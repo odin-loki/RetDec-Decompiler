@@ -1,0 +1,139 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 26,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "superbuild-gen",
+      "hidden": true,
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "superbuild-path-win",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/../../build/windows/${presetName}",
+      "installDir": "${sourceDir}/../../install/windows/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "superbuild-path-unix",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/../../build/linux/${presetName}",
+      "installDir": "${sourceDir}/../../install/linux/${presetName}",
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "superbuild-base",
+      "hidden": true,
+      "inherits": ["superbuild-gen", "superbuild-path-win", "superbuild-path-unix"]
+    },
+    {
+      "name": "superbuild-debug",
+      "displayName": "Superbuild — all components (Debug)",
+      "inherits": "superbuild-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "RETDEC_SUPERBUILD_ENABLE_TESTS": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_RETDEC_CORE": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_QT_GUI": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_CUDA_LAYER": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_ML_FRAMEWORK": "ON"
+      }
+    },
+    {
+      "name": "superbuild-release",
+      "displayName": "Superbuild — all components (Release + LTO)",
+      "inherits": "superbuild-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_TESTS": "OFF",
+        "RETDEC_SUPERBUILD_ENABLE_RETDEC_CORE": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_QT_GUI": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_CUDA_LAYER": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_ML_FRAMEWORK": "ON"
+      }
+    },
+    {
+      "name": "superbuild-windows-cross-mingw",
+      "displayName": "Superbuild — Windows cross-compile (MinGW-w64, Release + LTO)",
+      "inherits": "superbuild-base",
+      "toolchainFile": "${sourceDir}/../../cmake/toolchains/windows-mingw-w64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_TESTS": "OFF",
+        "RETDEC_SUPERBUILD_ENABLE_RETDEC_CORE": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_QT_GUI": "OFF",
+        "RETDEC_SUPERBUILD_ENABLE_CUDA_LAYER": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_ML_FRAMEWORK": "ON"
+      }
+    },
+    {
+      "name": "superbuild-windows-cross-mingw-debug",
+      "displayName": "Superbuild — Windows cross-compile (MinGW-w64, Debug)",
+      "inherits": "superbuild-base",
+      "toolchainFile": "${sourceDir}/../../cmake/toolchains/windows-mingw-w64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "OFF",
+        "RETDEC_SUPERBUILD_ENABLE_TESTS": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_RETDEC_CORE": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_QT_GUI": "OFF",
+        "RETDEC_SUPERBUILD_ENABLE_CUDA_LAYER": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_ML_FRAMEWORK": "ON"
+      }
+    },
+    {
+      "name": "superbuild-linux-clang",
+      "displayName": "Superbuild — Linux native (Clang, Release + LTO)",
+      "inherits": "superbuild-base",
+      "toolchainFile": "${sourceDir}/../../cmake/toolchains/linux-clang.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_TESTS": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_RETDEC_CORE": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_QT_GUI": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_CUDA_LAYER": "ON",
+        "RETDEC_SUPERBUILD_ENABLE_ML_FRAMEWORK": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "superbuild-debug",
+      "configurePreset": "superbuild-debug"
+    },
+    {
+      "name": "superbuild-release",
+      "configurePreset": "superbuild-release"
+    },
+    {
+      "name": "superbuild-windows-cross-mingw",
+      "configurePreset": "superbuild-windows-cross-mingw"
+    },
+    {
+      "name": "superbuild-windows-cross-mingw-debug",
+      "configurePreset": "superbuild-windows-cross-mingw-debug"
+    },
+    {
+      "name": "superbuild-linux-clang",
+      "configurePreset": "superbuild-linux-clang"
+    }
+  ]
+}

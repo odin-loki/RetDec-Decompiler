@@ -1,0 +1,1201 @@
+/**
+ * @file src/serial_detect/serial_detect.cpp
+ * @brief Serialisation Framework Detector — implementation.
+ *
+ * All SSAFunction references are treated as opaque handles in this
+ * implementation layer (the SSA IR types are declared but not defined here).
+ * Pattern matching is expressed via named helper predicates that query
+ * the IR through its public interface.
+ */
+
+#include <memory>
+#include "retdec/serial_detect/serial_detect.h"
+
+#include <algorithm>
+#include <cassert>
+#include <cstring>
+#include <iomanip>
+#include <sstream>
+#include <unordered_map>
+
+// Include the real SSA IR header to avoid ODR violations. Pattern-query
+// helpers below walk the real SSAFunction IR rather than relying on virtual
+// dispatch on a local stub class.
+#include "retdec/ssa/ssa.h"
+
+namespace retdec {
+namespace serial_detect {
+namespace ir_query {
+
+// ─── IR query helpers ─────────────────────────────────────────────────────────
+// These are free functions that inspect the real SSAFunction IR.
+// The implementations below are conservative stubs that walk instructions;
+// expand them as needed for higher detection accuracy.
+
+static bool hasConstant(const ssa::SSAFunction& fn, uint64_t value) {
+    for (auto& v : fn.values())
+        if (v->kind == ssa::ValueKind::Immediate && v->imm == value) return true;
+    return false;
+}
+static bool hasBitwiseOr(const ssa::SSAFunction& fn, uint64_t /*lhsMask*/, uint64_t rhs) {
+    if (hasConstant(fn, rhs)) {
+        for (auto& blk : fn.blocks())
+            for (auto* i : blk->instrs)
+                if (i->op == ssa::IrInstr::Op::Or) return true;
+    }
+    return false;
+}
+static bool hasRightShift(const ssa::SSAFunction& fn, int amount) {
+    if (!hasConstant(fn, (uint64_t)amount)) return false;
+    for (auto& blk : fn.blocks())
+        for (auto* i : blk->instrs)
+            if (i->op == ssa::IrInstr::Op::Shr || i->op == ssa::IrInstr::Op::Sar)
+                return true;
+    return false;
+}
+static bool hasLeftShift(const ssa::SSAFunction& fn, int amount) {
+    if (!hasConstant(fn, (uint64_t)amount)) return false;
+    for (auto& blk : fn.blocks())
+        for (auto* i : blk->instrs)
+            if (i->op == ssa::IrInstr::Op::Shl) return true;
+    return false;
+}
+static bool hasAndMask(const ssa::SSAFunction& fn, uint64_t mask) {
+    if (!hasConstant(fn, mask)) return false;
+    for (auto& blk : fn.blocks())
+        for (auto* i : blk->instrs)
+            if (i->op == ssa::IrInstr::Op::And) return true;
+    return false;
+}
+static bool hasLoopWithDecrement(const ssa::SSAFunction& fn) {
+    // Look for a back edge (loop) with a Sub instruction (decrement)
+    bool hasBackEdge = false;
+    for (auto& blk : fn.blocks())
+        for (auto* i : blk->instrs)
+            if (i->op == ssa::IrInstr::Op::Sub) {
+                // Check if any block has a back edge
+                for (auto& b : fn.blocks())
+                    for (ssa::BlockId s : b->succs)
+                        if (s <= b->id) { hasBackEdge = true; break; }
+                if (hasBackEdge) return true;
+            }
+    return false;
+}
+static bool hasSwitchOnByte(const ssa::SSAFunction& fn, int minCases) {
+    int branches = 0;
+    for (auto& blk : fn.blocks())
+        for (auto* i : blk->instrs)
+            if (i->op == ssa::IrInstr::Op::CondBranch) ++branches;
+    return branches >= minCases;
+}
+static int switchCaseCount(const ssa::SSAFunction& fn) {
+    int n = 0;
+    for (auto& blk : fn.blocks())
+        for (auto* i : blk->instrs)
+            if (i->op == ssa::IrInstr::Op::CondBranch) ++n;
+    return n;
+}
+static bool hasSelfCall(const ssa::SSAFunction& fn) {
+    for (auto& blk : fn.blocks())
+        for (auto* i : blk->instrs)
+            if (i->op == ssa::IrInstr::Op::Call && i->calleeName == fn.name())
+                return true;
+    return false;
+}
+static int selfCallCount(const ssa::SSAFunction& fn) {
+    int n = 0;
+    for (auto& blk : fn.blocks())
+        for (auto* i : blk->instrs)
+            if (i->op == ssa::IrInstr::Op::Call && i->calleeName == fn.name())
+                ++n;
+    return n;
+}
+static bool callsFunction(const ssa::SSAFunction& fn, const std::string& name) {
+    for (auto& blk : fn.blocks())
+        for (auto* i : blk->instrs)
+            if (i->op == ssa::IrInstr::Op::Call && i->calleeName == name)
+                return true;
+    return false;
+}
+static bool hasStructOffset(const ssa::SSAFunction& fn, int offset, int width) {
+    for (auto& v : fn.values())
+        if (v->kind == ssa::ValueKind::MemRef &&
+            v->memOffset == (int64_t)offset && v->memWidth == (uint8_t)width)
+            return true;
+    return false;
+}
+static bool hasSimdInstruction(const ssa::SSAFunction& /*fn*/) { return false; }
+static bool hasMutualRecursion(const ssa::SSAFunction& /*fn*/) { return false; }
+static bool hasStringLiteral(const ssa::SSAFunction& /*fn*/, const std::string& /*s*/) { return false; }
+static bool hasPointerArithWithConst(const ssa::SSAFunction& fn, int multiplier) {
+    return hasConstant(fn, (uint64_t)multiplier);
+}
+static int loadWidthsPresent(const ssa::SSAFunction& fn) {
+    std::unordered_set<uint8_t> widths;
+    for (auto& v : fn.values())
+        if (v->kind == ssa::ValueKind::MemRef && v->memWidth > 0)
+            widths.insert(v->memWidth);
+    return (int)widths.size();
+}
+static bool hasBackwardLoop(const ssa::SSAFunction& fn) {
+    for (auto& blk : fn.blocks())
+        for (ssa::BlockId s : blk->succs)
+            if (s <= blk->id) return true;
+    return false;
+}
+static bool hasThreeWayBranch(const ssa::SSAFunction& fn) {
+    for (auto& blk : fn.blocks())
+        if (blk->succs.size() >= 3) return true;
+    return false;
+}
+static bool hasAllocation(const ssa::SSAFunction& fn) {
+    return callsFunction(fn, "malloc") || callsFunction(fn, "operator new") ||
+           callsFunction(fn, "calloc");
+}
+static bool hasChildIndexArithmetic(const ssa::SSAFunction& fn) {
+    return hasPointerArithWithConst(fn, 2) || hasPointerArithWithConst(fn, 4);
+}
+static bool hasConvergingIndices(const ssa::SSAFunction& fn) {
+    return hasLoopWithDecrement(fn) && hasBackwardLoop(fn);
+}
+static bool hasSwapPattern(const ssa::SSAFunction& fn) {
+    int stores = 0;
+    for (auto& blk : fn.blocks())
+        for (auto* i : blk->instrs)
+            if (i->op == ssa::IrInstr::Op::Store) ++stores;
+    return stores >= 3;
+}
+
+} // namespace ir_query
+} // namespace serial_detect
+} // namespace retdec
+
+namespace retdec {
+namespace serial_detect {
+
+// ─── Utility helpers ──────────────────────────────────────────────────────────
+
+int encodeVarint(uint64_t value, uint8_t buf[10]) {
+    int n = 0;
+    while (value > 0x7Fu) {
+        buf[n++] = static_cast<uint8_t>((value & 0x7Fu) | 0x80u);
+        value >>= 7;
+    }
+    buf[n++] = static_cast<uint8_t>(value);
+    return n;
+}
+
+std::pair<uint64_t, int> decodeVarint(const uint8_t* data, int len) {
+    uint64_t result = 0;
+    int      shift  = 0;
+    for (int i = 0; i < len && i < 10; ++i) {
+        uint8_t b = data[i];
+        result |= static_cast<uint64_t>(b & 0x7Fu) << shift;
+        if (!(b & 0x80u)) return {result, i + 1};
+        shift += 7;
+    }
+    return {0, 0}; // malformed
+}
+
+uint32_t makeProtoTag(uint32_t fieldNumber, ProtoWireType wt) {
+    return (fieldNumber << 3) | static_cast<uint32_t>(wt);
+}
+
+std::pair<uint32_t, ProtoWireType> decodeProtoTag(uint32_t tag) {
+    uint32_t fn = tag >> 3;
+    auto     wt = static_cast<ProtoWireType>(tag & 0x7u);
+    return {fn, wt};
+}
+
+std::string symbolToFieldName(const std::string& sym) {
+    // Strip common C++ getter/setter prefixes and mangling noise
+    static const char* kPrefixes[] = {
+        "get_", "set_", "has_", "clear_", "mutable_",
+        "Get", "Set", "Has", "Clear", "Mutable"
+    };
+    std::string s = sym;
+    // Strip namespace path
+    auto colon = s.rfind("::");
+    if (colon != std::string::npos) s = s.substr(colon + 2);
+    for (auto* p : kPrefixes) {
+        if ((s.rfind(p, 0) == 0)) {
+            s = s.substr(std::strlen(p));
+            break;
+        }
+    }
+    // Convert to snake_case
+    std::string out;
+    for (char c : s) {
+        if (std::isupper(static_cast<unsigned char>(c)) && !out.empty())
+            out += '_';
+        out += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return out.empty() ? sym : out;
+}
+
+const char* protoScalarTypeName(ProtoScalarType t) {
+    switch (t) {
+    case ProtoScalarType::Bool:    return "bool";
+    case ProtoScalarType::Int32:   return "int32";
+    case ProtoScalarType::Int64:   return "int64";
+    case ProtoScalarType::UInt32:  return "uint32";
+    case ProtoScalarType::UInt64:  return "uint64";
+    case ProtoScalarType::SInt32:  return "sint32";
+    case ProtoScalarType::SInt64:  return "sint64";
+    case ProtoScalarType::Fixed32: return "fixed32";
+    case ProtoScalarType::Fixed64: return "fixed64";
+    case ProtoScalarType::SFixed32:return "sfixed32";
+    case ProtoScalarType::SFixed64:return "sfixed64";
+    case ProtoScalarType::Float:   return "float";
+    case ProtoScalarType::Double:  return "double";
+    case ProtoScalarType::String:  return "string";
+    case ProtoScalarType::Bytes:   return "bytes";
+    case ProtoScalarType::Message: return "message";
+    case ProtoScalarType::Enum:    return "int32"; // treated as int32 in schema
+    default:                       return "bytes";
+    }
+}
+
+const char* serialFrameworkName(SerialFramework f) {
+    switch (f) {
+    case SerialFramework::Protobuf:    return "Protobuf";
+    case SerialFramework::FlatBuffers: return "FlatBuffers";
+    case SerialFramework::MessagePack: return "MessagePack";
+    case SerialFramework::CBOR:        return "CBOR";
+    case SerialFramework::JSON:        return "JSON";
+    case SerialFramework::XML:         return "XML";
+    default:                           return "Unknown";
+    }
+}
+
+const char* serialLibraryName(SerialLibrary l) {
+    switch (l) {
+    case SerialLibrary::Protobuf2:            return "libprotobuf (proto2)";
+    case SerialLibrary::Protobuf3:            return "libprotobuf (proto3)";
+    case SerialLibrary::JSON_RapidJSON:       return "RapidJSON";
+    case SerialLibrary::JSON_nlohmann:        return "nlohmann/json";
+    case SerialLibrary::JSON_simdjson:        return "simdjson";
+    case SerialLibrary::JSON_cJSON:           return "cJSON";
+    case SerialLibrary::JSON_Generic:         return "hand-rolled JSON";
+    case SerialLibrary::XML_libxml2:          return "libxml2";
+    case SerialLibrary::XML_Expat:            return "Expat";
+    case SerialLibrary::XML_TinyXML:          return "TinyXML-2";
+    case SerialLibrary::XML_RapidXML:         return "RapidXML";
+    case SerialLibrary::XML_Generic:          return "hand-rolled XML";
+    case SerialLibrary::FlatBuffers_Official: return "FlatBuffers";
+    case SerialLibrary::MessagePack_msgpack_c:return "msgpack-c";
+    case SerialLibrary::MessagePack_Generic:  return "hand-rolled MessagePack";
+    case SerialLibrary::CBOR_Generic:         return "hand-rolled CBOR";
+    default:                                  return "Unknown";
+    }
+}
+
+// ─── ProtoField ───────────────────────────────────────────────────────────────
+
+std::string ProtoField::protoTypeName() const {
+    if (scalarType == ProtoScalarType::Message && !nestedMessageName.empty())
+        return nestedMessageName;
+    return protoScalarTypeName(scalarType);
+}
+
+std::string ProtoField::toString() const {
+    std::ostringstream os;
+    if (cardinality == ProtoCardinality::Repeated) os << "repeated ";
+    os << protoTypeName() << " " << name << " = " << number << ";";
+    return os.str();
+}
+
+// ─── ProtoSchema::emitProto ───────────────────────────────────────────────────
+
+std::string ProtoSchema::emitProto() const {
+    ProtoEmitter e;
+    return e.emit(*this);
+}
+
+// ─── FbsField ─────────────────────────────────────────────────────────────────
+
+std::string FbsField::fbsTypeName() const {
+    if (!typeName.empty()) return typeName;
+    if (isString)  return "string";
+    if (isVector)  return "[byte]";
+    switch (accessBytes) {
+    case 1: return "bool";
+    case 2: return "short";
+    case 4: return "int";
+    case 8: return "long";
+    default: return "byte";
+    }
+}
+
+// ─── FbsTable::emitFbs ────────────────────────────────────────────────────────
+
+std::string FbsTable::emitFbs() const {
+    FbsEmitter e;
+    return e.emitTable(*this);
+}
+
+// ─── FbsSchema::emitFbs ───────────────────────────────────────────────────────
+
+std::string FbsSchema::emitFbs() const {
+    FbsEmitter e;
+    return e.emit(*this);
+}
+
+// ─── SerialResult ─────────────────────────────────────────────────────────────
+
+std::string SerialResult::frameworkName() const noexcept {
+    return serialFrameworkName(framework);
+}
+
+std::string SerialResult::libraryName() const noexcept {
+    return serialLibraryName(library);
+}
+
+std::string SerialResult::toString() const {
+    std::ostringstream os;
+    os << frameworkName() << " (" << libraryName() << ")";
+    os << "  confidence=" << std::fixed << std::setprecision(2) << confidence;
+    if (!evidenceSummary.empty()) os << "\n  " << evidenceSummary;
+    return os.str();
+}
+
+// ─── Symbol-matching helpers ──────────────────────────────────────────────────
+
+static bool symContains(const std::unordered_set<std::string>& sym,
+                         const std::string& sub) {
+    for (auto& s : sym)
+        if (s.find(sub) != std::string::npos) return true;
+    return false;
+}
+
+// ─── ProtobufDetector ─────────────────────────────────────────────────────────
+
+VarintEvidence ProtobufDetector::detectVarint(const ssa::SSAFunction& fn) const {
+    VarintEvidence ev;
+    // Varint loop: (value & 0x7F) | 0x80 pattern + right shift by 7
+    bool hasAndMask  = ir_query::hasAndMask(fn, 0x7Fu);
+    bool hasOrHigh   = ir_query::hasBitwiseOr(fn, 0x7Fu, 0x80u);
+    bool hasShr7     = ir_query::hasRightShift(fn, 7);
+    bool hasLoop     = ir_query::hasLoopWithDecrement(fn);
+
+    if (hasAndMask && hasShr7) {
+        ev.found      = true;
+        ev.confidence = 0.40f;
+        if (hasOrHigh)  ev.confidence += 0.30f;
+        if (hasLoop)    ev.confidence += 0.20f;
+        ev.loopCount  = hasShr7 ? 1 : 0;
+    }
+    return ev;
+}
+
+TagEvidence ProtobufDetector::detectTag(const ssa::SSAFunction& fn) const {
+    TagEvidence ev;
+    // tag = (field_number << 3) | wire_type
+    // Look for a left shift of 3 combined with OR of 0-5
+    if (ir_query::hasLeftShift(fn, 3) && (ir_query::hasConstant(fn, 0) || ir_query::hasConstant(fn, 2) ||
+                                ir_query::hasConstant(fn, 5))) {
+        ev.found = true;
+    }
+    return ev;
+}
+
+bool ProtobufDetector::hasHasBitsArray(const ssa::SSAFunction& fn) const {
+    // _has_bits_ is typically a uint32_t[] at struct offset 0 or 8
+    return ir_query::hasStructOffset(fn, 0, 4) || ir_query::hasStructOffset(fn, 8, 4);
+}
+
+bool ProtobufDetector::hasSerializeSymbol(
+        const std::unordered_set<std::string>& sym) const {
+    return symContains(sym, "SerializeToString") ||
+           symContains(sym, "SerializeToArray")  ||
+           symContains(sym, "SerializeToOstream") ||
+           symContains(sym, "AppendToString")    ||
+           symContains(sym, "ByteSizeLong")      ||
+           symContains(sym, "ByteSize");
+}
+
+bool ProtobufDetector::hasParseSymbol(
+        const std::unordered_set<std::string>& sym) const {
+    return symContains(sym, "ParseFromString") ||
+           symContains(sym, "ParseFromArray")  ||
+           symContains(sym, "ParseFromIstream")||
+           symContains(sym, "MergeFromString") ||
+           symContains(sym, "MergePartialFromCodedStream");
+}
+
+SerialLibrary ProtobufDetector::detectVersion(
+        const ssa::SSAFunction& fn,
+        const std::unordered_set<std::string>& sym) const {
+    // proto3: no has_* methods for scalar fields, presence via oneof only
+    bool hasHasMethods = symContains(sym, "has_") &&
+                         !symContains(sym, "has_oneof");
+    return hasHasMethods ? SerialLibrary::Protobuf2 : SerialLibrary::Protobuf3;
+}
+
+ProtoScalarType ProtobufDetector::wireTypeToScalar(ProtoWireType wt,
+                                                    uint8_t accessBytes) const {
+    switch (wt) {
+    case ProtoWireType::Varint:
+        // Could be bool, int32, int64, enum — default to int32
+        return ProtoScalarType::Int32;
+    case ProtoWireType::Fixed32:
+        return (accessBytes == 4) ? ProtoScalarType::Float : ProtoScalarType::Fixed32;
+    case ProtoWireType::Fixed64:
+        return (accessBytes == 8) ? ProtoScalarType::Double : ProtoScalarType::Fixed64;
+    case ProtoWireType::LengthDelimited:
+        return ProtoScalarType::Bytes; // could be string or nested message
+    default:
+        return ProtoScalarType::Unknown;
+    }
+}
+
+ProtoField ProtobufDetector::recoverField(uint32_t fieldNum, ProtoWireType wt,
+                                           const std::string& symbolicName) const {
+    ProtoField f;
+    f.number     = fieldNum;
+    f.wireType   = wt;
+    f.scalarType = wireTypeToScalar(wt, 4);
+    f.name       = symbolicName.empty()
+                       ? "field_" + std::to_string(fieldNum)
+                       : symbolToFieldName(symbolicName);
+    return f;
+}
+
+SerialResult ProtobufDetector::detect(
+        const ssa::SSAFunction& fn,
+        const std::unordered_set<std::string>& sym) const {
+    SerialResult res;
+    res.framework = SerialFramework::Protobuf;
+
+    float score = 0.0f;
+    std::string evidence;
+
+    // 1. Symbol evidence (strongest signal)
+    bool hasSer = hasSerializeSymbol(sym);
+    bool hasPar = hasParseSymbol(sym);
+    if (hasSer) { score += 0.40f; evidence += "SerializeToString; "; }
+    if (hasPar) { score += 0.30f; evidence += "ParseFromString; "; }
+
+    // 2. Varint encoding loop
+    auto vi = detectVarint(fn);
+    if (vi.found) {
+        score += vi.confidence * 0.25f;
+        evidence += "varint_loop; ";
+    }
+
+    // 3. Tag arithmetic
+    auto tg = detectTag(fn);
+    if (tg.found) {
+        score += 0.20f;
+        evidence += "tag_shift3; ";
+    }
+
+    // 4. _has_bits_ array
+    if (hasHasBitsArray(fn)) {
+        score += 0.15f;
+        evidence += "_has_bits_; ";
+    }
+
+    if (score < 0.20f) return {}; // not detected
+
+    res.confidence = std::min(1.0f, score);
+    res.library    = detectVersion(fn, sym);
+    res.evidenceSummary = evidence;
+    res.evidenceFunctions.push_back(fn.name());
+    return res;
+}
+
+ProtoSchema ProtobufDetector::reconstructSchema(
+        const std::vector<const ssa::SSAFunction*>& classFunctions,
+        const std::unordered_set<std::string>& symTable) const {
+    ProtoSchema schema;
+    schema.syntaxVersion = "proto3";
+    schema.packageName   = "recovered";
+
+    ProtoMessage msg;
+    msg.name = "RecoveredMessage";
+
+    // Collect field evidence across all class functions
+    std::unordered_map<uint32_t, ProtoField> fields;
+    for (auto* fn : classFunctions) {
+        auto tg = detectTag(*fn);
+        if (tg.found && tg.fieldNumber > 0) {
+            if (!fields.count(tg.fieldNumber)) {
+                // Try to find a symbolic name from the function
+                std::string symName;
+                for (auto& s : symTable) {
+                    if (s.find(fn->name()) != std::string::npos) {
+                        symName = s;
+                        break;
+                    }
+                }
+                fields[tg.fieldNumber] =
+                    recoverField(tg.fieldNumber, tg.wireType, symName);
+            }
+        }
+    }
+
+    // Sort by field number
+    std::vector<std::pair<uint32_t, ProtoField>> sorted(fields.begin(), fields.end());
+    std::sort(sorted.begin(), sorted.end(),
+              [](const auto& a, const auto& b){ return a.first < b.first; });
+    for (auto& [n, f] : sorted) msg.fields.push_back(f);
+
+    if (!msg.fields.empty()) {
+        msg.sourceFunction = classFunctions.empty() ? "" : classFunctions[0]->name();
+        schema.messages.push_back(std::move(msg));
+    }
+    return schema;
+}
+
+std::string ProtobufDetector::emitProto(const ProtoSchema& schema) {
+    ProtoEmitter e;
+    return e.emit(schema);
+}
+
+// ─── FlatBuffersDetector ──────────────────────────────────────────────────────
+
+VtableEvidence FlatBuffersDetector::detectVtable(const ssa::SSAFunction& fn) const {
+    VtableEvidence ev;
+    // Vtable lookup: read int16 at vtable_ptr + slot*2, then check != 0
+    bool hasShortRead  = ir_query::hasStructOffset(fn, 0, 2);  // read int16_t
+    bool hasMultBy2    = ir_query::hasPointerArithWithConst(fn, 2);
+    bool hasZeroCheck  = ir_query::hasConstant(fn, 0);
+
+    if (hasShortRead && hasMultBy2) {
+        ev.found      = true;
+        ev.confidence = 0.50f;
+        ev.slotCount  = fn.instrCount() / 10; // rough heuristic
+        if (hasZeroCheck) ev.confidence += 0.20f;
+    }
+    return ev;
+}
+
+bool FlatBuffersDetector::hasBuilderPattern(const ssa::SSAFunction& fn) const {
+    return ir_query::callsFunction(fn, "StartTable") ||
+           ir_query::callsFunction(fn, "EndTable")   ||
+           ir_query::callsFunction(fn, "AddElement") ||
+           ir_query::callsFunction(fn, "FlatBufferBuilder");
+}
+
+bool FlatBuffersDetector::hasVerifier(
+        const ssa::SSAFunction& fn,
+        const std::unordered_set<std::string>& sym) const {
+    return symContains(sym, "Verify") ||
+           symContains(sym, "VerifyFlatBuffer") ||
+           ir_query::callsFunction(fn, "Verify");
+}
+
+std::vector<FbsField> FlatBuffersDetector::recoverFields(
+        const ssa::SSAFunction& fn) const {
+    std::vector<FbsField> fields;
+    // Stub: in a real implementation, walk vtable slot accesses in the IR
+    int slotCount = fn.instrCount() / 15;
+    for (int i = 0; i < slotCount && i < 32; ++i) {
+        FbsField f;
+        f.slot        = static_cast<uint32_t>(i);
+        f.name        = "field_" + std::to_string(i);
+        f.accessBytes = 4; // default to int
+        fields.push_back(f);
+    }
+    return fields;
+}
+
+SerialResult FlatBuffersDetector::detect(
+        const ssa::SSAFunction& fn,
+        const std::unordered_set<std::string>& sym) const {
+    SerialResult res;
+    res.framework = SerialFramework::FlatBuffers;
+
+    float score = 0.0f;
+    std::string evidence;
+
+    // Symbol evidence
+    if (symContains(sym, "FlatBufferBuilder")) { score += 0.45f; evidence += "FlatBufferBuilder; "; }
+    if (symContains(sym, "GetRootAs"))          { score += 0.35f; evidence += "GetRootAs; "; }
+
+    // Vtable pattern
+    auto vt = detectVtable(fn);
+    if (vt.found) {
+        score += vt.confidence * 0.35f;
+        evidence += "vtable_lookup; ";
+    }
+
+    // Builder API calls
+    if (hasBuilderPattern(fn)) {
+        score += 0.25f;
+        evidence += "builder_api; ";
+    }
+
+    // Verifier
+    if (hasVerifier(fn, sym)) {
+        score += 0.10f;
+        evidence += "verifier; ";
+    }
+
+    if (score < 0.20f) return {};
+
+    res.confidence = std::min(1.0f, score);
+    res.library    = SerialLibrary::FlatBuffers_Official;
+    res.evidenceSummary = evidence;
+    res.evidenceFunctions.push_back(fn.name());
+    return res;
+}
+
+FbsSchema FlatBuffersDetector::reconstructSchema(
+        const std::vector<const ssa::SSAFunction*>& tableFunctions,
+        const std::unordered_set<std::string>& symTable) const {
+    FbsSchema schema;
+    for (auto* fn : tableFunctions) {
+        FbsTable tbl;
+        tbl.name           = fn->name().empty() ? "RecoveredTable" : fn->name();
+        tbl.fields         = recoverFields(*fn);
+        tbl.sourceFunction = fn->name();
+        if (!tbl.fields.empty()) schema.tables.push_back(std::move(tbl));
+    }
+    if (!schema.tables.empty())
+        schema.rootType = schema.tables[0].name;
+    return schema;
+}
+
+std::string FlatBuffersDetector::emitFbs(const FbsSchema& schema) {
+    FbsEmitter e;
+    return e.emit(schema);
+}
+
+// ─── MessagePackDetector ──────────────────────────────────────────────────────
+
+MsgpackEvidence MessagePackDetector::detectSwitch(const ssa::SSAFunction& fn) const {
+    MsgpackEvidence ev;
+    if (!ir_query::hasSwitchOnByte(fn, 8)) return ev;
+
+    ev.found      = true;
+    ev.caseCount  = ir_query::switchCaseCount(fn);
+    ev.confidence = 0.40f;
+
+    // Check for specific format-byte constant groups
+    if (ir_query::hasConstant(fn, 0x80)) { ev.hasFixmap   = true; ev.confidence += 0.10f; }
+    if (ir_query::hasConstant(fn, 0x90)) { ev.hasFixarray = true; ev.confidence += 0.10f; }
+    if (ir_query::hasConstant(fn, 0xa0)) { ev.hasFixstr   = true; ev.confidence += 0.10f; }
+    if (ir_query::hasConstant(fn, 0x7f)) { ev.hasFixint   = true; ev.confidence += 0.10f; }
+    return ev;
+}
+
+bool MessagePackDetector::hasFixedWidthRead(const ssa::SSAFunction& fn) const {
+    // Reads of 1/2/4/8 bytes after the type-byte switch
+    int widths = ir_query::loadWidthsPresent(fn);
+    return (widths & 0xF) != 0; // at least some widths present
+}
+
+SerialLibrary MessagePackDetector::detectLibrary(
+        const std::unordered_set<std::string>& sym) const {
+    if (symContains(sym, "msgpack") || symContains(sym, "msgpack_pack"))
+        return SerialLibrary::MessagePack_msgpack_c;
+    return SerialLibrary::MessagePack_Generic;
+}
+
+SerialResult MessagePackDetector::detect(
+        const ssa::SSAFunction& fn,
+        const std::unordered_set<std::string>& sym) const {
+    SerialResult res;
+    res.framework = SerialFramework::MessagePack;
+
+    float score = 0.0f;
+    std::string evidence;
+
+    if (symContains(sym, "msgpack")) {
+        score += 0.50f;
+        evidence += "msgpack_symbol; ";
+    }
+
+    auto sw = detectSwitch(fn);
+    if (sw.found) {
+        score += sw.confidence;
+        evidence += "msgpack_switch(" + std::to_string(sw.caseCount) + " cases); ";
+    }
+
+    if (hasFixedWidthRead(fn)) {
+        score += 0.15f;
+        evidence += "fixed_width_reads; ";
+    }
+
+    if (score < 0.25f) return {};
+
+    res.confidence = std::min(1.0f, score);
+    res.library    = detectLibrary(sym);
+    res.evidenceSummary = evidence;
+    res.evidenceFunctions.push_back(fn.name());
+    return res;
+}
+
+// ─── CBORDetector ─────────────────────────────────────────────────────────────
+
+CborEvidence CBORDetector::detectMajorType(const ssa::SSAFunction& fn) const {
+    CborEvidence ev;
+    // (byte >> 5) & 7 — shift by 5 AND mask with 7
+    if (ir_query::hasRightShift(fn, 5) && ir_query::hasAndMask(fn, 7u)) {
+        ev.found        = true;
+        ev.hasMajorShift = true;
+        ev.confidence   = 0.45f;
+    }
+    return ev;
+}
+
+bool CBORDetector::hasAdditionalInfo(const ssa::SSAFunction& fn) const {
+    return ir_query::hasAndMask(fn, 0x1Fu); // byte & 31
+}
+
+bool CBORDetector::hasExtendedLength(const ssa::SSAFunction& fn) const {
+    return ir_query::hasConstant(fn, 24) && ir_query::hasConstant(fn, 25) &&
+           ir_query::hasConstant(fn, 26) && ir_query::hasConstant(fn, 27);
+}
+
+SerialResult CBORDetector::detect(
+        const ssa::SSAFunction& fn,
+        const std::unordered_set<std::string>& sym) const {
+    SerialResult res;
+    res.framework = SerialFramework::CBOR;
+
+    float score = 0.0f;
+    std::string evidence;
+
+    if (symContains(sym, "cbor") || symContains(sym, "CBOR")) {
+        score += 0.50f;
+        evidence += "cbor_symbol; ";
+    }
+
+    auto mt = detectMajorType(fn);
+    if (mt.found) {
+        score += mt.confidence;
+        evidence += "major_type_shr5; ";
+    }
+
+    if (hasAdditionalInfo(fn)) {
+        score += 0.20f;
+        evidence += "additional_and1f; ";
+    }
+
+    if (hasExtendedLength(fn)) {
+        score += 0.20f;
+        evidence += "extended_len_24-27; ";
+    }
+
+    if (score < 0.30f) return {};
+
+    res.confidence      = std::min(1.0f, score);
+    res.library         = SerialLibrary::CBOR_Generic;
+    res.evidenceSummary = evidence;
+    res.evidenceFunctions.push_back(fn.name());
+    return res;
+}
+
+// ─── JSONDetector ─────────────────────────────────────────────────────────────
+
+JsonParserEvidence JSONDetector::detectGeneric(const ssa::SSAFunction& fn) const {
+    JsonParserEvidence ev;
+
+    // Switch on leading JSON character: '{', '[', '"', 't', 'f', 'n'
+    if (ir_query::hasConstant(fn, '{') && ir_query::hasConstant(fn, '[') && ir_query::hasConstant(fn, '"')) {
+        ev.hasValueSwitch = true;
+        ev.confidence    += 0.35f;
+    }
+
+    // Mutual recursion with parse_object / parse_array
+    if (ir_query::hasMutualRecursion(fn)) {
+        ev.hasMutualRecurs = true;
+        ev.confidence     += 0.30f;
+    }
+
+    // Backslash escape handling
+    if (ir_query::hasConstant(fn, '\\') && ir_query::hasConstant(fn, '/')) {
+        ev.hasStringEscape = true;
+        ev.confidence     += 0.15f;
+    }
+
+    // Unicode decode: \uXXXX (constants 'u', 0xFFFF mask)
+    if (ir_query::hasConstant(fn, 'u') && ir_query::hasAndMask(fn, 0xFFFF)) {
+        ev.hasUnicodeDecod = true;
+        ev.confidence     += 0.10f;
+    }
+
+    ev.found = ev.confidence >= 0.30f;
+    return ev;
+}
+
+bool JSONDetector::hasRapidJsonSymbols(
+        const std::unordered_set<std::string>& sym) const {
+    return symContains(sym, "GenericDocument")   ||
+           symContains(sym, "GenericStringRef")  ||
+           symContains(sym, "kObjectType")       ||
+           symContains(sym, "RapidJSON")         ||
+           symContains(sym, "rapidjson");
+}
+
+bool JSONDetector::hasNlohmannSymbols(
+        const std::unordered_set<std::string>& sym) const {
+    return symContains(sym, "nlohmann")           ||
+           symContains(sym, "basic_json")         ||
+           symContains(sym, "json_sax_dom_parser") ||
+           symContains(sym, "detail::json");
+}
+
+bool JSONDetector::hasSimdjsonSimd(const ssa::SSAFunction& fn) const {
+    // simdjson uses SIMD for structural character detection
+    return ir_query::hasSimdInstruction(fn) &&
+           ir_query::hasConstant(fn, '{') && ir_query::hasConstant(fn, '[') &&
+           ir_query::hasConstant(fn, '}') && ir_query::hasConstant(fn, ']');
+}
+
+bool JSONDetector::hasCJsonSymbols(
+        const std::unordered_set<std::string>& sym) const {
+    return symContains(sym, "cJSON_Parse")        ||
+           symContains(sym, "cJSON_GetObjectItem")||
+           symContains(sym, "cJSON_Delete")       ||
+           symContains(sym, "cJSON_Print");
+}
+
+JsonLibraryEvidence JSONDetector::detectLibrary(
+        const ssa::SSAFunction& fn,
+        const std::unordered_set<std::string>& sym) const {
+    JsonLibraryEvidence ev;
+
+    if (hasCJsonSymbols(sym)) {
+        ev.library = SerialLibrary::JSON_cJSON;
+        ev.confidence = 0.90f;
+        ev.hasCJsonSymbols = true;
+        return ev;
+    }
+    if (hasRapidJsonSymbols(sym)) {
+        ev.library = SerialLibrary::JSON_RapidJSON;
+        ev.confidence = 0.85f;
+        ev.hasRapidJsonSymbols = true;
+        return ev;
+    }
+    if (hasNlohmannSymbols(sym)) {
+        ev.library = SerialLibrary::JSON_nlohmann;
+        ev.confidence = 0.85f;
+        ev.hasNlohmannSymbols = true;
+        return ev;
+    }
+    if (hasSimdjsonSimd(fn) || symContains(sym, "simdjson")) {
+        ev.library = SerialLibrary::JSON_simdjson;
+        ev.confidence = 0.80f;
+        ev.hasSimdjsonSimd = true;
+        return ev;
+    }
+    ev.library    = SerialLibrary::JSON_Generic;
+    ev.confidence = 0.50f;
+    return ev;
+}
+
+SerialResult JSONDetector::detect(
+        const ssa::SSAFunction& fn,
+        const std::unordered_set<std::string>& sym) const {
+    SerialResult res;
+    res.framework = SerialFramework::JSON;
+
+    float score = 0.0f;
+    std::string evidence;
+
+    // Library-specific symbols (highest weight)
+    auto libEv = detectLibrary(fn, sym);
+    if (libEv.library != SerialLibrary::Unknown &&
+        libEv.library != SerialLibrary::JSON_Generic) {
+        score += libEv.confidence * 0.60f;
+        evidence += serialLibraryName(libEv.library) + std::string(" symbols; ");
+    }
+
+    // Generic JSON parser pattern
+    auto gen = detectGeneric(fn);
+    if (gen.found) {
+        score += gen.confidence * 0.40f;
+        evidence += "json_recursive_descent; ";
+    }
+
+    if (score < 0.20f) return {};
+
+    res.confidence      = std::min(1.0f, score);
+    res.library         = libEv.library;
+    res.evidenceSummary = evidence;
+    res.evidenceFunctions.push_back(fn.name());
+    return res;
+}
+
+// ─── XMLDetector ──────────────────────────────────────────────────────────────
+
+bool XMLDetector::hasLibxml2Symbols(
+        const std::unordered_set<std::string>& sym) const {
+    return symContains(sym, "xmlReadMemory")        ||
+           symContains(sym, "xmlParseFile")         ||
+           symContains(sym, "xmlDocGetRootElement") ||
+           symContains(sym, "xmlFreeDoc")           ||
+           symContains(sym, "xmlNode")              ||
+           symContains(sym, "libxml");
+}
+
+bool XMLDetector::hasExpatSymbols(
+        const std::unordered_set<std::string>& sym) const {
+    return symContains(sym, "XML_ParserCreate")          ||
+           symContains(sym, "XML_SetElementHandler")     ||
+           symContains(sym, "XML_SetCharacterDataHandler")||
+           symContains(sym, "XML_Parse")                 ||
+           symContains(sym, "XML_ParserFree");
+}
+
+bool XMLDetector::hasTinyXmlSymbols(
+        const std::unordered_set<std::string>& sym) const {
+    return symContains(sym, "TiXml")        ||
+           symContains(sym, "XMLDocument")  ||
+           symContains(sym, "XMLElement")   ||
+           symContains(sym, "tinyxml")      ||
+           symContains(sym, "TinyXML");
+}
+
+bool XMLDetector::hasRapidXmlSymbols(
+        const std::unordered_set<std::string>& sym) const {
+    return symContains(sym, "rapidxml")     ||
+           symContains(sym, "RapidXML")     ||
+           symContains(sym, "xml_document") ||
+           symContains(sym, "xml_node");
+}
+
+bool XMLDetector::hasTagScanning(const ssa::SSAFunction& fn) const {
+    return ir_query::hasConstant(fn, '<') && ir_query::hasConstant(fn, '>') &&
+           ir_query::hasConstant(fn, '/');
+}
+
+bool XMLDetector::hasSaxCallbacks(const ssa::SSAFunction& fn) const {
+    // SAX parser sets up function pointers (indirect calls)
+    return ir_query::hasStructOffset(fn, 0, 8); // function pointer table at offset 0
+}
+
+XmlParserEvidence XMLDetector::detectGeneric(const ssa::SSAFunction& fn) const {
+    XmlParserEvidence ev;
+    if (hasTagScanning(fn)) {
+        ev.found       = true;
+        ev.hasTagStack = true;
+        ev.confidence += 0.30f;
+    }
+    if (ir_query::hasConstant(fn, '&') && ir_query::hasConstant(fn, ';')) {
+        ev.hasAttrParsing = true;
+        ev.confidence    += 0.15f;
+    }
+    if (hasSaxCallbacks(fn)) {
+        ev.hasSaxCallback = true;
+        ev.confidence    += 0.20f;
+    }
+    return ev;
+}
+
+SerialLibrary XMLDetector::detectLibrary(
+        const ssa::SSAFunction& fn,
+        const std::unordered_set<std::string>& sym) const {
+    if (hasLibxml2Symbols(sym)) return SerialLibrary::XML_libxml2;
+    if (hasExpatSymbols(sym))   return SerialLibrary::XML_Expat;
+    if (hasTinyXmlSymbols(sym)) return SerialLibrary::XML_TinyXML;
+    if (hasRapidXmlSymbols(sym))return SerialLibrary::XML_RapidXML;
+    return SerialLibrary::XML_Generic;
+}
+
+SerialResult XMLDetector::detect(
+        const ssa::SSAFunction& fn,
+        const std::unordered_set<std::string>& sym) const {
+    SerialResult res;
+    res.framework = SerialFramework::XML;
+
+    float score = 0.0f;
+    std::string evidence;
+
+    SerialLibrary lib = detectLibrary(fn, sym);
+    if (lib != SerialLibrary::XML_Generic) {
+        score += 0.65f;
+        evidence += serialLibraryName(lib) + std::string(" symbols; ");
+    }
+
+    auto gen = detectGeneric(fn);
+    if (gen.found) {
+        score += gen.confidence * 0.40f;
+        evidence += "xml_tag_scan; ";
+    }
+
+    if (score < 0.25f) return {};
+
+    res.confidence      = std::min(1.0f, score);
+    res.library         = lib;
+    res.evidenceSummary = evidence;
+    res.evidenceFunctions.push_back(fn.name());
+    return res;
+}
+
+// ─── ProtoEmitter ─────────────────────────────────────────────────────────────
+
+std::string ProtoEmitter::emitField(const ProtoField& f, int indent) const {
+    std::string pad(indent * indentWidth, ' ');
+    std::ostringstream os;
+    os << pad;
+    if (f.cardinality == ProtoCardinality::Repeated) os << "repeated ";
+    os << f.protoTypeName() << " " << f.name << " = " << f.number << ";";
+    return os.str();
+}
+
+std::string ProtoEmitter::emitMessage(const ProtoMessage& msg, int indent) const {
+    std::string pad(indent * indentWidth, ' ');
+    std::string ipad((indent + 1) * indentWidth, ' ');
+    std::ostringstream os;
+    os << pad << "message " << msg.name << " {\n";
+    for (auto& f : msg.fields) os << emitField(f, indent + 1) << "\n";
+    os << pad << "}\n";
+    return os.str();
+}
+
+std::string ProtoEmitter::emit(const ProtoSchema& schema) const {
+    std::ostringstream os;
+    os << "syntax = \"" << (schema.syntaxVersion.empty() ? "proto3" : schema.syntaxVersion) << "\";\n";
+    if (!schema.packageName.empty())
+        os << "package " << schema.packageName << ";\n";
+    for (auto& imp : schema.imports)
+        os << "import \"" << imp << "\";\n";
+    os << "\n";
+    for (auto& msg : schema.messages)
+        os << emitMessage(msg) << "\n";
+    return os.str();
+}
+
+// ─── FbsEmitter ───────────────────────────────────────────────────────────────
+
+std::string FbsEmitter::emitField(const FbsField& f, int indent) const {
+    std::string pad(indent * indentWidth, ' ');
+    return pad + f.name + ":" + f.fbsTypeName() + ";";
+}
+
+std::string FbsEmitter::emitTable(const FbsTable& tbl, int indent) const {
+    std::string pad(indent * indentWidth, ' ');
+    std::string keyword = tbl.isStruct ? "struct" : "table";
+    std::ostringstream os;
+    os << pad << keyword << " " << tbl.name << " {\n";
+    for (auto& f : tbl.fields) os << emitField(f, indent + 1) << "\n";
+    os << pad << "}\n";
+    return os.str();
+}
+
+std::string FbsEmitter::emit(const FbsSchema& schema) const {
+    std::ostringstream os;
+    for (auto& tbl : schema.tables) os << emitTable(tbl) << "\n";
+    if (!schema.rootType.empty())
+        os << "root_type " << schema.rootType << ";\n";
+    return os.str();
+}
+
+// ─── SerialDetector ───────────────────────────────────────────────────────────
+
+SerialDetector::SerialDetector(Config cfg) : cfg_(std::move(cfg)) {
+    if (cfg_.detectProtobuf) detectors_.push_back(std::make_unique<ProtobufDetector>());
+    if (cfg_.detectFlatBuf)  detectors_.push_back(std::make_unique<FlatBuffersDetector>());
+    if (cfg_.detectMsgpack)  detectors_.push_back(std::make_unique<MessagePackDetector>());
+    if (cfg_.detectCbor)     detectors_.push_back(std::make_unique<CBORDetector>());
+    if (cfg_.detectJson)     detectors_.push_back(std::make_unique<JSONDetector>());
+    if (cfg_.detectXml)      detectors_.push_back(std::make_unique<XMLDetector>());
+}
+
+bool SerialDetector::passesPreflight(const ssa::SSAFunction& fn) const {
+    return fn.blockCount() >= cfg_.minBlocks;
+}
+
+SerialResult SerialDetector::analyseFunction(
+        const ssa::SSAFunction& fn,
+        const std::unordered_set<std::string>& symTable) const {
+    if (!passesPreflight(fn)) {
+        ++stats_.functionsSkipped;
+        return {};
+    }
+    ++stats_.functionsAnalysed;
+
+    SerialResult best;
+    for (auto& det : detectors_) {
+        SerialResult r = det->detect(fn, symTable);
+        if (r.isValid() && r.confidence > best.confidence) {
+            best = std::move(r);
+        }
+    }
+    if (best.isValid() && best.confidence >= cfg_.minConfidence) {
+        ++stats_.detections;
+        ++stats_.byFramework[best.framework];
+    } else {
+        best = {};
+    }
+    return best;
+}
+
+SerialDetector::DetectionMap SerialDetector::analyseModule(
+        const std::vector<const ssa::SSAFunction*>& functions,
+        const std::unordered_set<std::string>& symTable) const {
+    DetectionMap results;
+
+    for (auto* fn : functions) {
+        if (!fn) continue;
+        SerialResult r = analyseFunction(*fn, symTable);
+        if (r.isValid()) {
+            results[fn->name()] = r;
+        }
+    }
+
+    // Group detections for schema reconstruction
+    if (cfg_.emitProto)  groupAndReconstructProtobuf(results, functions, symTable);
+    if (cfg_.emitFbs)    groupAndReconstructFlatBuffers(results, functions, symTable);
+
+    return results;
+}
+
+void SerialDetector::groupAndReconstructProtobuf(
+        const DetectionMap& detections,
+        const std::vector<const ssa::SSAFunction*>& functions,
+        const std::unordered_set<std::string>& symTable) const {
+    // Collect protobuf functions
+    std::vector<const ssa::SSAFunction*> protoFns;
+    for (auto* fn : functions) {
+        if (!fn) continue;
+        auto it = detections.find(fn->name());
+        if (it != detections.end() &&
+            it->second.framework == SerialFramework::Protobuf) {
+            protoFns.push_back(fn);
+        }
+    }
+    if (protoFns.empty()) return;
+
+    ++stats_.protobufClasses;
+
+    ProtobufDetector det;
+    ProtoSchema schema = det.reconstructSchema(protoFns, symTable);
+    if (!schema.isEmpty()) {
+        std::string text = ProtoEmitter{}.emit(schema);
+        schemaFiles_["recovered.proto"] = text;
+    }
+}
+
+void SerialDetector::groupAndReconstructFlatBuffers(
+        const DetectionMap& detections,
+        const std::vector<const ssa::SSAFunction*>& functions,
+        const std::unordered_set<std::string>& symTable) const {
+    std::vector<const ssa::SSAFunction*> fbsFns;
+    for (auto* fn : functions) {
+        if (!fn) continue;
+        auto it = detections.find(fn->name());
+        if (it != detections.end() &&
+            it->second.framework == SerialFramework::FlatBuffers) {
+            fbsFns.push_back(fn);
+        }
+    }
+    if (fbsFns.empty()) return;
+
+    ++stats_.flatbufTables;
+
+    FlatBuffersDetector det;
+    FbsSchema schema = det.reconstructSchema(fbsFns, symTable);
+    if (!schema.isEmpty()) {
+        std::string text = FbsEmitter{}.emit(schema);
+        schemaFiles_["recovered.fbs"] = text;
+    }
+}
+
+} // namespace serial_detect
+} // namespace retdec

@@ -1,0 +1,33 @@
+# Invoked by cmake --install: place Qt6 DLLs/plugins next to the installed retdec-gui
+# (POST_BUILD windeployqt only affects the build tree, not CMAKE_INSTALL_PREFIX).
+cmake_minimum_required(VERSION 3.21)
+if(NOT WIN32)
+	return()
+endif()
+if(DEFINED ENV{DESTDIR} AND NOT "$ENV{DESTDIR}" STREQUAL "")
+	set(_root "$ENV{DESTDIR}")
+	cmake_path(APPEND _root "${CMAKE_INSTALL_PREFIX}")
+else()
+	set(_root "${CMAKE_INSTALL_PREFIX}")
+endif()
+cmake_path(APPEND _root "bin" "retdec-gui@CMAKE_EXECUTABLE_SUFFIX@")
+cmake_path(NORMAL_PATH _root)
+if(NOT EXISTS "${_root}")
+	message(FATAL_ERROR "install-windeployqt-gui: executable not found: ${_root}")
+endif()
+message(STATUS "windeployqt (install): ${_root}")
+execute_process(
+	COMMAND "@WINDEPLOYQT_EXECUTABLE@" --no-compiler-runtime "${_root}"
+	RESULT_VARIABLE _retdec_wdq
+)
+if(_retdec_wdq)
+	message(FATAL_ERROR "windeployqt failed with code ${_retdec_wdq}")
+endif()
+# Headless (offscreen) runs need qoffscreen.dll; windeployqt does not always bundle it.
+if(NOT "@RETDEC_QT_OFFSCREEN_DLL@" STREQUAL "")
+	cmake_path(GET _root PARENT_PATH _bindir)
+	set(_plat "${_bindir}/platforms")
+	file(MAKE_DIRECTORY "${_plat}")
+	file(COPY "@RETDEC_QT_OFFSCREEN_DLL@" DESTINATION "${_plat}")
+	message(STATUS "Copied qoffscreen to ${_plat}")
+endif()

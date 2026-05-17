@@ -1,0 +1,303 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 26,
+    "patch": 0
+  },
+
+  "configurePresets": [
+    {
+      "name": "_gen",
+      "hidden": true,
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "_pathWin",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/windows",
+      "installDir": "${sourceDir}/install/windows",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "_pathUnix",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/linux",
+      "installDir": "${sourceDir}/install/linux",
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "base",
+      "hidden": true,
+      "inherits": ["_gen"],
+      "description": "Do not inherit _pathWin and _pathUnix together — CMake disables the preset when either path preset is inactive."
+    },
+
+    {
+      "name": "core-debug",
+      "displayName": "RetDec Core (Debug, native)",
+      "inherits": ["_gen", "_pathUnix"],
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "RETDEC_TESTS": "ON",
+        "RETDEC_ENABLE_RETDEC": "ON",
+        "RETDEC_ENABLE_RETDEC_DECOMPILER": "ON",
+        "RETDEC_ENABLE_FILEFORMAT": "ON",
+        "RETDEC_ENABLE_BIN2LLVMIR": "ON",
+        "RETDEC_ENABLE_LLVMIR2HLL": "ON",
+        "RETDEC_ENABLE_DEMANGLER": "ON",
+        "RETDEC_ENABLE_COMMON": "ON",
+        "RETDEC_ENABLE_CONFIG": "ON"
+      }
+    },
+
+    {
+      "name": "core-debug-msvc",
+      "displayName": "RetDec Core (Debug, MSVC — build/windows)",
+      "inherits": ["_gen", "_pathWin"],
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "RETDEC_TESTS": "ON",
+        "RETDEC_ENABLE_RETDEC": "ON",
+        "RETDEC_ENABLE_RETDEC_DECOMPILER": "ON",
+        "RETDEC_ENABLE_FILEFORMAT": "ON",
+        "RETDEC_ENABLE_BIN2LLVMIR": "ON",
+        "RETDEC_ENABLE_LLVMIR2HLL": "ON",
+        "RETDEC_ENABLE_DEMANGLER": "ON",
+        "RETDEC_ENABLE_COMMON": "ON",
+        "RETDEC_ENABLE_CONFIG": "ON"
+      }
+    },
+
+    {
+      "name": "core-release",
+      "displayName": "RetDec Core (Release + LTO, native)",
+      "inherits": ["_gen", "_pathUnix"],
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
+        "RETDEC_TESTS": "OFF",
+        "RETDEC_ENABLE_RETDEC": "ON",
+        "RETDEC_ENABLE_RETDEC_DECOMPILER": "ON",
+        "RETDEC_ENABLE_FILEFORMAT": "ON",
+        "RETDEC_ENABLE_BIN2LLVMIR": "ON",
+        "RETDEC_ENABLE_LLVMIR2HLL": "ON",
+        "RETDEC_ENABLE_DEMANGLER": "ON",
+        "RETDEC_ENABLE_COMMON": "ON",
+        "RETDEC_ENABLE_CONFIG": "ON"
+      }
+    },
+
+    {
+      "name": "core-release-msvc",
+      "displayName": "RetDec Core (Release + LTO, MSVC — build/windows)",
+      "inherits": ["_gen", "_pathWin"],
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
+        "RETDEC_TESTS": "OFF",
+        "RETDEC_ENABLE_RETDEC": "ON",
+        "RETDEC_ENABLE_RETDEC_DECOMPILER": "ON",
+        "RETDEC_ENABLE_FILEFORMAT": "ON",
+        "RETDEC_ENABLE_BIN2LLVMIR": "ON",
+        "RETDEC_ENABLE_LLVMIR2HLL": "ON",
+        "RETDEC_ENABLE_DEMANGLER": "ON",
+        "RETDEC_ENABLE_COMMON": "ON",
+        "RETDEC_ENABLE_CONFIG": "ON"
+      }
+    },
+
+    {
+      "name": "core-asan",
+      "displayName": "RetDec Core (Debug + AddressSanitizer)",
+      "inherits": "core-debug",
+      "cacheVariables": {
+        "RETDEC_USE_ADDRESS_SANITIZER": "ON"
+      }
+    },
+
+    {
+      "name": "core-coverage",
+      "displayName": "RetDec Core (Debug + gcov line/branch coverage)",
+      "inherits": "core-debug",
+      "cacheVariables": {
+        "CMAKE_C_FLAGS": "--coverage -O0 -fno-inline",
+        "CMAKE_CXX_FLAGS": "--coverage -O0 -fno-inline",
+        "CMAKE_EXE_LINKER_FLAGS": "--coverage",
+        "CMAKE_SHARED_LINKER_FLAGS": "--coverage"
+      }
+    },
+
+    {
+      "name": "full-linux-debug",
+      "displayName": "Full in-tree build (Debug, tests, CUDA accel, Qt6 GUI required)",
+      "inherits": ["_gen", "_pathUnix"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "RETDEC_TESTS": "ON",
+        "RETDEC_ENABLE_CUDA_ACCEL": "ON",
+        "RETDEC_REQUIRE_QT6": "ON"
+      }
+    },
+
+    {
+      "name": "full-linux-release",
+      "displayName": "Full in-tree build (Release + LTO, tests, CUDA accel, Qt6 GUI required)",
+      "inherits": ["_gen", "_pathUnix"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
+        "RETDEC_TESTS": "ON",
+        "RETDEC_ENABLE_CUDA_ACCEL": "ON",
+        "RETDEC_REQUIRE_QT6": "ON"
+      }
+    },
+
+    {
+      "name": "full-windows-release",
+      "displayName": "Full in-tree build (Windows, Release, bundled OpenSSL, CUDA + Qt6 GUI)",
+      "inherits": ["_gen", "_pathWin"],
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
+        "RETDEC_TESTS": "ON",
+        "RETDEC_ENABLE_CUDA_ACCEL": "ON",
+        "RETDEC_REQUIRE_QT6": "ON",
+        "RETDEC_BUNDLED_OPENSSL": "ON"
+      }
+    },
+
+    {
+      "name": "full-windows-debug",
+      "displayName": "Full in-tree build (Windows, Debug, bundled OpenSSL, CUDA + Qt6 GUI)",
+      "inherits": ["_gen", "_pathWin"],
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "RETDEC_TESTS": "ON",
+        "RETDEC_ENABLE_CUDA_ACCEL": "ON",
+        "RETDEC_REQUIRE_QT6": "ON",
+        "RETDEC_BUNDLED_OPENSSL": "ON"
+      }
+    }
+  ],
+
+  "buildPresets": [
+    {
+      "name": "core-debug",
+      "configurePreset": "core-debug"
+    },
+    {
+      "name": "core-debug-msvc",
+      "configurePreset": "core-debug-msvc"
+    },
+    {
+      "name": "core-release",
+      "configurePreset": "core-release"
+    },
+    {
+      "name": "core-release-msvc",
+      "configurePreset": "core-release-msvc"
+    },
+    {
+      "name": "core-asan",
+      "configurePreset": "core-asan"
+    },
+    {
+      "name": "core-coverage",
+      "configurePreset": "core-coverage"
+    },
+    {
+      "name": "full-linux-debug",
+      "configurePreset": "full-linux-debug"
+    },
+    {
+      "name": "full-linux-release",
+      "configurePreset": "full-linux-release"
+    },
+    {
+      "name": "full-windows-release",
+      "configurePreset": "full-windows-release"
+    },
+    {
+      "name": "full-windows-debug",
+      "configurePreset": "full-windows-debug"
+    }
+  ],
+
+  "testPresets": [
+    {
+      "name": "core-debug",
+      "configurePreset": "core-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    {
+      "name": "full-linux-debug",
+      "configurePreset": "full-linux-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    {
+      "name": "full-windows-debug",
+      "configurePreset": "full-windows-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    }
+  ]
+}

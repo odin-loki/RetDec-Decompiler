@@ -1,0 +1,36 @@
+/**
+ * @file src/fileformat/types/dotnet_types/dotnet_type.cpp
+ * @brief Class for .NET type.
+ * @copyright (c) 2017 Odin Loch Trading as Imortek
+ */
+
+#include <unordered_map>
+
+#include "retdec/utils/container.h"
+#include "retdec/fileformat/types/dotnet_types/dotnet_type.h"
+
+namespace retdec {
+namespace fileformat {
+
+namespace
+{
+
+const std::unordered_map<DotnetTypeVisibility, std::string, retdec::utils::EnumClassKeyHash> visibilityStrings =
+{
+	{ DotnetTypeVisibility::Public,    "public"    },
+	{ DotnetTypeVisibility::Protected, "protected" },
+	{ DotnetTypeVisibility::Private,   "private"   },
+	{ DotnetTypeVisibility::Internal,   "internal"   },
+	{ DotnetTypeVisibility::ProtectedInternal,   "protected internal"   },
+	{ DotnetTypeVisibility::PrivateProtected,   "private protected"   },
+};
+
+}
+
+const std::string& DotnetType::getVisibilityString() const
+{
+	return visibilityStrings.at(visibility);
+}
+
+} // namespace fileformat
+} // namespace retdec

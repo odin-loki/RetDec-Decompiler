@@ -1,0 +1,12 @@
+# Keep image context small and avoid stale generator files
+build/
+install/
+dist/
+.git/
+.taskmaster/
+**/__pycache__/
+*.pyc
+*.log
+.env
+.idea/
+.vscode/

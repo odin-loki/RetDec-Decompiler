@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+F=/tmp/benchmark_out/benchmark_cpp_O1.c
+cnt() { grep -cE "$1" "$F" 2>/dev/null || echo 0; }
+echo "vtable/virtual:    $(cnt 'vtable|_vtbl|vptr|virtual')"
+echo "dynamic_cast:      $(cnt 'dynamic_cast|__dynamic_cast')"
+echo "typeid/type_info:  $(cnt 'typeid|type_info')"
+echo "new/delete:        $(cnt '_Znw|_Zna|_Zdl|_Zda|operator new|operator delete')"
+echo "cxa_throw/catch:   $(cnt '__cxa_throw|__cxa_begin_catch|__cxa_end_catch|__cxa_rethrow')"
+echo "mangled names:     $(cnt '_Z[0-9NKT]')"
+echo "class names:       $(cnt 'Circle|Rectangle|Triangle|Shape|Buffer|Vec2|Animal|Dog|Cat|Bird')"
+echo "sort functions:    $(cnt 'quicksort|heap_sort|heapify|insertion_sort')"
+echo "atomic patterns:   $(cnt 'compare_exchange|fetch_add|atomic')"
+echo "mutex/lock:        $(cnt 'mutex|lock_guard|pthread_mutex')"
+echo "shared_ptr ref:    $(cnt 'shared_ptr|make_shared|_M_use_count')"
+echo "vector push_back:  $(cnt 'push_back|emplace_back')"
+echo "map operations:    $(cnt '_M_insert|_M_find|_M_erase')"
+echo "stl algo names:    $(cnt 'std::transform|std::accumulate|std::find|std::for_each|std::partition|std::copy_if|std::all_of|std::count_if')"
+echo "string ops:        $(cnt '_M_construct|_M_append|basic_string')"
+echo "exceptions:        $(cnt 'throw|catch|DomainError|out_of_range|invalid_argument')"
+echo "while loops:       $(cnt '\bwhile\b')"
+echo "return stmts:      $(cnt '\breturn\b')"
+echo "functions total:   $(cnt '^[a-zA-Z_].*\(')"

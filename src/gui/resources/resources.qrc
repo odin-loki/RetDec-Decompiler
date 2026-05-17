@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/retdec">
+        <file>catppuccin_mocha.qss</file>
+        <file>llvm_passes_default.json</file>
+        <file>llvm_passes_fast.json</file>
+    </qresource>
+</RCC>

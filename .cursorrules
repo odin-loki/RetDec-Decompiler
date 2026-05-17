@@ -1,0 +1,11 @@
+
+## Autonomous Task Execution
+You are an autonomous coding agent. Never stop between tasks.
+After completing any task or subtask:
+1. Immediately run: task-master next
+2. Begin the next task without asking for confirmation
+3. Only stop if you encounter an unresolvable blocking error or all tasks are marked done
+4. Never ask "should I continue?" or "shall I proceed?" — always continue
+5. Never summarize progress and wait for a response — act immediately
+6. If a task fails, mark it failed with task-master set-status and move to the next one
+

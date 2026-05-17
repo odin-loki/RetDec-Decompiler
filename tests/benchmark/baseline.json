@@ -1,0 +1,296 @@
+{
+  "timestamp": "2026-04-03T10:36:19Z",
+  "total_score": 196,
+  "max_score": 200,
+  "checks": [
+    {
+      "name": "FuncNameRecovery",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "12/12 names"
+    },
+    {
+      "name": "LoopRecovery",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "22 while, 0 for"
+    },
+    {
+      "name": "BitShiftOptimizer",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "shift_mul<<3 and shift_div/N recovered"
+    },
+    {
+      "name": "MBASimplify",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "mba_add fully simplified"
+    },
+    {
+      "name": "SelfAssignRemoval",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "zero self-assignments"
+    },
+    {
+      "name": "ArithIdentities",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "no identity ops"
+    },
+    {
+      "name": "GotoCFGOptimizer",
+      "score": 3,
+      "max": 5,
+      "status": "PARTIAL",
+      "note": "2 goto(s)"
+    },
+    {
+      "name": "CastRemoval",
+      "score": 3,
+      "max": 5,
+      "status": "PARTIAL",
+      "note": "196 casts / 447 stmts (43%)"
+    },
+    {
+      "name": "GuardClausePattern",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "56 if-guards"
+    },
+    {
+      "name": "NoInitVarDef",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "0 bare decl(s)"
+    },
+    {
+      "name": "TypeInference",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "453 concrete type(s)"
+    },
+    {
+      "name": "RecursionQuality",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "all 3 recursive"
+    },
+    {
+      "name": "FuncPtrDispatch",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "8 fp pattern(s)"
+    },
+    {
+      "name": "StringLiterals",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "4 string literal(s)"
+    },
+    {
+      "name": "BinarySearchQuality",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "3/3 patterns"
+    },
+    {
+      "name": "BubbleSortQuality",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "3/3 patterns"
+    },
+    {
+      "name": "PtrWalkPattern",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "3/3 patterns"
+    },
+    {
+      "name": "StructFieldAccess",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "3/3 patterns"
+    },
+    {
+      "name": "MemoryOps",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "2 malloc + 2 free"
+    },
+    {
+      "name": "BitOperations",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "3/3 bitwise funcs"
+    },
+    {
+      "name": "CxxClassMethods",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "25 class::method(s)"
+    },
+    {
+      "name": "VtableRecovery",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "16 vtable struct(s)"
+    },
+    {
+      "name": "DynamicCastRecovery",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "7 dynamic_cast(s)"
+    },
+    {
+      "name": "ExceptionHandling",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "19 EH pattern(s)"
+    },
+    {
+      "name": "CtorDtorNames",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "12 dtor(s) named"
+    },
+    {
+      "name": "ManualSortNames",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "35 sort fn(s)"
+    },
+    {
+      "name": "MutualRecursionIPA",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "is_even:7 is_odd:5"
+    },
+    {
+      "name": "DeepRecursionIPA",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "12 ackermann ref(s)"
+    },
+    {
+      "name": "STLAlgoWrappers",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "50 stl wrapper(s)"
+    },
+    {
+      "name": "RBTreeOperations",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "42 rb-tree pattern(s)"
+    },
+    {
+      "name": "HashTableOps",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "22 hash-table pattern(s)"
+    },
+    {
+      "name": "MutexLockPatterns",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "14 mutex pattern(s)"
+    },
+    {
+      "name": "AtomicCASPatterns",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "5 atomic pattern(s)"
+    },
+    {
+      "name": "NewDeleteRecovery",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "67 new/delete ref(s)"
+    },
+    {
+      "name": "DemangledNames",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "122 demangled"
+    },
+    {
+      "name": "RTTITypeInfo",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "8 RTTI ref(s)"
+    },
+    {
+      "name": "StringSSO",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "130 string op(s)"
+    },
+    {
+      "name": "ExceptionClasses",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "41 exc class ref(s)"
+    },
+    {
+      "name": "QuicksortRecursion",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "3/3 patterns"
+    },
+    {
+      "name": "CppFunctionCount",
+      "score": 5,
+      "max": 5,
+      "status": "PASS",
+      "note": "396 functions"
+    }
+  ],
+  "timing": {
+
+    "O1_unstripped": 4629,
+    "O1_stripped": 4726,
+    "O2_unstripped": 4701,
+    "O2_stripped": 4839,
+    "cpp_O1_unstripped": 58992,
+    "cpp_O1_stripped": 59932
+  }
+}
