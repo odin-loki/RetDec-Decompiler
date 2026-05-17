@@ -5,7 +5,10 @@ binaries. Built on the original RetDec/LLVM pipeline, this version adds
 semantic library recovery, a multi-language output backend, an integrated AI
 assistant (Qwen3 with CUDA GPU acceleration), and a rich Qt 6 GUI.
 
-Copyright (c) 2025 Odin Loch Trading as Imortek. All rights reserved.
+Copyright (c) 2025-2026 Odin Loch trading as Imortek.
+Dual-licensed: **AGPL-3.0+ with Imortek Section 7 additions** (free for
+personal, charitable, educational, and small-entity use) **OR** a tiered
+commercial licence. See [LICENSE](LICENSE) for full terms.
 
 ---
 
@@ -398,5 +401,31 @@ EXPECT_EQ(r.result, retdec::testing::SnapshotTester::Result::Match)
 
 ## License
 
-Copyright (c) 2025 Odin Loch Trading as Imortek. All rights reserved.
-See [LICENSE](LICENSE) for full terms.
+Copyright (c) 2025-2026 Odin Loch trading as Imortek.
+
+This project is **dual-licensed**:
+
+1. **GNU Affero General Public License, version 3 or later
+   (AGPL-3.0+)**, as modified by the additional terms in Section 7 of
+   the [LICENSE](LICENSE) file (attribution requirement, free-tier
+   eligibility for personal / charitable / educational use and
+   entities under 50,000 AUD annual revenue, mandatory open-sourcing
+   of modifications); OR
+
+2. A **tiered commercial licence** with an initial setup fee and an
+   annual fee based on the licensee's revenue. The commercial licence
+   waives the AGPL share-modifications requirement but requires that
+   research conducted with the software still be open-sourced.
+
+Initial fees range from **5,000 AUD** (entities with 50k–500k AUD
+revenue) to **200,000,000 AUD** (entities above 100 billion AUD
+revenue). Annual fees are a percentage of revenue (5 %–25 %). Volume
+discounts apply for 5+ licences. See [LICENSE](LICENSE) §§ 7.1–7.7
+for the full schedule and payment instructions, or read
+[`modified-license.md`](modified-license.md) for a Markdown
+version of the same terms.
+
+Commercial enquiries: **odin.loch@outlook.com.au**
+
+Contributions are accepted under the AGPL-3.0+ tier — by opening a PR
+you agree to the LICENSE.
