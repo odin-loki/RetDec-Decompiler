@@ -46,8 +46,13 @@ class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
 class QPushButton;
+class QStackedWidget;
 class QTableView;
 QT_END_NAMESPACE
+
+namespace retdec::gui::widgets {
+class EmptyStateWidget;
+}
 
 namespace retdec::gui::panels {
 
@@ -90,6 +95,9 @@ struct FunctionEntry {
     QStringList        tags;               ///< user-applied annotation tags
     QString            notes;
     bool               isLibrary   = false;
+    /// 1-based line range in decompiled .c (from config.json); -1 if unknown.
+    int                startLine   = -1;
+    int                endLine     = -1;
 
     /// Name for retdec-decompiler `--select-functions` (config/LLVM name preferred).
     QString selectFunctionsCliName() const {
@@ -273,6 +281,7 @@ private slots:
 private:
     void setupUI();
     void setupFilterBar(QWidget* parent, QHBoxLayout* layout);
+    void updateEmptyState();
     std::vector<uint64_t> selectedAddresses() const;
 
     // Filter bar widgets
@@ -291,6 +300,8 @@ private:
     QPushButton*    jsonButton_     = nullptr;
 
     // Table
+    QStackedWidget*        tableStack_ = nullptr;
+    retdec::gui::widgets::EmptyStateWidget* emptyState_ = nullptr;
     QTableView*            tableView_  = nullptr;
     FunctionListModel*     model_      = nullptr;
     FunctionFilterProxy*   proxy_      = nullptr;

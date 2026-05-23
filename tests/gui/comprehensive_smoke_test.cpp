@@ -200,9 +200,10 @@ TEST_F(ComprehensiveSmokeTest, MainWindowConstructsCleanly) {
     EXPECT_NE(win->workspaceTabsForTest(), nullptr);
     EXPECT_NE(win->liveConsoleForTest(),  nullptr);
     EXPECT_NE(win->triageBannerForTest(), nullptr);
-    // Bottom dock hosts Console + Problems tabs.
+    // Bottom dock hosts Console + Problems + History + Progress tabs.
     EXPECT_NE(win->outputTabsForTest(), nullptr);
-    EXPECT_EQ(win->outputTabsForTest()->count(), 2);
+    EXPECT_EQ(win->outputTabsForTest()->count(), 4);
+    EXPECT_EQ(win->workspaceTabsForTest()->count(), 3);
 }
 
 TEST_F(ComprehensiveSmokeTest, EveryDocumentTabSwitches) {
@@ -600,7 +601,7 @@ TEST_F(ComprehensiveSmokeTest, CachedDecompileLoadsInstantlyOnReopen) {
 
     QElapsedTimer t; t.start();
     win->openBinary(bin);
-    pump(40);
+    pump(200);
     const qint64 elapsedMs = t.elapsed();
 
     EXPECT_LT(elapsedMs, 1000) << "cached open should be near-instant (<1 s)";

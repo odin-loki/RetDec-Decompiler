@@ -32,7 +32,13 @@
 QT_BEGIN_NAMESPACE
 class QLabel;
 class QPushButton;
+class QStackedWidget;
+class QWidget;
 QT_END_NAMESPACE
+
+namespace retdec::gui::widgets {
+class EmptyStateWidget;
+}
 
 namespace retdec::gui::panels {
 
@@ -58,6 +64,7 @@ struct BlockInstr {
 struct BasicBlockData {
     uint64_t               id          = 0;   ///< unique id (e.g. start address)
     uint64_t               address     = 0;   ///< start address (for display / navigation)
+    uint64_t               endAddress  = 0;   ///< exclusive end (from config basicBlocks)
     std::vector<BlockInstr> instrs;            ///< all instructions; preview shows first 3
     bool                   isLoopHeader = false;
     int                    loopId      = -1;  ///< ≥0 means part of this loop
@@ -344,6 +351,7 @@ private slots:
 
 private:
     void setupUI();
+    void updateEmptyState();
 
     QLabel*      funcLabel_   = nullptr;
     QPushButton* fitButton_   = nullptr;
@@ -352,6 +360,9 @@ private:
     QPushButton* pngButton_   = nullptr;
     QLabel*      infoLabel_   = nullptr;
 
+    QStackedWidget* bodyStack_ = nullptr;
+    retdec::gui::widgets::EmptyStateWidget* emptyState_ = nullptr;
+    QWidget*     graphHost_   = nullptr;
     CFGScene*    scene_       = nullptr;
     CFGView*     graphView_   = nullptr;
     MiniMapView* miniMap_     = nullptr;

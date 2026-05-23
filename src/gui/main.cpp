@@ -4,7 +4,7 @@
  *
  * Responsibilities:
  *   1. Create QApplication with high-DPI settings.
- *   2. Load and apply the Catppuccin Mocha QSS stylesheet.
+ *   2. Load settings and apply theme QSS (Catppuccin Mocha; Light attempted).
  *   3. Register bundled monospace fonts (JetBrains Mono / Cascadia Code).
  *   4. Construct and show RetDecMainWindow.
  *   5. Handle command-line argument: optional binary path to open on launch.
@@ -15,6 +15,7 @@
 #include "retdec/gui/artifact_loader.h"
 #include "retdec/gui/decompiler_launch.h"
 #include "retdec/gui/settings/settings.h"
+#include "retdec/gui/theme.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -27,13 +28,6 @@
 #include <QTimer>
 
 #include <cstdio>
-
-static void loadStyleSheet(QApplication& app) {
-    QFile qssFile(":/retdec/catppuccin_mocha.qss");
-    if (qssFile.open(QIODevice::ReadOnly)) {
-        app.setStyleSheet(QString::fromUtf8(qssFile.readAll()));
-    }
-}
 
 static void registerFonts() {
     // Bundled fonts may be embedded as Qt resources; if unavailable the system
@@ -68,9 +62,9 @@ int main(int argc, char* argv[]) {
     app.setStyle(QStyleFactory::create("Fusion"));
 
     registerFonts();
-    loadStyleSheet(app);
 
     retdec::gui::AppSettings::instance().load();
+    retdec::gui::applyThemeFromSettings(app);
 
     // Command-line parsing.
     QCommandLineParser parser;

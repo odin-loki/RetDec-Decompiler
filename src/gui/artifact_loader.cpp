@@ -6,12 +6,15 @@
 
 #include "retdec/gui/panels/assembly_panel.h"
 #include "retdec/gui/panels/ir_panel.h"
+#include "retdec/gui/panels/tri_pane_code_view.h"
+#include "retdec/gui/panels/type_hierarchy_panel.h"
 
 #include <QFile>
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QRegularExpression>
+#include <QTextStream>
 
 namespace retdec {
 namespace gui {
@@ -60,6 +63,15 @@ std::vector<panels::FunctionEntry> parseFunctions(const QJsonArray& fnArr)
         const QString fncType = o.value(QStringLiteral("fncType")).toString();
         e.isLibrary = (fncType == QStringLiteral("staticallyLinked")
                     || fncType == QStringLiteral("dynamicallyLinked"));
+        {
+            bool lineOk = false;
+            const int sl = o.value(QStringLiteral("startLine")).toString().toInt(&lineOk);
+            if (lineOk && sl > 0)
+                e.startLine = sl;
+            const int el = o.value(QStringLiteral("endLine")).toString().toInt(&lineOk);
+            if (lineOk && el > 0)
+                e.endLine = el;
+        }
         entries.push_back(std::move(e));
     }
     return entries;
@@ -89,6 +101,143 @@ std::vector<panels::StringEntry> parseStringGlobals(const QJsonArray& globals)
         out.push_back(std::move(e));
     }
     return out;
+}
+
+std::vector<panels::BlockInstr> extractDsmInstructionsForRange(const QString& fullDsm,
+                                                                uint64_t startAddr,
+                                                                uint64_t endAddr)
+{
+    std::vector<panels::BlockInstr> instrs;
+    if (fullDsm.isEmpty() || endAddr <= startAddr)
+        return instrs;
+
+    static const QRegularExpression insRe(
+            QStringLiteral("^(0x[0-9a-fA-F]+):\\s*(.*)$"));
+    for (const QString& line : fullDsm.split(QLatin1Char('\n'))) {
+        const QRegularExpressionMatch m = insRe.match(line.trimmed());
+        if (!m.hasMatch())
+            continue;
+        const uint64_t a = parseAddr(m.captured(1));
+        if (a < startAddr || a >= endAddr)
+            continue;
+        panels::BlockInstr bi;
+        bi.address = a;
+        bi.text    = m.captured(2).trimmed();
+        instrs.push_back(std::move(bi));
+    }
+    return instrs;
+}
+
+void fillBlockInstructionsFromDsm(std::vector<panels::BasicBlockData>& blocks,
+                                  const QString& fullDsm)
+{
+    if (fullDsm.isEmpty())
+        return;
+    for (auto& bb : blocks) {
+        if (bb.endAddress <= bb.address)
+            continue;
+        bb.instrs = extractDsmInstructionsForRange(fullDsm, bb.address, bb.endAddress);
+    }
+}
+
+struct VtableParseData {
+    uint64_t                  address = 0;
+    QList<panels::VtableSlot> vtableSlots;
+};
+
+QHash<QString, VtableParseData> parseVtables(const QJsonArray& vtArr)
+{
+    QHash<QString, VtableParseData> byName;
+    for (const QJsonValue& vv : vtArr) {
+        if (!vv.isObject())
+            continue;
+        const QJsonObject vo = vv.toObject();
+        const QString name = vo.value(QStringLiteral("name")).toString();
+        if (name.isEmpty())
+            continue;
+
+        VtableParseData data;
+        data.address = parseAddr(vo.value(QStringLiteral("address")).toString());
+
+        int idx = 0;
+        for (const QJsonValue& iv : vo.value(QStringLiteral("items")).toArray()) {
+            if (!iv.isObject())
+                continue;
+            const QJsonObject io = iv.toObject();
+            panels::VtableSlot vtSlot;
+            vtSlot.index       = idx++;
+            vtSlot.funcName    = io.value(QStringLiteral("targetName")).toString();
+            vtSlot.funcAddress = parseAddr(io.value(QStringLiteral("targetAddress")).toString());
+            vtSlot.isPure      = (vtSlot.funcAddress == 0);
+            data.vtableSlots.append(vtSlot);
+        }
+        byName.insert(name, std::move(data));
+    }
+    return byName;
+}
+
+QList<panels::ClassInfo> parseTypeHierarchyClasses(const QJsonObject& config)
+{
+    const QHash<QString, VtableParseData> vtables =
+            parseVtables(config.value(QStringLiteral("vtables")).toArray());
+
+    QList<panels::ClassInfo> classes;
+    const QJsonArray classArr = config.value(QStringLiteral("classes")).toArray();
+    classes.reserve(classArr.size());
+
+    for (const QJsonValue& cv : classArr) {
+        if (!cv.isObject())
+            continue;
+        const QJsonObject co = cv.toObject();
+
+        panels::ClassInfo info;
+        const QString demangled = co.value(QStringLiteral("demangledName")).toString();
+        info.name = !demangled.isEmpty()
+                ? demangled
+                : co.value(QStringLiteral("name")).toString();
+        if (info.name.isEmpty())
+            continue;
+
+        for (const QJsonValue& sv : co.value(QStringLiteral("superClasses")).toArray()) {
+            const QString base = sv.toString();
+            if (base.isEmpty())
+                continue;
+            panels::InheritanceLink link;
+            link.base = base;
+            link.kind = panels::InheritanceLink::Kind::Public;
+            info.bases.append(link);
+        }
+
+        int methodCount = 0;
+        const auto countNames = [&](const char* key) {
+            methodCount += co.value(QString::fromLatin1(key)).toArray().size();
+        };
+        countNames("constructors");
+        countNames("destructors");
+        countNames("methods");
+        countNames("virtualMethods");
+        info.methodCount = methodCount;
+
+        for (const QJsonValue& vtNameVal : co.value(QStringLiteral("virtualTables")).toArray()) {
+            const QString vtName = vtNameVal.toString();
+            const auto vtIt = vtables.constFind(vtName);
+            if (vtIt == vtables.constEnd())
+                continue;
+            if (info.vtableAddress == 0)
+                info.vtableAddress = vtIt->address;
+            if (info.vtable.isEmpty())
+                info.vtable = vtIt->vtableSlots;
+            for (const auto& vtSlot : vtIt->vtableSlots) {
+                if (vtSlot.isPure) {
+                    info.isAbstract = true;
+                    break;
+                }
+            }
+        }
+
+        classes.append(std::move(info));
+    }
+    return classes;
 }
 
 void buildCallGraph(const QJsonArray& fnArr,
@@ -180,12 +329,8 @@ void buildCfgMaps(const QJsonArray& fnArr,
             if (!ok)
                 continue;
             const uint64_t bbEnd = parseAddr(bo.value(QStringLiteral("endAddr")).toString(), &ok);
-            if (bbEnd > bb.address) {
-                panels::BlockInstr bi;
-                bi.address = bb.address;
-                bi.text = QStringLiteral("; block %1–%2").arg(bb.address, 0, 16).arg(bbEnd, 0, 16);
-                bb.instrs.push_back(std::move(bi));
-            }
+            if (ok && bbEnd > bb.address)
+                bb.endAddress = bbEnd;
             fnBlocks.push_back(std::move(bb));
 
             for (const QJsonValue& sv : bo.value(QStringLiteral("succs")).toArray()) {
@@ -249,9 +394,13 @@ bool loadDecompileArtifactsFromPaths(const DecompileArtifactPaths& paths,
     out.strings   = parseStringGlobals(out.config.value(QStringLiteral("globals")).toArray());
     buildCallGraph(fnArr, &out.callGraphNodes, &out.callGraphEdges);
     buildCfgMaps(fnArr, &out.cfgBlocks, &out.cfgEdges);
+    out.typeHierarchyClasses = parseTypeHierarchyClasses(out.config);
 
     out.fullDsm = readTextFileIfExists(paths.dsmPath);
     out.fullLl  = readTextFileIfExists(paths.llPath);
+
+    for (auto& entry : out.cfgBlocks)
+        fillBlockInstructionsFromDsm(entry.second, out.fullDsm);
     return true;
 }
 
@@ -329,33 +478,140 @@ QString extractLlvmForFunction(const QString& fullLl, const QString& funcName)
     return fullLl.mid(start, i - start);
 }
 
+QString readLineRangeFromFile(const QString& path, int startLine, int endLine)
+{
+    if (startLine < 1 || path.isEmpty())
+        return {};
+
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+
+    QStringList out;
+    QTextStream ts(&f);
+    int line = 0;
+    while (!ts.atEnd()) {
+        ++line;
+        const QString l = ts.readLine();
+        if (line < startLine)
+            continue;
+        if (endLine > 0 && line > endLine)
+            break;
+        out << l;
+    }
+    return out.join(QLatin1Char('\n'));
+}
+
+QString extractCForFunctionByName(const QString& fullC, const QString& funcName)
+{
+    if (fullC.isEmpty() || funcName.isEmpty())
+        return {};
+
+    const QString escaped = QRegularExpression::escape(funcName);
+    const QRegularExpression sigRe(
+            QStringLiteral(R"((?:^|\n)([\w\s\*]+?\b%1\s*\())").arg(escaped));
+
+    const QRegularExpressionMatch m = sigRe.match(fullC);
+    if (!m.hasMatch())
+        return {};
+
+    const int bodyStart = m.capturedStart(1);
+    int depth = 0;
+    bool seenBrace = false;
+    int i = bodyStart;
+    for (; i < fullC.size(); ++i) {
+        const QChar c = fullC.at(i);
+        if (c == QLatin1Char('{')) {
+            ++depth;
+            seenBrace = true;
+        } else if (c == QLatin1Char('}') && seenBrace) {
+            --depth;
+            if (depth == 0) {
+                ++i;
+                break;
+            }
+        }
+    }
+    return fullC.mid(bodyStart, i - bodyStart).trimmed();
+}
+
+QString extractCForFunction(const QString& cPath,
+                          int startLine,
+                          int endLine,
+                          const QString& funcName)
+{
+    if (startLine > 0)
+        return readLineRangeFromFile(cPath, startLine, endLine);
+
+    if (funcName.isEmpty() || cPath.isEmpty())
+        return {};
+
+    const QString fullC = readTextFileIfExists(cPath);
+    return extractCForFunctionByName(fullC, funcName);
+}
+
+panels::LineMapping buildIdentityLineMapping(const QString& asmText,
+                                             const QString& irText,
+                                             const QString& cText)
+{
+    const auto lineCount = [](const QString& text) -> int {
+        if (text.isEmpty())
+            return 0;
+        return static_cast<int>(text.count(QLatin1Char('\n')) + 1);
+    };
+
+    panels::LineMapping mapping;
+    const int n = qMin(qMin(lineCount(asmText), lineCount(irText)), lineCount(cText));
+    for (int i = 1; i <= n; ++i)
+        mapping.addEntry(i, i, i);
+    return mapping;
+}
+
 void populateFunctionViews(const DecompileArtifacts& art,
                            uint64_t funcAddr,
                            const QString& funcName,
                            panels::AssemblyPanel* assembly,
                            panels::IRPanel* ir,
-                           panels::CFGPanel* cfg)
+                           panels::CFGPanel* cfg,
+                           panels::TriPaneCodeView* triPane)
 {
     uint64_t endAddr = 0;
+    int startLine = -1;
+    int endLine = -1;
     for (const auto& f : art.functions) {
         if (f.address == funcAddr) {
             endAddr = f.address + static_cast<uint64_t>(qMax(f.sizeBytes, 1));
+            startLine = f.startLine;
+            endLine = f.endLine;
             break;
         }
     }
 
-    if (assembly)
-        assembly->setAssemblyText(extractDsmForFunction(art.fullDsm, funcAddr, endAddr, funcName));
+    const QString asmText = extractDsmForFunction(art.fullDsm, funcAddr, endAddr, funcName);
+    const QString irText  = extractLlvmForFunction(art.fullLl, funcName);
+
+    if (assembly) {
+        assembly->setAssemblyText(asmText);
+        assembly->navigateTo(funcAddr);
+    }
     if (ir)
-        ir->setIRText(extractLlvmForFunction(art.fullLl, funcName));
+        ir->setIRText(irText);
+
+    if (triPane) {
+        const QString cText = extractCForFunction(art.cPath, startLine, endLine, funcName);
+        triPane->loadFunction(funcAddr, asmText, irText, cText);
+        triPane->setLineMapping(buildIdentityLineMapping(asmText, irText, cText));
+    }
 
     if (cfg) {
         const auto bIt = art.cfgBlocks.find(funcAddr);
         const auto eIt = art.cfgEdges.find(funcAddr);
         if (bIt != art.cfgBlocks.end() && !bIt->second.empty()) {
+            auto blocks = bIt->second;
+            fillBlockInstructionsFromDsm(blocks, art.fullDsm);
             const auto& edges = (eIt != art.cfgEdges.end()) ? eIt->second
                                                             : std::vector<panels::CFGEdgeData>{};
-            cfg->loadCFG(bIt->second, edges);
+            cfg->loadCFG(blocks, edges);
         } else {
             cfg->clear();
         }

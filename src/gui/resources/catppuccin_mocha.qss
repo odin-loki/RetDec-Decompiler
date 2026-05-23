@@ -127,8 +127,14 @@ QToolButton:pressed {
     background-color: #45475a;
 }
 
-QToolButton:disabled {
-    color: #585b70;
+QToolButton:checked {
+    background-color: #45475a;
+    color: #89b4fa;
+    border: 1px solid #89b4fa;
+}
+
+QToolButton:checked:hover {
+    background-color: #585b70;
 }
 
 /* ── Status bar ───────────────────────────────────────────────────────────── */
@@ -361,6 +367,139 @@ QComboBox QAbstractItemView {
     selection-color: #89b4fa;
 }
 
+QFontComboBox {
+    background-color: #313244;
+    color: #cdd6f4;
+    border: 1px solid #45475a;
+    border-radius: 4px;
+    padding: 4px 8px;
+    min-width: 120px;
+}
+
+QFontComboBox:hover {
+    border-color: #89b4fa;
+}
+
+QFontComboBox:focus {
+    border-color: #89b4fa;
+}
+
+QFontComboBox::drop-down {
+    border: none;
+    width: 24px;
+}
+
+QFontComboBox QAbstractItemView {
+    background-color: #181825;
+    border: 1px solid #45475a;
+    border-radius: 4px;
+    selection-background-color: #313244;
+    selection-color: #89b4fa;
+}
+
+/* ── Spin boxes ───────────────────────────────────────────────────────────── */
+
+QSpinBox, QDoubleSpinBox {
+    background-color: #313244;
+    color: #cdd6f4;
+    border: 1px solid #45475a;
+    border-radius: 4px;
+    padding: 4px 8px;
+    min-width: 56px;
+}
+
+QSpinBox:focus, QDoubleSpinBox:focus {
+    border-color: #89b4fa;
+}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background-color: #45475a;
+    border: none;
+    border-radius: 2px;
+    width: 16px;
+    subcontrol-origin: border;
+}
+
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background-color: #585b70;
+}
+
+QSpinBox::up-button:pressed, QDoubleSpinBox::up-button:pressed,
+QSpinBox::down-button:pressed, QDoubleSpinBox::down-button:pressed {
+    background-color: #313244;
+}
+
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+    width: 8px;
+    height: 8px;
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 5px solid #cdd6f4;
+}
+
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+    width: 8px;
+    height: 8px;
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #cdd6f4;
+}
+
+QSpinBox:disabled, QDoubleSpinBox:disabled {
+    color: #585b70;
+    background-color: #1e1e2e;
+}
+
+/* ── List widget ──────────────────────────────────────────────────────────── */
+
+QListWidget {
+    background-color: #1e1e2e;
+    alternate-background-color: #252537;
+    color: #cdd6f4;
+    border: 1px solid #313244;
+    border-radius: 4px;
+    outline: none;
+}
+
+QListWidget::item {
+    padding: 3px 6px;
+}
+
+QListWidget::item:hover {
+    background-color: #2a2a3e;
+}
+
+QListWidget::item:selected {
+    background-color: #3e4260;
+    color: #cdd6f4;
+}
+
+/* ── Dialog button box ────────────────────────────────────────────────────── */
+
+QDialogButtonBox {
+    dialogbuttonbox-buttons-have-icons: 0;
+}
+
+QDialogButtonBox QPushButton {
+    min-width: 72px;
+}
+
+QDialogButtonBox QPushButton[default="true"] {
+    background-color: #89b4fa;
+    color: #1e1e2e;
+    border-color: #89b4fa;
+    font-weight: bold;
+}
+
+QDialogButtonBox QPushButton[default="true"]:hover {
+    background-color: #b4d0ff;
+    border-color: #b4d0ff;
+}
+
 /* ── Tree / table views ───────────────────────────────────────────────────── */
 
 QTreeView, QTableView, QListView {
@@ -408,17 +547,7 @@ QHeaderView::section:hover {
     color: #89b4fa;
 }
 
-QTreeView::branch:has-children:!has-siblings:closed,
-QTreeView::branch:closed:has-children:has-siblings {
-    border-image: none;
-    image: none;
-}
-
-QTreeView::branch:open:has-children:!has-siblings,
-QTreeView::branch:open:has-children:has-siblings {
-    border-image: none;
-    image: none;
-}
+/* Branch expand/collapse — native indicators restored (removed image:none override). */
 
 /* ── Progress bar ─────────────────────────────────────────────────────────── */
 

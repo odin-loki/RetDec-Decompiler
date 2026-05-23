@@ -5,8 +5,8 @@
  *  * Central area = TriageBanner + QTabWidget of documents.
  *  * Centre tab order: Decompiled C | Assembly | IR (SSA) | CFG | Synced.
  *  * Left dock = Functions (single panel, no inner tab strip).
- *  * Right dock = Workspace tabbed: Strings | Inspect (only).
- *  * Bottom dock = Output tabbed: Console | Problems.
+ *  * Right dock = Workspace tabbed: Strings | Inspect | Binary.
+ *  * Bottom dock = Output tabbed: Console | Problems | History | Progress*.
  *  * No mode toolbar.
  */
 
@@ -51,16 +51,20 @@ TEST_F(MainWindowLayoutTest, ConstructsAndHasCentralTabs) {
     EXPECT_TRUE(docs->tabText(4).contains(QStringLiteral("Synced")));
 }
 
-TEST_F(MainWindowLayoutTest, BottomDockHasConsoleAndProblemsTabs) {
+TEST_F(MainWindowLayoutTest, BottomDockHasFourOutputTabs) {
     auto* output = win->outputDockForTest();
     ASSERT_NE(output, nullptr);
     auto* tabs = win->outputTabsForTest();
     ASSERT_NE(tabs, nullptr);
     EXPECT_EQ(output->widget(), tabs);
-    EXPECT_EQ(tabs->count(), 2);
+    EXPECT_EQ(tabs->count(), 4);
     EXPECT_EQ(tabs->tabText(0), QStringLiteral("Console"));
     EXPECT_EQ(tabs->tabText(1), QStringLiteral("Problems"));
+    EXPECT_EQ(tabs->tabText(2), QStringLiteral("History"));
+    EXPECT_EQ(tabs->tabText(3), QStringLiteral("Progress"));
     EXPECT_EQ(tabs->widget(0), win->liveConsoleForTest());
+    // Progress is present but hidden until analysis starts.
+    EXPECT_FALSE(tabs->isTabVisible(3));
 }
 
 TEST_F(MainWindowLayoutTest, LeftFunctionsDockIsSinglePanelNotTabbed) {
@@ -71,12 +75,13 @@ TEST_F(MainWindowLayoutTest, LeftFunctionsDockIsSinglePanelNotTabbed) {
     EXPECT_EQ(functions->findChildren<QTabWidget*>().size(), 0);
 }
 
-TEST_F(MainWindowLayoutTest, RightWorkspaceHasOnlyStringsAndInspect) {
+TEST_F(MainWindowLayoutTest, RightWorkspaceHasStringsInspectBinary) {
     auto* ws = win->workspaceTabsForTest();
     ASSERT_NE(ws, nullptr);
-    EXPECT_EQ(ws->count(), 2);
+    EXPECT_EQ(ws->count(), 3);
     EXPECT_EQ(ws->tabText(0), QStringLiteral("Strings"));
     EXPECT_EQ(ws->tabText(1), QStringLiteral("Inspect"));
+    EXPECT_EQ(ws->tabText(2), QStringLiteral("Binary"));
 }
 
 TEST_F(MainWindowLayoutTest, DocksAreNamedForLayoutPersistence) {

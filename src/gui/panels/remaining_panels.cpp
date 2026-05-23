@@ -26,6 +26,30 @@
 
 namespace retdec::gui::panels {
 
+namespace {
+
+QString severityLabel(DiagnosticEntry::Severity severity)
+{
+    switch (severity) {
+    case DiagnosticEntry::Severity::Info:    return QStringLiteral("Info");
+    case DiagnosticEntry::Severity::Warning: return QStringLiteral("Warning");
+    case DiagnosticEntry::Severity::Error:   return QStringLiteral("Error");
+    }
+    return {};
+}
+
+QString severityIcon(DiagnosticEntry::Severity severity)
+{
+    switch (severity) {
+    case DiagnosticEntry::Severity::Info:    return QStringLiteral("\u2139");  // ℹ
+    case DiagnosticEntry::Severity::Warning: return QStringLiteral("\u26A0");  // ⚠
+    case DiagnosticEntry::Severity::Error:   return QStringLiteral("\u2716"); // ✖
+    }
+    return {};
+}
+
+} // namespace
+
 DiagnosticsModel::DiagnosticsModel(QObject* parent)
     : QAbstractTableModel(parent) {}
 
@@ -39,16 +63,14 @@ QVariant DiagnosticsModel::data(const QModelIndex& index, int role) const {
     const auto& e = entries_[index.row()];
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
-        case 0: switch (e.severity) {
-                case DiagnosticEntry::Severity::Info:    return "Info";
-                case DiagnosticEntry::Severity::Warning: return "Warning";
-                case DiagnosticEntry::Severity::Error:   return "Error";
-                } break;
+        case 0: return severityLabel(e.severity);
         case 1: return e.stage;
         case 2: return e.message;
         case 3: return e.address ? QString("0x%1").arg(e.address, 0, 16) : "";
         }
     }
+    if (role == Qt::DecorationRole && index.column() == 0)
+        return severityIcon(e.severity);
     if (role == Qt::ForegroundRole) {
         switch (e.severity) {
         case DiagnosticEntry::Severity::Info:    return QColor("#a6e3a1");
@@ -131,6 +153,7 @@ void DiagnosticsPanel::setupUI() {
     filterProxy_->setFilterCaseSensitivity(Qt::CaseInsensitive);
     tableView_ = new QTableView(this);
     tableView_->setModel(filterProxy_);
+    tableView_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     tableView_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     tableView_->setAlternatingRowColors(true);
     tableView_->verticalHeader()->hide();

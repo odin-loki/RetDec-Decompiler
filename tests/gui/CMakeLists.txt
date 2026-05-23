@@ -28,6 +28,7 @@ add_executable(retdec-gui-tests
     artifact_loader_test.cpp
     export_bundle_test.cpp
     mainwindow_layout_test.cpp
+    polish_integration_test.cpp
     comprehensive_smoke_test.cpp
     # mainwindow + project_file are NOT in retdec-gui-panels (the exe owns them),
     # so we compile them into the test target. This keeps a single source of truth

@@ -5,6 +5,8 @@
 
 #include "retdec/gui/panels/cfg_panel.h"
 
+#include "retdec/gui/widgets/empty_state_widget.h"
+
 #include <QApplication>
 #include <QFileDialog>
 #include <QHBoxLayout>
@@ -19,6 +21,7 @@
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QScrollBar>
+#include <QStackedWidget>
 #include <QStyleOptionGraphicsItem>
 #include <QVBoxLayout>
 #include <QWheelEvent>
@@ -899,17 +902,29 @@ void CFGPanel::setupUI()
     // ── Scene & views ─────────────────────────────────────────────────────
     scene_     = new CFGScene(this);
     graphView_ = new CFGView(scene_, this);
+    graphHost_ = new QWidget(this);
+    auto* graphLay = new QVBoxLayout(graphHost_);
+    graphLay->setContentsMargins(0, 0, 0, 0);
+    graphLay->addWidget(graphView_);
     // Parent minimap to the viewport widget so it overlays the canvas properly
     miniMap_   = new MiniMapView(scene_, graphView_, graphView_->viewport());
     graphView_->setMiniMap(miniMap_);
     miniMap_->raise();
+
+    emptyState_ = new retdec::gui::widgets::EmptyStateWidget(this);
+    emptyState_->setTitle(QStringLiteral("No control-flow graph"));
+    emptyState_->setHint(QStringLiteral("Select a function to visualize its basic blocks and edges."));
+
+    bodyStack_ = new QStackedWidget(this);
+    bodyStack_->addWidget(emptyState_);
+    bodyStack_->addWidget(graphHost_);
 
     // ── Layout ────────────────────────────────────────────────────────────
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     layout->addWidget(topBar);
-    layout->addWidget(graphView_);
+    layout->addWidget(bodyStack_, 1);
 
     // ── Connections ───────────────────────────────────────────────────────
     connect(fitButton_,   &QPushButton::clicked, this, &CFGPanel::onFitView);
@@ -918,6 +933,12 @@ void CFGPanel::setupUI()
     connect(pngButton_,   &QPushButton::clicked, this, &CFGPanel::onExportPng);
     connect(scene_, &CFGScene::blockClicked, this, &CFGPanel::onBlockClicked);
     connect(graphView_, &CFGView::viewportMoved, miniMap_, &MiniMapView::syncViewport);
+    updateEmptyState();
+}
+
+void CFGPanel::updateEmptyState() {
+    if (!bodyStack_ || !scene_) return;
+    bodyStack_->setCurrentIndex(scene_->items().isEmpty() ? 0 : 1);
 }
 
 void CFGPanel::loadCFG(const std::vector<BasicBlockData>& blocks,
@@ -935,6 +956,7 @@ void CFGPanel::loadCFG(const std::vector<BasicBlockData>& blocks,
 
     graphView_->fitGraph();
     miniMap_->syncViewport();
+    updateEmptyState();
 }
 
 void CFGPanel::clear()
@@ -943,6 +965,7 @@ void CFGPanel::clear()
     funcLabel_->setText("No function selected");
     infoLabel_->setText("");
     addressMap_.clear();
+    updateEmptyState();
 }
 
 void CFGPanel::onFunctionSelected(uint64_t address, const QString& name)

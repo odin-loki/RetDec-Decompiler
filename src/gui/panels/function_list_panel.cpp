@@ -5,6 +5,8 @@
 
 #include "retdec/gui/panels/function_list_panel.h"
 
+#include "retdec/gui/widgets/empty_state_widget.h"
+
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
@@ -25,6 +27,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSortFilterProxyModel>
+#include <QStackedWidget>
 #include <QStyledItemDelegate>
 #include <QTableView>
 #include <QToolTip>
@@ -542,6 +545,14 @@ void FunctionListPanel::setupUI()
     // ── Row height ────────────────────────────────────────────────────────
     tableView_->verticalHeader()->setDefaultSectionSize(22);
 
+    emptyState_ = new retdec::gui::widgets::EmptyStateWidget(this);
+    emptyState_->setTitle(QStringLiteral("No functions yet"));
+    emptyState_->setHint(QStringLiteral("Open a binary and run analysis (F5) to populate the function list."));
+
+    tableStack_ = new QStackedWidget(this);
+    tableStack_->addWidget(emptyState_);
+    tableStack_->addWidget(tableView_);
+
     // ── Status bar ────────────────────────────────────────────────────────
     statusLabel_ = new QLabel("Ready", this);
     statusLabel_->setStyleSheet("color: #6c7086; font-size: 11px; padding: 2px 6px;");
@@ -551,7 +562,7 @@ void FunctionListPanel::setupUI()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     layout->addWidget(filterBar);
-    layout->addWidget(tableView_, 1);
+    layout->addWidget(tableStack_, 1);
     layout->addWidget(statusLabel_);
 
     // ── Connections ───────────────────────────────────────────────────────
@@ -569,6 +580,7 @@ void FunctionListPanel::setupUI()
             this,       &FunctionListPanel::updateStatusLabel);
     connect(proxy_,     &QSortFilterProxyModel::modelReset,
             this,       &FunctionListPanel::updateStatusLabel);
+    updateStatusLabel();
 }
 
 void FunctionListPanel::setupFilterBar(QWidget* parent, QHBoxLayout* layout)
@@ -932,10 +944,21 @@ void FunctionListPanel::updateStatusLabel()
 {
     int total   = model_->rowCount();
     int visible = proxy_->rowCount();
-    statusLabel_->setText(
-        visible == total
-            ? QString("%1 functions").arg(total)
-            : QString("%1 / %2 functions").arg(visible).arg(total));
+    if (total == 0) {
+        statusLabel_->setText(QStringLiteral("No functions — run Analysis (F5)"));
+    } else {
+        statusLabel_->setText(
+            visible == total
+                ? QString("%1 functions").arg(total)
+                : QString("%1 / %2 functions").arg(visible).arg(total));
+    }
+    updateEmptyState();
+}
+
+void FunctionListPanel::updateEmptyState()
+{
+    if (!tableStack_) return;
+    tableStack_->setCurrentIndex(model_->rowCount() == 0 ? 0 : 1);
 }
 
 } // namespace retdec::gui::panels

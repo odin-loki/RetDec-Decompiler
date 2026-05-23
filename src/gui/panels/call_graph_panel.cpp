@@ -841,6 +841,8 @@ void CallGraphScene::loadGraph(const std::vector<CallGraphNode>& nodes,
     }
 
     setSceneRect(itemsBoundingRect().adjusted(-kMargin, -kMargin, kMargin, kMargin));
+    recomputeNodeDepths();
+    applyFilters();
 }
 
 void CallGraphScene::clearGraph()
@@ -850,6 +852,7 @@ void CallGraphScene::clearGraph()
     sccItems_.clear();
     focusAddress_ = 0;
     focusSet_.clear();
+    nodeDepth_.clear();
 }
 
 int CallGraphScene::visibleNodeCount() const
@@ -884,6 +887,48 @@ void CallGraphScene::setModuleFilter(int moduleId)
 {
     moduleFilter_ = moduleId;
     applyFilters();
+}
+
+void CallGraphScene::setMaxDepth(int depth)
+{
+    maxDepth_ = depth;
+    applyFilters();
+}
+
+void CallGraphScene::recomputeNodeDepths()
+{
+    nodeDepth_.clear();
+    if (nodes_.empty()) return;
+
+    std::unordered_map<uint64_t, std::vector<uint64_t>> succ, pred;
+    for (auto& e : edges_) {
+        succ[e.callerAddress].push_back(e.calleeAddress);
+        pred[e.calleeAddress].push_back(e.callerAddress);
+    }
+
+    std::deque<uint64_t> queue;
+    for (auto& n : nodes_) {
+        if (pred[n.address].empty()) {
+            nodeDepth_[n.address] = 0;
+            queue.push_back(n.address);
+        }
+    }
+    if (queue.empty() && !nodes_.empty())
+        queue.push_back(nodes_.front().address);
+
+    while (!queue.empty()) {
+        const uint64_t u = queue.front();
+        queue.pop_front();
+        const int d = nodeDepth_.count(u) ? nodeDepth_[u] : 0;
+        for (uint64_t v : succ[u]) {
+            const int nd = d + 1;
+            auto it = nodeDepth_.find(v);
+            if (it == nodeDepth_.end() || nd < it->second) {
+                nodeDepth_[v] = nd;
+                queue.push_back(v);
+            }
+        }
+    }
 }
 
 void CallGraphScene::setFocusNode(uint64_t address, int hops)
@@ -954,6 +999,10 @@ bool CallGraphScene::isNodeVisible(uint64_t addr) const
             QRegularExpression::wildcardToRegularExpression(nameFilter_),
             QRegularExpression::CaseInsensitiveOption);
         if (!re.match(node->name).hasMatch()) return false;
+    }
+    if (maxDepth_ >= 0) {
+        auto dIt = nodeDepth_.find(addr);
+        if (dIt != nodeDepth_.end() && dIt->second > maxDepth_) return false;
     }
     return true;
 }
@@ -1039,6 +1088,15 @@ void CallGraphPanel::setupUI()
     minCallSpin_->setFixedWidth(60);
     styleEdit(minCallSpin_);
 
+    auto* depthLabel = new QLabel("Depth:", toolbar);
+    depthLabel->setStyleSheet("color: #a6adc8; font-size: 11px;");
+    depthSpin_ = new QSpinBox(toolbar);
+    depthSpin_->setRange(0, 99);
+    depthSpin_->setSpecialValueText("All");
+    depthSpin_->setValue(0);
+    depthSpin_->setFixedWidth(52);
+    styleEdit(depthSpin_);
+
     hideLibCheck_ = new QCheckBox("Hide lib", toolbar);
     hideLibCheck_->setStyleSheet("color: #cdd6f4; font-size: 11px;");
 
@@ -1067,6 +1125,8 @@ void CallGraphPanel::setupUI()
     tbLayout->addWidget(nameFilter_);
     tbLayout->addWidget(minCallLabel);
     tbLayout->addWidget(minCallSpin_);
+    tbLayout->addWidget(depthLabel);
+    tbLayout->addWidget(depthSpin_);
     tbLayout->addWidget(hideLibCheck_);
     tbLayout->addWidget(hopsLabel);
     tbLayout->addWidget(hopsSpin_);
@@ -1098,6 +1158,9 @@ void CallGraphPanel::setupUI()
     connect(minCallSpin_,
             QOverload<int>::of(&QSpinBox::valueChanged),
             this, &CallGraphPanel::onMinCallCountChanged);
+    connect(depthSpin_,
+            QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &CallGraphPanel::onDepthChanged);
     connect(hideLibCheck_, &QCheckBox::toggled, this, &CallGraphPanel::onHideLibraryToggled);
     connect(scene_, &CallGraphScene::nodeClicked, this, &CallGraphPanel::onNodeClicked);
     connect(scene_, &CallGraphScene::focusRequested, this, &CallGraphPanel::onFocusRequested);
@@ -1108,7 +1171,9 @@ void CallGraphPanel::loadGraph(const std::vector<CallGraphNode>& nodes,
 {
     scene_->loadGraph(nodes, edges);
     infoLabel_->setText(QString("%1 nodes").arg(nodes.size()));
-    graphView_->fitGraph();
+    // fitInView on a 0×0 offscreen viewport can stall headless GUI tests.
+    if (qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS"))
+        graphView_->fitGraph();
 }
 
 void CallGraphPanel::setCallGraph(const QStringList& functionNames,
@@ -1130,6 +1195,7 @@ void CallGraphPanel::clear()
     scene_->clearGraph();
     nameFilter_->clear();
     minCallSpin_->setValue(0);
+    depthSpin_->setValue(0);
     hideLibCheck_->setChecked(false);
     infoLabel_->setText("");
     focusLabel_->setText("");
@@ -1199,6 +1265,10 @@ void CallGraphPanel::onClearFocus()
     infoLabel_->setText(QString("%1 visible").arg(scene_->visibleNodeCount()));
 }
 
-void CallGraphPanel::onDepthChanged(int /*depth*/) {}
+void CallGraphPanel::onDepthChanged(int depth)
+{
+    scene_->setMaxDepth(depth <= 0 ? -1 : depth);
+    infoLabel_->setText(QString("%1 visible").arg(scene_->visibleNodeCount()));
+}
 
 } // namespace retdec::gui::panels

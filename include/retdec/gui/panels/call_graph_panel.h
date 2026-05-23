@@ -204,6 +204,7 @@ public:
     void setMinCallCount(int minCount);
     void setHideLibrary(bool hide);
     void setModuleFilter(int moduleId);   ///< -1 = show all
+    void setMaxDepth(int depth);          ///< -1 = unlimited; 0 = roots only
 
     // Focus mode
     void setFocusNode(uint64_t address, int hops);
@@ -242,6 +243,7 @@ private:
     // Visibility
     void applyFilters();
     bool isNodeVisible(uint64_t addr) const;
+    void recomputeNodeDepths();
 
     // Data
     std::vector<CallGraphNode>                         nodes_;
@@ -256,6 +258,8 @@ private:
     int      minCallCount_  = 0;
     bool     hideLibrary_   = false;
     int      moduleFilter_  = -1;
+    int      maxDepth_      = -1;
+    std::unordered_map<uint64_t, int> nodeDepth_;
 
     // Focus state
     uint64_t                    focusAddress_ = 0;
@@ -314,6 +318,7 @@ private:
 
     QLineEdit*      nameFilter_    = nullptr;
     QSpinBox*       minCallSpin_   = nullptr;
+    QSpinBox*       depthSpin_     = nullptr;
     QCheckBox*      hideLibCheck_  = nullptr;
     QSpinBox*       hopsSpin_      = nullptr;
     QPushButton*    clearFocusBtn_ = nullptr;

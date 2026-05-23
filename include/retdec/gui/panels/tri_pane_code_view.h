@@ -47,6 +47,7 @@
 
 #include "retdec/gui/panels/panel_base.h"
 
+#include <QFont>
 #include <QList>
 #include <QMap>
 #include <QRegularExpression>
@@ -193,6 +194,8 @@ public:
     void scrollToLine(int line);     ///< ensure line is centred in view
     void clearHighlight();
 
+    void setEditorFont(const QFont& font);
+
     QString title() const { return title_; }
     int lineCount() const;
     QPlainTextEdit* editor() const { return editor_; }  // returns CodeEditor*
@@ -254,6 +257,8 @@ public:
     void navigateTo(uint64_t address);
     void navigateBack();
     void navigateForward();
+
+    void applyEditorFont(const QFont& font);
 
     void clear() override;
 

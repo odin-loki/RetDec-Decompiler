@@ -3,12 +3,19 @@
 
 #include "retdec/gui/panels/panel_base.h"
 
+#include <QFont>
+
 QT_BEGIN_NAMESPACE
 class QPlainTextEdit;
 class QLabel;
 class QLineEdit;
 class QToolBar;
+class QStackedWidget;
 QT_END_NAMESPACE
+
+namespace retdec::gui::widgets {
+class EmptyStateWidget;
+}
 
 namespace retdec::gui::panels {
 
@@ -37,20 +44,31 @@ public:
     void setAssemblyText(const QString& text);
     void clear() override;
 
+    void applyEditorFont(const QFont& font);
+
 public slots:
     void onAddressNavigated(uint64_t address);
 
 private slots:
     void onGoToAddress();
     void onFind();
+    void onSearchReturnPressed();
 
 private:
+    enum class SearchMode { Find, GoTo };
+
     void setupUI();
+    void scrollToAddress(uint64_t address);
+    void updateEmptyState();
 
     QToolBar*      toolbar_   = nullptr;
     QLabel*        funcLabel_ = nullptr;
+    QStackedWidget* bodyStack_ = nullptr;
+    retdec::gui::widgets::EmptyStateWidget* emptyState_ = nullptr;
     QPlainTextEdit* view_     = nullptr;
     QLineEdit*     searchBar_ = nullptr;
+    SearchMode     searchMode_ = SearchMode::Find;
+    uint64_t       pendingScrollAddr_ = 0;
 };
 
 } // namespace retdec::gui::panels

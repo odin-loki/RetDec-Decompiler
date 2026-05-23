@@ -33,7 +33,7 @@ namespace retdec::gui::panels {
 static const QColor kColorRemoved ("#3d1212");
 static const QColor kColorAdded   ("#122d12");
 static const QColor kColorChanged ("#2d2d12");
-static const QColor kColorEmpty   ("#1a1a2e");   // placeholder line colour
+static const QColor kColorEmpty   ("#181825");   // Catppuccin Mantle — placeholder line colour
 static const QColor kColLineNum   ("#555577");
 
 // ─── DiffResult ───────────────────────────────────────────────────────────────

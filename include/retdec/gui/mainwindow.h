@@ -56,20 +56,17 @@ class TriPaneCodeView;
  *
  *   - Central widget:  vertical stack of
  *                        TriageBanner (dismissible, shown when binary loaded)
- *                        QTabWidget of document views
+ *                        QTabWidget — five document tabs:
  *                            Decompiled C | Assembly | IR (SSA) | CFG |
- *                            Synced (Asm ┃ IR ┃ C) | Compare
+ *                            Synced (Asm ┃ IR ┃ C)
  *   - Left dock:       Functions (with prominent filter, always visible)
- *   - Right dock:      Strings | Inspect  (just two tabs)
- *   - Bottom dock:     Console (live) | Problems (diagnostics)
- *   - Floating:        AI Assistant (hidden by default)
+ *   - Right dock:      Workspace — Strings | Inspect | Binary
+ *   - Bottom dock:     Output — Console | Problems | History | Progress (during analysis)
  *   - Tools menu:      Signature Studio…, Call Graph…, Type Hierarchy…
  *                      open as separate top-level windows on demand.
  *
- * The "mode toolbar" from v2 is intentionally removed — modes were redundant
- * with the document tabs and added cognitive load. The Synced tri-pane is
- * restored as a centre tab so power users still get cross-highlighted
- * Asm/IR/C without it competing for dock space.
+ * The v2 mode toolbar is removed — document tabs replace mode switching.
+ * AI Assistant is not docked in v3; use retdec-qwen3-runner externally.
  */
 class RetDecMainWindow : public QMainWindow {
     Q_OBJECT
@@ -144,6 +141,7 @@ private slots:
 
     // Help menu.
     void onOpenDocumentation();
+    void onKeyboardShortcuts();
     void onAbout();
 
     void onDecompilerProcessFinished(int exitCode, QProcess::ExitStatus status);
@@ -152,6 +150,9 @@ private slots:
 
     /// Apply Settings → ML to AI Assistant.
     void syncAiAssistantFromAppSettings();
+
+    /// Apply Settings → General editor font to code views.
+    void applyEditorFontFromSettings();
 
     void onAnalysisStageChanged(const QString& stage);
     void onAnalysisFinished();
@@ -163,8 +164,13 @@ private slots:
     void onShowSignatureStudio();
     void onShowCallGraph();
     void onShowTypeHierarchy();
+    void onResetLayout();
 
     void onFunctionArtifactViews(uint64_t address, const QString& name);
+    void refreshTypeHierarchyFromArtifacts();
+    /// Select @p address in the function list (when known), show @p documentTab,
+    /// and refresh per-function views.
+    void navigateToAddress(uint64_t address, int documentTab);
 
 private:
     // Init helpers.

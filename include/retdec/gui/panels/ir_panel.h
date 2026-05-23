@@ -3,11 +3,18 @@
 
 #include "retdec/gui/panels/panel_base.h"
 
+#include <QFont>
+
 QT_BEGIN_NAMESPACE
 class QPlainTextEdit;
 class QComboBox;
 class QLabel;
+class QStackedWidget;
 QT_END_NAMESPACE
+
+namespace retdec::gui::widgets {
+class EmptyStateWidget;
+}
 
 namespace retdec::gui::panels {
 
@@ -29,6 +36,8 @@ public:
     void setIRText(const QString& text, const QString& stage = "SSA");
     void clear() override;
 
+    void applyEditorFont(const QFont& font);
+
 public slots:
     void onFunctionSelected(uint64_t address, const QString& name);
 
@@ -37,9 +46,12 @@ private slots:
 
 private:
     void setupUI();
+    void updateEmptyState();
 
     QComboBox*     stageCombo_ = nullptr;
     QLabel*        funcLabel_  = nullptr;
+    QStackedWidget* bodyStack_ = nullptr;
+    retdec::gui::widgets::EmptyStateWidget* emptyState_ = nullptr;
     QPlainTextEdit* view_      = nullptr;
 };
 

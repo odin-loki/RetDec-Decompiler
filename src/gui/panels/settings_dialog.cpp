@@ -6,12 +6,16 @@
 #include "retdec/gui/panels/settings_dialog.h"
 #include "retdec/gui/settings/plugin_manager.h"
 #include "retdec/gui/settings/settings.h"
+#include "retdec/gui/theme.h"
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFile>
 #include <QFontComboBox>
 #include <QJsonArray>
@@ -25,6 +29,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QPalette>
 #include <QPushButton>
 #include <QScrollArea>
@@ -124,7 +129,10 @@ QWidget* SettingsDialog::buildGeneralTab() {
 
     themeCombo_ = new QComboBox;
     themeCombo_->addItems({"Dark", "Light", "System Default"});
-    l->addWidget(makeRow("Theme", themeCombo_));
+    themeCombo_->setItemData(1, QStringLiteral("Not available in v3"), Qt::ToolTipRole);
+    themeCombo_->setItemData(2, QStringLiteral("Not available in v3"), Qt::ToolTipRole);
+    l->addWidget(makeRow("Theme", themeCombo_,
+                         QStringLiteral("Only Catppuccin Mocha is bundled in v3")));
 
     fontCombo_ = new QFontComboBox;
     l->addWidget(makeRow("Editor font", fontCombo_));
@@ -150,6 +158,8 @@ QWidget* SettingsDialog::buildGeneralTab() {
     l->addWidget(makeSeparator("Session"));
 
     restoreCheck_ = new QCheckBox("Restore last session on startup");
+    restoreCheck_->setEnabled(false);
+    restoreCheck_->setToolTip(QStringLiteral("Not yet implemented"));
     l->addWidget(restoreCheck_);
 
     l->addStretch();
@@ -169,6 +179,20 @@ QWidget* SettingsDialog::buildAnalysisTab() {
     auto* l = new QVBoxLayout(w);
     l->setContentsMargins(12, 12, 12, 12);
     l->setSpacing(6);
+
+    {
+        auto* banner = new QLabel(
+            QStringLiteral(
+                "F5 runs retdec-decompiler externally; these toggles affect "
+                "in-process analysis only."),
+            w);
+        banner->setWordWrap(true);
+        banner->setForegroundRole(QPalette::PlaceholderText);
+        auto bannerFont = banner->font();
+        bannerFont.setPointSize(qMax(9, bannerFont.pointSize() - 1));
+        banner->setFont(bannerFont);
+        l->addWidget(banner);
+    }
 
     l->addWidget(makeSeparator("Pipeline Stages"));
 
@@ -290,9 +314,9 @@ QWidget* SettingsDialog::buildMLTab() {
     {
         auto* hint = new QLabel(
             QStringLiteral(
-                "Qwen3-compatible GGUF (including Qwen2.5-Coder / “Qwen Code”–style "
-                "checkpoints). After Apply or OK, this path is pushed to the AI Assistant "
-                "and the model loads if the file exists."),
+                "Qwen3-compatible GGUF checkpoints (including Qwen2.5-Coder). "
+                "The GUI does not load models in-process — run retdec-qwen3-runner "
+                "externally; Apply or OK saves this path for CLI use."),
             w);
         hint->setWordWrap(true);
         hint->setForegroundRole(QPalette::PlaceholderText);
@@ -833,7 +857,33 @@ void SettingsDialog::applyToSettings() {
 // ─── Slots ───────────────────────────────────────────────────────────────────
 
 void SettingsDialog::onApply() {
+    if (decompileOutputDirEdit_) {
+        const QString dir = decompileOutputDirEdit_->text().trimmed();
+        if (!dir.isEmpty()) {
+            QDir outDir(dir);
+            if (!outDir.exists() && !QDir().mkpath(dir)) {
+                QMessageBox::warning(
+                    this, QStringLiteral("Settings"),
+                    QStringLiteral("Decompile output directory cannot be created:\n%1")
+                        .arg(dir));
+                return;
+            }
+        }
+    }
+    if (decompilerConfigEdit_) {
+        const QString cfg = decompilerConfigEdit_->text().trimmed();
+        if (!cfg.isEmpty() && !QFileInfo::exists(cfg)) {
+            QMessageBox::warning(
+                this, QStringLiteral("Settings"),
+                QStringLiteral("Decompiler configuration file does not exist:\n%1")
+                    .arg(cfg));
+            return;
+        }
+    }
+
     applyToSettings();
+    if (auto* app = qobject_cast<QApplication*>(QApplication::instance()))
+        applyThemeFromSettings(*app);
     AppSettings::instance().save();
 }
 
@@ -911,7 +961,14 @@ void SettingsDialog::onPluginToggled(QListWidgetItem* item) {
 }
 
 void SettingsDialog::onFontChanged(const QFont& font) {
-    (void)font;
+    auto& s = AppSettings::instance();
+    QFont editorFont = font;
+    editorFont.setPointSize(fontSizeSpin_ ? fontSizeSpin_->value() : s.general.fontSize);
+    editorFont.setStyleHint(QFont::Monospace);
+    editorFont.setFixedPitch(true);
+    s.general.editorFont = editorFont;
+    s.general.fontSize   = editorFont.pointSize();
+    s.notifySettingsChanged();
 }
 
 void SettingsDialog::onThemeChanged(int) {

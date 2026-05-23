@@ -1,5 +1,7 @@
 #include "retdec/gui/panels/decompiled_c_panel.h"
 
+#include "retdec/gui/widgets/empty_state_widget.h"
+
 #include <QVBoxLayout>
 #include <QPlainTextEdit>
 #include <QLabel>
@@ -11,8 +13,11 @@
 #include <QFile>
 #include <QStringView>
 #include <QTextCursor>
+#include <QTextBlock>
 #include <QTextStream>
 #include <QTimer>
+#include <QStackedWidget>
+#include <QRegularExpression>
 
 namespace retdec::gui::panels {
 
@@ -40,14 +45,27 @@ void DecompiledCPanel::setupUI() {
     // the visible scrollback to keep typing/scrolling smooth on huge decompiles.
     view_->setMaximumBlockCount(200'000);
     view_->setLineWrapMode(QPlainTextEdit::NoWrap);
-    view_->setPlaceholderText("Decompiled C output will appear here after analysis…");
+
+    emptyState_ = new retdec::gui::widgets::EmptyStateWidget(this);
+    emptyState_->setTitle(QStringLiteral("No decompiled output yet"));
+    emptyState_->setHint(QStringLiteral("Run Analysis → Run Full Analysis (F5) to decompile the binary."));
+
+    bodyStack_ = new QStackedWidget(this);
+    bodyStack_->addWidget(emptyState_);
+    bodyStack_->addWidget(view_);
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     layout->addWidget(toolbar_);
     layout->addWidget(funcLabel_);
-    layout->addWidget(view_);
+    layout->addWidget(bodyStack_, 1);
+    updateEmptyState();
+}
+
+void DecompiledCPanel::updateEmptyState() {
+    if (!bodyStack_ || !view_) return;
+    bodyStack_->setCurrentIndex(view_->toPlainText().isEmpty() ? 0 : 1);
 }
 
 void DecompiledCPanel::setSource(const QString& cSource) {
@@ -68,6 +86,7 @@ void DecompiledCPanel::setSource(const QString& cSource) {
 
     if (cSource.size() <= kSmallThreshold) {
         view_->setPlainText(cSource);
+        updateEmptyState();
         return;
     }
 
@@ -84,11 +103,13 @@ void DecompiledCPanel::setSource(const QString& cSource) {
             c.insertText(QStringView(cSource).mid(pos, end - pos).toString());
             pos = end;
         }
+        updateEmptyState();
         return;
     }
 
     // Large: stream asynchronously.
     pendingLoadTotal_ = cSource.size();
+    bodyStack_->setCurrentIndex(1);
     scheduleAsyncLoad(cSource);
 }
 
@@ -146,12 +167,19 @@ void DecompiledCPanel::onAsyncLoadTick() {
         pendingLoad_.clear();
         pendingLoadPos_   = 0;
         pendingLoadTotal_ = 0;
+        updateEmptyState();
     }
 }
 
 void DecompiledCPanel::clear() {
     view_->clear();
     funcLabel_->setText("No function selected");
+    updateEmptyState();
+}
+
+void DecompiledCPanel::applyEditorFont(const QFont& font) {
+    if (view_)
+        view_->setFont(font);
 }
 
 QString DecompiledCPanel::documentText() const {
@@ -160,6 +188,59 @@ QString DecompiledCPanel::documentText() const {
 
 void DecompiledCPanel::onFunctionSelected(uint64_t address, const QString& name) {
     funcLabel_->setText(QString("%1 @ 0x%2").arg(name).arg(address, 0, 16));
+}
+
+void DecompiledCPanel::scrollToFunction(const QString& name, int startLine, int endLine) {
+    (void)endLine;
+    if (startLine > 0) {
+        QTextBlock block = view_->document()->findBlockByNumber(startLine - 1);
+        if (block.isValid()) {
+            QTextCursor c(block);
+            view_->setTextCursor(c);
+            view_->centerCursor();
+            return;
+        }
+    }
+
+    if (name.isEmpty())
+        return;
+
+    const QString escaped = QRegularExpression::escape(name);
+    const QRegularExpression sigRe(
+            QStringLiteral(R"(\b%1\s*\()").arg(escaped));
+    const QString text = view_->toPlainText();
+    const QRegularExpressionMatch m = sigRe.match(text);
+    if (!m.hasMatch())
+        return;
+
+    QTextCursor c(view_->document());
+    c.setPosition(m.capturedStart());
+    view_->setTextCursor(c);
+    view_->centerCursor();
+}
+
+void DecompiledCPanel::scrollToFunction(uint64_t address, const QString& name) {
+    if (!view_ || view_->document()->isEmpty())
+        return;
+    const QString hex = QStringLiteral("0x%1").arg(address, 0, 16);
+    const QStringList needles = {
+        name,
+        QStringLiteral("function_%1").arg(address, 0, 16),
+        hex,
+    };
+    const QString text = view_->toPlainText();
+    for (const QString& needle : needles) {
+        if (needle.isEmpty())
+            continue;
+        const int pos = text.indexOf(needle);
+        if (pos < 0)
+            continue;
+        QTextCursor c(view_->document());
+        c.setPosition(pos);
+        view_->setTextCursor(c);
+        view_->centerCursor();
+        return;
+    }
 }
 
 void DecompiledCPanel::onSaveAs() {

@@ -10,6 +10,7 @@
 #include "retdec/gui/panels/call_graph_panel.h"
 #include "retdec/gui/panels/function_list_panel.h"
 #include "retdec/gui/panels/strings_browser_panel.h"
+#include "retdec/gui/panels/type_hierarchy_panel.h"
 
 #include <QJsonObject>
 #include <QString>
@@ -25,6 +26,7 @@ namespace panels {
 class AssemblyPanel;
 class IRPanel;
 class CFGPanel;
+class TriPaneCodeView;
 } // namespace panels
 
 struct DecompileArtifactPaths {
@@ -48,6 +50,8 @@ struct DecompileArtifacts {
     /// Per-function CFG keyed by start address.
     std::unordered_map<uint64_t, std::vector<panels::BasicBlockData>> cfgBlocks;
     std::unordered_map<uint64_t, std::vector<panels::CFGEdgeData>> cfgEdges;
+    /// RTTI class hierarchy for TypeHierarchyPanel.
+    QList<panels::ClassInfo> typeHierarchyClasses;
 };
 
 bool loadDecompileArtifactsFromPaths(const DecompileArtifactPaths& paths,
@@ -61,12 +65,18 @@ QString extractDsmForFunction(const QString& fullDsm,
 
 QString extractLlvmForFunction(const QString& fullLl, const QString& funcName);
 
+QString extractCForFunction(const QString& cPath,
+                          int startLine,
+                          int endLine,
+                          const QString& funcName);
+
 void populateFunctionViews(const DecompileArtifacts& art,
                            uint64_t funcAddr,
                            const QString& funcName,
                            panels::AssemblyPanel* assembly,
                            panels::IRPanel* ir,
-                           panels::CFGPanel* cfg);
+                           panels::CFGPanel* cfg,
+                           panels::TriPaneCodeView* triPane = nullptr);
 
 } // namespace gui
 } // namespace retdec

@@ -44,9 +44,11 @@ set(GUI_PANEL_SOURCES
     panels/settings_dialog.cpp
     settings/settings.cpp
     settings/plugin_manager.cpp
+    theme.cpp
     panels/remaining_panels.cpp
     panels/progress_panel.cpp
     panels/tri_pane_code_view.cpp
+    widgets/empty_state_widget.cpp
 )
 
 # Panel library MOC headers only — mainwindow / project_file are linked with retdec-gui.
@@ -81,7 +83,9 @@ set(GUI_HEADERS
     ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/settings_dialog.h
     ${PROJECT_SOURCE_DIR}/include/retdec/gui/settings/settings.h
     ${PROJECT_SOURCE_DIR}/include/retdec/gui/settings/plugin_manager.h
+    ${PROJECT_SOURCE_DIR}/include/retdec/gui/theme.h
     ${PROJECT_SOURCE_DIR}/include/retdec/gui/settings/plugin_interface.h
+    ${PROJECT_SOURCE_DIR}/include/retdec/gui/widgets/empty_state_widget.h
 )
 
 # ── Launch helpers (headless / argv filtering for CI and automated debug) ─────

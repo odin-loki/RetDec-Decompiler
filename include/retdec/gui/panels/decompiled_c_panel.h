@@ -3,13 +3,19 @@
 
 #include "retdec/gui/panels/panel_base.h"
 
+#include <QFont>
 #include <QString>
 
 QT_BEGIN_NAMESPACE
 class QPlainTextEdit;
 class QLabel;
 class QToolBar;
+class QStackedWidget;
 QT_END_NAMESPACE
+
+namespace retdec::gui::widgets {
+class EmptyStateWidget;
+}
 
 namespace retdec::gui::panels {
 
@@ -36,12 +42,20 @@ public:
     bool setSourceFromPath(const QString& path);
     void clear() override;
 
+    void applyEditorFont(const QFont& font);
+
     /** @brief Current editor text (for diff / export helpers). */
     QString documentText() const;
+
+    /** Scroll to a function body in the full decompiled source (1-based lines). */
+    void scrollToFunction(const QString& name, int startLine, int endLine = -1);
 
 public slots:
     void onFunctionSelected(uint64_t address, const QString& name);
     void onSaveAs();
+
+    /** Best-effort scroll to @p name or @p address in the loaded C source. */
+    void scrollToFunction(uint64_t address, const QString& name);
 
 private slots:
     void onCopyToClipboard();
@@ -50,9 +64,12 @@ private slots:
 private:
     void setupUI();
     void scheduleAsyncLoad(QString remainder);
+    void updateEmptyState();
 
     QToolBar*      toolbar_   = nullptr;
     QLabel*        funcLabel_ = nullptr;
+    QStackedWidget* bodyStack_ = nullptr;
+    retdec::gui::widgets::EmptyStateWidget* emptyState_ = nullptr;
     QPlainTextEdit* view_     = nullptr;
     /// Full payload of an in-progress async load. We index into it via
     /// pendingLoadPos_ instead of mutating the string — mutating with

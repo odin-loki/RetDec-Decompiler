@@ -102,7 +102,7 @@ void InspectPanel::setupUi() {
     auto* unpackRow = new QHBoxLayout();
     unpackRow->addWidget(new QLabel(QStringLiteral("Unpack output:"), this));
     unpackOutEdit_ = new QLineEdit(this);
-    unpackOutEdit_->setPlaceholderText(QStringLiteral("Defaults to &lt;binary&gt;-unpacked"));
+    unpackOutEdit_->setPlaceholderText(QStringLiteral("Defaults to <binary>-unpacked"));
     unpackBrute_ = new QCheckBox(QStringLiteral("Brute"), this);
     unpackBrute_->setToolTip(QStringLiteral("Pass -b|--brute to retdec-unpacker."));
     unpackBtn_ = new QPushButton(QStringLiteral("Run unpacker"), this);

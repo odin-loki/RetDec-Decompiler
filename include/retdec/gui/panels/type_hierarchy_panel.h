@@ -32,6 +32,7 @@
 
 QT_BEGIN_NAMESPACE
 class QLineEdit;
+class QLabel;
 class QSplitter;
 class QTableView;
 class QTreeView;
@@ -172,6 +173,7 @@ private:
     QSplitter*             splitter_       = nullptr;
     ClassHierarchyModel*   hierarchyModel_ = nullptr;
     VtableModel*           vtableModel_    = nullptr;
+    QLabel*                emptyLabel_     = nullptr;
 };
 
 } // namespace retdec::gui::panels

@@ -20,6 +20,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollBar>
+#include <QShortcut>
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QSplitter>
@@ -110,10 +111,12 @@ void CodeSyntaxHighlighter::setLang(PaneLang lang) {
     // Defer rehighlight: synchronous rehighlight() from setLang() combined with
     // SyncedCodePaneTest::processEvents in TearDown could stall indefinitely when
     // the editor has no real viewport size (0×0 in off-screen tests).
-    QTimer::singleShot(0, this, [this]() {
-        if (document())
-            rehighlight();
-    });
+    if (qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) {
+        QTimer::singleShot(0, this, [this]() {
+            if (document())
+                rehighlight();
+        });
+    }
 }
 
 void CodeSyntaxHighlighter::buildRules() {
@@ -421,6 +424,9 @@ void SyncedCodePane::setContent(const QString& text) {
     clearHighlight();
     // Defer rehighlight (same as setLang): synchronous rehighlight from setContent
     // stacks with QTextLayout/updateRequest and can stall TriPane/loadFunction in tests.
+    // Skip entirely in headless/offscreen runs where the editor has no real viewport.
+    if (!qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS"))
+        return;
     QTimer::singleShot(0, this, [this]() {
         if (hl_ && hl_->document())
             hl_->rehighlight();
@@ -465,6 +471,11 @@ void SyncedCodePane::scrollToLine(int line) {
 void SyncedCodePane::clearHighlight() {
     highlightedLine_ = -1;
     editor_->setExtraSelections({});
+}
+
+void SyncedCodePane::setEditorFont(const QFont& font) {
+    if (editor_)
+        editor_->setFont(font);
 }
 
 int SyncedCodePane::lineNumberAreaWidth() const {
@@ -611,6 +622,11 @@ void TriPaneCodeView::setupUI() {
             this,     &TriPaneCodeView::onIrScrollChanged);
     connect(cPane_,   &SyncedCodePane::verticalScrollChanged,
             this,     &TriPaneCodeView::onCScrollChanged);
+
+    auto* altBack = new QShortcut(QKeySequence(Qt::ALT | Qt::Key_Left), this);
+    connect(altBack, &QShortcut::activated, this, &TriPaneCodeView::navigateBack);
+    auto* altFwd = new QShortcut(QKeySequence(Qt::ALT | Qt::Key_Right), this);
+    connect(altFwd, &QShortcut::activated, this, &TriPaneCodeView::navigateForward);
 }
 
 QWidget* TriPaneCodeView::buildToolbar() {
@@ -737,6 +753,12 @@ void TriPaneCodeView::navigateForward() {
         updateNavButtons();
         emit addressNavigated(navHistory_[navIdx_].address);
     }
+}
+
+void TriPaneCodeView::applyEditorFont(const QFont& font) {
+    if (asmPane_) asmPane_->setEditorFont(font);
+    if (irPane_)  irPane_->setEditorFont(font);
+    if (cPane_)   cPane_->setEditorFont(font);
 }
 
 void TriPaneCodeView::updateNavButtons() {

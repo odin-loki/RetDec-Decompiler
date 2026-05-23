@@ -344,6 +344,12 @@ void TypeHierarchyPanel::setupUI()
     treeView_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     treeView_->expandAll();
 
+    emptyLabel_ = new QLabel(QStringLiteral("No RTTI classes recovered"), this);
+    emptyLabel_->setAlignment(Qt::AlignCenter);
+    emptyLabel_->setStyleSheet(
+            QStringLiteral("color: #6c7086; font-style: italic; padding: 24px;"));
+    emptyLabel_->setVisible(true);
+
     // ── Vtable sub-panel ─────────────────────────────────────────────────
     auto* vtableLabel = new QLabel("Vtable", this);
     vtableLabel->setStyleSheet("color: #a6adc8; font-weight: bold; padding: 4px 6px 2px;");
@@ -375,6 +381,8 @@ void TypeHierarchyPanel::setupUI()
     splitter_->setStretchFactor(1, 2);
     splitter_->setStyleSheet(
         "QSplitter::handle { background: #45475a; height: 2px; }");
+    emptyLabel_->setParent(splitter_);
+    emptyLabel_->raise();
 
     // ── Overall layout ────────────────────────────────────────────────────
     auto* layout = new QVBoxLayout(this);
@@ -397,6 +405,10 @@ void TypeHierarchyPanel::setHierarchy(const QList<ClassInfo>& classes)
     hierarchyModel_->setClasses(classes);
     vtableModel_->setSlots({});
     treeView_->expandAll();
+    if (emptyLabel_) {
+        emptyLabel_->setVisible(classes.isEmpty());
+        emptyLabel_->raise();
+    }
 }
 
 void TypeHierarchyPanel::setHierarchy(const QList<ClassEntry>& entries)
@@ -424,6 +436,8 @@ void TypeHierarchyPanel::clear()
     hierarchyModel_->setClasses({});
     vtableModel_->setSlots({});
     searchBox_->clear();
+    if (emptyLabel_)
+        emptyLabel_->setVisible(true);
 }
 
 void TypeHierarchyPanel::onFilterChanged(const QString& text)
