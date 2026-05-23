@@ -26,9 +26,11 @@ QString themeQssPath(GeneralSettings::Theme theme) {
         // No reliable system-theme API on Windows in v3 — use Mocha.
         return QStringLiteral(":/retdec/catppuccin_mocha.qss");
 #else
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
         const auto scheme = QApplication::styleHints()->colorScheme();
         if (scheme == Qt::ColorScheme::Light)
             return QStringLiteral(":/retdec/catppuccin_latte.qss");
+#endif
 #endif
     }
 

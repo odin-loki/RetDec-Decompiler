@@ -26,6 +26,7 @@
 #include <QShortcut>
 #include <QSignalBlocker>
 #include <QTimer>
+#include <QToolTip>
 #include <QSplitter>
 #include <QTextBlock>
 #include <QTextCursor>

@@ -95,7 +95,7 @@ jobs:
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         run: |
           bash scripts/fetch-large-files.sh || \
-            bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+            bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/avast/retdec/master"
 
       - uses: ilammy/msvc-dev-cmd@v1
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
@@ -204,7 +204,7 @@ jobs:
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         run: |
           bash scripts/fetch-large-files.sh || \
-            bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+            bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/avast/retdec/master"
 
       - name: Configure (full-linux-release, CPU-only CI)
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)

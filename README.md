@@ -1,9 +1,5 @@
 # RetDec — Enhanced Retargetable Decompiler
 
-[![ci-smoke](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/ci-smoke.yml/badge.svg)](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/ci-smoke.yml)
-[![perf-nightly](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/perf-nightly.yml/badge.svg)](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/perf-nightly.yml)
-[![release-installers](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/release-installers.yml/badge.svg)](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/release-installers.yml)
-
 A machine-code decompiler that recovers high-level source code from compiled
 binaries. Built on the original RetDec/LLVM pipeline, this version adds
 semantic library recovery, a multi-language output backend, a Qt 6 IDE-style

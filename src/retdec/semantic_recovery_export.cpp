@@ -142,7 +142,7 @@ SemanticDetectionMap buildSemanticDetectionMap(
 		const std::string& outputLang)
 {
 	SemanticDetectionMap map;
-	const bool emitCHints = isCOutputLang(outputLang);
+	const bool emitCHints = common::isCOutputLang(outputLang);
 
 	for (const auto& [fnName, result] : containers)
 	{

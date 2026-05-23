@@ -13,10 +13,9 @@
 #include "retdec/serdes/calling_convention.h"
 #include "retdec/serdes/function.h"
 #include "retdec/serdes/object.h"
+#include "retdec/serdes/semantic_detection.h"
 #include "retdec/serdes/storage.h"
 #include "retdec/serdes/type.h"
-#include "retdec/serdes/std.h"
-
 #include "retdec/serdes/std.h"
 
 namespace {
@@ -50,12 +49,6 @@ const std::string JSON_usedCrypto    = "usedCryptoConstants";
 const std::string JSON_semanticDetections = "semanticDetections";
 const std::string JSON_basicBlocks   = "basicBlocks";
 
-const std::string JSON_sdKind        = "kind";
-const std::string JSON_sdLabel       = "label";
-const std::string JSON_sdConfidence  = "confidence";
-const std::string JSON_sdDetail      = "detail";
-const std::string JSON_sdCHint       = "cHint";
-
 std::vector<std::string> fncTypes =
 {
 	"decompilerDefined",
@@ -70,35 +63,6 @@ std::vector<std::string> fncTypes =
 
 namespace retdec {
 namespace serdes {
-
-template <typename Writer>
-void serialize(Writer& writer, const common::SemanticDetection& d)
-{
-	writer.StartObject();
-	serializeString(writer, JSON_sdKind, d.kind);
-	serializeString(writer, JSON_sdLabel, d.label);
-	serializeDouble(writer, JSON_sdConfidence, d.confidence);
-	serializeString(writer, JSON_sdDetail, d.detail);
-	if (!d.cHint.empty())
-	{
-		serializeString(writer, JSON_sdCHint, d.cHint);
-	}
-	writer.EndObject();
-}
-
-void deserialize(const rapidjson::Value& val, common::SemanticDetection& d)
-{
-	if (val.IsNull() || !val.IsObject())
-	{
-		return;
-	}
-
-	d.kind = deserializeString(val, JSON_sdKind);
-	d.label = deserializeString(val, JSON_sdLabel);
-	d.confidence = static_cast<float>(deserializeDouble(val, JSON_sdConfidence));
-	d.detail = deserializeString(val, JSON_sdDetail);
-	d.cHint = deserializeString(val, JSON_sdCHint);
-}
 
 template <typename Writer>
 void serialize(Writer& writer, const common::Function& f)

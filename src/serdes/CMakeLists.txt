@@ -11,6 +11,7 @@ add_library(serdes STATIC
 	language.cpp
 	object.cpp
 	pattern.cpp
+	semantic_detection.cpp
 	std.cpp
 	storage.cpp
 	tool_info.cpp

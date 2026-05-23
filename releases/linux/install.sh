@@ -11,9 +11,6 @@
 #   --yes          Non-interactive; use defaults (/opt/retdec, no PATH change)
 #
 # Requires write access to the chosen prefix (sudo for /opt/retdec).
-#
-# This copy lives in releases/linux/ for direct checkout; tarball builds also
-# embed the same script at the package root.
 
 set -euo pipefail
 

@@ -7,13 +7,18 @@ and attached to **[GitHub Releases](https://github.com/odin-loki/RetDec-Decompil
 
 See `VERSION` for paths and the active package version.
 
+| Platform | Artifact | Path |
+|----------|----------|------|
+| Windows | NSIS installer | `windows/retdec-5.0-windows-x64-setup.exe` |
+| Windows | Portable zip | `windows/retdec-5.0-windows-x64-portable.zip` |
+| Linux | Portable tarball | `linux/retdec-5.0-linux-x64.tar.gz` |
+| Linux | Install helper | `linux/install.sh` |
+| Linux | Uninstall helper | `linux/uninstall.sh` |
+
 ## CI and validation
 
-- **ci-smoke** (`.github/workflows/ci-smoke.yml`) runs on every push/PR to `main`:
-  fetch-large-files, Python CLI tests, pipeline profile validation, and semantic JSON
-  checks — no full RetDec compile.
-- **Release installers** (`.github/workflows/release-installers.yml`) build and publish
-  Windows and Linux packages on version tags or manual dispatch.
+- **ci-smoke**, **perf-nightly**, and **ctest-*** workflows are **manual-only** (Actions → Run workflow) so push status stays clean.
+- **release-installers** publishes Windows/Linux packages on version tags or manual dispatch.
 - Run **`scripts/doctor.ps1`** or **`bash scripts/doctor.sh`** locally before a full build.
 
 ## Windows
