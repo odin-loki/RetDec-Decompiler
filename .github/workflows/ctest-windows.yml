@@ -1,10 +1,8 @@
 name: ctest-windows
 
+# Disabled for automatic CI — full RetDec builds are too heavy for GitHub Actions
+# on every push. Run locally or trigger manually via Actions → ctest-windows.
 on:
-  push:
-    branches: [main, master]
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
 
 env:

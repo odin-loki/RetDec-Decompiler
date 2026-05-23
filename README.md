@@ -1,7 +1,5 @@
 # RetDec — Enhanced Retargetable Decompiler
 
-[![ctest-windows](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/ctest-windows.yml/badge.svg)](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/ctest-windows.yml)
-[![ctest-linux](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/ctest-linux.yml/badge.svg)](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/ctest-linux.yml)
 [![perf-nightly](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/perf-nightly.yml/badge.svg)](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/perf-nightly.yml)
 [![release-installers](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/release-installers.yml/badge.svg)](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/release-installers.yml)
 
