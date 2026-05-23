@@ -1,0 +1,4 @@
+﻿version=5.0
+windows_zip=releases/windows/retdec-5.0-windows-x64-portable.zip
+windows_setup=releases/windows/retdec-5.0-windows-x64-setup.exe
+updated=2026-05-23T18:42:31+10:00

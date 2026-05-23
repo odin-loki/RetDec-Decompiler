@@ -23,7 +23,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(diname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/retdec-env.sh
 source "${SCRIPT_DIR}/lib/retdec-env.sh"
 

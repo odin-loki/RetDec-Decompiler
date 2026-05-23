@@ -1,0 +1,6 @@
+# Large release binaries — Git LFS (GitHub 100 MiB per-file limit)
+releases/windows/*.exe filter=lfs diff=lfs merge=lfs -text
+releases/windows/*.zip filter=lfs diff=lfs merge=lfs -text
+releases/linux/*.tar.gz filter=lfs diff=lfs merge=lfs -text
+releases/linux/*.AppImage filter=lfs diff=lfs merge=lfs -text
+releases/linux/*.deb filter=lfs diff=lfs merge=lfs -text

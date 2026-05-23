@@ -71,7 +71,8 @@ InstallDirRegKey  HKLM "${PRODUCT_REG_KEY}" "InstallDir"
 BrandingText      "${PRODUCT_FULL_NAME} ${PRODUCT_VERSION}"
 
 ; ─── Version info block (PE metadata) ─────────────────────────────────────────
-VIProductVersion "${VERSION}.0"
+; VIProductVersion requires exactly four numeric components (X.X.X.X).
+VIProductVersion "${VERSION}.0.0"
 VIAddVersionKey "ProductName"     "${PRODUCT_FULL_NAME}"
 VIAddVersionKey "ProductVersion"  "${PRODUCT_VERSION}"
 VIAddVersionKey "CompanyName"     "${PRODUCT_PUBLISHER}"
@@ -103,9 +104,11 @@ Section "RetDec Core & CLI tools" SEC_CORE
   File /nonfatal "${BUNDLE_DIR}\bin\vcruntime140.dll"
   File /nonfatal "${BUNDLE_DIR}\bin\vcruntime140_1.dll"
 
-  ; Support data
+  ; Support data (NSIS does not allow /r with /nonfatal)
   SetOutPath "$INSTDIR\share\retdec"
-  File /r /nonfatal "${BUNDLE_DIR}\share\retdec\*.*"
+  ${If} ${FileExists} "${BUNDLE_DIR}\share\retdec\*.*"
+    File /r "${BUNDLE_DIR}\share\retdec\*.*"
+  ${EndIf}
 
   ; Registry: install dir + uninstall entry
   WriteRegStr   HKLM "${PRODUCT_REG_KEY}" "InstallDir"  "$INSTDIR"
@@ -149,7 +152,9 @@ Section "RetDec GUI (Qt6)" SEC_GUI
 
   ; Qt image format plugins
   SetOutPath "$INSTDIR\bin\imageformats"
-  File /r /nonfatal "${BUNDLE_DIR}\imageformats\*.dll"
+  ${If} ${FileExists} "${BUNDLE_DIR}\imageformats\*.dll"
+    File /r "${BUNDLE_DIR}\imageformats\*.dll"
+  ${EndIf}
 
   ; Start Menu shortcut
   CreateDirectory "$SMPROGRAMS\RetDec"

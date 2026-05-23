@@ -276,29 +276,70 @@ function New-PortableZip {
     Write-Host "==> Portable ZIP: $ZipPath"
 }
 
+function Resolve-Makensis {
+    $cmd = Get-Command makensis.exe -ErrorAction SilentlyContinue
+    if (-not $cmd) {
+        $cmd = Get-Command makensis -ErrorAction SilentlyContinue
+    }
+    if ($cmd) {
+        return $cmd.Source
+    }
+    $default = Join-Path ${env:ProgramFiles(x86)} "NSIS\makensis.exe"
+    if (Test-Path -LiteralPath $default) {
+        return $default
+    }
+    return $null
+}
+
+function Publish-ReleaseArtifacts {
+    param(
+        [string]$PackageVersion,
+        [string]$ZipPath,
+        [string]$SetupPath
+    )
+    $releasesRoot = Join-Path $RepoRoot "releases\windows"
+    New-Item -ItemType Directory -Force -Path $releasesRoot | Out-Null
+
+    $destZip = Join-Path $releasesRoot "retdec-$PackageVersion-windows-x64-portable.zip"
+    $destSetup = Join-Path $releasesRoot "retdec-$PackageVersion-windows-x64-setup.exe"
+
+    if (Test-Path -LiteralPath $ZipPath) {
+        Copy-Item -LiteralPath $ZipPath -Destination $destZip -Force
+        Write-Host "==> Published: $destZip"
+    }
+    if ($SetupPath -and (Test-Path -LiteralPath $SetupPath)) {
+        Copy-Item -LiteralPath $SetupPath -Destination $destSetup -Force
+        Write-Host "==> Published: $destSetup"
+    }
+
+    $versionFile = Join-Path $RepoRoot "releases\VERSION"
+    @(
+        "version=$PackageVersion"
+        "windows_zip=releases/windows/retdec-$PackageVersion-windows-x64-portable.zip"
+        "windows_setup=releases/windows/retdec-$PackageVersion-windows-x64-setup.exe"
+        "updated=$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssK')"
+    ) | Set-Content -LiteralPath $versionFile -Encoding UTF8
+}
+
 function Invoke-NsisInstaller {
     param(
         [string]$PackageVersion,
         [string]$StageRoot,
         [string]$OutputDir
     )
-    $makensis = Get-Command makensis.exe -ErrorAction SilentlyContinue
-    if (-not $makensis) {
-        $makensis = Get-Command makensis -ErrorAction SilentlyContinue
-    }
-    if (-not $makensis) {
+    $makensisPath = Resolve-Makensis
+    if (-not $makensisPath) {
         Write-Host ""
-        Write-Host "NSIS (makensis) not found on PATH - skipping setup.exe." -ForegroundColor Yellow
+        Write-Host "NSIS (makensis) not found - skipping setup.exe." -ForegroundColor Yellow
         $pfNSIS = Join-Path ${env:ProgramFiles(x86)} "NSIS"
         Write-Host ""
         Write-Host "To build the graphical installer:"
         Write-Host "  1. Install NSIS 3.x from https://nsis.sourceforge.io/Download"
         Write-Host "  2. Install the EnVar plug-in (required for PATH updates):"
-        Write-Host "       https://nsis.sourceforge.io/EnVar_plug-in"
+        Write-Host "       https://github.com/GsNSIS/EnVar/releases"
         Write-Host "     Copy EnVar.dll into:  $pfNSIS\Plugins\x86-unicode\"
-        Write-Host "     Copy EnVar.nsh into:  $pfNSIS\Include\"
         Write-Host "  3. Re-run this script, or compile manually:"
-        Write-Host "       makensis /DVERSION=$PackageVersion /DBUNDLE_DIR=`"$StageRoot`" packaging\nsis\retdec.nsi"
+        Write-Host "       & `"$pfNSIS\makensis.exe`" /DVERSION=$PackageVersion /DBUNDLE_DIR=`"$StageRoot`" packaging\nsis\retdec.nsi"
         Write-Host ""
         Write-Host "Portable ZIP is ready at: $OutputDir\retdec-$PackageVersion-windows-x64-portable.zip"
         return $null
@@ -312,8 +353,8 @@ function Invoke-NsisInstaller {
     New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
     Push-Location (Split-Path $nsi -Parent)
     try {
-        Write-Host "==> Running makensis ($($makensis.Source))"
-        & $makensis.Source "/DVERSION=$PackageVersion" "/DBUNDLE_DIR=$StageRoot" (Split-Path $nsi -Leaf)
+        Write-Host "==> Running makensis ($makensisPath)"
+        & $makensisPath "/DVERSION=$PackageVersion" "/DBUNDLE_DIR=$StageRoot" (Split-Path $nsi -Leaf)
         if ($LASTEXITCODE -ne 0) {
             throw "makensis failed with exit code $LASTEXITCODE"
         }
@@ -381,6 +422,8 @@ New-PortableZip -BundleRoot $BundleDir -ZipPath $zipPath
 
 $setupPath = Invoke-NsisInstaller -PackageVersion $PackageVersion -StageRoot $BundleDir -OutputDir $OutDir
 
+Publish-ReleaseArtifacts -PackageVersion $PackageVersion -ZipPath $zipPath -SetupPath $setupPath
+
 Write-Host ""
 Write-Host "=== Done ==="
 Write-Host "  bundle:  $BundleDir"
@@ -388,3 +431,4 @@ Write-Host "  zip:     $zipPath"
 if ($setupPath) {
     Write-Host "  setup:   $setupPath"
 }
+Write-Host "  releases: $(Join-Path $RepoRoot 'releases\windows')"

@@ -27,7 +27,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(diname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/retdec-env.sh
 source "${SCRIPT_DIR}/lib/retdec-env.sh"
 
@@ -73,19 +73,19 @@ _run() {
 _detect_version() {
 	if [[ -n "$VERSION" ]]; then
 		echo "$VERSION"
-		retun
+		return
 	fi
 	if [[ -f "${INSTALL_DIR}/share/retdec/BUILD-ID" ]]; then
 		local _tag
 		_tag=$(sed -n '1s/^RetDec \([^ ]*\).*/\1/p' "${INSTALL_DIR}/share/retdec/BUILD-ID" 2>/dev/null || true)
 		if [[ -n "$_tag" ]]; then
 			echo "$_tag"
-			retun
+			return
 		fi
 	fi
 	if command -v git >/dev/null 2>&1 && git -C "${RETDEC_ROOT}" describe --tags --always >/dev/null 2>&1; then
 		git -C "${RETDEC_ROOT}" describe --tags --always
-		retun
+		return
 	fi
 	echo "5.0"
 }
@@ -114,7 +114,7 @@ set -euo pipefail
 PREFIX=""
 ADD_PATH=0
 ASSUME_YES=0
-PACKAGE_ROOT="$(cd "$(diname "${BASH_SOURCE[0]}")" && pwd)"
+PACKAGE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
 	sed -n '2,12p' "$0"
@@ -146,12 +146,12 @@ if [[ -z "$PREFIX" ]]; then
 	fi
 fi
 
-PREFIX="$(cd "$(diname "$PREFIX")" && pwd)/$(basename "$PREFIX")"
+PREFIX="$(cd "$(dirname "$PREFIX")" && pwd)/$(basename "$PREFIX")"
 
 _copy_into() {
 	local _dest="$1"
 	local _use_sudo=0
-	if [[ ! -w "$(diname "$_dest")" ]]; then
+	if [[ ! -w "$(dirname "$_dest")" ]]; then
 		_use_sudo=1
 	fi
 	if [[ "$_use_sudo" -eq 1 ]]; then
@@ -217,7 +217,7 @@ INSTALL_EOF
 set -euo pipefail
 
 PREFIX=""
-SCRIPT_DIR="$(cd "$(diname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -244,7 +244,7 @@ if [[ -z "$PREFIX" ]]; then
 fi
 
 _remove_path_snippet() {
-	[[ -f "${HOME}/.bashrc" ]] || retun 0
+	[[ -f "${HOME}/.bashrc" ]] || return 0
 	if grep -Fq "${PREFIX}/bin" "${HOME}/.bashrc"; then
 		# shellcheck disable=SC2016
 		sed -i.bak "\|${PREFIX}/bin|d" "${HOME}/.bashrc" 2>/dev/null || \
@@ -435,3 +435,30 @@ echo "  staging:  ${STAGE_DIR}"
 echo "  tarball:  ${TARBALL}"
 [[ "${APPIMAGE:-0}" == "1" ]] && echo "  appimage: ${DIST_DIR}/retdec-${VERSION_SAFE}-x86_64.AppImage"
 command -v fpm >/dev/null 2>&1 && echo "  deb:      ${DIST_DIR}/retdec_${VERSION_SAFE}_amd64.deb (if fpm succeeded)"
+
+_publish_release_artifacts() {
+	local _ver="$1"
+	local _stage="$2"
+	local _tarball="$3"
+	local _rel="${RETDEC_ROOT}/releases/linux"
+	if [[ "$DRY_RUN" -eq 1 ]]; then
+		echo "[dry-run] publish release scripts → ${_rel}"
+		return 0
+	fi
+	mkdir -p "${_rel}"
+	cp "${_stage}/install.sh" "${_stage}/uninstall.sh" "${_rel}/"
+	chmod +x "${_rel}/install.sh" "${_rel}/uninstall.sh"
+	if [[ -f "${_tarball}" ]]; then
+		cp "${_tarball}" "${_rel}/"
+	fi
+	local _version_file="${RETDEC_ROOT}/releases/VERSION"
+	{
+		echo "version=${_ver}"
+		echo "linux_tarball=releases/linux/$(basename "${_tarball}")"
+		echo "linux_install=releases/linux/install.sh"
+		echo "updated=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
+	} > "${_version_file}"
+	echo "  releases: ${_rel}"
+}
+
+_publish_release_artifacts "${VERSION_SAFE}" "${STAGE_DIR}" "${TARBALL}"
