@@ -114,5 +114,22 @@ QString resolveSignatureFromLibraryCreatorScript() {
     return {};
 }
 
+QString resolveRetdecExportIntelScript() {
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList candidates = {
+        QDir(appDir).filePath(QStringLiteral("../share/retdec/scripts/retdec_export_intel.py")),
+        QDir(appDir).filePath(QStringLiteral("../../share/retdec/scripts/retdec_export_intel.py")),
+        QDir(appDir).filePath(QStringLiteral("../scripts/retdec_export_intel.py")),
+        QDir(appDir).filePath(QStringLiteral("../../scripts/retdec_export_intel.py")),
+        QDir(appDir).filePath(QStringLiteral("retdec_export_intel.py")),
+    };
+    for (const QString& c : candidates) {
+        const QString norm = QFileInfo(c).absoluteFilePath();
+        if (QFileInfo::exists(norm))
+            return norm;
+    }
+    return {};
+}
+
 } // namespace gui
 } // namespace retdec

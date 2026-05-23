@@ -135,6 +135,7 @@ private slots:
     void onSaveProjectAs();
     void onExportCMake();
     void onExportDecompileBundle();
+    void onExportThreatIntel();
     void onRecentFileTriggered();
     void onBatchDecompile();
 

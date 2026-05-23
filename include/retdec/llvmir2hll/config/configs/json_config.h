@@ -81,6 +81,8 @@ public:
 	virtual std::string getDeclarationStringForFunc(const std::string &func) const override;
 	virtual std::string getCommentForFunc(const std::string &func) const override;
 	virtual StringSet getDetectedCryptoPatternsForFunc(const std::string &func) const override;
+	virtual std::vector<retdec::common::SemanticDetection> getSemanticDetectionsForFunc(
+		const std::string &func) const override;
 	virtual std::string getWrappedFunc(const std::string &func) const override;
 	virtual std::string getDemangledNameOfFunc(const std::string &func) const override;
 	/// @}

@@ -56,6 +56,7 @@
 #include "retdec/utils/version.h"
 #include "retdec/utils/thread_pool.h"
 #include "managed_decompiler.h"
+#include "output_lang.h"
 
 #include <rapidjson/document.h>
 #include <rapidjson/error/en.h>
@@ -64,6 +65,13 @@ using namespace retdec::utils::io;
 using retdec::fileformat::ArArchiveFormatProbeSummary;
 using retdec::fileformat::Format;
 using retdec::fileformat::probeArArchiveMemberFormats;
+using retdec::decompiler::OutputLangId;
+using retdec::decompiler::applyNativeOutputLanguage;
+using retdec::decompiler::defaultOutputLangForManaged;
+using retdec::decompiler::isOutputLangCompatibleWithManaged;
+using retdec::decompiler::outputLangCliName;
+using retdec::decompiler::outputLangFileExtension;
+using retdec::decompiler::parseOutputLang;
 
 namespace
 {
@@ -218,25 +226,85 @@ static void applyLlvmPassesFromJsonFile(
 				+ std::to_string(doc.GetErrorOffset()) + ": "
 				+ rapidjson::GetParseError_En(doc.GetParseError()));
 	}
-	if (!doc.IsArray())
+	const rapidjson::Value* passArray = nullptr;
+	if (doc.IsArray())
+	{
+		passArray = &doc;
+	}
+	else if (doc.IsObject() && doc.HasMember("passes") && doc["passes"].IsArray())
+	{
+		passArray = &doc["passes"];
+	}
+	else
 	{
 		throw std::runtime_error(
-				"[--llvm-passes-json] root must be a JSON array of strings");
+				"[--llvm-passes-json] root must be a JSON array of pass names "
+				"or a pipeline document with a \"passes\" array "
+				"(see docs/pipeline_builder_schema.json)");
 	}
 
 	std::vector<std::string> passes;
-	passes.reserve(doc.Size());
-	for (rapidjson::SizeType i = 0; i < doc.Size(); ++i)
+	passes.reserve(passArray->Size());
+	for (rapidjson::SizeType i = 0; i < passArray->Size(); ++i)
 	{
-		const auto& el = doc[i];
+		const auto& el = (*passArray)[i];
 		if (!el.IsString())
 		{
 			throw std::runtime_error(
-					"[--llvm-passes-json] every element must be a string");
+					"[--llvm-passes-json] every pass name must be a string");
 		}
 		passes.emplace_back(el.GetString(), el.GetStringLength());
 	}
+	if (passes.empty())
+	{
+		throw std::runtime_error(
+				"[--llvm-passes-json] pass list must not be empty");
+	}
 	params.llvmPasses = std::move(passes);
+}
+
+static std::string resolveProfilePassesJsonPath(const std::string& profileName)
+{
+	if (profileName != "fast"
+			&& profileName != "balanced"
+			&& profileName != "quality")
+	{
+		throw std::runtime_error(
+				"[--profile] unknown profile: " + profileName
+				+ " (expected fast|balanced|quality)");
+	}
+
+	std::vector<fs::path> candidates;
+
+	if (const char* envDir = std::getenv("RETDEC_PROFILES_DIR"))
+	{
+		if (envDir[0] != '\0')
+		{
+			candidates.emplace_back(envDir);
+			candidates.back() /= profileName + ".json";
+		}
+	}
+
+	const auto binpath = retdec::utils::getThisBinaryDirectoryPath();
+	const fs::path shareRetdec = fs::canonical(binpath).parent_path()
+			/ "share" / "retdec";
+	candidates.push_back(shareRetdec / "profiles" / (profileName + ".json"));
+	if (profileName == "fast")
+	{
+		candidates.push_back(shareRetdec / "llvm_passes_fast.json");
+	}
+
+	for (const auto& candidate : candidates)
+	{
+		if (fs::is_regular_file(candidate))
+		{
+			return fs::absolute(candidate).string();
+		}
+	}
+
+	throw std::runtime_error(
+			"[--profile] could not find passes file for profile '"
+			+ profileName + "'");
 }
 
 const int EXIT_TIMEOUT = 137;
@@ -490,6 +558,11 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		}
 		config.parameters.setOutputFormat(of);
 	}
+	else if (isParam(i, "", "--output-lang"))
+	{
+		const auto lang = parseOutputLang(getParamOrDie(i));
+		config.parameters.setOutputLang(outputLangCliName(lang));
+	}
 	else if (isParam(i, "", "--max-memory"))
 	{
 		auto val = getParamOrDie(i);
@@ -608,6 +681,12 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 	else if (isParam(i, "", "--llvm-passes-json"))
 	{
 		auto file = checkFile(getParamOrDie(i), "[--llvm-passes-json]");
+		applyLlvmPassesFromJsonFile(params, file);
+	}
+	else if (isParam(i, "", "--profile"))
+	{
+		auto name = getParamOrDie(i);
+		const auto file = resolveProfilePassesJsonPath(name);
 		applyLlvmPassesFromJsonFile(params, file);
 	}
 	else if (isParam(i, "", "--disable-static-code-detection"))
@@ -788,10 +867,19 @@ void ProgramOptions::afterLoad()
 		params.setOutputConfigFile(in + ".config.json");
 	if (params.getOutputFile().empty())
 	{
+		OutputLangId lang = OutputLangId::C;
+		if (!params.getOutputLang().empty()) {
+			try {
+				lang = parseOutputLang(params.getOutputLang());
+			} catch (...) {
+				lang = OutputLangId::C;
+			}
+		}
+		const char* ext = outputLangFileExtension(lang);
 		if (params.getOutputFormat() == "plain")
-			params.setOutputFile(in + ".c");
+			params.setOutputFile(in + ext);
 		else
-			params.setOutputFile(in + ".c.json");
+			params.setOutputFile(in + ext + ".json");
 	}
 	if (params.getOutputUnpackedFile().empty())
 		params.setOutputUnpackedFile(in + "-unpacked");
@@ -860,11 +948,13 @@ General arguments:
 	[-o|--output FILE] Output file (default: INPUT_FILE.c if OUTPUT_FORMAT is plain, INPUT_FILE.c.json if OUTPUT_FORMAT is json|json-human).
 	[-s|--silent] Turns off informative output of the decompilation.
 	[-f|--output-format OUTPUT_FORMAT] Output format [plain|json|json-human] (default: plain).
+	[--output-lang LANG] Target source language for native binaries [c|cpp|python|csharp|java|wat] (default: c). Managed inputs ignore this and use format-specific emitters.
 	[-m|--mode MODE] Force the type of decompilation mode [bin|raw] (default: bin).
 	[-p|--pdb FILE] File with PDB debug information.
 	[-k|--keep-unreachable-funcs] Keep functions that are unreachable from the main function.
 	[--cleanup] Removes temporary files created during the decompilation.
 	[--config] Specify JSON decompilation configuration file. Relative paths in the file resolve against its directory; omitted resource path lists and llvmPasses fall back to the install default config.
+	[--profile PROFILE] Named LLVM pass pipeline [fast|balanced|quality]. fast = reduced passes; balanced/quality = full default pipeline. See share/retdec/profiles/README.md.
 	[--llvm-passes-json FILE] JSON array of LLVM pass names; overrides decompiler-config llvmPasses (CLI/GUI pipeline).
 	[--disable-static-code-detection] Prevents detection of statically linked code.
 Selective decompilation arguments:
@@ -1143,19 +1233,77 @@ int decompile(retdec::config::Config& config, ProgramOptions& po)
 		}
 	}
 
-	// Managed language detection (Java/DEX/Python/Lua/WASM).
+	// Managed language detection (Java/JAR/DEX/APK/Python/Lua/WASM/.NET CLI).
 	// These formats bypass the LLVM pipeline entirely.
 	//
 	{
-		auto managedFmt = detectManagedFormat(config.parameters.getInputFile());
+		std::vector<std::uint8_t> managedProbeBytes;
+		try
+		{
+			std::ifstream mf(config.parameters.getInputFile(), std::ios::binary | std::ios::ate);
+			if (mf)
+			{
+				auto mfSize = static_cast<std::size_t>(mf.tellg());
+				mf.seekg(0);
+				managedProbeBytes.resize(mfSize);
+				mf.read(reinterpret_cast<char*>(managedProbeBytes.data()),
+						static_cast<std::streamsize>(mfSize));
+			}
+		}
+		catch (...)
+		{
+		}
+
+		auto managedFmt = detectManagedFormatFromBytes(
+				managedProbeBytes.data(),
+				managedProbeBytes.size());
+
 		if (managedFmt != ManagedFormat::Unknown)
 		{
 			Log::phase("Managed language decompilation");
+			{
+				std::ostringstream routeLog;
+				logManagedFormatRoute(
+						managedFmt,
+						config.parameters.getInputFile(),
+						routeLog);
+				Log::info() << routeLog.str() << std::endl;
+			}
+			OutputLangId reqLang = OutputLangId::C;
+			if (!config.parameters.getOutputLang().empty()) {
+				try {
+					reqLang = parseOutputLang(config.parameters.getOutputLang());
+				} catch (const std::exception& e) {
+					Log::error() << e.what() << std::endl;
+					return EXIT_FAILURE;
+				}
+			} else {
+				reqLang = defaultOutputLangForManaged(managedFmt);
+			}
+			if (!isOutputLangCompatibleWithManaged(reqLang, managedFmt)) {
+				Log::info() << "[output-lang] Requested "
+						<< outputLangCliName(reqLang)
+						<< " does not match managed emitter for "
+						<< managedFormatName(managedFmt)
+						<< "; using "
+						<< outputLangCliName(defaultOutputLangForManaged(managedFmt))
+						<< "." << std::endl;
+			}
 			int rc = decompileManaged(
 					managedFmt,
 					config.parameters.getInputFile(),
 					config.parameters.getOutputFile());
 			return rc == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+		}
+
+		{
+			std::ostringstream unknownLog;
+			logUnknownManagedFormat(
+					managedProbeBytes.data(),
+					managedProbeBytes.size(),
+					config.parameters.getInputFile(),
+					unknownLog);
+			Log::info() << unknownLog.str() << std::endl;
 		}
 	}
 
@@ -1201,6 +1349,18 @@ int decompile(retdec::config::Config& config, ProgramOptions& po)
 
 	// Decompilation.
 	//
+	{
+		OutputLangId lang = OutputLangId::C;
+		if (!config.parameters.getOutputLang().empty()) {
+			try {
+				lang = parseOutputLang(config.parameters.getOutputLang());
+			} catch (const std::exception& e) {
+				Log::error() << e.what() << std::endl;
+				return EXIT_FAILURE;
+			}
+		}
+		applyNativeOutputLanguage(lang);
+	}
 	return retdec::decompile(config);
 }
 

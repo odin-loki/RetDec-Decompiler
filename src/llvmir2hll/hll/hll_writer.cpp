@@ -561,6 +561,7 @@ bool HLLWriter::emitFunction(ShPtr<Function> func) {
 	emitClassInfoIfAvailable(func);
 	emitDemangledNameIfAvailable(func);
 	emitDetectedCryptoPatternsForFuncIfAvailable(func);
+	emitSemanticDetectionsForFuncIfAvailable(func);
 	// The comment HAS to be put as the LAST info, right before the function's
 	// signature. IDA plugin relies on that.
 	emitCommentIfAvailable(func);
@@ -980,6 +981,18 @@ bool HLLWriter::emitDetectedCryptoPatternsForFuncIfAvailable(ShPtr<Function> fun
 	out->commentLine("Used cryptographic patterns:");
 	for (auto &pattern : patterns) {
 		out->commentLine(" - " + pattern);
+	}
+	return true;
+}
+
+bool HLLWriter::emitSemanticDetectionsForFuncIfAvailable(ShPtr<Function> func) {
+	auto detections = module->getSemanticDetectionsForFunc(func);
+	if (detections.empty()) {
+		return false;
+	}
+
+	for (const auto &det : detections) {
+		out->commentLine(det.commentLine());
 	}
 	return true;
 }

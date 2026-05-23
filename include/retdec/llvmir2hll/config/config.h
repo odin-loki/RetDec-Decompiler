@@ -11,7 +11,9 @@
 #include <exception>
 #include <set>
 #include <string>
+#include <vector>
 
+#include "retdec/common/semantic_detection.h"
 #include "retdec/llvmir2hll/support/types.h"
 #include "retdec/utils/non_copyable.h"
 
@@ -204,6 +206,12 @@ public:
 	* patterns, the empty set is returned.
 	*/
 	virtual StringSet getDetectedCryptoPatternsForFunc(const std::string &func) const = 0;
+
+	/**
+	* @brief Returns semantic recovery detections attached to the given function.
+	*/
+	virtual std::vector<retdec::common::SemanticDetection> getSemanticDetectionsForFunc(
+		const std::string &func) const = 0;
 
 	/**
 	* @brief Returns the name of a function that @a func wraps.

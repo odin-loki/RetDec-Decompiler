@@ -29,6 +29,12 @@ def count_functions_c_like(code: str) -> int:
     return len(_FUNC_RE.findall(cleaned))
 
 
+def function_names(code: str) -> Set[str]:
+    """Extract function names from decompiled C-like source."""
+    cleaned = strip_comments(code)
+    return {m.group(1).lower() for m in _FUNC_RE.finditer(cleaned)}
+
+
 def identifiers(code: str) -> Set[str]:
     """Extract identifier set for lexical similarity metrics."""
     cleaned = strip_comments(code)

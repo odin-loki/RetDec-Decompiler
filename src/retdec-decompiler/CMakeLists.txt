@@ -2,9 +2,10 @@
 add_executable(retdec-decompiler
 	retdec-decompiler.cpp
 	managed_decompiler.cpp
+	output_lang.cpp
 )
 
-target_compile_features(retdec-decompiler PUBLIC cxx_std_17)
+target_compile_features(retdec-decompiler PUBLIC cxx_std_20)
 
 target_include_directories(retdec-decompiler
 	PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
@@ -16,12 +17,15 @@ target_link_libraries(retdec-decompiler
 	retdec::macho-extractor
 	retdec::unpackertool
 	retdec::retdec
+	retdec-concurrency-detect
 	retdec::deps::rapidjson
 	Threads::Threads
 	# Managed-language pipelines
 	retdec-jvm-parser
 	retdec-jvm-reconstruct
 	retdec-java-emitter
+	retdec-cli-parser
+	retdec-csharp-emitter
 	retdec-dex-parser
 	retdec-pyc-parser
 	retdec-py-reconstruct
@@ -80,4 +84,10 @@ install(TARGETS retdec-decompiler
 install(
 	FILES       "decompiler-config.json"
 	DESTINATION ${RETDEC_INSTALL_DATA_DIR}
+)
+
+install(
+	DIRECTORY   "profiles/"
+	DESTINATION ${RETDEC_INSTALL_DATA_DIR}/profiles
+	FILES_MATCHING PATTERN "*.json"
 )

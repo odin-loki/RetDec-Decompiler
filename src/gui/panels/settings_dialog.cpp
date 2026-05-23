@@ -558,6 +558,29 @@ QWidget* SettingsDialog::buildDecompilerTab() {
     connect(decompileOutputDirBtn_, &QToolButton::clicked,
             this, &SettingsDialog::onBrowseDecompileOutputDir);
 
+    l->addWidget(makeSeparator("Output language"));
+
+    {
+        auto* row = new QWidget;
+        auto* rl  = new QHBoxLayout(row);
+        rl->setContentsMargins(0, 0, 0, 0);
+        auto* lbl = new QLabel("Preferred output language:", row);
+        lbl->setMinimumWidth(180);
+        outputLangCombo_ = new QComboBox(row);
+        outputLangCombo_->addItem(QStringLiteral("C"), QStringLiteral("c"));
+        outputLangCombo_->addItem(QStringLiteral("C++"), QStringLiteral("cpp"));
+        outputLangCombo_->addItem(QStringLiteral("Python"), QStringLiteral("python"));
+        outputLangCombo_->addItem(QStringLiteral("C#"), QStringLiteral("csharp"));
+        outputLangCombo_->addItem(QStringLiteral("Java"), QStringLiteral("java"));
+        outputLangCombo_->addItem(QStringLiteral("WAT"), QStringLiteral("wat"));
+        rl->addWidget(lbl);
+        rl->addWidget(outputLangCombo_, 1);
+        l->addWidget(row);
+        l->addWidget(new QLabel(
+            "<span style='color:#888;'>Passed as <code>--output-lang</code> for native "
+            "binaries. Managed inputs (.pyc, .class, …) use format-specific emitters.</span>"));
+    }
+
     l->addWidget(makeSeparator("Console"));
 
     liveConsoleTailCheck_ = new QCheckBox(
@@ -762,6 +785,10 @@ void SettingsDialog::populateFromSettings() {
         decompileOutputDirEdit_->setText(s.decompiler.decompileOutputDir);
     if (liveConsoleTailCheck_)
         liveConsoleTailCheck_->setChecked(s.decompiler.liveConsoleTail);
+    if (outputLangCombo_) {
+        const int idx = outputLangCombo_->findData(s.decompiler.outputLang);
+        outputLangCombo_->setCurrentIndex(idx >= 0 ? idx : 0);
+    }
 }
 
 // ─── applyToSettings ─────────────────────────────────────────────────────────
@@ -849,6 +876,8 @@ void SettingsDialog::applyToSettings() {
         s.decompiler.decompileOutputDir = decompileOutputDirEdit_->text().trimmed();
     if (liveConsoleTailCheck_)
         s.decompiler.liveConsoleTail = liveConsoleTailCheck_->isChecked();
+    if (outputLangCombo_)
+        s.decompiler.outputLang = outputLangCombo_->currentData().toString();
 
     s.notifySettingsChanged();
 }

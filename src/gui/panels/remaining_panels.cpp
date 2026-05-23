@@ -31,6 +31,7 @@ namespace {
 QString severityLabel(DiagnosticEntry::Severity severity)
 {
     switch (severity) {
+    case DiagnosticEntry::Severity::Muted:   return QStringLiteral("Muted");
     case DiagnosticEntry::Severity::Info:    return QStringLiteral("Info");
     case DiagnosticEntry::Severity::Warning: return QStringLiteral("Warning");
     case DiagnosticEntry::Severity::Error:   return QStringLiteral("Error");
@@ -41,6 +42,7 @@ QString severityLabel(DiagnosticEntry::Severity severity)
 QString severityIcon(DiagnosticEntry::Severity severity)
 {
     switch (severity) {
+    case DiagnosticEntry::Severity::Muted:   return QStringLiteral("\u2022");  // •
     case DiagnosticEntry::Severity::Info:    return QStringLiteral("\u2139");  // ℹ
     case DiagnosticEntry::Severity::Warning: return QStringLiteral("\u26A0");  // ⚠
     case DiagnosticEntry::Severity::Error:   return QStringLiteral("\u2716"); // ✖
@@ -73,6 +75,7 @@ QVariant DiagnosticsModel::data(const QModelIndex& index, int role) const {
         return severityIcon(e.severity);
     if (role == Qt::ForegroundRole) {
         switch (e.severity) {
+        case DiagnosticEntry::Severity::Muted:   return QColor("#6c7086");
         case DiagnosticEntry::Severity::Info:    return QColor("#a6e3a1");
         case DiagnosticEntry::Severity::Warning: return QColor("#f9e2af");
         case DiagnosticEntry::Severity::Error:   return QColor("#f38ba8");

@@ -567,6 +567,7 @@ void RetDecMainWindow::createMenus() {
     auto* saveDecompAct  = fileMenu_->addAction(QStringLiteral("Save Decompiled…"));
     auto* exportCmakeAct = fileMenu_->addAction(QStringLiteral("Export CMakeLists.txt…"));
     auto* exportBundleAct = fileMenu_->addAction(QStringLiteral("Export Decompile Bundle…"));
+    auto* exportIntelAct = fileMenu_->addAction(QStringLiteral("Export Threat Intel…"));
     auto* batchDecompileAct = fileMenu_->addAction(QStringLiteral("Batch Decompile…"));
     fileMenu_->addSeparator();
     auto* quitAct = fileMenu_->addAction(QStringLiteral("&Quit"));
@@ -584,6 +585,7 @@ void RetDecMainWindow::createMenus() {
     connect(saveDecompAct,  &QAction::triggered, this, &RetDecMainWindow::onSaveDecompiled);
     connect(exportCmakeAct, &QAction::triggered, this, &RetDecMainWindow::onExportCMake);
     connect(exportBundleAct, &QAction::triggered, this, &RetDecMainWindow::onExportDecompileBundle);
+    connect(exportIntelAct, &QAction::triggered, this, &RetDecMainWindow::onExportThreatIntel);
     connect(batchDecompileAct, &QAction::triggered, this, &RetDecMainWindow::onBatchDecompile);
     connect(quitAct,        &QAction::triggered, qApp, &QApplication::quit);
 
@@ -981,6 +983,9 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath,
             functionList_->setFunctions(loadedArtifacts_->functions);
         setStatusFunctionCount(static_cast<int>(loadedArtifacts_->functions.size()));
 
+        populateSemanticDetectionsFromConfig(
+                diagnostics_, loadedArtifacts_->config);
+
         if (stringsBrowser_)
             stringsBrowser_->setStrings(loadedArtifacts_->strings);
         if (callGraph_ && !loadedArtifacts_->callGraphNodes.empty()
@@ -995,6 +1000,17 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath,
         diagnostics_->addMessage(panels::DiagnosticEntry::Severity::Info,
                 QStringLiteral("retdec-decompiler"),
                 QStringLiteral("Output: %1 (%2 KiB)").arg(absC).arg(cSize / 1024));
+
+        for (const auto& det : loadedArtifacts_->semanticDetections) {
+            QString msg = QStringLiteral("%1: %2 detected (confidence %3)")
+                                  .arg(det.function, det.label)
+                                  .arg(det.confidence, 0, 'f', 2);
+            if (!det.detail.isEmpty())
+                msg += QStringLiteral(" — %1").arg(det.detail);
+            diagnostics_->addMessage(panels::DiagnosticEntry::Severity::Info,
+                    QStringLiteral("semantic-recovery"), msg);
+        }
+
         statusBar()->showMessage(
                 QStringLiteral("Loaded decompile artifacts (%1 KiB C, %2 functions)")
                         .arg(cSize / 1024)
@@ -1411,6 +1427,93 @@ void RetDecMainWindow::onExportDecompileBundle() {
         return;
     }
     statusBar()->showMessage(QStringLiteral("Exported bundle %1").arg(zipPath), 5000);
+}
+
+void RetDecMainWindow::onExportThreatIntel() {
+    const bool hasLoaded = loadedArtifacts_.has_value();
+    const QString cGuess = project_ ? guessDecompiledCPath(project_.get()) : QString{};
+    const bool hasOnDisk = !cGuess.isEmpty() && QFileInfo::exists(cGuess);
+    if (!hasLoaded && !hasOnDisk) {
+        QMessageBox::information(
+                this, QStringLiteral("Export Threat Intel"),
+                QStringLiteral("No decompiled artifacts found.\n\n"
+                               "Run Analysis → Run Full Analysis first."));
+        return;
+    }
+
+    const QString script = resolveRetdecExportIntelScript();
+    const QString python = resolvePythonInterpreter();
+    if (script.isEmpty() || python.isEmpty()) {
+        QMessageBox::warning(
+                this, QStringLiteral("Export Threat Intel"),
+                QStringLiteral("Could not locate retdec_export_intel.py or a Python interpreter.\n"
+                               "Use a full RetDec install with scripts/ on disk."));
+        return;
+    }
+
+    const QString cPath = (hasLoaded && !loadedArtifacts_->cPath.isEmpty())
+                                  ? loadedArtifacts_->cPath
+                                  : cGuess;
+    const QFileInfo cFi(cPath);
+    const auto paths = pathsFromOutputC(cPath);
+    const QString configPath = paths.configPath;
+    if (!QFileInfo::exists(configPath)) {
+        QMessageBox::information(
+                this, QStringLiteral("Export Threat Intel"),
+                QStringLiteral("Missing decompiler config sidecar:\n%1").arg(configPath));
+        return;
+    }
+
+    const QString defaultJson = cFi.absolutePath() + QLatin1Char('/')
+            + cFi.completeBaseName() + QStringLiteral("-intel.json");
+    const QString outPath = QFileDialog::getSaveFileName(
+            this, QStringLiteral("Export Threat Intel"), defaultJson,
+            QStringLiteral("JSON (*.json);;All files (*)"));
+    if (outPath.isEmpty())
+        return;
+
+    QStringList args;
+    args << script
+         << QStringLiteral("--c") << cPath
+         << QStringLiteral("--config") << configPath
+         << QStringLiteral("-o") << outPath;
+    if (project_ && !project_->binaryPath().isEmpty())
+        args << QStringLiteral("--binary") << project_->binaryPath();
+
+    std::unique_ptr<QTemporaryFile> fiTemp;
+    const QJsonObject fiJson = inspect_->fileinfoJson();
+    if (!fiJson.isEmpty()) {
+        fiTemp = std::make_unique<QTemporaryFile>(
+                QDir::temp().filePath(QStringLiteral("retdec-fileinfo-XXXXXX.json")));
+        fiTemp->setAutoRemove(true);
+        if (fiTemp->open()) {
+            fiTemp->write(QJsonDocument(fiJson).toJson(QJsonDocument::Compact));
+            fiTemp->close();
+            args << QStringLiteral("--fileinfo") << fiTemp->fileName();
+        }
+    }
+
+    QProcess proc;
+    proc.setProgram(python);
+    proc.setArguments(args);
+    proc.setWorkingDirectory(QFileInfo(script).absolutePath());
+    proc.setProcessChannelMode(QProcess::MergedChannels);
+    streamProcessToConsole(&proc, QStringLiteral("retdec_export_intel"));
+    proc.start();
+    if (!proc.waitForStarted(5000)) {
+        QMessageBox::warning(this, QStringLiteral("Export Threat Intel"),
+                             proc.errorString());
+        return;
+    }
+    proc.waitForFinished(-1);
+    if (proc.exitCode() != 0) {
+        QMessageBox::warning(
+                this, QStringLiteral("Export Threat Intel"),
+                QStringLiteral("Export failed (exit %1).\nSee Console for details.")
+                        .arg(proc.exitCode()));
+        return;
+    }
+    statusBar()->showMessage(QStringLiteral("Exported threat intel %1").arg(outPath), 5000);
 }
 
 void RetDecMainWindow::onRecentFileTriggered() {

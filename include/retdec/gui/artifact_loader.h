@@ -52,6 +52,15 @@ struct DecompileArtifacts {
     std::unordered_map<uint64_t, std::vector<panels::CFGEdgeData>> cfgEdges;
     /// RTTI class hierarchy for TypeHierarchyPanel.
     QList<panels::ClassInfo> typeHierarchyClasses;
+    /// Flattened semantic recovery detections from config functions.
+    struct SemanticDetectionEntry {
+        QString function;
+        QString kind;
+        QString label;
+        double confidence = 0.0;
+        QString detail;
+    };
+    std::vector<SemanticDetectionEntry> semanticDetections;
 };
 
 bool loadDecompileArtifactsFromPaths(const DecompileArtifactPaths& paths,

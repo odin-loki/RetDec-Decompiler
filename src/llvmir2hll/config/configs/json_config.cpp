@@ -281,6 +281,12 @@ StringSet JSONConfig::getDetectedCryptoPatternsForFunc(const std::string &func) 
 	return f.usedCryptoConstants;
 }
 
+std::vector<retdec::common::SemanticDetection> JSONConfig::getSemanticDetectionsForFunc(
+		const std::string &func) const {
+	const auto &f = impl->getConfigFunctionByNameOrEmptyFunction(func);
+	return f.semanticDetections;
+}
+
 std::string JSONConfig::getWrappedFunc(const std::string &func) const {
 	const auto &f = impl->getConfigFunctionByNameOrEmptyFunction(func);
 	return f.getWrappedFunctionName();

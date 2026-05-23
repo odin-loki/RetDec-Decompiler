@@ -40,6 +40,7 @@ const std::string JSON_outputLlFile             = "outputLlFile";
 const std::string JSON_outputConfigFile         = "outputConfigFile";
 const std::string JSON_outputUnpackedFile       = "outputUnpackedFile";
 const std::string JSON_outputFormat             = "outputFormat";
+const std::string JSON_outputLang               = "outputLang";
 const std::string JSON_logFile                  = "logFile";
 const std::string JSON_errFile                  = "errFile";
 
@@ -209,6 +210,11 @@ void Parameters::setOutputUnpackedFile(const std::string& file)
 void Parameters::setOutputFormat(const std::string& format)
 {
 	_outputFormat = format;
+}
+
+void Parameters::setOutputLang(const std::string& lang)
+{
+	_outputLang = lang;
 }
 
 void Parameters::setLogFile(const std::string &file)
@@ -385,6 +391,11 @@ const std::string& Parameters::getOutputFormat() const
 	return _outputFormat;
 }
 
+const std::string& Parameters::getOutputLang() const
+{
+	return _outputLang;
+}
+
 const std::string& Parameters::getLogFile() const
 {
 	return _logFile;
@@ -496,6 +507,7 @@ void Parameters::serialize(Writer& writer) const
 	serdes::serializeString(writer, JSON_outputConfigFile, getOutputConfigFile());
 	serdes::serializeString(writer, JSON_outputUnpackedFile, getOutputUnpackedFile());
 	serdes::serializeString(writer, JSON_outputFormat, getOutputFormat());
+	serdes::serializeString(writer, JSON_outputLang, getOutputLang());
 	serdes::serializeString(writer, JSON_logFile, getLogFile());
 	serdes::serializeString(writer, JSON_errFile, getErrFile());
 
@@ -564,6 +576,7 @@ void Parameters::deserialize(const rapidjson::Value& val)
 	setOutputConfigFile( serdes::deserializeString(val, JSON_outputConfigFile) );
 	setOutputUnpackedFile( serdes::deserializeString(val, JSON_outputUnpackedFile) );
 	setOutputFormat( serdes::deserializeString(val, JSON_outputFormat) );
+	setOutputLang( serdes::deserializeString(val, JSON_outputLang) );
 	setLogFile( serdes::deserializeString(val, JSON_logFile) );
 	setErrFile( serdes::deserializeString(val, JSON_errFile) );
 

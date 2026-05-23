@@ -17,6 +17,42 @@ endif()
 
 set(RETDEC_DECOMPILER "$<TARGET_FILE:retdec-decompiler>")
 
+# ── Format router probe + unit tests ─────────────────────────────────────────
+set(_MANAGED_DECOMPILER_SRC "${CMAKE_SOURCE_DIR}/src/retdec-decompiler/managed_decompiler.cpp")
+
+add_executable(format_router_probe
+    format_router_probe.cpp
+    "${_MANAGED_DECOMPILER_SRC}"
+)
+target_include_directories(format_router_probe
+    PRIVATE "${CMAKE_SOURCE_DIR}/src/retdec-decompiler"
+)
+target_compile_features(format_router_probe PUBLIC cxx_std_17)
+target_link_libraries(format_router_probe
+    retdec-jvm-parser
+    retdec-java-emitter
+    retdec-cli-parser
+    retdec-csharp-emitter
+    retdec-dex-parser
+    retdec-pyc-parser
+    retdec-py-reconstruct
+    retdec-py-emitter
+    retdec-lua-parser
+    retdec-wasm-parser
+)
+
+add_test(
+    NAME format_router_unit
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/format_router_test.py"
+        "$<TARGET_FILE:format_router_probe>"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+set_tests_properties(format_router_unit PROPERTIES
+    TIMEOUT 60
+    LABELS "decompiler;unit;managed"
+)
+
 # ── Build fib.c test binary at configure/build time ───────────────────────────
 set(_FIB_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../test_binaries/fib.c")
 set(_FIB_BIN "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke${CMAKE_EXECUTABLE_SUFFIX}")
@@ -54,6 +90,69 @@ add_test(
 set_tests_properties(decompiler_smoke_cli_fib PROPERTIES
     TIMEOUT 180
     LABELS "decompiler;smoke;integration"
+)
+
+add_test(
+    NAME decompiler_smoke_managed_formats
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/managed_format_smoke_test.py"
+        "${RETDEC_DECOMPILER}"
+        "${CMAKE_SOURCE_DIR}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+set_tests_properties(decompiler_smoke_managed_formats PROPERTIES
+    TIMEOUT 300
+    LABELS "decompiler;smoke;managed;integration"
+)
+
+# ── Golden corpus regression ──────────────────────────────────────────────────
+add_test(
+    NAME decompiler_corpus_regression_fib
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/corpus/corpus_regression_test.py"
+        "${RETDEC_DECOMPILER}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/corpus/manifest.yaml"
+        "${_FIB_BIN}"
+        "${CMAKE_CURRENT_BINARY_DIR}/corpus_out"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+set_tests_properties(decompiler_corpus_regression_fib PROPERTIES
+    TIMEOUT 240
+    LABELS "decompiler;corpus;integration"
+)
+
+add_test(
+    NAME semantic_detection_json_schema
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/semantic_detection_json_test.py"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+set_tests_properties(semantic_detection_json_schema PROPERTIES
+    TIMEOUT 30
+    LABELS "decompiler;unit"
+)
+
+add_test(
+    NAME decompiler_intel_export_mock
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/intel_export_test.py"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+set_tests_properties(decompiler_intel_export_mock PROPERTIES
+    TIMEOUT 60
+    LABELS "decompiler;unit;intel"
+)
+
+# ── Pipeline profile JSON schema ──────────────────────────────────────────────
+add_test(
+    NAME decompiler_validate_pipeline_profiles
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/validate_pipeline_test.py"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+set_tests_properties(decompiler_validate_pipeline_profiles PROPERTIES
+    TIMEOUT 60
+    LABELS "decompiler;unit;schema"
 )
 
 # ── Install smoke (post cmake --install; Windows only) ────────────────────────

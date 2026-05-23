@@ -41,6 +41,8 @@ public:
 	MOCK_CONST_METHOD1(getDeclarationStringForFunc, std::string (const std::string &));
 	MOCK_CONST_METHOD1(getCommentForFunc, std::string (const std::string &));
 	MOCK_CONST_METHOD1(getDetectedCryptoPatternsForFunc, StringSet (const std::string &));
+	MOCK_CONST_METHOD1(getSemanticDetectionsForFunc,
+		std::vector<retdec::common::SemanticDetection> (const std::string &));
 	MOCK_CONST_METHOD1(getWrappedFunc, std::string (const std::string &));
 	MOCK_CONST_METHOD1(getDemangledNameOfFunc, std::string (const std::string &));
 	MOCK_CONST_METHOD0(getClassNames, StringSet ());

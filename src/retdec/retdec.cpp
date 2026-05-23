@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <future>
 #include <vector>
 
 #include <llvm/ADT/Triple.h>
@@ -59,6 +60,8 @@
 #include "retdec/utils/thread_pool.h"
 #include "retdec/utils/gpu_scanner.h"
 #include "retdec/retdec/retdec.h"
+#include "retdec/retdec/function_analysis_cache.h"
+#include "retdec/retdec/semantic_recovery_export.h"
 #include "retdec/utils/conversion.h"
 #include "retdec/utils/memory.h"
 #include "retdec/utils/io/log.h"
@@ -710,42 +713,117 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 				}
 			}
 
-			// --- 4. Concurrency / threading detection ---
+			// --- 4–7. Per-function detectors (container, algo, sort, concurrency) ---
+			// Parallel when function count > 4 and RETDEC_PARALLEL_ANALYSIS allows it.
+			// Incremental cache sidecar skips unchanged functions on re-runs.
 			{
+				const std::string cachePath =
+				    analysis::functionAnalysisCachePath(
+				        config.parameters.getOutputFile());
+				analysis::FunctionAnalysisCache fnCache =
+				    analysis::FunctionAnalysisCache::loadFromFile(cachePath);
+
+				struct FnWorkItem {
+					const ssa::SSAFunction* fn = nullptr;
+					std::string bodyHash;
+					analysis::FunctionDetections detections;
+					bool cacheHit = false;
+				};
+
+				std::vector<FnWorkItem> work;
+				work.reserve(fnPtrs.size());
+				for (const auto* fn : fnPtrs) {
+					if (!fn) continue;
+					FnWorkItem item;
+					item.fn = fn;
+					item.bodyHash = analysis::computeFunctionBodyHash(*module, *fn);
+					if (const auto* cached =
+					        fnCache.lookup(fn->name(), item.bodyHash)) {
+						item.detections = cached->detections;
+						item.cacheHit = true;
+					}
+					work.push_back(std::move(item));
+				}
+
+				const bool useParallel =
+				    analysis::parallelAnalysisEnabled()
+				    && work.size() >= analysis::kParallelAnalysisMinFunctions;
+
+				if (useParallel) {
+					retdec::utils::ThreadPool pool;
+					std::vector<std::future<void>> futures;
+					futures.reserve(work.size());
+					for (std::size_t i = 0; i < work.size(); ++i) {
+						if (work[i].cacheHit) continue;
+						futures.push_back(pool.submit([i, &work]() {
+							work[i].detections =
+							    analysis::analyseFunctionDetections(*work[i].fn);
+						}));
+					}
+					for (auto& f : futures) f.get();
+				} else {
+					for (auto& item : work) {
+						if (item.cacheHit) continue;
+						item.detections =
+						    analysis::analyseFunctionDetections(*item.fn);
+					}
+				}
+
+				container_detect::ContainerDetector::DetectionMap cmap;
+				std::vector<std::pair<std::string, algo_recover::AlgorithmResult>> amap;
+				sort_detect::SortDetector::DetectionMap dm;
+
+				std::size_t cacheHits = 0;
+				for (auto& item : work) {
+					if (item.cacheHit) ++cacheHits;
+
+					fnCache.put(analysis::FunctionAnalysisCache::Entry{
+					    item.fn->name(),
+					    item.bodyHash,
+					    item.detections});
+
+					if (item.detections.container)
+						cmap[item.fn->name()] = *item.detections.container;
+					if (item.detections.algo)
+						amap.emplace_back(item.fn->name(), *item.detections.algo);
+					if (item.detections.sort)
+						dm[item.fn->name()] = *item.detections.sort;
+				}
+
 				concurrency_detect::ConcurrencyDetector cd;
-				auto cm = cd.analyseModule(*ssaMod);
+				concurrency_detect::ConcurrencyModel cm = cd.analyseModule(*ssaMod);
+
+				if (!cachePath.empty())
+					fnCache.saveToFile(cachePath);
+
+				if (cacheHits > 0)
+					Log::info() << "[analysis] function cache: "
+					            << cacheHits << " hit(s), "
+					            << (work.size() - cacheHits) << " miss(es)"
+					            << (useParallel ? " (parallel)" : "")
+					            << std::endl;
+
 				if (cm.isMT)
 					Log::info() << "[analysis] concurrency detected: "
 					            << cm.threads.size() << " thread(s), "
 					            << cm.locks.size() << " lock(s), "
 					            << cm.atomics.size() << " atomic(s)" << std::endl;
-			}
-
-			// --- 5. Container detection (STL containers, linked lists, trees) ---
-			{
-				container_detect::ContainerDetector cdet;
-				auto cmap = cdet.analyseModule(fnPtrs);
 				if (!cmap.empty())
 					Log::info() << "[analysis] containers detected in "
 					            << cmap.size() << " function(s)" << std::endl;
-			}
-
-			// --- 6. Algorithm detection (<algorithm> patterns) ---
-			{
-				algo_recover::AlgorithmDetector adet;
-				auto amap = adet.detectModule(fnPtrs);
 				if (!amap.empty())
 					Log::info() << "[analysis] <algorithm> patterns detected in "
 					            << amap.size() << " function(s)" << std::endl;
-			}
-
-			// --- 7. Sorting algorithm detection ---
-			{
-				sort_detect::SortDetector sd;
-				auto dm = sd.analyseModule(fnPtrs);
 				if (!dm.empty())
 					Log::info() << "[analysis] sorting algorithms detected in "
 					            << dm.size() << " function(s)" << std::endl;
+
+				const auto semanticMap =
+				    analysis::buildSemanticDetectionMap(cmap, amap, dm, cm);
+				analysis::exportSemanticRecovery(config, semanticMap, outString);
+				if (!semanticMap.empty())
+					Log::info() << "[analysis] semantic detections exported for "
+					            << semanticMap.size() << " function(s)" << std::endl;
 			}
 
 			// --- 8. Serial / wire-protocol detection (protobuf, flatbuffers, …) ---

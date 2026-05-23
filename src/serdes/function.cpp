@@ -47,7 +47,13 @@ const std::string JSON_isExported    = "isExported";
 const std::string JSON_isVariadic    = "isVariadic";
 const std::string JSON_isThumb       = "isThumb";
 const std::string JSON_usedCrypto    = "usedCryptoConstants";
+const std::string JSON_semanticDetections = "semanticDetections";
 const std::string JSON_basicBlocks   = "basicBlocks";
+
+const std::string JSON_sdKind        = "kind";
+const std::string JSON_sdLabel       = "label";
+const std::string JSON_sdConfidence  = "confidence";
+const std::string JSON_sdDetail      = "detail";
 
 std::vector<std::string> fncTypes =
 {
@@ -63,6 +69,30 @@ std::vector<std::string> fncTypes =
 
 namespace retdec {
 namespace serdes {
+
+template <typename Writer>
+void serialize(Writer& writer, const common::SemanticDetection& d)
+{
+	writer.StartObject();
+	serializeString(writer, JSON_sdKind, d.kind);
+	serializeString(writer, JSON_sdLabel, d.label);
+	serializeDouble(writer, JSON_sdConfidence, d.confidence);
+	serializeString(writer, JSON_sdDetail, d.detail);
+	writer.EndObject();
+}
+
+void deserialize(const rapidjson::Value& val, common::SemanticDetection& d)
+{
+	if (val.IsNull() || !val.IsObject())
+	{
+		return;
+	}
+
+	d.kind = deserializeString(val, JSON_sdKind);
+	d.label = deserializeString(val, JSON_sdLabel);
+	d.confidence = static_cast<float>(deserializeDouble(val, JSON_sdConfidence));
+	d.detail = deserializeString(val, JSON_sdDetail);
+}
 
 template <typename Writer>
 void serialize(Writer& writer, const common::Function& f)
@@ -104,6 +134,7 @@ void serialize(Writer& writer, const common::Function& f)
 	serializeContainer(writer, JSON_parameters, f.parameters);
 	serializeContainer(writer, JSON_basicBlocks, f.basicBlocks);
 	serializeContainer(writer, JSON_usedCrypto, f.usedCryptoConstants);
+	serializeContainer(writer, JSON_semanticDetections, f.semanticDetections);
 
 	writer.EndObject();
 }
@@ -155,6 +186,7 @@ void deserialize(const rapidjson::Value& val, common::Function& f)
 	deserializeContainer(val, JSON_locals, f.locals);
 	deserializeContainer(val, JSON_parameters, f.parameters);
 	deserializeContainer(val, JSON_usedCrypto, f.usedCryptoConstants);
+	deserializeContainer(val, JSON_semanticDetections, f.semanticDetections);
 	deserializeContainer(val, JSON_basicBlocks, f.basicBlocks);
 
 	std::string enumStr = deserializeString(val, JSON_fncType);

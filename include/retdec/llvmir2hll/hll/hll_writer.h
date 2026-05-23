@@ -128,6 +128,7 @@ protected:
 	bool emitDemangledNameIfAvailable(ShPtr<Function> func);
 	bool emitCommentIfAvailable(ShPtr<Function> func);
 	bool emitDetectedCryptoPatternsForFuncIfAvailable(ShPtr<Function> func);
+	bool emitSemanticDetectionsForFuncIfAvailable(ShPtr<Function> func);
 
 	void emitSectionHeader(const std::string &sectionName);
 

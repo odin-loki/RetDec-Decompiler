@@ -1,0 +1,2 @@
+# Placeholder directory for decompiler integration fixtures.
+# `managed_format_smoke_test.py` writes `minimal.wasm` here when absent.

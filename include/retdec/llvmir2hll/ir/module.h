@@ -14,6 +14,7 @@
 
 #include "retdec/llvmir2hll/support/smart_ptr.h"
 #include "retdec/llvmir2hll/support/types.h"
+#include "retdec/common/semantic_detection.h"
 #include "retdec/utils/filter_iterator.h"
 #include "retdec/utils/non_copyable.h"
 
@@ -117,6 +118,8 @@ public:
 	std::string getDeclarationStringForFunc(ShPtr<Function> func) const;
 	std::string getCommentForFunc(ShPtr<Function> func) const;
 	StringSet getDetectedCryptoPatternsForFunc(ShPtr<Function> func) const;
+	std::vector<retdec::common::SemanticDetection> getSemanticDetectionsForFunc(
+		ShPtr<Function> func) const;
 	std::string getWrappedFuncName(ShPtr<Function> func) const;
 	std::string getDemangledNameOfFunc(ShPtr<Function> func) const;
 

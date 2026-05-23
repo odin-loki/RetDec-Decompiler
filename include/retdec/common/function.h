@@ -9,10 +9,12 @@
 
 #include <set>
 #include <string>
+#include <vector>
 
 #include "retdec/common/calling_convention.h"
 #include "retdec/common/basic_block.h"
 #include "retdec/common/object.h"
+#include "retdec/common/semantic_detection.h"
 #include "retdec/common/storage.h"
 #include "retdec/common/type.h"
 
@@ -138,6 +140,7 @@ class Function : public retdec::common::AddressRange
 		common::ObjectSequentialContainer parameters;
 		common::ObjectSetContainer locals;
 		std::set<std::string> usedCryptoConstants;
+		std::vector<common::SemanticDetection> semanticDetections;
 		std::set<common::BasicBlock> basicBlocks;
 		/// Addresses of instructions which reference (use) this  function.
 		std::set<common::Address> codeReferences;

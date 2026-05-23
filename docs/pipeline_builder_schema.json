@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retdec.imortek.dev/schemas/pipeline-builder.json",
+  "title": "RetDec Pipeline Builder",
+  "description": "Schema for custom retdec-decompiler LLVM pass lists. Accepted by --llvm-passes-json when using the document form; a bare JSON array of pass names is also accepted for backward compatibility.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/passArray"
+    },
+    {
+      "$ref": "#/$defs/pipelineDocument"
+    }
+  ],
+  "$defs": {
+    "passName": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
+      "description": "LLVM or RetDec pass short name (e.g. retdec-decoder, mem2reg)."
+    },
+    "passArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/passName"
+      },
+      "description": "Legacy format: ordered list of pass names only."
+    },
+    "pipelineDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "passes"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "Profile identifier (lowercase, hyphenated)."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 512,
+          "description": "Human-readable summary of this pipeline."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+(\\.\\d+)?$",
+          "description": "Optional semantic version for team-maintained profiles."
+        },
+        "passes": {
+          "$ref": "#/$defs/passArray"
+        },
+        "backend": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "noOpts": {
+              "type": "boolean",
+              "description": "Document-only hint: pair with --backend-no-opts on CLI."
+            },
+            "callInfoObtainer": {
+              "type": "string",
+              "enum": ["optim", "pessim"]
+            },
+            "varRenamer": {
+              "type": "string",
+              "enum": ["address", "hungarian", "readable", "simple", "unified"]
+            }
+          },
+          "description": "Optional backend hints (not applied automatically; for tooling and GUI presets)."
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "description": "Free-form labels (e.g. fast, ci, malware)."
+        }
+      }
+    }
+  },
+  "examples": [
+    [
+      "retdec-provider-init",
+      "retdec-decoder",
+      "retdec-llvmir2hll"
+    ],
+    {
+      "name": "team-minimal",
+      "description": "Decode and emit only — for debugging decoder issues.",
+      "passes": [
+        "retdec-provider-init",
+        "retdec-decoder",
+        "retdec-write-ll",
+        "retdec-llvmir2hll"
+      ],
+      "tags": ["debug"]
+    }
+  ]
+}

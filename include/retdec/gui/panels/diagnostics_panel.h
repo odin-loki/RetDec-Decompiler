@@ -14,7 +14,7 @@ QT_END_NAMESPACE
 namespace retdec::gui::panels {
 
 struct DiagnosticEntry {
-    enum class Severity { Info, Warning, Error };
+    enum class Severity { Muted, Info, Warning, Error };
     Severity severity  = Severity::Info;
     QString  stage;
     QString  message;

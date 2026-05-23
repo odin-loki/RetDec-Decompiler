@@ -42,6 +42,36 @@ QString readTextFileIfExists(const QString& path)
     return QString::fromUtf8(f.readAll());
 }
 
+std::vector<DecompileArtifacts::SemanticDetectionEntry> parseSemanticDetections(
+        const QJsonArray& fnArr)
+{
+    std::vector<DecompileArtifacts::SemanticDetectionEntry> out;
+    for (const QJsonValue& v : fnArr) {
+        if (!v.isObject())
+            continue;
+        const QJsonObject fo = v.toObject();
+        const QString fnName = fo.value(QStringLiteral("name")).toString();
+        if (fnName.isEmpty())
+            continue;
+        for (const QJsonValue& dv :
+             fo.value(QStringLiteral("semanticDetections")).toArray()) {
+            if (!dv.isObject())
+                continue;
+            const QJsonObject d = dv.toObject();
+            DecompileArtifacts::SemanticDetectionEntry e;
+            e.function   = fnName;
+            e.kind       = d.value(QStringLiteral("kind")).toString();
+            e.label      = d.value(QStringLiteral("label")).toString();
+            e.confidence = d.value(QStringLiteral("confidence")).toDouble(0.0);
+            e.detail     = d.value(QStringLiteral("detail")).toString();
+            if (e.label.isEmpty())
+                continue;
+            out.push_back(std::move(e));
+        }
+    }
+    return out;
+}
+
 std::vector<panels::FunctionEntry> parseFunctions(const QJsonArray& fnArr)
 {
     std::vector<panels::FunctionEntry> entries;
@@ -392,6 +422,7 @@ bool loadDecompileArtifactsFromPaths(const DecompileArtifactPaths& paths,
     const QJsonArray fnArr = out.config.value(QStringLiteral("functions")).toArray();
     out.functions = parseFunctions(fnArr);
     out.strings   = parseStringGlobals(out.config.value(QStringLiteral("globals")).toArray());
+    out.semanticDetections = parseSemanticDetections(fnArr);
     buildCallGraph(fnArr, &out.callGraphNodes, &out.callGraphEdges);
     buildCfgMaps(fnArr, &out.cfgBlocks, &out.cfgEdges);
     out.typeHierarchyClasses = parseTypeHierarchyClasses(out.config);

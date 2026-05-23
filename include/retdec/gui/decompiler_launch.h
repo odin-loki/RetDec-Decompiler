@@ -73,6 +73,11 @@ void scanDecompilerLogDiagnostics(panels::DiagnosticsPanel* diagnostics,
                                   const QString& logPath,
                                   int maxEntries = 200);
 
+/// Populate Problems dock from `semanticDetections` arrays in decompile config JSON.
+void populateSemanticDetectionsFromConfig(panels::DiagnosticsPanel* diagnostics,
+                                          const QJsonObject& configRoot,
+                                          int maxEntries = 500);
+
 /// Incrementally read @p logPath from @p *ioFileOffset and map retdec-decompiler
 /// log lines to GUI stage names / approximate percent (0–100).
 /// Returns true when @p out was updated.

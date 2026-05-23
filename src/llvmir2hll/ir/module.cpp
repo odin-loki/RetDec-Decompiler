@@ -570,6 +570,11 @@ StringSet Module::getDetectedCryptoPatternsForFunc(ShPtr<Function> func) const {
 	return config->getDetectedCryptoPatternsForFunc(func->getInitialName());
 }
 
+std::vector<retdec::common::SemanticDetection> Module::getSemanticDetectionsForFunc(
+		ShPtr<Function> func) const {
+	return config->getSemanticDetectionsForFunc(func->getInitialName());
+}
+
 /**
 * @brief Returns the name of a function that @a func wraps.
 *

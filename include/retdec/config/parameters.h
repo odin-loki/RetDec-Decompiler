@@ -59,6 +59,7 @@ class Parameters
 		void setOutputConfigFile(const std::string& file);
 		void setOutputUnpackedFile(const std::string& file);
 		void setOutputFormat(const std::string& format);
+		void setOutputLang(const std::string& lang);
 		void setLogFile(const std::string& file);
 		void setErrFile(const std::string& file);
 		void setMaxMemoryLimit(uint64_t limit);
@@ -95,6 +96,7 @@ class Parameters
 		const std::string& getOutputConfigFile() const;
 		const std::string& getOutputUnpackedFile() const;
 		const std::string& getOutputFormat() const;
+		const std::string& getOutputLang() const;
 		const std::string& getLogFile() const;
 		const std::string& getErrFile() const;
 		uint64_t getMaxMemoryLimit() const;
@@ -160,6 +162,7 @@ class Parameters
 		std::string _outputConfigFile;
 		std::string _outputUnpackedFile;
 		std::string _outputFormat;
+		std::string _outputLang;
 		std::string _logFile;
 		std::string _errFile;
 		uint64_t _maxMemoryLimit = 0;

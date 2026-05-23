@@ -213,6 +213,16 @@ void printErrorUnsupportedObject(
 namespace retdec {
 namespace llvmir2hll {
 
+void setTargetHll(const std::string& id)
+{
+	TargetHLL = id;
+}
+
+const std::string& getTargetHll()
+{
+	return TargetHLL;
+}
+
 // Static variables and constants initialization.
 char LlvmIr2Hll::ID = 0;
 

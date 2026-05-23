@@ -2,6 +2,8 @@
 add_library(retdec STATIC
     retdec.cpp
     llvm_to_ssa.cpp
+    function_analysis_cache.cpp
+    semantic_recovery_export.cpp
 )
 add_library(retdec::retdec ALIAS retdec)
 
@@ -18,14 +20,7 @@ target_link_libraries(retdec
 		retdec::common
 		retdec::deps::capstone
 		retdec::deps::llvm
-	PRIVATE
-		retdec::bin2llvmir
-		retdec::llvmir2hll
-		retdec::llvmir-emul
-		retdec::config
-		Threads::Threads
-		retdec::gpu-scanner
-		# Post-decompile analysis passes
+		# Post-decompile analysis passes (PUBLIC: symbols used in retdec static lib)
 		retdec-concurrency-detect
 		retdec_sort_detect
 		retdec_container_detect
@@ -36,6 +31,14 @@ target_link_libraries(retdec
 		retdec-call-conv
 		retdec-ptx-decompile
 		retdec-ssa
+	PRIVATE
+		retdec::bin2llvmir
+		retdec::llvmir2hll
+		retdec::llvmir-emul
+		retdec::config
+		Threads::Threads
+		retdec::gpu-scanner
+		retdec::deps::rapidjson
 )
 
 set_target_properties(retdec

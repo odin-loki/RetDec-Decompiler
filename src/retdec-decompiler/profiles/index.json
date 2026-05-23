@@ -1,0 +1,29 @@
+{
+    "schema": "../../docs/pipeline_builder_schema.json",
+    "profiles": [
+        {
+            "id": "fast",
+            "file": "fast.json",
+            "format": "pass_array",
+            "description": "Trimmed LLVM pipeline for interactive GUI iteration and CI parity benches.",
+            "when_to_use": "Large binaries during exploration; GUI Fast Decompile; scripts/parity_ctest.ps1 -Fast. Pair with --backend-no-opts and --disable-static-code-detection for best speed.",
+            "cli": "--llvm-passes-json src/gui/resources/llvm_passes_fast.json"
+        },
+        {
+            "id": "balanced",
+            "file": "balanced.json",
+            "format": "pipeline_document",
+            "description": "Default RetDec native decompilation pipeline (matches decompiler-config.json llvmPasses).",
+            "when_to_use": "General-purpose decompilation when you want the stock RetDec behavior without GUI-specific shortcuts.",
+            "cli": "--llvm-passes-json src/retdec-decompiler/profiles/balanced.json"
+        },
+        {
+            "id": "quality",
+            "file": "quality.json",
+            "format": "pipeline_document",
+            "description": "Full LLVM pass list with backend readability optimizers enabled (default backend settings).",
+            "when_to_use": "Release-quality output, diffing against reference decompilers, or batch jobs where runtime is acceptable.",
+            "cli": "Default decompiler-config (no --llvm-passes-json override) or --llvm-passes-json src/retdec-decompiler/profiles/quality.json"
+        }
+    ]
+}

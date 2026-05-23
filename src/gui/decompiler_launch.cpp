@@ -14,6 +14,7 @@
 #include <QDir>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QJsonParseError>
 #include <QRegularExpression>
 #include <QSet>
@@ -253,6 +254,10 @@ QStringList buildDecompilerArguments(
          << QStringLiteral("-f") << QStringLiteral("plain")
          << QStringLiteral("-s");
 
+    const QString outLang = req.decompiler.outputLang.trimmed();
+    if (!outLang.isEmpty())
+        args << QStringLiteral("--output-lang") << outLang;
+
     const QString arch = req.arch.trimmed();
     if (!arch.isEmpty())
         args << QStringLiteral("-a") << arch;
@@ -389,6 +394,71 @@ void scanDecompilerLogDiagnostics(panels::DiagnosticsPanel* diagnostics,
 
         diagnostics->addMessage(sev, QStringLiteral("retdec-decompiler"), trimmed);
         ++added;
+    }
+}
+
+void populateSemanticDetectionsFromConfig(panels::DiagnosticsPanel* diagnostics,
+                                          const QJsonObject& configRoot,
+                                          int maxEntries)
+{
+    if (!diagnostics || maxEntries <= 0)
+        return;
+
+    const QJsonArray fnArr = configRoot.value(QStringLiteral("functions")).toArray();
+    int added = 0;
+    for (const QJsonValue& fv : fnArr) {
+        if (!fv.isObject())
+            continue;
+        const QJsonObject fnObj = fv.toObject();
+        const QString fnName = fnObj.value(QStringLiteral("name")).toString();
+        const QJsonArray dets =
+                fnObj.value(QStringLiteral("semanticDetections")).toArray();
+        if (dets.isEmpty())
+            continue;
+
+        uint64_t fnAddr = 0;
+        {
+            bool ok = false;
+            const uint64_t a =
+                    fnObj.value(QStringLiteral("startAddr")).toString().toULongLong(&ok, 0);
+            if (ok)
+                fnAddr = a;
+        }
+
+        for (const QJsonValue& dv : dets) {
+            if (added >= maxEntries)
+                return;
+            if (!dv.isObject())
+                continue;
+            const QJsonObject det = dv.toObject();
+            const QString kind  = det.value(QStringLiteral("kind")).toString();
+            const QString label = det.value(QStringLiteral("label")).toString();
+            const double conf   = det.value(QStringLiteral("confidence")).toDouble(0.0);
+            const QString detail = det.value(QStringLiteral("detail")).toString();
+
+            auto sev = panels::DiagnosticEntry::Severity::Muted;
+            if (conf > 0.8)
+                sev = panels::DiagnosticEntry::Severity::Info;
+            else if (conf > 0.5)
+                sev = panels::DiagnosticEntry::Severity::Warning;
+
+            QString msg = label;
+            if (msg.isEmpty())
+                msg = kind;
+            if (msg.isEmpty())
+                msg = QStringLiteral("detection");
+            msg += QStringLiteral(" (confidence %1%)")
+                           .arg(QString::number(conf * 100.0, 'f', 0));
+            if (!detail.isEmpty())
+                msg += QStringLiteral(" — ") + detail;
+
+            diagnostics->addMessage(
+                    sev,
+                    fnName.isEmpty() ? QStringLiteral("semantic") : fnName,
+                    msg,
+                    fnAddr);
+            ++added;
+        }
     }
 }
 

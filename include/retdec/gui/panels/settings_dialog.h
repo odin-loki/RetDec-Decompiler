@@ -176,6 +176,7 @@ private:
     QLineEdit*          decompileOutputDirEdit_ = nullptr;
     QToolButton*        decompileOutputDirBtn_  = nullptr;
     QCheckBox*          liveConsoleTailCheck_   = nullptr;
+    QComboBox*          outputLangCombo_        = nullptr;
 
     // ── Tab: Plugins ──────────────────────────────────────────────────────
     QListWidget*  pluginList_        = nullptr;

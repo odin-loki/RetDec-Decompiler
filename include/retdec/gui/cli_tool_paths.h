@@ -25,6 +25,9 @@ QString resolvePythonInterpreter();
 /// Installed `retdec-signature-from-library-creator.py` (empty if not found).
 QString resolveSignatureFromLibraryCreatorScript();
 
+/// Installed `retdec_export_intel.py` (empty if not found).
+QString resolveRetdecExportIntelScript();
+
 } // namespace gui
 } // namespace retdec
 

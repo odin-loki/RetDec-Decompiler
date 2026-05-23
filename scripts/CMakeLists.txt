@@ -3,6 +3,10 @@ if(RETDEC_ENABLE_RETDEC_DECOMPILER)
 	install(
 		PROGRAMS "retdec-archive-decompiler.py"
 				 "retdec-full-testbench.py"
+				 "retdec_binary_diff.py"
+				 "retdec_cli.py"
+				 "retdec_export_intel.py"
+				 "yara_retdec_bridge.py"
 		DESTINATION ${RETDEC_INSTALL_BIN_DIR}
 	)
 	install(

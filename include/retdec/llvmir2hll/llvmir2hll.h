@@ -183,6 +183,10 @@ private:
 	std::unique_ptr<llvm::raw_string_ostream> outStringStream;
 };
 
+/** @brief Override the HLL writer id used by the retdec-llvmir2hll pass (default "c"). */
+void setTargetHll(const std::string& id);
+const std::string& getTargetHll();
+
 } // namespace llvmir2hll
 } // namespace retdec
 
