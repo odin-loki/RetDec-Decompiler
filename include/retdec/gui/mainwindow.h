@@ -22,10 +22,15 @@ class QDockWidget;
 class QStatusBar;
 class QButtonGroup;
 class QTabWidget;
+class QStackedWidget;
 QT_END_NAMESPACE
 
 namespace retdec {
 namespace gui {
+
+namespace widgets {
+class EmptyStateWidget;
+}
 
 class ProjectFile;
 namespace panels {
@@ -47,6 +52,7 @@ class CommandLogPanel;
 class LiveConsolePanel;
 class TargetPanel;
 class SignatureStudioPanel;
+class DiffPanel;
 class TriageBanner;
 class TriPaneCodeView;
 } // namespace panels
@@ -88,9 +94,13 @@ public:
     void setStatusFile(const QString& path);
     void setStatusStage(const QString& stage);
     void setStatusFunctionCount(int count);
+    void setStatusDecompileState(const QString& state);
     void setAnalysisProgress(int percent);
 
     // ── Testing hooks ────────────────────────────────────────────────────────
+
+    /// Central stack: empty start screen (0) vs document tabs (1).
+    QStackedWidget* centralStackForTest() const { return centralStack_; }
 
     /// Central document tab widget.
     QTabWidget* documentTabsForTest() const { return documentTabs_; }
@@ -136,7 +146,6 @@ private slots:
 
     // Tools menu.
     void onSettings();
-    void onMLAssistant();
     void onCompare();
 
     // Help menu.
@@ -147,9 +156,6 @@ private slots:
     void onDecompilerProcessFinished(int exitCode, QProcess::ExitStatus status);
     void onDecompilerProcessError(QProcess::ProcessError err);
     void onDecompileLogPollTick();
-
-    /// Apply Settings → ML to AI Assistant.
-    void syncAiAssistantFromAppSettings();
 
     /// Apply Settings → General editor font to code views.
     void applyEditorFontFromSettings();
@@ -184,11 +190,15 @@ private:
     void raiseDocumentTab(int index);
     /// Show the bottom output dock and select Console (0) or Problems (1).
     void focusOutputTab(int tabIndex);
+    /// Show the workspace dock and select a tab (Strings/Inspect/Binary/Target).
+    void focusWorkspaceTab(int tabIndex);
     void updateProjectFileActions();
     void restoreLayout();
     void saveLayout();
     void updateRecentFilesMenu();
     void addRecentFile(const QString& path);
+    void updateCentralEmptyState();
+    void tryRestoreLastSession();
     void finishExternalDecompileUi();
     /// Hook a QProcess so its stdout/stderr stream live into the console panel.
     void streamProcessToConsole(QProcess* proc, const QString& label);
@@ -235,6 +245,7 @@ private:
     QLabel*       statusFile_    = nullptr;
     QLabel*       statusStage_   = nullptr;
     QLabel*       statusFnCount_ = nullptr;
+    QLabel*       statusDecompile_ = nullptr;
     QLabel*       statusElapsed_ = nullptr;
     QProgressBar* analysisBar_   = nullptr;
     QTimer*       elapsedTimer_  = nullptr;
@@ -262,10 +273,13 @@ private:
     panels::LiveConsolePanel*    liveConsole_     = nullptr;
     panels::TargetPanel*         target_          = nullptr;
     panels::SignatureStudioPanel* signatureStudio_ = nullptr;
+    panels::DiffPanel*           comparePanel_    = nullptr;
     panels::TriageBanner*        triageBanner_    = nullptr;
     panels::TriPaneCodeView*     triPane_         = nullptr;
 
     // Centre + dock wrappers.
+    QStackedWidget* centralStack_      = nullptr;
+    widgets::EmptyStateWidget* startEmptyState_ = nullptr;
     QTabWidget*  documentTabs_       = nullptr; ///< Centre: Decompiled C | Asm | IR | CFG | Synced | Compare
     QDockWidget* dockFunctions_      = nullptr;
     QDockWidget* dockWorkspace_      = nullptr;

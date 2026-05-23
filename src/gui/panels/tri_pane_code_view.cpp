@@ -364,9 +364,7 @@ SyncedCodePane::SyncedCodePane(PaneLang lang, const QString& title,
 void SyncedCodePane::setupUI() {
     titleLabel_ = new QLabel(title_, this);
     titleLabel_->setAlignment(Qt::AlignCenter);
-    titleLabel_->setStyleSheet(
-        "color: #6c7086; font-size: 10px; font-weight: bold; "
-        "background: #181825; padding: 2px;");
+    titleLabel_->setProperty("role", "pane-title");
 
     editor_ = new CodeEditor(this);
     editor_->setReadOnly(true);
@@ -571,10 +569,11 @@ void TriPaneCodeView::setupUI() {
 
     // Find bar
     findBar_ = new QWidget(this);
+    findBar_->setProperty("role", "find-bar");
     auto* fbLayout = new QHBoxLayout(findBar_);
     fbLayout->setContentsMargins(4, 2, 4, 2);
     auto* findIcon = new QLabel("Find:", findBar_);
-    findIcon->setStyleSheet("color: #6c7086;");
+    findIcon->setProperty("role", "muted");
     findEdit_ = new QLineEdit(findBar_);
     findEdit_->setPlaceholderText("Search all panes…");
     findEdit_->setClearButtonEnabled(true);
@@ -651,7 +650,7 @@ QWidget* TriPaneCodeView::buildToolbar() {
     fwdBtn_->setEnabled(false);
 
     funcLabel_ = new QLabel("No function loaded", tb);
-    funcLabel_->setStyleSheet("color: #cdd6f4; font-weight: bold;");
+    funcLabel_->setProperty("role", "func-name");
 
     langCombo_ = new QComboBox(tb);
     langCombo_->addItems({"C", "C++", "C#", "Java", "Python", "Lua"});

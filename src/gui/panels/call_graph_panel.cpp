@@ -177,9 +177,6 @@ void CallGraphNodeItem::mousePressEvent(QGraphicsSceneMouseEvent* event)
 void CallGraphNodeItem::contextMenuEvent(QGraphicsSceneContextMenuEvent* event)
 {
     QMenu menu;
-    menu.setStyleSheet(
-        "QMenu { background: #313244; color: #cdd6f4; border: 1px solid #45475a; }"
-        "QMenu::item:selected { background: #45475a; }");
 
     auto* focusAction1 = menu.addAction("Focus (1 hop)");
     auto* focusAction2 = menu.addAction("Focus (2 hops)");
@@ -1056,71 +1053,55 @@ void CallGraphPanel::setupUI()
 {
     // ── Toolbar ──────────────────────────────────────────────────────────
     auto* toolbar    = new QWidget(this);
+    toolbar->setProperty("role", "toolbar-compact");
     auto* tbLayout   = new QHBoxLayout(toolbar);
     tbLayout->setContentsMargins(4, 3, 4, 3);
     tbLayout->setSpacing(4);
-
-    auto styleEdit = [](QWidget* w) {
-        w->setStyleSheet(
-            "background: #313244; color: #cdd6f4; border: 1px solid #45475a;"
-            " border-radius: 4px; padding: 2px 4px;");
-    };
-    auto styleBtn = [](QPushButton* b) {
-        b->setFixedHeight(24);
-        b->setStyleSheet(
-            "QPushButton { background: #313244; color: #cdd6f4;"
-            " border: 1px solid #45475a; border-radius: 4px; padding: 0 8px; }"
-            "QPushButton:hover { background: #45475a; }"
-            "QPushButton:pressed { background: #585b70; }");
-    };
 
     nameFilter_ = new QLineEdit(toolbar);
     nameFilter_->setPlaceholderText("Filter functions…");
     nameFilter_->setClearButtonEnabled(true);
     nameFilter_->setFixedWidth(160);
-    styleEdit(nameFilter_);
 
     auto* minCallLabel = new QLabel("Min calls:", toolbar);
-    minCallLabel->setStyleSheet("color: #a6adc8; font-size: 11px;");
+    minCallLabel->setProperty("role", "subtext");
     minCallSpin_ = new QSpinBox(toolbar);
     minCallSpin_->setRange(0, 100000);
     minCallSpin_->setValue(0);
     minCallSpin_->setFixedWidth(60);
-    styleEdit(minCallSpin_);
 
     auto* depthLabel = new QLabel("Depth:", toolbar);
-    depthLabel->setStyleSheet("color: #a6adc8; font-size: 11px;");
+    depthLabel->setProperty("role", "subtext");
     depthSpin_ = new QSpinBox(toolbar);
     depthSpin_->setRange(0, 99);
     depthSpin_->setSpecialValueText("All");
     depthSpin_->setValue(0);
     depthSpin_->setFixedWidth(52);
-    styleEdit(depthSpin_);
 
     hideLibCheck_ = new QCheckBox("Hide lib", toolbar);
-    hideLibCheck_->setStyleSheet("color: #cdd6f4; font-size: 11px;");
 
     auto* hopsLabel = new QLabel("Focus hops:", toolbar);
-    hopsLabel->setStyleSheet("color: #a6adc8; font-size: 11px;");
+    hopsLabel->setProperty("role", "subtext");
     hopsSpin_ = new QSpinBox(toolbar);
     hopsSpin_->setRange(1, 10);
     hopsSpin_->setValue(2);
     hopsSpin_->setFixedWidth(40);
-    styleEdit(hopsSpin_);
 
     clearFocusBtn_ = new QPushButton("Clear Focus", toolbar);
-    styleBtn(clearFocusBtn_);
+    clearFocusBtn_->setProperty("compact", true);
     clearFocusBtn_->setEnabled(false);
 
     fitButton_   = new QPushButton("Fit",        toolbar);
     resetButton_ = new QPushButton("100%",       toolbar);
     dotButton_   = new QPushButton("Export DOT", toolbar);
-    for (auto* b : {fitButton_, resetButton_, dotButton_}) styleBtn(b);
+    for (auto* b : {fitButton_, resetButton_, dotButton_}) {
+        b->setProperty("compact", true);
+    }
 
     infoLabel_  = new QLabel("", toolbar);
-    infoLabel_->setStyleSheet("color: #a6adc8; font-size: 11px;");
+    infoLabel_->setProperty("role", "subtext");
     focusLabel_ = new QLabel("", toolbar);
-    focusLabel_->setStyleSheet("color: #89b4fa; font-size: 11px;");
+    focusLabel_->setProperty("role", "accent");
 
     tbLayout->addWidget(nameFilter_);
     tbLayout->addWidget(minCallLabel);

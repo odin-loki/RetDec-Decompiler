@@ -9,6 +9,7 @@
 QT_BEGIN_NAMESPACE
 class QPlainTextEdit;
 class QLabel;
+class QLineEdit;
 class QToolBar;
 class QStackedWidget;
 QT_END_NAMESPACE
@@ -28,6 +29,12 @@ namespace retdec::gui::panels {
  *   - Crypto / pattern annotations rendered as folded comment blocks
  *   - Copy-to-clipboard toolbar button
  *   - "Save as..." shortcut
+ *
+ * Keyboard (when panel focused):
+ *   Ctrl+F       → show find bar
+ *   F3           → find next
+ *   Shift+F3     → find previous
+ *   Escape       → hide find bar
  *
  * The panel is read-only to prevent the user from editing decompiled output
  * (annotations are applied via the FunctionListPanel rename workflow instead).
@@ -50,6 +57,10 @@ public:
     /** Scroll to a function body in the full decompiled source (1-based lines). */
     void scrollToFunction(const QString& name, int startLine, int endLine = -1);
 
+    /** Show / hide the inline find bar (Ctrl+F / Escape). */
+    void showFindBar();
+    void hideFindBar();
+
 public slots:
     void onFunctionSelected(uint64_t address, const QString& name);
     void onSaveAs();
@@ -60,17 +71,24 @@ public slots:
 private slots:
     void onCopyToClipboard();
     void onAsyncLoadTick();
+    void onSearchReturnPressed();
+    void onFindNext();
+    void onFindPrevious();
 
 private:
     void setupUI();
     void scheduleAsyncLoad(QString remainder);
     void updateEmptyState();
+    bool hasSearchableText() const;
+    void searchInView(const QString& query, bool forward);
 
     QToolBar*      toolbar_   = nullptr;
     QLabel*        funcLabel_ = nullptr;
     QStackedWidget* bodyStack_ = nullptr;
     retdec::gui::widgets::EmptyStateWidget* emptyState_ = nullptr;
     QPlainTextEdit* view_     = nullptr;
+    QLineEdit*     searchBar_ = nullptr;
+    QString        lastFindQuery_;
     /// Full payload of an in-progress async load. We index into it via
     /// pendingLoadPos_ instead of mutating the string — mutating with
     /// QString::remove(0, n) on a multi-MB string is O(N) per call and

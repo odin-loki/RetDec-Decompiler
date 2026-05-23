@@ -59,6 +59,11 @@ signals:
     void moreActionsRequested();
     /// User clicked "✕" — the host should hide the widget.
     void dismissed();
+    /// User clicked the architecture or OS badge — host should open Target panel.
+    void targetDetailsRequested();
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     void setupUi();

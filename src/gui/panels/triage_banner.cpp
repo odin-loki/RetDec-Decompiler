@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QPushButton>
 #include <QStyle>
 #include <QToolButton>
@@ -16,15 +17,6 @@ namespace gui {
 namespace panels {
 
 namespace {
-
-QString makeBadgeQss(const QString& bgHex, const QString& fgHex,
-                     const QString& borderHex) {
-    return QStringLiteral(
-            "QLabel { background-color: %1; color: %2; border: 1px solid %3; "
-            "border-radius: 4px; padding: 2px 8px; font-size: 11px; "
-            "font-weight: 500; }")
-            .arg(bgHex, fgHex, borderHex);
-}
 
 QString humanSize(qint64 bytes) {
     if (bytes <= 0) return QStringLiteral("—");
@@ -41,9 +33,6 @@ TriageBanner::TriageBanner(QWidget* parent)
     : QFrame(parent) {
     setObjectName(QStringLiteral("triageBanner"));
     setFrameShape(QFrame::StyledPanel);
-    setStyleSheet(QStringLiteral(
-            "#triageBanner { background-color: #313244; border: 1px solid #45475a; "
-            "border-radius: 6px; }"));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     setMinimumHeight(44);
     setupUi();
@@ -56,29 +45,29 @@ void TriageBanner::setupUi() {
     lay->setSpacing(8);
 
     title_ = new QLabel(this);
-    title_->setStyleSheet(QStringLiteral("color: #cdd6f4; font-weight: 600;"));
+    title_->setProperty("role", "title");
     title_->setToolTip(QStringLiteral("Currently loaded binary"));
 
     formatBadge_ = new QLabel(this);
     archBadge_   = new QLabel(this);
     osBadge_     = new QLabel(this);
     sizeBadge_   = new QLabel(this);
-    const QString neutral = makeBadgeQss(QStringLiteral("#45475a"),
-                                         QStringLiteral("#cdd6f4"),
-                                         QStringLiteral("#585b70"));
-    formatBadge_->setStyleSheet(neutral);
-    archBadge_->setStyleSheet(neutral);
-    osBadge_->setStyleSheet(neutral);
-    sizeBadge_->setStyleSheet(neutral);
+    for (QLabel* badge : {formatBadge_, archBadge_, osBadge_, sizeBadge_})
+        badge->setProperty("role", "badge");
     formatBadge_->setToolTip(QStringLiteral("Container format reported by retdec-fileinfo"));
-    archBadge_->setToolTip(QStringLiteral("Target architecture"));
-    osBadge_->setToolTip(QStringLiteral("Target operating system"));
+    archBadge_->setToolTip(QStringLiteral(
+            "Target architecture — click to open the Target panel"));
+    osBadge_->setToolTip(QStringLiteral(
+            "Target operating system — click to open the Target panel"));
     sizeBadge_->setToolTip(QStringLiteral("File size on disk"));
+    archBadge_->setCursor(Qt::PointingHandCursor);
+    osBadge_->setCursor(Qt::PointingHandCursor);
+    archBadge_->installEventFilter(this);
+    osBadge_->installEventFilter(this);
 
     packerBadge_ = new QLabel(this);
-    packerBadge_->setStyleSheet(makeBadgeQss(QStringLiteral("#4d3a1f"),
-                                             QStringLiteral("#f9e2af"),
-                                             QStringLiteral("#fab387")));
+    packerBadge_->setProperty("role", "badge");
+    packerBadge_->setProperty("variant", "warning");
     packerBadge_->setToolTip(QStringLiteral(
             "fileinfo detected a packer signature. Use 'Unpack first' or unpack "
             "manually before decompiling for best results."));
@@ -95,12 +84,10 @@ void TriageBanner::setupUi() {
             "Show secondary triage tools (re-run fileinfo, copy hash, view raw output…)."));
 
     closeBtn_ = new QToolButton(this);
+    closeBtn_->setObjectName(QStringLiteral("triageCloseBtn"));
     closeBtn_->setText(QStringLiteral("✕"));
     closeBtn_->setAutoRaise(true);
     closeBtn_->setToolTip(QStringLiteral("Hide this banner for the current binary."));
-    closeBtn_->setStyleSheet(QStringLiteral(
-            "QToolButton { color: #6c7086; font-weight: bold; padding: 2px 6px; }"
-            "QToolButton:hover { color: #f38ba8; }"));
 
     lay->addWidget(title_);
     lay->addSpacing(8);
@@ -165,6 +152,18 @@ void TriageBanner::setActionsEnabled(bool on) {
     unpackBtn_->setEnabled(on);
     decompileBtn_->setEnabled(on);
     moreBtn_->setEnabled(on);
+}
+
+bool TriageBanner::eventFilter(QObject* watched, QEvent* event) {
+    if ((watched == archBadge_ || watched == osBadge_) &&
+        event->type() == QEvent::MouseButtonRelease) {
+        auto* me = static_cast<QMouseEvent*>(event);
+        if (me->button() == Qt::LeftButton) {
+            emit targetDetailsRequested();
+            return true;
+        }
+    }
+    return QFrame::eventFilter(watched, event);
 }
 
 } // namespace panels

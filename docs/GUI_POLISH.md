@@ -36,8 +36,20 @@ Polish-only work (no new features). Update as items ship.
 ## Tier 6 — Tests ✅
 - [x] polish_integration_test.cpp; layout tests for 3+4 tabs
 
-## Remaining (optional micro-polish)
-- [ ] Centralize all inline `#313244` panel styles into QSS
-- [ ] Target panel in layout (arch/OS editor still orphan)
-- [ ] i18n / Light theme QSS file
-- [ ] Compare dialog non-modal + remember path
+## Tier 7 — Polish v2 ✅
+- [x] Target panel in workspace dock (4th tab) + Analysis → Target + clickable triage badges
+- [x] Light theme (`catppuccin_latte.qss`) + Settings theme combo enabled
+- [x] Inline panel styles → QSS role properties (triage, function list, call graph, tri-pane, console)
+- [x] Decompiled C find bar (Ctrl+F, F3, Shift+F3, Esc)
+- [x] Compare as non-modal tool window + `lastCompareDir` QSettings memory
+- [x] Diff panel current-line highlight
+- [x] Empty start screen (Open Binary / Project / drag-drop hint)
+- [x] Restore last session wired (`lastBinaryPath`, skipped in headless)
+- [x] Status bar decompile state (`not decompiled` / `cached` / `decompiled`)
+- [x] Document tab icons; dead ML Assistant stub removed
+
+## Remaining (optional)
+- [ ] i18n
+- [ ] Unified context menus (Copy address, Go to function) across all panels
+- [ ] Loading spinners on large artifact loads
+- [ ] Session persistence beyond layout (filters, call-graph depth per project)

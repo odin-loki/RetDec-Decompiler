@@ -5,8 +5,10 @@
 #include <QVBoxLayout>
 #include <QPlainTextEdit>
 #include <QLabel>
+#include <QLineEdit>
 #include <QToolBar>
 #include <QAction>
+#include <QShortcut>
 #include <QClipboard>
 #include <QApplication>
 #include <QFileDialog>
@@ -14,6 +16,7 @@
 #include <QStringView>
 #include <QTextCursor>
 #include <QTextBlock>
+#include <QTextDocument>
 #include <QTextStream>
 #include <QTimer>
 #include <QStackedWidget>
@@ -31,8 +34,12 @@ void DecompiledCPanel::setupUI() {
     toolbar_->setIconSize({16, 16});
     auto* copyAction = toolbar_->addAction("Copy");
     auto* saveAction = toolbar_->addAction("Save As…");
+    auto* findAction = toolbar_->addAction("Find");
+    findAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_F));
+    findAction->setToolTip(QStringLiteral("Find in decompiled C (Ctrl+F)"));
     connect(copyAction, &QAction::triggered, this, &DecompiledCPanel::onCopyToClipboard);
     connect(saveAction, &QAction::triggered, this, &DecompiledCPanel::onSaveAs);
+    connect(findAction, &QAction::triggered, this, &DecompiledCPanel::showFindBar);
 
     funcLabel_ = new QLabel("No function selected", this);
     funcLabel_->setProperty("role", "muted");
@@ -54,12 +61,30 @@ void DecompiledCPanel::setupUI() {
     bodyStack_->addWidget(emptyState_);
     bodyStack_->addWidget(view_);
 
+    searchBar_ = new QLineEdit(this);
+    searchBar_->setPlaceholderText(QStringLiteral("Find in decompiled C…"));
+    searchBar_->setClearButtonEnabled(true);
+    searchBar_->hide();
+    connect(searchBar_, &QLineEdit::returnPressed,
+            this, &DecompiledCPanel::onSearchReturnPressed);
+
+    auto* findNextSc = new QShortcut(QKeySequence(Qt::Key_F3), this);
+    connect(findNextSc, &QShortcut::activated, this, &DecompiledCPanel::onFindNext);
+    auto* findPrevSc = new QShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F3), this);
+    connect(findPrevSc, &QShortcut::activated, this, &DecompiledCPanel::onFindPrevious);
+    auto* escSc = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+    connect(escSc, &QShortcut::activated, this, [this]() {
+        if (searchBar_ && searchBar_->isVisible())
+            hideFindBar();
+    });
+
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     layout->addWidget(toolbar_);
     layout->addWidget(funcLabel_);
     layout->addWidget(bodyStack_, 1);
+    layout->addWidget(searchBar_);
     updateEmptyState();
 }
 
@@ -174,6 +199,8 @@ void DecompiledCPanel::onAsyncLoadTick() {
 void DecompiledCPanel::clear() {
     view_->clear();
     funcLabel_->setText("No function selected");
+    lastFindQuery_.clear();
+    hideFindBar();
     updateEmptyState();
 }
 
@@ -258,6 +285,79 @@ void DecompiledCPanel::onSaveAs() {
 void DecompiledCPanel::onCopyToClipboard() {
     QApplication::clipboard()->setText(view_->toPlainText());
     emit statusMessage("Copied to clipboard", 2000);
+}
+
+bool DecompiledCPanel::hasSearchableText() const {
+    return view_ && !view_->document()->isEmpty();
+}
+
+void DecompiledCPanel::showFindBar() {
+    if (!searchBar_)
+        return;
+    searchBar_->setVisible(true);
+    searchBar_->setFocus();
+    searchBar_->selectAll();
+}
+
+void DecompiledCPanel::hideFindBar() {
+    if (!searchBar_)
+        return;
+    searchBar_->hide();
+    if (view_)
+        view_->setFocus();
+}
+
+void DecompiledCPanel::searchInView(const QString& query, bool forward) {
+    if (query.isEmpty() || !hasSearchableText())
+        return;
+
+    QTextDocument::FindFlags flags;
+    if (!forward)
+        flags |= QTextDocument::FindBackward;
+    if (!view_->find(query, flags)) {
+        QTextCursor c = view_->textCursor();
+        c.movePosition(forward ? QTextCursor::Start : QTextCursor::End);
+        view_->setTextCursor(c);
+        view_->find(query, flags);
+    }
+}
+
+void DecompiledCPanel::onSearchReturnPressed() {
+    const QString query = searchBar_->text().trimmed();
+    if (query.isEmpty())
+        return;
+    if (!hasSearchableText()) {
+        emit statusMessage(QStringLiteral("No decompiled output to search"), 2000);
+        return;
+    }
+    lastFindQuery_ = query;
+    searchInView(query, true);
+}
+
+void DecompiledCPanel::onFindNext() {
+    const QString query = searchBar_->isVisible()
+            ? searchBar_->text().trimmed()
+            : lastFindQuery_;
+    if (query.isEmpty()) {
+        showFindBar();
+        return;
+    }
+    if (!hasSearchableText())
+        return;
+    lastFindQuery_ = query;
+    searchInView(query, true);
+}
+
+void DecompiledCPanel::onFindPrevious() {
+    const QString query = searchBar_->isVisible()
+            ? searchBar_->text().trimmed()
+            : lastFindQuery_;
+    if (query.isEmpty())
+        return;
+    if (!hasSearchableText())
+        return;
+    lastFindQuery_ = query;
+    searchInView(query, false);
 }
 
 } // namespace retdec::gui::panels

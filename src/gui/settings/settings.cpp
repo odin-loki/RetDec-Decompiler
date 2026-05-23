@@ -59,6 +59,7 @@ void AppSettings::loadGeneral(QSettings& s) {
     general.wordWrap      = s.value("wordWrap", false).toBool();
     general.restoreSession = s.value("restoreSession", true).toBool();
     general.lastOpenDir   = s.value("lastOpenDir").toString();
+    general.lastBinaryPath = s.value("lastBinaryPath").toString();
     s.endGroup();
 }
 
@@ -182,6 +183,7 @@ void AppSettings::saveGeneral(QSettings& s) const {
     s.setValue("wordWrap",       general.wordWrap);
     s.setValue("restoreSession", general.restoreSession);
     s.setValue("lastOpenDir",    general.lastOpenDir);
+    s.setValue("lastBinaryPath", general.lastBinaryPath);
     s.endGroup();
 }
 

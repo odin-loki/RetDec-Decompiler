@@ -16,6 +16,7 @@
 #include <QScrollBar>
 #include <QSplitter>
 #include <QTextBlock>
+#include <QTextFormat>
 #include <QToolBar>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -292,6 +293,8 @@ DiffPane::DiffPane(QWidget* parent)
             this, &DiffPane::updateLineNumberAreaWidth);
     connect(this, &QPlainTextEdit::updateRequest,
             this, &DiffPane::updateLineNumberArea);
+    connect(this, &QPlainTextEdit::cursorPositionChanged,
+            this, &DiffPane::highlightCurrentLine);
 
     updateLineNumberAreaWidth(0);
 }
@@ -320,7 +323,16 @@ void DiffPane::resizeEvent(QResizeEvent* e) {
     lineNumberArea_->setGeometry(cr.left(), cr.top(), lineNumberAreaWidth(), cr.height());
 }
 
-void DiffPane::highlightCurrentLine() {}
+void DiffPane::highlightCurrentLine() {
+    QList<QTextEdit::ExtraSelection> sels;
+    QTextEdit::ExtraSelection sel;
+    sel.format.setBackground(QColor(0x45, 0x47, 0x5a, 160));
+    sel.format.setProperty(QTextFormat::FullWidthSelection, true);
+    sel.cursor = textCursor();
+    sel.cursor.clearSelection();
+    sels.append(sel);
+    setExtraSelections(sels);
+}
 
 void DiffPane::lineNumberAreaPaintEvent(QPaintEvent* event) {
     QPainter painter(lineNumberArea_);
@@ -370,6 +382,7 @@ void DiffPane::setLineColors(const std::vector<QColor>& colors) {
 void DiffPane::setContent(const QString& text, const std::vector<QColor>& colors) {
     setPlainText(text);
     setLineColors(colors);
+    highlightCurrentLine();
 }
 
 void DiffPane::scrollToLine(int line) {

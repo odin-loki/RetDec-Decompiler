@@ -46,6 +46,8 @@ struct GeneralSettings {
     bool    wordWrap         = false;
     bool    restoreSession   = true;
     QString lastOpenDir;
+    /// Last binary opened via File → Open Binary (session restore).
+    QString lastBinaryPath;
 };
 
 // ─── AnalysisSettings ────────────────────────────────────────────────────────

@@ -111,7 +111,6 @@ void LiveConsolePanel::setupUi() {
     autoScrollChk_->setChecked(autoScroll_);
     statusLabel_ = new QLabel(QStringLiteral("(idle)"), this);
     statusLabel_->setProperty("role", "muted");
-    statusLabel_->setStyleSheet(QStringLiteral("color: #6c7086;"));
     copyBtn_->setToolTip(QStringLiteral("Copy entire console to clipboard."));
     saveBtn_->setToolTip(QStringLiteral("Save console output to a text file."));
     clearBtn_->setToolTip(QStringLiteral("Clear the console buffer."));
@@ -133,8 +132,6 @@ void LiveConsolePanel::setupUi() {
     text_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     text_->setPlaceholderText(QStringLiteral(
         "Live output from retdec-decompiler / retdec-fileinfo / retdec-unpacker will appear here as it runs."));
-    text_->setStyleSheet(QStringLiteral(
-        "QPlainTextEdit { background-color: #11111b; color: #cdd6f4; }"));
     lay->addWidget(text_, 1);
 
     highlighter_ = new LiveConsoleHighlighter(text_->document());

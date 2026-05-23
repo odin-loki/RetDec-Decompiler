@@ -511,6 +511,7 @@ void FunctionListPanel::setupUI()
 
     // ── Filter bar ────────────────────────────────────────────────────────
     auto* filterBar    = new QWidget(this);
+    filterBar->setProperty("role", "filter-bar");
     auto* fbLayout     = new QHBoxLayout(filterBar);
     fbLayout->setContentsMargins(4, 3, 4, 3);
     fbLayout->setSpacing(4);
@@ -555,7 +556,7 @@ void FunctionListPanel::setupUI()
 
     // ── Status bar ────────────────────────────────────────────────────────
     statusLabel_ = new QLabel("Ready", this);
-    statusLabel_->setStyleSheet("color: #6c7086; font-size: 11px; padding: 2px 6px;");
+    statusLabel_->setProperty("role", "status-muted");
 
     // ── Overall layout ────────────────────────────────────────────────────
     auto* layout = new QVBoxLayout(this);
@@ -585,63 +586,45 @@ void FunctionListPanel::setupUI()
 
 void FunctionListPanel::setupFilterBar(QWidget* parent, QHBoxLayout* layout)
 {
-    auto styleEdit = [](QWidget* w) {
-        w->setStyleSheet(
-            "background: #313244; color: #cdd6f4; border: 1px solid #45475a;"
-            " border-radius: 3px; padding: 2px 4px;");
-    };
-    auto styleCk = [](QCheckBox* c) {
-        c->setStyleSheet("color: #cdd6f4; font-size: 11px;");
-    };
-    auto styleBtn = [](QPushButton* b) {
-        b->setFixedHeight(22);
-        b->setStyleSheet(
-            "QPushButton { background:#313244; color:#cdd6f4; border:1px solid #45475a;"
-            " border-radius:3px; padding:0 8px; }"
-            "QPushButton:hover{background:#45475a;}");
-    };
-
     // Name filter
     nameFilter_ = new QLineEdit(parent);
     nameFilter_->setPlaceholderText("Search…");
     nameFilter_->setClearButtonEnabled(true);
     nameFilter_->setFixedWidth(140);
-    styleEdit(nameFilter_);
 
     // Address range
     auto* addrLabel = new QLabel("Addr:", parent);
-    addrLabel->setStyleSheet("color:#a6adc8; font-size:11px;");
+    addrLabel->setProperty("role", "subtext");
     addrLow_ = new QLineEdit(parent);
     addrLow_->setPlaceholderText("0x0");
     addrLow_->setFixedWidth(80);
-    styleEdit(addrLow_);
     auto* dashLabel = new QLabel("–", parent);
-    dashLabel->setStyleSheet("color:#6c7086;");
+    dashLabel->setProperty("role", "muted");
     addrHigh_ = new QLineEdit(parent);
     addrHigh_->setPlaceholderText("0xFFFF…");
     addrHigh_->setFixedWidth(80);
-    styleEdit(addrHigh_);
 
     // Confidence threshold
     auto* confLabel = new QLabel("Conf≥", parent);
-    confLabel->setStyleSheet("color:#a6adc8; font-size:11px;");
+    confLabel->setProperty("role", "subtext");
     confSpin_ = new QDoubleSpinBox(parent);
     confSpin_->setRange(0.0, 1.0);
     confSpin_->setSingleStep(0.05);
     confSpin_->setValue(0.0);
     confSpin_->setFixedWidth(56);
-    styleEdit(confSpin_);
 
     // Pattern checkboxes
-    ckStl_    = new QCheckBox("STL",    parent); styleCk(ckStl_);
-    ckCrypto_ = new QCheckBox("Crypto", parent); styleCk(ckCrypto_);
-    ckAlgo_   = new QCheckBox("Algo",   parent); styleCk(ckAlgo_);
-    ckDesign_ = new QCheckBox("Pat",    parent); styleCk(ckDesign_);
-    ckLib_    = new QCheckBox("Lib",    parent); styleCk(ckLib_);
+    ckStl_    = new QCheckBox("STL",    parent);
+    ckCrypto_ = new QCheckBox("Crypto", parent);
+    ckAlgo_   = new QCheckBox("Algo",   parent);
+    ckDesign_ = new QCheckBox("Pat",    parent);
+    ckLib_    = new QCheckBox("Lib",    parent);
 
     // Export buttons
-    csvButton_  = new QPushButton("CSV",  parent); styleBtn(csvButton_);
-    jsonButton_ = new QPushButton("JSON", parent); styleBtn(jsonButton_);
+    csvButton_  = new QPushButton("CSV",  parent);
+    csvButton_->setProperty("compact", true);
+    jsonButton_ = new QPushButton("JSON", parent);
+    jsonButton_->setProperty("compact", true);
 
     layout->addWidget(nameFilter_);
     layout->addWidget(addrLabel);
@@ -762,9 +745,6 @@ void FunctionListPanel::onContextMenu(const QPoint& pos)
     bool hasSelection = !tableView_->selectionModel()->selectedRows().isEmpty();
 
     QMenu menu;
-    menu.setStyleSheet(
-        "QMenu{background:#313244;color:#cdd6f4;border:1px solid #45475a;}"
-        "QMenu::item:selected{background:#45475a;}");
 
     auto* navigateAct = menu.addAction("Navigate to Function");
     navigateAct->setEnabled(idx.isValid());

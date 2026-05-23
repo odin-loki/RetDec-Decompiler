@@ -4,7 +4,7 @@
  *
  * Responsibilities:
  *   1. Create QApplication with high-DPI settings.
- *   2. Load settings and apply theme QSS (Catppuccin Mocha; Light attempted).
+ *   2. Load settings and apply theme QSS (Catppuccin Mocha / Latte).
  *   3. Register bundled monospace fonts (JetBrains Mono / Cascadia Code).
  *   4. Construct and show RetDecMainWindow.
  *   5. Handle command-line argument: optional binary path to open on launch.

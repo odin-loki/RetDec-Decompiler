@@ -203,7 +203,7 @@ TEST_F(ComprehensiveSmokeTest, MainWindowConstructsCleanly) {
     // Bottom dock hosts Console + Problems + History + Progress tabs.
     EXPECT_NE(win->outputTabsForTest(), nullptr);
     EXPECT_EQ(win->outputTabsForTest()->count(), 4);
-    EXPECT_EQ(win->workspaceTabsForTest()->count(), 3);
+    EXPECT_EQ(win->workspaceTabsForTest()->count(), 4);
 }
 
 TEST_F(ComprehensiveSmokeTest, EveryDocumentTabSwitches) {
@@ -382,6 +382,8 @@ TEST_F(ComprehensiveSmokeTest, StatusBarMutatorsAreSafe) {
     win->setStatusFile(QStringLiteral("x.bin"));
     win->setStatusStage(QStringLiteral("Stage"));
     win->setStatusFunctionCount(42);
+    win->setStatusDecompileState(QStringLiteral("cached"));
+    win->setStatusDecompileState(QString());
     win->setAnalysisProgress(0);
     win->setAnalysisProgress(100);
     win->setAnalysisProgress(-9999); // out of range: should clamp / ignore

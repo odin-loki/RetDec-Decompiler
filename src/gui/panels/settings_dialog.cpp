@@ -63,10 +63,10 @@ QWidget* SettingsDialog::makeSeparator(const QString& title) {
     auto* l = new QHBoxLayout(w);
     l->setContentsMargins(0, 8, 0, 4);
     auto* lbl = new QLabel("<b>" + title + "</b>", w);
-    lbl->setStyleSheet("color:#89b4fa;");
+    lbl->setProperty("role", "section-header");
     auto* line = new QFrame(w);
     line->setFrameShape(QFrame::HLine);
-    line->setStyleSheet("color:#313244;");
+    line->setProperty("role", "section-sep");
     l->addWidget(lbl);
     l->addWidget(line, 1);
     return w;
@@ -129,10 +129,9 @@ QWidget* SettingsDialog::buildGeneralTab() {
 
     themeCombo_ = new QComboBox;
     themeCombo_->addItems({"Dark", "Light", "System Default"});
-    themeCombo_->setItemData(1, QStringLiteral("Not available in v3"), Qt::ToolTipRole);
-    themeCombo_->setItemData(2, QStringLiteral("Not available in v3"), Qt::ToolTipRole);
     l->addWidget(makeRow("Theme", themeCombo_,
-                         QStringLiteral("Only Catppuccin Mocha is bundled in v3")));
+                         QStringLiteral("Catppuccin Mocha (dark) or Latte (light); "
+                                        "System Default follows the OS when supported")));
 
     fontCombo_ = new QFontComboBox;
     l->addWidget(makeRow("Editor font", fontCombo_));
@@ -158,8 +157,8 @@ QWidget* SettingsDialog::buildGeneralTab() {
     l->addWidget(makeSeparator("Session"));
 
     restoreCheck_ = new QCheckBox("Restore last session on startup");
-    restoreCheck_->setEnabled(false);
-    restoreCheck_->setToolTip(QStringLiteral("Not yet implemented"));
+    restoreCheck_->setToolTip(QStringLiteral(
+            "Re-open the last binary from File → Open Binary when RetDec starts."));
     l->addWidget(restoreCheck_);
 
     l->addStretch();

@@ -13,8 +13,9 @@ namespace retdec::gui {
 /**
  * @brief Apply the QSS theme selected in AppSettings::general.theme.
  *
- * Only Catppuccin Mocha is bundled in v3. Light theme attempts
- * catppuccin_latte.qss and falls back to Mocha when unavailable.
+ * Dark loads catppuccin_mocha.qss; Light loads catppuccin_latte.qss.
+ * System Default follows the OS colour scheme when available (Windows
+ * falls back to Mocha). Missing QSS files fall back to Mocha.
  */
 void applyThemeFromSettings(QApplication& app);
 

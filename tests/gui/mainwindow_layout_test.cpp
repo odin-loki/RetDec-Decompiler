@@ -5,7 +5,7 @@
  *  * Central area = TriageBanner + QTabWidget of documents.
  *  * Centre tab order: Decompiled C | Assembly | IR (SSA) | CFG | Synced.
  *  * Left dock = Functions (single panel, no inner tab strip).
- *  * Right dock = Workspace tabbed: Strings | Inspect | Binary.
+ *  * Right dock = Workspace tabbed: Strings | Inspect | Binary | Target.
  *  * Bottom dock = Output tabbed: Console | Problems | History | Progress*.
  *  * No mode toolbar.
  */
@@ -18,6 +18,7 @@
 
 #include <QApplication>
 #include <QDockWidget>
+#include <QStackedWidget>
 #include <QTabWidget>
 #include <QToolBar>
 #include <QtGlobal>
@@ -75,13 +76,14 @@ TEST_F(MainWindowLayoutTest, LeftFunctionsDockIsSinglePanelNotTabbed) {
     EXPECT_EQ(functions->findChildren<QTabWidget*>().size(), 0);
 }
 
-TEST_F(MainWindowLayoutTest, RightWorkspaceHasStringsInspectBinary) {
+TEST_F(MainWindowLayoutTest, RightWorkspaceHasStringsInspectBinaryTarget) {
     auto* ws = win->workspaceTabsForTest();
     ASSERT_NE(ws, nullptr);
-    EXPECT_EQ(ws->count(), 3);
+    EXPECT_EQ(ws->count(), 4);
     EXPECT_EQ(ws->tabText(0), QStringLiteral("Strings"));
     EXPECT_EQ(ws->tabText(1), QStringLiteral("Inspect"));
     EXPECT_EQ(ws->tabText(2), QStringLiteral("Binary"));
+    EXPECT_EQ(ws->tabText(3), QStringLiteral("Target"));
 }
 
 TEST_F(MainWindowLayoutTest, DocksAreNamedForLayoutPersistence) {
@@ -109,6 +111,21 @@ TEST_F(MainWindowLayoutTest, TriageBannerStartsHidden) {
     auto* tb = win->triageBannerForTest();
     ASSERT_NE(tb, nullptr);
     EXPECT_TRUE(tb->isHidden());
+}
+
+TEST_F(MainWindowLayoutTest, StartScreenVisibleWhenNoBinary) {
+    auto* stack = win->centralStackForTest();
+    ASSERT_NE(stack, nullptr);
+    EXPECT_EQ(stack->count(), 2);
+    EXPECT_EQ(stack->currentIndex(), 0);
+    EXPECT_NE(win->documentTabsForTest(), nullptr);
+}
+
+TEST_F(MainWindowLayoutTest, DocumentTabsHaveIcons) {
+    auto* docs = win->documentTabsForTest();
+    ASSERT_NE(docs, nullptr);
+    for (int i = 0; i < docs->count(); ++i)
+        EXPECT_FALSE(docs->tabIcon(i).isNull()) << "tab " << i;
 }
 
 TEST_F(MainWindowLayoutTest, AiAssistantDockIsNotPresent) {

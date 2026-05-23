@@ -8,15 +8,37 @@
 
 #include <QApplication>
 #include <QFile>
+#include <QStyleHints>
+#include <QtGlobal>
 
 namespace retdec::gui {
 
-void applyThemeFromSettings(QApplication& app) {
+namespace {
+
+QString themeQssPath(GeneralSettings::Theme theme) {
     using Theme = GeneralSettings::Theme;
 
-    QString qssPath = QStringLiteral(":/retdec/catppuccin_mocha.qss");
-    if (AppSettings::instance().general.theme == Theme::Light)
-        qssPath = QStringLiteral(":/retdec/catppuccin_latte.qss");
+    if (theme == Theme::Light)
+        return QStringLiteral(":/retdec/catppuccin_latte.qss");
+
+    if (theme == Theme::SystemDefault) {
+#ifdef Q_OS_WIN
+        // No reliable system-theme API on Windows in v3 — use Mocha.
+        return QStringLiteral(":/retdec/catppuccin_mocha.qss");
+#else
+        const auto scheme = QApplication::styleHints()->colorScheme();
+        if (scheme == Qt::ColorScheme::Light)
+            return QStringLiteral(":/retdec/catppuccin_latte.qss");
+#endif
+    }
+
+    return QStringLiteral(":/retdec/catppuccin_mocha.qss");
+}
+
+} // namespace
+
+void applyThemeFromSettings(QApplication& app) {
+    const QString qssPath = themeQssPath(AppSettings::instance().general.theme);
 
     QFile qssFile(qssPath);
     if (!qssFile.open(QIODevice::ReadOnly)) {

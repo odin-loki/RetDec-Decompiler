@@ -37,6 +37,7 @@
 #include "retdec/gui/panels/target_panel.h"
 #include "retdec/gui/panels/signature_studio_panel.h"
 #include "retdec/gui/panels/tri_pane_code_view.h"
+#include "retdec/gui/widgets/empty_state_widget.h"
 
 #include <QAction>
 #include <QApplication>
@@ -63,9 +64,12 @@
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QProgressBar>
+#include <QPushButton>
 #include <QRegularExpression>
 #include <QSet>
 #include <QSettings>
+#include <QStackedWidget>
+#include <QStyle>
 #include <QInputDialog>
 #include <QTemporaryFile>
 #include <QVBoxLayout>
@@ -138,10 +142,15 @@ constexpr int kDocIR          = 2;
 constexpr int kDocCFG         = 3;
 constexpr int kDocSynced      = 4;
 
-// Workspace dock (right) — slim two tabs.
+// Central stack: welcome screen vs document tabs.
+constexpr int kCentralEmpty = 0;
+constexpr int kCentralDocs  = 1;
+
+// Workspace dock (right).
 constexpr int kWsStrings = 0;
 constexpr int kWsInspect = 1;
 constexpr int kWsBinary  = 2;
+constexpr int kWsTarget  = 3;
 
 // Bottom output dock — Console + Problems + History + Progress.
 constexpr int kOutConsole  = 0;
@@ -238,6 +247,12 @@ RetDecMainWindow::RetDecMainWindow(QWidget* parent)
     connect(&AppSettings::instance(), &AppSettings::settingsChanged,
             this, &RetDecMainWindow::applyEditorFontFromSettings);
     applyEditorFontFromSettings();
+
+    updateCentralEmptyState();
+
+    if (qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) {
+        QTimer::singleShot(0, this, [this]() { tryRestoreLastSession(); });
+    }
 }
 
 RetDecMainWindow::~RetDecMainWindow() {
@@ -275,6 +290,7 @@ void RetDecMainWindow::createPanels() {
     liveConsole_    = new panels::LiveConsolePanel(this);
     target_         = new panels::TargetPanel(this);
     signatureStudio_ = new panels::SignatureStudioPanel(this);
+    comparePanel_   = new panels::DiffPanel(this);
     triageBanner_   = new panels::TriageBanner(this);
     triPane_        = new panels::TriPaneCodeView(this);
 
@@ -393,6 +409,9 @@ void RetDecMainWindow::createPanels() {
     connect(triageBanner_, &panels::TriageBanner::dismissed, this, [this] {
         triageBanner_->hide();
     });
+    connect(triageBanner_, &panels::TriageBanner::targetDetailsRequested, this, [this] {
+        focusWorkspaceTab(kWsTarget);
+    });
 
     connect(inspect_, &panels::InspectPanel::cliToolFinished, this,
             &RetDecMainWindow::onCliToolLogged);
@@ -436,25 +455,72 @@ void RetDecMainWindow::createDockLayout() {
     documentTabs_->setTabToolTip(kDocSynced,
             QStringLiteral("Cross-highlighted Asm ┃ IR ┃ C side-by-side view (Ctrl+5)."));
 
+    if (auto* style = this->style()) {
+        documentTabs_->setTabIcon(kDocDecompiledC,
+                style->standardIcon(QStyle::SP_FileIcon));
+        documentTabs_->setTabIcon(kDocAssembly,
+                style->standardIcon(QStyle::SP_ComputerIcon));
+        documentTabs_->setTabIcon(kDocIR,
+                style->standardIcon(QStyle::SP_FileDialogDetailedView));
+        documentTabs_->setTabIcon(kDocCFG,
+                style->standardIcon(QStyle::SP_FileDialogListView));
+        documentTabs_->setTabIcon(kDocSynced,
+                style->standardIcon(QStyle::SP_BrowserReload));
+    }
+
+    startEmptyState_ = new widgets::EmptyStateWidget(this);
+    startEmptyState_->setTitle(QStringLiteral("Open a binary to begin"));
+    startEmptyState_->setHint(QStringLiteral(
+            "Drag and drop an executable here, or use the buttons below."));
+    if (auto* style = this->style()) {
+        startEmptyState_->setIcon(style->standardIcon(QStyle::SP_DialogOpenButton));
+    }
+
+    auto* openBinaryBtn = new QPushButton(QStringLiteral("Open Binary…"), this);
+    auto* openProjectBtn = new QPushButton(QStringLiteral("Open Project…"), this);
+    connect(openBinaryBtn, &QPushButton::clicked, this, &RetDecMainWindow::onOpenBinary);
+    connect(openProjectBtn, &QPushButton::clicked, this, &RetDecMainWindow::onOpenProject);
+
+    auto* startActions = new QWidget(this);
+    auto* startActionsLay = new QHBoxLayout(startActions);
+    startActionsLay->setContentsMargins(0, 0, 0, 0);
+    startActionsLay->setSpacing(12);
+    startActionsLay->addWidget(openBinaryBtn);
+    startActionsLay->addWidget(openProjectBtn);
+
+    auto* startPage = new QWidget(this);
+    auto* startLay = new QVBoxLayout(startPage);
+    startLay->setContentsMargins(24, 24, 24, 24);
+    startLay->addStretch(1);
+    startLay->addWidget(startEmptyState_, 0, Qt::AlignHCenter);
+    startLay->addWidget(startActions, 0, Qt::AlignHCenter);
+    startLay->addStretch(2);
+
+    centralStack_ = new QStackedWidget(this);
+    centralStack_->setObjectName(QStringLiteral("centralStack"));
+    centralStack_->addWidget(startPage);
+    centralStack_->addWidget(documentTabs_);
+
     auto* centralHost = new QWidget(this);
     auto* centralLay  = new QVBoxLayout(centralHost);
     centralLay->setContentsMargins(6, 6, 6, 0);
     centralLay->setSpacing(6);
     centralLay->addWidget(triageBanner_);
-    centralLay->addWidget(documentTabs_, 1);
+    centralLay->addWidget(centralStack_, 1);
     setCentralWidget(centralHost);
 
     // ── LEFT: Functions (single dock, no inner tabs) ──────────────────────────
     dockFunctions_ = makeDock(QStringLiteral("Functions"), functionList_);
     dockFunctions_->setObjectName(QStringLiteral("dock_functions"));
 
-    // ── RIGHT: Strings + Inspect + Binary ─────────────────────────────────────
+    // ── RIGHT: Strings + Inspect + Binary + Target ────────────────────────────
     workspaceTabWidget_ = new QTabWidget();
     workspaceTabWidget_->setDocumentMode(true);
     workspaceTabWidget_->setMovable(true);
     workspaceTabWidget_->addTab(stringsBrowser_, QStringLiteral("Strings"));
     workspaceTabWidget_->addTab(inspect_,        QStringLiteral("Inspect"));
     workspaceTabWidget_->addTab(binaryBrowser_,  QStringLiteral("Binary"));
+    workspaceTabWidget_->addTab(target_,         QStringLiteral("Target"));
     dockWorkspace_ = makeDock(QStringLiteral("Workspace"), workspaceTabWidget_);
     dockWorkspace_->setObjectName(QStringLiteral("dock_workspace"));
 
@@ -536,6 +602,7 @@ void RetDecMainWindow::createMenus() {
     auto* runStageAct = analysisMenu_->addAction(QStringLiteral("Run Stage…"));
     analysisMenu_->addSeparator();
     auto* configAct = analysisMenu_->addAction(QStringLiteral("Configure…"));
+    auto* targetAct = analysisMenu_->addAction(QStringLiteral("Target"));
     analysisMenu_->addSeparator();
     fastDecompileAct_ = analysisMenu_->addAction(
             QStringLiteral("Fast decompile (skip backend optimisations)"));
@@ -565,6 +632,7 @@ void RetDecMainWindow::createMenus() {
             this, &RetDecMainWindow::onRedecompileSelectedFunction);
     connect(runStageAct, &QAction::triggered, this, &RetDecMainWindow::onRunStage);
     connect(configAct,   &QAction::triggered, this, &RetDecMainWindow::onConfigure);
+    connect(targetAct,   &QAction::triggered, this, [this] { focusWorkspaceTab(kWsTarget); });
     connect(stopAction_, &QAction::triggered, this, &RetDecMainWindow::stopAnalysis);
 
     analyseAction_ = runFullAct;
@@ -743,6 +811,20 @@ void RetDecMainWindow::focusOutputTab(int tabIndex) {
     }
 }
 
+void RetDecMainWindow::focusWorkspaceTab(int tabIndex) {
+    if (workspaceTabWidget_) {
+        if (tabIndex < 0 || tabIndex >= workspaceTabWidget_->count())
+            tabIndex = kWsStrings;
+        workspaceTabWidget_->setCurrentIndex(tabIndex);
+        if (auto* w = workspaceTabWidget_->currentWidget())
+            w->setFocus();
+    }
+    if (dockWorkspace_) {
+        dockWorkspace_->show();
+        dockWorkspace_->raise();
+    }
+}
+
 void RetDecMainWindow::updateProjectFileActions() {
     const bool ok = static_cast<bool>(project_);
     if (saveProjectAct_)   saveProjectAct_->setEnabled(ok);
@@ -811,6 +893,7 @@ void RetDecMainWindow::createStatusBar() {
     statusFile_    = new QLabel(this);
     statusStage_   = new QLabel(this);
     statusFnCount_ = new QLabel(this);
+    statusDecompile_ = new QLabel(this);
     statusElapsed_ = new QLabel(this);
     analysisBar_   = new QProgressBar(this);
     analysisBar_->setFixedWidth(150);
@@ -821,12 +904,14 @@ void RetDecMainWindow::createStatusBar() {
     statusBar()->addWidget(statusFile_,    2);
     statusBar()->addWidget(statusStage_,   2);
     statusBar()->addPermanentWidget(statusFnCount_);
+    statusBar()->addPermanentWidget(statusDecompile_);
     statusBar()->addPermanentWidget(analysisBar_);
     statusBar()->addPermanentWidget(statusElapsed_);
 
     setStatusFile(QStringLiteral("No binary loaded"));
     setStatusStage(QStringLiteral("Idle"));
     statusFnCount_->setText(QStringLiteral("— functions"));
+    statusDecompile_->setVisible(false);
 
     elapsedTimer_ = new QTimer(this);
     elapsedTimer_->setInterval(500);
@@ -974,6 +1059,7 @@ bool RetDecMainWindow::tryLoadCachedDecompile(const QString& binaryPath) {
         return false;
     if (!loadDecompileArtifacts(cPath))
         return false;
+    setStatusDecompileState(QStringLiteral("cached"));
     statusBar()->showMessage(
             QStringLiteral("Loaded cached decompile (%1) — press F5 to re-decompile.")
                     .arg(cFi.lastModified().toString(QStringLiteral("HH:mm"))),
@@ -1018,8 +1104,13 @@ void RetDecMainWindow::openBinary(const QString& path) {
     setWindowTitle(QStringLiteral("RetDec — %1").arg(absPath));
     project_ = std::make_unique<ProjectFile>(absPath);
     lastProjectSavePath_.clear();
+    loadedArtifacts_.reset();
     setStatusFile(absPath);
+    statusFnCount_->setText(QStringLiteral("— functions"));
+    setStatusDecompileState(QString());
     addRecentFile(absPath);
+    AppSettings::instance().general.lastBinaryPath = absPath;
+    AppSettings::instance().save();
     binaryBrowser_->loadBinary(absPath);
     target_->setFromProject(project_.get());
     signatureStudio_->setActiveBinary(absPath);
@@ -1032,10 +1123,15 @@ void RetDecMainWindow::openBinary(const QString& path) {
         triageBanner_->setActionsEnabled(true);
     }
     updateProjectFileActions();
+    updateCentralEmptyState();
     // Cache reuse: a 1 MB binary takes ~50 s to decompile from scratch on a
     // workstation. Re-opening the same binary in a session must not pay
     // instantly and show a "press F5 to re-decompile" hint.
-    tryLoadCachedDecompile(absPath);
+    if (tryLoadCachedDecompile(absPath)) {
+        // setStatusDecompileState("cached") done inside tryLoadCachedDecompile.
+    } else {
+        setStatusDecompileState(QStringLiteral("not decompiled"));
+    }
     // Always run fileinfo so Binary Browser gets sectionTable (unless headless).
     if (!quitWhenDecompileFinishes_
         && qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) {
@@ -1052,8 +1148,11 @@ void RetDecMainWindow::openProject(const QString& path) {
     }
     project_ = std::move(pf);
     lastProjectSavePath_ = QFileInfo(path).absoluteFilePath();
+    loadedArtifacts_.reset();
     setWindowTitle(QStringLiteral("RetDec — %1").arg(project_->binaryPath()));
     setStatusFile(project_->binaryPath());
+    statusFnCount_->setText(QStringLiteral("— functions"));
+    setStatusDecompileState(QString());
     addRecentFile(path);
     binaryBrowser_->loadBinary(project_->binaryPath());
     target_->setFromProject(project_.get());
@@ -1067,8 +1166,14 @@ void RetDecMainWindow::openProject(const QString& path) {
         triageBanner_->setActionsEnabled(true);
     }
     updateProjectFileActions();
-    if (!tryLoadCachedDecompile(project_->binaryPath()))
-        inspect_->runFileinfo(project_->binaryPath(), resolveRetdecFileinfoExecutable());
+    updateCentralEmptyState();
+    if (!tryLoadCachedDecompile(project_->binaryPath())) {
+        setStatusDecompileState(QStringLiteral("not decompiled"));
+        if (!quitWhenDecompileFinishes_
+            && qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) {
+            inspect_->runFileinfo(project_->binaryPath(), resolveRetdecFileinfoExecutable());
+        }
+    }
 }
 
 bool RetDecMainWindow::saveProject(const QString& path) {
@@ -1162,11 +1267,34 @@ void RetDecMainWindow::setStatusFile(const QString& path) {
 }
 void RetDecMainWindow::setStatusStage(const QString& stage)   { statusStage_->setText(stage); }
 void RetDecMainWindow::setStatusFunctionCount(int count) {
-    statusFnCount_->setText(QStringLiteral("%1 functions").arg(count));
+    if (count < 0)
+        statusFnCount_->setText(QStringLiteral("— functions"));
+    else
+        statusFnCount_->setText(QStringLiteral("%1 functions").arg(count));
+}
+void RetDecMainWindow::setStatusDecompileState(const QString& state) {
+    if (!statusDecompile_) return;
+    statusDecompile_->setText(state);
+    statusDecompile_->setVisible(!state.isEmpty());
 }
 void RetDecMainWindow::setAnalysisProgress(int percent) {
     analysisBar_->setRange(0, 100);
     analysisBar_->setValue(percent);
+}
+
+void RetDecMainWindow::updateCentralEmptyState() {
+    if (!centralStack_) return;
+    const bool hasBinary = project_ && !project_->binaryPath().isEmpty();
+    centralStack_->setCurrentIndex(hasBinary ? kCentralDocs : kCentralEmpty);
+}
+
+void RetDecMainWindow::tryRestoreLastSession() {
+    const auto& g = AppSettings::instance().general;
+    if (!g.restoreSession || g.lastBinaryPath.isEmpty())
+        return;
+    if (!QFileInfo::exists(g.lastBinaryPath))
+        return;
+    openBinary(g.lastBinaryPath);
 }
 
 void RetDecMainWindow::onOpenBinary() {
@@ -1630,11 +1758,6 @@ void RetDecMainWindow::onConfigure() {
     statusBar()->showMessage(QStringLiteral("Decompiler --config: %1").arg(path), 5000);
 }
 
-void RetDecMainWindow::syncAiAssistantFromAppSettings() {
-    // AI assistant intentionally removed from v3. Slot kept as a stub for
-    // ABI compatibility with the signal/slot wiring; no-op here.
-}
-
 void RetDecMainWindow::applyEditorFontFromSettings() {
     const auto& g = AppSettings::instance().general;
     QFont font = g.editorFont;
@@ -1650,11 +1773,6 @@ void RetDecMainWindow::applyEditorFontFromSettings() {
 void RetDecMainWindow::onSettings() {
     panels::SettingsDialog dlg(this);
     dlg.exec();
-}
-
-void RetDecMainWindow::onMLAssistant() {
-    statusBar()->showMessage(
-            QStringLiteral("AI Assistant has been removed from this build."), 4000);
 }
 
 void RetDecMainWindow::onCompare() {
@@ -1798,6 +1916,7 @@ void RetDecMainWindow::onDecompilerProcessFinished(int exitCode, QProcess::ExitS
                             QStringLiteral("retdec-decompiler"),
                             QStringLiteral("Finished but could not read: %1").arg(cPath));
                 } else {
+                    setStatusDecompileState(QStringLiteral("decompiled"));
                     statusBar()->showMessage(
                             QStringLiteral("Decompile %1 s · load %2 s")
                                     .arg(decompileMs / 1000.0, 0, 'f', 1)

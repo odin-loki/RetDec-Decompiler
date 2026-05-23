@@ -4,6 +4,7 @@
  */
 
 #include "retdec/gui/artifact_loader.h"
+#include "retdec/gui/panels/decompiled_c_panel.h"
 #include "retdec/gui/widgets/empty_state_widget.h"
 
 #include <gtest/gtest.h>
@@ -11,6 +12,7 @@
 #include <QApplication>
 #include <QFile>
 #include <QIcon>
+#include <QLineEdit>
 #include <QTemporaryDir>
 
 namespace {
@@ -61,6 +63,29 @@ TEST(PolishIntegration, EmptyStateWidgetConstructs) {
     widget.show();
     QApplication::processEvents();
     EXPECT_TRUE(widget.isVisible());
+}
+
+TEST(PolishIntegration, DecompiledCPanelFindBarConstructs) {
+    Q_ASSERT(QApplication::instance() != nullptr);
+    retdec::gui::panels::DecompiledCPanel panel;
+    panel.show();
+    QApplication::processEvents();
+
+    const QList<QLineEdit*> bars = panel.findChildren<QLineEdit*>();
+    ASSERT_EQ(bars.size(), 1);
+    EXPECT_FALSE(bars[0]->isVisible());
+
+    panel.setSource(QString{});
+    EXPECT_NO_THROW(panel.showFindBar());
+    EXPECT_TRUE(bars[0]->isVisible());
+    EXPECT_NO_THROW(panel.hideFindBar());
+    EXPECT_FALSE(bars[0]->isVisible());
+
+    panel.setSource(QStringLiteral("int main(void) { return 0; }\n"));
+    panel.showFindBar();
+    bars[0]->setText(QStringLiteral("main"));
+    EXPECT_NO_THROW(panel.showFindBar());
+    EXPECT_NO_THROW(panel.hideFindBar());
 }
 
 TEST(PolishIntegration, ExtractCForFunctionMinimalConfig) {
