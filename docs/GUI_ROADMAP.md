@@ -30,8 +30,10 @@ Phased plan for GUI/product work. Update checkboxes as items ship.
 - [x] `tests/decompiler/` — fib fixture, CLI smoke, GUI headless, Windows parity ctest
 - [x] `.github/workflows/ctest-windows.yml` (integration label)
 - [x] Linux integration workflow (`.github/workflows/ctest-linux.yml`)
+- [x] **Unit tests in CI** — `retdec-gui-tests` (headless) + `ctest -L unit` on Windows and Linux integration workflows
 - [x] Perf benchmark trend in CI (`.github/workflows/perf-nightly.yml`, weekly + workflow_dispatch; `scripts/perf_bench_ci.ps1`)
 - [x] Install smoke after `cmake --install`
+- [x] Docs / scripts polish pass (May 2026) — `GUI_POLISH.md`, `user_manual.md`, `scripts/README.md`, `-Help` on unpack scripts
 
 ## Phase D — Differentiation
 

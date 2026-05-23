@@ -53,6 +53,13 @@ set_tests_properties(format_router_unit PROPERTIES
     LABELS "decompiler;unit;managed"
 )
 
+add_test(NAME retdec_cli_unit
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_SOURCE_DIR}/scripts/python/test_retdec_cli.py"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+set_tests_properties(retdec_cli_unit PROPERTIES
+    TIMEOUT 60 LABELS "decompiler;unit;scripts")
+
 # ── Build fib.c test binary at configure/build time ───────────────────────────
 set(_FIB_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../test_binaries/fib.c")
 set(_FIB_BIN "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke${CMAKE_EXECUTABLE_SUFFIX}")

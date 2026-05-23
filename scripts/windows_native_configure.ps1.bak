@@ -1,6 +1,0 @@
-try {
-    function Foo { Write-Host "x" }
-    Foo
-} finally {
-    Write-Host "done"
-}

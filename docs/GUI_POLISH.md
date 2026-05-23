@@ -2,6 +2,16 @@
 
 Polish-only work (no new features). Update as items ship.
 
+## Completed (v3 maintenance)
+
+Framework / docs polish shipped alongside GUI v3 (May 2026). Items below were on the maintenance backlog; all complete.
+
+- [x] **CI badges** — README workflow badges for `ctest-windows`, `ctest-linux`, `perf-nightly`, `release-installers`
+- [x] **Unit tests in CI** — GUI headless tests + `ctest -L unit` in `.github/workflows/ctest-windows.yml` and `ctest-linux.yml`
+- [x] **`retdec_cli.py` autodetect** — `_resolve_decompiler()` searches `install/`, `build/**`, and `build-decompiler-test/bin`
+- [x] **User manual sync** — `docs/user_manual.md` aligned with v3 layout; external `retdec-qwen3-runner` / CLI `--model` (no in-GUI AI chat)
+- [x] **`scripts/README.md` expansion** — CI/tooling table (`retdec_cli.py`, unpack/decompile, perf bench, install smoke, build-all)
+
 ## Tier 0 — Trust (stop lying) ✅
 - [x] Hide/wire IR stage combo, Assembly G/F, call graph depth, tri-pane Alt+←/→
 - [x] Settings: theme/font honest, ML copy fixed, analysis scope banner

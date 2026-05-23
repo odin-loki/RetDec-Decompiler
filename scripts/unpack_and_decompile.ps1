@@ -18,17 +18,54 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true, Position = 0)]
+    [Parameter(Position = 0)]
     [string] $InputFile,
 
     [Alias("o")]
     [string] $Output = "",
 
-    [switch] $KeepUnpacked
+    [switch] $KeepUnpacked,
+
+    [switch] $Help
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+function Show-Usage {
+    @"
+Usage: .\scripts\unpack_and_decompile.ps1 INPUT [-Output OUTPUT] [-KeepUnpacked] [-Help]
+
+  INPUT            Binary to unpack and decompile
+  -Output, -o      Decompiler output path (default: INPUT.c beside input)
+  -KeepUnpacked    Do not delete the intermediate *-unpacked file
+  -Help            Show this synopsis
+
+Steps:
+  1. Optional retdec-fileinfo probe (informational)
+  2. retdec-unpacker (Python wrapper or native binary)
+  3. retdec-decompiler on unpacked file, or original if nothing to unpack
+
+Exit code: same as retdec-decompiler (0 = success).
+
+.EXAMPLE
+  .\scripts\unpack_and_decompile.ps1 C:\samples\packed.exe
+
+.EXAMPLE
+  .\scripts\unpack_and_decompile.ps1 .\sample.exe -Output .\out.c -KeepUnpacked
+"@
+}
+
+if ($Help) {
+    Show-Usage
+    exit 0
+}
+
+if ([string]::IsNullOrWhiteSpace($InputFile)) {
+    Show-Usage
+    Write-Error "Missing required parameter: InputFile"
+    exit 1
+}
 
 . (Join-Path $PSScriptRoot "retdec-paths.ps1")
 

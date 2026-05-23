@@ -7,7 +7,7 @@
   Always exits 0. Prints elapsed seconds and writes a JSON result file.
 
 .PARAMETER Decompiler
-  Path to retdec-decompiler.exe (auto-detected from install/ or build-decompiler-test/).
+  Path to retdec-decompiler.exe (auto-detected from install/ or build/).
 
 .PARAMETER Binary
   Input binary to decompile (default: tests/test_binaries/fib.c compiled on the fly).
@@ -34,10 +34,28 @@ function Find-Decompiler {
     }
     $candidates = @(
         (Join-Path $RepoRoot "install\windows\bin\retdec-decompiler.exe"),
-        (Join-Path $RepoRoot "build-decompiler-test\bin\retdec-decompiler.exe"),
-        (Join-Path $RepoRoot "build-decompiler-test\Release\bin\retdec-decompiler.exe")
+        (Join-Path $RepoRoot "install\linux\bin\retdec-decompiler")
     )
     foreach ($c in $candidates) {
+        if (Test-Path -LiteralPath $c) { return $c }
+    }
+    $buildWin = Join-Path $RepoRoot "build\windows"
+    if (Test-Path -LiteralPath $buildWin) {
+        $found = Get-ChildItem -LiteralPath $buildWin -Filter "retdec-decompiler.exe" -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($found) { return $found.FullName }
+    }
+    $buildLin = Join-Path $RepoRoot "build\linux"
+    if (Test-Path -LiteralPath $buildLin) {
+        $found = Get-ChildItem -LiteralPath $buildLin -Filter "retdec-decompiler" -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { -not $_.Extension } |
+            Select-Object -First 1
+        if ($found) { return $found.FullName }
+    }
+    foreach ($c in @(
+            (Join-Path $RepoRoot "build-decompiler-test\bin\retdec-decompiler.exe"),
+            (Join-Path $RepoRoot "build-decompiler-test\Release\bin\retdec-decompiler.exe")
+        )) {
         if (Test-Path -LiteralPath $c) { return $c }
     }
     return $null
@@ -48,12 +66,14 @@ function Ensure-FibBinary {
     if (Test-Path -LiteralPath $Path) { return $Path }
 
     $searchRoots = @(
-        (Join-Path $RepoRoot "build-decompiler-test\tests\decompiler"),
-        (Join-Path $RepoRoot "build-gui-check\tests\decompiler"),
-        (Join-Path $RepoRoot "build\tests\decompiler")
+        (Join-Path $RepoRoot "build\windows"),
+        (Join-Path $RepoRoot "build-decompiler-test"),
+        (Join-Path $RepoRoot "build-gui-check"),
+        (Join-Path $RepoRoot "build")
     )
     foreach ($root in $searchRoots) {
-        $existing = Get-ChildItem -LiteralPath $root -Filter "fib_smoke.exe" -ErrorAction SilentlyContinue |
+        if (-not (Test-Path -LiteralPath $root)) { continue }
+        $existing = Get-ChildItem -LiteralPath $root -Filter "fib_smoke.exe" -Recurse -ErrorAction SilentlyContinue |
             Select-Object -First 1
         if ($existing) { return $existing.FullName }
     }

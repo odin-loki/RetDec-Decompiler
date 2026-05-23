@@ -48,6 +48,27 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | `run_asan.sh` | ASan+LSan decompiler run; binary under `build/linux` or `build/`, test PE under `dist/windows` or `build-win/win-runtime` |
 | `superbuild-build-all-linux.sh` | Superbuild (GCC): `superbuild-debug` + `superbuild-release` under `build/linux/<preset>/`; optional `SUPERBUILD_MINGW=1`, `SUPERBUILD_CLANG=1` |
 
+## CI / tooling
+
+| Script | Role |
+|--------|------|
+| `fetch-large-files.ps1` / `fetch-large-files.sh` | Download support files omitted from git (required before first build) |
+| `retdec_cli.py` | Unified CLI: batch decompile, diff, emit-json, export-intel, watch, yara-bridge |
+| `unpack_and_decompile.ps1` / `unpack_and_decompile.sh` | Unpack (when needed) then decompile a binary |
+| `validate_pipeline_json.py` | Validate pipeline JSON against `docs/pipeline_builder_schema.json` |
+| `perf_bench_ci.ps1` | Time decompiler on a fib fixture; emit JSON for CI trend tracking |
+| `parity_bench.ps1` | Compare CLI vs GUI subprocess wall time on a fixed binary |
+| `install_smoke.ps1` | Smoke-test a `cmake --install` tree (decompiler + fileinfo) |
+| `build-all.ps1` / `build-all.sh` | End-to-end configure, build, install, and package (Windows / Linux) |
+| `build-windows-installer.ps1` | Stage portable zip + optional NSIS installer under `dist/` |
+| `build-linux-installer.sh` | `cmake --install` + portable tarball (optional AppImage / `.deb`) |
+
+On Linux or WSL clones, mark shell entrypoints executable once after checkout:
+
+```bash
+chmod +x scripts/*.sh scripts/lib/*.sh
+```
+
 ## Other
 
 Coverage, ASan, AppImage, model download, type_extractor, and MinGW superbuild helpers live here; prefer **CMake presets** for new workflows.

@@ -9,7 +9,7 @@ This directory contains **technical documentation** for building, operating, ext
 1. **[BUILD_REFERENCE.md](BUILD_REFERENCE.md)** — CMake 3.26+, directory layout (`build/linux`, `build/windows`, `dist/windows`), all presets, superbuild, install, CI secrets, testing, troubleshooting. **Start here** if you are compiling the project.
 2. **[WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md)** — MSVC, CUDA, Qt6, `windeployqt`, bundled OpenSSL, native Windows deployment.
 3. **[MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md)** — Linux/WSL → Windows PE via MinGW (CLI-only); `llvm-tblgen`, OpenSSL, staging.
-4. **[user_manual.md](user_manual.md)** — Qt GUI panels, settings, shortcuts, AI assistant.
+4. **[user_manual.md](user_manual.md)** — Qt GUI v3 layout, settings, shortcuts, external AI runner.
 5. **[developer_guide.md](developer_guide.md)** — Repository layout, code style, new pipeline stages, tests, plugins, profiling.
 6. **[architecture.md](architecture.md)** — Pipeline stages, libraries, managed-language dispatch.
 7. **[pipeline_stage_map.md](pipeline_stage_map.md)** — Quick stage → source mapping.
@@ -25,7 +25,13 @@ This directory contains **technical documentation** for building, operating, ext
 | [BUILD_REFERENCE.md](BUILD_REFERENCE.md) | Everyone building | Presets, paths, superbuild, Docker, CI, `deps.cmake`, test commands |
 | [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) | Windows developers | MSVC + CUDA + Qt6, scripts, troubleshooting |
 | [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md) | Linux/WSL packagers | MinGW cross, tblgen, OpenSSL, `dist/windows` |
-| [user_manual.md](user_manual.md) | GUI users | Layout, panels, settings, AI, export, shortcuts |
+| [user_manual.md](user_manual.md) | GUI users | v3 layout, panels, settings, export, shortcuts |
+| [GUI_POLISH.md](GUI_POLISH.md) | GUI contributors | Polish checklist (navigation, docks, honest settings) |
+| [GUI_ROADMAP.md](GUI_ROADMAP.md) | Product / GUI | Phased GUI plan, CI verification commands |
+| [ENGINEERING_ROADMAP.md](ENGINEERING_ROADMAP.md) | Maintainers | Shippable engineering tiers, backlog |
+| [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md) | Windows users | NSIS/portable install, PATH, smoke after install |
+| [INSTALL_LINUX.md](INSTALL_LINUX.md) | Linux packagers | Tarball/deb packaging, install prefixes |
+| [releases/README.md](../releases/README.md) | Release managers | Git LFS artifacts, GitHub Releases layout |
 | [developer_guide.md](developer_guide.md) | Contributors | Style, tests, debugging, new stages, plugins |
 | [architecture.md](architecture.md) | Contributors | Full pipeline, components, dependencies |
 | [pipeline_stage_map.md](pipeline_stage_map.md) | Contributors | Stage names ↔ directories |
@@ -33,6 +39,14 @@ This directory contains **technical documentation** for building, operating, ext
 | [future_directions.md](future_directions.md) | Planners | Roadmap-style topics |
 
 **Scripts:** [scripts/README.md](../scripts/README.md) lists every important `scripts/*.sh` and `scripts/*.ps1` helper.
+
+### Contributors — suggested reading order
+
+1. [BUILD_REFERENCE.md](BUILD_REFERENCE.md) — configure, presets, `ctest`, CI secrets.
+2. [developer_guide.md](developer_guide.md) — layout, style, tests, plugins.
+3. [ENGINEERING_ROADMAP.md](ENGINEERING_ROADMAP.md) — what to pick up next; [GUI_ROADMAP.md](GUI_ROADMAP.md) / [GUI_POLISH.md](GUI_POLISH.md) for GUI work.
+4. [architecture.md](architecture.md) + [pipeline_stage_map.md](pipeline_stage_map.md) — pipeline before touching stages.
+5. [user_manual.md](user_manual.md) — expected GUI behaviour when changing `retdec-gui`.
 
 **API (Doxygen):** Configure the `doc` / `docs` CMake target if enabled in your build; main page text is maintained under [doxygen/doxygen.h](doxygen/doxygen.h).
 

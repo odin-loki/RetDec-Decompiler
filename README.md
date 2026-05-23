@@ -1,5 +1,10 @@
 # RetDec — Enhanced Retargetable Decompiler
 
+[![ctest-windows](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/ctest-windows.yml/badge.svg)](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/ctest-windows.yml)
+[![ctest-linux](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/ctest-linux.yml/badge.svg)](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/ctest-linux.yml)
+[![perf-nightly](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/perf-nightly.yml/badge.svg)](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/perf-nightly.yml)
+[![release-installers](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/release-installers.yml/badge.svg)](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/release-installers.yml)
+
 A machine-code decompiler that recovers high-level source code from compiled
 binaries. Built on the original RetDec/LLVM pipeline, this version adds
 semantic library recovery, a multi-language output backend, a Qt 6 IDE-style
@@ -46,13 +51,14 @@ C · C++ · Python · Lua · Java · Kotlin · C# · F# · Visual Basic .NET · 
 - **Serialisation**: Protobuf, FlatBuffers, MessagePack, JSON, XML
 - **C++ runtime**: vtables, RTTI, constructors/destructors, exceptions
 
-### AI Assistant
+### AI-assisted analysis (external)
 
-Integrated [Qwen3-Coder-30B](https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct)
-inference engine (MoE, custom C++ implementation with FlashAttention-2 and
-**CUDA GPU acceleration**). Load any GGUF-quantised model for interactive code
-analysis. Pull the model with Ollama (`ollama pull qwen3-coder:30b-a3b-q4_K_M`),
-then copy the GGUF weights into `models/` in the repo root.
+Optional [Qwen3-Coder-30B](https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct)
+inference (MoE, custom C++ runner with FlashAttention-2 and **CUDA GPU
+acceleration**) runs **outside** the GUI via **`retdec-qwen3-runner`** or CLI
+**`--model`**. The v3 GUI has no in-GUI chat panel — see
+[docs/GUI_ROADMAP.md](docs/GUI_ROADMAP.md). Pull weights with Ollama
+(`ollama pull qwen3-coder:30b-a3b-q4_K_M`) or place a `.gguf` under `models/`.
 
 ### Qt 6 GUI (v3)
 

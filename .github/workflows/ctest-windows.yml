@@ -63,10 +63,16 @@ jobs:
         run: >
           cmake --build build/windows --parallel
           --target retdec-decompiler retdec-gui retdec-gui-tests
-          retdec-decompiler-fixture-fib
+          format_router_probe retdec-decompiler-fixture-fib
+
+      - name: Install (for install_smoke)
+        run: cmake --install build/windows --prefix install/windows
 
       - name: GUI unit tests (headless)
         run: .\build\windows\tests\gui\retdec-gui-tests.exe
+
+      - name: Unit tests
+        run: ctest --test-dir build/windows -L unit --output-on-failure
 
       - name: Integration tests
         run: ctest --test-dir build/windows --output-on-failure -L integration

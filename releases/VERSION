@@ -1,4 +1,7 @@
 ﻿version=5.0
 windows_zip=releases/windows/retdec-5.0-windows-x64-portable.zip
 windows_setup=releases/windows/retdec-5.0-windows-x64-setup.exe
+linux_tarball=releases/linux/retdec-5.0-linux-x64.tar.gz
+linux_install=releases/linux/install.sh
+linux_uninstall=releases/linux/uninstall.sh
 updated=2026-05-23T18:42:31+10:00

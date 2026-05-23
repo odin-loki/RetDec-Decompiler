@@ -57,17 +57,24 @@ jobs:
 
   perf-linux:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build python3 perl
+          sudo apt-get install -y build-essential ninja-build python3 perl
+
+      - uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "3.31.6"
 
       - name: Fetch large support files
-        run: ./scripts/fetch-large-files.sh
+        run: |
+          ./scripts/fetch-large-files.sh
+          if [ $? -ne 0 ]; then
+            ./scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+          fi
 
       - name: Cache CMake build
         uses: actions/cache@v4
@@ -77,8 +84,8 @@ jobs:
           restore-keys: |
             perf-linux-${{ runner.os }}-
 
-      - name: Configure (full-linux-debug)
-        run: cmake --preset full-linux-debug
+      - name: Configure (core-debug, decompiler-only CI)
+        run: cmake --preset core-debug
 
       - name: Build decompiler
         run: cmake --build build/linux --target retdec-decompiler --parallel

@@ -5,11 +5,17 @@ Shippable engineering tiers for RetDec. Research-only items live in
 
 ---
 
-## Tier 1 — Core stability
+## Tier 1 — Core stability & infrastructure
 
 - Windows native build parity (MSVC preset, install smoke)
 - GUI headless decompile path
 - Managed format smoke tests (Java, Python, WASM fixtures)
+- [x] Decompile profiles — `--profile fast|balanced|quality`, `src/retdec-decompiler/profiles/`
+- [x] Unified CLI — `scripts/retdec_cli.py` (batch, diff, emit-json, watch, yara-bridge, export-intel)
+- [x] Golden corpus — `tests/decompiler/corpus/` + `corpus_regression_test.py`
+- [x] Perf benchmark CI — `scripts/perf_bench_ci.ps1`
+- [x] Parallel post-pipeline analysis — `RETDEC_PARALLEL_ANALYSIS`, `ThreadPool` when ≥5 functions
+- [x] Function analysis cache — `.retdec-fn-cache.json` sidecar beside output `.c`
 
 ## Tier 2 — Managed pipeline depth & differentiation
 
@@ -71,18 +77,6 @@ See [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md) for RISC-V, ARM64, and SA
 - [x] YARA bridge stub — `scripts/yara_retdec_bridge.py`
 - [x] Symbol server doc — [SYMBOL_SERVER.md](SYMBOL_SERVER.md)
 - [x] Semantic recovery export — `semanticDetections` in config JSON, `[RetDec]` comments in `.c`/`.cpp`, GUI Problems dock; C output adds `cHint` + layout comments ([SEMANTIC_OUTPUT.md](SEMANTIC_OUTPUT.md))
-
-## Tier 1 — Core infrastructure ✅
-
-- [x] Decompile profiles — `--profile fast|balanced|quality`, `src/retdec-decompiler/profiles/`
-- [x] Unified CLI — `scripts/retdec_cli.py` (batch, diff, emit-json, watch, yara-bridge, export-intel)
-- [x] Golden corpus — `tests/decompiler/corpus/` + `corpus_regression_test.py`
-- [x] Perf benchmark CI — `scripts/perf_bench_ci.ps1`
-- [x] Parallel post-pipeline analysis — `RETDEC_PARALLEL_ANALYSIS`, `ThreadPool` when ≥5 functions
-- [x] Function analysis cache — `.retdec-fn-cache.json` sidecar beside output `.c`
-
-## Tier 4 (legacy section — semantic recovery in llvmir2hll)
-
 - STL container / algorithm pattern matching in emitted output (partial — detections + C `cHint` comments exported; full C struct typedef / C++ type replacement ongoing — [SEMANTIC_OUTPUT.md](SEMANTIC_OUTPUT.md))
 
 ## Tier 5 — Architecture & extensibility ✅
@@ -100,7 +94,7 @@ retdec-decompiler --profile balanced -o out.c input.exe
 python examples/decompiler_plugin/post_process_output.py out.c
 ```
 
-### Product polish (future)
+## Backlog
 
 - GUI tri-pane output language parity with CLI
 - Batch / agent workflows (`scripts/example-coding-agent.sh`)

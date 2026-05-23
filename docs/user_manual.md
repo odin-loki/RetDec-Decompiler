@@ -75,21 +75,21 @@ RetDec uses a dockable panel layout.  All panels can be rearranged,
 floated, or closed via the **View** menu.
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│  Menu: File  Edit  View  Analysis  Tools  Help                 │
-├──────────┬─────────────────────────────────┬───────────────────┤
-│ Function │           TriPane Code View      │  Type Hierarchy   │
-│  List    │  ┌─────────┐┌────────┐┌───────┐ │  & Call Graph     │
-│          │  │Assembly ││ SSA IR ││Decomp.│ │                   │
-│          │  └─────────┘└────────┘└───────┘ │                   │
-├──────────┴──────────────────────────────────┤                   │
-│ Strings & Constants Browser                 │                   │
-├─────────────────────────────────────────────┤                   │
-│ AI Assistant                                │                   │
-├─────────────────────────────────────────────┴───────────────────┤
-│ Progress: ████████████░░░░ 68% | Type inference (3.2s)          │
-└────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Menu: File  Edit  View  Analysis  Tools  Help                            │
+├──────────┬───────────────────────────────────────────────┬──────────────────┤
+│ Functions│ [Decompiled C][Assembly][IR][CFG][Synced]    │ Strings          │
+│  (list)  │                                               │ Inspect          │
+│          │          (active centre tab)                  │ Binary Browser   │
+│          │                                               │ Target           │
+├──────────┴───────────────────────────────────────────────┴──────────────────┤
+│ [Console] [Problems] [History] [Progress]                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Status: stage message… | progress bar                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+Active GUI work and shipped milestones: [GUI_ROADMAP.md](GUI_ROADMAP.md).
 
 ---
 
@@ -123,7 +123,7 @@ directly to the appropriate language-specific pipeline.
 
 ## Understanding the Interface
 
-### Function List Panel
+### Functions dock (left)
 
 Displays all recovered functions sorted by address.  Each entry shows:
 
@@ -137,16 +137,15 @@ Displays all recovered functions sorted by address.  Each entry shows:
 **Filter** the list using the search box (supports regex toggle).
 **Double-click** a function to navigate all panes to that function.
 
-### TriPane Code View
+### Centre tabs (Decompiled C · Assembly · IR · CFG · Synced)
 
-Three synchronised editors:
+The workspace centre holds five tabs. **Decompiled C**, **Assembly**, and **IR**
+show whole-file views loaded from decompiler artifacts (`.c`, `.dsm`, `.ll`).
+**CFG** shows the control-flow graph of the selected function. **Synced** is a
+tri-pane view (Assembly | SSA IR | Decompiled C) for the current function.
 
-| Left | Middle | Right |
-|------|--------|-------|
-| Assembly | SSA IR | Decompiled C |
-
-Scrolling any pane scrolls all three in sync.  Click any line to highlight
-the corresponding lines in the other two panes.
+Scrolling any pane in **Synced** scrolls all three in sync.  Click any line to
+highlight the corresponding lines in the other two panes.
 
 ### CFG Visualiser
 
@@ -202,31 +201,23 @@ Compare decompiled output before and after a recovery pass.
 
 ---
 
-## Using the AI Assistant
+## AI-assisted analysis (external)
 
-### Loading a model
+The v3 GUI has **no in-GUI AI chat panel**. Optional Qwen3-assisted naming and
+analysis use the same `.gguf` engine via external tools:
 
-1. Open **Settings → ML tab**.
-2. Set **Model file** to a `.gguf` file (Qwen3 recommended).
-3. Select **Quantisation level** (Q4_K_M is a good balance of speed/quality).
-4. Click **Apply**.
-5. In the AI Assistant panel, click **Load Model**.
+1. Open **Settings → ML tab** and set **Model file** to a `.gguf` (Qwen3
+   recommended; Q4_K_M is a good speed/quality balance). Click **Apply** — this
+   path is used when the GUI launches **`retdec-decompiler`** with **`--model`**.
+2. Or run the standalone runner / CLI directly:
 
-### Querying
+```bash
+retdec-decompiler binary.elf --model /path/to/model.gguf -o output.c
+retdec-qwen3-runner --help
+```
 
-Type a question in the input box and press Enter or click **Send**.
-
-The assistant automatically receives:
-- The currently selected function's decompiled code.
-- Any additional context you type.
-
-Example queries:
-- "What does this function do?"
-- "Is this a known crypto algorithm?"
-- "Rewrite this as idiomatic C++17."
-
-**Stop Generation** cancels the current response.
-**Clear** resets the chat history.
+Place weights under `models/` in the repo root or any path you configure.
+Product direction for GUI vs external AI: [GUI_ROADMAP.md](GUI_ROADMAP.md).
 
 ---
 
@@ -332,7 +323,6 @@ without unloading it.  Click **Install Plugin…** to load a `.so`/`.dll` plugin
 | F12 | Go to definition |
 | Ctrl+Shift+C | Copy current function as C |
 | Ctrl+Shift+D | Open Diff view for current function |
-| Ctrl+Shift+A | Focus AI assistant |
 
 ---
 
@@ -401,4 +391,5 @@ For **build** failures (OpenSSL, LLVM download, Qt, MSVC env), see [BUILD_REFERE
 | MSVC + CUDA + Qt | [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) |
 | All docs index | [docs/README.md](README.md) |
 | Architecture / pipeline | [architecture.md](architecture.md) |
+| GUI roadmap (v3+) | [GUI_ROADMAP.md](GUI_ROADMAP.md) |
 | Contributing code | [developer_guide.md](developer_guide.md) |

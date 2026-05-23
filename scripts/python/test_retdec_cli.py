@@ -64,7 +64,7 @@ class HelpSmokeTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 0)
 
     def test_subcommand_help(self) -> None:
-        for sub in ("batch", "diff", "emit-json", "watch"):
+        for sub in ("batch", "diff", "emit-json", "watch", "export-intel", "yara-bridge"):
             with self.assertRaises(SystemExit) as ctx:
                 retdec_cli.main([sub, "--help"])
             self.assertEqual(ctx.exception.code, 0)

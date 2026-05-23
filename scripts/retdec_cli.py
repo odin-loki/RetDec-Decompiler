@@ -63,23 +63,52 @@ def _load_manifest(path: Path) -> List[Dict[str, Any]]:
     return items
 
 
+def _version() -> str:
+    return os.environ.get("RETDEC_VERSION", "5.0")
+
+
 def _resolve_decompiler(explicit: Optional[str]) -> Path:
     if explicit:
         p = Path(explicit).resolve()
         if not p.is_file():
             raise SystemExit(f"decompiler not found: {p}")
         return p
+
+    tried: List[str] = []
     for sub in (
         "install/windows/bin/retdec-decompiler.exe",
         "install/linux/bin/retdec-decompiler",
+    ):
+        cand = REPO_ROOT / sub
+        tried.append(str(cand))
+        if cand.is_file():
+            return cand
+
+    for pattern in (
+        "build/windows/**/retdec-decompiler.exe",
+        "build/linux/**/retdec-decompiler",
+    ):
+        matches = sorted(REPO_ROOT.glob(pattern))
+        if not matches:
+            tried.append(str(REPO_ROOT / pattern))
+        for cand in matches:
+            tried.append(str(cand))
+            if cand.is_file():
+                return cand
+
+    for sub in (
         "build-decompiler-test/bin/retdec-decompiler.exe",
         "build-decompiler-test/bin/retdec-decompiler",
     ):
         cand = REPO_ROOT / sub
+        tried.append(str(cand))
         if cand.is_file():
             return cand
+
+    lines = "\n  ".join(tried)
     raise SystemExit(
-        "retdec-decompiler not found; pass --decompiler PATH"
+        "retdec-decompiler not found; pass --decompiler PATH\n"
+        f"Paths tried:\n  {lines}"
     )
 
 
@@ -369,6 +398,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  %(prog)s batch manifest.yaml --output-dir out/\n"
+            "  %(prog)s diff a.c b.c\n"
+            "  %(prog)s emit-json sample.exe --json-output report.json"
+        ),
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {_version()}",
     )
     parser.add_argument(
         "--decompiler",

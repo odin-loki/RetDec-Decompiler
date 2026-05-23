@@ -68,10 +68,13 @@ jobs:
         run: >
           cmake --build build/linux --parallel
           --target retdec-decompiler retdec-gui retdec-gui-tests
-          retdec-decompiler-fixture-fib
+          format_router_probe retdec-decompiler-fixture-fib
 
       - name: GUI unit tests (headless)
         run: ./build/linux/tests/gui/retdec-gui-tests
+
+      - name: Unit tests
+        run: ctest --test-dir build/linux -L unit --output-on-failure
 
       - name: Integration tests
         run: ctest --test-dir build/linux --output-on-failure -L integration
