@@ -30,15 +30,15 @@ Phased plan for GUI/product work. Update checkboxes as items ship.
 - [x] `tests/decompiler/` — fib fixture, CLI smoke, GUI headless, Windows parity ctest
 - [x] `.github/workflows/ctest-windows.yml` (integration label)
 - [x] Linux integration workflow (`.github/workflows/ctest-linux.yml`)
-- [ ] Perf benchmark trend in CI (optional nightly)
+- [x] Perf benchmark trend in CI (`.github/workflows/perf-nightly.yml`, weekly + workflow_dispatch; `scripts/perf_bench_ci.ps1`)
 - [x] Install smoke after `cmake --install`
 
 ## Phase D — Differentiation
 
 - [ ] CUDA wiring into hot analysis paths (or document CPU-only)
-- [ ] Reference decompiler plugin sample
+- [x] Reference decompiler plugin sample — `examples/decompiler_plugin/`
 - [ ] AI assistant: external Ollama HTTP vs in-process vs remove
-- [ ] Multi-language output picker in GUI
+- [x] Multi-language output picker in GUI — Settings → Decompiler → Preferred output language (`--output-lang`)
 
 ## Verification commands
 

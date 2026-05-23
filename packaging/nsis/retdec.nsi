@@ -1,15 +1,20 @@
 ; retdec.nsi — Full NSIS installer for RetDec Enhanced Decompiler Suite
 ;
-; Build this installer AFTER running scripts/bundle-windows.sh to populate
-; the BUNDLE_DIR directory (bin/*.exe, bin/*.dll, platforms/, imageformats/,
-; share/retdec/).
+; Build this installer AFTER running scripts/build-windows-installer.ps1 (or
+; scripts/bundle-windows.sh on Linux/WSL) to populate BUNDLE_DIR:
+;   bin/*.exe, bin/*.dll, platforms/, imageformats/, share/retdec/
 ;
 ; Usage:
-;   makensis /DVERSION=0.1.0 /DBUNDLE_DIR=../../bundle retdec.nsi
+;   makensis /DVERSION=5.0 /DBUNDLE_DIR=..\..\dist\windows-bundle retdec.nsi
 ;
 ; Requires:
 ;   NSIS 3.x (https://nsis.sourceforge.io/)
 ;   Modern UI 2 plugin (included with NSIS)
+;   EnVar plug-in for PATH updates (NOT bundled with NSIS):
+;     https://nsis.sourceforge.io/EnVar_plug-in
+;     Install EnVar.dll into ${NSISDIR}\Plugins\x86-unicode\
+;     Install EnVar.nsh  into ${NSISDIR}\Include\
+;   Without EnVar, comment out EnVar:: lines and PATH will not be updated.
 
 ; ─── Version / identity ───────────────────────────────────────────────────────
 !ifndef VERSION
@@ -23,7 +28,7 @@
 !define PRODUCT_FULL_NAME   "RetDec Enhanced Decompiler Suite"
 !define PRODUCT_VERSION     "${VERSION}"
 !define PRODUCT_PUBLISHER   "RetDec Contributors"
-!define PRODUCT_URL         "https://example.com/"
+!define PRODUCT_URL         "https://github.com/odin-loki/RetDec-Decompiler"
 !define PRODUCT_REG_KEY     "Software\RetDec"
 !define PRODUCT_UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\RetDec"
 
@@ -80,16 +85,23 @@ Section "RetDec Core & CLI tools" SEC_CORE
   SectionIn RO   ; required
   SetOutPath "$INSTDIR\bin"
 
-  ; Core binaries from bundle
+  ; Core binaries from bundle (MSVC native + MinGW cross names)
   File /nonfatal "${BUNDLE_DIR}\bin\retdec-decompiler.exe"
   File /nonfatal "${BUNDLE_DIR}\bin\retdec-fileinfo.exe"
+  File /nonfatal "${BUNDLE_DIR}\bin\retdec-ar-extractor.exe"
   File /nonfatal "${BUNDLE_DIR}\bin\retdec-ar-extractortool.exe"
+  File /nonfatal "${BUNDLE_DIR}\bin\retdec-unpacker.exe"
   File /nonfatal "${BUNDLE_DIR}\bin\retdec-utils.exe"
 
-  ; MinGW runtime DLLs
+  ; MinGW runtime DLLs (cross-compile bundle only)
   File /nonfatal "${BUNDLE_DIR}\bin\libstdc++-6.dll"
   File /nonfatal "${BUNDLE_DIR}\bin\libgcc_s_seh-1.dll"
   File /nonfatal "${BUNDLE_DIR}\bin\libwinpthread-1.dll"
+
+  ; MSVC runtime (native bundle)
+  File /nonfatal "${BUNDLE_DIR}\bin\msvcp140.dll"
+  File /nonfatal "${BUNDLE_DIR}\bin\vcruntime140.dll"
+  File /nonfatal "${BUNDLE_DIR}\bin\vcruntime140_1.dll"
 
   ; Support data
   SetOutPath "$INSTDIR\share\retdec"
@@ -113,7 +125,7 @@ Section "RetDec Core & CLI tools" SEC_CORE
 
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
-  ; PATH: add $INSTDIR\bin to system PATH
+  ; PATH: add $INSTDIR\bin to system PATH (requires EnVar plug-in — see header)
   EnVar::AddValue "PATH" "$INSTDIR\bin"
 SectionEnd
 
@@ -153,11 +165,23 @@ Section "OpenCL Runtime" SEC_OCL
   File /nonfatal "${BUNDLE_DIR}\bin\OpenCL.dll"
 SectionEnd
 
+; Optional: register "Open with RetDec GUI" for .exe files.
+; Disabled by default — uncomment the Section / SectionEnd block to enable.
+; Requires admin; associates ProgID RetDec.exe with retdec-gui.exe.
+;
+; Section "Associate .exe with RetDec GUI" SEC_ASSOC
+;   WriteRegStr HKCR "RetDec.exe" "" "RetDec Binary"
+;   WriteRegStr HKCR "RetDec.exe\DefaultIcon" "" "$INSTDIR\bin\retdec-gui.exe,0"
+;   WriteRegStr HKCR "RetDec.exe\shell\open\command" "" '"$INSTDIR\bin\retdec-gui.exe" "%1"'
+;   WriteRegStr HKCR ".exe\OpenWithProgids" "RetDec.exe" ""
+; SectionEnd
+
 ; ─── Section descriptions ──────────────────────────────────────────────────────
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC_CORE} "RetDec decompiler, fileinfo, and command-line tools. Required."
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC_GUI}  "Qt6-based graphical user interface with tri-pane code view, CFG visualiser, and AI assistant panel."
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC_OCL}  "OpenCL ICD runtime for GPU-accelerated analysis. Only needed if no GPU driver is installed."
+  ; !insertmacro MUI_DESCRIPTION_TEXT ${SEC_ASSOC} "Adds RetDec GUI to the Open with menu for .exe files."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 ; ─── Uninstaller ──────────────────────────────────────────────────────────────
@@ -168,13 +192,17 @@ Section "Uninstall"
   RMDir  "$SMPROGRAMS\RetDec"
   Delete "$DESKTOP\RetDec GUI.lnk"
 
+  ; Remove file association (if SEC_ASSOC was enabled)
+  ; DeleteRegValue HKCR ".exe\OpenWithProgids" "RetDec.exe"
+  ; DeleteRegKey HKCR "RetDec.exe"
+
   ; Remove files
   RMDir /r "$INSTDIR\bin"
   RMDir /r "$INSTDIR\share"
   Delete    "$INSTDIR\uninstall.exe"
   RMDir     "$INSTDIR"
 
-  ; Remove PATH entry
+  ; Remove PATH entry (requires EnVar plug-in — see header)
   EnVar::DeleteValue "PATH" "$INSTDIR\bin"
 
   ; Remove registry keys

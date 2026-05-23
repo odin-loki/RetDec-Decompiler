@@ -44,3 +44,10 @@ jobs:
         env:
           RETDEC_GUI_HEADLESS: "1"
           QT_QPA_PLATFORM: offscreen
+
+      # Optional release packaging (not run here — needs Release preset + longer job):
+      #   cmake --preset full-linux-release && cmake --build build/linux --parallel
+      #   chmod +x scripts/build-linux-installer.sh scripts/install-linux.sh
+      #   ./scripts/build-linux-installer.sh
+      #   APPIMAGE=1 ./scripts/build-linux-installer.sh --skip-install  # AppImage only
+      # See docs/INSTALL_LINUX.md

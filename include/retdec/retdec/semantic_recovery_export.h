@@ -28,7 +28,8 @@ SemanticDetectionMap buildSemanticDetectionMap(
 		const container_detect::ContainerDetector::DetectionMap& containers,
 		const std::vector<std::pair<std::string, algo_recover::AlgorithmResult>>& algos,
 		const sort_detect::SortDetector::DetectionMap& sorts,
-		const concurrency_detect::ConcurrencyModel& concurrency);
+		const concurrency_detect::ConcurrencyModel& concurrency,
+		const std::string& outputLang = {});
 
 void mergeSemanticDetectionsIntoConfig(
 		config::Config& config,

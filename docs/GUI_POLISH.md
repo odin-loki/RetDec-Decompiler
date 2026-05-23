@@ -50,6 +50,6 @@ Polish-only work (no new features). Update as items ship.
 
 ## Remaining (optional)
 - [ ] i18n
-- [ ] Unified context menus (Copy address, Go to function) across all panels
-- [ ] Loading spinners on large artifact loads
+- [x] Unified context menus (Copy Address, Go to Function) on Functions, Assembly, CFG
+- [x] Loading status on artifact load (`Loading artifacts…` in status bar)
 - [ ] Session persistence beyond layout (filters, call-graph depth per project)

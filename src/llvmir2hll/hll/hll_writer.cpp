@@ -34,7 +34,7 @@
 #include "retdec/llvmir2hll/support/debug.h"
 #include "retdec/llvmir2hll/support/global_vars_sorter.h"
 #include "retdec/llvmir2hll/support/headers_for_declared_funcs.h"
-#include "retdec/llvmir2hll/support/smart_ptr.h"
+#include "retdec/llvmir2hll/target_hll.h"
 #include "retdec/llvmir2hll/utils/ir.h"
 #include "retdec/llvmir2hll/utils/string.h"
 #include "retdec/utils/container.h"
@@ -992,7 +992,7 @@ bool HLLWriter::emitSemanticDetectionsForFuncIfAvailable(ShPtr<Function> func) {
 	}
 
 	for (const auto &det : detections) {
-		out->commentLine(det.commentLine());
+		out->commentLine(det.commentLine(TargetHLL));
 	}
 	return true;
 }

@@ -53,6 +53,7 @@ private slots:
     void onGoToAddress();
     void onFind();
     void onSearchReturnPressed();
+    void onContextMenu(const QPoint& pos);
 
 private:
     enum class SearchMode { Find, GoTo };

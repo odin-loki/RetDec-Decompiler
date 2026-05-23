@@ -336,6 +336,8 @@ void RetDecMainWindow::createPanels() {
     // Cross-panel navigation (Tier 1).
     connect(cfgPanel_, &panels::CFGPanel::blockNavigationRequested,
             this, [this](uint64_t addr) { navigateToAddress(addr, kDocAssembly); });
+    connect(cfgPanel_, &panels::CFGPanel::addressNavigated,
+            this, [this](uint64_t addr) { navigateToAddress(addr, kDocDecompiledC); });
     connect(callGraph_, &panels::CallGraphPanel::functionNavigationRequested,
             this, [this](uint64_t addr) { navigateToAddress(addr, kDocDecompiledC); });
     connect(typeHierarchy_, &panels::TypeHierarchyPanel::classSelected,
@@ -344,6 +346,10 @@ void RetDecMainWindow::createPanels() {
             this, [this](uint64_t addr) { navigateToAddress(addr, kDocDecompiledC); });
     connect(stringsBrowser_, &panels::StringsBrowserPanel::addressNavigated,
             this, [this](uint64_t addr) { navigateToAddress(addr, kDocAssembly); });
+    connect(functionList_, &panels::FunctionListPanel::addressNavigated,
+            this, [this](uint64_t addr) { navigateToAddress(addr, kDocDecompiledC); });
+    connect(assembly_, &panels::AssemblyPanel::addressNavigated,
+            this, [this](uint64_t addr) { navigateToAddress(addr, kDocDecompiledC); });
     connect(diagnostics_, &panels::PanelBase::addressNavigated,
             this, [this](uint64_t addr) {
         navigateToAddress(addr, kDocDecompiledC);
@@ -947,6 +953,9 @@ void RetDecMainWindow::runDecompileForBenchmark() {
 
 bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath,
                                               std::optional<uint64_t> reselectAddress) {
+    statusBar()->showMessage(QStringLiteral("Loading artifacts..."));
+    QApplication::processEvents();
+
     const QString absC = QFileInfo(cPath).absoluteFilePath();
     const DecompileArtifactPaths paths = pathsFromOutputC(absC);
 

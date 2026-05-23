@@ -34,6 +34,7 @@ class QLabel;
 class QPushButton;
 class QStackedWidget;
 class QWidget;
+class QGraphicsSceneContextMenuEvent;
 QT_END_NAMESPACE
 
 namespace retdec::gui::widgets {
@@ -110,9 +111,11 @@ public:
 
 signals:
     void clicked(uint64_t blockId);
+    void goToFunctionRequested();
 
 protected:
     void mousePressEvent(QGraphicsSceneMouseEvent*)  override;
+    void contextMenuEvent(QGraphicsSceneContextMenuEvent*) override;
     void hoverEnterEvent(QGraphicsSceneHoverEvent*)  override;
     void hoverLeaveEvent(QGraphicsSceneHoverEvent*)  override;
 
@@ -264,6 +267,7 @@ public:
 
 signals:
     void blockClicked(uint64_t blockId);
+    void blockGoToFunctionRequested();
 
 private:
     // ── Internal layout types ──────────────────────────────────────────────
@@ -348,6 +352,7 @@ private slots:
     void onExportSvg();
     void onExportPng();
     void onBlockClicked(uint64_t blockId);
+    void onBlockGoToFunction();
 
 private:
     void setupUI();
@@ -369,6 +374,7 @@ private:
 
     /** blockId → start address (for navigation signal). */
     std::unordered_map<uint64_t, uint64_t> addressMap_;
+    uint64_t selectedFuncAddress_ = 0;
 };
 
 } // namespace retdec::gui::panels

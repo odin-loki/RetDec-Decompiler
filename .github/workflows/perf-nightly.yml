@@ -1,0 +1,124 @@
+name: perf-nightly
+
+on:
+  schedule:
+    # Weekly Sunday 03:00 UTC
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+
+jobs:
+  perf-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: build/windows
+          key: perf-windows-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}
+          restore-keys: |
+            perf-windows-${{ runner.os }}-
+
+      - name: Configure (full-windows-debug)
+        run: cmake --preset full-windows-debug
+
+      - name: Build decompiler
+        run: cmake --build build/windows --target retdec-decompiler --parallel
+
+      - name: Build fib smoke fixture
+        run: cmake --build build/windows --target retdec-decompiler-fixture-fib --parallel
+
+      - name: Run perf benchmark
+        shell: pwsh
+        run: |
+          $dec = Get-ChildItem -Path build/windows -Recurse -Filter retdec-decompiler.exe |
+            Select-Object -First 1
+          if (-not $dec) { throw "retdec-decompiler.exe not found under build/windows" }
+          $fib = Get-ChildItem -Path build/windows -Recurse -Filter fib_smoke.exe |
+            Select-Object -First 1
+          $args = @{
+            Decompiler = $dec.FullName
+            OutputJson = "perf_bench_result.json"
+          }
+          if ($fib) { $args.Binary = $fib.FullName }
+          & ./scripts/perf_bench_ci.ps1 @args
+
+      - name: Upload perf JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-bench-windows
+          path: perf_bench_result.json
+          if-no-files-found: error
+
+  perf-linux:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build python3
+
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: build/linux
+          key: perf-linux-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}
+          restore-keys: |
+            perf-linux-${{ runner.os }}-
+
+      - name: Configure (full-linux-debug)
+        run: cmake --preset full-linux-debug
+
+      - name: Build decompiler
+        run: cmake --build build/linux --target retdec-decompiler --parallel
+
+      - name: Build fib smoke fixture
+        run: cmake --build build/linux --target retdec-decompiler-fixture-fib --parallel
+
+      - name: Run perf benchmark
+        run: |
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          FIB="$(find build/linux -name fib_smoke -type f | head -n1)"
+          if [ -z "$DEC" ]; then echo "retdec-decompiler not found"; exit 1; fi
+          START=$(date +%s.%N)
+          set +e
+          if [ -n "$FIB" ]; then
+            "$DEC" -o /tmp/retdec_perf_out.c "$FIB"
+          else
+            "$DEC" -o /tmp/retdec_perf_out.c "$DEC"
+          fi
+          RC=$?
+          set -e
+          END=$(date +%s.%N)
+          export DEC FIB RC START END
+          python3 - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          start = float(os.environ["START"])
+          end = float(os.environ["END"])
+          out = "/tmp/retdec_perf_out.c"
+          payload = {
+              "timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "fixture": "fib_smoke",
+              "decompiler": os.environ["DEC"],
+              "binary": os.environ.get("FIB") or os.environ["DEC"],
+              "seconds": round(end - start, 3),
+              "exit_code": int(os.environ["RC"]),
+              "output_bytes": os.path.getsize(out) if os.path.isfile(out) else 0,
+              "error": None,
+          }
+          with open("perf_bench_result.json", "w", encoding="utf-8") as fh:
+              json.dump(payload, fh, indent=2)
+          print(f"perf_bench: {payload['seconds']}s exit={payload['exit_code']} bytes={payload['output_bytes']}")
+          PY
+
+      - name: Upload perf JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-bench-linux
+          path: perf_bench_result.json
+          if-no-files-found: error

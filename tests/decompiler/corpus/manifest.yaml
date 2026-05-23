@@ -1,13 +1,46 @@
 # Golden corpus manifest for decompiler regression tests.
 #
-# Binaries are built by tests/decompiler/CMakeLists.txt (fib_smoke).
-# To add a fixture without a prebuilt binary, list `source` and compile with:
-#   cc -O1 -o build/fib_smoke tests/test_binaries/fib.c
+# Native binaries are built by tests/decompiler/CMakeLists.txt into corpus_fixtures/.
+# Offline / CI script: scripts/decompiler/build_corpus_fixtures.ps1|.sh
 
 fixtures:
   - id: fib
     description: Recursive fibonacci + printf loop (tests/test_binaries/fib.c)
     source: ../../test_binaries/fib.c
-    # binary path is passed by CTest (${CMAKE_CURRENT_BINARY_DIR}/fib_smoke)
+    binary: fib_smoke
+    format: native
     min_functions: 1
     keyword: printf
+
+  - id: hello
+    description: Minimal printf hello-world (corpus/sources/hello.c)
+    source: sources/hello.c
+    binary: hello
+    format: native
+    min_functions: 1
+    keyword: printf
+
+  - id: vector_sort
+    description: Bubble sort over int vector (corpus/sources/vector_sort.c)
+    source: sources/vector_sort.c
+    binary: vector_sort
+    format: native
+    min_functions: 2
+    keyword: bubble
+
+  - id: minimal_wasm
+    description: Valid WASM v1 module header (8 bytes)
+    binary: ../fixtures/minimal.wasm
+    format: managed
+    output_ext: .wat
+    min_functions: 0
+
+  - id: hello_pyc
+    description: Compiled hello.py (py_compile; skipped when missing)
+    source: sources/hello.py
+    binary: ../fixtures/hello.pyc
+    format: managed
+    output_ext: .py
+    min_functions: 0
+    keyword: print
+    skip_if_missing: true

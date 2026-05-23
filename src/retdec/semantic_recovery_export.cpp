@@ -79,6 +79,7 @@ void injectSemanticCommentsIntoLines(
 		std::vector<std::string>& lines,
 		const config::Config& config)
 {
+	const std::string& outputLang = config.parameters.getOutputLang();
 	std::map<int, std::vector<std::string>> inserts;
 	for (const auto& fn : config.functions)
 	{
@@ -95,7 +96,7 @@ void injectSemanticCommentsIntoLines(
 
 		for (const auto& d : fn.semanticDetections)
 		{
-			const std::string comment = "// " + d.commentLine();
+			const std::string comment = "// " + d.commentLine(outputLang);
 			bool duplicate = false;
 			if (line > 1 && line - 2 < static_cast<int>(lines.size()))
 			{
@@ -137,17 +138,25 @@ SemanticDetectionMap buildSemanticDetectionMap(
 		const container_detect::ContainerDetector::DetectionMap& containers,
 		const std::vector<std::pair<std::string, algo_recover::AlgorithmResult>>& algos,
 		const sort_detect::SortDetector::DetectionMap& sorts,
-		const concurrency_detect::ConcurrencyModel& concurrency)
+		const concurrency_detect::ConcurrencyModel& concurrency,
+		const std::string& outputLang)
 {
 	SemanticDetectionMap map;
+	const bool emitCHints = isCOutputLang(outputLang);
 
 	for (const auto& [fnName, result] : containers)
 	{
 		const std::string label = !result.emittedType.empty()
 				? result.emittedType
 				: result.kindName();
-		appendDetection(map, fnName,
-				makeDetection("container", label, result.confidence, result.toString()));
+		auto detection = makeDetection("container", label, result.confidence,
+				result.toString());
+		if (emitCHints)
+		{
+			detection.cHint = result.cHint();
+			detection.cElemBytes = result.elementType.byteWidth;
+		}
+		appendDetection(map, fnName, std::move(detection));
 	}
 
 	for (const auto& [fnName, result] : algos)

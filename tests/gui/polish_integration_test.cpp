@@ -4,6 +4,9 @@
  */
 
 #include "retdec/gui/artifact_loader.h"
+#include "retdec/gui/address_context_menu.h"
+#include "retdec/gui/panels/assembly_panel.h"
+#include "retdec/gui/panels/cfg_panel.h"
 #include "retdec/gui/panels/decompiled_c_panel.h"
 #include "retdec/gui/widgets/empty_state_widget.h"
 
@@ -13,6 +16,9 @@
 #include <QFile>
 #include <QIcon>
 #include <QLineEdit>
+#include <QMetaObject>
+#include <QPlainTextEdit>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 
 namespace {
@@ -121,4 +127,39 @@ TEST(PolishIntegration, FunctionEntryHasStartEndLineFromArtifactLoader) {
     EXPECT_EQ(art.functions[0].name, QStringLiteral("foo"));
     EXPECT_EQ(art.functions[0].startLine, 2);
     EXPECT_EQ(art.functions[0].endLine, 4);
+}
+
+TEST(PolishIntegration, UnifiedContextMenuLabels) {
+    EXPECT_STREQ(retdec::gui::kCopyAddressLabel, "Copy Address");
+    EXPECT_STREQ(retdec::gui::kGoToFunctionLabel, "Go to Function");
+}
+
+TEST(PolishIntegration, ParseFirstAddressFromDsmLine) {
+    const auto addr = retdec::gui::parseFirstAddress(
+            QStringLiteral("0x401000:  push    ebp"));
+    ASSERT_TRUE(addr.has_value());
+    EXPECT_EQ(*addr, 0x401000ull);
+    EXPECT_FALSE(retdec::gui::parseFirstAddress(QStringLiteral("nop")).has_value());
+}
+
+TEST(PolishIntegration, AssemblyPanelUsesCustomContextMenu) {
+    Q_ASSERT(QApplication::instance() != nullptr);
+    retdec::gui::panels::AssemblyPanel panel;
+    panel.setAssemblyText(QStringLiteral("0x401000:  push ebp\n"));
+    panel.show();
+    QApplication::processEvents();
+
+    const QList<QPlainTextEdit*> views = panel.findChildren<QPlainTextEdit*>();
+    ASSERT_EQ(views.size(), 1);
+    EXPECT_EQ(views[0]->contextMenuPolicy(), Qt::CustomContextMenu);
+}
+
+TEST(PolishIntegration, CFGPanelGoToFunctionEmitsAddressNavigated) {
+    Q_ASSERT(QApplication::instance() != nullptr);
+    retdec::gui::panels::CFGPanel panel;
+    panel.onFunctionSelected(0x401000ull, QStringLiteral("main"));
+    QSignalSpy spy(&panel, &retdec::gui::panels::CFGPanel::addressNavigated);
+    ASSERT_TRUE(QMetaObject::invokeMethod(&panel, "onBlockGoToFunction"));
+    ASSERT_EQ(spy.count(), 1);
+    EXPECT_EQ(spy.at(0).at(0).value<uint64_t>(), 0x401000ull);
 }

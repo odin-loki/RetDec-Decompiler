@@ -25,7 +25,7 @@ Shippable engineering tiers for RetDec. Research-only items live in
 - [x] **GUI preferred output language** — Settings → Decompiler combo → `buildDecompilerArguments()` passes `--output-lang`
 - [x] **Semantic detection confidence** — `semanticDetections` in `.config.json` shown in Problems dock (info >0.8, warning >0.5, muted otherwise)
 - [x] **Managed format smoke** — `tests/decompiler/managed_format_smoke_test.py` (skips missing fixtures)
-- [x] **CUDA capability doc** — [CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md) (`RETDEC_ENABLE_CUDA` vs `RETDEC_ENABLE_CUDA_ACCEL`)
+- [x] **Semantic output clarity** — C vs C++ comment/`cHint` behavior documented in [SEMANTIC_OUTPUT.md](SEMANTIC_OUTPUT.md)
 
 ## Tier 3 — New targets & format polish ✅
 
@@ -70,7 +70,7 @@ See [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md) for RISC-V, ARM64, and SA
 - [x] Threat intel export — `scripts/retdec_export_intel.py`, GUI **File → Export Threat Intel…**
 - [x] YARA bridge stub — `scripts/yara_retdec_bridge.py`
 - [x] Symbol server doc — [SYMBOL_SERVER.md](SYMBOL_SERVER.md)
-- [x] Semantic recovery export — `semanticDetections` in config JSON, `[RetDec]` comments in `.c`, GUI Problems dock
+- [x] Semantic recovery export — `semanticDetections` in config JSON, `[RetDec]` comments in `.c`/`.cpp`, GUI Problems dock; C output adds `cHint` + layout comments ([SEMANTIC_OUTPUT.md](SEMANTIC_OUTPUT.md))
 
 ## Tier 1 — Core infrastructure ✅
 
@@ -83,7 +83,7 @@ See [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md) for RISC-V, ARM64, and SA
 
 ## Tier 4 (legacy section — semantic recovery in llvmir2hll)
 
-- STL container / algorithm pattern matching in emitted output (partial — detections exported; full type replacement ongoing)
+- STL container / algorithm pattern matching in emitted output (partial — detections + C `cHint` comments exported; full C struct typedef / C++ type replacement ongoing — [SEMANTIC_OUTPUT.md](SEMANTIC_OUTPUT.md))
 
 ## Tier 5 — Architecture & extensibility ✅
 

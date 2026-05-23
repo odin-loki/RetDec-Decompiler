@@ -221,6 +221,8 @@ struct ContainerResult {
 
     std::string kindName() const noexcept;
     std::string toString() const;
+    /// C-layout recovery hint (e.g. "vector_like_3ptr"); empty when unknown.
+    std::string cHint() const noexcept;
 };
 
 // ─── Layer-1 structure evidence ───────────────────────────────────────────────

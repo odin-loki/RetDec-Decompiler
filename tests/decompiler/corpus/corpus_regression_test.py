@@ -3,12 +3,13 @@
 Golden corpus regression test for retdec-decompiler.
 
 Usage (CTest):
-  python3 corpus_regression_test.py <decompiler> <manifest.yaml> <binary> [work_dir]
+  python3 corpus_regression_test.py <decompiler> <manifest.yaml> <fixtures_dir> [work_dir]
 
 Checks per fixture:
+  - input binary exists (or skip when skip_if_missing)
   - decompiler exit 0
-  - output .c non-empty
-  - function count >= min_functions
+  - output non-empty
+  - function count >= min_functions (native heuristic)
   - optional keyword present in output
 """
 
@@ -19,7 +20,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 def _load_manifest(path: Path) -> List[Dict[str, Any]]:
@@ -51,24 +52,65 @@ def _count_functions_heuristic(code: str) -> int:
     return count
 
 
+def _resolve_binary(
+    fx: Dict[str, Any],
+    fixtures_dir: Path,
+    manifest_dir: Path,
+) -> Optional[Path]:
+    raw = fx.get("binary")
+    if not raw:
+        fx_id = str(fx.get("id") or "fixture")
+        raw = fx_id
+
+    rel = Path(str(raw))
+    if rel.is_absolute():
+        return rel
+
+    candidates = [
+        fixtures_dir / rel,
+        fixtures_dir / f"{rel.name}{_exe_suffix()}",
+        manifest_dir / rel,
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    return None
+
+
+def _exe_suffix() -> str:
+    return ".exe" if os.name == "nt" else ""
+
+
+def _output_candidates(work_dir: Path, fx_id: str, output_ext: str) -> List[Path]:
+    base = work_dir / f"corpus_{fx_id}"
+    ext = output_ext or ".c"
+    if not ext.startswith("."):
+        ext = "." + ext
+    paths = [base.with_suffix(ext)]
+    if ext == ".wat":
+        paths.append(base.with_name(base.name + ".wat"))
+    return paths
+
+
 def main() -> int:
     if len(sys.argv) < 4:
         print(
-            "Usage: corpus_regression_test.py <decompiler> <manifest> <binary> [work_dir]",
+            "Usage: corpus_regression_test.py <decompiler> <manifest> <fixtures_dir> [work_dir]",
             file=sys.stderr,
         )
         return 2
 
     decompiler = Path(sys.argv[1]).resolve()
     manifest_path = Path(sys.argv[2]).resolve()
-    binary = Path(sys.argv[3]).resolve()
-    work_dir = Path(sys.argv[4]).resolve() if len(sys.argv) > 4 else manifest_path.parent
+    fixtures_dir = Path(sys.argv[3]).resolve()
+    manifest_dir = manifest_path.parent
+    work_dir = Path(sys.argv[4]).resolve() if len(sys.argv) > 4 else manifest_dir / "out"
 
     if not decompiler.is_file():
         print(f"decompiler not found: {decompiler}", file=sys.stderr)
         return 2
-    if not binary.is_file():
-        print(f"binary not found: {binary}", file=sys.stderr)
+    if not fixtures_dir.is_dir():
+        print(f"fixtures dir not found: {fixtures_dir}", file=sys.stderr)
         return 2
 
     fixtures = _load_manifest(manifest_path)
@@ -78,23 +120,42 @@ def main() -> int:
 
     work_dir.mkdir(parents=True, exist_ok=True)
     failures = 0
+    skipped = 0
+    ran = 0
 
     for fx in fixtures:
         fx_id = str(fx.get("id") or "fixture")
-        out_c = work_dir / f"corpus_{fx_id}.c"
+        binary = _resolve_binary(fx, fixtures_dir, manifest_dir)
+        skip_if_missing = bool(fx.get("skip_if_missing"))
+
+        if binary is None or not binary.is_file():
+            msg = f"input missing: {fx.get('binary', fx_id)}"
+            if skip_if_missing:
+                print(f"[corpus] {fx_id}: SKIP ({msg})")
+                skipped += 1
+                continue
+            print(f"[corpus] {fx_id}: FAIL ({msg})", file=sys.stderr)
+            failures += 1
+            continue
+
+        fmt = str(fx.get("format") or "native")
+        output_ext = str(fx.get("output_ext") or ".c")
         min_funcs = int(fx.get("min_functions") or 1)
         keyword = fx.get("keyword")
+        out_paths = _output_candidates(work_dir, fx_id, output_ext)
+        out_primary = out_paths[0]
 
-        print(f"[corpus] {fx_id}: decompiling {binary.name} -> {out_c.name}")
+        print(f"[corpus] {fx_id}: decompiling {binary.name} -> {out_primary.name}")
+        ran += 1
         try:
             proc = subprocess.run(
-                [str(decompiler), "-o", str(out_c), str(binary)],
+                [str(decompiler), "-o", str(out_primary), str(binary)],
                 capture_output=True,
                 text=True,
                 timeout=180,
             )
         except subprocess.TimeoutExpired:
-            print(f"  FAIL: timeout", file=sys.stderr)
+            print("  FAIL: timeout", file=sys.stderr)
             failures += 1
             continue
 
@@ -105,14 +166,15 @@ def main() -> int:
             failures += 1
             continue
 
-        if not out_c.is_file() or out_c.stat().st_size == 0:
+        out_file = next((p for p in out_paths if p.is_file() and p.stat().st_size > 0), None)
+        if out_file is None:
             print("  FAIL: empty output", file=sys.stderr)
             failures += 1
             continue
 
-        code = out_c.read_text(encoding="utf-8", errors="replace")
-        fn_count = _count_functions_heuristic(code)
-        if fn_count < min_funcs:
+        code = out_file.read_text(encoding="utf-8", errors="replace")
+        fn_count = _count_functions_heuristic(code) if fmt == "native" else 0
+        if fmt == "native" and fn_count < min_funcs:
             print(
                 f"  FAIL: function count {fn_count} < min {min_funcs}",
                 file=sys.stderr,
@@ -125,8 +187,16 @@ def main() -> int:
             failures += 1
             continue
 
-        print(f"  OK: {out_c.stat().st_size} bytes, ~{fn_count} functions")
+        detail = f"{out_file.stat().st_size} bytes"
+        if fmt == "native":
+            detail += f", ~{fn_count} functions"
+        print(f"  OK: {detail}")
 
+    if ran == 0 and skipped == len(fixtures):
+        print("all fixtures skipped", file=sys.stderr)
+        return 2
+
+    print(f"\nSummary: {ran} ran, {skipped} skipped, {failures} failed")
     return 1 if failures else 0
 
 

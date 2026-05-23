@@ -100,6 +100,24 @@ std::string ContainerResult::toString() const {
     return os.str();
 }
 
+std::string ContainerResult::cHint() const noexcept {
+    switch (kind) {
+    case ContainerKind::Vector:       return "vector_like_3ptr";
+    case ContainerKind::List:         return "list_like_dllist";
+    case ContainerKind::Map:          return "map_like_rbtree";
+    case ContainerKind::Set:          return "set_like_rbtree";
+    case ContainerKind::UnorderedMap: return "unordered_map_like_hash";
+    case ContainerKind::UnorderedSet: return "unordered_set_like_hash";
+    case ContainerKind::String:       return "string_like_sso";
+    case ContainerKind::SharedPtr:    return "shared_ptr_like_2ptr";
+    case ContainerKind::UniquePtr:    return "unique_ptr_like_1ptr";
+    case ContainerKind::WeakPtr:      return "weak_ptr_like_2ptr";
+    case ContainerKind::Deque:        return "deque_like_chunked";
+    case ContainerKind::Array:        return "array_like_fixed";
+    default:                          return {};
+    }
+}
+
 // ─── TemplateTypeRecoverer ───────────────────────────────────────────────────
 
 RecoveredType TemplateTypeRecoverer::fromByteWidth(uint8_t w, bool isSigned) const {

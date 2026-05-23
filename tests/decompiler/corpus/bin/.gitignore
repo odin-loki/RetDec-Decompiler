@@ -1,0 +1,3 @@
+# Generated native corpus binaries (scripts/decompiler/build_corpus_fixtures.*)
+*
+!.gitignore

@@ -5,16 +5,20 @@
 
 #include "retdec/gui/panels/cfg_panel.h"
 
+#include "retdec/gui/address_context_menu.h"
 #include "retdec/gui/widgets/empty_state_widget.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QImage>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMessageBox>
+#include <QMenu>
 #include <QMouseEvent>
+#include <QGraphicsSceneContextMenuEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPen>
@@ -174,6 +178,20 @@ void BasicBlockItem::mousePressEvent(QGraphicsSceneMouseEvent* event)
 {
     QGraphicsObject::mousePressEvent(event);
     emit clicked(data_.id);
+}
+
+void BasicBlockItem::contextMenuEvent(QGraphicsSceneContextMenuEvent* event)
+{
+    QMenu menu;
+    auto* copyAct = menu.addAction(retdec::gui::kCopyAddressLabel);
+    auto* goAct   = menu.addAction(retdec::gui::kGoToFunctionLabel);
+    QAction* chosen = menu.exec(event->screenPos());
+    if (!chosen)
+        return;
+    if (chosen == copyAct)
+        retdec::gui::copyAddressToClipboard(data_.address);
+    else if (chosen == goAct)
+        emit goToFunctionRequested();
 }
 
 void BasicBlockItem::hoverEnterEvent(QGraphicsSceneHoverEvent* event)
@@ -830,6 +848,8 @@ void CFGScene::loadCFG(const std::vector<BasicBlockData>& blocks,
         blockItems_[b.id] = item;
         connect(item, &BasicBlockItem::clicked,
                 this,  &CFGScene::blockClicked);
+        connect(item, &BasicBlockItem::goToFunctionRequested,
+                this,  &CFGScene::blockGoToFunctionRequested);
     }
 
     // ── 9. Create edges ───────────────────────────────────────────────────
@@ -932,6 +952,8 @@ void CFGPanel::setupUI()
     connect(svgButton_,   &QPushButton::clicked, this, &CFGPanel::onExportSvg);
     connect(pngButton_,   &QPushButton::clicked, this, &CFGPanel::onExportPng);
     connect(scene_, &CFGScene::blockClicked, this, &CFGPanel::onBlockClicked);
+    connect(scene_, &CFGScene::blockGoToFunctionRequested,
+            this, &CFGPanel::onBlockGoToFunction);
     connect(graphView_, &CFGView::viewportMoved, miniMap_, &MiniMapView::syncViewport);
     updateEmptyState();
 }
@@ -965,11 +987,13 @@ void CFGPanel::clear()
     funcLabel_->setText("No function selected");
     infoLabel_->setText("");
     addressMap_.clear();
+    selectedFuncAddress_ = 0;
     updateEmptyState();
 }
 
 void CFGPanel::onFunctionSelected(uint64_t address, const QString& name)
 {
+    selectedFuncAddress_ = address;
     funcLabel_->setText(QString("%1  0x%2")
                         .arg(name)
                         .arg(address, 0, 16));
@@ -1039,6 +1063,12 @@ void CFGPanel::onBlockClicked(uint64_t blockId)
     if (it != addressMap_.end()) {
         emit blockNavigationRequested(it->second);
     }
+}
+
+void CFGPanel::onBlockGoToFunction()
+{
+    if (selectedFuncAddress_ != 0)
+        emit addressNavigated(selectedFuncAddress_);
 }
 
 } // namespace retdec::gui::panels

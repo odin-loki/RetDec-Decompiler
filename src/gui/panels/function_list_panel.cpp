@@ -5,6 +5,7 @@
 
 #include "retdec/gui/panels/function_list_panel.h"
 
+#include "retdec/gui/address_context_menu.h"
 #include "retdec/gui/widgets/empty_state_widget.h"
 
 #include <QApplication>
@@ -746,7 +747,7 @@ void FunctionListPanel::onContextMenu(const QPoint& pos)
 
     QMenu menu;
 
-    auto* navigateAct = menu.addAction("Navigate to Function");
+    auto* navigateAct = menu.addAction(retdec::gui::kGoToFunctionLabel);
     navigateAct->setEnabled(idx.isValid());
     auto* redecompileAct = menu.addAction("Re-decompile Selected Function");
     redecompileAct->setEnabled(idx.isValid());
@@ -758,7 +759,7 @@ void FunctionListPanel::onContextMenu(const QPoint& pos)
     auto* tagAct      = menu.addAction("Add Tag to Selected…");
     tagAct->setEnabled(hasSelection);
     menu.addSeparator();
-    auto* copyAct     = menu.addAction("Copy Address");
+    auto* copyAct     = menu.addAction(retdec::gui::kCopyAddressLabel);
     copyAct->setEnabled(idx.isValid());
     auto* copySigAct  = menu.addAction("Copy Signature");
     copySigAct->setEnabled(idx.isValid());
@@ -770,7 +771,11 @@ void FunctionListPanel::onContextMenu(const QPoint& pos)
     if (!chosen) return;
 
     if (chosen == navigateAct && idx.isValid()) {
-        onDoubleClicked(idx);
+        const QModelIndex src = proxy_->mapToSource(idx);
+        if (src.isValid()) {
+            const auto& e = model_->entry(src.row());
+            emit addressNavigated(e.address);
+        }
     } else if (chosen == redecompileAct && idx.isValid()) {
         const QModelIndex src = proxy_->mapToSource(idx);
         if (src.isValid()) {
@@ -787,7 +792,7 @@ void FunctionListPanel::onContextMenu(const QPoint& pos)
         if (src.isValid()) {
             const auto& e = model_->entry(src.row());
             QApplication::clipboard()->setText(
-                QString("0x%1").arg(e.address, 0, 16));
+                retdec::gui::formatAddressHex(e.address));
         }
     } else if (chosen == copySigAct && idx.isValid()) {
         QModelIndex src = proxy_->mapToSource(idx);

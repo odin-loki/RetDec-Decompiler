@@ -77,6 +77,72 @@ endif()
 
 add_custom_target(retdec-decompiler-fixture-fib ALL DEPENDS "${_FIB_BIN}")
 
+# ── Golden corpus native fixtures (hello, vector_sort) ───────────────────────
+set(_CORPUS_FIXTURES_DIR "${CMAKE_CURRENT_BINARY_DIR}/corpus_fixtures")
+file(MAKE_DIRECTORY "${_CORPUS_FIXTURES_DIR}")
+
+set(_CORPUS_NATIVE_SOURCES hello vector_sort)
+set(_CORPUS_FIXTURE_OUTPUTS "${_FIB_BIN}")
+foreach(_name IN LISTS _CORPUS_NATIVE_SOURCES)
+    set(_src "${CMAKE_CURRENT_SOURCE_DIR}/corpus/sources/${_name}.c")
+    set(_bin "${_CORPUS_FIXTURES_DIR}/${_name}${CMAKE_EXECUTABLE_SUFFIX}")
+    list(APPEND _CORPUS_FIXTURE_OUTPUTS "${_bin}")
+    if(MSVC)
+        add_custom_command(
+            OUTPUT "${_bin}"
+            COMMAND ${CMAKE_C_COMPILER} /nologo /O1 /Fe:"${_bin}" "${_src}"
+            DEPENDS "${_src}"
+            COMMENT "Building corpus fixture ${_name} (MSVC)"
+            VERBATIM
+        )
+    else()
+        add_custom_command(
+            OUTPUT "${_bin}"
+            COMMAND ${CMAKE_C_COMPILER} -O1 -o "${_bin}" "${_src}"
+            DEPENDS "${_src}"
+            COMMENT "Building corpus fixture ${_name}"
+            VERBATIM
+        )
+    endif()
+endforeach()
+
+# fib_smoke lives in binary dir; link/copy into corpus_fixtures for manifest lookup
+set(_CORPUS_FIB_LINK "${_CORPUS_FIXTURES_DIR}/fib_smoke${CMAKE_EXECUTABLE_SUFFIX}")
+if(WIN32)
+    add_custom_command(
+        OUTPUT "${_CORPUS_FIB_LINK}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_FIB_BIN}" "${_CORPUS_FIB_LINK}"
+        DEPENDS "${_FIB_BIN}"
+        COMMENT "Staging fib_smoke into corpus_fixtures"
+        VERBATIM
+    )
+else()
+    add_custom_command(
+        OUTPUT "${_CORPUS_FIB_LINK}"
+        COMMAND ${CMAKE_COMMAND} -E create_symlink "${_FIB_BIN}" "${_CORPUS_FIB_LINK}"
+        DEPENDS "${_FIB_BIN}"
+        COMMENT "Linking fib_smoke into corpus_fixtures"
+        VERBATIM
+    )
+endif()
+list(APPEND _CORPUS_FIXTURE_OUTPUTS "${_CORPUS_FIB_LINK}")
+
+# Optional hello.pyc for managed corpus entry
+set(_CORPUS_HELLO_PYC "${CMAKE_CURRENT_SOURCE_DIR}/corpus/fixtures/hello.pyc")
+set(_CORPUS_HELLO_PY "${CMAKE_CURRENT_SOURCE_DIR}/corpus/sources/hello.py")
+add_custom_command(
+    OUTPUT "${_CORPUS_HELLO_PYC}"
+    COMMAND ${Python3_EXECUTABLE} -c
+        "import py_compile; py_compile.compile('${_CORPUS_HELLO_PY}', cfile='${_CORPUS_HELLO_PYC}', doraise=True)"
+    DEPENDS "${_CORPUS_HELLO_PY}"
+    COMMENT "Generating corpus hello.pyc"
+    VERBATIM
+)
+list(APPEND _CORPUS_FIXTURE_OUTPUTS "${_CORPUS_HELLO_PYC}")
+
+add_custom_target(retdec-decompiler-corpus-fixtures ALL DEPENDS ${_CORPUS_FIXTURE_OUTPUTS})
+add_dependencies(retdec-decompiler-corpus-fixtures retdec-decompiler-fixture-fib)
+
 # ── CLI smoke ─────────────────────────────────────────────────────────────────
 add_test(
     NAME decompiler_smoke_cli_fib
@@ -107,17 +173,17 @@ set_tests_properties(decompiler_smoke_managed_formats PROPERTIES
 
 # ── Golden corpus regression ──────────────────────────────────────────────────
 add_test(
-    NAME decompiler_corpus_regression_fib
+    NAME decompiler_corpus_regression
     COMMAND ${Python3_EXECUTABLE}
         "${CMAKE_CURRENT_SOURCE_DIR}/corpus/corpus_regression_test.py"
         "${RETDEC_DECOMPILER}"
         "${CMAKE_CURRENT_SOURCE_DIR}/corpus/manifest.yaml"
-        "${_FIB_BIN}"
+        "${_CORPUS_FIXTURES_DIR}"
         "${CMAKE_CURRENT_BINARY_DIR}/corpus_out"
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
-set_tests_properties(decompiler_corpus_regression_fib PROPERTIES
-    TIMEOUT 240
+set_tests_properties(decompiler_corpus_regression PROPERTIES
+    TIMEOUT 600
     LABELS "decompiler;corpus;integration"
 )
 
@@ -128,6 +194,17 @@ add_test(
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 set_tests_properties(semantic_detection_json_schema PROPERTIES
+    TIMEOUT 30
+    LABELS "decompiler;unit"
+)
+
+add_test(
+    NAME semantic_c_hint_json_schema
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/semantic_c_hint_test.py"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+set_tests_properties(semantic_c_hint_json_schema PROPERTIES
     TIMEOUT 30
     LABELS "decompiler;unit"
 )

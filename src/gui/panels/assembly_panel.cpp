@@ -1,7 +1,11 @@
 #include "retdec/gui/panels/assembly_panel.h"
 
+#include "retdec/gui/address_context_menu.h"
 #include "retdec/gui/widgets/empty_state_widget.h"
 
+#include <QApplication>
+#include <QClipboard>
+#include <QMenu>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPlainTextEdit>
@@ -37,6 +41,9 @@ void AssemblyPanel::setupUI() {
     view_ = new QPlainTextEdit(this);
     view_->setReadOnly(true);
     view_->setLineWrapMode(QPlainTextEdit::NoWrap);
+    view_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(view_, &QPlainTextEdit::customContextMenuRequested,
+            this, &AssemblyPanel::onContextMenu);
 
     emptyState_ = new retdec::gui::widgets::EmptyStateWidget(this);
     emptyState_->setTitle(QStringLiteral("No disassembly yet"));
@@ -156,6 +163,27 @@ void AssemblyPanel::onSearchReturnPressed() {
         view_->setTextCursor(c);
         view_->find(query, flags);
     }
+}
+
+void AssemblyPanel::onContextMenu(const QPoint& pos)
+{
+    const QTextCursor cursor = view_->cursorForPosition(pos);
+    const QString line = cursor.block().text();
+    const auto addr = retdec::gui::parseFirstAddress(line);
+
+    QMenu menu(this);
+    auto* copyAct = menu.addAction(retdec::gui::kCopyAddressLabel);
+    copyAct->setEnabled(addr.has_value());
+    auto* goAct = menu.addAction(retdec::gui::kGoToFunctionLabel);
+    goAct->setEnabled(addr.has_value());
+
+    QAction* chosen = menu.exec(view_->mapToGlobal(pos));
+    if (!chosen || !addr.has_value())
+        return;
+    if (chosen == copyAct)
+        retdec::gui::copyAddressToClipboard(*addr);
+    else if (chosen == goAct)
+        emit addressNavigated(*addr);
 }
 
 } // namespace retdec::gui::panels

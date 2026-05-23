@@ -819,7 +819,8 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 					            << dm.size() << " function(s)" << std::endl;
 
 				const auto semanticMap =
-				    analysis::buildSemanticDetectionMap(cmap, amap, dm, cm);
+				    analysis::buildSemanticDetectionMap(
+				        cmap, amap, dm, cm, config.parameters.getOutputLang());
 				analysis::exportSemanticRecovery(config, semanticMap, outString);
 				if (!semanticMap.empty())
 					Log::info() << "[analysis] semantic detections exported for "

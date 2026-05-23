@@ -54,6 +54,7 @@ const std::string JSON_sdKind        = "kind";
 const std::string JSON_sdLabel       = "label";
 const std::string JSON_sdConfidence  = "confidence";
 const std::string JSON_sdDetail      = "detail";
+const std::string JSON_sdCHint       = "cHint";
 
 std::vector<std::string> fncTypes =
 {
@@ -78,6 +79,10 @@ void serialize(Writer& writer, const common::SemanticDetection& d)
 	serializeString(writer, JSON_sdLabel, d.label);
 	serializeDouble(writer, JSON_sdConfidence, d.confidence);
 	serializeString(writer, JSON_sdDetail, d.detail);
+	if (!d.cHint.empty())
+	{
+		serializeString(writer, JSON_sdCHint, d.cHint);
+	}
 	writer.EndObject();
 }
 
@@ -92,6 +97,7 @@ void deserialize(const rapidjson::Value& val, common::SemanticDetection& d)
 	d.label = deserializeString(val, JSON_sdLabel);
 	d.confidence = static_cast<float>(deserializeDouble(val, JSON_sdConfidence));
 	d.detail = deserializeString(val, JSON_sdDetail);
+	d.cHint = deserializeString(val, JSON_sdCHint);
 }
 
 template <typename Writer>
