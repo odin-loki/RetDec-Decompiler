@@ -12,6 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Fetch large support files
+        shell: pwsh
+        run: .\scripts\fetch-large-files.ps1
+
       - name: Cache CMake build
         uses: actions/cache@v4
         with:
@@ -60,7 +64,10 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build python3
+          sudo apt-get install -y build-essential cmake ninja-build python3 perl
+
+      - name: Fetch large support files
+        run: ./scripts/fetch-large-files.sh
 
       - name: Cache CMake build
         uses: actions/cache@v4

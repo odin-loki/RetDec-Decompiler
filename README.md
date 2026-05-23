@@ -177,7 +177,12 @@ Linux, so this is the only path to get all features on Windows.
 # 3. Build and stage into dist\windows\:
 .\scripts\windows_native_build.ps1
 
-# 4. Test:
+# 4. Package installers (zip + NSIS setup.exe → releases\windows\):
+.\scripts\build-windows-installer.ps1 -SkipBuild
+# or in one step after build:
+.\scripts\windows_native_build.ps1 -PackageInstallers
+
+# 5. Test:
 .\scripts\Test-RetdecWindows.ps1 -DistDir dist\windows
 ```
 

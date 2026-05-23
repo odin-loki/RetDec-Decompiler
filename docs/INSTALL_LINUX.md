@@ -37,7 +37,8 @@ Optional packaging tools:
 
 | Script | Role |
 |--------|------|
-| [build-linux-installer.sh](../scripts/build-linux-installer.sh) | `cmake --install`, stage `dist/retdec-*-linux-x64/`, tarball, optional AppImage / `.deb` |
+| [build-linux-installer.sh](../scripts/build-linux-installer.sh) | `cmake --install`, stage `dist/retdec-*-linux-x64/`, tarball, sync `releases/linux/` |
+| [build-all.sh](../scripts/build-all.sh) | Configure + build + package (one command) |
 | [install-linux.sh](../scripts/install-linux.sh) | User wrapper: build+package or install from tarball |
 | [make-appimage.sh](../scripts/make-appimage.sh) | Portable AppImage (called when `APPIMAGE=1`) |
 
@@ -100,10 +101,14 @@ dist/retdec-<version>-linux-x64.tar.gz
 ### One-shot build + package
 
 ```bash
+./scripts/build-all.sh
+# or
 ./scripts/build-linux-installer.sh --build
 # or
 ./scripts/install-linux.sh --build --build
 ```
+
+Packaged artifacts are copied to `releases/linux/` for git (tarball via Git LFS when present).
 
 ### With AppImage
 
@@ -204,11 +209,21 @@ This removes the install tree and deletes matching `PATH` lines from
 
 ---
 
-## CI note
+## CI and GitHub Releases
 
-Linux CI ([`.github/workflows/ctest-linux.yml`](../.github/workflows/ctest-linux.yml))
-runs Debug integration tests only. Release packaging is a manual or release-pipeline
-step — see the commented optional job in that workflow.
+- **Integration tests:** [`.github/workflows/ctest-linux.yml`](../.github/workflows/ctest-linux.yml)
+  fetches large support files, installs CMake 3.31+, Qt6, PyYAML, and runs headless GUI + integration tests (CPU-only).
+- **Release packaging:** [`.github/workflows/release-installers.yml`](../.github/workflows/release-installers.yml)
+  builds or reuses `releases/linux/` artifacts and publishes to
+  [GitHub Releases](https://github.com/odin-loki/RetDec-Decompiler/releases).
+
+Local one-shot packaging:
+
+```bash
+./scripts/build-all.sh
+```
+
+Commit updated `releases/linux/` after each build so `main` stays current.
 
 ---
 

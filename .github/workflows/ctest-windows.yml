@@ -7,20 +7,66 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+env:
+  RETDEC_GUI_HEADLESS: "1"
+  QT_QPA_PLATFORM: offscreen
+
 jobs:
   integration:
     runs-on: windows-latest
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure (full-windows-debug)
-        run: cmake --preset full-windows-debug
+      - name: Fetch large support files
+        shell: pwsh
+        run: |
+          .\scripts\fetch-large-files.ps1
+          if ($LASTEXITCODE -ne 0) {
+            .\scripts\fetch-large-files.ps1 -BaseUrl "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+          }
 
-      - name: Build
-        run: cmake --build build/windows --parallel
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Strawberry Perl
+        run: choco install strawberryperl -y --no-progress
+
+      - name: Install Qt 6 (MSVC x64)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.7.3"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: qtbase qtsvg
+
+      - uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "3.31.6"
+
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: build/windows
+          key: ctest-windows-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'src/**', 'deps/**') }}
+          restore-keys: |
+            ctest-windows-
+
+      - name: Configure (full-windows-debug, CPU-only CI)
+        run: >
+          cmake --preset full-windows-debug
+          -DRETDEC_ENABLE_CUDA_ACCEL=OFF
+
+      - name: Build integration targets
+        run: >
+          cmake --build build/windows --parallel
+          --target retdec-decompiler retdec-gui retdec-gui-tests
+          retdec-decompiler-fixture-fib
+
+      - name: GUI unit tests (headless)
+        run: .\build\windows\tests\gui\retdec-gui-tests.exe
 
       - name: Integration tests
         run: ctest --test-dir build/windows --output-on-failure -L integration
-        env:
-          RETDEC_GUI_HEADLESS: "1"
-          QT_QPA_PLATFORM: offscreen

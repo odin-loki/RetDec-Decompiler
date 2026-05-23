@@ -7,9 +7,14 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+env:
+  RETDEC_GUI_HEADLESS: "1"
+  QT_QPA_PLATFORM: offscreen
+
 jobs:
   integration:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
 
@@ -18,36 +23,55 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
-            cmake \
             ninja-build \
             python3 \
+            python3-yaml \
             perl \
             qt6-base-dev \
             qt6-base-dev-tools \
+            libqt6svg6-dev \
             libgl1-mesa-dev \
-            libxkbcommon-dev
+            libxkbcommon-dev \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-render-util0 \
+            libxcb-xinerama0 \
+            libxcb-xfixes0
 
-      - name: Configure (full-linux-debug)
-        run: cmake --preset full-linux-debug
+      - uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "3.31.6"
 
-      - name: Build
-        run: cmake --build build/linux --parallel
+      - name: Fetch large support files
+        run: |
+          ./scripts/fetch-large-files.sh
+          if [ $? -ne 0 ]; then
+            ./scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+          fi
+
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: build/linux
+          key: ctest-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'src/**', 'deps/**') }}
+          restore-keys: |
+            ctest-linux-
+
+      - name: Configure (full-linux-debug, CPU-only CI)
+        run: >
+          cmake --preset full-linux-debug
+          -DRETDEC_ENABLE_CUDA_ACCEL=OFF
+
+      - name: Build integration targets
+        run: >
+          cmake --build build/linux --parallel
+          --target retdec-decompiler retdec-gui retdec-gui-tests
+          retdec-decompiler-fixture-fib
 
       - name: GUI unit tests (headless)
         run: ./build/linux/tests/gui/retdec-gui-tests
-        env:
-          RETDEC_GUI_HEADLESS: "1"
-          QT_QPA_PLATFORM: offscreen
 
       - name: Integration tests
         run: ctest --test-dir build/linux --output-on-failure -L integration
-        env:
-          RETDEC_GUI_HEADLESS: "1"
-          QT_QPA_PLATFORM: offscreen
-
-      # Optional release packaging (not run here — needs Release preset + longer job):
-      #   cmake --preset full-linux-release && cmake --build build/linux --parallel
-      #   chmod +x scripts/build-linux-installer.sh scripts/install-linux.sh
-      #   ./scripts/build-linux-installer.sh
-      #   APPIMAGE=1 ./scripts/build-linux-installer.sh --skip-install  # AppImage only
-      # See docs/INSTALL_LINUX.md

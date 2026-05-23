@@ -22,14 +22,17 @@ Project home: [github.com/odin-loki/RetDec-Decompiler](https://github.com/odin-l
 From **Developer PowerShell for VS 2022**, after a successful native configure/build:
 
 ```powershell
-# Full pipeline: build targets, cmake --install, stage bundle, zip, NSIS (if makensis on PATH)
+# Full pipeline: build targets, cmake --install, stage bundle, zip, NSIS, releases\
+.\scripts\build-all.ps1
+
+# Or step-by-step:
 .\scripts\build-windows-installer.ps1
 
 # Re-package an existing install tree (no rebuild)
 .\scripts\build-windows-installer.ps1 -SkipBuild
 
-# Custom version string for filenames / NSIS metadata
-.\scripts\build-windows-installer.ps1 -SkipBuild -Version 5.0.0
+# After windows_native_build.ps1 staging:
+.\scripts\windows_native_build.ps1 -PackageInstallers
 ```
 
 ### Outputs
@@ -39,6 +42,7 @@ From **Developer PowerShell for VS 2022**, after a successful native configure/b
 | Staged bundle (NSIS input) | `dist\windows-bundle\` |
 | Portable archive | `dist\retdec-<version>-windows-x64-portable.zip` |
 | Graphical installer | `dist\retdec-<version>-windows-x64-setup.exe` (if NSIS installed) |
+| Git-tracked copies (Git LFS) | `releases\windows\` |
 
 ### Parameters (`build-windows-installer.ps1`)
 
@@ -144,11 +148,25 @@ Or from the repo after staging:
 
 | File | Purpose |
 |------|---------|
-| `scripts\build-windows-installer.ps1` | Build, stage, zip, NSIS |
+| `scripts\build-windows-installer.ps1` | Build, stage, zip, NSIS, sync `releases\windows\` |
+| `scripts\build-all.ps1` | Configure + build + install + package (one command) |
 | `scripts\install-windows.ps1` | User-facing install helper |
 | `scripts\windows_cmake_install.ps1` | `cmake --install` only |
 | `scripts\windows_native_build.ps1` | Full native build + `dist\windows` staging |
 | `scripts\bundle-windows.sh` | Linux/WSL cross-compile bundle (same NSIS layout) |
 | `packaging\nsis\retdec.nsi` | NSIS installer definition |
 | [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) | Build from source (MSVC + CUDA + Qt6) |
+| [../releases/README.md](../releases/README.md) | Git LFS artifacts + GitHub Releases |
 | [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md) | CLI-only cross-compile from WSL |
+
+---
+
+## 6. CI and GitHub Releases
+
+- **Integration tests:** `.github/workflows/ctest-windows.yml` (fetch-large-files, Qt6, MSVC, CPU-only).
+- **Release publishing:** `.github/workflows/release-installers.yml`
+  - Tag push: `git tag v5.0 && git push origin v5.0`
+  - Reuses prebuilt files from `releases/windows/` when present (LFS checkout required).
+  - Attachments appear on [GitHub Releases](https://github.com/odin-loki/RetDec-Decompiler/releases).
+
+After each local packaging run, commit updated `releases/` so `main` and releases stay in sync.

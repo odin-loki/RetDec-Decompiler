@@ -46,6 +46,7 @@ param(
     [switch] $SkipBuild,
     [switch] $SkipInstall,
     [switch] $SkipRun,
+    [switch] $PackageInstallers,
     [int] $Parallel = 0
 )
 
@@ -99,6 +100,12 @@ try {
         Write-Host "==> cmake --install $buildDir"
         & cmake --install $buildDir
         if ($LASTEXITCODE -ne 0) { throw "cmake --install failed with exit code $LASTEXITCODE" }
+    }
+
+    if ($PackageInstallers) {
+        Write-Host "==> Packaging Windows installers"
+        & (Join-Path $PSScriptRoot "build-windows-installer.ps1") -SkipBuild
+        if ($LASTEXITCODE -ne 0) { throw "build-windows-installer.ps1 failed with exit code $LASTEXITCODE" }
     }
 
     if ($SkipRun) {

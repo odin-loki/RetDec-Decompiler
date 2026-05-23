@@ -22,6 +22,10 @@
 .PARAMETER SkipBuild
     Skip the cmake --build step (only re-run staging).
 
+.PARAMETER PackageInstallers
+    After staging, run scripts\build-windows-installer.ps1 -SkipBuild to produce
+    dist\*.zip, setup.exe, and refresh releases\windows\ for git/CI publish.
+
 .PARAMETER BuildDir
     CMake binary directory (must match configure). Default: build\windows under the repo.
 
@@ -42,7 +46,8 @@ param(
     [string]$BuildDir  = "",
     [string]$InstallPrefix = "",
     [int]   $Jobs      = 32,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$PackageInstallers
 )
 
 $ErrorActionPreference = "Continue"
@@ -399,6 +404,16 @@ Write-Host "    .\$DistDir\retdec-gui.exe" -ForegroundColor Cyan
 Write-Host "    .\scripts\Test-RetdecWindows.ps1 -DistDir $DistDir" -ForegroundColor Cyan
 Write-Host "======================================================" -ForegroundColor Cyan
 Write-Host ""
+
+if ($PackageInstallers) {
+    $installerScript = Join-Path $PSScriptRoot "build-windows-installer.ps1"
+    Write-Host "--- Packaging installers (releases\windows\) ---" -ForegroundColor White
+    & $installerScript -SkipBuild
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "build-windows-installer.ps1 failed with exit code $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
+}
 
 } finally {
     Pop-Location

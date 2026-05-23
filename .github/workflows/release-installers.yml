@@ -1,0 +1,227 @@
+name: release-installers
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 5.0)"
+        required: true
+        default: "5.0"
+      skip_build:
+        description: "Publish existing releases/ artifacts only (no rebuild)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Resolve release metadata
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${GITHUB_REF_NAME}"
+            VER="${TAG#v}"
+          else
+            VER="${{ inputs.version }}"
+            TAG="v${VER}"
+          fi
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Release: ${TAG} (${VER})"
+
+      - name: Create GitHub Release (draft)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: RetDec ${{ steps.meta.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  windows-installer:
+    needs: release
+    runs-on: windows-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Detect prebuilt Windows artifacts
+        id: prebuilt
+        shell: pwsh
+        run: |
+          $ver = "${{ needs.release.outputs.version }}"
+          $setup = "releases/windows/retdec-$ver-windows-x64-setup.exe"
+          $zip = "releases/windows/retdec-$ver-windows-x64-portable.zip"
+          if ((Test-Path $setup) -and (Test-Path $zip)) {
+            Add-Content -Path $env:GITHUB_OUTPUT -Value "has=true"
+            Write-Host "Found prebuilt Windows installers — skipping rebuild"
+          }
+
+      - name: Verify prebuilt Windows installers
+        if: steps.prebuilt.outputs.has == 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_build)
+        shell: pwsh
+        run: |
+          $ver = "${{ needs.release.outputs.version }}"
+          foreach ($f in @(
+            "releases/windows/retdec-$ver-windows-x64-setup.exe",
+            "releases/windows/retdec-$ver-windows-x64-portable.zip"
+          )) {
+            if (-not (Test-Path $f)) { throw "Missing $f" }
+          }
+
+      - name: Fetch large support files
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        shell: pwsh
+        run: |
+          .\scripts\fetch-large-files.ps1
+          if ($LASTEXITCODE -ne 0) {
+            .\scripts\fetch-large-files.ps1 -BaseUrl "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+          }
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        with:
+          arch: x64
+
+      - name: Install Perl and NSIS
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        run: choco install strawberryperl nsis -y --no-progress
+
+      - name: Install Qt 6 (MSVC x64)
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.7.3"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: qtbase qtsvg
+
+      - uses: lukka/get-cmake@latest
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        with:
+          cmakeVersion: "3.31.6"
+
+      - name: Install EnVar NSIS plugin
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        shell: pwsh
+        run: |
+          $nsis = "${env:ProgramFiles(x86)}\NSIS"
+          Invoke-WebRequest -Uri "https://github.com/GsNSIS/EnVar/releases/download/v0.3.1/EnVar-Plugin.zip" -OutFile envar.zip
+          Expand-Archive envar.zip -DestinationPath envar -Force
+          Copy-Item envar\x86-unicode\EnVar.dll "$nsis\Plugins\x86-unicode\" -Force
+
+      - name: Configure (full-windows-release, CPU-only CI)
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        run: >
+          cmake --preset full-windows-release
+          -DRETDEC_ENABLE_CUDA_ACCEL=OFF
+
+      - name: Build and package Windows installers
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        shell: pwsh
+        run: .\scripts\build-windows-installer.ps1 -Version "${{ needs.release.outputs.version }}"
+
+      - name: Upload Windows release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          files: |
+            releases/windows/retdec-${{ needs.release.outputs.version }}-windows-x64-setup.exe
+            releases/windows/retdec-${{ needs.release.outputs.version }}-windows-x64-portable.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  linux-installer:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Detect prebuilt Linux tarball
+        id: prebuilt
+        run: |
+          ver="${{ needs.release.outputs.version }}"
+          tb="releases/linux/retdec-${ver}-linux-x64.tar.gz"
+          if [ -f "$tb" ]; then
+            echo "has=true" >> "$GITHUB_OUTPUT"
+            echo "Found prebuilt Linux tarball — skipping rebuild"
+          fi
+
+      - name: Verify prebuilt Linux tarball
+        if: steps.prebuilt.outputs.has == 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_build)
+        run: |
+          ver="${{ needs.release.outputs.version }}"
+          tb="releases/linux/retdec-${ver}-linux-x64.tar.gz"
+          test -f "$tb" || { echo "Missing $tb"; exit 1; }
+
+      - name: Install dependencies
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ninja-build \
+            python3 \
+            python3-yaml \
+            perl \
+            qt6-base-dev \
+            qt6-base-dev-tools \
+            libqt6svg6-dev \
+            libgl1-mesa-dev \
+            libxkbcommon-dev
+
+      - uses: lukka/get-cmake@latest
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        with:
+          cmakeVersion: "3.31.6"
+
+      - name: Fetch large support files
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        run: |
+          ./scripts/fetch-large-files.sh || \
+            ./scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+
+      - name: Configure (full-linux-release, CPU-only CI)
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        run: >
+          cmake --preset full-linux-release
+          -DRETDEC_ENABLE_CUDA_ACCEL=OFF
+
+      - name: Build and package Linux tarball
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        run: |
+          chmod +x scripts/build-linux-installer.sh scripts/install-linux.sh
+          ./scripts/build-linux-installer.sh --build --version "${{ needs.release.outputs.version }}"
+
+      - name: Upload Linux release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          files: |
+            releases/linux/retdec-${{ needs.release.outputs.version }}-linux-x64.tar.gz
+            releases/linux/install.sh
+            releases/linux/uninstall.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
