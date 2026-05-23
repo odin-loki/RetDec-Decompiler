@@ -513,6 +513,7 @@ void FunctionListPanel::setupUI()
     // ── Filter bar ────────────────────────────────────────────────────────
     auto* filterBar    = new QWidget(this);
     filterBar->setProperty("role", "filter-bar");
+    filterBar->setAccessibleName(QStringLiteral("Function list filters"));
     auto* fbLayout     = new QHBoxLayout(filterBar);
     fbLayout->setContentsMargins(4, 3, 4, 3);
     fbLayout->setSpacing(4);
@@ -520,6 +521,7 @@ void FunctionListPanel::setupUI()
 
     // ── Table ─────────────────────────────────────────────────────────────
     tableView_ = new QTableView(this);
+    tableView_->setAccessibleName(QStringLiteral("Function list table"));
     tableView_->setModel(proxy_);
     tableView_->setItemDelegate(delegate_);
     tableView_->setAlternatingRowColors(true);
@@ -680,6 +682,18 @@ void FunctionListPanel::filterByClass(const QString& className)
 {
     proxy_->setClassFilter(className);
     updateStatusLabel();
+}
+
+QString FunctionListPanel::nameFilterText() const
+{
+    return nameFilter_ ? nameFilter_->text() : QString();
+}
+
+void FunctionListPanel::setNameFilterText(const QString& text)
+{
+    if (!nameFilter_ || nameFilter_->text() == text)
+        return;
+    nameFilter_->setText(text);
 }
 
 void FunctionListPanel::onFunctionSelected(uint64_t /*address*/, const QString& /*name*/) {}

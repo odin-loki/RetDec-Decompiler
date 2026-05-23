@@ -6,7 +6,7 @@ Polish-only work (no new features). Update as items ship.
 
 Framework / docs polish shipped alongside GUI v3 (May 2026). Items below were on the maintenance backlog; all complete.
 
-- [x] **CI badges** — README workflow badges for `ctest-windows`, `ctest-linux`, `perf-nightly`, `release-installers`
+- [x] **CI badges** — README workflow badges for `perf-nightly` and `release-installers` only (`ctest-windows` / `ctest-linux` are manual-only, no badge)
 - [x] **Unit tests in CI** — GUI headless tests + `ctest -L unit` in `.github/workflows/ctest-windows.yml` and `ctest-linux.yml`
 - [x] **`retdec_cli.py` autodetect** — `_resolve_decompiler()` searches `install/`, `build/**`, and `build-decompiler-test/bin`
 - [x] **User manual sync** — `docs/user_manual.md` aligned with v3 layout; external `retdec-qwen3-runner` / CLI `--model` (no in-GUI AI chat)
@@ -62,4 +62,8 @@ Framework / docs polish shipped alongside GUI v3 (May 2026). Items below were on
 - [ ] i18n
 - [x] Unified context menus (Copy Address, Go to Function) on Functions, Assembly, CFG
 - [x] Loading status on artifact load (`Loading artifacts…` in status bar)
-- [ ] Session persistence beyond layout (filters, call-graph depth per project)
+- [x] Session persistence beyond layout (function-list filter text, call-graph depth per `.retdec` project)
+- [x] Tri-pane language combo: sync from Settings on load; tooltip + hint on manual change (view-only syntax)
+- [x] Optional Linux AppImage in `release-installers.yml` (`APPIMAGE=1` or workflow_dispatch checkbox)
+- [x] `ci-smoke.yml`: run `scripts/check_format.sh` when present (5 min timeout)
+- [x] README links to CONTRIBUTING.md / SECURITY.md; mentions `scripts/doctor.ps1`

@@ -262,6 +262,14 @@ QStringList buildDecompilerArguments(
     if (!arch.isEmpty())
         args << QStringLiteral("-a") << arch;
 
+    QString profileName = req.decompiler.decompileProfile.trimmed();
+    if (profileName.isEmpty())
+        profileName = QStringLiteral("balanced");
+    if (req.fastDecompile)
+        profileName = QStringLiteral("fast");
+    if (!req.decompiler.useCustomLlvmPasses)
+        args << QStringLiteral("--profile") << profileName;
+
     if (req.fastDecompile) {
         args << QStringLiteral("--backend-no-opts")
              << QStringLiteral("--disable-static-code-detection");

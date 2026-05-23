@@ -36,9 +36,14 @@ namespace gui {
  *   "annotations": {
  *     "0x4010a0": { "name": "decrypt_payload", "comment": "RC4 decrypt" }
  *   },
- *   "decompiledOutput": "/path/to/output.c"
+ *   "decompiledOutput": "/path/to/output.c",
+ *   "functionListFilter": "main",
+ *   "callGraphDepth": 0
  * }
  * ```
+ *
+ * Optional GUI session fields (`functionListFilter`, `callGraphDepth`) are
+ * persisted per project; omitted keys restore defaults on load.
  */
 class ProjectFile {
 public:
@@ -55,6 +60,8 @@ public:
     QString os()            const { return os_; }
     uint64_t entryPoint()   const { return entryPoint_; }
     QString decompiledPath()const { return decompiledOutputPath_; }
+    QString functionListFilter() const { return functionListFilter_; }
+    int     callGraphDepth()     const { return callGraphDepth_; }
 
     // Mutators
     void setBinaryPath(const QString& p) {
@@ -76,6 +83,14 @@ public:
     void setDecompiledPath(const QString& p) {
         decompiledOutputPath_ = p;
         modified_             = true;
+    }
+    void setFunctionListFilter(const QString& text) {
+        functionListFilter_ = text;
+        modified_           = true;
+    }
+    void setCallGraphDepth(int depth) {
+        callGraphDepth_ = depth;
+        modified_       = true;
     }
 
     // Stage tracking
@@ -106,6 +121,8 @@ private:
     QString   os_;
     uint64_t  entryPoint_ = 0;
     QString   decompiledOutputPath_;
+    QString   functionListFilter_;
+    int       callGraphDepth_ = 0;
     QMap<QString, QString>     stages_;
     QMap<uint64_t, Annotation> annotations_;
     mutable bool    modified_   = false;

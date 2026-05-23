@@ -4,10 +4,11 @@
 # Download the large source data files that are deliberately not committed
 # to keep this repo small (see .gitignore). Required before the first build.
 #
-# Run from the repo root:
-#   ./scripts/fetch-large-files.sh                  # default, only fetch missing
-#   ./scripts/fetch-large-files.sh --force          # overwrite even if present
-#   ./scripts/fetch-large-files.sh --base-url URL   # alternate mirror
+# Run from the repo root (bash works even when this file is not executable):
+#   bash scripts/fetch-large-files.sh               # default, only fetch missing
+#   ./scripts/fetch-large-files.sh                  # same, after: chmod +x scripts/*.sh
+#   bash scripts/fetch-large-files.sh --force       # overwrite even if present
+#   bash scripts/fetch-large-files.sh --base-url URL   # alternate mirror
 # ---------------------------------------------------------------------------
 set -euo pipefail
 

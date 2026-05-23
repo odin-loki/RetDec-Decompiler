@@ -8,7 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
-- **Repository metadata:** Git history was squashed to a single root commit; issue/PR URLs were removed from in-tree comments where they were non-essential. CI regression clones now require repository secrets `RETDEC_REGRESSION_TESTS_GIT_URL` and `RETDEC_REGRESSION_FRAMEWORK_GIT_URL` (see `.github/workflows/retdec-ci.yml`). NSIS/AppImage homepage placeholders use `https://example.com/` until you set a real product URL.
+- **Repository metadata:** Git history was squashed to a single root commit; issue/PR URLs were removed from in-tree comments where they were non-essential. Automated CI on push/PR uses [`.github/workflows/ci-smoke.yml`](.github/workflows/ci-smoke.yml); full test workflows ([`.github/workflows/ctest-linux.yml`](.github/workflows/ctest-linux.yml), [`.github/workflows/ctest-windows.yml`](.github/workflows/ctest-windows.yml)) are **manual-only**; scheduled/release automation uses [`.github/workflows/perf-nightly.yml`](.github/workflows/perf-nightly.yml) and [`.github/workflows/release-installers.yml`](.github/workflows/release-installers.yml). NSIS/AppImage homepage placeholders use `https://example.com/` until you set a real product URL.
 - **Build layout:** CMake presets and helper scripts now use a fixed OS tree: `build/linux` + `install/linux` on non-Windows hosts, `build/windows` + `install/windows` on Windows; superbuilds use `build/linux/<preset>` or `build/windows/<preset>`. Staging defaults to `dist/windows` (and `dist/windows/debuggable` for the debuggable GUI script). MinGW cross lives under `build/linux/mingw-w64-release`.
 
 ### Added
@@ -17,7 +17,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - **[docs/BUILD_REFERENCE.md](docs/BUILD_REFERENCE.md)** — canonical guide: CMake 3.26+, `build/linux` / `build/windows`, presets, superbuild, install, `dist/windows`, Docker, CI secrets, testing, troubleshooting.
 - **[docs/README.md](docs/README.md)** — documentation hub: reading order, superbuild/CI/Docker summaries, diagnostics env vars, WSL and Windows quick paths.
 - **[docs/user_manual.md](docs/user_manual.md)** — expanded installation (correct `cmake --install build/linux`), Windows staging notes, CLI companion section, troubleshooting, doc map.
-- Cross-links and CMake **3.26+** alignment in [README.md](README.md), [docs/developer_guide.md](docs/developer_guide.md), [docs/WINDOWS_NATIVE_BUILD.md](docs/WINDOWS_NATIVE_BUILD.md), [docs/MINGW_CROSS_DEEP_DIVE.md](docs/MINGW_CROSS_DEEP_DIVE.md), [docs/architecture.md](docs/architecture.md), [scripts/README.md](scripts/README.md), and [.github/workflows/retdec-ci.yml](.github/workflows/retdec-ci.yml).
+- Cross-links and CMake **3.26+** alignment in [README.md](README.md), [docs/developer_guide.md](docs/developer_guide.md), [docs/WINDOWS_NATIVE_BUILD.md](docs/WINDOWS_NATIVE_BUILD.md), [docs/MINGW_CROSS_DEEP_DIVE.md](docs/MINGW_CROSS_DEEP_DIVE.md), [docs/architecture.md](docs/architecture.md), [scripts/README.md](scripts/README.md), and [`.github/workflows/`](.github/workflows/) (ci-smoke, ctest, perf-nightly, release-installers).
 
 #### GPU Acceleration — CUDA
 - Full CUDA acceleration backend replacing OpenCL throughout the project.
@@ -71,7 +71,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   including MinGW runtime DLLs; bypasses `cmake --install` to avoid missing-file errors.
 - `scripts/Test-RetdecWindows.ps1` — PowerShell smoke test suite for the Windows build
   (help output, Lua / Python / Java managed decompilation tests).
-- `CHANGELOG.md` and `LICENSE` (BSD 3-Clause, Odin Loch Trading as Imortek) added to
+- `CHANGELOG.md` and `LICENSE` (AGPL-3.0+ / commercial dual licence, Odin Loch trading as Imortek) added to
   satisfy install targets.
 - `src/testing/test_harness.cpp` — added `#include <windows.h>` (with `WIN32_LEAN_AND_MEAN`
   and `NOMINMAX`) under `#ifdef _WIN32` to fix undeclared `MAX_PATH`, `GetTempPathA`, etc.

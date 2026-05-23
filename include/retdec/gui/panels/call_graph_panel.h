@@ -295,6 +295,9 @@ public:
 
     void clear() override;
 
+    int  callGraphDepth() const;
+    void setCallGraphDepth(int depth);
+
 public slots:
     void onFunctionSelected(uint64_t address, const QString& name);
 

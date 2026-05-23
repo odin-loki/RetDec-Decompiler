@@ -137,7 +137,7 @@ cat > "$APPDIR/usr/share/metainfo/retdec.appdata.xml" <<XML
       containers, cryptographic algorithms, and design patterns.
     </p>
   </description>
-  <url type="homepage">https://example.com/</url>
+  <url type="homepage">https://github.com/odin-loki/RetDec-Decompiler</url>
   <releases>
     <release version="${VERSION}" date="$(date -u +%Y-%m-%d)"/>
   </releases>

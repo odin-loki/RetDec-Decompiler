@@ -95,6 +95,10 @@ QJsonObject ProjectFile::toJson() const {
     root["entryPoint"] = static_cast<qint64>(entryPoint_);
     root["savedAt"]  = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
     root["decompiledOutput"] = decompiledOutputPath_;
+    if (!functionListFilter_.isEmpty())
+        root["functionListFilter"] = functionListFilter_;
+    if (callGraphDepth_ != 0)
+        root["callGraphDepth"] = callGraphDepth_;
 
     // Stages.
     QJsonObject stagesObj;
@@ -127,6 +131,8 @@ bool ProjectFile::fromJson(const QJsonObject& obj) {
     os_                   = obj["os"].toString();
     entryPoint_           = static_cast<uint64_t>(obj["entryPoint"].toVariant().toLongLong());
     decompiledOutputPath_ = obj["decompiledOutput"].toString();
+    functionListFilter_   = obj["functionListFilter"].toString();
+    callGraphDepth_       = obj["callGraphDepth"].toInt(0);
 
     // Stages.
     stages_.clear();

@@ -50,20 +50,22 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 
 ## CI / tooling
 
-| Script | Role |
+| Script / workflow | Role |
 |--------|------|
-| `fetch-large-files.ps1` / `fetch-large-files.sh` | Download support files omitted from git (required before first build) |
+| `doctor.ps1` / `doctor.sh` | Read-only prerequisite check: CMake 3.26+, fetch-large-files marker, Qt6 hint, git-lfs, python3, perl; Windows also checks NSIS/makensis and EnVar |
+| `fetch-large-files.ps1` / `fetch-large-files.sh` | Download support files omitted from git (~60 MiB; required before first build). Use `bash scripts/fetch-large-files.sh` when `.sh` is not executable |
+| `.github/workflows/ci-smoke.yml` | Lightweight CI on `main` push/PR: fetch-large-files, CLI helper tests, pipeline/semantic JSON validation (no full compile) |
+| `validate_pipeline_json.py` | Validate pipeline JSON against `docs/pipeline_builder_schema.json` (`python3 scripts/validate_pipeline_json.py --all-profiles`) |
+| `parity_bench.ps1` | Compare CLI vs GUI subprocess wall time on a fixed binary; `-Help` for options |
+| `install_smoke.ps1` | Smoke-test a `cmake --install` tree (decompiler + fileinfo on a fixture PE) |
+| `perf_bench_ci.ps1` | Time decompiler on a fib fixture; emit JSON for CI trend tracking |
 | `retdec_cli.py` | Unified CLI: batch decompile, diff, emit-json, export-intel, watch, yara-bridge |
 | `unpack_and_decompile.ps1` / `unpack_and_decompile.sh` | Unpack (when needed) then decompile a binary |
-| `validate_pipeline_json.py` | Validate pipeline JSON against `docs/pipeline_builder_schema.json` |
-| `perf_bench_ci.ps1` | Time decompiler on a fib fixture; emit JSON for CI trend tracking |
-| `parity_bench.ps1` | Compare CLI vs GUI subprocess wall time on a fixed binary |
-| `install_smoke.ps1` | Smoke-test a `cmake --install` tree (decompiler + fileinfo) |
 | `build-all.ps1` / `build-all.sh` | End-to-end configure, build, install, and package (Windows / Linux) |
 | `build-windows-installer.ps1` | Stage portable zip + optional NSIS installer under `dist/` |
 | `build-linux-installer.sh` | `cmake --install` + portable tarball (optional AppImage / `.deb`) |
 
-On Linux or WSL clones, mark shell entrypoints executable once after checkout:
+On Linux or WSL clones, shell scripts do **not** need `chmod +x` if you invoke them with `bash scripts/<name>.sh`. To run directly (`./scripts/...`), mark entrypoints executable once after checkout:
 
 ```bash
 chmod +x scripts/*.sh scripts/lib/*.sh

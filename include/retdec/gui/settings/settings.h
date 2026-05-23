@@ -160,6 +160,8 @@ struct DecompilerSettings {
     bool liveConsoleTail = false;
     /// Preferred `--output-lang` for native binaries (c|cpp|python|csharp|java|wat).
     QString outputLang = QStringLiteral("c");
+    /// Named LLVM pass pipeline for `--profile` (fast|balanced|quality).
+    QString decompileProfile = QStringLiteral("balanced");
 };
 
 // ─── AppSettings (main facade) ────────────────────────────────────────────────

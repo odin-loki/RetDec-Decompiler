@@ -1,11 +1,11 @@
-﻿RetDec â€” Enhanced Retargetable Decompiler
+﻿RetDec — Enhanced Retargetable Decompiler
 Copyright (c) 2025-2026 Odin Loch, trading as Imortek.
 
 This program is dual-licensed. You may use it under EITHER:
 
   (A) the GNU Affero General Public License, version 3 or later
       ("AGPL-3.0+"), reproduced in full below, as modified by the
-      additional terms in Section 7 ("Additional Terms â€” Imortek
+      additional terms in Section 7 ("Additional Terms — Imortek
       Attribution, Free-Tier, and Commercial Terms") that follow the
       AGPL text; OR
 
@@ -17,7 +17,7 @@ This program is dual-licensed. You may use it under EITHER:
 
 For the avoidance of doubt:
   * Personal, charitable, educational, and small-entity use (entities
-    with annual income/revenue below 50,000 AUD â‰ˆ 35,000 USD)
+    with annual income/revenue below 50,000 AUD ≈ 35,000 USD)
     receives the AGPL-3.0+ licence at no cost, subject to the
     attribution requirements below.
   * Anyone wishing to use this software commercially above the free
@@ -32,7 +32,7 @@ This licence agreement is governed by Australian law. Any disputes
 shall be resolved in the courts of Australia.
 
 ================================================================================
-        GNU AFFERO GENERAL PUBLIC LICENSE â€” VERSION 3, 19 NOVEMBER 2007
+        GNU AFFERO GENERAL PUBLIC LICENSE — VERSION 3, 19 NOVEMBER 2007
 ================================================================================
 
                     GNU AFFERO GENERAL PUBLIC LICENSE
@@ -698,7 +698,7 @@ For more information on this, and how to apply and follow the GNU AGPL, see
 <https://www.gnu.org/licenses/>.
 
 ================================================================================
-   ADDITIONAL TERMS â€” IMORTEK ATTRIBUTION, FREE-TIER, AND COMMERCIAL TERMS
+   ADDITIONAL TERMS — IMORTEK ATTRIBUTION, FREE-TIER, AND COMMERCIAL TERMS
    (applied under Section 7 of the AGPL-3.0)
 ================================================================================
 
@@ -770,34 +770,34 @@ A commercial licence is required if you:
 
 All amounts below are in Australian Dollars (AUD), inclusive of GST.
 
-(a) INITIAL ONE-TIME SETUP FEE â€” REVENUE-GENERATING USERS
+(a) INITIAL ONE-TIME SETUP FEE — REVENUE-GENERATING USERS
 
     +------------------------------------+----------------------+
     | Annual income / profit (AUD)       | Initial one-time fee |
     +------------------------------------+----------------------+
-    |       50,000  â€“    500,000         |        5,000         |
-    |      500,000  â€“  5,000,000         |       25,000         |
-    |    5,000,000  â€“ 50,000,000         |      100,000         |
-    |   50,000,000  â€“ 500,000,000        |      500,000         |
-    |  500,000,000  â€“ 1,000,000,000      |    2,000,000         |
-    | 1,000,000,000 â€“ 10,000,000,000     |   10,000,000         |
-    |10,000,000,000 â€“ 100,000,000,000    |   50,000,000         |
+    |       50,000  –    500,000         |        5,000         |
+    |      500,000  –  5,000,000         |       25,000         |
+    |    5,000,000  – 50,000,000         |      100,000         |
+    |   50,000,000  – 500,000,000        |      500,000         |
+    |  500,000,000  – 1,000,000,000      |    2,000,000         |
+    | 1,000,000,000 – 10,000,000,000     |   10,000,000         |
+    |10,000,000,000 – 100,000,000,000    |   50,000,000         |
     |          above 100,000,000,000     |  200,000,000         |
     +------------------------------------+----------------------+
 
-(b) INITIAL ONE-TIME SETUP FEE â€” NON-REVENUE-GENERATING COMMERCIAL USERS
+(b) INITIAL ONE-TIME SETUP FEE — NON-REVENUE-GENERATING COMMERCIAL USERS
     (e.g. internal tools, government, non-profits with commercial use)
 
     +------------------------------------+----------------------+
     | Annual budget / expenditure (AUD)  | Initial one-time fee |
     +------------------------------------+----------------------+
-    |       50,000  â€“    500,000         |       10,000         |
-    |      500,000  â€“  5,000,000         |       50,000         |
-    |    5,000,000  â€“ 50,000,000         |      200,000         |
-    |   50,000,000  â€“ 500,000,000        |      750,000         |
-    |  500,000,000  â€“ 1,000,000,000      |    3,000,000         |
-    | 1,000,000,000 â€“ 10,000,000,000     |   15,000,000         |
-    |10,000,000,000 â€“ 100,000,000,000    |   75,000,000         |
+    |       50,000  –    500,000         |       10,000         |
+    |      500,000  –  5,000,000         |       50,000         |
+    |    5,000,000  – 50,000,000         |      200,000         |
+    |   50,000,000  – 500,000,000        |      750,000         |
+    |  500,000,000  – 1,000,000,000      |    3,000,000         |
+    | 1,000,000,000 – 10,000,000,000     |   15,000,000         |
+    |10,000,000,000 – 100,000,000,000    |   75,000,000         |
     |          above 100,000,000,000     |  300,000,000         |
     +------------------------------------+----------------------+
 
@@ -807,25 +807,25 @@ All amounts below are in Australian Dollars (AUD), inclusive of GST.
     | Annual income / profit (AUD)       | Annual licence fee   |
     +------------------------------------+----------------------+
     | Below 50,000                       | Free (under AGPL-3.0+)|
-    |       50,000  â€“    500,000         |  5% of annual income |
-    |      500,000  â€“  5,000,000         |  7% of annual income |
-    |    5,000,000  â€“ 50,000,000         | 10% of annual income |
-    |   50,000,000  â€“ 500,000,000        | 12% of annual income |
-    |  500,000,000  â€“ 1,000,000,000      | 15% of annual income |
-    | 1,000,000,000 â€“ 10,000,000,000     | 18% of annual income |
-    |10,000,000,000 â€“ 100,000,000,000    | 20% of annual income |
+    |       50,000  –    500,000         |  5% of annual income |
+    |      500,000  –  5,000,000         |  7% of annual income |
+    |    5,000,000  – 50,000,000         | 10% of annual income |
+    |   50,000,000  – 500,000,000        | 12% of annual income |
+    |  500,000,000  – 1,000,000,000      | 15% of annual income |
+    | 1,000,000,000 – 10,000,000,000     | 18% of annual income |
+    |10,000,000,000 – 100,000,000,000    | 20% of annual income |
     |          above 100,000,000,000     | 25% of annual income |
     +------------------------------------+----------------------+
 
-(d) VOLUME DISCOUNTS â€” applied to both initial and annual fees
+(d) VOLUME DISCOUNTS — applied to both initial and annual fees
 
     +-----------------+--------------------------------+
     | Licences        | Discount on total fee          |
     +-----------------+--------------------------------+
-    |    5 â€“   9      | 10%                            |
-    |   10 â€“  24      | 15%                            |
-    |   25 â€“  49      | 20%                            |
-    |   50 â€“  99      | 25%                            |
+    |    5 –   9      | 10%                            |
+    |   10 –  24      | 15%                            |
+    |   25 –  49      | 20%                            |
+    |   50 –  99      | 25%                            |
     |  100+           | 30%                            |
     +-----------------+--------------------------------+
 
@@ -877,7 +877,7 @@ Payment details:
     Bank         : Commonwealth Bank
     SWIFT/BIC    : CTBAAU2SXXX
     BSB / Acct # : (contact licensor for current details)
-    Reference    : "Odin Loch trading as Imortek â€” Licence fee"
+    Reference    : "Odin Loch trading as Imortek — Licence fee"
 
 Commercial licensing enquiries (NOT payments):
 

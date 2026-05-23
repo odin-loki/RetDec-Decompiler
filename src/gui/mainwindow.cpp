@@ -246,6 +246,10 @@ RetDecMainWindow::RetDecMainWindow(QWidget* parent)
     }
     connect(&AppSettings::instance(), &AppSettings::settingsChanged,
             this, &RetDecMainWindow::applyEditorFontFromSettings);
+    if (triPane_) {
+        connect(&AppSettings::instance(), &AppSettings::settingsChanged,
+                triPane_, &panels::TriPaneCodeView::syncLanguageFromSettings);
+    }
     applyEditorFontFromSettings();
 
     updateCentralEmptyState();
@@ -278,10 +282,9 @@ void RetDecMainWindow::createPanels() {
     typeHierarchy_  = new panels::TypeHierarchyPanel(this);
     callGraph_      = new panels::CallGraphPanel(this);
     stringsBrowser_ = new panels::StringsBrowserPanel(this);
-    // AI assistant removed from the v3 layout — was floating, never useful
-    // out of the box, and just disrupted the working area. The panel class
-    // remains in retdec-gui-panels for the API tests; the main window does
-    // not instantiate or dock it.
+    // AI assistant: v3 intentionally does not instantiate AIAssistantPanel
+    // (see dockAI_ = nullptr below). The panel class remains in the build for
+    // API/tests; re-enable here if an external LLM backend is wired up.
     aiAssistant_    = nullptr;
     diagnostics_    = new panels::DiagnosticsPanel(this);
     progressPanel_  = new panels::ProgressPanel(this);
@@ -518,6 +521,9 @@ void RetDecMainWindow::createDockLayout() {
     // ── LEFT: Functions (single dock, no inner tabs) ──────────────────────────
     dockFunctions_ = makeDock(QStringLiteral("Functions"), functionList_);
     dockFunctions_->setObjectName(QStringLiteral("dock_functions"));
+    dockFunctions_->setAccessibleName(QStringLiteral("Functions panel"));
+    dockFunctions_->setAccessibleDescription(
+            QStringLiteral("Decompiled function list and recovery metadata"));
 
     // ── RIGHT: Strings + Inspect + Binary + Target ────────────────────────────
     workspaceTabWidget_ = new QTabWidget();
@@ -529,6 +535,9 @@ void RetDecMainWindow::createDockLayout() {
     workspaceTabWidget_->addTab(target_,         QStringLiteral("Target"));
     dockWorkspace_ = makeDock(QStringLiteral("Workspace"), workspaceTabWidget_);
     dockWorkspace_->setObjectName(QStringLiteral("dock_workspace"));
+    dockWorkspace_->setAccessibleName(QStringLiteral("Workspace panel"));
+    dockWorkspace_->setAccessibleDescription(
+            QStringLiteral("Strings, Inspect, Binary browser, and Target tabs"));
 
     // ── BOTTOM: Console + Problems + History + Progress ───────────────────────
     outputTabs_ = new QTabWidget(this);
@@ -542,6 +551,15 @@ void RetDecMainWindow::createDockLayout() {
     outputTabs_->setTabVisible(kOutProgress, false);
     dockOutput_ = makeDock(QStringLiteral("Output"), outputTabs_);
     dockOutput_->setObjectName(QStringLiteral("dock_output"));
+    dockOutput_->setAccessibleName(QStringLiteral("Output panel"));
+    dockOutput_->setAccessibleDescription(
+            QStringLiteral("Console, Problems, History, and Progress tabs"));
+    if (liveConsole_)
+        liveConsole_->setAccessibleName(QStringLiteral("Console"));
+    if (diagnostics_)
+        diagnostics_->setAccessibleName(QStringLiteral("Problems"));
+    if (functionList_)
+        functionList_->setAccessibleName(QStringLiteral("Function list"));
 
     // AI Assistant intentionally NOT docked or floated in v3.
     dockAI_ = nullptr;
@@ -1075,20 +1093,26 @@ bool RetDecMainWindow::tryLoadCachedDecompile(const QString& binaryPath) {
     const QFileInfo bFi(binaryPath);
     if (!cFi.exists() || !bFi.exists())
         return false;
-    // Cache is fresh iff the .c is at least as new as the binary AND the
-    // sidecar .config.json exists too (needed for the Functions panel).
-    if (cFi.lastModified() < bFi.lastModified())
-        return false;
+    const bool cacheStale = cFi.lastModified() < bFi.lastModified();
     const QString cfgPath = pathsFromOutputC(cPath).configPath;
     if (!QFileInfo::exists(cfgPath))
         return false;
     if (!loadDecompileArtifacts(cPath))
         return false;
     setStatusDecompileState(QStringLiteral("cached"));
-    statusBar()->showMessage(
-            QStringLiteral("Loaded cached decompile (%1) — press F5 to re-decompile.")
-                    .arg(cFi.lastModified().toString(QStringLiteral("HH:mm"))),
-            8000);
+    if (cacheStale) {
+        statusBar()->showMessage(
+                QStringLiteral("Cache may be stale — re-decompile recommended"),
+                8000);
+        diagnostics_->addMessage(panels::DiagnosticEntry::Severity::Warning,
+                QStringLiteral("retdec-decompiler"),
+                QStringLiteral("Cached decompile is older than the binary — press F5 to refresh."));
+    } else {
+        statusBar()->showMessage(
+                QStringLiteral("Loaded cached decompile (%1) — press F5 to re-decompile.")
+                        .arg(cFi.lastModified().toString(QStringLiteral("HH:mm"))),
+                8000);
+    }
     return true;
 }
 
@@ -1192,6 +1216,10 @@ void RetDecMainWindow::openProject(const QString& path) {
     }
     updateProjectFileActions();
     updateCentralEmptyState();
+    if (functionList_)
+        functionList_->setNameFilterText(project_->functionListFilter());
+    if (callGraph_)
+        callGraph_->setCallGraphDepth(project_->callGraphDepth());
     if (!tryLoadCachedDecompile(project_->binaryPath())) {
         setStatusDecompileState(QStringLiteral("not decompiled"));
         if (!quitWhenDecompileFinishes_
@@ -1203,6 +1231,10 @@ void RetDecMainWindow::openProject(const QString& path) {
 
 bool RetDecMainWindow::saveProject(const QString& path) {
     if (!project_) return false;
+    if (functionList_)
+        project_->setFunctionListFilter(functionList_->nameFilterText());
+    if (callGraph_)
+        project_->setCallGraphDepth(callGraph_->callGraphDepth());
     if (!project_->save(path)) {
         QMessageBox::warning(this, QStringLiteral("Save Project"),
                              QStringLiteral("Failed to save:\n%1").arg(project_->lastError()));
@@ -1690,6 +1722,15 @@ bool RetDecMainWindow::launchDecompilerForBinary(const QString& absBinary,
     elapsedTimer_->start();
     decompileLogOffset_ = 0;
     decompileConsoleTailOffset_ = 0;
+    if (!quitWhenDecompileFinishes_ && progressPanel_) {
+        progressPanel_->resetAll();
+        if (analysisBridge_)
+            analysisBridge_->reportAnalysisStarted();
+        if (outputTabs_) {
+            outputTabs_->setTabVisible(kOutProgress, true);
+            focusOutputTab(kOutProgress);
+        }
+    }
     if (batchRunning_)
         updateBatchStatusMessage(QStringLiteral("Decompiling…"));
     else if (!selectedFunctions.isEmpty())
@@ -2118,7 +2159,7 @@ void RetDecMainWindow::onAbout() {
         "<p>File → Batch Decompile queues multiple binaries. "
         "Tools → Call Graph / Type Hierarchy open in separate windows.</p>"
         "<p>No AI assistant panel in this build.</p>"
-        "<p>Theme: Catppuccin Mocha &nbsp;|&nbsp; Qt6</p>"));
+        "<p>Theme: Catppuccin Latte (light), Mocha (dark), or System Default &nbsp;|&nbsp; Qt6</p>"));
 }
 
 void RetDecMainWindow::onKeyboardShortcuts() {
@@ -2130,8 +2171,10 @@ void RetDecMainWindow::onKeyboardShortcuts() {
     browser->setHtml(QStringLiteral(
             "<h3>File</h3><table cellpadding='4'>"
             "<tr><td><b>Ctrl+O</b></td><td>Open binary</td></tr>"
+            "<tr><td><b>Ctrl+Shift+O</b></td><td>Open project</td></tr>"
             "<tr><td><b>Ctrl+S</b></td><td>Save decompiled C</td></tr>"
             "<tr><td><b>Ctrl+Shift+S</b></td><td>Save project</td></tr>"
+            "<tr><td><b>Ctrl+Shift+A</b></td><td>Save project as</td></tr>"
             "<tr><td><b>Ctrl+Q</b></td><td>Quit</td></tr>"
             "</table>"
             "<h3>Analysis</h3><table cellpadding='4'>"
@@ -2139,14 +2182,16 @@ void RetDecMainWindow::onKeyboardShortcuts() {
             "<tr><td><b>F6</b></td><td>Stop analysis / batch</td></tr>"
             "</table>"
             "<h3>View</h3><table cellpadding='4'>"
-            "<tr><td><b>Ctrl+1</b>…<b>Ctrl+5</b></td><td>Centre document tabs</td></tr>"
+            "<tr><td><b>Ctrl+1</b>…<b>Ctrl+5</b></td><td>Centre document tabs (Decompiled C, Assembly, IR, CFG, Synced)</td></tr>"
             "<tr><td><b>Ctrl+`</b></td><td>Show Console</td></tr>"
             "<tr><td><b>Ctrl+Shift+`</b></td><td>Show Problems</td></tr>"
-            "<tr><td><b>Ctrl+,</b></td><td>Settings</td></tr>"
+            "<tr><td><b>Ctrl+,</b></td><td>Settings (Tools menu)</td></tr>"
             "</table>"
             "<h3>Editor / panels</h3><table cellpadding='4'>"
-            "<tr><td><b>G</b></td><td>Assembly: go to address (when panel focused)</td></tr>"
-            "<tr><td><b>F</b></td><td>Assembly: find in disassembly</td></tr>"
+            "<tr><td><b>G</b></td><td>Assembly panel: go to address (when focused)</td></tr>"
+            "<tr><td><b>F</b></td><td>Assembly panel: find in disassembly (when focused)</td></tr>"
+            "<tr><td><b>Ctrl+F</b></td><td>Decompiled C / Synced tab: find in source</td></tr>"
+            "<tr><td><b>F3 / Shift+F3</b></td><td>Decompiled C: find next / previous</td></tr>"
             "<tr><td><b>Alt+← / Alt+→</b></td><td>Synced tab: navigation history</td></tr>"
             "</table>"));
     lay->addWidget(browser, 1);
@@ -2175,6 +2220,11 @@ void RetDecMainWindow::onDecompileLogPollTick() {
         else
             setStatusStage(prog.stage);
         setAnalysisProgress(prog.percent);
+        if (progressPanel_) {
+            progressPanel_->setStageState(prog.stage, panels::StageState::Running,
+                                          prog.percent);
+            progressPanel_->setOverallProgress(prog.percent);
+        }
     }
 
     if (liveConsole_ && AppSettings::instance().decompiler.liveConsoleTail &&

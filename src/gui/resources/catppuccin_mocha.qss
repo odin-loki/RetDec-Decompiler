@@ -816,3 +816,76 @@ QWidget[role="toolbar-compact"] QPushButton[compact="true"] {
 QWidget[role="find-bar"] QLabel {
     color: #6c7086;
 }
+
+/* ── Progress panel ─────────────────────────────────────────────────────────── */
+
+QWidget#ProgressPanel QLabel[role="progress-pct"] {
+    color: #cdd6f4;
+    font-weight: bold;
+}
+
+QWidget#ProgressPanel QLabel[role="progress-stat"] {
+    color: #cdd6f4;
+}
+
+QWidget#ProgressPanel QLabel[role="progress-icon-fn"] {
+    color: #89b4fa;
+    font-weight: bold;
+}
+
+QWidget#ProgressPanel QLabel[role="progress-icon-instr"] {
+    color: #cba6f7;
+}
+
+QWidget#ProgressPanel QLabel[role="progress-icon-clock"] {
+    color: #f9e2af;
+}
+
+QWidget#ProgressPanel QLabel[role="progress-section-title"] {
+    color: #6c7086;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+QWidget#ProgressPanel QLabel[role="progress-rate-fn"] {
+    color: #89b4fa;
+    font-family: monospace;
+}
+
+QWidget#ProgressPanel QLabel[role="progress-rate-instr"] {
+    color: #cba6f7;
+    font-family: monospace;
+}
+
+QWidget#ProgressPanel QLabel[role="progress-stage-name"] {
+    color: #cdd6f4;
+}
+
+QWidget#ProgressPanel QLabel[role="progress-stage-name"][stageState="running"] {
+    font-weight: bold;
+}
+
+QWidget#ProgressPanel QLabel[role="progress-stage-name"][stageState="error"] {
+    color: #f38ba8;
+}
+
+QWidget#ProgressPanel QLabel[role="progress-stage-time"] {
+    color: #6c7086;
+    font-family: monospace;
+}
+
+QWidget#ProgressPanel QLabel[role="progress-stage-icon"][stageState="pending"] {
+    color: #6c7086;
+}
+
+QWidget#ProgressPanel QLabel[role="progress-stage-icon"][stageState="running"] {
+    color: #89b4fa;
+}
+
+QWidget#ProgressPanel QLabel[role="progress-stage-icon"][stageState="done"] {
+    color: #a6e3a1;
+}
+
+QWidget#ProgressPanel QLabel[role="progress-stage-icon"][stageState="error"] {
+    color: #f38ba8;
+}

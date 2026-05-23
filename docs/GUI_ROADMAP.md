@@ -42,6 +42,18 @@ Phased plan for GUI/product work. Update checkboxes as items ship.
 - [ ] AI assistant: external Ollama HTTP vs in-process vs remove
 - [x] Multi-language output picker in GUI — Settings → Decompiler → Preferred output language (`--output-lang`)
 
+## Phase E — GUI polish (May 2026)
+
+- [x] About dialog: Light + System Default + Catppuccin Mocha theme copy
+- [x] IR panel: hide disabled stage combo until wired
+- [x] Batch decompile: disable Start when list empty + hint label
+- [x] Decompile profile combo (`fast` / `balanced` / `quality` → `--profile`)
+- [x] Keyboard shortcuts dialog + `user_manual.md` aligned with code
+- [x] Progress panel theme via QSS roles (Mocha + Latte)
+- [x] Progress panel wired from decompile log poll
+- [x] Accessibility names on main docks and function list
+- [x] Stale cache warning when binary is newer than cached `.c`
+
 ## Verification commands
 
 ```powershell

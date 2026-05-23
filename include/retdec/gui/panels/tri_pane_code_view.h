@@ -251,6 +251,7 @@ public:
                       const QString& cText);
     void setLineMapping(const LineMapping& mapping);
     void setOutputLanguage(OutputLang lang);
+    void syncLanguageFromSettings();
 
     // ── Navigation ───────────────────────────────────────────────────────────
 

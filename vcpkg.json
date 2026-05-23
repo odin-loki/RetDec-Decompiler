@@ -1,15 +1,13 @@
 {
   "name": "retdec-superbuild",
-  "version-string": "0.1.0",
-  "description": "RetDec Enhanced Decompiler Suite — vcpkg dependency manifest",
+  "version-string": "5.0",
+  "description": "RetDec Enhanced Decompiler Suite — vcpkg dependency manifest (CUDA replaces OpenCL)",
   "dependencies": [
     {
       "name": "qtbase",
       "features": ["widgets", "opengl"]
     },
     "qttools",
-    "opencl-headers",
-    "opencl-icd-loader",
     "capstone",
     "rapidjson",
     "nlohmann-json",

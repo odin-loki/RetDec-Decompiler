@@ -71,10 +71,8 @@ jobs:
 
       - name: Fetch large support files
         run: |
-          ./scripts/fetch-large-files.sh
-          if [ $? -ne 0 ]; then
-            ./scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
-          fi
+          bash scripts/fetch-large-files.sh || \
+            bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
 
       - name: Cache CMake build
         uses: actions/cache@v4

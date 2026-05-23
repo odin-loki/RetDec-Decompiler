@@ -2,7 +2,7 @@
 
 Reconciled checklist for the 29-stage pipeline described in [pipeline_stage_map.md](pipeline_stage_map.md). The stage map marks many entries **Implemented** at the “RetDec has a hook / partial pass” level; this file tracks what still falls short of the **full** algorithms in the original design write-up.
 
-**Related (not yet in-tree):** [DECOMPILATION_IMPROVEMENT_FRAMEWORK.md](DECOMPILATION_IMPROVEMENT_FRAMEWORK.md) — referenced by the stage map for file paths, tests, and `RETDEC_HEURISTIC_DIAG` / jump-table notes. Create that document when consolidating per-stage test fixtures and diagnostic hooks.
+**Related:** Per-stage diagnostics and test fixtures are tracked in [pipeline_stage_map.md](pipeline_stage_map.md) (stage → source mapping) and the env-var table in [docs/README.md](README.md#developer-diagnostics-environment-variables).
 
 **Status legend**
 
@@ -82,4 +82,4 @@ Reconciled checklist for the 29-stage pipeline described in [pipeline_stage_map.
 - [pipeline_stage_map.md](pipeline_stage_map.md) — stage → source mapping
 - [pipeline_builder_schema.json](pipeline_builder_schema.json) — custom pass-list JSON schema
 - [ENGINEERING_ROADMAP.md](ENGINEERING_ROADMAP.md) — shippable Tiers 1–5
-- [DECOMPILATION_IMPROVEMENT_FRAMEWORK.md](DECOMPILATION_IMPROVEMENT_FRAMEWORK.md) — *planned* per-stage tests and env diagnostics
+- [pipeline_stage_map.md](pipeline_stage_map.md) — stage → source mapping; diagnostic env vars in [README.md](README.md#developer-diagnostics-environment-variables)

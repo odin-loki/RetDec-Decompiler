@@ -3,10 +3,14 @@
 # Download the large source data files that are deliberately not committed
 # to keep this repo small (see .gitignore). Required before the first build.
 #
-# Run from the repo root:
+# Run from the repo root (PowerShell does not require +x on .ps1):
 #   .\scripts\fetch-large-files.ps1                  # default, only fetch missing
+#   pwsh -File scripts/fetch-large-files.ps1         # explicit invocation
 #   .\scripts\fetch-large-files.ps1 -Force           # overwrite even if present
 #   .\scripts\fetch-large-files.ps1 -BaseUrl <url>   # alternate mirror
+#
+# On Linux/WSL use the bash twin instead:
+#   bash scripts/fetch-large-files.sh
 #
 # Files fetched (all <= 16 MiB each, ~60 MiB total):
 #   support/types/{windows,windrivers,linux}.json

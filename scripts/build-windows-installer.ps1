@@ -321,6 +321,13 @@ function Publish-ReleaseArtifacts {
     ) | Set-Content -LiteralPath $versionFile -Encoding UTF8
 }
 
+function Test-EnVarNsisPlugin {
+    param([string]$NsisRoot = (Join-Path ${env:ProgramFiles(x86)} "NSIS"))
+    $dll = Join-Path $NsisRoot "Plugins\x86-unicode\EnVar.dll"
+    $nsh = Join-Path $NsisRoot "Include\EnVar.nsh"
+    return ((Test-Path -LiteralPath $dll) -and (Test-Path -LiteralPath $nsh))
+}
+
 function Invoke-NsisInstaller {
     param(
         [string]$PackageVersion,
@@ -348,6 +355,23 @@ function Invoke-NsisInstaller {
     $nsi = Join-Path $RepoRoot "packaging\nsis\retdec.nsi"
     if (-not (Test-Path -LiteralPath $nsi)) {
         throw "NSIS script not found: $nsi"
+    }
+
+    $pfNSIS = Split-Path $makensisPath -Parent
+    if (-not (Test-EnVarNsisPlugin -NsisRoot $pfNSIS)) {
+        Write-Host ""
+        Write-Host "EnVar NSIS plug-in not found — makensis will fail on PATH updates." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "The installer script uses EnVar::AddValue for system PATH. Install the plug-in:"
+        Write-Host "  https://github.com/GsNSIS/EnVar/releases"
+        Write-Host "Copy into your NSIS directory ($pfNSIS):"
+        Write-Host "  EnVar.dll  -> Plugins\x86-unicode\"
+        Write-Host "  EnVar.nsh  -> Include\"
+        Write-Host ""
+        Write-Host "Or comment out EnVar:: lines in packaging\nsis\retdec.nsi (PATH will not be updated)."
+        Write-Host ""
+        Write-Host "Portable ZIP is ready at: $OutputDir\retdec-$PackageVersion-windows-x64-portable.zip"
+        return $null
     }
 
     New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null

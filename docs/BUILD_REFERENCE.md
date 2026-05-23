@@ -252,16 +252,19 @@ docker build -t retdec:local .
 
 ## Continuous integration
 
-GitHub Actions workflow [.github/workflows/retdec-ci.yml](../.github/workflows/retdec-ci.yml) runs builds and regression steps.
+GitHub Actions workflows under [.github/workflows/](../.github/workflows/):
 
-**Regression test repositories** are not hard-coded in scripts. Set these **repository secrets** in GitHub:
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| [ci-smoke.yml](../.github/workflows/ci-smoke.yml) | Push/PR to `main` | Lightweight Python smoke tests (CLI helpers, semantic/pipeline validation) |
+| [ctest-windows.yml](../.github/workflows/ctest-windows.yml) | **Manual only** (`workflow_dispatch`) | Full Windows build, headless GUI tests, `ctest -L unit` and integration tests |
+| [ctest-linux.yml](../.github/workflows/ctest-linux.yml) | **Manual only** (`workflow_dispatch`) | Full Linux build, headless GUI tests, `ctest -L unit` and integration tests |
+| [perf-nightly.yml](../.github/workflows/perf-nightly.yml) | Weekly schedule + manual | Performance benchmarks (README badge) |
+| [release-installers.yml](../.github/workflows/release-installers.yml) | Tag push `v*` + manual | Build and publish release installers (README badge) |
 
-| Secret | Purpose |
-|--------|---------|
-| `RETDEC_REGRESSION_TESTS_GIT_URL` | `git clone` URL for the regression tests repo. |
-| `RETDEC_REGRESSION_FRAMEWORK_GIT_URL` | `git clone` URL for the regression-tests framework. |
+Full RetDec builds are too heavy to run on every push. Use **Actions → Run workflow** for `ctest-windows` or `ctest-linux`, or run `ctest` locally (see [Testing](#testing) below).
 
-The step **Prepare RetDec Regression Tests & Framework** passes them into [prepare-retdec-tests.sh](../.github/workflows/common/prepare-retdec-tests.sh). If either is unset, the script exits with an error.
+Both ctest workflows set `RETDEC_GUI_HEADLESS=1` and `QT_QPA_PLATFORM=offscreen` for headless GUI tests. External regression corpora are **not** cloned in CI; run those locally if you have access to private test repos.
 
 ---
 
@@ -315,7 +318,7 @@ RETDEC_UPDATE_SNAPSHOTS=1 ./build/linux/tests/<suite>/retdec-*-tests
 | OpenSSL / nmake failures on Windows | Not in VS environment | Use Developer PowerShell or the provided configure script (vcvars). |
 | CUDA not detected | `CUDA_PATH` / toolkit missing | Install CUDA; or disable `RETDEC_ENABLE_CUDA_ACCEL`. |
 | GitHub download fails during LLVM fetch | Network / HTTP2 | Retry build; clear `build/.../external/src/*-stamp/*-download` if needed. |
-| CI regression step fails immediately | Missing secrets | Configure `RETDEC_REGRESSION_*_GIT_URL` secrets on the repo. |
+| Manual ctest workflow fails | Heavy build / cache | Trigger [ctest-linux.yml](../.github/workflows/ctest-linux.yml) or [ctest-windows.yml](../.github/workflows/ctest-windows.yml) from Actions; prefer local `ctest` for iteration. |
 
 For MinGW-specific issues, see [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md). For MSVC GUI deployment, see [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md).
 

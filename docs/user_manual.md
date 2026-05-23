@@ -315,14 +315,22 @@ without unloading it.  Click **Install Plugin…** to load a `.so`/`.dll` plugin
 | Shortcut | Action |
 |----------|--------|
 | Ctrl+O | Open binary |
-| Ctrl+, | Open settings |
-| Ctrl+F | Search in current pane |
-| Ctrl+G | Go to address |
-| Ctrl+B | Go to function |
-| F5 | Re-run analysis |
-| F12 | Go to definition |
-| Ctrl+Shift+C | Copy current function as C |
-| Ctrl+Shift+D | Open Diff view for current function |
+| Ctrl+Shift+O | Open project |
+| Ctrl+S | Save decompiled C |
+| Ctrl+Shift+S | Save project |
+| Ctrl+Shift+A | Save project as |
+| Ctrl+Q | Quit |
+| Ctrl+, | Open settings (Tools menu) |
+| F5 | Run full analysis (decompile) |
+| F6 | Stop analysis / batch |
+| Ctrl+1 … Ctrl+5 | Centre document tabs (Decompiled C, Assembly, IR, CFG, Synced) |
+| Ctrl+` | Show Console |
+| Ctrl+Shift+` | Show Problems |
+| G | Assembly panel: go to address (when panel focused) |
+| F | Assembly panel: find in disassembly (when focused) |
+| Ctrl+F | Decompiled C / Synced tab: find in source |
+| F3 / Shift+F3 | Decompiled C: find next / previous |
+| Alt+← / Alt+→ | Synced tab: navigation history |
 
 ---
 

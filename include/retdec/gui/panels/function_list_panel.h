@@ -258,6 +258,9 @@ public:
     /** Select a function by address and emit @c functionSelected. */
     void selectFunction(uint64_t address);
 
+    QString nameFilterText() const;
+    void setNameFilterText(const QString& text);
+
 signals:
     void functionSelected(uint64_t address, const QString& name);
     void functionRenamed(uint64_t address,

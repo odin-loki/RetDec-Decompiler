@@ -10,6 +10,8 @@
 
 #include "retdec/gui/panels/tri_pane_code_view.h"
 
+#include "retdec/gui/settings/settings.h"
+
 #include <QApplication>
 #include <QComboBox>
 #include <QHBoxLayout>
@@ -17,6 +19,7 @@
 #include <QLineEdit>
 #include <QPainter>
 #include <QPlainTextEdit>
+#include <QPoint>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollBar>
@@ -55,6 +58,25 @@ QTextCharFormat fmt(const QColor& c, bool bold = false) {
     return f;
 }
 } // anonymous namespace
+
+namespace {
+
+OutputLang outputLangFromSettingsString(const QString& lang) {
+    const QString k = lang.trimmed().toLower();
+    if (k == QStringLiteral("cpp") || k == QStringLiteral("c++"))
+        return OutputLang::Cxx;
+    if (k == QStringLiteral("csharp") || k == QStringLiteral("cs"))
+        return OutputLang::CSharp;
+    if (k == QStringLiteral("java"))
+        return OutputLang::Java;
+    if (k == QStringLiteral("python") || k == QStringLiteral("py"))
+        return OutputLang::Python;
+    if (k == QStringLiteral("lua"))
+        return OutputLang::Lua;
+    return OutputLang::C;
+}
+
+} // namespace
 
 // ─── LineMapping ──────────────────────────────────────────────────────────────
 
@@ -654,7 +676,9 @@ QWidget* TriPaneCodeView::buildToolbar() {
 
     langCombo_ = new QComboBox(tb);
     langCombo_->addItems({"C", "C++", "C#", "Java", "Python", "Lua"});
-    langCombo_->setToolTip("Output language");
+    langCombo_->setToolTip(
+        QStringLiteral("View-only syntax highlighting. To change decompiled output: "
+                       "Settings → Decompiler → Output language, then re-decompile (F5)."));
     langCombo_->setFixedWidth(72);
 
     auto* findBtn = new QPushButton("⌕", tb);
@@ -677,6 +701,8 @@ QWidget* TriPaneCodeView::buildToolbar() {
             this,      &TriPaneCodeView::onLangChanged);
     connect(findBtn,   &QPushButton::clicked,
             this,      &TriPaneCodeView::showFindBar);
+
+    syncLanguageFromSettings();
 
     return tb;
 }
@@ -730,6 +756,11 @@ PaneLang TriPaneCodeView::outputLangToPaneLang(OutputLang lang) const {
     case OutputLang::Lua:     return PaneLang::Lua;
     }
     return PaneLang::C;
+}
+
+void TriPaneCodeView::syncLanguageFromSettings() {
+    setOutputLanguage(outputLangFromSettingsString(
+        AppSettings::instance().decompiler.outputLang));
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -909,6 +940,13 @@ void TriPaneCodeView::onForwardClicked() {
 
 void TriPaneCodeView::onLangChanged(int index) {
     setOutputLanguage(static_cast<OutputLang>(index));
+    if (langCombo_) {
+        QToolTip::showText(
+            langCombo_->mapToGlobal(QPoint(0, langCombo_->height())),
+            QStringLiteral("Change in Settings → Decompiler → Output language, "
+                             "then re-decompile."),
+            langCombo_, {}, 4000);
+    }
 }
 
 // ── Clear ─────────────────────────────────────────────────────────────────────

@@ -1252,4 +1252,19 @@ void CallGraphPanel::onDepthChanged(int depth)
     infoLabel_->setText(QString("%1 visible").arg(scene_->visibleNodeCount()));
 }
 
+int CallGraphPanel::callGraphDepth() const
+{
+    return depthSpin_ ? depthSpin_->value() : 0;
+}
+
+void CallGraphPanel::setCallGraphDepth(int depth)
+{
+    if (!depthSpin_)
+        return;
+    const int clamped = qBound(depthSpin_->minimum(), depth, depthSpin_->maximum());
+    if (depthSpin_->value() == clamped)
+        return;
+    depthSpin_->setValue(clamped);
+}
+
 } // namespace retdec::gui::panels

@@ -9,7 +9,9 @@
 #include <QDialog>
 #include <QStringList>
 
+class QLabel;
 class QListWidget;
+class QPushButton;
 
 namespace retdec {
 namespace gui {
@@ -26,8 +28,11 @@ private:
     void onAdd();
     void onRemove();
     void onClear();
+    void updateStartEnabled();
 
     QListWidget* list_ = nullptr;
+    QLabel*      hintLabel_ = nullptr;
+    QPushButton* startBtn_ = nullptr;
 };
 
 } // namespace gui

@@ -156,6 +156,7 @@ void AppSettings::loadDecompiler(QSettings& s) {
     decompiler.decompileOutputDir  = s.value("decompileOutputDir").toString();
     decompiler.liveConsoleTail     = s.value("liveConsoleTail", false).toBool();
     decompiler.outputLang          = s.value("outputLang", QStringLiteral("c")).toString();
+    decompiler.decompileProfile    = s.value("decompileProfile", QStringLiteral("balanced")).toString();
     s.endGroup();
 }
 
@@ -278,6 +279,7 @@ void AppSettings::saveDecompiler(QSettings& s) const {
     s.setValue("decompileOutputDir",   decompiler.decompileOutputDir);
     s.setValue("liveConsoleTail",      decompiler.liveConsoleTail);
     s.setValue("outputLang",           decompiler.outputLang);
+    s.setValue("decompileProfile",     decompiler.decompileProfile);
     s.endGroup();
 }
 
@@ -333,6 +335,7 @@ bool AppSettings::exportToFile(const QString& path) const {
     dec["decompileOutputDir"]  = decompiler.decompileOutputDir;
     dec["liveConsoleTail"]     = decompiler.liveConsoleTail;
     dec["outputLang"]          = decompiler.outputLang;
+    dec["decompileProfile"]    = decompiler.decompileProfile;
     root["Decompiler"]         = dec;
 
     QFile f(path);
@@ -382,6 +385,7 @@ bool AppSettings::importFromFile(const QString& path) {
         decompiler.decompileOutputDir  = d.value("decompileOutputDir").toString();
         decompiler.liveConsoleTail     = d.value("liveConsoleTail").toBool(false);
         decompiler.outputLang          = d.value("outputLang").toString(QStringLiteral("c"));
+        decompiler.decompileProfile    = d.value("decompileProfile").toString(QStringLiteral("balanced"));
         decompiler.llvmPassesDisabled.clear();
         const QJsonArray arr = d.value("llvmPassesDisabled").toArray();
         for (const QJsonValue& v : arr) {

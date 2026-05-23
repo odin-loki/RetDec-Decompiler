@@ -6,7 +6,7 @@ This directory contains **technical documentation** for building, operating, ext
 
 ## Suggested reading order
 
-1. **[BUILD_REFERENCE.md](BUILD_REFERENCE.md)** — CMake 3.26+, directory layout (`build/linux`, `build/windows`, `dist/windows`), all presets, superbuild, install, CI secrets, testing, troubleshooting. **Start here** if you are compiling the project.
+1. **[BUILD_REFERENCE.md](BUILD_REFERENCE.md)** — CMake 3.26+, directory layout (`build/linux`, `build/windows`, `dist/windows`), all presets, superbuild, install, CI workflows, testing, troubleshooting. **Start here** if you are compiling the project.
 2. **[WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md)** — MSVC, CUDA, Qt6, `windeployqt`, bundled OpenSSL, native Windows deployment.
 3. **[MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md)** — Linux/WSL → Windows PE via MinGW (CLI-only); `llvm-tblgen`, OpenSSL, staging.
 4. **[user_manual.md](user_manual.md)** — Qt GUI v3 layout, settings, shortcuts, external AI runner.
@@ -37,12 +37,16 @@ This directory contains **technical documentation** for building, operating, ext
 | [pipeline_stage_map.md](pipeline_stage_map.md) | Contributors | Stage names ↔ directories |
 | [algorithm_reference.md](algorithm_reference.md) | Researchers | Math-heavy algorithm notes |
 | [future_directions.md](future_directions.md) | Planners | Roadmap-style topics |
+| [CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md) | GPU contributors | CUDA vs CUDA-accel flags, modules, CPU fallback |
+| [SEMANTIC_OUTPUT.md](SEMANTIC_OUTPUT.md) | Output authors | C vs C++ semantics, STL recovery hints |
+| [SYMBOL_SERVER.md](SYMBOL_SERVER.md) | Windows analysts | PDB / symbol-server setup for richer names |
+| [RESEARCH_FRONTIERS.md](RESEARCH_FRONTIERS.md) | Researchers | Tier 7 long-horizon topics (not sprint work) |
 
 **Scripts:** [scripts/README.md](../scripts/README.md) lists every important `scripts/*.sh` and `scripts/*.ps1` helper.
 
 ### Contributors — suggested reading order
 
-1. [BUILD_REFERENCE.md](BUILD_REFERENCE.md) — configure, presets, `ctest`, CI secrets.
+1. [BUILD_REFERENCE.md](BUILD_REFERENCE.md) — configure, presets, `ctest`, CI workflows.
 2. [developer_guide.md](developer_guide.md) — layout, style, tests, plugins.
 3. [ENGINEERING_ROADMAP.md](ENGINEERING_ROADMAP.md) — what to pick up next; [GUI_ROADMAP.md](GUI_ROADMAP.md) / [GUI_POLISH.md](GUI_POLISH.md) for GUI work.
 4. [architecture.md](architecture.md) + [pipeline_stage_map.md](pipeline_stage_map.md) — pipeline before touching stages.
@@ -67,12 +71,17 @@ On Windows, the same preset name resolves under `build/windows/superbuild-releas
 
 ## Continuous integration
 
-The workflow [.github/workflows/retdec-ci.yml](../.github/workflows/retdec-ci.yml) drives GitHub Actions. Regression tests are cloned via [.github/workflows/common/prepare-retdec-tests.sh](../.github/workflows/common/prepare-retdec-tests.sh), which requires **repository secrets**:
+Workflows live under [.github/workflows/](../.github/workflows/):
 
-- `RETDEC_REGRESSION_TESTS_GIT_URL`
-- `RETDEC_REGRESSION_FRAMEWORK_GIT_URL`
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| [ci-smoke.yml](../.github/workflows/ci-smoke.yml) | Push/PR to `main` | Lightweight Python smoke tests |
+| [ctest-windows.yml](../.github/workflows/ctest-windows.yml) | **Manual only** | Windows build + headless GUI + `ctest` |
+| [ctest-linux.yml](../.github/workflows/ctest-linux.yml) | **Manual only** | Linux build + headless GUI + `ctest` |
+| [perf-nightly.yml](../.github/workflows/perf-nightly.yml) | Weekly + manual | Performance benchmarks (README badge) |
+| [release-installers.yml](../.github/workflows/release-installers.yml) | Tags `v*` + manual | Release installers (README badge) |
 
-Without these, the “Prepare RetDec Regression Tests & Framework” step fails by design. See [BUILD_REFERENCE.md](BUILD_REFERENCE.md#continuous-integration).
+Full builds are not run on every push. Trigger ctest workflows from **Actions → Run workflow**, or run `ctest` locally. Details: [BUILD_REFERENCE.md](BUILD_REFERENCE.md#continuous-integration).
 
 ---
 

@@ -31,6 +31,11 @@ BatchDecompileDialog::BatchDecompileDialog(QWidget* parent)
     list_->setSelectionMode(QAbstractItemView::ExtendedSelection);
     lay->addWidget(list_, 1);
 
+    hintLabel_ = new QLabel(
+            QStringLiteral("Add at least one binary to enable Start."), this);
+    hintLabel_->setProperty("role", "muted");
+    lay->addWidget(hintLabel_);
+
     auto* btnRow = new QHBoxLayout();
     auto* addBtn = new QPushButton(QStringLiteral("Add…"), this);
     auto* removeBtn = new QPushButton(QStringLiteral("Remove"), this);
@@ -43,7 +48,8 @@ BatchDecompileDialog::BatchDecompileDialog(QWidget* parent)
 
     auto* box = new QDialogButtonBox(
             QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-    box->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Start"));
+    startBtn_ = box->button(QDialogButtonBox::Ok);
+    startBtn_->setText(QStringLiteral("Start"));
     lay->addWidget(box);
 
     connect(addBtn, &QPushButton::clicked, this, &BatchDecompileDialog::onAdd);
@@ -51,6 +57,8 @@ BatchDecompileDialog::BatchDecompileDialog(QWidget* parent)
     connect(clearBtn, &QPushButton::clicked, this, &BatchDecompileDialog::onClear);
     connect(box, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(box, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+    updateStartEnabled();
 }
 
 QStringList BatchDecompileDialog::binaryPaths() const {
@@ -58,6 +66,14 @@ QStringList BatchDecompileDialog::binaryPaths() const {
     for (int i = 0; i < list_->count(); ++i)
         out << list_->item(i)->text();
     return out;
+}
+
+void BatchDecompileDialog::updateStartEnabled() {
+    const bool hasItems = list_->count() > 0;
+    if (startBtn_)
+        startBtn_->setEnabled(hasItems);
+    if (hintLabel_)
+        hintLabel_->setVisible(!hasItems);
 }
 
 void BatchDecompileDialog::onAdd() {
@@ -77,14 +93,17 @@ void BatchDecompileDialog::onAdd() {
         if (!dup)
             list_->addItem(abs);
     }
+    updateStartEnabled();
 }
 
 void BatchDecompileDialog::onRemove() {
     qDeleteAll(list_->selectedItems());
+    updateStartEnabled();
 }
 
 void BatchDecompileDialog::onClear() {
     list_->clear();
+    updateStartEnabled();
 }
 
 } // namespace gui

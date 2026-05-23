@@ -1,0 +1,48 @@
+name: ci-smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Fetch large support files
+        run: |
+          bash scripts/fetch-large-files.sh || \
+            bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+
+      - name: C++ format check (clang-format)
+        timeout-minutes: 5
+        run: |
+          if [[ ! -f scripts/check_format.sh ]]; then
+            echo "scripts/check_format.sh not found — skipping"
+            exit 0
+          fi
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+          bash scripts/check_format.sh
+
+      - name: CLI helper tests
+        run: python scripts/python/test_retdec_cli.py
+
+      - name: Semantic C hint tests
+        run: python tests/decompiler/semantic_c_hint_test.py
+
+      - name: Pipeline profile validation
+        run: python tests/decompiler/validate_pipeline_test.py
+
+      - name: Semantic detection JSON tests
+        run: python tests/decompiler/semantic_detection_json_test.py
+
+      - name: Intel export tests
+        run: python tests/decompiler/intel_export_test.py

@@ -4,12 +4,30 @@
 # Usage (from repo root):
 #   .\scripts\parity_bench.ps1
 #   .\scripts\parity_bench.ps1 -Binary _profile_run\target.exe -Fast
+#   .\scripts\parity_bench.ps1 -Help
+#
+# Parameters:
+#   -Binary      Input PE to decompile (default: _profile_run\target.exe)
+#   -Fast        Use fast LLVM pass preset (matches GUI --fast-decompile)
+#   -InstallDir  cmake --install bin directory (default: install\windows\bin)
+#   -Help        Show this help and exit
 
 param(
     [string]$Binary = "_profile_run\target.exe",
     [switch]$Fast,
-    [string]$InstallDir = "install\windows\bin"
+    [string]$InstallDir = "install\windows\bin",
+    [switch]$Help
 )
+
+if ($Help) {
+    Get-Help $MyInvocation.MyCommand.Path -Detailed 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Get-Content $MyInvocation.MyCommand.Path | Select-Object -First 14 | ForEach-Object {
+            if ($_ -match '^\s*#') { $_.TrimStart('#').TrimStart() }
+        }
+    }
+    exit 0
+}
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)

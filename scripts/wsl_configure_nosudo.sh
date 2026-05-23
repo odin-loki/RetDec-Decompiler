@@ -1,7 +1,27 @@
 #!/usr/bin/env bash
 # Configure RetDec in WSL using the same layout as Windows: <repo>/build/<preset>/
-# Default preset (full-linux-debug) requires Qt6 — e.g. sudo apt install qt6-base-dev qt6-base-dev-tools
+#
+# Usage (works when not executable):
+#   bash scripts/wsl_configure_nosudo.sh
+#   ./scripts/wsl_configure_nosudo.sh
+#
+# Options:
+#   (none) — uses RETDEC_CMAKE_PRESET_LINUX_DEBUG from scripts/lib/retdec-env.sh
+#
+# Requires:
+#   cmake 3.26+, Ninja or Make generator from the preset
+#   Qt6 for full-linux-debug (e.g. sudo apt install qt6-base-dev qt6-base-dev-tools)
+#
+# Help:
+#   bash scripts/wsl_configure_nosudo.sh --help
+#   grep '^#' "$0" | sed -E 's/^#\s?//'
 set -euo pipefail
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    grep -E '^#' "$0" | sed -E 's/^#\s?//'
+    exit 0
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/retdec-env.sh
 source "${SCRIPT_DIR}/lib/retdec-env.sh"

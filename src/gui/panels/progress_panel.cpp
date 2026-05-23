@@ -27,6 +27,7 @@
 #include <QLabel>
 #include <QMutexLocker>
 #include <QPainter>
+#include <QPalette>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
@@ -40,17 +41,11 @@ namespace retdec::gui::panels {
 // ─── Catppuccin Mocha palette helpers ────────────────────────────────────────
 
 namespace {
-constexpr QColor kSurface0  {0x31, 0x32, 0x44};
-constexpr QColor kSurface1  {0x45, 0x47, 0x5a};
-constexpr QColor kOverlay0  {0x6c, 0x70, 0x86};
-constexpr QColor kText      {0xcd, 0xd6, 0xf4};
-constexpr QColor kBlue      {0x89, 0xb4, 0xfa};
-constexpr QColor kGreen     {0xa6, 0xe3, 0xa1};
-constexpr QColor kRed       {0xf3, 0x8b, 0xa8};
-constexpr QColor kYellow    {0xf9, 0xe2, 0xaf};
-constexpr QColor kPeach     {0xfa, 0xb3, 0x87};
-constexpr QColor kMauve     {0xcb, 0xa6, 0xf7};
-constexpr QColor kBase      {0x1e, 0x1e, 0x2e};
+constexpr QColor kBlue   {0x89, 0xb4, 0xfa};
+constexpr QColor kMauve  {0xcb, 0xa6, 0xf7};
+constexpr QColor kGreen  {0xa6, 0xe3, 0xa1};
+constexpr QColor kPeach  {0xfa, 0xb3, 0x87};
+constexpr QColor kYellow {0xf9, 0xe2, 0xaf};
 
 // Returns colour for a stage bar based on pipeline position (for waterfall).
 QColor stageColor(int index) {
@@ -64,6 +59,12 @@ QColor stageColor(int index) {
         kBlue, kMauve, kGreen, kPeach,
     };
     return palette[index % static_cast<int>(std::size(palette))];
+}
+
+void polishStageProperty(QWidget* w, const char* prop, const char* value) {
+    w->setProperty(prop, value);
+    w->style()->unpolish(w);
+    w->style()->polish(w);
 }
 } // anonymous namespace
 
@@ -126,6 +127,7 @@ const QStringList ProgressPanel::kDefaultStages = {
 
 ProgressPanel::ProgressPanel(QWidget* parent)
     : PanelBase("Progress", parent) {
+    setObjectName(QStringLiteral("ProgressPanel"));
     setupUI();
 }
 
@@ -216,25 +218,25 @@ QWidget* ProgressPanel::buildSummaryHeader() {
     pctLabel_ = new QLabel("0%", w);
     pctLabel_->setFixedWidth(36);
     pctLabel_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    pctLabel_->setStyleSheet("color: #cdd6f4; font-weight: bold;");
+    pctLabel_->setProperty("role", "progress-pct");
 
     // Function count
     auto* fnIcon = new QLabel("ƒ", w);
-    fnIcon->setStyleSheet("color: #89b4fa; font-weight: bold;");
+    fnIcon->setProperty("role", "progress-icon-fn");
     fnCountLabel_ = new QLabel("0 fn", w);
-    fnCountLabel_->setStyleSheet("color: #cdd6f4;");
+    fnCountLabel_->setProperty("role", "progress-stat");
 
     // Instruction count
     auto* instrIcon = new QLabel("⬡", w);
-    instrIcon->setStyleSheet("color: #cba6f7;");
+    instrIcon->setProperty("role", "progress-icon-instr");
     instrLabel_ = new QLabel("0 instr", w);
-    instrLabel_->setStyleSheet("color: #cdd6f4;");
+    instrLabel_->setProperty("role", "progress-stat");
 
     // Elapsed time
     auto* clockIcon = new QLabel("⏱", w);
-    clockIcon->setStyleSheet("color: #f9e2af;");
+    clockIcon->setProperty("role", "progress-icon-clock");
     elapsedLabel_ = new QLabel("0.0s", w);
-    elapsedLabel_->setStyleSheet("color: #cdd6f4;");
+    elapsedLabel_->setProperty("role", "progress-stat");
     elapsedLabel_->setFixedWidth(56);
 
     layout->addWidget(overallBar_, 3);
@@ -274,14 +276,14 @@ QWidget* ProgressPanel::buildWaterfallWidget() {
     layout->setSpacing(2);
 
     auto* title = new QLabel("Stage Timeline", w);
-    title->setStyleSheet("color: #6c7086; font-size: 10px; font-weight: bold;");
+    title->setProperty("role", "progress-section-title");
 
     waterfallScene_ = new QGraphicsScene(this);
     waterfallView_  = new QGraphicsView(waterfallScene_, w);
     waterfallView_->setRenderHint(QPainter::Antialiasing);
     waterfallView_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     waterfallView_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    waterfallView_->setBackgroundBrush(QBrush(kBase));
+    waterfallView_->setBackgroundBrush(QBrush(palette().color(QPalette::Base)));
     waterfallView_->setFrameShape(QFrame::NoFrame);
     waterfallView_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     waterfallView_->setMinimumHeight(80);
@@ -301,17 +303,17 @@ QWidget* ProgressPanel::buildThroughputWidget() {
     layout->setSpacing(16);
 
     auto* throughputTitle = new QLabel("Throughput:", w);
-    throughputTitle->setStyleSheet("color: #6c7086; font-weight: bold;");
+    throughputTitle->setProperty("role", "progress-section-title");
 
     auto* fnLabel = new QLabel("Functions/s:", w);
-    fnLabel->setStyleSheet("color: #6c7086;");
+    fnLabel->setProperty("role", "muted");
     fnRateLabel_ = new QLabel("—", w);
-    fnRateLabel_->setStyleSheet("color: #89b4fa; font-family: monospace;");
+    fnRateLabel_->setProperty("role", "progress-rate-fn");
 
     auto* instrLabel = new QLabel("Instructions/s:", w);
-    instrLabel->setStyleSheet("color: #6c7086;");
+    instrLabel->setProperty("role", "muted");
     instrRateLabel_ = new QLabel("—", w);
-    instrRateLabel_->setStyleSheet("color: #cba6f7; font-family: monospace;");
+    instrRateLabel_->setProperty("role", "progress-rate-instr");
 
     layout->addWidget(throughputTitle);
     layout->addWidget(fnLabel);
@@ -335,13 +337,14 @@ ProgressPanel::StageRow* ProgressPanel::addRow(const QString& name) {
     sr.name      = name;
     sr.stateIcon = new QLabel("○", rowWidget);
     sr.stateIcon->setFixedWidth(16);
-    sr.stateIcon->setStyleSheet("color: #6c7086;");
+    sr.stateIcon->setProperty("role", "progress-stage-icon");
+    sr.stateIcon->setProperty("stageState", "pending");
     sr.stateIcon->setAlignment(Qt::AlignCenter);
 
     sr.nameLabel = new QLabel(name, rowWidget);
     sr.nameLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     sr.nameLabel->setFixedWidth(172);
-    sr.nameLabel->setStyleSheet("color: #cdd6f4;");
+    sr.nameLabel->setProperty("role", "progress-stage-name");
 
     sr.bar = new QProgressBar(rowWidget);
     sr.bar->setRange(0, 100);
@@ -351,7 +354,7 @@ ProgressPanel::StageRow* ProgressPanel::addRow(const QString& name) {
     sr.bar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     sr.timeLabel = new QLabel("", rowWidget);
-    sr.timeLabel->setStyleSheet("color: #6c7086; font-family: monospace;");
+    sr.timeLabel->setProperty("role", "progress-stage-time");
     sr.timeLabel->setFixedWidth(64);
     sr.timeLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
@@ -389,15 +392,16 @@ void ProgressPanel::setStageState(const QString& stageName,
     switch (state) {
     case StageState::Pending:
         r->stateIcon->setText("○");
-        r->stateIcon->setStyleSheet("color: #6c7086;");
+        polishStageProperty(r->stateIcon, "stageState", "pending");
+        polishStageProperty(r->nameLabel, "stageState", "pending");
         r->bar->setRange(0, 100);
         r->bar->setValue(0);
         break;
 
     case StageState::Running:
         r->stateIcon->setText("◉");
-        r->stateIcon->setStyleSheet("color: #89b4fa;");
-        r->nameLabel->setStyleSheet("color: #cdd6f4; font-weight: bold;");
+        polishStageProperty(r->stateIcon, "stageState", "running");
+        polishStageProperty(r->nameLabel, "stageState", "running");
         if (percent < 0) {
             r->bar->setRange(0, 0);  // indeterminate
         } else {
@@ -408,19 +412,18 @@ void ProgressPanel::setStageState(const QString& stageName,
 
     case StageState::Done:
         r->stateIcon->setText("✓");
-        r->stateIcon->setStyleSheet("color: #a6e3a1;");
-        r->nameLabel->setStyleSheet("color: #cdd6f4;");
+        polishStageProperty(r->stateIcon, "stageState", "done");
+        polishStageProperty(r->nameLabel, "stageState", "done");
         r->bar->setRange(0, 100);
         r->bar->setValue(100);
         break;
 
     case StageState::Error:
         r->stateIcon->setText("✗");
-        r->stateIcon->setStyleSheet("color: #f38ba8;");
-        r->nameLabel->setStyleSheet("color: #f38ba8;");
+        polishStageProperty(r->stateIcon, "stageState", "error");
+        polishStageProperty(r->nameLabel, "stageState", "error");
         r->bar->setRange(0, 100);
         r->bar->setValue(percent > 0 ? percent : 0);
-        // Visual error tint via property
         r->bar->setProperty("error", true);
         r->bar->style()->polish(r->bar);
         break;
@@ -560,8 +563,8 @@ void ProgressPanel::resetAll() {
         r.state = StageState::Pending;
         r.elapsedMs = -1;
         r.stateIcon->setText("○");
-        r.stateIcon->setStyleSheet("color: #6c7086;");
-        r.nameLabel->setStyleSheet("color: #cdd6f4;");
+        polishStageProperty(r.stateIcon, "stageState", "pending");
+        polishStageProperty(r.nameLabel, "stageState", "pending");
         r.bar->setRange(0, 100);
         r.bar->setValue(0);
         r.bar->setProperty("error", false);
@@ -633,7 +636,7 @@ void ProgressPanel::renderWaterfall() {
         // Stage name label
         auto* label = waterfallScene_->addText(
             t.name.left(18), QFont("monospace", 7));
-        label->setDefaultTextColor(kOverlay0);
+        label->setDefaultTextColor(palette().color(QPalette::PlaceholderText));
         label->setPos(2.0, y);
 
         // Duration bar
@@ -648,7 +651,7 @@ void ProgressPanel::renderWaterfall() {
         // Duration annotation
         auto* ann = waterfallScene_->addText(
             formatMs(t.durationMs), QFont("monospace", 7));
-        ann->setDefaultTextColor(kText);
+        ann->setDefaultTextColor(palette().color(QPalette::Text));
         ann->setPos(x + w + 3.0, y);
 
         ++idx;

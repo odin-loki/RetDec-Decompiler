@@ -513,6 +513,14 @@ QWidget* SettingsDialog::buildDecompilerTab() {
 
     l->addWidget(makeSeparator("LLVM pipeline (CLI)"));
 
+    decompileProfileCombo_ = new QComboBox;
+    decompileProfileCombo_->addItem(QStringLiteral("Fast"), QStringLiteral("fast"));
+    decompileProfileCombo_->addItem(QStringLiteral("Balanced"), QStringLiteral("balanced"));
+    decompileProfileCombo_->addItem(QStringLiteral("Quality"), QStringLiteral("quality"));
+    l->addWidget(makeRow("Decompile profile", decompileProfileCombo_,
+                         QStringLiteral("Passed as --profile to retdec-decompiler. "
+                                        "Analysis → Fast decompile overrides to fast for the next run.")));
+
     useCustomLlvmPassesCheck_ = new QCheckBox(
         "Use custom LLVM pass list when running \"Run Full Analysis\" "
         "(adds --llvm-passes-json to retdec-decompiler)");
@@ -789,6 +797,10 @@ void SettingsDialog::populateFromSettings() {
         const int idx = outputLangCombo_->findData(s.decompiler.outputLang);
         outputLangCombo_->setCurrentIndex(idx >= 0 ? idx : 0);
     }
+    if (decompileProfileCombo_) {
+        const int idx = decompileProfileCombo_->findData(s.decompiler.decompileProfile);
+        decompileProfileCombo_->setCurrentIndex(idx >= 0 ? idx : 1);
+    }
 }
 
 // ─── applyToSettings ─────────────────────────────────────────────────────────
@@ -878,6 +890,8 @@ void SettingsDialog::applyToSettings() {
         s.decompiler.liveConsoleTail = liveConsoleTailCheck_->isChecked();
     if (outputLangCombo_)
         s.decompiler.outputLang = outputLangCombo_->currentData().toString();
+    if (decompileProfileCombo_)
+        s.decompiler.decompileProfile = decompileProfileCombo_->currentData().toString();
 
     s.notifySettingsChanged();
 }

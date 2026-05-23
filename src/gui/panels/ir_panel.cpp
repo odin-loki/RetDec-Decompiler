@@ -28,7 +28,10 @@ void IRPanel::setupUI() {
     stageCombo_->setEnabled(false);
     stageCombo_->setToolTip(QStringLiteral("Stage selection not yet available"));
     topLayout->addWidget(funcLabel_, 1);
-    topLayout->addWidget(new QLabel("Stage:", topBar));
+    auto* stageLabel = new QLabel("Stage:", topBar);
+    stageLabel->setVisible(false);
+    stageCombo_->setVisible(false);
+    topLayout->addWidget(stageLabel);
     topLayout->addWidget(stageCombo_);
 
     view_ = new QPlainTextEdit(this);

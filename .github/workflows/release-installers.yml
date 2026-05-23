@@ -14,6 +14,10 @@ on:
         description: "Publish existing releases/ artifacts only (no rebuild)"
         type: boolean
         default: false
+      appimage:
+        description: "Also build Linux AppImage (or set job env APPIMAGE=1)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -89,12 +93,9 @@ jobs:
 
       - name: Fetch large support files
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
-        shell: pwsh
         run: |
-          .\scripts\fetch-large-files.ps1
-          if ($LASTEXITCODE -ne 0) {
-            .\scripts\fetch-large-files.ps1 -BaseUrl "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
-          }
+          bash scripts/fetch-large-files.sh || \
+            bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
 
       - uses: ilammy/msvc-dev-cmd@v1
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
@@ -154,6 +155,8 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    env:
+      APPIMAGE: ${{ (github.event_name == 'workflow_dispatch' && inputs.appimage == true) && '1' || vars.APPIMAGE || '0' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -200,8 +203,8 @@ jobs:
       - name: Fetch large support files
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         run: |
-          ./scripts/fetch-large-files.sh || \
-            ./scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+          bash scripts/fetch-large-files.sh || \
+            bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
 
       - name: Configure (full-linux-release, CPU-only CI)
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
@@ -211,9 +214,25 @@ jobs:
 
       - name: Build and package Linux tarball
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        env:
+          APPIMAGE: ${{ env.APPIMAGE }}
         run: |
-          chmod +x scripts/build-linux-installer.sh scripts/install-linux.sh
-          ./scripts/build-linux-installer.sh --build --version "${{ needs.release.outputs.version }}"
+          bash scripts/build-linux-installer.sh --build --version "${{ needs.release.outputs.version }}"
+
+      - name: Verify optional AppImage
+        if: env.APPIMAGE == '1'
+        run: |
+          ver="${{ needs.release.outputs.version }}"
+          appimage="dist/retdec-${ver}-x86_64.AppImage"
+          test -f "$appimage" || { echo "Missing $appimage"; exit 1; }
+
+      - name: Verify Linux release artifacts
+        run: |
+          ver="${{ needs.release.outputs.version }}"
+          tb="releases/linux/retdec-${ver}-linux-x64.tar.gz"
+          test -f "$tb" || { echo "Missing $tb"; exit 1; }
+          test -f releases/linux/install.sh || { echo "Missing releases/linux/install.sh"; exit 1; }
+          test -f releases/linux/uninstall.sh || { echo "Missing releases/linux/uninstall.sh"; exit 1; }
 
       - name: Upload Linux release assets
         uses: softprops/action-gh-release@v2
@@ -223,5 +242,14 @@ jobs:
             releases/linux/retdec-${{ needs.release.outputs.version }}-linux-x64.tar.gz
             releases/linux/install.sh
             releases/linux/uninstall.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux AppImage (optional)
+        if: env.APPIMAGE == '1'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          files: dist/retdec-${{ needs.release.outputs.version }}-x86_64.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,5 +1,6 @@
 # RetDec — Enhanced Retargetable Decompiler
 
+[![ci-smoke](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/ci-smoke.yml/badge.svg)](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/ci-smoke.yml)
 [![perf-nightly](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/perf-nightly.yml/badge.svg)](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/perf-nightly.yml)
 [![release-installers](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/release-installers.yml/badge.svg)](https://github.com/odin-loki/RetDec-Decompiler/actions/workflows/release-installers.yml)
 
@@ -11,7 +12,9 @@ GUI, and optional AI-assisted naming via the standalone `retdec-qwen3-runner`.
 Copyright (c) 2025-2026 Odin Loch trading as Imortek.
 Dual-licensed: **AGPL-3.0+ with Imortek Section 7 additions** (free for
 personal, charitable, educational, and small-entity use) **OR** a tiered
-commercial licence. See [LICENSE](LICENSE) for full terms.
+commercial licence. See [LICENSE](LICENSE) for full terms. For contributing
+and security reporting see [CONTRIBUTING.md](CONTRIBUTING.md) and
+[SECURITY.md](SECURITY.md).
 
 ---
 
@@ -113,6 +116,9 @@ Place your own GGUF under `models/` for `retdec-qwen3-runner` or CLI
 `--model`, or use a smaller checkpoint in CPU-only mode.
 
 ### Prerequisites
+
+On Windows, run `.\scripts\doctor.ps1` first for a read-only check of CMake,
+Qt6, NSIS, Perl, Python, git-lfs, and other common build prerequisites.
 
 | Dependency | Version | Required for |
 |------------|---------|-------------|
