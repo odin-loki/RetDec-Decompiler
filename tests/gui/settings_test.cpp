@@ -92,6 +92,14 @@ TEST_F(SettingsTest, DefaultPluginAutoLoadTrue) {
 
 // ─── AppSettings modification ────────────────────────────────────────────────
 
+TEST_F(SettingsTest, DefaultDecompileOutputDirEmpty) {
+    EXPECT_TRUE(AppSettings::instance().decompiler.decompileOutputDir.isEmpty());
+}
+
+TEST_F(SettingsTest, DefaultLiveConsoleTailFalse) {
+    EXPECT_FALSE(AppSettings::instance().decompiler.liveConsoleTail);
+}
+
 TEST_F(SettingsTest, ModifyTheme) {
     AppSettings::instance().general.theme = GeneralSettings::Theme::Light;
     EXPECT_EQ(AppSettings::instance().general.theme, GeneralSettings::Theme::Light);

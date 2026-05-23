@@ -2,8 +2,8 @@
 
 A machine-code decompiler that recovers high-level source code from compiled
 binaries. Built on the original RetDec/LLVM pipeline, this version adds
-semantic library recovery, a multi-language output backend, an integrated AI
-assistant (Qwen3 with CUDA GPU acceleration), and a rich Qt 6 GUI.
+semantic library recovery, a multi-language output backend, a Qt 6 IDE-style
+GUI, and optional AI-assisted naming via the standalone `retdec-qwen3-runner`.
 
 Copyright (c) 2025-2026 Odin Loch trading as Imortek.
 Dual-licensed: **AGPL-3.0+ with Imortek Section 7 additions** (free for
@@ -54,17 +54,29 @@ inference engine (MoE, custom C++ implementation with FlashAttention-2 and
 analysis. Pull the model with Ollama (`ollama pull qwen3-coder:30b-a3b-q4_K_M`),
 then copy the GGUF weights into `models/` in the repo root.
 
-### Qt 6 GUI
+### Qt 6 GUI (v3)
 
-- Synchronised Assembly / SSA IR / Decompiled code tri-pane view
-- Interactive CFG visualiser with mini-map and loop highlighting
-- Type hierarchy browser and vtable viewer
-- Call graph explorer with SCC super-nodes
-- Function list with recovery confidence badges
-- Strings and constants browser with semantic classification
-- Before/after diff view (Myers algorithm)
-- AI chat assistant panel with streaming output
-- Settings dialog (7 tabs) + plugin system
+IDE-style layout:
+
+- **Centre tabs:** Decompiled C · Assembly · IR (SSA) · CFG · Synced (Asm / IR / C tri-pane)
+- **Left dock:** Functions (filterable list)
+- **Right dock:** Strings · Inspect
+- **Bottom dock:** Console (live fileinfo/unpacker output) · Problems (decompiler diagnostics)
+
+Decompilation runs the same `retdec-decompiler` subprocess as the CLI (argument
+parity, same speed). **Cache reuse** on re-open; **Fast decompile** preset
+(~24% faster on tested binaries, byte-identical output). Post-decompile loads
+`.c`, `.config.json`, `.dsm`, and `.ll` into the document tabs.
+
+For CI and automated tests, use headless mode:
+
+```bash
+retdec-gui --headless-decompile /path/to/binary.elf
+```
+
+See [docs/GUI_ROADMAP.md](docs/GUI_ROADMAP.md) for the active plan. There is
+no in-GUI AI chat panel in v3; use **`retdec-qwen3-runner`** (or CLI
+`--model`) for Qwen3-assisted analysis.
 
 ---
 
@@ -92,10 +104,9 @@ Both scripts download from the upstream RetDec mirror (`avast/retdec`).
 Use `--base-url` / `-BaseUrl` to point at a private mirror, or `--force` /
 `-Force` to overwrite existing copies.
 
-The Qwen3 GGUF model used by the AI assistant is also intentionally not
-committed (multi-GB binary). Place your own GGUF under `models/` if you
-plan to enable the AI panel, or use the assistant in CPU-only mode with
-a smaller bundled checkpoint.
+The Qwen3 GGUF model is also intentionally not committed (multi-GB binary).
+Place your own GGUF under `models/` for `retdec-qwen3-runner` or CLI
+`--model`, or use a smaller checkpoint in CPU-only mode.
 
 ### Prerequisites
 
@@ -288,7 +299,7 @@ retdec-decompiler binary.elf --model models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.
 |----------|-------------|
 | [docs/README.md](docs/README.md) | **Documentation hub** — reading order, CI, Docker, diagnostics env vars, WSL/Windows quick refs |
 | [docs/BUILD_REFERENCE.md](docs/BUILD_REFERENCE.md) | **Canonical build guide** — presets, `build/linux` vs `build/windows`, superbuild, install, testing, troubleshooting |
-| [docs/user_manual.md](docs/user_manual.md) | GUI walkthrough, panels, settings, AI assistant, export, keyboard shortcuts |
+| [docs/user_manual.md](docs/user_manual.md) | GUI walkthrough, panels, settings, export, keyboard shortcuts |
 | [docs/architecture.md](docs/architecture.md) | Pipeline stages, libraries, managed-language dispatch |
 | [docs/developer_guide.md](docs/developer_guide.md) | Contributing, code style, new stages, tests, debugging, plugins |
 | [docs/algorithm_reference.md](docs/algorithm_reference.md) | Mathematical descriptions of key algorithms |

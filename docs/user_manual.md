@@ -385,7 +385,7 @@ Full feature lists and format tables: [README.md](../README.md).
 |---------|----------------|
 | GUI does not start | Run from `dist\windows` (or install prefix `bin`) so Qt plugins and `platforms\qwindows.dll` sit next to the executable; re-run `windeployqt` if you moved files manually. |
 | “No CUDA” / slow analysis | In **Settings → CUDA**, confirm **Use GPU**; install an NVIDIA driver; full MSVC build required for Windows CUDA kernels (MinGW cross build is CPU-only for GPU passes). |
-| AI panel idle | **Settings → ML** — set model path, **Apply**, then **Load Model** in the assistant panel. |
+| AI-assisted naming | Use **`retdec-qwen3-runner`** or CLI `--model`; v3 has no in-GUI AI chat panel. |
 | Empty decompilation | Check **Settings → Advanced → Max functions** (0 = all). Very large binaries may hit **Max analysis time** on the Analysis tab. |
 | Crash on open file | Try **File → Open** with a smaller sample; enable **Verbosity** under Advanced and capture console output; on Windows use `run_gui_with_procdump.ps1` (see [scripts/README.md](../scripts/README.md)). |
 

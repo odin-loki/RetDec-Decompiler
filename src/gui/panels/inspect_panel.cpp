@@ -180,10 +180,11 @@ void InspectPanel::setUnpackRunning(bool on) {
 }
 
 void InspectPanel::runFileinfo(const QString& binaryPath, const QString& fileinfoExecutable) {
-    lastBinaryPath_ = binaryPath;
+    const QString absPath = QFileInfo(binaryPath).absoluteFilePath();
+    lastBinaryPath_ = absPath;
     fileinfoExe_ = fileinfoExecutable;
     updateUnpackOutputDefault();
-    if (binaryPath.isEmpty()) {
+    if (absPath.isEmpty()) {
         updateButtonStates();
         return;
     }
@@ -206,7 +207,7 @@ void InspectPanel::runFileinfo(const QString& binaryPath, const QString& fileinf
     tabs_->setCurrentIndex(0);
 
     QStringList args;
-    args << QStringLiteral("--json") << binaryPath;
+    args << QStringLiteral("--json") << QStringLiteral("--verbose") << absPath;
     fileinfoProc_->setProgram(fileinfoExecutable);
     fileinfoProc_->setArguments(args);
     fileinfoProc_->setWorkingDirectory(QFileInfo(fileinfoExecutable).absolutePath());
@@ -228,6 +229,8 @@ void InspectPanel::clear() {
         unpackProc_->waitForFinished(2000);
     }
     lastBinaryPath_.clear();
+    lastFileinfoBinaryPath_.clear();
+    lastFileinfoJson_ = QJsonObject();
     status_->setText(QStringLiteral("No binary loaded."));
     summary_->clear();
     raw_->clear();
@@ -344,7 +347,8 @@ void InspectPanel::onFileinfoFinished(int exitCode, QProcess::ExitStatus) {
         tail = tail.left(4000) + QStringLiteral("\n…");
 
     emit cliToolFinished(QStringLiteral("retdec-fileinfo"),
-                         QStringList{QStringLiteral("--json"), lastBinaryPath_},
+                         QStringList{QStringLiteral("--json"), QStringLiteral("--verbose"),
+                                     lastBinaryPath_},
                          QFileInfo(fileinfoExe_).absolutePath(), exitCode, elapsed, tail);
 
     if (exitCode != 0) {
@@ -381,6 +385,8 @@ void InspectPanel::onFileinfoFinished(int exitCode, QProcess::ExitStatus) {
     };
 
     if (doc.isObject()) {
+        lastFileinfoJson_ = doc.object();
+        lastFileinfoBinaryPath_ = lastBinaryPath_;
         summary_->setHtml(summaryHtmlFromJson(doc.object()));
         // Pretty-print only if the payload is modest; otherwise show the raw
         // bytes (which fileinfo already formatted reasonably).
@@ -389,7 +395,10 @@ void InspectPanel::onFileinfoFinished(int exitCode, QProcess::ExitStatus) {
         } else {
             setRawCapped(out);
         }
+        emit fileinfoReady(lastFileinfoJson_, lastFileinfoBinaryPath_);
     } else {
+        lastFileinfoJson_ = QJsonObject();
+        lastFileinfoBinaryPath_.clear();
         summary_->setHtml(
                 QStringLiteral("<p>Could not parse JSON (%1). Raw output in JSON tab.</p>")
                         .arg(pe.errorString().toHtmlEscaped()));
@@ -404,7 +413,8 @@ void InspectPanel::onFileinfoError(QProcess::ProcessError err) {
     status_->setText(QStringLiteral("fileinfo error: %1").arg(fileinfoProc_->errorString()));
     summary_->setHtml(QStringLiteral("<p style=\"color:#c00\">Process error.</p>"));
     emit cliToolFinished(QStringLiteral("retdec-fileinfo"),
-                         QStringList{QStringLiteral("--json"), lastBinaryPath_},
+                         QStringList{QStringLiteral("--json"), QStringLiteral("--verbose"),
+                                     lastBinaryPath_},
                          QFileInfo(fileinfoExe_).absolutePath(), -1, fileinfoTimer_.elapsed(),
                          fileinfoProc_->errorString());
     updateButtonStates();

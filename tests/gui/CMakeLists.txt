@@ -23,15 +23,22 @@ add_executable(retdec-gui-tests
     diff_panel_test.cpp
     settings_test.cpp
     live_console_panel_test.cpp
+    decompiler_launch_test.cpp
+    batch_decompile_queue_test.cpp
+    artifact_loader_test.cpp
+    export_bundle_test.cpp
     mainwindow_layout_test.cpp
     comprehensive_smoke_test.cpp
     # mainwindow + project_file are NOT in retdec-gui-panels (the exe owns them),
     # so we compile them into the test target. This keeps a single source of truth
     # without restructuring the production binary's link order.
     ${PROJECT_SOURCE_DIR}/src/gui/mainwindow.cpp
+    ${PROJECT_SOURCE_DIR}/src/gui/batch_decompile_dialog.cpp
     ${PROJECT_SOURCE_DIR}/src/gui/project_file.cpp
     ${PROJECT_SOURCE_DIR}/include/retdec/gui/mainwindow.h
+    ${PROJECT_SOURCE_DIR}/include/retdec/gui/batch_decompile_dialog.h
     ${PROJECT_SOURCE_DIR}/include/retdec/gui/project_file.h
+    ${PROJECT_SOURCE_DIR}/src/gui/resources/resources.qrc
 )
 
 target_include_directories(retdec-gui-tests

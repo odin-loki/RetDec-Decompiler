@@ -35,6 +35,15 @@ ParsedLaunchOptions parseLaunchOptions(int argc, char** argv) {
             out.headless = true;
             continue;
         }
+        if (std::strcmp(argv[i], "--headless-decompile") == 0) {
+            out.headless           = true;
+            out.headlessDecompile    = true;
+            continue;
+        }
+        if (std::strcmp(argv[i], "--fast-decompile") == 0) {
+            out.fastDecompile = true;
+            continue;
+        }
         if (std::strcmp(argv[i], "--headless-exit-ms") == 0 && i + 1 < argc) {
             out.headless = true;
             out.headlessExitMs = std::atoi(argv[i + 1]);

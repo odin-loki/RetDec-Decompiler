@@ -559,6 +559,8 @@ void FunctionListPanel::setupUI()
             this,       &FunctionListPanel::onDoubleClicked);
     connect(tableView_, &QWidget::customContextMenuRequested,
             this,       &FunctionListPanel::onContextMenu);
+    connect(tableView_->selectionModel(), &QItemSelectionModel::selectionChanged,
+            this,       &FunctionListPanel::selectionChanged);
     connect(model_,     &FunctionListModel::functionRenamed,
             this,       &FunctionListPanel::functionRenamed);
     connect(proxy_,     &QSortFilterProxyModel::rowsInserted,
@@ -686,6 +688,36 @@ void FunctionListPanel::filterByClass(const QString& className)
 
 void FunctionListPanel::onFunctionSelected(uint64_t /*address*/, const QString& /*name*/) {}
 
+std::optional<FunctionEntry> FunctionListPanel::selectedEntry() const
+{
+    const auto selected = tableView_->selectionModel()->selectedRows();
+    if (selected.isEmpty())
+        return std::nullopt;
+    const QModelIndex src = proxy_->mapToSource(selected.first());
+    if (!src.isValid())
+        return std::nullopt;
+    return model_->entry(src.row());
+}
+
+void FunctionListPanel::selectFunction(uint64_t address)
+{
+    for (int r = 0; r < model_->rowCount(); ++r) {
+        const auto& e = model_->entry(r);
+        if (e.address != address)
+            continue;
+        const QModelIndex srcIdx = model_->index(r, 0);
+        const QModelIndex proxyIdx = proxy_->mapFromSource(srcIdx);
+        if (!proxyIdx.isValid())
+            return;
+        tableView_->selectionModel()->select(
+                proxyIdx,
+                QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        tableView_->scrollTo(proxyIdx);
+        emit functionSelected(e.address, e.name.isEmpty() ? e.rawName : e.name);
+        return;
+    }
+}
+
 void FunctionListPanel::onFilterChanged()
 {
     proxy_->setNameGlob(nameFilter_->text());
@@ -724,6 +756,10 @@ void FunctionListPanel::onContextMenu(const QPoint& pos)
 
     auto* navigateAct = menu.addAction("Navigate to Function");
     navigateAct->setEnabled(idx.isValid());
+    auto* redecompileAct = menu.addAction("Re-decompile Selected Function");
+    redecompileAct->setEnabled(idx.isValid());
+    redecompileAct->setToolTip(
+            QStringLiteral("Run retdec-decompiler with --select-functions for this function."));
     auto* renameAct   = menu.addAction("Rename…");
     renameAct->setEnabled(idx.isValid());
     menu.addSeparator();
@@ -743,6 +779,13 @@ void FunctionListPanel::onContextMenu(const QPoint& pos)
 
     if (chosen == navigateAct && idx.isValid()) {
         onDoubleClicked(idx);
+    } else if (chosen == redecompileAct && idx.isValid()) {
+        const QModelIndex src = proxy_->mapToSource(idx);
+        if (src.isValid()) {
+            const auto& e = model_->entry(src.row());
+            emit functionSelected(e.address, e.name.isEmpty() ? e.rawName : e.name);
+            emit redecompileRequested(e.address, e.selectFunctionsCliName());
+        }
     } else if (chosen == renameAct && idx.isValid()) {
         onRenameFunction();
     } else if (chosen == tagAct) {

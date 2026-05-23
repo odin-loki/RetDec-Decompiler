@@ -152,6 +152,10 @@ struct DecompilerSettings {
     QStringList llvmPassesDisabled;
     /// If set and the file exists, Run Full Analysis prepends --config with this path.
     QString extraConfigPath;
+    /// When set, `.gui-decompiled.*` artifacts are written here (binary basename only). Empty = beside binary.
+    QString decompileOutputDir;
+    /// When true, decompile log bytes are appended to the Console tab during the run (rate-limited).
+    bool liveConsoleTail = false;
 };
 
 // ─── AppSettings (main facade) ────────────────────────────────────────────────

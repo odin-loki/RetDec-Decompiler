@@ -73,6 +73,7 @@ private slots:
     void onDecompilerPassesNone();
     void onDecompilerPassesDefaults();
     void onBrowseDecompilerConfig();
+    void onBrowseDecompileOutputDir();
 
 private:
     // Tab builders
@@ -172,6 +173,9 @@ private:
     QPushButton*        llvmPassesDefaultBtn_ = nullptr;
     QLineEdit*          decompilerConfigEdit_ = nullptr;
     QToolButton*        decompilerConfigBtn_  = nullptr;
+    QLineEdit*          decompileOutputDirEdit_ = nullptr;
+    QToolButton*        decompileOutputDirBtn_  = nullptr;
+    QCheckBox*          liveConsoleTailCheck_   = nullptr;
 
     // ── Tab: Plugins ──────────────────────────────────────────────────────
     QListWidget*  pluginList_        = nullptr;

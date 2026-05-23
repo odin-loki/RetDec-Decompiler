@@ -9,6 +9,9 @@
  *   --headless              — same as above
  *   --headless-exit-ms N    — quit the event loop after N ms (smoke / automated debug)
  *   --headless-exit-ms=N
+ *   --headless-decompile    — after opening a binary, run retdec-decompiler and quit
+ *                             when the subprocess finishes (parity / CI timing)
+ *   --fast-decompile        — with --headless-decompile, use the Fast preset
  */
 
 #ifndef RETDEC_GUI_LAUNCH_OPTIONS_H
@@ -26,6 +29,9 @@ struct ParsedLaunchOptions {
     bool                     headless = false;
     /// >0: QTimer::singleShot to quit (smoke test). 0: run until window closed.
     int headlessExitMs = 0;
+    /// Run full decompile on the opened binary, then quit (ignores headlessExitMs).
+    bool headlessDecompile = false;
+    bool fastDecompile     = false;
 };
 
 /**

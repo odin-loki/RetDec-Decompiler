@@ -22,6 +22,8 @@
  * -------
  *  functionSelected(address, name)       – double-click / enter
  *  functionRenamed(address, oldName, newName) – after inline rename
+ *  redecompileRequested(address, cliName) – context menu re-decompile
+ *  selectionChanged()                    – table selection changed
  */
 
 #ifndef RETDEC_GUI_PANELS_FUNCTION_LIST_H
@@ -35,6 +37,7 @@
 #include <QStyledItemDelegate>
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 QT_BEGIN_NAMESPACE
@@ -87,6 +90,13 @@ struct FunctionEntry {
     QStringList        tags;               ///< user-applied annotation tags
     QString            notes;
     bool               isLibrary   = false;
+
+    /// Name for retdec-decompiler `--select-functions` (config/LLVM name preferred).
+    QString selectFunctionsCliName() const {
+        if (!name.isEmpty()) return name;
+        if (!rawName.isEmpty()) return rawName;
+        return QStringLiteral("function_%1").arg(address, 0, 16);
+    }
 };
 
 // ─── FunctionListModel ────────────────────────────────────────────────────────
@@ -234,10 +244,18 @@ public:
     /** Filter list to only functions belonging to className (from TypeHierarchyPanel). */
     void filterByClass(const QString& className);
 
+    /** Currently selected row, if any. */
+    std::optional<FunctionEntry> selectedEntry() const;
+
+    /** Select a function by address and emit @c functionSelected. */
+    void selectFunction(uint64_t address);
+
 signals:
     void functionSelected(uint64_t address, const QString& name);
     void functionRenamed(uint64_t address,
                          const QString& oldName, const QString& newName);
+    void selectionChanged();
+    void redecompileRequested(uint64_t address, const QString& cliFunctionName);
 
 public slots:
     void onFunctionSelected(uint64_t address, const QString& name);

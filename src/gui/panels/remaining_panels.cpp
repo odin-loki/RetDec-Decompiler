@@ -160,6 +160,8 @@ void DiagnosticsPanel::addMessage(DiagnosticEntry::Severity severity,
     e.address  = address;
     model_->addEntry(e);
     countLabel_->setText(QString("%1 entries").arg(filterProxy_->rowCount()));
+    if (severity == DiagnosticEntry::Severity::Error)
+        emit errorMessageAdded();
 }
 
 void DiagnosticsPanel::clear() {

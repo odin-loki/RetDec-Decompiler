@@ -1,0 +1,26 @@
+name: ctest-windows
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (full-windows-debug)
+        run: cmake --preset full-windows-debug
+
+      - name: Build
+        run: cmake --build build/windows --parallel
+
+      - name: Integration tests
+        run: ctest --test-dir build/windows --output-on-failure -L integration
+        env:
+          RETDEC_GUI_HEADLESS: "1"
+          QT_QPA_PLATFORM: offscreen

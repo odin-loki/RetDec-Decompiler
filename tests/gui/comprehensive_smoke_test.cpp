@@ -200,8 +200,9 @@ TEST_F(ComprehensiveSmokeTest, MainWindowConstructsCleanly) {
     EXPECT_NE(win->workspaceTabsForTest(), nullptr);
     EXPECT_NE(win->liveConsoleForTest(),  nullptr);
     EXPECT_NE(win->triageBannerForTest(), nullptr);
-    // Bottom dock hosts the LiveConsole directly — no tab strip.
-    EXPECT_EQ(win->outputTabsForTest(), nullptr);
+    // Bottom dock hosts Console + Problems tabs.
+    EXPECT_NE(win->outputTabsForTest(), nullptr);
+    EXPECT_EQ(win->outputTabsForTest()->count(), 2);
 }
 
 TEST_F(ComprehensiveSmokeTest, EveryDocumentTabSwitches) {
@@ -224,7 +225,15 @@ TEST_F(ComprehensiveSmokeTest, EveryWorkspaceTabSwitches) {
     }
 }
 
-// (v3.1: no output tab strip — bottom dock hosts LiveConsole directly.)
+TEST_F(ComprehensiveSmokeTest, EveryOutputTabSwitches) {
+    auto* out = win->outputTabsForTest();
+    ASSERT_NE(out, nullptr);
+    for (int i = 0; i < out->count(); ++i) {
+        out->setCurrentIndex(i);
+        pump();
+        EXPECT_EQ(out->currentIndex(), i);
+    }
+}
 
 TEST_F(ComprehensiveSmokeTest, EveryDockToggleWorks) {
     auto docks = win->findChildren<QDockWidget*>();

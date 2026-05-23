@@ -10,6 +10,10 @@
 #include <QTimer>
 #include <memory>
 
+#include "retdec/gui/artifact_loader.h"
+
+#include <optional>
+
 QT_BEGIN_NAMESPACE
 class QAction;
 class QMenu;
@@ -57,8 +61,7 @@ class TriPaneCodeView;
  *                            Synced (Asm ┃ IR ┃ C) | Compare
  *   - Left dock:       Functions (with prominent filter, always visible)
  *   - Right dock:      Strings | Inspect  (just two tabs)
- *   - Bottom dock:     Console (live) | Problems (diagnostics) |
- *                      Command log | Progress
+ *   - Bottom dock:     Console (live) | Problems (diagnostics)
  *   - Floating:        AI Assistant (hidden by default)
  *   - Tools menu:      Signature Studio…, Call Graph…, Type Hierarchy…
  *                      open as separate top-level windows on demand.
@@ -102,6 +105,15 @@ public:
     QDockWidget* symbolsDockForTest()  const { return dockFunctions_; }
     QDockWidget* workspaceDockForTest() const { return dockWorkspace_; }
 
+    /// CI / parity benchmark: enable Fast preset before decompile.
+    void setFastDecompilePreset(bool on);
+    /// CI / parity benchmark: quit the app when the decompiler subprocess exits.
+    void enableQuitWhenDecompileFinishes(bool on);
+    /// Trigger onRunFullAnalysis (bypasses menu).
+    void runDecompileForBenchmark();
+    /// Wall time of the last finished decompiler subprocess (ms).
+    qint64 lastDecompileSubprocessMsForTest() const { return lastDecompileSubprocessMs_; }
+
 protected:
     void closeEvent(QCloseEvent* event) override;
     void dragEnterEvent(QDragEnterEvent* event) override;
@@ -115,10 +127,13 @@ private slots:
     void onSaveProject();
     void onSaveProjectAs();
     void onExportCMake();
+    void onExportDecompileBundle();
     void onRecentFileTriggered();
+    void onBatchDecompile();
 
     // Analysis menu.
     void onRunFullAnalysis();
+    void onRedecompileSelectedFunction();
     void onRunStage();
     void onConfigure();
 
@@ -133,6 +148,7 @@ private slots:
 
     void onDecompilerProcessFinished(int exitCode, QProcess::ExitStatus status);
     void onDecompilerProcessError(QProcess::ProcessError err);
+    void onDecompileLogPollTick();
 
     /// Apply Settings → ML to AI Assistant.
     void syncAiAssistantFromAppSettings();
@@ -148,6 +164,8 @@ private slots:
     void onShowCallGraph();
     void onShowTypeHierarchy();
 
+    void onFunctionArtifactViews(uint64_t address, const QString& name);
+
 private:
     // Init helpers.
     void createMenus();
@@ -158,6 +176,8 @@ private:
     void setupDockOptions();
     void installCodeTabShortcuts();
     void raiseDocumentTab(int index);
+    /// Show the bottom output dock and select Console (0) or Problems (1).
+    void focusOutputTab(int tabIndex);
     void updateProjectFileActions();
     void restoreLayout();
     void saveLayout();
@@ -171,11 +191,21 @@ private:
     /// Load the decompiled .c + functions config.json sidecar produced by a
     /// prior decompile run. Used both by the post-decompile success path and
     /// by the openBinary cache-reuse path. Returns true if a usable .c was
-    /// loaded.
-    bool loadDecompileArtifacts(const QString& decompiledCPath);
+    /// loaded. When @p reselectAddress is set, that function is re-selected
+    /// instead of the first entry.
+    bool loadDecompileArtifacts(const QString& decompiledCPath,
+                                std::optional<uint64_t> reselectAddress = std::nullopt);
     /// If the binary has a fresh cached decompile next to it, load it and
     /// skip spawning retdec-decompiler. Returns true if cache was used.
     bool tryLoadCachedDecompile(const QString& binaryPath);
+    /// Launch retdec-decompiler for @p absBinary (shared by full analysis and batch).
+    bool launchDecompilerForBinary(const QString& absBinary,
+                                   const QString& arch,
+                                   const QStringList& selectedFunctions = {});
+    void startBatchDecompile(const QStringList& paths);
+    void processNextBatchItem();
+    void finishBatchDecompile(bool cancelled = false);
+    void updateBatchStatusMessage(const QString& stageSuffix = QString());
 
     // UI — menus.
     QMenu* fileMenu_     = nullptr;
@@ -190,6 +220,7 @@ private:
     QAction* saveProjectAct_   = nullptr;
     QAction* saveProjectAsAct_ = nullptr;
     QAction* analyseAction_  = nullptr;
+    QAction* redecompileFunctionAct_ = nullptr;
     QAction* stopAction_     = nullptr;
     QAction* printAfterAllAct_ = nullptr;
     QToolBar* mainToolBar_   = nullptr;
@@ -201,6 +232,9 @@ private:
     QLabel*       statusElapsed_ = nullptr;
     QProgressBar* analysisBar_   = nullptr;
     QTimer*       elapsedTimer_  = nullptr;
+    QTimer*       decompileLogPollTimer_ = nullptr;
+    qint64        decompileLogOffset_    = 0;
+    qint64        decompileConsoleTailOffset_ = 0;
     QElapsedTimer wallClock_;
 
     // Panels.
@@ -241,18 +275,30 @@ private:
 
     QProcess*                      decompilerProc_ = nullptr;
     std::unique_ptr<QTemporaryFile> llvmPassesJsonTemp_;
+    /// Decompiler stdout/stderr redirected here (not a pipe) so console UI
+    /// work cannot block the child process on a full OS pipe buffer.
+    std::unique_ptr<QTemporaryFile> decompilerLogTemp_;
     QString                        decompilerOutputPath_;
     QStringList                    lastDecompilerArgs_;
     QString                        lastDecompilerExe_;
     QString                        lastDecompilerCwd_;
     QString                        lastProjectSavePath_;
     bool                           decompilePrintAfterAll_ = false;
+    std::optional<uint64_t>        pendingReselectAddress_;
 
     QString lastAiMlFingerprint_;
 
     /// User toggle: skip expensive backend optimizations for faster runs.
     bool fastDecompile_ = false;
     QAction* fastDecompileAct_ = nullptr;
+    bool   quitWhenDecompileFinishes_ = false;
+    qint64 lastDecompileSubprocessMs_ = 0;
+
+    std::optional<DecompileArtifacts> loadedArtifacts_;
+
+    QStringList batchQueue_;
+    bool        batchRunning_ = false;
+    int         batchTotal_   = 0;
 
     static constexpr int kMaxRecentFiles = 10;
 };

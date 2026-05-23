@@ -8,7 +8,12 @@
 #include <memory>
 
 #include "retdec/gui/mainwindow.h"
+#include "retdec/gui/batch_decompile_dialog.h"
+#include "retdec/gui/batch_decompile_queue.h"
 #include "retdec/gui/cli_tool_paths.h"
+#include "retdec/gui/decompiler_launch.h"
+#include "retdec/gui/artifact_loader.h"
+#include "retdec/gui/export_bundle.h"
 #include "retdec/gui/project_file.h"
 #include "retdec/gui/settings/settings.h"
 #include "retdec/gui/panels/settings_dialog.h"
@@ -61,6 +66,7 @@
 #include <QSet>
 #include <QSettings>
 #include <QInputDialog>
+#include <QTemporaryFile>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QKeySequence>
@@ -70,9 +76,12 @@
 #include <QTabWidget>
 #include <QTextBrowser>
 #include <QTimer>
+#include <QTextStream>
 #include <QToolBar>
 #include <QUrl>
 #include <QWidget>
+
+#include <cstdio>
 
 namespace retdec {
 namespace gui {
@@ -80,57 +89,6 @@ namespace gui {
 // ─── Local helpers ───────────────────────────────────────────────────────────
 
 namespace {
-
-std::unique_ptr<QTemporaryFile> makeLlvmPassesJsonTempFile(
-        const DecompilerSettings& d,
-        bool fastPreset,
-        QString* errOut) {
-    // Fast preset drops duplicate generic LLVM passes (simplifycfg, instcombine,
-    // …). On every test binary we've tried output is byte-identical and the
-    // run is ~25 % faster; only enable on user opt-in to be safe with edge
-    // cases we haven't sampled.
-    const QString resource = fastPreset
-            ? QStringLiteral(":/retdec/llvm_passes_fast.json")
-            : QStringLiteral(":/retdec/llvm_passes_default.json");
-    QFile f(resource);
-    if (!f.open(QIODevice::ReadOnly)) {
-        if (errOut)
-            *errOut = QStringLiteral("Missing resource %1").arg(resource);
-        return nullptr;
-    }
-    QJsonParseError pe{};
-    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll(), &pe);
-    if (!doc.isArray()) {
-        if (errOut)
-            *errOut = QStringLiteral("Invalid llvm_passes_default.json");
-        return nullptr;
-    }
-    const QSet<QString> disabled(d.llvmPassesDisabled.begin(),
-                                 d.llvmPassesDisabled.end());
-    QJsonArray out;
-    for (const QJsonValue& v : doc.array()) {
-        if (!v.isString())
-            continue;
-        const QString s = v.toString();
-        if (!disabled.contains(s))
-            out.append(s);
-    }
-    auto t = std::make_unique<QTemporaryFile>();
-    t->setAutoRemove(true);
-    if (!t->open()) {
-        if (errOut)
-            *errOut = QStringLiteral("Could not create temporary file for LLVM passes.");
-        return nullptr;
-    }
-    const QJsonDocument outDoc(out);
-    if (t->write(outDoc.toJson(QJsonDocument::Compact)) < 0) {
-        if (errOut)
-            *errOut = QStringLiteral("Could not write LLVM passes JSON.");
-        return nullptr;
-    }
-    t->flush();
-    return t;
-}
 
 bool parseEntryPointString(const QString& s, uint64_t* out) {
     const QString t = s.trimmed();
@@ -151,10 +109,25 @@ QString guessDecompiledCPath(const ProjectFile* pf) {
         if (QFileInfo::exists(p))
             return QFileInfo(p).absoluteFilePath();
     }
-    QString base = pf->binaryPath();
-    const int dot = base.lastIndexOf(QLatin1Char('.'));
-    if (dot > 0) base = base.left(dot);
-    return QFileInfo(base + QStringLiteral(".gui-decompiled.c")).absoluteFilePath();
+    const QString outDir = AppSettings::instance().decompiler.decompileOutputDir;
+    return locateGuiDecompiledCPath(pf->binaryPath(), outDir);
+}
+
+void writeHeadlessDecompileReport(qint64 decompileMs, int exitCode,
+                                  const QString& outputPath,
+                                  const QStringList& args = {})
+{
+    const QString path =
+            QDir::temp().filePath(QStringLiteral("retdec-gui-decompile-timing.txt"));
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
+        return;
+    QTextStream ts(&f);
+    ts << QStringLiteral("DECOMPILE_MS=") << decompileMs << QLatin1Char('\n');
+    ts << QStringLiteral("EXIT=") << exitCode << QLatin1Char('\n');
+    ts << QStringLiteral("OUTPUT=") << outputPath << QLatin1Char('\n');
+    if (!args.isEmpty())
+        ts << QStringLiteral("ARGS=") << args.join(QLatin1Char(' ')) << QLatin1Char('\n');
 }
 
 // Document tab indices (Centre).
@@ -168,6 +141,10 @@ constexpr int kDocCompare     = 5;
 // Workspace dock (right) — slim two tabs.
 constexpr int kWsStrings = 0;
 constexpr int kWsInspect = 1;
+
+// Bottom output dock — Console + Problems only.
+constexpr int kOutConsole  = 0;
+constexpr int kOutProblems = 1;
 
 QDockWidget* makeDock(const QString& title, QWidget* widget,
                       QDockWidget::DockWidgetFeatures features =
@@ -237,6 +214,11 @@ RetDecMainWindow::RetDecMainWindow(QWidget* parent)
             this, &RetDecMainWindow::onDecompilerProcessFinished);
     connect(decompilerProc_, &QProcess::errorOccurred,
             this, &RetDecMainWindow::onDecompilerProcessError);
+
+    decompileLogPollTimer_ = new QTimer(this);
+    decompileLogPollTimer_->setInterval(500);
+    connect(decompileLogPollTimer_, &QTimer::timeout,
+            this, &RetDecMainWindow::onDecompileLogPollTick);
 
     if (target_) {
         connect(&AppSettings::instance(), &AppSettings::settingsChanged,
@@ -310,6 +292,16 @@ void RetDecMainWindow::createPanels() {
             callGraph_,       &panels::CallGraphPanel::onFunctionSelected);
     connect(functionList_,   &panels::FunctionListPanel::functionSelected,
             triPane_,         &panels::TriPaneCodeView::onFunctionSelected);
+    connect(functionList_,   &panels::FunctionListPanel::functionSelected,
+            this,             &RetDecMainWindow::onFunctionArtifactViews);
+    connect(functionList_,   &panels::FunctionListPanel::redecompileRequested,
+            this,             &RetDecMainWindow::onRedecompileSelectedFunction);
+    connect(functionList_,   &panels::FunctionListPanel::selectionChanged,
+            this,             [this]() {
+                if (redecompileFunctionAct_)
+                    redecompileFunctionAct_->setEnabled(
+                            functionList_->selectedEntry().has_value());
+            });
     connect(triPane_,        &panels::TriPaneCodeView::addressNavigated,
             assembly_,        &panels::AssemblyPanel::onAddressNavigated);
 
@@ -327,6 +319,12 @@ void RetDecMainWindow::createPanels() {
     connectStatus(decompiledC_);
     connectStatus(cfgPanel_);
     connectStatus(diagnostics_);
+
+    connect(diagnostics_, &panels::DiagnosticsPanel::errorMessageAdded, this, [this] {
+        if (quitWhenDecompileFinishes_)
+            return;
+        focusOutputTab(kOutProblems);
+    });
 
     // Triage banner ↔ main window.
     connect(triageBanner_, &panels::TriageBanner::decompileRequested,
@@ -371,6 +369,8 @@ void RetDecMainWindow::createPanels() {
         }
         openBinary(QFileInfo(p).absoluteFilePath());
     });
+    connect(inspect_, &panels::InspectPanel::fileinfoReady, binaryBrowser_,
+            &panels::BinaryBrowserPanel::populateFromFileinfo);
     connect(signatureStudio_, &panels::SignatureStudioPanel::cliToolFinished, this,
             &RetDecMainWindow::onCliToolLogged);
 }
@@ -420,14 +420,14 @@ void RetDecMainWindow::createDockLayout() {
     dockWorkspace_ = makeDock(QStringLiteral("Workspace"), workspaceTabWidget_);
     dockWorkspace_->setObjectName(QStringLiteral("dock_workspace"));
 
-    // ── BOTTOM: Console only ──────────────────────────────────────────────────
-    // Previous Problems / Command log / Progress tabs were either always
-    // empty (Progress was only fed by an in-process analysis bridge that we
-    // no longer use) or duplicated info already in the Console. Collapsing
-    // to a single live console removes empty-tab confusion and matches a
-    // standard terminal pane in an IDE.
-    outputTabs_ = nullptr;
-    dockOutput_ = makeDock(QStringLiteral("Console"), liveConsole_);
+    // ── BOTTOM: Console + Problems ────────────────────────────────────────────
+    outputTabs_ = new QTabWidget(this);
+    outputTabs_->setObjectName(QStringLiteral("outputTabs"));
+    outputTabs_->setDocumentMode(true);
+    outputTabs_->setMovable(false);
+    outputTabs_->addTab(liveConsole_,  QStringLiteral("Console"));
+    outputTabs_->addTab(diagnostics_, QStringLiteral("Problems"));
+    dockOutput_ = makeDock(QStringLiteral("Output"), outputTabs_);
     dockOutput_->setObjectName(QStringLiteral("dock_output"));
 
     // AI Assistant intentionally NOT docked or floated in v3.
@@ -459,6 +459,8 @@ void RetDecMainWindow::createMenus() {
     fileMenu_->addSeparator();
     auto* saveDecompAct  = fileMenu_->addAction(QStringLiteral("Save Decompiled…"));
     auto* exportCmakeAct = fileMenu_->addAction(QStringLiteral("Export CMakeLists.txt…"));
+    auto* exportBundleAct = fileMenu_->addAction(QStringLiteral("Export Decompile Bundle…"));
+    auto* batchDecompileAct = fileMenu_->addAction(QStringLiteral("Batch Decompile…"));
     fileMenu_->addSeparator();
     auto* quitAct = fileMenu_->addAction(QStringLiteral("&Quit"));
 
@@ -473,6 +475,8 @@ void RetDecMainWindow::createMenus() {
     connect(saveProjectAsAct_, &QAction::triggered, this, &RetDecMainWindow::onSaveProjectAs);
     connect(saveDecompAct,  &QAction::triggered, this, &RetDecMainWindow::onSaveDecompiled);
     connect(exportCmakeAct, &QAction::triggered, this, &RetDecMainWindow::onExportCMake);
+    connect(exportBundleAct, &QAction::triggered, this, &RetDecMainWindow::onExportDecompileBundle);
+    connect(batchDecompileAct, &QAction::triggered, this, &RetDecMainWindow::onBatchDecompile);
     connect(quitAct,        &QAction::triggered, qApp, &QApplication::quit);
 
     openAction_ = openBinaryAct;
@@ -480,6 +484,13 @@ void RetDecMainWindow::createMenus() {
     // ── Analysis ──────────────────────────────────────────────────────────────
     analysisMenu_ = menuBar()->addMenu(QStringLiteral("&Analysis"));
     auto* runFullAct  = analysisMenu_->addAction(QStringLiteral("Run Full Analysis"));
+    redecompileFunctionAct_ = analysisMenu_->addAction(
+            QStringLiteral("Re-decompile Selected Function"));
+    redecompileFunctionAct_->setEnabled(false);
+    redecompileFunctionAct_->setToolTip(QStringLiteral(
+            "Run retdec-decompiler with --select-functions for the function "
+            "selected in the Functions list. Other functions keep declarations "
+            "only; use Run Full Analysis to restore all bodies."));
     auto* runStageAct = analysisMenu_->addAction(QStringLiteral("Run Stage…"));
     analysisMenu_->addSeparator();
     auto* configAct = analysisMenu_->addAction(QStringLiteral("Configure…"));
@@ -508,6 +519,8 @@ void RetDecMainWindow::createMenus() {
     stopAction_->setShortcut(Qt::Key_F6);
 
     connect(runFullAct,  &QAction::triggered, this, &RetDecMainWindow::onRunFullAnalysis);
+    connect(redecompileFunctionAct_, &QAction::triggered,
+            this, &RetDecMainWindow::onRedecompileSelectedFunction);
     connect(runStageAct, &QAction::triggered, this, &RetDecMainWindow::onRunStage);
     connect(configAct,   &QAction::triggered, this, &RetDecMainWindow::onConfigure);
     connect(stopAction_, &QAction::triggered, this, &RetDecMainWindow::stopAnalysis);
@@ -543,7 +556,12 @@ void RetDecMainWindow::createMenus() {
         auto* showConsoleAct = viewMenu_->addAction(QStringLiteral("Show Console"));
         showConsoleAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+`")));
         connect(showConsoleAct, &QAction::triggered, this, [this] {
-            if (dockOutput_) { dockOutput_->show(); dockOutput_->raise(); }
+            focusOutputTab(kOutConsole);
+        });
+        auto* showProblemsAct = viewMenu_->addAction(QStringLiteral("Show Problems"));
+        showProblemsAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+`")));
+        connect(showProblemsAct, &QAction::triggered, this, [this] {
+            focusOutputTab(kOutProblems);
         });
     }
     viewMenu_->addSeparator();
@@ -604,6 +622,18 @@ void RetDecMainWindow::raiseDocumentTab(int index) {
     documentTabs_->setCurrentIndex(index);
     if (auto* w = documentTabs_->currentWidget())
         w->setFocus();
+}
+
+void RetDecMainWindow::focusOutputTab(int tabIndex) {
+    if (outputTabs_) {
+        if (tabIndex < 0 || tabIndex >= outputTabs_->count())
+            tabIndex = kOutConsole;
+        outputTabs_->setCurrentIndex(tabIndex);
+    }
+    if (dockOutput_) {
+        dockOutput_->show();
+        dockOutput_->raise();
+    }
 }
 
 void RetDecMainWindow::updateProjectFileActions() {
@@ -700,82 +730,97 @@ void RetDecMainWindow::streamProcessToConsole(QProcess* proc, const QString& lab
     liveConsole_->attachProcess(proc, label);
 }
 
+void RetDecMainWindow::setFastDecompilePreset(bool on) {
+    fastDecompile_ = on;
+    if (fastDecompileAct_) {
+        fastDecompileAct_->blockSignals(true);
+        fastDecompileAct_->setChecked(on);
+        fastDecompileAct_->blockSignals(false);
+    }
+}
+
+void RetDecMainWindow::enableQuitWhenDecompileFinishes(bool on) {
+    quitWhenDecompileFinishes_ = on;
+}
+
+void RetDecMainWindow::runDecompileForBenchmark() {
+    onRunFullAnalysis();
+}
+
 // ─── Decompile-artifact loader (used by both cache reuse + post-run) ─────────
 
-bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath) {
-    QFile f(cPath);
-    if (!f.open(QIODevice::ReadOnly))
-        return false;
-    const QByteArray cBytes = f.readAll();
-    f.close();
+bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath,
+                                              std::optional<uint64_t> reselectAddress) {
+    const QString absC = QFileInfo(cPath).absoluteFilePath();
+    const DecompileArtifactPaths paths = pathsFromOutputC(absC);
 
-    statusBar()->showMessage(
-            QStringLiteral("Loading decompiled C (%1 KiB)…")
-                    .arg(cBytes.size() / 1024), 1500);
-    decompiledC_->setSource(QString::fromUtf8(cBytes));
+    DecompileArtifacts art;
+    QString err;
+    if (!loadDecompileArtifactsFromPaths(paths, art, &err)) {
+        diagnostics_->addMessage(panels::DiagnosticEntry::Severity::Warning,
+                QStringLiteral("retdec-decompiler"), err);
+        return false;
+    }
+
+    if (!decompiledC_->setSourceFromPath(absC)) {
+        diagnostics_->addMessage(panels::DiagnosticEntry::Severity::Warning,
+                QStringLiteral("retdec-decompiler"),
+                QStringLiteral("Could not read: %1").arg(absC));
+        return false;
+    }
+
     if (project_)
-        project_->setDecompiledPath(cPath);
+        project_->setDecompiledPath(absC);
+
+    loadedArtifacts_ = std::move(art);
+
+    if (functionList_)
+        functionList_->setFunctions(loadedArtifacts_->functions);
+    setStatusFunctionCount(static_cast<int>(loadedArtifacts_->functions.size()));
+
+    if (stringsBrowser_) {
+        stringsBrowser_->setStrings(loadedArtifacts_->strings);
+    }
+    if (callGraph_ && !loadedArtifacts_->callGraphNodes.empty()) {
+        callGraph_->loadGraph(loadedArtifacts_->callGraphNodes,
+                             loadedArtifacts_->callGraphEdges);
+    }
+
+    const qint64 cSize = QFileInfo(absC).size();
     diagnostics_->addMessage(panels::DiagnosticEntry::Severity::Info,
             QStringLiteral("retdec-decompiler"),
-            QStringLiteral("Output: %1 (%2 KiB)").arg(cPath).arg(cBytes.size() / 1024));
+            QStringLiteral("Output: %1 (%2 KiB)").arg(absC).arg(cSize / 1024));
+    statusBar()->showMessage(
+            QStringLiteral("Loaded decompile artifacts (%1 KiB C, %2 functions)")
+                    .arg(cSize / 1024)
+                    .arg(loadedArtifacts_->functions.size()),
+            5000);
+
     if (documentTabs_)
         documentTabs_->setCurrentIndex(kDocDecompiledC);
 
-    // Populate Functions panel from the .config.json sidecar.
-    const QString cfgPath =
-            cPath.endsWith(QStringLiteral(".c"), Qt::CaseInsensitive)
-                    ? cPath.left(cPath.size() - 2) + QStringLiteral(".config.json")
-                    : cPath + QStringLiteral(".config.json");
-    QFile cfgFile(cfgPath);
-    if (cfgFile.open(QIODevice::ReadOnly)) {
-        const QByteArray cfgBytes = cfgFile.readAll();
-        cfgFile.close();
-        QJsonParseError pe{};
-        const QJsonDocument cfgDoc = QJsonDocument::fromJson(cfgBytes, &pe);
-        if (cfgDoc.isObject()) {
-            const QJsonArray fnArr =
-                    cfgDoc.object().value(QStringLiteral("functions")).toArray();
-            std::vector<panels::FunctionEntry> entries;
-            entries.reserve(static_cast<size_t>(fnArr.size()));
-            for (const QJsonValue& v : fnArr) {
-                if (!v.isObject()) continue;
-                const QJsonObject o = v.toObject();
-                panels::FunctionEntry e;
-                e.name    = o.value(QStringLiteral("name")).toString();
-                e.rawName = o.value(QStringLiteral("demangledName")).toString();
-                const QString sa = o.value(QStringLiteral("startAddr")).toString();
-                const QString ea = o.value(QStringLiteral("endAddr")).toString();
-                bool ok = false;
-                e.address = sa.startsWith(QStringLiteral("0x"), Qt::CaseInsensitive)
-                        ? sa.mid(2).toULongLong(&ok, 16)
-                        : sa.toULongLong(&ok, 10);
-                if (!ok) e.address = 0;
-                uint64_t end = ea.startsWith(QStringLiteral("0x"), Qt::CaseInsensitive)
-                        ? ea.mid(2).toULongLong(&ok, 16)
-                        : ea.toULongLong(&ok, 10);
-                if (ok && end > e.address)
-                    e.sizeBytes = static_cast<int>(end - e.address);
-                e.cc = o.value(QStringLiteral("callingConvention")).toString();
-                const QString fncType = o.value(QStringLiteral("fncType")).toString();
-                e.isLibrary = (fncType == QStringLiteral("staticallyLinked")
-                            || fncType == QStringLiteral("dynamicallyLinked"));
-                entries.push_back(std::move(e));
-            }
-            if (functionList_)
-                functionList_->setFunctions(std::move(entries));
-            setStatusFunctionCount(static_cast<int>(fnArr.size()));
-        }
+    if (reselectAddress) {
+        functionList_->selectFunction(*reselectAddress);
+    } else if (!loadedArtifacts_->functions.empty()) {
+        const auto& f0 = loadedArtifacts_->functions.front();
+        onFunctionArtifactViews(f0.address, f0.name);
     }
+
     return true;
+}
+
+void RetDecMainWindow::onFunctionArtifactViews(uint64_t address, const QString& name) {
+    if (!loadedArtifacts_)
+        return;
+    populateFunctionViews(*loadedArtifacts_, address, name,
+                          assembly_, irPanel_, cfgPanel_);
 }
 
 bool RetDecMainWindow::tryLoadCachedDecompile(const QString& binaryPath) {
     if (binaryPath.isEmpty())
         return false;
-    QString base = binaryPath;
-    const int dot = base.lastIndexOf(QLatin1Char('.'));
-    if (dot > 0) base = base.left(dot);
-    const QString cPath = base + QStringLiteral(".gui-decompiled.c");
+    const QString outDir = AppSettings::instance().decompiler.decompileOutputDir;
+    const QString cPath = locateGuiDecompiledCPath(binaryPath, outDir);
     const QFileInfo cFi(cPath);
     const QFileInfo bFi(binaryPath);
     if (!cFi.exists() || !bFi.exists())
@@ -784,7 +829,7 @@ bool RetDecMainWindow::tryLoadCachedDecompile(const QString& binaryPath) {
     // sidecar .config.json exists too (needed for the Functions panel).
     if (cFi.lastModified() < bFi.lastModified())
         return false;
-    const QString cfgPath = base + QStringLiteral(".gui-decompiled.config.json");
+    const QString cfgPath = pathsFromOutputC(cPath).configPath;
     if (!QFileInfo::exists(cfgPath))
         return false;
     if (!loadDecompileArtifacts(cPath))
@@ -829,33 +874,31 @@ void RetDecMainWindow::refreshTriageFromInspect() {
 // ─── Project management ──────────────────────────────────────────────────────
 
 void RetDecMainWindow::openBinary(const QString& path) {
-    setWindowTitle(QStringLiteral("RetDec — %1").arg(path));
-    project_ = std::make_unique<ProjectFile>(path);
+    const QString absPath = QFileInfo(path).absoluteFilePath();
+    setWindowTitle(QStringLiteral("RetDec — %1").arg(absPath));
+    project_ = std::make_unique<ProjectFile>(absPath);
     lastProjectSavePath_.clear();
-    setStatusFile(path);
-    addRecentFile(path);
-    binaryBrowser_->loadBinary(path);
+    setStatusFile(absPath);
+    addRecentFile(absPath);
+    binaryBrowser_->loadBinary(absPath);
     target_->setFromProject(project_.get());
-    signatureStudio_->setActiveBinary(path);
+    signatureStudio_->setActiveBinary(absPath);
     diagnostics_->clear();
     commandLog_->clear();
     liveConsole_->clear();
     progressPanel_->resetAll();
     if (triageBanner_) {
-        triageBanner_->setBinary(path);
+        triageBanner_->setBinary(absPath);
         triageBanner_->setActionsEnabled(true);
     }
     updateProjectFileActions();
     // Cache reuse: a 1 MB binary takes ~50 s to decompile from scratch on a
     // workstation. Re-opening the same binary in a session must not pay
-    // that again — if a fresh `.gui-decompiled.c` sits next to it, load
     // instantly and show a "press F5 to re-decompile" hint.
-    const bool cacheHit = tryLoadCachedDecompile(path);
-    // Skip the standalone retdec-fileinfo run when we have cached output —
-    // the config.json sidecar already contains the same metadata that
-    // fileinfo would produce. Saves ~1-2 s on every cached re-open.
-    if (!cacheHit)
-        inspect_->runFileinfo(path, resolveRetdecFileinfoExecutable());
+    tryLoadCachedDecompile(absPath);
+    // Always run fileinfo so Binary Browser gets sectionTable (unless headless quit).
+    if (!quitWhenDecompileFinishes_)
+        inspect_->runFileinfo(absPath, resolveRetdecFileinfoExecutable());
 }
 
 void RetDecMainWindow::openProject(const QString& path) {
@@ -940,16 +983,27 @@ void RetDecMainWindow::startAnalysis() {
 }
 
 void RetDecMainWindow::stopAnalysis() {
+    const bool stopBatch = batchRunning_;
     if (decompilerProc_ && decompilerProc_->state() != QProcess::NotRunning) {
         decompilerProc_->terminate();
         if (!decompilerProc_->waitForFinished(2000))
             decompilerProc_->kill();
         decompilerProc_->waitForFinished(1000);
     }
+    decompileLogPollTimer_->stop();
+    decompileLogOffset_ = 0;
+    decompileConsoleTailOffset_ = 0;
+    decompilerProc_->setStandardOutputFile(QString());
+    decompilerLogTemp_.reset();
     llvmPassesJsonTemp_.reset();
+    if (stopBatch)
+        finishBatchDecompile(true);
     if (!analysisRunning_) return;
     analysisRunning_ = false;
     analyseAction_->setEnabled(true);
+    if (redecompileFunctionAct_)
+        redecompileFunctionAct_->setEnabled(
+                functionList_ && functionList_->selectedEntry().has_value());
     stopAction_->setEnabled(false);
     elapsedTimer_->stop();
     analysisBar_->setVisible(false);
@@ -1032,6 +1086,58 @@ void RetDecMainWindow::onExportCMake() {
     statusBar()->showMessage(QStringLiteral("Wrote %1").arg(cmakePath), 5000);
 }
 
+void RetDecMainWindow::onExportDecompileBundle() {
+    const bool hasLoaded = loadedArtifacts_.has_value();
+    const QString cGuess = project_ ? guessDecompiledCPath(project_.get()) : QString{};
+    const bool hasOnDisk = !cGuess.isEmpty() && QFileInfo::exists(cGuess);
+    if (!hasLoaded && !hasOnDisk) {
+        QMessageBox::information(
+                this, QStringLiteral("Export Decompile Bundle"),
+                QStringLiteral("No decompiled artifacts found.\n\n"
+                               "Run Analysis → Run Full Analysis first."));
+        return;
+    }
+
+    const QString cPath = (hasLoaded && !loadedArtifacts_->cPath.isEmpty())
+                                  ? loadedArtifacts_->cPath
+                                  : cGuess;
+    const QFileInfo cFi(cPath);
+    const QString defaultZip = cFi.absolutePath() + QLatin1Char('/')
+            + cFi.completeBaseName() + QStringLiteral("-bundle.zip");
+    const QString zipPath = QFileDialog::getSaveFileName(
+            this, QStringLiteral("Export Decompile Bundle"), defaultZip,
+            QStringLiteral("ZIP archives (*.zip);;All files (*)"));
+    if (zipPath.isEmpty())
+        return;
+
+    DecompileBundleInput bundle;
+    bundle.cPath           = cPath;
+    bundle.decompilerExe   = lastDecompilerExe_;
+    bundle.decompilerArgs  = lastDecompilerArgs_;
+    bundle.decompilerCwd   = lastDecompilerCwd_;
+    if (decompilerLogTemp_)
+        bundle.logFilePath = decompilerLogTemp_->fileName();
+    else if (liveConsole_ && !liveConsole_->isEmpty()) {
+        QTemporaryFile tmp;
+        tmp.setAutoRemove(true);
+        if (tmp.open()) {
+            tmp.close();
+            if (liveConsole_->saveAs(tmp.fileName())) {
+                QFile f(tmp.fileName());
+                if (f.open(QIODevice::ReadOnly))
+                    bundle.logInline = f.readAll();
+            }
+        }
+    }
+
+    QString err;
+    if (!exportDecompileBundle(bundle, zipPath, &err)) {
+        QMessageBox::warning(this, QStringLiteral("Export Decompile Bundle"), err);
+        return;
+    }
+    statusBar()->showMessage(QStringLiteral("Exported bundle %1").arg(zipPath), 5000);
+}
+
 void RetDecMainWindow::onRecentFileTriggered() {
     auto* act = qobject_cast<QAction*>(sender());
     if (!act) return;
@@ -1047,84 +1153,155 @@ void RetDecMainWindow::onRunFullAnalysis() {
         onOpenBinary();
         return;
     }
+    if (batchRunning_) {
+        statusBar()->showMessage(QStringLiteral("Batch decompile in progress"), 2500);
+        return;
+    }
     if (decompilerProc_->state() != QProcess::NotRunning) {
         statusBar()->showMessage(QStringLiteral("Decompiler already running"), 2500);
         return;
     }
+    pendingReselectAddress_.reset();
+    launchDecompilerForBinary(QFileInfo(project_->binaryPath()).absoluteFilePath(),
+                                project_->arch());
+}
 
-    const QString decExe = resolveRetdecDecompilerExecutablePath();
-    if (decExe.isEmpty()) {
-        QMessageBox::warning(this, QStringLiteral("Decompiler"),
-                QStringLiteral("retdec-decompiler was not found next to the GUI or on PATH."));
+void RetDecMainWindow::onRedecompileSelectedFunction() {
+    if (!project_) {
+        statusBar()->showMessage(QStringLiteral("Open a binary first"), 2500);
+        return;
+    }
+    if (batchRunning_) {
+        statusBar()->showMessage(QStringLiteral("Batch decompile in progress"), 2500);
+        return;
+    }
+    if (decompilerProc_->state() != QProcess::NotRunning) {
+        statusBar()->showMessage(QStringLiteral("Decompiler already running"), 2500);
+        return;
+    }
+    if (!functionList_) {
+        return;
+    }
+    const auto entry = functionList_->selectedEntry();
+    if (!entry) {
+        statusBar()->showMessage(QStringLiteral("Select a function in the Functions list"), 2500);
         return;
     }
 
-    QString base = project_->binaryPath();
-    const int dot = base.lastIndexOf(QLatin1Char('.'));
-    if (dot > 0) base = base.left(dot);
-    decompilerOutputPath_ = base + QStringLiteral(".gui-decompiled.c");
+    pendingReselectAddress_ = entry->address;
+    const QString cliName = entry->selectFunctionsCliName();
+    if (!launchDecompilerForBinary(
+                QFileInfo(project_->binaryPath()).absoluteFilePath(),
+                project_->arch(),
+                {cliName})) {
+        pendingReselectAddress_.reset();
+    }
+}
 
-    QStringList args;
-    auto& st = AppSettings::instance();
-    if (!st.decompiler.extraConfigPath.isEmpty()) {
-        if (QFileInfo::exists(st.decompiler.extraConfigPath)) {
-            args << QStringLiteral("--config") << st.decompiler.extraConfigPath;
+bool RetDecMainWindow::launchDecompilerForBinary(const QString& absBinary,
+                                                  const QString& arch,
+                                                  const QStringList& selectedFunctions) {
+    if (decompilerProc_->state() != QProcess::NotRunning)
+        return false;
+
+    const QString decExe = resolveRetdecDecompilerExecutablePath();
+    if (decExe.isEmpty()) {
+        if (!quitWhenDecompileFinishes_) {
+            QMessageBox::warning(this, QStringLiteral("Decompiler"),
+                    QStringLiteral("retdec-decompiler was not found next to the GUI or on PATH."));
         } else {
-            diagnostics_->addMessage(
-                    panels::DiagnosticEntry::Severity::Warning,
+            diagnostics_->addMessage(panels::DiagnosticEntry::Severity::Error,
                     QStringLiteral("retdec-decompiler"),
-                    QStringLiteral("Configured --config file missing: %1")
-                            .arg(st.decompiler.extraConfigPath));
+                    QStringLiteral("retdec-decompiler was not found next to the GUI or on PATH."));
+            writeHeadlessDecompileReport(0, -2, QString());
+            QCoreApplication::quit();
         }
+        return false;
     }
 
-    args << project_->binaryPath()
-         << QStringLiteral("-o") << decompilerOutputPath_
-         << QStringLiteral("-f") << QStringLiteral("plain")
-         // --silent suppresses chatty informative output. Doesn't measurably
-         // change runtime (we measured <1% on a 1 MB binary) but reduces
-         // pipe traffic, which matters when the user has the Console docked.
-         << QStringLiteral("-s");
-    {
-        const QString arch = project_->arch().trimmed();
-        if (!arch.isEmpty()) args << QStringLiteral("-a") << arch;
+    auto& st = AppSettings::instance();
+    // Headless / parity runs must match a plain CLI invocation — ignore saved
+    // decompiler overrides (--config, custom LLVM pass lists, output dir, etc.).
+    const QString outDir = quitWhenDecompileFinishes_
+            ? QString()
+            : st.decompiler.decompileOutputDir.trimmed();
+    if (!outDir.isEmpty() && !QDir().mkpath(outDir)) {
+        if (!quitWhenDecompileFinishes_) {
+            QMessageBox::warning(this, QStringLiteral("Decompiler"),
+                    QStringLiteral("Could not create decompile output directory:\n%1").arg(outDir));
+        } else {
+            diagnostics_->addMessage(panels::DiagnosticEntry::Severity::Error,
+                    QStringLiteral("retdec-decompiler"),
+                    QStringLiteral("Could not create decompile output directory: %1").arg(outDir));
+            writeHeadlessDecompileReport(0, -3, QString());
+            QCoreApplication::quit();
+        }
+        return false;
     }
-    if (fastDecompile_) {
-        // Fast preview mode: skips backend (HLL) optimizations and the
-        // statically-linked-code detector. Output reads worse but typical
-        // wall time drops markedly because the HLL optimizer is a heavy
-        // O(functions × passes) loop.
-        args << QStringLiteral("--backend-no-opts")
-             << QStringLiteral("--disable-static-code-detection");
-    }
-    if (decompilePrintAfterAll_) args << QStringLiteral("--print-after-all");
+    decompilerOutputPath_ = resolveGuiDecompiledCPath(absBinary, outDir);
 
+    DecompilerLaunchRequest req;
+    req.binaryPath    = absBinary;
+    req.outputPath    = decompilerOutputPath_;
+    req.arch          = arch;
+    req.fastDecompile = fastDecompile_;
+    req.printAfterAll = quitWhenDecompileFinishes_ ? false : decompilePrintAfterAll_;
+    req.selectedFunctions = selectedFunctions;
+    req.decompiler    = quitWhenDecompileFinishes_ ? DecompilerSettings{} : st.decompiler;
+
+    QString buildErr;
     llvmPassesJsonTemp_.reset();
-    // Use a custom passes list whenever the user is using either the
-    // settings-driven custom set OR Fast mode (which selects the trimmed
-    // built-in preset).
-    if (st.decompiler.useCustomLlvmPasses || fastDecompile_) {
-        QString err;
-        llvmPassesJsonTemp_ = makeLlvmPassesJsonTempFile(
-                st.decompiler, fastDecompile_, &err);
-        if (!llvmPassesJsonTemp_) {
-            QMessageBox::warning(this, QStringLiteral("Decompiler"), err);
-            return;
+    const QStringList args = buildDecompilerArguments(
+            req, &buildErr, &llvmPassesJsonTemp_);
+    if (args.isEmpty()) {
+        if (!quitWhenDecompileFinishes_) {
+            QMessageBox::warning(this, QStringLiteral("Decompiler"),
+                    buildErr.isEmpty()
+                            ? QStringLiteral("Could not build decompiler arguments.")
+                            : buildErr);
+        } else {
+            diagnostics_->addMessage(panels::DiagnosticEntry::Severity::Error,
+                    QStringLiteral("retdec-decompiler"), buildErr);
         }
-        llvmPassesJsonTemp_->flush();
-        llvmPassesJsonTemp_->close();
-        args << QStringLiteral("--llvm-passes-json")
-             << llvmPassesJsonTemp_->fileName();
+        return false;
     }
+    if (!buildErr.isEmpty()) {
+        diagnostics_->addMessage(
+                panels::DiagnosticEntry::Severity::Warning,
+                QStringLiteral("retdec-decompiler"), buildErr);
+    }
+
+    decompilerLogTemp_ = std::make_unique<QTemporaryFile>();
+    decompilerLogTemp_->setAutoRemove(true);
+    if (!decompilerLogTemp_->open()) {
+        if (!quitWhenDecompileFinishes_) {
+            QMessageBox::warning(this, QStringLiteral("Decompiler"),
+                    QStringLiteral("Could not create a temporary log file for decompiler output."));
+        }
+        llvmPassesJsonTemp_.reset();
+        decompilerLogTemp_.reset();
+        return false;
+    }
+    decompilerLogTemp_->close();
+    const QString logPath = decompilerLogTemp_->fileName();
 
     analysisRunning_ = true;
     analyseAction_->setEnabled(false);
+    if (redecompileFunctionAct_)
+        redecompileFunctionAct_->setEnabled(false);
     stopAction_->setEnabled(true);
     analysisBar_->setVisible(true);
     analysisBar_->setRange(0, 0);
     wallClock_.start();
     elapsedTimer_->start();
-    setStatusStage(QStringLiteral("Decompiling (retdec-decompiler)…"));
+    decompileLogOffset_ = 0;
+    decompileConsoleTailOffset_ = 0;
+    if (batchRunning_)
+        updateBatchStatusMessage(QStringLiteral("Decompiling…"));
+    else if (!selectedFunctions.isEmpty())
+        setStatusStage(QStringLiteral("Re-decompiling %1…").arg(selectedFunctions.first()));
+    else
+        setStatusStage(QStringLiteral("Decompiling (retdec-decompiler)…"));
 
     lastDecompilerExe_  = decExe;
     lastDecompilerArgs_ = args;
@@ -1132,22 +1309,124 @@ void RetDecMainWindow::onRunFullAnalysis() {
 
     if (liveConsole_) {
         liveConsole_->appendBanner(QStringLiteral("retdec-decompiler"), args, lastDecompilerCwd_);
-        if (dockOutput_) { dockOutput_->show(); dockOutput_->raise(); }
-        streamProcessToConsole(decompilerProc_, QStringLiteral("retdec-decompiler"));
+        const bool streamLog = st.decompiler.liveConsoleTail && !quitWhenDecompileFinishes_;
+        liveConsole_->appendLine(
+                panels::LiveConsolePanel::Stream::Stdout,
+                streamLog
+                        ? QStringLiteral("(stdout/stderr redirected to %1 — streaming log to console)")
+                                .arg(logPath)
+                        : QStringLiteral("(stdout/stderr redirected to %1 — console updates when the run finishes)")
+                                .arg(logPath));
+        if (dockOutput_) focusOutputTab(kOutConsole);
     }
 
     decompilerProc_->setProgram(decExe);
     decompilerProc_->setArguments(args);
     decompilerProc_->setWorkingDirectory(lastDecompilerCwd_);
     decompilerProc_->setProcessChannelMode(QProcess::MergedChannels);
+    decompilerProc_->setStandardOutputFile(logPath);
     decompilerProc_->start();
     if (!decompilerProc_->waitForStarted(5000)) {
-        QMessageBox::warning(this, QStringLiteral("Decompiler"),
-                QStringLiteral("Failed to start retdec-decompiler."));
+        if (!quitWhenDecompileFinishes_) {
+            QMessageBox::warning(this, QStringLiteral("Decompiler"),
+                    QStringLiteral("Failed to start retdec-decompiler."));
+        }
+        decompilerProc_->setStandardOutputFile(QString());
         llvmPassesJsonTemp_.reset();
-        if (liveConsole_) liveConsole_->detachProcess(decompilerProc_);
+        decompilerLogTemp_.reset();
         finishExternalDecompileUi();
+        if (quitWhenDecompileFinishes_) {
+            writeHeadlessDecompileReport(wallClock_.elapsed(), -1, decompilerOutputPath_);
+            QCoreApplication::quit();
+        }
+        return false;
     }
+
+    if (!quitWhenDecompileFinishes_)
+        decompileLogPollTimer_->start();
+    return true;
+}
+
+void RetDecMainWindow::onBatchDecompile() {
+    if (quitWhenDecompileFinishes_)
+        return;
+    if (batchRunning_) {
+        statusBar()->showMessage(QStringLiteral("Batch decompile already running"), 2500);
+        return;
+    }
+    if (decompilerProc_->state() != QProcess::NotRunning) {
+        statusBar()->showMessage(QStringLiteral("Decompiler already running"), 2500);
+        return;
+    }
+
+    BatchDecompileDialog dlg(this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    const QStringList paths = dlg.binaryPaths();
+    if (paths.isEmpty())
+        return;
+
+    startBatchDecompile(paths);
+}
+
+void RetDecMainWindow::startBatchDecompile(const QStringList& paths) {
+    batchQueue_   = paths;
+    batchTotal_   = paths.size();
+    batchRunning_ = true;
+    processNextBatchItem();
+}
+
+void RetDecMainWindow::processNextBatchItem() {
+    if (!batchRunning_ || batchQueue_.isEmpty()) {
+        finishBatchDecompile(false);
+        return;
+    }
+
+    const QString absBinary = QFileInfo(batchQueue_.first()).absoluteFilePath();
+    const QString arch =
+            (project_ &&
+             QFileInfo(project_->binaryPath()).absoluteFilePath() == absBinary)
+                    ? project_->arch()
+                    : QString();
+
+    updateBatchStatusMessage(QStringLiteral("Starting…"));
+
+    if (launchDecompilerForBinary(absBinary, arch))
+        return;
+
+    batchDecompilePopFront(&batchQueue_);
+    if (batchRunning_ && !batchQueue_.isEmpty())
+        QTimer::singleShot(0, this, &RetDecMainWindow::processNextBatchItem);
+    else
+        finishBatchDecompile(false);
+}
+
+void RetDecMainWindow::finishBatchDecompile(bool cancelled) {
+    if (!batchRunning_ && batchQueue_.isEmpty() && batchTotal_ == 0)
+        return;
+
+    const int total = batchTotal_;
+    batchQueue_.clear();
+    batchTotal_   = 0;
+    batchRunning_ = false;
+
+    if (cancelled) {
+        statusBar()->showMessage(QStringLiteral("Batch decompile cancelled"), 5000);
+    } else if (total > 0) {
+        statusBar()->showMessage(
+                QStringLiteral("Batch decompile finished (%1 files)").arg(total), 8000);
+    }
+}
+
+void RetDecMainWindow::updateBatchStatusMessage(const QString& stageSuffix) {
+    if (!batchRunning_ || batchQueue_.isEmpty())
+        return;
+    const int index = batchDecompileCurrentIndex(batchTotal_, batchQueue_.size());
+    QString msg = batchDecompileStatusLabel(index, batchTotal_, batchQueue_.first());
+    if (!stageSuffix.isEmpty())
+        msg += QStringLiteral(" — ") + stageSuffix;
+    statusBar()->showMessage(msg);
 }
 
 void RetDecMainWindow::onRunStage() {
@@ -1170,7 +1449,7 @@ void RetDecMainWindow::onRunStage() {
         return;
     }
     inspect_->runFileinfo(project_->binaryPath(), fi);
-    if (dockOutput_) { dockOutput_->show(); dockOutput_->raise(); }
+    focusOutputTab(kOutConsole);
 }
 
 void RetDecMainWindow::onConfigure() {
@@ -1260,8 +1539,14 @@ void RetDecMainWindow::onOpenDocumentation() {
 }
 
 void RetDecMainWindow::finishExternalDecompileUi() {
+    decompileLogPollTimer_->stop();
+    decompileLogOffset_ = 0;
+    decompileConsoleTailOffset_ = 0;
     analysisRunning_ = false;
     analyseAction_->setEnabled(true);
+    if (redecompileFunctionAct_)
+        redecompileFunctionAct_->setEnabled(
+                functionList_ && functionList_->selectedEntry().has_value());
     stopAction_->setEnabled(false);
     elapsedTimer_->stop();
     analysisBar_->setVisible(false);
@@ -1269,86 +1554,118 @@ void RetDecMainWindow::finishExternalDecompileUi() {
 }
 
 void RetDecMainWindow::onDecompilerProcessFinished(int exitCode, QProcess::ExitStatus) {
-    llvmPassesJsonTemp_.reset();
-    // Drain the tail. LiveConsolePanel also drains in its own finished slot,
-    // but our slot may fire first (depending on connection order); reading
-    // here is safe — QProcess marks the buffers as consumed on first read.
-    const QByteArray stdoutTail = decompilerProc_->readAllStandardOutput();
-    const QByteArray stderrTail = decompilerProc_->readAllStandardError();
+    const qint64 decompileMs = wallClock_.elapsed();
+    lastDecompileSubprocessMs_ = decompileMs;
+
+    QString logPath;
+    if (decompilerLogTemp_)
+        logPath = decompilerLogTemp_->fileName();
+
+    decompilerProc_->setStandardOutputFile(QString());
+
     if (liveConsole_) {
-        if (!stdoutTail.isEmpty())
-            liveConsole_->appendChunk(panels::LiveConsolePanel::Stream::Stdout, stdoutTail);
-        if (!stderrTail.isEmpty())
-            liveConsole_->appendChunk(panels::LiveConsolePanel::Stream::Stderr, stderrTail);
+        if (!logPath.isEmpty()) {
+            const bool streamed =
+                    AppSettings::instance().decompiler.liveConsoleTail &&
+                    !quitWhenDecompileFinishes_;
+            if (streamed) {
+                while (appendDecompilerLogIncrementalToConsole(
+                        liveConsole_, logPath, &decompileConsoleTailOffset_))
+                    ;
+            } else {
+                appendDecompilerLogToConsole(liveConsole_, logPath);
+            }
+        }
+        liveConsole_->appendFooter(QStringLiteral("retdec-decompiler"), exitCode, decompileMs);
     }
 
-    // Performance fix: do NOT dump the entire decompiler output into a single
-    // Diagnostic row — for a multi-MB log this used to stutter the table for
-    // several seconds when the Problems tab was raised. Instead, scan the
-    // tail (and any leftover stderr) for warning/error lines and add one
-    // diagnostic per match; the full output stays available in the Console.
-    auto addLineDiagnostics = [this](const QByteArray& blob,
-                                     panels::DiagnosticEntry::Severity defaultSev) {
-        if (blob.isEmpty())
-            return;
-        const QString text = QString::fromUtf8(blob);
-        const QStringList lines = text.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-        // Cap how many we surface so a runaway pass can't flood Problems either.
-        int added = 0;
-        for (const QString& l : lines) {
-            const QString trimmed = l.trimmed();
-            if (trimmed.isEmpty()) continue;
-            auto sev = defaultSev;
-            if (trimmed.contains(QStringLiteral("error"), Qt::CaseInsensitive) ||
-                trimmed.startsWith(QStringLiteral("[error]"), Qt::CaseInsensitive)) {
-                sev = panels::DiagnosticEntry::Severity::Error;
-            } else if (trimmed.contains(QStringLiteral("warning"), Qt::CaseInsensitive) ||
-                       trimmed.startsWith(QStringLiteral("[warn]"), Qt::CaseInsensitive)) {
-                sev = panels::DiagnosticEntry::Severity::Warning;
-            } else if (defaultSev == panels::DiagnosticEntry::Severity::Info) {
-                // Skip routine info lines — they're already in the Console.
-                continue;
-            }
-            diagnostics_->addMessage(sev, QStringLiteral("retdec-decompiler"), trimmed);
-            if (++added >= 200)
-                break;
-        }
-    };
-    addLineDiagnostics(stderrTail, panels::DiagnosticEntry::Severity::Warning);
-    addLineDiagnostics(stdoutTail, panels::DiagnosticEntry::Severity::Info);
+    scanDecompilerLogDiagnostics(diagnostics_, logPath);
 
     if (commandLog_) {
-        QString tail = QString::fromUtf8(stdoutTail + stderrTail);
-        if (tail.size() > 4000) tail = tail.left(4000) + QStringLiteral("\n…");
+        QString tail;
+        if (!logPath.isEmpty()) {
+            QFile f(logPath);
+            if (f.open(QIODevice::ReadOnly)) {
+                constexpr qint64 kTailBytes = 4000;
+                const qint64 sz = f.size();
+                if (sz > kTailBytes)
+                    f.seek(sz - kTailBytes);
+                tail = QString::fromUtf8(f.readAll());
+                if (sz > kTailBytes)
+                    tail = QStringLiteral("…\n") + tail;
+            }
+        }
         commandLog_->appendRun(QStringLiteral("retdec-decompiler"), lastDecompilerArgs_,
-                               lastDecompilerCwd_, exitCode, wallClock_.elapsed(), tail);
+                               lastDecompilerCwd_, exitCode, decompileMs, tail);
     }
-    if (liveConsole_) {
-        liveConsole_->appendFooter(QStringLiteral("retdec-decompiler"),
-                                   exitCode, wallClock_.elapsed());
-        liveConsole_->detachProcess(decompilerProc_);
-    }
+
+    llvmPassesJsonTemp_.reset();
+    decompilerLogTemp_.reset();
+
+    const bool wasBatch = batchRunning_;
+    if (wasBatch)
+        batchDecompilePopFront(&batchQueue_);
+
     if (exitCode == 0) {
-        if (!loadDecompileArtifacts(decompilerOutputPath_)) {
-            diagnostics_->addMessage(panels::DiagnosticEntry::Severity::Warning,
-                    QStringLiteral("retdec-decompiler"),
-                    QStringLiteral("Finished but could not read: %1")
-                            .arg(decompilerOutputPath_));
+        if (!quitWhenDecompileFinishes_ && !wasBatch) {
+            const QString cPath = decompilerOutputPath_;
+            const auto reselect = pendingReselectAddress_;
+            pendingReselectAddress_.reset();
+            QTimer::singleShot(0, this, [this, cPath, decompileMs, reselect]() {
+                wallClock_.restart();
+                const bool ok = loadDecompileArtifacts(cPath, reselect);
+                const qint64 loadMs = wallClock_.elapsed();
+                if (!ok) {
+                    diagnostics_->addMessage(panels::DiagnosticEntry::Severity::Warning,
+                            QStringLiteral("retdec-decompiler"),
+                            QStringLiteral("Finished but could not read: %1").arg(cPath));
+                } else {
+                    statusBar()->showMessage(
+                            QStringLiteral("Decompile %1 s · load %2 s")
+                                    .arg(decompileMs / 1000.0, 0, 'f', 1)
+                                    .arg(loadMs / 1000.0, 0, 'f', 1),
+                            8000);
+                }
+            });
         }
     } else {
+        pendingReselectAddress_.reset();
         diagnostics_->addMessage(panels::DiagnosticEntry::Severity::Error,
                                  QStringLiteral("retdec-decompiler"),
                                  QStringLiteral("Exit code %1").arg(exitCode));
-        QMessageBox::warning(this, QStringLiteral("Decompiler"),
-                QStringLiteral("retdec-decompiler failed (exit %1). See Problems.")
-                        .arg(exitCode));
+        if (!quitWhenDecompileFinishes_ && !wasBatch) {
+            QMessageBox::warning(this, QStringLiteral("Decompiler"),
+                    QStringLiteral("retdec-decompiler failed (exit %1). See Problems.")
+                            .arg(exitCode));
+        }
     }
     finishExternalDecompileUi();
+
+    if (wasBatch && batchRunning_) {
+        if (!batchQueue_.isEmpty()) {
+            QTimer::singleShot(0, this, &RetDecMainWindow::processNextBatchItem);
+            return;
+        }
+        finishBatchDecompile(false);
+        return;
+    }
+
+    if (quitWhenDecompileFinishes_) {
+        writeHeadlessDecompileReport(decompileMs, exitCode, decompilerOutputPath_,
+                                     lastDecompilerArgs_);
+        QCoreApplication::quit();
+    }
 }
 
 void RetDecMainWindow::onDecompilerProcessError(QProcess::ProcessError) {
+    decompileLogPollTimer_->stop();
+    decompilerProc_->setStandardOutputFile(QString());
     llvmPassesJsonTemp_.reset();
+    decompilerLogTemp_.reset();
     if (!analysisRunning_) return;
+    const bool wasBatch = batchRunning_;
+    if (wasBatch)
+        batchDecompilePopFront(&batchQueue_);
     const QString err = decompilerProc_->errorString();
     diagnostics_->addMessage(panels::DiagnosticEntry::Severity::Error,
                              QStringLiteral("retdec-decompiler"), err);
@@ -1358,10 +1675,22 @@ void RetDecMainWindow::onDecompilerProcessError(QProcess::ProcessError) {
     }
     if (liveConsole_) {
         liveConsole_->appendLine(panels::LiveConsolePanel::Stream::Stderr, err);
-        liveConsole_->detachProcess(decompilerProc_);
     }
-    QMessageBox::warning(this, QStringLiteral("Decompiler"), err);
+    if (!quitWhenDecompileFinishes_ && !wasBatch) {
+        QMessageBox::warning(this, QStringLiteral("Decompiler"), err);
+    } else if (quitWhenDecompileFinishes_) {
+        writeHeadlessDecompileReport(wallClock_.elapsed(), -1, decompilerOutputPath_);
+        QCoreApplication::quit();
+    }
     finishExternalDecompileUi();
+
+    if (wasBatch && batchRunning_) {
+        if (!batchQueue_.isEmpty()) {
+            QTimer::singleShot(0, this, &RetDecMainWindow::processNextBatchItem);
+            return;
+        }
+        finishBatchDecompile(false);
+    }
 }
 
 void RetDecMainWindow::onAbout() {
@@ -1373,7 +1702,8 @@ void RetDecMainWindow::onAbout() {
         "recovery.</p>"
         "<p>Centre tabs: <b>Ctrl+1</b>…<b>Ctrl+5</b> "
         "(Decompiled C, Assembly, IR, CFG, Synced).</p>"
-        "<p>Toggle the live console with <b>Ctrl+`</b>.</p>"
+        "<p>Toggle the live console with <b>Ctrl+`</b>; "
+        "Problems tab with <b>Ctrl+Shift+`</b>.</p>"
         "<p>Theme: Catppuccin Mocha &nbsp;|&nbsp; Qt6</p>"));
 }
 
@@ -1382,9 +1712,34 @@ void RetDecMainWindow::onAnalysisStageChanged(const QString& stage) {
     if (progressPanel_) progressPanel_->setStageState(stage, panels::StageState::Running);
 }
 
+void RetDecMainWindow::onDecompileLogPollTick() {
+    if (!decompilerLogTemp_)
+        return;
+
+    const QString logPath = decompilerLogTemp_->fileName();
+
+    DecompileLogProgress prog;
+    if (pollDecompileLogProgress(logPath, &decompileLogOffset_, &prog)) {
+        if (batchRunning_)
+            updateBatchStatusMessage(prog.stage);
+        else
+            setStatusStage(prog.stage);
+        setAnalysisProgress(prog.percent);
+    }
+
+    if (liveConsole_ && AppSettings::instance().decompiler.liveConsoleTail &&
+        !quitWhenDecompileFinishes_) {
+        appendDecompilerLogIncrementalToConsole(
+                liveConsole_, logPath, &decompileConsoleTailOffset_);
+    }
+}
+
 void RetDecMainWindow::onAnalysisFinished() {
     analysisRunning_ = false;
     analyseAction_->setEnabled(true);
+    if (redecompileFunctionAct_)
+        redecompileFunctionAct_->setEnabled(
+                functionList_ && functionList_->selectedEntry().has_value());
     stopAction_->setEnabled(false);
     elapsedTimer_->stop();
     analysisBar_->setRange(0, 100);

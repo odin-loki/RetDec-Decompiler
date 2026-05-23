@@ -32,6 +32,8 @@ public:
     explicit DecompiledCPanel(QWidget* parent = nullptr);
 
     void setSource(const QString& cSource);
+    /// Load from disk (uses chunked/async path for large files).
+    bool setSourceFromPath(const QString& path);
     void clear() override;
 
     /** @brief Current editor text (for diff / export helpers). */

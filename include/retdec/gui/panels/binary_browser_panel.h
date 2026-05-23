@@ -3,8 +3,11 @@
 
 #include "retdec/gui/panels/panel_base.h"
 
+#include <QJsonObject>
+
 QT_BEGIN_NAMESPACE
 class QTreeWidget;
+class QTreeWidgetItem;
 class QLabel;
 class QSplitter;
 class QPlainTextEdit;
@@ -27,14 +30,18 @@ public:
     explicit BinaryBrowserPanel(QWidget* parent = nullptr);
 
     void loadBinary(const QString& path);
+    void populateFromFileinfo(const QJsonObject& root);
     void clear() override;
 
 private slots:
     void onItemDoubleClicked();
+    void onSelectionChanged();
 
 private:
     void setupUI();
+    void showHexForItem(QTreeWidgetItem* item);
 
+    QString        binaryPath_;
     QSplitter*     splitter_     = nullptr;
     QTreeWidget*   sectionTree_  = nullptr;
     QLabel*        hexHeader_    = nullptr;

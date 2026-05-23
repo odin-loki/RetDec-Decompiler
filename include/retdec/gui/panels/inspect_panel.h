@@ -4,6 +4,7 @@
 #include "retdec/gui/panels/panel_base.h"
 
 #include <QElapsedTimer>
+#include <QJsonObject>
 #include <QProcess>
 
 QT_BEGIN_NAMESPACE
@@ -29,6 +30,7 @@ public:
     explicit InspectPanel(QWidget* parent = nullptr);
 
     void runFileinfo(const QString& binaryPath, const QString& fileinfoExecutable);
+    const QJsonObject& fileinfoJson() const { return lastFileinfoJson_; }
     void clear() override;
 
 signals:
@@ -46,6 +48,8 @@ signals:
      * @param label Display label, e.g. "retdec-fileinfo".
      */
     void processStarting(QProcess* proc, const QString& label);
+    /// Parsed fileinfo JSON for the binary at @a absPath (empty object on failure).
+    void fileinfoReady(const QJsonObject& root, const QString& absPath);
 
 private slots:
     void onRefreshClicked();
@@ -65,6 +69,8 @@ private:
     void updateButtonStates();
 
     QString lastBinaryPath_;
+    QString lastFileinfoBinaryPath_;
+    QJsonObject lastFileinfoJson_;
     QString fileinfoExe_;
     QProcess* fileinfoProc_ = nullptr;
     QProcess* unpackProc_ = nullptr;

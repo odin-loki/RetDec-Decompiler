@@ -6,7 +6,7 @@
  *  * Centre tab order: Decompiled C | Assembly | IR (SSA) | CFG | Synced.
  *  * Left dock = Functions (single panel, no inner tab strip).
  *  * Right dock = Workspace tabbed: Strings | Inspect (only).
- *  * Bottom dock = Output tabbed: Console | Problems | Command log | Progress.
+ *  * Bottom dock = Output tabbed: Console | Problems.
  *  * No mode toolbar.
  */
 
@@ -51,17 +51,16 @@ TEST_F(MainWindowLayoutTest, ConstructsAndHasCentralTabs) {
     EXPECT_TRUE(docs->tabText(4).contains(QStringLiteral("Synced")));
 }
 
-TEST_F(MainWindowLayoutTest, BottomDockHostsLiveConsoleDirectly) {
-    // v3.1: Output dock used to host a 4-tab QTabWidget (Console / Problems /
-    // Command log / Progress). The latter three were either always empty or
-    // duplicated info already in the Console. The bottom dock now hosts the
-    // LiveConsolePanel directly, no tab strip.
+TEST_F(MainWindowLayoutTest, BottomDockHasConsoleAndProblemsTabs) {
     auto* output = win->outputDockForTest();
     ASSERT_NE(output, nullptr);
-    EXPECT_EQ(output->widget(), win->liveConsoleForTest());
-    // No leftover QTabWidget child.
-    EXPECT_EQ(output->findChildren<QTabWidget*>().size(), 0);
-    EXPECT_EQ(win->outputTabsForTest(), nullptr);
+    auto* tabs = win->outputTabsForTest();
+    ASSERT_NE(tabs, nullptr);
+    EXPECT_EQ(output->widget(), tabs);
+    EXPECT_EQ(tabs->count(), 2);
+    EXPECT_EQ(tabs->tabText(0), QStringLiteral("Console"));
+    EXPECT_EQ(tabs->tabText(1), QStringLiteral("Problems"));
+    EXPECT_EQ(tabs->widget(0), win->liveConsoleForTest());
 }
 
 TEST_F(MainWindowLayoutTest, LeftFunctionsDockIsSinglePanelNotTabbed) {

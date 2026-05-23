@@ -512,6 +512,35 @@ QWidget* SettingsDialog::buildDecompilerTab() {
     connect(llvmPassesDefaultBtn_, &QPushButton::clicked,
             this, &SettingsDialog::onDecompilerPassesDefaults);
 
+    l->addWidget(makeSeparator("Output location"));
+
+    {
+        auto* row = new QWidget;
+        auto* rl  = new QHBoxLayout(row);
+        rl->setContentsMargins(0, 0, 0, 0);
+        auto* lbl = new QLabel("Decompile output directory:", row);
+        lbl->setMinimumWidth(180);
+        decompileOutputDirEdit_ = new QLineEdit(row);
+        decompileOutputDirBtn_  = new QToolButton(row);
+        decompileOutputDirBtn_->setText(QStringLiteral("…"));
+        rl->addWidget(lbl);
+        rl->addWidget(decompileOutputDirEdit_, 1);
+        rl->addWidget(decompileOutputDirBtn_);
+        l->addWidget(row);
+        l->addWidget(new QLabel(
+            "<span style='color:#888;'>Set a folder outside OneDrive to keep large "
+            "`.gui-decompiled.*` artifacts out of sync. Leave empty to write beside the binary.</span>"));
+    }
+
+    connect(decompileOutputDirBtn_, &QToolButton::clicked,
+            this, &SettingsDialog::onBrowseDecompileOutputDir);
+
+    l->addWidget(makeSeparator("Console"));
+
+    liveConsoleTailCheck_ = new QCheckBox(
+        "Stream decompiler log to console (may slow decompile on huge logs)");
+    l->addWidget(liveConsoleTailCheck_);
+
     l->addWidget(makeSeparator("Configuration file"));
 
     {
@@ -706,6 +735,10 @@ void SettingsDialog::populateFromSettings() {
     }
     if (decompilerConfigEdit_)
         decompilerConfigEdit_->setText(s.decompiler.extraConfigPath);
+    if (decompileOutputDirEdit_)
+        decompileOutputDirEdit_->setText(s.decompiler.decompileOutputDir);
+    if (liveConsoleTailCheck_)
+        liveConsoleTailCheck_->setChecked(s.decompiler.liveConsoleTail);
 }
 
 // ─── applyToSettings ─────────────────────────────────────────────────────────
@@ -789,6 +822,10 @@ void SettingsDialog::applyToSettings() {
     }
     if (decompilerConfigEdit_)
         s.decompiler.extraConfigPath = decompilerConfigEdit_->text();
+    if (decompileOutputDirEdit_)
+        s.decompiler.decompileOutputDir = decompileOutputDirEdit_->text().trimmed();
+    if (liveConsoleTailCheck_)
+        s.decompiler.liveConsoleTail = liveConsoleTailCheck_->isChecked();
 
     s.notifySettingsChanged();
 }
@@ -903,6 +940,14 @@ void SettingsDialog::onBrowseDecompilerConfig() {
             QStringLiteral("JSON (*.json);;All files (*)"));
     if (!path.isEmpty() && decompilerConfigEdit_)
         decompilerConfigEdit_->setText(path);
+}
+
+void SettingsDialog::onBrowseDecompileOutputDir() {
+    QString path = QFileDialog::getExistingDirectory(
+            this, QStringLiteral("Decompile output directory"),
+            decompileOutputDirEdit_ ? decompileOutputDirEdit_->text() : QString());
+    if (!path.isEmpty() && decompileOutputDirEdit_)
+        decompileOutputDirEdit_->setText(path);
 }
 
 } // namespace retdec::gui::panels

@@ -51,7 +51,6 @@ void DecompiledCPanel::setupUI() {
 }
 
 void DecompiledCPanel::setSource(const QString& cSource) {
-    // Three regimes:
     //  1. Small (≤ 256 KiB):     one setPlainText, instant.
     //  2. Medium (≤ 2 MiB):      synchronous chunked insert (~hundreds of ms,
     //                            acceptable as a one-time pause at end of run).
@@ -91,6 +90,14 @@ void DecompiledCPanel::setSource(const QString& cSource) {
     // Large: stream asynchronously.
     pendingLoadTotal_ = cSource.size();
     scheduleAsyncLoad(cSource);
+}
+
+bool DecompiledCPanel::setSourceFromPath(const QString& path) {
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return false;
+    setSource(QString::fromUtf8(f.readAll()));
+    return true;
 }
 
 void DecompiledCPanel::scheduleAsyncLoad(QString remainder) {

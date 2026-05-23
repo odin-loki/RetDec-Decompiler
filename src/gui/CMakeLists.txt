@@ -18,6 +18,11 @@ set(CMAKE_AUTORCC ON)
 
 set(GUI_PANEL_SOURCES
     cli_tool_paths.cpp
+    decompiler_launch.cpp
+    batch_decompile_queue.cpp
+    artifact_loader.cpp
+    zip_writer.cpp
+    export_bundle.cpp
     panels/inspect_panel.cpp
     panels/command_log_panel.cpp
     panels/live_console_panel.cpp
@@ -47,6 +52,11 @@ set(GUI_PANEL_SOURCES
 # Panel library MOC headers only — mainwindow / project_file are linked with retdec-gui.
 set(GUI_HEADERS
     ${PROJECT_SOURCE_DIR}/include/retdec/gui/cli_tool_paths.h
+    ${PROJECT_SOURCE_DIR}/include/retdec/gui/decompiler_launch.h
+    ${PROJECT_SOURCE_DIR}/include/retdec/gui/batch_decompile_queue.h
+    ${PROJECT_SOURCE_DIR}/include/retdec/gui/artifact_loader.h
+    ${PROJECT_SOURCE_DIR}/include/retdec/gui/zip_writer.h
+    ${PROJECT_SOURCE_DIR}/include/retdec/gui/export_bundle.h
     ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/inspect_panel.h
     ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/command_log_panel.h
     ${PROJECT_SOURCE_DIR}/include/retdec/gui/panels/live_console_panel.h
@@ -116,9 +126,11 @@ target_link_libraries(retdec-gui-panels
 add_executable(retdec-gui WIN32 MACOSX_BUNDLE
     main.cpp
     mainwindow.cpp
+    batch_decompile_dialog.cpp
     project_file.cpp
     resources/resources.qrc
     ${PROJECT_SOURCE_DIR}/include/retdec/gui/mainwindow.h
+    ${PROJECT_SOURCE_DIR}/include/retdec/gui/batch_decompile_dialog.h
     ${PROJECT_SOURCE_DIR}/include/retdec/gui/project_file.h
     ${GUI_HEADERS}
 )

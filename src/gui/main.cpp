@@ -12,16 +12,21 @@
 
 #include "retdec/gui/launch_options.h"
 #include "retdec/gui/mainwindow.h"
+#include "retdec/gui/artifact_loader.h"
+#include "retdec/gui/decompiler_launch.h"
 #include "retdec/gui/settings/settings.h"
 
 #include <QApplication>
 #include <QCoreApplication>
 #include <QCommandLineParser>
 #include <QFile>
+#include <QFileInfo>
 #include <QFontDatabase>
 #include <QString>
 #include <QStyleFactory>
 #include <QTimer>
+
+#include <cstdio>
 
 static void loadStyleSheet(QApplication& app) {
     QFile qssFile(":/retdec/catppuccin_mocha.qss");
@@ -45,6 +50,7 @@ static void registerFonts() {
 }
 
 int main(int argc, char* argv[]) {
+    Q_INIT_RESOURCE(resources);
     // High-DPI support (Qt6 enables it by default, but we are explicit).
     QApplication::setHighDpiScaleFactorRoundingPolicy(
         Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
@@ -81,16 +87,37 @@ int main(int argc, char* argv[]) {
     window.show();
 
     const QStringList positional = parser.positionalArguments();
+    if (gLaunch.headlessDecompile) {
+        if (positional.isEmpty()) {
+            std::fprintf(stderr, "retdec-gui: --headless-decompile requires a binary path\n");
+            return 2;
+        }
+        window.setFastDecompilePreset(gLaunch.fastDecompile);
+        window.enableQuitWhenDecompileFinishes(true);
+    }
+
     if (!positional.isEmpty()) {
         const QString& arg = positional.first();
+        if (gLaunch.headlessDecompile) {
+            const QString outDir =
+                    retdec::gui::AppSettings::instance().decompiler.decompileOutputDir;
+            const QString cPath =
+                    retdec::gui::resolveGuiDecompiledCPath(arg, outDir);
+            const auto paths = retdec::gui::pathsFromOutputC(cPath);
+            QFile::remove(cPath);
+            QFile::remove(paths.configPath);
+        }
         if (arg.endsWith(".retdec", Qt::CaseInsensitive))
             window.openProject(arg);
         else
             window.openBinary(arg);
     }
 
-    if (gLaunch.headlessExitMs > 0)
+    if (gLaunch.headlessDecompile) {
+        QTimer::singleShot(100, &window, &retdec::gui::RetDecMainWindow::runDecompileForBenchmark);
+    } else if (gLaunch.headlessExitMs > 0) {
         QTimer::singleShot(gLaunch.headlessExitMs, &app, &QCoreApplication::quit);
+    }
 
     return app.exec();
 }

@@ -61,6 +61,10 @@ public:
                     uint64_t address = 0);
     void clear() override;
 
+signals:
+    /// Emitted when an Error-severity message is appended (not warnings/info).
+    void errorMessageAdded();
+
 private slots:
     void onFilterChanged(int index);
     void onDoubleClicked(const QModelIndex& index);

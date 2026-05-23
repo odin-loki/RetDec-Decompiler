@@ -152,6 +152,8 @@ void AppSettings::loadDecompiler(QSettings& s) {
     decompiler.useCustomLlvmPasses = s.value("useCustomLlvmPasses", false).toBool();
     decompiler.llvmPassesDisabled  = s.value("llvmPassesDisabled").toStringList();
     decompiler.extraConfigPath     = s.value("extraConfigPath").toString();
+    decompiler.decompileOutputDir  = s.value("decompileOutputDir").toString();
+    decompiler.liveConsoleTail     = s.value("liveConsoleTail", false).toBool();
     s.endGroup();
 }
 
@@ -270,6 +272,8 @@ void AppSettings::saveDecompiler(QSettings& s) const {
     s.setValue("useCustomLlvmPasses", decompiler.useCustomLlvmPasses);
     s.setValue("llvmPassesDisabled",  decompiler.llvmPassesDisabled);
     s.setValue("extraConfigPath",      decompiler.extraConfigPath);
+    s.setValue("decompileOutputDir",   decompiler.decompileOutputDir);
+    s.setValue("liveConsoleTail",      decompiler.liveConsoleTail);
     s.endGroup();
 }
 
@@ -322,6 +326,8 @@ bool AppSettings::exportToFile(const QString& path) const {
     dec["useCustomLlvmPasses"] = decompiler.useCustomLlvmPasses;
     dec["llvmPassesDisabled"]  = QJsonArray::fromStringList(decompiler.llvmPassesDisabled);
     dec["extraConfigPath"]     = decompiler.extraConfigPath;
+    dec["decompileOutputDir"]  = decompiler.decompileOutputDir;
+    dec["liveConsoleTail"]     = decompiler.liveConsoleTail;
     root["Decompiler"]         = dec;
 
     QFile f(path);
@@ -368,6 +374,8 @@ bool AppSettings::importFromFile(const QString& path) {
         auto d = root["Decompiler"].toObject();
         decompiler.useCustomLlvmPasses = d.value("useCustomLlvmPasses").toBool(false);
         decompiler.extraConfigPath     = d.value("extraConfigPath").toString();
+        decompiler.decompileOutputDir  = d.value("decompileOutputDir").toString();
+        decompiler.liveConsoleTail     = d.value("liveConsoleTail").toBool(false);
         decompiler.llvmPassesDisabled.clear();
         const QJsonArray arr = d.value("llvmPassesDisabled").toArray();
         for (const QJsonValue& v : arr) {
