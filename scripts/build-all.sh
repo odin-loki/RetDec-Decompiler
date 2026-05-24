@@ -13,7 +13,7 @@
 #
 # Outputs:
 #   dist/retdec-<version>-linux-x64.tar.gz
-#   releases/linux/                     (git-tracked scripts + tarball)
+#   releases/linux/                     (git-tracked install scripts only)
 
 set -euo pipefail
 

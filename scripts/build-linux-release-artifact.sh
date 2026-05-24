@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Linux tarball and copy to releases/linux/ in the repo tree.
+# Build Linux tarball in dist/ and sync install scripts to releases/linux/.
 # Intended for WSL/Linux: bash scripts/build-linux-release-artifact.sh
 set -euo pipefail
 
@@ -40,8 +40,8 @@ chmod +x scripts/build-linux-installer.sh
 
 DEST="${REPO}/releases/linux"
 mkdir -p "${DEST}"
-cp -f "dist/retdec-${VERSION}-linux-x64.tar.gz" "${DEST}/"
 cp -f "dist/retdec-${VERSION}-linux-x64/install.sh" \
 	"dist/retdec-${VERSION}-linux-x64/uninstall.sh" "${DEST}/" 2>/dev/null || true
 
-echo "==> Published ${DEST}/retdec-${VERSION}-linux-x64.tar.gz"
+echo "==> Tarball: dist/retdec-${VERSION}-linux-x64.tar.gz"
+echo "==> Scripts: ${DEST}/install.sh ${DEST}/uninstall.sh"

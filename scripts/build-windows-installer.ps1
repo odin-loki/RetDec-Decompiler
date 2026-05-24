@@ -291,41 +291,10 @@ function Resolve-Makensis {
     return $null
 }
 
-function Publish-ReleaseArtifacts {
-    param(
-        [string]$PackageVersion,
-        [string]$ZipPath,
-        [string]$SetupPath
-    )
-    $releasesRoot = Join-Path $RepoRoot "releases\windows"
-    New-Item -ItemType Directory -Force -Path $releasesRoot | Out-Null
-
-    $destZip = Join-Path $releasesRoot "retdec-$PackageVersion-windows-x64-portable.zip"
-    $destSetup = Join-Path $releasesRoot "retdec-$PackageVersion-windows-x64-setup.exe"
-
-    if (Test-Path -LiteralPath $ZipPath) {
-        Copy-Item -LiteralPath $ZipPath -Destination $destZip -Force
-        Write-Host "==> Published: $destZip"
-    }
-    if ($SetupPath -and (Test-Path -LiteralPath $SetupPath)) {
-        Copy-Item -LiteralPath $SetupPath -Destination $destSetup -Force
-        Write-Host "==> Published: $destSetup"
-    }
-
-    $versionFile = Join-Path $RepoRoot "releases\VERSION"
-    @(
-        "version=$PackageVersion"
-        "windows_zip=releases/windows/retdec-$PackageVersion-windows-x64-portable.zip"
-        "windows_setup=releases/windows/retdec-$PackageVersion-windows-x64-setup.exe"
-        "updated=$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssK')"
-    ) | Set-Content -LiteralPath $versionFile -Encoding UTF8
-}
-
 function Test-EnVarNsisPlugin {
     param([string]$NsisRoot = (Join-Path ${env:ProgramFiles(x86)} "NSIS"))
     $dll = Join-Path $NsisRoot "Plugins\x86-unicode\EnVar.dll"
-    $nsh = Join-Path $NsisRoot "Include\EnVar.nsh"
-    return ((Test-Path -LiteralPath $dll) -and (Test-Path -LiteralPath $nsh))
+    return (Test-Path -LiteralPath $dll)
 }
 
 function Invoke-NsisInstaller {
@@ -360,7 +329,7 @@ function Invoke-NsisInstaller {
     $pfNSIS = Split-Path $makensisPath -Parent
     if (-not (Test-EnVarNsisPlugin -NsisRoot $pfNSIS)) {
         Write-Host ""
-        Write-Host "EnVar NSIS plug-in not found — makensis will fail on PATH updates." -ForegroundColor Red
+        Write-Host "EnVar NSIS plug-in not found - makensis will fail on PATH updates." -ForegroundColor Red
         Write-Host ""
         Write-Host "The installer script uses EnVar::AddValue for system PATH. Install the plug-in:"
         Write-Host "  https://github.com/GsNSIS/EnVar/releases"
@@ -378,7 +347,7 @@ function Invoke-NsisInstaller {
     Push-Location (Split-Path $nsi -Parent)
     try {
         Write-Host "==> Running makensis ($makensisPath)"
-        & $makensisPath "/DVERSION=$PackageVersion" "/DBUNDLE_DIR=$StageRoot" (Split-Path $nsi -Leaf)
+        & $makensisPath "/DVERSION=$PackageVersion" "/DBUNDLE_DIR=$StageRoot" (Split-Path $nsi -Leaf) | Out-Host
         if ($LASTEXITCODE -ne 0) {
             throw "makensis failed with exit code $LASTEXITCODE"
         }
@@ -419,11 +388,11 @@ if (-not $SkipBuild) {
         throw "No CMake cache at $BuildDir - configure first (cmake --preset full-windows-release)."
     }
 
-    foreach ($target in @("retdec-decompiler", "retdec-gui", "retdec-fileinfo")) {
+    foreach ($target in @("retdec-decompiler", "retdec-gui")) {
         Write-Host "==> cmake --build --target $target"
         & cmake --build $BuildDir --target $target --parallel
         if ($LASTEXITCODE -ne 0) {
-            Write-Warning "Target '$target' was not built (may be absent in this configuration)."
+            throw "Target '$target' build failed with exit code $LASTEXITCODE"
         }
     }
 
@@ -446,8 +415,6 @@ New-PortableZip -BundleRoot $BundleDir -ZipPath $zipPath
 
 $setupPath = Invoke-NsisInstaller -PackageVersion $PackageVersion -StageRoot $BundleDir -OutputDir $OutDir
 
-Publish-ReleaseArtifacts -PackageVersion $PackageVersion -ZipPath $zipPath -SetupPath $setupPath
-
 Write-Host ""
 Write-Host "=== Done ==="
 Write-Host "  bundle:  $BundleDir"
@@ -455,4 +422,3 @@ Write-Host "  zip:     $zipPath"
 if ($setupPath) {
     Write-Host "  setup:   $setupPath"
 }
-Write-Host "  releases: $(Join-Path $RepoRoot 'releases\windows')"

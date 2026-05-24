@@ -448,14 +448,11 @@ _publish_release_artifacts() {
 	mkdir -p "${_rel}"
 	cp "${_stage}/install.sh" "${_stage}/uninstall.sh" "${_rel}/"
 	chmod +x "${_rel}/install.sh" "${_rel}/uninstall.sh"
-	if [[ -f "${_tarball}" ]]; then
-		cp "${_tarball}" "${_rel}/"
-	fi
 	local _version_file="${RETDEC_ROOT}/releases/VERSION"
 	{
 		echo "version=${_ver}"
-		echo "linux_tarball=releases/linux/$(basename "${_tarball}")"
 		echo "linux_install=releases/linux/install.sh"
+		echo "linux_uninstall=releases/linux/uninstall.sh"
 		echo "updated=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
 	} > "${_version_file}"
 	echo "  releases: ${_rel}"

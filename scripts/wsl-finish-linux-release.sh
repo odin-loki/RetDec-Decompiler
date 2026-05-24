@@ -34,12 +34,11 @@ echo "==> Packaging tarball"
 chmod +x scripts/build-linux-installer.sh
 ./scripts/build-linux-installer.sh --skip-install --version "${VERSION}"
 
-echo "==> Publishing to ${REPO}/releases/linux"
+echo "==> Syncing install scripts to ${REPO}/releases/linux"
 mkdir -p "${REPO}/releases/linux"
-cp -f "dist/retdec-${VERSION}-linux-x64.tar.gz" "${REPO}/releases/linux/"
 cp -f "dist/retdec-${VERSION}-linux-x64/install.sh" \
 	"dist/retdec-${VERSION}-linux-x64/uninstall.sh" \
 	"${REPO}/releases/linux/"
 
-ls -lh "${REPO}/releases/linux/retdec-${VERSION}-linux-x64.tar.gz"
+ls -lh "dist/retdec-${VERSION}-linux-x64.tar.gz"
 echo "LINUX_BUILD_DONE"

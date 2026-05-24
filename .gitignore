@@ -12,6 +12,12 @@
 /build/
 /install/
 /dist/
+
+# Release binaries (GitHub Releases only — not committed)
+/releases/windows/
+/releases/linux/*.tar.gz
+/releases/linux/*.AppImage
+/releases/linux/*.deb
 /Debug/
 /Release/
 

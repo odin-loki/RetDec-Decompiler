@@ -11,7 +11,7 @@ on:
         required: true
         default: "5.0"
       skip_build:
-        description: "Publish existing releases/ artifacts only (no rebuild)"
+        description: "Publish existing dist/ artifacts only (no rebuild)"
         type: boolean
         default: false
       appimage:
@@ -30,8 +30,6 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true
 
       - name: Resolve release metadata
         id: meta
@@ -64,19 +62,17 @@ jobs:
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true
 
       - name: Detect prebuilt Windows artifacts
         id: prebuilt
         shell: pwsh
         run: |
           $ver = "${{ needs.release.outputs.version }}"
-          $setup = "releases/windows/retdec-$ver-windows-x64-setup.exe"
-          $zip = "releases/windows/retdec-$ver-windows-x64-portable.zip"
+          $setup = "dist/retdec-$ver-windows-x64-setup.exe"
+          $zip = "dist/retdec-$ver-windows-x64-portable.zip"
           if ((Test-Path $setup) -and (Test-Path $zip)) {
             Add-Content -Path $env:GITHUB_OUTPUT -Value "has=true"
-            Write-Host "Found prebuilt Windows installers — skipping rebuild"
+            Write-Host "Found prebuilt Windows installers in dist/ — skipping rebuild"
           }
 
       - name: Verify prebuilt Windows installers
@@ -85,8 +81,8 @@ jobs:
         run: |
           $ver = "${{ needs.release.outputs.version }}"
           foreach ($f in @(
-            "releases/windows/retdec-$ver-windows-x64-setup.exe",
-            "releases/windows/retdec-$ver-windows-x64-portable.zip"
+            "dist/retdec-$ver-windows-x64-setup.exe",
+            "dist/retdec-$ver-windows-x64-portable.zip"
           )) {
             if (-not (Test-Path $f)) { throw "Missing $f" }
           }
@@ -146,8 +142,8 @@ jobs:
         with:
           tag_name: ${{ needs.release.outputs.tag }}
           files: |
-            releases/windows/retdec-${{ needs.release.outputs.version }}-windows-x64-setup.exe
-            releases/windows/retdec-${{ needs.release.outputs.version }}-windows-x64-portable.zip
+            dist/retdec-${{ needs.release.outputs.version }}-windows-x64-setup.exe
+            dist/retdec-${{ needs.release.outputs.version }}-windows-x64-portable.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -159,24 +155,22 @@ jobs:
       APPIMAGE: ${{ (github.event_name == 'workflow_dispatch' && inputs.appimage == true) && '1' || vars.APPIMAGE || '0' }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true
 
       - name: Detect prebuilt Linux tarball
         id: prebuilt
         run: |
           ver="${{ needs.release.outputs.version }}"
-          tb="releases/linux/retdec-${ver}-linux-x64.tar.gz"
+          tb="dist/retdec-${ver}-linux-x64.tar.gz"
           if [ -f "$tb" ]; then
             echo "has=true" >> "$GITHUB_OUTPUT"
-            echo "Found prebuilt Linux tarball — skipping rebuild"
+            echo "Found prebuilt Linux tarball in dist/ — skipping rebuild"
           fi
 
       - name: Verify prebuilt Linux tarball
         if: steps.prebuilt.outputs.has == 'true' || (github.event_name == 'workflow_dispatch' && inputs.skip_build)
         run: |
           ver="${{ needs.release.outputs.version }}"
-          tb="releases/linux/retdec-${ver}-linux-x64.tar.gz"
+          tb="dist/retdec-${ver}-linux-x64.tar.gz"
           test -f "$tb" || { echo "Missing $tb"; exit 1; }
 
       - name: Install dependencies
@@ -229,7 +223,7 @@ jobs:
       - name: Verify Linux release artifacts
         run: |
           ver="${{ needs.release.outputs.version }}"
-          tb="releases/linux/retdec-${ver}-linux-x64.tar.gz"
+          tb="dist/retdec-${ver}-linux-x64.tar.gz"
           test -f "$tb" || { echo "Missing $tb"; exit 1; }
           test -f releases/linux/install.sh || { echo "Missing releases/linux/install.sh"; exit 1; }
           test -f releases/linux/uninstall.sh || { echo "Missing releases/linux/uninstall.sh"; exit 1; }
@@ -239,7 +233,7 @@ jobs:
         with:
           tag_name: ${{ needs.release.outputs.tag }}
           files: |
-            releases/linux/retdec-${{ needs.release.outputs.version }}-linux-x64.tar.gz
+            dist/retdec-${{ needs.release.outputs.version }}-linux-x64.tar.gz
             releases/linux/install.sh
             releases/linux/uninstall.sh
         env:

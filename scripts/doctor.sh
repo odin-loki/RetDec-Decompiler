@@ -98,7 +98,7 @@ if command -v git >/dev/null 2>&1; then
     if git lfs version >/dev/null 2>&1; then
         pass_check "git-lfs $(git lfs version 2>/dev/null | head -n1 | awk '{print $1, $3}')"
     else
-        fail_check "git-lfs not available - required for releases/ LFS binaries"
+        warn_check "git-lfs not available (optional unless you use legacy LFS objects)"
     fi
 else
     fail_check "git not on PATH"

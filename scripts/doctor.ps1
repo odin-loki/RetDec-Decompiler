@@ -145,7 +145,7 @@ if ($git) {
     if ($LASTEXITCODE -eq 0) {
         Write-Pass "git-lfs $($lfsOut -join ' ')"
     } else {
-        Write-Fail "git-lfs not available - required for releases/ LFS binaries"
+        Write-Warn "git-lfs not available (optional unless you use legacy LFS objects)"
     }
 } else {
     Write-Fail "git not on PATH"

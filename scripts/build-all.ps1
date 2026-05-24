@@ -9,7 +9,6 @@
   3. Builds, installs, and runs build-windows-installer.ps1 to refresh:
        dist\retdec-*-windows-x64-portable.zip
        dist\retdec-*-windows-x64-setup.exe  (when NSIS is installed)
-       releases\windows\                    (git-tracked via Git LFS)
 
 .EXAMPLE
   .\scripts\build-all.ps1
