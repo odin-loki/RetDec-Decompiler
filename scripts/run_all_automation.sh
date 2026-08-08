@@ -74,3 +74,4 @@ bash "${ROOT}/scripts/nightly_report.sh" || true
 echo ""
 
 echo "run_all_automation: complete"
+bash "${ROOT}/scripts/automation_status.sh"

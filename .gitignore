@@ -107,7 +107,7 @@ build-gui-progress-test/
 results/algorithm_recovery.json
 tests/algorithm_recovery/predictions/ci-local.json
 tests/algorithm_recovery/predictions/full-sim.json
-docs/BENCHMARKS_TABLE.md
+docs/internal/nightly/20*.md
 keystone.zip
 llama.zip
 _license_preamble.txt

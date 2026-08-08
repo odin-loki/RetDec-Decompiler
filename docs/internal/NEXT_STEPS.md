@@ -6,7 +6,8 @@ require your environment, toolchain farm, or measured CI artifacts.
 ## Local automation (no WSL required)
 
 ```bash
-bash scripts/run_all_automation.sh          # doctor, ship checklist, tests, migration evals
+bash scripts/automation_status.sh       # what's done vs blocked
+bash scripts/run_all_automation.sh      # doctor, ship checklist, tests, migration evals
 bash scripts/run_all_automation.sh --skip-migration   # faster smoke
 ```
 
