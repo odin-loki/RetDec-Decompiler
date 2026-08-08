@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -71,6 +72,14 @@ TOKEN_MAP = {
     "varint": "Varint",
 }
 
+# Ignore low-confidence container/algo noise from post-pipeline heuristics.
+MIN_CONFIDENCE: dict[str, float] = {
+    "sort": 0.5,
+    "container": 0.8,
+    "algorithm": 0.9,
+    "concurrency": 0.5,
+}
+
 
 def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
@@ -95,16 +104,18 @@ def labels_from_config(cfg: dict) -> list[str]:
             kind = (det.get("kind") or "").lower()
             label = det.get("label") or ""
             label_l = label.lower()
+            conf = float(det.get("confidence", 0.0))
+            if conf < MIN_CONFIDENCE.get(kind, 0.5):
+                continue
 
             if kind == "sort":
                 found.add("Sort")
                 _add_aliases(found, label)
-
-            if kind == "algorithm":
-                found.add("Algorithm")
+            elif kind == "algorithm":
+                if label_l.startswith("std::") and conf < 0.95:
+                    continue
                 _add_aliases(found, label)
-
-            if kind == "container":
+            elif kind == "container":
                 if "unordered_map" in label_l or "unordered_set" in label_l:
                     found.update(["HashTable", "Map"])
                 elif "map" in label_l:
@@ -115,9 +126,7 @@ def labels_from_config(cfg: dict) -> list[str]:
                     found.add("List")
                 elif "deque" in label_l or "ring" in label_l:
                     found.update(["RingBuffer", "CircularBuffer"])
-                _add_aliases(found, label)
-
-            if kind == "concurrency":
+            elif kind == "concurrency":
                 if "mutex" in label_l:
                     found.add("Mutex")
                 if "thread" in label_l:
@@ -126,9 +135,6 @@ def labels_from_config(cfg: dict) -> list[str]:
                     found.add("Atomic")
                 if "spinlock" in label_l:
                     found.add("Spinlock")
-                _add_aliases(found, label)
-
-            _add_aliases(found, label)
     return sorted(found)
 
 
@@ -179,21 +185,29 @@ def decompile_one(
     job_work = work / binary.name
     job_work.mkdir(parents=True, exist_ok=True)
     out_c = job_work / f"{binary.name}.c"
-    cfg_path = job_work / f"{binary.name}.c.config.json"
+    for stale in job_work.glob("*.retdec-fn-cache.json"):
+        stale.unlink(missing_ok=True)
+    env = os.environ.copy()
+    env["RETDEC_INCREMENTAL_CACHE"] = "0"
     try:
         proc = subprocess.run(
             [str(dec), str(binary), "--output", str(out_c)],
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         return False, []
     if proc.returncode != 0:
         return False, []
-    if not cfg_path.is_file():
-        cfg_path = Path(str(out_c) + ".config.json")
-    if not cfg_path.is_file():
+    cfg_candidates = (
+        job_work / f"{binary.name}.config.json",
+        job_work / f"{binary.name}.c.config.json",
+        Path(str(out_c) + ".config.json"),
+    )
+    cfg_path = next((p for p in cfg_candidates if p.is_file()), None)
+    if cfg_path is None:
         return False, []
     cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
     return True, labels_from_config(cfg)

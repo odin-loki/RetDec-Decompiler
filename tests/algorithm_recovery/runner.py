@@ -31,30 +31,32 @@ def main() -> int:
     ap.add_argument("--out", default="results/algorithm_recovery.json")
     args = ap.parse_args()
 
-    pred = json.loads(Path(args.predictions).read_text(encoding="utf-8"))
-    if "predictions" in pred:
-        decompiled = pred.get("decompiled")
-        pred = pred["predictions"]
+    truth = json.loads(Path(args.ground_truth).read_text(encoding="utf-8"))
+    raw = json.loads(Path(args.predictions).read_text(encoding="utf-8"))
+    if "predictions" in raw:
+        decompiled = raw.get("decompiled")
+        pred = raw["predictions"]
+        eval_names = sorted(pred.keys())
     else:
         decompiled = None
-    truth = json.loads(Path(args.ground_truth).read_text(encoding="utf-8"))
+        pred = raw
+        eval_names = sorted(set(pred) | set(truth))
 
     per_binary = {}
     classes: set[str] = set()
-    for labels in truth.values():
-        classes.update(labels)
-    for labels in pred.values():
-        classes.update(labels)
+    for name in eval_names:
+        classes.update(truth.get(name, []))
+        classes.update(pred.get(name, []))
 
-    for name in sorted(set(pred) | set(truth)):
+    for name in eval_names:
         p = set(pred.get(name, []))
         e = set(truth.get(name, []))
         per_binary[name] = score(p, e)
 
     per_class = {}
     for cls in sorted(classes):
-        p = {b for b, labels in pred.items() if cls in labels}
-        e = {b for b, labels in truth.items() if cls in labels}
+        p = {b for b in eval_names if cls in pred.get(b, [])}
+        e = {b for b in eval_names if cls in truth.get(b, [])}
         per_class[cls] = score(p, e)
 
     f1_values = [v.get("f1", 0.0) for v in per_binary.values()]

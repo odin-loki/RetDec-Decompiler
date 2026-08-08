@@ -5,8 +5,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEC=""
-MIN_DECOMPILED=6
-MIN_MEAN_F1=0.0
+MIN_DECOMPILED=9
+MIN_MEAN_F1=0.10
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -39,13 +39,16 @@ bash "${ROOT}/scripts/build_algorithm_corpus.sh"
 PRED="${ROOT}/tests/algorithm_recovery/predictions/ci.json"
 GT="${ROOT}/tests/algorithm_recovery/ground_truth/corpus.json"
 RESULTS="${ROOT}/results/algorithm-recovery-ci.json"
+WORK="${ROOT}/build/prediction-work"
 mkdir -p "${ROOT}/results" "${ROOT}/tests/algorithm_recovery/predictions"
+rm -rf "${WORK}"
 
 python3 "${ROOT}/scripts/extract_decompiler_predictions.py" \
 	--decompiler "${DEC}" \
 	--corpus "${ROOT}/tests/algorithm_recovery/corpus" \
 	--manifest "${ROOT}/tests/algorithm_recovery/corpus/manifest.json" \
 	--ci-core \
+	--work "${WORK}" \
 	--out "${PRED}"
 
 python3 "${ROOT}/tests/algorithm_recovery/runner.py" \

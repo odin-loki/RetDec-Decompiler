@@ -4699,7 +4699,7 @@ static unsigned char bit_pairs_diff_table[][256] = {
 // topval is the topval of an array of values of len in l_capturing()
 //////////////////////////////////////////////
 
-unsigned int topval[170] = {
+static unsigned int topval[170] = {
 1,
 2,
 3,

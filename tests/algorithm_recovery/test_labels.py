@@ -55,10 +55,40 @@ def test_concurrency() -> None:
     assert "Mutex" in labels
 
 
+def test_low_confidence_container_ignored() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "container", "label": "std::unordered_map", "confidence": 0.45},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg)
+    assert labels == []
+
+
+def test_stl_algorithm_noise_filtered() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "algorithm", "label": "std::transform", "confidence": 0.9},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg)
+    assert "Transform" not in labels
+
+
 def main() -> int:
     test_sort_detection()
     test_hash_table_container()
     test_concurrency()
+    test_low_confidence_container_ignored()
+    test_stl_algorithm_noise_filtered()
     print("algorithm_recovery label tests: PASS")
     return 0
 

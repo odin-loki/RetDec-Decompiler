@@ -130,14 +130,35 @@ else
 fi
 
 # ── CI workflows enabled ──────────────────────────────────────────────────────
-for wf in ci-smoke.yml ctest-linux.yml algorithm-recovery-nightly.yml; do
-    wfpath="${REPO_ROOT}/.github/workflows/${wf}"
-    if [[ -f "$wfpath" ]] && grep -qE '^[[:space:]]*push:' "$wfpath"; then
-        pass_check "workflow ${wf} triggers on push"
-    else
-        fail_check "workflow ${wf} missing push trigger"
-    fi
-done
+workflow_has_trigger() {
+	local wfpath="$1"
+	shift
+	local pattern
+	for pattern in "$@"; do
+		if grep -qE "^[[:space:]]*${pattern}:" "${wfpath}"; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+if workflow_has_trigger "${REPO_ROOT}/.github/workflows/ci-smoke.yml" push; then
+	pass_check "workflow ci-smoke.yml triggers on push"
+else
+	fail_check "workflow ci-smoke.yml missing push trigger"
+fi
+
+if workflow_has_trigger "${REPO_ROOT}/.github/workflows/ctest-linux.yml" push pull_request; then
+	pass_check "workflow ctest-linux.yml triggers on push or pull_request"
+else
+	fail_check "workflow ctest-linux.yml missing push/pull_request trigger"
+fi
+
+if workflow_has_trigger "${REPO_ROOT}/.github/workflows/algorithm-recovery-nightly.yml" push schedule workflow_dispatch; then
+	pass_check "workflow algorithm-recovery-nightly.yml has CI trigger"
+else
+	fail_check "workflow algorithm-recovery-nightly.yml missing schedule/workflow_dispatch"
+fi
 
 # ── commercial GPL exclusion ──────────────────────────────────────────────────
 if grep -rq 'capstone2llvmirtool' "${REPO_ROOT}/packaging/" 2>/dev/null; then

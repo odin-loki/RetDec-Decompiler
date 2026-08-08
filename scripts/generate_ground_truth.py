@@ -31,7 +31,7 @@ def main() -> int:
     for item in manifest:
         name = item["name"]
         src = item["source"]
-        key = src[:-3] if src.endswith(".c") else src
+        key = src.removesuffix(".c") if src.endswith(".c") else src
         ground[name] = labels_by_key.get(key, labels_by_key.get(Path(key).name, []))
 
     out = Path(args.out)

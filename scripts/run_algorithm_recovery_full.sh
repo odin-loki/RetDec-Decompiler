@@ -41,13 +41,16 @@ bash "${ROOT}/scripts/build_algorithm_corpus.sh"
 PRED="${ROOT}/tests/algorithm_recovery/predictions/full.json"
 GT="${ROOT}/tests/algorithm_recovery/ground_truth/corpus.json"
 RESULTS="${ROOT}/results/algorithm-recovery-full.json"
+WORK="${ROOT}/build/prediction-work-full"
 mkdir -p "${ROOT}/results" "${ROOT}/tests/algorithm_recovery/predictions"
+rm -rf "${WORK}"
 
 python3 "${ROOT}/scripts/extract_decompiler_predictions.py" \
 	--decompiler "${DEC}" \
 	--corpus "${ROOT}/tests/algorithm_recovery/corpus" \
 	--manifest "${ROOT}/tests/algorithm_recovery/corpus/manifest.json" \
 	--jobs "${JOBS}" \
+	--work "${WORK}" \
 	--out "${PRED}"
 
 python3 "${ROOT}/tests/algorithm_recovery/runner.py" \

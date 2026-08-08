@@ -5,15 +5,14 @@ require your environment, toolchain farm, or measured CI artifacts.
 
 ## 1. Raise algorithm-recovery F1 floor
 
-After a green `algorithm-recovery-nightly` run on Linux:
+**Done locally (2026-08-08, v2.0.1):** CI core baseline updated to `mean_f1≈0.19`, `decompiled=9`; full corpus `216/216`, `mean_f1≈0.067`.
+Re-run after detector tuning:
 
 ```bash
-# Download artifact: results/algorithm-recovery-ci.json
+bash scripts/run_algorithm_recovery_ci.sh --decompiler "$(find build/linux -name retdec-decompiler -type f | head -n1)"
 bash scripts/update_algorithm_recovery_baseline.sh \
   --from results/algorithm-recovery-ci.json \
   --profile ci_core
-git add results/baseline-algorithm-recovery.json
-git commit -m "chore: update algorithm-recovery baseline from nightly."
 ```
 
 Then tighten `run_algorithm_recovery_ci.sh` `--min-mean-f1` if desired.

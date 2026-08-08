@@ -24,7 +24,7 @@ check() {
 }
 
 VER_CMAKE="$(grep -E '^[[:space:]]*VERSION[[:space:]]' "${ROOT}/CMakeLists.txt" | head -1 | sed -E 's/.*VERSION[[:space:]]+([0-9.]+).*/\1/')"
-VER_RELEASE="$(grep -E '^version=' "${ROOT}/releases/VERSION" | cut -d= -f2)"
+VER_RELEASE="$(sed '1s/^\xEF\xBB\xBF//' "${ROOT}/releases/VERSION" | grep -E '^version=' | head -1 | sed 's/^version=//' | tr -d '\r')"
 
 echo "==> RetDec ship checklist"
 echo "CMake VERSION: ${VER_CMAKE}"
@@ -46,6 +46,7 @@ check test -f "${ROOT}/results/baseline-algorithm-recovery.json"
 check test -f "${ROOT}/docs/internal/PLAN_COMPLETION.md"
 check bash "${ROOT}/scripts/doctor.sh"
 check python3 "${ROOT}/tests/algorithm_recovery/test_labels.py"
+check python3 "${ROOT}/tests/algorithm_recovery/test_ground_truth.py"
 check python3 "${ROOT}/tests/algorithm_recovery/test_regression_gate.py"
 check python3 "${ROOT}/tests/algorithm_recovery/test_triton_gate.py"
 
