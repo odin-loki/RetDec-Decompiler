@@ -8,6 +8,7 @@ CORPUS="${ROOT}/tests/algorithm_recovery/corpus"
 OUT="${ROOT}/results/sailr-eval.json"
 DEC=""
 LIMIT=6
+PYTHON="$("${ROOT}/scripts/find_python.sh")"
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -25,7 +26,7 @@ fi
 
 mkdir -p "$(dirname "${OUT}")"
 
-python3 - "${CORPUS}" "${OUT}" "${LIMIT}" "${DEC}" <<'PY'
+"${PYTHON}" - "${CORPUS}" "${OUT}" "${LIMIT}" "${DEC}" <<'PY'
 import json, pathlib, re, subprocess, sys, tempfile
 
 corpus = pathlib.Path(sys.argv[1])

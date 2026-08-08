@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CORPUS="${ROOT}/tests/decompilebench/corpus"
 OUT="${ROOT}/results/rellic-eval.json"
+PYTHON="$("${ROOT}/scripts/find_python.sh")"
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -29,7 +30,7 @@ EOF
 	exit 0
 fi
 
-python3 - "${CORPUS}" "${OUT}" <<'PY'
+"${PYTHON}" - "${CORPUS}" "${OUT}" <<'PY'
 import json, pathlib, subprocess, sys, time
 corpus, out = map(pathlib.Path, sys.argv[1:3])
 rows = []

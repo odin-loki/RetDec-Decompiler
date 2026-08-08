@@ -4,6 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON="$("${ROOT}/scripts/find_python.sh")"
 DEC=""
 CORPUS="${ROOT}/tests/algorithm_recovery/corpus"
 
@@ -36,7 +37,7 @@ fi
 echo "==> LLVM API inventory"
 bash "${ROOT}/scripts/inventory_llvm_apis.sh"
 
-python3 - "${ROOT}/results" <<'PY'
+"${PYTHON}" - "${ROOT}/results" <<'PY'
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 summary = {}

@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXPECTED=""
 FAIL=0
+PYTHON="$("${ROOT}/scripts/find_python.sh")"
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -45,10 +46,10 @@ check test -f "${ROOT}/results/baseline-2026-08.json"
 check test -f "${ROOT}/results/baseline-algorithm-recovery.json"
 check test -f "${ROOT}/docs/internal/PLAN_COMPLETION.md"
 check bash "${ROOT}/scripts/doctor.sh"
-check python3 "${ROOT}/tests/algorithm_recovery/test_labels.py"
-check python3 "${ROOT}/tests/algorithm_recovery/test_ground_truth.py"
-check python3 "${ROOT}/tests/algorithm_recovery/test_regression_gate.py"
-check python3 "${ROOT}/tests/algorithm_recovery/test_triton_gate.py"
+check "${PYTHON}" "${ROOT}/tests/algorithm_recovery/test_labels.py"
+check "${PYTHON}" "${ROOT}/tests/algorithm_recovery/test_ground_truth.py"
+check "${PYTHON}" "${ROOT}/tests/algorithm_recovery/test_regression_gate.py"
+check "${PYTHON}" "${ROOT}/tests/algorithm_recovery/test_triton_gate.py"
 
 if grep -qE '5\.0-rc|v4\.2\.0-rc' "${ROOT}/cmake/deps.cmake" 2>/dev/null; then
 	echo "FAIL  RC dependency pins in deps.cmake" >&2

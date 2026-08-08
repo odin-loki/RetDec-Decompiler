@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${ROOT}/build/support-regen"
 STAMP="$(date -u +%Y-%m-%d)"
 SIG_SCRIPT="${ROOT}/scripts/retdec-signature-from-library-creator.py"
+PYTHON="$("${ROOT}/scripts/find_python.sh")"
 
 echo "==> Output staging: ${OUT}"
 mkdir -p "${OUT}"
@@ -32,7 +33,7 @@ printf '%s\n' "${!TOOLCHAINS[@]}" | while read -r k; do
 done > "${OUT}/toolchains.txt"
 
 echo "==> Signature creator help"
-python3 "${SIG_SCRIPT}" --help || true
+"${PYTHON}" "${SIG_SCRIPT}" --help || true
 
 cat > "${OUT}/README.txt" <<EOF
 retdec-support regeneration staged ${STAMP}.
@@ -50,9 +51,18 @@ cat > "${OUT}/deps.cmake.snippet" <<'EOF'
 EOF
 
 echo "==> Corpus manifest for signature smoke"
-if [[ -f "${ROOT}/tests/algorithm_recovery/corpus/manifest.json" ]]; then
-	cp "${ROOT}/tests/algorithm_recovery/corpus/manifest.json" "${OUT}/corpus-manifest.json"
-	echo "  copied corpus manifest ($(python3 -c "import json; print(len(json.load(open('${OUT}/corpus-manifest.json'))))") binaries)"
-fi
+MANIFEST="${ROOT}/tests/algorithm_recovery/corpus/manifest.json"
+"${PYTHON}" - "${MANIFEST}" "${OUT}/corpus-manifest.json" <<'PY'
+import json, pathlib, shutil, sys
+
+src, dst = map(pathlib.Path, sys.argv[1:3])
+if not src.is_file():
+    print(f"  WARN: no corpus manifest at {src}")
+    raise SystemExit(0)
+dst.parent.mkdir(parents=True, exist_ok=True)
+shutil.copy2(src, dst)
+data = json.loads(dst.read_text(encoding="utf-8"))
+print(f"  copied corpus manifest ({len(data)} binaries)")
+PY
 
 echo "Done. See ${OUT}/README.txt"

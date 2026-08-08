@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATE="$(date -u +%Y-%m-%d)"
 OUT="${ROOT}/docs/internal/nightly/${DATE}.md"
+PYTHON="$("${ROOT}/scripts/find_python.sh")"
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -56,7 +57,7 @@ VER="$(grep -E '^[[:space:]]*VERSION[[:space:]]' "${ROOT}/CMakeLists.txt" | head
 		if [[ -f "${f}" ]]; then
 			echo "### $(basename "${f}")"
 			echo '```json'
-			python3 - "${f}" <<'PY'
+			"${PYTHON}" - "${f}" <<'PY'
 import json, sys
 data = json.load(open(sys.argv[1], encoding="utf-8"))
 summary = data.get("summary", {})

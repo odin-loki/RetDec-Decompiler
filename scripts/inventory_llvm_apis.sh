@@ -5,6 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${ROOT}/results/llvm-api-inventory.json"
+PYTHON="$("${ROOT}/scripts/find_python.sh")"
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -15,7 +16,7 @@ done
 
 mkdir -p "$(dirname "${OUT}")"
 
-python3 - "${ROOT}" "${OUT}" <<'PY'
+"${PYTHON}" - "${ROOT}" "${OUT}" <<'PY'
 import json, pathlib, re, sys
 
 root = pathlib.Path(sys.argv[1])

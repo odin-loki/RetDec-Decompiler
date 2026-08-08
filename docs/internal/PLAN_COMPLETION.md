@@ -1,11 +1,11 @@
 # MASTER-UPGRADE-PLAN — automation completion status
 
-Last updated: v2.0.8
+Last updated: v2.0.9
 
 ## Steps 1–26 (shippable product) — DONE
 
 All Composer-automatable items through Step 26 are implemented or scaffolded.
-Shipped releases v1.0.0–v2.0.8 on `main`.
+Shipped releases v1.0.0–v2.0.9 on `main`.
 
 | Area | Status | Artifacts |
 |------|--------|-----------|
@@ -24,7 +24,7 @@ Shipped releases v1.0.0–v2.0.8 on `main`.
 |------|------|------------|---------------------|
 | 27 | Performance | `perf-nightly.yml`, `flamegraph_profile.sh`, `PERFORMANCE.md` | Profile-driven optimizations |
 | 28 | rellic | `eval_rellic.sh` | Build rellic on LLVM 8; backend swap |
-| 29 | LIEF | `LiefAdapter`, `eval_lief.sh` | Phase B/C cutover |
+| 29 | LIEF | `LiefAdapter`, `eval_lief.sh` (Python lief eval OK) | Phase B/C cutover |
 | 30 | Retypd | `eval_retypd.sh` | 3–6 month spike |
 | 31 | SAILR | `eval_sailr.sh`, `goto_cfg_optimizer` | Structure recovery integration |
 | 32 | Neural tiers 4–5 | `RETDEC_NEURAL_TIER_MAX`, `BatchRefiner` | Frontier model review |
