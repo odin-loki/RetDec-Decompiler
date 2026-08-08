@@ -51,3 +51,7 @@ Shipped releases v1.0.0–v1.8.0 on `main`.
 Documented in [D7_DECISION.md](D7_DECISION.md). README and whitepaper aligned.
 
 See [NEXT_STEPS.md](NEXT_STEPS.md) for human-led follow-ups.
+
+## GUI roadmap — Phase D closed (v2.0.0)
+
+CUDA hot-path and AI assistant decisions documented in [GUI_PHASE_D.md](GUI_PHASE_D.md).

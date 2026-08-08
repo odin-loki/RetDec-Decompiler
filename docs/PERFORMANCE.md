@@ -39,6 +39,14 @@ parallel (one config per binary). Use for corpus benchmarks.
 - **Local flame graph (Linux):** `bash scripts/flamegraph_profile.sh <binary>`
 - **Nightly report:** `bash scripts/nightly_report.sh`
 
+## CUDA
+
+CUDA acceleration is **optional** and **off by default in CI** (`RETDEC_ENABLE_CUDA_ACCEL=OFF`).
+Post-LLVM analysis detectors (container, sort, algo) run on CPU; see
+[GUI_PHASE_D.md](internal/GUI_PHASE_D.md) for the product decision.
+
+Neural inference may use llama.cpp CUDA when enabled at build time.
+
 ## Roadmap
 
 - Neural batch decode via llama.cpp (11.4)

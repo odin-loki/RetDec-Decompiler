@@ -4,6 +4,18 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ---
 
+## [2.0.0] — 2026-08-08
+
+### Added
+
+- **GUI Phase D closed:** `docs/internal/GUI_PHASE_D.md` — CUDA CPU-only default, AI via external CLI/llama.cpp (no in-GUI chat).
+
+### Changed
+
+- `GUI_ROADMAP.md` Phase D checkboxes complete.
+- `PERFORMANCE.md` CUDA section documents CPU-only analysis default.
+- `NEXT_STEPS.md` WSL rebuild instructions for local F1.
+
 ## [1.9.0] — 2026-08-08
 
 ### Added

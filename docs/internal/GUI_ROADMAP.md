@@ -37,9 +37,9 @@ Phased plan for GUI/product work. Update checkboxes as items ship.
 
 ## Phase D — Differentiation
 
-- [ ] CUDA wiring into hot analysis paths (or document CPU-only)
+- [x] CUDA wiring into hot analysis paths — **documented CPU-only default** ([GUI_PHASE_D.md](GUI_PHASE_D.md))
 - [x] Reference decompiler plugin sample — `examples/decompiler_plugin/`
-- [ ] AI assistant: external Ollama HTTP vs in-process vs remove
+- [x] AI assistant — **external CLI / llama.cpp / optional Ollama**; no in-GUI chat ([GUI_PHASE_D.md](GUI_PHASE_D.md))
 - [x] Multi-language output picker in GUI — Settings → Decompiler → Preferred output language (`--output-lang`)
 
 ## Phase E — GUI polish (May 2026)
