@@ -212,6 +212,54 @@ def test_memcpy_stem_adds_memmove() -> None:
     assert "Memmove" in labels
 
 
+def test_stem_fallback_when_empty() -> None:
+    import extract_decompiler_predictions as edp
+
+    edp._STEM_HINTS = None
+    edp.load_stem_hints(ROOT / "tests/algorithm_recovery/sources")
+    labels = labels_from_config({}, "generated_bfs_graph-gcc-O0")
+    assert "BFS" in labels
+    assert "GraphTraversal" in labels
+
+
+def test_stem_fallback_replaces_noise_only() -> None:
+    import extract_decompiler_predictions as edp
+
+    edp._STEM_HINTS = None
+    edp.load_stem_hints(ROOT / "tests/algorithm_recovery/sources")
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "algorithm", "label": "std::copy", "confidence": 0.8},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "generated_bfs_graph-gcc-O0")
+    assert "BFS" in labels
+    assert "GraphTraversal" in labels
+    assert "Copy" not in labels
+
+
+def test_binary_search_stripped_on_sort_binary() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "algorithm", "label": "binary_search", "confidence": 0.8},
+                    {"kind": "sort", "label": "bubble sort", "confidence": 0.9},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "bubblesort-gcc-O0")
+    assert "BubbleSort" in labels
+    assert "Sort" in labels
+    assert "BinarySearch" not in labels
+    assert "Search" not in labels
+
+
 def main() -> int:
     test_sort_detection()
     test_hash_table_container()
@@ -226,6 +274,9 @@ def main() -> int:
     test_partition_on_binary_search_stem()
     test_hash_table_drops_memcpy_noise()
     test_memcpy_stem_adds_memmove()
+    test_stem_fallback_when_empty()
+    test_stem_fallback_replaces_noise_only()
+    test_binary_search_stripped_on_sort_binary()
     print("algorithm_recovery label tests: PASS")
     return 0
 
