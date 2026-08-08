@@ -14,9 +14,9 @@
 | 10 | Algorithm-recovery metric | H | — | pending |
 | 11 | `upgrade-dep.sh` | C | — | done |
 | 12 | Capstone 5.0.9 | C | P6 | done |
-| 13 | YARA 4.5.8 | C+ | P7 | pending |
-| 14 | yaramod 4.8.1 | C+ | P8 | pending |
-| 15 | googletest, Keystone | C | — | pending |
+| 13 | YARA 4.5.8 | C+ | P7 | done |
+| 14 | yaramod 4.8.1 | C+ | P8 | done |
+| 15 | googletest, Keystone | C | — | gtest done |
 | 17 | llama.cpp + mock | C | P9–P10 | mock done |
 | 18 | llama.cpp backend | C+ | P11 | pending |
 | 23 | Fuzz + sanitizer CI | C | P15–P16 | done |

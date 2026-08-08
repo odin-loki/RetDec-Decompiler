@@ -10,11 +10,11 @@ set(CAPSTONE_ARCHIVE_SHA256
 )
 
 set(GOOGLETEST_URL
-    "https://github.com/google/googletest/archive/90a443f9c2437ca8a682a1ac625eba64e1d74a8a.zip"
+    "https://github.com/google/googletest/archive/refs/tags/v1.15.2.zip"
     CACHE STRING "URL of Googletest archive to use."
 )
 set(GOOGLETEST_ARCHIVE_SHA256
-    "6fb9a49ad77656c860cfdafbb3148a91f076a3a8bda9c6d8809075c832549dd4"
+    "f179ec217f9b3b3f3c6e8b02d3e7eda997b49e4ce26d6b235c9053bec9c0bf9f"
     CACHE STRING ""
 )
 
@@ -37,20 +37,20 @@ set(LLVM_ARCHIVE_SHA256
 )
 
 set(YARA_URL
-    "https://github.com/VirusTotal/yara/archive/v4.2.0-rc1.zip"
+    "https://github.com/VirusTotal/yara/archive/v4.5.8.zip"
     CACHE STRING "URL of Yara archive to use."
 )
 set(YARA_ARCHIVE_SHA256
-    "ae1adad2ae33106f4c296cef32ddba2c93867010ef853028d30cad42548d0474"
+    "e623b16e4b0b07bb4ea614c1ea03c8a9b7d90b457e5f0bd65cdac7bca2f0c290"
     CACHE STRING ""
 )
 
 set(YARAMOD_URL
-    "https://github.com/avast/yaramod/archive/aa06dd408c492a8f4488774caf2ee105ccc23ab5.zip"
+    "https://github.com/avast/yaramod/archive/v4.8.1.zip"
     CACHE STRING "URL of YaraMod archive to use."
 )
 set(YARAMOD_ARCHIVE_SHA256
-	"e8583706f3b7cb22e2f5b8293cbdb96996a09fa6a64e67de7358424393f128be"
+	"c21ac8fa012d683f295affc0609eca6eb0741f5a76fcea3e2d5a517a52342d62"
 	CACHE STRING ""
 )
 
