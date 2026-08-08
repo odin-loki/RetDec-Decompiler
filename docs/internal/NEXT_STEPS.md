@@ -1,6 +1,6 @@
 # Next steps (human-led)
 
-MASTER-UPGRADE-PLAN automation is **complete** through v1.9.0. These items
+MASTER-UPGRADE-PLAN automation is **complete** through v2.0.0. These items
 require your environment, toolchain farm, or measured CI artifacts.
 
 ## 1. Raise algorithm-recovery F1 floor
@@ -50,13 +50,10 @@ target hardware to pick hot paths before code changes.
 
 ## 7. Local Linux F1 (WSL)
 
-If `build/linux` was configured from a different path, clean and rebuild:
-
 ```bash
-rm -rf build/linux/CMakeCache.txt build/linux/CMakeFiles
-cmake --preset core-debug -DRETDEC_ENABLE_CUDA_ACCEL=OFF -DRETDEC_ENABLE_NEURAL=OFF
-cmake --build build/linux --target retdec-decompiler --parallel
-bash scripts/run_algorithm_recovery_ci.sh --decompiler build/linux/src/retdec-decompiler/retdec-decompiler
+# In WSL, from repo root:
+bash scripts/wsl_build_decompiler.sh
+bash scripts/run_algorithm_recovery_ci.sh --decompiler "$(find build/linux -name retdec-decompiler -type f | head -n1)"
 ```
 
-Prefer CI artifacts from `algorithm-recovery-nightly` when available.
+First build takes 30–90 minutes. Prefer CI artifacts from `algorithm-recovery-nightly` when available.
