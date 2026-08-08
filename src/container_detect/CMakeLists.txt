@@ -1,5 +1,7 @@
 add_library(retdec_container_detect
     vector_detect.cpp
+    open_addressing_detect.cpp
+    ring_buffer_detect.cpp
     list_detect.cpp
     map_detect.cpp
     unordered_detect.cpp

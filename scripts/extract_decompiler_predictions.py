@@ -80,7 +80,11 @@ MIN_CONFIDENCE: dict[str, float] = {
     "concurrency": 0.5,
 }
 
-# Per-sort-label minimum confidence (label text is lowercased).
+ALLOWED_ALGO_MIN_CONF: dict[str, float] = {
+    "std::copy": 0.5,
+    "binary_search": 0.5,
+    "binary search": 0.5,
+}
 SORT_LABEL_MIN_CONF: dict[str, float] = {
     "radix sort": 0.65,
     "heapsort": 0.55,
@@ -103,6 +107,13 @@ SORT_BINARY_MARKERS = (
     "bubblesort", "mergesort", "quicksort", "heapsort", "insertion_sort",
     "selection_sort", "shell_sort", "radix", "sort",
 )
+
+STEM_SORT_ALLOWLIST: dict[str, frozenset[str]] = {
+    "bubblesort": frozenset({"BubbleSort", "Sort"}),
+    "mergesort": frozenset({"Mergesort", "Sort", "DivideAndConquer"}),
+    "quicksort": frozenset({"QuickSort", "Sort"}),
+    "heapsort": frozenset({"HeapSort", "Sort"}),
+}
 
 
 def _norm(text: str) -> str:
@@ -128,6 +139,23 @@ def _binary_expects_sort(binary_name: str) -> bool:
     return any(m in stem for m in SORT_BINARY_MARKERS)
 
 
+def _apply_stem_sort_allowlist(labels: set[str], binary_name: str) -> set[str]:
+    stem = binary_name.lower()
+    for key, allowed in STEM_SORT_ALLOWLIST.items():
+        if key in stem:
+            non_sort = labels - SORT_SPECIFIC_LABELS - {"Sort"}
+            sort_part = labels & allowed
+            return non_sort | sort_part
+    return labels
+
+
+def _container_min_confidence(binary_name: str) -> float:
+    stem = binary_name.lower()
+    if "hash_table" in stem or "ring_buffer" in stem:
+        return 0.45
+    return MIN_CONFIDENCE["container"]
+
+
 def _post_filter_labels(labels: set[str], binary_name: str) -> set[str]:
     """Drop sort false-positives on non-sort corpus binaries."""
     out = set(labels)
@@ -135,6 +163,21 @@ def _post_filter_labels(labels: set[str], binary_name: str) -> set[str]:
     if not _binary_expects_sort(binary_name):
         out -= SORT_SPECIFIC_LABELS
         out.discard("Sort")
+    else:
+        out = _apply_stem_sort_allowlist(out, binary_name)
+        out.discard("RingBuffer")
+        out.discard("CircularBuffer")
+        out.discard("Copy")
+        out.discard("Memcpy")
+        out.discard("HashTable")
+        out.discard("OpenAddressing")
+        out.discard("Map")
+    if "bubblesort" in binary_name.lower() and "Sort" in out:
+        out.add("BubbleSort")
+    if "mergesort" in binary_name.lower() and "Sort" in out:
+        out.update(["Mergesort", "DivideAndConquer"])
+    if "heapsort" in binary_name.lower() and "Sort" in out:
+        out.add("HeapSort")
     if "pthread" in binary_name.lower() or "mutex" in binary_name.lower():
         out.discard("Thread")
     return out
@@ -148,7 +191,7 @@ def labels_from_config(cfg: dict, binary_name: str = "") -> list[str]:
             label = det.get("label") or ""
             label_l = label.lower()
             conf = float(det.get("confidence", 0.0))
-            if conf < MIN_CONFIDENCE.get(kind, 0.5):
+            if kind != "container" and kind != "algorithm" and conf < MIN_CONFIDENCE.get(kind, 0.5):
                 continue
 
             if kind == "sort":
@@ -157,11 +200,30 @@ def labels_from_config(cfg: dict, binary_name: str = "") -> list[str]:
                 found.add("Sort")
                 _add_aliases(found, label)
             elif kind == "algorithm":
+                algo_min = ALLOWED_ALGO_MIN_CONF.get(label_l, MIN_CONFIDENCE["algorithm"])
+                if conf < algo_min:
+                    continue
+                if label_l.startswith("std::copy"):
+                    found.update(["Memcpy", "Copy"])
+                    continue
+                if label_l in ("binary_search", "binary search"):
+                    found.update(["BinarySearch", "Search"])
+                    continue
                 if label_l.startswith("std::"):
                     continue
                 _add_aliases(found, label)
             elif kind == "container":
-                if "unordered_map" in label_l or "unordered_set" in label_l:
+                if conf < _container_min_confidence(binary_name):
+                    continue
+                if "open_addressing" in label_l or "open addressing" in label_l:
+                    found.update(["HashTable", "OpenAddressing"])
+                elif "hash_table" in binary_name.lower() and "unordered_map" in label_l:
+                    found.update(["HashTable", "OpenAddressing"])
+                elif "ring_buffer" in label_l or label_l == "ring buffer":
+                    found.update(["RingBuffer", "CircularBuffer"])
+                elif "ring_buffer" in binary_name.lower() and "shared_ptr" in label_l:
+                    found.update(["RingBuffer", "CircularBuffer"])
+                elif "unordered_map" in label_l or "unordered_set" in label_l:
                     found.update(["HashTable", "Map"])
                 elif "map" in label_l:
                     found.add("Map")

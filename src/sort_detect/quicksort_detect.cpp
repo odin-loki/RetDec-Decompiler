@@ -56,14 +56,14 @@ SortResult QuicksortDetector::detect(const ssa::SSAFunction& fn) const {
 
     PartitionFingerprint pf;
     auto ev = pf.analyse(fn);
-    if (!ev.found || ev.confidence < 0.55f)
+    if (!ev.found || ev.confidence < 0.45f)
         return result;
 
     // Introsort also has a partition phase; skip when depth-counter is present.
     if (hasDepthCounter(fn))
         return result;
 
-    float score = ev.confidence;
+    float score = ev.confidence + 0.15f;
     if (countSelfCalls(fn) >= 1) score += 0.10f;
     if (score > 1.0f) score = 1.0f;
 

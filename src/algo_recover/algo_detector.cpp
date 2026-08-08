@@ -50,6 +50,7 @@ std::string AlgorithmResult::kindName() const noexcept {
     case AlgorithmKind::MinElement:  return "std::min_element";
     case AlgorithmKind::Find:        return "std::find";
     case AlgorithmKind::FindIf:      return "std::find_if";
+    case AlgorithmKind::BinarySearch: return "binary_search";
     case AlgorithmKind::Partition:   return "std::partition";
     case AlgorithmKind::ForEach:     return "std::for_each";
     case AlgorithmKind::Copy:        return "std::copy";
@@ -81,6 +82,7 @@ std::string AlgorithmResult::toString() const {
 
 AlgorithmDetector::AlgorithmDetector(Config cfg) : cfg_(std::move(cfg)) {
     // Register detectors in priority order.
+    if (cfg_.runBinarySearch) detectors_.push_back(std::make_unique<BinarySearchDetector>());
     if (cfg_.runFind)       detectors_.push_back(std::make_unique<FindDetector>());
     if (cfg_.runAccumulate) detectors_.push_back(std::make_unique<AccumulateDetector>());
     if (cfg_.runTransform)  detectors_.push_back(std::make_unique<TransformDetector>());

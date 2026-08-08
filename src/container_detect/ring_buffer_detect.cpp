@@ -1,0 +1,82 @@
+/**
+ * @file src/container_detect/ring_buffer_detect.cpp
+ * @brief Ring buffer detector — modulo index with array load/store.
+ */
+
+#include "retdec/container_detect/container_detect.h"
+#include "retdec/ssa/ssa.h"
+
+namespace retdec {
+namespace container_detect {
+
+namespace {
+
+static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
+    int n = 0;
+    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
+        const auto* blk = fn.block(b);
+        if (!blk) continue;
+        for (const auto* instr : blk->instrs)
+            if (instr && instr->op == op) ++n;
+    }
+    return n;
+}
+
+static bool hasModuloIndex(const ssa::SSAFunction& fn) {
+    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
+        const auto* blk = fn.block(b);
+        if (!blk) continue;
+        for (const auto* instr : blk->instrs) {
+            if (!instr) continue;
+            if (instr->op == ssa::IrInstr::Op::Div)
+                return true;
+        }
+    }
+    return false;
+}
+
+static bool hasInlineHash(const ssa::SSAFunction& fn) {
+    bool hasXor = false, hasMul = false;
+    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
+        const auto* blk = fn.block(b);
+        if (!blk) continue;
+        for (const auto* instr : blk->instrs) {
+            if (!instr) continue;
+            if (instr->op == ssa::IrInstr::Op::Xor) hasXor = true;
+            if (instr->op == ssa::IrInstr::Op::Mul) hasMul = true;
+        }
+    }
+    return hasXor && hasMul;
+}
+
+} // anonymous namespace
+
+ContainerResult RingBufferDetector::detect(const ssa::SSAFunction& fn) const {
+    ContainerResult result;
+    result.kind = ContainerKind::Array;
+
+    const bool mod = hasModuloIndex(fn);
+    const int loads  = countOp(fn, ssa::IrInstr::Op::Load);
+    const int stores = countOp(fn, ssa::IrInstr::Op::Store);
+    const int cmps   = countOp(fn, ssa::IrInstr::Op::Compare);
+
+    if (!mod || loads < 1 || stores < 1 || hasInlineHash(fn))
+        return result;
+
+    float score = 0.0f;
+    if (mod)          score += 0.35f;
+    if (loads >= 1)   score += 0.25f;
+    if (stores >= 1)  score += 0.25f;
+    if (cmps >= 1)    score += 0.15f;
+
+    result.confidence = score > 1.0f ? 1.0f : score;
+    if (result.confidence < 0.45f)
+        return result;
+
+    result.emittedType = "ring_buffer";
+    result.elementType.kind = RecoveredType::Kind::Int8;
+    return result;
+}
+
+} // namespace container_detect
+} // namespace retdec

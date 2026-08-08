@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEC=""
 MIN_DECOMPILED=9
-MIN_MEAN_F1=0.30
+MIN_MEAN_F1=0.65
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in

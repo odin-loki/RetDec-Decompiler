@@ -40,6 +40,8 @@
 #include "retdec/sort_detect/sort_detect.h"
 #include "retdec/ssa/ssa.h"
 
+#include <algorithm>
+
 namespace retdec {
 namespace sort_detect {
 
@@ -97,6 +99,10 @@ SortResult HeapsortDetector::detect(const ssa::SSAFunction& fn) const {
 
     if (hasBuildHeapPhase(fn)) score += 0.30f;
     if (hasSortPhase(fn))      score += 0.30f;
+
+    // Without sift-down evidence this is likely mergesort or another loop.
+    if (!sde.found)
+        score = std::min(score, 0.40f);
 
     result.confidence = score > 1.0f ? 1.0f : score;
 

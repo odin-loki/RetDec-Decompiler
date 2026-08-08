@@ -323,6 +323,20 @@ private:
     std::string emitType(const RecoveredType& elem) const;
 };
 
+/** Open-addressing hash table (linear probing). */
+class OpenAddressingDetector : public IContainerDetector {
+public:
+    ContainerResult detect(const ssa::SSAFunction& fn) const override;
+    ContainerKind kind() const noexcept override { return ContainerKind::Array; }
+};
+
+/** Ring buffer (modulo head/tail index). */
+class RingBufferDetector : public IContainerDetector {
+public:
+    ContainerResult detect(const ssa::SSAFunction& fn) const override;
+    ContainerKind kind() const noexcept override { return ContainerKind::Array; }
+};
+
 /**
  * std::list<T> detector.
  */
@@ -432,6 +446,8 @@ public:
         int   minBlocks     = 2;
         int   minInstrs     = 8;
         bool  runVector     = true;
+        bool  runOpenAddressing = true;
+        bool  runRingBuffer = true;
         bool  runList       = true;
         bool  runMap        = true;
         bool  runUnordered  = true;

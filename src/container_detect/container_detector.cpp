@@ -211,6 +211,8 @@ ContainerDetector::ContainerDetector(Config cfg) : cfg_(std::move(cfg)) {
     // Register detectors in descending specificity order.
     if (cfg_.runString)     detectors_.push_back(std::make_unique<StringDetector>());
     if (cfg_.runSharedPtr)  detectors_.push_back(std::make_unique<SharedPtrDetector>());
+    if (cfg_.runOpenAddressing) detectors_.push_back(std::make_unique<OpenAddressingDetector>());
+    if (cfg_.runRingBuffer) detectors_.push_back(std::make_unique<RingBufferDetector>());
     if (cfg_.runMap)        detectors_.push_back(std::make_unique<MapDetector>());
     if (cfg_.runUnordered)  detectors_.push_back(std::make_unique<UnorderedMapDetector>());
     if (cfg_.runList)       detectors_.push_back(std::make_unique<ListDetector>());

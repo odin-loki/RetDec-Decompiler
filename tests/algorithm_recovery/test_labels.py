@@ -115,6 +115,55 @@ def test_mutex_adds_pthread_labels() -> None:
     assert "Thread" not in labels
 
 
+def test_std_copy_maps_to_memcpy() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "algorithm", "label": "std::copy", "confidence": 0.8},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "memcpy_loop-gcc-O0")
+    assert "Memcpy" in labels
+    assert "Copy" in labels
+
+
+def test_binary_search_algorithm() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "algorithm", "label": "binary_search", "confidence": 0.8},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "binary_search-gcc-O0")
+    assert "BinarySearch" in labels
+    assert "Search" in labels
+
+
+def test_open_addressing_container() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {
+                        "kind": "container",
+                        "label": "open_addressing_hash_table",
+                        "confidence": 0.85,
+                    },
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "hash_table-gcc-O0")
+    assert "HashTable" in labels
+    assert "OpenAddressing" in labels
+
+
 def main() -> int:
     test_sort_detection()
     test_hash_table_container()
@@ -123,6 +172,9 @@ def main() -> int:
     test_stl_algorithm_noise_filtered()
     test_non_sort_binary_filters_sort_labels()
     test_mutex_adds_pthread_labels()
+    test_std_copy_maps_to_memcpy()
+    test_binary_search_algorithm()
+    test_open_addressing_container()
     print("algorithm_recovery label tests: PASS")
     return 0
 

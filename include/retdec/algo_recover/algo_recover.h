@@ -118,6 +118,7 @@ enum class AlgorithmKind : uint8_t {
     MinElement,      ///< *std::min_element
     Find,            ///< std::find
     FindIf,          ///< std::find_if
+    BinarySearch,    ///< binary search on sorted range
     Partition,       ///< std::partition
     ForEach,         ///< std::for_each
     Copy,            ///< std::copy (transform with identity)
@@ -245,6 +246,13 @@ private:
                             EmissionTier tier) const;
 };
 
+/** Binary search on a sorted array (halving midpoint loop). */
+class BinarySearchDetector : public IAlgorithmDetector {
+public:
+    AlgorithmResult detect(const ssa::SSAFunction& fn) const override;
+    AlgorithmKind   kind() const noexcept override { return AlgorithmKind::BinarySearch; }
+};
+
 /** std::find / std::find_if detector. */
 class FindDetector : public IAlgorithmDetector {
 public:
@@ -323,6 +331,7 @@ public:
         bool  runTransform        = true;
         bool  runAccumulate       = true;
         bool  runFind             = true;
+        bool  runBinarySearch     = true;
         bool  runPartition        = true;
         bool  runForEach          = true;
     };

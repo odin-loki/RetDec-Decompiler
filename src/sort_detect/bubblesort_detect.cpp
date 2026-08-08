@@ -69,17 +69,26 @@ SortResult BubbleSortDetector::detect(const ssa::SSAFunction& fn) const {
     SortResult result;
     result.algorithm = SortAlgorithm::BubbleSort;
 
+    PartitionFingerprint pf;
+    const auto part = pf.analyse(fn);
+    if (part.found && part.confidence >= 0.45f)
+        return result;
+
+    SiftDownFingerprint sdf;
+    if (sdf.analyse(fn).found)
+        return result;
+
     const int cmps  = countOp(fn, ssa::IrInstr::Op::Compare);
     const int cb    = countOp(fn, ssa::IrInstr::Op::CondBranch);
     const int phis  = countPhis(fn);
     const bool swap = hasSwapPattern(fn);
     const int self  = countSelfCalls(fn);
 
-    if (cmps < 2 || !swap || self > 0)
+    if (cmps < 3 || !swap || self > 0 || cb < 3 || phis < 2)
         return result;
 
     float score = 0.0f;
-    if (cmps >= 2)           score += 0.30f;
+    if (cmps >= 3)           score += 0.30f;
     if (swap)                score += 0.25f;
     if (cb >= 3)             score += 0.25f;
     if (phis >= 2)           score += 0.20f;

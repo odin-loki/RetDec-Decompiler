@@ -104,6 +104,11 @@ float MergesortDetector::scoreMerge(const ssa::SSAFunction& fn) const {
     score += scoreRecursion(fn);
     if (hasMergeLoop(fn))              score += 0.40f;
     if (hasAuxiliaryAllocation(fn))    score += 0.20f;
+
+    // Hand-written mergesort often splits across functions; boost merge loops.
+    if (hasMergeLoop(fn) && score < 0.55f)
+        score = 0.55f;
+
     return score > 1.0f ? 1.0f : score;
 }
 

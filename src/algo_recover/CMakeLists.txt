@@ -1,6 +1,7 @@
 add_library(retdec_algo_recover
     transform_detect.cpp
     accumulate_detect.cpp
+    binary_search_detect.cpp
     find_detect.cpp
     partition_detect.cpp
     foreach_detect.cpp

@@ -2,7 +2,7 @@
   "harness": "algorithm_recovery",
   "summary": {
     "binaries": 9,
-    "mean_f1": 0.36666666666666664,
+    "mean_f1": 0.7925925925925925,
     "decompiled": 9
   },
   "per_binary": {
@@ -23,12 +23,12 @@
       "f1": 1.0
     },
     "generated_heapsort-gcc-O0": {
-      "tp": 1,
-      "fp": 2,
-      "fn": 1,
-      "precision": 0.3333333333333333,
-      "recall": 0.5,
-      "f1": 0.4
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_pthread_mutex-gcc-O0": {
       "tp": 3,
@@ -39,44 +39,44 @@
       "f1": 1.0
     },
     "generated_quicksort-gcc-O0": {
-      "tp": 1,
-      "fp": 1,
-      "fn": 1,
-      "precision": 0.5,
-      "recall": 0.5,
-      "f1": 0.5
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "hash_table-gcc-O0": {
-      "tp": 0,
-      "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "tp": 2,
+      "fp": 2,
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "memcpy_loop-gcc-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 3,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.6666666666666666,
+      "f1": 0.8
     },
     "mergesort-gcc-O0": {
-      "tp": 1,
-      "fp": 1,
-      "fn": 2,
-      "precision": 0.5,
-      "recall": 0.3333333333333333,
-      "f1": 0.4
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "ring_buffer-gcc-O0": {
-      "tp": 0,
-      "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "tp": 2,
+      "fp": 2,
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     }
   },
   "per_class": {
@@ -90,19 +90,19 @@
     },
     "BubbleSort": {
       "tp": 1,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.3333333333333333,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.5
+      "f1": 1.0
     },
     "CircularBuffer": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "Concurrency": {
       "tp": 1,
@@ -113,44 +113,52 @@
       "f1": 1.0
     },
     "Copy": {
-      "tp": 0,
-      "fp": 0,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "tp": 1,
+      "fp": 1,
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "DivideAndConquer": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "HashTable": {
-      "tp": 0,
-      "fp": 0,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "tp": 1,
+      "fp": 1,
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "HeapSort": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "Map": {
       "tp": 0,
       "fp": 1,
-      "fn": 1,
+      "fn": 0,
       "precision": 0.0,
       "recall": 0.0,
       "f1": 0.0
     },
     "Memcpy": {
-      "tp": 0,
-      "fp": 0,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "tp": 1,
+      "fp": 1,
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "Memmove": {
       "tp": 0,
@@ -161,12 +169,12 @@
       "f1": 0.0
     },
     "Mergesort": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "Mutex": {
       "tp": 1,
@@ -177,12 +185,12 @@
       "f1": 1.0
     },
     "OpenAddressing": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "Pthread": {
       "tp": 1,
@@ -193,20 +201,20 @@
       "f1": 1.0
     },
     "QuickSort": {
-      "tp": 0,
-      "fp": 1,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "RingBuffer": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "Search": {
       "tp": 0,

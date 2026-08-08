@@ -102,11 +102,17 @@ TransformEvidence TransformDetector::analyse(const ssa::SSAFunction& fn) const {
     TransformEvidence ev;
     if (!hasBackEdge(fn)) return ev;
 
+    const bool indexedCopy = countOp(fn, ssa::IrInstr::Op::Load)  >= 1 &&
+                             countOp(fn, ssa::IrInstr::Op::Store) >= 1 &&
+                             countOp(fn, ssa::IrInstr::Op::Compare) >= 1 &&
+                             countOp(fn, ssa::IrInstr::Op::Add) >= 1 &&
+                             countOp(fn, ssa::IrInstr::Op::Call) == 0;
+
     ev.hasSrcDstLoad      = countOp(fn, ssa::IrInstr::Op::Load)  >= 1 &&
                             countOp(fn, ssa::IrInstr::Op::Store) >= 1;
-    ev.hasTwoPtrsAdvanced = hasTwoPtrsAdvanced(fn);
+    ev.hasTwoPtrsAdvanced = hasTwoPtrsAdvanced(fn) || indexedCopy;
     ev.hasNoReorder       = countOp(fn, ssa::IrInstr::Op::Call)  <= 1; // no sort call
-    ev.hasLambdaCall      = hasDerivedStore(fn);
+    ev.hasLambdaCall      = hasDerivedStore(fn) && !indexedCopy;
     ev.hasBackInserter    = hasBackInserterCall(fn);
     ev.found = ev.hasSrcDstLoad;
     ev.confidence = score(ev);
@@ -117,10 +123,13 @@ float TransformDetector::score(const TransformEvidence& ev) const {
     if (!ev.hasSrcDstLoad) return 0.0f;
     float s = 0.0f;
     if (ev.hasSrcDstLoad)      s += 0.25f;
-    if (ev.hasTwoPtrsAdvanced) s += 0.25f;
+    if (ev.hasTwoPtrsAdvanced) s += 0.30f;
     if (ev.hasNoReorder)       s += 0.10f;
     if (ev.hasLambdaCall)      s += 0.30f;
     if (ev.hasBackInserter)    s += 0.10f;
+    // Identity indexed copy (memcpy-style) without extra computation.
+    if (!ev.hasLambdaCall && !ev.hasBackInserter && ev.hasTwoPtrsAdvanced)
+        s += 0.20f;
     return s > 1.0f ? 1.0f : s;
 }
 
