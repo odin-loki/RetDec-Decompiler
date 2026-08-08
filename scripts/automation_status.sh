@@ -52,6 +52,7 @@ echo ""
 
 echo "Runnable now:"
 echo "  bash scripts/run_all_automation.sh"
+echo "  bash scripts/verify_lief_build.sh  # when liblief-dev installed"
 echo "  bash scripts/dispatch_algorithm_recovery_nightly.sh [--full-corpus]  # needs gh auth"
 echo "  bash scripts/regenerate-retdec-support.sh  # needs toolchain farm"
 echo ""

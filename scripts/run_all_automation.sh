@@ -79,5 +79,9 @@ echo "==> nightly report"
 bash "${ROOT}/scripts/nightly_report.sh" || true
 echo ""
 
+echo "==> LIEF C++ build verify (optional)"
+bash "${ROOT}/scripts/verify_lief_build.sh" || echo "WARN  LIEF verify failed"
+echo ""
+
 echo "run_all_automation: complete"
 bash "${ROOT}/scripts/automation_status.sh"
