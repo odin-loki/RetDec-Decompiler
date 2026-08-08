@@ -5,16 +5,41 @@
  */
 
 #include <memory>
+#include <cstdio>
+#include <cstdlib>
+
 #include "retdec/fileformat/file_format/coff/coff_format.h"
 #include "retdec/fileformat/file_format/elf/elf_format.h"
 #include "retdec/fileformat/file_format/intel_hex/intel_hex_format.h"
 #include "retdec/fileformat/file_format/macho/macho_format.h"
 #include "retdec/fileformat/file_format/pe/pe_format.h"
 #include "retdec/fileformat/file_format/raw_data/raw_data_format.h"
+#include "retdec/fileformat/lief_adapter.h"
 #include "retdec/fileformat/utils/format_detection.h"
 
 namespace retdec {
 namespace fileformat {
+
+namespace {
+
+void maybeLiefShadowProbe(const std::string& filePath)
+{
+#if defined(RETDEC_HAS_LIEF)
+	const char* env = std::getenv("RETDEC_LIEF_SHADOW");
+	if (!env || env[0] == '\0' || env[0] == '0') {
+		return;
+	}
+	if (!LiefAdapter::available()) {
+		return;
+	}
+	const auto sections = LiefAdapter::parseSections(filePath);
+	std::fprintf(stderr, "[lief-shadow] %s sections=%zu\n", filePath.c_str(), sections.size());
+#else
+	(void)filePath;
+#endif
+}
+
+} // namespace
 
 /**
  * Create instance of FileFormat class
@@ -33,6 +58,7 @@ std::unique_ptr<FileFormat> createFileFormat(
 		bool isRaw,
 		LoadFlags loadFlags)
 {
+	maybeLiefShadowProbe(filePath);
 	switch (detectFileFormat(filePath, isRaw))
 	{
 		case Format::PE:

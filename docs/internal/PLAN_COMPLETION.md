@@ -1,11 +1,11 @@
 # MASTER-UPGRADE-PLAN — automation completion status
 
-Last updated: v2.0.13
+Last updated: v2.0.14
 
 ## Steps 1–26 (shippable product) — DONE
 
 All Composer-automatable items through Step 26 are implemented or scaffolded.
-Shipped releases v1.0.0–v2.0.13 on `main`.
+Shipped releases v1.0.0–v2.0.14 on `main`.
 
 | Area | Status | Artifacts |
 |------|--------|-----------|

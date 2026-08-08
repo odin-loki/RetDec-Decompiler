@@ -20,12 +20,13 @@ done
 
 mkdir -p "$(dirname "${OUT}")"
 
-"${PYTHON}" - "${CORPUS}" "${OUT}" "${LIMIT}" <<'PY'
+"${PYTHON}" - "${CORPUS}" "${OUT}" "${LIMIT}" "${ROOT}" <<'PY'
 import json, pathlib, subprocess, sys
 
 corpus = pathlib.Path(sys.argv[1])
 out = pathlib.Path(sys.argv[2])
 limit = int(sys.argv[3])
+root = pathlib.Path(sys.argv[4])
 
 try:
     import lief  # type: ignore
@@ -54,11 +55,20 @@ for sample in samples:
             row["lief_error"] = str(exc)
     rows.append(row)
 
+retdec_has_lief = False
+for marker in (
+    root / "build/linux/lief-enabled.txt",
+    root / "build/windows/lief-enabled.txt",
+):
+    if marker.is_file() and marker.read_text(encoding="utf-8").strip() == "1":
+        retdec_has_lief = True
+        break
+
 payload = {
     "status": "blocked" if not has_lief else ("ok" if rows else "empty_corpus"),
     "harness": "lief-eval",
     "lief_available": has_lief,
-    "retdec_has_lief": False,
+    "retdec_has_lief": retdec_has_lief,
     "samples": rows,
     "next": "Build with RETDEC_ENABLE_LIEF=ON; see docs/internal/lief_adoption.md",
 }

@@ -18,6 +18,7 @@ Adopt behind `retdec::fileformat::LiefAdapter` — do not cut over in one PR.
 - `cmake/lief_optional.cmake` wires `find_package(LIEF)` when `RETDEC_ENABLE_LIEF=ON`
 - `LiefAdapter::parseSections` implemented with LIEF C++ API
 - Install: `apt install liblief-dev` (Linux) then `-DRETDEC_ENABLE_LIEF=ON`
+- Shadow validation: set `RETDEC_LIEF_SHADOW=1` when decompiling to log LIEF section counts alongside existing parsers
 
 ### Phase C — modification
 
