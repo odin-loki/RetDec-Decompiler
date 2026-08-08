@@ -19,6 +19,12 @@ done
 echo "==> RetDec run_all_automation (python=${PYTHON})"
 echo ""
 
+echo "==> eval venv"
+bash "${ROOT}/scripts/setup_eval_venv.sh"
+PYTHON="$("${ROOT}/scripts/find_python.sh")"
+echo "Using python: ${PYTHON}"
+echo ""
+
 echo "==> doctor"
 bash "${ROOT}/scripts/doctor.sh"
 echo ""

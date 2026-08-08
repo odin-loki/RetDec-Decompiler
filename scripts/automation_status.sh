@@ -45,7 +45,7 @@ fi
 check test -x "${ROOT}/build/linux/src/retdec-decompiler/retdec-decompiler"
 DEC="$(find "${ROOT}/build" -name 'retdec-decompiler' -type f 2>/dev/null | head -n1 || true)"
 [[ -n "${DEC}" ]] && echo "  OK   decompiler: ${DEC}" || echo "  --   decompiler not built"
-"${PYTHON}" -c "import lief" 2>/dev/null && echo "  OK   python lief" || echo "  --   pip install -r scripts/requirements-eval.txt"
+"${PYTHON}" -c "import lief" 2>/dev/null && echo "  OK   python lief (eval venv)" || echo "  --   bash scripts/setup_eval_venv.sh"
 command -v rellic-decompile >/dev/null 2>&1 && echo "  OK   rellic-decompile" || echo "  BLOCK rellic (LLVM 8 build)"
 command -v retypd >/dev/null 2>&1 && echo "  OK   retypd" || echo "  BLOCK retypd not on PATH"
 echo ""

@@ -4,7 +4,16 @@
 set -euo pipefail
 
 resolve_python() {
-	local c p
+	local root p c
+	root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+	for p in \
+		"${root}/.venv-eval/bin/python" \
+		"${root}/.venv-eval/Scripts/python.exe"; do
+		if [[ -x "$p" ]] && "$p" -c "import sys" >/dev/null 2>&1; then
+			printf '%s\n' "$p"
+			return 0
+		fi
+	done
 	for c in python3 python py; do
 		if command -v "$c" >/dev/null 2>&1; then
 			if "$c" -c "import sys" >/dev/null 2>&1; then

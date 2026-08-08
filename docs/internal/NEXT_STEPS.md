@@ -1,19 +1,18 @@
 # Next steps (human-led)
 
-MASTER-UPGRADE-PLAN automation is **complete** through v2.0.9. These items
+MASTER-UPGRADE-PLAN automation is **complete** through v2.0.11. These items
 require your environment, toolchain farm, or measured CI artifacts.
 
 ## Local automation (no WSL required)
 
 ```bash
 bash scripts/automation_status.sh       # what's done vs blocked
-bash scripts/run_all_automation.sh      # doctor, ship checklist, tests, migration evals
+bash scripts/run_all_automation.sh      # eval venv, doctor, ship checklist, tests, migration evals
 bash scripts/run_all_automation.sh --skip-migration   # faster smoke
+bash scripts/setup_eval_venv.sh         # PEP 668-safe Python deps for migration evals
 ```
 
 Windows: `.\scripts\doctor.ps1`, `.\scripts\run_all_automation.ps1`, and `.\scripts\dispatch_algorithm_recovery_nightly.ps1`
-
-Optional eval deps: `pip install -r scripts/requirements-eval.txt`
 
 ## 1. Algorithm-recovery F1 (local baselines)
 
