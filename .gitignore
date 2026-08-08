@@ -100,6 +100,13 @@ results/migration-eval-summary.json
 results/lief-eval.json
 results/rellic-eval.json
 results/llvm-api-inventory.json
+build-decompiler-test/
+build-format-router-test/
+build-gui-check/
+build-gui-progress-test/
+results/algorithm_recovery.json
+tests/algorithm_recovery/predictions/ci-local.json
+tests/algorithm_recovery/predictions/full-sim.json
 docs/BENCHMARKS_TABLE.md
 keystone.zip
 llama.zip

@@ -60,18 +60,32 @@ jobs:
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
           bash scripts/run_algorithm_recovery_full.sh --decompiler "$DEC" --jobs 4
 
-      - name: Algorithm recovery regression gate
+      - name: Algorithm recovery regression gate (CI core)
         run: |
           bash scripts/algorithm_recovery_regression_gate.sh \
             --current results/algorithm-recovery-ci.json \
             --profile ci_core
 
-      - name: Update algorithm recovery baseline
+      - name: Algorithm recovery regression gate (full corpus)
+        if: github.event_name == 'workflow_dispatch' && inputs.full_corpus == true
+        run: |
+          bash scripts/algorithm_recovery_regression_gate.sh \
+            --current results/algorithm-recovery-full.json \
+            --profile full_corpus
+
+      - name: Update algorithm recovery baseline (CI core)
         if: success()
         run: |
           bash scripts/update_algorithm_recovery_baseline.sh \
             --from results/algorithm-recovery-ci.json \
             --profile ci_core
+
+      - name: Update algorithm recovery baseline (full corpus)
+        if: success() && github.event_name == 'workflow_dispatch' && inputs.full_corpus == true
+        run: |
+          bash scripts/update_algorithm_recovery_baseline.sh \
+            --from results/algorithm-recovery-full.json \
+            --profile full_corpus
           git diff --stat results/baseline-algorithm-recovery.json || true
 
       - name: Migration eval suite
@@ -86,6 +100,7 @@ jobs:
           path: |
             results/algorithm-recovery-ci.json
             results/algorithm-recovery-full.json
+            results/baseline-algorithm-recovery.json
             results/lief-eval.json
             results/rellic-eval.json
             results/retypd-eval.json

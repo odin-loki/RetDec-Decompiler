@@ -41,8 +41,11 @@ bash scripts/regenerate-retdec-support.sh
 
 ```bash
 gh auth login
-gh workflow run algorithm-recovery-nightly -f full_corpus=true
+bash scripts/dispatch_algorithm_recovery_nightly.sh              # CI core (9 binaries)
+bash scripts/dispatch_algorithm_recovery_nightly.sh --full-corpus  # full 216-binary run
 ```
+
+Or manually: `gh workflow run algorithm-recovery-nightly -f full_corpus=true`
 
 Review `results/algorithm-recovery-full.json` artifact from the workflow run.
 

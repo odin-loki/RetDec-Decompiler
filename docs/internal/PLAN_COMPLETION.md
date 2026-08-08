@@ -1,11 +1,11 @@
 # MASTER-UPGRADE-PLAN — automation completion status
 
-Last updated: v2.0.7
+Last updated: v2.0.8
 
 ## Steps 1–26 (shippable product) — DONE
 
 All Composer-automatable items through Step 26 are implemented or scaffolded.
-Shipped releases v1.0.0–v2.0.7 on `main`.
+Shipped releases v1.0.0–v2.0.8 on `main`.
 
 | Area | Status | Artifacts |
 |------|--------|-----------|
@@ -43,7 +43,7 @@ Shipped releases v1.0.0–v2.0.7 on `main`.
 1. **retdec-support regen** — `regenerate-retdec-support.sh` stages; needs toolchain farm
 2. **rellic / LLVM backend** — blocked on LLVM 8 alignment
 3. **Retypd / SAILR production** — research timelines in MASTER-UPGRADE-PLAN Part 9
-4. **GitHub nightly dispatch** — `gh auth login` then `gh workflow run algorithm-recovery-nightly -f full_corpus=true`
+4. **GitHub nightly dispatch** — `gh auth login` then `bash scripts/dispatch_algorithm_recovery_nightly.sh [--full-corpus]`
 
 ## Decision D7 — CLOSED (v1.8.0)
 
