@@ -45,3 +45,15 @@ add_fuzz_target(fuzz_pyc fuzz_pyc.cpp
     retdec-pyc-parser
     retdec-bc-module
 )
+
+add_fuzz_target(fuzz_pe fuzz_pe.cpp
+    retdec::fileformat
+)
+
+add_fuzz_target(fuzz_elf fuzz_elf.cpp
+    retdec::fileformat
+)
+
+add_fuzz_target(fuzz_macho fuzz_macho.cpp
+    retdec::fileformat
+)

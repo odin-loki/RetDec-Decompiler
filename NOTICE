@@ -1,0 +1,29 @@
+RetDec — Enhanced Retargetable Decompiler
+Copyright (c) 2025-2026 Odin Loch, trading as Imortek.
+
+This product includes software developed by Avast and contributors
+(original RetDec, https://github.com/avast/retdec).
+
+Third-party components (see cmake/deps.cmake for pinned versions):
+
+  LLVM (University of Illinois/NCSA) — via avast/llvm fork
+  Capstone (BSD-3-Clause)
+  YARA (BSD-3-Clause)
+  yaramod (MIT)
+  Keystone (GPL-2.0) — tool-only; excluded from commercial packages
+  OpenSSL (Apache-2.0)
+  zlib (Zlib)
+  googletest (BSD-3-Clause)
+  Qt6 (LGPL/GPL/commercial — runtime dependency when GUI enabled)
+  Eigen (MPL-2.0)
+  rapidjson (MIT)
+  tinyxml2 (Zlib)
+  stb (MIT/public domain)
+  tlsh (Apache-2.0 / BSD)
+  elfio (MIT)
+  whereami (MIT/WTFPL)
+
+Keystone (GPL-2.0) is used only in capstone2llvmirtool and related tests.
+It must not be included in commercial distribution packages.
+
+llama.cpp (MIT) — when RETDEC_ENABLE_NEURAL is enabled.

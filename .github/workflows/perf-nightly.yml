@@ -1,8 +1,9 @@
 name: perf-nightly
 
-# Manual only — weekly cron disabled to avoid noisy CI status on the repo.
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 0"
 
 jobs:
   perf-windows:

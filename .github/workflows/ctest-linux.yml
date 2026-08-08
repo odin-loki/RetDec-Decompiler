@@ -1,8 +1,8 @@
 name: ctest-linux
 
-# Disabled for automatic CI — full RetDec builds are too heavy for GitHub Actions
-# on every push. Run locally or trigger manually via Actions → ctest-linux.
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 env:
@@ -15,6 +15,9 @@ jobs:
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
 
       - name: Install dependencies
         run: |
@@ -52,8 +55,10 @@ jobs:
       - name: Cache CMake build
         uses: actions/cache@v4
         with:
-          path: build/linux
-          key: ctest-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'src/**', 'deps/**') }}
+          path: |
+            build/linux
+            ~/.cache/ccache
+          key: ctest-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/deps.cmake', 'cmake/**') }}
           restore-keys: |
             ctest-linux-
 
@@ -61,6 +66,7 @@ jobs:
         run: >
           cmake --preset full-linux-debug
           -DRETDEC_ENABLE_CUDA_ACCEL=OFF
+          -DRETDEC_ENABLE_NEURAL=OFF
 
       - name: Build integration targets
         run: >

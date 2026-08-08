@@ -1,11 +1,11 @@
 # URLs below are required artifact locations for CMake dependency downloads (not documentation).
 
 set(CAPSTONE_URL
-    "https://github.com/capstone-engine/capstone/archive/refs/tags/5.0-rc2.zip"
+    "https://github.com/capstone-engine/capstone/archive/refs/tags/5.0.9.zip"
     CACHE STRING "URL of Capstone archive to use."
 )
 set(CAPSTONE_ARCHIVE_SHA256
-    "c47acdabb9ba4922a6d68b96eb7e14a431bfef7d7c57cea1e5881f87776228b2"
+    "0a651143e88a9c244a05dba149ee34e0379bebffa392eb4ccc285fc360442c4d"
     CACHE STRING ""
 )
 

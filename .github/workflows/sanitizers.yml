@@ -1,0 +1,86 @@
+name: sanitizers
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 0"
+
+jobs:
+  asan-ubsan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ninja-build \
+            python3 \
+            perl
+
+      - uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "3.31.6"
+
+      - name: Fetch large support files
+        run: |
+          bash scripts/fetch-large-files.sh || \
+            bash scripts/fetch-large-files.sh \
+              --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: build/linux
+          key: sanitizers-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/deps.cmake', 'cmake/**') }}
+          restore-keys: |
+            sanitizers-
+
+      - name: Configure (core-asan + UBSan, CPU-only CI)
+        run: >
+          cmake --preset core-asan
+          -DRETDEC_USE_UNDEFINED_BEHAVIOR_SANITIZER=ON
+          -DRETDEC_ENABLE_CUDA_ACCEL=OFF
+          -DRETDEC_ENABLE_NEURAL=OFF
+
+      - name: Build decompiler
+        run: cmake --build build/linux --parallel --target retdec-decompiler
+
+      - name: Build decompile sample corpus
+        run: |
+          mkdir -p /tmp/retdec_tests/c
+          cat > /tmp/retdec_tests/c/hello.c <<'EOF'
+          #include <stdio.h>
+          int main(void) { printf("hello\n"); return 0; }
+          EOF
+          gcc -O2 -o /tmp/retdec_tests/c/hello /tmp/retdec_tests/c/hello.c
+          strip /tmp/retdec_tests/c/hello
+          # Best-effort: compile additional samples from tests/decompile_samples.
+          bash tests/decompile_samples/compile_all.sh || true
+
+      - name: Run ASan over decompile sample corpus
+        run: |
+          set -euo pipefail
+          mkdir -p profile_output
+          shopt -s nullglob
+          samples=(/tmp/retdec_tests/c/* /tmp/retdec_tests/cpp/* /tmp/retdec_tests/rust/*)
+          if [ ${#samples[@]} -eq 0 ]; then
+            echo "No decompile samples found"
+            exit 1
+          fi
+          for sample in "${samples[@]}"; do
+            [ -f "$sample" ] || continue
+            echo "=== ASan: $sample ==="
+            bash scripts/run_asan.sh "$sample"
+          done
+
+      - name: Upload ASan log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: asan-ubsan-log
+          path: profile_output/asan.log
+          if-no-files-found: warn

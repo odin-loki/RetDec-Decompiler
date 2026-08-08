@@ -113,6 +113,23 @@ else
     fail_check "python3 not on PATH - needed for validate_pipeline_json.py and ci-smoke tests"
 fi
 
+# ── licence files ─────────────────────────────────────────────────────────────
+for f in LICENSE LICENSE-AGPL LICENSE-COMMERCIAL NOTICE; do
+    if [ -f "${REPO_ROOT}/${f}" ]; then
+        pass_check "${f} present"
+    else
+        fail_check "missing ${f} — run install-licence-files.sh"
+    fi
+done
+
+# ── dependency release candidates ─────────────────────────────────────────────
+if grep -q '5.0-rc2' "${REPO_ROOT}/cmake/deps.cmake" 2>/dev/null; then
+    warn_check "Capstone still pinned to 5.0-rc2"
+fi
+if grep -q 'v4.2.0-rc1' "${REPO_ROOT}/cmake/deps.cmake" 2>/dev/null; then
+    warn_check "YARA still pinned to v4.2.0-rc1"
+fi
+
 # ── perl ──────────────────────────────────────────────────────────────────────
 if command -v perl >/dev/null 2>&1; then
     pass_check "perl $(perl -e 'print $^V' 2>/dev/null || perl --version 2>/dev/null | sed -n '2p')"

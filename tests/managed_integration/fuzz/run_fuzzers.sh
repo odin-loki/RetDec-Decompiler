@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run_fuzzers.sh — Run all managed-language parser fuzz targets.
+# run_fuzzers.sh — Run all parser fuzz targets (managed + native file formats).
 #
 # Usage (from repo root after building with RETDEC_FUZZ=ON):
 #   bash tests/managed_integration/fuzz/run_fuzzers.sh [--runs N] [--jobs N]
@@ -17,6 +17,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 FUZZ_SRC="$REPO_ROOT/tests/managed_integration/fuzz"
 FIXTURES="$REPO_ROOT/tests/managed_integration/fixtures"
+CORPUS_BIN="$REPO_ROOT/tests/decompiler/corpus/bin"
 BUILD_DIR="$REPO_ROOT/build/linux"
 RUNS=1000000
 JOBS="$(nproc)"
@@ -95,6 +96,18 @@ run_fuzzer fuzz_wasm \
 run_fuzzer fuzz_pyc \
     "$FUZZ_BIN_DIR/corpus_pyc" \
     "$FIXTURES/python"
+
+run_fuzzer fuzz_pe \
+    "$FUZZ_BIN_DIR/corpus_pe" \
+    "$CORPUS_BIN"
+
+run_fuzzer fuzz_elf \
+    "$FUZZ_BIN_DIR/corpus_elf" \
+    "$CORPUS_BIN"
+
+run_fuzzer fuzz_macho \
+    "$FUZZ_BIN_DIR/corpus_macho" \
+    "$CORPUS_BIN"
 
 echo "=== All fuzz runs complete ==="
 echo "Logs:    $FUZZ_BIN_DIR/*.fuzz.log"

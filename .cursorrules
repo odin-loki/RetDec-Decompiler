@@ -1,11 +1,36 @@
+# RetDec — Composer agent rules (MASTER-UPGRADE-PLAN Part 14)
 
-## Autonomous Task Execution
-You are an autonomous coding agent. Never stop between tasks.
-After completing any task or subtask:
-1. Immediately run: task-master next
-2. Begin the next task without asking for confirmation
-3. Only stop if you encounter an unresolvable blocking error or all tasks are marked done
-4. Never ask "should I continue?" or "shall I proceed?" — always continue
-5. Never summarize progress and wait for a response — act immediately
-6. If a task fails, mark it failed with task-master set-status and move to the next one
+## Hard boundaries
 
+- NEVER touch `deps/llvm/` or attempt an LLVM version bump.
+- NEVER modify `deps/` except pinned URL and SHA-256 lines in `cmake/deps.cmake`.
+- NEVER change a public header to make an implementation compile.
+- NEVER edit files not named in the current task prompt.
+- NEVER delete, disable, SKIP, DISABLED_-prefix, or loosen a test. A failing test is a finding — report it.
+- NEVER invent file paths, symbols, or APIs not present in the repository.
+
+## Verification
+
+- Build after every C++ edit.
+- On build breakage: STOP and report the first compiler/link error verbatim. Do not attempt a third repair without escalation.
+- Never claim complete without pasting relevant ctest or build output.
+
+## Task sizing
+
+- One dependency bump per branch/commit.
+- One algorithm change per commit with unchanged public headers unless explicitly scoped.
+- If acceptance criteria cannot be stated in one sentence, stop and ask for a narrower scope.
+
+## Escalation triggers (stop and report)
+
+- Same build error survives two repair attempts.
+- Proposed public header change to fix implementation.
+- Any test deletion or disable proposed.
+- Diff exceeds ~400 lines for a mechanical task.
+- llama.cpp API symbol guesswork — read `deps/llamacpp/include/llama.h` at the pinned commit first.
+
+## Honesty
+
+- Say when unsure and stop.
+- Do not stack changes on a broken tree.
+- Do not mark tasks done without verification output.

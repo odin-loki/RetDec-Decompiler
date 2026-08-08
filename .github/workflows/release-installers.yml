@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version (e.g. 5.0)"
-        required: true
-        default: "5.0"
+        description: "Release version override (tag push uses git tag; manual only)"
+        required: false
+        default: ""
       skip_build:
         description: "Publish existing dist/ artifacts only (no rebuild)"
         type: boolean
@@ -37,8 +37,11 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ]; then
             TAG="${GITHUB_REF_NAME}"
             VER="${TAG#v}"
-          else
+          elif [ -n "${{ inputs.version }}" ]; then
             VER="${{ inputs.version }}"
+            TAG="v${VER}"
+          else
+            VER="$(grep -E '^[[:space:]]*VERSION[[:space:]]' CMakeLists.txt | head -1 | sed -E 's/.*VERSION[[:space:]]+([0-9.]+).*/\1/')"
             TAG="v${VER}"
           fi
           echo "version=${VER}" >> "$GITHUB_OUTPUT"
@@ -49,7 +52,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
-          name: RetDec ${{ steps.meta.outputs.version }}
+          name: RetDec Imortek ${{ steps.meta.outputs.version }}
           draft: false
           prerelease: false
           generate_release_notes: true

@@ -1,16 +1,19 @@
-# RetDec — Enhanced Retargetable Decompiler
+# RetDec Imortek — Specification Extraction Decompiler
 
-A machine-code decompiler that recovers high-level source code from compiled
-binaries. Built on the original RetDec/LLVM pipeline, this version adds
-semantic library recovery, a multi-language output backend, a Qt 6 IDE-style
-GUI, and optional AI-assisted naming via the standalone `retdec-qwen3-runner`.
+**A specification-extraction tool that contains a decompiler** — algorithm
+recovery, semantic export, and offline neural refinement are the product;
+recovered C pseudocode is a supporting artefact, not the headline.
+
+Built on upstream [RetDec](https://github.com/avast/retdec) v5.0 (dormant since
+2022), this fork adds semantic library recovery, multi-language output, a Qt 6
+GUI, verified offline neural refinement (llama.cpp, planned), and structured
+algorithm/concurrency/serialisation detection no stock decompiler ships.
 
 Copyright (c) 2025-2026 Odin Loch trading as Imortek.
-Dual-licensed: **AGPL-3.0+ with Imortek Section 7 additions** (free for
-personal, charitable, educational, and small-entity use) **OR** a tiered
-commercial licence. See [LICENSE](LICENSE) for full terms. For contributing
-and security reporting see [CONTRIBUTING.md](CONTRIBUTING.md) and
-[SECURITY.md](SECURITY.md).
+Dual-licensed: **AGPL-3.0+** (see [LICENSE-AGPL](LICENSE-AGPL)) with commercial
+terms in [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL) **OR** a separate commercial
+licence. Third-party notices: [NOTICE](NOTICE). See [CONTRIBUTING.md](CONTRIBUTING.md)
+and [SECURITY.md](SECURITY.md).
 
 ---
 
@@ -48,14 +51,12 @@ C · C++ · Python · Lua · Java · Kotlin · C# · F# · Visual Basic .NET · 
 - **Serialisation**: Protobuf, FlatBuffers, MessagePack, JSON, XML
 - **C++ runtime**: vtables, RTTI, constructors/destructors, exceptions
 
-### AI-assisted analysis (external)
+### Offline neural refinement (planned)
 
-Optional [Qwen3-Coder-30B](https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct)
-inference (MoE, custom C++ runner with FlashAttention-2 and **CUDA GPU
-acceleration**) runs **outside** the GUI via **`retdec-qwen3-runner`** or CLI
-**`--model`**. The v3 GUI has no in-GUI chat panel — see
-[docs/GUI_ROADMAP.md](docs/GUI_ROADMAP.md). Pull weights with Ollama
-(`ollama pull qwen3-coder:30b-a3b-q4_K_M`) or place a `.gguf` under `models/`.
+Verified, air-gapped refinement via **llama.cpp** and Qwen3.5 GGUF models.
+Deterministic decompiler output remains the auditable primary artefact;
+neural edits pass compile, structural, and differential gates before acceptance.
+See [docs/NEURAL_REFINEMENT.md](docs/NEURAL_REFINEMENT.md).
 
 ### Qt 6 GUI (v3)
 

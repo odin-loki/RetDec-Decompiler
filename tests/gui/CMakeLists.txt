@@ -57,7 +57,6 @@ target_link_libraries(retdec-gui-tests
         Qt6::Widgets
         Qt6::Test
         retdec::deps::gtest
-        retdec-qwen3
 )
 
 set_target_properties(retdec-gui-tests PROPERTIES

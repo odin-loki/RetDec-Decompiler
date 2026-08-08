@@ -122,7 +122,6 @@ target_link_libraries(retdec-gui-panels
         Qt6::Core
         Qt6::Gui
         Qt6::Widgets
-        retdec-qwen3
 )
 
 # ── Executable ─────────────────────────────────────────────────────────────────
@@ -152,7 +151,6 @@ target_link_libraries(retdec-gui
         Qt6::Gui
         Qt6::Widgets
         $<TARGET_NAME_IF_EXISTS:Qt6::Svg>
-        retdec-qwen3
 )
 
 if(TARGET Qt6::Svg)

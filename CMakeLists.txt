@@ -5,7 +5,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cuda_vs_generator_toolset.cmake)
 
 project(retdec
 	LANGUAGES C CXX
-	VERSION 5.0
+	VERSION 1.0.0
 )
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GetGitRevisionDescription.cmake)
@@ -227,6 +227,9 @@ install(
 set(_RETDEC_LEGAL_INSTALL_FILES
 	CHANGELOG.md
 	LICENSE
+	LICENSE-AGPL
+	LICENSE-COMMERCIAL
+	NOTICE
 	README.md
 )
 foreach(_RETDEC_LEGAL_EXTRA IN ITEMS LICENSE-PELIB LICENSE-THIRD-PARTY)

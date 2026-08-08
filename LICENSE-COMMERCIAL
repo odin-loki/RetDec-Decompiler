@@ -1,0 +1,51 @@
+Imortek Commercial Licence Terms (Section 7 summary)
+Copyright (c) 2025-2026 Odin Loch, trading as Imortek.
+
+These terms supplement LICENSE-AGPL under AGPL section 7.
+
+§ 7.1 Free tier (no cost, AGPL-3.0+)
+Personal, charitable, educational use, or entities with annual income or
+revenue below 50,000 AUD (~35,000 USD). Above the threshold: obtain a
+commercial licence or cease use.
+
+§ 7.2 Attribution (free-tier users)
+Prominent attribution in documentation, UI, marketing, integrations, and
+publications:
+
+  Powered by RetDec (Imortek edition), originally derived from the RetDec
+  project. Copyright (c) 2025-2026 Odin Loch trading as Imortek.
+  Licensed under AGPL-3.0+. See LICENSE for details.
+
+§ 7.3 Modifications (AGPL path)
+Modifications must be released under the same dual-licence framework unless
+a commercial licence is obtained.
+
+§ 7.4 Commercial licence
+Required for commercial use above the free-tier threshold, proprietary
+products, or when AGPL sharing obligations are not acceptable.
+
+Fees (AUD, indicative — contact licensor for current schedule):
+  - One-time setup fee tiered by annual income/budget.
+  - Annual fee: 5% of revenue attributable to software incorporating this
+    product (not total company revenue).
+  - Volume discounts available for multiple licences.
+
+Removed from prior published terms (deliberately):
+  - Annual fee based on total company income at high brackets.
+  - Mandatory open-sourcing of all research under commercial licence.
+  - Quarterly R&D reporting under commercial licence.
+  - 5% gross-profit royalty stacked on annual fee.
+  - Bank payment details in public licence text.
+
+§ 7.5 Commercial licence grants
+Commercial use, waiver of AGPL modification-sharing (subject to product
+attribution policy), support options, and deployment flexibility as agreed
+in the signed commercial agreement.
+
+§ 7.6 Contributing
+Contributions are AGPL-3.0+ as extended by these terms.
+
+§ 7.7 Governing law
+Australia.
+
+Enquiries: odin.loch@outlook.com.au

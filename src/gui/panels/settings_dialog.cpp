@@ -313,9 +313,8 @@ QWidget* SettingsDialog::buildMLTab() {
     {
         auto* hint = new QLabel(
             QStringLiteral(
-                "Qwen3-compatible GGUF checkpoints (including Qwen2.5-Coder). "
-                "The GUI does not load models in-process — run retdec-qwen3-runner "
-                "externally; Apply or OK saves this path for CLI use."),
+                "Qwen3.5 GGUF models for offline neural refinement (llama.cpp, planned). "
+                "No in-process inference backend is configured yet — path is saved for future CLI use."),
             w);
         hint->setWordWrap(true);
         hint->setForegroundRole(QPalette::PlaceholderText);

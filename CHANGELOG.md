@@ -8,7 +8,25 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
-- **Repository metadata:** Git history was squashed to a single root commit; issue/PR URLs were removed from in-tree comments where they were non-essential. Automated CI on push/PR uses [`.github/workflows/ci-smoke.yml`](.github/workflows/ci-smoke.yml); full test workflows ([`.github/workflows/ctest-linux.yml`](.github/workflows/ctest-linux.yml), [`.github/workflows/ctest-windows.yml`](.github/workflows/ctest-windows.yml)) are **manual-only**; scheduled/release automation uses [`.github/workflows/perf-nightly.yml`](.github/workflows/perf-nightly.yml) and [`.github/workflows/release-installers.yml`](.github/workflows/release-installers.yml). NSIS/AppImage homepage placeholders use `https://example.com/` until you set a real product URL.
+- **Product positioning (D7):** Specification-extraction tool with decompiler artefact; README and version **1.0.0** (clean break from upstream RetDec 5.0).
+- **Licence files:** Condensed `LICENSE` + `LICENSE-AGPL`, `LICENSE-COMMERCIAL`, `NOTICE` via `install-licence-files.sh`.
+- **CI:** `ci-smoke` on every push/PR; `ctest-linux` on PRs; `ctest-windows` nightly; `perf-nightly` weekly; new `sanitizers.yml`.
+- **Dependencies:** Capstone **5.0.9** (from 5.0-rc2).
+- **`.cursorrules`:** Replaced autonomous-continuation policy with Part 14 guardrails.
+- Internal roadmaps moved to `docs/internal/`.
+
+### Removed
+
+- **`src/qwen3/`** hand-written inference engine (~7.7k LOC); AI panel stubbed pending llama.cpp backend.
+
+### Added
+
+- **`retdec::neural`** mock inference library and tests.
+- **`docker/baseline.Dockerfile`**, `scripts/upgrade-dep.sh`, `scripts/run_benchmarks.sh` (placeholder schema).
+- PE/ELF/Mach-O fuzz harnesses in `tests/managed_integration/fuzz/`.
+- [docs/NEURAL_REFINEMENT.md](docs/NEURAL_REFINEMENT.md), [MASTER-UPGRADE-PLAN.md](MASTER-UPGRADE-PLAN.md).
+
+### Changed (prior) Git history was squashed to a single root commit; issue/PR URLs were removed from in-tree comments where they were non-essential. Automated CI on push/PR uses [`.github/workflows/ci-smoke.yml`](.github/workflows/ci-smoke.yml); full test workflows ([`.github/workflows/ctest-linux.yml`](.github/workflows/ctest-linux.yml), [`.github/workflows/ctest-windows.yml`](.github/workflows/ctest-windows.yml)) are **manual-only**; scheduled/release automation uses [`.github/workflows/perf-nightly.yml`](.github/workflows/perf-nightly.yml) and [`.github/workflows/release-installers.yml`](.github/workflows/release-installers.yml). NSIS/AppImage homepage placeholders use `https://example.com/` until you set a real product URL.
 - **Build layout:** CMake presets and helper scripts now use a fixed OS tree: `build/linux` + `install/linux` on non-Windows hosts, `build/windows` + `install/windows` on Windows; superbuilds use `build/linux/<preset>` or `build/windows/<preset>`. Staging defaults to `dist/windows` (and `dist/windows/debuggable` for the debuggable GUI script). MinGW cross lives under `build/linux/mingw-w64-release`.
 
 ### Added
