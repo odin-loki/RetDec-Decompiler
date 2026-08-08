@@ -49,6 +49,16 @@ python3 tests/algorithm_recovery/runner.py \
 
 Run full harness via `bash scripts/run_benchmarks.sh --build-corpus`.
 
+## CI live F1 (v1.4.0)
+
+`ctest-linux` runs a 9-binary core subset after building `retdec-decompiler`:
+
+```bash
+bash scripts/run_algorithm_recovery_ci.sh --decompiler build/linux/bin/retdec-decompiler
+```
+
+Gate: `algorithm_recovery_gate.sh` requires ≥ 6 successful decompiles.
+
 ## Sources (v1.2.0 starter set)
 
 | Source | Labels |

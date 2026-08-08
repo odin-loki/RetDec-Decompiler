@@ -82,3 +82,9 @@ jobs:
 
       - name: Integration tests
         run: ctest --test-dir build/linux --output-on-failure -L integration
+
+      - name: Algorithm recovery live F1 (CI core subset)
+        run: |
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          if [ -z "$DEC" ]; then echo "retdec-decompiler not found"; exit 1; fi
+          bash scripts/run_algorithm_recovery_ci.sh --decompiler "$DEC"

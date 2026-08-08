@@ -31,6 +31,8 @@ DEC=""
 for candidate in \
 	"${ROOT}/build/linux/bin/retdec-decompiler" \
 	"${ROOT}/build/linux/src/retdec-decompiler/retdec-decompiler" \
+	"${ROOT}/build/windows/bin/retdec-decompiler.exe" \
+	"${ROOT}/build/windows/src/retdec-decompiler/Release/retdec-decompiler.exe" \
 	"$(command -v retdec-decompiler 2>/dev/null || true)"; do
 	if [[ -n "${candidate}" && -x "${candidate}" ]]; then
 		DEC="${candidate}"
@@ -100,10 +102,12 @@ if gt.is_file():
         if proc.returncode == 0:
             ar = json.loads((root / "results/algorithm-recovery-tmp.json").read_text(encoding="utf-8"))
             payload["algorithm_recovery"] = ar
-            per_bin = ar.get("per_binary", {})
-            if per_bin:
+            summary = ar.get("summary", {})
+            if summary.get("mean_f1") is not None:
+                payload["metrics"]["algorithm_recovery"]["mean_f1"] = summary["mean_f1"]
+            elif ar.get("per_binary"):
                 payload["metrics"]["algorithm_recovery"]["mean_f1"] = sum(
-                    v.get("f1", 0.0) for v in per_bin.values()) / len(per_bin)
+                    v.get("f1", 0.0) for v in ar["per_binary"].values()) / len(ar["per_binary"])
 
 pathlib.Path(out).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 print(f"Wrote {out}")

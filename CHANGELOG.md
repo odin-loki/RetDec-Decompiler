@@ -4,6 +4,21 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ---
 
+## [1.4.0] — 2026-08-08
+
+### Added
+
+- **Live algorithm-recovery F1 in CI:** `run_algorithm_recovery_ci.sh` decompiles a 9-binary core subset and scores precision/recall/F1 against ground truth.
+- **Prediction extraction:** manifest-driven binary selection, `--ci-core` / `--limit` / per-binary timeout, richer label normalization (sorts, containers, concurrency).
+- **Regression gate:** `algorithm_recovery_gate.sh` enforces minimum decompiled count and mean F1 floor.
+- **Label unit tests:** `tests/algorithm_recovery/test_labels.py` in ci-smoke.
+
+### Changed
+
+- `extract_decompiler_predictions.py` output includes `decompiled` metadata; `runner.py` reports `summary.mean_f1`.
+- `ctest-linux.yml` runs live F1 after integration tests when decompiler is built.
+- `run_benchmarks.sh` discovers Windows decompiler paths.
+
 ## [1.3.0] — 2026-08-08
 
 ### Added

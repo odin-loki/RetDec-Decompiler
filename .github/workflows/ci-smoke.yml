@@ -58,6 +58,9 @@ jobs:
       - name: Intel export tests
         run: python tests/decompiler/intel_export_test.py
 
+      - name: Algorithm recovery label tests
+        run: python tests/algorithm_recovery/test_labels.py
+
       - name: Doctor licence and workflow checks
         run: bash scripts/doctor.sh
 
