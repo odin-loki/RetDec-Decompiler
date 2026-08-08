@@ -61,6 +61,9 @@ jobs:
       - name: Algorithm recovery label tests
         run: python tests/algorithm_recovery/test_labels.py
 
+      - name: Triton differential gate smoke
+        run: python tests/algorithm_recovery/test_triton_gate.py
+
       - name: Doctor licence and workflow checks
         run: bash scripts/doctor.sh
 

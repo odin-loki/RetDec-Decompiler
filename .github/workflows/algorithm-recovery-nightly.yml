@@ -1,0 +1,78 @@
+name: algorithm-recovery-nightly
+
+on:
+  workflow_dispatch:
+    inputs:
+      full_corpus:
+        description: Run full 216-binary corpus (slow)
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 5 * * 0"
+
+jobs:
+  recovery-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 720
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ninja-build python3 perl gcc clang
+
+      - uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "3.31.6"
+
+      - name: Fetch large support files
+        run: |
+          bash scripts/fetch-large-files.sh || \
+            bash scripts/fetch-large-files.sh \
+              --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: build/linux
+          key: algo-recovery-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/deps.cmake', 'cmake/**') }}
+          restore-keys: |
+            algo-recovery-
+
+      - name: Configure (core-debug)
+        run: >
+          cmake --preset core-debug
+          -DRETDEC_ENABLE_CUDA_ACCEL=OFF
+          -DRETDEC_ENABLE_NEURAL=OFF
+
+      - name: Build decompiler
+        run: cmake --build build/linux --parallel --target retdec-decompiler
+
+      - name: Algorithm recovery (CI core subset)
+        run: |
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          bash scripts/run_algorithm_recovery_ci.sh --decompiler "$DEC"
+
+      - name: Algorithm recovery (full corpus)
+        if: github.event_name == 'workflow_dispatch' && inputs.full_corpus == true
+        run: |
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          bash scripts/run_algorithm_recovery_full.sh --decompiler "$DEC" --jobs 4
+
+      - name: LIEF evaluation scaffold
+        run: bash scripts/eval_lief.sh
+
+      - name: rellic evaluation scaffold
+        run: bash scripts/eval_rellic.sh --corpus tests/algorithm_recovery/corpus
+
+      - name: Upload algorithm recovery results
+        uses: actions/upload-artifact@v4
+        with:
+          name: algorithm-recovery-results
+          path: |
+            results/algorithm-recovery-ci.json
+            results/algorithm-recovery-full.json
+            results/lief-eval.json
+            results/rellic-eval.json
+          if-no-files-found: warn

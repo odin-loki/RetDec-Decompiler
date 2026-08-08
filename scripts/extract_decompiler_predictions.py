@@ -7,6 +7,7 @@ import json
 import re
 import subprocess
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 # Hand-written corpus sources at gcc-O0 — fast CI smoke for live F1.
@@ -167,8 +168,10 @@ def decompile_one(
     work: Path,
     timeout: int,
 ) -> tuple[bool, list[str]]:
-    out_c = work / f"{binary.name}.c"
-    cfg_path = work / f"{binary.name}.c.config.json"
+    job_work = work / binary.name
+    job_work.mkdir(parents=True, exist_ok=True)
+    out_c = job_work / f"{binary.name}.c"
+    cfg_path = job_work / f"{binary.name}.c.config.json"
     try:
         proc = subprocess.run(
             [str(dec), str(binary), "--output", str(out_c)],
@@ -188,6 +191,20 @@ def decompile_one(
     return True, labels_from_config(cfg)
 
 
+def _decompile_task(
+    name: str,
+    dec: str,
+    corpus: str,
+    work: str,
+    timeout: int,
+) -> tuple[str, bool, list[str]]:
+    binary = Path(corpus) / name
+    if not binary.is_file():
+        return name, False, []
+    ok, labels = decompile_one(Path(dec), binary, Path(work), timeout)
+    return name, ok, labels
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--decompiler", required=True)
@@ -199,6 +216,7 @@ def main() -> int:
     ap.add_argument("--names", help="comma-separated binary names to decompile")
     ap.add_argument("--ci-core", action="store_true", help="CI smoke subset (9 binaries)")
     ap.add_argument("--timeout", type=int, default=300, help="per-binary timeout seconds")
+    ap.add_argument("--jobs", type=int, default=1, help="parallel decompile workers")
     args = ap.parse_args()
 
     dec = Path(args.decompiler)
@@ -215,15 +233,27 @@ def main() -> int:
 
     predictions: dict[str, list[str]] = {}
     decompiled = 0
-    for name in binary_names:
-        binary = corpus / name
-        if not binary.is_file():
-            predictions[name] = []
-            continue
-        ok, labels = decompile_one(dec, binary, work, args.timeout)
-        predictions[name] = labels
-        if ok:
-            decompiled += 1
+    jobs = max(1, args.jobs)
+    dec_s, corpus_s, work_s = str(dec), str(corpus), str(work)
+
+    if jobs == 1:
+        for name in binary_names:
+            name, ok, labels = _decompile_task(name, dec_s, corpus_s, work_s, args.timeout)
+            predictions[name] = labels
+            if ok:
+                decompiled += 1
+    else:
+        tasks = [
+            (name, dec_s, corpus_s, work_s, args.timeout)
+            for name in binary_names
+        ]
+        with ProcessPoolExecutor(max_workers=jobs) as pool:
+            futures = [pool.submit(_decompile_task, *t) for t in tasks]
+            for fut in as_completed(futures):
+                name, ok, labels = fut.result()
+                predictions[name] = labels
+                if ok:
+                    decompiled += 1
 
     payload = {
         "harness": "extract_decompiler_predictions",

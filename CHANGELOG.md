@@ -4,6 +4,22 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ---
 
+## [1.5.0] — 2026-08-08
+
+### Added
+
+- **Full-corpus nightly F1:** `run_algorithm_recovery_full.sh` with parallel `--jobs` decompilation (216+ binaries).
+- **algorithm-recovery-nightly workflow:** weekly CI-core run; full corpus on `workflow_dispatch`.
+- **Triton differential gate:** `triton_diff_gate.py` with stdout/fuzz/triton modes; smoke test in ci-smoke.
+- **LIEF eval scaffold:** `eval_lief.sh` compares readelf vs python-lief section counts.
+- **Baseline:** `results/baseline-algorithm-recovery.json` for nightly trend tracking.
+
+### Changed
+
+- `extract_decompiler_predictions.py` supports `--jobs` parallel workers with per-binary work dirs.
+- `perf-nightly` runs weekly algorithm-recovery CI core; `nightly_report.sh` includes F1 summary.
+- `differential_gate_triton.sh` delegates to `triton_diff_gate.py`.
+
 ## [1.4.0] — 2026-08-08
 
 ### Added

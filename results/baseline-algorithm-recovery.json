@@ -1,0 +1,20 @@
+{
+  "baseline_tag": "baseline-algorithm-recovery",
+  "note": "Reference for nightly algorithm-recovery trend tracking. Update after first full-corpus run.",
+  "metrics": {
+    "ci_core": {
+      "binaries": 9,
+      "min_decompiled": 6,
+      "mean_f1": 0.0
+    },
+    "full_corpus": {
+      "binaries": 216,
+      "min_decompiled": 180,
+      "mean_f1": 0.0
+    }
+  },
+  "thresholds": {
+    "mean_f1_drop_max": 0.05,
+    "decompiled_drop_max": 10
+  }
+}

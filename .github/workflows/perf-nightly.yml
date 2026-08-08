@@ -62,7 +62,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential ninja-build python3 perl
+          sudo apt-get install -y build-essential ninja-build python3 perl gcc clang
 
       - uses: lukka/get-cmake@latest
         with:
@@ -138,6 +138,13 @@ jobs:
         run: |
           bash scripts/nightly_report.sh --out "docs/internal/nightly/$(date -u +%Y-%m-%d).md"
           cat docs/internal/nightly/$(date -u +%Y-%m-%d).md
+
+      - name: Algorithm recovery CI core (weekly)
+        run: |
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          if [ -n "$DEC" ]; then
+            bash scripts/run_algorithm_recovery_ci.sh --decompiler "$DEC" || true
+          fi
 
       - name: Upload nightly report
         uses: actions/upload-artifact@v4

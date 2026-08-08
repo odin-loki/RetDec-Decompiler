@@ -48,6 +48,27 @@ VER="$(grep -E '^[[:space:]]*VERSION[[:space:]]' "${ROOT}/CMakeLists.txt" | head
 	bash "${ROOT}/scripts/doctor.sh" 2>&1 | tail -n 5 || true
 	echo '```'
 	echo ""
+	echo "## Algorithm recovery"
+	for f in \
+		"${ROOT}/results/algorithm-recovery-ci.json" \
+		"${ROOT}/results/algorithm-recovery-full.json" \
+		algorithm-recovery-ci.json; do
+		if [[ -f "${f}" ]]; then
+			echo "### $(basename "${f}")"
+			echo '```json'
+			python3 - "${f}" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+summary = data.get("summary", {})
+print(json.dumps(summary, indent=2))
+PY
+			echo '```'
+		fi
+	done
+	if [[ ! -f "${ROOT}/results/algorithm-recovery-ci.json" && ! -f algorithm-recovery-ci.json ]]; then
+		echo "- No algorithm-recovery results (run \`bash scripts/run_algorithm_recovery_ci.sh\`)"
+	fi
+	echo ""
 	echo "## Open regressions"
 	echo "- (manual) — link failing CI runs or fuzz crashes here"
 } > "${OUT}"

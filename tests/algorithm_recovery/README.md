@@ -59,6 +59,14 @@ bash scripts/run_algorithm_recovery_ci.sh --decompiler build/linux/bin/retdec-de
 
 Gate: `algorithm_recovery_gate.sh` requires ≥ 6 successful decompiles.
 
+## Full corpus (v1.5.0)
+
+```bash
+bash scripts/run_algorithm_recovery_full.sh --decompiler build/linux/bin/retdec-decompiler --jobs 4
+```
+
+Nightly: `.github/workflows/algorithm-recovery-nightly.yml` (weekly CI core; dispatch for full 216).
+
 ## Sources (v1.2.0 starter set)
 
 | Source | Labels |

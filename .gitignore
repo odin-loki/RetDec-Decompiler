@@ -92,6 +92,7 @@ luac.out
 /tests/algorithm_recovery/ground_truth/corpus.json
 /tests/algorithm_recovery/predictions/ci.json
 /tests/algorithm_recovery/predictions/corpus.json
+/tests/algorithm_recovery/predictions/full.json
 build/prediction-work/
 keystone.zip
 llama.zip
