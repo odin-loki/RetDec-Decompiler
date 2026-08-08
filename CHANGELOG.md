@@ -4,6 +4,20 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ---
 
+## [1.8.0] — 2026-08-08
+
+### Added
+
+- **Decision D7 closed:** specification-extraction positioning documented in `docs/internal/D7_DECISION.md`.
+- **Ship checklist:** `scripts/ship_checklist.sh` validates version, licences, baselines, doctor, and unit tests (ci-smoke + release).
+
+### Changed
+
+- README: neural refinement described as optional shipped feature; benchmarks section added.
+- `COMMERCIAL_WHITEPAPER.md` and `MASTER-UPGRADE-PLAN.md` D7 register updated to settled (b).
+- `demo.sh` runs algorithm recovery CI, migration eval suite, and ship checklist.
+- `PLAN_COMPLETION.md` marks D7 closed.
+
 ## [1.7.0] — 2026-08-08
 
 ### Added

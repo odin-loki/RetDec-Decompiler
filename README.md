@@ -6,7 +6,7 @@ recovered C pseudocode is a supporting artefact, not the headline.
 
 Built on upstream [RetDec](https://github.com/avast/retdec) v5.0 (dormant since
 2022), this fork adds semantic library recovery, multi-language output, a Qt 6
-GUI, verified offline neural refinement (llama.cpp, planned), and structured
+GUI, optional offline neural refinement (llama.cpp via `RETDEC_ENABLE_LLAMACPP`), and structured
 algorithm/concurrency/serialisation detection no stock decompiler ships.
 
 Copyright (c) 2025-2026 Odin Loch trading as Imortek.
@@ -51,12 +51,19 @@ C · C++ · Python · Lua · Java · Kotlin · C# · F# · Visual Basic .NET · 
 - **Serialisation**: Protobuf, FlatBuffers, MessagePack, JSON, XML
 - **C++ runtime**: vtables, RTTI, constructors/destructors, exceptions
 
-### Offline neural refinement (planned)
+### Offline neural refinement
 
-Verified, air-gapped refinement via **llama.cpp** and Qwen3.5 GGUF models.
+Optional verified, air-gapped refinement via **llama.cpp** and GGUF models
+(build with `-DRETDEC_ENABLE_LLAMACPP=ON`). Enable at runtime with
+`RETDEC_NEURAL_REFINE=1` and `RETDEC_NEURAL_MODEL=/path/to/model.gguf`.
 Deterministic decompiler output remains the auditable primary artefact;
 neural edits pass compile, structural, and differential gates before acceptance.
 See [docs/NEURAL_REFINEMENT.md](docs/NEURAL_REFINEMENT.md).
+
+### Benchmarks
+
+Algorithm-recovery F1 is measured on a 216+ binary corpus in CI and nightly
+workflows. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ### Qt 6 GUI (v3)
 

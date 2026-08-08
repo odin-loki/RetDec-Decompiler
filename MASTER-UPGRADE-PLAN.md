@@ -152,7 +152,7 @@ Decisions already made in this project. Recorded so they stop being re-litigated
 | D4 | LLVM stays on the Avast LLVM 8 fork for this release cycle | **Settled** |
 | D5 | Licence set condensed to LICENSE / LICENSE-AGPL / LICENSE-COMMERCIAL / NOTICE | **Settled** |
 | D6 | Neural output is gated and never replaces the deterministic artefact | **Settled** |
-| D7 | Product positioning: pseudocode decompiler, or specification-extraction tool? | **OPEN — blocks Part 12** |
+| D7 | Product positioning: pseudocode decompiler, or specification-extraction tool? | **Settled — (b) specification-extraction** ([docs/internal/D7_DECISION.md](docs/internal/D7_DECISION.md)) |
 
 ### D7 is the decision that unblocks the most work
 

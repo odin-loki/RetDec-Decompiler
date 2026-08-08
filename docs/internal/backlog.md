@@ -4,18 +4,20 @@
 
 | Version | Scope |
 |---------|-------|
-| v1.0.0–v1.6.0 | Steps 1–33 scaffolds, CI, corpus, F1, migration evals |
-| **v1.7.0** | **Plan completion**, LLVM inventory, release benchmark tables |
+| v1.0.0–v1.7.0 | MASTER-UPGRADE-PLAN automation (steps 1–33 scaffolds) |
+| **v1.8.0** | **D7 closed**, product docs alignment, ship checklist |
 
-## Automation complete
+## v1.8.0
 
-All Composer-automatable MASTER-UPGRADE-PLAN items are done. See `docs/internal/PLAN_COMPLETION.md`.
+- **Decision D7 closed:** specification-extraction positioning (`docs/internal/D7_DECISION.md`)
+- README, whitepaper, MASTER-UPGRADE-PLAN updated
+- `ship_checklist.sh` — pre-release validation
+- `demo.sh` — algorithm recovery + migration eval + ship checklist
 
 ## Human-led only
 
 | Item | Notes |
 |------|-------|
-| Decision D7 | Product positioning — blocks README/whitepaper final |
-| retdec-support regen | Toolchain farm; `regenerate-retdec-support.sh` stages output |
-| rellic / Retypd / LLVM backends | Months-long; eval scaffolds in place |
-| Profile-driven perf | Use `flamegraph_profile.sh` + `perf-nightly` artifacts |
+| retdec-support regen | Toolchain farm; `regenerate-retdec-support.sh` |
+| rellic / Retypd / LLVM backends | Eval scaffolds in place; months-long integration |
+| Profile-driven perf | `perf-nightly` + `flamegraph_profile.sh` |

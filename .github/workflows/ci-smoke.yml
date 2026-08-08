@@ -67,6 +67,9 @@ jobs:
       - name: Triton differential gate smoke
         run: python tests/algorithm_recovery/test_triton_gate.py
 
+      - name: Ship checklist
+        run: bash scripts/ship_checklist.sh
+
       - name: Doctor licence and workflow checks
         run: bash scripts/doctor.sh
 

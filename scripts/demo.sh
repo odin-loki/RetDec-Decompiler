@@ -59,6 +59,17 @@ fi
 echo "==> Benchmark tables"
 bash "${ROOT}/scripts/run_benchmarks.sh" --compare 2026-08 || true
 
+if [[ -d "${CORPUS}" && -f "${CORPUS}/manifest.json" ]]; then
+	echo "==> Algorithm recovery (CI core subset, best-effort)"
+	bash "${ROOT}/scripts/run_algorithm_recovery_ci.sh" --decompiler "${DEC}" 2>/dev/null || true
+fi
+
+echo "==> Migration eval scaffolds"
+bash "${ROOT}/scripts/migration_eval_suite.sh" --decompiler "${DEC}" 2>/dev/null || true
+
+echo "==> Ship checklist"
+bash "${ROOT}/scripts/ship_checklist.sh" --version "${VER}" || true
+
 echo "==> Doctor"
 bash "${ROOT}/scripts/doctor.sh" | tail -n 3
 

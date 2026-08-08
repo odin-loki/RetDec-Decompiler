@@ -7,9 +7,15 @@
 
 ## Executive summary
 
-**RetDec** is a machine-code decompiler: it takes compiled programs (executables, libraries, bytecode, and related artifacts) and reconstructs human-readable high-level source code. This repository is an **enhanced** edition of the RetDec lineage, built on a proven LLVM-oriented pipeline and extended with **semantic library recovery**, **multi-language output**, **optional CUDA GPU acceleration**, an **integrated large language model (LLM) assistant**, and a **Qt 6 desktop environment** for interactive analysis.
+**RetDec Imortek** is a **specification-extraction platform that contains a
+decompiler**: it recovers algorithms, containers, concurrency patterns, and
+structured semantics from compiled binaries, with optional offline neural
+refinement under verification gates. Human-readable C (and other languages) is
+a supporting artefact for review—not the sole product metric.
 
-Typical uses include malware analysis, legacy software recovery, interoperability research, education, and audit workflows where understanding behavior without original source matters.
+This edition extends the RetDec lineage with semantic library recovery,
+multi-language output, algorithm-recovery benchmarks, verified offline neural
+refinement, and a Qt 6 desktop environment for interactive analysis.
 
 ---
 
@@ -37,6 +43,19 @@ A decompiler automates the hardest part of that workflow: translating low-level 
 RetDec’s design centers **LLVM IR as a pivot**: architecture-specific front ends lift to a common IR; middle and back ends are shared. Adding CPU support is largely a front-end concern.
 
 ---
+
+## Product positioning (Decision D7)
+
+This product is positioned as **specification extraction**, not pseudocode
+parity with Hex-Rays or Ghidra. Lead with:
+
+- Algorithm-recovery precision/recall/F1 on a labelled corpus
+- Semantic JSON export (`config.functions[].semanticDetections`)
+- Offline neural refinement with compile + differential gates
+
+Pseudocode quality is reported honestly via DecompileBench; parity with stock
+RetDec C output is expected and not marketed as the primary differentiator.
+See [docs/internal/D7_DECISION.md](internal/D7_DECISION.md).
 
 ## Product positioning: “Enhanced RetDec”
 

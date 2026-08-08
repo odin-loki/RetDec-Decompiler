@@ -63,6 +63,9 @@ jobs:
       - name: Regenerate benchmark tables
         run: bash scripts/regenerate_benchmark_tables.sh
 
+      - name: Ship checklist
+        run: bash scripts/ship_checklist.sh
+
       - name: Create GitHub Release (draft)
         uses: softprops/action-gh-release@v2
         with:

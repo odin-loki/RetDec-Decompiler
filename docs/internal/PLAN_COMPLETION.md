@@ -1,6 +1,6 @@
 # MASTER-UPGRADE-PLAN — automation completion status
 
-Last updated: v1.7.0
+Last updated: v1.8.0
 
 ## Steps 1–26 (shippable product) — DONE
 
@@ -45,7 +45,9 @@ Shipped releases v1.0.0–v1.7.0 on `main`.
 3. **rellic / LLVM backend** — blocked on LLVM 8 alignment
 4. **Retypd / SAILR production** — research timelines in MASTER-UPGRADE-PLAN Part 9
 
-## Decision D7
+## Decision D7 — CLOSED (v1.8.0)
 
-Product positioning (pseudocode vs specification extraction) remains **OPEN** per Part 3.
-Blocks README/whitepaper final rewrite only; engineering automation is complete.
+**Positioning:** specification-extraction tool that contains a decompiler (option b).
+Documented in [D7_DECISION.md](D7_DECISION.md). README and whitepaper aligned.
+
+## Human-led only
