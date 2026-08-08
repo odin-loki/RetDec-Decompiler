@@ -96,6 +96,12 @@ static bool hasConvergenceCheck(const ssa::SSAFunction& fn) {
     return countOp(fn, ssa::IrInstr::Op::Compare) >= 1;
 }
 
+// Halving midpoint: binary search narrows with (lo+hi)/2, not a swap partition.
+static bool hasHalvingMidpoint(const ssa::SSAFunction& fn) {
+    return countOp(fn, ssa::IrInstr::Op::Shr) >= 1 ||
+           countOp(fn, ssa::IrInstr::Op::Div) >= 1;
+}
+
 } // anonymous namespace
 
 bool PartitionDetector::hasRecursion(const ssa::SSAFunction& fn) const {
@@ -118,6 +124,10 @@ bool PartitionDetector::hasRecursion(const ssa::SSAFunction& fn) const {
 PartitionEvidence PartitionDetector::analyse(const ssa::SSAFunction& fn) const {
     PartitionEvidence ev;
     if (!hasBackEdge(fn)) return ev;
+
+    // Binary search also has add/sub bounds; require swap, not just halving.
+    if (hasHalvingMidpoint(fn) && !hasSwap(fn))
+        return ev;
 
     ev.hasConvergingPtrs   = hasConvergingPtrs(fn);
     ev.hasSwap             = hasSwap(fn);

@@ -2,17 +2,17 @@
   "harness": "algorithm_recovery",
   "summary": {
     "binaries": 9,
-    "mean_f1": 0.7925925925925925,
+    "mean_f1": 0.9777777777777779,
     "decompiled": 9
   },
   "per_binary": {
     "binary_search-gcc-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "bubblesort-gcc-O0": {
       "tp": 2,
@@ -48,11 +48,11 @@
     },
     "hash_table-gcc-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "memcpy_loop-gcc-O0": {
       "tp": 2,
@@ -72,21 +72,21 @@
     },
     "ring_buffer-gcc-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     }
   },
   "per_class": {
     "BinarySearch": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "BubbleSort": {
       "tp": 1,
@@ -114,11 +114,11 @@
     },
     "Copy": {
       "tp": 1,
-      "fp": 1,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "DivideAndConquer": {
       "tp": 1,
@@ -130,11 +130,11 @@
     },
     "HashTable": {
       "tp": 1,
-      "fp": 1,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "HeapSort": {
       "tp": 1,
@@ -144,21 +144,13 @@
       "recall": 1.0,
       "f1": 1.0
     },
-    "Map": {
-      "tp": 0,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
-    },
     "Memcpy": {
       "tp": 1,
-      "fp": 1,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "Memmove": {
       "tp": 0,
@@ -217,12 +209,12 @@
       "f1": 1.0
     },
     "Search": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "Sort": {
       "tp": 4,

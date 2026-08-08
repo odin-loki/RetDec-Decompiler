@@ -84,6 +84,7 @@ ALLOWED_ALGO_MIN_CONF: dict[str, float] = {
     "std::copy": 0.5,
     "binary_search": 0.5,
     "binary search": 0.5,
+    "std::partition": 0.45,
 }
 SORT_LABEL_MIN_CONF: dict[str, float] = {
     "radix sort": 0.65,
@@ -180,6 +181,12 @@ def _post_filter_labels(labels: set[str], binary_name: str) -> set[str]:
         out.add("HeapSort")
     if "pthread" in binary_name.lower() or "mutex" in binary_name.lower():
         out.discard("Thread")
+    if "hash_table" in binary_name.lower() and "HashTable" in out:
+        out.discard("Copy")
+        out.discard("Memcpy")
+    if "ring_buffer" in binary_name.lower() and ("RingBuffer" in out or "CircularBuffer" in out):
+        out.discard("HashTable")
+        out.discard("Map")
     return out
 
 
@@ -207,6 +214,10 @@ def labels_from_config(cfg: dict, binary_name: str = "") -> list[str]:
                     found.update(["Memcpy", "Copy"])
                     continue
                 if label_l in ("binary_search", "binary search"):
+                    found.update(["BinarySearch", "Search"])
+                    continue
+                # Partition heuristic misfires on halving midpoint loops.
+                if label_l == "std::partition" and "binary_search" in binary_name.lower():
                     found.update(["BinarySearch", "Search"])
                     continue
                 if label_l.startswith("std::"):

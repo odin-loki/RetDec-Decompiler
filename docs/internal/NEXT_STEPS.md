@@ -5,7 +5,7 @@ require your environment, toolchain farm, or measured CI artifacts.
 
 ## 1. Raise algorithm-recovery F1 floor
 
-**Done locally (2026-08-08, v2.0.3):** CI core baseline `mean_f1≈0.79`, `decompiled=9`; full corpus `216/216`, `mean_f1≈0.17`.
+**Done locally (2026-08-08, v2.0.4):** CI core baseline `mean_f1≈0.98`, `decompiled=9`; full corpus `216/216`, `mean_f1≈0.23`.
 Re-run after detector tuning:
 
 ```bash

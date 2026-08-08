@@ -49,13 +49,14 @@ AlgorithmResult BinarySearchDetector::detect(const ssa::SSAFunction& fn) const {
     const bool halving = countOp(fn, ssa::IrInstr::Op::Shr) >= 1
                       || countOp(fn, ssa::IrInstr::Op::Div) >= 1;
 
-    if (cmps < 2 || loads < 1 || stores > 0 || !halving)
+    if (cmps < 2 || loads < 1 || !halving)
         return result;
 
     float score = 0.0f;
     if (cmps >= 2)   score += 0.40f;
     if (halving)     score += 0.35f;
     if (adds >= 1 && subs >= 1) score += 0.25f;
+    if (stores == 0) score += 0.10f;
 
     result.confidence = score > 1.0f ? 1.0f : score;
     if (result.confidence >= 0.75f)

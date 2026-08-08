@@ -164,6 +164,38 @@ def test_open_addressing_container() -> None:
     assert "OpenAddressing" in labels
 
 
+def test_partition_on_binary_search_stem() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "algorithm", "label": "std::partition", "confidence": 1.0},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "binary_search-gcc-O0")
+    assert "BinarySearch" in labels
+    assert "Search" in labels
+
+
+def test_hash_table_drops_memcpy_noise() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "container", "label": "std::unordered_map<int,int>", "confidence": 0.75},
+                    {"kind": "algorithm", "label": "std::copy", "confidence": 0.8},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "hash_table-gcc-O0")
+    assert "HashTable" in labels
+    assert "Copy" not in labels
+    assert "Memcpy" not in labels
+
+
 def main() -> int:
     test_sort_detection()
     test_hash_table_container()
@@ -175,6 +207,8 @@ def main() -> int:
     test_std_copy_maps_to_memcpy()
     test_binary_search_algorithm()
     test_open_addressing_container()
+    test_partition_on_binary_search_stem()
+    test_hash_table_drops_memcpy_noise()
     print("algorithm_recovery label tests: PASS")
     return 0
 
