@@ -4,6 +4,23 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ---
 
+## [1.6.0] — 2026-08-08
+
+### Added
+
+- **Algorithm recovery regression gate:** `algorithm_recovery_regression_gate.sh` compares nightly F1/decompiled vs `baseline-algorithm-recovery.json`.
+- **Baseline updater:** `update_algorithm_recovery_baseline.sh` refreshes baseline from CI results.
+- **D-Helix gate mode:** `triton_diff_gate.py --mode dhelix` — randomized stdin path exploration + Triton entry hash.
+- **Migration eval suite:** `migration_eval_suite.sh` runs rellic, LIEF, Retypd, SAILR scaffolds.
+- **Retypd eval:** `eval_retypd.sh` (step 30 scaffold).
+- **SAILR eval:** `eval_sailr.sh` — goto-count metrics on decompiled output (step 31 scaffold).
+
+### Changed
+
+- `algorithm-recovery-nightly` runs regression gate and migration suite.
+- `doctor.sh` checks algorithm-recovery baseline and nightly workflow.
+- `triton_diff_gate` auto mode defaults to `dhelix`.
+
 ## [1.5.0] — 2026-08-08
 
 ### Added

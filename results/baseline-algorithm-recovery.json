@@ -1,6 +1,6 @@
 {
   "baseline_tag": "baseline-algorithm-recovery",
-  "note": "Reference for nightly algorithm-recovery trend tracking. Update after first full-corpus run.",
+  "updated_at": null,
   "metrics": {
     "ci_core": {
       "binaries": 9,

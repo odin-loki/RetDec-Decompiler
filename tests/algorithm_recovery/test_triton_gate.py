@@ -23,14 +23,15 @@ def main() -> int:
         ref = td_path / "ref.c"
         orig.write_text(SRC, encoding="utf-8")
         ref.write_text(SRC, encoding="utf-8")
-        proc = subprocess.run(
-            [sys.executable, str(GATE), str(orig), str(ref), "--mode", "stdout"],
-            capture_output=True,
-            text=True,
-        )
-        if proc.returncode != 0:
-            print(proc.stdout, proc.stderr, file=sys.stderr)
-            return 1
+        for mode in ("stdout", "dhelix"):
+            proc = subprocess.run(
+                [sys.executable, str(GATE), str(orig), str(ref), "--mode", mode],
+                capture_output=True,
+                text=True,
+            )
+            if proc.returncode != 0:
+                print(f"mode={mode}", proc.stdout, proc.stderr, file=sys.stderr)
+                return 1
     print("triton_diff_gate smoke: PASS")
     return 0
 

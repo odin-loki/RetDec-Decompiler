@@ -130,7 +130,7 @@ else
 fi
 
 # ── CI workflows enabled ──────────────────────────────────────────────────────
-for wf in ci-smoke.yml ctest-linux.yml; do
+for wf in ci-smoke.yml ctest-linux.yml algorithm-recovery-nightly.yml; do
     wfpath="${REPO_ROOT}/.github/workflows/${wf}"
     if [[ -f "$wfpath" ]] && grep -qE '^[[:space:]]*push:' "$wfpath"; then
         pass_check "workflow ${wf} triggers on push"
@@ -158,6 +158,14 @@ if [[ -n "${RETDEC_NEURAL_MODEL:-}" && -f "${RETDEC_NEURAL_MODEL}" ]]; then
     else
         warn_check "RETDEC_NEURAL_MODEL set but RETDEC_NEURAL_MODEL_SHA256 unset"
     fi
+fi
+
+# ── algorithm recovery baseline ───────────────────────────────────────────────
+baseline_ar="${REPO_ROOT}/results/baseline-algorithm-recovery.json"
+if [[ -f "$baseline_ar" ]]; then
+    pass_check "algorithm-recovery baseline present (results/baseline-algorithm-recovery.json)"
+else
+    warn_check "missing results/baseline-algorithm-recovery.json"
 fi
 
 # ── perl ──────────────────────────────────────────────────────────────────────

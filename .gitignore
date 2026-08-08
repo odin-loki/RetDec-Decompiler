@@ -94,6 +94,11 @@ luac.out
 /tests/algorithm_recovery/predictions/corpus.json
 /tests/algorithm_recovery/predictions/full.json
 build/prediction-work/
+results/retypd-eval.json
+results/sailr-eval.json
+results/migration-eval-summary.json
+results/lief-eval.json
+results/rellic-eval.json
 keystone.zip
 llama.zip
 _license_preamble.txt

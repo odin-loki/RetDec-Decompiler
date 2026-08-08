@@ -32,22 +32,25 @@ def compile_sources(cc: str, orig: Path, ref: Path, td: Path) -> tuple[Path, Pat
     return orig_bin, ref_bin
 
 
-def run_capture(bin_path: Path, env: dict[str, str] | None = None) -> tuple[int, str]:
+def run_capture(bin_path: Path, env: dict[str, str] | None = None, stdin: bytes | None = None) -> tuple[int, str, str]:
     proc = subprocess.run(
         [str(bin_path)],
+        input=stdin,
         capture_output=True,
-        text=True,
+        text=stdin is None,
         env=env,
         timeout=30,
     )
-    return proc.returncode, proc.stdout
+    stdout = proc.stdout if isinstance(proc.stdout, str) else (proc.stdout or b"").decode("utf-8", errors="replace")
+    stderr = proc.stderr if isinstance(proc.stderr, str) else (proc.stderr or b"").decode("utf-8", errors="replace")
+    return proc.returncode, stdout, stderr
 
 
 def gate_stdout(cc: str, orig: Path, ref: Path) -> bool:
     td = Path(tempfile.mkdtemp(prefix="retdec_diff_"))
     orig_bin, ref_bin = compile_sources(cc, orig, ref, td)
-    _, out_orig = run_capture(orig_bin)
-    _, out_ref = run_capture(ref_bin)
+    _, out_orig, _ = run_capture(orig_bin)
+    _, out_ref, _ = run_capture(ref_bin)
     return out_orig == out_ref
 
 
@@ -57,11 +60,52 @@ def gate_fuzz(cc: str, orig: Path, ref: Path, rounds: int = 16) -> bool:
     for i in range(rounds):
         env = os.environ.copy()
         env["RETDEC_DIFF_SEED"] = str(i)
-        rc_o, out_o = run_capture(orig_bin, env)
-        rc_r, out_r = run_capture(ref_bin, env)
+        rc_o, out_o, _ = run_capture(orig_bin, env)
+        rc_r, out_r, _ = run_capture(ref_bin, env)
         if rc_o != rc_r or out_o != out_r:
             print(f"fuzz mismatch at round {i}: rc {rc_o}!={rc_r}", file=sys.stderr)
             return False
+    return True
+
+
+def gate_dhelix(cc: str, orig: Path, ref: Path, rounds: int = 64) -> bool:
+    """D-Helix-style differential: randomized stdin paths + optional Triton entry check."""
+    td = Path(tempfile.mkdtemp(prefix="retdec_diff_dhelix_"))
+    orig_bin, ref_bin = compile_sources(cc, orig, ref, td)
+
+    for i in range(rounds):
+        seed = os.urandom(8)
+        env = os.environ.copy()
+        env["RETDEC_DHELIX_ROUND"] = str(i)
+        rc_o, out_o, err_o = run_capture(orig_bin, env, stdin=seed)
+        rc_r, out_r, err_r = run_capture(ref_bin, env, stdin=seed)
+        if rc_o != rc_r or out_o != out_r or err_o != err_r:
+            print(f"dhelix path mismatch at round {i}", file=sys.stderr)
+            return False
+
+    try:
+        from triton import TritonContext, ARCH  # type: ignore
+
+        def entry_hash(path: Path) -> int:
+            ctx = TritonContext()
+            ctx.setArchitecture(ARCH.X86_64)
+            data = path.read_bytes()
+            h = 0
+            for off in range(0, min(len(data), 2048), 4):
+                try:
+                    inst = ctx.disassembly(data[off : off + 16], 0x1000 + off)
+                    if inst:
+                        h ^= hash(inst) & 0xFFFFFFFF
+                except Exception:
+                    break
+            return h
+
+        if entry_hash(orig_bin) != entry_hash(ref_bin):
+            print("dhelix: Triton entry hash mismatch", file=sys.stderr)
+            return False
+    except ImportError:
+        pass
+
     return True
 
 
@@ -105,7 +149,7 @@ def main() -> int:
     ap.add_argument("refined")
     ap.add_argument(
         "--mode",
-        choices=("auto", "stdout", "fuzz", "triton"),
+        choices=("auto", "stdout", "fuzz", "triton", "dhelix"),
         default="auto",
     )
     args = ap.parse_args()
@@ -123,17 +167,15 @@ def main() -> int:
 
     mode = args.mode
     if mode == "auto":
-        try:
-            __import__("triton")
-            mode = "triton"
-        except ImportError:
-            mode = "fuzz"
+        mode = "dhelix"
 
     ok = False
     if mode == "stdout":
         ok = gate_stdout(cc, orig, ref)
     elif mode == "fuzz":
         ok = gate_fuzz(cc, orig, ref)
+    elif mode == "dhelix":
+        ok = gate_dhelix(cc, orig, ref)
     else:
         ok = gate_triton(cc, orig, ref)
 

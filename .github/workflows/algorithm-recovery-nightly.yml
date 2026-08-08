@@ -60,11 +60,16 @@ jobs:
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
           bash scripts/run_algorithm_recovery_full.sh --decompiler "$DEC" --jobs 4
 
-      - name: LIEF evaluation scaffold
-        run: bash scripts/eval_lief.sh
+      - name: Algorithm recovery regression gate
+        run: |
+          bash scripts/algorithm_recovery_regression_gate.sh \
+            --current results/algorithm-recovery-ci.json \
+            --profile ci_core
 
-      - name: rellic evaluation scaffold
-        run: bash scripts/eval_rellic.sh --corpus tests/algorithm_recovery/corpus
+      - name: Migration eval suite
+        run: |
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          bash scripts/migration_eval_suite.sh --decompiler "$DEC"
 
       - name: Upload algorithm recovery results
         uses: actions/upload-artifact@v4
@@ -75,4 +80,7 @@ jobs:
             results/algorithm-recovery-full.json
             results/lief-eval.json
             results/rellic-eval.json
+            results/retypd-eval.json
+            results/sailr-eval.json
+            results/migration-eval-summary.json
           if-no-files-found: warn
