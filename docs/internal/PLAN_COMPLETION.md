@@ -1,17 +1,17 @@
 # MASTER-UPGRADE-PLAN — automation completion status
 
-Last updated: v2.0.6
+Last updated: v2.0.7
 
 ## Steps 1–26 (shippable product) — DONE
 
 All Composer-automatable items through Step 26 are implemented or scaffolded.
-Shipped releases v1.0.0–v2.0.6 on `main`.
+Shipped releases v1.0.0–v2.0.7 on `main`.
 
 | Area | Status | Artifacts |
 |------|--------|-----------|
 | CI smoke + ctest | Done | `ci-smoke.yml`, `ctest-linux.yml` |
 | DecompileBench | Done | `tests/decompilebench/`, `run_benchmarks.sh` |
-| Algorithm recovery | Done | 216 corpus, CI core F1=1.0, full corpus F1≈0.99, nightly, regression gate |
+| Algorithm recovery | Done | 216 corpus, CI + full corpus F1=1.0, nightly, regression gate |
 | Neural refinement | Done | tiers 1–5, gates, llama.cpp pin, model SHA |
 | Licensing | Done | AGPL + commercial, doctor checks |
 | Fuzz / sanitizers | Done | `sanitizers.yml`, `tests/crash_corpus/` |

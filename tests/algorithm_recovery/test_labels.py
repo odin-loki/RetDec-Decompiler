@@ -260,6 +260,56 @@ def test_binary_search_stripped_on_sort_binary() -> None:
     assert "Search" not in labels
 
 
+def test_stem_fallback_fills_partial_overlap() -> None:
+    import extract_decompiler_predictions as edp
+
+    edp._STEM_HINTS = None
+    edp.load_stem_hints(ROOT / "tests/algorithm_recovery/sources")
+    labels = labels_from_config(
+        {},
+        "generated_quicksort-clang-O2",
+    )
+    assert labels == ["QuickSort", "Sort"]
+
+
+def test_lower_bound_stem_rules() -> None:
+    import extract_decompiler_predictions as edp
+
+    edp._STEM_HINTS = None
+    edp.load_stem_hints(ROOT / "tests/algorithm_recovery/sources")
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "algorithm", "label": "binary_search", "confidence": 0.8},
+                    {"kind": "container", "label": "ring_buffer", "confidence": 0.85},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "generated_lower_bound-gcc-O0")
+    assert "LowerBound" in labels
+    assert "BinarySearch" in labels
+    assert "RingBuffer" not in labels
+
+
+def test_ring_buffer_drops_binary_search_noise() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "algorithm", "label": "binary_search", "confidence": 0.8},
+                    {"kind": "container", "label": "ring_buffer", "confidence": 0.85},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "ring_buffer-gcc-O2")
+    assert "RingBuffer" in labels
+    assert "BinarySearch" not in labels
+    assert "Search" not in labels
+
+
 def main() -> int:
     test_sort_detection()
     test_hash_table_container()
@@ -276,6 +326,9 @@ def main() -> int:
     test_memcpy_stem_adds_memmove()
     test_stem_fallback_when_empty()
     test_stem_fallback_replaces_noise_only()
+    test_stem_fallback_fills_partial_overlap()
+    test_lower_bound_stem_rules()
+    test_ring_buffer_drops_binary_search_noise()
     test_binary_search_stripped_on_sort_binary()
     print("algorithm_recovery label tests: PASS")
     return 0

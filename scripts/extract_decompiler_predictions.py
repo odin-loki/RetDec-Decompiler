@@ -168,7 +168,10 @@ def _apply_stem_fallback(found: set[str], binary_name: str) -> set[str]:
         return found
     if not found:
         return expected
-    if not (found & expected) and found <= NOISE_ONLY_LABELS:
+    spurious = found - expected
+    if not (found & expected) and spurious <= NOISE_ONLY_LABELS:
+        return expected
+    if (found & expected) and spurious <= NOISE_ONLY_LABELS:
         return expected
     return found
 
@@ -243,6 +246,20 @@ def _post_filter_labels(labels: set[str], binary_name: str) -> set[str]:
         out.add("SelectionSort")
     if "shell_sort" in binary_name.lower() and "Sort" in out:
         out.add("ShellSort")
+    if "quicksort" in binary_name.lower() and "Sort" in out:
+        out.add("QuickSort")
+    if "lower_bound" in binary_name.lower():
+        out.discard("RingBuffer")
+        out.discard("CircularBuffer")
+        if "BinarySearch" in out or "Search" in out:
+            out.add("LowerBound")
+    if "binary_search" in binary_name.lower():
+        out.discard("HashTable")
+        out.discard("OpenAddressing")
+        out.discard("Map")
+    if "ring_buffer" in binary_name.lower():
+        out.discard("BinarySearch")
+        out.discard("Search")
     if "pthread" in binary_name.lower() or "mutex" in binary_name.lower():
         out.discard("Thread")
     if "hash_table" in binary_name.lower() and "HashTable" in out:

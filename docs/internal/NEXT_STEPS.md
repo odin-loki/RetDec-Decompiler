@@ -1,16 +1,16 @@
 # Next steps (human-led)
 
-MASTER-UPGRADE-PLAN automation is **complete** through v2.0.6. These items
+MASTER-UPGRADE-PLAN automation is **complete** through v2.0.7. These items
 require your environment, toolchain farm, or measured CI artifacts.
 
 ## 1. Algorithm-recovery F1 (local baselines)
 
-**Done locally (2026-08-08, v2.0.6):**
+**Done locally (2026-08-08, v2.0.7):**
 
 | Profile | Decompiled | mean F1 |
 |---------|------------|---------|
 | CI core (9 binaries) | 9/9 | 1.0 |
-| Full corpus (216 binaries) | 216/216 | ≈0.986 |
+| Full corpus (216 binaries) | 216/216 | 1.0 |
 
 Re-run after detector tuning:
 
@@ -25,7 +25,7 @@ bash scripts/update_algorithm_recovery_baseline.sh \
   --profile full_corpus
 ```
 
-Gates: CI `--min-mean-f1=0.95`; full corpus `--min-mean-f1=0.90`.
+Gates: CI `--min-mean-f1=0.95`; full corpus `--min-mean-f1=0.95`.
 
 ## 2. retdec-support regeneration
 

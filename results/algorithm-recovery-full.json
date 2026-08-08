@@ -2,17 +2,17 @@
   "harness": "algorithm_recovery",
   "summary": {
     "binaries": 216,
-    "mean_f1": 0.9856701940035273,
+    "mean_f1": 1.0,
     "decompiled": 216
   },
   "per_binary": {
     "binary_search-clang-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "binary_search-clang-O2": {
       "tp": 2,
@@ -823,52 +823,52 @@
       "f1": 1.0
     },
     "generated_lower_bound-clang-O0": {
-      "tp": 2,
-      "fp": 2,
-      "fn": 1,
-      "precision": 0.5,
-      "recall": 0.6666666666666666,
-      "f1": 0.5714285714285715
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_lower_bound-clang-O2": {
-      "tp": 2,
+      "tp": 3,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.6666666666666666,
-      "f1": 0.8
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_lower_bound-clang-O3": {
-      "tp": 2,
+      "tp": 3,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.6666666666666666,
-      "f1": 0.8
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_lower_bound-gcc-O0": {
-      "tp": 2,
+      "tp": 3,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.6666666666666666,
-      "f1": 0.8
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_lower_bound-gcc-O2": {
-      "tp": 2,
+      "tp": 3,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.6666666666666666,
-      "f1": 0.8
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_lower_bound-gcc-O3": {
-      "tp": 2,
+      "tp": 3,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.6666666666666666,
-      "f1": 0.8
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_matrix_mul-clang-O0": {
       "tp": 2,
@@ -1071,20 +1071,20 @@
       "f1": 1.0
     },
     "generated_quicksort-clang-O2": {
-      "tp": 1,
+      "tp": 2,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.5,
-      "f1": 0.6666666666666666
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_quicksort-clang-O3": {
-      "tp": 1,
+      "tp": 2,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.5,
-      "f1": 0.6666666666666666
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_quicksort-gcc-O0": {
       "tp": 2,
@@ -1720,19 +1720,19 @@
     },
     "ring_buffer-gcc-O2": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "ring_buffer-gcc-O3": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     }
   },
   "per_class": {
@@ -1762,11 +1762,11 @@
     },
     "BinarySearch": {
       "tp": 12,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.8571428571428571,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.923076923076923
+      "f1": 1.0
     },
     "BitManipulation": {
       "tp": 6,
@@ -1826,11 +1826,11 @@
     },
     "CircularBuffer": {
       "tp": 6,
-      "fp": 1,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.8571428571428571,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.923076923076923
+      "f1": 1.0
     },
     "Compression": {
       "tp": 6,
@@ -1922,11 +1922,11 @@
     },
     "HashTable": {
       "tp": 12,
-      "fp": 1,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.9230769230769231,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.9600000000000001
+      "f1": 1.0
     },
     "HeapSort": {
       "tp": 6,
@@ -1993,12 +1993,12 @@
       "f1": 1.0
     },
     "LowerBound": {
-      "tp": 0,
+      "tp": 6,
       "fp": 0,
-      "fn": 6,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "MatrixMultiply": {
       "tp": 6,
@@ -2058,11 +2058,11 @@
     },
     "OpenAddressing": {
       "tp": 6,
-      "fp": 1,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.8571428571428571,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.923076923076923
+      "f1": 1.0
     },
     "Parse": {
       "tp": 6,
@@ -2105,12 +2105,12 @@
       "f1": 1.0
     },
     "QuickSort": {
-      "tp": 4,
+      "tp": 6,
       "fp": 0,
-      "fn": 2,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.6666666666666666,
-      "f1": 0.8
+      "recall": 1.0,
+      "f1": 1.0
     },
     "RLE": {
       "tp": 6,
@@ -2122,19 +2122,19 @@
     },
     "RingBuffer": {
       "tp": 6,
-      "fp": 1,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.8571428571428571,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.923076923076923
+      "f1": 1.0
     },
     "Search": {
       "tp": 18,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.9,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.9473684210526316
+      "f1": 1.0
     },
     "SelectionSort": {
       "tp": 6,

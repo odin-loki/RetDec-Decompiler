@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEC=""
 JOBS=4
 MIN_DECOMPILED=180
-MIN_MEAN_F1=0.90
+MIN_MEAN_F1=0.95
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
