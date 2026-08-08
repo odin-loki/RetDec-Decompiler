@@ -123,11 +123,41 @@ for f in LICENSE LICENSE-AGPL LICENSE-COMMERCIAL NOTICE; do
 done
 
 # ── dependency release candidates ─────────────────────────────────────────────
-if grep -q '5.0-rc2' "${REPO_ROOT}/cmake/deps.cmake" 2>/dev/null; then
-    warn_check "Capstone still pinned to 5.0-rc2"
+if grep -qE '5\.0-rc|v4\.2\.0-rc' "${REPO_ROOT}/cmake/deps.cmake" 2>/dev/null; then
+    fail_check "cmake/deps.cmake still pins a release-candidate dependency"
+else
+    pass_check "no RC dependency pins in cmake/deps.cmake"
 fi
-if grep -q 'v4.2.0-rc1' "${REPO_ROOT}/cmake/deps.cmake" 2>/dev/null; then
-    warn_check "YARA still pinned to v4.2.0-rc1"
+
+# ── CI workflows enabled ──────────────────────────────────────────────────────
+for wf in ci-smoke.yml ctest-linux.yml; do
+    wfpath="${REPO_ROOT}/.github/workflows/${wf}"
+    if [[ -f "$wfpath" ]] && grep -qE '^[[:space:]]*push:' "$wfpath"; then
+        pass_check "workflow ${wf} triggers on push"
+    else
+        fail_check "workflow ${wf} missing push trigger"
+    fi
+done
+
+# ── commercial GPL exclusion ──────────────────────────────────────────────────
+if grep -rq 'capstone2llvmirtool' "${REPO_ROOT}/packaging/" 2>/dev/null; then
+    fail_check "capstone2llvmirtool found in packaging/ (commercial GPL exclusion)"
+else
+    pass_check "no capstone2llvmirtool in packaging manifests"
+fi
+
+# ── neural model SHA (optional) ───────────────────────────────────────────────
+if [[ -n "${RETDEC_NEURAL_MODEL:-}" && -f "${RETDEC_NEURAL_MODEL}" ]]; then
+    if [[ -n "${RETDEC_NEURAL_MODEL_SHA256:-}" ]]; then
+        actual="$(sha256sum "${RETDEC_NEURAL_MODEL}" | awk '{print $1}')"
+        if [[ "$actual" == "${RETDEC_NEURAL_MODEL_SHA256}" ]]; then
+            pass_check "RETDEC_NEURAL_MODEL SHA256 matches"
+        else
+            fail_check "RETDEC_NEURAL_MODEL SHA256 mismatch (expected ${RETDEC_NEURAL_MODEL_SHA256})"
+        fi
+    else
+        warn_check "RETDEC_NEURAL_MODEL set but RETDEC_NEURAL_MODEL_SHA256 unset"
+    fi
 fi
 
 # ── perl ──────────────────────────────────────────────────────────────────────

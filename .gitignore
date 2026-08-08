@@ -86,3 +86,12 @@ node_modules/
 __pycache__/
 *.pyc
 luac.out
+
+# Local build trees (not under /build/)
+/build-*/
+keystone.zip
+llama.zip
+_license_preamble.txt
+_license_section7.txt
+LICENSE.full
+scripts/run-linux-release-build.cmd

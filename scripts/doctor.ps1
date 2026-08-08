@@ -163,6 +163,49 @@ if ($py) {
     Write-Fail "python not on PATH - needed for validate_pipeline_json.py and ci-smoke tests"
 }
 
+# ── licence files ─────────────────────────────────────────────────────────────
+foreach ($f in @("LICENSE", "LICENSE-AGPL", "LICENSE-COMMERCIAL", "NOTICE")) {
+    $p = Join-Path $RepoRoot $f
+    if (Test-Path -LiteralPath $p) {
+        Write-Pass "$f present"
+    } else {
+        Write-Fail "missing $f — run install-licence-files.sh"
+    }
+}
+
+# ── dependency release candidates ─────────────────────────────────────────────
+$deps = Join-Path $RepoRoot "cmake\deps.cmake"
+if (Test-Path -LiteralPath $deps) {
+    $depsText = Get-Content -LiteralPath $deps -Raw
+    if ($depsText -match '5\.0-rc|v4\.2\.0-rc') {
+        Write-Fail "cmake/deps.cmake still pins a release-candidate dependency"
+    } else {
+        Write-Pass "no RC dependency pins in cmake/deps.cmake"
+    }
+}
+
+# ── CI workflows enabled ──────────────────────────────────────────────────────
+foreach ($wf in @("ci-smoke.yml", "ctest-linux.yml")) {
+    $wfPath = Join-Path $RepoRoot ".github\workflows\$wf"
+    if ((Test-Path -LiteralPath $wfPath) -and (Select-String -Path $wfPath -Pattern '^\s*push:' -Quiet)) {
+        Write-Pass "workflow $wf triggers on push"
+    } else {
+        Write-Fail "workflow $wf missing push trigger"
+    }
+}
+
+# ── commercial GPL exclusion ──────────────────────────────────────────────────
+$packaging = Join-Path $RepoRoot "packaging"
+if (Test-Path -LiteralPath $packaging) {
+    $hits = Get-ChildItem -Path $packaging -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { Select-String -Path $_.FullName -Pattern 'capstone2llvmirtool' -Quiet }
+    if ($hits) {
+        Write-Fail "capstone2llvmirtool found in packaging/ (commercial GPL exclusion)"
+    } else {
+        Write-Pass "no capstone2llvmirtool in packaging manifests"
+    }
+}
+
 # ── perl ──────────────────────────────────────────────────────────────────────
 $perl = Get-Command perl -ErrorAction SilentlyContinue
 if ($perl) {

@@ -60,3 +60,7 @@ jobs:
 
       - name: Doctor licence and workflow checks
         run: bash scripts/doctor.sh
+
+      - name: Benchmark harness and regression gate
+        run: |
+          bash scripts/run_benchmarks.sh --compare 2026-08 --gate

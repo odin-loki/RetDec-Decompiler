@@ -133,3 +133,15 @@ jobs:
           name: perf-bench-linux
           path: perf_bench_result.json
           if-no-files-found: error
+
+      - name: Nightly report
+        run: |
+          bash scripts/nightly_report.sh --out "docs/internal/nightly/$(date -u +%Y-%m-%d).md"
+          cat docs/internal/nightly/$(date -u +%Y-%m-%d).md
+
+      - name: Upload nightly report
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-report-linux
+          path: docs/internal/nightly/
+          if-no-files-found: warn
