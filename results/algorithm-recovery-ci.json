@@ -2,7 +2,7 @@
   "harness": "algorithm_recovery",
   "summary": {
     "binaries": 9,
-    "mean_f1": 0.9777777777777779,
+    "mean_f1": 1.0,
     "decompiled": 9
   },
   "per_binary": {
@@ -55,12 +55,12 @@
       "f1": 1.0
     },
     "memcpy_loop-gcc-O0": {
-      "tp": 2,
+      "tp": 3,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.6666666666666666,
-      "f1": 0.8
+      "recall": 1.0,
+      "f1": 1.0
     },
     "mergesort-gcc-O0": {
       "tp": 3,
@@ -153,12 +153,12 @@
       "f1": 1.0
     },
     "Memmove": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "Mergesort": {
       "tp": 1,

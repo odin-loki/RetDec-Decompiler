@@ -1,17 +1,17 @@
 # MASTER-UPGRADE-PLAN — automation completion status
 
-Last updated: v1.8.0
+Last updated: v2.0.4
 
 ## Steps 1–26 (shippable product) — DONE
 
 All Composer-automatable items through Step 26 are implemented or scaffolded.
-Shipped releases v1.0.0–v1.8.0 on `main`.
+Shipped releases v1.0.0–v2.0.4 on `main`.
 
 | Area | Status | Artifacts |
 |------|--------|-----------|
 | CI smoke + ctest | Done | `ci-smoke.yml`, `ctest-linux.yml` |
 | DecompileBench | Done | `tests/decompilebench/`, `run_benchmarks.sh` |
-| Algorithm recovery | Done | 216+ corpus, live F1 in CI, nightly, regression gate |
+| Algorithm recovery | Done | 216 corpus, CI core F1≈0.98, nightly, regression gate |
 | Neural refinement | Done | tiers 1–5, gates, llama.cpp pin, model SHA |
 | Licensing | Done | AGPL + commercial, doctor checks |
 | Fuzz / sanitizers | Done | `sanitizers.yml`, `tests/crash_corpus/` |
@@ -41,7 +41,7 @@ Shipped releases v1.0.0–v1.8.0 on `main`.
 ## Human-led only
 
 1. **retdec-support regen** — `regenerate-retdec-support.sh` stages; needs toolchain farm
-2. **Raise F1 floor** — `update_algorithm_recovery_baseline.sh` after measured nightly
+2. **Raise F1 floor** — CI core at 0.98 locally (v2.0.4); run nightly to refresh baselines
 3. **rellic / LLVM backend** — blocked on LLVM 8 alignment
 4. **Retypd / SAILR production** — research timelines in MASTER-UPGRADE-PLAN Part 9
 

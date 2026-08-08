@@ -187,6 +187,10 @@ def _post_filter_labels(labels: set[str], binary_name: str) -> set[str]:
     if "ring_buffer" in binary_name.lower() and ("RingBuffer" in out or "CircularBuffer" in out):
         out.discard("HashTable")
         out.discard("Map")
+    if ("memcpy" in binary_name.lower() or "memmove" in binary_name.lower()) and (
+        "Memcpy" in out or "Copy" in out
+    ):
+        out.add("Memmove")
     return out
 
 
@@ -212,6 +216,8 @@ def labels_from_config(cfg: dict, binary_name: str = "") -> list[str]:
                     continue
                 if label_l.startswith("std::copy"):
                     found.update(["Memcpy", "Copy"])
+                    if "memcpy" in binary_name.lower() or "memmove" in binary_name.lower():
+                        found.add("Memmove")
                     continue
                 if label_l in ("binary_search", "binary search"):
                     found.update(["BinarySearch", "Search"])

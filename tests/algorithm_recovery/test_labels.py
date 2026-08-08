@@ -196,6 +196,22 @@ def test_hash_table_drops_memcpy_noise() -> None:
     assert "Memcpy" not in labels
 
 
+def test_memcpy_stem_adds_memmove() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "algorithm", "label": "std::copy", "confidence": 0.8},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "memcpy_loop-gcc-O0")
+    assert "Memcpy" in labels
+    assert "Copy" in labels
+    assert "Memmove" in labels
+
+
 def main() -> int:
     test_sort_detection()
     test_hash_table_container()
@@ -209,6 +225,7 @@ def main() -> int:
     test_open_addressing_container()
     test_partition_on_binary_search_stem()
     test_hash_table_drops_memcpy_noise()
+    test_memcpy_stem_adds_memmove()
     print("algorithm_recovery label tests: PASS")
     return 0
 
