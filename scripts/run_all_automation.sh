@@ -8,6 +8,8 @@ PYTHON="$("${ROOT}/scripts/find_python.sh")"
 SKIP_MIGRATION=false
 SKIP_SUPPORT=false
 
+bash "${ROOT}/scripts/normalize_sh_crlf.sh" >/dev/null 2>&1 || true
+
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--skip-migration) SKIP_MIGRATION=true; shift ;;
