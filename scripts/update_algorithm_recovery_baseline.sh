@@ -37,6 +37,8 @@ metrics = baseline.setdefault("metrics", {})
 metrics.setdefault(profile, {})
 metrics[profile]["min_decompiled"] = summary.get("decompiled", metrics[profile].get("min_decompiled", 0))
 metrics[profile]["mean_f1"] = summary.get("mean_f1", metrics[profile].get("mean_f1", 0.0))
+if summary.get("mean_f1_raw") is not None:
+    metrics[profile]["mean_f1_raw"] = summary.get("mean_f1_raw")
 metrics[profile]["binaries"] = summary.get("binaries", metrics[profile].get("binaries", 0))
 baseline["updated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 baseline["baseline_tag"] = "baseline-algorithm-recovery"

@@ -78,7 +78,8 @@ jobs:
 
       - name: Benchmark harness and regression gate
         run: |
-          bash scripts/run_benchmarks.sh --compare 2026-08 --gate
+          bash scripts/fetch_decompilebench_corpus.sh --profile ci-core
+          bash scripts/run_benchmarks.sh --compare 2026-08 --gate --profile ci-core
 
       - name: Algorithm corpus size check
         run: |

@@ -17,30 +17,32 @@ done
 
 mkdir -p "$(dirname "${OUT}")"
 
-# Best-effort: run harness if decompiler absent results still generated
-bash "${ROOT}/scripts/run_benchmarks.sh" 2>/dev/null || true
+bash "${ROOT}/scripts/run_benchmarks.sh" --profile ci-core 2>/dev/null || true
 
 python3 - "${ROOT}" "${OUT}" "${SHA}" "${VER}" <<'PY'
 import json, pathlib, sys
 from datetime import datetime, timezone
 
 root, out, sha, ver = sys.argv[1:5]
-results = root / "results" / f"{sha}.json"
-baseline = root / "results" / "baseline-2026-08.json"
-ar_ci = root / "results" / "algorithm-recovery-ci.json"
-ar_base = root / "results" / "baseline-algorithm-recovery.json"
+results = pathlib.Path(root) / "results" / f"{sha}.json"
+baseline = pathlib.Path(root) / "results" / "baseline-2026-08.json"
+ar_ci = pathlib.Path(root) / "results" / "algorithm-recovery-ci.json"
+ar_base = pathlib.Path(root) / "results" / "baseline-algorithm-recovery.json"
 
 def load(path):
     return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
 
-cur = load(pathlib.Path(results))
-base = load(pathlib.Path(baseline))
-ar = load(pathlib.Path(ar_ci))
-ar_b = load(pathlib.Path(ar_base))
+cur = load(results)
+base = load(baseline)
+ar = load(ar_ci)
+ar_b = load(ar_base)
 
 m = cur.get("metrics", {})
 bm = base.get("metrics", {})
-ar_summary = ar.get("summary", {})
+db = cur.get("decompilebench", {})
+stock = db.get("stock_retdec", {}).get("summary", {})
+fork = db.get("summary", db.get("fork", {}).get("summary", {}))
+ar_summary = ar.get("summary", {}) or cur.get("algorithm_recovery", {}).get("summary", {})
 ar_b_ci = ar_b.get("metrics", {}).get("ci_core", {})
 
 lines = [
@@ -50,15 +52,20 @@ lines = [
     f"- **Commit:** `{sha}`",
     f"- **Generated:** {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}",
     "",
-    "## DecompileBench",
+    "## DecompileBench (CI core stand-in corpus)",
     "",
-    "| Metric | Current | Baseline |",
-    "|--------|---------|----------|",
+    "| Metric | Fork | Stock RetDec 5.0 | Baseline |",
+    "|--------|------|------------------|----------|",
 ]
-for key in ("syntax_valid_rate", "recompile_success_rate"):
-    c = m.get("decompilebench", {}).get(key, "—")
-    b = bm.get("decompilebench", {}).get(key, "—")
-    lines.append(f"| {key} | {c} | {b} |")
+for key, label in (
+    ("syntax_valid_rate", "syntax_valid_rate"),
+    ("recompile_success_rate", "recompile_success_rate"),
+    ("coverage_equivalence_rate", "coverage_equivalence_rate"),
+):
+    fval = fork.get(key, m.get("decompilebench", {}).get(key, "—"))
+    sval = stock.get(key, "—")
+    bval = bm.get("decompilebench", {}).get(key, "—")
+    lines.append(f"| {label} | {fval} | {sval} | {bval} |")
 
 lines += [
     "",
@@ -66,7 +73,8 @@ lines += [
     "",
     "| Metric | Current | Baseline |",
     "|--------|---------|----------|",
-    f"| mean_f1 | {ar_summary.get('mean_f1', '—')} | {ar_b_ci.get('mean_f1', '—')} |",
+    f"| mean_f1 | {ar_summary.get('mean_f1', m.get('algorithm_recovery', {}).get('mean_f1', '—'))} | {ar_b_ci.get('mean_f1', '—')} |",
+    f"| mean_f1_raw | {ar_summary.get('mean_f1_raw', m.get('algorithm_recovery', {}).get('mean_f1_raw', '—'))} | — |",
     f"| decompiled | {ar_summary.get('decompiled', '—')} | {ar_b_ci.get('min_decompiled', '—')} |",
     "",
     "_Regenerate: `bash scripts/regenerate_benchmark_tables.sh`_",

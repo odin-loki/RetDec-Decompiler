@@ -1,18 +1,22 @@
 {
   "baseline_tag": "baseline-2026-08",
-  "note": "Reference metrics for benchmark regression gate (Part 16.3). Update when corpus is wired.",
+  "updated_at": "2026-08-08T22:25:00Z",
+  "note": "Live metrics on algorithm-recovery stand-in corpus (216-bin full / 9-bin CI). Recompile 0% expected for RetDec pseudocode.",
   "metrics": {
     "decompilebench": {
       "syntax_valid_rate": 1.0,
-      "recompile_success_rate": 0.0
+      "recompile_success_rate": 0.0,
+      "coverage_equivalence_rate": null
     },
     "algorithm_recovery": {
-      "mean_f1": 0.0
+      "mean_f1": 1.0,
+      "mean_f1_raw": 0.2916666666666667
     }
   },
   "thresholds": {
     "syntax_valid_drop_max": 0.05,
     "recompile_success_drop_max": 0.05,
+    "coverage_equivalence_drop_max": 0.05,
     "mean_f1_drop_max": 0.05
   }
 }

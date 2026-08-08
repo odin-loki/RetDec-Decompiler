@@ -75,6 +75,10 @@ if [[ -n "${DEC}" && -x "${DEC}" && -d "${ROOT}/tests/algorithm_recovery/corpus"
 	echo "==> algorithm recovery CI core"
 	bash "${ROOT}/scripts/run_algorithm_recovery_ci.sh" --decompiler "${DEC}" || echo "WARN  CI F1 pipeline failed"
 	echo ""
+
+	echo "==> DecompileBench + algorithm recovery benchmarks"
+	bash "${ROOT}/scripts/run_benchmarks.sh" --profile ci-core --compare 2026-08 || echo "WARN  benchmarks failed"
+	echo ""
 fi
 
 echo "==> nightly report"

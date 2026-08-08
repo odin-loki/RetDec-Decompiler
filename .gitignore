@@ -12,6 +12,14 @@
 /build/
 /install/
 /dist/
+/deps/lief-sdk/
+/deps/stock-retdec/
+/tests/decompilebench/artifacts/
+/tests/decompilebench/corpus/*
+!/tests/decompilebench/corpus/.gitkeep
+/results/decompilebench-tmp.json
+/results/*-tmp.json
+/results/[0-9a-f][0-9a-f]*.json
 
 # Release binaries (GitHub Releases only — not committed)
 /releases/windows/

@@ -1,11 +1,15 @@
 # Internal backlog
 
-**Status: complete.** See [PLAN_COMPLETION.md](PLAN_COMPLETION.md) and [NEXT_STEPS.md](NEXT_STEPS.md).
+| ID | Task | Executor | State |
+|----|------|----------|-------|
+| DB-1 | DecompileBench CI-core harness + coverage metric | C+ | **done** (stand-in corpus) |
+| DB-2 | OSS-Fuzz full DecompileBench corpus | C+/H | open |
+| DB-3 | Stock RetDec 5.0 two-column table | C | script ready (`fetch_stock_retdec.sh`) |
+| AR-1 | `mean_f1_raw` vs `mean_f1` reporting | C | **done** |
+| AR-2 | Per-opt-level F1 breakdown | C | **done** |
+| LIEF-1 | `install_lief_sdk.sh` for Ubuntu 24.04 | C | **done** |
+| LIEF-2 | FormatFactory cutover | C+ | open |
+| OPS-1 | `gh auth` + nightly dispatch | H | blocked |
+| OPS-2 | retdec-support regen | H | blocked |
 
-| Version | Scope |
-|---------|-------|
-| v1.0.0–v2.0.10 | MASTER-UPGRADE-PLAN automation (F1=1.0 CI + full corpus) |
-| v1.8.0 | D7 closed |
-| **v2.0.0** | GUI Phase D closed (docs) |
-
-No open engineering automation items. Remaining work is in NEXT_STEPS.md (toolchain farm, CI baselines, library migrations).
+See [PLAN_COMPLETION.md](PLAN_COMPLETION.md) and [NEXT_STEPS.md](NEXT_STEPS.md).

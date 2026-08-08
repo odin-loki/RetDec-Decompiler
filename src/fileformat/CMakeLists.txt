@@ -119,7 +119,7 @@ target_link_libraries(fileformat
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/lief_optional.cmake)
 if(RETDEC_HAS_LIEF)
-	target_compile_definitions(fileformat PRIVATE RETDEC_HAS_LIEF)
+	target_compile_definitions(fileformat PUBLIC RETDEC_HAS_LIEF)
 	if(TARGET LIEF::LIEF)
 		target_link_libraries(fileformat PRIVATE LIEF::LIEF)
 	elseif(LIEF_LIBRARIES)

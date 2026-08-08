@@ -17,7 +17,11 @@ Adopt behind `retdec::fileformat::LiefAdapter` — do not cut over in one PR.
 
 - `cmake/lief_optional.cmake` wires `find_package(LIEF)` when `RETDEC_ENABLE_LIEF=ON`
 - `LiefAdapter::parseSections` implemented with LIEF C++ API
-- Install: `apt install liblief-dev` (Linux) then `-DRETDEC_ENABLE_LIEF=ON`
+- Install C++ SDK:
+  - **Ubuntu 24.04+ (Noble):** no `liblief-dev` in apt — use `bash scripts/install_lief_sdk.sh`
+  - **Ubuntu 22.04 (Jammy):** `sudo apt install liblief-dev` (universe, 0.9.0 — older than upstream)
+  - Then: `export LIEF_DIR="$(pwd)/deps/lief-sdk/lib/cmake/LIEF"` and `-DRETDEC_ENABLE_LIEF=ON`
+- Python eval (no C++ SDK): `bash scripts/setup_eval_venv.sh` → `pip install lief`
 - Shadow validation: set `RETDEC_LIEF_SHADOW=1` when decompiling to log LIEF section counts alongside existing parsers
 
 ### Phase C — modification

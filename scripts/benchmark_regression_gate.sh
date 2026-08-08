@@ -54,7 +54,7 @@ def rate(deck, key):
 
 failures = []
 for section, keys in (
-    ("decompilebench", ("syntax_valid_rate", "recompile_success_rate")),
+    ("decompilebench", ("syntax_valid_rate", "recompile_success_rate", "coverage_equivalence_rate")),
     ("algorithm_recovery", ("mean_f1",)),
 ):
     bsec = base_m.get(section, {})
@@ -72,6 +72,8 @@ for section, keys in (
             max_drop = float(thresholds.get("syntax_valid_drop_max", 0.05))
         if key == "mean_f1":
             max_drop = float(thresholds.get("mean_f1_drop_max", 0.05))
+        if key == "coverage_equivalence_rate":
+            max_drop = float(thresholds.get("coverage_equivalence_drop_max", 0.05))
         print(f"{section}.{key}: baseline={bval:.4f} current={cval:.4f} drop={drop:.4f} max_drop={max_drop:.4f}")
         if drop > max_drop:
             failures.append(f"{section}.{key} dropped by {drop:.4f} (max {max_drop:.4f})")

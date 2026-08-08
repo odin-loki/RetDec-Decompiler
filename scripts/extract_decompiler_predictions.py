@@ -275,7 +275,7 @@ def _post_filter_labels(labels: set[str], binary_name: str) -> set[str]:
     return out
 
 
-def labels_from_config(cfg: dict, binary_name: str = "") -> list[str]:
+def labels_from_config(cfg: dict, binary_name: str = "", *, stem_fallback: bool = True) -> list[str]:
     found: set[str] = set()
     for fn in cfg.get("functions", []):
         for det in fn.get("semanticDetections", []):
@@ -342,7 +342,8 @@ def labels_from_config(cfg: dict, binary_name: str = "") -> list[str]:
                     found.add("Spinlock")
     if binary_name:
         found = _post_filter_labels(found, binary_name)
-        found = _apply_stem_fallback(found, binary_name)
+        if stem_fallback:
+            found = _apply_stem_fallback(found, binary_name)
     return sorted(found)
 
 
@@ -389,7 +390,8 @@ def decompile_one(
     binary: Path,
     work: Path,
     timeout: int,
-) -> tuple[bool, list[str]]:
+    stem_fallback: bool = True,
+) -> tuple[bool, list[str], list[str]]:
     job_work = work / binary.name
     job_work.mkdir(parents=True, exist_ok=True)
     out_c = job_work / f"{binary.name}.c"
@@ -406,9 +408,9 @@ def decompile_one(
             env=env,
         )
     except subprocess.TimeoutExpired:
-        return False, []
+        return False, [], []
     if proc.returncode != 0:
-        return False, []
+        return False, [], []
     cfg_candidates = (
         job_work / f"{binary.name}.config.json",
         job_work / f"{binary.name}.c.config.json",
@@ -416,9 +418,11 @@ def decompile_one(
     )
     cfg_path = next((p for p in cfg_candidates if p.is_file()), None)
     if cfg_path is None:
-        return False, []
+        return False, [], []
     cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-    return True, labels_from_config(cfg, binary.name)
+    raw = labels_from_config(cfg, binary.name, stem_fallback=False)
+    with_fallback = labels_from_config(cfg, binary.name, stem_fallback=stem_fallback)
+    return True, with_fallback, raw
 
 
 def _decompile_task(
@@ -427,12 +431,13 @@ def _decompile_task(
     corpus: str,
     work: str,
     timeout: int,
-) -> tuple[str, bool, list[str]]:
+    stem_fallback: bool,
+) -> tuple[str, bool, list[str], list[str]]:
     binary = resolve_corpus_binary(Path(corpus), name)
     if binary is None:
-        return name, False, []
-    ok, labels = decompile_one(Path(dec), binary, Path(work), timeout)
-    return name, ok, labels
+        return name, False, [], []
+    ok, labels, raw = decompile_one(Path(dec), binary, Path(work), timeout, stem_fallback)
+    return name, ok, labels, raw
 
 
 def main() -> int:
@@ -446,6 +451,7 @@ def main() -> int:
     ap.add_argument("--names", help="comma-separated binary names to decompile")
     ap.add_argument("--ci-core", action="store_true", help="CI smoke subset (9 binaries)")
     ap.add_argument("--sources", help="label sidecar root for stem fallback hints")
+    ap.add_argument("--no-stem-fallback", action="store_true", help="disable label sidecar fallback")
     ap.add_argument("--timeout", type=int, default=300, help="per-binary timeout seconds")
     ap.add_argument("--jobs", type=int, default=1, help="parallel decompile workers")
     args = ap.parse_args()
@@ -468,26 +474,32 @@ def main() -> int:
     )
 
     predictions: dict[str, list[str]] = {}
+    predictions_raw: dict[str, list[str]] = {}
     decompiled = 0
     jobs = max(1, args.jobs)
     dec_s, corpus_s, work_s = str(dec), str(corpus), str(work)
+    stem_fallback = not args.no_stem_fallback
 
     if jobs == 1:
         for name in binary_names:
-            name, ok, labels = _decompile_task(name, dec_s, corpus_s, work_s, args.timeout)
+            name, ok, labels, raw = _decompile_task(
+                name, dec_s, corpus_s, work_s, args.timeout, stem_fallback
+            )
             predictions[name] = labels
+            predictions_raw[name] = raw
             if ok:
                 decompiled += 1
     else:
         tasks = [
-            (name, dec_s, corpus_s, work_s, args.timeout)
+            (name, dec_s, corpus_s, work_s, args.timeout, stem_fallback)
             for name in binary_names
         ]
         with ProcessPoolExecutor(max_workers=jobs) as pool:
             futures = [pool.submit(_decompile_task, *t) for t in tasks]
             for fut in as_completed(futures):
-                name, ok, labels = fut.result()
+                name, ok, labels, raw = fut.result()
                 predictions[name] = labels
+                predictions_raw[name] = raw
                 if ok:
                     decompiled += 1
 
@@ -496,6 +508,7 @@ def main() -> int:
         "decompiled": decompiled,
         "requested": len(binary_names),
         "predictions": predictions,
+        "predictions_raw": predictions_raw,
     }
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
