@@ -1,0 +1,4 @@
+{
+  "sample_sort": ["Introsort", "Mergesort"],
+  "sample_hash": ["HashTable", "OpenAddressing"]
+}

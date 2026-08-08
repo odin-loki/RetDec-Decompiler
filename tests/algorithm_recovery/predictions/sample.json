@@ -1,0 +1,4 @@
+{
+  "sample_sort": ["Introsort"],
+  "sample_hash": ["HashTable", "Map"]
+}

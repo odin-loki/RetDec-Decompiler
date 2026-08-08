@@ -20,3 +20,11 @@ tests/algorithm_recovery/
 - per compiler (GCC, Clang)
 
 Run via `scripts/run_benchmarks.sh`.
+
+## Sample data
+
+```bash
+python3 tests/algorithm_recovery/runner.py \
+  --predictions tests/algorithm_recovery/predictions/sample.json \
+  --ground-truth tests/algorithm_recovery/ground_truth/sample.json
+```

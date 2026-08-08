@@ -50,6 +50,11 @@ struct FunctionDetections {
 bool parallelAnalysisEnabled();
 
 /**
+ * @brief True unless RETDEC_INCREMENTAL_CACHE=0.
+ */
+bool incrementalCacheEnabled();
+
+/**
  * @brief Derive the cache sidecar path from a decompiler output `.c` path.
  * Example: `/out/demo.c` → `/out/demo.retdec-fn-cache.json`
  */

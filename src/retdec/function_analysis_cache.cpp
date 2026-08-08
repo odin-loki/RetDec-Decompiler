@@ -197,6 +197,14 @@ bool parallelAnalysisEnabled()
     return std::thread::hardware_concurrency() > 2;
 }
 
+bool incrementalCacheEnabled()
+{
+    const char* e = std::getenv("RETDEC_INCREMENTAL_CACHE");
+    if (e != nullptr)
+        return e[0] != '\0' && e[0] != '0';
+    return true;
+}
+
 std::string functionAnalysisCachePath(const std::string& outputCPath)
 {
     if (outputCPath.empty()) return {};

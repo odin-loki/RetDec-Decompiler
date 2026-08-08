@@ -4,6 +4,7 @@ add_library(retdec-neural STATIC
     refiner.cpp
     prompts.cpp
     decompile_hook.cpp
+    batch_refiner.cpp
 )
 
 if(TARGET retdec::deps::llamacpp)

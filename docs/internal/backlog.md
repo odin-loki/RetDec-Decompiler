@@ -4,37 +4,26 @@
 
 | Step | Task | State |
 |------|------|-------|
-| 1–8 | Foundations + D7 | done |
-| 9 | DecompileBench runner | done |
-| 10 | Algorithm recovery corpus | scaffold + runner |
-| 11–15 | Deps bumps | done |
-| 16 | retdec-support regen script | scaffold |
-| 17–21 | Neural + gates | tiers 1–3; gates partial |
-| 22–23 | Offline + fuzz/sanitizers | done |
-| 24 | Tier-1 algorithms | Andersen wired; Braun + Semi-NCA scaffold |
-| 25–26 | Release + **SHIP** | **v1.0.0 tagged** |
+| 1–26 | Foundations through SHIP | **v1.0.0** |
 
-## Part 16 automation
+## Part 16 automation — shipped in v1.0.0
 
-| Item | State |
-|------|-------|
-| 16.1 upgrade-dep.sh | done |
-| 16.2 run_benchmarks.sh --compare | done |
-| 16.3 benchmark regression gate | done (ci-smoke) |
-| 16.4 doctor.sh extensions | done |
-| 16.5 nightly report | done (perf-nightly artifact) |
-| 16.6 backlog.md | this file |
+Benchmark gate, doctor extensions, nightly report — all done.
 
-## Post-ship roadmap (steps 27–33)
+## v1.1.0 post-ship scaffolds
 
-| # | Task | Executor | State |
-|---|------|----------|-------|
-| 27 | Performance (11.1–11.4) | C+/H | perf-nightly scheduled; parallelism TBD |
-| 28 | rellic evaluation | H | not started |
-| 29 | LIEF adoption | C+ | not started |
-| 30 | Retypd | H | not started |
-| 31 | SAILR | H | not started |
-| 32 | Neural tiers 4–5 | H | not started |
-| 33 | LLVM migration | H | not started |
+| # | Task | State |
+|---|------|-------|
+| 27 | Performance 11.1–11.4 | docs + flamegraph; parallel/cache flags; neural batch scaffold |
+| 28 | rellic evaluation | docs + `eval_rellic.sh` + `RETDEC_ENABLE_RELLIC` |
+| 29 | LIEF adoption | `LiefAdapter` stub + docs + `RETDEC_ENABLE_LIEF` |
+| 30 | Retypd | roadmap doc only |
+| 31 | SAILR | roadmap doc only |
+| 32 | Neural tiers 4–5 | `RETDEC_NEURAL_TIER_MAX=5`; compile gate |
+| 33 | LLVM migration | roadmap doc only |
 
-Human-led blockers: algorithm-recovery corpus (step 10), retdec-support regen (step 16), full verification gates (step 20).
+## Human blockers (unchanged)
+
+- Algorithm-recovery corpus (step 10) — needs 200+ binaries + labels
+- retdec-support regen (step 16) — needs toolchain farm
+- Full differential verification gate (step 20) — needs Triton/D-Helix

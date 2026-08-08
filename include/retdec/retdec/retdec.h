@@ -8,6 +8,7 @@
 #define RETDEC_RETDEC_RETDEC_H
 
 #include <memory>
+#include <vector>
 #include <capstone/capstone.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -80,6 +81,14 @@ bool tryEmulationUnpacking(
 		retdec::config::Config& config,
 		const std::string& outputPath
 );
+
+/**
+ * Decompile multiple binaries in parallel (one config per input).
+ * @param numJobs Worker count; 0 = hardware_concurrency.
+ */
+std::vector<bool> parallelBatchDecompile(
+		std::vector<retdec::config::Config>& configs,
+		std::size_t numJobs = 0);
 
 } // namespace retdec
 

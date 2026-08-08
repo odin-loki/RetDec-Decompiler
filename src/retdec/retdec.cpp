@@ -718,11 +718,14 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 			// Parallel when function count > 4 and RETDEC_PARALLEL_ANALYSIS allows it.
 			// Incremental cache sidecar skips unchanged functions on re-runs.
 			{
-				const std::string cachePath =
-				    analysis::functionAnalysisCachePath(
-				        config.parameters.getOutputFile());
-				analysis::FunctionAnalysisCache fnCache =
-				    analysis::FunctionAnalysisCache::loadFromFile(cachePath);
+				const bool useCache = analysis::incrementalCacheEnabled();
+				const std::string cachePath = useCache
+				    ? analysis::functionAnalysisCachePath(
+				          config.parameters.getOutputFile())
+				    : std::string{};
+				analysis::FunctionAnalysisCache fnCache = useCache
+				    ? analysis::FunctionAnalysisCache::loadFromFile(cachePath)
+				    : analysis::FunctionAnalysisCache{};
 
 				struct FnWorkItem {
 					const ssa::SSAFunction* fn = nullptr;
@@ -794,7 +797,7 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 				concurrency_detect::ConcurrencyDetector cd;
 				concurrency_detect::ConcurrencyModel cm = cd.analyseModule(*ssaMod);
 
-				if (!cachePath.empty())
+				if (useCache && !cachePath.empty())
 					fnCache.saveToFile(cachePath);
 
 				if (cacheHits > 0)

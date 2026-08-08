@@ -4,11 +4,24 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ---
 
-## Unreleased
+## [1.1.0] — 2026-08-08
+
+### Added
+
+- **Performance (step 27):** [docs/PERFORMANCE.md](docs/PERFORMANCE.md), `scripts/flamegraph_profile.sh`, `RETDEC_INCREMENTAL_CACHE` flag.
+- **Neural (steps 21/32):** `BatchRefiner`, compile verification gate, tiers 4–5 via `RETDEC_NEURAL_TIER_MAX`.
+- **Library adoption scaffolds (steps 28–29):** rellic eval script/docs, LIEF `LiefAdapter` stub, `RETDEC_ENABLE_LIEF` / `RETDEC_ENABLE_RELLIC` options.
+- **Roadmap docs:** `docs/internal/retypd_sailr_llvm.md` (steps 30–33).
+- **Algorithm recovery:** sample ground-truth and prediction JSON for metric runner.
 
 ### Changed
 
-- **Product positioning (D7):** Specification-extraction tool with decompiler artefact; README and version **1.0.0** (clean break from upstream RetDec 5.0).
+- `parallelBatchDecompile` declared in `retdec.h`.
+- Neural compile gate uses `RETDEC_NEURAL_GATE_CC`.
+
+## [1.0.0] — 2026-08-08
+
+### Changed (v1.0.0 release)
 - **Licence files:** Condensed `LICENSE` + `LICENSE-AGPL`, `LICENSE-COMMERCIAL`, `NOTICE` via `install-licence-files.sh`.
 - **CI:** `ci-smoke` on every push/PR; `ctest-linux` on PRs; `ctest-windows` nightly; `perf-nightly` weekly; new `sanitizers.yml`.
 - **Dependencies:** Capstone **5.0.9** (from 5.0-rc2).

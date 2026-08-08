@@ -25,6 +25,7 @@ add_library(fileformat STATIC
 	utils/asn1.cpp
 	utils/file_io.cpp
 	format_factory.cpp
+	lief_adapter.cpp
 	types/dotnet_headers/blob_stream.cpp
 	types/dotnet_headers/user_string_stream.cpp
 	types/dotnet_headers/guid_stream.cpp
