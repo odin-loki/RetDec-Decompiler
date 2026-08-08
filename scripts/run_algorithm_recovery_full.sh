@@ -61,7 +61,8 @@ python3 "${ROOT}/tests/algorithm_recovery/runner.py" \
 bash "${ROOT}/scripts/algorithm_recovery_gate.sh" \
 	--results "${RESULTS}" \
 	--min-decompiled "${MIN_DECOMPILED}" \
-	--min-mean-f1 "${MIN_MEAN_F1}"
+	--min-mean-f1 "${MIN_MEAN_F1}" \
+	--min-mean-f1-raw 0.25
 
 if [[ -f "${ROOT}/results/baseline-algorithm-recovery.json" ]]; then
 	bash "${ROOT}/scripts/algorithm_recovery_regression_gate.sh" \

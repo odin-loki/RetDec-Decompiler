@@ -14,6 +14,7 @@
 /dist/
 /deps/lief-sdk/
 /deps/stock-retdec/
+/external/
 /tests/decompilebench/artifacts/
 /tests/decompilebench/corpus/*
 !/tests/decompilebench/corpus/.gitkeep

@@ -88,6 +88,12 @@ jobs:
             --profile full_corpus
           git diff --stat results/baseline-algorithm-recovery.json || true
 
+      - name: DecompileBench regression (CI core stand-in)
+        run: |
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          bash scripts/fetch_decompilebench_corpus.sh --profile ci-core
+          bash scripts/run_benchmarks.sh --profile ci-core --compare 2026-08 --gate
+
       - name: Migration eval suite
         run: |
           bash scripts/setup_eval_venv.sh

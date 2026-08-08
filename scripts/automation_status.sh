@@ -25,7 +25,9 @@ if [[ -f "${ROOT}/results/baseline-algorithm-recovery.json" ]]; then
 import json, sys
 b = json.load(open(sys.argv[1], encoding="utf-8"))
 for profile, m in b.get("metrics", {}).items():
-    print(f"  F1 baseline {profile}: decompiled={m.get('min_decompiled')} mean_f1={m.get('mean_f1')}")
+    raw = m.get("mean_f1_raw")
+    extra = f" mean_f1_raw={raw}" if raw is not None else ""
+    print(f"  F1 baseline {profile}: decompiled={m.get('min_decompiled')} mean_f1={m.get('mean_f1')}{extra}")
 PY
 fi
 echo ""
@@ -52,9 +54,16 @@ echo ""
 
 echo "Runnable now:"
 echo "  bash scripts/run_all_automation.sh"
-echo "  bash scripts/install_lief_sdk.sh       # C++ LIEF on Ubuntu 24.04+ (no apt package)"
-echo "  bash scripts/verify_lief_build.sh  # when LIEF SDK or liblief-dev installed"
-echo "  bash scripts/dispatch_algorithm_recovery_nightly.sh [--full-corpus]  # needs gh auth"
-echo "  bash scripts/regenerate-retdec-support.sh  # needs toolchain farm"
+echo "  bash scripts/analyze_full_f1.py"
+echo "  bash scripts/install_lief_sdk.sh"
+echo "  bash scripts/verify_lief_build.sh"
+echo "  bash scripts/run_stock_retdec_docker.sh   # needs Docker"
+echo "  bash scripts/fetch_oss_fuzz_decompilebench.sh --clone-only"
+GH_HINT="$("${ROOT}/scripts/find_gh.sh" 2>/dev/null || true)"
+if [[ -n "${GH_HINT}" ]]; then
+	echo "  ${GH_HINT} auth login   # then dispatch nightly"
+else
+	echo "  gh auth login   # then dispatch nightly"
+fi
 echo ""
 echo "See docs/internal/NEXT_STEPS.md for human-led items."

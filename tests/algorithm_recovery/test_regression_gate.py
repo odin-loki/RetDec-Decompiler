@@ -13,11 +13,14 @@ from algorithm_recovery_regression_gate import check_regression  # noqa: E402
 
 def main() -> int:
     baseline = {
-        "metrics": {"ci_core": {"min_decompiled": 6, "mean_f1": 0.1}},
-        "thresholds": {"mean_f1_drop_max": 0.05, "decompiled_drop_max": 10},
+        "metrics": {
+            "ci_core": {"min_decompiled": 6, "mean_f1": 0.1, "mean_f1_raw": 0.1},
+        },
+        "thresholds": {"mean_f1_drop_max": 0.05, "mean_f1_raw_drop_max": 0.05, "decompiled_drop_max": 10},
     }
-    ok_current = {"summary": {"decompiled": 8, "mean_f1": 0.12}}
-    bad_current = {"summary": {"decompiled": 8, "mean_f1": 0.0}}
+    ok_current = {"summary": {"decompiled": 8, "mean_f1": 0.12, "mean_f1_raw": 0.11}}
+    bad_current = {"summary": {"decompiled": 8, "mean_f1": 0.0, "mean_f1_raw": 0.0}}
+    bad_raw = {"summary": {"decompiled": 8, "mean_f1": 0.12, "mean_f1_raw": 0.0}}
 
     ok, _ = check_regression(baseline, ok_current)
     if not ok:
@@ -26,6 +29,10 @@ def main() -> int:
     bad, _ = check_regression(baseline, bad_current)
     if bad:
         print("expected FAIL for F1 drop", file=sys.stderr)
+        return 1
+    bad_raw_ok, _ = check_regression(baseline, bad_raw)
+    if bad_raw_ok:
+        print("expected FAIL for raw F1 drop", file=sys.stderr)
         return 1
 
     print("algorithm_recovery regression gate tests: PASS")

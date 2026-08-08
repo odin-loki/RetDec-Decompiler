@@ -1,6 +1,6 @@
 # Benchmark tables (auto-generated)
 
-- **Version:** 2.0.15
+- **Version:** 2.0.16
 - **Commit:** `d1009beb048f405324ac9ea94f933484d9e41bc2`
 - **Generated:** 2026-08-08T23:07:00Z
 

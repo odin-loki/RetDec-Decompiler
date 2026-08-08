@@ -51,9 +51,14 @@ bash scripts/regenerate-retdec-support.sh
 ## 3. Full-corpus nightly (216 binaries)
 
 ```bash
+# Windows (GitHub CLI installed):
 gh auth login
-bash scripts/dispatch_algorithm_recovery_nightly.sh              # CI core (9 binaries)
-bash scripts/dispatch_algorithm_recovery_nightly.sh --full-corpus  # full 216-binary run
+.\scripts\dispatch_algorithm_recovery_nightly.ps1
+.\scripts\dispatch_algorithm_recovery_nightly.ps1 -FullCorpus
+
+# WSL (uses Windows gh.exe when available):
+bash scripts/find_gh.sh
+bash scripts/dispatch_algorithm_recovery_nightly.sh --full-corpus
 ```
 
 Or manually: `gh workflow run algorithm-recovery-nightly -f full_corpus=true`

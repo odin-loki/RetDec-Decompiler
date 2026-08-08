@@ -12,6 +12,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 if ! command -v gh >/dev/null 2>&1; then
+	ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+	if [[ -x "${ROOT}/scripts/find_gh.sh" ]]; then
+		GH="$("${ROOT}/scripts/find_gh.sh" 2>/dev/null || true)"
+		if [[ -n "${GH}" ]]; then
+			gh() { "${GH}" "$@"; }
+		fi
+	fi
+fi
+
+if ! command -v gh >/dev/null 2>&1; then
 	echo "gh CLI not found — install from https://cli.github.com/" >&2
 	exit 1
 fi
