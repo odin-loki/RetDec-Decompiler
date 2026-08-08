@@ -162,6 +162,14 @@ def load_binary_names(
     return selected
 
 
+def resolve_corpus_binary(corpus: Path, name: str) -> Path | None:
+    """Resolve manifest name to on-disk binary (handles Windows .exe suffix)."""
+    for candidate in (corpus / name, corpus / f"{name}.exe"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def decompile_one(
     dec: Path,
     binary: Path,
@@ -198,8 +206,8 @@ def _decompile_task(
     work: str,
     timeout: int,
 ) -> tuple[str, bool, list[str]]:
-    binary = Path(corpus) / name
-    if not binary.is_file():
+    binary = resolve_corpus_binary(Path(corpus), name)
+    if binary is None:
         return name, False, []
     ok, labels = decompile_one(Path(dec), binary, Path(work), timeout)
     return name, ok, labels

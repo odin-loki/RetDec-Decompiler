@@ -5,7 +5,7 @@ Last updated: v1.8.0
 ## Steps 1–26 (shippable product) — DONE
 
 All Composer-automatable items through Step 26 are implemented or scaffolded.
-Shipped releases v1.0.0–v1.7.0 on `main`.
+Shipped releases v1.0.0–v1.8.0 on `main`.
 
 | Area | Status | Artifacts |
 |------|--------|-----------|
@@ -50,4 +50,4 @@ Shipped releases v1.0.0–v1.7.0 on `main`.
 **Positioning:** specification-extraction tool that contains a decompiler (option b).
 Documented in [D7_DECISION.md](D7_DECISION.md). README and whitepaper aligned.
 
-## Human-led only
+See [NEXT_STEPS.md](NEXT_STEPS.md) for human-led follow-ups.

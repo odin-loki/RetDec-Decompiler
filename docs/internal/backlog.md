@@ -1,23 +1,14 @@
 # Internal backlog — see MASTER-UPGRADE-PLAN.md
 
+**Status: automation complete.** Human-led follow-ups: [NEXT_STEPS.md](NEXT_STEPS.md)
+
 ## Shipped
 
 | Version | Scope |
 |---------|-------|
-| v1.0.0–v1.7.0 | MASTER-UPGRADE-PLAN automation (steps 1–33 scaffolds) |
-| **v1.8.0** | **D7 closed**, product docs alignment, ship checklist |
-
-## v1.8.0
-
-- **Decision D7 closed:** specification-extraction positioning (`docs/internal/D7_DECISION.md`)
-- README, whitepaper, MASTER-UPGRADE-PLAN updated
-- `ship_checklist.sh` — pre-release validation
-- `demo.sh` — algorithm recovery + migration eval + ship checklist
+| v1.0.0–v1.8.0 | MASTER-UPGRADE-PLAN + D7 closure |
+| **v1.9.0** | Windows corpus `.exe` fix, NEXT_STEPS guide |
 
 ## Human-led only
 
-| Item | Notes |
-|------|-------|
-| retdec-support regen | Toolchain farm; `regenerate-retdec-support.sh` |
-| rellic / Retypd / LLVM backends | Eval scaffolds in place; months-long integration |
-| Profile-driven perf | `perf-nightly` + `flamegraph_profile.sh` |
+See [NEXT_STEPS.md](NEXT_STEPS.md) for baseline update, retdec-support regen, full-corpus nightly dispatch, and library migrations.

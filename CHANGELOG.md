@@ -4,6 +4,19 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ---
 
+## [1.9.0] — 2026-08-08
+
+### Added
+
+- **NEXT_STEPS.md:** human-led follow-ups after plan completion (baseline update, support regen, migrations).
+- **Windows corpus fix:** resolve `.exe` suffix when locating manifest binaries on Windows.
+- **Test:** `test_corpus_resolve.py` in ci-smoke.
+
+### Changed
+
+- `build_algorithm_corpus.sh` records actual binary path after MinGW `.exe` suffix.
+- `PLAN_COMPLETION.md` updated for v1.8.0; links to NEXT_STEPS.
+
 ## [1.8.0] — 2026-08-08
 
 ### Added

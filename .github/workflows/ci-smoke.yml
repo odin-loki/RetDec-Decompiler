@@ -64,6 +64,9 @@ jobs:
       - name: Algorithm recovery regression gate tests
         run: python tests/algorithm_recovery/test_regression_gate.py
 
+      - name: Corpus binary resolution tests
+        run: python tests/algorithm_recovery/test_corpus_resolve.py
+
       - name: Triton differential gate smoke
         run: python tests/algorithm_recovery/test_triton_gate.py
 

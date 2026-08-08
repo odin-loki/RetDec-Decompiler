@@ -53,13 +53,18 @@ for cfile in sorted(src.rglob("*.c")):
             path = out / name
             cmd = [cc, f"-{opt}", *extra, "-o", str(path), str(cfile), *link]
             subprocess.run(cmd, check=True)
-            subprocess.run(["strip", str(path)], check=False)
+            actual = path
+            if not actual.is_file():
+                exe = Path(str(path) + ".exe")
+                if exe.is_file():
+                    actual = exe
+            subprocess.run(["strip", str(actual)], check=False)
             manifest.append({
                 "name": name,
                 "source": source_key,
                 "compiler": cc,
                 "opt": opt,
-                "path": str(path),
+                "path": str(actual),
             })
 
 (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

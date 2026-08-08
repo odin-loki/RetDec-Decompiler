@@ -5,7 +5,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cuda_vs_generator_toolset.cmake)
 
 project(retdec
 	LANGUAGES C CXX
-	VERSION 1.8.0
+	VERSION 1.9.0
 )
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GetGitRevisionDescription.cmake)
