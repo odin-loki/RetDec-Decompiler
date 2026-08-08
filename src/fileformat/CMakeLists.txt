@@ -117,6 +117,17 @@ target_link_libraries(fileformat
 		OpenSSL::Crypto
 )
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/lief_optional.cmake)
+if(RETDEC_HAS_LIEF)
+	target_compile_definitions(fileformat PRIVATE RETDEC_HAS_LIEF)
+	if(TARGET LIEF::LIEF)
+		target_link_libraries(fileformat PRIVATE LIEF::LIEF)
+	elseif(LIEF_LIBRARIES)
+		target_include_directories(fileformat PRIVATE ${LIEF_INCLUDE_DIRS})
+		target_link_libraries(fileformat PRIVATE ${LIEF_LIBRARIES})
+	endif()
+endif()
+
 if(RETDEC_BUNDLED_OPENSSL)
 	add_dependencies(fileformat retdec-openssl)
 endif()

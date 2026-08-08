@@ -90,6 +90,7 @@ jobs:
 
       - name: Migration eval suite
         run: |
+          bash scripts/setup_eval_venv.sh
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
           bash scripts/migration_eval_suite.sh --decompiler "$DEC"
 

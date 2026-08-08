@@ -13,10 +13,11 @@ Adopt behind `retdec::fileformat::LiefAdapter` — do not cut over in one PR.
 - `RETDEC_ENABLE_LIEF=OFF` CMake option
 - Differential tests: LIEF vs existing parser on corpus binaries
 
-### Phase B — parse-only
+### Phase B — parse-only (v2.0.13)
 
-- PE section/import table via LIEF for new code paths
-- Keep `FormatFactory` as facade
+- `cmake/lief_optional.cmake` wires `find_package(LIEF)` when `RETDEC_ENABLE_LIEF=ON`
+- `LiefAdapter::parseSections` implemented with LIEF C++ API
+- Install: `apt install liblief-dev` (Linux) then `-DRETDEC_ENABLE_LIEF=ON`
 
 ### Phase C — modification
 
