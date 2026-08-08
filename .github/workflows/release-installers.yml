@@ -60,6 +60,9 @@ jobs:
           fi
           echo "Commercial GPL exclusion check passed"
 
+      - name: Regenerate benchmark tables
+        run: bash scripts/regenerate_benchmark_tables.sh
+
       - name: Create GitHub Release (draft)
         uses: softprops/action-gh-release@v2
         with:

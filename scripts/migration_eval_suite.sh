@@ -33,14 +33,18 @@ else
 	echo "==> SAILR (skipped — no decompiler)"
 fi
 
+echo "==> LLVM API inventory"
+bash "${ROOT}/scripts/inventory_llvm_apis.sh"
+
 python3 - "${ROOT}/results" <<'PY'
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 summary = {}
-for name in ("rellic-eval.json", "lief-eval.json", "retypd-eval.json", "sailr-eval.json"):
+for name in ("rellic-eval.json", "lief-eval.json", "retypd-eval.json", "sailr-eval.json", "llvm-api-inventory.json"):
     path = root / name
     if path.is_file():
-        summary[name] = json.loads(path.read_text(encoding="utf-8")).get("status", "unknown")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        summary[name] = data.get("status", data.get("harness", "ok"))
 out = root / "migration-eval-summary.json"
 out.write_text(json.dumps({"harness": "migration_eval_suite", "evals": summary}, indent=2) + "\n")
 print(f"Wrote {out}")

@@ -69,6 +69,15 @@ PY
 		echo "- No algorithm-recovery results (run \`bash scripts/run_algorithm_recovery_ci.sh\`)"
 	fi
 	echo ""
+	echo "## Migration evals"
+	if [[ -f "${ROOT}/results/migration-eval-summary.json" ]]; then
+		echo '```json'
+		cat "${ROOT}/results/migration-eval-summary.json"
+		echo '```'
+	else
+		echo "- No migration eval summary (run \`bash scripts/migration_eval_suite.sh\`)"
+	fi
+	echo ""
 	echo "## Open regressions"
 	echo "- (manual) — link failing CI runs or fuzz crashes here"
 } > "${OUT}"

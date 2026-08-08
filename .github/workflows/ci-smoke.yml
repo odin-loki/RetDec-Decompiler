@@ -61,6 +61,9 @@ jobs:
       - name: Algorithm recovery label tests
         run: python tests/algorithm_recovery/test_labels.py
 
+      - name: Algorithm recovery regression gate tests
+        run: python tests/algorithm_recovery/test_regression_gate.py
+
       - name: Triton differential gate smoke
         run: python tests/algorithm_recovery/test_triton_gate.py
 

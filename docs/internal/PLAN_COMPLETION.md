@@ -1,0 +1,51 @@
+# MASTER-UPGRADE-PLAN — automation completion status
+
+Last updated: v1.7.0
+
+## Steps 1–26 (shippable product) — DONE
+
+All Composer-automatable items through Step 26 are implemented or scaffolded.
+Shipped releases v1.0.0–v1.7.0 on `main`.
+
+| Area | Status | Artifacts |
+|------|--------|-----------|
+| CI smoke + ctest | Done | `ci-smoke.yml`, `ctest-linux.yml` |
+| DecompileBench | Done | `tests/decompilebench/`, `run_benchmarks.sh` |
+| Algorithm recovery | Done | 216+ corpus, live F1 in CI, nightly, regression gate |
+| Neural refinement | Done | tiers 1–5, gates, llama.cpp pin, model SHA |
+| Licensing | Done | AGPL + commercial, doctor checks |
+| Fuzz / sanitizers | Done | `sanitizers.yml`, `tests/crash_corpus/` |
+| Part 16 automation | Done | doctor, nightly report, benchmark gate, demo |
+| Release | Done | `release-installers.yml`, tag-driven version |
+
+## Steps 27–33 (roadmap) — SCAFFOLDED
+
+| Step | Item | Automation | Human-led remainder |
+|------|------|------------|---------------------|
+| 27 | Performance | `perf-nightly.yml`, `flamegraph_profile.sh`, `PERFORMANCE.md` | Profile-driven optimizations |
+| 28 | rellic | `eval_rellic.sh` | Build rellic on LLVM 8; backend swap |
+| 29 | LIEF | `LiefAdapter`, `eval_lief.sh` | Phase B/C cutover |
+| 30 | Retypd | `eval_retypd.sh` | 3–6 month spike |
+| 31 | SAILR | `eval_sailr.sh`, `goto_cfg_optimizer` | Structure recovery integration |
+| 32 | Neural tiers 4–5 | `RETDEC_NEURAL_TIER_MAX`, `BatchRefiner` | Frontier model review |
+| 33 | LLVM migration | `inventory_llvm_apis.sh` | Retypd-first, one pass at a time |
+
+## Nightly workflows
+
+| Workflow | Schedule | Purpose |
+|----------|----------|---------|
+| `perf-nightly` | Weekly | Perf bench + CI-core F1 |
+| `algorithm-recovery-nightly` | Weekly | F1 + regression + migration evals |
+| `sanitizers` | Weekly | ASan over sample corpus |
+
+## Human-led only
+
+1. **retdec-support regen** — `regenerate-retdec-support.sh` stages; needs toolchain farm
+2. **Raise F1 floor** — `update_algorithm_recovery_baseline.sh` after measured nightly
+3. **rellic / LLVM backend** — blocked on LLVM 8 alignment
+4. **Retypd / SAILR production** — research timelines in MASTER-UPGRADE-PLAN Part 9
+
+## Decision D7
+
+Product positioning (pseudocode vs specification extraction) remains **OPEN** per Part 3.
+Blocks README/whitepaper final rewrite only; engineering automation is complete.

@@ -99,6 +99,8 @@ results/sailr-eval.json
 results/migration-eval-summary.json
 results/lief-eval.json
 results/rellic-eval.json
+results/llvm-api-inventory.json
+docs/BENCHMARKS_TABLE.md
 keystone.zip
 llama.zip
 _license_preamble.txt

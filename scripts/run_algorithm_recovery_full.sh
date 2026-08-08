@@ -60,4 +60,10 @@ bash "${ROOT}/scripts/algorithm_recovery_gate.sh" \
 	--min-decompiled "${MIN_DECOMPILED}" \
 	--min-mean-f1 "${MIN_MEAN_F1}"
 
+if [[ -f "${ROOT}/results/baseline-algorithm-recovery.json" ]]; then
+	bash "${ROOT}/scripts/algorithm_recovery_regression_gate.sh" \
+		--current "${RESULTS}" \
+		--profile full_corpus
+fi
+
 echo "Full algorithm recovery complete: ${RESULTS}"

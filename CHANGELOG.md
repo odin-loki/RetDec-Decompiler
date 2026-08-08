@@ -4,6 +4,22 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ---
 
+## [1.7.0] — 2026-08-08
+
+### Added
+
+- **Plan completion doc:** `docs/internal/PLAN_COMPLETION.md` — automation status for steps 1–33.
+- **LLVM API inventory:** `inventory_llvm_apis.sh` for step 33 migration tracking.
+- **Release benchmark tables:** `regenerate_benchmark_tables.sh` → `docs/BENCHMARKS_TABLE.md` (wired in `release-installers.yml`).
+- **Regression gate tests:** `tests/algorithm_recovery/test_regression_gate.py`.
+
+### Changed
+
+- `docs/BENCHMARKS.md` reflects wired corpus, CI F1, nightly, and migration evals.
+- `algorithm-recovery-nightly` auto-updates baseline on success; full corpus runs regression gate.
+- `migration_eval_suite.sh` includes LLVM inventory; `nightly_report.sh` includes migration summary.
+- `regenerate-retdec-support.sh` emits `deps.cmake.snippet` and copies corpus manifest.
+
 ## [1.6.0] — 2026-08-08
 
 ### Added

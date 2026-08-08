@@ -66,6 +66,14 @@ jobs:
             --current results/algorithm-recovery-ci.json \
             --profile ci_core
 
+      - name: Update algorithm recovery baseline
+        if: success()
+        run: |
+          bash scripts/update_algorithm_recovery_baseline.sh \
+            --from results/algorithm-recovery-ci.json \
+            --profile ci_core
+          git diff --stat results/baseline-algorithm-recovery.json || true
+
       - name: Migration eval suite
         run: |
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
@@ -83,4 +91,5 @@ jobs:
             results/retypd-eval.json
             results/sailr-eval.json
             results/migration-eval-summary.json
+            results/llvm-api-inventory.json
           if-no-files-found: warn

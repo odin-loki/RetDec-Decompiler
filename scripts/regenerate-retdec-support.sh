@@ -43,4 +43,16 @@ Next steps:
   3. Update cmake/deps.cmake SUPPORT_PKG_URL and SUPPORT_PKG_SHA256.
 EOF
 
+cat > "${OUT}/deps.cmake.snippet" <<'EOF'
+# Paste into cmake/deps.cmake after packaging new support tarball:
+# set(RETDEC_SUPPORT_PKG_URL "https://github.com/odin-loki/RetDec-Decompiler/releases/download/support-YYYY-MM-DD/retdec-support.tar.xz")
+# set(RETDEC_SUPPORT_PKG_SHA256 "<sha256>")
+EOF
+
+echo "==> Corpus manifest for signature smoke"
+if [[ -f "${ROOT}/tests/algorithm_recovery/corpus/manifest.json" ]]; then
+	cp "${ROOT}/tests/algorithm_recovery/corpus/manifest.json" "${OUT}/corpus-manifest.json"
+	echo "  copied corpus manifest ($(python3 -c "import json; print(len(json.load(open('${OUT}/corpus-manifest.json'))))") binaries)"
+fi
+
 echo "Done. See ${OUT}/README.txt"

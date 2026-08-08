@@ -4,26 +4,18 @@
 
 | Version | Scope |
 |---------|-------|
-| v1.0.0 | Steps 1–26, Part 16 |
-| v1.1.0 | Steps 27–33 scaffolds |
-| v1.2.0 | Corpus starter, neural context/gates, demo |
-| v1.3.0 | 200+ corpus, prediction extraction, Triton gate scaffold |
-| v1.4.0 | Live F1 in CI, label normalization, algorithm recovery gate |
-| v1.5.0 | Full-corpus nightly, parallel extract, Triton/LIEF eval scaffolds |
-| v1.6.0 | **Regression gate**, D-Helix mode, Retypd/SAILR/migration eval suite |
+| v1.0.0–v1.6.0 | Steps 1–33 scaffolds, CI, corpus, F1, migration evals |
+| **v1.7.0** | **Plan completion**, LLVM inventory, release benchmark tables |
 
-## v1.6.0
+## Automation complete
 
-- Regression gate vs `baseline-algorithm-recovery.json`
-- `migration_eval_suite.sh` — rellic, LIEF, Retypd, SAILR
-- D-Helix differential gate (`--mode dhelix`)
+All Composer-automatable MASTER-UPGRADE-PLAN items are done. See `docs/internal/PLAN_COMPLETION.md`.
 
-## Remaining (human-led)
+## Human-led only
 
 | Item | Notes |
 |------|-------|
-| Raise F1 floor | Run `update_algorithm_recovery_baseline.sh` after green nightly |
-| retdec-support regen | Toolchain farm; `regenerate-retdec-support.sh` |
-| Full Triton symbolic paths | Extend `gate_dhelix` with constraint solving |
-| rellic backend swap | `RETDEC_ENABLE_RELLIC` — blocked on LLVM 8 |
-| Retypd / LLVM migration | Steps 30, 33 — months-long |
+| Decision D7 | Product positioning — blocks README/whitepaper final |
+| retdec-support regen | Toolchain farm; `regenerate-retdec-support.sh` stages output |
+| rellic / Retypd / LLVM backends | Months-long; eval scaffolds in place |
+| Profile-driven perf | Use `flamegraph_profile.sh` + `perf-nightly` artifacts |
