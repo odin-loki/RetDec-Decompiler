@@ -1,248 +1,44 @@
 # RetDec Algorithm Reference
 
-This document describes the key algorithms used in RetDec, their complexity,
-and implementation notes.
-
----
-
-## Table of Contents
-
-1. [Louvain Community Detection (Module Clustering)](#louvain)
-2. [Myers Diff (Diff/Compare View)](#myers)
-3. [FlashAttention-2 (AI Inference)](#flashattn)
-4. [Mixture-of-Experts Routing (AI Inference)](#moe)
-5. [Byte-Pair Encoding Tokeniser (AI Inference)](#bpe)
-6. [Online Softmax (FlashAttention)](#softmax)
-
----
-
-## Louvain Community Detection {#louvain}
-
-**Location**: `include/retdec/module_cluster/module_cluster.h`
-
-### Problem
-
-Given a call graph G = (V, E) where V = functions and E = call edges
-(weighted by call frequency), partition V into modules that maximise the
-Newman-Girvan modularity Q.
-
-### Algorithm
-
-Modularity of a partition:
-
-```
-Q = (1 / 2m) Σ_{ij} [ A_{ij} - γ * k_i * k_j / 2m ] δ(c_i, c_j)
-```
-
-where:
-- m = total edge weight
-- A_{ij} = edge weight between i and j
-- k_i = degree of node i
-- γ = resolution parameter (default 1.0)
-- δ(c_i, c_j) = 1 if i and j are in the same community
-
-**Phase 1 (node moving)**: For each node i, compute the modularity gain ΔQ
-of moving i from its current community to each neighbouring community.
-Move to the community with maximum positive ΔQ.  Repeat until no improvement.
-
-```
-ΔQ(i → C) = k_{i,in}(C) / m - γ * Σ_C * k_i / (2m²)
-```
-
-**Phase 2 (graph compression)**: Each community becomes a super-node.
-Inter-community edges are summed.  Phase 1 repeats on the compressed graph.
-
-**Refinements applied after Louvain**:
-1. *String locality*: functions sharing string-pool references are merged.
-2. *Debug symbols*: functions with identical `sourceFile` are merged.
-
-**Complexity**: O((N + M) · D) where D = number of Louvain passes (typically ≤ 20).
-
----
-
-## Myers Diff Algorithm {#myers}
-
-**Location**: `include/retdec/gui/panels/diff_panel.h`
-
-### Problem
-
-Given two sequences A (length N) and B (length M), compute the shortest edit
-script (SES): the minimum number of insertions and deletions to transform A into B.
-
-### Algorithm
-
-The edit distance D is the minimum number of edits (insert or delete).
-Myers defines a D-path as a path from (0,0) to (N,M) in an edit graph with
-exactly D non-diagonal edges.
-
-**Forward phase**: For d = 0, 1, 2, ...:
-  For each diagonal k = −d, −d+2, ..., d:
-    Compute the furthest-reaching D-path along diagonal k.
-    Extend diagonally (snake) as far as possible.
-    If we reach (N, M): done.
-
-**Hirschberg midpoint** (divide and conquer, O(N+M) space):
-  Find the midpoint of the shortest edit path by running forward and
-  backward DP simultaneously until they meet.
-  Recurse on the two halves.
-
-This gives O((N+M)D) time and O(N+M) space (vs O(ND) for the basic algorithm).
-
-**Complexity**:
-- Time: O((N + M) · D)
-- Space: O(N + M)
-- D = edit distance ≤ N + M
-
----
-
-## FlashAttention-2 {#flashattn}
-
-**Location**: `include/retdec/qwen3/qwen3_attention.h`
-
-### Problem
-
-Standard attention: O(n²) memory for the N×N attention matrix, which becomes
-prohibitive for long sequences.
-
-### Algorithm
-
-FlashAttention-2 tiles the computation into blocks of size B_r × B_c to avoid
-materialising the full N×N matrix.
-
-For each row tile of Q (size B_r):
-  For each column tile of K, V (size B_c):
-    Compute S = Q_tile · K_tile^T   (B_r × B_c)
-    Apply RoPE to Q and K heads
-    Running online softmax (numerically stable):
-      m_new = max(m_old, rowmax(S))
-      l_new = exp(m_old - m_new) · l_old + rowsum(exp(S - m_new))
-      O_new = diag(exp(m_old - m_new)) · O_old + exp(S - m_new) · V_tile
-  Normalise: O = O / l
-
-**Grouped-Query Attention (GQA)**: K and V heads are shared across groups of Q
-heads, reducing KV cache memory by factor `n_q_heads / n_kv_heads`.
-
-**Paged KV Cache**: K/V entries are stored in fixed-size blocks allocated from
-a pool.  A block table maps (layer, sequence_position / block_size) to block
-indices.  This eliminates fragmentation for variable-length sequences.
-
-**RoPE (Rotary Position Embeddings)**:
-```
-x_rot = x · cos(θ) + rotate_half(x) · sin(θ)
-θ_i = position / base^(2i / d_head)
-```
-
-**Complexity**:
-- Time: O(N · d · B_r · B_c) = O(N² · d) — same asymptotic as standard, but
-  HBM accesses are reduced from O(N² + Nd) to O(Nd).
-- Memory: O(N · d) — no N×N materialisation.
-
----
-
-## Mixture-of-Experts Routing {#moe}
-
-**Location**: `include/retdec/qwen3/qwen3_moe.h`
-
-### Problem
-
-In a MoE transformer layer, the FFN is replaced by E expert networks.
-For each token, only the top-K experts are activated.
-
-### Algorithm
-
-**Router**: Linear projection W_g ∈ ℝ^(d_model × E):
-```
-logits = x · W_g                    (E-dim)
-probs  = softmax(logits)             (E-dim)
-```
-
-**Top-K selection**: `std::nth_element` in O(E) time selects K largest.
-
-**Weight normalisation** (sum to 1 over selected experts):
-```
-w_i = probs[top_k[i]] / Σ_j probs[top_k[j]]
-```
-
-**Expert FFN** (SwiGLU):
-```
-y_i = W_down · (SiLU(W_gate · x) ⊙ W_up · x)
-```
-
-**Output**:
-```
-output = Σ_i w_i · y_i + shared_expert(x)
-```
-
-The shared expert is always active regardless of routing.
-
-**Load balancing**: `MoeLoadMonitor` tracks per-expert activation fraction
-to detect hot/cold experts during inference.
-
-**Complexity**: O(K · d_model · d_ff) per token — vs O(E · d_model · d_ff)
-for dense FFN.  Typically K = 4, E = 64: 16× reduction in FFN FLOPs.
-
----
-
-## Byte-Pair Encoding Tokeniser {#bpe}
-
-**Location**: `include/retdec/qwen3/qwen3_tokenizer.h`
-
-### Problem
-
-Map text ↔ integer token IDs using a vocabulary learned by BPE.
-
-### Algorithm
-
-**Encoding**:
-1. Byte-level pre-tokenisation: split on regex `\p{L}+|\p{N}+|\p{P}+|.`
-2. For each word: start with character-level tokens.
-3. Iteratively merge the most frequent adjacent pair per the merge table.
-4. Lookup final tokens in the vocabulary table.
-
-**Chat template** (ChatML format):
-```
-<|im_start|>system\n{system}\n<|im_end|>\n
-<|im_start|>user\n{user}\n<|im_end|>\n
-<|im_start|>assistant\n
-```
-
-**Special tokens**:
-- `<|im_start|>` = 151644
-- `<|im_end|>` = 151645
-- EOS = 151645
-
-**Complexity**: O(N · V) worst case, O(N log V) with merge priority queue.
-
----
-
-## Online Softmax {#softmax}
-
-**Location**: Used inside FlashAttention-2 (see above)
-
-### Problem
-
-Compute softmax(x₁, ..., xₙ) numerically stably in a single pass,
-accumulating into an output sum.
-
-### Algorithm (three-pass → two-pass → one-pass online)
-
-Standard two-pass:
-```
-m = max(x_i)
-s = Σ exp(x_i - m)
-y_i = exp(x_i - m) / s
-```
-
-Online single-pass (Dao et al.):
-```
-On seeing x_j:
-  m' = max(m, x_j)
-  s' = s · exp(m - m') + exp(x_j - m')
-  O' = O · exp(m - m') + V_j · exp(x_j - m')
-  m  = m'
-  s  = s'
-```
-
-This allows computing FlashAttention tiles without reading the data twice.
-
-**Numerical stability**: exp(x_j - m') ≤ 1 always, so no overflow.
+Algorithms documented in source file headers. Fields marked `-` are not stated in the header.
+
+| Algorithm | Citation | Source file | Complexity |
+|-----------|----------|-------------|------------|
+| FlagBundle analysis + SSAPass + SSAVerifier + SSAFunction impl | - | `src/ssa/flag_bundle.cpp` | - |
+| SSA renaming pass (Cytron et al. algorithm with FlagBundle and MemRef) | Cytron et al. §4 | `src/ssa/ssa_rename.cpp` | - |
+| Backward dataflow liveness analysis | Aho, Lam, Sethi, Ullman §9.2 | `src/ssa/liveness.cpp` | O(n × k × d) where n = number of blocks, k = number of variables, d = iterations until convergence |
+| Liveness-pruned phi function placement | Cytron et al. | `src/ssa/phi_placement.cpp` | - |
+| Lengauer-Tarjan dominator tree and dominance frontier computation | Lengauer & Tarjan, "A fast algorithm for finding dominators in a flowgraph" (TOPLAS 1979); Cooper, Harvey, Kennedy 2001 | `src/ssa/domtree.cpp` | O(n α(n)); dominance frontiers: O(n²) |
+| Steensgaard (1996) unification-based alias analysis | Steensgaard, "Points-to Analysis in Almost Linear Time" (POPL 1996) | `src/alias_analysis/steensgaard.cpp` | O(n α(n)) |
+| Exact stack frame alias analysis | - | `src/alias_analysis/stack_alias.cpp` | - |
+| Pointer escape analysis for SSA functions | - | `src/alias_analysis/escape_analysis.cpp` | - |
+| ABI parameter/return-type seeding, struct recovery, and TypeInferencePass | - | `src/type_inference/abi_seeder.cpp` | - |
+| Phase 1: instruction-width extraction for SSA values | - | `src/type_inference/width_seeder.cpp` | - |
+| Phase 2: union-find type propagation | - | `src/type_inference/type_propagation.cpp` | - |
+| SESE region decomposition using DFS timestamps and post-dominator tree | - | `src/cfg_structure/sese_decomp.cpp` | O(1) containment checks |
+| Recursive SESE-based CFG structurer and CfgStructurePass orchestrator | - | `src/cfg_structure/compiler_structurer.cpp` | - |
+| Natural loop classification (while / for / do-while / infinite) | - | `src/cfg_structure/loop_recovery.cpp` | - |
+| CFG reducibility check via DFS edge classification | - | `src/cfg_structure/irreducibility.cpp` | - |
+| Post-dominator tree via Lengauer-Tarjan on the reversed CFG | - | `src/cfg_structure/post_domtree.cpp` | - |
+| std::for_each detector — range loop with single call per element | - | `src/algo_recover/foreach_detect.cpp` | - |
+| std::transform detector — source→destination one-to-one loop | - | `src/algo_recover/transform_detect.cpp` | - |
+| AlgorithmDetector orchestrator + AlgorithmResult utilities | - | `src/algo_recover/algo_detector.cpp` | - |
+| std::partition detector — converging index, standalone (not in sort) | - | `src/algo_recover/partition_detect.cpp` | - |
+| Iterator pattern recovery — begin/end → range-based for | - | `src/algo_recover/iterator_recover.cpp` | - |
+| std::find / std::find_if detector — equality compare + early exit | - | `src/algo_recover/find_detect.cpp` | - |
+| std::accumulate / max_element / min_element detector | - | `src/algo_recover/accumulate_detect.cpp` | - |
+| ABI artifact detection: stack alignment, prologue/epilogue, shadow space, callee-save pairs, red zone | - | `src/dce/abi_artifact_marker.cpp` | - |
+| C-semantic live root collection | - | `src/dce/live_root_collector.cpp` | - |
+| Backward SSA def-use liveness propagation from C-semantic live roots | - | `src/dce/dead_propagation.cpp` | - |
+| Forward reachability analysis to find unreachable basic blocks | - | `src/dce/unreachable_elim.cpp` | - |
+| DcePass orchestrator + DeadCodeResult summary | - | `src/dce/dce_pass.cpp` | - |
+| SCC-stratified inter-procedural type propagation | - | `src/ipa/ipa_propagation.cpp` | - |
+| Per-function summary computation from intra-procedural analysis results | - | `src/ipa/function_summary.cpp` | - |
+| IpaPass orchestrator + IpaResult summary | - | `src/ipa/ipa_pass.cpp` | - |
+| Inline candidate identification | - | `src/ipa/inline_candidate.cpp` | - |
+| Global variable type unification across all functions | - | `src/ipa/global_typing.cpp` | - |
+| Call graph construction and Tarjan SCC decomposition | - | `src/ipa/call_graph.cpp` | - |
+| Prologue pattern recognition for x86-64 SysV, x86-64 Win64, x86-32, AArch64, and ARM32 | - | `src/var_recovery/prologue_parser.cpp` | - |
+| DVSA: Data-flow-driven Variable and Stack-slot Analysis | - | `src/var_recovery/dvsa.cpp` | - |
+| Variable naming + VarRecoveryPass orchestration | - | `src/var_recovery/var_namer.cpp` | - |
+| ABI-mandated frame region carving | - | `src/var_recovery/abi_regions.cpp` | - |

@@ -2,23 +2,50 @@
 
 ## Supported versions
 
-Security fixes are applied to the **latest release** on the default branch. Older tagged releases may not receive backports unless agreed with the maintainer.
+| Version | Supported |
+|---------|-----------|
+| 1.0.x   | Yes       |
+| < 1.0   | No        |
+
+Security fixes land on `main` and the latest `v1.0.x` tag.
 
 ## Reporting a vulnerability
 
 **Do not open a public GitHub issue for security-sensitive reports.**
 
-Send details to **odin.loch@outlook.com** with:
+Email **odin.loch@outlook.com** with:
 
-- A description of the issue and impact
-- Steps to reproduce or a proof-of-concept (if available)
-- Affected component (CLI, GUI, unpacker, plugin loader, etc.)
-- RetDec version or commit hash
+- Description and impact
+- Reproduction steps or proof-of-concept
+- Affected component (CLI, GUI, unpacker, file parsers, neural backend, plugins)
+- Version or commit hash
 
-You should receive an acknowledgement within **5 business days**. We will work with you on a fix and coordinated disclosure timeline.
+**Acknowledgement:** within **5 business days**.  
+**Target fix window:** **90 days** for confirmed high/critical issues; coordinated disclosure preferred.
 
-## Scope notes
+## Scope
 
-RetDec decompiles **untrusted binaries**. Treat decompiler output, temporary files, and plugin-loaded code as potentially hostile. Run in isolated environments when analysing malware.
+In scope:
+
+- Memory corruption in native parsers (PE, ELF, Mach-O, managed formats)
+- Unpacker and Capstone lifting boundary crashes
+- Arbitrary code execution via malicious binaries or models
+- Path traversal in export/install paths
+
+Out of scope:
+
+- Decompiler output quality or semantic incorrectness (not a security boundary)
+- Denial of service on pathological multi-gigabyte inputs without a crash (report anyway)
+
+## Operational guidance
+
+- Run RetDec on **untrusted binaries** in isolated VMs or containers.
+- Treat decompiler output, temporary files, and GGUF models as untrusted.
+- Use `RETDEC_NO_NETWORK=1` for air-gapped analysis; neural refinement uses local llama.cpp only.
+- Commercial packages must not include GPL-2.0 `capstone2llvmirtool` (see LICENSE-COMMERCIAL).
+
+## PGP
+
+Contact the maintainer for a PGP key if required for encrypted reports.
 
 Copyright (c) 2025-2026 Odin Loch, trading as Imortek.

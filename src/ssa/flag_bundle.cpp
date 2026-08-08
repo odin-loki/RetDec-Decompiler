@@ -331,23 +331,27 @@ std::vector<SSAVerifier::Error> SSAVerifier::verify(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 void SSAPass::run(SSAFunction& fn) {
-    // 1. Liveness
-    LivenessAnalysis liveness;
-    liveness.run(fn);
-    stats_.livenessIterations = liveness.iterations();
+    if (braunSsaEnabled()) {
+        buildSsaBraun(fn);
+    } else {
+        // 1. Liveness
+        LivenessAnalysis liveness;
+        liveness.run(fn);
+        stats_.livenessIterations = liveness.iterations();
 
-    // 2. Dominator tree
-    DominatorTree domtree;
-    domtree.run(fn);
+        // 2. Dominator tree
+        DominatorTree domtree;
+        domtree.run(fn);
 
-    // 3. Phi placement (liveness-pruned)
-    PhiPlacement phiPlace;
-    phiPlace.run(fn, liveness);
-    stats_.phisPlaced = phiPlace.placedCount();
+        // 3. Phi placement (liveness-pruned)
+        PhiPlacement phiPlace;
+        phiPlace.run(fn, liveness);
+        stats_.phisPlaced = phiPlace.placedCount();
 
-    // 4. SSA renaming
-    SSARename rename;
-    rename.run(fn);
+        // 4. SSA renaming
+        SSARename rename;
+        rename.run(fn);
+    }
 
     // 5. FlagBundle analysis
     FlagBundleAnalysis flagAnalysis;
@@ -361,6 +365,8 @@ void SSAPass::run(SSAFunction& fn) {
 
     // 7. Verify
     SSAVerifier verifier;
+    DominatorTree domtree;
+    domtree.run(fn);
     errors_ = verifier.verify(fn, domtree);
 }
 

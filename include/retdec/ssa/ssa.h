@@ -539,6 +539,16 @@ public:
  *
  * After run(), the SSAFunction is in valid pruned SSA form.
  */
+// ═══════════════════════════════════════════════════════════════════════════════
+// SSA construction pass
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// True when RETDEC_SSA_BRAUN is set (non-zero, non-empty).
+bool braunSsaEnabled();
+
+/// Braun et al. 2013 SSA scaffold (falls back to liveness + IDF + rename).
+void buildSsaBraun(SSAFunction& fn);
+
 class SSAPass {
 public:
     struct Stats {

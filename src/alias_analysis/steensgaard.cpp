@@ -343,6 +343,7 @@ void AliasPass::collectConstraints(const ssa::SSAFunction& fn) {
     for (auto& valPtr : fn.values()) {
         const IrValue* v = valPtr.get();
         steensgaard_.addValue(v->id);
+        if (useAndersen_) andersen_.addValue(v->id);
 
         if (v->kind == ValueKind::MemRef && v->memIsStack) {
             stackSlots_.insert(v->memOffset);
@@ -361,44 +362,52 @@ void AliasPass::collectConstraints(const ssa::SSAFunction& fn) {
             case IrInstr::Op::Load:
                 // dst = *src  → Load constraint
                 if (instr->defValue != UINT32_MAX && !instr->uses.empty()) {
-                    steensgaard_.addConstraint({
+                    const PtsConstraint c{
                         ConstraintKind::Load,
                         instr->defValue,
                         instr->uses[0].valueId
-                    });
+                    };
+                    if (useAndersen_) andersen_.addConstraint(c);
+                    else steensgaard_.addConstraint(c);
                 }
                 break;
 
             case IrInstr::Op::Store:
                 // *dst = src  → Store constraint
                 if (instr->uses.size() >= 2) {
-                    steensgaard_.addConstraint({
+                    const PtsConstraint c{
                         ConstraintKind::Store,
                         instr->uses[0].valueId,
                         instr->uses[1].valueId
-                    });
+                    };
+                    if (useAndersen_) andersen_.addConstraint(c);
+                    else steensgaard_.addConstraint(c);
                 }
                 break;
 
             case IrInstr::Op::Assign:
                 // dst = src (copy)
                 if (instr->defValue != UINT32_MAX && !instr->uses.empty()) {
-                    steensgaard_.addConstraint({
+                    const PtsConstraint c{
                         ConstraintKind::Copy,
                         instr->defValue,
                         instr->uses[0].valueId
-                    });
+                    };
+                    if (useAndersen_) andersen_.addConstraint(c);
+                    else steensgaard_.addConstraint(c);
                 }
                 break;
 
             case IrInstr::Op::Call:
                 // External call → mark all pointer args as escaped
                 for (auto& use : instr->uses) {
-                    steensgaard_.addConstraint({
+                    const PtsConstraint c{
                         ConstraintKind::External,
                         use.valueId,
                         use.valueId
-                    });
+                    };
+                    if (useAndersen_) andersen_.addConstraint(c);
+                    else steensgaard_.addConstraint(c);
                 }
                 break;
 
@@ -444,6 +453,8 @@ void AliasPass::determinePromotable(const ssa::SSAFunction& fn) {
 }
 
 void AliasPass::run(const ssa::SSAFunction& fn) {
+    useAndersen_ = useAndersenPointsTo();
+
     // 1. Escape analysis
     EscapeAnalysis ea;
     escape_ = ea.run(fn);
@@ -451,9 +462,14 @@ void AliasPass::run(const ssa::SSAFunction& fn) {
     // 2. Collect constraints for all tiers
     collectConstraints(fn);
 
-    // 3. Run Steensgaard
-    steensgaard_.run();
-    stats_.steenClasses = steensgaard_.classCount();
+    // 3. Run points-to analysis
+    if (useAndersen_) {
+        andersen_.run();
+        stats_.steenClasses = andersen_.classCount();
+    } else {
+        steensgaard_.run();
+        stats_.steenClasses = steensgaard_.classCount();
+    }
 
     // 4. Determine promotable stack slots
     determinePromotable(fn);
@@ -478,10 +494,12 @@ AliasResult AliasPass::alias(const MemLoc& a, const MemLoc& b) const {
         else ++stats_.mayAliasCount;
         return r;
     }
-    // Tier 3: Steensgaard
+    // Tier 3: Steensgaard or Andersen
     if (a.ssaId != UINT32_MAX && b.ssaId != UINT32_MAX) {
         ++stats_.steenQueries;
-        auto r = steensgaard_.alias(a.ssaId, b.ssaId);
+        const AliasResult r = useAndersen_
+            ? andersen_.alias(a.ssaId, b.ssaId)
+            : steensgaard_.alias(a.ssaId, b.ssaId);
         if (r == AliasResult::MustAlias) ++stats_.mustAliasCount;
         else if (r == AliasResult::NoAlias) ++stats_.noAliasCount;
         else ++stats_.mayAliasCount;

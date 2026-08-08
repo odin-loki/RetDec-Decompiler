@@ -48,6 +48,18 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Release: ${TAG} (${VER})"
 
+      - name: Verify licence files installed in tree
+        run: |
+          test -f LICENSE && test -f LICENSE-AGPL && test -f LICENSE-COMMERCIAL && test -f NOTICE
+
+      - name: Assert commercial package excludes capstone2llvmirtool
+        run: |
+          if grep -rq 'capstone2llvmirtool' packaging/ 2>/dev/null; then
+            echo "capstone2llvmirtool must not ship in commercial manifests"
+            exit 1
+          fi
+          echo "Commercial GPL exclusion check passed"
+
       - name: Create GitHub Release (draft)
         uses: softprops/action-gh-release@v2
         with:

@@ -1,6 +1,7 @@
 add_library(retdec-alias-analysis STATIC
     stack_alias.cpp
     steensgaard.cpp
+    andersen.cpp
     escape_analysis.cpp
 )
 

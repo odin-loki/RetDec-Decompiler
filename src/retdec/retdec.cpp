@@ -62,6 +62,7 @@
 #include "retdec/retdec/retdec.h"
 #include "retdec/retdec/function_analysis_cache.h"
 #include "retdec/retdec/semantic_recovery_export.h"
+#include "retdec/neural/decompile_hook.h"
 #include "retdec/utils/conversion.h"
 #include "retdec/utils/memory.h"
 #include "retdec/utils/io/log.h"
@@ -825,6 +826,7 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 				if (!semanticMap.empty())
 					Log::info() << "[analysis] semantic detections exported for "
 					            << semanticMap.size() << " function(s)" << std::endl;
+				neural::maybeRefineDecompilerOutput(config, outString);
 			}
 
 			// --- 8. Serial / wire-protocol detection (protobuf, flatbuffers, …) ---

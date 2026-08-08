@@ -1,26 +1,18 @@
-# Internal backlog (MASTER-UPGRADE-PLAN)
+# Internal backlog — see MASTER-UPGRADE-PLAN.md
 
-| # | Task | Tag | Prompt | State |
-|---|------|-----|--------|-------|
-| 1 | Install `.cursorrules` | H | — | done |
-| 2 | Install licence files | C | P5 | done |
-| 3 | Delete `src/qwen3/` | C | P4 | done |
-| 4 | CI smoke on push | C+ | P1 | done |
-| 5 | ctest on PRs | C+ | P2 | done |
-| 6 | Baseline Dockerfile | C | P3 | done |
-| 7 | Tag `baseline-2026-08` | H | — | pending |
-| 8 | D7 in README | H | — | done |
-| 9 | DecompileBench harness | C+ | — | pending |
-| 10 | Algorithm-recovery metric | H | — | pending |
-| 11 | `upgrade-dep.sh` | C | — | done |
-| 12 | Capstone 5.0.9 | C | P6 | done |
-| 13 | YARA 4.5.8 | C+ | P7 | done |
-| 14 | yaramod 4.8.1 | C+ | P8 | done |
-| 15 | googletest, Keystone | C | — | gtest done |
-| 17 | llama.cpp + mock | C | P9–P10 | mock done |
-| 18 | llama.cpp backend | C+ | P11 | pending |
-| 23 | Fuzz + sanitizer CI | C | P15–P16 | done |
-| 25 | Version/docs/release | C+ | P14 | in progress |
-| 26 | **SHIP** | H | — | pending |
+| Step | Task | State |
+|------|------|-------|
+| 1–8 | Foundations + D7 | done |
+| 9 | DecompileBench runner | done |
+| 10 | Algorithm recovery corpus | scaffold + runner |
+| 11–15 | Deps bumps | done (Keystone 0.9.2, llama.cpp b3997 pin) |
+| 16 | retdec-support regen script | scaffold |
+| 17–18 | Neural mock + hook; llama.cpp optional | done |
+| 19–21 | Neural tiers + gates | tiers 1–3 in hook; gates partial |
+| 22 | Offline flags | done |
+| 23 | Fuzz + sanitizers | done |
+| 24 | Tier-1 algorithms | Andersen wired; Braun + Semi-NCA scaffold |
+| 25 | Version/docs/release | done |
+| 26 | **SHIP** | demo script + tag v1.0.0 pending |
 
-Steps 27–33 are post-ship roadmap (performance, rellic, Retypd, SAILR, LLVM).
+Post-ship: performance, rellic, Retypd, SAILR, LLVM migration.

@@ -109,6 +109,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <queue>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -323,6 +324,34 @@ private:
     bool ran_ = false;
 };
 
+// ─── Andersen analysis (optional, env RETDEC_USE_ANDERSEN=1) ─────────────────
+
+/**
+ * Inclusion-based points-to analysis (Andersen 1994) with wave propagation.
+ * More precise than Steensgaard; selected when RETDEC_USE_ANDERSEN=1.
+ */
+class AndersenAnalysis {
+public:
+    void addValue(uint32_t id);
+    void addConstraint(PtsConstraint c);
+    void run();
+    AliasResult alias(uint32_t idA, uint32_t idB) const;
+    std::size_t classCount() const;
+
+private:
+    bool addPts(uint32_t lhs, uint32_t rhs);
+    bool unionPts(uint32_t lhs, uint32_t rhs);
+    void apply(const PtsConstraint& c, std::queue<PtsConstraint>& work);
+    void propagate(uint32_t lhs, std::queue<PtsConstraint>& work);
+
+    std::vector<std::unordered_set<uint32_t>> pointsTo_;
+    std::vector<PtsConstraint> constraints_;
+    bool ran_ = false;
+};
+
+/// True when RETDEC_USE_ANDERSEN is set (non-zero, non-empty).
+bool useAndersenPointsTo();
+
 // ─── Escape analysis ─────────────────────────────────────────────────────────
 
 /**
@@ -405,9 +434,11 @@ private:
     StackAliasAnalysis  stackAlias_;
     GlobalAliasAnalysis globalAlias_;
     SteensgaardAnalysis steensgaard_;
+    AndersenAnalysis    andersen_;
     EscapeAnalysis::EscapeInfo escape_;
     mutable Stats stats_;
 
+    bool useAndersen_ = false;
     std::unordered_set<int64_t> promotable_;
     std::unordered_set<int64_t> stackSlots_;
 

@@ -19,11 +19,11 @@ set(GOOGLETEST_ARCHIVE_SHA256
 )
 
 set(KEYSTONE_URL
-    "https://github.com/keystone-engine/keystone/archive/d7ba8e378e5284e6384fc9ecd660ed5f6532e922.zip"
+    "https://github.com/keystone-engine/keystone/archive/refs/tags/0.9.2.zip"
     CACHE STRING "URL of Keystone archive to use."
 )
 set(KEYSTONE_ARCHIVE_SHA256
-    "13bd00e062e9c778fe76aaab5c163348b3c9457c0e9b2a4c2fb3e2d8747694ca"
+    "9cebf492f64b8632d0a0678ca334f266e78978d6873dacfb795c8753d8afb12c"
     CACHE STRING ""
 )
 
@@ -74,6 +74,16 @@ set(SUPPORT_PKG_SHA256
 )
 set(SUPPORT_PKG_VERSION
     "2019-03-08"
+    CACHE STRING ""
+)
+
+# llama.cpp — enable with -DRETDEC_ENABLE_LLAMACPP=ON; bump via scripts/upgrade-dep.sh LLAMACPP
+set(LLAMACPP_URL
+    "https://github.com/ggml-org/llama.cpp/archive/refs/tags/b3997.zip"
+    CACHE STRING "URL of llama.cpp archive to use."
+)
+set(LLAMACPP_ARCHIVE_SHA256
+    "abb93bf1581ae1ad16d56400ff6c5684195861f44cdb8fa4db01a593dc6dd696"
     CACHE STRING ""
 )
 option(RETDEC_SUPPORT_PKG_VERIFY_SHA256

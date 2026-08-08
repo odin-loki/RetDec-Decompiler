@@ -26,6 +26,17 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - PE/ELF/Mach-O fuzz harnesses in `tests/managed_integration/fuzz/`.
 - [docs/NEURAL_REFINEMENT.md](docs/NEURAL_REFINEMENT.md), [MASTER-UPGRADE-PLAN.md](MASTER-UPGRADE-PLAN.md).
 
+### Added (continued)
+
+- **Neural:** `retdec::neural` decompile hook (`RETDEC_NEURAL_REFINE`), prompts, optional llama.cpp backend (`RETDEC_ENABLE_LLAMACPP`).
+- **Algorithms:** Semi-NCA dominator citation, Andersen points-to scaffold, Braun SSA scaffold (`RETDEC_SSA_BRAUN`).
+- **Benchmarks:** `tests/decompilebench/runner.py`, algorithm recovery scaffold, `docs/algorithm_reference.md`.
+- **Security:** expanded `SECURITY.md`; commercial GPL exclusion in release workflow.
+
+### Changed (continued)
+
+- **retdec-support:** `scripts/regenerate-retdec-support.sh` scaffold for Phase 7.2.
+
 ### Changed (prior) Git history was squashed to a single root commit; issue/PR URLs were removed from in-tree comments where they were non-essential. Automated CI on push/PR uses [`.github/workflows/ci-smoke.yml`](.github/workflows/ci-smoke.yml); full test workflows ([`.github/workflows/ctest-linux.yml`](.github/workflows/ctest-linux.yml), [`.github/workflows/ctest-windows.yml`](.github/workflows/ctest-windows.yml)) are **manual-only**; scheduled/release automation uses [`.github/workflows/perf-nightly.yml`](.github/workflows/perf-nightly.yml) and [`.github/workflows/release-installers.yml`](.github/workflows/release-installers.yml). NSIS/AppImage homepage placeholders use `https://example.com/` until you set a real product URL.
 - **Build layout:** CMake presets and helper scripts now use a fixed OS tree: `build/linux` + `install/linux` on non-Windows hosts, `build/windows` + `install/windows` on Windows; superbuilds use `build/linux/<preset>` or `build/windows/<preset>`. Staging defaults to `dist/windows` (and `dist/windows/debuggable` for the debuggable GUI script). MinGW cross lives under `build/linux/mingw-w64-release`.
 

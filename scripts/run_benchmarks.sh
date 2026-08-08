@@ -24,12 +24,13 @@ payload = {
     "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     "git_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
     "decompilebench": {
-        "status": "pending",
-        "note": "Wire tests/decompilebench runner in Phase 6.1",
+        "status": "runner",
+        "runner": "tests/decompilebench/runner.py",
     },
     "algorithm_recovery": {
-        "status": "pending",
-        "note": "Define corpus and ground truth in Phase 6.2",
+        "status": "runner",
+        "runner": "tests/algorithm_recovery/runner.py",
+        "readme": "tests/algorithm_recovery/README.md",
     },
     "compare_tag": compare or None,
 }

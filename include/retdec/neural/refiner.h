@@ -34,6 +34,8 @@ struct RefinementResponse {
     std::string manifestJson;
 };
 
+std::string buildRefinementPrompt(const RefinementRequest& request);
+
 class Refiner {
 public:
     explicit Refiner(std::unique_ptr<Inference> backend);

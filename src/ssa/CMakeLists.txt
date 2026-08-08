@@ -4,6 +4,7 @@ add_library(retdec-ssa STATIC
     domtree.cpp
     phi_placement.cpp
     ssa_rename.cpp
+    braun_ssa.cpp
 )
 
 target_include_directories(retdec-ssa

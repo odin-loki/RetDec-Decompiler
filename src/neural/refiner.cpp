@@ -3,6 +3,8 @@
 
 namespace retdec::neural {
 
+std::string buildRefinementPrompt(const RefinementRequest& request);
+
 Refiner::Refiner(std::unique_ptr<Inference> backend)
     : inference_(std::move(backend)) {}
 
@@ -15,10 +17,7 @@ RefinementResponse Refiner::refine(const RefinementRequest& request) const {
         return response;
     }
 
-    std::string prompt = request.functionSource;
-    if (!request.semanticContextJson.empty()) {
-        prompt = request.semanticContextJson + "\n\n" + prompt;
-    }
+    std::string prompt = buildRefinementPrompt(request);
 
     const auto gen = inference_->generate(prompt, request.generation);
     if (!gen.ok) {

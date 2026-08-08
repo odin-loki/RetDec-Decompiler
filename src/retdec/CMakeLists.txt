@@ -41,6 +41,10 @@ target_link_libraries(retdec
 		retdec::deps::rapidjson
 )
 
+if(RETDEC_ENABLE_NEURAL)
+	target_link_libraries(retdec PRIVATE retdec::neural)
+endif()
+
 set_target_properties(retdec
 	PROPERTIES
 		OUTPUT_NAME "retdec-retdec"
