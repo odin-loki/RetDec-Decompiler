@@ -1,6 +1,6 @@
 # Next steps (human-led)
 
-MASTER-UPGRADE-PLAN automation is **complete** through v2.0.7. These items
+MASTER-UPGRADE-PLAN automation is **complete** through v2.0.9. These items
 require your environment, toolchain farm, or measured CI artifacts.
 
 ## Local automation (no WSL required)
@@ -10,7 +10,9 @@ bash scripts/run_all_automation.sh          # doctor, ship checklist, tests, mig
 bash scripts/run_all_automation.sh --skip-migration   # faster smoke
 ```
 
-Windows: `.\scripts\doctor.ps1` and `.\scripts\dispatch_algorithm_recovery_nightly.ps1`
+Windows: `.\scripts\doctor.ps1`, `.\scripts\run_all_automation.ps1`, and `.\scripts\dispatch_algorithm_recovery_nightly.ps1`
+
+Optional eval deps: `pip install -r scripts/requirements-eval.txt`
 
 ## 1. Algorithm-recovery F1 (local baselines)
 
@@ -63,7 +65,7 @@ Review `results/algorithm-recovery-full.json` artifact from the workflow run.
 | Step | Script | Blocker |
 |------|--------|---------|
 | 28 rellic | `eval_rellic.sh` | Build rellic on LLVM 8 |
-| 29 LIEF | `eval_lief.sh` | `RETDEC_ENABLE_LIEF=ON` integration |
+| 29 LIEF | `eval_lief.sh` | `pip install -r scripts/requirements-eval.txt`; `RETDEC_ENABLE_LIEF=ON` for cutover |
 | 30 Retypd | `eval_retypd.sh` | LLVM module export path |
 | 31 SAILR | `eval_sailr.sh` | Structure recovery backend |
 | 33 LLVM | `inventory_llvm_apis.sh` | Retypd-first per plan |

@@ -21,7 +21,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${DEC}" ]]; then
-	DEC="$(find "${ROOT}/build/linux" -name retdec-decompiler -type f 2>/dev/null | head -n1 || true)"
+	for candidate in \
+		"${ROOT}/build/linux/src/retdec-decompiler/retdec-decompiler" \
+		"${ROOT}/build/linux/bin/retdec-decompiler" \
+		"$(find "${ROOT}/build/windows" -name 'retdec-decompiler.exe' -type f 2>/dev/null | head -n1)"; do
+		if [[ -n "${candidate}" && -x "${candidate}" ]]; then
+			DEC="${candidate}"
+			break
+		fi
+	done
 fi
 
 mkdir -p "$(dirname "${OUT}")"
@@ -40,24 +48,28 @@ rows = []
 
 for sample in samples:
     row = {"input": sample.name, "goto_count": None, "lines": None}
-    if not dec:
+    if not dec or not pathlib.Path(dec).is_file():
         row["status"] = "no_decompiler"
         rows.append(row)
         continue
-    with tempfile.TemporaryDirectory() as td:
-        out_c = pathlib.Path(td) / "out.c"
-        proc = subprocess.run(
-            [dec, str(sample), "-o", str(out_c)],
-            capture_output=True, text=True,
-        )
-        row["decompile_rc"] = proc.returncode
-        if out_c.is_file():
-            text = out_c.read_text(encoding="utf-8", errors="replace")
-            row["lines"] = text.count("\n") + 1
-            row["goto_count"] = len(goto_re.findall(text))
-            row["status"] = "ok"
-        else:
-            row["status"] = "no_output"
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            out_c = pathlib.Path(td) / "out.c"
+            proc = subprocess.run(
+                [dec, str(sample), "-o", str(out_c)],
+                capture_output=True, text=True,
+            )
+            row["decompile_rc"] = proc.returncode
+            if out_c.is_file():
+                text = out_c.read_text(encoding="utf-8", errors="replace")
+                row["lines"] = text.count("\n") + 1
+                row["goto_count"] = len(goto_re.findall(text))
+                row["status"] = "ok"
+            else:
+                row["status"] = "no_output"
+    except OSError as exc:
+        row["status"] = "decompiler_exec_error"
+        row["error"] = str(exc)
     rows.append(row)
 
 mean_goto = sum(r.get("goto_count") or 0 for r in rows) / len(rows) if rows else 0.0

@@ -1,0 +1,3 @@
+# Optional Python packages for migration eval scaffolds (steps 28–31).
+# Install: pip install -r scripts/requirements-eval.txt
+lief>=0.14.0

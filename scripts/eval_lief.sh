@@ -63,7 +63,7 @@ payload = {
     "next": "Build with RETDEC_ENABLE_LIEF=ON; see docs/internal/lief_adoption.md",
 }
 if not has_lief:
-    payload["reason"] = "python lief package not installed (pip install lief)"
+    payload["reason"] = "python lief package not installed (pip install -r scripts/requirements-eval.txt)"
 
 out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 print(f"Wrote {out} ({len(rows)} samples, lief={has_lief})")
