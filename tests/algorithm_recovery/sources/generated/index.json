@@ -1,0 +1,213 @@
+[
+  {
+    "stem": "quicksort",
+    "algorithms": [
+      "QuickSort",
+      "Sort"
+    ]
+  },
+  {
+    "stem": "heapsort",
+    "algorithms": [
+      "HeapSort",
+      "Sort"
+    ]
+  },
+  {
+    "stem": "insertion_sort",
+    "algorithms": [
+      "InsertionSort",
+      "Sort"
+    ]
+  },
+  {
+    "stem": "selection_sort",
+    "algorithms": [
+      "SelectionSort",
+      "Sort"
+    ]
+  },
+  {
+    "stem": "shell_sort",
+    "algorithms": [
+      "ShellSort",
+      "Sort"
+    ]
+  },
+  {
+    "stem": "linear_search",
+    "algorithms": [
+      "LinearSearch",
+      "Search"
+    ]
+  },
+  {
+    "stem": "stack_array",
+    "algorithms": [
+      "Stack",
+      "LIFO"
+    ]
+  },
+  {
+    "stem": "queue_array",
+    "algorithms": [
+      "Queue",
+      "FIFO"
+    ]
+  },
+  {
+    "stem": "strlen_loop",
+    "algorithms": [
+      "Strlen",
+      "String"
+    ]
+  },
+  {
+    "stem": "strcmp_loop",
+    "algorithms": [
+      "Strcmp",
+      "String"
+    ]
+  },
+  {
+    "stem": "fibonacci_iter",
+    "algorithms": [
+      "Fibonacci",
+      "DynamicProgramming"
+    ]
+  },
+  {
+    "stem": "gcd_euclid",
+    "algorithms": [
+      "GCD",
+      "Euclid"
+    ]
+  },
+  {
+    "stem": "xor_cipher",
+    "algorithms": [
+      "XOR",
+      "Cipher"
+    ]
+  },
+  {
+    "stem": "dfs_graph",
+    "algorithms": [
+      "DFS",
+      "GraphTraversal"
+    ]
+  },
+  {
+    "stem": "bfs_graph",
+    "algorithms": [
+      "BFS",
+      "GraphTraversal"
+    ]
+  },
+  {
+    "stem": "crc32_simple",
+    "algorithms": [
+      "CRC",
+      "Checksum"
+    ]
+  },
+  {
+    "stem": "bitcount",
+    "algorithms": [
+      "Popcount",
+      "BitManipulation"
+    ]
+  },
+  {
+    "stem": "matrix_mul",
+    "algorithms": [
+      "MatrixMultiply",
+      "LinearAlgebra"
+    ]
+  },
+  {
+    "stem": "knapsack_01",
+    "algorithms": [
+      "Knapsack",
+      "DynamicProgramming"
+    ]
+  },
+  {
+    "stem": "lcs_dp",
+    "algorithms": [
+      "LCS",
+      "DynamicProgramming"
+    ]
+  },
+  {
+    "stem": "rle_encode",
+    "algorithms": [
+      "RLE",
+      "Compression"
+    ]
+  },
+  {
+    "stem": "varint_encode",
+    "algorithms": [
+      "Varint",
+      "Serialization"
+    ]
+  },
+  {
+    "stem": "linked_list",
+    "algorithms": [
+      "LinkedList"
+    ]
+  },
+  {
+    "stem": "separate_chaining",
+    "algorithms": [
+      "HashTable",
+      "Chaining"
+    ]
+  },
+  {
+    "stem": "atomic_counter",
+    "algorithms": [
+      "Atomic",
+      "Concurrency"
+    ]
+  },
+  {
+    "stem": "pthread_mutex",
+    "algorithms": [
+      "Mutex",
+      "Concurrency",
+      "Pthread"
+    ]
+  },
+  {
+    "stem": "bloom_filter",
+    "algorithms": [
+      "BloomFilter",
+      "Probabilistic"
+    ]
+  },
+  {
+    "stem": "lower_bound",
+    "algorithms": [
+      "LowerBound",
+      "BinarySearch",
+      "Search"
+    ]
+  },
+  {
+    "stem": "atoi_parse",
+    "algorithms": [
+      "Atoi",
+      "Parse"
+    ]
+  },
+  {
+    "stem": "memset_loop",
+    "algorithms": [
+      "Memset",
+      "Memory"
+    ]
+  }
+]

@@ -4,15 +4,29 @@ Corpus: binaries built from sources with known algorithmic content (sorts,
 hash tables, ring buffers, mutex patterns, serialisation). Ground truth: JSON
 labels from source sidecars, never from the decompiler.
 
-## Build corpus
+## Build corpus (216+ binaries)
 
 ```bash
 bash scripts/build_algorithm_corpus.sh
 ```
 
-Produces `tests/algorithm_recovery/corpus/` (6 sources × 3 opts × gcc/clang).
+Generates 30 catalog sources under `sources/generated/` plus 6 hand-written sources.
+With gcc **and** clang: 36 × 3 opts × 2 compilers = **216 binaries**.
 
-## Ground truth
+## Extract predictions from decompiler
+
+```bash
+scripts/extract_decompiler_predictions.py \
+  --decompiler build/linux/bin/retdec-decompiler \
+  --corpus tests/algorithm_recovery/corpus \
+  --out tests/algorithm_recovery/predictions/corpus.json
+```
+
+## Sources (v1.3.0)
+
+Hand-written (6): bubblesort, mergesort, hash_table, ring_buffer, binary_search, memcpy_loop.
+
+Generated catalog (30): quicksort, heapsort, insertion/selection/shell sort, graph DFS/BFS, knapsack, LCS, pthread mutex, atomics, and more — see `scripts/generate_corpus_sources.py`.
 
 ```bash
 python3 scripts/generate_ground_truth.py \

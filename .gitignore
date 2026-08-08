@@ -89,6 +89,7 @@ luac.out
 
 /tests/algorithm_recovery/corpus/
 !/tests/algorithm_recovery/corpus/.gitkeep
+/tests/algorithm_recovery/ground_truth/corpus.json
 keystone.zip
 llama.zip
 _license_preamble.txt

@@ -21,7 +21,7 @@ done
 
 mkdir -p "${ROOT}/results"
 
-if [[ "${BUILD_CORPUS}" -eq 1 ]] || [[ ! -d "${ROOT}/tests/algorithm_recovery/corpus" ]]; then
+if [[ "${BUILD_CORPUS}" -eq 1 ]] || [[ ! -f "${ROOT}/tests/algorithm_recovery/corpus/manifest.json" ]]; then
 	if command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
 		bash "${ROOT}/scripts/build_algorithm_corpus.sh" || true
 	fi
@@ -79,8 +79,15 @@ if dec and corpus.is_dir() and any(corpus.iterdir()):
             }
 
 gt = root / "tests/algorithm_recovery/ground_truth/corpus.json"
+pred = root / "tests/algorithm_recovery/predictions/corpus.json"
+if dec and gt.is_file() and corpus.is_dir():
+    subprocess.run(
+        [sys.executable, str(root / "scripts/extract_decompiler_predictions.py"),
+         "--decompiler", dec, "--corpus", str(corpus),
+         "--out", str(pred)],
+        check=False,
+    )
 if gt.is_file():
-    pred = root / "tests/algorithm_recovery/predictions/corpus.json"
     if not pred.is_file():
         pred = root / "tests/algorithm_recovery/predictions/sample.json"
     if pred.is_file():

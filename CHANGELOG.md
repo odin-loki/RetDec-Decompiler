@@ -4,6 +4,21 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ---
 
+## [1.3.0] — 2026-08-08
+
+### Added
+
+- **200+ binary corpus:** `generate_corpus_sources.py` adds 30 generated algorithm sources (36 total × gcc/clang × O0/O2/O3 ≥ 216 binaries).
+- **Prediction extraction:** `extract_decompiler_predictions.py` maps decompiler `.config.json` semantic detections to labels.
+- **Triton gate scaffold:** `differential_gate_triton.sh` with stdout fallback.
+- **CI:** corpus size ≥ 200 check on Linux ci-smoke when gcc is available.
+
+### Changed
+
+- `build_algorithm_corpus.sh` auto-generates sources, uses C11/pthread flags, warns if < 200 binaries.
+- `run_benchmarks.sh` extracts live predictions when decompiler is present.
+- `regenerate-retdec-support.sh` detects available toolchains.
+
 ## [1.2.0] — 2026-08-08
 
 ### Added

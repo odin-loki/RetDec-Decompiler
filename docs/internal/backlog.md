@@ -4,22 +4,22 @@
 
 | Version | Scope |
 |---------|-------|
-| v1.0.0 | Steps 1–26, Part 16 automation |
-| v1.1.0 | Steps 27–33 scaffolds (performance, rellic, LIEF, neural tiers 4–5) |
-| v1.2.0 | Step 10 corpus starter, step 8.4/8.8/20 neural, demo, crash corpus |
+| v1.0.0 | Steps 1–26, Part 16 |
+| v1.1.0 | Steps 27–33 scaffolds |
+| v1.2.0 | Corpus starter, neural context/gates, demo |
+| v1.3.0 | **200+ corpus**, prediction extraction, Triton gate scaffold |
 
-## v1.2.0 highlights
+## v1.3.0
 
-- 6-source algorithm recovery corpus (expand to 200+)
-- Semantic context in neural prompts
-- Model SHA verification + differential gate scaffold
-- Full `run_benchmarks.sh` pipeline
+- 36 algorithm sources → 216+ stripped binaries (gcc+clang × O0/O2/O3)
+- End-to-end: build → decompile → extract predictions → F1 metrics
+- CI enforces corpus ≥ 200 on Linux
 
-## Remaining human-led
+## Remaining (human-led)
 
 | Item | Notes |
 |------|-------|
-| Corpus scale-up | Add sources until 200+ binaries |
-| retdec-support regen | Toolchain farm |
-| Triton/D-Helix differential | Replace stdout-compare gate |
-| rellic / LIEF / Retypd / SAILR / LLVM | Evaluation and migration |
+| Live F1 on full corpus | Needs decompiler build in benchmark CI |
+| retdec-support regen | Run on toolchain farm; update deps.cmake pins |
+| Triton symbolic differential | Replace stdout-compare in `differential_gate_triton.sh` |
+| rellic / LIEF / Retypd / SAILR / LLVM | Evaluation migrations |

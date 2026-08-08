@@ -64,3 +64,14 @@ jobs:
       - name: Benchmark harness and regression gate
         run: |
           bash scripts/run_benchmarks.sh --compare 2026-08 --gate
+
+      - name: Algorithm corpus size check
+        run: |
+          if command -v gcc >/dev/null 2>&1; then
+            bash scripts/build_algorithm_corpus.sh
+            COUNT=$(python3 -c "import json; print(len(json.load(open('tests/algorithm_recovery/corpus/manifest.json'))))")
+            echo "Corpus binaries: ${COUNT}"
+            test "${COUNT}" -ge 200
+          else
+            echo "gcc not available — skipping corpus build"
+          fi

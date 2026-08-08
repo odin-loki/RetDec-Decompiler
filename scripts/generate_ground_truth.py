@@ -16,18 +16,23 @@ def main() -> int:
 
     sources = Path(args.sources)
     manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
-    labels_by_base: dict[str, list[str]] = {}
+    labels_by_key: dict[str, list[str]] = {}
 
-    for label_file in sorted(sources.glob("*.labels.json")):
-        base = label_file.name.replace(".labels.json", "")
+    for label_file in sorted(sources.rglob("*.labels.json")):
+        rel = label_file.relative_to(sources)
+        key = str(rel)[: -len(".labels.json")].replace("\\", "/")
+        stem_key = rel.stem
         data = json.loads(label_file.read_text(encoding="utf-8"))
-        labels_by_base[base] = list(data.get("algorithms", []))
+        labels = list(data.get("algorithms", []))
+        labels_by_key[key] = labels
+        labels_by_key[stem_key] = labels
 
     ground: dict[str, list[str]] = {}
     for item in manifest:
         name = item["name"]
-        base = item["source"].replace(".c", "")
-        ground[name] = labels_by_base.get(base, [])
+        src = item["source"]
+        key = src[:-3] if src.endswith(".c") else src
+        ground[name] = labels_by_key.get(key, labels_by_key.get(Path(key).name, []))
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
