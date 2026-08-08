@@ -382,6 +382,24 @@ public:
     SortAlgorithm algorithm() const noexcept override { return SortAlgorithm::InsertionSort; }
 };
 
+/**
+ * Quicksort detector (standalone partition-based sort).
+ */
+class QuicksortDetector : public ISortDetector {
+public:
+    SortResult    detect(const ssa::SSAFunction& fn) const override;
+    SortAlgorithm algorithm() const noexcept override { return SortAlgorithm::Quicksort; }
+};
+
+/**
+ * Bubble sort detector (nested adjacent-swap loops).
+ */
+class BubbleSortDetector : public ISortDetector {
+public:
+    SortResult    detect(const ssa::SSAFunction& fn) const override;
+    SortAlgorithm algorithm() const noexcept override { return SortAlgorithm::BubbleSort; }
+};
+
 // ─── Element type recovery ────────────────────────────────────────────────────
 
 /**
@@ -424,7 +442,7 @@ private:
 class SortDetector {
 public:
     struct Config {
-        float minConfidence  = 0.45f; ///< Minimum confidence to report
+        float minConfidence  = 0.50f; ///< Minimum confidence to report
         int   minBlocks      = 3;     ///< Skip trivially small functions
         int   minInstrs      = 15;    ///< Skip trivially small functions
         bool  runRadix       = true;
@@ -432,6 +450,8 @@ public:
         bool  runHeap        = true;
         bool  runIntrosort   = true;
         bool  runInsertion   = true;
+        bool  runQuicksort   = true;
+        bool  runBubble      = true;
     };
     static Config defaultConfig() noexcept { return {}; }
 

@@ -4,6 +4,8 @@ add_library(retdec_sort_detect
     mergesort_detect.cpp
     heapsort_detect.cpp
     radixsort_detect.cpp
+    bubblesort_detect.cpp
+    quicksort_detect.cpp
     sort_detector.cpp
 )
 

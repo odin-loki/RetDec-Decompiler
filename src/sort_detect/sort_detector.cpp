@@ -176,6 +176,8 @@ SortDetector::SortDetector(Config cfg) : cfg_(std::move(cfg)) {
     if (cfg_.runIntrosort)  detectors_.push_back(std::make_unique<IntrosortDetector>());
     if (cfg_.runMerge)      detectors_.push_back(std::make_unique<MergesortDetector>());
     if (cfg_.runHeap)       detectors_.push_back(std::make_unique<HeapsortDetector>());
+    if (cfg_.runQuicksort)  detectors_.push_back(std::make_unique<QuicksortDetector>());
+    if (cfg_.runBubble)     detectors_.push_back(std::make_unique<BubbleSortDetector>());
     if (cfg_.runRadix)      detectors_.push_back(std::make_unique<RadixsortDetector>());
     if (cfg_.runInsertion)  detectors_.push_back(std::make_unique<InsertionSortDetector>());
 }

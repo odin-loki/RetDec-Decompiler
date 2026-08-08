@@ -2,43 +2,11 @@
   "harness": "algorithm_recovery",
   "summary": {
     "binaries": 9,
-    "mean_f1": 0.1873015873015873,
+    "mean_f1": 0.36666666666666664,
     "decompiled": 9
   },
   "per_binary": {
     "binary_search-gcc-O0": {
-      "tp": 0,
-      "fp": 3,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
-    },
-    "bubblesort-gcc-O0": {
-      "tp": 1,
-      "fp": 1,
-      "fn": 1,
-      "precision": 0.5,
-      "recall": 0.5,
-      "f1": 0.5
-    },
-    "generated_heapsort-gcc-O0": {
-      "tp": 1,
-      "fp": 1,
-      "fn": 1,
-      "precision": 0.5,
-      "recall": 0.5,
-      "f1": 0.5
-    },
-    "generated_pthread_mutex-gcc-O0": {
-      "tp": 1,
-      "fp": 1,
-      "fn": 2,
-      "precision": 0.5,
-      "recall": 0.3333333333333333,
-      "f1": 0.4
-    },
-    "generated_quicksort-gcc-O0": {
       "tp": 0,
       "fp": 0,
       "fn": 2,
@@ -46,9 +14,41 @@
       "recall": 0.0,
       "f1": 0.0
     },
+    "bubblesort-gcc-O0": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "generated_heapsort-gcc-O0": {
+      "tp": 1,
+      "fp": 2,
+      "fn": 1,
+      "precision": 0.3333333333333333,
+      "recall": 0.5,
+      "f1": 0.4
+    },
+    "generated_pthread_mutex-gcc-O0": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "generated_quicksort-gcc-O0": {
+      "tp": 1,
+      "fp": 1,
+      "fn": 1,
+      "precision": 0.5,
+      "recall": 0.5,
+      "f1": 0.5
+    },
     "hash_table-gcc-O0": {
       "tp": 0,
-      "fp": 2,
+      "fp": 0,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
@@ -64,15 +64,15 @@
     },
     "mergesort-gcc-O0": {
       "tp": 1,
-      "fp": 3,
+      "fp": 1,
       "fn": 2,
-      "precision": 0.25,
+      "precision": 0.5,
       "recall": 0.3333333333333333,
-      "f1": 0.28571428571428575
+      "f1": 0.4
     },
     "ring_buffer-gcc-O0": {
       "tp": 0,
-      "fp": 3,
+      "fp": 0,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
@@ -89,12 +89,12 @@
       "f1": 0.0
     },
     "BubbleSort": {
-      "tp": 0,
-      "fp": 0,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "tp": 1,
+      "fp": 2,
+      "fn": 0,
+      "precision": 0.3333333333333333,
+      "recall": 1.0,
+      "f1": 0.5
     },
     "CircularBuffer": {
       "tp": 0,
@@ -105,12 +105,12 @@
       "f1": 0.0
     },
     "Concurrency": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "Copy": {
       "tp": 0,
@@ -138,16 +138,8 @@
     },
     "HeapSort": {
       "tp": 0,
-      "fp": 3,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
-    },
-    "Introsort": {
-      "tp": 0,
       "fp": 1,
-      "fn": 0,
+      "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
       "f1": 0.0
@@ -170,7 +162,7 @@
     },
     "Mergesort": {
       "tp": 0,
-      "fp": 1,
+      "fp": 0,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -192,34 +184,18 @@
       "recall": 0.0,
       "f1": 0.0
     },
-    "Partition": {
-      "tp": 0,
-      "fp": 2,
-      "fn": 0,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
-    },
     "Pthread": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "QuickSort": {
       "tp": 0,
-      "fp": 0,
+      "fp": 1,
       "fn": 1,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
-    },
-    "RadixSort": {
-      "tp": 0,
-      "fp": 3,
-      "fn": 0,
       "precision": 0.0,
       "recall": 0.0,
       "f1": 0.0
@@ -241,20 +217,12 @@
       "f1": 0.0
     },
     "Sort": {
-      "tp": 3,
-      "fp": 3,
-      "fn": 1,
-      "precision": 0.5,
-      "recall": 0.75,
-      "f1": 0.6
-    },
-    "Thread": {
-      "tp": 0,
-      "fp": 1,
+      "tp": 4,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     }
   }
 }

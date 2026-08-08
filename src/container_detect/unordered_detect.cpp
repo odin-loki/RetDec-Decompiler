@@ -140,7 +140,7 @@ HashTableEvidence UnorderedMapDetector::analyseStructure(const ssa::SSAFunction&
     ev.hasHashCompute    = hasHashFunction(fn);
     ev.hasModulo         = hasBucketModulo(fn);
     ev.hasChainTraversal = hasChainTraversal(fn);
-    ev.found = ev.hasHashCompute && (ev.hasModulo || ev.hasBucketArray);
+    ev.found = ev.hasHashCompute && ev.hasModulo && ev.hasChainTraversal;
     ev.confidence = scoreEvidence(ev);
     return ev;
 }

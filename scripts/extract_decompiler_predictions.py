@@ -76,9 +76,33 @@ TOKEN_MAP = {
 MIN_CONFIDENCE: dict[str, float] = {
     "sort": 0.5,
     "container": 0.8,
-    "algorithm": 0.9,
+    "algorithm": 0.95,
     "concurrency": 0.5,
 }
+
+# Per-sort-label minimum confidence (label text is lowercased).
+SORT_LABEL_MIN_CONF: dict[str, float] = {
+    "radix sort": 0.65,
+    "heapsort": 0.55,
+    "introsort (std::sort)": 0.70,
+    "mergesort (std::stable_sort)": 0.55,
+}
+
+SORT_SPECIFIC_LABELS = frozenset({
+    "BubbleSort", "InsertionSort", "SelectionSort", "ShellSort",
+    "QuickSort", "Mergesort", "HeapSort", "Introsort", "RadixSort",
+    "Timsort", "DivideAndConquer",
+})
+
+NON_SORT_BINARY_MARKERS = (
+    "hash_table", "ring_buffer", "binary_search", "memcpy", "pthread",
+    "mutex", "atoi", "bfs", "dfs", "gcd", "crc", "knapsack", "fibonacci",
+)
+
+SORT_BINARY_MARKERS = (
+    "bubblesort", "mergesort", "quicksort", "heapsort", "insertion_sort",
+    "selection_sort", "shell_sort", "radix", "sort",
+)
 
 
 def _norm(text: str) -> str:
@@ -97,7 +121,26 @@ def _add_aliases(found: set[str], text: str) -> None:
             found.add(TOKEN_MAP[token])
 
 
-def labels_from_config(cfg: dict) -> list[str]:
+def _binary_expects_sort(binary_name: str) -> bool:
+    stem = binary_name.lower()
+    if any(m in stem for m in NON_SORT_BINARY_MARKERS):
+        return False
+    return any(m in stem for m in SORT_BINARY_MARKERS)
+
+
+def _post_filter_labels(labels: set[str], binary_name: str) -> set[str]:
+    """Drop sort false-positives on non-sort corpus binaries."""
+    out = set(labels)
+    out.discard("Partition")
+    if not _binary_expects_sort(binary_name):
+        out -= SORT_SPECIFIC_LABELS
+        out.discard("Sort")
+    if "pthread" in binary_name.lower() or "mutex" in binary_name.lower():
+        out.discard("Thread")
+    return out
+
+
+def labels_from_config(cfg: dict, binary_name: str = "") -> list[str]:
     found: set[str] = set()
     for fn in cfg.get("functions", []):
         for det in fn.get("semanticDetections", []):
@@ -109,10 +152,12 @@ def labels_from_config(cfg: dict) -> list[str]:
                 continue
 
             if kind == "sort":
+                if conf < SORT_LABEL_MIN_CONF.get(label_l, MIN_CONFIDENCE["sort"]):
+                    continue
                 found.add("Sort")
                 _add_aliases(found, label)
             elif kind == "algorithm":
-                if label_l.startswith("std::") and conf < 0.95:
+                if label_l.startswith("std::"):
                     continue
                 _add_aliases(found, label)
             elif kind == "container":
@@ -128,13 +173,15 @@ def labels_from_config(cfg: dict) -> list[str]:
                     found.update(["RingBuffer", "CircularBuffer"])
             elif kind == "concurrency":
                 if "mutex" in label_l:
-                    found.add("Mutex")
+                    found.update(["Mutex", "Pthread", "Concurrency"])
                 if "thread" in label_l:
                     found.add("Thread")
                 if "atomic" in label_l:
                     found.add("Atomic")
                 if "spinlock" in label_l:
                     found.add("Spinlock")
+    if binary_name:
+        found = _post_filter_labels(found, binary_name)
     return sorted(found)
 
 
@@ -210,7 +257,7 @@ def decompile_one(
     if cfg_path is None:
         return False, []
     cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-    return True, labels_from_config(cfg)
+    return True, labels_from_config(cfg, binary.name)
 
 
 def _decompile_task(

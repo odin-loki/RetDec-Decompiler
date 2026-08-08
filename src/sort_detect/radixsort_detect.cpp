@@ -38,6 +38,8 @@
 #include "retdec/sort_detect/sort_detect.h"
 #include "retdec/ssa/ssa.h"
 
+#include <algorithm>
+
 namespace retdec {
 namespace sort_detect {
 
@@ -181,14 +183,24 @@ SortResult RadixsortDetector::detect(const ssa::SSAFunction& fn) const {
 
     float score = 0.0f;
 
-    // Zero element comparisons — strongest signal.
+    // Zero element comparisons — strongest signal for radix sort.
     int elemCmps = countComparisonInstrs(fn);
     if (elemCmps == 0)            score += 0.35f;
-    else if (elemCmps <= 2)       score += 0.15f; // partial credit
+    else                          return result; // comparison sorts are not radix
 
-    if (hasDigitExtraction(fn))   score += 0.25f;
-    if (hasHistogramAccumulation(fn)) score += 0.20f;
-    if (hasScatterPass(fn))       score += 0.20f;
+    const bool digit = hasDigitExtraction(fn);
+    const bool hist  = hasHistogramAccumulation(fn);
+    const bool prefix = hasPrefixSumPass(fn);
+    const bool scatter = hasScatterPass(fn);
+
+    if (digit)   score += 0.25f;
+    if (hist)    score += 0.20f;
+    if (prefix)  score += 0.10f;
+    if (scatter) score += 0.20f;
+
+    // Require at least histogram + scatter for a confident radix call.
+    if (!(hist && scatter))
+        score = std::min(score, 0.40f);
 
     result.confidence = score > 1.0f ? 1.0f : score;
 

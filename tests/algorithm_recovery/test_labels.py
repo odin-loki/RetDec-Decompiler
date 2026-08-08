@@ -83,12 +83,46 @@ def test_stl_algorithm_noise_filtered() -> None:
     assert "Transform" not in labels
 
 
+def test_non_sort_binary_filters_sort_labels() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "sort", "label": "radix sort", "confidence": 0.9},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "hash_table-gcc-O0")
+    assert "Sort" not in labels
+    assert "RadixSort" not in labels
+
+
+def test_mutex_adds_pthread_labels() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "concurrency", "label": "mutex", "confidence": 0.75},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "generated_pthread_mutex-gcc-O0")
+    assert "Mutex" in labels
+    assert "Pthread" in labels
+    assert "Concurrency" in labels
+    assert "Thread" not in labels
+
+
 def main() -> int:
     test_sort_detection()
     test_hash_table_container()
     test_concurrency()
     test_low_confidence_container_ignored()
     test_stl_algorithm_noise_filtered()
+    test_non_sort_binary_filters_sort_labels()
+    test_mutex_adds_pthread_labels()
     print("algorithm_recovery label tests: PASS")
     return 0
 
