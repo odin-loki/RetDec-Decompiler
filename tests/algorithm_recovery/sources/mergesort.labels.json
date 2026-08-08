@@ -1,0 +1,8 @@
+{
+  "algorithms": ["Mergesort", "Sort", "DivideAndConquer"],
+  "functions": {
+    "merge": ["Mergesort"],
+    "mergesort": ["Mergesort", "Sort", "DivideAndConquer"],
+    "main": []
+  }
+}

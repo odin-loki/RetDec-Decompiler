@@ -1,29 +1,25 @@
 # Internal backlog — see MASTER-UPGRADE-PLAN.md
 
-## Steps 1–26 (v1.0.0) — shipped
+## Shipped
 
-| Step | Task | State |
-|------|------|-------|
-| 1–26 | Foundations through SHIP | **v1.0.0** |
+| Version | Scope |
+|---------|-------|
+| v1.0.0 | Steps 1–26, Part 16 automation |
+| v1.1.0 | Steps 27–33 scaffolds (performance, rellic, LIEF, neural tiers 4–5) |
+| v1.2.0 | Step 10 corpus starter, step 8.4/8.8/20 neural, demo, crash corpus |
 
-## Part 16 automation — shipped in v1.0.0
+## v1.2.0 highlights
 
-Benchmark gate, doctor extensions, nightly report — all done.
+- 6-source algorithm recovery corpus (expand to 200+)
+- Semantic context in neural prompts
+- Model SHA verification + differential gate scaffold
+- Full `run_benchmarks.sh` pipeline
 
-## v1.1.0 post-ship scaffolds
+## Remaining human-led
 
-| # | Task | State |
-|---|------|-------|
-| 27 | Performance 11.1–11.4 | docs + flamegraph; parallel/cache flags; neural batch scaffold |
-| 28 | rellic evaluation | docs + `eval_rellic.sh` + `RETDEC_ENABLE_RELLIC` |
-| 29 | LIEF adoption | `LiefAdapter` stub + docs + `RETDEC_ENABLE_LIEF` |
-| 30 | Retypd | roadmap doc only |
-| 31 | SAILR | roadmap doc only |
-| 32 | Neural tiers 4–5 | `RETDEC_NEURAL_TIER_MAX=5`; compile gate |
-| 33 | LLVM migration | roadmap doc only |
-
-## Human blockers (unchanged)
-
-- Algorithm-recovery corpus (step 10) — needs 200+ binaries + labels
-- retdec-support regen (step 16) — needs toolchain farm
-- Full differential verification gate (step 20) — needs Triton/D-Helix
+| Item | Notes |
+|------|-------|
+| Corpus scale-up | Add sources until 200+ binaries |
+| retdec-support regen | Toolchain farm |
+| Triton/D-Helix differential | Replace stdout-compare gate |
+| rellic / LIEF / Retypd / SAILR / LLVM | Evaluation and migration |

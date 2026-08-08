@@ -1,0 +1,8 @@
+{
+  "algorithms": ["RingBuffer", "CircularBuffer"],
+  "functions": {
+    "rb_push": ["RingBuffer"],
+    "rb_pop": ["RingBuffer"],
+    "main": []
+  }
+}

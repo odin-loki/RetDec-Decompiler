@@ -1,4 +1,5 @@
 #include "retdec/neural/inference.h"
+#include "retdec/neural/model_verify.h"
 
 #include <algorithm>
 #include <memory>
@@ -27,7 +28,8 @@ const std::vector<MockRule>& mockRules() {
 
 class MockInference : public Inference {
 public:
-    bool loadModel(const std::string& /*ggufPath*/, int /*contextLen*/) override {
+    bool loadModel(const std::string& ggufPath, int /*contextLen*/) override {
+        if (!verifyModelSha256(ggufPath)) return false;
         loaded_ = true;
         return true;
     }

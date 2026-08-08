@@ -4,6 +4,7 @@
  */
 
 #include "retdec/neural/inference.h"
+#include "retdec/neural/model_verify.h"
 
 #include <mutex>
 #include <string>
@@ -33,6 +34,7 @@ void initBackend() {
 class LlamaInference : public Inference {
 public:
     bool loadModel(const std::string& ggufPath, int contextLen) override {
+        if (!verifyModelSha256(ggufPath)) return false;
         std::call_once(g_backendOnce, initBackend);
 
         unloadModel();

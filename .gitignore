@@ -87,8 +87,8 @@ __pycache__/
 *.pyc
 luac.out
 
-# Local build trees (not under /build/)
-/build-*/
+/tests/algorithm_recovery/corpus/
+!/tests/algorithm_recovery/corpus/.gitkeep
 keystone.zip
 llama.zip
 _license_preamble.txt

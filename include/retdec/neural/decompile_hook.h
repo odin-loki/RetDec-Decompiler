@@ -12,7 +12,7 @@
 
 namespace retdec::neural {
 
-/// Run tiers 1–3 refinement when RETDEC_NEURAL_REFINE is set and model path exists.
+/// Run neural refinement tiers when RETDEC_NEURAL_REFINE is set and model path exists.
 void maybeRefineDecompilerOutput(retdec::config::Config& config,
                                  std::string* outString);
 

@@ -1,0 +1,7 @@
+{
+  "algorithms": ["BubbleSort", "Sort"],
+  "functions": {
+    "bubble_sort": ["BubbleSort", "Sort"],
+    "main": []
+  }
+}

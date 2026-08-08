@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RetDec benchmark results",
+  "type": "object",
+  "required": ["generated_at", "git_sha", "metrics"],
+  "properties": {
+    "generated_at": { "type": "string" },
+    "git_sha": { "type": "string" },
+    "compare_tag": { "type": ["string", "null"] },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "decompilebench": {
+          "type": "object",
+          "properties": {
+            "syntax_valid_rate": { "type": "number" },
+            "recompile_success_rate": { "type": "number" }
+          }
+        },
+        "algorithm_recovery": {
+          "type": "object",
+          "properties": {
+            "mean_f1": { "type": "number" }
+          }
+        }
+      }
+    },
+    "decompilebench": { "type": "object" },
+    "algorithm_recovery": { "type": "object" }
+  }
+}

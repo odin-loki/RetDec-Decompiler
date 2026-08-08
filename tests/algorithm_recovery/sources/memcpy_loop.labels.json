@@ -1,0 +1,7 @@
+{
+  "algorithms": ["Memcpy", "Memmove", "Copy"],
+  "functions": {
+    "copy_bytes": ["Memcpy", "Copy"],
+    "main": []
+  }
+}

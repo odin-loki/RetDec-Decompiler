@@ -4,6 +4,22 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ---
 
+## [1.2.0] — 2026-08-08
+
+### Added
+
+- **Algorithm recovery corpus (step 10):** 6 labelled C sources, `build_algorithm_corpus.sh`, ground-truth generator, starter corpus pipeline.
+- **Neural context (step 8.4):** semantic detections serialized into refinement prompts from `config.functions`.
+- **Model provenance (step 8.8):** `RETDEC_NEURAL_MODEL_SHA256` verification at load.
+- **Differential gate scaffold (step 20):** `RETDEC_NEURAL_DIFF_GATE=1` compares stdout of compiled original vs refined.
+- **Demo:** `scripts/demo.sh` (Part 12.5) with offline assertion and benchmark tables.
+- **Crash corpus:** `tests/crash_corpus/` + `scripts/ingest_fuzz_crash.sh` (Part 10.3).
+- **DecompileBench schema:** `tests/decompilebench/schema.json`.
+
+### Changed
+
+- `run_benchmarks.sh` builds corpus, runs DecompileBench and algorithm-recovery metrics when decompiler available.
+
 ## [1.1.0] — 2026-08-08
 
 ### Added

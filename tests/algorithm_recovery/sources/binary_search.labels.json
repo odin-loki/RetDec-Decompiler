@@ -1,0 +1,7 @@
+{
+  "algorithms": ["BinarySearch", "Search"],
+  "functions": {
+    "binary_search": ["BinarySearch", "Search"],
+    "main": []
+  }
+}

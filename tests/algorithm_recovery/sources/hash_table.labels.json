@@ -1,0 +1,9 @@
+{
+  "algorithms": ["HashTable", "OpenAddressing"],
+  "functions": {
+    "hash_key": ["HashTable"],
+    "ht_insert": ["HashTable", "OpenAddressing"],
+    "ht_lookup": ["HashTable"],
+    "main": []
+  }
+}

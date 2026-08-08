@@ -44,6 +44,49 @@ bool tryCompileCheck(const std::string& sourceC)
     return rc == 0;
 }
 
+bool tryDifferentialCheck(const std::string& originalC, const std::string& refinedC)
+{
+    if (!std::getenv("RETDEC_NEURAL_DIFF_GATE")
+        || std::getenv("RETDEC_NEURAL_DIFF_GATE")[0] == '0')
+        return true;
+
+    namespace fs = std::filesystem;
+    const auto dir = fs::temp_directory_path() / "retdec_diff_gate";
+    fs::create_directories(dir);
+
+    const fs::path origC = dir / "orig.c";
+    const fs::path refC  = dir / "refined.c";
+    const fs::path origBin = dir / "orig.out";
+    const fs::path refBin  = dir / "refined.out";
+
+    std::ofstream(origC) << originalC;
+    std::ofstream(refC) << refinedC;
+
+    const char* cc = std::getenv("RETDEC_NEURAL_GATE_CC");
+    if (!cc || !cc[0]) cc = "gcc";
+
+    const std::string compileOrig = std::string(cc) + " -O2 -o \"" + origBin.string()
+        + "\" \"" + origC.string() + "\"";
+    const std::string compileRef = std::string(cc) + " -O2 -o \"" + refBin.string()
+        + "\" \"" + refC.string() + "\"";
+
+    if (std::system(compileOrig.c_str()) != 0) return false;
+    if (std::system(compileRef.c_str()) != 0) return false;
+
+    auto runCapture = [](const fs::path& bin) -> std::string {
+        const std::string cmd = "\"" + bin.string() + "\"";
+        FILE* pipe = popen(cmd.c_str(), "r");
+        if (!pipe) return {};
+        char buf[256];
+        std::string out;
+        while (fgets(buf, sizeof(buf), pipe)) out += buf;
+        pclose(pipe);
+        return out;
+    };
+
+    return runCapture(origBin) == runCapture(refBin);
+}
+
 } // namespace
 
 bool GateReport::allPassed() const {
@@ -76,7 +119,11 @@ GateReport runVerificationGates(const std::string& originalC,
             report.compile = GateResult::FailCompile;
     }
 
-    // Differential gate: stub until Triton/D-Helix tooling (step 20).
+    if (report.compile == GateResult::Pass) {
+        if (!tryDifferentialCheck(originalC, refinedC))
+            report.differential = GateResult::FailDifferential;
+    }
+
     return report;
 }
 

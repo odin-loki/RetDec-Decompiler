@@ -2,13 +2,13 @@
 
 Architecture for offline, verified neural post-processing (MASTER-UPGRADE-PLAN Phase 4).
 
-## Status (v1.1.0)
+## Status (v1.2.0)
 
 - `retdec::neural` library with mock + optional llama.cpp backend (`RETDEC_ENABLE_LLAMACPP`).
-- Decompile hook: `RETDEC_NEURAL_REFINE=1`, `RETDEC_NEURAL_MODEL=/path/model.gguf`.
+- Decompile hook feeds **semantic detection JSON** from `config.functions` into prompts (step 8.4).
+- Model SHA verified at load when `RETDEC_NEURAL_MODEL_SHA256` is set (step 8.8).
 - Tiers 1–5 via `RETDEC_NEURAL_TIER_MAX` (default 3).
-- Batched refinement scaffold: `RETDEC_NEURAL_BATCH=1`, `BatchRefiner`.
-- Compile gate: `RETDEC_NEURAL_GATE_CC` (default `gcc`/`cc`).
+- Compile gate + optional differential gate (`RETDEC_NEURAL_DIFF_GATE=1`).
 
 ## Artefacts
 
