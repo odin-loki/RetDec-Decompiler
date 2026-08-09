@@ -310,6 +310,56 @@ def test_ring_buffer_drops_binary_search_noise() -> None:
     assert "Search" not in labels
 
 
+def test_atomic_adds_concurrency() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "concurrency", "label": "atomic", "confidence": 0.75},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "generated_atomic_counter-gcc-O0", stem_fallback=False)
+    assert "Atomic" in labels
+    assert "Concurrency" in labels
+
+
+def test_linear_search_strips_memcpy_noise() -> None:
+    import extract_decompiler_predictions as edp
+
+    edp._STEM_HINTS = None
+    edp.load_stem_hints(ROOT / "tests/algorithm_recovery/sources")
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "algorithm", "label": "linear_search", "confidence": 0.96},
+                    {"kind": "algorithm", "label": "std::copy", "confidence": 0.8},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "generated_linear_search-gcc-O0", stem_fallback=False)
+    assert labels == ["LinearSearch", "Search"]
+
+
+def test_mergesort_strips_graph_noise() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "sort", "label": "mergesort (std::stable_sort)", "confidence": 0.8},
+                    {"kind": "algorithm", "label": "dfs", "confidence": 0.8},
+                    {"kind": "algorithm", "label": "graphtraversal", "confidence": 0.8},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "mergesort-clang-O0", stem_fallback=False)
+    assert labels == ["DivideAndConquer", "Mergesort", "Sort"]
+
+
 def main() -> int:
     test_sort_detection()
     test_hash_table_container()
@@ -329,6 +379,9 @@ def main() -> int:
     test_stem_fallback_fills_partial_overlap()
     test_lower_bound_stem_rules()
     test_ring_buffer_drops_binary_search_noise()
+    test_atomic_adds_concurrency()
+    test_linear_search_strips_memcpy_noise()
+    test_mergesort_strips_graph_noise()
     test_binary_search_stripped_on_sort_binary()
     print("algorithm_recovery label tests: PASS")
     return 0

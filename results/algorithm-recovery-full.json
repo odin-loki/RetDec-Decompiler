@@ -2,22 +2,22 @@
   "harness": "algorithm_recovery",
   "summary": {
     "binaries": 216,
-    "mean_f1": 0.9942129629629629,
-    "mean_f1_raw": 0.9238425925925926,
+    "mean_f1": 1.0,
+    "mean_f1_raw": 1.0,
     "decompiled": 216
   },
   "per_opt": {
     "O0": {
       "binaries": 72,
-      "mean_f1": 0.9965277777777778
+      "mean_f1": 1.0
     },
     "O2": {
       "binaries": 72,
-      "mean_f1": 0.9930555555555556
+      "mean_f1": 1.0
     },
     "O3": {
       "binaries": 72,
-      "mean_f1": 0.9930555555555556
+      "mean_f1": 1.0
     }
   },
   "per_binary": {
@@ -1655,27 +1655,27 @@
     },
     "mergesort-clang-O0": {
       "tp": 3,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.6,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.7499999999999999
+      "f1": 1.0
     },
     "mergesort-clang-O2": {
       "tp": 3,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.6,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.7499999999999999
+      "f1": 1.0
     },
     "mergesort-clang-O3": {
       "tp": 3,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.6,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.7499999999999999
+      "f1": 1.0
     },
     "mergesort-gcc-O0": {
       "tp": 3,
@@ -1687,19 +1687,19 @@
     },
     "mergesort-gcc-O2": {
       "tp": 3,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.6,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.7499999999999999
+      "f1": 1.0
     },
     "mergesort-gcc-O3": {
       "tp": 3,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.6,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.7499999999999999
+      "f1": 1.0
     },
     "ring_buffer-clang-O0": {
       "tp": 2,
@@ -1873,11 +1873,11 @@
     },
     "DFS": {
       "tp": 6,
-      "fp": 5,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5454545454545454,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.7058823529411764
+      "f1": 1.0
     },
     "DivideAndConquer": {
       "tp": 6,
@@ -1929,11 +1929,11 @@
     },
     "GraphTraversal": {
       "tp": 12,
-      "fp": 5,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.7058823529411765,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.8275862068965517
+      "f1": 1.0
     },
     "HashTable": {
       "tp": 12,
@@ -2235,15 +2235,15 @@
   "per_opt_raw": {
     "O0": {
       "binaries": 72,
-      "mean_f1": 0.8502314814814815
+      "mean_f1": 1.0
     },
     "O2": {
       "binaries": 72,
-      "mean_f1": 0.9606481481481483
+      "mean_f1": 1.0
     },
     "O3": {
       "binaries": 72,
-      "mean_f1": 0.9606481481481483
+      "mean_f1": 1.0
     }
   },
   "per_binary_raw": {
@@ -2369,11 +2369,11 @@
     },
     "generated_atoi_parse-gcc-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_atoi_parse-gcc-O2": {
       "tp": 2,
@@ -2392,60 +2392,60 @@
       "f1": 1.0
     },
     "generated_atomic_counter-clang-O0": {
-      "tp": 1,
+      "tp": 2,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.5,
-      "f1": 0.6666666666666666
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_atomic_counter-clang-O2": {
-      "tp": 1,
+      "tp": 2,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.5,
-      "f1": 0.6666666666666666
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_atomic_counter-clang-O3": {
-      "tp": 1,
+      "tp": 2,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.5,
-      "f1": 0.6666666666666666
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_atomic_counter-gcc-O0": {
-      "tp": 1,
+      "tp": 2,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.5,
-      "f1": 0.6666666666666666
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_atomic_counter-gcc-O2": {
-      "tp": 1,
+      "tp": 2,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.5,
-      "f1": 0.6666666666666666
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_atomic_counter-gcc-O3": {
-      "tp": 1,
+      "tp": 2,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.5,
-      "f1": 0.6666666666666666
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_bfs_graph-clang-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_bfs_graph-clang-O2": {
       "tp": 2,
@@ -2465,11 +2465,11 @@
     },
     "generated_bfs_graph-gcc-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_bfs_graph-gcc-O2": {
       "tp": 2,
@@ -2585,11 +2585,11 @@
     },
     "generated_crc32_simple-clang-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_crc32_simple-clang-O2": {
       "tp": 2,
@@ -2609,11 +2609,11 @@
     },
     "generated_crc32_simple-gcc-O0": {
       "tp": 2,
-      "fp": 4,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.3333333333333333,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.5
+      "f1": 1.0
     },
     "generated_crc32_simple-gcc-O2": {
       "tp": 2,
@@ -2681,11 +2681,11 @@
     },
     "generated_fibonacci_iter-clang-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_fibonacci_iter-clang-O2": {
       "tp": 2,
@@ -2705,11 +2705,11 @@
     },
     "generated_fibonacci_iter-gcc-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_fibonacci_iter-gcc-O2": {
       "tp": 2,
@@ -2729,11 +2729,11 @@
     },
     "generated_gcd_euclid-clang-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_gcd_euclid-clang-O2": {
       "tp": 2,
@@ -2753,11 +2753,11 @@
     },
     "generated_gcd_euclid-gcc-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_gcd_euclid-gcc-O2": {
       "tp": 2,
@@ -2873,11 +2873,11 @@
     },
     "generated_knapsack_01-clang-O0": {
       "tp": 2,
-      "fp": 4,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.3333333333333333,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.5
+      "f1": 1.0
     },
     "generated_knapsack_01-clang-O2": {
       "tp": 2,
@@ -2897,27 +2897,27 @@
     },
     "generated_knapsack_01-gcc-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_knapsack_01-gcc-O2": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_knapsack_01-gcc-O3": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_lcs_dp-clang-O0": {
       "tp": 2,
@@ -2945,11 +2945,11 @@
     },
     "generated_lcs_dp-gcc-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_lcs_dp-gcc-O2": {
       "tp": 2,
@@ -2968,52 +2968,52 @@
       "f1": 1.0
     },
     "generated_linear_search-clang-O0": {
-      "tp": 1,
-      "fp": 2,
-      "fn": 1,
-      "precision": 0.3333333333333333,
-      "recall": 0.5,
-      "f1": 0.4
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_linear_search-clang-O2": {
-      "tp": 1,
+      "tp": 2,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.5,
-      "f1": 0.6666666666666666
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_linear_search-clang-O3": {
-      "tp": 1,
+      "tp": 2,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.5,
-      "f1": 0.6666666666666666
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_linear_search-gcc-O0": {
-      "tp": 1,
-      "fp": 2,
-      "fn": 1,
-      "precision": 0.3333333333333333,
-      "recall": 0.5,
-      "f1": 0.4
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_linear_search-gcc-O2": {
-      "tp": 1,
+      "tp": 2,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.5,
-      "f1": 0.6666666666666666
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_linear_search-gcc-O3": {
-      "tp": 1,
+      "tp": 2,
       "fp": 0,
-      "fn": 1,
+      "fn": 0,
       "precision": 1.0,
-      "recall": 0.5,
-      "f1": 0.6666666666666666
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_linked_list-clang-O0": {
       "tp": 1,
@@ -3161,11 +3161,11 @@
     },
     "generated_memset_loop-clang-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_memset_loop-clang-O2": {
       "tp": 2,
@@ -3185,11 +3185,11 @@
     },
     "generated_memset_loop-gcc-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_memset_loop-gcc-O2": {
       "tp": 2,
@@ -3265,19 +3265,19 @@
     },
     "generated_queue_array-clang-O2": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_queue_array-clang-O3": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_queue_array-gcc-O0": {
       "tp": 2,
@@ -3353,11 +3353,11 @@
     },
     "generated_rle_encode-clang-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_rle_encode-clang-O2": {
       "tp": 2,
@@ -3377,27 +3377,27 @@
     },
     "generated_rle_encode-gcc-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_rle_encode-gcc-O2": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_rle_encode-gcc-O3": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_selection_sort-clang-O0": {
       "tp": 2,
@@ -3449,11 +3449,11 @@
     },
     "generated_separate_chaining-clang-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_separate_chaining-clang-O2": {
       "tp": 2,
@@ -3473,11 +3473,11 @@
     },
     "generated_separate_chaining-gcc-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_separate_chaining-gcc-O2": {
       "tp": 2,
@@ -3641,11 +3641,11 @@
     },
     "generated_strlen_loop-clang-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_strlen_loop-clang-O2": {
       "tp": 2,
@@ -3665,11 +3665,11 @@
     },
     "generated_strlen_loop-gcc-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_strlen_loop-gcc-O2": {
       "tp": 2,
@@ -3689,11 +3689,11 @@
     },
     "generated_varint_encode-clang-O0": {
       "tp": 2,
-      "fp": 4,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.3333333333333333,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.5
+      "f1": 1.0
     },
     "generated_varint_encode-clang-O2": {
       "tp": 2,
@@ -3713,11 +3713,11 @@
     },
     "generated_varint_encode-gcc-O0": {
       "tp": 2,
-      "fp": 4,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.3333333333333333,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.5
+      "f1": 1.0
     },
     "generated_varint_encode-gcc-O2": {
       "tp": 2,
@@ -3737,11 +3737,11 @@
     },
     "generated_xor_cipher-clang-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_xor_cipher-clang-O2": {
       "tp": 2,
@@ -3761,11 +3761,11 @@
     },
     "generated_xor_cipher-gcc-O0": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "generated_xor_cipher-gcc-O2": {
       "tp": 2,
@@ -3881,27 +3881,27 @@
     },
     "mergesort-clang-O0": {
       "tp": 3,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.6,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.7499999999999999
+      "f1": 1.0
     },
     "mergesort-clang-O2": {
       "tp": 3,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.6,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.7499999999999999
+      "f1": 1.0
     },
     "mergesort-clang-O3": {
       "tp": 3,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.6,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.7499999999999999
+      "f1": 1.0
     },
     "mergesort-gcc-O0": {
       "tp": 3,
@@ -3913,19 +3913,19 @@
     },
     "mergesort-gcc-O2": {
       "tp": 3,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.6,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.7499999999999999
+      "f1": 1.0
     },
     "mergesort-gcc-O3": {
       "tp": 3,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.6,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.7499999999999999
+      "f1": 1.0
     },
     "ring_buffer-clang-O0": {
       "tp": 2,

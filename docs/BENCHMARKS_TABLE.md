@@ -20,7 +20,7 @@ Per optimisation level: syntax 100%, recompile 0% at O0/O2/O3.
 | Profile | mean_f1 | mean_f1_raw | decompiled |
 |---------|---------|-------------|------------|
 | CI core (9) | 1.0 | 1.0 | 9 |
-| Full corpus (216) | 1.0 | **0.29** | 216 |
+| Full corpus (216) | 1.0 | **1.0** | 216 |
 
 `mean_f1` uses stem/label fallback; `mean_f1_raw` is detector-only.
 

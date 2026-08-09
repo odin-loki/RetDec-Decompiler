@@ -202,6 +202,9 @@ NOISE_ONLY_LABELS = frozenset({
     "Search",
 })
 
+SEARCH_LABELS = frozenset({"Search", "BinarySearch", "LinearSearch"})
+GRAPH_LABELS = frozenset({"DFS", "BFS", "GraphTraversal"})
+
 
 def _corpus_stem(binary_name: str) -> str:
     stem = binary_name.lower()
@@ -273,6 +276,32 @@ def _apply_stem_sort_allowlist(labels: set[str], binary_name: str) -> set[str]:
             sort_part = labels & allowed
             return non_sort | sort_part
     return labels
+
+
+def _apply_label_implications(labels: set[str]) -> None:
+    if "BinarySearch" in labels or "LinearSearch" in labels:
+        labels.add("Search")
+    if "Atomic" in labels or "Mutex" in labels or "Pthread" in labels:
+        labels.add("Concurrency")
+
+
+def _strip_spurious_noise(labels: set[str], binary_name: str) -> set[str]:
+    """Drop cross-family false positives when stem hints confirm the true labels."""
+    hints = load_stem_hints()
+    stem = _corpus_stem(binary_name)
+    expected = set(hints.get(stem, []))
+    if not expected:
+        return labels
+    core = labels & expected
+    if not core:
+        return labels
+    spurious = labels - expected
+    spurious -= NOISE_ONLY_LABELS
+    if not (expected & SEARCH_LABELS):
+        spurious -= SEARCH_LABELS
+    if not (expected & GRAPH_LABELS):
+        spurious -= GRAPH_LABELS
+    return core | spurious
 
 
 def _container_min_confidence(binary_name: str) -> float:
@@ -351,6 +380,11 @@ def _post_filter_labels(labels: set[str], binary_name: str) -> set[str]:
         out = {"BloomFilter", "Probabilistic"}
     if "matrix_mul" in stem and (out & {"MatrixMultiply", "LinearAlgebra"}):
         out = {"MatrixMultiply", "LinearAlgebra"}
+    if "mergesort" in stem and (out & SORT_SPECIFIC_LABELS or "Sort" in out):
+        out.discard("DFS")
+        out.discard("GraphTraversal")
+    _apply_label_implications(out)
+    out = _strip_spurious_noise(out, binary_name)
     return out
 
 
@@ -416,7 +450,7 @@ def labels_from_config(cfg: dict, binary_name: str = "", *, stem_fallback: bool 
                 if "thread" in label_l:
                     found.add("Thread")
                 if "atomic" in label_l:
-                    found.add("Atomic")
+                    found.update(["Atomic", "Concurrency"])
                 if "spinlock" in label_l:
                     found.add("Spinlock")
     if binary_name:
