@@ -383,6 +383,20 @@ enum class IdiomKind : uint8_t {
     Fibonacci,
     Lcs,
     Memset,
+    Popcount,
+    BloomFilter,
+    MatrixMultiply,
+    LinkedList,
+    XorCipher,
+    LowerBound,
+    LinearSearch,
+    BinarySearch,
+    Stack,
+    Queue,
+    ShellSort,
+    MemcpyLoop,
+    RingBuffer,
+    HashTableChaining,
 };
 
 struct IdiomResult {

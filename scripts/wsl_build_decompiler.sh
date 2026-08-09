@@ -34,6 +34,7 @@ cmake --preset core-debug \
 JOBS="$(nproc 2>/dev/null || echo 4)"
 echo "==> Build retdec-decompiler (-j${JOBS}) — expect 30-90 minutes on first run"
 cmake --build build/linux --target retdec-decompiler --parallel "${JOBS}"
+cmake --install build/linux >/dev/null 2>&1 || true
 
 DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
 if [[ -z "${DEC}" ]]; then

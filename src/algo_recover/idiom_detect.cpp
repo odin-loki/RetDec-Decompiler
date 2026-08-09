@@ -158,6 +158,20 @@ std::string IdiomResult::primaryLabel() const noexcept
     case IdiomKind::Fibonacci: return "Fibonacci";
     case IdiomKind::Lcs:    return "LCS";
     case IdiomKind::Memset: return "Memset";
+    case IdiomKind::Popcount: return "Popcount";
+    case IdiomKind::BloomFilter: return "BloomFilter";
+    case IdiomKind::MatrixMultiply: return "MatrixMultiply";
+    case IdiomKind::LinkedList: return "LinkedList";
+    case IdiomKind::XorCipher: return "XOR";
+    case IdiomKind::LowerBound: return "LowerBound";
+    case IdiomKind::LinearSearch: return "LinearSearch";
+    case IdiomKind::BinarySearch: return "BinarySearch";
+    case IdiomKind::Stack: return "Stack";
+    case IdiomKind::Queue: return "Queue";
+    case IdiomKind::ShellSort: return "ShellSort";
+    case IdiomKind::MemcpyLoop: return "Memcpy";
+    case IdiomKind::RingBuffer: return "RingBuffer";
+    case IdiomKind::HashTableChaining: return "HashTable";
     default:                return "Unknown";
     }
 }
@@ -191,6 +205,34 @@ std::vector<std::string> IdiomResult::exportLabels() const
         return {"LCS", "DynamicProgramming"};
     case IdiomKind::Memset:
         return {"Memset", "Memory"};
+    case IdiomKind::Popcount:
+        return {"Popcount", "BitManipulation"};
+    case IdiomKind::BloomFilter:
+        return {"BloomFilter", "Probabilistic"};
+    case IdiomKind::MatrixMultiply:
+        return {"MatrixMultiply", "LinearAlgebra"};
+    case IdiomKind::LinkedList:
+        return {"LinkedList"};
+    case IdiomKind::XorCipher:
+        return {"XOR", "Cipher"};
+    case IdiomKind::LowerBound:
+        return {"LowerBound", "BinarySearch", "Search"};
+    case IdiomKind::LinearSearch:
+        return {"LinearSearch", "Search"};
+    case IdiomKind::BinarySearch:
+        return {"BinarySearch", "Search"};
+    case IdiomKind::Stack:
+        return {"Stack", "LIFO"};
+    case IdiomKind::Queue:
+        return {"Queue", "FIFO"};
+    case IdiomKind::ShellSort:
+        return {"ShellSort", "Sort"};
+    case IdiomKind::MemcpyLoop:
+        return {"Memcpy", "Copy", "Memmove"};
+    case IdiomKind::RingBuffer:
+        return {"RingBuffer", "CircularBuffer"};
+    case IdiomKind::HashTableChaining:
+        return {"HashTable", "Chaining"};
     default:
         return {};
     }

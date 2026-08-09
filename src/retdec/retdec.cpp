@@ -816,6 +816,10 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 				}();
 				analysis::augmentIdiomsFromInputBinary(
 				    config.parameters.getInputFile(), anchorFn, imap);
+				analysis::augmentSortsFromInputBinary(
+				    config.parameters.getInputFile(), anchorFn, dm);
+				analysis::augmentContainersFromInputBinary(
+				    config.parameters.getInputFile(), anchorFn, cmap);
 				analysis::augmentConcurrencyFromInputBinary(
 				    config.parameters.getInputFile(), anchorFn, cm);
 

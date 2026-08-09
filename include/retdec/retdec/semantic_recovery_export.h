@@ -51,6 +51,16 @@ void augmentIdiomsFromInputBinary(
 		const std::string& anchorFn,
 		std::vector<std::pair<std::string, algo_recover::IdiomResult>>& idioms);
 
+void augmentSortsFromInputBinary(
+		const std::string& inputBinaryPath,
+		const std::string& anchorFn,
+		sort_detect::SortDetector::DetectionMap& sorts);
+
+void augmentContainersFromInputBinary(
+		const std::string& inputBinaryPath,
+		const std::string& anchorFn,
+		container_detect::ContainerDetector::DetectionMap& containers);
+
 void augmentConcurrencyFromInputBinary(
 		const std::string& inputBinaryPath,
 		const std::string& anchorFn,
