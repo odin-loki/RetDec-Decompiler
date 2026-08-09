@@ -10,7 +10,7 @@
     },
     "algorithm_recovery": {
       "mean_f1": 1.0,
-      "mean_f1_raw": 0.6253858024691359
+      "mean_f1_raw": 0.9238425925925926
     }
   },
   "thresholds": {

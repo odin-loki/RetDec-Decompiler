@@ -24,9 +24,9 @@ Predictions come from decompiler `.config.json` → `semanticDetections` (sort, 
 ## Gates
 
 - CI core (9 binaries): `--min-mean-f1=0.95` via `run_algorithm_recovery_ci.sh`
-- Full corpus: `--min-mean-f1=0.95` via `run_algorithm_recovery_full.sh`
+- Full corpus: `--min-mean-f1=0.95`, `--min-mean-f1-raw=0.85` via `run_algorithm_recovery_full.sh`
 
-Regression baselines: `results/baseline-algorithm-recovery.json`
+Regression baselines: `results/baseline-algorithm-recovery.json` (v2.0.18 full corpus `mean_f1_raw` ≈ 0.92)
 
 ## Honest reporting
 

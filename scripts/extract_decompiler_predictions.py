@@ -344,6 +344,13 @@ def _post_filter_labels(labels: set[str], binary_name: str) -> set[str]:
         "Memcpy" in out or "Copy" in out
     ):
         out.add("Memmove")
+    stem = binary_name.lower()
+    if "bitcount" in stem and (out & {"Popcount", "BitManipulation"}):
+        out = {"Popcount", "BitManipulation"}
+    if "bloom_filter" in stem and "BloomFilter" in out:
+        out = {"BloomFilter", "Probabilistic"}
+    if "matrix_mul" in stem and (out & {"MatrixMultiply", "LinearAlgebra"}):
+        out = {"MatrixMultiply", "LinearAlgebra"}
     return out
 
 

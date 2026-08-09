@@ -8,7 +8,7 @@ Last updated: v2.0.14+ (measurement gap closure)
 |------|--------|-----------|
 | CI smoke + ctest | Done | `ci-smoke.yml`, `ctest-linux.yml` |
 | DecompileBench | **Partial** | Harness + CI-core stand-in corpus; OSS-Fuzz full corpus not wired |
-| Algorithm recovery | Done (caveat) | F1≈0.98 with fallback; **mean_f1_raw≈0.61** on full corpus (v2.0.17) |
+| Algorithm recovery | Done (caveat) | F1≈0.99 with fallback; **mean_f1_raw≈0.92** on full corpus (v2.0.18) |
 | Neural refinement | Done | tiers 1–5, gates, llama.cpp pin, opt-in via env |
 | Licensing | Done | AGPL + commercial, doctor checks |
 | Fuzz / sanitizers | Done | `sanitizers.yml`, `tests/crash_corpus/` |
