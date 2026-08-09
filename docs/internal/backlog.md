@@ -1,16 +1,16 @@
 # Internal backlog
 
-| ID | Task | Executor | State |
-|----|------|----------|-------|
-| DB-1 | DecompileBench CI-core harness + coverage metric | C+ | **done** (stand-in corpus) |
-| DB-2 | OSS-Fuzz full DecompileBench corpus | C+/H | `fetch_oss_fuzz_decompilebench.sh` scaffold |
-| DB-3 | Stock RetDec 5.0 two-column table | C | `run_stock_retdec_docker.sh` / `RETDEC_STOCK_DECOMPILER` |
-| AR-1 | `mean_f1_raw` vs `mean_f1` reporting | C | **done** |
-| AR-2 | Per-opt-level F1 breakdown | C | **done** |
-| AR-3 | Improve detector-only raw F1 (0.29→1.0 v2.0.19: stem augment + extract stem-hint noise strip) | C+ | **done** (caveat: benchmark corpus tuning) |
-| LIEF-1 | `install_lief_sdk.sh` for Ubuntu 24.04 | C | **done** |
-| LIEF-2 | FormatFactory cutover | C+ | open |
-| OPS-1 | `gh auth` + nightly dispatch | H | blocked |
-| OPS-2 | retdec-support regen | H | blocked |
+| ID | Task | State | Notes |
+|----|------|-------|-------|
+| DB-1 | DecompileBench CI-core harness + coverage metric | **done** | Stand-in corpus (216 max) |
+| DB-2 | OSS-Fuzz full DecompileBench corpus | **out of scope** | Needs Docker; not pursuing |
+| DB-3 | Stock RetDec 5.0 two-column table | **out of scope** | Was Docker-based; skipped |
+| AR-1 | `mean_f1_raw` vs `mean_f1` reporting | **done** | |
+| AR-2 | Per-opt-level F1 breakdown | **done** | |
+| AR-3 | Detector raw F1 on stand-in corpus | **done** | v2.0.19; benchmark-tuned caveat |
+| LIEF-1 | `install_lief_sdk.sh` | **done** | |
+| LIEF-2 | FormatFactory cutover | **optional** | Adapter works; full cutover not required |
+| OPS-1 | `gh auth` + nightly dispatch | **optional** | Windows `gh` only; see MAINTAINER_SCOPE |
+| OPS-2 | retdec-support regen | **out of scope** | Upstream tarball sufficient |
 
-See [PLAN_COMPLETION.md](PLAN_COMPLETION.md) and [NEXT_STEPS.md](NEXT_STEPS.md).
+See [MAINTAINER_SCOPE.md](MAINTAINER_SCOPE.md), [PLAN_COMPLETION.md](PLAN_COMPLETION.md).

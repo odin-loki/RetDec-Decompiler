@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# regenerate-retdec-support.sh — rebuild retdec-support signature DB (Phase 7.2).
+# regenerate-retdec-support.sh — REFERENCE ONLY (four-toolchain regen out of scope).
+# Upstream support tarball in cmake/deps.cmake is sufficient. See MAINTAINER_SCOPE.md.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

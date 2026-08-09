@@ -8,7 +8,7 @@
 
 | Metric | Fork | Stock RetDec 5.0 | Baseline |
 |--------|------|------------------|----------|
-| syntax_valid_rate | 1.0 | — | 1.0 |
+| syntax_valid_rate | 1.0 | — (not compared) | 1.0 |
 | recompile_success_rate | 0.0 | — | 0.0 |
 | coverage_equivalence_rate | — | — | — |
 | mean_wall_s | 1.99 | — | — |
@@ -23,5 +23,7 @@ Per optimisation level: syntax 100%, recompile 0% at O0/O2/O3.
 | Full corpus (216) | 1.0 | **1.0** | 216 |
 
 `mean_f1` uses stem/label fallback; `mean_f1_raw` is detector-only.
+
+Stock RetDec column intentionally blank — Docker/stock compare out of scope ([MAINTAINER_SCOPE.md](internal/MAINTAINER_SCOPE.md)).
 
 _Regenerate: `bash scripts/regenerate_benchmark_tables.sh`_

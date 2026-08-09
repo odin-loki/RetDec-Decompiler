@@ -3,11 +3,10 @@
 Measures pseudocode quality: syntax validity, recompile success, coverage equivalence,
 wall time, and peak RSS.
 
-## Corpus
+## Corpus (this fork)
 
-**Full paper corpus** (23,400 OSS-Fuzz functions) requires Docker + [Jennieett/DecompileBench](https://github.com/Jennieett/DecompileBench) setup — not yet wired in-tree.
-
-**Local stand-in** (reproducible, with source for coverage checks):
+We use the **algorithm-recovery stand-in** only — not the paper's OSS-Fuzz corpus
+(Docker required upstream; **out of scope** here).
 
 ```bash
 bash scripts/fetch_decompilebench_corpus.sh --profile ci-core   # 9 binaries
@@ -20,7 +19,7 @@ Staged under `tests/decompilebench/corpus/` (symlinks to algorithm-recovery bina
 
 ```bash
 bash scripts/run_benchmarks.sh --profile ci-core --compare 2026-08
-bash scripts/run_benchmarks.sh --profile ci-core --fetch-stock   # two-column vs RetDec v5.0
+bash scripts/run_benchmarks.sh --profile full --compare 2026-08
 ```
 
 Direct runner:
@@ -44,9 +43,7 @@ python3 tests/decompilebench/runner.py \
 
 ## Stock RetDec 5.0 comparison
 
-```bash
-bash scripts/fetch_stock_retdec.sh
-bash scripts/run_benchmarks.sh --profile ci-core --fetch-stock
-```
+**Not maintained.** Fork-vs-stock two-column tables leave stock as `—`.
+`run_stock_retdec_docker.sh` and `fetch_stock_retdec.sh` exist for reference only.
 
-Results include `stock_retdec` and `compare.fork_vs_stock` in `results/<sha>.json`.
+See [docs/internal/MAINTAINER_SCOPE.md](../../docs/internal/MAINTAINER_SCOPE.md).

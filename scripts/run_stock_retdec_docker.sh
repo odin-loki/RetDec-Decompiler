@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# run_stock_retdec_docker.sh — Run DecompileBench with stock RetDec v5.0 via Docker.
+# run_stock_retdec_docker.sh — REFERENCE ONLY (Docker out of scope for this fork).
+# See docs/internal/MAINTAINER_SCOPE.md — do not use unless you explicitly want Docker.
 # Usage: bash scripts/run_stock_retdec_docker.sh [--profile ci-core|full] [--tag v5.0]
 set -euo pipefail
 

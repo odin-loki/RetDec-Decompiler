@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# fetch_oss_fuzz_decompilebench.sh — Scaffold for arXiv 2505.11340 OSS-Fuzz corpus.
-#
-# Full setup requires Docker, oss-fuzz checkout, and patched base images per:
-#   https://github.com/Jennieett/DecompileBench
+# fetch_oss_fuzz_decompilebench.sh — REFERENCE ONLY (OSS-Fuzz corpus not used; no Docker).
+# See docs/internal/MAINTAINER_SCOPE.md and tests/decompilebench/OSS_FUZZ_SETUP.md
 #
 # Usage: bash scripts/fetch_oss_fuzz_decompilebench.sh [--clone-only]
 set -euo pipefail

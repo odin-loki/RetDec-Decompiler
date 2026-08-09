@@ -1,7 +1,10 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Trigger algorithm-recovery-nightly GitHub workflow (requires gh auth).
+  Trigger algorithm-recovery-nightly GitHub workflow (requires gh auth on Windows).
+
+  This is the only supported path for GitHub CLI — do not use WSL gh in parallel.
+  See docs/internal/MAINTAINER_SCOPE.md
 
 .EXAMPLE
   .\scripts\dispatch_algorithm_recovery_nightly.ps1
