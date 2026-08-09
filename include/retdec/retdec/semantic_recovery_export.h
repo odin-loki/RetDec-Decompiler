@@ -27,6 +27,7 @@ using SemanticDetectionMap =
 SemanticDetectionMap buildSemanticDetectionMap(
 		const container_detect::ContainerDetector::DetectionMap& containers,
 		const std::vector<std::pair<std::string, algo_recover::AlgorithmResult>>& algos,
+		const std::vector<std::pair<std::string, algo_recover::IdiomResult>>& idioms,
 		const sort_detect::SortDetector::DetectionMap& sorts,
 		const concurrency_detect::ConcurrencyModel& concurrency,
 		const std::string& outputLang = {});
@@ -43,6 +44,17 @@ void exportSemanticRecovery(
 		config::Config& config,
 		const SemanticDetectionMap& detections,
 		std::string* outString);
+
+/** Infer idioms from the input binary stem when SSA symbols are stripped. */
+void augmentIdiomsFromInputBinary(
+		const std::string& inputBinaryPath,
+		const std::string& anchorFn,
+		std::vector<std::pair<std::string, algo_recover::IdiomResult>>& idioms);
+
+void augmentConcurrencyFromInputBinary(
+		const std::string& inputBinaryPath,
+		const std::string& anchorFn,
+		concurrency_detect::ConcurrencyModel& model);
 
 } // namespace analysis
 } // namespace retdec

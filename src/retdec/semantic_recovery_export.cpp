@@ -137,6 +137,7 @@ void injectSemanticCommentsIntoLines(
 SemanticDetectionMap buildSemanticDetectionMap(
 		const container_detect::ContainerDetector::DetectionMap& containers,
 		const std::vector<std::pair<std::string, algo_recover::AlgorithmResult>>& algos,
+		const std::vector<std::pair<std::string, algo_recover::IdiomResult>>& idioms,
 		const sort_detect::SortDetector::DetectionMap& sorts,
 		const concurrency_detect::ConcurrencyModel& concurrency,
 		const std::string& outputLang)
@@ -164,6 +165,16 @@ SemanticDetectionMap buildSemanticDetectionMap(
 		appendDetection(map, fnName,
 				makeDetection("algorithm", result.kindName(), result.confidence,
 						result.toString()));
+	}
+
+	for (const auto& [fnName, result] : idioms)
+	{
+		for (const auto& label : result.exportLabels())
+		{
+			appendDetection(map, fnName,
+					makeDetection("algorithm", label, result.confidence,
+							result.toString()));
+		}
 	}
 
 	for (const auto& [fnName, result] : sorts)

@@ -366,6 +366,55 @@ private:
     EmissionTier  assignTier(float confidence) const;
 };
 
+// ─── Classic C idiom recovery (atoi, BFS, varint, …) ───────────────────────
+
+enum class IdiomKind : uint8_t {
+    Unknown,
+    Atoi,
+    Strlen,
+    Strcmp,
+    Bfs,
+    Dfs,
+    Varint,
+    Gcd,
+    Crc,
+    Knapsack,
+    Rle,
+    Fibonacci,
+    Lcs,
+    Memset,
+};
+
+struct IdiomResult {
+    IdiomKind   kind       = IdiomKind::Unknown;
+    float       confidence = 0.0f;
+    std::string detail;
+
+    std::string primaryLabel() const noexcept;
+    std::vector<std::string> exportLabels() const;
+    std::string toString() const;
+};
+
+/** Detects classic C algorithm idioms outside the STL <algorithm> set. */
+class IdiomDetector {
+public:
+    struct Config {
+        float minConfidence = 0.70f;
+        int   minBlocks     = 2;
+        int   minInstrs     = 4;
+    };
+    static Config defaultConfig() noexcept { return {}; }
+
+    explicit IdiomDetector(Config cfg = defaultConfig());
+
+    std::vector<IdiomResult> detect(const ssa::SSAFunction& fn) const;
+
+private:
+    Config cfg_;
+
+    bool passesPreflight(const ssa::SSAFunction& fn) const;
+};
+
 } // namespace algo_recover
 } // namespace retdec
 

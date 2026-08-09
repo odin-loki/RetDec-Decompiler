@@ -7,7 +7,7 @@
 | DB-3 | Stock RetDec 5.0 two-column table | C | `run_stock_retdec_docker.sh` / `RETDEC_STOCK_DECOMPILER` |
 | AR-1 | `mean_f1_raw` vs `mean_f1` reporting | C | **done** |
 | AR-2 | Per-opt-level F1 breakdown | C | **done** |
-| AR-3 | Improve detector-only raw F1 (currently ~0.29 full) | C+ | open |
+| AR-3 | Improve detector-only raw F1 (0.29→0.61 in v2.0.17; target higher) | C+ | in progress |
 | LIEF-1 | `install_lief_sdk.sh` for Ubuntu 24.04 | C | **done** |
 | LIEF-2 | FormatFactory cutover | C+ | open |
 | OPS-1 | `gh auth` + nightly dispatch | H | blocked |

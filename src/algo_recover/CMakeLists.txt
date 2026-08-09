@@ -6,6 +6,7 @@ add_library(retdec_algo_recover
     partition_detect.cpp
     foreach_detect.cpp
     iterator_recover.cpp
+    idiom_detect.cpp
     algo_detector.cpp
 )
 

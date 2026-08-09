@@ -2,22 +2,22 @@
   "harness": "algorithm_recovery",
   "summary": {
     "binaries": 216,
-    "mean_f1": 1.0,
-    "mean_f1_raw": 0.2916666666666667,
+    "mean_f1": 0.9942129629629629,
+    "mean_f1_raw": 0.6253858024691359,
     "decompiled": 216
   },
   "per_opt": {
     "O0": {
       "binaries": 72,
-      "mean_f1": 1.0
+      "mean_f1": 0.9965277777777778
     },
     "O2": {
       "binaries": 72,
-      "mean_f1": 1.0
+      "mean_f1": 0.9930555555555556
     },
     "O3": {
       "binaries": 72,
-      "mean_f1": 1.0
+      "mean_f1": 0.9930555555555556
     }
   },
   "per_binary": {
@@ -1655,27 +1655,27 @@
     },
     "mergesort-clang-O0": {
       "tp": 3,
-      "fp": 0,
+      "fp": 2,
       "fn": 0,
-      "precision": 1.0,
+      "precision": 0.6,
       "recall": 1.0,
-      "f1": 1.0
+      "f1": 0.7499999999999999
     },
     "mergesort-clang-O2": {
       "tp": 3,
-      "fp": 0,
+      "fp": 2,
       "fn": 0,
-      "precision": 1.0,
+      "precision": 0.6,
       "recall": 1.0,
-      "f1": 1.0
+      "f1": 0.7499999999999999
     },
     "mergesort-clang-O3": {
       "tp": 3,
-      "fp": 0,
+      "fp": 2,
       "fn": 0,
-      "precision": 1.0,
+      "precision": 0.6,
       "recall": 1.0,
-      "f1": 1.0
+      "f1": 0.7499999999999999
     },
     "mergesort-gcc-O0": {
       "tp": 3,
@@ -1687,19 +1687,19 @@
     },
     "mergesort-gcc-O2": {
       "tp": 3,
-      "fp": 0,
+      "fp": 2,
       "fn": 0,
-      "precision": 1.0,
+      "precision": 0.6,
       "recall": 1.0,
-      "f1": 1.0
+      "f1": 0.7499999999999999
     },
     "mergesort-gcc-O3": {
       "tp": 3,
-      "fp": 0,
+      "fp": 2,
       "fn": 0,
-      "precision": 1.0,
+      "precision": 0.6,
       "recall": 1.0,
-      "f1": 1.0
+      "f1": 0.7499999999999999
     },
     "ring_buffer-clang-O0": {
       "tp": 2,
@@ -1873,11 +1873,11 @@
     },
     "DFS": {
       "tp": 6,
-      "fp": 0,
+      "fp": 5,
       "fn": 0,
-      "precision": 1.0,
+      "precision": 0.5454545454545454,
       "recall": 1.0,
-      "f1": 1.0
+      "f1": 0.7058823529411764
     },
     "DivideAndConquer": {
       "tp": 6,
@@ -1929,11 +1929,11 @@
     },
     "GraphTraversal": {
       "tp": 12,
-      "fp": 0,
+      "fp": 5,
       "fn": 0,
-      "precision": 1.0,
+      "precision": 0.7058823529411765,
       "recall": 1.0,
-      "f1": 1.0
+      "f1": 0.8275862068965517
     },
     "HashTable": {
       "tp": 12,
@@ -2235,15 +2235,15 @@
   "per_opt_raw": {
     "O0": {
       "binaries": 72,
-      "mean_f1": 0.3472222222222222
+      "mean_f1": 0.6215277777777778
     },
     "O2": {
       "binaries": 72,
-      "mean_f1": 0.2638888888888889
+      "mean_f1": 0.6273148148148148
     },
     "O3": {
       "binaries": 72,
-      "mean_f1": 0.2638888888888889
+      "mean_f1": 0.6273148148148148
     }
   },
   "per_binary_raw": {
@@ -2344,148 +2344,148 @@
       "f1": 1.0
     },
     "generated_atoi_parse-clang-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_atoi_parse-clang-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_atoi_parse-clang-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_atoi_parse-gcc-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_atoi_parse-gcc-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_atoi_parse-gcc-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_atomic_counter-clang-O0": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.5,
+      "f1": 0.6666666666666666
     },
     "generated_atomic_counter-clang-O2": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.5,
+      "f1": 0.6666666666666666
     },
     "generated_atomic_counter-clang-O3": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.5,
+      "f1": 0.6666666666666666
     },
     "generated_atomic_counter-gcc-O0": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.5,
+      "f1": 0.6666666666666666
     },
     "generated_atomic_counter-gcc-O2": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.5,
+      "f1": 0.6666666666666666
     },
     "generated_atomic_counter-gcc-O3": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.5,
+      "f1": 0.6666666666666666
     },
     "generated_bfs_graph-clang-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_bfs_graph-clang-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_bfs_graph-clang-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_bfs_graph-gcc-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_bfs_graph-gcc-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_bfs_graph-gcc-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_bitcount-clang-O0": {
       "tp": 0,
@@ -2584,196 +2584,196 @@
       "f1": 0.0
     },
     "generated_crc32_simple-clang-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_crc32_simple-clang-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_crc32_simple-clang-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_crc32_simple-gcc-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 4,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.3333333333333333,
+      "recall": 1.0,
+      "f1": 0.5
     },
     "generated_crc32_simple-gcc-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_crc32_simple-gcc-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_dfs_graph-clang-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_dfs_graph-clang-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_dfs_graph-clang-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_dfs_graph-gcc-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_dfs_graph-gcc-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_dfs_graph-gcc-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_fibonacci_iter-clang-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_fibonacci_iter-clang-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_fibonacci_iter-clang-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_fibonacci_iter-gcc-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_fibonacci_iter-gcc-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_fibonacci_iter-gcc-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_gcd_euclid-clang-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_gcd_euclid-clang-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_gcd_euclid-clang-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_gcd_euclid-gcc-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_gcd_euclid-gcc-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_gcd_euclid-gcc-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_heapsort-clang-O0": {
       "tp": 2,
@@ -2872,100 +2872,100 @@
       "f1": 1.0
     },
     "generated_knapsack_01-clang-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 4,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.3333333333333333,
+      "recall": 1.0,
+      "f1": 0.5
     },
     "generated_knapsack_01-clang-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_knapsack_01-clang-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_knapsack_01-gcc-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_knapsack_01-gcc-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_knapsack_01-gcc-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_lcs_dp-clang-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_lcs_dp-clang-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_lcs_dp-clang-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_lcs_dp-gcc-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_lcs_dp-gcc-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_lcs_dp-gcc-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_linear_search-clang-O0": {
       "tp": 0,
@@ -3160,52 +3160,52 @@
       "f1": 0.0
     },
     "generated_memset_loop-clang-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_memset_loop-clang-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_memset_loop-clang-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_memset_loop-gcc-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_memset_loop-gcc-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_memset_loop-gcc-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_pthread_mutex-clang-O0": {
       "tp": 3,
@@ -3352,52 +3352,52 @@
       "f1": 1.0
     },
     "generated_rle_encode-clang-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_rle_encode-clang-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_rle_encode-clang-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_rle_encode-gcc-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_rle_encode-gcc-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_rle_encode-gcc-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_selection_sort-clang-O0": {
       "tp": 2,
@@ -3592,148 +3592,148 @@
       "f1": 0.0
     },
     "generated_strcmp_loop-clang-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_strcmp_loop-clang-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_strcmp_loop-clang-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_strcmp_loop-gcc-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_strcmp_loop-gcc-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_strcmp_loop-gcc-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_strlen_loop-clang-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_strlen_loop-clang-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_strlen_loop-clang-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_strlen_loop-gcc-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 2,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
     },
     "generated_strlen_loop-gcc-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_strlen_loop-gcc-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_varint_encode-clang-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 4,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.3333333333333333,
+      "recall": 1.0,
+      "f1": 0.5
     },
     "generated_varint_encode-clang-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_varint_encode-clang-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_varint_encode-gcc-O0": {
-      "tp": 0,
+      "tp": 2,
       "fp": 4,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 0.3333333333333333,
+      "recall": 1.0,
+      "f1": 0.5
     },
     "generated_varint_encode-gcc-O2": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_varint_encode-gcc-O3": {
-      "tp": 0,
+      "tp": 2,
       "fp": 0,
-      "fn": 2,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
     },
     "generated_xor_cipher-clang-O0": {
       "tp": 0,
@@ -3881,27 +3881,27 @@
     },
     "mergesort-clang-O0": {
       "tp": 3,
-      "fp": 0,
+      "fp": 2,
       "fn": 0,
-      "precision": 1.0,
+      "precision": 0.6,
       "recall": 1.0,
-      "f1": 1.0
+      "f1": 0.7499999999999999
     },
     "mergesort-clang-O2": {
       "tp": 3,
-      "fp": 0,
+      "fp": 2,
       "fn": 0,
-      "precision": 1.0,
+      "precision": 0.6,
       "recall": 1.0,
-      "f1": 1.0
+      "f1": 0.7499999999999999
     },
     "mergesort-clang-O3": {
       "tp": 3,
-      "fp": 0,
+      "fp": 2,
       "fn": 0,
-      "precision": 1.0,
+      "precision": 0.6,
       "recall": 1.0,
-      "f1": 1.0
+      "f1": 0.7499999999999999
     },
     "mergesort-gcc-O0": {
       "tp": 3,
@@ -3913,19 +3913,19 @@
     },
     "mergesort-gcc-O2": {
       "tp": 3,
-      "fp": 0,
+      "fp": 2,
       "fn": 0,
-      "precision": 1.0,
+      "precision": 0.6,
       "recall": 1.0,
-      "f1": 1.0
+      "f1": 0.7499999999999999
     },
     "mergesort-gcc-O3": {
       "tp": 3,
-      "fp": 0,
+      "fp": 2,
       "fn": 0,
-      "precision": 1.0,
+      "precision": 0.6,
       "recall": 1.0,
-      "f1": 1.0
+      "f1": 0.7499999999999999
     },
     "ring_buffer-clang-O0": {
       "tp": 0,

@@ -41,6 +41,7 @@ struct FunctionDetections {
     std::optional<container_detect::ContainerResult> container;
     std::optional<sort_detect::SortResult> sort;
     std::optional<algo_recover::AlgorithmResult> algo;
+    std::vector<algo_recover::IdiomResult> idioms;
 };
 
 /**
@@ -80,7 +81,7 @@ FunctionDetections analyseFunctionDetections(const ssa::SSAFunction& fn);
  */
 class FunctionAnalysisCache {
 public:
-    static constexpr std::uint32_t kVersion = 1;
+    static constexpr std::uint32_t kVersion = 2;
 
     struct Entry {
         std::string name;

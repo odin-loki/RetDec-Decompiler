@@ -254,10 +254,19 @@ FunctionDetections analyseFunctionDetections(const ssa::SSAFunction& fn)
             out.container = std::move(cr);
     }
     {
+        algo_recover::IdiomDetector idet;
+        out.idioms = idet.detect(fn);
+    }
+    {
         algo_recover::AlgorithmDetector adet;
         auto ar = adet.detect(fn);
         if (ar.kind != algo_recover::AlgorithmKind::Unknown)
             out.algo = std::move(ar);
+    }
+    if (!out.idioms.empty() && out.algo
+        && out.algo->kind == algo_recover::AlgorithmKind::Copy
+        && out.algo->confidence < 0.85f) {
+        out.algo.reset();
     }
     {
         sort_detect::SortDetector sd;

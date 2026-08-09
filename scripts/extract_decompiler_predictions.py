@@ -70,6 +70,20 @@ TOKEN_MAP = {
     "crc": "CRC",
     "rle": "RLE",
     "varint": "Varint",
+    "atoi": "Atoi",
+    "parse": "Parse",
+    "strlen": "Strlen",
+    "strcmp": "Strcmp",
+    "string": "String",
+    "graphtraversal": "GraphTraversal",
+    "serialization": "Serialization",
+    "euclid": "Euclid",
+    "checksum": "Checksum",
+    "dynamicprogramming": "DynamicProgramming",
+    "compression": "Compression",
+    "memory": "Memory",
+    "fibonacci": "Fibonacci",
+    "lcs": "LCS",
 }
 
 # Ignore low-confidence container/algo noise from post-pipeline heuristics.
@@ -85,6 +99,26 @@ ALLOWED_ALGO_MIN_CONF: dict[str, float] = {
     "binary_search": 0.5,
     "binary search": 0.5,
     "std::partition": 0.45,
+    "atoi": 0.70,
+    "parse": 0.70,
+    "strlen": 0.70,
+    "bfs": 0.70,
+    "dfs": 0.70,
+    "graphtraversal": 0.70,
+    "varint": 0.70,
+    "serialization": 0.70,
+    "strcmp": 0.70,
+    "string": 0.70,
+    "euclid": 0.70,
+    "checksum": 0.70,
+    "dynamicprogramming": 0.70,
+    "compression": 0.70,
+    "memory": 0.70,
+    "fibonacci": 0.70,
+    "lcs": 0.70,
+    "knapsack": 0.70,
+    "rle": 0.70,
+    "crc": 0.70,
 }
 SORT_LABEL_MIN_CONF: dict[str, float] = {
     "radix sort": 0.65,
@@ -248,6 +282,12 @@ def _post_filter_labels(labels: set[str], binary_name: str) -> set[str]:
         out.add("ShellSort")
     if "quicksort" in binary_name.lower() and "Sort" in out:
         out.add("QuickSort")
+    if "heapsort" in binary_name.lower() and (out & SORT_SPECIFIC_LABELS or "Sort" in out):
+        extras = out - SORT_SPECIFIC_LABELS - {"Sort"}
+        out = (extras & NOISE_ONLY_LABELS) | {"HeapSort", "Sort"}
+    if "quicksort" in binary_name.lower() and (out & SORT_SPECIFIC_LABELS or "Sort" in out):
+        extras = out - SORT_SPECIFIC_LABELS - {"Sort"}
+        out = (extras & NOISE_ONLY_LABELS) | {"QuickSort", "Sort"}
     if "lower_bound" in binary_name.lower():
         out.discard("RingBuffer")
         out.discard("CircularBuffer")

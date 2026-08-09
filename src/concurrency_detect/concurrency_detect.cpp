@@ -76,6 +76,16 @@ bool tryParseAtomicBuiltin(const std::string& name, uint64_t vma,
     else if (name.find("__sync_val_compare_and_swap")  != std::string::npos) { ae.op = "cmpxchg"; }
     else if (name.find("__sync_lock_test_and_set")     != std::string::npos) { ae.op = "exchange"; }
     else if (name.find("__sync_lock_release")          != std::string::npos) { ae.op = "store";    }
+    // C11 stdatomic.h / libatomic entry points
+    else if (name.find("atomic_fetch_add")             != std::string::npos) { ae.op = "add";             }
+    else if (name.find("atomic_fetch_sub")             != std::string::npos) { ae.op = "sub";             }
+    else if (name.find("atomic_fetch_and")             != std::string::npos) { ae.op = "and";             }
+    else if (name.find("atomic_fetch_or")              != std::string::npos) { ae.op = "or";              }
+    else if (name.find("atomic_fetch_xor")             != std::string::npos) { ae.op = "xor";             }
+    else if (name.find("atomic_compare_exchange")      != std::string::npos) { ae.op = "cmpxchg";        }
+    else if (name.find("atomic_exchange")              != std::string::npos) { ae.op = "exchange";        }
+    else if (name.find("atomic_load")                  != std::string::npos) { ae.op = "load";            }
+    else if (name.find("atomic_store")                 != std::string::npos) { ae.op = "store";           }
     else { return false; }
 
     // Memory ordering heuristic: __atomic_*_explicit names encode the ordering

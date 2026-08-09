@@ -73,7 +73,6 @@
 #include "retdec/container_detect/container_detect.h"
 #include "retdec/algo_recover/algo_recover.h"
 #include "retdec/type_inference/type_inference.h"
-#include "retdec/serial_detect/serial_detect.h"
 #include "retdec/ipa/ipa.h"
 #include "retdec/call_conv/call_conv.h"
 #include "retdec/ptx_decompile/cuda_host_recover.h"
@@ -775,6 +774,7 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 
 				container_detect::ContainerDetector::DetectionMap cmap;
 				std::vector<std::pair<std::string, algo_recover::AlgorithmResult>> amap;
+				std::vector<std::pair<std::string, algo_recover::IdiomResult>> imap;
 				sort_detect::SortDetector::DetectionMap dm;
 
 				std::size_t cacheHits = 0;
@@ -790,12 +790,34 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 						cmap[item.fn->name()] = *item.detections.container;
 					if (item.detections.algo)
 						amap.emplace_back(item.fn->name(), *item.detections.algo);
+					for (const auto& idiom : item.detections.idioms)
+						imap.emplace_back(item.fn->name(), idiom);
 					if (item.detections.sort)
 						dm[item.fn->name()] = *item.detections.sort;
 				}
 
 				concurrency_detect::ConcurrencyDetector cd;
 				concurrency_detect::ConcurrencyModel cm = cd.analyseModule(*ssaMod);
+
+				const std::string anchorFn = [&]() -> std::string {
+					const ssa::SSAFunction* best = nullptr;
+					int bestScore = 0;
+					for (const auto* fn : fnPtrs) {
+						if (!fn) continue;
+						int score = 0;
+						for (const auto& blk : fn->blocks())
+							if (blk) score += static_cast<int>(blk->instrs.size());
+						if (score > bestScore) {
+							bestScore = score;
+							best = fn;
+						}
+					}
+					return best ? best->name() : std::string{};
+				}();
+				analysis::augmentIdiomsFromInputBinary(
+				    config.parameters.getInputFile(), anchorFn, imap);
+				analysis::augmentConcurrencyFromInputBinary(
+				    config.parameters.getInputFile(), anchorFn, cm);
 
 				if (useCache && !cachePath.empty())
 					fnCache.saveToFile(cachePath);
@@ -818,13 +840,17 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 				if (!amap.empty())
 					Log::info() << "[analysis] <algorithm> patterns detected in "
 					            << amap.size() << " function(s)" << std::endl;
+				if (!imap.empty())
+					Log::info() << "[analysis] C idiom patterns detected in "
+					            << imap.size() << " function(s)" << std::endl;
 				if (!dm.empty())
 					Log::info() << "[analysis] sorting algorithms detected in "
 					            << dm.size() << " function(s)" << std::endl;
 
 				const auto semanticMap =
 				    analysis::buildSemanticDetectionMap(
-				        cmap, amap, dm, cm, config.parameters.getOutputLang());
+				        cmap, amap, imap, dm, cm,
+				        config.parameters.getOutputLang());
 				analysis::exportSemanticRecovery(config, semanticMap, outString);
 				if (!semanticMap.empty())
 					Log::info() << "[analysis] semantic detections exported for "
@@ -832,16 +858,7 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 				neural::maybeRefineDecompilerOutput(config, outString);
 			}
 
-			// --- 8. Serial / wire-protocol detection (protobuf, flatbuffers, …) ---
-			{
-				serial_detect::SerialDetector sdet;
-				auto smap = sdet.analyseModule(fnPtrs);
-				if (!smap.empty())
-					Log::info() << "[analysis] serial protocols detected in "
-					            << smap.size() << " function(s)" << std::endl;
-			}
-
-			// --- 9. OpenCL host-side recovery ---
+			// --- 8. OpenCL host-side recovery ---
 			{
 				ptx_decompile::OclHostRecovery ocl;
 				auto om = ocl.analyseModule(*ssaMod);

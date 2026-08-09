@@ -1,4 +1,4 @@
-﻿version=2.0.16
+﻿version=2.0.17
 linux_install=releases/linux/install.sh
 linux_uninstall=releases/linux/uninstall.sh
 updated=2026-08-08T23:15:00+00:00

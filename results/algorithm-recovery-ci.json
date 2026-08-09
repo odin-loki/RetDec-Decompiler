@@ -3,7 +3,14 @@
   "summary": {
     "binaries": 9,
     "mean_f1": 1.0,
+    "mean_f1_raw": 1.0,
     "decompiled": 9
+  },
+  "per_opt": {
+    "O0": {
+      "binaries": 9,
+      "mean_f1": 1.0
+    }
   },
   "per_binary": {
     "binary_search-gcc-O0": {
@@ -218,6 +225,86 @@
     },
     "Sort": {
       "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    }
+  },
+  "per_opt_raw": {
+    "O0": {
+      "binaries": 9,
+      "mean_f1": 1.0
+    }
+  },
+  "per_binary_raw": {
+    "binary_search-gcc-O0": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "bubblesort-gcc-O0": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "generated_heapsort-gcc-O0": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "generated_pthread_mutex-gcc-O0": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "generated_quicksort-gcc-O0": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "hash_table-gcc-O0": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "memcpy_loop-gcc-O0": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "mergesort-gcc-O0": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "ring_buffer-gcc-O0": {
+      "tp": 2,
       "fp": 0,
       "fn": 0,
       "precision": 1.0,
