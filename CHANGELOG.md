@@ -35,6 +35,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   intact on Linux (GUI launch tests).
 - `format_router_test.py` does not let unittest treat the C++ probe path
   as a test name.
+- CLI assembly detection uses the COM-descriptor directory (same as the
+  Python format-router reference) instead of `PeReader::open`, which
+  rejected the minimal PE stubs.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for
   `install_smoke` instead of a full `cmake --install` (yaramod headers
   are not built by the integration target list). The CMake target is
