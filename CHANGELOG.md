@@ -23,8 +23,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Repo layout: live numbers stay in `results/`; historical JSON/logs live
   under `data/archive/` (not committed). Planning docs moved to
   `docs/internal/`.
-- `ctest-windows`: build the `googletest` ExternalProject first so Ninja
-  can find MSVC `gtestd.lib` (no BUILD_BYPRODUCTS on that generator).
+- `ctest-windows`: build googletest first, then map `gtest.lib` to
+  `gtestd.lib` so Debug Ninja can link GUI tests (the EP installs the
+  unsuffixed name).
 - `ctest-linux`: run `fetch-large-files.sh` through bash (the script is
   not executable in the tree).
 - `perf-nightly` Windows: use MSVC (`core-debug-msvc`) instead of the

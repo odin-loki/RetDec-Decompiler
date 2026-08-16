@@ -64,6 +64,17 @@ jobs:
         run: |
           $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
           cmake --build build/windows --parallel --target googletest
+          if ($LASTEXITCODE -ne 0) { throw "googletest build failed" }
+          # MSVC Debug ninja expects gtestd.lib; current googletest installs gtest.lib.
+          $gdir = "build/windows/deps/install/googletest/lib"
+          foreach ($n in @("gtest", "gtest_main", "gmock", "gmock_main")) {
+            $src = Join-Path $gdir "$n.lib"
+            $dst = Join-Path $gdir "${n}d.lib"
+            if ((Test-Path -LiteralPath $src) -and -not (Test-Path -LiteralPath $dst)) {
+              Copy-Item -LiteralPath $src -Destination $dst
+              Write-Host "Mapped $n.lib -> ${n}d.lib for Debug Ninja"
+            }
+          }
 
       - name: Build integration targets
         shell: pwsh
