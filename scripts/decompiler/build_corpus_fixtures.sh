@@ -16,11 +16,11 @@ compile_c() {
         return 0
     fi
     if command -v gcc >/dev/null 2>&1; then
-        gcc -O1 -o "${dest}" "${src}"
+        gcc -O0 -fno-inline -fno-builtin -o "${dest}" "${src}"
         return 0
     fi
     if command -v clang >/dev/null 2>&1; then
-        clang -O1 -o "${dest}" "${src}"
+        clang -O0 -fno-inline -fno-builtin -o "${dest}" "${src}"
         return 0
     fi
     return 1

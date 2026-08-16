@@ -67,7 +67,7 @@ set(_FIB_BIN "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke${CMAKE_EXECUTABLE_SUFFIX}")
 if(MSVC)
     add_custom_command(
         OUTPUT "${_FIB_BIN}"
-        COMMAND ${CMAKE_C_COMPILER} /nologo /O1 "/Fe${_FIB_BIN}" "${_FIB_SRC}"
+        COMMAND ${CMAKE_C_COMPILER} /nologo /Od /Ob0 /Oi- "/Fe${_FIB_BIN}" "${_FIB_SRC}"
         DEPENDS "${_FIB_SRC}"
         COMMENT "Building fib_smoke test binary (MSVC)"
         VERBATIM
@@ -97,7 +97,7 @@ foreach(_name IN LISTS _CORPUS_NATIVE_SOURCES)
     if(MSVC)
         add_custom_command(
             OUTPUT "${_bin}"
-            COMMAND ${CMAKE_C_COMPILER} /nologo /Od /Ob0 "/Fe${_bin}" "${_src}"
+            COMMAND ${CMAKE_C_COMPILER} /nologo /Od /Ob0 /Oi- "/Fe${_bin}" "${_src}"
             DEPENDS "${_src}"
             COMMENT "Building corpus fixture ${_name} (MSVC)"
             VERBATIM
