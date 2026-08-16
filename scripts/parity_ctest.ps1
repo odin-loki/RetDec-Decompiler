@@ -30,7 +30,10 @@ $workBinary = Join-Path $WorkDir $binName
 Copy-Item -LiteralPath $Binary -Destination $workBinary -Force
 
 $absBinary = (Resolve-Path -LiteralPath $workBinary).Path
-$base = [System.IO.Path]::ChangeExtension($absBinary, $null)
+# ChangeExtension(..., $null) leaves a trailing dot on .NET Framework
+# ("fib_smoke." + ".gui-decompiled.c" => fib_smoke..gui-decompiled.c).
+$base = Join-Path ([System.IO.Path]::GetDirectoryName($absBinary)) `
+    ([System.IO.Path]::GetFileNameWithoutExtension($absBinary))
 
 $outCli = Join-Path $WorkDir "parity_cli.c"
 $outGui = "${base}.gui-decompiled.c"

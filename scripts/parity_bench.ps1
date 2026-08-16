@@ -42,7 +42,8 @@ if (-not (Test-Path $Gui)) { throw "Missing $Gui - build and install first." }
 if (-not (Test-Path $Binary)) { throw "Missing benchmark binary: $Binary" }
 
 $absBinary = (Resolve-Path $Binary).Path
-$base = [System.IO.Path]::ChangeExtension($absBinary, $null)
+$base = Join-Path ([System.IO.Path]::GetDirectoryName($absBinary)) `
+    ([System.IO.Path]::GetFileNameWithoutExtension($absBinary))
 $outCli = "${base}_parity_cli.c"
 $outGui = "${base}.gui-decompiled.c"
 

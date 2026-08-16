@@ -130,8 +130,12 @@ jobs:
         run: .\build\windows\tests\gui\retdec-gui-tests.exe
 
       - name: Unit tests
+        shell: pwsh
         run: |
-          python -m pip install --user pyyaml
+          $py = Join-Path $env:pythonLocation "python.exe"
+          if (-not (Test-Path -LiteralPath $py)) { $py = "python" }
+          # Same interpreter CMake/ctest use; --user can miss that prefix.
+          & $py -m pip install pyyaml
           ctest --test-dir build/windows -L unit --output-on-failure
 
       - name: Integration tests

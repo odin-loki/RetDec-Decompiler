@@ -104,7 +104,10 @@ try {
     Copy-Item -LiteralPath $sample -Destination $workBinary -Force
     $absBinary = (Resolve-Path -LiteralPath $workBinary).Path
 
-    $base = [System.IO.Path]::ChangeExtension($absBinary, $null)
+    # ChangeExtension(..., $null) leaves a trailing dot on .NET Framework
+    # ("fib_smoke." + ".gui-decompiled.c" => fib_smoke..gui-decompiled.c).
+    $base = Join-Path ([System.IO.Path]::GetDirectoryName($absBinary)) `
+        ([System.IO.Path]::GetFileNameWithoutExtension($absBinary))
     Remove-Item "${base}.gui-decompiled.c", "${base}.gui-decompiled.config.json" -Force -ErrorAction SilentlyContinue
 
     & $gui --headless --headless-decompile $absBinary 2>&1 | Out-Null

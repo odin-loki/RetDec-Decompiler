@@ -77,6 +77,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   (`hello.pyc`) so the regression test finds it.
 - `managed_format_smoke_test` always recompiles `hello.pyc` from
   `hello.py` so a leftover 3.14 bytecode file cannot outlive the CI pin.
+- Windows `install_smoke` / `parity_ctest` derive the GUI output stem
+  with `GetFileNameWithoutExtension` (`.NET ChangeExtension(null)` left
+  a trailing dot, so they looked for `fib_smoke..gui-decompiled.c`).
+- `ctest-windows` installs PyYAML into the setup-python 3.12 prefix
+  CMake uses, not a different `python --user` site.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for
