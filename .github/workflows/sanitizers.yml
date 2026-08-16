@@ -39,9 +39,10 @@ jobs:
           restore-keys: |
             sanitizers-
 
-      - name: Configure (core-asan + UBSan, CPU-only CI)
+      - name: Configure (ASan + UBSan, RelWithDebInfo, CPU-only CI)
         run: >
           cmake --preset core-asan
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DRETDEC_USE_UNDEFINED_BEHAVIOR_SANITIZER=ON
           -DRETDEC_ENABLE_CUDA_ACCEL=OFF
           -DRETDEC_ENABLE_NEURAL=OFF
@@ -72,7 +73,17 @@ jobs:
           cp -f src/retdec-decompiler/profiles/*.json "${share_dir}/profiles/"
           echo "Staged runtime config: ${share_dir}/decompiler-config.json"
 
+      - name: Add swap for ASan shadow
+        run: |
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
       - name: Run ASan over decompile sample corpus
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:symbolize=1:quarantine_size_mb=16:malloc_context_size=5
         run: |
           set -euo pipefail
           mkdir -p profile_output
@@ -86,7 +97,7 @@ jobs:
               *.c|*.cc|*.cpp|*.cxx|*.h|*.hpp|*.rs) continue ;;
             esac
             echo "=== ASan: $sample ==="
-            timeout 180 bash scripts/run_asan.sh "$sample"
+            timeout --kill-after=15 180 bash scripts/run_asan.sh "$sample"
             ran=$((ran + 1))
           done
           if [ "$ran" -eq 0 ]; then

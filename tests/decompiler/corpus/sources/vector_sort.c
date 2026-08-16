@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-static void bubble_sort(int *a, int n) {
+void bubble_sort(int *a, int n) {
     int i, j, tmp;
     for (i = 0; i < n - 1; i++) {
         for (j = 0; j < n - i - 1; j++) {

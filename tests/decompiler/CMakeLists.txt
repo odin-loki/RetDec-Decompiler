@@ -97,7 +97,7 @@ foreach(_name IN LISTS _CORPUS_NATIVE_SOURCES)
     if(MSVC)
         add_custom_command(
             OUTPUT "${_bin}"
-            COMMAND ${CMAKE_C_COMPILER} /nologo /O1 "/Fe${_bin}" "${_src}"
+            COMMAND ${CMAKE_C_COMPILER} /nologo /Od /Ob0 "/Fe${_bin}" "${_src}"
             DEPENDS "${_src}"
             COMMENT "Building corpus fixture ${_name} (MSVC)"
             VERBATIM
@@ -105,7 +105,7 @@ foreach(_name IN LISTS _CORPUS_NATIVE_SOURCES)
     else()
         add_custom_command(
             OUTPUT "${_bin}"
-            COMMAND ${CMAKE_C_COMPILER} -O1 -o "${_bin}" "${_src}"
+            COMMAND ${CMAKE_C_COMPILER} -O0 -fno-inline -fno-builtin -o "${_bin}" "${_src}"
             DEPENDS "${_src}"
             COMMENT "Building corpus fixture ${_name}"
             VERBATIM

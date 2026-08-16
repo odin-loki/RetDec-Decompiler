@@ -184,6 +184,8 @@ def main() -> int:
 
         if keyword and str(keyword) not in code:
             print(f"  FAIL: keyword {keyword!r} not in output", file=sys.stderr)
+            print(f"  output={out_file} size={out_file.stat().st_size}", file=sys.stderr)
+            print(code[:800], file=sys.stderr)
             failures += 1
             continue
 

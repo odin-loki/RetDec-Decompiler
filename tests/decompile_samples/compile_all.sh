@@ -2,6 +2,7 @@
 # Compile one representative sample per language into /tmp/retdec_tests/
 OUTDIR=/tmp/retdec_tests
 SRCDIR="$(dirname "$(realpath "$0")")"
+mkdir -p "$OUTDIR"/{c,cpp,rust,java,dex,kotlin,csharp,python,lua,wasm,go,asm}
 
 OK=0; FAIL=0
 pass(){ echo "[ok] $1"; OK=$(( OK + 1 )); }

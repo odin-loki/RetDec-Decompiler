@@ -21,8 +21,8 @@ OUTPUT="profile_output/asan_out.c"
 [ -n "$DECOMPILER" ] || { echo "Decompiler not found under build/linux or build/. Build with ASan (e.g. core-asan preset)."; exit 1; }
 [ -n "$TEST_BIN" ] || { echo "Test binary not found (pass path or stage dist/windows/test_hello.exe)"; exit 1; }
 mkdir -p "$(dirname "$OUTPUT")"
-export ASAN_OPTIONS="detect_leaks=1:abort_on_error=1:symbolize=1"
-export LSAN_OPTIONS="report_objects=1"
+export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1:abort_on_error=1:symbolize=1:quarantine_size_mb=16:malloc_context_size=5}"
+export LSAN_OPTIONS="${LSAN_OPTIONS:-report_objects=1}"
 echo "Running $DECOMPILER with ASan+LSan on $TEST_BIN"
 echo "Output: $OUTPUT"
 "$DECOMPILER" "$TEST_BIN" -o "$OUTPUT" --silent 2>&1 | tee profile_output/asan.log

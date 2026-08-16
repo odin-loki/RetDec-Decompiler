@@ -48,6 +48,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   gets the same config under `install/windows/share/retdec`.
 - ASan corpus loop runs only executable samples (not `.c`/`.cpp`/`.rs`
   sources) with a 180s per-sample timeout; `run_asan.sh` uses `pipefail`.
+  Sanitizer CI uses RelWithDebInfo plus 8G swap so ASan shadow can mmap.
+- Corpus fixtures compile at `-O0 -fno-inline -fno-builtin` so `printf`
+  and `bubble_sort` survive into the binary the keyword checks expect.
+- `LiveConsolePanelTest.PerCallStaysUnderFrameBudgetForRealisticChunks`
+  clears the editor between trials so the 16 ms budget measures one
+  16 KiB insert, not a growing document.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for
