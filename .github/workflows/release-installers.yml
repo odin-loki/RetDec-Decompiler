@@ -171,21 +171,41 @@ jobs:
 
       - name: Configure (full-windows-release, CPU-only CI)
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
-        run: >
-          cmake --preset full-windows-release
-          -DRETDEC_ENABLE_CUDA_ACCEL=OFF
-          -DRETDEC_TESTS=OFF
-          -DRETDEC_ENABLE_NEURAL=OFF
-          -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
-          -DRETDEC_ENABLE_RETDEC_DECOMPILER=ON
-          -DRETDEC_ENABLE_FILEINFO=ON
-
-      - name: Build and package Windows installers
-        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         shell: pwsh
         run: |
           $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
-          .\scripts\build-windows-installer.ps1 -Version "${{ needs.release.outputs.version }}"
+          cmake --preset full-windows-release `
+            -DRETDEC_ENABLE_CUDA_ACCEL=OFF `
+            -DRETDEC_TESTS=OFF `
+            -DRETDEC_ENABLE_NEURAL=OFF `
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF `
+            -DRETDEC_ENABLE_RETDEC_DECOMPILER=ON `
+            -DRETDEC_ENABLE_FILEINFO=ON
+
+      - name: Build and package Windows installers
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        id: win_pkg
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
+          try {
+            .\scripts\build-windows-installer.ps1 -Version "${{ needs.release.outputs.version }}"
+          } catch {
+            $log = Join-Path $pwd "build-windows.log"
+            $tail = @()
+            if (Test-Path $log) { $tail = Get-Content $log -Tail 50 }
+            $msg = ($tail -join "%0A") -replace '::', ' :'
+            Write-Host "::error::Windows installer build failed%0A$msg"
+            throw
+          }
+
+      - name: Upload Windows build log
+        if: failure() && steps.win_pkg.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-build-log
+          path: build-windows.log
+          if-no-files-found: ignore
 
       - name: Upload Windows release assets
         uses: softprops/action-gh-release@v2
@@ -267,13 +287,35 @@ jobs:
 
       - name: Build and package Linux tarball
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        id: linux_pkg
         env:
           APPIMAGE: ${{ env.APPIMAGE }}
         run: |
           set -euo pipefail
-          cmake --build build/linux --parallel --target retdec-decompiler retdec-gui fileinfo
-          cmake --install build/linux
+          cmake --build build/linux --parallel --target install 2>&1 | tee build-linux.log
           bash scripts/build-linux-installer.sh --skip-install --version "${{ needs.release.outputs.version }}"
+
+      - name: Annotate Linux build failure
+        if: failure() && steps.linux_pkg.outcome == 'failure'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("build-linux.log")
+          if not p.exists():
+              print("::error::Linux installer failed and build-linux.log is missing")
+              raise SystemExit(0)
+          lines = p.read_text(errors="replace").splitlines()[-50:]
+          text = "%0A".join(x.replace("%", "%25") for x in lines)
+          print(f"::error::Linux installer build failed%0A{text}")
+          PY
+
+      - name: Upload Linux build log
+        if: failure() && steps.linux_pkg.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-installer-build-log
+          path: build-linux.log
+          if-no-files-found: ignore
 
       - name: Verify optional AppImage
         if: env.APPIMAGE == '1'

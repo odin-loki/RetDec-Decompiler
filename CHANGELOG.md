@@ -26,7 +26,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Release installer CI: package the decompiler/GUI/fileinfo graph only
   (`RETDEC_ENABLE_RETDEC_DECOMPILER=ON`, not `ENABLE_ALL`), no LTO/tests.
   `RETDEC_ENABLE_NEURAL=OFF` now links a no-op refinement hook so the
-  decompiler does not fail at final link.
+  decompiler does not fail at final link. Installer jobs emit the last
+  build lines as annotations when packaging fails.
 
 ## [2.0.19] — 2026-08-09
 

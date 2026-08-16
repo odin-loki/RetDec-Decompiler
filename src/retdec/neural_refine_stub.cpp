@@ -7,8 +7,6 @@
 
 namespace retdec::neural {
 
-void maybeRefineDecompilerOutput(retdec::config::Config&, std::string*)
-{
-}
+void maybeRefineDecompilerOutput(retdec::config::Config&, std::string*) {}
 
 } // namespace retdec::neural

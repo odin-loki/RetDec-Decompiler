@@ -389,8 +389,13 @@ if (-not $SkipBuild) {
     }
 
     Write-Host "==> cmake --build --target install"
-    & cmake --build $BuildDir --target install --parallel
+    $buildLog = Join-Path $RepoRoot "build-windows.log"
+    & cmake --build $BuildDir --target install --parallel 2>&1 | Tee-Object -FilePath $buildLog
     if ($LASTEXITCODE -ne 0) {
+        if (Test-Path -LiteralPath $buildLog) {
+            Write-Host "===== cmake --build failed (last 80 lines) ====="
+            Get-Content -LiteralPath $buildLog -Tail 80
+        }
         throw "cmake --build --target install failed with exit code $LASTEXITCODE"
     }
 } else {
