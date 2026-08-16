@@ -8,6 +8,11 @@
 #include <sstream>
 #include <string>
 
+#if defined(_MSC_VER)
+#define popen _popen
+#define pclose _pclose
+#endif
+
 namespace retdec::neural {
 
 namespace {
