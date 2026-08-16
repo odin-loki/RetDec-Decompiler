@@ -23,6 +23,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Repo layout: live numbers stay in `results/`; historical JSON/logs live
   under `data/archive/` (not committed). Planning docs moved to
   `docs/internal/`.
+- `ctest-windows`: build the `googletest` ExternalProject first so Ninja
+  can find MSVC `gtestd.lib` (no BUILD_BYPRODUCTS on that generator).
+- `ctest-linux`: run `fetch-large-files.sh` through bash (the script is
+  not executable in the tree).
 - `perf-nightly` Windows: use MSVC (`core-debug-msvc`) instead of the
   runner MinGW toolchain, which failed `find_package(ZLIB)`. Retry
   `fetch-large-files.ps1` when avast raw.githubusercontent.com resets.

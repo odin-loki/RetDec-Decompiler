@@ -53,15 +53,25 @@ jobs:
             ctest-windows-
 
       - name: Configure (full-windows-debug, CPU-only CI)
-        run: >
-          cmake --preset full-windows-debug
-          -DRETDEC_ENABLE_CUDA_ACCEL=OFF
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
+          cmake --preset full-windows-debug `
+            -DRETDEC_ENABLE_CUDA_ACCEL=OFF
+
+      - name: Build googletest
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
+          cmake --build build/windows --parallel --target googletest
 
       - name: Build integration targets
-        run: >
-          cmake --build build/windows --parallel
-          --target retdec-decompiler retdec-gui retdec-gui-tests
-          format_router_probe retdec-decompiler-fixture-fib
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
+          cmake --build build/windows --parallel `
+            --target retdec-decompiler retdec-gui retdec-gui-tests `
+            format_router_probe retdec-decompiler-fixture-fib
 
       - name: Install (for install_smoke)
         run: cmake --install build/windows --prefix install/windows
