@@ -72,7 +72,10 @@ BrandingText      "${PRODUCT_FULL_NAME} ${PRODUCT_VERSION}"
 
 ; ─── Version info block (PE metadata) ─────────────────────────────────────────
 ; VIProductVersion requires exactly four numeric components (X.X.X.X).
-VIProductVersion "${VERSION}.0.0"
+!ifndef VERSION_QUAD
+  !define VERSION_QUAD "${VERSION}.0"
+!endif
+VIProductVersion "${VERSION_QUAD}"
 VIAddVersionKey "ProductName"     "${PRODUCT_FULL_NAME}"
 VIAddVersionKey "ProductVersion"  "${PRODUCT_VERSION}"
 VIAddVersionKey "CompanyName"     "${PRODUCT_PUBLISHER}"

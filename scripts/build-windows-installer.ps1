@@ -344,12 +344,22 @@ function Invoke-NsisInstaller {
     }
 
     New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+    $nsisLog = Join-Path $RepoRoot "build-windows.log"
     Push-Location (Split-Path $nsi -Parent)
     try {
         Write-Host "==> Running makensis ($makensisPath)"
-        & $makensisPath "/DVERSION=$PackageVersion" "/DBUNDLE_DIR=$StageRoot" (Split-Path $nsi -Leaf) | Out-Host
-        if ($LASTEXITCODE -ne 0) {
-            throw "makensis failed with exit code $LASTEXITCODE"
+        $parts = @($PackageVersion.Split('.') | Where-Object { $_ -ne '' })
+        while ($parts.Count -lt 4) { $parts += '0' }
+        $versionQuad = ($parts[0..3] -join '.')
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        & $makensisPath "/DVERSION=$PackageVersion" "/DVERSION_QUAD=$versionQuad" "/DBUNDLE_DIR=$StageRoot" (Split-Path $nsi -Leaf) 2>&1 |
+            Tee-Object -FilePath $nsisLog -Append |
+            Out-Host
+        $nsisCode = $LASTEXITCODE
+        $ErrorActionPreference = $prevEap
+        if ($nsisCode -ne 0) {
+            throw "makensis failed with exit code $nsisCode"
         }
     }
     finally {

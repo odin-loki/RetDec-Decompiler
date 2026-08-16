@@ -178,9 +178,12 @@ jobs:
           New-Item -ItemType Directory -Force -Path $pluginDir, $includeDir | Out-Null
           Invoke-WebRequest -Uri "https://github.com/GsNSIS/EnVar/releases/download/v0.3.1/EnVar-Plugin.zip" -OutFile envar.zip
           Expand-Archive envar.zip -DestinationPath envar -Force
-          $dll = Get-ChildItem -Path envar -Recurse -Filter EnVar.dll | Select-Object -First 1
+          # NSIS 3 Unicode is 32-bit; amd64-unicode EnVar.dll will not load.
+          $dll = Get-ChildItem -Path envar -Recurse -Filter EnVar.dll |
+            Where-Object { $_.FullName -match '[\\/]x86-unicode[\\/]' } |
+            Select-Object -First 1
+          if (-not $dll) { throw "EnVar.dll (x86-unicode) missing from EnVar-Plugin.zip" }
           $nsh = Get-ChildItem -Path envar -Recurse -Filter EnVar.nsh | Select-Object -First 1
-          if (-not $dll) { throw "EnVar.dll missing from EnVar-Plugin.zip" }
           Copy-Item $dll.FullName (Join-Path $pluginDir "EnVar.dll") -Force
           if ($nsh) { Copy-Item $nsh.FullName (Join-Path $includeDir "EnVar.nsh") -Force }
           Write-Host "Installed EnVar from $($dll.FullName) into $pluginDir"
@@ -226,6 +229,7 @@ jobs:
           keys = (
               "FAILED", "error C", "error LNK", "fatal error", "error:",
               "No space", "ninja: build stopped", "MSB", ": error ",
+              "Plugin not found", "Error in script", "makensis failed",
           )
           hits = [ln for ln in raw if any(k in ln for k in keys)]
           lines = (hits[-30:] + raw[-20:]) if hits else raw[-80:]
