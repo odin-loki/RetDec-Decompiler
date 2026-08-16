@@ -97,6 +97,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - `managed_integration` invokes `retdec-decompiler` with a positional
   input and `-o` (there is no `--input`), compiles `hello.py` so the
   harness is not a no-op, and fails if the decompiler writes no text.
+- Corpus function-count ignores `//` address comments on the header
+  line (`void foo() // 0x140001000`) so MSVC PE output is not scored
+  as zero functions. Failure dumps now include the file tail.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for

@@ -42,21 +42,44 @@ def _load_manifest(path: Path) -> List[Dict[str, Any]]:
     return fixtures
 
 
+def _strip_c_line_comment(line: str) -> str:
+    return re.sub(r"//.*", "", line).strip()
+
+
 def _count_functions_heuristic(code: str) -> int:
-    # Match K&R `) {` and Allman `)\n{`. The old per-line `)\n{` check
-    # could never fire (a stripped line cannot contain a newline).
+    # Match K&R `) {`, Allman `)\n{`, and RetDec's address-comment form
+    # `void foo() // 0x140001000` / `void foo() // 0x140001000 {`.
     count = 0
     prev = ""
     for line in code.splitlines():
         stripped = line.strip()
         if stripped.startswith("//"):
             continue
-        if re.search(r"\)\s*\{", stripped):
+        code_only = _strip_c_line_comment(stripped)
+        if (
+            re.search(r"\)\s*\{", code_only)
+            or re.search(r"\)\s*\{", stripped)
+            or re.search(r"\)\s*//.*\{", stripped)
+        ):
             count += 1
-        elif stripped == "{" and prev.endswith(")"):
+        elif code_only.startswith("{") and prev.endswith(")"):
             count += 1
-        prev = stripped
+        if code_only:
+            prev = code_only
     return count
+
+
+def _dump_output_sample(code: str) -> None:
+    print(code[:800], file=sys.stderr)
+    print("--- tail ---", file=sys.stderr)
+    print(code[-800:], file=sys.stderr)
+    brace_lines = [ln.strip() for ln in code.splitlines() if "{" in ln]
+    print(
+        f"  brace_chars={code.count('{')} brace_lines={len(brace_lines)}",
+        file=sys.stderr,
+    )
+    for ln in brace_lines[:8]:
+        print(f"  brace: {ln[:160]}", file=sys.stderr)
 
 
 def _resolve_binary(
@@ -187,14 +210,14 @@ def main() -> int:
                 file=sys.stderr,
             )
             print(f"  output={out_file} size={out_file.stat().st_size}", file=sys.stderr)
-            print(code[:800], file=sys.stderr)
+            _dump_output_sample(code)
             failures += 1
             continue
 
         if keyword and str(keyword) not in code:
             print(f"  FAIL: keyword {keyword!r} not in output", file=sys.stderr)
             print(f"  output={out_file} size={out_file.stat().st_size}", file=sys.stderr)
-            print(code[:800], file=sys.stderr)
+            _dump_output_sample(code)
             failures += 1
             continue
 
