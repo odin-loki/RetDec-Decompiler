@@ -28,6 +28,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   `RETDEC_ENABLE_NEURAL=OFF` now links a no-op refinement hook so the
   decompiler does not fail at final link. Installer jobs emit the last
   build lines as annotations when packaging fails.
+- `.clang-format`: drop duplicate keys so clang-format 18 (CI) can read the
+  style file. That was failing smoke whenever a C++ file changed.
 
 ## [2.0.19] — 2026-08-09
 

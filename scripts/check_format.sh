@@ -11,6 +11,10 @@ if ! command -v clang-format &>/dev/null; then
   echo "check_format: clang-format not found in PATH" >&2
   exit 1
 fi
+if ! clang-format --dump-config >/dev/null; then
+  echo "check_format: .clang-format is invalid for $(clang-format --version)" >&2
+  exit 1
+fi
 
 # Full-tree format is not green on this LLVM-8-era codebase. In CI, only
 # check C/C++ files touched by the current push/PR so new work stays clean.
@@ -41,8 +45,16 @@ while IFS= read -r f; do
   [[ -z "$f" || ! -f "$f" ]] && continue
   [[ "$f" =~ \.(cpp|h|hpp|cc|c|cu)$ ]] || continue
   CHECKED=$((CHECKED + 1))
+  if ! clang-format "$f" >/dev/null; then
+    echo "check_format: clang-format failed on $f (invalid style or parse error)" >&2
+    echo "::error file=$f::clang-format failed"
+    FAILED=1
+    continue
+  fi
   if ! diff -q "$f" <(clang-format "$f") &>/dev/null; then
     echo "check_format: needs reformat: $f" >&2
+    diff -u "$f" <(clang-format "$f") >&2 || true
+    echo "::error file=$f::needs clang-format"
     FAILED=1
   fi
 done < <(list_sources)
