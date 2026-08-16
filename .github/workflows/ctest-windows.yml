@@ -38,7 +38,7 @@ jobs:
           host: windows
           target: desktop
           arch: win64_msvc2022_64
-          modules: qtbase qtsvg
+          archives: qtbase qtsvg
 
       - uses: lukka/get-cmake@latest
         with:
