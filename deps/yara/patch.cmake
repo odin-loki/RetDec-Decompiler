@@ -89,6 +89,31 @@ function(patch_vcxproj file)
         new_content
         "${new_content}"
     )
+    # YARA 4.5.x vs2015 project switched the NuGet pin to 1.1.1.
+    string(REPLACE
+        "..\\packages\\YARA.OpenSSL.x64.1.1.1\\include"
+        ""
+        new_content
+        "${new_content}"
+    )
+    string(REPLACE
+        "..\\packages\\YARA.OpenSSL.x86.1.1.1\\include"
+        ""
+        new_content
+        "${new_content}"
+    )
+    string(REPLACE
+        "..\\packages\\YARA.OpenSSL.x64.1.1.1\\lib"
+        ""
+        new_content
+        "${new_content}"
+    )
+    string(REPLACE
+        "..\\packages\\YARA.OpenSSL.x86.1.1.1\\lib"
+        ""
+        new_content
+        "${new_content}"
+    )
     string(REPLACE
 		"<ClCompile Include=\"..\\..\\..\\libyara\\modules\\cuckoo\\cuckoo.c\" />"
         ""
@@ -103,6 +128,14 @@ function(patch_vcxproj file)
     )
     string(REPLACE
         "<ClCompile Include=\"..\\..\\..\\libyara\\modules\\hash\\hash.c\" />"
+        ""
+        new_content
+        "${new_content}"
+    )
+    # authenticode-parser includes OpenSSL unconditionally; pe.c already
+    # gates those symbols on HAVE_LIBCRYPTO (stripped above).
+    string(REGEX REPLACE
+        "[ \t]*<ClCompile Include=\"[^\"]*authenticode-parser[^\"]*\"[ \t]*/>[ \t]*\r?\n?"
         ""
         new_content
         "${new_content}"
