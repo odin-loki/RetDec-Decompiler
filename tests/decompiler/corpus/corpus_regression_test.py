@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -42,13 +43,19 @@ def _load_manifest(path: Path) -> List[Dict[str, Any]]:
 
 
 def _count_functions_heuristic(code: str) -> int:
+    # Match K&R `) {` and Allman `)\n{`. The old per-line `)\n{` check
+    # could never fire (a stripped line cannot contain a newline).
     count = 0
+    prev = ""
     for line in code.splitlines():
         stripped = line.strip()
         if stripped.startswith("//"):
             continue
-        if ") {" in stripped or ")\n{" in stripped:
+        if re.search(r"\)\s*\{", stripped):
             count += 1
+        elif stripped == "{" and prev.endswith(")"):
+            count += 1
+        prev = stripped
     return count
 
 
@@ -179,6 +186,8 @@ def main() -> int:
                 f"  FAIL: function count {fn_count} < min {min_funcs}",
                 file=sys.stderr,
             )
+            print(f"  output={out_file} size={out_file.stat().st_size}", file=sys.stderr)
+            print(code[:800], file=sys.stderr)
             failures += 1
             continue
 
