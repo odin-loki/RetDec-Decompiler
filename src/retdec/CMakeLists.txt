@@ -44,6 +44,8 @@ target_link_libraries(retdec
 
 if(RETDEC_ENABLE_NEURAL)
 	target_link_libraries(retdec PRIVATE retdec::neural)
+else()
+	target_sources(retdec PRIVATE neural_refine_stub.cpp)
 endif()
 
 set_target_properties(retdec

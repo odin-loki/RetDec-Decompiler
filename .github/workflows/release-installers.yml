@@ -270,6 +270,7 @@ jobs:
         env:
           APPIMAGE: ${{ env.APPIMAGE }}
         run: |
+          set -euo pipefail
           cmake --build build/linux --parallel --target retdec-decompiler retdec-gui fileinfo
           cmake --install build/linux
           bash scripts/build-linux-installer.sh --skip-install --version "${{ needs.release.outputs.version }}"
