@@ -97,8 +97,9 @@ jobs:
           # OOM at 0x800. Same workaround as actions/runner-images#9491.
           sudo sysctl vm.mmap_rnd_bits=28
           sudo sysctl vm.overcommit_memory=1
-          sysctl vm.mmap_rnd_bits vm.overcommit_memory
-          sysctl vm.mmap_rnd_compat_bits || true
+          # One key per invocation: `sysctl A B` is a write of B into A.
+          sysctl vm.mmap_rnd_bits
+          sysctl vm.overcommit_memory
 
       - name: Run ASan over decompile sample corpus
         env:
