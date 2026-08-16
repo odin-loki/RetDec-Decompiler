@@ -37,7 +37,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   as a test name.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for
   `install_smoke` instead of a full `cmake --install` (yaramod headers
-  are not built by the integration target list).
+  are not built by the integration target list). The CMake target is
+  `fileinfo` (output name `retdec-fileinfo`).
 - `perf-nightly` Windows: use MSVC (`core-debug-msvc`) instead of the
   runner MinGW toolchain, which failed `find_package(ZLIB)`. Retry
   `fetch-large-files.ps1` when avast raw.githubusercontent.com resets.

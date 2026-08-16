@@ -82,7 +82,7 @@ jobs:
           $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
           cmake --build build/windows --parallel `
             --target retdec-decompiler retdec-gui retdec-gui-tests `
-            retdec-fileinfo format_router_probe retdec-decompiler-fixture-fib
+            fileinfo format_router_probe retdec-decompiler-fixture-fib
 
       - name: Install (for install_smoke)
         shell: pwsh
