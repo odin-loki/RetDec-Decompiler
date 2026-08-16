@@ -16,6 +16,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# CTest launches Windows PowerShell -NoProfile; Get-FileHash is not always
+# on the command table there. Hash with .NET instead.
+function Get-Sha256Hex([string]$Path) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $fs = [System.IO.File]::OpenRead($Path)
+        try {
+            return ([System.BitConverter]::ToString($sha.ComputeHash($fs))).Replace("-", "")
+        } finally { $fs.Dispose() }
+    } finally { $sha.Dispose() }
+}
+
 if (-not (Test-Path -LiteralPath $Decompiler)) { throw "Missing decompiler: $Decompiler" }
 if (-not (Test-Path -LiteralPath $Gui)) { throw "Missing GUI: $Gui" }
 if (-not (Test-Path -LiteralPath $Binary)) { throw "Missing binary: $Binary" }
@@ -85,8 +97,8 @@ if (-not (Test-Path -LiteralPath $guiOutputPath)) { throw "GUI output missing: $
 $parityGuiCopy = Join-Path $WorkDir "parity_gui.c"
 Copy-Item -LiteralPath $guiOutputPath -Destination $parityGuiCopy -Force
 
-$h1 = (Get-FileHash -LiteralPath $outCli -Algorithm SHA256).Hash
-$h2 = (Get-FileHash -LiteralPath $guiOutputPath -Algorithm SHA256).Hash
+$h1 = Get-Sha256Hex $outCli
+$h2 = Get-Sha256Hex $guiOutputPath
 $match = ($h1 -eq $h2)
 
 @{

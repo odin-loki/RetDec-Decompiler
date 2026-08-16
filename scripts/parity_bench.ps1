@@ -30,6 +30,17 @@ if ($Help) {
 }
 
 $ErrorActionPreference = "Stop"
+
+function Get-Sha256Hex([string]$Path) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $fs = [System.IO.File]::OpenRead($Path)
+        try {
+            return ([System.BitConverter]::ToString($sha.ComputeHash($fs))).Replace("-", "")
+        } finally { $fs.Dispose() }
+    } finally { $sha.Dispose() }
+}
+
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $RepoRoot
 
@@ -97,8 +108,8 @@ if (-not (Test-Path $guiOutputPath)) { throw "GUI decompile did not produce $gui
 Write-Host ("  subprocess: {0:F1} s (wall including Qt: {1:F1} s)" -f $guiSubSec, $guiWallSec)
 Write-Host ""
 
-$h1 = (Get-FileHash $outCli -Algorithm SHA256).Hash
-$h2 = (Get-FileHash $guiOutputPath -Algorithm SHA256).Hash
+$h1 = Get-Sha256Hex $outCli
+$h2 = Get-Sha256Hex $guiOutputPath
 Write-Host "(3) Output parity:"
 Write-Host "  CLI .c: $($h1.Substring(0,16))... ($((Get-Item $outCli).Length) bytes)"
 Write-Host "  GUI .c: $($h2.Substring(0,16))... ($((Get-Item $guiOutputPath).Length) bytes)"

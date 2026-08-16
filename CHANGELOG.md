@@ -92,6 +92,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   lines so a 16 KiB insert stays under the 16 ms frame budget.
 - Sanitizer CI reads `vm.mmap_rnd_bits` with a single-key `sysctl`
   (`sysctl A B` is a write and failed the job before ASan ran).
+- `parity_ctest` hashes CLI/GUI output with .NET SHA256; CTest's
+  `powershell -NoProfile` does not always expose `Get-FileHash`.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for
