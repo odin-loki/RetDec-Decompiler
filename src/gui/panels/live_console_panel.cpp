@@ -64,6 +64,14 @@ protected:
 			setFormat(0, text.size(), footerFmt_);
 			return;
 		}
+		// Typical decompiler log lines. Skip the case-insensitive scans
+		// so a 16 KiB [INFO] chunk stays under the 16 ms frame budget on
+		// Windows CI Debug Qt.
+		if (c0 == QLatin1Char('[')
+			&& (text.startsWith(QLatin1String("[INFO]")) || text.startsWith(QLatin1String("[OK]"))))
+		{
+			return;
+		}
 		// Cheap substring scans for severity keywords. With merged channels
 		// we no longer differentiate stderr/stdout by prefix — anything
 		// containing "error"/"warn"/etc. is coloured based on content.

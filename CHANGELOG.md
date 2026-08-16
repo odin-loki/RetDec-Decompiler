@@ -88,6 +88,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Windows corpus hello/vector_sort and `fib_smoke` compile with
   `/Od /Ob0 /Oi-` (no inline/intrinsics), matching Linux
   `-fno-builtin`, so `printf` / `bubble` stay as calls.
+- `LiveConsoleHighlighter` returns immediately on `[INFO]` / `[OK]`
+  lines so a 16 KiB insert stays under the 16 ms frame budget.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for
