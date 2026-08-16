@@ -23,6 +23,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Repo layout: live numbers stay in `results/`; historical JSON/logs live
   under `data/archive/` (not committed). Planning docs moved to
   `docs/internal/`.
+- `perf-nightly` Windows: use MSVC (`core-debug-msvc`) instead of the
+  runner MinGW toolchain, which failed `find_package(ZLIB)`.
 - Release installer CI: install the NSIS 3 x86-unicode EnVar plugin (the
   amd64 build does not load, so PATH updates aborted `makensis`).
 - Release installer CI: package the decompiler/GUI/fileinfo graph only

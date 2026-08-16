@@ -8,12 +8,24 @@ on:
 jobs:
   perf-windows:
     runs-on: windows-latest
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
 
       - name: Fetch large support files
         shell: pwsh
         run: .\scripts\fetch-large-files.ps1
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Perl
+        run: choco install strawberryperl -y --no-progress
+
+      - uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "3.31.6"
 
       - name: Cache CMake build
         uses: actions/cache@v4
@@ -23,8 +35,13 @@ jobs:
           restore-keys: |
             perf-windows-${{ runner.os }}-
 
-      - name: Configure (full-windows-debug)
-        run: cmake --preset full-windows-debug
+      - name: Configure (core-debug-msvc, CPU-only)
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
+          cmake --preset core-debug-msvc `
+            -DRETDEC_ENABLE_CUDA_ACCEL=OFF `
+            -DRETDEC_TESTS=OFF
 
       - name: Build decompiler
         run: cmake --build build/windows --target retdec-decompiler --parallel
@@ -56,6 +73,7 @@ jobs:
 
   perf-linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
 
