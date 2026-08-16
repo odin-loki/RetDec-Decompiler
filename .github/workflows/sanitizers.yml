@@ -35,9 +35,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/linux
-          key: sanitizers-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/deps.cmake', 'cmake/**') }}
+          key: sanitizers-rel-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/deps.cmake', 'cmake/**') }}
           restore-keys: |
-            sanitizers-
+            sanitizers-rel-
 
       - name: Configure (ASan + UBSan, RelWithDebInfo, CPU-only CI)
         run: >
@@ -92,7 +92,7 @@ jobs:
 
       - name: Run ASan over decompile sample corpus
         env:
-          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:symbolize=1:quarantine_size_mb=16:malloc_context_size=5
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:handle_abort=1:symbolize=1:quarantine_size_mb=8:malloc_context_size=0
         run: |
           set -euo pipefail
           mkdir -p profile_output

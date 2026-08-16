@@ -348,13 +348,12 @@ void LiveConsolePanel::appendChunk(Stream stream, const QByteArray& bytes)
 		}
 	}
 	c.endEditBlock();
-	text_->setUpdatesEnabled(true);
-
 	if (autoScroll_)
 	{
 		QScrollBar* sb = text_->verticalScrollBar();
 		if (sb) sb->setValue(sb->maximum());
 	}
+	text_->setUpdatesEnabled(true);
 }
 
 void LiveConsolePanel::appendLine(Stream stream, const QString& line)
