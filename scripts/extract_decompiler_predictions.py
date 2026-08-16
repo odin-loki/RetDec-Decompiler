@@ -521,8 +521,12 @@ def decompile_one(
             env=env,
         )
     except subprocess.TimeoutExpired:
+        print(f"extract: timeout {binary.name}", file=sys.stderr)
         return False, [], []
     if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or "").strip().splitlines()
+        tail = " | ".join(err[-3:]) if err else "no output"
+        print(f"extract: {binary.name} rc={proc.returncode}: {tail}", file=sys.stderr)
         return False, [], []
     cfg_candidates = (
         job_work / f"{binary.name}.config.json",
@@ -548,8 +552,11 @@ def _decompile_task(
 ) -> tuple[str, bool, list[str], list[str]]:
     binary = resolve_corpus_binary(Path(corpus), name)
     if binary is None:
+        print(f"extract: missing corpus binary {name}", file=sys.stderr)
         return name, False, [], []
     ok, labels, raw = decompile_one(Path(dec), binary, Path(work), timeout, stem_fallback)
+    if not ok:
+        print(f"extract: decompile failed {name}", file=sys.stderr)
     return name, ok, labels, raw
 
 

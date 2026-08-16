@@ -34,6 +34,20 @@ if [[ -z "${DEC}" || ! -x "${DEC}" ]]; then
 	exit 1
 fi
 
+# Build-tree binaries look for ../share/retdec/decompiler-config.json.
+dec_dir="$(cd "$(dirname "${DEC}")" && pwd)"
+share_dir="$(cd "${dec_dir}/.." && pwd)/share/retdec"
+mkdir -p "${share_dir}/profiles"
+cp -f "${ROOT}/src/retdec-decompiler/decompiler-config.json" "${share_dir}/"
+if [[ -d "${ROOT}/src/retdec-decompiler/profiles" ]]; then
+	cp -f "${ROOT}/src/retdec-decompiler/profiles/"*.json "${share_dir}/profiles/" 2>/dev/null || true
+fi
+if [[ -d "${ROOT}/install/linux/share/retdec/support" && ! -d "${share_dir}/support" ]]; then
+	cp -a "${ROOT}/install/linux/share/retdec/support" "${share_dir}/support"
+fi
+echo "Using decompiler: ${DEC}"
+echo "Staged runtime config: ${share_dir}/decompiler-config.json"
+
 bash "${ROOT}/scripts/build_algorithm_corpus.sh"
 
 PRED="${ROOT}/tests/algorithm_recovery/predictions/ci.json"

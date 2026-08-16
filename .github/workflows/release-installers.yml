@@ -91,7 +91,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 360
     env:
-      CMAKE_BUILD_PARALLEL_LEVEL: "2"
+      CMAKE_BUILD_PARALLEL_LEVEL: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -204,7 +204,12 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
+          $env:CMAKE_BUILD_PARALLEL_LEVEL = "1"
           try {
+            cmake --build build/windows --parallel 1 --target llvm-project
+            if (Test-Path "build/windows/deps/install/llvm/lib/LLVMPasses.lib") {
+              Get-ChildItem -Path "build/windows/llvm-project-prefix" -Recurse -Filter *.obj -ErrorAction SilentlyContinue | Remove-Item -Force
+            }
             .\scripts\build-windows-installer.ps1 -Version "${{ needs.release.outputs.version }}"
           } catch {
             $log = Join-Path $pwd "build-windows.log"
@@ -249,7 +254,7 @@ jobs:
     timeout-minutes: 360
     env:
       APPIMAGE: ${{ (github.event_name == 'workflow_dispatch' && inputs.appimage == true) && '1' || vars.APPIMAGE || '0' }}
-      CMAKE_BUILD_PARALLEL_LEVEL: "2"
+      CMAKE_BUILD_PARALLEL_LEVEL: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -336,8 +341,17 @@ jobs:
           APPIMAGE: ${{ env.APPIMAGE }}
         run: |
           set -euo pipefail
-          cmake --build build/linux --parallel 2 --target install 2>&1 | tee build-linux.log
-          bash scripts/build-linux-installer.sh --skip-install --version "${{ needs.release.outputs.version }}"
+          {
+            df -h
+            cmake --build build/linux --parallel 1 --target llvm-project
+            if [ -f build/linux/deps/install/llvm/lib/libLLVMPasses.a ]; then
+              find build/linux/llvm-project-prefix -name '*.o' -delete || true
+            fi
+            df -h
+            cmake --build build/linux --parallel 2 --target retdec-decompiler retdec-gui fileinfo
+            cmake --install build/linux
+            bash scripts/build-linux-installer.sh --skip-install --version "${{ needs.release.outputs.version }}"
+          } 2>&1 | tee build-linux.log
 
       - name: Annotate Linux build failure
         if: failure() && steps.linux_pkg.outcome == 'failure'
@@ -348,7 +362,10 @@ jobs:
           if not p.exists():
               print("::error::Linux installer failed and build-linux.log is missing")
               raise SystemExit(0)
-          lines = p.read_text(errors="replace").splitlines()[-50:]
+          raw = p.read_text(errors="replace").splitlines()
+          keys = ("FAILED", "error:", "fatal", "No space", "ninja: build stopped")
+          hits = [ln for ln in raw if any(k in ln for k in keys)]
+          lines = (hits[-20:] + raw[-30:]) if hits else raw[-50:]
           text = "%0A".join(x.replace("%", "%25") for x in lines)
           print(f"::error::Linux installer build failed%0A{text}")
           PY

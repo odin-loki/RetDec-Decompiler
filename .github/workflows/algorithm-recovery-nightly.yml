@@ -47,17 +47,33 @@ jobs:
           -DRETDEC_ENABLE_NEURAL=OFF
 
       - name: Build decompiler
-        run: cmake --build build/linux --parallel --target retdec-decompiler
+        run: cmake --build build/linux --parallel 2 --target retdec-decompiler
+
+      - name: Install decompiler prefix
+        run: cmake --install build/linux || echo "cmake --install failed; recovery will stage build-tree config"
 
       - name: Algorithm recovery (CI core subset)
         run: |
-          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          DEC=""
+          if [[ -x install/linux/bin/retdec-decompiler ]]; then
+            DEC="install/linux/bin/retdec-decompiler"
+          else
+            DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          fi
+          test -n "$DEC" && test -x "$DEC"
+          echo "decompiler=$DEC"
+          "$DEC" --help >/dev/null || true
           bash scripts/run_algorithm_recovery_ci.sh --decompiler "$DEC"
 
       - name: Algorithm recovery (full corpus)
         if: github.event_name == 'workflow_dispatch' && inputs.full_corpus == true
         run: |
-          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          DEC="${DEC:-}"
+          if [[ -x install/linux/bin/retdec-decompiler ]]; then
+            DEC="install/linux/bin/retdec-decompiler"
+          else
+            DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          fi
           bash scripts/run_algorithm_recovery_full.sh --decompiler "$DEC" --jobs 4
 
       - name: Algorithm recovery regression gate (CI core)
@@ -90,17 +106,24 @@ jobs:
 
       - name: DecompileBench regression (CI core stand-in)
         run: |
-          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          DEC="install/linux/bin/retdec-decompiler"
+          if [[ ! -x "$DEC" ]]; then
+            DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          fi
           bash scripts/fetch_decompilebench_corpus.sh --profile ci-core
           bash scripts/run_benchmarks.sh --profile ci-core --compare 2026-08 --gate
 
       - name: Migration eval suite
         run: |
           bash scripts/setup_eval_venv.sh
-          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          DEC="install/linux/bin/retdec-decompiler"
+          if [[ ! -x "$DEC" ]]; then
+            DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          fi
           bash scripts/migration_eval_suite.sh --decompiler "$DEC"
 
       - name: Upload algorithm recovery results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: algorithm-recovery-results
