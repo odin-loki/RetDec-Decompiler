@@ -175,12 +175,17 @@ jobs:
           cmake --preset full-windows-release
           -DRETDEC_ENABLE_CUDA_ACCEL=OFF
           -DRETDEC_TESTS=OFF
+          -DRETDEC_ENABLE_NEURAL=OFF
           -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
+          -DRETDEC_ENABLE_RETDEC_DECOMPILER=ON
+          -DRETDEC_ENABLE_FILEINFO=ON
 
       - name: Build and package Windows installers
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         shell: pwsh
-        run: .\scripts\build-windows-installer.ps1 -Version "${{ needs.release.outputs.version }}"
+        run: |
+          $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
+          .\scripts\build-windows-installer.ps1 -Version "${{ needs.release.outputs.version }}"
 
       - name: Upload Windows release assets
         uses: softprops/action-gh-release@v2
@@ -228,6 +233,10 @@ jobs:
             python3 \
             python3-yaml \
             perl \
+            flex \
+            bison \
+            libssl-dev \
+            zlib1g-dev \
             qt6-base-dev \
             qt6-base-dev-tools \
             libqt6svg6-dev \
@@ -243,7 +252,7 @@ jobs:
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         run: |
           bash scripts/fetch-large-files.sh || \
-            bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/avast/retdec/master"
+            bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
 
       - name: Configure (full-linux-release, CPU-only CI)
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
@@ -251,14 +260,18 @@ jobs:
           cmake --preset full-linux-release
           -DRETDEC_ENABLE_CUDA_ACCEL=OFF
           -DRETDEC_TESTS=OFF
+          -DRETDEC_ENABLE_NEURAL=OFF
           -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
+          -DRETDEC_ENABLE_RETDEC_DECOMPILER=ON
+          -DRETDEC_ENABLE_FILEINFO=ON
 
       - name: Build and package Linux tarball
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         env:
           APPIMAGE: ${{ env.APPIMAGE }}
         run: |
-          cmake --build build/linux --target install --parallel
+          cmake --build build/linux --parallel --target retdec-decompiler retdec-gui fileinfo
+          cmake --install build/linux
           bash scripts/build-linux-installer.sh --skip-install --version "${{ needs.release.outputs.version }}"
 
       - name: Verify optional AppImage
