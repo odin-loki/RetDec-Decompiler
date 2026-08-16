@@ -2,7 +2,7 @@
 # Run RetDec decompiler built with AddressSanitizer + LeakSanitizer.
 # Build: cmake --preset core-asan (or -DRETDEC_USE_ADDRESS_SANITIZER=ON) then build retdec-decompiler
 # Usage: wsl bash scripts/run_asan.sh [binary_to_decompile]
-set -e
+set -euo pipefail
 cd "$(dirname "$0")/.."
 DECOMPILER=""
 for d in build/linux build; do

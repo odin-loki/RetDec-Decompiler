@@ -82,7 +82,10 @@ jobs:
           $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
           cmake --build build/windows --parallel `
             --target retdec-decompiler retdec-gui retdec-gui-tests `
-            fileinfo format_router_probe retdec-decompiler-fixture-fib
+            fileinfo format_router_probe retdec-decompiler-fixture-fib `
+            retdec-decompiler-runtime-share `
+            retdec-decompiler-corpus-fixtures `
+            retdec-gui-decompiler-staging
 
       - name: Install (for install_smoke)
         shell: pwsh
@@ -104,7 +107,12 @@ jobs:
           Copy-Item -Path (Join-Path $gui.DirectoryName "*") -Destination $dest -Force
           Copy-Item -LiteralPath $dec.FullName -Destination $dest -Force
           Copy-Item -LiteralPath $fi.FullName -Destination $dest -Force
+          $share = "install/windows/share/retdec"
+          New-Item -ItemType Directory -Force -Path (Join-Path $share "profiles") | Out-Null
+          Copy-Item -LiteralPath "src/retdec-decompiler/decompiler-config.json" -Destination $share -Force
+          Copy-Item -Path "src/retdec-decompiler/profiles/*.json" -Destination (Join-Path $share "profiles") -Force
           Write-Host "Staged $($gui.Name), $($dec.Name), $($fi.Name) into $dest"
+          Write-Host "Staged decompiler-config.json into $share"
 
       - name: GUI unit tests (headless)
         run: .\build\windows\tests\gui\retdec-gui-tests.exe

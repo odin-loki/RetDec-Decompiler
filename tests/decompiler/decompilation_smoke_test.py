@@ -29,10 +29,16 @@ def main():
         )
         if result.returncode != 0:
             print(f"Decompiler failed (exit {result.returncode})")
-            print(result.stderr[-2000:] if result.stderr else "")
+            print("stdout:", result.stdout[-2000:] if result.stdout else "")
+            print("stderr:", result.stderr[-2000:] if result.stderr else "")
             sys.exit(1)
         if not os.path.isfile(output) or os.path.getsize(output) == 0:
             print("Error: output file empty or missing")
+            print(f"decompiler={decompiler}")
+            print(f"input={input_bin} size={os.path.getsize(input_bin)}")
+            print(f"output={output} exists={os.path.isfile(output)}")
+            print("stdout:", result.stdout[-2000:] if result.stdout else "")
+            print("stderr:", result.stderr[-2000:] if result.stderr else "")
             sys.exit(1)
         print(f"OK: {output} ({os.path.getsize(output)} bytes)")
     except subprocess.TimeoutExpired:

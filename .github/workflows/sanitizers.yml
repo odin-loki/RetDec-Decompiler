@@ -61,21 +61,39 @@ jobs:
           # Best-effort: compile additional samples from tests/decompile_samples.
           bash tests/decompile_samples/compile_all.sh || true
 
+      - name: Stage decompiler runtime config
+        run: |
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          if [ -z "$DEC" ]; then echo "retdec-decompiler not found"; exit 1; fi
+          dec_dir="$(cd "$(dirname "$DEC")" && pwd)"
+          share_dir="$(cd "${dec_dir}/.." && pwd)/share/retdec"
+          mkdir -p "${share_dir}/profiles"
+          cp -f src/retdec-decompiler/decompiler-config.json "${share_dir}/"
+          cp -f src/retdec-decompiler/profiles/*.json "${share_dir}/profiles/"
+          echo "Staged runtime config: ${share_dir}/decompiler-config.json"
+
       - name: Run ASan over decompile sample corpus
         run: |
           set -euo pipefail
           mkdir -p profile_output
           shopt -s nullglob
           samples=(/tmp/retdec_tests/c/* /tmp/retdec_tests/cpp/* /tmp/retdec_tests/rust/*)
-          if [ ${#samples[@]} -eq 0 ]; then
-            echo "No decompile samples found"
-            exit 1
-          fi
+          ran=0
           for sample in "${samples[@]}"; do
             [ -f "$sample" ] || continue
+            [ -x "$sample" ] || continue
+            case "$sample" in
+              *.c|*.cc|*.cpp|*.cxx|*.h|*.hpp|*.rs) continue ;;
+            esac
             echo "=== ASan: $sample ==="
-            bash scripts/run_asan.sh "$sample"
+            timeout 180 bash scripts/run_asan.sh "$sample"
+            ran=$((ran + 1))
           done
+          if [ "$ran" -eq 0 ]; then
+            echo "No executable decompile samples found"
+            exit 1
+          fi
+          echo "ASan finished $ran executable sample(s)"
 
       - name: Upload ASan log
         uses: actions/upload-artifact@v4

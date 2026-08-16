@@ -41,6 +41,15 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - `LiveConsolePanel::attachProcess` connects `QProcess::finished` to the
   member slot (Qt `UniqueConnection` cannot wrap a lambda; Windows GUI
   tests aborted on that assert).
+- Full-test CI builds corpus fixtures, GUI staging, and
+  `retdec-decompiler-runtime-share` so integration ctest has hello /
+  vector_sort / `gui_staging` and a build-tree `decompiler-config.json`
+  (empty llvmPasses was exiting 0 with no `-o`). Windows `install_smoke`
+  gets the same config under `install/windows/share/retdec`.
+- ASan corpus loop runs only executable samples (not `.c`/`.cpp`/`.rs`
+  sources) with a 180s per-sample timeout; `run_asan.sh` uses `pipefail`.
+- `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
+  output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for
   `install_smoke` instead of a full `cmake --install` (yaramod headers
   are not built by the integration target list). The CMake target is

@@ -71,6 +71,9 @@ jobs:
           cmake --build build/linux --parallel
           --target retdec-decompiler retdec-gui retdec-gui-tests
           format_router_probe retdec-decompiler-fixture-fib
+          retdec-decompiler-runtime-share
+          retdec-decompiler-corpus-fixtures
+          retdec-gui-decompiler-staging
 
       - name: GUI unit tests (headless)
         run: ./build/linux/tests/gui/retdec-gui-tests

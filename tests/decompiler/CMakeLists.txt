@@ -150,6 +150,29 @@ list(APPEND _CORPUS_FIXTURE_OUTPUTS "${_CORPUS_HELLO_PYC}")
 add_custom_target(retdec-decompiler-corpus-fixtures ALL DEPENDS ${_CORPUS_FIXTURE_OUTPUTS})
 add_dependencies(retdec-decompiler-corpus-fixtures retdec-decompiler-fixture-fib)
 
+# Build-tree binaries look for ../share/retdec/decompiler-config.json
+# (parent of TARGET_FILE_DIR). Without it, llvmPasses stays empty and
+# decompile can exit 0 with no -o file.
+set(_DEC_SHARE_DIR "$<TARGET_FILE_DIR:retdec-decompiler>/../share/retdec")
+set(_DEC_SHARE_STAMP "${CMAKE_CURRENT_BINARY_DIR}/.runtime_share_staged")
+add_custom_command(
+    OUTPUT "${_DEC_SHARE_STAMP}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${_DEC_SHARE_DIR}/profiles"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/retdec-decompiler/decompiler-config.json"
+        "${_DEC_SHARE_DIR}/decompiler-config.json"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/src/retdec-decompiler/profiles"
+        "${_DEC_SHARE_DIR}/profiles"
+    COMMAND ${CMAKE_COMMAND} -E touch "${_DEC_SHARE_STAMP}"
+    DEPENDS retdec-decompiler
+        "${CMAKE_SOURCE_DIR}/src/retdec-decompiler/decompiler-config.json"
+    COMMENT "Stage share/retdec next to the build-tree decompiler"
+    VERBATIM
+)
+add_custom_target(retdec-decompiler-runtime-share ALL DEPENDS "${_DEC_SHARE_STAMP}")
+add_dependencies(retdec-decompiler-corpus-fixtures retdec-decompiler-runtime-share)
+
 # ── CLI smoke ─────────────────────────────────────────────────────────────────
 add_test(
     NAME decompiler_smoke_cli_fib
@@ -278,6 +301,14 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:retdec-decompiler>"
         "${_GUI_STAGING}/$<TARGET_FILE_NAME:retdec-decompiler>"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_CURRENT_BINARY_DIR}/share/retdec/profiles"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/src/retdec-decompiler/decompiler-config.json"
+        "${CMAKE_CURRENT_BINARY_DIR}/share/retdec/decompiler-config.json"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/src/retdec-decompiler/profiles"
+        "${CMAKE_CURRENT_BINARY_DIR}/share/retdec/profiles"
     COMMAND ${CMAKE_COMMAND} -E touch "${_GUI_STAGING_STAMP}"
     DEPENDS retdec-gui retdec-decompiler
     COMMENT "Stage retdec-gui (with Qt deps) + retdec-decompiler for integration tests"
