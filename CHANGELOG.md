@@ -33,6 +33,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   does not pass `/Fe:\"path\"` and LNK1104 the quoted name.
 - `resolveGuiDecompiledCPath` joins lexically so Windows-style paths stay
   intact on Linux (GUI launch tests).
+- `format_router_test.py` does not let unittest treat the C++ probe path
+  as a test name.
+- `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for
+  `install_smoke` instead of a full `cmake --install` (yaramod headers
+  are not built by the integration target list).
 - `perf-nightly` Windows: use MSVC (`core-debug-msvc`) instead of the
   runner MinGW toolchain, which failed `find_package(ZLIB)`. Retry
   `fetch-large-files.ps1` when avast raw.githubusercontent.com resets.

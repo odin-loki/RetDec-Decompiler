@@ -82,10 +82,29 @@ jobs:
           $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
           cmake --build build/windows --parallel `
             --target retdec-decompiler retdec-gui retdec-gui-tests `
-            format_router_probe retdec-decompiler-fixture-fib
+            retdec-fileinfo format_router_probe retdec-decompiler-fixture-fib
 
       - name: Install (for install_smoke)
-        run: cmake --install build/windows --prefix install/windows
+        shell: pwsh
+        run: |
+          # Full cmake --install also installs ExternalProjects that this job
+          # never built (yaramod include/). Stage the three smoke binaries
+          # from the build tree instead.
+          $dest = "install/windows/bin"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          $gui = Get-ChildItem -Recurse -Filter retdec-gui.exe -Path build/windows |
+            Select-Object -First 1
+          $dec = Get-ChildItem -Recurse -Filter retdec-decompiler.exe -Path build/windows |
+            Select-Object -First 1
+          $fi = Get-ChildItem -Recurse -Filter retdec-fileinfo.exe -Path build/windows |
+            Select-Object -First 1
+          if (-not $gui -or -not $dec -or -not $fi) {
+            throw "missing retdec-gui/decompiler/fileinfo under build/windows"
+          }
+          Copy-Item -Path (Join-Path $gui.DirectoryName "*") -Destination $dest -Force
+          Copy-Item -LiteralPath $dec.FullName -Destination $dest -Force
+          Copy-Item -LiteralPath $fi.FullName -Destination $dest -Force
+          Write-Host "Staged $($gui.Name), $($dec.Name), $($fi.Name) into $dest"
 
       - name: GUI unit tests (headless)
         run: .\build\windows\tests\gui\retdec-gui-tests.exe

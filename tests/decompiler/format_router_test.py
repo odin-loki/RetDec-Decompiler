@@ -270,7 +270,7 @@ class FormatRouterProbe:
 
 
 def resolve_probe_path() -> str | None:
-    if len(sys.argv) > 1:
+    if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]):
         return sys.argv[1]
     env = os.environ.get("FORMAT_ROUTER_PROBE")
     if env and os.path.isfile(env):
@@ -339,4 +339,5 @@ class FormatRouterTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    # Probe path is sys.argv[1]; do not let unittest treat it as a test name.
+    unittest.main(verbosity=2, argv=[sys.argv[0]])
