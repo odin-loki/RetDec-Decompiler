@@ -90,6 +90,8 @@ jobs:
     needs: release
     runs-on: windows-latest
     timeout-minutes: 360
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: "2"
     steps:
       - uses: actions/checkout@v4
 
@@ -146,6 +148,20 @@ jobs:
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         with:
           cmakeVersion: "3.31.6"
+
+      - name: Restore Windows dep cache
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        id: win_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/windows/deps
+            build/windows/external
+            build/windows/llvm-project-prefix
+          key: installer-win-deps-${{ hashFiles('cmake/deps.cmake') }}-${{ github.run_id }}
+          restore-keys: |
+            installer-win-deps-${{ hashFiles('cmake/deps.cmake') }}-
+            installer-win-deps-
 
       - name: Install EnVar NSIS plugin
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
@@ -207,6 +223,16 @@ jobs:
           path: build-windows.log
           if-no-files-found: ignore
 
+      - name: Save Windows dep cache
+        if: always() && steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/windows/deps
+            build/windows/external
+            build/windows/llvm-project-prefix
+          key: installer-win-deps-${{ hashFiles('cmake/deps.cmake') }}-${{ github.run_id }}
+
       - name: Upload Windows release assets
         uses: softprops/action-gh-release@v2
         with:
@@ -223,6 +249,7 @@ jobs:
     timeout-minutes: 360
     env:
       APPIMAGE: ${{ (github.event_name == 'workflow_dispatch' && inputs.appimage == true) && '1' || vars.APPIMAGE || '0' }}
+      CMAKE_BUILD_PARALLEL_LEVEL: "2"
     steps:
       - uses: actions/checkout@v4
 
@@ -268,6 +295,23 @@ jobs:
         with:
           cmakeVersion: "3.31.6"
 
+      - name: ccache
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        uses: hendrikmuhs/ccache-action@v1.2
+
+      - name: Restore Linux dep cache
+        if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/linux/deps
+            build/linux/external
+            build/linux/llvm-project-prefix
+          key: installer-linux-deps-${{ hashFiles('cmake/deps.cmake') }}-${{ github.run_id }}
+          restore-keys: |
+            installer-linux-deps-${{ hashFiles('cmake/deps.cmake') }}-
+            installer-linux-deps-
+
       - name: Fetch large support files
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         run: |
@@ -292,7 +336,7 @@ jobs:
           APPIMAGE: ${{ env.APPIMAGE }}
         run: |
           set -euo pipefail
-          cmake --build build/linux --parallel --target install 2>&1 | tee build-linux.log
+          cmake --build build/linux --parallel 2 --target install 2>&1 | tee build-linux.log
           bash scripts/build-linux-installer.sh --skip-install --version "${{ needs.release.outputs.version }}"
 
       - name: Annotate Linux build failure
@@ -316,6 +360,16 @@ jobs:
           name: linux-installer-build-log
           path: build-linux.log
           if-no-files-found: ignore
+
+      - name: Save Linux dep cache
+        if: always() && steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/linux/deps
+            build/linux/external
+            build/linux/llvm-project-prefix
+          key: installer-linux-deps-${{ hashFiles('cmake/deps.cmake') }}-${{ github.run_id }}
 
       - name: Verify optional AppImage
         if: env.APPIMAGE == '1'

@@ -30,6 +30,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   build lines as annotations when packaging fails.
 - `.clang-format`: drop duplicate keys so clang-format 18 (CI) can read the
   style file. That was failing smoke whenever a C++ file changed.
+- Release installer CI: cache LLVM/OpenSSL ExternalProject trees (save on
+  failure so a partial compile can resume) and cap `cmake --build` at 2 jobs.
 
 ## [2.0.19] — 2026-08-09
 

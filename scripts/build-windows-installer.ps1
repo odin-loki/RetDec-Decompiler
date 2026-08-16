@@ -390,7 +390,11 @@ if (-not $SkipBuild) {
 
     Write-Host "==> cmake --build --target install"
     $buildLog = Join-Path $RepoRoot "build-windows.log"
-    & cmake --build $BuildDir --target install --parallel 2>&1 | Tee-Object -FilePath $buildLog
+    $parallelArgs = @("--parallel")
+    if ($env:CMAKE_BUILD_PARALLEL_LEVEL) {
+        $parallelArgs = @("--parallel", $env:CMAKE_BUILD_PARALLEL_LEVEL)
+    }
+    & cmake --build $BuildDir --target install @parallelArgs 2>&1 | Tee-Object -FilePath $buildLog
     if ($LASTEXITCODE -ne 0) {
         if (Test-Path -LiteralPath $buildLog) {
             Write-Host "===== cmake --build failed (last 80 lines) ====="
