@@ -76,12 +76,11 @@ def roundtrip_java(retdec: Path, java: Optional[Path], cc: Path,
 
     with tempfile.TemporaryDirectory(prefix="retdec_rt_java_") as tmp:
         tmp_path = Path(tmp)
-        out_base = tmp_path / name
+        c_file = tmp_path / (name + ".c")
 
         # Phase 1: decompile
         try:
-            proc = run([str(retdec), "--input", str(fixture),
-                        "--output", str(out_base)], timeout)
+            proc = run([str(retdec), str(fixture), "-o", str(c_file)], timeout)
         except subprocess.TimeoutExpired:
             return RoundtripResult(name, "decompile", False, "TIMEOUT")
 
@@ -89,7 +88,6 @@ def roundtrip_java(retdec: Path, java: Optional[Path], cc: Path,
             return RoundtripResult(name, "decompile", False,
                                    f"retdec exit {proc.returncode}: {proc.stderr[:300]}")
 
-        c_file = tmp_path / (name + ".c")
         if not c_file.exists():
             # Try .ll fallback
             ll_file = tmp_path / (name + ".ll")
@@ -161,11 +159,10 @@ def roundtrip_csharp(retdec: Path, fixture: Path,
 
     with tempfile.TemporaryDirectory(prefix="retdec_rt_cs_") as tmp:
         tmp_path = Path(tmp)
-        out_base = tmp_path / name
+        c_file = tmp_path / (name + ".c")
 
         try:
-            proc = run([str(retdec), "--input", str(fixture),
-                        "--output", str(out_base)], timeout)
+            proc = run([str(retdec), str(fixture), "-o", str(c_file)], timeout)
         except subprocess.TimeoutExpired:
             return RoundtripResult(name, "decompile", False, "TIMEOUT")
 

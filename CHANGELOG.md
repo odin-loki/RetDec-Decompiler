@@ -94,6 +94,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   (`sysctl A B` is a write and failed the job before ASan ran).
 - `parity_ctest` hashes CLI/GUI output with .NET SHA256; CTest's
   `powershell -NoProfile` does not always expose `Get-FileHash`.
+- `managed_integration` invokes `retdec-decompiler` with a positional
+  input and `-o` (there is no `--input`), compiles `hello.py` so the
+  harness is not a no-op, and fails if the decompiler writes no text.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for

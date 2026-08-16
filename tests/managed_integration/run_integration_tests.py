@@ -83,6 +83,8 @@ def find_retdec(hint: Optional[str]) -> Path:
     script_dir = Path(__file__).parent
     candidates = [
         script_dir / "../../build/src/retdec-decompiler/retdec-decompiler",
+        script_dir / "../../build/linux/src/retdec-decompiler/retdec-decompiler",
+        script_dir / "../../build/windows/src/retdec-decompiler/retdec-decompiler.exe",
         script_dir / "../../build-release/src/retdec-decompiler/retdec-decompiler",
         Path("/usr/local/bin/retdec-decompiler"),
         Path("/usr/bin/retdec-decompiler"),
@@ -138,18 +140,58 @@ def discover_fixtures(fixtures_dir: Path, languages: List[str]) -> List[TestCase
 # ---------------------------------------------------------------------------
 # Execution
 # ---------------------------------------------------------------------------
+def decompile_cmd(retdec: Path, fixture: Path, output: Optional[Path] = None) -> List[str]:
+    # retdec-decompiler takes a positional input and -o/--output. There is no --input.
+    cmd = [str(retdec), str(fixture)]
+    if output is not None:
+        cmd.extend(["-o", str(output)])
+    return cmd
+
+
+def ensure_hello_pyc(fixtures_dir: Path) -> None:
+    """Compile the committed hello.py so CI has at least one real .pyc fixture."""
+    src = fixtures_dir / "python" / "hello.py"
+    dest = fixtures_dir / "python" / "hello.pyc"
+    if not src.is_file():
+        return
+    import py_compile
+
+    py_compile.compile(str(src), cfile=str(dest), doraise=True)
+
+
+def read_decompiled_text(tmp_out: Path, fixture: Path) -> Optional[str]:
+    candidates = [
+        tmp_out,
+        Path(str(tmp_out) + ".c"),
+        Path(str(tmp_out) + ".ll"),
+        fixture.parent / (fixture.name + ".c"),
+        fixture.parent / (fixture.name + ".ll"),
+    ]
+    for path in candidates:
+        if not path.is_file() or path.stat().st_size <= 0:
+            continue
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        if text.strip():
+            return text
+    return None
+
+
 def run_one(retdec: Path, test: TestCase, timeout: int, verbose: bool) -> TestResult:
     start = time.monotonic()
     tmp_out = test.fixture_path.parent / (test.fixture_path.name + ".retdec_out")
+    actual_text: Optional[str] = None
     try:
         proc = subprocess.run(
-            [str(retdec), "--input", str(test.fixture_path),
-             "--output", str(tmp_out)],
+            decompile_cmd(retdec, test.fixture_path, tmp_out),
             capture_output=True, text=True, timeout=timeout,
         )
         succeeded = proc.returncode == 0
         stdout = proc.stdout
         stderr = proc.stderr
+        actual_text = read_decompiled_text(tmp_out, test.fixture_path)
     except subprocess.TimeoutExpired:
         duration = time.monotonic() - start
         return TestResult(test, False, duration, f"TIMEOUT after {timeout}s")
@@ -157,7 +199,6 @@ def run_one(retdec: Path, test: TestCase, timeout: int, verbose: bool) -> TestRe
         duration = time.monotonic() - start
         return TestResult(test, False, duration, f"EXEC ERROR: {e}")
     finally:
-        # Clean up temp output
         for p in [tmp_out, Path(str(tmp_out) + ".c"), Path(str(tmp_out) + ".ll")]:
             if p.exists():
                 try:
@@ -181,24 +222,10 @@ def run_one(retdec: Path, test: TestCase, timeout: int, verbose: bool) -> TestRe
         return TestResult(test, False, duration,
                           f"retdec exited {proc.returncode}", stdout, stderr)
 
-    # Golden file comparison
-    output_files = [
-        Path(str(tmp_out) + ".c"),
-        Path(str(tmp_out) + ".ll"),
-        tmp_out,
-    ]
-    actual_text: Optional[str] = None
-    for op in [test.fixture_path.parent / (test.fixture_path.name + ".c"),
-               test.fixture_path.parent / (test.fixture_path.name + ".ll")]:
-        if op.exists():
-            try:
-                actual_text = op.read_text(errors="replace")
-            except OSError:
-                pass
-            break
-
     if actual_text is None:
-        return TestResult(test, True, duration, "decompiled (no text output to diff)")
+        return TestResult(test, False, duration,
+                          "decompiler exited 0 but wrote no decompiled text",
+                          stdout, stderr)
 
     if not test.golden_path.exists():
         return TestResult(test, True, duration,
@@ -221,18 +248,26 @@ def run_one(retdec: Path, test: TestCase, timeout: int, verbose: bool) -> TestRe
 # Golden-file update
 # ---------------------------------------------------------------------------
 def update_golden(retdec: Path, test: TestCase, timeout: int):
-    proc = subprocess.run(
-        [str(retdec), "--input", str(test.fixture_path)],
-        capture_output=True, text=True, timeout=timeout,
-    )
-    for ext in [".c", ".ll"]:
-        candidate = test.fixture_path.parent / (test.fixture_path.name + ext)
-        if candidate.exists():
+    tmp_out = test.fixture_path.parent / (test.fixture_path.name + ".retdec_out")
+    try:
+        subprocess.run(
+            decompile_cmd(retdec, test.fixture_path, tmp_out),
+            capture_output=True, text=True, timeout=timeout,
+        )
+        text = read_decompiled_text(tmp_out, test.fixture_path)
+        if text:
             test.golden_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(candidate, test.golden_path)
+            test.golden_path.write_text(text, errors="replace")
             print(f"  [golden] {test.golden_path}")
             return
-    print(f"  [golden] no output file found for {test.fixture_path.name}")
+        print(f"  [golden] no output file found for {test.fixture_path.name}")
+    finally:
+        for p in [tmp_out, Path(str(tmp_out) + ".c"), Path(str(tmp_out) + ".ll")]:
+            if p.exists():
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
 
 # ---------------------------------------------------------------------------
 # Reporting
@@ -283,6 +318,7 @@ def main():
 
     fixtures_dir = Path(args.fixtures)
     languages = args.languages or list(LANGUAGE_SPECS.keys())
+    ensure_hello_pyc(fixtures_dir)
     cases = discover_fixtures(fixtures_dir, languages)
 
     if not cases:
