@@ -45,8 +45,7 @@ jobs:
           $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
           cmake --preset core-debug-msvc `
             -DRETDEC_ENABLE_CUDA_ACCEL=OFF `
-            -DRETDEC_ENABLE_NEURAL=OFF `
-            -DRETDEC_TESTS=OFF
+            -DRETDEC_ENABLE_NEURAL=OFF
 
       - name: Build decompiler
         run: cmake --build build/windows --target retdec-decompiler --parallel

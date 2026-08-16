@@ -27,7 +27,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   runner MinGW toolchain, which failed `find_package(ZLIB)`. Retry
   `fetch-large-files.ps1` when avast raw.githubusercontent.com resets.
   Map `popen`/`pclose` to `_popen`/`_pclose` on MSVC so `retdec-neural`
-  compiles; leave neural off for the Windows perf job.
+  compiles; leave neural off for the Windows perf job. Keep tests enabled
+  so the `retdec-decompiler-fixture-fib` target exists.
 - Release installer CI: install the NSIS 3 x86-unicode EnVar plugin (the
   amd64 build does not load, so PATH updates aborted `makensis`).
 - Release installer CI: package the decompiler/GUI/fileinfo graph only
