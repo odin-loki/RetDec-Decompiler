@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CORPUS="${ROOT}/tests/algorithm_recovery/corpus"
 OUT="${ROOT}/results/retypd-eval.json"
 LIMIT=10
-PYTHON="$("${ROOT}/scripts/find_python.sh")"
+PYTHON="$(bash "${ROOT}/scripts/find_python.sh")"
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in

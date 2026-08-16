@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CORPUS="${ROOT}/tests/decompilebench/corpus"
 OUT="${ROOT}/results/rellic-eval.json"
-PYTHON="$("${ROOT}/scripts/find_python.sh")"
+PYTHON="$(bash "${ROOT}/scripts/find_python.sh")"
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in

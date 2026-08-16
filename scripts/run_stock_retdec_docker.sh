@@ -22,7 +22,7 @@ done
 
 PYTHON="${PYTHON:-python3}"
 if ! command -v "${PYTHON}" >/dev/null 2>&1; then
-	PYTHON="$("${ROOT}/scripts/find_python.sh")"
+	PYTHON="$(bash "${ROOT}/scripts/find_python.sh")"
 fi
 
 IMAGE_ARGS=()

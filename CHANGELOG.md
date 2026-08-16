@@ -53,6 +53,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   lines from the build log instead of a raw tail that hid the first failure.
 - YARA 4.5.8 MSVC patch: strip OpenSSL 1.1.1 NuGet paths and drop
   `authenticode-parser` sources (they need OpenSSL; `HAVE_LIBCRYPTO` is off).
+- Invoke `find_python.sh` via `bash` (the script is not executable; nightly
+  migration eval was dying with permission denied / exit 126).
 
 ## [2.0.19] — 2026-08-09
 

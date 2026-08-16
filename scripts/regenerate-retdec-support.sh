@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${ROOT}/build/support-regen"
 STAMP="$(date -u +%Y-%m-%d)"
 SIG_SCRIPT="${ROOT}/scripts/retdec-signature-from-library-creator.py"
-PYTHON="$("${ROOT}/scripts/find_python.sh")"
+PYTHON="$(bash "${ROOT}/scripts/find_python.sh")"
 
 echo "==> Output staging: ${OUT}"
 mkdir -p "${OUT}"

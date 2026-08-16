@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON="$("${ROOT}/scripts/find_python.sh")"
+PYTHON="$(bash "${ROOT}/scripts/find_python.sh")"
 DEC=""
 CORPUS="${ROOT}/tests/algorithm_recovery/corpus"
 

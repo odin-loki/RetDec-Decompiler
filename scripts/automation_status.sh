@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON="$("${ROOT}/scripts/find_python.sh")"
+PYTHON="$(bash "${ROOT}/scripts/find_python.sh")"
 VER="$(grep -E '^[[:space:]]*VERSION[[:space:]]' "${ROOT}/CMakeLists.txt" | head -1 | sed -E 's/.*VERSION[[:space:]]+([0-9.]+).*/\1/')"
 
 echo "RetDec automation status (v${VER})"

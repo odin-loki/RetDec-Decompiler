@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON="$("${ROOT}/scripts/find_python.sh")"
+PYTHON="$(bash "${ROOT}/scripts/find_python.sh")"
 SKIP_MIGRATION=false
 SKIP_SUPPORT=false
 
@@ -23,7 +23,7 @@ echo ""
 
 echo "==> eval venv"
 bash "${ROOT}/scripts/setup_eval_venv.sh"
-PYTHON="$("${ROOT}/scripts/find_python.sh")"
+PYTHON="$(bash "${ROOT}/scripts/find_python.sh")"
 echo "Using python: ${PYTHON}"
 echo ""
 

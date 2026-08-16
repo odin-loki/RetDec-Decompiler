@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV="${ROOT}/.venv-eval"
 REQ="${ROOT}/scripts/requirements-eval.txt"
-BASE_PYTHON="$("${ROOT}/scripts/find_python.sh" 2>/dev/null || true)"
+BASE_PYTHON="$(bash "${ROOT}/scripts/find_python.sh" 2>/dev/null || true)"
 
 if [[ -z "${BASE_PYTHON}" ]]; then
 	for c in python3 python; do
