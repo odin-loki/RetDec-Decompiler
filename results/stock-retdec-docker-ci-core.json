@@ -1,0 +1,131 @@
+{
+  "harness": "stock_retdec_docker",
+  "image": "remnux/retdec",
+  "stock_version": "v5.0",
+  "stock_commit": "53e55b4b26e9b843787f0e06d867441e32b1604e",
+  "profile": "ci-core",
+  "generated_at": "2026-08-16T02:22:04Z",
+  "docker": "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe",
+  "container_wall_s": 3.203,
+  "samples": [
+    {
+      "input": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\corpus\\binary_search-gcc-O0",
+      "opt": "O0",
+      "syntax_valid": true,
+      "recompile_success": false,
+      "coverage_equivalence": false,
+      "output_c": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\out\\binary_search-gcc-O0.c",
+      "bytes": 5174,
+      "wall_s": 0.271,
+      "stock_status": "ok"
+    },
+    {
+      "input": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\corpus\\bubblesort-gcc-O0",
+      "opt": "O0",
+      "syntax_valid": true,
+      "recompile_success": false,
+      "coverage_equivalence": false,
+      "output_c": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\out\\bubblesort-gcc-O0.c",
+      "bytes": 6128,
+      "wall_s": 0.242,
+      "stock_status": "ok"
+    },
+    {
+      "input": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\corpus\\generated_heapsort-gcc-O0",
+      "opt": "O0",
+      "syntax_valid": true,
+      "recompile_success": false,
+      "coverage_equivalence": false,
+      "output_c": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\out\\generated_heapsort-gcc-O0.c",
+      "bytes": 5902,
+      "wall_s": 0.253,
+      "stock_status": "ok"
+    },
+    {
+      "input": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\corpus\\generated_pthread_mutex-gcc-O0",
+      "opt": "O0",
+      "syntax_valid": true,
+      "recompile_success": false,
+      "coverage_equivalence": false,
+      "output_c": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\out\\generated_pthread_mutex-gcc-O0.c",
+      "bytes": 4551,
+      "wall_s": 0.235,
+      "stock_status": "ok"
+    },
+    {
+      "input": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\corpus\\generated_quicksort-gcc-O0",
+      "opt": "O0",
+      "syntax_valid": true,
+      "recompile_success": false,
+      "coverage_equivalence": false,
+      "output_c": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\out\\generated_quicksort-gcc-O0.c",
+      "bytes": 5746,
+      "wall_s": 0.25,
+      "stock_status": "ok"
+    },
+    {
+      "input": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\corpus\\hash_table-gcc-O0",
+      "opt": "O0",
+      "syntax_valid": true,
+      "recompile_success": false,
+      "coverage_equivalence": false,
+      "output_c": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\out\\hash_table-gcc-O0.c",
+      "bytes": 6683,
+      "wall_s": 0.252,
+      "stock_status": "ok"
+    },
+    {
+      "input": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\corpus\\memcpy_loop-gcc-O0",
+      "opt": "O0",
+      "syntax_valid": true,
+      "recompile_success": false,
+      "coverage_equivalence": false,
+      "output_c": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\out\\memcpy_loop-gcc-O0.c",
+      "bytes": 3850,
+      "wall_s": 0.238,
+      "stock_status": "ok"
+    },
+    {
+      "input": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\corpus\\mergesort-gcc-O0",
+      "opt": "O0",
+      "syntax_valid": true,
+      "recompile_success": false,
+      "coverage_equivalence": false,
+      "output_c": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\out\\mergesort-gcc-O0.c",
+      "bytes": 7169,
+      "wall_s": 0.264,
+      "stock_status": "ok"
+    },
+    {
+      "input": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\corpus\\ring_buffer-gcc-O0",
+      "opt": "O0",
+      "syntax_valid": true,
+      "recompile_success": false,
+      "coverage_equivalence": false,
+      "output_c": "C:\\Users\\odinl\\OneDrive\\Desktop\\RetDec\\build\\stock-docker-work\\out\\ring_buffer-gcc-O0.c",
+      "bytes": 5023,
+      "wall_s": 0.235,
+      "stock_status": "ok"
+    }
+  ],
+  "summary": {
+    "count": 9,
+    "syntax_valid": 9,
+    "recompile_ok": 0,
+    "coverage_ok": 0,
+    "syntax_valid_rate": 1.0,
+    "recompile_success_rate": 0.0,
+    "coverage_equivalence_rate": 0.0,
+    "mean_wall_s": 0.249,
+    "per_opt": {
+      "O0": {
+        "count": 9,
+        "syntax_valid_rate": 1.0,
+        "recompile_success_rate": 0.0,
+        "coverage_equivalence_rate": 0.0,
+        "mean_wall_s": 0.249
+      }
+    }
+  },
+  "note": "Stock RetDec has no algorithm-label export; F1 is fork-only. coverage_equivalence is False unless recompile succeeds."
+}

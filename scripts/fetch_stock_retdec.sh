@@ -3,7 +3,7 @@
 #
 # Note: RetDec-v5.0-Linux-Release.tar.xz is an SDK (headers/libs), not a prebuilt
 # retdec-decompiler binary. For live two-column benchmarks, install the Docker
-# image `retdec/retdec:v5.0` or build v5.0 from source, then set:
+# image `remnux/retdec` (stock v5.0; `retdec/retdec:v5.0` does not exist) or set:
 #   export RETDEC_STOCK_DECOMPILER=/path/to/retdec-decompiler
 #
 # Usage: bash scripts/fetch_stock_retdec.sh [--version 5.0]
@@ -55,5 +55,5 @@ if [[ -n "${DEC}" && -x "${DEC}" ]]; then
 fi
 
 echo "Downloaded SDK to ${DEST} — no retdec-decompiler binary in official Linux release."
-echo "For benchmarks: docker pull retdec/retdec:v5.0  OR  set RETDEC_STOCK_DECOMPILER"
+echo "For benchmarks: bash scripts/run_stock_retdec_docker.sh --profile ci-core"
 exit 2

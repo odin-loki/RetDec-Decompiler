@@ -52,7 +52,8 @@ command -v rellic-decompile >/dev/null 2>&1 && echo "  OK   rellic-decompile" ||
 command -v retypd >/dev/null 2>&1 && echo "  OK   retypd" || echo "  --   retypd (optional research)"
 echo ""
 
-echo "Out of scope (documented): Docker, OSS-Fuzz 23k corpus, four-toolchain support regen"
+echo "Out of scope (documented): OSS-Fuzz 23k corpus, four-toolchain support regen"
+echo "Stock compare: remnux/retdec (v5.0) via scripts/run_stock_retdec_docker.py"
 echo ""
 
 echo "Runnable now:"

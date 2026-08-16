@@ -64,6 +64,7 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | `build-all.ps1` / `build-all.sh` | End-to-end configure, build, install, and package (Windows / Linux) |
 | `build-windows-installer.ps1` | Stage portable zip + optional NSIS installer under `dist/` |
 | `build-linux-installer.sh` | `cmake --install` + portable tarball (optional AppImage / `.deb`) |
+| `run_stock_retdec_docker.py` / `.sh` | Stock RetDec 5.0 compare via `remnux/retdec` (Windows `docker.exe`) |
 
 On Linux or WSL clones, shell scripts do **not** need `chmod +x` if you invoke them with `bash scripts/<name>.sh`. To run directly (`./scripts/...`), mark entrypoints executable once after checkout:
 

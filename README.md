@@ -93,9 +93,10 @@ no in-GUI AI chat panel in v3; use **`retdec-qwen3-runner`** (or CLI
 
 ## Maintainer scope
 
-**Shippable at v2.0.19** — algorithm recovery and DecompileBench gates pass on the
-216-binary stand-in corpus. This fork does **not** use Docker, does not pursue the
-OSS-Fuzz paper corpus, and does not regenerate retdec-support across four compilers.
+**Shippable at v2.0.20** — algorithm recovery and DecompileBench gates pass on the
+216-binary stand-in corpus. Stock RetDec 5.0 compare uses the published
+`remnux/retdec` image (official `retdec/retdec:v5.0` does not exist). This fork
+does **not** pursue the OSS-Fuzz paper corpus or four-compiler support regen.
 
 - Git / GitHub CLI: **Windows PowerShell only** (not dual WSL + Windows)
 - Optional CI: `gh auth login` then `.\scripts\dispatch_algorithm_recovery_nightly.ps1`

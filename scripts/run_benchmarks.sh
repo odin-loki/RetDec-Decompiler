@@ -100,7 +100,15 @@ if bench_tmp.is_file():
         "syntax_valid_rate": summary.get("syntax_valid_rate"),
         "recompile_success_rate": summary.get("recompile_success_rate"),
         "coverage_equivalence_rate": summary.get("coverage_equivalence_rate"),
+        "mean_wall_s": summary.get("mean_wall_s"),
     }
+
+stock_path = root / f"results/stock-retdec-docker-{profile}.json"
+if stock_path.is_file():
+    stock = json.loads(stock_path.read_text(encoding="utf-8"))
+    payload.setdefault("decompilebench", {})
+    payload["decompilebench"]["stock_retdec"] = stock
+    payload["metrics"]["stock_retdec"] = stock.get("summary", {})
 
 corpus = root / "tests/algorithm_recovery/corpus"
 gt = root / "tests/algorithm_recovery/ground_truth/corpus.json"

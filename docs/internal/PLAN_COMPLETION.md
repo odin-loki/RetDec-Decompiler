@@ -1,13 +1,13 @@
 # MASTER-UPGRADE-PLAN — automation completion status
 
-Last updated: v2.0.14+ (measurement gap closure)
+Last updated: v2.0.20 (stock RetDec 5.0 compare + housekeeping)
 
 ## Steps 1–26 (shippable product)
 
 | Area | Status | Artifacts |
 |------|--------|-----------|
 | CI smoke + ctest | Done | `ci-smoke.yml`, `ctest-linux.yml` |
-| DecompileBench | **Done (stand-in)** | 216-binary harness; OSS-Fuzz/Docker corpus **out of scope** |
+| DecompileBench | **Done (stand-in + stock v5.0)** | 216-binary harness; stock via `remnux/retdec`; OSS-Fuzz paper corpus out of scope |
 | Algorithm recovery | Done (caveat) | **mean_f1_raw=1.0** on full corpus (v2.0.19 extract refinement; benchmark-tuned) |
 | Neural refinement | Done | tiers 1–5, gates, llama.cpp pin, opt-in via env |
 | Licensing | Done | AGPL + commercial, doctor checks |
@@ -28,9 +28,10 @@ Scaffolds only. Not required to ship. See [MAINTAINER_SCOPE.md](MAINTAINER_SCOPE
 
 ## Not pursuing (documented)
 
-- Docker (stock RetDec compare, OSS-Fuzz corpus)
+- OSS-Fuzz 23k paper corpus
 - Four-toolchain `retdec-support` regeneration
 - Dual Windows/WSL Git — **Windows Git + `gh` only**
+- Building custom Docker images (we only pull `remnux/retdec`)
 
 Optional: `gh auth login` (PowerShell) → `.\scripts\dispatch_algorithm_recovery_nightly.ps1`
 

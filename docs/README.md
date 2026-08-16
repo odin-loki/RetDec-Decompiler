@@ -41,6 +41,8 @@ This directory contains **technical documentation** for building, operating, ext
 | [SEMANTIC_OUTPUT.md](SEMANTIC_OUTPUT.md) | Output authors | C vs C++ semantics, STL recovery hints |
 | [SYMBOL_SERVER.md](SYMBOL_SERVER.md) | Windows analysts | PDB / symbol-server setup for richer names |
 | [RESEARCH_FRONTIERS.md](RESEARCH_FRONTIERS.md) | Researchers | Tier 7 long-horizon topics (not sprint work) |
+| [internal/MAINTAINER_SCOPE.md](internal/MAINTAINER_SCOPE.md) | Maintainers | What is in scope vs skipped (Docker, OSS-Fuzz, Git) |
+| [BENCHMARKS_TABLE.md](BENCHMARKS_TABLE.md) | Releases | Fork vs stock RetDec 5.0 + F1 gates |
 
 **Scripts:** [scripts/README.md](../scripts/README.md) lists every important `scripts/*.sh` and `scripts/*.ps1` helper.
 

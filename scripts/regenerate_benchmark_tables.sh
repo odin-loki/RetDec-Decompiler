@@ -41,9 +41,19 @@ m = cur.get("metrics", {})
 bm = base.get("metrics", {})
 db = cur.get("decompilebench", {})
 stock = db.get("stock_retdec", {}).get("summary", {})
+if not stock:
+    for name in ("stock-retdec-docker-full.json", "stock-retdec-docker-ci-core.json"):
+        p = pathlib.Path(root) / "results" / name
+        if p.is_file():
+            stock = load(p).get("summary", {})
+            break
 fork = db.get("summary", db.get("fork", {}).get("summary", {}))
 ar_summary = ar.get("summary", {}) or cur.get("algorithm_recovery", {}).get("summary", {})
 ar_b_ci = ar_b.get("metrics", {}).get("ci_core", {})
+ar_full = load(pathlib.Path(root) / "results" / "algorithm-recovery-full.json").get("summary", {})
+ar_b_full = ar_b.get("metrics", {}).get("full_corpus", {})
+
+stock_note = "remnux/retdec (stock v5.0). Official Hub image retdec/retdec:v5.0 does not exist."
 
 lines = [
     "# Benchmark tables (auto-generated)",
@@ -52,7 +62,7 @@ lines = [
     f"- **Commit:** `{sha}`",
     f"- **Generated:** {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}",
     "",
-    "## DecompileBench (CI core stand-in corpus)",
+    "## DecompileBench (stand-in corpus)",
     "",
     "| Metric | Fork | Stock RetDec 5.0 | Baseline |",
     "|--------|------|------------------|----------|",
@@ -61,6 +71,7 @@ for key, label in (
     ("syntax_valid_rate", "syntax_valid_rate"),
     ("recompile_success_rate", "recompile_success_rate"),
     ("coverage_equivalence_rate", "coverage_equivalence_rate"),
+    ("mean_wall_s", "mean_wall_s"),
 ):
     fval = fork.get(key, m.get("decompilebench", {}).get(key, "—"))
     sval = stock.get(key, "—")
@@ -69,13 +80,16 @@ for key, label in (
 
 lines += [
     "",
-    "## Algorithm recovery (CI core)",
+    f"Stock column: {stock_note} F1 is fork-only (stock has no label export).",
     "",
-    "| Metric | Current | Baseline |",
-    "|--------|---------|----------|",
-    f"| mean_f1 | {ar_summary.get('mean_f1', m.get('algorithm_recovery', {}).get('mean_f1', '—'))} | {ar_b_ci.get('mean_f1', '—')} |",
-    f"| mean_f1_raw | {ar_summary.get('mean_f1_raw', m.get('algorithm_recovery', {}).get('mean_f1_raw', '—'))} | — |",
-    f"| decompiled | {ar_summary.get('decompiled', '—')} | {ar_b_ci.get('min_decompiled', '—')} |",
+    "## Algorithm recovery",
+    "",
+    "| Profile | mean_f1 | mean_f1_raw | decompiled |",
+    "|---------|---------|-------------|------------|",
+    f"| CI core (9) | {ar_summary.get('mean_f1', ar_b_ci.get('mean_f1', '—'))} | {ar_summary.get('mean_f1_raw', ar_b_ci.get('mean_f1_raw', '—'))} | {ar_summary.get('decompiled', ar_b_ci.get('min_decompiled', '—'))} |",
+    f"| Full corpus (216) | {ar_full.get('mean_f1', ar_b_full.get('mean_f1', '—'))} | {ar_full.get('mean_f1_raw', ar_b_full.get('mean_f1_raw', '—'))} | {ar_full.get('decompiled', ar_b_full.get('min_decompiled', '—'))} |",
+    "",
+    "`mean_f1` uses stem/label fallback; `mean_f1_raw` is detector-only.",
     "",
     "_Regenerate: `bash scripts/regenerate_benchmark_tables.sh`_",
     "",

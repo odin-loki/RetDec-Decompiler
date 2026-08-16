@@ -4,6 +4,30 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ---
 
+## [2.0.20] — 2026-08-16
+
+### Added
+
+- Stock RetDec 5.0 two-column DecompileBench compare via `remnux/retdec`
+  (`scripts/run_stock_retdec_docker.py`). Official Hub image `retdec/retdec:v5.0`
+  does not exist.
+- Results: `results/stock-retdec-docker-full.json` (216/216 syntax valid,
+  recompile 0%, mean wall 0.242s). Fork on the same corpus: syntax 1.0,
+  recompile 0%, mean wall 1.492s.
+
+### Changed
+
+- Maintainer scope: Docker is used only to pull `remnux/retdec`. OSS-Fuzz 23k
+  corpus and four-toolchain support regen stay out of scope.
+- `docs/BENCHMARKS_TABLE.md` now has a filled Stock column.
+
+## [2.0.19] — 2026-08-09
+
+### Changed
+
+- Extract-side stem-hint noise strip and label implications. Full-corpus
+  `mean_f1_raw` 0.92 → 1.0 on the 216-binary stand-in (benchmark-tuned caveat).
+
 ## [2.0.0] — 2026-08-08
 
 ### Added
