@@ -14,7 +14,11 @@ jobs:
 
       - name: Fetch large support files
         shell: pwsh
-        run: .\scripts\fetch-large-files.ps1
+        run: |
+          .\scripts\fetch-large-files.ps1
+          if ($LASTEXITCODE -ne 0) {
+            .\scripts\fetch-large-files.ps1 -BaseUrl "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+          }
 
       - uses: ilammy/msvc-dev-cmd@v1
         with:

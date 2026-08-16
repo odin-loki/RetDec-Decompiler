@@ -24,7 +24,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   under `data/archive/` (not committed). Planning docs moved to
   `docs/internal/`.
 - `perf-nightly` Windows: use MSVC (`core-debug-msvc`) instead of the
-  runner MinGW toolchain, which failed `find_package(ZLIB)`.
+  runner MinGW toolchain, which failed `find_package(ZLIB)`. Retry
+  `fetch-large-files.ps1` when avast raw.githubusercontent.com resets.
 - Release installer CI: install the NSIS 3 x86-unicode EnVar plugin (the
   amd64 build does not load, so PATH updates aborted `makensis`).
 - Release installer CI: package the decompiler/GUI/fileinfo graph only

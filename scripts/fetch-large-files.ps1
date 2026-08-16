@@ -59,13 +59,23 @@ foreach ($rel in $files) {
     }
     $url = "$BaseUrl/$rel"
     Write-Host "fetch  $rel " -NoNewline
-    try {
-        Invoke-WebRequest -Uri $url -OutFile $dst -UseBasicParsing
-        $size = (Get-Item $dst).Length
-        Write-Host ("({0} KiB)" -f [math]::Round($size/1KB, 1)) -ForegroundColor Green
-        $downloaded++
-    } catch {
-        Write-Host "FAILED: $_" -ForegroundColor Red
+    $ok = $false
+    $lastErr = $null
+    foreach ($attempt in 1..3) {
+        try {
+            Invoke-WebRequest -Uri $url -OutFile $dst -UseBasicParsing
+            $size = (Get-Item $dst).Length
+            Write-Host ("({0} KiB)" -f [math]::Round($size/1KB, 1)) -ForegroundColor Green
+            $downloaded++
+            $ok = $true
+            break
+        } catch {
+            $lastErr = $_
+            if ($attempt -lt 3) { Start-Sleep -Seconds (2 * $attempt) }
+        }
+    }
+    if (-not $ok) {
+        Write-Host "FAILED: $lastErr" -ForegroundColor Red
         $failed++
     }
 }
