@@ -23,6 +23,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Repo layout: live numbers stay in `results/`; historical JSON/logs live
   under `data/archive/` (not committed). Planning docs moved to
   `docs/internal/`.
+- Release installer CI: package builds disable LTO and unit tests; Windows
+  `cmake --build --target install` so installable binaries exist.
 
 ## [2.0.19] — 2026-08-09
 

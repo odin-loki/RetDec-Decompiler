@@ -174,6 +174,8 @@ jobs:
         run: >
           cmake --preset full-windows-release
           -DRETDEC_ENABLE_CUDA_ACCEL=OFF
+          -DRETDEC_TESTS=OFF
+          -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
 
       - name: Build and package Windows installers
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
@@ -248,13 +250,16 @@ jobs:
         run: >
           cmake --preset full-linux-release
           -DRETDEC_ENABLE_CUDA_ACCEL=OFF
+          -DRETDEC_TESTS=OFF
+          -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
 
       - name: Build and package Linux tarball
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         env:
           APPIMAGE: ${{ env.APPIMAGE }}
         run: |
-          bash scripts/build-linux-installer.sh --build --version "${{ needs.release.outputs.version }}"
+          cmake --build build/linux --target install --parallel
+          bash scripts/build-linux-installer.sh --skip-install --version "${{ needs.release.outputs.version }}"
 
       - name: Verify optional AppImage
         if: env.APPIMAGE == '1'

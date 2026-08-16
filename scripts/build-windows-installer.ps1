@@ -388,18 +388,10 @@ if (-not $SkipBuild) {
         throw "No CMake cache at $BuildDir - configure first (cmake --preset full-windows-release)."
     }
 
-    foreach ($target in @("retdec-decompiler", "retdec-gui")) {
-        Write-Host "==> cmake --build --target $target"
-        & cmake --build $BuildDir --target $target --parallel
-        if ($LASTEXITCODE -ne 0) {
-            throw "Target '$target' build failed with exit code $LASTEXITCODE"
-        }
-    }
-
-    Write-Host "==> cmake --install $BuildDir"
-    & cmake --install $BuildDir
+    Write-Host "==> cmake --build --target install"
+    & cmake --build $BuildDir --target install --parallel
     if ($LASTEXITCODE -ne 0) {
-        throw "cmake --install failed with exit code $LASTEXITCODE"
+        throw "cmake --build --target install failed with exit code $LASTEXITCODE"
     }
 } else {
     if (-not (Test-Path -LiteralPath $InstallDir)) {
