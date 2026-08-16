@@ -266,10 +266,13 @@ set_tests_properties(decompiler_validate_pipeline_profiles PROPERTIES
 
 # ── Install smoke (post cmake --install; Windows only) ────────────────────────
 if(WIN32)
+    # GHA and modern Windows have pwsh; fall back to Windows PowerShell 5.1.
+    # CTest's powershell -NoProfile does not always load Utility cmdlets.
+    find_program(RETDEC_POWERSHELL NAMES pwsh powershell REQUIRED)
     set(_INSTALL_DIR "${CMAKE_SOURCE_DIR}/install/windows")
     add_test(
         NAME install_smoke
-        COMMAND powershell -NoProfile -ExecutionPolicy Bypass
+        COMMAND "${RETDEC_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
             -File "${CMAKE_SOURCE_DIR}/scripts/install_smoke.ps1"
             -InstallDir "${_INSTALL_DIR}"
             -Binary "${_FIB_BIN}"
@@ -338,7 +341,7 @@ if(WIN32)
     set(_PARITY_WORK "${CMAKE_CURRENT_BINARY_DIR}/parity_work")
     add_test(
         NAME gui_cli_decompile_parity_fib
-        COMMAND powershell -NoProfile -ExecutionPolicy Bypass
+        COMMAND "${RETDEC_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
             -File "${CMAKE_SOURCE_DIR}/scripts/parity_ctest.ps1"
             -Decompiler "${RETDEC_DECOMPILER}"
             -Gui "${_GUI_STAGED}"

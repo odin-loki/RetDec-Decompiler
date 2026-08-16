@@ -100,6 +100,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Corpus function-count ignores `//` address comments on the header
   line (`void foo() // 0x140001000`) so MSVC PE output is not scored
   as zero functions. Failure dumps now include the file tail.
+- Windows CTest prefers `pwsh` over Windows PowerShell 5.1 for
+  `install_smoke` and `parity_ctest`.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for
