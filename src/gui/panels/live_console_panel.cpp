@@ -308,10 +308,15 @@ void LiveConsolePanel::appendChunk(Stream stream, const QByteArray& bytes)
 
 	// Decode permissively: tool output is usually UTF-8 but may contain stray bytes.
 	QString text = QString::fromUtf8(bytes);
-	text = stripAnsi(std::move(text));
+	if (bytes.contains('\x1b')) text = stripAnsi(std::move(text));
 	if (text.isEmpty()) return;
 
+	// Skip regex ANSI work and widget repaints on the common no-escape path.
+	// beginEditBlock batches layout so a 16 KiB insert stays under a 60 Hz frame
+	// on Windows CI Debug Qt, not only on a local workstation.
+	text_->setUpdatesEnabled(false);
 	QTextCursor c(text_->document());
+	c.beginEditBlock();
 	c.movePosition(QTextCursor::End);
 
 	// Channels are now merged at the QProcess level, so stderr and stdout
@@ -342,6 +347,8 @@ void LiveConsolePanel::appendChunk(Stream stream, const QByteArray& bytes)
 			pos = end;
 		}
 	}
+	c.endEditBlock();
+	text_->setUpdatesEnabled(true);
 
 	if (autoScroll_)
 	{
@@ -482,8 +489,8 @@ void LiveConsolePanel::clear()
 
 QString LiveConsolePanel::stripAnsi(QString in)
 {
+	if (!in.contains(QLatin1Char('\x1b'))) return in;
 	// Cover the two most common forms: CSI ('\x1b[...m') and OSC ('\x1b]...\x07').
-	// Cheap regex pass — input is small chunks.
 	static const QRegularExpression csi(QStringLiteral("\x1b\\[[0-9;?]*[A-Za-z]"));
 	static const QRegularExpression osc(QStringLiteral("\x1b\\][^\x07]*\x07"));
 	in.remove(csi);

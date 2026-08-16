@@ -75,10 +75,19 @@ jobs:
 
       - name: Add swap for ASan shadow
         run: |
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          # ubuntu-latest already has /swapfile mounted; fallocate on it
+          # fails with "Text file busy". Add a second file if needed.
+          if grep -q /swapfile-retdec /proc/swaps; then
+            echo "swapfile-retdec already active"
+          elif [ "$(awk '/SwapTotal:/ {print $2}' /proc/meminfo)" -ge 4000000 ]; then
+            echo "existing swap is enough"
+          else
+            sudo fallocate -l 8G /swapfile-retdec
+            sudo chmod 600 /swapfile-retdec
+            sudo mkswap /swapfile-retdec
+            sudo swapon /swapfile-retdec
+          fi
+          swapon --show
           free -h
 
       - name: Run ASan over decompile sample corpus

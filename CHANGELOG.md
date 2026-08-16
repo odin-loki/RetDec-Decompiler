@@ -54,6 +54,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - `LiveConsolePanelTest.PerCallStaysUnderFrameBudgetForRealisticChunks`
   clears the editor between trials so the 16 ms budget measures one
   16 KiB insert, not a growing document.
+- `LiveConsolePanel::appendChunk` skips ANSI regex when the chunk has no
+  ESC and batches the insert in an edit block so a 16 KiB write stays
+  under the 16 ms frame budget on Windows CI Debug Qt.
+- Sanitizer CI adds `/swapfile-retdec` only when the runner has little
+  swap; it does not `fallocate` the already-mounted `/swapfile`.
+- `ctest-windows` sets `RETDEC_ENABLE_NEURAL=OFF` like `ctest-linux`, so
+  `ctest -L unit` does not list an unbuilt `retdec-neural-tests`.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for
