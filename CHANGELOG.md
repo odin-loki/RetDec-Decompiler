@@ -29,6 +29,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - `ctest-linux`: run `fetch-large-files.sh` through bash (the script is
   not executable in the tree). Compile `format_router_probe` as C++20
   (it includes CLI headers that use `std::span`).
+- MSVC fib/corpus fixtures: use `/Fepath` (one argv) so Ninja VERBATIM
+  does not pass `/Fe:\"path\"` and LNK1104 the quoted name.
 - `perf-nightly` Windows: use MSVC (`core-debug-msvc`) instead of the
   runner MinGW toolchain, which failed `find_package(ZLIB)`. Retry
   `fetch-large-files.ps1` when avast raw.githubusercontent.com resets.
