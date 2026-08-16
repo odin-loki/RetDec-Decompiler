@@ -63,6 +63,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   a Debug LLVM tree (that combination failed to mmap ASan shadow).
 - `ctest-windows` sets `RETDEC_ENABLE_NEURAL=OFF` like `ctest-linux`, so
   `ctest -L unit` does not list an unbuilt `retdec-neural-tests`.
+- `Filter::orderStacks` uses a strict-weak-ordering comparator (MSVC
+  Debug was aborting in `_Debug_lt_pred` on equal/missing stack offsets).
+- `.pyc` magic table includes CPython 3.14 (3625–3627).
+- `ctest-windows` installs PyYAML so corpus_regression can read the
+  YAML manifest.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for

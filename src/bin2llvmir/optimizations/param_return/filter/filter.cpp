@@ -1,13 +1,13 @@
 /**
-* @file src/bin2llvmir/optimizations/param_return/filter/filter.cpp
-* @brief Filters potential values according to calling convention.
-* @copyright (c) 2019 Odin Loch Trading as Imortek
-*/
+ * @file src/bin2llvmir/optimizations/param_return/filter/filter.cpp
+ * @brief Filters potential values according to calling convention.
+ * @copyright (c) 2019 Odin Loch Trading as Imortek
+ */
 
-#include <memory>
 #include <algorithm>
 #include <cctype>
 #include <deque>
+#include <memory>
 #include <optional>
 
 #include <llvm/IR/GlobalVariable.h>
@@ -24,9 +24,7 @@ namespace {
 
 bool isLikelySyscallName(const std::string& name)
 {
-	return name == "syscall"
-		|| name == "__syscall"
-		|| name == "__syscall_cp";
+	return name == "syscall" || name == "__syscall" || name == "__syscall_cp";
 }
 
 int countPrintfStyleArgs(const std::string& fmt)
@@ -51,8 +49,7 @@ int countPrintfStyleArgs(const std::string& fmt)
 		}
 
 		// Dynamic width/precision consume an argument.
-		while (i < fmt.size() && (fmt[i] == '-' || fmt[i] == '+' || fmt[i] == ' '
-				|| fmt[i] == '#' || fmt[i] == '0'))
+		while (i < fmt.size() && (fmt[i] == '-' || fmt[i] == '+' || fmt[i] == ' ' || fmt[i] == '#' || fmt[i] == '0'))
 		{
 			++i;
 		}
@@ -86,8 +83,9 @@ int countPrintfStyleArgs(const std::string& fmt)
 		}
 
 		// Length modifiers.
-		if (i < fmt.size() && (fmt[i] == 'h' || fmt[i] == 'l' || fmt[i] == 'L'
-				|| fmt[i] == 'q' || fmt[i] == 'j' || fmt[i] == 'z' || fmt[i] == 't'))
+		if (i < fmt.size()
+			&& (fmt[i] == 'h' || fmt[i] == 'l' || fmt[i] == 'L' || fmt[i] == 'q' || fmt[i] == 'j' || fmt[i] == 'z'
+				|| fmt[i] == 't'))
 		{
 			char lm = fmt[i];
 			++i;
@@ -102,11 +100,9 @@ int countPrintfStyleArgs(const std::string& fmt)
 		}
 
 		char spec = fmt[i];
-		if (spec == 'd' || spec == 'i' || spec == 'o' || spec == 'u'
-				|| spec == 'x' || spec == 'X' || spec == 'e' || spec == 'E'
-				|| spec == 'f' || spec == 'F' || spec == 'g' || spec == 'G'
-				|| spec == 'a' || spec == 'A' || spec == 'c' || spec == 's'
-				|| spec == 'p' || spec == 'n')
+		if (spec == 'd' || spec == 'i' || spec == 'o' || spec == 'u' || spec == 'x' || spec == 'X' || spec == 'e'
+			|| spec == 'E' || spec == 'f' || spec == 'F' || spec == 'g' || spec == 'G' || spec == 'a' || spec == 'A'
+			|| spec == 'c' || spec == 's' || spec == 'p' || spec == 'n')
 		{
 			++count;
 		}
@@ -120,10 +116,7 @@ int countPrintfStyleArgs(const std::string& fmt)
 }
 
 void applyExtendedCallArgFiltering(
-		const CallEntry& call,
-		const DataFlowEntry* de,
-		const Abi* abi,
-		std::vector<llvm::Value*>& args)
+	const CallEntry& call, const DataFlowEntry* de, const Abi* abi, std::vector<llvm::Value*>& args)
 {
 	(void)call;
 	(void)de;
@@ -139,13 +132,7 @@ void applyExtendedCallArgFiltering(
 //=============================================================================
 //
 
-Filter::Filter(
-		const Abi* abi,
-		const CallingConvention* cc) :
-	_abi(abi),
-	_cc(cc)
-{
-}
+Filter::Filter(const Abi* abi, const CallingConvention* cc): _abi(abi), _cc(cc) {}
 
 void Filter::estimateRetValue(DataFlowEntry* de) const
 {
@@ -154,8 +141,7 @@ void Filter::estimateRetValue(DataFlowEntry* de) const
 
 	if (retType == nullptr)
 	{
-		if (!de->retEntries().empty()
-			&& !de->retEntries().front().retValues().empty())
+		if (!de->retEntries().empty() && !de->retEntries().front().retValues().empty())
 		{
 			auto* rv = de->retEntries().front().retValues().front();
 			if (rv != nullptr)
@@ -189,17 +175,17 @@ void Filter::estimateRetValue(DataFlowEntry* de) const
 	}
 	else
 	{
-//		TODO: double-read-modf.x86.clang-3.2.O0.g.elf
-//		In test above return type is found from configuration to be
-//		double but collector finds only stores to EAX which results in failure in
-//		decompilation.
-//
-//		if (!de->retEntries().empty()
-//			&& !de->retEntries().front().retValues().empty())
-//		{
-//			retValue = de->retEntries().front().retValues().front();
-//		}
-//		else
+		//		TODO: double-read-modf.x86.clang-3.2.O0.g.elf
+		//		In test above return type is found from configuration to be
+		//		double but collector finds only stores to EAX which results in failure in
+		//		decompilation.
+		//
+		//		if (!de->retEntries().empty()
+		//			&& !de->retEntries().front().retValues().empty())
+		//		{
+		//			retValue = de->retEntries().front().retValues().front();
+		//		}
+		//		else
 		{
 			if (!_cc->getReturnRegisters().empty())
 			{
@@ -240,10 +226,9 @@ void Filter::filterDefinition(DataFlowEntry* de) const
 	}
 
 	std::vector<FilterableLayout> defRets;
-	for (auto& ret : de->retEntries())
+	for (auto& ret: de->retEntries())
 	{
-		defRets.push_back(
-			createRetsFilterableLayout(ret.retValues(), de->getRetType()));
+		defRets.push_back(createRetsFilterableLayout(ret.retValues(), de->getRetType()));
 	}
 	if (defRets.empty())
 	{
@@ -255,7 +240,7 @@ void Filter::filterDefinition(DataFlowEntry* de) const
 
 	FilterableLayout retTempl = defRets.front();
 
-	for (auto& ret : de->retEntries())
+	for (auto& ret: de->retEntries())
 	{
 		if (defRets.empty())
 		{
@@ -278,14 +263,10 @@ void Filter::filterCalls(DataFlowEntry* de) const
 	std::vector<FilterableLayout> callArgs, callArgsCopy;
 	std::vector<FilterableLayout> callRets;
 
-	for (auto& call : de->callEntries())
+	for (auto& call: de->callEntries())
 	{
-		callArgs.push_back(
-			createArgsFilterableLayout(call.args(), de->argTypes()));
-		callRets.push_back(
-			createRetsFilterableLayout(
-				call.retValues(),
-				de->getRetType()));
+		callArgs.push_back(createArgsFilterableLayout(call.args(), de->argTypes()));
+		callRets.push_back(createRetsFilterableLayout(call.retValues(), de->getRetType()));
 	}
 
 	callArgsCopy = callArgs;
@@ -316,9 +297,7 @@ void Filter::filterCalls(DataFlowEntry* de) const
 	if (de->hasDefinition())
 	{
 		FilterableLayout defArgs;
-		defArgs = createArgsFilterableLayout(
-				de->args(),
-				de->argTypes());
+		defArgs = createArgsFilterableLayout(de->args(), de->argTypes());
 		if (!de->isVoidarg() && !de->argTypes().empty())
 		{
 			// This function is called because
@@ -330,15 +309,16 @@ void Filter::filterCalls(DataFlowEntry* de) const
 			// below.
 			filterArgsByKnownTypes(defArgs);
 		}
-		else if (de->args().empty() && (
+		else if (
+			de->args().empty()
+			&& (
 				// possible wrapper
 				(de->numberOfCalls() == 1 && !de->hasBranches())
 				// Possible error in stack analysis.
 				|| (de->storesOnRawStack(*_abi))
 				// Selective decompilation. Definition exists
 				// but is empty -> we do not trust it.
-				|| (!de->isFullyDecoded())
-			))
+				|| (!de->isFullyDecoded())))
 		{
 			// In this case it might be wrapper that
 			// takes arguments from call and do not modify them
@@ -346,8 +326,7 @@ void Filter::filterCalls(DataFlowEntry* de) const
 			filterCallArgsByDefLayout(defArgs, argTempl);
 			de->setArgs(createGroupedArgValues(defArgs));
 		}
-		else if (argTempl.stacks.size() > defArgs.stacks.size()
-				&& de->numberOfCalls() == 1 && !de->hasBranches())
+		else if (argTempl.stacks.size() > defArgs.stacks.size() && de->numberOfCalls() == 1 && !de->hasBranches())
 		{
 			if (argTempl.gpRegisters.size() == defArgs.gpRegisters.size()
 				&& argTempl.fpRegisters.size() == defArgs.fpRegisters.size()
@@ -361,15 +340,13 @@ void Filter::filterCalls(DataFlowEntry* de) const
 
 		if (!de->retEntries().empty())
 		{
-			retTempl = createRetsFilterableLayout(
-					de->retEntries().front().retValues(),
-					de->getRetType());
+			retTempl = createRetsFilterableLayout(de->retEntries().front().retValues(), de->getRetType());
 		}
 
 		argTempl = std::move(defArgs);
 	}
 
-	for (auto& call : de->callEntries())
+	for (auto& call: de->callEntries())
 	{
 		if (callArgsCopy.empty())
 		{
@@ -404,7 +381,7 @@ void Filter::filterCallsVariadic(DataFlowEntry* de, const Collector* collector) 
 	std::vector<FilterableLayout> callArgs;
 	std::vector<FilterableLayout> callRets;
 
-	for (auto& call : de->callEntries())
+	for (auto& call: de->callEntries())
 	{
 		auto argTypes = de->argTypes();
 
@@ -415,27 +392,20 @@ void Filter::filterCallsVariadic(DataFlowEntry* de, const Collector* collector) 
 		call.setArgs(createGroupedArgValues(argLayout));
 		collector->collectCallSpecificTypes(&call);
 
-		argTypes.insert(
-			argTypes.end(),
-			call.argTypes().begin(),
-			call.argTypes().end());
+		argTypes.insert(argTypes.end(), call.argTypes().begin(), call.argTypes().end());
 
 		argLayout.knownTypes = std::move(argTypes);
 
 		callArgs.push_back(argLayout);
-		callRets.push_back(
-			createRetsFilterableLayout(
-				call.retValues(),
-				call.getBaseFunction() ? call.getBaseFunction()->getRetType() : nullptr));
+		callRets.push_back(createRetsFilterableLayout(
+			call.retValues(), call.getBaseFunction() ? call.getBaseFunction()->getRetType() : nullptr));
 	}
 
 	FilterableLayout retTempl;
 
 	if (de->hasDefinition() && !de->retEntries().empty())
 	{
-		retTempl = createRetsFilterableLayout(
-				de->retEntries().front().retValues(),
-				de->getRetType());
+		retTempl = createRetsFilterableLayout(de->retEntries().front().retValues(), de->getRetType());
 	}
 	else if (!callRets.empty())
 	{
@@ -444,7 +414,7 @@ void Filter::filterCallsVariadic(DataFlowEntry* de, const Collector* collector) 
 		retTempl = callRets.front();
 	}
 
-	for (auto& call : de->callEntries())
+	for (auto& call: de->callEntries())
 	{
 		if (callArgs.empty() || callRets.empty())
 		{
@@ -509,9 +479,7 @@ void Filter::filterCallArgs(FilterableLayout& args, bool isVoidarg) const
 	leaveOnlyContinuousStack(args);
 }
 
-void Filter::filterCallArgsByDefLayout(
-			FilterableLayout& args,
-			const FilterableLayout& defArgs) const
+void Filter::filterCallArgsByDefLayout(FilterableLayout& args, const FilterableLayout& defArgs) const
 {
 	args.gpRegisters = std::vector<uint32_t>(defArgs.gpRegisters);
 	args.fpRegisters = std::vector<uint32_t>(defArgs.fpRegisters);
@@ -535,9 +503,7 @@ void Filter::filterRets(FilterableLayout& rets) const
 	}
 }
 
-void Filter::filterRetsByDefLayout(
-			FilterableLayout& rets,
-			const FilterableLayout& defRets) const
+void Filter::filterRetsByDefLayout(FilterableLayout& rets, const FilterableLayout& defRets) const
 {
 	rets.gpRegisters = std::vector<uint32_t>(defRets.gpRegisters);
 	rets.fpRegisters = std::vector<uint32_t>(defRets.fpRegisters);
@@ -622,9 +588,7 @@ void Filter::filterArgsByKnownTypes(FilterableLayout& lay) const
 				newLayout.stacks.push_back(nullptr);
 			}
 
-			newLayout.knownOrder.push_back(
-				i == 0 ? stackOrd :
-					OrderID::ORD_STACK_GROUP);
+			newLayout.knownOrder.push_back(i == 0 ? stackOrd : OrderID::ORD_STACK_GROUP);
 		}
 	}
 
@@ -641,21 +605,20 @@ std::vector<Type*> Filter::expandTypes(const std::vector<Type*>& types) const
 	{
 		std::vector<Type*> expanded;
 
-		std::deque<llvm::Type*> toExpand(
-				types.begin(),
-				types.end());
+		std::deque<llvm::Type*> toExpand(types.begin(), types.end());
 
 		while (!toExpand.empty())
 		{
 			auto t = toExpand.front();
 			toExpand.pop_front();
 
-			if (t == nullptr) {
+			if (t == nullptr)
+			{
 				expanded.push_back(_abi->getDefaultType());
 			}
 			else if (auto* st = dyn_cast<StructType>(t))
 			{
-				for (auto& e : st->elements())
+				for (auto& e: st->elements())
 				{
 					toExpand.push_back(e);
 				}
@@ -673,18 +636,14 @@ std::vector<Type*> Filter::expandTypes(const std::vector<Type*>& types) const
 size_t Filter::fetchGPRegsForType(Type* type, FilterableLayout& lay) const
 {
 	std::size_t sizeBefore = lay.gpRegisters.size();
-	std::size_t reqStacks = fetchRegsForType(
-		type,
-		lay.gpRegisters,
-		_cc->getParamRegisters(),
-		_cc->getMaxNumOfRegsPerParam());
+	std::size_t reqStacks =
+		fetchRegsForType(type, lay.gpRegisters, _cc->getParamRegisters(), _cc->getMaxNumOfRegsPerParam());
 
 	std::size_t change = lay.gpRegisters.size() - sizeBefore;
 	if (change)
 	{
 		lay.knownOrder.push_back(OrderID::ORD_GPR);
-		lay.knownOrder.resize(
-			lay.knownOrder.size() + change - 1, OrderID::ORD_GPR_GROUP);
+		lay.knownOrder.resize(lay.knownOrder.size() + change - 1, OrderID::ORD_GPR_GROUP);
 	}
 
 	return reqStacks;
@@ -693,18 +652,14 @@ size_t Filter::fetchGPRegsForType(Type* type, FilterableLayout& lay) const
 size_t Filter::fetchFPRegsForType(Type* type, FilterableLayout& lay) const
 {
 	std::size_t sizeBefore = lay.fpRegisters.size();
-	std::size_t reqStacks = fetchRegsForType(
-		type,
-		lay.fpRegisters,
-		_cc->getParamFPRegisters(),
-		_cc->getMaxNumOfFPRegsPerParam());
+	std::size_t reqStacks =
+		fetchRegsForType(type, lay.fpRegisters, _cc->getParamFPRegisters(), _cc->getMaxNumOfFPRegsPerParam());
 
 	std::size_t change = lay.fpRegisters.size() - sizeBefore;
 	if (change)
 	{
 		lay.knownOrder.push_back(OrderID::ORD_FPR);
-		lay.knownOrder.resize(
-			lay.knownOrder.size() + change - 1, OrderID::ORD_FPR_GROUP);
+		lay.knownOrder.resize(lay.knownOrder.size() + change - 1, OrderID::ORD_FPR_GROUP);
 	}
 
 	return reqStacks;
@@ -714,17 +669,13 @@ size_t Filter::fetchDoubleRegsForType(Type* type, FilterableLayout& lay) const
 {
 	std::size_t sizeBefore = lay.doubleRegisters.size();
 	std::size_t reqStacks = fetchRegsForType(
-		type,
-		lay.doubleRegisters,
-		_cc->getParamDoubleRegisters(),
-		_cc->getMaxNumOfDoubleRegsPerParam());
+		type, lay.doubleRegisters, _cc->getParamDoubleRegisters(), _cc->getMaxNumOfDoubleRegsPerParam());
 
 	std::size_t change = lay.doubleRegisters.size() - sizeBefore;
 	if (change)
 	{
 		lay.knownOrder.push_back(OrderID::ORD_DOUBR);
-		lay.knownOrder.resize(
-			lay.knownOrder.size() + change - 1, OrderID::ORD_DOUBR_GROUP);
+		lay.knownOrder.resize(lay.knownOrder.size() + change - 1, OrderID::ORD_DOUBR_GROUP);
 	}
 
 	return reqStacks;
@@ -734,48 +685,40 @@ size_t Filter::fetchVecRegsForType(Type* type, FilterableLayout& lay) const
 {
 	std::size_t sizeBefore = lay.vectorRegisters.size();
 	std::size_t reqStacks = fetchRegsForType(
-		type,
-		lay.vectorRegisters,
-		_cc->getParamVectorRegisters(),
-		_cc->getMaxNumOfVectorRegsPerParam());
+		type, lay.vectorRegisters, _cc->getParamVectorRegisters(), _cc->getMaxNumOfVectorRegsPerParam());
 
 	std::size_t change = lay.vectorRegisters.size() - sizeBefore;
 	if (change)
 	{
 		lay.knownOrder.push_back(OrderID::ORD_VECR);
-		lay.knownOrder.resize(
-			lay.knownOrder.size() + change - 1, OrderID::ORD_VECR_GROUP);
+		lay.knownOrder.resize(lay.knownOrder.size() + change - 1, OrderID::ORD_VECR_GROUP);
 	}
 
 	return reqStacks;
 }
 
 size_t Filter::fetchRegsForType(
-			Type* type,
-			std::vector<uint32_t>& store,
-			const std::vector<uint32_t>& regs,
-			std::size_t maxRegsPerObject) const
+	Type* type, std::vector<uint32_t>& store, const std::vector<uint32_t>& regs, std::size_t maxRegsPerObject) const
 {
 	if (regs.empty())
 	{
-		return  getNumberOfStacksForType(type);
+		return getNumberOfStacksForType(type);
 	}
 	auto* reg = _abi->getRegister(regs.front());
 	if (reg == nullptr)
 	{
-		return  getNumberOfStacksForType(type);
+		return getNumberOfStacksForType(type);
 	}
 
 	Type* registerType = reg->getType();
 	std::size_t registerSize = _abi->getTypeByteSize(registerType);
-	std::size_t typeSize = type->isVoidTy() ?
-					_abi->getWordSize() : _abi->getTypeByteSize(type);
+	std::size_t typeSize = type->isVoidTy() ? _abi->getWordSize() : _abi->getTypeByteSize(type);
 
 	if (typeSize <= registerSize)
 	{
 		if (regs.size() <= store.size())
 		{
-			return  getNumberOfStacksForType(registerType);
+			return getNumberOfStacksForType(registerType);
 		}
 
 		auto reg = regs[store.size()];
@@ -784,15 +727,14 @@ size_t Filter::fetchRegsForType(
 		return 0;
 	}
 
-	if ((typeSize > registerSize)
-		&& (typeSize <= registerSize*maxRegsPerObject))
+	if ((typeSize > registerSize) && (typeSize <= registerSize * maxRegsPerObject))
 	{
 		std::size_t numberOfRegs = typeSize / registerSize;
 		auto regIt = store.size();
 
 		if (_cc->respectsRegisterCouples())
 		{
-			if ((regIt+1)%2 == 0)
+			if ((regIt + 1) % 2 == 0)
 			{
 				regIt++;
 			}
@@ -802,7 +744,7 @@ size_t Filter::fetchRegsForType(
 		{
 			if (regs.size() <= regIt)
 			{
-				return getNumberOfStacksForType(registerType)*(numberOfRegs-i);
+				return getNumberOfStacksForType(registerType) * (numberOfRegs - i);
 			}
 
 			auto reg = regs[regIt];
@@ -817,7 +759,7 @@ size_t Filter::fetchRegsForType(
 	{
 		if (regs.size() <= store.size())
 		{
-			return  getNumberOfStacksForType(registerType);
+			return getNumberOfStacksForType(registerType);
 		}
 
 		auto reg = regs[store.size()];
@@ -852,8 +794,7 @@ void Filter::filterRetsByKnownTypes(FilterableLayout& lay) const
 	auto& doubleRegs = _cc->getReturnDoubleRegisters();
 	auto& vecRegs = _cc->getReturnVectorRegisters();
 
-	Type* retType = lay.knownTypes.empty() ? nullptr
-				: lay.knownTypes.front();
+	Type* retType = lay.knownTypes.empty() ? nullptr : lay.knownTypes.front();
 
 	if (retType == nullptr)
 	{
@@ -872,13 +813,12 @@ void Filter::filterRetsByKnownTypes(FilterableLayout& lay) const
 		Type* registerType = firstReg->getType();
 		std::size_t registerSize = _abi->getTypeByteSize(registerType);
 
-		if (typeSize <= registerSize ||
-				(typeSize > registerSize*vecRegs.size()))
+		if (typeSize <= registerSize || (typeSize > registerSize * vecRegs.size()))
 		{
 			regVecValues.push_back(vecRegs.front());
 		}
 
-		std::size_t numOfRegs = typeSize/registerSize;
+		std::size_t numOfRegs = typeSize / registerSize;
 		for (std::size_t i = 0; i < numOfRegs && i < vecRegs.size(); i++)
 		{
 			regVecValues.push_back(vecRegs[i]);
@@ -896,13 +836,12 @@ void Filter::filterRetsByKnownTypes(FilterableLayout& lay) const
 		Type* registerType = firstReg->getType();
 		std::size_t registerSize = _abi->getTypeByteSize(registerType);
 
-		if (typeSize <= registerSize ||
-				(typeSize > registerSize*doubleRegs.size()))
+		if (typeSize <= registerSize || (typeSize > registerSize * doubleRegs.size()))
 		{
 			regDoubleValues.push_back(doubleRegs.front());
 		}
 
-		std::size_t numOfRegs = typeSize/registerSize;
+		std::size_t numOfRegs = typeSize / registerSize;
 		for (std::size_t i = 0; i < numOfRegs && i < doubleRegs.size(); i++)
 		{
 			regDoubleValues.push_back(doubleRegs[i]);
@@ -920,13 +859,12 @@ void Filter::filterRetsByKnownTypes(FilterableLayout& lay) const
 		Type* registerType = firstReg->getType();
 		std::size_t registerSize = _abi->getTypeByteSize(registerType);
 
-		if (typeSize <= registerSize ||
-				(typeSize > registerSize*fpRegs.size()))
+		if (typeSize <= registerSize || (typeSize > registerSize * fpRegs.size()))
 		{
 			regFPValues.push_back(fpRegs.front());
 		}
 
-		std::size_t numOfRegs = typeSize/registerSize;
+		std::size_t numOfRegs = typeSize / registerSize;
 		for (std::size_t i = 0; i < numOfRegs && i < fpRegs.size(); i++)
 		{
 			regFPValues.push_back(fpRegs[i]);
@@ -941,13 +879,12 @@ void Filter::filterRetsByKnownTypes(FilterableLayout& lay) const
 			Type* registerType = defaultReg->getType();
 			std::size_t registerSize = _abi->getTypeByteSize(registerType);
 
-			if (typeSize <= registerSize ||
-					(typeSize > registerSize*gpRegs.size()))
+			if (typeSize <= registerSize || (typeSize > registerSize * gpRegs.size()))
 			{
 				regGPValues.push_back(gpRegs.front());
 			}
 
-			std::size_t numOfRegs = typeSize/registerSize;
+			std::size_t numOfRegs = typeSize / registerSize;
 			for (std::size_t i = 0; i < numOfRegs && i < gpRegs.size(); i++)
 			{
 				regGPValues.push_back(gpRegs[i]);
@@ -957,7 +894,6 @@ void Filter::filterRetsByKnownTypes(FilterableLayout& lay) const
 		{
 			retType = nullptr;
 		}
-
 	}
 
 	lay.gpRegisters = std::move(regGPValues);
@@ -996,9 +932,8 @@ void Filter::leaveCommon(std::vector<FilterableLayout>& lays) const
 
 	std::size_t minStacks = lays.front().stacks.size();
 
-	for (auto& lay : lays)
+	for (auto& lay: lays)
 	{
-
 		auto& gpr = lay.gpRegisters;
 		auto& fpr = lay.fpRegisters;
 		auto& dr = lay.doubleRegisters;
@@ -1009,18 +944,18 @@ void Filter::leaveCommon(std::vector<FilterableLayout>& lays) const
 		commonDR.insert(dr.begin(), dr.end());
 		commonVR.insert(vr.begin(), vr.end());
 
-	//	if (lay.stacks.empty())
-	//	{
-	//		continue;
-	//	}
-	//	else if (!minStacks || (minStacks > lay.stacks.size()))
+		//	if (lay.stacks.empty())
+		//	{
+		//		continue;
+		//	}
+		//	else if (!minStacks || (minStacks > lay.stacks.size()))
 		if (minStacks > lay.stacks.size())
 		{
 			minStacks = lay.stacks.size();
 		}
 	}
 
-	for (auto& lay : lays)
+	for (auto& lay: lays)
 	{
 		lay.gpRegisters.assign(commonGPR.begin(), commonGPR.end());
 		lay.fpRegisters.assign(commonFPR.begin(), commonFPR.end());
@@ -1050,37 +985,22 @@ void Filter::orderStacks(std::vector<llvm::Value*>& stacks, bool asc) const
 
 	auto config = _abi->getConfig();
 
-	std::stable_sort(
-			stacks.begin(),
-			stacks.end(),
-			[config, asc](Value* a, Value* b) -> bool
-	{
+	std::stable_sort(stacks.begin(), stacks.end(), [config, asc](Value* a, Value* b) -> bool {
 		auto aOff = config->getStackVariableOffset(a);
 		auto bOff = config->getStackVariableOffset(b);
-		if (!aOff.has_value())
-		{
-			return !bOff.has_value();
-		}
-		else if (aOff.has_value() && !bOff.has_value())
-		{
-			return true;
-		}
-
-		bool ascOrd = aOff.value() < bOff.value();
-
-		return asc ? ascOrd : !ascOrd;
+		// Strict weak ordering: equivalent elements must compare false.
+		// MSVC Debug _Debug_lt_pred aborts if both-missing returns true
+		// or if descending uses !(a<b) (true when offsets are equal).
+		if (!aOff.has_value() && !bOff.has_value()) return false;
+		if (!aOff.has_value()) return false;
+		if (!bOff.has_value()) return true;
+		return asc ? (*aOff < *bOff) : (*bOff < *aOff);
 	});
 }
 
-void Filter::orderRegistersBy(
-	std::vector<uint32_t>& regs,
-	const std::vector<uint32_t>& orderedVector) const
+void Filter::orderRegistersBy(std::vector<uint32_t>& regs, const std::vector<uint32_t>& orderedVector) const
 {
-	std::stable_sort(
-			regs.begin(),
-			regs.end(),
-			[orderedVector](uint32_t a, uint32_t b) -> bool
-	{
+	std::stable_sort(regs.begin(), regs.end(), [orderedVector](uint32_t a, uint32_t b) -> bool {
 		auto it1 = std::find(orderedVector.begin(), orderedVector.end(), a);
 		auto it2 = std::find(orderedVector.begin(), orderedVector.end(), b);
 
@@ -1089,8 +1009,7 @@ void Filter::orderRegistersBy(
 }
 
 FilterableLayout Filter::createArgsFilterableLayout(
-			const std::vector<llvm::Value*>& group,
-			const std::vector<llvm::Type*>& knownTypes) const
+	const std::vector<llvm::Value*>& group, const std::vector<llvm::Type*>& knownTypes) const
 {
 	FilterableLayout layout = separateArgValues(group);
 	layout.knownTypes = knownTypes;
@@ -1100,17 +1019,14 @@ FilterableLayout Filter::createArgsFilterableLayout(
 	return layout;
 }
 
-FilterableLayout Filter::createRetsFilterableLayout(
-			const std::vector<llvm::Value*>& group,
-			llvm::Type* knownType) const
+FilterableLayout Filter::createRetsFilterableLayout(const std::vector<llvm::Value*>& group, llvm::Type* knownType) const
 {
 	std::vector<Type*> knownTypes = {knownType};
 	return createRetsFilterableLayout(group, knownTypes);
 }
 
 FilterableLayout Filter::createRetsFilterableLayout(
-			const std::vector<llvm::Value*>& group,
-			const std::vector<llvm::Type*>& knownTypes) const
+	const std::vector<llvm::Value*>& group, const std::vector<llvm::Type*>& knownTypes) const
 {
 	FilterableLayout layout = separateRetValues(group);
 	layout.knownTypes = knownTypes;
@@ -1144,11 +1060,11 @@ FilterableLayout Filter::separateRetValues(const std::vector<llvm::Value*>& para
 }
 
 FilterableLayout Filter::separateValues(
-		const std::vector<llvm::Value*>& paramValues,
-		const std::vector<uint32_t>& gpRegs,
-		const std::vector<uint32_t>& fpRegs,
-		const std::vector<uint32_t>& doubleRegs,
-		const std::vector<uint32_t>& vecRegs) const
+	const std::vector<llvm::Value*>& paramValues,
+	const std::vector<uint32_t>& gpRegs,
+	const std::vector<uint32_t>& fpRegs,
+	const std::vector<uint32_t>& doubleRegs,
+	const std::vector<uint32_t>& vecRegs) const
 {
 	FilterableLayout layout;
 
@@ -1174,23 +1090,19 @@ FilterableLayout Filter::separateValues(
 		{
 			continue;
 		}
-		if (std::find(gpRegs.begin(), gpRegs.end(),
-				_abi->getRegisterId(pv)) != gpRegs.end())
+		if (std::find(gpRegs.begin(), gpRegs.end(), _abi->getRegisterId(pv)) != gpRegs.end())
 		{
 			layout.gpRegisters.push_back(_abi->getRegisterId(pv));
 		}
-		else if (std::find(doubleRegs.begin(), doubleRegs.end(),
-				_abi->getRegisterId(pv)) != doubleRegs.end())
+		else if (std::find(doubleRegs.begin(), doubleRegs.end(), _abi->getRegisterId(pv)) != doubleRegs.end())
 		{
 			layout.doubleRegisters.push_back(_abi->getRegisterId(pv));
 		}
-		else if (std::find(fpRegs.begin(), fpRegs.end(),
-				_abi->getRegisterId(pv)) != fpRegs.end())
+		else if (std::find(fpRegs.begin(), fpRegs.end(), _abi->getRegisterId(pv)) != fpRegs.end())
 		{
 			layout.fpRegisters.push_back(_abi->getRegisterId(pv));
 		}
-		else if (std::find(vecRegs.begin(), vecRegs.end(),
-				_abi->getRegisterId(pv)) != vecRegs.end())
+		else if (std::find(vecRegs.begin(), vecRegs.end(), _abi->getRegisterId(pv)) != vecRegs.end())
 		{
 			layout.vectorRegisters.push_back(_abi->getRegisterId(pv));
 		}
@@ -1221,100 +1133,99 @@ std::vector<llvm::Value*> Filter::createGroupedValues(const FilterableLayout& la
 
 	if (!lay.knownOrder.empty())
 	{
-		for (auto ord : lay.knownOrder)
+		for (auto ord: lay.knownOrder)
 		{
 			switch (ord)
 			{
-				case OrderID::ORD_GPR:
-					if (ri != lay.gpRegisters.end())
+			case OrderID::ORD_GPR:
+				if (ri != lay.gpRegisters.end())
+				{
+					if (auto* reg = _abi->getRegister(*ri))
 					{
-						if (auto* reg = _abi->getRegister(*ri))
-						{
-							paramValues.push_back(reg);
-						}
-						ri++;
+						paramValues.push_back(reg);
 					}
+					ri++;
+				}
 				break;
 
-				case OrderID::ORD_FPR:
-					if (fi != lay.fpRegisters.end())
+			case OrderID::ORD_FPR:
+				if (fi != lay.fpRegisters.end())
+				{
+					if (auto* reg = _abi->getRegister(*fi))
 					{
-						if (auto* reg = _abi->getRegister(*fi))
-						{
-							paramValues.push_back(reg);
-						}
-						fi++;
+						paramValues.push_back(reg);
 					}
+					fi++;
+				}
 				break;
 
-				case OrderID::ORD_DOUBR:
-					if (di != lay.doubleRegisters.end())
+			case OrderID::ORD_DOUBR:
+				if (di != lay.doubleRegisters.end())
+				{
+					if (auto* reg = _abi->getRegister(*di))
 					{
-						if (auto* reg = _abi->getRegister(*di))
-						{
-							paramValues.push_back(reg);
-						}
-						di++;
+						paramValues.push_back(reg);
 					}
+					di++;
+				}
 				break;
 
-				case OrderID::ORD_VECR:
-					if (vi != lay.vectorRegisters.end())
+			case OrderID::ORD_VECR:
+				if (vi != lay.vectorRegisters.end())
+				{
+					if (auto* reg = _abi->getRegister(*vi))
 					{
-						if (auto* reg = _abi->getRegister(*vi))
-						{
-							paramValues.push_back(reg);
-						}
-						vi++;
+						paramValues.push_back(reg);
 					}
+					vi++;
+				}
 				break;
 
-				case OrderID::ORD_STACK:
-					if (si != lay.stacks.end())
-					{
-						paramValues.push_back(*si);
-						si++;
-					}
+			case OrderID::ORD_STACK:
+				if (si != lay.stacks.end())
+				{
+					paramValues.push_back(*si);
+					si++;
+				}
 				break;
 
-				case OrderID::ORD_GPR_GROUP:
-					if (ri != lay.gpRegisters.end())
-					{
-						ri++;
-					}
+			case OrderID::ORD_GPR_GROUP:
+				if (ri != lay.gpRegisters.end())
+				{
+					ri++;
+				}
 				break;
 
-				case OrderID::ORD_FPR_GROUP:
-					if (fi != lay.fpRegisters.end())
-					{
-						fi++;
-					}
+			case OrderID::ORD_FPR_GROUP:
+				if (fi != lay.fpRegisters.end())
+				{
+					fi++;
+				}
 				break;
 
-				case OrderID::ORD_DOUBR_GROUP:
-					if (di != lay.doubleRegisters.end())
-					{
-						di++;
-					}
+			case OrderID::ORD_DOUBR_GROUP:
+				if (di != lay.doubleRegisters.end())
+				{
+					di++;
+				}
 				break;
 
-				case OrderID::ORD_VECR_GROUP:
+			case OrderID::ORD_VECR_GROUP:
 
-					if (vi != lay.vectorRegisters.end())
-					{
-						vi++;
-					}
+				if (vi != lay.vectorRegisters.end())
+				{
+					vi++;
+				}
 				break;
 
-				case OrderID::ORD_STACK_GROUP:
-					if (si != lay.stacks.end())
-					{
-						si++;
-					}
+			case OrderID::ORD_STACK_GROUP:
+				if (si != lay.stacks.end())
+				{
+					si++;
+				}
 				break;
 
-				default:
-					continue;
+			default: continue;
 			}
 		}
 
@@ -1367,9 +1278,10 @@ void Filter::leaveOnlyPositiveStacks(FilterableLayout& lay) const
 	auto* config = _abi->getConfig();
 
 	lay.stacks.erase(
-		std::remove_if(lay.stacks.begin(), lay.stacks.end(),
-			[config](const Value* li)
-			{
+		std::remove_if(
+			lay.stacks.begin(),
+			lay.stacks.end(),
+			[config](const Value* li) {
 				auto aOff = config->getStackVariableOffset(li);
 				return aOff.has_value() && aOff.value() < 0;
 			}),
@@ -1471,7 +1383,7 @@ void Filter::createContinuousArgRegisters(FilterableLayout& lay) const
 	{
 		uint32_t regId = lay.gpRegisters.back();
 
-		for (auto ccR : _cc->getParamRegisters())
+		for (auto ccR: _cc->getParamRegisters())
 		{
 			gpRegs.push_back(ccR);
 			if (regId == ccR)
@@ -1485,7 +1397,7 @@ void Filter::createContinuousArgRegisters(FilterableLayout& lay) const
 	{
 		uint32_t regId = lay.fpRegisters.back();
 
-		for (auto ccR : _cc->getParamFPRegisters())
+		for (auto ccR: _cc->getParamFPRegisters())
 		{
 			fpRegs.push_back(ccR);
 			if (regId == ccR)
@@ -1499,7 +1411,7 @@ void Filter::createContinuousArgRegisters(FilterableLayout& lay) const
 	{
 		uint32_t regId = lay.doubleRegisters.back();
 
-		for (auto ccR : _cc->getParamDoubleRegisters())
+		for (auto ccR: _cc->getParamDoubleRegisters())
 		{
 			dbRegs.push_back(ccR);
 			if (regId == ccR)
@@ -1513,7 +1425,7 @@ void Filter::createContinuousArgRegisters(FilterableLayout& lay) const
 	{
 		uint32_t regId = lay.vectorRegisters.back();
 
-		for (auto ccR : _cc->getParamRegisters())
+		for (auto ccR: _cc->getParamRegisters())
 		{
 			veRegs.push_back(ccR);
 			if (regId == ccR)
@@ -1537,13 +1449,11 @@ void Filter::leaveOnlyContinuousRetRegisters(FilterableLayout& lay) const
 	leaveOnlyContinuousRegisters(lay.vectorRegisters, _cc->getReturnVectorRegisters());
 }
 
-void Filter::leaveOnlyContinuousRegisters(
-				std::vector<uint32_t>& regs,
-				const std::vector<uint32_t>& templRegs) const
+void Filter::leaveOnlyContinuousRegisters(std::vector<uint32_t>& regs, const std::vector<uint32_t>& templRegs) const
 {
 	auto itEnd = regs.end();
 	auto it = regs.begin();
-	for (auto regId : templRegs)
+	for (auto regId: templRegs)
 	{
 		if (it == itEnd)
 		{
@@ -1582,8 +1492,7 @@ Filter::Ptr FilterProvider::createFilter(Abi* abi, const CallingConvention::ID& 
 	assert(cc);
 
 	auto c = abi->getConfig();
-	bool isMinGW = c->getConfig().tools.isGcc()
-			&& c->getConfig().fileFormat.isPe();
+	bool isMinGW = c->getConfig().tools.isGcc() && c->getConfig().fileFormat.isPe();
 
 	if (abi->isX64() && (isMinGW || c->getConfig().tools.isMsvc()))
 	{
@@ -1593,5 +1502,5 @@ Filter::Ptr FilterProvider::createFilter(Abi* abi, const CallingConvention::ID& 
 	return std::make_unique<Filter>(abi, cc);
 }
 
-}
-}
+} // namespace bin2llvmir
+} // namespace retdec
