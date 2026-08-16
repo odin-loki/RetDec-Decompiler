@@ -139,10 +139,16 @@ def build_cases(root: Path) -> List[ManagedCase]:
 
 def run_case(decompiler: Path, case: ManagedCase, work: Path) -> Tuple[str, bool, str]:
     fixture = case.fixture
-    if case.prepare and not fixture.is_file():
+    # Always rebuild .pyc from source so a leftover 3.14 file cannot
+    # outlive the CI Python pin (opcode tables cover 3.8-3.12).
+    rebuild = case.prepare and (
+        not fixture.is_file() or case.name == "python_pyc"
+    )
+    if rebuild:
         fixture.parent.mkdir(parents=True, exist_ok=True)
         if not case.prepare(fixture, work):
-            return case.name, False, "SKIP (fixture missing, compile failed)"
+            if not fixture.is_file():
+                return case.name, False, "SKIP (fixture missing, compile failed)"
 
     if not fixture.is_file():
         return case.name, False, "SKIP (fixture missing)"

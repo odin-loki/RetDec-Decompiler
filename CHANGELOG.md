@@ -75,6 +75,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   (windows-latest's 3.14 .pyc is outside the 3.8–3.12 opcode tables).
 - Corpus `hello.pyc` is generated into the build-tree fixtures dir
   (`hello.pyc`) so the regression test finds it.
+- `managed_format_smoke_test` always recompiles `hello.pyc` from
+  `hello.py` so a leftover 3.14 bytecode file cannot outlive the CI pin.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for
