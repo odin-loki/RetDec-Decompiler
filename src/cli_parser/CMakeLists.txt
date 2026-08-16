@@ -17,6 +17,9 @@ target_link_libraries(retdec-cli-parser
         retdec-bc-module
 )
 
+# PUBLIC so dependents that compile managed_decompiler.cpp (format_router_probe)
+# inherit C++20; the headers use std::span.
+target_compile_features(retdec-cli-parser PUBLIC cxx_std_20)
 set_target_properties(retdec-cli-parser PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON

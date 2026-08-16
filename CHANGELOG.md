@@ -27,7 +27,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   `gtestd.lib` so Debug Ninja can link GUI tests (the EP installs the
   unsuffixed name).
 - `ctest-linux`: run `fetch-large-files.sh` through bash (the script is
-  not executable in the tree).
+  not executable in the tree). Compile `format_router_probe` as C++20
+  (it includes CLI headers that use `std::span`).
 - `perf-nightly` Windows: use MSVC (`core-debug-msvc`) instead of the
   runner MinGW toolchain, which failed `find_package(ZLIB)`. Retry
   `fetch-large-files.ps1` when avast raw.githubusercontent.com resets.

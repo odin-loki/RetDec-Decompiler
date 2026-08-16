@@ -27,7 +27,7 @@ add_executable(format_router_probe
 target_include_directories(format_router_probe
     PRIVATE "${CMAKE_SOURCE_DIR}/src/retdec-decompiler"
 )
-target_compile_features(format_router_probe PUBLIC cxx_std_17)
+target_compile_features(format_router_probe PUBLIC cxx_std_20)
 target_link_libraries(format_router_probe
     retdec-jvm-parser
     retdec-java-emitter
