@@ -361,8 +361,7 @@ jobs:
               find build/linux/llvm-project-prefix -name '*.o' -delete || true
             fi
             df -h
-            cmake --build build/linux --parallel 2 --target retdec-decompiler retdec-gui fileinfo
-            cmake --install build/linux
+            cmake --build build/linux --parallel 2 --target install
             bash scripts/build-linux-installer.sh --skip-install --version "${{ needs.release.outputs.version }}"
           } 2>&1 | tee build-linux.log
 
@@ -376,7 +375,7 @@ jobs:
               print("::error::Linux installer failed and build-linux.log is missing")
               raise SystemExit(0)
           raw = p.read_text(errors="replace").splitlines()
-          keys = ("FAILED", "error:", "fatal", "No space", "ninja: build stopped")
+          keys = ("FAILED", "error:", "CMake Error", "cannot find", "fatal", "No space", "ninja: build stopped")
           hits = [ln for ln in raw if any(k in ln for k in keys)]
           lines = (hits[-20:] + raw[-30:]) if hits else raw[-50:]
           text = "%0A".join(x.replace("%", "%25") for x in lines)

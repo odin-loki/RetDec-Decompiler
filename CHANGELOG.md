@@ -55,6 +55,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   `authenticode-parser` sources (they need OpenSSL; `HAVE_LIBCRYPTO` is off).
 - Invoke `find_python.sh` via `bash` (the script is not executable; nightly
   migration eval was dying with permission denied / exit 126).
+- Linux installer CI builds `--target install` so side libraries such as
+  `retdec-fileformat-lattice` exist before `cmake --install`.
 
 ## [2.0.19] — 2026-08-09
 
