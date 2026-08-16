@@ -151,10 +151,23 @@ jobs:
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         shell: pwsh
         run: |
-          $nsis = "${env:ProgramFiles(x86)}\NSIS"
+          $ErrorActionPreference = "Stop"
+          $nsis = @(
+            "${env:ProgramFiles(x86)}\NSIS",
+            "${env:ProgramFiles}\NSIS"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $nsis) { throw "NSIS install directory not found" }
+          $pluginDir = Join-Path $nsis "Plugins\x86-unicode"
+          $includeDir = Join-Path $nsis "Include"
+          New-Item -ItemType Directory -Force -Path $pluginDir, $includeDir | Out-Null
           Invoke-WebRequest -Uri "https://github.com/GsNSIS/EnVar/releases/download/v0.3.1/EnVar-Plugin.zip" -OutFile envar.zip
           Expand-Archive envar.zip -DestinationPath envar -Force
-          Copy-Item envar\x86-unicode\EnVar.dll "$nsis\Plugins\x86-unicode\" -Force
+          $dll = Get-ChildItem -Path envar -Recurse -Filter EnVar.dll | Select-Object -First 1
+          $nsh = Get-ChildItem -Path envar -Recurse -Filter EnVar.nsh | Select-Object -First 1
+          if (-not $dll) { throw "EnVar.dll missing from EnVar-Plugin.zip" }
+          Copy-Item $dll.FullName (Join-Path $pluginDir "EnVar.dll") -Force
+          if ($nsh) { Copy-Item $nsh.FullName (Join-Path $includeDir "EnVar.nsh") -Force }
+          Write-Host "Installed EnVar from $($dll.FullName) into $pluginDir"
 
       - name: Configure (full-windows-release, CPU-only CI)
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
