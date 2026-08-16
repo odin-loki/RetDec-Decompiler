@@ -6,7 +6,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXPECTED=""
 FAIL=0
-PYTHON="$("${ROOT}/scripts/find_python.sh")"
+PYTHON="$("${ROOT}/scripts/find_python.sh" || true)"
+if [[ -z "${PYTHON}" ]]; then
+	PYTHON="python3"
+fi
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in

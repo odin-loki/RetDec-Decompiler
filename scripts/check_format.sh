@@ -29,6 +29,8 @@ list_sources() {
       git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" -- include/ src/ tests/
       return
     fi
+    # Shallow clone with no usable base: do not scan the historic tree.
+    return
   fi
   git ls-files include/ src/ tests/
 }
