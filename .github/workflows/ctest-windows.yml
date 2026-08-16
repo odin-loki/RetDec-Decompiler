@@ -54,17 +54,22 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/windows
-          key: ctest-windows-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'src/**', 'deps/**') }}
+          key: ctest-windows-py312-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'src/**', 'deps/**') }}
           restore-keys: |
+            ctest-windows-py312-
             ctest-windows-
 
       - name: Configure (full-windows-debug, CPU-only CI)
         shell: pwsh
         run: |
           $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
+          $py = Join-Path $env:pythonLocation "python.exe"
+          if (-not (Test-Path -LiteralPath $py)) { throw "setup-python 3.12 missing: $py" }
           cmake --preset full-windows-debug `
             -DRETDEC_ENABLE_CUDA_ACCEL=OFF `
-            -DRETDEC_ENABLE_NEURAL=OFF
+            -DRETDEC_ENABLE_NEURAL=OFF `
+            -DPython3_ROOT_DIR="$env:pythonLocation" `
+            -DPython3_EXECUTABLE="$py"
 
       - name: Build googletest
         shell: pwsh

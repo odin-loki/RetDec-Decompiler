@@ -70,8 +70,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   YAML manifest.
 - Sanitizer CI sets `vm.mmap_rnd_bits=28` (and overcommit) so ASan can
   mmap shadow on ubuntu-latest high-entropy ASLR.
-- `ctest-windows` pins CPython 3.12; windows-latest's 3.14 .pyc is
-  outside the 3.8–3.12 opcode tables.
+- `ctest-windows` pins CPython 3.12 via `setup-python` and
+  `-DPython3_EXECUTABLE` so a restored CMake cache cannot keep 3.14
+  (windows-latest's 3.14 .pyc is outside the 3.8–3.12 opcode tables).
 - Corpus `hello.pyc` is generated into the build-tree fixtures dir
   (`hello.pyc`) so the regression test finds it.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
