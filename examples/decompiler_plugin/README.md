@@ -73,4 +73,4 @@ Until then, prefer:
 ## Related
 
 - [docs/pipeline_builder_schema.json](../../docs/pipeline_builder_schema.json)
-- [docs/ENGINEERING_ROADMAP.md](../../docs/ENGINEERING_ROADMAP.md) — Tier 5 extensibility
+- [docs/internal/ENGINEERING_ROADMAP.md](../../docs/internal/ENGINEERING_ROADMAP.md) — Tier 5 extensibility

@@ -35,4 +35,4 @@ supporting artefact for human review, not the primary benchmark headline.
 
 - README opening paragraph
 - [docs/BENCHMARKS.md](../BENCHMARKS.md)
-- [MASTER-UPGRADE-PLAN.md](../../MASTER-UPGRADE-PLAN.md) Part 3, Decision D7
+- [MASTER-UPGRADE-PLAN.md](MASTER-UPGRADE-PLAN.md) Part 3, Decision D7

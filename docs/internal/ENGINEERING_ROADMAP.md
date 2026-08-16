@@ -1,7 +1,7 @@
 # RetDec — Engineering Roadmap
 
 Shippable engineering tiers for RetDec. Research-only items live in
-[RESEARCH_FRONTIERS.md](RESEARCH_FRONTIERS.md).
+[RESEARCH_FRONTIERS.md](../RESEARCH_FRONTIERS.md).
 
 ---
 

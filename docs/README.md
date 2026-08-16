@@ -26,9 +26,12 @@ This directory contains **technical documentation** for building, operating, ext
 | [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) | Windows developers | MSVC + CUDA + Qt6, scripts, troubleshooting |
 | [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md) | Linux/WSL packagers | MinGW cross, tblgen, OpenSSL, `dist/windows` |
 | [user_manual.md](user_manual.md) | GUI users | v3 layout, panels, settings, export, shortcuts |
-| [GUI_POLISH.md](GUI_POLISH.md) | GUI contributors | Polish checklist (navigation, docks, honest settings) |
-| [GUI_ROADMAP.md](GUI_ROADMAP.md) | Product / GUI | Phased GUI plan, CI verification commands |
-| [ENGINEERING_ROADMAP.md](ENGINEERING_ROADMAP.md) | Maintainers | Shippable engineering tiers, backlog |
+| [internal/GUI_POLISH.md](internal/GUI_POLISH.md) | GUI contributors | Polish checklist (navigation, docks, honest settings) |
+| [internal/GUI_ROADMAP.md](internal/GUI_ROADMAP.md) | Product / GUI | Phased GUI plan, CI verification commands |
+| [internal/ENGINEERING_ROADMAP.md](internal/ENGINEERING_ROADMAP.md) | Maintainers | Shippable engineering tiers, backlog |
+| [internal/README.md](internal/README.md) | Maintainers | Index of internal / historical notes |
+| [../results/README.md](../results/README.md) | Releases / CI | Live baselines and stock/F1 JSON |
+| [../data/README.md](../data/README.md) | Maintainers | Archived JSON, logs, local dumps |
 | [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md) | Windows users | NSIS/portable install, PATH, smoke after install |
 | [INSTALL_LINUX.md](INSTALL_LINUX.md) | Linux packagers | Tarball/deb packaging, install prefixes |
 | [releases/README.md](../releases/README.md) | Release managers | Git LFS artifacts, GitHub Releases layout |
@@ -50,7 +53,7 @@ This directory contains **technical documentation** for building, operating, ext
 
 1. [BUILD_REFERENCE.md](BUILD_REFERENCE.md) — configure, presets, `ctest`, CI workflows.
 2. [developer_guide.md](developer_guide.md) — layout, style, tests, plugins.
-3. [ENGINEERING_ROADMAP.md](ENGINEERING_ROADMAP.md) — what to pick up next; [GUI_ROADMAP.md](GUI_ROADMAP.md) / [GUI_POLISH.md](GUI_POLISH.md) for GUI work.
+3. [internal/ENGINEERING_ROADMAP.md](internal/ENGINEERING_ROADMAP.md) — what to pick up next; [internal/GUI_ROADMAP.md](internal/GUI_ROADMAP.md) / [internal/GUI_POLISH.md](internal/GUI_POLISH.md) for GUI work.
 4. [architecture.md](architecture.md) + [pipeline_stage_map.md](pipeline_stage_map.md) — pipeline before touching stages.
 5. [user_manual.md](user_manual.md) — expected GUI behaviour when changing `retdec-gui`.
 
@@ -77,11 +80,13 @@ Workflows live under [.github/workflows/](../.github/workflows/):
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| [ci-smoke.yml](../.github/workflows/ci-smoke.yml) | Push/PR to `main` | Lightweight Python smoke tests |
-| [ctest-windows.yml](../.github/workflows/ctest-windows.yml) | **Manual only** | Windows build + headless GUI + `ctest` |
-| [ctest-linux.yml](../.github/workflows/ctest-linux.yml) | **Manual only** | Linux build + headless GUI + `ctest` |
-| [perf-nightly.yml](../.github/workflows/perf-nightly.yml) | Weekly + manual | Performance benchmarks (README badge) |
-| [release-installers.yml](../.github/workflows/release-installers.yml) | Tags `v*` + manual | Release installers (README badge) |
+| [ci-smoke.yml](../.github/workflows/ci-smoke.yml) | Push / PR | Python smoke, ship checklist, benchmark gate (no decompiler build) |
+| [ctest-linux.yml](../.github/workflows/ctest-linux.yml) | PR to `main` + manual | Linux build + headless GUI + `ctest` |
+| [ctest-windows.yml](../.github/workflows/ctest-windows.yml) | Schedule + manual | Windows build + headless GUI + `ctest` |
+| [release-installers.yml](../.github/workflows/release-installers.yml) | Tags `v*` + manual | GitHub Release + Windows/Linux installers |
+| [algorithm-recovery-nightly.yml](../.github/workflows/algorithm-recovery-nightly.yml) | Schedule + manual | Full F1 corpus (needs a built decompiler) |
+| [perf-nightly.yml](../.github/workflows/perf-nightly.yml) | Weekly + manual | Performance trend JSON |
+| [sanitizers.yml](../.github/workflows/sanitizers.yml) | Weekly + manual | ASan/UBSan |
 
 Full builds are not run on every push. Trigger ctest workflows from **Actions → Run workflow**, or run `ctest` locally. Details: [BUILD_REFERENCE.md](BUILD_REFERENCE.md#continuous-integration).
 
@@ -89,11 +94,18 @@ Full builds are not run on every push. Trigger ctest workflows from **Actions �
 
 ## Docker
 
-```bash
-docker build -t retdec:local .
+Stock RetDec 5.0 compare **pulls** `remnux/retdec` (Windows `docker.exe`).
+We do not build custom images for that table. Official Hub image
+`retdec/retdec:v5.0` does not exist.
+
+```powershell
+$env:PATH = "C:\Program Files\Docker\Docker\resources\bin;" + $env:PATH
+py -3 scripts\run_stock_retdec_docker.py --profile full --skip-pull
 ```
 
-The [Dockerfile](../Dockerfile) expects the **build context** to be your checkout (no remote clone inside the file). See [BUILD_REFERENCE.md](BUILD_REFERENCE.md#docker).
+The in-tree [Dockerfile](../Dockerfile) is optional (build context = checkout).
+See [BUILD_REFERENCE.md](BUILD_REFERENCE.md#docker) and
+[internal/MAINTAINER_SCOPE.md](internal/MAINTAINER_SCOPE.md).
 
 ---
 

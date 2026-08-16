@@ -1,12 +1,17 @@
 # Master Upgrade Plan — Enhanced Retargetable Decompiler
 
+**Status (v2.0.20):** Steps 1–26 are done. This file is the historical plan.
+Current scope: [MAINTAINER_SCOPE.md](MAINTAINER_SCOPE.md). Completion:
+[PLAN_COMPLETION.md](PLAN_COMPLETION.md).
+
 **Author:** Odin Loch
 **Repo:** `github.com/odin-loki/RetDec-Decompiler`
 **Base:** upstream RetDec v5.0 (upstream dormant since 2022)
 **Primary executor:** Composer 2.5, Cursor slow pool
 **Date:** 2026-08-01
 
-Single source of truth. Supersedes all previous plans and notes.
+Historical source of truth for the upgrade sequence. Do not treat open
+checkboxes here as current work.
 
 ---
 

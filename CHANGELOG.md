@@ -20,6 +20,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Maintainer scope: Docker is used only to pull `remnux/retdec`. OSS-Fuzz 23k
   corpus and four-toolchain support regen stay out of scope.
 - `docs/BENCHMARKS_TABLE.md` now has a filled Stock column.
+- Repo layout: live numbers stay in `results/`; historical JSON/logs live
+  under `data/archive/` (not committed). Planning docs moved to
+  `docs/internal/`.
 
 ## [2.0.19] — 2026-08-09
 
@@ -195,7 +198,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - **`retdec::neural`** mock inference library and tests.
 - **`docker/baseline.Dockerfile`**, `scripts/upgrade-dep.sh`, `scripts/run_benchmarks.sh` (placeholder schema).
 - PE/ELF/Mach-O fuzz harnesses in `tests/managed_integration/fuzz/`.
-- [docs/NEURAL_REFINEMENT.md](docs/NEURAL_REFINEMENT.md), [MASTER-UPGRADE-PLAN.md](MASTER-UPGRADE-PLAN.md).
+- [docs/NEURAL_REFINEMENT.md](docs/NEURAL_REFINEMENT.md), [docs/internal/MASTER-UPGRADE-PLAN.md](docs/internal/MASTER-UPGRADE-PLAN.md).
 
 ### Added (continued)
 

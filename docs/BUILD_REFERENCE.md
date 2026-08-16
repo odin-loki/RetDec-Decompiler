@@ -240,7 +240,12 @@ To customise components, use `-DRETDEC_ENABLE_*=ON/OFF` or `-DRETDEC_ENABLE_ALL=
 
 ## Docker
 
-The [Dockerfile](../Dockerfile) builds from a **local checkout** on **Ubuntu 24.04 (noble)** with **CMake 3.26+**, **Ninja**, and the **`core-release`** preset (output under `build/linux/`, install prefix overridden for the image):
+Stock RetDec 5.0 compare **pulls** `remnux/retdec` via
+`scripts/run_stock_retdec_docker.py` (Windows `docker.exe`). That is the
+supported Docker use. Official Hub image `retdec/retdec:v5.0` does not exist.
+
+The in-tree [Dockerfile](../Dockerfile) is optional: local checkout, Ubuntu
+24.04, CMake 3.26+, Ninja, `core-release` preset:
 
 ```bash
 docker build -t retdec:local .
@@ -256,13 +261,15 @@ GitHub Actions workflows under [.github/workflows/](../.github/workflows/):
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| [ci-smoke.yml](../.github/workflows/ci-smoke.yml) | Push/PR to `main` | Lightweight Python smoke tests (CLI helpers, semantic/pipeline validation) |
-| [ctest-windows.yml](../.github/workflows/ctest-windows.yml) | **Manual only** (`workflow_dispatch`) | Full Windows build, headless GUI tests, `ctest -L unit` and integration tests |
-| [ctest-linux.yml](../.github/workflows/ctest-linux.yml) | **Manual only** (`workflow_dispatch`) | Full Linux build, headless GUI tests, `ctest -L unit` and integration tests |
-| [perf-nightly.yml](../.github/workflows/perf-nightly.yml) | Weekly schedule + manual | Performance benchmarks (README badge) |
-| [release-installers.yml](../.github/workflows/release-installers.yml) | Tag push `v*` + manual | Build and publish release installers (README badge) |
+| [ci-smoke.yml](../.github/workflows/ci-smoke.yml) | Push / PR | Python smoke, ship checklist, benchmark gate (no decompiler build) |
+| [ctest-linux.yml](../.github/workflows/ctest-linux.yml) | PR to `main` + manual | Linux build, headless GUI, `ctest` |
+| [ctest-windows.yml](../.github/workflows/ctest-windows.yml) | Schedule + manual | Windows build, headless GUI, `ctest` |
+| [release-installers.yml](../.github/workflows/release-installers.yml) | Tag `v*` + manual | GitHub Release + installers |
+| [algorithm-recovery-nightly.yml](../.github/workflows/algorithm-recovery-nightly.yml) | Schedule + manual | Full F1 corpus |
+| [perf-nightly.yml](../.github/workflows/perf-nightly.yml) | Weekly + manual | Performance trend JSON |
+| [sanitizers.yml](../.github/workflows/sanitizers.yml) | Weekly + manual | ASan/UBSan |
 
-Full RetDec builds are too heavy to run on every push. Use **Actions → Run workflow** for `ctest-windows` or `ctest-linux`, or run `ctest` locally (see [Testing](#testing) below).
+Full RetDec builds are too heavy to run on every push. `ctest-linux` also runs on PRs to `main`. Use **Actions → Run workflow** for `ctest-windows`, or run `ctest` locally (see [Testing](#testing) below).
 
 Both ctest workflows set `RETDEC_GUI_HEADLESS=1` and `QT_QPA_PLATFORM=offscreen` for headless GUI tests. External regression corpora are **not** cloned in CI; run those locally if you have access to private test repos.
 

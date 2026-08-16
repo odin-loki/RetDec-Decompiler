@@ -67,6 +67,15 @@
 /_full_smoke/
 /_full_smoke_gui/
 
+# ── data/ archives (local only; see data/README.md) ───────────────────────
+/data/archive/runs/
+/data/archive/evals/
+/data/archive/tmp/
+/data/archive/logs/
+/data/archive/legal/
+/data/archive/vendor/
+/data/archive/profile_run/
+
 # ── Logs ──────────────────────────────────────────────────────────────────
 *.log
 logs/

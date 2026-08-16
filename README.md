@@ -62,8 +62,10 @@ See [docs/NEURAL_REFINEMENT.md](docs/NEURAL_REFINEMENT.md).
 
 ### Benchmarks
 
-Algorithm-recovery F1 is measured on a 216+ binary corpus in CI and nightly
-workflows. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+Stand-in corpus (216 binaries / 9 CI-core), not the OSS-Fuzz paper set.
+Numbers: [docs/BENCHMARKS_TABLE.md](docs/BENCHMARKS_TABLE.md).
+Harness: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+`mean_f1_raw = 1.0` is corpus-tuned, not production structural detection.
 
 ### Qt 6 GUI (v3)
 
@@ -85,7 +87,7 @@ For CI and automated tests, use headless mode:
 retdec-gui --headless-decompile /path/to/binary.elf
 ```
 
-See [docs/GUI_ROADMAP.md](docs/GUI_ROADMAP.md) for the active plan. There is
+See [docs/internal/GUI_ROADMAP.md](docs/internal/GUI_ROADMAP.md) for the GUI plan. There is
 no in-GUI AI chat panel in v3; use **`retdec-qwen3-runner`** (or CLI
 `--model`) for Qwen3-assisted analysis.
 
@@ -101,6 +103,16 @@ does **not** pursue the OSS-Fuzz paper corpus or four-compiler support regen.
 - Git / GitHub CLI: **Windows PowerShell only** (not dual WSL + Windows)
 - Optional CI: `gh auth login` then `.\scripts\dispatch_algorithm_recovery_nightly.ps1`
 - Full honesty doc: [docs/internal/MAINTAINER_SCOPE.md](docs/internal/MAINTAINER_SCOPE.md)
+
+### Repository layout
+
+| Path | What |
+|------|------|
+| [`results/`](results/README.md) | Live baselines and current stock/F1 JSON (CI reads these) |
+| [`data/`](data/README.md) | Archived JSON, logs, local dumps (not committed) |
+| [`docs/`](docs/README.md) | Public technical docs |
+| [`docs/internal/`](docs/internal/README.md) | Maintainer notes and historical plans |
+| [`scripts/`](scripts/README.md) | Build, CI, benchmark helpers |
 
 ---
 
@@ -465,7 +477,7 @@ revenue) to **200,000,000 AUD** (entities above 100 billion AUD
 revenue). Annual fees are a percentage of revenue (5 %–25 %). Volume
 discounts apply for 5+ licences. See [LICENSE](LICENSE) §§ 7.1–7.7
 for the full schedule and payment instructions, or read
-[`modified-license.md`](modified-license.md) for a Markdown
+[`docs/internal/modified-license.md`](docs/internal/modified-license.md) for a Markdown
 version of the same terms.
 
 Commercial enquiries: **odin.loch@outlook.com.au**

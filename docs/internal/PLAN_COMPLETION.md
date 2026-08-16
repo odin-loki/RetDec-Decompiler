@@ -1,6 +1,6 @@
 # MASTER-UPGRADE-PLAN — automation completion status
 
-Last updated: v2.0.20 (stock RetDec 5.0 compare + housekeeping)
+Last updated: v2.0.20 (stock compare + CI green + `data/` / `docs/internal/` layout)
 
 ## Steps 1–26 (shippable product)
 

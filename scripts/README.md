@@ -81,4 +81,6 @@ Coverage, ASan, AppImage, model download, type_extractor, and MinGW superbuild h
 
 Ad hoc corpus/coverage/debug scripts used by maintainers live under [`../tools/dev/`](../tools/dev/README.md), not in CI.
 
+Live benchmark JSON: [`../results/`](../results/README.md). Archived dumps/logs: [`../data/`](../data/README.md).
+
 Legacy one-shot `fix_*.py` helpers resolve paths from the repository root (parent of `scripts/`), not from fixed `/mnt/c/...` paths.

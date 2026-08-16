@@ -29,6 +29,6 @@ Stock wall time is in-container `retdec-decompiler` only. Fork wall time is the 
 
 `mean_f1` uses stem/label fallback; `mean_f1_raw` is detector-only. Stock RetDec has no label export — F1 is fork-only.
 
-Artifacts: `results/decompilebench-tmp.json`, `results/stock-retdec-docker-full.json`, `results/algorithm-recovery-full.json`.
+Artifacts: `results/stock-retdec-docker-full.json`, `results/algorithm-recovery-full.json` (see [`results/README.md`](../results/README.md)). Temporary harness dumps belong in `data/archive/`.
 
 _Regenerate fork: `python3 tests/decompilebench/runner.py ...`. Stock: `py -3 scripts/run_stock_retdec_docker.py --profile full --skip-pull`._

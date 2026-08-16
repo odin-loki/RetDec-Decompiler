@@ -53,3 +53,5 @@ Official Hub image `retdec/retdec:v5.0` **does not exist**. We use
 - [NEXT_STEPS.md](NEXT_STEPS.md)
 - [backlog.md](backlog.md)
 - [BENCHMARKS_TABLE.md](../BENCHMARKS_TABLE.md)
+- [results/README.md](../../results/README.md) — live numbers
+- [data/README.md](../../data/README.md) — archived JSON / logs

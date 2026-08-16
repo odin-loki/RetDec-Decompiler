@@ -53,7 +53,8 @@ py -3 scripts\run_stock_retdec_docker.py --profile ci-core --skip-pull
 py -3 scripts\run_stock_retdec_docker.py --profile full --skip-pull
 ```
 
-Results: `results/stock-retdec-docker-ci-core.json`, `results/stock-retdec-docker-full.json`.
+Results: `results/stock-retdec-docker-ci-core.json`, `results/stock-retdec-docker-full.json`
+(see [`results/README.md`](../../results/README.md)). Local leftovers: `data/archive/`.
 Stock has no algorithm-label export — F1 stays fork-only.
 
 See [docs/internal/MAINTAINER_SCOPE.md](../../docs/internal/MAINTAINER_SCOPE.md).
