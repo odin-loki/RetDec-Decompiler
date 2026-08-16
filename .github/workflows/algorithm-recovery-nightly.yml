@@ -54,6 +54,7 @@ jobs:
 
       - name: Algorithm recovery (CI core subset)
         run: |
+          set -euo pipefail
           DEC=""
           if [[ -x install/linux/bin/retdec-decompiler ]]; then
             DEC="install/linux/bin/retdec-decompiler"
@@ -63,7 +64,27 @@ jobs:
           test -n "$DEC" && test -x "$DEC"
           echo "decompiler=$DEC"
           "$DEC" --help >/dev/null || true
-          bash scripts/run_algorithm_recovery_ci.sh --decompiler "$DEC"
+          bash scripts/run_algorithm_recovery_ci.sh --decompiler "$DEC" 2>&1 | tee algorithm-recovery-ci.log
+
+      - name: Annotate algorithm recovery failure
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ("algorithm-recovery-ci.log", "results/algorithm-recovery-ci.json"):
+              p = Path(name)
+              if not p.exists():
+                  continue
+              raw = p.read_text(errors="replace").splitlines()
+              keys = ("extract:", "FAILED", "error:", "gate", "mean_f1", "decompiled", "not found")
+              hits = [ln for ln in raw if any(k in ln for k in keys)]
+              lines = (hits[-30:] + raw[-20:]) if hits else raw[-40:]
+              text = "%0A".join(x.replace("%", "%25") for x in lines)
+              print(f"::error::Algorithm recovery failed ({name})%0A{text}")
+              break
+          else:
+              print("::error::Algorithm recovery failed and no log/results were produced")
+          PY
 
       - name: Algorithm recovery (full corpus)
         if: github.event_name == 'workflow_dispatch' && inputs.full_corpus == true

@@ -343,7 +343,7 @@ TEST_F(ComprehensiveSmokeTest, OpenBinaryWithNonAsciiPath) {
     const QString path = tmpDir_.filePath(QStringLiteral("naïve_ üñ.bin"));
     QFile f(path);
     ASSERT_TRUE(f.open(QIODevice::WriteOnly));
-    f.write(QByteArrayLiteral("MZ\x00\x00", 4));
+    f.write(QByteArray("MZ\x00\x00", 4));
     f.close();
     win->openBinary(path);
     pump(30);

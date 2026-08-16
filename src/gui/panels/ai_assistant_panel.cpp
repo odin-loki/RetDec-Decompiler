@@ -51,7 +51,7 @@ void InferenceWorker::resetKvCacheSlot() {}
 void InferenceWorker::unloadModelSlot() {}
 
 AIAssistantPanel::AIAssistantPanel(QWidget* parent)
-    : PanelBase(parent) {
+    : PanelBase(QStringLiteral("AI Assistant"), parent) {
     setObjectName(QStringLiteral("ai_assistant_panel"));
     setWindowTitle(tr("AI Assistant"));
 
@@ -96,23 +96,27 @@ void AIAssistantPanel::setupUI() {
 void AIAssistantPanel::setupTopBar(QVBoxLayout* root) {
     auto* row = new QHBoxLayout();
     modelPathLabel_ = new QLabel(tr("Model: (none)"), this);
-    modelPathLabel_->setObjectName(QStringLiteral("model_path_label"));
+    modelPathLabel_->setObjectName(QStringLiteral("aiAssistantModelPathLabel"));
     loadModelButton_ = new QPushButton(tr("Load"), this);
     loadModelButton_->setObjectName(QStringLiteral("load_model_button"));
-    gpuButton_ = new QPushButton(tr("GPU: Off"), this);
+    gpuButton_ = new QPushButton(tr("GPU: OFF"), this);
     gpuButton_->setObjectName(QStringLiteral("gpu_button"));
     gpuButton_->setCheckable(true);
-    settingsButton_ = new QPushButton(tr("Settings"), this);
+    settingsButton_ = new QPushButton(QStringLiteral("⚙"), this);
     settingsButton_->setObjectName(QStringLiteral("settings_button"));
+    settingsButton_->setCheckable(true);
+    settingsButton_->setChecked(false);
     clearButton_ = new QPushButton(tr("Clear"), this);
     clearButton_->setObjectName(QStringLiteral("clear_button"));
 
     connect(loadModelButton_, &QPushButton::clicked, this, &AIAssistantPanel::onLoadModel);
     connect(gpuButton_, &QPushButton::toggled, this, [this](bool on) {
         gpuEnabled_ = on;
-        gpuButton_->setText(on ? tr("GPU: On") : tr("GPU: Off"));
+        gpuButton_->setText(on ? tr("GPU: ON") : tr("GPU: OFF"));
     });
-    connect(settingsButton_, &QPushButton::clicked, this, &AIAssistantPanel::onSettingsToggled);
+    connect(settingsButton_, &QPushButton::toggled, this, [this](bool on) {
+        if (settingsBar_) settingsBar_->setVisible(on);
+    });
     connect(clearButton_, &QPushButton::clicked, this, &AIAssistantPanel::onClearHistory);
 
     row->addWidget(modelPathLabel_, 1);
@@ -140,7 +144,7 @@ void AIAssistantPanel::setupSettingsBar(QVBoxLayout* root) {
 
 void AIAssistantPanel::setupChatArea(QVBoxLayout* root) {
     chatLog_ = new QTextBrowser(this);
-    chatLog_->setObjectName(QStringLiteral("chat_log"));
+    chatLog_->setObjectName(QStringLiteral("aiAssistantChatLog"));
     root->addWidget(chatLog_, 1);
     statusLabel_ = new QLabel(this);
     statusLabel_->setObjectName(QStringLiteral("status_label"));
@@ -150,9 +154,9 @@ void AIAssistantPanel::setupChatArea(QVBoxLayout* root) {
 void AIAssistantPanel::setupInputRow(QVBoxLayout* root) {
     auto* row = new QHBoxLayout();
     queryInput_ = new QLineEdit(this);
-    queryInput_->setObjectName(QStringLiteral("query_input"));
+    queryInput_->setObjectName(QStringLiteral("aiAssistantQueryInput"));
     sendButton_ = new QPushButton(tr("Send"), this);
-    sendButton_->setObjectName(QStringLiteral("send_button"));
+    sendButton_->setObjectName(QStringLiteral("aiAssistantSendButton"));
     stopButton_ = new QPushButton(tr("Stop"), this);
     stopButton_->setObjectName(QStringLiteral("stop_button"));
     stopButton_->setEnabled(false);
@@ -269,7 +273,9 @@ void AIAssistantPanel::onResponseComplete(int /*newTokens*/, double /*tokPerSec*
 }
 
 void AIAssistantPanel::onInferenceError(const QString& error) {
-    appendSystemMessage(error);
+    appendSystemMessage(error.contains(QStringLiteral("Error:"))
+                            ? error
+                            : QStringLiteral("Error: ") + error);
     setInferenceBusy(false);
 }
 

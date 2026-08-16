@@ -397,8 +397,12 @@ if (-not $SkipBuild) {
     & cmake --build $BuildDir --target install @parallelArgs 2>&1 | Tee-Object -FilePath $buildLog
     if ($LASTEXITCODE -ne 0) {
         if (Test-Path -LiteralPath $buildLog) {
-            Write-Host "===== cmake --build failed (last 80 lines) ====="
-            Get-Content -LiteralPath $buildLog -Tail 80
+            Write-Host "===== cmake --build failed (error lines) ====="
+            Select-String -Path $buildLog -Pattern "FAILED|error C|error LNK|fatal error|error:|ninja: build stopped|: error " |
+                Select-Object -Last 40 |
+                ForEach-Object { $_.Line }
+            Write-Host "===== cmake --build failed (last 40 lines) ====="
+            Get-Content -LiteralPath $buildLog -Tail 40
         }
         throw "cmake --build --target install failed with exit code $LASTEXITCODE"
     }

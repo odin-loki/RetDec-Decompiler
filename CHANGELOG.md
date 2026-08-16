@@ -45,6 +45,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   `GenerationConfig`; KV prefix reuse across refinement tiers;
   `RETDEC_NEURAL_GPU_OFFLOAD` passes `GGML_CUDA`. Model verify rejects mmproj/VL.
 - Optional `RETDEC_ENABLE_XSIMD` fetches xsimd 13.2.0 for entropy all-zero scans.
+- `AIAssistantPanel` now constructs `PanelBase` with its title (Linux installer
+  was failing: `PanelBase(QWidget*)` is not a constructor).
+- GUI smoke test writes a 4-byte MZ stub with `QByteArray(...)` (`QByteArrayLiteral`
+  takes one argument).
+- Installer and algorithm-recovery CI annotations now pull `error`/`FAILED`
+  lines from the build log instead of a raw tail that hid the first failure.
 
 ## [2.0.19] — 2026-08-09
 

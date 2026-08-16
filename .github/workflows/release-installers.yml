@@ -205,20 +205,33 @@ jobs:
         run: |
           $env:PATH = "C:\Strawberry\perl\bin;" + $env:PATH
           $env:CMAKE_BUILD_PARALLEL_LEVEL = "1"
-          try {
-            cmake --build build/windows --parallel 1 --target llvm-project
-            if (Test-Path "build/windows/deps/install/llvm/lib/LLVMPasses.lib") {
-              Get-ChildItem -Path "build/windows/llvm-project-prefix" -Recurse -Filter *.obj -ErrorAction SilentlyContinue | Remove-Item -Force
-            }
-            .\scripts\build-windows-installer.ps1 -Version "${{ needs.release.outputs.version }}"
-          } catch {
-            $log = Join-Path $pwd "build-windows.log"
-            $tail = @()
-            if (Test-Path $log) { $tail = Get-Content $log -Tail 50 }
-            $msg = ($tail -join "%0A") -replace '::', ' :'
-            Write-Host "::error::Windows installer build failed%0A$msg"
-            throw
+          cmake --build build/windows --parallel 1 --target llvm-project
+          if ($LASTEXITCODE -ne 0) { throw "llvm-project build failed" }
+          if (Test-Path "build/windows/deps/install/llvm/lib/LLVMPasses.lib") {
+            Get-ChildItem -Path "build/windows/llvm-project-prefix" -Recurse -Filter *.obj -ErrorAction SilentlyContinue | Remove-Item -Force
           }
+          .\scripts\build-windows-installer.ps1 -Version "${{ needs.release.outputs.version }}"
+
+      - name: Annotate Windows build failure
+        if: failure() && steps.win_pkg.outcome == 'failure'
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("build-windows.log")
+          if not p.exists():
+              print("::error::Windows installer failed and build-windows.log is missing")
+              raise SystemExit(0)
+          raw = p.read_text(errors="replace").splitlines()
+          keys = (
+              "FAILED", "error C", "error LNK", "fatal error", "error:",
+              "No space", "ninja: build stopped", "MSB", ": error ",
+          )
+          hits = [ln for ln in raw if any(k in ln for k in keys)]
+          lines = (hits[-30:] + raw[-20:]) if hits else raw[-80:]
+          text = "%0A".join(x.replace("%", "%25").replace("::", " :") for x in lines)
+          print(f"::error::Windows installer build failed%0A{text}")
+          PY
 
       - name: Upload Windows build log
         if: failure() && steps.win_pkg.outcome == 'failure'
