@@ -40,6 +40,7 @@ target_link_libraries(retdec
 		Threads::Threads
 		retdec::gpu-scanner
 		retdec::deps::rapidjson
+		$<BUILD_INTERFACE:retdec-profiling>
 )
 
 if(RETDEC_ENABLE_NEURAL)

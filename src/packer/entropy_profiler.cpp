@@ -9,6 +9,10 @@
 #include <cmath>
 #include <numeric>
 
+#if defined(RETDEC_HAS_XSIMD)
+#include <xsimd/xsimd.hpp>
+#endif
+
 namespace retdec {
 namespace packer {
 
@@ -17,6 +21,31 @@ namespace packer {
 double EntropyProfiler::blockEntropy(const uint8_t *data, size_t size)
 {
     if (!data || size == 0) return 0.0;
+
+#if defined(RETDEC_HAS_XSIMD)
+    {
+        using batch_t = xsimd::batch<uint8_t>;
+        const std::size_t width = batch_t::size;
+        std::size_t i = 0;
+        bool allZero = true;
+        for (; i + width <= size; i += width) {
+            const auto b = batch_t::load_unaligned(data + i);
+            if (xsimd::any(b != uint8_t{0})) {
+                allZero = false;
+                break;
+            }
+        }
+        if (allZero) {
+            for (; i < size; ++i) {
+                if (data[i] != 0) {
+                    allZero = false;
+                    break;
+                }
+            }
+        }
+        if (allZero) return 0.0;
+    }
+#endif
 
     // Count byte frequencies
     uint32_t freq[256] = {};

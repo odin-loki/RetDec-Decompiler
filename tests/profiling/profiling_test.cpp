@@ -246,6 +246,14 @@ TEST_F(ProfilingTest, ToJsonContainsTotalWall) {
     EXPECT_NE(r.toJson().find("total_wall_ms"), std::string::npos);
 }
 
+TEST_F(ProfilingTest, ToJsonIncludesFunctionSamples) {
+    Profiler::instance().recordFunction("instcombine", 1500000);
+    auto r = Profiler::instance().report();
+    auto j = r.toJson();
+    EXPECT_NE(j.find("function_samples"), std::string::npos);
+    EXPECT_NE(j.find("instcombine"), std::string::npos);
+}
+
 // ─── toCsv ───────────────────────────────────────────────────────────────────
 
 TEST_F(ProfilingTest, ToCsvCreatesFile) {

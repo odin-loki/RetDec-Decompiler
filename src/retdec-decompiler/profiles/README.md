@@ -15,8 +15,8 @@ python3 scripts/validate_pipeline_json.py path/to/profile.json
 | ID | File | When to use |
 |----|------|-------------|
 | **fast** | [fast.json](fast.json) (canonical GUI copy: [llvm_passes_fast.json](../../gui/resources/llvm_passes_fast.json)) | Interactive GUI work, smoke tests, parity `-Fast` benches. Skips some verify/loop passes. Use with `--backend-no-opts` for speed. |
-| **balanced** | [balanced.json](balanced.json) | Default stock pipeline — same pass order as install `decompiler-config.json`. Good baseline for CI and regression diffs. |
-| **quality** | [quality.json](quality.json) | Same LLVM passes as balanced; intended for jobs where backend readability optimizers stay **enabled** (no `--backend-no-opts`). |
+| **balanced** | [balanced.json](balanced.json) | Stock mid-end without `verify`, `loop-accesses`, or `loop-load-elim`. Use for CI and interactive jobs. Default `decompiler-config.json` is unchanged. |
+| **quality** | [quality.json](quality.json) | Full pass list matching install `decompiler-config.json` (keeps `verify` plus `loop-accesses` / `loop-load-elim`). |
 
 ## CLI usage
 

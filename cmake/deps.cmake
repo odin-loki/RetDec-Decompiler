@@ -78,12 +78,23 @@ set(SUPPORT_PKG_VERSION
 )
 
 # llama.cpp — enable with -DRETDEC_ENABLE_LLAMACPP=ON; bump via scripts/upgrade-dep.sh LLAMACPP
+# b10451 is current as of 2026-08-16 and includes qwen35 / MTP (b9180+).
 set(LLAMACPP_URL
-    "https://github.com/ggml-org/llama.cpp/archive/refs/tags/b3997.zip"
+    "https://github.com/ggml-org/llama.cpp/archive/refs/tags/b10451.zip"
     CACHE STRING "URL of llama.cpp archive to use."
 )
 set(LLAMACPP_ARCHIVE_SHA256
-    "abb93bf1581ae1ad16d56400ff6c5684195861f44cdb8fa4db01a593dc6dd696"
+    "b04aeb511cc05451a410437eacd5a2d64a3130c27f10a54a23ad948369816cad"
+    CACHE STRING ""
+)
+
+# xsimd — header-only; enable with -DRETDEC_ENABLE_XSIMD=ON. Do not vendor under deps/xsimd/.
+set(XSIMD_URL
+    "https://github.com/xtensor-stack/xsimd/archive/refs/tags/13.2.0.zip"
+    CACHE STRING "URL of xsimd archive to use."
+)
+set(XSIMD_ARCHIVE_SHA256
+    "3ff360dc82109b11b35389a5dfed8ac15155f356f39840dff2be2e230b935b8c"
     CACHE STRING ""
 )
 option(RETDEC_SUPPORT_PKG_VERIFY_SHA256

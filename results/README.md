@@ -6,6 +6,7 @@ Live measurement contract for CI, ship checklist, and the release table.
 
 | File | Role |
 |------|------|
+| `decompilebench.json` | Live per-sample DecompileBench contract (wall_s, profile stages) |
 | `baseline-2026-08.json` | DecompileBench regression gate |
 | `baseline-algorithm-recovery.json` | Algorithm-recovery regression gate |
 | `stock-retdec-docker-ci-core.json` | Stock RetDec 5.0 (`remnux/retdec`), 9 binaries |

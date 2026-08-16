@@ -54,6 +54,14 @@ std::string sha256HexOfFile(const std::string& path)
 
 bool verifyModelSha256(const std::string& modelPath)
 {
+    auto lower = modelPath;
+    for (char& c : lower)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (lower.find("mmproj") != std::string::npos
+            || lower.find("-vl-") != std::string::npos
+            || lower.find("_vl_") != std::string::npos)
+        return false;
+
     const char* expected = std::getenv("RETDEC_NEURAL_MODEL_SHA256");
     if (!expected || !expected[0]) return true;
 

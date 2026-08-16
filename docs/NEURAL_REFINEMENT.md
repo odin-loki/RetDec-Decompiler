@@ -5,10 +5,19 @@ Architecture for offline, verified neural post-processing (MASTER-UPGRADE-PLAN P
 ## Status (v1.2.0)
 
 - `retdec::neural` library with mock + optional llama.cpp backend (`RETDEC_ENABLE_LLAMACPP`).
+  Pinned at **b10451** (Qwen3.5 / MTP). Default installers keep llama.cpp OFF.
 - Decompile hook feeds **semantic detection JSON** from `config.functions` into prompts (step 8.4).
 - Model SHA verified at load when `RETDEC_NEURAL_MODEL_SHA256` is set (step 8.8).
-- Tiers 1–5 via `RETDEC_NEURAL_TIER_MAX` (default 3).
+  Multimodal `mmproj` / `-VL-` filenames are rejected. Use a **text-only**
+  Qwen3.5-9B Instruct GGUF (`kQwen35TextOnlyGgufHint`).
+- Tiers 1–5 via `RETDEC_NEURAL_TIER_MAX` (default 3). Later tiers reuse the
+  shared prompt-prefix KV (`GenerationConfig::reuseKvPrefix`).
+- Sampler chain uses temperature / top-p / top-k / min-p from `GenerationConfig`.
+- `RETDEC_NEURAL_GPU_OFFLOAD=ON` passes `GGML_CUDA` into the llama.cpp build.
+  `RETDEC_NEURAL_MTP=1` sets `llama_model_params.load_mtp`.
 - Compile gate + optional differential gate (`RETDEC_NEURAL_DIFF_GATE=1`).
+- Refinement latency is a separate `neural_refine_wall_s` field in DecompileBench;
+  it is not mixed into `mean_wall_s`.
 
 ## Artefacts
 

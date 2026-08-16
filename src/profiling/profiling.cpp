@@ -221,6 +221,17 @@ std::string ProfilingReport::toJson() const {
         os << "\n";
     }
     os << "  ]";
+    if (!functionSamples.empty()) {
+        os << ",\n  \"function_samples\": [\n";
+        for (size_t i = 0; i < functionSamples.size(); ++i) {
+            const auto& f = functionSamples[i];
+            os << "    {\"name\":\"" << f.key << "\","
+               << "\"elapsed_ms\":" << static_cast<double>(f.elapsedNs) / 1e6 << "}";
+            if (i + 1 < functionSamples.size()) os << ",";
+            os << "\n";
+        }
+        os << "  ]";
+    }
     if (!kernels.empty()) {
         os << ",\n  \"kernels\": [\n";
         for (size_t i = 0; i < kernels.size(); ++i) {

@@ -25,6 +25,11 @@ target_link_libraries(retdec-packer
         retdec::fileformat-lattice
 )
 
+if(RETDEC_ENABLE_XSIMD AND TARGET retdec::deps::xsimd)
+    target_link_libraries(retdec-packer PRIVATE retdec::deps::xsimd)
+    target_compile_definitions(retdec-packer PRIVATE RETDEC_HAS_XSIMD)
+endif()
+
 set_target_properties(retdec-packer
     PROPERTIES
         OUTPUT_NAME "retdec-packer"

@@ -20,7 +20,9 @@
 !/tests/decompilebench/corpus/.gitkeep
 /results/decompilebench-tmp.json
 /results/*-tmp.json
-/results/[0-9a-f][0-9a-f]*.json
+# SHA-named harness dumps (7+ hex chars). Keep decompilebench.json committable.
+/results/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*.json
+!/results/decompilebench.json
 
 # Release binaries (GitHub Releases only — not committed)
 /releases/windows/

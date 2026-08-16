@@ -66,6 +66,7 @@
 #include "retdec/utils/conversion.h"
 #include "retdec/utils/memory.h"
 #include "retdec/utils/io/log.h"
+#include "retdec/profiling/profiling.h"
 
 // ── Post-decompile analysis passes ───────────────────────────────────────────
 #include "retdec/sort_detect/sort_detect.h"
@@ -123,10 +124,75 @@ namespace retdec {
 namespace
 {
 
+bool envFlagEnabled(const char *name)
+{
+	const char *e = std::getenv(name);
+	return e != nullptr && e[0] != '\0' && e[0] != '0';
+}
+
 bool bin2llvmirPassDiagEnabled()
 {
-	const char *e = std::getenv("RETDEC_BIN2LLVMIR_DIAG");
-	return e != nullptr && e[0] != '\0' && e[0] != '0';
+	return envFlagEnabled("RETDEC_BIN2LLVMIR_DIAG");
+}
+
+bool profileJsonEnabled()
+{
+	return envFlagEnabled("RETDEC_PROFILE_JSON");
+}
+
+bool pipelineProfilingEnabled()
+{
+	return bin2llvmirPassDiagEnabled() || profileJsonEnabled();
+}
+
+void configurePipelineProfiler()
+{
+	auto& prof = profiling::Profiler::instance();
+	if (pipelineProfilingEnabled())
+	{
+		prof.setEnabled(true);
+		prof.reset();
+	}
+	else
+	{
+		prof.setEnabled(false);
+	}
+}
+
+void maybeDumpProfileJson(const retdec::config::Config& config)
+{
+	const char *e = std::getenv("RETDEC_PROFILE_JSON");
+	if (!e || e[0] == '\0' || e[0] == '0')
+	{
+		return;
+	}
+
+	profiling::Profiler::instance().sampleRss();
+	const auto report = profiling::Profiler::instance().report();
+
+	std::string path;
+	if (std::strcmp(e, "1") == 0 || std::strcmp(e, "auto") == 0)
+	{
+		path = config.parameters.getOutputFile();
+		if (path.empty())
+		{
+			path = "retdec.profile.json";
+		}
+		else
+		{
+			path += ".profile.json";
+		}
+	}
+	else
+	{
+		path = e;
+	}
+
+	std::ofstream out(path);
+	if (out)
+	{
+		out << report.toJson();
+	}
 }
 
 } // namespace
@@ -181,7 +247,7 @@ class ModulePassPrinter : public llvm::ModulePass
 				// Log::phase(PhaseName);
 				// LastPhase = PhaseArg;
 			}
-			if (bin2llvmirPassDiagEnabled() && utils::startsWith(PhaseArg, "retdec"))
+			if (pipelineProfilingEnabled())
 			{
 				passWallStartForTimedPass = std::chrono::steady_clock::now();
 			}
@@ -217,16 +283,21 @@ class ModulePassTimerAfter : public llvm::ModulePass
 
 		bool runOnModule(llvm::Module &) override
 		{
-			if (!bin2llvmirPassDiagEnabled()
-					|| !utils::startsWith(_passArg, "retdec"))
+			if (!pipelineProfilingEnabled())
 			{
 				return false;
 			}
 			const auto now = std::chrono::steady_clock::now();
-			const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+			const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
 					now - ModulePassPrinter::passWallStartForTimedPass).count();
-			Log::info() << "[bin2llvmir-diag] pass_ms " << _passArg << "=" << ms
-					<< std::endl;
+			profiling::Profiler::instance().recordFunction(
+					_passArg, static_cast<profiling::Nanos>(ns));
+			if (bin2llvmirPassDiagEnabled())
+			{
+				const auto ms = ns / 1000000;
+				Log::info() << "[bin2llvmir-diag] pass_ms " << _passArg << "=" << ms
+						<< std::endl;
+			}
 			return false;
 		}
 
@@ -568,6 +639,7 @@ void setLogsFrom(const retdec::config::Parameters& params)
 bool decompile(retdec::config::Config& config, std::string* outString)
 {
 	setLogsFrom(config.parameters);
+	configurePipelineProfiler();
 
 	Log::phase("Initialization");
 	auto& passRegistry = initializeLlvmPasses();
@@ -634,7 +706,12 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 		Log::phase("Post-pipeline analysis");
 		const auto analysisT0 = std::chrono::steady_clock::now();
 
-		auto ssaMod = buildSsaModule(*module);
+		std::unique_ptr<ssa::SSAModule> ssaMod;
+		{
+			auto ssaTimer = profiling::Profiler::instance().measure(
+					"analysis.ssa_rebuild");
+			ssaMod = buildSsaModule(*module);
+		}
 		if (ssaMod && !ssaMod->functions.empty())
 		{
 			// Collect a flat const-pointer list once — reused by all module passes.
@@ -647,6 +724,8 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 			// Use the batch runAll() method to build a ccMap for all functions.
 			std::unordered_map<std::string, call_conv::CallingConvention> ccMap;
 			{
+				auto ccTimer = profiling::Profiler::instance().measure(
+						"analysis.call_conv");
 				call_conv::CallConvPass ccPass;
 				ccMap = ccPass.runAll(fnPtrs);
 			}
@@ -654,6 +733,8 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 			// --- 2. IPA (call graph + summary propagation) ---
 			ipa::IpaResult ipaResult;
 			{
+				auto ipaTimer = profiling::Profiler::instance().measure(
+						"analysis.ipa");
 				ipa::IpaPass ipaPass;
 				ipaResult = ipaPass.run(fnPtrs, ccMap);
 				if (!ipaResult.inlineCandidates.empty())
@@ -666,6 +747,13 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 
 			// --- 3. Type inference (per function, seeded from IPA summaries) ---
 			{
+				auto tiTimer = profiling::Profiler::instance().measure(
+						"analysis.type_inference");
+				// TypeInferencePass stores results on the pass object only.
+				// Nothing in this function reads types()/stats(), so the serial
+				// loop is discarded work unless RETDEC_TYPE_INFERENCE=1.
+				if (envFlagEnabled("RETDEC_TYPE_INFERENCE"))
+				{
 				// Convert an IPA ParamInfo → AbiSeedInfo::ParamSeed.
 				auto makeParamSeed =
 				    [](uint32_t i, const ipa::FunctionSummary::ParamInfo& pi)
@@ -711,12 +799,15 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 
 					tiPass.run(*fn, tiCfg);
 				}
+				}
 			}
 
 			// --- 4–7. Per-function detectors (container, algo, sort, concurrency) ---
 			// Parallel when function count > 4 and RETDEC_PARALLEL_ANALYSIS allows it.
 			// Incremental cache sidecar skips unchanged functions on re-runs.
 			{
+				auto detTimer = profiling::Profiler::instance().measure(
+						"analysis.detectors");
 				const bool useCache = analysis::incrementalCacheEnabled();
 				const std::string cachePath = useCache
 				    ? analysis::functionAnalysisCachePath(
@@ -859,11 +950,17 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 				if (!semanticMap.empty())
 					Log::info() << "[analysis] semantic detections exported for "
 					            << semanticMap.size() << " function(s)" << std::endl;
-				neural::maybeRefineDecompilerOutput(config, outString);
+				{
+					auto neuralTimer = profiling::Profiler::instance().measure(
+							"analysis.neural_refine");
+					neural::maybeRefineDecompilerOutput(config, outString);
+				}
 			}
 
 			// --- 8. OpenCL host-side recovery ---
 			{
+				auto oclTimer = profiling::Profiler::instance().measure(
+						"analysis.ocl_host");
 				ptx_decompile::OclHostRecovery ocl;
 				auto om = ocl.analyseModule(*ssaMod);
 				if (om.hasOpenCL)
@@ -884,6 +981,7 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 		}
 	}
 
+	maybeDumpProfileJson(config);
 	return EXIT_SUCCESS;
 }
 

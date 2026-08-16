@@ -15,9 +15,12 @@ namespace retdec::neural {
 struct GenerationConfig {
     float temperature = 0.7f;
     float topP        = 0.9f;
-    int   topK        = 0;
+    float minP        = 0.0f;
+    int   topK        = 20;
     int   maxTokens   = 512;
     bool  thinkingMode = false;
+    /// Keep shared prompt-prefix KV between generate() calls on the same function.
+    bool  reuseKvPrefix = false;
 };
 
 struct GenerationResult {

@@ -123,6 +123,7 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config,
         req.functionSource = current;
         req.tier = kTiers[i];
         req.semanticContextJson = semanticJson;
+        req.generation.reuseKvPrefix = (i > 0);
 
         const auto resp = refiner.refine(req);
         lastManifest = resp.manifestJson;

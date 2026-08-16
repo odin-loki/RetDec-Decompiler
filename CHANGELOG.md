@@ -35,6 +35,16 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   1 job, then drop LLVM `.o` files before linking RetDec.
 - Algorithm-recovery nightly: stage `share/retdec` next to the build-tree
   decompiler and prefer `install/linux/bin/retdec-decompiler`.
+- Performance: `RETDEC_PROFILE_JSON` dumps stage JSON; LLVM pass timers include
+  stock passes; post-pipeline stages and `capstone2llvmir.translate` are scoped.
+  Unused `TypeInferencePass` is skipped unless `RETDEC_TYPE_INFERENCE=1`.
+  OpenCL host recovery has a `cl*` pre-gate (`RETDEC_OCL_HOST=0` disables it).
+  `--profile balanced` drops `verify` / `loop-accesses` / `loop-load-elim`;
+  `quality` keeps them. Default `decompiler-config.json` is unchanged.
+- llama.cpp pin b3997 → b10451 (Qwen3.5 / MTP). Sampler chain follows
+  `GenerationConfig`; KV prefix reuse across refinement tiers;
+  `RETDEC_NEURAL_GPU_OFFLOAD` passes `GGML_CUDA`. Model verify rejects mmproj/VL.
+- Optional `RETDEC_ENABLE_XSIMD` fetches xsimd 13.2.0 for entropy all-zero scans.
 
 ## [2.0.19] — 2026-08-09
 

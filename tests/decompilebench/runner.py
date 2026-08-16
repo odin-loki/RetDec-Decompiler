@@ -123,16 +123,26 @@ def run_decompiler(
 ) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     out_c = out_dir / f"{input_bin.name}-{opt}.c"
+    profile_path = Path(str(out_c) + ".profile.json")
+    env = os.environ.copy()
+    env.setdefault("RETDEC_PROFILE_JSON", "auto")
     t0 = time.time()
     proc = subprocess.run(
         [str(decompiler), str(input_bin), "--output", str(out_c)],
         capture_output=True,
         text=True,
         timeout=600,
+        env=env,
     )
     elapsed = time.time() - t0
     rss = peak_rss_kb()
     syntax_valid = out_c.is_file() and out_c.stat().st_size > 0
+    profile = None
+    if profile_path.is_file():
+        try:
+            profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            profile = None
     recompile = None
     cov = None
     if syntax_valid:
@@ -145,7 +155,7 @@ def run_decompiler(
         recompile = dec_exe is not None
         if recompile:
             cov = coverage_equivalence(input_bin, source_path, out_c, cc, compile_opt)
-    return {
+    row = {
         "input": str(input_bin),
         "opt": opt,
         "exit_code": proc.returncode,
@@ -157,6 +167,13 @@ def run_decompiler(
         "coverage_equivalence": cov,
         "stderr_tail": (proc.stderr or "")[-500:],
     }
+    if profile is not None:
+        row["profile"] = profile
+        stages = {s.get("name"): s for s in profile.get("stages", []) if isinstance(s, dict)}
+        neural = stages.get("analysis.neural_refine")
+        if neural and neural.get("total_ms") is not None:
+            row["neural_refine_wall_s"] = round(float(neural["total_ms"]) / 1000.0, 3)
+    return row
 
 
 def summarize(rows: list[dict]) -> dict:

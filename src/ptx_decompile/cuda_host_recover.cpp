@@ -18,6 +18,8 @@
 #include "retdec/ssa/ssa.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -625,8 +627,60 @@ void OclHostRecovery::analyseFunction(const ssa::SSAFunction& fn,
         d->analyseFunction(fn, out);
 }
 
+namespace {
+
+bool oclHostDisabled()
+{
+    const char* v = std::getenv("RETDEC_OCL_HOST");
+    return v && v[0] == '0';
+}
+
+bool nameLooksLikeOclApi(const std::string& n)
+{
+    if (n.size() < 7 || n[0] != 'c' || n[1] != 'l')
+        return false;
+    static const char* const kPrefixes[] = {
+        "clCreate", "clGet", "clEnqueue", "clBuild", "clSetKernel",
+        "clRelease", "clRetain", "clSVM", "clFinish", "clFlush",
+        "clWait", "clCompile", "clLink",
+    };
+    for (const char* p : kPrefixes)
+    {
+        const std::size_t len = std::strlen(p);
+        if (n.size() >= len && n.compare(0, len, p) == 0)
+            return true;
+    }
+    return false;
+}
+
+bool moduleMayContainOpenCL(const ssa::SSAModule& mod)
+{
+    for (const auto& fnPtr : mod.functions)
+    {
+        if (!fnPtr)
+            continue;
+        if (nameLooksLikeOclApi(fnPtr->name()))
+            return true;
+        for (const auto& blk : fnPtr->blocks())
+        {
+            if (!blk)
+                continue;
+            for (const auto* instr : blk->instrs)
+            {
+                if (instr && nameLooksLikeOclApi(instr->calleeName))
+                    return true;
+            }
+        }
+    }
+    return false;
+}
+
+} // namespace
+
 OclHostModel OclHostRecovery::analyseModule(const ssa::SSAModule& mod) {
     OclHostModel result;
+    if (oclHostDisabled() || !moduleMayContainOpenCL(mod))
+        return result;
     for (const auto& fnPtr : mod.functions)
         if (fnPtr) analyseFunction(*fnPtr, result);
     result.resolveKernelNames();

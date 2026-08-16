@@ -8,6 +8,7 @@
 #include <iomanip>
 
 #include "capstone2llvmir/capstone2llvmir_impl.h"
+#include "retdec/profiling/profiling.h"
 
 namespace retdec {
 namespace capstone2llvmir {
@@ -170,6 +171,8 @@ Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::translate(
 		std::size_t count,
 		bool stopOnBranch)
 {
+	auto translateTimer = retdec::profiling::Profiler::instance().measure(
+			"capstone2llvmir.translate");
 	TranslationResult res;
 
 	// We want to keep all Capstone instructions -> alloc a new one each time.

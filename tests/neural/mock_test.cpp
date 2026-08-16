@@ -1,4 +1,5 @@
 #include "retdec/neural/inference.h"
+#include "retdec/neural/model_verify.h"
 
 #include <gtest/gtest.h>
 
@@ -13,6 +14,11 @@ TEST(NeuralMockInference, LoadAndGenerateRenameRule) {
     const auto result = inf->generate("please rename this variable", cfg);
     EXPECT_TRUE(result.ok);
     EXPECT_NE(result.text.find("suggested_name"), std::string::npos);
+}
+
+TEST(NeuralModelVerify, RejectsMultimodalMmprojFilename) {
+    EXPECT_FALSE(verifyModelSha256("Qwen3.5-9B-mmproj-f16.gguf"));
+    EXPECT_FALSE(verifyModelSha256("Qwen3.5-9B-VL-Q4_K_M.gguf"));
 }
 
 TEST(NeuralMockInference, UnloadedGenerateFails) {

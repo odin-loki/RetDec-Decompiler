@@ -36,6 +36,8 @@ target_link_libraries(capstone2llvmir
 		retdec::deps::capstone
 		retdec::deps::llvm
 		retdec::deps::rapidjson
+	PRIVATE
+		$<BUILD_INTERFACE:retdec-profiling>
 )
 
 set_target_properties(capstone2llvmir

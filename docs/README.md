@@ -119,7 +119,10 @@ Set to any non-empty value except `0` unless noted. These are **verbose logging*
 | **`RETDEC_DECODER_TLS_DIAG`** | Decoder — TLS callback list (RVA/VA) in `initJumpTargetsTls()` |
 | **`RETDEC_PARAM_RETURN_TRACE`** | `param_return` — stages + module summary |
 | **`RETDEC_EMULATION_UNPACK_DIAG`** | Stage 3 emulation unpack — input path/size, entry_rva, failure reasons |
-| **`RETDEC_BIN2LLVMIR_DIAG`** | `retdec` — `pass_ms retdec-*=` per pass; `pipeline_wall_ms` |
+| **`RETDEC_BIN2LLVMIR_DIAG`** | `retdec` — `pass_ms <pass>=` for every LLVM pass; `pipeline_wall_ms` |
+| **`RETDEC_PROFILE_JSON`** | `retdec` — write `Profiler` JSON (`auto`/`1` → `<output>.profile.json`) |
+| **`RETDEC_TYPE_INFERENCE`** | `retdec` — run unused `TypeInferencePass` loop (off by default) |
+| **`RETDEC_OCL_HOST`** | `retdec` — set `0` to skip OpenCL host recovery |
 | **`RETDEC_LLVMIR2HLL_DIAG`** | `retdec-llvmir2hll` — IR shape + `phase_ms=*` per stage |
 | **`RETDEC_DECODER_IMPORT_DIAG`** | Decoder — import table counts + delay-load markers |
 | **`RETDEC_DECODER_EXPORT_DIAG`** | Decoder — export table size + push/skip summary |
