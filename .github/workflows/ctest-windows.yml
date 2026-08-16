@@ -24,6 +24,12 @@ jobs:
             .\scripts\fetch-large-files.ps1 -BaseUrl "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
           }
 
+      - uses: actions/setup-python@v5
+        with:
+          # windows-latest ships CPython 3.14; pyc opcode tables cover 3.8–3.12.
+          # Pin so managed_formats / corpus hello.pyc stay in that range.
+          python-version: "3.12"
+
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64

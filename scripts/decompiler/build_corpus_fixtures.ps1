@@ -76,7 +76,7 @@ if (-not (Test-Path -LiteralPath $wasmDest)) {
 }
 
 # hello.pyc via Python when available
-$pycDest = Join-Path $FixDir "hello.pyc"
+$pycDest = Join-Path $OutDir "hello.pyc"
 $pySrc = Join-Path $SrcDir "hello.py"
 if ((Test-Path -LiteralPath $pySrc) -and -not (Test-Path -LiteralPath $pycDest)) {
     $py = Get-Command python -ErrorAction SilentlyContinue

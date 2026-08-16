@@ -38,7 +38,7 @@ fixtures:
   - id: hello_pyc
     description: Compiled hello.py (py_compile; skipped when missing)
     source: sources/hello.py
-    binary: fixtures/hello.pyc
+    binary: hello.pyc
     format: managed
     output_ext: .py
     min_functions: 0

@@ -9,7 +9,7 @@ Regression fixtures for `corpus_regression_test.py` (CTest: `decompiler_corpus_r
 | `manifest.yaml` | Fixture metadata and expectations |
 | `sources/` | Tiny C/Python sources compiled into binaries |
 | `bin/` | Native executables (generated; not committed) |
-| `fixtures/` | Managed inputs (`minimal.wasm`, optional `hello.pyc`) |
+| `fixtures/` | Managed inputs (`minimal.wasm`) |
 
 ## Build fixtures
 
@@ -26,7 +26,7 @@ CMake also builds native corpus binaries under `${CMAKE_CURRENT_BINARY_DIR}/corp
 ## Managed fixtures
 
 - **WASM** — `fixtures/minimal.wasm` is an 8-byte valid module header (`\0asm\x01\0\0\0`).
-- **Python** — `fixtures/hello.pyc` is generated from `sources/hello.py` via `py_compile` when Python is available. If generation fails, the `hello_pyc` manifest entry is skipped (`skip_if_missing: true`).
+- **Python** — `hello.pyc` is generated from `sources/hello.py` via `py_compile` into the CMake `corpus_fixtures/` dir (or `bin/` via the offline scripts). If generation fails, the `hello_pyc` manifest entry is skipped (`skip_if_missing: true`).
 
 ## Run manually
 

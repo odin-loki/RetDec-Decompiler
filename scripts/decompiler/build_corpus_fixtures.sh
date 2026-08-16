@@ -57,7 +57,7 @@ if [[ ! -f "${wasm_dest}" ]]; then
     echo "wrote ${wasm_dest}"
 fi
 
-pyc_dest="${FIX_DIR}/hello.pyc"
+pyc_dest="${OUT_DIR}/hello.pyc"
 py_src="${SRC_DIR}/hello.py"
 if [[ -f "${py_src}" && ! -f "${pyc_dest}" ]]; then
     if command -v python3 >/dev/null 2>&1; then

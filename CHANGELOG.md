@@ -68,6 +68,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - `.pyc` magic table includes CPython 3.14 (3625–3627).
 - `ctest-windows` installs PyYAML so corpus_regression can read the
   YAML manifest.
+- Sanitizer CI sets `vm.mmap_rnd_bits=28` (and overcommit) so ASan can
+  mmap shadow on ubuntu-latest high-entropy ASLR.
+- `ctest-windows` pins CPython 3.12; windows-latest's 3.14 .pyc is
+  outside the 3.8–3.12 opcode tables.
+- Corpus `hello.pyc` is generated into the build-tree fixtures dir
+  (`hello.pyc`) so the regression test finds it.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for

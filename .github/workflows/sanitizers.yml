@@ -90,6 +90,16 @@ jobs:
           swapon --show
           free -h
 
+      - name: Lower ASLR entropy for ASan shadow mmap
+        run: |
+          # High-entropy ASLR (vm.mmap_rnd_bits=32) on ubuntu-latest makes
+          # ASan fail to mmap shadow: "Failed to mmap" / internal allocator
+          # OOM at 0x800. Same workaround as actions/runner-images#9491.
+          sudo sysctl vm.mmap_rnd_bits=28
+          sudo sysctl vm.overcommit_memory=1
+          sysctl vm.mmap_rnd_bits vm.overcommit_memory
+          sysctl vm.mmap_rnd_compat_bits || true
+
       - name: Run ASan over decompile sample corpus
         env:
           ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:handle_abort=1:symbolize=1:quarantine_size_mb=8:malloc_context_size=0:protect_shadow_gap=0

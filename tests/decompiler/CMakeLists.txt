@@ -134,13 +134,15 @@ else()
 endif()
 list(APPEND _CORPUS_FIXTURE_OUTPUTS "${_CORPUS_FIB_LINK}")
 
-# Optional hello.pyc for managed corpus entry
-set(_CORPUS_HELLO_PYC "${CMAKE_CURRENT_SOURCE_DIR}/corpus/fixtures/hello.pyc")
+# hello.pyc for the managed corpus entry (build tree so Windows paths work)
+set(_CORPUS_HELLO_PYC "${_CORPUS_FIXTURES_DIR}/hello.pyc")
 set(_CORPUS_HELLO_PY "${CMAKE_CURRENT_SOURCE_DIR}/corpus/sources/hello.py")
+file(TO_CMAKE_PATH "${_CORPUS_HELLO_PY}" _CORPUS_HELLO_PY_C)
+file(TO_CMAKE_PATH "${_CORPUS_HELLO_PYC}" _CORPUS_HELLO_PYC_C)
 add_custom_command(
     OUTPUT "${_CORPUS_HELLO_PYC}"
     COMMAND ${Python3_EXECUTABLE} -c
-        "import py_compile; py_compile.compile('${_CORPUS_HELLO_PY}', cfile='${_CORPUS_HELLO_PYC}', doraise=True)"
+        "import py_compile; py_compile.compile('${_CORPUS_HELLO_PY_C}', cfile='${_CORPUS_HELLO_PYC_C}', doraise=True)"
     DEPENDS "${_CORPUS_HELLO_PY}"
     COMMENT "Generating corpus hello.pyc"
     VERBATIM
