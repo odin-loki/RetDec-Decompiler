@@ -102,6 +102,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   as zero functions. Failure dumps now include the file tail.
 - Windows CTest prefers `pwsh` over Windows PowerShell 5.1 for
   `install_smoke` and `parity_ctest`.
+- Sanitizer CI does not read `vm.mmap_rnd_bits` without sudo after
+  setting it; ubuntu-latest denies that unprivileged read.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for

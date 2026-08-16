@@ -97,9 +97,8 @@ jobs:
           # OOM at 0x800. Same workaround as actions/runner-images#9491.
           sudo sysctl vm.mmap_rnd_bits=28
           sudo sysctl vm.overcommit_memory=1
-          # One key per invocation: `sysctl A B` is a write of B into A.
-          sysctl vm.mmap_rnd_bits
-          sysctl vm.overcommit_memory
+          # Writes already print the new values. Do not `sysctl KEY` without
+          # sudo: ubuntu-latest denies unprivileged reads of mmap_rnd_bits.
 
       - name: Run ASan over decompile sample corpus
         env:
