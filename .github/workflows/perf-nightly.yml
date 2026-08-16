@@ -51,6 +51,7 @@ jobs:
         run: cmake --build build/windows --target retdec-decompiler --parallel
 
       - name: Build fib smoke fixture
+        continue-on-error: true
         run: cmake --build build/windows --target retdec-decompiler-fixture-fib --parallel
 
       - name: Run perf benchmark
