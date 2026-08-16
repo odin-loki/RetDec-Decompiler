@@ -521,13 +521,15 @@ bool pollDecompileLogProgress(const QString& logPath,
 QString resolveGuiDecompiledCPath(const QString& binaryPath,
                                   const QString& outputDir)
 {
-    const QFileInfo bfi(QFileInfo(binaryPath).absoluteFilePath());
+    // Lexical join only. absoluteFilePath() would turn "C:/bin/x.exe" into a
+    // cwd-relative path on non-Windows hosts and break the launch-path tests.
+    const QFileInfo bfi(binaryPath);
     const QString fileName =
             bfi.completeBaseName() + QStringLiteral(".gui-decompiled.c");
     const QString trimmed = outputDir.trimmed();
     if (trimmed.isEmpty())
-        return QFileInfo(QDir(bfi.absolutePath()).filePath(fileName)).absoluteFilePath();
-    return QFileInfo(QDir(trimmed).filePath(fileName)).absoluteFilePath();
+        return QDir::fromNativeSeparators(QDir(bfi.path()).filePath(fileName));
+    return QDir::fromNativeSeparators(QDir(trimmed).filePath(fileName));
 }
 
 QString locateGuiDecompiledCPath(const QString& binaryPath,

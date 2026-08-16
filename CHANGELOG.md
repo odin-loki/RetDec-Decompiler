@@ -31,6 +31,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   (it includes CLI headers that use `std::span`).
 - MSVC fib/corpus fixtures: use `/Fepath` (one argv) so Ninja VERBATIM
   does not pass `/Fe:\"path\"` and LNK1104 the quoted name.
+- `resolveGuiDecompiledCPath` joins lexically so Windows-style paths stay
+  intact on Linux (GUI launch tests).
 - `perf-nightly` Windows: use MSVC (`core-debug-msvc`) instead of the
   runner MinGW toolchain, which failed `find_package(ZLIB)`. Retry
   `fetch-large-files.ps1` when avast raw.githubusercontent.com resets.
