@@ -23,7 +23,11 @@ done
 
 if [[ ! -f "${AR_CORPUS}/manifest.json" ]]; then
 	echo "Building algorithm-recovery corpus first..."
-	bash "${ROOT}/scripts/build_algorithm_corpus.sh"
+	bash "${ROOT}/scripts/build_algorithm_corpus.sh" || true
+fi
+if [[ ! -f "${AR_CORPUS}/manifest.json" ]]; then
+	echo "No algorithm-recovery corpus; skip DecompileBench staging."
+	exit 0
 fi
 
 python3 - "${ROOT}" "${PROFILE}" "${AR_CORPUS}" "${AR_SRC}" "${OUT}" <<'PY'

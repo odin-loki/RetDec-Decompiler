@@ -64,8 +64,11 @@ for section, keys in (
         if bval is None:
             continue
         cval = rate(csec, key) if isinstance(csec, dict) else None
+        if cval is None and isinstance(csec, dict):
+            cval = csec.get(key)
         if cval is None:
-            cval = csec.get(key, bval)
+            print(f"{section}.{key}: SKIP (not measured)")
+            continue
         drop = float(bval) - float(cval)
         max_drop = float(thresholds.get(f"{key.replace('_rate', '')}_drop_max", thresholds.get("recompile_success_drop_max", 0.05)))
         if key == "syntax_valid_rate":

@@ -65,6 +65,9 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | `build-windows-installer.ps1` | Stage portable zip + optional NSIS installer under `dist/` |
 | `build-linux-installer.sh` | `cmake --install` + portable tarball (optional AppImage / `.deb`) |
 | `run_stock_retdec_docker.py` / `.sh` | Stock RetDec 5.0 compare via `remnux/retdec` (Windows `docker.exe`) |
+| `_stage_stock_docker_corpus.py` | Copy real ELF files for the stock Docker mount (dereferences WSL/OneDrive links) |
+| `simulate_raw_refine.py` / `reprocess_predictions_raw.py` | Offline label refine / re-score (no decompiler) |
+| `analyze_full_f1.py` | Summarize algorithm-recovery F1 results |
 
 On Linux or WSL clones, shell scripts do **not** need `chmod +x` if you invoke them with `bash scripts/<name>.sh`. To run directly (`./scripts/...`), mark entrypoints executable once after checkout:
 

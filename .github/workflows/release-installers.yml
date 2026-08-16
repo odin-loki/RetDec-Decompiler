@@ -64,6 +64,11 @@ jobs:
           fi
           echo "Commercial GPL exclusion check passed"
 
+      - name: Fetch large support files
+        run: |
+          bash scripts/fetch-large-files.sh || \
+            bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+
       - name: Regenerate benchmark tables
         run: bash scripts/regenerate_benchmark_tables.sh
 

@@ -11,6 +11,7 @@ image for the two-column DecompileBench table.
 - DecompileBench on the **same stand-in corpus** (not OSS-Fuzz)
 - Stock RetDec **v5.0** compare via `remnux/retdec` (see `results/stock-retdec-docker-full.json`)
 - Doctor, ship checklist, baselines, release tags, LIEF adapter verify
+- CI smoke gate skips metrics that were not measured (no decompiler on `ubuntu-latest`)
 
 The stand-in corpus is sufficient for regression gates. It is not the
 23k-function DecompileBench paper corpus.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fetch_oss_fuzz_decompilebench.sh — REFERENCE ONLY (OSS-Fuzz corpus not used; no Docker).
+# fetch_oss_fuzz_decompilebench.sh — REFERENCE ONLY (OSS-Fuzz corpus out of scope).
 # See docs/internal/MAINTAINER_SCOPE.md and tests/decompilebench/OSS_FUZZ_SETUP.md
 #
 # Usage: bash scripts/fetch_oss_fuzz_decompilebench.sh [--clone-only]

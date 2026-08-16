@@ -123,22 +123,19 @@ if dec and pathlib.Path(dec).is_file() and gt.is_file() and corpus.is_dir():
     if profile == "ci-core":
         extract_args.append("--ci-core")
     subprocess.run(extract_args, check=False)
-if gt.is_file():
-    if not pred.is_file():
-        pred = root / "tests/algorithm_recovery/predictions/sample.json"
-    if pred.is_file():
-        proc = subprocess.run(
-            [sys.executable, str(root / "tests/algorithm_recovery/runner.py"),
-             "--predictions", str(pred), "--ground-truth", str(gt),
-             "--out", str(root / "results/algorithm-recovery-tmp.json")],
-            capture_output=True, text=True,
-        )
-        if proc.returncode == 0:
-            ar = json.loads((root / "results/algorithm-recovery-tmp.json").read_text(encoding="utf-8"))
-            payload["algorithm_recovery"] = ar
-            summary = ar.get("summary", {})
-            payload["metrics"]["algorithm_recovery"]["mean_f1"] = summary.get("mean_f1")
-            payload["metrics"]["algorithm_recovery"]["mean_f1_raw"] = summary.get("mean_f1_raw")
+if gt.is_file() and pred.is_file():
+    proc = subprocess.run(
+        [sys.executable, str(root / "tests/algorithm_recovery/runner.py"),
+         "--predictions", str(pred), "--ground-truth", str(gt),
+         "--out", str(root / "results/algorithm-recovery-tmp.json")],
+        capture_output=True, text=True,
+    )
+    if proc.returncode == 0:
+        ar = json.loads((root / "results/algorithm-recovery-tmp.json").read_text(encoding="utf-8"))
+        payload["algorithm_recovery"] = ar
+        summary = ar.get("summary", {})
+        payload["metrics"]["algorithm_recovery"]["mean_f1"] = summary.get("mean_f1")
+        payload["metrics"]["algorithm_recovery"]["mean_f1_raw"] = summary.get("mean_f1_raw")
 
 pathlib.Path(out).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 print(f"Wrote {out}")
