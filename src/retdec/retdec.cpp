@@ -589,13 +589,22 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 	configurePipelineProfiler();
 
 	Log::phase("Initialization");
-	auto& passRegistry = initializeLlvmPasses();
+	llvm::PassRegistry* passRegistry = nullptr;
+	{
+		auto initPassesTimer = profiling::Profiler::instance().measure("init.llvm_passes");
+		passRegistry = &initializeLlvmPasses();
+	}
 
 	// limitMaximalMemoryIfRequested(params);
 	// PrintAfterAll = true;
 
-	auto context = std::make_unique<llvm::LLVMContext>();
-	auto module = createLlvmModule(*context);
+	std::unique_ptr<llvm::LLVMContext> context;
+	std::unique_ptr<llvm::Module> module;
+	{
+		auto initModuleTimer = profiling::Profiler::instance().measure("init.llvm_module");
+		context = std::make_unique<llvm::LLVMContext>();
+		module = createLlvmModule(*context);
+	}
 
 	// Create a PassManager to hold and optimize the collection of passes we
 	// are about to build.
@@ -605,40 +614,47 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 	// e.g. printf() call -> puts() call
 	//
 	// Add an appropriate TargetLibraryInfo pass for the module's triple.
+	// TLII must outlive pm.run() — WrapperPass may retain it.
 	Triple ModuleTriple(module->getTargetTriple());
 	TargetLibraryInfoImpl TLII(ModuleTriple);
 	// The -disable-simplify-libcalls flag actually disables all builtin optzns.
 	TLII.disableAllFunctions();
 	pm.add(new TargetLibraryInfoWrapperPass(TLII));
 
-	for (auto& p: config.parameters.llvmPasses)
 	{
-		if (auto* info = passRegistry.getPassInfo(p))
+		auto setupTimer = profiling::Profiler::instance().measure("init.pass_setup");
+		for (auto& p: config.parameters.llvmPasses)
 		{
-			auto* pass = info->createPass();
-			addPass(pm, pass, info);
+			if (auto* info = passRegistry->getPassInfo(p))
+			{
+				auto* pass = info->createPass();
+				addPass(pm, pass, info);
 
-			if (info->getTypeInfo() == &bin2llvmir::ProviderInitialization::ID)
-			{
-				auto* p = static_cast<bin2llvmir::ProviderInitialization*>(pass);
-				p->setConfig(&config);
+				if (info->getTypeInfo() == &bin2llvmir::ProviderInitialization::ID)
+				{
+					auto* p = static_cast<bin2llvmir::ProviderInitialization*>(pass);
+					p->setConfig(&config);
+				}
+				if (info->getTypeInfo() == &llvmir2hll::LlvmIr2Hll::ID)
+				{
+					auto* p = static_cast<llvmir2hll::LlvmIr2Hll*>(pass);
+					p->setConfig(&config);
+					p->setOutputString(outString);
+				}
 			}
-			if (info->getTypeInfo() == &llvmir2hll::LlvmIr2Hll::ID)
+			else
 			{
-				auto* p = static_cast<llvmir2hll::LlvmIr2Hll*>(pass);
-				p->setConfig(&config);
-				p->setOutputString(outString);
+				throw std::runtime_error("cannot create pass: " + p);
 			}
-		}
-		else
-		{
-			throw std::runtime_error("cannot create pass: " + p);
 		}
 	}
 
 	// Now that we have all of the passes ready, run them.
 	const auto pipelineT0 = std::chrono::steady_clock::now();
-	pm.run(*module);
+	{
+		auto pipelineTimer = profiling::Profiler::instance().measure("pipeline.pm_run");
+		pm.run(*module);
+	}
 	if (bin2llvmirPassDiagEnabled())
 	{
 		const auto ms =

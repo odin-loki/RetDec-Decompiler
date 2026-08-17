@@ -17,10 +17,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- AI Assistant panel worker uses `retdec::neural` when that target is linked.
 - Dual licence texts in `LICENSE` and `LICENSE-COMMERCIAL` (AGPL or a
   published commercial price list). Enquiries: odin.loch@outlook.com.au.
-- `scripts/fetch_qwen_gguf.sh` stages a 9B Instruct GGUF under `models/`
-  via Ollama `qwen3.5:9b` (Qwen 3.6 has no 9B tag).
+- `scripts/fetch_qwen_gguf.sh` stages Unsloth `Qwen3.5-9B-Q4_K_M.gguf`
+  and verifies SHA-256 (Ollama `qwen3.5:9b` blobs do not load on b10451).
+- GGUF load failure writes `*.refinement-manifest.json`. Profile stages
+  cover LLVM init and `pipeline.pm_run`.
 - llama.cpp generate() calls `llama_sampler_accept` and records token
   count, not byte length. Type inference (when enabled) uses the same
   thread pool as the detectors.

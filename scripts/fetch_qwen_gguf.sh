@@ -22,8 +22,35 @@ already_ok() {
     [ -f "$1" ] && [ "$(stat -c%s "$1" 2>/dev/null || stat -f%z "$1")" -gt 1000000000 ]
 }
 
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    else
+        echo ""
+    fi
+}
+
+verify_sha() {
+    local f="$1"
+    local got
+    got="$(sha256_of "$f")"
+    if [ -z "$got" ]; then
+        echo "[warn] no sha256sum/shasum; skip verify for $f" >&2
+        return 0
+    fi
+    if [ "$got" != "$SHA" ]; then
+        echo "[error] SHA-256 mismatch for $f" >&2
+        echo "        expected $SHA" >&2
+        echo "        got      $got" >&2
+        exit 1
+    fi
+}
+
 for cand in "$DEST" "$DEST_DIR/Qwen3.5-9B-Q4_K_M.unsloth.gguf"; do
     if already_ok "$cand"; then
+        verify_sha "$cand"
         print_exports "$cand"
         exit 0
     fi
@@ -43,4 +70,5 @@ else
     exit 1
 fi
 
+verify_sha "$DEST"
 print_exports "$DEST"

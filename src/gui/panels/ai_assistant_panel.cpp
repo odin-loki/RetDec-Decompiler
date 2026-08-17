@@ -1,13 +1,19 @@
 /**
  * @file src/gui/panels/ai_assistant_panel.cpp
- * @brief AI Assistant panel stub — llama.cpp backend planned (MASTER-UPGRADE-PLAN Phase 4).
+ * @brief AI Assistant panel — InferenceWorker talks to retdec::neural when linked.
  */
 
 #include "retdec/gui/panels/ai_assistant_panel.h"
 
+#ifdef RETDEC_GUI_HAS_NEURAL
+#include "retdec/neural/inference.h"
+#endif
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -18,6 +24,12 @@
 #include <QThread>
 #include <QVBoxLayout>
 
+#ifdef RETDEC_GUI_HAS_NEURAL
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+#endif
+
 namespace retdec::gui::panels {
 
 namespace {
@@ -25,20 +37,68 @@ namespace {
 constexpr const char* kNoBackend =
 	"No inference backend configured. Neural refinement (llama.cpp) is not yet available.";
 
+#ifdef RETDEC_GUI_HAS_NEURAL
+constexpr const char* kLoadGgufHint = "Load a Qwen 3.5 9B Q4_K_M GGUF to use the assistant.";
+
+std::mutex g_inferenceMutex;
+std::unordered_map<InferenceWorker*, std::shared_ptr<retdec::neural::Inference>> g_backends;
+#endif
+
 } // namespace
 
 InferenceWorker::InferenceWorker(QObject* parent): QObject(parent) {}
 
-InferenceWorker::~InferenceWorker() = default;
+InferenceWorker::~InferenceWorker()
+{
+#ifdef RETDEC_GUI_HAS_NEURAL
+	std::lock_guard<std::mutex> lock(g_inferenceMutex);
+	g_backends.erase(this);
+#endif
+}
 
-void InferenceWorker::startInference(const QString& /*prompt*/)
+void InferenceWorker::startInference(const QString& prompt)
 {
 	if (abort_.load())
 	{
 		abort_.store(false);
 		return;
 	}
+
+#ifdef RETDEC_GUI_HAS_NEURAL
+	std::shared_ptr<retdec::neural::Inference> backend;
+	{
+		std::lock_guard<std::mutex> lock(g_inferenceMutex);
+		auto it = g_backends.find(this);
+		if (it != g_backends.end() && it->second && it->second->isLoaded()) backend = it->second;
+	}
+	if (!backend)
+	{
+		emit errorOccurred(QStringLiteral("No model loaded"));
+		return;
+	}
+
+	retdec::neural::GenerationConfig cfg;
+	cfg.temperature = temperature_;
+	cfg.topP = topP_;
+	cfg.topK = topK_;
+	cfg.maxTokens = maxTokens_;
+	cfg.thinkingMode = thinkingMode_;
+
+	const retdec::neural::GenerationResult result = backend->generate(prompt.toStdString(), cfg);
+	if (!result.ok)
+	{
+		const QString err =
+			result.error.empty() ? QStringLiteral("generation failed") : QString::fromStdString(result.error);
+		emit errorOccurred(err);
+		return;
+	}
+
+	emit tokenGenerated(QString::fromStdString(result.text));
+	emit responseComplete(result.tokensGenerated, 0.0);
+#else
+	Q_UNUSED(prompt);
 	emit errorOccurred(QString::fromUtf8(kNoBackend));
+#endif
 }
 
 void InferenceWorker::abortInference()
@@ -46,15 +106,50 @@ void InferenceWorker::abortInference()
 	abort_.store(true);
 }
 
-void InferenceWorker::loadModelSlot(const QString& path, bool /*useGpu*/, int /*ctxLen*/)
+void InferenceWorker::loadModelSlot(const QString& path, bool /*useGpu*/, int ctxLen)
 {
+#ifdef RETDEC_GUI_HAS_NEURAL
+	if (!QFileInfo::exists(path))
+	{
+		emit systemStatusMessage(QStringLiteral("Model file missing"));
+		emit loadModelFinished(false, path, QStringLiteral("missing"));
+		return;
+	}
+
+	auto backend = retdec::neural::createLlamaInference();
+	if (!backend) backend = retdec::neural::createMockInference();
+
+	const int resolvedCtx = ctxLen >= 512 ? ctxLen : 4096;
+	if (!backend || !backend->loadModel(path.toStdString(), resolvedCtx))
+	{
+		emit loadModelFinished(false, path, QStringLiteral("load"));
+		return;
+	}
+
+	{
+		std::lock_guard<std::mutex> lock(g_inferenceMutex);
+		g_backends[this] = std::move(backend);
+	}
+	emit loadModelFinished(true, path, QString());
+#else
+	Q_UNUSED(ctxLen);
 	emit systemStatusMessage(QString::fromUtf8(kNoBackend));
 	emit loadModelFinished(false, path, QString());
+#endif
 }
 
 void InferenceWorker::resetKvCacheSlot() {}
 
-void InferenceWorker::unloadModelSlot() {}
+void InferenceWorker::unloadModelSlot()
+{
+#ifdef RETDEC_GUI_HAS_NEURAL
+	std::lock_guard<std::mutex> lock(g_inferenceMutex);
+	auto it = g_backends.find(this);
+	if (it == g_backends.end()) return;
+	if (it->second) it->second->unloadModel();
+	g_backends.erase(it);
+#endif
+}
 
 AIAssistantPanel::AIAssistantPanel(QWidget* parent): PanelBase(QStringLiteral("AI Assistant"), parent)
 {
@@ -90,7 +185,11 @@ AIAssistantPanel::AIAssistantPanel(QWidget* parent): PanelBase(QStringLiteral("A
 		Qt::QueuedConnection);
 
 	setupUI();
+#ifdef RETDEC_GUI_HAS_NEURAL
+	appendSystemMessage(QString::fromUtf8(kLoadGgufHint));
+#else
 	appendSystemMessage(QString::fromUtf8(kNoBackend));
+#endif
 }
 
 AIAssistantPanel::~AIAssistantPanel()
@@ -153,13 +252,65 @@ void AIAssistantPanel::setupSettingsBar(QVBoxLayout* root)
 	settingsBar_->setObjectName(QStringLiteral("settings_bar"));
 	settingsBar_->setVisible(false);
 	auto* row = new QHBoxLayout(settingsBar_);
+
 	row->addWidget(new QLabel(tr("Temperature"), settingsBar_));
-	row->addWidget(new QDoubleSpinBox(settingsBar_));
+	auto* tempSpin = new QDoubleSpinBox(settingsBar_);
+	tempSpin->setObjectName(QStringLiteral("aiAssistantTemperatureSpin"));
+	tempSpin->setRange(0.0, 2.0);
+	tempSpin->setSingleStep(0.05);
+	tempSpin->setDecimals(2);
+	tempSpin->setValue(0.6);
+	row->addWidget(tempSpin);
+
 	row->addWidget(new QLabel(tr("Top-P"), settingsBar_));
-	row->addWidget(new QDoubleSpinBox(settingsBar_));
+	auto* topPSpin = new QDoubleSpinBox(settingsBar_);
+	topPSpin->setObjectName(QStringLiteral("aiAssistantTopPSpin"));
+	topPSpin->setRange(0.0, 1.0);
+	topPSpin->setSingleStep(0.05);
+	topPSpin->setDecimals(2);
+	topPSpin->setValue(0.95);
+	row->addWidget(topPSpin);
+
+	row->addWidget(new QLabel(tr("Top-K"), settingsBar_));
+	auto* topKSpin = new QSpinBox(settingsBar_);
+	topKSpin->setObjectName(QStringLiteral("aiAssistantTopKSpin"));
+	topKSpin->setRange(0, 200);
+	topKSpin->setValue(20);
+	row->addWidget(topKSpin);
+
 	row->addWidget(new QLabel(tr("Max tokens"), settingsBar_));
-	row->addWidget(new QSpinBox(settingsBar_));
-	row->addWidget(new QCheckBox(tr("Thinking mode"), settingsBar_));
+	auto* maxTokensSpin = new QSpinBox(settingsBar_);
+	maxTokensSpin->setObjectName(QStringLiteral("aiAssistantMaxTokensSpin"));
+	maxTokensSpin->setRange(1, 32768);
+	maxTokensSpin->setValue(512);
+	row->addWidget(maxTokensSpin);
+
+	auto* thinking = new QCheckBox(tr("Thinking mode"), settingsBar_);
+	thinking->setObjectName(QStringLiteral("aiAssistantThinkingCheck"));
+	row->addWidget(thinking);
+
+	if (worker_)
+	{
+		worker_->setTemperature(0.6f);
+		worker_->setTopP(0.95f);
+		worker_->setTopK(20);
+		worker_->setMaxTokens(512);
+	}
+
+	connect(tempSpin, &QDoubleSpinBox::valueChanged, this, [this](double v) {
+		if (worker_) worker_->setTemperature(static_cast<float>(v));
+	});
+	connect(topPSpin, &QDoubleSpinBox::valueChanged, this, [this](double v) {
+		if (worker_) worker_->setTopP(static_cast<float>(v));
+	});
+	connect(topKSpin, &QSpinBox::valueChanged, this, [this](int v) {
+		if (worker_) worker_->setTopK(v);
+	});
+	connect(maxTokensSpin, &QSpinBox::valueChanged, this, [this](int v) {
+		if (worker_) worker_->setMaxTokens(v);
+	});
+	connect(thinking, &QCheckBox::toggled, this, &AIAssistantPanel::onThinkingToggled);
+
 	root->addWidget(settingsBar_);
 }
 
@@ -305,7 +456,10 @@ void AIAssistantPanel::onClearHistory()
 
 void AIAssistantPanel::onLoadModel()
 {
-	loadModel(QStringLiteral("/nonexistent/model.gguf"), gpuEnabled_);
+	const QString path =
+		QFileDialog::getOpenFileName(this, tr("Open GGUF model"), QString(), tr("GGUF models (*.gguf)"));
+	if (path.isEmpty()) return;
+	loadModel(path, gpuEnabled_);
 }
 
 void AIAssistantPanel::onSettingsToggled()
@@ -313,12 +467,23 @@ void AIAssistantPanel::onSettingsToggled()
 	if (settingsBar_) settingsBar_->setVisible(!settingsBar_->isVisible());
 }
 
-void AIAssistantPanel::onThinkingToggled(bool /*enabled*/) {}
+void AIAssistantPanel::onThinkingToggled(bool enabled)
+{
+	if (worker_) worker_->setThinkingMode(enabled);
+}
 
-void AIAssistantPanel::onTokenGenerated(const QString& /*piece*/) {}
+void AIAssistantPanel::onTokenGenerated(const QString& piece)
+{
+	if (!history_.empty() && history_.back().role == ChatRole::Assistant && !history_.back().isComplete)
+		history_.back().text += piece;
+	else
+		history_.push_back({ChatRole::Assistant, piece, false});
+	rebuildChatLog();
+}
 
 void AIAssistantPanel::onResponseComplete(int /*newTokens*/, double /*tokPerSec*/)
 {
+	if (!history_.empty() && history_.back().role == ChatRole::Assistant) history_.back().isComplete = true;
 	setInferenceBusy(false);
 }
 

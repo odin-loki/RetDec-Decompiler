@@ -37,7 +37,7 @@ Or by hand:
 
 ```bash
 export RETDEC_NEURAL_REFINE=1
-export RETDEC_NEURAL_MODEL="$PWD/models/Qwen3.5-9B-Instruct-Q4_K_M.gguf"
+export RETDEC_NEURAL_MODEL="$PWD/models/Qwen3.5-9B-Q4_K_M.gguf"
 export RETDEC_NEURAL_MODEL_SHA256=03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8
 ./build/linux/src/retdec-decompiler/retdec-decompiler in.bin -o out.c
 ```

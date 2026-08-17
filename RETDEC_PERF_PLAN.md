@@ -257,8 +257,8 @@ Qwen 3.6 has no 9B (27B / 35B only). The 9B Instruct path is **Qwen 3.5**.
 - KV prefix reuse via `llama_memory_seq_rm` / `llama_memory_clear` and
   `GenerationConfig::reuseKvPrefix` (tiers after the first).
 - `RETDEC_NEURAL_GPU_OFFLOAD` → `GGML_CUDA`.
-- Text-only GGUF: `models/Qwen3.5-9B-Instruct-Q4_K_M.gguf` via
-  `scripts/fetch_qwen_gguf.sh` (`ollama pull qwen3.5:9b`).
+- Text-only GGUF: `models/Qwen3.5-9B-Q4_K_M.gguf` via
+  `scripts/fetch_qwen_gguf.sh` (Unsloth HF; SHA verified after download).
   SHA-256 `03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8`
   (Unsloth llama.cpp-native Q4_K_M). Ollama blobs need llama.cpp PR 25334.
   `mmproj` / VL filenames rejected.

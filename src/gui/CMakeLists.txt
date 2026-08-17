@@ -124,6 +124,11 @@ target_link_libraries(retdec-gui-panels
         Qt6::Widgets
 )
 
+if(TARGET retdec::neural)
+	target_link_libraries(retdec-gui-panels PUBLIC retdec::neural)
+	target_compile_definitions(retdec-gui-panels PUBLIC RETDEC_GUI_HAS_NEURAL)
+endif()
+
 # ── Executable ─────────────────────────────────────────────────────────────────
 
 add_executable(retdec-gui WIN32 MACOSX_BUNDLE

@@ -128,6 +128,12 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 	if (!backend->loadModel(model, ctxLen))
 	{
 		std::fprintf(stderr, "retdec-neural: failed to load GGUF: %s\n", model.c_str());
+		const std::string outPath = config.parameters.getOutputFile();
+		if (!outPath.empty())
+		{
+			std::ofstream(outPath + ".refinement-manifest.json")
+				<< R"({"accepted":false,"reason":"failed to load GGUF"})";
+		}
 		return;
 	}
 
