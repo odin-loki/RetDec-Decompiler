@@ -6,6 +6,7 @@
 #include "retdec/gui/panels/function_list_panel.h"
 
 #include "retdec/gui/address_context_menu.h"
+#include "retdec/gui/settings/settings.h"
 #include "retdec/gui/widgets/empty_state_widget.h"
 
 #include <QApplication>
@@ -105,7 +106,12 @@ QVariant FunctionListModel::data(const QModelIndex& index, int role) const
     case Qt::DisplayRole:
         switch (index.column()) {
         case ColAddress:    return QString("0x%1").arg(e.address, 16, 16, QChar('0'));
-        case ColName:       return e.name.isEmpty() ? e.rawName : e.name;
+        case ColName: {
+            if (!retdec::gui::AppSettings::instance().advanced.demangleNames
+                    && !e.rawName.isEmpty())
+                return e.rawName;
+            return e.name.isEmpty() ? e.rawName : e.name;
+        }
         case ColSize:       return e.sizeBytes > 0
                                 ? QString("%1 B").arg(e.sizeBytes) : "—";
         case ColInstrs:     return e.instrCount > 0

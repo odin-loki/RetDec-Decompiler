@@ -3,6 +3,7 @@
  */
 
 #include "retdec/gui/decompiler_launch.h"
+#include "retdec/gui/panels/diagnostics_panel.h"
 #include "retdec/gui/panels/live_console_panel.h"
 #include "retdec/gui/settings/settings.h"
 
@@ -94,6 +95,7 @@ TEST(DecompilerLaunch, BuildsBaselineArguments)
 	EXPECT_TRUE(args.contains(QStringLiteral("x86-64")));
 	EXPECT_FALSE(args.contains(QStringLiteral("--backend-no-opts")));
 	EXPECT_FALSE(args.contains(QStringLiteral("--print-after-all")));
+	EXPECT_FALSE(args.contains(QStringLiteral("--select-decode-only")));
 }
 
 TEST(DecompilerLaunch, FastModeAddsFlagsAndLlvmPassesJson)
@@ -138,6 +140,30 @@ TEST(DecompilerLaunch, EmitCfgAndDisablePatternsFlags)
 	EXPECT_FALSE(args.contains(QStringLiteral("--backend-no-opts")));
 }
 
+TEST(DecompilerLaunch, VerboseOmitsSilentFlag)
+{
+	retdec::gui::DecompilerLaunchRequest req;
+	req.binaryPath = QStringLiteral("/tmp/bin");
+	req.outputPath = QStringLiteral("/tmp/out.c");
+	req.silent = false;
+
+	const QStringList args = retdec::gui::buildDecompilerArguments(req);
+	EXPECT_FALSE(args.contains(QStringLiteral("-s")));
+}
+
+TEST(DecompilerLaunch, SelectDecodeOnlyFlag)
+{
+	retdec::gui::DecompilerLaunchRequest req;
+	req.binaryPath = QStringLiteral("/tmp/bin");
+	req.outputPath = QStringLiteral("/tmp/out.c");
+	req.selectedFunctions = {QStringLiteral("main")};
+	req.selectDecodeOnly = true;
+
+	const QStringList args = retdec::gui::buildDecompilerArguments(req);
+	EXPECT_TRUE(args.contains(QStringLiteral("--select-functions")));
+	EXPECT_TRUE(args.contains(QStringLiteral("--select-decode-only")));
+}
+
 TEST(DecompilerLaunch, InteractiveNeuralEnvWhenModelExists)
 {
 	QTemporaryFile model;
@@ -154,6 +180,7 @@ TEST(DecompilerLaunch, InteractiveNeuralEnvWhenModelExists)
 	st.ml.temperature = 0.55;
 	st.ml.topP = 0.8;
 	st.ml.topK = 15;
+	st.analysis.threadCount = 4;
 
 	const QProcessEnvironment env = retdec::gui::buildDecompilerProcessEnvironment(st, true);
 	EXPECT_EQ(env.value(QStringLiteral("RETDEC_NEURAL_REFINE")), QStringLiteral("1"));
@@ -164,6 +191,7 @@ TEST(DecompilerLaunch, InteractiveNeuralEnvWhenModelExists)
 	EXPECT_EQ(env.value(QStringLiteral("RETDEC_NEURAL_CTX")), QStringLiteral("2048"));
 	EXPECT_EQ(env.value(QStringLiteral("RETDEC_NEURAL_MAX_TOKENS")), QStringLiteral("128"));
 	EXPECT_EQ(env.value(QStringLiteral("RETDEC_NEURAL_TOP_K")), QStringLiteral("15"));
+	EXPECT_EQ(env.value(QStringLiteral("RETDEC_NEURAL_THREADS")), QStringLiteral("4"));
 
 	const QProcessEnvironment headless = retdec::gui::buildDecompilerProcessEnvironment(st, false);
 	const QProcessEnvironment sys = QProcessEnvironment::systemEnvironment();
@@ -196,6 +224,28 @@ TEST(DecompilerLaunch, SelectFunctionsFlag)
 	ASSERT_GE(idx, 0);
 	EXPECT_LT(idx + 1, args.size());
 	EXPECT_EQ(args.at(idx + 1), QStringLiteral("main,function_401000"));
+}
+
+TEST(DecompilerLaunch, IncrementalDiagnosticsReadsNewWarningLines)
+{
+	QTemporaryFile log;
+	log.setAutoRemove(true);
+	ASSERT_TRUE(log.open());
+	log.write("info: starting\nwarning: first\n");
+	log.close();
+
+	qint64 offset = 0;
+	retdec::gui::panels::DiagnosticsPanel panel;
+	EXPECT_TRUE(retdec::gui::scanDecompilerLogDiagnosticsIncremental(&panel, log.fileName(), &offset));
+	EXPECT_GT(offset, 0);
+
+	QFile append(log.fileName());
+	ASSERT_TRUE(append.open(QIODevice::Append));
+	append.write("error: second\n");
+	append.close();
+
+	EXPECT_TRUE(retdec::gui::scanDecompilerLogDiagnosticsIncremental(&panel, log.fileName(), &offset));
+	EXPECT_FALSE(retdec::gui::scanDecompilerLogDiagnosticsIncremental(&panel, log.fileName(), &offset));
 }
 
 TEST(DecompilerLaunch, AppendLogIncrementalFromOffset)

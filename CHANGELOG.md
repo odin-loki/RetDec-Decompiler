@@ -15,6 +15,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Settings dialog Export… / Import… ActionRole buttons. Export applies
   unsaved form edits first; Import refreshes the dialog and does not
   persist to QSettings until Apply/OK.
+- Settings language combo now persists `en`/`de`/`fr`/`es`/`zh`.
+  Plugins search paths / enabled IDs / auto-load are in JSON export.
+- Tools → Compare original vs refined… opens Diff against `.refined.c`.
+- Problems shows a type-inference sidecar summary when
+  `.type-inference.json` exists. Warning/error log lines appear in
+  Problems during the run, not only at exit.
 
 ### Changed
 
@@ -35,6 +41,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Neural hook sampler reads `RETDEC_NEURAL_TEMPERATURE` / `TOP_P` /
   `TOP_K` (clamped). AI Assistant publishes CTX / MAX_TOKENS / sampler
   env from Settings → ML without auto-loading a GGUF.
+- File dialogs start in `lastOpenDir`. Word wrap applies to Decompiled C.
+  Function list shows raw names when demangle is off. Selecting a
+  function feeds its C snippet to the AI Assistant. Verbose/Debug
+  omits `-s`. Re-decompile a function adds `--select-decode-only`.
+  Analysis thread count > 0 sets `RETDEC_NEURAL_THREADS`. Thinking
+  mode publishes `RETDEC_NEURAL_THINKING`.
 
 ---
 

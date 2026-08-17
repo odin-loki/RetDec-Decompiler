@@ -33,6 +33,10 @@ struct DecompilerLaunchRequest
 	bool emitCfg = false;
 	/// Adds `--disable-static-code-detection` when not already in fast mode.
 	bool disableStaticCodeDetection = false;
+	/// Default true keeps `-s` (silent). Verbose/Debug interactive runs set false.
+	bool silent = true;
+	/// Adds `--select-decode-only` (faster partial re-decompile).
+	bool selectDecodeOnly = false;
 	/// Non-empty → adds `--select-functions` (comma-separated LLVM/config names).
 	QStringList selectedFunctions;
 	DecompilerSettings decompiler;
@@ -79,6 +83,11 @@ bool appendDecompilerLogIncrementalToConsole(
 
 /// Scan a log file for warning/error lines (does not load the whole file).
 void scanDecompilerLogDiagnostics(panels::DiagnosticsPanel* diagnostics, const QString& logPath, int maxEntries = 200);
+
+/// Scan newly appended log bytes from @p *ioFileOffset for warning/error lines.
+/// Advances @p *ioFileOffset past complete lines. Returns true if any were added.
+bool scanDecompilerLogDiagnosticsIncremental(
+	panels::DiagnosticsPanel* diagnostics, const QString& logPath, qint64* ioFileOffset, int maxEntries = 50);
 
 /// Populate Problems dock from `semanticDetections` arrays in decompile config JSON.
 void populateSemanticDetectionsFromConfig(

@@ -61,6 +61,7 @@ void DecompiledCPanel::setupUI()
 	funcLabel_->setProperty("role", "muted");
 
 	view_ = new QPlainTextEdit(this);
+	view_->setObjectName(QStringLiteral("decompiledCView"));
 	view_->setReadOnly(true);
 	view_->setUndoRedoEnabled(false);
 	// QPlainTextEdit copes with very large documents (it's block-based), but

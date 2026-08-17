@@ -210,6 +210,27 @@ TEST_F(SettingsTest, ExportImportRoundtripExtended)
 	EXPECT_FALSE(s.analysis.enableTyping);
 }
 
+TEST_F(SettingsTest, ExportImportPluginsAndLanguage)
+{
+	auto& s = AppSettings::instance();
+	s.general.language = QStringLiteral("de");
+	s.plugins.autoLoadPlugins = false;
+	s.plugins.enabledPlugins = QStringList{QStringLiteral("com.test")};
+
+	QTemporaryFile f;
+	f.open();
+	QString path = f.fileName();
+	f.close();
+
+	ASSERT_TRUE(s.exportToFile(path));
+	s.resetToDefaults();
+	ASSERT_TRUE(s.importFromFile(path));
+
+	EXPECT_EQ(s.general.language, QStringLiteral("de"));
+	EXPECT_FALSE(s.plugins.autoLoadPlugins);
+	EXPECT_EQ(s.plugins.enabledPlugins, (QStringList{QStringLiteral("com.test")}));
+}
+
 TEST_F(SettingsTest, ImportBadFileReturnsFalse)
 {
 	EXPECT_FALSE(AppSettings::instance().importFromFile("/nonexistent/path.json"));

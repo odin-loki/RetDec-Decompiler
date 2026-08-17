@@ -412,6 +412,12 @@ bool AppSettings::exportToFile(const QString& path) const
 	dec["decompileProfile"] = decompiler.decompileProfile;
 	root["Decompiler"] = dec;
 
+	QJsonObject plug;
+	plug["searchPaths"] = QJsonArray::fromStringList(plugins.searchPaths);
+	plug["enabledPlugins"] = QJsonArray::fromStringList(plugins.enabledPlugins);
+	plug["autoLoad"] = plugins.autoLoadPlugins;
+	root["Plugins"] = plug;
+
 	QFile f(path);
 	if (!f.open(QIODevice::WriteOnly)) return false;
 	f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
@@ -533,6 +539,24 @@ bool AppSettings::importFromFile(const QString& path)
 		{
 			if (v.isString()) decompiler.llvmPassesDisabled.append(v.toString());
 		}
+	}
+
+	if (root.contains("Plugins"))
+	{
+		auto p = root["Plugins"].toObject();
+		plugins.searchPaths.clear();
+		const QJsonArray searchArr = p.value("searchPaths").toArray();
+		for (const QJsonValue& v: searchArr)
+		{
+			if (v.isString()) plugins.searchPaths.append(v.toString());
+		}
+		plugins.enabledPlugins.clear();
+		const QJsonArray enabledArr = p.value("enabledPlugins").toArray();
+		for (const QJsonValue& v: enabledArr)
+		{
+			if (v.isString()) plugins.enabledPlugins.append(v.toString());
+		}
+		plugins.autoLoadPlugins = p.value("autoLoad").toBool(true);
 	}
 
 	emit settingsChanged();

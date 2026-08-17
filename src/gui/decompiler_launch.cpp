@@ -242,8 +242,8 @@ QStringList buildDecompilerArguments(
 		}
 	}
 
-	args << req.binaryPath << QStringLiteral("-o") << req.outputPath << QStringLiteral("-f") << QStringLiteral("plain")
-		 << QStringLiteral("-s");
+	args << req.binaryPath << QStringLiteral("-o") << req.outputPath << QStringLiteral("-f") << QStringLiteral("plain");
+	if (req.silent) args << QStringLiteral("-s");
 
 	const QString outLang = req.decompiler.outputLang.trimmed();
 	if (!outLang.isEmpty()) args << QStringLiteral("--output-lang") << outLang;
@@ -269,6 +269,7 @@ QStringList buildDecompilerArguments(
 
 	if (!req.selectedFunctions.isEmpty())
 		args << QStringLiteral("--select-functions") << req.selectedFunctions.join(QStringLiteral(","));
+	if (req.selectDecodeOnly) args << QStringLiteral("--select-decode-only");
 
 	if (llvmPassesOut && (req.decompiler.useCustomLlvmPasses || req.fastDecompile))
 	{
@@ -306,6 +307,8 @@ QProcessEnvironment buildDecompilerProcessEnvironment(const AppSettings& setting
 		env.insert(QStringLiteral("RETDEC_NEURAL_TEMPERATURE"), QString::number(settings.ml.temperature, 'f', 4));
 		env.insert(QStringLiteral("RETDEC_NEURAL_TOP_P"), QString::number(settings.ml.topP, 'f', 4));
 		env.insert(QStringLiteral("RETDEC_NEURAL_TOP_K"), QString::number(settings.ml.topK));
+		if (settings.analysis.threadCount > 0)
+			env.insert(QStringLiteral("RETDEC_NEURAL_THREADS"), QString::number(settings.analysis.threadCount));
 	}
 	if (!settings.cuda.useGPU) env.insert(QStringLiteral("RETDEC_OCL_HOST"), QStringLiteral("0"));
 	return env;
@@ -402,6 +405,54 @@ void scanDecompilerLogDiagnostics(panels::DiagnosticsPanel* diagnostics, const Q
 		diagnostics->addMessage(sev, QStringLiteral("retdec-decompiler"), trimmed);
 		++added;
 	}
+}
+
+bool scanDecompilerLogDiagnosticsIncremental(
+	panels::DiagnosticsPanel* diagnostics, const QString& logPath, qint64* ioFileOffset, int maxEntries)
+{
+	if (!diagnostics || !ioFileOffset || logPath.isEmpty() || maxEntries <= 0) return false;
+
+	QFile f(logPath);
+	if (!f.open(QIODevice::ReadOnly)) return false;
+	if (*ioFileOffset > f.size()) *ioFileOffset = 0;
+	if (!f.seek(*ioFileOffset)) return false;
+
+	const QByteArray data = f.readAll();
+	int start = 0;
+	int consumed = 0;
+	int added = 0;
+	while (start < data.size() && added < maxEntries)
+	{
+		const int nl = data.indexOf('\n', start);
+		if (nl < 0) break;
+		QString trimmed = QString::fromUtf8(data.mid(start, nl - start)).trimmed();
+		consumed = nl + 1;
+		start = nl + 1;
+		if (trimmed.isEmpty()) continue;
+
+		auto sev = panels::DiagnosticEntry::Severity::Info;
+		if (trimmed.contains(QStringLiteral("error"), Qt::CaseInsensitive)
+			|| trimmed.startsWith(QStringLiteral("[error]"), Qt::CaseInsensitive))
+		{
+			sev = panels::DiagnosticEntry::Severity::Error;
+		}
+		else if (
+			trimmed.contains(QStringLiteral("warning"), Qt::CaseInsensitive)
+			|| trimmed.startsWith(QStringLiteral("[warn]"), Qt::CaseInsensitive))
+		{
+			sev = panels::DiagnosticEntry::Severity::Warning;
+		}
+		else
+		{
+			continue;
+		}
+
+		diagnostics->addMessage(sev, QStringLiteral("retdec-decompiler"), trimmed);
+		++added;
+	}
+
+	*ioFileOffset += consumed;
+	return added > 0;
 }
 
 void populateSemanticDetectionsFromConfig(

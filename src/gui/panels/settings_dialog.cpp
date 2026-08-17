@@ -83,6 +83,14 @@ static QWidget* makeScrollArea(QWidget* inner)
 	return scroll;
 }
 
+static const QStringList kUiLanguageCodes{
+	QStringLiteral("en"),
+	QStringLiteral("de"),
+	QStringLiteral("fr"),
+	QStringLiteral("es"),
+	QStringLiteral("zh")};
+
+
 // ─── Constructor ─────────────────────────────────────────────────────────────
 
 SettingsDialog::SettingsDialog(QWidget* parent): QDialog(parent)
@@ -765,7 +773,10 @@ void SettingsDialog::populateFromSettings()
 	themeCombo_->setCurrentIndex(static_cast<int>(s.general.theme));
 	fontCombo_->setCurrentFont(s.general.editorFont);
 	fontSizeSpin_->setValue(s.general.fontSize);
-	langCombo_->setCurrentIndex(0); // simplified
+	{
+		const int langIdx = kUiLanguageCodes.indexOf(s.general.language);
+		langCombo_->setCurrentIndex(langIdx >= 0 ? langIdx : 0);
+	}
 	lineNumCheck_->setChecked(s.general.showLineNumbers);
 	wordWrapCheck_->setChecked(s.general.wordWrap);
 	restoreCheck_->setChecked(s.general.restoreSession);
@@ -863,6 +874,12 @@ void SettingsDialog::applyToSettings()
 	s.general.theme = static_cast<GeneralSettings::Theme>(themeCombo_->currentIndex());
 	s.general.editorFont = fontCombo_->currentFont();
 	s.general.fontSize = fontSizeSpin_->value();
+	{
+		const int langIdx = langCombo_->currentIndex();
+		s.general.language = (langIdx >= 0 && langIdx < kUiLanguageCodes.size())
+			? kUiLanguageCodes.at(langIdx)
+			: QStringLiteral("en");
+	}
 	s.general.showLineNumbers = lineNumCheck_->isChecked();
 	s.general.wordWrap = wordWrapCheck_->isChecked();
 	s.general.restoreSession = restoreCheck_->isChecked();

@@ -432,6 +432,8 @@ void AIAssistantPanel::applyMlSettingsFromApp()
 	if (auto* topKSpin = findChild<QSpinBox*>(QStringLiteral("aiAssistantTopKSpin"))) topKSpin->setValue(s.ml.topK);
 	if (auto* maxTokensSpin = findChild<QSpinBox*>(QStringLiteral("aiAssistantMaxTokensSpin")))
 		maxTokensSpin->setValue(s.ml.maxNewTokens);
+	if (auto* thinking = findChild<QCheckBox*>(QStringLiteral("aiAssistantThinkingCheck")))
+		qputenv("RETDEC_NEURAL_THINKING", thinking->isChecked() ? QByteArray("1") : QByteArray("0"));
 
 	const QFileInfo modelInfo(s.ml.modelPath);
 	if (modelInfo.isFile())
@@ -520,6 +522,7 @@ void AIAssistantPanel::onSettingsToggled()
 
 void AIAssistantPanel::onThinkingToggled(bool enabled)
 {
+	qputenv("RETDEC_NEURAL_THINKING", enabled ? QByteArray("1") : QByteArray("0"));
 	if (worker_) worker_->setThinkingMode(enabled);
 }
 

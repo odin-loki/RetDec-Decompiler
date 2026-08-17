@@ -114,6 +114,18 @@ bool parseEntryPointString(const QString& s, uint64_t* out)
 	return ok;
 }
 
+QString fileDialogStartDir()
+{
+	const QString d = AppSettings::instance().general.lastOpenDir;
+	return QDir(d).exists() ? d : QString();
+}
+
+void rememberLastOpenDir(const QString& filePath)
+{
+	if (filePath.isEmpty()) return;
+	AppSettings::instance().general.lastOpenDir = QFileInfo(filePath).absolutePath();
+}
+
 QString guessDecompiledCPath(const ProjectFile* pf)
 {
 	if (!pf) return {};
@@ -745,6 +757,7 @@ void RetDecMainWindow::createMenus()
 	auto* aiAssistantAct = toolsMenu_->addAction(QStringLiteral("AI Assistant…"));
 	toolsMenu_->addSeparator();
 	auto* compareAct = toolsMenu_->addAction(QStringLiteral("Compare…"));
+	auto* compareRefinedAct = toolsMenu_->addAction(QStringLiteral("Compare original vs refined…"));
 
 	connect(settingsAct, &QAction::triggered, this, &RetDecMainWindow::onSettings);
 	connect(sigStudioAct, &QAction::triggered, this, &RetDecMainWindow::onShowSignatureStudio);
@@ -756,6 +769,40 @@ void RetDecMainWindow::createMenus()
 		aiAssistant_->applyMlSettingsFromApp();
 	});
 	connect(compareAct, &QAction::triggered, this, &RetDecMainWindow::onCompare);
+	connect(compareRefinedAct, &QAction::triggered, this, [this]() {
+		QString orig = decompilerOutputPath_;
+		if (orig.isEmpty() && project_)
+			orig = locateGuiDecompiledCPath(
+				QFileInfo(project_->binaryPath()).absoluteFilePath(),
+				AppSettings::instance().decompiler.decompileOutputDir);
+		const QString refined = orig + QStringLiteral(".refined.c");
+		if (orig.isEmpty() || !QFileInfo::exists(orig) || !QFileInfo::exists(refined))
+		{
+			QMessageBox::information(
+				this,
+				QStringLiteral("Compare"),
+				QStringLiteral("Need both the decompiled .c and its .refined.c sidecar."));
+			return;
+		}
+		QFile lf(orig);
+		QFile rf(refined);
+		if (!lf.open(QIODevice::ReadOnly) || !rf.open(QIODevice::ReadOnly))
+		{
+			QMessageBox::warning(this, QStringLiteral("Compare"), QStringLiteral("Could not read C files."));
+			return;
+		}
+		QDialog dlg(this);
+		dlg.setWindowTitle(QStringLiteral("Compare — original vs refined"));
+		auto* lay = new QVBoxLayout(&dlg);
+		auto* diff = new panels::DiffPanel(&dlg);
+		diff->setDiff(QString::fromUtf8(lf.readAll()), QString::fromUtf8(rf.readAll()), QFileInfo(refined).fileName());
+		lay->addWidget(diff, 1);
+		auto* box = new QDialogButtonBox(QDialogButtonBox::Close);
+		QObject::connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+		lay->addWidget(box);
+		dlg.resize(1100, 700);
+		dlg.exec();
+	});
 
 	// ── Help ──────────────────────────────────────────────────────────────────
 	helpMenu_ = menuBar()->addMenu(QStringLiteral("&Help"));
@@ -1050,6 +1097,33 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath, std::optiona
 			}
 		}
 
+		const QString tiPath = absC + QStringLiteral(".type-inference.json");
+		if (QFileInfo::exists(tiPath))
+		{
+			QFile tf(tiPath);
+			if (tf.open(QIODevice::ReadOnly))
+			{
+				const QJsonDocument doc = QJsonDocument::fromJson(tf.readAll());
+				const QJsonArray arr =
+					doc.isArray() ? doc.array() : doc.object().value(QStringLiteral("functions")).toArray();
+				int n = 0;
+				int known = 0;
+				for (const QJsonValue& v: arr)
+				{
+					if (!v.isObject()) continue;
+					++n;
+					known += v.toObject().value(QStringLiteral("known")).toInt();
+				}
+				if (n > 0)
+				{
+					diagnostics_->addMessage(
+						panels::DiagnosticEntry::Severity::Info,
+						QStringLiteral("type-inference"),
+						QStringLiteral("%1 functions, %2 values with known types").arg(n).arg(known));
+				}
+			}
+		}
+
 		if (functionList_) functionList_->setFunctions(loadedArtifacts_->functions);
 		setStatusFunctionCount(static_cast<int>(loadedArtifacts_->functions.size()));
 
@@ -1117,6 +1191,22 @@ void RetDecMainWindow::onFunctionArtifactViews(uint64_t address, const QString& 
 		}
 	}
 	if (decompiledC_) decompiledC_->scrollToFunction(name, startLine, endLine);
+
+	if (aiAssistant_)
+	{
+		QString snippet = decompiledC_ ? decompiledC_->documentText() : QString();
+		if (startLine > 0 && !snippet.isEmpty())
+		{
+			const QStringList lines = snippet.split(QLatin1Char('\n'));
+			const int from = startLine - 1;
+			if (from < lines.size())
+			{
+				const int to = (endLine > 0) ? qMin(endLine, lines.size()) : lines.size();
+				snippet = QStringList(lines.mid(from, qMax(0, to - from))).join(QLatin1Char('\n'));
+			}
+		}
+		aiAssistant_->setActiveFunction(snippet, name);
+	}
 }
 
 void RetDecMainWindow::refreshTypeHierarchyFromArtifacts()
@@ -1208,6 +1298,7 @@ void RetDecMainWindow::openBinary(const QString& path)
 	setStatusDecompileState(QString());
 	addRecentFile(absPath);
 	AppSettings::instance().general.lastBinaryPath = absPath;
+	AppSettings::instance().general.lastOpenDir = QFileInfo(absPath).absolutePath();
 	AppSettings::instance().save();
 	binaryBrowser_->loadBinary(absPath);
 	target_->setFromProject(project_.get());
@@ -1366,6 +1457,7 @@ void RetDecMainWindow::stopAnalysis()
 	}
 	decompileLogPollTimer_->stop();
 	decompileLogOffset_ = 0;
+	decompileDiagOffset_ = 0;
 	decompileConsoleTailOffset_ = 0;
 	decompilerProc_->setStandardOutputFile(QString());
 	decompilerLogTemp_.reset();
@@ -1429,7 +1521,7 @@ void RetDecMainWindow::onOpenBinary()
 	QString path = QFileDialog::getOpenFileName(
 		this,
 		QStringLiteral("Open Binary"),
-		QString(),
+		fileDialogStartDir(),
 		QStringLiteral("Executable Files (*.exe *.dll *.elf *.so *.dylib *.bin);;All Files (*)"));
 	if (!path.isEmpty()) openBinary(path);
 }
@@ -1439,9 +1531,13 @@ void RetDecMainWindow::onOpenProject()
 	QString path = QFileDialog::getOpenFileName(
 		this,
 		QStringLiteral("Open RetDec Project"),
-		QString(),
+		fileDialogStartDir(),
 		QStringLiteral("RetDec Projects (*.retdec);;All Files (*)"));
-	if (!path.isEmpty()) openProject(path);
+	if (!path.isEmpty())
+	{
+		rememberLastOpenDir(path);
+		openProject(path);
+	}
 }
 
 void RetDecMainWindow::onSaveDecompiled()
@@ -1667,7 +1763,7 @@ void RetDecMainWindow::onRunFullAnalysis()
 		const QString path = QFileDialog::getOpenFileName(
 			this,
 			QStringLiteral("Open Binary"),
-			QString(),
+			fileDialogStartDir(),
 			QStringLiteral("Executable Files (*.exe *.dll *.elf *.so *.dylib *.bin);;All Files (*)"));
 		if (path.isEmpty()) return;
 		openBinary(path);
@@ -1784,6 +1880,9 @@ bool RetDecMainWindow::launchDecompilerForBinary(
 	req.printAfterAll = quitWhenDecompileFinishes_ ? false : (decompilePrintAfterAll_ || st.advanced.dumpIR);
 	req.emitCfg = quitWhenDecompileFinishes_ ? false : st.advanced.dumpCFG;
 	req.disableStaticCodeDetection = quitWhenDecompileFinishes_ ? false : !st.recovery.detectPatterns;
+	req.silent = quitWhenDecompileFinishes_ || st.advanced.verbosity == AdvancedSettings::Verbosity::Quiet
+			  || st.advanced.verbosity == AdvancedSettings::Verbosity::Normal;
+	req.selectDecodeOnly = !quitWhenDecompileFinishes_ && !selectedFunctions.isEmpty();
 	req.selectedFunctions = selectedFunctions;
 	req.decompiler = quitWhenDecompileFinishes_ ? DecompilerSettings{} : st.decompiler;
 
@@ -1839,6 +1938,7 @@ bool RetDecMainWindow::launchDecompilerForBinary(
 	wallClock_.start();
 	elapsedTimer_->start();
 	decompileLogOffset_ = 0;
+	decompileDiagOffset_ = 0;
 	decompileConsoleTailOffset_ = 0;
 	if (!quitWhenDecompileFinishes_ && progressPanel_)
 	{
@@ -2004,7 +2104,7 @@ void RetDecMainWindow::onRunStage()
 		const QString path = QFileDialog::getOpenFileName(
 			this,
 			QStringLiteral("Open Binary"),
-			QString(),
+			fileDialogStartDir(),
 			QStringLiteral("Executable Files (*.exe *.dll *.elf *.so *.dylib *.bin);;All Files (*)"));
 		if (path.isEmpty()) return;
 		openBinary(path);
@@ -2056,7 +2156,14 @@ void RetDecMainWindow::applyEditorFontFromSettings()
 	font.setPointSize(g.fontSize);
 	font.setStyleHint(QFont::Monospace);
 	font.setFixedPitch(true);
-	if (decompiledC_) decompiledC_->applyEditorFont(font);
+	if (decompiledC_)
+	{
+		decompiledC_->applyEditorFont(font);
+		if (auto* view = decompiledC_->findChild<QPlainTextEdit*>(QStringLiteral("decompiledCView")))
+		{
+			view->setLineWrapMode(g.wordWrap ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
+		}
+	}
 	if (assembly_) assembly_->applyEditorFont(font);
 	if (irPanel_) irPanel_->applyEditorFont(font);
 	if (triPane_) triPane_->applyEditorFont(font);
@@ -2082,9 +2189,10 @@ void RetDecMainWindow::onCompare()
 	const QString rightPath = QFileDialog::getOpenFileName(
 		this,
 		QStringLiteral("Compare with file"),
-		QString(),
+		fileDialogStartDir(),
 		QStringLiteral("C/C++ sources (*.c *.cpp *.h *.hpp);;All files (*)"));
 	if (rightPath.isEmpty()) return;
+	rememberLastOpenDir(rightPath);
 	QFile rf(rightPath);
 	if (!rf.open(QIODevice::ReadOnly))
 	{
@@ -2141,6 +2249,7 @@ void RetDecMainWindow::finishExternalDecompileUi()
 {
 	decompileLogPollTimer_->stop();
 	decompileLogOffset_ = 0;
+	decompileDiagOffset_ = 0;
 	decompileConsoleTailOffset_ = 0;
 	analysisRunning_ = false;
 	analyseAction_->setEnabled(true);
@@ -2181,7 +2290,7 @@ void RetDecMainWindow::onDecompilerProcessFinished(int exitCode, QProcess::ExitS
 		liveConsole_->appendFooter(QStringLiteral("retdec-decompiler"), exitCode, decompileMs);
 	}
 
-	scanDecompilerLogDiagnostics(diagnostics_, logPath);
+	if (diagnostics_) scanDecompilerLogDiagnosticsIncremental(diagnostics_, logPath, &decompileDiagOffset_, 200);
 
 	if (commandLog_)
 	{
@@ -2413,6 +2522,9 @@ void RetDecMainWindow::onDecompileLogPollTick()
 	{
 		appendDecompilerLogIncrementalToConsole(liveConsole_, logPath, &decompileConsoleTailOffset_);
 	}
+
+	if (diagnostics_ && !quitWhenDecompileFinishes_)
+		scanDecompilerLogDiagnosticsIncremental(diagnostics_, logPath, &decompileDiagOffset_);
 }
 
 void RetDecMainWindow::onAnalysisFinished()
