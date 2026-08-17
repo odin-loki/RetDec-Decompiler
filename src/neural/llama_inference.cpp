@@ -86,6 +86,17 @@ public:
 #endif
 		mparams.load_mtp = envFlag("RETDEC_NEURAL_MTP");
 
+		if (!llama_supports_gpu_offload() && mparams.n_gpu_layers != 0)
+		{
+			std::fprintf(stderr, "retdec-neural: llama_supports_gpu_offload() is false; using CPU\n");
+			mparams.n_gpu_layers = 0;
+		}
+		else if (mparams.n_gpu_layers != 0)
+		{
+			std::fprintf(
+				stderr, "retdec-neural: GPU offload n_gpu_layers=%d\n", static_cast<int>(mparams.n_gpu_layers));
+		}
+
 		g_model = llama_model_load_from_file(ggufPath.c_str(), mparams);
 		if (!g_model) return false;
 

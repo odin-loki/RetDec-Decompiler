@@ -19,6 +19,10 @@ Offline, gated post-processing after the deterministic decompiler.
 - Sampler: temperature 0.6, top-p 0.95, top-k 20 (Qwen Instruct defaults).
 - Later tiers reuse the shared prompt-prefix KV (`reuseKvPrefix`).
 - `RETDEC_NEURAL_GPU_OFFLOAD=ON` passes `GGML_CUDA` into llama.cpp.
+  `RETDEC_NEURAL_N_GPU_LAYERS` sets `llama_model_params.n_gpu_layers`
+  (`-1` = all layers, `0` = CPU). The GUI AI Assistant (Tools →
+  AI Assistant…) writes this env from the GPU toggle and Settings → ML
+  device (CPU → `0`; GPU or Auto → `-1`) before `loadModel`.
   `RETDEC_NEURAL_MTP=1` sets `llama_model_params.load_mtp`. Speculative
   MTP decode has no C API at b10451.
 - Compile gate + optional differential gate (`RETDEC_NEURAL_DIFF_GATE=1`).

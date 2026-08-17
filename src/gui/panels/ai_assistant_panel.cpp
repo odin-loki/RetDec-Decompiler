@@ -4,11 +4,13 @@
  */
 
 #include "retdec/gui/panels/ai_assistant_panel.h"
+#include "retdec/gui/settings/settings.h"
 
 #ifdef RETDEC_GUI_HAS_NEURAL
 #include "retdec/neural/inference.h"
 #endif
 
+#include <QByteArray>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -23,6 +25,7 @@
 #include <QTextBrowser>
 #include <QThread>
 #include <QVBoxLayout>
+#include <QtGlobal>
 
 #ifdef RETDEC_GUI_HAS_NEURAL
 #include <memory>
@@ -106,8 +109,9 @@ void InferenceWorker::abortInference()
 	abort_.store(true);
 }
 
-void InferenceWorker::loadModelSlot(const QString& path, bool /*useGpu*/, int ctxLen)
+void InferenceWorker::loadModelSlot(const QString& path, bool useGpu, int ctxLen)
 {
+	qputenv("RETDEC_NEURAL_N_GPU_LAYERS", useGpu ? QByteArray("-1") : QByteArray("0"));
 #ifdef RETDEC_GUI_HAS_NEURAL
 	if (!QFileInfo::exists(path))
 	{
@@ -185,6 +189,7 @@ AIAssistantPanel::AIAssistantPanel(QWidget* parent): PanelBase(QStringLiteral("A
 		Qt::QueuedConnection);
 
 	setupUI();
+	applyMlSettingsFromApp();
 #ifdef RETDEC_GUI_HAS_NEURAL
 	appendSystemMessage(QString::fromUtf8(kLoadGgufHint));
 #else
@@ -365,13 +370,14 @@ bool AIAssistantPanel::loadModel(const QString& ggufPath, bool useGpu)
 {
 	gpuEnabled_ = useGpu;
 	gpuButton_->setChecked(useGpu);
+	const int ctxLen = retdec::gui::AppSettings::instance().ml.contextLength;
 	QMetaObject::invokeMethod(
 		worker_,
 		"loadModelSlot",
 		Qt::QueuedConnection,
 		Q_ARG(QString, ggufPath),
 		Q_ARG(bool, useGpu),
-		Q_ARG(int, 4096));
+		Q_ARG(int, ctxLen));
 	return true;
 }
 
@@ -388,7 +394,47 @@ bool AIAssistantPanel::isModelLoaded() const
 	return modelLoaded_;
 }
 
-void AIAssistantPanel::applyMlSettingsFromApp() {}
+void AIAssistantPanel::applyMlSettingsFromApp()
+{
+	auto& s = retdec::gui::AppSettings::instance();
+
+	const bool cpuOnly = s.ml.inferenceDevice == retdec::gui::MLSettings::InferenceDevice::CPU;
+	const bool gpuOn = s.ml.inferenceDevice == retdec::gui::MLSettings::InferenceDevice::GPU;
+	qputenv("RETDEC_NEURAL_N_GPU_LAYERS", cpuOnly ? QByteArray("0") : QByteArray("-1"));
+	if (cpuOnly)
+	{
+		gpuEnabled_ = false;
+		if (gpuButton_) gpuButton_->setChecked(false);
+	}
+	else if (gpuOn)
+	{
+		gpuEnabled_ = true;
+		if (gpuButton_) gpuButton_->setChecked(true);
+	}
+
+	if (worker_)
+	{
+		worker_->setTemperature(static_cast<float>(s.ml.temperature));
+		worker_->setTopP(static_cast<float>(s.ml.topP));
+		worker_->setTopK(s.ml.topK);
+		worker_->setMaxTokens(s.ml.maxNewTokens);
+	}
+
+	if (auto* tempSpin = findChild<QDoubleSpinBox*>(QStringLiteral("aiAssistantTemperatureSpin")))
+		tempSpin->setValue(s.ml.temperature);
+	if (auto* topPSpin = findChild<QDoubleSpinBox*>(QStringLiteral("aiAssistantTopPSpin")))
+		topPSpin->setValue(s.ml.topP);
+	if (auto* topKSpin = findChild<QSpinBox*>(QStringLiteral("aiAssistantTopKSpin"))) topKSpin->setValue(s.ml.topK);
+	if (auto* maxTokensSpin = findChild<QSpinBox*>(QStringLiteral("aiAssistantMaxTokensSpin")))
+		maxTokensSpin->setValue(s.ml.maxNewTokens);
+
+	const QFileInfo modelInfo(s.ml.modelPath);
+	if (modelInfo.isFile())
+	{
+		// Do not auto-load — a real GGUF would hang GUI tests.
+		if (modelPathLabel_) modelPathLabel_->setText(tr("Model: %1 (not loaded)").arg(s.ml.modelPath));
+	}
+}
 
 void AIAssistantPanel::appendSystemMessage(const QString& text)
 {

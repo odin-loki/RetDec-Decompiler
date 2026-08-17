@@ -17,6 +17,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- llama.cpp GPU: `RETDEC_NEURAL_GPU_OFFLOAD=ON` links `ggml-cuda` +
+  cuBLAS; `wsl_build_neural.sh` enables it. Offload all layers by default
+  (`RETDEC_NEURAL_N_GPU_LAYERS=-1`).
+- AI Assistant opens from Tools (like Signature Studio); the GPU toggle
+  sets `RETDEC_NEURAL_N_GPU_LAYERS` (`-1` / `0`) before model load.
 - Profile stages now include `bin2llvmir.decoder` (nested under
   `pipeline.pm_run`).
 - Benchmark regression gate fails when `mean_wall_s` is more than 25%
@@ -176,7 +181,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   decompiler and prefer `install/linux/bin/retdec-decompiler`.
 - Performance: `RETDEC_PROFILE_JSON` dumps stage JSON; LLVM pass timers include
   stock passes; post-pipeline stages and `capstone2llvmir.translate` are scoped.
-  Unused `TypeInferencePass` is skipped unless `RETDEC_TYPE_INFERENCE=1`.
+  Unused `TypeInferencePass` is skipped unless `RETDEC_TYPE_INFERENCE=1`;
+  when enabled, per-function stats are stored on `config.functions`
+  (`kind=type_inference`) and written to `<out>.type-inference.json`.
   OpenCL host recovery has a `cl*` pre-gate (`RETDEC_OCL_HOST=0` disables it).
   `--profile balanced` drops `verify` / `loop-accesses` / `loop-load-elim`;
   `quality` keeps them. Default `decompiler-config.json` is unchanged.

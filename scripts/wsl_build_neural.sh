@@ -14,9 +14,10 @@ cmake -S . -B build/linux \
 	-DRETDEC_ENABLE_CUDA_ACCEL=OFF \
 	-DRETDEC_ENABLE_NEURAL=ON \
 	-DRETDEC_ENABLE_LLAMACPP=ON \
+	-DRETDEC_NEURAL_GPU_OFFLOAD=ON \
 	-DLLAMACPP_URL="https://github.com/ggml-org/llama.cpp/archive/refs/tags/b10451.zip" \
 	-DLLAMACPP_ARCHIVE_SHA256="b04aeb511cc05451a410437eacd5a2d64a3130c27f10a54a23ad948369816cad"
 
 JOBS="$(nproc 2>/dev/null || echo 4)"
 cmake --build build/linux --target llamacpp-project retdec-neural retdec-decompiler --parallel "${JOBS}"
-echo "Built llama.cpp + retdec-decompiler (RETDEC_ENABLE_LLAMACPP=ON)"
+echo "Built llama.cpp + retdec-decompiler (RETDEC_ENABLE_LLAMACPP=ON RETDEC_NEURAL_GPU_OFFLOAD=ON)"

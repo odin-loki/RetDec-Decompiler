@@ -10,6 +10,7 @@
 #include <fstream>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include <llvm/ADT/Triple.h>
@@ -707,8 +708,8 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 			{
 				auto tiTimer = profiling::Profiler::instance().measure("analysis.type_inference");
 				// TypeInferencePass stores results on the pass object only.
-				// Nothing in this function reads types()/stats(), so the serial
-				// loop is discarded work unless RETDEC_TYPE_INFERENCE=1.
+				// Persist stats onto config.functions (and an optional JSON sidecar)
+				// when RETDEC_TYPE_INFERENCE=1; otherwise skip the loop.
 				if (envFlagEnabled("RETDEC_TYPE_INFERENCE"))
 				{
 					// Convert an IPA ParamInfo → AbiSeedInfo::ParamSeed.
@@ -722,6 +723,18 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 						ps.type.width = pi.width;
 						return ps;
 					};
+
+					struct TiFnStats
+					{
+						std::size_t valuesWithKnownType = 0;
+						std::size_t pointerValues = 0;
+						std::size_t structsRecovered = 0;
+						std::size_t arraysRecovered = 0;
+					};
+					std::unordered_map<std::string, TiFnStats> tiStats;
+					std::mutex tiStatsMutex;
+					const bool useParallelTi =
+						analysis::parallelAnalysisEnabled() && fnPtrs.size() >= analysis::kParallelAnalysisMinFunctions;
 
 					auto runOne = [&](const ssa::SSAFunction* fn) {
 						if (!fn) return;
@@ -748,10 +761,20 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 						}
 
 						tiPass.run(*fn, tiCfg);
+						const auto& st = tiPass.stats();
+						TiFnStats rec{
+							st.valuesWithKnownType, st.pointerValues, st.structsRecovered, st.arraysRecovered};
+						if (useParallelTi)
+						{
+							std::lock_guard<std::mutex> lock(tiStatsMutex);
+							tiStats[fn->name()] = rec;
+						}
+						else
+						{
+							tiStats[fn->name()] = rec;
+						}
 					};
 
-					const bool useParallelTi =
-						analysis::parallelAnalysisEnabled() && fnPtrs.size() >= analysis::kParallelAnalysisMinFunctions;
 					if (useParallelTi)
 					{
 						retdec::utils::ThreadPool pool;
@@ -766,6 +789,82 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 					{
 						for (const auto* fn: fnPtrs)
 							runOne(fn);
+					}
+
+					for (const auto& rec: tiStats)
+					{
+						common::Function key(rec.first);
+						auto fit = config.functions.find(key);
+						if (fit == config.functions.end())
+						{
+							continue;
+						}
+						common::Function fn = *fit;
+						if (fn.getName() != rec.first)
+						{
+							continue;
+						}
+						config.functions.erase(fit);
+						common::SemanticDetection det;
+						det.kind = "type_inference";
+						det.label = "ssa_types";
+						det.confidence = 1.0f;
+						det.detail = "known=" + std::to_string(rec.second.valuesWithKnownType)
+								   + " ptr=" + std::to_string(rec.second.pointerValues)
+								   + " structs=" + std::to_string(rec.second.structsRecovered)
+								   + " arrays=" + std::to_string(rec.second.arraysRecovered);
+						fn.semanticDetections.push_back(std::move(det));
+						config.functions.insert(std::move(fn));
+					}
+
+					const std::string outFile = config.parameters.getOutputFile();
+					if (!outFile.empty())
+					{
+						auto jsonEscapeName = [](const std::string& s) {
+							std::string o;
+							o.reserve(s.size());
+							for (unsigned char c: s)
+							{
+								if (c == '"' || c == '\\')
+								{
+									o.push_back('\\');
+									o.push_back(static_cast<char>(c));
+								}
+								else if (c == '\n')
+								{
+									o += "\\n";
+								}
+								else if (c == '\r')
+								{
+									o += "\\r";
+								}
+								else
+								{
+									o.push_back(static_cast<char>(c));
+								}
+							}
+							return o;
+						};
+						std::ofstream tiJson(outFile + ".type-inference.json");
+						if (tiJson)
+						{
+							tiJson << '[';
+							bool first = true;
+							for (const auto& rec: tiStats)
+							{
+								if (!first)
+								{
+									tiJson << ',';
+								}
+								first = false;
+								tiJson << "{\"name\":\"" << jsonEscapeName(rec.first)
+									   << "\",\"known\":" << rec.second.valuesWithKnownType
+									   << ",\"ptr\":" << rec.second.pointerValues
+									   << ",\"structs\":" << rec.second.structsRecovered
+									   << ",\"arrays\":" << rec.second.arraysRecovered << '}';
+							}
+							tiJson << ']';
+						}
 					}
 				}
 			}
