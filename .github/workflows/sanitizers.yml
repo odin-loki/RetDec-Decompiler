@@ -95,8 +95,10 @@ jobs:
           # High-entropy ASLR (vm.mmap_rnd_bits=32) on ubuntu-latest makes
           # ASan fail to mmap shadow: "Failed to mmap" / internal allocator
           # OOM at 0x800. Same workaround as actions/runner-images#9491.
-          sudo sysctl vm.mmap_rnd_bits=28
+          # 28 was not enough for this ASan binary (Failed to mmap on hello).
+          sudo sysctl vm.mmap_rnd_bits=18
           sudo sysctl vm.overcommit_memory=1
+          sudo sysctl kernel.randomize_va_space=0
           # Writes already print the new values. Do not `sysctl KEY` without
           # sudo: ubuntu-latest denies unprivileged reads of mmap_rnd_bits.
 
@@ -116,7 +118,8 @@ jobs:
               *.c|*.cc|*.cpp|*.cxx|*.h|*.hpp|*.rs) continue ;;
             esac
             echo "=== ASan: $sample ==="
-            timeout --kill-after=15 180 bash scripts/run_asan.sh "$sample"
+            timeout --kill-after=15 180 \
+              setarch "$(uname -m)" -R -- bash scripts/run_asan.sh "$sample"
             ran=$((ran + 1))
           done
           if [ "$ran" -eq 0 ]; then

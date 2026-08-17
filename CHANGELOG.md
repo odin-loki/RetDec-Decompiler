@@ -113,6 +113,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Sanitizer CI builds ASan only (no UBSan on the same binary). Combined
   ASan+UBSan still failed to mmap shadow on ubuntu-latest after
   `vm.mmap_rnd_bits=28`.
+- Sanitizer CI lowers ASLR further (`mmap_rnd_bits=18`,
+  `randomize_va_space=0`) and runs the decompiler under `setarch -R`.
+  ASan-only still failed to mmap shadow at 28.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for
