@@ -152,6 +152,8 @@ target_link_libraries(bin2llvmir
 		retdec::common
 		retdec::utils
 		retdec::deps::llvm
+	PRIVATE
+		$<BUILD_INTERFACE:retdec-profiling>
 )
 
 set_target_properties(bin2llvmir

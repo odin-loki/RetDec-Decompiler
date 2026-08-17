@@ -24,6 +24,7 @@
     "syntax_valid_drop_max": 0.05,
     "recompile_success_drop_max": 0.05,
     "coverage_equivalence_drop_max": 0.05,
-    "mean_f1_drop_max": 0.05
+    "mean_f1_drop_max": 0.05,
+    "mean_wall_s_increase_max": 0.25
   }
 }

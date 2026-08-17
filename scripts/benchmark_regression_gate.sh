@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# benchmark_regression_gate.sh — Fail if metrics drop vs baseline (Part 16.3).
+# benchmark_regression_gate.sh — Fail if quality metrics drop vs baseline
+# or mean_wall_s slows down by more than the threshold (Part 16.3).
 # Usage: bash scripts/benchmark_regression_gate.sh [--baseline FILE] [--current FILE]
 set -euo pipefail
 
@@ -52,6 +53,26 @@ def rate(deck, key):
         return (len(ok) / denom) if denom else 0.0
     return deck.get(key)
 
+def lookup_mean_wall_s(doc):
+    """metrics.decompilebench, decompilebench, summary, or top-level."""
+    metrics = doc.get("metrics") if isinstance(doc.get("metrics"), dict) else {}
+    db = metrics.get("decompilebench")
+    if isinstance(db, dict) and db.get("mean_wall_s") is not None:
+        return db.get("mean_wall_s")
+    top_db = doc.get("decompilebench")
+    if isinstance(top_db, dict):
+        if top_db.get("mean_wall_s") is not None:
+            return top_db.get("mean_wall_s")
+        summary = top_db.get("summary")
+        if isinstance(summary, dict) and summary.get("mean_wall_s") is not None:
+            return summary.get("mean_wall_s")
+    if doc.get("mean_wall_s") is not None:
+        return doc.get("mean_wall_s")
+    summary = doc.get("summary")
+    if isinstance(summary, dict) and summary.get("mean_wall_s") is not None:
+        return summary.get("mean_wall_s")
+    return None
+
 failures = []
 for section, keys in (
     ("decompilebench", ("syntax_valid_rate", "recompile_success_rate", "coverage_equivalence_rate")),
@@ -80,6 +101,27 @@ for section, keys in (
         print(f"{section}.{key}: baseline={bval:.4f} current={cval:.4f} drop={drop:.4f} max_drop={max_drop:.4f}")
         if drop > max_drop:
             failures.append(f"{section}.{key} dropped by {drop:.4f} (max {max_drop:.4f})")
+
+# SLOWDOWN gate: fail only when current is slower than baseline by more
+# than thresholds.mean_wall_s_increase_max (relative). Faster is OK.
+b_wall = lookup_mean_wall_s(baseline)
+c_wall = lookup_mean_wall_s(current)
+if b_wall is not None:
+    if c_wall is None:
+        print("decompilebench.mean_wall_s: SKIP (not measured)")
+    else:
+        b_wall = float(b_wall)
+        c_wall = float(c_wall)
+        max_inc = float(thresholds.get("mean_wall_s_increase_max", 0.25))
+        increase = ((c_wall - b_wall) / b_wall) if b_wall > 0 else (0.0 if c_wall <= 0 else float("inf"))
+        print(
+            f"decompilebench.mean_wall_s: baseline={b_wall:.4f} current={c_wall:.4f} "
+            f"increase={increase:.4f} max_increase={max_inc:.4f}"
+        )
+        if increase > max_inc:
+            failures.append(
+                f"decompilebench.mean_wall_s slowed by {increase:.4f} (max {max_inc:.4f})"
+            )
 
 if failures:
     print("REGRESSION:", "; ".join(failures), file=sys.stderr)

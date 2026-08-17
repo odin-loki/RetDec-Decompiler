@@ -17,6 +17,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Profile stages now include `bin2llvmir.decoder` (nested under
+  `pipeline.pm_run`).
+- Benchmark regression gate fails when `mean_wall_s` is more than 25%
+  slower than baseline (`thresholds.mean_wall_s_increase_max`).
 - AI Assistant panel worker uses `retdec::neural` when that target is linked.
 - Dual licence texts in `LICENSE` and `LICENSE-COMMERCIAL` (AGPL or a
   published commercial price list). Enquiries: odin.loch@outlook.com.au.

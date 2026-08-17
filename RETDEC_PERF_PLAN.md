@@ -7,6 +7,15 @@ Every claim below was checked against the actual source, `CMakeLists.txt`,
 `avast/retdec` fetched live for comparison. Where something is a hypothesis
 rather than a measured fact, it's marked as such.
 
+**Status 2026-08-17:** Phase 1 instrumentation and the cheap Phase 2 process
+items are shipped (annotated in §2/§3/§4 below). `mean_wall_s` is now a CI
+slowdown gate (`thresholds.mean_wall_s_increase_max` = 0.25).
+`bin2llvmir.decoder` is a profile stage (nested under `pipeline.pm_run`).
+Do not wrap `translateOne()`; incremental SSA is not started. Do not put
+`Profiler::measure` on the CLI managed probe — `configurePipelineProfiler()`
+resets the singleton at `decompile()` start, so CLI preamble timers would be
+wiped.
+
 ---
 
 ## 0. The number that matters
@@ -19,10 +28,11 @@ this sitting in it:
 | This fork (`decompilebench` harness, ci-core corpus) | **1.492** |
 | Stock RetDec 5.0 (`remnux/retdec` Docker, same corpus) | **0.242** |
 
-**That's a 6.17x slowdown.** It's already measured, already gated in CI
-(`baseline-2026-08.json` thresholds), and it's a stable number — stock's
-mean_wall_s is 0.240–0.249 across O0/O2/O3 and across the 9-binary and
-216-binary corpora, so it's not corpus noise.
+**That's a 6.17x slowdown.** It's already measured, and as of 2026-08-17 it
+is gated in CI as a SLOWDOWN check (`thresholds.mean_wall_s_increase_max` =
+0.25 — fail if current is more than 25% slower than 1.492s; faster is OK).
+Stock's mean_wall_s is 0.240–0.249 across O0/O2/O3 and across the 9-binary
+and 216-binary corpora, so it's not corpus noise.
 
 The per-sample data backing the fork's `1.492` isn't committed — only the
 rolled-up mean survived into the baseline file (`results/decompilebench.json`
@@ -30,6 +40,8 @@ is gitignored per `results/README.md`, generated then discarded). **Step one
 of this whole plan is regenerating and keeping that file**, because right now
 nobody can see whether the 6.17x is uniform across binaries or concentrated
 in a few — and that distinction changes everything else in this document.
+**(Shipped 2026-08-17: `results/decompilebench.json` is committed; DecompileBench
+also records `neural_refine_wall_s` separately from `mean_wall_s`.)**
 
 ---
 
@@ -58,6 +70,7 @@ fixing:
   `--profile balanced`. Decide what should actually differ (candidates: keep
   the `verify` module-verification calls and `loop-accesses`/`loop-load-elim`
   analysis in quality, drop them from balanced) and make them diverge.
+  **(Shipped 2026-08-17: `balanced.json` != `quality.json`.)**
 
 **Conclusion: don't spend the first optimization pass on pass-list tuning.**
 It's not free (see §4 for where it's still worth revisiting), but it is not
@@ -73,12 +86,16 @@ substantial phase with **no equivalent in stock RetDec at all**:
 
 1. `buildSsaModule(*module)` — rebuilds an entire second SSA-form IR
    (`retdec::ssa::SSAModule`) from the already-lowered LLVM module.
+   **(2026-08-17: incremental SSA not started.)**
 2. `CallConvPass::runAll()` — calling-convention inference over every function.
 3. `IpaPass::run()` — interprocedural call-graph + summary propagation.
 4. **`TypeInferencePass`, run in a plain serial `for` loop, one function at a
    time.** No parallelism, no cache. This is the one clear outlier: every
    other per-function stage below it got the parallel/cache treatment and
    this one didn't.
+   **(Shipped 2026-08-17: TypeInference is parallel when
+   `RETDEC_TYPE_INFERENCE=1`. The default path does not run TI. Do not add
+   a TI cache — results are unused and a cache would need a public header.)**
 5. Container / algorithm / sort / concurrency detectors — **these are
    already parallelized** (`analysis::parallelAnalysisEnabled()`, defaults to
    on when `hardware_concurrency() > 2`) **and already cached**
@@ -100,6 +117,7 @@ substantial phase with **no equivalent in stock RetDec at all**:
 8. `ptx_decompile::OclHostRecovery` — scans every module for OpenCL host
    patterns, unconditionally, even for binaries with nothing GPU-related in
    them.
+   **(Shipped 2026-08-17: pre-gated via `moduleMayContainOpenCL`.)**
 
 None of steps 1–4 and 8 have per-stage timing. `RETDEC_BIN2LLVMIR_DIAG=1`
 gives you exactly one number for this entire block:
@@ -107,6 +125,10 @@ gives you exactly one number for this entire block:
 tell SSA rebuild apart from IPA apart from the serial type-inference loop
 apart from OpenCL scanning. **This is the single most valuable thing to fix
 before doing anything else** — see §3.
+**(Shipped 2026-08-17: Post-pipeline stages are wrapped in
+`Profiler::measure` as `analysis.*`. Also shipped: unfiltered LLVM pass
+timer when profiling is on; `pipeline.pm_run` plus `init.llvm_passes` /
+`init.llvm_module` / `init.pass_setup`.)**
 
 ---
 
@@ -123,6 +145,7 @@ layer — 26k lines, zero profiling coverage) have none of it.
 Concrete tasks, in order:
 
 ### 3.1 Instrument the Post-pipeline analysis phase
+**(Shipped 2026-08-17: `analysis.*` via `Profiler::measure`.)**
 Wrap each of the 8 stages listed in §2 in `Profiler::instance().measure("stage-name")`.
 This is a few hours of mechanical work — the call sites are already isolated
 in the block starting at `retdec.cpp:633`. This answers, per binary, which
@@ -132,6 +155,7 @@ one stage architecturally worse than its neighbors, it's the leading
 hypothesis for where time concentrates — but confirm before fixing it.
 
 ### 3.2 Extend the LLVM pass timer to cover stock passes, not just `retdec-*`
+**(Shipped 2026-08-17: unfiltered LLVM pass timer when profiling is on.)**
 `ModulePassTimerAfter::runOnModule()` currently only logs when
 `utils::startsWith(_passArg, "retdec")`. Every stock LLVM pass
 (`instcombine`, `gvn`, `licm`, `simplifycfg`, all ~60 of them in the default
@@ -143,6 +167,8 @@ up in the same structured report as everything else instead of scattered
 log lines.
 
 ### 3.3 Instrument `capstone2llvmir`
+**(2026-08-17: do not wrap `translateOne()` — the decompiler lifts
+per-instruction; only the test/tool `translate()` path is timed.)**
 Zero coverage currently. Instruction-by-instruction semantic lifting is a
 classic hidden cost in every decompiler and this fork has never measured it.
 At minimum, wrap the top-level per-function lifting entry point in a
@@ -150,6 +176,9 @@ At minimum, wrap the top-level per-function lifting entry point in a
 instrument per-instruction (that would dominate its own overhead).
 
 ### 3.4 Feed the profiler report into the benchmark harness
+**(Shipped 2026-08-17: DecompileBench records `neural_refine_wall_s`;
+`mean_wall_s` is now a CI slowdown gate. `bin2llvmir.decoder` is a
+profile stage nested under `pipeline.pm_run`.)**
 `tests/decompilebench/runner.py` already produces `wall_s`/`peak_rss_kb` per
 sample. Add an option to also capture `RETDEC_BIN2LLVMIR_DIAG=1` output (or,
 better, have the decompiler binary itself dump `ProfilingReport` as JSON
@@ -160,6 +189,7 @@ binary is a manual `RETDEC_BIN2LLVMIR_DIAG=1 ./retdec-decompiler ...` run;
 it should be a column in the same JSON the CI gate already reads.
 
 ### 3.5 Regenerate and commit the raw per-sample decompilebench result
+**(Shipped 2026-08-17: `results/decompilebench.json` is committed.)**
 ```
 python3 tests/decompilebench/runner.py \
   --decompiler build/linux/src/retdec-decompiler/retdec-decompiler \
@@ -177,6 +207,8 @@ spawns or corpus I/O).
 run once.** Everything past this point is a hypothesis about where the time
 goes; the point of this phase is turning hypotheses into measurements before
 spending engineering time.
+**(2026-08-17: 3.1, 3.2, 3.5 shipped. 3.3: do not wrap `translateOne()`.
+3.4: `neural_refine_wall_s` + `mean_wall_s` gate shipped.)**
 
 ---
 
@@ -191,6 +223,8 @@ In expected-payoff order, assuming §2's architecture read is roughly right
    `analysis::FunctionAnalysisCache` sidecar keyed on
    `computeFunctionBodyHash()`. This is copying an established, working
    pattern from four call sites down in the same function — not new design.
+   **(Shipped 2026-08-17: parallel when `RETDEC_TYPE_INFERENCE=1`; default
+   path does not run TI. Do not add a TI cache.)**
 2. **Question whether `buildSsaModule` needs to exist as a separate full
    rebuild.** bin2llvmir's own passes (`inst_opt_rda`, register
    localization) already compute SSA-adjacent structure over the same LLVM
@@ -199,16 +233,21 @@ In expected-payoff order, assuming §2's architecture read is roughly right
    over the whole module. This is the highest-effort, highest-payoff item on
    the list — don't start it without §3 data confirming SSA rebuild is
    actually expensive.
+   **(2026-08-17: incremental SSA not started.)**
 3. **Fix `balanced.json` / `quality.json` duplication** (§1) — cheap, do it
    regardless of what profiling shows.
+   **(Shipped 2026-08-17: `balanced.json` != `quality.json`.)**
 4. **Gate or scope the OpenCL host-recovery scan** — cheap check (does the
    module contain any OpenCL-shaped patterns at all before running the full
    `OclHostRecovery::analyseModule`?) that avoids paying for a scan that's
    irrelevant to the overwhelming majority of binaries.
+   **(Shipped 2026-08-17: pre-gated via `moduleMayContainOpenCL`.)**
 5. Re-run §3.5's benchmark after each individual fix and diff against the
    committed baseline — the CI gate infrastructure
    (`scripts/run_benchmarks.sh --compare 2026-08 --gate`) already exists for
    exactly this; use it rather than eyeballing numbers.
+   **(Shipped 2026-08-17: `mean_wall_s` slowdown gate in
+   `scripts/benchmark_regression_gate.sh`.)**
 
 ---
 
@@ -280,10 +319,11 @@ Qwen 3.6 has no 9B (27B / 35B only). The 9B Instruct path is **Qwen 3.5**.
 
 ```
 Phase 0  Read results/baseline-2026-08.json properly (done — see §0)
-Phase 1  Instrument (§3.1–3.5) — mechanical, no behavior change, do first
-Phase 2  Fix Post-pipeline analysis phase per what Phase 1 finds (§4)
+Phase 1  Instrument (§3.1–3.5) — shipped 2026-08-17 except translateOne() (not wrapped)
+Phase 2  Cheap items shipped (TI parallel opt-in, balanced!=quality, OpenCL pre-gate,
+         mean_wall_s gate, bin2llvmir.decoder stage). Incremental SSA not started
 Phase 3  xsimd on confirmed-hot byte-scanning code only (§5)
-Phase 4  Qwen 3.5 9B: pin/sampler/KV/GPU/SHA shipped; MTP spec decode has no C API
+Phase 4  Qwen 3.5 9B Unsloth GGUF + llama.cpp b10451 shipped; MTP spec decode has no C API
 ```
 
 Phases 3 and 4 are independent of each other and of Phase 2's outcome — they
@@ -309,3 +349,5 @@ Phase 1's measurements actually landing first.
       and "everything in §2" today, before any instrumentation work.
 - [x] Fix `quality.json`/`balanced.json` duplication (§1) — five minutes,
       do it regardless of what else happens.
+- [x] Add `mean_wall_s` SLOWDOWN gate (`thresholds.mean_wall_s_increase_max`
+      = 0.25). Faster is OK; missing current value prints SKIP.
