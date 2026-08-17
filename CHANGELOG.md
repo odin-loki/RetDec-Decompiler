@@ -110,6 +110,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - `UnreachableFuncs` treats the image entry point as a live root when
   `main` is missing (MSVC PE / VS 2022+ CRT). Otherwise every decoded
   function was stripped.
+- Sanitizer CI builds ASan only (no UBSan on the same binary). Combined
+  ASan+UBSan still failed to mmap shadow on ubuntu-latest after
+  `vm.mmap_rnd_bits=28`.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for

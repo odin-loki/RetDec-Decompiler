@@ -35,15 +35,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/linux
-          key: sanitizers-rel-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/deps.cmake', 'cmake/**') }}
+          key: sanitizers-asan-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/deps.cmake', 'cmake/**') }}
           restore-keys: |
-            sanitizers-rel-
+            sanitizers-asan-
 
-      - name: Configure (ASan + UBSan, RelWithDebInfo, CPU-only CI)
+      - name: Configure (ASan, RelWithDebInfo, CPU-only CI)
         run: >
           cmake --preset core-asan
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DRETDEC_USE_UNDEFINED_BEHAVIOR_SANITIZER=ON
+          -DRETDEC_USE_UNDEFINED_BEHAVIOR_SANITIZER=OFF
           -DRETDEC_ENABLE_CUDA_ACCEL=OFF
           -DRETDEC_ENABLE_NEURAL=OFF
 
