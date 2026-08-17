@@ -33,9 +33,14 @@ public:
     void populateFromFileinfo(const QJsonObject& root);
     void clear() override;
 
+signals:
+    /// VMA range as "0xSTART-0xEND" for retdec-decompiler --select-ranges.
+    void decompileRangeRequested(const QString& range);
+
 private slots:
     void onItemDoubleClicked();
     void onSelectionChanged();
+    void onSectionContextMenu(const QPoint& pos);
 
 private:
     void setupUI();

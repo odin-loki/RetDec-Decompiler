@@ -1,5 +1,6 @@
 #include "retdec/gui/panels/binary_browser_panel.h"
 
+#include <QAction>
 #include <QFile>
 #include <QFileInfo>
 #include <QHeaderView>
@@ -7,6 +8,7 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QLabel>
+#include <QMenu>
 #include <QPlainTextEdit>
 #include <QSplitter>
 #include <QTreeWidget>
@@ -70,6 +72,7 @@ void BinaryBrowserPanel::setupUI() {
     sectionTree_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     sectionTree_->setAlternatingRowColors(true);
     sectionTree_->setRootIsDecorated(true);
+    sectionTree_->setContextMenuPolicy(Qt::CustomContextMenu);
 
     auto* hexWidget = new QWidget(splitter_);
     auto* hexLayout = new QVBoxLayout(hexWidget);
@@ -97,6 +100,8 @@ void BinaryBrowserPanel::setupUI() {
             this, &BinaryBrowserPanel::onItemDoubleClicked);
     connect(sectionTree_, &QTreeWidget::itemSelectionChanged,
             this, &BinaryBrowserPanel::onSelectionChanged);
+    connect(sectionTree_, &QTreeWidget::customContextMenuRequested,
+            this, &BinaryBrowserPanel::onSectionContextMenu);
 }
 
 void BinaryBrowserPanel::loadBinary(const QString& path) {
@@ -206,6 +211,26 @@ void BinaryBrowserPanel::onItemDoubleClicked() {
     const uint64_t addr = parseHexU64(item->text(1));
     if (addr != 0)
         emit addressNavigated(addr);
+}
+
+void BinaryBrowserPanel::onSectionContextMenu(const QPoint& pos) {
+    QTreeWidgetItem* item = sectionTree_->itemAt(pos);
+    if (!item)
+        return;
+
+    const quint64 start = parseHexU64(item->text(1));
+    const quint64 size = parseHexU64(item->text(2));
+    if (start == 0 || size == 0)
+        return;
+
+    const quint64 end = start + size;
+
+    QMenu menu;
+    QAction* action = menu.addAction(QStringLiteral("Decompile this range…"));
+    connect(action, &QAction::triggered, this, [this, start, end]() {
+        emit decompileRangeRequested(QStringLiteral("0x%1-0x%2").arg(start, 0, 16).arg(end, 0, 16));
+    });
+    menu.exec(sectionTree_->viewport()->mapToGlobal(pos));
 }
 
 } // namespace retdec::gui::panels

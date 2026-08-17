@@ -47,6 +47,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   omits `-s`. Re-decompile a function adds `--select-decode-only`.
   Analysis thread count > 0 sets `RETDEC_NEURAL_THREADS`. Thinking
   mode publishes `RETDEC_NEURAL_THINKING`.
+- Binary Browser context menu decompiles a section via `--select-ranges`.
+  Dump CFG also emits `--backend-emit-cg`. Analysis menu can add
+  `--print-before-all` and `-k`. Problems reports `.dsm` / `.ll`
+  presence. Export packs CFG/CG DOT sidecars. AI Assistant reuses KV
+  on follow-ups and resets it on Clear / function change. Plugins
+  auto-load only when search paths are set. Line-number gutters honor
+  Settings → General.
 
 ---
 

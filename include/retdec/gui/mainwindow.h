@@ -250,8 +250,11 @@ private:
 	/// skip spawning retdec-decompiler. Returns true if cache was used.
 	bool tryLoadCachedDecompile(const QString& binaryPath);
 	/// Launch retdec-decompiler for @p absBinary (shared by full analysis and batch).
-	bool
-	launchDecompilerForBinary(const QString& absBinary, const QString& arch, const QStringList& selectedFunctions = {});
+	bool launchDecompilerForBinary(
+		const QString& absBinary,
+		const QString& arch,
+		const QStringList& selectedFunctions = {},
+		const QStringList& selectedRanges = {});
 	void startBatchDecompile(const QStringList& paths);
 	void processNextBatchItem();
 	void finishBatchDecompile(bool cancelled = false);

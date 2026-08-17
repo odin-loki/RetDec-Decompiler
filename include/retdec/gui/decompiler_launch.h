@@ -37,8 +37,16 @@ struct DecompilerLaunchRequest
 	bool silent = true;
 	/// Adds `--select-decode-only` (faster partial re-decompile).
 	bool selectDecodeOnly = false;
+	/// Adds `--print-before-all` (very verbose).
+	bool printBeforeAll = false;
+	/// Adds `-k` / `--keep-unreachable-funcs`.
+	bool keepUnreachableFuncs = false;
+	/// Adds `--backend-emit-cg` (call-graph DOT next to CFG dumps).
+	bool emitCg = false;
 	/// Non-empty → adds `--select-functions` (comma-separated LLVM/config names).
 	QStringList selectedFunctions;
+	/// Non-empty → adds `--select-ranges` (comma-separated `0xSTART-0xEND`).
+	QStringList selectedRanges;
 	DecompilerSettings decompiler;
 };
 

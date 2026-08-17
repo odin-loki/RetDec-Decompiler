@@ -132,6 +132,46 @@ TEST(ExportBundle, ExportBundleIncludesOptionalSidecars)
 	EXPECT_TRUE(zipContainsEntryName(bytes, "sample.gui-decompiled.c.type-inference.json"));
 }
 
+TEST(ExportBundle, ExportBundleIncludesDotSidecars)
+{
+	QTemporaryDir tmp;
+	ASSERT_TRUE(tmp.isValid());
+	const QString cPath = tmp.path() + QStringLiteral("/sample.gui-decompiled.c");
+	const QString cfgPath = tmp.path() + QStringLiteral("/sample.gui-decompiled.config.json");
+	const QString zipPath = tmp.path() + QStringLiteral("/out.zip");
+
+	QFile cFile(cPath);
+	ASSERT_TRUE(cFile.open(QIODevice::WriteOnly));
+	cFile.write("int main(void) { return 0; }\n");
+	cFile.close();
+
+	QFile cfgFile(cfgPath);
+	ASSERT_TRUE(cfgFile.open(QIODevice::WriteOnly));
+	cfgFile.write("{}");
+	cfgFile.close();
+
+	QFile cgFile(tmp.path() + QStringLiteral("/sample.gui-decompiled.cg.dot"));
+	ASSERT_TRUE(cgFile.open(QIODevice::WriteOnly));
+	cgFile.write("digraph {}");
+	cgFile.close();
+
+	retdec::gui::DecompileBundleInput in;
+	in.cPath = cPath;
+	in.decompilerExe = QStringLiteral("C:/tools/retdec-decompiler.exe");
+	in.decompilerCwd = QStringLiteral("C:/tools");
+	in.decompilerArgs = {QStringLiteral("--input-file"), QStringLiteral("sample.exe")};
+	in.logInline = QByteArray("stage: done\n");
+
+	QString err;
+	ASSERT_TRUE(retdec::gui::exportDecompileBundle(in, zipPath, &err)) << qPrintable(err);
+	ASSERT_TRUE(QFileInfo::exists(zipPath));
+
+	QFile zipFile(zipPath);
+	ASSERT_TRUE(zipFile.open(QIODevice::ReadOnly));
+	const QByteArray bytes = zipFile.readAll();
+	EXPECT_TRUE(zipContainsEntryName(bytes, "sample.gui-decompiled.cg.dot"));
+}
+
 TEST(ExportBundle, MissingCFileFails)
 {
 	retdec::gui::DecompileBundleInput in;

@@ -7,6 +7,7 @@
 #include "retdec/gui/artifact_loader.h"
 #include "retdec/gui/zip_writer.h"
 
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 
@@ -68,6 +69,16 @@ bool exportDecompileBundle(const DecompileBundleInput& in, const QString& zipPat
 	if (!addFileIfExists(zip, in.cPath + QStringLiteral(".refined.c"), errOut)) return false;
 	if (!addFileIfExists(zip, in.cPath + QStringLiteral(".refinement-manifest.json"), errOut)) return false;
 	if (!addFileIfExists(zip, in.cPath + QStringLiteral(".type-inference.json"), errOut)) return false;
+
+	const QFileInfo cInfo(in.cPath);
+	const QDir dir(cInfo.absolutePath());
+	const QString stem = cInfo.completeBaseName(); // e.g. sample.gui-decompiled
+	const QStringList dots = dir.entryList(
+		{stem + QStringLiteral(".cfg.*.dot"), stem + QStringLiteral(".cg.dot")},
+		QDir::Files);
+	for (const QString& name : dots) {
+		if (!addFileIfExists(zip, dir.filePath(name), errOut)) return false;
+	}
 
 	const QByteArray cmdText = formatDecompilerCommandText(in).toUtf8();
 	if (!cmdText.isEmpty())

@@ -265,10 +265,15 @@ QStringList buildDecompilerArguments(
 		args << QStringLiteral("--disable-static-code-detection");
 	}
 	if (req.printAfterAll) args << QStringLiteral("--print-after-all");
+	if (req.printBeforeAll) args << QStringLiteral("--print-before-all");
 	if (req.emitCfg) args << QStringLiteral("--backend-emit-cfg");
+	if (req.emitCg) args << QStringLiteral("--backend-emit-cg");
+	if (req.keepUnreachableFuncs) args << QStringLiteral("-k");
 
 	if (!req.selectedFunctions.isEmpty())
 		args << QStringLiteral("--select-functions") << req.selectedFunctions.join(QStringLiteral(","));
+	if (!req.selectedRanges.isEmpty())
+		args << QStringLiteral("--select-ranges") << req.selectedRanges.join(QStringLiteral(","));
 	if (req.selectDecodeOnly) args << QStringLiteral("--select-decode-only");
 
 	if (llvmPassesOut && (req.decompiler.useCustomLlvmPasses || req.fastDecompile))

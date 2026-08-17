@@ -138,6 +138,28 @@ TEST(DecompilerLaunch, EmitCfgAndDisablePatternsFlags)
 	EXPECT_TRUE(args.contains(QStringLiteral("--backend-emit-cfg")));
 	EXPECT_TRUE(args.contains(QStringLiteral("--disable-static-code-detection")));
 	EXPECT_FALSE(args.contains(QStringLiteral("--backend-no-opts")));
+	EXPECT_FALSE(args.contains(QStringLiteral("--backend-emit-cg")));
+}
+
+TEST(DecompilerLaunch, SelectRangesPrintBeforeAndKeepUnreachable)
+{
+	retdec::gui::DecompilerLaunchRequest req;
+	req.binaryPath = QStringLiteral("/tmp/bin");
+	req.outputPath = QStringLiteral("/tmp/out.c");
+	req.selectedRanges = {QStringLiteral("0x401000-0x401200")};
+	req.printBeforeAll = true;
+	req.keepUnreachableFuncs = true;
+	req.emitCg = true;
+
+	const QStringList args = retdec::gui::buildDecompilerArguments(req);
+	EXPECT_TRUE(args.contains(QStringLiteral("--select-ranges")));
+	const int idx = args.indexOf(QStringLiteral("--select-ranges"));
+	ASSERT_GE(idx, 0);
+	EXPECT_LT(idx + 1, args.size());
+	EXPECT_EQ(args.at(idx + 1), QStringLiteral("0x401000-0x401200"));
+	EXPECT_TRUE(args.contains(QStringLiteral("--print-before-all")));
+	EXPECT_TRUE(args.contains(QStringLiteral("-k")));
+	EXPECT_TRUE(args.contains(QStringLiteral("--backend-emit-cg")));
 }
 
 TEST(DecompilerLaunch, VerboseOmitsSilentFlag)

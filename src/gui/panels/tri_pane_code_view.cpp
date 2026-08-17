@@ -406,6 +406,7 @@ void SyncedCodePane::setupUI() {
     editor_->setFont(mono);
 
     lineNumArea_ = new LineNumberArea(this);
+    lineNumArea_->setObjectName(QStringLiteral("syncedLineNumberArea"));
     hl_          = new CodeSyntaxHighlighter(editor_->document(), lang_);
 
     auto* layout = new QVBoxLayout(this);

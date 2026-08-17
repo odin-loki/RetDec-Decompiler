@@ -45,6 +45,7 @@ constexpr const char* kLoadGgufHint = "Load a Qwen 3.5 9B Q4_K_M GGUF to use the
 
 std::mutex g_inferenceMutex;
 std::unordered_map<InferenceWorker*, std::shared_ptr<retdec::neural::Inference>> g_backends;
+std::unordered_map<InferenceWorker*, bool> g_reuseKv;
 #endif
 
 } // namespace
@@ -56,6 +57,7 @@ InferenceWorker::~InferenceWorker()
 #ifdef RETDEC_GUI_HAS_NEURAL
 	std::lock_guard<std::mutex> lock(g_inferenceMutex);
 	g_backends.erase(this);
+	g_reuseKv.erase(this);
 #endif
 }
 
@@ -87,6 +89,14 @@ void InferenceWorker::startInference(const QString& prompt)
 	cfg.maxTokens = maxTokens_;
 	cfg.thinkingMode = thinkingMode_;
 
+#ifdef RETDEC_GUI_HAS_NEURAL
+	{
+		std::lock_guard<std::mutex> lock(g_inferenceMutex);
+		auto it = g_reuseKv.find(this);
+		cfg.reuseKvPrefix = (it != g_reuseKv.end() && it->second);
+	}
+#endif
+
 	const retdec::neural::GenerationResult result = backend->generate(prompt.toStdString(), cfg);
 	if (!result.ok)
 	{
@@ -94,6 +104,11 @@ void InferenceWorker::startInference(const QString& prompt)
 			result.error.empty() ? QStringLiteral("generation failed") : QString::fromStdString(result.error);
 		emit errorOccurred(err);
 		return;
+	}
+
+	{
+		std::lock_guard<std::mutex> lock(g_inferenceMutex);
+		g_reuseKv[this] = true;
 	}
 
 	emit tokenGenerated(QString::fromStdString(result.text));
@@ -142,7 +157,13 @@ void InferenceWorker::loadModelSlot(const QString& path, bool useGpu, int ctxLen
 #endif
 }
 
-void InferenceWorker::resetKvCacheSlot() {}
+void InferenceWorker::resetKvCacheSlot()
+{
+#ifdef RETDEC_GUI_HAS_NEURAL
+	std::lock_guard<std::mutex> lock(g_inferenceMutex);
+	g_reuseKv[this] = false;
+#endif
+}
 
 void InferenceWorker::unloadModelSlot()
 {
@@ -352,6 +373,8 @@ void AIAssistantPanel::setupInputRow(QVBoxLayout* root)
 
 void AIAssistantPanel::setActiveFunction(const QString& decompiledSource, const QString& functionName)
 {
+	if (functionName != activeFunctionName_ && worker_)
+		QMetaObject::invokeMethod(worker_, "resetKvCacheSlot", Qt::QueuedConnection);
 	activeDecompiled_ = decompiledSource;
 	activeFunctionName_ = functionName;
 	contextPending_ = !decompiledSource.isEmpty();
@@ -364,6 +387,8 @@ void AIAssistantPanel::clear()
 	activeFunctionName_.clear();
 	contextPending_ = false;
 	rebuildChatLog();
+	if (worker_)
+		QMetaObject::invokeMethod(worker_, "resetKvCacheSlot", Qt::QueuedConnection);
 }
 
 bool AIAssistantPanel::loadModel(const QString& ggufPath, bool useGpu)

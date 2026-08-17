@@ -15,6 +15,7 @@
 #include "retdec/gui/artifact_loader.h"
 #include "retdec/gui/decompiler_launch.h"
 #include "retdec/gui/settings/settings.h"
+#include "retdec/gui/settings/plugin_manager.h"
 #include "retdec/gui/theme.h"
 
 #include <QApplication>
@@ -64,6 +65,11 @@ int main(int argc, char* argv[]) {
     registerFonts();
 
     retdec::gui::AppSettings::instance().load();
+    {
+        const auto& plug = retdec::gui::AppSettings::instance().plugins;
+        if (plug.autoLoadPlugins && !plug.searchPaths.isEmpty())
+            retdec::gui::PluginManager::instance().scanAndLoad(plug.searchPaths);
+    }
     retdec::gui::applyThemeFromSettings(app);
 
     // Command-line parsing.

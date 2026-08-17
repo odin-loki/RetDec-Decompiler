@@ -36,6 +36,7 @@
 #include "retdec/gui/panels/triage_banner.h"
 #include "retdec/gui/panels/type_hierarchy_panel.h"
 #include "retdec/gui/project_file.h"
+#include "retdec/gui/settings/plugin_manager.h"
 #include "retdec/gui/settings/settings.h"
 #include "retdec/gui/widgets/empty_state_widget.h"
 
@@ -337,6 +338,15 @@ void RetDecMainWindow::createPanels()
 		&panels::BinaryBrowserPanel::addressNavigated,
 		assembly_,
 		&panels::AssemblyPanel::onAddressNavigated);
+	connect(binaryBrowser_, &panels::BinaryBrowserPanel::decompileRangeRequested, this, [this](const QString& range) {
+		if (!project_ || range.isEmpty()) return;
+		if (decompilerProc_->state() != QProcess::NotRunning)
+		{
+			statusBar()->showMessage(QStringLiteral("Decompiler already running"), 2500);
+			return;
+		}
+		launchDecompilerForBinary(QFileInfo(project_->binaryPath()).absoluteFilePath(), project_->arch(), {}, {range});
+	});
 	connect(
 		functionList_,
 		&panels::FunctionListPanel::functionSelected,
@@ -676,6 +686,17 @@ void RetDecMainWindow::createMenus()
 	printAfterAllAct_->setToolTip(
 		QStringLiteral("Adds --print-after-all to the next retdec-decompiler invocation (verbose)."));
 	connect(printAfterAllAct_, &QAction::toggled, this, [this](bool on) { decompilePrintAfterAll_ = on; });
+
+	auto* printBeforeAllAct = analysisMenu_->addAction(QStringLiteral("Print LLVM IR before every pass (next run)"));
+	printBeforeAllAct->setCheckable(true);
+	printBeforeAllAct->setToolTip(QStringLiteral("Adds --print-before-all to the next retdec-decompiler invocation."));
+	connect(printBeforeAllAct, &QAction::toggled, this, [this](bool on) { setProperty("printBeforeAll", on); });
+
+	auto* keepUnreachAct = analysisMenu_->addAction(QStringLiteral("Keep unreachable functions (next run)"));
+	keepUnreachAct->setCheckable(true);
+	keepUnreachAct->setToolTip(
+		QStringLiteral("Adds -k / --keep-unreachable-funcs so discarded helpers stay in the C."));
+	connect(keepUnreachAct, &QAction::toggled, this, [this](bool on) { setProperty("keepUnreachableFuncs", on); });
 
 	runFullAct->setShortcut(Qt::Key_F5);
 	stopAction_ = analysisMenu_->addAction(QStringLiteral("Stop Analysis"));
@@ -1128,6 +1149,29 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath, std::optiona
 		setStatusFunctionCount(static_cast<int>(loadedArtifacts_->functions.size()));
 
 		populateSemanticDetectionsFromConfig(diagnostics_, loadedArtifacts_->config);
+
+		{
+			const DecompileArtifactPaths side = pathsFromOutputC(absC);
+			const bool hasDsm = QFileInfo::exists(side.dsmPath);
+			const bool hasLl = QFileInfo::exists(side.llPath);
+			diagnostics_->addMessage(
+				(hasDsm && hasLl) ? panels::DiagnosticEntry::Severity::Info
+								  : panels::DiagnosticEntry::Severity::Warning,
+				QStringLiteral("retdec-decompiler"),
+				QStringLiteral("Sidecars: %1 %2, %3 %4")
+					.arg(QFileInfo(side.dsmPath).fileName(), hasDsm ? QStringLiteral("ok") : QStringLiteral("missing"))
+					.arg(QFileInfo(side.llPath).fileName(), hasLl ? QStringLiteral("ok") : QStringLiteral("missing")));
+		}
+
+		{
+			PipelineContext ctx;
+			ctx.inputBinaryPath = project_ ? project_->binaryPath() : QString();
+			ctx.decompiledText = decompiledC_ ? decompiledC_->documentText() : QString();
+			ctx.analysisComplete = true;
+			PluginManager::instance().runAnalysisPlugins(ctx);
+			if (decompiledC_ && !ctx.decompiledText.isEmpty() && ctx.decompiledText != decompiledC_->documentText())
+				decompiledC_->setSource(ctx.decompiledText);
+		}
 
 		if (stringsBrowser_) stringsBrowser_->setStrings(loadedArtifacts_->strings);
 		if (callGraph_ && !loadedArtifacts_->callGraphNodes.empty()
@@ -1820,7 +1864,10 @@ void RetDecMainWindow::onRedecompileSelectedFunction()
 }
 
 bool RetDecMainWindow::launchDecompilerForBinary(
-	const QString& absBinary, const QString& arch, const QStringList& selectedFunctions)
+	const QString& absBinary,
+	const QString& arch,
+	const QStringList& selectedFunctions,
+	const QStringList& selectedRanges)
 {
 	if (decompilerProc_->state() != QProcess::NotRunning) return false;
 
@@ -1879,7 +1926,11 @@ bool RetDecMainWindow::launchDecompilerForBinary(
 	req.fastDecompile = fastDecompile_;
 	req.printAfterAll = quitWhenDecompileFinishes_ ? false : (decompilePrintAfterAll_ || st.advanced.dumpIR);
 	req.emitCfg = quitWhenDecompileFinishes_ ? false : st.advanced.dumpCFG;
+	req.emitCg = req.emitCfg;
 	req.disableStaticCodeDetection = quitWhenDecompileFinishes_ ? false : !st.recovery.detectPatterns;
+	req.printBeforeAll = quitWhenDecompileFinishes_ ? false : property("printBeforeAll").toBool();
+	req.keepUnreachableFuncs = quitWhenDecompileFinishes_ ? false : property("keepUnreachableFuncs").toBool();
+	req.selectedRanges = selectedRanges;
 	req.silent = quitWhenDecompileFinishes_ || st.advanced.verbosity == AdvancedSettings::Verbosity::Quiet
 			  || st.advanced.verbosity == AdvancedSettings::Verbosity::Normal;
 	req.selectDecodeOnly = !quitWhenDecompileFinishes_ && !selectedFunctions.isEmpty();
@@ -2164,6 +2215,8 @@ void RetDecMainWindow::applyEditorFontFromSettings()
 			view->setLineWrapMode(g.wordWrap ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
 		}
 	}
+	for (auto* gutter: findChildren<QWidget*>(QStringLiteral("syncedLineNumberArea")))
+		gutter->setVisible(g.showLineNumbers);
 	if (assembly_) assembly_->applyEditorFont(font);
 	if (irPanel_) irPanel_->applyEditorFont(font);
 	if (triPane_) triPane_->applyEditorFont(font);
