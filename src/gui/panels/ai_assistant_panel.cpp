@@ -401,6 +401,11 @@ void AIAssistantPanel::applyMlSettingsFromApp()
 	const bool cpuOnly = s.ml.inferenceDevice == retdec::gui::MLSettings::InferenceDevice::CPU;
 	const bool gpuOn = s.ml.inferenceDevice == retdec::gui::MLSettings::InferenceDevice::GPU;
 	qputenv("RETDEC_NEURAL_N_GPU_LAYERS", cpuOnly ? QByteArray("0") : QByteArray("-1"));
+	if (s.ml.contextLength >= 512) qputenv("RETDEC_NEURAL_CTX", QByteArray::number(s.ml.contextLength));
+	if (s.ml.maxNewTokens > 0) qputenv("RETDEC_NEURAL_MAX_TOKENS", QByteArray::number(s.ml.maxNewTokens));
+	qputenv("RETDEC_NEURAL_TEMPERATURE", QByteArray::number(s.ml.temperature, 'f', 4));
+	qputenv("RETDEC_NEURAL_TOP_P", QByteArray::number(s.ml.topP, 'f', 4));
+	qputenv("RETDEC_NEURAL_TOP_K", QByteArray::number(s.ml.topK));
 	if (cpuOnly)
 	{
 		gpuEnabled_ = false;

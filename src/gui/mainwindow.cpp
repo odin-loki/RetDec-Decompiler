@@ -57,6 +57,7 @@
 #include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QJsonParseError>
 #include <QKeySequence>
 #include <QLabel>
@@ -1020,13 +1021,33 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath, std::optiona
 	QTimer::singleShot(0, this, [this, absC, reselect]() {
 		if (!loadedArtifacts_) return;
 
-		if (!decompiledC_->setSourceFromPath(absC))
+		const QString refinedC = absC + QStringLiteral(".refined.c");
+		const QString displayC = QFileInfo::exists(refinedC) ? refinedC : absC;
+		if (!decompiledC_->setSourceFromPath(displayC))
 		{
 			diagnostics_->addMessage(
 				panels::DiagnosticEntry::Severity::Warning,
 				QStringLiteral("retdec-decompiler"),
-				QStringLiteral("Could not read: %1").arg(absC));
+				QStringLiteral("Could not read: %1").arg(displayC));
 			return;
+		}
+
+		const QString manifestPath = absC + QStringLiteral(".refinement-manifest.json");
+		if (QFileInfo::exists(manifestPath))
+		{
+			QFile mf(manifestPath);
+			if (mf.open(QIODevice::ReadOnly))
+			{
+				const QJsonObject obj = QJsonDocument::fromJson(mf.readAll()).object();
+				const bool accepted = obj.value(QStringLiteral("accepted")).toBool();
+				const QString reason = obj.value(QStringLiteral("reason")).toString();
+				diagnostics_->addMessage(
+					accepted ? panels::DiagnosticEntry::Severity::Info : panels::DiagnosticEntry::Severity::Warning,
+					QStringLiteral("retdec-neural"),
+					accepted ? QStringLiteral("Neural refine accepted — showing %1").arg(displayC)
+							 : QStringLiteral("Neural refine rejected: %1")
+								   .arg(reason.isEmpty() ? QStringLiteral("see manifest") : reason));
+			}
 		}
 
 		if (functionList_) functionList_->setFunctions(loadedArtifacts_->functions);
@@ -1760,7 +1781,9 @@ bool RetDecMainWindow::launchDecompilerForBinary(
 	req.outputPath = decompilerOutputPath_;
 	req.arch = arch;
 	req.fastDecompile = fastDecompile_;
-	req.printAfterAll = quitWhenDecompileFinishes_ ? false : decompilePrintAfterAll_;
+	req.printAfterAll = quitWhenDecompileFinishes_ ? false : (decompilePrintAfterAll_ || st.advanced.dumpIR);
+	req.emitCfg = quitWhenDecompileFinishes_ ? false : st.advanced.dumpCFG;
+	req.disableStaticCodeDetection = quitWhenDecompileFinishes_ ? false : !st.recovery.detectPatterns;
 	req.selectedFunctions = selectedFunctions;
 	req.decompiler = quitWhenDecompileFinishes_ ? DecompilerSettings{} : st.decompiler;
 
@@ -1850,9 +1873,22 @@ bool RetDecMainWindow::launchDecompilerForBinary(
 		if (dockOutput_) focusOutputTab(kOutConsole);
 	}
 
+	const QProcessEnvironment decEnv = buildDecompilerProcessEnvironment(st, !quitWhenDecompileFinishes_);
+	if (liveConsole_ && decEnv.value(QStringLiteral("RETDEC_NEURAL_REFINE")) == QLatin1String("1"))
+	{
+		liveConsole_->appendLine(
+			panels::LiveConsolePanel::Stream::Stdout,
+			QStringLiteral("Neural refine: model=%1 gpu_layers=%2 ctx=%3 max_tokens=%4")
+				.arg(decEnv.value(QStringLiteral("RETDEC_NEURAL_MODEL")))
+				.arg(decEnv.value(QStringLiteral("RETDEC_NEURAL_N_GPU_LAYERS")))
+				.arg(decEnv.value(QStringLiteral("RETDEC_NEURAL_CTX")))
+				.arg(decEnv.value(QStringLiteral("RETDEC_NEURAL_MAX_TOKENS"))));
+	}
+
 	decompilerProc_->setProgram(decExe);
 	decompilerProc_->setArguments(args);
 	decompilerProc_->setWorkingDirectory(lastDecompilerCwd_);
+	decompilerProc_->setProcessEnvironment(decEnv);
 	decompilerProc_->setProcessChannelMode(QProcess::MergedChannels);
 	decompilerProc_->setStandardOutputFile(logPath);
 	decompilerProc_->start();

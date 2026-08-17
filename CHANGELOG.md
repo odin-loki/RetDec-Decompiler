@@ -4,6 +4,40 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ---
 
+## [2.0.21] — 2026-08-17
+
+### Added
+
+- Settings JSON export/import now covers General (`restoreSession`), full
+  Analysis / ML groups, and new CUDA, Recovery, and Advanced groups.
+  Session paths (`lastOpenDir`, `lastBinaryPath`) stay out of the portable
+  file. Import remains backward-compatible: missing keys keep defaults.
+- Settings dialog Export… / Import… ActionRole buttons. Export applies
+  unsaved form edits first; Import refreshes the dialog and does not
+  persist to QSettings until Apply/OK.
+
+### Changed
+
+- ML tab hint now describes live llama.cpp refinement: a GGUF path on
+  disk sets `RETDEC_NEURAL_REFINE`; context length and max new tokens
+  come from the tab; CPU forces `RETDEC_NEURAL_N_GPU_LAYERS=0`, GPU/Auto
+  use `-1`; empty path leaves refinement off.
+- Interactive GUI decompile now passes Settings → ML / CUDA / Advanced /
+  Recovery into the `retdec-decompiler` child (`RETDEC_NEURAL_*`,
+  `RETDEC_OCL_HOST=0` when CUDA GPU is off, `--backend-emit-cfg`,
+  `--disable-static-code-detection`, `--print-after-all` from dump IR).
+  Headless `--quit-when-done` still uses a clean CLI environment.
+- After a successful run the Decompiled C tab prefers `.refined.c` when
+  present (toolbar **Refined** toggles back to the deterministic file)
+  and Problems shows the refinement manifest accept/reject reason.
+- Export bundle packs `.refined.c`, `.refinement-manifest.json`, and
+  `.type-inference.json` when those sidecars exist.
+- Neural hook sampler reads `RETDEC_NEURAL_TEMPERATURE` / `TOP_P` /
+  `TOP_K` (clamped). AI Assistant publishes CTX / MAX_TOKENS / sampler
+  env from Settings → ML without auto-loading a GGUF.
+
+---
+
 ## [2.0.20] — 2026-08-16
 
 ### Added

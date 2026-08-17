@@ -12,6 +12,7 @@
 
 #include "retdec/gui/settings/settings.h"
 
+#include <QProcessEnvironment>
 #include <QString>
 #include <QStringList>
 #include <memory>
@@ -21,36 +22,47 @@ class QTemporaryFile;
 namespace retdec {
 namespace gui {
 
-struct DecompilerLaunchRequest {
-    QString binaryPath;
-    QString outputPath;
-    QString arch;
-    bool    fastDecompile     = false;
-    bool    printAfterAll     = false;
-    /// Non-empty → adds `--select-functions` (comma-separated LLVM/config names).
-    QStringList selectedFunctions;
-    DecompilerSettings decompiler;
+struct DecompilerLaunchRequest
+{
+	QString binaryPath;
+	QString outputPath;
+	QString arch;
+	bool fastDecompile = false;
+	bool printAfterAll = false;
+	/// Adds `--backend-emit-cfg` (Settings → Advanced → dump CFG).
+	bool emitCfg = false;
+	/// Adds `--disable-static-code-detection` when not already in fast mode.
+	bool disableStaticCodeDetection = false;
+	/// Non-empty → adds `--select-functions` (comma-separated LLVM/config names).
+	QStringList selectedFunctions;
+	DecompilerSettings decompiler;
 };
 
 /// Parsed decompile progress from retdec-decompiler log tail.
-struct DecompileLogProgress {
-    QString stage;
-    int     percent = 0;
+struct DecompileLogProgress
+{
+	QString stage;
+	int percent = 0;
 };
 
 /// Build the argument vector passed to retdec-decompiler.
 QStringList buildDecompilerArguments(
-        const DecompilerLaunchRequest& req,
-        QString* errOut = nullptr,
-        std::unique_ptr<QTemporaryFile>* llvmPassesOut = nullptr);
+	const DecompilerLaunchRequest& req,
+	QString* errOut = nullptr,
+	std::unique_ptr<QTemporaryFile>* llvmPassesOut = nullptr);
+
+/// Child-process environment for retdec-decompiler.
+/// When @p applyInteractiveOverrides is false (headless / quit-when-done),
+/// returns `QProcessEnvironment::systemEnvironment()` unchanged so CLI
+/// parity is preserved. Interactive runs copy ML / CUDA settings into
+/// `RETDEC_NEURAL_*` and `RETDEC_OCL_HOST` when a GGUF path exists.
+QProcessEnvironment buildDecompilerProcessEnvironment(const AppSettings& settings, bool applyInteractiveOverrides);
 
 /// Resolved `.gui-decompiled.c` path. Empty @p outputDir = beside the binary.
-QString resolveGuiDecompiledCPath(const QString& binaryPath,
-                                  const QString& outputDir = QString());
+QString resolveGuiDecompiledCPath(const QString& binaryPath, const QString& outputDir = QString());
 
 /// Prefer configured @p outputDir, then beside-binary; returns an existing path or the preferred default.
-QString locateGuiDecompiledCPath(const QString& binaryPath,
-                                 const QString& outputDir = QString());
+QString locateGuiDecompiledCPath(const QString& binaryPath, const QString& outputDir = QString());
 
 namespace panels {
 class DiagnosticsPanel;
@@ -58,32 +70,24 @@ class LiveConsolePanel;
 } // namespace panels
 
 /// Append decompiler log to the live console (tail only if huge).
-void appendDecompilerLogToConsole(panels::LiveConsolePanel* panel,
-                                  const QString& logPath,
-                                  qint64 maxBytes = 512 * 1024);
+void appendDecompilerLogToConsole(
+	panels::LiveConsolePanel* panel, const QString& logPath, qint64 maxBytes = 512 * 1024);
 
 /// Append new log bytes from @p *ioFileOffset (up to @p maxBytesPerTick). Returns true if any bytes were appended.
-bool appendDecompilerLogIncrementalToConsole(panels::LiveConsolePanel* panel,
-                                             const QString& logPath,
-                                             qint64* ioFileOffset,
-                                             qint64 maxBytesPerTick = 32 * 1024);
+bool appendDecompilerLogIncrementalToConsole(
+	panels::LiveConsolePanel* panel, const QString& logPath, qint64* ioFileOffset, qint64 maxBytesPerTick = 32 * 1024);
 
 /// Scan a log file for warning/error lines (does not load the whole file).
-void scanDecompilerLogDiagnostics(panels::DiagnosticsPanel* diagnostics,
-                                  const QString& logPath,
-                                  int maxEntries = 200);
+void scanDecompilerLogDiagnostics(panels::DiagnosticsPanel* diagnostics, const QString& logPath, int maxEntries = 200);
 
 /// Populate Problems dock from `semanticDetections` arrays in decompile config JSON.
-void populateSemanticDetectionsFromConfig(panels::DiagnosticsPanel* diagnostics,
-                                          const QJsonObject& configRoot,
-                                          int maxEntries = 500);
+void populateSemanticDetectionsFromConfig(
+	panels::DiagnosticsPanel* diagnostics, const QJsonObject& configRoot, int maxEntries = 500);
 
 /// Incrementally read @p logPath from @p *ioFileOffset and map retdec-decompiler
 /// log lines to GUI stage names / approximate percent (0–100).
 /// Returns true when @p out was updated.
-bool pollDecompileLogProgress(const QString& logPath,
-                              qint64* ioFileOffset,
-                              DecompileLogProgress* out);
+bool pollDecompileLogProgress(const QString& logPath, qint64* ioFileOffset, DecompileLogProgress* out);
 
 } // namespace gui
 } // namespace retdec

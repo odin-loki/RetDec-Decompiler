@@ -5,6 +5,7 @@
 #include "retdec/common/function.h"
 #include "retdec/common/semantic_detection.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -35,6 +36,24 @@ int tierMaxFromEnv()
 	if (!t || !t[0]) return 3;
 	const int v = std::atoi(t);
 	return v < 1 ? 1 : (v > 5 ? 5 : v);
+}
+
+float envFloat(const char* name, float fallback)
+{
+	const char* v = std::getenv(name);
+	if (!v || !v[0]) return fallback;
+	char* end = nullptr;
+	const float x = std::strtof(v, &end);
+	if (end == v) return fallback;
+	return x;
+}
+
+int envInt(const char* name, int fallback)
+{
+	const char* v = std::getenv(name);
+	if (!v || !v[0]) return fallback;
+	const int n = std::atoi(v);
+	return n == 0 && v[0] != '0' ? fallback : n;
 }
 
 void writeSidecar(const std::string& basePath, const std::string& refined, const std::string& manifest)
@@ -161,9 +180,24 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 		req.semanticContextJson = semanticJson;
 		req.generation.reuseKvPrefix = (i > 0);
 		// Qwen 3.5 / 3.6 Instruct recommended sampling (text refine).
-		req.generation.temperature = 0.6f;
-		req.generation.topP = 0.95f;
-		req.generation.topK = 20;
+		req.generation.temperature = envFloat("RETDEC_NEURAL_TEMPERATURE", 0.6f);
+		req.generation.topP = envFloat("RETDEC_NEURAL_TOP_P", 0.95f);
+		const int topK = envInt("RETDEC_NEURAL_TOP_K", 20);
+		if (topK > 0) req.generation.topK = topK;
+		if (std::isfinite(req.generation.temperature))
+		{
+			if (req.generation.temperature < 0.0f)
+				req.generation.temperature = 0.0f;
+			else if (req.generation.temperature > 2.0f)
+				req.generation.temperature = 2.0f;
+		}
+		if (std::isfinite(req.generation.topP))
+		{
+			if (req.generation.topP < 0.0f)
+				req.generation.topP = 0.0f;
+			else if (req.generation.topP > 1.0f)
+				req.generation.topP = 1.0f;
+		}
 		req.generation.minP = 0.0f;
 		req.generation.thinkingMode = envEnabled("RETDEC_NEURAL_THINKING");
 		const char* maxTok = std::getenv("RETDEC_NEURAL_MAX_TOKENS");

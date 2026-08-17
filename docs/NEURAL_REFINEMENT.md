@@ -25,6 +25,29 @@ Offline, gated post-processing after the deterministic decompiler.
   device (CPU → `0`; GPU or Auto → `-1`) before `loadModel`.
   `RETDEC_NEURAL_MTP=1` sets `llama_model_params.load_mtp`. Speculative
   MTP decode has no C API at b10451.
+
+**Build-time:** `RETDEC_NEURAL_GPU_OFFLOAD=ON` compiles `GGML_CUDA` into
+llama.cpp. CI default is OFF.
+
+**Runtime (decompiler / GUI child):**
+- `RETDEC_NEURAL_REFINE=1`
+- `RETDEC_NEURAL_MODEL`
+- `RETDEC_NEURAL_MODEL_SHA256`
+- `RETDEC_NEURAL_CTX` (default 4096)
+- `RETDEC_NEURAL_MAX_TOKENS`
+- `RETDEC_NEURAL_THREADS`
+- `RETDEC_NEURAL_N_BATCH`
+- `RETDEC_NEURAL_N_GPU_LAYERS` (`-1` all, `0` CPU)
+- `RETDEC_NEURAL_TEMPERATURE` / `RETDEC_NEURAL_TOP_P` / `RETDEC_NEURAL_TOP_K`
+- `RETDEC_NEURAL_TIER_MAX`
+- `RETDEC_NEURAL_THINKING`
+- `RETDEC_NEURAL_ALLOW_NETWORK`
+- `RETDEC_NEURAL_SKIP_COMPILE_GATE`
+
+GUI: Settings → ML model path that exists on disk is passed to the
+decompiler child as these env vars. Headless `--quit-when-done` does
+not apply saved ML settings.
+
 - Compile gate + optional differential gate (`RETDEC_NEURAL_DIFF_GATE=1`).
 - Refinement latency is `neural_refine_wall_s` in DecompileBench; it is
   not mixed into `mean_wall_s`.

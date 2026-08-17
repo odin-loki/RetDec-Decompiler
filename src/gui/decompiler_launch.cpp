@@ -260,7 +260,12 @@ QStringList buildDecompilerArguments(
 	{
 		args << QStringLiteral("--backend-no-opts") << QStringLiteral("--disable-static-code-detection");
 	}
+	else if (req.disableStaticCodeDetection)
+	{
+		args << QStringLiteral("--disable-static-code-detection");
+	}
 	if (req.printAfterAll) args << QStringLiteral("--print-after-all");
+	if (req.emitCfg) args << QStringLiteral("--backend-emit-cfg");
 
 	if (!req.selectedFunctions.isEmpty())
 		args << QStringLiteral("--select-functions") << req.selectedFunctions.join(QStringLiteral(","));
@@ -280,6 +285,30 @@ QStringList buildDecompilerArguments(
 	}
 
 	return args;
+}
+
+QProcessEnvironment buildDecompilerProcessEnvironment(const AppSettings& settings, bool applyInteractiveOverrides)
+{
+	QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+	if (!applyInteractiveOverrides) return env;
+
+	const QFileInfo model(settings.ml.modelPath);
+	if (model.isFile())
+	{
+		env.insert(QStringLiteral("RETDEC_NEURAL_REFINE"), QStringLiteral("1"));
+		env.insert(QStringLiteral("RETDEC_NEURAL_MODEL"), model.absoluteFilePath());
+		if (settings.ml.contextLength >= 512)
+			env.insert(QStringLiteral("RETDEC_NEURAL_CTX"), QString::number(settings.ml.contextLength));
+		if (settings.ml.maxNewTokens > 0)
+			env.insert(QStringLiteral("RETDEC_NEURAL_MAX_TOKENS"), QString::number(settings.ml.maxNewTokens));
+		const bool cpuOnly = settings.ml.inferenceDevice == MLSettings::InferenceDevice::CPU;
+		env.insert(QStringLiteral("RETDEC_NEURAL_N_GPU_LAYERS"), cpuOnly ? QStringLiteral("0") : QStringLiteral("-1"));
+		env.insert(QStringLiteral("RETDEC_NEURAL_TEMPERATURE"), QString::number(settings.ml.temperature, 'f', 4));
+		env.insert(QStringLiteral("RETDEC_NEURAL_TOP_P"), QString::number(settings.ml.topP, 'f', 4));
+		env.insert(QStringLiteral("RETDEC_NEURAL_TOP_K"), QString::number(settings.ml.topK));
+	}
+	if (!settings.cuda.useGPU) env.insert(QStringLiteral("RETDEC_OCL_HOST"), QStringLiteral("0"));
+	return env;
 }
 
 void appendDecompilerLogToConsole(panels::LiveConsolePanel* panel, const QString& logPath, qint64 maxBytes)
