@@ -47,6 +47,16 @@ struct DecompilerLaunchRequest
 	QStringList selectedFunctions;
 	/// Non-empty → adds `--select-ranges` (comma-separated `0xSTART-0xEND`).
 	QStringList selectedRanges;
+	/// Non-zero → `--raw-entry-point` (Target panel override).
+	quint64 entryPoint = 0;
+	/// Existing file → `-p` / `--pdb`.
+	QString pdbPath;
+	/// Non-empty and not `readable` → `--backend-var-renamer`.
+	QString varRenamer;
+	/// Existing file → `--static-code-sigfile`.
+	QString staticCodeSigFile;
+	/// Adds `--cleanup` (delete intermediates after the run).
+	bool cleanup = false;
 	DecompilerSettings decompiler;
 };
 

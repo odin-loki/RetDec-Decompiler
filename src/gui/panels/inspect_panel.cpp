@@ -106,6 +106,7 @@ void InspectPanel::setupUi() {
     unpackBrute_ = new QCheckBox(QStringLiteral("Brute"), this);
     unpackBrute_->setToolTip(QStringLiteral("Pass -b|--brute to retdec-unpacker."));
     unpackBtn_ = new QPushButton(QStringLiteral("Run unpacker"), this);
+    unpackBtn_->setObjectName(QStringLiteral("inspectUnpackButton"));
     openUnpackedBtn_ = new QPushButton(QStringLiteral("Open unpacked"), this);
     openUnpackedBtn_->setToolTip(QStringLiteral("Load the unpack output path as the current binary."));
     openUnpackedBtn_->setEnabled(false);

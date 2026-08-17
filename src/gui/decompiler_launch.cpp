@@ -275,6 +275,15 @@ QStringList buildDecompilerArguments(
 	if (!req.selectedRanges.isEmpty())
 		args << QStringLiteral("--select-ranges") << req.selectedRanges.join(QStringLiteral(","));
 	if (req.selectDecodeOnly) args << QStringLiteral("--select-decode-only");
+	if (req.entryPoint != 0)
+		args << QStringLiteral("--raw-entry-point") << QStringLiteral("0x%1").arg(req.entryPoint, 0, 16);
+	if (!req.pdbPath.isEmpty() && QFileInfo::exists(req.pdbPath)) args << QStringLiteral("-p") << req.pdbPath;
+	const QString renamer = req.varRenamer.trimmed().toLower();
+	if (!renamer.isEmpty() && renamer != QLatin1String("readable"))
+		args << QStringLiteral("--backend-var-renamer") << renamer;
+	if (!req.staticCodeSigFile.isEmpty() && QFileInfo::exists(req.staticCodeSigFile))
+		args << QStringLiteral("--static-code-sigfile") << req.staticCodeSigFile;
+	if (req.cleanup) args << QStringLiteral("--cleanup");
 
 	if (llvmPassesOut && (req.decompiler.useCustomLlvmPasses || req.fastDecompile))
 	{
@@ -491,6 +500,18 @@ void populateSemanticDetectionsFromConfig(
 			const QString label = det.value(QStringLiteral("label")).toString();
 			const double conf = det.value(QStringLiteral("confidence")).toDouble(0.0);
 			const QString detail = det.value(QStringLiteral("detail")).toString();
+
+			const auto& rec = AppSettings::instance().recovery;
+			const QString k = kind.toLower();
+			if (!rec.detectSTL && (k.contains("stl") || k.contains("container"))) continue;
+			if (!rec.detectCrypto && (k.contains("crypto") || k.contains("cipher") || k.contains("hash"))) continue;
+			if (!rec.detectPatterns && (k.contains("pattern") || k.contains("idiom") || k.contains("algo"))) continue;
+			if (!rec.detectConcurrency && (k.contains("concurr") || k.contains("thread") || k.contains("mutex")))
+				continue;
+			if (!rec.detectCuda && (k.contains("cuda") || k.contains("opencl") || k.contains("ptx"))) continue;
+			if (!rec.detectRTTI && k.contains("rtti")) continue;
+			if (!rec.detectExceptions && (k.contains("exception") || k.contains("eh_"))) continue;
+			if (!rec.detectVirtual && (k.contains("virtual") || k.contains("vtable"))) continue;
 
 			auto sev = panels::DiagnosticEntry::Severity::Muted;
 			if (conf > 0.8)

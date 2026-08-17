@@ -162,6 +162,37 @@ TEST(DecompilerLaunch, SelectRangesPrintBeforeAndKeepUnreachable)
 	EXPECT_TRUE(args.contains(QStringLiteral("--backend-emit-cg")));
 }
 
+TEST(DecompilerLaunch, EntryPointPdbRenamerCleanupAndSigfile)
+{
+	QTemporaryFile pdb;
+	ASSERT_TRUE(pdb.open());
+	pdb.write("pdb");
+	pdb.close();
+	QTemporaryFile sig;
+	ASSERT_TRUE(sig.open());
+	sig.write("rule x { condition: true }");
+	sig.close();
+
+	retdec::gui::DecompilerLaunchRequest req;
+	req.binaryPath = QStringLiteral("/tmp/bin");
+	req.outputPath = QStringLiteral("/tmp/out.c");
+	req.entryPoint = 0x401000;
+	req.pdbPath = pdb.fileName();
+	req.varRenamer = QStringLiteral("simple");
+	req.staticCodeSigFile = sig.fileName();
+	req.cleanup = true;
+
+	const QStringList args = retdec::gui::buildDecompilerArguments(req);
+	EXPECT_TRUE(args.contains(QStringLiteral("--raw-entry-point")));
+	EXPECT_TRUE(args.contains(QStringLiteral("0x401000")));
+	EXPECT_TRUE(args.contains(QStringLiteral("-p")));
+	EXPECT_TRUE(args.contains(QStringLiteral("--backend-var-renamer")));
+	EXPECT_TRUE(args.contains(QStringLiteral("simple")));
+	EXPECT_TRUE(args.contains(QStringLiteral("--static-code-sigfile")));
+	EXPECT_TRUE(args.contains(QStringLiteral("--cleanup")));
+	EXPECT_FALSE(args.contains(QStringLiteral("readable")));
+}
+
 TEST(DecompilerLaunch, VerboseOmitsSilentFlag)
 {
 	retdec::gui::DecompilerLaunchRequest req;

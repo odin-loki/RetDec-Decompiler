@@ -36,11 +36,13 @@
 #include "retdec/gui/panels/triage_banner.h"
 #include "retdec/gui/panels/type_hierarchy_panel.h"
 #include "retdec/gui/project_file.h"
+#include "retdec/gui/settings/plugin_interface.h"
 #include "retdec/gui/settings/plugin_manager.h"
 #include "retdec/gui/settings/settings.h"
 #include "retdec/gui/widgets/empty_state_widget.h"
 
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDesktopServices>
@@ -636,6 +638,8 @@ void RetDecMainWindow::createMenus()
 	auto* exportCmakeAct = fileMenu_->addAction(QStringLiteral("Export CMakeLists.txt…"));
 	auto* exportBundleAct = fileMenu_->addAction(QStringLiteral("Export Decompile Bundle…"));
 	auto* exportIntelAct = fileMenu_->addAction(QStringLiteral("Export Threat Intel…"));
+	auto* exportAsMenu = fileMenu_->addMenu(QStringLiteral("Export As"));
+	exportAsMenu->setObjectName(QStringLiteral("exportAsPluginMenu"));
 	auto* batchDecompileAct = fileMenu_->addAction(QStringLiteral("Batch Decompile…"));
 	fileMenu_->addSeparator();
 	auto* quitAct = fileMenu_->addAction(QStringLiteral("&Quit"));
@@ -656,6 +660,46 @@ void RetDecMainWindow::createMenus()
 	connect(exportIntelAct, &QAction::triggered, this, &RetDecMainWindow::onExportThreatIntel);
 	connect(batchDecompileAct, &QAction::triggered, this, &RetDecMainWindow::onBatchDecompile);
 	connect(quitAct, &QAction::triggered, qApp, &QApplication::quit);
+
+	auto refreshExportAs = [this, exportAsMenu]() {
+		exportAsMenu->clear();
+		const auto plugs = PluginManager::instance().pluginsOfType<IOutputPlugin>();
+		if (plugs.empty())
+		{
+			auto* empty = exportAsMenu->addAction(QStringLiteral("(no output plugins loaded)"));
+			empty->setEnabled(false);
+			return;
+		}
+		for (IOutputPlugin* plug: plugs)
+		{
+			exportAsMenu->addAction(plug->formatName(), this, [this, plug]() {
+				if (!decompiledC_ || decompiledC_->documentText().trimmed().isEmpty())
+				{
+					QMessageBox::information(
+						this, QStringLiteral("Export As"), QStringLiteral("Decompiled C is empty."));
+					return;
+				}
+				const QString ext = plug->fileExtension();
+				const QString path = QFileDialog::getSaveFileName(
+					this,
+					QStringLiteral("Export As"),
+					fileDialogStartDir(),
+					QStringLiteral("*%1;;All files (*)").arg(ext.isEmpty() ? QStringLiteral(".*") : ext));
+				if (path.isEmpty()) return;
+				QFile f(path);
+				if (!f.open(QIODevice::WriteOnly))
+				{
+					QMessageBox::warning(this, QStringLiteral("Export As"), f.errorString());
+					return;
+				}
+				f.write(plug->transform(decompiledC_->documentText()).toUtf8());
+				rememberLastOpenDir(path);
+				statusBar()->showMessage(QStringLiteral("Exported %1").arg(path), 5000);
+			});
+		}
+	};
+	refreshExportAs();
+	connect(&AppSettings::instance(), &AppSettings::settingsChanged, this, refreshExportAs);
 
 	openAction_ = openBinaryAct;
 
@@ -697,6 +741,52 @@ void RetDecMainWindow::createMenus()
 	keepUnreachAct->setToolTip(
 		QStringLiteral("Adds -k / --keep-unreachable-funcs so discarded helpers stay in the C."));
 	connect(keepUnreachAct, &QAction::toggled, this, [this](bool on) { setProperty("keepUnreachableFuncs", on); });
+
+	auto* cleanupAct = analysisMenu_->addAction(QStringLiteral("Delete intermediates after run (--cleanup)"));
+	cleanupAct->setCheckable(true);
+	connect(cleanupAct, &QAction::toggled, this, [this](bool on) { setProperty("decompilerCleanup", on); });
+
+	auto* pdbAct = analysisMenu_->addAction(QStringLiteral("Set PDB symbols…"));
+	connect(pdbAct, &QAction::triggered, this, [this]() {
+		const QString path = QFileDialog::getOpenFileName(
+			this, QStringLiteral("PDB symbols"), fileDialogStartDir(), QStringLiteral("PDB (*.pdb);;All files (*)"));
+		if (path.isEmpty()) return;
+		setProperty("decompilerPdbPath", path);
+		rememberLastOpenDir(path);
+		statusBar()->showMessage(QStringLiteral("Next decompile will pass --pdb %1").arg(path), 5000);
+	});
+
+	auto* sigAct = analysisMenu_->addAction(QStringLiteral("Set static-code signature file…"));
+	connect(sigAct, &QAction::triggered, this, [this]() {
+		const QString path = QFileDialog::getOpenFileName(
+			this,
+			QStringLiteral("Static-code signatures"),
+			fileDialogStartDir(),
+			QStringLiteral("YARA / sig (*.yar *.yara *.sig);;All files (*)"));
+		if (path.isEmpty()) return;
+		setProperty("staticCodeSigFile", path);
+		rememberLastOpenDir(path);
+		statusBar()->showMessage(QStringLiteral("Next decompile will pass --static-code-sigfile %1").arg(path), 5000);
+	});
+
+	auto* renamerMenu = analysisMenu_->addMenu(QStringLiteral("Variable renamer"));
+	const QStringList styles = {
+		QStringLiteral("readable"),
+		QStringLiteral("simple"),
+		QStringLiteral("address"),
+		QStringLiteral("hungarian"),
+		QStringLiteral("unified"),
+	};
+	auto* renamerGroup = new QActionGroup(this);
+	renamerGroup->setExclusive(true);
+	for (const QString& style: styles)
+	{
+		auto* a = renamerMenu->addAction(style);
+		a->setCheckable(true);
+		a->setChecked(style == QLatin1String("readable"));
+		renamerGroup->addAction(a);
+		connect(a, &QAction::triggered, this, [this, style]() { setProperty("varRenamer", style); });
+	}
 
 	runFullAct->setShortcut(Qt::Key_F5);
 	stopAction_ = analysisMenu_->addAction(QStringLiteral("Stop Analysis"));
@@ -1019,6 +1109,10 @@ void RetDecMainWindow::createStatusBar()
 	statusBar()->addWidget(statusStage_, 2);
 	statusBar()->addPermanentWidget(statusFnCount_);
 	statusBar()->addPermanentWidget(statusDecompile_);
+	auto* neuralLbl = new QLabel(this);
+	neuralLbl->setObjectName(QStringLiteral("statusNeural"));
+	neuralLbl->setText(QStringLiteral("Neural: off"));
+	statusBar()->addPermanentWidget(neuralLbl);
 	statusBar()->addPermanentWidget(analysisBar_);
 	statusBar()->addPermanentWidget(statusElapsed_);
 
@@ -1145,7 +1239,19 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath, std::optiona
 			}
 		}
 
-		if (functionList_) functionList_->setFunctions(loadedArtifacts_->functions);
+		std::vector<panels::FunctionEntry> shown = loadedArtifacts_->functions;
+		const int cap = AppSettings::instance().advanced.maxFunctions;
+		if (cap > 0 && static_cast<int>(shown.size()) > cap)
+		{
+			shown.resize(static_cast<std::size_t>(cap));
+			diagnostics_->addMessage(
+				panels::DiagnosticEntry::Severity::Info,
+				QStringLiteral("retdec-decompiler"),
+				QStringLiteral("Showing first %1 of %2 functions (Settings → Advanced → max functions)")
+					.arg(cap)
+					.arg(loadedArtifacts_->functions.size()));
+		}
+		if (functionList_) functionList_->setFunctions(shown);
 		setStatusFunctionCount(static_cast<int>(loadedArtifacts_->functions.size()));
 
 		populateSemanticDetectionsFromConfig(diagnostics_, loadedArtifacts_->config);
@@ -1168,6 +1274,7 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath, std::optiona
 			ctx.inputBinaryPath = project_ ? project_->binaryPath() : QString();
 			ctx.decompiledText = decompiledC_ ? decompiledC_->documentText() : QString();
 			ctx.analysisComplete = true;
+			PluginManager::instance().runDecompilerPlugins(ctx);
 			PluginManager::instance().runAnalysisPlugins(ctx);
 			if (decompiledC_ && !ctx.decompiledText.isEmpty() && ctx.decompiledText != decompiledC_->documentText())
 				decompiledC_->setSource(ctx.decompiledText);
@@ -1931,6 +2038,11 @@ bool RetDecMainWindow::launchDecompilerForBinary(
 	req.printBeforeAll = quitWhenDecompileFinishes_ ? false : property("printBeforeAll").toBool();
 	req.keepUnreachableFuncs = quitWhenDecompileFinishes_ ? false : property("keepUnreachableFuncs").toBool();
 	req.selectedRanges = selectedRanges;
+	req.entryPoint = quitWhenDecompileFinishes_ ? 0 : (project_ ? project_->entryPoint() : 0);
+	req.pdbPath = quitWhenDecompileFinishes_ ? QString() : property("decompilerPdbPath").toString();
+	req.varRenamer = quitWhenDecompileFinishes_ ? QString() : property("varRenamer").toString();
+	req.staticCodeSigFile = quitWhenDecompileFinishes_ ? QString() : property("staticCodeSigFile").toString();
+	req.cleanup = quitWhenDecompileFinishes_ ? false : property("decompilerCleanup").toBool();
 	req.silent = quitWhenDecompileFinishes_ || st.advanced.verbosity == AdvancedSettings::Verbosity::Quiet
 			  || st.advanced.verbosity == AdvancedSettings::Verbosity::Normal;
 	req.selectDecodeOnly = !quitWhenDecompileFinishes_ && !selectedFunctions.isEmpty();
@@ -2005,6 +2117,8 @@ bool RetDecMainWindow::launchDecompilerForBinary(
 		updateBatchStatusMessage(QStringLiteral("Decompiling…"));
 	else if (!selectedFunctions.isEmpty())
 		setStatusStage(QStringLiteral("Re-decompiling %1…").arg(selectedFunctions.first()));
+	else if (!selectedRanges.isEmpty())
+		setStatusStage(QStringLiteral("Range decompile %1…").arg(selectedRanges.join(QLatin1Char(','))));
 	else
 		setStatusStage(QStringLiteral("Decompiling (retdec-decompiler)…"));
 
@@ -2025,6 +2139,12 @@ bool RetDecMainWindow::launchDecompilerForBinary(
 	}
 
 	const QProcessEnvironment decEnv = buildDecompilerProcessEnvironment(st, !quitWhenDecompileFinishes_);
+	if (auto* neuralLbl = findChild<QLabel*>(QStringLiteral("statusNeural")))
+	{
+		neuralLbl->setText(
+			decEnv.value(QStringLiteral("RETDEC_NEURAL_REFINE")) == QLatin1String("1") ? QStringLiteral("Neural: on")
+																					   : QStringLiteral("Neural: off"));
+	}
 	if (liveConsole_ && decEnv.value(QStringLiteral("RETDEC_NEURAL_REFINE")) == QLatin1String("1"))
 	{
 		liveConsole_->appendLine(
@@ -2163,7 +2283,10 @@ void RetDecMainWindow::onRunStage()
 	if (!project_) return;
 	const QStringList items = {
 		QStringLiteral("Decompile (retdec-decompiler)"),
+		QStringLiteral("Fast decompile"),
 		QStringLiteral("fileinfo — binary format report"),
+		QStringLiteral("unpacker — try packed-binary recovery"),
+		QStringLiteral("Signature Studio"),
 	};
 	bool ok = false;
 	const QString choice = QInputDialog::getItem(
@@ -2172,6 +2295,28 @@ void RetDecMainWindow::onRunStage()
 	if (choice == items.at(0))
 	{
 		onRunFullAnalysis();
+		return;
+	}
+	if (choice == items.at(1))
+	{
+		const bool prev = fastDecompile_;
+		fastDecompile_ = true;
+		onRunFullAnalysis();
+		fastDecompile_ = prev;
+		return;
+	}
+	if (choice == items.at(3))
+	{
+		if (inspect_)
+		{
+			if (auto* btn = inspect_->findChild<QPushButton*>(QStringLiteral("inspectUnpackButton"))) btn->click();
+			if (outputTabs_) focusOutputTab(kOutConsole);
+		}
+		return;
+	}
+	if (choice == items.at(4))
+	{
+		onShowSignatureStudio();
 		return;
 	}
 	const QString fi = resolveRetdecFileinfoExecutable();
@@ -2220,6 +2365,11 @@ void RetDecMainWindow::applyEditorFontFromSettings()
 	if (assembly_) assembly_->applyEditorFont(font);
 	if (irPanel_) irPanel_->applyEditorFont(font);
 	if (triPane_) triPane_->applyEditorFont(font);
+	if (auto* neuralLbl = findChild<QLabel*>(QStringLiteral("statusNeural")))
+	{
+		const QFileInfo model(AppSettings::instance().ml.modelPath);
+		neuralLbl->setText(model.isFile() ? QStringLiteral("Neural: ready") : QStringLiteral("Neural: off"));
+	}
 }
 
 void RetDecMainWindow::onSettings()

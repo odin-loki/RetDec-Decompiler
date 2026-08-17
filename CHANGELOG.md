@@ -54,6 +54,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   on follow-ups and resets it on Clear / function change. Plugins
   auto-load only when search paths are set. Line-number gutters honor
   Settings → General.
+- Status bar shows Neural ready/on/off. Target entry point is passed as
+  `--raw-entry-point` when set. Analysis menu can set PDB, signature
+  file, variable renamer, and `--cleanup`. Run Stage also offers fast
+  decompile, unpacker, and Signature Studio. Recovery detect* flags
+  filter Problems kinds. Max functions caps the Functions list.
+  File → Export As lists `IOutputPlugin`s. Decompiler plugins run
+  after artifact load.
 
 ---
 
