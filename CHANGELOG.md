@@ -100,6 +100,16 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   search paths persist from Settings. Call graph has a module-cluster
   filter. Progress Export can Save JSON. Compare original vs refined
   reuses the Compare panel as a tool window (no modal).
+- Function-list pattern badges and STL/Crypto/Algo filters fill from
+  config semantic detections. Instruction counts and string/constant
+  Refs come from the .dsm sidecar. Type-inference sidecar scores merge
+  into the confidence column. Edit signature… persists on the project.
+  Inspect Decompile mode raises the C tab. IR Stage switches Function
+  vs Module .ll. Assembly Enter follows jumps; Escape goes back.
+  Constants can filter by label kind. F6 marks Progress cancelled.
+  Progress waterfall records per-stage elapsed. Recovery → RTTI gates
+  Type Hierarchy. Settings → ML stream output buffers AI tokens when
+  off.
 
 ---
 

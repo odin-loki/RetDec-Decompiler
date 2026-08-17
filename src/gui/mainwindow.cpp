@@ -61,6 +61,7 @@
 #include <QFont>
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QHash>
 #include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -481,6 +482,7 @@ void RetDecMainWindow::createPanels()
 			ProjectFile::Annotation ann = project_->annotation(e.address).value_or(ProjectFile::Annotation{});
 			ann.comment = e.notes;
 			ann.tags = e.tags;
+			ann.signatureOverride = e.signature;
 			project_->setAnnotation(e.address, ann);
 		});
 	}
@@ -634,6 +636,15 @@ void RetDecMainWindow::createPanels()
 		binaryBrowser_,
 		&panels::BinaryBrowserPanel::populateFromFileinfo);
 	connect(signatureStudio_, &panels::SignatureStudioPanel::cliToolFinished, this, &RetDecMainWindow::onCliToolLogged);
+	connect(inspect_, &panels::InspectPanel::requestDecompileMode, this, [this] {
+		if (documentTabs_) documentTabs_->setCurrentIndex(kDocDecompiledC);
+		if (dockFunctions_)
+		{
+			dockFunctions_->show();
+			dockFunctions_->raise();
+		}
+		statusBar()->showMessage(QStringLiteral("Decompile view"), 3000);
+	});
 }
 
 void RetDecMainWindow::createDockLayout()
@@ -1685,6 +1696,7 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath, std::optiona
 	const std::optional<uint64_t> reselect = reselectAddress;
 	QTimer::singleShot(0, this, [this, absC, reselect]() {
 		if (!loadedArtifacts_) return;
+		QHash<QString, float> tiByName;
 
 		const QString refinedC = absC + QStringLiteral(".refined.c");
 		const QString displayC = QFileInfo::exists(refinedC) ? refinedC : absC;
@@ -1739,6 +1751,17 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath, std::optiona
 						QStringLiteral("type-inference"),
 						QStringLiteral("%1 functions, %2 values with known types").arg(n).arg(known));
 				}
+				for (const QJsonValue& v: arr)
+				{
+					if (!v.isObject()) continue;
+					const QJsonObject o = v.toObject();
+					const QString name = o.value(QStringLiteral("name")).toString();
+					if (name.isEmpty()) continue;
+					const int k = o.value(QStringLiteral("known")).toInt();
+					const int structs = o.value(QStringLiteral("structs")).toInt();
+					const int arrays = o.value(QStringLiteral("arrays")).toInt();
+					tiByName.insert(name, qBound(0.f, static_cast<float>(k + structs + arrays) / 8.f, 1.f));
+				}
 			}
 		}
 
@@ -1754,16 +1777,24 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath, std::optiona
 					.arg(cap)
 					.arg(loadedArtifacts_->functions.size()));
 		}
-		if (project_)
+		if (project_ || !tiByName.isEmpty())
 		{
 			for (auto& f: shown)
 			{
-				if (auto ann = project_->annotation(f.address))
+				if (project_)
 				{
-					if (!ann->name.isEmpty()) f.name = ann->name;
-					if (!ann->comment.isEmpty()) f.notes = ann->comment;
-					if (!ann->signatureOverride.isEmpty()) f.signature = ann->signatureOverride;
-					if (!ann->tags.isEmpty()) f.tags = ann->tags;
+					if (auto ann = project_->annotation(f.address))
+					{
+						if (!ann->name.isEmpty()) f.name = ann->name;
+						if (!ann->comment.isEmpty()) f.notes = ann->comment;
+						if (!ann->signatureOverride.isEmpty()) f.signature = ann->signatureOverride;
+						if (!ann->tags.isEmpty()) f.tags = ann->tags;
+					}
+				}
+				if (!tiByName.isEmpty())
+				{
+					const auto it = tiByName.constFind(f.name.isEmpty() ? f.rawName : f.name);
+					if (it != tiByName.cend()) f.confidence.typeInference = it.value();
 				}
 			}
 		}
@@ -1942,7 +1973,7 @@ void RetDecMainWindow::onFunctionArtifactViews(uint64_t address, const QString& 
 void RetDecMainWindow::refreshTypeHierarchyFromArtifacts()
 {
 	if (!typeHierarchy_ || !loadedArtifacts_) return;
-	if (!AppSettings::instance().analysis.enableCxxLifter)
+	if (!AppSettings::instance().analysis.enableCxxLifter || !AppSettings::instance().recovery.detectRTTI)
 	{
 		typeHierarchy_->setHierarchy(QList<panels::ClassInfo>{});
 		return;
@@ -2136,11 +2167,12 @@ bool RetDecMainWindow::saveProject(const QString& path)
 			for (const auto& e: model->functions())
 			{
 				auto existing = project_->annotation(e.address);
-				if (!existing && e.notes.isEmpty() && e.tags.isEmpty()) continue;
+				if (!existing && e.notes.isEmpty() && e.tags.isEmpty() && e.signature.isEmpty()) continue;
 				ProjectFile::Annotation ann = existing.value_or(ProjectFile::Annotation{});
 				if (!e.name.isEmpty()) ann.name = e.name;
 				ann.comment = e.notes;
 				ann.tags = e.tags;
+				ann.signatureOverride = e.signature;
 				project_->setAnnotation(e.address, ann);
 			}
 		}
@@ -2237,6 +2269,13 @@ void RetDecMainWindow::stopAnalysis()
 	elapsedTimer_->stop();
 	analysisBar_->setVisible(false);
 	setStatusStage(QStringLiteral("Stopped"));
+	if (analysisBridge_) analysisBridge_->reportAnalysisCancelled();
+	if (progressPanel_)
+	{
+		const QString last = property("lastProgressStage").toString();
+		if (!last.isEmpty()) progressPanel_->setStageState(last, panels::StageState::Error);
+	}
+	setProperty("lastProgressStage", QString());
 }
 
 void RetDecMainWindow::setStatusFile(const QString& path)
@@ -3368,10 +3407,19 @@ void RetDecMainWindow::onDecompileLogPollTick()
 			const QString prev = property("lastProgressStage").toString();
 			if (!prev.isEmpty() && prev != prog.stage)
 			{
+				const qint64 now = wallClock_.elapsed();
+				const qint64 prevStart = property("lastProgressStageMs").toLongLong();
+				const qint64 elapsed = (prevStart > 0 && now >= prevStart) ? (now - prevStart) : 0;
 				progressPanel_->setStageState(prev, panels::StageState::Done);
+				if (elapsed > 0) progressPanel_->setStageElapsed(prev, elapsed);
+				if (analysisBridge_) analysisBridge_->reportStageCompleted(prev, elapsed);
 				if (project_) project_->setStageStatus(prev, QStringLiteral("done"));
+				setProperty("lastProgressStageMs", now);
 			}
+			else if (prev.isEmpty())
+				setProperty("lastProgressStageMs", wallClock_.elapsed());
 			setProperty("lastProgressStage", prog.stage);
+			if (analysisBridge_ && prev != prog.stage) analysisBridge_->reportStageStarted(prog.stage);
 			progressPanel_->setStageState(prog.stage, panels::StageState::Running, prog.percent);
 			progressPanel_->setOverallProgress(prog.percent);
 		}

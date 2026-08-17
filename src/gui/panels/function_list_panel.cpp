@@ -790,6 +790,8 @@ void FunctionListPanel::onContextMenu(const QPoint& pos)
 	redecompileAct->setToolTip(QStringLiteral("Run retdec-decompiler with --select-functions for this function."));
 	auto* renameAct = menu.addAction("Rename…");
 	renameAct->setEnabled(idx.isValid());
+	auto* editSigAct = menu.addAction("Edit signature…");
+	editSigAct->setEnabled(idx.isValid());
 	menu.addSeparator();
 	auto* tagAct = menu.addAction("Add Tag to Selected…");
 	tagAct->setEnabled(hasSelection);
@@ -828,6 +830,21 @@ void FunctionListPanel::onContextMenu(const QPoint& pos)
 	{
 		onRenameFunction();
 	}
+	else if (chosen == editSigAct && idx.isValid())
+	{
+		if (!qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) return;
+		QModelIndex src = proxy_->mapToSource(idx);
+		if (!src.isValid()) return;
+		auto& e = model_->entry(src.row());
+		bool ok = false;
+		const QString label = e.name.isEmpty() ? e.rawName : e.name;
+		QString text = QInputDialog::getText(this, "Edit signature", label, QLineEdit::Normal, e.signature, &ok);
+		if (ok && !text.trimmed().isEmpty())
+		{
+			e.signature = text.trimmed();
+			model_->setData(model_->index(src.row(), FunctionListModel::ColNotes), e.notes);
+		}
+	}
 	else if (chosen == tagAct)
 	{
 		onBatchTag();
@@ -854,6 +871,7 @@ void FunctionListPanel::onContextMenu(const QPoint& pos)
 
 void FunctionListPanel::onRenameFunction()
 {
+	if (!qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) return;
 	auto selected = tableView_->selectionModel()->selectedRows();
 	if (selected.isEmpty()) return;
 	QModelIndex src = proxy_->mapToSource(selected.first());
@@ -873,6 +891,7 @@ void FunctionListPanel::onRenameFunction()
 
 void FunctionListPanel::onBatchTag()
 {
+	if (!qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) return;
 	bool ok = false;
 	QString tag = QInputDialog::getText(this, "Add Tag", "Tag name:", QLineEdit::Normal, "", &ok);
 	if (!ok || tag.trimmed().isEmpty()) return;

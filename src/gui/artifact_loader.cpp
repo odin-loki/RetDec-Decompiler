@@ -8,6 +8,7 @@
 #include "retdec/gui/panels/ir_panel.h"
 #include "retdec/gui/panels/tri_pane_code_view.h"
 #include "retdec/gui/panels/type_hierarchy_panel.h"
+#include "retdec/gui/settings/settings.h"
 
 #include <QFile>
 #include <QHash>
@@ -86,6 +87,40 @@ std::vector<panels::FunctionEntry> parseFunctions(const QJsonArray& fnArr)
 		e.cc = o.value(QStringLiteral("callingConvention")).toString();
 		const QString fncType = o.value(QStringLiteral("fncType")).toString();
 		e.isLibrary = (fncType == QStringLiteral("staticallyLinked") || fncType == QStringLiteral("dynamicallyLinked"));
+		e.patterns.library = e.isLibrary;
+		{
+			const auto& rec = AppSettings::instance().recovery;
+			for (const QJsonValue& dv: o.value(QStringLiteral("semanticDetections")).toArray())
+			{
+				if (!dv.isObject()) continue;
+				const QJsonObject d = dv.toObject();
+				QString k = d.value(QStringLiteral("kind")).toString().toLower();
+				if (k.isEmpty()) k = d.value(QStringLiteral("label")).toString().toLower();
+				const double conf = d.value(QStringLiteral("confidence")).toDouble(0.0);
+
+				if (k.contains(QStringLiteral("stl")) || k.contains(QStringLiteral("container")))
+				{
+					if (!(conf > 0.0 && conf < rec.stlConfidence)) e.patterns.stl = true;
+				}
+				if (k.contains(QStringLiteral("crypto")) || k.contains(QStringLiteral("cipher"))
+					|| k.contains(QStringLiteral("hash")))
+				{
+					if (!(conf > 0.0 && conf < rec.cryptoConfidence)) e.patterns.crypto = true;
+				}
+				if (k.contains(QStringLiteral("pattern")) || k.contains(QStringLiteral("idiom"))
+					|| k.contains(QStringLiteral("algo")))
+				{
+					if (!(conf > 0.0 && conf < rec.patternConfidence)) e.patterns.algo = true;
+				}
+				if (k.contains(QStringLiteral("virtual")) || k.contains(QStringLiteral("vtable"))
+					|| k.contains(QStringLiteral("singleton")) || k.contains(QStringLiteral("factory"))
+					|| k.contains(QStringLiteral("rtti")))
+				{
+					e.patterns.design = true;
+				}
+				if (k.contains(QStringLiteral("library"))) e.patterns.library = true;
+			}
+		}
 		{
 			bool lineOk = false;
 			const int sl = o.value(QStringLiteral("startLine")).toString().toInt(&lineOk);
@@ -415,6 +450,59 @@ void buildCfgMaps(
 	}
 }
 
+constexpr int kMaxDsmScanChars = 2 * 1024 * 1024;
+
+int countDsmAddrRefs(const QString& fullDsm, uint64_t addr)
+{
+	const QString hex = QStringLiteral("%1").arg(addr, 0, 16);
+	return fullDsm.count(QStringLiteral("0x") + hex) + fullDsm.count(hex);
+}
+
+void fillInstrCountsFromDsm(std::vector<panels::FunctionEntry>& functions, const QString& fullDsm)
+{
+	if (fullDsm.isEmpty() || fullDsm.size() > kMaxDsmScanChars) return;
+
+	const QStringList lines = fullDsm.split(QLatin1Char('\n'));
+	std::vector<uint64_t> lineAddrs;
+	lineAddrs.reserve(static_cast<size_t>(lines.size()));
+	for (const QString& line: lines)
+	{
+		const QString t = line.trimmed();
+		const int hx = t.indexOf(QStringLiteral("0x"), 0, Qt::CaseInsensitive);
+		if (hx < 0) continue;
+		bool ok = false;
+		const uint64_t a = parseAddr(t.mid(hx), &ok);
+		if (ok) lineAddrs.push_back(a);
+	}
+
+	for (auto& fn: functions)
+	{
+		if (fn.instrCount != 0 || fn.address == 0 || fn.sizeBytes <= 0) continue;
+		const uint64_t lo = fn.address;
+		const uint64_t hi = fn.address + static_cast<uint64_t>(fn.sizeBytes);
+		int n = 0;
+		for (uint64_t a: lineAddrs)
+		{
+			if (a >= lo && a < hi) ++n;
+		}
+		fn.instrCount = n;
+	}
+}
+
+void fillRefCountsFromDsm(
+	std::vector<panels::StringEntry>& strings, std::vector<panels::ConstantEntry>& constants, const QString& fullDsm)
+{
+	if (fullDsm.isEmpty() || fullDsm.size() > kMaxDsmScanChars) return;
+	for (auto& e: strings)
+	{
+		if (e.address != 0) e.refCount = countDsmAddrRefs(fullDsm, e.address);
+	}
+	for (auto& e: constants)
+	{
+		if (e.address != 0) e.refCount = countDsmAddrRefs(fullDsm, e.address);
+	}
+}
+
 } // namespace
 
 DecompileArtifactPaths pathsFromOutputC(const QString& cPath)
@@ -460,6 +548,9 @@ bool loadDecompileArtifactsFromPaths(const DecompileArtifactPaths& paths, Decomp
 
 	out.fullDsm = readTextFileIfExists(paths.dsmPath);
 	out.fullLl = readTextFileIfExists(paths.llPath);
+
+	fillInstrCountsFromDsm(out.functions, out.fullDsm);
+	fillRefCountsFromDsm(out.strings, out.constants, out.fullDsm);
 
 	for (auto& entry: out.cfgBlocks)
 		fillBlockInstructionsFromDsm(entry.second, out.fullDsm);
@@ -651,7 +742,12 @@ void populateFunctionViews(
 		assembly->setAssemblyText(asmText);
 		assembly->navigateTo(funcAddr);
 	}
-	if (ir) ir->setIRText(irText);
+	if (ir)
+	{
+		ir->setProperty("functionIr", irText);
+		ir->setProperty("moduleIr", art.fullLl);
+		ir->setIRText(irText);
+	}
 
 	if (triPane)
 	{

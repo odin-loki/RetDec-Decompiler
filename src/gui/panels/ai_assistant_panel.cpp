@@ -387,8 +387,7 @@ void AIAssistantPanel::clear()
 	activeFunctionName_.clear();
 	contextPending_ = false;
 	rebuildChatLog();
-	if (worker_)
-		QMetaObject::invokeMethod(worker_, "resetKvCacheSlot", Qt::QueuedConnection);
+	if (worker_) QMetaObject::invokeMethod(worker_, "resetKvCacheSlot", Qt::QueuedConnection);
 }
 
 bool AIAssistantPanel::loadModel(const QString& ggufPath, bool useGpu)
@@ -557,12 +556,13 @@ void AIAssistantPanel::onTokenGenerated(const QString& piece)
 		history_.back().text += piece;
 	else
 		history_.push_back({ChatRole::Assistant, piece, false});
-	rebuildChatLog();
+	if (retdec::gui::AppSettings::instance().ml.streamOutput) rebuildChatLog();
 }
 
 void AIAssistantPanel::onResponseComplete(int /*newTokens*/, double /*tokPerSec*/)
 {
 	if (!history_.empty() && history_.back().role == ChatRole::Assistant) history_.back().isComplete = true;
+	rebuildChatLog();
 	setInferenceBusy(false);
 }
 
