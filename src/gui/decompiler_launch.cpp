@@ -284,6 +284,9 @@ QStringList buildDecompilerArguments(
 	if (!req.staticCodeSigFile.isEmpty() && QFileInfo::exists(req.staticCodeSigFile))
 		args << QStringLiteral("--static-code-sigfile") << req.staticCodeSigFile;
 	if (req.cleanup) args << QStringLiteral("--cleanup");
+	if (req.tryEmulation) args << QStringLiteral("--try-emulation");
+	if (req.maxMemoryBytes > 0) args << QStringLiteral("--max-memory") << QString::number(req.maxMemoryBytes);
+	if (req.keepLibraryFuncs) args << QStringLiteral("--backend-keep-library-funcs");
 
 	if (llvmPassesOut && (req.decompiler.useCustomLlvmPasses || req.fastDecompile))
 	{

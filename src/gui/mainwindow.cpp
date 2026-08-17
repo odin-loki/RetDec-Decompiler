@@ -64,10 +64,12 @@
 #include <QJsonParseError>
 #include <QKeySequence>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QModelIndex>
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QProgressBar>
@@ -383,6 +385,27 @@ void RetDecMainWindow::createPanels()
 	connect(functionList_, &panels::FunctionListPanel::selectionChanged, this, [this]() {
 		if (redecompileFunctionAct_) redecompileFunctionAct_->setEnabled(functionList_->selectedEntry().has_value());
 	});
+	connect(
+		functionList_,
+		&panels::FunctionListPanel::functionRenamed,
+		this,
+		[this](uint64_t addr, const QString&, const QString& newName) {
+			if (!project_) return;
+			ProjectFile::Annotation ann = project_->annotation(addr).value_or(ProjectFile::Annotation{});
+			ann.name = newName;
+			project_->setAnnotation(addr, ann);
+		});
+	if (auto* model = functionList_->findChild<panels::FunctionListModel*>())
+	{
+		connect(model, &panels::FunctionListModel::dataChanged, this, [this, model](const QModelIndex& tl) {
+			if (!project_ || !tl.isValid()) return;
+			if (tl.column() != panels::FunctionListModel::ColNotes) return;
+			const auto& e = model->entry(tl.row());
+			ProjectFile::Annotation ann = project_->annotation(e.address).value_or(ProjectFile::Annotation{});
+			ann.comment = e.notes;
+			project_->setAnnotation(e.address, ann);
+		});
+	}
 	connect(
 		triPane_, &panels::TriPaneCodeView::addressNavigated, assembly_, &panels::AssemblyPanel::onAddressNavigated);
 
@@ -746,6 +769,43 @@ void RetDecMainWindow::createMenus()
 	cleanupAct->setCheckable(true);
 	connect(cleanupAct, &QAction::toggled, this, [this](bool on) { setProperty("decompilerCleanup", on); });
 
+	auto* tryEmuAct = analysisMenu_->addAction(QStringLiteral("Try emulation unpacking (next run)"));
+	tryEmuAct->setCheckable(true);
+	tryEmuAct->setToolTip(QStringLiteral("Adds --try-emulation. Experimental; can be slow or fail on packed samples."));
+	connect(tryEmuAct, &QAction::toggled, this, [this](bool on) { setProperty("tryEmulation", on); });
+
+	auto* keepLibAct = analysisMenu_->addAction(QStringLiteral("Keep library functions (next run)"));
+	keepLibAct->setCheckable(true);
+	keepLibAct->setToolTip(QStringLiteral("Adds --backend-keep-library-funcs so libc-like helpers stay in the C."));
+	connect(keepLibAct, &QAction::toggled, this, [this](bool on) { setProperty("keepLibraryFuncs", on); });
+
+	auto* maxMemAct = analysisMenu_->addAction(QStringLiteral("Set max memory (bytes)…"));
+	connect(maxMemAct, &QAction::triggered, this, [this]() {
+		bool ok = false;
+		const quint64 cur = property("maxMemoryBytes").toULongLong();
+		const QString s = QInputDialog::getText(
+			this,
+			QStringLiteral("Max memory"),
+			QStringLiteral("Limit decompiler memory in bytes (0 = omit --max-memory):"),
+			QLineEdit::Normal,
+			cur > 0 ? QString::number(cur) : QStringLiteral("0"),
+			&ok);
+		if (!ok) return;
+		bool parsed = false;
+		const quint64 n = s.trimmed().toULongLong(&parsed);
+		if (!s.trimmed().isEmpty() && s.trimmed() != QLatin1String("0") && !parsed)
+		{
+			QMessageBox::warning(this, QStringLiteral("Max memory"), QStringLiteral("Not a valid byte count."));
+			return;
+		}
+		const quint64 stored = parsed ? n : quint64{0};
+		setProperty("maxMemoryBytes", QVariant::fromValue(stored));
+		statusBar()->showMessage(
+			stored > 0 ? QStringLiteral("Next decompile will pass --max-memory %1").arg(stored)
+					   : QStringLiteral("Next decompile will omit --max-memory"),
+			5000);
+	});
+
 	auto* pdbAct = analysisMenu_->addAction(QStringLiteral("Set PDB symbols…"));
 	connect(pdbAct, &QAction::triggered, this, [this]() {
 		const QString path = QFileDialog::getOpenFileName(
@@ -880,6 +940,37 @@ void RetDecMainWindow::createMenus()
 		aiAssistant_->applyMlSettingsFromApp();
 	});
 	connect(compareAct, &QAction::triggered, this, &RetDecMainWindow::onCompare);
+	toolsMenu_->addSeparator();
+	auto* vizMenu = toolsMenu_->addMenu(QStringLiteral("Visualisation plugins"));
+	vizMenu->setObjectName(QStringLiteral("visualisationPluginMenu"));
+	auto refreshViz = [this, vizMenu]() {
+		vizMenu->clear();
+		const auto plugs = PluginManager::instance().pluginsOfType<IVisualisationPlugin>();
+		if (plugs.empty())
+		{
+			auto* empty = vizMenu->addAction(QStringLiteral("(no visualisation plugins loaded)"));
+			empty->setEnabled(false);
+			return;
+		}
+		for (IVisualisationPlugin* plug: plugs)
+		{
+			const QString title = plug->panelTitle();
+			vizMenu->addAction(title, this, [this, plug, title]() {
+				const QString key = QStringLiteral("vizPlugin:%1").arg(title);
+				QWidget* w = findChild<QWidget*>(key);
+				if (!w)
+				{
+					w = plug->createPanel(this);
+					if (!w) return;
+					w->setObjectName(key);
+				}
+				showAsToolWindow(this, w, title, QSize(700, 500));
+			});
+		}
+	};
+	refreshViz();
+	connect(&AppSettings::instance(), &AppSettings::settingsChanged, this, refreshViz);
+
 	connect(compareRefinedAct, &QAction::triggered, this, [this]() {
 		QString orig = decompilerOutputPath_;
 		if (orig.isEmpty() && project_)
@@ -1251,6 +1342,17 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath, std::optiona
 					.arg(cap)
 					.arg(loadedArtifacts_->functions.size()));
 		}
+		if (project_)
+		{
+			for (auto& f: shown)
+			{
+				if (auto ann = project_->annotation(f.address))
+				{
+					if (!ann->name.isEmpty()) f.name = ann->name;
+					if (!ann->comment.isEmpty()) f.notes = ann->comment;
+				}
+			}
+		}
 		if (functionList_) functionList_->setFunctions(shown);
 		setStatusFunctionCount(static_cast<int>(loadedArtifacts_->functions.size()));
 
@@ -1278,9 +1380,19 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath, std::optiona
 			PluginManager::instance().runAnalysisPlugins(ctx);
 			if (decompiledC_ && !ctx.decompiledText.isEmpty() && ctx.decompiledText != decompiledC_->documentText())
 				decompiledC_->setSource(ctx.decompiledText);
+			for (IAnalysisPlugin* ap: PluginManager::instance().pluginsOfType<IAnalysisPlugin>())
+			{
+				const QString sum = ap->summary();
+				if (sum.isEmpty()) continue;
+				diagnostics_->addMessage(panels::DiagnosticEntry::Severity::Info, QStringLiteral("plugin"), sum);
+			}
 		}
 
-		if (stringsBrowser_) stringsBrowser_->setStrings(loadedArtifacts_->strings);
+		if (stringsBrowser_)
+		{
+			stringsBrowser_->setStrings(loadedArtifacts_->strings);
+			stringsBrowser_->setConstants(loadedArtifacts_->constants);
+		}
 		if (callGraph_ && !loadedArtifacts_->callGraphNodes.empty()
 			&& qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS"))
 		{
@@ -1531,6 +1643,21 @@ bool RetDecMainWindow::saveProject(const QString& path)
 	if (!project_) return false;
 	if (functionList_) project_->setFunctionListFilter(functionList_->nameFilterText());
 	if (callGraph_) project_->setCallGraphDepth(callGraph_->callGraphDepth());
+	if (functionList_)
+	{
+		if (auto* model = functionList_->findChild<panels::FunctionListModel*>())
+		{
+			for (const auto& e: model->functions())
+			{
+				auto existing = project_->annotation(e.address);
+				if (!existing && e.notes.isEmpty()) continue;
+				ProjectFile::Annotation ann = existing.value_or(ProjectFile::Annotation{});
+				if (!e.name.isEmpty()) ann.name = e.name;
+				ann.comment = e.notes;
+				project_->setAnnotation(e.address, ann);
+			}
+		}
+	}
 	if (!project_->save(path))
 	{
 		QMessageBox::warning(
@@ -2043,6 +2170,9 @@ bool RetDecMainWindow::launchDecompilerForBinary(
 	req.varRenamer = quitWhenDecompileFinishes_ ? QString() : property("varRenamer").toString();
 	req.staticCodeSigFile = quitWhenDecompileFinishes_ ? QString() : property("staticCodeSigFile").toString();
 	req.cleanup = quitWhenDecompileFinishes_ ? false : property("decompilerCleanup").toBool();
+	req.tryEmulation = quitWhenDecompileFinishes_ ? false : property("tryEmulation").toBool();
+	req.keepLibraryFuncs = quitWhenDecompileFinishes_ ? false : property("keepLibraryFuncs").toBool();
+	req.maxMemoryBytes = quitWhenDecompileFinishes_ ? 0 : property("maxMemoryBytes").toULongLong();
 	req.silent = quitWhenDecompileFinishes_ || st.advanced.verbosity == AdvancedSettings::Verbosity::Quiet
 			  || st.advanced.verbosity == AdvancedSettings::Verbosity::Normal;
 	req.selectDecodeOnly = !quitWhenDecompileFinishes_ && !selectedFunctions.isEmpty();
@@ -2812,6 +2942,12 @@ void RetDecMainWindow::addRecentFile(const QString& path)
 void RetDecMainWindow::updateRecentFilesMenu()
 {
 	if (!recentMenu_) return;
+	QStringList kept;
+	for (const auto& path: recentFiles_)
+	{
+		if (QFileInfo::exists(path)) kept << path;
+	}
+	recentFiles_ = kept;
 	recentMenu_->clear();
 	for (const auto& path: recentFiles_)
 	{
@@ -2819,7 +2955,17 @@ void RetDecMainWindow::updateRecentFilesMenu()
 		act->setData(path);
 		connect(act, &QAction::triggered, this, &RetDecMainWindow::onRecentFileTriggered);
 	}
-	if (recentFiles_.isEmpty()) recentMenu_->addAction(QStringLiteral("(empty)"))->setEnabled(false);
+	if (recentFiles_.isEmpty())
+	{
+		recentMenu_->addAction(QStringLiteral("(empty)"))->setEnabled(false);
+		return;
+	}
+	recentMenu_->addSeparator();
+	auto* clearAct = recentMenu_->addAction(QStringLiteral("Clear recent files"));
+	connect(clearAct, &QAction::triggered, this, [this]() {
+		recentFiles_.clear();
+		updateRecentFilesMenu();
+	});
 }
 
 // ─── Drag and drop ───────────────────────────────────────────────────────────

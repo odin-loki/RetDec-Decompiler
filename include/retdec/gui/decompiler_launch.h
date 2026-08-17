@@ -57,6 +57,12 @@ struct DecompilerLaunchRequest
 	QString staticCodeSigFile;
 	/// Adds `--cleanup` (delete intermediates after the run).
 	bool cleanup = false;
+	/// Adds `--try-emulation` (experimental unpacking). Default off.
+	bool tryEmulation = false;
+	/// Non-zero → `--max-memory` (bytes). Zero omits the flag.
+	quint64 maxMemoryBytes = 0;
+	/// Adds `--backend-keep-library-funcs`.
+	bool keepLibraryFuncs = false;
 	DecompilerSettings decompiler;
 };
 

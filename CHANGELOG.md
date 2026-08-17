@@ -61,6 +61,14 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   filter Problems kinds. Max functions caps the Functions list.
   File → Export As lists `IOutputPlugin`s. Decompiler plugins run
   after artifact load.
+- Function renames and notes persist in the project file (Save Project).
+  Command log History has Save…. Inspect can auto-open an unpacked
+  file (default off). Analysis menu can add `--try-emulation`,
+  `--max-memory`, and `--backend-keep-library-funcs`. Strings
+  Constants tab fills from non-string config globals. Tools →
+  Visualisation plugins mounts `IVisualisationPlugin` panels. Analysis
+  plugin `summary()` lines appear in Problems. Recent files drops
+  missing paths and can be cleared.
 
 ---
 

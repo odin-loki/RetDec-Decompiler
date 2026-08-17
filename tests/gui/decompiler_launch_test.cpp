@@ -96,6 +96,9 @@ TEST(DecompilerLaunch, BuildsBaselineArguments)
 	EXPECT_FALSE(args.contains(QStringLiteral("--backend-no-opts")));
 	EXPECT_FALSE(args.contains(QStringLiteral("--print-after-all")));
 	EXPECT_FALSE(args.contains(QStringLiteral("--select-decode-only")));
+	EXPECT_FALSE(args.contains(QStringLiteral("--try-emulation")));
+	EXPECT_FALSE(args.contains(QStringLiteral("--max-memory")));
+	EXPECT_FALSE(args.contains(QStringLiteral("--backend-keep-library-funcs")));
 }
 
 TEST(DecompilerLaunch, FastModeAddsFlagsAndLlvmPassesJson)
@@ -191,6 +194,24 @@ TEST(DecompilerLaunch, EntryPointPdbRenamerCleanupAndSigfile)
 	EXPECT_TRUE(args.contains(QStringLiteral("--static-code-sigfile")));
 	EXPECT_TRUE(args.contains(QStringLiteral("--cleanup")));
 	EXPECT_FALSE(args.contains(QStringLiteral("readable")));
+}
+
+TEST(DecompilerLaunch, TryEmulationMaxMemoryAndKeepLibraryFuncs)
+{
+	retdec::gui::DecompilerLaunchRequest req;
+	req.binaryPath = QStringLiteral("/tmp/bin");
+	req.outputPath = QStringLiteral("/tmp/out.c");
+	req.tryEmulation = true;
+	req.maxMemoryBytes = 2147483648ull;
+	req.keepLibraryFuncs = true;
+
+	const QStringList args = retdec::gui::buildDecompilerArguments(req);
+	EXPECT_TRUE(args.contains(QStringLiteral("--try-emulation")));
+	EXPECT_TRUE(args.contains(QStringLiteral("--backend-keep-library-funcs")));
+	const int idx = args.indexOf(QStringLiteral("--max-memory"));
+	ASSERT_GE(idx, 0);
+	EXPECT_LT(idx + 1, args.size());
+	EXPECT_EQ(args.at(idx + 1), QStringLiteral("2147483648"));
 }
 
 TEST(DecompilerLaunch, VerboseOmitsSilentFlag)
