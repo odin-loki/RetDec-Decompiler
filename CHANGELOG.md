@@ -104,6 +104,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   `install_smoke` and `parity_ctest`.
 - Sanitizer CI does not read `vm.mmap_rnd_bits` without sudo after
   setting it; ubuntu-latest denies that unprivileged read.
+- Windows corpus/fib fixtures compile without CFG, CET, GS cookies, or
+  incremental linking. Default VS 2022+ PEs decompiled to
+  `Detected functions: 0` and ~10 KiB of CRT globals.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for

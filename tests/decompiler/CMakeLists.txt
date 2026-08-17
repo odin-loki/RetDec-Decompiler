@@ -64,10 +64,15 @@ set_tests_properties(retdec_cli_unit PROPERTIES
 set(_FIB_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../test_binaries/fib.c")
 set(_FIB_BIN "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke${CMAKE_EXECUTABLE_SUFFIX}")
 
+# VS 2022+ defaults (CFG / CET / incremental) yield PEs whose .text the
+# decoder never starts: "Detected functions: 0" and ~10 KiB of CRT globals.
 if(MSVC)
+    set(_MSVC_FIXTURE_C /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf-)
+    set(_MSVC_FIXTURE_LINK /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO)
     add_custom_command(
         OUTPUT "${_FIB_BIN}"
-        COMMAND ${CMAKE_C_COMPILER} /nologo /Od /Ob0 /Oi- "/Fe${_FIB_BIN}" "${_FIB_SRC}"
+        COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C} "/Fe${_FIB_BIN}" "${_FIB_SRC}"
+            ${_MSVC_FIXTURE_LINK}
         DEPENDS "${_FIB_SRC}"
         COMMENT "Building fib_smoke test binary (MSVC)"
         VERBATIM
@@ -97,7 +102,8 @@ foreach(_name IN LISTS _CORPUS_NATIVE_SOURCES)
     if(MSVC)
         add_custom_command(
             OUTPUT "${_bin}"
-            COMMAND ${CMAKE_C_COMPILER} /nologo /Od /Ob0 /Oi- "/Fe${_bin}" "${_src}"
+            COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C} "/Fe${_bin}" "${_src}"
+                ${_MSVC_FIXTURE_LINK}
             DEPENDS "${_src}"
             COMMENT "Building corpus fixture ${_name} (MSVC)"
             VERBATIM
