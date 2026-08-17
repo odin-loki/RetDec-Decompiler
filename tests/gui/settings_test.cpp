@@ -190,6 +190,8 @@ TEST_F(SettingsTest, ExportImportRoundtripExtended)
 	s.ml.maxNewTokens = 256;
 	s.ml.contextLength = 2048;
 	s.ml.inferenceDevice = MLSettings::InferenceDevice::CPU;
+	s.ml.modelSha256 = QStringLiteral("deadbeef");
+	s.ml.batchRefine = true;
 	s.analysis.enableTyping = false;
 
 	QTemporaryFile f;
@@ -207,6 +209,8 @@ TEST_F(SettingsTest, ExportImportRoundtripExtended)
 	EXPECT_EQ(s.ml.maxNewTokens, 256);
 	EXPECT_EQ(s.ml.contextLength, 2048);
 	EXPECT_EQ(s.ml.inferenceDevice, MLSettings::InferenceDevice::CPU);
+	EXPECT_EQ(s.ml.modelSha256, QStringLiteral("deadbeef"));
+	EXPECT_TRUE(s.ml.batchRefine);
 	EXPECT_FALSE(s.analysis.enableTyping);
 }
 

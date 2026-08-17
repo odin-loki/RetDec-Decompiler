@@ -354,8 +354,16 @@ QProcessEnvironment buildDecompilerProcessEnvironment(const AppSettings& setting
 		env.insert(QStringLiteral("RETDEC_NEURAL_TOP_K"), QString::number(settings.ml.topK));
 		if (settings.analysis.threadCount > 0)
 			env.insert(QStringLiteral("RETDEC_NEURAL_THREADS"), QString::number(settings.analysis.threadCount));
+		const QString sha = settings.ml.modelSha256.trimmed();
+		if (!sha.isEmpty()) env.insert(QStringLiteral("RETDEC_NEURAL_MODEL_SHA256"), sha);
+		if (settings.ml.batchRefine) env.insert(QStringLiteral("RETDEC_NEURAL_BATCH"), QStringLiteral("1"));
 	}
 	if (!settings.cuda.useGPU) env.insert(QStringLiteral("RETDEC_OCL_HOST"), QStringLiteral("0"));
+	{
+		const QString cache = settings.cuda.kernelCacheDir.trimmed();
+		if (!cache.isEmpty()) env.insert(QStringLiteral("RETDEC_OCL_CACHE_DIR"), QDir(cache).absolutePath());
+	}
+	if (settings.cuda.enableProfiling) env.insert(QStringLiteral("RETDEC_PROFILE_JSON"), QStringLiteral("1"));
 	return env;
 }
 

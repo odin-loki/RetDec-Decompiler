@@ -110,6 +110,8 @@ void AppSettings::loadML(QSettings& s)
 	ml.maxNewTokens = s.value("maxNewTokens", 512).toInt();
 	ml.contextLength = s.value("contextLength", 4096).toInt();
 	ml.streamOutput = s.value("streamOutput", true).toBool();
+	ml.modelSha256 = s.value("modelSha256").toString();
+	ml.batchRefine = s.value("batchRefine", false).toBool();
 	s.endGroup();
 }
 
@@ -243,6 +245,8 @@ void AppSettings::saveML(QSettings& s) const
 	s.setValue("maxNewTokens", ml.maxNewTokens);
 	s.setValue("contextLength", ml.contextLength);
 	s.setValue("streamOutput", ml.streamOutput);
+	s.setValue("modelSha256", ml.modelSha256);
+	s.setValue("batchRefine", ml.batchRefine);
 	s.endGroup();
 }
 
@@ -363,6 +367,8 @@ bool AppSettings::exportToFile(const QString& path) const
 	ml_obj["maxNewTokens"] = ml.maxNewTokens;
 	ml_obj["contextLength"] = ml.contextLength;
 	ml_obj["streamOutput"] = ml.streamOutput;
+	ml_obj["modelSha256"] = ml.modelSha256;
+	ml_obj["batchRefine"] = ml.batchRefine;
 	root["ML"] = ml_obj;
 
 	QJsonObject cuda_obj;
@@ -478,6 +484,8 @@ bool AppSettings::importFromFile(const QString& path)
 		ml.maxNewTokens = m.value("maxNewTokens").toInt(512);
 		ml.contextLength = m.value("contextLength").toInt(4096);
 		ml.streamOutput = m.value("streamOutput").toBool(true);
+		ml.modelSha256 = m.value("modelSha256").toString();
+		ml.batchRefine = m.value("batchRefine").toBool(false);
 	}
 
 	if (root.contains("CUDA"))

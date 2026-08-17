@@ -611,6 +611,27 @@ void RetDecMainWindow::createPanels()
 				statusBar()->showMessage(QStringLiteral("Copied binary path"), 3000);
 			});
 		}
+		menu.addSeparator();
+		menu.addAction(QStringLiteral("Open backend graph files…"), this, [this] {
+			if (decompilerOutputPath_.isEmpty())
+			{
+				statusBar()->showMessage(QStringLiteral("No decompile output yet."), 3000);
+				return;
+			}
+			const QFileInfo cInfo(decompilerOutputPath_);
+			const QDir dir(cInfo.absolutePath());
+			const QString stem = cInfo.completeBaseName();
+			const QStringList dots =
+				dir.entryList({stem + QStringLiteral(".cfg.*.dot"), stem + QStringLiteral(".cg.dot")}, QDir::Files);
+			if (dots.isEmpty())
+			{
+				statusBar()->showMessage(QStringLiteral("No backend CFG/CG DOT files next to the decompiled C."), 4000);
+				return;
+			}
+			QDesktopServices::openUrl(QUrl::fromLocalFile(dir.absolutePath()));
+			statusBar()->showMessage(
+				QStringLiteral("Opened %1 (%2 graph file(s))").arg(dir.absolutePath()).arg(dots.size()), 4000);
+		});
 		menu.exec(QCursor::pos());
 	});
 	connect(triageBanner_, &panels::TriageBanner::dismissed, this, [this] { triageBanner_->hide(); });
@@ -636,6 +657,27 @@ void RetDecMainWindow::createPanels()
 		binaryBrowser_,
 		&panels::BinaryBrowserPanel::populateFromFileinfo);
 	connect(signatureStudio_, &panels::SignatureStudioPanel::cliToolFinished, this, &RetDecMainWindow::onCliToolLogged);
+	if (auto* useSig = signatureStudio_->findChild<QPushButton*>(QStringLiteral("sigStudioUseAsStatic")))
+	{
+		connect(useSig, &QPushButton::clicked, this, [this] {
+			QString path;
+			if (auto* yara = signatureStudio_->findChild<QLineEdit*>(QStringLiteral("sigStudioYaraOut")))
+				path = yara->text().trimmed();
+			if ((path.isEmpty() || !QFileInfo::exists(path)))
+			{
+				if (auto* pat = signatureStudio_->findChild<QLineEdit*>(QStringLiteral("sigStudioPatYaraOut")))
+					path = pat->text().trimmed();
+			}
+			if (path.isEmpty() || !QFileInfo::exists(path))
+			{
+				statusBar()->showMessage(QStringLiteral("No YARA output file on disk yet."), 4000);
+				return;
+			}
+			const QString abs = QFileInfo(path).absoluteFilePath();
+			setProperty("staticCodeSigFile", abs);
+			statusBar()->showMessage(QStringLiteral("Next decompile will use --static-code-sigfile %1").arg(abs), 6000);
+		});
+	}
 	connect(inspect_, &panels::InspectPanel::requestDecompileMode, this, [this] {
 		if (documentTabs_) documentTabs_->setCurrentIndex(kDocDecompiledC);
 		if (dockFunctions_)
@@ -2167,7 +2209,13 @@ bool RetDecMainWindow::saveProject(const QString& path)
 			for (const auto& e: model->functions())
 			{
 				auto existing = project_->annotation(e.address);
-				if (!existing && e.notes.isEmpty() && e.tags.isEmpty() && e.signature.isEmpty()) continue;
+				const bool nameUnchanged = e.name.isEmpty() || e.name == e.rawName;
+				const bool emptyAnn = e.notes.isEmpty() && e.tags.isEmpty() && e.signature.isEmpty() && nameUnchanged;
+				if (emptyAnn)
+				{
+					if (existing) project_->clearAnnotation(e.address);
+					continue;
+				}
 				ProjectFile::Annotation ann = existing.value_or(ProjectFile::Annotation{});
 				if (!e.name.isEmpty()) ann.name = e.name;
 				ann.comment = e.notes;
@@ -2684,7 +2732,9 @@ bool RetDecMainWindow::launchDecompilerForBinary(
 	req.outputPath = decompilerOutputPath_;
 	req.arch = arch;
 	req.fastDecompile = fastDecompile_;
-	req.printAfterAll = quitWhenDecompileFinishes_ ? false : (decompilePrintAfterAll_ || st.advanced.dumpIR);
+	req.printAfterAll = quitWhenDecompileFinishes_ ? false
+												   : (decompilePrintAfterAll_ || st.advanced.dumpIR
+													  || st.advanced.verbosity == AdvancedSettings::Verbosity::Debug);
 	req.emitCfg = quitWhenDecompileFinishes_ ? false : st.advanced.dumpCFG;
 	req.emitCg = req.emitCfg;
 	req.disableStaticCodeDetection = quitWhenDecompileFinishes_ ? false : !st.recovery.detectPatterns;
@@ -2803,6 +2853,10 @@ bool RetDecMainWindow::launchDecompilerForBinary(
 
 	if (liveConsole_)
 	{
+		if (!quitWhenDecompileFinishes_ && st.advanced.verbosity == AdvancedSettings::Verbosity::Debug)
+			liveConsole_->setFlushHz(40);
+		else
+			liveConsole_->setFlushHz(20);
 		liveConsole_->appendBanner(QStringLiteral("retdec-decompiler"), args, lastDecompilerCwd_);
 		const bool streamLog = st.decompiler.liveConsoleTail && !quitWhenDecompileFinishes_;
 		liveConsole_->appendLine(

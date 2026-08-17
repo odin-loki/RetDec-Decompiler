@@ -110,6 +110,17 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   Progress waterfall records per-stage elapsed. Recovery → RTTI gates
   Type Hierarchy. Settings → ML stream output buffers AI tokens when
   off.
+- CFG Expand chains (click / context menu / toolbar) reloads the full
+  graph after chain compression. Settings → Advanced Debug adds
+  `--print-after-all` and raises live-console flush. OpenCL cache
+  honors `RETDEC_OCL_CACHE_DIR` (Settings → CUDA kernel cache). CUDA
+  profiling sets `RETDEC_PROFILE_JSON`. Progress elapsed warns at the
+  analysis time budget (no `--timeout`). Function list Clear
+  annotation drops empty project notes. Triage More opens backend
+  CFG/CG DOT files. Binary Browser copies address / range / hex.
+  Signature Studio can set `--static-code-sigfile`. ML SHA-256 and
+  batch refine publish `RETDEC_NEURAL_MODEL_SHA256` /
+  `RETDEC_NEURAL_BATCH` on interactive decompile only.
 
 ---
 

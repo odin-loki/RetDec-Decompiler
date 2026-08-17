@@ -380,6 +380,51 @@ TEST(DecompilerLaunch, InteractiveDisablesOclWhenGpuOff)
 	st.resetToDefaults();
 }
 
+TEST(DecompilerLaunch, InteractiveOclCacheAndProfileEnv)
+{
+	auto& st = retdec::gui::AppSettings::instance();
+	st.resetToDefaults();
+	st.cuda.kernelCacheDir = QStringLiteral("/tmp/ocl-cache-test");
+	st.cuda.enableProfiling = true;
+	const QProcessEnvironment env = retdec::gui::buildDecompilerProcessEnvironment(st, true);
+	EXPECT_TRUE(env.value(QStringLiteral("RETDEC_OCL_CACHE_DIR")).contains(QStringLiteral("ocl-cache-test")));
+	EXPECT_EQ(env.value(QStringLiteral("RETDEC_PROFILE_JSON")), QStringLiteral("1"));
+
+	const QProcessEnvironment headless = retdec::gui::buildDecompilerProcessEnvironment(st, false);
+	const QProcessEnvironment sys = QProcessEnvironment::systemEnvironment();
+	EXPECT_EQ(headless.value(QStringLiteral("RETDEC_PROFILE_JSON")), sys.value(QStringLiteral("RETDEC_PROFILE_JSON")));
+	EXPECT_EQ(
+		headless.value(QStringLiteral("RETDEC_OCL_CACHE_DIR")), sys.value(QStringLiteral("RETDEC_OCL_CACHE_DIR")));
+	st.resetToDefaults();
+}
+
+TEST(DecompilerLaunch, InteractiveNeuralShaAndBatch)
+{
+	QTemporaryFile model;
+	ASSERT_TRUE(model.open());
+	model.write("GGUF");
+	model.close();
+
+	auto& st = retdec::gui::AppSettings::instance();
+	st.resetToDefaults();
+	st.ml.modelPath = model.fileName();
+	st.ml.modelSha256 = QStringLiteral("abc123def456");
+	st.ml.batchRefine = true;
+
+	const QProcessEnvironment env = retdec::gui::buildDecompilerProcessEnvironment(st, true);
+	EXPECT_EQ(env.value(QStringLiteral("RETDEC_NEURAL_REFINE")), QStringLiteral("1"));
+	EXPECT_EQ(env.value(QStringLiteral("RETDEC_NEURAL_MODEL_SHA256")), QStringLiteral("abc123def456"));
+	EXPECT_EQ(env.value(QStringLiteral("RETDEC_NEURAL_BATCH")), QStringLiteral("1"));
+
+	const QProcessEnvironment headless = retdec::gui::buildDecompilerProcessEnvironment(st, false);
+	const QProcessEnvironment sys = QProcessEnvironment::systemEnvironment();
+	EXPECT_EQ(
+		headless.value(QStringLiteral("RETDEC_NEURAL_MODEL_SHA256")),
+		sys.value(QStringLiteral("RETDEC_NEURAL_MODEL_SHA256")));
+	EXPECT_EQ(headless.value(QStringLiteral("RETDEC_NEURAL_BATCH")), sys.value(QStringLiteral("RETDEC_NEURAL_BATCH")));
+	st.resetToDefaults();
+}
+
 TEST(DecompilerLaunch, SelectFunctionsFlag)
 {
 	retdec::gui::DecompilerLaunchRequest req;

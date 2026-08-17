@@ -433,6 +433,18 @@ QWidget* SettingsDialog::buildMLTab()
 	streamCheck_ = new QCheckBox("Stream output tokens");
 	l->addWidget(streamCheck_);
 
+	auto* shaEdit = new QLineEdit;
+	shaEdit->setObjectName(QStringLiteral("mlModelSha256"));
+	shaEdit->setPlaceholderText(QStringLiteral("optional SHA-256 of the GGUF"));
+	l->addWidget(makeRow("Model SHA-256", shaEdit));
+
+	auto* batchRefineCheck = new QCheckBox(QStringLiteral("Batch refine (RETDEC_NEURAL_BATCH)"));
+	batchRefineCheck->setObjectName(QStringLiteral("mlBatchRefine"));
+	batchRefineCheck->setToolTip(
+		QStringLiteral("When checked, interactive decompile sets RETDEC_NEURAL_BATCH=1. "
+					   "Headless ignores this setting. Off by default so F5 is unchanged until you opt in."));
+	l->addWidget(batchRefineCheck);
+
 	l->addStretch();
 
 	connect(modelPathBtn_, &QToolButton::clicked, this, &SettingsDialog::onBrowseModelPath);
@@ -878,6 +890,8 @@ void SettingsDialog::populateFromSettings()
 	maxTokensSpin_->setValue(s.ml.maxNewTokens);
 	contextLenSpin_->setValue(s.ml.contextLength);
 	streamCheck_->setChecked(s.ml.streamOutput);
+	if (auto* e = findChild<QLineEdit*>(QStringLiteral("mlModelSha256"))) e->setText(s.ml.modelSha256);
+	if (auto* c = findChild<QCheckBox*>(QStringLiteral("mlBatchRefine"))) c->setChecked(s.ml.batchRefine);
 
 	// Recovery
 	detectSTLCheck_->setChecked(s.recovery.detectSTL);
@@ -987,6 +1001,8 @@ void SettingsDialog::applyToSettings()
 	s.ml.maxNewTokens = maxTokensSpin_->value();
 	s.ml.contextLength = contextLenSpin_->value();
 	s.ml.streamOutput = streamCheck_->isChecked();
+	if (auto* e = findChild<QLineEdit*>(QStringLiteral("mlModelSha256"))) s.ml.modelSha256 = e->text().trimmed();
+	if (auto* c = findChild<QCheckBox*>(QStringLiteral("mlBatchRefine"))) s.ml.batchRefine = c->isChecked();
 
 	// Recovery
 	s.recovery.detectSTL = detectSTLCheck_->isChecked();

@@ -11,6 +11,7 @@
  */
 
 #include "retdec/gui/panels/progress_panel.h"
+#include "retdec/gui/settings/settings.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -563,6 +564,8 @@ void ProgressPanel::onAnalysisStarted()
 	running_ = true;
 	wallClock_.start();
 	elapsedTimer_->start();
+	elapsedLabel_->setStyleSheet({});
+	elapsedLabel_->setToolTip({});
 }
 
 void ProgressPanel::onAnalysisCompleted(qint64 totalMs)
@@ -570,6 +573,8 @@ void ProgressPanel::onAnalysisCompleted(qint64 totalMs)
 	running_ = false;
 	elapsedTimer_->stop();
 	elapsedLabel_->setText(formatMs(totalMs));
+	elapsedLabel_->setStyleSheet({});
+	elapsedLabel_->setToolTip({});
 	overallBar_->setValue(100);
 	pctLabel_->setText("100%");
 	renderWaterfall();
@@ -580,6 +585,8 @@ void ProgressPanel::onAnalysisCancelled()
 {
 	running_ = false;
 	elapsedTimer_->stop();
+	elapsedLabel_->setStyleSheet({});
+	elapsedLabel_->setToolTip({});
 	// Mark all still-running stages as pending
 	for (auto& r: rows_)
 	{
@@ -592,6 +599,30 @@ void ProgressPanel::onElapsedTick()
 	if (!running_) return;
 	qint64 ms = wallClock_.elapsed();
 	elapsedLabel_->setText(formatMs(ms));
+
+	const int budgetSecs = retdec::gui::AppSettings::instance().analysis.maxAnalysisTimeSecs;
+	if (budgetSecs > 0)
+	{
+		const qint64 budgetMs = static_cast<qint64>(budgetSecs) * 1000;
+		if (ms >= budgetMs)
+		{
+			elapsedLabel_->setStyleSheet(QStringLiteral("color: #e64553; font-weight: 600;"));
+			elapsedLabel_->setToolTip(
+				QStringLiteral(
+					"Wall time exceeded the %1s analysis budget; decompile still running; press F6 to cancel.")
+					.arg(budgetSecs));
+		}
+		else if (ms >= (budgetMs * 80) / 100)
+		{
+			elapsedLabel_->setStyleSheet(QStringLiteral("color: #df8e1d;"));
+			elapsedLabel_->setToolTip(QStringLiteral("Approaching the %1s analysis budget.").arg(budgetSecs));
+		}
+		else
+		{
+			elapsedLabel_->setStyleSheet({});
+			elapsedLabel_->setToolTip({});
+		}
+	}
 }
 
 void ProgressPanel::onExportClicked()
@@ -638,6 +669,8 @@ void ProgressPanel::resetAll()
 	fnCountLabel_->setText("0 fn");
 	instrLabel_->setText("0 instr");
 	elapsedLabel_->setText("0.0s");
+	elapsedLabel_->setStyleSheet({});
+	elapsedLabel_->setToolTip({});
 	fnRateLabel_->setText("—");
 	instrRateLabel_->setText("—");
 	functionCount_ = 0;

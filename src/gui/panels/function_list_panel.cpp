@@ -792,6 +792,8 @@ void FunctionListPanel::onContextMenu(const QPoint& pos)
 	renameAct->setEnabled(idx.isValid());
 	auto* editSigAct = menu.addAction("Edit signature…");
 	editSigAct->setEnabled(idx.isValid());
+	auto* clearAnnAct = menu.addAction("Clear annotation");
+	clearAnnAct->setEnabled(idx.isValid());
 	menu.addSeparator();
 	auto* tagAct = menu.addAction("Add Tag to Selected…");
 	tagAct->setEnabled(hasSelection);
@@ -844,6 +846,21 @@ void FunctionListPanel::onContextMenu(const QPoint& pos)
 			e.signature = text.trimmed();
 			model_->setData(model_->index(src.row(), FunctionListModel::ColNotes), e.notes);
 		}
+	}
+	else if (chosen == clearAnnAct && idx.isValid())
+	{
+		if (!qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) return;
+		QModelIndex src = proxy_->mapToSource(idx);
+		if (!src.isValid()) return;
+		auto& e = model_->entry(src.row());
+		e.notes.clear();
+		e.tags.clear();
+		e.signature.clear();
+		if (!e.rawName.isEmpty())
+			model_->renameFunction(e.address, e.rawName);
+		else
+			e.name.clear();
+		model_->setData(model_->index(src.row(), FunctionListModel::ColNotes), QString());
 	}
 	else if (chosen == tagAct)
 	{
