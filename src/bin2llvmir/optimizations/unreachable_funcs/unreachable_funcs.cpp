@@ -178,19 +178,21 @@ bool UnreachableFuncs::run()
 		liveFuncs.insert(mainFunc);
 		addToSet(ReachableFuncsAnalysis::getReachableDefinedFuncsFor(*mainFunc, *module, *callGraph), liveFuncs);
 	}
-
-	// MSVC PE often has no `main` symbol (and VS 2022+ CRT no longer matches
-	// the hardcoded _CrtSetCheckCount / InterlockedExchange offsets). Keep
-	// the image entry so decoded .text is not stripped to zero functions.
-	const auto ep = config->getConfig().parameters.getEntryPoint();
-	if (ep.isDefined())
+	else
 	{
-		if (auto* epFn = config->getLlvmFunction(ep))
+		// Only when main is missing. Using CRT startup (mainCRTStartup) as a
+		// root keeps the entire UCRT and crashes CopyPropagation on MSVC PE.
+		const auto ep = config->getConfig().parameters.getEntryPoint();
+		if (ep.isDefined())
 		{
-			if (!epFn->isDeclaration())
+			if (auto* epFn = config->getLlvmFunction(ep))
 			{
-				liveFuncs.insert(epFn);
-				addToSet(ReachableFuncsAnalysis::getReachableDefinedFuncsFor(*epFn, *module, *callGraph), liveFuncs);
+				if (!epFn->isDeclaration())
+				{
+					liveFuncs.insert(epFn);
+					addToSet(
+						ReachableFuncsAnalysis::getReachableDefinedFuncsFor(*epFn, *module, *callGraph), liveFuncs);
+				}
 			}
 		}
 	}

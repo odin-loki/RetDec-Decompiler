@@ -68,7 +68,7 @@ set(_FIB_BIN "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke${CMAKE_EXECUTABLE_SUFFIX}")
 # decoder never starts: "Detected functions: 0" and ~10 KiB of CRT globals.
 if(MSVC)
     set(_MSVC_FIXTURE_C /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf-)
-    set(_MSVC_FIXTURE_LINK /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO)
+    set(_MSVC_FIXTURE_LINK /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /ENTRY:main)
     add_custom_command(
         OUTPUT "${_FIB_BIN}"
         COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C} "/Fe${_FIB_BIN}" "${_FIB_SRC}"

@@ -116,6 +116,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Sanitizer CI lowers ASLR further (`mmap_rnd_bits=18`,
   `randomize_va_space=0`) and runs the decompiler under `setarch -R`.
   ASan-only still failed to mmap shadow at 28.
+- Windows corpus/fib fixtures use `/ENTRY:main` so the image entry is
+  user `main`, not `mainCRTStartup`. Treating CRT startup as the
+  UnreachableFuncs root kept all of UCRT and crashed
+  `CopyPropagationOptimizer` (`0xC0000005`).
+- `UnreachableFuncs` uses the image entry only when `main` is missing.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for
