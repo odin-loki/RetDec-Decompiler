@@ -1,51 +1,62 @@
-Imortek Commercial Licence Terms (Section 7 summary)
+Imortek Commercial Licence
 Copyright (c) 2025-2026 Odin Loch, trading as Imortek.
 
-These terms supplement LICENSE-AGPL under AGPL section 7.
+Buy this if you want to put RetDec in a product and keep your own
+source private. One invoice. No extra fees when you ship more copies.
 
-§ 7.1 Free tier (no cost, AGPL-3.0+)
-Personal, charitable, educational use, or entities with annual income or
-revenue below 50,000 AUD (~35,000 USD). Above the threshold: obtain a
-commercial licence or cease use.
+Who it is for
+  Companies and sole traders who embed RetDec, ship a GUI, or run it
+  as a service, and do not want to publish their modifications.
+  Students, researchers, and anyone happy to share source can use
+  the AGPL text in LICENSE-AGPL instead. You do not need this licence
+  for that.
 
-§ 7.2 Attribution (free-tier users)
-Prominent attribution in documentation, UI, marketing, integrations, and
-publications:
+What you can do
+  - Use RetDec in commercial and internal products
+  - Keep your changes private
+  - Ship binaries of your product
+  - Run it as a hosted or on-prem service
+  - Get email support during the paid year
+  - Ask us for paid custom work if you need it
 
-  Powered by RetDec (Imortek edition), originally derived from the RetDec
-  project. Copyright (c) 2025-2026 Odin Loch trading as Imortek.
-  Licensed under AGPL-3.0+. See LICENSE for details.
+What you cannot do
+  - Claim you own RetDec or the Imortek name
+  - Sell RetDec itself as if it were your original work
 
-§ 7.3 Modifications (AGPL path)
-Modifications must be released under the same dual-licence framework unless
-a commercial licence is obtained.
+Price (AUD, exclusive of GST unless the invoice says otherwise)
+  These are the published prices. Multi-year and volume deals are
+  available. If your use is unusual, ask for a quote.
 
-§ 7.4 Commercial licence
-Required for commercial use above the free-tier threshold, proprietary
-products, or when AGPL sharing obligations are not acceptable.
+  Indie / sole trader          1,490 per year
+  Team (up to 10 people)       4,990 per year
+  Business (up to 50 people)  14,900 per year
+  Enterprise / OEM            we quote (annual or multi-year)
 
-Fees (AUD, indicative — contact licensor for current schedule):
-  - One-time setup fee tiered by annual income/budget.
-  - Annual fee: 5% of revenue attributable to software incorporating this
-    product (not total company revenue).
-  - Volume discounts available for multiple licences.
+  A seat is one person who runs RetDec or ships a product that
+  embeds it. Build servers that only run tests are free.
 
-Removed from prior published terms (deliberately):
-  - Annual fee based on total company income at high brackets.
-  - Mandatory open-sourcing of all research under commercial licence.
-  - Quarterly R&D reporting under commercial licence.
-  - 5% gross-profit royalty stacked on annual fee.
-  - Bank payment details in public licence text.
+  The price is the price. You do not pay a percentage of revenue.
 
-§ 7.5 Commercial licence grants
-Commercial use, waiver of AGPL modification-sharing (subject to product
-attribution policy), support options, and deployment flexibility as agreed
-in the signed commercial agreement.
+How to buy
+  Email odin.loch@outlook.com.au with:
+  - company name and country
+  - which tier
+  - whether you need an OEM / redistribution addendum
 
-§ 7.6 Contributing
-Contributions are AGPL-3.0+ as extended by these terms.
+  We send a short order form and a tax invoice. The licence starts
+  when payment clears. Renew at the same tier, or tell us to change.
 
-§ 7.7 Governing law
-Australia.
+Day one
+  After payment you may ship. Keep a discreet
+  “Powered by RetDec (Imortek)” line in docs or an About box.
+  We do not require it on every splash screen.
+
+Warranty
+  The software is provided as-is. Imortek’s liability is limited
+  to the fees you paid in the previous twelve months, except where
+  Australian consumer law says otherwise.
+
+Governing law
+  Australia.
 
 Enquiries: odin.loch@outlook.com.au

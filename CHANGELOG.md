@@ -17,6 +17,18 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Dual licence texts in `LICENSE` and `LICENSE-COMMERCIAL` (AGPL or a
+  published commercial price list). Enquiries: odin.loch@outlook.com.au.
+- `scripts/fetch_qwen_gguf.sh` stages a 9B Instruct GGUF under `models/`
+  via Ollama `qwen3.5:9b` (Qwen 3.6 has no 9B tag).
+- llama.cpp generate() calls `llama_sampler_accept` and records token
+  count, not byte length. Type inference (when enabled) uses the same
+  thread pool as the detectors.
+- Qwen Instruct chat template, `/no_think` unless `RETDEC_NEURAL_THINKING=1`,
+  default SHA-256 pin for the Unsloth Q4_K_M GGUF, CLI refine reads `-o`
+  when `decompile()` has no out-string, prompt decode is chunked by
+  `n_batch`, and `scripts/wsl_build_neural.sh` / `scripts/run_neural_refine.sh`.
+  Gate/SHA rejects log to stderr and write a refinement manifest.
 - Maintainer scope: Docker is used only to pull `remnux/retdec`. OSS-Fuzz 23k
   corpus and four-toolchain support regen stay out of scope.
 - `docs/BENCHMARKS_TABLE.md` now has a filled Stock column.

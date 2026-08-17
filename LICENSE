@@ -1,25 +1,27 @@
 RetDec — Enhanced Retargetable Decompiler
 Copyright (c) 2025-2026 Odin Loch, trading as Imortek.
 
-This program is dual-licensed. You may use it under EITHER:
+This software is dual-licensed. Choose one path:
 
-  (A) GNU Affero General Public License v3.0 or later (AGPL-3.0+),
-      reproduced verbatim in LICENSE-AGPL, as modified by the
-      commercial-tier terms in LICENSE-COMMERCIAL; OR
+  (A) GNU Affero General Public License v3.0 or later
+      The full AGPL-3.0 text is in LICENSE-AGPL. You may use, modify,
+      and share the software if you also share your corresponding
+      source under AGPL-3.0+ when you distribute or run a modified
+      network service. Please keep the Imortek / RetDec attribution
+      visible in documentation and in any user-facing product.
 
-  (B) a separate commercial licence obtained from Odin Loch
-      (odin.loch@outlook.com.au). See LICENSE-COMMERCIAL.
+  (B) A commercial licence from Imortek
+      Use this when you want to ship RetDec in a closed-source product,
+      keep your modifications private, or need a signed agreement.
+      Terms and prices are in LICENSE-COMMERCIAL.
+      Email: odin.loch@outlook.com.au
 
-Free-tier eligibility (personal, charitable, educational, and entities
-below 50,000 AUD annual income/revenue): AGPL-3.0+ at no cost, subject
-to attribution requirements in LICENSE-COMMERCIAL.
+Contributions are accepted under AGPL-3.0+. Opening a pull request
+means you agree to those terms.
 
-Contributions are accepted under AGPL-3.0+ as extended by LICENSE-COMMERCIAL.
-Submitting a pull request constitutes agreement with these terms.
+Governed by the laws of Australia.
 
-This licence agreement is governed by Australian law.
-
-Full texts:
-  LICENSE-AGPL        — AGPL-3.0 verbatim
-  LICENSE-COMMERCIAL  — Imortek attribution, tiers, commercial terms
+Related files:
+  LICENSE-AGPL        — AGPL-3.0 full text
+  LICENSE-COMMERCIAL  — commercial terms and price list
   NOTICE              — third-party attributions

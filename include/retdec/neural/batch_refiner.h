@@ -20,8 +20,8 @@ bool neuralBatchingEnabled();
 /**
  * @brief Refine multiple requests; batches prompts when RETDEC_NEURAL_BATCH=1.
  *
- * Current implementation processes sequentially; llama.cpp batched decode is
- * the planned optimisation (Part 11.4).
+ * Processes sequentially on one backend session. With RETDEC_NEURAL_BATCH=1,
+ * later requests reuse the KV prefix (llama.cpp llama_batch decode).
  */
 class BatchRefiner {
 public:

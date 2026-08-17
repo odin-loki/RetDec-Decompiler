@@ -10,9 +10,9 @@ GUI, optional offline neural refinement (llama.cpp via `RETDEC_ENABLE_LLAMACPP`)
 algorithm/concurrency/serialisation detection no stock decompiler ships.
 
 Copyright (c) 2025-2026 Odin Loch trading as Imortek.
-Dual-licensed: **AGPL-3.0+** (see [LICENSE-AGPL](LICENSE-AGPL)) with commercial
-terms in [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL) **OR** a separate commercial
-licence. Third-party notices: [NOTICE](NOTICE). See [CONTRIBUTING.md](CONTRIBUTING.md)
+Dual-licensed: **AGPL-3.0+** ([LICENSE-AGPL](LICENSE-AGPL)) or a commercial
+licence ([LICENSE-COMMERCIAL](LICENSE-COMMERCIAL)). Third-party notices:
+[NOTICE](NOTICE). See [CONTRIBUTING.md](CONTRIBUTING.md)
 and [SECURITY.md](SECURITY.md).
 
 ---
@@ -323,8 +323,10 @@ retdec-decompiler classes.dex -o decompiled.java
 # Decompile WebAssembly to WAT
 retdec-decompiler module.wasm -o module.wat
 
-# Decompile with AI-assisted naming (requires Qwen3 model)
-retdec-decompiler binary.elf --model models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf -o output.c
+# Decompile with offline neural refine (llama.cpp build + 9B Instruct GGUF)
+export RETDEC_NEURAL_REFINE=1
+export RETDEC_NEURAL_MODEL=models/Qwen3.5-9B-Q4_K_M.gguf
+retdec-decompiler binary.elf -o output.c
 ```
 
 ### Windows (.exe build)
@@ -460,27 +462,12 @@ Copyright (c) 2025-2026 Odin Loch trading as Imortek.
 
 This project is **dual-licensed**:
 
-1. **GNU Affero General Public License, version 3 or later
-   (AGPL-3.0+)**, as modified by the additional terms in Section 7 of
-   the [LICENSE](LICENSE) file (attribution requirement, free-tier
-   eligibility for personal / charitable / educational use and
-   entities under 50,000 AUD annual revenue, mandatory open-sourcing
-   of modifications); OR
-
-2. A **tiered commercial licence** with an initial setup fee and an
-   annual fee based on the licensee's revenue. The commercial licence
-   waives the AGPL share-modifications requirement but requires that
-   research conducted with the software still be open-sourced.
-
-Initial fees range from **5,000 AUD** (entities with 50k–500k AUD
-revenue) to **200,000,000 AUD** (entities above 100 billion AUD
-revenue). Annual fees are a percentage of revenue (5 %–25 %). Volume
-discounts apply for 5+ licences. See [LICENSE](LICENSE) §§ 7.1–7.7
-for the full schedule and payment instructions, or read
-[`docs/internal/modified-license.md`](docs/internal/modified-license.md) for a Markdown
-version of the same terms.
+1. **AGPL-3.0+** — use, modify, and share if you also share corresponding
+   source. See [LICENSE](LICENSE) and [LICENSE-AGPL](LICENSE-AGPL).
+2. **Commercial** — closed-source and OEM use. Published starting prices
+   from **1,490 AUD / year**. See [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL).
 
 Commercial enquiries: **odin.loch@outlook.com.au**
 
-Contributions are accepted under the AGPL-3.0+ tier — by opening a PR
-you agree to the LICENSE.
+Contributions are accepted under AGPL-3.0+. Opening a pull request means
+you agree to those terms.

@@ -17,6 +17,44 @@ namespace retdec::neural {
 
 namespace {
 
+// SHA-256 of the Unsloth llama.cpp-native Q4_K_M (5.28 GiB).
+// Ollama qwen3.5:9b blobs fail on b10451 (rope.dimension_sections length 3).
+constexpr const char* kQwen35Q4KmSha256 = "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8";
+
+std::string fileBasename(const std::string& path)
+{
+	const auto slash = path.find_last_of("/\\");
+	return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+
+bool namesMatchHint(const std::string& path)
+{
+	auto name = fileBasename(path);
+	const char* hints[] = {
+		kQwen35TextOnlyGgufHint,
+		"Qwen3.5-9B-Q4_K_M.gguf",
+		"Qwen3.5-9B-Q4_K_M.unsloth.gguf",
+	};
+	for (const char* hint: hints)
+	{
+		const std::string h = hint;
+		if (name.size() != h.size()) continue;
+		bool ok = true;
+		for (std::size_t i = 0; i < name.size(); ++i)
+		{
+			const auto a = static_cast<unsigned char>(name[i]);
+			const auto b = static_cast<unsigned char>(h[i]);
+			if (std::tolower(a) != std::tolower(b))
+			{
+				ok = false;
+				break;
+			}
+		}
+		if (ok) return true;
+	}
+	return false;
+}
+
 std::string sha256HexOfFile(const std::string& path)
 {
 	std::string cmd = "sha256sum \"" + path + "\"";
@@ -69,17 +107,33 @@ bool verifyModelSha256(const std::string& modelPath)
 		|| lower.find("_vl_") != std::string::npos)
 		return false;
 
-	const char* expected = std::getenv("RETDEC_NEURAL_MODEL_SHA256");
-	if (!expected || !expected[0]) return true;
+	const char* envSha = std::getenv("RETDEC_NEURAL_MODEL_SHA256");
+	const bool haveEnv = envSha && envSha[0];
+	const bool pinDefault = !haveEnv && namesMatchHint(modelPath);
+	if (!haveEnv && !pinDefault) return true;
 
 	const std::string actual = sha256HexOfFile(modelPath);
-	if (actual.empty()) return false;
+	if (actual.empty()) return !haveEnv;
+
+	const char* expected = haveEnv ? envSha : kQwen35Q4KmSha256;
 
 	std::string exp(expected);
 	for (char& c: exp)
 		c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
-	return actual == exp;
+	if (actual != exp)
+	{
+		std::fprintf(
+			stderr,
+			"retdec-neural: SHA-256 mismatch for %s\n"
+			"  expected %s\n"
+			"  actual   %s\n",
+			modelPath.c_str(),
+			exp.c_str(),
+			actual.c_str());
+		return false;
+	}
+	return true;
 }
 
 } // namespace retdec::neural

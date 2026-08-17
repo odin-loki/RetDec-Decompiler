@@ -246,80 +246,33 @@ Mechanics:
 
 ---
 
-## 6. Phase 4 — Qwen3.5-9B on llama.cpp
+## 6. Phase 4 — Qwen 3.5 9B on llama.cpp (shipped)
 
-This is further along than "needs to be built" — there's a real, working
-integration already. What's missing is specific and blocking, not vague.
+Qwen 3.6 has no 9B (27B / 35B only). The 9B Instruct path is **Qwen 3.5**.
 
-### Current state (verified from source)
-- `deps/llamacpp/CMakeLists.txt` does a real `ExternalProject_Add`,
-  fetching, building, and statically linking llama.cpp — not a stub.
-- `src/neural/llama_inference.cpp` makes real API calls:
-  `llama_load_model_from_file`, `llama_new_context_with_model`,
-  `llama_tokenize`, `llama_decode`, `llama_token_to_piece`. This is a
-  functioning, model-agnostic GGUF loader/generator, not scaffolding.
-- `src/neural/model_verify.cpp` does SHA256 pinning against
-  `RETDEC_NEURAL_MODEL_SHA256` (shells out to `sha256sum`).
-- `src/neural/gates.cpp` does a real `-fsyntax-only` compile-check gate on
-  refined output, plus an optional differential-execution gate
-  (`RETDEC_NEURAL_DIFF_GATE`) that compiles and runs both original and
-  refined C and diffs behavior.
-- `src/neural/decompile_hook.cpp` runs refinement through up to 5 tiers
-  (Naming → Comments → StructFields → IdiomRecovery → FullRewrite),
-  configurable via `RETDEC_NEURAL_TIER_MAX` (default 3), gated off entirely
-  unless `RETDEC_NEURAL_REFINE` is set.
+### Shipped
+- llama.cpp pin **b10451** in `cmake/deps.cmake` (qwen35 / `load_mtp`).
+- Real sampler chain + `llama_sampler_accept`; Qwen Instruct defaults
+  (temp 0.6, top-p 0.95, top-k 20) in `decompile_hook.cpp`.
+- KV prefix reuse via `llama_memory_seq_rm` / `llama_memory_clear` and
+  `GenerationConfig::reuseKvPrefix` (tiers after the first).
+- `RETDEC_NEURAL_GPU_OFFLOAD` → `GGML_CUDA`.
+- Text-only GGUF: `models/Qwen3.5-9B-Instruct-Q4_K_M.gguf` via
+  `scripts/fetch_qwen_gguf.sh` (`ollama pull qwen3.5:9b`).
+  SHA-256 `03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8`
+  (Unsloth llama.cpp-native Q4_K_M). Ollama blobs need llama.cpp PR 25334.
+  `mmproj` / VL filenames rejected.
+- Qwen chat template + `/no_think` (set `RETDEC_NEURAL_THINKING=1` for `/think`).
+- `neural_refine_wall_s` in DecompileBench (not mixed into `mean_wall_s`).
+- Build: `bash scripts/wsl_build_neural.sh`. Run: `bash scripts/run_neural_refine.sh`.
 
-### The actual blocker
-`cmake/deps.cmake` pins:
-```
-LLAMACPP_URL = https://github.com/ggml-org/llama.cpp/archive/refs/tags/b3997.zip
-```
-Checked current Qwen3.5-9B GGUF release pages (Hugging Face, as of this
-week): they're quantized against llama.cpp **b8185 / b9180 / b9222**. Qwen3.5
-uses a `qwen35` architecture identifier with MTP (multi-token-prediction)
-layers that llama.cpp only gained support for around **b9180**. `b3997` is
-thousands of builds behind and has no knowledge of `qwen35` tensor naming —
-`loadModel()` will fail outright, not run slowly. **This has to be fixed
-before anything else in this phase is testable.**
-
-### Task list
-1. **Bump `LLAMACPP_URL` / `LLAMACPP_ARCHIVE_SHA256`** to a current tag
-   (b9180+ minimum for MTP; check for a newer tag at implementation time,
-   llama.cpp moves fast). Update the SHA256 to match. This is the
-   prerequisite for every other item below.
-2. **Fix the sampler.** `generate()` currently calls
-   `llama_sampler_sample(nullptr, g_context, -1)` — a null sampler chain,
-   effectively an unconfigured/default decode with no temperature, top-p,
-   top-k, or min-p control despite `GenerationConfig` presumably carrying
-   fields for these. Build a real `llama_sampler_chain` with Qwen's
-   documented recommended sampling settings instead.
-3. **Add MTP speculative decoding.** Qwen3.5 ships MTP layers specifically
-   for this; llama.cpp added `--spec-type draft-mtp --spec-draft-n-max`
-   support for it. This is close to a free 2–4x throughput win on the AI
-   refinement path specifically — separate performance axis from the static
-   decompilation speedups above, worth tracking separately in benchmarks.
-4. **Stop clearing the KV cache between tiers on the same function.**
-   `generate()` calls `llama_kv_cache_clear(g_context)` at the top of every
-   call. Since tiers 1–5 operate on progressively-refined versions of the
-   *same* function source, there's a real shared-prefix opportunity being
-   thrown away on every tier beyond the first (`RETDEC_NEURAL_TIER_MAX`
-   defaults to 3, so this is 3 full-prompt reprocessings per function today,
-   up to 5 if tier max is raised).
-5. **Make GPU offload an explicit build option, not silently absent.**
-   Current `ExternalProject_Add` CMAKE_ARGS pass no `GGML_CUDA` flag — this
-   is consistent with the stated CPU-only requirement, but should be a named
-   CMake option (`RETDEC_NEURAL_GPU_OFFLOAD` or similar) so it's a deliberate
-   choice per deployment target rather than an implicit default that's easy
-   to lose track of.
-6. **Update `model_verify.cpp`'s expected SHA256** for the specific
-   Qwen3.5-9B GGUF quant settled on. Confirm it's the **text-only**
-   checkpoint — Qwen3.5 also ships multimodal variants with separate
-   `mmproj` vision-projector files that this integration has no use for and
-   shouldn't accidentally load.
-7. **Benchmark refinement latency separately from decompile speed.** These
-   are different cost axes (static analysis vs. LLM inference) and
-   shouldn't be conflated in the same wall-time number when reporting
-   progress against §0's baseline.
+### Not in the C API at b10451
+- Speculative MTP decode (`--spec-type draft-mtp`) — `load_mtp` only.
+- True multi-sequence batched decode — `BatchRefiner` is one session +
+  KV prefix reuse when `RETDEC_NEURAL_BATCH=1`.
+- OpenCL host scan is already pre-gated (`moduleMayContainOpenCL`).
+- `capstone2llvmir.translate` times the test/tool `translate()` path;
+  the decompiler uses per-instruction `translateOne()` (not wrapped).
 
 ---
 
@@ -330,7 +283,7 @@ Phase 0  Read results/baseline-2026-08.json properly (done — see §0)
 Phase 1  Instrument (§3.1–3.5) — mechanical, no behavior change, do first
 Phase 2  Fix Post-pipeline analysis phase per what Phase 1 finds (§4)
 Phase 3  xsimd on confirmed-hot byte-scanning code only (§5)
-Phase 4  Qwen3.5-9B: version bump is the blocker, then sampler/MTP/KV-reuse (§6)
+Phase 4  Qwen 3.5 9B: pin/sampler/KV/GPU/SHA shipped; MTP spec decode has no C API
 ```
 
 Phases 3 and 4 are independent of each other and of Phase 2's outcome — they
@@ -343,15 +296,16 @@ Phase 1's measurements actually landing first.
 
 ## 8. Immediate checklist (before writing any new code)
 
-- [ ] Confirm `RETDEC_NEURAL_REFINE` was **not** set when
+- [x] Confirm `RETDEC_NEURAL_REFINE` was **not** set when
       `baseline-2026-08.json`'s 1.492s figure was generated — if it was, the
       6.17x number includes AI refinement cost and the static-pipeline
       slowdown is smaller than it looks.
-- [ ] Regenerate `results/decompilebench.json` (§3.5) and keep it — get the
+      (Hook returns unless the env is set; baseline JSON has no neural field.)
+- [x] Regenerate `results/decompilebench.json` (§3.5) and keep it — get the
       per-binary breakdown instead of just the mean.
-- [ ] Run one representative binary with `RETDEC_BIN2LLVMIR_DIAG=1` and read
+- [x] Run one representative binary with `RETDEC_BIN2LLVMIR_DIAG=1` and read
       `pipeline_wall_ms` vs `post_pipeline_analysis_wall_ms` — ten minutes,
       zero new code, tells you the split between "LLVM+bin2llvmir pipeline"
       and "everything in §2" today, before any instrumentation work.
-- [ ] Fix `quality.json`/`balanced.json` duplication (§1) — five minutes,
+- [x] Fix `quality.json`/`balanced.json` duplication (§1) — five minutes,
       do it regardless of what else happens.

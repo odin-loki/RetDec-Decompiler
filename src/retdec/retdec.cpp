@@ -4,12 +4,12 @@
  * @copyright (c) 2019 Odin Loch Trading as Imortek
  */
 
-#include <memory>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <future>
+#include <memory>
 #include <vector>
 
 #include <llvm/ADT/Triple.h>
@@ -57,26 +57,26 @@
 
 #include "retdec/config/config.h"
 #include "retdec/llvmir-emul/llvmir_emul.h"
-#include "retdec/utils/thread_pool.h"
-#include "retdec/utils/gpu_scanner.h"
-#include "retdec/retdec/retdec.h"
-#include "retdec/retdec/function_analysis_cache.h"
-#include "retdec/retdec/semantic_recovery_export.h"
 #include "retdec/neural/decompile_hook.h"
-#include "retdec/utils/conversion.h"
-#include "retdec/utils/memory.h"
-#include "retdec/utils/io/log.h"
 #include "retdec/profiling/profiling.h"
+#include "retdec/retdec/function_analysis_cache.h"
+#include "retdec/retdec/retdec.h"
+#include "retdec/retdec/semantic_recovery_export.h"
+#include "retdec/utils/conversion.h"
+#include "retdec/utils/gpu_scanner.h"
+#include "retdec/utils/io/log.h"
+#include "retdec/utils/memory.h"
+#include "retdec/utils/thread_pool.h"
 
 // ── Post-decompile analysis passes ───────────────────────────────────────────
-#include "retdec/sort_detect/sort_detect.h"
+#include "retdec/algo_recover/algo_recover.h"
+#include "retdec/call_conv/call_conv.h"
 #include "retdec/concurrency_detect/concurrency_detect.h"
 #include "retdec/container_detect/container_detect.h"
-#include "retdec/algo_recover/algo_recover.h"
-#include "retdec/type_inference/type_inference.h"
 #include "retdec/ipa/ipa.h"
-#include "retdec/call_conv/call_conv.h"
 #include "retdec/ptx_decompile/cuda_host_recover.h"
+#include "retdec/sort_detect/sort_detect.h"
+#include "retdec/type_inference/type_inference.h"
 
 #include "llvm_to_ssa.h"
 #include "retdec/ssa/ssa.h"
@@ -121,12 +121,11 @@ std::unique_ptr<llvm::Module> createLlvmModule(llvm::LLVMContext& Context)
 
 namespace retdec {
 
-namespace
-{
+namespace {
 
-bool envFlagEnabled(const char *name)
+bool envFlagEnabled(const char* name)
 {
-	const char *e = std::getenv(name);
+	const char* e = std::getenv(name);
 	return e != nullptr && e[0] != '\0' && e[0] != '0';
 }
 
@@ -161,7 +160,7 @@ void configurePipelineProfiler()
 
 void maybeDumpProfileJson(const retdec::config::Config& config)
 {
-	const char *e = std::getenv("RETDEC_PROFILE_JSON");
+	const char* e = std::getenv("RETDEC_PROFILE_JSON");
 	if (!e || e[0] == '\0' || e[0] == '0')
 	{
 		return;
@@ -202,131 +201,114 @@ void maybeDumpProfileJson(const retdec::config::Config& config)
  * In pass manager, it should be placed right before the pass which phase info
  * it is printing.
  */
-class ModulePassPrinter : public llvm::ModulePass
-{
-	public:
-		static char ID;
-		std::string PhaseName;
-		std::string PhaseArg;
-		std::string PassName;
+class ModulePassPrinter : public llvm::ModulePass {
+public:
+	static char ID;
+	std::string PhaseName;
+	std::string PhaseArg;
+	std::string PassName;
 
-		static std::string LastPhase;
-		inline static const std::string LlvmAggregatePhaseName = "LLVM";
-		/// Wall-clock start for the next real pass (set by printer; read by @c ModulePassTimerAfter).
-		static std::chrono::steady_clock::time_point passWallStartForTimedPass;
+	static std::string LastPhase;
+	inline static const std::string LlvmAggregatePhaseName = "LLVM";
+	/// Wall-clock start for the next real pass (set by printer; read by @c ModulePassTimerAfter).
+	static std::chrono::steady_clock::time_point passWallStartForTimedPass;
 
-	public:
-		ModulePassPrinter(
-				const std::string& phaseName,
-				const std::string& phaseArg)
-				: llvm::ModulePass(ID)
-				, PhaseName(phaseName)
-				, PhaseArg(phaseArg)
-				, PassName("ModulePass Printer: " + PhaseName)
+public:
+	ModulePassPrinter(const std::string& phaseName, const std::string& phaseArg):
+		llvm::ModulePass(ID), PhaseName(phaseName), PhaseArg(phaseArg), PassName("ModulePass Printer: " + PhaseName)
+	{}
+
+	bool runOnModule(llvm::Module& M) override
+	{
+		if (utils::startsWith(PhaseArg, "retdec"))
 		{
-
+			Log::phase(PhaseName);
+			LastPhase = PhaseArg;
 		}
-
-		bool runOnModule(llvm::Module &M) override
+		else
 		{
-			if (utils::startsWith(PhaseArg, "retdec"))
+			// aggregate LLVM
+			if (LastPhase != LlvmAggregatePhaseName)
 			{
-				Log::phase(PhaseName);
-				LastPhase = PhaseArg;
+				Log::phase(LlvmAggregatePhaseName);
+				LastPhase = LlvmAggregatePhaseName;
 			}
-			else
-			{
-				// aggregate LLVM
-				if (LastPhase != LlvmAggregatePhaseName)
-				{
-					Log::phase(LlvmAggregatePhaseName);
-					LastPhase = LlvmAggregatePhaseName;
-				}
 
-				// print all
-				// Log::phase(PhaseName);
-				// LastPhase = PhaseArg;
-			}
-			if (pipelineProfilingEnabled())
-			{
-				passWallStartForTimedPass = std::chrono::steady_clock::now();
-			}
-			return false;
+			// print all
+			// Log::phase(PhaseName);
+			// LastPhase = PhaseArg;
 		}
-
-		llvm::StringRef getPassName() const override
+		if (pipelineProfilingEnabled())
 		{
-			return PassName.c_str();
+			passWallStartForTimedPass = std::chrono::steady_clock::now();
 		}
+		return false;
+	}
 
-		void getAnalysisUsage(llvm::AnalysisUsage &AU) const override
-		{
-			AU.setPreservesAll();
-		}
+	llvm::StringRef getPassName() const override
+	{
+		return PassName.c_str();
+	}
+
+	void getAnalysisUsage(llvm::AnalysisUsage& AU) const override
+	{
+		AU.setPreservesAll();
+	}
 };
 char ModulePassPrinter::ID = 0;
 std::string ModulePassPrinter::LastPhase;
 std::chrono::steady_clock::time_point ModulePassPrinter::passWallStartForTimedPass{};
 
 /**
- * Runs immediately after each real module pass; logs wall ms for @c retdec-* passes only.
+ * Runs immediately after each real module pass; records wall ms for every pass.
  */
-class ModulePassTimerAfter : public llvm::ModulePass
-{
-	public:
-		static char ID;
+class ModulePassTimerAfter : public llvm::ModulePass {
+public:
+	static char ID;
 
-		explicit ModulePassTimerAfter(std::string passArg)
-				: llvm::ModulePass(ID), _passArg(std::move(passArg))
-		{
-		}
+	explicit ModulePassTimerAfter(std::string passArg): llvm::ModulePass(ID), _passArg(std::move(passArg)) {}
 
-		bool runOnModule(llvm::Module &) override
+	bool runOnModule(llvm::Module&) override
+	{
+		if (!pipelineProfilingEnabled())
 		{
-			if (!pipelineProfilingEnabled())
-			{
-				return false;
-			}
-			const auto now = std::chrono::steady_clock::now();
-			const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-					now - ModulePassPrinter::passWallStartForTimedPass).count();
-			profiling::Profiler::instance().recordFunction(
-					_passArg, static_cast<profiling::Nanos>(ns));
-			if (bin2llvmirPassDiagEnabled())
-			{
-				const auto ms = ns / 1000000;
-				Log::info() << "[bin2llvmir-diag] pass_ms " << _passArg << "=" << ms
-						<< std::endl;
-			}
 			return false;
 		}
-
-		llvm::StringRef getPassName() const override
+		const auto now = std::chrono::steady_clock::now();
+		const auto ns =
+			std::chrono::duration_cast<std::chrono::nanoseconds>(now - ModulePassPrinter::passWallStartForTimedPass)
+				.count();
+		profiling::Profiler::instance().recordFunction(_passArg, static_cast<profiling::Nanos>(ns));
+		if (bin2llvmirPassDiagEnabled())
 		{
-			return "retdec-module-pass-timer-after";
+			const auto ms = ns / 1000000;
+			Log::info() << "[bin2llvmir-diag] pass_ms " << _passArg << "=" << ms << std::endl;
 		}
+		return false;
+	}
 
-		void getAnalysisUsage(llvm::AnalysisUsage &AU) const override
-		{
-			AU.setPreservesAll();
-		}
+	llvm::StringRef getPassName() const override
+	{
+		return "retdec-module-pass-timer-after";
+	}
 
-	private:
-		std::string _passArg;
+	void getAnalysisUsage(llvm::AnalysisUsage& AU) const override
+	{
+		AU.setPreservesAll();
+	}
+
+private:
+	std::string _passArg;
 };
 char ModulePassTimerAfter::ID = 0;
 
-common::BasicBlock fillBasicBlock(
-		bin2llvmir::Config* config,
-		llvm::BasicBlock& bb,
-		llvm::BasicBlock& bbEnd)
+common::BasicBlock fillBasicBlock(bin2llvmir::Config* config, llvm::BasicBlock& bb, llvm::BasicBlock& bbEnd)
 {
 	common::BasicBlock ret;
 
 	ret.setStartEnd(
 		bin2llvmir::AsmInstruction::getTrueBasicBlockAddress(&bb),
-		bin2llvmir::AsmInstruction::getBasicBlockEndAddress(&bbEnd)
-	);
+		bin2llvmir::AsmInstruction::getBasicBlockEndAddress(&bbEnd));
 
 	for (auto pit = pred_begin(&bb), e = pred_end(&bb); pit != e; ++pit)
 	{
@@ -363,31 +345,23 @@ common::BasicBlock fillBasicBlock(
 	// find all sucessors.
 	// Also applicable to ARM cond call/return patterns, and other cases.
 	if (bin2llvmir::AsmInstruction::getTrueBasicBlockAddress(&bbEnd).isUndefined() // no addr
-			&& (++pred_begin(&bbEnd)) == pred_end(&bbEnd) // single pred
-			&& bbEnd.getPrevNode() == *pred_begin(&bbEnd)) // pred right before
+		&& (++pred_begin(&bbEnd)) == pred_end(&bbEnd)                              // single pred
+		&& bbEnd.getPrevNode() == *pred_begin(&bbEnd))                             // pred right before
 	{
-		auto* br = llvm::dyn_cast<llvm::BranchInst>(
-				(*pred_begin(&bbEnd))->getTerminator());
-		if (br
-				&& br->isConditional()
-				&& br->getSuccessor(0) == &bbEnd
-				&& bin2llvmir::AsmInstruction::getTrueBasicBlockAddress(
-						br->getSuccessor(1)))
+		auto* br = llvm::dyn_cast<llvm::BranchInst>((*pred_begin(&bbEnd))->getTerminator());
+		if (br && br->isConditional() && br->getSuccessor(0) == &bbEnd
+			&& bin2llvmir::AsmInstruction::getTrueBasicBlockAddress(br->getSuccessor(1)))
 		{
-			ret.succs.insert(
-					bin2llvmir::AsmInstruction::getTrueBasicBlockAddress(
-							br->getSuccessor(1)));
+			ret.succs.insert(bin2llvmir::AsmInstruction::getTrueBasicBlockAddress(br->getSuccessor(1)));
 		}
 	}
 
 	auto* nextBb = bbEnd.getNextNode(); // may be nullptr
-	for (auto ai = bin2llvmir::AsmInstruction(&bb);
-			ai.isValid() && ai.getBasicBlock() != nextBb;
-			ai = ai.getNext())
+	for (auto ai = bin2llvmir::AsmInstruction(&bb); ai.isValid() && ai.getBasicBlock() != nextBb; ai = ai.getNext())
 	{
 		ret.instructions.push_back(ai.getCapstoneInsn());
 
-		for (auto& i : ai)
+		for (auto& i: ai)
 		{
 			auto call = llvm::dyn_cast<llvm::CallInst>(&i);
 			if (call && call->getCalledFunction())
@@ -413,8 +387,7 @@ common::BasicBlock fillBasicBlock(
 						src -= 4;
 					}
 
-					ret.calls.emplace(
-							common::BasicBlock::CallEntry{src, target});
+					ret.calls.emplace(common::BasicBlock::CallEntry{src, target});
 				}
 			}
 		}
@@ -423,17 +396,14 @@ common::BasicBlock fillBasicBlock(
 	return ret;
 }
 
-common::Function fillFunction(
-		bin2llvmir::Config* config,
-		llvm::Function& f)
+common::Function fillFunction(bin2llvmir::Config* config, llvm::Function& f)
 {
 	common::Function ret(
-			bin2llvmir::AsmInstruction::getFunctionAddress(&f),
-			bin2llvmir::AsmInstruction::getFunctionEndAddress(&f),
-			f.getName()
-	);
+		bin2llvmir::AsmInstruction::getFunctionAddress(&f),
+		bin2llvmir::AsmInstruction::getFunctionEndAddress(&f),
+		f.getName());
 
-	for (llvm::BasicBlock& bb : f)
+	for (llvm::BasicBlock& bb: f)
 	{
 		// There are more BBs in LLVM IR than we created in control-flow
 		// decoding - e.g. BBs inside instructions that behave like
@@ -448,8 +418,7 @@ common::Function fillFunction(
 		{
 			// Next has address -- is a proper BB.
 			//
-			if (bin2llvmir::AsmInstruction::getTrueBasicBlockAddress(
-					bbEnd->getNextNode()).isDefined())
+			if (bin2llvmir::AsmInstruction::getTrueBasicBlockAddress(bbEnd->getNextNode()).isDefined())
 			{
 				break;
 			}
@@ -459,11 +428,10 @@ common::Function fillFunction(
 			}
 		}
 
-		ret.basicBlocks.emplace(
-				fillBasicBlock(config, bb, *bbEnd));
+		ret.basicBlocks.emplace(fillBasicBlock(config, bb, *bbEnd));
 	}
 
-	for (auto* u : f.users())
+	for (auto* u: f.users())
 	{
 		if (auto* i = llvm::dyn_cast<llvm::Instruction>(u))
 		{
@@ -489,9 +457,7 @@ common::Function fillFunction(
 	return ret;
 }
 
-void fillFunctions(
-		llvm::Module& module,
-		retdec::common::FunctionSet* fs)
+void fillFunctions(llvm::Module& module, retdec::common::FunctionSet* fs)
 {
 	if (fs == nullptr)
 	{
@@ -504,11 +470,9 @@ void fillFunctions(
 		return;
 	}
 
-	for (llvm::Function& f : module.functions())
+	for (llvm::Function& f: module.functions())
 	{
-		if (f.isDeclaration()
-			|| f.empty()
-			|| bin2llvmir::AsmInstruction::getFunctionAddress(&f).isUndefined())
+		if (f.isDeclaration() || f.empty() || bin2llvmir::AsmInstruction::getFunctionAddress(&f).isUndefined())
 		{
 			auto sa = config->getFunctionAddress(&f);
 			if (sa.isDefined())
@@ -522,9 +486,7 @@ void fillFunctions(
 	}
 }
 
-LlvmModuleContextPair disassemble(
-		const std::string& inputPath,
-		retdec::common::FunctionSet* fs)
+LlvmModuleContextPair disassemble(const std::string& inputPath, retdec::common::FunctionSet* fs)
 {
 	auto context = std::make_unique<llvm::LLVMContext>();
 	auto module = createLlvmModule(*context);
@@ -538,14 +500,10 @@ LlvmModuleContextPair disassemble(
 
 	if (bin2llvmirPassDiagEnabled())
 	{
-		pm.add(new ModulePassPrinter(
-				"Providers initialization",
-				"retdec-provider-init"));
+		pm.add(new ModulePassPrinter("Providers initialization", "retdec-provider-init"));
 		pm.add(new bin2llvmir::ProviderInitialization(&c));
 		pm.add(new ModulePassTimerAfter("retdec-provider-init"));
-		pm.add(new ModulePassPrinter(
-				"Input binary to LLVM IR decoding",
-				"retdec-decoder"));
+		pm.add(new ModulePassPrinter("Input binary to LLVM IR decoding", "retdec-decoder"));
 		pm.add(new bin2llvmir::Decoder());
 		pm.add(new ModulePassTimerAfter("retdec-decoder"));
 	}
@@ -559,10 +517,9 @@ LlvmModuleContextPair disassemble(
 	pm.run(*module);
 	if (bin2llvmirPassDiagEnabled())
 	{
-		const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-				std::chrono::steady_clock::now() - disasmT0).count();
-		Log::info() << "[bin2llvmir-diag] disassemble_pipeline_wall_ms=" << ms
-				<< std::endl;
+		const auto ms =
+			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - disasmT0).count();
+		Log::info() << "[bin2llvmir-diag] disassemble_pipeline_wall_ms=" << ms << std::endl;
 	}
 
 	fillFunctions(*module, fs);
@@ -594,24 +551,17 @@ llvm::PassRegistry& initializeLlvmPasses()
 /**
  * Add the pass to the pass manager - no verification.
  */
-static inline void addPass(
-		legacy::PassManagerBase& PM,
-		Pass* P,
-		const PassInfo* PI)
+static inline void addPass(legacy::PassManagerBase& PM, Pass* P, const PassInfo* PI)
 {
-	PM.add(new ModulePassPrinter(
-			PI->getPassName().str(),
-			PI->getPassArgument().str()
-	));
+	PM.add(new ModulePassPrinter(PI->getPassName().str(), PI->getPassArgument().str()));
 	PM.add(P);
 	PM.add(new ModulePassTimerAfter(PI->getPassArgument().str()));
 
-// if (!PI->isAnalysis())
-// PM.add(P->createPrinterPass(
-// 		dbgs(),
-// 		("*** IR Dump After " + P->getPassName() + " ***").str()
-// ));
-
+	// if (!PI->isAnalysis())
+	// PM.add(P->createPrinterPass(
+	// 		dbgs(),
+	// 		("*** IR Dump After " + P->getPassName() + " ***").str()
+	// ));
 }
 
 
@@ -623,15 +573,12 @@ void setLogsFrom(const retdec::config::Parameters& params)
 
 	Logger::Ptr outLog = nullptr;
 
-	outLog.reset(
-		logFile.empty()
-			? new Logger(std::cout, verbose)
-			: new FileLogger(logFile, verbose)
-	);
+	outLog.reset(logFile.empty() ? new Logger(std::cout, verbose) : new FileLogger(logFile, verbose));
 
 	Log::set(Log::Type::Info, std::move(outLog));
 
-	if (!errFile.empty()) {
+	if (!errFile.empty())
+	{
 		Log::set(Log::Type::Error, Logger::Ptr(new FileLogger(errFile)));
 	}
 }
@@ -664,7 +611,7 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 	TLII.disableAllFunctions();
 	pm.add(new TargetLibraryInfoWrapperPass(TLII));
 
-	for (auto& p : config.parameters.llvmPasses)
+	for (auto& p: config.parameters.llvmPasses)
 	{
 		if (auto* info = passRegistry.getPassInfo(p))
 		{
@@ -694,8 +641,9 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 	pm.run(*module);
 	if (bin2llvmirPassDiagEnabled())
 	{
-		const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-				std::chrono::steady_clock::now() - pipelineT0).count();
+		const auto ms =
+			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - pipelineT0)
+				.count();
 		Log::info() << "[bin2llvmir-diag] pipeline_wall_ms=" << ms << std::endl;
 	}
 
@@ -708,8 +656,7 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 
 		std::unique_ptr<ssa::SSAModule> ssaMod;
 		{
-			auto ssaTimer = profiling::Profiler::instance().measure(
-					"analysis.ssa_rebuild");
+			auto ssaTimer = profiling::Profiler::instance().measure("analysis.ssa_rebuild");
 			ssaMod = buildSsaModule(*module);
 		}
 		if (ssaMod && !ssaMod->functions.empty())
@@ -717,15 +664,14 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 			// Collect a flat const-pointer list once — reused by all module passes.
 			std::vector<const ssa::SSAFunction*> fnPtrs;
 			fnPtrs.reserve(ssaMod->functions.size());
-			for (const auto& fp : ssaMod->functions)
+			for (const auto& fp: ssaMod->functions)
 				if (fp) fnPtrs.push_back(fp.get());
 
 			// --- 1. Calling-convention inference (must run before IPA) ---
 			// Use the batch runAll() method to build a ccMap for all functions.
 			std::unordered_map<std::string, call_conv::CallingConvention> ccMap;
 			{
-				auto ccTimer = profiling::Profiler::instance().measure(
-						"analysis.call_conv");
+				auto ccTimer = profiling::Profiler::instance().measure("analysis.call_conv");
 				call_conv::CallConvPass ccPass;
 				ccMap = ccPass.runAll(fnPtrs);
 			}
@@ -733,72 +679,78 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 			// --- 2. IPA (call graph + summary propagation) ---
 			ipa::IpaResult ipaResult;
 			{
-				auto ipaTimer = profiling::Profiler::instance().measure(
-						"analysis.ipa");
+				auto ipaTimer = profiling::Profiler::instance().measure("analysis.ipa");
 				ipa::IpaPass ipaPass;
 				ipaResult = ipaPass.run(fnPtrs, ccMap);
 				if (!ipaResult.inlineCandidates.empty())
-					Log::info() << "[analysis] IPA: "
-					            << ipaResult.inlineCandidates.size()
-					            << " inline candidate(s), "
-					            << ipaResult.globals.size()
-					            << " global(s) typed" << std::endl;
+					Log::info() << "[analysis] IPA: " << ipaResult.inlineCandidates.size() << " inline candidate(s), "
+								<< ipaResult.globals.size() << " global(s) typed" << std::endl;
 			}
 
 			// --- 3. Type inference (per function, seeded from IPA summaries) ---
 			{
-				auto tiTimer = profiling::Profiler::instance().measure(
-						"analysis.type_inference");
+				auto tiTimer = profiling::Profiler::instance().measure("analysis.type_inference");
 				// TypeInferencePass stores results on the pass object only.
 				// Nothing in this function reads types()/stats(), so the serial
 				// loop is discarded work unless RETDEC_TYPE_INFERENCE=1.
 				if (envFlagEnabled("RETDEC_TYPE_INFERENCE"))
 				{
-				// Convert an IPA ParamInfo → AbiSeedInfo::ParamSeed.
-				auto makeParamSeed =
-				    [](uint32_t i, const ipa::FunctionSummary::ParamInfo& pi)
-				{
-					type_inference::AbiSeedInfo::ParamSeed ps;
-					ps.ssaId      = ssa::kInvalidValue; // resolved per-function
-					ps.paramIndex = static_cast<uint8_t>(i);
-					ps.type.kind  = pi.isFp
-					    ? type_inference::TypeKind::Float
-					    : pi.isPointer
-					        ? type_inference::TypeKind::Pointer
-					        : type_inference::TypeKind::Integer;
-					ps.type.width = pi.width;
-					return ps;
-				};
+					// Convert an IPA ParamInfo → AbiSeedInfo::ParamSeed.
+					auto makeParamSeed = [](uint32_t i, const ipa::FunctionSummary::ParamInfo& pi) {
+						type_inference::AbiSeedInfo::ParamSeed ps;
+						ps.ssaId = ssa::kInvalidValue; // resolved per-function
+						ps.paramIndex = static_cast<uint8_t>(i);
+						ps.type.kind = pi.isFp      ? type_inference::TypeKind::Float
+									 : pi.isPointer ? type_inference::TypeKind::Pointer
+													: type_inference::TypeKind::Integer;
+						ps.type.width = pi.width;
+						return ps;
+					};
 
-				for (const auto* fn : fnPtrs)
-				{
-					type_inference::TypeInferencePass tiPass;
-					type_inference::TypeInferencePass::Config tiCfg;
+					auto runOne = [&](const ssa::SSAFunction* fn) {
+						if (!fn) return;
+						type_inference::TypeInferencePass tiPass;
+						type_inference::TypeInferencePass::Config tiCfg;
 
-					auto it = ipaResult.summaries.find(fn->name());
-					if (it != ipaResult.summaries.end())
-					{
-						const auto& sum = it->second;
-						for (std::size_t i = 0; i < sum.params.size(); ++i)
-							tiCfg.abiSeed.params.push_back(
-							    makeParamSeed(static_cast<uint32_t>(i), sum.params[i]));
-
-						if (!sum.isVoid)
+						auto it = ipaResult.summaries.find(fn->name());
+						if (it != ipaResult.summaries.end())
 						{
-							type_inference::IrType retTy;
-							retTy.kind  = sum.retIsFp
-							    ? type_inference::TypeKind::Float
-							    : sum.retIsPtr
-							        ? type_inference::TypeKind::Pointer
-							        : type_inference::TypeKind::Integer;
-							retTy.width = sum.retWidth;
-							tiCfg.abiSeed.retVal = type_inference::AbiSeedInfo::ReturnSeed{
-							    ssa::kInvalidValue, retTy};
-						}
-					}
+							const auto& sum = it->second;
+							for (std::size_t i = 0; i < sum.params.size(); ++i)
+								tiCfg.abiSeed.params.push_back(makeParamSeed(static_cast<uint32_t>(i), sum.params[i]));
 
-					tiPass.run(*fn, tiCfg);
-				}
+							if (!sum.isVoid)
+							{
+								type_inference::IrType retTy;
+								retTy.kind = sum.retIsFp  ? type_inference::TypeKind::Float
+										   : sum.retIsPtr ? type_inference::TypeKind::Pointer
+														  : type_inference::TypeKind::Integer;
+								retTy.width = sum.retWidth;
+								tiCfg.abiSeed.retVal =
+									type_inference::AbiSeedInfo::ReturnSeed{ssa::kInvalidValue, retTy};
+							}
+						}
+
+						tiPass.run(*fn, tiCfg);
+					};
+
+					const bool useParallelTi =
+						analysis::parallelAnalysisEnabled() && fnPtrs.size() >= analysis::kParallelAnalysisMinFunctions;
+					if (useParallelTi)
+					{
+						retdec::utils::ThreadPool pool;
+						std::vector<std::future<void>> futures;
+						futures.reserve(fnPtrs.size());
+						for (const auto* fn: fnPtrs)
+							futures.push_back(pool.submit([fn, &runOne]() { runOne(fn); }));
+						for (auto& f: futures)
+							f.get();
+					}
+					else
+					{
+						for (const auto* fn: fnPtrs)
+							runOne(fn);
+					}
 				}
 			}
 
@@ -806,18 +758,16 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 			// Parallel when function count > 4 and RETDEC_PARALLEL_ANALYSIS allows it.
 			// Incremental cache sidecar skips unchanged functions on re-runs.
 			{
-				auto detTimer = profiling::Profiler::instance().measure(
-						"analysis.detectors");
+				auto detTimer = profiling::Profiler::instance().measure("analysis.detectors");
 				const bool useCache = analysis::incrementalCacheEnabled();
-				const std::string cachePath = useCache
-				    ? analysis::functionAnalysisCachePath(
-				          config.parameters.getOutputFile())
-				    : std::string{};
+				const std::string cachePath =
+					useCache ? analysis::functionAnalysisCachePath(config.parameters.getOutputFile()) : std::string{};
 				analysis::FunctionAnalysisCache fnCache = useCache
-				    ? analysis::FunctionAnalysisCache::loadFromFile(cachePath)
-				    : analysis::FunctionAnalysisCache{};
+															? analysis::FunctionAnalysisCache::loadFromFile(cachePath)
+															: analysis::FunctionAnalysisCache{};
 
-				struct FnWorkItem {
+				struct FnWorkItem
+				{
 					const ssa::SSAFunction* fn = nullptr;
 					std::string bodyHash;
 					analysis::FunctionDetections detections;
@@ -826,13 +776,14 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 
 				std::vector<FnWorkItem> work;
 				work.reserve(fnPtrs.size());
-				for (const auto* fn : fnPtrs) {
+				for (const auto* fn: fnPtrs)
+				{
 					if (!fn) continue;
 					FnWorkItem item;
 					item.fn = fn;
 					item.bodyHash = analysis::computeFunctionBodyHash(*module, *fn);
-					if (const auto* cached =
-					        fnCache.lookup(fn->name(), item.bodyHash)) {
+					if (const auto* cached = fnCache.lookup(fn->name(), item.bodyHash))
+					{
 						item.detections = cached->detections;
 						item.cacheHit = true;
 					}
@@ -840,26 +791,28 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 				}
 
 				const bool useParallel =
-				    analysis::parallelAnalysisEnabled()
-				    && work.size() >= analysis::kParallelAnalysisMinFunctions;
+					analysis::parallelAnalysisEnabled() && work.size() >= analysis::kParallelAnalysisMinFunctions;
 
-				if (useParallel) {
+				if (useParallel)
+				{
 					retdec::utils::ThreadPool pool;
 					std::vector<std::future<void>> futures;
 					futures.reserve(work.size());
-					for (std::size_t i = 0; i < work.size(); ++i) {
+					for (std::size_t i = 0; i < work.size(); ++i)
+					{
 						if (work[i].cacheHit) continue;
-						futures.push_back(pool.submit([i, &work]() {
-							work[i].detections =
-							    analysis::analyseFunctionDetections(*work[i].fn);
-						}));
+						futures.push_back(pool.submit(
+							[i, &work]() { work[i].detections = analysis::analyseFunctionDetections(*work[i].fn); }));
 					}
-					for (auto& f : futures) f.get();
-				} else {
-					for (auto& item : work) {
+					for (auto& f: futures)
+						f.get();
+				}
+				else
+				{
+					for (auto& item: work)
+					{
 						if (item.cacheHit) continue;
-						item.detections =
-						    analysis::analyseFunctionDetections(*item.fn);
+						item.detections = analysis::analyseFunctionDetections(*item.fn);
 					}
 				}
 
@@ -869,22 +822,18 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 				sort_detect::SortDetector::DetectionMap dm;
 
 				std::size_t cacheHits = 0;
-				for (auto& item : work) {
+				for (auto& item: work)
+				{
 					if (item.cacheHit) ++cacheHits;
 
-					fnCache.put(analysis::FunctionAnalysisCache::Entry{
-					    item.fn->name(),
-					    item.bodyHash,
-					    item.detections});
+					fnCache.put(
+						analysis::FunctionAnalysisCache::Entry{item.fn->name(), item.bodyHash, item.detections});
 
-					if (item.detections.container)
-						cmap[item.fn->name()] = *item.detections.container;
-					if (item.detections.algo)
-						amap.emplace_back(item.fn->name(), *item.detections.algo);
-					for (const auto& idiom : item.detections.idioms)
+					if (item.detections.container) cmap[item.fn->name()] = *item.detections.container;
+					if (item.detections.algo) amap.emplace_back(item.fn->name(), *item.detections.algo);
+					for (const auto& idiom: item.detections.idioms)
 						imap.emplace_back(item.fn->name(), idiom);
-					if (item.detections.sort)
-						dm[item.fn->name()] = *item.detections.sort;
+					if (item.detections.sort) dm[item.fn->name()] = *item.detections.sort;
 				}
 
 				concurrency_detect::ConcurrencyDetector cd;
@@ -893,91 +842,78 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 				const std::string anchorFn = [&]() -> std::string {
 					const ssa::SSAFunction* best = nullptr;
 					int bestScore = 0;
-					for (const auto* fn : fnPtrs) {
+					for (const auto* fn: fnPtrs)
+					{
 						if (!fn) continue;
 						int score = 0;
-						for (const auto& blk : fn->blocks())
+						for (const auto& blk: fn->blocks())
 							if (blk) score += static_cast<int>(blk->instrs.size());
-						if (score > bestScore) {
+						if (score > bestScore)
+						{
 							bestScore = score;
 							best = fn;
 						}
 					}
 					return best ? best->name() : std::string{};
 				}();
-				analysis::augmentIdiomsFromInputBinary(
-				    config.parameters.getInputFile(), anchorFn, imap);
-				analysis::augmentSortsFromInputBinary(
-				    config.parameters.getInputFile(), anchorFn, dm);
-				analysis::augmentContainersFromInputBinary(
-				    config.parameters.getInputFile(), anchorFn, cmap);
-				analysis::augmentConcurrencyFromInputBinary(
-				    config.parameters.getInputFile(), anchorFn, cm);
+				analysis::augmentIdiomsFromInputBinary(config.parameters.getInputFile(), anchorFn, imap);
+				analysis::augmentSortsFromInputBinary(config.parameters.getInputFile(), anchorFn, dm);
+				analysis::augmentContainersFromInputBinary(config.parameters.getInputFile(), anchorFn, cmap);
+				analysis::augmentConcurrencyFromInputBinary(config.parameters.getInputFile(), anchorFn, cm);
 
-				if (useCache && !cachePath.empty())
-					fnCache.saveToFile(cachePath);
+				if (useCache && !cachePath.empty()) fnCache.saveToFile(cachePath);
 
 				if (cacheHits > 0)
-					Log::info() << "[analysis] function cache: "
-					            << cacheHits << " hit(s), "
-					            << (work.size() - cacheHits) << " miss(es)"
-					            << (useParallel ? " (parallel)" : "")
-					            << std::endl;
+					Log::info() << "[analysis] function cache: " << cacheHits << " hit(s), "
+								<< (work.size() - cacheHits) << " miss(es)" << (useParallel ? " (parallel)" : "")
+								<< std::endl;
 
 				if (cm.isMT)
-					Log::info() << "[analysis] concurrency detected: "
-					            << cm.threads.size() << " thread(s), "
-					            << cm.locks.size() << " lock(s), "
-					            << cm.atomics.size() << " atomic(s)" << std::endl;
+					Log::info() << "[analysis] concurrency detected: " << cm.threads.size() << " thread(s), "
+								<< cm.locks.size() << " lock(s), " << cm.atomics.size() << " atomic(s)" << std::endl;
 				if (!cmap.empty())
-					Log::info() << "[analysis] containers detected in "
-					            << cmap.size() << " function(s)" << std::endl;
+					Log::info() << "[analysis] containers detected in " << cmap.size() << " function(s)" << std::endl;
 				if (!amap.empty())
-					Log::info() << "[analysis] <algorithm> patterns detected in "
-					            << amap.size() << " function(s)" << std::endl;
+					Log::info() << "[analysis] <algorithm> patterns detected in " << amap.size() << " function(s)"
+								<< std::endl;
 				if (!imap.empty())
-					Log::info() << "[analysis] C idiom patterns detected in "
-					            << imap.size() << " function(s)" << std::endl;
+					Log::info() << "[analysis] C idiom patterns detected in " << imap.size() << " function(s)"
+								<< std::endl;
 				if (!dm.empty())
-					Log::info() << "[analysis] sorting algorithms detected in "
-					            << dm.size() << " function(s)" << std::endl;
+					Log::info() << "[analysis] sorting algorithms detected in " << dm.size() << " function(s)"
+								<< std::endl;
 
 				const auto semanticMap =
-				    analysis::buildSemanticDetectionMap(
-				        cmap, amap, imap, dm, cm,
-				        config.parameters.getOutputLang());
+					analysis::buildSemanticDetectionMap(cmap, amap, imap, dm, cm, config.parameters.getOutputLang());
 				analysis::exportSemanticRecovery(config, semanticMap, outString);
 				if (!semanticMap.empty())
-					Log::info() << "[analysis] semantic detections exported for "
-					            << semanticMap.size() << " function(s)" << std::endl;
+					Log::info() << "[analysis] semantic detections exported for " << semanticMap.size()
+								<< " function(s)" << std::endl;
 				{
-					auto neuralTimer = profiling::Profiler::instance().measure(
-							"analysis.neural_refine");
+					auto neuralTimer = profiling::Profiler::instance().measure("analysis.neural_refine");
 					neural::maybeRefineDecompilerOutput(config, outString);
 				}
 			}
 
 			// --- 8. OpenCL host-side recovery ---
 			{
-				auto oclTimer = profiling::Profiler::instance().measure(
-						"analysis.ocl_host");
+				auto oclTimer = profiling::Profiler::instance().measure("analysis.ocl_host");
 				ptx_decompile::OclHostRecovery ocl;
 				auto om = ocl.analyseModule(*ssaMod);
 				if (om.hasOpenCL)
 				{
 					ptx_decompile::OclHostEmitter emitter;
-					Log::info() << "[analysis] OpenCL host code recovered:\n"
-					            << emitter.emit(om) << std::endl;
+					Log::info() << "[analysis] OpenCL host code recovered:\n" << emitter.emit(om) << std::endl;
 				}
 			}
 		}
 
 		if (bin2llvmirPassDiagEnabled())
 		{
-			const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-					std::chrono::steady_clock::now() - analysisT0).count();
-			Log::info() << "[analysis-diag] post_pipeline_analysis_wall_ms=" << ms
-			            << std::endl;
+			const auto ms =
+				std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - analysisT0)
+					.count();
+			Log::info() << "[analysis-diag] post_pipeline_analysis_wall_ms=" << ms << std::endl;
 		}
 	}
 
@@ -985,9 +921,7 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 	return EXIT_SUCCESS;
 }
 
-LlvmModuleContextPair decompileToLlvmIr(
-		retdec::config::Config& config,
-		const std::string& stopBeforePass)
+LlvmModuleContextPair decompileToLlvmIr(retdec::config::Config& config, const std::string& stopBeforePass)
 {
 	setLogsFrom(config.parameters);
 
@@ -1004,10 +938,9 @@ LlvmModuleContextPair decompileToLlvmIr(
 	TLII.disableAllFunctions();
 	pm.add(new TargetLibraryInfoWrapperPass(TLII));
 
-	for (auto& p : config.parameters.llvmPasses)
+	for (auto& p: config.parameters.llvmPasses)
 	{
-		if (p == stopBeforePass)
-			break;
+		if (p == stopBeforePass) break;
 
 		if (auto* info = passRegistry.getPassInfo(p))
 		{
@@ -1030,8 +963,9 @@ LlvmModuleContextPair decompileToLlvmIr(
 	pm.run(*module);
 	if (bin2llvmirPassDiagEnabled())
 	{
-		const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-				std::chrono::steady_clock::now() - pipelineT0).count();
+		const auto ms =
+			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - pipelineT0)
+				.count();
 		Log::info() << "[bin2llvmir-diag] pipeline_wall_ms=" << ms << std::endl;
 	}
 
@@ -1042,21 +976,19 @@ namespace {
 
 bool emulationUnpackDiagEnabled()
 {
-	const char *e = std::getenv("RETDEC_EMULATION_UNPACK_DIAG");
+	const char* e = std::getenv("RETDEC_EMULATION_UNPACK_DIAG");
 	return e != nullptr && e[0] != '\0' && e[0] != '0';
 }
 
 } // namespace
 
-bool tryEmulationUnpacking(
-		retdec::config::Config& config,
-		const std::string& outputPath)
+bool tryEmulationUnpacking(retdec::config::Config& config, const std::string& outputPath)
 {
 	const bool diag = emulationUnpackDiagEnabled();
 
 	if (diag)
 	{
-		const std::string &inPath = config.parameters.getInputFile();
+		const std::string& inPath = config.parameters.getInputFile();
 		Log::info() << "emulation unpack: input_path='" << inPath << "'." << std::endl;
 		if (!inPath.empty())
 		{
@@ -1068,8 +1000,7 @@ bool tryEmulationUnpacking(
 			}
 			else
 			{
-				Log::info() << "emulation unpack: could not stat input file for size."
-						<< std::endl;
+				Log::info() << "emulation unpack: could not stat input file for size." << std::endl;
 			}
 		}
 	}
@@ -1081,8 +1012,7 @@ bool tryEmulationUnpacking(
 		{
 			if (diag)
 			{
-				Log::info() << "emulation unpack: LLVM IR generation failed (no module)."
-						<< std::endl;
+				Log::info() << "emulation unpack: LLVM IR generation failed (no module)." << std::endl;
 			}
 			return false;
 		}
@@ -1093,21 +1023,18 @@ bool tryEmulationUnpacking(
 		{
 			if (diag)
 			{
-				Log::info() << "emulation unpack: bin2llvmir config not available on module."
-						<< std::endl;
+				Log::info() << "emulation unpack: bin2llvmir config not available on module." << std::endl;
 			}
 			return false;
 		}
 
 		auto ep = config.parameters.getEntryPoint();
-		if (ep.isUndefined())
-			ep = config.parameters.getMainAddress();
+		if (ep.isUndefined()) ep = config.parameters.getMainAddress();
 		if (ep.isUndefined())
 		{
 			if (diag)
 			{
-				Log::info() << "emulation unpack: no entry point or main address."
-						<< std::endl;
+				Log::info() << "emulation unpack: no entry point or main address." << std::endl;
 			}
 			return false;
 		}
@@ -1118,19 +1045,16 @@ bool tryEmulationUnpacking(
 			if (diag)
 			{
 				Log::info() << "emulation unpack: entry LLVM function missing, external, "
-						"or empty at "
-						<< retdec::utils::intToHexString(ep.getValue(), true) << "."
-						<< std::endl;
+							   "or empty at "
+							<< retdec::utils::intToHexString(ep.getValue(), true) << "." << std::endl;
 			}
 			return false;
 		}
 
 		if (diag)
 		{
-			Log::info() << "emulation unpack: entry_rva="
-					<< retdec::utils::intToHexString(ep.getValue(), true)
-					<< " entry_llvm_name='" << entryFunc->getName().str() << "'."
-					<< std::endl;
+			Log::info() << "emulation unpack: entry_rva=" << retdec::utils::intToHexString(ep.getValue(), true)
+						<< " entry_llvm_name='" << entryFunc->getName().str() << "'." << std::endl;
 		}
 
 		retdec::llvmir_emul::LlvmIrEmulator emu(module);
@@ -1142,15 +1066,15 @@ bool tryEmulationUnpacking(
 			if (diag)
 			{
 				Log::info() << "emulation unpack: emulator performed no stores to tracked "
-						"memory."
-						<< std::endl;
+							   "memory."
+							<< std::endl;
 			}
 			return false;
 		}
 
 		uint64_t minAddr = UINT64_MAX;
 		uint64_t maxAddr = 0;
-		for (uint64_t addr : storedAddrs)
+		for (uint64_t addr: storedAddrs)
 		{
 			minAddr = std::min(minAddr, addr);
 			maxAddr = std::max(maxAddr, addr + 7);
@@ -1162,9 +1086,8 @@ bool tryEmulationUnpacking(
 		{
 			if (diag)
 			{
-				Log::info() << "emulation unpack: dumped range size " << rangeSize
-						<< " is empty or over " << maxDumpSize << " byte cap."
-						<< std::endl;
+				Log::info() << "emulation unpack: dumped range size " << rangeSize << " is empty or over "
+							<< maxDumpSize << " byte cap." << std::endl;
 			}
 			return false;
 		}
@@ -1174,14 +1097,13 @@ bool tryEmulationUnpacking(
 		{
 			if (diag)
 			{
-				Log::info() << "emulation unpack: cannot open output file '" << outputPath
-						<< "'." << std::endl;
+				Log::info() << "emulation unpack: cannot open output file '" << outputPath << "'." << std::endl;
 			}
 			return false;
 		}
 
 		std::vector<uint8_t> buf(rangeSize, 0);
-		for (uint64_t addr : storedAddrs)
+		for (uint64_t addr: storedAddrs)
 		{
 			if (addr >= minAddr && addr + 8 <= minAddr + rangeSize)
 			{
@@ -1198,8 +1120,7 @@ bool tryEmulationUnpacking(
 		{
 			if (diag)
 			{
-				Log::info() << "emulation unpack: write to '" << outputPath
-						<< "' failed." << std::endl;
+				Log::info() << "emulation unpack: write to '" << outputPath << "' failed." << std::endl;
 			}
 			return false;
 		}
@@ -1211,23 +1132,21 @@ bool tryEmulationUnpacking(
 		if (diag)
 		{
 			Log::info() << "emulation unpack: success store_sites=" << storedAddrs.size()
-					<< " dump_range_bytes=" << rangeSize << " min_addr="
-					<< retdec::utils::intToHexString(minAddr, true) << " max_addr="
-					<< retdec::utils::intToHexString(maxAddr, true) << " output_path='"
-					<< outputPath << "'." << std::endl;
+						<< " dump_range_bytes=" << rangeSize
+						<< " min_addr=" << retdec::utils::intToHexString(minAddr, true)
+						<< " max_addr=" << retdec::utils::intToHexString(maxAddr, true) << " output_path='"
+						<< outputPath << "'." << std::endl;
 		}
 
-		Log::info() << "Emulation unpack: wrote " << rangeSize << " bytes to '"
-				<< outputPath << "' (image base "
-				<< retdec::utils::intToHexString(minAddr, true) << ")." << std::endl;
+		Log::info() << "Emulation unpack: wrote " << rangeSize << " bytes to '" << outputPath << "' (image base "
+					<< retdec::utils::intToHexString(minAddr, true) << ")." << std::endl;
 		return true;
 	}
 	catch (const std::exception&)
 	{
 		if (diag)
 		{
-			Log::info() << "emulation unpack: exception during LLVM IR build or emulation."
-					<< std::endl;
+			Log::info() << "emulation unpack: exception during LLVM IR build or emulation." << std::endl;
 		}
 		return false;
 	}
@@ -1244,42 +1163,40 @@ bool tryEmulationUnpacking(
  */
 namespace retdec {
 
-std::vector<bool> parallelBatchDecompile(
-        std::vector<retdec::config::Config>& configs,
-        std::size_t numJobs)
+std::vector<bool> parallelBatchDecompile(std::vector<retdec::config::Config>& configs, std::size_t numJobs)
 {
-    const std::size_t n = configs.size();
-    std::vector<bool> results(n, false);
-    if (n == 0) return results;
+	const std::size_t n = configs.size();
+	std::vector<bool> results(n, false);
+	if (n == 0) return results;
 
-    if (numJobs == 0 || numJobs > n) {
-        numJobs = std::min(
-            n,
-            static_cast<std::size_t>(std::thread::hardware_concurrency())
-        );
-    }
-    if (numJobs == 0) numJobs = 1;
+	if (numJobs == 0 || numJobs > n)
+	{
+		numJobs = std::min(n, static_cast<std::size_t>(std::thread::hardware_concurrency()));
+	}
+	if (numJobs == 0) numJobs = 1;
 
-    retdec::utils::ThreadPool pool(numJobs);
-    std::vector<std::future<bool>> futures;
-    futures.reserve(n);
+	retdec::utils::ThreadPool pool(numJobs);
+	std::vector<std::future<bool>> futures;
+	futures.reserve(n);
 
-    for (std::size_t i = 0; i < n; ++i) {
-        futures.push_back(pool.submit([&configs, i]() -> bool {
-            return decompile(configs[i], nullptr);
-        }));
-    }
+	for (std::size_t i = 0; i < n; ++i)
+	{
+		futures.push_back(pool.submit([&configs, i]() -> bool { return decompile(configs[i], nullptr); }));
+	}
 
-    for (std::size_t i = 0; i < n; ++i) {
-        try {
-            results[i] = futures[i].get();
-        } catch (const std::exception& e) {
-            Log::error() << "parallelBatchDecompile: job " << i
-                         << " threw: " << e.what() << std::endl;
-            results[i] = false;
-        }
-    }
-    return results;
+	for (std::size_t i = 0; i < n; ++i)
+	{
+		try
+		{
+			results[i] = futures[i].get();
+		}
+		catch (const std::exception& e)
+		{
+			Log::error() << "parallelBatchDecompile: job " << i << " threw: " << e.what() << std::endl;
+			results[i] = false;
+		}
+	}
+	return results;
 }
 
 } // namespace retdec

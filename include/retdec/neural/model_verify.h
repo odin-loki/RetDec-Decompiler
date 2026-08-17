@@ -15,7 +15,8 @@ inline constexpr const char* kQwen35TextOnlyGgufHint =
     "Qwen3.5-9B-Instruct-Q4_K_M.gguf";
 
 /// Verify file SHA-256 against RETDEC_NEURAL_MODEL_SHA256 when set.
-/// Rejects multimodal mmproj / VL filenames regardless of SHA.
+/// Known Qwen3.5-9B Q4_K_M filenames are also checked against the
+/// Unsloth llama.cpp-native hash. Rejects mmproj / VL names.
 bool verifyModelSha256(const std::string& modelPath);
 
 } // namespace retdec::neural
