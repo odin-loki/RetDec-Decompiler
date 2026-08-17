@@ -308,6 +308,12 @@ QStringList buildDecompilerArguments(
 		args << QStringLiteral("--raw-section-vma") << QStringLiteral("0x%1").arg(req.rawSectionVma, 0, 16);
 	if (req.rawMode) args << QStringLiteral("-m") << QStringLiteral("raw");
 	if (req.noMemoryLimit) args << QStringLiteral("--no-memory-limit");
+	if (!req.backendDisabledOpts.trimmed().isEmpty())
+		args << QStringLiteral("--backend-disabled-opts") << req.backendDisabledOpts.trimmed();
+	if (!req.backendEnabledOpts.trimmed().isEmpty())
+		args << QStringLiteral("--backend-enabled-opts") << req.backendEnabledOpts.trimmed();
+	if (req.arName.trimmed().isEmpty() && req.arIndex >= 0)
+		args << QStringLiteral("--ar-index") << QString::number(req.arIndex);
 
 	if (llvmPassesOut && (req.decompiler.useCustomLlvmPasses || req.fastDecompile))
 	{
@@ -544,6 +550,20 @@ void populateSemanticDetectionsFromConfig(
 				continue;
 			if (conf > 0.0 && (k.contains("type") || k.contains("typedef") || k.contains("struct"))
 				&& conf < ana.minTypeConfidence)
+				continue;
+			if (!ana.enablePatternMatch && (k.contains("pattern") || k.contains("idiom") || k.contains("algo")))
+				continue;
+			if (!ana.enableConcurrency && (k.contains("concurr") || k.contains("thread") || k.contains("mutex")))
+				continue;
+			if (!ana.enableCudaRecovery && (k.contains("cuda") || k.contains("opencl") || k.contains("ptx"))) continue;
+			if (!ana.enableSerialDetect
+				&& (k.contains("serial") || k.contains("protobuf") || k.contains("msgpack") || k.contains("pickle")))
+				continue;
+			if (!ana.enableModuleCluster && (k.contains("module") || k.contains("cluster") || k.contains("community")))
+				continue;
+			if (conf > 0.0 && (k.contains("stl") || k.contains("container")) && conf < rec.stlConfidence) continue;
+			if (conf > 0.0 && (k.contains("crypto") || k.contains("cipher") || k.contains("hash"))
+				&& conf < rec.cryptoConfidence)
 				continue;
 
 			auto sev = panels::DiagnosticEntry::Severity::Muted;

@@ -87,6 +87,12 @@ struct DecompilerLaunchRequest
 	bool rawMode = false;
 	/// Adds `--no-memory-limit`.
 	bool noMemoryLimit = false;
+	/// Non-empty → `--backend-disabled-opts`.
+	QString backendDisabledOpts;
+	/// Non-empty → `--backend-enabled-opts`.
+	QString backendEnabledOpts;
+	/// >= 0 → `--ar-index` (archive member by index). -1 omits. Ignored if arName is set.
+	int arIndex = -1;
 	DecompilerSettings decompiler;
 };
 

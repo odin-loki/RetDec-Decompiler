@@ -1,8 +1,8 @@
 #ifndef RETDEC_GUI_PROJECT_FILE_H
 #define RETDEC_GUI_PROJECT_FILE_H
 
-#include <QString>
 #include <QJsonObject>
+#include <QString>
 #include <QStringList>
 #include <optional>
 
@@ -47,88 +47,127 @@ namespace gui {
  */
 class ProjectFile {
 public:
-    ProjectFile() = default;
-    explicit ProjectFile(const QString& binaryPath);
+	ProjectFile() = default;
+	explicit ProjectFile(const QString& binaryPath);
 
-    // I/O
-    bool load(const QString& projectPath);
-    bool save(const QString& projectPath) const;
+	// I/O
+	bool load(const QString& projectPath);
+	bool save(const QString& projectPath) const;
 
-    // Accessors
-    QString binaryPath()    const { return binaryPath_; }
-    QString arch()          const { return arch_; }
-    QString os()            const { return os_; }
-    uint64_t entryPoint()   const { return entryPoint_; }
-    QString decompiledPath()const { return decompiledOutputPath_; }
-    QString functionListFilter() const { return functionListFilter_; }
-    int     callGraphDepth()     const { return callGraphDepth_; }
+	// Accessors
+	QString binaryPath() const
+	{
+		return binaryPath_;
+	}
+	QString arch() const
+	{
+		return arch_;
+	}
+	QString os() const
+	{
+		return os_;
+	}
+	uint64_t entryPoint() const
+	{
+		return entryPoint_;
+	}
+	QString decompiledPath() const
+	{
+		return decompiledOutputPath_;
+	}
+	QString functionListFilter() const
+	{
+		return functionListFilter_;
+	}
+	int callGraphDepth() const
+	{
+		return callGraphDepth_;
+	}
 
-    // Mutators
-    void setBinaryPath(const QString& p) {
-        binaryPath_ = p;
-        modified_   = true;
-    }
-    void setArch(const QString& a) {
-        arch_     = a;
-        modified_ = true;
-    }
-    void setOs(const QString& o) {
-        os_       = o;
-        modified_ = true;
-    }
-    void setEntryPoint(uint64_t ep) {
-        entryPoint_ = ep;
-        modified_   = true;
-    }
-    void setDecompiledPath(const QString& p) {
-        decompiledOutputPath_ = p;
-        modified_             = true;
-    }
-    void setFunctionListFilter(const QString& text) {
-        functionListFilter_ = text;
-        modified_           = true;
-    }
-    void setCallGraphDepth(int depth) {
-        callGraphDepth_ = depth;
-        modified_       = true;
-    }
+	// Mutators
+	void setBinaryPath(const QString& p)
+	{
+		binaryPath_ = p;
+		modified_ = true;
+	}
+	void setArch(const QString& a)
+	{
+		arch_ = a;
+		modified_ = true;
+	}
+	void setOs(const QString& o)
+	{
+		os_ = o;
+		modified_ = true;
+	}
+	void setEntryPoint(uint64_t ep)
+	{
+		entryPoint_ = ep;
+		modified_ = true;
+	}
+	void setDecompiledPath(const QString& p)
+	{
+		decompiledOutputPath_ = p;
+		modified_ = true;
+	}
+	void setFunctionListFilter(const QString& text)
+	{
+		functionListFilter_ = text;
+		modified_ = true;
+	}
+	void setCallGraphDepth(int depth)
+	{
+		callGraphDepth_ = depth;
+		modified_ = true;
+	}
 
-    // Stage tracking
-    void setStageStatus(const QString& stage, const QString& status);
-    QString stageStatus(const QString& stage) const;
-    QStringList stageNames() const;
+	// Stage tracking
+	void setStageStatus(const QString& stage, const QString& status);
+	QString stageStatus(const QString& stage) const;
+	QStringList stageNames() const;
 
-    // Annotations
-    struct Annotation {
-        QString name;
-        QString comment;
-        QString signatureOverride;
-    };
-    void setAnnotation(uint64_t address, const Annotation& ann);
-    std::optional<Annotation> annotation(uint64_t address) const;
-    void clearAnnotation(uint64_t address);
+	// Annotations
+	struct Annotation
+	{
+		QString name;
+		QString comment;
+		QString signatureOverride;
+		QStringList tags;
+	};
+	void setAnnotation(uint64_t address, const Annotation& ann);
+	std::optional<Annotation> annotation(uint64_t address) const;
+	void clearAnnotation(uint64_t address);
 
-    bool isModified() const { return modified_; }
-    void clearModified()    { modified_ = false; }
-    QString lastError()     const { return lastError_; }
+	bool isModified() const
+	{
+		return modified_;
+	}
+	void clearModified()
+	{
+		modified_ = false;
+	}
+	QString lastError() const
+	{
+		return lastError_;
+	}
 
 private:
-    QJsonObject toJson() const;
-    bool fromJson(const QJsonObject& obj);
+	QJsonObject toJson() const;
+	bool fromJson(const QJsonObject& obj);
 
-    QString   binaryPath_;
-    QString   arch_;
-    QString   os_;
-    uint64_t  entryPoint_ = 0;
-    QString   decompiledOutputPath_;
-    QString   functionListFilter_;
-    int       callGraphDepth_ = 0;
-    QMap<QString, QString>     stages_;
-    QMap<uint64_t, Annotation> annotations_;
-    mutable bool    modified_   = false;
-    mutable QString lastError_;
+	QString binaryPath_;
+	QString arch_;
+	QString os_;
+	uint64_t entryPoint_ = 0;
+	QString decompiledOutputPath_;
+	QString functionListFilter_;
+	int callGraphDepth_ = 0;
+	QMap<QString, QString> stages_;
+	QMap<uint64_t, Annotation> annotations_;
+	mutable bool modified_ = false;
+	mutable QString lastError_;
 
-    static constexpr int kVersion = 1;
+	static constexpr int kVersion = 1;
 };
 
 } // namespace gui

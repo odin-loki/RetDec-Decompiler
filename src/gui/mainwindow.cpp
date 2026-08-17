@@ -66,6 +66,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QJsonValue>
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
@@ -133,6 +134,78 @@ void rememberLastOpenDir(const QString& filePath)
 {
 	if (filePath.isEmpty()) return;
 	AppSettings::instance().general.lastOpenDir = QFileInfo(filePath).absolutePath();
+}
+
+QString firstJsonStringByKey(const QJsonValue& v, const QString& key, int depth = 0)
+{
+	if (depth > 8 || v.isNull() || v.isUndefined()) return {};
+	if (v.isObject())
+	{
+		const QJsonObject o = v.toObject();
+		for (auto it = o.begin(); it != o.end(); ++it)
+		{
+			if (it.key().compare(key, Qt::CaseInsensitive) != 0) continue;
+			if (it.value().isString())
+			{
+				const QString s = it.value().toString().trimmed();
+				if (!s.isEmpty()) return s;
+			}
+			else if (it.value().isDouble())
+				return QString::number(it.value().toDouble(), 'f', 0);
+			else if (it.value().isBool())
+				return it.value().toBool() ? QStringLiteral("true") : QStringLiteral("false");
+		}
+		for (auto it = o.begin(); it != o.end(); ++it)
+		{
+			const QString nested = firstJsonStringByKey(it.value(), key, depth + 1);
+			if (!nested.isEmpty()) return nested;
+		}
+	}
+	else if (v.isArray())
+	{
+		for (const QJsonValue& e: v.toArray())
+		{
+			const QString nested = firstJsonStringByKey(e, key, depth + 1);
+			if (!nested.isEmpty()) return nested;
+		}
+	}
+	return {};
+}
+
+QString packerFromFileinfoJson(const QJsonObject& root)
+{
+	const QJsonArray tools = root.value(QStringLiteral("tools")).toArray();
+	for (const QJsonValue& tv: tools)
+	{
+		const QJsonObject t = tv.toObject();
+		const QString type = t.value(QStringLiteral("type")).toString().toLower();
+		const QString name = t.value(QStringLiteral("name")).toString().trimmed();
+		if (name.isEmpty()) continue;
+		if (type.contains(QLatin1String("pack"))) return name;
+		const QString nl = name.toLower();
+		if (nl.contains(QLatin1String("upx")) || nl.contains(QLatin1String("aspack"))
+			|| nl.contains(QLatin1String("themida")) || nl.contains(QLatin1String("vmprotect"))
+			|| nl.contains(QLatin1String("petite")))
+			return name;
+	}
+	const QString packed = firstJsonStringByKey(root, QStringLiteral("packed"));
+	if (packed.compare(QLatin1String("yes"), Qt::CaseInsensitive) == 0
+		|| packed.compare(QLatin1String("true"), Qt::CaseInsensitive) == 0
+		|| packed.compare(QLatin1String("packed"), Qt::CaseInsensitive) == 0)
+		return QStringLiteral("unknown");
+	return {};
+}
+
+QString fileinfoHashLine(const QJsonObject& root)
+{
+	QStringList lines;
+	const QString sha = firstJsonStringByKey(root, QStringLiteral("sha256"));
+	const QString md5 = firstJsonStringByKey(root, QStringLiteral("md5"));
+	const QString crc = firstJsonStringByKey(root, QStringLiteral("crc32"));
+	if (!sha.isEmpty()) lines << QStringLiteral("SHA-256: %1").arg(sha);
+	if (!md5.isEmpty()) lines << QStringLiteral("MD5: %1").arg(md5);
+	if (!crc.isEmpty()) lines << QStringLiteral("CRC32: %1").arg(crc);
+	return lines.join(QLatin1Char('\n'));
 }
 
 QString guessDecompiledCPath(const ProjectFile* pf)
@@ -407,6 +480,7 @@ void RetDecMainWindow::createPanels()
 			const auto& e = model->entry(tl.row());
 			ProjectFile::Annotation ann = project_->annotation(e.address).value_or(ProjectFile::Annotation{});
 			ann.comment = e.notes;
+			ann.tags = e.tags;
 			project_->setAnnotation(e.address, ann);
 		});
 	}
@@ -498,6 +572,43 @@ void RetDecMainWindow::createPanels()
 			}
 		});
 		menu.addAction(QStringLiteral("Configure decompiler…"), this, &RetDecMainWindow::onConfigure);
+		menu.addSeparator();
+		const QJsonObject fi = inspect_ ? inspect_->fileinfoJson() : QJsonObject();
+		const QString sha = firstJsonStringByKey(fi, QStringLiteral("sha256"));
+		const QString md5 = firstJsonStringByKey(fi, QStringLiteral("md5"));
+		const QString crc = firstJsonStringByKey(fi, QStringLiteral("crc32"));
+		auto copyHash = [this](const QString& label, const QString& value) {
+			if (value.isEmpty())
+			{
+				statusBar()->showMessage(QStringLiteral("No %1 in fileinfo yet.").arg(label), 3000);
+				return;
+			}
+			QGuiApplication::clipboard()->setText(value);
+			statusBar()->showMessage(QStringLiteral("Copied %1").arg(label), 3000);
+		};
+		menu.addAction(QStringLiteral("Copy SHA-256"), this, [copyHash, sha] {
+			copyHash(QStringLiteral("SHA-256"), sha);
+		});
+		menu.addAction(QStringLiteral("Copy MD5"), this, [copyHash, md5] { copyHash(QStringLiteral("MD5"), md5); });
+		menu.addAction(QStringLiteral("Copy CRC32"), this, [copyHash, crc] { copyHash(QStringLiteral("CRC32"), crc); });
+		menu.addAction(QStringLiteral("Copy all hashes"), this, [this, fi] {
+			const QString text = fileinfoHashLine(fi);
+			if (text.isEmpty())
+			{
+				statusBar()->showMessage(QStringLiteral("No fileinfo hashes yet."), 3000);
+				return;
+			}
+			QGuiApplication::clipboard()->setText(text);
+			statusBar()->showMessage(QStringLiteral("Copied file hashes"), 3000);
+		});
+		if (project_ && !project_->binaryPath().isEmpty())
+		{
+			const QString p = project_->binaryPath();
+			menu.addAction(QStringLiteral("Copy binary path"), this, [this, p] {
+				QGuiApplication::clipboard()->setText(p);
+				statusBar()->showMessage(QStringLiteral("Copied binary path"), 3000);
+			});
+		}
 		menu.exec(QCursor::pos());
 	});
 	connect(triageBanner_, &panels::TriageBanner::dismissed, this, [this] { triageBanner_->hide(); });
@@ -843,6 +954,16 @@ void RetDecMainWindow::createMenus()
 			cio->addItems({QStringLiteral("omit"), QStringLiteral("optim"), QStringLiteral("pessim")});
 			form->addWidget(new QLabel(QStringLiteral("Call-info obtainer"), dlg));
 			form->addWidget(cio);
+			auto* dis = new QLineEdit(dlg);
+			dis->setObjectName(QStringLiteral("cStyleDisabledOpts"));
+			dis->setPlaceholderText(QStringLiteral("comma-separated --backend-disabled-opts"));
+			auto* enOpts = new QLineEdit(dlg);
+			enOpts->setObjectName(QStringLiteral("cStyleEnabledOpts"));
+			enOpts->setPlaceholderText(QStringLiteral("comma-separated --backend-enabled-opts"));
+			form->addWidget(new QLabel(QStringLiteral("Disabled backend opts"), dlg));
+			form->addWidget(dis);
+			form->addWidget(new QLabel(QStringLiteral("Enabled backend opts"), dlg));
+			form->addWidget(enOpts);
 			auto* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
 			form->addWidget(box);
 			connect(box, &QDialogButtonBox::rejected, dlg, &QDialog::hide);
@@ -862,10 +983,14 @@ void RetDecMainWindow::createMenus()
 					if (t == QLatin1String("optim") || t == QLatin1String("pessim")) cioVal = t;
 				}
 				setProperty("callInfoObtainer", cioVal);
+				if (auto* dis = dlg->findChild<QLineEdit*>(QStringLiteral("cStyleDisabledOpts")))
+					setProperty("backendDisabledOpts", dis->text().trimmed());
+				if (auto* en = dlg->findChild<QLineEdit*>(QStringLiteral("cStyleEnabledOpts")))
+					setProperty("backendEnabledOpts", en->text().trimmed());
 				dlg->hide();
 				statusBar()->showMessage(QStringLiteral("C output style applied to the next decompile"), 5000);
 			});
-			dlg->resize(400, 320);
+			dlg->resize(400, 400);
 		}
 		auto loadCk = [this, dlg](const QString& name, const char* prop) {
 			if (auto* ck = dlg->findChild<QCheckBox*>(name)) ck->setChecked(property(prop).toBool());
@@ -880,6 +1005,10 @@ void RetDecMainWindow::createMenus()
 			const QString v = property("callInfoObtainer").toString();
 			cio->setCurrentText(v.isEmpty() ? QStringLiteral("omit") : v);
 		}
+		if (auto* dis = dlg->findChild<QLineEdit*>(QStringLiteral("cStyleDisabledOpts")))
+			dis->setText(property("backendDisabledOpts").toString());
+		if (auto* en = dlg->findChild<QLineEdit*>(QStringLiteral("cStyleEnabledOpts")))
+			en->setText(property("backendEnabledOpts").toString());
 		dlg->show();
 		dlg->raise();
 	});
@@ -922,10 +1051,15 @@ void RetDecMainWindow::createMenus()
 			form->addWidget(vma);
 			form->addWidget(new QLabel(QStringLiteral("Archive member (--ar-name)"), dlg));
 			form->addWidget(ar);
+			auto* arIdx = new QLineEdit(dlg);
+			arIdx->setObjectName(QStringLiteral("rawOptArIndex"));
+			arIdx->setPlaceholderText(QStringLiteral("0 (empty = omit; ignored if name is set)"));
+			form->addWidget(new QLabel(QStringLiteral("Archive member index (--ar-index)"), dlg));
+			form->addWidget(arIdx);
 			auto* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
 			form->addWidget(box);
 			connect(box, &QDialogButtonBox::rejected, dlg, &QDialog::hide);
-			connect(box, &QDialogButtonBox::accepted, this, [this, dlg, endian, bits, vma, ar]() {
+			connect(box, &QDialogButtonBox::accepted, this, [this, dlg, endian, bits, vma, ar, arIdx]() {
 				const QString en = endian->currentText();
 				setProperty(
 					"decompilerEndian", (en == QLatin1String("little") || en == QLatin1String("big")) ? en : QString());
@@ -935,10 +1069,19 @@ void RetDecMainWindow::createMenus()
 				const quint64 v = vma->text().trimmed().toULongLong(&parsed, 0);
 				setProperty("rawSectionVma", QVariant::fromValue(parsed ? v : quint64{0}));
 				setProperty("arName", ar->text().trimmed());
+				const QString idxText = arIdx->text().trimmed();
+				if (idxText.isEmpty())
+					setProperty("arIndex", QVariant());
+				else
+				{
+					bool ok = false;
+					const int idx = idxText.toInt(&ok);
+					setProperty("arIndex", ok && idx >= 0 ? QVariant(idx) : QVariant());
+				}
 				dlg->hide();
 				statusBar()->showMessage(QStringLiteral("Raw / archive options applied to the next decompile"), 5000);
 			});
-			dlg->resize(420, 320);
+			dlg->resize(420, 380);
 		}
 		if (auto* endian = dlg->findChild<QComboBox*>(QStringLiteral("rawOptEndian")))
 		{
@@ -957,6 +1100,11 @@ void RetDecMainWindow::createMenus()
 		}
 		if (auto* ar = dlg->findChild<QLineEdit*>(QStringLiteral("rawOptArName")))
 			ar->setText(property("arName").toString());
+		if (auto* arIdx = dlg->findChild<QLineEdit*>(QStringLiteral("rawOptArIndex")))
+		{
+			const QVariant idx = property("arIndex");
+			arIdx->setText(idx.isValid() && idx.toInt() >= 0 ? QString::number(idx.toInt()) : QString());
+		}
 		dlg->show();
 		dlg->raise();
 		dlg->activateWindow();
@@ -1365,6 +1513,43 @@ void RetDecMainWindow::installCodeTabShortcuts()
 			raiseDocumentTab(i);
 		});
 	}
+	auto* gotoLine = new QShortcut(QKeySequence(QStringLiteral("Ctrl+L")), this);
+	gotoLine->setContext(Qt::ApplicationShortcut);
+	connect(gotoLine, &QShortcut::activated, this, [this]() {
+		if (!qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) return;
+		QDialog* dlg = findChild<QDialog*>(QStringLiteral("gotoLineDialog"));
+		if (!dlg)
+		{
+			dlg = new QDialog(this);
+			dlg->setObjectName(QStringLiteral("gotoLineDialog"));
+			dlg->setWindowTitle(QStringLiteral("Go to line"));
+			dlg->setModal(false);
+			auto* lay = new QVBoxLayout(dlg);
+			auto* edit = new QLineEdit(dlg);
+			edit->setObjectName(QStringLiteral("gotoLineEdit"));
+			edit->setPlaceholderText(QStringLiteral("1"));
+			lay->addWidget(edit);
+			auto* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
+			lay->addWidget(box);
+			connect(box, &QDialogButtonBox::rejected, dlg, &QDialog::hide);
+			connect(box, &QDialogButtonBox::accepted, this, [this, dlg, edit]() {
+				bool parsed = false;
+				const int line = edit->text().trimmed().toInt(&parsed);
+				if (!parsed || line < 1)
+				{
+					statusBar()->showMessage(QStringLiteral("Not a valid line number"), 3000);
+					return;
+				}
+				dlg->hide();
+				if (documentTabs_) documentTabs_->setCurrentIndex(kDocDecompiledC);
+				if (decompiledC_) decompiledC_->scrollToFunction(QString(), line, line);
+			});
+			dlg->resize(360, 120);
+		}
+		dlg->show();
+		dlg->raise();
+		if (auto* edit = dlg->findChild<QLineEdit*>(QStringLiteral("gotoLineEdit"))) edit->setFocus();
+	});
 }
 
 void RetDecMainWindow::onCliToolLogged(
@@ -1584,6 +1769,7 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath, std::optiona
 					if (!ann->name.isEmpty()) f.name = ann->name;
 					if (!ann->comment.isEmpty()) f.notes = ann->comment;
 					if (!ann->signatureOverride.isEmpty()) f.signature = ann->signatureOverride;
+					if (!ann->tags.isEmpty()) f.tags = ann->tags;
 				}
 			}
 		}
@@ -1730,6 +1916,11 @@ void RetDecMainWindow::onFunctionArtifactViews(uint64_t address, const QString& 
 void RetDecMainWindow::refreshTypeHierarchyFromArtifacts()
 {
 	if (!typeHierarchy_ || !loadedArtifacts_) return;
+	if (!AppSettings::instance().analysis.enableCxxLifter)
+	{
+		typeHierarchy_->setHierarchy(QList<panels::ClassInfo>{});
+		return;
+	}
 	typeHierarchy_->setHierarchy(loadedArtifacts_->typeHierarchyClasses);
 }
 
@@ -1769,27 +1960,18 @@ bool RetDecMainWindow::tryLoadCachedDecompile(const QString& binaryPath)
 void RetDecMainWindow::refreshTriageFromInspect()
 {
 	if (!triageBanner_ || !project_) return;
-	// The InspectPanel holds the JSON internally; pull a few well-known fields
-	// via its public summary text. For now we just use the project's stored
-	// arch/os if set, and a best-effort packer hint from diagnostics.
-	QString arch = project_->arch();
-	QString os = project_->os();
+	const QJsonObject fi = inspect_ ? inspect_->fileinfoJson() : QJsonObject();
+	QString arch = firstJsonStringByKey(fi, QStringLiteral("architecture"));
+	if (arch.isEmpty()) arch = project_->arch();
+	QString os = firstJsonStringByKey(fi, QStringLiteral("os"));
+	if (os.isEmpty()) os = firstJsonStringByKey(fi, QStringLiteral("osabi"));
+	if (os.isEmpty()) os = firstJsonStringByKey(fi, QStringLiteral("subsystem"));
+	if (os.isEmpty()) os = firstJsonStringByKey(fi, QStringLiteral("operatingSystem"));
+	if (os.isEmpty()) os = project_->os();
 	qint64 sz = QFileInfo(project_->binaryPath()).size();
-	// Detect "packed" from a simple keyword scan of the fileinfo raw output
-	// (avoids exposing a private JSON cache in InspectPanel).
-	QString packer;
-	if (auto* raw = inspect_->findChild<QPlainTextEdit*>())
-	{
-		const QString t = raw->toPlainText();
-		if (t.contains(QStringLiteral("UPX"), Qt::CaseInsensitive))
-			packer = QStringLiteral("UPX");
-		else if (t.contains(QStringLiteral("ASPack"), Qt::CaseInsensitive))
-			packer = QStringLiteral("ASPack");
-		else if (t.contains(QStringLiteral("\"packed\": true")))
-			packer = QStringLiteral("unknown");
-	}
-	QString format;
-	if (!project_->binaryPath().isEmpty())
+	QString packer = packerFromFileinfoJson(fi);
+	QString format = firstJsonStringByKey(fi, QStringLiteral("fileFormat"));
+	if (format.isEmpty() && !project_->binaryPath().isEmpty())
 	{
 		const QString ext = QFileInfo(project_->binaryPath()).suffix().toLower();
 		if (ext == QStringLiteral("exe") || ext == QStringLiteral("dll"))
@@ -1799,7 +1981,14 @@ void RetDecMainWindow::refreshTriageFromInspect()
 		else if (ext == QStringLiteral("dylib"))
 			format = QStringLiteral("Mach-O");
 	}
+	if (project_->arch().isEmpty() && !arch.isEmpty()) project_->setArch(arch);
+	if (project_->os().isEmpty() && !os.isEmpty()) project_->setOs(os);
+	if (target_ && (!project_->arch().isEmpty() || !project_->os().isEmpty())) target_->setFromProject(project_.get());
 	triageBanner_->setMetadata(format, arch, os, sz, packer);
+	const QString hashes = fileinfoHashLine(fi);
+	if (statusFile_ && !hashes.isEmpty()) statusFile_->setToolTip(hashes);
+	const QString sha = firstJsonStringByKey(fi, QStringLiteral("sha256"));
+	if (!sha.isEmpty()) statusBar()->showMessage(QStringLiteral("SHA-256 %1…").arg(sha.left(16)), 6000);
 }
 
 // ─── Project management ──────────────────────────────────────────────────────
@@ -1905,10 +2094,11 @@ bool RetDecMainWindow::saveProject(const QString& path)
 			for (const auto& e: model->functions())
 			{
 				auto existing = project_->annotation(e.address);
-				if (!existing && e.notes.isEmpty()) continue;
+				if (!existing && e.notes.isEmpty() && e.tags.isEmpty()) continue;
 				ProjectFile::Annotation ann = existing.value_or(ProjectFile::Annotation{});
 				if (!e.name.isEmpty()) ann.name = e.name;
 				ann.comment = e.notes;
+				ann.tags = e.tags;
 				project_->setAnnotation(e.address, ann);
 			}
 		}
@@ -2440,6 +2630,12 @@ bool RetDecMainWindow::launchDecompilerForBinary(
 	req.rawSectionVma = quitWhenDecompileFinishes_ ? 0 : property("rawSectionVma").toULongLong();
 	req.rawMode = quitWhenDecompileFinishes_ ? false : property("rawMode").toBool();
 	req.noMemoryLimit = quitWhenDecompileFinishes_ ? false : property("noMemoryLimit").toBool();
+	req.backendDisabledOpts = quitWhenDecompileFinishes_ ? QString() : property("backendDisabledOpts").toString();
+	req.backendEnabledOpts = quitWhenDecompileFinishes_ ? QString() : property("backendEnabledOpts").toString();
+	{
+		const QVariant idx = property("arIndex");
+		req.arIndex = (!quitWhenDecompileFinishes_ && idx.isValid()) ? idx.toInt() : -1;
+	}
 	req.silent = quitWhenDecompileFinishes_ || st.advanced.verbosity == AdvancedSettings::Verbosity::Quiet
 			  || st.advanced.verbosity == AdvancedSettings::Verbosity::Normal;
 	req.selectDecodeOnly = !quitWhenDecompileFinishes_ && !selectedFunctions.isEmpty();

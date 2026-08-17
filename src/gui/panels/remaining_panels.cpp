@@ -15,10 +15,16 @@
 
 // ── DiagnosticsPanel ──────────────────────────────────────────────────────────
 #include "retdec/gui/panels/diagnostics_panel.h"
+#include <QClipboard>
 #include <QComboBox>
-#include <QHeaderView>
+#include <QFile>
+#include <QFileDialog>
+#include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
 #include <QRegularExpression>
 #include <QSortFilterProxyModel>
 #include <QTableView>
@@ -30,203 +36,269 @@ namespace {
 
 QString severityLabel(DiagnosticEntry::Severity severity)
 {
-    switch (severity) {
-    case DiagnosticEntry::Severity::Muted:   return QStringLiteral("Muted");
-    case DiagnosticEntry::Severity::Info:    return QStringLiteral("Info");
-    case DiagnosticEntry::Severity::Warning: return QStringLiteral("Warning");
-    case DiagnosticEntry::Severity::Error:   return QStringLiteral("Error");
-    }
-    return {};
+	switch (severity)
+	{
+	case DiagnosticEntry::Severity::Muted: return QStringLiteral("Muted");
+	case DiagnosticEntry::Severity::Info: return QStringLiteral("Info");
+	case DiagnosticEntry::Severity::Warning: return QStringLiteral("Warning");
+	case DiagnosticEntry::Severity::Error: return QStringLiteral("Error");
+	}
+	return {};
 }
 
 QString severityIcon(DiagnosticEntry::Severity severity)
 {
-    switch (severity) {
-    case DiagnosticEntry::Severity::Muted:   return QStringLiteral("\u2022");  // •
-    case DiagnosticEntry::Severity::Info:    return QStringLiteral("\u2139");  // ℹ
-    case DiagnosticEntry::Severity::Warning: return QStringLiteral("\u26A0");  // ⚠
-    case DiagnosticEntry::Severity::Error:   return QStringLiteral("\u2716"); // ✖
-    }
-    return {};
+	switch (severity)
+	{
+	case DiagnosticEntry::Severity::Muted: return QStringLiteral("\u2022");   // •
+	case DiagnosticEntry::Severity::Info: return QStringLiteral("\u2139");    // ℹ
+	case DiagnosticEntry::Severity::Warning: return QStringLiteral("\u26A0"); // ⚠
+	case DiagnosticEntry::Severity::Error: return QStringLiteral("\u2716");   // ✖
+	}
+	return {};
+}
+
+QString visibleDiagnosticsTsv(const QSortFilterProxyModel* proxy)
+{
+	if (!proxy) return {};
+	QStringList lines;
+	const int rows = proxy->rowCount();
+	lines.reserve(rows);
+	for (int r = 0; r < rows; ++r)
+	{
+		const QString severity = proxy->index(r, 0).data().toString();
+		const QString stage = proxy->index(r, 1).data().toString();
+		const QString message = proxy->index(r, 2).data().toString();
+		lines.append(severity + QLatin1Char('\t') + stage + QLatin1Char('\t') + message);
+	}
+	return lines.join(QLatin1Char('\n'));
 }
 
 } // namespace
 
-DiagnosticsModel::DiagnosticsModel(QObject* parent)
-    : QAbstractTableModel(parent) {}
+DiagnosticsModel::DiagnosticsModel(QObject* parent): QAbstractTableModel(parent) {}
 
-int DiagnosticsModel::rowCount(const QModelIndex&) const {
-    return entries_.size();
+int DiagnosticsModel::rowCount(const QModelIndex&) const
+{
+	return entries_.size();
 }
-int DiagnosticsModel::columnCount(const QModelIndex&) const { return 4; }
-
-QVariant DiagnosticsModel::data(const QModelIndex& index, int role) const {
-    if (!index.isValid() || index.row() >= entries_.size()) return {};
-    const auto& e = entries_[index.row()];
-    if (role == Qt::DisplayRole) {
-        switch (index.column()) {
-        case 0: return severityLabel(e.severity);
-        case 1: return e.stage;
-        case 2: return e.message;
-        case 3: return e.address ? QString("0x%1").arg(e.address, 0, 16) : "";
-        }
-    }
-    if (role == Qt::DecorationRole && index.column() == 0)
-        return severityIcon(e.severity);
-    if (role == Qt::ForegroundRole) {
-        switch (e.severity) {
-        case DiagnosticEntry::Severity::Muted:   return QColor("#6c7086");
-        case DiagnosticEntry::Severity::Info:    return QColor("#a6e3a1");
-        case DiagnosticEntry::Severity::Warning: return QColor("#f9e2af");
-        case DiagnosticEntry::Severity::Error:   return QColor("#f38ba8");
-        }
-    }
-    return {};
+int DiagnosticsModel::columnCount(const QModelIndex&) const
+{
+	return 4;
 }
 
-QVariant DiagnosticsModel::headerData(int section, Qt::Orientation o, int role) const {
-    if (o != Qt::Horizontal || role != Qt::DisplayRole) return {};
-    switch (section) {
-    case 0: return "Severity";
-    case 1: return "Stage";
-    case 2: return "Message";
-    case 3: return "Address";
-    }
-    return {};
+QVariant DiagnosticsModel::data(const QModelIndex& index, int role) const
+{
+	if (!index.isValid() || index.row() >= entries_.size()) return {};
+	const auto& e = entries_[index.row()];
+	if (role == Qt::DisplayRole)
+	{
+		switch (index.column())
+		{
+		case 0: return severityLabel(e.severity);
+		case 1: return e.stage;
+		case 2: return e.message;
+		case 3: return e.address ? QString("0x%1").arg(e.address, 0, 16) : "";
+		}
+	}
+	if (role == Qt::DecorationRole && index.column() == 0) return severityIcon(e.severity);
+	if (role == Qt::ForegroundRole)
+	{
+		switch (e.severity)
+		{
+		case DiagnosticEntry::Severity::Muted: return QColor("#6c7086");
+		case DiagnosticEntry::Severity::Info: return QColor("#a6e3a1");
+		case DiagnosticEntry::Severity::Warning: return QColor("#f9e2af");
+		case DiagnosticEntry::Severity::Error: return QColor("#f38ba8");
+		}
+	}
+	return {};
 }
 
-void DiagnosticsModel::addEntry(const DiagnosticEntry& entry) {
-    // Evict oldest entry first if we're at the cap, to keep memory bounded
-    // during long sessions (a very chatty decompiler with --print-after-all
-    // can otherwise emit tens of thousands of info lines).
-    if (maxEntries_ > 0 && entries_.size() >= maxEntries_) {
-        beginRemoveRows({}, 0, 0);
-        entries_.removeFirst();
-        endRemoveRows();
-    }
-    beginInsertRows({}, entries_.size(), entries_.size());
-    entries_.append(entry);
-    endInsertRows();
+QVariant DiagnosticsModel::headerData(int section, Qt::Orientation o, int role) const
+{
+	if (o != Qt::Horizontal || role != Qt::DisplayRole) return {};
+	switch (section)
+	{
+	case 0: return "Severity";
+	case 1: return "Stage";
+	case 2: return "Message";
+	case 3: return "Address";
+	}
+	return {};
 }
 
-void DiagnosticsModel::clear() {
-    beginResetModel();
-    entries_.clear();
-    endResetModel();
+void DiagnosticsModel::addEntry(const DiagnosticEntry& entry)
+{
+	// Evict oldest entry first if we're at the cap, to keep memory bounded
+	// during long sessions (a very chatty decompiler with --print-after-all
+	// can otherwise emit tens of thousands of info lines).
+	if (maxEntries_ > 0 && entries_.size() >= maxEntries_)
+	{
+		beginRemoveRows({}, 0, 0);
+		entries_.removeFirst();
+		endRemoveRows();
+	}
+	beginInsertRows({}, entries_.size(), entries_.size());
+	entries_.append(entry);
+	endInsertRows();
 }
 
-void DiagnosticsModel::setMaxEntries(int n) {
-    maxEntries_ = qMax(100, n);
-    if (entries_.size() > maxEntries_) {
-        beginResetModel();
-        while (entries_.size() > maxEntries_)
-            entries_.removeFirst();
-        endResetModel();
-    }
+void DiagnosticsModel::clear()
+{
+	beginResetModel();
+	entries_.clear();
+	endResetModel();
 }
 
-uint64_t DiagnosticsModel::addressAtRow(int row) const {
-    if (row < 0 || row >= entries_.size())
-        return 0;
-    return entries_.at(row).address;
+void DiagnosticsModel::setMaxEntries(int n)
+{
+	maxEntries_ = qMax(100, n);
+	if (entries_.size() > maxEntries_)
+	{
+		beginResetModel();
+		while (entries_.size() > maxEntries_)
+			entries_.removeFirst();
+		endResetModel();
+	}
 }
 
-DiagnosticsPanel::DiagnosticsPanel(QWidget* parent)
-    : PanelBase("Diagnostics", parent) {
-    setupUI();
+uint64_t DiagnosticsModel::addressAtRow(int row) const
+{
+	if (row < 0 || row >= entries_.size()) return 0;
+	return entries_.at(row).address;
 }
 
-void DiagnosticsPanel::setupUI() {
-    auto* topBar    = new QWidget(this);
-    auto* topLayout = new QHBoxLayout(topBar);
-    topLayout->setContentsMargins(4, 2, 4, 2);
-    filterCombo_ = new QComboBox(topBar);
-    filterCombo_->addItems({"All", "Info", "Warnings", "Errors"});
-    countLabel_ = new QLabel("0 entries", topBar);
-    countLabel_->setProperty("role", "muted");
-    topLayout->addWidget(new QLabel("Show:", topBar));
-    topLayout->addWidget(filterCombo_);
-    topLayout->addStretch();
-    topLayout->addWidget(countLabel_);
-
-    model_        = new DiagnosticsModel(this);
-    filterProxy_  = new QSortFilterProxyModel(this);
-    filterProxy_->setSourceModel(model_);
-    filterProxy_->setFilterKeyColumn(0);
-    filterProxy_->setFilterCaseSensitivity(Qt::CaseInsensitive);
-    tableView_ = new QTableView(this);
-    tableView_->setModel(filterProxy_);
-    tableView_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    tableView_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
-    tableView_->setAlternatingRowColors(true);
-    tableView_->verticalHeader()->hide();
-    tableView_->setSelectionBehavior(QAbstractItemView::SelectRows);
-
-    auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
-    layout->addWidget(topBar);
-    layout->addWidget(tableView_);
-
-    connect(filterCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &DiagnosticsPanel::onFilterChanged);
-    connect(tableView_, &QTableView::doubleClicked,
-            this, &DiagnosticsPanel::onDoubleClicked);
-    onFilterChanged(filterCombo_->currentIndex());
+DiagnosticsPanel::DiagnosticsPanel(QWidget* parent): PanelBase("Diagnostics", parent)
+{
+	setupUI();
 }
 
-void DiagnosticsPanel::addMessage(DiagnosticEntry::Severity severity,
-                                   const QString& stage,
-                                   const QString& message,
-                                   uint64_t address) {
-    DiagnosticEntry e;
-    e.severity = severity;
-    e.stage    = stage;
-    e.message  = message;
-    e.address  = address;
-    model_->addEntry(e);
-    countLabel_->setText(QString("%1 entries").arg(filterProxy_->rowCount()));
-    if (severity == DiagnosticEntry::Severity::Error)
-        emit errorMessageAdded();
+void DiagnosticsPanel::setupUI()
+{
+	auto* topBar = new QWidget(this);
+	auto* topLayout = new QHBoxLayout(topBar);
+	topLayout->setContentsMargins(4, 2, 4, 2);
+	filterCombo_ = new QComboBox(topBar);
+	filterCombo_->addItems({"All", "Info", "Warnings", "Errors"});
+	countLabel_ = new QLabel("0 entries", topBar);
+	countLabel_->setProperty("role", "muted");
+	topLayout->addWidget(new QLabel("Show:", topBar));
+	topLayout->addWidget(filterCombo_);
+
+	auto* search = new QLineEdit(topBar);
+	search->setObjectName(QStringLiteral("diagnosticsSearch"));
+	search->setPlaceholderText(QStringLiteral("Filter text…"));
+	search->setToolTip(QStringLiteral("Text filter replaces severity filter while non-empty"));
+	topLayout->addWidget(search);
+
+	auto* copyBtn = new QPushButton(QStringLiteral("Copy"), topBar);
+	copyBtn->setToolTip(QStringLiteral("Copy visible rows as TSV"));
+	topLayout->addWidget(copyBtn);
+
+	auto* saveBtn = new QPushButton(QStringLiteral("Save…"), topBar);
+	saveBtn->setToolTip(QStringLiteral("Save visible rows as TSV"));
+	topLayout->addWidget(saveBtn);
+
+	topLayout->addStretch();
+	topLayout->addWidget(countLabel_);
+
+	model_ = new DiagnosticsModel(this);
+	filterProxy_ = new QSortFilterProxyModel(this);
+	filterProxy_->setSourceModel(model_);
+	filterProxy_->setFilterKeyColumn(0);
+	filterProxy_->setFilterCaseSensitivity(Qt::CaseInsensitive);
+	tableView_ = new QTableView(this);
+	tableView_->setModel(filterProxy_);
+	tableView_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+	tableView_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+	tableView_->setAlternatingRowColors(true);
+	tableView_->verticalHeader()->hide();
+	tableView_->setSelectionBehavior(QAbstractItemView::SelectRows);
+
+	auto* layout = new QVBoxLayout(this);
+	layout->setContentsMargins(0, 0, 0, 0);
+	layout->setSpacing(0);
+	layout->addWidget(topBar);
+	layout->addWidget(tableView_);
+
+	connect(
+		filterCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &DiagnosticsPanel::onFilterChanged);
+	connect(filterCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, search](int) {
+		if (search->text().isEmpty()) return;
+		filterProxy_->setFilterKeyColumn(2);
+		filterProxy_->setFilterFixedString(search->text());
+		countLabel_->setText(QStringLiteral("%1 entries").arg(filterProxy_->rowCount()));
+	});
+	connect(search, &QLineEdit::textChanged, this, [this](const QString& text) {
+		if (text.isEmpty())
+		{
+			filterProxy_->setFilterKeyColumn(0);
+			onFilterChanged(filterCombo_->currentIndex());
+			return;
+		}
+		filterProxy_->setFilterKeyColumn(2);
+		filterProxy_->setFilterFixedString(text);
+		countLabel_->setText(QStringLiteral("%1 entries").arg(filterProxy_->rowCount()));
+	});
+	connect(copyBtn, &QPushButton::clicked, this, [this] {
+		if (QClipboard* clip = QGuiApplication::clipboard()) clip->setText(visibleDiagnosticsTsv(filterProxy_));
+	});
+	connect(saveBtn, &QPushButton::clicked, this, [this] {
+		if (!qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) return;
+		const QString path = QFileDialog::getSaveFileName(
+			this,
+			QStringLiteral("Save diagnostics"),
+			QString(),
+			QStringLiteral("TSV (*.tsv);;Text (*.txt);;All files (*)"));
+		if (path.isEmpty()) return;
+		QFile f(path);
+		if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return;
+		f.write(visibleDiagnosticsTsv(filterProxy_).toUtf8());
+	});
+	connect(tableView_, &QTableView::doubleClicked, this, &DiagnosticsPanel::onDoubleClicked);
+	onFilterChanged(filterCombo_->currentIndex());
 }
 
-void DiagnosticsPanel::clear() {
-    model_->clear();
-    countLabel_->setText(QStringLiteral("0 entries"));
+void DiagnosticsPanel::addMessage(
+	DiagnosticEntry::Severity severity, const QString& stage, const QString& message, uint64_t address)
+{
+	DiagnosticEntry e;
+	e.severity = severity;
+	e.stage = stage;
+	e.message = message;
+	e.address = address;
+	model_->addEntry(e);
+	countLabel_->setText(QString("%1 entries").arg(filterProxy_->rowCount()));
+	if (severity == DiagnosticEntry::Severity::Error) emit errorMessageAdded();
 }
 
-void DiagnosticsPanel::onFilterChanged(int index) {
-    if (!filterProxy_)
-        return;
-    switch (index) {
-    case 1:
-        filterProxy_->setFilterRegularExpression(
-                QRegularExpression(QStringLiteral("^Info$")));
-        break;
-    case 2:
-        filterProxy_->setFilterRegularExpression(
-                QRegularExpression(QStringLiteral("^Warning$")));
-        break;
-    case 3:
-        filterProxy_->setFilterRegularExpression(
-                QRegularExpression(QStringLiteral("^Error$")));
-        break;
-    default:
-        filterProxy_->setFilterRegularExpression(QRegularExpression());
-        break;
-    }
-    countLabel_->setText(QStringLiteral("%1 entries").arg(filterProxy_->rowCount()));
+void DiagnosticsPanel::clear()
+{
+	model_->clear();
+	countLabel_->setText(QStringLiteral("0 entries"));
 }
 
-void DiagnosticsPanel::onDoubleClicked(const QModelIndex& index) {
-    if (!index.isValid() || !filterProxy_ || !model_)
-        return;
-    const QModelIndex src = filterProxy_->mapToSource(index);
-    if (!src.isValid())
-        return;
-    const uint64_t addr = model_->addressAtRow(src.row());
-    if (addr != 0)
-        emit addressNavigated(addr);
+void DiagnosticsPanel::onFilterChanged(int index)
+{
+	if (!filterProxy_) return;
+	switch (index)
+	{
+	case 1: filterProxy_->setFilterRegularExpression(QRegularExpression(QStringLiteral("^Info$"))); break;
+	case 2: filterProxy_->setFilterRegularExpression(QRegularExpression(QStringLiteral("^Warning$"))); break;
+	case 3: filterProxy_->setFilterRegularExpression(QRegularExpression(QStringLiteral("^Error$"))); break;
+	default: filterProxy_->setFilterRegularExpression(QRegularExpression()); break;
+	}
+	countLabel_->setText(QStringLiteral("%1 entries").arg(filterProxy_->rowCount()));
+}
+
+void DiagnosticsPanel::onDoubleClicked(const QModelIndex& index)
+{
+	if (!index.isValid() || !filterProxy_ || !model_) return;
+	const QModelIndex src = filterProxy_->mapToSource(index);
+	if (!src.isValid()) return;
+	const uint64_t addr = model_->addressAtRow(src.row());
+	if (addr != 0) emit addressNavigated(addr);
 }
 
 } // namespace retdec::gui::panels

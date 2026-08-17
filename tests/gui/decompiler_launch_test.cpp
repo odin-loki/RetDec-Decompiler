@@ -11,6 +11,8 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QProcessEnvironment>
 #include <QTemporaryDir>
 #include <QTemporaryFile>
@@ -103,6 +105,9 @@ TEST(DecompilerLaunch, BuildsBaselineArguments)
 	EXPECT_FALSE(args.contains(QStringLiteral("--ar-name")));
 	EXPECT_FALSE(args.contains(QStringLiteral("--no-memory-limit")));
 	EXPECT_FALSE(args.contains(QStringLiteral("-m")));
+	EXPECT_FALSE(args.contains(QStringLiteral("--backend-disabled-opts")));
+	EXPECT_FALSE(args.contains(QStringLiteral("--backend-enabled-opts")));
+	EXPECT_FALSE(args.contains(QStringLiteral("--ar-index")));
 }
 
 TEST(DecompilerLaunch, FastModeAddsFlagsAndLlvmPassesJson)
@@ -255,6 +260,41 @@ TEST(DecompilerLaunch, BackendStyleRawArchiveAndEndianFlags)
 	EXPECT_TRUE(args.contains(QStringLiteral("-m")));
 	EXPECT_TRUE(args.contains(QStringLiteral("raw")));
 	EXPECT_TRUE(args.contains(QStringLiteral("--no-memory-limit")));
+}
+
+TEST(DecompilerLaunch, BackendOptsAndArIndex)
+{
+	retdec::gui::DecompilerLaunchRequest req;
+	req.binaryPath = QStringLiteral("/tmp/bin");
+	req.outputPath = QStringLiteral("/tmp/out.c");
+	req.backendDisabledOpts = QStringLiteral("x");
+	req.backendEnabledOpts = QStringLiteral("y");
+	req.arIndex = 2;
+
+	const QStringList args = retdec::gui::buildDecompilerArguments(req);
+	const int disIdx = args.indexOf(QStringLiteral("--backend-disabled-opts"));
+	ASSERT_GE(disIdx, 0);
+	EXPECT_LT(disIdx + 1, args.size());
+	EXPECT_EQ(args.at(disIdx + 1), QStringLiteral("x"));
+	const int enIdx = args.indexOf(QStringLiteral("--backend-enabled-opts"));
+	ASSERT_GE(enIdx, 0);
+	EXPECT_LT(enIdx + 1, args.size());
+	EXPECT_EQ(args.at(enIdx + 1), QStringLiteral("y"));
+	const int arIdx = args.indexOf(QStringLiteral("--ar-index"));
+	ASSERT_GE(arIdx, 0);
+	EXPECT_LT(arIdx + 1, args.size());
+	EXPECT_EQ(args.at(arIdx + 1), QStringLiteral("2"));
+	EXPECT_FALSE(args.contains(QStringLiteral("--ar-name")));
+
+	retdec::gui::DecompilerLaunchRequest named;
+	named.binaryPath = QStringLiteral("/tmp/bin");
+	named.outputPath = QStringLiteral("/tmp/out.c");
+	named.arName = QStringLiteral("member.o");
+	named.arIndex = 2;
+	const QStringList namedArgs = retdec::gui::buildDecompilerArguments(named);
+	EXPECT_TRUE(namedArgs.contains(QStringLiteral("--ar-name")));
+	EXPECT_TRUE(namedArgs.contains(QStringLiteral("member.o")));
+	EXPECT_FALSE(namedArgs.contains(QStringLiteral("--ar-index")));
 }
 
 TEST(DecompilerLaunch, VerboseOmitsSilentFlag)
@@ -478,4 +518,38 @@ TEST(DecompilerLaunch, PollLogProgressParsesBackendProgressBar)
 	EXPECT_EQ(prog.stage, QStringLiteral("Code generation"));
 	EXPECT_GE(prog.percent, 65);
 	EXPECT_LE(prog.percent, 99);
+}
+
+TEST(DecompilerLaunch, SemanticDetectionsOmitConcurrencyWhenAnalysisFlagOff)
+{
+	auto& st = retdec::gui::AppSettings::instance();
+	st.resetToDefaults();
+	st.analysis.enableConcurrency = false;
+
+	QJsonObject det;
+	det.insert(QStringLiteral("kind"), QStringLiteral("concurrency"));
+	det.insert(QStringLiteral("label"), QStringLiteral("thread pool"));
+	det.insert(QStringLiteral("confidence"), 0.9);
+
+	QJsonArray dets;
+	dets.append(det);
+
+	QJsonObject fn;
+	fn.insert(QStringLiteral("name"), QStringLiteral("worker"));
+	fn.insert(QStringLiteral("semanticDetections"), dets);
+
+	QJsonArray fns;
+	fns.append(fn);
+
+	QJsonObject root;
+	root.insert(QStringLiteral("functions"), fns);
+
+	retdec::gui::panels::DiagnosticsPanel panel;
+	retdec::gui::populateSemanticDetectionsFromConfig(&panel, root);
+
+	auto* model = panel.findChild<retdec::gui::panels::DiagnosticsModel*>();
+	ASSERT_NE(model, nullptr);
+	EXPECT_EQ(model->rowCount(), 0);
+
+	st.resetToDefaults();
 }

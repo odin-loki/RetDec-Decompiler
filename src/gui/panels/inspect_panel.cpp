@@ -8,10 +8,13 @@
 #include <algorithm>
 
 #include <QCheckBox>
+#include <QClipboard>
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QFontDatabase>
+#include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -31,23 +34,67 @@ namespace panels {
 
 namespace {
 
+QString firstNestedString(const QJsonValue& v, const QString& key, int depth = 0)
+{
+	if (depth > 8 || v.isNull() || v.isUndefined()) return {};
+	if (v.isObject())
+	{
+		const QJsonObject o = v.toObject();
+		for (auto it = o.begin(); it != o.end(); ++it)
+		{
+			if (it.key().compare(key, Qt::CaseInsensitive) != 0) continue;
+			if (it.value().isString())
+			{
+				const QString s = it.value().toString().trimmed();
+				if (!s.isEmpty()) return s;
+			}
+		}
+		for (auto it = o.begin(); it != o.end(); ++it)
+		{
+			const QString nested = firstNestedString(it.value(), key, depth + 1);
+			if (!nested.isEmpty()) return nested;
+		}
+	}
+	else if (v.isArray())
+	{
+		for (const QJsonValue& e: v.toArray())
+		{
+			const QString nested = firstNestedString(e, key, depth + 1);
+			if (!nested.isEmpty()) return nested;
+		}
+	}
+	return {};
+}
+
 QString summaryHtmlFromJson(const QJsonObject& root)
 {
 	QString html = QStringLiteral("<html><body><table cellspacing=\"6\">");
+	int rows = 0;
+	constexpr int kMaxRows = 48;
+	auto addRow = [&](const QString& k, const QString& val) {
+		if (rows >= kMaxRows || val.isEmpty()) return;
+		html += QStringLiteral("<tr><td><b>%1</b></td><td>%2</td></tr>").arg(k.toHtmlEscaped(), val.toHtmlEscaped());
+		++rows;
+	};
+	addRow(QStringLiteral("sha256"), firstNestedString(root, QStringLiteral("sha256")));
+	addRow(QStringLiteral("md5"), firstNestedString(root, QStringLiteral("md5")));
+	addRow(QStringLiteral("crc32"), firstNestedString(root, QStringLiteral("crc32")));
 	QStringList keys;
 	for (auto it = root.begin(); it != root.end(); ++it)
 		keys.append(it.key());
 	std::sort(keys.begin(), keys.end());
-	int rows = 0;
-	constexpr int kMaxRows = 48;
 	for (const QString& k: keys)
 	{
 		if (rows >= kMaxRows) break;
+		if (k.compare(QLatin1String("sha256"), Qt::CaseInsensitive) == 0
+			|| k.compare(QLatin1String("md5"), Qt::CaseInsensitive) == 0
+			|| k.compare(QLatin1String("crc32"), Qt::CaseInsensitive) == 0)
+			continue;
 		const QJsonValue v = root.value(k);
 		if (v.isObject() || v.isArray()) continue;
 		QString val;
 		if (v.isString())
-			val = v.toString().toHtmlEscaped();
+			val = v.toString();
 		else if (v.isDouble())
 			val = QString::number(v.toDouble());
 		else if (v.isBool())
@@ -56,8 +103,7 @@ QString summaryHtmlFromJson(const QJsonObject& root)
 			val = QStringLiteral("null");
 		else
 			continue;
-		html += QStringLiteral("<tr><td><b>%1</b></td><td>%2</td></tr>").arg(k.toHtmlEscaped(), val);
-		++rows;
+		addRow(k, val);
 	}
 	html += QStringLiteral("</table>");
 	if (rows == 0) html += QStringLiteral("<p><i>No flat key/value fields at root; see JSON tab.</i></p>");
@@ -101,6 +147,10 @@ void InspectPanel::setupUi()
 	row->addWidget(status_, 1);
 	row->addWidget(refreshBtn_);
 	row->addWidget(decompileModeBtn_);
+	auto* copyHashes = new QPushButton(QStringLiteral("Copy hashes"), this);
+	copyHashes->setObjectName(QStringLiteral("inspectCopyHashes"));
+	copyHashes->setToolTip(QStringLiteral("Copy SHA-256 / MD5 / CRC32 from the last fileinfo JSON."));
+	row->addWidget(copyHashes);
 	root->addLayout(row);
 
 	auto* unpackRow = new QHBoxLayout();
@@ -143,6 +193,22 @@ void InspectPanel::setupUi()
 
 	connect(refreshBtn_, &QPushButton::clicked, this, &InspectPanel::onRefreshClicked);
 	connect(decompileModeBtn_, &QPushButton::clicked, this, &InspectPanel::onDecompileShortcutClicked);
+	connect(copyHashes, &QPushButton::clicked, this, [this] {
+		QStringList lines;
+		const QString sha = firstNestedString(lastFileinfoJson_, QStringLiteral("sha256"));
+		const QString md5 = firstNestedString(lastFileinfoJson_, QStringLiteral("md5"));
+		const QString crc = firstNestedString(lastFileinfoJson_, QStringLiteral("crc32"));
+		if (!sha.isEmpty()) lines << QStringLiteral("SHA-256: %1").arg(sha);
+		if (!md5.isEmpty()) lines << QStringLiteral("MD5: %1").arg(md5);
+		if (!crc.isEmpty()) lines << QStringLiteral("CRC32: %1").arg(crc);
+		if (lines.isEmpty())
+		{
+			status_->setText(QStringLiteral("No hashes in fileinfo JSON yet."));
+			return;
+		}
+		if (QClipboard* clip = QGuiApplication::clipboard()) clip->setText(lines.join(QLatin1Char('\n')));
+		status_->setText(QStringLiteral("Copied file hashes."));
+	});
 	connect(unpackBtn_, &QPushButton::clicked, this, &InspectPanel::onUnpackClicked);
 	connect(openUnpackedBtn_, &QPushButton::clicked, this, &InspectPanel::onOpenUnpackedClicked);
 	connect(unpackOutEdit_, &QLineEdit::textChanged, this, [this] { updateButtonStates(); });

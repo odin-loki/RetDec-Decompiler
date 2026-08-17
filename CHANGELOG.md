@@ -79,6 +79,19 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   Analysis → Type inference. Advanced IR dump path copies the `.ll`
   sidecar. Plugins receive IR/ASM text. Project stage status is
   recorded. Saved signature overrides re-apply on load.
+- C-output style can set `--backend-disabled-opts` /
+  `--backend-enabled-opts`. Raw / archive options can set `--ar-index`
+  (omitted when `--ar-name` is set). Problems can search, copy, and
+  save visible rows as TSV. Function tags persist in the project file.
+- Triage reads format / arch / OS / packer / hashes from fileinfo JSON
+  instead of file-extension guesses. More menu copies SHA-256, MD5,
+  CRC32, or the binary path. Inspect Summary leads with hashes and
+  has Copy hashes. Type Hierarchy
+  stays empty when Analysis → C++ lifter is off. Analysis stage flags
+  (concurrency / CUDA / serial / module-cluster) filter Problems.
+  Functions Copy exports the filtered list (including Tags) to the
+  clipboard; CSV/JSON export is skipped in headless tests. Ctrl+L
+  jumps to a line in Decompiled C.
 
 ---
 
