@@ -287,6 +287,27 @@ QStringList buildDecompilerArguments(
 	if (req.tryEmulation) args << QStringLiteral("--try-emulation");
 	if (req.maxMemoryBytes > 0) args << QStringLiteral("--max-memory") << QString::number(req.maxMemoryBytes);
 	if (req.keepLibraryFuncs) args << QStringLiteral("--backend-keep-library-funcs");
+	if (req.keepAllBrackets) args << QStringLiteral("--backend-keep-all-brackets");
+	if (req.noTimeVaryingInfo) args << QStringLiteral("--backend-no-time-varying-info");
+	if (req.noVarRenaming) args << QStringLiteral("--backend-no-var-renaming");
+	if (req.noCompoundOperators) args << QStringLiteral("--backend-no-compound-operators");
+	if (req.noSymbolicNames) args << QStringLiteral("--backend-no-symbolic-names");
+	{
+		const QString cio = req.callInfoObtainer.trimmed().toLower();
+		if (cio == QLatin1String("optim") || cio == QLatin1String("pessim"))
+			args << QStringLiteral("--backend-call-info-obtainer") << cio;
+	}
+	if (!req.arName.trimmed().isEmpty()) args << QStringLiteral("--ar-name") << req.arName.trimmed();
+	{
+		const QString en = req.endian.trimmed().toLower();
+		if (en == QLatin1String("little") || en == QLatin1String("big")) args << QStringLiteral("-e") << en;
+	}
+	if (req.bitSize == 16 || req.bitSize == 32 || req.bitSize == 64)
+		args << QStringLiteral("-b") << QString::number(req.bitSize);
+	if (req.rawSectionVma != 0)
+		args << QStringLiteral("--raw-section-vma") << QStringLiteral("0x%1").arg(req.rawSectionVma, 0, 16);
+	if (req.rawMode) args << QStringLiteral("-m") << QStringLiteral("raw");
+	if (req.noMemoryLimit) args << QStringLiteral("--no-memory-limit");
 
 	if (llvmPassesOut && (req.decompiler.useCustomLlvmPasses || req.fastDecompile))
 	{
@@ -515,6 +536,15 @@ void populateSemanticDetectionsFromConfig(
 			if (!rec.detectRTTI && k.contains("rtti")) continue;
 			if (!rec.detectExceptions && (k.contains("exception") || k.contains("eh_"))) continue;
 			if (!rec.detectVirtual && (k.contains("virtual") || k.contains("vtable"))) continue;
+
+			const auto& ana = AppSettings::instance().analysis;
+			if (conf > 0.0 && conf < ana.minRecoveryConfidence) continue;
+			if (conf > 0.0 && (k.contains("pattern") || k.contains("idiom") || k.contains("algo"))
+				&& conf < ana.minPatternConfidence)
+				continue;
+			if (conf > 0.0 && (k.contains("type") || k.contains("typedef") || k.contains("struct"))
+				&& conf < ana.minTypeConfidence)
+				continue;
 
 			auto sev = panels::DiagnosticEntry::Severity::Muted;
 			if (conf > 0.8)

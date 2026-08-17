@@ -44,7 +44,10 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
+#include <QCheckBox>
+#include <QClipboard>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -56,6 +59,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QJsonArray>
@@ -806,6 +810,158 @@ void RetDecMainWindow::createMenus()
 			5000);
 	});
 
+	auto* noMemLimitAct = analysisMenu_->addAction(QStringLiteral("No memory limit (next run)"));
+	noMemLimitAct->setCheckable(true);
+	noMemLimitAct->setToolTip(QStringLiteral("Adds --no-memory-limit (overrides --max-memory)."));
+	connect(noMemLimitAct, &QAction::toggled, this, [this](bool on) { setProperty("noMemoryLimit", on); });
+
+	auto* cStyleAct = analysisMenu_->addAction(QStringLiteral("C output style…"));
+	cStyleAct->setToolTip(QStringLiteral("Backend C flags for the next run (brackets, renaming, call-info)."));
+	connect(cStyleAct, &QAction::triggered, this, [this]() {
+		if (!qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) return;
+		QDialog* dlg = findChild<QDialog*>(QStringLiteral("cOutputStyleDialog"));
+		if (!dlg)
+		{
+			dlg = new QDialog(this);
+			dlg->setObjectName(QStringLiteral("cOutputStyleDialog"));
+			dlg->setWindowTitle(QStringLiteral("C output style"));
+			dlg->setModal(false);
+			auto* form = new QVBoxLayout(dlg);
+			auto addCk = [dlg, form](const QString& title, const QString& name) {
+				auto* ck = new QCheckBox(title, dlg);
+				ck->setObjectName(name);
+				form->addWidget(ck);
+				return ck;
+			};
+			addCk(QStringLiteral("Keep all brackets"), QStringLiteral("cStyleKeepBrackets"));
+			addCk(QStringLiteral("No time-varying comments"), QStringLiteral("cStyleNoTime"));
+			addCk(QStringLiteral("No variable renaming"), QStringLiteral("cStyleNoRename"));
+			addCk(QStringLiteral("No compound operators"), QStringLiteral("cStyleNoCompound"));
+			addCk(QStringLiteral("No symbolic names"), QStringLiteral("cStyleNoSymbolic"));
+			auto* cio = new QComboBox(dlg);
+			cio->setObjectName(QStringLiteral("cStyleCallInfo"));
+			cio->addItems({QStringLiteral("omit"), QStringLiteral("optim"), QStringLiteral("pessim")});
+			form->addWidget(new QLabel(QStringLiteral("Call-info obtainer"), dlg));
+			form->addWidget(cio);
+			auto* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
+			form->addWidget(box);
+			connect(box, &QDialogButtonBox::rejected, dlg, &QDialog::hide);
+			connect(box, &QDialogButtonBox::accepted, this, [this, dlg]() {
+				auto setCk = [this, dlg](const QString& name, const char* prop) {
+					if (auto* ck = dlg->findChild<QCheckBox*>(name)) setProperty(prop, ck->isChecked());
+				};
+				setCk(QStringLiteral("cStyleKeepBrackets"), "keepAllBrackets");
+				setCk(QStringLiteral("cStyleNoTime"), "noTimeVaryingInfo");
+				setCk(QStringLiteral("cStyleNoRename"), "noVarRenaming");
+				setCk(QStringLiteral("cStyleNoCompound"), "noCompoundOperators");
+				setCk(QStringLiteral("cStyleNoSymbolic"), "noSymbolicNames");
+				QString cioVal;
+				if (auto* cio = dlg->findChild<QComboBox*>(QStringLiteral("cStyleCallInfo")))
+				{
+					const QString t = cio->currentText();
+					if (t == QLatin1String("optim") || t == QLatin1String("pessim")) cioVal = t;
+				}
+				setProperty("callInfoObtainer", cioVal);
+				dlg->hide();
+				statusBar()->showMessage(QStringLiteral("C output style applied to the next decompile"), 5000);
+			});
+			dlg->resize(400, 320);
+		}
+		auto loadCk = [this, dlg](const QString& name, const char* prop) {
+			if (auto* ck = dlg->findChild<QCheckBox*>(name)) ck->setChecked(property(prop).toBool());
+		};
+		loadCk(QStringLiteral("cStyleKeepBrackets"), "keepAllBrackets");
+		loadCk(QStringLiteral("cStyleNoTime"), "noTimeVaryingInfo");
+		loadCk(QStringLiteral("cStyleNoRename"), "noVarRenaming");
+		loadCk(QStringLiteral("cStyleNoCompound"), "noCompoundOperators");
+		loadCk(QStringLiteral("cStyleNoSymbolic"), "noSymbolicNames");
+		if (auto* cio = dlg->findChild<QComboBox*>(QStringLiteral("cStyleCallInfo")))
+		{
+			const QString v = property("callInfoObtainer").toString();
+			cio->setCurrentText(v.isEmpty() ? QStringLiteral("omit") : v);
+		}
+		dlg->show();
+		dlg->raise();
+	});
+
+	auto* rawModeAct = analysisMenu_->addAction(QStringLiteral("Treat input as raw image (-m raw)"));
+	rawModeAct->setCheckable(true);
+	rawModeAct->setToolTip(QStringLiteral("Adds -m raw for firmware dumps without a container header."));
+	connect(rawModeAct, &QAction::toggled, this, [this](bool on) { setProperty("rawMode", on); });
+
+	auto* rawOptsAct = analysisMenu_->addAction(QStringLiteral("Raw image / archive options…"));
+	rawOptsAct->setToolTip(
+		QStringLiteral("Set --endian, --bit-size, --raw-section-vma, and --ar-name for the next run."));
+	connect(rawOptsAct, &QAction::triggered, this, [this]() {
+		if (!qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) return;
+		QDialog* dlg = findChild<QDialog*>(QStringLiteral("rawArchiveOptionsDialog"));
+		if (!dlg)
+		{
+			dlg = new QDialog(this);
+			dlg->setObjectName(QStringLiteral("rawArchiveOptionsDialog"));
+			dlg->setWindowTitle(QStringLiteral("Raw image / archive options"));
+			dlg->setModal(false);
+			auto* form = new QVBoxLayout(dlg);
+			auto* endian = new QComboBox(dlg);
+			endian->setObjectName(QStringLiteral("rawOptEndian"));
+			endian->addItems({QStringLiteral("omit"), QStringLiteral("little"), QStringLiteral("big")});
+			auto* bits = new QComboBox(dlg);
+			bits->setObjectName(QStringLiteral("rawOptBitSize"));
+			bits->addItems({QStringLiteral("omit"), QStringLiteral("16"), QStringLiteral("32"), QStringLiteral("64")});
+			auto* vma = new QLineEdit(dlg);
+			vma->setObjectName(QStringLiteral("rawOptVma"));
+			vma->setPlaceholderText(QStringLiteral("0x100000 (empty = omit)"));
+			auto* ar = new QLineEdit(dlg);
+			ar->setObjectName(QStringLiteral("rawOptArName"));
+			ar->setPlaceholderText(QStringLiteral("member.o (empty = omit)"));
+			form->addWidget(new QLabel(QStringLiteral("Endian (-e)"), dlg));
+			form->addWidget(endian);
+			form->addWidget(new QLabel(QStringLiteral("Bit size (-b)"), dlg));
+			form->addWidget(bits);
+			form->addWidget(new QLabel(QStringLiteral("Raw section VMA"), dlg));
+			form->addWidget(vma);
+			form->addWidget(new QLabel(QStringLiteral("Archive member (--ar-name)"), dlg));
+			form->addWidget(ar);
+			auto* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
+			form->addWidget(box);
+			connect(box, &QDialogButtonBox::rejected, dlg, &QDialog::hide);
+			connect(box, &QDialogButtonBox::accepted, this, [this, dlg, endian, bits, vma, ar]() {
+				const QString en = endian->currentText();
+				setProperty(
+					"decompilerEndian", (en == QLatin1String("little") || en == QLatin1String("big")) ? en : QString());
+				const int n = bits->currentText().toInt();
+				setProperty("decompilerBitSize", (n == 16 || n == 32 || n == 64) ? n : 0);
+				bool parsed = false;
+				const quint64 v = vma->text().trimmed().toULongLong(&parsed, 0);
+				setProperty("rawSectionVma", QVariant::fromValue(parsed ? v : quint64{0}));
+				setProperty("arName", ar->text().trimmed());
+				dlg->hide();
+				statusBar()->showMessage(QStringLiteral("Raw / archive options applied to the next decompile"), 5000);
+			});
+			dlg->resize(420, 320);
+		}
+		if (auto* endian = dlg->findChild<QComboBox*>(QStringLiteral("rawOptEndian")))
+		{
+			const QString en = property("decompilerEndian").toString();
+			endian->setCurrentText(en.isEmpty() ? QStringLiteral("omit") : en);
+		}
+		if (auto* bits = dlg->findChild<QComboBox*>(QStringLiteral("rawOptBitSize")))
+		{
+			const int n = property("decompilerBitSize").toInt();
+			bits->setCurrentText(n > 0 ? QString::number(n) : QStringLiteral("omit"));
+		}
+		if (auto* vma = dlg->findChild<QLineEdit*>(QStringLiteral("rawOptVma")))
+		{
+			const quint64 v = property("rawSectionVma").toULongLong();
+			vma->setText(v > 0 ? QStringLiteral("0x%1").arg(v, 0, 16) : QString());
+		}
+		if (auto* ar = dlg->findChild<QLineEdit*>(QStringLiteral("rawOptArName")))
+			ar->setText(property("arName").toString());
+		dlg->show();
+		dlg->raise();
+		dlg->activateWindow();
+	});
+
 	auto* pdbAct = analysisMenu_->addAction(QStringLiteral("Set PDB symbols…"));
 	connect(pdbAct, &QAction::triggered, this, [this]() {
 		const QString path = QFileDialog::getOpenFileName(
@@ -880,6 +1036,42 @@ void RetDecMainWindow::createMenus()
 		addCentreAct(QStringLiteral("Show IR"), kDocIR, QKeySequence(QStringLiteral("Ctrl+3")));
 		addCentreAct(QStringLiteral("Show CFG"), kDocCFG, QKeySequence(QStringLiteral("Ctrl+4")));
 		addCentreAct(QStringLiteral("Show Synced view"), kDocSynced, QKeySequence(QStringLiteral("Ctrl+5")));
+		auto* gotoAct = viewMenu_->addAction(QStringLiteral("Go to address…"));
+		gotoAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+G")));
+		connect(gotoAct, &QAction::triggered, this, [this]() {
+			if (!qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) return;
+			QDialog* dlg = findChild<QDialog*>(QStringLiteral("gotoAddressDialog"));
+			if (!dlg)
+			{
+				dlg = new QDialog(this);
+				dlg->setObjectName(QStringLiteral("gotoAddressDialog"));
+				dlg->setWindowTitle(QStringLiteral("Go to address"));
+				dlg->setModal(false);
+				auto* lay = new QVBoxLayout(dlg);
+				auto* edit = new QLineEdit(dlg);
+				edit->setObjectName(QStringLiteral("gotoAddressEdit"));
+				edit->setPlaceholderText(QStringLiteral("0x401000"));
+				lay->addWidget(edit);
+				auto* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
+				lay->addWidget(box);
+				connect(box, &QDialogButtonBox::rejected, dlg, &QDialog::hide);
+				connect(box, &QDialogButtonBox::accepted, this, [this, dlg, edit]() {
+					bool parsed = false;
+					const quint64 addr = edit->text().trimmed().toULongLong(&parsed, 0);
+					if (!parsed)
+					{
+						statusBar()->showMessage(QStringLiteral("Not a valid address"), 3000);
+						return;
+					}
+					dlg->hide();
+					navigateToAddress(addr, kDocAssembly);
+				});
+				dlg->resize(360, 120);
+			}
+			dlg->show();
+			dlg->raise();
+			if (auto* edit = dlg->findChild<QLineEdit*>(QStringLiteral("gotoAddressEdit"))) edit->setFocus();
+		});
 	}
 	viewMenu_->addSeparator();
 	{
@@ -929,6 +1121,8 @@ void RetDecMainWindow::createMenus()
 	toolsMenu_->addSeparator();
 	auto* compareAct = toolsMenu_->addAction(QStringLiteral("Compare…"));
 	auto* compareRefinedAct = toolsMenu_->addAction(QStringLiteral("Compare original vs refined…"));
+	auto* copyFnAct = toolsMenu_->addAction(QStringLiteral("Copy selected function C"));
+	copyFnAct->setToolTip(QStringLiteral("Copy the decompiled C for the function selected in the Functions list."));
 
 	connect(settingsAct, &QAction::triggered, this, &RetDecMainWindow::onSettings);
 	connect(sigStudioAct, &QAction::triggered, this, &RetDecMainWindow::onShowSignatureStudio);
@@ -971,6 +1165,45 @@ void RetDecMainWindow::createMenus()
 	refreshViz();
 	connect(&AppSettings::instance(), &AppSettings::settingsChanged, this, refreshViz);
 
+	connect(copyFnAct, &QAction::triggered, this, [this]() {
+		if (!functionList_ || !loadedArtifacts_)
+		{
+			statusBar()->showMessage(QStringLiteral("Load a decompile first, then select a function."), 4000);
+			return;
+		}
+		const auto entry = functionList_->selectedEntry();
+		if (!entry)
+		{
+			statusBar()->showMessage(QStringLiteral("Select a function in the Functions list."), 4000);
+			return;
+		}
+		QString snippet = extractCForFunction(
+			loadedArtifacts_->cPath,
+			entry->startLine,
+			entry->endLine,
+			entry->name.isEmpty() ? entry->rawName : entry->name);
+		if (snippet.trimmed().isEmpty() && decompiledC_)
+		{
+			snippet = decompiledC_->documentText();
+			if (entry->startLine > 0)
+			{
+				const QStringList lines = snippet.split(QLatin1Char('\n'));
+				const int from = entry->startLine - 1;
+				if (from < lines.size())
+				{
+					const int to = (entry->endLine > 0) ? qMin(entry->endLine, lines.size()) : lines.size();
+					snippet = QStringList(lines.mid(from, qMax(0, to - from))).join(QLatin1Char('\n'));
+				}
+			}
+		}
+		if (snippet.trimmed().isEmpty())
+		{
+			statusBar()->showMessage(QStringLiteral("Could not extract C for this function."), 4000);
+			return;
+		}
+		QGuiApplication::clipboard()->setText(snippet);
+		statusBar()->showMessage(QStringLiteral("Copied %1").arg(entry->name), 3000);
+	});
 	connect(compareRefinedAct, &QAction::triggered, this, [this]() {
 		QString orig = decompilerOutputPath_;
 		if (orig.isEmpty() && project_)
@@ -1304,7 +1537,7 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath, std::optiona
 		}
 
 		const QString tiPath = absC + QStringLiteral(".type-inference.json");
-		if (QFileInfo::exists(tiPath))
+		if (AppSettings::instance().analysis.enableTyping && QFileInfo::exists(tiPath))
 		{
 			QFile tf(tiPath);
 			if (tf.open(QIODevice::ReadOnly))
@@ -1350,6 +1583,7 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath, std::optiona
 				{
 					if (!ann->name.isEmpty()) f.name = ann->name;
 					if (!ann->comment.isEmpty()) f.notes = ann->comment;
+					if (!ann->signatureOverride.isEmpty()) f.signature = ann->signatureOverride;
 				}
 			}
 		}
@@ -1369,12 +1603,33 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath, std::optiona
 				QStringLiteral("Sidecars: %1 %2, %3 %4")
 					.arg(QFileInfo(side.dsmPath).fileName(), hasDsm ? QStringLiteral("ok") : QStringLiteral("missing"))
 					.arg(QFileInfo(side.llPath).fileName(), hasLl ? QStringLiteral("ok") : QStringLiteral("missing")));
+			const QString dumpTo = AppSettings::instance().advanced.irDumpPath.trimmed();
+			if (!dumpTo.isEmpty() && hasLl)
+			{
+				QString dest = dumpTo;
+				const QFileInfo destFi(dest);
+				if (destFi.isDir() || dest.endsWith(QLatin1Char('/')) || dest.endsWith(QLatin1Char('\\')))
+					dest = QDir(dumpTo).filePath(QFileInfo(side.llPath).fileName());
+				QFile::remove(dest);
+				if (QFile::copy(side.llPath, dest))
+					diagnostics_->addMessage(
+						panels::DiagnosticEntry::Severity::Info,
+						QStringLiteral("retdec-decompiler"),
+						QStringLiteral("Copied IR to %1").arg(dest));
+				else
+					diagnostics_->addMessage(
+						panels::DiagnosticEntry::Severity::Warning,
+						QStringLiteral("retdec-decompiler"),
+						QStringLiteral("Could not copy IR to %1").arg(dest));
+			}
 		}
 
 		{
 			PipelineContext ctx;
 			ctx.inputBinaryPath = project_ ? project_->binaryPath() : QString();
 			ctx.decompiledText = decompiledC_ ? decompiledC_->documentText() : QString();
+			ctx.irText = loadedArtifacts_->fullLl;
+			ctx.asmText = loadedArtifacts_->fullDsm;
 			ctx.analysisComplete = true;
 			PluginManager::instance().runDecompilerPlugins(ctx);
 			PluginManager::instance().runAnalysisPlugins(ctx);
@@ -2173,6 +2428,18 @@ bool RetDecMainWindow::launchDecompilerForBinary(
 	req.tryEmulation = quitWhenDecompileFinishes_ ? false : property("tryEmulation").toBool();
 	req.keepLibraryFuncs = quitWhenDecompileFinishes_ ? false : property("keepLibraryFuncs").toBool();
 	req.maxMemoryBytes = quitWhenDecompileFinishes_ ? 0 : property("maxMemoryBytes").toULongLong();
+	req.keepAllBrackets = quitWhenDecompileFinishes_ ? false : property("keepAllBrackets").toBool();
+	req.noTimeVaryingInfo = quitWhenDecompileFinishes_ ? false : property("noTimeVaryingInfo").toBool();
+	req.noVarRenaming = quitWhenDecompileFinishes_ ? false : property("noVarRenaming").toBool();
+	req.noCompoundOperators = quitWhenDecompileFinishes_ ? false : property("noCompoundOperators").toBool();
+	req.noSymbolicNames = quitWhenDecompileFinishes_ ? false : property("noSymbolicNames").toBool();
+	req.callInfoObtainer = quitWhenDecompileFinishes_ ? QString() : property("callInfoObtainer").toString();
+	req.arName = quitWhenDecompileFinishes_ ? QString() : property("arName").toString();
+	req.endian = quitWhenDecompileFinishes_ ? QString() : property("decompilerEndian").toString();
+	req.bitSize = quitWhenDecompileFinishes_ ? 0 : property("decompilerBitSize").toInt();
+	req.rawSectionVma = quitWhenDecompileFinishes_ ? 0 : property("rawSectionVma").toULongLong();
+	req.rawMode = quitWhenDecompileFinishes_ ? false : property("rawMode").toBool();
+	req.noMemoryLimit = quitWhenDecompileFinishes_ ? false : property("noMemoryLimit").toBool();
 	req.silent = quitWhenDecompileFinishes_ || st.advanced.verbosity == AdvancedSettings::Verbosity::Quiet
 			  || st.advanced.verbosity == AdvancedSettings::Verbosity::Normal;
 	req.selectDecodeOnly = !quitWhenDecompileFinishes_ && !selectedFunctions.isEmpty();
@@ -2807,6 +3074,7 @@ void RetDecMainWindow::onKeyboardShortcuts()
 					   "CFG, Synced)</td></tr>"
 					   "<tr><td><b>Ctrl+`</b></td><td>Show Console</td></tr>"
 					   "<tr><td><b>Ctrl+Shift+`</b></td><td>Show Problems</td></tr>"
+					   "<tr><td><b>Ctrl+G</b></td><td>Go to address</td></tr>"
 					   "<tr><td><b>Ctrl+,</b></td><td>Settings (Tools menu)</td></tr>"
 					   "</table>"
 					   "<h3>Editor / panels</h3><table cellpadding='4'>"
@@ -2828,6 +3096,7 @@ void RetDecMainWindow::onAnalysisStageChanged(const QString& stage)
 {
 	setStatusStage(stage);
 	if (progressPanel_) progressPanel_->setStageState(stage, panels::StageState::Running);
+	if (project_ && !stage.isEmpty()) project_->setStageStatus(stage, QStringLiteral("running"));
 }
 
 void RetDecMainWindow::onDecompileLogPollTick()
@@ -2873,6 +3142,7 @@ void RetDecMainWindow::onAnalysisFinished()
 	analysisBar_->setTextVisible(true);
 	if (outputTabs_) outputTabs_->setTabVisible(kOutProgress, false);
 	setStatusStage(QStringLiteral("Analysis complete"));
+	if (project_) project_->setStageStatus(QStringLiteral("decompile"), QStringLiteral("done"));
 }
 
 void RetDecMainWindow::updateElapsedTime()

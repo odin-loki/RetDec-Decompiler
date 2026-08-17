@@ -63,6 +63,30 @@ struct DecompilerLaunchRequest
 	quint64 maxMemoryBytes = 0;
 	/// Adds `--backend-keep-library-funcs`.
 	bool keepLibraryFuncs = false;
+	/// Adds `--backend-keep-all-brackets`.
+	bool keepAllBrackets = false;
+	/// Adds `--backend-no-time-varying-info`.
+	bool noTimeVaryingInfo = false;
+	/// Adds `--backend-no-var-renaming`.
+	bool noVarRenaming = false;
+	/// Adds `--backend-no-compound-operators`.
+	bool noCompoundOperators = false;
+	/// Adds `--backend-no-symbolic-names`.
+	bool noSymbolicNames = false;
+	/// `optim` or `pessim` → `--backend-call-info-obtainer`. Empty omits.
+	QString callInfoObtainer;
+	/// Non-empty → `--ar-name` (archive member).
+	QString arName;
+	/// `little` or `big` → `-e` / `--endian`. Empty omits.
+	QString endian;
+	/// 16, 32, or 64 → `-b` / `--bit-size`. Zero omits.
+	int bitSize = 0;
+	/// Non-zero → `--raw-section-vma` as 0xHEX.
+	quint64 rawSectionVma = 0;
+	/// Adds `-m raw` (firmware / raw image). Default false = omit (bin).
+	bool rawMode = false;
+	/// Adds `--no-memory-limit`.
+	bool noMemoryLimit = false;
 	DecompilerSettings decompiler;
 };
 

@@ -99,6 +99,10 @@ TEST(DecompilerLaunch, BuildsBaselineArguments)
 	EXPECT_FALSE(args.contains(QStringLiteral("--try-emulation")));
 	EXPECT_FALSE(args.contains(QStringLiteral("--max-memory")));
 	EXPECT_FALSE(args.contains(QStringLiteral("--backend-keep-library-funcs")));
+	EXPECT_FALSE(args.contains(QStringLiteral("--backend-keep-all-brackets")));
+	EXPECT_FALSE(args.contains(QStringLiteral("--ar-name")));
+	EXPECT_FALSE(args.contains(QStringLiteral("--no-memory-limit")));
+	EXPECT_FALSE(args.contains(QStringLiteral("-m")));
 }
 
 TEST(DecompilerLaunch, FastModeAddsFlagsAndLlvmPassesJson)
@@ -212,6 +216,45 @@ TEST(DecompilerLaunch, TryEmulationMaxMemoryAndKeepLibraryFuncs)
 	ASSERT_GE(idx, 0);
 	EXPECT_LT(idx + 1, args.size());
 	EXPECT_EQ(args.at(idx + 1), QStringLiteral("2147483648"));
+}
+
+TEST(DecompilerLaunch, BackendStyleRawArchiveAndEndianFlags)
+{
+	retdec::gui::DecompilerLaunchRequest req;
+	req.binaryPath = QStringLiteral("/tmp/bin");
+	req.outputPath = QStringLiteral("/tmp/out.c");
+	req.keepAllBrackets = true;
+	req.noTimeVaryingInfo = true;
+	req.noVarRenaming = true;
+	req.noCompoundOperators = true;
+	req.noSymbolicNames = true;
+	req.callInfoObtainer = QStringLiteral("optim");
+	req.arName = QStringLiteral("member.o");
+	req.endian = QStringLiteral("little");
+	req.bitSize = 32;
+	req.rawSectionVma = 0x80000000ull;
+	req.rawMode = true;
+	req.noMemoryLimit = true;
+
+	const QStringList args = retdec::gui::buildDecompilerArguments(req);
+	EXPECT_TRUE(args.contains(QStringLiteral("--backend-keep-all-brackets")));
+	EXPECT_TRUE(args.contains(QStringLiteral("--backend-no-time-varying-info")));
+	EXPECT_TRUE(args.contains(QStringLiteral("--backend-no-var-renaming")));
+	EXPECT_TRUE(args.contains(QStringLiteral("--backend-no-compound-operators")));
+	EXPECT_TRUE(args.contains(QStringLiteral("--backend-no-symbolic-names")));
+	EXPECT_TRUE(args.contains(QStringLiteral("--backend-call-info-obtainer")));
+	EXPECT_TRUE(args.contains(QStringLiteral("optim")));
+	EXPECT_TRUE(args.contains(QStringLiteral("--ar-name")));
+	EXPECT_TRUE(args.contains(QStringLiteral("member.o")));
+	EXPECT_TRUE(args.contains(QStringLiteral("-e")));
+	EXPECT_TRUE(args.contains(QStringLiteral("little")));
+	EXPECT_TRUE(args.contains(QStringLiteral("-b")));
+	EXPECT_TRUE(args.contains(QStringLiteral("32")));
+	EXPECT_TRUE(args.contains(QStringLiteral("--raw-section-vma")));
+	EXPECT_TRUE(args.contains(QStringLiteral("0x80000000")));
+	EXPECT_TRUE(args.contains(QStringLiteral("-m")));
+	EXPECT_TRUE(args.contains(QStringLiteral("raw")));
+	EXPECT_TRUE(args.contains(QStringLiteral("--no-memory-limit")));
 }
 
 TEST(DecompilerLaunch, VerboseOmitsSilentFlag)

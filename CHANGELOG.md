@@ -69,6 +69,16 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   Visualisation plugins mounts `IVisualisationPlugin` panels. Analysis
   plugin `summary()` lines appear in Problems. Recent files drops
   missing paths and can be cleared.
+- Analysis menu C-output style flags (`--backend-keep-all-brackets`,
+  no-time-varying-info, no-var-renaming, no-compound-operators,
+  no-symbolic-names, call-info obtainer). Raw-image mode (`-m raw`),
+  endian, bit size, `--raw-section-vma`, `--ar-name`, and
+  `--no-memory-limit`. View → Go to address (Ctrl+G). Tools → Copy
+  selected function C. Settings confidence floors filter Problems
+  when a detection reports confidence. Type-inference Problems honor
+  Analysis → Type inference. Advanced IR dump path copies the `.ll`
+  sidecar. Plugins receive IR/ASM text. Project stage status is
+  recorded. Saved signature overrides re-apply on load.
 
 ---
 
