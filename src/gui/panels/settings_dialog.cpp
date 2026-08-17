@@ -84,11 +84,35 @@ static QWidget* makeScrollArea(QWidget* inner)
 }
 
 static const QStringList kUiLanguageCodes{
-	QStringLiteral("en"),
-	QStringLiteral("de"),
-	QStringLiteral("fr"),
-	QStringLiteral("es"),
-	QStringLiteral("zh")};
+	QStringLiteral("en"), QStringLiteral("de"), QStringLiteral("fr"), QStringLiteral("es"), QStringLiteral("zh")};
+
+static QStringList enabledPluginIdsFromList(const QListWidget* list)
+{
+	QStringList ids;
+	if (!list) return ids;
+	for (int i = 0; i < list->count(); ++i)
+	{
+		const QListWidgetItem* item = list->item(i);
+		if (!item || item->checkState() != Qt::Checked) continue;
+		const QString id = item->data(Qt::UserRole).toString();
+		if (!id.isEmpty()) ids.append(id);
+	}
+	return ids;
+}
+
+static QStringList searchPathsFromList(const QListWidget* list)
+{
+	QStringList paths;
+	if (!list) return paths;
+	for (int i = 0; i < list->count(); ++i)
+	{
+		const QListWidgetItem* item = list->item(i);
+		if (!item) continue;
+		const QString p = item->text().trimmed();
+		if (!p.isEmpty()) paths.append(p);
+	}
+	return paths;
+}
 
 
 // ─── Constructor ─────────────────────────────────────────────────────────────
@@ -729,6 +753,26 @@ QWidget* SettingsDialog::buildPluginsTab()
 		pluginList_->addItem(item);
 	}
 
+	auto* pathList = new QListWidget(w);
+	pathList->setObjectName(QStringLiteral("pluginSearchPaths"));
+	pathList->setAlternatingRowColors(true);
+	pathList->setMaximumHeight(120);
+	for (const QString& p: AppSettings::instance().plugins.searchPaths)
+		pathList->addItem(p);
+
+	auto* addPathBtn = new QPushButton(QStringLiteral("Add path…"), w);
+	addPathBtn->setObjectName(QStringLiteral("pluginSearchAdd"));
+	auto* removePathBtn = new QPushButton(QStringLiteral("Remove"), w);
+	removePathBtn->setObjectName(QStringLiteral("pluginSearchRemove"));
+	auto* rescanPathBtn = new QPushButton(QStringLiteral("Rescan"), w);
+	rescanPathBtn->setObjectName(QStringLiteral("pluginSearchRescan"));
+
+	auto* pathBtnRow = new QHBoxLayout;
+	pathBtnRow->addWidget(addPathBtn);
+	pathBtnRow->addWidget(removePathBtn);
+	pathBtnRow->addWidget(rescanPathBtn);
+	pathBtnRow->addStretch();
+
 	auto* btnRow = new QHBoxLayout;
 	installPluginBtn_ = new QPushButton("Install Plugin…");
 	unloadPluginBtn_ = new QPushButton("Unload Selected");
@@ -740,10 +784,33 @@ QWidget* SettingsDialog::buildPluginsTab()
 	pluginDetailLabel_->setWordWrap(true);
 	pluginDetailLabel_->setStyleSheet("color:#888; padding:4px;");
 
+	l->addWidget(new QLabel(QStringLiteral("<b>Search paths</b>")));
+	l->addWidget(pathList);
+	l->addLayout(pathBtnRow);
 	l->addWidget(new QLabel("<b>Installed Plugins</b>"));
 	l->addWidget(pluginList_, 1);
 	l->addLayout(btnRow);
 	l->addWidget(pluginDetailLabel_);
+
+	connect(addPathBtn, &QPushButton::clicked, this, [this]() {
+		if (!qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) return;
+		auto* list = findChild<QListWidget*>(QStringLiteral("pluginSearchPaths"));
+		if (!list) return;
+		const QString path = QFileDialog::getExistingDirectory(this, QStringLiteral("Plugin search path"), QString());
+		if (path.isEmpty()) return;
+		list->addItem(path);
+	});
+	connect(removePathBtn, &QPushButton::clicked, this, [this]() {
+		auto* list = findChild<QListWidget*>(QStringLiteral("pluginSearchPaths"));
+		if (!list) return;
+		const int row = list->currentRow();
+		if (row < 0) return;
+		delete list->takeItem(row);
+	});
+	connect(rescanPathBtn, &QPushButton::clicked, this, [this]() {
+		auto* list = findChild<QListWidget*>(QStringLiteral("pluginSearchPaths"));
+		PluginManager::instance().scanAndLoad(searchPathsFromList(list));
+	});
 
 	connect(installPluginBtn_, &QPushButton::clicked, this, &SettingsDialog::onInstallPlugin);
 	connect(unloadPluginBtn_, &QPushButton::clicked, this, &SettingsDialog::onUnloadPlugin);
@@ -862,6 +929,13 @@ void SettingsDialog::populateFromSettings()
 		const int idx = decompileProfileCombo_->findData(s.decompiler.decompileProfile);
 		decompileProfileCombo_->setCurrentIndex(idx >= 0 ? idx : 1);
 	}
+
+	if (auto* pathList = findChild<QListWidget*>(QStringLiteral("pluginSearchPaths")))
+	{
+		pathList->clear();
+		for (const QString& p: s.plugins.searchPaths)
+			pathList->addItem(p);
+	}
 }
 
 // ─── applyToSettings ─────────────────────────────────────────────────────────
@@ -876,9 +950,8 @@ void SettingsDialog::applyToSettings()
 	s.general.fontSize = fontSizeSpin_->value();
 	{
 		const int langIdx = langCombo_->currentIndex();
-		s.general.language = (langIdx >= 0 && langIdx < kUiLanguageCodes.size())
-			? kUiLanguageCodes.at(langIdx)
-			: QStringLiteral("en");
+		s.general.language =
+			(langIdx >= 0 && langIdx < kUiLanguageCodes.size()) ? kUiLanguageCodes.at(langIdx) : QStringLiteral("en");
 	}
 	s.general.showLineNumbers = lineNumCheck_->isChecked();
 	s.general.wordWrap = wordWrapCheck_->isChecked();
@@ -957,6 +1030,9 @@ void SettingsDialog::applyToSettings()
 	if (liveConsoleTailCheck_) s.decompiler.liveConsoleTail = liveConsoleTailCheck_->isChecked();
 	if (outputLangCombo_) s.decompiler.outputLang = outputLangCombo_->currentData().toString();
 	if (decompileProfileCombo_) s.decompiler.decompileProfile = decompileProfileCombo_->currentData().toString();
+
+	s.plugins.enabledPlugins = enabledPluginIdsFromList(pluginList_);
+	s.plugins.searchPaths = searchPathsFromList(findChild<QListWidget*>(QStringLiteral("pluginSearchPaths")));
 
 	s.notifySettingsChanged();
 }
@@ -1079,6 +1155,8 @@ void SettingsDialog::onPluginToggled(QListWidgetItem* item)
 	QString id = item->data(Qt::UserRole).toString();
 	bool enabled = (item->checkState() == Qt::Checked);
 	PluginManager::instance().setEnabled(id, enabled);
+	AppSettings::instance().plugins.enabledPlugins = enabledPluginIdsFromList(pluginList_);
+	AppSettings::instance().save();
 }
 
 void SettingsDialog::onFontChanged(const QFont& font)

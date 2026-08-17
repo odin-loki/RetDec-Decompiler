@@ -93,6 +93,8 @@ struct DecompilerLaunchRequest
 	QString backendEnabledOpts;
 	/// >= 0 → `--ar-index` (archive member by index). -1 omits. Ignored if arName is set.
 	int arIndex = -1;
+	/// Adds `--backend-no-opts` when not already in fast mode (fast already emits it).
+	bool backendNoOpts = false;
 	DecompilerSettings decompiler;
 };
 

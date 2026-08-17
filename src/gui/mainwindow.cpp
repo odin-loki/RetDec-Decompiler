@@ -949,6 +949,7 @@ void RetDecMainWindow::createMenus()
 			addCk(QStringLiteral("No variable renaming"), QStringLiteral("cStyleNoRename"));
 			addCk(QStringLiteral("No compound operators"), QStringLiteral("cStyleNoCompound"));
 			addCk(QStringLiteral("No symbolic names"), QStringLiteral("cStyleNoSymbolic"));
+			addCk(QStringLiteral("Disable backend optimizations (--backend-no-opts)"), QStringLiteral("cStyleNoOpts"));
 			auto* cio = new QComboBox(dlg);
 			cio->setObjectName(QStringLiteral("cStyleCallInfo"));
 			cio->addItems({QStringLiteral("omit"), QStringLiteral("optim"), QStringLiteral("pessim")});
@@ -976,6 +977,7 @@ void RetDecMainWindow::createMenus()
 				setCk(QStringLiteral("cStyleNoRename"), "noVarRenaming");
 				setCk(QStringLiteral("cStyleNoCompound"), "noCompoundOperators");
 				setCk(QStringLiteral("cStyleNoSymbolic"), "noSymbolicNames");
+				setCk(QStringLiteral("cStyleNoOpts"), "backendNoOpts");
 				QString cioVal;
 				if (auto* cio = dlg->findChild<QComboBox*>(QStringLiteral("cStyleCallInfo")))
 				{
@@ -1000,6 +1002,7 @@ void RetDecMainWindow::createMenus()
 		loadCk(QStringLiteral("cStyleNoRename"), "noVarRenaming");
 		loadCk(QStringLiteral("cStyleNoCompound"), "noCompoundOperators");
 		loadCk(QStringLiteral("cStyleNoSymbolic"), "noSymbolicNames");
+		loadCk(QStringLiteral("cStyleNoOpts"), "backendNoOpts");
 		if (auto* cio = dlg->findChild<QComboBox*>(QStringLiteral("cStyleCallInfo")))
 		{
 			const QString v = property("callInfoObtainer").toString();
@@ -1353,6 +1356,7 @@ void RetDecMainWindow::createMenus()
 		statusBar()->showMessage(QStringLiteral("Copied %1").arg(entry->name), 3000);
 	});
 	connect(compareRefinedAct, &QAction::triggered, this, [this]() {
+		if (!qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) return;
 		QString orig = decompilerOutputPath_;
 		if (orig.isEmpty() && project_)
 			orig = locateGuiDecompiledCPath(
@@ -1361,30 +1365,20 @@ void RetDecMainWindow::createMenus()
 		const QString refined = orig + QStringLiteral(".refined.c");
 		if (orig.isEmpty() || !QFileInfo::exists(orig) || !QFileInfo::exists(refined))
 		{
-			QMessageBox::information(
-				this,
-				QStringLiteral("Compare"),
-				QStringLiteral("Need both the decompiled .c and its .refined.c sidecar."));
+			statusBar()->showMessage(QStringLiteral("Need both the decompiled .c and its .refined.c sidecar."), 4000);
 			return;
 		}
 		QFile lf(orig);
 		QFile rf(refined);
 		if (!lf.open(QIODevice::ReadOnly) || !rf.open(QIODevice::ReadOnly))
 		{
-			QMessageBox::warning(this, QStringLiteral("Compare"), QStringLiteral("Could not read C files."));
+			statusBar()->showMessage(QStringLiteral("Could not read C files for compare."), 4000);
 			return;
 		}
-		QDialog dlg(this);
-		dlg.setWindowTitle(QStringLiteral("Compare — original vs refined"));
-		auto* lay = new QVBoxLayout(&dlg);
-		auto* diff = new panels::DiffPanel(&dlg);
-		diff->setDiff(QString::fromUtf8(lf.readAll()), QString::fromUtf8(rf.readAll()), QFileInfo(refined).fileName());
-		lay->addWidget(diff, 1);
-		auto* box = new QDialogButtonBox(QDialogButtonBox::Close);
-		QObject::connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-		lay->addWidget(box);
-		dlg.resize(1100, 700);
-		dlg.exec();
+		if (!comparePanel_) comparePanel_ = new panels::DiffPanel(this);
+		comparePanel_->addStage(
+			QStringLiteral("Original vs refined"), QString::fromUtf8(lf.readAll()), QString::fromUtf8(rf.readAll()));
+		showAsToolWindow(this, comparePanel_, QStringLiteral("Compare — original vs refined"), QSize(1100, 700));
 	});
 
 	// ── Help ──────────────────────────────────────────────────────────────────
@@ -1775,6 +1769,38 @@ bool RetDecMainWindow::loadDecompileArtifacts(const QString& cPath, std::optiona
 		}
 		if (functionList_) functionList_->setFunctions(shown);
 		setStatusFunctionCount(static_cast<int>(loadedArtifacts_->functions.size()));
+		if (progressPanel_)
+		{
+			qint64 instrs = 0;
+			for (const auto& f: loadedArtifacts_->functions)
+				instrs += f.instrCount;
+			progressPanel_->setFunctionCount(static_cast<int>(loadedArtifacts_->functions.size()));
+			progressPanel_->setInstructionCount(instrs);
+			if (lastDecompileSubprocessMs_ > 0)
+			{
+				const double sec = static_cast<double>(lastDecompileSubprocessMs_) / 1000.0;
+				progressPanel_->setThroughput(
+					sec > 0.0 ? static_cast<double>(loadedArtifacts_->functions.size()) / sec : 0.0,
+					sec > 0.0 ? static_cast<double>(instrs) / sec : 0.0);
+			}
+		}
+		if (comparePanel_ && qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS"))
+		{
+			const QString refinedPath = absC + QStringLiteral(".refined.c");
+			if (QFileInfo::exists(absC) && QFileInfo::exists(refinedPath))
+			{
+				QFile origF(absC);
+				QFile refF(refinedPath);
+				if (origF.open(QIODevice::ReadOnly) && refF.open(QIODevice::ReadOnly))
+				{
+					comparePanel_->clear();
+					comparePanel_->addStage(
+						QStringLiteral("Original vs refined"),
+						QString::fromUtf8(origF.readAll()),
+						QString::fromUtf8(refF.readAll()));
+				}
+			}
+		}
 
 		populateSemanticDetectionsFromConfig(diagnostics_, loadedArtifacts_->config);
 
@@ -2063,6 +2089,22 @@ void RetDecMainWindow::openProject(const QString& path)
 	commandLog_->clear();
 	liveConsole_->clear();
 	progressPanel_->resetAll();
+	if (progressPanel_ && project_)
+	{
+		bool anyDone = false;
+		for (const QString& name: project_->stageNames())
+		{
+			const QString st = project_->stageStatus(name);
+			if (st == QLatin1String("done"))
+			{
+				progressPanel_->setStageState(name, panels::StageState::Done);
+				anyDone = true;
+			}
+			else if (st == QLatin1String("running"))
+				progressPanel_->setStageState(name, panels::StageState::Running);
+		}
+		if (anyDone && outputTabs_) outputTabs_->setTabVisible(kOutProgress, true);
+	}
 	if (triageBanner_)
 	{
 		triageBanner_->setBinary(project_->binaryPath());
@@ -2636,6 +2678,7 @@ bool RetDecMainWindow::launchDecompilerForBinary(
 		const QVariant idx = property("arIndex");
 		req.arIndex = (!quitWhenDecompileFinishes_ && idx.isValid()) ? idx.toInt() : -1;
 	}
+	req.backendNoOpts = quitWhenDecompileFinishes_ ? false : property("backendNoOpts").toBool();
 	req.silent = quitWhenDecompileFinishes_ || st.advanced.verbosity == AdvancedSettings::Verbosity::Quiet
 			  || st.advanced.verbosity == AdvancedSettings::Verbosity::Normal;
 	req.selectDecodeOnly = !quitWhenDecompileFinishes_ && !selectedFunctions.isEmpty();
@@ -3054,7 +3097,17 @@ void RetDecMainWindow::finishExternalDecompileUi()
 	stopAction_->setEnabled(false);
 	elapsedTimer_->stop();
 	analysisBar_->setVisible(false);
-	if (outputTabs_) outputTabs_->setTabVisible(kOutProgress, false);
+	if (progressPanel_)
+	{
+		const QString last = property("lastProgressStage").toString();
+		if (!last.isEmpty())
+		{
+			progressPanel_->setStageState(last, panels::StageState::Done);
+			if (project_) project_->setStageStatus(last, QStringLiteral("done"));
+		}
+		progressPanel_->setOverallProgress(100);
+	}
+	setProperty("lastProgressStage", QString());
 	setStatusStage(QStringLiteral("Idle"));
 }
 
@@ -3158,6 +3211,7 @@ void RetDecMainWindow::onDecompilerProcessFinished(int exitCode, QProcess::ExitS
 				QStringLiteral("retdec-decompiler failed (exit %1). See Problems.").arg(exitCode));
 		}
 	}
+	if (analysisBridge_) analysisBridge_->reportAnalysisCompleted(decompileMs);
 	finishExternalDecompileUi();
 
 	if (wasBatch && batchRunning_)
@@ -3311,6 +3365,13 @@ void RetDecMainWindow::onDecompileLogPollTick()
 		setAnalysisProgress(prog.percent);
 		if (progressPanel_)
 		{
+			const QString prev = property("lastProgressStage").toString();
+			if (!prev.isEmpty() && prev != prog.stage)
+			{
+				progressPanel_->setStageState(prev, panels::StageState::Done);
+				if (project_) project_->setStageStatus(prev, QStringLiteral("done"));
+			}
+			setProperty("lastProgressStage", prog.stage);
 			progressPanel_->setStageState(prog.stage, panels::StageState::Running, prog.percent);
 			progressPanel_->setOverallProgress(prog.percent);
 		}
@@ -3336,7 +3397,7 @@ void RetDecMainWindow::onAnalysisFinished()
 	analysisBar_->setRange(0, 100);
 	analysisBar_->setValue(100);
 	analysisBar_->setTextVisible(true);
-	if (outputTabs_) outputTabs_->setTabVisible(kOutProgress, false);
+	if (progressPanel_) progressPanel_->setOverallProgress(100);
 	setStatusStage(QStringLiteral("Analysis complete"));
 	if (project_) project_->setStageStatus(QStringLiteral("decompile"), QStringLiteral("done"));
 }

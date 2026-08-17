@@ -264,6 +264,7 @@ QStringList buildDecompilerArguments(
 	{
 		args << QStringLiteral("--disable-static-code-detection");
 	}
+	if (req.backendNoOpts && !req.fastDecompile) args << QStringLiteral("--backend-no-opts");
 	if (req.printAfterAll) args << QStringLiteral("--print-after-all");
 	if (req.printBeforeAll) args << QStringLiteral("--print-before-all");
 	if (req.emitCfg) args << QStringLiteral("--backend-emit-cfg");
@@ -564,6 +565,12 @@ void populateSemanticDetectionsFromConfig(
 			if (conf > 0.0 && (k.contains("stl") || k.contains("container")) && conf < rec.stlConfidence) continue;
 			if (conf > 0.0 && (k.contains("crypto") || k.contains("cipher") || k.contains("hash"))
 				&& conf < rec.cryptoConfidence)
+				continue;
+			if (conf > 0.0 && (k.contains("pattern") || k.contains("idiom") || k.contains("algo"))
+				&& conf < rec.patternConfidence)
+				continue;
+			if (conf > 0.0 && (k.contains("concurr") || k.contains("thread") || k.contains("mutex"))
+				&& conf < rec.concurrencyConfidence)
 				continue;
 
 			auto sev = panels::DiagnosticEntry::Severity::Muted;

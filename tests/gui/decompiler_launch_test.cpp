@@ -297,6 +297,18 @@ TEST(DecompilerLaunch, BackendOptsAndArIndex)
 	EXPECT_FALSE(namedArgs.contains(QStringLiteral("--ar-index")));
 }
 
+TEST(DecompilerLaunch, BackendNoOptsStandalone)
+{
+	retdec::gui::DecompilerLaunchRequest req;
+	req.binaryPath = QStringLiteral("/tmp/bin");
+	req.outputPath = QStringLiteral("/tmp/out.c");
+	req.backendNoOpts = true;
+	req.fastDecompile = false;
+
+	const QStringList args = retdec::gui::buildDecompilerArguments(req);
+	EXPECT_EQ(args.count(QStringLiteral("--backend-no-opts")), 1);
+}
+
 TEST(DecompilerLaunch, VerboseOmitsSilentFlag)
 {
 	retdec::gui::DecompilerLaunchRequest req;
@@ -536,6 +548,40 @@ TEST(DecompilerLaunch, SemanticDetectionsOmitConcurrencyWhenAnalysisFlagOff)
 
 	QJsonObject fn;
 	fn.insert(QStringLiteral("name"), QStringLiteral("worker"));
+	fn.insert(QStringLiteral("semanticDetections"), dets);
+
+	QJsonArray fns;
+	fns.append(fn);
+
+	QJsonObject root;
+	root.insert(QStringLiteral("functions"), fns);
+
+	retdec::gui::panels::DiagnosticsPanel panel;
+	retdec::gui::populateSemanticDetectionsFromConfig(&panel, root);
+
+	auto* model = panel.findChild<retdec::gui::panels::DiagnosticsModel*>();
+	ASSERT_NE(model, nullptr);
+	EXPECT_EQ(model->rowCount(), 0);
+
+	st.resetToDefaults();
+}
+
+TEST(DecompilerLaunch, SemanticDetectionsOmitPatternBelowRecoveryFloor)
+{
+	auto& st = retdec::gui::AppSettings::instance();
+	st.resetToDefaults();
+	st.recovery.patternConfidence = 0.9;
+
+	QJsonObject det;
+	det.insert(QStringLiteral("kind"), QStringLiteral("pattern"));
+	det.insert(QStringLiteral("label"), QStringLiteral("memcpy idiom"));
+	det.insert(QStringLiteral("confidence"), 0.5);
+
+	QJsonArray dets;
+	dets.append(det);
+
+	QJsonObject fn;
+	fn.insert(QStringLiteral("name"), QStringLiteral("copy_block"));
 	fn.insert(QStringLiteral("semanticDetections"), dets);
 
 	QJsonArray fns;

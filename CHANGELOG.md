@@ -92,6 +92,14 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   Functions Copy exports the filtered list (including Tags) to the
   clipboard; CSV/JSON export is skipped in headless tests. Ctrl+L
   jumps to a line in Decompiled C.
+- Progress marks prior log stages Done, stays visible after a run,
+  and fills function / instruction / throughput counts from artifacts.
+  Opening a project restores saved stage status. C-output style can
+  set `--backend-no-opts` without Fast decompile. Recovery pattern
+  and concurrency floors filter Problems. Plugin enablement and
+  search paths persist from Settings. Call graph has a module-cluster
+  filter. Progress Export can Save JSON. Compare original vs refined
+  reuses the Compare panel as a tool window (no modal).
 
 ---
 
