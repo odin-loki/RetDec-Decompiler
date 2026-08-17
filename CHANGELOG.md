@@ -121,6 +121,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   UnreachableFuncs root kept all of UCRT and crashed
   `CopyPropagationOptimizer` (`0xC0000005`).
 - `UnreachableFuncs` uses the image entry only when `main` is missing.
+- Windows corpus/fib fixtures export `main` instead of `/ENTRY:main`.
+  Custom entry skipped CRT startup and failed `printf` (`LNK2019`
+  `__acrt_iob_func`). The export keeps CRT and names `main` for
+  MainDetection.
+- ASan builds are non-PIE (`-fno-pie -no-pie`) and drop compile-time
+  LeakSanitizer. The PIE ASan decompiler still failed to mmap shadow
+  after `mmap_rnd_bits=18` and `setarch -R`.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for

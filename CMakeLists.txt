@@ -112,12 +112,16 @@ if(RETDEC_USE_ADDRESS_SANITIZER)
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /fsanitize=address")
 		message(STATUS "AddressSanitizer enabled")
 	else()
-		set(_ASAN_FLAGS "-fsanitize=address,leak -fno-omit-frame-pointer")
+		# No PIE: ASan's fixed shadow cannot mmap on a large PIE binary
+		# even after mmap_rnd_bits=18 / setarch -R (Failed to mmap).
+		# LeakSanitizer stays off at compile time; CI already sets
+		# detect_leaks=0.
+		set(_ASAN_FLAGS "-fsanitize=address -fno-omit-frame-pointer -fno-pie")
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_ASAN_FLAGS}")
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_ASAN_FLAGS}")
-		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address,leak")
-		set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address,leak")
-		message(STATUS "AddressSanitizer and LeakSanitizer enabled")
+		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address -no-pie")
+		set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address")
+		message(STATUS "AddressSanitizer enabled (no PIE)")
 	endif()
 endif()
 if(RETDEC_USE_UNDEFINED_BEHAVIOR_SANITIZER)

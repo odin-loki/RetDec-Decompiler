@@ -31,7 +31,7 @@ function Compile-CSource {
 
     $cl = Get-Command cl -ErrorAction SilentlyContinue
     if ($cl) {
-        & cl /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf- /Fe:"$Dest" "$Src" /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /ENTRY:main 2>$null
+        & cl /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf- /Fe:"$Dest" "$Src" /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /EXPORT:main 2>$null
         if (Test-Path -LiteralPath $Dest) { return $true }
     }
     $gcc = Get-Command gcc -ErrorAction SilentlyContinue

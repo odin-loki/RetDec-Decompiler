@@ -68,7 +68,10 @@ set(_FIB_BIN "${CMAKE_CURRENT_BINARY_DIR}/fib_smoke${CMAKE_EXECUTABLE_SUFFIX}")
 # decoder never starts: "Detected functions: 0" and ~10 KiB of CRT globals.
 if(MSVC)
     set(_MSVC_FIXTURE_C /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf-)
-    set(_MSVC_FIXTURE_LINK /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /ENTRY:main)
+    # /ENTRY:main skips CRT startup and LNK2019s printf (__acrt_iob_func).
+    # /EXPORT:main keeps the CRT and puts `main` in the export table so
+    # MainDetection / UnreachableFuncs can root on the user function.
+    set(_MSVC_FIXTURE_LINK /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /EXPORT:main)
     add_custom_command(
         OUTPUT "${_FIB_BIN}"
         COMMAND ${CMAKE_C_COMPILER} ${_MSVC_FIXTURE_C} "/Fe${_FIB_BIN}" "${_FIB_SRC}"
