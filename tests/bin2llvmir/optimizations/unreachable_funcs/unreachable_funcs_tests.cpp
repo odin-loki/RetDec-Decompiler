@@ -1,11 +1,11 @@
 /**
-* @file tests/bin2llvmir/optimizations/unreachable_funcs/tests/unreachable_funcs_tests.cpp
-* @brief Tests for the @c NeverReturningFuncs pass.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
-*/
+ * @file tests/bin2llvmir/optimizations/unreachable_funcs/tests/unreachable_funcs_tests.cpp
+ * @brief Tests for the @c NeverReturningFuncs pass.
+ * @copyright (c) 2017 Odin Loch Trading as Imortek
+ */
 
-#include "retdec/bin2llvmir/optimizations/unreachable_funcs/unreachable_funcs.h"
 #include "bin2llvmir/utils/llvmir_tests.h"
+#include "retdec/bin2llvmir/optimizations/unreachable_funcs/unreachable_funcs.h"
 
 using namespace ::testing;
 using namespace llvm;
@@ -17,13 +17,12 @@ namespace tests {
 /**
  * @brief Tests for the @c UnreachableFuncs pass.
  */
-class UnreachableFuncsTests: public LlvmIrTests
-{
-	protected:
-		void runOnModule()
-		{
-			LlvmIrTests::runOnModule<UnreachableFuncs>();
-		}
+class UnreachableFuncsTests : public LlvmIrTests {
+protected:
+	void runOnModule()
+	{
+		LlvmIrTests::runOnModule<UnreachableFuncs>();
+	}
 };
 
 TEST_F(UnreachableFuncsTests, addressOfFunc01)
@@ -783,6 +782,51 @@ TEST_F(UnreachableFuncsTests, onlyMain02)
 
 		main1:                                            ; preds = %main0
 		  ret i32 0
+		}
+	)";
+	checkModuleAgainstExpectedIr(exp);
+}
+
+TEST_F(UnreachableFuncsTests, entryPointKeptWhenMainAddressMissing)
+{
+	parseInput(R"(
+		define void @helper() {
+		  ret void
+		}
+
+		define void @dead() {
+		  ret void
+		}
+
+		define void @entry() {
+		  call void @helper()
+		  ret void
+		}
+	)");
+	auto config = config::Config::fromJsonString(R"({
+		"decompParams": {
+			"entryPoint" : "0x140001000"
+		},
+		"functions" :
+		[
+			{
+				"startAddr" : "0x140001000",
+				"name" : "entry"
+			}
+		]
+	})");
+	ConfigProvider::addConfig(module.get(), config);
+
+	runOnModule();
+
+	std::string exp = R"(
+		define void @helper() {
+		  ret void
+		}
+
+		define void @entry() {
+		  call void @helper()
+		  ret void
 		}
 	)";
 	checkModuleAgainstExpectedIr(exp);

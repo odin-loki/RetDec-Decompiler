@@ -107,6 +107,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Windows corpus/fib fixtures compile without CFG, CET, GS cookies, or
   incremental linking. Default VS 2022+ PEs decompiled to
   `Detected functions: 0` and ~10 KiB of CRT globals.
+- `UnreachableFuncs` treats the image entry point as a live root when
+  `main` is missing (MSVC PE / VS 2022+ CRT). Otherwise every decoded
+  function was stripped.
 - `decompilation_smoke_test.py` prints decompiler stdout/stderr when the
   output file is empty or missing.
 - `ctest-windows` stages decompiler/GUI/fileinfo from the build tree for
