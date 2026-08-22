@@ -54,13 +54,11 @@ Per-opt name-blind numbers: `results/algorithm-recovery-per-opt.md`.
 Stock RetDec has no label export — F1 is fork-only.
 
 B9 adversarial-positive (18 gcc O0/O2 binaries): name-blind mean
-**0.093** after the sort-gate remasure
-(`results/b9-adversarial-positive.md`). Not a product F1.
+**0.111** (`results/b9-adversarial-positive.md`). Not a product F1.
 
-B8 loop-containing negatives (100): FP rate **0.200** after
-the Quicksort self-call gate and Mergesort merge-loop-floor
-removal (`results/b8-loop-negatives.md`). Sort labels are gone;
-remaining FPs are box-blur→ring_buffer and HTTP-verb→copy.
+B8 loop-containing negatives (100): FP rate **0.100** after
+the sort gates and RingBuffer wrap-mask
+(`results/b8-loop-negatives.md`). Remaining FPs are HTTP-verb→copy.
 Loop-free B8 remains 0.000.
 
 B10 zlib 1.3.1 crc32-only: 2/2 decompiled, name-blind F1 **0.000**.

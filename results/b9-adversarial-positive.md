@@ -11,9 +11,9 @@ not a product F1. `crypto_detect` is **not** merged into decompiler
 AES rows are therefore expected misses unless `usedCryptoConstants` is set.
 
 - binaries: **18**
-- mean F1: **0.093** (was 0.076 before the Quicksort self-call
-  and Mergesort floor changes)
-- micro F1: **0.133** (tp=4 fp=26 fn=26)
+- mean F1: **0.111** (was 0.093; heapsort sentinel O0 no longer
+  carries a RingBuffer extra from `n/2` Div)
+- micro F1: **0.138** (tp=4 fp=24 fn=26)
 
 ## Per binary
 
@@ -31,7 +31,7 @@ AES rows are therefore expected misses unless `usedCryptoConstants` is set.
 | `bfs_ring-gcc-O2` | BFS, GraphTraversal | (none) | 0.000 |
 | `dfs_explicit_stack-gcc-O0` | DFS, GraphTraversal | Copy, Memcpy | 0.000 |
 | `dfs_explicit_stack-gcc-O2` | DFS, GraphTraversal | (none) | 0.000 |
-| `heapsort_sentinel-gcc-O0` | HeapSort, Sort | CircularBuffer, HeapSort, RingBuffer, Sort | 0.667 |
+| `heapsort_sentinel-gcc-O0` | HeapSort, Sort | HeapSort, Sort | 1.000 |
 | `heapsort_sentinel-gcc-O2` | HeapSort, Sort | HeapSort, Sort | 1.000 |
 | `strlen_word-gcc-O0` | Strlen, String | HeapSort, Sort | 0.000 |
 | `strlen_word-gcc-O2` | Strlen, String | HeapSort, Sort | 0.000 |

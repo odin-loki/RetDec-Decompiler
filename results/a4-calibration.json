@@ -9,8 +9,13 @@
       "empirical_precision": 0.0
     },
     {
+      "bin": "0.6-0.8",
+      "n": 10,
+      "empirical_precision": 0.0
+    },
+    {
       "bin": "0.8-1.0",
-      "n": 90,
+      "n": 80,
       "empirical_precision": 0.0
     }
   ],
@@ -26,13 +31,8 @@
       "empirical_precision": 0.0
     },
     {
-      "key": "container:ring_buffer",
-      "n": 10,
-      "empirical_precision": 0.0
-    },
-    {
       "key": "container:std::unordered_map<uint32_t, uint32_t>",
-      "n": 70,
+      "n": 80,
       "empirical_precision": 0.0
     }
   ]

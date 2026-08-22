@@ -8,20 +8,6 @@
       "n": 10
     },
     {
-      "key": "algorithm:std::transform",
-      "max_confidence": 0.8500000238418579,
-      "mean_confidence": 0.8500000238418579,
-      "min_confidence": 0.8500000238418579,
-      "n": 10
-    },
-    {
-      "key": "container:ring_buffer",
-      "max_confidence": 1.0,
-      "mean_confidence": 1.0,
-      "min_confidence": 1.0,
-      "n": 10
-    },
-    {
       "key": "container:std::unordered_map<uint32_t, uint32_t>",
       "max_confidence": 0.45000001788139343,
       "mean_confidence": 0.45000001788139343,
@@ -30,50 +16,10 @@
     }
   ],
   "decompiled": 100,
-  "false_positive_binaries": 20,
-  "false_positive_rate": 0.2,
+  "false_positive_binaries": 10,
+  "false_positive_rate": 0.1,
   "fitted": false,
   "positives": {
-    "box_blur_00-gcc-O0": [
-      "CircularBuffer",
-      "RingBuffer"
-    ],
-    "box_blur_01-gcc-O0": [
-      "CircularBuffer",
-      "RingBuffer"
-    ],
-    "box_blur_02-gcc-O0": [
-      "CircularBuffer",
-      "RingBuffer"
-    ],
-    "box_blur_03-gcc-O0": [
-      "CircularBuffer",
-      "RingBuffer"
-    ],
-    "box_blur_04-gcc-O0": [
-      "CircularBuffer",
-      "RingBuffer"
-    ],
-    "box_blur_05-gcc-O0": [
-      "CircularBuffer",
-      "RingBuffer"
-    ],
-    "box_blur_06-gcc-O0": [
-      "CircularBuffer",
-      "RingBuffer"
-    ],
-    "box_blur_07-gcc-O0": [
-      "CircularBuffer",
-      "RingBuffer"
-    ],
-    "box_blur_08-gcc-O0": [
-      "CircularBuffer",
-      "RingBuffer"
-    ],
-    "box_blur_09-gcc-O0": [
-      "CircularBuffer",
-      "RingBuffer"
-    ],
     "http_verb_00-gcc-O0": [
       "Copy",
       "Memcpy"

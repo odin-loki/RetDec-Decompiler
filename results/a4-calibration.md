@@ -11,7 +11,8 @@ correct on this set.
 | Reported confidence | n | empirical precision |
 |--------------------|---|---------------------|
 | 0.4-0.6 | 70 | 0.000 |
-| 0.8-1.0 | 90 | 0.000 |
+| 0.6-0.8 | 10 | 0.000 |
+| 0.8-1.0 | 80 | 0.000 |
 
 ## Per detection kind
 
@@ -19,10 +20,10 @@ correct on this set.
 |-----------|---|---------------------|
 | `algorithm:std::copy` | 10 | 0.000 |
 | `algorithm:std::transform` | 70 | 0.000 |
-| `container:ring_buffer` | 10 | 0.000 |
-| `container:std::unordered_map<uint32_t, uint32_t>` | 70 | 0.000 |
+| `container:std::unordered_map<uint32_t, uint32_t>` | 80 | 0.000 |
 
-No `sort:*` detections remain on this remasure. Remaining
-false labels are containers and `std::copy` / `std::transform`.
-Fitting would require changing detector constants and re-scoring
-the 216-binary table; that was not done.
+No `sort:*` or `container:ring_buffer` on this remasure. Remaining
+false labels (`std::copy` / `std::transform` / `unordered_map`)
+still have empirical precision **0.000**. Fitting would require
+changing detector constants and re-scoring the 216-binary table;
+that was not done.

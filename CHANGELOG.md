@@ -8,6 +8,14 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- RingBufferDetector requires `And` with a `(2^k-1)` wrap mask
+  (`k<=16`). Plain `Div` is no longer modulo (B8 box-blur `/ 3`
+  and heapsort `n/2`). Recovered SSA from `llvm_to_ssa` has empty
+  uses, so this does not assign on decompiled ELFs — corpus
+  `ring_buffer` is a miss until uses are attached. Tests:
+  `PowerOfTwoAndMaskIsRingBuffer`, `AndWithoutImmediateIsNotRingBuffer`,
+  `PlainDivIsNotRingBuffer`. B8 loop FP **0.100** (10/100:
+  HTTP-verb copy only). B9 remasure mean F1 **0.111**.
 - MergesortDetector no longer floors a merge-loop-only function
   to 0.55. Split mergesort without recursion or malloc is a miss.
   Test: `MergeLoopWithoutRecursionStaysBelowAssign`. B8 loop FP
