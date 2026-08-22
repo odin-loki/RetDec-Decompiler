@@ -860,6 +860,26 @@ TEST(NeuralSemanticContext, SerializesOptionalFunctionMetadata)
 	EXPECT_EQ(json.find("fn_401001"), std::string::npos);
 }
 
+TEST(NeuralSemanticContext, SerializesFunctionRoleFlags)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Function fn("fn_401000");
+	fn.setDeclarationString("void Cipher::~Cipher()");
+	fn.setIsDestructor(true);
+	fn.setIsVirtual(true);
+	fn.setIsVariadic(true);
+	fn.setIsDynamicallyLinked();
+	cfg.functions.insert(fn);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"destructor\":true"), std::string::npos);
+	EXPECT_NE(json.find("\"virtual\":true"), std::string::npos);
+	EXPECT_NE(json.find("\"variadic\":true"), std::string::npos);
+	EXPECT_NE(json.find("\"dynamically_linked\":true"), std::string::npos);
+	EXPECT_EQ(json.find("\"constructor\""), std::string::npos);
+	EXPECT_EQ(json.find("\"syscall\""), std::string::npos);
+}
+
 TEST(NeuralSemanticContext, SerializesCallingConvention)
 {
 	auto cfg = retdec::config::Config::empty();

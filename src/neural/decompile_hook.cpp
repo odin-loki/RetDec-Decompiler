@@ -151,6 +151,16 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		if (!fn.getWrappedFunctionName().empty())
 			oss << ",\"wrapped\":\"" << jsonEscape(fn.getWrappedFunctionName()) << '"';
 		if (fn.isFromDebug()) oss << ",\"from_debug\":true";
+		if (fn.isConstructor()) oss << ",\"constructor\":true";
+		if (fn.isDestructor()) oss << ",\"destructor\":true";
+		if (fn.isVirtual()) oss << ",\"virtual\":true";
+		if (fn.isVariadic()) oss << ",\"variadic\":true";
+		if (fn.isExported()) oss << ",\"exported\":true";
+		if (fn.isThumb()) oss << ",\"thumb\":true";
+		if (fn.isSyscall()) oss << ",\"syscall\":true";
+		if (fn.isIdiom()) oss << ",\"idiom\":true";
+		if (fn.isStaticallyLinked()) oss << ",\"statically_linked\":true";
+		if (fn.isDynamicallyLinked()) oss << ",\"dynamically_linked\":true";
 		if (fn.callingConvention.isKnown())
 		{
 			std::ostringstream cc;

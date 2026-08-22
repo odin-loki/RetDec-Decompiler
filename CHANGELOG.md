@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` also dumps existing
+  function role flags (constructor / destructor / virtual /
+  variadic / exported / thumb / syscall / idiom / static or
+  dynamic link) on already-included functions. These flags
+  alone do not include a function. Test:
+  `SerializesFunctionRoleFlags`. Default F5 is unchanged.
 - N16 leftover: `serializeSemanticContext` also dumps known
   file type (`shared` / `archive` / `object` / `executable`)
   from existing `FileType` predicates. Unknown stays omitted.
