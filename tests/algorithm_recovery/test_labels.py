@@ -348,6 +348,26 @@ def test_symbol_name_evidence_excluded_from_headline() -> None:
     assert "HeapSort" in labels
 
 
+def test_tagged_open_addressing_excluded_from_headline() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {
+                        "kind": "container",
+                        "label": "open_addressing_hash_table",
+                        "confidence": 0.85,
+                        "detail": "evidence:symbol_name open_addressing",
+                    },
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "hash_table-gcc-O0")
+    assert "HashTable" not in labels
+    assert "OpenAddressing" not in labels
+
+
 def test_linear_search_strips_memcpy_noise() -> None:
     import extract_decompiler_predictions as edp
 
@@ -452,6 +472,7 @@ def main() -> int:
     test_ring_buffer_drops_binary_search_noise()
     test_atomic_adds_concurrency()
     test_symbol_name_evidence_excluded_from_headline()
+    test_tagged_open_addressing_excluded_from_headline()
     test_linear_search_strips_memcpy_noise()
     test_mergesort_strips_graph_noise()
     test_binary_search_stripped_on_sort_binary()

@@ -9,32 +9,30 @@ This is **not** a product F1. Do not advertise it as one. The checked-in
 score. Official `scripts/run_algorithm_recovery_full.sh` still gates
 `MIN_MEAN_F1=0.95`; that mismatch is a finding, not a silent gate change.
 
-Remasured after the detector precision gates (sort / hash / copy). Mean F1
-dropped from 0.124 to **0.107** because false labels fell (fp 360 → 62)
-and a few true labels were also dropped (tp 77 → 64). Do not advertise
-the old 0.124 as current.
+Remasured after B7 tagged open-addressing as `evidence:symbol_name`.
+Mean F1 dropped from 0.107 to **0.056** because hash-table labels left
+the headline (tp 64 → 34). Do not advertise 0.107 as current.
 
-ci-core (9 gcc-O0 binaries) name-blind `mean_f1` is **0.237**
-(`results/algorithm-recovery-ci.json`; CI95 0.037–0.496). The full
-set is harder. hash_table is 1.000; pthread_mutex is 0.000 after
-B7 excluded symbol-name concurrency hits.
+ci-core (9 gcc-O0 binaries) name-blind `mean_f1` is **0.126**
+(`results/algorithm-recovery-ci.json`; CI95 0.000–0.341). hash_table
+and pthread_mutex are both 0.000.
 
 ## Headline (216 binaries)
 
 | Metric | Value |
 |--------|-------|
-| mean F1 (per-binary) | **0.107** |
-| bootstrap 95% CI | 0.073 – 0.145 (n=216, 2000 resamples) |
-| micro F1 | 0.222 (tp=64, fp=62, fn=386) |
-| macro F1 | **0.119** |
+| mean F1 (per-binary) | **0.056** |
+| bootstrap 95% CI | 0.034 – 0.083 (n=216, 2000 resamples) |
+| micro F1 | 0.126 (tp=34, fp=56, fn=416) |
+| macro F1 | **0.049** |
 
 ## Per optimisation level
 
 | Opt | n | mean F1 | 95% CI | micro F1 |
 |-----|---|---------|--------|----------|
-| O0 | 72 | **0.102** | 0.045 – 0.165 | 0.202 |
-| O2 | 72 | **0.110** | 0.050 – 0.179 | 0.232 |
-| O3 | 72 | **0.110** | 0.050 – 0.179 | 0.234 |
+| O0 | 72 | **0.050** | 0.014 – 0.094 | 0.108 |
+| O2 | 72 | **0.059** | 0.021 – 0.110 | 0.135 |
+| O3 | 72 | **0.059** | 0.021 – 0.110 | 0.136 |
 
 Name-blind recall is low at every level. That is honesty, not a quality win.
 

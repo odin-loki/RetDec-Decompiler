@@ -1309,7 +1309,13 @@ SemanticDetectionMap buildSemanticDetectionMap(
 	for (const auto& [fnName, result]: containers)
 	{
 		const std::string label = !result.emittedType.empty() ? result.emittedType : result.kindName();
-		auto detection = makeDetection("container", label, result.confidence, result.toString());
+		std::string detail = result.toString();
+		// Open-addressing requires a strcmp/memcmp/hash callee (hasKeyCall).
+		if (label.find("open_addressing") != std::string::npos)
+		{
+			detail = "evidence:symbol_name " + detail;
+		}
+		auto detection = makeDetection("container", label, result.confidence, detail);
 		if (emitCHints)
 		{
 			detection.cHint = result.cHint();

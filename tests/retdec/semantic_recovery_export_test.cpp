@@ -5,6 +5,10 @@
 
 #include "retdec/retdec/semantic_recovery_export.h"
 
+#include "retdec/concurrency_detect/concurrency_detect.h"
+#include "retdec/container_detect/container_detect.h"
+#include "retdec/sort_detect/sort_detect.h"
+
 #include <gtest/gtest.h>
 
 #include <cstdlib>
@@ -527,4 +531,34 @@ TEST(BuildableSidecars, DefinesAsmIntrinsicMacro)
 	fs::remove(dir / "retdec_buildable_asm.h");
 	fs::remove(dir / "retdec_buildable_asm_stubs.c");
 	fs::remove(dir / "retdec_buildable_asm.buildable.c");
+}
+
+TEST(SemanticExport, OpenAddressingDetailIsSymbolNameEvidence)
+{
+	retdec::container_detect::ContainerDetector::DetectionMap containers;
+	retdec::container_detect::ContainerResult oa;
+	oa.emittedType = "open_addressing_hash_table";
+	oa.confidence = 0.85f;
+	containers.emplace("lookup", oa);
+
+	retdec::container_detect::ContainerResult vec;
+	vec.emittedType = "std::vector<int32_t>";
+	vec.confidence = 0.80f;
+	containers.emplace("push", vec);
+
+	const auto map = retdec::analysis::buildSemanticDetectionMap(
+		containers,
+		{},
+		{},
+		retdec::sort_detect::SortDetector::DetectionMap{},
+		retdec::concurrency_detect::ConcurrencyModel{},
+		"c");
+
+	ASSERT_EQ(map.count("lookup"), 1u);
+	ASSERT_FALSE(map.at("lookup").empty());
+	EXPECT_NE(map.at("lookup").front().detail.find("evidence:symbol_name"), std::string::npos);
+
+	ASSERT_EQ(map.count("push"), 1u);
+	ASSERT_FALSE(map.at("push").empty());
+	EXPECT_EQ(map.at("push").front().detail.find("evidence:symbol_name"), std::string::npos);
 }

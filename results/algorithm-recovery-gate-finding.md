@@ -7,8 +7,8 @@ That constant is the stem-era threshold. It was **not** silently lowered.
 |----------|---------|------------|
 | `results/algorithm-recovery-full.json` | **1.0** | Withdrawn stem-tuned score |
 | Official script gate | **0.95** | Still in force; will fail a name-blind run |
-| `results/algorithm-recovery-full-nameblind.json` | **0.107** | Honest name-blind full 216 (was 0.124 before precision gates) |
-| `results/algorithm-recovery-ci.json` | **0.237** | Honest name-blind ci-core 9 (B7 dropped symbol-name concurrency) |
+| `results/algorithm-recovery-full-nameblind.json` | **0.056** | Honest name-blind full 216 (was 0.107 before OA symbol-name tag) |
+| `results/algorithm-recovery-ci.json` | **0.126** | Honest name-blind ci-core 9 (B7 dropped concurrency and OA) |
 
 This mismatch is a **finding**. Do not treat a 0.95 CI pass as current
 product quality. Do not advertise 1.0.

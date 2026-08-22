@@ -24,11 +24,11 @@ Live measurement contract for CI, ship checklist, and the release table.
 | `a4-calibration.md` | Reported confidence vs empirical precision (not fitted) |
 | `b6-rename-guard.md` | Named vs hashed labels on ci-core 9 |
 | `b7-name-evidence.md` | Symbol-name tag; concurrency excluded from headline |
-| `algorithm-recovery-gate-finding.md` | Official 0.95 gate vs honest 0.107 |
+| `algorithm-recovery-gate-finding.md` | Official 0.95 gate vs honest 0.056 |
 
 Algorithm-recovery F1 figures that depended on filename filters are
 **withdrawn** (B1–B5). Name-blind ci-core remasure:
-`results/algorithm-recovery-ci.json` `mean_f1` **0.237**. Do not
+`results/algorithm-recovery-ci.json` `mean_f1` **0.126**. Do not
 advertise 1.0. Stock has no label export — F1 is fork-only.
 
 Live DecompileBench compare: `compare-fork-vs-stock.md` and

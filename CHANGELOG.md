@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- B7: open-addressing export tags `evidence:symbol_name` (strcmp /
+  memcmp / hash callee gate). Name-blind extract skips those hits.
+  Full 216 mean F1 **0.056** (was 0.107). ci-core **0.126** (was
+  0.237). hash_table is 0.000. Official `MIN_MEAN_F1=0.95` was not
+  lowered. Remaining serial/sort/unordered callee tables are
+  untagged (`results/b7-name-evidence.md`).
 - B7: concurrency detections export `evidence:symbol_name` in
   `detail`. Name-blind extract skips those hits. ci-core mean F1
   **0.237** (was 0.332); pthread_mutex is now 0.000. Remaining

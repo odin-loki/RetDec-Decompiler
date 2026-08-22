@@ -2,64 +2,64 @@
   "harness": "algorithm_recovery",
   "summary": {
     "binaries": 216,
-    "mean_f1": 0.10749559082892415,
-    "mean_f1_raw": 0.10749559082892415,
+    "mean_f1": 0.055908289241622576,
+    "mean_f1_raw": 0.055908289241622576,
     "decompiled": 216,
-    "mean_f1_ci95_low": 0.07279541446208113,
-    "mean_f1_ci95_high": 0.14519400352733686,
+    "mean_f1_ci95_low": 0.03368606701940035,
+    "mean_f1_ci95_high": 0.08284832451499119,
     "n": 216,
     "n_boot": 2000
   },
   "per_opt": {
     "O0": {
       "binaries": 72,
-      "mean_f1": 0.10158730158730159,
+      "mean_f1": 0.05,
       "n": 72,
       "micro": {
-        "tp": 20,
-        "fp": 28,
-        "fn": 130,
-        "precision": 0.4166666666666667,
-        "recall": 0.13333333333333333,
-        "f1": 0.20202020202020202,
+        "tp": 10,
+        "fp": 26,
+        "fn": 140,
+        "precision": 0.2777777777777778,
+        "recall": 0.06666666666666667,
+        "f1": 0.10752688172043011,
         "n": 72
       },
-      "mean_f1_ci95_low": 0.04523809523809524,
-      "mean_f1_ci95_high": 0.16455026455026456,
+      "mean_f1_ci95_low": 0.013888888888888888,
+      "mean_f1_ci95_high": 0.09351851851851851,
       "n_boot": 2000
     },
     "O2": {
       "binaries": 72,
-      "mean_f1": 0.11044973544973545,
+      "mean_f1": 0.058862433862433866,
       "n": 72,
       "micro": {
-        "tp": 22,
-        "fp": 18,
-        "fn": 128,
-        "precision": 0.55,
-        "recall": 0.14666666666666667,
-        "f1": 0.23157894736842105,
+        "tp": 12,
+        "fp": 16,
+        "fn": 138,
+        "precision": 0.42857142857142855,
+        "recall": 0.08,
+        "f1": 0.1348314606741573,
         "n": 72
       },
-      "mean_f1_ci95_low": 0.05026455026455026,
-      "mean_f1_ci95_high": 0.17923280423280424,
+      "mean_f1_ci95_low": 0.021164021164021166,
+      "mean_f1_ci95_high": 0.10978835978835978,
       "n_boot": 2000
     },
     "O3": {
       "binaries": 72,
-      "mean_f1": 0.11044973544973545,
+      "mean_f1": 0.058862433862433866,
       "n": 72,
       "micro": {
-        "tp": 22,
-        "fp": 16,
-        "fn": 128,
-        "precision": 0.5789473684210527,
-        "recall": 0.14666666666666667,
-        "f1": 0.23404255319148934,
+        "tp": 12,
+        "fp": 14,
+        "fn": 138,
+        "precision": 0.46153846153846156,
+        "recall": 0.08,
+        "f1": 0.13636363636363638,
         "n": 72
       },
-      "mean_f1_ci95_low": 0.05026455026455026,
-      "mean_f1_ci95_high": 0.17923280423280424,
+      "mean_f1_ci95_low": 0.021164021164021166,
+      "mean_f1_ci95_high": 0.10978835978835978,
       "n_boot": 2000
     }
   },
@@ -1025,52 +1025,52 @@
       "f1": 0.0
     },
     "generated_pthread_mutex-clang-O0": {
-      "tp": 3,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.75,
-      "recall": 1.0,
-      "f1": 0.8571428571428571
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "generated_pthread_mutex-clang-O2": {
-      "tp": 3,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.75,
-      "recall": 1.0,
-      "f1": 0.8571428571428571
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "generated_pthread_mutex-clang-O3": {
-      "tp": 3,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.75,
-      "recall": 1.0,
-      "f1": 0.8571428571428571
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "generated_pthread_mutex-gcc-O0": {
-      "tp": 3,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.75,
-      "recall": 1.0,
-      "f1": 0.8571428571428571
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "generated_pthread_mutex-gcc-O2": {
-      "tp": 3,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.75,
-      "recall": 1.0,
-      "f1": 0.8571428571428571
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "generated_pthread_mutex-gcc-O3": {
-      "tp": 3,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.75,
-      "recall": 1.0,
-      "f1": 0.8571428571428571
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "generated_queue_array-clang-O0": {
       "tp": 0,
@@ -1601,52 +1601,52 @@
       "f1": 0.0
     },
     "hash_table-clang-O0": {
-      "tp": 2,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "hash_table-clang-O2": {
-      "tp": 2,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "hash_table-clang-O3": {
-      "tp": 2,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "hash_table-gcc-O0": {
-      "tp": 2,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "hash_table-gcc-O2": {
-      "tp": 2,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "hash_table-gcc-O3": {
-      "tp": 2,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "memcpy_loop-clang-O0": {
       "tp": 2,
@@ -1925,13 +1925,13 @@
       "n_true": 6
     },
     "Concurrency": {
-      "tp": 6,
+      "tp": 0,
       "fp": 0,
-      "fn": 6,
-      "precision": 1.0,
-      "recall": 0.5,
-      "f1": 0.6666666666666666,
-      "n_pred": 6,
+      "fn": 12,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 0,
       "n_true": 12
     },
     "Copy": {
@@ -2025,13 +2025,13 @@
       "n_true": 12
     },
     "HashTable": {
-      "tp": 6,
+      "tp": 0,
       "fp": 0,
-      "fn": 6,
-      "precision": 1.0,
-      "recall": 0.5,
-      "f1": 0.6666666666666666,
-      "n_pred": 6,
+      "fn": 12,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 0,
       "n_true": 12
     },
     "HeapSort": {
@@ -2185,23 +2185,23 @@
       "n_true": 6
     },
     "Mutex": {
-      "tp": 6,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0,
-      "n_pred": 6,
+      "fn": 6,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 0,
       "n_true": 6
     },
     "OpenAddressing": {
-      "tp": 6,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0,
-      "n_pred": 6,
+      "fn": 6,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 0,
       "n_true": 6
     },
     "Parse": {
@@ -2235,13 +2235,13 @@
       "n_true": 6
     },
     "Pthread": {
-      "tp": 6,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0,
-      "n_pred": 6,
+      "fn": 6,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 0,
       "n_true": 6
     },
     "Queue": {
@@ -2374,16 +2374,6 @@
       "n_pred": 1,
       "n_true": 6
     },
-    "Thread": {
-      "tp": 0,
-      "fp": 6,
-      "fn": 0,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0,
-      "n_pred": 6,
-      "n_true": 0
-    },
     "Varint": {
       "tp": 0,
       "fp": 0,
@@ -2406,65 +2396,65 @@
     }
   },
   "micro": {
-    "tp": 64,
-    "fp": 62,
-    "fn": 386,
-    "precision": 0.5079365079365079,
-    "recall": 0.14222222222222222,
-    "f1": 0.2222222222222222,
+    "tp": 34,
+    "fp": 56,
+    "fn": 416,
+    "precision": 0.37777777777777777,
+    "recall": 0.07555555555555556,
+    "f1": 0.12592592592592594,
     "n": 216
   },
-  "macro_f1": 0.11921261798310978,
+  "macro_f1": 0.04897727272727272,
   "per_opt_raw": {
     "O0": {
       "binaries": 72,
-      "mean_f1": 0.10158730158730159,
+      "mean_f1": 0.05,
       "n": 72,
       "micro": {
-        "tp": 20,
-        "fp": 28,
-        "fn": 130,
-        "precision": 0.4166666666666667,
-        "recall": 0.13333333333333333,
-        "f1": 0.20202020202020202,
+        "tp": 10,
+        "fp": 26,
+        "fn": 140,
+        "precision": 0.2777777777777778,
+        "recall": 0.06666666666666667,
+        "f1": 0.10752688172043011,
         "n": 72
       },
-      "mean_f1_ci95_low": 0.04523809523809524,
-      "mean_f1_ci95_high": 0.16455026455026456,
+      "mean_f1_ci95_low": 0.013888888888888888,
+      "mean_f1_ci95_high": 0.09351851851851851,
       "n_boot": 2000
     },
     "O2": {
       "binaries": 72,
-      "mean_f1": 0.11044973544973545,
+      "mean_f1": 0.058862433862433866,
       "n": 72,
       "micro": {
-        "tp": 22,
-        "fp": 18,
-        "fn": 128,
-        "precision": 0.55,
-        "recall": 0.14666666666666667,
-        "f1": 0.23157894736842105,
+        "tp": 12,
+        "fp": 16,
+        "fn": 138,
+        "precision": 0.42857142857142855,
+        "recall": 0.08,
+        "f1": 0.1348314606741573,
         "n": 72
       },
-      "mean_f1_ci95_low": 0.05026455026455026,
-      "mean_f1_ci95_high": 0.17923280423280424,
+      "mean_f1_ci95_low": 0.021164021164021166,
+      "mean_f1_ci95_high": 0.10978835978835978,
       "n_boot": 2000
     },
     "O3": {
       "binaries": 72,
-      "mean_f1": 0.11044973544973545,
+      "mean_f1": 0.058862433862433866,
       "n": 72,
       "micro": {
-        "tp": 22,
-        "fp": 16,
-        "fn": 128,
-        "precision": 0.5789473684210527,
-        "recall": 0.14666666666666667,
-        "f1": 0.23404255319148934,
+        "tp": 12,
+        "fp": 14,
+        "fn": 138,
+        "precision": 0.46153846153846156,
+        "recall": 0.08,
+        "f1": 0.13636363636363638,
         "n": 72
       },
-      "mean_f1_ci95_low": 0.05026455026455026,
-      "mean_f1_ci95_high": 0.17923280423280424,
+      "mean_f1_ci95_low": 0.021164021164021166,
+      "mean_f1_ci95_high": 0.10978835978835978,
       "n_boot": 2000
     }
   },
@@ -3430,52 +3420,52 @@
       "f1": 0.0
     },
     "generated_pthread_mutex-clang-O0": {
-      "tp": 3,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.75,
-      "recall": 1.0,
-      "f1": 0.8571428571428571
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "generated_pthread_mutex-clang-O2": {
-      "tp": 3,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.75,
-      "recall": 1.0,
-      "f1": 0.8571428571428571
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "generated_pthread_mutex-clang-O3": {
-      "tp": 3,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.75,
-      "recall": 1.0,
-      "f1": 0.8571428571428571
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "generated_pthread_mutex-gcc-O0": {
-      "tp": 3,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.75,
-      "recall": 1.0,
-      "f1": 0.8571428571428571
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "generated_pthread_mutex-gcc-O2": {
-      "tp": 3,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.75,
-      "recall": 1.0,
-      "f1": 0.8571428571428571
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "generated_pthread_mutex-gcc-O3": {
-      "tp": 3,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.75,
-      "recall": 1.0,
-      "f1": 0.8571428571428571
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "generated_queue_array-clang-O0": {
       "tp": 0,
@@ -4006,52 +3996,52 @@
       "f1": 0.0
     },
     "hash_table-clang-O0": {
-      "tp": 2,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "hash_table-clang-O2": {
-      "tp": 2,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "hash_table-clang-O3": {
-      "tp": 2,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "hash_table-gcc-O0": {
-      "tp": 2,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "hash_table-gcc-O2": {
-      "tp": 2,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "hash_table-gcc-O3": {
-      "tp": 2,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "memcpy_loop-clang-O0": {
       "tp": 2,
