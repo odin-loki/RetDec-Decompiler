@@ -8,6 +8,17 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- B8 loop-containing negatives: 100 gcc-O0 binaries (FIR, histogram,
+  Bresenham, box-blur, HTTP-verb, UTF-8 scan, sliding-max, transpose,
+  saturating-add, dot-product). Name-blind FP rate **0.800**. Dominant
+  false label is `sort:quicksort` at confidence 0.90 on 80/100.
+  Assigned idioms (Atoi/Strlen/DFS/Varint) did not fire. A4
+  confidences were **observed, not fitted**.
+- B10 third-party zlib 1.3.1 (`crc32.c` / `compress.c`) compiled into
+  a driver; labels from that upstream source. Both gcc-O0/O2 binaries
+  **timed out** at 300s extract. Mean F1 0.000 is a decompile miss,
+  not a detector score. Not the full Debian set.
+- E2: `IdiomDetectorTest.FirLikeLoopDoesNotAssignAtoiStrlenDfsVarint`.
 - B9 adversarial-positive corpus: 9 idiosyncratic C sources × gcc
   O0/O2 (18 binaries). Name-blind mean F1 **0.076**
   (`results/b9-adversarial-positive.md`). Sentinel heapsort is the
@@ -43,8 +54,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   `tests/algorithm_recovery/sources/negative/`;
   `scripts/ci/run_b8_negative_corpus.sh` publishes the false-positive
   rate (`results/b8-negative-corpus.md`).
-- Q4 goto-optimizer baseline on ci-core default `.c`
-  (`results/goto-optimizer-baseline.md`). Not a SAILR port.
+- Q4 goto-optimizer baseline on ci-core default `.c` at gcc O0/O2/O3
+  (`results/goto-optimizer-baseline.md`). O0 still 0 gotos; 27-sample
+  mean **1.44** (mergesort-O3 = 15). Not a SAILR port.
 - B14 DecompileBench provenance now includes `cc` / `uname` / `cpu_count`.
 - Emit-buildable `.buildable.c` is a single linkable TU: libc headers
   instead of `int putchar(void)`, extra-arity wrappers, cloned file-scope

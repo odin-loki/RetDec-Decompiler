@@ -1426,6 +1426,31 @@ TEST(AlgorithmDetectorTest, NullFunctionSkipped)
 	EXPECT_EQ(results.size(), 0u);
 }
 
+TEST(IdiomDetectorTest, FirLikeLoopDoesNotAssignAtoiStrlenDfsVarint)
+{
+	IdiomDetector det;
+	auto fn = makeFunc(
+		"fir_tap",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Mul,
+			ssa::IrInstr::Op::Add,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::Branch,
+		},
+		2);
+	addBackEdge(*fn);
+	addImmInstr(*fn, ssa::IrInstr::Op::Compare, 3u);
+	for (const auto& r: det.detect(*fn))
+	{
+		EXPECT_NE(r.kind, IdiomKind::Atoi);
+		EXPECT_NE(r.kind, IdiomKind::Strlen);
+		EXPECT_NE(r.kind, IdiomKind::Dfs);
+		EXPECT_NE(r.kind, IdiomKind::Varint);
+	}
+}
+
 TEST(IdiomDetectorTest, NeverAssignsFibonacciLcsKnapsack)
 {
 	IdiomDetector det;

@@ -19,6 +19,17 @@ recorded at build time.
 - gcc `-O0` only
 - Binaries gitignored under `tests/algorithm_recovery/negative_corpus/`
 
+Loop-containing sibling: `scripts/build_negative_loop_corpus.sh` →
+`tests/algorithm_recovery/negative_loop_corpus/` (gitignored).
+
+## B10 third-party (zlib)
+
+- Script: `scripts/build_third_party_corpus.sh`
+- Fetches pinned zlib 1.3.1 (`sha256 9a93b2b7…df23`) into `build/linux/third_party/`
+- Compiles `crc32.c` / `compress.c` / `deflate.c` + a local driver
+- Labels from that upstream source, not the detector
+- Binaries gitignored under `tests/algorithm_recovery/third_party_corpus/`
+
 ## B9 adversarial-positive corpus
 
 - Script: `scripts/build_adversarial_corpus.sh`

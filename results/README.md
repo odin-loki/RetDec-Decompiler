@@ -18,6 +18,9 @@ Live measurement contract for CI, ship checklist, and the release table.
 | `algorithm-recovery-adversarial-b9.json` | Name-blind F1 on the B9 idiosyncratic set (18) |
 | `b9-adversarial-positive.md` | B9 recall table |
 | `corpus-build-recipe.md` | How the corpora are built (B16) |
+| `b8-loop-negatives.md` | Loop-containing B8 FP rate + A4 observation |
+| `b10-third-party.md` | zlib 1.3.1 third-party name-blind result |
+| `goto-optimizer-baseline.md` | Q4 goto counts on ci-core O0/O2/O3 |
 
 Algorithm-recovery F1 figures that depended on filename filters are
 **withdrawn** (B1–B5). Name-blind ci-core remasure:

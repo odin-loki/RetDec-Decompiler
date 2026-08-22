@@ -113,8 +113,15 @@ luac.out
 !/tests/algorithm_recovery/negative_corpus/.gitkeep
 /tests/algorithm_recovery/adversarial_corpus/*
 !/tests/algorithm_recovery/adversarial_corpus/.gitkeep
+/tests/algorithm_recovery/negative_loop_corpus/*
+!/tests/algorithm_recovery/negative_loop_corpus/.gitkeep
+/tests/algorithm_recovery/third_party_corpus/*
+!/tests/algorithm_recovery/third_party_corpus/.gitkeep
 /tests/algorithm_recovery/ground_truth/adversarial.json
+/tests/algorithm_recovery/ground_truth/third_party.json
 /tests/algorithm_recovery/predictions/adversarial-nameblind.json
+/tests/algorithm_recovery/predictions/third-party-nameblind.json
+/results/b8-loop-negative-predictions.json
 /tests/algorithm_recovery/ground_truth/corpus.json
 /tests/algorithm_recovery/predictions/ci.json
 /tests/algorithm_recovery/predictions/corpus.json

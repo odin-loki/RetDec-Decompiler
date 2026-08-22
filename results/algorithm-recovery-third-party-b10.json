@@ -1,0 +1,163 @@
+{
+  "harness": "algorithm_recovery",
+  "summary": {
+    "binaries": 2,
+    "mean_f1": 0.0,
+    "mean_f1_raw": 0.0,
+    "decompiled": 0,
+    "mean_f1_ci95_low": 0.0,
+    "mean_f1_ci95_high": 0.0,
+    "n": 2,
+    "n_boot": 2000
+  },
+  "per_opt": {
+    "O0": {
+      "binaries": 1,
+      "mean_f1": 0.0,
+      "n": 1,
+      "micro": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 3,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "n": 1
+      },
+      "mean_f1_ci95_low": 0.0,
+      "mean_f1_ci95_high": 0.0,
+      "n_boot": 2000
+    },
+    "O2": {
+      "binaries": 1,
+      "mean_f1": 0.0,
+      "n": 1,
+      "micro": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 3,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "n": 1
+      },
+      "mean_f1_ci95_low": 0.0,
+      "mean_f1_ci95_high": 0.0,
+      "n_boot": 2000
+    }
+  },
+  "per_binary": {
+    "zlib_crc_compress-gcc-O0": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "zlib_crc_compress-gcc-O2": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    }
+  },
+  "per_class": {
+    "CRC": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 0,
+      "n_true": 2
+    },
+    "Checksum": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 0,
+      "n_true": 2
+    },
+    "Compression": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 0,
+      "n_true": 2
+    }
+  },
+  "micro": {
+    "tp": 0,
+    "fp": 0,
+    "fn": 6,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "n": 2
+  },
+  "macro_f1": 0.0,
+  "per_opt_raw": {
+    "O0": {
+      "binaries": 1,
+      "mean_f1": 0.0,
+      "n": 1,
+      "micro": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 3,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "n": 1
+      },
+      "mean_f1_ci95_low": 0.0,
+      "mean_f1_ci95_high": 0.0,
+      "n_boot": 2000
+    },
+    "O2": {
+      "binaries": 1,
+      "mean_f1": 0.0,
+      "n": 1,
+      "micro": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 3,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "n": 1
+      },
+      "mean_f1_ci95_low": 0.0,
+      "mean_f1_ci95_high": 0.0,
+      "n_boot": 2000
+    }
+  },
+  "per_binary_raw": {
+    "zlib_crc_compress-gcc-O0": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "zlib_crc_compress-gcc-O2": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    }
+  }
+}

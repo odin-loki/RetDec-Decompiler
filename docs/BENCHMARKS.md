@@ -56,6 +56,15 @@ Stock RetDec has no label export — F1 is fork-only.
 B9 adversarial-positive (18 gcc O0/O2 binaries): name-blind mean
 **0.076**. See `results/b9-adversarial-positive.md`. Not a product F1.
 
+B8 loop-containing negatives (100): FP rate **0.800**
+(`results/b8-loop-negatives.md`). Loop-free B8 remains 0.000.
+
+B10 zlib 1.3.1: extract timed out at 300s on both O0/O2
+(`results/b10-third-party.md`).
+
+Q4 goto baseline on ci-core gcc O0/O2/O3: mean **1.44**
+(`results/goto-optimizer-baseline.md`). O0 is still 0.
+
 ## Migration evals (optional)
 
 `bash scripts/migration_eval_suite.sh` — rellic, LIEF, Retypd, SAILR scaffolds.

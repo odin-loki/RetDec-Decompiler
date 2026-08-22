@@ -9,17 +9,23 @@ if [[ ! -x "${DEC}" ]]; then
 	echo "missing ${DEC}" >&2
 	exit 1
 fi
-NAMES=(
-	bubblesort-gcc-O0
-	mergesort-gcc-O0
-	hash_table-gcc-O0
-	ring_buffer-gcc-O0
-	binary_search-gcc-O0
-	memcpy_loop-gcc-O0
-	generated_quicksort-gcc-O0
-	generated_heapsort-gcc-O0
-	generated_pthread_mutex-gcc-O0
+STEMS=(
+	bubblesort
+	mergesort
+	hash_table
+	ring_buffer
+	binary_search
+	memcpy_loop
+	generated_quicksort
+	generated_heapsort
+	generated_pthread_mutex
 )
+NAMES=()
+for stem in "${STEMS[@]}"; do
+	for opt in O0 O2 O3; do
+		NAMES+=("${stem}-gcc-${opt}")
+	done
+done
 DEC_DIR="$(cd "$(dirname "${DEC}")" && pwd)"
 SHARE_DIR="$(cd "${DEC_DIR}/.." && pwd)/share/retdec"
 mkdir -p "${SHARE_DIR}/profiles" "${WORK}"
@@ -61,8 +67,8 @@ payload = {"samples": rows, "count": n, "total_goto": total, "mean_goto": mean}
 md = [
     "# Q4 goto-optimizer baseline",
     "",
-    "Default F5 `.c` (not `.buildable.c`) on ci-core 9. Counts the `goto` token.",
-    "This is the pre-SAILR baseline; do not treat it as a SAILR port.",
+    "Default F5 `.c` (not `.buildable.c`) on ci-core stems at gcc O0/O2/O3.",
+    "Counts the `goto` token. This is the pre-SAILR baseline; not a SAILR port.",
     "",
     f"- samples: {n}",
     f"- total goto: **{total}**",

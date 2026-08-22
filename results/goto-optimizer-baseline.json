@@ -6,9 +6,29 @@
       "bytes": 5290
     },
     {
+      "name": "bubblesort-gcc-O2",
+      "goto_count": 0,
+      "bytes": 4718
+    },
+    {
+      "name": "bubblesort-gcc-O3",
+      "goto_count": 0,
+      "bytes": 4230
+    },
+    {
       "name": "mergesort-gcc-O0",
       "goto_count": 0,
       "bytes": 7355
+    },
+    {
+      "name": "mergesort-gcc-O2",
+      "goto_count": 3,
+      "bytes": 8033
+    },
+    {
+      "name": "mergesort-gcc-O3",
+      "goto_count": 15,
+      "bytes": 15380
     },
     {
       "name": "hash_table-gcc-O0",
@@ -16,9 +36,29 @@
       "bytes": 6884
     },
     {
+      "name": "hash_table-gcc-O2",
+      "goto_count": 0,
+      "bytes": 6918
+    },
+    {
+      "name": "hash_table-gcc-O3",
+      "goto_count": 0,
+      "bytes": 6918
+    },
+    {
       "name": "ring_buffer-gcc-O0",
       "goto_count": 0,
       "bytes": 5402
+    },
+    {
+      "name": "ring_buffer-gcc-O2",
+      "goto_count": 0,
+      "bytes": 4452
+    },
+    {
+      "name": "ring_buffer-gcc-O3",
+      "goto_count": 0,
+      "bytes": 4822
     },
     {
       "name": "binary_search-gcc-O0",
@@ -26,9 +66,29 @@
       "bytes": 5164
     },
     {
+      "name": "binary_search-gcc-O2",
+      "goto_count": 4,
+      "bytes": 5245
+    },
+    {
+      "name": "binary_search-gcc-O3",
+      "goto_count": 4,
+      "bytes": 5096
+    },
+    {
       "name": "memcpy_loop-gcc-O0",
       "goto_count": 0,
       "bytes": 4463
+    },
+    {
+      "name": "memcpy_loop-gcc-O2",
+      "goto_count": 0,
+      "bytes": 3777
+    },
+    {
+      "name": "memcpy_loop-gcc-O3",
+      "goto_count": 0,
+      "bytes": 3777
     },
     {
       "name": "generated_quicksort-gcc-O0",
@@ -36,17 +96,47 @@
       "bytes": 6036
     },
     {
+      "name": "generated_quicksort-gcc-O2",
+      "goto_count": 0,
+      "bytes": 5727
+    },
+    {
+      "name": "generated_quicksort-gcc-O3",
+      "goto_count": 0,
+      "bytes": 5727
+    },
+    {
       "name": "generated_heapsort-gcc-O0",
       "goto_count": 0,
       "bytes": 6573
     },
     {
+      "name": "generated_heapsort-gcc-O2",
+      "goto_count": 4,
+      "bytes": 6593
+    },
+    {
+      "name": "generated_heapsort-gcc-O3",
+      "goto_count": 9,
+      "bytes": 7548
+    },
+    {
       "name": "generated_pthread_mutex-gcc-O0",
       "goto_count": 0,
       "bytes": 5371
+    },
+    {
+      "name": "generated_pthread_mutex-gcc-O2",
+      "goto_count": 0,
+      "bytes": 5321
+    },
+    {
+      "name": "generated_pthread_mutex-gcc-O3",
+      "goto_count": 0,
+      "bytes": 5321
     }
   ],
-  "count": 9,
-  "total_goto": 0,
-  "mean_goto": 0.0
+  "count": 27,
+  "total_goto": 39,
+  "mean_goto": 1.4444444444444444
 }

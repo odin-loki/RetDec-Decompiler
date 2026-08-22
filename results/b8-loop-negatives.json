@@ -1,0 +1,406 @@
+{
+  "calibration_observation": [
+    {
+      "key": "algorithm:std::copy",
+      "max_confidence": 0.8500000238418579,
+      "mean_confidence": 0.8500000238418579,
+      "min_confidence": 0.8500000238418579,
+      "n": 10
+    },
+    {
+      "key": "algorithm:std::transform",
+      "max_confidence": 0.8500000238418579,
+      "mean_confidence": 0.8500000238418579,
+      "min_confidence": 0.8500000238418579,
+      "n": 70
+    },
+    {
+      "key": "container:ring_buffer",
+      "max_confidence": 1.0,
+      "mean_confidence": 1.0,
+      "min_confidence": 1.0,
+      "n": 10
+    },
+    {
+      "key": "container:std::unordered_map<uint32_t, uint32_t>",
+      "max_confidence": 0.45000001788139343,
+      "mean_confidence": 0.45000001788139343,
+      "min_confidence": 0.45000001788139343,
+      "n": 70
+    },
+    {
+      "key": "sort:quicksort",
+      "max_confidence": 0.8999999761581421,
+      "mean_confidence": 0.8999999761581421,
+      "min_confidence": 0.8999999761581421,
+      "n": 80
+    }
+  ],
+  "decompiled": 100,
+  "false_positive_binaries": 80,
+  "false_positive_rate": 0.8,
+  "fitted": false,
+  "positives": {
+    "box_blur_00-gcc-O0": [
+      "CircularBuffer",
+      "QuickSort",
+      "RingBuffer",
+      "Sort"
+    ],
+    "box_blur_01-gcc-O0": [
+      "CircularBuffer",
+      "QuickSort",
+      "RingBuffer",
+      "Sort"
+    ],
+    "box_blur_02-gcc-O0": [
+      "CircularBuffer",
+      "QuickSort",
+      "RingBuffer",
+      "Sort"
+    ],
+    "box_blur_03-gcc-O0": [
+      "CircularBuffer",
+      "QuickSort",
+      "RingBuffer",
+      "Sort"
+    ],
+    "box_blur_04-gcc-O0": [
+      "CircularBuffer",
+      "QuickSort",
+      "RingBuffer",
+      "Sort"
+    ],
+    "box_blur_05-gcc-O0": [
+      "CircularBuffer",
+      "QuickSort",
+      "RingBuffer",
+      "Sort"
+    ],
+    "box_blur_06-gcc-O0": [
+      "CircularBuffer",
+      "QuickSort",
+      "RingBuffer",
+      "Sort"
+    ],
+    "box_blur_07-gcc-O0": [
+      "CircularBuffer",
+      "QuickSort",
+      "RingBuffer",
+      "Sort"
+    ],
+    "box_blur_08-gcc-O0": [
+      "CircularBuffer",
+      "QuickSort",
+      "RingBuffer",
+      "Sort"
+    ],
+    "box_blur_09-gcc-O0": [
+      "CircularBuffer",
+      "QuickSort",
+      "RingBuffer",
+      "Sort"
+    ],
+    "dot3_00-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "dot3_01-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "dot3_02-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "dot3_03-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "dot3_04-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "dot3_05-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "dot3_06-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "dot3_07-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "dot3_08-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "dot3_09-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "fir_tap_00-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "fir_tap_01-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "fir_tap_02-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "fir_tap_03-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "fir_tap_04-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "fir_tap_05-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "fir_tap_06-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "fir_tap_07-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "fir_tap_08-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "fir_tap_09-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "hist16_00-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "hist16_01-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "hist16_02-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "hist16_03-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "hist16_04-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "hist16_05-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "hist16_06-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "hist16_07-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "hist16_08-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "hist16_09-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "http_verb_00-gcc-O0": [
+      "Copy",
+      "Memcpy",
+      "QuickSort",
+      "Sort"
+    ],
+    "http_verb_01-gcc-O0": [
+      "Copy",
+      "Memcpy",
+      "QuickSort",
+      "Sort"
+    ],
+    "http_verb_02-gcc-O0": [
+      "Copy",
+      "Memcpy",
+      "QuickSort",
+      "Sort"
+    ],
+    "http_verb_03-gcc-O0": [
+      "Copy",
+      "Memcpy",
+      "QuickSort",
+      "Sort"
+    ],
+    "http_verb_04-gcc-O0": [
+      "Copy",
+      "Memcpy",
+      "QuickSort",
+      "Sort"
+    ],
+    "http_verb_05-gcc-O0": [
+      "Copy",
+      "Memcpy",
+      "QuickSort",
+      "Sort"
+    ],
+    "http_verb_06-gcc-O0": [
+      "Copy",
+      "Memcpy",
+      "QuickSort",
+      "Sort"
+    ],
+    "http_verb_07-gcc-O0": [
+      "Copy",
+      "Memcpy",
+      "QuickSort",
+      "Sort"
+    ],
+    "http_verb_08-gcc-O0": [
+      "Copy",
+      "Memcpy",
+      "QuickSort",
+      "Sort"
+    ],
+    "http_verb_09-gcc-O0": [
+      "Copy",
+      "Memcpy",
+      "QuickSort",
+      "Sort"
+    ],
+    "sliding_max_00-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "sliding_max_01-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "sliding_max_02-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "sliding_max_03-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "sliding_max_04-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "sliding_max_05-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "sliding_max_06-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "sliding_max_07-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "sliding_max_08-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "sliding_max_09-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "transpose4_00-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "transpose4_01-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "transpose4_02-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "transpose4_03-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "transpose4_04-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "transpose4_05-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "transpose4_06-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "transpose4_07-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "transpose4_08-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "transpose4_09-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "utf8_scan_00-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "utf8_scan_01-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "utf8_scan_02-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "utf8_scan_03-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "utf8_scan_04-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "utf8_scan_05-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "utf8_scan_06-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "utf8_scan_07-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "utf8_scan_08-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ],
+    "utf8_scan_09-gcc-O0": [
+      "QuickSort",
+      "Sort"
+    ]
+  },
+  "requested": 100
+}
