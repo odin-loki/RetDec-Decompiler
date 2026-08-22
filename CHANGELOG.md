@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` also dumps RTTI class
+  constructor / destructor / method / virtual-method / vtable
+  names from existing `Class` sets. Test:
+  `SerializesClassMemberNames`. Default F5 is unchanged.
 - N16 leftover: `serializeSemanticContext` also dumps existing
   function role flags (constructor / destructor / virtual /
   variadic / exported / thumb / syscall / idiom / static or

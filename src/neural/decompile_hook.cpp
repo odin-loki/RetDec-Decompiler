@@ -233,6 +233,11 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 			}
 			oss << ']';
 		}
+		appendJsonStringArray(oss, "constructors", cl.constructors);
+		appendJsonStringArray(oss, "destructors", cl.destructors);
+		appendJsonStringArray(oss, "methods", cl.methods);
+		appendJsonStringArray(oss, "virtual_methods", cl.virtualMethods);
+		appendJsonStringArray(oss, "virtual_tables", cl.virtualTables);
 		oss << '}';
 	}
 	oss << "],\"vtables\":[";

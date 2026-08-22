@@ -1,3 +1,4 @@
+#include "retdec/common/class.h"
 #include "retdec/common/file_format.h"
 #include "retdec/common/file_type.h"
 #include "retdec/common/function.h"
@@ -983,6 +984,26 @@ TEST(NeuralSemanticContext, SerializesCryptoPatternNames)
 	EXPECT_NE(json.find("\"name\":\"AES\""), std::string::npos);
 	EXPECT_NE(json.find("\"yara_rule\":\"crypto_aes_sbox\""), std::string::npos);
 	EXPECT_NE(json.find("\"type\":\"crypto\""), std::string::npos);
+}
+
+TEST(NeuralSemanticContext, SerializesClassMemberNames)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Class cl("7Cipher");
+	cl.setDemangledName("Cipher");
+	cl.constructors.insert("Cipher::Cipher");
+	cl.destructors.insert("Cipher::~Cipher");
+	cl.methods.insert("Cipher::expand_key");
+	cl.virtualMethods.insert("Cipher::clone");
+	cl.virtualTables.insert("_ZTV6Cipher");
+	cfg.classes.insert(cl);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"constructors\":[\"Cipher::Cipher\"]"), std::string::npos);
+	EXPECT_NE(json.find("\"destructors\":[\"Cipher::~Cipher\"]"), std::string::npos);
+	EXPECT_NE(json.find("\"methods\":[\"Cipher::expand_key\"]"), std::string::npos);
+	EXPECT_NE(json.find("\"virtual_methods\":[\"Cipher::clone\"]"), std::string::npos);
+	EXPECT_NE(json.find("\"virtual_tables\":[\"_ZTV6Cipher\"]"), std::string::npos);
 }
 
 TEST(NeuralSemanticContext, SerializesRttiClassNames)
