@@ -1340,8 +1340,14 @@ SemanticDetectionMap buildSemanticDetectionMap(
 
 	for (const auto& [fnName, result]: sorts)
 	{
-		appendDetection(
-			map, fnName, makeDetection("sort", result.algorithmName(), result.confidence, result.toString()));
+		std::string detail = result.toString();
+		// Introsort variant comes from _introsort / _Sort_unchecked names.
+		if (result.algorithm == sort_detect::SortAlgorithm::Introsort
+			&& result.compilerVariant != sort_detect::CompilerVariant::Unknown)
+		{
+			detail = "evidence:symbol_name " + detail;
+		}
+		appendDetection(map, fnName, makeDetection("sort", result.algorithmName(), result.confidence, detail));
 	}
 
 	collectConcurrencyDetections(concurrency, map);

@@ -368,6 +368,27 @@ def test_tagged_open_addressing_excluded_from_headline() -> None:
     assert "OpenAddressing" not in labels
 
 
+def test_tagged_introsort_excluded_from_headline() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {
+                        "kind": "sort",
+                        "label": "introsort (std::sort)",
+                        "confidence": 0.80,
+                        "detail": "evidence:symbol_name introsort",
+                    },
+                    {"kind": "sort", "label": "heap sort", "confidence": 0.9},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "generated_heapsort-gcc-O0")
+    assert "Introsort" not in labels
+    assert "HeapSort" in labels
+
+
 def test_linear_search_strips_memcpy_noise() -> None:
     import extract_decompiler_predictions as edp
 
@@ -473,6 +494,7 @@ def main() -> int:
     test_atomic_adds_concurrency()
     test_symbol_name_evidence_excluded_from_headline()
     test_tagged_open_addressing_excluded_from_headline()
+    test_tagged_introsort_excluded_from_headline()
     test_linear_search_strips_memcpy_noise()
     test_mergesort_strips_graph_noise()
     test_binary_search_stripped_on_sort_binary()

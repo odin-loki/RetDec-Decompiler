@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- B7: introsort export tags `evidence:symbol_name` when the
+  compiler variant came from `_introsort` / `_Sort_unchecked`.
+  Structural introsort (Unknown variant) stays in the headline.
+  Full 216 remasure still mean F1 **0.056**. Tests:
+  `IntrosortNameVariantIsSymbolNameEvidence`,
+  `test_tagged_introsort_excluded_from_headline`.
 - N11 leftover: sampling loop honours `RETDEC_NEURAL_DEADLINE_MS`
   and SIGINT/SIGTERM (`llama: cancelled` / `llama: deadline
   exceeded`). GUI Stop already `terminate()`s the child (SIGTERM

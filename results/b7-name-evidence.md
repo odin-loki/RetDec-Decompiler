@@ -19,6 +19,10 @@ This is **not** a product F1 change by itself.
 - Open-addressing export also tags `evidence:symbol_name` (`hasKeyCall`).
   Remasure: full 216 mean F1 **0.056** (was 0.107); ci-core **0.126**.
   `hash_table-gcc-O0` is 0.000.
+- Introsort export tags `evidence:symbol_name` when
+  `compilerVariant` is not Unknown (`_introsort` / `_Sort_unchecked`).
+  Structural introsort (Unknown variant) stays in the headline.
+  Full 216 remasure after the tag: mean F1 still **0.056**.
 
 A8 (lock-prefix / ldxr) is still blocked: `IrInstr::Op` has no lock/atomic.
 
@@ -30,7 +34,8 @@ confidence as structural evidence:
 - `serial_detect` (`symContains` on SerializeToString, FlatBuffer, …)
 - `unordered_detect` (hash callee *or* xor+mul; not tagged because the
   xor+mul path is structural)
-- `sort_detect` (self-name recursion, `_introsort`)
+- `sort_detect` self-name recursion (not `_introsort` variant; that
+  path is now tagged)
 - `algo_recover` partition `swap` callee; idiom self-recursion
 - `crypto_detect` / `pattern_detect` callee-name tables
 
