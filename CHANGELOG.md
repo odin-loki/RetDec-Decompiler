@@ -8,6 +8,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- TransformDetector does not assign identity `std::copy` when the
+  loop has Mul or Xor (AES GF, atoi `n*10`, DFS index scale).
+  memcpy-style loops have neither. Tests: `MulInLoopIsNotCopy`,
+  `XorInLoopIsNotCopy`. B8 extract FP **0.000**. B9 mean F1
+  **0.111**, micro **0.235** (tp=4 fp=0 fn=26). All AES/atoi/dfs
+  Copy extras are gone. `memcpy_loop-gcc-O0` still Copy/Memcpy.
+  A4 precision **0**, not fitted.
 - InsertionSortFingerprint requires two Compare instructions
   (inner shift plus outer bound). A single-compare parse loop is
   not insertion sort. Test: `OneCompareIsNotInsertion`. B8 extract

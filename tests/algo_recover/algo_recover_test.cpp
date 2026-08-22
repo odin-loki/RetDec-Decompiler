@@ -723,6 +723,45 @@ TEST(TransformDetectorTest, StateMachineManyBranchesIsNotCopy)
 	EXPECT_LT(r.confidence, 0.45f);
 }
 
+TEST(TransformDetectorTest, MulInLoopIsNotCopy)
+{
+	// atoi `n * 10` / DFS index scale is not memcpy.
+	auto fn = makeFunc(
+		"atoi_parse",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::Add,
+			ssa::IrInstr::Op::Mul,
+		},
+		1);
+	addBackEdge(*fn);
+	TransformDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_NE(r.kind, AlgorithmKind::Copy);
+	EXPECT_LT(r.confidence, 0.45f);
+}
+
+TEST(TransformDetectorTest, XorInLoopIsNotCopy)
+{
+	auto fn = makeFunc(
+		"aes_mix",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::Add,
+			ssa::IrInstr::Op::Xor,
+		},
+		1);
+	addBackEdge(*fn);
+	TransformDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_NE(r.kind, AlgorithmKind::Copy);
+	EXPECT_LT(r.confidence, 0.45f);
+}
+
 TEST(TransformDetectorTest, HighTierEmittedFormContainsStd)
 {
 	auto fn = makeFunc(

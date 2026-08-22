@@ -181,8 +181,18 @@ AlgorithmResult TransformDetector::detect(const ssa::SSAFunction& fn) const
 
 	if (ev.confidence < 0.01f) return result;
 
-	// Identity transform → emit as copy.
-	if (!ev.hasLambdaCall && !ev.hasBackInserter) result.kind = AlgorithmKind::Copy;
+	// Identity transform → emit as copy. Mul/Xor means AES/atoi/DFS,
+	// not memcpy. True transform (lambda/call) still uses those ops.
+	if (!ev.hasLambdaCall && !ev.hasBackInserter)
+	{
+		if (countOp(fn, ssa::IrInstr::Op::Mul) >= 1 || countOp(fn, ssa::IrInstr::Op::Xor) >= 1)
+		{
+			result.confidence = 0.0f;
+			result.kind = AlgorithmKind::Transform;
+			return result;
+		}
+		result.kind = AlgorithmKind::Copy;
+	}
 
 	result.emittedForm = emit(ev, tier);
 	return result;

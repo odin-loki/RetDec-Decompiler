@@ -55,8 +55,8 @@ Stock RetDec has no label export — F1 is fork-only.
 
 B9 adversarial-positive (18 gcc O0/O2 binaries): name-blind mean
 **0.111** (`results/b9-adversarial-positive.md`). Not a product F1.
-Sentinel heapsort O0/O2 stay 1.000. Remaining extras are
-Copy/Memcpy on aes_bitslice / atoi / dfs gcc-O0.
+Sentinel heapsort O0/O2 stay 1.000. Micro fp is **0** after the
+identity-copy Mul/Xor gate.
 
 B8 loop-containing negatives (100): FP rate **0.000** after
 the sort, RingBuffer, and copy-state-machine gates
