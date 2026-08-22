@@ -1,7 +1,16 @@
+#include "retdec/common/function.h"
+#include "retdec/common/object.h"
+#include "retdec/common/semantic_detection.h"
+#include "retdec/common/storage.h"
+#include "retdec/config/config.h"
 #include "retdec/neural/gates.h"
 #include "retdec/neural/inference.h"
 #include "retdec/neural/model_verify.h"
 #include "retdec/neural/refiner.h"
+
+namespace retdec::neural {
+std::string serializeSemanticContext(const retdec::config::Config& config);
+}
 
 #include <cstdint>
 #include <cstdlib>
@@ -436,18 +445,18 @@ TEST(NeuralRefiner, ManifestSchemaHasRequiredKeys)
 	const auto resp = refiner.refine(req);
 	ASSERT_TRUE(resp.accepted);
 	for (const char* key:
-		{"\"accepted\"",
-		 "\"reason\"",
-		 "\"tier\"",
-		 "\"seed\"",
-		 "\"temperature\"",
-		 "\"top_p\"",
-		 "\"top_k\"",
-		 "\"reuse_kv\"",
-		 "\"input_sha256\"",
-		 "\"output_sha256\"",
-		 "\"compile_gate\"",
-		 "\"wall_ms\""})
+		 {"\"accepted\"",
+		  "\"reason\"",
+		  "\"tier\"",
+		  "\"seed\"",
+		  "\"temperature\"",
+		  "\"top_p\"",
+		  "\"top_k\"",
+		  "\"reuse_kv\"",
+		  "\"input_sha256\"",
+		  "\"output_sha256\"",
+		  "\"compile_gate\"",
+		  "\"wall_ms\""})
 	{
 		EXPECT_NE(resp.manifestJson.find(key), std::string::npos) << key;
 	}
@@ -636,4 +645,70 @@ TEST(NeuralRefiner, CacheHitReusesAcceptedRefinement)
 	EXPECT_NE(hit.manifestJson.find("\"reason\":\"cache hit\""), std::string::npos);
 
 	fs::remove_all(dir, ec);
+}
+
+TEST(NeuralPrompt, IncludesSemanticContextWhenSet)
+{
+	RefinementRequest req;
+	req.functionSource = "int f(void) { return 1; }\n";
+	req.tier = RefinementTier::Naming;
+	req.generation.thinkingMode = false;
+	req.semanticContextJson = R"({"functions":[{"name":"f","used_crypto":["AES"]}]})";
+	const std::string p = buildRefinementPrompt(req);
+	EXPECT_NE(p.find("Semantic context (JSON):"), std::string::npos);
+	EXPECT_NE(p.find("\"used_crypto\":[\"AES\"]"), std::string::npos);
+	EXPECT_NE(p.find("Function source:"), std::string::npos);
+}
+
+TEST(NeuralSemanticContext, SerializesExistingFunctionFields)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Function fn(retdec::common::Address(0x401000), retdec::common::Address(0x401080), "fn_401000");
+	fn.setDemangledName("Cipher::expand_key");
+	fn.setDeclarationString("void expand_key(uint8_t *key)");
+	fn.returnType = retdec::common::Type("void");
+	retdec::common::Object param("key", retdec::common::Storage::undefined());
+	param.type = retdec::common::Type("i8*");
+	fn.parameters.push_back(param);
+	fn.usedCryptoConstants.insert("AES");
+	retdec::common::SemanticDetection det;
+	det.kind = "algorithm";
+	det.label = "aes_key_expansion";
+	det.confidence = 0.8f;
+	det.detail = "sbox_load";
+	fn.semanticDetections.push_back(det);
+	cfg.functions.insert(fn);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"name\":\"fn_401000\""), std::string::npos);
+	EXPECT_NE(json.find("\"demangled\":\"Cipher::expand_key\""), std::string::npos);
+	EXPECT_NE(json.find("\"start\":\"0x401000\""), std::string::npos);
+	EXPECT_NE(json.find("\"declaration\":\"void expand_key(uint8_t *key)\""), std::string::npos);
+	EXPECT_NE(json.find("\"return_type\":\"void\""), std::string::npos);
+	EXPECT_NE(json.find("\"name\":\"key\""), std::string::npos);
+	EXPECT_NE(json.find("\"type\":\"i8*\""), std::string::npos);
+	EXPECT_NE(json.find("\"used_crypto\":[\"AES\"]"), std::string::npos);
+	EXPECT_NE(json.find("\"kind\":\"algorithm\""), std::string::npos);
+	EXPECT_NE(json.find("\"label\":\"aes_key_expansion\""), std::string::npos);
+	EXPECT_NE(json.find("\"detail\":\"sbox_load\""), std::string::npos);
+}
+
+TEST(NeuralSemanticContext, IncludesCryptoOnlyFunction)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Function fn("uses_crc");
+	fn.usedCryptoConstants.insert("CRC32");
+	cfg.functions.insert(fn);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"name\":\"uses_crc\""), std::string::npos);
+	EXPECT_NE(json.find("\"used_crypto\":[\"CRC32\"]"), std::string::npos);
+	EXPECT_NE(json.find("\"detections\":[]"), std::string::npos);
+}
+
+TEST(NeuralSemanticContext, SkipsEmptyFunction)
+{
+	auto cfg = retdec::config::Config::empty();
+	cfg.functions.insert(retdec::common::Function("empty_fn"));
+	EXPECT_EQ(serializeSemanticContext(cfg), "{\"functions\":[]}");
 }

@@ -8,6 +8,16 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` now dumps demangled
+  name, start address, declaration, return type, parameters, and
+  `usedCryptoConstants` from existing `common::Function` getters,
+  plus detections. Functions with crypto constants or a
+  demangled/declaration string are included even when detections
+  are empty. Does not invent RTTI or caller-buffer facts.
+  Crypto/serial detectors stay unwired. Default F5 is unchanged.
+  Tests: `SerializesExistingFunctionFields`,
+  `IncludesCryptoOnlyFunction`, `SkipsEmptyFunction`,
+  `IncludesSemanticContextWhenSet`.
 - N14 leftover: mock coverage for every refine tier prompt and
   the accepted-manifest key set (`accepted`, `reason`, `tier`,
   sampler, SHA-256s, `compile_gate`, `wall_ms`). Tests:

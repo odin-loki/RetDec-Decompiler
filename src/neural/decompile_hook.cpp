@@ -83,6 +83,8 @@ std::string jsonEscape(const std::string& s)
 	return oss.str();
 }
 
+} // namespace
+
 std::string serializeSemanticContext(const retdec::config::Config& config)
 {
 	std::ostringstream oss;
@@ -90,10 +92,45 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 	bool firstFn = true;
 	for (const auto& fn: config.functions)
 	{
-		if (fn.semanticDetections.empty()) continue;
+		const bool hasDetections = !fn.semanticDetections.empty();
+		const bool hasCrypto = !fn.usedCryptoConstants.empty();
+		const bool hasDemangled = !fn.getDemangledName().empty();
+		const bool hasDecl = !fn.getDeclarationString().empty();
+		if (!hasDetections && !hasCrypto && !hasDemangled && !hasDecl) continue;
 		if (!firstFn) oss << ',';
 		firstFn = false;
-		oss << "{\"name\":\"" << jsonEscape(fn.getName()) << "\",\"detections\":[";
+		oss << "{\"name\":\"" << jsonEscape(fn.getName()) << '"';
+		if (hasDemangled) oss << ",\"demangled\":\"" << jsonEscape(fn.getDemangledName()) << '"';
+		if (fn.getStart().isDefined()) oss << ",\"start\":\"" << jsonEscape(fn.getStart().toHexPrefixString()) << '"';
+		if (hasDecl) oss << ",\"declaration\":\"" << jsonEscape(fn.getDeclarationString()) << '"';
+		if (fn.returnType.isDefined()) oss << ",\"return_type\":\"" << jsonEscape(fn.returnType.getId()) << '"';
+		if (!fn.parameters.empty())
+		{
+			oss << ",\"parameters\":[";
+			bool firstP = true;
+			for (const auto& p: fn.parameters)
+			{
+				if (!firstP) oss << ',';
+				firstP = false;
+				oss << "{\"name\":\"" << jsonEscape(p.getName()) << '"';
+				if (p.type.isDefined()) oss << ",\"type\":\"" << jsonEscape(p.type.getId()) << '"';
+				oss << '}';
+			}
+			oss << ']';
+		}
+		if (hasCrypto)
+		{
+			oss << ",\"used_crypto\":[";
+			bool firstC = true;
+			for (const auto& c: fn.usedCryptoConstants)
+			{
+				if (!firstC) oss << ',';
+				firstC = false;
+				oss << '"' << jsonEscape(c) << '"';
+			}
+			oss << ']';
+		}
+		oss << ",\"detections\":[";
 		bool firstDet = true;
 		for (const auto& d: fn.semanticDetections)
 		{
@@ -109,8 +146,6 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 	oss << "]}";
 	return oss.str();
 }
-
-} // namespace
 
 void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* outString)
 {
