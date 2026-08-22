@@ -142,11 +142,16 @@ bool isIdentCont(char c)
 }
 
 void skipSpaces(const std::string& s, std::size_t& i);
+void skipSpacesBack(const std::string& s, std::size_t& i);
 std::size_t skipNonCode(const std::string& s, std::size_t i);
 std::size_t matchingCloseParen(const std::string& s, std::size_t open);
 bool bodyUsesIdent(const std::string& body, const std::string& name);
 bool looksLikeDeclarator(const std::string& s, std::size_t namePos);
 bool isDefinitionAfterClose(const std::string& s, std::size_t close);
+std::string appendMissingGotoLabels(const std::string& body);
+bool identUsedAsPointer(const std::string& body, const std::string& name);
+bool isPthreadName(const std::string& name);
+bool isAsmIntrinsicName(const std::string& name);
 
 std::string outputStem(const std::string& outputCPath)
 {
@@ -218,10 +223,6 @@ const char* libcHeaderForName(const std::string& name)
 	{
 		return "stdlib.h";
 	}
-	if (name.compare(0, 8, "pthread_") == 0)
-	{
-		return "pthread.h";
-	}
 	if (name == "isalpha" || name == "isdigit" || name == "isspace" || name == "tolower" || name == "toupper")
 	{
 		return "ctype.h";
@@ -242,6 +243,16 @@ bool isCrtCallName(const std::string& name)
 		|| name == "__printf_chk" || name == "__fprintf_chk" || name == "__sprintf_chk" || name == "__snprintf_chk"
 		|| name == "__memcpy_chk" || name == "__memmove_chk" || name == "__memset_chk" || name == "__strcpy_chk"
 		|| name == "__strncpy_chk";
+}
+
+bool isPthreadName(const std::string& name)
+{
+	return name.compare(0, 8, "pthread_") == 0;
+}
+
+bool isAsmIntrinsicName(const std::string& name)
+{
+	return name.compare(0, 6, "__asm_") == 0 && name != "__asm_hlt" && name != "__asm_rep_stosq_memset";
 }
 
 bool sourceDefinesMain(const std::string& src)
@@ -269,6 +280,24 @@ void writeHelperStubs(std::ostream& os)
 	os << "RETDEC_BUILDABLE_WEAK void __asm_hlt(void) {}\n";
 	os << "RETDEC_BUILDABLE_WEAK void *__asm_rep_stosq_memset(void *d, int c, "
 		  "unsigned long n) { return memset(d, c, (size_t)n); }\n";
+}
+
+void writeLibcArityMacros(std::ostream& os)
+{
+	os << "#define strncpy(dst, src, n, ...) "
+		  "(strncpy)((char *)(dst), (const char *)(src), (size_t)(n))\n";
+	os << "#define strcmp(a, b, ...) (strcmp)((a), (b))\n";
+	os << "#define strncmp(a, b, n, ...) (strncmp)((a), (b), (n))\n";
+	os << "#define puts(s, ...) (puts)((s))\n";
+	os << "#define putc(ch, ...) (putc)((int)(ch), stdout)\n";
+	os << "#define putchar(ch, ...) (putchar)((int)(ch))\n";
+	os << "static inline uint64_t retdec_pthread_any(void *a, ...) { (void)a; return 0; }\n";
+	os << "#define pthread_create(...) retdec_pthread_any(__VA_ARGS__)\n";
+	os << "#define pthread_join(...) retdec_pthread_any(__VA_ARGS__)\n";
+	os << "#define pthread_mutex_lock(...) retdec_pthread_any(__VA_ARGS__)\n";
+	os << "#define pthread_mutex_unlock(...) retdec_pthread_any(__VA_ARGS__)\n";
+	os << "#define pthread_mutex_init(...) retdec_pthread_any(__VA_ARGS__)\n";
+	os << "#define pthread_mutex_destroy(...) retdec_pthread_any(__VA_ARGS__)\n";
 }
 
 void writePrototypeBodies(std::ostream& os, const std::string& src)
@@ -302,7 +331,7 @@ void writePrototypeBodies(std::ostream& os, const std::string& src)
 			continue;
 		}
 		const std::string name = src.substr(start, i - start);
-		if (isSkippedCallName(name) || isLibcCallName(name))
+		if (isSkippedCallName(name) || isLibcCallName(name) || isPthreadName(name) || isAsmIntrinsicName(name))
 		{
 			i = after + 1;
 			continue;
@@ -336,8 +365,7 @@ void writePrototypeBodies(std::ostream& os, const std::string& src)
 		{
 			--lineStart;
 		}
-		if (lineStart < start
-			&& (src[lineStart] == ' ' || src[lineStart] == '\t'))
+		if (lineStart < start && (src[lineStart] == ' ' || src[lineStart] == '\t'))
 		{
 			i = after + 1;
 			continue;
@@ -353,7 +381,7 @@ void writePrototypeBodies(std::ostream& os, const std::string& src)
 		protos.emplace_back(name, proto);
 		i = after + 1;
 	}
-	for (const auto& item : protos)
+	for (const auto& item: protos)
 	{
 		if (defined.count(item.first) != 0)
 		{
@@ -378,10 +406,44 @@ bool isControlName(const std::string& name)
 
 bool isTypeName(const std::string& name)
 {
-	return name == "int" || name == "long" || name == "short" || name == "char" || name == "void" || name == "unsigned"
-		|| name == "signed" || name == "bool" || name == "float" || name == "double" || name == "size_t"
-		|| name == "int8_t" || name == "uint8_t" || name == "int16_t" || name == "uint16_t" || name == "int32_t"
-		|| name == "uint32_t" || name == "int64_t" || name == "uint64_t";
+	if (name == "int" || name == "long" || name == "short" || name == "char" || name == "void" || name == "unsigned"
+		|| name == "signed" || name == "bool" || name == "float" || name == "double" || name == "struct"
+		|| name == "enum" || name == "union" || name == "volatile")
+	{
+		return true;
+	}
+	return name.size() >= 3 && name.compare(name.size() - 2, 2, "_t") == 0;
+}
+
+bool isForInitDecl(const std::string& body, std::size_t namePos)
+{
+	int depth = 0;
+	for (std::size_t k = namePos; k > 0; --k)
+	{
+		const char c = body[k - 1];
+		if (c == ')')
+		{
+			++depth;
+		}
+		else if (c == '(')
+		{
+			if (depth == 0)
+			{
+				std::size_t t = k - 1;
+				skipSpacesBack(body, t);
+				return t >= 3 && body.compare(t - 3, 3, "for") == 0 && (t == 3 || !isIdentCont(body[t - 4]));
+			}
+			--depth;
+		}
+		else if (c == '{' || c == '}' || c == ';')
+		{
+			if (depth == 0)
+			{
+				return false;
+			}
+		}
+	}
+	return false;
 }
 
 bool bodyDeclaresIdent(const std::string& body, const std::string& name)
@@ -417,7 +479,25 @@ bool bodyDeclaresIdent(const std::string& body, const std::string& name)
 		}
 		if (back > 0 && body[back - 1] == '*')
 		{
-			return true;
+			std::size_t t = back;
+			while (t > 0 && (body[t - 1] == '*' || std::isspace(static_cast<unsigned char>(body[t - 1])) != 0))
+			{
+				--t;
+			}
+			if (t > 0 && isIdentCont(body[t - 1]))
+			{
+				std::size_t ts = t;
+				while (ts > 0 && isIdentCont(body[ts - 1]))
+				{
+					--ts;
+				}
+				const std::string ty = body.substr(ts, t - ts);
+				if ((isTypeName(ty) || ty == "unsigned" || ty == "const") && !isForInitDecl(body, start))
+				{
+					return true;
+				}
+			}
+			continue;
 		}
 		if (back > 0 && isIdentCont(body[back - 1]))
 		{
@@ -427,7 +507,64 @@ bool bodyDeclaresIdent(const std::string& body, const std::string& name)
 				--t;
 			}
 			const std::string ty = body.substr(t, back - t);
-			if (isTypeName(ty) || ty == "unsigned" || ty == "const")
+			if ((isTypeName(ty) || ty == "unsigned" || ty == "const") && !isForInitDecl(body, start))
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool identUsedAsPointer(const std::string& body, const std::string& name)
+{
+	std::size_t i = 0;
+	while (i < body.size())
+	{
+		const std::size_t next = skipNonCode(body, i);
+		if (next != i)
+		{
+			i = next;
+			continue;
+		}
+		if (!isIdentStart(body[i]))
+		{
+			++i;
+			continue;
+		}
+		const std::size_t start = i;
+		++i;
+		while (i < body.size() && isIdentCont(body[i]))
+		{
+			++i;
+		}
+		if (body.compare(start, i - start, name) != 0)
+		{
+			continue;
+		}
+		std::size_t back = start;
+		while (back > 0 && std::isspace(static_cast<unsigned char>(body[back - 1])) != 0)
+		{
+			--back;
+		}
+		if (back > 0 && body[back - 1] == '*')
+		{
+			std::size_t t = back;
+			while (t > 0 && (body[t - 1] == '*' || std::isspace(static_cast<unsigned char>(body[t - 1])) != 0))
+			{
+				--t;
+			}
+			if (t == 0 || !isIdentCont(body[t - 1]))
+			{
+				return true;
+			}
+			std::size_t ts = t;
+			while (ts > 0 && isIdentCont(body[ts - 1]))
+			{
+				--ts;
+			}
+			const std::string ty = body.substr(ts, t - ts);
+			if (!isTypeName(ty) && ty != "unsigned" && ty != "const")
 			{
 				return true;
 			}
@@ -469,23 +606,185 @@ bool bodyUsesIdent(const std::string& body, const std::string& name)
 std::vector<std::string> missingTempsInBody(const std::string& body)
 {
 	std::vector<std::string> missing;
-	auto consider = [&](const std::string& name) {
+	std::set<std::string> names = {"result", "result2", "result3", "thread", "status", "c", "str", "str2"};
+	std::size_t i = 0;
+	while (i < body.size())
+	{
+		const std::size_t next = skipNonCode(body, i);
+		if (next != i)
+		{
+			i = next;
+			continue;
+		}
+		if (!isIdentStart(body[i]))
+		{
+			++i;
+			continue;
+		}
+		const std::size_t start = i;
+		++i;
+		while (i < body.size() && isIdentCont(body[i]))
+		{
+			++i;
+		}
+		const std::string name = body.substr(start, i - start);
+		if (name.size() >= 2 && name[0] == 'v')
+		{
+			bool digits = true;
+			for (std::size_t k = 1; k < name.size(); ++k)
+			{
+				if (std::isdigit(static_cast<unsigned char>(name[k])) == 0)
+				{
+					digits = false;
+					break;
+				}
+			}
+			if (digits)
+			{
+				names.insert(name);
+			}
+		}
+	}
+	for (const auto& name: names)
+	{
 		if (bodyUsesIdent(body, name) && !bodyDeclaresIdent(body, name))
 		{
 			missing.push_back(name);
 		}
-	};
-	consider("result");
-	consider("result2");
-	consider("result3");
-	consider("thread");
-	consider("status");
-	consider("c");
-	for (int n = 1; n <= 32; ++n)
-	{
-		consider("v" + std::to_string(n));
 	}
 	return missing;
+}
+
+// Sidecar-only: RetDec can emit `goto lab_0x...` with no matching label.
+std::string appendMissingGotoLabels(const std::string& body)
+{
+	std::set<std::string> gotos;
+	std::set<std::string> labels;
+	std::size_t i = 0;
+	while (i < body.size())
+	{
+		const std::size_t next = skipNonCode(body, i);
+		if (next != i)
+		{
+			i = next;
+			continue;
+		}
+		if (!isIdentStart(body[i]))
+		{
+			++i;
+			continue;
+		}
+		const std::size_t start = i;
+		++i;
+		while (i < body.size() && isIdentCont(body[i]))
+		{
+			++i;
+		}
+		const std::string name = body.substr(start, i - start);
+		if (name == "goto")
+		{
+			std::size_t after = i;
+			skipSpaces(body, after);
+			if (after < body.size() && isIdentStart(body[after]))
+			{
+				const std::size_t ls = after;
+				++after;
+				while (after < body.size() && isIdentCont(body[after]))
+				{
+					++after;
+				}
+				gotos.insert(body.substr(ls, after - ls));
+				i = after;
+			}
+			continue;
+		}
+		if (name == "default" || name == "case")
+		{
+			continue;
+		}
+		std::size_t after = i;
+		skipSpaces(body, after);
+		if (after < body.size() && body[after] == ':')
+		{
+			labels.insert(name);
+		}
+	}
+	std::string extra;
+	for (const auto& lab: gotos)
+	{
+		if (labels.find(lab) == labels.end())
+		{
+			extra += "    ";
+			extra += lab;
+			extra += ": ;\n";
+		}
+	}
+	if (extra.empty())
+	{
+		return body;
+	}
+	return body + extra;
+}
+
+std::string stripSidecarSystemIncludes(const std::string& src)
+{
+	std::string out;
+	out.reserve(src.size());
+	std::istringstream iss(src);
+	std::string line;
+	while (std::getline(iss, line))
+	{
+		if (!line.empty() && line.back() == '\r')
+		{
+			line.pop_back();
+		}
+		std::size_t p = 0;
+		while (p < line.size() && (line[p] == ' ' || line[p] == '\t'))
+		{
+			++p;
+		}
+		if (p < line.size() && line.compare(p, 10, "#include <") == 0)
+		{
+			if (line.find("<pthread.h>") != std::string::npos || line.find("<stdio.h>") != std::string::npos
+				|| line.find("<string.h>") != std::string::npos || line.find("<stdlib.h>") != std::string::npos)
+			{
+				continue;
+			}
+		}
+		out += line;
+		out += '\n';
+	}
+	return out;
+}
+
+void collectAsmIntrinsicNames(const std::string& src, std::set<std::string>& names)
+{
+	std::size_t i = 0;
+	while (i < src.size())
+	{
+		const std::size_t next = skipNonCode(src, i);
+		if (next != i)
+		{
+			i = next;
+			continue;
+		}
+		if (!isIdentStart(src[i]))
+		{
+			++i;
+			continue;
+		}
+		const std::size_t start = i;
+		++i;
+		while (i < src.size() && isIdentCont(src[i]))
+		{
+			++i;
+		}
+		const std::string name = src.substr(start, i - start);
+		if (isAsmIntrinsicName(name))
+		{
+			names.insert(name);
+		}
+	}
 }
 
 std::size_t matchingCloseBrace(const std::string& s, std::size_t open)
@@ -595,7 +894,8 @@ std::string injectUndeclaredTemps(const std::string& src)
 				skip.insert(params.substr(ps, p - ps));
 			}
 		}
-		const std::string body = src.substr(brace + 1, bodyEnd - brace - 1);
+		std::string body = src.substr(brace + 1, bodyEnd - brace - 1);
+		body = appendMissingGotoLabels(body);
 		auto missing = missingTempsInBody(body);
 		missing.erase(
 			std::remove_if(missing.begin(), missing.end(), [&](const std::string& id) { return skip.count(id) != 0; }),
@@ -605,7 +905,14 @@ std::string injectUndeclaredTemps(const std::string& src)
 			out += '\n';
 			for (const auto& ident: missing)
 			{
-				out += "    int64_t ";
+				if (identUsedAsPointer(body, ident))
+				{
+					out += "    int64_t * ";
+				}
+				else
+				{
+					out += "    int64_t ";
+				}
 				out += ident;
 				out += " = 0;\n";
 			}
@@ -1156,7 +1463,7 @@ void maybeWriteBuildableSidecars(const std::string& outputCPath, const std::stri
 			libcHeaders.insert(hdr);
 			it = undeclared.erase(it);
 		}
-		else if (isCrtCallName(*it))
+		else if (isCrtCallName(*it) || isPthreadName(*it) || isAsmIntrinsicName(*it))
 		{
 			it = undeclared.erase(it);
 		}
@@ -1222,22 +1529,39 @@ void maybeWriteBuildableSidecars(const std::string& outputCPath, const std::stri
 		buildable << includeLine << '\n';
 	}
 	buildable << "#include <string.h>\n";
+	const bool hasChk = src.find("__printf_chk") != std::string::npos || src.find("__fprintf_chk") != std::string::npos;
+	if (!hasChk)
+	{
+		buildable << "#include <stdio.h>\n";
+	}
+	else
+	{
+		buildable << "int puts(const char *);\n";
+		buildable << "int putchar(int);\n";
+		buildable << "int putc(int, void *);\n";
+		buildable << "int printf(const char *, ...);\n";
+		buildable << "#define stdout ((void *)0)\n";
+	}
 	for (const auto& hdr: libcHeaders)
 	{
-		if (hdr != "string.h")
+		if (hdr != "string.h" && hdr != "stdio.h")
 		{
 			buildable << "#include <" << hdr << ">\n";
 		}
 	}
-	buildable << "#define strncpy(dst, src, n, ...) "
-				 "(strncpy)((char *)(dst), (const char *)(src), (size_t)(n))\n";
-	buildable << "#define strcmp(a, b, ...) (strcmp)((a), (b))\n";
-	buildable << "#define strncmp(a, b, n, ...) (strncmp)((a), (b), (n))\n";
+	writeLibcArityMacros(buildable);
+	std::set<std::string> asmNames;
+	collectAsmIntrinsicNames(src, asmNames);
+	for (const auto& name: asmNames)
+	{
+		buildable << "#define " << name << "(...) ((uint64_t)0)\n";
+	}
 	for (const auto& name: undeclared)
 	{
 		buildable << "#define " << name << "(...) ((" << name << ")())\n";
 	}
-	buildable << rewriteOrphanBreakContinue(injectUndeclaredTemps(src));
+	const std::string sidecarSrc = stripSidecarSystemIncludes(src);
+	buildable << rewriteOrphanBreakContinue(injectUndeclaredTemps(sidecarSrc));
 	if (!src.empty() && src.back() != '\n')
 	{
 		buildable << '\n';

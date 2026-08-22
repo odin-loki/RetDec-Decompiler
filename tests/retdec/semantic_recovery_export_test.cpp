@@ -288,15 +288,14 @@ TEST(BuildableSidecars, ClonesFileScopePrototypeNotReturnCall)
 	const fs::path dir = fs::temp_directory_path();
 	const fs::path outC = dir / "retdec_buildable_proto.c";
 	const std::string original =
-			"uint64_t __cxa_finalize(uint64_t a1);\n"
-			"uint64_t foo(uint64_t a1) {\n"
-			"    return __cxa_finalize(a1);\n"
-			"}\n";
+		"uint64_t __cxa_finalize(uint64_t a1);\n"
+		"uint64_t foo(uint64_t a1) {\n"
+		"    return __cxa_finalize(a1);\n"
+		"}\n";
 	writeAll(outC, original);
 	maybeWriteBuildableSidecars(outC.string(), original);
 	const std::string b = readAll(dir / "retdec_buildable_proto.buildable.c");
-	EXPECT_NE(b.find("uint64_t __cxa_finalize(uint64_t a1) { return 0; }"),
-			std::string::npos);
+	EXPECT_NE(b.find("uint64_t __cxa_finalize(uint64_t a1) { return 0; }"), std::string::npos);
 	EXPECT_EQ(b.find("WEAK return __cxa_finalize"), std::string::npos);
 	EXPECT_EQ(b.find("WEAK return "), std::string::npos);
 
@@ -337,4 +336,195 @@ TEST(BuildableSidecars, RewritesOrphanBreakKeepsLoopBreak)
 	fs::remove(dir / "retdec_buildable_break.h");
 	fs::remove(dir / "retdec_buildable_break_stubs.c");
 	fs::remove(dir / "retdec_buildable_break.buildable.c");
+}
+
+TEST(BuildableSidecars, InjectsHighVTempsAndStr)
+{
+	EmitBuildableEnvGuard guard;
+	setEmitBuildableEnv("1");
+
+	const fs::path dir = fs::temp_directory_path();
+	const fs::path outC = dir / "retdec_buildable_v33.c";
+	const std::string original =
+		"uint64_t f(void) {\n"
+		"    return v33 + str;\n"
+		"}\n";
+	writeAll(outC, original);
+	maybeWriteBuildableSidecars(outC.string(), original);
+	const std::string b = readAll(dir / "retdec_buildable_v33.buildable.c");
+	EXPECT_NE(b.find("int64_t v33 = 0;"), std::string::npos);
+	EXPECT_NE(b.find("int64_t str = 0;"), std::string::npos);
+
+	fs::remove(outC);
+	fs::remove(dir / "retdec_buildable_v33.h");
+	fs::remove(dir / "retdec_buildable_v33_stubs.c");
+	fs::remove(dir / "retdec_buildable_v33.buildable.c");
+}
+
+TEST(BuildableSidecars, InjectsResultWhenOnlyForInitDeclaresIt)
+{
+	EmitBuildableEnvGuard guard;
+	setEmitBuildableEnv("1");
+
+	const fs::path dir = fs::temp_directory_path();
+	const fs::path outC = dir / "retdec_buildable_forresult.c";
+	const std::string original =
+		"uint64_t f(unsigned char * a1) {\n"
+		"    for (uint32_t result = 0; a1[result]; result++) {}\n"
+		"    return result;\n"
+		"}\n";
+	writeAll(outC, original);
+	maybeWriteBuildableSidecars(outC.string(), original);
+	const std::string b = readAll(dir / "retdec_buildable_forresult.buildable.c");
+	EXPECT_NE(b.find("int64_t result = 0;"), std::string::npos);
+
+	fs::remove(outC);
+	fs::remove(dir / "retdec_buildable_forresult.h");
+	fs::remove(dir / "retdec_buildable_forresult_stubs.c");
+	fs::remove(dir / "retdec_buildable_forresult.buildable.c");
+}
+
+TEST(BuildableSidecars, DoesNotRedefineInt128Temp)
+{
+	EmitBuildableEnvGuard guard;
+	setEmitBuildableEnv("1");
+
+	const fs::path dir = fs::temp_directory_path();
+	const fs::path outC = dir / "retdec_buildable_i128.c";
+	const std::string original =
+		"uint64_t f(void) {\n"
+		"    int128_t v6 = 0;\n"
+		"    return (uint64_t)v6;\n"
+		"}\n";
+	writeAll(outC, original);
+	maybeWriteBuildableSidecars(outC.string(), original);
+	const std::string b = readAll(dir / "retdec_buildable_i128.buildable.c");
+	EXPECT_EQ(b.find("int64_t v6 = 0;"), std::string::npos);
+	EXPECT_NE(b.find("int128_t v6 = 0;"), std::string::npos);
+
+	fs::remove(outC);
+	fs::remove(dir / "retdec_buildable_i128.h");
+	fs::remove(dir / "retdec_buildable_i128_stubs.c");
+	fs::remove(dir / "retdec_buildable_i128.buildable.c");
+}
+
+TEST(BuildableSidecars, WrapsPutsArityAndHidesFortifyChk)
+{
+	EmitBuildableEnvGuard guard;
+	setEmitBuildableEnv("1");
+
+	const fs::path dir = fs::temp_directory_path();
+	const fs::path outC = dir / "retdec_buildable_arity.c";
+	const std::string original =
+		"uint64_t __printf_chk(uint64_t a1);\n"
+		"uint64_t f(void) {\n"
+		"    puts(\"x\", 1);\n"
+		"    return pthread_create(0);\n"
+		"}\n";
+	writeAll(outC, original);
+	maybeWriteBuildableSidecars(outC.string(), original);
+	const std::string b = readAll(dir / "retdec_buildable_arity.buildable.c");
+	EXPECT_NE(b.find("#define puts("), std::string::npos);
+	EXPECT_NE(b.find("#define pthread_create("), std::string::npos);
+	EXPECT_NE(b.find("retdec_pthread_any"), std::string::npos);
+	EXPECT_EQ(b.find("#define __printf_chk retdec_fortify"), std::string::npos);
+	EXPECT_NE(b.find("uint64_t __printf_chk("), std::string::npos);
+
+	fs::remove(outC);
+	fs::remove(dir / "retdec_buildable_arity.h");
+	fs::remove(dir / "retdec_buildable_arity_stubs.c");
+	fs::remove(dir / "retdec_buildable_arity.buildable.c");
+}
+
+TEST(BuildableSidecars, InjectsTempUsedAsDerefStar)
+{
+	EmitBuildableEnvGuard guard;
+	setEmitBuildableEnv("1");
+
+	const fs::path dir = fs::temp_directory_path();
+	const fs::path outC = dir / "retdec_buildable_deref.c";
+	const std::string original =
+		"uint64_t f(void) {\n"
+		"    *v11 = 1;\n"
+		"    v11 = 0;\n"
+		"    return v11;\n"
+		"}\n";
+	writeAll(outC, original);
+	maybeWriteBuildableSidecars(outC.string(), original);
+	const std::string b = readAll(dir / "retdec_buildable_deref.buildable.c");
+	EXPECT_NE(b.find("int64_t * v11 = 0;"), std::string::npos);
+
+	fs::remove(outC);
+	fs::remove(dir / "retdec_buildable_deref.h");
+	fs::remove(dir / "retdec_buildable_deref_stubs.c");
+	fs::remove(dir / "retdec_buildable_deref.buildable.c");
+}
+
+TEST(BuildableSidecars, EmitsMissingGotoLabels)
+{
+	EmitBuildableEnvGuard guard;
+	setEmitBuildableEnv("1");
+
+	const fs::path dir = fs::temp_directory_path();
+	const fs::path outC = dir / "retdec_buildable_goto.c";
+	const std::string original =
+		"uint64_t f(void) {\n"
+		"    goto lab_0x12ec;\n"
+		"    return 0;\n"
+		"}\n";
+	writeAll(outC, original);
+	maybeWriteBuildableSidecars(outC.string(), original);
+	const std::string b = readAll(dir / "retdec_buildable_goto.buildable.c");
+	EXPECT_NE(b.find("lab_0x12ec: ;"), std::string::npos);
+
+	fs::remove(outC);
+	fs::remove(dir / "retdec_buildable_goto.h");
+	fs::remove(dir / "retdec_buildable_goto_stubs.c");
+	fs::remove(dir / "retdec_buildable_goto.buildable.c");
+}
+
+TEST(BuildableSidecars, StripsPthreadIncludeAndMacrosCalls)
+{
+	EmitBuildableEnvGuard guard;
+	setEmitBuildableEnv("1");
+
+	const fs::path dir = fs::temp_directory_path();
+	const fs::path outC = dir / "retdec_buildable_pthread.c";
+	const std::string original =
+		"#include <pthread.h>\n"
+		"uint64_t f(uint64_t * thread) {\n"
+		"    return pthread_create(thread);\n"
+		"}\n";
+	writeAll(outC, original);
+	maybeWriteBuildableSidecars(outC.string(), original);
+	const std::string b = readAll(dir / "retdec_buildable_pthread.buildable.c");
+	EXPECT_EQ(b.find("#include <pthread.h>"), std::string::npos);
+	EXPECT_NE(b.find("#define pthread_create("), std::string::npos);
+
+	fs::remove(outC);
+	fs::remove(dir / "retdec_buildable_pthread.h");
+	fs::remove(dir / "retdec_buildable_pthread_stubs.c");
+	fs::remove(dir / "retdec_buildable_pthread.buildable.c");
+}
+
+TEST(BuildableSidecars, DefinesAsmIntrinsicMacro)
+{
+	EmitBuildableEnvGuard guard;
+	setEmitBuildableEnv("1");
+
+	const fs::path dir = fs::temp_directory_path();
+	const fs::path outC = dir / "retdec_buildable_asm.c";
+	const std::string original =
+		"void f(void) {\n"
+		"    __asm_movups(0, 1);\n"
+		"}\n";
+	writeAll(outC, original);
+	maybeWriteBuildableSidecars(outC.string(), original);
+	const std::string b = readAll(dir / "retdec_buildable_asm.buildable.c");
+	EXPECT_NE(b.find("#define __asm_movups("), std::string::npos);
+
+	fs::remove(outC);
+	fs::remove(dir / "retdec_buildable_asm.h");
+	fs::remove(dir / "retdec_buildable_asm_stubs.c");
+	fs::remove(dir / "retdec_buildable_asm.buildable.c");
 }
