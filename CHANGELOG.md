@@ -8,6 +8,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Neural leftover: structural gate and rename denylist also
+  reject `CreateProcessAsUser` / `A` / `W`, `ShellExecuteEx` /
+  `A` / `W`, and `posix_spawn` / `posix_spawnp` (word-boundary:
+  `CreateProcess` does not match `CreateProcessAsUserA`). Tests:
+  `AddedCreateProcessAsUserCallFailsStructural`,
+  `AddedShellExecuteExCallFailsStructural`,
+  `AddedPosixSpawnCallFailsStructural`. Default F5 is unchanged.
 - N16 leftover: `serializeSemanticContext` also dumps RTTI class
   constructor / destructor / method / virtual-method / vtable
   names from existing `Class` sets. Test:

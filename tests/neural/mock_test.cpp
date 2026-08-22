@@ -221,6 +221,34 @@ TEST(NeuralGates, AddedShellExecuteACallFailsStructural)
 	EXPECT_EQ(r.structural, GateResult::FailStructural);
 }
 
+TEST(NeuralGates, AddedCreateProcessAsUserCallFailsStructural)
+{
+	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
+	const std::string refined =
+		"int f(int x) { if (x > 0) return 1; CreateProcessAsUserA(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); return 0; }\n";
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_FALSE(r.allPassed());
+	EXPECT_EQ(r.structural, GateResult::FailStructural);
+}
+
+TEST(NeuralGates, AddedShellExecuteExCallFailsStructural)
+{
+	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
+	const std::string refined = "int f(int x) { if (x > 0) return 1; ShellExecuteExA(0); return 0; }\n";
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_FALSE(r.allPassed());
+	EXPECT_EQ(r.structural, GateResult::FailStructural);
+}
+
+TEST(NeuralGates, AddedPosixSpawnCallFailsStructural)
+{
+	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
+	const std::string refined = "int f(int x) { if (x > 0) return 1; posix_spawn(0, 0, 0, 0, 0, 0); return 0; }\n";
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_FALSE(r.allPassed());
+	EXPECT_EQ(r.structural, GateResult::FailStructural);
+}
+
 TEST(NeuralGates, AddedCrtPopenCallFailsStructural)
 {
 	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
@@ -449,6 +477,9 @@ TEST(NeuralNaming, ApplyJsonRenameMapRejectsSpawnTarget)
 	EXPECT_EQ(applyJsonRenameMap(src, R"({"fn_401230":"execv"})"), src);
 	EXPECT_EQ(applyJsonRenameMap(src, R"({"v3":"_popen"})"), src);
 	EXPECT_EQ(applyJsonRenameMap(src, R"({"v3":"ShellExecuteA"})"), src);
+	EXPECT_EQ(applyJsonRenameMap(src, R"({"v3":"CreateProcessAsUserA"})"), src);
+	EXPECT_EQ(applyJsonRenameMap(src, R"({"v3":"ShellExecuteEx"})"), src);
+	EXPECT_EQ(applyJsonRenameMap(src, R"({"v3":"posix_spawn"})"), src);
 	const std::string mixed = applyJsonRenameMap(src, R"({"v3":"state","fn_401230":"system"})");
 	EXPECT_NE(mixed.find("int state = key_schedule(fn_401230)"), std::string::npos);
 	EXPECT_EQ(mixed.find("system"), std::string::npos);
