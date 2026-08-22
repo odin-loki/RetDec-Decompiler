@@ -272,6 +272,18 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		if (!tool.getVersion().empty()) oss << ",\"version\":\"" << jsonEscape(tool.getVersion()) << '"';
 		oss << '}';
 	}
+	oss << "],\"languages\":[";
+	bool firstLang = true;
+	for (const auto& lang: config.languages)
+	{
+		if (lang.getName().empty()) continue;
+		if (!firstLang) oss << ',';
+		firstLang = false;
+		oss << "{\"name\":\"" << jsonEscape(lang.getName()) << '"';
+		if (lang.isBytecode()) oss << ",\"bytecode\":true";
+		if (lang.isModuleCountSet()) oss << ",\"module_count\":" << lang.getModuleCount();
+		oss << '}';
+	}
 	oss << ']';
 	if (config.architecture.isKnown())
 	{

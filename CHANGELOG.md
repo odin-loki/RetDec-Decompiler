@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` also dumps detected
+  source languages (name, bytecode, module count) from
+  `config.languages`. Test: `SerializesDetectedLanguages`.
+  Default F5 is unchanged.
 - N11 leftover: the context-budget retry marker is re-emitted
   after N14 comment stripping so the mock (and the model)
   still see `[truncated for context]`. Test:

@@ -1,5 +1,6 @@
 #include "retdec/common/file_format.h"
 #include "retdec/common/function.h"
+#include "retdec/common/language.h"
 #include "retdec/common/object.h"
 #include "retdec/common/pattern.h"
 #include "retdec/common/semantic_detection.h"
@@ -835,7 +836,8 @@ TEST(NeuralSemanticContext, SkipsEmptyFunction)
 	auto cfg = retdec::config::Config::empty();
 	cfg.functions.insert(retdec::common::Function("empty_fn"));
 	EXPECT_EQ(
-		serializeSemanticContext(cfg), "{\"functions\":[],\"classes\":[],\"vtables\":[],\"patterns\":[],\"tools\":[]}");
+		serializeSemanticContext(cfg),
+		"{\"functions\":[],\"classes\":[],\"vtables\":[],\"patterns\":[],\"tools\":[],\"languages\":[]}");
 }
 
 TEST(NeuralSemanticContext, SerializesOptionalFunctionMetadata)
@@ -912,6 +914,23 @@ TEST(NeuralSemanticContext, SerializesCompilerToolAndArchitecture)
 	EXPECT_NE(json.find("\"architecture\":{\"name\":\"x86\""), std::string::npos);
 	EXPECT_NE(json.find("\"bit_size\":64"), std::string::npos);
 	EXPECT_NE(json.find("\"file_format\":\"elf\""), std::string::npos);
+}
+
+TEST(NeuralSemanticContext, SerializesDetectedLanguages)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Language cxx("C++");
+	cxx.setModuleCount(3);
+	cfg.languages.insert(cxx);
+	retdec::common::Language cil("CIL/.NET");
+	cil.setIsBytecode(true);
+	cfg.languages.insert(cil);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"name\":\"C++\""), std::string::npos);
+	EXPECT_NE(json.find("\"module_count\":3"), std::string::npos);
+	EXPECT_NE(json.find("\"name\":\"CIL/.NET\""), std::string::npos);
+	EXPECT_NE(json.find("\"bytecode\":true"), std::string::npos);
 }
 
 TEST(NeuralSemanticContext, SerializesCryptoPatternNames)
