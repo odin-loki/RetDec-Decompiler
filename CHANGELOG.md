@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- A7 leftover: MD5 detector also fingerprints T/K[8..15]
+  (`0x698098d8` … `0x49b40821`). Existing `hasSineK` field;
+  no public-header change. Crypto stays unwired into export;
+  no remasure. Test: `SineK8Detected`. Default F5 is unchanged.
 - N14 leftover: concurrency unit test for two independent
   `Refiner` instances (separate mock backends). Does not claim
   the llama.cpp backend is thread-safe. Test:

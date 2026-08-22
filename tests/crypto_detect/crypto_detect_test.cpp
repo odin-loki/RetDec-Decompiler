@@ -860,6 +860,18 @@ TEST(MD5DetectorTest, AlgorithmIsMD5) {
     EXPECT_EQ(det.algorithm(), CryptoAlgorithm::MD5);
 }
 
+TEST(MD5DetectorTest, SineK8Detected) {
+    MD5Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* i = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, i, 0x698098d8ULL); // MD5 K[8] — not in the first eight
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.algorithm, CryptoAlgorithm::MD5);
+    EXPECT_GT(r.confidence, 0.50f);
+    EXPECT_NE(r.emittedAnnotation.find("MD5"), std::string::npos);
+}
+
 // ─── 14. CRC Detector ────────────────────────────────────────────────────────
 
 TEST(CRCDetectorTest, ReflectedPolyDetected) {
