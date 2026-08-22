@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- TransformDetector does not assign identity `std::copy` on
+  state-machine loops (CondBranch ≥ 3 and Add < 3). HTTP-verb
+  scanners are a miss for copy; memcpy-style loops still hit.
+  Test: `StateMachineManyBranchesIsNotCopy`. B8 loop FP **0.000**.
 - RingBufferDetector requires `And` with a `(2^k-1)` wrap mask
   (`k<=16`). Plain `Div` is no longer modulo (B8 box-blur `/ 3`
   and heapsort `n/2`). Recovered SSA from `llvm_to_ssa` has empty

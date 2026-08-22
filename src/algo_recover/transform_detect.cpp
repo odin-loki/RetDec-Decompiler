@@ -43,143 +43,149 @@ namespace algo_recover {
 
 namespace {
 
-static bool hasBackEdge(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (uint32_t s : blk->succs)
-            if (s <= b) return true;
-    }
-    return false;
+static bool hasBackEdge(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (uint32_t s: blk->succs)
+			if (s <= b) return true;
+	}
+	return false;
 }
 
-static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
-    int n = 0;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs)
-            if (i && i->op == op) ++n;
-    }
-    return n;
+static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+			if (i && i->op == op) ++n;
+	}
+	return n;
 }
 
 // Both source and destination pointers advanced by Add in loop body.
-static bool hasTwoPtrsAdvanced(const ssa::SSAFunction& fn) {
-    return countOp(fn, ssa::IrInstr::Op::Add) >= 2;
+static bool hasTwoPtrsAdvanced(const ssa::SSAFunction& fn)
+{
+	return countOp(fn, ssa::IrInstr::Op::Add) >= 2;
 }
 
 // Derived store: a Call or any non-trivial computation between Load and Store.
 // Note: 2 Adds are expected for src/dst pointer advances; require 3+ for computation.
-static bool hasDerivedStore(const ssa::SSAFunction& fn) {
-    return countOp(fn, ssa::IrInstr::Op::Call) >= 1 ||
-           countOp(fn, ssa::IrInstr::Op::Add)  >= 3 ||
-           countOp(fn, ssa::IrInstr::Op::Mul)  >= 1 ||
-           countOp(fn, ssa::IrInstr::Op::Shl)  >= 1;
+static bool hasDerivedStore(const ssa::SSAFunction& fn)
+{
+	return countOp(fn, ssa::IrInstr::Op::Call) >= 1 || countOp(fn, ssa::IrInstr::Op::Add) >= 3
+		|| countOp(fn, ssa::IrInstr::Op::Mul) >= 1 || countOp(fn, ssa::IrInstr::Op::Shl) >= 1;
 }
 
 // Back-inserter: push_back / emplace_back / _M_insert call in loop.
-static bool hasBackInserterCall(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs) {
-            if (!i || i->op != ssa::IrInstr::Op::Call) continue;
-            const auto& cn = i->calleeName;
-            if (cn.find("push_back")    != std::string::npos ||
-                cn.find("emplace_back") != std::string::npos ||
-                cn.find("_M_insert")    != std::string::npos ||
-                cn.find("append")       != std::string::npos)
-                return true;
-        }
-    }
-    return false;
+static bool hasBackInserterCall(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != ssa::IrInstr::Op::Call) continue;
+			const auto& cn = i->calleeName;
+			if (cn.find("push_back") != std::string::npos || cn.find("emplace_back") != std::string::npos
+				|| cn.find("_M_insert") != std::string::npos || cn.find("append") != std::string::npos)
+				return true;
+		}
+	}
+	return false;
 }
 
 } // anonymous namespace
 
-TransformEvidence TransformDetector::analyse(const ssa::SSAFunction& fn) const {
-    TransformEvidence ev;
-    if (!hasBackEdge(fn)) return ev;
+TransformEvidence TransformDetector::analyse(const ssa::SSAFunction& fn) const
+{
+	TransformEvidence ev;
+	if (!hasBackEdge(fn)) return ev;
 
-    const bool indexedCopy = countOp(fn, ssa::IrInstr::Op::Load)  >= 1 &&
-                             countOp(fn, ssa::IrInstr::Op::Store) >= 1 &&
-                             countOp(fn, ssa::IrInstr::Op::Compare) >= 1 &&
-                             countOp(fn, ssa::IrInstr::Op::Add) >= 1 &&
-                             countOp(fn, ssa::IrInstr::Op::Call) == 0;
+	// B8 HTTP-verb: many CondBranches (state machine) and one pointer
+	// increment is not std::copy. memcpy-style loops have one bound
+	// branch and several Adds (src+i, dst+i, i++).
+	if (countOp(fn, ssa::IrInstr::Op::CondBranch) >= 3 && countOp(fn, ssa::IrInstr::Op::Add) < 3) return ev;
 
-    ev.hasSrcDstLoad      = countOp(fn, ssa::IrInstr::Op::Load)  >= 1 &&
-                            countOp(fn, ssa::IrInstr::Op::Store) >= 1;
-    ev.hasTwoPtrsAdvanced = hasTwoPtrsAdvanced(fn) || indexedCopy;
-    ev.hasNoReorder       = countOp(fn, ssa::IrInstr::Op::Call)  <= 1; // no sort call
-    ev.hasLambdaCall      = hasDerivedStore(fn) && !indexedCopy;
-    ev.hasBackInserter    = hasBackInserterCall(fn);
-    ev.found = ev.hasSrcDstLoad;
-    ev.confidence = score(ev);
-    return ev;
+	const bool indexedCopy = countOp(fn, ssa::IrInstr::Op::Load) >= 1 && countOp(fn, ssa::IrInstr::Op::Store) >= 1
+						  && countOp(fn, ssa::IrInstr::Op::Compare) >= 1 && countOp(fn, ssa::IrInstr::Op::Add) >= 1
+						  && countOp(fn, ssa::IrInstr::Op::Call) == 0;
+
+	ev.hasSrcDstLoad = countOp(fn, ssa::IrInstr::Op::Load) >= 1 && countOp(fn, ssa::IrInstr::Op::Store) >= 1;
+	ev.hasTwoPtrsAdvanced = hasTwoPtrsAdvanced(fn) || indexedCopy;
+	ev.hasNoReorder = countOp(fn, ssa::IrInstr::Op::Call) <= 1; // no sort call
+	ev.hasLambdaCall = hasDerivedStore(fn) && !indexedCopy;
+	ev.hasBackInserter = hasBackInserterCall(fn);
+	ev.found = ev.hasSrcDstLoad;
+	ev.confidence = score(ev);
+	return ev;
 }
 
-float TransformDetector::score(const TransformEvidence& ev) const {
-    if (!ev.hasSrcDstLoad) return 0.0f;
-    float s = 0.0f;
-    if (ev.hasSrcDstLoad)      s += 0.25f;
-    if (ev.hasTwoPtrsAdvanced) s += 0.30f;
-    if (ev.hasNoReorder)       s += 0.10f;
-    if (ev.hasLambdaCall)      s += 0.30f;
-    if (ev.hasBackInserter)    s += 0.10f;
-    // Identity indexed copy (memcpy-style) without extra computation.
-    if (!ev.hasLambdaCall && !ev.hasBackInserter && ev.hasTwoPtrsAdvanced)
-        s += 0.20f;
-    return s > 1.0f ? 1.0f : s;
+float TransformDetector::score(const TransformEvidence& ev) const
+{
+	if (!ev.hasSrcDstLoad) return 0.0f;
+	float s = 0.0f;
+	if (ev.hasSrcDstLoad) s += 0.25f;
+	if (ev.hasTwoPtrsAdvanced) s += 0.30f;
+	if (ev.hasNoReorder) s += 0.10f;
+	if (ev.hasLambdaCall) s += 0.30f;
+	if (ev.hasBackInserter) s += 0.10f;
+	// Identity indexed copy (memcpy-style) without extra computation.
+	if (!ev.hasLambdaCall && !ev.hasBackInserter && ev.hasTwoPtrsAdvanced) s += 0.20f;
+	return s > 1.0f ? 1.0f : s;
 }
 
-std::string TransformDetector::emit(const TransformEvidence& ev,
-                                     EmissionTier tier) const {
-    if (tier == EmissionTier::Low)
-        return "for (auto src = first; src != last; ++src, ++dst) *dst = f(*src);";
+std::string TransformDetector::emit(const TransformEvidence& ev, EmissionTier tier) const
+{
+	if (tier == EmissionTier::Low) return "for (auto src = first; src != last; ++src, ++dst) *dst = f(*src);";
 
-    // Determine whether identity (copy) or true transform.
-    bool isIdentity = !ev.hasLambdaCall && !ev.hasBackInserter;
+	// Determine whether identity (copy) or true transform.
+	bool isIdentity = !ev.hasLambdaCall && !ev.hasBackInserter;
 
-    if (tier == EmissionTier::Medium) {
-        if (isIdentity)
-            return "/* std::copy? */ for (...) *dst++ = *src++;";
-        return "/* std::transform? */ for (...) *dst++ = f(*src++);";
-    }
+	if (tier == EmissionTier::Medium)
+	{
+		if (isIdentity) return "/* std::copy? */ for (...) *dst++ = *src++;";
+		return "/* std::transform? */ for (...) *dst++ = f(*src++);";
+	}
 
-    // High tier.
-    if (isIdentity)
-        return ev.hasBackInserter
-               ? "std::copy(first, last, std::back_inserter(dst));"
-               : "std::copy(first, last, dst);";
-    return ev.hasBackInserter
-           ? "std::transform(first, last, std::back_inserter(dst), f);"
-           : "std::transform(first, last, dst, f);";
+	// High tier.
+	if (isIdentity)
+		return ev.hasBackInserter ? "std::copy(first, last, std::back_inserter(dst));" : "std::copy(first, last, dst);";
+	return ev.hasBackInserter ? "std::transform(first, last, std::back_inserter(dst), f);"
+							  : "std::transform(first, last, dst, f);";
 }
 
-AlgorithmResult TransformDetector::detect(const ssa::SSAFunction& fn) const {
-    AlgorithmResult result;
-    result.kind = AlgorithmKind::Transform;
+AlgorithmResult TransformDetector::detect(const ssa::SSAFunction& fn) const
+{
+	AlgorithmResult result;
+	result.kind = AlgorithmKind::Transform;
 
-    auto ev = analyse(fn);
-    result.confidence = ev.confidence;
-    result.hasLambda  = ev.hasLambdaCall;
-    result.hasBackInserter = ev.hasBackInserter;
+	auto ev = analyse(fn);
+	result.confidence = ev.confidence;
+	result.hasLambda = ev.hasLambdaCall;
+	result.hasBackInserter = ev.hasBackInserter;
 
-    // Assign tier (caller will override; set tentative here).
-    EmissionTier tier = EmissionTier::Low;
-    if (ev.confidence >= 0.75f) tier = EmissionTier::High;
-    else if (ev.confidence >= 0.45f) tier = EmissionTier::Medium;
-    result.tier = tier;
+	// Assign tier (caller will override; set tentative here).
+	EmissionTier tier = EmissionTier::Low;
+	if (ev.confidence >= 0.75f)
+		tier = EmissionTier::High;
+	else if (ev.confidence >= 0.45f)
+		tier = EmissionTier::Medium;
+	result.tier = tier;
 
-    if (ev.confidence < 0.01f) return result;
+	if (ev.confidence < 0.01f) return result;
 
-    // Identity transform → emit as copy.
-    if (!ev.hasLambdaCall && !ev.hasBackInserter)
-        result.kind = AlgorithmKind::Copy;
+	// Identity transform → emit as copy.
+	if (!ev.hasLambdaCall && !ev.hasBackInserter) result.kind = AlgorithmKind::Copy;
 
-    result.emittedForm = emit(ev, tier);
-    return result;
+	result.emittedForm = emit(ev, tier);
+	return result;
 }
 
 } // namespace algo_recover

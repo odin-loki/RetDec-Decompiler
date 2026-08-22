@@ -56,10 +56,9 @@ Stock RetDec has no label export — F1 is fork-only.
 B9 adversarial-positive (18 gcc O0/O2 binaries): name-blind mean
 **0.111** (`results/b9-adversarial-positive.md`). Not a product F1.
 
-B8 loop-containing negatives (100): FP rate **0.100** after
-the sort gates and RingBuffer wrap-mask
-(`results/b8-loop-negatives.md`). Remaining FPs are HTTP-verb→copy.
-Loop-free B8 remains 0.000.
+B8 loop-containing negatives (100): FP rate **0.000** after
+the sort, RingBuffer, and copy-state-machine gates
+(`results/b8-loop-negatives.md`). Loop-free B8 remains 0.000.
 
 B10 zlib 1.3.1 crc32-only: 2/2 decompiled, name-blind F1 **0.000**.
 crc+deflate still timed out (`results/b10-third-party.md`).

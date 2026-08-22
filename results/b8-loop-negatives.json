@@ -1,65 +1,9 @@
 {
-  "calibration_observation": [
-    {
-      "key": "algorithm:std::copy",
-      "max_confidence": 0.8500000238418579,
-      "mean_confidence": 0.8500000238418579,
-      "min_confidence": 0.8500000238418579,
-      "n": 10
-    },
-    {
-      "key": "container:std::unordered_map<uint32_t, uint32_t>",
-      "max_confidence": 0.45000001788139343,
-      "mean_confidence": 0.45000001788139343,
-      "min_confidence": 0.45000001788139343,
-      "n": 10
-    }
-  ],
+  "calibration_observation": [],
   "decompiled": 100,
-  "false_positive_binaries": 10,
-  "false_positive_rate": 0.1,
+  "false_positive_binaries": 0,
+  "false_positive_rate": 0.0,
   "fitted": false,
-  "positives": {
-    "http_verb_00-gcc-O0": [
-      "Copy",
-      "Memcpy"
-    ],
-    "http_verb_01-gcc-O0": [
-      "Copy",
-      "Memcpy"
-    ],
-    "http_verb_02-gcc-O0": [
-      "Copy",
-      "Memcpy"
-    ],
-    "http_verb_03-gcc-O0": [
-      "Copy",
-      "Memcpy"
-    ],
-    "http_verb_04-gcc-O0": [
-      "Copy",
-      "Memcpy"
-    ],
-    "http_verb_05-gcc-O0": [
-      "Copy",
-      "Memcpy"
-    ],
-    "http_verb_06-gcc-O0": [
-      "Copy",
-      "Memcpy"
-    ],
-    "http_verb_07-gcc-O0": [
-      "Copy",
-      "Memcpy"
-    ],
-    "http_verb_08-gcc-O0": [
-      "Copy",
-      "Memcpy"
-    ],
-    "http_verb_09-gcc-O0": [
-      "Copy",
-      "Memcpy"
-    ]
-  },
+  "positives": {},
   "requested": 100
 }

@@ -701,6 +701,28 @@ TEST(TransformDetectorTest, IdentityIsCopyKind)
 	EXPECT_EQ(r.kind, AlgorithmKind::Copy);
 }
 
+TEST(TransformDetectorTest, StateMachineManyBranchesIsNotCopy)
+{
+	// B8 HTTP-verb bag: load/store/cmp, one Add, many CondBranches.
+	auto fn = makeFunc(
+		"http_verb",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::Add,
+			ssa::IrInstr::Op::CondBranch,
+			ssa::IrInstr::Op::CondBranch,
+			ssa::IrInstr::Op::CondBranch,
+			ssa::IrInstr::Op::CondBranch,
+		},
+		1);
+	addBackEdge(*fn);
+	TransformDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.45f);
+}
+
 TEST(TransformDetectorTest, HighTierEmittedFormContainsStd)
 {
 	auto fn = makeFunc(
