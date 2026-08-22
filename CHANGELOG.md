@@ -8,6 +8,14 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- HeapsortDetector requires child-index arithmetic (Mul immediate 2
+  or Shl immediate 1). Recovered `i * 2` only has the ConstantInt
+  use attached, so the Mul check no longer demands two uses.
+  Tests: `MulTwoImmediateIsChildIndex`, `NoChildIndexStaysBelowAssign`.
+  B8 extract FP **0.000**. B9 mean F1 **0.111**, micro **0.174**
+  (fp 12). Sentinel heapsort O0/O2 stay 1.000. strlen no longer
+  extracts HeapSort. AES O2 still does (GF mul 2). A4 precision
+  **0**, not fitted.
 - OpenAddressingDetector requires a `strcmp` / `memcmp` / hash
   callee, not xor+mul alone (AES GF and T-table `udiv 64` were
   extra HashTable). Test: `XorMulWithoutStrcmpIsNotOpenAddressing`.

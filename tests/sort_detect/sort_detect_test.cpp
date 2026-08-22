@@ -209,6 +209,24 @@ TEST(SiftDownFingerprintTest, ShlOnePatternDetected)
 	EXPECT_TRUE(ev.hasLeftArith);
 }
 
+TEST(SiftDownFingerprintTest, MulTwoImmediateIsChildIndex)
+{
+	// Recovered `i * 2` has only the ConstantInt use attached.
+	auto fn = std::make_unique<ssa::SSAFunction>("sift");
+	auto* blk = fn->addBlock("entry");
+	auto* mul = fn->addInstr(blk->id, ssa::IrInstr::Op::Mul);
+	auto* immVal = fn->allocValue(ssa::ValueKind::Immediate);
+	immVal->imm = 2;
+	ssa::Use mulUse;
+	mulUse.valueId = immVal->id;
+	mulUse.operandIndex = 1;
+	mul->uses.push_back(mulUse);
+
+	SiftDownFingerprint sdf;
+	auto ev = sdf.analyse(*fn);
+	EXPECT_TRUE(ev.hasLeftArith);
+}
+
 TEST(SiftDownFingerprintTest, FullSiftDownSignature)
 {
 	// Shl + Compare + CondBranch + 2 Stores.
@@ -462,6 +480,22 @@ TEST(HeapsortDetectorTest, FullHeapsortPattern)
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.50f);
 	EXPECT_EQ(r.algorithm, SortAlgorithm::Heapsort);
+}
+
+TEST(HeapsortDetectorTest, NoChildIndexStaysBelowAssign)
+{
+	// Build+sort opcode bag without Mul 2 / Shl 1 is not heapsort.
+	auto fn = makeFunc(
+		"not_heap",
+		{ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::CondBranch,
+		 ssa::IrInstr::Op::Sub,
+		 ssa::IrInstr::Op::Sub,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::Store});
+	HeapsortDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.55f);
 }
 
 // ─── RadixsortDetector tests ──────────────────────────────────────────────────

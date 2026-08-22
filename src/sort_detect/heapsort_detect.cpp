@@ -47,91 +47,98 @@ namespace sort_detect {
 
 namespace {
 
-static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
-    int n = 0;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs)
-            if (instr && instr->op == op) ++n;
-    }
-    return n;
+static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+			if (instr && instr->op == op) ++n;
+	}
+	return n;
 }
 
 // Build-heap phase: a loop with Sub (decrement) + Compare + CondBranch.
 // Also, the loop calls something (sift-down) or contains sift-down inline.
-static bool hasBuildHeapPhase(const ssa::SSAFunction& fn) {
-    bool hasSub  = countOp(fn, ssa::IrInstr::Op::Sub) >= 1;
-    bool hasCmp  = countOp(fn, ssa::IrInstr::Op::Compare) >= 1;
-    bool hasCb   = countOp(fn, ssa::IrInstr::Op::CondBranch) >= 1;
-    return hasSub && hasCmp && hasCb;
+static bool hasBuildHeapPhase(const ssa::SSAFunction& fn)
+{
+	bool hasSub = countOp(fn, ssa::IrInstr::Op::Sub) >= 1;
+	bool hasCmp = countOp(fn, ssa::IrInstr::Op::Compare) >= 1;
+	bool hasCb = countOp(fn, ssa::IrInstr::Op::CondBranch) >= 1;
+	return hasSub && hasCmp && hasCb;
 }
 
 // Sort phase: an additional loop with a swap (2+ stores) + sift-down call/inline.
 // Heuristic: the function has 2+ stores AND 2+ Subs (one for each phase).
-static bool hasSortPhase(const ssa::SSAFunction& fn) {
-    int stores = countOp(fn, ssa::IrInstr::Op::Store);
-    int subs   = countOp(fn, ssa::IrInstr::Op::Sub);
-    return stores >= 2 && subs >= 2;
+static bool hasSortPhase(const ssa::SSAFunction& fn)
+{
+	int stores = countOp(fn, ssa::IrInstr::Op::Store);
+	int subs = countOp(fn, ssa::IrInstr::Op::Sub);
+	return stores >= 2 && subs >= 2;
 }
 
 } // anonymous namespace
 
 // ─── HeapsortDetector ─────────────────────────────────────────────────────────
 
-bool HeapsortDetector::hasBuildHeapPhase(const ssa::SSAFunction& fn) const {
-    return ::retdec::sort_detect::hasBuildHeapPhase(fn);
+bool HeapsortDetector::hasBuildHeapPhase(const ssa::SSAFunction& fn) const
+{
+	return ::retdec::sort_detect::hasBuildHeapPhase(fn);
 }
 
-bool HeapsortDetector::hasSortPhase(const ssa::SSAFunction& fn) const {
-    return ::retdec::sort_detect::hasSortPhase(fn);
+bool HeapsortDetector::hasSortPhase(const ssa::SSAFunction& fn) const
+{
+	return ::retdec::sort_detect::hasSortPhase(fn);
 }
 
-SortResult HeapsortDetector::detect(const ssa::SSAFunction& fn) const {
-    SortResult result;
-    result.algorithm = SortAlgorithm::Heapsort;
+SortResult HeapsortDetector::detect(const ssa::SSAFunction& fn) const
+{
+	SortResult result;
+	result.algorithm = SortAlgorithm::Heapsort;
 
-    float score = 0.0f;
+	float score = 0.0f;
 
-    SiftDownFingerprint sdf;
-    auto sde = sdf.analyse(fn);
-    if (sde.found) score += 0.40f;
+	SiftDownFingerprint sdf;
+	auto sde = sdf.analyse(fn);
+	if (sde.found) score += 0.40f;
 
-    if (hasBuildHeapPhase(fn)) score += 0.30f;
-    if (hasSortPhase(fn))      score += 0.30f;
+	if (hasBuildHeapPhase(fn)) score += 0.30f;
+	if (hasSortPhase(fn)) score += 0.30f;
 
-    // Without sift-down evidence this is likely mergesort or another loop.
-    if (!sde.found)
-        score = std::min(score, 0.40f);
+	// Without sift-down evidence this is likely mergesort or another loop.
+	if (!sde.found) score = std::min(score, 0.40f);
+	// Child index (Mul 2 / Shl 1) is required to extract. max-select +
+	// swap alone fired on strlen/atoi O2 after uses were attached.
+	if (!sde.hasLeftArith) score = std::min(score, 0.40f);
 
-    result.confidence = score > 1.0f ? 1.0f : score;
+	result.confidence = score > 1.0f ? 1.0f : score;
 
-    // Variant detection from function / callee names.
-    const std::string& name = fn.name();
-    if (name.find("sort_heap")  != std::string::npos ||
-        name.find("make_heap")  != std::string::npos ||
-        name.find("push_heap")  != std::string::npos ||
-        name.find("sift_down")  != std::string::npos ||
-        name.find("__sift")     != std::string::npos)
-        result.compilerVariant = CompilerVariant::GCC;
-    else if (name.find("_Push_heap") != std::string::npos ||
-             name.find("_Pop_heap")  != std::string::npos)
-        result.compilerVariant = CompilerVariant::MSVC;
+	// Variant detection from function / callee names.
+	const std::string& name = fn.name();
+	if (name.find("sort_heap") != std::string::npos || name.find("make_heap") != std::string::npos
+		|| name.find("push_heap") != std::string::npos || name.find("sift_down") != std::string::npos
+		|| name.find("__sift") != std::string::npos)
+		result.compilerVariant = CompilerVariant::GCC;
+	else if (name.find("_Push_heap") != std::string::npos || name.find("_Pop_heap") != std::string::npos)
+		result.compilerVariant = CompilerVariant::MSVC;
 
-    // Record sift-down as a helper if we detected it in callee names.
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs) {
-            if (!instr || instr->op != ssa::IrInstr::Op::Call) continue;
-            const std::string& cn = instr->calleeName;
-            if (cn.find("sift") != std::string::npos ||
-                cn.find("heap") != std::string::npos)
-                result.helperFunctions.push_back(cn);
-        }
-    }
+	// Record sift-down as a helper if we detected it in callee names.
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+		{
+			if (!instr || instr->op != ssa::IrInstr::Op::Call) continue;
+			const std::string& cn = instr->calleeName;
+			if (cn.find("sift") != std::string::npos || cn.find("heap") != std::string::npos)
+				result.helperFunctions.push_back(cn);
+		}
+	}
 
-    return result;
+	return result;
 }
 
 } // namespace sort_detect
