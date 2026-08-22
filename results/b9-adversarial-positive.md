@@ -11,15 +11,15 @@ not a product F1. `crypto_detect` is **not** merged into decompiler
 AES rows are therefore expected misses unless `usedCryptoConstants` is set.
 
 - binaries: **18**
-- mean F1: **0.093** (was 0.111; `heapsort_sentinel-gcc-O2` is 0.667
-  after extra HashTable/Map from recovered immediates)
-- micro F1: **0.127** (tp=4 fp=29 fn=26)
+- mean F1: **0.111** (unordered-map And-mask gate; sentinel heapsort
+  O2 is 1.000 again)
+- micro F1: **0.133** (tp=4 fp=26 fn=26)
 
 ## Per binary
 
 | Binary | Expected | Predicted | F1 |
 |--------|----------|-----------|----|
-| `aes_bitslice-gcc-O0` | AES | Copy, HashTable, Map, Memcpy, OpenAddressing | 0.000 |
+| `aes_bitslice-gcc-O0` | AES | Copy, HashTable, Memcpy, OpenAddressing | 0.000 |
 | `aes_bitslice-gcc-O2` | AES | HashTable, HeapSort, OpenAddressing, Sort | 0.000 |
 | `aes_ni-gcc-O0` | AES | (none) | 0.000 |
 | `aes_ni-gcc-O2` | AES | (none) | 0.000 |
@@ -32,7 +32,7 @@ AES rows are therefore expected misses unless `usedCryptoConstants` is set.
 | `dfs_explicit_stack-gcc-O0` | DFS, GraphTraversal | Copy, Memcpy | 0.000 |
 | `dfs_explicit_stack-gcc-O2` | DFS, GraphTraversal | (none) | 0.000 |
 | `heapsort_sentinel-gcc-O0` | HeapSort, Sort | HeapSort, Sort | 1.000 |
-| `heapsort_sentinel-gcc-O2` | HeapSort, Sort | HashTable, HeapSort, Map, Sort | 0.667 |
+| `heapsort_sentinel-gcc-O2` | HeapSort, Sort | HeapSort, Sort | 1.000 |
 | `strlen_word-gcc-O0` | Strlen, String | HashTable, HeapSort, OpenAddressing, Sort | 0.000 |
 | `strlen_word-gcc-O2` | Strlen, String | HeapSort, Sort | 0.000 |
 | `varint_unrolled-gcc-O0` | Varint, Serialization | (none) | 0.000 |

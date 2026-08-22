@@ -590,6 +590,45 @@ TEST(UnorderedMapDetectorTest, ModuloPowerOfTwo)
 	EXPECT_GE(r.confidence, 0.50f);
 }
 
+TEST(UnorderedMapDetectorTest, DivIsNotBucketModulo)
+{
+	// Rem and strength-reduction Div are not a bucket mask (B9 heapsort).
+	auto fn = makeFunc(
+		"uhm_div",
+		{
+			ssa::IrInstr::Op::Xor,
+			ssa::IrInstr::Op::Mul,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Compare,
+		},
+		1);
+	fn->block(1)->succs.push_back(0);
+	addImmInstr(*fn, ssa::IrInstr::Op::Div, 8);
+	UnorderedMapDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.80f);
+}
+
+TEST(UnorderedMapDetectorTest, AndAllOnes32IsNotBucketModulo)
+{
+	auto fn = makeFunc(
+		"uhm_zext",
+		{
+			ssa::IrInstr::Op::Xor,
+			ssa::IrInstr::Op::Mul,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Compare,
+		},
+		1);
+	fn->block(1)->succs.push_back(0);
+	addImmInstr(*fn, ssa::IrInstr::Op::And, 0xffffffffULL);
+	UnorderedMapDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.80f);
+}
+
 TEST(UnorderedMapDetectorTest, EmittedTypeContainsUnorderedMap)
 {
 	auto fn = makeFunc(

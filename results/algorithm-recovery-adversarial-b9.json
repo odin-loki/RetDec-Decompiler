@@ -2,11 +2,11 @@
   "harness": "algorithm_recovery",
   "summary": {
     "binaries": 18,
-    "mean_f1": 0.09259259259259259,
-    "mean_f1_raw": 0.09259259259259259,
+    "mean_f1": 0.1111111111111111,
+    "mean_f1_raw": 0.1111111111111111,
     "decompiled": 18,
     "mean_f1_ci95_low": 0.0,
-    "mean_f1_ci95_high": 0.24074074074074073,
+    "mean_f1_ci95_high": 0.2777777777777778,
     "n": 18,
     "n_boot": 2000
   },
@@ -14,23 +14,6 @@
     "O0": {
       "binaries": 9,
       "mean_f1": 0.1111111111111111,
-      "n": 9,
-      "micro": {
-        "tp": 2,
-        "fp": 15,
-        "fn": 13,
-        "precision": 0.11764705882352941,
-        "recall": 0.13333333333333333,
-        "f1": 0.125,
-        "n": 9
-      },
-      "mean_f1_ci95_low": 0.0,
-      "mean_f1_ci95_high": 0.3333333333333333,
-      "n_boot": 2000
-    },
-    "O2": {
-      "binaries": 9,
-      "mean_f1": 0.07407407407407407,
       "n": 9,
       "micro": {
         "tp": 2,
@@ -42,14 +25,31 @@
         "n": 9
       },
       "mean_f1_ci95_low": 0.0,
-      "mean_f1_ci95_high": 0.2222222222222222,
+      "mean_f1_ci95_high": 0.3333333333333333,
+      "n_boot": 2000
+    },
+    "O2": {
+      "binaries": 9,
+      "mean_f1": 0.1111111111111111,
+      "n": 9,
+      "micro": {
+        "tp": 2,
+        "fp": 12,
+        "fn": 13,
+        "precision": 0.14285714285714285,
+        "recall": 0.13333333333333333,
+        "f1": 0.1379310344827586,
+        "n": 9
+      },
+      "mean_f1_ci95_low": 0.0,
+      "mean_f1_ci95_high": 0.3333333333333333,
       "n_boot": 2000
     }
   },
   "per_binary": {
     "aes_bitslice-gcc-O0": {
       "tp": 0,
-      "fp": 5,
+      "fp": 4,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -153,11 +153,11 @@
     },
     "heapsort_sentinel-gcc-O2": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "strlen_word-gcc-O0": {
       "tp": 0,
@@ -255,12 +255,12 @@
     },
     "HashTable": {
       "tp": 0,
-      "fp": 6,
+      "fp": 5,
       "fn": 0,
       "precision": 0.0,
       "recall": 0.0,
       "f1": 0.0,
-      "n_pred": 6,
+      "n_pred": 5,
       "n_true": 0
     },
     "HeapSort": {
@@ -272,16 +272,6 @@
       "f1": 0.4444444444444445,
       "n_pred": 7,
       "n_true": 2
-    },
-    "Map": {
-      "tp": 0,
-      "fp": 2,
-      "fn": 0,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0,
-      "n_pred": 2,
-      "n_true": 0
     },
     "Memcpy": {
       "tp": 0,
@@ -366,35 +356,18 @@
   },
   "micro": {
     "tp": 4,
-    "fp": 29,
+    "fp": 26,
     "fn": 26,
-    "precision": 0.12121212121212122,
+    "precision": 0.13333333333333333,
     "recall": 0.13333333333333333,
-    "f1": 0.126984126984127,
+    "f1": 0.13333333333333333,
     "n": 18
   },
-  "macro_f1": 0.05228758169934641,
+  "macro_f1": 0.05555555555555556,
   "per_opt_raw": {
     "O0": {
       "binaries": 9,
       "mean_f1": 0.1111111111111111,
-      "n": 9,
-      "micro": {
-        "tp": 2,
-        "fp": 15,
-        "fn": 13,
-        "precision": 0.11764705882352941,
-        "recall": 0.13333333333333333,
-        "f1": 0.125,
-        "n": 9
-      },
-      "mean_f1_ci95_low": 0.0,
-      "mean_f1_ci95_high": 0.3333333333333333,
-      "n_boot": 2000
-    },
-    "O2": {
-      "binaries": 9,
-      "mean_f1": 0.07407407407407407,
       "n": 9,
       "micro": {
         "tp": 2,
@@ -406,14 +379,31 @@
         "n": 9
       },
       "mean_f1_ci95_low": 0.0,
-      "mean_f1_ci95_high": 0.2222222222222222,
+      "mean_f1_ci95_high": 0.3333333333333333,
+      "n_boot": 2000
+    },
+    "O2": {
+      "binaries": 9,
+      "mean_f1": 0.1111111111111111,
+      "n": 9,
+      "micro": {
+        "tp": 2,
+        "fp": 12,
+        "fn": 13,
+        "precision": 0.14285714285714285,
+        "recall": 0.13333333333333333,
+        "f1": 0.1379310344827586,
+        "n": 9
+      },
+      "mean_f1_ci95_low": 0.0,
+      "mean_f1_ci95_high": 0.3333333333333333,
       "n_boot": 2000
     }
   },
   "per_binary_raw": {
     "aes_bitslice-gcc-O0": {
       "tp": 0,
-      "fp": 5,
+      "fp": 4,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -517,11 +507,11 @@
     },
     "heapsort_sentinel-gcc-O2": {
       "tp": 2,
-      "fp": 2,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.5,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.6666666666666666
+      "f1": 1.0
     },
     "strlen_word-gcc-O0": {
       "tp": 0,

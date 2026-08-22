@@ -54,9 +54,9 @@ Per-opt name-blind numbers: `results/algorithm-recovery-per-opt.md`.
 Stock RetDec has no label export — F1 is fork-only.
 
 B9 adversarial-positive (18 gcc O0/O2 binaries): name-blind mean
-**0.093** (`results/b9-adversarial-positive.md`). Not a product F1.
-Sentinel heapsort O2 now also extracts HashTable/Map after recovered
-SSA carries immediates.
+**0.111** (`results/b9-adversarial-positive.md`). Not a product F1.
+Sentinel heapsort O0/O2 stay 1.000 after the unordered-map bucket
+gate. AES/strlen OpenAddressing extras remain.
 
 B8 loop-containing negatives (100): FP rate **0.000** after
 the sort, RingBuffer, and copy-state-machine gates

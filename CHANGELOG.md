@@ -8,6 +8,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- UnorderedMapDetector bucket selection is And with `(2^k-1)`,
+  `k<=16`. Bare Div and the `0xFFFFFFFF` zext-mask are not a
+  bucket index. Tests: `DivIsNotBucketModulo`,
+  `AndAllOnes32IsNotBucketModulo`. B8 extract FP **0.000**.
+  B9 remasure mean F1 **0.111** (`heapsort_sentinel-gcc-O2` is
+  1.000 again). Corpus `hash_table` still extracts via
+  OpenAddressing. A4 still precision **0**, not fitted.
 - `llvm_to_ssa` attaches `BinaryOperator` `ConstantInt` operands as
   Immediate uses and maps `SRem`/`URem` to `Div` (they were `Assign`).
   RingBuffer stays And-mask-only: accepting Div wrap (capacity `2^k`)
