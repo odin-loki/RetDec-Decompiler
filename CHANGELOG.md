@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N14 leftover: mock coverage for every refine tier prompt and
+  the accepted-manifest key set (`accepted`, `reason`, `tier`,
+  sampler, SHA-256s, `compile_gate`, `wall_ms`). Tests:
+  `EachTierHasDistinctInstruction`, `ManifestSchemaHasRequiredKeys`.
 - B7: name-only vector growth (`malloc`+`free`, no three-pointer
   layout) tags `evidence:symbol_name` on `emittedType`. Structural
   begin/end/cap stays in the headline. ci-core has no vector

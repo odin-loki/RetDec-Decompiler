@@ -219,6 +219,24 @@ TEST(NeuralPrompt, StripsStringLiteralsFromFunctionSource)
 	EXPECT_NE(p.find("Do not change logic"), std::string::npos);
 }
 
+TEST(NeuralPrompt, EachTierHasDistinctInstruction)
+{
+	RefinementRequest req;
+	req.functionSource = "int f(void) { return 1; }\n";
+	req.generation.thinkingMode = false;
+
+	req.tier = RefinementTier::Naming;
+	EXPECT_NE(buildRefinementPrompt(req).find("variable and function names"), std::string::npos);
+	req.tier = RefinementTier::Comments;
+	EXPECT_NE(buildRefinementPrompt(req).find("Add concise comments"), std::string::npos);
+	req.tier = RefinementTier::StructFields;
+	EXPECT_NE(buildRefinementPrompt(req).find("Rename struct fields"), std::string::npos);
+	req.tier = RefinementTier::IdiomRecovery;
+	EXPECT_NE(buildRefinementPrompt(req).find("standard library idioms"), std::string::npos);
+	req.tier = RefinementTier::FullRewrite;
+	EXPECT_NE(buildRefinementPrompt(req).find("Rewrite for clarity"), std::string::npos);
+}
+
 TEST(NeuralModelVerify, Sha256HexOfBytesMatchesKnownVector)
 {
 	const char kAbc[] = "abc";
@@ -402,6 +420,37 @@ TEST(NeuralRefiner, MockEmitCManifestContainsAcceptedAndTier)
 	EXPECT_NE(resp.manifestJson.find("\"reuse_kv\":false"), std::string::npos);
 	EXPECT_NE(resp.manifestJson.find("input_sha256"), std::string::npos);
 	EXPECT_NE(resp.manifestJson.find("output_sha256"), std::string::npos);
+}
+
+TEST(NeuralRefiner, ManifestSchemaHasRequiredKeys)
+{
+	EnvGuard unverified("RETDEC_NEURAL_ALLOW_UNVERIFIED", "1");
+	EnvGuard emitC("RETDEC_NEURAL_MOCK_EMIT_C", "1");
+	EnvGuard skipCompile("RETDEC_NEURAL_SKIP_COMPILE_GATE", "1");
+	auto inf = createMockInference();
+	ASSERT_TRUE(inf->loadModel("mock.gguf"));
+	Refiner refiner(std::move(inf));
+	RefinementRequest req;
+	req.functionSource = "int broken(void) { return result; }\n";
+	req.tier = RefinementTier::FullRewrite;
+	const auto resp = refiner.refine(req);
+	ASSERT_TRUE(resp.accepted);
+	for (const char* key:
+		{"\"accepted\"",
+		 "\"reason\"",
+		 "\"tier\"",
+		 "\"seed\"",
+		 "\"temperature\"",
+		 "\"top_p\"",
+		 "\"top_k\"",
+		 "\"reuse_kv\"",
+		 "\"input_sha256\"",
+		 "\"output_sha256\"",
+		 "\"compile_gate\"",
+		 "\"wall_ms\""})
+	{
+		EXPECT_NE(resp.manifestJson.find(key), std::string::npos) << key;
+	}
 }
 
 TEST(NeuralPrompt, IncludesCompilerDiagnosticsWhenSet)
