@@ -12,12 +12,14 @@ namespace retdec::neural {
 std::string serializeSemanticContext(const retdec::config::Config& config);
 }
 
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -685,6 +687,31 @@ TEST(NeuralRefiner, CacheHitReusesAcceptedRefinement)
 	EXPECT_NE(hit.manifestJson.find("\"reason\":\"cache hit\""), std::string::npos);
 
 	fs::remove_all(dir, ec);
+}
+
+TEST(NeuralRefiner, ConcurrentIndependentRefinesDoNotCrash)
+{
+	EnvGuard unverified("RETDEC_NEURAL_ALLOW_UNVERIFIED", "1");
+	EnvGuard emitC("RETDEC_NEURAL_MOCK_EMIT_C", "1");
+	EnvGuard skipCompile("RETDEC_NEURAL_SKIP_COMPILE_GATE", "1");
+
+	std::atomic<int> accepted{0};
+	auto work = [&accepted]() {
+		auto inf = createMockInference();
+		if (!inf || !inf->loadModel("mock.gguf")) return;
+		Refiner refiner(std::move(inf));
+		RefinementRequest req;
+		req.functionSource = "int broken(void) { return result; }\n";
+		req.tier = RefinementTier::FullRewrite;
+		const auto resp = refiner.refine(req);
+		if (resp.accepted) accepted.fetch_add(1);
+	};
+
+	std::thread t1(work);
+	std::thread t2(work);
+	t1.join();
+	t2.join();
+	EXPECT_EQ(accepted.load(), 2);
 }
 
 TEST(NeuralPrompt, IncludesSemanticContextWhenSet)

@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N14 leftover: concurrency unit test for two independent
+  `Refiner` instances (separate mock backends). Does not claim
+  the llama.cpp backend is thread-safe. Test:
+  `ConcurrentIndependentRefinesDoNotCrash`. Default F5 is
+  unchanged.
 - N18 leftover: `serializeSemanticContext` dumps caller and
   callee names recovered from existing `Function::codeReferences`
   and address ranges. This is call-graph context in the prompt,
