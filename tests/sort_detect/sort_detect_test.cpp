@@ -409,6 +409,22 @@ TEST(MergesortDetectorTest, TwoRecursiveCallsBoostScore)
 	EXPECT_EQ(r.algorithm, SortAlgorithm::Mergesort);
 }
 
+TEST(MergesortDetectorTest, MergeLoopWithoutRecursionStaysBelowAssign)
+{
+	// Same opcode bag as hasMergeLoop (2 loads + cmp + 2 branches).
+	// The removed 0.55 floor must not assign this as mergesort.
+	auto fn = makeFunc(
+		"fir_tap",
+		{ssa::IrInstr::Op::Load,
+		 ssa::IrInstr::Op::Load,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::CondBranch,
+		 ssa::IrInstr::Op::CondBranch});
+	MergesortDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.50f);
+}
+
 // ─── HeapsortDetector tests ───────────────────────────────────────────────────
 
 TEST(HeapsortDetectorTest, EmptyFunctionLowConfidence)

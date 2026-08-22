@@ -2,54 +2,54 @@
   "harness": "algorithm_recovery",
   "summary": {
     "binaries": 18,
-    "mean_f1": 0.0761904761904762,
-    "mean_f1_raw": 0.0761904761904762,
+    "mean_f1": 0.09259259259259259,
+    "mean_f1_raw": 0.09259259259259259,
     "decompiled": 18,
     "mean_f1_ci95_low": 0.0,
-    "mean_f1_ci95_high": 0.18412698412698414,
+    "mean_f1_ci95_high": 0.2222222222222222,
     "n": 18,
     "n_boot": 2000
   },
   "per_opt": {
     "O0": {
       "binaries": 9,
-      "mean_f1": 0.0634920634920635,
+      "mean_f1": 0.07407407407407407,
       "n": 9,
       "micro": {
         "tp": 2,
-        "fp": 29,
+        "fp": 14,
         "fn": 13,
-        "precision": 0.06451612903225806,
+        "precision": 0.125,
         "recall": 0.13333333333333333,
-        "f1": 0.08695652173913043,
+        "f1": 0.12903225806451615,
         "n": 9
       },
       "mean_f1_ci95_low": 0.0,
-      "mean_f1_ci95_high": 0.1904761904761905,
+      "mean_f1_ci95_high": 0.2222222222222222,
       "n_boot": 2000
     },
     "O2": {
       "binaries": 9,
-      "mean_f1": 0.08888888888888889,
+      "mean_f1": 0.1111111111111111,
       "n": 9,
       "micro": {
         "tp": 2,
-        "fp": 18,
+        "fp": 12,
         "fn": 13,
-        "precision": 0.1,
+        "precision": 0.14285714285714285,
         "recall": 0.13333333333333333,
-        "f1": 0.1142857142857143,
+        "f1": 0.1379310344827586,
         "n": 9
       },
       "mean_f1_ci95_low": 0.0,
-      "mean_f1_ci95_high": 0.2666666666666667,
+      "mean_f1_ci95_high": 0.3333333333333333,
       "n_boot": 2000
     }
   },
   "per_binary": {
     "aes_bitslice-gcc-O0": {
       "tp": 0,
-      "fp": 6,
+      "fp": 4,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -57,7 +57,7 @@
     },
     "aes_bitslice-gcc-O2": {
       "tp": 0,
-      "fp": 5,
+      "fp": 4,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -65,7 +65,7 @@
     },
     "aes_ni-gcc-O0": {
       "tp": 0,
-      "fp": 2,
+      "fp": 0,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -81,7 +81,7 @@
     },
     "aes_ttable-gcc-O0": {
       "tp": 0,
-      "fp": 4,
+      "fp": 2,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -97,7 +97,7 @@
     },
     "atoi_hex_table-gcc-O0": {
       "tp": 0,
-      "fp": 4,
+      "fp": 2,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
@@ -113,7 +113,7 @@
     },
     "bfs_ring-gcc-O0": {
       "tp": 0,
-      "fp": 2,
+      "fp": 0,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
@@ -121,7 +121,7 @@
     },
     "bfs_ring-gcc-O2": {
       "tp": 0,
-      "fp": 2,
+      "fp": 0,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
@@ -129,7 +129,7 @@
     },
     "dfs_explicit_stack-gcc-O0": {
       "tp": 0,
-      "fp": 4,
+      "fp": 2,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
@@ -137,7 +137,7 @@
     },
     "dfs_explicit_stack-gcc-O2": {
       "tp": 0,
-      "fp": 2,
+      "fp": 0,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
@@ -145,19 +145,19 @@
     },
     "heapsort_sentinel-gcc-O0": {
       "tp": 2,
-      "fp": 3,
+      "fp": 2,
       "fn": 0,
-      "precision": 0.4,
+      "precision": 0.5,
       "recall": 1.0,
-      "f1": 0.5714285714285715
+      "f1": 0.6666666666666666
     },
     "heapsort_sentinel-gcc-O2": {
       "tp": 2,
-      "fp": 1,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.6666666666666666,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.8
+      "f1": 1.0
     },
     "strlen_word-gcc-O0": {
       "tp": 0,
@@ -177,7 +177,7 @@
     },
     "varint_unrolled-gcc-O0": {
       "tp": 0,
-      "fp": 2,
+      "fp": 0,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
@@ -275,12 +275,12 @@
     },
     "HeapSort": {
       "tp": 2,
-      "fp": 3,
+      "fp": 5,
       "fn": 0,
-      "precision": 0.4,
+      "precision": 0.2857142857142857,
       "recall": 1.0,
-      "f1": 0.5714285714285715,
-      "n_pred": 5,
+      "f1": 0.4444444444444445,
+      "n_pred": 7,
       "n_true": 2
     },
     "Memcpy": {
@@ -313,16 +313,6 @@
       "n_pred": 0,
       "n_true": 2
     },
-    "QuickSort": {
-      "tp": 0,
-      "fp": 14,
-      "fn": 0,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0,
-      "n_pred": 14,
-      "n_true": 0
-    },
     "RingBuffer": {
       "tp": 0,
       "fp": 1,
@@ -345,12 +335,12 @@
     },
     "Sort": {
       "tp": 2,
-      "fp": 14,
+      "fp": 5,
       "fn": 0,
-      "precision": 0.125,
+      "precision": 0.2857142857142857,
       "recall": 1.0,
-      "f1": 0.2222222222222222,
-      "n_pred": 16,
+      "f1": 0.4444444444444445,
+      "n_pred": 7,
       "n_true": 2
     },
     "String": {
@@ -386,54 +376,54 @@
   },
   "micro": {
     "tp": 4,
-    "fp": 47,
+    "fp": 26,
     "fn": 26,
-    "precision": 0.0784313725490196,
+    "precision": 0.13333333333333333,
     "recall": 0.13333333333333333,
-    "f1": 0.09876543209876543,
+    "f1": 0.13333333333333333,
     "n": 18
   },
-  "macro_f1": 0.041771094402673355,
+  "macro_f1": 0.04938271604938272,
   "per_opt_raw": {
     "O0": {
       "binaries": 9,
-      "mean_f1": 0.0634920634920635,
+      "mean_f1": 0.07407407407407407,
       "n": 9,
       "micro": {
         "tp": 2,
-        "fp": 29,
+        "fp": 14,
         "fn": 13,
-        "precision": 0.06451612903225806,
+        "precision": 0.125,
         "recall": 0.13333333333333333,
-        "f1": 0.08695652173913043,
+        "f1": 0.12903225806451615,
         "n": 9
       },
       "mean_f1_ci95_low": 0.0,
-      "mean_f1_ci95_high": 0.1904761904761905,
+      "mean_f1_ci95_high": 0.2222222222222222,
       "n_boot": 2000
     },
     "O2": {
       "binaries": 9,
-      "mean_f1": 0.08888888888888889,
+      "mean_f1": 0.1111111111111111,
       "n": 9,
       "micro": {
         "tp": 2,
-        "fp": 18,
+        "fp": 12,
         "fn": 13,
-        "precision": 0.1,
+        "precision": 0.14285714285714285,
         "recall": 0.13333333333333333,
-        "f1": 0.1142857142857143,
+        "f1": 0.1379310344827586,
         "n": 9
       },
       "mean_f1_ci95_low": 0.0,
-      "mean_f1_ci95_high": 0.2666666666666667,
+      "mean_f1_ci95_high": 0.3333333333333333,
       "n_boot": 2000
     }
   },
   "per_binary_raw": {
     "aes_bitslice-gcc-O0": {
       "tp": 0,
-      "fp": 6,
+      "fp": 4,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -441,7 +431,7 @@
     },
     "aes_bitslice-gcc-O2": {
       "tp": 0,
-      "fp": 5,
+      "fp": 4,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -449,7 +439,7 @@
     },
     "aes_ni-gcc-O0": {
       "tp": 0,
-      "fp": 2,
+      "fp": 0,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -465,7 +455,7 @@
     },
     "aes_ttable-gcc-O0": {
       "tp": 0,
-      "fp": 4,
+      "fp": 2,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -481,7 +471,7 @@
     },
     "atoi_hex_table-gcc-O0": {
       "tp": 0,
-      "fp": 4,
+      "fp": 2,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
@@ -497,7 +487,7 @@
     },
     "bfs_ring-gcc-O0": {
       "tp": 0,
-      "fp": 2,
+      "fp": 0,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
@@ -505,7 +495,7 @@
     },
     "bfs_ring-gcc-O2": {
       "tp": 0,
-      "fp": 2,
+      "fp": 0,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
@@ -513,7 +503,7 @@
     },
     "dfs_explicit_stack-gcc-O0": {
       "tp": 0,
-      "fp": 4,
+      "fp": 2,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
@@ -521,7 +511,7 @@
     },
     "dfs_explicit_stack-gcc-O2": {
       "tp": 0,
-      "fp": 2,
+      "fp": 0,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
@@ -529,19 +519,19 @@
     },
     "heapsort_sentinel-gcc-O0": {
       "tp": 2,
-      "fp": 3,
+      "fp": 2,
       "fn": 0,
-      "precision": 0.4,
+      "precision": 0.5,
       "recall": 1.0,
-      "f1": 0.5714285714285715
+      "f1": 0.6666666666666666
     },
     "heapsort_sentinel-gcc-O2": {
       "tp": 2,
-      "fp": 1,
+      "fp": 0,
       "fn": 0,
-      "precision": 0.6666666666666666,
+      "precision": 1.0,
       "recall": 1.0,
-      "f1": 0.8
+      "f1": 1.0
     },
     "strlen_word-gcc-O0": {
       "tp": 0,
@@ -561,7 +551,7 @@
     },
     "varint_unrolled-gcc-O0": {
       "tp": 0,
-      "fp": 2,
+      "fp": 0,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,

@@ -1,11 +1,11 @@
 {
   "fitted": false,
   "note": "Loop-negative detections only. Every hit is a false positive, so empirical precision is 0 at the reported confidences. Detector constants were not changed.",
-  "n": 240,
+  "n": 160,
   "reliability_bins": [
     {
       "bin": "0.4-0.6",
-      "n": 150,
+      "n": 70,
       "empirical_precision": 0.0
     },
     {
@@ -33,11 +33,6 @@
     {
       "key": "container:std::unordered_map<uint32_t, uint32_t>",
       "n": 70,
-      "empirical_precision": 0.0
-    },
-    {
-      "key": "sort:mergesort (std::stable_sort)",
-      "n": 80,
       "empirical_precision": 0.0
     }
   ]

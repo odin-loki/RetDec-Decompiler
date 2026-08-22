@@ -34,15 +34,17 @@ namespace sort_detect {
 
 namespace {
 
-static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
-    int n = 0;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs)
-            if (instr && instr->op == op) ++n;
-    }
-    return n;
+static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+			if (instr && instr->op == op) ++n;
+	}
+	return n;
 }
 
 // Detect a merge loop: a basic block that is part of a cycle (has a back-edge
@@ -50,85 +52,91 @@ static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
 // 1 Compare, and 2 CondBranches.
 // Simplified heuristic: a block whose successor set contains its own id
 // OR the function has a block with (2+ Loads + 1+ Compare + 2+ CondBranch).
-static bool hasMergeLoop(const ssa::SSAFunction& fn) {
-    // A merge loop needs at least 2 loads, 1 cmp, and branching.
-    int loads = countOp(fn, ssa::IrInstr::Op::Load);
-    int cmps  = countOp(fn, ssa::IrInstr::Op::Compare);
-    int cbs   = countOp(fn, ssa::IrInstr::Op::CondBranch);
-    return loads >= 2 && cmps >= 1 && cbs >= 2;
+static bool hasMergeLoop(const ssa::SSAFunction& fn)
+{
+	// A merge loop needs at least 2 loads, 1 cmp, and branching.
+	int loads = countOp(fn, ssa::IrInstr::Op::Load);
+	int cmps = countOp(fn, ssa::IrInstr::Op::Compare);
+	int cbs = countOp(fn, ssa::IrInstr::Op::CondBranch);
+	return loads >= 2 && cmps >= 1 && cbs >= 2;
 }
 
 // Detect auxiliary buffer allocation: a call to malloc/calloc/alloca/new
 // in the function.
-static bool hasAuxiliaryAllocation(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs) {
-            if (!instr || instr->op != ssa::IrInstr::Op::Call) continue;
-            const std::string& cn = instr->calleeName;
-            if (cn == "malloc"  || cn == "calloc"  || cn == "realloc"  ||
-                cn == "__builtin_alloca"            || cn == "alloca"   ||
-                cn.find("_new")     != std::string::npos ||
-                cn.find("allocate") != std::string::npos ||
-                cn.find("Allocate") != std::string::npos)
-                return true;
-        }
-    }
-    return false;
+static bool hasAuxiliaryAllocation(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+		{
+			if (!instr || instr->op != ssa::IrInstr::Op::Call) continue;
+			const std::string& cn = instr->calleeName;
+			if (cn == "malloc" || cn == "calloc" || cn == "realloc" || cn == "__builtin_alloca" || cn == "alloca"
+				|| cn.find("_new") != std::string::npos || cn.find("allocate") != std::string::npos
+				|| cn.find("Allocate") != std::string::npos)
+				return true;
+		}
+	}
+	return false;
 }
 
 // Score: do two recursive halves exist?
-static float scoreRecursion(const ssa::SSAFunction& fn) {
-    RecursiveHalvingFingerprint rhf;
-    auto ev = rhf.analyse(fn);
-    if (ev.selfCallCount >= 2) return 0.40f;
-    if (ev.selfCallCount == 1) return 0.15f;
-    return 0.0f;
+static float scoreRecursion(const ssa::SSAFunction& fn)
+{
+	RecursiveHalvingFingerprint rhf;
+	auto ev = rhf.analyse(fn);
+	if (ev.selfCallCount >= 2) return 0.40f;
+	if (ev.selfCallCount == 1) return 0.15f;
+	return 0.0f;
 }
 
 } // anonymous namespace
 
 // ─── MergesortDetector ────────────────────────────────────────────────────────
 
-bool MergesortDetector::hasMergeLoop(const ssa::SSAFunction& fn) const {
-    return ::retdec::sort_detect::hasMergeLoop(fn);
+bool MergesortDetector::hasMergeLoop(const ssa::SSAFunction& fn) const
+{
+	return ::retdec::sort_detect::hasMergeLoop(fn);
 }
 
-bool MergesortDetector::hasAuxiliaryAllocation(const ssa::SSAFunction& fn) const {
-    return ::retdec::sort_detect::hasAuxiliaryAllocation(fn);
+bool MergesortDetector::hasAuxiliaryAllocation(const ssa::SSAFunction& fn) const
+{
+	return ::retdec::sort_detect::hasAuxiliaryAllocation(fn);
 }
 
-float MergesortDetector::scoreMerge(const ssa::SSAFunction& fn) const {
-    float score = 0.0f;
-    score += scoreRecursion(fn);
-    if (hasMergeLoop(fn))              score += 0.40f;
-    if (hasAuxiliaryAllocation(fn))    score += 0.20f;
+float MergesortDetector::scoreMerge(const ssa::SSAFunction& fn) const
+{
+	float score = 0.0f;
+	score += scoreRecursion(fn);
+	if (hasMergeLoop(fn)) score += 0.40f;
+	if (hasAuxiliaryAllocation(fn)) score += 0.20f;
 
-    // Hand-written mergesort often splits across functions; boost merge loops.
-    if (hasMergeLoop(fn) && score < 0.55f)
-        score = 0.55f;
+	// Do not floor merge-loop-only to 0.55. That labelled B8 FIR /
+	// histogram / dot-product at empirical precision 0. Split
+	// mergesort without recursion or malloc is a miss.
 
-    return score > 1.0f ? 1.0f : score;
+	return score > 1.0f ? 1.0f : score;
 }
 
-SortResult MergesortDetector::detect(const ssa::SSAFunction& fn) const {
-    SortResult result;
-    result.algorithm  = SortAlgorithm::Mergesort;
-    result.confidence = scoreMerge(fn);
+SortResult MergesortDetector::detect(const ssa::SSAFunction& fn) const
+{
+	SortResult result;
+	result.algorithm = SortAlgorithm::Mergesort;
+	result.confidence = scoreMerge(fn);
 
-    // Compiler variant heuristics.
-    const std::string& name = fn.name();
-    if (name.find("stable_sort") != std::string::npos ||
-        name.find("merge_sort")  != std::string::npos ||
-        name.find("__merge")     != std::string::npos)
-        result.compilerVariant = CompilerVariant::GCC;
-    else if (name.find("_Stable_sort") != std::string::npos)
-        result.compilerVariant = CompilerVariant::MSVC;
-    else
-        result.compilerVariant = CompilerVariant::Unknown;
+	// Compiler variant heuristics.
+	const std::string& name = fn.name();
+	if (name.find("stable_sort") != std::string::npos || name.find("merge_sort") != std::string::npos
+		|| name.find("__merge") != std::string::npos)
+		result.compilerVariant = CompilerVariant::GCC;
+	else if (name.find("_Stable_sort") != std::string::npos)
+		result.compilerVariant = CompilerVariant::MSVC;
+	else
+		result.compilerVariant = CompilerVariant::Unknown;
 
-    return result;
+	return result;
 }
 
 } // namespace sort_detect

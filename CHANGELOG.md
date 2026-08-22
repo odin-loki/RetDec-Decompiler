@@ -8,6 +8,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- MergesortDetector no longer floors a merge-loop-only function
+  to 0.55. Split mergesort without recursion or malloc is a miss.
+  Test: `MergeLoopWithoutRecursionStaysBelowAssign`. B8 loop FP
+  dropped from 0.800 to **0.200** (20/100: box-blur ring_buffer,
+  HTTP-verb copy). Sort false labels are gone. A4 still
+  observation-only. B9 remasure: name-blind mean F1 **0.093**
+  (was 0.076) after the extra QuickSort/Mergesort labels dropped.
 - QuicksortDetector requires a recursive self-call before assign.
   Partition-only FIR/histogram/dot-product loops no longer label
   `QuickSort`. Iterative quicksort is a miss. Tests:
