@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- A7 leftover: SHA-256 detector also fingerprints K[4..7]
+  (`0x3956c25b` … `0xab1c5ed5`). Existing `hasRoundConst` field;
+  no public-header change. Crypto stays unwired into export;
+  no remasure. Test: `SHA256K4Detected`. Default F5 is
+  unchanged.
 - A7 leftover: MD5 detector also fingerprints T/K[8..15]
   (`0x698098d8` … `0x49b40821`). Existing `hasSineK` field;
   no public-header change. Crypto stays unwired into export;

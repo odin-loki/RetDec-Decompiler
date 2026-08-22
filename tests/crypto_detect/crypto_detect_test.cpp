@@ -212,6 +212,20 @@ TEST(SHADetectorTest, SHA256ConstantDetected) {
     EXPECT_EQ(r.algorithm, CryptoAlgorithm::SHA256);
 }
 
+TEST(SHADetectorTest, SHA256K4Detected) {
+    SHADetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* i = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, i, 0x3956c25bULL); // SHA-256 K[4] — not in the first four
+    addInstr(*fn, blk, IrInstr::Op::And);
+    addInstr(*fn, blk, IrInstr::Op::And);
+    addInstr(*fn, blk, IrInstr::Op::Xor);
+    auto r = det.detect(*fn);
+    EXPECT_GT(r.confidence, 0.40f);
+    EXPECT_EQ(r.algorithm, CryptoAlgorithm::SHA256);
+}
+
 TEST(SHADetectorTest, SHA1ConstantDetected) {
     SHADetector det;
     auto fn = makeEmptyFn();
