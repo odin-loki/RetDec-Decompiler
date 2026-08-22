@@ -16,6 +16,9 @@
 #if defined(RETDEC_HAS_LLAMACPP)
 #include "llama.h"
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <vector>
@@ -27,16 +30,45 @@ namespace retdec::neural {
 
 namespace {
 std::once_flag g_backendOnce;
+std::once_flag g_signalOnce;
+std::atomic<bool> g_cancel{false};
 
 void llamaLog(enum ggml_log_level level, const char* text, void*)
 {
 	if (level >= GGML_LOG_LEVEL_WARN && text) std::fputs(text, stderr);
 }
 
+void onCancelSignal(int)
+{
+	g_cancel.store(true, std::memory_order_relaxed);
+}
+
+void installCancelHandlers()
+{
+	std::signal(SIGINT, onCancelSignal);
+#ifndef _WIN32
+	std::signal(SIGTERM, onCancelSignal);
+#endif
+}
+
+void freeBackendAtExit()
+{
+	llama_backend_free();
+}
+
 void initBackend()
 {
 	llama_backend_init();
 	llama_log_set(llamaLog, nullptr);
+	std::atexit(freeBackendAtExit);
+}
+
+bool deadlineExceeded(std::chrono::steady_clock::time_point start, int deadlineMs)
+{
+	if (deadlineMs <= 0) return false;
+	const auto ms =
+		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+	return ms > deadlineMs;
 }
 
 int envInt(const char* name, int fallback)
@@ -190,6 +222,11 @@ public:
 		}
 		tokens.resize(static_cast<std::size_t>(n));
 
+		std::call_once(g_signalOnce, installCancelHandlers);
+		g_cancel.store(false, std::memory_order_relaxed);
+		const int deadlineMs = envInt("RETDEC_NEURAL_DEADLINE_MS", 0);
+		const auto genStart = std::chrono::steady_clock::now();
+
 		// N11: refuse rather than silently truncate into n_ctx.
 		const uint32_t nCtx = llama_n_ctx(context_);
 		const int maxGen = config.maxTokens > 0 ? config.maxTokens : 0;
@@ -216,6 +253,16 @@ public:
 		const uint32_t nBatch = llama_n_batch(context_);
 		for (std::size_t i = common; i < tokens.size();)
 		{
+			if (g_cancel.load(std::memory_order_relaxed))
+			{
+				result.error = "llama: cancelled";
+				return result;
+			}
+			if (deadlineExceeded(genStart, deadlineMs))
+			{
+				result.error = "llama: deadline exceeded";
+				return result;
+			}
 			const int32_t nTok = static_cast<int32_t>(std::min<std::size_t>(nBatch, tokens.size() - i));
 			llama_batch batch = llama_batch_get_one(tokens.data() + i, nTok);
 			if (llama_decode(context_, batch) != 0)
@@ -233,6 +280,18 @@ public:
 		int nTok = 0;
 		for (int i = 0; i < config.maxTokens; ++i)
 		{
+			if (g_cancel.load(std::memory_order_relaxed))
+			{
+				llama_sampler_free(smpl);
+				result.error = "llama: cancelled";
+				return result;
+			}
+			if (deadlineExceeded(genStart, deadlineMs))
+			{
+				llama_sampler_free(smpl);
+				result.error = "llama: deadline exceeded";
+				return result;
+			}
 			llama_token tok = llama_sampler_sample(smpl, context_, -1);
 			llama_sampler_accept(smpl, tok);
 			if (llama_vocab_is_eog(vocab, tok)) break;

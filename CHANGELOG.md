@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N11 leftover: sampling loop honours `RETDEC_NEURAL_DEADLINE_MS`
+  and SIGINT/SIGTERM (`llama: cancelled` / `llama: deadline
+  exceeded`). GUI Stop already `terminate()`s the child (SIGTERM
+  on Unix). `llama_backend_free` runs at process exit (N-n).
+  Default F5 is unchanged. Deadline is off unless the env is set.
 - N11: llama generate refuses a prompt when `prompt_tokens +
   maxTokens` exceeds `llama_n_ctx`. Oversized `llama_token_to_piece`
   buffers are retried instead of dropped (N-k). No deadline or GUI
