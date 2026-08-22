@@ -17,11 +17,11 @@
       "n": 9,
       "micro": {
         "tp": 2,
-        "fp": 10,
+        "fp": 8,
         "fn": 13,
-        "precision": 0.16666666666666666,
+        "precision": 0.2,
         "recall": 0.13333333333333333,
-        "f1": 0.14814814814814814,
+        "f1": 0.16,
         "n": 9
       },
       "mean_f1_ci95_low": 0.0,
@@ -34,11 +34,11 @@
       "n": 9,
       "micro": {
         "tp": 2,
-        "fp": 12,
+        "fp": 8,
         "fn": 13,
-        "precision": 0.14285714285714285,
+        "precision": 0.2,
         "recall": 0.13333333333333333,
-        "f1": 0.1379310344827586,
+        "f1": 0.16,
         "n": 9
       },
       "mean_f1_ci95_low": 0.0,
@@ -57,7 +57,7 @@
     },
     "aes_bitslice-gcc-O2": {
       "tp": 0,
-      "fp": 4,
+      "fp": 2,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -81,7 +81,7 @@
     },
     "aes_ttable-gcc-O0": {
       "tp": 0,
-      "fp": 2,
+      "fp": 0,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -89,7 +89,7 @@
     },
     "aes_ttable-gcc-O2": {
       "tp": 0,
-      "fp": 4,
+      "fp": 2,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -253,16 +253,6 @@
       "n_pred": 0,
       "n_true": 4
     },
-    "HashTable": {
-      "tp": 0,
-      "fp": 3,
-      "fn": 0,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0,
-      "n_pred": 3,
-      "n_true": 0
-    },
     "HeapSort": {
       "tp": 2,
       "fp": 5,
@@ -274,16 +264,6 @@
       "n_true": 2
     },
     "Memcpy": {
-      "tp": 0,
-      "fp": 3,
-      "fn": 0,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0,
-      "n_pred": 3,
-      "n_true": 0
-    },
-    "OpenAddressing": {
       "tp": 0,
       "fp": 3,
       "fn": 0,
@@ -356,14 +336,14 @@
   },
   "micro": {
     "tp": 4,
-    "fp": 22,
+    "fp": 16,
     "fn": 26,
-    "precision": 0.15384615384615385,
+    "precision": 0.2,
     "recall": 0.13333333333333333,
-    "f1": 0.14285714285714288,
+    "f1": 0.16,
     "n": 18
   },
-  "macro_f1": 0.05555555555555556,
+  "macro_f1": 0.0634920634920635,
   "per_opt_raw": {
     "O0": {
       "binaries": 9,
@@ -371,11 +351,11 @@
       "n": 9,
       "micro": {
         "tp": 2,
-        "fp": 10,
+        "fp": 8,
         "fn": 13,
-        "precision": 0.16666666666666666,
+        "precision": 0.2,
         "recall": 0.13333333333333333,
-        "f1": 0.14814814814814814,
+        "f1": 0.16,
         "n": 9
       },
       "mean_f1_ci95_low": 0.0,
@@ -388,11 +368,11 @@
       "n": 9,
       "micro": {
         "tp": 2,
-        "fp": 12,
+        "fp": 8,
         "fn": 13,
-        "precision": 0.14285714285714285,
+        "precision": 0.2,
         "recall": 0.13333333333333333,
-        "f1": 0.1379310344827586,
+        "f1": 0.16,
         "n": 9
       },
       "mean_f1_ci95_low": 0.0,
@@ -411,7 +391,7 @@
     },
     "aes_bitslice-gcc-O2": {
       "tp": 0,
-      "fp": 4,
+      "fp": 2,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -435,7 +415,7 @@
     },
     "aes_ttable-gcc-O0": {
       "tp": 0,
-      "fp": 2,
+      "fp": 0,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -443,7 +423,7 @@
     },
     "aes_ttable-gcc-O2": {
       "tp": 0,
-      "fp": 4,
+      "fp": 2,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,

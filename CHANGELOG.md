@@ -8,6 +8,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- OpenAddressingDetector requires a `strcmp` / `memcmp` / hash
+  callee, not xor+mul alone (AES GF and T-table `udiv 64` were
+  extra HashTable). Test: `XorMulWithoutStrcmpIsNotOpenAddressing`.
+  B8 extract FP **0.000**. B9 mean F1 **0.111**, micro **0.160**
+  (fp 16). AES rows no longer extract HashTable. Corpus
+  `hash_table` still does (strcmp + urem 32). Integer-key tables
+  without a compare call are a miss. A4 precision **0**, not fitted.
 - OpenAddressingDetector requires a bucket count of at least 16
   (And mask `15..65535` except 255/65535, or Div capacity `2^k`
   in `[16, 65536]` except 256). Alignment `and 7`, AES `% 8` /

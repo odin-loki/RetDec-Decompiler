@@ -1110,11 +1110,33 @@ TEST(OpenAddressingDetectorTest, DivBy32WithHashIsOpenAddressing)
 		},
 		1);
 	fn->block(1)->succs.push_back(0);
+	addCall(*fn, "strcmp");
 	addImmInstr(*fn, ssa::IrInstr::Op::Div, 32);
 	OpenAddressingDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.55f);
 	EXPECT_EQ(r.emittedType, "open_addressing_hash_table");
+}
+
+TEST(OpenAddressingDetectorTest, XorMulWithoutStrcmpIsNotOpenAddressing)
+{
+	// AES GF mul is xor+mul, not a key compare.
+	auto fn = makeFunc(
+		"aes_gf",
+		{
+			ssa::IrInstr::Op::Xor,
+			ssa::IrInstr::Op::Mul,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::Store,
+		},
+		1);
+	fn->block(1)->succs.push_back(0);
+	addImmInstr(*fn, ssa::IrInstr::Op::Div, 32);
+	OpenAddressingDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.55f);
 }
 
 TEST(OpenAddressingDetectorTest, DivByEightIsNotOpenAddressing)

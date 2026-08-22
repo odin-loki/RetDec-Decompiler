@@ -55,8 +55,8 @@ Stock RetDec has no label export — F1 is fork-only.
 
 B9 adversarial-positive (18 gcc O0/O2 binaries): name-blind mean
 **0.111** (`results/b9-adversarial-positive.md`). Not a product F1.
-Sentinel heapsort O0/O2 stay 1.000. strlen O0 and aes_bitslice O0
-no longer extract HashTable; aes_ttable and bitslice O2 still do.
+Sentinel heapsort O0/O2 stay 1.000. AES no longer extracts
+HashTable. HeapSort extras remain on some O2 rows.
 
 B8 loop-containing negatives (100): FP rate **0.000** after
 the sort, RingBuffer, and copy-state-machine gates

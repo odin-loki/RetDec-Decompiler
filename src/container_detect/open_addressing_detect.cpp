@@ -36,26 +36,10 @@ static bool hasBackEdge(const ssa::SSAFunction& fn)
 	return false;
 }
 
-static bool hasInlineHash(const ssa::SSAFunction& fn)
+// xor+mul is AES GF / FNV, not enough. Open-addressing of keys needs
+// strcmp or a hash call (corpus hash_table keeps both at O0/O2/O3).
+static bool hasKeyCall(const ssa::SSAFunction& fn)
 {
-	bool hasXor = false, hasMul = false;
-	for (uint32_t b = 0; b < fn.blockCount(); ++b)
-	{
-		const auto* blk = fn.block(b);
-		if (!blk) continue;
-		for (const auto* instr: blk->instrs)
-		{
-			if (!instr) continue;
-			if (instr->op == ssa::IrInstr::Op::Xor) hasXor = true;
-			if (instr->op == ssa::IrInstr::Op::Mul) hasMul = true;
-		}
-	}
-	return hasXor && hasMul;
-}
-
-static bool hasHashSignal(const ssa::SSAFunction& fn)
-{
-	if (hasInlineHash(fn)) return true;
 	for (uint32_t b = 0; b < fn.blockCount(); ++b)
 	{
 		const auto* blk = fn.block(b);
@@ -64,7 +48,9 @@ static bool hasHashSignal(const ssa::SSAFunction& fn)
 		{
 			if (!instr || instr->op != ssa::IrInstr::Op::Call) continue;
 			const auto& cn = instr->calleeName;
-			if (cn.find("hash") != std::string::npos || cn.find("strcmp") != std::string::npos) return true;
+			if (cn.find("hash") != std::string::npos || cn.find("strcmp") != std::string::npos
+				|| cn.find("memcmp") != std::string::npos)
+				return true;
 		}
 	}
 	return false;
@@ -117,7 +103,7 @@ ContainerResult OpenAddressingDetector::detect(const ssa::SSAFunction& fn) const
 
 	if (!hasBackEdge(fn)) return result;
 
-	const bool hash = hasHashSignal(fn);
+	const bool hash = hasKeyCall(fn);
 	const bool mod = hasModuloIndex(fn);
 	const int cmps = countOp(fn, ssa::IrInstr::Op::Compare);
 	const int loads = countOp(fn, ssa::IrInstr::Op::Load);
