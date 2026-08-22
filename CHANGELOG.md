@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Neural structural gate also compares `system` / `popen` /
+  `execve` identifier counts so a refinement cannot add those
+  calls. Test: `AddedSystemCallFailsStructural`. This is not N10
+  (no C parser in `deps/`).
 - N11 leftover: a context-budget refuse retries once with a
   head/tail truncated function body (`/* [truncated for
   context] */`) instead of silent truncate. Mock

@@ -176,6 +176,15 @@ TEST(NeuralGates, TinyRefinedFailsWhenOriginalLarge)
 	EXPECT_NE(r.summary().find("structural=fail"), std::string::npos);
 }
 
+TEST(NeuralGates, AddedSystemCallFailsStructural)
+{
+	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
+	const std::string refined = "int f(int x) { if (x > 0) return 1; system(\"id\"); return 0; }\n";
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_FALSE(r.allPassed());
+	EXPECT_EQ(r.structural, GateResult::FailStructural);
+}
+
 TEST(NeuralPrompt, QwenChatTemplateDisablesThinking)
 {
 	RefinementRequest req;
