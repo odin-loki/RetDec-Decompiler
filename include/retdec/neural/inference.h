@@ -12,40 +12,45 @@
 
 namespace retdec::neural {
 
-struct GenerationConfig {
-    float temperature = 0.7f;
-    float topP        = 0.9f;
-    float minP        = 0.0f;
-    int   topK        = 20;
-    int   maxTokens   = 512;
-    /// Sampler seed. 0 is a deterministic seed (not llama's random default).
-    unsigned seed     = 0;
-    bool  thinkingMode = false;
-    /// Keep shared prompt-prefix KV between generate() calls on the same function.
-    /// Off unless the caller sets this and RETDEC_NEURAL_REUSE_KV is set.
-    bool  reuseKvPrefix = false;
-    /// Optional GBNF (N15). Empty = unconstrained. Root defaults to "root".
-    std::string grammarGbnf;
-    std::string grammarRoot = "root";
+struct GenerationConfig
+{
+	float temperature = 0.7f;
+	float topP = 0.9f;
+	float minP = 0.0f;
+	int topK = 20;
+	int maxTokens = 512;
+	/// Sampler seed. 0 is a deterministic seed (not llama's random default).
+	unsigned seed = 0;
+	bool thinkingMode = false;
+	/// Keep shared prompt-prefix KV between generate() calls on the same function.
+	/// Off unless the caller sets this and RETDEC_NEURAL_REUSE_KV is set.
+	bool reuseKvPrefix = false;
+	/// Optional GBNF (N15). Empty = unconstrained. Root defaults to "root".
+	std::string grammarGbnf;
+	std::string grammarRoot = "root";
 };
 
-struct GenerationResult {
-    std::string text;
-    int         tokensGenerated = 0;
-    bool        ok              = false;
-    std::string error;
+struct GenerationResult
+{
+	std::string text;
+	int tokensGenerated = 0;
+	bool ok = false;
+	std::string error;
+	/// Mean selected-token probability after sampler apply (N17). Unset if
+	/// the backend did not observe post-sampler `llama_token_data.p`.
+	bool hasTokenProb = false;
+	float meanTokenProb = 0.0f;
 };
 
 class Inference {
 public:
-    virtual ~Inference() = default;
+	virtual ~Inference() = default;
 
-    virtual bool loadModel(const std::string& ggufPath, int contextLen = 16384) = 0;
-    virtual void unloadModel() = 0;
-    virtual bool isLoaded() const = 0;
+	virtual bool loadModel(const std::string& ggufPath, int contextLen = 16384) = 0;
+	virtual void unloadModel() = 0;
+	virtual bool isLoaded() const = 0;
 
-    virtual GenerationResult generate(const std::string& prompt,
-                                      const GenerationConfig& config) = 0;
+	virtual GenerationResult generate(const std::string& prompt, const GenerationConfig& config) = 0;
 };
 
 std::unique_ptr<Inference> createMockInference();

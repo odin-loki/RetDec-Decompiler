@@ -8,6 +8,14 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N17 leftover: llama.cpp generate records mean selected-token
+  probability from documented `llama_get_logits_ith` +
+  `llama_sampler_apply` + `llama_token_data.p`. Manifest key
+  `mean_token_p`. Abstain (keep original C) only when
+  `RETDEC_NEURAL_MIN_MEAN_P` is set and mean p is below it.
+  Off by default. Mock:
+  `RETDEC_NEURAL_MOCK_MEAN_P`. Test:
+  `LowMeanTokenProbAbstains`. Default F5 is unchanged.
 - N16 leftover: `serializeSemanticContext` also dumps
   `getRealName`, `getSourceFileName`, `getWrappedFunctionName`,
   and `isFromDebug` on functions already included. Does not

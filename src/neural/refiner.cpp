@@ -67,6 +67,16 @@ std::string stripMarkdownFences(std::string text)
 	return text;
 }
 
+float envFloat(const char* name, float fallback)
+{
+	const char* v = std::getenv(name);
+	if (!v || !v[0]) return fallback;
+	char* end = nullptr;
+	const float x = std::strtof(v, &end);
+	if (end == v) return fallback;
+	return x;
+}
+
 std::string buildManifest(
 	bool accepted,
 	const std::string& reason,
@@ -75,7 +85,9 @@ std::string buildManifest(
 	const std::string& outputSource,
 	const std::string& compileGate,
 	long long wallMs,
-	const std::string& detail = {})
+	const std::string& detail = {},
+	bool hasTokenProb = false,
+	float meanTokenProb = 0.0f)
 {
 	const std::string inHash = sha256HexOfBytes(request.functionSource.data(), request.functionSource.size());
 	const std::string outHash = sha256HexOfBytes(outputSource.data(), outputSource.size());
@@ -107,6 +119,11 @@ std::string buildManifest(
 	w.String(compileGate.c_str(), static_cast<rapidjson::SizeType>(compileGate.size()));
 	w.Key("wall_ms");
 	w.Int64(wallMs);
+	if (hasTokenProb)
+	{
+		w.Key("mean_token_p");
+		w.Double(meanTokenProb);
+	}
 	if (!detail.empty())
 	{
 		w.Key("detail");
@@ -360,8 +377,35 @@ RefinementResponse Refiner::refine(const RefinementRequest& request) const
 			gen,
 			request.functionSource,
 			compileGateLabel(nullptr, false),
-			wallMs());
+			wallMs(),
+			{},
+			genResult.hasTokenProb,
+			genResult.meanTokenProb);
 		std::fprintf(stderr, "retdec-neural: generation failed: %s\n", genResult.error.c_str());
+		return response;
+	}
+
+	const float minMeanP = envFloat("RETDEC_NEURAL_MIN_MEAN_P", 0.0f);
+	if (minMeanP > 0.0f && genResult.hasTokenProb && genResult.meanTokenProb < minMeanP)
+	{
+		response.refinedSource = request.functionSource;
+		response.accepted = false;
+		response.manifestJson = buildManifest(
+			false,
+			"low token probability",
+			request,
+			gen,
+			request.functionSource,
+			compileGateLabel(nullptr, false),
+			wallMs(),
+			{},
+			genResult.hasTokenProb,
+			genResult.meanTokenProb);
+		std::fprintf(
+			stderr,
+			"retdec-neural: abstain (mean token p=%f < %f)\n",
+			static_cast<double>(genResult.meanTokenProb),
+			static_cast<double>(minMeanP));
 		return response;
 	}
 
@@ -387,7 +431,9 @@ RefinementResponse Refiner::refine(const RefinementRequest& request) const
 			response.refinedSource,
 			compileGateLabel(&gates, false),
 			wallMs(),
-			gates.summary());
+			gates.summary(),
+			genResult.hasTokenProb,
+			genResult.meanTokenProb);
 		std::fprintf(stderr, "retdec-neural: gates failed (%s)\n", gates.summary().c_str());
 		return response;
 	}
@@ -399,8 +445,17 @@ RefinementResponse Refiner::refine(const RefinementRequest& request) const
 		{
 			response.refinedSource = refined;
 			response.accepted = false;
-			response.manifestJson =
-				buildManifest(false, "compile_syntax", request, gen, refined, compileGateLabel(&gates, true), wallMs());
+			response.manifestJson = buildManifest(
+				false,
+				"compile_syntax",
+				request,
+				gen,
+				refined,
+				compileGateLabel(&gates, true),
+				wallMs(),
+				{},
+				genResult.hasTokenProb,
+				genResult.meanTokenProb);
 			std::fprintf(stderr, "retdec-neural: compile_syntax rejected refinement\n");
 			return response;
 		}
@@ -411,7 +466,16 @@ RefinementResponse Refiner::refine(const RefinementRequest& request) const
 	response.refinedSource = refined;
 	response.accepted = true;
 	response.manifestJson = buildManifest(
-		true, cacheHit ? "cache hit" : "accepted", request, gen, refined, compileGateLabel(&gates, false), wallMs());
+		true,
+		cacheHit ? "cache hit" : "accepted",
+		request,
+		gen,
+		refined,
+		compileGateLabel(&gates, false),
+		wallMs(),
+		{},
+		genResult.hasTokenProb,
+		genResult.meanTokenProb);
 	return response;
 }
 

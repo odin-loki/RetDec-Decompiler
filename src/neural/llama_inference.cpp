@@ -105,6 +105,36 @@ llama_sampler* buildSampler(const GenerationConfig& config, const llama_vocab* v
 	llama_sampler_chain_add(chain, llama_sampler_init_dist(config.seed));
 	return chain;
 }
+
+// Documented llama_sampler_sample shorthand (llama.h) plus selected-token p.
+bool sampleTokenWithProb(
+	llama_sampler* smpl, llama_context* ctx, const llama_vocab* vocab, llama_token* tokOut, float* pOut)
+{
+	if (!smpl || !ctx || !vocab || !tokOut) return false;
+	const float* logits = llama_get_logits_ith(ctx, -1);
+	const int32_t nVocab = llama_vocab_n_tokens(vocab);
+	if (!logits || nVocab <= 0)
+	{
+		*tokOut = llama_sampler_sample(smpl, ctx, -1);
+		if (pOut) *pOut = -1.0f;
+		return *tokOut != LLAMA_TOKEN_NULL;
+	}
+	std::vector<llama_token_data> cur(static_cast<std::size_t>(nVocab));
+	for (int32_t i = 0; i < nVocab; ++i)
+		cur[static_cast<std::size_t>(i)] = {i, logits[i], 0.0f};
+	llama_token_data_array curP = {cur.data(), cur.size(), -1, false};
+	llama_sampler_apply(smpl, &curP);
+	if (curP.selected < 0 || static_cast<std::size_t>(curP.selected) >= curP.size)
+	{
+		*tokOut = llama_sampler_sample(smpl, ctx, -1);
+		if (pOut) *pOut = -1.0f;
+		return *tokOut != LLAMA_TOKEN_NULL;
+	}
+	*tokOut = curP.data[curP.selected].id;
+	if (pOut) *pOut = curP.data[curP.selected].p;
+	llama_sampler_accept(smpl, *tokOut);
+	return *tokOut != LLAMA_TOKEN_NULL;
+}
 } // namespace
 
 // One llama_context is single-threaded. generate/load/unload share mutex_.
@@ -278,6 +308,8 @@ public:
 		llama_sampler* smpl = buildSampler(config, vocab);
 		std::string out;
 		int nTok = 0;
+		double probSum = 0.0;
+		int probN = 0;
 		for (int i = 0; i < config.maxTokens; ++i)
 		{
 			if (g_cancel.load(std::memory_order_relaxed))
@@ -292,8 +324,19 @@ public:
 				result.error = "llama: deadline exceeded";
 				return result;
 			}
-			llama_token tok = llama_sampler_sample(smpl, context_, -1);
-			llama_sampler_accept(smpl, tok);
+			llama_token tok = LLAMA_TOKEN_NULL;
+			float tokP = -1.0f;
+			if (!sampleTokenWithProb(smpl, context_, vocab, &tok, &tokP))
+			{
+				llama_sampler_free(smpl);
+				result.error = "llama: sample failed";
+				return result;
+			}
+			if (tokP >= 0.0f)
+			{
+				probSum += static_cast<double>(tokP);
+				++probN;
+			}
 			if (llama_vocab_is_eog(vocab, tok)) break;
 			char piece[64];
 			int len = llama_token_to_piece(vocab, tok, piece, sizeof(piece), 0, true);
@@ -315,6 +358,11 @@ public:
 
 		result.text = std::move(out);
 		result.tokensGenerated = nTok;
+		if (probN > 0)
+		{
+			result.hasTokenProb = true;
+			result.meanTokenProb = static_cast<float>(probSum / static_cast<double>(probN));
+		}
 		result.ok = true;
 		return result;
 	}

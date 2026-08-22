@@ -62,6 +62,12 @@ public:
 			result.error = "llama: prompt exceeds context budget";
 			return result;
 		}
+		result.hasTokenProb = true;
+		result.meanTokenProb = 1.0f;
+		if (const char* mp = std::getenv("RETDEC_NEURAL_MOCK_MEAN_P"))
+		{
+			if (mp[0]) result.meanTokenProb = std::strtof(mp, nullptr);
+		}
 		const char* emitC = std::getenv("RETDEC_NEURAL_MOCK_EMIT_C");
 		if (emitC && emitC[0] && emitC[0] != '0')
 		{

@@ -518,7 +518,8 @@ TEST(NeuralRefiner, ManifestSchemaHasRequiredKeys)
 		  "\"input_sha256\"",
 		  "\"output_sha256\"",
 		  "\"compile_gate\"",
-		  "\"wall_ms\""})
+		  "\"wall_ms\"",
+		  "\"mean_token_p\""})
 	{
 		EXPECT_NE(resp.manifestJson.find(key), std::string::npos) << key;
 	}
@@ -732,6 +733,27 @@ TEST(NeuralRefiner, ConcurrentIndependentRefinesDoNotCrash)
 	t1.join();
 	t2.join();
 	EXPECT_EQ(accepted.load(), 2);
+}
+
+TEST(NeuralRefiner, LowMeanTokenProbAbstains)
+{
+	EnvGuard unverified("RETDEC_NEURAL_ALLOW_UNVERIFIED", "1");
+	EnvGuard emitC("RETDEC_NEURAL_MOCK_EMIT_C", "1");
+	EnvGuard skipCompile("RETDEC_NEURAL_SKIP_COMPILE_GATE", "1");
+	EnvGuard mockP("RETDEC_NEURAL_MOCK_MEAN_P", "0.1");
+	EnvGuard minP("RETDEC_NEURAL_MIN_MEAN_P", "0.5");
+
+	auto inf = createMockInference();
+	ASSERT_TRUE(inf->loadModel("mock.gguf"));
+	Refiner refiner(std::move(inf));
+	RefinementRequest req;
+	req.functionSource = "int broken(void) { return result; }\n";
+	req.tier = RefinementTier::FullRewrite;
+	const auto resp = refiner.refine(req);
+	EXPECT_FALSE(resp.accepted);
+	EXPECT_EQ(resp.refinedSource, req.functionSource);
+	EXPECT_NE(resp.manifestJson.find("low token probability"), std::string::npos);
+	EXPECT_NE(resp.manifestJson.find("\"mean_token_p\""), std::string::npos);
 }
 
 TEST(NeuralPrompt, IncludesSemanticContextWhenSet)
