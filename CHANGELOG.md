@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N11: llama generate refuses a prompt when `prompt_tokens +
+  maxTokens` exceeds `llama_n_ctx`. Oversized `llama_token_to_piece`
+  buffers are retried instead of dropped (N-k). No deadline or GUI
+  cancel yet. Default F5 is unchanged.
 - B7: open-addressing export tags `evidence:symbol_name` (strcmp /
   memcmp / hash callee gate). Name-blind extract skips those hits.
   Full 216 mean F1 **0.056** (was 0.107). ci-core **0.126** (was

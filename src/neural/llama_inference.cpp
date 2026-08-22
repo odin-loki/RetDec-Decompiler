@@ -190,6 +190,15 @@ public:
 		}
 		tokens.resize(static_cast<std::size_t>(n));
 
+		// N11: refuse rather than silently truncate into n_ctx.
+		const uint32_t nCtx = llama_n_ctx(context_);
+		const int maxGen = config.maxTokens > 0 ? config.maxTokens : 0;
+		if (nCtx == 0 || static_cast<uint64_t>(n) + static_cast<uint64_t>(maxGen) > nCtx)
+		{
+			result.error = "llama: prompt exceeds context budget";
+			return result;
+		}
+
 		llama_memory_t mem = llama_get_memory(context_);
 		std::size_t common = 0;
 		if (config.reuseKvPrefix && !lastPromptTokens_.empty())
@@ -228,8 +237,17 @@ public:
 			llama_sampler_accept(smpl, tok);
 			if (llama_vocab_is_eog(vocab, tok)) break;
 			char piece[64];
-			const int len = llama_token_to_piece(vocab, tok, piece, sizeof(piece), 0, true);
-			if (len > 0) out.append(piece, static_cast<std::size_t>(len));
+			int len = llama_token_to_piece(vocab, tok, piece, sizeof(piece), 0, true);
+			if (len < 0)
+			{
+				std::vector<char> buf(static_cast<std::size_t>(-len));
+				len = llama_token_to_piece(vocab, tok, buf.data(), static_cast<int32_t>(buf.size()), 0, true);
+				if (len > 0) out.append(buf.data(), static_cast<std::size_t>(len));
+			}
+			else if (len > 0)
+			{
+				out.append(piece, static_cast<std::size_t>(len));
+			}
 			llama_batch next = llama_batch_get_one(&tok, 1);
 			if (llama_decode(context_, next) != 0) break;
 			++nTok;
