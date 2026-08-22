@@ -42,8 +42,7 @@ void setEmitBuildableEnv(const char* value)
 #endif
 }
 
-class EmitBuildableEnvGuard
-{
+class EmitBuildableEnvGuard {
 public:
 	EmitBuildableEnvGuard()
 	{
@@ -75,8 +74,7 @@ private:
 std::string readAll(const fs::path& path)
 {
 	std::ifstream in(path);
-	return std::string(std::istreambuf_iterator<char>(in),
-			std::istreambuf_iterator<char>());
+	return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
 void writeAll(const fs::path& path, const std::string& text)
@@ -124,16 +122,16 @@ TEST(BuildableSidecars, WritesHeaderStubsAndBuildable)
 	const fs::path dir = fs::temp_directory_path();
 	const fs::path outC = dir / "retdec_buildable_emit.c";
 	const std::string original =
-			"typedef int my_i;\n"
-			"struct S {\n"
-			"    int x;\n"
-			"};\n"
-			"int foo(void) {\n"
-			"    if (bar()) {\n"
-			"        return sizeof(int);\n"
-			"    }\n"
-			"    return foo();\n"
-			"}\n";
+		"typedef int my_i;\n"
+		"struct S {\n"
+		"    int x;\n"
+		"};\n"
+		"int foo(void) {\n"
+		"    if (bar()) {\n"
+		"        return sizeof(int);\n"
+		"    }\n"
+		"    return foo();\n"
+		"}\n";
 	writeAll(outC, original);
 
 	maybeWriteBuildableSidecars(outC.string(), original);
@@ -166,7 +164,9 @@ TEST(BuildableSidecars, WritesHeaderStubsAndBuildable)
 	EXPECT_EQ(b.find("#include \"retdec_buildable_emit.h\""), 0u);
 	EXPECT_NE(b.find("#define strncpy("), std::string::npos);
 	EXPECT_NE(b.find("int foo(void)"), std::string::npos);
-	EXPECT_EQ(b.find("int main("), std::string::npos);
+	EXPECT_NE(b.find("int bar(void) { return 0; }"), std::string::npos);
+	EXPECT_NE(b.find("int main(void) { return 0; }"), std::string::npos);
+	EXPECT_NE(b.find("RETDEC_BUILDABLE_STUBS"), std::string::npos);
 
 	EXPECT_EQ(readAll(outC), original);
 
@@ -191,6 +191,8 @@ TEST(BuildableSidecars, DoesNotAddMainWhenPresent)
 	const std::string s = readAll(dir / "retdec_buildable_main_stubs.c");
 	EXPECT_NE(s.find("void __retdec_stub(void) {}"), std::string::npos);
 	EXPECT_EQ(s.find("int main("), std::string::npos);
+	const std::string b = readAll(dir / "retdec_buildable_main.buildable.c");
+	EXPECT_EQ(b.find("int main(void) { return 0; }"), std::string::npos);
 	EXPECT_EQ(readAll(outC), original);
 
 	fs::remove(outC);
@@ -207,12 +209,12 @@ TEST(BuildableSidecars, InjectsUndeclaredResultAndVTemps)
 	const fs::path dir = fs::temp_directory_path();
 	const fs::path outC = dir / "retdec_buildable_temps.c";
 	const std::string original =
-			"uint64_t function_1020(void) {\n"
-			"    return result;\n"
-			"}\n"
-			"uint64_t entry_point(uint64_t a1) {\n"
-			"    return v1 + v2;\n"
-			"}\n";
+		"uint64_t function_1020(void) {\n"
+		"    return result;\n"
+		"}\n"
+		"uint64_t entry_point(uint64_t a1) {\n"
+		"    return v1 + v2;\n"
+		"}\n";
 	writeAll(outC, original);
 	maybeWriteBuildableSidecars(outC.string(), original);
 
@@ -236,9 +238,9 @@ TEST(BuildableSidecars, DoesNotInjectParamNames)
 	const fs::path dir = fs::temp_directory_path();
 	const fs::path outC = dir / "retdec_buildable_param.c";
 	const std::string original =
-			"uint64_t function_1189(uint64_t result) {\n"
-			"    return result;\n"
-			"}\n";
+		"uint64_t function_1189(uint64_t result) {\n"
+		"    return result;\n"
+		"}\n";
 	writeAll(outC, original);
 	maybeWriteBuildableSidecars(outC.string(), original);
 	const std::string b = readAll(dir / "retdec_buildable_param.buildable.c");
@@ -249,4 +251,57 @@ TEST(BuildableSidecars, DoesNotInjectParamNames)
 	fs::remove(dir / "retdec_buildable_param.h");
 	fs::remove(dir / "retdec_buildable_param_stubs.c");
 	fs::remove(dir / "retdec_buildable_param.buildable.c");
+}
+
+TEST(BuildableSidecars, DoesNotStubLibcPutcharAsIntVoid)
+{
+	EmitBuildableEnvGuard guard;
+	setEmitBuildableEnv("1");
+
+	const fs::path dir = fs::temp_directory_path();
+	const fs::path outC = dir / "retdec_buildable_putchar.c";
+	const std::string original =
+		"void ring_put(int c) {\n"
+		"    putchar(c);\n"
+		"}\n";
+	writeAll(outC, original);
+	maybeWriteBuildableSidecars(outC.string(), original);
+
+	const std::string h = readAll(dir / "retdec_buildable_putchar.h");
+	const std::string b = readAll(dir / "retdec_buildable_putchar.buildable.c");
+	EXPECT_EQ(h.find("int putchar(void);"), std::string::npos);
+	EXPECT_NE(b.find("#include <stdio.h>"), std::string::npos);
+	EXPECT_EQ(b.find("int putchar(void)"), std::string::npos);
+	EXPECT_EQ(readAll(outC), original);
+
+	fs::remove(outC);
+	fs::remove(dir / "retdec_buildable_putchar.h");
+	fs::remove(dir / "retdec_buildable_putchar_stubs.c");
+	fs::remove(dir / "retdec_buildable_putchar.buildable.c");
+}
+
+TEST(BuildableSidecars, ClonesFileScopePrototypeNotReturnCall)
+{
+	EmitBuildableEnvGuard guard;
+	setEmitBuildableEnv("1");
+
+	const fs::path dir = fs::temp_directory_path();
+	const fs::path outC = dir / "retdec_buildable_proto.c";
+	const std::string original =
+			"uint64_t __cxa_finalize(uint64_t a1);\n"
+			"uint64_t foo(uint64_t a1) {\n"
+			"    return __cxa_finalize(a1);\n"
+			"}\n";
+	writeAll(outC, original);
+	maybeWriteBuildableSidecars(outC.string(), original);
+	const std::string b = readAll(dir / "retdec_buildable_proto.buildable.c");
+	EXPECT_NE(b.find("uint64_t __cxa_finalize(uint64_t a1) { return 0; }"),
+			std::string::npos);
+	EXPECT_EQ(b.find("WEAK return __cxa_finalize"), std::string::npos);
+	EXPECT_EQ(b.find("WEAK return "), std::string::npos);
+
+	fs::remove(outC);
+	fs::remove(dir / "retdec_buildable_proto.h");
+	fs::remove(dir / "retdec_buildable_proto_stubs.c");
+	fs::remove(dir / "retdec_buildable_proto.buildable.c");
 }

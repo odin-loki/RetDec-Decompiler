@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <ostream>
 #include <set>
 #include <sstream>
 #include <vector>
@@ -21,11 +22,8 @@ namespace analysis {
 
 namespace {
 
-common::SemanticDetection makeDetection(
-		const std::string& kind,
-		const std::string& label,
-		float confidence,
-		const std::string& detail = {})
+common::SemanticDetection
+makeDetection(const std::string& kind, const std::string& label, float confidence, const std::string& detail = {})
 {
 	common::SemanticDetection d;
 	d.kind = kind;
@@ -35,10 +33,7 @@ common::SemanticDetection makeDetection(
 	return d;
 }
 
-void appendDetection(
-		SemanticDetectionMap& map,
-		const std::string& fnName,
-		common::SemanticDetection detection)
+void appendDetection(SemanticDetectionMap& map, const std::string& fnName, common::SemanticDetection detection)
 {
 	if (fnName.empty())
 	{
@@ -47,47 +42,39 @@ void appendDetection(
 	map[fnName].push_back(std::move(detection));
 }
 
-void collectConcurrencyDetections(
-		const concurrency_detect::ConcurrencyModel& cm,
-		SemanticDetectionMap& map)
+void collectConcurrencyDetections(const concurrency_detect::ConcurrencyModel& cm, SemanticDetectionMap& map)
 {
-	auto addFn = [&](const std::string& fnName,
-	                 const std::string& label,
-	                 float confidence,
-	                 const std::string& detail) {
-		appendDetection(map, fnName,
-				makeDetection("concurrency", label, confidence, detail));
+	auto addFn = [&](const std::string& fnName, const std::string& label, float confidence, const std::string& detail) {
+		appendDetection(map, fnName, makeDetection("concurrency", label, confidence, detail));
 	};
 
-	for (const auto& t : cm.threads)
+	for (const auto& t: cm.threads)
 	{
 		addFn(t.funcName, "thread", 0.75f, t.threadFunc);
 	}
-	for (const auto& l : cm.locks)
+	for (const auto& l: cm.locks)
 	{
 		addFn(l.funcName, "mutex", 0.75f, "");
 	}
-	for (const auto& a : cm.atomics)
+	for (const auto& a: cm.atomics)
 	{
 		addFn(a.funcName, "atomic", 0.70f, a.varName);
 	}
-	for (const auto& c : cm.condVars)
+	for (const auto& c: cm.condVars)
 	{
 		addFn(c.funcName, "condition_variable", 0.70f, "");
 	}
-	for (const auto& s : cm.spinlocks)
+	for (const auto& s: cm.spinlocks)
 	{
 		addFn(s.funcName, "spinlock", 0.65f, "");
 	}
 }
 
-void injectSemanticCommentsIntoLines(
-		std::vector<std::string>& lines,
-		const config::Config& config)
+void injectSemanticCommentsIntoLines(std::vector<std::string>& lines, const config::Config& config)
 {
 	const std::string& outputLang = config.parameters.getOutputLang();
 	std::map<int, std::vector<std::string>> inserts;
-	for (const auto& fn : config.functions)
+	for (const auto& fn: config.functions)
 	{
 		if (fn.semanticDetections.empty() || !fn.getStartLine().isDefined())
 		{
@@ -100,7 +87,7 @@ void injectSemanticCommentsIntoLines(
 			continue;
 		}
 
-		for (const auto& d : fn.semanticDetections)
+		for (const auto& d: fn.semanticDetections)
 		{
 			const std::string comment = "// " + d.commentLine(outputLang);
 			bool duplicate = false;
@@ -157,6 +144,9 @@ bool isIdentCont(char c)
 void skipSpaces(const std::string& s, std::size_t& i);
 std::size_t skipNonCode(const std::string& s, std::size_t i);
 std::size_t matchingCloseParen(const std::string& s, std::size_t open);
+bool bodyUsesIdent(const std::string& body, const std::string& name);
+bool looksLikeDeclarator(const std::string& s, std::size_t namePos);
+bool isDefinitionAfterClose(const std::string& s, std::size_t close);
 
 std::string outputStem(const std::string& outputCPath)
 {
@@ -179,7 +169,7 @@ std::string includeGuardFromHeaderName(const std::string& headerName)
 {
 	std::string g;
 	g.reserve(headerName.size() + 2);
-	for (char c : headerName)
+	for (char c: headerName)
 	{
 		if (std::isalnum(static_cast<unsigned char>(c)) != 0)
 		{
@@ -199,26 +189,196 @@ std::string includeGuardFromHeaderName(const std::string& headerName)
 
 bool isSkippedCallName(const std::string& name)
 {
-	return name == "if" || name == "for" || name == "while"
-			|| name == "switch" || name == "return" || name == "sizeof"
-			|| name == "__readUndefQword" || name == "__readfsqword"
-			|| name == "__asm_hlt" || name == "__retdec_stub";
+	return name == "if" || name == "for" || name == "while" || name == "switch" || name == "return" || name == "sizeof"
+		|| name == "__readUndefQword" || name == "__readfsqword" || name == "__asm_hlt" || name == "__retdec_stub";
+}
+
+const char* libcHeaderForName(const std::string& name)
+{
+	if (name == "memcpy" || name == "memmove" || name == "memset" || name == "memcmp" || name == "memchr"
+		|| name == "strcpy" || name == "strncpy" || name == "strcat" || name == "strncat" || name == "strcmp"
+		|| name == "strncmp" || name == "strlen" || name == "strchr" || name == "strrchr" || name == "strstr"
+		|| name == "strtok" || name == "strdup" || name == "strerror")
+	{
+		return "string.h";
+	}
+	if (name == "printf" || name == "fprintf" || name == "sprintf" || name == "snprintf" || name == "vprintf"
+		|| name == "vfprintf" || name == "vsprintf" || name == "vsnprintf" || name == "puts" || name == "putchar"
+		|| name == "putc" || name == "getchar" || name == "getc" || name == "scanf" || name == "fscanf"
+		|| name == "sscanf" || name == "fopen" || name == "fclose" || name == "fread" || name == "fwrite"
+		|| name == "fgets" || name == "fputs" || name == "fflush" || name == "fseek" || name == "ftell"
+		|| name == "rewind" || name == "feof" || name == "perror")
+	{
+		return "stdio.h";
+	}
+	if (name == "malloc" || name == "calloc" || name == "realloc" || name == "free" || name == "exit" || name == "abort"
+		|| name == "atexit" || name == "atoi" || name == "atol" || name == "atoll" || name == "atof" || name == "abs"
+		|| name == "labs" || name == "llabs" || name == "qsort" || name == "bsearch")
+	{
+		return "stdlib.h";
+	}
+	if (name.compare(0, 8, "pthread_") == 0)
+	{
+		return "pthread.h";
+	}
+	if (name == "isalpha" || name == "isdigit" || name == "isspace" || name == "tolower" || name == "toupper")
+	{
+		return "ctype.h";
+	}
+	return nullptr;
+}
+
+bool isLibcCallName(const std::string& name)
+{
+	return libcHeaderForName(name) != nullptr;
+}
+
+bool isCrtCallName(const std::string& name)
+{
+	return name == "__cxa_finalize" || name == "__cxa_atexit" || name == "__gmon_start__" || name == "__stack_chk_fail"
+		|| name == "__libc_start_main" || name == "__do_global_dtors_aux" || name == "deregister_tm_clones"
+		|| name == "register_tm_clones" || name == "frame_dummy" || name == "_init" || name == "_fini"
+		|| name == "__printf_chk" || name == "__fprintf_chk" || name == "__sprintf_chk" || name == "__snprintf_chk"
+		|| name == "__memcpy_chk" || name == "__memmove_chk" || name == "__memset_chk" || name == "__strcpy_chk"
+		|| name == "__strncpy_chk";
+}
+
+bool sourceDefinesMain(const std::string& src)
+{
+	return src.find("int main(") != std::string::npos || src.find("void main(") != std::string::npos
+		|| src.find("uint64_t main(") != std::string::npos || src.find("int64_t main(") != std::string::npos
+		|| src.find("int32_t main(") != std::string::npos || src.find("int16_t main(") != std::string::npos;
+}
+
+void writeWeakMacro(std::ostream& os)
+{
+	os << "#if defined(__GNUC__)\n";
+	os << "#define RETDEC_BUILDABLE_WEAK __attribute__((weak))\n";
+	os << "#else\n";
+	os << "#define RETDEC_BUILDABLE_WEAK\n";
+	os << "#endif\n";
+}
+
+void writeHelperStubs(std::ostream& os)
+{
+	writeWeakMacro(os);
+	os << "RETDEC_BUILDABLE_WEAK uint64_t __readUndefQword(void) { return 0; }\n";
+	os << "RETDEC_BUILDABLE_WEAK uint64_t __readfsqword(unsigned long a) "
+		  "{ (void)a; return 0; }\n";
+	os << "RETDEC_BUILDABLE_WEAK void __asm_hlt(void) {}\n";
+}
+
+void writePrototypeBodies(std::ostream& os, const std::string& src)
+{
+	std::set<std::string> defined;
+	std::vector<std::pair<std::string, std::string>> protos;
+	std::size_t i = 0;
+	while (i < src.size())
+	{
+		const std::size_t next = skipNonCode(src, i);
+		if (next != i)
+		{
+			i = next;
+			continue;
+		}
+		if (!isIdentStart(src[i]))
+		{
+			++i;
+			continue;
+		}
+		const std::size_t start = i;
+		++i;
+		while (i < src.size() && isIdentCont(src[i]))
+		{
+			++i;
+		}
+		std::size_t after = i;
+		skipSpaces(src, after);
+		if (after >= src.size() || src[after] != '(')
+		{
+			continue;
+		}
+		const std::string name = src.substr(start, i - start);
+		if (isSkippedCallName(name) || isLibcCallName(name))
+		{
+			i = after + 1;
+			continue;
+		}
+		const std::size_t close = matchingCloseParen(src, after);
+		if (close == std::string::npos)
+		{
+			i = after + 1;
+			continue;
+		}
+		if (!looksLikeDeclarator(src, start))
+		{
+			i = after + 1;
+			continue;
+		}
+		if (isDefinitionAfterClose(src, close))
+		{
+			defined.insert(name);
+			i = after + 1;
+			continue;
+		}
+		std::size_t semi = close + 1;
+		skipSpaces(src, semi);
+		if (semi >= src.size() || src[semi] != ';')
+		{
+			i = after + 1;
+			continue;
+		}
+		std::size_t lineStart = start;
+		while (lineStart > 0 && src[lineStart - 1] != '\n')
+		{
+			--lineStart;
+		}
+		if (lineStart < start
+			&& (src[lineStart] == ' ' || src[lineStart] == '\t'))
+		{
+			i = after + 1;
+			continue;
+		}
+		std::size_t begin = lineStart;
+		skipSpaces(src, begin);
+		if (begin >= start)
+		{
+			i = after + 1;
+			continue;
+		}
+		const std::string proto = src.substr(begin, close + 1 - begin);
+		protos.emplace_back(name, proto);
+		i = after + 1;
+	}
+	for (const auto& item : protos)
+	{
+		if (defined.count(item.first) != 0)
+		{
+			continue;
+		}
+		os << "RETDEC_BUILDABLE_WEAK " << item.second;
+		if (item.second.compare(0, 5, "void ") == 0 && (item.second.size() < 6 || item.second[5] != '*'))
+		{
+			os << " {}\n";
+		}
+		else
+		{
+			os << " { return 0; }\n";
+		}
+	}
 }
 
 bool isControlName(const std::string& name)
 {
-	return name == "if" || name == "for" || name == "while"
-			|| name == "switch" || name == "else";
+	return name == "if" || name == "for" || name == "while" || name == "switch" || name == "else";
 }
 
 bool isTypeName(const std::string& name)
 {
-	return name == "int" || name == "long" || name == "short" || name == "char"
-			|| name == "void" || name == "unsigned" || name == "signed"
-			|| name == "bool" || name == "float" || name == "double"
-			|| name == "size_t" || name == "int8_t" || name == "uint8_t"
-			|| name == "int16_t" || name == "uint16_t" || name == "int32_t"
-			|| name == "uint32_t" || name == "int64_t" || name == "uint64_t";
+	return name == "int" || name == "long" || name == "short" || name == "char" || name == "void" || name == "unsigned"
+		|| name == "signed" || name == "bool" || name == "float" || name == "double" || name == "size_t"
+		|| name == "int8_t" || name == "uint8_t" || name == "int16_t" || name == "uint16_t" || name == "int32_t"
+		|| name == "uint32_t" || name == "int64_t" || name == "uint64_t";
 }
 
 bool bodyDeclaresIdent(const std::string& body, const std::string& name)
@@ -387,8 +547,7 @@ std::string injectUndeclaredTemps(const std::string& src)
 		out.append(src, nameStart, i - nameStart);
 		std::size_t after = i;
 		skipSpaces(src, after);
-		if (after >= src.size() || src[after] != '(' || isControlName(name)
-				|| isTypeName(name))
+		if (after >= src.size() || src[after] != '(' || isControlName(name) || isTypeName(name))
 		{
 			continue;
 		}
@@ -435,13 +594,13 @@ std::string injectUndeclaredTemps(const std::string& src)
 		}
 		const std::string body = src.substr(brace + 1, bodyEnd - brace - 1);
 		auto missing = missingTempsInBody(body);
-		missing.erase(std::remove_if(missing.begin(), missing.end(),
-							  [&](const std::string& id) { return skip.count(id) != 0; }),
-				missing.end());
+		missing.erase(
+			std::remove_if(missing.begin(), missing.end(), [&](const std::string& id) { return skip.count(id) != 0; }),
+			missing.end());
 		if (!missing.empty())
 		{
 			out += '\n';
-			for (const auto& ident : missing)
+			for (const auto& ident: missing)
 			{
 				out += "    int64_t ";
 				out += ident;
@@ -546,8 +705,7 @@ bool looksLikeDeclarator(const std::string& s, std::size_t namePos)
 {
 	std::size_t i = namePos;
 	skipSpacesBack(s, i);
-	while (i > 0 && (s[i - 1] == '*'
-			|| std::isspace(static_cast<unsigned char>(s[i - 1])) != 0))
+	while (i > 0 && (s[i - 1] == '*' || std::isspace(static_cast<unsigned char>(s[i - 1])) != 0))
 	{
 		--i;
 	}
@@ -565,9 +723,7 @@ bool isDefinitionAfterClose(const std::string& s, std::size_t close)
 	return i < s.size() && s[i] == '{';
 }
 
-void collectCallAndDefinedNames(
-		const std::string& src,
-		std::set<std::string>& undeclaredCalls)
+void collectCallAndDefinedNames(const std::string& src, std::set<std::string>& undeclaredCalls)
 {
 	std::set<std::string> declared;
 	std::set<std::string> called;
@@ -604,8 +760,7 @@ void collectCallAndDefinedNames(
 			continue;
 		}
 		const std::size_t close = matchingCloseParen(src, after);
-		if (looksLikeDeclarator(src, start) || (close != std::string::npos
-				&& isDefinitionAfterClose(src, close)))
+		if (looksLikeDeclarator(src, start) || (close != std::string::npos && isDefinitionAfterClose(src, close)))
 		{
 			declared.insert(name);
 		}
@@ -615,7 +770,7 @@ void collectCallAndDefinedNames(
 		}
 		i = after + 1;
 	}
-	for (const auto& name : called)
+	for (const auto& name: called)
 	{
 		if (declared.find(name) == declared.end())
 		{
@@ -645,10 +800,8 @@ std::vector<std::string> scrapeTypeBlocks(const std::string& src)
 				continue;
 			}
 			const std::string rest = line.substr(first);
-			const bool isTypedef = rest.compare(0, 7, "typedef") == 0
-					&& (rest.size() == 7 || !isIdentCont(rest[7]));
-			const bool isStruct = rest.compare(0, 6, "struct") == 0
-					&& (rest.size() == 6 || !isIdentCont(rest[6]));
+			const bool isTypedef = rest.compare(0, 7, "typedef") == 0 && (rest.size() == 7 || !isIdentCont(rest[7]));
+			const bool isStruct = rest.compare(0, 6, "struct") == 0 && (rest.size() == 6 || !isIdentCont(rest[6]));
 			if (!isTypedef && !isStruct)
 			{
 				continue;
@@ -686,8 +839,7 @@ std::string readFileIfEmpty(const std::string& path, const std::string& cSource)
 	{
 		return {};
 	}
-	return std::string(std::istreambuf_iterator<char>(in),
-			std::istreambuf_iterator<char>());
+	return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
 bool writeTextFile(const std::string& path, const std::string& text)
@@ -704,23 +856,20 @@ bool writeTextFile(const std::string& path, const std::string& text)
 } // anonymous namespace
 
 SemanticDetectionMap buildSemanticDetectionMap(
-		const container_detect::ContainerDetector::DetectionMap& containers,
-		const std::vector<std::pair<std::string, algo_recover::AlgorithmResult>>& algos,
-		const std::vector<std::pair<std::string, algo_recover::IdiomResult>>& idioms,
-		const sort_detect::SortDetector::DetectionMap& sorts,
-		const concurrency_detect::ConcurrencyModel& concurrency,
-		const std::string& outputLang)
+	const container_detect::ContainerDetector::DetectionMap& containers,
+	const std::vector<std::pair<std::string, algo_recover::AlgorithmResult>>& algos,
+	const std::vector<std::pair<std::string, algo_recover::IdiomResult>>& idioms,
+	const sort_detect::SortDetector::DetectionMap& sorts,
+	const concurrency_detect::ConcurrencyModel& concurrency,
+	const std::string& outputLang)
 {
 	SemanticDetectionMap map;
 	const bool emitCHints = common::isCOutputLang(outputLang);
 
-	for (const auto& [fnName, result] : containers)
+	for (const auto& [fnName, result]: containers)
 	{
-		const std::string label = !result.emittedType.empty()
-				? result.emittedType
-				: result.kindName();
-		auto detection = makeDetection("container", label, result.confidence,
-				result.toString());
+		const std::string label = !result.emittedType.empty() ? result.emittedType : result.kindName();
+		auto detection = makeDetection("container", label, result.confidence, result.toString());
 		if (emitCHints)
 		{
 			detection.cHint = result.cHint();
@@ -729,39 +878,33 @@ SemanticDetectionMap buildSemanticDetectionMap(
 		appendDetection(map, fnName, std::move(detection));
 	}
 
-	for (const auto& [fnName, result] : algos)
+	for (const auto& [fnName, result]: algos)
 	{
-		appendDetection(map, fnName,
-				makeDetection("algorithm", result.kindName(), result.confidence,
-						result.toString()));
+		appendDetection(
+			map, fnName, makeDetection("algorithm", result.kindName(), result.confidence, result.toString()));
 	}
 
-	for (const auto& [fnName, result] : idioms)
+	for (const auto& [fnName, result]: idioms)
 	{
-		for (const auto& label : result.exportLabels())
+		for (const auto& label: result.exportLabels())
 		{
-			appendDetection(map, fnName,
-					makeDetection("algorithm", label, result.confidence,
-							result.toString()));
+			appendDetection(map, fnName, makeDetection("algorithm", label, result.confidence, result.toString()));
 		}
 	}
 
-	for (const auto& [fnName, result] : sorts)
+	for (const auto& [fnName, result]: sorts)
 	{
-		appendDetection(map, fnName,
-				makeDetection("sort", result.algorithmName(), result.confidence,
-						result.toString()));
+		appendDetection(
+			map, fnName, makeDetection("sort", result.algorithmName(), result.confidence, result.toString()));
 	}
 
 	collectConcurrencyDetections(concurrency, map);
 	return map;
 }
 
-void mergeSemanticDetectionsIntoConfig(
-		config::Config& config,
-		const SemanticDetectionMap& detections)
+void mergeSemanticDetectionsIntoConfig(config::Config& config, const SemanticDetectionMap& detections)
 {
-	for (const auto& [fnName, dets] : detections)
+	for (const auto& [fnName, dets]: detections)
 	{
 		if (dets.empty())
 		{
@@ -782,9 +925,7 @@ void mergeSemanticDetectionsIntoConfig(
 	}
 }
 
-void injectSemanticCommentsIntoOutput(
-		const config::Config& config,
-		std::string* outString)
+void injectSemanticCommentsIntoOutput(const config::Config& config, std::string* outString)
 {
 	std::vector<std::string> lines;
 	const std::string& outPath = config.parameters.getOutputFile();
@@ -846,10 +987,7 @@ void injectSemanticCommentsIntoOutput(
 	}
 }
 
-void exportSemanticRecovery(
-		config::Config& config,
-		const SemanticDetectionMap& detections,
-		std::string* outString)
+void exportSemanticRecovery(config::Config& config, const SemanticDetectionMap& detections, std::string* outString)
 {
 	if (detections.empty())
 	{
@@ -866,9 +1004,7 @@ void exportSemanticRecovery(
 	injectSemanticCommentsIntoOutput(config, outString);
 }
 
-void maybeWriteBuildableSidecars(
-		const std::string& outputCPath,
-		const std::string& cSource)
+void maybeWriteBuildableSidecars(const std::string& outputCPath, const std::string& cSource)
 {
 	if (!emitBuildableEnabled() || outputCPath.empty())
 	{
@@ -885,6 +1021,23 @@ void maybeWriteBuildableSidecars(
 
 	std::set<std::string> undeclared;
 	collectCallAndDefinedNames(src, undeclared);
+	std::set<std::string> libcHeaders;
+	for (auto it = undeclared.begin(); it != undeclared.end();)
+	{
+		if (const char* hdr = libcHeaderForName(*it))
+		{
+			libcHeaders.insert(hdr);
+			it = undeclared.erase(it);
+		}
+		else if (isCrtCallName(*it))
+		{
+			it = undeclared.erase(it);
+		}
+		else
+		{
+			++it;
+		}
+	}
 
 	std::ostringstream header;
 	header << "#ifndef " << guard << "\n#define " << guard << "\n\n";
@@ -900,7 +1053,7 @@ void maybeWriteBuildableSidecars(
 	if (!typeBlocks.empty())
 	{
 		header << '\n';
-		for (const auto& block : typeBlocks)
+		for (const auto& block: typeBlocks)
 		{
 			header << block << '\n';
 		}
@@ -909,7 +1062,7 @@ void maybeWriteBuildableSidecars(
 	if (!undeclared.empty())
 	{
 		header << '\n';
-		for (const auto& name : undeclared)
+		for (const auto& name: undeclared)
 		{
 			header << "int " << name << "(void);\n";
 		}
@@ -919,9 +1072,16 @@ void maybeWriteBuildableSidecars(
 	writeTextFile(headerPath, header.str());
 
 	std::ostringstream stubs;
-	stubs << "#include \"" << headerName << "\"\n\n";
+	stubs << "#include \"" << headerName << "\"\n";
+	stubs << "#include <string.h>\n\n";
 	stubs << "void __retdec_stub(void) {}\n";
-	if (src.find("int main(") == std::string::npos)
+	writeHelperStubs(stubs);
+	writePrototypeBodies(stubs, src);
+	for (const auto& name: undeclared)
+	{
+		stubs << "int " << name << "(void) { return 0; }\n";
+	}
+	if (!sourceDefinesMain(src))
 	{
 		stubs << "\nint main(void) { return 0; }\n";
 	}
@@ -934,14 +1094,40 @@ void maybeWriteBuildableSidecars(
 		buildable << includeLine << '\n';
 	}
 	buildable << "#include <string.h>\n";
+	for (const auto& hdr: libcHeaders)
+	{
+		if (hdr != "string.h")
+		{
+			buildable << "#include <" << hdr << ">\n";
+		}
+	}
 	buildable << "#define strncpy(dst, src, n, ...) "
-			"(strncpy)((char *)(dst), (const char *)(src), (size_t)(n))\n";
+				 "(strncpy)((char *)(dst), (const char *)(src), (size_t)(n))\n";
 	buildable << "#define strcmp(a, b, ...) (strcmp)((a), (b))\n";
 	buildable << "#define strncmp(a, b, n, ...) (strncmp)((a), (b), (n))\n";
+	for (const auto& name: undeclared)
+	{
+		buildable << "#define " << name << "(...) ((" << name << ")())\n";
+	}
 	buildable << injectUndeclaredTemps(src);
 	if (!src.empty() && src.back() != '\n')
 	{
 		buildable << '\n';
+	}
+	buildable << "\n/* RETDEC_BUILDABLE_STUBS */\n";
+	for (const auto& name: undeclared)
+	{
+		buildable << "#undef " << name << "\n";
+	}
+	writeHelperStubs(buildable);
+	writePrototypeBodies(buildable, src);
+	for (const auto& name: undeclared)
+	{
+		buildable << "int " << name << "(void) { return 0; }\n";
+	}
+	if (!sourceDefinesMain(src))
+	{
+		buildable << "int main(void) { return 0; }\n";
 	}
 	writeTextFile(buildablePath, buildable.str());
 }

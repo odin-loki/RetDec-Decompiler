@@ -92,13 +92,13 @@ Deterministic analysis writes C. Neural may refine it. **Neither path executes t
 
 Priority inside the wave:
 
-1. **A7** constant-keyed crypto (SHA/MD5/ChaCha tables) — precision per hour.  
+1. **A7** constant-keyed crypto (SHA/MD5/ChaCha/Blowfish P-array). Base64 skipped (no SSA string table).  
 2. **E7** `docs/CLAIMS.md` register.  
 3. **E8/E9** link-graph / doc-vs-code CI scripts.  
 4. **N6–N9** model allowlist default, GGUF header parse, instance state, richer manifest.  
 5. **N15** GBNF rename-map for Naming tier (if llama.cpp grammar API is at the pin).  
 6. **A3** rewrite binary-search detector as a dataflow query **on existing SSA** (A1 LLVM move is blocked by the LLVM pin).  
-7. **E1** 3–5 real-binary detector tests (O0), no name hints.  
+7. **E1** 3–5 real-binary detector tests (O0), no name hints — `scripts/ci/run_e1_real_binary_smoke.sh`.  
 8. **Q4** measure existing goto-optimizer baseline (no SAILR port yet).  
 9. **P1** sketch only unless a tiny C ABI already exists.  
 10. **S11** `docs/THREAT_MODEL.md`.

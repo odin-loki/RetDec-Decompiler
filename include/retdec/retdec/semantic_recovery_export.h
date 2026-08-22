@@ -11,46 +11,39 @@
 #include <unordered_map>
 #include <vector>
 
-#include "retdec/common/semantic_detection.h"
-#include "retdec/config/config.h"
 #include "retdec/algo_recover/algo_recover.h"
+#include "retdec/common/semantic_detection.h"
 #include "retdec/concurrency_detect/concurrency_detect.h"
+#include "retdec/config/config.h"
 #include "retdec/container_detect/container_detect.h"
 #include "retdec/sort_detect/sort_detect.h"
 
 namespace retdec {
 namespace analysis {
 
-using SemanticDetectionMap =
-		std::unordered_map<std::string, std::vector<common::SemanticDetection>>;
+using SemanticDetectionMap = std::unordered_map<std::string, std::vector<common::SemanticDetection>>;
 
 SemanticDetectionMap buildSemanticDetectionMap(
-		const container_detect::ContainerDetector::DetectionMap& containers,
-		const std::vector<std::pair<std::string, algo_recover::AlgorithmResult>>& algos,
-		const std::vector<std::pair<std::string, algo_recover::IdiomResult>>& idioms,
-		const sort_detect::SortDetector::DetectionMap& sorts,
-		const concurrency_detect::ConcurrencyModel& concurrency,
-		const std::string& outputLang = {});
+	const container_detect::ContainerDetector::DetectionMap& containers,
+	const std::vector<std::pair<std::string, algo_recover::AlgorithmResult>>& algos,
+	const std::vector<std::pair<std::string, algo_recover::IdiomResult>>& idioms,
+	const sort_detect::SortDetector::DetectionMap& sorts,
+	const concurrency_detect::ConcurrencyModel& concurrency,
+	const std::string& outputLang = {});
 
-void mergeSemanticDetectionsIntoConfig(
-		config::Config& config,
-		const SemanticDetectionMap& detections);
+void mergeSemanticDetectionsIntoConfig(config::Config& config, const SemanticDetectionMap& detections);
 
-void injectSemanticCommentsIntoOutput(
-		const config::Config& config,
-		std::string* outString);
+void injectSemanticCommentsIntoOutput(const config::Config& config, std::string* outString);
 
-void exportSemanticRecovery(
-		config::Config& config,
-		const SemanticDetectionMap& detections,
-		std::string* outString);
+void exportSemanticRecovery(config::Config& config, const SemanticDetectionMap& detections, std::string* outString);
 
 /// When RETDEC_EMIT_BUILDABLE is set (non-empty, not "0"), write
 /// `<stem>.h`, `<stem>_stubs.c`, and `<stem>.buildable.c` next to outputCPath.
-/// Empty outputCPath is a no-op. Does not overwrite the original .c.
-void maybeWriteBuildableSidecars(
-		const std::string& outputCPath,
-		const std::string& cSource);
+/// `.buildable.c` is a single translation unit: libc headers for undeclared
+/// libc calls, extra-arity wrappers, temp injects, and weak link stubs plus
+/// `main` when the recovered C has none. Empty outputCPath is a no-op.
+/// Does not overwrite the original .c.
+void maybeWriteBuildableSidecars(const std::string& outputCPath, const std::string& cSource);
 
 } // namespace analysis
 } // namespace retdec

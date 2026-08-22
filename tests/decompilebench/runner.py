@@ -117,12 +117,20 @@ def compile_flags_for_source(source_text: str) -> list[str]:
     return flags
 
 
-def try_compile(source_c: Path, cc: str, opt: str = "O2", extra: list[str] | None = None) -> tuple[Path | None, str]:
+def try_compile(
+    source_c: Path,
+    cc: str,
+    opt: str = "O2",
+    extra: list[str] | None = None,
+    extra_sources: list[Path] | None = None,
+) -> tuple[Path | None, str]:
     if not shutil.which(cc):
         return None, "cc missing"
     with tempfile.TemporaryDirectory() as td:
         exe = Path(td) / "a.out"
-        cmd = [cc, f"-{opt}", "-o", str(exe), str(source_c)]
+        cmd = [cc, f"-{opt}", "-std=gnu11", "-w", "-o", str(exe), str(source_c)]
+        if extra_sources:
+            cmd.extend(str(p) for p in extra_sources)
         if extra:
             cmd.extend(extra)
         proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -212,6 +220,12 @@ def _score_sidecar(path: Path, cc: str, compile_opt: str, extra: list[str]) -> t
         return None, None
     tu_valid = try_syntax_only(path, cc)
     dec_exe, _ = try_compile(path, cc, compile_opt, extra)
+    if dec_exe is None:
+        stem = path.name
+        if stem.endswith(".buildable.c"):
+            stubs = path.with_name(path.name[: -len(".buildable.c")] + "_stubs.c")
+            if stubs.is_file():
+                dec_exe, _ = try_compile(path, cc, compile_opt, extra, extra_sources=[stubs])
     return tu_valid, dec_exe is not None
 
 

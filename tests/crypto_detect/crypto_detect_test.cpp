@@ -68,6 +68,7 @@ TEST(CryptoResultTest, AlgorithmNames) {
     r.algorithm = CryptoAlgorithm::RC4;      EXPECT_EQ(r.algorithmName(), "RC4");
     r.algorithm = CryptoAlgorithm::MD5;      EXPECT_EQ(r.algorithmName(), "MD5");
     r.algorithm = CryptoAlgorithm::CRC;      EXPECT_EQ(r.algorithmName(), "CRC");
+    r.algorithm = CryptoAlgorithm::Blowfish; EXPECT_EQ(r.algorithmName(), "Blowfish");
     r.algorithm = CryptoAlgorithm::Unknown;  EXPECT_EQ(r.algorithmName(), "Unknown");
 }
 
@@ -641,6 +642,22 @@ TEST(CryptoDetectorTest, MD5AndCRCDetected) {
     EXPECT_TRUE(hasCRC);
 }
 
+TEST(CryptoDetectorTest, BlowfishDetected) {
+    CryptoDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* i = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, i, 0x243f6a88ULL);
+    addInstr(*fn, blk, IrInstr::Op::Add);
+    addInstr(*fn, blk, IrInstr::Op::Add);
+    addInstr(*fn, blk, IrInstr::Op::Add);
+    auto results = det.detect(*fn);
+    bool hasBF = false;
+    for (auto& r : results)
+        if (r.algorithm == CryptoAlgorithm::Blowfish) hasBF = true;
+    EXPECT_TRUE(hasBF);
+}
+
 TEST(CryptoDetectorTest, ConfidenceThresholdFilters) {
     CryptoDetector::Config cfg;
     cfg.minConfidence = 0.90f;
@@ -874,6 +891,61 @@ TEST(CRCDetectorTest, EmptyFunctionLowConfidence) {
 TEST(CRCDetectorTest, AlgorithmIsCRC) {
     CRCDetector det;
     EXPECT_EQ(det.algorithm(), CryptoAlgorithm::CRC);
+}
+
+TEST(BlowfishDetectorTest, P0Detected) {
+    BlowfishDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* i = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, i, 0x243f6a88ULL); // Blowfish P[0] — unique π-digit word
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.algorithm, CryptoAlgorithm::Blowfish);
+    EXPECT_GT(r.confidence, 0.50f);
+    EXPECT_NE(r.emittedAnnotation.find("Blowfish"), std::string::npos);
+}
+
+TEST(BlowfishDetectorTest, ExtraPWordsBoostConfidence) {
+    BlowfishDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* p0 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, p0, 0x243f6a88ULL);
+    auto* p1 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, p1, 0x85a308d3ULL);
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.algorithm, CryptoAlgorithm::Blowfish);
+    EXPECT_GT(r.confidence, 0.70f);
+}
+
+TEST(BlowfishDetectorTest, FourPWordsSaturateTowardOne) {
+    BlowfishDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* p0 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, p0, 0x243f6a88ULL);
+    auto* p1 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, p1, 0x85a308d3ULL);
+    auto* p2 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, p2, 0x13198a2eULL);
+    auto* p3 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, p3, 0x03707344ULL);
+    auto r = det.detect(*fn);
+    EXPECT_NEAR(r.confidence, 1.0f, 0.01f);
+}
+
+TEST(BlowfishDetectorTest, EmptyFunctionLowConfidence) {
+    BlowfishDetector det;
+    auto fn = makeEmptyFn();
+    addBlock(*fn);
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.10f);
+    EXPECT_TRUE(r.emittedAnnotation.empty());
+}
+
+TEST(BlowfishDetectorTest, AlgorithmIsBlowfish) {
+    BlowfishDetector det;
+    EXPECT_EQ(det.algorithm(), CryptoAlgorithm::Blowfish);
 }
 
 TEST(AnnotationTest, RSAAnnotationMentionsMontgomery) {

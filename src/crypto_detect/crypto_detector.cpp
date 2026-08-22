@@ -31,6 +31,7 @@ std::string CryptoResult::algorithmName() const noexcept {
     case CryptoAlgorithm::CRC:       return "CRC";
     case CryptoAlgorithm::Poly1305:  return "Poly1305";
     case CryptoAlgorithm::Salsa20:   return "Salsa20";
+    case CryptoAlgorithm::Blowfish:  return "Blowfish";
     default:                         return "Unknown";
     }
 }
@@ -89,6 +90,7 @@ CryptoDetector::CryptoDetector(Config cfg) : cfg_(cfg) {
     detectors_.push_back(std::make_unique<MD5Detector>());
     detectors_.push_back(std::make_unique<ChaCha20Detector>());
     detectors_.push_back(std::make_unique<CRCDetector>());
+    detectors_.push_back(std::make_unique<BlowfishDetector>());
     detectors_.push_back(std::make_unique<RSADetector>());
     detectors_.push_back(std::make_unique<RC4Detector>());
 }

@@ -7,6 +7,7 @@ add_library(retdec-crypto-detect
     rc4_detect.cpp
     md5_detect.cpp
     crc_detect.cpp
+    blowfish_detect.cpp
     crypto_detector.cpp
 )
 

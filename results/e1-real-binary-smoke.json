@@ -1,0 +1,230 @@
+{
+  "ok": true,
+  "filename_coupling": false,
+  "crashed": false,
+  "empty_ok": true,
+  "note": "Detections read from functions[].semanticDetections in .config.json. Empty detections are honest and do not fail. No F1 gate. No filename-to-label mapping.",
+  "corpus": "/mnt/c/Users/odinl/OneDrive/Desktop/RetDec/tests/algorithm_recovery/corpus",
+  "decompiler": "/mnt/c/Users/odinl/OneDrive/Desktop/RetDec/build/linux/src/retdec-decompiler/retdec-decompiler",
+  "outdir": "/mnt/c/Users/odinl/OneDrive/Desktop/RetDec/build/linux/e1-smoke",
+  "binaries": [
+    {
+      "name": "binary_search-gcc-O0",
+      "sha256_prefix": "0460c1d8c868b033",
+      "labels_identical": true,
+      "empty": false,
+      "named": {
+        "ok": true,
+        "rc": 0,
+        "config": "/mnt/c/Users/odinl/OneDrive/Desktop/RetDec/build/linux/e1-smoke/binary_search-gcc-O0.config.json",
+        "error": null,
+        "detections": [
+          {
+            "kind": "algorithm",
+            "label": "std::partition",
+            "confidence": 1.0
+          },
+          {
+            "kind": "container",
+            "label": "std::shared_ptr<T>",
+            "confidence": 0.7000000476837158
+          },
+          {
+            "kind": "sort",
+            "label": "quicksort",
+            "confidence": 0.8999999761581421
+          }
+        ],
+        "labels": [
+          "algorithm:std::partition",
+          "container:std::shared_ptr<t>",
+          "sort:quicksort"
+        ]
+      },
+      "hashed": {
+        "ok": true,
+        "rc": 0,
+        "config": "/mnt/c/Users/odinl/OneDrive/Desktop/RetDec/build/linux/e1-smoke/hashed/0460c1d8c868b033.config.json",
+        "error": null,
+        "detections": [
+          {
+            "kind": "algorithm",
+            "label": "std::partition",
+            "confidence": 1.0
+          },
+          {
+            "kind": "container",
+            "label": "std::shared_ptr<T>",
+            "confidence": 0.7000000476837158
+          },
+          {
+            "kind": "sort",
+            "label": "quicksort",
+            "confidence": 0.8999999761581421
+          }
+        ],
+        "labels": [
+          "algorithm:std::partition",
+          "container:std::shared_ptr<t>",
+          "sort:quicksort"
+        ]
+      }
+    },
+    {
+      "name": "bubblesort-gcc-O0",
+      "sha256_prefix": "892b9d3f06aba65a",
+      "labels_identical": true,
+      "empty": false,
+      "named": {
+        "ok": true,
+        "rc": 0,
+        "config": "/mnt/c/Users/odinl/OneDrive/Desktop/RetDec/build/linux/e1-smoke/bubblesort-gcc-O0.config.json",
+        "error": null,
+        "detections": [
+          {
+            "kind": "algorithm",
+            "label": "std::copy",
+            "confidence": 0.8500000238418579
+          },
+          {
+            "kind": "algorithm",
+            "label": "std::transform",
+            "confidence": 0.8500000238418579
+          },
+          {
+            "kind": "container",
+            "label": "std::unordered_map<uint32_t, uint32_t>",
+            "confidence": 0.75
+          },
+          {
+            "kind": "container",
+            "label": "std::unordered_map<uint32_t, uint32_t>",
+            "confidence": 0.45000001788139343
+          },
+          {
+            "kind": "sort",
+            "label": "quicksort",
+            "confidence": 0.8999999761581421
+          },
+          {
+            "kind": "sort",
+            "label": "quicksort",
+            "confidence": 0.6499999761581421
+          }
+        ],
+        "labels": [
+          "algorithm:std::copy",
+          "algorithm:std::transform",
+          "container:std::unordered_map<uint32_t, uint32_t>",
+          "sort:quicksort"
+        ]
+      },
+      "hashed": {
+        "ok": true,
+        "rc": 0,
+        "config": "/mnt/c/Users/odinl/OneDrive/Desktop/RetDec/build/linux/e1-smoke/hashed/892b9d3f06aba65a.config.json",
+        "error": null,
+        "detections": [
+          {
+            "kind": "algorithm",
+            "label": "std::copy",
+            "confidence": 0.8500000238418579
+          },
+          {
+            "kind": "algorithm",
+            "label": "std::transform",
+            "confidence": 0.8500000238418579
+          },
+          {
+            "kind": "container",
+            "label": "std::unordered_map<uint32_t, uint32_t>",
+            "confidence": 0.75
+          },
+          {
+            "kind": "container",
+            "label": "std::unordered_map<uint32_t, uint32_t>",
+            "confidence": 0.45000001788139343
+          },
+          {
+            "kind": "sort",
+            "label": "quicksort",
+            "confidence": 0.8999999761581421
+          },
+          {
+            "kind": "sort",
+            "label": "quicksort",
+            "confidence": 0.6499999761581421
+          }
+        ],
+        "labels": [
+          "algorithm:std::copy",
+          "algorithm:std::transform",
+          "container:std::unordered_map<uint32_t, uint32_t>",
+          "sort:quicksort"
+        ]
+      }
+    },
+    {
+      "name": "memcpy_loop-gcc-O0",
+      "sha256_prefix": "30947493a3ac047c",
+      "labels_identical": true,
+      "empty": false,
+      "named": {
+        "ok": true,
+        "rc": 0,
+        "config": "/mnt/c/Users/odinl/OneDrive/Desktop/RetDec/build/linux/e1-smoke/memcpy_loop-gcc-O0.config.json",
+        "error": null,
+        "detections": [
+          {
+            "kind": "algorithm",
+            "label": "std::copy",
+            "confidence": 0.8500000238418579
+          },
+          {
+            "kind": "container",
+            "label": "std::unordered_map<uint32_t, uint32_t>",
+            "confidence": 0.45000001788139343
+          },
+          {
+            "kind": "sort",
+            "label": "quicksort",
+            "confidence": 0.8999999761581421
+          }
+        ],
+        "labels": [
+          "algorithm:std::copy",
+          "container:std::unordered_map<uint32_t, uint32_t>",
+          "sort:quicksort"
+        ]
+      },
+      "hashed": {
+        "ok": true,
+        "rc": 0,
+        "config": "/mnt/c/Users/odinl/OneDrive/Desktop/RetDec/build/linux/e1-smoke/hashed/30947493a3ac047c.config.json",
+        "error": null,
+        "detections": [
+          {
+            "kind": "algorithm",
+            "label": "std::copy",
+            "confidence": 0.8500000238418579
+          },
+          {
+            "kind": "container",
+            "label": "std::unordered_map<uint32_t, uint32_t>",
+            "confidence": 0.45000001788139343
+          },
+          {
+            "kind": "sort",
+            "label": "quicksort",
+            "confidence": 0.8999999761581421
+          }
+        ],
+        "labels": [
+          "algorithm:std::copy",
+          "container:std::unordered_map<uint32_t, uint32_t>",
+          "sort:quicksort"
+        ]
+      }
+    }
+  ]
+}

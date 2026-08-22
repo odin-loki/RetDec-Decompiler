@@ -78,6 +78,13 @@
  *   - Reflected IEEE: `0xEDB88320`.
  *   - Normal / Ethernet: `0x04C11DB7`.
  *
+ * ### Blowfish
+ *
+ * Constant fingerprints — P-array first words (digits of π; uniquely Blowfish):
+ *   `0x243f6a88, 0x85a308d3, 0x13198a2e, 0x03707344`.
+ * Any one P-array word is sufficient. Base64 alphabets are not scanned:
+ * SSA exposes immediates only (no string-table / data-section access).
+ *
  * ### HMAC
  *
  * Constant fingerprints (unmistakable):
@@ -148,6 +155,7 @@ enum class CryptoAlgorithm : uint8_t {
     CRC,         ///< CRC-32 / CRC-32C polynomial fingerprint
     Poly1305,
     Salsa20,
+    Blowfish,    ///< Blowfish P-array (π digits) fingerprint
 };
 
 enum class CryptoMode : uint8_t {
@@ -266,6 +274,13 @@ struct CRCEvidence {
     bool  hasNormalPoly      = false; ///< 0x04C11DB7 CRC-32 normal
 };
 
+struct BlowfishEvidence {
+    bool  found              = false;
+    float confidence         = 0.0f;
+    bool  hasPArray          = false; ///< P-array first words (e.g. 0x243f6a88)
+    int   pArrayWords        = 0;     ///< how many of the first four P words
+};
+
 // ─── Detector interface ───────────────────────────────────────────────────────
 
 class ICryptoDetector {
@@ -363,6 +378,19 @@ public:
 private:
     CRCEvidence analyse(const ssa::SSAFunction& fn) const;
     float       score(const CRCEvidence& ev) const;
+};
+
+/**
+ * Blowfish detector — P-array first words (π digits).
+ * 0x243f6a88 is uniquely Blowfish; SHA-256 H[0] is the distinct 0x6a09e667.
+ */
+class BlowfishDetector : public ICryptoDetector {
+public:
+    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
+    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::Blowfish; }
+private:
+    BlowfishEvidence analyse(const ssa::SSAFunction& fn) const;
+    float            score(const BlowfishEvidence& ev) const;
 };
 
 // ─── Crypto detector orchestrator ────────────────────────────────────────────
