@@ -49,128 +49,151 @@ namespace algo_recover {
 
 namespace {
 
-static bool hasBackEdge(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (uint32_t s : blk->succs) if (s <= b) return true;
-    }
-    return false;
+static bool hasBackEdge(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (uint32_t s: blk->succs)
+			if (s <= b) return true;
+	}
+	return false;
 }
 
-static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
-    int n = 0;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs)
-            if (i && i->op == op) ++n;
-    }
-    return n;
+static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+			if (i && i->op == op) ++n;
+	}
+	return n;
 }
 
 // Converging pointers: both Add (left++) and Sub (right--) in loop body.
-static bool hasConvergingPtrs(const ssa::SSAFunction& fn) {
-    return countOp(fn, ssa::IrInstr::Op::Add) >= 1 &&
-           countOp(fn, ssa::IrInstr::Op::Sub) >= 1;
+static bool hasConvergingPtrs(const ssa::SSAFunction& fn)
+{
+	return countOp(fn, ssa::IrInstr::Op::Add) >= 1 && countOp(fn, ssa::IrInstr::Op::Sub) >= 1;
+}
+
+static bool hasNamedSwap(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != ssa::IrInstr::Op::Call) continue;
+			if (i->calleeName.find("swap") != std::string::npos) return true;
+		}
+	}
+	return false;
+}
+
+static bool hasStructuralSwap(const ssa::SSAFunction& fn)
+{
+	return countOp(fn, ssa::IrInstr::Op::Load) >= 2 && countOp(fn, ssa::IrInstr::Op::Store) >= 2;
 }
 
 // Swap: ≥2 Loads and ≥2 Stores, or a call to swap.
-static bool hasSwap(const ssa::SSAFunction& fn) {
-    if (countOp(fn, ssa::IrInstr::Op::Load)  >= 2 &&
-        countOp(fn, ssa::IrInstr::Op::Store) >= 2)
-        return true;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs) {
-            if (!i || i->op != ssa::IrInstr::Op::Call) continue;
-            if (i->calleeName.find("swap") != std::string::npos) return true;
-        }
-    }
-    return false;
+static bool hasSwap(const ssa::SSAFunction& fn)
+{
+	return hasStructuralSwap(fn) || hasNamedSwap(fn);
 }
 
 // Convergence check: a Compare in the loop body.
-static bool hasConvergenceCheck(const ssa::SSAFunction& fn) {
-    return countOp(fn, ssa::IrInstr::Op::Compare) >= 1;
+static bool hasConvergenceCheck(const ssa::SSAFunction& fn)
+{
+	return countOp(fn, ssa::IrInstr::Op::Compare) >= 1;
 }
 
 // Halving midpoint: binary search narrows with (lo+hi)/2, not a swap partition.
-static bool hasHalvingMidpoint(const ssa::SSAFunction& fn) {
-    return countOp(fn, ssa::IrInstr::Op::Shr) >= 1 ||
-           countOp(fn, ssa::IrInstr::Op::Div) >= 1;
+static bool hasHalvingMidpoint(const ssa::SSAFunction& fn)
+{
+	return countOp(fn, ssa::IrInstr::Op::Shr) >= 1 || countOp(fn, ssa::IrInstr::Op::Div) >= 1;
 }
 
 } // anonymous namespace
 
-bool PartitionDetector::hasRecursion(const ssa::SSAFunction& fn) const {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs) {
-            if (!i || i->op != ssa::IrInstr::Op::Call) continue;
-            // Recursion is a self-call only (callee name equals this function).
-            if (i->calleeName == fn.name())
-                return true;
-        }
-    }
-    return false;
+bool PartitionDetector::hasRecursion(const ssa::SSAFunction& fn) const
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != ssa::IrInstr::Op::Call) continue;
+			// Recursion is a self-call only (callee name equals this function).
+			if (i->calleeName == fn.name()) return true;
+		}
+	}
+	return false;
 }
 
-PartitionEvidence PartitionDetector::analyse(const ssa::SSAFunction& fn) const {
-    PartitionEvidence ev;
-    if (!hasBackEdge(fn)) return ev;
+PartitionEvidence PartitionDetector::analyse(const ssa::SSAFunction& fn) const
+{
+	PartitionEvidence ev;
+	if (!hasBackEdge(fn)) return ev;
 
-    // Binary search also has add/sub bounds; require swap, not just halving.
-    if (hasHalvingMidpoint(fn) && !hasSwap(fn))
-        return ev;
+	// Binary search also has add/sub bounds; require swap, not just halving.
+	if (hasHalvingMidpoint(fn) && !hasSwap(fn)) return ev;
 
-    ev.hasConvergingPtrs   = hasConvergingPtrs(fn);
-    ev.hasSwap             = hasSwap(fn);
-    ev.hasConvergenceCheck = hasConvergenceCheck(fn);
-    ev.hasNoRecursion      = !hasRecursion(fn);
-    ev.found = ev.hasConvergingPtrs && ev.hasSwap;
-    ev.confidence = score(ev);
-    return ev;
+	ev.hasConvergingPtrs = hasConvergingPtrs(fn);
+	ev.hasSwap = hasSwap(fn);
+	ev.hasConvergenceCheck = hasConvergenceCheck(fn);
+	ev.hasNoRecursion = !hasRecursion(fn);
+	ev.found = ev.hasConvergingPtrs && ev.hasSwap;
+	ev.confidence = score(ev);
+	return ev;
 }
 
-float PartitionDetector::score(const PartitionEvidence& ev) const {
-    float s = 0.0f;
-    if (ev.hasConvergingPtrs)   s += 0.35f;
-    if (ev.hasSwap)             s += 0.35f;
-    if (ev.hasConvergenceCheck) s += 0.20f;
-    if (ev.hasNoRecursion)      s += 0.10f;
-    return s > 1.0f ? 1.0f : s;
+float PartitionDetector::score(const PartitionEvidence& ev) const
+{
+	float s = 0.0f;
+	if (ev.hasConvergingPtrs) s += 0.35f;
+	if (ev.hasSwap) s += 0.35f;
+	if (ev.hasConvergenceCheck) s += 0.20f;
+	if (ev.hasNoRecursion) s += 0.10f;
+	return s > 1.0f ? 1.0f : s;
 }
 
-AlgorithmResult PartitionDetector::detect(const ssa::SSAFunction& fn) const {
-    AlgorithmResult result;
-    result.kind = AlgorithmKind::Partition;
+AlgorithmResult PartitionDetector::detect(const ssa::SSAFunction& fn) const
+{
+	AlgorithmResult result;
+	result.kind = AlgorithmKind::Partition;
 
-    auto ev = analyse(fn);
-    result.confidence = ev.confidence;
+	auto ev = analyse(fn);
+	result.confidence = ev.confidence;
 
-    EmissionTier tier = EmissionTier::Low;
-    if (ev.confidence >= 0.75f) tier = EmissionTier::High;
-    else if (ev.confidence >= 0.45f) tier = EmissionTier::Medium;
-    result.tier = tier;
+	EmissionTier tier = EmissionTier::Low;
+	if (ev.confidence >= 0.75f)
+		tier = EmissionTier::High;
+	else if (ev.confidence >= 0.45f)
+		tier = EmissionTier::Medium;
+	result.tier = tier;
 
-    if (ev.confidence < 0.01f) return result;
+	if (ev.confidence < 0.01f) return result;
 
-    switch (tier) {
-    case EmissionTier::High:
-        result.emittedForm = "std::partition(first, last, pred);"; break;
-    case EmissionTier::Medium:
-        result.emittedForm = "/* std::partition? */ converging-index swap loop"; break;
-    default:
-        result.emittedForm =
-            "auto left = first, right = last;\n"
-            "while (left != right) { /* swap */ }";
-        break;
-    }
+	const bool nameOnlySwap = hasNamedSwap(fn) && !hasStructuralSwap(fn);
+	switch (tier)
+	{
+	case EmissionTier::High: result.emittedForm = "std::partition(first, last, pred);"; break;
+	case EmissionTier::Medium: result.emittedForm = "/* std::partition? */ converging-index swap loop"; break;
+	default:
+		result.emittedForm =
+			"auto left = first, right = last;\n"
+			"while (left != right) { /* swap */ }";
+		break;
+	}
+	if (nameOnlySwap) result.emittedForm = "evidence:symbol_name " + result.emittedForm;
 
-    return result;
+	return result;
 }
 
 } // namespace algo_recover

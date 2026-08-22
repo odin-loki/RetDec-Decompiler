@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- B7: name-only partition (`swap` callee, no Load/Store pair)
+  export tags `evidence:symbol_name`. Structural Load/Store swap
+  stays in the headline. Extract already drops `std::partition`
+  labels, so headline F1 is unchanged. Tests: `SwapCallCounts`,
+  `StructuralSwapIsNotSymbolNameEvidence`,
+  `test_tagged_partition_excluded_from_headline`.
 - Neural structural gate also compares `system` / `popen` /
   `execve` identifier counts so a refinement cannot add those
   calls. Test: `AddedSystemCallFailsStructural`. This is not N10

@@ -23,6 +23,10 @@ This is **not** a product F1 change by itself.
   `compilerVariant` is not Unknown (`_introsort` / `_Sort_unchecked`).
   Structural introsort (Unknown variant) stays in the headline.
   Full 216 remasure after the tag: mean F1 still **0.056**.
+- Name-only partition (`swap` callee without a Load/Store pair)
+  prefixes `emittedForm` with `evidence:symbol_name`. Structural
+  Load/Store swap is untagged. Extract already drops `std::partition`
+  labels (`startswith("std::")`), so headline F1 is unchanged.
 
 A8 (lock-prefix / ldxr) is still blocked: `IrInstr::Op` has no lock/atomic.
 
@@ -36,7 +40,7 @@ confidence as structural evidence:
   xor+mul path is structural)
 - `sort_detect` self-name recursion (not `_introsort` variant; that
   path is now tagged)
-- `algo_recover` partition `swap` callee; idiom self-recursion
+- `algo_recover` idiom self-recursion (exact self-call is structural)
 - `crypto_detect` / `pattern_detect` callee-name tables
 
 Input-path reads in `retdec.cpp` `tryEmulationUnpacking` are diagnostic

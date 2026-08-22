@@ -1069,6 +1069,28 @@ TEST(PartitionDetectorTest, SwapCallCounts)
 	PartitionDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.55f);
+	EXPECT_NE(r.toString().find("evidence:symbol_name"), std::string::npos);
+}
+
+TEST(PartitionDetectorTest, StructuralSwapIsNotSymbolNameEvidence)
+{
+	auto fn = makeFunc(
+		"part_stores",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Add,
+			ssa::IrInstr::Op::Sub,
+			ssa::IrInstr::Op::Compare,
+		},
+		1);
+	addBackEdge(*fn);
+	PartitionDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_GE(r.confidence, 0.55f);
+	EXPECT_EQ(r.toString().find("evidence:symbol_name"), std::string::npos);
 }
 
 TEST(PartitionDetectorTest, HighTierEmittedContainsPartition)
