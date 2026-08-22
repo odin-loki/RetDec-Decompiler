@@ -15,6 +15,9 @@ Live measurement contract for CI, ship checklist, and the release table.
 | `algorithm-recovery-full.json` | Withdrawn stem-tuned F1 (216) — do not advertise |
 | `algorithm-recovery-full-nameblind.json` | Honest name-blind F1 on 216 (B12/B13) |
 | `algorithm-recovery-per-opt.md` | Per-opt headline table for the name-blind run |
+| `algorithm-recovery-adversarial-b9.json` | Name-blind F1 on the B9 idiosyncratic set (18) |
+| `b9-adversarial-positive.md` | B9 recall table |
+| `corpus-build-recipe.md` | How the corpora are built (B16) |
 
 Algorithm-recovery F1 figures that depended on filename filters are
 **withdrawn** (B1–B5). Name-blind ci-core remasure:

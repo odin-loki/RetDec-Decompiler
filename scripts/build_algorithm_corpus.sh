@@ -38,8 +38,11 @@ if not compilers:
 
 out.mkdir(parents=True, exist_ok=True)
 manifest = []
+skip_dirs = {"negative", "adversarial"}
 for cfile in sorted(src.rglob("*.c")):
     rel = cfile.relative_to(src)
+    if any(part in skip_dirs for part in rel.parts):
+        continue
     source_key = str(rel).replace("\\", "/")
     stem = source_key.replace("/", "_").removesuffix(".c")
     text = cfile.read_text(encoding="utf-8", errors="replace")

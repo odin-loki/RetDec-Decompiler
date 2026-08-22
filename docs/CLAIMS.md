@@ -21,6 +21,9 @@ Do not treat `results/algorithm-recovery-*.json` or
 | C-B13 | Micro/macro F1, per-class P/R, bootstrap 95% CI, `n` | `RETDEC_AUDIT.md` B13 | `tests/algorithm_recovery/runner.py`; `results/algorithm-recovery-full-nameblind.json` (`micro`, `macro_f1`, `per_class`, `mean_f1_ci95_*`) | demonstrated |
 | C-E1 | Detector labels survive a hashed rename of the input ELF | `RETDEC_AUDIT.md` E1 | `scripts/ci/run_e1_real_binary_smoke.sh`; `results/e1-real-binary-smoke.json`. No F1 gate. Empty detections allowed. | demonstrated |
 | C-B8 | Negative corpus: 200+ binaries with no target-algorithm labels; any hit is a false positive | `RETDEC_AUDIT.md` B8 | `scripts/generate_negative_corpus.py`; `scripts/ci/run_b8_negative_corpus.sh`; `results/b8-negative-corpus.md` | demonstrated |
+| C-B9 | Adversarial-positive recall on idiosyncratic implementations | `RETDEC_AUDIT.md` B9 | `scripts/ci/run_b9_adversarial_corpus.sh`; `results/b9-adversarial-positive.md`. Name-blind mean F1 **0.076** on 18 binaries. Not a product figure. | demonstrated |
+| C-B11 | Frozen holdout as hashes only | `RETDEC_AUDIT.md` B11 | `tests/algorithm_recovery/holdout/source-hashes.json` (B9 sources). Not a Debian/third-party holdout. | demonstrated |
+| C-B16 | Corpus build recipe | `RETDEC_AUDIT.md` B16 | `results/corpus-build-recipe.md`. Host gcc/clang; no pinned container digest. | demonstrated |
 | C-Q4 | Existing goto-optimizer baseline measured before any SAILR port | `RETDEC_AUDIT.md` Q4 | `scripts/ci/run_q4_goto_baseline.sh`; `results/goto-optimizer-baseline.md` | demonstrated |
 | C-A6 | Fibonacci / LCS / Knapsack are not structural detections | `RETDEC_AUDIT.md` A6 | `src/algo_recover/idiom_detect.cpp`; `tests/algo_recover/algo_recover_test.cpp` (`NeverAssignsFibonacciLcsKnapsack`) | demonstrated |
 | C-A9 | Design-pattern recovery is experimental heuristics, not a product claim | `RETDEC_AUDIT.md` A9 | `src/pattern_detect/pattern_detector.cpp` file comment | demonstrated |

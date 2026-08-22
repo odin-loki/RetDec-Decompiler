@@ -1,0 +1,4 @@
+{
+  "algorithms": ["Varint", "Serialization"],
+  "functions": {}
+}

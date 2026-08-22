@@ -1,0 +1,42 @@
+{
+  "role": "B11 frozen source holdout (adversarial-positive). Binaries are not committed.",
+  "n": 9,
+  "files": [
+    {
+      "path": "tests/algorithm_recovery/sources/adversarial/aes_bitslice.c",
+      "sha256": "deaf1585d295a625a37af4e560b5701149300e2c66320159d81018c56a62fbb0"
+    },
+    {
+      "path": "tests/algorithm_recovery/sources/adversarial/aes_ni.c",
+      "sha256": "721b8ed7c336574d9626c159099c080229d65f2914f597b59ba924d4e1fa65c5"
+    },
+    {
+      "path": "tests/algorithm_recovery/sources/adversarial/aes_ttable.c",
+      "sha256": "2fa5774052891f3bf88673560dbe0096db71e0c565f6601775350bb38f630acc"
+    },
+    {
+      "path": "tests/algorithm_recovery/sources/adversarial/atoi_hex_table.c",
+      "sha256": "297141439c956184fb5c5a50ea7e2abd6deaf520b698952d99d537f3fe25d41d"
+    },
+    {
+      "path": "tests/algorithm_recovery/sources/adversarial/bfs_ring.c",
+      "sha256": "19e225c32a96437fd580ffd23a6e26f3b30061d4bc461b3026fcf18ac2b3dbdc"
+    },
+    {
+      "path": "tests/algorithm_recovery/sources/adversarial/dfs_explicit_stack.c",
+      "sha256": "6bd0f7743323047fd0095892f30506ff92e2c0858b9b646623cc18630aa8996a"
+    },
+    {
+      "path": "tests/algorithm_recovery/sources/adversarial/heapsort_sentinel.c",
+      "sha256": "a66d08024ae8d98b7e7868f5d831a826042fe67515b7f711d5a78b5fe4597675"
+    },
+    {
+      "path": "tests/algorithm_recovery/sources/adversarial/strlen_word.c",
+      "sha256": "99caa144b23142b14d390c7c9008917c6375a1bb8bbcc0c29defca9caf6fd843"
+    },
+    {
+      "path": "tests/algorithm_recovery/sources/adversarial/varint_unrolled.c",
+      "sha256": "43bb95150fd7fb4b979bdb2e2a276e0f429662b7ff06774c0426f7fe7cce6209"
+    }
+  ]
+}

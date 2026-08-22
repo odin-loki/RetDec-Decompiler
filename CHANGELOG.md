@@ -8,6 +8,18 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- B9 adversarial-positive corpus: 9 idiosyncratic C sources × gcc
+  O0/O2 (18 binaries). Name-blind mean F1 **0.076**
+  (`results/b9-adversarial-positive.md`). Sentinel heapsort is the
+  only assigned hit. AES is not in decompiler `semanticDetections`
+  (`crypto_detect` is not wired through `FunctionDetections`; no
+  public-header change). Do not advertise as product recall.
+- B11: SHA-256 of those sources in
+  `tests/algorithm_recovery/holdout/source-hashes.json` (binaries
+  not committed).
+- B16: host-compiler corpus recipe
+  (`results/corpus-build-recipe.md`). No Docker digest — Docker is
+  unavailable here.
 - B12/B13: name-blind full-corpus F1 by optimisation level
   (`results/algorithm-recovery-full-nameblind.json`,
   `results/algorithm-recovery-per-opt.md`). Headline mean **0.124**

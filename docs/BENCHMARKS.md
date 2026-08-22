@@ -53,6 +53,9 @@ stem-tuned score — do not advertise it.
 Per-opt name-blind numbers: `results/algorithm-recovery-per-opt.md`.
 Stock RetDec has no label export — F1 is fork-only.
 
+B9 adversarial-positive (18 gcc O0/O2 binaries): name-blind mean
+**0.076**. See `results/b9-adversarial-positive.md`. Not a product F1.
+
 ## Migration evals (optional)
 
 `bash scripts/migration_eval_suite.sh` — rellic, LIEF, Retypd, SAILR scaffolds.
