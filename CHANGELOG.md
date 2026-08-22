@@ -8,6 +8,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Neural structural gate and rename denylist also compare
+  `ShellExecuteA` / `ShellExecuteW` / `CreateProcess` /
+  `_popen` / `_wpopen` / `_wsystem` (word-boundary, so
+  `ShellExecute` did not match `ShellExecuteA`). Tests:
+  `AddedShellExecuteACallFailsStructural`,
+  `AddedCrtPopenCallFailsStructural`. This is not N10.
+  Default F5 is unchanged.
 - A7 leftover: SHA-256 detector also fingerprints K[4..7]
   (`0x3956c25b` … `0xab1c5ed5`). Existing `hasRoundConst` field;
   no public-header change. Crypto stays unwired into export;

@@ -205,6 +205,24 @@ TEST(NeuralGates, AddedExecvCallFailsStructural)
 	EXPECT_EQ(r.structural, GateResult::FailStructural);
 }
 
+TEST(NeuralGates, AddedShellExecuteACallFailsStructural)
+{
+	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
+	const std::string refined = "int f(int x) { if (x > 0) return 1; ShellExecuteA(0, 0, 0, 0, 0, 0); return 0; }\n";
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_FALSE(r.allPassed());
+	EXPECT_EQ(r.structural, GateResult::FailStructural);
+}
+
+TEST(NeuralGates, AddedCrtPopenCallFailsStructural)
+{
+	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
+	const std::string refined = "int f(int x) { if (x > 0) return 1; _popen(\"id\", \"r\"); return 0; }\n";
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_FALSE(r.allPassed());
+	EXPECT_EQ(r.structural, GateResult::FailStructural);
+}
+
 TEST(NeuralPrompt, QwenChatTemplateDisablesThinking)
 {
 	RefinementRequest req;
@@ -411,6 +429,8 @@ TEST(NeuralNaming, ApplyJsonRenameMapRejectsSpawnTarget)
 	const std::string src = "int v3 = key_schedule(fn_401230);\n";
 	EXPECT_EQ(applyJsonRenameMap(src, R"({"v3":"system"})"), src);
 	EXPECT_EQ(applyJsonRenameMap(src, R"({"fn_401230":"execv"})"), src);
+	EXPECT_EQ(applyJsonRenameMap(src, R"({"v3":"_popen"})"), src);
+	EXPECT_EQ(applyJsonRenameMap(src, R"({"v3":"ShellExecuteA"})"), src);
 	const std::string mixed = applyJsonRenameMap(src, R"({"v3":"state","fn_401230":"system"})");
 	EXPECT_NE(mixed.find("int state = key_schedule(fn_401230)"), std::string::npos);
 	EXPECT_EQ(mixed.find("system"), std::string::npos);

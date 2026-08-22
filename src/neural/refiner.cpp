@@ -208,21 +208,22 @@ bool isForbiddenRenameIdent(const std::string& s)
 	// C11 keywords (header: applyJsonRenameMap skips C keywords) plus the
 	// spawn-family idents compared by the structural gate.
 	static const char* const kForbidden[] = {
-		"auto",           "break",     "case",           "char",
-		"const",          "continue",  "default",        "do",
-		"double",         "else",      "enum",           "extern",
-		"float",          "for",       "goto",           "if",
-		"inline",         "int",       "long",           "register",
-		"restrict",       "return",    "short",          "signed",
-		"sizeof",         "static",    "struct",         "switch",
-		"typedef",        "union",     "unsigned",       "void",
-		"volatile",       "while",     "_Alignas",       "_Alignof",
-		"_Atomic",        "_Bool",     "_Complex",       "_Generic",
-		"_Imaginary",     "_Noreturn", "_Static_assert", "_Thread_local",
-		"system",         "popen",     "execve",         "execl",
-		"execle",         "execlp",    "execv",          "execvp",
-		"execvpe",        "WinExec",   "ShellExecute",   "CreateProcessA",
-		"CreateProcessW",
+		"auto",          "break",         "case",           "char",
+		"const",         "continue",      "default",        "do",
+		"double",        "else",          "enum",           "extern",
+		"float",         "for",           "goto",           "if",
+		"inline",        "int",           "long",           "register",
+		"restrict",      "return",        "short",          "signed",
+		"sizeof",        "static",        "struct",         "switch",
+		"typedef",       "union",         "unsigned",       "void",
+		"volatile",      "while",         "_Alignas",       "_Alignof",
+		"_Atomic",       "_Bool",         "_Complex",       "_Generic",
+		"_Imaginary",    "_Noreturn",     "_Static_assert", "_Thread_local",
+		"system",        "popen",         "execve",         "execl",
+		"execle",        "execlp",        "execv",          "execvp",
+		"execvpe",       "WinExec",       "ShellExecute",   "ShellExecuteA",
+		"ShellExecuteW", "CreateProcess", "CreateProcessA", "CreateProcessW",
+		"_popen",        "_wpopen",       "_wsystem",
 	};
 	for (const char* w: kForbidden)
 	{
