@@ -782,6 +782,7 @@ TEST(SharedPtrDetectorTest, TwoPointerPlusAtomicDecrement)
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.55f);
 	EXPECT_EQ(r.kind, ContainerKind::SharedPtr);
+	EXPECT_EQ(r.toString().find("evidence:symbol_name"), std::string::npos);
 }
 
 TEST(SharedPtrDetectorTest, AtomicCallDetected)
@@ -799,6 +800,7 @@ TEST(SharedPtrDetectorTest, AtomicCallDetected)
 	SharedPtrDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.55f);
+	EXPECT_NE(r.toString().find("evidence:symbol_name"), std::string::npos);
 }
 
 TEST(SharedPtrDetectorTest, EmittedTypeContainsSharedPtr)

@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- B7: name-only shared_ptr atomic (`__atomic` / `_Interlocked*`,
+  no Sub+Compare) tags `evidence:symbol_name` on `emittedType`.
+  Structural decrement stays in the headline. Name-blind extract
+  does not map `shared_ptr`, so F1 is unchanged. Tests:
+  `AtomicCallDetected`, `TwoPointerPlusAtomicDecrement`,
+  `test_tagged_shared_ptr_excluded_from_headline`.
 - B7: name-only unordered-map hash (`hash` / `fnv` / `murmur`
   callee, no xor+mul) tags `evidence:symbol_name` on
   `emittedType`. Structural xor+mul hash stays in the headline.

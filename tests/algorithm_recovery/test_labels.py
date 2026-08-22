@@ -368,6 +368,27 @@ def test_tagged_open_addressing_excluded_from_headline() -> None:
     assert "OpenAddressing" not in labels
 
 
+def test_tagged_shared_ptr_excluded_from_headline() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {
+                        "kind": "container",
+                        "label": "std::shared_ptr<T>",
+                        "confidence": 0.80,
+                        "detail": "evidence:symbol_name std::shared_ptr",
+                    },
+                    {"kind": "sort", "label": "heap sort", "confidence": 0.9},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "generated_heapsort-gcc-O0")
+    assert "SharedPtr" not in labels
+    assert "HeapSort" in labels
+
+
 def test_tagged_unordered_map_excluded_from_headline() -> None:
     cfg = {
         "functions": [
@@ -579,6 +600,7 @@ def main() -> int:
     test_atomic_adds_concurrency()
     test_symbol_name_evidence_excluded_from_headline()
     test_tagged_open_addressing_excluded_from_headline()
+    test_tagged_shared_ptr_excluded_from_headline()
     test_tagged_unordered_map_excluded_from_headline()
     test_tagged_partition_excluded_from_headline()
     test_tagged_mergesort_excluded_from_headline()
