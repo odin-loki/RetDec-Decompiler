@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` also dumps known
+  file type (`shared` / `archive` / `object` / `executable`)
+  from existing `FileType` predicates. Unknown stays omitted.
+  Test: `SerializesFileType`. Default F5 is unchanged.
 - N16 leftover: `serializeSemanticContext` also dumps a
   function's known calling convention via the existing
   `CallingConvention` streamer (`CC_THISCALL`, …). Unknown

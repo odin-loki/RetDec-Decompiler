@@ -300,6 +300,19 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 	{
 		oss << ",\"file_format\":\"" << jsonEscape(config.fileFormat.getName()) << '"';
 	}
+	if (config.fileType.isKnown())
+	{
+		const char* kind = "unknown";
+		if (config.fileType.isShared())
+			kind = "shared";
+		else if (config.fileType.isArchive())
+			kind = "archive";
+		else if (config.fileType.isObject())
+			kind = "object";
+		else if (config.fileType.isExecutable())
+			kind = "executable";
+		oss << ",\"file_type\":\"" << kind << '"';
+	}
 	oss << '}';
 	return oss.str();
 }

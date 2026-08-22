@@ -1,4 +1,5 @@
 #include "retdec/common/file_format.h"
+#include "retdec/common/file_type.h"
 #include "retdec/common/function.h"
 #include "retdec/common/language.h"
 #include "retdec/common/object.h"
@@ -926,6 +927,15 @@ TEST(NeuralSemanticContext, SerializesCompilerToolAndArchitecture)
 	EXPECT_NE(json.find("\"architecture\":{\"name\":\"x86\""), std::string::npos);
 	EXPECT_NE(json.find("\"bit_size\":64"), std::string::npos);
 	EXPECT_NE(json.find("\"file_format\":\"elf\""), std::string::npos);
+}
+
+TEST(NeuralSemanticContext, SerializesFileType)
+{
+	auto cfg = retdec::config::Config::empty();
+	cfg.fileType.setIsExecutable();
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"file_type\":\"executable\""), std::string::npos);
 }
 
 TEST(NeuralSemanticContext, SerializesDetectedLanguages)
