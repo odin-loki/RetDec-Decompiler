@@ -14,10 +14,10 @@ dropped from 0.124 to **0.107** because false labels fell (fp 360 → 62)
 and a few true labels were also dropped (tp 77 → 64). Do not advertise
 the old 0.124 as current.
 
-ci-core (9 gcc-O0 binaries) name-blind `mean_f1` is **0.332**
-(`results/algorithm-recovery-ci.json`; CI95 0.089–0.613). The full
-set is harder. hash_table is now 1.000; bubble/merge/quicksort
-extract no labels after the precision gates.
+ci-core (9 gcc-O0 binaries) name-blind `mean_f1` is **0.237**
+(`results/algorithm-recovery-ci.json`; CI95 0.037–0.496). The full
+set is harder. hash_table is 1.000; pthread_mutex is 0.000 after
+B7 excluded symbol-name concurrency hits.
 
 ## Headline (216 binaries)
 

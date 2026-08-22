@@ -44,7 +44,13 @@ void appendDetection(SemanticDetectionMap& map, const std::string& fnName, commo
 
 void collectConcurrencyDetections(const concurrency_detect::ConcurrencyModel& cm, SemanticDetectionMap& map)
 {
-	auto addFn = [&](const std::string& fnName, const std::string& label, float confidence, const std::string& detail) {
+	auto addFn = [&](const std::string& fnName, const std::string& label, float confidence, const std::string& extra) {
+		std::string detail = "evidence:symbol_name";
+		if (!extra.empty())
+		{
+			detail += " ";
+			detail += extra;
+		}
 		appendDetection(map, fnName, makeDetection("concurrency", label, confidence, detail));
 	};
 

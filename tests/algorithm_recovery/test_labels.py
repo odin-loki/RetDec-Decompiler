@@ -326,6 +326,28 @@ def test_atomic_adds_concurrency() -> None:
     assert "Concurrency" in labels
 
 
+def test_symbol_name_evidence_excluded_from_headline() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {
+                        "kind": "concurrency",
+                        "label": "mutex",
+                        "confidence": 0.75,
+                        "detail": "evidence:symbol_name pthread_mutex_lock",
+                    },
+                    {"kind": "sort", "label": "heap sort", "confidence": 0.9},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "generated_pthread_mutex-gcc-O0")
+    assert "Mutex" not in labels
+    assert "Pthread" not in labels
+    assert "HeapSort" in labels
+
+
 def test_linear_search_strips_memcpy_noise() -> None:
     import extract_decompiler_predictions as edp
 
@@ -429,6 +451,7 @@ def main() -> int:
     test_lower_bound_stem_rules()
     test_ring_buffer_drops_binary_search_noise()
     test_atomic_adds_concurrency()
+    test_symbol_name_evidence_excluded_from_headline()
     test_linear_search_strips_memcpy_noise()
     test_mergesort_strips_graph_noise()
     test_binary_search_stripped_on_sort_binary()

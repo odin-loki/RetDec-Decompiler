@@ -2,30 +2,30 @@
   "harness": "algorithm_recovery",
   "summary": {
     "binaries": 9,
-    "mean_f1": 0.3322751322751323,
-    "mean_f1_raw": 0.3322751322751323,
+    "mean_f1": 0.23703703703703705,
+    "mean_f1_raw": 0.23703703703703705,
     "decompiled": 9,
-    "mean_f1_ci95_low": 0.08888888888888889,
-    "mean_f1_ci95_high": 0.6126984126984127,
+    "mean_f1_ci95_low": 0.037037037037037035,
+    "mean_f1_ci95_high": 0.4962962962962963,
     "n": 9,
     "n_boot": 2000
   },
   "per_opt": {
     "O0": {
       "binaries": 9,
-      "mean_f1": 0.3322751322751323,
+      "mean_f1": 0.23703703703703705,
       "n": 9,
       "micro": {
-        "tp": 8,
-        "fp": 8,
-        "fn": 13,
-        "precision": 0.5,
-        "recall": 0.38095238095238093,
-        "f1": 0.4324324324324324,
+        "tp": 5,
+        "fp": 7,
+        "fn": 16,
+        "precision": 0.4166666666666667,
+        "recall": 0.23809523809523808,
+        "f1": 0.30303030303030304,
         "n": 9
       },
-      "mean_f1_ci95_low": 0.08888888888888889,
-      "mean_f1_ci95_high": 0.6126984126984127,
+      "mean_f1_ci95_low": 0.037037037037037035,
+      "mean_f1_ci95_high": 0.4962962962962963,
       "n_boot": 2000
     }
   },
@@ -55,12 +55,12 @@
       "f1": 0.3333333333333333
     },
     "generated_pthread_mutex-gcc-O0": {
-      "tp": 3,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.75,
-      "recall": 1.0,
-      "f1": 0.8571428571428571
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "generated_quicksort-gcc-O0": {
       "tp": 0,
@@ -135,13 +135,13 @@
       "n_true": 1
     },
     "Concurrency": {
-      "tp": 1,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0,
-      "n_pred": 1,
+      "fn": 1,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 0,
       "n_true": 1
     },
     "Copy": {
@@ -245,13 +245,13 @@
       "n_true": 1
     },
     "Mutex": {
-      "tp": 1,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0,
-      "n_pred": 1,
+      "fn": 1,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 0,
       "n_true": 1
     },
     "OpenAddressing": {
@@ -265,13 +265,13 @@
       "n_true": 1
     },
     "Pthread": {
-      "tp": 1,
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0,
-      "n_pred": 1,
+      "fn": 1,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 0,
       "n_true": 1
     },
     "QuickSort": {
@@ -313,44 +313,34 @@
       "f1": 0.3333333333333333,
       "n_pred": 2,
       "n_true": 4
-    },
-    "Thread": {
-      "tp": 0,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0,
-      "n_pred": 1,
-      "n_true": 0
     }
   },
   "micro": {
-    "tp": 8,
-    "fp": 8,
-    "fn": 13,
-    "precision": 0.5,
-    "recall": 0.38095238095238093,
-    "f1": 0.4324324324324324,
+    "tp": 5,
+    "fp": 7,
+    "fn": 16,
+    "precision": 0.4166666666666667,
+    "recall": 0.23809523809523808,
+    "f1": 0.30303030303030304,
     "n": 9
   },
-  "macro_f1": 0.3333333333333333,
+  "macro_f1": 0.20634920634920634,
   "per_opt_raw": {
     "O0": {
       "binaries": 9,
-      "mean_f1": 0.3322751322751323,
+      "mean_f1": 0.23703703703703705,
       "n": 9,
       "micro": {
-        "tp": 8,
-        "fp": 8,
-        "fn": 13,
-        "precision": 0.5,
-        "recall": 0.38095238095238093,
-        "f1": 0.4324324324324324,
+        "tp": 5,
+        "fp": 7,
+        "fn": 16,
+        "precision": 0.4166666666666667,
+        "recall": 0.23809523809523808,
+        "f1": 0.30303030303030304,
         "n": 9
       },
-      "mean_f1_ci95_low": 0.08888888888888889,
-      "mean_f1_ci95_high": 0.6126984126984127,
+      "mean_f1_ci95_low": 0.037037037037037035,
+      "mean_f1_ci95_high": 0.4962962962962963,
       "n_boot": 2000
     }
   },
@@ -380,12 +370,12 @@
       "f1": 0.3333333333333333
     },
     "generated_pthread_mutex-gcc-O0": {
-      "tp": 3,
-      "fp": 1,
-      "fn": 0,
-      "precision": 0.75,
-      "recall": 1.0,
-      "f1": 0.8571428571428571
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     },
     "generated_quicksort-gcc-O0": {
       "tp": 0,

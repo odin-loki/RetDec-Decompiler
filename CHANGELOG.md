@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- B7: concurrency detections export `evidence:symbol_name` in
+  `detail`. Name-blind extract skips those hits. ci-core mean F1
+  **0.237** (was 0.332); pthread_mutex is now 0.000. Remaining
+  serial/container/sort callee tables are untagged
+  (`results/b7-name-evidence.md`). A8 lock-prefix is still blocked.
 - E6: `llvm_to_ssa` maps LLVM `PHINode` to `IrInstr::Op::Phi` and
   attaches incoming ConstantInt Immediate uses. The `BasicBlock::phis`
   list stays empty so AccumulateDetector does not fire on every loop.

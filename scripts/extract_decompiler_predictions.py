@@ -102,6 +102,10 @@ TOKEN_MAP = {
     "chaining": "Chaining",
 }
 
+# B7: name-hint detections must carry this token in detail and are
+# excluded from headline algorithm-recovery F1.
+SYMBOL_NAME_EVIDENCE = "evidence:symbol_name"
+
 # Ignore low-confidence container/algo noise from post-pipeline heuristics.
 MIN_CONFIDENCE: dict[str, float] = {
     "sort": 0.5,
@@ -413,6 +417,9 @@ def labels_from_config(cfg: dict, binary_name: str = "", *, stem_fallback: bool 
             kind = (det.get("kind") or "").lower()
             label = det.get("label") or ""
             label_l = label.lower()
+            detail = det.get("detail") or ""
+            if SYMBOL_NAME_EVIDENCE in detail:
+                continue
             conf = float(det.get("confidence", 0.0))
             if kind != "container" and kind != "algorithm" and conf < MIN_CONFIDENCE.get(kind, 0.5):
                 continue
