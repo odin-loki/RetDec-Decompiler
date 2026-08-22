@@ -145,6 +145,12 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		if (hasDemangled) oss << ",\"demangled\":\"" << jsonEscape(fn.getDemangledName()) << '"';
 		if (fn.getStart().isDefined()) oss << ",\"start\":\"" << jsonEscape(fn.getStart().toHexPrefixString()) << '"';
 		if (hasDecl) oss << ",\"declaration\":\"" << jsonEscape(fn.getDeclarationString()) << '"';
+		if (!fn.getRealName().empty() && fn.getRealName() != fn.getName())
+			oss << ",\"real_name\":\"" << jsonEscape(fn.getRealName()) << '"';
+		if (!fn.getSourceFileName().empty()) oss << ",\"source_file\":\"" << jsonEscape(fn.getSourceFileName()) << '"';
+		if (!fn.getWrappedFunctionName().empty())
+			oss << ",\"wrapped\":\"" << jsonEscape(fn.getWrappedFunctionName()) << '"';
+		if (fn.isFromDebug()) oss << ",\"from_debug\":true";
 		if (fn.returnType.isDefined()) oss << ",\"return_type\":\"" << jsonEscape(fn.returnType.getId()) << '"';
 		if (!fn.parameters.empty())
 		{

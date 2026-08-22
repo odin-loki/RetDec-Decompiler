@@ -800,6 +800,25 @@ TEST(NeuralSemanticContext, SkipsEmptyFunction)
 	EXPECT_EQ(serializeSemanticContext(cfg), "{\"functions\":[],\"classes\":[]}");
 }
 
+TEST(NeuralSemanticContext, SerializesOptionalFunctionMetadata)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Function fn("fn_401000");
+	fn.setRealName("expand_key");
+	fn.setSourceFileName("cipher.c");
+	fn.setWrappedFunctionName("AES_set_encrypt_key");
+	fn.setIsFromDebug(true);
+	fn.usedCryptoConstants.insert("AES");
+	cfg.functions.insert(fn);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"real_name\":\"expand_key\""), std::string::npos);
+	EXPECT_NE(json.find("\"source_file\":\"cipher.c\""), std::string::npos);
+	EXPECT_NE(json.find("\"wrapped\":\"AES_set_encrypt_key\""), std::string::npos);
+	EXPECT_NE(json.find("\"from_debug\":true"), std::string::npos);
+	EXPECT_EQ(json.find("fn_401001"), std::string::npos);
+}
+
 TEST(NeuralSemanticContext, SerializesCallGraphFromCodeReferences)
 {
 	auto cfg = retdec::config::Config::empty();

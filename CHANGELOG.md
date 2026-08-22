@@ -8,6 +8,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` also dumps
+  `getRealName`, `getSourceFileName`, `getWrappedFunctionName`,
+  and `isFromDebug` on functions already included. Does not
+  dump comments (injection surface). Does not include a
+  function for those fields alone. Test:
+  `SerializesOptionalFunctionMetadata`. Default F5 is
+  unchanged.
 - Neural structural gate and rename denylist also compare
   `ShellExecuteA` / `ShellExecuteW` / `CreateProcess` /
   `_popen` / `_wpopen` / `_wsystem` (word-boundary, so
