@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` also dumps RTTI class
+  names, demangled names, and super-classes from
+  `config.classes`. Still no invented caller-buffer facts.
+  Test: `SerializesRttiClassNames`. Default F5 is unchanged.
 - N14 leftover: prompt sanitizer strips `//` and `/* */` comment
   bodies (same placeholder as string literals) and scans strings
   first so `"http://…"` is not treated as a comment. C-source

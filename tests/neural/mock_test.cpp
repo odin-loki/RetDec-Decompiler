@@ -732,5 +732,20 @@ TEST(NeuralSemanticContext, SkipsEmptyFunction)
 {
 	auto cfg = retdec::config::Config::empty();
 	cfg.functions.insert(retdec::common::Function("empty_fn"));
-	EXPECT_EQ(serializeSemanticContext(cfg), "{\"functions\":[]}");
+	EXPECT_EQ(serializeSemanticContext(cfg), "{\"functions\":[],\"classes\":[]}");
+}
+
+TEST(NeuralSemanticContext, SerializesRttiClassNames)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Class cl("7Cipher");
+	cl.setDemangledName("Cipher");
+	cl.addSuperClass("9Algorithm");
+	cfg.classes.insert(cl);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"name\":\"7Cipher\""), std::string::npos);
+	EXPECT_NE(json.find("\"demangled\":\"Cipher\""), std::string::npos);
+	EXPECT_NE(json.find("\"super_classes\":[\"9Algorithm\"]"), std::string::npos);
+	EXPECT_NE(json.find("\"functions\":[]"), std::string::npos);
 }

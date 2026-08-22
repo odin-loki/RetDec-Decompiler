@@ -143,6 +143,29 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		}
 		oss << "]}";
 	}
+	oss << "],\"classes\":[";
+	bool firstCl = true;
+	for (const auto& cl: config.classes)
+	{
+		if (cl.getName().empty() && cl.getDemangledName().empty()) continue;
+		if (!firstCl) oss << ',';
+		firstCl = false;
+		oss << "{\"name\":\"" << jsonEscape(cl.getName()) << '"';
+		if (!cl.getDemangledName().empty()) oss << ",\"demangled\":\"" << jsonEscape(cl.getDemangledName()) << '"';
+		if (!cl.getSuperClasses().empty())
+		{
+			oss << ",\"super_classes\":[";
+			bool firstS = true;
+			for (const auto& s: cl.getSuperClasses())
+			{
+				if (!firstS) oss << ',';
+				firstS = false;
+				oss << '"' << jsonEscape(s) << '"';
+			}
+			oss << ']';
+		}
+		oss << '}';
+	}
 	oss << "]}";
 	return oss.str();
 }
