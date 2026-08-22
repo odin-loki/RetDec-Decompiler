@@ -110,11 +110,8 @@ bool PartitionDetector::hasRecursion(const ssa::SSAFunction& fn) const {
         if (!blk) continue;
         for (const auto* i : blk->instrs) {
             if (!i || i->op != ssa::IrInstr::Op::Call) continue;
-            // Self-call or depth-counter call (any call whose callee has the
-            // same prefix as this function).
-            if (i->calleeName == fn.name() ||
-                (fn.name().size() >= 4 &&
-                 i->calleeName.find(fn.name().substr(0, 4)) != std::string::npos))
+            // Recursion is a self-call only (callee name equals this function).
+            if (i->calleeName == fn.name())
                 return true;
         }
     }

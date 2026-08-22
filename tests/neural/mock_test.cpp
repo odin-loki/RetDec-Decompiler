@@ -185,6 +185,14 @@ TEST(NeuralPrompt, StripsStringLiteralsFromFunctionSource)
 	EXPECT_NE(p.find("Do not change logic"), std::string::npos);
 }
 
+TEST(NeuralModelVerify, Sha256HexOfBytesMatchesKnownVector)
+{
+	const char kAbc[] = "abc";
+	EXPECT_EQ(
+		sha256HexOfBytes(kAbc, 3),
+		"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+}
+
 TEST(NeuralModelVerify, EnvPinUsesStreamedSha256)
 {
 	namespace fs = std::filesystem;
@@ -223,7 +231,11 @@ TEST(NeuralRefiner, ShortMockOutputFailsStructuralGate)
 	req.tier = RefinementTier::Naming;
 	const auto resp = refiner.refine(req);
 	EXPECT_FALSE(resp.accepted);
-	EXPECT_NE(resp.manifestJson.find("gates failed"), std::string::npos);
+	EXPECT_TRUE(
+		resp.manifestJson.find("gates failed") != std::string::npos
+		|| resp.manifestJson.find("compile_syntax") != std::string::npos);
+	EXPECT_NE(resp.manifestJson.find("\"accepted\":false"), std::string::npos);
+	EXPECT_NE(resp.manifestJson.find("\"tier\""), std::string::npos);
 }
 
 namespace {
@@ -289,6 +301,28 @@ TEST(NeuralGates, CompileSyntaxOnlyValidTranslationUnit)
 		EXPECT_FALSE(compiled);
 }
 
+TEST(NeuralNaming, ApplyJsonRenameMapRenamesIdentifiers)
+{
+	const std::string src = "int v3 = key_schedule(fn_401230);\n";
+	const std::string out = applyJsonRenameMap(src, R"({"v3":"state","fn_401230":"aes_expand_key"})");
+	EXPECT_NE(out.find("int state = key_schedule(aes_expand_key)"), std::string::npos);
+	EXPECT_EQ(out.find("v3"), std::string::npos);
+}
+
+TEST(NeuralNaming, ApplyJsonRenameMapRejectsNonObject)
+{
+	const std::string src = "int v3 = 0;\n";
+	EXPECT_EQ(applyJsonRenameMap(src, "not json"), src);
+}
+
+TEST(NeuralNaming, GbnfHasRootAndStringPair)
+{
+	const char* g = namingRenameMapGbnf();
+	ASSERT_NE(g, nullptr);
+	EXPECT_NE(std::string(g).find("root ::= object"), std::string::npos);
+	EXPECT_NE(std::string(g).find("pair ::= string"), std::string::npos);
+}
+
 TEST(NeuralRefiner, MockEmitCIsAcceptedWhenCompileRequired)
 {
 	EnvGuard unverified("RETDEC_NEURAL_ALLOW_UNVERIFIED", "1");
@@ -306,11 +340,36 @@ TEST(NeuralRefiner, MockEmitCIsAcceptedWhenCompileRequired)
 		EXPECT_TRUE(resp.accepted);
 		EXPECT_NE(resp.refinedSource.find("int main(void)"), std::string::npos);
 		EXPECT_TRUE(compileSyntaxOnly(resp.refinedSource));
+		EXPECT_NE(resp.manifestJson.find("\"accepted\":true"), std::string::npos);
+		EXPECT_NE(resp.manifestJson.find("\"tier\""), std::string::npos);
 	}
 	else
 	{
 		EXPECT_FALSE(resp.accepted);
+		EXPECT_TRUE(
+			resp.manifestJson.find("gates failed") != std::string::npos
+			|| resp.manifestJson.find("compile_syntax") != std::string::npos);
 	}
+}
+
+TEST(NeuralRefiner, MockEmitCManifestContainsAcceptedAndTier)
+{
+	EnvGuard unverified("RETDEC_NEURAL_ALLOW_UNVERIFIED", "1");
+	EnvGuard emitC("RETDEC_NEURAL_MOCK_EMIT_C", "1");
+	EnvGuard skipCompile("RETDEC_NEURAL_SKIP_COMPILE_GATE", "1");
+	auto inf = createMockInference();
+	ASSERT_TRUE(inf->loadModel("mock.gguf"));
+	Refiner refiner(std::move(inf));
+	RefinementRequest req;
+	req.functionSource = "int broken(void) { return result; }\n";
+	req.tier = RefinementTier::FullRewrite;
+	const auto resp = refiner.refine(req);
+	EXPECT_TRUE(resp.accepted);
+	EXPECT_NE(resp.manifestJson.find("\"accepted\":true"), std::string::npos);
+	EXPECT_NE(resp.manifestJson.find("\"tier\""), std::string::npos);
+	EXPECT_NE(resp.manifestJson.find("\"reuse_kv\":false"), std::string::npos);
+	EXPECT_NE(resp.manifestJson.find("input_sha256"), std::string::npos);
+	EXPECT_NE(resp.manifestJson.find("output_sha256"), std::string::npos);
 }
 
 TEST(NeuralPrompt, IncludesCompilerDiagnosticsWhenSet)

@@ -573,7 +573,71 @@ bool hashesMatch(const std::string& actual, const char* expected)
 	return actual == toLowerCopy(expected);
 }
 
+#if defined(RETDEC_NEURAL_HAS_OPENSSL)
+
+std::string sha256HexOfMemory(const void* data, std::size_t size)
+{
+#if defined(OPENSSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER < 0x10100000L
+	EVP_MD_CTX ctxStorage;
+	EVP_MD_CTX* ctx = &ctxStorage;
+	EVP_MD_CTX_init(ctx);
+#else
+	EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+	if (!ctx) return {};
+#endif
+
+	if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) != 1)
+	{
+#if !defined(OPENSSL_VERSION_NUMBER) || OPENSSL_VERSION_NUMBER >= 0x10100000L
+		EVP_MD_CTX_free(ctx);
+#else
+		EVP_MD_CTX_cleanup(ctx);
+#endif
+		return {};
+	}
+
+	if (size > 0 && data
+		&& EVP_DigestUpdate(ctx, data, size) != 1)
+	{
+#if !defined(OPENSSL_VERSION_NUMBER) || OPENSSL_VERSION_NUMBER >= 0x10100000L
+		EVP_MD_CTX_free(ctx);
+#else
+		EVP_MD_CTX_cleanup(ctx);
+#endif
+		return {};
+	}
+
+	unsigned char digest[EVP_MAX_MD_SIZE];
+	unsigned int len = 0;
+	const int ok = EVP_DigestFinal_ex(ctx, digest, &len);
+#if !defined(OPENSSL_VERSION_NUMBER) || OPENSSL_VERSION_NUMBER >= 0x10100000L
+	EVP_MD_CTX_free(ctx);
+#else
+	EVP_MD_CTX_cleanup(ctx);
+#endif
+	if (ok != 1 || len == 0) return {};
+	return digestToHex(digest, len);
+}
+
+#else
+
+std::string sha256HexOfMemory(const void* data, std::size_t size)
+{
+	Sha256Stream sha;
+	if (data && size > 0) sha.update(data, size);
+	std::uint8_t digest[32];
+	sha.final(digest);
+	return digestToHex(digest, 32);
+}
+
+#endif
+
 } // namespace
+
+std::string sha256HexOfBytes(const void* data, std::size_t size)
+{
+	return sha256HexOfMemory(data, size);
+}
 
 bool startsWithGgufMagic(const void* data, std::size_t size)
 {

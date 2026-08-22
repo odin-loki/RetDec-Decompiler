@@ -18,9 +18,15 @@ struct GenerationConfig {
     float minP        = 0.0f;
     int   topK        = 20;
     int   maxTokens   = 512;
+    /// Sampler seed. 0 is a deterministic seed (not llama's random default).
+    unsigned seed     = 0;
     bool  thinkingMode = false;
     /// Keep shared prompt-prefix KV between generate() calls on the same function.
+    /// Off unless the caller sets this and RETDEC_NEURAL_REUSE_KV is set.
     bool  reuseKvPrefix = false;
+    /// Optional GBNF (N15). Empty = unconstrained. Root defaults to "root".
+    std::string grammarGbnf;
+    std::string grammarRoot = "root";
 };
 
 struct GenerationResult {

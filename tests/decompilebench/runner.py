@@ -22,6 +22,68 @@ except ImportError:
     resource = None  # type: ignore[assignment]
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _git_output(repo: Path, *args: str) -> str | None:
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout
+
+
+def collect_provenance(repo: Path | None = None) -> dict:
+    root = repo or _repo_root()
+    sha_out = _git_output(root, "rev-parse", "HEAD")
+    status_out = _git_output(root, "status", "--porcelain")
+    return {
+        "git_sha": sha_out.strip() if sha_out and sha_out.strip() else "unknown",
+        "dirty": bool(status_out and status_out.strip()),
+        "harness": "decompilebench",
+    }
+
+
+def repo_relative_path(path: str | Path, repo: Path | None = None) -> str:
+    """Store repo-relative paths when *path* resolves under the repo."""
+    root = (repo or _repo_root()).resolve()
+    raw = str(path)
+    try:
+        resolved = Path(path).resolve()
+        if resolved.is_relative_to(root):
+            return resolved.relative_to(root).as_posix()
+    except (OSError, ValueError):
+        pass
+    return raw
+
+
+def _relativize_sample_paths(payload: dict, repo: Path) -> None:
+    seen: set[int] = set()
+    for rows in (
+        payload.get("samples"),
+        (payload.get("fork") or {}).get("samples"),
+        (payload.get("stock_retdec") or {}).get("samples"),
+    ):
+        if not isinstance(rows, list) or id(rows) in seen:
+            continue
+        seen.add(id(rows))
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            inp = row.get("input")
+            if inp:
+                row["input"] = repo_relative_path(inp, repo)
+
+
 def load_manifest(corpus: Path) -> list[dict]:
     manifest = corpus / "manifest.json"
     if not manifest.is_file():
@@ -533,6 +595,10 @@ def main() -> int:
         payload["compare"] = {
             "fork_vs_stock": compare_fork_vs_stock(fork["summary"], stock["summary"])
         }
+
+    repo = _repo_root()
+    payload["provenance"] = collect_provenance(repo)
+    _relativize_sample_paths(payload, repo)
 
     out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(f"Wrote {out_path} ({len(fork['samples'])} rows)")

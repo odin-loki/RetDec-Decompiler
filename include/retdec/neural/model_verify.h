@@ -41,6 +41,11 @@ bool ggufIdentityLooksMultimodal(const GgufIdentity& id);
 /// No-op path when neural is off (this is only called from loadModel).
 bool verifyModelSha256(const std::string& modelPath);
 
+/// SHA-256 hex of an in-memory buffer (N9 refinement manifests).
+/// Uses the same streamed SHA-256 as model-file verification (OpenSSL or
+/// the built-in FIPS 180-4 implementation). Empty input is a valid hash.
+std::string sha256HexOfBytes(const void* data, std::size_t size);
+
 } // namespace retdec::neural
 
 #endif

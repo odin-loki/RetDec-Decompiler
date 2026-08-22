@@ -11,6 +11,8 @@ mkdir -p "${ROOT}/results" "${ROOT}/tests/algorithm_recovery/predictions"
 if [[ ! -f "${ROOT}/tests/algorithm_recovery/corpus/manifest.json" ]]; then
 	bash "${ROOT}/scripts/build_algorithm_corpus.sh"
 fi
+# --no-stem-fallback is now the extract default; keep it explicit so CI
+# stays name-blind even if the script default changes again.
 python3 "${ROOT}/scripts/extract_decompiler_predictions.py" \
 	--decompiler "${DEC}" \
 	--corpus "${ROOT}/tests/algorithm_recovery/corpus" \

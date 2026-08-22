@@ -93,7 +93,7 @@ def test_non_sort_binary_filters_sort_labels() -> None:
             }
         ]
     }
-    labels = labels_from_config(cfg, "hash_table-gcc-O0")
+    labels = labels_from_config(cfg, "hash_table-gcc-O0", stem_fallback=True)
     assert "Sort" not in labels
     assert "RadixSort" not in labels
 
@@ -108,7 +108,7 @@ def test_mutex_adds_pthread_labels() -> None:
             }
         ]
     }
-    labels = labels_from_config(cfg, "generated_pthread_mutex-gcc-O0")
+    labels = labels_from_config(cfg, "generated_pthread_mutex-gcc-O0", stem_fallback=True)
     assert "Mutex" in labels
     assert "Pthread" in labels
     assert "Concurrency" in labels
@@ -174,7 +174,7 @@ def test_partition_on_binary_search_stem() -> None:
             }
         ]
     }
-    labels = labels_from_config(cfg, "binary_search-gcc-O0")
+    labels = labels_from_config(cfg, "binary_search-gcc-O0", stem_fallback=True)
     assert "BinarySearch" in labels
     assert "Search" in labels
 
@@ -190,7 +190,7 @@ def test_hash_table_drops_memcpy_noise() -> None:
             }
         ]
     }
-    labels = labels_from_config(cfg, "hash_table-gcc-O0")
+    labels = labels_from_config(cfg, "hash_table-gcc-O0", stem_fallback=True)
     assert "HashTable" in labels
     assert "Copy" not in labels
     assert "Memcpy" not in labels
@@ -206,7 +206,7 @@ def test_memcpy_stem_adds_memmove() -> None:
             }
         ]
     }
-    labels = labels_from_config(cfg, "memcpy_loop-gcc-O0")
+    labels = labels_from_config(cfg, "memcpy_loop-gcc-O0", stem_fallback=True)
     assert "Memcpy" in labels
     assert "Copy" in labels
     assert "Memmove" in labels
@@ -217,7 +217,7 @@ def test_stem_fallback_when_empty() -> None:
 
     edp._STEM_HINTS = None
     edp.load_stem_hints(ROOT / "tests/algorithm_recovery/sources")
-    labels = labels_from_config({}, "generated_bfs_graph-gcc-O0")
+    labels = labels_from_config({}, "generated_bfs_graph-gcc-O0", stem_fallback=True)
     assert "BFS" in labels
     assert "GraphTraversal" in labels
 
@@ -236,7 +236,7 @@ def test_stem_fallback_replaces_noise_only() -> None:
             }
         ]
     }
-    labels = labels_from_config(cfg, "generated_bfs_graph-gcc-O0")
+    labels = labels_from_config(cfg, "generated_bfs_graph-gcc-O0", stem_fallback=True)
     assert "BFS" in labels
     assert "GraphTraversal" in labels
     assert "Copy" not in labels
@@ -253,7 +253,7 @@ def test_binary_search_stripped_on_sort_binary() -> None:
             }
         ]
     }
-    labels = labels_from_config(cfg, "bubblesort-gcc-O0")
+    labels = labels_from_config(cfg, "bubblesort-gcc-O0", stem_fallback=True)
     assert "BubbleSort" in labels
     assert "Sort" in labels
     assert "BinarySearch" not in labels
@@ -268,6 +268,7 @@ def test_stem_fallback_fills_partial_overlap() -> None:
     labels = labels_from_config(
         {},
         "generated_quicksort-clang-O2",
+        stem_fallback=True,
     )
     assert labels == ["QuickSort", "Sort"]
 
@@ -287,7 +288,7 @@ def test_lower_bound_stem_rules() -> None:
             }
         ]
     }
-    labels = labels_from_config(cfg, "generated_lower_bound-gcc-O0")
+    labels = labels_from_config(cfg, "generated_lower_bound-gcc-O0", stem_fallback=True)
     assert "LowerBound" in labels
     assert "BinarySearch" in labels
     assert "RingBuffer" not in labels
@@ -304,7 +305,7 @@ def test_ring_buffer_drops_binary_search_noise() -> None:
             }
         ]
     }
-    labels = labels_from_config(cfg, "ring_buffer-gcc-O2")
+    labels = labels_from_config(cfg, "ring_buffer-gcc-O2", stem_fallback=True)
     assert "RingBuffer" in labels
     assert "BinarySearch" not in labels
     assert "Search" not in labels
@@ -340,7 +341,7 @@ def test_linear_search_strips_memcpy_noise() -> None:
             }
         ]
     }
-    labels = labels_from_config(cfg, "generated_linear_search-gcc-O0", stem_fallback=False)
+    labels = labels_from_config(cfg, "generated_linear_search-gcc-O0", stem_fallback=True)
     assert labels == ["LinearSearch", "Search"]
 
 
@@ -356,8 +357,56 @@ def test_mergesort_strips_graph_noise() -> None:
             }
         ]
     }
-    labels = labels_from_config(cfg, "mergesort-clang-O0", stem_fallback=False)
+    labels = labels_from_config(cfg, "mergesort-clang-O0", stem_fallback=True)
     assert labels == ["DivideAndConquer", "Mergesort", "Sort"]
+
+
+def test_no_stem_fallback_is_name_blind() -> None:
+    """Filename must not invent or drop labels when stem_fallback is off."""
+    partition_cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "algorithm", "label": "std::partition", "confidence": 1.0},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(
+        partition_cfg, "binary_search-gcc-O0", stem_fallback=False
+    )
+    assert "BinarySearch" not in labels
+    assert "Search" not in labels
+
+    sort_cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "sort", "label": "radix sort", "confidence": 0.9},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(sort_cfg, "hash_table-gcc-O0", stem_fallback=False)
+    assert "Sort" in labels
+    assert "RadixSort" in labels
+
+    copy_cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "algorithm", "label": "linear_search", "confidence": 0.96},
+                    {"kind": "algorithm", "label": "std::copy", "confidence": 0.8},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(
+        copy_cfg, "generated_linear_search-gcc-O0", stem_fallback=False
+    )
+    assert "LinearSearch" in labels
+    assert "Copy" in labels
+    assert "Memcpy" in labels
 
 
 def main() -> int:
@@ -383,6 +432,7 @@ def main() -> int:
     test_linear_search_strips_memcpy_noise()
     test_mergesort_strips_graph_noise()
     test_binary_search_stripped_on_sort_binary()
+    test_no_stem_fallback_is_name_blind()
     print("algorithm_recovery label tests: PASS")
     return 0
 

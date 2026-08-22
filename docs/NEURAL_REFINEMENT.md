@@ -16,8 +16,15 @@ Offline, gated post-processing after the deterministic decompiler.
 - Multimodal `mmproj` / `-VL-` filenames are rejected.
 - Prompts use the Qwen Instruct chat template. Thinking is off unless
   `RETDEC_NEURAL_THINKING=1`.
-- Sampler: temperature 0.6, top-p 0.95, top-k 20 (Qwen Instruct defaults).
-- Later tiers reuse the shared prompt-prefix KV (`reuseKvPrefix`).
+- Sampler: Naming / Comments / StructFields default to temperature 0.
+  Other tiers use temperature 0.6, top-p 0.95, top-k 20 (Qwen Instruct).
+- Prompt-prefix KV reuse is **off** unless `RETDEC_NEURAL_REUSE_KV=1`.
+  When on, the manifest records `"reuse_kv":true` (non-reproducible).
+- **N15 Naming GBNF:** the Naming tier sets `llama_sampler_init_grammar`
+  (`namingRenameMapGbnf`) so the model emits a JSON rename map, then
+  `applyJsonRenameMap` rewrites identifiers in the deterministic C.
+  Other tiers stay unconstrained. Requires a real GGUF; mock tests cover
+  the apply/GBNF string only.
 - `RETDEC_NEURAL_GPU_OFFLOAD=ON` passes `GGML_CUDA` into llama.cpp.
   `RETDEC_NEURAL_N_GPU_LAYERS` sets `llama_model_params.n_gpu_layers`
   (`-1` = all layers, `0` = CPU). The GUI AI Assistant (Tools →
@@ -39,6 +46,7 @@ llama.cpp. CI default is OFF.
 - `RETDEC_NEURAL_N_BATCH`
 - `RETDEC_NEURAL_N_GPU_LAYERS` (`-1` all, `0` CPU)
 - `RETDEC_NEURAL_TEMPERATURE` / `RETDEC_NEURAL_TOP_P` / `RETDEC_NEURAL_TOP_K`
+- `RETDEC_NEURAL_REUSE_KV` (default off)
 - `RETDEC_NEURAL_TIER_MAX`
 - `RETDEC_NEURAL_THINKING`
 - `RETDEC_NEURAL_ALLOW_NETWORK`

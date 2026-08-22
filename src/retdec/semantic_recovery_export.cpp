@@ -6,6 +6,7 @@
 
 #include "retdec/retdec/semantic_recovery_export.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
@@ -210,19 +211,63 @@ bool isControlName(const std::string& name)
 			|| name == "switch" || name == "else";
 }
 
+bool isTypeName(const std::string& name)
+{
+	return name == "int" || name == "long" || name == "short" || name == "char"
+			|| name == "void" || name == "unsigned" || name == "signed"
+			|| name == "bool" || name == "float" || name == "double"
+			|| name == "size_t" || name == "int8_t" || name == "uint8_t"
+			|| name == "int16_t" || name == "uint16_t" || name == "int32_t"
+			|| name == "uint32_t" || name == "int64_t" || name == "uint64_t";
+}
+
 bool bodyDeclaresIdent(const std::string& body, const std::string& name)
 {
-	static const char* types[] = {
-			"int64_t", "uint64_t", "int32_t", "uint32_t",
-			"int16_t", "uint16_t", "int8_t", "uint8_t",
-			"int", "long", "unsigned", "char", "bool", "size_t",
-	};
-	for (const char* ty : types)
+	std::size_t i = 0;
+	while (i < body.size())
 	{
-		const std::string pat = std::string(ty) + " " + name;
-		if (body.find(pat) != std::string::npos)
+		const std::size_t next = skipNonCode(body, i);
+		if (next != i)
+		{
+			i = next;
+			continue;
+		}
+		if (!isIdentStart(body[i]))
+		{
+			++i;
+			continue;
+		}
+		const std::size_t start = i;
+		++i;
+		while (i < body.size() && isIdentCont(body[i]))
+		{
+			++i;
+		}
+		if (body.compare(start, i - start, name) != 0)
+		{
+			continue;
+		}
+		std::size_t back = start;
+		while (back > 0 && std::isspace(static_cast<unsigned char>(body[back - 1])) != 0)
+		{
+			--back;
+		}
+		if (back > 0 && body[back - 1] == '*')
 		{
 			return true;
+		}
+		if (back > 0 && isIdentCont(body[back - 1]))
+		{
+			std::size_t t = back;
+			while (t > 0 && isIdentCont(body[t - 1]))
+			{
+				--t;
+			}
+			const std::string ty = body.substr(t, back - t);
+			if (isTypeName(ty) || ty == "unsigned" || ty == "const")
+			{
+				return true;
+			}
 		}
 	}
 	return false;
@@ -268,7 +313,12 @@ std::vector<std::string> missingTempsInBody(const std::string& body)
 		}
 	};
 	consider("result");
-	for (int n = 1; n <= 16; ++n)
+	consider("result2");
+	consider("result3");
+	consider("thread");
+	consider("status");
+	consider("c");
+	for (int n = 1; n <= 32; ++n)
 	{
 		consider("v" + std::to_string(n));
 	}
@@ -337,7 +387,8 @@ std::string injectUndeclaredTemps(const std::string& src)
 		out.append(src, nameStart, i - nameStart);
 		std::size_t after = i;
 		skipSpaces(src, after);
-		if (after >= src.size() || src[after] != '(' || isControlName(name))
+		if (after >= src.size() || src[after] != '(' || isControlName(name)
+				|| isTypeName(name))
 		{
 			continue;
 		}
@@ -361,8 +412,32 @@ std::string injectUndeclaredTemps(const std::string& src)
 			i = brace + 1;
 			continue;
 		}
+		const std::string params = src.substr(after + 1, close - after - 1);
+		std::set<std::string> skip;
+		skip.insert(name);
+		{
+			std::size_t p = 0;
+			while (p < params.size())
+			{
+				if (!isIdentStart(params[p]))
+				{
+					++p;
+					continue;
+				}
+				const std::size_t ps = p;
+				++p;
+				while (p < params.size() && isIdentCont(params[p]))
+				{
+					++p;
+				}
+				skip.insert(params.substr(ps, p - ps));
+			}
+		}
 		const std::string body = src.substr(brace + 1, bodyEnd - brace - 1);
-		const auto missing = missingTempsInBody(body);
+		auto missing = missingTempsInBody(body);
+		missing.erase(std::remove_if(missing.begin(), missing.end(),
+							  [&](const std::string& id) { return skip.count(id) != 0; }),
+				missing.end());
 		if (!missing.empty())
 		{
 			out += '\n';
@@ -858,6 +933,11 @@ void maybeWriteBuildableSidecars(
 	{
 		buildable << includeLine << '\n';
 	}
+	buildable << "#include <string.h>\n";
+	buildable << "#define strncpy(dst, src, n, ...) "
+			"(strncpy)((char *)(dst), (const char *)(src), (size_t)(n))\n";
+	buildable << "#define strcmp(a, b, ...) (strcmp)((a), (b))\n";
+	buildable << "#define strncmp(a, b, n, ...) (strncmp)((a), (b), (n))\n";
 	buildable << injectUndeclaredTemps(src);
 	if (!src.empty() && src.back() != '\n')
 	{

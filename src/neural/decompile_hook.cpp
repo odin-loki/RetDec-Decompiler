@@ -189,9 +189,12 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 		req.functionSource = current;
 		req.tier = kTiers[i];
 		req.semanticContextJson = semanticJson;
-		req.generation.reuseKvPrefix = (i > 0);
-		// Qwen 3.5 / 3.6 Instruct recommended sampling (text refine).
-		req.generation.temperature = envFloat("RETDEC_NEURAL_TEMPERATURE", 0.6f);
+		req.generation.reuseKvPrefix = envEnabled("RETDEC_NEURAL_REUSE_KV") && (i > 0);
+		// Naming/Comments/StructFields default to temperature 0 (N9).
+		// Other tiers keep the Qwen Instruct default unless the env is set.
+		const bool conservativeTier = (req.tier == RefinementTier::Naming
+			|| req.tier == RefinementTier::Comments || req.tier == RefinementTier::StructFields);
+		req.generation.temperature = envFloat("RETDEC_NEURAL_TEMPERATURE", conservativeTier ? 0.0f : 0.6f);
 		req.generation.topP = envFloat("RETDEC_NEURAL_TOP_P", 0.95f);
 		const int topK = envInt("RETDEC_NEURAL_TOP_K", 20);
 		if (topK > 0) req.generation.topK = topK;
@@ -211,6 +214,11 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 		}
 		req.generation.minP = 0.0f;
 		req.generation.thinkingMode = envEnabled("RETDEC_NEURAL_THINKING");
+		if (req.tier == RefinementTier::Naming)
+		{
+			req.generation.grammarGbnf = namingRenameMapGbnf();
+			req.generation.grammarRoot = "root";
+		}
 		const char* maxTok = std::getenv("RETDEC_NEURAL_MAX_TOKENS");
 		if (maxTok && maxTok[0])
 		{
@@ -241,7 +249,7 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 		RefinementRequest retry = req;
 		retry.functionSource = current;
 		retry.tier = RefinementTier::FullRewrite;
-		retry.generation.reuseKvPrefix = false;
+		retry.generation.reuseKvPrefix = false; // compile-retry never reuses KV
 		retry.compilerDiagnostics =
 			diags.empty() ? std::string("cc -fsyntax-only failed") : diags;
 

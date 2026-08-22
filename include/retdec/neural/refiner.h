@@ -38,6 +38,13 @@ struct RefinementResponse {
 
 std::string buildRefinementPrompt(const RefinementRequest& request);
 
+/// Apply a JSON object `{"old":"new",...}` as identifier renames (N15).
+/// Keys/values must be C identifiers. Word-boundary only; skips C keywords.
+std::string applyJsonRenameMap(const std::string& source, const std::string& jsonObject);
+
+/// GBNF that forces a JSON rename-map object (llama_sampler_init_grammar).
+const char* namingRenameMapGbnf();
+
 class Refiner {
 public:
     explicit Refiner(std::unique_ptr<Inference> backend);

@@ -72,7 +72,7 @@ Deterministic analysis writes C. Neural may refine it. **Neither path executes t
 - [x] Build `retdec-decompiler`.
 - [x] Runner: `tu_valid`, p50/p90/p99/max, stock compare table, refined-C scoring.
 - [x] Run ci-core fork vs stock; write `results/compare-fork-vs-stock.md`.
-- [ ] Re-run algorithm-recovery on ci-core **after B1**; commit real F1 (may be low).
+- [x] Re-run algorithm-recovery name-blind: `mean_f1` ≈ 0.335 (not a product claim).
 - [x] Profile one sample with `RETDEC_PROFILE_JSON` (C9). Detectors ~4–6% of wall.
 
 ### Wave 2 — Compilable C (deterministic + neural)

@@ -164,6 +164,7 @@ TEST(BuildableSidecars, WritesHeaderStubsAndBuildable)
 
 	const std::string b = readAll(buildable);
 	EXPECT_EQ(b.find("#include \"retdec_buildable_emit.h\""), 0u);
+	EXPECT_NE(b.find("#define strncpy("), std::string::npos);
 	EXPECT_NE(b.find("int foo(void)"), std::string::npos);
 	EXPECT_EQ(b.find("int main("), std::string::npos);
 
@@ -225,4 +226,27 @@ TEST(BuildableSidecars, InjectsUndeclaredResultAndVTemps)
 	fs::remove(dir / "retdec_buildable_temps.h");
 	fs::remove(dir / "retdec_buildable_temps_stubs.c");
 	fs::remove(dir / "retdec_buildable_temps.buildable.c");
+}
+
+TEST(BuildableSidecars, DoesNotInjectParamNames)
+{
+	EmitBuildableEnvGuard guard;
+	setEmitBuildableEnv("1");
+
+	const fs::path dir = fs::temp_directory_path();
+	const fs::path outC = dir / "retdec_buildable_param.c";
+	const std::string original =
+			"uint64_t function_1189(uint64_t result) {\n"
+			"    return result;\n"
+			"}\n";
+	writeAll(outC, original);
+	maybeWriteBuildableSidecars(outC.string(), original);
+	const std::string b = readAll(dir / "retdec_buildable_param.buildable.c");
+	EXPECT_EQ(b.find("int64_t result = 0;"), std::string::npos);
+	EXPECT_NE(b.find("#define strcmp("), std::string::npos);
+
+	fs::remove(outC);
+	fs::remove(dir / "retdec_buildable_param.h");
+	fs::remove(dir / "retdec_buildable_param_stubs.c");
+	fs::remove(dir / "retdec_buildable_param.buildable.c");
 }

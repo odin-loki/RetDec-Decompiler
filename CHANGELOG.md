@@ -8,6 +8,15 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Emit-buildable skips parameter names and wraps extra-arity
+  `strncpy`/`strcmp`; ci-core `tu_valid_buildable` is 8/9.
+- Name-blind algorithm-recovery extract (stem filters off by default);
+  ci-core `mean_f1` ≈ 0.335. Do not advertise 1.0.
+- N8/N9: llama model/context on the inference instance; rapidjson
+  refine manifests (hashes, sampler, compile_gate, wall_ms).
+- N15 Naming-tier GBNF rename map (`llama_sampler_init_grammar`) applied
+  as identifier rewrites, not free-form C.
+- P1 sketch: `docs/internal/C_ABI_SKETCH.md`.
 - DecompileBench harness: `tu_valid` (`cc -fsyntax-only -std=gnu11`), wall
   p50/p90/p99/max, `--emit-buildable-env`, `--stock-json`, `--markdown-out`.
   Results: `results/decompilebench-ci-core.json`,

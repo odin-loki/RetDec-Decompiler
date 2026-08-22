@@ -27,9 +27,6 @@ namespace retdec::neural {
 
 namespace {
 std::once_flag g_backendOnce;
-llama_model* g_model = nullptr;
-llama_context* g_context = nullptr;
-std::vector<llama_token> g_lastPromptTokens;
 
 void llamaLog(enum ggml_log_level level, const char* text, void*)
 {
@@ -55,28 +52,46 @@ bool envFlag(const char* name)
 	return v && v[0] != '\0' && v[0] != '0';
 }
 
-llama_sampler* buildSampler(const GenerationConfig& config)
+llama_sampler* buildSampler(const GenerationConfig& config, const llama_vocab* vocab)
 {
 	auto sparams = llama_sampler_chain_default_params();
 	llama_sampler* chain = llama_sampler_chain_init(sparams);
+	if (vocab && !config.grammarGbnf.empty())
+	{
+		const char* root = config.grammarRoot.empty() ? "root" : config.grammarRoot.c_str();
+		llama_sampler* g = llama_sampler_init_grammar(vocab, config.grammarGbnf.c_str(), root);
+		if (g)
+			llama_sampler_chain_add(chain, g);
+		else
+			std::fprintf(stderr, "retdec-neural: GBNF parse failed; unconstrained decode\n");
+	}
 	if (config.topK > 0) llama_sampler_chain_add(chain, llama_sampler_init_top_k(config.topK));
 	if (config.topP > 0.0f && config.topP < 1.0f)
 		llama_sampler_chain_add(chain, llama_sampler_init_top_p(config.topP, 1));
 	if (config.minP > 0.0f) llama_sampler_chain_add(chain, llama_sampler_init_min_p(config.minP, 1));
 	llama_sampler_chain_add(chain, llama_sampler_init_temp(config.temperature));
-	llama_sampler_chain_add(chain, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+	llama_sampler_chain_add(chain, llama_sampler_init_dist(config.seed));
 	return chain;
 }
 } // namespace
 
+// One llama_context is single-threaded. generate/load/unload share mutex_.
+// Concurrent callers are serialized; do not decode from two threads on the
+// same context. Batched multi-sequence decode needs n_seq_max > 1 (unused).
 class LlamaInference : public Inference {
 public:
+	~LlamaInference() override
+	{
+		unloadModel();
+	}
+
 	bool loadModel(const std::string& ggufPath, int contextLen) override
 	{
 		if (!verifyModelSha256(ggufPath)) return false;
 		std::call_once(g_backendOnce, initBackend);
 
-		unloadModel();
+		std::lock_guard<std::mutex> lock(mutex_);
+		unloadUnlocked();
 
 		llama_model_params mparams = llama_model_default_params();
 #if defined(RETDEC_NEURAL_GPU_OFFLOAD)
@@ -97,8 +112,8 @@ public:
 				stderr, "retdec-neural: GPU offload n_gpu_layers=%d\n", static_cast<int>(mparams.n_gpu_layers));
 		}
 
-		g_model = llama_model_load_from_file(ggufPath.c_str(), mparams);
-		if (!g_model) return false;
+		model_ = llama_model_load_from_file(ggufPath.c_str(), mparams);
+		if (!model_) return false;
 
 		llama_context_params cparams = llama_context_default_params();
 		cparams.n_ctx = static_cast<uint32_t>(contextLen);
@@ -114,40 +129,33 @@ public:
 			cparams.n_batch = static_cast<uint32_t>(nBatch);
 			cparams.n_ubatch = static_cast<uint32_t>(nBatch);
 		}
-		g_context = llama_init_from_model(g_model, cparams);
-		return g_context != nullptr;
+		context_ = llama_init_from_model(model_, cparams);
+		return context_ != nullptr;
 	}
 
 	void unloadModel() override
 	{
-		g_lastPromptTokens.clear();
-		if (g_context)
-		{
-			llama_free(g_context);
-			g_context = nullptr;
-		}
-		if (g_model)
-		{
-			llama_model_free(g_model);
-			g_model = nullptr;
-		}
+		std::lock_guard<std::mutex> lock(mutex_);
+		unloadUnlocked();
 	}
 
 	bool isLoaded() const override
 	{
-		return g_context != nullptr;
+		std::lock_guard<std::mutex> lock(mutex_);
+		return context_ != nullptr;
 	}
 
 	GenerationResult generate(const std::string& prompt, const GenerationConfig& config) override
 	{
+		std::lock_guard<std::mutex> lock(mutex_);
 		GenerationResult result;
-		if (!g_context || !g_model)
+		if (!context_ || !model_)
 		{
 			result.error = "llama: model not loaded";
 			return result;
 		}
 
-		const llama_vocab* vocab = llama_model_get_vocab(g_model);
+		const llama_vocab* vocab = llama_model_get_vocab(model_);
 		if (!vocab)
 		{
 			result.error = "llama: missing vocab";
@@ -182,48 +190,48 @@ public:
 		}
 		tokens.resize(static_cast<std::size_t>(n));
 
-		llama_memory_t mem = llama_get_memory(g_context);
+		llama_memory_t mem = llama_get_memory(context_);
 		std::size_t common = 0;
-		if (config.reuseKvPrefix && !g_lastPromptTokens.empty())
+		if (config.reuseKvPrefix && !lastPromptTokens_.empty())
 		{
-			const std::size_t limit = std::min(g_lastPromptTokens.size(), tokens.size());
-			while (common < limit && g_lastPromptTokens[common] == tokens[common])
+			const std::size_t limit = std::min(lastPromptTokens_.size(), tokens.size());
+			while (common < limit && lastPromptTokens_[common] == tokens[common])
 				++common;
-			if (common < g_lastPromptTokens.size()) llama_memory_seq_rm(mem, 0, static_cast<llama_pos>(common), -1);
+			if (common < lastPromptTokens_.size()) llama_memory_seq_rm(mem, 0, static_cast<llama_pos>(common), -1);
 		}
 		else
 		{
 			llama_memory_clear(mem, true);
 		}
 
-		const uint32_t nBatch = llama_n_batch(g_context);
+		const uint32_t nBatch = llama_n_batch(context_);
 		for (std::size_t i = common; i < tokens.size();)
 		{
-			const int32_t n = static_cast<int32_t>(std::min<std::size_t>(nBatch, tokens.size() - i));
-			llama_batch batch = llama_batch_get_one(tokens.data() + i, n);
-			if (llama_decode(g_context, batch) != 0)
+			const int32_t nTok = static_cast<int32_t>(std::min<std::size_t>(nBatch, tokens.size() - i));
+			llama_batch batch = llama_batch_get_one(tokens.data() + i, nTok);
+			if (llama_decode(context_, batch) != 0)
 			{
 				result.error = "llama: decode failed";
 				return result;
 			}
-			i += static_cast<std::size_t>(n);
+			i += static_cast<std::size_t>(nTok);
 		}
 
-		g_lastPromptTokens = tokens;
+		lastPromptTokens_ = tokens;
 
-		llama_sampler* smpl = buildSampler(config);
+		llama_sampler* smpl = buildSampler(config, vocab);
 		std::string out;
 		int nTok = 0;
 		for (int i = 0; i < config.maxTokens; ++i)
 		{
-			llama_token tok = llama_sampler_sample(smpl, g_context, -1);
+			llama_token tok = llama_sampler_sample(smpl, context_, -1);
 			llama_sampler_accept(smpl, tok);
 			if (llama_vocab_is_eog(vocab, tok)) break;
 			char piece[64];
 			const int len = llama_token_to_piece(vocab, tok, piece, sizeof(piece), 0, true);
 			if (len > 0) out.append(piece, static_cast<std::size_t>(len));
 			llama_batch next = llama_batch_get_one(&tok, 1);
-			if (llama_decode(g_context, next) != 0) break;
+			if (llama_decode(context_, next) != 0) break;
 			++nTok;
 		}
 		llama_sampler_free(smpl);
@@ -233,6 +241,27 @@ public:
 		result.ok = true;
 		return result;
 	}
+
+private:
+	void unloadUnlocked()
+	{
+		lastPromptTokens_.clear();
+		if (context_)
+		{
+			llama_free(context_);
+			context_ = nullptr;
+		}
+		if (model_)
+		{
+			llama_model_free(model_);
+			model_ = nullptr;
+		}
+	}
+
+	llama_model* model_ = nullptr;
+	llama_context* context_ = nullptr;
+	std::vector<llama_token> lastPromptTokens_;
+	mutable std::mutex mutex_;
 };
 
 std::unique_ptr<Inference> createLlamaInference()

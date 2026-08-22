@@ -24,7 +24,7 @@ def refine_exported_labels(labels: list[str], binary_name: str) -> list[str]:
         out.discard("DFS")
         out.discard("GraphTraversal")
     _apply_label_implications(out)
-    out = _strip_spurious_noise(out, binary_name)
+    out = _strip_spurious_noise(out, binary_name, stem_fallback=True)
     return sorted(out)
 
 

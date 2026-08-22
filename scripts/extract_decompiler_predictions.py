@@ -268,7 +268,11 @@ def _binary_expects_sort(binary_name: str) -> bool:
     return any(m in stem for m in SORT_BINARY_MARKERS)
 
 
-def _apply_stem_sort_allowlist(labels: set[str], binary_name: str) -> set[str]:
+def _apply_stem_sort_allowlist(
+    labels: set[str], binary_name: str, *, stem_fallback: bool = False
+) -> set[str]:
+    if not stem_fallback:
+        return labels
     stem = binary_name.lower()
     for key, allowed in STEM_SORT_ALLOWLIST.items():
         if key in stem:
@@ -285,8 +289,12 @@ def _apply_label_implications(labels: set[str]) -> None:
         labels.add("Concurrency")
 
 
-def _strip_spurious_noise(labels: set[str], binary_name: str) -> set[str]:
+def _strip_spurious_noise(
+    labels: set[str], binary_name: str, *, stem_fallback: bool = False
+) -> set[str]:
     """Drop cross-family false positives when stem hints confirm the true labels."""
+    if not stem_fallback:
+        return labels
     hints = load_stem_hints()
     stem = _corpus_stem(binary_name)
     expected = set(hints.get(stem, []))
@@ -304,22 +312,32 @@ def _strip_spurious_noise(labels: set[str], binary_name: str) -> set[str]:
     return core | spurious
 
 
-def _container_min_confidence(binary_name: str) -> float:
+def _container_min_confidence(binary_name: str, *, stem_fallback: bool = False) -> float:
+    if not stem_fallback:
+        return MIN_CONFIDENCE["container"]
     stem = binary_name.lower()
     if "hash_table" in stem or "ring_buffer" in stem:
         return 0.45
     return MIN_CONFIDENCE["container"]
 
 
-def _post_filter_labels(labels: set[str], binary_name: str) -> set[str]:
-    """Drop sort false-positives on non-sort corpus binaries."""
+def _post_filter_labels(
+    labels: set[str], binary_name: str, *, stem_fallback: bool = False
+) -> set[str]:
+    """Drop sort false-positives on non-sort corpus binaries.
+
+    Filename / stem rules run only when stem_fallback is True.
+    """
     out = set(labels)
+    if not stem_fallback:
+        _apply_label_implications(out)
+        return out
     out.discard("Partition")
     if not _binary_expects_sort(binary_name):
         out -= SORT_SPECIFIC_LABELS
         out.discard("Sort")
     else:
-        out = _apply_stem_sort_allowlist(out, binary_name)
+        out = _apply_stem_sort_allowlist(out, binary_name, stem_fallback=stem_fallback)
         out.discard("BinarySearch")
         out.discard("Search")
         out.discard("RingBuffer")
@@ -384,11 +402,11 @@ def _post_filter_labels(labels: set[str], binary_name: str) -> set[str]:
         out.discard("DFS")
         out.discard("GraphTraversal")
     _apply_label_implications(out)
-    out = _strip_spurious_noise(out, binary_name)
+    out = _strip_spurious_noise(out, binary_name, stem_fallback=stem_fallback)
     return out
 
 
-def labels_from_config(cfg: dict, binary_name: str = "", *, stem_fallback: bool = True) -> list[str]:
+def labels_from_config(cfg: dict, binary_name: str = "", *, stem_fallback: bool = False) -> list[str]:
     found: set[str] = set()
     for fn in cfg.get("functions", []):
         for det in fn.get("semanticDetections", []):
@@ -410,29 +428,43 @@ def labels_from_config(cfg: dict, binary_name: str = "", *, stem_fallback: bool 
                     continue
                 if label_l.startswith("std::copy"):
                     found.update(["Memcpy", "Copy"])
-                    if "memcpy" in binary_name.lower() or "memmove" in binary_name.lower():
+                    if stem_fallback and (
+                        "memcpy" in binary_name.lower() or "memmove" in binary_name.lower()
+                    ):
                         found.add("Memmove")
                     continue
                 if label_l in ("binary_search", "binary search"):
                     found.update(["BinarySearch", "Search"])
                     continue
                 # Partition heuristic misfires on halving midpoint loops.
-                if label_l == "std::partition" and "binary_search" in binary_name.lower():
+                if (
+                    stem_fallback
+                    and label_l == "std::partition"
+                    and "binary_search" in binary_name.lower()
+                ):
                     found.update(["BinarySearch", "Search"])
                     continue
                 if label_l.startswith("std::"):
                     continue
                 _add_aliases(found, label)
             elif kind == "container":
-                if conf < _container_min_confidence(binary_name):
+                if conf < _container_min_confidence(binary_name, stem_fallback=stem_fallback):
                     continue
                 if "open_addressing" in label_l or "open addressing" in label_l:
                     found.update(["HashTable", "OpenAddressing"])
-                elif "hash_table" in binary_name.lower() and "unordered_map" in label_l:
+                elif (
+                    stem_fallback
+                    and "hash_table" in binary_name.lower()
+                    and "unordered_map" in label_l
+                ):
                     found.update(["HashTable", "OpenAddressing"])
                 elif "ring_buffer" in label_l or label_l == "ring buffer":
                     found.update(["RingBuffer", "CircularBuffer"])
-                elif "ring_buffer" in binary_name.lower() and "shared_ptr" in label_l:
+                elif (
+                    stem_fallback
+                    and "ring_buffer" in binary_name.lower()
+                    and "shared_ptr" in label_l
+                ):
                     found.update(["RingBuffer", "CircularBuffer"])
                 elif "unordered_map" in label_l or "unordered_set" in label_l:
                     found.update(["HashTable", "Map"])
@@ -454,7 +486,7 @@ def labels_from_config(cfg: dict, binary_name: str = "", *, stem_fallback: bool 
                 if "spinlock" in label_l:
                     found.add("Spinlock")
     if binary_name:
-        found = _post_filter_labels(found, binary_name)
+        found = _post_filter_labels(found, binary_name, stem_fallback=stem_fallback)
         if stem_fallback:
             found = _apply_stem_fallback(found, binary_name)
     return sorted(found)
@@ -503,7 +535,7 @@ def decompile_one(
     binary: Path,
     work: Path,
     timeout: int,
-    stem_fallback: bool = True,
+    stem_fallback: bool = False,
 ) -> tuple[bool, list[str], list[str]]:
     job_work = work / binary.name
     job_work.mkdir(parents=True, exist_ok=True)
@@ -571,7 +603,16 @@ def main() -> int:
     ap.add_argument("--names", help="comma-separated binary names to decompile")
     ap.add_argument("--ci-core", action="store_true", help="CI smoke subset (9 binaries)")
     ap.add_argument("--sources", help="label sidecar root for stem fallback hints")
-    ap.add_argument("--no-stem-fallback", action="store_true", help="disable label sidecar fallback")
+    ap.add_argument(
+        "--stem-fallback",
+        action="store_true",
+        help="enable filename/sidecar label fallback (off by default)",
+    )
+    ap.add_argument(
+        "--no-stem-fallback",
+        action="store_true",
+        help="disable filename/sidecar label fallback (default)",
+    )
     ap.add_argument("--timeout", type=int, default=300, help="per-binary timeout seconds")
     ap.add_argument("--jobs", type=int, default=1, help="parallel decompile workers")
     args = ap.parse_args()
@@ -598,7 +639,7 @@ def main() -> int:
     decompiled = 0
     jobs = max(1, args.jobs)
     dec_s, corpus_s, work_s = str(dec), str(corpus), str(work)
-    stem_fallback = not args.no_stem_fallback
+    stem_fallback = bool(args.stem_fallback) and not args.no_stem_fallback
 
     if jobs == 1:
         for name in binary_names:

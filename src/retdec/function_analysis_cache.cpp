@@ -117,12 +117,21 @@ std::optional<sort_detect::SortResult> deserializeSort(const rapidjson::Value& o
         ? static_cast<float>(obj["confidence"].GetDouble()) : 0.5f;
     if (obj.HasMember("algorithm") && obj["algorithm"].IsString()) {
         const std::string alg(obj["algorithm"].GetString(), obj["algorithm"].GetStringLength());
-        if (alg.find("Introsort") != std::string::npos)
-            r.algorithm = sort_detect::SortAlgorithm::Introsort;
-        else if (alg.find("Mergesort") != std::string::npos)
-            r.algorithm = sort_detect::SortAlgorithm::Mergesort;
-        else if (alg.find("Heapsort") != std::string::npos)
-            r.algorithm = sort_detect::SortAlgorithm::Heapsort;
+        // Exact algorithmName() match only — no substring find.
+        using SA = sort_detect::SortAlgorithm;
+        const SA all[] = {
+            SA::Quicksort, SA::Introsort, SA::Mergesort, SA::Heapsort,
+            SA::Radixsort, SA::InsertionSort, SA::SelectionSort,
+            SA::BubbleSort, SA::Timsort
+        };
+        for (SA a : all) {
+            sort_detect::SortResult probe;
+            probe.algorithm = a;
+            if (alg == probe.algorithmName()) {
+                r.algorithm = a;
+                break;
+            }
+        }
     }
     return r;
 }
