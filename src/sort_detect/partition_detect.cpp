@@ -327,7 +327,9 @@ bool InsertionSortFingerprint::hasBackwardShiftLoop(const ssa::SSAFunction& fn) 
 	//  - Decrements a loop variable (Sub by 1 or Add by -1).
 	//  - Loads an element, compares, stores shifted element.
 	//  - Typically 3-6 basic blocks.
-	return countSubs(fn) >= 1 && countCompares(fn) >= 1 && countStores(fn) >= 1 && fn.blockCount() >= 3;
+	// Two compares: inner shift test plus the outer insertion bound.
+	// One compare is an atoi/parse loop (B9 atoi_hex_table O2).
+	return countSubs(fn) >= 1 && countCompares(fn) >= 2 && countStores(fn) >= 1 && fn.blockCount() >= 3;
 }
 
 bool InsertionSortFingerprint::hasThresholdGuard(const ssa::SSAFunction& fn, int& threshold) const

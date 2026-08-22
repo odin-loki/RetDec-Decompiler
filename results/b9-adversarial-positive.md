@@ -11,9 +11,9 @@ not a product F1. `crypto_detect` is **not** merged into decompiler
 AES rows are therefore expected misses unless `usedCryptoConstants` is set.
 
 - binaries: **18**
-- mean F1: **0.111** (xor-heavy mixer is not heapsort; AES O2
-  HeapSort extras are gone)
-- micro F1: **0.190** (tp=4 fp=8 fn=26)
+- mean F1: **0.111** (insertion sort needs two Compares; atoi O2
+  no longer extracts InsertionSort)
+- micro F1: **0.200** (tp=4 fp=6 fn=26)
 
 ## Per binary
 
@@ -26,7 +26,7 @@ AES rows are therefore expected misses unless `usedCryptoConstants` is set.
 | `aes_ttable-gcc-O0` | AES | (none) | 0.000 |
 | `aes_ttable-gcc-O2` | AES | (none) | 0.000 |
 | `atoi_hex_table-gcc-O0` | Atoi, Parse | Copy, Memcpy | 0.000 |
-| `atoi_hex_table-gcc-O2` | Atoi, Parse | InsertionSort, Sort | 0.000 |
+| `atoi_hex_table-gcc-O2` | Atoi, Parse | (none) | 0.000 |
 | `bfs_ring-gcc-O0` | BFS, GraphTraversal | (none) | 0.000 |
 | `bfs_ring-gcc-O2` | BFS, GraphTraversal | (none) | 0.000 |
 | `dfs_explicit_stack-gcc-O0` | DFS, GraphTraversal | Copy, Memcpy | 0.000 |

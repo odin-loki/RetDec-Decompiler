@@ -298,12 +298,28 @@ TEST(InsertionSortFingerprintTest, BasicInsertionPattern)
 	// Sub (decrement) + Compare + Store + extra blocks.
 	auto fn = makeFunc(
 		"insertion",
-		{ssa::IrInstr::Op::Sub, ssa::IrInstr::Op::Compare, ssa::IrInstr::Op::Store, ssa::IrInstr::Op::CondBranch},
+		{ssa::IrInstr::Op::Sub,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::CondBranch},
 		3);
 	InsertionSortFingerprint isf;
 	auto ev = isf.analyse(*fn);
 	EXPECT_TRUE(ev.found);
 	EXPECT_GE(ev.confidence, 0.4f);
+}
+
+TEST(InsertionSortFingerprintTest, OneCompareIsNotInsertion)
+{
+	// atoi/parse is Sub+one Compare+Store, not a shift loop.
+	auto fn = makeFunc(
+		"atoi_parse",
+		{ssa::IrInstr::Op::Sub, ssa::IrInstr::Op::Compare, ssa::IrInstr::Op::Store, ssa::IrInstr::Op::CondBranch},
+		3);
+	InsertionSortFingerprint isf;
+	auto ev = isf.analyse(*fn);
+	EXPECT_FALSE(ev.found);
 }
 
 TEST(InsertionSortFingerprintTest, ThresholdGuard16)
@@ -316,6 +332,7 @@ TEST(InsertionSortFingerprintTest, ThresholdGuard16)
 	// Add instructions to entry block.
 	fn->addInstr(entry->id, ssa::IrInstr::Op::Sub);
 	auto* cmpI = fn->addInstr(entry->id, ssa::IrInstr::Op::Compare);
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Compare);
 	fn->addInstr(entry->id, ssa::IrInstr::Op::CondBranch);
 	fn->addInstr(entry->id, ssa::IrInstr::Op::Store);
 
@@ -648,7 +665,11 @@ TEST(InsertionSortDetectorTest, BasicPattern)
 {
 	auto fn = makeFunc(
 		"insertion",
-		{ssa::IrInstr::Op::Sub, ssa::IrInstr::Op::Compare, ssa::IrInstr::Op::Store, ssa::IrInstr::Op::CondBranch},
+		{ssa::IrInstr::Op::Sub,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::CondBranch},
 		3);
 	InsertionSortDetector det;
 	auto r = det.detect(*fn);
