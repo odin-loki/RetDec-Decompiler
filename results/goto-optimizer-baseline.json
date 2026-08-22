@@ -1,0 +1,52 @@
+{
+  "samples": [
+    {
+      "name": "bubblesort-gcc-O0",
+      "goto_count": 0,
+      "bytes": 5290
+    },
+    {
+      "name": "mergesort-gcc-O0",
+      "goto_count": 0,
+      "bytes": 7355
+    },
+    {
+      "name": "hash_table-gcc-O0",
+      "goto_count": 0,
+      "bytes": 6884
+    },
+    {
+      "name": "ring_buffer-gcc-O0",
+      "goto_count": 0,
+      "bytes": 5402
+    },
+    {
+      "name": "binary_search-gcc-O0",
+      "goto_count": 0,
+      "bytes": 5164
+    },
+    {
+      "name": "memcpy_loop-gcc-O0",
+      "goto_count": 0,
+      "bytes": 4463
+    },
+    {
+      "name": "generated_quicksort-gcc-O0",
+      "goto_count": 0,
+      "bytes": 6036
+    },
+    {
+      "name": "generated_heapsort-gcc-O0",
+      "goto_count": 0,
+      "bytes": 6573
+    },
+    {
+      "name": "generated_pthread_mutex-gcc-O0",
+      "goto_count": 0,
+      "bytes": 5371
+    }
+  ],
+  "count": 9,
+  "total_goto": 0,
+  "mean_goto": 0.0
+}

@@ -8,6 +8,15 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- A6: Fibonacci / LCS / Knapsack stay enum labels only; `IdiomDetector`
+  never assigns them. A9: `pattern_detect` marked experimental.
+- B8 negative corpus: 220 gcc-O0 binaries from
+  `tests/algorithm_recovery/sources/negative/`;
+  `scripts/ci/run_b8_negative_corpus.sh` publishes the false-positive
+  rate (`results/b8-negative-corpus.md`).
+- Q4 goto-optimizer baseline on ci-core default `.c`
+  (`results/goto-optimizer-baseline.md`). Not a SAILR port.
+- B14 DecompileBench provenance now includes `cc` / `uname` / `cpu_count`.
 - Emit-buildable `.buildable.c` is a single linkable TU: libc headers
   instead of `int putchar(void)`, extra-arity wrappers, cloned file-scope
   prototypes (not `return` calls), orphan `break`/`continue` rewritten,

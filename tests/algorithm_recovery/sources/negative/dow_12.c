@@ -1,0 +1,7 @@
+int main(void) {
+    int y = 2000 + 12;
+    int m = 1 + (12 % 12);
+    int d = 1 + (12 % 28);
+    int t = y + y / 4 - y / 100 + y / 400 + (13 * m + 8) / 5 + d;
+    return t % 7;
+}

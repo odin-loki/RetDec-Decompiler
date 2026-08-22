@@ -28,6 +28,10 @@ Hand-written (6): bubblesort, mergesort, hash_table, ring_buffer, binary_search,
 
 Generated catalog (30): quicksort, heapsort, insertion/selection/shell sort, graph DFS/BFS, knapsack, LCS, pthread mutex, atomics, and more — see `scripts/generate_corpus_sources.py`.
 
+Knapsack, LCS, and Fibonacci remain **corpus labels only** (audit A6). No structural detector assigns those kinds.
+
+Negative corpus (B8): `sources/negative/` — 220 programs that are not target algorithms. Build with `scripts/build_negative_corpus.sh`.
+
 ```bash
 python3 scripts/generate_ground_truth.py \
   --sources tests/algorithm_recovery/sources \

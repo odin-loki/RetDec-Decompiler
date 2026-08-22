@@ -109,6 +109,8 @@ luac.out
 
 /tests/algorithm_recovery/corpus/
 !/tests/algorithm_recovery/corpus/.gitkeep
+/tests/algorithm_recovery/negative_corpus/*
+!/tests/algorithm_recovery/negative_corpus/.gitkeep
 /tests/algorithm_recovery/ground_truth/corpus.json
 /tests/algorithm_recovery/predictions/ci.json
 /tests/algorithm_recovery/predictions/corpus.json

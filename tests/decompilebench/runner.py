@@ -46,10 +46,32 @@ def collect_provenance(repo: Path | None = None) -> dict:
     root = repo or _repo_root()
     sha_out = _git_output(root, "rev-parse", "HEAD")
     status_out = _git_output(root, "status", "--porcelain")
+    cc = os.environ.get("CC", "gcc")
+    cc_ver = None
+    try:
+        proc = subprocess.run([cc, "--version"], capture_output=True, text=True, timeout=10)
+        if proc.returncode == 0 and proc.stdout:
+            cc_ver = proc.stdout.splitlines()[0].strip()
+    except (OSError, subprocess.TimeoutExpired):
+        cc_ver = None
+    uname = None
+    try:
+        u = subprocess.run(["uname", "-a"], capture_output=True, text=True, timeout=10)
+        if u.returncode == 0:
+            uname = (u.stdout or "").strip()
+    except (OSError, subprocess.TimeoutExpired):
+        uname = None
+    nproc = os.cpu_count()
     return {
         "git_sha": sha_out.strip() if sha_out and sha_out.strip() else "unknown",
         "dirty": bool(status_out and status_out.strip()),
         "harness": "decompilebench",
+        "harness_version": "1",
+        "cc": cc,
+        "cc_version": cc_ver,
+        "uname": uname,
+        "cpu_count": nproc,
+        "os_name": os.name,
     }
 
 
