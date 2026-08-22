@@ -24,11 +24,8 @@ static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
 	return n;
 }
 
-// Power-of-two wrap: And with (2^k - 1). Plain Div is box-blur / n
-// or heapsort n/2. Recovered SSA from llvm_to_ssa has empty uses, so
-// this does not fire on decompiled ELFs (B8 box-blur FP drops; corpus
-// ring_buffer is a miss until uses are attached). Stack-align And
-// (0xfffffffffffffff0) is excluded by the mask bound.
+// Power-of-two wrap: And with (2^k-1). Div immediates are not wrap
+// (B8 FP 0.700 when strength-reduction Div was accepted).
 static bool isWrapMask(uint64_t imm)
 {
 	if (imm == 0 || imm > 0xffffULL) return false;

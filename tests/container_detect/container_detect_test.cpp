@@ -1076,7 +1076,7 @@ TEST(RingBufferDetectorTest, PowerOfTwoAndMaskIsRingBuffer)
 
 TEST(RingBufferDetectorTest, AndWithoutImmediateIsNotRingBuffer)
 {
-	// Recovered SSA from llvm_to_ssa has And with empty uses.
+	// And without a wrap-mask immediate is not a ring buffer.
 	auto fn = makeFunc(
 		"rb_pop",
 		{
@@ -1102,6 +1102,23 @@ TEST(RingBufferDetectorTest, PlainDivIsNotRingBuffer)
 			ssa::IrInstr::Op::Compare,
 			ssa::IrInstr::Op::Add,
 		});
+	RingBufferDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.45f);
+}
+
+TEST(RingBufferDetectorTest, DivByEightIsNotRingBuffer)
+{
+	// Strength-reduction Div immediates are not wrap (B8 FP 0.700).
+	auto fn = makeFunc(
+		"rb_mod8",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::Add,
+		});
+	addImmInstr(*fn, ssa::IrInstr::Op::Div, 8);
 	RingBufferDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_LT(r.confidence, 0.45f);

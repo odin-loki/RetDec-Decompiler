@@ -5,12 +5,12 @@
   "reliability_bins": [
     {
       "bin": "0.4-0.6",
-      "n": 70,
+      "n": 10,
       "empirical_precision": 0.0
     },
     {
       "bin": "0.6-0.8",
-      "n": 20,
+      "n": 80,
       "empirical_precision": 0.0
     },
     {

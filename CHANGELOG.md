@@ -8,6 +8,17 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- `llvm_to_ssa` attaches `BinaryOperator` `ConstantInt` operands as
+  Immediate uses and maps `SRem`/`URem` to `Div` (they were `Assign`).
+  RingBuffer stays And-mask-only: accepting Div wrap (capacity `2^k`)
+  was B8 loop FP **0.700**. Test: `DivByEightIsNotRingBuffer`.
+  B8 extract FP still **0.000**. A4 on the remasured configs: 160
+  detections (`std::transform` 70, `unordered_map` 80, `std::find_if`
+  10), empirical precision **0**. Not fitted. Corpus `ring_buffer`
+  is still HeapSort/Sort — recovered IR has `srem i32, 8` (now Div)
+  and `and i64, 4294967295` (not a wrap mask). B9 remasure mean F1
+  **0.093** (was 0.111): `heapsort_sentinel-gcc-O2` picks up extra
+  HashTable/Map once immediates are visible. Not a product F1.
 - TransformDetector does not assign identity `std::copy` on
   state-machine loops (CondBranch ≥ 3 and Add < 3). HTTP-verb
   scanners are a miss for copy; memcpy-style loops still hit.

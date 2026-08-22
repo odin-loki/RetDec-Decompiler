@@ -10,7 +10,8 @@
  * The adapter maps:
  *   llvm::Function     → retdec::ssa::SSAFunction
  *   llvm::BasicBlock   → retdec::ssa::BasicBlock  (with instrs list)
- *   llvm::Instruction  → retdec::ssa::IrInstr      (op + calleeName + vma)
+ *   llvm::Instruction  → retdec::ssa::IrInstr      (op + calleeName + vma;
+ *                        BinaryOperator ConstantInt operands become Immediate uses)
  *
  * Only instruction classes that the analysis passes actually inspect are
  * translated.  Phi nodes, SSA renaming, and liveness analysis are deliberately
@@ -21,8 +22,14 @@
 #pragma once
 #include <memory>
 
-namespace llvm  { class Module; }
-namespace retdec { namespace ssa { struct SSAModule; } }
+namespace llvm {
+class Module;
+}
+namespace retdec {
+namespace ssa {
+struct SSAModule;
+}
+} // namespace retdec
 
 namespace retdec {
 
@@ -38,7 +45,7 @@ namespace retdec {
  *   StoreInst       → Store
  *   BranchInst      → Branch / CondBranch
  *   ReturnInst      → Ret
- *   BinaryOperator  → Add/Sub/Mul/… (mapped by LLVM opcode)
+ *   BinaryOperator  → Add/Sub/Mul/Div/And/… (SRem/URem map to Div)
  *   ICmpInst/FCmpInst → Compare
  *   Other           → Assign (conservative fallback)
  *

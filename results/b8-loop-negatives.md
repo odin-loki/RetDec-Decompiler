@@ -10,11 +10,7 @@ and the sort opcode bag. Any extracted label is a false positive.
 - binaries with any label: **0**
 - false-positive rate: **0.000**
 
-Remasured after `TransformDetector` rejected state-machine loops
-(CondBranch ≥ 3 and Add < 3). HTTP-verb copy is gone.
-`memcpy_loop-gcc-O0` still extracts Copy/Memcpy.
-
-A4: confidences are **not fitted**. Configs may still contain
-`std::transform` / `unordered_map` below extract thresholds.
+A4: confidences are **not fitted**. The table below is an observation
+on this negative set only. Detector constants were not changed.
 
 No labels extracted (0 false positives on this run).

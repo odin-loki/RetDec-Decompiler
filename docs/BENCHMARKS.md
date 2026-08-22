@@ -54,7 +54,9 @@ Per-opt name-blind numbers: `results/algorithm-recovery-per-opt.md`.
 Stock RetDec has no label export — F1 is fork-only.
 
 B9 adversarial-positive (18 gcc O0/O2 binaries): name-blind mean
-**0.111** (`results/b9-adversarial-positive.md`). Not a product F1.
+**0.093** (`results/b9-adversarial-positive.md`). Not a product F1.
+Sentinel heapsort O2 now also extracts HashTable/Map after recovered
+SSA carries immediates.
 
 B8 loop-containing negatives (100): FP rate **0.000** after
 the sort, RingBuffer, and copy-state-machine gates
@@ -63,9 +65,9 @@ the sort, RingBuffer, and copy-state-machine gates
 B10 zlib 1.3.1 crc32-only: 2/2 decompiled, name-blind F1 **0.000**.
 crc+deflate still timed out (`results/b10-third-party.md`).
 
-A4: no `sort:*` on the remasured loop-negatives; remaining
-false labels still have empirical precision **0**
-(`results/a4-calibration.md`). Not fitted.
+A4: 160 detections on remasured loop-negatives (`std::transform`,
+`unordered_map`, `std::find_if`); extract still yields FP **0.000**.
+Empirical precision **0**. Not fitted (`results/a4-calibration.md`).
 
 Official full-corpus gate is still `MIN_MEAN_F1=0.95`; honest
 name-blind is 0.124 (`results/algorithm-recovery-gate-finding.md`).

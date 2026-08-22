@@ -97,9 +97,11 @@ def main() -> int:
         md.append(f"| `{row['key']}` | {row['n']} | {row['empirical_precision']:.3f} |")
     md += [
         "",
-        "`sort:quicksort` at 0.90 has empirical precision **0.000** here.",
-        "Fitting would require changing detector constants and re-scoring",
-        "the 216-binary table; that was not done.",
+        "Extract can still report B8 loop FP 0.000 while this table is",
+        "non-empty: generic `std::` algorithms are skipped and container",
+        "labels need confidence ≥ 0.8. Fitting would require changing",
+        "detector constants and re-scoring the 216-binary table; that",
+        "was not done.",
         "",
     ]
     (ROOT / "results/a4-calibration.md").write_text("\n".join(md), encoding="utf-8")

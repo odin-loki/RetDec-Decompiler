@@ -10,8 +10,8 @@ correct on this set.
 
 | Reported confidence | n | empirical precision |
 |--------------------|---|---------------------|
-| 0.4-0.6 | 70 | 0.000 |
-| 0.6-0.8 | 20 | 0.000 |
+| 0.4-0.6 | 10 | 0.000 |
+| 0.6-0.8 | 80 | 0.000 |
 | 0.8-1.0 | 70 | 0.000 |
 
 ## Per detection kind
@@ -22,7 +22,8 @@ correct on this set.
 | `algorithm:std::transform` | 70 | 0.000 |
 | `container:std::unordered_map<uint32_t, uint32_t>` | 80 | 0.000 |
 
-Extract (`--no-stem-fallback`) reports 0 labelled binaries; the
-rows above are raw `.config.json` detections that extract filters
-(`std::transform`, `unordered_map` below container min 0.8).
-Empirical precision is **0.000**. Fitting was not done.
+No `sort:*` on this remasure. Extract still reports B8 loop FP
+**0.000** because generic `std::` algorithms are skipped and
+container labels need confidence ≥ 0.8. Fitting would require
+changing detector constants and re-scoring the 216-binary table;
+that was not done.
