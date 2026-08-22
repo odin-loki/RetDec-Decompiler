@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- A7 leftover: HMAC 64-bit ipad/opad immediates get the
+  documented +0.10 bonus each (was described in
+  `hmac_detect.cpp` but not applied). 32-bit-only scores
+  stay 0.50 / 1.00. Crypto stays unwired into export; no
+  remasure. Test: `WideIpadGetsBonus`. Default F5 is
+  unchanged.
 - N16 leftover: `serializeSemanticContext` also dumps vtable
   names, addresses, and target function names from
   `config.vtables`. Test: `SerializesVtableTargetNames`.

@@ -410,6 +410,16 @@ TEST(HMACDetectorTest, _64BitPadsDetected) {
     EXPECT_NEAR(r.confidence, 1.0f, 0.01f);
 }
 
+TEST(HMACDetectorTest, WideIpadGetsBonus) {
+    HMACDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* i = addInstr(*fn, blk, IrInstr::Op::Xor);
+    addImmUse(*fn, i, 0x3636363636363636ULL);
+    auto r = det.detect(*fn);
+    EXPECT_NEAR(r.confidence, 0.60f, 0.01f);
+}
+
 TEST(HMACDetectorTest, AlgorithmIsHMAC) {
     HMACDetector det;
     EXPECT_EQ(det.algorithm(), CryptoAlgorithm::HMAC);
