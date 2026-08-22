@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEC=""
 JOBS=4
 MIN_DECOMPILED=180
-# Official gate stays 0.95 (stem-era). Honest name-blind full mean is 0.124.
+# Official gate stays 0.95 (stem-era). Honest name-blind full mean is 0.107.
 # Do not lower this constant. See results/algorithm-recovery-gate-finding.md
 MIN_MEAN_F1=0.95
 

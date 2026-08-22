@@ -46,10 +46,11 @@ Custom metric for `algo_recover`, `sort_detect`, `concurrency_detect`,
 | Nightly | `.github/workflows/algorithm-recovery-nightly.yml` |
 
 Name-blind extract (`--no-stem-fallback`) is the headline figure.
-ci-core `mean_f1` ≈ **0.335**. Full 216 name-blind mean **0.124**
-(O0 0.137 / O2 0.116 / O3 0.121). The checked-in
-`algorithm-recovery-full.json` `mean_f1` **1.0** is the withdrawn
-stem-tuned score — do not advertise it.
+ci-core `mean_f1` ≈ **0.335**. Full 216 name-blind mean **0.107**
+(O0 0.102 / O2 0.110 / O3 0.110). That is lower than the previous
+0.124 because detector gates cut false labels (fp 360 → 62). The
+checked-in `algorithm-recovery-full.json` `mean_f1` **1.0** is the
+withdrawn stem-tuned score — do not advertise it.
 Per-opt name-blind numbers: `results/algorithm-recovery-per-opt.md`.
 Stock RetDec has no label export — F1 is fork-only.
 
@@ -70,7 +71,7 @@ A4: 160 detections on remasured loop-negatives (`std::transform`,
 Empirical precision **0**. Not fitted (`results/a4-calibration.md`).
 
 Official full-corpus gate is still `MIN_MEAN_F1=0.95`; honest
-name-blind is 0.124 (`results/algorithm-recovery-gate-finding.md`).
+name-blind is 0.107 (`results/algorithm-recovery-gate-finding.md`).
 
 Q4 goto baseline on ci-core gcc O0/O2/O3: mean **1.44**
 (`results/goto-optimizer-baseline.md`). O0 is still 0.

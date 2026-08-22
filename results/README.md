@@ -23,7 +23,7 @@ Live measurement contract for CI, ship checklist, and the release table.
 | `goto-optimizer-baseline.md` | Q4 goto counts on ci-core O0/O2/O3 |
 | `a4-calibration.md` | Reported confidence vs empirical precision (not fitted) |
 | `b6-rename-guard.md` | Named vs hashed labels on ci-core 9 |
-| `algorithm-recovery-gate-finding.md` | Official 0.95 gate vs honest 0.124 |
+| `algorithm-recovery-gate-finding.md` | Official 0.95 gate vs honest 0.107 |
 
 Algorithm-recovery F1 figures that depended on filename filters are
 **withdrawn** (B1–B5). Name-blind ci-core remasure:
