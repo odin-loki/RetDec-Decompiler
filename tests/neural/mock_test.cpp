@@ -2,6 +2,7 @@
 #include "retdec/common/object.h"
 #include "retdec/common/semantic_detection.h"
 #include "retdec/common/storage.h"
+#include "retdec/common/vtable.h"
 #include "retdec/config/config.h"
 #include "retdec/neural/gates.h"
 #include "retdec/neural/inference.h"
@@ -819,7 +820,7 @@ TEST(NeuralSemanticContext, SkipsEmptyFunction)
 {
 	auto cfg = retdec::config::Config::empty();
 	cfg.functions.insert(retdec::common::Function("empty_fn"));
-	EXPECT_EQ(serializeSemanticContext(cfg), "{\"functions\":[],\"classes\":[]}");
+	EXPECT_EQ(serializeSemanticContext(cfg), "{\"functions\":[],\"classes\":[],\"vtables\":[]}");
 }
 
 TEST(NeuralSemanticContext, SerializesOptionalFunctionMetadata)
@@ -857,6 +858,22 @@ TEST(NeuralSemanticContext, SerializesCallGraphFromCodeReferences)
 	EXPECT_NE(json.find("\"callers\":[\"main\"]"), std::string::npos);
 	EXPECT_NE(json.find("\"name\":\"main\""), std::string::npos);
 	EXPECT_NE(json.find("\"callees\":[\"expand_key\"]"), std::string::npos);
+}
+
+TEST(NeuralSemanticContext, SerializesVtableTargetNames)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Vtable vt(retdec::common::Address(0x402000));
+	vt.setName("_ZTV6Cipher");
+	retdec::common::VtableItem item(retdec::common::Address(0x402008));
+	item.setTargetFunctionName("Cipher::expand_key");
+	vt.items.insert(item);
+	cfg.vtables.insert(vt);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"name\":\"_ZTV6Cipher\""), std::string::npos);
+	EXPECT_NE(json.find("\"address\":\"0x402000\""), std::string::npos);
+	EXPECT_NE(json.find("\"targets\":[\"Cipher::expand_key\"]"), std::string::npos);
 }
 
 TEST(NeuralSemanticContext, SerializesRttiClassNames)

@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` also dumps vtable
+  names, addresses, and target function names from
+  `config.vtables`. Test: `SerializesVtableTargetNames`.
+  Default F5 is unchanged.
 - N17 leftover: llama.cpp generate records mean selected-token
   probability from documented `llama_get_logits_ith` +
   `llama_sampler_apply` + `llama_token_data.p`. Manifest key

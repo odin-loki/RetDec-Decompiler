@@ -219,6 +219,31 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		}
 		oss << '}';
 	}
+	oss << "],\"vtables\":[";
+	bool firstVt = true;
+	for (const auto& vt: config.vtables)
+	{
+		if (vt.getName().empty() && vt.items.empty()) continue;
+		if (!firstVt) oss << ',';
+		firstVt = false;
+		oss << "{\"name\":\"" << jsonEscape(vt.getName()) << '"';
+		if (vt.getAddress().isDefined())
+			oss << ",\"address\":\"" << jsonEscape(vt.getAddress().toHexPrefixString()) << '"';
+		if (!vt.items.empty())
+		{
+			oss << ",\"targets\":[";
+			bool firstT = true;
+			for (const auto& item: vt.items)
+			{
+				if (item.getTargetFunctionName().empty()) continue;
+				if (!firstT) oss << ',';
+				firstT = false;
+				oss << '"' << jsonEscape(item.getTargetFunctionName()) << '"';
+			}
+			oss << ']';
+		}
+		oss << '}';
+	}
 	oss << "]}";
 	return oss.str();
 }
