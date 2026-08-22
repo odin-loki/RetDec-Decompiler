@@ -27,6 +27,10 @@ This is **not** a product F1 change by itself.
   `compilerVariant` is not Unknown (`sort_heap` / `make_heap` /
   `_Push_heap`). Structural heapsort (Unknown variant) stays in
   the headline. No remasure (named-variant only).
+- Mergesort export tags `evidence:symbol_name` when
+  `compilerVariant` is not Unknown (`stable_sort` / `merge_sort` /
+  `_Stable_sort`). Structural mergesort stays in the headline.
+  No remasure (named-variant only).
 - Name-only partition (`swap` callee without a Load/Store pair)
   prefixes `emittedForm` with `evidence:symbol_name`. Structural
   Load/Store swap is untagged. Extract already drops `std::partition`
@@ -43,7 +47,7 @@ confidence as structural evidence:
 - `unordered_detect` (hash callee *or* xor+mul; not tagged because the
   xor+mul path is structural)
 - `sort_detect` self-name recursion (not `_introsort` / named-heapsort
-  variant; those paths are now tagged)
+  / named-mergesort variant; those paths are now tagged)
 - `algo_recover` idiom self-recursion (exact self-call is structural)
 - `crypto_detect` / `pattern_detect` callee-name tables
 

@@ -616,3 +616,30 @@ TEST(SemanticExport, HeapsortNameVariantIsSymbolNameEvidence)
 	ASSERT_FALSE(map.at("hand_roll").empty());
 	EXPECT_EQ(map.at("hand_roll").front().detail.find("evidence:symbol_name"), std::string::npos);
 }
+
+TEST(SemanticExport, MergesortNameVariantIsSymbolNameEvidence)
+{
+	retdec::sort_detect::SortDetector::DetectionMap sorts;
+	retdec::sort_detect::SortResult named;
+	named.algorithm = retdec::sort_detect::SortAlgorithm::Mergesort;
+	named.compilerVariant = retdec::sort_detect::CompilerVariant::GCC;
+	named.confidence = 0.80f;
+	sorts.emplace("std_stable", named);
+
+	retdec::sort_detect::SortResult structural;
+	structural.algorithm = retdec::sort_detect::SortAlgorithm::Mergesort;
+	structural.compilerVariant = retdec::sort_detect::CompilerVariant::Unknown;
+	structural.confidence = 0.80f;
+	sorts.emplace("hand_roll", structural);
+
+	const auto map = retdec::analysis::buildSemanticDetectionMap(
+		{}, {}, {}, sorts, retdec::concurrency_detect::ConcurrencyModel{}, "c");
+
+	ASSERT_EQ(map.count("std_stable"), 1u);
+	ASSERT_FALSE(map.at("std_stable").empty());
+	EXPECT_NE(map.at("std_stable").front().detail.find("evidence:symbol_name"), std::string::npos);
+
+	ASSERT_EQ(map.count("hand_roll"), 1u);
+	ASSERT_FALSE(map.at("hand_roll").empty());
+	EXPECT_EQ(map.at("hand_roll").front().detail.find("evidence:symbol_name"), std::string::npos);
+}

@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- B7: mergesort export tags `evidence:symbol_name` when the
+  compiler variant came from `stable_sort` / `merge_sort` /
+  `_Stable_sort`. Structural mergesort (Unknown variant) stays
+  in the headline. Headline F1 is unchanged (no remasure). Tests:
+  `MergesortNameVariantIsSymbolNameEvidence`,
+  `test_tagged_mergesort_excluded_from_headline`.
 - B7: heapsort export tags `evidence:symbol_name` when the
   compiler variant came from `sort_heap` / `make_heap` /
   `_Push_heap`. Structural heapsort (Unknown variant) stays in

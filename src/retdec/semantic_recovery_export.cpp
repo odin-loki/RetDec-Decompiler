@@ -1353,6 +1353,12 @@ SemanticDetectionMap buildSemanticDetectionMap(
 		{
 			detail = "evidence:symbol_name " + detail;
 		}
+		// Mergesort variant comes from stable_sort / merge_sort / _Stable_sort names.
+		if (result.algorithm == sort_detect::SortAlgorithm::Mergesort
+			&& result.compilerVariant != sort_detect::CompilerVariant::Unknown)
+		{
+			detail = "evidence:symbol_name " + detail;
+		}
 		appendDetection(map, fnName, makeDetection("sort", result.algorithmName(), result.confidence, detail));
 	}
 
