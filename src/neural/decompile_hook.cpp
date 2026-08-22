@@ -309,7 +309,10 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 	if (config.architecture.isKnown())
 	{
 		oss << ",\"architecture\":{\"name\":\"" << jsonEscape(config.architecture.getName()) << '"';
-		oss << ",\"bit_size\":" << config.architecture.getBitSize() << '}';
+		oss << ",\"bit_size\":" << config.architecture.getBitSize();
+		if (config.architecture.isEndianKnown())
+			oss << ",\"endian\":\"" << (config.architecture.isEndianLittle() ? "little" : "big") << '"';
+		oss << '}';
 	}
 	if (config.fileFormat.isKnown())
 	{

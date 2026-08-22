@@ -969,6 +969,7 @@ TEST(NeuralSemanticContext, SerializesCompilerToolAndArchitecture)
 	cfg.architecture.setIsX86();
 	cfg.architecture.setName("x86");
 	cfg.architecture.setBitSize(64);
+	cfg.architecture.setIsEndianLittle();
 	cfg.fileFormat.setIsElf();
 	cfg.fileFormat.setName("elf");
 
@@ -978,6 +979,7 @@ TEST(NeuralSemanticContext, SerializesCompilerToolAndArchitecture)
 	EXPECT_NE(json.find("\"version\":\"13.2.0\""), std::string::npos);
 	EXPECT_NE(json.find("\"architecture\":{\"name\":\"x86\""), std::string::npos);
 	EXPECT_NE(json.find("\"bit_size\":64"), std::string::npos);
+	EXPECT_NE(json.find("\"endian\":\"little\""), std::string::npos);
 	EXPECT_NE(json.find("\"file_format\":\"elf\""), std::string::npos);
 }
 

@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: known architecture endian (`little` / `big`) is
+  included next to name and bit-size. Unknown endian stays
+  omitted. Test: `SerializesCompilerToolAndArchitecture`.
+  Default F5 is unchanged.
 - Neural leftover: structural gate and rename denylist also
   reject `CreateProcessAsUser` / `A` / `W`, `ShellExecuteEx` /
   `A` / `W`, and `posix_spawn` / `posix_spawnp` (word-boundary:
