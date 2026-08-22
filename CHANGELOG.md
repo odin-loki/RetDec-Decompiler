@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` also dumps a
+  function's known calling convention via the existing
+  `CallingConvention` streamer (`CC_THISCALL`, …). Unknown
+  stays omitted. Test: `SerializesCallingConvention`. Default
+  F5 is unchanged.
 - N16 leftover: `serializeSemanticContext` also dumps detected
   source languages (name, bytecode, module count) from
   `config.languages`. Test: `SerializesDetectedLanguages`.

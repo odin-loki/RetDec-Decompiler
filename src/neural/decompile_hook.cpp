@@ -151,6 +151,12 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		if (!fn.getWrappedFunctionName().empty())
 			oss << ",\"wrapped\":\"" << jsonEscape(fn.getWrappedFunctionName()) << '"';
 		if (fn.isFromDebug()) oss << ",\"from_debug\":true";
+		if (fn.callingConvention.isKnown())
+		{
+			std::ostringstream cc;
+			cc << fn.callingConvention;
+			oss << ",\"calling_convention\":\"" << jsonEscape(cc.str()) << '"';
+		}
 		if (fn.returnType.isDefined()) oss << ",\"return_type\":\"" << jsonEscape(fn.returnType.getId()) << '"';
 		if (!fn.parameters.empty())
 		{

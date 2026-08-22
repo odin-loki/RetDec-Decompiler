@@ -859,6 +859,18 @@ TEST(NeuralSemanticContext, SerializesOptionalFunctionMetadata)
 	EXPECT_EQ(json.find("fn_401001"), std::string::npos);
 }
 
+TEST(NeuralSemanticContext, SerializesCallingConvention)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Function fn("fn_401000");
+	fn.setDeclarationString("void __thiscall Cipher::expand_key()");
+	fn.callingConvention.setIsThiscall();
+	cfg.functions.insert(fn);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"calling_convention\":\"CC_THISCALL\""), std::string::npos);
+}
+
 TEST(NeuralSemanticContext, SerializesCallGraphFromCodeReferences)
 {
 	auto cfg = retdec::config::Config::empty();
