@@ -284,7 +284,11 @@ ContainerResult ContainerDetector::analyseFunction(const ssa::SSAFunction& fn) c
 
 	// Refine emittedType with recovered element type.
 	if (best.kind == ContainerKind::Vector)
+	{
+		const bool nameOnlyGrowth = best.emittedType.find("evidence:symbol_name") != std::string::npos;
 		best.emittedType = "std::vector<" + best.elementType.toString() + ">";
+		if (nameOnlyGrowth) best.emittedType = "evidence:symbol_name " + best.emittedType;
+	}
 	else if (best.kind == ContainerKind::List)
 	{
 		const bool nameOnlyAlloc = best.emittedType.find("evidence:symbol_name") != std::string::npos;

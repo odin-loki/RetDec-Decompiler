@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- B7: name-only vector growth (`malloc`+`free`, no three-pointer
+  layout) tags `evidence:symbol_name` on `emittedType`. Structural
+  begin/end/cap stays in the headline. ci-core has no vector
+  binary; no remasure. Tests: `GrowthOnlyIsSymbolNameEvidence`,
+  `ThreeLoadsPlusSubHigherConfidence`,
+  `test_tagged_vector_excluded_from_headline`.
 - B7: name-only list alloc (`malloc` / `new` / `allocate`, no
   sentinel) tags `evidence:symbol_name` on `emittedType`.
   Sentinel-init list stays in the headline. ci-core has no list

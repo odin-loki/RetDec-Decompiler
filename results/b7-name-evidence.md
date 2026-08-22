@@ -31,6 +31,10 @@ This is **not** a product F1 change by itself.
   `compilerVariant` is not Unknown (`stable_sort` / `merge_sort` /
   `_Stable_sort`). Structural mergesort stays in the headline.
   No remasure (named-variant only).
+- Name-only vector growth (`malloc`+`free` without a three-pointer
+  layout) prefixes `emittedType` with `evidence:symbol_name`.
+  Structural begin/end/cap is untagged. `ContainerDetector` keeps
+  the prefix.
 - Name-only list alloc (`malloc` / `new` / `allocate` without a
   sentinel) prefixes `emittedType` with `evidence:symbol_name`.
   Sentinel-init list is untagged. `ContainerDetector` keeps the prefix.

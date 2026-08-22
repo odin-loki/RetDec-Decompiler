@@ -244,6 +244,7 @@ TEST(VectorDetectorTest, ThreeLoadsPlusSubHigherConfidence)
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.30f);
 	EXPECT_EQ(r.kind, ContainerKind::Vector);
+	EXPECT_EQ(r.toString().find("evidence:symbol_name"), std::string::npos);
 }
 
 TEST(VectorDetectorTest, GrowthPatternDetected)
@@ -265,6 +266,20 @@ TEST(VectorDetectorTest, GrowthPatternDetected)
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.55f);
 	EXPECT_EQ(r.compilerVariant, CompilerVariant::GCC);
+	EXPECT_EQ(r.toString().find("evidence:symbol_name"), std::string::npos);
+}
+
+TEST(VectorDetectorTest, GrowthOnlyIsSymbolNameEvidence)
+{
+	auto fn = makeFunc("vec_grow", {ssa::IrInstr::Op::Store});
+	addCall(*fn, "malloc");
+	addCall(*fn, "free");
+	addImmInstr(*fn, ssa::IrInstr::Op::Shl, 1);
+	VectorDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_GE(r.confidence, 0.10f);
+	EXPECT_EQ(r.kind, ContainerKind::Vector);
+	EXPECT_NE(r.toString().find("evidence:symbol_name"), std::string::npos);
 }
 
 TEST(VectorDetectorTest, MSVCGrowthFactor)
