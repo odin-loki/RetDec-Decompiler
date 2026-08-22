@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- B7: heapsort export tags `evidence:symbol_name` when the
+  compiler variant came from `sort_heap` / `make_heap` /
+  `_Push_heap`. Structural heapsort (Unknown variant) stays in
+  the headline. Headline F1 is unchanged (no remasure). Tests:
+  `HeapsortNameVariantIsSymbolNameEvidence`,
+  `test_tagged_heapsort_excluded_from_headline`.
 - B7: name-only partition (`swap` callee, no Load/Store pair)
   export tags `evidence:symbol_name`. Structural Load/Store swap
   stays in the headline. Extract already drops `std::partition`

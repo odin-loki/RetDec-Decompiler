@@ -1347,6 +1347,12 @@ SemanticDetectionMap buildSemanticDetectionMap(
 		{
 			detail = "evidence:symbol_name " + detail;
 		}
+		// Heapsort variant comes from sort_heap / make_heap / _Push_heap names.
+		if (result.algorithm == sort_detect::SortAlgorithm::Heapsort
+			&& result.compilerVariant != sort_detect::CompilerVariant::Unknown)
+		{
+			detail = "evidence:symbol_name " + detail;
+		}
 		appendDetection(map, fnName, makeDetection("sort", result.algorithmName(), result.confidence, detail));
 	}
 

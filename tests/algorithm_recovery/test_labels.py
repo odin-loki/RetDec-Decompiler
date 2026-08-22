@@ -389,6 +389,27 @@ def test_tagged_partition_excluded_from_headline() -> None:
     assert "HeapSort" in labels
 
 
+def test_tagged_heapsort_excluded_from_headline() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {
+                        "kind": "sort",
+                        "label": "heapsort",
+                        "confidence": 0.80,
+                        "detail": "evidence:symbol_name heapsort",
+                    },
+                    {"kind": "sort", "label": "introsort (std::sort)", "confidence": 0.9},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "generated_introsort-gcc-O0")
+    assert "HeapSort" not in labels
+    assert "Introsort" in labels
+
+
 def test_tagged_introsort_excluded_from_headline() -> None:
     cfg = {
         "functions": [
@@ -516,6 +537,7 @@ def main() -> int:
     test_symbol_name_evidence_excluded_from_headline()
     test_tagged_open_addressing_excluded_from_headline()
     test_tagged_partition_excluded_from_headline()
+    test_tagged_heapsort_excluded_from_headline()
     test_tagged_introsort_excluded_from_headline()
     test_linear_search_strips_memcpy_noise()
     test_mergesort_strips_graph_noise()
