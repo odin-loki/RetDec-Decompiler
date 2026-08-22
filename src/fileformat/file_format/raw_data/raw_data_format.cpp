@@ -1,7 +1,8 @@
 /**
  * @file src/fileformat/file_format/raw_data/raw_data_format.cpp
  * @brief Methods of RawDataFormat class.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include <algorithm>

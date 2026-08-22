@@ -1,7 +1,8 @@
 /**
  * @file src/bin2llvmir/optimizations/idioms/idioms_llvm.cpp
  * @brief clang/LLVM instruction idioms
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include <llvm/IR/PatternMatch.h>

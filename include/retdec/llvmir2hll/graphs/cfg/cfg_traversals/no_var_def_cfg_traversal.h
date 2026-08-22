@@ -2,7 +2,8 @@
 * @file include/retdec/llvmir2hll/graphs/cfg/cfg_traversals/no_var_def_cfg_traversal.h
 * @brief A CFG traversal that checks whether no variable in a given set is
 *        defined/modified between a start statement and a set of end statements.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_GRAPHS_CFG_CFG_TRAVERSALS_NO_VAR_DEF_CFG_TRAVERSAL_H

@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/optimizer/optimizers/unused_global_var_optimizer.h
 * @brief Removes global variables that are not used.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_OPTIMIZER_OPTIMIZERS_UNUSED_GLOBAL_VAR_OPTIMIZER_H

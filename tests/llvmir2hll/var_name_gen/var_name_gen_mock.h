@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/var_name_gen/var_name_gen_mock.h
 * @brief A mock for the VarNameGen module.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef BACKEND_BIR_VAR_NAME_GEN_TESTS_VAR_NAME_GEN_MOCK_H

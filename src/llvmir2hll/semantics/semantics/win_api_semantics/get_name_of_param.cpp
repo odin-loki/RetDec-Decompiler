@@ -2,7 +2,8 @@
 * @file src/llvmir2hll/semantics/semantics/win_api_semantics/get_name_of_param.cpp
 * @brief Implementation of semantics::win_api::getNameOfParam() for
 *        WinAPISemantics.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include "retdec/llvmir2hll/semantics/semantics/impl_support/get_name_of_param.h"

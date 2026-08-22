@@ -2,7 +2,8 @@
 * @file include/retdec/llvmir2hll/var_renamer/var_renamers/unified_var_renamer.h
 * @brief A renamer of variable names which names the variables @c gX (global
 *        variables), @c aX (parameters), and @c vX (local variables).
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_VAR_RENAMER_VAR_RENAMERS_UNIFIED_VAR_RENAMER_H

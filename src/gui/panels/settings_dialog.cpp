@@ -438,11 +438,10 @@ QWidget* SettingsDialog::buildMLTab()
 	shaEdit->setPlaceholderText(QStringLiteral("optional SHA-256 of the GGUF"));
 	l->addWidget(makeRow("Model SHA-256", shaEdit));
 
-	auto* batchRefineCheck = new QCheckBox(QStringLiteral("Batch refine (RETDEC_NEURAL_BATCH)"));
+	auto* batchRefineCheck = new QCheckBox(QStringLiteral("Batch refine (unused)"));
 	batchRefineCheck->setObjectName(QStringLiteral("mlBatchRefine"));
 	batchRefineCheck->setToolTip(
-		QStringLiteral("When checked, interactive decompile sets RETDEC_NEURAL_BATCH=1. "
-					   "Headless ignores this setting. Off by default so F5 is unchanged until you opt in."));
+		QStringLiteral("Reserved. Does not set RETDEC_NEURAL_BATCH (removed until real batching exists)."));
 	l->addWidget(batchRefineCheck);
 
 	l->addStretch();

@@ -76,7 +76,7 @@ Optional parameters:
 | `-Preset` | `full-windows-release` | CMake preset; binary dir `build\<Preset>\` |
 | `-QtDir` | auto-detected | Qt6 CMake config dir (**required** for `full-*` unless `-AllowOptionalQt`) |
 | `-CudaPath` | `$env:CUDA_PATH` | CUDA Toolkit root |
-| `-NoCuda` | off | Set `RETDEC_ENABLE_CUDA_ACCEL=OFF` (full presets default to CUDA **on** when NVCC is available) |
+| `-NoCuda` | on (default) | `RETDEC_ENABLE_CUDA_ACCEL` is **OFF** unless you pass `-DRETDEC_ENABLE_CUDA_ACCEL=ON` |
 | `-AllowOptionalQt` | off | Pass `-DRETDEC_REQUIRE_QT6=OFF` if you cannot install Qt (CLI-only; not recommended for `full-*`) |
 
 Example with explicit paths:
@@ -124,7 +124,7 @@ For a **full** default component set (not the smaller `core-*` presets), use:
 
 | Preset | Host | Notes |
 |--------|------|--------|
-| `full-linux-debug` | Linux / WSL | Debug, tests, **`RETDEC_ENABLE_CUDA_ACCEL=ON`**, **`RETDEC_REQUIRE_QT6=ON`** |
+| `full-linux-debug` | Linux / WSL | Debug, tests, **`RETDEC_ENABLE_CUDA_ACCEL=OFF`**, **`RETDEC_REQUIRE_QT6=ON`** |
 | `full-linux-release` | Linux / WSL | Release + LTO, same |
 | `full-windows-release` | Windows | Shown only on Windows; Release + LTO, bundled OpenSSL, **CUDA + Qt6 GUI required** |
 | `full-windows-debug` | Windows | Same components as release, **Debug** (`/MDd`), no LTO — use for PDB debugging and `windows_native_build.ps1` → `dist\windows\` by default |
@@ -154,15 +154,11 @@ After `cmake --install`, documentation is installed under `share/retdec/doc/` (e
 | `retdec-unpacker.exe` | Archive/packer unpacker |
 | `retdec-qwen3-runner.exe` | AI inference runner (Qwen3) |
 
-CUDA-accelerated analysis passes:
-- `CUDADisassembler` — parallel x86-64 CFG disassembly
-- `CUDASteensgaard` — points-to alias analysis
-- `CUDATypeInferencer` — type propagation
-- `CUDASemanticHasher` — mini x86-64 emulator
-- `CUDAEGraphSimplifier` — E-graph equality saturation
-
-All passes fall back to CPU threading automatically if the CUDA runtime is not
-available on the target machine (or if no NVIDIA GPU is present).
+CUDA-accelerated analysis kernels (`CUDADisassembler`, `CUDASteensgaard`,
+`CUDATypeInferencer`, `CUDASemanticHasher`, `CUDAEGraphSimplifier`) exist
+under `src/cuda_accel/` but are **experimental and unintegrated**. Nothing
+in the decompiler pipeline calls them. Default builds are CPU-only
+(`RETDEC_ENABLE_CUDA_ACCEL=OFF`).
 
 ---
 

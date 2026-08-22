@@ -52,6 +52,7 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 
 | Script / workflow | Role |
 |--------|------|
+| `ci/benchmark_rename_guard.sh` | B6: decompile named vs SHA-256-renamed corpus copies; fail if detections appear only on the named file |
 | `doctor.ps1` / `doctor.sh` | Read-only prerequisite check: CMake 3.26+, fetch-large-files marker, Qt6 hint, git-lfs, python3, perl; Windows also checks NSIS/makensis and EnVar |
 | `fetch-large-files.ps1` / `fetch-large-files.sh` | Download support files omitted from git (~60 MiB; required before first build). Use `bash scripts/fetch-large-files.sh` when `.sh` is not executable |
 | `.github/workflows/ci-smoke.yml` | Lightweight CI on `main` push/PR: fetch-large-files, CLI helper tests, pipeline/semantic JSON validation (no full compile) |
@@ -84,3 +85,20 @@ Ad hoc corpus/coverage/debug scripts used by maintainers live under [`../tools/d
 Live benchmark JSON: [`../results/`](../results/README.md). Archived dumps/logs: [`../data/`](../data/README.md).
 
 Legacy one-shot `fix_*.py` helpers resolve paths from the repository root (parent of `scripts/`), not from fixed `/mnt/c/...` paths.
+
+## CUDA keyring (do not commit `.deb` files)
+
+`scripts/cuda-keyring_1.1-1_all.deb` was removed from the tree (E16). Fetch NVIDIA's
+network-repo keyring by URL when you need CUDA apt packages; do not re-commit the binary.
+
+```bash
+# Example (Ubuntu 22.04 amd64). Pick the repo dir that matches your distro:
+#   https://developer.download.nvidia.com/compute/cuda/repos/
+URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb"
+curl -fsSL "$URL" -o /tmp/cuda-keyring_1.1-1_all.deb
+# SHA-256 of the package previously committed in this repo (verify against NVIDIA if it drifts):
+echo "7c0a531d0662bbd7ae233b9c55eb2a46e36735d395693c29815b45723f83a6d1  /tmp/cuda-keyring_1.1-1_all.deb" | sha256sum -c
+sudo dpkg -i /tmp/cuda-keyring_1.1-1_all.deb
+```
+
+See [NVIDIA CUDA Linux install — network repo](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/#network-repo-installation-for-ubuntu).

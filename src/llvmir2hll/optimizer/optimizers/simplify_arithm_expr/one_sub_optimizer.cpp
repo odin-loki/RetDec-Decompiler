@@ -2,7 +2,8 @@
 * @file src/llvmir2hll/optimizer/optimizers/simplify_arithm_expr/one_sub_optimizer.cpp
 * @brief Implementation of a sub-optimization class that optimize expression
 *        with operand which is number one.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include "retdec/llvmir2hll/evaluator/arithm_expr_evaluator.h"

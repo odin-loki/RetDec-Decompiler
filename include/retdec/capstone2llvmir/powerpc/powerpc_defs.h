@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/capstone2llvmir/powerpc/powerpc_defs.h
  * @brief Additional (on top of Capstone) definitions for PowerPC translator.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_CAPSTONE2LLVMIR_POWERPC_POWERPC_DEFS_H

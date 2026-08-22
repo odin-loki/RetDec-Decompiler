@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/fileformat/types/sec_seg/elf_segment.h
  * @brief Class for ELF segment.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_FILEFORMAT_TYPES_SEC_SEG_ELF_SEGMENT_H

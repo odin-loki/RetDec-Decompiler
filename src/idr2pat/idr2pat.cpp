@@ -1,7 +1,8 @@
 /**
  * @file src/idr2pat/idr2pat.cpp
  * @brief IDR knowledge base pattern extractor.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include <cstdint>

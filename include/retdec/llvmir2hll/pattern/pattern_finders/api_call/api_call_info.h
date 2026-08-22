@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/pattern/pattern_finders/api_call/api_call_info.h
 * @brief A representation of information about an API call.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_PATTERN_PATTERN_FINDERS_API_CALL_API_CALL_INFO_H

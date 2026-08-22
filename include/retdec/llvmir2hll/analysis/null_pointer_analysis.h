@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/analysis/null_pointer_analysis.h
 * @brief Analysis of the use of null pointers.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_ANALYSIS_NULL_POINTER_ANALYSIS_H

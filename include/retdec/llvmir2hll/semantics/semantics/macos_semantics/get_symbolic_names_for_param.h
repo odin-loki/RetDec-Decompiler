@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/semantics/semantics/macos_semantics/get_symbolic_names_for_param.h
 * @brief Provides getSymbolicNamesForParam() for macOS/BSD targets.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_SEMANTICS_SEMANTICS_MACOS_SEMANTICS_GET_SYMBOLIC_NAMES_FOR_PARAM_H

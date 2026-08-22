@@ -1,7 +1,8 @@
 /**
 * @file src/llvmir2hll/support/struct_types_sorter.cpp
 * @brief Implementation of StructTypesSorter.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include <algorithm>

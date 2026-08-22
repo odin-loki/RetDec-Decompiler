@@ -1,7 +1,8 @@
 /**
  * @file src/utils/binary_path.cpp
  * @brief Absolute path of currently running binary getters.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include <whereami/whereami.h>

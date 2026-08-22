@@ -2,7 +2,8 @@
 * @file include/retdec/llvmir2hll/semantics/semantics/win_api_semantics/func_never_returns.h
 * @brief Provides function funcNeverReturns() for WinAPISemantics in the
 *        semantics::win_api namespace.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_SEMANTICS_SEMANTICS_WIN_API_SEMANTICS_FUNC_NEVER_RETURNS_H

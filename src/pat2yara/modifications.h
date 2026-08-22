@@ -1,7 +1,8 @@
 /**
  * @file src/pat2yara/modifications.h
  * @brief Rule manipulation functions for yara patterns filter.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef PAT2YARA_MODIFICATIONS_H

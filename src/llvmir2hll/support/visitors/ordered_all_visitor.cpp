@@ -1,7 +1,8 @@
 /**
 * @file src/llvmir2hll/support/visitors/ordered_all_visitor.cpp
 * @brief Implementation of OrderedAllVisitor.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include "retdec/llvmir2hll/ir/add_op_expr.h"

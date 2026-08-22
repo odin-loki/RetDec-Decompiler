@@ -7,25 +7,12 @@
 #include "retdec/ssa/ssa.h"
 
 #include <algorithm>
-#include <cctype>
 #include <sstream>
 
 namespace retdec {
 namespace algo_recover {
 
 namespace {
-
-std::string lower(std::string s)
-{
-    std::transform(s.begin(), s.end(), s.begin(),
-            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return s;
-}
-
-bool nameContains(const std::string& name, const std::string& needle)
-{
-    return lower(name).find(needle) != std::string::npos;
-}
 
 bool hasConstant(const ssa::SSAFunction& fn, uint64_t value)
 {
@@ -93,35 +80,6 @@ bool hasNullTerminatedLoop(const ssa::SSAFunction& fn)
         && countOp(fn, ssa::IrInstr::Op::Load) >= 1
         && countOp(fn, ssa::IrInstr::Op::Compare) >= 1
         && countOp(fn, ssa::IrInstr::Op::Mul) == 0;
-}
-
-bool hasGcdLoop(const ssa::SSAFunction& fn)
-{
-    return hasBackEdge(fn)
-        && countOp(fn, ssa::IrInstr::Op::Div) >= 1
-        && countOp(fn, ssa::IrInstr::Op::Compare) >= 1;
-}
-
-bool hasNestedLoops(const ssa::SSAFunction& fn)
-{
-    int loopHeaders = 0;
-    for (const auto& blk : fn.blocks()) {
-        if (!blk) continue;
-        for (ssa::BlockId s : blk->succs)
-            if (s <= blk->id) {
-                ++loopHeaders;
-                break;
-            }
-    }
-    return loopHeaders >= 2;
-}
-
-bool hasBfsStructure(const ssa::SSAFunction& fn)
-{
-    return hasNestedLoops(fn)
-        && countOp(fn, ssa::IrInstr::Op::Store) >= 2
-        && countOp(fn, ssa::IrInstr::Op::Load) >= 3
-        && countOp(fn, ssa::IrInstr::Op::Compare) >= 2;
 }
 
 bool hasDfsStructure(const ssa::SSAFunction& fn)
@@ -265,61 +223,20 @@ std::vector<IdiomResult> IdiomDetector::detect(const ssa::SSAFunction& fn) const
     std::vector<IdiomResult> out;
     if (!passesPreflight(fn)) return out;
 
-    const std::string& n = fn.name();
-
-    if (nameContains(n, "atoi") || nameContains(n, "my_atoi")) {
-        out.push_back(makeResult(IdiomKind::Atoi, 0.97f, "name_hint"));
-    } else if (hasDigitLoop(fn)) {
+    if (hasDigitLoop(fn)) {
         out.push_back(makeResult(IdiomKind::Atoi, 0.88f, "digit_loop"));
     }
 
-    if (nameContains(n, "strlen") || nameContains(n, "my_strlen")) {
-        out.push_back(makeResult(IdiomKind::Strlen, 0.97f, "name_hint"));
-    } else if (hasNullTerminatedLoop(fn) && !nameContains(n, "atoi")) {
+    if (hasNullTerminatedLoop(fn)) {
         out.push_back(makeResult(IdiomKind::Strlen, 0.82f, "null_term_loop"));
     }
 
-    if (nameContains(n, "bfs")) {
-        out.push_back(makeResult(IdiomKind::Bfs, 0.97f, "name_hint"));
-    }
-
-    if (nameContains(n, "dfs")) {
-        out.push_back(makeResult(IdiomKind::Dfs, 0.97f, "name_hint"));
-    } else if (hasDfsStructure(fn)) {
+    if (hasDfsStructure(fn)) {
         out.push_back(makeResult(IdiomKind::Dfs, 0.90f, "recursive_adjacency"));
     }
 
-    if (nameContains(n, "varint") || nameContains(n, "encode_varint")) {
-        out.push_back(makeResult(IdiomKind::Varint, 0.97f, "name_hint"));
-    } else if (hasVarintLoop(fn)) {
+    if (hasVarintLoop(fn)) {
         out.push_back(makeResult(IdiomKind::Varint, 0.92f, "shift7_mask7f"));
-    }
-
-    if (nameContains(n, "strcmp") || nameContains(n, "my_strcmp")) {
-        out.push_back(makeResult(IdiomKind::Strcmp, 0.97f, "name_hint"));
-    }
-
-    if (nameContains(n, "gcd")) {
-        out.push_back(makeResult(IdiomKind::Gcd, 0.97f, "name_hint"));
-    }
-
-    if (nameContains(n, "crc")) {
-        out.push_back(makeResult(IdiomKind::Crc, 0.95f, "name_hint"));
-    }
-    if (nameContains(n, "knapsack")) {
-        out.push_back(makeResult(IdiomKind::Knapsack, 0.95f, "name_hint"));
-    }
-    if (nameContains(n, "rle")) {
-        out.push_back(makeResult(IdiomKind::Rle, 0.95f, "name_hint"));
-    }
-    if (nameContains(n, "fibonacci")) {
-        out.push_back(makeResult(IdiomKind::Fibonacci, 0.95f, "name_hint"));
-    }
-    if (nameContains(n, "lcs")) {
-        out.push_back(makeResult(IdiomKind::Lcs, 0.95f, "name_hint"));
-    }
-    if (nameContains(n, "memset")) {
-        out.push_back(makeResult(IdiomKind::Memset, 0.95f, "name_hint"));
     }
 
     out.erase(std::remove_if(out.begin(), out.end(),

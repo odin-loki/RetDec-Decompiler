@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/fileformat/types/dotnet_headers/user_string_stream.h
  * @brief Class for \#US Stream.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_FILEFORMAT_TYPES_DOTNET_HEADERS_USER_STRING_STREAM_H

@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/graphs/cfg/cfg_traversals/optim_func_info_cfg_traversal.h
 * @brief A CFG traversal for computing OptimFuncInfos.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 *
 * @see OptimCallInfoObtainer::OptimFuncInfo
 */

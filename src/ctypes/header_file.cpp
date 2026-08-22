@@ -1,7 +1,8 @@
 /**
 * @file src/ctypes/header_file.cpp
 * @brief Implementation of HeaderFile.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include "retdec/ctypes/header_file.h"

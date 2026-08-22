@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/unpacker/decompression/nrv/nrv_data.h
  * @brief Declaration of abstract class for NRV compressed data.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_UNPACKER_DECOMPRESSION_NRV_NRV_DATA_H

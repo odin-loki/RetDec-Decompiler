@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/fileformat/file_format/intel_hex/intel_hex_parser/intel_hex_parser.h
  * @brief Definition of IntelHexSection and IntelHexParser classes.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_FILEFORMAT_FILE_FORMAT_INTEL_HEX_INTEL_HEX_PARSER_INTEL_HEX_PARSER_H

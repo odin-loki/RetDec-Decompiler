@@ -1,7 +1,8 @@
 /**
  * @file src/fileformat/types/resource_table/bitmap_image.cpp
  * @brief Class for one bitmap image.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include <vector>

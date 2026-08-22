@@ -398,7 +398,7 @@ TEST(DecompilerLaunch, InteractiveOclCacheAndProfileEnv)
 	st.resetToDefaults();
 }
 
-TEST(DecompilerLaunch, InteractiveNeuralShaAndBatch)
+TEST(DecompilerLaunch, InteractiveNeuralSha256)
 {
 	QTemporaryFile model;
 	ASSERT_TRUE(model.open());
@@ -414,14 +414,12 @@ TEST(DecompilerLaunch, InteractiveNeuralShaAndBatch)
 	const QProcessEnvironment env = retdec::gui::buildDecompilerProcessEnvironment(st, true);
 	EXPECT_EQ(env.value(QStringLiteral("RETDEC_NEURAL_REFINE")), QStringLiteral("1"));
 	EXPECT_EQ(env.value(QStringLiteral("RETDEC_NEURAL_MODEL_SHA256")), QStringLiteral("abc123def456"));
-	EXPECT_EQ(env.value(QStringLiteral("RETDEC_NEURAL_BATCH")), QStringLiteral("1"));
 
 	const QProcessEnvironment headless = retdec::gui::buildDecompilerProcessEnvironment(st, false);
 	const QProcessEnvironment sys = QProcessEnvironment::systemEnvironment();
 	EXPECT_EQ(
 		headless.value(QStringLiteral("RETDEC_NEURAL_MODEL_SHA256")),
 		sys.value(QStringLiteral("RETDEC_NEURAL_MODEL_SHA256")));
-	EXPECT_EQ(headless.value(QStringLiteral("RETDEC_NEURAL_BATCH")), sys.value(QStringLiteral("RETDEC_NEURAL_BATCH")));
 	st.resetToDefaults();
 }
 

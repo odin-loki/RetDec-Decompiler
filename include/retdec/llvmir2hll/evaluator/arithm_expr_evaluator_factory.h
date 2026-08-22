@@ -2,7 +2,8 @@
 * @file include/retdec/llvmir2hll/evaluator/arithm_expr_evaluator_factory.h
 * @brief Factory that creates instances of classes derived from
 *        ArithmExprEvaluator.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_EVALUATOR_ARITHM_EXPR_EVALUATOR_FACTORY_H

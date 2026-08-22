@@ -11,6 +11,9 @@ Maintainer notes. Start with **[MAINTAINER_SCOPE.md](MAINTAINER_SCOPE.md)**.
 | [NEXT_STEPS.md](NEXT_STEPS.md) | Optional follow-ups |
 | [backlog.md](backlog.md) | ID table (done / out of scope) |
 | [D7_DECISION.md](D7_DECISION.md) | Specification-extraction positioning |
+| [LLVM_MIGRATION_SCOPE.md](LLVM_MIGRATION_SCOPE.md) | D1 — LLVM pin and migration research (no bump) |
+| [DETECTOR_STAGE_COST.md](DETECTOR_STAGE_COST.md) | C9 — how to measure detector-stage cost |
+| [`.cursorrules`](../../.cursorrules) | Composer agent rules (keep at repo root; do not delete) |
 
 ## Historical / optional
 

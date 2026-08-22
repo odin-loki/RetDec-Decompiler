@@ -1,7 +1,8 @@
 /**
  * @file src/rtti-finder/vtable/vtable_finder.cpp
  * @brief Find vtable structures in @c Image.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include <iostream>

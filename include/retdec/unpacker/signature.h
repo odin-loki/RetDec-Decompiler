@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/unpacker/signature.h
  * @brief Declaration of class for matching signatures in executable files or buffers.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_UNPACKER_SIGNATURE_H

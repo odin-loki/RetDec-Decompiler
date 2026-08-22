@@ -2,7 +2,8 @@
 * @file include/retdec/utils/filter_iterator.h
 * @brief An adapter of an iterator range in which some elements of the range
 *        are skipped.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_UTILS_FILTER_ITERATOR_H

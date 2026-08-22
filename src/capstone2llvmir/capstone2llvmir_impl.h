@@ -2,7 +2,8 @@
  * @file src/capstone2llvmir/capstone2llvmir_impl.h
  * @brief Common private implementation for translators converting bytes to
  * LLVM IR.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef CAPSTONE2LLVMIR_CAPSTONE2LLVMIR_IMPL_H

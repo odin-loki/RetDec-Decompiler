@@ -4,7 +4,6 @@ add_library(retdec STATIC
     llvm_to_ssa.cpp
     function_analysis_cache.cpp
     semantic_recovery_export.cpp
-    idiom_stem_augment.cpp
 )
 add_library(retdec::retdec ALIAS retdec)
 

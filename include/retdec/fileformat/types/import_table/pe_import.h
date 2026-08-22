@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/fileformat/types/import_table/pe_import.h
  * @brief Class for one PE import.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_FILEFORMAT_TYPES_IMPORT_TABLE_PE_IMPORT_H

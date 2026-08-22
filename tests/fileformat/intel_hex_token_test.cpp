@@ -1,7 +1,8 @@
 /**
 * @file tests/fileformat/intel_hex_token_test.cpp
 * @brief Tests for the @c intel_hex_format module.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include <string>

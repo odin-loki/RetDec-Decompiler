@@ -2,7 +2,8 @@
 * @file include/retdec/llvmir2hll/optimizer/optimizers/bit_op_to_log_op_optimizer.h
 * @brief Optimizes BitAndExpr to AndOpExpr or BitOrExpr to OrOpExpr if fulfil
 *        conditions.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_OPTIMIZER_OPTIMIZERS_BIT_OP_TO_LOG_OP_OPTIMIZER_H

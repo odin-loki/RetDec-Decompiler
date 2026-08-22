@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/bin2llvmir/optimizations/cond_branch_opt/cond_branch_opt.h
 * @brief Conditional branch optimization.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_BIN2LLVMIR_OPTIMIZATIONS_COND_BRANCH_OPT_COND_BRANCH_OPT_H

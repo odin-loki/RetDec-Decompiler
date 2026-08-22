@@ -33,7 +33,7 @@ This document is the **canonical guide** to configuring, compiling, installing, 
 | **Python 3** | 3.4+ | LLVM TableGen and scripts. |
 | **Perl** | any | Bundled OpenSSL builds (Windows / MinGW). |
 | **Qt 6** | 6.4+ | Widgets, Core, Gui, Test — **required** for `full-linux-*` and `full-windows-*` (GUI). |
-| **CUDA Toolkit** | 11.8+ (typical) | Optional but **default ON** for full presets; CPU fallback at runtime if no GPU. |
+| **CUDA Toolkit** | 11.8+ (typical) | Optional and **opt-in** (`RETDEC_ENABLE_CUDA_ACCEL=OFF` by default, including full presets). The acceleration layer is experimental and not in the decompiler pipeline. |
 | **MinGW-w64** | Ubuntu packages | Only for Linux/WSL → Windows PE cross-compile. |
 
 ---

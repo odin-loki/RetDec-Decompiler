@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/graphs/cfg/cfg_builders/non_recursive_cfg_builder_tests.cpp
 * @brief Tests for the @c non_recursive_cfg_builder module.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include <fstream>

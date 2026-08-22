@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/llvmir-emul/llvmir_emul.h
  * @brief LLVM IR emulator library.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_LLVMIR_EMUL_LLVMIR_EMUL_H

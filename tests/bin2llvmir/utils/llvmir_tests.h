@@ -1,7 +1,8 @@
 /**
  * @file tests/bin2llvmir/utils/llvmir_tests.h
  * @brief A base test class for all tests which works with LLVM IR strings.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef TESTS_BIN2LLVMIR_UTILS_LLVMIR_TESTS_H

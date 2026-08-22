@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/optimizer/optimizers/c_cast_optimizer_tests.cpp
 * @brief Tests for the @c c_cast_optimizer module.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 *
 * Verifies that redundant C casts (those that are implicit in C) are removed
 * from assignments, variable definitions, and return statements, while

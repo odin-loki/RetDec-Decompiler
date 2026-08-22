@@ -1,7 +1,8 @@
 /**
  * @file src/capstone2llvmir/x86/x86_impl.h
  * @brief X86 implementation of @c Capstone2LlvmIrTranslator.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef CAPSTONE2LLVMIR_X86_X86_IMPL_H

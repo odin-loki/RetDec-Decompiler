@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/optimizer/optimizers/empty_array_to_string_optimizer.h
 * @brief Optimizes global empty arrays to empty strings.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_OPTIMIZER_OPTIMIZERS_EMPTY_ARRAY_TO_STRING_OPTIMIZER_H

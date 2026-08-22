@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/unpacker/decompression/compressed_data.h
  * @brief Declaration of class for abstract compressed data.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_UNPACKER_DECOMPRESSION_COMPRESSED_DATA_H

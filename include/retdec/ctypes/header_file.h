@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/ctypes/header_file.h
 * @brief A representation of C header file.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_CTYPES_HEADER_FILE_H

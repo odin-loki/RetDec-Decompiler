@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/pattern/pattern_finder_runner_mock.h
 * @brief A base class for all runners of pattern finders.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef BACKEND_BIR_PATTERN_TESTS_PATTERN_FINDER_RUNNER_MOCK_H

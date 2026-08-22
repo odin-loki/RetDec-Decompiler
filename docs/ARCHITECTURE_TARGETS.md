@@ -3,9 +3,11 @@
 Status of additional **native** decompilation targets beyond the current
 x86, x86-64, ARM, Thumb, ARM64 (partial), MIPS, and PowerPC support.
 
-> **Honest status:** RISC-V, full ARM64, and SASS are **not implemented** in
-> RetDec today. This document lists prerequisites and integration points so
-> work can be scheduled without overstating current capability.
+> **Honest status:** RISC-V, full ARM64, SASS, SPARC, SystemZ, and XCore are
+> **not implemented** in RetDec today. Capstone dispatch for SPARC / SystemZ /
+> XCore throws `GenericError`. This document lists prerequisites and
+> integration points so work can be scheduled without overstating current
+> capability.
 
 ---
 
@@ -15,6 +17,9 @@ x86, x86-64, ARM, Thumb, ARM64 (partial), MIPS, and PowerPC support.
 |--------|--------|-------|
 | **RISC-V** (RV32I / RV64I) | Not implemented | LLVM backend exists; RetDec lifter + ABI tables missing |
 | **ARM64** (AArch64) | Partial / incomplete | Capstone + some ARM64 init in `bin2llvmir`; not production-ready end-to-end |
+| **SPARC** | **Not implemented** | `createArch(CS_ARCH_SPARC)` / `createSparc` throw `GenericError` |
+| **SystemZ** | **Not implemented** | `createArch(CS_ARCH_SYSZ)` / `createSysz` throw `GenericError` |
+| **XCore** | **Not implemented** | `createArch(CS_ARCH_XCORE)` / `createXcore` throw `GenericError` |
 | **SASS** (NVIDIA GPU machine code) | Not implemented | No lifter; research path via `nvdisasm` pre-processing only |
 
 ---
@@ -65,6 +70,19 @@ x86, x86-64, ARM, Thumb, ARM64 (partial), MIPS, and PowerPC support.
 
 Treat ARM64 as **in progress**: components exist, but Tier 3 product criteria
 (stable smoke + docs + parity) are not met.
+
+---
+
+## SPARC, SystemZ, and XCore
+
+### Current state
+
+`Capstone2LlvmIrTranslator::createArch` has switch cases for
+`CS_ARCH_SPARC`, `CS_ARCH_SYSZ`, and `CS_ARCH_XCORE`. Those cases call
+`createSparc` / `createSysz` / `createXcore`, which **throw**
+`GenericError` naming the architecture as unimplemented. There are no
+implementation directories under `src/capstone2llvmir/`. Public header
+methods are retained (API); they do not produce a translator.
 
 ---
 

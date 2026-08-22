@@ -118,9 +118,36 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   analysis time budget (no `--timeout`). Function list Clear
   annotation drops empty project notes. Triage More opens backend
   CFG/CG DOT files. Binary Browser copies address / range / hex.
-  Signature Studio can set `--static-code-sigfile`. ML SHA-256 and
-  batch refine publish `RETDEC_NEURAL_MODEL_SHA256` /
-  `RETDEC_NEURAL_BATCH` on interactive decompile only.
+  Signature Studio can set `--static-code-sigfile`. ML SHA-256
+  publishes `RETDEC_NEURAL_MODEL_SHA256` on interactive decompile only.
+
+### Removed
+
+- Removed filename-derived algorithm detection from the analysis pipeline.
+  This code inflated algorithm-recovery benchmark scores by matching input
+  filenames against a table of corpus names. All published
+  algorithm-recovery figures prior to this release are withdrawn;
+  `results/` must be regenerated. Name-hint idiom matches (`nameContains`,
+  `my_atoi` / `my_strlen` / corpus stems) are gone; only structural
+  idiom fallbacks remain.
+- `RETDEC_NEURAL_BATCH` until llama.cpp can actually batch. Sequential
+  `BatchRefiner` remains.
+- CUDA acceleration as a default-ON / marketed pipeline feature. The
+  option is now **OFF** (including full presets). The layer is
+  experimental and unintegrated.
+
+### Security
+
+- Neural compile-gate uses argv spawn (no `std::system` / shell). Model
+  SHA-256 is a streamed digest (no `popen`). Runtime differential
+  execution of decompiled C is disabled even if `RETDEC_NEURAL_DIFF_GATE`
+  is set. Prompt construction strips C string literals.
+
+### Legal
+
+- Restored Avast MIT copyright on files that had a mechanical 2017
+  Imortek rewrite. `LICENSE-MIT` ships with the tree. See
+  `docs/PROVENANCE.md`.
 
 ---
 

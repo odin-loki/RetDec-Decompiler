@@ -1,7 +1,8 @@
 /**
 * @file tests/bin2llvmir/optimizations/asm_inst_remover/tests/asm_inst_remover_tests.cpp
 * @brief Tests for the @c AsmInstructionRemover pass.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include "bin2llvmir/utils/llvmir_tests.h"

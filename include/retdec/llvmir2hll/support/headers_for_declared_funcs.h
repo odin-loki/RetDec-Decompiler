@@ -1,7 +1,8 @@
 /*
 * @file include/retdec/llvmir2hll/support/headers_for_declared_funcs.h
 * @brief Retrieval of header files for all the declared functions in a module.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_SUPPORT_HEADERS_FOR_DECLARED_FUNCS_H

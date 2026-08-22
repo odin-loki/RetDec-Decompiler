@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/optimizer/optimizers/no_init_var_def_optimizer.h
 * @brief Removes variable-defining statements with no initializer.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_OPTIMIZER_OPTIMIZERS_NO_INIT_VAR_DEF_OPTIMIZER_H

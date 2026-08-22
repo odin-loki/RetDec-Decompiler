@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/bin2llvmir/optimizations/idioms/idioms_gcc.h
  * @brief GNU/GCC instruction idioms
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_BIN2LLVMIR_OPTIMIZATIONS_IDIOMS_IDIOMS_GCC_H

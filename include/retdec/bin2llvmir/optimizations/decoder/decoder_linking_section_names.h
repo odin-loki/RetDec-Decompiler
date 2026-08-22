@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/bin2llvmir/optimizations/decoder/decoder_linking_section_names.h
  * @brief PLT/GOT-like section name helpers (P1.5 loader/binding) shared by decoder passes.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_BIN2LLVMIR_OPTIMIZATIONS_DECODER_DECODER_LINKING_SECTION_NAMES_H

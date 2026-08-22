@@ -1,6 +1,8 @@
 name: ctest-linux
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -89,3 +91,8 @@ jobs:
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
           if [ -z "$DEC" ]; then echo "retdec-decompiler not found"; exit 1; fi
           bash scripts/run_algorithm_recovery_ci.sh --decompiler "$DEC"
+
+      - name: Filename-rename integrity guard
+        run: |
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          bash scripts/ci/benchmark_rename_guard.sh --decompiler "$DEC" --limit 5

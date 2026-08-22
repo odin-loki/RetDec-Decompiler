@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/fileformat/types/dotnet_types/dotnet_data_types.h
  * @brief Classes for .NET data types.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_FILEFORMAT_TYPES_DOTNET_TYPES_DOTNET_DATA_TYPES_H

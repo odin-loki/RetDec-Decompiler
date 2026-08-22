@@ -1,6 +1,6 @@
 /**
  * @file include/retdec/neural/batch_refiner.h
- * @brief Batched neural refinement (step 27 / 11.4 scaffold).
+ * @brief Sequential neural refinement over multiple requests.
  */
 
 #ifndef RETDEC_NEURAL_BATCH_REFINER_H
@@ -14,14 +14,11 @@
 
 namespace retdec::neural {
 
-/// True when RETDEC_NEURAL_BATCH is set (non-zero).
-bool neuralBatchingEnabled();
-
 /**
- * @brief Refine multiple requests; batches prompts when RETDEC_NEURAL_BATCH=1.
+ * @brief Refine multiple requests sequentially on one backend session.
  *
- * Processes sequentially on one backend session. With RETDEC_NEURAL_BATCH=1,
- * later requests reuse the KV prefix (llama.cpp llama_batch decode).
+ * Real llama.cpp batched decode is not implemented (N13). Each request is
+ * refined independently so output does not depend on prior functions.
  */
 class BatchRefiner {
 public:

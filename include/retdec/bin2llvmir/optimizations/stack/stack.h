@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/bin2llvmir/optimizations/stack/stack.h
 * @brief Reconstruct stack.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_BIN2LLVMIR_OPTIMIZATIONS_STACK_STACK_H

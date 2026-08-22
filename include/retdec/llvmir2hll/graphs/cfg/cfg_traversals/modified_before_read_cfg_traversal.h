@@ -2,7 +2,8 @@
 * @file include/retdec/llvmir2hll/graphs/cfg/cfg_traversals/modified_before_read_cfg_traversal.h
 * @brief A CFG traversal that checks whether a variable is modified prior to
 *        every read access to it starting from a given statement.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_GRAPHS_CFG_CFG_TRAVERSALS_MODIFIED_BEFORE_READ_CFG_TRAVERSAL_H

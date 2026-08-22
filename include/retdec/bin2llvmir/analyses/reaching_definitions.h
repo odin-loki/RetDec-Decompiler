@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/bin2llvmir/analyses/reaching_definitions.h
 * @brief Reaching definitions analysis (RDA) builds UD and DU chains.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 *
 * Right now, this works on an entire module. But we could insert an another layer
 * that represents functions. Then it would be possible to associate BBs with

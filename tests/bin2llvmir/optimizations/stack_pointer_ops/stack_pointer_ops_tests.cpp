@@ -1,7 +1,8 @@
 /**
 * @file tests/bin2llvmir/optimizations/stack_pointer_ops/tests/stack_pointer_ops_tests.cpp
 * @brief Tests for the @c StackPointerOpsRemove pass.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include "retdec/bin2llvmir/optimizations/stack_pointer_ops/stack_pointer_ops.h"

@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/analysis/goto_target_analysis.h
 * @brief Analysis of goto targets.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_ANALYSIS_GOTO_TARGET_ANALYSIS_H

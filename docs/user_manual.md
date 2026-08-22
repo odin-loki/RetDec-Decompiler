@@ -14,7 +14,7 @@ This manual describes the **Qt 6 GUI** (`retdec-gui`), its panels, settings, and
 - A C++17-capable compiler (GCC 11+, Clang 14+, or MSVC 2019+ on Windows)
 - Qt 6 (6.4 or later) with Widgets, Core, Gui, **and Test** — **required** for the `full-linux-*` and `full-windows-*` presets that build `retdec-gui`
 - Ninja (recommended)
-- CUDA Toolkit 11.8+ recommended for full presets (GPU analysis + Qwen3); builds can configure without NVCC; runtime falls back to CPU if no suitable GPU is present
+- CUDA Toolkit is optional. Full presets are CPU-only unless you pass `-DRETDEC_ENABLE_CUDA_ACCEL=ON`. The CUDA acceleration layer is experimental and not wired into the decompiler.
 
 **Build (Linux/WSL — full GUI + CUDA preset)**
 

@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/llvm/llvmir2bir_converter/labels_handler_tests.cpp
 * @brief Tests for the @c labels_handler module.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include <gtest/gtest.h>

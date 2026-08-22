@@ -161,32 +161,32 @@
 
     {
       "name": "full-linux-debug",
-      "displayName": "Full in-tree build (Debug, tests, CUDA accel, Qt6 GUI required)",
+      "displayName": "Full in-tree build (Debug, tests, Qt6 GUI required; CUDA accel opt-in)",
       "inherits": ["_gen", "_pathUnix"],
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "RETDEC_TESTS": "ON",
-        "RETDEC_ENABLE_CUDA_ACCEL": "ON",
+        "RETDEC_ENABLE_CUDA_ACCEL": "OFF",
         "RETDEC_REQUIRE_QT6": "ON"
       }
     },
 
     {
       "name": "full-linux-release",
-      "displayName": "Full in-tree build (Release + LTO, tests, CUDA accel, Qt6 GUI required)",
+      "displayName": "Full in-tree build (Release + LTO, tests, Qt6 GUI required; CUDA accel opt-in)",
       "inherits": ["_gen", "_pathUnix"],
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "RETDEC_TESTS": "ON",
-        "RETDEC_ENABLE_CUDA_ACCEL": "ON",
+        "RETDEC_ENABLE_CUDA_ACCEL": "OFF",
         "RETDEC_REQUIRE_QT6": "ON"
       }
     },
 
     {
       "name": "full-windows-release",
-      "displayName": "Full in-tree build (Windows, Release, bundled OpenSSL, CUDA + Qt6 GUI)",
+      "displayName": "Full in-tree build (Windows, Release, bundled OpenSSL, Qt6 GUI; CUDA accel opt-in)",
       "inherits": ["_gen", "_pathWin"],
       "condition": {
         "type": "equals",
@@ -197,7 +197,7 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "RETDEC_TESTS": "ON",
-        "RETDEC_ENABLE_CUDA_ACCEL": "ON",
+        "RETDEC_ENABLE_CUDA_ACCEL": "OFF",
         "RETDEC_REQUIRE_QT6": "ON",
         "RETDEC_BUNDLED_OPENSSL": "ON"
       }
@@ -205,7 +205,7 @@
 
     {
       "name": "full-windows-debug",
-      "displayName": "Full in-tree build (Windows, Debug, bundled OpenSSL, CUDA + Qt6 GUI)",
+      "displayName": "Full in-tree build (Windows, Debug, bundled OpenSSL, Qt6 GUI; CUDA accel opt-in)",
       "inherits": ["_gen", "_pathWin"],
       "condition": {
         "type": "equals",
@@ -215,7 +215,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "RETDEC_TESTS": "ON",
-        "RETDEC_ENABLE_CUDA_ACCEL": "ON",
+        "RETDEC_ENABLE_CUDA_ACCEL": "OFF",
         "RETDEC_REQUIRE_QT6": "ON",
         "RETDEC_BUNDLED_OPENSSL": "ON"
       }

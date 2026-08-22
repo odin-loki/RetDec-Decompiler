@@ -1,7 +1,8 @@
 /**
 * @file src/llvmir2hll/obtainer/call_info_obtainers/optim_call_info_obtainer.cpp
 * @brief Implementation of OptimCallInfoObtainer.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include "retdec/llvmir2hll/graphs/cfg/cfg_traversals/optim_func_info_cfg_traversal.h"

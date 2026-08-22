@@ -2,7 +2,8 @@
 * @file include/retdec/llvmir2hll/analysis/no_init_var_def_analysis.h
 * @brief An analysis which returns variable-defining statements without an
 *        initializer in given functions.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_ANALYSIS_NO_INIT_VAR_DEF_ANALYSIS_H

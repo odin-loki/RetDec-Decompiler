@@ -157,14 +157,14 @@ Qt6, NSIS, Perl, Python, git-lfs, and other common build prerequisites.
 | Qt 6 | 6.4+ (Widgets, Core, Gui, Test) | **Required** for `full-linux-*` / `full-windows-release` / `full-windows-debug` presets (`retdec-gui`) |
 | Python 3 | 3.4+ | LLVM TableGen scripts |
 | Perl | any | OpenSSL cross-build |
-| CUDA Toolkit | 11.8+ | **Default ON** for full presets (GPU analysis + Qwen3); use `-NoCuda` / `-DRETDEC_ENABLE_CUDA_ACCEL=OFF` for CPU-only |
+| CUDA Toolkit | 11.8+ | **Optional / opt-in** (`RETDEC_ENABLE_CUDA_ACCEL` defaults **OFF**, including full presets). Experimental `cuda_accel` layer is unintegrated — not required to evaluate or build. |
 | Ninja | any | Recommended generator |
 
 ### Linux / WSL build
 
 The normal development build targets the **Linux ELF** toolchain. CMake presets
 put the build tree under **`build/linux/`** or **`build/windows/`** (from `CMakePresets.json` `base`, by host OS).
-The **`full-linux-*` presets enable CUDA acceleration and require Qt 6** (same idea as the native Windows full build). Install Qt dev packages first, for example on Ubuntu:
+The **`full-linux-*` presets require Qt 6** (same idea as the native Windows full build). CUDA acceleration is **opt-in** (`RETDEC_ENABLE_CUDA_ACCEL=OFF` by default). Install Qt dev packages first, for example on Ubuntu:
 
 ```bash
 sudo apt install qt6-base-dev qt6-base-dev-tools
@@ -189,17 +189,18 @@ cmake --preset full-linux-release
 cmake --build --preset full-linux-release
 ```
 
-### Windows — full build (native MSVC + CUDA + Qt6 GUI)
+### Windows — full build (native MSVC + Qt6 GUI)
 
-For a complete Windows build with **CUDA GPU acceleration** and the **Qt6 GUI**,
-you must build natively on Windows. NVCC cannot cross-compile GPU kernels from
-Linux, so this is the only path to get all features on Windows.
+For a complete Windows build with the **Qt6 GUI**,
+you must build natively on Windows. The CUDA Toolkit is **optional**
+(`RETDEC_ENABLE_CUDA_ACCEL` defaults OFF). Experimental GPU accel is
+unintegrated and is not required to evaluate the product.
 
 **Prerequisites** (install with `scripts\Install-RetdecWindowsDeps.ps1`):
 | Tool | Source |
 |------|--------|
 | Visual Studio Build Tools 2022 (MSVC v143 + Windows SDK) | [visualstudio.microsoft.com](https://visualstudio.microsoft.com/downloads/) |
-| CUDA Toolkit 11.8+ | [developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads) |
+| CUDA Toolkit 11.8+ (optional) | [developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads) — not required; `RETDEC_ENABLE_CUDA_ACCEL` defaults OFF |
 | Qt 6 for Windows (MSVC 2019/2022 x64) | [qt.io/download-qt-installer](https://www.qt.io/download-qt-installer) |
 | CMake **3.26+**, Ninja | via winget or [cmake.org](https://cmake.org) |
 | Strawberry Perl | [strawberryperl.com](https://strawberryperl.com) (needed for bundled OpenSSL) |
@@ -378,25 +379,22 @@ dependency graph and module layout.
 
 ---
 
-## GPU Acceleration (CUDA)
+## GPU Acceleration (experimental, opt-in)
 
-All GPU-accelerated analysis passes use **CUDA** (replacing the previous
-OpenCL backend). On systems without an NVIDIA GPU or without CUDA Toolkit
-installed, all passes automatically fall back to multi-threaded CPU
-implementations — no configuration change needed.
+The in-tree **CUDA** (`src/cuda_accel`) and **OpenCL** (`src/opencl`)
+libraries are **experimental and unintegrated**: they are not wired into
+the decompiler pipeline and are not a product feature.
+`RETDEC_ENABLE_CUDA_ACCEL` defaults **OFF** (including full presets).
+Evaluators do not need an NVIDIA card or OpenCL ICD.
 
-```bash
-# Check if CUDA was detected at configure time:
-grep 'cuda_accel' build/linux/cmake-configure.log
-# Should show: [cuda_accel] CUDA found — GPU build
-# Or:          [cuda_accel] No CUDA compiler — CPU-only build
-```
-
-To enable CUDA explicitly:
+To opt in to the experimental CUDA accel library (still not linked from
+`src/retdec`):
 
 ```bash
 cmake -S . -B build/linux -DRETDEC_ENABLE_CUDA_ACCEL=ON ...
 ```
+
+See [docs/CUDA_CAPABILITIES.md](docs/CUDA_CAPABILITIES.md).
 
 ---
 

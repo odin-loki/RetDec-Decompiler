@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/analysis/alias_analysis/alias_analyses/simple_alias_analysis.h
 * @brief A very simple alias analysis.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_ANALYSIS_ALIAS_ANALYSIS_ALIAS_ANALYSES_SIMPLE_ALIAS_ANALYSIS_H

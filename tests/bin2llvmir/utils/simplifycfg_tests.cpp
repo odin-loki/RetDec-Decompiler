@@ -1,7 +1,8 @@
 /**
 * @file tests/bin2llvmir/utils/tests/simplifycfg_tests.cpp
 * @brief Tests for the @c CFGSimplifyPass pass.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 *
 * This is checking that LLVM's -simplifycfg is behaving as expected.
 * If this fails, something in LLVM changed and we need to react, because

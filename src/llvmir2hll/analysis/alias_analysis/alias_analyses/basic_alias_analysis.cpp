@@ -1,7 +1,8 @@
 /**
 * @file src/llvmir2hll/analysis/alias_analysis/alias_analyses/basic_alias_analysis.cpp
 * @brief Implementation of BasicAliasAnalysis.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 *
 * This is a conservative "top" alias analysis: every pointer variable is
 * assumed to potentially alias every variable whose address has been taken

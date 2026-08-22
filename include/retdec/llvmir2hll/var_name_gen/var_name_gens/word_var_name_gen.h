@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/var_name_gen/var_name_gens/word_var_name_gen.h
 * @brief A generator of English words as variable names.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_VAR_NAME_GEN_VAR_NAME_GENS_WORD_VAR_NAME_GEN_H

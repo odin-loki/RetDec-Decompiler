@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/ctypes/visit_all_visitor.h
 * @brief A visitor that visits all types inside some type.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_CTYPES_VISIT_ALL_VISITOR_H

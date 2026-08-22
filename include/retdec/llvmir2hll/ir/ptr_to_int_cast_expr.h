@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/ir/ptr_to_int_cast_expr.h
 * @brief The casting of LLVM instruction PtrToInt.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_IR_PTR_TO_INT_CAST_EXPR_H

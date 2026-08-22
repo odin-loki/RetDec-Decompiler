@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/optimizer/optimizers/var_def_for_loop_optimizer.h
 * @brief Optimizes VarDefStmts for induction variables of for loops.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_OPTIMIZER_OPTIMIZERS_VAR_DEF_FOR_LOOP_OPTIMIZER_H

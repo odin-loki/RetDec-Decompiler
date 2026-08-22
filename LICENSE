@@ -16,6 +16,11 @@ This software is dual-licensed. Choose one path:
       Terms and prices are in LICENSE-COMMERCIAL.
       Email: odin.loch@outlook.com.au
 
+Upstream RetDec v5.0 is MIT-licensed (copyright Avast Software). The
+MIT copyright and permission notice are in LICENSE-MIT and must be
+retained in all copies. This fork dual-licenses modifications under
+AGPL-3.0+ / commercial.
+
 Contributions are accepted under AGPL-3.0+. Opening a pull request
 means you agree to those terms.
 
@@ -24,4 +29,5 @@ Governed by the laws of Australia.
 Related files:
   LICENSE-AGPL        — AGPL-3.0 full text
   LICENSE-COMMERCIAL  — commercial terms and price list
+  LICENSE-MIT         — MIT permission notice for upstream RetDec v5.0 (Avast)
   NOTICE              — third-party attributions

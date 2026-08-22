@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/graphs/cfg/cfg_writers/graphviz_cfg_writer.h
 * @brief A CFG writer in the @c dot format (@c graphviz).
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_GRAPHS_CFG_CFG_WRITERS_GRAPHVIZ_CFG_WRITER_H

@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/utils/scope_exit.h
 * @brief Macro for performing actions when the current block exits.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 *
 * The code is based on the following presentation:
 * CppCon 2015: Andrei Alexandrescu: "Declarative Control Flow"

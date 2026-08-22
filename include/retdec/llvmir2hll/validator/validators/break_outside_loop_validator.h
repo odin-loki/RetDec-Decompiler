@@ -2,7 +2,8 @@
 * @file include/retdec/llvmir2hll/validator/validators/break_outside_loop_validator.h
 * @brief A validator which checks that no break or continue statement appears
 *        where it should not appear.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_VALIDATOR_VALIDATORS_BREAK_OUTSIDE_LOOP_VALIDATOR_H

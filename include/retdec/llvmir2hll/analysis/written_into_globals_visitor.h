@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/analysis/written_into_globals_visitor.h
 * @brief A visitor for obtaining written-into global variables in functions.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_ANALYSIS_WRITTEN_INTO_GLOBALS_VISITOR_H

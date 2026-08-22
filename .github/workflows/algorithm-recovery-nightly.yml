@@ -66,6 +66,21 @@ jobs:
           "$DEC" --help >/dev/null || true
           bash scripts/run_algorithm_recovery_ci.sh --decompiler "$DEC" 2>&1 | tee algorithm-recovery-ci.log
 
+      - name: Filename-rename integrity guard
+        if: success() || failure()
+        env:
+          RENAME_GUARD_LIMIT: "12"
+        run: |
+          set -euo pipefail
+          DEC=""
+          if [[ -x install/linux/bin/retdec-decompiler ]]; then
+            DEC="install/linux/bin/retdec-decompiler"
+          else
+            DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          fi
+          test -n "$DEC" && test -x "$DEC"
+          bash scripts/ci/benchmark_rename_guard.sh --decompiler "$DEC" --limit 12
+
       - name: Annotate algorithm recovery failure
         if: failure()
         run: |

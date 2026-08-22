@@ -954,28 +954,6 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 				concurrency_detect::ConcurrencyDetector cd;
 				concurrency_detect::ConcurrencyModel cm = cd.analyseModule(*ssaMod);
 
-				const std::string anchorFn = [&]() -> std::string {
-					const ssa::SSAFunction* best = nullptr;
-					int bestScore = 0;
-					for (const auto* fn: fnPtrs)
-					{
-						if (!fn) continue;
-						int score = 0;
-						for (const auto& blk: fn->blocks())
-							if (blk) score += static_cast<int>(blk->instrs.size());
-						if (score > bestScore)
-						{
-							bestScore = score;
-							best = fn;
-						}
-					}
-					return best ? best->name() : std::string{};
-				}();
-				analysis::augmentIdiomsFromInputBinary(config.parameters.getInputFile(), anchorFn, imap);
-				analysis::augmentSortsFromInputBinary(config.parameters.getInputFile(), anchorFn, dm);
-				analysis::augmentContainersFromInputBinary(config.parameters.getInputFile(), anchorFn, cmap);
-				analysis::augmentConcurrencyFromInputBinary(config.parameters.getInputFile(), anchorFn, cm);
-
 				if (useCache && !cachePath.empty()) fnCache.saveToFile(cachePath);
 
 				if (cacheHits > 0)

@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/loader/loader/raw_data/raw_data_image.h
  * @brief Declaration of loadable raw data image class for testing.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_LOADER_RETDEC_LOADER_RAW_DATA_RAW_DATA_IMAGE_H

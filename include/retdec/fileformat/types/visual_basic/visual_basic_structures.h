@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/fileformat/types/visual_basic/visual_basic_structures.h
  * @brief Visual basic metadata structures.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_FILEFORMAT_TYPES_VISUAL_BASIC_VISUAL_BASIC_STRUCTURES_H

@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/pattern/pattern_finder_runners/cli_pattern_finder_runner.h
 * @brief Runner of pattern finders for the command line interface.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_PATTERN_PATTERN_FINDER_RUNNERS_CLI_PATTERN_FINDER_RUNNER_H

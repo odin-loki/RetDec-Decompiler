@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/bin2llvmir/utils/llvm.h
  * @brief LLVM Utility functions.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  *
  * Useful LLVM-related things that are missing in LLVM itself.
  * All (Values, Types, Instructions, etc.) in one module.

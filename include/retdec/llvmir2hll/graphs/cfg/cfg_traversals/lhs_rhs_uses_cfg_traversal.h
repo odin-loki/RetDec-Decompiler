@@ -3,7 +3,8 @@
 * @brief A CFG traversal that for an assign statement @c S returns the uses of
 *        its left-hand side such that there are no uses of its right-hand side
 *        before them.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_GRAPHS_CFG_CFG_TRAVERSALS_LHS_RHS_USES_CFG_TRAVERSAL_H

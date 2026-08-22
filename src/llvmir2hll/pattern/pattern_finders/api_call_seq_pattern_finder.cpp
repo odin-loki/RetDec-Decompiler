@@ -1,7 +1,8 @@
 /**
 * @file src/llvmir2hll/pattern/pattern_finders/api_call_seq_pattern_finder.cpp
 * @brief Implementation of APICallSeqPatternFinder.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include <map>

@@ -1,7 +1,8 @@
 /**
  * @file src/capstone2llvmir/mips/mips_init.cpp
  * @brief Initializations for MIPS implementation of @c Capstone2LlvmIrTranslator.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include "capstone2llvmir/mips/mips_impl.h"

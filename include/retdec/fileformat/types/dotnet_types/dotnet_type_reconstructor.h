@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/fileformat/types/dotnet_types/dotnet_type_reconstructor.h
  * @brief Class for .NET reconstructor.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_FILEFORMAT_TYPES_DOTNET_TYPES_DOTNET_TYPE_RECONSTRUCTOR_H

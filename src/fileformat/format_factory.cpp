@@ -1,7 +1,8 @@
 /**
  * @file src/fileformat/format_factory.cpp
  * @brief Factory for creating file detectors.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include <memory>

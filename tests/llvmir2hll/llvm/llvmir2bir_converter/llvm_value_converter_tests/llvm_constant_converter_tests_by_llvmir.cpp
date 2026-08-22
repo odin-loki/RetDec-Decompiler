@@ -2,7 +2,8 @@
 * @file tests/llvmir2hll/llvm/llvmir2bir_converter/llvm_value_converter_tests/llvm_constant_converter_tests_by_llvmir.cpp
 * @brief Tests for the @c llvm_constant_converter module using LLVM IR text
 *        representation.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include <gtest/gtest.h>

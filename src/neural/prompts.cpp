@@ -22,6 +22,70 @@ std::string tierPrompt(RefinementTier tier)
 	return {};
 }
 
+// Replace contents of C "..." and '...' with placeholders so binary-lifted
+// strings cannot inject instructions into the model prompt.
+std::string stripCStringLiterals(const std::string& src)
+{
+	std::string out;
+	out.reserve(src.size());
+	const std::size_t n = src.size();
+	for (std::size_t i = 0; i < n; ++i)
+	{
+		if (src[i] == '/' && i + 1 < n && src[i + 1] == '/')
+		{
+			out += "//";
+			i += 2;
+			while (i < n && src[i] != '\n')
+			{
+				out += src[i];
+				++i;
+			}
+			if (i < n) out += src[i];
+			continue;
+		}
+		if (src[i] == '/' && i + 1 < n && src[i + 1] == '*')
+		{
+			out += "/*";
+			i += 2;
+			while (i + 1 < n && !(src[i] == '*' && src[i + 1] == '/'))
+			{
+				out += src[i];
+				++i;
+			}
+			if (i + 1 < n)
+			{
+				out += "*/";
+				++i;
+			}
+			continue;
+		}
+		if (src[i] == '"' || src[i] == '\'')
+		{
+			const char q = src[i];
+			out += q;
+			++i;
+			while (i < n)
+			{
+				if (src[i] == '\\' && i + 1 < n)
+				{
+					i += 2;
+					continue;
+				}
+				if (src[i] == q)
+				{
+					out += "…";
+					out += q;
+					break;
+				}
+				++i;
+			}
+			continue;
+		}
+		out += src[i];
+	}
+	return out;
+}
+
 } // namespace
 
 std::string buildRefinementPrompt(const RefinementRequest& request)
@@ -29,15 +93,16 @@ std::string buildRefinementPrompt(const RefinementRequest& request)
 	std::ostringstream oss;
 	// Qwen 3.5 / 3.6 Instruct chat template (text-only). Thinking is off
 	// unless GenerationConfig::thinkingMode is set (faster refine).
+	// Instruction text stays in the system section (N5).
 	oss << "<|im_start|>system\n"
 		<< "You refine decompiled C. Output only C source. No markdown fences.\n"
+		<< tierPrompt(request.tier)
 		<< "<|im_end|>\n<|im_start|>user\n";
-	oss << tierPrompt(request.tier);
 	if (!request.semanticContextJson.empty())
 	{
 		oss << "Semantic context (JSON):\n" << request.semanticContextJson << "\n\n";
 	}
-	oss << "Function source:\n" << request.functionSource << "\n";
+	oss << "Function source:\n" << stripCStringLiterals(request.functionSource) << "\n";
 	oss << (request.generation.thinkingMode ? "/think\n" : "/no_think\n");
 	oss << "<|im_end|>\n<|im_start|>assistant\n";
 	return oss.str();

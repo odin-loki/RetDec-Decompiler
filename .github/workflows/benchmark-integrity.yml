@@ -1,0 +1,23 @@
+name: benchmark-integrity
+
+# B6 — filename-rename guard. Skip-safe when the decompiler or corpus is
+# missing (configure-only trees). The same script runs after the decompiler
+# build in ctest-linux.yml (PR / main, 5 binaries) and
+# algorithm-recovery-nightly.yml (more binaries).
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  rename-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Filename-rename CI guard
+        env:
+          RENAME_GUARD_LIMIT: "5"
+        run: bash scripts/ci/benchmark_rename_guard.sh --limit 5

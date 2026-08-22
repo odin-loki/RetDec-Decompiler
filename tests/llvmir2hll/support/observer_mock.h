@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/support/observer_mock.h
 * @brief A mock for the Observer class.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef BACKEND_BIR_SUPPORT_TESTS_OBSERVER_MOCK_H

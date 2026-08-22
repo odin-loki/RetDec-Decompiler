@@ -1,0 +1,123 @@
+name: fuzz-pr
+
+# S5 — parser fuzz harnesses (elf, pe, macho, wasm, dex, jvm, pyc).
+#
+# CMake option name is RETDEC_FUZZ (tests/managed_integration/fuzz/CMakeLists.txt).
+# Do not invent another flag.
+#
+# fuzz_elf links retdec::fileformat, which PUBLIC-links retdec::deps::llvm
+# (src/fileformat/CMakeLists.txt). cmake -DRETDEC_FUZZ=ON on a clean runner
+# therefore builds the pinned Avast LLVM 8 fork — hours, not a PR smoke.
+# pull_request: option + source presence only (no LLVM configure).
+# workflow_dispatch + weekly schedule: Clang + RETDEC_FUZZ=ON, then ~30s
+# libFuzzer per target if the build cache / compile succeeds.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 0"
+
+jobs:
+  fuzz-option-smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirm RETDEC_FUZZ and seven harness sources
+        run: |
+          set -euo pipefail
+          cmake_file="tests/managed_integration/fuzz/CMakeLists.txt"
+          test -f "${cmake_file}"
+          grep -q 'option(RETDEC_FUZZ' "${cmake_file}"
+          echo "RETDEC_FUZZ option is present in ${cmake_file}"
+          for src in fuzz_elf.cpp fuzz_pe.cpp fuzz_macho.cpp fuzz_wasm.cpp \
+                     fuzz_dex.cpp fuzz_jvm_class.cpp fuzz_pyc.cpp; do
+            test -f "tests/managed_integration/fuzz/${src}"
+            echo "ok ${src}"
+          done
+          test -f tests/managed_integration/fuzz/run_fuzzers.sh
+          echo "fuzz-option-smoke: OK (compile fuzz_elf is nightly/dispatch only; needs LLVM)"
+
+  fuzz-libfuzzer:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Clang and Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang ninja-build python3
+
+      - uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "3.31.6"
+
+      - name: Fetch large support files
+        run: |
+          bash scripts/fetch-large-files.sh || \
+            bash scripts/fetch-large-files.sh \
+              --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
+
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/linux
+            ~/.cache/ccache
+          key: fuzz-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/deps.cmake', 'cmake/**') }}
+          restore-keys: |
+            fuzz-linux-
+
+      - name: Configure Clang + RETDEC_FUZZ=ON
+        run: >
+          cmake --preset core-debug
+          -DCMAKE_C_COMPILER=clang
+          -DCMAKE_CXX_COMPILER=clang++
+          -DRETDEC_FUZZ=ON
+          -DRETDEC_ENABLE_CUDA_ACCEL=OFF
+          -DRETDEC_ENABLE_NEURAL=OFF
+
+      - name: Build fuzz targets
+        run: >
+          cmake --build build/linux --parallel
+          --target fuzz_elf fuzz_pe fuzz_macho fuzz_wasm
+          fuzz_dex fuzz_jvm_class fuzz_pyc
+
+      - name: Run libFuzzer 30s per target
+        run: |
+          set -euo pipefail
+          BIN_DIR="build/linux/tests/managed_integration/fuzz"
+          if [[ ! -d "${BIN_DIR}" ]]; then
+            BIN_DIR="$(dirname "$(find build/linux -name fuzz_elf -type f | head -n1)")"
+          fi
+          ran=0
+          for name in fuzz_elf fuzz_pe fuzz_macho fuzz_wasm fuzz_dex fuzz_jvm_class fuzz_pyc; do
+            bin="${BIN_DIR}/${name}"
+            if [[ ! -x "${bin}" ]]; then
+              echo "[skip] ${name} not built"
+              continue
+            fi
+            corpus="${BIN_DIR}/corpus_${name}"
+            mkdir -p "${corpus}"
+            echo "=== ${name} -max_total_time=30 ==="
+            "${bin}" "${corpus}" \
+              -max_total_time=30 \
+              -jobs=1 \
+              -workers=1 \
+              -max_len=65536 \
+              -print_final_stats=1 \
+              -artifact_prefix="${BIN_DIR}/${name}_crash_" \
+              || true
+            ran=$((ran + 1))
+          done
+          if [[ "${ran}" -eq 0 ]]; then
+            echo "No fuzz binaries were produced"
+            exit 1
+          fi
+          echo "fuzz-libfuzzer: ran ${ran} target(s)"

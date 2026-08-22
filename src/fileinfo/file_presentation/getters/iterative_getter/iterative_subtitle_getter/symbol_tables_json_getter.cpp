@@ -1,7 +1,8 @@
 /**
  * @file src/fileinfo/file_presentation/getters/iterative_getter/iterative_subtitle_getter/symbol_tables_json_getter.cpp
  * @brief Methods of SymbolTablesJsonGetter class.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include "retdec/utils/string.h"

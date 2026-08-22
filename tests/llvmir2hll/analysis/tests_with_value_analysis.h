@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/analysis/tests_with_value_analysis.h
 * @brief Support for tests using ValueAnalysis.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef BACKEND_BIR_ANALYSIS_TESTS_TESTS_WITH_VALUE_ANALYSIS_H

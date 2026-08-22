@@ -1,7 +1,8 @@
 /**
 * @file src/llvmir2hll/utils/graphviz.cpp
 * @brief Implementation of the @c graphviz utilities.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include <cctype>

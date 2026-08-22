@@ -1,7 +1,8 @@
 /**
 * @file src/bin2llvmir/optimizations/phi_remover/phi_remover.cpp
 * @brief Remove all Phi nodes — with coalescing pre-pass.
-* @copyright (c) 2017 Odin Loch Trading as Imortek (original)
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 * @copyright (c) 2024, MIT license (coalescing improvement)
 *
 * Improvement over the original:

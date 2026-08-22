@@ -1,7 +1,8 @@
 /**
  * @file src/fileinfo/file_presentation/getters/iterative_getter/iterative_distribution_getter/section_plain_getter.h
  * @brief Definition of SectionPlainGetter class.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef FILEINFO_FILE_PRESENTATION_GETTERS_ITERATIVE_GETTER_ITERATIVE_DISTRIBUTION_GETTER_SECTION_PLAIN_GETTER_H

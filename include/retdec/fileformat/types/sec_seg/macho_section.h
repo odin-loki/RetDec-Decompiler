@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/fileformat/types/sec_seg/macho_section.h
  * @brief Class for Mach-O section.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_FILEFORMAT_TYPES_SEC_SEG_MACHO_SECTION_H

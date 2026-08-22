@@ -66,7 +66,7 @@ This tree is positioned as a **full-stack analysis and decompilation platform**,
 | **Broad input formats** | One toolchain for native binaries, GPU PTX, WASM, JVM/DEX, .NET, Python, and Lua artifacts. |
 | **Multiple output languages** | Emit code in the language that best fits downstream tooling or analyst preference. |
 | **Semantic recovery** | Recognize STL containers, algorithms, crypto, concurrency, serialization, and C++ runtime patterns—not only raw instructions. |
-| **CUDA acceleration** | Optional GPU-backed passes with automatic CPU fallback when no suitable GPU is present. |
+| **GPU acceleration (experimental)** | CUDA (`cuda_accel`) and OpenCL backends exist in-tree but are **unintegrated**, default-OFF, and **not** in the decompiler pipeline. Do not treat them as a product feature. |
 | **On-device AI** | Optional GGUF-based models (e.g. Qwen3 family) for naming, explanation, and interactive Q&A over recovered code—without mandatory cloud APIs. |
 | **Qt 6 GUI** | IDE-style tri-pane views, CFG and call-graph visualization, diffing, and integrated assistant UI. |
 | **Plugins** | Extend the pipeline, output, visualizations, or analysis via shared libraries. |
@@ -132,11 +132,18 @@ These features improve **analyst throughput**; they do not guarantee bit-identic
 
 ---
 
-## GPU acceleration (CUDA)
+## GPU acceleration (experimental, not in the default pipeline)
 
-Analysis passes can use **CUDA** for workloads such as parallel disassembly, alias analysis, type inference, semantic hashing, and e-graph simplification. The implementation is designed for **practical deployment**: if no suitable NVIDIA stack is available, the same logical passes **fall back to multi-threaded CPU** implementations without manual reconfiguration.
+In-tree **CUDA** (`src/cuda_accel`) and **OpenCL** (`src/opencl`) libraries are
+**experimental and unintegrated**: they are not linked from `src/retdec` and
+do not run during a default decompilation. `RETDEC_ENABLE_CUDA_ACCEL` is
+**OFF** by default (including full CMake presets). Evaluators do not need an
+NVIDIA card. Do not advertise GPU-backed analysis passes or automatic CPU
+fallback as a shipped capability.
 
-For **maximum capability on Windows** (MSVC + CUDA + Qt 6 GUI), the project documents a **native Windows** build path; **Linux/WSL cross-compilation to Windows** produces a **CLI-oriented** bundle without CUDA or the Qt GUI, reflecting toolchain constraints (GPU kernels are not cross-compiled in that mode).
+For a **native Windows** build with the Qt 6 GUI, the project documents an
+MSVC path; **Linux/WSL cross-compilation to Windows** produces a
+**CLI-oriented** bundle without the Qt GUI.
 
 ---
 
@@ -194,8 +201,8 @@ Plugins are discovered and ordered with **dependency-aware loading** (topologica
 
 | Scenario | Highlights |
 |----------|------------|
-| **Linux / WSL (full)** | CMake 3.26+, Qt 6 for GUI presets, optional CUDA for acceleration. |
-| **Windows (native full)** | MSVC, CUDA, Qt 6; scripts for dependency install, configure, build, and smoke tests; staged `dist/windows/` layout. |
+| **Linux / WSL (full)** | CMake 3.26+, Qt 6 for GUI presets. CUDA accel is opt-in and unintegrated. |
+| **Windows (native full)** | MSVC, Qt 6; CUDA toolkit optional (accel unintegrated, default OFF); scripts for dependency install, configure, build, and smoke tests; staged `dist/windows/` layout. |
 | **Windows PE from Linux** | MinGW-w64 cross-build: CLI-focused bundle, no Qt/CUDA in that path. |
 | **Docker** | Dockerfile in-repo for containerized builds (see docs). |
 | **Reduced footprint** | “Core” style presets for faster CLI-only trees without mandating Qt. |
@@ -217,7 +224,7 @@ Note: full **external regression corpora** may require **CI secrets** configured
 
 ## Limitations and expectations (honest scope)
 
-No decompiler can **perfectly** recover original source for arbitrary optimized binaries. Obfuscation, stripped symbols, self-modifying code, novel packers, and aggressive interprocedural optimizations all reduce fidelity. RetDec mitigates this with broad format support, rich heuristics, visualization, optional GPU acceleration, and AI assistance—but **human review** remains essential for high-stakes conclusions (e.g. legal evidence or mission-critical security verdicts).
+No decompiler can **perfectly** recover original source for arbitrary optimized binaries. Obfuscation, stripped symbols, self-modifying code, novel packers, and aggressive interprocedural optimizations all reduce fidelity. RetDec mitigates this with broad format support, rich heuristics, visualization, and optional on-device AI assistance—but **human review** remains essential for high-stakes conclusions (e.g. legal evidence or mission-critical security verdicts).
 
 ---
 

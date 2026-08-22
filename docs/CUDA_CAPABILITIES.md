@@ -1,5 +1,12 @@
 # CUDA capabilities in RetDec
 
+> **Experimental / unintegrated / opt-in.** The `cuda_accel` acceleration
+> layer and the `opencl` backend are **not wired** into the decompiler
+> pipeline, are **not linked** from `src/retdec`, default **OFF**, and are
+> **not product features**. Do not advertise them as shipped GPU
+> acceleration. Enable CUDA accel only with `-DRETDEC_ENABLE_CUDA_ACCEL=ON`
+> for research builds; OpenCL is not added from `src/CMakeLists.txt`.
+
 RetDec uses two independent CUDA-related build switches. They control different
 subsystems and should not be conflated.
 
@@ -8,7 +15,7 @@ subsystems and should not be conflated.
 | CMake option | Default (full preset) | Purpose |
 |--------------|----------------------|---------|
 | `RETDEC_ENABLE_CUDA` | OFF | [`retdec-gpu-scanner`](../src/utils/gpu_scanner.cu) — GPU signature matching and file entropy |
-| `RETDEC_ENABLE_CUDA_ACCEL` | ON (when toolkit found) | CUDA acceleration layer (`cuda_accel`), Qwen3 GPU inference, GUI OpenCL/CUDA recovery hooks |
+| `RETDEC_ENABLE_CUDA_ACCEL` | **OFF** (opt-in) | Experimental CUDA acceleration layer (`cuda_accel`). Unintegrated; not a product feature. |
 
 Disable GPU builds when no toolkit is installed:
 
@@ -29,17 +36,20 @@ When `RETDEC_ENABLE_CUDA=OFF` or no capable device is present, [`gpu_scanner_cpu
 
 **Entry point:** `retdec::utils::GpuScanner` (used from [`src/retdec/retdec.cpp`](../src/retdec/retdec.cpp) during binary loading / pattern phases).
 
-## CUDA acceleration layer (`RETDEC_ENABLE_CUDA_ACCEL=ON`)
+## CUDA acceleration layer (`RETDEC_ENABLE_CUDA_ACCEL=ON`, opt-in)
 
-Separate from `gpu_scanner`:
+Separate from `gpu_scanner`. **Unintegrated:** nothing in `src/retdec`
+includes or links `retdec/cuda_accel/*`. Sources stay in place under
+[`src/cuda_accel/`](../src/cuda_accel/) (see that directory's README).
 
 | Component | Role |
 |-----------|------|
-| [`src/cuda_accel/`](../src/cuda_accel/) | `CUDAContext`, kernel cache, optional profiling |
+| [`src/cuda_accel/`](../src/cuda_accel/) | Experimental `CUDAContext`, kernel cache, optional profiling |
+| [`src/opencl/`](../src/opencl/) | Experimental OpenCL backend — **also unintegrated**, not added from `src/CMakeLists.txt` |
 | [`src/qwen3/`](../src/qwen3/) | GGUF model GPU inference (FlashAttention path when CUDA available) |
 | GUI **CUDA** settings tab | Device index, block size, kernel cache directory |
 
-These accelerate **analysis / ML**, not the core LLVM → C decompilation pipeline.
+These do **not** run in the default LLVM → C decompilation pipeline.
 
 ## CPU-only (main decompile pipeline)
 
@@ -65,7 +75,7 @@ Binary input
             │
             └─► Post-pipeline analysis CPU
                     │
-                    └─► Qwen3 / cuda_accel (optional GPU)  RETDEC_ENABLE_CUDA_ACCEL
+                    └─► Qwen3 / cuda_accel (opt-in, unintegrated)  RETDEC_ENABLE_CUDA_ACCEL
 ```
 
 ## Related docs

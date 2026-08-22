@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/var_renamer/tests_with_var_name_gen_and_var_renamer.h
 * @brief Support for tests using VarNameGen and VarRenamer.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef BACKEND_BIR_VAR_RENAMER_TESTS_TESTS_WITH_VAR_NAME_GEN_AND_VAR_RENAMER_H

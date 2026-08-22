@@ -1,7 +1,8 @@
 /**
 * @file src/llvmir2hll/support/unreachable_code_in_cfg_remover.cpp
 * @brief Implementation of UnreachableCodeInCFGRemover.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include "retdec/llvmir2hll/analysis/goto_target_analysis.h"

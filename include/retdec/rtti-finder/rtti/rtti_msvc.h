@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/rtti-finder/rtti/rtti_msvc.h
  * @brief MSVC C++ RTTI structures.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  *
  * http://www.openrce.org/articles/full_view/21
  * http://www.openrce.org/articles/full_view/23

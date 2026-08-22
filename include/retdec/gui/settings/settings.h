@@ -122,7 +122,7 @@ struct MLSettings
 	bool streamOutput = true;
 	/// Optional expected SHA-256 of the GGUF (`RETDEC_NEURAL_MODEL_SHA256`).
 	QString modelSha256;
-	/// When true, interactive decompile sets `RETDEC_NEURAL_BATCH=1`.
+	/// Unused (N13): not published as RETDEC_NEURAL_BATCH until real batching exists.
 	bool batchRefine = false;
 };
 

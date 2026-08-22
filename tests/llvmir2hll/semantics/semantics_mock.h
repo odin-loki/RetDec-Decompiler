@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/semantics/semantics_mock.h
 * @brief A mock for the Semantics module.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef BACKEND_BIR_SEMANTICS_TESTS_SEMANTICS_MOCK_H

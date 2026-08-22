@@ -1,7 +1,8 @@
 /**
  * @file src/fileinfo/file_presentation/getters/iterative_getter/iterative_subtitle_getter/section_json_getter.h
  * @brief Definition of SectionJsonGetter class.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef FILEINFO_FILE_PRESENTATION_GETTERS_ITERATIVE_GETTER_ITERATIVE_SUBTITLE_GETTER_SECTION_JSON_GETTER_H

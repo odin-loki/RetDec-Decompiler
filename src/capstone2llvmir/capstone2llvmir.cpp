@@ -1,7 +1,8 @@
 /**
  * @file src/capstone2llvmir/capstone2llvmir_impl.cpp
  * @brief Common public interface for translators converting bytes to LLVM IR.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include <memory>
@@ -172,7 +173,7 @@ std::unique_ptr<Capstone2LlvmIrTranslator> Capstone2LlvmIrTranslator::createSpar
 		llvm::Module* m,
 		cs_mode extra)
 {
-	throw GenericError("Not implemented.");
+	throw GenericError("SPARC architecture is unimplemented.");
 	return nullptr;
 }
 
@@ -180,7 +181,7 @@ std::unique_ptr<Capstone2LlvmIrTranslator> Capstone2LlvmIrTranslator::createSysz
 		llvm::Module* m,
 		cs_mode extra)
 {
-	throw GenericError("Not implemented.");
+	throw GenericError("SystemZ architecture is unimplemented.");
 	return nullptr;
 }
 
@@ -188,7 +189,7 @@ std::unique_ptr<Capstone2LlvmIrTranslator> Capstone2LlvmIrTranslator::createXcor
 		llvm::Module* m,
 		cs_mode extra)
 {
-	throw GenericError("Not implemented.");
+	throw GenericError("XCore architecture is unimplemented.");
 	return nullptr;
 }
 

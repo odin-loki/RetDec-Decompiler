@@ -1,7 +1,8 @@
 /**
  * @file src/fileformat/types/sec_seg/sec_seg.cpp
  * @brief Basic class for section and segment.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include <sstream>

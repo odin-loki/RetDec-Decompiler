@@ -2,7 +2,8 @@
 * @file include/retdec/llvmir2hll/semantics/semantics/win_api_semantics/get_c_header_file_for_func.h
 * @brief Provides function getCHeaderFileForFunc() for
 *        WinAPISemantics in the semantics::win_api namespace.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_SEMANTICS_SEMANTICS_WIN_API_SEMANTICS_GET_C_HEADER_FILE_FOR_FUNC_H

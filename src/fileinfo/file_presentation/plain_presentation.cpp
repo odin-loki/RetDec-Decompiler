@@ -1,7 +1,8 @@
 /**
  * @file src/fileinfo/file_presentation/plain_presentation.cpp
  * @brief Plain text presentation class.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include "retdec/fileformat/types/certificate_table/certificate.h"

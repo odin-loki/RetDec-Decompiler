@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/pattern/pattern_finders/api_call/api_call_seq_finder_mock.h
 * @brief A mock for the APICallSeqFinder class.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef BACKEND_BIR_PATTERN_PATTERN_FINDERS_API_CALL_TESTS_API_CALL_SEQ_FINDER_MOCK_H

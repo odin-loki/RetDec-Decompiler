@@ -2,7 +2,8 @@
 * @file include/retdec/llvmir2hll/semantics/semantics/gcc_general_semantics/get_name_of_var_storing_result.h
 * @brief Provides function getNameOfVarStoringResult() for
 *        GCCGeneralSemantics in the semantics::gcc_general namespace.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_SEMANTICS_SEMANTICS_GCC_GENERAL_SEMANTICS_GET_NAME_OF_VAR_STORING_RESULT_H

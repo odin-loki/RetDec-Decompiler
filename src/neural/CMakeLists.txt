@@ -34,6 +34,14 @@ target_link_libraries(retdec-neural
         retdec::config
 )
 
+if(NOT TARGET OpenSSL::Crypto)
+    find_package(OpenSSL QUIET)
+endif()
+if(TARGET OpenSSL::Crypto)
+    target_link_libraries(retdec-neural PRIVATE OpenSSL::Crypto)
+    target_compile_definitions(retdec-neural PRIVATE RETDEC_NEURAL_HAS_OPENSSL)
+endif()
+
 target_compile_features(retdec-neural PUBLIC cxx_std_17)
 
 set_target_properties(retdec-neural PROPERTIES OUTPUT_NAME "retdec-neural")

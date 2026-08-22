@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/ir/ext_cast_expr.h
 * @brief The casting of LLVM instructions: FPExt, SExt, ZExt.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_IR_EXT_CAST_EXPR_H

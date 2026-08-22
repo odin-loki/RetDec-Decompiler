@@ -1,7 +1,8 @@
 /**
  * @file src/bin2llvmir/optimizations/inst_opt/inst_opt_pass.cpp
  * @brief LLVM instruction optimization pass.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include <llvm/IR/InstIterator.h>

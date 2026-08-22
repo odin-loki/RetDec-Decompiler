@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/bin2llvmir/optimizations/simple_types/simple_types.h
 * @brief Simple type reconstruction analysis.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_BIN2LLVMIR_OPTIMIZATIONS_SIMPLE_TYPES_SIMPLE_TYPES_H

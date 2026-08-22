@@ -1,7 +1,8 @@
 /**
  * @file src/bin2llvmir/optimizations/entry_alloca/entry_alloca.cpp
  * @brief Ensure all constant-size allocas live in function entry blocks.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  *
  * This pass fixes two classes of IR invalidity that can arise after
  * simplifycfg and similar transformations:

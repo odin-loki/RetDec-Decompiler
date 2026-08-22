@@ -2,7 +2,8 @@
 * @file include/retdec/llvmir2hll/semantics/semantics/win_api_semantics/get_name_of_param/g1.h
 * @brief Initializes FuncParamNamesMap for WinAPI functions starting with G
 *        (first part).
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_SEMANTICS_SEMANTICS_WIN_API_SEMANTICS_GET_NAME_OF_PARAM_G1_H

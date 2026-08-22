@@ -2,7 +2,8 @@
 * @file include/retdec/llvmir2hll/var_name_gen/var_name_gens/num_var_name_gen.h
 * @brief A generator of variable names of the form "prefixN", where N is a
 *        number.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_VAR_NAME_GEN_VAR_NAME_GENS_NUM_VAR_NAME_GEN_H

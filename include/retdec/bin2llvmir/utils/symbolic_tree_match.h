@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/bin2llvmir/utils/ir_modifier.h
  * @brief Pattern matching for @c SymbolicTree.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  *
  * Simple and efficient mechanism for performing general tree-based
  * pattern matches on the @c SymbolicTree structures.

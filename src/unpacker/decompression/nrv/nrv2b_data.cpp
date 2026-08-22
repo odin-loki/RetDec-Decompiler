@@ -1,7 +1,8 @@
 /**
  * @file src/unpacker/decompression/nrv/nrv2b_data.cpp
  * @brief Implementation of class for NRV2B compressed data.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include "retdec/fileformat/fftypes.h"

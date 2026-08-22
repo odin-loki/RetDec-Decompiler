@@ -1,7 +1,8 @@
 /**
  * @file src/fileformat/utils/format_detection.cpp
  * @brief File format detection.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  *
  * Implements Signature-Lattice Parsing (Stage 1 of decompilation-specific pipeline):
  * - Single read of first 512 bytes, O(1) dispatch via magic-byte decision lattice

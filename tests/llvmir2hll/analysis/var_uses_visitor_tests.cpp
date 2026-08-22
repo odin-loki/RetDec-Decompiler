@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/analysis/var_uses_visitor_tests.cpp
 * @brief Tests for the @c var_uses_visitor module.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include <map>

@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/bin2llvmir/analyses/symbolic_tree.h
  * @brief Construction of symbolic tree from the given node.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  *
  * This is an implementation of symbolic interpret. It is provided with
  * an initial node (llvm::Value) and it builds symbolic tree representing

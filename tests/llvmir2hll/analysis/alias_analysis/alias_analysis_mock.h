@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/analysis/alias_analysis/alias_analysis_mock.h
 * @brief A mock for the AliasAnalysis module.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef BACKEND_BIR_ANALYSIS_ALIAS_ANALYSIS_TESTS_ALIAS_ANALYSIS_MOCK_H

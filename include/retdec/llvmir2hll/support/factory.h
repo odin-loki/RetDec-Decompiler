@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/support/factory.h
 * @brief Implementation of the Object Factory design pattern.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 *
 * The implementation is based on the following book:
 *  - A. Alexandrescu: "Modern C++ Design: Generic Programming and Design

@@ -1,7 +1,8 @@
 /**
  * @file src/loader/loader/segment_data_source.cpp
  * @brief Definition of segment data source class.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include <algorithm>

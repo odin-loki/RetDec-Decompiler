@@ -1,7 +1,8 @@
 /**
 * @file src/llvmir2hll/semantics/semantics/win_api_semantics/get_symbolic_names_for_param.cpp
 * @brief Implementation of getSymbolicNamesForParam() for Windows API semantics.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 *
 * Covers Win32 / NT native API symbolic constants for commonly decompiled
 * functions. Values sourced from WinNT.h, WinBase.h, WinSock2.h, WinIoCtl.h,

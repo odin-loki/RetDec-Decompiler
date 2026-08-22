@@ -2,7 +2,8 @@
 * @file src/llvmir2hll/semantics/semantics/libc_semantics/get_name_of_var_storing_result.cpp
 * @brief Implementation of semantics::libc::getNameOfVarStoringResult() for
 *        LibcSemantics.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include "retdec/llvmir2hll/semantics/semantics/impl_support/get_name_of_var_storing_result.h"

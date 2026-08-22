@@ -4,90 +4,209 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <functional>
 #include <string>
+#include <system_error>
+#include <vector>
 
-#if defined(_MSC_VER)
-#define popen _popen
-#define pclose _pclose
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 namespace retdec::neural {
 
 namespace {
 
-bool tryCompileCheck(const std::string& sourceC)
+namespace fs = std::filesystem;
+
+struct ScopedTempDir
 {
-	const char* cc = std::getenv("RETDEC_NEURAL_GATE_CC");
-	if (!cc || !cc[0])
+	fs::path path;
+
+	explicit ScopedTempDir(fs::path p): path(std::move(p)) {}
+	~ScopedTempDir()
 	{
-#if defined(_WIN32)
-		cc = "gcc";
-#else
-		cc = "cc";
-#endif
+		if (path.empty()) return;
+		std::error_code ec;
+		fs::remove_all(path, ec);
 	}
 
-	namespace fs = std::filesystem;
-	const fs::path tmp =
-		fs::temp_directory_path() / ("retdec_gate_" + std::to_string(std::hash<std::string>{}(sourceC)) + ".c");
+	ScopedTempDir(const ScopedTempDir&) = delete;
+	ScopedTempDir& operator=(const ScopedTempDir&) = delete;
+};
 
-	{
-		std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-		if (!out) return false;
-		out << sourceC;
-	}
-
-	const std::string cmd = std::string(cc) + " -fsyntax-only -w \"" + tmp.string()
-						  + "\""
+fs::path createUniqueTempDir()
+{
 #if defined(_WIN32)
-							" 2>nul";
+	wchar_t tmp[MAX_PATH];
+	const DWORD n = GetTempPathW(MAX_PATH, tmp);
+	if (n == 0 || n >= MAX_PATH) return {};
+
+	const DWORD pid = GetCurrentProcessId();
+	const ULONGLONG ticks = GetTickCount64();
+	for (int i = 0; i < 256; ++i)
+	{
+		wchar_t name[MAX_PATH];
+		if (swprintf_s(name, L"%sretdec_gate_%lu_%llu_%d", tmp, static_cast<unsigned long>(pid), ticks,
+					   i)
+			< 0)
+			return {};
+		if (CreateDirectoryW(name, nullptr)) return fs::path(name);
+		if (GetLastError() != ERROR_ALREADY_EXISTS) return {};
+	}
+	return {};
 #else
-							" 2>/dev/null";
+	const fs::path tmpl = fs::temp_directory_path() / "retdec_gate_XXXXXX";
+	std::string s = tmpl.string();
+	std::vector<char> buf(s.begin(), s.end());
+	buf.push_back('\0');
+	if (!mkdtemp(buf.data())) return {};
+	const fs::path dir(buf.data());
+	::chmod(dir.c_str(), 0700);
+	return dir;
 #endif
-	const int rc = std::system(cmd.c_str());
-	fs::remove(tmp);
-	return rc == 0;
 }
 
-bool tryDifferentialCheck(const std::string& originalC, const std::string& refinedC)
+#if defined(_WIN32)
+std::wstring utf8ToWide(const std::string& s)
 {
-	if (!std::getenv("RETDEC_NEURAL_DIFF_GATE") || std::getenv("RETDEC_NEURAL_DIFF_GATE")[0] == '0') return true;
+	if (s.empty()) return {};
+	const int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+	if (n <= 0) return {};
+	std::wstring w(static_cast<std::size_t>(n - 1), L'\0');
+	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, w.data(), n);
+	return w;
+}
 
-	namespace fs = std::filesystem;
-	const auto dir = fs::temp_directory_path() / "retdec_diff_gate";
-	fs::create_directories(dir);
+std::wstring quoteWinArg(const std::wstring& a)
+{
+	if (a.find_first_of(L" \t\"") == std::wstring::npos) return a;
+	std::wstring out = L"\"";
+	for (wchar_t c: a)
+	{
+		if (c == L'"') out += L"\"\"";
+		else
+			out += c;
+	}
+	out += L'"';
+	return out;
+}
+#endif
 
-	const fs::path origC = dir / "orig.c";
-	const fs::path refC = dir / "refined.c";
-	const fs::path origBin = dir / "orig.out";
-	const fs::path refBin = dir / "refined.out";
+bool spawnSyntaxOnlyCompiler(const char* cc, const fs::path& src)
+{
+#if defined(_WIN32)
+	const std::wstring wcc = utf8ToWide(cc);
+	const std::wstring cmd = quoteWinArg(wcc) + L" -fsyntax-only -w " + quoteWinArg(src.wstring());
+	std::vector<wchar_t> cmdline(cmd.begin(), cmd.end());
+	cmdline.push_back(L'\0');
 
-	std::ofstream(origC) << originalC;
-	std::ofstream(refC) << refinedC;
+	STARTUPINFOW si{};
+	si.cb = sizeof(si);
+	si.dwFlags = STARTF_USESTDHANDLES;
+	HANDLE nul = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+	if (nul != INVALID_HANDLE_VALUE)
+	{
+		si.hStdOutput = nul;
+		si.hStdError = nul;
+		si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+	}
 
+	PROCESS_INFORMATION pi{};
+	const BOOL ok = CreateProcessW(
+		nullptr,
+		cmdline.data(),
+		nullptr,
+		nullptr,
+		FALSE,
+		CREATE_NO_WINDOW,
+		nullptr,
+		nullptr,
+		&si,
+		&pi);
+	if (nul != INVALID_HANDLE_VALUE) CloseHandle(nul);
+	if (!ok) return false;
+
+	WaitForSingleObject(pi.hProcess, INFINITE);
+	DWORD code = 1;
+	GetExitCodeProcess(pi.hProcess, &code);
+	CloseHandle(pi.hProcess);
+	CloseHandle(pi.hThread);
+	return code == 0;
+#else
+	const std::string srcPath = src.string();
+	const pid_t pid = fork();
+	if (pid < 0) return false;
+	if (pid == 0)
+	{
+		const int nullfd = open("/dev/null", O_WRONLY);
+		if (nullfd >= 0)
+		{
+			dup2(nullfd, STDOUT_FILENO);
+			dup2(nullfd, STDERR_FILENO);
+			close(nullfd);
+		}
+		const char* argv[] = {cc, "-fsyntax-only", "-w", srcPath.c_str(), nullptr};
+		execvp(cc, const_cast<char* const*>(argv));
+		_exit(127);
+	}
+	int status = 0;
+	if (waitpid(pid, &status, 0) < 0) return false;
+	return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+#endif
+}
+
+const char* gateCompiler()
+{
 	const char* cc = std::getenv("RETDEC_NEURAL_GATE_CC");
-	if (!cc || !cc[0]) cc = "gcc";
+	if (cc && cc[0]) return cc;
+#if defined(_WIN32)
+	return "gcc";
+#else
+	return "cc";
+#endif
+}
 
-	const std::string compileOrig = std::string(cc) + " -O2 -o \"" + origBin.string() + "\" \"" + origC.string() + "\"";
-	const std::string compileRef = std::string(cc) + " -O2 -o \"" + refBin.string() + "\" \"" + refC.string() + "\"";
+bool tryCompileCheck(const std::string& sourceC)
+{
+	const fs::path dir = createUniqueTempDir();
+	if (dir.empty()) return false;
+	ScopedTempDir guard(dir);
 
-	if (std::system(compileOrig.c_str()) != 0) return false;
-	if (std::system(compileRef.c_str()) != 0) return false;
+	const fs::path src = dir / "gate.c";
+	{
+		std::ofstream out(src, std::ios::binary | std::ios::trunc);
+		if (!out) return false;
+		out << sourceC;
+		if (!out) return false;
+	}
 
-	auto runCapture = [](const fs::path& bin) -> std::string {
-		const std::string cmd = "\"" + bin.string() + "\"";
-		FILE* pipe = popen(cmd.c_str(), "r");
-		if (!pipe) return {};
-		char buf[256];
-		std::string out;
-		while (fgets(buf, sizeof(buf), pipe))
-			out += buf;
-		pclose(pipe);
-		return out;
-	};
+	return spawnSyntaxOnlyCompiler(gateCompiler(), src);
+}
 
-	return runCapture(origBin) == runCapture(refBin);
+bool tryDifferentialCheck(const std::string& /*originalC*/, const std::string& /*refinedC*/)
+{
+	const char* e = std::getenv("RETDEC_NEURAL_DIFF_GATE");
+	if (!e || e[0] == '\0' || e[0] == '0') return true;
+
+	std::fprintf(
+		stderr,
+		"retdec-neural: WARNING: runtime differential execution of decompiled C is DISABLED.\n"
+		"  RETDEC_NEURAL_DIFF_GATE is set, but compiling and running decompiled C would execute\n"
+		"  attacker-controlled code on this host. The differential gate is skipped (treated as pass).\n"
+		"  Unset RETDEC_NEURAL_DIFF_GATE to silence this warning.\n");
+	return true;
 }
 
 } // namespace
@@ -112,6 +231,8 @@ GateReport runVerificationGates(const std::string& originalC, const std::string&
 		report.structural = GateResult::FailStructural;
 		return report;
 	}
+	// Size heuristic only. Naming/Comments/StructFields rejections for
+	// control-flow changes are future N10 (no C parser in this task).
 	if (refinedC.size() < originalC.size() / 4 && originalC.size() > 64)
 	{
 		report.structural = GateResult::FailStructural;

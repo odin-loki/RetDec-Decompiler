@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/hll/compound_op_managers/compound_op_manager_tests.h
 * @brief Base class for all CompoundOpManager test classes.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef BACKEND_BIR_HLL_COMPOUND_OP_MANAGERS_TESTS_COMPOUND_OP_MANAGER_TESTS_H

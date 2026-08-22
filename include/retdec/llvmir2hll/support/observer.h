@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/support/observer.h
 * @brief Implementation of a generic typed observer (observer part).
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_SUPPORT_OBSERVER_H

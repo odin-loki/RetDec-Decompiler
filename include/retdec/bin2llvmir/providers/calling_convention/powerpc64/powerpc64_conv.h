@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/bin2llvmir/providers/calling_convention/powerpc64/powerpc64_conv.h
  * @brief Calling conventions of PowerPC64 architecture.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_BIN2LLVMIR_PROVIDERS_CALL_CONV_PPC64_PPC64_CONV_H

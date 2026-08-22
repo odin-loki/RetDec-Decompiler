@@ -2,7 +2,8 @@
 * @file include/retdec/llvmir2hll/obtainer/call_info_obtainer_factory.h
 * @brief Factory that creates instances of classes derived from
 *        CallInfoObtainer.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 *
 * The implementation is using the Object factory and Singleton design patterns.
 */

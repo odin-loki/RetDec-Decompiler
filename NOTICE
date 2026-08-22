@@ -4,6 +4,10 @@ Copyright (c) 2025-2026 Odin Loch, trading as Imortek.
 This product includes software developed by Avast and contributors
 (original RetDec, https://github.com/avast/retdec).
 
+The MIT copyright and permission notice for upstream RetDec v5.0
+(Copyright (c) 2017 Avast Software) are in LICENSE-MIT and must be
+retained in all copies and substantial portions of the Software.
+
 Third-party components (see cmake/deps.cmake for pinned versions):
 
   LLVM (University of Illinois/NCSA) — via avast/llvm fork

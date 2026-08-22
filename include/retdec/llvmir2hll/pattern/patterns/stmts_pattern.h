@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/pattern/patterns/stmts_pattern.h
 * @brief A pattern that is composed of zero or more statements.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_PATTERN_PATTERNS_STMTS_PATTERN_H

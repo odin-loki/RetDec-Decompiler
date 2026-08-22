@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/hll/hll_writers/hll_writer_tests.h
 * @brief Base class for tests of HLL writers.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef BACKEND_BIR_HLL_HLL_WRITERS_TESTS_HLL_WRITER_TESTS_H

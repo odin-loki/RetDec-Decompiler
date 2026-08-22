@@ -1,7 +1,8 @@
 /**
 * @file src/llvmir2hll/graphs/cfg/cfg_writer.cpp
 * @brief Implementation of CFGWriter.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include "retdec/llvmir2hll/graphs/cfg/cfg_writer.h"

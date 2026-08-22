@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/fileformat/types/pe_timestamps/pe_timestamps.h
  * @brief PE timestamps.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef FILEINFO_FILE_INFORMATION_FILEFORMAT_TYPES_PE_TIMESTAMPS_H

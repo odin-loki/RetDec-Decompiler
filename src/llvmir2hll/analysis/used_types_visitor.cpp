@@ -1,7 +1,8 @@
 /**
 * @file src/llvmir2hll/analysis/used_types_visitor.cpp
 * @brief A visitor for obtaining the used types in the IR.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include "retdec/llvmir2hll/analysis/used_types_visitor.h"

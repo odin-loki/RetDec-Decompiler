@@ -1,7 +1,8 @@
 /**
  * @file src/unpackertool/plugins/upx/macho/macho_upx_stub.h
  * @brief Declaration of UPX unpacking stub in Mach-O files.
- * @copyright (c) 2017 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef UNPACKERTOOL_PLUGINS_UPX_MACHO_MACHO_UPX_STUB_H

@@ -1,7 +1,8 @@
 /**
 * @file src/llvmir2hll/support/expr_types_fixer.cpp
 * @brief A visitor for fixing the types in the IR.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include <cstddef>

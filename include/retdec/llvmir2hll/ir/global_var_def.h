@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/ir/global_var_def.h
 * @brief A definition of a global variable.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_IR_GLOBAL_VAR_DEF_H

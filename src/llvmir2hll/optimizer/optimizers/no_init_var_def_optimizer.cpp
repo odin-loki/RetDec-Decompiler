@@ -1,7 +1,8 @@
 /**
 * @file src/llvmir2hll/optimizer/optimizers/no_init_var_def_optimizer.cpp
 * @brief Implementation of NoInitVarDefOptimizer.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include "retdec/llvmir2hll/ir/var_def_stmt.h"

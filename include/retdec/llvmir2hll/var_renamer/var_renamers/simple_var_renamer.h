@@ -2,7 +2,8 @@
 * @file include/retdec/llvmir2hll/var_renamer/var_renamers/simple_var_renamer.h
 * @brief A renamer of variable names which names them simply by using the
 *        given variable name generator.
-* @copyright (c) 2017 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_VAR_RENAMER_VAR_RENAMERS_SIMPLE_VAR_RENAMER_H
