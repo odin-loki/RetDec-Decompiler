@@ -244,6 +244,22 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		}
 		oss << '}';
 	}
+	oss << "],\"patterns\":[";
+	bool firstPat = true;
+	for (const auto& pat: config.patterns)
+	{
+		if (pat.getName().empty() && pat.getYaraRuleName().empty()) continue;
+		if (!firstPat) oss << ',';
+		firstPat = false;
+		oss << "{\"name\":\"" << jsonEscape(pat.getName()) << '"';
+		if (!pat.getYaraRuleName().empty()) oss << ",\"yara_rule\":\"" << jsonEscape(pat.getYaraRuleName()) << '"';
+		const char* kind = "other";
+		if (pat.isTypeCrypto())
+			kind = "crypto";
+		else if (pat.isTypeMalware())
+			kind = "malware";
+		oss << ",\"type\":\"" << kind << "\"}";
+	}
 	oss << "]}";
 	return oss.str();
 }

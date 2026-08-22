@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` also dumps YARA
+  pattern names, rule ids, and crypto/malware/other type from
+  `config.patterns`. Descriptions are omitted (bloat /
+  injection). Test: `SerializesCryptoPatternNames`. Default F5
+  is unchanged.
 - A7 leftover: HMAC 64-bit ipad/opad immediates get the
   documented +0.10 bonus each (was described in
   `hmac_detect.cpp` but not applied). 32-bit-only scores
