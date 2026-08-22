@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N11 leftover: a context-budget refuse retries once with a
+  head/tail truncated function body (`/* [truncated for
+  context] */`) instead of silent truncate. Mock
+  `RETDEC_NEURAL_MOCK_CONTEXT_FAIL` covers the retry. Test:
+  `ContextBudgetRetriesWithTruncatedSource`. Default F5 is
+  unchanged.
 - B7: introsort export tags `evidence:symbol_name` when the
   compiler variant came from `_introsort` / `_Sort_unchecked`.
   Structural introsort (Unknown variant) stays in the headline.

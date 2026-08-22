@@ -518,3 +518,19 @@ TEST(NeuralGgufHeader, RejectsNonGgufMagic)
 	EXPECT_FALSE(parseGgufIdentityFromMemory(raw, sizeof(raw) - 1, id));
 	EXPECT_FALSE(id.parsed);
 }
+
+TEST(NeuralRefiner, ContextBudgetRetriesWithTruncatedSource)
+{
+	EnvGuard unverified("RETDEC_NEURAL_ALLOW_UNVERIFIED", "1");
+	EnvGuard ctxFail("RETDEC_NEURAL_MOCK_CONTEXT_FAIL", "1");
+	auto inf = createMockInference();
+	ASSERT_TRUE(inf->loadModel("mock.gguf"));
+	Refiner refiner(std::move(inf));
+	RefinementRequest req;
+	req.tier = RefinementTier::Comments;
+	for (int i = 0; i < 100; ++i)
+		req.functionSource += "int f" + std::to_string(i) + "(void) { return 0; }\n";
+	const auto resp = refiner.refine(req);
+	// First generate is refused; retry with a truncated body must run.
+	EXPECT_EQ(resp.manifestJson.find("generation failed"), std::string::npos);
+}

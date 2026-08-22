@@ -56,6 +56,12 @@ public:
 			result.error = "mock: model not loaded";
 			return result;
 		}
+		const char* ctxFail = std::getenv("RETDEC_NEURAL_MOCK_CONTEXT_FAIL");
+		if (ctxFail && ctxFail[0] && ctxFail[0] != '0' && prompt.find("[truncated for context]") == std::string::npos)
+		{
+			result.error = "llama: prompt exceeds context budget";
+			return result;
+		}
 		const char* emitC = std::getenv("RETDEC_NEURAL_MOCK_EMIT_C");
 		if (emitC && emitC[0] && emitC[0] != '0')
 		{

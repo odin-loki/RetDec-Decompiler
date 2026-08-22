@@ -4,8 +4,8 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstdlib>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 #include <cctype>
@@ -29,16 +29,14 @@ bool envFlag(const char* name)
 
 bool isConservativeTier(RefinementTier tier)
 {
-	return tier == RefinementTier::Naming || tier == RefinementTier::Comments
-		|| tier == RefinementTier::StructFields;
+	return tier == RefinementTier::Naming || tier == RefinementTier::Comments || tier == RefinementTier::StructFields;
 }
 
 // GenerationConfig defaults (0.7) and the hook Qwen default (0.6) are
 // default-high for Naming/Comments/StructFields — force greedy decode.
 void applyDeterministicDefaults(GenerationConfig& gen, RefinementTier tier)
 {
-	if (isConservativeTier(tier) && (gen.temperature == 0.7f || gen.temperature == 0.6f))
-		gen.temperature = 0.0f;
+	if (isConservativeTier(tier) && (gen.temperature == 0.7f || gen.temperature == 0.6f)) gen.temperature = 0.0f;
 	if (!envFlag("RETDEC_NEURAL_REUSE_KV")) gen.reuseKvPrefix = false;
 }
 
@@ -114,6 +112,35 @@ std::string buildManifest(
 	return sb.GetString();
 }
 
+std::string summarizeFunctionSource(const std::string& src)
+{
+	if (src.size() < 2048) return src;
+	std::vector<std::string> lines;
+	std::string line;
+	for (char c: src)
+	{
+		line.push_back(c);
+		if (c == '\n')
+		{
+			lines.push_back(std::move(line));
+			line.clear();
+		}
+	}
+	if (!line.empty()) lines.push_back(std::move(line));
+	if (lines.size() <= 80) return src;
+
+	std::string out;
+	const std::size_t head = 40;
+	const std::size_t tail = 20;
+	for (std::size_t i = 0; i < head && i < lines.size(); ++i)
+		out += lines[i];
+	out += "/* [truncated for context] */\n";
+	const std::size_t start = lines.size() > tail ? lines.size() - tail : 0;
+	for (std::size_t i = start; i < lines.size(); ++i)
+		out += lines[i];
+	return out;
+}
+
 } // namespace
 
 const char* namingRenameMapGbnf()
@@ -132,8 +159,7 @@ ws ::= [ \t\n]*
 std::string applyJsonRenameMap(const std::string& source, const std::string& jsonObject)
 {
 	rapidjson::Document doc;
-	if (doc.Parse(jsonObject.c_str()).HasParseError() || !doc.IsObject())
-		return source;
+	if (doc.Parse(jsonObject.c_str()).HasParseError() || !doc.IsObject()) return source;
 
 	std::vector<std::pair<std::string, std::string>> pairs;
 	for (auto it = doc.MemberBegin(); it != doc.MemberEnd(); ++it)
@@ -143,21 +169,18 @@ std::string applyJsonRenameMap(const std::string& source, const std::string& jso
 		const std::string to = it->value.GetString();
 		if (from.empty() || to.empty() || from == to) continue;
 		auto isIdent = [](const std::string& s) {
-			if (s.empty() || !(std::isalpha(static_cast<unsigned char>(s[0])) || s[0] == '_'))
-				return false;
-			for (char c : s)
+			if (s.empty() || !(std::isalpha(static_cast<unsigned char>(s[0])) || s[0] == '_')) return false;
+			for (char c: s)
 			{
 				if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_')) return false;
 			}
 			return true;
 		};
 		if (!isIdent(from) || !isIdent(to)) continue;
-		if (from == "if" || from == "for" || from == "while" || from == "return" || from == "int")
-			continue;
+		if (from == "if" || from == "for" || from == "while" || from == "return" || from == "int") continue;
 		pairs.emplace_back(from, to);
 	}
-	std::sort(pairs.begin(), pairs.end(),
-		[](const auto& a, const auto& b) { return a.first.size() > b.first.size(); });
+	std::sort(pairs.begin(), pairs.end(), [](const auto& a, const auto& b) { return a.first.size() > b.first.size(); });
 
 	std::string out;
 	out.reserve(source.size() + 16);
@@ -171,12 +194,11 @@ std::string applyJsonRenameMap(const std::string& source, const std::string& jso
 		}
 		const std::size_t start = i;
 		++i;
-		while (i < source.size()
-			&& (std::isalnum(static_cast<unsigned char>(source[i])) || source[i] == '_'))
+		while (i < source.size() && (std::isalnum(static_cast<unsigned char>(source[i])) || source[i] == '_'))
 			++i;
 		const std::string tok = source.substr(start, i - start);
 		std::string repl = tok;
-		for (const auto& p : pairs)
+		for (const auto& p: pairs)
 		{
 			if (p.first == tok)
 			{
@@ -195,8 +217,7 @@ RefinementResponse Refiner::refine(const RefinementRequest& request) const
 {
 	const auto t0 = std::chrono::steady_clock::now();
 	auto wallMs = [&t0]() -> long long {
-		return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0)
-			.count();
+		return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
 	};
 
 	GenerationConfig gen = request.generation;
@@ -214,7 +235,16 @@ RefinementResponse Refiner::refine(const RefinementRequest& request) const
 
 	std::string prompt = buildRefinementPrompt(request);
 
-	const auto genResult = inference_->generate(prompt, gen);
+	auto genResult = inference_->generate(prompt, gen);
+	if (!genResult.ok && genResult.error.find("prompt exceeds context budget") != std::string::npos)
+	{
+		// N11: retry once with head/tail source instead of silent truncate.
+		std::fprintf(stderr, "retdec-neural: context budget exceeded; retrying with truncated source\n");
+		RefinementRequest summary = request;
+		summary.functionSource = summarizeFunctionSource(request.functionSource);
+		prompt = buildRefinementPrompt(summary);
+		genResult = inference_->generate(prompt, gen);
+	}
 	if (!genResult.ok)
 	{
 		response.refinedSource = request.functionSource;
@@ -237,15 +267,13 @@ RefinementResponse Refiner::refine(const RefinementRequest& request) const
 		std::string json = refined;
 		while (!json.empty() && (json.front() == ' ' || json.front() == '\n'))
 			json.erase(json.begin());
-		if (!json.empty() && json.front() == '{')
-			refined = applyJsonRenameMap(request.functionSource, json);
+		if (!json.empty() && json.front() == '{') refined = applyJsonRenameMap(request.functionSource, json);
 	}
 	const auto gates = runVerificationGates(request.functionSource, refined);
 	if (!gates.allPassed())
 	{
 		// Keep the failed attempt when compile failed so the hook can capture diagnostics.
-		response.refinedSource =
-			(gates.compile == GateResult::FailCompile) ? refined : request.functionSource;
+		response.refinedSource = (gates.compile == GateResult::FailCompile) ? refined : request.functionSource;
 		response.accepted = false;
 		response.manifestJson = buildManifest(
 			false,
@@ -267,8 +295,8 @@ RefinementResponse Refiner::refine(const RefinementRequest& request) const
 		{
 			response.refinedSource = refined;
 			response.accepted = false;
-			response.manifestJson = buildManifest(
-				false, "compile_syntax", request, gen, refined, compileGateLabel(&gates, true), wallMs());
+			response.manifestJson =
+				buildManifest(false, "compile_syntax", request, gen, refined, compileGateLabel(&gates, true), wallMs());
 			std::fprintf(stderr, "retdec-neural: compile_syntax rejected refinement\n");
 			return response;
 		}
