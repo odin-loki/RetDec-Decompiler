@@ -11,6 +11,8 @@
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <map>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -85,8 +87,48 @@ std::string jsonEscape(const std::string& s)
 
 } // namespace
 
+void appendJsonStringArray(std::ostringstream& oss, const char* key, const std::set<std::string>& values)
+{
+	if (values.empty()) return;
+	oss << ",\"" << key << "\":[";
+	bool first = true;
+	for (const auto& v: values)
+	{
+		if (!first) oss << ',';
+		first = false;
+		oss << '"' << jsonEscape(v) << '"';
+	}
+	oss << ']';
+}
+
+void buildCallGraph(
+	const retdec::config::Config& config,
+	std::map<std::string, std::set<std::string>>& callersOf,
+	std::map<std::string, std::set<std::string>>& calleesOf)
+{
+	for (const auto& callee: config.functions)
+	{
+		for (const auto& site: callee.codeReferences)
+		{
+			if (!site.isDefined()) continue;
+			for (const auto& caller: config.functions)
+			{
+				if (caller.getName() == callee.getName()) continue;
+				if (!caller.getStart().isDefined() || !caller.getEnd().isDefined()) continue;
+				if (!caller.contains(site)) continue;
+				callersOf[callee.getName()].insert(caller.getName());
+				calleesOf[caller.getName()].insert(callee.getName());
+			}
+		}
+	}
+}
+
 std::string serializeSemanticContext(const retdec::config::Config& config)
 {
+	std::map<std::string, std::set<std::string>> callersOf;
+	std::map<std::string, std::set<std::string>> calleesOf;
+	buildCallGraph(config, callersOf, calleesOf);
+
 	std::ostringstream oss;
 	oss << "{\"functions\":[";
 	bool firstFn = true;
@@ -141,7 +183,12 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 			if (!d.detail.empty()) oss << ",\"detail\":\"" << jsonEscape(d.detail) << '"';
 			oss << '}';
 		}
-		oss << "]}";
+		oss << ']';
+		const auto callersIt = callersOf.find(fn.getName());
+		if (callersIt != callersOf.end()) appendJsonStringArray(oss, "callers", callersIt->second);
+		const auto calleesIt = calleesOf.find(fn.getName());
+		if (calleesIt != calleesOf.end()) appendJsonStringArray(oss, "callees", calleesIt->second);
+		oss << '}';
 	}
 	oss << "],\"classes\":[";
 	bool firstCl = true;

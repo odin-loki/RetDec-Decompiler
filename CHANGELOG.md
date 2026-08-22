@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N18 leftover: `serializeSemanticContext` dumps caller and
+  callee names recovered from existing `Function::codeReferences`
+  and address ranges. This is call-graph context in the prompt,
+  not a per-function bottom-up refine pass (that still needs a
+  C parser). Test: `SerializesCallGraphFromCodeReferences`.
+  Default F5 is unchanged.
 - N15 leftover: `applyJsonRenameMap` now skips the C11 keyword
   set and the structural-gate spawn family (`system` / `execv`
   / …) as rename sources or targets. The public header already

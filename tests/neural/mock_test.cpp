@@ -753,6 +753,24 @@ TEST(NeuralSemanticContext, SkipsEmptyFunction)
 	EXPECT_EQ(serializeSemanticContext(cfg), "{\"functions\":[],\"classes\":[]}");
 }
 
+TEST(NeuralSemanticContext, SerializesCallGraphFromCodeReferences)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Function caller(retdec::common::Address(0x401000), retdec::common::Address(0x401080), "main");
+	caller.setDeclarationString("int main(void)");
+	retdec::common::Function callee(retdec::common::Address(0x401200), retdec::common::Address(0x401280), "expand_key");
+	callee.usedCryptoConstants.insert("AES");
+	callee.codeReferences.insert(retdec::common::Address(0x401010));
+	cfg.functions.insert(caller);
+	cfg.functions.insert(callee);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"name\":\"expand_key\""), std::string::npos);
+	EXPECT_NE(json.find("\"callers\":[\"main\"]"), std::string::npos);
+	EXPECT_NE(json.find("\"name\":\"main\""), std::string::npos);
+	EXPECT_NE(json.find("\"callees\":[\"expand_key\"]"), std::string::npos);
+}
+
 TEST(NeuralSemanticContext, SerializesRttiClassNames)
 {
 	auto cfg = retdec::config::Config::empty();
