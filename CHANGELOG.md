@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- E6: `llvm_to_ssa` maps LLVM `PHINode` to `IrInstr::Op::Phi` and
+  attaches incoming ConstantInt Immediate uses. The `BasicBlock::phis`
+  list stays empty so AccumulateDetector does not fire on every loop.
+  Test: `LlvmToSsa.ForLoopHasBackEdgeHeaderPhiAndImmediateUses`.
 - ci-core 9 name-blind remasure after the precision gates:
   mean F1 **0.332** (was ≈ 0.335). Micro tp=8 fp=8 fn=13.
   hash_table 1.000; memcpy_loop 0.800; bubble/merge/quicksort

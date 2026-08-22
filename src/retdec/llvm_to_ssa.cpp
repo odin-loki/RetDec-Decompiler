@@ -114,6 +114,10 @@ static ssa::IrInstr* translateInstr(const llvm::Instruction& li, ssa::SSAFunctio
 	{
 		op = binOp(bo->getOpcode());
 	}
+	else if (llvm::isa<llvm::PHINode>(li))
+	{
+		op = Op::Phi;
+	}
 	else if (
 		llvm::isa<llvm::AllocaInst>(li) || llvm::isa<llvm::GetElementPtrInst>(li) || llvm::isa<llvm::BitCastInst>(li)
 		|| llvm::isa<llvm::TruncInst>(li) || llvm::isa<llvm::ZExtInst>(li) || llvm::isa<llvm::SExtInst>(li)
@@ -127,7 +131,8 @@ static ssa::IrInstr* translateInstr(const llvm::Instruction& li, ssa::SSAFunctio
 
 	// Detectors (RingBuffer wrap mask, sift-down Shl/Mul imm) read
 	// IrInstr::uses. Recovered IR previously left them empty.
-	if (instr && llvm::isa<llvm::BinaryOperator>(li))
+	// PHI incoming ConstantInts are the same Immediate form (E6 def-use).
+	if (instr && (llvm::isa<llvm::BinaryOperator>(li) || llvm::isa<llvm::PHINode>(li)))
 	{
 		for (unsigned i = 0, n = li.getNumOperands(); i < n; ++i)
 		{

@@ -14,9 +14,11 @@
  *                        BinaryOperator ConstantInt operands become Immediate uses)
  *
  * Only instruction classes that the analysis passes actually inspect are
- * translated.  Phi nodes, SSA renaming, and liveness analysis are deliberately
- * skipped here because the LLVM IR is already in SSA form and the analysis
- * passes need only call-graph information and basic control-flow structure.
+ * translated.  LLVM `PHINode` becomes `IrInstr::Op::Phi` with ConstantInt
+ * incoming values as Immediate uses.  The `BasicBlock::phis` list is left
+ * empty — that list is SSAPass output, and AccumulateDetector treats a
+ * non-empty list as std::accumulate evidence.  SSA renaming and liveness
+ * are still skipped because LLVM IR is already in SSA form.
  */
 
 #pragma once
@@ -47,6 +49,7 @@ namespace retdec {
  *   ReturnInst      → Ret
  *   BinaryOperator  → Add/Sub/Mul/Div/And/… (SRem/URem map to Div)
  *   ICmpInst/FCmpInst → Compare
+ *   PHINode         → Phi (instruction only; PhiNode list stays empty)
  *   Other           → Assign (conservative fallback)
  *
  * The returned SSAModule is heap-allocated and owned by the caller.
