@@ -305,3 +305,36 @@ TEST(BuildableSidecars, ClonesFileScopePrototypeNotReturnCall)
 	fs::remove(dir / "retdec_buildable_proto_stubs.c");
 	fs::remove(dir / "retdec_buildable_proto.buildable.c");
 }
+
+TEST(BuildableSidecars, RewritesOrphanBreakKeepsLoopBreak)
+{
+	EmitBuildableEnvGuard guard;
+	setEmitBuildableEnv("1");
+
+	const fs::path dir = fs::temp_directory_path();
+	const fs::path outC = dir / "retdec_buildable_break.c";
+	const std::string original =
+		"uint64_t orphan_if(void) {\n"
+		"    if (1) {\n"
+		"        break;\n"
+		"    }\n"
+		"    return 0;\n"
+		"}\n"
+		"uint64_t in_loop(void) {\n"
+		"    for (;;) {\n"
+		"        break;\n"
+		"    }\n"
+		"    return 0;\n"
+		"}\n";
+	writeAll(outC, original);
+	maybeWriteBuildableSidecars(outC.string(), original);
+	const std::string b = readAll(dir / "retdec_buildable_break.buildable.c");
+	EXPECT_NE(b.find("/* orphan break */"), std::string::npos);
+	EXPECT_NE(b.find("for (;;) {\n        break;\n    }"), std::string::npos);
+	EXPECT_EQ(readAll(outC), original);
+
+	fs::remove(outC);
+	fs::remove(dir / "retdec_buildable_break.h");
+	fs::remove(dir / "retdec_buildable_break_stubs.c");
+	fs::remove(dir / "retdec_buildable_break.buildable.c");
+}

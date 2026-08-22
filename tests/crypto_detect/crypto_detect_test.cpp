@@ -69,6 +69,7 @@ TEST(CryptoResultTest, AlgorithmNames) {
     r.algorithm = CryptoAlgorithm::MD5;      EXPECT_EQ(r.algorithmName(), "MD5");
     r.algorithm = CryptoAlgorithm::CRC;      EXPECT_EQ(r.algorithmName(), "CRC");
     r.algorithm = CryptoAlgorithm::Blowfish; EXPECT_EQ(r.algorithmName(), "Blowfish");
+    r.algorithm = CryptoAlgorithm::DES;      EXPECT_EQ(r.algorithmName(), "DES");
     r.algorithm = CryptoAlgorithm::Unknown;  EXPECT_EQ(r.algorithmName(), "Unknown");
 }
 
@@ -658,6 +659,22 @@ TEST(CryptoDetectorTest, BlowfishDetected) {
     EXPECT_TRUE(hasBF);
 }
 
+TEST(CryptoDetectorTest, DESDetected) {
+    CryptoDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* i = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, i, 0x02080800ULL);
+    addInstr(*fn, blk, IrInstr::Op::Add);
+    addInstr(*fn, blk, IrInstr::Op::Add);
+    addInstr(*fn, blk, IrInstr::Op::Add);
+    auto results = det.detect(*fn);
+    bool hasDES = false;
+    for (auto& r : results)
+        if (r.algorithm == CryptoAlgorithm::DES) hasDES = true;
+    EXPECT_TRUE(hasDES);
+}
+
 TEST(CryptoDetectorTest, ConfidenceThresholdFilters) {
     CryptoDetector::Config cfg;
     cfg.minConfidence = 0.90f;
@@ -946,6 +963,61 @@ TEST(BlowfishDetectorTest, EmptyFunctionLowConfidence) {
 TEST(BlowfishDetectorTest, AlgorithmIsBlowfish) {
     BlowfishDetector det;
     EXPECT_EQ(det.algorithm(), CryptoAlgorithm::Blowfish);
+}
+
+TEST(DESDetectorTest, SPtrans0Detected) {
+    DESDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* i = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, i, 0x02080800ULL); // OpenSSL DES_SPtrans[0][0]
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.algorithm, CryptoAlgorithm::DES);
+    EXPECT_GE(r.confidence, 0.70f);
+    EXPECT_NE(r.emittedAnnotation.find("DES"), std::string::npos);
+}
+
+TEST(DESDetectorTest, ExtraSPtransWordsBoostConfidence) {
+    DESDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* w0 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, w0, 0x02080800ULL);
+    auto* w1 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, w1, 0x02080802ULL);
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.algorithm, CryptoAlgorithm::DES);
+    EXPECT_GT(r.confidence, 0.70f);
+}
+
+TEST(DESDetectorTest, FourSPtransWordsSaturateTowardOne) {
+    DESDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* w0 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, w0, 0x02080800ULL);
+    auto* w1 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, w1, 0x02080802ULL);
+    auto* w2 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, w2, 0x00080802ULL);
+    auto* w3 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, w3, 0x02000802ULL);
+    auto r = det.detect(*fn);
+    EXPECT_NEAR(r.confidence, 1.0f, 0.01f);
+}
+
+TEST(DESDetectorTest, EmptyFunctionLowConfidence) {
+    DESDetector det;
+    auto fn = makeEmptyFn();
+    addBlock(*fn);
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.10f);
+    EXPECT_TRUE(r.emittedAnnotation.empty());
+}
+
+TEST(DESDetectorTest, AlgorithmIsDES) {
+    DESDetector det;
+    EXPECT_EQ(det.algorithm(), CryptoAlgorithm::DES);
 }
 
 TEST(AnnotationTest, RSAAnnotationMentionsMontgomery) {

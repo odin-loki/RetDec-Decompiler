@@ -14,7 +14,7 @@ Post-ship performance features (MASTER-UPGRADE-PLAN Part 11, step 27).
 | `RETDEC_PROFILE_JSON` | off | Write `<output>.profile.json` (`auto` next to `-o`) |
 | `RETDEC_TYPE_INFERENCE` | off | Extra per-function type-inference loop (off = faster) |
 | `RETDEC_NEURAL_REFINE` | off | Offline llama.cpp refine (needs GGUF + `RETDEC_ENABLE_LLAMACPP`) |
-| `RETDEC_EMIT_BUILDABLE` | off | Write `.h` / `_stubs.c` / `.buildable.c` next to output C. `.buildable.c` is one linkable TU (libc headers, weak stubs, `main` if missing). Default `.c` unchanged. |
+| `RETDEC_EMIT_BUILDABLE` | off | Write `.h` / `_stubs.c` / `.buildable.c` next to output C. `.buildable.c` is one linkable TU (libc headers, cloned prototypes, orphan break rewrite, weak stubs, `main` if missing). Default `.c` unchanged. |
 | `RETDEC_SKIP_SEMANTIC_RECOVERY` | off | A/B only: skip post-pipeline detectors (default F5 still runs them) |
 | `RETDEC_NEURAL_REQUIRE_COMPILE` | off | Accept neural refine only if `cc -fsyntax-only` passes |
 | `RETDEC_NEURAL_THINKING` | off | Qwen `/think` (slower; off = `/no_think`) |

@@ -190,7 +190,8 @@ std::string includeGuardFromHeaderName(const std::string& headerName)
 bool isSkippedCallName(const std::string& name)
 {
 	return name == "if" || name == "for" || name == "while" || name == "switch" || name == "return" || name == "sizeof"
-		|| name == "__readUndefQword" || name == "__readfsqword" || name == "__asm_hlt" || name == "__retdec_stub";
+		|| name == "__readUndefQword" || name == "__readfsqword" || name == "__asm_hlt"
+		|| name == "__asm_rep_stosq_memset" || name == "__retdec_stub";
 }
 
 const char* libcHeaderForName(const std::string& name)
@@ -266,6 +267,8 @@ void writeHelperStubs(std::ostream& os)
 	os << "RETDEC_BUILDABLE_WEAK uint64_t __readfsqword(unsigned long a) "
 		  "{ (void)a; return 0; }\n";
 	os << "RETDEC_BUILDABLE_WEAK void __asm_hlt(void) {}\n";
+	os << "RETDEC_BUILDABLE_WEAK void *__asm_rep_stosq_memset(void *d, int c, "
+		  "unsigned long n) { return memset(d, c, (size_t)n); }\n";
 }
 
 void writePrototypeBodies(std::ostream& os, const std::string& src)
@@ -610,6 +613,130 @@ std::string injectUndeclaredTemps(const std::string& src)
 		out += body;
 		out.push_back('}');
 		i = bodyEnd + 1;
+	}
+	return out;
+}
+
+// Sidecar-only: RetDec can emit `break`/`continue` outside a loop/switch
+// (hash_table function_1305). Do not change the default .c.
+std::string rewriteOrphanBreakContinue(const std::string& src)
+{
+	std::string out;
+	out.reserve(src.size() + 64);
+	enum class BraceKind
+	{
+		Other,
+		Loop,
+		Switch
+	};
+	std::vector<BraceKind> stack;
+	BraceKind pending = BraceKind::Other;
+	int paren = 0;
+	std::size_t i = 0;
+	while (i < src.size())
+	{
+		const std::size_t next = skipNonCode(src, i);
+		if (next != i)
+		{
+			out.append(src, i, next - i);
+			i = next;
+			continue;
+		}
+		if (isIdentStart(src[i]))
+		{
+			const std::size_t start = i;
+			++i;
+			while (i < src.size() && isIdentCont(src[i]))
+			{
+				++i;
+			}
+			const std::string name = src.substr(start, i - start);
+			if (name == "for" || name == "while" || name == "do")
+			{
+				out.append(src, start, i - start);
+				pending = BraceKind::Loop;
+				continue;
+			}
+			if (name == "switch")
+			{
+				out.append(src, start, i - start);
+				pending = BraceKind::Switch;
+				continue;
+			}
+			if (name == "break" || name == "continue")
+			{
+				std::size_t after = i;
+				skipSpaces(src, after);
+				if (after < src.size() && src[after] == ';')
+				{
+					bool inLoop = pending == BraceKind::Loop;
+					bool inSwitch = pending == BraceKind::Switch;
+					for (auto k: stack)
+					{
+						if (k == BraceKind::Loop)
+						{
+							inLoop = true;
+						}
+						if (k == BraceKind::Switch)
+						{
+							inSwitch = true;
+						}
+					}
+					const bool ok = (name == "break") ? (inLoop || inSwitch) : inLoop;
+					if (!ok)
+					{
+						out += "/* orphan ";
+						out += name;
+						out += " */";
+						continue;
+					}
+				}
+			}
+			out.append(src, start, i - start);
+			continue;
+		}
+		if (src[i] == '{')
+		{
+			stack.push_back(pending);
+			pending = BraceKind::Other;
+			out.push_back('{');
+			++i;
+			continue;
+		}
+		if (src[i] == '}')
+		{
+			if (!stack.empty())
+			{
+				stack.pop_back();
+			}
+			pending = BraceKind::Other;
+			out.push_back('}');
+			++i;
+			continue;
+		}
+		if (src[i] == '(')
+		{
+			++paren;
+			out.push_back('(');
+			++i;
+			continue;
+		}
+		if (src[i] == ')')
+		{
+			if (paren > 0)
+			{
+				--paren;
+			}
+			out.push_back(')');
+			++i;
+			continue;
+		}
+		if (src[i] == ';' && paren == 0)
+		{
+			pending = BraceKind::Other;
+		}
+		out.push_back(src[i]);
+		++i;
 	}
 	return out;
 }
@@ -1048,6 +1175,7 @@ void maybeWriteBuildableSidecars(const std::string& outputCPath, const std::stri
 	header << "uint64_t __readUndefQword(void);\n";
 	header << "uint64_t __readfsqword(unsigned long);\n";
 	header << "void __asm_hlt(void);\n";
+	header << "void *__asm_rep_stosq_memset(void *, int, unsigned long);\n";
 
 	const auto typeBlocks = scrapeTypeBlocks(src);
 	if (!typeBlocks.empty())
@@ -1109,7 +1237,7 @@ void maybeWriteBuildableSidecars(const std::string& outputCPath, const std::stri
 	{
 		buildable << "#define " << name << "(...) ((" << name << ")())\n";
 	}
-	buildable << injectUndeclaredTemps(src);
+	buildable << rewriteOrphanBreakContinue(injectUndeclaredTemps(src));
 	if (!src.empty() && src.back() != '\n')
 	{
 		buildable << '\n';

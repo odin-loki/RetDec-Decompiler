@@ -10,11 +10,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 - Emit-buildable `.buildable.c` is a single linkable TU: libc headers
   instead of `int putchar(void)`, extra-arity wrappers, cloned file-scope
-  prototypes (not `return` calls), weak helpers, and `main` when recovered
-  C has none. ci-core buildable `tu_valid` **8/9** and `recompile` **8/9**.
-  Default `.c` unchanged.
-- A7 Blowfish P-array words (`0x243f6a88` …). Base64 skipped (no SSA
-  string table).
+  prototypes (not `return` calls), orphan `break`/`continue` rewritten,
+  weak helpers, and `main` when recovered C has none. ci-core buildable
+  `tu_valid` **9/9** and `recompile` **9/9**. Full stand-in corpus (216):
+  buildable **0.912**. Default `.c` unchanged.
+- A7 Blowfish P-array (`0x243f6a88` …) and DES `DES_SPtrans` packed
+  words (`0x02080800` …). Base64 skipped (no SSA string table).
 - E1 name-blind real-ELF smoke: `scripts/ci/run_e1_real_binary_smoke.sh`
   (named vs hashed labels must match; empty detections still pass).
 - Emit-buildable skips parameter names and wraps extra-arity

@@ -85,6 +85,13 @@
  * Any one P-array word is sufficient. Base64 alphabets are not scanned:
  * SSA exposes immediates only (no string-table / data-section access).
  *
+ * ### DES
+ *
+ * Constant fingerprints — OpenSSL/SSLeay DES_SPtrans packed S-box+P words:
+ *   `0x02080800, 0x02080802, 0x00080802, 0x02000802`.
+ * Any one distinctive multi-bit word is sufficient. Raw S-box nibbles and
+ * IP/FP swap masks (`0x0f0f0f0f`, `0x33333333`, …) are not unique.
+ *
  * ### HMAC
  *
  * Constant fingerprints (unmistakable):
@@ -156,6 +163,7 @@ enum class CryptoAlgorithm : uint8_t {
     Poly1305,
     Salsa20,
     Blowfish,    ///< Blowfish P-array (π digits) fingerprint
+    DES,         ///< DES_SPtrans packed S-box+P fingerprint
 };
 
 enum class CryptoMode : uint8_t {
@@ -281,6 +289,13 @@ struct BlowfishEvidence {
     int   pArrayWords        = 0;     ///< how many of the first four P words
 };
 
+struct DESEvidence {
+    bool  found              = false;
+    float confidence         = 0.0f;
+    bool  hasSPtrans         = false; ///< DES_SPtrans packed words (e.g. 0x02080800)
+    int   sptransWords       = 0;     ///< how many distinctive SPtrans words
+};
+
 // ─── Detector interface ───────────────────────────────────────────────────────
 
 class ICryptoDetector {
@@ -391,6 +406,19 @@ public:
 private:
     BlowfishEvidence analyse(const ssa::SSAFunction& fn) const;
     float            score(const BlowfishEvidence& ev) const;
+};
+
+/**
+ * DES detector — OpenSSL/SSLeay DES_SPtrans packed S-box+P words.
+ * 0x02080800 is uniquely DES; IP/FP masks (0x0f0f0f0f …) are not used.
+ */
+class DESDetector : public ICryptoDetector {
+public:
+    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
+    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::DES; }
+private:
+    DESEvidence analyse(const ssa::SSAFunction& fn) const;
+    float       score(const DESEvidence& ev) const;
 };
 
 // ─── Crypto detector orchestrator ────────────────────────────────────────────

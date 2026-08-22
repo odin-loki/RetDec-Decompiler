@@ -92,7 +92,7 @@ Deterministic analysis writes C. Neural may refine it. **Neither path executes t
 
 Priority inside the wave:
 
-1. **A7** constant-keyed crypto (SHA/MD5/ChaCha/Blowfish P-array). Base64 skipped (no SSA string table).  
+1. **A7** constant-keyed crypto (SHA/MD5/ChaCha/Blowfish P-array, DES SPtrans). Base64 skipped (no SSA string table). **A8** lock-prefix/ldxr: SSA `IrInstr::Op` has no lock/atomic, so not implemented.  
 2. **E7** `docs/CLAIMS.md` register.  
 3. **E8/E9** link-graph / doc-vs-code CI scripts.  
 4. **N6–N9** model allowlist default, GGUF header parse, instance state, richer manifest.  
