@@ -8,6 +8,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- B7: name-only unordered-map hash (`hash` / `fnv` / `murmur`
+  callee, no xor+mul) tags `evidence:symbol_name` on
+  `emittedType`. Structural xor+mul hash stays in the headline.
+  Headline F1 is unchanged (xor+mul path untagged; ci-core
+  `hash_table` is already 0.000). Tests: `HashCallDetected`,
+  `InlineHashXorMul`, `NameOnlyHashPreservesSymbolNameEvidence`,
+  `test_tagged_unordered_map_excluded_from_headline`.
 - Neural structural gate also compares `execl` / `execv` /
   `execvp` / `WinExec` / `ShellExecute` / `CreateProcessA` /
   `CreateProcessW` identifier counts (same family as

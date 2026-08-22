@@ -64,8 +64,25 @@ static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
 	return n;
 }
 
-// Hash computation: call to a recognisable hash function, or inline XOR+MUL chain.
-static bool hasHashCompute(const ssa::SSAFunction& fn)
+static bool hasNamedHash(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+		{
+			if (!instr || instr->op != ssa::IrInstr::Op::Call) continue;
+			const auto& cn = instr->calleeName;
+			if (cn.find("hash") != std::string::npos || cn.find("Hash") != std::string::npos
+				|| cn.find("fnv") != std::string::npos || cn.find("murmur") != std::string::npos)
+				return true;
+		}
+	}
+	return false;
+}
+
+static bool hasStructuralHash(const ssa::SSAFunction& fn)
 {
 	bool hasXor = false, hasMul = false;
 	for (uint32_t b = 0; b < fn.blockCount(); ++b)
@@ -75,19 +92,17 @@ static bool hasHashCompute(const ssa::SSAFunction& fn)
 		for (const auto* instr: blk->instrs)
 		{
 			if (!instr) continue;
-			if (instr->op == ssa::IrInstr::Op::Call)
-			{
-				const auto& cn = instr->calleeName;
-				if (cn.find("hash") != std::string::npos || cn.find("Hash") != std::string::npos
-					|| cn.find("fnv") != std::string::npos || cn.find("murmur") != std::string::npos)
-					return true;
-			}
 			if (instr->op == ssa::IrInstr::Op::Xor) hasXor = true;
 			if (instr->op == ssa::IrInstr::Op::Mul) hasMul = true;
 		}
 	}
-	// Inline FNV-1a: xor + mul combination.
 	return hasXor && hasMul;
+}
+
+// Hash computation: call to a recognisable hash function, or inline XOR+MUL chain.
+static bool hasHashCompute(const ssa::SSAFunction& fn)
+{
+	return hasNamedHash(fn) || hasStructuralHash(fn);
 }
 
 // Bucket array: at least two consecutive Loads from a pointer base.
@@ -179,6 +194,7 @@ ContainerResult UnorderedMapDetector::detect(const ssa::SSAFunction& fn) const
 	if (ev.confidence < 0.10f) return result;
 
 	result.emittedType = "std::unordered_map<int, int>";
+	if (hasNamedHash(fn) && !hasStructuralHash(fn)) result.emittedType = "evidence:symbol_name " + result.emittedType;
 	result.elementType.kind = RecoveredType::Kind::Int32;
 	result.keyType.kind = RecoveredType::Kind::Int32;
 

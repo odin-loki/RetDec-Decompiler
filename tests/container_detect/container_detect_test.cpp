@@ -553,6 +553,7 @@ TEST(UnorderedMapDetectorTest, HashCallDetected)
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.55f);
 	EXPECT_EQ(r.kind, ContainerKind::UnorderedMap);
+	EXPECT_NE(r.toString().find("evidence:symbol_name"), std::string::npos);
 }
 
 TEST(UnorderedMapDetectorTest, InlineHashXorMul)
@@ -572,6 +573,7 @@ TEST(UnorderedMapDetectorTest, InlineHashXorMul)
 	UnorderedMapDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.55f);
+	EXPECT_EQ(r.toString().find("evidence:symbol_name"), std::string::npos);
 }
 
 TEST(UnorderedMapDetectorTest, ModuloPowerOfTwo)
@@ -942,6 +944,35 @@ TEST(ContainerDetectorTest, VectorFunctionDetected)
 	auto r = det.analyseFunction(*fn);
 	// Either vector or unknown depending on confidence threshold.
 	EXPECT_TRUE(r.kind == ContainerKind::Vector || r.kind == ContainerKind::Unknown);
+}
+
+TEST(ContainerDetectorTest, NameOnlyHashPreservesSymbolNameEvidence)
+{
+	ContainerDetector::Config cfg;
+	cfg.minBlocks = 1;
+	cfg.minInstrs = 1;
+	cfg.runVector = false;
+	cfg.runOpenAddressing = false;
+	cfg.runRingBuffer = false;
+	cfg.runList = false;
+	cfg.runMap = false;
+	cfg.runString = false;
+	cfg.runSharedPtr = false;
+	ContainerDetector det(cfg);
+	auto fn = makeFunc(
+		"uhm_lookup",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Compare,
+		},
+		1);
+	fn->block(1)->succs.push_back(0);
+	addCall(*fn, "std_hash");
+	addImmInstr(*fn, ssa::IrInstr::Op::And, 63);
+	auto r = det.analyseFunction(*fn);
+	EXPECT_EQ(r.kind, ContainerKind::UnorderedMap);
+	EXPECT_NE(r.toString().find("evidence:symbol_name"), std::string::npos);
 }
 
 TEST(ContainerDetectorTest, StringBeatsVectorDueToSSOSignal)

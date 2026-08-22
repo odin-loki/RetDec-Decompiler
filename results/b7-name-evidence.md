@@ -31,6 +31,10 @@ This is **not** a product F1 change by itself.
   `compilerVariant` is not Unknown (`stable_sort` / `merge_sort` /
   `_Stable_sort`). Structural mergesort stays in the headline.
   No remasure (named-variant only).
+- Name-only unordered-map hash (`hash` / `fnv` / `murmur` callee
+  without xor+mul) prefixes `emittedType` with
+  `evidence:symbol_name`. Structural xor+mul hash is untagged.
+  `ContainerDetector` keeps the prefix when it rewrites the type.
 - Name-only partition (`swap` callee without a Load/Store pair)
   prefixes `emittedForm` with `evidence:symbol_name`. Structural
   Load/Store swap is untagged. Extract already drops `std::partition`
@@ -44,8 +48,8 @@ These still read `calleeName` or a symbol table and mix that into the same
 confidence as structural evidence:
 
 - `serial_detect` (`symContains` on SerializeToString, FlatBuffer, …)
-- `unordered_detect` (hash callee *or* xor+mul; not tagged because the
-  xor+mul path is structural)
+- `unordered_detect` xor+mul hash (structural; name-only hash callee
+  is now tagged)
 - `sort_detect` self-name recursion (not `_introsort` / named-heapsort
   / named-mergesort variant; those paths are now tagged)
 - `algo_recover` idiom self-recursion (exact self-call is structural)

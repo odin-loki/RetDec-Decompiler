@@ -368,6 +368,28 @@ def test_tagged_open_addressing_excluded_from_headline() -> None:
     assert "OpenAddressing" not in labels
 
 
+def test_tagged_unordered_map_excluded_from_headline() -> None:
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {
+                        "kind": "container",
+                        "label": "std::unordered_map<int, int>",
+                        "confidence": 0.85,
+                        "detail": "evidence:symbol_name std::unordered_map",
+                    },
+                    {"kind": "sort", "label": "heap sort", "confidence": 0.9},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "generated_heapsort-gcc-O0")
+    assert "HashTable" not in labels
+    assert "Map" not in labels
+    assert "HeapSort" in labels
+
+
 def test_tagged_partition_excluded_from_headline() -> None:
     cfg = {
         "functions": [
@@ -557,6 +579,7 @@ def main() -> int:
     test_atomic_adds_concurrency()
     test_symbol_name_evidence_excluded_from_headline()
     test_tagged_open_addressing_excluded_from_headline()
+    test_tagged_unordered_map_excluded_from_headline()
     test_tagged_partition_excluded_from_headline()
     test_tagged_mergesort_excluded_from_headline()
     test_tagged_heapsort_excluded_from_headline()
