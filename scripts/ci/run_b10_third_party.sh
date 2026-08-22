@@ -19,10 +19,11 @@ python3 "${ROOT}/scripts/extract_decompiler_predictions.py" \
 	--decompiler "${DEC}" \
 	--corpus "${CORPUS}" \
 	--manifest "${CORPUS}/manifest.json" \
+	--names "zlib_crc_only-gcc-O0,zlib_crc_only-gcc-O2" \
 	--out "${ROOT}/tests/algorithm_recovery/predictions/third-party-nameblind.json" \
 	--work "${ROOT}/build/linux/b10-work" \
 	--jobs "$(nproc)" \
-	--timeout 300 \
+	--timeout 180 \
 	--no-stem-fallback
 python3 "${ROOT}/tests/algorithm_recovery/runner.py" \
 	--predictions "${ROOT}/tests/algorithm_recovery/predictions/third-party-nameblind.json" \
@@ -43,9 +44,10 @@ n = int(score["summary"]["binaries"])
 lines = [
     "# B10 third-party corpus",
     "",
-    "zlib 1.3.1 (`crc32.c` / `compress.c` / `deflate.c`) compiled into a small",
-    "driver. Labels are taken from that upstream source, not from the detector.",
-    "This is **not** a full Debian coreutils/OpenSSL/SQLite set.",
+    "Headline this run: zlib 1.3.1 **crc32.c only** (no deflate/trees).",
+    "Labels are taken from that upstream source, not from the detector.",
+    "The larger crc+deflate pair previously **timed out at 300s** and is",
+    "not re-run here. This is **not** a full Debian coreutils/OpenSSL/SQLite set.",
     "",
     "Name-blind (`--no-stem-fallback`). CRC is not an assigned `IdiomDetector`",
     "kind (same rule as A6). Expect low recall.",
@@ -58,7 +60,7 @@ lines = [
     "|--------|----------|-----------|----|",
 ]
 per = score.get("per_binary") or {}
-for name in sorted(truth):
+for name in sorted(preds or truth):
     exp = ", ".join(truth.get(name) or []) or "(none)"
     got = ", ".join(preds.get(name) or []) or "(none)"
     f1 = float((per.get(name) or {}).get("f1", 0.0))

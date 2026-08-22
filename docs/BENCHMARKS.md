@@ -59,8 +59,14 @@ B9 adversarial-positive (18 gcc O0/O2 binaries): name-blind mean
 B8 loop-containing negatives (100): FP rate **0.800**
 (`results/b8-loop-negatives.md`). Loop-free B8 remains 0.000.
 
-B10 zlib 1.3.1: extract timed out at 300s on both O0/O2
-(`results/b10-third-party.md`).
+B10 zlib 1.3.1 crc32-only: 2/2 decompiled, name-blind F1 **0.000**.
+crc+deflate still timed out (`results/b10-third-party.md`).
+
+A4: reported 0.90 QuickSort has empirical precision **0** on loop
+negatives (`results/a4-calibration.md`). Not fitted.
+
+Official full-corpus gate is still `MIN_MEAN_F1=0.95`; honest
+name-blind is 0.124 (`results/algorithm-recovery-gate-finding.md`).
 
 Q4 goto baseline on ci-core gcc O0/O2/O3: mean **1.44**
 (`results/goto-optimizer-baseline.md`). O0 is still 0.

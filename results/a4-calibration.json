@@ -1,0 +1,44 @@
+{
+  "fitted": false,
+  "note": "Loop-negative detections only. Every hit is a false positive, so empirical precision is 0 at the reported confidences. Detector constants were not changed.",
+  "n": 240,
+  "reliability_bins": [
+    {
+      "bin": "0.4-0.6",
+      "n": 70,
+      "empirical_precision": 0.0
+    },
+    {
+      "bin": "0.8-1.0",
+      "n": 170,
+      "empirical_precision": 0.0
+    }
+  ],
+  "per_detection": [
+    {
+      "key": "algorithm:std::copy",
+      "n": 10,
+      "empirical_precision": 0.0
+    },
+    {
+      "key": "algorithm:std::transform",
+      "n": 70,
+      "empirical_precision": 0.0
+    },
+    {
+      "key": "container:ring_buffer",
+      "n": 10,
+      "empirical_precision": 0.0
+    },
+    {
+      "key": "container:std::unordered_map<uint32_t, uint32_t>",
+      "n": 70,
+      "empirical_precision": 0.0
+    },
+    {
+      "key": "sort:quicksort",
+      "n": 80,
+      "empirical_precision": 0.0
+    }
+  ]
+}

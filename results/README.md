@@ -21,6 +21,9 @@ Live measurement contract for CI, ship checklist, and the release table.
 | `b8-loop-negatives.md` | Loop-containing B8 FP rate + A4 observation |
 | `b10-third-party.md` | zlib 1.3.1 third-party name-blind result |
 | `goto-optimizer-baseline.md` | Q4 goto counts on ci-core O0/O2/O3 |
+| `a4-calibration.md` | Reported confidence vs empirical precision (not fitted) |
+| `b6-rename-guard.md` | Named vs hashed labels on ci-core 9 |
+| `algorithm-recovery-gate-finding.md` | Official 0.95 gate vs honest 0.124 |
 
 Algorithm-recovery F1 figures that depended on filename filters are
 **withdrawn** (B1–B5). Name-blind ci-core remasure:

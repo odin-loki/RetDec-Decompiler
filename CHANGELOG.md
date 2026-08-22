@@ -8,6 +8,16 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- B6 rename guard on ci-core 9: named vs `$(sha256)` kind:label
+  sets match (`results/b6-rename-guard.md`).
+- A4 observation curve (`results/a4-calibration.md`): 240 detections
+  on loop-negatives; empirical precision **0.000** at reported 0.4–1.0.
+  Detector constants were not fitted.
+- Official vs honest F1 finding
+  (`results/algorithm-recovery-gate-finding.md`). `MIN_MEAN_F1=0.95`
+  stays; name-blind full is 0.124.
+- B10 crc32-only zlib 1.3.1 decompiled 2/2; name-blind F1 **0.000**
+  (CRC not assigned). The crc+deflate pair remains a 300s timeout.
 - B8 loop-containing negatives: 100 gcc-O0 binaries (FIR, histogram,
   Bresenham, box-blur, HTTP-verb, UTF-8 scan, sliding-max, transpose,
   saturating-add, dot-product). Name-blind FP rate **0.800**. Dominant

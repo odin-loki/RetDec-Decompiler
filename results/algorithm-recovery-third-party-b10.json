@@ -4,7 +4,7 @@
     "binaries": 2,
     "mean_f1": 0.0,
     "mean_f1_raw": 0.0,
-    "decompiled": 0,
+    "decompiled": 2,
     "mean_f1_ci95_low": 0.0,
     "mean_f1_ci95_high": 0.0,
     "n": 2,
@@ -17,8 +17,8 @@
       "n": 1,
       "micro": {
         "tp": 0,
-        "fp": 0,
-        "fn": 3,
+        "fp": 8,
+        "fn": 2,
         "precision": 0.0,
         "recall": 0.0,
         "f1": 0.0,
@@ -34,8 +34,8 @@
       "n": 1,
       "micro": {
         "tp": 0,
-        "fp": 0,
-        "fn": 3,
+        "fp": 9,
+        "fn": 2,
         "precision": 0.0,
         "recall": 0.0,
         "f1": 0.0,
@@ -47,18 +47,18 @@
     }
   },
   "per_binary": {
-    "zlib_crc_compress-gcc-O0": {
+    "zlib_crc_only-gcc-O0": {
       "tp": 0,
-      "fp": 0,
-      "fn": 3,
+      "fp": 8,
+      "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
       "f1": 0.0
     },
-    "zlib_crc_compress-gcc-O2": {
+    "zlib_crc_only-gcc-O2": {
       "tp": 0,
-      "fp": 0,
-      "fn": 3,
+      "fp": 9,
+      "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
       "f1": 0.0
@@ -85,21 +85,101 @@
       "n_pred": 0,
       "n_true": 2
     },
-    "Compression": {
+    "CircularBuffer": {
       "tp": 0,
-      "fp": 0,
-      "fn": 2,
+      "fp": 2,
+      "fn": 0,
       "precision": 0.0,
       "recall": 0.0,
       "f1": 0.0,
-      "n_pred": 0,
-      "n_true": 2
+      "n_pred": 2,
+      "n_true": 0
+    },
+    "Copy": {
+      "tp": 0,
+      "fp": 2,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 2,
+      "n_true": 0
+    },
+    "HashTable": {
+      "tp": 0,
+      "fp": 2,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 2,
+      "n_true": 0
+    },
+    "HeapSort": {
+      "tp": 0,
+      "fp": 1,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 1,
+      "n_true": 0
+    },
+    "Memcpy": {
+      "tp": 0,
+      "fp": 2,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 2,
+      "n_true": 0
+    },
+    "OpenAddressing": {
+      "tp": 0,
+      "fp": 2,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 2,
+      "n_true": 0
+    },
+    "QuickSort": {
+      "tp": 0,
+      "fp": 2,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 2,
+      "n_true": 0
+    },
+    "RingBuffer": {
+      "tp": 0,
+      "fp": 2,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 2,
+      "n_true": 0
+    },
+    "Sort": {
+      "tp": 0,
+      "fp": 2,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "n_pred": 2,
+      "n_true": 0
     }
   },
   "micro": {
     "tp": 0,
-    "fp": 0,
-    "fn": 6,
+    "fp": 17,
+    "fn": 4,
     "precision": 0.0,
     "recall": 0.0,
     "f1": 0.0,
@@ -113,8 +193,8 @@
       "n": 1,
       "micro": {
         "tp": 0,
-        "fp": 0,
-        "fn": 3,
+        "fp": 8,
+        "fn": 2,
         "precision": 0.0,
         "recall": 0.0,
         "f1": 0.0,
@@ -130,8 +210,8 @@
       "n": 1,
       "micro": {
         "tp": 0,
-        "fp": 0,
-        "fn": 3,
+        "fp": 9,
+        "fn": 2,
         "precision": 0.0,
         "recall": 0.0,
         "f1": 0.0,
@@ -143,18 +223,18 @@
     }
   },
   "per_binary_raw": {
-    "zlib_crc_compress-gcc-O0": {
+    "zlib_crc_only-gcc-O0": {
       "tp": 0,
-      "fp": 0,
-      "fn": 3,
+      "fp": 8,
+      "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
       "f1": 0.0
     },
-    "zlib_crc_compress-gcc-O2": {
+    "zlib_crc_only-gcc-O2": {
       "tp": 0,
-      "fp": 0,
-      "fn": 3,
+      "fp": 9,
+      "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
       "f1": 0.0
