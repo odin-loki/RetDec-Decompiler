@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N14 leftover: prompt sanitizer strips `//` and `/* */` comment
+  bodies (same placeholder as string literals) and scans strings
+  first so `"http://…"` is not treated as a comment. C-source
+  fixture only; still no adversarial-binary injection corpus.
+  Test: `StripsCommentBodiesFromFunctionSource`. Default F5 is
+  unchanged.
 - N16 leftover: `serializeSemanticContext` now dumps demangled
   name, start address, declaration, return type, parameters, and
   `usedCryptoConstants` from existing `common::Function` getters,

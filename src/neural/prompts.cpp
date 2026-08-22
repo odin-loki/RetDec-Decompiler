@@ -22,8 +22,10 @@ std::string tierPrompt(RefinementTier tier)
 	return {};
 }
 
-// Replace contents of C "..." and '...' with placeholders so binary-lifted
-// strings cannot inject instructions into the model prompt.
+// Replace C "..." / '...' bodies and comment text with placeholders so
+// binary-lifted strings and comment payloads cannot inject instructions
+// into the model prompt. String literals are scanned first so "//" inside
+// a string is not treated as a comment.
 std::string stripCStringLiterals(const std::string& src)
 {
 	std::string out;
@@ -31,34 +33,6 @@ std::string stripCStringLiterals(const std::string& src)
 	const std::size_t n = src.size();
 	for (std::size_t i = 0; i < n; ++i)
 	{
-		if (src[i] == '/' && i + 1 < n && src[i + 1] == '/')
-		{
-			out += "//";
-			i += 2;
-			while (i < n && src[i] != '\n')
-			{
-				out += src[i];
-				++i;
-			}
-			if (i < n) out += src[i];
-			continue;
-		}
-		if (src[i] == '/' && i + 1 < n && src[i + 1] == '*')
-		{
-			out += "/*";
-			i += 2;
-			while (i + 1 < n && !(src[i] == '*' && src[i + 1] == '/'))
-			{
-				out += src[i];
-				++i;
-			}
-			if (i + 1 < n)
-			{
-				out += "*/";
-				++i;
-			}
-			continue;
-		}
 		if (src[i] == '"' || src[i] == '\'')
 		{
 			const char q = src[i];
@@ -81,6 +55,24 @@ std::string stripCStringLiterals(const std::string& src)
 			}
 			continue;
 		}
+		if (src[i] == '/' && i + 1 < n && src[i + 1] == '/')
+		{
+			out += "//…";
+			i += 2;
+			while (i < n && src[i] != '\n')
+				++i;
+			if (i < n) out += src[i];
+			continue;
+		}
+		if (src[i] == '/' && i + 1 < n && src[i + 1] == '*')
+		{
+			out += "/*…*/";
+			i += 2;
+			while (i + 1 < n && !(src[i] == '*' && src[i + 1] == '/'))
+				++i;
+			if (i + 1 < n) ++i;
+			continue;
+		}
 		out += src[i];
 	}
 	return out;
@@ -96,8 +88,7 @@ std::string buildRefinementPrompt(const RefinementRequest& request)
 	// Instruction text stays in the system section (N5).
 	oss << "<|im_start|>system\n"
 		<< "You refine decompiled C. Output only C source. No markdown fences.\n"
-		<< tierPrompt(request.tier)
-		<< "<|im_end|>\n<|im_start|>user\n";
+		<< tierPrompt(request.tier) << "<|im_end|>\n<|im_start|>user\n";
 	if (!request.semanticContextJson.empty())
 	{
 		oss << "Semantic context (JSON):\n" << request.semanticContextJson << "\n\n";
