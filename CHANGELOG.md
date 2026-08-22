@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` also dumps existing
+  return and parameter storage (register name, stack offset,
+  memory address) on already-included functions. Test:
+  `SerializesParameterAndReturnStorage`. Default F5 is
+  unchanged.
 - N16 leftover: known architecture endian (`little` / `big`) is
   included next to name and bit-size. Unknown endian stays
   omitted. Test: `SerializesCompilerToolAndArchitecture`.

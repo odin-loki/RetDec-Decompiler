@@ -912,6 +912,23 @@ TEST(NeuralSemanticContext, SerializesFunctionRoleFlags)
 	EXPECT_EQ(json.find("\"syscall\""), std::string::npos);
 }
 
+TEST(NeuralSemanticContext, SerializesParameterAndReturnStorage)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Function fn("fn_401000");
+	fn.setDeclarationString("int expand_key(uint8_t *key)");
+	fn.returnStorage = retdec::common::Storage::inRegister("eax");
+	retdec::common::Object key("key", retdec::common::Storage::onStack(8));
+	key.type.setLlvmIr("i8*");
+	fn.parameters.push_back(key);
+	cfg.functions.insert(fn);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"return_storage\":{\"register\":\"eax\"}"), std::string::npos);
+	EXPECT_NE(json.find("\"name\":\"key\""), std::string::npos);
+	EXPECT_NE(json.find("\"stack_offset\":8"), std::string::npos);
+}
+
 TEST(NeuralSemanticContext, SerializesCallingConvention)
 {
 	auto cfg = retdec::config::Config::empty();

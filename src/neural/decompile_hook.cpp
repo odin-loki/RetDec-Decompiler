@@ -5,6 +5,7 @@
 
 #include "retdec/common/function.h"
 #include "retdec/common/semantic_detection.h"
+#include "retdec/common/storage.h"
 
 #include <cmath>
 #include <cstdio>
@@ -83,6 +84,23 @@ std::string jsonEscape(const std::string& s)
 		}
 	}
 	return oss.str();
+}
+
+void appendStorageFields(std::ostringstream& oss, const retdec::common::Storage& st)
+{
+	if (st.isRegister())
+	{
+		const std::string n = st.getRegisterName();
+		if (!n.empty()) oss << ",\"register\":\"" << jsonEscape(n) << '"';
+		return;
+	}
+	if (st.isStack())
+	{
+		oss << ",\"stack_offset\":" << st.getStackOffset();
+		return;
+	}
+	if (st.isMemory() && st.getAddress().isDefined())
+		oss << ",\"address\":\"" << jsonEscape(st.getAddress().toHexPrefixString()) << '"';
 }
 
 } // namespace
@@ -168,6 +186,15 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 			oss << ",\"calling_convention\":\"" << jsonEscape(cc.str()) << '"';
 		}
 		if (fn.returnType.isDefined()) oss << ",\"return_type\":\"" << jsonEscape(fn.returnType.getId()) << '"';
+		if (fn.returnStorage.isDefined())
+		{
+			oss << ",\"return_storage\":{";
+			std::ostringstream body;
+			appendStorageFields(body, fn.returnStorage);
+			const std::string fields = body.str();
+			if (!fields.empty() && fields.front() == ',') oss << fields.substr(1);
+			oss << '}';
+		}
 		if (!fn.parameters.empty())
 		{
 			oss << ",\"parameters\":[";
@@ -178,6 +205,7 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 				firstP = false;
 				oss << "{\"name\":\"" << jsonEscape(p.getName()) << '"';
 				if (p.type.isDefined()) oss << ",\"type\":\"" << jsonEscape(p.type.getId()) << '"';
+				appendStorageFields(oss, p.getStorage());
 				oss << '}';
 			}
 			oss << ']';
