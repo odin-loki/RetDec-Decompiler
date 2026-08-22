@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- B7: name-only list alloc (`malloc` / `new` / `allocate`, no
+  sentinel) tags `evidence:symbol_name` on `emittedType`.
+  Sentinel-init list stays in the headline. ci-core has no list
+  binary; no remasure. Tests: `NodeAllocPlusTraversalDetected`,
+  `test_tagged_list_excluded_from_headline`.
 - N12 leftover: opt-in content-addressed refinement cache
   (`RETDEC_NEURAL_CACHE_DIR`). Key is SHA-256 of model path/pin,
   prompt, tier, and sampler params. Off unless the env is set.

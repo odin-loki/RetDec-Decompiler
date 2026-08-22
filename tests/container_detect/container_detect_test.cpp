@@ -396,6 +396,7 @@ TEST(ListDetectorTest, NodeAllocPlusTraversalDetected)
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.40f);
 	EXPECT_EQ(r.kind, ContainerKind::List);
+	EXPECT_NE(r.toString().find("evidence:symbol_name"), std::string::npos);
 }
 
 TEST(ListDetectorTest, FourStoresIncreasesConfidence)
@@ -416,6 +417,7 @@ TEST(ListDetectorTest, FourStoresIncreasesConfidence)
 	ListDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.60f);
+	EXPECT_NE(r.toString().find("evidence:symbol_name"), std::string::npos);
 }
 
 TEST(ListDetectorTest, AccessPatternsHaveIterate)

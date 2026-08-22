@@ -286,7 +286,11 @@ ContainerResult ContainerDetector::analyseFunction(const ssa::SSAFunction& fn) c
 	if (best.kind == ContainerKind::Vector)
 		best.emittedType = "std::vector<" + best.elementType.toString() + ">";
 	else if (best.kind == ContainerKind::List)
+	{
+		const bool nameOnlyAlloc = best.emittedType.find("evidence:symbol_name") != std::string::npos;
 		best.emittedType = "std::list<" + best.elementType.toString() + ">";
+		if (nameOnlyAlloc) best.emittedType = "evidence:symbol_name " + best.emittedType;
+	}
 	else if (best.kind == ContainerKind::Map)
 		best.emittedType = "std::map<" + best.keyType.toString() + ", " + best.elementType.toString() + ">";
 	else if (best.kind == ContainerKind::UnorderedMap)

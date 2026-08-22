@@ -46,15 +46,17 @@ namespace container_detect {
 namespace {
 
 // Count Store instructions in fn.
-static int countStores(const ssa::SSAFunction& fn) {
-    int n = 0;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs)
-            if (instr && instr->op == ssa::IrInstr::Op::Store) ++n;
-    }
-    return n;
+static int countStores(const ssa::SSAFunction& fn)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+			if (instr && instr->op == ssa::IrInstr::Op::Store) ++n;
+	}
+	return n;
 }
 
 // A self-referential store is a Store where the destination address and the
@@ -62,127 +64,142 @@ static int countStores(const ssa::SSAFunction& fn) {
 // We approximate this by looking for ≥2 Store instructions in the function
 // entry block where the stored value feeds another memory slot in the same block
 // (short-distance address reuse within 2 instructions).
-static bool hasSentinelInit(const ssa::SSAFunction& fn) {
-    if (fn.blockCount() == 0) return false;
-    const auto* entry = fn.block(0);
-    if (!entry) return false;
+static bool hasSentinelInit(const ssa::SSAFunction& fn)
+{
+	if (fn.blockCount() == 0) return false;
+	const auto* entry = fn.block(0);
+	if (!entry) return false;
 
-    int selfRefStores = 0;
-    for (std::size_t i = 0; i + 1 < entry->instrs.size(); ++i) {
-        const auto* a = entry->instrs[i];
-        const auto* b = entry->instrs[i + 1];
-        if (!a || !b) continue;
-        if (a->op == ssa::IrInstr::Op::Store &&
-            b->op == ssa::IrInstr::Op::Store) {
-            // If both stores have overlapping use-sets (both reference the same
-            // base address value), it's a sentinel init.
-            if (!a->uses.empty() && !b->uses.empty() &&
-                a->uses[1].valueId == b->uses[1].valueId + 1) {
-                ++selfRefStores;
-            }
-        }
-    }
-    return selfRefStores >= 1;
+	int selfRefStores = 0;
+	for (std::size_t i = 0; i + 1 < entry->instrs.size(); ++i)
+	{
+		const auto* a = entry->instrs[i];
+		const auto* b = entry->instrs[i + 1];
+		if (!a || !b) continue;
+		if (a->op == ssa::IrInstr::Op::Store && b->op == ssa::IrInstr::Op::Store)
+		{
+			// If both stores have overlapping use-sets (both reference the same
+			// base address value), it's a sentinel init.
+			if (!a->uses.empty() && !b->uses.empty() && a->uses[1].valueId == b->uses[1].valueId + 1)
+			{
+				++selfRefStores;
+			}
+		}
+	}
+	return selfRefStores >= 1;
 }
 
 // Node heap allocation: a malloc/new call followed by a pointer store.
-static bool hasNodeAlloc(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs) {
-            if (!instr || instr->op != ssa::IrInstr::Op::Call) continue;
-            const auto& cn = instr->calleeName;
-            if (cn == "malloc" || cn == "_Znwm" || cn == "operator new" ||
-                cn.find("allocate") != std::string::npos)
-                return true;
-        }
-    }
-    return false;
+static bool hasNodeAlloc(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+		{
+			if (!instr || instr->op != ssa::IrInstr::Op::Call) continue;
+			const auto& cn = instr->calleeName;
+			if (cn == "malloc" || cn == "_Znwm" || cn == "operator new" || cn.find("allocate") != std::string::npos)
+				return true;
+		}
+	}
+	return false;
 }
 
 // Chain traversal: a loop that loads a pointer from an offset (the _next slot)
 // and compares it to another pointer (the sentinel or nullptr).
 // In practice we detect: ≥1 Load + ≥1 Compare + ≥1 back-edge.
-static bool hasChainTraversal(const ssa::SSAFunction& fn) {
-    int loads = 0, compares = 0, backEdges = 0;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs) {
-            if (!instr) continue;
-            if (instr->op == ssa::IrInstr::Op::Load)    ++loads;
-            if (instr->op == ssa::IrInstr::Op::Compare) ++compares;
-        }
-        // Back-edge: a successor block with a smaller index.
-        for (uint32_t succ : blk->succs)
-            if (succ <= b) ++backEdges;
-    }
-    return loads >= 1 && compares >= 1 && backEdges >= 1;
+static bool hasChainTraversal(const ssa::SSAFunction& fn)
+{
+	int loads = 0, compares = 0, backEdges = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+		{
+			if (!instr) continue;
+			if (instr->op == ssa::IrInstr::Op::Load) ++loads;
+			if (instr->op == ssa::IrInstr::Op::Compare) ++compares;
+		}
+		// Back-edge: a successor block with a smaller index.
+		for (uint32_t succ: blk->succs)
+			if (succ <= b) ++backEdges;
+	}
+	return loads >= 1 && compares >= 1 && backEdges >= 1;
 }
 
 // Four-pointer update: insert or erase modifies 4 pointer slots.
 // Approximation: ≥4 Store instructions in the function.
-static bool hasFourPtrUpdate(const ssa::SSAFunction& fn) {
-    return countStores(fn) >= 4;
+static bool hasFourPtrUpdate(const ssa::SSAFunction& fn)
+{
+	return countStores(fn) >= 4;
 }
 
 } // anonymous namespace
 
 // ─── ListDetector ────────────────────────────────────────────────────────────
 
-ListEvidence ListDetector::analyseStructure(const ssa::SSAFunction& fn) const {
-    ListEvidence ev;
-    ev.hasSentinelNode   = hasSentinelInit(fn);
-    ev.hasNodeAlloc      = hasNodeAlloc(fn);
-    ev.hasChainTraversal = hasChainTraversal(fn);
-    ev.hasFourPtrUpdate  = hasFourPtrUpdate(fn);
-    ev.found = ev.hasSentinelNode || (ev.hasNodeAlloc && ev.hasChainTraversal);
-    ev.confidence = scoreEvidence(ev);
-    return ev;
+ListEvidence ListDetector::analyseStructure(const ssa::SSAFunction& fn) const
+{
+	ListEvidence ev;
+	ev.hasSentinelNode = hasSentinelInit(fn);
+	ev.hasNodeAlloc = hasNodeAlloc(fn);
+	ev.hasChainTraversal = hasChainTraversal(fn);
+	ev.hasFourPtrUpdate = hasFourPtrUpdate(fn);
+	ev.found = ev.hasSentinelNode || (ev.hasNodeAlloc && ev.hasChainTraversal);
+	ev.confidence = scoreEvidence(ev);
+	return ev;
 }
 
-float ListDetector::scoreEvidence(const ListEvidence& ev) const {
-    float s = 0.0f;
-    if (ev.hasSentinelNode)    s += 0.35f;
-    if (ev.hasNodeAlloc)       s += 0.25f;
-    if (ev.hasChainTraversal)  s += 0.25f;
-    if (ev.hasFourPtrUpdate)   s += 0.15f;
-    return s > 1.0f ? 1.0f : s;
+float ListDetector::scoreEvidence(const ListEvidence& ev) const
+{
+	float s = 0.0f;
+	if (ev.hasSentinelNode) s += 0.35f;
+	if (ev.hasNodeAlloc) s += 0.25f;
+	if (ev.hasChainTraversal) s += 0.25f;
+	if (ev.hasFourPtrUpdate) s += 0.15f;
+	return s > 1.0f ? 1.0f : s;
 }
 
-ContainerResult ListDetector::detect(const ssa::SSAFunction& fn) const {
-    ContainerResult result;
-    result.kind = ContainerKind::List;
+ContainerResult ListDetector::detect(const ssa::SSAFunction& fn) const
+{
+	ContainerResult result;
+	result.kind = ContainerKind::List;
 
-    auto ev = analyseStructure(fn);
-    result.confidence = ev.confidence;
+	auto ev = analyseStructure(fn);
+	result.confidence = ev.confidence;
 
-    if (ev.confidence < 0.10f) return result;
+	if (ev.confidence < 0.10f) return result;
 
-    result.emittedType = "std::list<int>";
-    result.elementType.kind = RecoveredType::Kind::Int32;
+	result.emittedType = "std::list<int>";
+	if (ev.hasNodeAlloc && !ev.hasSentinelNode) result.emittedType = "evidence:symbol_name " + result.emittedType;
+	result.elementType.kind = RecoveredType::Kind::Int32;
 
-    if (ev.hasChainTraversal) {
-        AccessPattern ap;
-        ap.kind    = AccessKind::Iterate;
-        ap.emitted = "for (auto& e : lst)";
-        result.accessPatterns.push_back(ap);
-    }
-    if (ev.hasNodeAlloc) {
-        AccessPattern ap;
-        ap.kind    = AccessKind::PushBack;
-        ap.emitted = "lst.push_back(elem)";
-        result.accessPatterns.push_back(ap);
-    }
-    if (ev.hasFourPtrUpdate) {
-        AccessPattern ap;
-        ap.kind    = AccessKind::Erase;
-        ap.emitted = "lst.erase(it)";
-        result.accessPatterns.push_back(ap);
-    }
+	if (ev.hasChainTraversal)
+	{
+		AccessPattern ap;
+		ap.kind = AccessKind::Iterate;
+		ap.emitted = "for (auto& e : lst)";
+		result.accessPatterns.push_back(ap);
+	}
+	if (ev.hasNodeAlloc)
+	{
+		AccessPattern ap;
+		ap.kind = AccessKind::PushBack;
+		ap.emitted = "lst.push_back(elem)";
+		result.accessPatterns.push_back(ap);
+	}
+	if (ev.hasFourPtrUpdate)
+	{
+		AccessPattern ap;
+		ap.kind = AccessKind::Erase;
+		ap.emitted = "lst.erase(it)";
+		result.accessPatterns.push_back(ap);
+	}
 
-    return result;
+	return result;
 }
 
 } // namespace container_detect
