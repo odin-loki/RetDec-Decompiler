@@ -8,6 +8,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N15 leftover: `applyJsonRenameMap` now skips the C11 keyword
+  set and the structural-gate spawn family (`system` / `execv`
+  / …) as rename sources or targets. The public header already
+  said it skips C keywords. Tests:
+  `ApplyJsonRenameMapRejectsKeywordTarget`,
+  `ApplyJsonRenameMapRejectsSpawnTarget`. Default F5 is
+  unchanged.
 - N16 leftover: `serializeSemanticContext` also dumps RTTI class
   names, demangled names, and super-classes from
   `config.classes`. Still no invented caller-buffer facts.

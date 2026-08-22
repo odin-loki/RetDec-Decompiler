@@ -203,6 +203,34 @@ void writeCacheFile(const std::string& dir, const std::string& key, const std::s
 	out.write(text.data(), static_cast<std::streamsize>(text.size()));
 }
 
+bool isForbiddenRenameIdent(const std::string& s)
+{
+	// C11 keywords (header: applyJsonRenameMap skips C keywords) plus the
+	// spawn-family idents compared by the structural gate.
+	static const char* const kForbidden[] = {
+		"auto",           "break",     "case",           "char",
+		"const",          "continue",  "default",        "do",
+		"double",         "else",      "enum",           "extern",
+		"float",          "for",       "goto",           "if",
+		"inline",         "int",       "long",           "register",
+		"restrict",       "return",    "short",          "signed",
+		"sizeof",         "static",    "struct",         "switch",
+		"typedef",        "union",     "unsigned",       "void",
+		"volatile",       "while",     "_Alignas",       "_Alignof",
+		"_Atomic",        "_Bool",     "_Complex",       "_Generic",
+		"_Imaginary",     "_Noreturn", "_Static_assert", "_Thread_local",
+		"system",         "popen",     "execve",         "execl",
+		"execle",         "execlp",    "execv",          "execvp",
+		"execvpe",        "WinExec",   "ShellExecute",   "CreateProcessA",
+		"CreateProcessW",
+	};
+	for (const char* w: kForbidden)
+	{
+		if (s == w) return true;
+	}
+	return false;
+}
+
 } // namespace
 
 const char* namingRenameMapGbnf()
@@ -239,7 +267,7 @@ std::string applyJsonRenameMap(const std::string& source, const std::string& jso
 			return true;
 		};
 		if (!isIdent(from) || !isIdent(to)) continue;
-		if (from == "if" || from == "for" || from == "while" || from == "return" || from == "int") continue;
+		if (isForbiddenRenameIdent(from) || isForbiddenRenameIdent(to)) continue;
 		pairs.emplace_back(from, to);
 	}
 	std::sort(pairs.begin(), pairs.end(), [](const auto& a, const auto& b) { return a.first.size() > b.first.size(); });

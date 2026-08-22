@@ -396,6 +396,24 @@ TEST(NeuralNaming, ApplyJsonRenameMapRejectsNonObject)
 	EXPECT_EQ(applyJsonRenameMap(src, "not json"), src);
 }
 
+TEST(NeuralNaming, ApplyJsonRenameMapRejectsKeywordTarget)
+{
+	const std::string src = "int v3 = 0;\n";
+	EXPECT_EQ(applyJsonRenameMap(src, R"({"v3":"goto"})"), src);
+	EXPECT_EQ(applyJsonRenameMap(src, R"({"v3":"else"})"), src);
+	EXPECT_EQ(applyJsonRenameMap(src, R"({"int":"count"})"), src);
+}
+
+TEST(NeuralNaming, ApplyJsonRenameMapRejectsSpawnTarget)
+{
+	const std::string src = "int v3 = key_schedule(fn_401230);\n";
+	EXPECT_EQ(applyJsonRenameMap(src, R"({"v3":"system"})"), src);
+	EXPECT_EQ(applyJsonRenameMap(src, R"({"fn_401230":"execv"})"), src);
+	const std::string mixed = applyJsonRenameMap(src, R"({"v3":"state","fn_401230":"system"})");
+	EXPECT_NE(mixed.find("int state = key_schedule(fn_401230)"), std::string::npos);
+	EXPECT_EQ(mixed.find("system"), std::string::npos);
+}
+
 TEST(NeuralNaming, GbnfHasRootAndStringPair)
 {
 	const char* g = namingRenameMapGbnf();
