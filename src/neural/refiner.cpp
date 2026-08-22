@@ -6,7 +6,11 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
+#include <system_error>
 
 #include <cctype>
 #include <vector>
@@ -141,6 +145,64 @@ std::string summarizeFunctionSource(const std::string& src)
 	return out;
 }
 
+std::string cacheDirFromEnv()
+{
+	const char* d = std::getenv("RETDEC_NEURAL_CACHE_DIR");
+	if (!d || d[0] == '\0') return {};
+	return d;
+}
+
+std::string cacheKeyHex(const std::string& prompt, const GenerationConfig& gen, RefinementTier tier)
+{
+	const char* model = std::getenv("RETDEC_NEURAL_MODEL");
+	const char* modelSha = std::getenv("RETDEC_NEURAL_MODEL_SHA256");
+	std::string blob;
+	blob += model ? model : "";
+	blob += '\n';
+	blob += modelSha ? modelSha : "unpinned";
+	blob += '\n';
+	blob += std::to_string(static_cast<int>(tier));
+	blob += '\n';
+	blob += std::to_string(gen.seed);
+	blob += '\n';
+	blob += std::to_string(gen.temperature);
+	blob += '\n';
+	blob += std::to_string(gen.topP);
+	blob += '\n';
+	blob += std::to_string(gen.topK);
+	blob += '\n';
+	blob += std::to_string(gen.maxTokens);
+	blob += '\n';
+	blob += gen.grammarGbnf;
+	blob += '\n';
+	blob += prompt;
+	return sha256HexOfBytes(blob.data(), blob.size());
+}
+
+bool readCacheFile(const std::string& dir, const std::string& key, std::string* out)
+{
+	if (dir.empty() || key.empty() || !out) return false;
+	std::error_code ec;
+	const auto path = std::filesystem::path(dir) / (key + ".txt");
+	if (!std::filesystem::is_regular_file(path, ec)) return false;
+	std::ifstream in(path, std::ios::binary);
+	if (!in) return false;
+	out->assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+	return !out->empty();
+}
+
+void writeCacheFile(const std::string& dir, const std::string& key, const std::string& text)
+{
+	if (dir.empty() || key.empty() || text.empty()) return;
+	std::error_code ec;
+	std::filesystem::create_directories(dir, ec);
+	if (ec) return;
+	const auto path = std::filesystem::path(dir) / (key + ".txt");
+	std::ofstream out(path, std::ios::binary | std::ios::trunc);
+	if (!out) return;
+	out.write(text.data(), static_cast<std::streamsize>(text.size()));
+}
+
 } // namespace
 
 const char* namingRenameMapGbnf()
@@ -234,16 +296,29 @@ RefinementResponse Refiner::refine(const RefinementRequest& request) const
 	}
 
 	std::string prompt = buildRefinementPrompt(request);
+	const std::string cdir = cacheDirFromEnv();
+	const std::string ckey = cacheKeyHex(prompt, gen, request.tier);
+	std::string cached;
+	const bool cacheHit = !cdir.empty() && readCacheFile(cdir, ckey, &cached);
 
-	auto genResult = inference_->generate(prompt, gen);
-	if (!genResult.ok && genResult.error.find("prompt exceeds context budget") != std::string::npos)
+	GenerationResult genResult;
+	if (cacheHit)
 	{
-		// N11: retry once with head/tail source instead of silent truncate.
-		std::fprintf(stderr, "retdec-neural: context budget exceeded; retrying with truncated source\n");
-		RefinementRequest summary = request;
-		summary.functionSource = summarizeFunctionSource(request.functionSource);
-		prompt = buildRefinementPrompt(summary);
+		genResult.ok = true;
+		genResult.text = cached;
+	}
+	else
+	{
 		genResult = inference_->generate(prompt, gen);
+		if (!genResult.ok && genResult.error.find("prompt exceeds context budget") != std::string::npos)
+		{
+			// N11: retry once with head/tail source instead of silent truncate.
+			std::fprintf(stderr, "retdec-neural: context budget exceeded; retrying with truncated source\n");
+			RefinementRequest summary = request;
+			summary.functionSource = summarizeFunctionSource(request.functionSource);
+			prompt = buildRefinementPrompt(summary);
+			genResult = inference_->generate(prompt, gen);
+		}
 	}
 	if (!genResult.ok)
 	{
@@ -261,7 +336,7 @@ RefinementResponse Refiner::refine(const RefinementRequest& request) const
 		return response;
 	}
 
-	std::string refined = stripMarkdownFences(genResult.text);
+	std::string refined = cacheHit ? cached : stripMarkdownFences(genResult.text);
 	if (request.tier == RefinementTier::Naming)
 	{
 		std::string json = refined;
@@ -302,10 +377,12 @@ RefinementResponse Refiner::refine(const RefinementRequest& request) const
 		}
 	}
 
+	if (!cdir.empty() && !cacheHit) writeCacheFile(cdir, ckey, refined);
+
 	response.refinedSource = refined;
 	response.accepted = true;
-	response.manifestJson =
-		buildManifest(true, "accepted", request, gen, refined, compileGateLabel(&gates, false), wallMs());
+	response.manifestJson = buildManifest(
+		true, cacheHit ? "cache hit" : "accepted", request, gen, refined, compileGateLabel(&gates, false), wallMs());
 	return response;
 }
 

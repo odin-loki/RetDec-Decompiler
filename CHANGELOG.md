@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N12 leftover: opt-in content-addressed refinement cache
+  (`RETDEC_NEURAL_CACHE_DIR`). Key is SHA-256 of model path/pin,
+  prompt, tier, and sampler params. Off unless the env is set.
+  Accepted results only. Test: `CacheHitReusesAcceptedRefinement`.
+  Default F5 is unchanged.
 - B7: name-only shared_ptr atomic (`__atomic` / `_Interlocked*`,
   no Sub+Compare) tags `evidence:symbol_name` on `emittedType`.
   Structural decrement stays in the headline. Name-blind extract

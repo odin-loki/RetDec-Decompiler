@@ -552,3 +552,39 @@ TEST(NeuralRefiner, ContextBudgetRetriesWithTruncatedSource)
 	// First generate is refused; retry with a truncated body must run.
 	EXPECT_EQ(resp.manifestJson.find("generation failed"), std::string::npos);
 }
+
+TEST(NeuralRefiner, CacheHitReusesAcceptedRefinement)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / "retdec_neural_n12_cache";
+	std::error_code ec;
+	fs::remove_all(dir, ec);
+	fs::create_directories(dir, ec);
+	ASSERT_TRUE(fs::is_directory(dir));
+
+	EnvGuard unverified("RETDEC_NEURAL_ALLOW_UNVERIFIED", "1");
+	EnvGuard emitC("RETDEC_NEURAL_MOCK_EMIT_C", "1");
+	EnvGuard skipCompile("RETDEC_NEURAL_SKIP_COMPILE_GATE", "1");
+	const std::string cachePath = dir.string();
+	EnvGuard cacheDir("RETDEC_NEURAL_CACHE_DIR", cachePath.c_str());
+
+	auto inf1 = createMockInference();
+	ASSERT_TRUE(inf1->loadModel("mock.gguf"));
+	Refiner first(std::move(inf1));
+	RefinementRequest req;
+	req.functionSource = "int broken(void) { return result; }\n";
+	req.tier = RefinementTier::FullRewrite;
+	const auto miss = first.refine(req);
+	EXPECT_TRUE(miss.accepted);
+	EXPECT_NE(miss.manifestJson.find("\"reason\":\"accepted\""), std::string::npos);
+
+	auto inf2 = createMockInference();
+	ASSERT_TRUE(inf2->loadModel("mock.gguf"));
+	Refiner second(std::move(inf2));
+	const auto hit = second.refine(req);
+	EXPECT_TRUE(hit.accepted);
+	EXPECT_EQ(hit.refinedSource, miss.refinedSource);
+	EXPECT_NE(hit.manifestJson.find("\"reason\":\"cache hit\""), std::string::npos);
+
+	fs::remove_all(dir, ec);
+}
