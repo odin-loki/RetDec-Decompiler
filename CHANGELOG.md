@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- ci-core 9 name-blind remasure after the precision gates:
+  mean F1 **0.332** (was ≈ 0.335). Micro tp=8 fp=8 fn=13.
+  hash_table 1.000; memcpy_loop 0.800; bubble/merge/quicksort
+  extract no labels. Official `MIN_MEAN_F1=0.95` was not lowered.
 - Full 216 name-blind remasure after the precision gates:
   mean F1 **0.107** (was 0.124). Micro fp 360 → 62, tp 77 → 64.
   O0 0.102 / O2 0.110 / O3 0.110. Official `MIN_MEAN_F1=0.95`
