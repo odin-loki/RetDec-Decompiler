@@ -17,11 +17,11 @@
       "n": 9,
       "micro": {
         "tp": 2,
-        "fp": 14,
+        "fp": 10,
         "fn": 13,
-        "precision": 0.125,
+        "precision": 0.16666666666666666,
         "recall": 0.13333333333333333,
-        "f1": 0.12903225806451615,
+        "f1": 0.14814814814814814,
         "n": 9
       },
       "mean_f1_ci95_low": 0.0,
@@ -49,7 +49,7 @@
   "per_binary": {
     "aes_bitslice-gcc-O0": {
       "tp": 0,
-      "fp": 4,
+      "fp": 2,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -161,7 +161,7 @@
     },
     "strlen_word-gcc-O0": {
       "tp": 0,
-      "fp": 4,
+      "fp": 2,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,
@@ -255,12 +255,12 @@
     },
     "HashTable": {
       "tp": 0,
-      "fp": 5,
+      "fp": 3,
       "fn": 0,
       "precision": 0.0,
       "recall": 0.0,
       "f1": 0.0,
-      "n_pred": 5,
+      "n_pred": 3,
       "n_true": 0
     },
     "HeapSort": {
@@ -285,12 +285,12 @@
     },
     "OpenAddressing": {
       "tp": 0,
-      "fp": 5,
+      "fp": 3,
       "fn": 0,
       "precision": 0.0,
       "recall": 0.0,
       "f1": 0.0,
-      "n_pred": 5,
+      "n_pred": 3,
       "n_true": 0
     },
     "Parse": {
@@ -356,11 +356,11 @@
   },
   "micro": {
     "tp": 4,
-    "fp": 26,
+    "fp": 22,
     "fn": 26,
-    "precision": 0.13333333333333333,
+    "precision": 0.15384615384615385,
     "recall": 0.13333333333333333,
-    "f1": 0.13333333333333333,
+    "f1": 0.14285714285714288,
     "n": 18
   },
   "macro_f1": 0.05555555555555556,
@@ -371,11 +371,11 @@
       "n": 9,
       "micro": {
         "tp": 2,
-        "fp": 14,
+        "fp": 10,
         "fn": 13,
-        "precision": 0.125,
+        "precision": 0.16666666666666666,
         "recall": 0.13333333333333333,
-        "f1": 0.12903225806451615,
+        "f1": 0.14814814814814814,
         "n": 9
       },
       "mean_f1_ci95_low": 0.0,
@@ -403,7 +403,7 @@
   "per_binary_raw": {
     "aes_bitslice-gcc-O0": {
       "tp": 0,
-      "fp": 4,
+      "fp": 2,
       "fn": 1,
       "precision": 0.0,
       "recall": 0.0,
@@ -515,7 +515,7 @@
     },
     "strlen_word-gcc-O0": {
       "tp": 0,
-      "fp": 4,
+      "fp": 2,
       "fn": 2,
       "precision": 0.0,
       "recall": 0.0,

@@ -8,6 +8,16 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- OpenAddressingDetector requires a bucket count of at least 16
+  (And mask `15..65535` except 255/65535, or Div capacity `2^k`
+  in `[16, 65536]` except 256). Alignment `and 7`, AES `% 8` /
+  `% 256`, and bare Div are not a table. Tests:
+  `DivBy32WithHashIsOpenAddressing`, `DivByEightIsNotOpenAddressing`,
+  `DivBy256IsNotOpenAddressing`, `AndSevenIsNotOpenAddressing`.
+  B8 extract FP **0.000**. B9 mean F1 **0.111**; strlen O0 and
+  aes_bitslice O0 no longer extract HashTable. aes_ttable and
+  bitslice O2 still do. Corpus `hash_table` still extracts
+  (urem 32). A4 precision **0**, not fitted.
 - UnorderedMapDetector bucket selection is And with `(2^k-1)`,
   `k<=16`. Bare Div and the `0xFFFFFFFF` zext-mask are not a
   bucket index. Tests: `DivIsNotBucketModulo`,

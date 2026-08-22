@@ -1094,6 +1094,92 @@ TEST(AccessPatternTest, SharedPtrResetEmitted)
 	if (r.confidence >= 0.30f) EXPECT_TRUE(hasErase);
 }
 
+// ─── OpenAddressingDetector tests ─────────────────────────────────────────────
+
+TEST(OpenAddressingDetectorTest, DivBy32WithHashIsOpenAddressing)
+{
+	auto fn = makeFunc(
+		"ht_insert",
+		{
+			ssa::IrInstr::Op::Xor,
+			ssa::IrInstr::Op::Mul,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::Store,
+		},
+		1);
+	fn->block(1)->succs.push_back(0);
+	addImmInstr(*fn, ssa::IrInstr::Op::Div, 32);
+	OpenAddressingDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_GE(r.confidence, 0.55f);
+	EXPECT_EQ(r.emittedType, "open_addressing_hash_table");
+}
+
+TEST(OpenAddressingDetectorTest, DivByEightIsNotOpenAddressing)
+{
+	// AES affine `(i + 4) % 8` is not a bucket count.
+	auto fn = makeFunc(
+		"aes_rot",
+		{
+			ssa::IrInstr::Op::Xor,
+			ssa::IrInstr::Op::Mul,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::Store,
+		},
+		1);
+	fn->block(1)->succs.push_back(0);
+	addImmInstr(*fn, ssa::IrInstr::Op::Div, 8);
+	OpenAddressingDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.55f);
+}
+
+TEST(OpenAddressingDetectorTest, DivBy256IsNotOpenAddressing)
+{
+	// Byte rem (`% 256`) is not a bucket count.
+	auto fn = makeFunc(
+		"byte_wrap",
+		{
+			ssa::IrInstr::Op::Xor,
+			ssa::IrInstr::Op::Mul,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::Store,
+		},
+		1);
+	fn->block(1)->succs.push_back(0);
+	addImmInstr(*fn, ssa::IrInstr::Op::Div, 256);
+	OpenAddressingDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.55f);
+}
+
+TEST(OpenAddressingDetectorTest, AndSevenIsNotOpenAddressing)
+{
+	// strlen alignment `p & 7` is not a bucket mask.
+	auto fn = makeFunc(
+		"strlen_align",
+		{
+			ssa::IrInstr::Op::Xor,
+			ssa::IrInstr::Op::Mul,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::Store,
+		},
+		1);
+	fn->block(1)->succs.push_back(0);
+	addImmInstr(*fn, ssa::IrInstr::Op::And, 7);
+	OpenAddressingDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.55f);
+}
+
 // ─── RingBufferDetector tests ─────────────────────────────────────────────────
 
 TEST(RingBufferDetectorTest, PowerOfTwoAndMaskIsRingBuffer)
