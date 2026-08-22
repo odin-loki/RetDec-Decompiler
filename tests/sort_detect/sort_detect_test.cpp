@@ -498,6 +498,31 @@ TEST(HeapsortDetectorTest, NoChildIndexStaysBelowAssign)
 	EXPECT_LT(r.confidence, 0.55f);
 }
 
+TEST(HeapsortDetectorTest, XorHeavyIsNotHeapsort)
+{
+	// AES GF/T-table mixers have many Xors; that is not sift-down.
+	auto fn = std::make_unique<ssa::SSAFunction>("aes_mix");
+	auto* entry = fn->addBlock("entry");
+	auto* shl = fn->addInstr(entry->id, ssa::IrInstr::Op::Shl);
+	auto* imm1 = fn->allocValue(ssa::ValueKind::Immediate);
+	imm1->imm = 1;
+	ssa::Use u;
+	u.valueId = imm1->id;
+	u.operandIndex = 1;
+	shl->uses.push_back(u);
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Compare);
+	fn->addInstr(entry->id, ssa::IrInstr::Op::CondBranch);
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Sub);
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Sub);
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Store);
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Store);
+	for (int i = 0; i < 8; ++i)
+		fn->addInstr(entry->id, ssa::IrInstr::Op::Xor);
+	HeapsortDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.55f);
+}
+
 // ─── RadixsortDetector tests ──────────────────────────────────────────────────
 
 TEST(RadixsortDetectorTest, EmptyFunctionLowConfidence)

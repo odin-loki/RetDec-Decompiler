@@ -112,6 +112,9 @@ SortResult HeapsortDetector::detect(const ssa::SSAFunction& fn) const
 	// Child index (Mul 2 / Shl 1) is required to extract. max-select +
 	// swap alone fired on strlen/atoi O2 after uses were attached.
 	if (!sde.hasLeftArith) score = std::min(score, 0.40f);
+	// AES GF / T-table mixers have many Xors; sentinel sift-down stays
+	// at 3–6 on this compiler. Eight or more is not a heap.
+	if (countOp(fn, ssa::IrInstr::Op::Xor) >= 8) score = std::min(score, 0.40f);
 
 	result.confidence = score > 1.0f ? 1.0f : score;
 

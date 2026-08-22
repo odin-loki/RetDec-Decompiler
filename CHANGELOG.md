@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- HeapsortDetector caps at 0.40 when a function has 8+ Xors
+  (AES GF / T-table mixers). Sentinel sift-down stays at 3–6 Xors
+  here. Test: `XorHeavyIsNotHeapsort`. B8 extract FP **0.000**.
+  B9 mean F1 **0.111**, micro **0.190** (fp 8). AES O2 no longer
+  extracts HeapSort. Sentinel O0/O2 stay 1.000. A4 precision **0**,
+  not fitted.
 - HeapsortDetector requires child-index arithmetic (Mul immediate 2
   or Shl immediate 1). Recovered `i * 2` only has the ConstantInt
   use attached, so the Mul check no longer demands two uses.
