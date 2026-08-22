@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` also dumps compiler
+  / packer tools plus architecture name/bit-size and file
+  format from existing `Config` fields. Test:
+  `SerializesCompilerToolAndArchitecture`. Default F5 is
+  unchanged.
 - N16 leftover: `serializeSemanticContext` also dumps YARA
   pattern names, rule ids, and crypto/malware/other type from
   `config.patterns`. Descriptions are omitted (bloat /

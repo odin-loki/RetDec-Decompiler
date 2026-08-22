@@ -260,7 +260,29 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 			kind = "malware";
 		oss << ",\"type\":\"" << kind << "\"}";
 	}
-	oss << "]}";
+	oss << "],\"tools\":[";
+	bool firstTool = true;
+	for (const auto& tool: config.tools)
+	{
+		if (tool.getName().empty() && tool.getType().empty()) continue;
+		if (!firstTool) oss << ',';
+		firstTool = false;
+		oss << "{\"name\":\"" << jsonEscape(tool.getName()) << '"';
+		if (!tool.getType().empty()) oss << ",\"type\":\"" << jsonEscape(tool.getType()) << '"';
+		if (!tool.getVersion().empty()) oss << ",\"version\":\"" << jsonEscape(tool.getVersion()) << '"';
+		oss << '}';
+	}
+	oss << ']';
+	if (config.architecture.isKnown())
+	{
+		oss << ",\"architecture\":{\"name\":\"" << jsonEscape(config.architecture.getName()) << '"';
+		oss << ",\"bit_size\":" << config.architecture.getBitSize() << '}';
+	}
+	if (config.fileFormat.isKnown())
+	{
+		oss << ",\"file_format\":\"" << jsonEscape(config.fileFormat.getName()) << '"';
+	}
+	oss << '}';
 	return oss.str();
 }
 

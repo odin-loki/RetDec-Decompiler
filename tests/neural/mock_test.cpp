@@ -1,8 +1,10 @@
+#include "retdec/common/file_format.h"
 #include "retdec/common/function.h"
 #include "retdec/common/object.h"
 #include "retdec/common/pattern.h"
 #include "retdec/common/semantic_detection.h"
 #include "retdec/common/storage.h"
+#include "retdec/common/tool_info.h"
 #include "retdec/common/vtable.h"
 #include "retdec/config/config.h"
 #include "retdec/neural/gates.h"
@@ -821,7 +823,8 @@ TEST(NeuralSemanticContext, SkipsEmptyFunction)
 {
 	auto cfg = retdec::config::Config::empty();
 	cfg.functions.insert(retdec::common::Function("empty_fn"));
-	EXPECT_EQ(serializeSemanticContext(cfg), "{\"functions\":[],\"classes\":[],\"vtables\":[],\"patterns\":[]}");
+	EXPECT_EQ(
+		serializeSemanticContext(cfg), "{\"functions\":[],\"classes\":[],\"vtables\":[],\"patterns\":[],\"tools\":[]}");
 }
 
 TEST(NeuralSemanticContext, SerializesOptionalFunctionMetadata)
@@ -875,6 +878,29 @@ TEST(NeuralSemanticContext, SerializesVtableTargetNames)
 	EXPECT_NE(json.find("\"name\":\"_ZTV6Cipher\""), std::string::npos);
 	EXPECT_NE(json.find("\"address\":\"0x402000\""), std::string::npos);
 	EXPECT_NE(json.find("\"targets\":[\"Cipher::expand_key\"]"), std::string::npos);
+}
+
+TEST(NeuralSemanticContext, SerializesCompilerToolAndArchitecture)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::ToolInfo gcc;
+	gcc.setName("gcc");
+	gcc.setType("compiler");
+	gcc.setVersion("13.2.0");
+	cfg.tools.push_back(gcc);
+	cfg.architecture.setIsX86();
+	cfg.architecture.setName("x86");
+	cfg.architecture.setBitSize(64);
+	cfg.fileFormat.setIsElf();
+	cfg.fileFormat.setName("elf");
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"name\":\"gcc\""), std::string::npos);
+	EXPECT_NE(json.find("\"type\":\"compiler\""), std::string::npos);
+	EXPECT_NE(json.find("\"version\":\"13.2.0\""), std::string::npos);
+	EXPECT_NE(json.find("\"architecture\":{\"name\":\"x86\""), std::string::npos);
+	EXPECT_NE(json.find("\"bit_size\":64"), std::string::npos);
+	EXPECT_NE(json.find("\"file_format\":\"elf\""), std::string::npos);
 }
 
 TEST(NeuralSemanticContext, SerializesCryptoPatternNames)
