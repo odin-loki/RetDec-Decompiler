@@ -5,12 +5,12 @@
   "reliability_bins": [
     {
       "bin": "0.4-0.6",
-      "n": 70,
+      "n": 150,
       "empirical_precision": 0.0
     },
     {
       "bin": "0.8-1.0",
-      "n": 170,
+      "n": 90,
       "empirical_precision": 0.0
     }
   ],
@@ -36,7 +36,7 @@
       "empirical_precision": 0.0
     },
     {
-      "key": "sort:quicksort",
+      "key": "sort:mergesort (std::stable_sort)",
       "n": 80,
       "empirical_precision": 0.0
     }

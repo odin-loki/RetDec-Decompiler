@@ -56,13 +56,15 @@ Stock RetDec has no label export — F1 is fork-only.
 B9 adversarial-positive (18 gcc O0/O2 binaries): name-blind mean
 **0.076**. See `results/b9-adversarial-positive.md`. Not a product F1.
 
-B8 loop-containing negatives (100): FP rate **0.800**
-(`results/b8-loop-negatives.md`). Loop-free B8 remains 0.000.
+B8 loop-containing negatives (100): FP rate still **0.800**
+after the Quicksort self-call gate
+(`results/b8-loop-negatives.md`). Dominant false label is now
+mergesort at 0.55. Loop-free B8 remains 0.000.
 
 B10 zlib 1.3.1 crc32-only: 2/2 decompiled, name-blind F1 **0.000**.
 crc+deflate still timed out (`results/b10-third-party.md`).
 
-A4: reported 0.90 QuickSort has empirical precision **0** on loop
+A4: reported 0.55 Mergesort has empirical precision **0** on loop
 negatives (`results/a4-calibration.md`). Not fitted.
 
 Official full-corpus gate is still `MIN_MEAN_F1=0.95`; honest

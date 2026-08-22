@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- QuicksortDetector requires a recursive self-call before assign.
+  Partition-only FIR/histogram/dot-product loops no longer label
+  `QuickSort`. Iterative quicksort is a miss. Tests:
+  `PartitionWithoutSelfCallIsNotQuicksort`,
+  `PartitionWithSelfCallIsQuicksort`.
 - B6 rename guard on ci-core 9: named vs `$(sha256)` kind:label
   sets match (`results/b6-rename-guard.md`).
 - A4 observation curve (`results/a4-calibration.md`): 240 detections
@@ -125,6 +130,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- B8 loop remasure after the Quicksort self-call gate: binary FP
+  still **0.800** (80/100). `sort:quicksort` is gone; the dominant
+  false label is now `sort:mergesort (std::stable_sort)` at
+  confidence 0.55 (`MergesortDetector` merge-loop floor without
+  recursion). A4 remains observation-only; constants not fitted.
 - Withdrawn unpublished marketing: Fast decompile “~24% faster”
   (C-FAST24) and in-tree Qwen3/FlashAttention as a pipeline accelerator
   (C-QWEN3-GPU). Default F5 `.c` is unchanged.

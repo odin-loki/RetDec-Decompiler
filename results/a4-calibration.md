@@ -10,8 +10,8 @@ correct on this set.
 
 | Reported confidence | n | empirical precision |
 |--------------------|---|---------------------|
-| 0.4-0.6 | 70 | 0.000 |
-| 0.8-1.0 | 170 | 0.000 |
+| 0.4-0.6 | 150 | 0.000 |
+| 0.8-1.0 | 90 | 0.000 |
 
 ## Per detection kind
 
@@ -21,8 +21,9 @@ correct on this set.
 | `algorithm:std::transform` | 70 | 0.000 |
 | `container:ring_buffer` | 10 | 0.000 |
 | `container:std::unordered_map<uint32_t, uint32_t>` | 70 | 0.000 |
-| `sort:quicksort` | 80 | 0.000 |
+| `sort:mergesort (std::stable_sort)` | 80 | 0.000 |
 
-`sort:quicksort` at 0.90 has empirical precision **0.000** here.
-Fitting would require changing detector constants and re-scoring
-the 216-binary table; that was not done.
+`sort:mergesort (std::stable_sort)` at 0.55 has empirical precision
+**0.000** here (was `sort:quicksort` at 0.90 before the self-call
+gate). Fitting would require changing detector constants and
+re-scoring the 216-binary table; that was not done.
