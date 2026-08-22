@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N11 leftover: the context-budget retry marker is re-emitted
+  after N14 comment stripping so the mock (and the model)
+  still see `[truncated for context]`. Test:
+  `TruncationMarkerSurvivesCommentStrip`. Default F5 is
+  unchanged.
 - N16 leftover: `serializeSemanticContext` also dumps compiler
   / packer tools plus architecture name/bit-size and file
   format from existing `Config` fields. Test:

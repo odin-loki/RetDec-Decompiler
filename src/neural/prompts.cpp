@@ -94,6 +94,8 @@ std::string buildRefinementPrompt(const RefinementRequest& request)
 		oss << "Semantic context (JSON):\n" << request.semanticContextJson << "\n\n";
 	}
 	oss << "Function source:\n" << stripCStringLiterals(request.functionSource) << "\n";
+	// N11 marker is a comment so it must be re-emitted after N14 strip.
+	if (request.functionSource.find("[truncated for context]") != std::string::npos) oss << "[truncated for context]\n";
 	if (!request.compilerDiagnostics.empty())
 	{
 		oss << "The previous C failed cc -fsyntax-only with:\n"

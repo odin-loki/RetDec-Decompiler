@@ -274,6 +274,17 @@ TEST(NeuralPrompt, StripsCommentBodiesFromFunctionSource)
 	EXPECT_NE(p.find("int f(void)"), std::string::npos);
 }
 
+TEST(NeuralPrompt, TruncationMarkerSurvivesCommentStrip)
+{
+	RefinementRequest req;
+	req.functionSource = "int f(void) { return 0; }\n/* [truncated for context] */\n";
+	req.tier = RefinementTier::Comments;
+	req.generation.thinkingMode = false;
+	const std::string p = buildRefinementPrompt(req);
+	EXPECT_EQ(p.find("/* [truncated for context] */"), std::string::npos);
+	EXPECT_NE(p.find("[truncated for context]"), std::string::npos);
+}
+
 TEST(NeuralPrompt, EachTierHasDistinctInstruction)
 {
 	RefinementRequest req;
