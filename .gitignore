@@ -115,6 +115,7 @@ luac.out
 /tests/algorithm_recovery/predictions/ci.json
 /tests/algorithm_recovery/predictions/corpus.json
 /tests/algorithm_recovery/predictions/full.json
+/tests/algorithm_recovery/predictions/full-nameblind.json
 build/prediction-work/
 results/retypd-eval.json
 results/sailr-eval.json

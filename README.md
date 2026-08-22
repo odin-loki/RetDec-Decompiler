@@ -77,9 +77,9 @@ IDE-style layout:
 - **Bottom dock:** Console (live fileinfo/unpacker output) · Problems (decompiler diagnostics)
 
 Decompilation runs the same `retdec-decompiler` subprocess as the CLI (argument
-parity, same speed). **Cache reuse** on re-open; **Fast decompile** preset
-(~24% faster on tested binaries, byte-identical output). Post-decompile loads
-`.c`, `.config.json`, `.dsm`, and `.ll` into the document tabs.
+parity, same speed). **Cache reuse** on re-open. The former “~24% faster Fast
+decompile” figure is **withdrawn** (no demonstrating artefact). Post-decompile
+loads `.c`, `.config.json`, `.dsm`, and `.ll` into the document tabs.
 
 For CI and automated tests, use headless mode:
 

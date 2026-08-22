@@ -51,7 +51,8 @@ parity with Hex-Rays or Ghidra. Lead with:
 
 - Algorithm-recovery precision/recall/F1 on a labelled corpus
 - Semantic JSON export (`config.functions[].semanticDetections`)
-- Offline neural refinement with compile + differential gates
+- Offline neural refinement with a compile-only gate (`cc -fsyntax-only`;
+  decompiled C is never executed)
 
 Pseudocode quality is reported honestly via DecompileBench; parity with stock
 RetDec C output is expected and not marketed as the primary differentiator.
@@ -149,11 +150,13 @@ MSVC path; **Linux/WSL cross-compilation to Windows** produces a
 
 ## AI assistant (on-device inference)
 
-The tree integrates a **Qwen3-oriented** inference stack (Mixture-of-Experts capable), with **FlashAttention-2**-style optimizations and **GPU acceleration** where enabled. Analysts can load **GGUF-quantized** weights (for example from an Ollama pull copied into a `models/` directory) for:
+Optional on-device naming uses **llama.cpp + a GGUF on disk**
+(`RETDEC_NEURAL_REFINE`). The in-tree Qwen3/FlashAttention stack is
+**not wired into `src/retdec`** (C-QWEN3-GPU withdrawn). Analysts can load
+**GGUF-quantized** weights for:
 
 - Explanations and naming suggestions over decompiled output.  
-- Interactive chat in the GUI (**streaming** tokens from a worker thread).  
-- CLI-assisted workflows (e.g. `--model` on `retdec-decompiler`).
+- CLI-assisted workflows (`RETDEC_NEURAL_REFINE` / `--model`). The GUI has no live AI chat panel.
 
 This is **optional**: core decompilation remains usable without any model on disk. Operation is **local-first**, which matters for air-gapped or data-sensitive environments—subject to your own policies on running third-party model weights.
 

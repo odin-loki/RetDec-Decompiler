@@ -140,12 +140,25 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 	std::unique_ptr<Inference> backend;
 	if (envEnabled("RETDEC_NEURAL_FORCE_MOCK"))
 	{
+#if defined(NDEBUG) && !defined(RETDEC_NEURAL_ALLOW_MOCK)
+		std::fprintf(stderr, "retdec-neural: mock inference is disabled in release builds\n");
+		return;
+#else
 		backend = createMockInference();
+#endif
 	}
 	else
 	{
 		backend = createLlamaInference();
-		if (!backend) backend = createMockInference();
+		if (!backend)
+		{
+#if defined(NDEBUG) && !defined(RETDEC_NEURAL_ALLOW_MOCK)
+			std::fprintf(stderr, "retdec-neural: no llama.cpp backend; mock fallback disabled in release\n");
+			return;
+#else
+			backend = createMockInference();
+#endif
+		}
 	}
 	int ctxLen = 4096;
 	if (const char* ctxEnv = std::getenv("RETDEC_NEURAL_CTX"))
@@ -192,8 +205,9 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 		req.generation.reuseKvPrefix = envEnabled("RETDEC_NEURAL_REUSE_KV") && (i > 0);
 		// Naming/Comments/StructFields default to temperature 0 (N9).
 		// Other tiers keep the Qwen Instruct default unless the env is set.
-		const bool conservativeTier = (req.tier == RefinementTier::Naming
-			|| req.tier == RefinementTier::Comments || req.tier == RefinementTier::StructFields);
+		const bool conservativeTier =
+			(req.tier == RefinementTier::Naming || req.tier == RefinementTier::Comments
+			 || req.tier == RefinementTier::StructFields);
 		req.generation.temperature = envFloat("RETDEC_NEURAL_TEMPERATURE", conservativeTier ? 0.0f : 0.6f);
 		req.generation.topP = envFloat("RETDEC_NEURAL_TOP_P", 0.95f);
 		const int topK = envInt("RETDEC_NEURAL_TOP_K", 20);
@@ -235,8 +249,8 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 		}
 
 		const bool compileReject = !resp.accepted
-			&& (resp.manifestJson.find("compile_syntax") != std::string::npos
-				|| resp.manifestJson.find("compile=fail") != std::string::npos);
+								&& (resp.manifestJson.find("compile_syntax") != std::string::npos
+									|| resp.manifestJson.find("compile=fail") != std::string::npos);
 		if (compileRetryUsed) continue;
 		if (!compileReject && !requireCompile) continue;
 
@@ -250,8 +264,7 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 		retry.functionSource = current;
 		retry.tier = RefinementTier::FullRewrite;
 		retry.generation.reuseKvPrefix = false; // compile-retry never reuses KV
-		retry.compilerDiagnostics =
-			diags.empty() ? std::string("cc -fsyntax-only failed") : diags;
+		retry.compilerDiagnostics = diags.empty() ? std::string("cc -fsyntax-only failed") : diags;
 
 		const auto retryResp = refiner.refine(retry);
 		lastManifest = retryResp.manifestJson;

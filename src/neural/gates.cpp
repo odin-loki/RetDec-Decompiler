@@ -1,5 +1,6 @@
 #include "retdec/neural/gates.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -59,9 +60,7 @@ fs::path createUniqueTempDir()
 	for (int i = 0; i < 256; ++i)
 	{
 		wchar_t name[MAX_PATH];
-		if (swprintf_s(name, L"%sretdec_gate_%lu_%llu_%d", tmp, static_cast<unsigned long>(pid), ticks,
-					   i)
-			< 0)
+		if (swprintf_s(name, L"%sretdec_gate_%lu_%llu_%d", tmp, static_cast<unsigned long>(pid), ticks, i) < 0)
 			return {};
 		if (CreateDirectoryW(name, nullptr)) return fs::path(name);
 		if (GetLastError() != ERROR_ALREADY_EXISTS) return {};
@@ -96,7 +95,8 @@ std::wstring quoteWinArg(const std::wstring& a)
 	std::wstring out = L"\"";
 	for (wchar_t c: a)
 	{
-		if (c == L'"') out += L"\"\"";
+		if (c == L'"')
+			out += L"\"\"";
 		else
 			out += c;
 	}
@@ -143,17 +143,8 @@ bool spawnSyntaxOnlyCompiler(const char* cc, const fs::path& src, const fs::path
 	}
 
 	PROCESS_INFORMATION pi{};
-	const BOOL ok = CreateProcessW(
-		nullptr,
-		cmdline.data(),
-		nullptr,
-		nullptr,
-		TRUE,
-		CREATE_NO_WINDOW,
-		nullptr,
-		nullptr,
-		&si,
-		&pi);
+	const BOOL ok =
+		CreateProcessW(nullptr, cmdline.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
 	if (err != INVALID_HANDLE_VALUE) CloseHandle(err);
 	if (!ok) return false;
 
@@ -171,8 +162,7 @@ bool spawnSyntaxOnlyCompiler(const char* cc, const fs::path& src, const fs::path
 	if (pid == 0)
 	{
 		int outfd = -1;
-		if (!errPath.empty())
-			outfd = open(errPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+		if (!errPath.empty()) outfd = open(errPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
 		if (outfd < 0) outfd = open("/dev/null", O_WRONLY);
 		if (outfd >= 0)
 		{
@@ -227,6 +217,96 @@ bool tryCompileCheck(const std::string& sourceC)
 	return tryCompileCheck(sourceC, nullptr);
 }
 
+int countIdent(const std::string& s, const char* word)
+{
+	int n = 0;
+	const std::size_t wlen = std::char_traits<char>::length(word);
+	for (std::size_t i = 0; i + wlen <= s.size(); ++i)
+	{
+		if (s.compare(i, wlen, word) != 0)
+		{
+			continue;
+		}
+		const bool leftOk = i == 0 || !(std::isalnum(static_cast<unsigned char>(s[i - 1])) != 0 || s[i - 1] == '_');
+		const bool rightOk =
+			i + wlen >= s.size() || !(std::isalnum(static_cast<unsigned char>(s[i + wlen])) != 0 || s[i + wlen] == '_');
+		if (leftOk && rightOk)
+		{
+			++n;
+		}
+	}
+	return n;
+}
+
+struct CmpOpCounts
+{
+	int eq = 0;
+	int ne = 0;
+	int le = 0;
+	int ge = 0;
+	int lt = 0;
+	int gt = 0;
+};
+
+bool operator==(const CmpOpCounts& a, const CmpOpCounts& b)
+{
+	return a.eq == b.eq && a.ne == b.ne && a.le == b.le && a.ge == b.ge && a.lt == b.lt && a.gt == b.gt;
+}
+
+CmpOpCounts countCmpOps(const std::string& s)
+{
+	CmpOpCounts n;
+	for (std::size_t i = 0; i < s.size(); ++i)
+	{
+		if (i + 1 < s.size() && s[i] == '=' && s[i + 1] == '=')
+		{
+			++n.eq;
+			++i;
+			continue;
+		}
+		if (i + 1 < s.size() && s[i] == '!' && s[i + 1] == '=')
+		{
+			++n.ne;
+			++i;
+			continue;
+		}
+		if (i + 1 < s.size() && s[i] == '<' && s[i + 1] == '=')
+		{
+			++n.le;
+			++i;
+			continue;
+		}
+		if (i + 1 < s.size() && s[i] == '>' && s[i + 1] == '=')
+		{
+			++n.ge;
+			++i;
+			continue;
+		}
+		if (s[i] == '<')
+		{
+			++n.lt;
+			continue;
+		}
+		if (s[i] == '>')
+		{
+			++n.gt;
+		}
+	}
+	return n;
+}
+
+bool controlShapeChanged(const std::string& originalC, const std::string& refinedC)
+{
+	if (countIdent(originalC, "if") != countIdent(refinedC, "if")) return true;
+	if (countIdent(originalC, "else") != countIdent(refinedC, "else")) return true;
+	if (countIdent(originalC, "while") != countIdent(refinedC, "while")) return true;
+	if (countIdent(originalC, "for") != countIdent(refinedC, "for")) return true;
+	if (countIdent(originalC, "goto") != countIdent(refinedC, "goto")) return true;
+	if (countIdent(originalC, "return") != countIdent(refinedC, "return")) return true;
+	if (!(countCmpOps(originalC) == countCmpOps(refinedC))) return true;
+	return false;
+}
+
 bool tryDifferentialCheck(const std::string& /*originalC*/, const std::string& /*refinedC*/)
 {
 	const char* e = std::getenv("RETDEC_NEURAL_DIFF_GATE");
@@ -263,9 +343,17 @@ GateReport runVerificationGates(const std::string& originalC, const std::string&
 		report.structural = GateResult::FailStructural;
 		return report;
 	}
-	// Size heuristic only. Naming/Comments/StructFields rejections for
-	// control-flow changes are future N10 (no C parser in this task).
 	if (refinedC.size() < originalC.size() / 4 && originalC.size() > 64)
+	{
+		report.structural = GateResult::FailStructural;
+		return report;
+	}
+	// N5 (not N10): same-size refinements may not change control-flow
+	// keywords or comparison operators. FullRewrite that grows the TU
+	// skips this check. No C parser in deps/.
+	const bool similarSize =
+		originalC.size() > 16 && refinedC.size() * 4 > originalC.size() && originalC.size() * 4 > refinedC.size();
+	if (similarSize && controlShapeChanged(originalC, refinedC))
 	{
 		report.structural = GateResult::FailStructural;
 		return report;

@@ -45,10 +45,13 @@ Custom metric for `algo_recover`, `sort_detect`, `concurrency_detect`,
 | Full corpus | `scripts/run_algorithm_recovery_full.sh --jobs 4` |
 | Nightly | `.github/workflows/algorithm-recovery-nightly.yml` |
 
-`mean_f1` uses stem/label fallback. `mean_f1_raw` is detector-only.
-**`mean_f1_raw = 1.0` is corpus-tuned** (stem augment + extract noise strip),
-not proof that structural IR detection is solved in production. Stock RetDec
-has no label export — F1 is fork-only.
+Name-blind extract (`--no-stem-fallback`) is the headline figure.
+ci-core `mean_f1` ≈ **0.335**. Full 216 name-blind mean **0.124**
+(O0 0.137 / O2 0.116 / O3 0.121). The checked-in
+`algorithm-recovery-full.json` `mean_f1` **1.0** is the withdrawn
+stem-tuned score — do not advertise it.
+Per-opt name-blind numbers: `results/algorithm-recovery-per-opt.md`.
+Stock RetDec has no label export — F1 is fork-only.
 
 ## Migration evals (optional)
 

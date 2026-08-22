@@ -18,11 +18,9 @@ using namespace retdec::neural;
 
 namespace {
 
-class EnvGuard
-{
+class EnvGuard {
 public:
-	EnvGuard(const char* key, const char* value)
-		: key_(key)
+	EnvGuard(const char* key, const char* value): key_(key)
 	{
 		const char* old = std::getenv(key);
 		had_ = old != nullptr;
@@ -55,8 +53,10 @@ private:
 #ifdef _WIN32
 		_putenv_s(key_.c_str(), value ? value : "");
 #else
-		if (value && value[0]) setenv(key_.c_str(), value, 1);
-		else unsetenv(key_.c_str());
+		if (value && value[0])
+			setenv(key_.c_str(), value, 1);
+		else
+			unsetenv(key_.c_str());
 #endif
 	}
 
@@ -83,9 +83,8 @@ void appendGgufString(std::vector<std::uint8_t>& b, const std::string& s)
 	b.insert(b.end(), s.begin(), s.end());
 }
 
-std::vector<std::uint8_t> makeTinyGguf(
-	const std::vector<std::pair<std::string, std::string>>& kv,
-	std::uint32_t version = 3)
+std::vector<std::uint8_t>
+makeTinyGguf(const std::vector<std::pair<std::string, std::string>>& kv, std::uint32_t version = 3)
 {
 	std::vector<std::uint8_t> b;
 	b.insert(b.end(), {'G', 'G', 'U', 'F'});
@@ -152,6 +151,23 @@ TEST(NeuralGates, EmptyRefinedFailsStructural)
 	EXPECT_NE(r.summary().find("structural=fail"), std::string::npos);
 }
 
+TEST(NeuralGates, InvertedComparisonFailsStructural)
+{
+	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
+	const std::string refined = "int f(int x) { if (x < 0) return 1; return 0; }\n";
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_FALSE(r.allPassed());
+	EXPECT_NE(r.summary().find("structural=fail"), std::string::npos);
+}
+
+TEST(NeuralGates, SameControlShapePassesStructural)
+{
+	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
+	const std::string refined = "int f(int y) { if (y > 0) return 1; return 0; }\n";
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_EQ(r.structural, GateResult::Pass);
+}
+
 TEST(NeuralGates, TinyRefinedFailsWhenOriginalLarge)
 {
 	const std::string original(200, 'a');
@@ -188,9 +204,7 @@ TEST(NeuralPrompt, StripsStringLiteralsFromFunctionSource)
 TEST(NeuralModelVerify, Sha256HexOfBytesMatchesKnownVector)
 {
 	const char kAbc[] = "abc";
-	EXPECT_EQ(
-		sha256HexOfBytes(kAbc, 3),
-		"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+	EXPECT_EQ(sha256HexOfBytes(kAbc, 3), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 }
 
 TEST(NeuralModelVerify, EnvPinUsesStreamedSha256)
@@ -433,9 +447,7 @@ TEST(NeuralModelVerify, EmptyAllowlistRefusesEvenWithMatchingEnvSha)
 	const std::string jsonPath = json.string();
 	const std::string tmpPath = tmp.string();
 	EnvGuard unverified("RETDEC_NEURAL_ALLOW_UNVERIFIED", "");
-	EnvGuard envSha(
-		"RETDEC_NEURAL_MODEL_SHA256",
-		"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+	EnvGuard envSha("RETDEC_NEURAL_MODEL_SHA256", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 	EnvGuard models("RETDEC_NEURAL_MODELS_JSON", jsonPath.c_str());
 	EXPECT_FALSE(verifyModelSha256(tmpPath));
 

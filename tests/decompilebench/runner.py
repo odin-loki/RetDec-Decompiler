@@ -88,22 +88,20 @@ def repo_relative_path(path: str | Path, repo: Path | None = None) -> str:
     return raw
 
 
+def _relativize_obj(obj, repo: Path) -> None:
+    if isinstance(obj, dict):
+        for key, val in obj.items():
+            if isinstance(val, str) and ("/" in val or "\\" in val):
+                obj[key] = repo_relative_path(val, repo)
+            else:
+                _relativize_obj(val, repo)
+    elif isinstance(obj, list):
+        for item in obj:
+            _relativize_obj(item, repo)
+
+
 def _relativize_sample_paths(payload: dict, repo: Path) -> None:
-    seen: set[int] = set()
-    for rows in (
-        payload.get("samples"),
-        (payload.get("fork") or {}).get("samples"),
-        (payload.get("stock_retdec") or {}).get("samples"),
-    ):
-        if not isinstance(rows, list) or id(rows) in seen:
-            continue
-        seen.add(id(rows))
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            inp = row.get("input")
-            if inp:
-                row["input"] = repo_relative_path(inp, repo)
+    _relativize_obj(payload, repo)
 
 
 def load_manifest(corpus: Path) -> list[dict]:

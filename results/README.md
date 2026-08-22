@@ -11,8 +11,10 @@ Live measurement contract for CI, ship checklist, and the release table.
 | `baseline-algorithm-recovery.json` | Algorithm-recovery regression gate |
 | `stock-retdec-docker-ci-core.json` | Stock RetDec 5.0 (`remnux/retdec`), 9 binaries |
 | `stock-retdec-docker-full.json` | Stock RetDec 5.0, 216 binaries |
-| `algorithm-recovery-ci.json` | Fork F1 on CI-core (9) |
-| `algorithm-recovery-full.json` | Fork F1 on full stand-in corpus (216) |
+| `algorithm-recovery-ci.json` | Name-blind fork F1 on CI-core (9) |
+| `algorithm-recovery-full.json` | Withdrawn stem-tuned F1 (216) — do not advertise |
+| `algorithm-recovery-full-nameblind.json` | Honest name-blind F1 on 216 (B12/B13) |
+| `algorithm-recovery-per-opt.md` | Per-opt headline table for the name-blind run |
 
 Algorithm-recovery F1 figures that depended on filename filters are
 **withdrawn** (B1–B5). Name-blind ci-core remasure:

@@ -8,6 +8,23 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- B12/B13: name-blind full-corpus F1 by optimisation level
+  (`results/algorithm-recovery-full-nameblind.json`,
+  `results/algorithm-recovery-per-opt.md`). Headline mean **0.124**
+  (O0 0.137 / O2 0.116 / O3 0.121, n=72 each); macro F1 **0.075**;
+  micro F1 **0.174**. Bootstrap 95% CI on mean F1 is in the JSON.
+  Do not advertise the withdrawn stem-tuned 1.0. Official
+  `run_algorithm_recovery_full.sh` still gates `MIN_MEAN_F1=0.95` —
+  that is a finding, not silently lowered.
+- N5 leftover: same-size neural refinements fail structural if
+  `if`/`else`/`while`/`for`/`goto`/`return` or comparison-operator
+  counts change. Not a CFG (no parser in `deps/`).
+- S18: mock inference is refused in `NDEBUG` unless
+  `RETDEC_NEURAL_ALLOW_MOCK` is compiled in. Tests still call
+  `createMockInference()` directly.
+- B15: `scripts/ci/verify_result_provenance.py` requires
+  `provenance.git_sha` / `dirty` / `harness` on DecompileBench
+  JSON. Host-absolute paths warn; the runner now relativizes new runs.
 - A6: Fibonacci / LCS / Knapsack stay enum labels only; `IdiomDetector`
   never assigns them. A9: `pattern_detect` marked experimental.
 - B8 negative corpus: 220 gcc-O0 binaries from
@@ -74,6 +91,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Changed
 
+- Withdrawn unpublished marketing: Fast decompile “~24% faster”
+  (C-FAST24) and in-tree Qwen3/FlashAttention as a pipeline accelerator
+  (C-QWEN3-GPU). Default F5 `.c` is unchanged.
 - ML tab hint now describes live llama.cpp refinement: a GGUF path on
   disk sets `RETDEC_NEURAL_REFINE`; context length and max new tokens
   come from the tab; CPU forces `RETDEC_NEURAL_N_GPU_LAYERS=0`, GPU/Auto
@@ -191,7 +211,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Neural compile-gate uses argv spawn (no `std::system` / shell). Model
   SHA-256 is a streamed digest (no `popen`). Runtime differential
   execution of decompiled C is disabled even if `RETDEC_NEURAL_DIFF_GATE`
-  is set. Prompt construction strips C string literals.
+  is set. Prompt construction strips C string literals. Release builds
+  cannot select the mock backend (S18). Same-size refinements that
+  flip comparisons or control-flow keywords fail structural (N5).
 
 ### Legal
 

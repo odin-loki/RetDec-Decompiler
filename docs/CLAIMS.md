@@ -16,7 +16,9 @@ Do not treat `results/algorithm-recovery-*.json` or
 |----|-------|---------------|------------------------|--------|
 | C-DB-STOCK | Stock RetDec 5.0 (`remnux/retdec`) DecompileBench JSON exists for the stand-in corpus (CI-core and full) | `CHANGELOG.md` `[2.0.20]`; `docs/BENCHMARKS.md`; `results/README.md` | `results/stock-retdec-docker-ci-core.json`; `results/stock-retdec-docker-full.json` | demonstrated |
 | C-DB-COMPARE | Fork vs stock DecompileBench wall/quality two-column compare | `CHANGELOG.md` `[2.0.21]`; `results/compare-fork-vs-stock.md`; `results/compare-fork-vs-stock-full.md` | ci-core 9/9 buildable tu_valid+recompile. Full 216: buildable **1.000**. Debug vs stock Release ~6.3× (ci-core) / ~5.9× (full). Raw `.c` 0. Do not advertise a stock speed win. | demonstrated |
-| C-ALGO-F1 | Algorithm-recovery F1 as a product/marketing figure | `README.md`; `docs/BENCHMARKS_TABLE.md`; pre-B1 CHANGELOG | Withdrawn (B4). Name-blind ci-core remasure: `mean_f1` ≈ 0.335 in `results/algorithm-recovery-ci.json`. Do not advertise 1.0. | withdrawn |
+| C-ALGO-F1 | Algorithm-recovery F1 as a product/marketing figure | `README.md`; `docs/BENCHMARKS_TABLE.md`; pre-B1 CHANGELOG | Withdrawn (B4). Name-blind ci-core ≈ 0.335; full 216 name-blind mean **0.124** in `results/algorithm-recovery-full-nameblind.json`. Do not advertise 1.0. | withdrawn |
+| C-B12 | Per-optimisation name-blind F1 as a headline | `RETDEC_AUDIT.md` B12; `docs/BENCHMARKS.md` | `results/algorithm-recovery-per-opt.md`; O0 0.137 / O2 0.116 / O3 0.121. Not a product F1. | demonstrated |
+| C-B13 | Micro/macro F1, per-class P/R, bootstrap 95% CI, `n` | `RETDEC_AUDIT.md` B13 | `tests/algorithm_recovery/runner.py`; `results/algorithm-recovery-full-nameblind.json` (`micro`, `macro_f1`, `per_class`, `mean_f1_ci95_*`) | demonstrated |
 | C-E1 | Detector labels survive a hashed rename of the input ELF | `RETDEC_AUDIT.md` E1 | `scripts/ci/run_e1_real_binary_smoke.sh`; `results/e1-real-binary-smoke.json`. No F1 gate. Empty detections allowed. | demonstrated |
 | C-B8 | Negative corpus: 200+ binaries with no target-algorithm labels; any hit is a false positive | `RETDEC_AUDIT.md` B8 | `scripts/generate_negative_corpus.py`; `scripts/ci/run_b8_negative_corpus.sh`; `results/b8-negative-corpus.md` | demonstrated |
 | C-Q4 | Existing goto-optimizer baseline measured before any SAILR port | `RETDEC_AUDIT.md` Q4 | `scripts/ci/run_q4_goto_baseline.sh`; `results/goto-optimizer-baseline.md` | demonstrated |
@@ -30,8 +32,10 @@ Do not treat `results/algorithm-recovery-*.json` or
 | C-EMIT | Buildable sidecars (`.h`, `_stubs.c`, `.buildable.c`) next to output C | `include/retdec/retdec/semantic_recovery_export.h` | `src/retdec/semantic_recovery_export.cpp`; `tests/retdec/semantic_recovery_export_test.cpp`. Off unless `RETDEC_EMIT_BUILDABLE` is set (non-empty, not `0`) | opt-in |
 | C-ARCH-UNIMP | SPARC, SystemZ, and XCore lifting are unimplemented | `docs/ARCHITECTURE_TARGETS.md`; `RETDEC_AUDIT.md` T5 | `src/capstone2llvmir/capstone2llvmir.cpp`: `createSparc` / `createSysz` / `createXcore` throw `GenericError` | demonstrated |
 | C-LICENCE | Upstream Avast RetDec v5.0 MIT notice retained; Imortek modifications recorded | `CHANGELOG.md` `[2.0.21]` Legal | `docs/PROVENANCE.md`; `LICENSE-MIT` | demonstrated |
-| C-FAST24 | Fast decompile preset ~24% faster, byte-identical output | `README.md` (Qt 6 GUI) | none | unpublished |
-| C-QWEN3-GPU | In-tree Qwen3 / FlashAttention stack accelerates decompilation | `docs/architecture.md`; `docs/COMMERCIAL_WHITEPAPER.md` | not wired into `src/retdec` | unpublished |
+| C-FAST24 | Fast decompile preset ~24% faster, byte-identical output | Historical README (Qt 6 GUI) | none — claim removed from README | withdrawn |
+| C-QWEN3-GPU | In-tree Qwen3 / FlashAttention stack accelerates decompilation | Historical `docs/architecture.md` / whitepaper | not wired into `src/retdec`; docs now say so | withdrawn |
+| C-B15 | Result JSON provenance keys required | `RETDEC_AUDIT.md` B15 | `scripts/ci/verify_result_provenance.py` | demonstrated |
+| C-A12 | Anchor-function selection is "biggest function" | `RETDEC_AUDIT.md` A12 (`retdec.cpp:894-906`) | Stale. Detectors run on every SSA function (`FnWorkItem`); those lines are the incremental cache. | demonstrated |
 
 ## How to use
 

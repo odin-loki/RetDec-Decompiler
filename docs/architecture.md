@@ -374,6 +374,10 @@ Plugin types:
 
 ## AI Inference Engine (Qwen3) {#ai}
 
+**Not in the default decompiler pipeline.** `src/qwen3/` and FlashAttention
+are experimental / unintegrated (claims register C-QWEN3-GPU). Live refinement
+uses opt-in llama.cpp (`RETDEC_NEURAL_REFINE`) when a GGUF is on disk.
+
 ### Component Stack
 
 ```
