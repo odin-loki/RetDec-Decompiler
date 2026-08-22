@@ -14,7 +14,13 @@
           "type": "object",
           "properties": {
             "syntax_valid_rate": { "type": "number" },
-            "recompile_success_rate": { "type": "number" }
+            "tu_valid_rate": { "type": "number" },
+            "recompile_success_rate": { "type": "number" },
+            "mean_wall_s": { "type": "number" },
+            "p50_wall_s": { "type": "number" },
+            "p90_wall_s": { "type": "number" },
+            "p99_wall_s": { "type": "number" },
+            "max_wall_s": { "type": "number" }
           }
         },
         "algorithm_recovery": {

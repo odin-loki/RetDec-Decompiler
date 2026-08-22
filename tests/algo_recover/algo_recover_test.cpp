@@ -8,9 +8,11 @@
  *   - AccumulateDetector::detect (add/mul/or/xor/max/min combiners)
  *   - FindDetector::detect       (find/find_if/count)
  *   - PartitionDetector::detect  (converging ptrs, swap, no recursion)
+ *   - BinarySearchDetector::detect (SSA mid→load→compare, not opcode counts)
  *   - ForEachDetector::detect    (call per element, no accumulator)
  *   - IteratorPatternRecovery    (begin/end, reverse, back_inserter)
  *   - AlgorithmDetector          (preflight, tier assignment, orchestration)
+ *   - gcc -O0 IR-shape fixtures  (binary_search / bubblesort / memcpy_loop)
  */
 
 #include <memory>
@@ -63,6 +65,455 @@ static void addImmInstr(ssa::SSAFunction& fn, ssa::IrInstr::Op op, uint64_t immV
 static void addPhi(ssa::SSAFunction& fn) {
     if (fn.blockCount() > 0)
         fn.addPhi(fn.block(0)->id, 0);
+}
+
+static void useVal(ssa::IrInstr* instr, ssa::ValueId id, uint8_t idx = 0) {
+    if (!instr) return;
+    ssa::Use u;
+    u.valueId = id;
+    u.operandIndex = idx;
+    instr->uses.push_back(u);
+}
+
+static ssa::IrValue* defOf(ssa::SSAFunction& fn, ssa::IrInstr* instr,
+                           ssa::VarId var = ssa::kInvalidVar) {
+    ssa::IrValue* v = fn.allocValue(ssa::ValueKind::VirtualReg, var);
+    if (instr) {
+        instr->defValue = v->id;
+        v->defInstr = instr;
+    }
+    return v;
+}
+
+/// Connected binary-search SSA: mid = (lo+hi)>>1, load at mid, compare
+/// against an immediate target, lo/hi updated from mid into header phis.
+static std::unique_ptr<ssa::SSAFunction> makeConnectedBinarySearch() {
+    auto fn = std::make_unique<ssa::SSAFunction>("f");
+    auto* entry  = fn->addBlock("entry");
+    auto* header = fn->addBlock("header");
+    auto* body   = fn->addBlock("body");
+    auto* loUpd  = fn->addBlock("lo_upd");
+    auto* hiUpd  = fn->addBlock("hi_upd");
+    auto* exitB  = fn->addBlock("exit");
+
+    entry->addSucc(header->id);
+    header->addSucc(body->id);
+    header->addSucc(exitB->id);
+    header->addPred(entry->id);
+    header->addPred(loUpd->id);
+    header->addPred(hiUpd->id);
+    body->addSucc(loUpd->id);
+    body->addSucc(hiUpd->id);
+    body->addPred(header->id);
+    loUpd->addSucc(header->id);
+    loUpd->addPred(body->id);
+    hiUpd->addSucc(header->id);
+    hiUpd->addPred(body->id);
+    exitB->addPred(header->id);
+
+    const ssa::VarId vLo = fn->declareVar("lo");
+    const ssa::VarId vHi = fn->declareVar("hi");
+
+    ssa::IrValue* lo0 = fn->allocValue(ssa::ValueKind::VirtualReg, vLo);
+    ssa::IrValue* hi0 = fn->allocValue(ssa::ValueKind::VirtualReg, vHi);
+    ssa::IrValue* target = fn->allocValue(ssa::ValueKind::Immediate);
+    target->imm = 42;
+    ssa::IrValue* one = fn->allocValue(ssa::ValueKind::Immediate);
+    one->imm = 1;
+    ssa::IrValue* arr = fn->allocValue(ssa::ValueKind::VirtualReg);
+
+    ssa::PhiNode* phiLo = fn->addPhi(header->id, vLo);
+    ssa::IrValue* lo = fn->allocValue(ssa::ValueKind::Phi, vLo);
+    phiLo->result = lo->id;
+    lo->defPhi = phiLo;
+
+    ssa::PhiNode* phiHi = fn->addPhi(header->id, vHi);
+    ssa::IrValue* hi = fn->allocValue(ssa::ValueKind::Phi, vHi);
+    phiHi->result = hi->id;
+    hi->defPhi = phiHi;
+
+    ssa::IrInstr* boundCmp = fn->addInstr(header->id, ssa::IrInstr::Op::Compare);
+    useVal(boundCmp, lo->id, 0);
+    useVal(boundCmp, hi->id, 1);
+    fn->addInstr(header->id, ssa::IrInstr::Op::CondBranch);
+
+    ssa::IrInstr* add = fn->addInstr(body->id, ssa::IrInstr::Op::Add);
+    useVal(add, lo->id, 0);
+    useVal(add, hi->id, 1);
+    ssa::IrValue* sum = defOf(*fn, add);
+
+    ssa::IrInstr* shr = fn->addInstr(body->id, ssa::IrInstr::Op::Shr);
+    useVal(shr, sum->id, 0);
+    useVal(shr, one->id, 1);
+    ssa::IrValue* mid = defOf(*fn, shr);
+
+    ssa::IrInstr* addrAdd = fn->addInstr(body->id, ssa::IrInstr::Op::Add);
+    useVal(addrAdd, arr->id, 0);
+    useVal(addrAdd, mid->id, 1);
+    ssa::IrValue* addr = defOf(*fn, addrAdd);
+
+    ssa::IrInstr* load = fn->addInstr(body->id, ssa::IrInstr::Op::Load);
+    useVal(load, addr->id, 0);
+    ssa::IrValue* elem = defOf(*fn, load);
+
+    ssa::IrInstr* cmp = fn->addInstr(body->id, ssa::IrInstr::Op::Compare);
+    useVal(cmp, elem->id, 0);
+    useVal(cmp, target->id, 1);
+    fn->addInstr(body->id, ssa::IrInstr::Op::CondBranch);
+
+    ssa::IrInstr* loAdd = fn->addInstr(loUpd->id, ssa::IrInstr::Op::Add);
+    useVal(loAdd, mid->id, 0);
+    useVal(loAdd, one->id, 1);
+    ssa::IrValue* lo1 = defOf(*fn, loAdd, vLo);
+
+    ssa::IrInstr* hiSub = fn->addInstr(hiUpd->id, ssa::IrInstr::Op::Sub);
+    useVal(hiSub, mid->id, 0);
+    useVal(hiSub, one->id, 1);
+    ssa::IrValue* hi1 = defOf(*fn, hiSub, vHi);
+
+    phiLo->addOperand(entry->id, lo0->id);
+    phiLo->addOperand(loUpd->id, lo1->id);
+    phiLo->addOperand(hiUpd->id, lo->id);
+    phiHi->addOperand(entry->id, hi0->id);
+    phiHi->addOperand(loUpd->id, hi->id);
+    phiHi->addOperand(hiUpd->id, hi1->id);
+
+    return fn;
+}
+
+/// Loop with a Shr that is not a load-indexed midpoint (hash-style mix).
+static std::unique_ptr<ssa::SSAFunction> makeRandomShrLoop() {
+    auto fn = std::make_unique<ssa::SSAFunction>("f");
+    auto* entry = fn->addBlock("entry");
+    auto* loop  = fn->addBlock("loop");
+    auto* exitB = fn->addBlock("exit");
+    entry->addSucc(loop->id);
+    loop->addSucc(loop->id);
+    loop->addSucc(exitB->id);
+    loop->addPred(entry->id);
+    loop->addPred(loop->id);
+
+    ssa::IrValue* x = fn->allocValue(ssa::ValueKind::VirtualReg);
+    ssa::IrValue* one = fn->allocValue(ssa::ValueKind::Immediate);
+    one->imm = 1;
+    ssa::IrValue* three = fn->allocValue(ssa::ValueKind::Immediate);
+    three->imm = 3;
+
+    ssa::IrInstr* shr = fn->addInstr(loop->id, ssa::IrInstr::Op::Shr);
+    useVal(shr, x->id, 0);
+    useVal(shr, one->id, 1);
+    defOf(*fn, shr);
+
+    ssa::IrInstr* add = fn->addInstr(loop->id, ssa::IrInstr::Op::Add);
+    useVal(add, x->id, 0);
+    useVal(add, one->id, 1);
+    defOf(*fn, add);
+
+    ssa::IrValue* slot = fn->allocValue(ssa::ValueKind::MemRef);
+    ssa::IrInstr* load = fn->addInstr(loop->id, ssa::IrInstr::Op::Load);
+    useVal(load, slot->id, 0);
+    ssa::IrValue* elem = defOf(*fn, load);
+
+    ssa::IrInstr* cmp = fn->addInstr(loop->id, ssa::IrInstr::Op::Compare);
+    useVal(cmp, elem->id, 0);
+    useVal(cmp, three->id, 1);
+    return fn;
+}
+
+/// gcc -O0 shape of tests/algorithm_recovery/sources/binary_search.c:
+/// mid = lo + (hi - lo) / 2, load a[mid], compare vs invariant target.
+/// Function name is generic — no filename / symbol hint.
+static std::unique_ptr<ssa::SSAFunction> makeGccO0BinarySearchShape() {
+    auto fn = std::make_unique<ssa::SSAFunction>("f");
+    auto* entry  = fn->addBlock("entry");
+    auto* header = fn->addBlock("header");
+    auto* body   = fn->addBlock("body");
+    auto* loUpd  = fn->addBlock("lo_upd");
+    auto* hiUpd  = fn->addBlock("hi_upd");
+    auto* exitB  = fn->addBlock("exit");
+
+    entry->addSucc(header->id);
+    header->addSucc(body->id);
+    header->addSucc(exitB->id);
+    header->addPred(entry->id);
+    header->addPred(loUpd->id);
+    header->addPred(hiUpd->id);
+    body->addSucc(loUpd->id);
+    body->addSucc(hiUpd->id);
+    body->addPred(header->id);
+    loUpd->addSucc(header->id);
+    loUpd->addPred(body->id);
+    hiUpd->addSucc(header->id);
+    hiUpd->addPred(body->id);
+    exitB->addPred(header->id);
+
+    const ssa::VarId vLo = fn->declareVar("lo");
+    const ssa::VarId vHi = fn->declareVar("hi");
+
+    ssa::IrValue* lo0 = fn->allocValue(ssa::ValueKind::VirtualReg, vLo);
+    ssa::IrValue* hi0 = fn->allocValue(ssa::ValueKind::VirtualReg, vHi);
+    ssa::IrValue* target = fn->allocValue(ssa::ValueKind::Immediate);
+    target->imm = 42;
+    ssa::IrValue* one = fn->allocValue(ssa::ValueKind::Immediate);
+    one->imm = 1;
+    ssa::IrValue* two = fn->allocValue(ssa::ValueKind::Immediate);
+    two->imm = 2;
+    ssa::IrValue* arr = fn->allocValue(ssa::ValueKind::VirtualReg);
+
+    ssa::PhiNode* phiLo = fn->addPhi(header->id, vLo);
+    ssa::IrValue* lo = fn->allocValue(ssa::ValueKind::Phi, vLo);
+    phiLo->result = lo->id;
+    lo->defPhi = phiLo;
+
+    ssa::PhiNode* phiHi = fn->addPhi(header->id, vHi);
+    ssa::IrValue* hi = fn->allocValue(ssa::ValueKind::Phi, vHi);
+    phiHi->result = hi->id;
+    hi->defPhi = phiHi;
+
+    ssa::IrInstr* boundCmp = fn->addInstr(header->id, ssa::IrInstr::Op::Compare);
+    useVal(boundCmp, lo->id, 0);
+    useVal(boundCmp, hi->id, 1);
+    fn->addInstr(header->id, ssa::IrInstr::Op::CondBranch);
+
+    ssa::IrInstr* sub = fn->addInstr(body->id, ssa::IrInstr::Op::Sub);
+    useVal(sub, hi->id, 0);
+    useVal(sub, lo->id, 1);
+    ssa::IrValue* diff = defOf(*fn, sub);
+
+    ssa::IrInstr* div = fn->addInstr(body->id, ssa::IrInstr::Op::Div);
+    useVal(div, diff->id, 0);
+    useVal(div, two->id, 1);
+    ssa::IrValue* half = defOf(*fn, div);
+
+    ssa::IrInstr* add = fn->addInstr(body->id, ssa::IrInstr::Op::Add);
+    useVal(add, lo->id, 0);
+    useVal(add, half->id, 1);
+    ssa::IrValue* mid = defOf(*fn, add);
+
+    ssa::IrInstr* addrAdd = fn->addInstr(body->id, ssa::IrInstr::Op::Add);
+    useVal(addrAdd, arr->id, 0);
+    useVal(addrAdd, mid->id, 1);
+    ssa::IrValue* addr = defOf(*fn, addrAdd);
+
+    ssa::IrInstr* load = fn->addInstr(body->id, ssa::IrInstr::Op::Load);
+    useVal(load, addr->id, 0);
+    ssa::IrValue* elem = defOf(*fn, load);
+
+    ssa::IrInstr* cmp = fn->addInstr(body->id, ssa::IrInstr::Op::Compare);
+    useVal(cmp, elem->id, 0);
+    useVal(cmp, target->id, 1);
+    fn->addInstr(body->id, ssa::IrInstr::Op::CondBranch);
+
+    ssa::IrInstr* loAdd = fn->addInstr(loUpd->id, ssa::IrInstr::Op::Add);
+    useVal(loAdd, mid->id, 0);
+    useVal(loAdd, one->id, 1);
+    ssa::IrValue* lo1 = defOf(*fn, loAdd, vLo);
+
+    ssa::IrInstr* hiSub = fn->addInstr(hiUpd->id, ssa::IrInstr::Op::Sub);
+    useVal(hiSub, mid->id, 0);
+    useVal(hiSub, one->id, 1);
+    ssa::IrValue* hi1 = defOf(*fn, hiSub, vHi);
+
+    phiLo->addOperand(entry->id, lo0->id);
+    phiLo->addOperand(loUpd->id, lo1->id);
+    phiLo->addOperand(hiUpd->id, lo->id);
+    phiHi->addOperand(entry->id, hi0->id);
+    phiHi->addOperand(loUpd->id, hi->id);
+    phiHi->addOperand(hiUpd->id, hi1->id);
+
+    return fn;
+}
+
+/// gcc -O0 shape of tests/algorithm_recovery/sources/bubblesort.c:
+/// nested i/j loops, n-1-i bound, adjacent compare, two-store swap.
+static std::unique_ptr<ssa::SSAFunction> makeGccO0BubblesortShape() {
+    auto fn = std::make_unique<ssa::SSAFunction>("f");
+    auto* entry = fn->addBlock("entry");
+    auto* outer = fn->addBlock("outer");
+    auto* inner = fn->addBlock("inner");
+    auto* body  = fn->addBlock("body");
+    auto* swapB = fn->addBlock("swap");
+    auto* jInc  = fn->addBlock("j_inc");
+    auto* iInc  = fn->addBlock("i_inc");
+    auto* exitB = fn->addBlock("exit");
+
+    entry->addSucc(outer->id);
+    outer->addSucc(inner->id);
+    outer->addSucc(exitB->id);
+    outer->addPred(entry->id);
+    outer->addPred(iInc->id);
+    inner->addSucc(body->id);
+    inner->addSucc(iInc->id);
+    inner->addPred(outer->id);
+    inner->addPred(jInc->id);
+    body->addSucc(swapB->id);
+    body->addSucc(jInc->id);
+    body->addPred(inner->id);
+    swapB->addSucc(jInc->id);
+    swapB->addPred(body->id);
+    jInc->addSucc(inner->id);
+    jInc->addPred(body->id);
+    jInc->addPred(swapB->id);
+    iInc->addSucc(outer->id);
+    iInc->addPred(inner->id);
+    exitB->addPred(outer->id);
+
+    const ssa::VarId vI = fn->declareVar("i");
+    const ssa::VarId vJ = fn->declareVar("j");
+
+    ssa::IrValue* i0 = fn->allocValue(ssa::ValueKind::VirtualReg, vI);
+    ssa::IrValue* j0 = fn->allocValue(ssa::ValueKind::VirtualReg, vJ);
+    ssa::IrValue* one = fn->allocValue(ssa::ValueKind::Immediate);
+    one->imm = 1;
+    ssa::IrValue* n = fn->allocValue(ssa::ValueKind::VirtualReg);
+    ssa::IrValue* arr = fn->allocValue(ssa::ValueKind::VirtualReg);
+
+    ssa::PhiNode* phiI = fn->addPhi(outer->id, vI);
+    ssa::IrValue* i = fn->allocValue(ssa::ValueKind::Phi, vI);
+    phiI->result = i->id;
+    i->defPhi = phiI;
+
+    ssa::PhiNode* phiJ = fn->addPhi(inner->id, vJ);
+    ssa::IrValue* j = fn->allocValue(ssa::ValueKind::Phi, vJ);
+    phiJ->result = j->id;
+    j->defPhi = phiJ;
+
+    ssa::IrInstr* n1 = fn->addInstr(outer->id, ssa::IrInstr::Op::Sub);
+    useVal(n1, n->id, 0);
+    useVal(n1, one->id, 1);
+    ssa::IrValue* nMinus1 = defOf(*fn, n1);
+
+    ssa::IrInstr* icmp = fn->addInstr(outer->id, ssa::IrInstr::Op::Compare);
+    useVal(icmp, i->id, 0);
+    useVal(icmp, nMinus1->id, 1);
+    fn->addInstr(outer->id, ssa::IrInstr::Op::CondBranch);
+
+    ssa::IrInstr* bound = fn->addInstr(inner->id, ssa::IrInstr::Op::Sub);
+    useVal(bound, nMinus1->id, 0);
+    useVal(bound, i->id, 1);
+    ssa::IrValue* jlim = defOf(*fn, bound);
+
+    ssa::IrInstr* jcmp = fn->addInstr(inner->id, ssa::IrInstr::Op::Compare);
+    useVal(jcmp, j->id, 0);
+    useVal(jcmp, jlim->id, 1);
+    fn->addInstr(inner->id, ssa::IrInstr::Op::CondBranch);
+
+    ssa::IrInstr* addr0 = fn->addInstr(body->id, ssa::IrInstr::Op::Add);
+    useVal(addr0, arr->id, 0);
+    useVal(addr0, j->id, 1);
+    ssa::IrValue* p0 = defOf(*fn, addr0);
+
+    ssa::IrInstr* j1 = fn->addInstr(body->id, ssa::IrInstr::Op::Add);
+    useVal(j1, j->id, 0);
+    useVal(j1, one->id, 1);
+    ssa::IrValue* jp1 = defOf(*fn, j1);
+
+    ssa::IrInstr* addr1 = fn->addInstr(body->id, ssa::IrInstr::Op::Add);
+    useVal(addr1, arr->id, 0);
+    useVal(addr1, jp1->id, 1);
+    ssa::IrValue* p1 = defOf(*fn, addr1);
+
+    ssa::IrInstr* load0 = fn->addInstr(body->id, ssa::IrInstr::Op::Load);
+    useVal(load0, p0->id, 0);
+    ssa::IrValue* e0 = defOf(*fn, load0);
+
+    ssa::IrInstr* load1 = fn->addInstr(body->id, ssa::IrInstr::Op::Load);
+    useVal(load1, p1->id, 0);
+    ssa::IrValue* e1 = defOf(*fn, load1);
+
+    ssa::IrInstr* acmp = fn->addInstr(body->id, ssa::IrInstr::Op::Compare);
+    useVal(acmp, e0->id, 0);
+    useVal(acmp, e1->id, 1);
+    fn->addInstr(body->id, ssa::IrInstr::Op::CondBranch);
+
+    ssa::IrInstr* st0 = fn->addInstr(swapB->id, ssa::IrInstr::Op::Store);
+    useVal(st0, p0->id, 0);
+    useVal(st0, e1->id, 1);
+
+    ssa::IrInstr* st1 = fn->addInstr(swapB->id, ssa::IrInstr::Op::Store);
+    useVal(st1, p1->id, 0);
+    useVal(st1, e0->id, 1);
+
+    ssa::IrInstr* jAdd = fn->addInstr(jInc->id, ssa::IrInstr::Op::Add);
+    useVal(jAdd, j->id, 0);
+    useVal(jAdd, one->id, 1);
+    ssa::IrValue* jn = defOf(*fn, jAdd, vJ);
+
+    ssa::IrInstr* iAdd = fn->addInstr(iInc->id, ssa::IrInstr::Op::Add);
+    useVal(iAdd, i->id, 0);
+    useVal(iAdd, one->id, 1);
+    ssa::IrValue* in = defOf(*fn, iAdd, vI);
+
+    phiI->addOperand(entry->id, i0->id);
+    phiI->addOperand(iInc->id, in->id);
+    phiJ->addOperand(outer->id, j0->id);
+    phiJ->addOperand(jInc->id, jn->id);
+
+    return fn;
+}
+
+/// gcc -O0 shape of tests/algorithm_recovery/sources/memcpy_loop.c:
+/// for (i = 0; i < n; ++i) dst[i] = src[i];
+static std::unique_ptr<ssa::SSAFunction> makeGccO0MemcpyLoopShape() {
+    auto fn = std::make_unique<ssa::SSAFunction>("f");
+    auto* entry  = fn->addBlock("entry");
+    auto* header = fn->addBlock("header");
+    auto* body   = fn->addBlock("body");
+    auto* exitB  = fn->addBlock("exit");
+
+    entry->addSucc(header->id);
+    header->addSucc(body->id);
+    header->addSucc(exitB->id);
+    header->addPred(entry->id);
+    header->addPred(body->id);
+    body->addSucc(header->id);
+    body->addPred(header->id);
+    exitB->addPred(header->id);
+
+    const ssa::VarId vI = fn->declareVar("i");
+    ssa::IrValue* i0 = fn->allocValue(ssa::ValueKind::VirtualReg, vI);
+    ssa::IrValue* one = fn->allocValue(ssa::ValueKind::Immediate);
+    one->imm = 1;
+    ssa::IrValue* n = fn->allocValue(ssa::ValueKind::VirtualReg);
+    ssa::IrValue* src = fn->allocValue(ssa::ValueKind::VirtualReg);
+    ssa::IrValue* dst = fn->allocValue(ssa::ValueKind::VirtualReg);
+
+    ssa::PhiNode* phiI = fn->addPhi(header->id, vI);
+    ssa::IrValue* i = fn->allocValue(ssa::ValueKind::Phi, vI);
+    phiI->result = i->id;
+    i->defPhi = phiI;
+
+    ssa::IrInstr* cmp = fn->addInstr(header->id, ssa::IrInstr::Op::Compare);
+    useVal(cmp, i->id, 0);
+    useVal(cmp, n->id, 1);
+    fn->addInstr(header->id, ssa::IrInstr::Op::CondBranch);
+
+    ssa::IrInstr* sa = fn->addInstr(body->id, ssa::IrInstr::Op::Add);
+    useVal(sa, src->id, 0);
+    useVal(sa, i->id, 1);
+    ssa::IrValue* sp = defOf(*fn, sa);
+
+    ssa::IrInstr* ld = fn->addInstr(body->id, ssa::IrInstr::Op::Load);
+    useVal(ld, sp->id, 0);
+    ssa::IrValue* elem = defOf(*fn, ld);
+
+    ssa::IrInstr* da = fn->addInstr(body->id, ssa::IrInstr::Op::Add);
+    useVal(da, dst->id, 0);
+    useVal(da, i->id, 1);
+    ssa::IrValue* dp = defOf(*fn, da);
+
+    ssa::IrInstr* st = fn->addInstr(body->id, ssa::IrInstr::Op::Store);
+    useVal(st, dp->id, 0);
+    useVal(st, elem->id, 1);
+
+    ssa::IrInstr* inc = fn->addInstr(body->id, ssa::IrInstr::Op::Add);
+    useVal(inc, i->id, 0);
+    useVal(inc, one->id, 1);
+    ssa::IrValue* i1 = defOf(*fn, inc, vI);
+
+    phiI->addOperand(entry->id, i0->id);
+    phiI->addOperand(body->id, i1->id);
+    return fn;
 }
 
 // ─── AlgorithmResult tests ────────────────────────────────────────────────────
@@ -464,6 +915,136 @@ TEST(PartitionDetectorTest, HighTierEmittedContainsPartition) {
     auto r = det.detect(*fn);
     if (r.tier == EmissionTier::High)
         EXPECT_NE(r.emittedForm.find("std::partition"), std::string::npos);
+}
+
+// ─── BinarySearchDetector tests ───────────────────────────────────────────────
+
+TEST(BinarySearchDetectorTest, EmptyFunctionLowConfidence) {
+    auto fn = makeFunc("empty", {});
+    BinarySearchDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.10f);
+}
+
+TEST(BinarySearchDetectorTest, MidpointShrLoadCompareDetects) {
+    auto fn = makeConnectedBinarySearch();
+    BinarySearchDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_GE(r.confidence, 0.45f);
+    EXPECT_EQ(r.kind, AlgorithmKind::BinarySearch);
+    EXPECT_NE(r.emittedForm.find("binary_search"), std::string::npos);
+}
+
+TEST(BinarySearchDetectorTest, ConnectedInvariantIsHighTier) {
+    auto fn = makeConnectedBinarySearch();
+    BinarySearchDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_GE(r.confidence, 0.75f);
+    EXPECT_EQ(r.tier, EmissionTier::High);
+}
+
+TEST(BinarySearchDetectorTest, RandomShrLoopDoesNotDetect) {
+    auto fn = makeRandomShrLoop();
+    BinarySearchDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.45f);
+}
+
+TEST(BinarySearchDetectorTest, OpcodeCountsAloneDoNotDetect) {
+    // Former counter-style fixture: Compare/Add/Sub/Load/Shr + back-edge,
+    // with no SSA def-use connecting the shift to the load.
+    auto fn = makeFunc("counts_only", {
+        ssa::IrInstr::Op::Compare,
+        ssa::IrInstr::Op::Compare,
+        ssa::IrInstr::Op::Add,
+        ssa::IrInstr::Op::Sub,
+        ssa::IrInstr::Op::Load,
+        ssa::IrInstr::Op::Shr,
+    }, 1);
+    addBackEdge(*fn);
+    BinarySearchDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.45f);
+}
+
+TEST(BinarySearchDetectorTest, MidpointDivLoadCompareDetects) {
+    auto fn = std::make_unique<ssa::SSAFunction>("f");
+    auto* entry = fn->addBlock("entry");
+    auto* loop  = fn->addBlock("loop");
+    entry->addSucc(loop->id);
+    loop->addSucc(loop->id);
+    loop->addPred(entry->id);
+    loop->addPred(loop->id);
+
+    ssa::IrValue* lo = fn->allocValue(ssa::ValueKind::VirtualReg);
+    ssa::IrValue* hi = fn->allocValue(ssa::ValueKind::VirtualReg);
+    ssa::IrValue* two = fn->allocValue(ssa::ValueKind::Immediate);
+    two->imm = 2;
+    ssa::IrValue* target = fn->allocValue(ssa::ValueKind::Immediate);
+    target->imm = 7;
+
+    ssa::IrInstr* add = fn->addInstr(loop->id, ssa::IrInstr::Op::Add);
+    useVal(add, lo->id, 0);
+    useVal(add, hi->id, 1);
+    ssa::IrValue* sum = defOf(*fn, add);
+
+    ssa::IrInstr* div = fn->addInstr(loop->id, ssa::IrInstr::Op::Div);
+    useVal(div, sum->id, 0);
+    useVal(div, two->id, 1);
+    ssa::IrValue* mid = defOf(*fn, div);
+
+    ssa::IrInstr* load = fn->addInstr(loop->id, ssa::IrInstr::Op::Load);
+    useVal(load, mid->id, 0);
+    ssa::IrValue* elem = defOf(*fn, load);
+
+    ssa::IrInstr* cmp = fn->addInstr(loop->id, ssa::IrInstr::Op::Compare);
+    useVal(cmp, elem->id, 0);
+    useVal(cmp, target->id, 1);
+
+    ssa::IrInstr* loAdd = fn->addInstr(loop->id, ssa::IrInstr::Op::Add);
+    useVal(loAdd, mid->id, 0);
+    useVal(loAdd, two->id, 1);
+    defOf(*fn, loAdd);
+
+    BinarySearchDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_GE(r.confidence, 0.45f);
+    EXPECT_EQ(r.kind, AlgorithmKind::BinarySearch);
+}
+
+// ─── gcc -O0 IR-shape fixtures (E1; no ELF loader, no filename hints) ─────────
+
+TEST(GccO0BinarySearchShape, OverflowSafeMidDetectsWithoutNameHint) {
+    auto fn = makeGccO0BinarySearchShape();
+    ASSERT_EQ(fn->name(), "f");
+    BinarySearchDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_GE(r.confidence, 0.45f);
+    EXPECT_EQ(r.kind, AlgorithmKind::BinarySearch);
+}
+
+TEST(GccO0BubblesortShape, NestedSwapIsNotBinarySearch) {
+    auto fn = makeGccO0BubblesortShape();
+    ASSERT_EQ(fn->name(), "f");
+    BinarySearchDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.45f);
+}
+
+TEST(GccO0MemcpyLoopShape, IndexedCopyDetectsWithoutNameHint) {
+    auto fn = makeGccO0MemcpyLoopShape();
+    ASSERT_EQ(fn->name(), "f");
+    TransformDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_GE(r.confidence, 0.45f);
+    EXPECT_EQ(r.kind, AlgorithmKind::Copy);
+}
+
+TEST(GccO0MemcpyLoopShape, IndexedCopyIsNotBinarySearch) {
+    auto fn = makeGccO0MemcpyLoopShape();
+    BinarySearchDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.45f);
 }
 
 // ─── ForEachDetector tests ────────────────────────────────────────────────────

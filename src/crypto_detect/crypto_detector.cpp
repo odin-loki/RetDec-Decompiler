@@ -28,6 +28,7 @@ std::string CryptoResult::algorithmName() const noexcept {
     case CryptoAlgorithm::DH:        return "DH";
     case CryptoAlgorithm::BLAKE2:    return "BLAKE2";
     case CryptoAlgorithm::MD5:       return "MD5";
+    case CryptoAlgorithm::CRC:       return "CRC";
     case CryptoAlgorithm::Poly1305:  return "Poly1305";
     case CryptoAlgorithm::Salsa20:   return "Salsa20";
     default:                         return "Unknown";
@@ -85,7 +86,9 @@ CryptoDetector::CryptoDetector(Config cfg) : cfg_(cfg) {
     detectors_.push_back(std::make_unique<HMACDetector>());
     detectors_.push_back(std::make_unique<AESDetector>());
     detectors_.push_back(std::make_unique<SHADetector>());
+    detectors_.push_back(std::make_unique<MD5Detector>());
     detectors_.push_back(std::make_unique<ChaCha20Detector>());
+    detectors_.push_back(std::make_unique<CRCDetector>());
     detectors_.push_back(std::make_unique<RSADetector>());
     detectors_.push_back(std::make_unique<RC4Detector>());
 }

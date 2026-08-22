@@ -2,6 +2,7 @@
 #include "retdec/neural/model_verify.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <vector>
@@ -53,6 +54,19 @@ public:
 		if (!loaded_)
 		{
 			result.error = "mock: model not loaded";
+			return result;
+		}
+		const char* emitC = std::getenv("RETDEC_NEURAL_MOCK_EMIT_C");
+		if (emitC && emitC[0] && emitC[0] != '0')
+		{
+			std::string tu = "int main(void) { return 0; }\n";
+			while (tu.size() < prompt.size() / 4 + 8)
+			{
+				tu += "/* keep structural size */\n";
+			}
+			result.text = tu;
+			result.tokensGenerated = static_cast<int>(tu.size());
+			result.ok = true;
 			return result;
 		}
 		for (const auto& rule: mockRules())

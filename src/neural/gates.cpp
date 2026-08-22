@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -104,7 +105,14 @@ std::wstring quoteWinArg(const std::wstring& a)
 }
 #endif
 
-bool spawnSyntaxOnlyCompiler(const char* cc, const fs::path& src)
+std::string readAll(const fs::path& p)
+{
+	std::ifstream in(p, std::ios::binary);
+	if (!in) return {};
+	return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+bool spawnSyntaxOnlyCompiler(const char* cc, const fs::path& src, const fs::path& diagFile)
 {
 #if defined(_WIN32)
 	const std::wstring wcc = utf8ToWide(cc);
@@ -112,14 +120,25 @@ bool spawnSyntaxOnlyCompiler(const char* cc, const fs::path& src)
 	std::vector<wchar_t> cmdline(cmd.begin(), cmd.end());
 	cmdline.push_back(L'\0');
 
+	SECURITY_ATTRIBUTES sa{};
+	sa.nLength = sizeof(sa);
+	sa.bInheritHandle = TRUE;
+	HANDLE err = CreateFileW(
+		diagFile.empty() ? L"NUL" : diagFile.wstring().c_str(),
+		GENERIC_WRITE,
+		FILE_SHARE_READ | FILE_SHARE_WRITE,
+		&sa,
+		diagFile.empty() ? OPEN_EXISTING : CREATE_ALWAYS,
+		FILE_ATTRIBUTE_NORMAL,
+		nullptr);
+
 	STARTUPINFOW si{};
 	si.cb = sizeof(si);
 	si.dwFlags = STARTF_USESTDHANDLES;
-	HANDLE nul = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (nul != INVALID_HANDLE_VALUE)
+	if (err != INVALID_HANDLE_VALUE)
 	{
-		si.hStdOutput = nul;
-		si.hStdError = nul;
+		si.hStdOutput = err;
+		si.hStdError = err;
 		si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
 	}
 
@@ -129,13 +148,13 @@ bool spawnSyntaxOnlyCompiler(const char* cc, const fs::path& src)
 		cmdline.data(),
 		nullptr,
 		nullptr,
-		FALSE,
+		TRUE,
 		CREATE_NO_WINDOW,
 		nullptr,
 		nullptr,
 		&si,
 		&pi);
-	if (nul != INVALID_HANDLE_VALUE) CloseHandle(nul);
+	if (err != INVALID_HANDLE_VALUE) CloseHandle(err);
 	if (!ok) return false;
 
 	WaitForSingleObject(pi.hProcess, INFINITE);
@@ -146,16 +165,20 @@ bool spawnSyntaxOnlyCompiler(const char* cc, const fs::path& src)
 	return code == 0;
 #else
 	const std::string srcPath = src.string();
+	const std::string errPath = diagFile.empty() ? std::string() : diagFile.string();
 	const pid_t pid = fork();
 	if (pid < 0) return false;
 	if (pid == 0)
 	{
-		const int nullfd = open("/dev/null", O_WRONLY);
-		if (nullfd >= 0)
+		int outfd = -1;
+		if (!errPath.empty())
+			outfd = open(errPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+		if (outfd < 0) outfd = open("/dev/null", O_WRONLY);
+		if (outfd >= 0)
 		{
-			dup2(nullfd, STDOUT_FILENO);
-			dup2(nullfd, STDERR_FILENO);
-			close(nullfd);
+			dup2(outfd, STDOUT_FILENO);
+			dup2(outfd, STDERR_FILENO);
+			close(outfd);
 		}
 		const char* argv[] = {cc, "-fsyntax-only", "-w", srcPath.c_str(), nullptr};
 		execvp(cc, const_cast<char* const*>(argv));
@@ -178,8 +201,9 @@ const char* gateCompiler()
 #endif
 }
 
-bool tryCompileCheck(const std::string& sourceC)
+bool tryCompileCheck(const std::string& sourceC, std::string* diagnostics)
 {
+	if (diagnostics) diagnostics->clear();
 	const fs::path dir = createUniqueTempDir();
 	if (dir.empty()) return false;
 	ScopedTempDir guard(dir);
@@ -192,7 +216,15 @@ bool tryCompileCheck(const std::string& sourceC)
 		if (!out) return false;
 	}
 
-	return spawnSyntaxOnlyCompiler(gateCompiler(), src);
+	const fs::path diag = dir / "gate.err";
+	const bool ok = spawnSyntaxOnlyCompiler(gateCompiler(), src, diag);
+	if (diagnostics) *diagnostics = readAll(diag);
+	return ok;
+}
+
+bool tryCompileCheck(const std::string& sourceC)
+{
+	return tryCompileCheck(sourceC, nullptr);
 }
 
 bool tryDifferentialCheck(const std::string& /*originalC*/, const std::string& /*refinedC*/)
@@ -251,6 +283,22 @@ GateReport runVerificationGates(const std::string& originalC, const std::string&
 	}
 
 	return report;
+}
+
+bool compileSyntaxOnly(const std::string& sourceC)
+{
+	if (sourceC.empty()) return false;
+	return tryCompileCheck(sourceC);
+}
+
+bool compileSyntaxOnly(const std::string& sourceC, std::string& diagnostics)
+{
+	if (sourceC.empty())
+	{
+		diagnostics.clear();
+		return false;
+	}
+	return tryCompileCheck(sourceC, &diagnostics);
 }
 
 } // namespace retdec::neural

@@ -66,6 +66,8 @@ TEST(CryptoResultTest, AlgorithmNames) {
     r.algorithm = CryptoAlgorithm::HMAC;     EXPECT_EQ(r.algorithmName(), "HMAC");
     r.algorithm = CryptoAlgorithm::RSA;      EXPECT_EQ(r.algorithmName(), "RSA");
     r.algorithm = CryptoAlgorithm::RC4;      EXPECT_EQ(r.algorithmName(), "RC4");
+    r.algorithm = CryptoAlgorithm::MD5;      EXPECT_EQ(r.algorithmName(), "MD5");
+    r.algorithm = CryptoAlgorithm::CRC;      EXPECT_EQ(r.algorithmName(), "CRC");
     r.algorithm = CryptoAlgorithm::Unknown;  EXPECT_EQ(r.algorithmName(), "Unknown");
 }
 
@@ -313,6 +315,37 @@ TEST(ChaCha20DetectorTest, ThreeOfFourConstants) {
 TEST(ChaCha20DetectorTest, AlgorithmIsChaCha20) {
     ChaCha20Detector det;
     EXPECT_EQ(det.algorithm(), CryptoAlgorithm::ChaCha20);
+}
+
+TEST(ChaCha20DetectorTest, SigmaExpand32ByteK) {
+    ChaCha20Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    // Little-endian ASCII words of "expand 32-byte k".
+    auto* w0 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, w0, 0x61707865ULL); // "expa"
+    auto* w1 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, w1, 0x3320646eULL); // "nd 3"
+    auto* w2 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, w2, 0x79622d32ULL); // "2-by"
+    auto* w3 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, w3, 0x6b206574ULL); // "te k"
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.algorithm, CryptoAlgorithm::ChaCha20);
+    EXPECT_NEAR(r.confidence, 1.0f, 0.01f);
+    EXPECT_NE(r.emittedAnnotation.find("ChaCha20"), std::string::npos);
+}
+
+TEST(ChaCha20DetectorTest, TwoSigmaWordsReachThreshold) {
+    ChaCha20Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* w0 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, w0, 0x61707865ULL);
+    auto* w1 = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, w1, 0x6b206574ULL);
+    auto r = det.detect(*fn);
+    EXPECT_NEAR(r.confidence, 0.50f, 0.01f);
 }
 
 // ─── 5. HMAC Detector ────────────────────────────────────────────────────────
@@ -588,6 +621,26 @@ TEST(CryptoDetectorTest, ModuleDetectAggregatesResults) {
     EXPECT_TRUE(hasAES);
 }
 
+TEST(CryptoDetectorTest, MD5AndCRCDetected) {
+    CryptoDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* k = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, k, 0xd76aa478ULL);
+    auto* p = addInstr(*fn, blk, IrInstr::Op::Xor);
+    addImmUse(*fn, p, 0xEDB88320ULL);
+    addInstr(*fn, blk, IrInstr::Op::Add);
+    addInstr(*fn, blk, IrInstr::Op::Add);
+    auto results = det.detect(*fn);
+    bool hasMD5 = false, hasCRC = false;
+    for (auto& r : results) {
+        if (r.algorithm == CryptoAlgorithm::MD5) hasMD5 = true;
+        if (r.algorithm == CryptoAlgorithm::CRC) hasCRC = true;
+    }
+    EXPECT_TRUE(hasMD5);
+    EXPECT_TRUE(hasCRC);
+}
+
 TEST(CryptoDetectorTest, ConfidenceThresholdFilters) {
     CryptoDetector::Config cfg;
     cfg.minConfidence = 0.90f;
@@ -720,6 +773,107 @@ TEST(AnnotationTest, SHAAnnotationContainsSHA) {
     if (r.confidence >= 0.50f) {
         EXPECT_NE(r.emittedAnnotation.find("SHA"), std::string::npos);
     }
+}
+
+// ─── 13. MD5 Detector ────────────────────────────────────────────────────────
+
+TEST(MD5DetectorTest, SineK0Detected) {
+    MD5Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* i = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, i, 0xd76aa478ULL); // MD5 K[0] — not used by SHA-1
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.algorithm, CryptoAlgorithm::MD5);
+    EXPECT_GT(r.confidence, 0.50f);
+    EXPECT_NE(r.emittedAnnotation.find("MD5"), std::string::npos);
+}
+
+TEST(MD5DetectorTest, SharedSHA1InitAloneDoesNotFire) {
+    MD5Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* i = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, i, 0x67452301ULL); // shared with SHA-1 H[0]
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.50f);
+    EXPECT_TRUE(r.emittedAnnotation.empty());
+}
+
+TEST(MD5DetectorTest, InitPlusSineKBoostsConfidence) {
+    MD5Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* k = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, k, 0xd76aa478ULL);
+    auto* h = addInstr(*fn, blk, IrInstr::Op::Store);
+    addImmUse(*fn, h, 0x10325476ULL); // MD5 D / SHA-1 H[3] — supporting only
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.algorithm, CryptoAlgorithm::MD5);
+    EXPECT_GT(r.confidence, 0.70f);
+}
+
+TEST(MD5DetectorTest, EmptyFunctionLowConfidence) {
+    MD5Detector det;
+    auto fn = makeEmptyFn();
+    addBlock(*fn);
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.10f);
+}
+
+TEST(MD5DetectorTest, AlgorithmIsMD5) {
+    MD5Detector det;
+    EXPECT_EQ(det.algorithm(), CryptoAlgorithm::MD5);
+}
+
+// ─── 14. CRC Detector ────────────────────────────────────────────────────────
+
+TEST(CRCDetectorTest, ReflectedPolyDetected) {
+    CRCDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* i = addInstr(*fn, blk, IrInstr::Op::Xor);
+    addImmUse(*fn, i, 0xEDB88320ULL);
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.algorithm, CryptoAlgorithm::CRC);
+    EXPECT_GT(r.confidence, 0.50f);
+    EXPECT_NE(r.emittedAnnotation.find("CRC"), std::string::npos);
+}
+
+TEST(CRCDetectorTest, NormalPolyDetected) {
+    CRCDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* i = addInstr(*fn, blk, IrInstr::Op::Xor);
+    addImmUse(*fn, i, 0x04C11DB7ULL);
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.algorithm, CryptoAlgorithm::CRC);
+    EXPECT_GT(r.confidence, 0.50f);
+}
+
+TEST(CRCDetectorTest, BothPolysSaturateConfidence) {
+    CRCDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* i1 = addInstr(*fn, blk, IrInstr::Op::Xor);
+    addImmUse(*fn, i1, 0xEDB88320ULL);
+    auto* i2 = addInstr(*fn, blk, IrInstr::Op::Xor);
+    addImmUse(*fn, i2, 0x04C11DB7ULL);
+    auto r = det.detect(*fn);
+    EXPECT_NEAR(r.confidence, 1.0f, 0.01f);
+}
+
+TEST(CRCDetectorTest, EmptyFunctionLowConfidence) {
+    CRCDetector det;
+    auto fn = makeEmptyFn();
+    addBlock(*fn);
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.10f);
+}
+
+TEST(CRCDetectorTest, AlgorithmIsCRC) {
+    CRCDetector det;
+    EXPECT_EQ(det.algorithm(), CryptoAlgorithm::CRC);
 }
 
 TEST(AnnotationTest, RSAAnnotationMentionsMontgomery) {

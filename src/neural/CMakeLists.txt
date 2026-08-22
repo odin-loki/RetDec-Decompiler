@@ -44,7 +44,18 @@ endif()
 
 target_compile_features(retdec-neural PUBLIC cxx_std_17)
 
+file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}/support/models.json" _RETDEC_NEURAL_DEFAULT_MODELS_JSON)
+target_compile_definitions(retdec-neural PRIVATE
+    "RETDEC_NEURAL_DEFAULT_MODELS_JSON=\"${_RETDEC_NEURAL_DEFAULT_MODELS_JSON}\""
+)
+
 set_target_properties(retdec-neural PROPERTIES OUTPUT_NAME "retdec-neural")
+
+install(FILES
+    ${PROJECT_SOURCE_DIR}/support/models.json
+    ${PROJECT_SOURCE_DIR}/support/models.md
+    DESTINATION ${RETDEC_INSTALL_SUPPORT_DIR}
+)
 
 install(TARGETS retdec-neural
     EXPORT retdec-targets

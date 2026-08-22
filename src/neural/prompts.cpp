@@ -103,6 +103,12 @@ std::string buildRefinementPrompt(const RefinementRequest& request)
 		oss << "Semantic context (JSON):\n" << request.semanticContextJson << "\n\n";
 	}
 	oss << "Function source:\n" << stripCStringLiterals(request.functionSource) << "\n";
+	if (!request.compilerDiagnostics.empty())
+	{
+		oss << "The previous C failed cc -fsyntax-only with:\n"
+			<< request.compilerDiagnostics
+			<< "\nEmit a single compilable C translation unit. Do not add network or system().\n";
+	}
 	oss << (request.generation.thinkingMode ? "/think\n" : "/no_think\n");
 	oss << "<|im_end|>\n<|im_start|>assistant\n";
 	return oss.str();

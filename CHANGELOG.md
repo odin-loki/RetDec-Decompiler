@@ -8,6 +8,25 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- DecompileBench harness: `tu_valid` (`cc -fsyntax-only -std=gnu11`), wall
+  p50/p90/p99/max, `--emit-buildable-env`, `--stock-json`, `--markdown-out`.
+  Results: `results/decompilebench-ci-core.json`,
+  `results/compare-fork-vs-stock.md`.
+- Opt-in `RETDEC_EMIT_BUILDABLE`: writes `.h`, `_stubs.c`, `.buildable.c`
+  and injects undeclared RetDec temps (`result`, `v1`…`v16`) in the sidecar
+  only. Default output `.c` is unchanged.
+- Neural compile-retry (`RETDEC_NEURAL_REQUIRE_COMPILE`): accept refine only
+  if `cc -fsyntax-only` passes; one diagnostics-guided rewrite. Mock path
+  `RETDEC_NEURAL_FORCE_MOCK` + `RETDEC_NEURAL_MOCK_EMIT_C` can emit a
+  compilable TU without a GGUF. Decompiled C is never executed.
+- N6/N7: `support/models.json` allowlist (refuse unknown unless
+  `RETDEC_NEURAL_ALLOW_UNVERIFIED`); GGUF header parse rejects multimodal
+  projectors.
+- A7 constant-keyed MD5 / CRC-32 / ChaCha sigma words.
+- A3 binary-search detector is an SSA def-use query (no opcode counts).
+- `RETDEC_SKIP_SEMANTIC_RECOVERY` A/B skip for detector-stage cost (C9).
+- E8/E9 CI: `scripts/ci/check_link_graph.py`, `check_doc_vs_code.py`.
+- `docs/CLAIMS.md` (E7) and `docs/THREAT_MODEL.md` (S11).
 - Settings JSON export/import now covers General (`restoreSession`), full
   Analysis / ML groups, and new CUDA, Recovery, and Advanced groups.
   Session paths (`lastOpenDir`, `lastBinaryPath`) stay out of the portable
@@ -21,6 +40,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Problems shows a type-inference sidecar summary when
   `.type-inference.json` exists. Warning/error log lines appear in
   Problems during the run, not only at exit.
+- CI E8/E9: `scripts/ci/check_link_graph.py` and `scripts/ci/check_doc_vs_code.py`.
 
 ### Changed
 

@@ -6,6 +6,7 @@ endif()
 add_executable(retdec-retdec-tests
     thread_pool_test.cpp
     function_analysis_cache_test.cpp
+    semantic_recovery_export_test.cpp
 )
 
 target_link_libraries(retdec-retdec-tests
@@ -13,6 +14,7 @@ target_link_libraries(retdec-retdec-tests
         retdec::retdec
         retdec::deps::gtest
         retdec::deps::gtest_main
+        retdec::deps::rapidjson
 )
 
 target_compile_features(retdec-retdec-tests PRIVATE cxx_std_17)

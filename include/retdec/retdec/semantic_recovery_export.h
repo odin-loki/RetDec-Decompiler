@@ -45,6 +45,13 @@ void exportSemanticRecovery(
 		const SemanticDetectionMap& detections,
 		std::string* outString);
 
+/// When RETDEC_EMIT_BUILDABLE is set (non-empty, not "0"), write
+/// `<stem>.h`, `<stem>_stubs.c`, and `<stem>.buildable.c` next to outputCPath.
+/// Empty outputCPath is a no-op. Does not overwrite the original .c.
+void maybeWriteBuildableSidecars(
+		const std::string& outputCPath,
+		const std::string& cSource);
+
 } // namespace analysis
 } // namespace retdec
 

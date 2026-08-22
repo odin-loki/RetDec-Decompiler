@@ -5,6 +5,8 @@ add_library(retdec-crypto-detect
     hmac_detect.cpp
     rsa_detect.cpp
     rc4_detect.cpp
+    md5_detect.cpp
+    crc_detect.cpp
     crypto_detector.cpp
 )
 

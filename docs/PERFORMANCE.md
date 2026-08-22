@@ -8,12 +8,15 @@ Post-ship performance features (MASTER-UPGRADE-PLAN Part 11, step 27).
 |----------|---------|--------|
 | `RETDEC_PARALLEL_ANALYSIS` | on when `hardware_concurrency > 2` | Parallel container/sort/algo detectors (≥5 functions) |
 | `RETDEC_INCREMENTAL_CACHE` | on | Load/save `.retdec-fn-cache.json` sidecar |
-| `RETDEC_NEURAL_BATCH` | off | Reuse KV prefix across refinement requests |
+| `RETDEC_NEURAL_BATCH` | removed | Deleted (N13); do not set |
 | `RETDEC_NEURAL_TIER_MAX` | `3` | Max refinement tier (1–5) |
 | `RETDEC_BIN2LLVMIR_DIAG` | off | Per-pass LLVM wall ms + pipeline / post-pipeline split |
 | `RETDEC_PROFILE_JSON` | off | Write `<output>.profile.json` (`auto` next to `-o`) |
 | `RETDEC_TYPE_INFERENCE` | off | Extra per-function type-inference loop (off = faster) |
 | `RETDEC_NEURAL_REFINE` | off | Offline llama.cpp refine (needs GGUF + `RETDEC_ENABLE_LLAMACPP`) |
+| `RETDEC_EMIT_BUILDABLE` | off | Write `.h` / `_stubs.c` / `.buildable.c` next to output C |
+| `RETDEC_SKIP_SEMANTIC_RECOVERY` | off | A/B only: skip post-pipeline detectors (default F5 still runs them) |
+| `RETDEC_NEURAL_REQUIRE_COMPILE` | off | Accept neural refine only if `cc -fsyntax-only` passes |
 | `RETDEC_NEURAL_THINKING` | off | Qwen `/think` (slower; off = `/no_think`) |
 | `RETDEC_NEURAL_MAX_TOKENS` | `512` | Cap generated tokens per tier |
 | `RETDEC_NEURAL_THREADS` | llama default | llama.cpp generation threads |

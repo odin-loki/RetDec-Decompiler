@@ -62,6 +62,22 @@
  * IR signals: Add + Xor + (Shl+Shr+Or for rotate) sequence, with rotation
  * constants 16, 12, 8, 7 appearing as Immediate values.
  *
+ * Constant fingerprints — ChaCha/Salsa sigma words for "expand 32-byte k":
+ *   `0x61707865, 0x3320646e, 0x79622d32, 0x6b206574` (little-endian ASCII).
+ *
+ * ### MD5
+ *
+ * Constant fingerprints:
+ *   - Sine-table K[0]: `0xd76aa478` (MD5-only; SHA-1 does not use this).
+ *   - Init words `0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476` are shared
+ *     with SHA-1 and are supporting evidence only — never sufficient alone.
+ *
+ * ### CRC-32
+ *
+ * Constant fingerprints (either polynomial):
+ *   - Reflected IEEE: `0xEDB88320`.
+ *   - Normal / Ethernet: `0x04C11DB7`.
+ *
  * ### HMAC
  *
  * Constant fingerprints (unmistakable):
@@ -129,6 +145,7 @@ enum class CryptoAlgorithm : uint8_t {
     DH,          ///< Diffie-Hellman (same Montgomery multiply pattern as RSA)
     BLAKE2,
     MD5,
+    CRC,         ///< CRC-32 / CRC-32C polynomial fingerprint
     Poly1305,
     Salsa20,
 };
@@ -208,6 +225,8 @@ struct ChaCha20Evidence {
     bool  hasRotConst8     = false;
     bool  hasRotConst7     = false;
     bool  hasAddXorRotSeq  = false;   ///< Add+Xor+(Shl+Shr+Or) sequence
+    bool  hasSigmaConst    = false;   ///< "expand 32-byte k" ASCII words
+    int   sigmaWords       = 0;       ///< how many of the four sigma words
 };
 
 struct HMACEvidence {
@@ -231,6 +250,20 @@ struct RC4Evidence {
     bool  hasKSA             = false; ///< 256-iteration init+swap loop
     bool  hasPRGA            = false; ///< XOR with S[S[i]+S[j]]
     bool  has256Constant     = false; ///< loop bound 256
+};
+
+struct MD5Evidence {
+    bool  found              = false;
+    float confidence         = 0.0f;
+    bool  hasSineK           = false; ///< MD5-only T/K table (e.g. 0xd76aa478)
+    bool  hasInitMagic       = false; ///< 0x67452301 / 0xefcdab89 / …
+};
+
+struct CRCEvidence {
+    bool  found              = false;
+    float confidence         = 0.0f;
+    bool  hasReflectedPoly   = false; ///< 0xEDB88320 CRC-32 IEEE reflected
+    bool  hasNormalPoly      = false; ///< 0x04C11DB7 CRC-32 normal
 };
 
 // ─── Detector interface ───────────────────────────────────────────────────────
@@ -306,6 +339,30 @@ public:
 private:
     RC4Evidence analyse(const ssa::SSAFunction& fn) const;
     float       score(const RC4Evidence& ev) const;
+};
+
+/**
+ * MD5 detector — sine-table K[] plus init magic.
+ * SHA-1 shares 0x67452301 / 0xefcdab89 / 0x98badcfe / 0x10325476; a hit
+ * requires at least one MD5-only T/K constant (e.g. 0xd76aa478).
+ */
+class MD5Detector : public ICryptoDetector {
+public:
+    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
+    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::MD5; }
+private:
+    MD5Evidence analyse(const ssa::SSAFunction& fn) const;
+    float       score(const MD5Evidence& ev) const;
+};
+
+/** CRC-32 detector — IEEE reflected (0xEDB88320) / normal (0x04C11DB7) polynomials. */
+class CRCDetector : public ICryptoDetector {
+public:
+    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
+    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::CRC; }
+private:
+    CRCEvidence analyse(const ssa::SSAFunction& fn) const;
+    float       score(const CRCEvidence& ev) const;
 };
 
 // ─── Crypto detector orchestrator ────────────────────────────────────────────

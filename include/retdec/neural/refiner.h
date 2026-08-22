@@ -26,6 +26,8 @@ struct RefinementRequest {
     std::string semanticContextJson;
     RefinementTier tier = RefinementTier::Naming;
     GenerationConfig generation;
+    /// Non-empty: previous `cc -fsyntax-only` output for a compile-retry pass.
+    std::string compilerDiagnostics;
 };
 
 struct RefinementResponse {

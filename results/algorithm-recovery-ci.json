@@ -311,5 +311,6 @@
       "recall": 1.0,
       "f1": 1.0
     }
-  }
+  },
+  "note": "ci-core 9 after B1. predictions_raw equals predictions (stem fallback added nothing). extract_decompiler_predictions.py still filename-filters in _post_filter_labels. Do not publish as a product F1."
 }

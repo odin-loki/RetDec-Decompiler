@@ -14,8 +14,14 @@ Live measurement contract for CI, ship checklist, and the release table.
 | `algorithm-recovery-ci.json` | Fork F1 on CI-core (9) |
 | `algorithm-recovery-full.json` | Fork F1 on full stand-in corpus (216) |
 
-`mean_f1_raw = 1.0` is benchmark-corpus tuning, not production structural
-detection. Stock has no label export — F1 is fork-only.
+Algorithm-recovery F1 figures that depended on filename/name-hint detectors
+are **withdrawn** (B1–B4). A post-B1 ci-core rerun can still print
+`mean_f1 = 1.0` because `extract_decompiler_predictions.py` post-filters
+consult the binary name even with `--no-stem-fallback`. That is **not** a
+product F1. Stock has no label export — F1 is fork-only.
+
+Live DecompileBench compare: `compare-fork-vs-stock.md` and
+`decompilebench-ci-core.json`.
 
 ## Generated (gitignored)
 

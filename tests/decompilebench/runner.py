@@ -9,13 +9,17 @@ import argparse
 import json
 import os
 import re
-import resource
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+
+try:
+    import resource
+except ImportError:
+    resource = None  # type: ignore[assignment]
 
 
 def load_manifest(corpus: Path) -> list[dict]:
@@ -65,6 +69,17 @@ def try_compile(source_c: Path, cc: str, opt: str = "O2", extra: list[str] | Non
         return exe, ""
 
 
+def try_syntax_only(source_c: Path, cc: str) -> bool:
+    if not shutil.which(cc):
+        return False
+    proc = subprocess.run(
+        [cc, "-fsyntax-only", "-std=gnu11", "-w", str(source_c)],
+        capture_output=True,
+        text=True,
+    )
+    return proc.returncode == 0
+
+
 def run_binary(exe: Path, timeout: float = 5.0) -> tuple[int | None, str, str]:
     try:
         proc = subprocess.run(
@@ -81,7 +96,7 @@ def run_binary(exe: Path, timeout: float = 5.0) -> tuple[int | None, str, str]:
 
 
 def peak_rss_kb() -> int | None:
-    if sys.platform != "linux":
+    if sys.platform != "linux" or resource is None:
         return None
     # ru_maxrss is KiB on Linux.
     return int(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
@@ -112,6 +127,49 @@ def coverage_equivalence(
     return orig_code == dec_code and orig_out == dec_out
 
 
+def _decompiler_env(extra_env: dict[str, str] | None, *, is_stock: bool) -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("RETDEC_PROFILE_JSON", "auto")
+    if is_stock:
+        env.pop("RETDEC_EMIT_BUILDABLE", None)
+    elif extra_env:
+        env.update(extra_env)
+    return env
+
+
+def _source_extra_flags(source_path: Path | None) -> list[str]:
+    if source_path and source_path.is_file():
+        return compile_flags_for_source(
+            source_path.read_text(encoding="utf-8", errors="replace")
+        )
+    return []
+
+
+def _score_sidecar(path: Path, cc: str, compile_opt: str, extra: list[str]) -> tuple[bool | None, bool | None]:
+    if not path.is_file():
+        return None, None
+    tu_valid = try_syntax_only(path, cc)
+    dec_exe, _ = try_compile(path, cc, compile_opt, extra)
+    return tu_valid, dec_exe is not None
+
+
+def _first_existing(*candidates: Path) -> Path | None:
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
+
+
+def _sidecar_candidates(output_c: Path, kind: str) -> tuple[Path, ...]:
+    """Accept both `<stem>.buildable.c` and `<out.c>.buildable.c` spellings."""
+    stem = output_c.with_suffix("")
+    return (
+        Path(str(stem) + f".{kind}.c"),
+        Path(str(output_c) + f".{kind}.c"),
+        output_c.with_name(output_c.name + f".{kind}.c"),
+    )
+
+
 def run_decompiler(
     decompiler: Path,
     input_bin: Path,
@@ -120,12 +178,13 @@ def run_decompiler(
     cc: str,
     source_path: Path | None,
     compile_opt: str,
+    extra_env: dict[str, str] | None = None,
+    is_stock: bool = False,
 ) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     out_c = out_dir / f"{input_bin.name}-{opt}.c"
     profile_path = Path(str(out_c) + ".profile.json")
-    env = os.environ.copy()
-    env.setdefault("RETDEC_PROFILE_JSON", "auto")
+    env = _decompiler_env(extra_env, is_stock=is_stock)
     t0 = time.time()
     proc = subprocess.run(
         [str(decompiler), str(input_bin), "--output", str(out_c)],
@@ -143,28 +202,40 @@ def run_decompiler(
             profile = json.loads(profile_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             profile = None
+    extra = _source_extra_flags(source_path)
+    tu_valid = False
     recompile = None
     cov = None
     if syntax_valid:
-        extra = []
-        if source_path and source_path.is_file():
-            extra = compile_flags_for_source(
-                source_path.read_text(encoding="utf-8", errors="replace")
-            )
+        tu_valid = try_syntax_only(out_c, cc)
         dec_exe, _ = try_compile(out_c, cc, compile_opt, extra)
         recompile = dec_exe is not None
         if recompile:
             cov = coverage_equivalence(input_bin, source_path, out_c, cc, compile_opt)
+    output_c = str(out_c)
+    buildable = _first_existing(*_sidecar_candidates(out_c, "buildable"))
+    refined = _first_existing(*_sidecar_candidates(out_c, "refined"))
+    tu_valid_buildable, recompile_buildable = (
+        _score_sidecar(buildable, cc, compile_opt, extra) if buildable else (None, None)
+    )
+    tu_valid_refined, recompile_refined = (
+        _score_sidecar(refined, cc, compile_opt, extra) if refined else (None, None)
+    )
     row = {
         "input": str(input_bin),
         "opt": opt,
         "exit_code": proc.returncode,
         "wall_s": round(elapsed, 3),
         "peak_rss_kb": rss,
-        "output_c": str(out_c),
+        "output_c": output_c,
         "syntax_valid": syntax_valid,
+        "tu_valid": tu_valid,
         "recompile_success": recompile,
         "coverage_equivalence": cov,
+        "tu_valid_buildable": tu_valid_buildable,
+        "recompile_buildable": recompile_buildable,
+        "tu_valid_refined": tu_valid_refined,
+        "recompile_refined": recompile_refined,
         "stderr_tail": (proc.stderr or "")[-500:],
     }
     if profile is not None:
@@ -176,13 +247,31 @@ def run_decompiler(
     return row
 
 
-def summarize(rows: list[dict]) -> dict:
-    def rate(key: str) -> float | None:
-        vals = [r.get(key) for r in rows if r.get(key) is not None]
-        if not vals:
-            return None
-        return sum(1 for v in vals if v) / len(vals)
+def wall_stats(rows: list[dict]) -> dict:
+    walls = sorted(float(r.get("wall_s", 0.0)) for r in rows)
+    if not walls:
+        return {
+            "mean_wall_s": 0.0,
+            "p50_wall_s": 0.0,
+            "p90_wall_s": 0.0,
+            "p99_wall_s": 0.0,
+            "max_wall_s": 0.0,
+        }
+    n = len(walls)
 
+    def pct(p: int) -> float:
+        return round(walls[int((n - 1) * p / 100)], 3)
+
+    return {
+        "mean_wall_s": round(sum(walls) / n, 3),
+        "p50_wall_s": pct(50),
+        "p90_wall_s": pct(90),
+        "p99_wall_s": pct(99),
+        "max_wall_s": round(walls[-1], 3),
+    }
+
+
+def summarize(rows: list[dict]) -> dict:
     by_opt: dict[str, list[dict]] = {}
     for row in rows:
         by_opt.setdefault(row.get("opt", "unknown"), []).append(row)
@@ -192,8 +281,10 @@ def summarize(rows: list[dict]) -> dict:
         per_opt[opt] = {
             "count": len(group),
             "syntax_valid_rate": rate_from(group, "syntax_valid"),
+            "tu_valid_rate": rate_from(group, "tu_valid"),
             "recompile_success_rate": rate_from(group, "recompile_success"),
             "coverage_equivalence_rate": rate_from(group, "coverage_equivalence"),
+            **wall_stats(group),
         }
 
     return {
@@ -202,10 +293,17 @@ def summarize(rows: list[dict]) -> dict:
         "recompile_ok": sum(1 for r in rows if r.get("recompile_success") is True),
         "coverage_ok": sum(1 for r in rows if r.get("coverage_equivalence") is True),
         "syntax_valid_rate": rate_from(rows, "syntax_valid"),
+        "tu_valid_rate": rate_from(rows, "tu_valid"),
         "recompile_success_rate": rate_from(rows, "recompile_success"),
         "coverage_equivalence_rate": rate_from(rows, "coverage_equivalence"),
+        "tu_valid_buildable_rate": rate_from(rows, "tu_valid_buildable"),
+        "recompile_buildable_rate": rate_from(rows, "recompile_buildable"),
+        "tu_valid_refined_rate": rate_from(rows, "tu_valid_refined"),
+        "recompile_refined_rate": rate_from(rows, "recompile_refined"),
+        "buildable_count": sum(1 for r in rows if r.get("tu_valid_buildable") is not None),
+        "refined_count": sum(1 for r in rows if r.get("tu_valid_refined") is not None),
         "per_opt": per_opt,
-        "mean_wall_s": round(sum(r.get("wall_s", 0.0) for r in rows) / len(rows), 3) if rows else 0.0,
+        **wall_stats(rows),
     }
 
 
@@ -225,6 +323,8 @@ def run_suite(
     limit: int | None,
     cc: str,
     label: str,
+    extra_env: dict[str, str] | None = None,
+    is_stock: bool = False,
 ) -> dict:
     rows = []
     for item in list_samples(corpus, manifest, limit):
@@ -250,6 +350,8 @@ def run_suite(
                 cc,
                 source_path,
                 opt if opt.startswith("O") else "O2",
+                extra_env=extra_env,
+                is_stock=is_stock,
             )
         )
     return {
@@ -260,14 +362,114 @@ def run_suite(
     }
 
 
+def _pair(fork_summary: dict, stock_summary: dict, key: str) -> dict:
+    return {
+        "fork": fork_summary.get(key),
+        "stock": stock_summary.get(key),
+    }
+
+
+def _wall_ratio(fork_val: object, stock_val: object) -> float | None:
+    if fork_val is None or stock_val in (None, 0, 0.0):
+        return None
+    return round(float(fork_val) / float(stock_val), 3)
+
+
+def compare_fork_vs_stock(fork_summary: dict, stock_summary: dict) -> dict:
+    mean_fork = fork_summary.get("mean_wall_s")
+    mean_stock = stock_summary.get("mean_wall_s")
+    return {
+        "mean_wall_s": {
+            "fork": mean_fork,
+            "stock": mean_stock,
+            "ratio": _wall_ratio(mean_fork, mean_stock),
+        },
+        "p99_wall_s": _pair(fork_summary, stock_summary, "p99_wall_s"),
+        "syntax_valid_rate": _pair(fork_summary, stock_summary, "syntax_valid_rate"),
+        "tu_valid_rate": _pair(fork_summary, stock_summary, "tu_valid_rate"),
+        "recompile_success_rate": _pair(fork_summary, stock_summary, "recompile_success_rate"),
+        "coverage_equivalence_rate": _pair(fork_summary, stock_summary, "coverage_equivalence_rate"),
+    }
+
+
+def _fmt_cell(value: object) -> str:
+    if value is None:
+        return "—"
+    if isinstance(value, float):
+        return f"{value:.3f}"
+    return str(value)
+
+
+def write_compare_markdown(payload: dict, dest: Path) -> None:
+    fork_summary = payload.get("summary") or payload.get("fork", {}).get("summary") or {}
+    stock_summary = payload.get("stock_retdec", {}).get("summary") or {}
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    rows = (
+        ("count", "count", "count", "buildable_count", "refined_count"),
+        ("syntax_valid_rate", "syntax_valid_rate", "syntax_valid_rate", None, None),
+        ("tu_valid_rate", "tu_valid_rate", "tu_valid_rate", "tu_valid_buildable_rate", "tu_valid_refined_rate"),
+        (
+            "recompile_success_rate",
+            "recompile_success_rate",
+            "recompile_success_rate",
+            "recompile_buildable_rate",
+            "recompile_refined_rate",
+        ),
+        ("mean_wall_s", "mean_wall_s", "mean_wall_s", None, None),
+        ("p50_wall_s", "p50_wall_s", "p50_wall_s", None, None),
+        ("p90_wall_s", "p90_wall_s", "p90_wall_s", None, None),
+        ("p99_wall_s", "p99_wall_s", "p99_wall_s", None, None),
+        ("max_wall_s", "max_wall_s", "max_wall_s", None, None),
+    )
+    lines = [
+        "# DecompileBench fork vs stock",
+        "",
+        "| Metric | Fork | Stock | Fork-buildable | Fork-refined |",
+        "|--------|------|-------|----------------|--------------|",
+    ]
+    for label, fork_key, stock_key, buildable_key, refined_key in rows:
+        lines.append(
+            "| {metric} | {fork} | {stock} | {buildable} | {refined} |".format(
+                metric=label,
+                fork=_fmt_cell(fork_summary.get(fork_key) if fork_key else None),
+                stock=_fmt_cell(stock_summary.get(stock_key) if stock_key else None),
+                buildable=_fmt_cell(fork_summary.get(buildable_key) if buildable_key else None),
+                refined=_fmt_cell(fork_summary.get(refined_key) if refined_key else None),
+            )
+        )
+    compare = payload.get("compare", {}).get("fork_vs_stock", {})
+    ratio = compare.get("mean_wall_s", {}).get("ratio")
+    lines.extend(
+        [
+            "",
+            "Wall times are decompiler process time. Sidecar columns score "
+            "`.buildable.c` / `.refined.c` when present; they are not separate decompile runs.",
+        ]
+    )
+    if ratio is not None:
+        lines.append(f"fork/stock mean_wall_s ratio: {_fmt_cell(ratio)}")
+    lines.append("")
+    dest.write_text("\n".join(lines), encoding="utf-8")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--decompiler", required=True, help="path to retdec-decompiler")
     ap.add_argument("--corpus", required=True, help="directory of test binaries")
     ap.add_argument("--out", default="results/decompilebench.json")
     ap.add_argument("--baseline-decompiler", help="stock RetDec for two-column compare")
+    ap.add_argument(
+        "--stock-json",
+        help="attach a previous stock RetDec result JSON (docker or runner) without re-running stock",
+    )
     ap.add_argument("--limit", type=int, help="max samples (CI core uses 9)")
     ap.add_argument("--cc", default=os.environ.get("CC", "gcc"))
+    ap.add_argument(
+        "--emit-buildable-env",
+        action="store_true",
+        help="set RETDEC_EMIT_BUILDABLE=1 for the fork suite only",
+    )
+    ap.add_argument("--markdown-out", help="write fork vs stock vs sidecar compare table")
     args = ap.parse_args()
 
     decompiler = Path(args.decompiler)
@@ -276,7 +478,17 @@ def main() -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     manifest = load_manifest(corpus)
 
-    fork = run_suite(decompiler, corpus, manifest, args.limit, args.cc, "fork")
+    fork_env = {"RETDEC_EMIT_BUILDABLE": "1"} if args.emit_buildable_env else None
+    fork = run_suite(
+        decompiler,
+        corpus,
+        manifest,
+        args.limit,
+        args.cc,
+        "fork",
+        extra_env=fork_env,
+        is_stock=False,
+    )
     payload: dict = {
         "harness": "decompilebench",
         "corpus": str(corpus),
@@ -286,26 +498,48 @@ def main() -> int:
         "summary": fork["summary"],
     }
 
+    stock = None
     if args.baseline_decompiler:
         baseline_dec = Path(args.baseline_decompiler)
         if baseline_dec.is_file():
-            stock = run_suite(baseline_dec, corpus, manifest, args.limit, args.cc, "stock")
-            payload["stock_retdec"] = stock
-            payload["compare"] = {
-                "fork_vs_stock": {
-                    "recompile_success_rate": {
-                        "fork": fork["summary"].get("recompile_success_rate"),
-                        "stock": stock["summary"].get("recompile_success_rate"),
-                    },
-                    "coverage_equivalence_rate": {
-                        "fork": fork["summary"].get("coverage_equivalence_rate"),
-                        "stock": stock["summary"].get("coverage_equivalence_rate"),
-                    },
-                }
+            stock = run_suite(
+                baseline_dec,
+                corpus,
+                manifest,
+                args.limit,
+                args.cc,
+                "stock",
+                extra_env=None,
+                is_stock=True,
+            )
+    elif args.stock_json:
+        stock_path = Path(args.stock_json)
+        if stock_path.is_file():
+            prior = json.loads(stock_path.read_text(encoding="utf-8"))
+            prior_samples = prior.get("samples") or prior.get("stock_retdec", {}).get("samples") or []
+            prior_summary = prior.get("summary") or prior.get("stock_retdec", {}).get("summary") or {}
+            if prior_samples and "p50_wall_s" not in prior_summary:
+                prior_summary = {**prior_summary, **summarize(prior_samples)}
+            stock = {
+                "label": "stock",
+                "decompiler": prior.get("image") or prior.get("decompiler") or str(stock_path),
+                "source_json": str(stock_path),
+                "samples": prior_samples,
+                "summary": prior_summary,
             }
+
+    if stock is not None:
+        payload["stock_retdec"] = stock
+        payload["compare"] = {
+            "fork_vs_stock": compare_fork_vs_stock(fork["summary"], stock["summary"])
+        }
 
     out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(f"Wrote {out_path} ({len(fork['samples'])} rows)")
+    if args.markdown_out:
+        md_path = Path(args.markdown_out)
+        write_compare_markdown(payload, md_path)
+        print(f"Wrote {md_path}")
     return 0
 
 

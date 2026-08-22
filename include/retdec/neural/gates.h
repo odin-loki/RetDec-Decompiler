@@ -24,6 +24,13 @@ struct GateReport {
 GateReport runVerificationGates(const std::string& originalC,
                                 const std::string& refinedC);
 
+/// `cc -fsyntax-only` (or `RETDEC_NEURAL_GATE_CC` / `gcc` on Windows).
+/// Empty source is always false. Missing compiler is false.
+bool compileSyntaxOnly(const std::string& sourceC);
+
+/// Same as compileSyntaxOnly, and fills compiler stdout/stderr when the check runs.
+bool compileSyntaxOnly(const std::string& sourceC, std::string& diagnostics);
+
 } // namespace retdec::neural
 
 #endif

@@ -1,6 +1,7 @@
 #include "retdec/neural/refiner.h"
 #include "retdec/neural/gates.h"
 
+#include <cstdlib>
 #include <cstdio>
 #include <string>
 
@@ -54,12 +55,27 @@ RefinementResponse Refiner::refine(const RefinementRequest& request) const
 	const auto gates = runVerificationGates(request.functionSource, refined);
 	if (!gates.allPassed())
 	{
-		response.refinedSource = request.functionSource;
+		// Keep the failed attempt when compile failed so the hook can capture diagnostics.
+		response.refinedSource =
+			(gates.compile == GateResult::FailCompile) ? refined : request.functionSource;
 		response.accepted = false;
 		response.manifestJson =
 			std::string(R"({"accepted":false,"reason":"gates failed","detail":")") + gates.summary() + "\"}";
 		std::fprintf(stderr, "retdec-neural: gates failed (%s)\n", gates.summary().c_str());
 		return response;
+	}
+
+	const char* requireCompile = std::getenv("RETDEC_NEURAL_REQUIRE_COMPILE");
+	if (requireCompile && requireCompile[0] != '\0' && requireCompile[0] != '0')
+	{
+		if (!compileSyntaxOnly(refined))
+		{
+			response.refinedSource = refined;
+			response.accepted = false;
+			response.manifestJson = R"({"accepted":false,"reason":"compile_syntax"})";
+			std::fprintf(stderr, "retdec-neural: compile_syntax rejected refinement\n");
+			return response;
+		}
 	}
 
 	response.refinedSource = refined;

@@ -1,0 +1,27 @@
+name: doc-integrity
+
+# E8 / E9 — cheap, no-network Python checks. No LLVM, no decompiler build.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  e8-e9:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: E8 link-graph
+        run: python scripts/ci/check_link_graph.py --self-test
+
+      - name: E9 doc-vs-code
+        run: python scripts/ci/check_doc_vs_code.py

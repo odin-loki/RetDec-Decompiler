@@ -6,7 +6,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
+#include <set>
 #include <string>
+
+#include <rapidjson/document.h>
+
+#if defined(RETDEC_HAS_LLAMACPP)
+#include "gguf.h"
+#endif
 
 #if defined(RETDEC_NEURAL_HAS_OPENSSL)
 #include <openssl/evp.h>
@@ -271,41 +279,431 @@ std::string sha256HexOfFile(const std::string& path)
 
 #endif
 
+std::string toLowerCopy(std::string s)
+{
+	for (char& c: s)
+		c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	return s;
+}
+
+bool envFlagSet(const char* name)
+{
+	const char* v = std::getenv(name);
+	return v && v[0] != '\0' && v[0] != '0';
+}
+
+bool filenameLooksMultimodal(const std::string& modelPath)
+{
+	const std::string lower = toLowerCopy(modelPath);
+	return lower.find("mmproj") != std::string::npos || lower.find("-vl-") != std::string::npos
+		|| lower.find("_vl_") != std::string::npos;
+}
+
+// GGUF v2/v3 little-endian KV header (gguf.h at llama.cpp b10451).
+// Type tags match enum gguf_type. Strings are u64 length + bytes, no NUL.
+constexpr std::uint32_t kGgufTypeUint8 = 0;
+constexpr std::uint32_t kGgufTypeInt8 = 1;
+constexpr std::uint32_t kGgufTypeUint16 = 2;
+constexpr std::uint32_t kGgufTypeInt16 = 3;
+constexpr std::uint32_t kGgufTypeUint32 = 4;
+constexpr std::uint32_t kGgufTypeInt32 = 5;
+constexpr std::uint32_t kGgufTypeFloat32 = 6;
+constexpr std::uint32_t kGgufTypeBool = 7;
+constexpr std::uint32_t kGgufTypeString = 8;
+constexpr std::uint32_t kGgufTypeArray = 9;
+constexpr std::uint32_t kGgufTypeUint64 = 10;
+constexpr std::uint32_t kGgufTypeInt64 = 11;
+constexpr std::uint32_t kGgufTypeFloat64 = 12;
+
+constexpr std::uint64_t kGgufMaxString = 1024 * 1024;
+constexpr std::uint64_t kGgufMaxKv = 65536;
+constexpr std::uint64_t kGgufMaxArray = 1024 * 1024;
+
+std::size_t ggufScalarSize(std::uint32_t type)
+{
+	switch (type)
+	{
+		case kGgufTypeUint8:
+		case kGgufTypeInt8:
+		case kGgufTypeBool: return 1;
+		case kGgufTypeUint16:
+		case kGgufTypeInt16: return 2;
+		case kGgufTypeUint32:
+		case kGgufTypeInt32:
+		case kGgufTypeFloat32: return 4;
+		case kGgufTypeUint64:
+		case kGgufTypeInt64:
+		case kGgufTypeFloat64: return 8;
+		default: return 0;
+	}
+}
+
+class GgufByteReader
+{
+public:
+	GgufByteReader(const std::uint8_t* data, std::size_t size)
+		: data_(data)
+		, size_(size)
+	{}
+
+	explicit GgufByteReader(std::ifstream& file)
+		: file_(&file)
+	{}
+
+	bool read(void* dst, std::size_t n)
+	{
+		if (n == 0) return true;
+		if (file_)
+		{
+			file_->read(static_cast<char*>(dst), static_cast<std::streamsize>(n));
+			return static_cast<std::size_t>(file_->gcount()) == n;
+		}
+		if (!data_ || pos_ + n > size_) return false;
+		std::memcpy(dst, data_ + pos_, n);
+		pos_ += n;
+		return true;
+	}
+
+	bool skip(std::size_t n)
+	{
+		if (n == 0) return true;
+		if (file_)
+		{
+			file_->seekg(static_cast<std::streamoff>(n), std::ios::cur);
+			return static_cast<bool>(*file_);
+		}
+		if (pos_ + n > size_) return false;
+		pos_ += n;
+		return true;
+	}
+
+	template<typename T>
+	bool readLe(T& out)
+	{
+		std::uint8_t buf[sizeof(T)];
+		if (!read(buf, sizeof(T))) return false;
+		T v = 0;
+		for (std::size_t i = 0; i < sizeof(T); ++i)
+			v |= static_cast<T>(buf[i]) << (8 * i);
+		out = v;
+		return true;
+	}
+
+	bool readString(std::string& out)
+	{
+		std::uint64_t len = 0;
+		if (!readLe(len) || len > kGgufMaxString) return false;
+		out.resize(static_cast<std::size_t>(len));
+		if (len == 0) return true;
+		return read(out.data(), static_cast<std::size_t>(len));
+	}
+
+private:
+	const std::uint8_t* data_ = nullptr;
+	std::size_t size_ = 0;
+	std::size_t pos_ = 0;
+	std::ifstream* file_ = nullptr;
+};
+
+bool skipGgufValue(GgufByteReader& r, std::uint32_t type)
+{
+	if (type == kGgufTypeString)
+	{
+		std::string tmp;
+		return r.readString(tmp);
+	}
+	if (type == kGgufTypeArray)
+	{
+		std::uint32_t elemType = 0;
+		std::uint64_t n = 0;
+		if (!r.readLe(elemType) || !r.readLe(n) || n > kGgufMaxArray) return false;
+		if (elemType == kGgufTypeString)
+		{
+			for (std::uint64_t i = 0; i < n; ++i)
+			{
+				std::string tmp;
+				if (!r.readString(tmp)) return false;
+			}
+			return true;
+		}
+		const std::size_t elem = ggufScalarSize(elemType);
+		if (elem == 0) return false;
+		return r.skip(elem * static_cast<std::size_t>(n));
+	}
+	const std::size_t n = ggufScalarSize(type);
+	if (n == 0) return false;
+	return r.skip(n);
+}
+
+bool parseGgufKvStandalone(GgufByteReader& r, GgufIdentity& out)
+{
+	char magic[4];
+	if (!r.read(magic, 4) || std::memcmp(magic, "GGUF", 4) != 0) return false;
+
+	std::uint32_t version = 0;
+	if (!r.readLe(version)) return false;
+	if (version == 0 || version == 1 || (version & 0x0000FFFFu) == 0) return false;
+	if (version > 3) return false;
+
+	std::uint64_t nTensors = 0;
+	std::uint64_t nKv = 0;
+	if (!r.readLe(nTensors) || !r.readLe(nKv) || nKv > kGgufMaxKv) return false;
+
+	std::string architecture;
+	std::string name;
+	for (std::uint64_t i = 0; i < nKv; ++i)
+	{
+		std::string key;
+		std::uint32_t type = 0;
+		if (!r.readString(key) || !r.readLe(type)) return false;
+		if (type == kGgufTypeString && (key == "general.architecture" || key == "general.name"))
+		{
+			std::string val;
+			if (!r.readString(val)) return false;
+			if (key == "general.architecture") architecture = std::move(val);
+			else name = std::move(val);
+		}
+		else if (!skipGgufValue(r, type))
+		{
+			return false;
+		}
+	}
+
+	out.parsed = true;
+	out.version = version;
+	out.architecture = std::move(architecture);
+	out.name = std::move(name);
+	return true;
+}
+
+#if defined(RETDEC_HAS_LLAMACPP)
+
+bool parseGgufKvLlamaBuffer(const void* data, std::size_t size, GgufIdentity& out)
+{
+	gguf_init_params params{};
+	params.no_alloc = true;
+	params.ctx = nullptr;
+	gguf_context* ctx = gguf_init_from_buffer(data, size, params);
+	if (!ctx) return false;
+
+	out.parsed = true;
+	out.version = gguf_get_version(ctx);
+	const int64_t archId = gguf_find_key(ctx, "general.architecture");
+	if (archId >= 0 && gguf_get_kv_type(ctx, archId) == GGUF_TYPE_STRING)
+	{
+		if (const char* s = gguf_get_val_str(ctx, archId)) out.architecture = s;
+	}
+	const int64_t nameId = gguf_find_key(ctx, "general.name");
+	if (nameId >= 0 && gguf_get_kv_type(ctx, nameId) == GGUF_TYPE_STRING)
+	{
+		if (const char* s = gguf_get_val_str(ctx, nameId)) out.name = s;
+	}
+	gguf_free(ctx);
+	return true;
+}
+
+bool parseGgufKvLlamaFile(const std::string& path, GgufIdentity& out)
+{
+	gguf_init_params params{};
+	params.no_alloc = true;
+	params.ctx = nullptr;
+	gguf_context* ctx = gguf_init_from_file(path.c_str(), params);
+	if (!ctx) return false;
+
+	out.parsed = true;
+	out.version = gguf_get_version(ctx);
+	const int64_t archId = gguf_find_key(ctx, "general.architecture");
+	if (archId >= 0 && gguf_get_kv_type(ctx, archId) == GGUF_TYPE_STRING)
+	{
+		if (const char* s = gguf_get_val_str(ctx, archId)) out.architecture = s;
+	}
+	const int64_t nameId = gguf_find_key(ctx, "general.name");
+	if (nameId >= 0 && gguf_get_kv_type(ctx, nameId) == GGUF_TYPE_STRING)
+	{
+		if (const char* s = gguf_get_val_str(ctx, nameId)) out.name = s;
+	}
+	gguf_free(ctx);
+	return true;
+}
+
+#endif
+
+std::string modelsJsonPath()
+{
+	if (const char* override = std::getenv("RETDEC_NEURAL_MODELS_JSON"))
+	{
+		if (override[0]) return override;
+	}
+#ifdef RETDEC_NEURAL_DEFAULT_MODELS_JSON
+	return RETDEC_NEURAL_DEFAULT_MODELS_JSON;
+#else
+	return "support/models.json";
+#endif
+}
+
+std::set<std::string> loadAllowlistHashes()
+{
+	std::set<std::string> hashes;
+	const std::string path = modelsJsonPath();
+	std::ifstream in(path, std::ios::binary);
+	if (!in) return hashes;
+
+	const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+	rapidjson::Document doc;
+	doc.Parse(text.c_str());
+	if (doc.HasParseError() || !doc.IsObject()) return hashes;
+
+	const auto models = doc.FindMember("models");
+	if (models == doc.MemberEnd() || !models->value.IsArray()) return hashes;
+
+	for (const auto& entry: models->value.GetArray())
+	{
+		if (!entry.IsObject()) continue;
+		const auto sha = entry.FindMember("sha256");
+		if (sha == entry.MemberEnd() || !sha->value.IsString()) continue;
+		const std::string hex = toLowerCopy(sha->value.GetString());
+		if (hex.size() == 64) hashes.insert(hex);
+	}
+	return hashes;
+}
+
+bool hashesMatch(const std::string& actual, const char* expected)
+{
+	if (!expected || !expected[0] || actual.empty()) return false;
+	return actual == toLowerCopy(expected);
+}
+
 } // namespace
+
+bool startsWithGgufMagic(const void* data, std::size_t size)
+{
+	return data && size >= 4 && std::memcmp(data, "GGUF", 4) == 0;
+}
+
+bool parseGgufIdentityFromMemory(const void* data, std::size_t size, GgufIdentity& out)
+{
+	out = GgufIdentity{};
+	if (!startsWithGgufMagic(data, size)) return false;
+
+#if defined(RETDEC_HAS_LLAMACPP)
+	if (parseGgufKvLlamaBuffer(data, size, out)) return true;
+	out = GgufIdentity{};
+#endif
+	GgufByteReader r(static_cast<const std::uint8_t*>(data), size);
+	return parseGgufKvStandalone(r, out);
+}
+
+bool parseGgufIdentity(const std::string& modelPath, GgufIdentity& out)
+{
+	out = GgufIdentity{};
+	if (modelPath.empty()) return false;
+
+	std::ifstream peek(modelPath, std::ios::binary);
+	char magic[4];
+	if (!peek || !peek.read(magic, 4) || peek.gcount() != 4 || std::memcmp(magic, "GGUF", 4) != 0)
+		return false;
+	peek.close();
+
+#if defined(RETDEC_HAS_LLAMACPP)
+	if (parseGgufKvLlamaFile(modelPath, out)) return true;
+	out = GgufIdentity{};
+#endif
+	std::ifstream in(modelPath, std::ios::binary);
+	if (!in) return false;
+	GgufByteReader r(in);
+	return parseGgufKvStandalone(r, out);
+}
+
+bool ggufIdentityLooksMultimodal(const GgufIdentity& id)
+{
+	if (!id.parsed) return false;
+	const std::string arch = toLowerCopy(id.architecture);
+	const std::string name = toLowerCopy(id.name);
+	if (arch.find("clip") != std::string::npos || arch.find("projector") != std::string::npos)
+		return true;
+	return name.find("mmproj") != std::string::npos;
+}
 
 bool verifyModelSha256(const std::string& modelPath)
 {
-	auto lower = modelPath;
-	for (char& c: lower)
-		c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-	if (lower.find("mmproj") != std::string::npos || lower.find("-vl-") != std::string::npos
-		|| lower.find("_vl_") != std::string::npos)
+	if (filenameLooksMultimodal(modelPath))
+	{
+		std::fprintf(stderr, "retdec-neural: refusing multimodal filename: %s\n", modelPath.c_str());
 		return false;
+	}
+
+	GgufIdentity ident;
+	if (parseGgufIdentity(modelPath, ident) && ggufIdentityLooksMultimodal(ident))
+	{
+		std::fprintf(
+			stderr,
+			"retdec-neural: refusing multimodal GGUF header (%s): architecture=%s name=%s\n",
+			modelPath.c_str(),
+			ident.architecture.c_str(),
+			ident.name.c_str());
+		return false;
+	}
 
 	const char* envSha = std::getenv("RETDEC_NEURAL_MODEL_SHA256");
 	const bool haveEnv = envSha && envSha[0];
 	const bool pinDefault = !haveEnv && namesMatchHint(modelPath);
-	if (!haveEnv && !pinDefault) return true;
+	const bool unverified = envFlagSet("RETDEC_NEURAL_ALLOW_UNVERIFIED");
 
 	const std::string actual = sha256HexOfFile(modelPath);
-	if (actual.empty()) return !haveEnv;
 
-	const char* expected = haveEnv ? envSha : kQwen35Q4KmSha256;
+	if (haveEnv)
+	{
+		if (!hashesMatch(actual, envSha))
+		{
+			std::fprintf(
+				stderr,
+				"retdec-neural: SHA-256 mismatch for %s\n"
+				"  expected %s\n"
+				"  actual   %s\n",
+				modelPath.c_str(),
+				toLowerCopy(envSha).c_str(),
+				actual.empty() ? "(unreadable)" : actual.c_str());
+			return false;
+		}
+	}
+	else if (pinDefault)
+	{
+		if (!hashesMatch(actual, kQwen35Q4KmSha256))
+		{
+			std::fprintf(
+				stderr,
+				"retdec-neural: SHA-256 mismatch for pinned Qwen filename %s\n"
+				"  expected %s\n"
+				"  actual   %s\n",
+				modelPath.c_str(),
+				kQwen35Q4KmSha256,
+				actual.empty() ? "(unreadable)" : actual.c_str());
+			return false;
+		}
+	}
 
-	std::string exp(expected);
-	for (char& c: exp)
-		c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	if (unverified) return true;
 
-	if (actual != exp)
+	if (actual.empty())
 	{
 		std::fprintf(
 			stderr,
-			"retdec-neural: SHA-256 mismatch for %s\n"
-			"  expected %s\n"
-			"  actual   %s\n",
+			"retdec-neural: cannot hash %s; unknown models are refused "
+			"(set RETDEC_NEURAL_ALLOW_UNVERIFIED=1 or add sha256 to the allowlist)\n",
+			modelPath.c_str());
+		return false;
+	}
+
+	const auto allow = loadAllowlistHashes();
+	if (allow.count(actual) == 0)
+	{
+		std::fprintf(
+			stderr,
+			"retdec-neural: %s hash %s is not in the model allowlist (%s)\n"
+			"  add {\"name\":\"...\",\"sha256\":\"...\"} or set RETDEC_NEURAL_ALLOW_UNVERIFIED=1\n",
 			modelPath.c_str(),
-			exp.c_str(),
-			actual.c_str());
+			actual.c_str(),
+			modelsJsonPath().c_str());
 		return false;
 	}
 	return true;

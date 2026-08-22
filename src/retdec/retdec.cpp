@@ -872,119 +872,137 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 			// --- 4–7. Per-function detectors (container, algo, sort, concurrency) ---
 			// Parallel when function count > 4 and RETDEC_PARALLEL_ANALYSIS allows it.
 			// Incremental cache sidecar skips unchanged functions on re-runs.
+			// RETDEC_SKIP_SEMANTIC_RECOVERY=1 skips detectors + export (A/B cost only).
 			{
 				auto detTimer = profiling::Profiler::instance().measure("analysis.detectors");
-				const bool useCache = analysis::incrementalCacheEnabled();
-				const std::string cachePath =
-					useCache ? analysis::functionAnalysisCachePath(config.parameters.getOutputFile()) : std::string{};
-				analysis::FunctionAnalysisCache fnCache = useCache
-															? analysis::FunctionAnalysisCache::loadFromFile(cachePath)
-															: analysis::FunctionAnalysisCache{};
-
-				struct FnWorkItem
+				if (envFlagEnabled("RETDEC_SKIP_SEMANTIC_RECOVERY"))
 				{
-					const ssa::SSAFunction* fn = nullptr;
-					std::string bodyHash;
-					analysis::FunctionDetections detections;
-					bool cacheHit = false;
-				};
-
-				std::vector<FnWorkItem> work;
-				work.reserve(fnPtrs.size());
-				for (const auto* fn: fnPtrs)
-				{
-					if (!fn) continue;
-					FnWorkItem item;
-					item.fn = fn;
-					item.bodyHash = analysis::computeFunctionBodyHash(*module, *fn);
-					if (const auto* cached = fnCache.lookup(fn->name(), item.bodyHash))
-					{
-						item.detections = cached->detections;
-						item.cacheHit = true;
-					}
-					work.push_back(std::move(item));
-				}
-
-				const bool useParallel =
-					analysis::parallelAnalysisEnabled() && work.size() >= analysis::kParallelAnalysisMinFunctions;
-
-				if (useParallel)
-				{
-					retdec::utils::ThreadPool pool;
-					std::vector<std::future<void>> futures;
-					futures.reserve(work.size());
-					for (std::size_t i = 0; i < work.size(); ++i)
-					{
-						if (work[i].cacheHit) continue;
-						futures.push_back(pool.submit(
-							[i, &work]() { work[i].detections = analysis::analyseFunctionDetections(*work[i].fn); }));
-					}
-					for (auto& f: futures)
-						f.get();
+					Log::info() << "[analysis] semantic recovery skipped (RETDEC_SKIP_SEMANTIC_RECOVERY)"
+								<< std::endl;
 				}
 				else
 				{
+					const bool useCache = analysis::incrementalCacheEnabled();
+					const std::string cachePath =
+						useCache ? analysis::functionAnalysisCachePath(config.parameters.getOutputFile()) : std::string{};
+					analysis::FunctionAnalysisCache fnCache = useCache
+																? analysis::FunctionAnalysisCache::loadFromFile(cachePath)
+																: analysis::FunctionAnalysisCache{};
+
+					struct FnWorkItem
+					{
+						const ssa::SSAFunction* fn = nullptr;
+						std::string bodyHash;
+						analysis::FunctionDetections detections;
+						bool cacheHit = false;
+					};
+
+					std::vector<FnWorkItem> work;
+					work.reserve(fnPtrs.size());
+					for (const auto* fn: fnPtrs)
+					{
+						if (!fn) continue;
+						FnWorkItem item;
+						item.fn = fn;
+						item.bodyHash = analysis::computeFunctionBodyHash(*module, *fn);
+						if (const auto* cached = fnCache.lookup(fn->name(), item.bodyHash))
+						{
+							item.detections = cached->detections;
+							item.cacheHit = true;
+						}
+						work.push_back(std::move(item));
+					}
+
+					const bool useParallel =
+						analysis::parallelAnalysisEnabled() && work.size() >= analysis::kParallelAnalysisMinFunctions;
+
+					if (useParallel)
+					{
+						retdec::utils::ThreadPool pool;
+						std::vector<std::future<void>> futures;
+						futures.reserve(work.size());
+						for (std::size_t i = 0; i < work.size(); ++i)
+						{
+							if (work[i].cacheHit) continue;
+							futures.push_back(pool.submit(
+								[i, &work]() { work[i].detections = analysis::analyseFunctionDetections(*work[i].fn); }));
+						}
+						for (auto& f: futures)
+							f.get();
+					}
+					else
+					{
+						for (auto& item: work)
+						{
+							if (item.cacheHit) continue;
+							item.detections = analysis::analyseFunctionDetections(*item.fn);
+						}
+					}
+
+					container_detect::ContainerDetector::DetectionMap cmap;
+					std::vector<std::pair<std::string, algo_recover::AlgorithmResult>> amap;
+					std::vector<std::pair<std::string, algo_recover::IdiomResult>> imap;
+					sort_detect::SortDetector::DetectionMap dm;
+
+					std::size_t cacheHits = 0;
 					for (auto& item: work)
 					{
-						if (item.cacheHit) continue;
-						item.detections = analysis::analyseFunctionDetections(*item.fn);
+						if (item.cacheHit) ++cacheHits;
+
+						fnCache.put(
+							analysis::FunctionAnalysisCache::Entry{item.fn->name(), item.bodyHash, item.detections});
+
+						if (item.detections.container) cmap[item.fn->name()] = *item.detections.container;
+						if (item.detections.algo) amap.emplace_back(item.fn->name(), *item.detections.algo);
+						for (const auto& idiom: item.detections.idioms)
+							imap.emplace_back(item.fn->name(), idiom);
+						if (item.detections.sort) dm[item.fn->name()] = *item.detections.sort;
 					}
+
+					concurrency_detect::ConcurrencyDetector cd;
+					concurrency_detect::ConcurrencyModel cm = cd.analyseModule(*ssaMod);
+
+					if (useCache && !cachePath.empty()) fnCache.saveToFile(cachePath);
+
+					if (cacheHits > 0)
+						Log::info() << "[analysis] function cache: " << cacheHits << " hit(s), "
+									<< (work.size() - cacheHits) << " miss(es)" << (useParallel ? " (parallel)" : "")
+									<< std::endl;
+
+					if (cm.isMT)
+						Log::info() << "[analysis] concurrency detected: " << cm.threads.size() << " thread(s), "
+									<< cm.locks.size() << " lock(s), " << cm.atomics.size() << " atomic(s)" << std::endl;
+					if (!cmap.empty())
+						Log::info() << "[analysis] containers detected in " << cmap.size() << " function(s)" << std::endl;
+					if (!amap.empty())
+						Log::info() << "[analysis] <algorithm> patterns detected in " << amap.size() << " function(s)"
+									<< std::endl;
+					if (!imap.empty())
+						Log::info() << "[analysis] C idiom patterns detected in " << imap.size() << " function(s)"
+									<< std::endl;
+					if (!dm.empty())
+						Log::info() << "[analysis] sorting algorithms detected in " << dm.size() << " function(s)"
+									<< std::endl;
+
+					const auto semanticMap =
+						analysis::buildSemanticDetectionMap(cmap, amap, imap, dm, cm, config.parameters.getOutputLang());
+					analysis::exportSemanticRecovery(config, semanticMap, outString);
+					if (!semanticMap.empty())
+						Log::info() << "[analysis] semantic detections exported for " << semanticMap.size()
+									<< " function(s)" << std::endl;
 				}
-
-				container_detect::ContainerDetector::DetectionMap cmap;
-				std::vector<std::pair<std::string, algo_recover::AlgorithmResult>> amap;
-				std::vector<std::pair<std::string, algo_recover::IdiomResult>> imap;
-				sort_detect::SortDetector::DetectionMap dm;
-
-				std::size_t cacheHits = 0;
-				for (auto& item: work)
-				{
-					if (item.cacheHit) ++cacheHits;
-
-					fnCache.put(
-						analysis::FunctionAnalysisCache::Entry{item.fn->name(), item.bodyHash, item.detections});
-
-					if (item.detections.container) cmap[item.fn->name()] = *item.detections.container;
-					if (item.detections.algo) amap.emplace_back(item.fn->name(), *item.detections.algo);
-					for (const auto& idiom: item.detections.idioms)
-						imap.emplace_back(item.fn->name(), idiom);
-					if (item.detections.sort) dm[item.fn->name()] = *item.detections.sort;
-				}
-
-				concurrency_detect::ConcurrencyDetector cd;
-				concurrency_detect::ConcurrencyModel cm = cd.analyseModule(*ssaMod);
-
-				if (useCache && !cachePath.empty()) fnCache.saveToFile(cachePath);
-
-				if (cacheHits > 0)
-					Log::info() << "[analysis] function cache: " << cacheHits << " hit(s), "
-								<< (work.size() - cacheHits) << " miss(es)" << (useParallel ? " (parallel)" : "")
-								<< std::endl;
-
-				if (cm.isMT)
-					Log::info() << "[analysis] concurrency detected: " << cm.threads.size() << " thread(s), "
-								<< cm.locks.size() << " lock(s), " << cm.atomics.size() << " atomic(s)" << std::endl;
-				if (!cmap.empty())
-					Log::info() << "[analysis] containers detected in " << cmap.size() << " function(s)" << std::endl;
-				if (!amap.empty())
-					Log::info() << "[analysis] <algorithm> patterns detected in " << amap.size() << " function(s)"
-								<< std::endl;
-				if (!imap.empty())
-					Log::info() << "[analysis] C idiom patterns detected in " << imap.size() << " function(s)"
-								<< std::endl;
-				if (!dm.empty())
-					Log::info() << "[analysis] sorting algorithms detected in " << dm.size() << " function(s)"
-								<< std::endl;
-
-				const auto semanticMap =
-					analysis::buildSemanticDetectionMap(cmap, amap, imap, dm, cm, config.parameters.getOutputLang());
-				analysis::exportSemanticRecovery(config, semanticMap, outString);
-				if (!semanticMap.empty())
-					Log::info() << "[analysis] semantic detections exported for " << semanticMap.size()
-								<< " function(s)" << std::endl;
 				{
 					auto neuralTimer = profiling::Profiler::instance().measure("analysis.neural_refine");
 					neural::maybeRefineDecompilerOutput(config, outString);
+				}
+				{
+					std::string cSource;
+					if (outString && !outString->empty())
+					{
+						cSource = *outString;
+					}
+					analysis::maybeWriteBuildableSidecars(
+							config.parameters.getOutputFile(), cSource);
 				}
 			}
 

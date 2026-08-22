@@ -1,0 +1,41 @@
+{
+  "sample": "binary_search-gcc-O0",
+  "runs": [
+    {
+      "label": "default",
+      "detectors_ms": 55.65,
+      "stages": {
+        "pipeline.pm_run": 589.482,
+        "analysis.detectors": 55.65,
+        "bin2llvmir.decoder": 50.068,
+        "init.llvm_passes": 30.554,
+        "init.pass_setup": 27.911,
+        "init.llvm_module": 16.86,
+        "analysis.neural_refine": 16.428,
+        "analysis.ssa_rebuild": 2.194,
+        "analysis.call_conv": 1.372,
+        "analysis.ipa": 0.988,
+        "analysis.ocl_host": 0.409,
+        "analysis.type_inference": 0.001
+      }
+    },
+    {
+      "label": "skip",
+      "detectors_ms": 3.303,
+      "stages": {
+        "pipeline.pm_run": 584.252,
+        "bin2llvmir.decoder": 48.387,
+        "init.llvm_passes": 28.325,
+        "init.pass_setup": 28.201,
+        "init.llvm_module": 15.952,
+        "analysis.ipa": 4.072,
+        "analysis.detectors": 3.303,
+        "analysis.neural_refine": 3.296,
+        "analysis.ssa_rebuild": 2.396,
+        "analysis.call_conv": 2.048,
+        "analysis.ocl_host": 0.361,
+        "analysis.type_inference": 0.002
+      }
+    }
+  ]
+}

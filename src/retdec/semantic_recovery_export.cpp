@@ -6,9 +6,14 @@
 
 #include "retdec/retdec/semantic_recovery_export.h"
 
+#include <cctype>
+#include <cstdlib>
 #include <fstream>
+#include <iterator>
 #include <map>
+#include <set>
 #include <sstream>
+#include <vector>
 
 namespace retdec {
 namespace analysis {
@@ -130,6 +135,495 @@ void injectSemanticCommentsIntoLines(
 			lines.insert(lines.begin() + idx, *cit);
 		}
 	}
+}
+
+bool emitBuildableEnabled()
+{
+	const char* e = std::getenv("RETDEC_EMIT_BUILDABLE");
+	return e != nullptr && e[0] != '\0' && e[0] != '0';
+}
+
+bool isIdentStart(char c)
+{
+	return std::isalpha(static_cast<unsigned char>(c)) != 0 || c == '_';
+}
+
+bool isIdentCont(char c)
+{
+	return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
+}
+
+void skipSpaces(const std::string& s, std::size_t& i);
+std::size_t skipNonCode(const std::string& s, std::size_t i);
+std::size_t matchingCloseParen(const std::string& s, std::size_t open);
+
+std::string outputStem(const std::string& outputCPath)
+{
+	const auto slash = outputCPath.find_last_of("/\\");
+	const auto dot = outputCPath.rfind('.');
+	if (dot != std::string::npos && (slash == std::string::npos || dot > slash))
+	{
+		return outputCPath.substr(0, dot);
+	}
+	return outputCPath;
+}
+
+std::string pathBasename(const std::string& path)
+{
+	const auto slash = path.find_last_of("/\\");
+	return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+
+std::string includeGuardFromHeaderName(const std::string& headerName)
+{
+	std::string g;
+	g.reserve(headerName.size() + 2);
+	for (char c : headerName)
+	{
+		if (std::isalnum(static_cast<unsigned char>(c)) != 0)
+		{
+			g += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+		}
+		else
+		{
+			g += '_';
+		}
+	}
+	if (g.empty() || std::isdigit(static_cast<unsigned char>(g[0])) != 0)
+	{
+		g = "RETDEC_" + g;
+	}
+	return g;
+}
+
+bool isSkippedCallName(const std::string& name)
+{
+	return name == "if" || name == "for" || name == "while"
+			|| name == "switch" || name == "return" || name == "sizeof"
+			|| name == "__readUndefQword" || name == "__readfsqword"
+			|| name == "__asm_hlt" || name == "__retdec_stub";
+}
+
+bool isControlName(const std::string& name)
+{
+	return name == "if" || name == "for" || name == "while"
+			|| name == "switch" || name == "else";
+}
+
+bool bodyDeclaresIdent(const std::string& body, const std::string& name)
+{
+	static const char* types[] = {
+			"int64_t", "uint64_t", "int32_t", "uint32_t",
+			"int16_t", "uint16_t", "int8_t", "uint8_t",
+			"int", "long", "unsigned", "char", "bool", "size_t",
+	};
+	for (const char* ty : types)
+	{
+		const std::string pat = std::string(ty) + " " + name;
+		if (body.find(pat) != std::string::npos)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool bodyUsesIdent(const std::string& body, const std::string& name)
+{
+	std::size_t i = 0;
+	while (i < body.size())
+	{
+		const std::size_t next = skipNonCode(body, i);
+		if (next != i)
+		{
+			i = next;
+			continue;
+		}
+		if (!isIdentStart(body[i]))
+		{
+			++i;
+			continue;
+		}
+		const std::size_t start = i;
+		++i;
+		while (i < body.size() && isIdentCont(body[i]))
+		{
+			++i;
+		}
+		if (body.compare(start, i - start, name) == 0)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+std::vector<std::string> missingTempsInBody(const std::string& body)
+{
+	std::vector<std::string> missing;
+	auto consider = [&](const std::string& name) {
+		if (bodyUsesIdent(body, name) && !bodyDeclaresIdent(body, name))
+		{
+			missing.push_back(name);
+		}
+	};
+	consider("result");
+	for (int n = 1; n <= 16; ++n)
+	{
+		consider("v" + std::to_string(n));
+	}
+	return missing;
+}
+
+std::size_t matchingCloseBrace(const std::string& s, std::size_t open)
+{
+	if (open >= s.size() || s[open] != '{')
+	{
+		return std::string::npos;
+	}
+	int depth = 0;
+	for (std::size_t i = open; i < s.size();)
+	{
+		const std::size_t next = skipNonCode(s, i);
+		if (next != i)
+		{
+			i = next;
+			continue;
+		}
+		if (s[i] == '{')
+		{
+			++depth;
+		}
+		else if (s[i] == '}')
+		{
+			--depth;
+			if (depth == 0)
+			{
+				return i;
+			}
+		}
+		++i;
+	}
+	return std::string::npos;
+}
+
+std::string injectUndeclaredTemps(const std::string& src)
+{
+	std::string out;
+	out.reserve(src.size() + 256);
+	std::size_t i = 0;
+	while (i < src.size())
+	{
+		const std::size_t next = skipNonCode(src, i);
+		if (next != i)
+		{
+			out.append(src, i, next - i);
+			i = next;
+			continue;
+		}
+		if (!isIdentStart(src[i]))
+		{
+			out.push_back(src[i]);
+			++i;
+			continue;
+		}
+		const std::size_t nameStart = i;
+		++i;
+		while (i < src.size() && isIdentCont(src[i]))
+		{
+			++i;
+		}
+		const std::string name = src.substr(nameStart, i - nameStart);
+		out.append(src, nameStart, i - nameStart);
+		std::size_t after = i;
+		skipSpaces(src, after);
+		if (after >= src.size() || src[after] != '(' || isControlName(name))
+		{
+			continue;
+		}
+		const std::size_t close = matchingCloseParen(src, after);
+		if (close == std::string::npos)
+		{
+			continue;
+		}
+		out.append(src, i, close + 1 - i);
+		i = close + 1;
+		std::size_t brace = i;
+		skipSpaces(src, brace);
+		if (brace >= src.size() || src[brace] != '{')
+		{
+			continue;
+		}
+		out.append(src, i, brace + 1 - i);
+		const std::size_t bodyEnd = matchingCloseBrace(src, brace);
+		if (bodyEnd == std::string::npos)
+		{
+			i = brace + 1;
+			continue;
+		}
+		const std::string body = src.substr(brace + 1, bodyEnd - brace - 1);
+		const auto missing = missingTempsInBody(body);
+		if (!missing.empty())
+		{
+			out += '\n';
+			for (const auto& ident : missing)
+			{
+				out += "    int64_t ";
+				out += ident;
+				out += " = 0;\n";
+			}
+		}
+		out += body;
+		out.push_back('}');
+		i = bodyEnd + 1;
+	}
+	return out;
+}
+
+void skipSpaces(const std::string& s, std::size_t& i)
+{
+	while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i])) != 0)
+	{
+		++i;
+	}
+}
+
+void skipSpacesBack(const std::string& s, std::size_t& i)
+{
+	while (i > 0 && std::isspace(static_cast<unsigned char>(s[i - 1])) != 0)
+	{
+		--i;
+	}
+}
+
+// Skip // comments, /* */ comments, "strings", and 'chars'. Returns the
+// next index that is in ordinary code, or s.size().
+std::size_t skipNonCode(const std::string& s, std::size_t i)
+{
+	if (i + 1 < s.size() && s[i] == '/' && s[i + 1] == '/')
+	{
+		i += 2;
+		while (i < s.size() && s[i] != '\n')
+		{
+			++i;
+		}
+		return i;
+	}
+	if (i + 1 < s.size() && s[i] == '/' && s[i + 1] == '*')
+	{
+		i += 2;
+		while (i + 1 < s.size() && !(s[i] == '*' && s[i + 1] == '/'))
+		{
+			++i;
+		}
+		return i + 1 < s.size() ? i + 2 : s.size();
+	}
+	if (s[i] == '"' || s[i] == '\'')
+	{
+		const char q = s[i];
+		++i;
+		while (i < s.size() && s[i] != q)
+		{
+			if (s[i] == '\\' && i + 1 < s.size())
+			{
+				i += 2;
+			}
+			else
+			{
+				++i;
+			}
+		}
+		return i < s.size() ? i + 1 : s.size();
+	}
+	return i;
+}
+
+std::size_t matchingCloseParen(const std::string& s, std::size_t open)
+{
+	int depth = 1;
+	std::size_t i = open + 1;
+	while (i < s.size() && depth > 0)
+	{
+		const std::size_t next = skipNonCode(s, i);
+		if (next != i)
+		{
+			i = next;
+			continue;
+		}
+		if (s[i] == '(')
+		{
+			++depth;
+		}
+		else if (s[i] == ')')
+		{
+			--depth;
+			if (depth == 0)
+			{
+				return i;
+			}
+		}
+		++i;
+	}
+	return std::string::npos;
+}
+
+bool looksLikeDeclarator(const std::string& s, std::size_t namePos)
+{
+	std::size_t i = namePos;
+	skipSpacesBack(s, i);
+	while (i > 0 && (s[i - 1] == '*'
+			|| std::isspace(static_cast<unsigned char>(s[i - 1])) != 0))
+	{
+		--i;
+	}
+	if (i == 0)
+	{
+		return false;
+	}
+	return isIdentCont(s[i - 1]);
+}
+
+bool isDefinitionAfterClose(const std::string& s, std::size_t close)
+{
+	std::size_t i = close + 1;
+	skipSpaces(s, i);
+	return i < s.size() && s[i] == '{';
+}
+
+void collectCallAndDefinedNames(
+		const std::string& src,
+		std::set<std::string>& undeclaredCalls)
+{
+	std::set<std::string> declared;
+	std::set<std::string> called;
+	std::size_t i = 0;
+	while (i < src.size())
+	{
+		const std::size_t next = skipNonCode(src, i);
+		if (next != i)
+		{
+			i = next;
+			continue;
+		}
+		if (!isIdentStart(src[i]))
+		{
+			++i;
+			continue;
+		}
+		const std::size_t start = i;
+		++i;
+		while (i < src.size() && isIdentCont(src[i]))
+		{
+			++i;
+		}
+		std::size_t after = i;
+		skipSpaces(src, after);
+		if (after >= src.size() || src[after] != '(')
+		{
+			continue;
+		}
+		const std::string name = src.substr(start, i - start);
+		if (isSkippedCallName(name))
+		{
+			i = after + 1;
+			continue;
+		}
+		const std::size_t close = matchingCloseParen(src, after);
+		if (looksLikeDeclarator(src, start) || (close != std::string::npos
+				&& isDefinitionAfterClose(src, close)))
+		{
+			declared.insert(name);
+		}
+		else
+		{
+			called.insert(name);
+		}
+		i = after + 1;
+	}
+	for (const auto& name : called)
+	{
+		if (declared.find(name) == declared.end())
+		{
+			undeclaredCalls.insert(name);
+		}
+	}
+}
+
+std::vector<std::string> scrapeTypeBlocks(const std::string& src)
+{
+	std::vector<std::string> out;
+	std::istringstream iss(src);
+	std::string line;
+	std::string accum;
+	bool capturing = false;
+	while (std::getline(iss, line))
+	{
+		if (!line.empty() && line.back() == '\r')
+		{
+			line.pop_back();
+		}
+		if (!capturing)
+		{
+			const auto first = line.find_first_not_of(" \t");
+			if (first == std::string::npos || first > 3)
+			{
+				continue;
+			}
+			const std::string rest = line.substr(first);
+			const bool isTypedef = rest.compare(0, 7, "typedef") == 0
+					&& (rest.size() == 7 || !isIdentCont(rest[7]));
+			const bool isStruct = rest.compare(0, 6, "struct") == 0
+					&& (rest.size() == 6 || !isIdentCont(rest[6]));
+			if (!isTypedef && !isStruct)
+			{
+				continue;
+			}
+			capturing = true;
+			accum.clear();
+		}
+		if (!accum.empty())
+		{
+			accum += '\n';
+		}
+		accum += line;
+		if (line.find(';') != std::string::npos)
+		{
+			out.push_back(accum);
+			capturing = false;
+			accum.clear();
+		}
+	}
+	if (capturing && !accum.empty())
+	{
+		out.push_back(accum);
+	}
+	return out;
+}
+
+std::string readFileIfEmpty(const std::string& path, const std::string& cSource)
+{
+	if (!cSource.empty() || path.empty())
+	{
+		return cSource;
+	}
+	std::ifstream in(path);
+	if (!in)
+	{
+		return {};
+	}
+	return std::string(std::istreambuf_iterator<char>(in),
+			std::istreambuf_iterator<char>());
+}
+
+bool writeTextFile(const std::string& path, const std::string& text)
+{
+	std::ofstream out(path, std::ios::trunc);
+	if (!out)
+	{
+		return false;
+	}
+	out << text;
+	return static_cast<bool>(out);
 }
 
 } // anonymous namespace
@@ -295,6 +789,81 @@ void exportSemanticRecovery(
 	}
 
 	injectSemanticCommentsIntoOutput(config, outString);
+}
+
+void maybeWriteBuildableSidecars(
+		const std::string& outputCPath,
+		const std::string& cSource)
+{
+	if (!emitBuildableEnabled() || outputCPath.empty())
+	{
+		return;
+	}
+
+	const std::string src = readFileIfEmpty(outputCPath, cSource);
+	const std::string stem = outputStem(outputCPath);
+	const std::string headerPath = stem + ".h";
+	const std::string stubsPath = stem + "_stubs.c";
+	const std::string buildablePath = stem + ".buildable.c";
+	const std::string headerName = pathBasename(headerPath);
+	const std::string guard = includeGuardFromHeaderName(headerName);
+
+	std::set<std::string> undeclared;
+	collectCallAndDefinedNames(src, undeclared);
+
+	std::ostringstream header;
+	header << "#ifndef " << guard << "\n#define " << guard << "\n\n";
+	header << "#include <stdint.h>\n";
+	header << "#include <stddef.h>\n";
+	header << "#include <stdbool.h>\n";
+	header << "\n";
+	header << "uint64_t __readUndefQword(void);\n";
+	header << "uint64_t __readfsqword(unsigned long);\n";
+	header << "void __asm_hlt(void);\n";
+
+	const auto typeBlocks = scrapeTypeBlocks(src);
+	if (!typeBlocks.empty())
+	{
+		header << '\n';
+		for (const auto& block : typeBlocks)
+		{
+			header << block << '\n';
+		}
+	}
+
+	if (!undeclared.empty())
+	{
+		header << '\n';
+		for (const auto& name : undeclared)
+		{
+			header << "int " << name << "(void);\n";
+		}
+	}
+
+	header << "\n#endif\n";
+	writeTextFile(headerPath, header.str());
+
+	std::ostringstream stubs;
+	stubs << "#include \"" << headerName << "\"\n\n";
+	stubs << "void __retdec_stub(void) {}\n";
+	if (src.find("int main(") == std::string::npos)
+	{
+		stubs << "\nint main(void) { return 0; }\n";
+	}
+	writeTextFile(stubsPath, stubs.str());
+
+	std::ostringstream buildable;
+	const std::string includeLine = "#include \"" + headerName + "\"";
+	if (src.find(includeLine) == std::string::npos)
+	{
+		buildable << includeLine << '\n';
+	}
+	buildable << injectUndeclaredTemps(src);
+	if (!src.empty() && src.back() != '\n')
+	{
+		buildable << '\n';
+	}
+	writeTextFile(buildablePath, buildable.str());
 }
 
 } // namespace analysis

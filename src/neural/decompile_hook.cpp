@@ -1,4 +1,5 @@
 #include "retdec/neural/decompile_hook.h"
+#include "retdec/neural/gates.h"
 #include "retdec/neural/inference.h"
 #include "retdec/neural/refiner.h"
 
@@ -136,8 +137,16 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 	const std::string model = modelPathFromEnv();
 	if (model.empty()) return;
 
-	auto backend = createLlamaInference();
-	if (!backend) backend = createMockInference();
+	std::unique_ptr<Inference> backend;
+	if (envEnabled("RETDEC_NEURAL_FORCE_MOCK"))
+	{
+		backend = createMockInference();
+	}
+	else
+	{
+		backend = createLlamaInference();
+		if (!backend) backend = createMockInference();
+	}
 	int ctxLen = 4096;
 	if (const char* ctxEnv = std::getenv("RETDEC_NEURAL_CTX"))
 	{
@@ -171,6 +180,8 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 	std::string current = *outString;
 	std::string lastManifest = R"({"accepted":false,"reason":"no tier ran"})";
 	bool anyAccepted = false;
+	bool compileRetryUsed = false;
+	const bool requireCompile = envEnabled("RETDEC_NEURAL_REQUIRE_COMPILE");
 
 	for (int i = 0; i < tierMax && i < 5; ++i)
 	{
@@ -213,6 +224,37 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 		{
 			current = resp.refinedSource;
 			anyAccepted = true;
+		}
+
+		const bool compileReject = !resp.accepted
+			&& (resp.manifestJson.find("compile_syntax") != std::string::npos
+				|| resp.manifestJson.find("compile=fail") != std::string::npos);
+		if (compileRetryUsed) continue;
+		if (!compileReject && !requireCompile) continue;
+
+		std::string diags;
+		const std::string attempt = resp.refinedSource.empty() ? current : resp.refinedSource;
+		const bool compiles = compileSyntaxOnly(attempt, diags);
+		if (resp.accepted && compiles) continue;
+
+		compileRetryUsed = true;
+		RefinementRequest retry = req;
+		retry.functionSource = current;
+		retry.tier = RefinementTier::FullRewrite;
+		retry.generation.reuseKvPrefix = false;
+		retry.compilerDiagnostics =
+			diags.empty() ? std::string("cc -fsyntax-only failed") : diags;
+
+		const auto retryResp = refiner.refine(retry);
+		lastManifest = retryResp.manifestJson;
+		if (retryResp.accepted && compileSyntaxOnly(retryResp.refinedSource))
+		{
+			current = retryResp.refinedSource;
+			anyAccepted = true;
+		}
+		else if (retryResp.accepted)
+		{
+			lastManifest = R"({"accepted":false,"reason":"compile_syntax"})";
 		}
 	}
 

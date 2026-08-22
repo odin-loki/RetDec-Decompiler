@@ -22,11 +22,14 @@
  *   rotation constant 12           +0.25
  *   rotation constant 8            +0.25
  *   rotation constant 7            +0.25
- *   Add + Xor sequence             required (guard)
+ *   Add + Xor sequence             required (guard) for rotation path
+ *   sigma word ("expand 32-byte k") +0.25 each (constant path; no guard)
  */
 
 #include "retdec/crypto_detect/crypto_detect.h"
 #include "retdec/ssa/ssa.h"
+
+#include <set>
 
 namespace retdec {
 namespace crypto_detect {
@@ -60,6 +63,21 @@ static bool hasImmediate(const ssa::SSAFunction& fn, uint64_t val) {
     return false;
 }
 
+// Little-endian uint32 words of ASCII "expand 32-byte k".
+static const std::set<uint64_t> kChaChaSigma32 = {
+    0x61707865ULL, // "expa"
+    0x3320646eULL, // "nd 3"
+    0x79622d32ULL, // "2-by"
+    0x6b206574ULL, // "te k"
+};
+
+static int countSigmaWords(const ssa::SSAFunction& fn) {
+    int n = 0;
+    for (uint64_t v : kChaChaSigma32)
+        if (hasImmediate(fn, v)) ++n;
+    return n;
+}
+
 } // anonymous namespace
 
 ChaCha20Evidence ChaCha20Detector::analyse(const ssa::SSAFunction& fn) const {
@@ -72,21 +90,29 @@ ChaCha20Evidence ChaCha20Detector::analyse(const ssa::SSAFunction& fn) const {
                          countOp(fn, ssa::IrInstr::Op::Xor) >= 1 &&
                          (countOp(fn, ssa::IrInstr::Op::Shl) >= 1 ||
                           countOp(fn, ssa::IrInstr::Op::Or)  >= 1);
-    // Guard: require the structural sequence.
-    ev.found = ev.hasAddXorRotSeq &&
-               (ev.hasRotConst16 || ev.hasRotConst12 ||
-                ev.hasRotConst8  || ev.hasRotConst7);
+    ev.sigmaWords      = countSigmaWords(fn);
+    ev.hasSigmaConst   = ev.sigmaWords > 0;
+    // Rotation path still requires the structural sequence; sigma words
+    // are unique magic constants and stand alone.
+    ev.found = ev.hasSigmaConst ||
+               (ev.hasAddXorRotSeq &&
+                (ev.hasRotConst16 || ev.hasRotConst12 ||
+                 ev.hasRotConst8  || ev.hasRotConst7));
     ev.confidence = score(ev);
     return ev;
 }
 
 float ChaCha20Detector::score(const ChaCha20Evidence& ev) const {
-    if (!ev.hasAddXorRotSeq) return 0.0f;
     float s = 0.0f;
-    if (ev.hasRotConst16) s += 0.25f;
-    if (ev.hasRotConst12) s += 0.25f;
-    if (ev.hasRotConst8)  s += 0.25f;
-    if (ev.hasRotConst7)  s += 0.25f;
+    if (ev.hasAddXorRotSeq) {
+        if (ev.hasRotConst16) s += 0.25f;
+        if (ev.hasRotConst12) s += 0.25f;
+        if (ev.hasRotConst8)  s += 0.25f;
+        if (ev.hasRotConst7)  s += 0.25f;
+    }
+    // Each "expand 32-byte k" word is a unique constant fingerprint.
+    // Two words reach the 0.50 threshold; four words saturate.
+    s += 0.25f * static_cast<float>(ev.sigmaWords);
     return s > 1.0f ? 1.0f : s;
 }
 
@@ -99,6 +125,7 @@ CryptoResult ChaCha20Detector::detect(const ssa::SSAFunction& fn) const {
         r.emittedAnnotation =
             "// Cryptographic primitive: ChaCha20\n"
             "// Quarter-round rotation constants: 16, 12, 8, 7\n"
+            "// Sigma: \"expand 32-byte k\" (0x61707865 …)\n"
             "// Usage: chacha20_encrypt(key, nonce, counter, plaintext, ciphertext, len);";
     }
     return r;

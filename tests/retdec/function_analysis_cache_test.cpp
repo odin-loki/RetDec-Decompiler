@@ -61,7 +61,10 @@ TEST(FunctionAnalysisCacheTest, RoundTripSaveAndLoad)
     FunctionAnalysisCache::Entry entry;
     entry.name = "main";
     entry.bodyHash = "deadbeef";
-    entry.detections.concurrency.isMT = true;
+    retdec::algo_recover::AlgorithmResult algo;
+    algo.kind = retdec::algo_recover::AlgorithmKind::Find;
+    algo.confidence = 0.9f;
+    entry.detections.algo = algo;
     cache.put(std::move(entry));
 
     ASSERT_TRUE(cache.saveToFile(path.string()));
@@ -71,7 +74,8 @@ TEST(FunctionAnalysisCacheTest, RoundTripSaveAndLoad)
     ASSERT_NE(hit, nullptr);
     EXPECT_EQ(hit->name, "main");
     EXPECT_EQ(hit->bodyHash, "deadbeef");
-    EXPECT_TRUE(hit->detections.concurrency.isMT);
+    ASSERT_TRUE(hit->detections.algo.has_value());
+    EXPECT_FLOAT_EQ(hit->detections.algo->confidence, 0.9f);
     EXPECT_EQ(loaded.lookup("main", "stale"), nullptr);
 
     fs::remove(path);
