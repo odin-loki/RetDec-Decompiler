@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Neural structural gate also compares `execl` / `execv` /
+  `execvp` / `WinExec` / `ShellExecute` / `CreateProcessA` /
+  `CreateProcessW` identifier counts (same family as
+  `system` / `popen` / `execve`). Test:
+  `AddedExecvCallFailsStructural`. This is not N10.
 - B7: mergesort export tags `evidence:symbol_name` when the
   compiler variant came from `stable_sort` / `merge_sort` /
   `_Stable_sort`. Structural mergesort (Unknown variant) stays

@@ -303,9 +303,25 @@ bool controlShapeChanged(const std::string& originalC, const std::string& refine
 	if (countIdent(originalC, "for") != countIdent(refinedC, "for")) return true;
 	if (countIdent(originalC, "goto") != countIdent(refinedC, "goto")) return true;
 	if (countIdent(originalC, "return") != countIdent(refinedC, "return")) return true;
-	if (countIdent(originalC, "system") != countIdent(refinedC, "system")) return true;
-	if (countIdent(originalC, "popen") != countIdent(refinedC, "popen")) return true;
-	if (countIdent(originalC, "execve") != countIdent(refinedC, "execve")) return true;
+	static const char* const kSpawnIdents[] = {
+		"system",
+		"popen",
+		"execve",
+		"execl",
+		"execle",
+		"execlp",
+		"execv",
+		"execvp",
+		"execvpe",
+		"WinExec",
+		"ShellExecute",
+		"CreateProcessA",
+		"CreateProcessW",
+	};
+	for (const char* w: kSpawnIdents)
+	{
+		if (countIdent(originalC, w) != countIdent(refinedC, w)) return true;
+	}
 	if (!(countCmpOps(originalC) == countCmpOps(refinedC))) return true;
 	return false;
 }
