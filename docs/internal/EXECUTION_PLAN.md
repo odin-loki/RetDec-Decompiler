@@ -103,14 +103,20 @@ Priority inside the wave:
 9. **P1** sketch only unless a tiny C ABI already exists.  
 10. **S11** `docs/THREAT_MODEL.md`.
 
-### Wave 5 — Do not start until explicitly unblocked
+### Wave 5 — Unblocked 2026-08-23 (see `docs/internal/UNBLOCKED-MIGRATION.md`)
 
-- **D2** LLVM 8→18 (forbidden by `.cursorrules`).  
-- Full **T1/T2** ARM64/RISC-V lifters (weeks).  
-- **P2** Python bindings (needs P1).  
-- **X1–X8** research.  
-- Physical move of 7k LOC GPU trees.  
-- Re-enabling `RETDEC_NEURAL_BATCH`.
+Sequence, not one PR:
+
+1. **Pointer MD on LLVM 8** — `retdec.pointee` via existing `setMetadata` (`insn.addr` pattern). No pin change.
+2. **LLVM pin** — one `cmake/deps.cmake` URL/SHA to latest upstream (~22). Never edit `deps/llvm/`. Legacy PM → new PM is part of that branch.
+3. **SSA `Rem` / `Lock`** — public `IrInstr::Op` (explicitly scoped). Then ring `%` wrap and A8 lock-prefix. Do not invent opcodes until this header change lands.
+4. **C parser dep** — tree-sitter-c or libclang URL/SHA in `cmake/deps.cmake` only. Then N10, then N18 topological refine.
+5. **N17 per-id / N19 / real batch** — llama.cpp APIs at the pin; no flag without an implementation.
+6. **T1/T2** ARM64 complete + RISC-V lifter (weeks).
+7. **P1 C ABI** then **P2** Python.
+8. **A4 fit** can start now (`scripts/ci/run_a4_calibration.py`, `fitted=false`).
+
+GPU tree move and X1–X8 stay organizational / research.
 
 ---
 

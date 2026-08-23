@@ -2,8 +2,8 @@
 
 ## Hard boundaries
 
-- NEVER touch `deps/llvm/` or attempt an LLVM version bump.
-- NEVER modify `deps/` except pinned URL and SHA-256 lines in `cmake/deps.cmake`.
+- NEVER edit files under `deps/llvm/` (in-tree copy). The only legal LLVM pin change is the URL and SHA-256 pair in `cmake/deps.cmake`.
+- LLVM version bumps are allowed only as an explicitly scoped task (see `docs/internal/UNBLOCKED-MIGRATION.md`). One pin change per commit. Do not drive-by bump. Snapshot `retdec.pointee` metadata on the LLVM 8 pin before moving the URL.
 - NEVER change a public header to make an implementation compile.
 - NEVER edit files not named in the current task prompt.
 - NEVER delete, disable, SKIP, DISABLED_-prefix, or loosen a test. A failing test is a finding — report it.

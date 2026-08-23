@@ -154,7 +154,7 @@ Decisions already made in this project. Recorded so they stop being re-litigated
 | D1 | Inference backend is llama.cpp, not a hand-written engine | **Settled** |
 | D2 | Model is Qwen3.5-9B GGUF, CPU-capable | **Settled** |
 | D3 | `src/qwen3/` is deleted, not kept as a fallback backend | **Settled** |
-| D4 | LLVM stays on the Avast LLVM 8 fork for this release cycle | **Settled** |
+| D4 | LLVM migration unblocked: keep Avast LLVM 8 until RetDec-owned `retdec.pointee` metadata is the source of truth, then one pin change in `cmake/deps.cmake` to latest upstream (~22). Never edit `deps/llvm/`. | **Unblocked 2026-08-23** |
 | D5 | Licence set condensed to LICENSE / LICENSE-AGPL / LICENSE-COMMERCIAL / NOTICE | **Settled** |
 | D6 | Neural output is gated and never replaces the deterministic artefact | **Settled** |
 | D7 | Product positioning: pseudocode decompiler, or specification-extraction tool? | **Settled — (b) specification-extraction** ([docs/internal/D7_DECISION.md](docs/internal/D7_DECISION.md)) |
@@ -337,13 +337,13 @@ Rebuild with `scripts/retdec-signature-from-library-creator.py` against current 
 
 **This is probably the highest accuracy-per-effort item in the entire document.** It is a scripted regeneration, not research.
 
-### 7.3 The LLVM wall **[H]** — deferred, with reason
+### 7.3 The LLVM wall **[H]** — unblocked; snapshot first
 
-Do not attempt in this cycle. Put `deps/llvm/` in `.cursorrules` as forbidden, because on a broad "modernise dependencies" prompt Composer will try.
+User-unblocked 2026-08-23. Full sequence: [`UNBLOCKED-MIGRATION.md`](UNBLOCKED-MIGRATION.md).
 
-The non-obvious reason for deferring: from LLVM 17, **opaque pointers** remove pointee types from the IR. For a compiler that is a simplification. For a decompiler it deletes exactly the information you are trying to recover. Migrating today would plausibly make your output *worse*.
+From LLVM 17, **opaque pointers** remove pointee types from `ptr`. That is still true. The workaround is **not** “wait for Retypd only”: on the current LLVM 8 pin, copy every `getPointerElementType()` fact into RetDec-owned instruction metadata (`retdec.pointee`, same attachment pattern as `insn.addr`). Load/store and type recovery read that MD first, then fall back to typed pointers. After the pin moves, only MD remains.
 
-That blocker lifts once Retypd lands (Part 9), because a constraint-based type system recovers types from use patterns rather than IR annotations. **Sequence: Retypd first, LLVM second.** Doing it the other way means fighting a regression you caused yourself.
+Still never edit `deps/llvm/`. One URL/SHA change in `cmake/deps.cmake` per commit, and only after MD is the source of truth. Retypd (Part 9) remains useful for use-based recovery; it is no longer the gate on starting the snapshot.
 ---
 
 ## Part 8 — Phase 4: Neural refinement
@@ -665,7 +665,7 @@ Process matters as much as plan. This section is what makes a cheap model on a l
 
 Already written. Install before anything else. Its four load-bearing sections:
 
-**Hard boundaries** — never touch `deps/llvm/`, never attempt an LLVM bump, never modify `deps/` outside pinned URL and SHA lines, never change a public header to make an implementation compile, never edit unnamed files.
+**Hard boundaries** — never edit `deps/llvm/` in-tree; LLVM pin changes are URL/SHA in `cmake/deps.cmake` only, one per commit, after `retdec.pointee` is the source of truth (`UNBLOCKED-MIGRATION.md`). Never change a public header to make an implementation compile. Never edit unnamed files.
 
 **Verification** — build after every C++ edit; on breakage stop and report the first error verbatim rather than attempting a third repair; never claim complete without pasting ctest output.
 

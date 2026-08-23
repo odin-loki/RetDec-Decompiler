@@ -48,10 +48,15 @@ bool isStringArrayPointeType(const llvm::Type* t);
 llvm::Type* stringToLlvmType(llvm::LLVMContext& ctx, const std::string& str);
 llvm::Type* stringToLlvmTypeDefault(llvm::Module* m, const std::string& str);
 
-std::vector<llvm::Type*> parseFormatString(
-		llvm::Module* module,
-		const std::string& format,
-		llvm::Function* calledFnc = nullptr);
+/// LLVM 8 pointee snapshot (opaque-pointer port). Kind `retdec.pointee`.
+/// Same attachment pattern as `insn.addr`. See UNBLOCKED-MIGRATION.md.
+void setPointeeTypeMetadata(llvm::Instruction* i, llvm::Type* pointee);
+llvm::Type* getPointeeTypeMetadata(const llvm::Instruction* i);
+/// Metadata first; then `PointerType::getElementType()` on LLVM 8.
+llvm::Type* pointeeType(llvm::Value* v);
+
+std::vector<llvm::Type*>
+parseFormatString(llvm::Module* module, const std::string& format, llvm::Function* calledFnc = nullptr);
 
 } // namespace llvm_utils
 } // namespace bin2llvmir

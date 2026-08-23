@@ -8,6 +8,14 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover: LLVM 8 typed-pointer facts can be stored as
+  instruction metadata kind `retdec.pointee` (same `setMetadata`
+  pattern as `insn.addr`). Helpers
+  `llvm_utils::setPointeeTypeMetadata` /
+  `getPointeeTypeMetadata` / `pointeeType` read MD first, then
+  fall back to `PointerType::getElementType`. The Avast LLVM 8 pin
+  is unchanged. Test: `LlvmUtilsTests.PointeeMetadataRoundTrips`.
+  See `docs/internal/UNBLOCKED-MIGRATION.md`.
 - CI leftover: stem-fallback now treats graph-family FPs
   (`DFS` / `BFS` / `GraphTraversal`) like other cross-family
   noise, so `generated_quicksort` is not stuck at F1=0 when

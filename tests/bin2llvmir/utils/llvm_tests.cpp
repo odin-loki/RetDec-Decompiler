@@ -12,9 +12,9 @@
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
 
-#include "retdec/utils/string.h"
 #include "bin2llvmir/utils/llvmir_tests.h"
 #include "retdec/bin2llvmir/utils/llvm.h"
+#include "retdec/utils/string.h"
 
 using namespace ::testing;
 using namespace llvm;
@@ -24,10 +24,7 @@ namespace bin2llvmir {
 namespace llvm_utils {
 namespace tests {
 
-class LlvmUtilsTests : public retdec::bin2llvmir::tests::LlvmIrTests
-{
-
-};
+class LlvmUtilsTests : public retdec::bin2llvmir::tests::LlvmIrTests {};
 
 //
 // stringToLlvmType()
@@ -58,106 +55,59 @@ TEST_F(LlvmUtilsTests, stringToLlvmTypeCreatesPrimitiveTypes)
 
 TEST_F(LlvmUtilsTests, stringToLlvmTypeCreatesPointerTypes)
 {
-	EXPECT_EQ(
-			PointerType::get(
-					Type::getInt32Ty(context),
-					Abi::DEFAULT_ADDR_SPACE),
-			stringToLlvmType(context, "i32*"));
+	EXPECT_EQ(PointerType::get(Type::getInt32Ty(context), Abi::DEFAULT_ADDR_SPACE), stringToLlvmType(context, "i32*"));
 
 	EXPECT_EQ(
-			PointerType::get(
-					PointerType::get(
-							Type::getDoubleTy(context),
-							Abi::DEFAULT_ADDR_SPACE),
-					Abi::DEFAULT_ADDR_SPACE),
-			stringToLlvmType(context, "double**"));
+		PointerType::get(
+			PointerType::get(Type::getDoubleTy(context), Abi::DEFAULT_ADDR_SPACE), Abi::DEFAULT_ADDR_SPACE),
+		stringToLlvmType(context, "double**"));
 }
 
 TEST_F(LlvmUtilsTests, stringToLlvmTypeCreatesArrayTypes)
 {
-	EXPECT_EQ(
-			ArrayType::get(
-					Type::getInt32Ty(context),
-					10),
-			stringToLlvmType(context, "[10 x i32]"));
+	EXPECT_EQ(ArrayType::get(Type::getInt32Ty(context), 10), stringToLlvmType(context, "[10 x i32]"));
 
 	EXPECT_EQ(
-			ArrayType::get(
-					ArrayType::get(
-							Type::getDoubleTy(context),
-							20 ),
-					10),
-			stringToLlvmType(context, "[10 x [20 x double]]"));
+		ArrayType::get(ArrayType::get(Type::getDoubleTy(context), 20), 10),
+		stringToLlvmType(context, "[10 x [20 x double]]"));
 }
 
 TEST_F(LlvmUtilsTests, stringToLlvmTypeCreatesVectorTypes)
 {
-	EXPECT_EQ(
-			VectorType::get(
-					Type::getInt32Ty(context),
-					10),
-			stringToLlvmType(context, "<10 x i32>"));
+	EXPECT_EQ(VectorType::get(Type::getInt32Ty(context), 10), stringToLlvmType(context, "<10 x i32>"));
 }
 
 TEST_F(LlvmUtilsTests, stringToLlvmTypeOnlyPrimitiveTypesCanBeVectorTypeElements)
 {
-	EXPECT_EQ(
-			nullptr,
-			stringToLlvmType(context, "<10 x [20 x double]>"));
+	EXPECT_EQ(nullptr, stringToLlvmType(context, "<10 x [20 x double]>"));
 }
 
 TEST_F(LlvmUtilsTests, stringToLlvmTypeCreatesFunctionTypes)
 {
-	EXPECT_EQ(
-		FunctionType::get(
-				Type::getVoidTy(context),
-				{},
-				false),
-		stringToLlvmType(context, "void ()"));
+	EXPECT_EQ(FunctionType::get(Type::getVoidTy(context), {}, false), stringToLlvmType(context, "void ()"));
+
+	EXPECT_EQ(FunctionType::get(Type::getDoubleTy(context), {}, false), stringToLlvmType(context, "double ()"));
+
+	EXPECT_EQ(FunctionType::get(Type::getDoubleTy(context), {}, true), stringToLlvmType(context, "double (...)"));
 
 	EXPECT_EQ(
-		FunctionType::get(
-				Type::getDoubleTy(context),
-				{},
-				false),
-		stringToLlvmType(context, "double ()"));
-
-	EXPECT_EQ(
-		FunctionType::get(
-				Type::getDoubleTy(context),
-				{},
-				true),
-		stringToLlvmType(context, "double (...)"));
-
-	EXPECT_EQ(
-		FunctionType::get(
-				Type::getDoubleTy(context),
-				{Type::getIntNTy(context, 32)},
-				false),
+		FunctionType::get(Type::getDoubleTy(context), {Type::getIntNTy(context, 32)}, false),
 		stringToLlvmType(context, "double (i32)"));
 
 	EXPECT_EQ(
 		FunctionType::get(
-				Type::getDoubleTy(context),
-				std::vector<Type*>{
-						Type::getIntNTy(context, 32),
-						PointerType::get(
-								Type::getDoubleTy(context),
-								Abi::DEFAULT_ADDR_SPACE)
-				},
-				false),
+			Type::getDoubleTy(context),
+			std::vector<Type*>{
+				Type::getIntNTy(context, 32), PointerType::get(Type::getDoubleTy(context), Abi::DEFAULT_ADDR_SPACE)},
+			false),
 		stringToLlvmType(context, "double (i32, double*)"));
 
 	EXPECT_EQ(
 		FunctionType::get(
-				Type::getDoubleTy(context),
-				std::vector<Type*>{
-						Type::getIntNTy(context, 32),
-						PointerType::get(
-								Type::getDoubleTy(context),
-								Abi::DEFAULT_ADDR_SPACE)
-				},
-				true),
+			Type::getDoubleTy(context),
+			std::vector<Type*>{
+				Type::getIntNTy(context, 32), PointerType::get(Type::getDoubleTy(context), Abi::DEFAULT_ADDR_SPACE)},
+			true),
 		stringToLlvmType(context, "double (i32, double*, ...)"));
 }
 
@@ -178,23 +128,15 @@ TEST_F(LlvmUtilsTests, stringToLlvmTypeCreatesStructureTypes)
 {
 	EXPECT_EQ(
 		StructType::get(
-				context,
-				std::vector<Type*>{
-						Type::getIntNTy(context, 32),
-						Type::getDoubleTy(context),
-						Type::getFloatTy(context)
-				}),
+			context,
+			std::vector<Type*>{Type::getIntNTy(context, 32), Type::getDoubleTy(context), Type::getFloatTy(context)}),
 		stringToLlvmType(context, "{i32, double, float}"));
 
 	EXPECT_EQ(
 		StructType::get(
-				context,
-				std::vector<Type*>{
-						Type::getIntNTy(context, 32),
-						Type::getDoubleTy(context),
-						Type::getFloatTy(context)
-				},
-				true),
+			context,
+			std::vector<Type*>{Type::getIntNTy(context, 32), Type::getDoubleTy(context), Type::getFloatTy(context)},
+			true),
 		stringToLlvmType(context, "<{i32, double, float}>"));
 
 	auto* t1 = stringToLlvmType(context, "%s1 = type {i32, double, float}");
@@ -253,8 +195,8 @@ TEST_F(LlvmUtilsTests, stringToLlvmTypeCreatesComplicatedType)
 	// We should handle everything.
 	//
 	std::string str =
-			"{i16*, i32**, {i16, {i32(float, double)*}, half}*, "
-			"[10xi32({float,double})*]}*";
+		"{i16*, i32**, {i16, {i32(float, double)*}, half}*, "
+		"[10xi32({float,double})*]}*";
 	auto* t = stringToLlvmType(context, str);
 	ASSERT_NE(nullptr, t);
 
@@ -263,9 +205,7 @@ TEST_F(LlvmUtilsTests, stringToLlvmTypeCreatesComplicatedType)
 	t->print(ros);
 	ros.str();
 
-	EXPECT_EQ(
-			retdec::utils::removeWhitespace(str),
-			retdec::utils::removeWhitespace(out));
+	EXPECT_EQ(retdec::utils::removeWhitespace(str), retdec::utils::removeWhitespace(out));
 }
 
 TEST_F(LlvmUtilsTests, stringToLlvmTypeReturnsAlreadyExistingTypeForStructureId)
@@ -316,9 +256,33 @@ TEST_F(LlvmUtilsTests, stringToLlvmTypeReturnNullWhenInvalidElementTypesAreUsed)
 
 TEST_F(LlvmUtilsTests, stringToLlvmTypeCanHandlePointerToVoid)
 {
-	EXPECT_EQ(
-			PointerType::get(Type::getInt8Ty(context), 0),
-			stringToLlvmType(context, "void*"));
+	EXPECT_EQ(PointerType::get(Type::getInt8Ty(context), 0), stringToLlvmType(context, "void*"));
+}
+
+TEST_F(LlvmUtilsTests, PointeeMetadataRoundTrips)
+{
+	parseInput(R"(
+		define void @fnc() {
+			%a = alloca i32
+			%v = load i32, i32* %a
+			ret void
+		}
+	)");
+	auto* f = getFunctionByName("fnc");
+	ASSERT_NE(nullptr, f);
+	auto it = f->front().begin();
+	auto* alloca = dyn_cast<AllocaInst>(&*it);
+	ASSERT_NE(nullptr, alloca);
+	++it;
+	auto* load = dyn_cast<LoadInst>(&*it);
+	ASSERT_NE(nullptr, load);
+
+	auto* i32 = Type::getInt32Ty(context);
+	EXPECT_EQ(i32, pointeeType(alloca));
+
+	setPointeeTypeMetadata(load, i32);
+	EXPECT_EQ(i32, getPointeeTypeMetadata(load));
+	EXPECT_EQ(i32, pointeeType(load));
 }
 
 //
@@ -328,18 +292,18 @@ TEST_F(LlvmUtilsTests, stringToLlvmTypeCanHandlePointerToVoid)
 TEST_F(LlvmUtilsTests, parseFormatStringBasic)
 {
 	std::string format =
-			"this"
-			"%d %i %o %u %x %X "
-			"normal"
-			"%f %F %e %E %g %G %a %A "
-			"text"
-			"%c %C "
-			"should"
-			"%s %S "
-			"be"
-			"%p %n "
-			"skipped"
-			"%%";
+		"this"
+		"%d %i %o %u %x %X "
+		"normal"
+		"%f %F %e %E %g %G %a %A "
+		"text"
+		"%c %C "
+		"should"
+		"%s %S "
+		"be"
+		"%p %n "
+		"skipped"
+		"%%";
 	auto& ctx = module->getContext();
 	auto ret = parseFormatString(module.get(), format);
 

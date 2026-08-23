@@ -8,10 +8,13 @@
 #include <fstream>
 #include <regex>
 
-#include <llvm/Support/Casting.h>
 #include <llvm/../../lib/IR/LLVMContextImpl.h>
+#include <llvm/Support/Casting.h>
+
+#include <llvm/IR/Metadata.h>
 
 #include "retdec/bin2llvmir/providers/abi/abi.h"
+#include "retdec/bin2llvmir/utils/debug.h"
 #include "retdec/bin2llvmir/utils/llvm.h"
 #include "retdec/utils/conversion.h"
 #include "retdec/utils/string.h"
@@ -45,8 +48,7 @@ llvm::Value* skipCasts(llvm::Value* val)
 		}
 		else if (auto* ce = dyn_cast_or_null<ConstantExpr>(val))
 		{
-			if (ce->isCast()
-					|| ce->getOpcode() == Instruction::GetElementPtr)
+			if (ce->isCast() || ce->getOpcode() == Instruction::GetElementPtr)
 			{
 				val = ce->getOperand(0);
 			}
@@ -62,6 +64,61 @@ llvm::Value* skipCasts(llvm::Value* val)
 	}
 
 	return val;
+}
+
+namespace {
+
+const char kPointeeMDKind[] = "retdec.pointee";
+
+} // namespace
+
+void setPointeeTypeMetadata(llvm::Instruction* i, llvm::Type* pointee)
+{
+	if (!i || !pointee)
+	{
+		return;
+	}
+	auto* md = llvm::MDNode::get(i->getContext(), {llvm::MDString::get(i->getContext(), llvmObjToString(pointee))});
+	i->setMetadata(kPointeeMDKind, md);
+}
+
+llvm::Type* getPointeeTypeMetadata(const llvm::Instruction* i)
+{
+	if (!i)
+	{
+		return nullptr;
+	}
+	auto* mdn = i->getMetadata(kPointeeMDKind);
+	if (!mdn || mdn->getNumOperands() < 1)
+	{
+		return nullptr;
+	}
+	auto* mds = llvm::dyn_cast<llvm::MDString>(mdn->getOperand(0));
+	if (!mds)
+	{
+		return nullptr;
+	}
+	return stringToLlvmType(i->getContext(), mds->getString().str());
+}
+
+llvm::Type* pointeeType(llvm::Value* v)
+{
+	if (!v)
+	{
+		return nullptr;
+	}
+	if (auto* i = dyn_cast<Instruction>(v))
+	{
+		if (auto* t = getPointeeTypeMetadata(i))
+		{
+			return t;
+		}
+	}
+	if (auto* pt = dyn_cast<PointerType>(v->getType()))
+	{
+		return pt->getElementType();
+	}
+	return nullptr;
 }
 
 //
@@ -136,19 +193,12 @@ llvm::Type* stringToLlvmTypeDefault(llvm::Module* m, const std::string& str)
  * @param[out] typeList Output vector to fill.
  * @return @c False if parsing was successful, @c true otherwise.
  */
-bool parseTypeList(
-		LLVMContext& ctx,
-		std::string list,
-		std::vector<Type*>& typeList)
+bool parseTypeList(LLVMContext& ctx, std::string list, std::vector<Type*>& typeList)
 {
 	while (!list.empty())
 	{
 		size_t pos = 0;
-		if (retdec::utils::findFirstInEmbeddedLists(
-				pos,
-				list,
-				',',
-				{ {'{','}'}, {'(',')'} }))
+		if (retdec::utils::findFirstInEmbeddedLists(pos, list, ',', {{'{', '}'}, {'(', ')'}}))
 		{
 			return true;
 		}
@@ -157,7 +207,7 @@ bool parseTypeList(
 		if (pos == std::string::npos)
 			list.erase(0, pos);
 		else
-			list.erase(0, pos+1);
+			list.erase(0, pos + 1);
 
 		auto* elemType = stringToLlvmType(ctx, elemStr);
 		if (elemType == nullptr)
@@ -196,16 +246,26 @@ Type* stringToLlvmType(LLVMContext& ctx, const std::string& str)
 
 	// Primitive types: <keyword>.
 	//
-	if (s=="void") return Type::getVoidTy(ctx);
-	else if (s=="label") return Type::getLabelTy(ctx);
-	else if (s=="half") return Type::getHalfTy(ctx);
-	else if (s=="float") return Type::getFloatTy(ctx);
-	else if (s=="double") return Type::getDoubleTy(ctx);
-	else if (s=="metadata") return Type::getMetadataTy(ctx);
-	else if (s=="x86_fp80") return Type::getX86_FP80Ty(ctx);
-	else if (s=="fp128") return Type::getFP128Ty(ctx);
-	else if (s=="ppc_fp128") return Type::getPPC_FP128Ty(ctx);
-	else if (s=="x86_mmx") return Type::getX86_MMXTy(ctx);
+	if (s == "void")
+		return Type::getVoidTy(ctx);
+	else if (s == "label")
+		return Type::getLabelTy(ctx);
+	else if (s == "half")
+		return Type::getHalfTy(ctx);
+	else if (s == "float")
+		return Type::getFloatTy(ctx);
+	else if (s == "double")
+		return Type::getDoubleTy(ctx);
+	else if (s == "metadata")
+		return Type::getMetadataTy(ctx);
+	else if (s == "x86_fp80")
+		return Type::getX86_FP80Ty(ctx);
+	else if (s == "fp128")
+		return Type::getFP128Ty(ctx);
+	else if (s == "ppc_fp128")
+		return Type::getPPC_FP128Ty(ctx);
+	else if (s == "x86_mmx")
+		return Type::getX86_MMXTy(ctx);
 	else if (std::regex_match(s, match, regexInt))
 	{
 		unsigned intBits = 0;
@@ -230,9 +290,7 @@ Type* stringToLlvmType(LLVMContext& ctx, const std::string& str)
 		//
 		if (t && t->isVoidTy())
 		{
-			return PointerType::get(
-					Type::getInt8Ty(ctx),
-					Abi::DEFAULT_ADDR_SPACE);
+			return PointerType::get(Type::getInt8Ty(ctx), Abi::DEFAULT_ADDR_SPACE);
 		}
 
 		if (t == nullptr || !PointerType::isValidElementType(t))
@@ -251,11 +309,7 @@ Type* stringToLlvmType(LLVMContext& ctx, const std::string& str)
 		{
 			auto d = n > 0 ? n : 1;
 			auto* t = stringToLlvmType(ctx, match[2]);
-			return t == nullptr ?
-					t :
-					ArrayType::isValidElementType(t) ?
-							ArrayType::get(t, d) :
-							nullptr;
+			return t == nullptr ? t : ArrayType::isValidElementType(t) ? ArrayType::get(t, d) : nullptr;
 		}
 		else
 		{
@@ -271,11 +325,7 @@ Type* stringToLlvmType(LLVMContext& ctx, const std::string& str)
 		if (retdec::utils::strToNum(match[1], n))
 		{
 			auto* t = stringToLlvmType(ctx, match[2]);
-			return t == nullptr ?
-					t :
-					VectorType::isValidElementType(t) ?
-							VectorType::get( t, n ) :
-							nullptr;
+			return t == nullptr ? t : VectorType::isValidElementType(t) ? VectorType::get(t, n) : nullptr;
 		}
 		else
 		{
@@ -298,7 +348,7 @@ Type* stringToLlvmType(LLVMContext& ctx, const std::string& str)
 		static std::regex regexVariadic(R"(.*,\.\.\.)");
 		if (std::regex_match(paramList, regexVariadic))
 		{
-			paramList.erase(paramList.length()-4);
+			paramList.erase(paramList.length() - 4);
 			isVarArg = true;
 		}
 		else if (paramList == "...")
@@ -312,10 +362,7 @@ Type* stringToLlvmType(LLVMContext& ctx, const std::string& str)
 		{
 			return nullptr;
 		}
-		if (!std::all_of(
-				args.begin(),
-				args.end(),
-				FunctionType::isValidArgumentType))
+		if (!std::all_of(args.begin(), args.end(), FunctionType::isValidArgumentType))
 		{
 			return nullptr;
 		}
@@ -330,18 +377,14 @@ Type* stringToLlvmType(LLVMContext& ctx, const std::string& str)
 	}
 	// Literal structure.
 	//
-	else if (std::regex_match(s, match, regexLiteralStruct) ||
-	         std::regex_match(s, match, regexLiteralStructPacked))
+	else if (std::regex_match(s, match, regexLiteralStruct) || std::regex_match(s, match, regexLiteralStructPacked))
 	{
 		std::vector<Type*> elems;
 		if (parseTypeList(ctx, match[1], elems))
 		{
 			return nullptr;
 		}
-		if (!std::all_of(
-				elems.begin(),
-				elems.end(),
-				FunctionType::isValidArgumentType))
+		if (!std::all_of(elems.begin(), elems.end(), FunctionType::isValidArgumentType))
 		{
 			return nullptr;
 		}
@@ -355,18 +398,14 @@ Type* stringToLlvmType(LLVMContext& ctx, const std::string& str)
 	}
 	// Identified structure.
 	//
-	else if (std::regex_match(s, match, regexIdStruct) ||
-	         std::regex_match(s, match, regexIdStructPacked))
+	else if (std::regex_match(s, match, regexIdStruct) || std::regex_match(s, match, regexIdStructPacked))
 	{
 		std::vector<Type*> elems;
 		if (parseTypeList(ctx, match[2], elems))
 		{
 			return nullptr;
 		}
-		if (!std::all_of(
-				elems.begin(),
-				elems.end(),
-				FunctionType::isValidArgumentType))
+		if (!std::all_of(elems.begin(), elems.end(), FunctionType::isValidArgumentType))
 		{
 			return nullptr;
 		}
@@ -376,11 +415,7 @@ Type* stringToLlvmType(LLVMContext& ctx, const std::string& str)
 			elems.push_back(Type::getInt32Ty(ctx));
 		}
 
-		return StructType::create(
-				ctx,
-				elems,
-				std::string(match[1]),
-				s.back() == '>');
+		return StructType::create(ctx, elems, std::string(match[1]), s.back() == '>');
 	}
 	// Structure ID.
 	// We need to get to structures that were already added to the current
@@ -421,15 +456,12 @@ Type* stringToLlvmType(LLVMContext& ctx, const std::string& str)
  * differences in floating point numbers:
  * http://www.cplusplus.com/reference/cstdio/scanf/
  */
-std::vector<llvm::Type*> parseFormatString(
-		llvm::Module* module,
-		const std::string& format,
-		llvm::Function* calledFnc)
+std::vector<llvm::Type*> parseFormatString(llvm::Module* module, const std::string& format, llvm::Function* calledFnc)
 {
 	LLVMContext& ctx = module->getContext();
 	std::vector<Type*> ret;
 
-	const char *cp = format.c_str();
+	const char* cp = format.c_str();
 	size_t max_width_length = 0;
 	size_t max_precision_length = 0;
 
@@ -445,16 +477,18 @@ std::vector<llvm::Type*> parseFormatString(
 		//
 		if (*cp >= '0' && *cp <= '9')
 		{
-			const char *np;
+			const char* np;
 
-			for (np = cp; *np >= '0' && *np <= '9'; np++) {};
+			for (np = cp; *np >= '0' && *np <= '9'; np++)
+			{
+			};
 
 			if (*np == '$')
 			{
 				size_t n = 0;
 				for (np = cp; *np >= '0' && *np <= '9'; np++)
 				{
-					n += n*10 + *np - '0';
+					n += n * 10 + *np - '0';
 				}
 				if (n == 0) // Positional argument 0.
 				{
@@ -511,9 +545,11 @@ std::vector<llvm::Type*> parseFormatString(
 			// Test for positional argument.
 			if (*cp >= '0' && *cp <= '9')
 			{
-				const char *np;
+				const char* np;
 
-				for (np = cp; *np >= '0' && *np <= '9'; np++) {};
+				for (np = cp; *np >= '0' && *np <= '9'; np++)
+				{
+				};
 
 				if (*np == '$')
 				{
@@ -534,7 +570,9 @@ std::vector<llvm::Type*> parseFormatString(
 		}
 		else if (*cp >= '0' && *cp <= '9')
 		{
-			for (; *cp >= '0' && *cp <= '9'; cp++) {}; // skipping
+			for (; *cp >= '0' && *cp <= '9'; cp++)
+			{
+			}; // skipping
 		}
 
 		// Parse the precision.
@@ -553,9 +591,11 @@ std::vector<llvm::Type*> parseFormatString(
 				// Test for positional argument.
 				if (*cp >= '0' && *cp <= '9')
 				{
-					const char *np;
+					const char* np;
 
-					for (np = cp; *np >= '0' && *np <= '9'; np++) {};
+					for (np = cp; *np >= '0' && *np <= '9'; np++)
+					{
+					};
 
 					if (*np == '$')
 					{
@@ -576,7 +616,9 @@ std::vector<llvm::Type*> parseFormatString(
 			}
 			else
 			{
-				for (; *cp >= '0' && *cp <= '9'; cp++) {}; // skipping
+				for (; *cp >= '0' && *cp <= '9'; cp++)
+				{
+				}; // skipping
 			}
 		}
 
@@ -657,112 +699,114 @@ std::vector<llvm::Type*> parseFormatString(
 		c = *cp++;
 		switch (c)
 		{
-			case 'd':
-			case 'i':
+		case 'd':
+		case 'i': {
+			if (flags >= 16 || (flags & 4))
 			{
-				if (flags >= 16 || (flags & 4))
-				{
-					type = Type::getInt64Ty(ctx);
-				}
+				type = Type::getInt64Ty(ctx);
+			}
+			else
+			{
+				if (flags >= 8)
+					type = Type::getInt32Ty(ctx);
+				else if (flags & 2)
+					type = Type::getInt8Ty(ctx);
+				else if (flags & 1)
+					type = Type::getInt16Ty(ctx);
 				else
-				{
-					if (flags >= 8) type = Type::getInt32Ty(ctx);
-					else if (flags & 2) type = Type::getInt8Ty(ctx);
-					else if (flags & 1) type = Type::getInt16Ty(ctx);
-					else type = Abi::getDefaultType(module);
-				}
-				break;
+					type = Abi::getDefaultType(module);
 			}
-			case 'o':
-			case 'u':
-			case 'x':
-			case 'X':
+			break;
+		}
+		case 'o':
+		case 'u':
+		case 'x':
+		case 'X': {
+			if (flags >= 16 || (flags & 4))
 			{
-				if (flags >= 16 || (flags & 4))
-				{
-					type = Type::getInt64Ty(ctx);
-				}
+				type = Type::getInt64Ty(ctx);
+			}
+			else
+			{
+				if (flags >= 8)
+					type = Type::getInt32Ty(ctx);
+				else if (flags & 2)
+					type = Type::getInt8Ty(ctx);
+				else if (flags & 1)
+					type = Type::getInt16Ty(ctx);
 				else
-				{
-					if (flags >= 8) type = Type::getInt32Ty(ctx);
-					else if (flags & 2) type = Type::getInt8Ty(ctx);
-					else if (flags & 1) type = Type::getInt16Ty(ctx);
-					else type = Type::getInt32Ty(ctx);
-				}
-				break;
+					type = Type::getInt32Ty(ctx);
 			}
-			case 'f':
-			case 'F':
-			case 'e':
-			case 'E':
-			case 'g':
-			case 'G':
-			case 'a':
-			case 'A':
+			break;
+		}
+		case 'f':
+		case 'F':
+		case 'e':
+		case 'E':
+		case 'g':
+		case 'G':
+		case 'a':
+		case 'A': {
+			if (flags >= 16 || (flags & 4))
 			{
-				if (flags >= 16 || (flags & 4))
-				{
-					type = Type::getX86_FP80Ty(ctx);
-				}
+				type = Type::getX86_FP80Ty(ctx);
+			}
+			else
+			{
+				type = Type::getDoubleTy(ctx);
+			}
+			break;
+		}
+		case 'c': {
+			type = Type::getInt8Ty(ctx);
+			break;
+		}
+		case 'C': {
+			type = Type::getInt8Ty(ctx);
+			c = 'c';
+			break;
+		}
+		case 's': {
+			type = llvm_utils::getCharPointerType(ctx);
+			break;
+		}
+		case 'S': {
+			type = llvm_utils::getCharPointerType(ctx);
+			c = 's';
+			break;
+		}
+		case 'p': {
+			type = Abi::getDefaultPointerType(module);
+			break;
+		}
+		case 'n': {
+			if (flags >= 16 || (flags & 4))
+			{
+				type = PointerType::get(Type::getInt64Ty(ctx), 0);
+			}
+			else
+			{
+				if (flags >= 8)
+					type = Type::getInt32Ty(ctx);
+				else if (flags & 2)
+					type = Type::getInt8Ty(ctx);
+				else if (flags & 1)
+					type = Type::getInt16Ty(ctx);
 				else
-				{
-					type = Type::getDoubleTy(ctx);
-				}
-				break;
+					type = Type::getInt32Ty(ctx);
+				type = PointerType::get(type, 0);
 			}
-			case 'c':
-			{
-				type = Type::getInt8Ty(ctx);
-				break;
-			}
-			case 'C':
-			{
-				type = Type::getInt8Ty(ctx);
-				c = 'c';
-				break;
-			}
-			case 's':
-			{
-				type = llvm_utils::getCharPointerType(ctx);
-				break;
-			}
-			case 'S':
-			{
-				type = llvm_utils::getCharPointerType(ctx);
-				c = 's';
-				break;
-			}
-			case 'p':
-			{
-				type = Abi::getDefaultPointerType(module);
-				break;
-			}
-			case 'n':
-			{
-				if (flags >= 16 || (flags & 4))
-				{
-					type = PointerType::get(Type::getInt64Ty(ctx), 0);
-				}
-				else
-				{
-					if (flags >= 8) type = Type::getInt32Ty(ctx);
-					else if (flags & 2) type = Type::getInt8Ty(ctx);
-					else if (flags & 1) type = Type::getInt16Ty(ctx);
-					else type = Type::getInt32Ty(ctx);
-					type = PointerType::get(type, 0);
-				}
-				break;
-			}
-			case '%':
-			{
-				type = nullptr;
-				break;
-			}
-			default: // Unknown conversion character.
-			{
-				type = Abi::getDefaultType(module);
-				break;
-			}
+			break;
+		}
+		case '%': {
+			type = nullptr;
+			break;
+		}
+		default: // Unknown conversion character.
+		{
+			type = Abi::getDefaultType(module);
+			break;
+		}
 		}
 
 		if (type)

@@ -1,0 +1,209 @@
+# Unblocked migration (2026-08-23)
+
+User-scoped: unlock the Wave 5 hard blocks, move Clang/LLVM to latest
+upstream, and **port LLVM 8 typed-pointer facts into RetDec-owned
+metadata** so opaque pointers do not delete type recovery.
+
+This file is the working plan. Inventories are from in-repo search
+(`src/`, `include/`, `tests/` — not `deps/llvm/`). Do not invent APIs.
+
+## Non-negotiables
+
+- Never edit files under `deps/llvm/`. Pin changes are URL + SHA-256
+  in `cmake/deps.cmake` only. One pin per commit.
+- Do not bump LLVM until `retdec.pointee` is the source of truth for
+  load/store/type recovery (MD first, typed-pointer fallback second).
+- One algorithm / one family per commit. Public `IrInstr::Op` changes
+  are explicitly scoped here and still get their own commit.
+- Never delete, SKIP, or loosen a test. Official `MIN_MEAN_F1=0.95`
+  stays. Name-blind product F1 stays 0.056 / ci-core 0.126.
+- Default F5 decompile path stays unchanged unless the user opts in.
+- Build after every C++ edit.
+
+## Current LLVM pin (do not change in Track 1)
+
+| Field | Value |
+|-------|--------|
+| URL | `https://github.com/avast/llvm/archive/a776c2a976ef64d9cd84d7ee71d0e4a04aa117a1.zip` |
+| Commit | `a776c2a976ef64d9cd84d7ee71d0e4a04aa117a1` |
+| SHA-256 | `b5879b30768135e5fce84ccd8be356d2c55c940ab32ceb22d278b228e88c4c60` |
+
+Avast LLVM 8-era fork, not upstream 8. Clang is **not** a separate pin;
+it lives in that monorepo. Host `clang-18` in toolchains is the
+**compiler that builds RetDec**, not the IR library.
+
+`llvm::` appears in **373** files (367 excluding docs). Older note
+said 314. There is **no** `RETDEC_LLVM_NEXT` flag. Do not add one as
+a drive-by.
+
+Pass manager is **legacy only**: `llvm::legacy::PassManager` in
+`src/retdec/retdec.cpp` (disassemble / decompile / decompileToLlvmIr),
+`RegisterPass<>` (~40 sites), JSON names in
+`src/retdec-decompiler/decompiler-config.json` and `profiles/*.json`.
+Zero `PassBuilder` / new PM usage.
+
+Target pin after MD lands: **latest upstream LLVM/Clang (~22.x)**,
+one URL/SHA. Not LLVM 18.
+
+---
+
+## Track 1 — Port pointer metadata (LLVM 8, first)
+
+Opaque pointers (mandatory LLVM 17) delete `T*` pointee types.
+RetDec still reads them. Port = copy those facts into IR metadata
+**while LLVM 8 still has them**.
+
+### Existing hook (do not invent a new public MD API)
+
+Same pattern as `insn.addr` / `x87.depth`:
+
+| Kind | Set | Read |
+|------|-----|------|
+| `insn.addr` | `asm_inst_remover.cpp`, `phi_remover.cpp` | `jump_table_recovery.cpp`, `LLVMSupport::getInstAddress` |
+| `x87.depth` | `x87_fpu_ext.cpp` | write-only today |
+| `retdec.addr` | never set | orphan reader in `llvm_to_ssa.cpp` |
+| **`retdec.pointee`** | `llvm_utils::setPointeeTypeMetadata` | `getPointeeTypeMetadata` / `pointeeType` |
+
+Helpers live in existing `include/retdec/bin2llvmir/utils/llvm.h`
+(type-utils module). Payload is an `MDString` of the LLVM type print
+(`llvmObjToString`), parsed back with existing `stringToLlvmType`.
+
+Named globals/stack already store types via
+`common::Object::type.setLlvmIr` (`object.h`). That does **not**
+cover arbitrary SSA pointer values. `IrModifier::getGlobalVariable(...,
+preferredPointeeType)` covers globals only.
+
+No TBAA / `!deref` attachment exists in RetDec IR today.
+
+### Inventory that must eventually read MD first
+
+| Category | Count | Hottest files |
+|----------|-------|----------------|
+| `getPointerElementType` | 25 | `inst_opt.cpp`, `simple_types.cpp`, `ir_modifier.cpp`, `entry_alloca.cpp`, `abi.cpp` |
+| `PointerType::get(` | 78 | `capstone2llvmir` (x86 21), `param_return`, `llvm.cpp` |
+| Pointer `getElementType` | ~20 | `llvmir2hll` converters, `param_return`, `config.cpp` |
+| Implicit `CreateLoad` | 46 | all `capstone2llvmir` backends |
+| Implicit `CreateStore` | 44 | same |
+| Typed `CreateLoad(type, ptr)` | 1 | `struct_recovery.cpp:371` (already opaque-ready) |
+| GEP create | 2 | `struct_recovery` |
+| `PointerType::isValidElementType` | 4 | `ctypes2llvm`, `ir_modifier`, `llvm.cpp` |
+
+Lifter pattern (typed-pointer dependent):
+
+```
+PointerType::get(lty, 0) → CreateIntToPtr → CreateLoad(addr)
+```
+
+`struct_recovery` is the only bin2llvmir pass already using
+`CreateLoad(type, ptr)`.
+
+### Track 1 commit slices (do not flatten)
+
+1. Helpers + unit test (`set`/`get`/`pointeeType` fallback). **This slice.**
+2. Writers: attach MD at every `IntToPtr` + implicit load/store in
+   `capstone2llvmir` (one arch per commit if the diff is large).
+3. Readers: `getPointerElementType` sites call `pointeeType` first
+   (`simple_types`, `inst_opt`, `ir_modifier`, `entry_alloca`, `abi`).
+4. `llvmir2hll` type/value converters.
+5. Only then consider the LLVM URL bump.
+
+---
+
+## Track 2 — LLVM 8 → ~22 (after Track 1)
+
+1. Full `ctest` green on the LLVM 8 pin with MD readers in place.
+2. Inventory breaking APIs (`scripts/inventory_llvm_apis.sh`); do not
+   guess symbols.
+3. New pass manager: replace `RegisterPass` + `legacy::PassManager` +
+   JSON name lookup. Keep profile JSON pass **names** stable if possible.
+4. Typed `CreateLoad`/`CreateGEP`/`CreateStore` → explicit type operands
+   (LLVM 15+). Lifters already have `lty` in hand.
+5. One `cmake/deps.cmake` URL/SHA to upstream LLVM ~22 (with Clang).
+6. Host toolchain Clang can move with the library pin; keep
+   `clang-format-18` until a format-version commit is scoped.
+
+Retypd (Part 9) still helps use-based recovery. It is **not** a
+prerequisite for starting Track 1.
+
+---
+
+## Track 3 — Other hard blocks (parallel streams)
+
+Each stream is its own commit family. Public headers only when listed.
+
+### 3a SSA opcodes (`include/retdec/ssa/ssa.h` 214–224)
+
+Current: `Assign, Add, Sub, Mul, Div, And, Or, Xor, Not, Neg, Shl,
+Shr, Sar, Ror, Rol, Load, Store, Call, Ret, Branch, CondBranch,
+Compare, FlagWrite, FlagRead, Phi, Undef`.
+
+- `SRem`/`URem`/`FDiv` all map to `Op::Div` (`llvm_to_ssa.cpp` 46–50).
+- No `Rem`, `Lock`, or atomic op.
+- Concurrency today: callee names `__atomic_*` / `__sync_*`, not lock
+  prefix (`concurrency_detect.cpp`, A8 in EXECUTION_PLAN).
+
+**After an explicit `IrInstr::Op` commit:** map `SRem`/`URem` → `Rem`;
+map LLVM atomics / fence to `Lock` (or a dedicated Atomic if the enum
+commit says so). Then ring-buffer `% capacity` (B8 Div-wrap already
+failed FP 0.700 — do not reuse Div). Then A8 lock-prefix / `ldxr`.
+
+### 3b C parser → N10 → N18
+
+No tree-sitter / libclang in `deps/`. `gates.cpp` 384–386: N5 keyword
+scan only; “This is not N10.”
+
+Pin a C parser via `cmake/deps.cmake` URL/SHA only. Then replace the
+N5 shape check. Then N18: callee-before-caller refine (today
+`serializeSemanticContext` dumps callers/callees from `codeReferences`
+only — `decompile_hook.cpp`).
+
+### 3c Neural leftovers
+
+| Item | Status |
+|------|--------|
+| N17 mean selected-token `p` | Done (`inference.h` 39–42). Not per-identifier. |
+| N17 per-id logprob | Blocked on llama.cpp token-level API at the pin. |
+| N19 retrieval | Audit-only. No embedding corpus in `src/neural/`. |
+| `RETDEC_NEURAL_BATCH` | Removed. `BatchRefiner` is sequential. Do not restore the env without `n_seq_max>1` decode. |
+
+### 3d Architectures
+
+- ARM64: lifter exists (`capstone2llvmir/arm64`, ~3k LOC) + partial
+  `bin2llvmir` ABI/CC. Docs: not production e2e (SIMD, atomics,
+  BTI/PAC, corpus).
+- RISC-V: **no** lifter, no `-a riscv`.
+- SPARC / SystemZ / XCore: `create*` stubs throw.
+
+### 3e C ABI / Python
+
+`docs/internal/C_ABI_SKETCH.md` is a sketch. No `libretdec` export.
+P2 waits on P1.
+
+### 3f A4 (can run now)
+
+`scripts/ci/run_a4_calibration.py` + `results/a4-calibration.md`:
+n=160, precision 0, `fitted=false`. Fitting = tune detector constants
+on the B8 100-binary negative corpus. No new opcode.
+
+### 3g Crypto leftovers (not Wave 5)
+
+ECC / BLAKE2 / Poly1305 / Salsa20 remain enum-only. Do not stack more
+SHA-256 K[] / MD5 T[] rows. Do not mix Castagnoli into IEEE CRC.
+
+---
+
+## Honesty
+
+A 0.95 CI F1 pass is the **stem-era** gate, not product quality.
+Name-blind full-216 mean F1 is **0.056**. Do not advertise 1.0.
+
+N17 is mean selected-token probability for the whole generation.
+
+---
+
+## Done in the first slice (this change)
+
+- `.cursorrules` + D4 + Part 7.3 + Wave 5 point at this file.
+- `retdec.pointee` helpers + unit test on the LLVM 8 pin.
+- **No** `cmake/deps.cmake` LLVM URL change.
+- **No** `IrInstr::Op` enum change yet (next scoped commit).
