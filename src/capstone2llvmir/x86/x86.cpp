@@ -1046,9 +1046,7 @@ llvm::Value* Capstone2LlvmIrTranslatorX86_impl::loadOp(
 				llvm::Type* t = ty && ty->isFloatingPointTy()
 						? getFloatTypeFromByteSize(_module, op.size)
 						: getIntegerTypeFromByteSize(_module, op.size);
-				auto* pt = llvm::PointerType::get(t, getAddrSpace(op.mem.segment));
-				addr = irb.CreateIntToPtr(addr, pt);
-				return irb.CreateLoad(addr);
+				return loadIntPtr(irb, addr, t, getAddrSpace(op.mem.segment));
 			}
 		}
 		case X86_OP_INVALID:
@@ -1123,9 +1121,7 @@ llvm::Instruction* Capstone2LlvmIrTranslatorX86_impl::storeOp(
 
 			val = generateTypeConversion(irb, val, tt, ct);
 
-			auto* pt = llvm::PointerType::get(tt, getAddrSpace(op.mem.segment));
-			addr = irb.CreateIntToPtr(addr, pt);
-			return irb.CreateStore(val, addr);
+			return storeIntPtr(irb, val, addr, tt, getAddrSpace(op.mem.segment));
 		}
 		case X86_OP_IMM:
 		case X86_OP_INVALID:

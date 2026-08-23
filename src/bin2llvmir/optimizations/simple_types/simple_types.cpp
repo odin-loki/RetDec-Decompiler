@@ -268,7 +268,7 @@ bool SimpleTypesAnalysis::runOnModule(Module& M)
 
 					if (isWide)
 					{
-						irModif.changeObjectType(objf, glob, glob->getType()->getPointerElementType(), nullptr, &instToErase, false, isWide);
+						irModif.changeObjectType(objf, glob, llvm_utils::pointeeType(glob), nullptr, &instToErase, false, isWide);
 						done = true;
 						break;
 					}
@@ -1563,8 +1563,8 @@ void EqSet::apply(
 			llvm::Value* vsv = vs.value;
 			if (vsv->getType()->isPointerTy())
 			{
-				llvm::Type* ptr = vsv->getType()->getPointerElementType();
-				if (ptr->isPointerTy() || ptr->isArrayTy())
+				llvm::Type* ptr = llvm_utils::pointeeType(vsv);
+				if (!ptr || ptr->isPointerTy() || ptr->isArrayTy())
 				{
 					continue;
 				}
@@ -1629,7 +1629,11 @@ llvm::Type* ValueEntry::getTypeForPropagation() const
 	{
 		if (value->getType()->isPointerTy())
 		{
-			auto* elem = value->getType()->getPointerElementType();
+			auto* elem = llvm_utils::pointeeType(value);
+			if (!elem)
+			{
+				return value->getType();
+			}
 			if (elem->isArrayTy())
 			{
 				return PointerType::get(elem->getArrayElementType(), 0);

@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover: operand `loadOp`/`storeOp` on x86, ARM, ARM64,
+  MIPS, and PowerPC now emit `retdec.pointee` on IntToPtr +
+  load/store via `loadIntPtr`/`storeIntPtr`. Value-based
+  `getPointerElementType` sites in inst_opt, entry_alloca, ABI,
+  ir_modifier, and simple_types read `pointeeType` first.
+  Test: `MemoryLoadAttachesPointeeMetadata`. LLVM pin unchanged.
 - Wave 5 leftover: LLVM 8 typed-pointer facts can be stored as
   instruction metadata kind `retdec.pointee` (same `setMetadata`
   pattern as `insn.addr`). Helpers

@@ -101,7 +101,7 @@ llvm::Type* getPointeeTypeMetadata(const llvm::Instruction* i)
 	return stringToLlvmType(i->getContext(), mds->getString().str());
 }
 
-llvm::Type* pointeeType(llvm::Value* v)
+llvm::Type* pointeeType(const llvm::Value* v)
 {
 	if (!v)
 	{

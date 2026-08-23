@@ -13,6 +13,7 @@
 
 #include "retdec/bin2llvmir/optimizations/inst_opt/inst_opt.h"
 #include "retdec/bin2llvmir/utils/debug.h"
+#include "retdec/bin2llvmir/utils/llvm.h"
 
 using namespace llvm;
 using namespace PatternMatch;
@@ -531,24 +532,27 @@ bool storeToBitcastPointer(llvm::Instruction* insn)
 {
 	Value* val;
 	Value* op;
-	if (!match(insn, m_Store(m_Value(val), m_BitCast(m_Value(op))))
-			|| !op->getType()->getPointerElementType()->isFirstClassType()
-			|| op->getType()->getPointerElementType()->isAggregateType()
-			|| op->getType()->getPointerElementType()->isPointerTy())
+	if (!match(insn, m_Store(m_Value(val), m_BitCast(m_Value(op)))))
+	{
+		return false;
+	}
+	auto* ptee = llvm_utils::pointeeType(op);
+	if (!ptee
+			|| !ptee->isFirstClassType()
+			|| ptee->isAggregateType()
+			|| ptee->isPointerTy())
 	{
 		return false;
 	}
 
-	if (!BitCastInst::isBitCastable(
-			val->getType(),
-			op->getType()->getPointerElementType()))
+	if (!BitCastInst::isBitCastable(val->getType(), ptee))
 	{
 		return false;
 	}
 
 	auto* conv = CastInst::CreateBitOrPointerCast(
 			val,
-			op->getType()->getPointerElementType(),
+			ptee,
 			"",
 			insn);
 	new StoreInst(conv, op, insn);
@@ -584,15 +588,18 @@ bool storeToBitcastPointer(llvm::Instruction* insn)
 bool loadFromBitcastPointer(llvm::Instruction* insn)
 {
 	Value* op;
-	if (!match(insn, m_Load(m_BitCast(m_Value(op))))
-			|| !op->getType()->getPointerElementType()->isFirstClassType()
-			|| op->getType()->getPointerElementType()->isAggregateType())
+	if (!match(insn, m_Load(m_BitCast(m_Value(op)))))
+	{
+		return false;
+	}
+	auto* ptee = llvm_utils::pointeeType(op);
+	if (!ptee || !ptee->isFirstClassType() || ptee->isAggregateType())
 	{
 		return false;
 	}
 
 	if (!BitCastInst::isBitOrNoopPointerCastable(
-			op->getType()->getPointerElementType(),
+			ptee,
 			insn->getType(),
 			insn->getModule()->getDataLayout()))
 	{

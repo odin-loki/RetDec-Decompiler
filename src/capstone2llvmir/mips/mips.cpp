@@ -355,9 +355,7 @@ llvm::Value* Capstone2LlvmIrTranslatorMips_impl::loadOp(
 			else
 			{
 				auto* lty = ty ? ty : t;
-				auto* pt = llvm::PointerType::get(lty, 0);
-				addr = irb.CreateIntToPtr(addr, pt);
-				return irb.CreateLoad(addr);
+				return loadIntPtr(irb, addr, lty);
 			}
 		}
 		case MIPS_OP_INVALID:
@@ -457,9 +455,7 @@ llvm::Instruction* Capstone2LlvmIrTranslatorMips_impl::storeOp(
 				}
 			}
 
-			auto* pt = llvm::PointerType::get(val->getType(), 0);
-			addr = irb.CreateIntToPtr(addr, pt);
-			return irb.CreateStore(val, addr);
+			return storeIntPtr(irb, val, addr, val->getType());
 		}
 		case MIPS_OP_IMM:
 		case MIPS_OP_INVALID:

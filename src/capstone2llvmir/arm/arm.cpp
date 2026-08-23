@@ -475,9 +475,7 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadOp(
 			else
 			{
 				auto* lty = ty ? ty : getDefaultType();
-				auto* pt = llvm::PointerType::get(lty, 0);
-				addr = irb.CreateIntToPtr(addr, pt);
-				return irb.CreateLoad(addr);
+				return loadIntPtr(irb, addr, lty);
 			}
 		}
 		case ARM_OP_FP:
@@ -631,9 +629,7 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeOp(
 				addr = irb.CreateAdd(addr, idxR);
 			}
 
-			auto* pt = llvm::PointerType::get(val->getType(), 0);
-			addr = irb.CreateIntToPtr(addr, pt);
-			return irb.CreateStore(val, addr);
+			return storeIntPtr(irb, val, addr, val->getType());
 		}
 		case ARM_OP_PIMM:
 		case ARM_OP_CIMM:

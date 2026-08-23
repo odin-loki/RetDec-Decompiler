@@ -53,7 +53,7 @@ llvm::Type* stringToLlvmTypeDefault(llvm::Module* m, const std::string& str);
 void setPointeeTypeMetadata(llvm::Instruction* i, llvm::Type* pointee);
 llvm::Type* getPointeeTypeMetadata(const llvm::Instruction* i);
 /// Metadata first; then `PointerType::getElementType()` on LLVM 8.
-llvm::Type* pointeeType(llvm::Value* v);
+llvm::Type* pointeeType(const llvm::Value* v);
 
 std::vector<llvm::Type*>
 parseFormatString(llvm::Module* module, const std::string& format, llvm::Function* calledFnc = nullptr);

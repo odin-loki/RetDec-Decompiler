@@ -821,8 +821,8 @@ llvm::Value* IrModifier::changeObjectDeclarationType(
 			retdec::common::Object cgv(
 					ecgv->getName(),
 					ecgv->getStorage());
-			cgv.type.setLlvmIr(
-					llvmObjToString(ogv->getType()->getPointerElementType()));
+			auto* ptee = llvm_utils::pointeeType(ogv);
+			cgv.type.setLlvmIr(llvmObjToString(ptee));
 			cgv.type.setIsWideString(wideString);
 			_config->getConfig().globals.insert(cgv);
 		}
@@ -1001,7 +1001,7 @@ llvm::Value* IrModifier::changeObjectType(
 		{
 			auto* conv = IrModifier::convertConstantToType(
 					newConst,
-					gvDeclr->getType()->getPointerElementType());
+					llvm_utils::pointeeType(gvDeclr));
 			if (gvDeclr != conv)
 			{
 				gvDeclr->replaceUsesOfWith(val, conv);
@@ -1157,8 +1157,9 @@ IrModifier::FunctionPair IrModifier::modifyFunction(
 			// TODO: hack, we need to propagate type's wide string property.
 			// but how?
 			//
+			auto* ptee = llvm_utils::pointeeType(i);
 			if (i->getType()->isPointerTy()
-					&& i->getType()->getPointerElementType()->isIntegerTy()
+					&& ptee && ptee->isIntegerTy()
 					&& retdec::utils::contains(nf->getName(), "wprintf"))
 			{
 				arg.type.setIsWideString(true);
@@ -1215,7 +1216,7 @@ IrModifier::FunctionPair IrModifier::modifyFunction(
 			assert(v->getType()->isPointerTy());
 			auto* conv = IrModifier::convertValueToType(
 					a,
-					v->getType()->getPointerElementType(),
+					llvm_utils::pointeeType(v),
 					&nf->front().front());
 
 			auto* s = new StoreInst(conv, v);
@@ -1373,7 +1374,7 @@ IrModifier::FunctionPair IrModifier::modifyFunction(
 				assert(n);
 				auto* conv = IrModifier::convertValueToType(
 						nc,
-						retVal->getType()->getPointerElementType(),
+						llvm_utils::pointeeType(retVal),
 						n);
 				new StoreInst(conv, retVal, n);
 			}

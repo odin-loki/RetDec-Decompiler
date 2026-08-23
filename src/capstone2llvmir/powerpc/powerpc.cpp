@@ -197,9 +197,7 @@ llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::loadOp(
 			else
 			{
 				auto* lty = ty ? ty : t;
-				auto* pt = llvm::PointerType::get(lty, 0);
-				addr = irb.CreateIntToPtr(addr, pt);
-				return irb.CreateLoad(addr);
+				return loadIntPtr(irb, addr, lty);
 			}
 		}
 		case PPC_OP_CRX:
@@ -271,9 +269,7 @@ llvm::Instruction* Capstone2LlvmIrTranslatorPowerpc_impl::storeOp(
 				}
 			}
 
-			auto* pt = llvm::PointerType::get(val->getType(), 0);
-			addr = irb.CreateIntToPtr(addr, pt);
-			return irb.CreateStore(val, addr);
+			return storeIntPtr(irb, val, addr, val->getType());
 		}
 		case PPC_OP_IMM:
 		case PPC_OP_CRX:

@@ -15,6 +15,7 @@
 #include "retdec/bin2llvmir/providers/abi/x86.h"
 #include "retdec/bin2llvmir/providers/abi/x64.h"
 #include "retdec/bin2llvmir/providers/abi/pic32.h"
+#include "retdec/bin2llvmir/utils/llvm.h"
 
 using namespace llvm;
 
@@ -49,8 +50,8 @@ bool Abi::isRegister(const llvm::Value* val, uint32_t r) const
 
 bool Abi::isFlagRegister(const llvm::Value* val)
 {
-	return isRegister(val)
-			&& val->getType()->getPointerElementType()->isIntegerTy(1);
+	auto* ptee = llvm_utils::pointeeType(val);
+	return isRegister(val) && ptee && ptee->isIntegerTy(1);
 }
 
 bool Abi::isStackPointerRegister(const llvm::Value* val) const

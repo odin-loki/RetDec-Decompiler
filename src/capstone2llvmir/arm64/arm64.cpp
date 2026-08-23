@@ -785,9 +785,7 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::loadOp(
 			else
 			{
 				auto* lty = ty ? ty : getDefaultType();
-				auto* pt = llvm::PointerType::get(lty, 0);
-				addr = irb.CreateIntToPtr(addr, pt);
-				return irb.CreateLoad(addr);
+				return loadIntPtr(irb, addr, lty);
 			}
 
 		}
@@ -889,9 +887,7 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm64_impl::storeOp(
 		{
 			auto* addr = generateGetOperandMemAddr(op, irb);
 
-			auto* pt = llvm::PointerType::get(val->getType(), 0);
-			addr = irb.CreateIntToPtr(addr, pt);
-			return irb.CreateStore(val, addr);
+			return storeIntPtr(irb, val, addr, val->getType());
 		}
 		case ARM64_OP_INVALID:
 		case ARM64_OP_IMM:

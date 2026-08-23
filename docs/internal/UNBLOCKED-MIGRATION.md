@@ -201,9 +201,15 @@ N17 is mean selected-token probability for the whole generation.
 
 ---
 
-## Done in the first slice (this change)
+## Done so far
 
 - `.cursorrules` + D4 + Part 7.3 + Wave 5 point at this file.
-- `retdec.pointee` helpers + unit test on the LLVM 8 pin.
+- `retdec.pointee` helpers + `LlvmUtilsTests.PointeeMetadataRoundTrips`.
+- Lifter `loadOp`/`storeOp` on x86/ARM/ARM64/MIPS/PowerPC write MD.
+- Value-based readers (`inst_opt`, `entry_alloca`, ABI, `ir_modifier`,
+  `simple_types`) call `pointeeType` first.
 - **No** `cmake/deps.cmake` LLVM URL change.
-- **No** `IrInstr::Op` enum change yet (next scoped commit).
+- **No** `IrInstr::Op` enum change yet.
+- Remaining writers: push/pop and other direct `CreateIntToPtr` sites
+  outside `loadOp`/`storeOp`. Remaining readers: Type*-only
+  `getPointerElementType` (no Value).

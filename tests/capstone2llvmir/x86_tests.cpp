@@ -13617,6 +13617,26 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FXAM)
 
 // D9 F4	FXTRACT		Separate value in ST(0) into exponent and significand,
 // store exponent in ST(0), and push the significand onto the register stack.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, MemoryLoadAttachesPointeeMetadata)
+{
+	SKIP_MODE_16;
+	auto* f = translate(assemble("mov eax, dword ptr [0x1234]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FXTRACT)
 {
 	ALL_MODES;

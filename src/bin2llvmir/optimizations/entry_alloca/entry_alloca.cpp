@@ -35,6 +35,7 @@
 #include <llvm/IR/IRBuilder.h>
 
 #include "retdec/bin2llvmir/optimizations/entry_alloca/entry_alloca.h"
+#include "retdec/bin2llvmir/utils/llvm.h"
 
 using namespace llvm;
 
@@ -325,8 +326,11 @@ bool EntryAlloca::runOnModule(Module& M)
 			if (auto* s = dyn_cast<StoreInst>(&*it))
 			{
 				Type* valTy = s->getValueOperand()->getType();
-				Type* pteeTy = s->getPointerOperand()
-					->getType()->getPointerElementType();
+				Type* pteeTy = llvm_utils::pointeeType(s->getPointerOperand());
+				if (!pteeTy)
+				{
+					continue;
+				}
 				if (valTy != pteeTy)
 				{
 					if (valTy->isIntegerTy() && pteeTy->isIntegerTy())
@@ -344,8 +348,11 @@ bool EntryAlloca::runOnModule(Module& M)
 			else if (auto* l = dyn_cast<LoadInst>(&*it))
 			{
 				Type* loadTy = l->getType();
-				Type* pteeTy = l->getPointerOperand()
-					->getType()->getPointerElementType();
+				Type* pteeTy = llvm_utils::pointeeType(l->getPointerOperand());
+				if (!pteeTy)
+				{
+					continue;
+				}
 				if (loadTy != pteeTy)
 				{
 					if (loadTy->isIntegerTy() && pteeTy->isIntegerTy())
@@ -368,8 +375,7 @@ bool EntryAlloca::runOnModule(Module& M)
 		{
 			StoreInst* s     = sf.s;
 			Type* valTy  = s->getValueOperand()->getType();
-			Type* pteeTy = s->getPointerOperand()
-				->getType()->getPointerElementType();
+			Type* pteeTy = llvm_utils::pointeeType(s->getPointerOperand());
 			unsigned valBits  = valTy->getIntegerBitWidth();
 			unsigned pteeBits = pteeTy->getIntegerBitWidth();
 			Value* newVal = s->getValueOperand();
@@ -393,8 +399,7 @@ bool EntryAlloca::runOnModule(Module& M)
 		{
 			LoadInst* l     = lf.l;
 			Type* loadTy = l->getType();
-			Type* pteeTy = l->getPointerOperand()
-				->getType()->getPointerElementType();
+			Type* pteeTy = llvm_utils::pointeeType(l->getPointerOperand());
 			unsigned loadBits = loadTy->getIntegerBitWidth();
 			unsigned pteeBits = pteeTy->getIntegerBitWidth();
 
