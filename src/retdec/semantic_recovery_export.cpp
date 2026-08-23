@@ -1399,6 +1399,16 @@ bool patternUsedNameTable(pattern_detect::PatternKind kind, const ssa::SSAFuncti
 		};
 		return calleeNameContainsAny(fn, kObs);
 	}
+	if (kind == PatternKind::Factory)
+	{
+		static const char* const kAlloc[] = {"malloc", "_Znwm", "operator new", "allocate", nullptr};
+		return calleeNameContainsAny(fn, kAlloc);
+	}
+	if (kind == PatternKind::Strategy)
+	{
+		static const char* const kStrat[] = {"doAlgorithm", "execute", "Execute", "sort", nullptr};
+		return calleeNameContainsAny(fn, kStrat);
+	}
 	return false;
 }
 

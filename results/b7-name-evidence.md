@@ -57,8 +57,9 @@ This is **not** a product F1 change by itself.
   `detail` with `evidence:symbol_name`. Extract does not
   map `kind=="pattern"`. Headline F1 is unchanged.
 - Pattern export also tags Singleton lock names, Command
-  `execute`/`undo`, and Observer `subscribe`/`notify`. Structural
-  Command (empty / indirect callee) stays untagged.
+  `execute`/`undo`, Observer `subscribe`/`notify`, Factory
+  `malloc`/`new`, and Strategy `doAlgorithm`/`execute`. Structural
+  Command/Strategy (empty / indirect callee) stay untagged.
 
 A8 lock-prefix / ldxr is shipped (`IrInstr::Op::Lock`).
 
@@ -76,8 +77,8 @@ confidence as structural evidence:
   `kind="crypto"`; name-only AES-NI scores 0.20 and stays below
   minConfidence 0.50 so it does not reach config JSON. Extract
   does not map `kind="crypto"`.
-- `pattern_detect` Factory `malloc`/`new` names and Strategy
-  `doAlgorithm`/`execute` mixes.
+- `pattern_detect` name tables are tagged at export. Remaining
+  mixes are structural self-recursion and unordered xor+mul.
 
 Input-path reads in `retdec.cpp` `tryEmulationUnpacking` are diagnostic
 logs only (`RETDEC_EMULATION_UNPACK_DIAG`), not detector scores.

@@ -9,6 +9,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 ### Added
 
 - B7 leftover: pattern export tags `evidence:symbol_name` for
+  Factory `malloc`/`new` and Strategy `doAlgorithm`/`execute`.
+  Structural Strategy (indirect call, no those names) stays
+  untagged. Extract does not map `kind=="pattern"`. Tests:
+  `FactoryAllocExportsAsPatternNameEvidence`,
+  `StrategyDoAlgorithmExportsAsPatternNameEvidence`,
+  `StrategyIndirectCallDoesNotTagSymbolName`.
+- B7 leftover: pattern export tags `evidence:symbol_name` for
   Singleton lock names, Command `execute`/`undo`, and Observer
   `subscribe`/`notify`. Structural Command (indirect call, no
   execute name) stays untagged. Extract does not map

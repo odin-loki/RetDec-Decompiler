@@ -898,3 +898,99 @@ TEST(SemanticExport, CommandIndirectCallDoesNotTagSymbolName)
 	}
 	EXPECT_TRUE(found);
 }
+
+TEST(SemanticExport, FactoryAllocExportsAsPatternNameEvidence)
+{
+	retdec::ssa::SSAFunction fn("createProduct");
+	auto* entry = fn.addBlock();
+	ASSERT_NE(entry, nullptr);
+	ASSERT_NE(fn.addBlock(), nullptr);
+	auto addImmCompare = [&](uint64_t imm) {
+		retdec::ssa::IrInstr* cmp = fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Compare, 0);
+		retdec::ssa::IrValue* v = fn.allocValue(retdec::ssa::ValueKind::Immediate);
+		v->imm = imm;
+		retdec::ssa::Use u;
+		u.valueId = v->id;
+		cmp->uses.push_back(u);
+	};
+	addImmCompare(0);
+	addImmCompare(1);
+	retdec::ssa::IrInstr* a0 = fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Call, 0);
+	a0->calleeName = "_Znwm";
+	retdec::ssa::IrInstr* a1 = fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Call, 0);
+	a1->calleeName = "_Znwm";
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Ret, 0);
+
+	retdec::analysis::SemanticDetectionMap map;
+	retdec::analysis::appendPatternDetections(map, fn);
+
+	ASSERT_EQ(map.count("createProduct"), 1u);
+	bool found = false;
+	for (const auto& d: map.at("createProduct"))
+	{
+		if (d.kind == "pattern" && d.label == "Factory")
+		{
+			found = true;
+			EXPECT_GE(d.confidence, 0.45f);
+			EXPECT_NE(d.detail.find("evidence:symbol_name"), std::string::npos);
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST(SemanticExport, StrategyDoAlgorithmExportsAsPatternNameEvidence)
+{
+	retdec::ssa::SSAFunction fn("execute");
+	auto* entry = fn.addBlock();
+	ASSERT_NE(entry, nullptr);
+	ASSERT_NE(fn.addBlock(), nullptr);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Load, 0);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Load, 0);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Store, 0);
+	retdec::ssa::IrInstr* call = fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Call, 0);
+	call->calleeName = "doAlgorithm";
+
+	retdec::analysis::SemanticDetectionMap map;
+	retdec::analysis::appendPatternDetections(map, fn);
+
+	ASSERT_EQ(map.count("execute"), 1u);
+	bool found = false;
+	for (const auto& d: map.at("execute"))
+	{
+		if (d.kind == "pattern" && d.label == "Strategy")
+		{
+			found = true;
+			EXPECT_GE(d.confidence, 0.45f);
+			EXPECT_NE(d.detail.find("evidence:symbol_name"), std::string::npos);
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST(SemanticExport, StrategyIndirectCallDoesNotTagSymbolName)
+{
+	retdec::ssa::SSAFunction fn("delegate");
+	auto* entry = fn.addBlock();
+	ASSERT_NE(entry, nullptr);
+	ASSERT_NE(fn.addBlock(), nullptr);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Load, 0);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Load, 0);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Store, 0);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Call, 0);
+
+	retdec::analysis::SemanticDetectionMap map;
+	retdec::analysis::appendPatternDetections(map, fn);
+
+	ASSERT_EQ(map.count("delegate"), 1u);
+	bool found = false;
+	for (const auto& d: map.at("delegate"))
+	{
+		if (d.kind == "pattern" && d.label == "Strategy")
+		{
+			found = true;
+			EXPECT_GE(d.confidence, 0.45f);
+			EXPECT_EQ(d.detail.find("evidence:symbol_name"), std::string::npos);
+		}
+	}
+	EXPECT_TRUE(found);
+}
