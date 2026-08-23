@@ -150,12 +150,13 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
 ### 3b C parser → N10 → N18
 
 `TREE_SITTER_C_URL` pins tree-sitter-c v0.24.2. `TREE_SITTER_URL` pins
-tree-sitter v0.26.12 (ABI 15; MIN 13, so ABI 14 grammar is OK). Not
-fetched yet. `gates.cpp` 384–386: N5 keyword scan only; “This is not
-N10.”
+tree-sitter v0.26.12 (ABI 15; MIN 13, so ABI 14 grammar is OK).
+Fetched in `cmake/tree_sitter.cmake` (not under `deps/`). N10 walks
+the C AST for the N5 counted set; parse failure falls back to the
+keyword scan.
 
-Then N10: replace the N5 shape check. Then N18: callee-before-caller
-refine (today `serializeSemanticContext` dumps callers/callees from
+Then N18: callee-before-caller refine (today
+`serializeSemanticContext` dumps callers/callees from
 `codeReferences` only — `decompile_hook.cpp`).
 
 ### 3c Neural leftovers
@@ -216,7 +217,9 @@ N17 is mean selected-token probability for the whole generation.
 - A8 lock-prefix / `ldxr` / `stlxr` / `stxp`: lifter emits LLVM
   atomics; detector reads `Op::Lock`.
 - llvmir2hll empty-string GV uses `getValueType`.
-- tree-sitter-c v0.24.2 URL/SHA in `cmake/deps.cmake`. Not fetched.
+- tree-sitter-c v0.24.2 and tree-sitter v0.26.12 URL/SHA in
+  `cmake/deps.cmake`. Fetched via `cmake/tree_sitter.cmake`. N10 AST
+  shape check in `gates.cpp` (N5 keyword scan is fallback).
 - Remaining Type*-only readers (no Value to thread):
   `simple_types` 1203–1204 / 1641 nested pointer-to-array,
   `hasFunctionTypeOrPointer`, llvmir2hll `convert(PointerType*)`.

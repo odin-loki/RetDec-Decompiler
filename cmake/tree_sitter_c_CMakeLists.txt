@@ -1,0 +1,16 @@
+# Overlay for the tree-sitter-c ExternalProject. Replaces upstream
+# CMakeLists so the build does not invoke the tree-sitter CLI.
+# parser.c ships in the v0.24.2 release tarball.
+
+cmake_minimum_required(VERSION 3.13)
+project(tree-sitter-c LANGUAGES C)
+
+add_library(tree-sitter-c STATIC src/parser.c)
+target_include_directories(tree-sitter-c PRIVATE src)
+set_target_properties(tree-sitter-c PROPERTIES
+	C_STANDARD 11
+	POSITION_INDEPENDENT_CODE ON
+)
+
+install(TARGETS tree-sitter-c ARCHIVE DESTINATION lib)
+install(FILES bindings/c/tree_sitter/tree-sitter-c.h DESTINATION include/tree_sitter)

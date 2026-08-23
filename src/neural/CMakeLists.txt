@@ -29,6 +29,10 @@ target_include_directories(retdec-neural
         $<INSTALL_INTERFACE:${RETDEC_INSTALL_INCLUDE_DIR}>
 )
 
+include(${PROJECT_SOURCE_DIR}/cmake/tree_sitter.cmake)
+target_link_libraries(retdec-neural PUBLIC retdec::deps::tree-sitter retdec::deps::tree-sitter-c)
+target_compile_definitions(retdec-neural PRIVATE RETDEC_HAS_TREE_SITTER)
+
 target_link_libraries(retdec-neural
     PUBLIC
         retdec::config

@@ -258,6 +258,22 @@ TEST(NeuralGates, AddedCrtPopenCallFailsStructural)
 	EXPECT_EQ(r.structural, GateResult::FailStructural);
 }
 
+TEST(NeuralGates, ControlKeywordInCommentDoesNotChangeShape)
+{
+	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
+	const std::string refined = "int f(int x) { if (x > 0) return 1; /* if while for goto */ return 0; }\n";
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_EQ(r.structural, GateResult::Pass);
+}
+
+TEST(NeuralGates, SystemCallInCommentDoesNotChangeShape)
+{
+	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
+	const std::string refined = "int f(int x) { if (x > 0) return 1; /* system */ return 0; }\n";
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_EQ(r.structural, GateResult::Pass);
+}
+
 TEST(NeuralPrompt, QwenChatTemplateDisablesThinking)
 {
 	RefinementRequest req;

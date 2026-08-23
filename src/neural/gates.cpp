@@ -1,14 +1,21 @@
 #include "retdec/neural/gates.h"
 
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
 #include <system_error>
 #include <vector>
+
+#ifdef RETDEC_HAS_TREE_SITTER
+#include <tree_sitter/api.h>
+#include <tree_sitter/tree-sitter-c.h>
+#endif
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -253,6 +260,37 @@ bool operator==(const CmpOpCounts& a, const CmpOpCounts& b)
 	return a.eq == b.eq && a.ne == b.ne && a.le == b.le && a.ge == b.ge && a.lt == b.lt && a.gt == b.gt;
 }
 
+static const char* const kSpawnIdents[] = {
+	"system",
+	"popen",
+	"execve",
+	"execl",
+	"execle",
+	"execlp",
+	"execv",
+	"execvp",
+	"execvpe",
+	"WinExec",
+	"ShellExecute",
+	"ShellExecuteA",
+	"ShellExecuteW",
+	"ShellExecuteEx",
+	"ShellExecuteExA",
+	"ShellExecuteExW",
+	"CreateProcess",
+	"CreateProcessA",
+	"CreateProcessW",
+	"CreateProcessAsUser",
+	"CreateProcessAsUserA",
+	"CreateProcessAsUserW",
+	"_popen",
+	"_wpopen",
+	"_wsystem",
+	"posix_spawn",
+	"posix_spawnp",
+	nullptr,
+};
+
 CmpOpCounts countCmpOps(const std::string& s)
 {
 	CmpOpCounts n;
@@ -295,46 +333,132 @@ CmpOpCounts countCmpOps(const std::string& s)
 	return n;
 }
 
+#ifdef RETDEC_HAS_TREE_SITTER
+
+std::string nodeText(const std::string& src, TSNode n)
+{
+	const uint32_t a = ts_node_start_byte(n);
+	const uint32_t b = ts_node_end_byte(n);
+	if (a > b || b > src.size()) return {};
+	return src.substr(a, b - a);
+}
+
+struct AstShape
+{
+	int ifN = 0;
+	int elseN = 0;
+	int whileN = 0;
+	int forN = 0;
+	int gotoN = 0;
+	int returnN = 0;
+	CmpOpCounts cmp;
+	int spawn[32] = {};
+};
+
+void addCmpOp(AstShape& s, const std::string& op)
+{
+	if (op == "==") ++s.cmp.eq;
+	else if (op == "!=") ++s.cmp.ne;
+	else if (op == "<=") ++s.cmp.le;
+	else if (op == ">=") ++s.cmp.ge;
+	else if (op == "<") ++s.cmp.lt;
+	else if (op == ">") ++s.cmp.gt;
+}
+
+void addSpawn(AstShape& s, const std::string& id)
+{
+	for (int i = 0; kSpawnIdents[i]; ++i)
+	{
+		if (id == kSpawnIdents[i])
+		{
+			++s.spawn[i];
+			return;
+		}
+	}
+}
+
+void walkAst(TSNode n, const std::string& src, AstShape& s)
+{
+	const char* ty = ts_node_type(n);
+	if (std::strcmp(ty, "if_statement") == 0) ++s.ifN;
+	else if (std::strcmp(ty, "else_clause") == 0) ++s.elseN;
+	else if (std::strcmp(ty, "while_statement") == 0) ++s.whileN;
+	else if (std::strcmp(ty, "for_statement") == 0) ++s.forN;
+	else if (std::strcmp(ty, "goto_statement") == 0) ++s.gotoN;
+	else if (std::strcmp(ty, "return_statement") == 0) ++s.returnN;
+	else if (std::strcmp(ty, "binary_expression") == 0)
+	{
+		TSNode op = ts_node_child_by_field_name(n, "operator", 8);
+		if (!ts_node_is_null(op)) addCmpOp(s, nodeText(src, op));
+	}
+	else if (std::strcmp(ty, "call_expression") == 0)
+	{
+		TSNode fn = ts_node_child_by_field_name(n, "function", 8);
+		if (!ts_node_is_null(fn) && std::strcmp(ts_node_type(fn), "identifier") == 0)
+			addSpawn(s, nodeText(src, fn));
+	}
+
+	const uint32_t nch = ts_node_child_count(n);
+	for (uint32_t i = 0; i < nch; ++i)
+		walkAst(ts_node_child(n, i), src, s);
+}
+
+bool fillAstShape(const std::string& src, AstShape& out)
+{
+	TSParser* p = ts_parser_new();
+	if (!p) return false;
+	if (!ts_parser_set_language(p, tree_sitter_c()))
+	{
+		ts_parser_delete(p);
+		return false;
+	}
+	TSTree* tree = ts_parser_parse_string(p, nullptr, src.data(), static_cast<uint32_t>(src.size()));
+	if (!tree)
+	{
+		ts_parser_delete(p);
+		return false;
+	}
+	TSNode root = ts_tree_root_node(tree);
+	const bool ok = !ts_node_is_null(root) && !ts_node_has_error(root);
+	if (ok) walkAst(root, src, out);
+	ts_tree_delete(tree);
+	ts_parser_delete(p);
+	return ok;
+}
+
+bool astShapeChanged(const AstShape& a, const AstShape& b)
+{
+	if (a.ifN != b.ifN || a.elseN != b.elseN || a.whileN != b.whileN || a.forN != b.forN
+		|| a.gotoN != b.gotoN || a.returnN != b.returnN)
+		return true;
+	if (!(a.cmp == b.cmp)) return true;
+	for (int i = 0; kSpawnIdents[i]; ++i)
+	{
+		if (a.spawn[i] != b.spawn[i]) return true;
+	}
+	return false;
+}
+
+#endif
+
 bool controlShapeChanged(const std::string& originalC, const std::string& refinedC)
 {
+#ifdef RETDEC_HAS_TREE_SITTER
+	AstShape a;
+	AstShape b;
+	if (fillAstShape(originalC, a) && fillAstShape(refinedC, b))
+		return astShapeChanged(a, b);
+#endif
 	if (countIdent(originalC, "if") != countIdent(refinedC, "if")) return true;
 	if (countIdent(originalC, "else") != countIdent(refinedC, "else")) return true;
 	if (countIdent(originalC, "while") != countIdent(refinedC, "while")) return true;
 	if (countIdent(originalC, "for") != countIdent(refinedC, "for")) return true;
 	if (countIdent(originalC, "goto") != countIdent(refinedC, "goto")) return true;
 	if (countIdent(originalC, "return") != countIdent(refinedC, "return")) return true;
-	static const char* const kSpawnIdents[] = {
-		"system",
-		"popen",
-		"execve",
-		"execl",
-		"execle",
-		"execlp",
-		"execv",
-		"execvp",
-		"execvpe",
-		"WinExec",
-		"ShellExecute",
-		"ShellExecuteA",
-		"ShellExecuteW",
-		"ShellExecuteEx",
-		"ShellExecuteExA",
-		"ShellExecuteExW",
-		"CreateProcess",
-		"CreateProcessA",
-		"CreateProcessW",
-		"CreateProcessAsUser",
-		"CreateProcessAsUserA",
-		"CreateProcessAsUserW",
-		"_popen",
-		"_wpopen",
-		"_wsystem",
-		"posix_spawn",
-		"posix_spawnp",
-	};
-	for (const char* w: kSpawnIdents)
+	for (int i = 0; kSpawnIdents[i]; ++i)
 	{
-		if (countIdent(originalC, w) != countIdent(refinedC, w)) return true;
+		if (countIdent(originalC, kSpawnIdents[i]) != countIdent(refinedC, kSpawnIdents[i]))
+			return true;
 	}
 	if (!(countCmpOps(originalC) == countCmpOps(refinedC))) return true;
 	return false;
@@ -381,9 +505,10 @@ GateReport runVerificationGates(const std::string& originalC, const std::string&
 		report.structural = GateResult::FailStructural;
 		return report;
 	}
-	// N5 (not N10): same-size refinements may not change control-flow
-	// keywords or comparison operators. FullRewrite that grows the TU
-	// skips this check. No C parser in deps/.
+	// N10: same-size refinements may not change control-flow AST
+	// shape, comparison operators, or spawn calls. Parse failure
+	// falls back to the N5 keyword scan. FullRewrite that grows the
+	// TU skips this check.
 	const bool similarSize =
 		originalC.size() > 16 && refinedC.size() * 4 > originalC.size() && originalC.size() * 4 > refinedC.size();
 	if (similarSize && controlShapeChanged(originalC, refinedC))
