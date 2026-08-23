@@ -1019,6 +1019,19 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 					if (nSerial > 0)
 						Log::info() << "[analysis] serialisation frameworks detected in " << nSerial << " function(s)"
 									<< std::endl;
+					std::size_t nPattern = 0;
+					for (const auto& item: work)
+					{
+						if (!item.fn) continue;
+						const std::size_t before =
+							semanticMap.count(item.fn->name()) ? semanticMap.find(item.fn->name())->second.size() : 0;
+						analysis::appendPatternDetections(semanticMap, *item.fn);
+						const auto it = semanticMap.find(item.fn->name());
+						if (it != semanticMap.end() && it->second.size() > before) ++nPattern;
+					}
+					if (nPattern > 0)
+						Log::info() << "[analysis] design patterns detected in " << nPattern << " function(s)"
+									<< std::endl;
 					analysis::exportSemanticRecovery(config, semanticMap, outString);
 					if (!semanticMap.empty())
 						Log::info() << "[analysis] semantic detections exported for " << semanticMap.size()

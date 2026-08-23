@@ -28,6 +28,7 @@ target_link_libraries(retdec
 		retdec-type-inference
 		retdec-crypto-detect
 		retdec-serial-detect
+		retdec_pattern_detect
 		retdec-ipa
 		retdec-call-conv
 		retdec-ptx-decompile

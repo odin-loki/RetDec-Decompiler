@@ -8,6 +8,14 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Pipeline leftover: `PatternDetector` now runs on each SSA
+  function after serial export and appends `kind="pattern"`
+  (label from `kindName()`). RAII acquire/release table hits
+  (`fopen`/`fclose`, …) prefix `detail` with
+  `evidence:symbol_name`. Extract does not map
+  `kind=="pattern"`, so headline F1 is unchanged. Test:
+  `RaiiAcquireReleaseExportsAsPatternNameEvidence`. Default F5
+  is unchanged.
 - Pipeline leftover: `SerialDetector` now runs on each SSA
   function after crypto export and appends `kind="serial"`
   (label from `frameworkName()`). Name-only symbol-table hits

@@ -53,6 +53,10 @@ This is **not** a product F1 change by itself.
 - Name-only serial symbol-table hits prefix `detail` with
   `evidence:symbol_name`. Structural serial tokens stay untagged.
   Extract does not map `kind=="serial"`. Headline F1 is unchanged.
+- RAII acquire/release callee-name table hits prefix pattern
+  `detail` with `evidence:symbol_name`. Other design patterns
+  stay untagged (no public name-only flag). Extract does not
+  map `kind=="pattern"`. Headline F1 is unchanged.
 
 A8 (lock-prefix / ldxr) is still blocked: `IrInstr::Op` has no lock/atomic.
 
@@ -66,10 +70,13 @@ confidence as structural evidence:
 - `sort_detect` self-name recursion (not `_introsort` / named-heapsort
   / named-mergesort variant; those paths are now tagged)
 - `algo_recover` idiom self-recursion (exact self-call is structural)
-- `crypto_detect` / `pattern_detect` callee-name tables.
-  Crypto is now exported as `kind="crypto"`; name-only AES-NI
-  scores 0.20 and stays below minConfidence 0.50 so it does
-  not reach config JSON. Extract does not map `kind=="crypto"`.
+- `crypto_detect` callee-name tables. Crypto is now exported as
+  `kind="crypto"`; name-only AES-NI scores 0.20 and stays below
+  minConfidence 0.50 so it does not reach config JSON. Extract
+  does not map `kind=="crypto"`.
+- `pattern_detect` non-RAII callee-name mixes (Singleton lock
+  names, Command `execute`/`undo`, Observer `subscribe`/`notify`).
+  RAII table hits are now tagged.
 
 Input-path reads in `retdec.cpp` `tryEmulationUnpacking` are diagnostic
 logs only (`RETDEC_EMULATION_UNPACK_DIAG`), not detector scores.

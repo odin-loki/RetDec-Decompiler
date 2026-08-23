@@ -737,3 +737,33 @@ TEST(SemanticExport, SerialPreflightSkipsTinyFunctions)
 	retdec::analysis::appendSerialDetections(map, fn, sym);
 	EXPECT_EQ(map.count("tiny"), 0u);
 }
+
+TEST(SemanticExport, RaiiAcquireReleaseExportsAsPatternNameEvidence)
+{
+	retdec::ssa::SSAFunction fn("raii_fn");
+	auto* entry = fn.addBlock();
+	ASSERT_NE(entry, nullptr);
+	ASSERT_NE(fn.addBlock(), nullptr);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Load, 0);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Store, 0);
+	retdec::ssa::IrInstr* acq = fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Call, 0);
+	acq->calleeName = "fopen";
+	retdec::ssa::IrInstr* rel = fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Call, 0);
+	rel->calleeName = "fclose";
+
+	retdec::analysis::SemanticDetectionMap map;
+	retdec::analysis::appendPatternDetections(map, fn);
+
+	ASSERT_EQ(map.count("raii_fn"), 1u);
+	bool foundRaii = false;
+	for (const auto& d: map.at("raii_fn"))
+	{
+		if (d.kind == "pattern" && d.label == "RAII")
+		{
+			foundRaii = true;
+			EXPECT_GE(d.confidence, 0.45f);
+			EXPECT_NE(d.detail.find("evidence:symbol_name"), std::string::npos);
+		}
+	}
+	EXPECT_TRUE(foundRaii);
+}

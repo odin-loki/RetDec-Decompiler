@@ -39,6 +39,11 @@ void appendCryptoDetections(SemanticDetectionMap& map, const ssa::SSAFunction& f
 void appendSerialDetections(
 	SemanticDetectionMap& map, const ssa::SSAFunction& fn, const std::unordered_set<std::string>& symTable);
 
+/// Run PatternDetector on `fn` and append kind="pattern" hits (label from
+/// kindName()). RAII acquire/release table hits prefix detail with
+/// evidence:symbol_name. Extract does not map kind=pattern.
+void appendPatternDetections(SemanticDetectionMap& map, const ssa::SSAFunction& fn);
+
 SemanticDetectionMap buildSemanticDetectionMap(
 	const container_detect::ContainerDetector::DetectionMap& containers,
 	const std::vector<std::pair<std::string, algo_recover::AlgorithmResult>>& algos,

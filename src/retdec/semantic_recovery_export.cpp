@@ -7,6 +7,7 @@
 #include "retdec/retdec/semantic_recovery_export.h"
 
 #include "retdec/crypto_detect/crypto_detect.h"
+#include "retdec/pattern_detect/pattern_detect.h"
 #include "retdec/serial_detect/serial_detect.h"
 #include "retdec/ssa/ssa.h"
 
@@ -1360,6 +1361,24 @@ void appendSerialDetections(
 		detail = "evidence:symbol_name " + detail;
 	}
 	appendDetection(map, fn.name(), makeDetection("serial", result.frameworkName(), result.confidence, detail));
+}
+
+void appendPatternDetections(SemanticDetectionMap& map, const ssa::SSAFunction& fn)
+{
+	pattern_detect::PatternDetector detector;
+	for (const auto& result: detector.detectFunction(fn))
+	{
+		if (result.kind == pattern_detect::PatternKind::Unknown)
+		{
+			continue;
+		}
+		std::string detail = result.toString();
+		if (result.kind == pattern_detect::PatternKind::RAII)
+		{
+			detail = "evidence:symbol_name " + detail;
+		}
+		appendDetection(map, fn.name(), makeDetection("pattern", result.kindName(), result.confidence, detail));
+	}
 }
 
 SemanticDetectionMap buildSemanticDetectionMap(

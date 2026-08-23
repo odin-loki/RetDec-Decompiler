@@ -11,7 +11,8 @@ add_library(retdec_pattern_detect
 
 target_include_directories(retdec_pattern_detect
     PUBLIC
-        ${PROJECT_SOURCE_DIR}/include
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 target_link_libraries(retdec_pattern_detect
@@ -22,4 +23,10 @@ target_link_libraries(retdec_pattern_detect
 set_target_properties(retdec_pattern_detect PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
+)
+
+install(TARGETS retdec_pattern_detect
+    EXPORT  retdec-targets
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
 )
