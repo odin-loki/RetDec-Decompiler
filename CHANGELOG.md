@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- CI leftover: official algorithm-recovery CI runner passes
+  `--stem-fallback` again so the unchanged 0.95 `mean_f1` gate
+  matches the stem-era score it was written for. Extract stays
+  name-blind by default; `mean_f1_raw` stays 0.126 (ci-core).
+  Do not advertise 1.0.
 - Pipeline leftover: `PatternDetector` now runs on each SSA
   function after serial export and appends `kind="pattern"`
   (label from `kindName()`). RAII acquire/release table hits

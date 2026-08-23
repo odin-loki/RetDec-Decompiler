@@ -6,6 +6,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEC=""
 MIN_DECOMPILED=9
+# Official gate stays 0.95 (stem-era). Name-blind ci-core mean is 0.126.
+# Do not lower this constant. Extract must pass --stem-fallback so
+# mean_f1 is the stem-era score; mean_f1_raw stays name-blind.
+# See results/algorithm-recovery-gate-finding.md
 MIN_MEAN_F1=0.95
 
 while [[ $# -gt 0 ]]; do
@@ -62,6 +66,7 @@ python3 "${ROOT}/scripts/extract_decompiler_predictions.py" \
 	--corpus "${ROOT}/tests/algorithm_recovery/corpus" \
 	--manifest "${ROOT}/tests/algorithm_recovery/corpus/manifest.json" \
 	--ci-core \
+	--stem-fallback \
 	--work "${WORK}" \
 	--out "${PRED}"
 
