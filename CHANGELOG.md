@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (N16): semantic JSON dumps detection `cHint`,
+  pattern `endian`/`matches`, and tool significant-nibble counts.
+  Comments, locals, globals, descriptions, `cElemBytes`, and
+  `getAdditionalInfo()` stay omitted. Tests:
+  `SerializesExistingFunctionFields`, `SerializesCryptoPatternNames`,
+  `SerializesPatternMatches`, `SerializesToolConfidence`.
 - Wave 5 leftover (N18): call-graph-only functions are included in
   semantic JSON so `callers`/`callees` reach the prompt. Tests:
   `SerializesCallGraphOnlyFunctions`.

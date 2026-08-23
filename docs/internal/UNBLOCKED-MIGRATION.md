@@ -182,6 +182,11 @@ crypto / detections) are included so those edges reach the prompt.
 
 ### 3c Neural leftovers
 
+N16 peripheral dump in `serializeSemanticContext`: detection
+`cHint`, pattern `endian`/`matches`, tool nibble counts.
+Comments, locals, globals, descriptions, `cElemBytes`, and
+`getAdditionalInfo()` stay omitted.
+
 | Item | Status |
 |------|--------|
 | N17 mean selected-token `p` | Done (`inference.h` 39–42). Not per-identifier. |

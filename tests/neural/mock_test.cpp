@@ -864,6 +864,7 @@ TEST(NeuralSemanticContext, SerializesExistingFunctionFields)
 	det.label = "aes_key_expansion";
 	det.confidence = 0.8f;
 	det.detail = "sbox_load";
+	det.cHint = "vector_like_3ptr";
 	fn.semanticDetections.push_back(det);
 	cfg.functions.insert(fn);
 
@@ -880,6 +881,7 @@ TEST(NeuralSemanticContext, SerializesExistingFunctionFields)
 	EXPECT_NE(json.find("\"kind\":\"algorithm\""), std::string::npos);
 	EXPECT_NE(json.find("\"label\":\"aes_key_expansion\""), std::string::npos);
 	EXPECT_NE(json.find("\"detail\":\"sbox_load\""), std::string::npos);
+	EXPECT_NE(json.find("\"cHint\":\"vector_like_3ptr\""), std::string::npos);
 }
 
 TEST(NeuralSemanticContext, IncludesCryptoOnlyFunction)
@@ -1105,12 +1107,16 @@ TEST(NeuralSemanticContext, SerializesToolConfidence)
 	gcc.setType("compiler");
 	gcc.setPercentage(0.5);
 	gcc.setIsFromHeuristics(true);
+	gcc.setTotalSignificantNibbles(40);
+	gcc.setIdenticalSignificantNibbles(32);
 	cfg.tools.push_back(gcc);
 
 	const std::string json = serializeSemanticContext(cfg);
 	EXPECT_NE(json.find("\"name\":\"gcc\""), std::string::npos);
 	EXPECT_NE(json.find("\"percentage\":"), std::string::npos);
 	EXPECT_NE(json.find("\"heuristics\":true"), std::string::npos);
+	EXPECT_NE(json.find("\"totalSignificantNibbles\":40"), std::string::npos);
+	EXPECT_NE(json.find("\"identicalSignificantNibbles\":32"), std::string::npos);
 }
 
 TEST(NeuralSemanticContext, SerializesFileClassBits)
@@ -1151,11 +1157,28 @@ TEST(NeuralSemanticContext, SerializesDetectedLanguages)
 TEST(NeuralSemanticContext, SerializesCryptoPatternNames)
 {
 	auto cfg = retdec::config::Config::empty();
-	cfg.patterns.push_back(retdec::common::Pattern::crypto("AES", "", "crypto_aes_sbox"));
+	cfg.patterns.push_back(retdec::common::Pattern::cryptoLittle("AES", "", "crypto_aes_sbox"));
 	const std::string json = serializeSemanticContext(cfg);
 	EXPECT_NE(json.find("\"name\":\"AES\""), std::string::npos);
 	EXPECT_NE(json.find("\"yara_rule\":\"crypto_aes_sbox\""), std::string::npos);
 	EXPECT_NE(json.find("\"type\":\"crypto\""), std::string::npos);
+	EXPECT_NE(json.find("\"endian\":\"little\""), std::string::npos);
+}
+
+TEST(NeuralSemanticContext, SerializesPatternMatches)
+{
+	auto cfg = retdec::config::Config::empty();
+	auto pat = retdec::common::Pattern::crypto("AES", "", "crypto_aes_sbox");
+	pat.matches.push_back(retdec::common::Pattern::Match::integral(
+			retdec::common::Address(0x40),
+			retdec::common::Address(0x401040),
+			16));
+	cfg.patterns.push_back(pat);
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"offset\":\"0x40\""), std::string::npos);
+	EXPECT_NE(json.find("\"address\":\"0x401040\""), std::string::npos);
+	EXPECT_NE(json.find("\"size\":16"), std::string::npos);
+	EXPECT_NE(json.find("\"type\":\"integral\""), std::string::npos);
 }
 
 TEST(NeuralSemanticContext, SerializesClassMemberNames)

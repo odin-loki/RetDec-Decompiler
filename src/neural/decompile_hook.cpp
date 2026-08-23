@@ -444,6 +444,7 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 			oss << "{\"kind\":\"" << jsonEscape(d.kind) << "\",\"label\":\"" << jsonEscape(d.label)
 				<< "\",\"confidence\":" << d.confidence;
 			if (!d.detail.empty()) oss << ",\"detail\":\"" << jsonEscape(d.detail) << '"';
+			if (!d.cHint.empty()) oss << ",\"cHint\":\"" << jsonEscape(d.cHint) << '"';
 			oss << '}';
 		}
 		oss << ']';
@@ -546,7 +547,59 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 			kind = "crypto";
 		else if (pat.isTypeMalware())
 			kind = "malware";
-		oss << ",\"type\":\"" << kind << "\"}";
+		oss << ",\"type\":\"" << kind << '"';
+		if (pat.isEndianLittle())
+			oss << ",\"endian\":\"little\"";
+		else if (pat.isEndianBig())
+			oss << ",\"endian\":\"big\"";
+		if (!pat.matches.empty())
+		{
+			oss << ",\"matches\":[";
+			bool firstM = true;
+			for (const auto& m: pat.matches)
+			{
+				if (!firstM) oss << ',';
+				firstM = false;
+				oss << '{';
+				bool firstF = true;
+				if (m.isOffsetDefined())
+				{
+					oss << "\"offset\":\"" << jsonEscape(m.getOffset().toHexPrefixString()) << '"';
+					firstF = false;
+				}
+				if (m.isAddressDefined())
+				{
+					if (!firstF) oss << ',';
+					oss << "\"address\":\"" << jsonEscape(m.getAddress().toHexPrefixString()) << '"';
+					firstF = false;
+				}
+				if (m.isSizeDefined())
+				{
+					if (!firstF) oss << ',';
+					oss << "\"size\":" << *m.getSize();
+					firstF = false;
+				}
+				if (m.isEntrySizeDefined())
+				{
+					if (!firstF) oss << ',';
+					oss << "\"entry_size\":" << *m.getEntrySize();
+					firstF = false;
+				}
+				if (m.isTypeIntegral())
+				{
+					if (!firstF) oss << ',';
+					oss << "\"type\":\"integral\"";
+				}
+				else if (m.isTypeFloatingPoint())
+				{
+					if (!firstF) oss << ',';
+					oss << "\"type\":\"floating_point\"";
+				}
+				oss << '}';
+			}
+			oss << ']';
+		}
+		oss << '}';
 	}
 	oss << "],\"tools\":[";
 	bool firstTool = true;
@@ -560,6 +613,10 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		if (!tool.getVersion().empty()) oss << ",\"version\":\"" << jsonEscape(tool.getVersion()) << '"';
 		if (tool.getPercentage() != 0.0) oss << ",\"percentage\":" << tool.getPercentage();
 		if (tool.isFromHeuristics()) oss << ",\"heuristics\":true";
+		if (tool.getTotalSignificantNibbles() != 0)
+			oss << ",\"totalSignificantNibbles\":" << tool.getTotalSignificantNibbles();
+		if (tool.getIdenticalSignificantNibbles() != 0)
+			oss << ",\"identicalSignificantNibbles\":" << tool.getIdenticalSignificantNibbles();
 		oss << '}';
 	}
 	oss << "],\"languages\":[";
