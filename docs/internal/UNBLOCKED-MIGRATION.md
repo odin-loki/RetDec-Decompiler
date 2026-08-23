@@ -177,7 +177,8 @@ keyword scan.
 N18: callee-before-caller refine in `maybeRefineDecompilerOutput`
 (topo order, address ties, `refined_callees` in the caller prompt).
 `serializeSemanticContext` still dumps callers/callees from
-`codeReferences`.
+`codeReferences`. Call-graph-only functions (no declaration /
+crypto / detections) are included so those edges reach the prompt.
 
 ### 3c Neural leftovers
 

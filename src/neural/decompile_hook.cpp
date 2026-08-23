@@ -353,7 +353,8 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		const bool hasCrypto = !fn.usedCryptoConstants.empty();
 		const bool hasDemangled = !fn.getDemangledName().empty();
 		const bool hasDecl = !fn.getDeclarationString().empty();
-		if (!hasDetections && !hasCrypto && !hasDemangled && !hasDecl) continue;
+		const bool hasCallGraph = callersOf.count(fn.getName()) || calleesOf.count(fn.getName());
+		if (!hasDetections && !hasCrypto && !hasDemangled && !hasDecl && !hasCallGraph) continue;
 		if (!firstFn) oss << ',';
 		firstFn = false;
 		oss << "{\"name\":\"" << jsonEscape(fn.getName()) << '"';

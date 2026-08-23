@@ -1035,6 +1035,22 @@ TEST(NeuralSemanticContext, SerializesCallGraphFromCodeReferences)
 	EXPECT_NE(json.find("\"callees\":[\"expand_key\"]"), std::string::npos);
 }
 
+TEST(NeuralSemanticContext, SerializesCallGraphOnlyFunctions)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Function caller(retdec::common::Address(0x401000), retdec::common::Address(0x401080), "main");
+	retdec::common::Function callee(retdec::common::Address(0x401200), retdec::common::Address(0x401280), "helper");
+	callee.codeReferences.insert(retdec::common::Address(0x401010));
+	cfg.functions.insert(caller);
+	cfg.functions.insert(callee);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"name\":\"helper\""), std::string::npos);
+	EXPECT_NE(json.find("\"callers\":[\"main\"]"), std::string::npos);
+	EXPECT_NE(json.find("\"name\":\"main\""), std::string::npos);
+	EXPECT_NE(json.find("\"callees\":[\"helper\"]"), std::string::npos);
+}
+
 TEST(NeuralSemanticContext, SerializesVtableTargetNames)
 {
 	auto cfg = retdec::config::Config::empty();

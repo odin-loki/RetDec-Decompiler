@@ -8,6 +8,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (N18): call-graph-only functions are included in
+  semantic JSON so `callers`/`callees` reach the prompt. Tests:
+  `SerializesCallGraphOnlyFunctions`.
 - Wave 5 leftover (A8): PowerPC `sync`/`isync`/`lwsync`/`eieio`/
   `mbar`/`msync`/`tlbsync`/`ptesync` emit LLVM `fence` (`seq_cst`).
   No I-cache / TLB model. Tests: `SyncEmitsFence`, `IsyncEmitsFence`,
