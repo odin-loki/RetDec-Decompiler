@@ -187,6 +187,15 @@ define i32 @ldxr(i32* %p) {
 }
 )IR";
 
+constexpr const char* kCmpXchgIR = R"IR(
+target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+define i32 @cas(i32* %p) {
+  %r = cmpxchg i32* %p, i32 0, i32 1 seq_cst seq_cst
+  %v = extractvalue { i32, i1 } %r, 0
+  ret i32 %v
+}
+)IR";
+
 TEST(LlvmToSsa, SRemMapsToRemNotDiv)
 {
 	llvm::LLVMContext ctx;
@@ -223,4 +232,16 @@ TEST(LlvmToSsa, AtomicLoadMapsToLock)
 	ASSERT_NE(fn, nullptr);
 	EXPECT_GE(countOp(*fn, IrInstr::Op::Lock), 1);
 	EXPECT_EQ(countOp(*fn, IrInstr::Op::Load), 0);
+}
+
+TEST(LlvmToSsa, CmpXchgMapsToLock)
+{
+	llvm::LLVMContext ctx;
+	auto module = parseIR(ctx, kCmpXchgIR);
+	ASSERT_NE(module, nullptr);
+	auto ssa = buildSsaModule(*module);
+	ASSERT_NE(ssa, nullptr);
+	const SSAFunction* fn = findFn(*ssa, "cas");
+	ASSERT_NE(fn, nullptr);
+	EXPECT_GE(countOp(*fn, IrInstr::Op::Lock), 1);
 }

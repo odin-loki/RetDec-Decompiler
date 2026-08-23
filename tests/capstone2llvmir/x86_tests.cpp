@@ -13685,6 +13685,62 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, AddWithoutLockIsNotAtomicRmw)
 	}
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockCmpxchgEmitsAtomicCmpXchg)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock cmpxchg dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<AtomicCmpXchgInst>(&*it))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, CmpxchgWithoutLockIsNotAtomicCmpXchg)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("cmpxchg dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		EXPECT_FALSE(isa<AtomicCmpXchgInst>(&*it));
+	}
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockIncEmitsAtomicRmw)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock inc dword ptr [eax]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<AtomicRMWInst>(&*it))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, IncWithoutLockIsNotAtomicRmw)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("inc dword ptr [eax]"));
+	ASSERT_NE(nullptr, f);
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		EXPECT_FALSE(isa<AtomicRMWInst>(&*it));
+	}
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FXTRACT)
 {
 	ALL_MODES;

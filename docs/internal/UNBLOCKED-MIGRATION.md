@@ -139,11 +139,12 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
 
 - `SRem`/`URem`/`FRem` map to `Op::Rem`; `AtomicRMW`/`CmpXchg`/`Fence`
   and atomic load/store map to `Op::Lock`.
-- A8: lock-prefixed x86 ADD/XADD/AND/OR/XOR emit `atomicrmw`; ARM64
-  `ldxr`/`ldaxr`/`ldar` are atomic loads. `extractAtomics` accepts
-  `Op::Lock`. Implicit `xchg mem` is still a plain store (emulator
-  test). `lock cmpxchg` / `lock inc` / STLXR still untranslated as
-  atomics.
+- A8: lock-prefixed x86 ADD/XADD/AND/OR/XOR/`inc`/`dec` emit
+  `atomicrmw`; `lock cmpxchg` mem emits `cmpxchg`. ARM64
+  `ldxr`/`ldaxr`/`ldar` are atomic loads; `stxr`/`stlxr` are atomic
+  stores (status 0, no exclusive monitor); `stlr` is release.
+  `extractAtomics` accepts `Op::Lock`. Implicit `xchg mem` is still a
+  plain store (emulator test). `lock cmpxchg8b` / STXP still open.
 
 ### 3b C parser → N10 → N18
 
@@ -210,8 +211,8 @@ N17 is mean selected-token probability for the whole generation.
 - `IrInstr::Op::Rem` / `Op::Lock` appended before `Undef`.
   `SRem`/`URem`/`FRem` → `Rem`; atomics/fence → `Lock`.
 - Ring-buffer wrap: `Rem` + capacity immediate (not `Div`).
-- A8 lock-prefix / `ldxr`: lifter emits LLVM atomics; detector reads
-  `Op::Lock`.
+- A8 lock-prefix / `ldxr` / `stlxr`: lifter emits LLVM atomics;
+  detector reads `Op::Lock`. `lock cmpxchg8b` / STXP still open.
 - llvmir2hll empty-string GV uses `getValueType`.
 - Remaining Type*-only readers (no Value to thread):
   `simple_types` 1203–1204 / 1641 nested pointer-to-array,

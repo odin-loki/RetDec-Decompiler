@@ -3746,6 +3746,38 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, LdrLoadIsNotAtomic)
 	}
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, StlxrStoreIsAtomic)
+{
+	auto* f = translate(assemble("stlxr w0, w1, [x2]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic())
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, StrStoreIsNotAtomic)
+{
+	auto* f = translate(assemble("str w0, [x1]"));
+	ASSERT_NE(nullptr, f);
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			EXPECT_FALSE(s->isAtomic());
+		}
+	}
+}
+
 //
 // ARM64_INS_LDXRB
 //

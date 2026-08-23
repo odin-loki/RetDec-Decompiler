@@ -1429,7 +1429,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStr(cs_insn* i, cs_arm64* ai,
 		case ARM64_INS_STR:
 		case ARM64_INS_STUR:
 		case ARM64_INS_STTR:
-		//case ARM64_INS_STXR:
+		case ARM64_INS_STLR:
 		{
 			ty = getRegisterType(ai->operands[0].reg);
 			if (ty->isFloatTy())
@@ -1445,7 +1445,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStr(cs_insn* i, cs_arm64* ai,
 		case ARM64_INS_STRB:
 		case ARM64_INS_STURB:
 		case ARM64_INS_STTRB:
-		//case ARM64_INS_STXRB:
+		case ARM64_INS_STLRB:
 		{
 			ty = irb.getInt8Ty();
 			break;
@@ -1453,7 +1453,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStr(cs_insn* i, cs_arm64* ai,
 		case ARM64_INS_STRH:
 		case ARM64_INS_STURH:
 		case ARM64_INS_STTRH:
-		//case ARM64_INS_STXRH:
+		case ARM64_INS_STLRH:
 		{
 			ty = irb.getInt16Ty();
 			break;
@@ -1475,7 +1475,11 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStr(cs_insn* i, cs_arm64* ai,
 		op0 = irb.CreateZExtOrTrunc(op0, ty);
 	}
 	auto* dest = generateGetOperandMemAddr(ai->operands[1], irb);
-	storeIntPtr(irb, op0, dest, op0->getType());
+	auto* st = storeIntPtr(irb, op0, dest, op0->getType());
+	if (i->id == ARM64_INS_STLR || i->id == ARM64_INS_STLRB || i->id == ARM64_INS_STLRH)
+	{
+		st->setAtomic(llvm::AtomicOrdering::Release);
+	}
 
 	uint32_t baseR = ARM64_REG_INVALID;
 	if (ai->op_count == 2)
@@ -1499,6 +1503,57 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStr(cs_insn* i, cs_arm64* ai,
 	{
 		storeRegister(baseR, dest, irb);
 	}
+}
+
+/**
+ * ARM64_INS_STXR, ARM64_INS_STXRB, ARM64_INS_STXRH
+ * ARM64_INS_STLXR, ARM64_INS_STLXRB, ARM64_INS_STLXRH
+ * Exclusive store: atomic store + status 0 (no exclusive-monitor model).
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateStxr(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_EXPR(i, ai, irb, (ai->op_count == 3));
+
+	llvm::Type* ty = nullptr;
+	switch (i->id)
+	{
+		case ARM64_INS_STXR:
+		case ARM64_INS_STLXR:
+			ty = getRegisterType(ai->operands[1].reg);
+			break;
+		case ARM64_INS_STXRB:
+		case ARM64_INS_STLXRB:
+			ty = irb.getInt8Ty();
+			break;
+		case ARM64_INS_STXRH:
+		case ARM64_INS_STLXRH:
+			ty = irb.getInt16Ty();
+			break;
+		default:
+			throw GenericError("Arm64: unhandled STXR id");
+	}
+
+	auto* val = loadOp(ai->operands[1], irb);
+	if (!val->getType()->isFloatingPointTy())
+	{
+		val = irb.CreateZExtOrTrunc(val, ty);
+	}
+
+	llvm::Value* dest = nullptr;
+	if (ai->operands[2].type == ARM64_OP_MEM)
+	{
+		dest = generateGetOperandMemAddr(ai->operands[2], irb);
+	}
+	else
+	{
+		dest = loadOp(ai->operands[2], irb, nullptr, true);
+	}
+
+	auto* st = storeIntPtr(irb, val, dest, val->getType());
+	const bool release = i->id == ARM64_INS_STLXR || i->id == ARM64_INS_STLXRB
+			|| i->id == ARM64_INS_STLXRH;
+	st->setAtomic(release ? llvm::AtomicOrdering::Release : llvm::AtomicOrdering::Monotonic);
+	storeRegister(ai->operands[0].reg, llvm::ConstantInt::get(getRegisterType(ai->operands[0].reg), 0), irb);
 }
 
 /**

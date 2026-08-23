@@ -1816,6 +1816,82 @@ bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedRmw(
 	return true;
 }
 
+bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedCmpxchg(
+		cs_insn* i,
+		cs_x86* xi,
+		llvm::IRBuilder<>& irb)
+{
+	if (!hasLockPrefix(xi) || xi->op_count < 2)
+	{
+		return false;
+	}
+	if (xi->operands[0].type != X86_OP_MEM)
+	{
+		return false;
+	}
+
+	auto* addr = loadOp(xi->operands[0], irb, nullptr, true);
+	auto* desired = loadOp(xi->operands[1], irb);
+	auto* elem = getIntegerTypeFromByteSize(_module, xi->operands[0].size);
+	auto* accum = loadRegister(getAccumulatorRegister(xi->operands[0].size), irb);
+	desired = generateTypeConversion(irb, desired, elem, eOpConv::SEXT_TRUNC_OR_BITCAST);
+	accum = generateTypeConversion(irb, accum, elem, eOpConv::SEXT_TRUNC_OR_BITCAST);
+	auto* ptr = intToPtr(irb, addr, elem, getAddrSpace(xi->operands[0].mem.segment));
+	auto* cx = irb.CreateAtomicCmpXchg(
+			ptr,
+			accum,
+			desired,
+			llvm::AtomicOrdering::SequentiallyConsistent,
+			llvm::AtomicOrdering::SequentiallyConsistent);
+	attachPointeeType(cx, elem);
+	auto* old = irb.CreateExtractValue(cx, 0);
+	auto* sub = irb.CreateSub(accum, old);
+	storeRegistersPlusSflags(irb, sub, {
+			{X86_REG_AF, generateBorrowSubInt4(accum, old, irb)},
+			{X86_REG_CF, generateBorrowSub(accum, old, irb)},
+			{X86_REG_OF, generateOverflowSub(sub, accum, desired, irb)}});
+	storeRegister(getAccumulatorRegister(xi->operands[0].size), old, irb);
+	return true;
+}
+
+bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedIncDec(
+		cs_insn* i,
+		cs_x86* xi,
+		llvm::IRBuilder<>& irb,
+		bool isDec)
+{
+	if (!hasLockPrefix(xi) || xi->op_count < 1)
+	{
+		return false;
+	}
+	if (xi->operands[0].type != X86_OP_MEM)
+	{
+		return false;
+	}
+
+	auto* addr = loadOp(xi->operands[0], irb, nullptr, true);
+	auto* elem = getIntegerTypeFromByteSize(_module, xi->operands[0].size);
+	auto* one = llvm::ConstantInt::get(elem, 1);
+	auto* ptr = intToPtr(irb, addr, elem, getAddrSpace(xi->operands[0].mem.segment));
+	auto aop = isDec ? llvm::AtomicRMWInst::Sub : llvm::AtomicRMWInst::Add;
+	auto* old = irb.CreateAtomicRMW(aop, ptr, one, llvm::AtomicOrdering::SequentiallyConsistent);
+	attachPointeeType(old, elem);
+	llvm::Value* result = isDec ? irb.CreateSub(old, one) : irb.CreateAdd(old, one);
+	if (isDec)
+	{
+		storeRegistersPlusSflags(irb, result, {
+				{X86_REG_AF, generateBorrowSubInt4(old, one, irb)},
+				{X86_REG_OF, generateOverflowSub(result, old, one, irb)}});
+	}
+	else
+	{
+		storeRegistersPlusSflags(irb, result, {
+				{X86_REG_AF, generateCarryAddInt4(old, one, irb)},
+				{X86_REG_OF, generateOverflowAdd(result, old, one, irb)}});
+	}
+	return true;
+}
+
 /**
  * X86_INS_ADD, X86_INS_XADD
  */
@@ -2119,6 +2195,11 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCmpxchg(cs_insn* i, cs_x86* xi,
 {
 	EXPECT_IS_BINARY(i, xi, irb);
 
+	if (tryTranslateLockedCmpxchg(i, xi, irb))
+	{
+		return;
+	}
+
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
 	auto* accum = loadRegister(getAccumulatorRegister(xi->operands[0].size), irb);
 
@@ -2210,6 +2291,11 @@ void Capstone2LlvmIrTranslatorX86_impl::translateDec(cs_insn* i, cs_x86* xi, llv
 {
 	EXPECT_IS_UNARY(i, xi, irb);
 
+	if (tryTranslateLockedIncDec(i, xi, irb, true))
+	{
+		return;
+	}
+
 	op0 = loadOpUnary(xi, irb);
 	op1 = llvm::ConstantInt::get(op0->getType(), 1);
 
@@ -2278,6 +2364,11 @@ void Capstone2LlvmIrTranslatorX86_impl::translateImul(cs_insn* i, cs_x86* xi, ll
 void Capstone2LlvmIrTranslatorX86_impl::translateInc(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_UNARY(i, xi, irb);
+
+	if (tryTranslateLockedIncDec(i, xi, irb, false))
+	{
+		return;
+	}
 
 	op0 = loadOpUnary(xi, irb);
 	op1 = llvm::ConstantInt::get(op0->getType(), 1);
