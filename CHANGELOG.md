@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (A8): MIPS `ll`/`lld` loads are atomic
+  (monotonic). `sc`/`scd` are an atomic store plus status 1 (no
+  exclusive monitor). Tests: `LlLoadIsAtomic`, `MIPS_INS_LL`,
+  `LwLoadIsNotAtomic`, `ScStoreIsAtomic`, `MIPS_INS_SC`.
 - Wave 5 leftover (A8): `lock bts`/`btr`/`btc` mem → `atomicrmw`
   or/and/xor with a bit mask. CF is the old bit. Plain `bts` mem
   stays a load/modify/store. Tests: `LockBtsEmitsAtomicRmw`,

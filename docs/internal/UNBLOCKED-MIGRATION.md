@@ -157,6 +157,8 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
   stores; `stlex*` are release exclusive stores plus status 0.
   `ldaexd`/`stlexd` stay untranslated.
   `lock bts`/`btr`/`btc` mem emit `atomicrmw` or/and/xor.
+  MIPS `ll`/`lld` are atomic loads; `sc`/`scd` are atomic stores
+  plus status 1.
 
 ### 3b C parser → N10 → N18
 

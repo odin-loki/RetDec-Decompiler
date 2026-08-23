@@ -1056,9 +1056,11 @@ void Capstone2LlvmIrTranslatorMips_impl::translateLoadMemory(cs_insn* i, cs_mips
 		case MIPS_INS_LBU: ty = irb.getInt8Ty(); ct = eOpConv::ZEXT_TRUNC_OR_BITCAST; break;
 		case MIPS_INS_LH: ty = irb.getInt16Ty(); ct = eOpConv::SEXT_TRUNC_OR_BITCAST; break;
 		case MIPS_INS_LHU: ty = irb.getInt16Ty(); ct = eOpConv::ZEXT_TRUNC_OR_BITCAST; break;
-		case MIPS_INS_LW: ty = irb.getInt32Ty(); ct = eOpConv::SEXT_TRUNC_OR_BITCAST; break;
+		case MIPS_INS_LW:
+		case MIPS_INS_LL: ty = irb.getInt32Ty(); ct = eOpConv::SEXT_TRUNC_OR_BITCAST; break;
 		case MIPS_INS_LWU: ty = irb.getInt32Ty(); ct = eOpConv::ZEXT_TRUNC_OR_BITCAST; break;
-		case MIPS_INS_LD: ty = irb.getInt64Ty(); ct = eOpConv::SEXT_TRUNC_OR_BITCAST; break;
+		case MIPS_INS_LD:
+		case MIPS_INS_LLD: ty = irb.getInt64Ty(); ct = eOpConv::SEXT_TRUNC_OR_BITCAST; break;
 		case MIPS_INS_LDC3: ty = irb.getInt64Ty(); ct = eOpConv::SEXT_TRUNC_OR_BITCAST; break;
 		case MIPS_INS_LWC1: ty = irb.getFloatTy(); ct = eOpConv::FPCAST_OR_BITCAST; break;
 		case MIPS_INS_LDC1: ty = irb.getDoubleTy(); ct = eOpConv::FPCAST_OR_BITCAST; break;
@@ -1067,6 +1069,13 @@ void Capstone2LlvmIrTranslatorMips_impl::translateLoadMemory(cs_insn* i, cs_mips
 	}
 
 	op1 = loadOp(mi->operands[1], irb, ty);
+	if (i->id == MIPS_INS_LL || i->id == MIPS_INS_LLD)
+	{
+		if (auto* ld = llvm::dyn_cast<llvm::LoadInst>(op1))
+		{
+			ld->setAtomic(llvm::AtomicOrdering::Monotonic);
+		}
+	}
 	storeOp(mi->operands[0], op1, irb, ct);
 }
 
@@ -1083,8 +1092,10 @@ void Capstone2LlvmIrTranslatorMips_impl::translateStoreMemory(cs_insn* i, cs_mip
 	{
 		case MIPS_INS_SB: ty = irb.getInt8Ty(); break;
 		case MIPS_INS_SH: ty = irb.getInt16Ty(); break;
-		case MIPS_INS_SW: ty = irb.getInt32Ty(); break;
-		case MIPS_INS_SD: ty = irb.getInt64Ty(); break;
+		case MIPS_INS_SW:
+		case MIPS_INS_SC: ty = irb.getInt32Ty(); break;
+		case MIPS_INS_SD:
+		case MIPS_INS_SCD: ty = irb.getInt64Ty(); break;
 		case MIPS_INS_SDC3: ty = irb.getInt64Ty(); break;
 		case MIPS_INS_SWC1: ty = irb.getFloatTy(); break;
 		case MIPS_INS_SDC1: ty = irb.getDoubleTy(); break;
@@ -1107,7 +1118,19 @@ void Capstone2LlvmIrTranslatorMips_impl::translateStoreMemory(cs_insn* i, cs_mip
 	{
 		throw GenericError("unhandled type");
 	}
-	storeOp(mi->operands[1], op0, irb);
+	auto* stored = storeOp(mi->operands[1], op0, irb);
+	if (i->id == MIPS_INS_SC || i->id == MIPS_INS_SCD)
+	{
+		if (auto* st = llvm::dyn_cast<llvm::StoreInst>(stored))
+		{
+			st->setAtomic(llvm::AtomicOrdering::Monotonic);
+		}
+		// Success = 1. No exclusive-monitor model.
+		storeOp(
+				mi->operands[0],
+				llvm::ConstantInt::get(getDefaultType(), 1),
+				irb);
+	}
 }
 
 /**

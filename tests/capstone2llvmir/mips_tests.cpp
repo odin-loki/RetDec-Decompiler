@@ -2167,6 +2167,62 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LW)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, LlLoadIsAtomic)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("ll $1, 0x8($2)"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic())
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LL)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{MIPS_REG_2, 0x1000},
+	});
+	setMemory({
+		{0x1008, 0x12345678_dw},
+	});
+
+	emulate("ll $1, 0x8($2)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_1, 0x12345678},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1008});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, LwLoadIsNotAtomic)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("lw $1, 0x8($2)"));
+	ASSERT_NE(nullptr, f);
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			EXPECT_FALSE(l->isAtomic());
+		}
+	}
+}
+
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LW_sext)
 {
 	SKIP_MODE_64;
@@ -2473,6 +2529,48 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SW)
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_1, MIPS_REG_2});
 	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1008, 0x12345678_w}
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, ScStoreIsAtomic)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("sc $1, 0x8($2)"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic())
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SC)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{MIPS_REG_1, 0x12345678},
+		{MIPS_REG_2, 0x1000},
+	});
+
+	emulate("sc $1, 0x8($2)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_1, MIPS_REG_2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_1, 1},
+	});
 	EXPECT_NO_MEMORY_LOADED();
 	EXPECT_JUST_MEMORY_STORED({
 		{0x1008, 0x12345678_w}
