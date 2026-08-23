@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` also dumps a
+  function's defined end address from existing
+  `AddressRange::getEnd` (start was already dumped). Test:
+  `SerializesExistingFunctionFields`. Default F5 is unchanged.
 - N16 leftover: vtable `targets` are objects with name, slot
   address, target address, and thumb from existing
   `VtableItem` getters. Test: `SerializesVtableTargetNames`.

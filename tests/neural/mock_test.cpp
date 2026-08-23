@@ -841,6 +841,7 @@ TEST(NeuralSemanticContext, SerializesExistingFunctionFields)
 	EXPECT_NE(json.find("\"name\":\"fn_401000\""), std::string::npos);
 	EXPECT_NE(json.find("\"demangled\":\"Cipher::expand_key\""), std::string::npos);
 	EXPECT_NE(json.find("\"start\":\"0x401000\""), std::string::npos);
+	EXPECT_NE(json.find("\"end\":\"0x401080\""), std::string::npos);
 	EXPECT_NE(json.find("\"declaration\":\"void expand_key(uint8_t *key)\""), std::string::npos);
 	EXPECT_NE(json.find("\"return_type\":\"void\""), std::string::npos);
 	EXPECT_NE(json.find("\"name\":\"key\""), std::string::npos);

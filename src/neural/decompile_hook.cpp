@@ -162,6 +162,7 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		oss << "{\"name\":\"" << jsonEscape(fn.getName()) << '"';
 		if (hasDemangled) oss << ",\"demangled\":\"" << jsonEscape(fn.getDemangledName()) << '"';
 		if (fn.getStart().isDefined()) oss << ",\"start\":\"" << jsonEscape(fn.getStart().toHexPrefixString()) << '"';
+		if (fn.getEnd().isDefined()) oss << ",\"end\":\"" << jsonEscape(fn.getEnd().toHexPrefixString()) << '"';
 		if (hasDecl) oss << ",\"declaration\":\"" << jsonEscape(fn.getDeclarationString()) << '"';
 		if (!fn.getRealName().empty() && fn.getRealName() != fn.getName())
 			oss << ",\"real_name\":\"" << jsonEscape(fn.getRealName()) << '"';
