@@ -1033,6 +1033,15 @@ TEST(NeuralSemanticContext, SerializesCompilerToolAndArchitecture)
 	EXPECT_NE(json.find("\"file_format\":\"elf\""), std::string::npos);
 }
 
+TEST(NeuralSemanticContext, SerializesFileClassBits)
+{
+	auto cfg = retdec::config::Config::empty();
+	cfg.fileFormat.setFileClassBits(64);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"file_class_bits\":64"), std::string::npos);
+}
+
 TEST(NeuralSemanticContext, SerializesFileType)
 {
 	auto cfg = retdec::config::Config::empty();

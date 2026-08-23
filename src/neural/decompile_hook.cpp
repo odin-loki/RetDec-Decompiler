@@ -351,6 +351,8 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 	{
 		oss << ",\"file_format\":\"" << jsonEscape(config.fileFormat.getName()) << '"';
 	}
+	if (config.fileFormat.getFileClassBits() != 0)
+		oss << ",\"file_class_bits\":" << config.fileFormat.getFileClassBits();
 	if (config.fileType.isKnown())
 	{
 		const char* kind = "unknown";

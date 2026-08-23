@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` also dumps
+  `file_class_bits` from existing `FileFormat::getFileClassBits`
+  when non-zero. Test: `SerializesFileClassBits`. Default F5 is
+  unchanged.
 - N16 leftover: `serializeSemanticContext` also dumps defined
   source `start_line` / `end_line` from existing
   `Function::getStartLine` / `getEndLine`. Lines alone do not
