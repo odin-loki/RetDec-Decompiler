@@ -8,9 +8,11 @@
 #include "retdec/concurrency_detect/concurrency_detect.h"
 #include "retdec/container_detect/container_detect.h"
 #include "retdec/sort_detect/sort_detect.h"
+#include "retdec/ssa/ssa.h"
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -642,4 +644,64 @@ TEST(SemanticExport, MergesortNameVariantIsSymbolNameEvidence)
 	ASSERT_EQ(map.count("hand_roll"), 1u);
 	ASSERT_FALSE(map.at("hand_roll").empty());
 	EXPECT_EQ(map.at("hand_roll").front().detail.find("evidence:symbol_name"), std::string::npos);
+}
+
+TEST(SemanticExport, HmacPadsExportAsCryptoKind)
+{
+	retdec::ssa::SSAFunction fn("hmac_fn");
+	auto* blk = fn.addBlock();
+	ASSERT_NE(blk, nullptr);
+
+	auto addImmXor = [&](uint64_t imm) {
+		retdec::ssa::IrInstr* instr = fn.addInstr(blk->id, retdec::ssa::IrInstr::Op::Xor, 0);
+		retdec::ssa::IrValue* v = fn.allocValue(retdec::ssa::ValueKind::Immediate);
+		v->imm = imm;
+		retdec::ssa::Use u;
+		u.valueId = v->id;
+		instr->uses.push_back(u);
+	};
+	addImmXor(0x36363636ULL);
+	addImmXor(0x5c5c5c5cULL);
+	fn.addInstr(blk->id, retdec::ssa::IrInstr::Op::Add, 0);
+	fn.addInstr(blk->id, retdec::ssa::IrInstr::Op::Add, 0);
+
+	retdec::analysis::SemanticDetectionMap map;
+	retdec::analysis::appendCryptoDetections(map, fn);
+
+	ASSERT_EQ(map.count("hmac_fn"), 1u);
+	bool foundHmac = false;
+	for (const auto& d: map.at("hmac_fn"))
+	{
+		if (d.kind == "crypto" && d.label == "HMAC")
+		{
+			foundHmac = true;
+			EXPECT_GE(d.confidence, 0.50f);
+			EXPECT_EQ(d.detail.find("evidence:symbol_name"), std::string::npos);
+		}
+	}
+	EXPECT_TRUE(foundHmac);
+}
+
+TEST(SemanticExport, NameOnlyAesNiDoesNotExportBelowThreshold)
+{
+	retdec::ssa::SSAFunction fn("aesni_only");
+	auto* blk = fn.addBlock();
+	ASSERT_NE(blk, nullptr);
+	retdec::ssa::IrInstr* call = fn.addInstr(blk->id, retdec::ssa::IrInstr::Op::Call, 0);
+	call->calleeName = "_mm_aesenc_si128";
+	fn.addInstr(blk->id, retdec::ssa::IrInstr::Op::Xor, 0);
+	fn.addInstr(blk->id, retdec::ssa::IrInstr::Op::Xor, 0);
+	fn.addInstr(blk->id, retdec::ssa::IrInstr::Op::Xor, 0);
+
+	retdec::analysis::SemanticDetectionMap map;
+	retdec::analysis::appendCryptoDetections(map, fn);
+
+	if (map.count("aesni_only") == 0)
+	{
+		return;
+	}
+	for (const auto& d: map.at("aesni_only"))
+	{
+		EXPECT_FALSE(d.kind == "crypto" && d.label == "AES");
+	}
 }

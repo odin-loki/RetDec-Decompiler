@@ -6,6 +6,9 @@
 
 #include "retdec/retdec/semantic_recovery_export.h"
 
+#include "retdec/crypto_detect/crypto_detect.h"
+#include "retdec/ssa/ssa.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -1294,6 +1297,20 @@ bool writeTextFile(const std::string& path, const std::string& text)
 }
 
 } // anonymous namespace
+
+void appendCryptoDetections(SemanticDetectionMap& map, const ssa::SSAFunction& fn)
+{
+	crypto_detect::CryptoDetector detector;
+	for (const auto& result: detector.detect(fn))
+	{
+		if (result.algorithm == crypto_detect::CryptoAlgorithm::Unknown)
+		{
+			continue;
+		}
+		appendDetection(
+			map, fn.name(), makeDetection("crypto", result.algorithmName(), result.confidence, result.toString()));
+	}
+}
 
 SemanticDetectionMap buildSemanticDetectionMap(
 	const container_detect::ContainerDetector::DetectionMap& containers,

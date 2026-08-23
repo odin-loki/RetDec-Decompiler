@@ -19,9 +19,18 @@
 #include "retdec/sort_detect/sort_detect.h"
 
 namespace retdec {
+
+namespace ssa {
+class SSAFunction;
+}
+
 namespace analysis {
 
 using SemanticDetectionMap = std::unordered_map<std::string, std::vector<common::SemanticDetection>>;
+
+/// Run CryptoDetector on `fn` and append kind="crypto" hits (label from
+/// algorithmName()). Extract does not map kind=crypto.
+void appendCryptoDetections(SemanticDetectionMap& map, const ssa::SSAFunction& fn);
 
 SemanticDetectionMap buildSemanticDetectionMap(
 	const container_detect::ContainerDetector::DetectionMap& containers,

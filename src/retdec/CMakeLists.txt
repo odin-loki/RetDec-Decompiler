@@ -26,6 +26,7 @@ target_link_libraries(retdec
 		retdec_container_detect
 		retdec_algo_recover
 		retdec-type-inference
+		retdec-crypto-detect
 		retdec-serial-detect
 		retdec-ipa
 		retdec-call-conv

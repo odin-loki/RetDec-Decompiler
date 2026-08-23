@@ -28,4 +28,8 @@ set_target_properties(retdec-crypto-detect PROPERTIES
     CXX_STANDARD_REQUIRED YES
 )
 
-install(TARGETS retdec-crypto-detect ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
+install(TARGETS retdec-crypto-detect
+    EXPORT  retdec-targets
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+)

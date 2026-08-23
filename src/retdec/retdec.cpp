@@ -877,17 +877,17 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 				auto detTimer = profiling::Profiler::instance().measure("analysis.detectors");
 				if (envFlagEnabled("RETDEC_SKIP_SEMANTIC_RECOVERY"))
 				{
-					Log::info() << "[analysis] semantic recovery skipped (RETDEC_SKIP_SEMANTIC_RECOVERY)"
-								<< std::endl;
+					Log::info() << "[analysis] semantic recovery skipped (RETDEC_SKIP_SEMANTIC_RECOVERY)" << std::endl;
 				}
 				else
 				{
 					const bool useCache = analysis::incrementalCacheEnabled();
 					const std::string cachePath =
-						useCache ? analysis::functionAnalysisCachePath(config.parameters.getOutputFile()) : std::string{};
-					analysis::FunctionAnalysisCache fnCache = useCache
-																? analysis::FunctionAnalysisCache::loadFromFile(cachePath)
-																: analysis::FunctionAnalysisCache{};
+						useCache ? analysis::functionAnalysisCachePath(config.parameters.getOutputFile())
+								 : std::string{};
+					analysis::FunctionAnalysisCache fnCache =
+						useCache ? analysis::FunctionAnalysisCache::loadFromFile(cachePath)
+								 : analysis::FunctionAnalysisCache{};
 
 					struct FnWorkItem
 					{
@@ -924,8 +924,9 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 						for (std::size_t i = 0; i < work.size(); ++i)
 						{
 							if (work[i].cacheHit) continue;
-							futures.push_back(pool.submit(
-								[i, &work]() { work[i].detections = analysis::analyseFunctionDetections(*work[i].fn); }));
+							futures.push_back(pool.submit([i, &work]() {
+								work[i].detections = analysis::analyseFunctionDetections(*work[i].fn);
+							}));
 						}
 						for (auto& f: futures)
 							f.get();
@@ -971,9 +972,11 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 
 					if (cm.isMT)
 						Log::info() << "[analysis] concurrency detected: " << cm.threads.size() << " thread(s), "
-									<< cm.locks.size() << " lock(s), " << cm.atomics.size() << " atomic(s)" << std::endl;
+									<< cm.locks.size() << " lock(s), " << cm.atomics.size() << " atomic(s)"
+									<< std::endl;
 					if (!cmap.empty())
-						Log::info() << "[analysis] containers detected in " << cmap.size() << " function(s)" << std::endl;
+						Log::info() << "[analysis] containers detected in " << cmap.size() << " function(s)"
+									<< std::endl;
 					if (!amap.empty())
 						Log::info() << "[analysis] <algorithm> patterns detected in " << amap.size() << " function(s)"
 									<< std::endl;
@@ -984,8 +987,21 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 						Log::info() << "[analysis] sorting algorithms detected in " << dm.size() << " function(s)"
 									<< std::endl;
 
-					const auto semanticMap =
-						analysis::buildSemanticDetectionMap(cmap, amap, imap, dm, cm, config.parameters.getOutputLang());
+					auto semanticMap = analysis::buildSemanticDetectionMap(
+						cmap, amap, imap, dm, cm, config.parameters.getOutputLang());
+					std::size_t nCrypto = 0;
+					for (const auto& item: work)
+					{
+						if (!item.fn) continue;
+						const std::size_t before =
+							semanticMap.count(item.fn->name()) ? semanticMap.find(item.fn->name())->second.size() : 0;
+						analysis::appendCryptoDetections(semanticMap, *item.fn);
+						const auto it = semanticMap.find(item.fn->name());
+						if (it != semanticMap.end() && it->second.size() > before) ++nCrypto;
+					}
+					if (nCrypto > 0)
+						Log::info() << "[analysis] crypto primitives detected in " << nCrypto << " function(s)"
+									<< std::endl;
 					analysis::exportSemanticRecovery(config, semanticMap, outString);
 					if (!semanticMap.empty())
 						Log::info() << "[analysis] semantic detections exported for " << semanticMap.size()
@@ -1001,8 +1017,7 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 					{
 						cSource = *outString;
 					}
-					analysis::maybeWriteBuildableSidecars(
-							config.parameters.getOutputFile(), cSource);
+					analysis::maybeWriteBuildableSidecars(config.parameters.getOutputFile(), cSource);
 				}
 			}
 

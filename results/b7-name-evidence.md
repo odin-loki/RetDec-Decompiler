@@ -64,7 +64,10 @@ confidence as structural evidence:
 - `sort_detect` self-name recursion (not `_introsort` / named-heapsort
   / named-mergesort variant; those paths are now tagged)
 - `algo_recover` idiom self-recursion (exact self-call is structural)
-- `crypto_detect` / `pattern_detect` callee-name tables
+- `crypto_detect` / `pattern_detect` callee-name tables.
+  Crypto is now exported as `kind="crypto"`; name-only AES-NI
+  scores 0.20 and stays below minConfidence 0.50 so it does
+  not reach config JSON. Extract does not map `kind=="crypto"`.
 
 Input-path reads in `retdec.cpp` `tryEmulationUnpacking` are diagnostic
 logs only (`RETDEC_EMULATION_UNPACK_DIAG`), not detector scores.

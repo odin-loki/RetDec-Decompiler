@@ -8,6 +8,14 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Pipeline leftover: `CryptoDetector` now runs on each SSA
+  function after `buildSemanticDetectionMap` and appends
+  `kind="crypto"` (label from `algorithmName()`). Extract does
+  not map `kind=="crypto"`, so headline F1 is unchanged.
+  Name-only AES-NI scores 0.20 and stays below the 0.50 export
+  floor. Tests: `HmacPadsExportAsCryptoKind`,
+  `NameOnlyAesNiDoesNotExportBelowThreshold`. Default F5 is
+  unchanged.
 - N16 leftover: `serializeSemanticContext` also dumps defined
   frame-base storage from existing `Function::frameBaseStorage`.
   Test: `SerializesFrameBaseStorage`. Default F5 is unchanged.
