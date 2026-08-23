@@ -311,7 +311,7 @@ ShPtr<Type> LLVMValueConverter::determineVariableType(llvm::Value *value) {
 	if (auto allocaInst = LLVMSupport::isDirectAlloca(value)) {
 		return typeConverter->convert(allocaInst->getAllocatedType());
 	} else if (auto globVar = llvm::dyn_cast<llvm::GlobalVariable>(value)) {
-		return typeConverter->convert(globVar->getType()->getElementType());
+		return typeConverter->convert(globVar->getValueType());
 	}
 
 	return typeConverter->convert(value->getType());

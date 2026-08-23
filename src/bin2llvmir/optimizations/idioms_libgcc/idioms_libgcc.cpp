@@ -312,7 +312,7 @@ llvm::Value* IdiomsLibgccImpl::getRes0<std::int32_t>(
 {
 	auto* c = IrModifier::convertValueToType(
 			res,
-			res0Single->getType()->getElementType(),
+			llvm_utils::pointeeType(res0Single),
 			call);
 	return new llvm::StoreInst(c, res0Single, call);
 }
@@ -323,7 +323,7 @@ llvm::Value* IdiomsLibgccImpl::getRes0<std::int64_t>(
 {
 	auto* c = IrModifier::convertValueToType(
 			res,
-			res0Double->getType()->getElementType(),
+			llvm_utils::pointeeType(res0Double),
 			call);
 	return new llvm::StoreInst(c, res0Double, call);
 }
@@ -334,7 +334,7 @@ llvm::Value* IdiomsLibgccImpl::getRes0<float>(
 {
 	auto* c = IrModifier::convertValueToType(
 			res,
-			res0Single->getType()->getElementType(),
+			llvm_utils::pointeeType(res0Single),
 			call);
 	return new llvm::StoreInst(c, res0Single, call);
 }
@@ -343,7 +343,7 @@ llvm::Value* IdiomsLibgccImpl::getRes0<double>(
 		llvm::CallInst* call,
 		llvm::Value* res)
 {
-	auto* resType = res0Double->getType()->getElementType();
+	auto* resType = llvm_utils::pointeeType(res0Double);
 	auto* c = IrModifier::convertValueToType(res, resType, call);
 	return new llvm::StoreInst(c, res0Double, call);
 }
@@ -355,7 +355,7 @@ llvm::Value* IdiomsLibgccImpl::getRes1<std::int32_t>(
 {
 	auto* c = IrModifier::convertValueToType(
 			res,
-			res1Single->getType()->getElementType(),
+			llvm_utils::pointeeType(res1Single),
 			call);
 	return new llvm::StoreInst(c, res1Single, call);
 }
@@ -366,7 +366,7 @@ llvm::Value* IdiomsLibgccImpl::getRes1<std::int64_t>(
 {
 	auto* c = IrModifier::convertValueToType(
 			res,
-			res1Double->getType()->getElementType(),
+			llvm_utils::pointeeType(res1Double),
 			call);
 	return new llvm::StoreInst(c, res1Double, call);
 }

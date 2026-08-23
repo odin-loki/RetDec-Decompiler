@@ -163,7 +163,7 @@ bool SyscallFixer::transform(
 		{
 			auto* conv = IrModifier::convertValueToType(
 					call,
-					reg->getType()->getElementType(),
+					llvm_utils::pointeeType(reg),
 					next);
 			auto* s = new StoreInst(conv, reg, next);
 			LOG << "\t===> " << llvmObjToString(s) << std::endl;

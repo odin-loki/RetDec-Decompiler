@@ -914,9 +914,9 @@ Type* ParamReturn::extractType(Value* from) const
 		return p->getElementType();
 	}
 
-	if (auto* p = dyn_cast<PointerType>(from->getType()))
+	if (auto* elem = llvm_utils::pointeeType(from))
 	{
-		if (auto* a = dyn_cast<ArrayType>(p->getElementType()))
+		if (auto* a = dyn_cast<ArrayType>(elem))
 		{
 			return PointerType::get(a->getElementType(), 0);
 		}
@@ -964,9 +964,9 @@ void ParamReturn::modifyType(DataFlowEntry& de) const
 				if (usage == call.argStores().end())
 				{
 
-					if (auto* p = dyn_cast<PointerType>(arg->getType()))
+					if (auto* ptee = llvm_utils::pointeeType(arg))
 					{
-						types.push_back(p->getElementType());
+						types.push_back(ptee);
 					}
 					else
 					{
@@ -1017,9 +1017,9 @@ void ParamReturn::modifyType(DataFlowEntry& de) const
 			{
 				types.push_back(_abi->getDefaultType());
 			}
-			else if (auto* p = dyn_cast<PointerType>(i->getType()))
+			else if (auto* ptee = llvm_utils::pointeeType(i))
 			{
-				types.push_back(p->getElementType());
+				types.push_back(ptee);
 			}
 			else
 			{
@@ -1157,9 +1157,9 @@ void ParamReturn::applyToIr(DataFlowEntry& de)
 		traceParamReturn("applyToIr ret processing: " + fnName);
 		if (de.getRetType() == nullptr)
 		{
-			if (auto* p = dyn_cast<PointerType>(de.getRetValue()->getType()))
+			if (auto* ptee = llvm_utils::pointeeType(de.getRetValue()))
 			{
-				de.setRetType(p->getElementType());
+				de.setRetType(ptee);
 			}
 			else
 			{

@@ -917,9 +917,9 @@ llvm::Value* IrModifier::changeObjectType(
 
 			if (val == dst)
 			{
-				PointerType* ptr = dyn_cast<PointerType>(nval->getType());
-				assert(ptr);
-				auto* conv = IrModifier::convertValueToType(src, ptr->getElementType(), store);
+				auto* ptee = llvm_utils::pointeeType(nval);
+				assert(ptee);
+				auto* conv = IrModifier::convertValueToType(src, ptee, store);
 				store->setOperand(0, conv);
 				store->setOperand(1, nval);
 			}

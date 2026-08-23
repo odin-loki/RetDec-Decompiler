@@ -321,7 +321,7 @@ const retdec::common::Object* Config::insertGlobalVariable(
 	cgv.setIsFromDebug(fromDebug);
 	cgv.setRealName(realName);
 	cgv.setCryptoDescription(cryptoDesc);
-	cgv.type.setLlvmIr(llvmObjToString(gv->getType()->getElementType()));
+	cgv.type.setLlvmIr(llvmObjToString(llvm_utils::pointeeType(gv)));
 	if (gv->hasInitializer() && gv->getInitializer()->getName() == "wide-string")
 	{
 		cgv.type.setIsWideString(true);

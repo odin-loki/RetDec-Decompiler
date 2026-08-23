@@ -286,7 +286,7 @@ void StackAnalysis::handleInstruction(
 	{
 		auto* conv = IrModifier::convertValueToType(
 				s->getValueOperand(),
-				a->getType()->getElementType(),
+				llvm_utils::pointeeType(a),
 				inst);
 		new StoreInst(conv, a, inst);
 		_toRemove.insert(s);

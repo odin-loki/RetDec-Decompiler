@@ -14,6 +14,7 @@
 
 #include "retdec/bin2llvmir/optimizations/param_return/filter/filter.h"
 #include "retdec/bin2llvmir/optimizations/param_return/filter/ms_x64.h"
+#include "retdec/bin2llvmir/utils/llvm.h"
 
 using namespace llvm;
 
@@ -147,9 +148,9 @@ void Filter::estimateRetValue(DataFlowEntry* de) const
 			if (rv != nullptr)
 			{
 				retType = rv->getType();
-				if (auto* p = dyn_cast<PointerType>(retType))
+				if (auto* ptee = llvm_utils::pointeeType(rv))
 				{
-					retType = p->getElementType();
+					retType = ptee;
 				}
 				retValue = rv;
 			}

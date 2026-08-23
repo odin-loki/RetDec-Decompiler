@@ -212,5 +212,9 @@ N17 is mean selected-token probability for the whole generation.
 - **No** `IrInstr::Op` enum change yet.
 - Remaining lifter IntToPtr load/store writers (push/pop/call/ret,
   ARM LDM/STM, ARM64 LDP/STP, PowerPC indexed) write MD.
-- Remaining readers: Type*-only `getPointerElementType` (no Value),
-  `llvmir2hll` converters, `param_return`.
+- Remaining Value-based readers (`config`, `stack`, `syscalls`, ABI,
+  `ir_modifier`, `param_return`, `idioms_libgcc`) call `pointeeType`.
+  llvmir2hll GV uses `getValueType` (no bin2llvmir dep).
+- Remaining readers: Type*-only `getPointerElementType` /
+  `PointerType::getElementType` (no Value), llvmir2hll
+  `convert(PointerType*)`.

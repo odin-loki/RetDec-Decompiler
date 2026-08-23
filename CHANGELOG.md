@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover: remaining Value-based pointer-element reads
+  (`config`, `stack`, `syscalls`, ABI, `ir_modifier`, `param_return`,
+  `idioms_libgcc`) go through `pointeeType`. llvmir2hll global
+  variables use `GlobalVariable::getValueType`. LLVM pin unchanged.
 - Wave 5 leftover: remaining lifter IntToPtr load/store paths
   (x86 push/pop/call/ret/enter/leave/far/xlat/fxsave, ARM LDM/STM,
   ARM64 LDR/STR/LDP/STP, PowerPC indexed load/store) now emit

@@ -108,9 +108,9 @@ std::size_t Abi::getRegisterByteSize(uint32_t reg) const
 	auto r = getRegister(reg);
 	assert(r);
 
-	if (auto* p = dyn_cast<PointerType>(r->getType()))
+	if (auto* ptee = llvm_utils::pointeeType(r))
 	{
-		return getTypeByteSize(p->getElementType());
+		return getTypeByteSize(ptee);
 	}
 
 	return getTypeByteSize(r->getType());
