@@ -1449,6 +1449,8 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdr(cs_insn* i, cs_arm* ai, llv
 		case ARM_INS_LDR:
 		case ARM_INS_LDRT:
 		case ARM_INS_LDREX:
+		case ARM_INS_LDA:
+		case ARM_INS_LDAEX:
 		{
 			ty = irb.getInt32Ty();
 			sext = false;
@@ -1457,6 +1459,8 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdr(cs_insn* i, cs_arm* ai, llv
 		case ARM_INS_LDRB:
 		case ARM_INS_LDRBT:
 		case ARM_INS_LDREXB:
+		case ARM_INS_LDAB:
+		case ARM_INS_LDAEXB:
 		{
 			ty = irb.getInt8Ty();
 			sext = false;
@@ -1472,6 +1476,8 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdr(cs_insn* i, cs_arm* ai, llv
 		case ARM_INS_LDRH:
 		case ARM_INS_LDRHT:
 		case ARM_INS_LDREXH:
+		case ARM_INS_LDAH:
+		case ARM_INS_LDAEXH:
 		{
 			ty = irb.getInt16Ty();
 			sext = false;
@@ -1520,11 +1526,25 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdr(cs_insn* i, cs_arm* ai, llv
 		throw GenericError("unhandled LDR format");
 	}
 
-	if (i->id == ARM_INS_LDREX || i->id == ARM_INS_LDREXB || i->id == ARM_INS_LDREXH)
+	if (auto* ld = llvm::dyn_cast<llvm::LoadInst>(op1))
 	{
-		if (auto* ld = llvm::dyn_cast<llvm::LoadInst>(op1))
+		switch (i->id)
 		{
-			ld->setAtomic(llvm::AtomicOrdering::Monotonic);
+			case ARM_INS_LDREX:
+			case ARM_INS_LDREXB:
+			case ARM_INS_LDREXH:
+				ld->setAtomic(llvm::AtomicOrdering::Monotonic);
+				break;
+			case ARM_INS_LDA:
+			case ARM_INS_LDAB:
+			case ARM_INS_LDAH:
+			case ARM_INS_LDAEX:
+			case ARM_INS_LDAEXB:
+			case ARM_INS_LDAEXH:
+				ld->setAtomic(llvm::AtomicOrdering::Acquire);
+				break;
+			default:
+				break;
 		}
 	}
 
@@ -1676,6 +1696,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStr(cs_insn* i, cs_arm* ai, llv
 		case ARM_INS_STR:
 		case ARM_INS_STRT:
 		case ARM_INS_STREX:
+		case ARM_INS_STL:
 		{
 			op0 = loadOp(ai->operands[0], irb);
 			op0 = irb.CreateZExtOrTrunc(op0, irb.getInt32Ty());
@@ -1685,6 +1706,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStr(cs_insn* i, cs_arm* ai, llv
 		case ARM_INS_STRB:
 		case ARM_INS_STRBT:
 		case ARM_INS_STREXB:
+		case ARM_INS_STLB:
 		{
 			op0 = loadOp(ai->operands[0], irb);
 			op0 = irb.CreateZExtOrTrunc(op0, irb.getInt8Ty());
@@ -1693,6 +1715,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStr(cs_insn* i, cs_arm* ai, llv
 		case ARM_INS_STRH:
 		case ARM_INS_STRHT:
 		case ARM_INS_STREXH:
+		case ARM_INS_STLH:
 		{
 			op0 = loadOp(ai->operands[0], irb);
 			op0 = irb.CreateZExtOrTrunc(op0, irb.getInt16Ty());
@@ -1764,7 +1787,14 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStr(cs_insn* i, cs_arm* ai, llv
 	else if (ai->op_count == 2
 			&& ai->operands[1].type == ARM_OP_MEM)
 	{
-		storeOp(ai->operands[1], op0, irb);
+		auto* stored = storeOp(ai->operands[1], op0, irb);
+		if (i->id == ARM_INS_STL || i->id == ARM_INS_STLB || i->id == ARM_INS_STLH)
+		{
+			if (auto* st = llvm::dyn_cast<llvm::StoreInst>(stored))
+			{
+				st->setAtomic(llvm::AtomicOrdering::Release);
+			}
+		}
 		baseR = ai->operands[1].mem.base;
 		if (auto disp = ai->operands[1].mem.disp)
 		{
@@ -1800,14 +1830,16 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStr(cs_insn* i, cs_arm* ai, llv
 
 /**
  * ARM_INS_STREX, ARM_INS_STREXB, ARM_INS_STREXH
+ * ARM_INS_STLEX, ARM_INS_STLEXB, ARM_INS_STLEXH
  * Exclusive store: atomic store + status 0 (no exclusive-monitor model).
- * STREXD stays untranslated (pair packing).
+ * STREXD/STLEXD stay untranslated (pair packing).
  */
 void Capstone2LlvmIrTranslatorArm_impl::translateStrex(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_EXPR(i, ai, irb, (ai->op_count == 3));
 
 	llvm::Type* ty = nullptr;
+	auto ordering = llvm::AtomicOrdering::Monotonic;
 	switch (i->id)
 	{
 		case ARM_INS_STREX:
@@ -1819,6 +1851,18 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStrex(cs_insn* i, cs_arm* ai, l
 		case ARM_INS_STREXH:
 			ty = irb.getInt16Ty();
 			break;
+		case ARM_INS_STLEX:
+			ty = irb.getInt32Ty();
+			ordering = llvm::AtomicOrdering::Release;
+			break;
+		case ARM_INS_STLEXB:
+			ty = irb.getInt8Ty();
+			ordering = llvm::AtomicOrdering::Release;
+			break;
+		case ARM_INS_STLEXH:
+			ty = irb.getInt16Ty();
+			ordering = llvm::AtomicOrdering::Release;
+			break;
 		default:
 			throw GenericError("ARM: unhandled STREX id");
 	}
@@ -1829,7 +1873,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStrex(cs_insn* i, cs_arm* ai, l
 	auto* dest = loadOp(ai->operands[2], irb, nullptr, true);
 
 	auto* st = storeIntPtr(irb, val, dest, ty);
-	st->setAtomic(llvm::AtomicOrdering::Monotonic);
+	st->setAtomic(ordering);
 	storeRegister(
 			ai->operands[0].reg,
 			llvm::ConstantInt::get(getRegisterType(ai->operands[0].reg), 0),

@@ -153,6 +153,9 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
   ARM `ldrex*` loads are atomic; `strex`/`strexb`/`strexh` are
   atomic stores plus status 0. `strexd` stays untranslated.
   ARM `swp`/`swpb` emit `atomicrmw xchg` (seq_cst).
+  ARM `lda*`/`ldaex*` are acquire loads; `stl*` are release
+  stores; `stlex*` are release exclusive stores plus status 0.
+  `ldaexd`/`stlexd` stay untranslated.
 
 ### 3b C parser → N10 → N18
 

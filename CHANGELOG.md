@@ -8,6 +8,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (A8): ARM `lda`/`ldab`/`ldah`/`ldaex`/`ldaexb`/
+  `ldaexh` are acquire loads. `stl`/`stlb`/`stlh` are release
+  stores. `stlex`/`stlexb`/`stlexh` are release exclusive stores
+  plus status 0. `ldaexd`/`stlexd` stay untranslated. Tests:
+  `LdaLoadIsAtomic`, `ARM_INS_LDA`, `LdaexLoadIsAtomic`,
+  `StlStoreIsAtomic`, `ARM_INS_STL`, `StlexStoreIsAtomic`,
+  `ARM_INS_STLEX`.
 - Wave 5 leftover (A8): ARM `swp`/`swpb` emit `atomicrmw xchg`
   (seq_cst). Tests: `SwpEmitsAtomicRmw`, `ARM_INS_SWP`,
   `SwpbEmitsAtomicRmw`, `ARM_INS_SWPB`.

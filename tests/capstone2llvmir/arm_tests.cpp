@@ -2461,6 +2461,72 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, LdrLoadIsNotAtomic)
 	}
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdaLoadIsAtomic)
+{
+	ONLY_MODE_ARM;
+	// lda r0, [r1] — Keystone ARM mode lacks v8; encoding from llvm-mc.
+	auto* f = translate({0x9f, 0x0c, 0x91, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic())
+			{
+				found = true;
+				EXPECT_EQ(l->getOrdering(), AtomicOrdering::Acquire);
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDA)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R1, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x12345678_dw},
+	});
+
+	emulate_bin("9f 0c 91 e1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x12345678},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdaexLoadIsAtomic)
+{
+	ONLY_MODE_ARM;
+	// ldaex r0, [r1]
+	auto* f = translate({0x9f, 0x0e, 0x91, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic())
+			{
+				found = true;
+				EXPECT_EQ(l->getOrdering(), AtomicOrdering::Acquire);
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 //
 // ARM_INS_LDRB
 //
@@ -2829,6 +2895,92 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_STREX)
 	});
 
 	emulate("strex r0, r1, [r2]");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0},
+	});
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x12345678_dw}
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StlStoreIsAtomic)
+{
+	ONLY_MODE_ARM;
+	// stl r0, [r1] — Keystone ARM mode lacks v8; encoding from llvm-mc.
+	auto* f = translate({0x90, 0xfc, 0x81, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic())
+			{
+				found = true;
+				EXPECT_EQ(s->getOrdering(), AtomicOrdering::Release);
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_STL)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R0, 0x12345678},
+		{ARM_REG_R1, 0x1000},
+	});
+
+	emulate_bin("90 fc 81 e1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R0, ARM_REG_R1});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x12345678_dw}
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StlexStoreIsAtomic)
+{
+	ONLY_MODE_ARM;
+	// stlex r0, r1, [r2]
+	auto* f = translate({0x91, 0x0e, 0x82, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic())
+			{
+				found = true;
+				EXPECT_EQ(s->getOrdering(), AtomicOrdering::Release);
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_STLEX)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R1, 0x12345678},
+		{ARM_REG_R2, 0x1000},
+	});
+
+	emulate_bin("91 0e 82 e1");
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
