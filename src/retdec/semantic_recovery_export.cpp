@@ -1345,6 +1345,63 @@ bool serialEvidenceIsNameOnly(const std::string& evidence)
 	return true;
 }
 
+bool calleeNameContainsAny(const ssa::SSAFunction& fn, const char* const* needles)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != ssa::IrInstr::Op::Call) continue;
+			for (const char* const* n = needles; *n; ++n)
+			{
+				if (i->calleeName.find(*n) != std::string::npos) return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool patternUsedNameTable(pattern_detect::PatternKind kind, const ssa::SSAFunction& fn)
+{
+	using pattern_detect::PatternKind;
+	if (kind == PatternKind::RAII) return true;
+	if (kind == PatternKind::Singleton)
+	{
+		static const char* const kLock[] = {
+			"mutex_lock",
+			"EnterCriticalSection",
+			"__cxa_guard_acquire",
+			"pthread_mutex_lock",
+			"AcquireSRWLock",
+			nullptr,
+		};
+		return calleeNameContainsAny(fn, kLock);
+	}
+	if (kind == PatternKind::Command)
+	{
+		static const char* const kExec[] = {
+			"execute", "Execute", "undo", "Undo", "rollback", "revert", "run", "Run", nullptr};
+		return calleeNameContainsAny(fn, kExec);
+	}
+	if (kind == PatternKind::Observer)
+	{
+		static const char* const kObs[] = {
+			"subscribe",
+			"addListener",
+			"addObserver",
+			"notify",
+			"emit",
+			"broadcast",
+			"dispatch",
+			nullptr,
+		};
+		return calleeNameContainsAny(fn, kObs);
+	}
+	return false;
+}
+
 } // namespace
 
 void appendSerialDetections(
@@ -1373,7 +1430,7 @@ void appendPatternDetections(SemanticDetectionMap& map, const ssa::SSAFunction& 
 			continue;
 		}
 		std::string detail = result.toString();
-		if (result.kind == pattern_detect::PatternKind::RAII)
+		if (patternUsedNameTable(result.kind, fn))
 		{
 			detail = "evidence:symbol_name " + detail;
 		}

@@ -40,7 +40,8 @@ void appendSerialDetections(
 	SemanticDetectionMap& map, const ssa::SSAFunction& fn, const std::unordered_set<std::string>& symTable);
 
 /// Run PatternDetector on `fn` and append kind="pattern" hits (label from
-/// kindName()). RAII acquire/release table hits prefix detail with
+/// kindName()). RAII table hits, Singleton lock names, Command
+/// execute/undo, and Observer subscribe/notify prefix detail with
 /// evidence:symbol_name. Extract does not map kind=pattern.
 void appendPatternDetections(SemanticDetectionMap& map, const ssa::SSAFunction& fn);
 

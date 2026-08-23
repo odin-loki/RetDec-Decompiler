@@ -767,3 +767,134 @@ TEST(SemanticExport, RaiiAcquireReleaseExportsAsPatternNameEvidence)
 	}
 	EXPECT_TRUE(foundRaii);
 }
+
+TEST(SemanticExport, CommandExecuteExportsAsPatternNameEvidence)
+{
+	retdec::ssa::SSAFunction fn("runQueue");
+	auto* entry = fn.addBlock();
+	ASSERT_NE(entry, nullptr);
+	auto* loop = fn.addBlock();
+	ASSERT_NE(loop, nullptr);
+	loop->succs.push_back(entry->id);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Load, 0);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Load, 0);
+	retdec::ssa::IrInstr* ex = fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Call, 0);
+	ex->calleeName = "execute";
+	retdec::ssa::IrInstr* pb = fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Call, 0);
+	pb->calleeName = "push_back";
+
+	retdec::analysis::SemanticDetectionMap map;
+	retdec::analysis::appendPatternDetections(map, fn);
+
+	ASSERT_EQ(map.count("runQueue"), 1u);
+	bool found = false;
+	for (const auto& d: map.at("runQueue"))
+	{
+		if (d.kind == "pattern" && d.label == "Command")
+		{
+			found = true;
+			EXPECT_GE(d.confidence, 0.45f);
+			EXPECT_NE(d.detail.find("evidence:symbol_name"), std::string::npos);
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST(SemanticExport, ObserverSubscribeExportsAsPatternNameEvidence)
+{
+	retdec::ssa::SSAFunction fn("obs");
+	auto* entry = fn.addBlock();
+	ASSERT_NE(entry, nullptr);
+	auto* loop = fn.addBlock();
+	ASSERT_NE(loop, nullptr);
+	loop->succs.push_back(entry->id);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Load, 0);
+	retdec::ssa::IrInstr* pb = fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Call, 0);
+	pb->calleeName = "push_back";
+	retdec::ssa::IrInstr* em = fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Call, 0);
+	em->calleeName = "emit";
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Store, 0);
+
+	retdec::analysis::SemanticDetectionMap map;
+	retdec::analysis::appendPatternDetections(map, fn);
+
+	ASSERT_EQ(map.count("obs"), 1u);
+	bool found = false;
+	for (const auto& d: map.at("obs"))
+	{
+		if (d.kind == "pattern" && d.label == "Observer")
+		{
+			found = true;
+			EXPECT_GE(d.confidence, 0.45f);
+			EXPECT_NE(d.detail.find("evidence:symbol_name"), std::string::npos);
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST(SemanticExport, SingletonLockExportsAsPatternNameEvidence)
+{
+	retdec::ssa::SSAFunction fn("getInstance");
+	auto* entry = fn.addBlock();
+	ASSERT_NE(entry, nullptr);
+	ASSERT_NE(fn.addBlock(), nullptr);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Load, 0);
+	retdec::ssa::IrInstr* cmp = fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Compare, 0);
+	retdec::ssa::IrValue* z = fn.allocValue(retdec::ssa::ValueKind::Immediate);
+	z->imm = 0;
+	retdec::ssa::Use u;
+	u.valueId = z->id;
+	cmp->uses.push_back(u);
+	retdec::ssa::IrInstr* al = fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Call, 0);
+	al->calleeName = "malloc";
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Store, 0);
+	retdec::ssa::IrInstr* lk = fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Call, 0);
+	lk->calleeName = "EnterCriticalSection";
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Ret, 0);
+
+	retdec::analysis::SemanticDetectionMap map;
+	retdec::analysis::appendPatternDetections(map, fn);
+
+	ASSERT_EQ(map.count("getInstance"), 1u);
+	bool found = false;
+	for (const auto& d: map.at("getInstance"))
+	{
+		if (d.kind == "pattern" && d.label == "Singleton")
+		{
+			found = true;
+			EXPECT_GE(d.confidence, 0.45f);
+			EXPECT_NE(d.detail.find("evidence:symbol_name"), std::string::npos);
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST(SemanticExport, CommandIndirectCallDoesNotTagSymbolName)
+{
+	retdec::ssa::SSAFunction fn("runQueue");
+	auto* entry = fn.addBlock();
+	ASSERT_NE(entry, nullptr);
+	auto* loop = fn.addBlock();
+	ASSERT_NE(loop, nullptr);
+	loop->succs.push_back(entry->id);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Load, 0);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Load, 0);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Store, 0);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Call, 0);
+
+	retdec::analysis::SemanticDetectionMap map;
+	retdec::analysis::appendPatternDetections(map, fn);
+
+	ASSERT_EQ(map.count("runQueue"), 1u);
+	bool found = false;
+	for (const auto& d: map.at("runQueue"))
+	{
+		if (d.kind == "pattern" && d.label == "Command")
+		{
+			found = true;
+			EXPECT_GE(d.confidence, 0.45f);
+			EXPECT_EQ(d.detail.find("evidence:symbol_name"), std::string::npos);
+		}
+	}
+	EXPECT_TRUE(found);
+}
