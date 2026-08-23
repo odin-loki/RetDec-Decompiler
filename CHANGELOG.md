@@ -8,6 +8,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (3b): pin tree-sitter v0.26.12 in `cmake/deps.cmake`
+  (`TREE_SITTER_URL` / `TREE_SITTER_ARCHIVE_SHA256`). ABI 15, compatible
+  with tree-sitter-c 0.24.2 (ABI 14). Fetch/N10 not wired yet.
 - Wave 5 leftover (3b): pin tree-sitter-c v0.24.2 in `cmake/deps.cmake`
   (`TREE_SITTER_C_URL` / `TREE_SITTER_C_ARCHIVE_SHA256`). Fetch/N10
   not wired yet. LLVM pin unchanged.

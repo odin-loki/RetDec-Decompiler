@@ -149,10 +149,10 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
 
 ### 3b C parser → N10 → N18
 
-`TREE_SITTER_C_URL` / `TREE_SITTER_C_ARCHIVE_SHA256` pin tree-sitter-c
-v0.24.2 (release tarball). Not fetched yet. `gates.cpp` 384–386: N5
-keyword scan only; “This is not N10.” Runtime `tree-sitter` is a
-separate pin (grammar only exports `tree_sitter_c()`).
+`TREE_SITTER_C_URL` pins tree-sitter-c v0.24.2. `TREE_SITTER_URL` pins
+tree-sitter v0.26.12 (ABI 15; MIN 13, so ABI 14 grammar is OK). Not
+fetched yet. `gates.cpp` 384–386: N5 keyword scan only; “This is not
+N10.”
 
 Then N10: replace the N5 shape check. Then N18: callee-before-caller
 refine (today `serializeSemanticContext` dumps callers/callees from

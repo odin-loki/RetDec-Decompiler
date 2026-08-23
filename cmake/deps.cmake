@@ -108,6 +108,16 @@ set(TREE_SITTER_C_ARCHIVE_SHA256
     "f3a2cdfbca39c79f60baf2ef62b42084c609782c76485de457ba36ff65d51baf"
     CACHE STRING ""
 )
+
+# tree-sitter runtime — ABI 15, compatible with tree-sitter-c 0.24.2 (ABI 14).
+set(TREE_SITTER_URL
+    "https://github.com/tree-sitter/tree-sitter/archive/refs/tags/v0.26.12.zip"
+    CACHE STRING "URL of tree-sitter archive to use."
+)
+set(TREE_SITTER_ARCHIVE_SHA256
+    "cbafe90818093cd5f2b2f56ff8c10504bab9f26840a80fabd11985e2445f91ee"
+    CACHE STRING ""
+)
 option(RETDEC_SUPPORT_PKG_VERIFY_SHA256
 	"Verify SHA-256 of downloaded retdec-support archive (disable for custom mirrors/tarballs)"
 	ON)
