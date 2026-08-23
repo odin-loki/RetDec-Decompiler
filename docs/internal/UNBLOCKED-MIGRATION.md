@@ -210,7 +210,8 @@ N17 is mean selected-token probability for the whole generation.
 - `retdec.pointee` helpers + `LlvmUtilsTests.PointeeMetadataRoundTrips`.
 - Lifter `loadOp`/`storeOp` on x86/ARM/ARM64/MIPS/PowerPC write MD.
 - Value-based readers (`inst_opt`, `entry_alloca`, ABI, `ir_modifier`,
-  `simple_types`) call `pointeeType` first.
+  `simple_types`) call `pointeeType` first. `pointeeType` also uses
+  `AllocaInst::getAllocatedType` and `GlobalVariable::getValueType`.
 - **No** `cmake/deps.cmake` LLVM URL change.
 - `IrInstr::Op::Rem` / `Op::Lock` appended before `Undef`.
   `SRem`/`URem`/`FRem` → `Rem`; atomics/fence → `Lock`.
@@ -224,5 +225,6 @@ N17 is mean selected-token probability for the whole generation.
   callee-before-caller refine in `decompile_hook.cpp`.
 - Remaining Type*-only readers (no Value to thread):
   `simple_types` 1203–1204 / 1641 nested pointer-to-array,
-  `hasFunctionTypeOrPointer`, llvmir2hll `convert(PointerType*)`.
+  `hasFunctionTypeOrPointer`, llvmir2hll `convert(PointerType*)`,
+  `fileimage` `getConstant(Type*)` char-pointer identity.
 - **No** `cmake/deps.cmake` LLVM URL change.

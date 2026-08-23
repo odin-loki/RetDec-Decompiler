@@ -227,7 +227,8 @@ bool SimpleTypesAnalysis::runOnModule(Module& M)
 								break;
 							}
 
-							if (!llvm_utils::isStringArrayPointeType(glob->getType()) && llvm_utils::isCharPointerType(ce->getType()))
+							if (!llvm_utils::isStringArrayType(llvm_utils::pointeeType(glob))
+								&& llvm_utils::isCharType(llvm_utils::pointeeType(ce)))
 							{
 								auto* c = objf->getConstantCharArrayNice(cgv->getStorage().getAddress());
 								if (c)

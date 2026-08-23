@@ -285,6 +285,22 @@ TEST_F(LlvmUtilsTests, PointeeMetadataRoundTrips)
 	EXPECT_EQ(i32, pointeeType(load));
 }
 
+TEST_F(LlvmUtilsTests, GlobalValueTypeIsPointee)
+{
+	parseInput(R"(
+		@g = global [4 x i8] zeroinitializer
+		define void @fnc() {
+			ret void
+		}
+	)");
+	auto* gv = getGlobalByName("g");
+	ASSERT_NE(nullptr, gv);
+	auto* at = dyn_cast<ArrayType>(pointeeType(gv));
+	ASSERT_NE(nullptr, at);
+	EXPECT_EQ(4u, at->getNumElements());
+	EXPECT_TRUE(isCharType(at->getElementType()));
+}
+
 //
 // parseFormatString()
 //

@@ -11,6 +11,8 @@
 #include <llvm/../../lib/IR/LLVMContextImpl.h>
 #include <llvm/Support/Casting.h>
 
+#include <llvm/IR/GlobalVariable.h>
+#include <llvm/IR/Instructions.h>
 #include <llvm/IR/Metadata.h>
 
 #include "retdec/bin2llvmir/providers/abi/abi.h"
@@ -113,6 +115,14 @@ llvm::Type* pointeeType(const llvm::Value* v)
 		{
 			return t;
 		}
+	}
+	if (auto* ai = dyn_cast<AllocaInst>(v))
+	{
+		return ai->getAllocatedType();
+	}
+	if (auto* gv = dyn_cast<GlobalVariable>(v))
+	{
+		return gv->getValueType();
 	}
 	if (auto* pt = dyn_cast<PointerType>(v->getType()))
 	{

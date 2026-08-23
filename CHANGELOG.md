@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover: `pointeeType` reads `AllocaInst::getAllocatedType`
+  and `GlobalVariable::getValueType` before the typed-pointer
+  fallback. Value-based `isStringArrayPointeType` /
+  `isCharPointerType` sites go through that helper. Emulator alloca
+  sizing uses `getAllocatedType`. Test:
+  `LlvmUtilsTests.GlobalValueTypeIsPointee`. LLVM pin unchanged.
 - Wave 5 leftover (N18): callee-before-caller refine over the call
   graph (ties broken by start address; cycles pick the lowest
   address). Accepted callee text is injected as `refined_callees`

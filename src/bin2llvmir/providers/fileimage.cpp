@@ -536,7 +536,7 @@ llvm::Constant* FileImage::getConstant(
 			c = refGvs.front();
 		}
 		else if (refGvs.size() > 1
-				&& llvm_utils::isStringArrayPointeType(refGvs.front()->getType()))
+				&& llvm_utils::isStringArrayType(llvm_utils::pointeeType(refGvs.front())))
 		{
 			auto* at = ArrayType::get(
 					PointerType::get(Type::getInt8Ty(ctx), 0),

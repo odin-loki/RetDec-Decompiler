@@ -2989,7 +2989,7 @@ void LlvmIrEmulator::visitAllocaInst(llvm::AllocaInst& I)
 {
 	LocalExecutionContext& ec = _ecStack.back();
 
-	Type* ty = I.getType()->getElementType();
+	Type* ty = I.getAllocatedType();
 
 	unsigned elemN = _globalEc.getOperandValue(I.getOperand(0), ec).IntVal.getZExtValue();
 	unsigned tySz = static_cast<size_t>(_module->getDataLayout().getTypeAllocSize(ty));
