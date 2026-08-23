@@ -161,6 +161,7 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
   plus status 1.
   PowerPC `lwarx`/`ldarx` are atomic loads; `stwcx`/`stdcx` are
   atomic stores plus `CR0.EQ`.
+  `lock sub` mem emits `atomicrmw sub` (`cmp` is not locked).
 
 ### 3b C parser → N10 → N18
 

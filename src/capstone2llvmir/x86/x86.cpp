@@ -1805,6 +1805,13 @@ bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedRmw(
 					{X86_REG_CF, irb.getInt1(false)},
 					{X86_REG_OF, irb.getInt1(false)}});
 			break;
+		case llvm::AtomicRMWInst::Sub:
+			result = irb.CreateSub(old, rhs);
+			storeRegistersPlusSflags(irb, result, {
+					{X86_REG_AF, generateBorrowSubInt4(old, rhs, irb)},
+					{X86_REG_CF, generateBorrowSub(old, rhs, irb)},
+					{X86_REG_OF, generateOverflowSub(result, old, rhs, irb)}});
+			break;
 		default:
 			return false;
 	}
@@ -3831,6 +3838,12 @@ void Capstone2LlvmIrTranslatorX86_impl::translateStd(cs_insn* i, cs_x86* xi, llv
 void Capstone2LlvmIrTranslatorX86_impl::translateSub(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, xi, irb);
+
+	if (i->id == X86_INS_SUB
+			&& tryTranslateLockedRmw(i, xi, irb, llvm::AtomicRMWInst::Sub))
+	{
+		return;
+	}
 
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
 

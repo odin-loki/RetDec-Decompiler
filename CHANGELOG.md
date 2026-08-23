@@ -8,6 +8,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (A8): `lock sub` mem → `atomicrmw sub`. Plain
+  `sub` mem stays a load/sub/store. `cmp` is not locked. Tests:
+  `LockSubEmitsAtomicRmw`, `SubMemWithoutLockIsNotAtomicRmw`.
 - Wave 5 leftover (A8): PowerPC `lwarx`/`ldarx` loads are atomic
   (monotonic). `stwcx`/`stdcx` are an atomic store plus `CR0.EQ`
   success (no exclusive monitor). Tests: `LwarxLoadIsAtomic`,
