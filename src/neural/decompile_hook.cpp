@@ -198,6 +198,15 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 			if (!fields.empty() && fields.front() == ',') oss << fields.substr(1);
 			oss << '}';
 		}
+		if (fn.frameBaseStorage.isDefined())
+		{
+			oss << ",\"frame_base\":{";
+			std::ostringstream body;
+			appendStorageFields(body, fn.frameBaseStorage);
+			const std::string fields = body.str();
+			if (!fields.empty() && fields.front() == ',') oss << fields.substr(1);
+			oss << '}';
+		}
 		if (!fn.parameters.empty())
 		{
 			oss << ",\"parameters\":[";

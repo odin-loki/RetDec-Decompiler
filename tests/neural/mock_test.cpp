@@ -946,6 +946,18 @@ TEST(NeuralSemanticContext, SerializesParameterRealName)
 	EXPECT_NE(json.find("\"from_debug\":true"), std::string::npos);
 }
 
+TEST(NeuralSemanticContext, SerializesFrameBaseStorage)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Function fn("fn_401000");
+	fn.setDeclarationString("int expand_key(void)");
+	fn.frameBaseStorage = retdec::common::Storage::inRegister("ebp");
+	cfg.functions.insert(fn);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"frame_base\":{\"register\":\"ebp\"}"), std::string::npos);
+}
+
 TEST(NeuralSemanticContext, SerializesParameterAndReturnStorage)
 {
 	auto cfg = retdec::config::Config::empty();

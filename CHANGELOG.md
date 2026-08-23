@@ -8,6 +8,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` also dumps defined
+  frame-base storage from existing `Function::frameBaseStorage`.
+  Test: `SerializesFrameBaseStorage`. Default F5 is unchanged.
 - N16 leftover: `serializeSemanticContext` also dumps a
   function's defined end address from existing
   `AddressRange::getEnd` (start was already dumped). Test:
