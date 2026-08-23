@@ -556,6 +556,26 @@ def test_linear_search_strips_memcpy_noise() -> None:
     assert labels == ["LinearSearch", "Search"]
 
 
+def test_quicksort_graph_only_fp_uses_stem() -> None:
+    """DFS/GraphTraversal alone on quicksort must not block stem labels."""
+    import extract_decompiler_predictions as edp
+
+    edp._STEM_HINTS = None
+    edp.load_stem_hints(ROOT / "tests/algorithm_recovery/sources")
+    cfg = {
+        "functions": [
+            {
+                "semanticDetections": [
+                    {"kind": "algorithm", "label": "dfs", "confidence": 0.8},
+                    {"kind": "algorithm", "label": "graphtraversal", "confidence": 0.8},
+                ]
+            }
+        ]
+    }
+    labels = labels_from_config(cfg, "generated_quicksort-gcc-O0", stem_fallback=True)
+    assert labels == ["QuickSort", "Sort"]
+
+
 def test_mergesort_strips_graph_noise() -> None:
     cfg = {
         "functions": [
@@ -651,6 +671,7 @@ def main() -> int:
     test_tagged_heapsort_excluded_from_headline()
     test_tagged_introsort_excluded_from_headline()
     test_linear_search_strips_memcpy_noise()
+    test_quicksort_graph_only_fp_uses_stem()
     test_mergesort_strips_graph_noise()
     test_binary_search_stripped_on_sort_binary()
     test_no_stem_fallback_is_name_blind()

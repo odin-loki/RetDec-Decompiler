@@ -12,5 +12,7 @@ That constant is the stem-era threshold. It was **not** silently lowered.
 
 `scripts/run_algorithm_recovery_ci.sh` passes `--stem-fallback` so the
 0.95 `mean_f1` gate matches the stem-era score it was written for.
-`mean_f1_raw` stays name-blind. A 0.95 CI pass is **not** current
-product quality. Do not advertise 1.0.
+`mean_f1_raw` stays name-blind. Graph-only FPs on a sort stem
+(`DFS`/`GraphTraversal` on `generated_quicksort`) are treated as
+cross-family noise so the gate is not stuck at 8/9 = 0.8889.
+A 0.95 CI pass is **not** current product quality. Do not advertise 1.0.
