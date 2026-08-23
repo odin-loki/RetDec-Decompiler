@@ -1033,6 +1033,22 @@ TEST(NeuralSemanticContext, SerializesCompilerToolAndArchitecture)
 	EXPECT_NE(json.find("\"file_format\":\"elf\""), std::string::npos);
 }
 
+TEST(NeuralSemanticContext, SerializesToolConfidence)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::ToolInfo gcc;
+	gcc.setName("gcc");
+	gcc.setType("compiler");
+	gcc.setPercentage(0.5);
+	gcc.setIsFromHeuristics(true);
+	cfg.tools.push_back(gcc);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"name\":\"gcc\""), std::string::npos);
+	EXPECT_NE(json.find("\"percentage\":"), std::string::npos);
+	EXPECT_NE(json.find("\"heuristics\":true"), std::string::npos);
+}
+
 TEST(NeuralSemanticContext, SerializesFileClassBits)
 {
 	auto cfg = retdec::config::Config::empty();

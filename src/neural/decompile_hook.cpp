@@ -324,6 +324,8 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		oss << "{\"name\":\"" << jsonEscape(tool.getName()) << '"';
 		if (!tool.getType().empty()) oss << ",\"type\":\"" << jsonEscape(tool.getType()) << '"';
 		if (!tool.getVersion().empty()) oss << ",\"version\":\"" << jsonEscape(tool.getVersion()) << '"';
+		if (tool.getPercentage() != 0.0) oss << ",\"percentage\":" << tool.getPercentage();
+		if (tool.isFromHeuristics()) oss << ",\"heuristics\":true";
 		oss << '}';
 	}
 	oss << "],\"languages\":[";
