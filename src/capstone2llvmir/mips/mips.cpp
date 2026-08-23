@@ -1012,6 +1012,15 @@ void Capstone2LlvmIrTranslatorMips_impl::translateExt(cs_insn* i, cs_mips* mi, l
 }
 
 /**
+ * MIPS_INS_SYNC, MIPS_INS_SYNCI
+ * Memory / instruction barriers → LLVM fence. SYNCI has no I-cache model.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateFence(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	irb.CreateFence(llvm::AtomicOrdering::SequentiallyConsistent);
+}
+
+/**
  * MIPS_INS_J, MIPS_INS_JR,
  * MIPS_INS_B,
  */

@@ -919,8 +919,8 @@ Capstone2LlvmIrTranslatorMips_impl::_i2fm =
 		{MIPS_INS_SWP, nullptr},
 		{MIPS_INS_SWR, &Capstone2LlvmIrTranslatorMips_impl::translatePseudoAsmFncOp0Op1},
 		{MIPS_INS_SWXC1, nullptr},
-		{MIPS_INS_SYNC, nullptr},
-		{MIPS_INS_SYNCI, nullptr},
+		{MIPS_INS_SYNC, &Capstone2LlvmIrTranslatorMips_impl::translateFence},
+		{MIPS_INS_SYNCI, &Capstone2LlvmIrTranslatorMips_impl::translateFence},
 		{MIPS_INS_SYSCALL, &Capstone2LlvmIrTranslatorMips_impl::translateSyscall},
 		// Not really a NOP, but often in places (e.g. main) where generating
 		// pseudo asm call would break regression tests.

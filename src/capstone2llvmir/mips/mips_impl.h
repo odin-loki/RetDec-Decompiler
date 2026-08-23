@@ -134,6 +134,7 @@ class Capstone2LlvmIrTranslatorMips_impl :
 		void translateDiv(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateDivu(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateExt(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		void translateFence(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateJ(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateJal(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateLoadMemory(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);

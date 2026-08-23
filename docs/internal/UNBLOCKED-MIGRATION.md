@@ -162,6 +162,7 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
   PowerPC `lwarx`/`ldarx` are atomic loads; `stwcx`/`stdcx` are
   atomic stores plus `CR0.EQ`.
   `lock sub` mem emits `atomicrmw sub` (`cmp` is not locked).
+  MIPS `sync`/`synci` emit LLVM `fence` (`synci` has no I-cache model).
 
 ### 3b C parser → N10 → N18
 

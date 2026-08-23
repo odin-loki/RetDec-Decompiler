@@ -6230,6 +6230,24 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, issue_633)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, SyncEmitsFence)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("sync"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* fence = dyn_cast<FenceInst>(&*it))
+		{
+			found = true;
+			EXPECT_EQ(fence->getOrdering(), AtomicOrdering::SequentiallyConsistent);
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
