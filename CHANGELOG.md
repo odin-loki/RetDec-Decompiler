@@ -8,6 +8,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: exclusive/atomic stores assert `retdec.pointee`
+  (ARM64 `stlxr`/`stxp`, ARM `strex`, MIPS `sc`, PowerPC `stwcx`,
+  x86 `lock not`/`lock sub`/`lock bts`). Tests:
+  `StlxrAttachesPointeeMetadata`, `StxpAttachesPointeeMetadata`,
+  `StrexAttachesPointeeMetadata`, `ScAttachesPointeeMetadata`,
+  `StwcxAttachesPointeeMetadata`, `LockNotAttachesPointeeMetadata`,
+  `LockSubAttachesPointeeMetadata`, `LockBtsAttachesPointeeMetadata`.
 - Track 1 leftover: x86 memory store, x86 `xchg`/`lock add`/`lock
   cmpxchg`, ARM `swp`, ARM64 `ldxr`, MIPS `ll`, and PowerPC `lwarx`
   tests assert `retdec.pointee`. Tests:

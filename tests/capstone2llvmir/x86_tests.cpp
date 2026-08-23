@@ -13792,6 +13792,26 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockSubEmitsAtomicRmw)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockSubAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock sub dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			if (rmw->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, SubMemWithoutLockIsNotAtomicRmw)
 {
 	ONLY_MODE_32;
@@ -13905,6 +13925,26 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, SfenceEmitsReleaseFence)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockNotAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock not dword ptr [eax]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			if (rmw->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockNotEmitsAtomicRmw)
 {
 	ONLY_MODE_32;
@@ -13947,6 +13987,26 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockBtsEmitsAtomicRmw)
 			found = true;
 			EXPECT_EQ(rmw->getOperation(), AtomicRMWInst::Or);
 			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockBtsAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock bts dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			if (rmw->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
 		}
 	}
 	EXPECT_TRUE(found);
