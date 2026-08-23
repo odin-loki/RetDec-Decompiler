@@ -289,10 +289,36 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 			bool firstT = true;
 			for (const auto& item: vt.items)
 			{
-				if (item.getTargetFunctionName().empty()) continue;
+				if (item.getTargetFunctionName().empty() && !item.getAddress().isDefined()
+					&& !item.getTargetFunctionAddress().isDefined())
+					continue;
 				if (!firstT) oss << ',';
 				firstT = false;
-				oss << '"' << jsonEscape(item.getTargetFunctionName()) << '"';
+				oss << '{';
+				bool firstF = true;
+				if (!item.getTargetFunctionName().empty())
+				{
+					oss << "\"name\":\"" << jsonEscape(item.getTargetFunctionName()) << '"';
+					firstF = false;
+				}
+				if (item.getAddress().isDefined())
+				{
+					if (!firstF) oss << ',';
+					firstF = false;
+					oss << "\"address\":\"" << jsonEscape(item.getAddress().toHexPrefixString()) << '"';
+				}
+				if (item.getTargetFunctionAddress().isDefined())
+				{
+					if (!firstF) oss << ',';
+					firstF = false;
+					oss << "\"target\":\"" << jsonEscape(item.getTargetFunctionAddress().toHexPrefixString()) << '"';
+				}
+				if (item.isThumb())
+				{
+					if (!firstF) oss << ',';
+					oss << "\"thumb\":true";
+				}
+				oss << '}';
 			}
 			oss << ']';
 		}

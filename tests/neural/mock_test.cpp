@@ -999,13 +999,18 @@ TEST(NeuralSemanticContext, SerializesVtableTargetNames)
 	vt.setName("_ZTV6Cipher");
 	retdec::common::VtableItem item(retdec::common::Address(0x402008));
 	item.setTargetFunctionName("Cipher::expand_key");
+	item.setTargetFunctionAddress(retdec::common::Address(0x401200));
+	item.setIsThumb(true);
 	vt.items.insert(item);
 	cfg.vtables.insert(vt);
 
 	const std::string json = serializeSemanticContext(cfg);
 	EXPECT_NE(json.find("\"name\":\"_ZTV6Cipher\""), std::string::npos);
 	EXPECT_NE(json.find("\"address\":\"0x402000\""), std::string::npos);
-	EXPECT_NE(json.find("\"targets\":[\"Cipher::expand_key\"]"), std::string::npos);
+	EXPECT_NE(json.find("\"name\":\"Cipher::expand_key\""), std::string::npos);
+	EXPECT_NE(json.find("\"address\":\"0x402008\""), std::string::npos);
+	EXPECT_NE(json.find("\"target\":\"0x401200\""), std::string::npos);
+	EXPECT_NE(json.find("\"thumb\":true"), std::string::npos);
 }
 
 TEST(NeuralSemanticContext, SerializesCompilerToolAndArchitecture)

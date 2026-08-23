@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: vtable `targets` are objects with name, slot
+  address, target address, and thumb from existing
+  `VtableItem` getters. Test: `SerializesVtableTargetNames`.
+  Default F5 is unchanged.
 - N16 leftover: `serializeSemanticContext` also dumps tool
   detection percentage (when non-zero) and `heuristics` from
   existing `ToolInfo` getters. Additional info stays omitted.
