@@ -97,6 +97,17 @@ set(XSIMD_ARCHIVE_SHA256
     "3ff360dc82109b11b35389a5dfed8ac15155f356f39840dff2be2e230b935b8c"
     CACHE STRING ""
 )
+
+# tree-sitter-c — C grammar for N10. URL/SHA only this commit (Wave 5 3b).
+# Complete source is the release tarball, not the GitHub tag zip.
+set(TREE_SITTER_C_URL
+    "https://github.com/tree-sitter/tree-sitter-c/releases/download/v0.24.2/tree-sitter-c.tar.gz"
+    CACHE STRING "URL of tree-sitter-c archive to use."
+)
+set(TREE_SITTER_C_ARCHIVE_SHA256
+    "f3a2cdfbca39c79f60baf2ef62b42084c609782c76485de457ba36ff65d51baf"
+    CACHE STRING ""
+)
 option(RETDEC_SUPPORT_PKG_VERIFY_SHA256
 	"Verify SHA-256 of downloaded retdec-support archive (disable for custom mirrors/tarballs)"
 	ON)

@@ -8,6 +8,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (3b): pin tree-sitter-c v0.24.2 in `cmake/deps.cmake`
+  (`TREE_SITTER_C_URL` / `TREE_SITTER_C_ARCHIVE_SHA256`). Fetch/N10
+  not wired yet. LLVM pin unchanged.
 - Wave 5 leftover (A8): `lock cmpxchg8b`/`cmpxchg16b` mem → `cmpxchg`
   (i64/i128). ARM64 `stxp`/`stlxp` are one wide atomic store (status 0).
   Tests: `LockCmpxchg8bEmitsAtomicCmpXchg`,

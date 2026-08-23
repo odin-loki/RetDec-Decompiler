@@ -149,13 +149,14 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
 
 ### 3b C parser → N10 → N18
 
-No tree-sitter / libclang in `deps/`. `gates.cpp` 384–386: N5 keyword
-scan only; “This is not N10.”
+`TREE_SITTER_C_URL` / `TREE_SITTER_C_ARCHIVE_SHA256` pin tree-sitter-c
+v0.24.2 (release tarball). Not fetched yet. `gates.cpp` 384–386: N5
+keyword scan only; “This is not N10.” Runtime `tree-sitter` is a
+separate pin (grammar only exports `tree_sitter_c()`).
 
-Pin a C parser via `cmake/deps.cmake` URL/SHA only. Then replace the
-N5 shape check. Then N18: callee-before-caller refine (today
-`serializeSemanticContext` dumps callers/callees from `codeReferences`
-only — `decompile_hook.cpp`).
+Then N10: replace the N5 shape check. Then N18: callee-before-caller
+refine (today `serializeSemanticContext` dumps callers/callees from
+`codeReferences` only — `decompile_hook.cpp`).
 
 ### 3c Neural leftovers
 
@@ -215,6 +216,7 @@ N17 is mean selected-token probability for the whole generation.
 - A8 lock-prefix / `ldxr` / `stlxr` / `stxp`: lifter emits LLVM
   atomics; detector reads `Op::Lock`.
 - llvmir2hll empty-string GV uses `getValueType`.
+- tree-sitter-c v0.24.2 URL/SHA in `cmake/deps.cmake`. Not fetched.
 - Remaining Type*-only readers (no Value to thread):
   `simple_types` 1203–1204 / 1641 nested pointer-to-array,
   `hasFunctionTypeOrPointer`, llvmir2hll `convert(PointerType*)`.
