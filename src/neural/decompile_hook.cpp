@@ -205,6 +205,9 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 				firstP = false;
 				oss << "{\"name\":\"" << jsonEscape(p.getName()) << '"';
 				if (p.type.isDefined()) oss << ",\"type\":\"" << jsonEscape(p.type.getId()) << '"';
+				if (!p.getRealName().empty() && p.getRealName() != p.getName())
+					oss << ",\"real_name\":\"" << jsonEscape(p.getRealName()) << '"';
+				if (p.isFromDebug()) oss << ",\"from_debug\":true";
 				appendStorageFields(oss, p.getStorage());
 				oss << '}';
 			}

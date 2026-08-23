@@ -912,6 +912,23 @@ TEST(NeuralSemanticContext, SerializesFunctionRoleFlags)
 	EXPECT_EQ(json.find("\"syscall\""), std::string::npos);
 }
 
+TEST(NeuralSemanticContext, SerializesParameterRealName)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Function fn("fn_401000");
+	fn.setDeclarationString("int expand_key(uint8_t *a1)");
+	retdec::common::Object key("a1", retdec::common::Storage::undefined());
+	key.setRealName("key");
+	key.setIsFromDebug(true);
+	fn.parameters.push_back(key);
+	cfg.functions.insert(fn);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"name\":\"a1\""), std::string::npos);
+	EXPECT_NE(json.find("\"real_name\":\"key\""), std::string::npos);
+	EXPECT_NE(json.find("\"from_debug\":true"), std::string::npos);
+}
+
 TEST(NeuralSemanticContext, SerializesParameterAndReturnStorage)
 {
 	auto cfg = retdec::config::Config::empty();

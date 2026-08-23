@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- N16 leftover: `serializeSemanticContext` also dumps parameter
+  `real_name` and `from_debug` from existing `Object` getters.
+  Crypto descriptions stay omitted. Test:
+  `SerializesParameterRealName`. Default F5 is unchanged.
 - N16 leftover: `serializeSemanticContext` also dumps existing
   return and parameter storage (register name, stack offset,
   memory address) on already-included functions. Test:
