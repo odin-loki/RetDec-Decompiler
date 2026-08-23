@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: ARM / ARM64 / MIPS / PowerPC memory load/store
+  tests assert `retdec.pointee` (same as x86
+  `MemoryLoadAttachesPointeeMetadata`). Tests:
+  `MemoryLoadAttachesPointeeMetadata`,
+  `MemoryStoreAttachesPointeeMetadata`.
 - Wave 5 leftover (N16): semantic JSON dumps detection `cHint`,
   pattern `endian`/`matches`, and tool significant-nibble counts.
   Comments, locals, globals, descriptions, `cElemBytes`, and

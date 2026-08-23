@@ -2541,6 +2541,46 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LWZ)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, MemoryLoadAttachesPointeeMetadata)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("lwz 0, 0x120, 1"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, MemoryStoreAttachesPointeeMetadata)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("stw 0, 0x120, 1"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 //
 // PPC_INS_LBZU
 //
