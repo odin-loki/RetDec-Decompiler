@@ -1361,6 +1361,16 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNop(cs_insn* i, cs_arm64* ai,
 }
 
 /**
+ * ARM64_INS_DMB, ARM64_INS_DSB, ARM64_INS_ISB
+ * Memory / instruction barriers → LLVM fence. ISB has no I-cache model;
+ * it is lowered as seq_cst like DMB/DSB.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateFence(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	irb.CreateFence(llvm::AtomicOrdering::SequentiallyConsistent);
+}
+
+/**
  * ARM64_INS_MOV, ARM64_INS_MVN, ARM64_INS_MOVZ, ARM64_INS_MOVN
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateMov(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)

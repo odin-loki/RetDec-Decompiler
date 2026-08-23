@@ -2895,6 +2895,23 @@ void Capstone2LlvmIrTranslatorX86_impl::translateNop(cs_insn* i, cs_x86* xi, llv
 }
 
 /**
+ * X86_INS_LFENCE, X86_INS_SFENCE, X86_INS_MFENCE
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateFence(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	llvm::AtomicOrdering ord = llvm::AtomicOrdering::SequentiallyConsistent;
+	if (i->id == X86_INS_LFENCE)
+	{
+		ord = llvm::AtomicOrdering::Acquire;
+	}
+	else if (i->id == X86_INS_SFENCE)
+	{
+		ord = llvm::AtomicOrdering::Release;
+	}
+	irb.CreateFence(ord);
+}
+
+/**
  * X86_INS_FNINIT
  * This was modeled as empty (nop) instruction in an old semantics, but it
  * does set some values. Not all of the set objects are represented in our

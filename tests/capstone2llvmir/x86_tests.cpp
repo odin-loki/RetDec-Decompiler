@@ -13742,6 +13742,60 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, CmpxchgWithoutLockIsNotAtomicCmpXchg)
 	}
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, MfenceEmitsSeqCstFence)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("mfence"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* fence = dyn_cast<FenceInst>(&*it))
+		{
+			found = true;
+			EXPECT_EQ(fence->getOrdering(), AtomicOrdering::SequentiallyConsistent);
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LfenceEmitsAcquireFence)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lfence"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* fence = dyn_cast<FenceInst>(&*it))
+		{
+			found = true;
+			EXPECT_EQ(fence->getOrdering(), AtomicOrdering::Acquire);
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, SfenceEmitsReleaseFence)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("sfence"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* fence = dyn_cast<FenceInst>(&*it))
+		{
+			found = true;
+			EXPECT_EQ(fence->getOrdering(), AtomicOrdering::Release);
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockNotEmitsAtomicRmw)
 {
 	ONLY_MODE_32;

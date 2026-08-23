@@ -4876,6 +4876,57 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, MVN_ternary)
 	});
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, DmbEmitsFence)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("dmb sy"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<FenceInst>(&*it))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, DsbEmitsFence)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("dsb sy"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<FenceInst>(&*it))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, IsbEmitsFence)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("isb"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<FenceInst>(&*it))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, AND_quaternary)
 {
 	ONLY_MODE_ARM;

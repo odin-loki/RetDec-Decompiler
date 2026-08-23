@@ -3837,6 +3837,54 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, LdaxpLoadIsAtomic)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, DmbEmitsFence)
+{
+	auto* f = translate(assemble("dmb sy"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<FenceInst>(&*it))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, DsbEmitsFence)
+{
+	auto* f = translate(assemble("dsb sy"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<FenceInst>(&*it))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, IsbEmitsFence)
+{
+	auto* f = translate(assemble("isb"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<FenceInst>(&*it))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, LdpLoadIsNotAtomic)
 {
 	auto* f = translate(assemble("ldp x0, x1, [x2]"));

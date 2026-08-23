@@ -148,6 +148,8 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
   `lock cmpxchg8b`/`cmpxchg16b` emit `cmpxchg`; `stxp`/`stlxp` are
   wide atomic stores. `ldxp`/`ldaxp` pair loads are atomic
   (monotonic / acquire); ordinary `ldp` stays non-atomic.
+  x86 `lfence`/`sfence`/`mfence` and ARM/ARM64 `dmb`/`dsb`/`isb`
+  emit LLVM `fence` (`isb` is seq_cst; no I-cache model).
 
 ### 3b C parser → N10 → N18
 
