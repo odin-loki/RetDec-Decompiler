@@ -235,7 +235,9 @@ N17 is mean selected-token probability for the whole generation.
 - `retdec.pointee` helpers + `LlvmUtilsTests.PointeeMetadataRoundTrips`.
 - Lifter `loadOp`/`storeOp` on x86/ARM/ARM64/MIPS/PowerPC write MD.
   Tests: `MemoryLoadAttachesPointeeMetadata` /
-  `MemoryStoreAttachesPointeeMetadata` on those arches.
+  `MemoryStoreAttachesPointeeMetadata` on those arches, plus x86
+  store / atomic RMW / cmpxchg, ARM `swp`, ARM64 `ldxr`, MIPS `ll`,
+  and PowerPC `lwarx`.
 - Value-based readers (`inst_opt`, `entry_alloca`, ABI, `ir_modifier`,
   `simple_types`) call `pointeeType` first. `pointeeType` also uses
   `AllocaInst::getAllocatedType` and `GlobalVariable::getValueType`.

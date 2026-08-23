@@ -3051,6 +3051,26 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, SwpEmitsAtomicRmw)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, SwpAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("swp r0, r1, [r2]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			if (rmw->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SWP)
 {
 	ONLY_MODE_ARM;

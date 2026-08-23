@@ -2187,6 +2187,26 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, LlLoadIsAtomic)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, LlLoadAttachesPointeeMetadata)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("ll $1, 0x8($2)"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LL)
 {
 	ALL_MODES;
