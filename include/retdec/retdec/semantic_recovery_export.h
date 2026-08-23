@@ -9,6 +9,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "retdec/algo_recover/algo_recover.h"
@@ -31,6 +32,12 @@ using SemanticDetectionMap = std::unordered_map<std::string, std::vector<common:
 /// Run CryptoDetector on `fn` and append kind="crypto" hits (label from
 /// algorithmName()). Extract does not map kind=crypto.
 void appendCryptoDetections(SemanticDetectionMap& map, const ssa::SSAFunction& fn);
+
+/// Run SerialDetector on `fn` and append kind="serial" hits (label from
+/// frameworkName()). Name-only symbol-table hits prefix detail with
+/// evidence:symbol_name. Extract does not map kind=serial.
+void appendSerialDetections(
+	SemanticDetectionMap& map, const ssa::SSAFunction& fn, const std::unordered_set<std::string>& symTable);
 
 SemanticDetectionMap buildSemanticDetectionMap(
 	const container_detect::ContainerDetector::DetectionMap& containers,

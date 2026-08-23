@@ -8,6 +8,14 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Pipeline leftover: `SerialDetector` now runs on each SSA
+  function after crypto export and appends `kind="serial"`
+  (label from `frameworkName()`). Name-only symbol-table hits
+  (`SerializeToString`, `FlatBufferBuilder`, …) prefix `detail`
+  with `evidence:symbol_name`. Extract does not map
+  `kind=="serial"`, so headline F1 is unchanged. Tests:
+  `ProtobufSymbolsExportAsSerialNameEvidence`,
+  `SerialPreflightSkipsTinyFunctions`. Default F5 is unchanged.
 - Pipeline leftover: `CryptoDetector` now runs on each SSA
   function after `buildSemanticDetectionMap` and appends
   `kind="crypto"` (label from `algorithmName()`). Extract does

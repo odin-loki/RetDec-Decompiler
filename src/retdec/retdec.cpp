@@ -11,6 +11,7 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <unordered_set>
 #include <vector>
 
 #include <llvm/ADT/Triple.h>
@@ -1001,6 +1002,22 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 					}
 					if (nCrypto > 0)
 						Log::info() << "[analysis] crypto primitives detected in " << nCrypto << " function(s)"
+									<< std::endl;
+					std::unordered_set<std::string> serialSyms;
+					for (const llvm::Function& lf: *module)
+						serialSyms.insert(lf.getName().str());
+					std::size_t nSerial = 0;
+					for (const auto& item: work)
+					{
+						if (!item.fn) continue;
+						const std::size_t before =
+							semanticMap.count(item.fn->name()) ? semanticMap.find(item.fn->name())->second.size() : 0;
+						analysis::appendSerialDetections(semanticMap, *item.fn, serialSyms);
+						const auto it = semanticMap.find(item.fn->name());
+						if (it != semanticMap.end() && it->second.size() > before) ++nSerial;
+					}
+					if (nSerial > 0)
+						Log::info() << "[analysis] serialisation frameworks detected in " << nSerial << " function(s)"
 									<< std::endl;
 					analysis::exportSemanticRecovery(config, semanticMap, outString);
 					if (!semanticMap.empty())

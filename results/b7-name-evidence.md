@@ -50,6 +50,9 @@ This is **not** a product F1 change by itself.
   prefixes `emittedForm` with `evidence:symbol_name`. Structural
   Load/Store swap is untagged. Extract already drops `std::partition`
   labels (`startswith("std::")`), so headline F1 is unchanged.
+- Name-only serial symbol-table hits prefix `detail` with
+  `evidence:symbol_name`. Structural serial tokens stay untagged.
+  Extract does not map `kind=="serial"`. Headline F1 is unchanged.
 
 A8 (lock-prefix / ldxr) is still blocked: `IrInstr::Op` has no lock/atomic.
 
@@ -58,7 +61,6 @@ A8 (lock-prefix / ldxr) is still blocked: `IrInstr::Op` has no lock/atomic.
 These still read `calleeName` or a symbol table and mix that into the same
 confidence as structural evidence:
 
-- `serial_detect` (`symContains` on SerializeToString, FlatBuffer, …)
 - `unordered_detect` xor+mul hash (structural; name-only hash callee
   is now tagged)
 - `sort_detect` self-name recursion (not `_introsort` / named-heapsort

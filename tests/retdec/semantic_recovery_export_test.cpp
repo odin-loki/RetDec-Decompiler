@@ -18,6 +18,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 
@@ -704,4 +705,35 @@ TEST(SemanticExport, NameOnlyAesNiDoesNotExportBelowThreshold)
 	{
 		EXPECT_FALSE(d.kind == "crypto" && d.label == "AES");
 	}
+}
+
+TEST(SemanticExport, ProtobufSymbolsExportAsSerialNameEvidence)
+{
+	retdec::ssa::SSAFunction fn("ser_fn");
+	ASSERT_NE(fn.addBlock(), nullptr);
+	ASSERT_NE(fn.addBlock(), nullptr);
+	ASSERT_NE(fn.addBlock(), nullptr);
+
+	const std::unordered_set<std::string> sym{
+		"proto::MyMessage::SerializeToString", "proto::MyMessage::ParseFromString"};
+	retdec::analysis::SemanticDetectionMap map;
+	retdec::analysis::appendSerialDetections(map, fn, sym);
+
+	ASSERT_EQ(map.count("ser_fn"), 1u);
+	ASSERT_FALSE(map.at("ser_fn").empty());
+	const auto& d = map.at("ser_fn").front();
+	EXPECT_EQ(d.kind, "serial");
+	EXPECT_EQ(d.label, "Protobuf");
+	EXPECT_GE(d.confidence, 0.40f);
+	EXPECT_NE(d.detail.find("evidence:symbol_name"), std::string::npos);
+}
+
+TEST(SemanticExport, SerialPreflightSkipsTinyFunctions)
+{
+	retdec::ssa::SSAFunction fn("tiny");
+	ASSERT_NE(fn.addBlock(), nullptr);
+	const std::unordered_set<std::string> sym{"proto::MyMessage::SerializeToString"};
+	retdec::analysis::SemanticDetectionMap map;
+	retdec::analysis::appendSerialDetections(map, fn, sym);
+	EXPECT_EQ(map.count("tiny"), 0u);
 }

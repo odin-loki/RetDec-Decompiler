@@ -7,6 +7,7 @@
 #include "retdec/retdec/semantic_recovery_export.h"
 
 #include "retdec/crypto_detect/crypto_detect.h"
+#include "retdec/serial_detect/serial_detect.h"
 #include "retdec/ssa/ssa.h"
 
 #include <algorithm>
@@ -1310,6 +1311,55 @@ void appendCryptoDetections(SemanticDetectionMap& map, const ssa::SSAFunction& f
 		appendDetection(
 			map, fn.name(), makeDetection("crypto", result.algorithmName(), result.confidence, result.toString()));
 	}
+}
+
+namespace {
+
+bool serialEvidenceIsNameOnly(const std::string& evidence)
+{
+	if (evidence.empty())
+	{
+		return false;
+	}
+	static const char* const kStructural[] = {
+		"varint_loop",
+		"tag_shift3",
+		"_has_bits_",
+		"vtable_lookup",
+		"msgpack_switch",
+		"fixed_width_reads",
+		"major_type_shr5",
+		"additional_and1f",
+		"extended_len_24-27",
+		"json_recursive_descent",
+		"xml_tag_scan",
+	};
+	for (const char* token: kStructural)
+	{
+		if (evidence.find(token) != std::string::npos)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+} // namespace
+
+void appendSerialDetections(
+	SemanticDetectionMap& map, const ssa::SSAFunction& fn, const std::unordered_set<std::string>& symTable)
+{
+	const serial_detect::SerialResult result = serial_detect::SerialDetector{}.analyseFunction(fn, symTable);
+	if (!result.isValid())
+	{
+		return;
+	}
+	std::string detail = result.toString();
+	if (serialEvidenceIsNameOnly(result.evidenceSummary))
+	{
+		detail = "evidence:symbol_name " + detail;
+	}
+	appendDetection(map, fn.name(), makeDetection("serial", result.frameworkName(), result.confidence, detail));
 }
 
 SemanticDetectionMap buildSemanticDetectionMap(
