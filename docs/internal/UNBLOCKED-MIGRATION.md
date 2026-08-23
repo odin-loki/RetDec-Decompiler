@@ -209,12 +209,11 @@ N17 is mean selected-token probability for the whole generation.
 - Value-based readers (`inst_opt`, `entry_alloca`, ABI, `ir_modifier`,
   `simple_types`) call `pointeeType` first.
 - **No** `cmake/deps.cmake` LLVM URL change.
-- **No** `IrInstr::Op` enum change yet.
-- Remaining lifter IntToPtr load/store writers (push/pop/call/ret,
-  ARM LDM/STM, ARM64 LDP/STP, PowerPC indexed) write MD.
-- Remaining Value-based readers (`config`, `stack`, `syscalls`, ABI,
-  `ir_modifier`, `param_return`, `idioms_libgcc`) call `pointeeType`.
-  llvmir2hll GV uses `getValueType` (no bin2llvmir dep).
-- Remaining readers: Type*-only `getPointerElementType` /
-  `PointerType::getElementType` (no Value), llvmir2hll
-  `convert(PointerType*)`.
+- `IrInstr::Op::Rem` / `Op::Lock` appended before `Undef`.
+  `SRem`/`URem`/`FRem` → `Rem`; atomics/fence → `Lock`.
+- Ring-buffer wrap: `Rem` + capacity immediate (not `Div`).
+- llvmir2hll empty-string GV uses `getValueType`.
+- Remaining Type*-only readers (no Value to thread):
+  `simple_types` 1203–1204 / 1641 nested pointer-to-array,
+  `hasFunctionTypeOrPointer`, llvmir2hll `convert(PointerType*)`.
+- **No** `cmake/deps.cmake` LLVM URL change.

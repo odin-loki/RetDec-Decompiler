@@ -11,7 +11,7 @@
  *   - UnorderedMapDetector::detect (hash, modulo, chain)
  *   - StringDetector::detect  (SSO branch, inline path, heap path)
  *   - SharedPtrDetector::detect (two-pointer, atomic dec, zero-check free)
- *   - RingBufferDetector::detect (And wrap mask, not plain Div)
+ *   - RingBufferDetector::detect (And wrap mask or Rem capacity, not Div)
  *   - TemplateTypeRecoverer::recoverElementType
  *   - ContainerDetector::analyseFunction (preflight, best-confidence selection)
  *   - ContainerDetector::analyseModule
@@ -1319,4 +1319,21 @@ TEST(RingBufferDetectorTest, DivByEightIsNotRingBuffer)
 	RingBufferDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_LT(r.confidence, 0.45f);
+}
+
+TEST(RingBufferDetectorTest, RemByCapacityIsRingBuffer)
+{
+	auto fn = makeFunc(
+		"rb_mod",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::Add,
+		});
+	addImmInstr(*fn, ssa::IrInstr::Op::Rem, 10);
+	RingBufferDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_GE(r.confidence, 0.45f);
+	EXPECT_EQ(r.emittedType, "ring_buffer");
 }

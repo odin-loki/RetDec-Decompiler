@@ -25,11 +25,17 @@ static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
 }
 
 // Power-of-two wrap: And with (2^k-1). Div immediates are not wrap
-// (B8 FP 0.700 when strength-reduction Div was accepted).
+// (B8 FP 0.700 when strength-reduction Div was accepted). Rem with a
+// capacity immediate is wrap (`i % n`).
 static bool isWrapMask(uint64_t imm)
 {
 	if (imm == 0 || imm > 0xffffULL) return false;
 	return ((imm + 1ULL) & imm) == 0ULL;
+}
+
+static bool isWrapCapacity(uint64_t imm)
+{
+	return imm >= 2 && imm <= 0xffffULL;
 }
 
 static bool hasModuloIndex(const ssa::SSAFunction& fn)
@@ -40,11 +46,22 @@ static bool hasModuloIndex(const ssa::SSAFunction& fn)
 		if (!blk) continue;
 		for (const auto* instr: blk->instrs)
 		{
-			if (!instr || instr->op != ssa::IrInstr::Op::And) continue;
-			for (const auto& use: instr->uses)
+			if (!instr) continue;
+			if (instr->op == ssa::IrInstr::Op::And)
 			{
-				const auto* val = fn.value(use.valueId);
-				if (val && val->kind == ssa::ValueKind::Immediate && isWrapMask(val->imm)) return true;
+				for (const auto& use: instr->uses)
+				{
+					const auto* val = fn.value(use.valueId);
+					if (val && val->kind == ssa::ValueKind::Immediate && isWrapMask(val->imm)) return true;
+				}
+			}
+			else if (instr->op == ssa::IrInstr::Op::Rem)
+			{
+				for (const auto& use: instr->uses)
+				{
+					const auto* val = fn.value(use.valueId);
+					if (val && val->kind == ssa::ValueKind::Immediate && isWrapCapacity(val->imm)) return true;
+				}
 			}
 		}
 	}

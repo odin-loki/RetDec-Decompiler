@@ -8,6 +8,16 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover: `IrInstr::Op::Rem` and `Op::Lock` appended before
+  `Undef` (existing enumerators keep their values). `SRem`/`URem`/`FRem`
+  map to `Rem`; `AtomicRMW`/`CmpXchg`/`Fence` map to `Lock`. Tests:
+  `LlvmToSsa.SRemMapsToRemNotDiv`, `LlvmToSsa.AtomicRmwMapsToLock`.
+- Wave 5 leftover: ring-buffer detector accepts `Rem` with a capacity
+  immediate (`i % n`). `Div` stay rejected (B8 FP 0.700). Test:
+  `RemByCapacityIsRingBuffer`.
+- Wave 5 leftover: llvmir2hll empty-string globals use
+  `GlobalVariable::getValueType` instead of
+  `PointerType::getElementType`. LLVM pin unchanged.
 - Wave 5 leftover: remaining Value-based pointer-element reads
   (`config`, `stack`, `syscalls`, ABI, `ir_modifier`, `param_return`,
   `idioms_libgcc`) go through `pointeeType`. llvmir2hll global
