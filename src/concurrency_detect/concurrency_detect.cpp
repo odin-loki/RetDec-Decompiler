@@ -103,7 +103,16 @@ bool tryParseAtomicBuiltin(const std::string& name, uint64_t vma,
 std::vector<AtomicEntry> extractAtomics(const retdec::ssa::BasicBlock& blk) {
     std::vector<AtomicEntry> result;
     for (const retdec::ssa::IrInstr* instr : blk.instrs) {
-        if (!instr || instr->op != retdec::ssa::IrInstr::Op::Call) continue;
+        if (!instr) continue;
+        if (instr->op == retdec::ssa::IrInstr::Op::Lock) {
+            AtomicEntry ae;
+            ae.op = "atomicrmw";
+            ae.order = "seq_cst";
+            ae.address = instr->vma;
+            result.push_back(ae);
+            continue;
+        }
+        if (instr->op != retdec::ssa::IrInstr::Op::Call) continue;
         AtomicEntry ae;
         if (tryParseAtomicBuiltin(instr->calleeName, instr->vma, ae))
             result.push_back(ae);

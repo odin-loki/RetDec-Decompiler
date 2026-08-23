@@ -129,6 +129,13 @@ class Capstone2LlvmIrTranslatorX86_impl :
 				llvm::Value* sflagsVal,
 				const std::vector<std::pair<uint32_t, llvm::Value*>>& regs);
 
+		/// LOCK + memory dest → AtomicRMW. False if the insn is not that form.
+		bool tryTranslateLockedRmw(
+				cs_insn* i,
+				cs_x86* xi,
+				llvm::IRBuilder<>& irb,
+				llvm::AtomicRMWInst::BinOp aop);
+
 		unsigned getAddrSpace(x86_reg segment);
 
 		bool isX87DataRegister(uint32_t r);

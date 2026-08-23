@@ -1629,6 +1629,27 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdr(cs_insn* i, cs_arm64* ai,
 	auto* regType = getRegisterType(ai->operands[0].reg);
 	auto* dest = loadOp(ai->operands[1], irb, nullptr, true);
 	llvm::Value* loaded_value = loadIntPtr(irb, dest, ty);
+	if (auto* ld = llvm::dyn_cast<llvm::LoadInst>(loaded_value))
+	{
+		switch (i->id)
+		{
+			case ARM64_INS_LDXR:
+			case ARM64_INS_LDXRB:
+			case ARM64_INS_LDXRH:
+				ld->setAtomic(llvm::AtomicOrdering::Monotonic);
+				break;
+			case ARM64_INS_LDAXR:
+			case ARM64_INS_LDAXRB:
+			case ARM64_INS_LDAXRH:
+			case ARM64_INS_LDAR:
+			case ARM64_INS_LDARB:
+			case ARM64_INS_LDARH:
+				ld->setAtomic(llvm::AtomicOrdering::Acquire);
+				break;
+			default:
+				break;
+		}
+	}
 	// If the result should be floating point, bit cast it
 	if (!regType->isFloatingPointTy())
 	{

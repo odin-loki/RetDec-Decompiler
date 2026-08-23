@@ -13657,6 +13657,34 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, StackPushAttachesPointeeMetadata)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockAddEmitsAtomicRmw)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock add dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<AtomicRMWInst>(&*it))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, AddWithoutLockIsNotAtomicRmw)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("add dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		EXPECT_FALSE(isa<AtomicRMWInst>(&*it));
+	}
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FXTRACT)
 {
 	ALL_MODES;

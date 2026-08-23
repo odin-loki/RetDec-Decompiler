@@ -33,6 +33,8 @@ void attachPointeeType(llvm::Instruction* i, llvm::Type* pointee);
 llvm::LoadInst* loadIntPtr(llvm::IRBuilder<>& irb, llvm::Value* addr, llvm::Type* elem, unsigned addrSpace = 0);
 llvm::StoreInst*
 storeIntPtr(llvm::IRBuilder<>& irb, llvm::Value* val, llvm::Value* addr, llvm::Type* elem, unsigned addrSpace = 0);
+/// IntToPtr + `retdec.pointee` (for AtomicRMW / typed pointer uses).
+llvm::Value* intToPtr(llvm::IRBuilder<>& irb, llvm::Value* addr, llvm::Type* elem, unsigned addrSpace = 0);
 
 /**
  * Generate if-then statement at the current insert point of @p irb builder.

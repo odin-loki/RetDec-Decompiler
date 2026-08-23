@@ -179,6 +179,14 @@ define i32 @lockadd(i32* %p) {
 }
 )IR";
 
+constexpr const char* kAtomicLoadIR = R"IR(
+target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+define i32 @ldxr(i32* %p) {
+  %r = load atomic i32, i32* %p monotonic, align 4
+  ret i32 %r
+}
+)IR";
+
 TEST(LlvmToSsa, SRemMapsToRemNotDiv)
 {
 	llvm::LLVMContext ctx;
@@ -202,4 +210,17 @@ TEST(LlvmToSsa, AtomicRmwMapsToLock)
 	const SSAFunction* fn = findFn(*ssa, "lockadd");
 	ASSERT_NE(fn, nullptr);
 	EXPECT_GE(countOp(*fn, IrInstr::Op::Lock), 1);
+}
+
+TEST(LlvmToSsa, AtomicLoadMapsToLock)
+{
+	llvm::LLVMContext ctx;
+	auto module = parseIR(ctx, kAtomicLoadIR);
+	ASSERT_NE(module, nullptr);
+	auto ssa = buildSsaModule(*module);
+	ASSERT_NE(ssa, nullptr);
+	const SSAFunction* fn = findFn(*ssa, "ldxr");
+	ASSERT_NE(fn, nullptr);
+	EXPECT_GE(countOp(*fn, IrInstr::Op::Lock), 1);
+	EXPECT_EQ(countOp(*fn, IrInstr::Op::Load), 0);
 }

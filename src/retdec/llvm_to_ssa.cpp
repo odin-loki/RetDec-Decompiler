@@ -91,13 +91,13 @@ static ssa::IrInstr* translateInstr(const llvm::Instruction& li, ssa::SSAFunctio
 		op = Op::Call;
 		calleeStr = calleeName(ci);
 	}
-	else if (llvm::isa<llvm::LoadInst>(li))
+	else if (const auto* load = llvm::dyn_cast<llvm::LoadInst>(&li))
 	{
-		op = Op::Load;
+		op = load->isAtomic() ? Op::Lock : Op::Load;
 	}
-	else if (llvm::isa<llvm::StoreInst>(li))
+	else if (const auto* store = llvm::dyn_cast<llvm::StoreInst>(&li))
 	{
-		op = Op::Store;
+		op = store->isAtomic() ? Op::Lock : Op::Store;
 	}
 	else if (llvm::isa<llvm::AtomicRMWInst>(li) || llvm::isa<llvm::AtomicCmpXchgInst>(li)
 			 || llvm::isa<llvm::FenceInst>(li))

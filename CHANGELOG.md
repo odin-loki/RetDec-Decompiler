@@ -8,6 +8,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (A8): x86 `LOCK` + memory dest on ADD/XADD/AND/OR/XOR
+  emit `atomicrmw` (implicit `xchg mem` unchanged). ARM64
+  `ldxr`/`ldaxr`/`ldar` loads are `setAtomic`. Atomic loads/stores
+  map to `Op::Lock`; `extractAtomics` accepts `Op::Lock`. Tests:
+  `LockAddEmitsAtomicRmw`, `AddWithoutLockIsNotAtomicRmw`,
+  `LdxrLoadIsAtomic`, `LdrLoadIsNotAtomic`,
+  `LlvmToSsa.AtomicLoadMapsToLock`.
 - Wave 5 leftover: `IrInstr::Op::Rem` and `Op::Lock` appended before
   `Undef` (existing enumerators keep their values). `SRem`/`URem`/`FRem`
   map to `Rem`; `AtomicRMW`/`CmpXchg`/`Fence` map to `Lock`. Tests:

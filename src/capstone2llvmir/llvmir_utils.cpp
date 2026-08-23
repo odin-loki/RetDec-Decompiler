@@ -69,6 +69,17 @@ storeIntPtr(llvm::IRBuilder<>& irb, llvm::Value* val, llvm::Value* addr, llvm::T
 	return st;
 }
 
+llvm::Value* intToPtr(llvm::IRBuilder<>& irb, llvm::Value* addr, llvm::Type* elem, unsigned addrSpace)
+{
+	auto* pt = llvm::PointerType::get(elem, addrSpace);
+	auto* ptr = irb.CreateIntToPtr(addr, pt);
+	if (auto* i = llvm::dyn_cast<llvm::Instruction>(ptr))
+	{
+		attachPointeeType(i, elem);
+	}
+	return ptr;
+}
+
 llvm::Type* getFloatTypeFromByteSize(llvm::Module* module, unsigned sz)
 {
 	auto& ctx = module->getContext();

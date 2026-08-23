@@ -1735,12 +1735,98 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAdc(cs_insn* i, cs_x86* xi, llv
 	storeOp(xi->operands[0], add, irb);
 }
 
+namespace {
+
+bool hasLockPrefix(const cs_x86* xi)
+{
+	for (int p = 0; p < 4; ++p)
+	{
+		if (xi->prefix[p] == X86_PREFIX_LOCK)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+} // namespace
+
+bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedRmw(
+		cs_insn* i,
+		cs_x86* xi,
+		llvm::IRBuilder<>& irb,
+		llvm::AtomicRMWInst::BinOp aop)
+{
+	if (!hasLockPrefix(xi) || xi->op_count < 2)
+	{
+		return false;
+	}
+	if (xi->operands[0].type != X86_OP_MEM || i->id == X86_INS_TEST)
+	{
+		return false;
+	}
+
+	auto* addr = loadOp(xi->operands[0], irb, nullptr, true);
+	auto* rhs = loadOp(xi->operands[1], irb);
+	auto* elem = getIntegerTypeFromByteSize(_module, xi->operands[0].size);
+	rhs = generateTypeConversion(irb, rhs, elem, eOpConv::SEXT_TRUNC_OR_BITCAST);
+	auto* ptr = intToPtr(irb, addr, elem, getAddrSpace(xi->operands[0].mem.segment));
+	auto* old = irb.CreateAtomicRMW(aop, ptr, rhs, llvm::AtomicOrdering::SequentiallyConsistent);
+	attachPointeeType(old, elem);
+
+	llvm::Value* result = nullptr;
+	switch (aop)
+	{
+		case llvm::AtomicRMWInst::Add:
+			result = irb.CreateAdd(old, rhs);
+			storeRegistersPlusSflags(irb, result, {
+					{X86_REG_AF, generateCarryAddInt4(old, rhs, irb)},
+					{X86_REG_CF, generateCarryAdd(result, old, irb)},
+					{X86_REG_OF, generateOverflowAdd(result, old, rhs, irb)}});
+			break;
+		case llvm::AtomicRMWInst::And:
+			result = irb.CreateAnd(old, rhs);
+			storeRegistersPlusSflags(irb, result, {
+					{X86_REG_AF, irb.getInt1(false)},
+					{X86_REG_CF, irb.getInt1(false)},
+					{X86_REG_OF, irb.getInt1(false)}});
+			break;
+		case llvm::AtomicRMWInst::Or:
+			result = irb.CreateOr(old, rhs);
+			storeRegistersPlusSflags(irb, result, {
+					{X86_REG_AF, irb.getInt1(false)},
+					{X86_REG_CF, irb.getInt1(false)},
+					{X86_REG_OF, irb.getInt1(false)}});
+			break;
+		case llvm::AtomicRMWInst::Xor:
+			result = irb.CreateXor(old, rhs);
+			storeRegistersPlusSflags(irb, result, {
+					{X86_REG_AF, irb.getInt1(false)},
+					{X86_REG_CF, irb.getInt1(false)},
+					{X86_REG_OF, irb.getInt1(false)}});
+			break;
+		default:
+			return false;
+	}
+
+	if (i->id == X86_INS_XADD)
+	{
+		storeOp(xi->operands[1], old, irb);
+	}
+	return true;
+}
+
 /**
  * X86_INS_ADD, X86_INS_XADD
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateAdd(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, xi, irb);
+
+	if (tryTranslateLockedRmw(i, xi, irb, llvm::AtomicRMWInst::Add))
+	{
+		return;
+	}
 
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
 
@@ -1763,6 +1849,11 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAdd(cs_insn* i, cs_x86* xi, llv
 void Capstone2LlvmIrTranslatorX86_impl::translateAnd(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, xi, irb);
+
+	if (tryTranslateLockedRmw(i, xi, irb, llvm::AtomicRMWInst::And))
+	{
+		return;
+	}
 
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
 
@@ -2723,6 +2814,11 @@ void Capstone2LlvmIrTranslatorX86_impl::translateOr(cs_insn* i, cs_x86* xi, llvm
 {
 	EXPECT_IS_BINARY(i, xi, irb);
 
+	if (tryTranslateLockedRmw(i, xi, irb, llvm::AtomicRMWInst::Or))
+	{
+		return;
+	}
+
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
 
 	auto* orOp = irb.CreateOr(op0, op1);
@@ -3569,6 +3665,11 @@ void Capstone2LlvmIrTranslatorX86_impl::translateXlatb(cs_insn* i, cs_x86* xi, l
 void Capstone2LlvmIrTranslatorX86_impl::translateXor(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, xi, irb);
+
+	if (tryTranslateLockedRmw(i, xi, irb, llvm::AtomicRMWInst::Xor))
+	{
+		return;
+	}
 
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
 

@@ -137,15 +137,13 @@ Current: `Assign, Add, Sub, Mul, Div, And, Or, Xor, Not, Neg, Shl,
 Shr, Sar, Ror, Rol, Load, Store, Call, Ret, Branch, CondBranch,
 Compare, FlagWrite, FlagRead, Phi, Undef`.
 
-- `SRem`/`URem`/`FDiv` all map to `Op::Div` (`llvm_to_ssa.cpp` 46–50).
-- No `Rem`, `Lock`, or atomic op.
-- Concurrency today: callee names `__atomic_*` / `__sync_*`, not lock
-  prefix (`concurrency_detect.cpp`, A8 in EXECUTION_PLAN).
-
-**After an explicit `IrInstr::Op` commit:** map `SRem`/`URem` → `Rem`;
-map LLVM atomics / fence to `Lock` (or a dedicated Atomic if the enum
-commit says so). Then ring-buffer `% capacity` (B8 Div-wrap already
-failed FP 0.700 — do not reuse Div). Then A8 lock-prefix / `ldxr`.
+- `SRem`/`URem`/`FRem` map to `Op::Rem`; `AtomicRMW`/`CmpXchg`/`Fence`
+  and atomic load/store map to `Op::Lock`.
+- A8: lock-prefixed x86 ADD/XADD/AND/OR/XOR emit `atomicrmw`; ARM64
+  `ldxr`/`ldaxr`/`ldar` are atomic loads. `extractAtomics` accepts
+  `Op::Lock`. Implicit `xchg mem` is still a plain store (emulator
+  test). `lock cmpxchg` / `lock inc` / STLXR still untranslated as
+  atomics.
 
 ### 3b C parser → N10 → N18
 
@@ -212,6 +210,8 @@ N17 is mean selected-token probability for the whole generation.
 - `IrInstr::Op::Rem` / `Op::Lock` appended before `Undef`.
   `SRem`/`URem`/`FRem` → `Rem`; atomics/fence → `Lock`.
 - Ring-buffer wrap: `Rem` + capacity immediate (not `Div`).
+- A8 lock-prefix / `ldxr`: lifter emits LLVM atomics; detector reads
+  `Op::Lock`.
 - llvmir2hll empty-string GV uses `getValueType`.
 - Remaining Type*-only readers (no Value to thread):
   `simple_types` 1203–1204 / 1641 nested pointer-to-array,

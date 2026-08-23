@@ -92,7 +92,7 @@ Deterministic analysis writes C. Neural may refine it. **Neither path executes t
 
 Priority inside the wave:
 
-1. **A7** constant-keyed crypto (SHA/MD5/ChaCha/Blowfish P-array, DES SPtrans). Base64 skipped (no SSA string table). **A6** Fibonacci/LCS/Knapsack remain unused enum labels. **A9** `pattern_detect` marked experimental. **A8** lock-prefix/ldxr: SSA `IrInstr::Op` has no lock/atomic, so not implemented. **B8** 220-binary negative corpus + FP extract. **Q4** goto baseline measured (no SAILR). **B14** runner provenance expanded.  
+1. **A7** constant-keyed crypto (SHA/MD5/ChaCha/Blowfish P-array, DES SPtrans). Base64 skipped (no SSA string table). **A6** Fibonacci/LCS/Knapsack remain unused enum labels. **A9** `pattern_detect` marked experimental. **A8** lock-prefix/`ldxr`: `LOCK`+mem ADD/XADD/AND/OR/XOR → `atomicrmw`; ARM64 exclusive/acquire loads are atomic; `extractAtomics` reads `Op::Lock`. `lock cmpxchg` / `lock inc` / STLXR still open. **B8** 220-binary negative corpus + FP extract. **Q4** goto baseline measured (no SAILR). **B14** runner provenance expanded.  
 2. **E7** `docs/CLAIMS.md` register.  
 3. **E8/E9** link-graph / doc-vs-code CI scripts.  
 4. **N6–N9** model allowlist default, GGUF header parse, instance state, richer manifest.  
