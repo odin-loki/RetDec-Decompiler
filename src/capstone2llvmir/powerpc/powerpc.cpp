@@ -1568,6 +1568,16 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateNop(cs_insn* i, cs_ppc* pi,
 }
 
 /**
+ * PPC_INS_SYNC, PPC_INS_LWSYNC, PPC_INS_ISYNC, PPC_INS_EIEIO,
+ * PPC_INS_MBAR, PPC_INS_MSYNC, PPC_INS_TLBSYNC, PPC_INS_PTESYNC
+ * Barriers → LLVM fence. No I-cache / TLB model.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateFence(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	irb.CreateFence(llvm::AtomicOrdering::SequentiallyConsistent);
+}
+
+/**
  * PPC_INS_NOR
  */
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateNor(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)

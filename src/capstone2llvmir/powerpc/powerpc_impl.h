@@ -138,6 +138,7 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateDivw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateEqv(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateExtendSign(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateFence(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLhbrx(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLi(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLis(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);

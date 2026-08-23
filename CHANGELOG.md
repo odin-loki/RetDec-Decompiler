@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (A8): PowerPC `sync`/`isync`/`lwsync`/`eieio`/
+  `mbar`/`msync`/`tlbsync`/`ptesync` emit LLVM `fence` (`seq_cst`).
+  No I-cache / TLB model. Tests: `SyncEmitsFence`, `IsyncEmitsFence`,
+  `LwsyncEmitsFence`, `EieioEmitsFence`.
 - Wave 5 leftover (A8): MIPS `sync`/`synci` emit LLVM `fence`
   (`seq_cst`). `synci` has no I-cache model. Tests: `SyncEmitsFence`.
 - Wave 5 leftover (A8): `lock sub` mem → `atomicrmw sub`. Plain

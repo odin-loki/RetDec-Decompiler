@@ -163,6 +163,8 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
   atomic stores plus `CR0.EQ`.
   `lock sub` mem emits `atomicrmw sub` (`cmp` is not locked).
   MIPS `sync`/`synci` emit LLVM `fence` (`synci` has no I-cache model).
+  PowerPC `sync`/`isync`/`lwsync`/`eieio`/`mbar`/`msync`/`tlbsync`/
+  `ptesync` emit LLVM `fence` (no I-cache / TLB model).
 
 ### 3b C parser → N10 → N18
 
