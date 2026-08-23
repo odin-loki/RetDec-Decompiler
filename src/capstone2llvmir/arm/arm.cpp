@@ -1427,9 +1427,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateSbc(cs_insn* i, cs_arm* ai, llv
  * ARM_INS_LDRSH (signed half word) = ARM_INS_LDRSHT (unprivileged)
  *
  * ARM_INS_LDREX, ARM_INS_LDREXB, ARM_INS_LDREXH = Exclusive:
- * Conditional load, conditions check physical address atributes (e.g. TLB).
- * We are not able to check those here. Right now, we just ignore it and
- * generate ordinary loads, but we might generate ASM pseudo insn fnc call.
+ * Atomic load (monotonic). No exclusive-monitor model.
  *
  * LDR R0, [R4, #4]  ; simple offset: R0 = *(int*)(R4+4); R4 unchanged
  * LDR R0, [R4, #4]! ; pre-indexed  : R0 = *(int*)(R4+4); R4 = R4+4
@@ -1522,6 +1520,14 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdr(cs_insn* i, cs_arm* ai, llv
 		throw GenericError("unhandled LDR format");
 	}
 
+	if (i->id == ARM_INS_LDREX || i->id == ARM_INS_LDREXB || i->id == ARM_INS_LDREXH)
+	{
+		if (auto* ld = llvm::dyn_cast<llvm::LoadInst>(op1))
+		{
+			ld->setAtomic(llvm::AtomicOrdering::Monotonic);
+		}
+	}
+
 	op1 = sext
 			? irb.CreateSExtOrTrunc(op1, irb.getInt32Ty())
 			: irb.CreateZExtOrTrunc(op1, irb.getInt32Ty());
@@ -1585,6 +1591,14 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdrd(cs_insn* i, cs_arm* ai, ll
 	else
 	{
 		throw GenericError("unhandled LDRD format");
+	}
+
+	if (i->id == ARM_INS_LDREXD)
+	{
+		if (auto* ld = llvm::dyn_cast<llvm::LoadInst>(op1))
+		{
+			ld->setAtomic(llvm::AtomicOrdering::Monotonic);
+		}
 	}
 
 	auto* lo = irb.CreateTrunc(op1, irb.getInt32Ty());
@@ -1782,6 +1796,44 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStr(cs_insn* i, cs_arm* ai, llv
 				: irb.CreateAdd(b, idx);
 		storeRegister(baseR, v, irb);
 	}
+}
+
+/**
+ * ARM_INS_STREX, ARM_INS_STREXB, ARM_INS_STREXH
+ * Exclusive store: atomic store + status 0 (no exclusive-monitor model).
+ * STREXD stays untranslated (pair packing).
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateStrex(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_EXPR(i, ai, irb, (ai->op_count == 3));
+
+	llvm::Type* ty = nullptr;
+	switch (i->id)
+	{
+		case ARM_INS_STREX:
+			ty = irb.getInt32Ty();
+			break;
+		case ARM_INS_STREXB:
+			ty = irb.getInt8Ty();
+			break;
+		case ARM_INS_STREXH:
+			ty = irb.getInt16Ty();
+			break;
+		default:
+			throw GenericError("ARM: unhandled STREX id");
+	}
+
+	auto* val = loadOp(ai->operands[1], irb);
+	val = irb.CreateZExtOrTrunc(val, ty);
+
+	auto* dest = loadOp(ai->operands[2], irb, nullptr, true);
+
+	auto* st = storeIntPtr(irb, val, dest, ty);
+	st->setAtomic(llvm::AtomicOrdering::Monotonic);
+	storeRegister(
+			ai->operands[0].reg,
+			llvm::ConstantInt::get(getRegisterType(ai->operands[0].reg), 0),
+			irb);
 }
 
 /**

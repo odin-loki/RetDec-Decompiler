@@ -150,6 +150,8 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
   (monotonic / acquire); ordinary `ldp` stays non-atomic.
   x86 `lfence`/`sfence`/`mfence` and ARM/ARM64 `dmb`/`dsb`/`isb`
   emit LLVM `fence` (`isb` is seq_cst; no I-cache model).
+  ARM `ldrex*` loads are atomic; `strex`/`strexb`/`strexh` are
+  atomic stores plus status 0. `strexd` stays untranslated.
 
 ### 3b C parser → N10 → N18
 

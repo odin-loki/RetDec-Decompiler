@@ -2426,6 +2426,41 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDREX)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdrexLoadIsAtomic)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("ldrex r0, [r1]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic())
+			{
+				found = true;
+				EXPECT_EQ(l->getOrdering(), AtomicOrdering::Monotonic);
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdrLoadIsNotAtomic)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("ldr r0, [r1]"));
+	ASSERT_NE(nullptr, f);
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			EXPECT_FALSE(l->isAtomic());
+		}
+	}
+}
+
 //
 // ARM_INS_LDRB
 //
@@ -2757,6 +2792,48 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_STR)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R0, ARM_REG_R1});
 	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x12345678_dw}
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StrexStoreIsAtomic)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("strex r0, r1, [r2]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic())
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_STREX)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R1, 0x12345678},
+		{ARM_REG_R2, 0x1000},
+	});
+
+	emulate("strex r0, r1, [r2]");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0},
+	});
 	EXPECT_NO_MEMORY_LOADED();
 	EXPECT_JUST_MEMORY_STORED({
 		{0x1000, 0x12345678_dw}

@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (A8): ARM `ldrex`/`ldrexb`/`ldrexh`/`ldrexd`
+  loads are atomic (monotonic). `strex`/`strexb`/`strexh` emit
+  an atomic store plus status 0 (no exclusive monitor). `strexd`
+  stays untranslated. Tests: `LdrexLoadIsAtomic`,
+  `LdrLoadIsNotAtomic`, `StrexStoreIsAtomic`, `ARM_INS_STREX`.
 - Wave 5 leftover (A8): x86 `lfence`/`sfence`/`mfence` and
   ARM/ARM64 `dmb`/`dsb`/`isb` emit LLVM `fence` (`acquire` /
   `release` / `seq_cst`). `isb` has no I-cache model. Tests:
