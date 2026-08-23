@@ -146,7 +146,8 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
   `extractAtomics` accepts `Op::Lock`. Implicit `xchg mem` emits
   `atomicrmw xchg` (register–register xchg stays a plain swap).
   `lock cmpxchg8b`/`cmpxchg16b` emit `cmpxchg`; `stxp`/`stlxp` are
-  wide atomic stores.
+  wide atomic stores. `ldxp`/`ldaxp` pair loads are atomic
+  (monotonic / acquire); ordinary `ldp` stays non-atomic.
 
 ### 3b C parser → N10 → N18
 

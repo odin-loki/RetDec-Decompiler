@@ -3797,6 +3797,59 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, StxpStoreIsAtomic)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, LdxpLoadIsAtomic)
+{
+	auto* f = translate(assemble("ldxp x0, x1, [x2]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic())
+			{
+				found = true;
+				EXPECT_EQ(l->getOrdering(), AtomicOrdering::Monotonic);
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, LdaxpLoadIsAtomic)
+{
+	auto* f = translate(assemble("ldaxp x0, x1, [x2]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic())
+			{
+				found = true;
+				EXPECT_EQ(l->getOrdering(), AtomicOrdering::Acquire);
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, LdpLoadIsNotAtomic)
+{
+	auto* f = translate(assemble("ldp x0, x1, [x2]"));
+	ASSERT_NE(nullptr, f);
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			EXPECT_FALSE(l->isAtomic());
+		}
+	}
+}
+
 //
 // ARM64_INS_LDXRB
 //

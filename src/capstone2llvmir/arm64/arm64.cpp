@@ -1772,8 +1772,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdr(cs_insn* i, cs_arm64* ai,
 /**
  * ARM64_INS_LDP, ARM64_INS_LDPSW
  * ARM64_INS_LDNP (Non-temporal)
- * ARM64_INS_LDXP (Exclusive)
- * ARM64_INS_LDAXP (Exclusive Aquire)
+ * ARM64_INS_LDXP (Exclusive) — atomic pair loads (monotonic)
+ * ARM64_INS_LDAXP (Exclusive Acquire) — atomic pair loads (acquire)
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateLdp(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
@@ -1832,6 +1832,21 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdp(cs_insn* i, cs_arm64* ai,
 	else
 	{
 		throw GenericError("ldp, ldpsw: Unsupported instruction format");
+	}
+
+	if (i->id == ARM64_INS_LDXP || i->id == ARM64_INS_LDAXP)
+	{
+		const auto order = i->id == ARM64_INS_LDAXP
+				? llvm::AtomicOrdering::Acquire
+				: llvm::AtomicOrdering::Monotonic;
+		if (auto* ld = llvm::dyn_cast<llvm::LoadInst>(newReg1Value))
+		{
+			ld->setAtomic(order);
+		}
+		if (auto* ld = llvm::dyn_cast<llvm::LoadInst>(newReg2Value))
+		{
+			ld->setAtomic(order);
+		}
 	}
 
 	if (ai->writeback && baseR != ARM64_REG_INVALID)
