@@ -8,6 +8,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (A8): `lock not` mem → `atomicrmw xor -1`.
+  Plain `not` mem stays a load/xor/store. Tests:
+  `LockNotEmitsAtomicRmw`, `NotMemWithoutLockIsNotAtomicRmw`.
 - Wave 5 leftover (A8): ARM64 `ldxp`/`ldaxp` pair loads are
   atomic (monotonic / acquire). Ordinary `ldp` stays non-atomic.
   Tests: `LdxpLoadIsAtomic`, `LdaxpLoadIsAtomic`,

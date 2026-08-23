@@ -2946,6 +2946,25 @@ void Capstone2LlvmIrTranslatorX86_impl::translateNot(cs_insn* i, cs_x86* xi, llv
 {
 	EXPECT_IS_UNARY(i, xi, irb);
 
+	if (hasLockPrefix(xi) && xi->operands[0].type == X86_OP_MEM)
+	{
+		auto* addr = loadOp(xi->operands[0], irb, nullptr, true);
+		if (!addr)
+		{
+			return;
+		}
+		auto* elem = getIntegerTypeFromByteSize(_module, xi->operands[0].size);
+		auto* ones = llvm::ConstantInt::getSigned(elem, -1);
+		auto* ptr = intToPtr(irb, addr, elem, getAddrSpace(xi->operands[0].mem.segment));
+		auto* old = irb.CreateAtomicRMW(
+				llvm::AtomicRMWInst::Xor,
+				ptr,
+				ones,
+				llvm::AtomicOrdering::SequentiallyConsistent);
+		attachPointeeType(old, elem);
+		return;
+	}
+
 	op0 = loadOpUnary(xi, irb);
 	auto* negativeOne = llvm::ConstantInt::getSigned(op0->getType(), -1);
 

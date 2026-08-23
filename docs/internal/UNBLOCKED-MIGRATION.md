@@ -139,7 +139,7 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
 
 - `SRem`/`URem`/`FRem` map to `Op::Rem`; `AtomicRMW`/`CmpXchg`/`Fence`
   and atomic load/store map to `Op::Lock`.
-- A8: lock-prefixed x86 ADD/XADD/AND/OR/XOR/`inc`/`dec` emit
+- A8: lock-prefixed x86 ADD/XADD/AND/OR/XOR/`inc`/`dec`/`not` emit
   `atomicrmw`; `lock cmpxchg` mem emits `cmpxchg`. ARM64
   `ldxr`/`ldaxr`/`ldar` are atomic loads; `stxr`/`stlxr` are atomic
   stores (status 0, no exclusive monitor); `stlr` is release.
