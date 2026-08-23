@@ -152,6 +152,7 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
   emit LLVM `fence` (`isb` is seq_cst; no I-cache model).
   ARM `ldrex*` loads are atomic; `strex`/`strexb`/`strexh` are
   atomic stores plus status 0. `strexd` stays untranslated.
+  ARM `swp`/`swpb` emit `atomicrmw xchg` (seq_cst).
 
 ### 3b C parser → N10 → N18
 

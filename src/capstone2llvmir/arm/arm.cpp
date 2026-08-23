@@ -1837,6 +1837,43 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStrex(cs_insn* i, cs_arm* ai, l
 }
 
 /**
+ * ARM_INS_SWP, ARM_INS_SWPB
+ * Atomic swap: Rd = *Rn; *Rn = Rm. Seq_cst like x86 xchg mem.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateSwp(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_EXPR(
+			i,
+			ai,
+			irb,
+			(ai->op_count == 3
+					&& ai->operands[0].type == ARM_OP_REG
+					&& ai->operands[1].type == ARM_OP_REG
+					&& ai->operands[2].type == ARM_OP_MEM));
+
+	llvm::Type* ty = (i->id == ARM_INS_SWPB) ? irb.getInt8Ty() : irb.getInt32Ty();
+
+	auto* addr = loadOp(ai->operands[2], irb, nullptr, true);
+	auto* val = loadOp(ai->operands[1], irb);
+	if (!addr || !val)
+	{
+		return;
+	}
+	val = irb.CreateZExtOrTrunc(val, ty);
+	auto* ptr = intToPtr(irb, addr, ty);
+	auto* old = irb.CreateAtomicRMW(
+			llvm::AtomicRMWInst::Xchg,
+			ptr,
+			val,
+			llvm::AtomicOrdering::SequentiallyConsistent);
+	attachPointeeType(old, ty);
+	storeRegister(
+			ai->operands[0].reg,
+			irb.CreateZExtOrTrunc(old, getRegisterType(ai->operands[0].reg)),
+			irb);
+}
+
+/**
  * ARM_INS_SUB, ARM_INS_RSB, ARM_INS_CMP (SUBS but result is discarded)
  */
 void Capstone2LlvmIrTranslatorArm_impl::translateSub(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)

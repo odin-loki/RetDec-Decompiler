@@ -8,6 +8,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (A8): ARM `swp`/`swpb` emit `atomicrmw xchg`
+  (seq_cst). Tests: `SwpEmitsAtomicRmw`, `ARM_INS_SWP`,
+  `SwpbEmitsAtomicRmw`, `ARM_INS_SWPB`.
 - Wave 5 leftover (A8): ARM `ldrex`/`ldrexb`/`ldrexh`/`ldrexd`
   loads are atomic (monotonic). `strex`/`strexb`/`strexh` emit
   an atomic store plus status 0 (no exclusive monitor). `strexd`

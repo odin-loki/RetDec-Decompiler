@@ -163,6 +163,7 @@ class Capstone2LlvmIrTranslatorArm_impl :
 		void translateStr(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateStrex(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateSub(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateSwp(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateUmlal(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateUmull(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateUxtah(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);

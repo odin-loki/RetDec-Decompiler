@@ -2841,6 +2841,92 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_STREX)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, SwpEmitsAtomicRmw)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("swp r0, r1, [r2]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			found = true;
+			EXPECT_EQ(rmw->getOperation(), AtomicRMWInst::Xchg);
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SWP)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R1, 0x12345678},
+		{ARM_REG_R2, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0xaabbccdd_dw},
+	});
+
+	emulate("swp r0, r1, [r2]");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xaabbccdd},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x12345678_dw}
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, SwpbEmitsAtomicRmw)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("swpb r0, r1, [r2]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			found = true;
+			EXPECT_EQ(rmw->getOperation(), AtomicRMWInst::Xchg);
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SWPB)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R1, 0x12345678},
+		{ARM_REG_R2, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0xf1_b},
+	});
+
+	emulate("swpb r0, r1, [r2]");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xf1},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x78_b}
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_STR_dst_shift)
 {
 	SKIP_MODE_THUMB;
