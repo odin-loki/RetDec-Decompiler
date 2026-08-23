@@ -1253,7 +1253,6 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdmStm(cs_insn* i, cs_arm* ai, 
 
 	auto sz = getArchByteSize();
 	auto* ty = getDefaultType();
-	auto* pt = llvm::PointerType::get(ty, 0);
 
 	unsigned opStart = 0;
 	if (i->id == ARM_INS_POP || i->id == ARM_INS_PUSH)
@@ -1301,11 +1300,9 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdmStm(cs_insn* i, cs_arm* ai, 
 			}
 		}
 
-		auto* addr = irb.CreateIntToPtr(incDec, pt);
-
 		if (load)
 		{
-			auto* l = irb.CreateLoad(addr);
+			auto* l = loadIntPtr(irb, incDec, ty);
 			if (ai->operands[j].type == ARM_OP_REG
 					&& ai->operands[j].reg == ARM_REG_PC)
 			{
@@ -1321,7 +1318,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdmStm(cs_insn* i, cs_arm* ai, 
 		{
 			auto* reg = loadOp(ai->operands[j], irb);
 			reg = irb.CreateZExtOrTrunc(reg, ty);
-			irb.CreateStore(reg, addr);
+			storeIntPtr(irb, reg, incDec, ty);
 		}
 
 		if (after)

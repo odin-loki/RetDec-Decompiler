@@ -2313,16 +2313,12 @@ void Capstone2LlvmIrTranslatorX86_impl::translateLjmp(cs_insn* i, cs_x86* xi, ll
 		op0 = loadOp(xi->operands[0], irb, nullptr, true);
 
 		auto* it1 = getIntegerTypeFromByteSize(_module, xi->operands[0].size);
-		auto* pt1 = llvm::PointerType::get(it1, 0);
-		auto* addr1 = irb.CreateIntToPtr(op0, pt1);
-		auto* l1 = irb.CreateLoad(addr1);
+		auto* l1 = loadIntPtr(irb, op0, it1);
 
 		auto* it2 = irb.getInt16Ty();
-		auto* pt2 = llvm::PointerType::get(it2, 0);
 		auto* addC = llvm::ConstantInt::get(op0->getType(), xi->operands[0].size);
 		auto* addr2 = irb.CreateAdd(op0, addC);
-		addr2 = irb.CreateIntToPtr(addr2, pt2);
-		auto* l2 = irb.CreateLoad(addr2);
+		auto* l2 = loadIntPtr(irb, addr2, it2);
 
 		op0 = l2; // segment selector
 		op1 = l1; // address
@@ -2351,9 +2347,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCall(cs_insn* i, cs_x86* xi, ll
 	auto* sp = loadRegister(getStackPointerRegister(), irb);
 	auto* ci = llvm::ConstantInt::get(sp->getType(), getArchByteSize());
 	auto* sub = irb.CreateSub(sp, ci);
-	auto* pt = llvm::PointerType::get(pc->getType(), 0);
-	auto* addr = irb.CreateIntToPtr(sub, pt);
-	irb.CreateStore(pc, addr);
+	storeIntPtr(irb, pc, sub, pc->getType());
 	storeRegister(getStackPointerRegister(), sub, irb);
 
 	op0 = loadOpUnary(xi, irb);
@@ -2374,15 +2368,11 @@ void Capstone2LlvmIrTranslatorX86_impl::translateLcall(cs_insn* i, cs_x86* xi, l
 
 	auto* ci1 = llvm::ConstantInt::get(sp->getType(), getArchByteSize());
 	auto* sub1 = irb.CreateSub(sp, ci1);
-	auto* pt1 = llvm::PointerType::get(cs->getType(), 0);
-	auto* addr1 = irb.CreateIntToPtr(sub1, pt1);
-	irb.CreateStore(cs, addr1);
+	storeIntPtr(irb, cs, sub1, cs->getType());
 
 	auto* ci2 = llvm::ConstantInt::get(sp->getType(), getArchByteSize()*2);
 	auto* sub2 = irb.CreateSub(sp, ci2);
-	auto* pt2 = llvm::PointerType::get(pc->getType(), 0);
-	auto* addr2 = irb.CreateIntToPtr(sub2, pt2);
-	irb.CreateStore(pc, addr2);
+	storeIntPtr(irb, pc, sub2, pc->getType());
 
 	storeRegister(getStackPointerRegister(), sub2, irb);
 
@@ -2454,9 +2444,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateEnter(cs_insn* i, cs_x86* xi, l
 
 	auto* ci = llvm::ConstantInt::get(sp->getType(), xi->addr_size);
 	auto* sub = irb.CreateSub(sp, ci);
-	auto* pt = llvm::PointerType::get(bp->getType(), 0);
-	auto* addr = irb.CreateIntToPtr(sub, pt);
-	irb.CreateStore(bp, addr);  // push BP
+	storeIntPtr(irb, bp, sub, bp->getType());  // push BP
 	storeRegister(getStackPointerRegister(), sub, irb);
 
 	auto* frameTemp = sub; // SP
@@ -2479,9 +2467,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateLeave(cs_insn* i, cs_x86* xi, l
 	EXPECT_IS_NULLARY(i, xi, irb);
 
 	auto* bp = loadRegister(getBasePointerRegister(), irb);
-	auto* pt = llvm::PointerType::get(bp->getType(), 0);
-	auto* addr = irb.CreateIntToPtr(bp, pt);
-	auto* l = irb.CreateLoad(addr);
+	auto* l = loadIntPtr(irb, bp, bp->getType());
 	auto* c = llvm::ConstantInt::get(bp->getType(), getArchByteSize());
 	auto* add = irb.CreateAdd(bp, c);
 
@@ -2500,16 +2486,12 @@ void Capstone2LlvmIrTranslatorX86_impl::translateLoadFarPtr(cs_insn* i, cs_x86* 
 	op1 = loadOp(xi->operands[1], irb, nullptr, true);
 
 	auto* it1 = getIntegerTypeFromByteSize(_module, xi->operands[1].size);
-	auto* pt1 = llvm::PointerType::get(it1, 0);
-	auto* addr1 = irb.CreateIntToPtr(op1, pt1);
-	auto* l1 = irb.CreateLoad(addr1);
+	auto* l1 = loadIntPtr(irb, op1, it1);
 
 	auto* it2 = irb.getInt16Ty();
-	auto* pt2 = llvm::PointerType::get(it2, 0);
 	auto* addC = llvm::ConstantInt::get(op1->getType(), xi->operands[1].size);
 	auto* addr2 = irb.CreateAdd(op1, addC);
-	addr2 = irb.CreateIntToPtr(addr2, pt2);
-	auto* l2 = irb.CreateLoad(addr2);
+	auto* l2 = loadIntPtr(irb, addr2, it2);
 
 	uint32_t segR = X86_REG_INVALID;
 	switch (i->id)
@@ -2762,9 +2744,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translatePop(cs_insn* i, cs_x86* xi, llv
 	auto* sp = loadRegister(getStackPointerRegister(), irb);
 
 	auto* it = getIntegerTypeFromByteSize(_module, xi->operands[0].size);
-	auto* pt = llvm::PointerType::get(it, 0);
-	auto* addr = irb.CreateIntToPtr(sp, pt);
-	auto* l = irb.CreateLoad(addr);
+	auto* l = loadIntPtr(irb, sp, it);
 	storeOp(xi->operands[0], l, irb);
 
 	auto* ci = llvm::ConstantInt::get(sp->getType(), xi->operands[0].size);
@@ -2781,7 +2761,6 @@ void Capstone2LlvmIrTranslatorX86_impl::translatePopa(cs_insn* i, cs_x86* xi, ll
 
 	auto* sp = loadRegister(getStackPointerRegister(), irb);
 	auto* t = getIntegerTypeFromByteSize(_module, xi->addr_size);
-	auto* pt = llvm::PointerType::get(t, 0);
 	auto* c = llvm::ConstantInt::get(sp->getType(), xi->addr_size);
 
 	auto* a1 = sp;
@@ -2799,13 +2778,13 @@ void Capstone2LlvmIrTranslatorX86_impl::translatePopa(cs_insn* i, cs_x86* xi, ll
 	if (i->id == X86_INS_POPAL && xi->addr_size == 4)
 	{
 		storeRegisters(irb, {
-			{X86_REG_EDI, irb.CreateLoad(irb.CreateIntToPtr(a1, pt))},
-			{X86_REG_ESI, irb.CreateLoad(irb.CreateIntToPtr(a2, pt))},
-			{X86_REG_EBP, irb.CreateLoad(irb.CreateIntToPtr(a3, pt))},
-			{X86_REG_EBX, irb.CreateLoad(irb.CreateIntToPtr(a5, pt))},
-			{X86_REG_EDX, irb.CreateLoad(irb.CreateIntToPtr(a6, pt))},
-			{X86_REG_ECX, irb.CreateLoad(irb.CreateIntToPtr(a7, pt))},
-			{X86_REG_EAX, irb.CreateLoad(irb.CreateIntToPtr(a8, pt))},
+			{X86_REG_EDI, loadIntPtr(irb, a1, t)},
+			{X86_REG_ESI, loadIntPtr(irb, a2, t)},
+			{X86_REG_EBP, loadIntPtr(irb, a3, t)},
+			{X86_REG_EBX, loadIntPtr(irb, a5, t)},
+			{X86_REG_EDX, loadIntPtr(irb, a6, t)},
+			{X86_REG_ECX, loadIntPtr(irb, a7, t)},
+			{X86_REG_EAX, loadIntPtr(irb, a8, t)},
 			{getStackPointerRegister(), a9}});
 	}
 	else if ((i->id == X86_INS_POPAW
@@ -2813,13 +2792,13 @@ void Capstone2LlvmIrTranslatorX86_impl::translatePopa(cs_insn* i, cs_x86* xi, ll
 			|| (i->id == X86_INS_POPAL && xi->addr_size == 2))
 	{
 		storeRegisters(irb, {
-			{X86_REG_DI, irb.CreateLoad(irb.CreateIntToPtr(a1, pt))},
-			{X86_REG_SI, irb.CreateLoad(irb.CreateIntToPtr(a2, pt))},
-			{X86_REG_BP, irb.CreateLoad(irb.CreateIntToPtr(a3, pt))},
-			{X86_REG_BX, irb.CreateLoad(irb.CreateIntToPtr(a5, pt))},
-			{X86_REG_DX, irb.CreateLoad(irb.CreateIntToPtr(a6, pt))},
-			{X86_REG_CX, irb.CreateLoad(irb.CreateIntToPtr(a7, pt))},
-			{X86_REG_AX, irb.CreateLoad(irb.CreateIntToPtr(a8, pt))},
+			{X86_REG_DI, loadIntPtr(irb, a1, t)},
+			{X86_REG_SI, loadIntPtr(irb, a2, t)},
+			{X86_REG_BP, loadIntPtr(irb, a3, t)},
+			{X86_REG_BX, loadIntPtr(irb, a5, t)},
+			{X86_REG_DX, loadIntPtr(irb, a6, t)},
+			{X86_REG_CX, loadIntPtr(irb, a7, t)},
+			{X86_REG_AX, loadIntPtr(irb, a8, t)},
 			{getStackPointerRegister(), a9}});
 	}
 	else
@@ -2840,9 +2819,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translatePopEflags(cs_insn* i, cs_x86* x
 
 	auto* sp = loadRegister(getStackPointerRegister(), irb);
 	auto* it = getIntegerTypeFromByteSize(_module, xi->addr_size);
-	auto* pt = llvm::PointerType::get(it, 0);
-	auto* addr = irb.CreateIntToPtr(sp, pt);
-	auto* l = irb.CreateLoad(addr);
+	auto* l = loadIntPtr(irb, sp, it);
 
 	auto* ci = llvm::ConstantInt::get(sp->getType(), xi->addr_size);
 	auto* add = irb.CreateAdd(sp, ci);
@@ -2909,10 +2886,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translatePush(cs_insn* i, cs_x86* xi, ll
 
 	auto* ci = llvm::ConstantInt::get(sp->getType(), xi->operands[0].size);
 	auto* sub = irb.CreateSub(sp, ci);
-	auto* pt = llvm::PointerType::get(op0->getType(), 0);
-	auto* addr = irb.CreateIntToPtr(sub, pt);
-
-	irb.CreateStore(op0, addr);
+	storeIntPtr(irb, op0, sub, op0->getType());
 	storeRegister(getStackPointerRegister(), sub, irb);
 }
 
@@ -2936,7 +2910,6 @@ void Capstone2LlvmIrTranslatorX86_impl::translatePusha(cs_insn* i, cs_x86* xi, l
 		t = irb.getInt16Ty();
 		bsz = 2;
 	}
-	auto* pt = llvm::PointerType::get(t, 0);
 	auto* c = llvm::ConstantInt::get(sp->getType(), bsz);
 
 	auto* a1 = irb.CreateSub(sp, c);
@@ -2950,26 +2923,26 @@ void Capstone2LlvmIrTranslatorX86_impl::translatePusha(cs_insn* i, cs_x86* xi, l
 
 	if (i->id == X86_INS_PUSHAL)
 	{
-		irb.CreateStore(loadRegister(X86_REG_EAX, irb), irb.CreateIntToPtr(a1, pt));
-		irb.CreateStore(loadRegister(X86_REG_ECX, irb), irb.CreateIntToPtr(a2, pt));
-		irb.CreateStore(loadRegister(X86_REG_EDX, irb), irb.CreateIntToPtr(a3, pt));
-		irb.CreateStore(loadRegister(X86_REG_EBX, irb), irb.CreateIntToPtr(a4, pt));
-		irb.CreateStore(irb.CreateZExtOrTrunc(sp, t), irb.CreateIntToPtr(a5, pt));
-		irb.CreateStore(loadRegister(X86_REG_EBP, irb), irb.CreateIntToPtr(a6, pt));
-		irb.CreateStore(loadRegister(X86_REG_ESI, irb), irb.CreateIntToPtr(a7, pt));
-		irb.CreateStore(loadRegister(X86_REG_EDI, irb), irb.CreateIntToPtr(a8, pt));
+		storeIntPtr(irb, loadRegister(X86_REG_EAX, irb), a1, t);
+		storeIntPtr(irb, loadRegister(X86_REG_ECX, irb), a2, t);
+		storeIntPtr(irb, loadRegister(X86_REG_EDX, irb), a3, t);
+		storeIntPtr(irb, loadRegister(X86_REG_EBX, irb), a4, t);
+		storeIntPtr(irb, irb.CreateZExtOrTrunc(sp, t), a5, t);
+		storeIntPtr(irb, loadRegister(X86_REG_EBP, irb), a6, t);
+		storeIntPtr(irb, loadRegister(X86_REG_ESI, irb), a7, t);
+		storeIntPtr(irb, loadRegister(X86_REG_EDI, irb), a8, t);
 		storeRegister(getStackPointerRegister(), a8, irb);
 	}
 	else if (i->id == X86_INS_PUSHAW)
 	{
-		irb.CreateStore(loadRegister(X86_REG_AX, irb), irb.CreateIntToPtr(a1, pt));
-		irb.CreateStore(loadRegister(X86_REG_CX, irb), irb.CreateIntToPtr(a2, pt));
-		irb.CreateStore(loadRegister(X86_REG_DX, irb), irb.CreateIntToPtr(a3, pt));
-		irb.CreateStore(loadRegister(X86_REG_BX, irb), irb.CreateIntToPtr(a4, pt));
-		irb.CreateStore(irb.CreateZExtOrTrunc(sp, t), irb.CreateIntToPtr(a5, pt));
-		irb.CreateStore(loadRegister(X86_REG_BP, irb), irb.CreateIntToPtr(a6, pt));
-		irb.CreateStore(loadRegister(X86_REG_SI, irb), irb.CreateIntToPtr(a7, pt));
-		irb.CreateStore(loadRegister(X86_REG_DI, irb), irb.CreateIntToPtr(a8, pt));
+		storeIntPtr(irb, loadRegister(X86_REG_AX, irb), a1, t);
+		storeIntPtr(irb, loadRegister(X86_REG_CX, irb), a2, t);
+		storeIntPtr(irb, loadRegister(X86_REG_DX, irb), a3, t);
+		storeIntPtr(irb, loadRegister(X86_REG_BX, irb), a4, t);
+		storeIntPtr(irb, irb.CreateZExtOrTrunc(sp, t), a5, t);
+		storeIntPtr(irb, loadRegister(X86_REG_BP, irb), a6, t);
+		storeIntPtr(irb, loadRegister(X86_REG_SI, irb), a7, t);
+		storeIntPtr(irb, loadRegister(X86_REG_DI, irb), a8, t);
 		storeRegister(getStackPointerRegister(), a8, irb);
 	}
 }
@@ -3029,10 +3002,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translatePushEflags(cs_insn* i, cs_x86* 
 	auto* sp = loadRegister(getStackPointerRegister(), irb);
 	auto* ci = llvm::ConstantInt::get(sp->getType(), xi->addr_size);
 	auto* sub = irb.CreateSub(sp, ci);
-	auto* pt = llvm::PointerType::get(val->getType(), 0);
-	auto* addr = irb.CreateIntToPtr(sub, pt);
-
-	irb.CreateStore(val, addr);
+	storeIntPtr(irb, val, sub, val->getType());
 	storeRegister(getStackPointerRegister(), sub, irb);
 }
 
@@ -3071,17 +3041,14 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRet(cs_insn* i, cs_x86* xi, llv
 	}
 
 	auto* it = getIntegerTypeFromByteSize(_module, sz);
-	auto* pt = llvm::PointerType::get(it, 0);
-	auto* addr = irb.CreateIntToPtr(sp, pt);
-	auto* l = irb.CreateLoad(addr);
+	auto* l = loadIntPtr(irb, sp, it);
 
 	auto* ci = llvm::ConstantInt::get(sp->getType(), sz);
 	auto* add = irb.CreateAdd(sp, ci);
 
 	if (far)
 	{
-		auto* addr2 = irb.CreateIntToPtr(add, pt);
-		auto* l2 = irb.CreateLoad(addr2);
+		auto* l2 = loadIntPtr(irb, add, it);
 		storeRegister(X86_REG_CS, l2, irb);
 		add = irb.CreateAdd(add, ci);
 	}
@@ -3591,9 +3558,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateXlatb(cs_insn* i, cs_x86* xi, l
 
 	al = irb.CreateZExt(al, ebx->getType());
 	auto* add = irb.CreateAdd(ebx, al);
-	auto* ptrT = llvm::PointerType::get(irb.getInt8Ty(), 0);
-	auto* addr = irb.CreateIntToPtr(add, ptrT);
-	auto* l = irb.CreateLoad(addr);
+	auto* l = loadIntPtr(irb, add, irb.getInt8Ty());
 
 	storeRegister(X86_REG_AL, l, irb);
 }
@@ -3681,6 +3646,10 @@ void Capstone2LlvmIrTranslatorX86_impl::translateStoreString(cs_insn* i, cs_x86*
 		auto ediId = getParentRegister(X86_REG_DI);
 		auto* edi = loadRegister(ediId, irb);
 		auto* ediPtr = irb.CreateIntToPtr(edi, irb.getInt8PtrTy(0));
+		if (auto* ediI = llvm::dyn_cast<llvm::Instruction>(ediPtr))
+		{
+			attachPointeeType(ediI, irb.getInt8Ty());
+		}
 
 		auto* eax = loadOp(xi->operands[1], irb); // al, ax, eax, rax
 
@@ -3790,10 +3759,18 @@ void Capstone2LlvmIrTranslatorX86_impl::translateMoveString(cs_insn* i, cs_x86* 
 		auto esiId = getParentRegister(X86_REG_SI);
 		auto* esi = loadRegister(esiId, irb);
 		auto* esiPtr = irb.CreateIntToPtr(esi, irb.getInt8PtrTy(0));
+		if (auto* esiI = llvm::dyn_cast<llvm::Instruction>(esiPtr))
+		{
+			attachPointeeType(esiI, irb.getInt8Ty());
+		}
 
 		auto ediId = getParentRegister(X86_REG_DI);
 		auto* edi = loadRegister(ediId, irb);
 		auto* ediPtr = irb.CreateIntToPtr(edi, irb.getInt8PtrTy(0));
+		if (auto* ediI = llvm::dyn_cast<llvm::Instruction>(ediPtr))
+		{
+			attachPointeeType(ediI, irb.getInt8Ty());
+		}
 
 		auto ecxId = getParentRegister(X86_REG_CX);
 		auto* ecx = loadRegister(ecxId, irb);
@@ -5010,10 +4987,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFxsave(cs_insn *i, cs_x86 *xi, 
 
 	auto val = generateTypeConversion(irb, c, retType, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 
-	auto* pt = llvm::PointerType::get(retType, getAddrSpace(xi->operands[0].mem.segment));
-	addr = irb.CreateIntToPtr(addr, pt);
-
-	irb.CreateStore(val, addr);
+	storeIntPtr(irb, val, addr, retType, getAddrSpace(xi->operands[0].mem.segment));
 }
 
 /**
@@ -5068,10 +5042,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFxstor(cs_insn *i, cs_x86 *xi, 
 		addr = irb.CreateAdd(addr, idxR);
 	}
 
-	auto* pt = llvm::PointerType::get(retType, getAddrSpace(xi->operands[0].mem.segment));
-	addr = irb.CreateIntToPtr(addr, pt);
-
-	op0 = irb.CreateLoad(addr);
+	op0 = loadIntPtr(irb, addr, retType, getAddrSpace(xi->operands[0].mem.segment));
 
 	llvm::Function* fnc = getPseudoAsmFunction(
 			i,

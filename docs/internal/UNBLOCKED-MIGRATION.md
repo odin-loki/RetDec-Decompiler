@@ -210,6 +210,7 @@ N17 is mean selected-token probability for the whole generation.
   `simple_types`) call `pointeeType` first.
 - **No** `cmake/deps.cmake` LLVM URL change.
 - **No** `IrInstr::Op` enum change yet.
-- Remaining writers: push/pop and other direct `CreateIntToPtr` sites
-  outside `loadOp`/`storeOp`. Remaining readers: Type*-only
-  `getPointerElementType` (no Value).
+- Remaining lifter IntToPtr load/store writers (push/pop/call/ret,
+  ARM LDM/STM, ARM64 LDP/STP, PowerPC indexed) write MD.
+- Remaining readers: Type*-only `getPointerElementType` (no Value),
+  `llvmir2hll` converters, `param_return`.

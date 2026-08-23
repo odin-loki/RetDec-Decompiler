@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover: remaining lifter IntToPtr load/store paths
+  (x86 push/pop/call/ret/enter/leave/far/xlat/fxsave, ARM LDM/STM,
+  ARM64 LDR/STR/LDP/STP, PowerPC indexed load/store) now emit
+  `retdec.pointee` via `loadIntPtr`/`storeIntPtr`. String-op i8*
+  IntToPtrs attach the same kind. Test:
+  `StackPushAttachesPointeeMetadata`. LLVM pin unchanged.
 - Wave 5 leftover: operand `loadOp`/`storeOp` on x86, ARM, ARM64,
   MIPS, and PowerPC now emit `retdec.pointee` on IntToPtr +
   load/store via `loadIntPtr`/`storeIntPtr`. Value-based

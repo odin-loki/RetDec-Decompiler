@@ -1475,10 +1475,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStr(cs_insn* i, cs_arm64* ai,
 		op0 = irb.CreateZExtOrTrunc(op0, ty);
 	}
 	auto* dest = generateGetOperandMemAddr(ai->operands[1], irb);
-
-	auto* pt = llvm::PointerType::get(op0->getType(), 0);
-	auto* addr = irb.CreateIntToPtr(dest, pt);
-	irb.CreateStore(op0, addr);
+	storeIntPtr(irb, op0, dest, op0->getType());
 
 	uint32_t baseR = ARM64_REG_INVALID;
 	if (ai->op_count == 2)
@@ -1523,10 +1520,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStp(cs_insn* i, cs_arm64* ai,
 	if (ai->op_count == 3)
 	{
 		newDest = irb.CreateAdd(dest, registerSize);
-
-		auto* pt = llvm::PointerType::get(op1->getType(), 0);
-		auto* addr = irb.CreateIntToPtr(newDest, pt);
-		irb.CreateStore(op1, addr);
+		storeIntPtr(irb, op1, newDest, op1->getType());
 
 		baseR = ai->operands[2].mem.base;
 	}
@@ -1534,10 +1528,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStp(cs_insn* i, cs_arm64* ai,
 	{
 		auto* disp = llvm::ConstantInt::get(getDefaultType(), ai->operands[3].imm);
 		newDest    = irb.CreateAdd(dest, registerSize);
-
-		auto* pt = llvm::PointerType::get(op1->getType(), 0);
-		auto* addr = irb.CreateIntToPtr(newDest, pt);
-		irb.CreateStore(op1, addr);
+		storeIntPtr(irb, op1, newDest, op1->getType());
 
 		baseR = ai->operands[2].mem.base;
 
@@ -1637,10 +1628,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdr(cs_insn* i, cs_arm64* ai,
 
 	auto* regType = getRegisterType(ai->operands[0].reg);
 	auto* dest = loadOp(ai->operands[1], irb, nullptr, true);
-	auto* pt = llvm::PointerType::get(ty, 0);
-	auto* addr = irb.CreateIntToPtr(dest, pt);
-
-	llvm::Value* loaded_value = irb.CreateLoad(addr);
+	llvm::Value* loaded_value = loadIntPtr(irb, dest, ty);
 	// If the result should be floating point, bit cast it
 	if (!regType->isFloatingPointTy())
 	{
@@ -1708,10 +1696,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdp(cs_insn* i, cs_arm64* ai,
 	}
 
 	auto* dest = loadOp(ai->operands[2], irb, nullptr, true);
-	auto* pt = llvm::PointerType::get(ty, 0);
-	auto* addr = irb.CreateIntToPtr(dest, pt);
-
-	auto* newReg1Value = irb.CreateLoad(addr);
+	auto* newReg1Value = loadIntPtr(irb, dest, ty);
 
 	llvm::Value* newDest = nullptr;
 	llvm::Value* newReg2Value = nullptr;
@@ -1720,8 +1705,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdp(cs_insn* i, cs_arm64* ai,
 	{
 		storeRegister(ai->operands[0].reg, newReg1Value, irb, ct);
 		newDest = irb.CreateAdd(dest, data_size);
-		addr = irb.CreateIntToPtr(newDest, pt);
-		newReg2Value = irb.CreateLoad(addr);
+		newReg2Value = loadIntPtr(irb, newDest, ty);
 		storeRegister(ai->operands[1].reg, newReg2Value, irb, ct);
 
 		baseR = ai->operands[2].mem.base;
@@ -1731,8 +1715,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateLdp(cs_insn* i, cs_arm64* ai,
 
 		storeRegister(ai->operands[0].reg, newReg1Value, irb, ct);
 		newDest = irb.CreateAdd(dest, data_size);
-		addr = irb.CreateIntToPtr(newDest, pt);
-		newReg2Value = irb.CreateLoad(addr);
+		newReg2Value = loadIntPtr(irb, newDest, ty);
 		storeRegister(ai->operands[1].reg, newReg2Value, irb, ct);
 
 		auto* disp = llvm::ConstantInt::get(getDefaultType(), ai->operands[3].imm);

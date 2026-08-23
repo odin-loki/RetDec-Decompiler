@@ -991,9 +991,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadIndexed(cs_insn* i, cs_
 			return;
 	}
 
-	auto* pty = llvm::PointerType::get(ty, 0);
-	auto* addr = irb.CreateIntToPtr(add, pty);
-	auto* l = irb.CreateLoad(addr);
+	auto* l = loadIntPtr(irb, add, ty);
 
 	eOpConv conv = eOpConv::ZEXT_TRUNC_OR_BITCAST;
 	if (i->id == PPC_INS_LHAX || i->id == PPC_INS_LHAUX)
@@ -1097,9 +1095,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreIndexed(cs_insn* i, cs
 	op0 = irb.CreateZExtOrTrunc(op0, ty);
 
 	auto* add = irb.CreateAdd(op1, op2);
-	auto* pty = llvm::PointerType::get(ty, 0);
-	auto* addr = irb.CreateIntToPtr(add, pty);
-	irb.CreateStore(op0, addr);
+	storeIntPtr(irb, op0, add, ty);
 
 	// With update.
 	//
@@ -1122,16 +1118,12 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLhbrx(cs_insn* i, cs_ppc* p
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 
-	auto* pty = llvm::PointerType::get(irb.getInt8Ty(), 0);
-
 	auto* addHi = irb.CreateAdd(op1, op2);
-	auto* addrHi = irb.CreateIntToPtr(addHi, pty);
-	llvm::Value* lHi = irb.CreateLoad(addrHi);
+	llvm::Value* lHi = loadIntPtr(irb, addHi, irb.getInt8Ty());
 	lHi = irb.CreateZExtOrTrunc(lHi, irb.getInt16Ty());
 
 	auto* addLo = irb.CreateAdd(addHi, llvm::ConstantInt::get(addHi->getType(), 1));
-	auto* addrLo = irb.CreateIntToPtr(addLo, pty);
-	llvm::Value* lLo = irb.CreateLoad(addrLo);
+	llvm::Value* lLo = loadIntPtr(irb, addLo, irb.getInt8Ty());
 	lLo = irb.CreateZExtOrTrunc(lLo, irb.getInt16Ty());
 	lLo = irb.CreateShl(lLo, 8);
 
