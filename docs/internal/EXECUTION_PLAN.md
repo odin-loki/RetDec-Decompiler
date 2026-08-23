@@ -110,7 +110,7 @@ Sequence, not one PR:
 1. **Pointer MD on LLVM 8** — `retdec.pointee` via existing `setMetadata` (`insn.addr` pattern). No pin change.
 2. **LLVM pin** — one `cmake/deps.cmake` URL/SHA to latest upstream (~22). Never edit `deps/llvm/`. Legacy PM → new PM is part of that branch.
 3. **SSA `Rem` / `Lock`** — public `IrInstr::Op` (explicitly scoped). Then ring `%` wrap and A8 lock-prefix. Do not invent opcodes until this header change lands.
-4. **C parser dep** — tree-sitter-c v0.24.2 + tree-sitter v0.26.12 URL/SHA in `cmake/deps.cmake`. Fetch + N10 done. N18 still open.
+4. **C parser dep** — tree-sitter-c v0.24.2 + tree-sitter v0.26.12 URL/SHA in `cmake/deps.cmake`. Fetch + N10 + N18 done.
 5. **N17 per-id / N19 / real batch** — llama.cpp APIs at the pin; no flag without an implementation.
 6. **T1/T2** ARM64 complete + RISC-V lifter (weeks).
 7. **P1 C ABI** then **P2** Python.

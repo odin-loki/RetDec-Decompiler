@@ -7,9 +7,12 @@
 #include "retdec/common/semantic_detection.h"
 #include "retdec/common/storage.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -17,6 +20,11 @@
 #include <sstream>
 #include <string>
 #include <vector>
+
+#ifdef RETDEC_HAS_TREE_SITTER
+#include <tree_sitter/api.h>
+#include <tree_sitter/tree-sitter-c.h>
+#endif
 
 namespace retdec::neural {
 
@@ -101,6 +109,195 @@ void appendStorageFields(std::ostringstream& oss, const retdec::common::Storage&
 	}
 	if (st.isMemory() && st.getAddress().isDefined())
 		oss << ",\"address\":\"" << jsonEscape(st.getAddress().toHexPrefixString()) << '"';
+}
+
+#ifdef RETDEC_HAS_TREE_SITTER
+
+struct CFunctionSpan
+{
+	std::string name;
+	std::uint32_t start = 0;
+	std::uint32_t end = 0;
+};
+
+std::string nodeText(const std::string& src, TSNode n)
+{
+	const uint32_t a = ts_node_start_byte(n);
+	const uint32_t b = ts_node_end_byte(n);
+	if (a > b || b > src.size()) return {};
+	return src.substr(a, b - a);
+}
+
+std::string declaratorName(TSNode n, const std::string& src)
+{
+	if (ts_node_is_null(n)) return {};
+	if (std::strcmp(ts_node_type(n), "identifier") == 0) return nodeText(src, n);
+	TSNode inner = ts_node_child_by_field_name(n, "declarator", 10);
+	if (!ts_node_is_null(inner))
+	{
+		const std::string name = declaratorName(inner, src);
+		if (!name.empty()) return name;
+	}
+	const uint32_t nch = ts_node_child_count(n);
+	for (uint32_t i = 0; i < nch; ++i)
+	{
+		const std::string name = declaratorName(ts_node_child(n, i), src);
+		if (!name.empty()) return name;
+	}
+	return {};
+}
+
+void collectFunctionSpans(TSNode n, const std::string& src, std::vector<CFunctionSpan>& out)
+{
+	if (ts_node_is_error(n)) return;
+	if (std::strcmp(ts_node_type(n), "function_definition") == 0)
+	{
+		TSNode decl = ts_node_child_by_field_name(n, "declarator", 10);
+		CFunctionSpan span;
+		span.name = declaratorName(decl, src);
+		span.start = ts_node_start_byte(n);
+		span.end = ts_node_end_byte(n);
+		if (!span.name.empty() && span.end > span.start) out.push_back(std::move(span));
+		return;
+	}
+	const uint32_t nch = ts_node_child_count(n);
+	for (uint32_t i = 0; i < nch; ++i)
+		collectFunctionSpans(ts_node_child(n, i), src, out);
+}
+
+std::vector<CFunctionSpan> extractCFunctionSpans(const std::string& src)
+{
+	std::vector<CFunctionSpan> out;
+	TSParser* p = ts_parser_new();
+	if (!p) return out;
+	if (!ts_parser_set_language(p, tree_sitter_c()))
+	{
+		ts_parser_delete(p);
+		return out;
+	}
+	TSTree* tree = ts_parser_parse_string(p, nullptr, src.data(), static_cast<uint32_t>(src.size()));
+	if (!tree)
+	{
+		ts_parser_delete(p);
+		return out;
+	}
+	TSNode root = ts_tree_root_node(tree);
+	if (!ts_node_is_null(root))
+		collectFunctionSpans(root, src, out);
+	ts_tree_delete(tree);
+	ts_parser_delete(p);
+	return out;
+}
+
+#endif
+
+struct RefinePassResult
+{
+	std::string source;
+	std::string manifest;
+	bool accepted = false;
+};
+
+RefinePassResult runTieredRefine(Refiner& refiner, std::string current, const std::string& semanticJson)
+{
+	static const RefinementTier kTiers[] = {
+		RefinementTier::Naming,
+		RefinementTier::Comments,
+		RefinementTier::StructFields,
+		RefinementTier::IdiomRecovery,
+		RefinementTier::FullRewrite,
+	};
+
+	const int tierMax = tierMaxFromEnv();
+	RefinePassResult result;
+	result.source = current;
+	result.manifest = R"({"accepted":false,"reason":"no tier ran"})";
+	bool compileRetryUsed = false;
+	const bool requireCompile = envEnabled("RETDEC_NEURAL_REQUIRE_COMPILE");
+
+	for (int i = 0; i < tierMax && i < 5; ++i)
+	{
+		RefinementRequest req;
+		req.functionSource = current;
+		req.tier = kTiers[i];
+		req.semanticContextJson = semanticJson;
+		req.generation.reuseKvPrefix = envEnabled("RETDEC_NEURAL_REUSE_KV") && (i > 0);
+		const bool conservativeTier =
+			(req.tier == RefinementTier::Naming || req.tier == RefinementTier::Comments
+			 || req.tier == RefinementTier::StructFields);
+		req.generation.temperature = envFloat("RETDEC_NEURAL_TEMPERATURE", conservativeTier ? 0.0f : 0.6f);
+		req.generation.topP = envFloat("RETDEC_NEURAL_TOP_P", 0.95f);
+		const int topK = envInt("RETDEC_NEURAL_TOP_K", 20);
+		if (topK > 0) req.generation.topK = topK;
+		if (std::isfinite(req.generation.temperature))
+		{
+			if (req.generation.temperature < 0.0f)
+				req.generation.temperature = 0.0f;
+			else if (req.generation.temperature > 2.0f)
+				req.generation.temperature = 2.0f;
+		}
+		if (std::isfinite(req.generation.topP))
+		{
+			if (req.generation.topP < 0.0f)
+				req.generation.topP = 0.0f;
+			else if (req.generation.topP > 1.0f)
+				req.generation.topP = 1.0f;
+		}
+		req.generation.minP = 0.0f;
+		req.generation.thinkingMode = envEnabled("RETDEC_NEURAL_THINKING");
+		if (req.tier == RefinementTier::Naming)
+		{
+			req.generation.grammarGbnf = namingRenameMapGbnf();
+			req.generation.grammarRoot = "root";
+		}
+		const char* maxTok = std::getenv("RETDEC_NEURAL_MAX_TOKENS");
+		if (maxTok && maxTok[0])
+		{
+			const int n = std::atoi(maxTok);
+			if (n > 0) req.generation.maxTokens = n;
+		}
+
+		const auto resp = refiner.refine(req);
+		result.manifest = resp.manifestJson;
+		if (resp.accepted)
+		{
+			current = resp.refinedSource;
+			result.accepted = true;
+		}
+
+		const bool compileReject = !resp.accepted
+								&& (resp.manifestJson.find("compile_syntax") != std::string::npos
+									|| resp.manifestJson.find("compile=fail") != std::string::npos);
+		if (compileRetryUsed) continue;
+		if (!compileReject && !requireCompile) continue;
+
+		std::string diags;
+		const std::string attempt = resp.refinedSource.empty() ? current : resp.refinedSource;
+		const bool compiles = compileSyntaxOnly(attempt, diags);
+		if (resp.accepted && compiles) continue;
+
+		compileRetryUsed = true;
+		RefinementRequest retry = req;
+		retry.functionSource = current;
+		retry.tier = RefinementTier::FullRewrite;
+		retry.generation.reuseKvPrefix = false;
+		retry.compilerDiagnostics = diags.empty() ? std::string("cc -fsyntax-only failed") : diags;
+
+		const auto retryResp = refiner.refine(retry);
+		result.manifest = retryResp.manifestJson;
+		if (retryResp.accepted && compileSyntaxOnly(retryResp.refinedSource))
+		{
+			current = retryResp.refinedSource;
+			result.accepted = true;
+		}
+		else if (retryResp.accepted)
+		{
+			result.manifest = R"({"accepted":false,"reason":"compile_syntax"})";
+		}
+	}
+
+	result.source = current;
+	return result;
 }
 
 } // namespace
@@ -408,6 +605,117 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 	return oss.str();
 }
 
+std::vector<std::string> orderFunctionsCalleeFirst(
+	const std::map<std::string, std::set<std::string>>& calleesOf,
+	const std::map<std::string, std::uint64_t>& startAddr)
+{
+	std::set<std::string> names;
+	for (const auto& kv: startAddr)
+		names.insert(kv.first);
+	for (const auto& kv: calleesOf)
+	{
+		names.insert(kv.first);
+		for (const auto& c: kv.second)
+			names.insert(c);
+	}
+
+	auto addrOf = [&](const std::string& n) -> std::uint64_t {
+		const auto it = startAddr.find(n);
+		return it == startAddr.end() ? 0 : it->second;
+	};
+	auto before = [&](const std::string& a, const std::string& b) {
+		const std::uint64_t aa = addrOf(a);
+		const std::uint64_t bb = addrOf(b);
+		if (aa != bb) return aa < bb;
+		return a < b;
+	};
+
+	std::map<std::string, int> indeg;
+	std::map<std::string, std::vector<std::string>> succ;
+	for (const auto& n: names)
+		indeg[n] = 0;
+	for (const auto& kv: calleesOf)
+	{
+		if (!names.count(kv.first)) continue;
+		for (const auto& callee: kv.second)
+		{
+			if (callee == kv.first || !names.count(callee)) continue;
+			succ[callee].push_back(kv.first);
+			++indeg[kv.first];
+		}
+	}
+
+	std::set<std::string, decltype(before)> ready(before);
+	std::set<std::string> remaining(names.begin(), names.end());
+	for (const auto& n: names)
+	{
+		if (indeg[n] == 0) ready.insert(n);
+	}
+
+	std::vector<std::string> order;
+	order.reserve(names.size());
+	while (order.size() < names.size())
+	{
+		if (ready.empty())
+		{
+			std::string pick;
+			for (const auto& n: remaining)
+			{
+				if (pick.empty() || before(n, pick)) pick = n;
+			}
+			if (pick.empty()) break;
+			ready.insert(pick);
+		}
+		const std::string n = *ready.begin();
+		ready.erase(ready.begin());
+		if (!remaining.erase(n)) continue;
+		order.push_back(n);
+		const auto sit = succ.find(n);
+		if (sit == succ.end()) continue;
+		for (const auto& caller: sit->second)
+		{
+			if (!remaining.count(caller)) continue;
+			if (--indeg[caller] == 0) ready.insert(caller);
+		}
+	}
+	return order;
+}
+
+std::string appendRefinedCalleesJson(
+	const std::string& semanticJson,
+	const std::map<std::string, std::string>& refinedByName,
+	const std::set<std::string>& calleeNames)
+{
+	std::ostringstream extra;
+	extra << "\"refined_callees\":[";
+	bool first = true;
+	for (const auto& name: calleeNames)
+	{
+		const auto it = refinedByName.find(name);
+		if (it == refinedByName.end()) continue;
+		if (!first) extra << ',';
+		first = false;
+		extra << "{\"name\":\"" << jsonEscape(name) << "\",\"source\":\"" << jsonEscape(it->second) << "\"}";
+	}
+	extra << ']';
+	if (first) return semanticJson;
+	if (semanticJson.empty()) return std::string("{") + extra.str() + '}';
+	if (semanticJson.back() != '}') return semanticJson;
+	return semanticJson.substr(0, semanticJson.size() - 1) + ',' + extra.str() + '}';
+}
+
+std::vector<std::string> extractCFunctionNames(const std::string& src)
+{
+	std::vector<std::string> names;
+#ifdef RETDEC_HAS_TREE_SITTER
+	for (const auto& span: extractCFunctionSpans(src))
+		names.push_back(span.name);
+#else
+	(void)src;
+#endif
+	return names;
+}
+
 void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* outString)
 {
 	std::string fileBuf;
@@ -476,103 +784,81 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 
 	Refiner refiner(std::move(backend));
 	const std::string semanticJson = serializeSemanticContext(config);
-
-	static const RefinementTier kTiers[] = {
-		RefinementTier::Naming,
-		RefinementTier::Comments,
-		RefinementTier::StructFields,
-		RefinementTier::IdiomRecovery,
-		RefinementTier::FullRewrite,
-	};
-
-	const int tierMax = tierMaxFromEnv();
 	std::string current = *outString;
 	std::string lastManifest = R"({"accepted":false,"reason":"no tier ran"})";
 	bool anyAccepted = false;
-	bool compileRetryUsed = false;
-	const bool requireCompile = envEnabled("RETDEC_NEURAL_REQUIRE_COMPILE");
 
-	for (int i = 0; i < tierMax && i < 5; ++i)
+#ifdef RETDEC_HAS_TREE_SITTER
+	const auto spans = extractCFunctionSpans(current);
+	if (spans.size() >= 2)
 	{
-		RefinementRequest req;
-		req.functionSource = current;
-		req.tier = kTiers[i];
-		req.semanticContextJson = semanticJson;
-		req.generation.reuseKvPrefix = envEnabled("RETDEC_NEURAL_REUSE_KV") && (i > 0);
-		// Naming/Comments/StructFields default to temperature 0 (N9).
-		// Other tiers keep the Qwen Instruct default unless the env is set.
-		const bool conservativeTier =
-			(req.tier == RefinementTier::Naming || req.tier == RefinementTier::Comments
-			 || req.tier == RefinementTier::StructFields);
-		req.generation.temperature = envFloat("RETDEC_NEURAL_TEMPERATURE", conservativeTier ? 0.0f : 0.6f);
-		req.generation.topP = envFloat("RETDEC_NEURAL_TOP_P", 0.95f);
-		const int topK = envInt("RETDEC_NEURAL_TOP_K", 20);
-		if (topK > 0) req.generation.topK = topK;
-		if (std::isfinite(req.generation.temperature))
+		std::map<std::string, std::set<std::string>> callersOf;
+		std::map<std::string, std::set<std::string>> calleesOf;
+		buildCallGraph(config, callersOf, calleesOf);
+
+		std::map<std::string, CFunctionSpan> byName;
+		std::map<std::string, std::uint64_t> startAddr;
+		for (const auto& span: spans)
 		{
-			if (req.generation.temperature < 0.0f)
-				req.generation.temperature = 0.0f;
-			else if (req.generation.temperature > 2.0f)
-				req.generation.temperature = 2.0f;
+			if (byName.count(span.name)) continue;
+			byName[span.name] = span;
+			startAddr[span.name] = span.start;
 		}
-		if (std::isfinite(req.generation.topP))
+		for (const auto& fn: config.functions)
 		{
-			if (req.generation.topP < 0.0f)
-				req.generation.topP = 0.0f;
-			else if (req.generation.topP > 1.0f)
-				req.generation.topP = 1.0f;
-		}
-		req.generation.minP = 0.0f;
-		req.generation.thinkingMode = envEnabled("RETDEC_NEURAL_THINKING");
-		if (req.tier == RefinementTier::Naming)
-		{
-			req.generation.grammarGbnf = namingRenameMapGbnf();
-			req.generation.grammarRoot = "root";
-		}
-		const char* maxTok = std::getenv("RETDEC_NEURAL_MAX_TOKENS");
-		if (maxTok && maxTok[0])
-		{
-			const int n = std::atoi(maxTok);
-			if (n > 0) req.generation.maxTokens = n;
+			if (!byName.count(fn.getName()) || !fn.getStart().isDefined()) continue;
+			startAddr[fn.getName()] = fn.getStart().getValue();
 		}
 
-		const auto resp = refiner.refine(req);
-		lastManifest = resp.manifestJson;
-		if (resp.accepted)
+		std::map<std::string, std::set<std::string>> localCallees;
+		for (const auto& kv: calleesOf)
 		{
-			current = resp.refinedSource;
-			anyAccepted = true;
+			if (!byName.count(kv.first)) continue;
+			for (const auto& c: kv.second)
+			{
+				if (byName.count(c)) localCallees[kv.first].insert(c);
+			}
 		}
 
-		const bool compileReject = !resp.accepted
-								&& (resp.manifestJson.find("compile_syntax") != std::string::npos
-									|| resp.manifestJson.find("compile=fail") != std::string::npos);
-		if (compileRetryUsed) continue;
-		if (!compileReject && !requireCompile) continue;
+		const auto order = orderFunctionsCalleeFirst(localCallees, startAddr);
+		std::map<std::string, std::string> refinedByName;
+		std::vector<std::pair<CFunctionSpan, std::string>> replacements;
 
-		std::string diags;
-		const std::string attempt = resp.refinedSource.empty() ? current : resp.refinedSource;
-		const bool compiles = compileSyntaxOnly(attempt, diags);
-		if (resp.accepted && compiles) continue;
-
-		compileRetryUsed = true;
-		RefinementRequest retry = req;
-		retry.functionSource = current;
-		retry.tier = RefinementTier::FullRewrite;
-		retry.generation.reuseKvPrefix = false; // compile-retry never reuses KV
-		retry.compilerDiagnostics = diags.empty() ? std::string("cc -fsyntax-only failed") : diags;
-
-		const auto retryResp = refiner.refine(retry);
-		lastManifest = retryResp.manifestJson;
-		if (retryResp.accepted && compileSyntaxOnly(retryResp.refinedSource))
+		for (const auto& name: order)
 		{
-			current = retryResp.refinedSource;
-			anyAccepted = true;
+			const auto sit = byName.find(name);
+			if (sit == byName.end()) continue;
+			const auto& span = sit->second;
+			if (span.end > current.size() || span.start >= span.end) continue;
+			const std::string src = current.substr(span.start, span.end - span.start);
+			const auto calIt = localCallees.find(name);
+			const std::set<std::string> calleeNames =
+				calIt == localCallees.end() ? std::set<std::string>{} : calIt->second;
+			const std::string sem = appendRefinedCalleesJson(semanticJson, refinedByName, calleeNames);
+			const auto pass = runTieredRefine(refiner, src, sem);
+			lastManifest = pass.manifest;
+			if (pass.accepted)
+			{
+				refinedByName[name] = pass.source;
+				replacements.push_back({span, pass.source});
+				anyAccepted = true;
+			}
 		}
-		else if (retryResp.accepted)
-		{
-			lastManifest = R"({"accepted":false,"reason":"compile_syntax"})";
-		}
+
+		std::sort(
+			replacements.begin(),
+			replacements.end(),
+			[](const auto& a, const auto& b) { return a.first.start > b.first.start; });
+		for (const auto& r: replacements)
+			current.replace(r.first.start, r.first.end - r.first.start, r.second);
+	}
+	else
+#endif
+	{
+		const auto pass = runTieredRefine(refiner, current, semanticJson);
+		current = pass.source;
+		lastManifest = pass.manifest;
+		anyAccepted = pass.accepted;
 	}
 
 	const std::string outPath = config.parameters.getOutputFile();

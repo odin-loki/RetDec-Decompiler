@@ -8,6 +8,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (N18): callee-before-caller refine over the call
+  graph (ties broken by start address; cycles pick the lowest
+  address). Accepted callee text is injected as `refined_callees`
+  into the caller prompt. One-function TUs keep the whole-file
+  path. Tests: `CalleeBeforeCaller`, `TiesBrokenByAddress`,
+  `CycleBrokenByAddress`, `AppendRefinedCalleesIntoSemanticJson`,
+  `ExtractsFunctionNamesFromAst`. LLVM pin unchanged.
 - Wave 5 leftover (N10): fetch tree-sitter v0.26.12 + tree-sitter-c
   v0.24.2 via `cmake/tree_sitter.cmake` (outside `deps/`). Structural
   gate walks the C AST for the N5 counted set (`if`/`else`/`while`/

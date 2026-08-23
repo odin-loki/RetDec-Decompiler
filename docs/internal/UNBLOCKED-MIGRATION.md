@@ -155,9 +155,10 @@ Fetched in `cmake/tree_sitter.cmake` (not under `deps/`). N10 walks
 the C AST for the N5 counted set; parse failure falls back to the
 keyword scan.
 
-Then N18: callee-before-caller refine (today
-`serializeSemanticContext` dumps callers/callees from
-`codeReferences` only — `decompile_hook.cpp`).
+N18: callee-before-caller refine in `maybeRefineDecompilerOutput`
+(topo order, address ties, `refined_callees` in the caller prompt).
+`serializeSemanticContext` still dumps callers/callees from
+`codeReferences`.
 
 ### 3c Neural leftovers
 
@@ -219,7 +220,8 @@ N17 is mean selected-token probability for the whole generation.
 - llvmir2hll empty-string GV uses `getValueType`.
 - tree-sitter-c v0.24.2 and tree-sitter v0.26.12 URL/SHA in
   `cmake/deps.cmake`. Fetched via `cmake/tree_sitter.cmake`. N10 AST
-  shape check in `gates.cpp` (N5 keyword scan is fallback).
+  shape check in `gates.cpp` (N5 keyword scan is fallback). N18
+  callee-before-caller refine in `decompile_hook.cpp`.
 - Remaining Type*-only readers (no Value to thread):
   `simple_types` 1203–1204 / 1641 nested pointer-to-array,
   `hasFunctionTypeOrPointer`, llvmir2hll `convert(PointerType*)`.

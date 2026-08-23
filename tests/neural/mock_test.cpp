@@ -15,8 +15,22 @@
 #include "retdec/neural/model_verify.h"
 #include "retdec/neural/refiner.h"
 
+#include <cstdint>
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
+
 namespace retdec::neural {
 std::string serializeSemanticContext(const retdec::config::Config& config);
+std::vector<std::string> orderFunctionsCalleeFirst(
+	const std::map<std::string, std::set<std::string>>& calleesOf,
+	const std::map<std::string, std::uint64_t>& startAddr);
+std::string appendRefinedCalleesJson(
+	const std::string& semanticJson,
+	const std::map<std::string, std::string>& refinedByName,
+	const std::set<std::string>& calleeNames);
+std::vector<std::string> extractCFunctionNames(const std::string& src);
 }
 
 #include <atomic>
@@ -1161,4 +1175,52 @@ TEST(NeuralSemanticContext, SerializesRttiClassNames)
 	EXPECT_NE(json.find("\"demangled\":\"Cipher\""), std::string::npos);
 	EXPECT_NE(json.find("\"super_classes\":[\"9Algorithm\"]"), std::string::npos);
 	EXPECT_NE(json.find("\"functions\":[]"), std::string::npos);
+}
+
+TEST(NeuralTopoOrder, CalleeBeforeCaller)
+{
+	const std::map<std::string, std::set<std::string>> calleesOf = {{"main", {"helper"}}};
+	const std::map<std::string, std::uint64_t> startAddr = {{"helper", 0x401200}, {"main", 0x401000}};
+	const auto order = orderFunctionsCalleeFirst(calleesOf, startAddr);
+	ASSERT_EQ(order.size(), 2u);
+	EXPECT_EQ(order[0], "helper");
+	EXPECT_EQ(order[1], "main");
+}
+
+TEST(NeuralTopoOrder, TiesBrokenByAddress)
+{
+	const std::map<std::string, std::set<std::string>> calleesOf;
+	const std::map<std::string, std::uint64_t> startAddr = {{"later", 0x20}, {"earlier", 0x10}};
+	const auto order = orderFunctionsCalleeFirst(calleesOf, startAddr);
+	ASSERT_EQ(order.size(), 2u);
+	EXPECT_EQ(order[0], "earlier");
+	EXPECT_EQ(order[1], "later");
+}
+
+TEST(NeuralTopoOrder, CycleBrokenByAddress)
+{
+	const std::map<std::string, std::set<std::string>> calleesOf = {{"a", {"b"}}, {"b", {"a"}}};
+	const std::map<std::string, std::uint64_t> startAddr = {{"a", 0x20}, {"b", 0x10}};
+	const auto order = orderFunctionsCalleeFirst(calleesOf, startAddr);
+	ASSERT_EQ(order.size(), 2u);
+	EXPECT_EQ(order[0], "b");
+	EXPECT_EQ(order[1], "a");
+}
+
+TEST(NeuralTopoOrder, AppendRefinedCalleesIntoSemanticJson)
+{
+	const std::map<std::string, std::string> refined = {{"helper", "int helper(int y) { return y; }\n"}};
+	const std::string json = appendRefinedCalleesJson(R"({"functions":[]})", refined, {"helper"});
+	EXPECT_NE(json.find("\"refined_callees\""), std::string::npos);
+	EXPECT_NE(json.find("\"name\":\"helper\""), std::string::npos);
+	EXPECT_NE(json.find("int helper(int y)"), std::string::npos);
+}
+
+TEST(NeuralTopoOrder, ExtractsFunctionNamesFromAst)
+{
+	const std::string src = "int helper(int x) { return x + 1; }\nint main(void) { return helper(0); }\n";
+	const auto names = extractCFunctionNames(src);
+	ASSERT_EQ(names.size(), 2u);
+	EXPECT_EQ(names[0], "helper");
+	EXPECT_EQ(names[1], "main");
 }
