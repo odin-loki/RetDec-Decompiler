@@ -13825,6 +13825,71 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, NotMemWithoutLockIsNotAtomicRmw)
 	}
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockBtsEmitsAtomicRmw)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock bts dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			found = true;
+			EXPECT_EQ(rmw->getOperation(), AtomicRMWInst::Or);
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, BtsMemWithoutLockIsNotAtomicRmw)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("bts dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		EXPECT_FALSE(isa<AtomicRMWInst>(&*it));
+	}
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockBtrEmitsAtomicRmw)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock btr dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			found = true;
+			EXPECT_EQ(rmw->getOperation(), AtomicRMWInst::And);
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockBtcEmitsAtomicRmw)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock btc dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			found = true;
+			EXPECT_EQ(rmw->getOperation(), AtomicRMWInst::Xor);
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockIncEmitsAtomicRmw)
 {
 	ONLY_MODE_32;

@@ -156,6 +156,7 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
   ARM `lda*`/`ldaex*` are acquire loads; `stl*` are release
   stores; `stlex*` are release exclusive stores plus status 0.
   `ldaexd`/`stlexd` stay untranslated.
+  `lock bts`/`btr`/`btc` mem emit `atomicrmw` or/and/xor.
 
 ### 3b C parser → N10 → N18
 

@@ -1816,6 +1816,46 @@ bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedRmw(
 	return true;
 }
 
+bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedBit(
+		cs_insn* i,
+		cs_x86* xi,
+		llvm::IRBuilder<>& irb,
+		llvm::AtomicRMWInst::BinOp aop)
+{
+	if (!hasLockPrefix(xi) || xi->op_count < 2)
+	{
+		return false;
+	}
+	if (xi->operands[0].type != X86_OP_MEM)
+	{
+		return false;
+	}
+
+	auto* addr = loadOp(xi->operands[0], irb, nullptr, true);
+	auto* bit = loadOp(xi->operands[1], irb);
+	if (!addr || !bit)
+	{
+		return false;
+	}
+	auto* elem = getIntegerTypeFromByteSize(_module, xi->operands[0].size);
+	bit = generateTypeConversion(irb, bit, elem, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	unsigned op0BitW = elem->getBitWidth();
+	bit = irb.CreateAnd(bit, llvm::ConstantInt::get(elem, op0BitW - 1));
+	auto* mask = irb.CreateShl(llvm::ConstantInt::get(elem, 1), bit);
+	llvm::Value* rhs = mask;
+	if (aop == llvm::AtomicRMWInst::And)
+	{
+		rhs = irb.CreateXor(mask, llvm::ConstantInt::getSigned(elem, -1));
+	}
+	auto* ptr = intToPtr(irb, addr, elem, getAddrSpace(xi->operands[0].mem.segment));
+	auto* old = irb.CreateAtomicRMW(aop, ptr, rhs, llvm::AtomicOrdering::SequentiallyConsistent);
+	attachPointeeType(old, elem);
+	auto* andd = irb.CreateAnd(old, mask);
+	auto* icmp = irb.CreateICmpNE(andd, llvm::ConstantInt::get(elem, 0));
+	storeRegister(X86_REG_CF, icmp, irb);
+	return true;
+}
+
 bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedCmpxchg(
 		cs_insn* i,
 		cs_x86* xi,
@@ -2061,6 +2101,11 @@ void Capstone2LlvmIrTranslatorX86_impl::translateBtc(cs_insn* i, cs_x86* xi, llv
 {
 	EXPECT_IS_BINARY(i, xi, irb);
 
+	if (tryTranslateLockedBit(i, xi, irb, llvm::AtomicRMWInst::Xor))
+	{
+		return;
+	}
+
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	unsigned op0BitW = llvm::cast<llvm::IntegerType>(op0->getType())->getBitWidth();
 	op1 = irb.CreateAnd(op1, llvm::ConstantInt::get(op1->getType(), op0BitW - 1));
@@ -2086,6 +2131,11 @@ void Capstone2LlvmIrTranslatorX86_impl::translateBtr(cs_insn* i, cs_x86* xi, llv
 {
 	EXPECT_IS_BINARY(i, xi, irb);
 
+	if (tryTranslateLockedBit(i, xi, irb, llvm::AtomicRMWInst::And))
+	{
+		return;
+	}
+
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	unsigned op0BitW = llvm::cast<llvm::IntegerType>(op0->getType())->getBitWidth();
 	op1 = irb.CreateAnd(op1, llvm::ConstantInt::get(op1->getType(), op0BitW - 1));
@@ -2105,6 +2155,11 @@ void Capstone2LlvmIrTranslatorX86_impl::translateBtr(cs_insn* i, cs_x86* xi, llv
 void Capstone2LlvmIrTranslatorX86_impl::translateBts(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, xi, irb);
+
+	if (tryTranslateLockedBit(i, xi, irb, llvm::AtomicRMWInst::Or))
+	{
+		return;
+	}
 
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	unsigned op0BitW = llvm::cast<llvm::IntegerType>(op0->getType())->getBitWidth();

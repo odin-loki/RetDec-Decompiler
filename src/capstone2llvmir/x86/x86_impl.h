@@ -138,6 +138,7 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		bool tryTranslateLockedCmpxchg(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		bool tryTranslateLockedCmpxchgWide(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb, unsigned bits);
 		bool tryTranslateLockedIncDec(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb, bool isDec);
+		bool tryTranslateLockedBit(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb, llvm::AtomicRMWInst::BinOp aop);
 
 		unsigned getAddrSpace(x86_reg segment);
 
