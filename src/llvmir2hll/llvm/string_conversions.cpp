@@ -92,15 +92,11 @@ bool stores8BitStringLiteral(const llvm::GlobalVariable *v) {
 	// stores a string literal if and only if its type is an array of i8.
 	if (!v->hasInitializer() || v->getInitializer()->isNullValue()) {
 		// The array of i8 has to actually be [Y x i8]*, i.e. a pointer to an
-		// array of i8.
-		if (llvm::PointerType *ptrType =
-				llvm::dyn_cast<llvm::PointerType>(v->getType())) {
-			if (llvm::ArrayType *arrayType =
-					llvm::dyn_cast<llvm::ArrayType>(ptrType->getElementType())) {
-				if (llvm::Type *elemType =
-						arrayType->getArrayElementType()) {
-					return elemType == llvm::Type::getInt8Ty(arrayType->getContext());
-				}
+		// array of i8. GlobalVariable::getValueType() is that array type.
+		if (llvm::ArrayType *arrayType =
+				llvm::dyn_cast<llvm::ArrayType>(v->getValueType())) {
+			if (llvm::Type *elemType = arrayType->getArrayElementType()) {
+				return elemType == llvm::Type::getInt8Ty(arrayType->getContext());
 			}
 		}
 		return false;
