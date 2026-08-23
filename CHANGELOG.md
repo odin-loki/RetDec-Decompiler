@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (A8): PowerPC `lwarx`/`ldarx` loads are atomic
+  (monotonic). `stwcx`/`stdcx` are an atomic store plus `CR0.EQ`
+  success (no exclusive monitor). Tests: `LwarxLoadIsAtomic`,
+  `PPC_INS_LWARX`, `StwcxStoreIsAtomic`, `PPC_INS_STWCX`.
 - Wave 5 leftover (A8): MIPS `ll`/`lld` loads are atomic
   (monotonic). `sc`/`scd` are an atomic store plus status 1 (no
   exclusive monitor). Tests: `LlLoadIsAtomic`, `MIPS_INS_LL`,

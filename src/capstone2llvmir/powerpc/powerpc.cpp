@@ -985,13 +985,21 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadIndexed(cs_insn* i, cs_
 			break;
 		case PPC_INS_LWZX:
 		case PPC_INS_LWZUX:
+		case PPC_INS_LWARX:
 			ty = irb.getInt32Ty();
+			break;
+		case PPC_INS_LDARX:
+			ty = irb.getInt64Ty();
 			break;
 		default:
 			return;
 	}
 
 	auto* l = loadIntPtr(irb, add, ty);
+	if (i->id == PPC_INS_LWARX || i->id == PPC_INS_LDARX)
+	{
+		l->setAtomic(llvm::AtomicOrdering::Monotonic);
+	}
 
 	eOpConv conv = eOpConv::ZEXT_TRUNC_OR_BITCAST;
 	if (i->id == PPC_INS_LHAX || i->id == PPC_INS_LHAUX)
@@ -1086,7 +1094,11 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreIndexed(cs_insn* i, cs
 			break;
 		case PPC_INS_STWX:
 		case PPC_INS_STWUX:
+		case PPC_INS_STWCX:
 			ty = irb.getInt32Ty();
+			break;
+		case PPC_INS_STDCX:
+			ty = irb.getInt64Ty();
 			break;
 		default:
 			return;
@@ -1095,7 +1107,13 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreIndexed(cs_insn* i, cs
 	op0 = irb.CreateZExtOrTrunc(op0, ty);
 
 	auto* add = irb.CreateAdd(op1, op2);
-	storeIntPtr(irb, op0, add, ty);
+	auto* st = storeIntPtr(irb, op0, add, ty);
+	if (i->id == PPC_INS_STWCX || i->id == PPC_INS_STDCX)
+	{
+		st->setAtomic(llvm::AtomicOrdering::Monotonic);
+		// Success. No exclusive-monitor model.
+		storeRegister(PPC_REG_CR0EQ, irb.getInt1(true), irb);
+	}
 
 	// With update.
 	//

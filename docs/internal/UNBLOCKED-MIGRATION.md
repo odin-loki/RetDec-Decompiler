@@ -159,6 +159,8 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
   `lock bts`/`btr`/`btc` mem emit `atomicrmw` or/and/xor.
   MIPS `ll`/`lld` are atomic loads; `sc`/`scd` are atomic stores
   plus status 1.
+  PowerPC `lwarx`/`ldarx` are atomic loads; `stwcx`/`stdcx` are
+  atomic stores plus `CR0.EQ`.
 
 ### 3b C parser → N10 → N18
 

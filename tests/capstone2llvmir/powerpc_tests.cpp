@@ -2749,6 +2749,49 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LWZX)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, LwarxLoadIsAtomic)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("lwarx 0, 1, 2"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic())
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LWARX)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+		{PPC_REG_R2, 0x120},
+	});
+	setMemory({
+		{0x1120, 0x12345678_dw},
+	});
+
+	emulate("lwarx 0, 1, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x12345678},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1120});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 //
 // PPC_INS_LBZUX
 //
@@ -3692,6 +3735,49 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STWX)
 
 	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1, PPC_REG_R2});
 	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1120, 0x12345678_w}
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, StwcxStoreIsAtomic)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("stwcx. 0, 1, 2"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic())
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STWCX)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R0, 0x12345678},
+		{PPC_REG_R1, 0x1000},
+		{PPC_REG_R2, 0x120},
+	});
+
+	emulate("stwcx. 0, 1, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1, PPC_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR0EQ, true},
+	});
 	EXPECT_NO_MEMORY_LOADED();
 	EXPECT_JUST_MEMORY_STORED({
 		{0x1120, 0x12345678_w}
