@@ -111,6 +111,7 @@ uint16_t WidthSeeder::widthFromInstr(const SSAFunction& fn,
     case IrInstr::Op::Add:
     case IrInstr::Op::Sub:
     case IrInstr::Op::Mul:
+    case IrInstr::Op::Rem:
     case IrInstr::Op::And:
     case IrInstr::Op::Or:
     case IrInstr::Op::Xor:

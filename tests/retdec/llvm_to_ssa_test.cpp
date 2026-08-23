@@ -166,3 +166,40 @@ TEST(LlvmToSsa, ForLoopHasBackEdgeHeaderPhiAndImmediateUses)
 	// AccumulateDetector fire on every compiled loop.
 	EXPECT_EQ(phiNodeListCount(*fn), 0);
 }
+
+constexpr const char* kRemLockIR = R"IR(
+target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+define i32 @wrap(i32 %a, i32 %n) {
+  %r = srem i32 %a, %n
+  ret i32 %r
+}
+define i32 @lockadd(i32* %p) {
+  %r = atomicrmw add i32* %p, i32 1 seq_cst
+  ret i32 %r
+}
+)IR";
+
+TEST(LlvmToSsa, SRemMapsToRemNotDiv)
+{
+	llvm::LLVMContext ctx;
+	auto module = parseIR(ctx, kRemLockIR);
+	ASSERT_NE(module, nullptr);
+	auto ssa = buildSsaModule(*module);
+	ASSERT_NE(ssa, nullptr);
+	const SSAFunction* fn = findFn(*ssa, "wrap");
+	ASSERT_NE(fn, nullptr);
+	EXPECT_GE(countOp(*fn, IrInstr::Op::Rem), 1);
+	EXPECT_EQ(countOp(*fn, IrInstr::Op::Div), 0);
+}
+
+TEST(LlvmToSsa, AtomicRmwMapsToLock)
+{
+	llvm::LLVMContext ctx;
+	auto module = parseIR(ctx, kRemLockIR);
+	ASSERT_NE(module, nullptr);
+	auto ssa = buildSsaModule(*module);
+	ASSERT_NE(ssa, nullptr);
+	const SSAFunction* fn = findFn(*ssa, "lockadd");
+	ASSERT_NE(fn, nullptr);
+	EXPECT_GE(countOp(*fn, IrInstr::Op::Lock), 1);
+}

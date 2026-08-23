@@ -45,9 +45,10 @@ static ssa::IrInstr::Op binOp(unsigned llvmOpc)
 	case llvm::Instruction::FMul: return Op::Mul;
 	case llvm::Instruction::SDiv:
 	case llvm::Instruction::UDiv:
+	case llvm::Instruction::FDiv: return Op::Div;
 	case llvm::Instruction::SRem:
 	case llvm::Instruction::URem:
-	case llvm::Instruction::FDiv: return Op::Div;
+	case llvm::Instruction::FRem: return Op::Rem;
 	case llvm::Instruction::And: return Op::And;
 	case llvm::Instruction::Or: return Op::Or;
 	case llvm::Instruction::Xor: return Op::Xor;
@@ -98,6 +99,11 @@ static ssa::IrInstr* translateInstr(const llvm::Instruction& li, ssa::SSAFunctio
 	{
 		op = Op::Store;
 	}
+	else if (llvm::isa<llvm::AtomicRMWInst>(li) || llvm::isa<llvm::AtomicCmpXchgInst>(li)
+			 || llvm::isa<llvm::FenceInst>(li))
+	{
+		op = Op::Lock;
+	}
 	else if (llvm::isa<llvm::ReturnInst>(li))
 	{
 		op = Op::Ret;
@@ -132,7 +138,9 @@ static ssa::IrInstr* translateInstr(const llvm::Instruction& li, ssa::SSAFunctio
 	// Detectors (RingBuffer wrap mask, sift-down Shl/Mul imm) read
 	// IrInstr::uses. Recovered IR previously left them empty.
 	// PHI incoming ConstantInts are the same Immediate form (E6 def-use).
-	if (instr && (llvm::isa<llvm::BinaryOperator>(li) || llvm::isa<llvm::PHINode>(li)))
+	if (instr
+		&& (llvm::isa<llvm::BinaryOperator>(li) || llvm::isa<llvm::PHINode>(li)
+			|| llvm::isa<llvm::AtomicRMWInst>(li) || llvm::isa<llvm::AtomicCmpXchgInst>(li)))
 	{
 		for (unsigned i = 0, n = li.getNumOperands(); i < n; ++i)
 		{

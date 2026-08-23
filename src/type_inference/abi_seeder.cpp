@@ -290,6 +290,14 @@ void TypeInferencePass::emitInstructionConstraints(const SSAFunction& fn) {
                 }
                 break;
 
+            case IrInstr::Op::Rem:
+                // Remainder is integer wrap, not division.
+                if (defId != UINT32_MAX && !instr->uses.empty()) {
+                    for (auto& use : instr->uses)
+                        prop_.addConstraint(TypeConstraint::sameWidth(defId, use.valueId));
+                }
+                break;
+
             case IrInstr::Op::Sar:
                 // Arithmetic right shift → value must be signed
                 if (!instr->uses.empty())

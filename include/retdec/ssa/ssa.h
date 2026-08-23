@@ -220,6 +220,8 @@ struct IrInstr {
         FlagWrite, ///< Any instruction that produces flags
         FlagRead,  ///< SETcc, CMOVcc, Jcc — consumes specific flags
         Phi,       ///< Placeholder (actual phi is in PhiNode list)
+        Rem,       ///< SRem / URem / FRem — not Div (ring wrap)
+        Lock,      ///< AtomicRMW / CmpXchg / fence / lock prefix
         Undef,
     } op = Op::Undef;
 

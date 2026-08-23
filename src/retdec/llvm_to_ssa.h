@@ -47,7 +47,8 @@ namespace retdec {
  *   StoreInst       → Store
  *   BranchInst      → Branch / CondBranch
  *   ReturnInst      → Ret
- *   BinaryOperator  → Add/Sub/Mul/Div/And/… (SRem/URem map to Div)
+ *   BinaryOperator  → Add/Sub/Mul/Div/Rem/And/… (SRem/URem/FRem → Rem)
+ *   AtomicRMW / CmpXchg / Fence → Lock
  *   ICmpInst/FCmpInst → Compare
  *   PHINode         → Phi (instruction only; PhiNode list stays empty)
  *   Other           → Assign (conservative fallback)
