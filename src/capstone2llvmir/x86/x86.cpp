@@ -3762,6 +3762,40 @@ void Capstone2LlvmIrTranslatorX86_impl::translateXchg(cs_insn* i, cs_x86* xi, ll
 {
 	EXPECT_IS_BINARY(i, xi, irb);
 
+	// xchg r/m is implicitly locked even without a LOCK prefix.
+	int memIdx = -1;
+	int otherIdx = -1;
+	if (xi->operands[0].type == X86_OP_MEM)
+	{
+		memIdx = 0;
+		otherIdx = 1;
+	}
+	else if (xi->operands[1].type == X86_OP_MEM)
+	{
+		memIdx = 1;
+		otherIdx = 0;
+	}
+	if (memIdx >= 0)
+	{
+		auto* addr = loadOp(xi->operands[memIdx], irb, nullptr, true);
+		auto* val = loadOp(xi->operands[otherIdx], irb);
+		if (!addr || !val)
+		{
+			return;
+		}
+		auto* elem = getIntegerTypeFromByteSize(_module, xi->operands[memIdx].size);
+		val = generateTypeConversion(irb, val, elem, eOpConv::SEXT_TRUNC_OR_BITCAST);
+		auto* ptr = intToPtr(irb, addr, elem, getAddrSpace(xi->operands[memIdx].mem.segment));
+		auto* old = irb.CreateAtomicRMW(
+				llvm::AtomicRMWInst::Xchg,
+				ptr,
+				val,
+				llvm::AtomicOrdering::SequentiallyConsistent);
+		attachPointeeType(old, elem);
+		storeOp(xi->operands[otherIdx], old, irb);
+		return;
+	}
+
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
 	// TODO:
 	// Capstone may generate something like this:

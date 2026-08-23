@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (A8): implicit `xchg mem` → `atomicrmw xchg`
+  (x86 locks that swap without a LOCK prefix). Register–register
+  `xchg` stays a plain swap. Emulator visits `atomicrmw xchg` so
+  the existing mem-swap test still runs. Tests:
+  `XchgMemEmitsAtomicRmw`, `XchgRegRegIsNotAtomicRmw`.
 - B7 leftover: pattern export tags `evidence:symbol_name` for
   Factory `malloc`/`new` and Strategy `doAlgorithm`/`execute`.
   Structural Strategy (indirect call, no those names) stays

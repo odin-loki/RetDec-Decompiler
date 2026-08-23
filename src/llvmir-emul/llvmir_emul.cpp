@@ -3662,6 +3662,34 @@ void LlvmIrEmulator::visitPHINode(llvm::PHINode& PN)
  */
 void LlvmIrEmulator::visitInstruction(llvm::Instruction& I)
 {
+	if (auto* rmw = dyn_cast<AtomicRMWInst>(&I))
+	{
+		if (rmw->getOperation() != AtomicRMWInst::Xchg)
+		{
+			throw LlvmIrEmulatorError(
+					"Unhandled instruction visited: " + llvmObjToString(&I));
+		}
+
+		LocalExecutionContext& ec = _ecStack.back();
+		GenericValue val = _globalEc.getOperandValue(rmw->getValOperand(), ec);
+		GenericValue old;
+		if (auto* gv = dyn_cast<GlobalVariable>(rmw->getPointerOperand()))
+		{
+			old = _globalEc.getGlobal(gv);
+			_globalEc.setGlobal(gv, val);
+		}
+		else
+		{
+			GenericValue dst = _globalEc.getOperandValue(rmw->getPointerOperand(), ec);
+			GenericValue* ptr = reinterpret_cast<GenericValue*>(GVTOP(dst));
+			uint64_t ptrVal = reinterpret_cast<uint64_t>(ptr);
+			old = _globalEc.getMemory(ptrVal);
+			_globalEc.setMemory(ptrVal, val);
+		}
+		_globalEc.setValue(&I, old);
+		return;
+	}
+
 	throw LlvmIrEmulatorError(
 			"Unhandled instruction visited: " + llvmObjToString(&I));
 }

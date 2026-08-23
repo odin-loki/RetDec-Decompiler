@@ -143,9 +143,10 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
   `atomicrmw`; `lock cmpxchg` mem emits `cmpxchg`. ARM64
   `ldxr`/`ldaxr`/`ldar` are atomic loads; `stxr`/`stlxr` are atomic
   stores (status 0, no exclusive monitor); `stlr` is release.
-  `extractAtomics` accepts `Op::Lock`. Implicit `xchg mem` is still a
-  plain store (emulator test). `lock cmpxchg8b`/`cmpxchg16b` emit
-  `cmpxchg`; `stxp`/`stlxp` are wide atomic stores.
+  `extractAtomics` accepts `Op::Lock`. Implicit `xchg mem` emits
+  `atomicrmw xchg` (register–register xchg stays a plain swap).
+  `lock cmpxchg8b`/`cmpxchg16b` emit `cmpxchg`; `stxp`/`stlxp` are
+  wide atomic stores.
 
 ### 3b C parser → N10 → N18
 
