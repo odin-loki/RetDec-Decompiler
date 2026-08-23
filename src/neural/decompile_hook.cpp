@@ -166,6 +166,8 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		if (!fn.getRealName().empty() && fn.getRealName() != fn.getName())
 			oss << ",\"real_name\":\"" << jsonEscape(fn.getRealName()) << '"';
 		if (!fn.getSourceFileName().empty()) oss << ",\"source_file\":\"" << jsonEscape(fn.getSourceFileName()) << '"';
+		if (fn.getStartLine().isDefined()) oss << ",\"start_line\":" << fn.getStartLine().getValue();
+		if (fn.getEndLine().isDefined()) oss << ",\"end_line\":" << fn.getEndLine().getValue();
 		if (!fn.getWrappedFunctionName().empty())
 			oss << ",\"wrapped\":\"" << jsonEscape(fn.getWrappedFunctionName()) << '"';
 		if (fn.isFromDebug()) oss << ",\"from_debug\":true";

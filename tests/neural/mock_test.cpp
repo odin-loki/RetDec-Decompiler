@@ -892,6 +892,22 @@ TEST(NeuralSemanticContext, SerializesOptionalFunctionMetadata)
 	EXPECT_EQ(json.find("fn_401001"), std::string::npos);
 }
 
+TEST(NeuralSemanticContext, SerializesSourceLineNumbers)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Function fn("fn_401000");
+	fn.setSourceFileName("cipher.c");
+	fn.setStartLine(retdec::common::Address(42));
+	fn.setEndLine(retdec::common::Address(88));
+	fn.usedCryptoConstants.insert("AES");
+	cfg.functions.insert(fn);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"source_file\":\"cipher.c\""), std::string::npos);
+	EXPECT_NE(json.find("\"start_line\":42"), std::string::npos);
+	EXPECT_NE(json.find("\"end_line\":88"), std::string::npos);
+}
+
 TEST(NeuralSemanticContext, SerializesFunctionRoleFlags)
 {
 	auto cfg = retdec::config::Config::empty();
