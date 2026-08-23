@@ -1557,8 +1557,39 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateStxr(cs_insn* i, cs_arm64* ai
 }
 
 /**
+ * ARM64_INS_STXP, ARM64_INS_STLXP
+ * Exclusive pair store: one wide atomic store + status 0.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateStxp(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_EXPR(i, ai, irb, (ai->op_count == 4));
+
+	auto* v0 = loadOp(ai->operands[1], irb);
+	auto* v1 = loadOp(ai->operands[2], irb);
+	const unsigned halfBits = getRegisterByteSize(ai->operands[1].reg) * 8;
+	auto* wide = llvm::Type::getIntNTy(_module->getContext(), halfBits * 2);
+	v0 = irb.CreateZExtOrTrunc(v0, wide);
+	v1 = irb.CreateZExtOrTrunc(v1, wide);
+	auto* pair = irb.CreateOr(v0, irb.CreateShl(v1, llvm::ConstantInt::get(wide, halfBits)));
+
+	llvm::Value* dest = nullptr;
+	if (ai->operands[3].type == ARM64_OP_MEM)
+	{
+		dest = generateGetOperandMemAddr(ai->operands[3], irb);
+	}
+	else
+	{
+		dest = loadOp(ai->operands[3], irb, nullptr, true);
+	}
+
+	auto* st = storeIntPtr(irb, pair, dest, wide);
+	st->setAtomic(
+			i->id == ARM64_INS_STLXP ? llvm::AtomicOrdering::Release : llvm::AtomicOrdering::Monotonic);
+	storeRegister(ai->operands[0].reg, llvm::ConstantInt::get(getRegisterType(ai->operands[0].reg), 0), irb);
+}
+
+/**
  * ARM64_INS_STP, ARM64_INS_STNP
- * ARM64_INS_STXP -- Maybe should be pseudo
  */
 void Capstone2LlvmIrTranslatorArm64_impl::translateStp(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {

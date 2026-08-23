@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (A8): `lock cmpxchg8b`/`cmpxchg16b` mem → `cmpxchg`
+  (i64/i128). ARM64 `stxp`/`stlxp` are one wide atomic store (status 0).
+  Tests: `LockCmpxchg8bEmitsAtomicCmpXchg`,
+  `Cmpxchg8bWithoutLockIsNotAtomicCmpXchg`,
+  `LockCmpxchg16bEmitsAtomicCmpXchg`, `StxpStoreIsAtomic`.
 - Wave 5 leftover (A8): `lock cmpxchg` mem → `cmpxchg`; `lock inc`/`dec`
   mem → `atomicrmw`. ARM64 `stxr`/`stlxr` are atomic stores (status 0);
   `stlr` is a release store. Tests: `LockCmpxchgEmitsAtomicCmpXchg`,

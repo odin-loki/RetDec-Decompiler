@@ -1854,6 +1854,52 @@ bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedCmpxchg(
 	return true;
 }
 
+bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedCmpxchgWide(
+		cs_insn* i,
+		cs_x86* xi,
+		llvm::IRBuilder<>& irb,
+		unsigned bits)
+{
+	if (!hasLockPrefix(xi) || xi->op_count < 1)
+	{
+		return false;
+	}
+	if (xi->operands[0].type != X86_OP_MEM || (bits != 64 && bits != 128))
+	{
+		return false;
+	}
+
+	const uint32_t loExp = bits == 64 ? X86_REG_EAX : X86_REG_RAX;
+	const uint32_t hiExp = bits == 64 ? X86_REG_EDX : X86_REG_RDX;
+	const uint32_t loDes = bits == 64 ? X86_REG_EBX : X86_REG_RBX;
+	const uint32_t hiDes = bits == 64 ? X86_REG_ECX : X86_REG_RCX;
+	auto* wide = llvm::Type::getIntNTy(_module->getContext(), bits);
+	auto* half = llvm::Type::getIntNTy(_module->getContext(), bits / 2);
+	auto* shamt = llvm::ConstantInt::get(wide, bits / 2);
+
+	auto* addr = loadOp(xi->operands[0], irb, nullptr, true);
+	auto* elo = generateTypeConversion(irb, loadRegister(loExp, irb), wide, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	auto* ehi = generateTypeConversion(irb, loadRegister(hiExp, irb), wide, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	auto* expected = irb.CreateOr(elo, irb.CreateShl(ehi, shamt));
+	auto* dlo = generateTypeConversion(irb, loadRegister(loDes, irb), wide, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	auto* dhi = generateTypeConversion(irb, loadRegister(hiDes, irb), wide, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	auto* desired = irb.CreateOr(dlo, irb.CreateShl(dhi, shamt));
+	auto* ptr = intToPtr(irb, addr, wide, getAddrSpace(xi->operands[0].mem.segment));
+	auto* cx = irb.CreateAtomicCmpXchg(
+			ptr,
+			expected,
+			desired,
+			llvm::AtomicOrdering::SequentiallyConsistent,
+			llvm::AtomicOrdering::SequentiallyConsistent);
+	attachPointeeType(cx, wide);
+	auto* old = irb.CreateExtractValue(cx, 0);
+	auto* succ = irb.CreateExtractValue(cx, 1);
+	storeRegister(X86_REG_ZF, succ, irb);
+	storeRegister(loExp, irb.CreateTrunc(old, half), irb);
+	storeRegister(hiExp, irb.CreateTrunc(irb.CreateLShr(old, shamt), half), irb);
+	return true;
+}
+
 bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedIncDec(
 		cs_insn* i,
 		cs_x86* xi,
@@ -2229,6 +2275,11 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCmpxchg8b(cs_insn* i, cs_x86* x
 {
 	EXPECT_IS_UNARY(i, xi, irb);
 
+	if (tryTranslateLockedCmpxchgWide(i, xi, irb, 64))
+	{
+		return;
+	}
+
 	op0 = loadOpUnary(xi, irb);
 	auto* eax = loadRegister(X86_REG_EAX, irb, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	auto* edx = loadRegister(X86_REG_EDX, irb, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
@@ -2259,6 +2310,11 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCmpxchg8b(cs_insn* i, cs_x86* x
 void Capstone2LlvmIrTranslatorX86_impl::translateCmpxchg16b(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_UNARY(i, xi, irb);
+
+	if (tryTranslateLockedCmpxchgWide(i, xi, irb, 128))
+	{
+		return;
+	}
 
 	op0 = loadOpUnary(xi, irb);
 	auto* rax = loadRegister(X86_REG_RAX, irb, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);

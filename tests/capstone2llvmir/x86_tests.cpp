@@ -13741,6 +13741,51 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, IncWithoutLockIsNotAtomicRmw)
 	}
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockCmpxchg8bEmitsAtomicCmpXchg)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock cmpxchg8b [eax]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<AtomicCmpXchgInst>(&*it))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, Cmpxchg8bWithoutLockIsNotAtomicCmpXchg)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("cmpxchg8b [eax]"));
+	ASSERT_NE(nullptr, f);
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		EXPECT_FALSE(isa<AtomicCmpXchgInst>(&*it));
+	}
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockCmpxchg16bEmitsAtomicCmpXchg)
+{
+	ONLY_MODE_64;
+	auto* f = translate(assemble("lock cmpxchg16b [rax]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (isa<AtomicCmpXchgInst>(&*it))
+		{
+			found = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FXTRACT)
 {
 	ALL_MODES;
