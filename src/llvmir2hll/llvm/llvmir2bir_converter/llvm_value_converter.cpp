@@ -6,6 +6,7 @@
 */
 
 #include <memory>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/IR/Constant.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -13,6 +14,7 @@
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/IR/Metadata.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Value.h>
 
@@ -23,6 +25,7 @@
 #include "retdec/llvmir2hll/ir/deref_op_expr.h"
 #include "retdec/llvmir2hll/ir/expression.h"
 #include "retdec/llvmir2hll/ir/module.h"
+#include "retdec/llvmir2hll/ir/pointer_type.h"
 #include "retdec/llvmir2hll/ir/unknown_type.h"
 #include "retdec/llvmir2hll/ir/variable.h"
 #include "retdec/llvmir2hll/llvm/llvm_support.h"
@@ -36,6 +39,83 @@
 
 namespace retdec {
 namespace llvmir2hll {
+
+namespace {
+
+/// Reconstruct LLVM types from `retdec.pointee` print-form (same as
+/// `Type::print` / `loadIntPtr`). Fall back to typed-pointer conversion
+/// when the string is not a primitive or pointer-to-primitive.
+llvm::Type *parsePrintedLlvmType(llvm::LLVMContext &ctx, llvm::StringRef s)
+{
+	s = s.trim();
+	if (s.empty())
+	{
+		return nullptr;
+	}
+	if (s.endswith("*"))
+	{
+		auto *inner = parsePrintedLlvmType(ctx, s.drop_back());
+		if (!inner || !llvm::PointerType::isValidElementType(inner))
+		{
+			return nullptr;
+		}
+		return llvm::PointerType::get(inner, 0);
+	}
+	if (s == "void")
+	{
+		return llvm::Type::getVoidTy(ctx);
+	}
+	if (s == "half")
+	{
+		return llvm::Type::getHalfTy(ctx);
+	}
+	if (s == "float")
+	{
+		return llvm::Type::getFloatTy(ctx);
+	}
+	if (s == "double")
+	{
+		return llvm::Type::getDoubleTy(ctx);
+	}
+	if (s == "x86_fp80")
+	{
+		return llvm::Type::getX86_FP80Ty(ctx);
+	}
+	if (s == "fp128")
+	{
+		return llvm::Type::getFP128Ty(ctx);
+	}
+	if (s.startswith("i"))
+	{
+		unsigned bits = 0;
+		if (!s.drop_front().getAsInteger(10, bits) && bits > 0)
+		{
+			return llvm::Type::getIntNTy(ctx, bits);
+		}
+	}
+	return nullptr;
+}
+
+llvm::Type *llvmTypeFromPointeeMD(const llvm::Instruction *i)
+{
+	if (!i)
+	{
+		return nullptr;
+	}
+	auto *mdn = i->getMetadata("retdec.pointee");
+	if (!mdn || mdn->getNumOperands() < 1)
+	{
+		return nullptr;
+	}
+	auto *mds = llvm::dyn_cast<llvm::MDString>(mdn->getOperand(0));
+	if (!mds)
+	{
+		return nullptr;
+	}
+	return parsePrintedLlvmType(i->getContext(), mds->getString());
+}
+
+} // namespace
 
 /**
 * @brief Constructs a new converter.
@@ -312,6 +392,18 @@ ShPtr<Type> LLVMValueConverter::determineVariableType(llvm::Value *value) {
 		return typeConverter->convert(allocaInst->getAllocatedType());
 	} else if (auto globVar = llvm::dyn_cast<llvm::GlobalVariable>(value)) {
 		return typeConverter->convert(globVar->getValueType());
+	}
+
+	// Pointer-typed instructions: prefer `retdec.pointee` (same kind as
+	// `insn.addr`) so Track 1 readers do not depend on typed-pointer
+	// `getElementType()`. Non-pointer values (loads) keep their LLVM type;
+	// MD on those insts is the loaded type, not a pointer wrapper.
+	if (value->getType()->isPointerTy()) {
+		if (auto *inst = llvm::dyn_cast<llvm::Instruction>(value)) {
+			if (auto *ptee = llvmTypeFromPointeeMD(inst)) {
+				return PointerType::create(typeConverter->convert(ptee));
+			}
+		}
 	}
 
 	return typeConverter->convert(value->getType());

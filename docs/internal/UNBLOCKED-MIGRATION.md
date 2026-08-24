@@ -277,7 +277,10 @@ N17 is mean selected-token probability for the whole generation.
   `hasFunctionTypeOrPointer` consults `pointeeType` on return/arg
   slots before the Type* function-pointer check.
   ParamReturn indirect-call snapshots include the function-pointer
-  bitcast MD from `convertValueToType`.
+  bitcast MD from `convertValueToType`. llvmir2hll
+  `determineVariableType` reads `retdec.pointee` on pointer-typed
+  instructions (loads keep their LLVM type; MD there is the loaded
+  type). `convert(PointerType*)` stays Type*-only.
 - **No** `cmake/deps.cmake` LLVM URL change.
 - `IrInstr::Op::Rem` / `Op::Lock` appended before `Undef`.
   `SRem`/`URem`/`FRem` → `Rem`; atomics/fence → `Lock`.
@@ -291,6 +294,6 @@ N17 is mean selected-token probability for the whole generation.
   callee-before-caller refine in `decompile_hook.cpp`.
 - Remaining Type*-only readers (no Value to thread):
   `simple_types` 1203–1204 / 1641 nested pointer-to-array,
-  llvmir2hll `convert(PointerType*)`,
+  llvmir2hll `convert(PointerType*)` (Type*-only signature),
   `fileimage` `getConstant(Type*)` char-pointer identity.
 - **No** `cmake/deps.cmake` LLVM URL change.

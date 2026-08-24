@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: llvmir2hll `determineVariableType` prefers
+  `retdec.pointee` on pointer-typed instructions (same MD kind as
+  `insn.addr`). Tests:
+  `PointerInstPointeeMetadataOverridesTypedPointerElementType`,
+  `LoadInstPointeeMetadataDoesNotWrapLoadedValueAsPointer`.
 - Track 1 leftover: remaining ARM `ldrd`/`strd`, x86 memory `ljmp`/`retf`,
   and PowerPC `lhbrx` assert `retdec.pointee`. Tests:
   `LdrdLoadAttachesPointeeMetadata`, `StrdStoreAttachesPointeeMetadata`,

@@ -13,6 +13,7 @@
 #include <llvm/IR/InstrTypes.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Metadata.h>
 #include <llvm/IR/Type.h>
 
 #include "llvmir2hll/ir/assertions.h"
@@ -33,11 +34,13 @@
 #include "retdec/llvmir2hll/ir/gt_op_expr.h"
 #include "retdec/llvmir2hll/ir/int_to_fp_cast_expr.h"
 #include "retdec/llvmir2hll/ir/int_to_ptr_cast_expr.h"
+#include "retdec/llvmir2hll/ir/int_type.h"
 #include "retdec/llvmir2hll/ir/lt_eq_op_expr.h"
 #include "retdec/llvmir2hll/ir/lt_op_expr.h"
 #include "retdec/llvmir2hll/ir/mod_op_expr.h"
 #include "retdec/llvmir2hll/ir/mul_op_expr.h"
 #include "retdec/llvmir2hll/ir/neq_op_expr.h"
+#include "retdec/llvmir2hll/ir/pointer_type.h"
 #include "retdec/llvmir2hll/ir/ptr_to_int_cast_expr.h"
 #include "retdec/llvmir2hll/ir/sub_op_expr.h"
 #include "retdec/llvmir2hll/ir/ternary_op_expr.h"
@@ -578,6 +581,44 @@ SelectInstructionIsConvertedCorrectly) {
 	auto birTernaryOpExpr = cast<TernaryOpExpr>(birInst);
 	ASSERT_TRUE(birTernaryOpExpr);
 	ASSERT_TRUE(areTernaryOperandsInCorrectOrder(birTernaryOpExpr));
+}
+
+TEST_F(LLVMInstructionsConverterTests,
+PointerInstPointeeMetadataOverridesTypedPointerElementType)
+{
+	auto* i32 = llvm::Type::getInt32Ty(context);
+	auto* i32Ptr = llvm::Type::getInt32PtrTy(context);
+	auto src = std::make_unique<llvm::Argument>(i32, "addr");
+	auto llvmInst = UPtr<llvm::IntToPtrInst>(new llvm::IntToPtrInst(src.get(), i32Ptr));
+	llvmInst->setMetadata("retdec.pointee", llvm::MDNode::get(context, {
+			llvm::MDString::get(context, "i8")}));
+
+	auto var = converter->convertValueToVariable(llvmInst.get());
+
+	ASSERT_TRUE(var);
+	auto birPtr = cast<PointerType>(var->getType());
+	ASSERT_TRUE(birPtr);
+	auto birInt = cast<IntType>(birPtr->getContainedType());
+	ASSERT_TRUE(birInt);
+	EXPECT_EQ(8u, birInt->getSize());
+}
+
+TEST_F(LLVMInstructionsConverterTests,
+LoadInstPointeeMetadataDoesNotWrapLoadedValueAsPointer)
+{
+	auto* i32Ptr = llvm::Type::getInt32PtrTy(context);
+	auto src = std::make_unique<llvm::Argument>(i32Ptr, "p");
+	auto llvmInst = UPtr<llvm::LoadInst>(new llvm::LoadInst(src.get()));
+	llvmInst->setMetadata("retdec.pointee", llvm::MDNode::get(context, {
+			llvm::MDString::get(context, "i8")}));
+
+	auto var = converter->convertValueToVariable(llvmInst.get());
+
+	ASSERT_TRUE(var);
+	EXPECT_FALSE(isa<PointerType>(var->getType()));
+	auto birInt = cast<IntType>(var->getType());
+	ASSERT_TRUE(birInt);
+	EXPECT_EQ(32u, birInt->getSize());
 }
 
 } // namespace tests
