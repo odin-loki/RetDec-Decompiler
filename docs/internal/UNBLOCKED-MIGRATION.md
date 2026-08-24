@@ -150,12 +150,13 @@ Compare, FlagWrite, FlagRead, Phi, Undef`.
   (monotonic / acquire); ordinary `ldp` stays non-atomic.
   x86 `lfence`/`sfence`/`mfence` and ARM/ARM64 `dmb`/`dsb`/`isb`
   emit LLVM `fence` (`isb` is seq_cst; no I-cache model).
-  ARM `ldrex*` loads are atomic; `strex`/`strexb`/`strexh` are
-  atomic stores plus status 0. `strexd` stays untranslated.
+  ARM `ldrex*` loads are atomic; `strex`/`strexb`/`strexh`/`strexd`
+  are atomic stores plus status 0. `ldaexd` is an acquire pair load;
+  `stlexd` is a release pair store.
   ARM `swp`/`swpb` emit `atomicrmw xchg` (seq_cst).
   ARM `lda*`/`ldaex*` are acquire loads; `stl*` are release
   stores; `stlex*` are release exclusive stores plus status 0.
-  `ldaexd`/`stlexd` stay untranslated.
+  `ldaexd`/`stlexd` are packed `i64` acquire-load / release-store.
   `lock bts`/`btr`/`btc` mem emit `atomicrmw` or/and/xor.
   MIPS `ll`/`lld` are atomic loads; `sc`/`scd` are atomic stores
   plus status 1.
@@ -241,7 +242,8 @@ N17 is mean selected-token probability for the whole generation.
   `stwcx`) and x86 `lock not`/`sub`/`bts` also have MD tests.
   Remaining A8 lift paths (`ldrex`/`lda*`/`stl*`/`swpb`, `ldxp`/
   `ldaxp`, `lock btr`/`btc`/`inc`/`cmpxchg8b`/`16b`) have MD tests.
-  `STREXD`/`LDAEXD`/`STLEXD` stay untranslated (pair packing).
+  `STREXD`/`STLEXD` pack `Rt|(Rt2<<32)` like ARM64 `stxp`; `LDAEXD`
+  is an acquire pair load.
 - Value-based readers (`inst_opt`, `entry_alloca`, ABI, `ir_modifier`,
   `simple_types`) call `pointeeType` first. `pointeeType` also uses
   `AllocaInst::getAllocatedType` and `GlobalVariable::getValueType`.

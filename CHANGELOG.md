@@ -8,10 +8,18 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Wave 5 leftover (A8): ARM `strexd`/`stlexd` pack `Rt|(Rt2<<32)`
+  into one atomic `i64` store plus status 0. `ldaexd` is an
+  acquire exclusive pair load via `translateLdrd`. Tests:
+  `StrexdStoreIsAtomic`, `StrexdAttachesPointeeMetadata`,
+  `ARM_INS_STREXD`, `StlexdStoreIsAtomic`,
+  `StlexdAttachesPointeeMetadata`, `ARM_INS_STLEXD`,
+  `LdaexdLoadIsAtomic`, `LdaexdLoadAttachesPointeeMetadata`,
+  `ARM_INS_LDAEXD`.
 - Track 1 leftover: remaining A8 lift tests assert `retdec.pointee`
   (ARM `ldrex`/`lda`/`ldaex`/`stl`/`stlex`/`swpb`, ARM64 `ldxp`/
   `ldaxp`, x86 `lock btr`/`btc`/`inc`/`cmpxchg8b`/`cmpxchg16b`).
-  `STREXD`/`LDAEXD`/`STLEXD` stay untranslated. Tests:
+  Tests:
   `LdrexLoadAttachesPointeeMetadata`, `LdaLoadAttachesPointeeMetadata`,
   `LdaexLoadAttachesPointeeMetadata`, `StlAttachesPointeeMetadata`,
   `StlexAttachesPointeeMetadata`, `SwpbAttachesPointeeMetadata`,
@@ -74,7 +82,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Wave 5 leftover (A8): ARM `lda`/`ldab`/`ldah`/`ldaex`/`ldaexb`/
   `ldaexh` are acquire loads. `stl`/`stlb`/`stlh` are release
   stores. `stlex`/`stlexb`/`stlexh` are release exclusive stores
-  plus status 0. `ldaexd`/`stlexd` stay untranslated. Tests:
+  plus status 0. `ldaexd` is an acquire pair load; `stlexd` is a
+  release pair store. Tests:
   `LdaLoadIsAtomic`, `ARM_INS_LDA`, `LdaexLoadIsAtomic`,
   `StlStoreIsAtomic`, `ARM_INS_STL`, `StlexStoreIsAtomic`,
   `ARM_INS_STLEX`.

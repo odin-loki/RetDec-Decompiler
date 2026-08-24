@@ -2627,6 +2627,71 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, LdaexLoadAttachesPointeeMetadata)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdaexdLoadIsAtomic)
+{
+	ONLY_MODE_ARM;
+	// ldaexd r0, r1, [r2] — Keystone ARM mode lacks v8; encoding from ARM ARM.
+	auto* f = translate({0x9f, 0x0e, 0xb2, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic())
+			{
+				found = true;
+				EXPECT_EQ(l->getOrdering(), AtomicOrdering::Acquire);
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdaexdLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate({0x9f, 0x0e, 0xb2, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDAEXD)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R2, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x1234567890abcdef_qw},
+	});
+
+	emulate_bin("9f 0e b2 e1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x12345678},
+		{ARM_REG_R1, 0x90abcdef},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 //
 // ARM_INS_LDRB
 //
@@ -3027,6 +3092,70 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_STREX)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StrexdStoreIsAtomic)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("strexd r0, r2, r3, [r1]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic())
+			{
+				found = true;
+				EXPECT_EQ(s->getOrdering(), AtomicOrdering::Monotonic);
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StrexdAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("strexd r0, r2, r3, [r1]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic() && s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_STREXD)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R2, 0x12345678},
+		{ARM_REG_R3, 0x90abcdef},
+		{ARM_REG_R1, 0x1000},
+	});
+
+	emulate("strexd r0, r2, r3, [r1]");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2, ARM_REG_R3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0},
+	});
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x90abcdef12345678_qw}
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, StlStoreIsAtomic)
 {
 	ONLY_MODE_ARM;
@@ -3149,6 +3278,71 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_STLEX)
 	EXPECT_NO_MEMORY_LOADED();
 	EXPECT_JUST_MEMORY_STORED({
 		{0x1000, 0x12345678_dw}
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StlexdStoreIsAtomic)
+{
+	ONLY_MODE_ARM;
+	// stlexd r0, r2, r3, [r1] — Keystone ARM mode lacks v8; encoding from ARM ARM.
+	auto* f = translate({0x92, 0x0e, 0xa1, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic())
+			{
+				found = true;
+				EXPECT_EQ(s->getOrdering(), AtomicOrdering::Release);
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StlexdAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate({0x92, 0x0e, 0xa1, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic() && s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_STLEXD)
+{
+	ONLY_MODE_ARM;
+
+	setRegisters({
+		{ARM_REG_R2, 0x12345678},
+		{ARM_REG_R3, 0x90abcdef},
+		{ARM_REG_R1, 0x1000},
+	});
+
+	emulate_bin("92 0e a1 e1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2, ARM_REG_R3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0},
+	});
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x90abcdef12345678_qw}
 	});
 	EXPECT_NO_VALUE_CALLED();
 }
