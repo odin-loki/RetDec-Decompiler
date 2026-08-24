@@ -250,7 +250,10 @@ N17 is mean selected-token probability for the whole generation.
   `strexb`/`strexh`/`stlb`/`stlh`/`stlexb`/`stlexh`), ARM `ldrexd`,
   ARM64 remaining widths (`ldxrb`/`ldxrh`/`ldaxrh`/`ldarb`/`ldarh`/
   `stxrh`/`stlrh`/`stlxrb`/`stlxrh`), and x86 `lock dec`/`or`/
-  `xor`/`and`/`xadd` also have MD tests.
+  `xor`/`and`/`xadd` also have MD tests. x86 string lifts (`stos`/
+  `lods`/`movs`/`scas`/`cmps`, including `rep stos`/`rep movs`
+  inttoptr) also have MD tests. Remaining wired fences (`synci`,
+  `mbar`/`msync`/`tlbsync`/`ptesync`) have emit-fence tests.
 - Value-based readers (`inst_opt`, `entry_alloca`, ABI, `ir_modifier`,
   `simple_types`) call `pointeeType` first. `pointeeType` also uses
   `AllocaInst::getAllocatedType` and `GlobalVariable::getValueType`.

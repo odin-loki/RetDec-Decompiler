@@ -8,6 +8,15 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: x86 string lifts assert `retdec.pointee` (`stosd`/
+  `lodsd`/`movsd`/`scasd`/`cmpsd`, `rep stosd`/`rep movsd`). Tests:
+  `StosStoreAttachesPointeeMetadata`, `LodsLoadAttachesPointeeMetadata`,
+  `MovsStoreAttachesPointeeMetadata`, `RepStosAttachesPointeeMetadata`,
+  `RepMovsAttachesPointeeMetadata`, `ScasLoadAttachesPointeeMetadata`,
+  `CmpsLoadAttachesPointeeMetadata`. Remaining wired fences (`synci`,
+  `mbar`/`msync`/`tlbsync`/`ptesync`) emit LLVM `fence`. Tests:
+  `SynciEmitsFence`, `MbarEmitsFence`, `MsyncEmitsFence`,
+  `TlbsyncEmitsFence`, `PtesyncEmitsFence`.
 - Track 1 leftover: remaining ARM/ARM64 exclusive width and x86
   lock RMW lifts assert `retdec.pointee`. Tests:
   `LdabLoadAttachesPointeeMetadata`, `LdahLoadAttachesPointeeMetadata`,

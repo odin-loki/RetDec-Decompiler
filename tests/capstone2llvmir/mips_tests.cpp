@@ -6368,6 +6368,26 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, SyncEmitsFence)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, SynciEmitsFence)
+{
+	ALL_MODES;
+	// synci 0($a0) — Keystone MIPS32 lacks R2 synci; encoding from binutils
+	// (REGIMM / SYNCI, base=$a0, offset=0) → 0x049f0000.
+	auto* f = translate({0x00, 0x00, 0x9f, 0x04});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* fence = dyn_cast<FenceInst>(&*it))
+		{
+			found = true;
+			EXPECT_EQ(fence->getOrdering(), AtomicOrdering::SequentiallyConsistent);
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

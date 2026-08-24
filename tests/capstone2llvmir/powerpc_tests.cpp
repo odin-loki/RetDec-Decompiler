@@ -9404,6 +9404,78 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, EieioEmitsFence)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, MbarEmitsFence)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("mbar"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* fence = dyn_cast<FenceInst>(&*it))
+		{
+			found = true;
+			EXPECT_EQ(fence->getOrdering(), AtomicOrdering::SequentiallyConsistent);
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, MsyncEmitsFence)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("msync"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* fence = dyn_cast<FenceInst>(&*it))
+		{
+			found = true;
+			EXPECT_EQ(fence->getOrdering(), AtomicOrdering::SequentiallyConsistent);
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, TlbsyncEmitsFence)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("tlbsync"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* fence = dyn_cast<FenceInst>(&*it))
+		{
+			found = true;
+			EXPECT_EQ(fence->getOrdering(), AtomicOrdering::SequentiallyConsistent);
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PtesyncEmitsFence)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("ptesync"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* fence = dyn_cast<FenceInst>(&*it))
+		{
+			found = true;
+			EXPECT_EQ(fence->getOrdering(), AtomicOrdering::SequentiallyConsistent);
+			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

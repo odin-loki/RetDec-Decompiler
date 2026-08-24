@@ -14356,10 +14356,150 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FXTRACT)
 	});
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, StosStoreAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("stosd"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LodsLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lodsd"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, MovsStoreAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("movs dword ptr es:[edi], dword ptr [esi]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, RepStosAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("rep stosd"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* i2p = dyn_cast<IntToPtrInst>(&*it))
+		{
+			if (i2p->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, RepMovsAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("rep movs dword ptr es:[edi], dword ptr [esi]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* i2p = dyn_cast<IntToPtrInst>(&*it))
+		{
+			if (i2p->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, ScasLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("scasd"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, CmpsLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("cmps dword ptr [esi], dword ptr es:[edi]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 //
 // TODO:
 // X86_INS_STOSB, X86_INS_STOSW, X86_INS_STOSD, X86_INS_STOSQ
-// + REP prefix variants
+// + REP prefix variants (emulate)
 //
 
 //
