@@ -173,6 +173,7 @@ bool PhiToSelect::tryConvert(PHINode* phi) {
     }
 
     Value* sel = irb.CreateSelect(cond, trueVal, falseVal, phi->getName() + ".sel");
+    attachPointeeOnPointerCast(sel);
     phi->replaceAllUsesWith(sel);
     phi->eraseFromParent();
     return true;

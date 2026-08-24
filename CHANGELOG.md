@@ -8,6 +8,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: `PhiToSelect` pointer `select` attaches
+  `retdec.pointee`. Test: `pointerSelectAttachesPointeeMetadata`.
 - Track 1 leftover: `PhiRemover` demote load/store of the reg2mem
   alloca attach `retdec.pointee`. Test:
   `demotePhiLoadStoreAttachesPointeeMetadata`.

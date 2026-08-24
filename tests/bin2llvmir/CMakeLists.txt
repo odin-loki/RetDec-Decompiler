@@ -9,6 +9,7 @@ add_executable(tests-bin2llvmir
 	optimizations/inst_opt/inst_opt_tests.cpp
 	optimizations/param_return/param_return_tests.cpp
 	optimizations/phi_remover/phi_remover_tests.cpp
+	optimizations/phi_to_select/phi_to_select_tests.cpp
 	optimizations/simple_types/simple_types_tests.cpp
 	optimizations/stack_pointer_ops/stack_pointer_ops_tests.cpp
 	optimizations/unreachable_funcs/unreachable_funcs_tests.cpp
