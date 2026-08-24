@@ -245,3 +245,57 @@ TEST(LlvmToSsa, CmpXchgMapsToLock)
 	ASSERT_NE(fn, nullptr);
 	EXPECT_GE(countOp(*fn, IrInstr::Op::Lock), 1);
 }
+
+constexpr const char* kInsnAddrIR = R"IR(
+target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+define i32 @addr(i32 %a, i32 %b) {
+  %r = add i32 %a, %b, !insn.addr !0
+  ret i32 %r
+}
+!0 = !{i64 4096}
+)IR";
+
+constexpr const char* kRetdecAddrIR = R"IR(
+target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+define i32 @legacy(i32 %a, i32 %b) {
+  %r = add i32 %a, %b, !retdec.addr !0
+  ret i32 %r
+}
+!0 = !{i64 8192}
+)IR";
+
+uint64_t firstOpVma(const SSAFunction& fn, IrInstr::Op op)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+			if (i && i->op == op) return i->vma;
+	}
+	return 0;
+}
+
+TEST(LlvmToSsa, InsnAddrMetadataSetsVma)
+{
+	llvm::LLVMContext ctx;
+	auto module = parseIR(ctx, kInsnAddrIR);
+	ASSERT_NE(module, nullptr);
+	auto ssa = buildSsaModule(*module);
+	ASSERT_NE(ssa, nullptr);
+	const SSAFunction* fn = findFn(*ssa, "addr");
+	ASSERT_NE(fn, nullptr);
+	EXPECT_EQ(firstOpVma(*fn, IrInstr::Op::Add), 4096u);
+}
+
+TEST(LlvmToSsa, RetdecAddrMetadataStillSetsVma)
+{
+	llvm::LLVMContext ctx;
+	auto module = parseIR(ctx, kRetdecAddrIR);
+	ASSERT_NE(module, nullptr);
+	auto ssa = buildSsaModule(*module);
+	ASSERT_NE(ssa, nullptr);
+	const SSAFunction* fn = findFn(*ssa, "legacy");
+	ASSERT_NE(fn, nullptr);
+	EXPECT_EQ(firstOpVma(*fn, IrInstr::Op::Add), 8192u);
+}

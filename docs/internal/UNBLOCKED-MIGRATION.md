@@ -61,7 +61,7 @@ Same pattern as `insn.addr` / `x87.depth`:
 |------|-----|------|
 | `insn.addr` | `asm_inst_remover.cpp`, `phi_remover.cpp` | `jump_table_recovery.cpp`, `LLVMSupport::getInstAddress` |
 | `x87.depth` | `x87_fpu_ext.cpp` | write-only today |
-| `retdec.addr` | never set | orphan reader in `llvm_to_ssa.cpp` |
+| `retdec.addr` | never set | `llvm_to_ssa` fallback after `insn.addr` |
 | **`retdec.pointee`** | `llvm_utils::setPointeeTypeMetadata` | `getPointeeTypeMetadata` / `pointeeType` |
 
 Helpers live in existing `include/retdec/bin2llvmir/utils/llvm.h`
@@ -286,6 +286,8 @@ N17 is mean selected-token probability for the whole generation.
   including always-inlined `bitcast` / `addrspacecast` and one-use
   `inttoptr`) use the same MD for the destination type.
   `convert(PointerType*)` stays Type*-only.
+  `llvm_to_ssa` prefers `insn.addr` for `IrInstr::vma` (`retdec.addr`
+  is a fallback).
 - **No** `cmake/deps.cmake` LLVM URL change.
 - `IrInstr::Op::Rem` / `Op::Lock` appended before `Undef`.
   `SRem`/`URem`/`FRem` → `Rem`; atomics/fence → `Lock`.

@@ -8,6 +8,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: `llvm_to_ssa` reads `insn.addr` for `IrInstr::vma`
+  (`retdec.addr` remains a fallback). Tests: `InsnAddrMetadataSetsVma`,
+  `RetdecAddrMetadataStillSetsVma`.
 - Track 1 leftover: llvmir2hll `determineVariableType` does not wrap
   pointer-typed loads with `retdec.pointee` (MD is the loaded type).
   Test: `PointerLoadInstPointeeMetadataDoesNotDoubleWrap`.

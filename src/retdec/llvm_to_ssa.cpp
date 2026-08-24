@@ -11,6 +11,7 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/InstrTypes.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/IR/Metadata.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Support/raw_ostream.h>
 
@@ -59,6 +60,22 @@ static ssa::IrInstr::Op binOp(unsigned llvmOpc)
 	}
 }
 
+/// Address from `insn.addr` (what bin2llvmir writes) or orphan `retdec.addr`.
+static uint64_t addressFromMetadata(const llvm::Instruction& li)
+{
+	auto fromKind = [&](const char* kind) -> uint64_t {
+		const llvm::MDNode* md = li.getMetadata(kind);
+		if (!md || md->getNumOperands() < 1)
+			return 0;
+		if (auto* ci = llvm::mdconst::dyn_extract<llvm::ConstantInt>(md->getOperand(0)))
+			return ci->getZExtValue();
+		return 0;
+	};
+	if (uint64_t a = fromKind("insn.addr"))
+		return a;
+	return fromKind("retdec.addr");
+}
+
 /// Translate one LLVM instruction into an ssa::IrInstr and append it to
 /// the given basic block.  Returns nullptr if the instruction should be
 /// skipped (e.g. alloca, getelementptr, unreachable).
@@ -66,21 +83,12 @@ static ssa::IrInstr* translateInstr(const llvm::Instruction& li, ssa::SSAFunctio
 {
 	using Op = ssa::IrInstr::Op;
 
-	// Determine VMA: use debug-info location if present; otherwise 0.
+	// Determine VMA: debug-info line is a proxy; real VMA is `insn.addr`.
 	uint64_t vma = 0;
 	if (const llvm::DebugLoc& loc = li.getDebugLoc())
-		vma = loc.getLine(); // line is a proxy; real VMA comes from metadata
-
-	// Try to read the retdec address metadata attached by bin2llvmir.
-	if (const auto* md = li.getMetadata("retdec.addr"))
-	{
-		if (md->getNumOperands() > 0)
-		{
-			if (const auto* ci = llvm::dyn_cast<llvm::ConstantInt>(
-					llvm::dyn_cast<llvm::ValueAsMetadata>(md->getOperand(0).get())->getValue()))
-				vma = ci->getZExtValue();
-		}
-	}
+		vma = loc.getLine();
+	if (uint64_t a = addressFromMetadata(li))
+		vma = a;
 
 	Op op = Op::Assign;
 	std::string calleeStr;
