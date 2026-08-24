@@ -2829,6 +2829,26 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, LwarxLoadAttachesPointeeMetadata)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, LdarxLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_64;
+	auto* f = translate(assemble("ldarx 0, 1, 2"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LWARX)
 {
 	ALL_MODES;
@@ -3826,6 +3846,26 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, StwcxAttachesPointeeMetadata)
 {
 	ALL_MODES;
 	auto* f = translate(assemble("stwcx. 0, 1, 2"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic() && s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, StdcxAttachesPointeeMetadata)
+{
+	ONLY_MODE_64;
+	auto* f = translate(assemble("stdcx. 0, 1, 2"));
 	ASSERT_NE(nullptr, f);
 	bool found = false;
 	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)

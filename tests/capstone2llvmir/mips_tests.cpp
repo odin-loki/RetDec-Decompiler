@@ -2207,6 +2207,26 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, LlLoadAttachesPointeeMetadata)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, LldLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_64;
+	auto* f = translate(assemble("lld $1, 0x8($2)"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LL)
 {
 	ALL_MODES;
@@ -2620,6 +2640,26 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, ScAttachesPointeeMetadata)
 {
 	ALL_MODES;
 	auto* f = translate(assemble("sc $1, 0x8($2)"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic() && s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, ScdAttachesPointeeMetadata)
+{
+	ONLY_MODE_64;
+	auto* f = translate(assemble("scd $1, 0x8($2)"));
 	ASSERT_NE(nullptr, f);
 	bool found = false;
 	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)

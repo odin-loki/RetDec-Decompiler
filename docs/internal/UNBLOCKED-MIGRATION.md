@@ -243,7 +243,8 @@ N17 is mean selected-token probability for the whole generation.
   Remaining A8 lift paths (`ldrex`/`lda*`/`stl*`/`swpb`, `ldxp`/
   `ldaxp`, `lock btr`/`btc`/`inc`/`cmpxchg8b`/`16b`) have MD tests.
   `STREXD`/`STLEXD` pack `Rt|(Rt2<<32)` like ARM64 `stxp`; `LDAEXD`
-  is an acquire pair load.
+  is an acquire pair load. ARM64 `ldaxr`/`ldar`/`stxr`/`stlr`, MIPS
+  `lld`/`scd`, and PowerPC `ldarx`/`stdcx` also have MD tests.
 - Value-based readers (`inst_opt`, `entry_alloca`, ABI, `ir_modifier`,
   `simple_types`) call `pointeeType` first. `pointeeType` also uses
   `AllocaInst::getAllocatedType` and `GlobalVariable::getValueType`.
