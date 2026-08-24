@@ -258,7 +258,8 @@ N17 is mean selected-token probability for the whole generation.
   `lds`). Remaining x86 `lcall`/`pusha`/`popa`/`pushf`/`popf`/
   `fxsave`/`fxrstor` and ARM `push`/`pop`/`ldm`/`stm` also have MD
   tests. ARM64 `ldp`/`stp` and PowerPC indexed `lwzx`/`stwx` also
-  have MD tests. Remaining wired fences (`synci`,
+  have MD tests. Remaining ARM `ldrd`/`strd`, x86 memory `ljmp`/`retf`,
+  and PowerPC `lhbrx` also have MD tests. Remaining wired fences (`synci`,
   `mbar`/`msync`/`tlbsync`/`ptesync`) have emit-fence tests.
 - Value-based readers (`inst_opt`, `entry_alloca`, ABI, `ir_modifier`,
   `simple_types`) call `pointeeType` first. `pointeeType` also uses

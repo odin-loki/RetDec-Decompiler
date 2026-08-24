@@ -9516,6 +9516,26 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, StwxStoreAttachesPointeeMetadata)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, LhbrxLoadAttachesPointeeMetadata)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("lhbrx 0, 1, 2"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

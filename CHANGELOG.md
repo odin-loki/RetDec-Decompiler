@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: remaining ARM `ldrd`/`strd`, x86 memory `ljmp`/`retf`,
+  and PowerPC `lhbrx` assert `retdec.pointee`. Tests:
+  `LdrdLoadAttachesPointeeMetadata`, `StrdStoreAttachesPointeeMetadata`,
+  `LjmpLoadAttachesPointeeMetadata`, `RetfLoadAttachesPointeeMetadata`,
+  `LhbrxLoadAttachesPointeeMetadata`.
 - Track 1 leftover: ARM64 `ldp`/`stp` and PowerPC indexed `lwzx`/`stwx`
   assert `retdec.pointee`. Tests: `LdpLoadAttachesPointeeMetadata`,
   `StpStoreAttachesPointeeMetadata`, `LwzxLoadAttachesPointeeMetadata`,

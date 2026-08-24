@@ -5997,6 +5997,46 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, StmStoreAttachesPointeeMetadata)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdrdLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("ldrd r0, r1, [r2]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StrdStoreAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("strd r0, r1, [r2]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

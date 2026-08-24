@@ -13777,6 +13777,26 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, RetLoadAttachesPointeeMetadata)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, RetfLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("retf"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, LdsLoadAttachesPointeeMetadata)
 {
 	ONLY_MODE_32;
@@ -13808,6 +13828,26 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, LcallPushAttachesPointeeMetadata)
 		if (auto* s = dyn_cast<StoreInst>(&*it))
 		{
 			if (s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LjmpLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("ljmp dword ptr [0x1000]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
 			{
 				found = true;
 				break;
