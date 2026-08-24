@@ -30,6 +30,7 @@ class IdiomsLibgcc : public llvm::ModulePass
 	public:
 		static char ID;
 		IdiomsLibgcc();
+		~IdiomsLibgcc() override;
 		virtual bool runOnModule(llvm::Module& M) override;
 		bool runOnModuleCustom(llvm::Module& M, Config* c, Abi* abi);
 

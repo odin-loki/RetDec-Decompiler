@@ -51,6 +51,9 @@ class IdiomsLibgccImpl
 				llvm::Instruction* orig,
 				std::initializer_list<llvm::Value*> news);
 
+		llvm::Value* loadReg(llvm::GlobalVariable* reg, llvm::CallInst* call);
+		llvm::Value* storeReg(llvm::Value* val, llvm::GlobalVariable* reg, llvm::CallInst* call);
+
 		void replaceResultUses(llvm::CallInst* c, llvm::Instruction* r);
 
 		template<typename N>
@@ -255,53 +258,76 @@ void IdiomsLibgccImpl::log(
 	}
 }
 
+llvm::Value* IdiomsLibgccImpl::loadReg(llvm::GlobalVariable* reg, llvm::CallInst* call)
+{
+	auto* l = new llvm::LoadInst(reg, "", call);
+	if (auto* ptee = llvm_utils::pointeeType(reg))
+	{
+		llvm_utils::setPointeeTypeMetadata(l, ptee);
+	}
+	return l;
+}
+
+llvm::Value* IdiomsLibgccImpl::storeReg(
+		llvm::Value* val,
+		llvm::GlobalVariable* reg,
+		llvm::CallInst* call)
+{
+	auto* s = new llvm::StoreInst(val, reg, call);
+	if (auto* ptee = llvm_utils::pointeeType(reg))
+	{
+		llvm_utils::setPointeeTypeMetadata(s, ptee);
+	}
+	return s;
+}
+
 template<>
 llvm::Value* IdiomsLibgccImpl::getOp0<std::int32_t>(llvm::CallInst* call)
 {
-	return new llvm::LoadInst(op0Single, "", call);
+	return loadReg(op0Single, call);
 }
 template<>
 llvm::Value* IdiomsLibgccImpl::getOp0<std::int64_t>(llvm::CallInst* call)
 {
-	return new llvm::LoadInst(op0Double, "", call);
+	return loadReg(op0Double, call);
 }
 template<>
 llvm::Value* IdiomsLibgccImpl::getOp0<float>(llvm::CallInst* call)
 {
 	auto* t = Type::getFloatTy(call->getContext());
-	auto* l = new llvm::LoadInst(op0Single, "", call);
+	auto* l = loadReg(op0Single, call);
 	return IrModifier::convertValueToType(l, t, call);
 }
 template<>
 llvm::Value* IdiomsLibgccImpl::getOp0<double>(llvm::CallInst* call)
 {
 	auto* t = Type::getDoubleTy(call->getContext());
-	auto* l = new llvm::LoadInst(op0Double, "", call);
+	auto* l = loadReg(op0Double, call);
 	return IrModifier::convertValueToType(l, t, call);
 }
 
 template<>
 llvm::Value* IdiomsLibgccImpl::getOp1<std::int32_t>(llvm::CallInst* call)
 {
-	return new llvm::LoadInst(op1Single, "", call);
+	return loadReg(op1Single, call);
 }
 template<>
 llvm::Value* IdiomsLibgccImpl::getOp1<std::int64_t>(llvm::CallInst* call)
 {
-	return new llvm::LoadInst(op1Double, "", call);
+	return loadReg(op1Double, call);
 }
 template<>
 llvm::Value* IdiomsLibgccImpl::getOp1<float>(llvm::CallInst* call)
 {
 	auto* t = Type::getFloatTy(call->getContext());
-	auto* l = new llvm::LoadInst(op1Single, "", call);
+	auto* l = loadReg(op1Single, call);
 	return IrModifier::convertValueToType(l, t, call);
 }
 template<>
 llvm::Value* IdiomsLibgccImpl::getOp1<double>(llvm::CallInst* call)
 {
 	auto* t = Type::getDoubleTy(call->getContext());
-	auto* l = new llvm::LoadInst(op1Double, "", call);
+	auto* l = loadReg(op1Double, call);
 	return IrModifier::convertValueToType(l, t, call);
 }
 
@@ -314,7 +340,7 @@ llvm::Value* IdiomsLibgccImpl::getRes0<std::int32_t>(
 			res,
 			llvm_utils::pointeeType(res0Single),
 			call);
-	return new llvm::StoreInst(c, res0Single, call);
+	return storeReg(c, res0Single, call);
 }
 template<>
 llvm::Value* IdiomsLibgccImpl::getRes0<std::int64_t>(
@@ -325,7 +351,7 @@ llvm::Value* IdiomsLibgccImpl::getRes0<std::int64_t>(
 			res,
 			llvm_utils::pointeeType(res0Double),
 			call);
-	return new llvm::StoreInst(c, res0Double, call);
+	return storeReg(c, res0Double, call);
 }
 template<>
 llvm::Value* IdiomsLibgccImpl::getRes0<float>(
@@ -336,7 +362,7 @@ llvm::Value* IdiomsLibgccImpl::getRes0<float>(
 			res,
 			llvm_utils::pointeeType(res0Single),
 			call);
-	return new llvm::StoreInst(c, res0Single, call);
+	return storeReg(c, res0Single, call);
 }
 template<>
 llvm::Value* IdiomsLibgccImpl::getRes0<double>(
@@ -345,7 +371,7 @@ llvm::Value* IdiomsLibgccImpl::getRes0<double>(
 {
 	auto* resType = llvm_utils::pointeeType(res0Double);
 	auto* c = IrModifier::convertValueToType(res, resType, call);
-	return new llvm::StoreInst(c, res0Double, call);
+	return storeReg(c, res0Double, call);
 }
 
 template<>
@@ -357,7 +383,7 @@ llvm::Value* IdiomsLibgccImpl::getRes1<std::int32_t>(
 			res,
 			llvm_utils::pointeeType(res1Single),
 			call);
-	return new llvm::StoreInst(c, res1Single, call);
+	return storeReg(c, res1Single, call);
 }
 template<>
 llvm::Value* IdiomsLibgccImpl::getRes1<std::int64_t>(
@@ -368,7 +394,7 @@ llvm::Value* IdiomsLibgccImpl::getRes1<std::int64_t>(
 			res,
 			llvm_utils::pointeeType(res1Double),
 			call);
-	return new llvm::StoreInst(c, res1Double, call);
+	return storeReg(c, res1Double, call);
 }
 
 void IdiomsLibgccImpl::replaceResultUses(llvm::CallInst* c, llvm::Instruction* r)
@@ -1249,6 +1275,8 @@ bool IdiomsLibgcc::checkFunctionToActionMap(const Fnc2Action& fnc2action)
 	}
 	return false;
 }
+
+IdiomsLibgcc::~IdiomsLibgcc() = default;
 
 IdiomsLibgcc::IdiomsLibgcc() :
 		ModulePass(ID),

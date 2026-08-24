@@ -6,6 +6,7 @@
 */
 
 #include "retdec/bin2llvmir/optimizations/idioms_libgcc/idioms_libgcc.h"
+#include "retdec/bin2llvmir/utils/llvm.h"
 #include "bin2llvmir/utils/llvmir_tests.h"
 
 using namespace ::testing;
@@ -65,6 +66,45 @@ TEST_F(IdiomsLibgccTests, checkFunctionToActionMapNotMisorderedElementPassTheTes
 	};
 
 	EXPECT_FALSE(IdiomsLibgcc::checkFunctionToActionMap(f2a));
+}
+
+TEST_F(IdiomsLibgccTests, divsi3RegisterLoadStoreAttachesPointeeMetadata)
+{
+	parseInput(R"(
+		@r0 = global i32 0
+		@r1 = global i32 0
+		declare i32 @__divsi3(i32, i32)
+		define void @fnc() {
+			%c = call i32 @__divsi3(i32 10, i32 3)
+			ret void
+		}
+	)");
+	auto c = config::Config::fromJsonString(R"({
+		"architecture" : {
+			"bitSize" : 32,
+			"endian" : "little",
+			"name" : "arm"
+		}
+	})");
+	auto config = Config::fromConfig(module.get(), c);
+	auto abi = AbiProvider::addAbi(module.get(), &config);
+	abi->addRegister(ARM_REG_R0, getGlobalByName("r0"));
+	abi->addRegister(ARM_REG_R1, getGlobalByName("r1"));
+
+	IdiomsLibgcc pass;
+	bool ret = pass.runOnModuleCustom(*module, &config, abi);
+	EXPECT_TRUE(ret);
+
+	auto* i32 = Type::getInt32Ty(context);
+	auto* l0 = getNthInstruction<LoadInst>();
+	auto* l1 = getNthInstruction<LoadInst>(1u);
+	auto* s0 = getNthInstruction<StoreInst>();
+	ASSERT_NE(nullptr, l0);
+	ASSERT_NE(nullptr, l1);
+	ASSERT_NE(nullptr, s0);
+	EXPECT_EQ(i32, llvm_utils::getPointeeTypeMetadata(l0));
+	EXPECT_EQ(i32, llvm_utils::getPointeeTypeMetadata(l1));
+	EXPECT_EQ(i32, llvm_utils::getPointeeTypeMetadata(s0));
 }
 
 } // namespace tests

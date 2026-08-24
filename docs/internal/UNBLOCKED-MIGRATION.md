@@ -272,7 +272,8 @@ N17 is mean selected-token probability for the whole generation.
   pass `LoadInst`/`StoreInst` writers attach MD on the access
   (`inst_opt` bitcast load/store, `IrModifier` aggregate reload,
   `struct_recovery`, `entry_alloca`, `stack`, `value_protect`,
-  decoder, syscalls, `cond_branch_opt`). `PhiRemover` demote
+  decoder, syscalls, `cond_branch_opt`). `IdiomsLibgcc` register
+  load/store of libgcc operand/result GVs also attach MD. `PhiRemover` demote
   load/store of the reg2mem alloca also attach MD. Pointer
   `SelectInst` from `PhiToSelect` attaches MD too. `EntryAlloca`
   Pass 5 stamps pointer `SelectInst` the same way. Pass 5b stamps
