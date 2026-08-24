@@ -2467,6 +2467,46 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, LdrexLoadAttachesPointeeMetadata)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdrexbLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("ldrexb r0, [r1]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdrexhLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("ldrexh r0, [r1]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, LdrLoadIsNotAtomic)
 {
 	ONLY_MODE_ARM;

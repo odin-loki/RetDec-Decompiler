@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: ARM64 `stlxp`/`ldaxrb`/`stxrb`/`stlrb` and ARM
+  `ldrexb`/`ldrexh` assert `retdec.pointee`. Tests:
+  `StlxpAttachesPointeeMetadata`,
+  `LdaxrbLoadAttachesPointeeMetadata`, `StxrbAttachesPointeeMetadata`,
+  `StlrbAttachesPointeeMetadata`, `LdrexbLoadAttachesPointeeMetadata`,
+  `LdrexhLoadAttachesPointeeMetadata`.
 - Track 1 leftover: `IrModifier::convertValueToType` attaches
   `retdec.pointee` on non-constant pointer `bitcast` /
   `addrspacecast`. Test:
