@@ -59,6 +59,20 @@ void attachPointeeOnPointerCast(Value* v)
 	llvm_utils::setPointeeTypeMetadata(i, pt->getPointerElementType());
 }
 
+void attachPointeeOnPointerSelect(SelectInst* sel, bool& changed)
+{
+	if (!sel->getType()->isPointerTy())
+	{
+		return;
+	}
+	if (llvm_utils::getPointeeTypeMetadata(sel))
+	{
+		return;
+	}
+	attachPointeeOnPointerCast(sel);
+	changed = true;
+}
+
 } // namespace
 
 char EntryAlloca::ID = 0;
@@ -520,7 +534,10 @@ bool EntryAlloca::runOnModule(Module& M)
 			Value* tVal = sel->getTrueValue();
 			Value* fVal = sel->getFalseValue();
 			if (tVal->getType() == resTy && fVal->getType() == resTy)
+			{
+				attachPointeeOnPointerSelect(sel, changed);
 				continue;
+			}
 
 			IRBuilder<> irb(sel);
 			Value* newT = tVal;
@@ -548,6 +565,7 @@ bool EntryAlloca::runOnModule(Module& M)
 			{
 				sel->setOperand(1, newT);
 				sel->setOperand(2, newF);
+				attachPointeeOnPointerSelect(sel, changed);
 				changed = true;
 			}
 		}

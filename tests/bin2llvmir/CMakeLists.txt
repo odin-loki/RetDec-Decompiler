@@ -3,6 +3,7 @@ add_executable(tests-bin2llvmir
 	analyses/reaching_definitions_tests.cpp
 	optimizations/asm_inst_remover/asm_inst_remover_tests.cpp
 	optimizations/decoder/decoder_linking_section_names_tests.cpp
+	optimizations/entry_alloca/entry_alloca_tests.cpp
 	optimizations/idioms_libgcc/idioms_libgcc_tests.cpp
 	optimizations/jump_table_recovery/jump_table_recovery_tests.cpp
 	optimizations/inst_opt/inst_opt_pass_tests.cpp
