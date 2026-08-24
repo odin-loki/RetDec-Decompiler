@@ -8,6 +8,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: `PhiRemover` demote load/store of the reg2mem
+  alloca attach `retdec.pointee`. Test:
+  `demotePhiLoadStoreAttachesPointeeMetadata`.
 - Track 1 leftover: llvmir2hll inlined pointer casts
   (`convertCastInstToExpression`) prefer `retdec.pointee` for the
   destination type. Tests:

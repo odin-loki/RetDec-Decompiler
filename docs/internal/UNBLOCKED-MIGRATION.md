@@ -266,13 +266,14 @@ N17 is mean selected-token probability for the whole generation.
   `AllocaInst::getAllocatedType` and `GlobalVariable::getValueType`.
   `IrModifier::convertValueToType` attaches `retdec.pointee` on
   instruction `inttoptr` and pointer `bitcast`/`addrspacecast`
-  (not `ConstantExpr`). Remaining pointer-cast writers
+  (not `ConstantExpr`).   Remaining pointer-cast writers
   (`entry_alloca`, `value_protect`, `phi_remover`, `inst_opt`,
   `phi_to_select`, `struct_recovery`) do the same. Remaining
   pass `LoadInst`/`StoreInst` writers attach MD on the access
   (`inst_opt` bitcast load/store, `IrModifier` aggregate reload,
   `struct_recovery`, `entry_alloca`, `stack`, `value_protect`,
-  decoder, syscalls, `cond_branch_opt`). `param_return` / x87
+  decoder, syscalls, `cond_branch_opt`). `PhiRemover` demote
+  load/store of the reg2mem alloca also attach MD. `param_return` / x87
   register GV loads stay on the alloca/GV typed-pointer fallback.
   `hasFunctionTypeOrPointer` consults `pointeeType` on return/arg
   slots before the Type* function-pointer check.

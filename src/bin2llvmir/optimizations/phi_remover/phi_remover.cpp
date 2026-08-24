@@ -251,6 +251,8 @@ bool PhiRemover::demotePhiToStack(llvm::PHINode* phi, llvm::MDNode* faddr) {
         auto* s = new llvm::StoreInst(inc, alloca, insertInsn);
         if (a.isDefined())
             s->setMetadata("insn.addr", getInstAddressMeta(a, _module));
+        if (auto* ptee = llvm_utils::pointeeType(alloca))
+            llvm_utils::setPointeeTypeMetadata(s, ptee);
     }
 
     llvm::BasicBlock::iterator InsertPt = phi->getIterator();
@@ -260,6 +262,8 @@ bool PhiRemover::demotePhiToStack(llvm::PHINode* phi, llvm::MDNode* faddr) {
     auto* l = new llvm::LoadInst(alloca, phi->getName() + ".reload", &*InsertPt);
     if (a.isDefined())
         l->setMetadata("insn.addr", getInstAddressMeta(a, _module));
+    if (auto* ptee = llvm_utils::pointeeType(alloca))
+        llvm_utils::setPointeeTypeMetadata(l, ptee);
 
     phi->replaceAllUsesWith(l);
     phi->eraseFromParent();
