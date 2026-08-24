@@ -53,7 +53,7 @@ void traceParamReturn(const std::string& msg)
 	llvm::errs().flush();
 }
 
-bool hasFunctionTypeOrPointer(Type* t)
+bool isFunctionTypeOrPointerToFunction(Type* t)
 {
 	if (t == nullptr)
 	{
@@ -68,6 +68,15 @@ bool hasFunctionTypeOrPointer(Type* t)
 		return isa<FunctionType>(p->getElementType());
 	}
 	return false;
+}
+
+bool hasFunctionTypeOrPointer(Type* t, Value* v = nullptr)
+{
+	if (isFunctionTypeOrPointerToFunction(t))
+	{
+		return true;
+	}
+	return v && isFunctionTypeOrPointerToFunction(llvm_utils::pointeeType(v));
 }
 
 }
@@ -1368,15 +1377,22 @@ void ParamReturn::applyToIr(DataFlowEntry& de)
 	}
 
 	IrModifier irm(_module, _config);
-	if (hasFunctionTypeOrPointer(retTy))
+	if (hasFunctionTypeOrPointer(retTy, de.getRetValue()))
 	{
 		traceParamReturn("applyToIr skip unsupported function-pointer return: " + fnName);
 		return;
 	}
-	if (std::any_of(
-			definitionArgTypes.begin(),
-			definitionArgTypes.end(),
-			[](Type* t){ return hasFunctionTypeOrPointer(t); }))
+	bool skipFnPtrArg = false;
+	for (std::size_t i = 0; i < definitionArgTypes.size(); ++i)
+	{
+		Value* av = i < definitionArgs.size() ? definitionArgs[i] : nullptr;
+		if (hasFunctionTypeOrPointer(definitionArgTypes[i], av))
+		{
+			skipFnPtrArg = true;
+			break;
+		}
+	}
+	if (skipFnPtrArg)
 	{
 		traceParamReturn("applyToIr skip unsupported function-pointer parameter: " + fnName);
 		return;

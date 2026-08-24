@@ -8,6 +8,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: ParamReturn `hasFunctionTypeOrPointer` consults
+  `pointeeType` on the return slot and argument slots before the
+  typed-pointer `FunctionType` check.
 - Track 1 leftover: ParamReturn indirect-call snapshots include
   `retdec.pointee` on `IrModifier` function-pointer bitcasts.
 - Track 1 leftover: remaining pass `LoadInst`/`StoreInst` writers
