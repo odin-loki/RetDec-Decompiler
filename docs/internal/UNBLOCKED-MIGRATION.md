@@ -275,7 +275,9 @@ N17 is mean selected-token probability for the whole generation.
   decoder, syscalls, `cond_branch_opt`). `PhiRemover` demote
   load/store of the reg2mem alloca also attach MD. Pointer
   `SelectInst` from `PhiToSelect` attaches MD too. `EntryAlloca`
-  Pass 5 stamps pointer `SelectInst` the same way. `param_return` / x87
+  Pass 5 stamps pointer `SelectInst` the same way. Pass 5b stamps
+  pointer `bitcast` / `inttoptr` / `addrspacecast` that still lack MD.
+  `param_return` / x87
   register GV loads stay on the alloca/GV typed-pointer fallback.
   `hasFunctionTypeOrPointer` consults `pointeeType` on return/arg
   slots before the Type* function-pointer check.

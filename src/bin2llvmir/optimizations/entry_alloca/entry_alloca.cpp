@@ -571,6 +571,35 @@ bool EntryAlloca::runOnModule(Module& M)
 		}
 	}
 
+	// -----------------------------------------------------------------------
+	// Pass 5b: Stamp retdec.pointee on pointer casts that still lack MD
+	//         (e.g. instcombine orphans after typed-pointer snapshot writers).
+	// -----------------------------------------------------------------------
+	for (Function& f : M)
+	{
+		if (f.empty()) continue;
+
+		for (inst_iterator it = inst_begin(f), e = inst_end(f); it != e; ++it)
+		{
+			Instruction* i = &*it;
+			if (!isa<BitCastInst>(i) && !isa<IntToPtrInst>(i)
+					&& !isa<AddrSpaceCastInst>(i))
+			{
+				continue;
+			}
+			if (!i->getType()->isPointerTy())
+			{
+				continue;
+			}
+			if (llvm_utils::getPointeeTypeMetadata(i))
+			{
+				continue;
+			}
+			attachPointeeOnPointerCast(i);
+			changed = true;
+		}
+	}
+
 	// Note: A previous Pass 5 (now Pass 6) attempted to lower LLVM vector operations
 	// (bitcast <vec> to iN, shufflevector, insertelement, extractelement)
 	// to scalar arithmetic before llvmir2hll saw them.  This was removed

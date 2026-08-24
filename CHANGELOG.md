@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: `EntryAlloca` stamps `retdec.pointee` on pointer
+  `bitcast` / `inttoptr` that still lack MD. Tests:
+  `pointerBitCastAttachesPointeeMetadata`,
+  `intToPtrAttachesPointeeMetadata`.
 - Track 1 leftover: `EntryAlloca` pointer `select` attaches
   `retdec.pointee`. Test: `pointerSelectAttachesPointeeMetadata`.
 - Track 1 leftover: `llvm_to_ssa` reads `insn.addr` for `IrInstr::vma`
