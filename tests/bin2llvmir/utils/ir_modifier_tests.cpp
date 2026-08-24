@@ -147,6 +147,25 @@ TEST_F(IrModifierTests, convertValueToTypePtrBitCastAttachesPointeeMetadata)
 	EXPECT_EQ(i32, llvm_utils::pointeeType(bc));
 }
 
+TEST_F(IrModifierTests, convertValueToTypeAggregateLoadAttachesPointeeMetadata)
+{
+	parseInput(R"(
+		define void @fnc() {
+			%p = alloca {i32}
+			%a = load {i32}, {i32}* %p
+			ret void
+		}
+	)");
+	auto* a = getValueByName("a");
+	auto* b = getNthInstruction<ReturnInst>();
+	auto* i32 = Type::getInt32Ty(context);
+
+	auto* conv = IrModifier::convertValueToType(a, i32, b);
+	auto* nl = dyn_cast<LoadInst>(conv);
+	ASSERT_NE(nullptr, nl);
+	EXPECT_EQ(i32, llvm_utils::getPointeeTypeMetadata(nl));
+}
+
 //
 // convertValueToAfter()
 //

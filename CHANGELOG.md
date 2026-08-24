@@ -8,6 +8,18 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: remaining pass `LoadInst`/`StoreInst` writers
+  attach `retdec.pointee` (`inst_opt` bitcast load/store,
+  `IrModifier` aggregate reload, `struct_recovery`, `entry_alloca`,
+  `stack`, `value_protect`, decoder call/switch lowering,
+  syscalls, `cond_branch_opt`). Tests:
+  `storeToBitcastPointerAttachesPointeeMetadata`,
+  `loadFromBitcastPointerAttachesPointeeMetadata`,
+  `loadFromBitcastPointerIntToPtrAttachesPointeeMetadata`,
+  `convertValueToTypeAggregateLoadAttachesPointeeMetadata`.
+  `param_return` / x87 register GV loads keep typed-pointer
+  fallback only (`pointeeType` uses `getAllocatedType` /
+  `getValueType`).
 - Track 1 leftover: x86 string lifts assert `retdec.pointee` (`stosd`/
   `lodsd`/`movsd`/`scasd`/`cmpsd`, `rep stosd`/`rep movsd`). Tests:
   `StosStoreAttachesPointeeMetadata`, `LodsLoadAttachesPointeeMetadata`,

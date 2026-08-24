@@ -17,6 +17,7 @@
 #define debug_enabled false
 #include "retdec/bin2llvmir/utils/debug.h"
 #include "retdec/bin2llvmir/utils/ir_modifier.h"
+#include "retdec/bin2llvmir/utils/llvm.h"
 #include "retdec/bin2llvmir/utils/symbolic_tree_match.h"
 
 using namespace llvm;
@@ -259,6 +260,10 @@ bool CondBranchOpt::runOnInstruction(
 	{
 		auto* r = load->getPointerOperand();
 		auto* nl = new LoadInst(r, "", br);
+		if (auto* ptee = llvm_utils::pointeeType(r))
+		{
+			llvm_utils::setPointeeTypeMetadata(nl, ptee);
+		}
 		auto* nci = ConstantInt::get(nl->getType(), ci->getZExtValue() - 1);
 
 		if (!nl->getType()->isIntegerTy() || !nci->getType()->isIntegerTy())
@@ -292,11 +297,27 @@ bool CondBranchOpt::transformConditionSub(
 	{
 		return false;
 	}
-	new StoreInst(testedVal, testedA, binOp);
-	new StoreInst(subVal, subA, binOp);
+	auto* s1 = new StoreInst(testedVal, testedA, binOp);
+	auto* s2 = new StoreInst(subVal, subA, binOp);
+	if (auto* ptee = llvm_utils::pointeeType(testedA))
+	{
+		llvm_utils::setPointeeTypeMetadata(s1, ptee);
+	}
+	if (auto* ptee = llvm_utils::pointeeType(subA))
+	{
+		llvm_utils::setPointeeTypeMetadata(s2, ptee);
+	}
 
 	auto* testedL = new LoadInst(testedA, "", br);
 	auto* subL = new LoadInst(subA, "", br);
+	if (auto* ptee = llvm_utils::pointeeType(testedA))
+	{
+		llvm_utils::setPointeeTypeMetadata(testedL, ptee);
+	}
+	if (auto* ptee = llvm_utils::pointeeType(subA))
+	{
+		llvm_utils::setPointeeTypeMetadata(subL, ptee);
+	}
 	auto* conv = IrModifier::convertValueToType(testedL, subL->getType(), br);
 
 	if (!conv->getType()->isIntegerTy() || !subL->getType()->isIntegerTy())

@@ -574,7 +574,8 @@ bool storeToBitcastPointer(llvm::Instruction* insn)
 			ptee,
 			"",
 			insn);
-	new StoreInst(conv, op, insn);
+	auto* st = new StoreInst(conv, op, insn);
+	llvm_utils::setPointeeTypeMetadata(st, ptee);
 
 	auto* bitcastI = dyn_cast<BitCastInst>(insn->getOperand(1));
 	auto* bitcastCE = dyn_cast<ConstantExpr>(insn->getOperand(1));
@@ -627,7 +628,9 @@ bool loadFromBitcastPointer(llvm::Instruction* insn)
 
 	auto* l = new LoadInst(op, "", insn);
 	l->setAlignment(cast<LoadInst>(insn)->getAlignment());
+	llvm_utils::setPointeeTypeMetadata(l, ptee);
 	auto* conv = CastInst::CreateBitOrPointerCast(l, insn->getType(), "", insn);
+	attachPointeeOnPointerCast(conv);
 	insn->replaceAllUsesWith(conv);
 
 	auto* bitcastI = dyn_cast<BitCastInst>(insn->getOperand(0));

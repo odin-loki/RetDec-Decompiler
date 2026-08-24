@@ -424,6 +424,7 @@ bool EntryAlloca::runOnModule(Module& M)
 
 			// Create a new load with the pointer's native type.
 			auto* newLoad = new LoadInst(l->getPointerOperand(), "", l);
+			llvm_utils::setPointeeTypeMetadata(newLoad, pteeTy);
 			Value* conv = nullptr;
 			if (pteeBits > loadBits)
 			{

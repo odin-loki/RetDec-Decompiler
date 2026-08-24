@@ -717,6 +717,10 @@ void ValueProtect::protectValue(
 	c->insertBefore(before);
 	auto* s = new StoreInst(c, val);
 	s->insertAfter(c);
+	if (auto* ptee = llvm_utils::pointeeType(val))
+	{
+		llvm_utils::setPointeeTypeMetadata(s, ptee);
+	}
 }
 
 /**
@@ -938,6 +942,10 @@ bool ValueProtect::unprotect()
 				}
 
 				auto* load = new LoadInst(v, "", i);
+				if (auto* ptee = llvm_utils::pointeeType(v))
+				{
+					llvm_utils::setPointeeTypeMetadata(load, ptee);
+				}
 				i->replaceAllUsesWith(load);
 			}
 

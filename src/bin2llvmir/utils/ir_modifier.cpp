@@ -278,6 +278,7 @@ Value* convertToType(
 				constExpr));
 		auto* nl = new LoadInst(c);
 		nl->insertAfter(c);
+		llvm_utils::setPointeeTypeMetadata(nl, type);
 		conv = nl;
 	}
 	else if (val->getType()->isAggregateType())
@@ -938,6 +939,10 @@ llvm::Value* IrModifier::changeObjectType(
 
 			auto* newLoad = new LoadInst(nval);
 			newLoad->insertBefore(load);
+			if (auto* ptee = llvm_utils::pointeeType(nval))
+			{
+				llvm_utils::setPointeeTypeMetadata(newLoad, ptee);
+			}
 
 			// load->getType() stays unchanged even after loaded object's type is mutated.
 			// we can use it here as a target type, but the origianl load instruction can

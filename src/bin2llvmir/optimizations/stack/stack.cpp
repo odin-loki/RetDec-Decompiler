@@ -288,12 +288,20 @@ void StackAnalysis::handleInstruction(
 				s->getValueOperand(),
 				llvm_utils::pointeeType(a),
 				inst);
-		new StoreInst(conv, a, inst);
+		auto* ns = new StoreInst(conv, a, inst);
+		if (auto* ptee = llvm_utils::pointeeType(a))
+		{
+			llvm_utils::setPointeeTypeMetadata(ns, ptee);
+		}
 		_toRemove.insert(s);
 	}
 	else if (l && l->getPointerOperand() == val)
 	{
 		auto* nl = new LoadInst(a, "", l);
+		if (auto* ptee = llvm_utils::pointeeType(a))
+		{
+			llvm_utils::setPointeeTypeMetadata(nl, ptee);
+		}
 		auto* conv = IrModifier::convertValueToType(nl, l->getType(), l);
 		l->replaceAllUsesWith(conv);
 		_toRemove.insert(l);

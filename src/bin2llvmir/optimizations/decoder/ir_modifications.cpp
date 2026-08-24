@@ -6,6 +6,7 @@
 */
 
 #include "retdec/bin2llvmir/optimizations/decoder/decoder.h"
+#include "retdec/bin2llvmir/utils/llvm.h"
 
 using namespace llvm;
 
@@ -25,6 +26,10 @@ llvm::CallInst* Decoder::transformToCall(
 				IrModifier::convertValueToTypeAfter(c, retObj->getValueType(), c));
 		auto* s = new StoreInst(cc, retObj);
 		s->insertAfter(cc);
+		if (auto* ptee = llvm_utils::pointeeType(retObj))
+		{
+			llvm_utils::setPointeeTypeMetadata(s, ptee);
+		}
 	}
 
 	return c;
@@ -123,6 +128,11 @@ llvm::SwitchInst* Decoder::transformToSwitch(
 		s->insertAfter(insn);
 
 		val = new LoadInst(gv, "", pseudo);
+		if (auto* ptee = llvm_utils::pointeeType(gv))
+		{
+			llvm_utils::setPointeeTypeMetadata(s, ptee);
+			llvm_utils::setPointeeTypeMetadata(cast<LoadInst>(val), ptee);
+		}
 	}
 
 	auto* term = pseudo->getParent()->getTerminator();
@@ -602,6 +612,10 @@ llvm::Function* Decoder::splitFunctionOn(
 						IrModifier::convertValueToTypeAfter(c, retObj->getValueType(), c));
 				auto* s = new StoreInst(cc, retObj);
 				s->insertAfter(cc);
+				if (auto* ptee = llvm_utils::pointeeType(retObj))
+				{
+					llvm_utils::setPointeeTypeMetadata(s, ptee);
+				}
 			}
 
 			ReturnInst::Create(

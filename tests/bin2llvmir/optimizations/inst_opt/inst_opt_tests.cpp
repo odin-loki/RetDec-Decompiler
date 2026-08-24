@@ -7,6 +7,7 @@
 
 #include "bin2llvmir/utils/llvmir_tests.h"
 #include "retdec/bin2llvmir/optimizations/inst_opt/inst_opt.h"
+#include "retdec/bin2llvmir/utils/llvm.h"
 
 using namespace ::testing;
 using namespace llvm;
@@ -634,6 +635,72 @@ TEST_F(OptimizeTests, castSequencePtrCastAttachesPointeeMetadata)
 	auto* i8 = Type::getInt8Ty(context);
 	EXPECT_EQ(i8, llvm_utils::getPointeeTypeMetadata(bc));
 	EXPECT_EQ(i8, llvm_utils::pointeeType(bc));
+}
+
+TEST_F(OptimizeTests, storeToBitcastPointerAttachesPointeeMetadata)
+{
+	parseInput(R"(
+		@gv = global i32 0
+		define void @func(float %v) {
+			%p = bitcast i32* @gv to float*
+			store float %v, float* %p
+			ret void
+		}
+	)");
+	auto* st = getNthInstruction<StoreInst>();
+
+	bool ret = inst_opt::optimize(st);
+	EXPECT_TRUE(ret);
+
+	auto* ns = getNthInstruction<StoreInst>();
+	ASSERT_NE(nullptr, ns);
+	auto* i32 = Type::getInt32Ty(context);
+	EXPECT_EQ(i32, llvm_utils::getPointeeTypeMetadata(ns));
+	EXPECT_EQ(i32, llvm_utils::pointeeType(ns->getPointerOperand()));
+}
+
+TEST_F(OptimizeTests, loadFromBitcastPointerAttachesPointeeMetadata)
+{
+	parseInput(R"(
+		@gv = global i32 0
+		define float @func() {
+			%p = bitcast i32* @gv to float*
+			%a = load float, float* %p
+			ret float %a
+		}
+	)");
+	auto* ld = getNthInstruction<LoadInst>();
+
+	bool ret = inst_opt::optimize(ld);
+	EXPECT_TRUE(ret);
+
+	auto* nl = getNthInstruction<LoadInst>();
+	ASSERT_NE(nullptr, nl);
+	auto* i32 = Type::getInt32Ty(context);
+	EXPECT_EQ(i32, llvm_utils::getPointeeTypeMetadata(nl));
+	EXPECT_EQ(i32, llvm_utils::pointeeType(nl->getPointerOperand()));
+}
+
+TEST_F(OptimizeTests, loadFromBitcastPointerIntToPtrAttachesPointeeMetadata)
+{
+	parseInput(R"(
+		@gv = global i32 0
+		define i8* @func() {
+			%p = bitcast i32* @gv to i8**
+			%a = load i8*, i8** %p
+			ret i8* %a
+		}
+	)");
+	auto* ld = getNthInstruction<LoadInst>();
+
+	bool ret = inst_opt::optimize(ld);
+	EXPECT_TRUE(ret);
+
+	auto* i2p = getNthInstruction<IntToPtrInst>();
+	ASSERT_NE(nullptr, i2p);
+	auto* i8 = Type::getInt8Ty(context);
+	EXPECT_EQ(i8, llvm_utils::getPointeeTypeMetadata(i2p));
+	EXPECT_EQ(i8, llvm_utils::pointeeType(i2p));
 }
 
 TEST_F(OptimizeTests, castSequence_float_int_float_arg)

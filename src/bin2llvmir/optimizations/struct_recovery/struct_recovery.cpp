@@ -393,11 +393,16 @@ bool StructRecovery::materializeStruct(RecoveredStruct& rs) {
             if (auto* ld = dyn_cast<LoadInst>(rw.oldInst)) {
                 Value* newLoad = builder.CreateLoad(field.type, typedPtr,
                                                      ld->getName() + "_sr");
+                if (auto* li = dyn_cast<LoadInst>(newLoad))
+                {
+                    llvm_utils::setPointeeTypeMetadata(li, field.type);
+                }
                 ld->replaceAllUsesWith(newLoad);
                 ld->eraseFromParent();
                 changed = true;
             } else if (auto* st = dyn_cast<StoreInst>(rw.oldInst)) {
-                builder.CreateStore(st->getValueOperand(), typedPtr);
+                auto* ns = builder.CreateStore(st->getValueOperand(), typedPtr);
+                llvm_utils::setPointeeTypeMetadata(ns, field.type);
                 st->eraseFromParent();
                 changed = true;
             }
