@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: llvmir2hll inlined pointer casts
+  (`convertCastInstToExpression`) prefer `retdec.pointee` for the
+  destination type. Tests:
+  `BitCastInstPointeeMetadataOverridesCastDestType`,
+  `IntToPtrInstPointeeMetadataOverridesCastDestType`.
 - Track 1 leftover: llvmir2hll `determineVariableType` prefers
   `retdec.pointee` on pointer-typed instructions (same MD kind as
   `insn.addr`). Tests:

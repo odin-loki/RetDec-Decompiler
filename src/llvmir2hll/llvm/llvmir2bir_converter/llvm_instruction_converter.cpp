@@ -5,12 +5,15 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include <llvm/ADT/StringRef.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/InstrTypes.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/IR/Metadata.h>
+#include <llvm/IR/Type.h>
 #include <llvm/IR/User.h>
 #include <llvm/IR/Value.h>
 
@@ -41,6 +44,7 @@
 #include "retdec/llvmir2hll/ir/mod_op_expr.h"
 #include "retdec/llvmir2hll/ir/mul_op_expr.h"
 #include "retdec/llvmir2hll/ir/neq_op_expr.h"
+#include "retdec/llvmir2hll/ir/pointer_type.h"
 #include "retdec/llvmir2hll/ir/ptr_to_int_cast_expr.h"
 #include "retdec/llvmir2hll/ir/struct_index_op_expr.h"
 #include "retdec/llvmir2hll/ir/sub_op_expr.h"
@@ -62,6 +66,78 @@ namespace {
 /// It was chosen to use 32 bits because it is enough to store index
 /// for huge structures.
 const unsigned COMPOSITE_TYPE_INDEX_SIZE_BITS = 32;
+
+/// Same reconstruction as `determineVariableType` (file-local; llvmir2hll
+/// cannot link `bin2llvmir`).
+llvm::Type *parsePrintedLlvmType(llvm::LLVMContext &ctx, llvm::StringRef s)
+{
+	s = s.trim();
+	if (s.empty())
+	{
+		return nullptr;
+	}
+	if (s.endswith("*"))
+	{
+		auto *inner = parsePrintedLlvmType(ctx, s.drop_back());
+		if (!inner || !llvm::PointerType::isValidElementType(inner))
+		{
+			return nullptr;
+		}
+		return llvm::PointerType::get(inner, 0);
+	}
+	if (s == "void")
+	{
+		return llvm::Type::getVoidTy(ctx);
+	}
+	if (s == "half")
+	{
+		return llvm::Type::getHalfTy(ctx);
+	}
+	if (s == "float")
+	{
+		return llvm::Type::getFloatTy(ctx);
+	}
+	if (s == "double")
+	{
+		return llvm::Type::getDoubleTy(ctx);
+	}
+	if (s == "x86_fp80")
+	{
+		return llvm::Type::getX86_FP80Ty(ctx);
+	}
+	if (s == "fp128")
+	{
+		return llvm::Type::getFP128Ty(ctx);
+	}
+	if (s.startswith("i"))
+	{
+		unsigned bits = 0;
+		if (!s.drop_front().getAsInteger(10, bits) && bits > 0)
+		{
+			return llvm::Type::getIntNTy(ctx, bits);
+		}
+	}
+	return nullptr;
+}
+
+llvm::Type *llvmTypeFromPointeeMD(const llvm::Instruction *i)
+{
+	if (!i)
+	{
+		return nullptr;
+	}
+	auto *mdn = i->getMetadata("retdec.pointee");
+	if (!mdn || mdn->getNumOperands() < 1)
+	{
+		return nullptr;
+	}
+	auto *mds = llvm::dyn_cast<llvm::MDString>(mdn->getOperand(0));
+	if (!mds)
+	{
+		return nullptr;
+	}
+	return parsePrintedLlvmType(i->getContext(), mds->getString());
+}
 
 } // anonymous namespace
 
@@ -671,6 +747,15 @@ template<class T>
 ShPtr<Expression> LLVMInstructionConverter::convertCastInstToExpression(llvm::User &inst) {
 	auto op = getConverter()->convertValueToExpression(inst.getOperand(0));
 	auto dstType = getConverter()->convertType(inst.getType());
+	// Inlined pointer casts never hit `determineVariableType`. Prefer
+	// `retdec.pointee` when present; ConstantExpr has no instruction MD.
+	if (inst.getType()->isPointerTy()) {
+		if (auto *i = llvm::dyn_cast<llvm::Instruction>(&inst)) {
+			if (auto *ptee = llvmTypeFromPointeeMD(i)) {
+				dstType = PointerType::create(getConverter()->convertType(ptee));
+			}
+		}
+	}
 	return T::create(op, dstType);
 }
 

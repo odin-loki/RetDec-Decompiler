@@ -604,6 +604,47 @@ PointerInstPointeeMetadataOverridesTypedPointerElementType)
 }
 
 TEST_F(LLVMInstructionsConverterTests,
+BitCastInstPointeeMetadataOverridesCastDestType)
+{
+	auto* i32Ptr = llvm::Type::getInt32PtrTy(context);
+	auto src = std::make_unique<llvm::Argument>(i32Ptr, "p");
+	auto llvmInst = UPtr<llvm::BitCastInst>(new llvm::BitCastInst(src.get(), i32Ptr));
+	llvmInst->setMetadata("retdec.pointee", llvm::MDNode::get(context, {
+			llvm::MDString::get(context, "i8")}));
+
+	auto birInst = converter->convertInstructionToExpression(llvmInst.get());
+
+	auto birCast = cast<BitCastExpr>(birInst);
+	ASSERT_TRUE(birCast);
+	auto birPtr = cast<PointerType>(birCast->getType());
+	ASSERT_TRUE(birPtr);
+	auto birInt = cast<IntType>(birPtr->getContainedType());
+	ASSERT_TRUE(birInt);
+	EXPECT_EQ(8u, birInt->getSize());
+}
+
+TEST_F(LLVMInstructionsConverterTests,
+IntToPtrInstPointeeMetadataOverridesCastDestType)
+{
+	auto* i32 = llvm::Type::getInt32Ty(context);
+	auto* i32Ptr = llvm::Type::getInt32PtrTy(context);
+	auto src = std::make_unique<llvm::Argument>(i32, "addr");
+	auto llvmInst = UPtr<llvm::IntToPtrInst>(new llvm::IntToPtrInst(src.get(), i32Ptr));
+	llvmInst->setMetadata("retdec.pointee", llvm::MDNode::get(context, {
+			llvm::MDString::get(context, "i8")}));
+
+	auto birInst = converter->convertInstructionToExpression(llvmInst.get());
+
+	auto birCast = cast<IntToPtrCastExpr>(birInst);
+	ASSERT_TRUE(birCast);
+	auto birPtr = cast<PointerType>(birCast->getType());
+	ASSERT_TRUE(birPtr);
+	auto birInt = cast<IntType>(birPtr->getContainedType());
+	ASSERT_TRUE(birInt);
+	EXPECT_EQ(8u, birInt->getSize());
+}
+
+TEST_F(LLVMInstructionsConverterTests,
 LoadInstPointeeMetadataDoesNotWrapLoadedValueAsPointer)
 {
 	auto* i32Ptr = llvm::Type::getInt32PtrTy(context);

@@ -280,7 +280,10 @@ N17 is mean selected-token probability for the whole generation.
   bitcast MD from `convertValueToType`. llvmir2hll
   `determineVariableType` reads `retdec.pointee` on pointer-typed
   instructions (loads keep their LLVM type; MD there is the loaded
-  type). `convert(PointerType*)` stays Type*-only.
+  type). Inlined pointer casts (`convertCastInstToExpression`,
+  including always-inlined `bitcast` / `addrspacecast` and one-use
+  `inttoptr`) use the same MD for the destination type.
+  `convert(PointerType*)` stays Type*-only.
 - **No** `cmake/deps.cmake` LLVM URL change.
 - `IrInstr::Op::Rem` / `Op::Lock` appended before `Undef`.
   `SRem`/`URem`/`FRem` → `Rem`; atomics/fence → `Lock`.
