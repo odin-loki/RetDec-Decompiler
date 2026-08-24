@@ -14041,6 +14041,26 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockBtrEmitsAtomicRmw)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockBtrAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock btr dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			if (rmw->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockBtcEmitsAtomicRmw)
 {
 	ONLY_MODE_32;
@@ -14059,6 +14079,26 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockBtcEmitsAtomicRmw)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockBtcAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock btc dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			if (rmw->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockIncEmitsAtomicRmw)
 {
 	ONLY_MODE_32;
@@ -14071,6 +14111,26 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockIncEmitsAtomicRmw)
 		{
 			found = true;
 			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockIncAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock inc dword ptr [eax]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			if (rmw->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
 		}
 	}
 	EXPECT_TRUE(found);
@@ -14104,6 +14164,26 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockCmpxchg8bEmitsAtomicCmpXchg)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockCmpxchg8bAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock cmpxchg8b [eax]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* cx = dyn_cast<AtomicCmpXchgInst>(&*it))
+		{
+			if (cx->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, Cmpxchg8bWithoutLockIsNotAtomicCmpXchg)
 {
 	ONLY_MODE_32;
@@ -14127,6 +14207,26 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockCmpxchg16bEmitsAtomicCmpXchg)
 		{
 			found = true;
 			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockCmpxchg16bAttachesPointeeMetadata)
+{
+	ONLY_MODE_64;
+	auto* f = translate(assemble("lock cmpxchg16b [rax]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* cx = dyn_cast<AtomicCmpXchgInst>(&*it))
+		{
+			if (cx->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
 		}
 	}
 	EXPECT_TRUE(found);

@@ -239,6 +239,9 @@ N17 is mean selected-token probability for the whole generation.
   store / atomic RMW / cmpxchg, ARM `swp`, ARM64 `ldxr`, MIPS `ll`,
   and PowerPC `lwarx`. Exclusive stores (`stlxr`/`stxp`/`strex`/`sc`/
   `stwcx`) and x86 `lock not`/`sub`/`bts` also have MD tests.
+  Remaining A8 lift paths (`ldrex`/`lda*`/`stl*`/`swpb`, `ldxp`/
+  `ldaxp`, `lock btr`/`btc`/`inc`/`cmpxchg8b`/`16b`) have MD tests.
+  `STREXD`/`LDAEXD`/`STLEXD` stay untranslated (pair packing).
 - Value-based readers (`inst_opt`, `entry_alloca`, ABI, `ir_modifier`,
   `simple_types`) call `pointeeType` first. `pointeeType` also uses
   `AllocaInst::getAllocatedType` and `GlobalVariable::getValueType`.

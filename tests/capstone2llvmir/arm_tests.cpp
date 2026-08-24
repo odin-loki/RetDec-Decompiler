@@ -2447,6 +2447,26 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, LdrexLoadIsAtomic)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdrexLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("ldrex r0, [r1]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, LdrLoadIsNotAtomic)
 {
 	ONLY_MODE_ARM;
@@ -2523,6 +2543,26 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, LdaLoadIsAtomic)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdaLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate({0x9f, 0x0c, 0x91, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDA)
 {
 	ONLY_MODE_ARM;
@@ -2560,6 +2600,26 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, LdaexLoadIsAtomic)
 			{
 				found = true;
 				EXPECT_EQ(l->getOrdering(), AtomicOrdering::Acquire);
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdaexLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate({0x9f, 0x0e, 0x91, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
 				break;
 			}
 		}
@@ -2989,6 +3049,26 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, StlStoreIsAtomic)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StlAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate({0x90, 0xfc, 0x81, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic() && s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_STL)
 {
 	ONLY_MODE_ARM;
@@ -3024,6 +3104,26 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, StlexStoreIsAtomic)
 			{
 				found = true;
 				EXPECT_EQ(s->getOrdering(), AtomicOrdering::Release);
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StlexAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate({0x91, 0x0e, 0x82, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic() && s->getMetadata("retdec.pointee"))
+			{
+				found = true;
 				break;
 			}
 		}
@@ -3129,6 +3229,26 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, SwpbEmitsAtomicRmw)
 			found = true;
 			EXPECT_EQ(rmw->getOperation(), AtomicRMWInst::Xchg);
 			break;
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, SwpbAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("swpb r0, r1, [r2]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			if (rmw->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
 		}
 	}
 	EXPECT_TRUE(found);

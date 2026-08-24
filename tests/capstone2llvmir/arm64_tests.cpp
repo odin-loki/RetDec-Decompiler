@@ -3912,6 +3912,25 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, LdxpLoadIsAtomic)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, LdxpLoadAttachesPointeeMetadata)
+{
+	auto* f = translate(assemble("ldxp x0, x1, [x2]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, LdaxpLoadIsAtomic)
 {
 	auto* f = translate(assemble("ldaxp x0, x1, [x2]"));
@@ -3925,6 +3944,25 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, LdaxpLoadIsAtomic)
 			{
 				found = true;
 				EXPECT_EQ(l->getOrdering(), AtomicOrdering::Acquire);
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, LdaxpLoadAttachesPointeeMetadata)
+{
+	auto* f = translate(assemble("ldaxp x0, x1, [x2]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
 				break;
 			}
 		}
