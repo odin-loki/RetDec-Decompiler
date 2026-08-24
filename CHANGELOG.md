@@ -8,6 +8,16 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: remaining x86 string-op widths and stack/table
+  memops assert `retdec.pointee`. Tests:
+  `StosbStoreAttachesPointeeMetadata`, `StoswStoreAttachesPointeeMetadata`,
+  `LodsbLoadAttachesPointeeMetadata`, `LodswLoadAttachesPointeeMetadata`,
+  `MovsbStoreAttachesPointeeMetadata`, `ScasbLoadAttachesPointeeMetadata`,
+  `CmpsbLoadAttachesPointeeMetadata`, `RepStosbAttachesPointeeMetadata`,
+  `StackPopAttachesPointeeMetadata`, `XlatLoadAttachesPointeeMetadata`,
+  `CallPushAttachesPointeeMetadata`, `LeaveLoadAttachesPointeeMetadata`,
+  `EnterPushAttachesPointeeMetadata`, `RetLoadAttachesPointeeMetadata`,
+  `LdsLoadAttachesPointeeMetadata`.
 - Track 1 leftover: ParamReturn `hasFunctionTypeOrPointer` consults
   `pointeeType` on the return slot and argument slots before the
   typed-pointer `FunctionType` check.
