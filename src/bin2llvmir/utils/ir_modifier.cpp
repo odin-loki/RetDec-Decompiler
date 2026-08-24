@@ -112,6 +112,7 @@ Value* convertToType(
 		{
 			auto* i = new IntToPtrInst(val, type, "");
 			conv = insertBeforeAfter(i, before, after);
+			llvm_utils::setPointeeTypeMetadata(i, type->getPointerElementType());
 		}
 	}
 	else if (val->getType()->isIntegerTy() && type->isIntegerTy())

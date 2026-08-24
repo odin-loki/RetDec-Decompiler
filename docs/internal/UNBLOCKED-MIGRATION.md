@@ -247,6 +247,8 @@ N17 is mean selected-token probability for the whole generation.
 - Value-based readers (`inst_opt`, `entry_alloca`, ABI, `ir_modifier`,
   `simple_types`) call `pointeeType` first. `pointeeType` also uses
   `AllocaInst::getAllocatedType` and `GlobalVariable::getValueType`.
+  `IrModifier::convertValueToType` attaches `retdec.pointee` on
+  instruction `inttoptr` (not `ConstantExpr`).
 - **No** `cmake/deps.cmake` LLVM URL change.
 - `IrInstr::Op::Rem` / `Op::Lock` appended before `Undef`.
   `SRem`/`URem`/`FRem` → `Rem`; atomics/fence → `Lock`.

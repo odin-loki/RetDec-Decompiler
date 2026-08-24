@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include "retdec/bin2llvmir/utils/ir_modifier.h"
+#include "retdec/bin2llvmir/utils/llvm.h"
 #include "bin2llvmir/utils/llvmir_tests.h"
 
 using namespace ::testing;
@@ -103,6 +104,26 @@ TEST_F(IrModifierTests, convertValueToTypeFunctionToPointer)
 		}
 	)";
 	checkModuleAgainstExpectedIr(exp);
+}
+
+TEST_F(IrModifierTests, convertValueToTypeIntToPtrAttachesPointeeMetadata)
+{
+	parseInput(R"(
+		define void @fnc() {
+			%a = add i32 1, 2
+			ret void
+		}
+	)");
+	auto* a = getValueByName("a");
+	auto* b = getNthInstruction<ReturnInst>();
+	auto* i32 = Type::getInt32Ty(context);
+	auto* ptrTy = PointerType::get(i32, 0);
+
+	auto* conv = IrModifier::convertValueToType(a, ptrTy, b);
+	auto* i2p = dyn_cast<IntToPtrInst>(conv);
+	ASSERT_NE(nullptr, i2p);
+	EXPECT_EQ(i32, llvm_utils::getPointeeTypeMetadata(i2p));
+	EXPECT_EQ(i32, llvm_utils::pointeeType(i2p));
 }
 
 //

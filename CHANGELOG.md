@@ -8,6 +8,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: `IrModifier::convertValueToType` attaches
+  `retdec.pointee` on non-constant `inttoptr`. Test:
+  `convertValueToTypeIntToPtrAttachesPointeeMetadata`.
 - Wave 5 leftover (A8): ARM `strexd`/`stlexd` pack `Rt|(Rt2<<32)`
   into one atomic `i64` store plus status 0. `ldaexd` is an
   acquire exclusive pair load via `translateLdrd`. Tests:
