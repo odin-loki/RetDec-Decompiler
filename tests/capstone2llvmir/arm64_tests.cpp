@@ -8903,6 +8903,44 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, issue_998)
 	});
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, LdpLoadAttachesPointeeMetadata)
+{
+	auto* f = translate(assemble("ldp x0, x1, [sp]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, StpStoreAttachesPointeeMetadata)
+{
+	auto* f = translate(assemble("stp x0, x2, [sp]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
