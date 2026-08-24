@@ -26,9 +26,29 @@
 
 #include "retdec/bin2llvmir/optimizations/phi_remover/phi_remover.h"
 #include "retdec/bin2llvmir/providers/asm_instruction.h"
+#include "retdec/bin2llvmir/utils/llvm.h"
 
 namespace retdec {
 namespace bin2llvmir {
+
+namespace {
+
+void attachPointeeOnPointerCast(llvm::Value* v)
+{
+    auto* i = llvm::dyn_cast<llvm::Instruction>(v);
+    if (!i)
+    {
+        return;
+    }
+    auto* pt = llvm::dyn_cast<llvm::PointerType>(i->getType());
+    if (!pt)
+    {
+        return;
+    }
+    llvm_utils::setPointeeTypeMetadata(i, pt->getPointerElementType());
+}
+
+} // namespace
 
 char PhiRemover::ID = 0;
 
@@ -225,6 +245,7 @@ bool PhiRemover::demotePhiToStack(llvm::PHINode* phi, llvm::MDNode* faddr) {
                 inc = llvm::CastInst::CreateIntegerCast(inc, phiTy, false, "", insertInsn);
             else if (phiTy->isPointerTy() && inc->getType()->isPointerTy())
                 inc = llvm::CastInst::CreatePointerBitCastOrAddrSpaceCast(inc, phiTy, "", insertInsn);
+                attachPointeeOnPointerCast(inc);
         }
         auto a = getInstAddress(insertInsn);
         auto* s = new llvm::StoreInst(inc, alloca, insertInsn);

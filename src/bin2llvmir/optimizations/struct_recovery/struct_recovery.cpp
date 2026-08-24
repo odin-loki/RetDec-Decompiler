@@ -40,6 +40,7 @@
 #include "retdec/bin2llvmir/providers/abi/abi.h"
 #include "retdec/bin2llvmir/providers/config.h"
 #include "retdec/bin2llvmir/providers/fileimage.h"
+#include "retdec/bin2llvmir/utils/llvm.h"
 #include "retdec/utils/io/log.h"
 
 using namespace llvm;
@@ -47,6 +48,25 @@ using namespace retdec::utils::io;
 
 namespace retdec {
 namespace bin2llvmir {
+
+namespace {
+
+void attachPointeeOnPointerCast(Value* v)
+{
+    auto* i = dyn_cast<Instruction>(v);
+    if (!i)
+    {
+        return;
+    }
+    auto* pt = dyn_cast<PointerType>(i->getType());
+    if (!pt)
+    {
+        return;
+    }
+    llvm_utils::setPointeeTypeMetadata(i, pt->getPointerElementType());
+}
+
+} // namespace
 
 // Minimum number of distinct offsets before we consider something a struct.
 static constexpr unsigned MIN_FIELDS = 2;
@@ -349,6 +369,7 @@ bool StructRecovery::materializeStruct(RecoveredStruct& rs) {
             // Cast base to struct pointer.
             PointerType* sPtrTy = PointerType::get(rs.llvmTy, 0);
             Value* basePtr = builder.CreateBitCast(rw.base, sPtrTy, "sr_base");
+            attachPointeeOnPointerCast(basePtr);
 
             // GEP to the field.  Field index in the struct type accounts for
             // padding members; find the actual index.
@@ -361,11 +382,13 @@ bool StructRecovery::materializeStruct(RecoveredStruct& rs) {
             // Instead, use a byte-offset approach for robustness.
             Value* i8Base = builder.CreateBitCast(rw.base,
                                 Type::getInt8PtrTy(_module->getContext()), "sr_i8");
+            attachPointeeOnPointerCast(i8Base);
             Value* byteGep = builder.CreateConstGEP1_64(
                                 Type::getInt8Ty(_module->getContext()),
                                 i8Base, field.offset, "sr_off");
             Value* typedPtr = builder.CreateBitCast(byteGep,
                                 PointerType::get(field.type, 0), "sr_ptr");
+            attachPointeeOnPointerCast(typedPtr);
 
             if (auto* ld = dyn_cast<LoadInst>(rw.oldInst)) {
                 Value* newLoad = builder.CreateLoad(field.type, typedPtr,

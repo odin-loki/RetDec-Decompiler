@@ -601,13 +601,39 @@ TEST_F(OptimizeTests, castSequence_ptr_int_ptr)
 		declare i32 @print (i8*)
 		define void @func() {
 			%a = load i32*, i32** @r
-			%1 = bitcast i32* %a to i8*
+			%1 = bitcast i32* %a to i8*, !retdec.pointee !0
 			%d = call i32 @print(i8* %1)
 			ret void
 		}
+		!0 = !{!"i8"}
 	)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(ret);
+}
+
+TEST_F(OptimizeTests, castSequencePtrCastAttachesPointeeMetadata)
+{
+	parseInput(R"(
+		@r = global i32* null
+		declare i32 @print (i8*)
+		define void @func() {
+			%a = load i32*, i32** @r
+			%b = ptrtoint i32* %a to i32
+			%c = inttoptr i32 %b to i8*
+			%d = call i32 @print(i8* %c)
+			ret void
+		}
+	)");
+	auto* i = getInstructionByName("c");
+
+	bool ret = inst_opt::optimize(i);
+	EXPECT_TRUE(ret);
+
+	auto* bc = getNthInstruction<BitCastInst>();
+	ASSERT_NE(nullptr, bc);
+	auto* i8 = Type::getInt8Ty(context);
+	EXPECT_EQ(i8, llvm_utils::getPointeeTypeMetadata(bc));
+	EXPECT_EQ(i8, llvm_utils::pointeeType(bc));
 }
 
 TEST_F(OptimizeTests, castSequence_float_int_float_arg)

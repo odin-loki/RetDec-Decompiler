@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: remaining pass writers attach `retdec.pointee`
+  on pointer `bitcast`/`addrspacecast` (`entry_alloca`,
+  `value_protect`, `phi_remover`, `inst_opt`, `phi_to_select`,
+  `struct_recovery`). Test:
+  `castSequencePtrCastAttachesPointeeMetadata`.
 - Track 1 leftover: ARM64 `stlxp`/`ldaxrb`/`stxrb`/`stlrb` and ARM
   `ldrexb`/`ldrexh` assert `retdec.pointee`. Tests:
   `StlxpAttachesPointeeMetadata`,

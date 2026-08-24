@@ -28,6 +28,21 @@ namespace bin2llvmir {
 
 namespace {
 
+void attachPointeeOnPointerCast(Value* v)
+{
+	auto* i = dyn_cast<Instruction>(v);
+	if (!i)
+	{
+		return;
+	}
+	auto* pt = dyn_cast<PointerType>(i->getType());
+	if (!pt)
+	{
+		return;
+	}
+	llvm_utils::setPointeeTypeMetadata(i, pt->getPointerElementType());
+}
+
 bool valueProtectTraceEnabled()
 {
 	const char* env = std::getenv("RETDEC_VALUE_PROTECT_TRACE");
@@ -386,6 +401,7 @@ bool ValueProtect::protect()
 							expectedPtrTy,
 							"",
 							l);
+					attachPointeeOnPointerCast(castPtr);
 					l->setOperand(0, castPtr);
 					changed = true;
 				}
@@ -406,6 +422,7 @@ bool ValueProtect::protect()
 							expectedPtrTy,
 							"",
 							s);
+					attachPointeeOnPointerCast(castPtr);
 					s->setOperand(1, castPtr);
 					changed = true;
 				}

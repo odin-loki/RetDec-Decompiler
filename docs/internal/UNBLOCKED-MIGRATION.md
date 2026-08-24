@@ -251,7 +251,9 @@ N17 is mean selected-token probability for the whole generation.
   `AllocaInst::getAllocatedType` and `GlobalVariable::getValueType`.
   `IrModifier::convertValueToType` attaches `retdec.pointee` on
   instruction `inttoptr` and pointer `bitcast`/`addrspacecast`
-  (not `ConstantExpr`).
+  (not `ConstantExpr`). Remaining pointer-cast writers
+  (`entry_alloca`, `value_protect`, `phi_remover`, `inst_opt`,
+  `phi_to_select`, `struct_recovery`) do the same.
 - **No** `cmake/deps.cmake` LLVM URL change.
 - `IrInstr::Op::Rem` / `Op::Lock` appended before `Undef`.
   `SRem`/`URem`/`FRem` → `Rem`; atomics/fence → `Lock`.

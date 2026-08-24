@@ -42,6 +42,25 @@ using namespace llvm;
 namespace retdec {
 namespace bin2llvmir {
 
+namespace {
+
+void attachPointeeOnPointerCast(Value* v)
+{
+	auto* i = dyn_cast<Instruction>(v);
+	if (!i)
+	{
+		return;
+	}
+	auto* pt = dyn_cast<PointerType>(i->getType());
+	if (!pt)
+	{
+		return;
+	}
+	llvm_utils::setPointeeTypeMetadata(i, pt->getPointerElementType());
+}
+
+} // namespace
+
 char EntryAlloca::ID = 0;
 
 static RegisterPass<EntryAlloca> X(
@@ -427,6 +446,7 @@ bool EntryAlloca::runOnModule(Module& M)
 			Value* ptr = pf.inst->getOperand(pf.opIdx);
 			auto*  cast = CastInst::CreatePointerBitCastOrAddrSpaceCast(
 				ptr, pf.newPtrTy, "", pf.inst);
+			attachPointeeOnPointerCast(cast);
 			pf.inst->setOperand(pf.opIdx, cast);
 			changed = true;
 		}
@@ -469,6 +489,7 @@ bool EntryAlloca::runOnModule(Module& M)
 					{
 						casted = CastInst::CreatePointerBitCastOrAddrSpaceCast(
 							inc, phiTy, "", insertBefore);
+						attachPointeeOnPointerCast(casted);
 					}
 					if (casted)
 					{
@@ -511,10 +532,16 @@ bool EntryAlloca::runOnModule(Module& M)
 				newF = irb.CreateIntCast(fVal, resTy, false);
 			if (tVal->getType() != resTy && resTy->isPointerTy() &&
 			    tVal->getType()->isPointerTy())
+			{
 				newT = irb.CreatePointerCast(tVal, resTy);
+				attachPointeeOnPointerCast(newT);
+			}
 			if (fVal->getType() != resTy && resTy->isPointerTy() &&
 			    fVal->getType()->isPointerTy())
+			{
 				newF = irb.CreatePointerCast(fVal, resTy);
+				attachPointeeOnPointerCast(newF);
+			}
 
 			if (newT != tVal || newF != fVal)
 			{

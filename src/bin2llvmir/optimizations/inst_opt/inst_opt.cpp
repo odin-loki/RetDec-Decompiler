@@ -24,6 +24,21 @@ namespace inst_opt {
 
 namespace {
 
+void attachPointeeOnPointerCast(Value* v)
+{
+	auto* i = dyn_cast<Instruction>(v);
+	if (!i)
+	{
+		return;
+	}
+	auto* pt = dyn_cast<PointerType>(i->getType());
+	if (!pt)
+	{
+		return;
+	}
+	llvm_utils::setPointeeTypeMetadata(i, pt->getPointerElementType());
+}
+
 bool instOptPatternTraceEnabled()
 {
 	const char* env = std::getenv("RETDEC_INST_OPT_PATTERN_TRACE");
@@ -454,6 +469,10 @@ llvm::Value* castSequence(llvm::CastInst* cast1, llvm::CastInst* cast2)
 		v = srcTy != dstTy
 				? CastInst::CreatePointerCast(src, dstTy, "", cast2)
 				: src;
+		if (v != src)
+		{
+			attachPointeeOnPointerCast(v);
+		}
 	}
 	// float -> cast -> cast -> float
 	else if (srcTy->isFloatingPointTy() && dstTy->isFloatingPointTy())

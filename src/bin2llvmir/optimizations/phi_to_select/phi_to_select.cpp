@@ -23,11 +23,31 @@
 #include <llvm/IR/Module.h>
 
 #include "retdec/bin2llvmir/optimizations/phi_to_select/phi_to_select.h"
+#include "retdec/bin2llvmir/utils/llvm.h"
 
 using namespace llvm;
 
 namespace retdec {
 namespace bin2llvmir {
+
+namespace {
+
+void attachPointeeOnPointerCast(Value* v)
+{
+    auto* i = dyn_cast<Instruction>(v);
+    if (!i)
+    {
+        return;
+    }
+    auto* pt = dyn_cast<PointerType>(i->getType());
+    if (!pt)
+    {
+        return;
+    }
+    llvm_utils::setPointeeTypeMetadata(i, pt->getPointerElementType());
+}
+
+} // namespace
 
 char PhiToSelect::ID = 0;
 
@@ -133,7 +153,10 @@ bool PhiToSelect::tryConvert(PHINode* phi) {
         if (phiTy->isIntegerTy() && trueVal->getType()->isIntegerTy())
             trueVal = irb.CreateIntCast(trueVal, phiTy, false);
         else if (phiTy->isPointerTy() && trueVal->getType()->isPointerTy())
+        {
             trueVal = irb.CreatePointerCast(trueVal, phiTy);
+            attachPointeeOnPointerCast(trueVal);
+        }
         else
             return false;  // Cannot safely coerce.
     }
@@ -141,7 +164,10 @@ bool PhiToSelect::tryConvert(PHINode* phi) {
         if (phiTy->isIntegerTy() && falseVal->getType()->isIntegerTy())
             falseVal = irb.CreateIntCast(falseVal, phiTy, false);
         else if (phiTy->isPointerTy() && falseVal->getType()->isPointerTy())
+        {
             falseVal = irb.CreatePointerCast(falseVal, phiTy);
+            attachPointeeOnPointerCast(falseVal);
+        }
         else
             return false;
     }
