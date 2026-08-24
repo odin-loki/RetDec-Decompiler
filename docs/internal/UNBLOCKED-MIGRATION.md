@@ -249,7 +249,8 @@ N17 is mean selected-token probability for the whole generation.
   `simple_types`) call `pointeeType` first. `pointeeType` also uses
   `AllocaInst::getAllocatedType` and `GlobalVariable::getValueType`.
   `IrModifier::convertValueToType` attaches `retdec.pointee` on
-  instruction `inttoptr` (not `ConstantExpr`).
+  instruction `inttoptr` and pointer `bitcast`/`addrspacecast`
+  (not `ConstantExpr`).
 - **No** `cmake/deps.cmake` LLVM URL change.
 - `IrInstr::Op::Rem` / `Op::Lock` appended before `Undef`.
   `SRem`/`URem`/`FRem` → `Rem`; atomics/fence → `Lock`.

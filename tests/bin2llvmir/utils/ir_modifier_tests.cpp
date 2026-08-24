@@ -96,13 +96,14 @@ TEST_F(IrModifierTests, convertValueToTypeFunctionToPointer)
 
 	IrModifier::convertValueToType(import, t, r);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		declare void @import()
 		define void @fnc() {
-			%1 = bitcast void()* @import to i32(i32, i32)*
+			%1 = bitcast void()* @import to i32(i32, i32)*, !retdec.pointee !0
 			ret void
 		}
-	)";
+		!0 = !{!"i32 (i32, i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -124,6 +125,26 @@ TEST_F(IrModifierTests, convertValueToTypeIntToPtrAttachesPointeeMetadata)
 	ASSERT_NE(nullptr, i2p);
 	EXPECT_EQ(i32, llvm_utils::getPointeeTypeMetadata(i2p));
 	EXPECT_EQ(i32, llvm_utils::pointeeType(i2p));
+}
+
+TEST_F(IrModifierTests, convertValueToTypePtrBitCastAttachesPointeeMetadata)
+{
+	parseInput(R"(
+		define void @fnc() {
+			%a = alloca i8
+			ret void
+		}
+	)");
+	auto* a = getValueByName("a");
+	auto* b = getNthInstruction<ReturnInst>();
+	auto* i32 = Type::getInt32Ty(context);
+	auto* ptrTy = PointerType::get(i32, 0);
+
+	auto* conv = IrModifier::convertValueToType(a, ptrTy, b);
+	auto* bc = dyn_cast<BitCastInst>(conv);
+	ASSERT_NE(nullptr, bc);
+	EXPECT_EQ(i32, llvm_utils::getPointeeTypeMetadata(bc));
+	EXPECT_EQ(i32, llvm_utils::pointeeType(bc));
 }
 
 //
@@ -199,15 +220,16 @@ TEST_F(IrModifierTests, modifyIndirectCallInstOfVoidCall)
 	auto* a2 = ConstantInt::get(Type::getInt32Ty(context), 456);
 	IrModifier::modifyCallInst(call, Type::getInt32Ty(context), {a1, a2});
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		define void @fnc() {
 			%a = alloca i32
 			%b = bitcast i32* %a to void()*
-			%1 = bitcast void()* %b to i32(i32, i32)*
+			%1 = bitcast void()* %b to i32(i32, i32)*, !retdec.pointee !0
 			%2 = call i32 %1(i32 123, i32 456)
 			ret void
 		}
-	)";
+		!0 = !{!"i32 (i32, i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -226,14 +248,15 @@ TEST_F(IrModifierTests, modifyDirectCallInstOfVoidCall)
 	auto* a2 = ConstantInt::get(Type::getInt32Ty(context), 456);
 	IrModifier::modifyCallInst(call, Type::getInt32Ty(context), {a1, a2});
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		declare void @import()
 		define void @fnc() {
-			%1 = bitcast void()* @import to i32(i32, i32)*
+			%1 = bitcast void()* @import to i32(i32, i32)*, !retdec.pointee !0
 			%2 = call i32 %1(i32 123, i32 456)
 			ret void
 		}
-	)";
+		!0 = !{!"i32 (i32, i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -256,19 +279,20 @@ TEST_F(IrModifierTests, modifyIndirectCallFullModification)
 	auto* a2 = ConstantInt::get(Type::getInt32Ty(context), 456);
 	IrModifier::modifyCallInst(call, Type::getFloatTy(context), {a1, a2});
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		@r = global i32 0
 		define void @fnc() {
 			%a = alloca i32
 			%b = bitcast i32* %a to i32(i32)*
 			%a1 = load i32, i32* @r
-			%1 = bitcast i32(i32)* %b to float(i32, i32)*
+			%1 = bitcast i32(i32)* %b to float(i32, i32)*, !retdec.pointee !0
 			%2 = call float %1(i32 123, i32 456)
 			%3 = bitcast float %2 to i32
 			store i32 %3, i32* @r
 			ret void
 		}
-	)";
+		!0 = !{!"float (i32, i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -290,18 +314,19 @@ TEST_F(IrModifierTests, modifyDirectCallFullModification)
 	auto* a2 = ConstantInt::get(Type::getInt32Ty(context), 456);
 	IrModifier::modifyCallInst(call, Type::getFloatTy(context), {a1, a2});
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		@r = global i32 0
 		declare i32 @import(i32)
 		define void @fnc() {
 			%a1 = load i32, i32* @r
-			%1 = bitcast i32(i32)* @import to float(i32, i32)*
+			%1 = bitcast i32(i32)* @import to float(i32, i32)*, !retdec.pointee !0
 			%2 = call float %1(i32 123, i32 456)
 			%3 = bitcast float %2 to i32
 			store i32 %3, i32* @r
 			ret void
 		}
-	)";
+		!0 = !{!"float (i32, i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 

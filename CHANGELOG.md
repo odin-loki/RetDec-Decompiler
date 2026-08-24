@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: `IrModifier::convertValueToType` attaches
+  `retdec.pointee` on non-constant pointer `bitcast` /
+  `addrspacecast`. Test:
+  `convertValueToTypePtrBitCastAttachesPointeeMetadata`.
 - Track 1 leftover: remaining 64-bit / ARM64 exclusive lifts
   assert `retdec.pointee` (`ldaxr`/`ldar`/`stxr`/`stlr`, MIPS
   `lld`/`scd`, PowerPC `ldarx`/`stdcx`). Tests:

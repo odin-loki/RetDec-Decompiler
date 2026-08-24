@@ -82,11 +82,13 @@ Value* convertToType(
 			{
 				auto* i = new BitCastInst(val, type, "");
 				conv = insertBeforeAfter(i, before, after);
+				llvm_utils::setPointeeTypeMetadata(i, type->getPointerElementType());
 			}
 			else
 			{
 				auto* i = new AddrSpaceCastInst(val, type, "");
 				conv = insertBeforeAfter(i, before, after);
+				llvm_utils::setPointeeTypeMetadata(i, type->getPointerElementType());
 			}
 		}
 	}
