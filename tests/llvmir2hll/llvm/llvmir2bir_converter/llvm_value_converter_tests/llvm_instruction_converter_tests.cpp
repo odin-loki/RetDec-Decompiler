@@ -662,6 +662,26 @@ LoadInstPointeeMetadataDoesNotWrapLoadedValueAsPointer)
 	EXPECT_EQ(32u, birInt->getSize());
 }
 
+TEST_F(LLVMInstructionsConverterTests,
+PointerLoadInstPointeeMetadataDoesNotDoubleWrap)
+{
+	auto* i8Ptr = llvm::Type::getInt8PtrTy(context);
+	auto* i8PtrPtr = llvm::PointerType::get(i8Ptr, 0);
+	auto src = std::make_unique<llvm::Argument>(i8PtrPtr, "p");
+	auto llvmInst = UPtr<llvm::LoadInst>(new llvm::LoadInst(src.get()));
+	llvmInst->setMetadata("retdec.pointee", llvm::MDNode::get(context, {
+			llvm::MDString::get(context, "i8*")}));
+
+	auto var = converter->convertValueToVariable(llvmInst.get());
+
+	ASSERT_TRUE(var);
+	auto birPtr = cast<PointerType>(var->getType());
+	ASSERT_TRUE(birPtr);
+	auto birInt = cast<IntType>(birPtr->getContainedType());
+	ASSERT_TRUE(birInt);
+	EXPECT_EQ(8u, birInt->getSize());
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

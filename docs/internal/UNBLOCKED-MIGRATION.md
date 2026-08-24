@@ -281,8 +281,8 @@ N17 is mean selected-token probability for the whole generation.
   ParamReturn indirect-call snapshots include the function-pointer
   bitcast MD from `convertValueToType`. llvmir2hll
   `determineVariableType` reads `retdec.pointee` on pointer-typed
-  instructions (loads keep their LLVM type; MD there is the loaded
-  type). Inlined pointer casts (`convertCastInstToExpression`,
+  instructions (loads keep their LLVM type, including pointer-typed
+  loads; MD there is the loaded type, not a wrapper). Inlined pointer casts (`convertCastInstToExpression`,
   including always-inlined `bitcast` / `addrspacecast` and one-use
   `inttoptr`) use the same MD for the destination type.
   `convert(PointerType*)` stays Type*-only.

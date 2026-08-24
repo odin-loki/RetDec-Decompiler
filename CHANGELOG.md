@@ -8,6 +8,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: llvmir2hll `determineVariableType` does not wrap
+  pointer-typed loads with `retdec.pointee` (MD is the loaded type).
+  Test: `PointerLoadInstPointeeMetadataDoesNotDoubleWrap`.
 - Track 1 leftover: `PhiToSelect` pointer `select` attaches
   `retdec.pointee`. Test: `pointerSelectAttachesPointeeMetadata`.
 - Track 1 leftover: `PhiRemover` demote load/store of the reg2mem

@@ -396,12 +396,15 @@ ShPtr<Type> LLVMValueConverter::determineVariableType(llvm::Value *value) {
 
 	// Pointer-typed instructions: prefer `retdec.pointee` (same kind as
 	// `insn.addr`) so Track 1 readers do not depend on typed-pointer
-	// `getElementType()`. Non-pointer values (loads) keep their LLVM type;
-	// MD on those insts is the loaded type, not a pointer wrapper.
+	// `getElementType()`. Loads keep their LLVM type even when pointer-typed:
+	// MD on a load is the loaded type (e.g. `i8*` for `load i8*`), not a
+	// wrapper to apply around it.
 	if (value->getType()->isPointerTy()) {
 		if (auto *inst = llvm::dyn_cast<llvm::Instruction>(value)) {
-			if (auto *ptee = llvmTypeFromPointeeMD(inst)) {
-				return PointerType::create(typeConverter->convert(ptee));
+			if (!llvm::isa<llvm::LoadInst>(inst)) {
+				if (auto *ptee = llvmTypeFromPointeeMD(inst)) {
+					return PointerType::create(typeConverter->convert(ptee));
+				}
 			}
 		}
 	}
