@@ -80,7 +80,7 @@ TEST_F(ParamReturnTests, x86PtrCallBasicFunctionality)
 		std::move(typeConfig));
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		@r = global i32 0
 		define void @fnc() {
 			%stack_-4 = alloca i32
@@ -90,11 +90,13 @@ TEST_F(ParamReturnTests, x86PtrCallBasicFunctionality)
 			%a = bitcast i32* @r to void()*
 			%1 = load i32, i32* %stack_-8
 			%2 = load i32, i32* %stack_-4
-			%3 = bitcast void ()* %a to void (i32, i32)*
+			%3 = bitcast void ()* %a to void (i32, i32)*, !retdec.pointee !0
 			call void %3(i32 %1, i32 %2)
 			ret void
 		}
-	)";
+
+		!0 = !{!"void (i32, i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -148,7 +150,7 @@ TEST_F(ParamReturnTests, x86PtrCallPrevBbIsUsedOnlyIfItIsASinglePredecessor)
 		std::move(typeConfig));
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		@r = global i32 0
 		define void @fnc() {
 			%stack_-4 = alloca i32
@@ -162,11 +164,13 @@ TEST_F(ParamReturnTests, x86PtrCallPrevBbIsUsedOnlyIfItIsASinglePredecessor)
 			%a = bitcast i32* @r to void()*
 			%1 = load i32, i32* %stack_-8
 			%2 = load i32, i32* %stack_-4
-			%3 = bitcast void ()* %a to void (i32, i32)*
+			%3 = bitcast void ()* %a to void (i32, i32)*, !retdec.pointee !0
 			call void %3(i32 %1, i32 %2)
 			ret void
 		}
-	)";
+
+		!0 = !{!"void (i32, i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -221,7 +225,7 @@ TEST_F(ParamReturnTests, x86PtrCallPrevBbIsNotUsedIfItIsNotASinglePredecessor)
 		std::move(typeConfig));
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		@r = global i32 0
 		define void @fnc() {
 			%stack_-4 = alloca i32
@@ -234,12 +238,14 @@ TEST_F(ParamReturnTests, x86PtrCallPrevBbIsNotUsedIfItIsNotASinglePredecessor)
 			store i32 456, i32* %stack_-8
 			%a = bitcast i32* @r to void()*
 			%1 = load i32, i32* %stack_-8
-			%2 = bitcast void ()* %a to void (i32)*
+			%2 = bitcast void ()* %a to void (i32)*, !retdec.pointee !0
 			call void %2(i32 %1)
 			br label %lab2
 			ret void
 		}
-	)";
+
+		!0 = !{!"void (i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -291,7 +297,7 @@ TEST_F(ParamReturnTests, x86PtrCallOnlyStackStoresAreUsed)
 
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		@eax = global i32 0
 		@r = global i32 0
 		define i32 @fnc() {
@@ -302,13 +308,15 @@ TEST_F(ParamReturnTests, x86PtrCallOnlyStackStoresAreUsed)
 			store i32 789, i32* @eax
 			%a = bitcast i32* @r to void()*
 			%1 = load i32, i32* %stack_-4
-			%2 = bitcast void ()* %a to void (i32)*
+			%2 = bitcast void ()* %a to void (i32)*, !retdec.pointee !0
 			call void %2(i32 %1)
 			%3 = load i32, i32* @eax
 			ret i32 %3
 		}
 		declare void @0()
-	)";
+
+		!0 = !{!"void (i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -358,7 +366,7 @@ TEST_F(ParamReturnTests, x86PtrCallStackAreUsedAsArgumentsInCorrectOrder)
 		std::move(typeConfig));
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		@r = global i32 0
 		define void @fnc() {
 			%stack_-4 = alloca i32
@@ -368,11 +376,13 @@ TEST_F(ParamReturnTests, x86PtrCallStackAreUsedAsArgumentsInCorrectOrder)
 			%a = bitcast i32* @r to void()*
 			%1 = load i32, i32* %stack_-8
 			%2 = load i32, i32* %stack_-4
-			%3 = bitcast void ()* %a to void (i32, i32)*
+			%3 = bitcast void ()* %a to void (i32, i32)*, !retdec.pointee !0
 			call void %3(i32 %1, i32 %2)
 			ret void
 		}
-	)";
+
+		!0 = !{!"void (i32, i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -434,7 +444,7 @@ TEST_F(ParamReturnTests, x86PtrCallOnlyContinuousStackOffsetsAreUsed)
 		std::move(typeConfig));
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		@r = global i32 0
 		define void @fnc() {
 			%stack_-4 = alloca i32
@@ -449,11 +459,13 @@ TEST_F(ParamReturnTests, x86PtrCallOnlyContinuousStackOffsetsAreUsed)
 			%1 = load i32, i32* %stack_-24
 			%2 = load i32, i32* %stack_-20
 			%3 = load i32, i32* %stack_-16
-			%4 = bitcast void ()* %a to void (i32, i32, i32)*
+			%4 = bitcast void ()* %a to void (i32, i32, i32)*, !retdec.pointee !0
 			call void %4(i32 %1, i32 %2, i32 %3)
 			ret void
 		}
-	)";
+
+		!0 = !{!"void (i32, i32, i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -983,7 +995,7 @@ TEST_F(ParamReturnTests, x86_64PtrCallBasicFunctionality)
 
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
 
 		@r = global i64 0
@@ -997,14 +1009,16 @@ TEST_F(ParamReturnTests, x86_64PtrCallBasicFunctionality)
 			%a = bitcast i64* @r to void()*
 			%1 = load i64, i64* @rdi
 			%2 = load i64, i64* @rsi
-			%3 = bitcast void ()* %a to void (i64, i64)*
+			%3 = bitcast void ()* %a to void (i64, i64)*, !retdec.pointee !0
 			call void %3(i64 %1, i64 %2)
 			%4 = load i64, i64* @rax
 			ret i64 %4
 		}
 
 		declare void @0()
-	)";
+
+		!0 = !{!"void (i64, i64)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -1052,7 +1066,7 @@ TEST_F(ParamReturnTests, x86_64PtrCallPrevBbIsUsedOnlyIfItIsASinglePredecessor)
 
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
 
 		@r = global i64 0
@@ -1072,14 +1086,16 @@ TEST_F(ParamReturnTests, x86_64PtrCallPrevBbIsUsedOnlyIfItIsASinglePredecessor)
 			%a = bitcast i64* @r to void ()*
 			%1 = load i64, i64* @rdi
 			%2 = load i64, i64* @rsi
-			%3 = bitcast void ()* %a to void (i64, i64)*
+			%3 = bitcast void ()* %a to void (i64, i64)*, !retdec.pointee !0
 			call void %3(i64 %1, i64 %2)
 			%4 = load i64, i64* @rax
 			ret i64 %4
 		}
 
 		declare void @0()
-	)";
+
+		!0 = !{!"void (i64, i64)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -1496,7 +1512,7 @@ TEST_F(ParamReturnTests, ms_x64PtrCallBasicFunctionality)
 
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
 
 		@r = global i64 0
@@ -1510,14 +1526,16 @@ TEST_F(ParamReturnTests, ms_x64PtrCallBasicFunctionality)
 			%a = bitcast i64* @r to void()*
 			%1 = load i64, i64* @rcx
 			%2 = load i64, i64* @rdx
-			%3 = bitcast void ()* %a to void (i64, i64)*
+			%3 = bitcast void ()* %a to void (i64, i64)*, !retdec.pointee !0
 			call void %3(i64 %1, i64 %2)
 			%4 = load i64, i64* @rax
 			ret i64 %4
 		}
 
 		declare void @0()
-	)";
+
+		!0 = !{!"void (i64, i64)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -1570,7 +1588,7 @@ TEST_F(ParamReturnTests, ms_x64PtrCallPrevBbIsUsedOnlyIfItIsASinglePredecessor)
 
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
 
 		@r = global i64 0
@@ -1590,14 +1608,16 @@ TEST_F(ParamReturnTests, ms_x64PtrCallPrevBbIsUsedOnlyIfItIsASinglePredecessor)
 			%a = bitcast i64* @r to void ()*
 			%1 = load i64, i64* @rcx
 			%2 = load i64, i64* @rdx
-			%3 = bitcast void ()* %a to void (i64, i64)*
+			%3 = bitcast void ()* %a to void (i64, i64)*, !retdec.pointee !0
 			call void %3(i64 %1, i64 %2)
 			%4 = load i64, i64* @rax
 			ret i64 %4
 		}
 
 		declare void @0()
-	)";
+
+		!0 = !{!"void (i64, i64)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2045,7 +2065,7 @@ TEST_F(ParamReturnTests, ppcPtrCallBasicFunctionality)
 
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		@r = global i32 0
 		@r3 = global i32 0
 		@r4 = global i32 0
@@ -2056,14 +2076,16 @@ TEST_F(ParamReturnTests, ppcPtrCallBasicFunctionality)
 			%a = bitcast i32* @r to void ()*
 			%1 = load i32, i32* @r3
 			%2 = load i32, i32* @r4
-			%3 = bitcast void ()* %a to void (i32, i32)*
+			%3 = bitcast void ()* %a to void (i32, i32)*, !retdec.pointee !0
 			call void %3(i32 %1, i32 %2)
 			%4 = load i32, i32* @r3
 			ret i32 %4
 		}
 
 		declare void @0()
-	)";
+
+		!0 = !{!"void (i32, i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2530,7 +2552,7 @@ TEST_F(ParamReturnTests, ppc64PtrCallBasicFunctionality)
 
 	pass.runOnModuleCustom(*module, &config, &abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		target datalayout = "E-m:e-p:64:64-i64:64-n32"
 
 		@r = global i64 0
@@ -2543,14 +2565,16 @@ TEST_F(ParamReturnTests, ppc64PtrCallBasicFunctionality)
 			%a = bitcast i64* @r to void ()*
 			%1 = load i64, i64* @r3
 			%2 = load i64, i64* @r4
-			%3 = bitcast void ()* %a to void (i64, i64)*
+			%3 = bitcast void ()* %a to void (i64, i64)*, !retdec.pointee !0
 			call void %3(i64 %1, i64 %2)
 			%4 = load i64, i64* @r3
 			ret i64 %4
 		}
 
 		declare void @0()
-	)";
+
+		!0 = !{!"void (i64, i64)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2614,7 +2638,7 @@ TEST_F(ParamReturnTests, armPtrCallBasicFunctionality)
 
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		@r = global i32 0
 		@r0 = global i32 0
 		@r1 = global i32 0
@@ -2625,14 +2649,16 @@ TEST_F(ParamReturnTests, armPtrCallBasicFunctionality)
 			%a = bitcast i32* @r to void ()*
 			%1 = load i32, i32* @r0
 			%2 = load i32, i32* @r1
-			%3 = bitcast void ()* %a to void (i32, i32)*
+			%3 = bitcast void ()* %a to void (i32, i32)*, !retdec.pointee !0
 			call void %3(i32 %1, i32 %2)
 			%4 = load i32, i32* @r0
 			ret i32 %4
 		}
 
 		declare void @0()
-	)";
+
+		!0 = !{!"void (i32, i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2833,7 +2859,7 @@ TEST_F(ParamReturnTests, arm64PtrCallBasicFunctionality)
 
 	pass.runOnModuleCustom(*module, &config, &abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		target datalayout = "E-m:e-p:64:64-i64:64-n32"
 
 		@r = global i64 0
@@ -2846,14 +2872,16 @@ TEST_F(ParamReturnTests, arm64PtrCallBasicFunctionality)
 			%a = bitcast i64* @r to void ()*
 			%1 = load i64, i64* @x0
 			%2 = load i64, i64* @x1
-			%3 = bitcast void ()* %a to void (i64, i64)*
+			%3 = bitcast void ()* %a to void (i64, i64)*, !retdec.pointee !0
 			call void %3(i64 %1, i64 %2)
 			%4 = load i64, i64* @x0
 			ret i64 %4
 		}
 
 		declare void @0()
-	)";
+
+		!0 = !{!"void (i64, i64)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -3243,7 +3271,7 @@ TEST_F(ParamReturnTests, mipsPtrCallBasicFunctionality)
 
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		@r = global i32 0
 		@a0 = global i32 0
 		@a1 = global i32 0
@@ -3253,11 +3281,13 @@ TEST_F(ParamReturnTests, mipsPtrCallBasicFunctionality)
 			%a = bitcast i32* @r to void()*
 			%1 = load i32, i32* @a0
 			%2 = load i32, i32* @a1
-			%3 = bitcast void ()* %a to void (i32, i32)*
+			%3 = bitcast void ()* %a to void (i32, i32)*, !retdec.pointee !0
 			call void %3(i32 %1, i32 %2)
 			ret void
 		}
-	)";
+
+		!0 = !{!"void (i32, i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -3443,7 +3473,7 @@ TEST_F(ParamReturnTests, mips64PtrCallBasicFunctionality)
 
 	pass.runOnModuleCustom(*module, &config, &abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		target datalayout = "E-m:e-p:64:64-i64:64-f64:64"
 
 		@r = global i64 0
@@ -3455,11 +3485,13 @@ TEST_F(ParamReturnTests, mips64PtrCallBasicFunctionality)
 			%a = bitcast i64* @r to void()*
 			%1 = load i64, i64* @a0
 			%2 = load i64, i64* @a1
-			%3 = bitcast void ()* %a to void (i64, i64)*
+			%3 = bitcast void ()* %a to void (i64, i64)*, !retdec.pointee !0
 			call void %3(i64 %1, i64 %2)
 			ret void
 		}
-	)";
+
+		!0 = !{!"void (i64, i64)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -3887,7 +3919,7 @@ TEST_F(ParamReturnTests, x86PascalBasic)
 
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		@r = global i32 0
 		define void @fnc() {
 			%stack_-4 = alloca i32
@@ -3897,11 +3929,13 @@ TEST_F(ParamReturnTests, x86PascalBasic)
 			%a = bitcast i32* @r to void()*
 			%1 = load i32, i32* %stack_-4
 			%2 = load i32, i32* %stack_-8
-			%3 = bitcast void ()* %a to void (i32, i32)*
+			%3 = bitcast void ()* %a to void (i32, i32)*, !retdec.pointee !0
 			call void %3(i32 %1, i32 %2)
 			ret void
 		}
-	)";
+
+		!0 = !{!"void (i32, i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -4167,7 +4201,7 @@ TEST_F(ParamReturnTests, x86WatcomBasic)
 
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		@eax = global i32 0
 		@ebx = global i32 0
 		@edx = global i32 0
@@ -4190,14 +4224,16 @@ TEST_F(ParamReturnTests, x86WatcomBasic)
 			%4 = load i32, i32* @ecx
 			%5 = load i32, i32* %stack_-8
 			%6 = load i32, i32* %stack_-4
-			%7 = bitcast void ()* %a to void (i32, i32, i32, i32, i32, i32)*
+			%7 = bitcast void ()* %a to void (i32, i32, i32, i32, i32, i32)*, !retdec.pointee !0
 			call void %7(i32 %1, i32 %2, i32 %3, i32 %4, i32 %5, i32 %6)
 			%8 = load i32, i32* @eax
 			ret i32 %8
 		}
 
 		declare void @0()
-	)";
+
+		!0 = !{!"void (i32, i32, i32, i32, i32, i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -4259,7 +4295,7 @@ TEST_F(ParamReturnTests, x86WatcomPassDouble)
 
 	pass.runOnModuleCustom(*module, &config, abi, demangler);
 
-	std::string exp = R"(
+	std::string exp = R"IR(
 		@eax = global i32 0
 		@edx = global i32 0
 		@r = global i32 0
@@ -4276,14 +4312,16 @@ TEST_F(ParamReturnTests, x86WatcomPassDouble)
 			%2 = load i32, i32* @edx
 			%3 = load i32, i32* %stack_-8
 			%4 = load i32, i32* %stack_-4
-			%5 = bitcast void ()* %a to void (i32, i32, i32, i32)*
+			%5 = bitcast void ()* %a to void (i32, i32, i32, i32)*, !retdec.pointee !0
 			call void %5(i32 %1, i32 %2, i32 %3, i32 %4)
 			%6 = load i32, i32* @eax
 			ret i32 %6
 		}
 
 		declare void @0()
-	)";
+
+		!0 = !{!"void (i32, i32, i32, i32)"}
+	)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 

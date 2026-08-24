@@ -8,6 +8,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: ParamReturn indirect-call snapshots include
+  `retdec.pointee` on `IrModifier` function-pointer bitcasts.
 - Track 1 leftover: remaining pass `LoadInst`/`StoreInst` writers
   attach `retdec.pointee` (`inst_opt` bitcast load/store,
   `IrModifier` aggregate reload, `struct_recovery`, `entry_alloca`,

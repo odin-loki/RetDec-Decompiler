@@ -267,6 +267,8 @@ N17 is mean selected-token probability for the whole generation.
   `struct_recovery`, `entry_alloca`, `stack`, `value_protect`,
   decoder, syscalls, `cond_branch_opt`). `param_return` / x87
   register GV loads stay on the alloca/GV typed-pointer fallback.
+  ParamReturn indirect-call snapshots include the function-pointer
+  bitcast MD from `convertValueToType`.
 - **No** `cmake/deps.cmake` LLVM URL change.
 - `IrInstr::Op::Rem` / `Op::Lock` appended before `Undef`.
   `SRem`/`URem`/`FRem` → `Rem`; atomics/fence → `Lock`.
