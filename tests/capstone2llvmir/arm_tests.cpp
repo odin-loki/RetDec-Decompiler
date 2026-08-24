@@ -2603,6 +2603,47 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, LdaLoadAttachesPointeeMetadata)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdabLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	// ldab r0, [r1] — Keystone ARM mode lacks v8; encoding from ARM ARM.
+	auto* f = translate({0x9f, 0x0c, 0xd1, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdahLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate({0x9f, 0x0c, 0xf1, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDA)
 {
 	ONLY_MODE_ARM;
@@ -2651,6 +2692,46 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, LdaexLoadAttachesPointeeMetadata)
 {
 	ONLY_MODE_ARM;
 	auto* f = translate({0x9f, 0x0e, 0x91, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdaexbLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate({0x9f, 0x0e, 0xd1, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdaexhLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate({0x9f, 0x0e, 0xf1, 0xe1});
 	ASSERT_NE(nullptr, f);
 	bool found = false;
 	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
@@ -3023,6 +3104,26 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDRD)
 // ARM_INS_LDREXD
 //
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdrexdLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("ldrexd r0, r1, [r2]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->isAtomic() && l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDREXD)
 {
 	ALL_MODES;
@@ -3094,6 +3195,46 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, StrexAttachesPointeeMetadata)
 {
 	ONLY_MODE_ARM;
 	auto* f = translate(assemble("strex r0, r1, [r2]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic() && s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StrexbAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("strexb r0, r1, [r2]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic() && s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StrexhAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("strexh r0, r1, [r2]"));
 	ASSERT_NE(nullptr, f);
 	bool found = false;
 	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
@@ -3238,6 +3379,46 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, StlAttachesPointeeMetadata)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StlbAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate({0x90, 0xfc, 0xc1, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic() && s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StlhAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate({0x90, 0xfc, 0xe1, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic() && s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_STL)
 {
 	ONLY_MODE_ARM;
@@ -3284,6 +3465,46 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, StlexAttachesPointeeMetadata)
 {
 	ONLY_MODE_ARM;
 	auto* f = translate({0x91, 0x0e, 0x82, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic() && s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StlexbAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate({0x91, 0x0e, 0xc2, 0xe1});
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->isAtomic() && s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StlexhAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate({0x91, 0x0e, 0xe2, 0xe1});
 	ASSERT_NE(nullptr, f);
 	bool found = false;
 	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)

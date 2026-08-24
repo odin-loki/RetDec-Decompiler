@@ -8,6 +8,21 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: remaining ARM/ARM64 exclusive width and x86
+  lock RMW lifts assert `retdec.pointee`. Tests:
+  `LdabLoadAttachesPointeeMetadata`, `LdahLoadAttachesPointeeMetadata`,
+  `LdaexbLoadAttachesPointeeMetadata`, `LdaexhLoadAttachesPointeeMetadata`,
+  `StrexbAttachesPointeeMetadata`, `StrexhAttachesPointeeMetadata`,
+  `StlbAttachesPointeeMetadata`, `StlhAttachesPointeeMetadata`,
+  `StlexbAttachesPointeeMetadata`, `StlexhAttachesPointeeMetadata`,
+  `LdrexdLoadAttachesPointeeMetadata`,
+  `LdxrbLoadAttachesPointeeMetadata`, `LdxrhLoadAttachesPointeeMetadata`,
+  `LdaxrhLoadAttachesPointeeMetadata`, `LdarbLoadAttachesPointeeMetadata`,
+  `LdarhLoadAttachesPointeeMetadata`, `StxrhAttachesPointeeMetadata`,
+  `StlrhAttachesPointeeMetadata`, `StlxrbAttachesPointeeMetadata`,
+  `StlxrhAttachesPointeeMetadata`, `LockDecAttachesPointeeMetadata`,
+  `LockOrAttachesPointeeMetadata`, `LockXorAttachesPointeeMetadata`,
+  `LockAndAttachesPointeeMetadata`, `LockXaddAttachesPointeeMetadata`.
 - Track 1 leftover: remaining pass writers attach `retdec.pointee`
   on pointer `bitcast`/`addrspacecast` (`entry_alloca`,
   `value_protect`, `phi_remover`, `inst_opt`, `phi_to_select`,

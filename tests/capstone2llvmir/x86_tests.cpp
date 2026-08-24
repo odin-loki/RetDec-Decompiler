@@ -14136,6 +14136,106 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockIncAttachesPointeeMetadata)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockDecAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock dec dword ptr [eax]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			if (rmw->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockOrAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock or dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			if (rmw->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockXorAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock xor dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			if (rmw->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockAndAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock and dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			if (rmw->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LockXaddAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lock xadd dword ptr [eax], ecx"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* rmw = dyn_cast<AtomicRMWInst>(&*it))
+		{
+			if (rmw->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, IncWithoutLockIsNotAtomicRmw)
 {
 	ONLY_MODE_32;

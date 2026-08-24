@@ -245,7 +245,12 @@ N17 is mean selected-token probability for the whole generation.
   `STREXD`/`STLEXD` pack `Rt|(Rt2<<32)` like ARM64 `stxp`; `LDAEXD`
   is an acquire pair load. ARM64 `ldaxr`/`ldar`/`stxr`/`stlr`/`stlxp`/
   `ldaxrb`/`stxrb`/`stlrb`, MIPS `lld`/`scd`, PowerPC `ldarx`/`stdcx`,
-  and ARM `ldrexb`/`ldrexh` also have MD tests.
+  and ARM `ldrexb`/`ldrexh` also have MD tests. Remaining ARM
+  byte/half acquire/exclusive (`ldab`/`ldah`/`ldaexb`/`ldaexh`/
+  `strexb`/`strexh`/`stlb`/`stlh`/`stlexb`/`stlexh`), ARM `ldrexd`,
+  ARM64 remaining widths (`ldxrb`/`ldxrh`/`ldaxrh`/`ldarb`/`ldarh`/
+  `stxrh`/`stlrh`/`stlxrb`/`stlxrh`), and x86 `lock dec`/`or`/
+  `xor`/`and`/`xadd` also have MD tests.
 - Value-based readers (`inst_opt`, `entry_alloca`, ABI, `ir_modifier`,
   `simple_types`) call `pointeeType` first. `pointeeType` also uses
   `AllocaInst::getAllocatedType` and `GlobalVariable::getValueType`.
