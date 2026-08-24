@@ -255,7 +255,9 @@ N17 is mean selected-token probability for the whole generation.
   inttoptr) also have MD tests, plus remaining string-op widths
   (`stosb`/`stosw`/`lodsb`/`lodsw`/`movsb`/`scasb`/`cmpsb`/`rep stosb`)
   and stack/table memops (`pop`/`xlatb`/`call`/`leave`/`enter`/`ret`/
-  `lds`). Remaining wired fences (`synci`,
+  `lds`). Remaining x86 `lcall`/`pusha`/`popa`/`pushf`/`popf`/
+  `fxsave`/`fxrstor` and ARM `push`/`pop`/`ldm`/`stm` also have MD
+  tests. Remaining wired fences (`synci`,
   `mbar`/`msync`/`tlbsync`/`ptesync`) have emit-fence tests.
 - Value-based readers (`inst_opt`, `entry_alloca`, ABI, `ir_modifier`,
   `simple_types`) call `pointeeType` first. `pointeeType` also uses

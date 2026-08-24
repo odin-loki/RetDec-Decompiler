@@ -5917,6 +5917,86 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, AND_quaternary)
 	});
 }
 
+TEST_P(Capstone2LlvmIrTranslatorArmTests, PushStoreAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("push {r2, r4, r6}"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, PopLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("pop {r2, r4, r6}"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, LdmLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("ldm r0, {r2, r4, r6}"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, StmStoreAttachesPointeeMetadata)
+{
+	ONLY_MODE_ARM;
+	auto* f = translate(assemble("stm r0, {r2, r4, r6}"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

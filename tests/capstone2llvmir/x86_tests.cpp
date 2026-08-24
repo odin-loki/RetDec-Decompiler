@@ -13797,6 +13797,146 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, LdsLoadAttachesPointeeMetadata)
 	EXPECT_TRUE(found);
 }
 
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, LcallPushAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("lcall 0x7:0x1234"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PushaStoreAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("pushal"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PopaLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("popal"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PushfStoreAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("pushfd"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PopfLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("popfd"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, FxsaveStoreAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("fxsave [eax]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, FxrstorLoadAttachesPointeeMetadata)
+{
+	ONLY_MODE_32;
+	auto* f = translate(assemble("fxrstor [eax]"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, MemoryStoreAttachesPointeeMetadata)
 {
 	SKIP_MODE_16;

@@ -8,6 +8,15 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Track 1 leftover: remaining x86 `lcall`/`pusha`/`popa`/`pushf`/`popf`/
+  `fxsave`/`fxrstor` and ARM `push`/`pop`/`ldm`/`stm` assert
+  `retdec.pointee`. Tests:
+  `LcallPushAttachesPointeeMetadata`, `PushaStoreAttachesPointeeMetadata`,
+  `PopaLoadAttachesPointeeMetadata`, `PushfStoreAttachesPointeeMetadata`,
+  `PopfLoadAttachesPointeeMetadata`, `FxsaveStoreAttachesPointeeMetadata`,
+  `FxrstorLoadAttachesPointeeMetadata`, `PushStoreAttachesPointeeMetadata`,
+  `PopLoadAttachesPointeeMetadata`, `LdmLoadAttachesPointeeMetadata`,
+  `StmStoreAttachesPointeeMetadata`.
 - Track 1 leftover: remaining x86 string-op widths and stack/table
   memops assert `retdec.pointee`. Tests:
   `StosbStoreAttachesPointeeMetadata`, `StoswStoreAttachesPointeeMetadata`,
