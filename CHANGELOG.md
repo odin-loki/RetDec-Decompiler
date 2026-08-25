@@ -8,7 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
-- Phase 1 `REL-02`: GHCR runtime image ships `/opt/retdec/share/fib_smoke` and smokes `analyse` on it. Anonymous pull still 401 until the package is public.
+- Phase 1 `REL-02`: GHCR runtime image ships `/opt/retdec/share/fib_smoke` and smokes `analyse` on it (run [32835822135](https://github.com/odin-loki/RetDec-Decompiler/actions/runs/32835822135)). Anonymous pull still 401 until the package is public.
 - Phase 1 `DEAD-01`: `src/cxx_backend/README.md` marks the C++ writer unwired until `LLVM-22`.
 - Phase 1 `CI-10`: GitHub secret scanning and push protection were already on; Dependabot security updates and private vulnerability reporting are now on. `SECURITY.md` tracks 2.0.x (not 1.0.x).
 - Phase 1 `REL-07`: `v2.0.21` Release includes `fib_smoke` + `.sigstore.json` (run [32834649102](https://github.com/odin-loki/RetDec-Decompiler/actions/runs/32834649102)); QUICKSTART decompiles it after the tarball install.

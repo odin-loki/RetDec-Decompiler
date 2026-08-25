@@ -46,18 +46,24 @@ Keyless Sigstore bundles `retdec-2.0.21-windows-x64-portable.zip.sigstore.json`
 and `retdec-2.0.21-windows-x64-setup.exe.sigstore.json` are on the Release.
 Authenticode is not applied.
 
-## Docker (when the image is published)
+## Docker (when the image is public)
+
+The GHCR image packs the Linux tarball and `/opt/retdec/share/fib_smoke`.
+CI smoked `analyse` on that sample ([run 32835822135](https://github.com/odin-loki/RetDec-Decompiler/actions/runs/32835822135)).
+Anonymous `docker pull ghcr.io/odin-loki/retdec:v2.0.21` still returns 401
+until the package is set public in GitHub Packages. Docker Hub
+`imortek/retdec` is unpublished.
+
+When the GHCR package is public:
 
 ```bash
-docker pull imortek/retdec
-docker run --rm -v "$PWD":/work imortek/retdec \
-  analyse /work/sample.elf -o /work/sample.c
+docker pull ghcr.io/odin-loki/retdec:v2.0.21
+docker run --rm -v "$PWD":/work ghcr.io/odin-loki/retdec:v2.0.21 \
+  analyse /opt/retdec/share/fib_smoke -o /work/fib.c
 ```
 
 The in-tree `Dockerfile` installs the CLI on `PATH` as `retdec-decompiler`
-and `analyse` (same argv). The image is not on Docker Hub yet.
-`ghcr.io/odin-loki/retdec` was pushed from the Linux tarball but anonymous
-pulls still return 401 until the package is set public in GitHub Packages.
+and `analyse` (same argv).
 
 ## Local binary (this tree)
 
