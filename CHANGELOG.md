@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `DEAD-04`: `BUILD_REFERENCE.md` no longer says full presets default CUDA accel ON.
 - Phase 1 `DOC-07`: developer guide emitter how-to states native output is C.
 - Phase 1 `DOC-06`: `docs/internal/GUI_PHASE_D.md` neural path is `RETDEC_NEURAL_REFINE` (no `retdec-qwen3-runner`).
 - Phase 1 `LEG-12`: `check_qt_dynamic_link.py` forbids `find_package(Qt6 STATIC)`; weekly `qt-lgpl-evidence.yml` `dumpbin`s the published Windows zip for `Qt6Core.dll`.

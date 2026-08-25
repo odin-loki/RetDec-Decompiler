@@ -1,14 +1,14 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Build RetDec natively on Windows (MSVC + CUDA + Qt6 GUI) and stage
+    Build RetDec natively on Windows (MSVC + Qt6 GUI; CUDA toolkit optional) and stage
     a self-contained deployment in dist\windows\.
 
 .DESCRIPTION
     1. Runs cmake --build on build\windows\ (from windows_native_configure.ps1 or cmake --preset).
     2. Runs cmake --install into install\windows\ (CMake preset installDir).
-    3. Copies all required DLLs (Qt6, CUDA runtime, MSVC runtime) into
-       dist\windows\ so the result is portable.
+    3. Copies Qt6 and MSVC runtime DLLs into dist\windows\ so the result is portable.
+       CUDA runtime DLLs are copied if a toolkit is installed; cuda_accel stays OFF.
 
 .PARAMETER Preset
     Same preset as configure (default: full-windows-release). Build: build\windows\, install: install\windows\.
@@ -364,7 +364,7 @@ if ($msvcRedistCopied -eq 0) {
 # ── Create a README in dist dir ───────────────────────────────────────────
 $readmePath = Join-Path $DistDirFull "README.txt"
 @"
-RetDec - Windows Native Build (MSVC + CUDA + Qt6 GUI)
+RetDec - Windows Native Build (MSVC + Qt6 GUI)
 Copyright (c) 2025 Odin Loch Trading as Imortek
 
 Contents:

@@ -1,6 +1,6 @@
 # RetDec build reference
 
-This document is the **canonical guide** to configuring, compiling, installing, packaging, and validating RetDec. It complements [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) (MSVC + CUDA + Qt) and [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md) (MinGW cross-compile).
+This document is the **canonical guide** to configuring, compiling, installing, packaging, and validating RetDec. It complements [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) (MSVC + Qt6; CUDA toolkit optional) and [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md) (MinGW cross-compile).
 
 ---
 
@@ -75,9 +75,9 @@ cmake --build build/linux --parallel    # Linux/WSL/macOS
 | `core-release` | Any | Release + LTO | Smaller set; tests OFF. |
 | `core-asan` | Unix | Debug + ASan | AddressSanitizer. |
 | `core-coverage` | Unix | Debug + gcov | Coverage instrumentation. |
-| `full-linux-debug` | Linux/WSL/macOS | Debug | Full tree, CUDA, Qt6 GUI, tests ON. |
-| `full-linux-release` | Linux/WSL/macOS | Release + LTO | Full tree, CUDA, Qt6 GUI, tests ON. |
-| `full-windows-release` | Windows only | Release + LTO | MSVC, bundled OpenSSL, CUDA, Qt6. |
+| `full-linux-debug` | Linux/WSL/macOS | Debug | Full tree, Qt6 GUI, tests ON; CUDA accel **OFF**. |
+| `full-linux-release` | Linux/WSL/macOS | Release + LTO | Full tree, Qt6 GUI, tests ON; CUDA accel **OFF**. |
+| `full-windows-release` | Windows only | Release + LTO | MSVC, bundled OpenSSL, Qt6; CUDA accel **OFF**. |
 | `full-windows-debug` | Windows only | Debug | Same components as release; PDB-friendly. |
 
 **Build presets** (same names) invoke the matching configure preset:
@@ -170,7 +170,7 @@ cmake --install build\windows
 
 ### Windows portable folder (`dist/windows`)
 
-`windows_native_build.ps1` runs `cmake --build`, `cmake --install` into `install/windows`, then copies binaries, `share/retdec`, Qt DLLs (`windeployqt`), and CUDA/MSVC runtimes into `dist/windows`.
+`windows_native_build.ps1` runs `cmake --build`, `cmake --install` into `install/windows`, then copies binaries, `share/retdec`, Qt DLLs (`windeployqt`), and MSVC runtimes into `dist/windows`. If a CUDA toolkit is present it also copies CUDA runtime DLLs; that does not enable `cuda_accel` in the decompiler pipeline.
 
 For a **debuggable GUI** copy with PDBs, use `windows_prepare_debuggable_gui.ps1` (reads from `dist/windows`, writes `dist/windows/debuggable` by default).
 
@@ -223,7 +223,7 @@ See [scripts/README.md](../scripts/README.md) for the full table.
 
 ## Component presets: `core-*` vs `full-*`
 
-- **`full-*`** presets enable the **default “everything”** product build (CUDA, Qt6 GUI, bundled OpenSSL on Windows, etc.).
+- **`full-*`** presets enable the **default “everything”** product build (Qt6 GUI, bundled OpenSSL on Windows, etc.). `RETDEC_ENABLE_CUDA_ACCEL` stays **OFF**.
 - **`core-*`** presets enable a **reduced** set of `RETDEC_ENABLE_*` options suitable for faster CLI-focused builds. CMake logic still pulls in libraries required by `retdec-decompiler` (e.g. unpacker, extractors) via [cmake/options.cmake](../cmake/options.cmake).
 
 To customise components, use `-DRETDEC_ENABLE_*=ON/OFF` or `-DRETDEC_ENABLE_ALL=ON` and read `options.cmake` for dependency chains.
@@ -232,7 +232,7 @@ To customise components, use `-DRETDEC_ENABLE_*=ON/OFF` or `-DRETDEC_ENABLE_ALL=
 
 ## CUDA, Qt6, and OpenSSL
 
-- **CUDA:** `RETDEC_ENABLE_CUDA_ACCEL` defaults ON in full presets. Pass `-DRETDEC_ENABLE_CUDA_ACCEL=OFF` or use `windows_native_configure.ps1 -NoCuda` on Windows if no toolkit is installed.
+- **CUDA:** `RETDEC_ENABLE_CUDA_ACCEL` defaults **OFF** in full presets (`C-CUDA-PIPE` withdrawn). Pass `-DRETDEC_ENABLE_CUDA_ACCEL=ON` only for parked research builds. `windows_native_configure.ps1 -NoCuda` skips the NVCC probe.
 - **Qt6:** Full presets set `RETDEC_REQUIRE_QT6=ON`. Use `-AllowOptionalQt` on the Windows configure script or `-DRETDEC_REQUIRE_QT6=OFF` for CLI-only experiments.
 - **OpenSSL:** On Windows, `RETDEC_BUNDLED_OPENSSL` is typically ON (MSVC build). MinGW cross-compiles also use bundled OpenSSL with the MinGW toolchain.
 
