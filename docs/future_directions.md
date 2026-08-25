@@ -194,17 +194,15 @@ declarations and call-site reconstruction.
 
 | Language | Status | Notes |
 |----------|--------|-------|
-| C | Implemented | Default output |
-| C++ | Implemented | Class hierarchy, vtables, RTTI |
-| F# | Implemented | Functional approximation |
-| Visual Basic .NET | Implemented | — |
+| C | Implemented | Default native output |
+| C++ | Filename only | Same C writer; `.cpp` extension |
 | Python | Implemented | From `.pyc` input |
 | Lua | Implemented | From `.luac` input |
-| WASM/WAT | Implemented | — |
-| CUDA C | Implemented | From PTX input |
-| Java | Implemented | From JVM bytecode |
-| Kotlin | Implemented | From DEX/JVM, Kotlin metadata |
-| C# | Implemented | From CIL |
+| WASM/WAT | Implemented | From `.wasm` input |
+| Java | Managed path | From JVM bytecode |
+| C# | Managed path | From CIL |
+| CUDA C | PTX path | From `.ptx` input |
+| F# / VB.NET / Kotlin | In-tree, unwired | Not a native free-choice target |
 | Rust | Future | Highly desirable; requires Rust-specific idiom recovery |
 | Go | Research | Go ABI differs significantly; goroutine patterns |
 | Swift | Research | ARC patterns, Swift runtime calls |

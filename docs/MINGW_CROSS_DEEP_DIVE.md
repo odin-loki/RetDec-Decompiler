@@ -145,7 +145,6 @@ After running, `dist/windows/` contains a self-contained Windows deployment:
 dist/windows/
   retdec-decompiler.exe
   retdec-unpacker.exe
-  retdec-qwen3-runner.exe
   libstdc++-6.dll
   libgcc_s_seh-1.dll
   libwinpthread-1.dll

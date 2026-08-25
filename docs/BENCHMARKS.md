@@ -27,8 +27,14 @@ $env:PATH = "C:\Program Files\Docker\Docker\resources\bin;" + $env:PATH
 py -3 scripts\run_stock_retdec_docker.py --profile full --skip-pull
 ```
 
-On this set both sides are typically syntax 1.0 and recompile 0% (RetDec
-pseudocode is not gcc-clean C).
+On this set both sides are typically syntax 1.0 on **default `.c`**, which
+does **not** recompile (0%). Opt-in buildable sidecars
+(`RETDEC_EMIT_BUILDABLE`) recompile **216/216** on the fork vs **0/216**
+stock. That is the headline quality number; see
+[BENCHMARKS_TABLE.md](BENCHMARKS_TABLE.md).
+
+Wall times that mix Debug/WSL with stock Release-in-Docker are not a
+comparison (BENCH-06).
 
 Harness: [tests/decompilebench/README.md](../tests/decompilebench/README.md)
 

@@ -10,12 +10,13 @@
 **RetDec Imortek** is a **specification-extraction platform that contains a
 decompiler**: it recovers algorithms, containers, concurrency patterns, and
 structured semantics from compiled binaries, with optional offline neural
-refinement under verification gates. Human-readable C (and other languages) is
-a supporting artefact for review—not the sole product metric.
+refinement. Human-readable C is a supporting artefact for review—not the
+sole product metric. Other languages are emitted only on managed/bytecode
+inputs, not as a free-choice native list.
 
 This edition extends the RetDec lineage with semantic library recovery,
-multi-language output, algorithm-recovery benchmarks, verified offline neural
-refinement, and a Qt 6 desktop environment for interactive analysis.
+algorithm-recovery **name-blind** measurements, optional verified offline
+neural refinement, and a Qt 6 desktop environment.
 
 ---
 
@@ -38,7 +39,8 @@ A decompiler automates the hardest part of that workflow: translating low-level 
 2. **Lifting** — Translate machine instructions (or bytecode) into an intermediate representation (IR) that is easier to analyze than raw opcodes.  
 3. **Analysis** — Build control-flow graphs (CFGs), infer types, recover functions, exceptions, RTTI, and calling conventions.  
 4. **Structuring** — Turn flat graphs into loops, branches, and structured control flow that resemble original source.  
-5. **Emission** — Print the result as **C**, **C++**, or another supported language, optionally annotated with recovery metadata.
+5. **Emission** — Print the result as **C** for native binaries. Managed
+   formats emit the language of the input.
 
 RetDec’s design centers **LLVM IR as a pivot**: architecture-specific front ends lift to a common IR; middle and back ends are shared. Adding CPU support is largely a front-end concern.
 
@@ -49,10 +51,11 @@ RetDec’s design centers **LLVM IR as a pivot**: architecture-specific front en
 This product is positioned as **specification extraction**, not pseudocode
 parity with Hex-Rays or Ghidra. Lead with:
 
-- Algorithm-recovery precision/recall/F1 on a labelled corpus
+- Opt-in buildable C recompile **216/216** vs stock **0/216**
+- Algorithm-recovery **name-blind** F1 **0.056** (95% CI 0.034–0.083)
 - Semantic JSON export (`config.functions[].semanticDetections`)
 - Offline neural refinement with a compile-only gate (`cc -fsyntax-only`;
-  decompiled C is never executed)
+  decompiled C is never executed). Differential gate is not implemented.
 
 Pseudocode quality is reported honestly via DecompileBench; parity with stock
 RetDec C output is expected and not marketed as the primary differentiator.
@@ -64,12 +67,12 @@ This tree is positioned as a **full-stack analysis and decompilation platform**,
 
 | Capability | Benefit |
 |------------|---------|
-| **Broad input formats** | One toolchain for native binaries, GPU PTX, WASM, JVM/DEX, .NET, Python, and Lua artifacts. |
-| **Multiple output languages** | Emit code in the language that best fits downstream tooling or analyst preference. |
-| **Semantic recovery** | Recognize STL containers, algorithms, crypto, concurrency, serialization, and C++ runtime patterns—not only raw instructions. |
-| **GPU acceleration (experimental)** | CUDA (`cuda_accel`) and OpenCL backends exist in-tree but are **unintegrated**, default-OFF, and **not** in the decompiler pipeline. Do not treat them as a product feature. |
-| **On-device AI** | Optional GGUF-based models (e.g. Qwen3 family) for naming, explanation, and interactive Q&A over recovered code—without mandatory cloud APIs. |
-| **Qt 6 GUI** | IDE-style tri-pane views, CFG and call-graph visualization, diffing, and integrated assistant UI. |
+| **Broad input formats** | One toolchain for native binaries, GPU PTX, WASM, JVM/DEX, .NET, Python, and Lua artifacts. Native CPU maturity is Production (x86/x86-64) / Partial (ARM, Thumb, MIPS, PowerPC) / Incomplete (ARM64). |
+| **Input-keyed output** | Native binaries emit C. Managed formats emit that format’s language. Not a free-choice eleven-language native list. |
+| **Semantic recovery** | Recognize STL containers, algorithms, crypto, concurrency, serialization, and C++ runtime patterns—not only raw instructions. Name-blind F1 is 0.056; do not advertise 1.0. |
+| **GPU backends (experimental)** | CUDA (`cuda_accel`) and OpenCL exist in-tree, default-OFF, **unintegrated**, not a product feature (`C-CUDA-PIPE` withdrawn). |
+| **On-device AI (opt-in)** | Optional GGUF via `RETDEC_NEURAL_REFINE` / `RETDEC_NEURAL_MODEL`. No `--model` flag. No `retdec-qwen3-runner`. |
+| **Qt 6 GUI** | Document tabs, docks, Call Graph, Type Hierarchy, Signature Studio, Diff, Binary Browser, AI Assistant Tools window. |
 | **Plugins** | Extend the pipeline, output, visualizations, or analysis via shared libraries. |
 
 ---
@@ -94,7 +97,9 @@ A **managed-language dispatcher** routes JVM, DEX, CIL, Python, Lua, and WASM th
 
 ## Supported outputs (what you can obtain)
 
-Beyond traditional **C** and **C++**, the product targets **Python**, **Lua**, **Java**, **Kotlin**, **C#**, **F#**, **Visual Basic .NET**, **WebAssembly text (WAT)**, and **CUDA C** (for PTX-oriented workflows). The exact fidelity depends on input class: native binaries pass through the full IR pipeline; bytecode formats use specialized lifters.
+Native binaries emit **C**. Managed inputs emit the language of that format
+(Python, Lua, WAT, Java-family, C#-family). F# / VB.NET / Kotlin / CUDA-C
+writers in-tree are not general native-pipeline targets.
 
 ---
 
@@ -153,10 +158,10 @@ MSVC path; **Linux/WSL cross-compilation to Windows** produces a
 Optional on-device naming uses **llama.cpp + a GGUF on disk**
 (`RETDEC_NEURAL_REFINE`). The in-tree Qwen3/FlashAttention stack is
 **not wired into `src/retdec`** (C-QWEN3-GPU withdrawn). Analysts can load
-**GGUF-quantized** weights for:
-
-- Explanations and naming suggestions over decompiled output.  
-- CLI-assisted workflows (`RETDEC_NEURAL_REFINE` / `--model`). The GUI has no live AI chat panel.
+**GGUF-quantized** weights for explanations and naming suggestions.
+Use `RETDEC_NEURAL_REFINE` and `RETDEC_NEURAL_MODEL`. There is no `--model`
+CLI flag and no `retdec-qwen3-runner`. The GUI Tools menu opens
+**AI Assistant**.
 
 This is **optional**: core decompilation remains usable without any model on disk. Operation is **local-first**, which matters for air-gapped or data-sensitive environments—subject to your own policies on running third-party model weights.
 
@@ -172,10 +177,9 @@ The GUI targets a professional analyst workflow:
 - **Call graph** with SCC “super-nodes” and module cluster overlays.  
 - **Function list** with recovery confidence cues.  
 - **Strings and constants** browser with semantic classification.  
-- **Before/after diff** (Myers algorithm) for comparing outputs or stages.  
-- **AI assistant** panel with streaming responses.  
-- **Settings** across multiple tabs (general, analysis, ML model, recovery toggles, advanced diagnostics, plugins).  
-- **Plugin manager** integration for third-party extensions.
+- **Before/after diff** (Myers algorithm) for comparing outputs or stages.
+- **AI Assistant** Tools window (`AIAssistantPanel`).
+- **Settings** across multiple tabs (general, analysis, ML model, recovery toggles, advanced diagnostics, plugins).
 
 ---
 
@@ -183,7 +187,9 @@ The GUI targets a professional analyst workflow:
 
 The primary CLI is **`retdec-decompiler`**, suitable for scripting and CI. Typical invocations decompile a file to a chosen output path; managed formats use the same entry point with automatic dispatch.
 
-Additional tooling includes **`retdec-unpacker`** (packed / archive-oriented unpacking in the broader RetDec ecosystem) and, where built, auxiliary binaries such as an **AI runner** in staged Windows bundles. Exact tool availability depends on **CMake options** and preset (see `docs/BUILD_REFERENCE.md`).
+Additional tooling includes **`retdec-unpacker`**. There is no
+`retdec-qwen3-runner` in staged Windows bundles. Exact tool availability
+depends on **CMake options** and preset (see `docs/BUILD_REFERENCE.md`).
 
 ---
 

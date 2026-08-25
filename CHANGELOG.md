@@ -8,6 +8,12 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 0 (Plan.md): honest public numbers (name-blind F1 **0.056**,
+  opt-in buildable **216/216** vs stock **0/216**); input-keyed output
+  languages; GUI panel inventory; purge of `retdec-qwen3-runner` / `--model`;
+  `NOTICE` LLVM licence line; commercial licence without a published price
+  list; `docs/DUE_DILIGENCE.md`; `CLAIMS.md` verification column (`C-LICENCE`
+  asserted).
 - Master engineering review and execution plan (`Plan.md`).
 - Track 1 leftover: `IdiomsLibgcc` register load/store attach
   `retdec.pointee`. Test:

@@ -1,0 +1,32 @@
+# Due diligence register
+
+Responses to the blocking findings in [`Plan.md`](../Plan.md) Part 2.
+This file is the pre-empting artefact (`BIZ-04`). Status is as of the
+Phase 0 documentation pass (2026-08-25).
+
+| ID | Finding | Response | Residual |
+|----|---------|----------|----------|
+| B1 | Public docs advertised withdrawn F1 1.0 and default-`.c` recompile 0 as the quality story | README **Results** and `docs/BENCHMARKS_TABLE.md` now lead with name-blind **0.056** (95% CI 0.034–0.083) and opt-in buildable **216/216** vs stock **0/216**. Stem-fallback 1.0 is labelled a second mode, not the headline. | CI still gates `MIN_MEAN_F1=0.95` with stem fallback (`CI-01`, Phase 1E). |
+| B2 | 151 upstream files lack the Avast copyright line | `C-LICENCE` is **asserted**, not demonstrated. Dual MIT notice remains in `LICENSE-MIT` / `NOTICE`. | Restore headers (`LEG-01`) and CI gate (`LEG-02`) in Phase 1A. |
+| B3 | No CLA; dual-licence relicensing is not wired | Not started. | `LEG-05`/`LEG-06` Phase 1A. |
+| B4 | Detector confidence precision 0.000 (A4, n=160) | `results/a4-calibration.md` remains the measurement. README does not treat confidence as calibrated. Constants were not fitted. | Fitting is Phase 2+ (`DET` track). Do not advertise scores as probabilities. |
+| B5 | Documented `retdec-qwen3-runner` / `--model` did not exist | Purged from README, user manual, Windows/MinGW docs, whitepaper. Neural path is `RETDEC_NEURAL_REFINE` + `RETDEC_NEURAL_MODEL`. | None for the phantom binary. |
+| B6 | Incremental cache can return wrong results; on by default | Not started. | `CACHE-01`–`CACHE-06` Phase 1C. |
+| B7 | README advertised eleven output languages; native path is C | README / architecture / whitepaper / user manual rewritten as input-keyed tables. | Unwired emitters remain in-tree (`DEAD-02`, Phase 1B). |
+| B8 | No git tags / no downloadable release | Not started. | `REL-01`–`REL-07` Phase 1D. |
+| B9 | AGPL is a procurement blocker for the stated buyer | Dual-licence text remains; commercial terms no longer publish a price list (`LEG-10`). | Commercial packaging and Keystone exclusion (`LEG-11`) Phase 1A. |
+
+## Phase 0 exit (docs)
+
+- No public document asserts `C-ALGO-F1` or `C-NEURAL-DIFF` as implemented product figures.
+- No public document names `retdec-qwen3-runner` or CLI `--model` as shipped.
+- `--buildable` / `RETDEC_EMIT_BUILDABLE` 216/216 vs stock 0/216 is above the fold in the README.
+- Wall-clock Debug/WSL vs Release/Docker is marked unmeasured (`BENCH-06`).
+- LLVM line in `NOTICE` is Apache-2.0-with-LLVM-exceptions (`LEG-13`).
+- `DET-01` (`emittedAnnotation`) was **not** deleted: fourteen `tests/crypto_detect` cases assert on it.
+
+## Not in this pass
+
+Phase 1 (legal headers, dead modules, cache hash, releases, CI truth) and
+later phases. Track 1 `retdec.pointee` writers/readers are on `main`; Type*-only
+and ParamReturn-dump families stay until a larger change. LLVM pin is Track 2.

@@ -152,7 +152,6 @@ After `cmake --install`, documentation is installed under `share/retdec/doc/` (e
 | `retdec-decompiler.exe` | Main CLI decompiler |
 | `retdec-gui.exe` | Qt6 GUI application |
 | `retdec-unpacker.exe` | Archive/packer unpacker |
-| `retdec-qwen3-runner.exe` | AI inference runner (Qwen3) |
 
 CUDA-accelerated analysis kernels (`CUDADisassembler`, `CUDASteensgaard`,
 `CUDATypeInferencer`, `CUDASemanticHasher`, `CUDAEGraphSimplifier`) exist

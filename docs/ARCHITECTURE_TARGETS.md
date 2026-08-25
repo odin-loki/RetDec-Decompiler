@@ -16,7 +16,9 @@ x86, x86-64, ARM, Thumb, ARM64 (partial), MIPS, and PowerPC support.
 | Target | Status | Notes |
 |--------|--------|-------|
 | **RISC-V** (RV32I / RV64I) | Not implemented | LLVM backend exists; RetDec lifter + ABI tables missing |
-| **ARM64** (AArch64) | Partial / incomplete | Capstone + some ARM64 init in `bin2llvmir`; not production-ready end-to-end |
+| **x86 / x86-64** | Production | Default native path |
+| **ARM / Thumb / MIPS / PowerPC** | Partial | Lifter + ABI present; not the production e2e bar |
+| **ARM64** (AArch64) | Incomplete | Capstone + some ARM64 init in `bin2llvmir`; not production-ready end-to-end |
 | **SPARC** | **Not implemented** | `createArch(CS_ARCH_SPARC)` / `createSparc` throw `GenericError` |
 | **SystemZ** | **Not implemented** | `createArch(CS_ARCH_SYSZ)` / `createSysz` throw `GenericError` |
 | **XCore** | **Not implemented** | `createArch(CS_ARCH_XCORE)` / `createXcore` throw `GenericError` |

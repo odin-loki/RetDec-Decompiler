@@ -201,38 +201,31 @@ Compare decompiled output before and after a recovery pass.
 
 ---
 
-## AI-assisted analysis (external)
+## AI-assisted analysis
 
-The v3 GUI has **no in-GUI AI chat panel**. Optional Qwen3-assisted naming and
-analysis use the same `.gguf` engine via external tools:
+The GUI includes an **AI Assistant** Tools window (`AIAssistantPanel`).
+Optional llama.cpp refine uses env vars, not a CLI `--model` flag:
 
-1. Open **Settings → ML tab** and set **Model file** to a `.gguf` (Qwen3
-   recommended; Q4_K_M is a good speed/quality balance). Click **Apply** — this
-   path is used when the GUI launches **`retdec-decompiler`** with **`--model`**.
-2. Or run the standalone runner / CLI directly:
+1. Open **Settings → ML tab** and set **Model file** to a `.gguf`. Apply.
+   The GUI passes `RETDEC_NEURAL_REFINE` / `RETDEC_NEURAL_MODEL` to the
+   `retdec-decompiler` child.
+2. Or set the same variables on the CLI:
 
 ```bash
-retdec-decompiler binary.elf --model /path/to/model.gguf -o output.c
-retdec-qwen3-runner --help
+RETDEC_NEURAL_REFINE=1 RETDEC_NEURAL_MODEL=/path/to/model.gguf \
+  retdec-decompiler binary.elf -o output.c
 ```
 
-Place weights under `models/` in the repo root or any path you configure.
-Product direction for GUI vs external AI: [GUI_ROADMAP.md](GUI_ROADMAP.md).
+There is no `retdec-qwen3-runner` binary. Product direction:
+[GUI_ROADMAP.md](GUI_ROADMAP.md).
 
 ---
 
 ## Exporting Results
 
-**File → Export As…** offers:
-
-| Format | Description |
-|--------|-------------|
-| C      | Recovered C source (default) |
-| C++    | Recovered C++ with class hierarchy |
-| F#     | F# functional approximation |
-| VB.NET | Visual Basic .NET |
-| WASM/WAT | WebAssembly text format |
-| Lua    | Lua script (for Lua bytecode inputs) |
+**File → Export As…** offers recovered C (default). Other rows in the dialog
+are format-keyed managed emitters or unwired writers — not a free-choice
+list of eleven languages for native binaries. Native pipeline output is C.
 
 **Analysis → Save CMakeLists.txt** exports the module clustering result as a
 `CMakeLists.txt` ready for compilation.
@@ -350,10 +343,11 @@ retdec-decompiler module.wasm -o module.wat
 retdec-decompiler script.pyc -o script.py
 ```
 
-Optional **Qwen3** GGUF for AI-assisted naming:
+Optional GGUF refine (no `--model` flag):
 
 ```bash
-retdec-decompiler binary.elf --model /path/to/model.gguf -o output.c
+RETDEC_NEURAL_REFINE=1 RETDEC_NEURAL_MODEL=/path/to/model.gguf \
+  retdec-decompiler binary.elf -o output.c
 ```
 
 On Windows staged builds:
@@ -383,7 +377,7 @@ Full feature lists and format tables: [README.md](../README.md).
 |---------|----------------|
 | GUI does not start | Run from `dist\windows` (or install prefix `bin`) so Qt plugins and `platforms\qwindows.dll` sit next to the executable; re-run `windeployqt` if you moved files manually. |
 | “No CUDA” / slow analysis | In **Settings → CUDA**, confirm **Use GPU**; install an NVIDIA driver; full MSVC build required for Windows CUDA kernels (MinGW cross build is CPU-only for GPU passes). |
-| AI-assisted naming | Use **`retdec-qwen3-runner`** or CLI `--model`; v3 has no in-GUI AI chat panel. |
+| AI-assisted naming | Tools → AI Assistant, or `RETDEC_NEURAL_REFINE` + `RETDEC_NEURAL_MODEL`. There is no `--model` flag and no `retdec-qwen3-runner`. |
 | Empty decompilation | Check **Settings → Advanced → Max functions** (0 = all). Very large binaries may hit **Max analysis time** on the Analysis tab. |
 | Crash on open file | Try **File → Open** with a smaller sample; enable **Verbosity** under Advanced and capture console output; on Windows use `run_gui_with_procdump.ps1` (see [scripts/README.md](../scripts/README.md)). |
 

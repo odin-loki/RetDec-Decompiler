@@ -23,28 +23,15 @@ What you cannot do
   - Claim you own RetDec or the Imortek name
   - Sell RetDec itself as if it were your original work
 
-Price (AUD, exclusive of GST unless the invoice says otherwise)
-  These are the published prices. Multi-year and volume deals are
-  available. If your use is unusual, ask for a quote.
-
-  Indie / sole trader          1,490 per year
-  Team (up to 10 people)       4,990 per year
-  Business (up to 50 people)  14,900 per year
-  Enterprise / OEM            we quote (annual or multi-year)
-
-  A seat is one person who runs RetDec or ships a product that
-  embeds it. Build servers that only run tests are free.
-
-  The price is the price. You do not pay a percentage of revenue.
-
 How to buy
   Email odin.loch@outlook.com.au with:
   - company name and country
-  - which tier
-  - whether you need an OEM / redistribution addendum
+  - intended use (internal, SaaS, OEM / redistribution)
+  - seat count (one person who runs RetDec or ships a product that
+    embeds it; build servers that only run tests are free)
 
   We send a short order form and a tax invoice. The licence starts
-  when payment clears. Renew at the same tier, or tell us to change.
+  when payment clears. Renew, or tell us to change terms.
 
 Day one
   After payment you may ship. Keep a discreet

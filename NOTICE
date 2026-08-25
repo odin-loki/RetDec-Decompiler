@@ -10,7 +10,7 @@ retained in all copies and substantial portions of the Software.
 
 Third-party components (see cmake/deps.cmake for pinned versions):
 
-  LLVM (University of Illinois/NCSA) — via avast/llvm fork
+  LLVM (Apache-2.0-with-LLVM-exceptions) — via avast/llvm fork (LLVM 8-era pin)
   Capstone (BSD-3-Clause)
   YARA (BSD-3-Clause)
   yaramod (MIT)

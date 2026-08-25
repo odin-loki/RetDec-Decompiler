@@ -27,16 +27,19 @@ the AI inference engine, and the plugin system.
 
 RetDec is a retargetable machine-code decompiler.  Given a binary (ELF, PE,
 Mach-O, CUDA, WASM, JVM, DEX, `.pyc`, `.luac`, CIL), it produces human-readable
-source code in C, C++, Python, Lua, Java, Kotlin, C#, F#, VB.NET, or WAT.
+source code in **C** for native binaries. Managed formats emit the language
+of the input (Python from `.pyc`, Lua from `.luac`, WAT from `.wasm`, and
+so on). Native “C++” is the C writer with a `.cpp` filename.
 
 The enhanced version adds:
 
 - **Semantic recovery**: STL containers, cryptographic primitives, concurrency
   synchronisation, CUDA host/device code, serialisation frameworks (Protobuf,
   FlatBuffers, JSON, XML).
-- **Multiple output languages**: nine target languages beyond plain C.
-- **AI assistant**: integrated Qwen3 MoE LLM for interactive analysis,
-  streaming over a background thread.
+- **Input-keyed output**: native binaries emit C; managed formats emit the
+  source language of that format.
+- **AI assistant**: optional llama.cpp GGUF refine (`RETDEC_NEURAL_REFINE`);
+  GUI Tools → AI Assistant. There is no `retdec-qwen3-runner` / `--model`.
 - **Qt 6 GUI**: multi-panel IDE-style interface with CFG visualiser, type
   hierarchy browser, call graph explorer, diff view, strings browser, and
   settings/plugin system.
@@ -594,8 +597,7 @@ Binary File
 └─────────────────────────┬────────────────────────────┘
                           │
                  Final Source Code
-                 (C / C++ / Python / Java / Kotlin /
-                  C# / F# / VB.NET / Lua / WAT)
+                 (native: C; managed: format-keyed)
 ```
 
 ### Managed Language Paths (bypass SSA)

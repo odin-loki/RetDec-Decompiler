@@ -56,7 +56,8 @@ GUI: Settings → ML model path that exists on disk is passed to the
 decompiler child as these env vars. Headless `--quit-when-done` does
 not apply saved ML settings.
 
-- Compile gate + optional differential gate (`RETDEC_NEURAL_DIFF_GATE=1`).
+- Compile gate is `cc`/`gcc -fsyntax-only`. Differential gate is **not
+  implemented**: `RETDEC_NEURAL_DIFF_GATE=1` warns and skips.
 - Refinement latency is `neural_refine_wall_s` in DecompileBench; it is
   not mixed into `mean_wall_s`.
 
@@ -95,7 +96,7 @@ First smoke: `RETDEC_NEURAL_TIER_MAX=1`.
 
 1. **Compile** — `gcc -fsyntax-only` (skip with `RETDEC_NEURAL_SKIP_COMPILE_GATE=1`).
 2. **Structural** — non-empty; size sanity vs original.
-3. **Differential** — `RETDEC_NEURAL_DIFF_GATE=1`.
+3. **Differential** — **not implemented.** `RETDEC_NEURAL_DIFF_GATE=1` warns and skips; C is never executed.
 
 On any gate failure, deterministic output is kept.
 

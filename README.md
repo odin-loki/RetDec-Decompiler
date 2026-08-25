@@ -5,9 +5,34 @@ recovery, semantic export, and offline neural refinement are the product;
 recovered C pseudocode is a supporting artefact, not the headline.
 
 Built on upstream [RetDec](https://github.com/avast/retdec) v5.0 (dormant since
-2022), this fork adds semantic library recovery, multi-language output, a Qt 6
-GUI, optional offline neural refinement (llama.cpp via `RETDEC_ENABLE_LLAMACPP`), and structured
+2022), this fork adds semantic library recovery, a Qt 6 GUI, optional offline
+neural refinement (llama.cpp via `RETDEC_ENABLE_LLAMACPP`), and structured
 algorithm/concurrency/serialisation detection no stock decompiler ships.
+
+---
+
+## Results (measured)
+
+Stand-in corpus: 216 ELF binaries. Not the OSS-Fuzz paper set.
+
+| Metric | This fork | Stock RetDec 5.0 |
+|--------|-----------|------------------|
+| Recompile, **opt-in buildable C** (`RETDEC_EMIT_BUILDABLE`) | **216/216** | **0/216** |
+| Recompile, default `.c` | 0/216 | 0/216 |
+| Algorithm-recovery F1, **name-blind** | **0.056** (95% CI 0.034–0.083) | n/a (no label export) |
+| Algorithm-recovery F1, name-assisted (symbolicated binaries) | 1.000 | n/a |
+
+Name-blind is the headline. Name-assisted is a second mode on binaries that
+still have symbol names; it is not a product F1. Do not advertise 1.0.
+
+Default `.c` still does not recompile on either side. The buildable sidecar is
+opt-in (`C-EMIT` in [docs/CLAIMS.md](docs/CLAIMS.md)), not the default CLI.
+
+Wall-clock figures that compare this Debug/WSL fork to stock Release-in-Docker
+are **not a comparison**. Treat published ~6× ratios as unmeasured.
+
+Numbers and methodology: [docs/BENCHMARKS_TABLE.md](docs/BENCHMARKS_TABLE.md),
+[docs/BENCHMARKS.md](docs/BENCHMARKS.md). Register: [docs/CLAIMS.md](docs/CLAIMS.md).
 
 Copyright (c) 2025-2026 Odin Loch trading as Imortek.
 Dual-licensed: **AGPL-3.0+** ([LICENSE-AGPL](LICENSE-AGPL)) or a commercial
@@ -19,7 +44,9 @@ and [SECURITY.md](SECURITY.md).
 
 ## Features
 
-### Input Formats
+### Input formats
+
+File formats the loaders accept:
 
 | Format | Extensions |
 |--------|-----------|
@@ -34,9 +61,32 @@ and [SECURITY.md](SECURITY.md).
 | Python bytecode | `.pyc` |
 | Lua bytecode | `.luac` |
 
-### Output Languages
+Native CPU lifting maturity (not the same as “file opens”):
 
-C · C++ · Python · Lua · Java · Kotlin · C# · F# · Visual Basic .NET · WebAssembly Text (WAT) · CUDA C
+| Architecture | Maturity |
+|--------------|----------|
+| x86, x86-64 | Production |
+| ARM, Thumb, MIPS, PowerPC | Partial |
+| ARM64 | Incomplete |
+| SPARC, SystemZ, XCore, RISC-V | Not implemented |
+
+Detail: [docs/ARCHITECTURE_TARGETS.md](docs/ARCHITECTURE_TARGETS.md).
+
+### Output languages
+
+Output is **input-keyed**, not a free-choice list of eleven languages.
+
+| Input | What the native/managed path emits |
+|-------|-------------------------------------|
+| Native binaries (ELF / PE / Mach-O) | **C**. “C++” is the same C writer with a `.cpp` filename. |
+| Python bytecode (`.pyc`) | Python |
+| Lua bytecode (`.luac`) | Lua |
+| WebAssembly (`.wasm`) | WAT |
+| JVM / DEX | Java-family managed path |
+| .NET CIL | C#-family managed path |
+
+F#, VB.NET, Kotlin, and CUDA-C emitters exist in-tree and are **not** wired as
+general native-pipeline targets. Do not treat them as shipped output choices.
 
 ### Semantic Recovery
 
@@ -56,30 +106,36 @@ C · C++ · Python · Lua · Java · Kotlin · C# · F# · Visual Basic .NET · 
 Optional verified, air-gapped refinement via **llama.cpp** and GGUF models
 (build with `-DRETDEC_ENABLE_LLAMACPP=ON`). Enable at runtime with
 `RETDEC_NEURAL_REFINE=1` and `RETDEC_NEURAL_MODEL=/path/to/model.gguf`.
-Deterministic decompiler output remains the auditable primary artefact;
-neural edits pass compile, structural, and differential gates before acceptance.
+Deterministic decompiler output remains the auditable primary artefact.
+Neural edits: **compile** gate is `cc`/`gcc -fsyntax-only` (C is not executed);
+**structural** gate is active; **differential** gate is **not implemented**
+(`RETDEC_NEURAL_DIFF_GATE` warns and skips).
 See [docs/NEURAL_REFINEMENT.md](docs/NEURAL_REFINEMENT.md).
 
 ### Benchmarks
 
-Stand-in corpus (216 binaries / 9 CI-core), not the OSS-Fuzz paper set.
-Numbers: [docs/BENCHMARKS_TABLE.md](docs/BENCHMARKS_TABLE.md).
+See **Results** above. Tables: [docs/BENCHMARKS_TABLE.md](docs/BENCHMARKS_TABLE.md).
 Harness: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
-`mean_f1_raw = 1.0` is corpus-tuned, not production structural detection.
 
 ### Qt 6 GUI (v3)
 
-IDE-style layout:
+Decompilation runs the same `retdec-decompiler` subprocess as the CLI. **Cache
+reuse** on re-open. The former “~24% faster Fast decompile” figure is
+**withdrawn**. Post-decompile loads `.c`, `.config.json`, `.dsm`, and `.ll`.
 
-- **Centre tabs:** Decompiled C · Assembly · IR (SSA) · CFG · Synced (Asm / IR / C tri-pane)
-- **Left dock:** Functions (filterable list)
-- **Right dock:** Strings · Inspect
-- **Bottom dock:** Console (live fileinfo/unpacker output) · Problems (decompiler diagnostics)
+Shipped panels (constructed in `createPanels()`):
 
-Decompilation runs the same `retdec-decompiler` subprocess as the CLI (argument
-parity, same speed). **Cache reuse** on re-open. The former “~24% faster Fast
-decompile” figure is **withdrawn** (no demonstrating artefact). Post-decompile
-loads `.c`, `.config.json`, `.dsm`, and `.ll` into the document tabs.
+| Place | Panels |
+|-------|--------|
+| Document tabs | Decompiled C, Assembly, IR, CFG, Synced (`TriPaneCodeView`) |
+| Left dock | Functions |
+| Workspace (right) | Strings, Inspect, Binary Browser, Target |
+| Output (bottom) | Console, Problems, History, Progress |
+| Tools windows | Type Hierarchy, Call Graph, Signature Studio, Diff, **AI Assistant** |
+| Chrome | Triage banner |
+
+Settings and batch-decompile are dialogs, not docks. The AI assistant is a
+Tools window (`AIAssistantPanel`); it is not a permanent bottom dock.
 
 For CI and automated tests, use headless mode:
 
@@ -87,18 +143,19 @@ For CI and automated tests, use headless mode:
 retdec-gui --headless-decompile /path/to/binary.elf
 ```
 
-See [docs/internal/GUI_ROADMAP.md](docs/internal/GUI_ROADMAP.md) for the GUI plan. There is
-no in-GUI AI chat panel in v3; use **`retdec-qwen3-runner`** (or CLI
-`--model`) for Qwen3-assisted analysis.
+See [docs/internal/GUI_ROADMAP.md](docs/internal/GUI_ROADMAP.md). Optional neural
+refine uses `RETDEC_NEURAL_REFINE` and `RETDEC_NEURAL_MODEL` — there is no
+`retdec-qwen3-runner` binary and no CLI `--model` flag.
 
 ---
 
 ## Maintainer scope
 
-**Shippable at v2.0.20** — algorithm recovery and DecompileBench gates pass on the
-216-binary stand-in corpus. Stock RetDec 5.0 compare uses the published
-`remnux/retdec` image (official `retdec/retdec:v5.0` does not exist). This fork
-does **not** pursue the OSS-Fuzz paper corpus or four-compiler support regen.
+**Shippable at v2.0.21** — measured results are in **Results** above. Stock
+RetDec 5.0 compare uses the published `remnux/retdec` image (official
+`retdec/retdec:v5.0` does not exist). CI still gates stem-era `MIN_MEAN_F1=0.95`;
+that is not product quality. This fork does **not** pursue the OSS-Fuzz paper
+corpus or four-compiler support regen.
 
 - Git / GitHub CLI: **Windows PowerShell only** (not dual WSL + Windows)
 - Optional CI: `gh auth login` then `.\scripts\dispatch_algorithm_recovery_nightly.ps1`
@@ -141,8 +198,9 @@ Use `--base-url` / `-BaseUrl` to point at a private mirror, or `--force` /
 `-Force` to overwrite existing copies.
 
 The Qwen3 GGUF model is also intentionally not committed (multi-GB binary).
-Place your own GGUF under `models/` for `retdec-qwen3-runner` or CLI
-`--model`, or use a smaller checkpoint in CPU-only mode.
+Place your own GGUF under `models/` and set `RETDEC_NEURAL_MODEL` when
+`RETDEC_NEURAL_REFINE=1`. There is no `retdec-qwen3-runner` and no `--model`
+CLI flag.
 
 ### Prerequisites
 
@@ -263,7 +321,6 @@ bash scripts/wsl_cross_build.sh
 The `dist/windows/` folder will contain:
 - `retdec-decompiler.exe` — the main decompiler
 - `retdec-unpacker.exe` — archive unpacker
-- `retdec-qwen3-runner.exe` — AI model runner
 - MinGW runtime DLLs (`libstdc++-6.dll`, `libgcc_s_seh-1.dll`, `libwinpthread-1.dll`)
 
 **Test on Windows (PowerShell):**
@@ -462,8 +519,8 @@ This project is **dual-licensed**:
 
 1. **AGPL-3.0+** — use, modify, and share if you also share corresponding
    source. See [LICENSE](LICENSE) and [LICENSE-AGPL](LICENSE-AGPL).
-2. **Commercial** — closed-source and OEM use. Published starting prices
-   from **1,490 AUD / year**. See [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL).
+2. **Commercial** — closed-source and OEM use. See
+   [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL) for terms. Contact for a quote.
 
 Commercial enquiries: **odin.loch@outlook.com.au**
 
