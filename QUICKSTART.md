@@ -2,21 +2,22 @@
 
 Plan.md `REL-07`. The zero-build path is `docker pull` once `imortek/retdec`
 is published (`REL-02`). Until then, use a local `retdec-decompiler` from a
-preset build. There is no `analyse` wrapper yet; that name is the product
-command, not a current binary.
+preset build. The in-tree `Dockerfile` installs `retdec-decompiler` and an
+`analyse` shim that execs it.
 
 ## Docker (when the image is published)
 
 ```bash
 docker pull imortek/retdec
 docker run --rm -v "$PWD":/work imortek/retdec \
-  retdec-decompiler /work/sample.elf -o /work/sample.c
+  analyse /work/sample.elf -o /work/sample.c
 ```
 
 Buildable C (`.h`, `_stubs.c`, `.buildable.c`) is **on by default**.
 Pass `--no-buildable` to skip sidecars.
 
-The in-tree `Dockerfile` installs the CLI on `PATH` as `retdec-decompiler`.
+The in-tree `Dockerfile` installs the CLI on `PATH` as `retdec-decompiler`
+and `analyse` (same argv). The image is not on Docker Hub yet.
 
 ## Local binary (this tree)
 

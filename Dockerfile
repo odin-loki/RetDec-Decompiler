@@ -56,4 +56,10 @@ USER retdec
 
 COPY --from=builder /home/retdec/retdec-install /retdec-install
 
+USER root
+# REL-02 product command. Image publication (imortek/retdec) is still open.
+RUN printf '%s\n' '#!/bin/sh' 'exec retdec-decompiler "$@"' \
+	> /retdec-install/bin/analyse && chmod 755 /retdec-install/bin/analyse
+USER retdec
+
 ENV PATH=/retdec-install/bin:$PATH
