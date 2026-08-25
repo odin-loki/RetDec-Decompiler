@@ -14,7 +14,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 360
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Fetch large support files
         shell: pwsh
@@ -24,13 +24,13 @@ jobs:
             .\scripts\fetch-large-files.ps1 -BaseUrl "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
           }
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           # windows-latest ships CPython 3.14; pyc opcode tables cover 3.8–3.12.
           # Pin so managed_formats / corpus hello.pyc stay in that range.
           python-version: "3.12"
 
-      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         with:
           arch: x64
 
@@ -38,7 +38,7 @@ jobs:
         run: choco install strawberryperl -y --no-progress
 
       - name: Install Qt 6 (MSVC x64)
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4
         with:
           version: "6.7.3"
           host: windows
@@ -46,12 +46,12 @@ jobs:
           arch: win64_msvc2019_64
           archives: qtbase qtsvg
 
-      - uses: lukka/get-cmake@latest
+      - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # latest
         with:
           cmakeVersion: "3.31.6"
 
       - name: Cache CMake build
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: build/windows
           key: ctest-windows-py312-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'src/**', 'deps/**') }}

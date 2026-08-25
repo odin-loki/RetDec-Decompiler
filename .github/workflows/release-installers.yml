@@ -29,9 +29,9 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.x"
 
@@ -76,7 +76,7 @@ jobs:
         run: bash scripts/ship_checklist.sh
 
       - name: Create GitHub Release (draft)
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: RetDec Imortek ${{ steps.meta.outputs.version }}
@@ -93,7 +93,7 @@ jobs:
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Detect prebuilt Windows artifacts
         id: prebuilt
@@ -125,7 +125,7 @@ jobs:
           bash scripts/fetch-large-files.sh || \
             bash scripts/fetch-large-files.sh --base-url "https://raw.githubusercontent.com/avast/retdec/master"
 
-      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         with:
           arch: x64
@@ -136,7 +136,7 @@ jobs:
 
       - name: Install Qt 6 (MSVC x64)
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4
         with:
           version: "6.7.3"
           host: windows
@@ -144,7 +144,7 @@ jobs:
           arch: win64_msvc2019_64
           archives: qtbase qtsvg
 
-      - uses: lukka/get-cmake@latest
+      - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # latest
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         with:
           cmakeVersion: "3.31.6"
@@ -152,7 +152,7 @@ jobs:
       - name: Restore Windows dep cache
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         id: win_cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             build/windows/deps
@@ -239,7 +239,7 @@ jobs:
 
       - name: Upload Windows build log
         if: failure() && steps.win_pkg.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-installer-build-log
           path: build-windows.log
@@ -247,7 +247,7 @@ jobs:
 
       - name: Save Windows dep cache
         if: always() && steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             build/windows/deps
@@ -256,7 +256,7 @@ jobs:
           key: installer-win-deps-${{ hashFiles('cmake/deps.cmake') }}-${{ github.run_id }}
 
       - name: Upload Windows release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.release.outputs.tag }}
           files: |
@@ -273,7 +273,7 @@ jobs:
       APPIMAGE: ${{ (github.event_name == 'workflow_dispatch' && inputs.appimage == true) && '1' || vars.APPIMAGE || '0' }}
       CMAKE_BUILD_PARALLEL_LEVEL: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Detect prebuilt Linux tarball
         id: prebuilt
@@ -312,18 +312,18 @@ jobs:
             libgl1-mesa-dev \
             libxkbcommon-dev
 
-      - uses: lukka/get-cmake@latest
+      - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # latest
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
         with:
           cmakeVersion: "3.31.6"
 
       - name: ccache
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1.2
 
       - name: Restore Linux dep cache
         if: steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             build/linux/deps
@@ -388,7 +388,7 @@ jobs:
 
       - name: Upload Linux build log
         if: failure() && steps.linux_pkg.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: linux-installer-build-log
           path: build-linux.log
@@ -396,7 +396,7 @@ jobs:
 
       - name: Save Linux dep cache
         if: always() && steps.prebuilt.outputs.has != 'true' && (github.event_name != 'workflow_dispatch' || !inputs.skip_build)
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             build/linux/deps
@@ -420,7 +420,7 @@ jobs:
           test -f releases/linux/uninstall.sh || { echo "Missing releases/linux/uninstall.sh"; exit 1; }
 
       - name: Upload Linux release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.release.outputs.tag }}
           files: |
@@ -432,7 +432,7 @@ jobs:
 
       - name: Upload Linux AppImage (optional)
         if: env.APPIMAGE == '1'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.release.outputs.tag }}
           files: dist/retdec-${{ needs.release.outputs.version }}-x86_64.AppImage
