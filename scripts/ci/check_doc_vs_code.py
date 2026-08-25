@@ -428,18 +428,36 @@ def read_text(path: Path) -> str:
 
 def public_doc_files() -> list[Path]:
     files: list[Path] = []
-    readme = REPO_ROOT / "README.md"
-    if readme.is_file():
-        files.append(readme)
+    seen: set[Path] = set()
+
+    def add(path: Path) -> None:
+        if not path.is_file():
+            return
+        key = path.resolve()
+        if key in seen:
+            return
+        seen.add(key)
+        files.append(path)
+
+    add(REPO_ROOT / "README.md")
     docs = REPO_ROOT / "docs"
     if docs.is_dir():
         for path in sorted(docs.iterdir()):
             if path.is_file() and path.suffix.lower() == ".md":
-                files.append(path)
+                add(path)
     for name in ("WHITEPAPER.md", "WHITEPAPER"):
-        path = REPO_ROOT / name
-        if path.is_file() and path not in files:
-            files.append(path)
+        add(REPO_ROOT / name)
+    # CI-03 leftover: REL-07 / legal / packaging surfaces outside docs/.
+    for rel in (
+        "QUICKSTART.md",
+        "SECURITY.md",
+        "CLA.md",
+        "CONTRIBUTING.md",
+        "LICENSING_FAQ.md",
+        "CODE_OF_CONDUCT.md",
+        "releases/README.md",
+    ):
+        add(REPO_ROOT / rel)
     return files
 
 
@@ -531,6 +549,7 @@ def invert_errors(docs: list[Path]) -> list[str]:
         REPO_ROOT / "scripts",
         REPO_ROOT / "cmake",
         REPO_ROOT / "tests",
+        REPO_ROOT / "releases",
     )
     seen_names: set[str] = set()
     seen_envs: set[str] = set()

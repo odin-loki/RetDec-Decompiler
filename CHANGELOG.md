@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `CI-03`/`DOC-05`: `check_doc_vs_code.py` and `check_withdrawn_claims.py` also scan QUICKSTART, SECURITY, CLA, CONTRIBUTING, LICENSING_FAQ, CODE_OF_CONDUCT, and `releases/README.md`.
 - Phase 1 `REL-07`: `v2.0.21` Release includes `fib_smoke.exe` + `.sigstore.json` (run [32836567725](https://github.com/odin-loki/RetDec-Decompiler/actions/runs/32836567725)); QUICKSTART decompiles it after NSIS/zip.
 - Phase 1 `REL-07`: `upload-sample-binary.yml` also attaches `fib_smoke.exe` (MSVC fixture flags) plus a keyless Sigstore bundle.
 - Phase 1 `REL-02`: GHCR runtime image ships `/opt/retdec/share/fib_smoke` and smokes `analyse` on it (run [32835822135](https://github.com/odin-loki/RetDec-Decompiler/actions/runs/32835822135)). Anonymous pull still 401 until the package is public.

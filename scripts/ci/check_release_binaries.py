@@ -43,7 +43,7 @@ def read_text(path: Path) -> str:
 
 def public_doc_files() -> list[Path]:
     files: list[Path] = []
-    for rel in ("README.md", "releases/README.md"):
+    for rel in ("README.md", "releases/README.md", "QUICKSTART.md"):
         path = REPO_ROOT / rel
         if path.is_file():
             files.append(path)
