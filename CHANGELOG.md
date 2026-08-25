@@ -8,6 +8,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `LEG-01`: restore Avast MIT notice on **85** 2019 rewrite
+  headers under `src/` (including `serdes`, which is upstream).
 - Phase 1 `LEG-11`: do not `install()` Keystone-linked `capstone2llvmirtool`.
 - Phase 1 hygiene docs: Qt LGPL evidence (`docs/LGPL_QT.md`), CLA
   (`CLA.md`), sole-authorship (`LEG-07`), `cxx_backend` marked unwired,

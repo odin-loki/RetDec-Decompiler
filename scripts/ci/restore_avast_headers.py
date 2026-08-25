@@ -112,10 +112,17 @@ def main() -> int:
         choices=ALLOWED_YEARS,
         help="rewrite tell year to restore (repeatable; default: all 2017-2020)",
     )
+    parser.add_argument(
+        "--under",
+        action="append",
+        default=[],
+        help="relative prefix to limit (e.g. src, include, tests); default: all",
+    )
     args = parser.parse_args()
     years = tuple(args.year) if args.year else ALLOWED_YEARS
     pattern = rewrite_pattern(years)
     markers = [rewrite_marker(y) for y in years]
+    prefixes = tuple(p.replace("\\", "/").rstrip("/") for p in args.under)
 
     rewritten_files = 0
     rewritten_lines = 0
@@ -124,7 +131,15 @@ def main() -> int:
     leftover = []
     module_counts: Counter[str] = Counter()
 
+    def matches_under(path: Path) -> bool:
+        if not prefixes:
+            return True
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        return any(rel == p or rel.startswith(p + "/") for p in prefixes)
+
     for path in iter_text_files(REPO_ROOT):
+        if not matches_under(path):
+            continue
         text = read_text(path)
         if text is None:
             continue
@@ -150,6 +165,8 @@ def main() -> int:
 
     leftover_after = []
     for path in iter_text_files(REPO_ROOT):
+        if not matches_under(path):
+            continue
         text = read_text(path)
         if text is None:
             continue

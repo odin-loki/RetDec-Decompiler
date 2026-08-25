@@ -1,7 +1,8 @@
 /**
 * @file src/demangler/ast_ctypes_parser.cpp
 * @brief Base class for all C-types parsers from demangler ASTs.
-* @copyright (c) 2019 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include "retdec/utils/container.h"

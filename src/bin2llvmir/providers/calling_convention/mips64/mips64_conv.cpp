@@ -1,7 +1,8 @@
 /**
  * @file src/bin2llvmir/providers/calling_convention/mips64/mips64_conv.cpp
  * @brief Calling convention of Mips64 architecture.
- * @copyright (c) 2019 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include <memory>

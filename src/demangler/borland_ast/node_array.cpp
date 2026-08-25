@@ -1,7 +1,8 @@
 /**
 * @file src/demangler/borland_ast/node_array.cpp
 * @brief Representation of array in AST node.
-* @copyright (c) 2019 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include <memory>

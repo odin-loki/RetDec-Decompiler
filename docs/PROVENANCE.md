@@ -97,7 +97,7 @@ Headers were restored by the 2017-rewrite heuristic, not by a per-file upstream 
 | `algo_recover` | Imortek-new | Algorithm recovery |
 | `crypto_detect` | Imortek-new | Crypto constant / structure detection |
 | `concurrency_detect` | Imortek-new | |
-| `serdes` | Imortek-new | |
+| `serdes` | upstream | JSON (de)serialisers; 2019 rewrite year restored |
 | `sem_decoder` | Imortek-new | |
 | `module_cluster` | Imortek-new | |
 | `cuda_accel` | Imortek-new | |
