@@ -43,7 +43,7 @@ jobs:
         run: >
           cmake --preset core-asan
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DRETDEC_USE_UNDEFINED_BEHAVIOR_SANITIZER=OFF
+          -DRETDEC_USE_UNDEFINED_BEHAVIOR_SANITIZER=ON
           -DRETDEC_ENABLE_CUDA_ACCEL=OFF
           -DRETDEC_ENABLE_NEURAL=OFF
 
@@ -105,6 +105,7 @@ jobs:
       - name: Run ASan over decompile sample corpus
         env:
           ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:handle_abort=1:symbolize=1:quarantine_size_mb=8:malloc_context_size=0:protect_shadow_gap=0
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: |
           set -euo pipefail
           mkdir -p profile_output
