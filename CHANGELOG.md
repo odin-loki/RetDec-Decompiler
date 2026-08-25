@@ -22,7 +22,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Phase 1 `CI-07`: weekly `coverage.yml` runs `scripts/run_coverage.sh` (ratchet floor pending a green artefact).
 - Phase 1 `REL-03`: `v2.0.21` Linux x86_64 tarball is on the GitHub Release; AppImage was skipped.
 - Phase 1 `REL-05`: `sign-release-sbom.yml` also keyless-signs a published Linux tarball if the bundle is missing.
-- Phase 1 `REL-07`: `QUICKSTART.md` installs from the published Linux tarball.
+- Phase 1 `REL-07`: `QUICKSTART.md` installs from the published Linux tarball; README Quick Start points at it.
 - Phase 1 `REL-05`: workflow `sign-release-sbom.yml` keyless-signs a published CycloneDX JSON if the bundle is missing.
 - Phase 1 `REL-02`: `docker-publish.yml` builds the Dockerfile and pushes `ghcr.io/<owner>/retdec` (Docker Hub `imortek/retdec` still unpublished).
 - Phase 1 `LEG-09`: `LICENSING_FAQ.md` for procurement (air-gap / AGPL vs commercial).

@@ -354,6 +354,9 @@ scripts\Test-RetdecWindows.ps1
 
 ## Quick Start
 
+Prebuilt Linux x86_64: [QUICKSTART.md](QUICKSTART.md) (GitHub Release tarball).
+`docker pull imortek/retdec` is not published.
+
 ### GUI (Linux/WSL)
 
 ```bash
