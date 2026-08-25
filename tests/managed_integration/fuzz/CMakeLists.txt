@@ -71,3 +71,9 @@ add_fuzz_target(fuzz_jar fuzz_jar.cpp
     retdec-jvm-parser
     retdec-bc-module
 )
+
+if(TARGET retdec::unpacker)
+    add_fuzz_target(fuzz_unpacker fuzz_unpacker.cpp
+        retdec::unpacker
+    )
+endif()

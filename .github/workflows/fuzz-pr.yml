@@ -38,7 +38,7 @@ jobs:
           echo "RETDEC_FUZZ option is present in ${cmake_file}"
           for src in fuzz_elf.cpp fuzz_pe.cpp fuzz_macho.cpp fuzz_wasm.cpp \
                      fuzz_dex.cpp fuzz_jvm_class.cpp fuzz_pyc.cpp fuzz_lua.cpp \
-                     fuzz_apk.cpp fuzz_jar.cpp; do
+                     fuzz_apk.cpp fuzz_jar.cpp fuzz_unpacker.cpp; do
             test -f "tests/managed_integration/fuzz/${src}"
             echo "ok ${src}"
           done
@@ -83,6 +83,7 @@ jobs:
           -DCMAKE_C_COMPILER=clang
           -DCMAKE_CXX_COMPILER=clang++
           -DRETDEC_FUZZ=ON
+          -DRETDEC_ENABLE_UNPACKER=ON
           -DRETDEC_ENABLE_CUDA_ACCEL=OFF
           -DRETDEC_ENABLE_NEURAL=OFF
 
@@ -90,7 +91,7 @@ jobs:
         run: >
           cmake --build build/linux --parallel
           --target fuzz_elf fuzz_pe fuzz_macho fuzz_wasm
-          fuzz_dex fuzz_jvm_class fuzz_pyc fuzz_lua fuzz_apk fuzz_jar
+          fuzz_dex fuzz_jvm_class fuzz_pyc fuzz_lua fuzz_apk fuzz_jar fuzz_unpacker
 
       - name: Cache libFuzzer corpora
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -124,7 +125,7 @@ jobs:
           fi
           ran=0
           mkdir -p fuzz-corpora
-          for name in fuzz_elf fuzz_pe fuzz_macho fuzz_wasm fuzz_dex fuzz_jvm_class fuzz_pyc fuzz_lua fuzz_apk fuzz_jar; do
+          for name in fuzz_elf fuzz_pe fuzz_macho fuzz_wasm fuzz_dex fuzz_jvm_class fuzz_pyc fuzz_lua fuzz_apk fuzz_jar fuzz_unpacker; do
             bin="${BIN_DIR}/${name}"
             if [[ ! -x "${bin}" ]]; then
               echo "[skip] ${name} not built"

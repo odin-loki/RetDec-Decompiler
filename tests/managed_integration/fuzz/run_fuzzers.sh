@@ -121,6 +121,10 @@ run_fuzzer fuzz_jar \
     "$FUZZ_BIN_DIR/corpus_jar" \
     "$FIXTURES/java"
 
+run_fuzzer fuzz_unpacker \
+    "$FUZZ_BIN_DIR/corpus_unpacker" \
+    "$FIXTURES/unpacker"
+
 echo "=== All fuzz runs complete ==="
 echo "Logs:    $FUZZ_BIN_DIR/*.fuzz.log"
 echo "Corpus:  $FUZZ_BIN_DIR/corpus_*"
