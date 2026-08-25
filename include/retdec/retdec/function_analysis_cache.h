@@ -62,7 +62,7 @@ bool incrementalCacheEnabled();
 std::string functionAnalysisCachePath(const std::string& outputCPath);
 
 /**
- * @brief FNV-1a content hash of an LLVM function body, or SSA stats fallback.
+ * @brief SHA-256 of a serialized LLVM function body (or SSA stats fallback).
  */
 std::string computeFunctionBodyHash(
         const llvm::Module& module,
@@ -81,7 +81,7 @@ FunctionDetections analyseFunctionDetections(const ssa::SSAFunction& fn);
  */
 class FunctionAnalysisCache {
 public:
-    static constexpr std::uint32_t kVersion = 2;
+    static constexpr std::uint32_t kVersion = 3;
 
     struct Entry {
         std::string name;

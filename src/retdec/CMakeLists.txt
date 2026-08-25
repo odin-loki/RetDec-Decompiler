@@ -41,6 +41,7 @@ target_link_libraries(retdec
 		Threads::Threads
 		retdec::gpu-scanner
 		retdec::deps::rapidjson
+		retdec::fileformat
 		$<BUILD_INTERFACE:retdec-profiling>
 )
 

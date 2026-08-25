@@ -7,6 +7,7 @@
 
 #include "retdec/algo_recover/algo_recover.h"
 #include "retdec/container_detect/container_detect.h"
+#include "retdec/fileformat/utils/crypto.h"
 #include "retdec/sort_detect/sort_detect.h"
 #include "retdec/ssa/ssa.h"
 
@@ -14,33 +15,35 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Module.h>
+#include <llvm/ADT/StringRef.h>
 
 #include <rapidjson/document.h>
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/stringbuffer.h>
 
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
-#include <sstream>
 #include <thread>
+#include <vector>
 
 namespace retdec {
 namespace analysis {
 
 namespace {
 
-std::uint64_t fnv1a64Update(std::uint64_t h, std::uint64_t v)
+void appendU64(std::vector<unsigned char>& buf, std::uint64_t v)
 {
-    h ^= v;
-    h *= 0x100000001b3ULL;
-    return h;
+    for (int i = 0; i < 8; ++i) {
+        buf.push_back(static_cast<unsigned char>(v & 0xffu));
+        v >>= 8;
+    }
 }
 
-std::string hashToHex(std::uint64_t h)
+void appendCString(std::vector<unsigned char>& buf, llvm::StringRef s)
 {
-    std::ostringstream oss;
-    oss << std::hex << h;
-    return oss.str();
+    buf.insert(buf.end(), s.begin(), s.end());
+    buf.push_back(0);
 }
 
 std::string makeIndexKey(const std::string& name, const std::string& bodyHash)
@@ -228,40 +231,37 @@ std::string computeFunctionBodyHash(
         const llvm::Module& module,
         const ssa::SSAFunction& fn)
 {
-    std::uint64_t h = 0xcbf29ce484222325ULL;
-    h = fnv1a64Update(h, fn.blockCount());
-    h = fnv1a64Update(h, fn.instrCount());
-    for (char c : fn.name())
-        h = fnv1a64Update(h, static_cast<unsigned char>(c));
+    std::vector<unsigned char> buf;
+    appendU64(buf, fn.blockCount());
+    appendU64(buf, fn.instrCount());
+    appendCString(buf, fn.name());
 
     const llvm::Function* lf = module.getFunction(fn.name());
     if (lf != nullptr && !lf->isDeclaration()) {
         for (const llvm::BasicBlock& bb : *lf) {
-            h = fnv1a64Update(h, bb.size());
+            appendU64(buf, bb.size());
             for (const llvm::Instruction& inst : bb) {
-                h = fnv1a64Update(h, inst.getOpcode());
-                h = fnv1a64Update(h, inst.getNumOperands());
+                appendU64(buf, inst.getOpcode());
+                appendU64(buf, inst.getNumOperands());
                 for (unsigned oi = 0, on = inst.getNumOperands(); oi < on; ++oi) {
                     if (const auto* cvi =
                             llvm::dyn_cast<llvm::ConstantInt>(inst.getOperand(oi))) {
                         const llvm::APInt& val = cvi->getValue();
-                        h = fnv1a64Update(h, val.getBitWidth());
+                        appendU64(buf, val.getBitWidth());
                         const unsigned nWords = val.getNumWords();
                         const auto* words = val.getRawData();
                         for (unsigned w = 0; w < nWords; ++w)
-                            h = fnv1a64Update(h, words[w]);
+                            appendU64(buf, words[w]);
                     }
                 }
                 if (const auto* ci = llvm::dyn_cast<llvm::CallInst>(&inst)) {
-                    if (const llvm::Function* callee = ci->getCalledFunction()) {
-                        for (char c : callee->getName())
-                            h = fnv1a64Update(h, static_cast<unsigned char>(c));
-                    }
+                    if (const llvm::Function* callee = ci->getCalledFunction())
+                        appendCString(buf, callee->getName());
                 }
             }
         }
     }
-    return hashToHex(h);
+    return fileformat::getSha256(buf.data(), buf.size());
 }
 
 FunctionDetections analyseFunctionDetections(const ssa::SSAFunction& fn)

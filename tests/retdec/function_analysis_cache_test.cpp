@@ -263,5 +263,7 @@ entry:
     retdec::ssa::SSAFunction fnB("xor_imm");
     EXPECT_EQ(computeFunctionBodyHash(*modA, fnA),
               computeFunctionBodyHash(*modB, fnB));
+    const std::string hash = computeFunctionBodyHash(*modA, fnA);
+    EXPECT_EQ(hash.size(), 64u);
 }
 
