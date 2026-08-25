@@ -76,3 +76,45 @@ jobs:
           cosign sign-blob --yes --bundle "/tmp/rel/${bundle}" "${tb}"
           gh release upload "${TAG}" "/tmp/rel/${bundle}"
           echo "uploaded ${bundle} to ${TAG}"
+
+  sign-windows-installers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign published Windows zip and NSIS if unsigned
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || 'v2.0.21' }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/rel
+          signed=0
+          for pattern in \
+            'retdec-*-windows-x64-portable.zip' \
+            'retdec-*-windows-x64-setup.exe'
+          do
+            gh release download "${TAG}" --pattern "${pattern}" --dir /tmp/rel
+          done
+          shopt -s nullglob
+          blobs=(/tmp/rel/retdec-*-windows-x64-portable.zip /tmp/rel/retdec-*-windows-x64-setup.exe)
+          if [[ ${#blobs[@]} -eq 0 ]]; then
+            echo "no Windows zip/NSIS on ${TAG}"
+            exit 1
+          fi
+          for blob in "${blobs[@]}"; do
+            base="$(basename "${blob}")"
+            bundle="${base}.sigstore.json"
+            if gh release view "${TAG}" --json assets --jq '.assets[].name' | grep -qx "${bundle}"; then
+              echo "already signed: ${bundle}"
+              continue
+            fi
+            cosign sign-blob --yes --bundle "/tmp/rel/${bundle}" "${blob}"
+            gh release upload "${TAG}" "/tmp/rel/${bundle}"
+            echo "uploaded ${bundle} to ${TAG}"
+            signed=1
+          done
+          echo "windows sign pass done (new_bundles=${signed})"
