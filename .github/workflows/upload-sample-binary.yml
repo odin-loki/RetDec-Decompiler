@@ -53,3 +53,42 @@ jobs:
           cosign sign-blob --yes --bundle "/tmp/${bundle}" /tmp/fib_smoke
           gh release upload "${TAG}" "/tmp/${bundle}"
           echo "uploaded ${bundle} to ${TAG}"
+
+  upload-windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Build fib_smoke.exe and upload if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || 'v2.0.21' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Same MSVC flags as tests/decompiler/CMakeLists.txt retdec-decompiler-fixture-fib.
+          cmd /c "cl /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf- /Fefib_smoke.exe tests\test_binaries\fib.c /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /EXPORT:main"
+          if ($LASTEXITCODE -ne 0) { throw "cl failed: $LASTEXITCODE" }
+          if (-not (Test-Path -LiteralPath "fib_smoke.exe")) { throw "fib_smoke.exe missing" }
+          $names = gh release view $env:TAG --json assets --jq ".assets[].name"
+          if ($names -notmatch '(?m)^fib_smoke\.exe$') {
+            gh release upload $env:TAG fib_smoke.exe
+            Write-Host "uploaded fib_smoke.exe to $($env:TAG)"
+          } else {
+            Write-Host "already on $($env:TAG): fib_smoke.exe"
+          }
+          $bundle = "fib_smoke.exe.sigstore.json"
+          if ($names -match '(?m)^fib_smoke\.exe\.sigstore\.json$') {
+            Write-Host "already signed: $bundle"
+            exit 0
+          }
+          cosign sign-blob --yes --bundle $bundle fib_smoke.exe
+          gh release upload $env:TAG $bundle
+          Write-Host "uploaded $bundle to $($env:TAG)"
