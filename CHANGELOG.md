@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `DEAD-04`: developer guide no longer describes automatic GPU analysis-pass fallback.
 - Phase 1 `DEAD-04`: Windows/MinGW build docs no longer advertise CUDA as default-pipeline acceleration.
 - Phase 1 `DOC-06`: `scripts/README.md` no longer advertises `run-qwen3-trace.ps1` as a shipped runner; `build-install-run-windows.ps1` defaults to `retdec-decompiler`; the GUI header comment points at `RETDEC_NEURAL_REFINE`.
 - Phase 1 `DOC-03`: public algorithm-recovery copy uses `mean_f1_raw` for the name-blind 0.126 figure; stem-tuned `mean_f1` 1.0 stays labelled withdrawn.

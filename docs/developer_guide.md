@@ -678,22 +678,12 @@ This is configurable via `Qwen3Config::kv_block_size` in `qwen3_config.h`.
 
 ### CUDA portability and CPU fallback
 
-All GPU-accelerated analysis passes are implemented with a mandatory CPU
-fallback path. When the CUDA runtime is unavailable (no NVIDIA GPU, no CUDA
-Toolkit, or Windows cross-compile), the pass automatically uses the
-multi-threaded CPU implementation. No configuration change is needed.
+`RETDEC_ENABLE_CUDA` (`GpuScanner` signature/entropy) has a CPU twin in
+`gpu_scanner_cpu.cpp`. Parked `cuda_accel` / OpenCL are **not** wired into
+`src/retdec` (`C-CUDA-PIPE` withdrawn). Neural GPU offload is llama.cpp
+`n_gpu_layers`, opt-in via `RETDEC_NEURAL_REFINE`, not a decompiler pass.
 
-The pattern in every `.cu` file:
-
-```cpp
-void CUDASomePass::run(Input& in, Output& out) {
-    if (!ctx_.isAvailable()) {
-        runCpu(in, out);   // always implemented
-        return;
-    }
-    runGpu(in, out);       // CUDA path
-}
-```
-
-CUDA modules live under `src/cuda_accel/` and `include/retdec/cuda_accel/`.
-Each module has a corresponding Google Test suite under `tests/cuda_accel/`.
+Do not treat NVCC as required for a default build. Sources under
+`src/cuda_accel/` remain in-tree with tests under `tests/cuda_accel/`;
+that is parked research, not the default pipeline. See
+[CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md).
