@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `REL-02`: `Dockerfile.runtime` packs the published Linux tarball; `docker-from-release.yml` pushes `ghcr.io/<owner>/retdec` (Docker Hub `imortek/retdec` still unpublished).
 - Phase 1 `CACHE-03`: `computeFunctionBodyHash` uses SHA-256 (`fileformat::getSha256`); cache format `kVersion` is 3.
 - Phase 1 `FUZZ-02`: weekly libFuzzer corpora persist in `actions/cache` (`fuzz-corpora/`).
 - Phase 1 `FUZZ-03`: weekly `fuzz_elf` corpus is seeded from compiled `tests/test_binaries` C files.

@@ -1,8 +1,9 @@
 name: docker-publish
 
-# REL-02 — build the in-tree Dockerfile and push to GHCR.
+# REL-02 — source rebuild of the in-tree Dockerfile (360 min, LLVM from source).
+# Prefer docker-from-release.yml to pack the published Linux tarball.
 # Docker Hub imortek/retdec is still unpublished (no Hub credentials here).
-# Do not claim QUICKSTART docker pull works until a run of this job succeeds.
+# Do not claim QUICKSTART docker pull works until a run of docker-from-release succeeds.
 
 on:
   workflow_dispatch:

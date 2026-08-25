@@ -1,0 +1,59 @@
+name: docker-from-release
+
+# REL-02 — pack the published Linux tarball into GHCR without rebuilding LLVM.
+# Docker Hub imortek/retdec stays unpublished (no Hub credentials here).
+# Do not claim QUICKSTART docker pull works until a run of this job succeeds.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag whose Linux tarball is packed
+        required: false
+        default: v2.0.21
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/docker-from-release.yml"
+      - "Dockerfile.runtime"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pack published Linux tarball and push GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || 'v2.0.21' }}
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/retdec"
+          mkdir -p /tmp/docker-runtime
+          cp Dockerfile.runtime /tmp/docker-runtime/Dockerfile
+          gh release download "${TAG}" --pattern 'retdec-*-linux-x64.tar.gz' --dir /tmp/rel
+          tb="$(find /tmp/rel -name 'retdec-*-linux-x64.tar.gz' | head -n1)"
+          test -n "${tb}" || { echo "no Linux tarball on ${TAG}"; exit 1; }
+          cp "${tb}" /tmp/docker-runtime/retdec-linux-x64.tar.gz
+          docker build -t "${IMAGE}:${TAG}" -t "${IMAGE}:latest" /tmp/docker-runtime
+          docker run --rm "${IMAGE}:${TAG}" retdec-decompiler --help
+          docker run --rm "${IMAGE}:${TAG}" analyse --help
+          docker push "${IMAGE}:${TAG}"
+          docker push "${IMAGE}:latest"
+          echo "pushed ${IMAGE}:${TAG} and ${IMAGE}:latest"
+          gh api --method PUT \
+            "/user/packages/container/retdec/visibility" \
+            -f visibility=public \
+            || echo "package visibility left unchanged (set ghcr.io/${GITHUB_REPOSITORY_OWNER}/retdec public in GitHub Packages if pulls 401)"

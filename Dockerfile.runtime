@@ -1,0 +1,31 @@
+# Runtime image from a published Linux tarball (Plan.md REL-02).
+# Does not compile LLVM. Pair with .github/workflows/docker-from-release.yml.
+# Build context must contain retdec-linux-x64.tar.gz (renamed release asset).
+
+FROM ubuntu:noble
+
+RUN apt-get update -y && \
+	DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+	openssl graphviz upx python3 ca-certificates \
+	&& rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m retdec
+
+COPY retdec-linux-x64.tar.gz /tmp/retdec-linux-x64.tar.gz
+
+RUN tar xzf /tmp/retdec-linux-x64.tar.gz -C /opt && \
+	rm /tmp/retdec-linux-x64.tar.gz && \
+	root="$(find /opt -maxdepth 1 -type d -name 'retdec-*-linux-x64' | head -n1)" && \
+	test -n "${root}" && \
+	mv "${root}" /opt/retdec && \
+	test -x /opt/retdec/bin/retdec-decompiler && \
+	printf '%s\n' '#!/bin/sh' 'exec retdec-decompiler "$@"' \
+		> /opt/retdec/bin/analyse && \
+	chmod 755 /opt/retdec/bin/analyse && \
+	mkdir -p /work && \
+	chown -R retdec:retdec /opt/retdec /work
+
+USER retdec
+ENV HOME=/home/retdec
+ENV PATH=/opt/retdec/bin:$PATH
+WORKDIR /work
