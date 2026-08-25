@@ -522,7 +522,9 @@ This project is **dual-licensed**:
 1. **AGPL-3.0+** — use, modify, and share if you also share corresponding
    source. See [LICENSE](LICENSE) and [LICENSE-AGPL](LICENSE-AGPL).
 2. **Commercial** — closed-source and OEM use. See
-   [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL) for terms. Contact for a quote.
+   [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL) for terms and
+   [LICENSING_FAQ.md](LICENSING_FAQ.md) for procurement questions.
+   Contact for a quote.
 
 Commercial enquiries: **odin.loch@outlook.com.au**
 
