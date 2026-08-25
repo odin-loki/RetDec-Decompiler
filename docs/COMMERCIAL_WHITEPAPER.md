@@ -51,7 +51,7 @@ RetDec’s design centers **LLVM IR as a pivot**: architecture-specific front en
 This product is positioned as **specification extraction**, not pseudocode
 parity with Hex-Rays or Ghidra. Lead with:
 
-- Opt-in buildable C recompile **216/216** vs stock **0/216**
+- Buildable C (`--buildable`, default on) recompile **216/216** vs stock **0/216**
 - Algorithm-recovery **name-blind** F1 **0.056** (95% CI 0.034–0.083)
 - Semantic JSON export (`config.functions[].semanticDetections`)
 - Offline neural refinement with a compile-only gate (`cc -fsyntax-only`;

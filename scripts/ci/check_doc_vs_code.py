@@ -19,6 +19,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 TOKENS: tuple[tuple[str, str | None], ...] = (
     ("RETDEC_NEURAL_REFINE", "src/neural"),
     ("RETDEC_EMIT_BUILDABLE", "src/retdec"),
+    ("--buildable", "src/retdec-decompiler"),
+    ("--no-buildable", "src/retdec-decompiler"),
     ("RETDEC_SKIP_SEMANTIC_RECOVERY", "src/retdec/retdec.cpp"),
     ("maybeRefineDecompilerOutput", None),
 )

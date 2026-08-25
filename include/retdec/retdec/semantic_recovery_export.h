@@ -61,12 +61,12 @@ void injectSemanticCommentsIntoOutput(const config::Config& config, std::string*
 
 void exportSemanticRecovery(config::Config& config, const SemanticDetectionMap& detections, std::string* outString);
 
-/// When RETDEC_EMIT_BUILDABLE is set (non-empty, not "0"), write
-/// `<stem>.h`, `<stem>_stubs.c`, and `<stem>.buildable.c` next to outputCPath.
-/// `.buildable.c` is a single translation unit: libc headers for undeclared
-/// libc calls, extra-arity wrappers, temp injects, and weak link stubs plus
-/// `main` when the recovered C has none. Empty outputCPath is a no-op.
-/// Does not overwrite the original .c.
+/// Write `<stem>.h`, `<stem>_stubs.c`, and `<stem>.buildable.c` next to
+/// outputCPath unless `RETDEC_EMIT_BUILDABLE` is `0` (CLI `--no-buildable`).
+/// Default is on (`--buildable`). `.buildable.c` is a single translation
+/// unit: libc headers for undeclared libc calls, extra-arity wrappers,
+/// temp injects, and weak link stubs plus `main` when the recovered C has
+/// none. Empty outputCPath is a no-op. Does not overwrite the original .c.
 void maybeWriteBuildableSidecars(const std::string& outputCPath, const std::string& cSource);
 
 } // namespace analysis

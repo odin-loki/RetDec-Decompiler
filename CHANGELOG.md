@@ -8,6 +8,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `CFG-02`: `--buildable` is a CLI flag and the default; `--no-buildable`
+  / `RETDEC_EMIT_BUILDABLE=0` opts out. Tests: `EnabledWhenUnset`,
+  `DisabledWhenZero`.
 - Phase 1 `CACHE-01`: `computeFunctionBodyHash` includes integer
   immediate operand values so structurally identical functions with
   different constants (e.g. AES S-box vs CRC) do not share a cache key.

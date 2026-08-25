@@ -8,11 +8,11 @@ Official Hub image `retdec/retdec:v5.0` does not exist.
 
 ## DecompileBench (stand-in corpus, 216 binaries)
 
-Headline quality metric is **opt-in buildable C**, not default `.c`.
+Headline quality metric is **buildable C** (`--buildable`, default on), not default `.c`.
 
 | Metric | Fork | Stock RetDec 5.0 |
 |--------|------|------------------|
-| Recompile, `RETDEC_EMIT_BUILDABLE` sidecar | **216/216** | **0/216** |
+| Recompile, `--buildable` sidecar | **216/216** | **0/216** |
 | Recompile, default `.c` | 0/216 | 0/216 |
 | syntax_valid_rate (default `.c`) | 1.0 | 1.0 |
 | mean_wall_s | 1.492 | 0.242 |

@@ -139,7 +139,9 @@ void injectSemanticCommentsIntoLines(std::vector<std::string>& lines, const conf
 bool emitBuildableEnabled()
 {
 	const char* e = std::getenv("RETDEC_EMIT_BUILDABLE");
-	return e != nullptr && e[0] != '\0' && e[0] != '0';
+	if (e == nullptr || e[0] == '\0')
+		return true;
+	return e[0] != '0';
 }
 
 bool isIdentStart(char c)

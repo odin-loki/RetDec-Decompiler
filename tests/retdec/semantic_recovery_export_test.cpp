@@ -99,18 +99,12 @@ TEST(BuildableSidecars, EmptyPathIsNoop)
 	maybeWriteBuildableSidecars("", "int foo(void) { return 0; }\n");
 }
 
-TEST(BuildableSidecars, DisabledWhenUnsetOrZero)
+TEST(BuildableSidecars, DisabledWhenZero)
 {
 	EmitBuildableEnvGuard guard;
 	const fs::path dir = fs::temp_directory_path();
 	const fs::path outC = dir / "retdec_buildable_disabled.c";
 	writeAll(outC, "int foo(void) { return 0; }\n");
-
-	setEmitBuildableEnv(nullptr);
-	maybeWriteBuildableSidecars(outC.string(), "int foo(void) { return 0; }\n");
-	EXPECT_FALSE(fs::exists(dir / "retdec_buildable_disabled.h"));
-	EXPECT_FALSE(fs::exists(dir / "retdec_buildable_disabled_stubs.c"));
-	EXPECT_FALSE(fs::exists(dir / "retdec_buildable_disabled.buildable.c"));
 
 	setEmitBuildableEnv("0");
 	maybeWriteBuildableSidecars(outC.string(), "int foo(void) { return 0; }\n");
@@ -119,6 +113,25 @@ TEST(BuildableSidecars, DisabledWhenUnsetOrZero)
 	EXPECT_FALSE(fs::exists(dir / "retdec_buildable_disabled.buildable.c"));
 
 	fs::remove(outC);
+}
+
+TEST(BuildableSidecars, EnabledWhenUnset)
+{
+	EmitBuildableEnvGuard guard;
+	const fs::path dir = fs::temp_directory_path();
+	const fs::path outC = dir / "retdec_buildable_default_on.c";
+	writeAll(outC, "int foo(void) { return 0; }\n");
+
+	setEmitBuildableEnv(nullptr);
+	maybeWriteBuildableSidecars(outC.string(), "int foo(void) { return 0; }\n");
+	EXPECT_TRUE(fs::exists(dir / "retdec_buildable_default_on.h"));
+	EXPECT_TRUE(fs::exists(dir / "retdec_buildable_default_on_stubs.c"));
+	EXPECT_TRUE(fs::exists(dir / "retdec_buildable_default_on.buildable.c"));
+
+	fs::remove(outC);
+	fs::remove(dir / "retdec_buildable_default_on.h");
+	fs::remove(dir / "retdec_buildable_default_on_stubs.c");
+	fs::remove(dir / "retdec_buildable_default_on.buildable.c");
 }
 
 TEST(BuildableSidecars, WritesHeaderStubsAndBuildable)

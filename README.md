@@ -17,7 +17,7 @@ Stand-in corpus: 216 ELF binaries. Not the OSS-Fuzz paper set.
 
 | Metric | This fork | Stock RetDec 5.0 |
 |--------|-----------|------------------|
-| Recompile, **opt-in buildable C** (`RETDEC_EMIT_BUILDABLE`) | **216/216** | **0/216** |
+| Recompile, **buildable C** (`--buildable`, default on) | **216/216** | **0/216** |
 | Recompile, default `.c` | 0/216 | 0/216 |
 | Algorithm-recovery F1, **name-blind** | **0.056** (95% CI 0.034–0.083) | n/a (no label export) |
 | Algorithm-recovery F1, name-assisted (symbolicated binaries) | 1.000 | n/a |
@@ -25,8 +25,9 @@ Stand-in corpus: 216 ELF binaries. Not the OSS-Fuzz paper set.
 Name-blind is the headline. Name-assisted is a second mode on binaries that
 still have symbol names; it is not a product F1. Do not advertise 1.0.
 
-Default `.c` still does not recompile on either side. The buildable sidecar is
-opt-in (`C-EMIT` in [docs/CLAIMS.md](docs/CLAIMS.md)), not the default CLI.
+Default `.c` still does not recompile on either side. The buildable sidecar
+is on by default (`--buildable` / `C-EMIT` in [docs/CLAIMS.md](docs/CLAIMS.md));
+`--no-buildable` or `RETDEC_EMIT_BUILDABLE=0` turns it off.
 
 Wall-clock figures that compare this Debug/WSL fork to stock Release-in-Docker
 are **not a comparison**. Treat published ~6× ratios as unmeasured.

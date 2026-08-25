@@ -76,6 +76,18 @@ using retdec::decompiler::parseOutputLang;
 namespace
 {
 
+#ifdef _WIN32
+void setEmitBuildableEnv(bool on)
+{
+	_putenv_s("RETDEC_EMIT_BUILDABLE", on ? "1" : "0");
+}
+#else
+void setEmitBuildableEnv(bool on)
+{
+	setenv("RETDEC_EMIT_BUILDABLE", on ? "1" : "0", 1);
+}
+#endif
+
 bool retdecFormatArProbeDiagEnabled()
 {
 	const char *e = std::getenv("RETDEC_FORMAT_AR_PROBE_DIAG");
@@ -563,6 +575,14 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		const auto lang = parseOutputLang(getParamOrDie(i));
 		config.parameters.setOutputLang(outputLangCliName(lang));
 	}
+	else if (isParam(i, "", "--buildable"))
+	{
+		setEmitBuildableEnv(true);
+	}
+	else if (isParam(i, "", "--no-buildable"))
+	{
+		setEmitBuildableEnv(false);
+	}
 	else if (isParam(i, "", "--max-memory"))
 	{
 		auto val = getParamOrDie(i);
@@ -949,6 +969,8 @@ General arguments:
 	[-s|--silent] Turns off informative output of the decompilation.
 	[-f|--output-format OUTPUT_FORMAT] Output format [plain|json|json-human] (default: plain).
 	[--output-lang LANG] Target source language for native binaries [c|cpp|python|csharp|java|wat] (default: c). Managed inputs ignore this and use format-specific emitters.
+	[--buildable] Write .h, _stubs.c, and .buildable.c next to output C (default: on).
+	[--no-buildable] Disable buildable sidecars (same as RETDEC_EMIT_BUILDABLE=0).
 	[-m|--mode MODE] Force the type of decompilation mode [bin|raw] (default: bin).
 	[-p|--pdb FILE] File with PDB debug information.
 	[-k|--keep-unreachable-funcs] Keep functions that are unreachable from the main function.
