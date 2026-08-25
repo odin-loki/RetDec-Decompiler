@@ -32,5 +32,8 @@ jobs:
       - name: LEG-11 Keystone not installed
         run: python scripts/ci/check_keystone_not_installed.py
 
+      - name: LEG-03 provenance rewrite-tells
+        run: python scripts/ci/generate_provenance.py
+
 
 

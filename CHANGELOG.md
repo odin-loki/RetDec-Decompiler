@@ -8,6 +8,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `LEG-03`: `scripts/ci/generate_provenance.py` writes
+  `docs/PROVENANCE-files.md`; `doc-integrity` fails on rewrite-tells.
 - Phase 1 `CI-09`: pin GitHub Actions to commit SHAs.
 - Phase 1 `LEG-01`: restore remaining **2019** (tests) and **2020** rewrite
   headers; CI fails on leftover 2017–2020 Odin Loch lines.

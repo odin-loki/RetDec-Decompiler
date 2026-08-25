@@ -153,7 +153,9 @@ Headers were restored by the 2017-rewrite heuristic, not by a per-file upstream 
 
 Matching `include/retdec/<module>/` and `tests/<module>/` trees follow the same origin as `src/<module>/`.
 
-This is a module-level map, not a 5,000-file inventory. File-level truth is the header.
+This is a module-level map, not a 5,000-file inventory. Regenerated
+file-level counts: [PROVENANCE-files.md](PROVENANCE-files.md)
+(`scripts/ci/generate_provenance.py`).
 
 ## CI
 

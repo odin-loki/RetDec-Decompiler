@@ -34,6 +34,7 @@ This directory contains **technical documentation** for building, operating, ext
 | [internal/ENGINEERING_ROADMAP.md](internal/ENGINEERING_ROADMAP.md) | Maintainers | Shippable engineering tiers, backlog |
 | [internal/README.md](internal/README.md) | Maintainers | Index of internal / historical notes |
 | [LGPL_QT.md](LGPL_QT.md) | Packagers / counsel | Qt 6 dynamic-link and relink evidence (`LEG-12`) |
+| [PROVENANCE-files.md](PROVENANCE-files.md) | Diligence | Generated file-level header classes |
 | [DUE_DILIGENCE.md](DUE_DILIGENCE.md) | Diligence readers | Plan.md Part 2 responses |
 | [../Plan.md](../Plan.md) | Maintainers | Master engineering review |
 | [../results/README.md](../results/README.md) | Releases / CI | Live baselines and stock/F1 JSON |
