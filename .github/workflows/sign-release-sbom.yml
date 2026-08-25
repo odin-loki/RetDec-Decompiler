@@ -1,0 +1,49 @@
+name: sign-release-sbom
+
+# REL-05 leftover: the v2.0.21 SBOM was uploaded before cosign landed.
+# Signs an existing GitHub Release CycloneDX JSON with keyless Sigstore.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag whose retdec-*.cdx.json should be signed
+        required: false
+        default: v2.0.21
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/sign-release-sbom.yml"
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign published CycloneDX if unsigned
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || 'v2.0.21' }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/rel
+          gh release download "${TAG}" --pattern 'retdec-*.cdx.json' --dir /tmp/rel
+          json="$(find /tmp/rel -name 'retdec-*.cdx.json' | head -n1)"
+          test -n "${json}" || { echo "no CycloneDX JSON on ${TAG}"; exit 1; }
+          base="$(basename "${json}")"
+          bundle="${base}.sigstore.json"
+          if gh release view "${TAG}" --json assets --jq '.assets[].name' | grep -qx "${bundle}"; then
+            echo "already signed: ${bundle}"
+            exit 0
+          fi
+          cosign sign-blob --yes --bundle "/tmp/rel/${bundle}" "${json}"
+          gh release upload "${TAG}" "/tmp/rel/${bundle}"
+          echo "uploaded ${bundle} to ${TAG}"
