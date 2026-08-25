@@ -632,8 +632,10 @@ The implementation plan:
 3. **Layer 3 reconstructor**: replace low-level pointer operations with
    idiomatic STL calls in the emitted output.
 
-Prototype location: `src/container_detect/` (stub exists; implementation pending).
-Algorithm detection: `src/algo_recover/` (stub exists).
+Prototype location: `src/container_detect/` (implemented; not a stub).
+Algorithm detection: `src/algo_recover/` (implemented). Name-blind F1 is
+the headline in [BENCHMARKS.md](BENCHMARKS.md); do not treat these
+modules as finished product quality.
 
 ### Algorithm recognition via structural fingerprints
 
