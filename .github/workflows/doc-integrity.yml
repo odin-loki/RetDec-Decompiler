@@ -47,5 +47,8 @@ jobs:
       - name: CI-10 secret patterns
         run: python scripts/ci/check_secrets.py
 
+      - name: REL-06 CycloneDX pins
+        run: python scripts/ci/generate_cyclonedx.py --out "$RUNNER_TEMP/retdec.cdx.json"
+
 
 
