@@ -604,6 +604,9 @@ plugin to be rejected at load time with a `loadError` signal.
 
 ### Adding a new language emitter
 
+Native binaries still emit **C**. Extra emitters are managed-format routes
+or research (`DEAD-02`); they are not a free-choice native language list.
+
 1. Create `include/retdec/<lang>_emitter/` with type, stmt, expr, file emitters.
 2. Implement in `src/<lang>_emitter/`.
 3. Register in `codegen`'s language dispatch table.
