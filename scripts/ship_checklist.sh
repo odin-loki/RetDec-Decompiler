@@ -57,6 +57,8 @@ check "${PYTHON}" "${ROOT}/tests/algorithm_recovery/test_labels.py"
 check "${PYTHON}" "${ROOT}/tests/algorithm_recovery/test_ground_truth.py"
 check "${PYTHON}" "${ROOT}/tests/algorithm_recovery/test_regression_gate.py"
 check "${PYTHON}" "${ROOT}/tests/algorithm_recovery/test_triton_gate.py"
+check "${PYTHON}" "${ROOT}/scripts/ci/check_version_drift.py"
+check "${PYTHON}" "${ROOT}/scripts/ci/check_release_binaries.py"
 
 if grep -qE '5\.0-rc|v4\.2\.0-rc' "${ROOT}/cmake/deps.cmake" 2>/dev/null; then
 	echo "FAIL  RC dependency pins in deps.cmake" >&2

@@ -53,7 +53,7 @@ From **Developer PowerShell for VS 2022**, after a successful native configure/b
 | `-OutDir` | `dist` | ZIP and setup.exe output |
 | `-BundleDir` | `dist\windows-bundle` | Staging layout for NSIS |
 | `-SkipBuild` | off | Skip `cmake --build` / `--install` |
-| `-Version` | from `CMakeLists.txt` | Package version (e.g. `5.0`) |
+| `-Version` | from `CMakeLists.txt` | Package version (e.g. `2.0.21`) |
 | `-QtRoot` | auto-detect | Qt kit root (e.g. `C:\Qt\6.11.0\msvc2022_64`) |
 
 The bundle includes:
@@ -70,7 +70,7 @@ The bundle includes:
 ### Option A — NSIS installer (recommended)
 
 ```powershell
-.\scripts\install-windows.ps1 -SetupExe dist\retdec-5.0-windows-x64-setup.exe
+.\scripts\install-windows.ps1 -SetupExe dist\retdec-2.0.21-windows-x64-setup.exe
 ```
 
 Or double-click `retdec-*-windows-x64-setup.exe`. The installer:

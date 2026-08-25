@@ -15,7 +15,8 @@ See `VERSION` for the active package version and script paths.
 
 ## CI and validation
 
-- **ci-smoke**, **perf-nightly**, and **ctest-*** workflows are **manual-only** (Actions → Run workflow).
+- **ci-smoke** and **ctest-linux** / **ctest-windows** run on push and pull request to `main` (and on `workflow_dispatch`).
+- **perf-nightly** is schedule / manual.
 - **release-installers** builds into `dist/` and uploads to GitHub Releases on version tags or manual dispatch.
 - Run **`scripts/doctor.ps1`** or **`bash scripts/doctor.sh`** locally before a full build.
 
@@ -32,7 +33,7 @@ See `VERSION` for the active package version and script paths.
 **Install:**
 
 ```powershell
-.\scripts\install-windows.ps1 -SetupExe dist\retdec-5.0-windows-x64-setup.exe
+.\scripts\install-windows.ps1 -SetupExe dist\retdec-2.0.21-windows-x64-setup.exe
 ```
 
 ## Linux
@@ -47,9 +48,9 @@ chmod +x scripts/build-all.sh scripts/build-linux-installer.sh
 **Install from a release tarball:**
 
 ```bash
-# Download retdec-5.0-linux-x64.tar.gz from GitHub Releases, then:
-tar xzf retdec-5.0-linux-x64.tar.gz
-cd retdec-5.0-linux-x64
+# Download retdec-2.0.21-linux-x64.tar.gz from GitHub Releases, then:
+tar xzf retdec-2.0.21-linux-x64.tar.gz
+cd retdec-2.0.21-linux-x64
 ./install.sh --user --add-path
 ```
 
@@ -59,7 +60,7 @@ Or copy `install.sh` / `uninstall.sh` from this repo and run them from inside an
 
 CI workflow **`.github/workflows/release-installers.yml`** publishes both platforms when you:
 
-1. **Tag a release:** `git tag v5.0 && git push origin v5.0`
+1. **Tag a release:** `git tag v2.0.21 && git push origin v2.0.21`
 2. **Manual dispatch:** Actions → *release-installers* → Run workflow
 
 After changing install/uninstall scripts locally, commit updated `releases/linux/` files.

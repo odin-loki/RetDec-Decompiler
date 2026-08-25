@@ -41,5 +41,8 @@ jobs:
       - name: REL-04 version drift
         run: python scripts/ci/check_version_drift.py
 
+      - name: CI-04 release binaries
+        run: python scripts/ci/check_release_binaries.py
+
 
 
