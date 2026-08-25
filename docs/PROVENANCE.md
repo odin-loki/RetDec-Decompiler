@@ -46,7 +46,7 @@ The 2017 date on an Imortek line is the tell: Imortek did not exist in 2017. Tho
 
 L1 restored every `@copyright (c) 2017 Odin Loch` line under `src/`, `include/`, and `tests/` (never `deps/`, never `build/`). Files that already correctly named Avast were left alone. `src/pelib/` files that retain Sebastian Porst copyright were left alone. New-module files that already said 2025–2026 Imortek only were left alone (L3).
 
-A residual class exists: some known-upstream files use **2019–2020** Odin Loch lines (Avast-era years, same rewrite pattern). L1 restored 2017; Phase 1 restored **2018**. 2019–2020 remain. `scripts/ci/restore_avast_headers.py --year 2019` (then `--year 2020`) is the next slice. `check_avast_mit_notice.py` currently fails on leftover **2017 and 2018** rewrite lines.
+A residual class existed: known-upstream files used **2018–2020** Odin Loch lines (Avast-era years, same rewrite pattern). L1 restored 2017; Phase 1 restored **2018, 2019, and 2020**. `check_avast_mit_notice.py` fails on leftover **2017–2020** rewrite lines.
 
 ## Module origin (`src/`)
 
@@ -158,7 +158,7 @@ This is a module-level map, not a 5,000-file inventory. File-level truth is the 
 ## CI
 
 - `scripts/ci/restore_avast_headers.py` — restore Avast-era rewrite years (`--year 2017|2018|2019|2020`). L1 did 2017; Phase 1 did 2018.
-- `scripts/ci/check_avast_mit_notice.py` — fails if `LICENSE-MIT` is missing or if `@copyright (c) 2017|2018 Odin Loch` still exists under `src/`, `include/`, or `tests/`. Wired in `.github/workflows/doc-integrity.yml`.
+- `scripts/ci/check_avast_mit_notice.py` — fails if `LICENSE-MIT` is missing or if `@copyright (c) 2017|2018|2019|2020 Odin Loch` still exists under `src/`, `include/`, or `tests/`. Wired in `.github/workflows/doc-integrity.yml`.
 
 ## Related files
 

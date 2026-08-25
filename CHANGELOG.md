@@ -8,6 +8,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `LEG-01`: restore remaining **2019** (tests) and **2020** rewrite
+  headers; CI fails on leftover 2017–2020 Odin Loch lines.
 - Phase 1 `LEG-01`: restore Avast MIT notice on **85** 2019 rewrite
   headers under `src/` (including `serdes`, which is upstream).
 - Phase 1 `LEG-11`: do not `install()` Keystone-linked `capstone2llvmirtool`.

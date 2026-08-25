@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/bin2llvmir/optimizations/writer_bc/writer_bc.h
  * @brief Generate the current bitcode.
- * @copyright (c) 2020 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_BIN2LLVMIR_OPTIMIZATIONS_WRITER_BC_WRITER_BC_H

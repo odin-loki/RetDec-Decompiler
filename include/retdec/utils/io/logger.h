@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/utils/io/logger.h
 * @brief Implementation of a logging class.
-* @copyright (c) 2020 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_UTILS_IO_LOGGER_H

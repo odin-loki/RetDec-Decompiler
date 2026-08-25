@@ -1,7 +1,8 @@
 /**
 * @file src/bin2llvmir/optimizations/types_propagator/types_propagator.cpp
 * @brief Data type propagation — fixed and completed.
-* @copyright (c) 2020 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 *
 * Changes from the original (which had a debug exit(1) and several TODO stubs):
 *   - Removed the debug exit(1) and the debug log loop.

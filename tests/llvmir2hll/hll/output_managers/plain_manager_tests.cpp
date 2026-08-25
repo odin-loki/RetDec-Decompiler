@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/hll/output_managers/plain_manager_tests.cpp
 * @brief Implementation of class for tests of Plain output manager.
-* @copyright (c) 2019 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #include "llvmir2hll/hll/output_managers/output_manager_tests.h"

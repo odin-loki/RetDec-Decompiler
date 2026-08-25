@@ -1,7 +1,8 @@
 /**
 * @file tests/llvmir2hll/hll/output_managers/output_manager_tests.h
 * @brief Base class for tests of output managers.
-* @copyright (c) 2019 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef BACKEND_BIR_HLL_OUTPUT_MANAGERS_OUTPUT_MANAGER_TESTS_H
