@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `DEAD-04`: developer guide no longer says `full-linux-*` presets turn CUDA accel on.
 - Phase 1 docs: developer guide no longer calls `container_detect` / `algo_recover` stubs.
 - Phase 1 `DEAD-04`: developer guide no longer describes automatic GPU analysis-pass fallback.
 - Phase 1 `DEAD-04`: Windows/MinGW build docs no longer advertise CUDA as default-pipeline acceleration.

@@ -66,13 +66,15 @@ retdec-master/
 | GCC or Clang | GCC 11 / Clang 14 | C++17 required |
 | Ninja | any | Recommended generator |
 | Qt6 | 6.4 | Widgets, Core, Gui, Test modules |
-| CUDA Toolkit | 11.8 | Optional; enables GPU acceleration |
+| CUDA Toolkit | 11.8 | Optional; parked `RETDEC_ENABLE_CUDA_ACCEL` (defaults **OFF**) |
 | MinGW-w64 | `g++-mingw-w64-x86-64` | Windows cross-compile only |
 | Perl + make | any | OpenSSL cross-build only |
 
 ### Quick build (Linux/WSL)
 
-The **`full-linux-*` presets** turn on **CUDA acceleration** and **require Qt 6** for `retdec-gui`. Install Qt dev packages first (e.g. `sudo apt install qt6-base-dev qt6-base-dev-tools` on Ubuntu).
+The **`full-linux-*` presets require Qt 6** for `retdec-gui`. CUDA accel stays
+**OFF** (`RETDEC_ENABLE_CUDA_ACCEL`). Install Qt dev packages first (e.g.
+`sudo apt install qt6-base-dev qt6-base-dev-tools` on Ubuntu).
 
 ```bash
 # Configure into build/linux/ (preset full-linux-debug):
@@ -474,7 +476,10 @@ for (const auto& fn : functions) {
 }
 ```
 
-### Record CUDA kernel time
+### Record CUDA kernel time (parked `cuda_accel` only)
+
+Not the default decompiler pipeline (`C-CUDA-PIPE` withdrawn). The header
+exists under `include/retdec/cuda_accel/` for research builds.
 
 ```cpp
 // Using CUDAProfiler from include/retdec/cuda_accel/cuda_profiler.h:
