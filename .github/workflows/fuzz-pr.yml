@@ -12,6 +12,7 @@ name: fuzz-pr
 # workflow_dispatch + weekly schedule: Clang + RETDEC_FUZZ=ON, then ~30s
 # libFuzzer per target if the build cache / compile succeeds.
 # FUZZ-02: libFuzzer corpora persist in actions/cache under fuzz-corpora/.
+# FUZZ-03: ELF seeds are compiled from tests/test_binaries/*.c when missing.
 
 on:
   pull_request:
@@ -97,6 +98,21 @@ jobs:
           key: fuzz-corpus-${{ github.run_id }}
           restore-keys: |
             fuzz-corpus-
+
+      - name: Seed ELF corpus from tests/test_binaries
+        run: |
+          set -euo pipefail
+          seed="${GITHUB_WORKSPACE}/fuzz-corpora/fuzz_elf"
+          mkdir -p "${seed}"
+          for src in fib factorial binary_search sort gcd_lcm; do
+            c="tests/test_binaries/${src}.c"
+            out="${seed}/${src}"
+            if [[ -f "${c}" && ! -e "${out}" ]]; then
+              gcc -O0 -o "${out}" "${c}" || echo "skip compile ${src}"
+            fi
+          done
+          echo "ELF seeds:"
+          ls -la "${seed}" || true
 
       - name: Run libFuzzer 30s per target
         run: |

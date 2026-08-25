@@ -10,6 +10,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 - Phase 1 `CACHE-03`: `computeFunctionBodyHash` uses SHA-256 (`fileformat::getSha256`); cache format `kVersion` is 3.
 - Phase 1 `FUZZ-02`: weekly libFuzzer corpora persist in `actions/cache` (`fuzz-corpora/`).
+- Phase 1 `FUZZ-03`: weekly `fuzz_elf` corpus is seeded from compiled `tests/test_binaries` C files.
 - Phase 1 `REL-05`: workflow `sign-release-sbom.yml` keyless-signs a published CycloneDX JSON if the bundle is missing.
 - Phase 1 `REL-02`: `docker-publish.yml` builds the Dockerfile and pushes `ghcr.io/<owner>/retdec` (Docker Hub `imortek/retdec` still unpublished).
 - Phase 1 `LEG-09`: `LICENSING_FAQ.md` for procurement (air-gap / AGPL vs commercial).
