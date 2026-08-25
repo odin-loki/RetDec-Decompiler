@@ -6,18 +6,19 @@ This directory contains **technical documentation** for building, operating, ext
 
 ## Suggested reading order
 
-1. **[BUILD_REFERENCE.md](BUILD_REFERENCE.md)** — CMake 3.26+, directory layout (`build/linux`, `build/windows`, `dist/windows`), all presets, superbuild, install, CI workflows, testing, troubleshooting. **Start here** if you are compiling the project.
-2. **[WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md)** — MSVC, CUDA, Qt6, `windeployqt`, bundled OpenSSL, native Windows deployment.
-3. **[MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md)** — Linux/WSL → Windows PE via MinGW (CLI-only); `llvm-tblgen`, OpenSSL, staging.
-4. **[user_manual.md](user_manual.md)** — Qt GUI v3 layout, settings, shortcuts, optional neural refine.
-5. **[CLAIMS.md](CLAIMS.md)** — claims register (status + verification).
-6. **[DUE_DILIGENCE.md](DUE_DILIGENCE.md)** — responses to Plan.md Part 2.
-7. **[../Plan.md](../Plan.md)** — master engineering review and execution plan.
-8. **[developer_guide.md](developer_guide.md)** — Repository layout, code style, new pipeline stages, tests, plugins, profiling.
-9. **[architecture.md](architecture.md)** — Pipeline stages, libraries, managed-language dispatch.
-10. **[pipeline_stage_map.md](pipeline_stage_map.md)** — Quick stage → source mapping.
-11. **[algorithm_reference.md](algorithm_reference.md)** — Formal notes on selected algorithms.
-12. **[future_directions.md](future_directions.md)** — Research directions and open problems.
+1. **[../QUICKSTART.md](../QUICKSTART.md)** — ten-minute decompile (Docker when published, or a local binary).
+2. **[BUILD_REFERENCE.md](BUILD_REFERENCE.md)** — CMake 3.26+, directory layout (`build/linux`, `build/windows`, `dist/windows`), all presets, superbuild, install, CI workflows, testing, troubleshooting. **Start here** if you are compiling the project.
+3. **[WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md)** — MSVC, CUDA, Qt6, `windeployqt`, bundled OpenSSL, native Windows deployment.
+4. **[MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md)** — Linux/WSL → Windows PE via MinGW (CLI-only); `llvm-tblgen`, OpenSSL, staging.
+5. **[user_manual.md](user_manual.md)** — Qt GUI v3 layout, settings, shortcuts, optional neural refine.
+6. **[CLAIMS.md](CLAIMS.md)** — claims register (status + verification).
+7. **[DUE_DILIGENCE.md](DUE_DILIGENCE.md)** — responses to Plan.md Part 2.
+8. **[../Plan.md](../Plan.md)** — master engineering review and execution plan.
+9. **[developer_guide.md](developer_guide.md)** — Repository layout, code style, new pipeline stages, tests, plugins, profiling.
+10. **[architecture.md](architecture.md)** — Pipeline stages, libraries, managed-language dispatch.
+11. **[pipeline_stage_map.md](pipeline_stage_map.md)** — Quick stage → source mapping.
+12. **[algorithm_reference.md](algorithm_reference.md)** — Formal notes on selected algorithms.
+13. **[future_directions.md](future_directions.md)** — Research directions and open problems.
 
 ---
 
@@ -25,6 +26,7 @@ This directory contains **technical documentation** for building, operating, ext
 
 | Document | Audience | Contents |
 |----------|----------|----------|
+| [../QUICKSTART.md](../QUICKSTART.md) | New users | Ten-minute decompile (Docker when published) |
 | [BUILD_REFERENCE.md](BUILD_REFERENCE.md) | Everyone building | Presets, paths, superbuild, Docker, CI, `deps.cmake`, test commands |
 | [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) | Windows developers | MSVC + CUDA + Qt6, scripts, troubleshooting |
 | [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md) | Linux/WSL packagers | MinGW cross, tblgen, OpenSSL, `dist/windows` |
