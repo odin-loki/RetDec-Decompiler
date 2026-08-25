@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `CACHE-05`: hash determinism and `RETDEC_INCREMENTAL_CACHE=0` unit tests.
 - Phase 1 `CLI-01`: `--output-lang cpp` is rejected until `LLVM-22`.
 - Phase 1 `SAN-04`: ASan/UBSan job also runs on PRs that touch `src/`/`include/`/`cmake/`.
 - Phase 1 `REL-04`: CI fails if CMake, `releases/VERSION`, and CHANGELOG drift.

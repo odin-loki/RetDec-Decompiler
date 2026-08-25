@@ -176,3 +176,51 @@ entry:
     EXPECT_FALSE(hashB.empty());
 }
 
+TEST(FunctionAnalysisCacheTest, IncrementalCacheEnabledWhenUnset)
+{
+#ifdef _WIN32
+    _putenv_s("RETDEC_INCREMENTAL_CACHE", "");
+#else
+    unsetenv("RETDEC_INCREMENTAL_CACHE");
+#endif
+    EXPECT_TRUE(incrementalCacheEnabled());
+}
+
+TEST(FunctionAnalysisCacheTest, IncrementalCacheDisabledWhenZero)
+{
+#ifdef _WIN32
+    _putenv_s("RETDEC_INCREMENTAL_CACHE", "0");
+    EXPECT_FALSE(incrementalCacheEnabled());
+    _putenv_s("RETDEC_INCREMENTAL_CACHE", "1");
+    EXPECT_TRUE(incrementalCacheEnabled());
+    _putenv_s("RETDEC_INCREMENTAL_CACHE", "");
+#else
+    setenv("RETDEC_INCREMENTAL_CACHE", "0", 1);
+    EXPECT_FALSE(incrementalCacheEnabled());
+    setenv("RETDEC_INCREMENTAL_CACHE", "1", 1);
+    EXPECT_TRUE(incrementalCacheEnabled());
+    unsetenv("RETDEC_INCREMENTAL_CACHE");
+#endif
+}
+
+TEST(FunctionAnalysisCacheTest, BodyHashIsDeterministic)
+{
+    constexpr const char* kXor = R"IR(
+define i32 @xor_imm(i32 %x) {
+entry:
+  %y = xor i32 %x, 99
+  ret i32 %y
+}
+)IR";
+    llvm::LLVMContext ctxA;
+    llvm::LLVMContext ctxB;
+    auto modA = parseIR(ctxA, kXor);
+    auto modB = parseIR(ctxB, kXor);
+    ASSERT_NE(modA, nullptr);
+    ASSERT_NE(modB, nullptr);
+    retdec::ssa::SSAFunction fnA("xor_imm");
+    retdec::ssa::SSAFunction fnB("xor_imm");
+    EXPECT_EQ(computeFunctionBodyHash(*modA, fnA),
+              computeFunctionBodyHash(*modB, fnB));
+}
+
