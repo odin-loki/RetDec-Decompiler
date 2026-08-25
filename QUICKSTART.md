@@ -20,8 +20,8 @@ retdec-decompiler --help
 ```
 
 Run without installing: `export PATH="$(pwd)/bin:$PATH"`. AppImage was not
-produced on this tag run. Cosign keyless bundles (`.sigstore.json`) attach
-when `sign-release-sbom.yml` or a later installer job has signed the tarball.
+produced on this tag run. The same Release has a keyless Sigstore bundle
+`retdec-2.0.21-linux-x64.tar.gz.sigstore.json`.
 
 ## Docker (when the image is published)
 
