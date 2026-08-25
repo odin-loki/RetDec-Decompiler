@@ -11,6 +11,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Phase 1 `CACHE-03`: `computeFunctionBodyHash` uses SHA-256 (`fileformat::getSha256`); cache format `kVersion` is 3.
 - Phase 1 `LEG-09`: `LICENSING_FAQ.md` for procurement (air-gap / AGPL vs commercial).
 - Phase 1 `CI-08`: CodeQL on Python and GitHub Actions workflows.
+- Phase 1 `REL-05`: keyless Sigstore (`cosign sign-blob`) on release SBOM and installer artefacts. Authenticode is still outstanding.
 - Phase 1 `CACHE-06`: cache JSON with a mismatched or missing `version` loads empty (`VersionMismatchYieldsEmptyCache`, `MissingVersionYieldsEmptyCache`).
 - Phase 1 `CI-04`: `check_release_binaries.py` asserts table-named `retdec-*` tools are `add_executable` targets (or `OUTPUT_NAME`).
 - Phase 1 `CI-10`: Dependabot for Actions, pip, and Docker; `check_secrets.py` fails on committed key material.
