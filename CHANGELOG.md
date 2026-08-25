@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `REL-03`/`REL-07`: `v2.0.21` Release now has Linux tarball, AppImage (both Sigstore), Windows NSIS and portable zip. QUICKSTART lists all four; GHCR anonymous pull still 401.
 - Phase 1 `REL-03`: AppImage wrap always writes a PNG icon and AppStream metainfo that `appimagetool` accepts.
 - Phase 1 `REL-03`: `appimage-from-release.yml` wraps the published Linux tarball as an AppImage without rebuilding LLVM.
 - Phase 1 `DEAD-05`: `src/experimental/README.md` documents the opt-in scaffold (not a product pipeline).
@@ -24,7 +25,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Phase 1 `FUZZ-04`: `fuzz_cli` libFuzzer harness for `CLIReader` (.NET PE / CIL).
 - Phase 1 `FUZZ-04`: `fuzz_unpacker_plugins` libFuzzer harness for UPX and MPRESS plugins.
 - Phase 1 `CI-07`: weekly `coverage.yml` runs `scripts/run_coverage.sh` (ratchet floor pending a green artefact).
-- Phase 1 `REL-03`: `v2.0.21` Linux x86_64 tarball is on the GitHub Release; AppImage was skipped.
+- Phase 1 `REL-03`: `v2.0.21` Linux x86_64 tarball is on the GitHub Release (AppImage followed on a later main commit).
 - Phase 1 `REL-05`: `sign-release-sbom.yml` also keyless-signs a published Linux tarball if the bundle is missing.
 - Phase 1 `REL-07`: `QUICKSTART.md` installs from the published Linux tarball; README Quick Start points at it.
 - Phase 1 `REL-05`: workflow `sign-release-sbom.yml` keyless-signs a published CycloneDX JSON if the bundle is missing.

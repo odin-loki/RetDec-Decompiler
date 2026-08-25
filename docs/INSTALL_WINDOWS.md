@@ -1,6 +1,9 @@
 # Installing RetDec on Windows
 
 This guide covers **end-user installation** after you (or CI) have built RetDec on Windows.
+Prebuilt NSIS and zip for `v2.0.21` are on the
+[GitHub Release](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.21)
+([QUICKSTART.md](../QUICKSTART.md)). Authenticode is not applied.
 For compiling from source, see [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md).
 
 Project home: [github.com/odin-loki/RetDec-Decompiler](https://github.com/odin-loki/RetDec-Decompiler)

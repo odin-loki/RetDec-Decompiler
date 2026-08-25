@@ -10,8 +10,8 @@ See `VERSION` for the active package version and script paths.
 
 | Platform | In git | On GitHub Releases |
 |----------|--------|-------------------|
-| Linux | `linux/install.sh`, `linux/uninstall.sh` | `retdec-*-linux-x64.tar.gz` + scripts |
-| Windows | — (use `scripts/install-windows.ps1`) | `setup.exe`, portable `.zip` |
+| Linux | `linux/install.sh`, `linux/uninstall.sh` | `retdec-*-linux-x64.tar.gz` + scripts; `retdec-*-x86_64.AppImage` |
+| Windows | — (use `scripts/install-windows.ps1`) | `retdec-*-windows-x64-setup.exe`, `retdec-*-windows-x64-portable.zip` |
 
 ## CI and validation
 

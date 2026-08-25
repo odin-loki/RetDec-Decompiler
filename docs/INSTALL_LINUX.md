@@ -1,7 +1,8 @@
 # Linux Install & Packaging
 
 This guide covers **building**, **packaging**, and **installing** RetDec on
-Linux (native or WSL). For the full preset matrix see
+Linux (native or WSL). For the ten-minute download path see
+[QUICKSTART.md](../QUICKSTART.md). For the full preset matrix see
 [BUILD_REFERENCE.md](BUILD_REFERENCE.md).
 
 **Related docs:** [scripts/README.md](../scripts/README.md) ·
