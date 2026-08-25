@@ -48,7 +48,7 @@ includes or links `retdec/cuda_accel/*`. Sources stay in place under
 |-----------|------|
 | [`src/cuda_accel/`](../src/cuda_accel/) | Experimental `CUDAContext`, kernel cache, optional profiling |
 | [`src/opencl/`](../src/opencl/) | Experimental OpenCL backend — **also unintegrated**, not added from `src/CMakeLists.txt` |
-| [`src/qwen3/`](../src/qwen3/) | GGUF model GPU inference (FlashAttention path when CUDA available) |
+| [`src/neural/`](../src/neural/) | Opt-in llama.cpp refine (`RETDEC_NEURAL_REFINE`). GPU offload is `n_gpu_layers`, not a custom tree. There is no `src/qwen3/` (`C-QWEN3-GPU` withdrawn). |
 | GUI **CUDA** settings tab | Device index, block size, kernel cache directory |
 
 These do **not** run in the default LLVM → C decompilation pipeline.
@@ -77,7 +77,7 @@ Binary input
             │
             └─► Post-pipeline analysis CPU
                     │
-                    └─► Qwen3 / cuda_accel (opt-in, unintegrated)  RETDEC_ENABLE_CUDA_ACCEL
+                    └─► llama.cpp refine (opt-in) / parked cuda_accel
 ```
 
 ## Related docs

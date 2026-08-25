@@ -16,7 +16,7 @@ This manual describes the **Qt 6 GUI** (`retdec-gui`), its panels, settings, and
 - Ninja (recommended)
 - CUDA Toolkit is optional. Full presets are CPU-only unless you pass `-DRETDEC_ENABLE_CUDA_ACCEL=ON`. The CUDA acceleration layer is experimental and not wired into the decompiler.
 
-**Build (Linux/WSL — full GUI + CUDA preset)**
+**Build (Linux/WSL — full GUI preset)**
 
 ```bash
 # Ubuntu/Debian: sudo apt install qt6-base-dev qt6-base-dev-tools

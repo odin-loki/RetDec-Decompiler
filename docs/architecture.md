@@ -64,8 +64,8 @@ retdec-master/
 │   ├── concurrency_detect/   Concurrency/synchronisation detector
 │   ├── module_cluster/       Louvain module clustering + CMake generation
 │   ├── profiling/            Performance profiling harness
+│   ├── neural/               Opt-in llama.cpp refine (`RETDEC_NEURAL_REFINE`)
 │   ├── ptx_decompile/        PTX parser + CUDA C lifter
-│   ├── qwen3/                Tokeniser, weights, FlashAttn, MoE, pipeline
 │   ├── testing/              Test harness utilities
 │   └── gui/
 │       ├── panels/           All Qt panel widgets
@@ -374,83 +374,25 @@ Plugin types:
 
 ---
 
-## AI Inference Engine (Qwen3) {#ai}
+## AI Inference Engine {#ai}
 
-**Not in the default decompiler pipeline.** `src/qwen3/` and FlashAttention
-are experimental / unintegrated (claims register C-QWEN3-GPU withdrawn). Live refinement
-uses opt-in llama.cpp (`RETDEC_NEURAL_REFINE`) when a GGUF is on disk.
+**Not in the default decompiler pipeline.** There is no `src/qwen3/`,
+`Qwen3Pipeline`, or in-tree FlashAttention engine (`C-QWEN3-GPU` withdrawn).
+Live refinement is opt-in llama.cpp in `src/neural/`
+(`RETDEC_NEURAL_REFINE` + `RETDEC_NEURAL_MODEL`). See
+[NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
 
-### Component Stack
+### Component stack
 
 ```
-Qwen3Pipeline
-  ├── Qwen3Tokenizer    BPE tokeniser + ChatML templating
-  ├── Qwen3Weights      GGUF/SafeTensors loader + quantised tensor views
-  ├── Qwen3FlashAttn    FlashAttention-2 (OpenCL GPU + CPU fallback)
-  ├── Qwen3MoeLayer     MoE router + dispatcher + shared expert
-  └── Qwen3Sampler      Temperature, top-P, top-K, repetition penalty
+maybeRefineDecompilerOutput
+  ├── model_verify     SHA-256 allowlist (fails closed if empty)
+  ├── llama.cpp        GGUF generate (optional n_gpu_layers)
+  ├── gates            -fsyntax-only + tree-sitter AST
+  └── applyJsonRenameMap  Naming-tier GBNF JSON map
 ```
 
-### Qwen3Tokenizer
-
-- Byte-level pre-tokenisation with regex split.
-- BPE merge table loaded from GGUF metadata.
-- ChatML template:
-  ```
-  <|im_start|>system\n{system_prompt}\n<|im_end|>\n
-  <|im_start|>user\n{user_message}\n<|im_end|>\n
-  <|im_start|>assistant\n
-  ```
-- Special tokens: `<|im_start|>` = 151644, `<|im_end|>` = 151645.
-
-### Qwen3Weights
-
-Supports two weight formats:
-- **GGUF**: reads header metadata, tensor descriptors, then mmap-maps data.
-  Supports dtypes: `GGUF_F32`, `GGUF_F16`, `GGUF_Q4_0`, `GGUF_Q4_K_M`,
-  `GGUF_Q5_K_M`, `GGUF_Q6_K`.
-- **SafeTensors**: JSON header + raw tensor data, memory-mapped.
-
-### FlashAttention-2
-
-See [algorithm_reference.md](algorithm_reference.md) for the full mathematical
-treatment.  Implementation notes:
-
-- Block size constants: `FLASH_BR = 64` (row tiles), `FLASH_BC = 64` (col tiles).
-- **Dense KV cache** (`KvCacheLayer`): pre-allocated `float*` buffers for K and V;
-  indexed by sequence position.
-- **Paged KV cache** (`PagedKvCache`): fixed-size blocks (default 16 tokens);
-  block table maps `(layer, slot) → block_id`; supports variable-length
-  sequences without memory fragmentation.
-- **OpenCL kernel**: embedded as a `const char*` string in `qwen3_attention.cpp`;
-  compiled at runtime by `clCreateProgramWithSource`.  Falls back to
-  `flashAttnCpu` if no OpenCL device is available.
-
-### MoE Layer
-
-- **Router**: `W_g` weight matrix; softmax gating; `std::nth_element` for O(E)
-  top-K selection.
-- **Dispatcher**: evaluates K selected experts (SwiGLU FFN each); weighted sum.
-- **Shared expert**: always active; result added unconditionally.
-- **Load monitor**: per-expert activation fraction; alerts on hot/cold imbalance.
-
-### Qwen3Pipeline
-
-Full inference loop:
-
-1. `embedToken(id)` → look up embedding row.
-2. For each layer: `runLayer(layer_idx, pos)`:
-   - RMSNorm on input.
-   - QKV projections.
-   - RoPE application via `ropeApplyAll`.
-   - `Qwen3FlashAttn::forward` (or `forwardPaged`).
-   - Output projection.
-   - Residual add.
-   - FFN: `Qwen3MoeLayer::forward` or dense SwiGLU.
-   - Second residual add.
-3. Final RMSNorm + LM head projection → logits.
-4. `Qwen3Sampler::sample(logits)` → next token ID.
-5. Repeat until EOS or `max_new_tokens`.
+There is no `retdec-qwen3-runner` and no CLI `--model`.
 
 ---
 
@@ -466,17 +408,15 @@ Full inference loop:
 
 ### AI Inference Thread
 
-- `InferenceWorker` lives on a dedicated `QThread`.
-- Generation callbacks use `Qt::QueuedConnection` to marshal `tokenGenerated`
-  signals back to the main thread.
-- `abort_` is `std::atomic_bool` — set by any thread, checked by the worker.
+- The GUI Tools → AI Assistant window is a separate process/env path for
+  `RETDEC_NEURAL_REFINE`; it does not call a `Qwen3Pipeline` in-process.
+  See [NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
 
 ### OpenCL Concurrency
 
-- OpenCL command queues are per-device.
-- `cl_event` objects are used for kernel timing when profiling is enabled.
-- The FlashAttention kernel is dispatched asynchronously; results are read back
-  with `clEnqueueReadBuffer` + blocking wait.
+Parked `src/opencl/` is **not** wired into `src/retdec`
+(`C-CUDA-PIPE` withdrawn; `C-QWEN3-GPU` withdrawn). Do not treat
+FlashAttention command queues as a shipped decompiler path.
 
 ### Profiling Overhead
 
@@ -540,20 +480,12 @@ INI is human-readable, diff-friendly, and portable.  Settings files can be
 committed to version control for team configuration sharing.  JSON would also
 work but requires a JSON parser dependency.  QSettings handles INI natively.
 
-### Why a custom Qwen3 inference engine?
+### Why llama.cpp instead of a custom Qwen3 engine?
 
-For pure inference of a public model, llama.cpp already runs Qwen3 models
-efficiently.  The reasons to build a self-contained engine are:
-
-1. **Auditability**: for defence and research applications, a clean-room
-   implementation with full source visibility is required.
-2. **Direct integration**: the pipeline connects `Qwen3Pipeline::generate()`
-   directly to the decompiler context without IPC or subprocess overhead.
-3. **Custom attention patterns**: paged KV cache with block-table management
-   and FlashAttention-2 are tuned for the specific workloads of interactive
-   code analysis (short bursts, moderate context lengths).
-4. **No external dependencies at runtime**: the inference engine has zero
-   shared-library dependencies beyond the C++ standard library and OpenCL.
+`src/qwen3/` was deleted (`C-QWEN3-GPU` withdrawn). Optional refinement uses
+the pinned llama.cpp backend in `src/neural/` (`maybeRefineDecompilerOutput`).
+That path has GBNF naming maps, compile/structural gates, and a fail-closed
+model allowlist. There is no in-tree FlashAttention / MoE engine.
 
 ---
 
@@ -614,31 +546,16 @@ PTX .ptx         →  ptx_parser →  ptx_lifter     → CUDA C (inline in C emi
 ### AI Inference Pipeline
 
 ```
-User prompt (+ decompiled context)
+RETDEC_NEURAL_REFINE=1 + RETDEC_NEURAL_MODEL (GGUF)
     │
     ▼
-Qwen3Tokenizer::encodeChat()
-    │  token IDs
-    ▼
-Qwen3Pipeline::prefill(token_ids)
-    │  KV cache populated
-    ▼
-Generate loop:
-  Qwen3Pipeline::forward(next_token, pos)
-    ├── Embedding lookup
-    ├── For each layer: RMSNorm → QKV → RoPE → FlashAttn → FFN (MoE)
-    └── LM head → logits
-  Qwen3Sampler::sample(logits)
-    │  next token ID
-    ▼
-  Qwen3Tokenizer::decode(token_id) → text fragment
+maybeRefineDecompilerOutput
     │
     ▼
-  StreamCallback → InferenceWorker::tokenGenerated signal
+llama.cpp generate (optional n_gpu_layers)
     │
     ▼
-  AIAssistantPanel::onTokenGenerated() → append to chat bubble
-    │
-    ▼
-  [until EOS or max_new_tokens]
+gates (-fsyntax-only, tree-sitter) + optional GBNF rename map
 ```
+
+There is no `Qwen3Pipeline` / `src/qwen3/` (`C-QWEN3-GPU` withdrawn).

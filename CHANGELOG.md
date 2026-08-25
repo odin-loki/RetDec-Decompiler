@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `DOC-06` / `C-QWEN3-GPU`: architecture, CUDA docs, and the developer guide no longer treat `src/qwen3/` / `Qwen3Pipeline` as present.
 - Phase 1 `REL-03`/`REL-05`/`REL-07`: AppImage wrap, leftover Sigstore, and `fib_smoke` upload run after `release-installers` on `v*` tags.
 - Phase 1 `DEAD-04`: `BUILD_REFERENCE.md` no longer says full presets default CUDA accel ON.
 - Phase 1 `DOC-07`: developer guide emitter how-to states native output is C.

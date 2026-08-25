@@ -668,23 +668,11 @@ struct AlgorithmDescriptor {
 - Memory allocation calls
 - Pointer arithmetic patterns
 
-### MoE expert load balancing
+### MoE expert load balancing / paged KV
 
-The current `MoeLoadMonitor` tracks per-expert activation fractions but does
-not yet feed back into routing.  A planned enhancement is auxiliary loss
-during fine-tuning to encourage balanced expert usage.  For inference only
-(no gradient), the monitor is diagnostic — it identifies hot experts that
-might become throughput bottlenecks in multi-user serving scenarios.
-
-### Paged KV cache performance
-
-The current paged KV cache implementation allocates blocks of 16 tokens.
-For interactive analysis sessions with many short queries, the block overhead
-is minimal.  For long decompilation contexts (functions with thousands of
-lines), a larger block size (64 or 128 tokens) reduces the number of block
-table lookups.
-
-This is configurable via `Qwen3Config::kv_block_size` in `qwen3_config.h`.
+There is no in-tree `Qwen3Config` / `qwen3_config.h` (`C-QWEN3-GPU` withdrawn).
+Optional neural KV reuse is llama.cpp `RETDEC_NEURAL_REUSE_KV` in
+[NEURAL_REFINEMENT.md](NEURAL_REFINEMENT.md).
 
 ### CUDA portability and CPU fallback
 
