@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `REL-05`: `v2.0.21` Windows zip and NSIS now have keyless `.sigstore.json` (run [32833860648](https://github.com/odin-loki/RetDec-Decompiler/actions/runs/32833860648)). Authenticode remains.
 - Phase 1 `REL-05`: `sign-release-sbom.yml` keyless-signs published Windows zip and NSIS if the bundles are missing. Authenticode remains.
 - Phase 1 `REL-03`/`REL-07`: `v2.0.21` Release now has Linux tarball, AppImage (both Sigstore), Windows NSIS and portable zip. QUICKSTART lists all four; GHCR anonymous pull still 401.
 - Phase 1 `REL-03`: AppImage wrap always writes a PNG icon and AppStream metainfo that `appimagetool` accepts.

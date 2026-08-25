@@ -39,8 +39,9 @@ From the same Release:
 - `retdec-2.0.21-windows-x64-setup.exe` — NSIS installer
 - `retdec-2.0.21-windows-x64-portable.zip` — portable tree
 
-Authenticode is not applied. Keyless Sigstore for those two blobs is a
-follow-up (`sign-release-sbom.yml`); this tag run uploaded them unsigned.
+Keyless Sigstore bundles `retdec-2.0.21-windows-x64-portable.zip.sigstore.json`
+and `retdec-2.0.21-windows-x64-setup.exe.sigstore.json` are on the Release.
+Authenticode is not applied.
 
 ## Docker (when the image is published)
 
