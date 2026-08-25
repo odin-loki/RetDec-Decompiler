@@ -15,6 +15,9 @@ on:
     paths:
       - ".github/workflows/appimage-from-release.yml"
       - "scripts/make-appimage.sh"
+  workflow_run:
+    workflows: [release-installers]
+    types: [completed]
 
 permissions:
   contents: write
@@ -22,6 +25,9 @@ permissions:
 
 jobs:
   appimage:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -32,9 +38,22 @@ jobs:
       - name: Wrap published Linux tarball as AppImage
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.inputs.tag || 'v2.0.21' }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ github.event.inputs.tag || '' }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}
         run: |
           set -euo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" && -n "${DISPATCH_TAG}" ]]; then
+            TAG="${DISPATCH_TAG}"
+          elif [[ "${EVENT_NAME}" == "workflow_run" ]]; then
+            TAG="${RUN_BRANCH}"
+            if [[ "${TAG}" != v* ]]; then
+              echo "release-installers did not run on a v* tag (${TAG}); skip"
+              exit 0
+            fi
+          else
+            TAG="v2.0.21"
+          fi
           NAME="retdec-${TAG#v}-x86_64.AppImage"
           if gh release view "${TAG}" --json assets --jq '.assets[].name' | grep -qx "${NAME}"; then
             echo "already published: ${NAME}"

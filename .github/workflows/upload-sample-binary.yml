@@ -16,6 +16,9 @@ on:
     paths:
       - ".github/workflows/upload-sample-binary.yml"
       - "tests/test_binaries/fib.c"
+  workflow_run:
+    workflows: [release-installers]
+    types: [completed]
 
 permissions:
   contents: write
@@ -23,6 +26,9 @@ permissions:
 
 jobs:
   upload:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -33,9 +39,22 @@ jobs:
       - name: Build fib_smoke and upload if missing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.inputs.tag || 'v2.0.21' }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ github.event.inputs.tag || '' }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}
         run: |
           set -euo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" && -n "${DISPATCH_TAG}" ]]; then
+            TAG="${DISPATCH_TAG}"
+          elif [[ "${EVENT_NAME}" == "workflow_run" ]]; then
+            TAG="${RUN_BRANCH}"
+            if [[ "${TAG}" != v* ]]; then
+              echo "release-installers did not run on a v* tag (${TAG}); skip"
+              exit 0
+            fi
+          else
+            TAG="v2.0.21"
+          fi
           gcc -O1 -o /tmp/fib_smoke tests/test_binaries/fib.c
           test -x /tmp/fib_smoke
           file /tmp/fib_smoke
@@ -55,6 +74,9 @@ jobs:
           echo "uploaded ${bundle} to ${TAG}"
 
   upload-windows:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -69,10 +91,23 @@ jobs:
       - name: Build fib_smoke.exe and upload if missing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.inputs.tag || 'v2.0.21' }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ github.event.inputs.tag || '' }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          if ($env:EVENT_NAME -eq "workflow_dispatch" -and $env:DISPATCH_TAG) {
+            $env:TAG = $env:DISPATCH_TAG
+          } elseif ($env:EVENT_NAME -eq "workflow_run") {
+            $env:TAG = $env:RUN_BRANCH
+            if ($env:TAG -notlike "v*") {
+              Write-Host "release-installers did not run on a v* tag ($($env:TAG)); skip"
+              exit 0
+            }
+          } else {
+            $env:TAG = "v2.0.21"
+          }
           # Same MSVC flags as tests/decompiler/CMakeLists.txt retdec-decompiler-fixture-fib.
           cmd /c "cl /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf- /Fefib_smoke.exe tests\test_binaries\fib.c /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /EXPORT:main"
           if ($LASTEXITCODE -ne 0) { throw "cl failed: $LASTEXITCODE" }

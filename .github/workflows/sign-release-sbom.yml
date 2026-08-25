@@ -15,6 +15,9 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/sign-release-sbom.yml"
+  workflow_run:
+    workflows: [release-installers]
+    types: [completed]
 
 permissions:
   contents: write
@@ -22,6 +25,9 @@ permissions:
 
 jobs:
   sign-sbom:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -32,9 +38,22 @@ jobs:
       - name: Sign published CycloneDX if unsigned
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.inputs.tag || 'v2.0.21' }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ github.event.inputs.tag || '' }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}
         run: |
           set -euo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" && -n "${DISPATCH_TAG}" ]]; then
+            TAG="${DISPATCH_TAG}"
+          elif [[ "${EVENT_NAME}" == "workflow_run" ]]; then
+            TAG="${RUN_BRANCH}"
+            if [[ "${TAG}" != v* ]]; then
+              echo "release-installers did not run on a v* tag (${TAG}); skip"
+              exit 0
+            fi
+          else
+            TAG="v2.0.21"
+          fi
           mkdir -p /tmp/rel
           gh release download "${TAG}" --pattern 'retdec-*.cdx.json' --dir /tmp/rel
           json="$(find /tmp/rel -name 'retdec-*.cdx.json' | head -n1)"
@@ -50,6 +69,9 @@ jobs:
           echo "uploaded ${bundle} to ${TAG}"
 
   sign-linux-tarball:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -60,9 +82,22 @@ jobs:
       - name: Sign published Linux tarball if unsigned
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.inputs.tag || 'v2.0.21' }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ github.event.inputs.tag || '' }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}
         run: |
           set -euo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" && -n "${DISPATCH_TAG}" ]]; then
+            TAG="${DISPATCH_TAG}"
+          elif [[ "${EVENT_NAME}" == "workflow_run" ]]; then
+            TAG="${RUN_BRANCH}"
+            if [[ "${TAG}" != v* ]]; then
+              echo "release-installers did not run on a v* tag (${TAG}); skip"
+              exit 0
+            fi
+          else
+            TAG="v2.0.21"
+          fi
           mkdir -p /tmp/rel
           gh release download "${TAG}" --pattern 'retdec-*-linux-x64.tar.gz' --dir /tmp/rel
           tb="$(find /tmp/rel -name 'retdec-*-linux-x64.tar.gz' | head -n1)"
@@ -78,6 +113,9 @@ jobs:
           echo "uploaded ${bundle} to ${TAG}"
 
   sign-windows-installers:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -88,9 +126,22 @@ jobs:
       - name: Sign published Windows zip and NSIS if unsigned
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.inputs.tag || 'v2.0.21' }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ github.event.inputs.tag || '' }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}
         run: |
           set -euo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" && -n "${DISPATCH_TAG}" ]]; then
+            TAG="${DISPATCH_TAG}"
+          elif [[ "${EVENT_NAME}" == "workflow_run" ]]; then
+            TAG="${RUN_BRANCH}"
+            if [[ "${TAG}" != v* ]]; then
+              echo "release-installers did not run on a v* tag (${TAG}); skip"
+              exit 0
+            fi
+          else
+            TAG="v2.0.21"
+          fi
           mkdir -p /tmp/rel
           signed=0
           for pattern in \

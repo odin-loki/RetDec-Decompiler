@@ -244,8 +244,12 @@ Stock RetDec 5.0 compare **pulls** `remnux/retdec` via
 `scripts/run_stock_retdec_docker.py` (Windows `docker.exe`). That is the
 supported Docker use. Official Hub image `retdec/retdec:v5.0` does not exist.
 
-The in-tree [Dockerfile](../Dockerfile) is optional: local checkout, Ubuntu
-24.04, CMake 3.26+, Ninja, `core-release` preset:
+The GHCR runtime image is [Dockerfile.runtime](../Dockerfile.runtime) packed
+from a published Linux tarball (`.github/workflows/docker-from-release.yml`).
+Anonymous pull still 401 until the package is public.
+
+The in-tree [Dockerfile](../Dockerfile) is a dispatch-only LLVM rebuild:
+Ubuntu 24.04, CMake 3.26+, Ninja, `core-release` preset:
 
 ```bash
 docker build -t retdec:local .
@@ -265,6 +269,8 @@ GitHub Actions workflows under [.github/workflows/](../.github/workflows/):
 | [ctest-linux.yml](../.github/workflows/ctest-linux.yml) | PR to `main` + manual | Linux build, headless GUI, `ctest` |
 | [ctest-windows.yml](../.github/workflows/ctest-windows.yml) | Schedule + manual | Windows build, headless GUI, `ctest` |
 | [release-installers.yml](../.github/workflows/release-installers.yml) | Tag `v*` + manual | GitHub Release + installers |
+| [docker-from-release.yml](../.github/workflows/docker-from-release.yml) | After installers + manual | GHCR from Linux tarball |
+| [appimage-from-release.yml](../.github/workflows/appimage-from-release.yml) | After installers + manual | AppImage from Linux tarball |
 | [algorithm-recovery-nightly.yml](../.github/workflows/algorithm-recovery-nightly.yml) | Schedule + manual | Full F1 corpus |
 | [perf-nightly.yml](../.github/workflows/perf-nightly.yml) | Weekly + manual | Performance trend JSON |
 | [sanitizers.yml](../.github/workflows/sanitizers.yml) | Weekly + manual | ASan/UBSan |
