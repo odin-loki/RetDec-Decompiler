@@ -1,6 +1,8 @@
 name: doc-integrity
 
 # E8 / E9 — cheap, no-network Python checks. No LLVM, no decompiler build.
+# ubuntu-latest is the gate. macos-latest (CI-05) and ubuntu-24.04-arm (CI-06)
+# run the same scripts; they do not decompile Mach-O or ARM binaries.
 
 on:
   push:
@@ -11,7 +13,11 @@ on:
 
 jobs:
   e8-e9:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -49,6 +55,3 @@ jobs:
 
       - name: REL-06 CycloneDX pins
         run: python scripts/ci/generate_cyclonedx.py --out "$RUNNER_TEMP/retdec.cdx.json"
-
-
-
