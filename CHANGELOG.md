@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `DOC-06`: `scripts/README.md` no longer advertises `run-qwen3-trace.ps1` as a shipped runner; `build-install-run-windows.ps1` defaults to `retdec-decompiler`; the GUI header comment points at `RETDEC_NEURAL_REFINE`.
 - Phase 1 `DOC-03`: public algorithm-recovery copy uses `mean_f1_raw` for the name-blind 0.126 figure; stem-tuned `mean_f1` 1.0 stays labelled withdrawn.
 - Phase 1 `CI-03`/`DOC-05`: `check_doc_vs_code.py` and `check_withdrawn_claims.py` also scan QUICKSTART, SECURITY, CLA, CONTRIBUTING, LICENSING_FAQ, CODE_OF_CONDUCT, and `releases/README.md`.
 - Phase 1 `REL-07`: `v2.0.21` Release includes `fib_smoke.exe` + `.sigstore.json` (run [32836567725](https://github.com/odin-loki/RetDec-Decompiler/actions/runs/32836567725)); QUICKSTART decompiles it after NSIS/zip.

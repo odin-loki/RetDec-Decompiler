@@ -1,42 +1,36 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-  Configure (CMake preset), build, install, and run RetDec Qwen3 tools on Windows.
+  Configure (CMake preset), build, install, and run RetDec on Windows.
 
 .DESCRIPTION
   Loads Visual Studio Dev Shell when available (so MSVC + Windows SDK includes work),
   then runs cmake --preset, cmake --build, cmake --install, and optionally runs:
-    - Runner: install\...\bin\retdec-qwen3-runner.exe (default)
+    - Decompiler:  install\...\bin\retdec-decompiler.exe (default)
     - Gui:         install\...\bin\retdec-gui.exe (visible window)
     - GuiHeadless: same binary with --headless and optional --headless-exit-ms (Qt offscreen)
     - GuiTests:    build\...\tests\gui\retdec-gui-tests.exe (QTest + gtest, headless env)
-    - Tests:       build\...\tests\qwen3\retdec-qwen3-tests.exe (not installed by default)
+    - Runner/Tests: leftover Qwen3 paths; they do not ship (DOC-06). Neural path is RETDEC_NEURAL_REFINE.
 
 .EXAMPLE
   .\scripts\build-install-run-windows.ps1
 
 .EXAMPLE
-  .\scripts\build-install-run-windows.ps1 -Model "C:\models\qwen3.gguf" -RunnerArgs @("-p","Hello","-n","16")
-
-.EXAMPLE
-  .\scripts\build-install-run-windows.ps1 -Trace -TraceVerbose -Model "C:\models\moe.gguf" -RunnerArgs @("-p","test","-n","4")
-
-.EXAMPLE
   .\scripts\build-install-run-windows.ps1 -Run Gui
 
 .EXAMPLE
-  .\scripts\build-install-run-windows.ps1 -Run Tests -SkipInstall
+  .\scripts\build-install-run-windows.ps1 -Run GuiTests -SkipInstall
 
 .EXAMPLE
-  .\scripts\build-install-run-windows.ps1 -Run GuiHeadless -HeadlessExitMs 15000 -Trace
+  .\scripts\build-install-run-windows.ps1 -Run GuiHeadless -HeadlessExitMs 15000
 #>
 
 [CmdletBinding()]
 param(
     [string] $SourceDir = "",
     [string] $Preset = "full-windows-release",
-    [ValidateSet("Runner", "Gui", "GuiHeadless", "GuiTests", "Tests")]
-    [string] $Run = "Runner",
+    [ValidateSet("Decompiler", "Runner", "Gui", "GuiHeadless", "GuiTests", "Tests")]
+    [string] $Run = "Decompiler",
     [int] $HeadlessExitMs = 12000,
     [string] $Model = "",
     [string[]] $RunnerArgs = @(),
@@ -121,22 +115,20 @@ try {
     }
 
     switch ($Run) {
-        "Runner" {
-            $exe = Join-Path $installBin "retdec-qwen3-runner.exe"
+        "Decompiler" {
+            $exe = Join-Path $installBin "retdec-decompiler.exe"
             if (-not (Test-Path -LiteralPath $exe)) {
-                throw "Runner not found: $exe (build/install may have failed or preset differs)."
+                throw "retdec-decompiler not found: $exe (build/install may have failed or preset differs)."
             }
-            if (-not $Model -and $RunnerArgs.Count -eq 0) {
-                $RunnerArgs = @("--version")
-                Write-Host "No -Model or -RunnerArgs; running smoke: retdec-qwen3-runner --version"
+            if ($RunnerArgs.Count -eq 0) {
+                $RunnerArgs = @("--help")
             }
-            Write-Host "==> & `"$exe`" ..."
-            if ($Model) {
-                & $exe $Model @RunnerArgs
-            } else {
-                & $exe @RunnerArgs
-            }
-            if ($LASTEXITCODE -ne 0) { throw "retdec-qwen3-runner exited with code $LASTEXITCODE" }
+            Write-Host "==> & `"$exe`" $($RunnerArgs -join ' ')"
+            & $exe @RunnerArgs
+            if ($LASTEXITCODE -ne 0) { throw "retdec-decompiler exited with code $LASTEXITCODE" }
+        }
+        "Runner" {
+            throw "retdec-qwen3-runner does not ship (DOC-06). Use -Run Decompiler, or set RETDEC_NEURAL_REFINE + RETDEC_NEURAL_MODEL."
         }
         "Gui" {
             $exe = Join-Path $installBin "retdec-gui.exe"
@@ -170,13 +162,7 @@ try {
             if ($LASTEXITCODE -ne 0) { throw "retdec-gui-tests failed with exit code $LASTEXITCODE" }
         }
         "Tests" {
-            $exe = Join-Path $buildDir "tests\qwen3\retdec-qwen3-tests.exe"
-            if (-not (Test-Path -LiteralPath $exe)) {
-                throw "Tests binary not found: $exe (configure with RETDEC_TESTS=ON and build retdec-qwen3-tests)."
-            }
-            Write-Host "==> & `"$exe`""
-            & $exe
-            if ($LASTEXITCODE -ne 0) { throw "retdec-qwen3-tests failed with exit code $LASTEXITCODE" }
+            throw "retdec-qwen3-tests does not exist. Use -Run GuiTests, or ctest in the build tree."
         }
     }
 }

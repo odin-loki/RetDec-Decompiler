@@ -18,12 +18,12 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | Script | Role |
 |--------|------|
 | `retdec-paths.ps1` | Dot-source: `Get-RetDecRepoRoot`, `Get-RetDecBuildDir`, VS Dev Shell |
-| `build-install-run-windows.ps1` | `cmake --preset`, build, install, run runner/GUI/tests |
+| `build-install-run-windows.ps1` | `cmake --preset`, build, install, run `retdec-decompiler` / GUI / tests |
 | `windows_native_configure.ps1` | Toolchain env + `cmake --preset full-windows-release` (CUDA + Qt6 by default; `-NoCuda` / `-AllowOptionalQt` to relax) |
 | `windows_native_build.ps1` | Build, `cmake --install` → `install/windows/`, stage `dist/windows/` |
 | `windows_prepare_debuggable_gui.ps1` | PDB / debuggable GUI bundle |
-| `run-gui-headless-debug.ps1` | Qt offscreen + optional Qwen trace |
-| `run-qwen3-trace.ps1` | `RETDEC_QWEN3_TRACE` runner wrapper |
+| `run-gui-headless-debug.ps1` | Qt offscreen + `RETDEC_GUI_HEADLESS` |
+| `run-qwen3-trace.ps1` | leftover wrapper for withdrawn `retdec-qwen3-runner` (does not ship). Neural path is `RETDEC_NEURAL_REFINE` |
 | `Install-RetdecWindowsDeps.ps1` | winget dependency check |
 | `Test-RetdecWindows.ps1` | Smoke tests against a dist folder |
 | `run_gui_with_procdump.ps1` / `windows_analyze_crash_dump.ps1` | Crash capture |

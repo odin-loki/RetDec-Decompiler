@@ -72,7 +72,8 @@ class TriPaneCodeView;
  *                      open as separate top-level windows on demand.
  *
  * The v2 mode toolbar is removed — document tabs replace mode switching.
- * AI Assistant is not docked in v3; use retdec-qwen3-runner externally.
+ * AI Assistant is not docked in v3; open it from Tools, or set
+ * RETDEC_NEURAL_REFINE. There is no retdec-qwen3-runner.
  */
 class RetDecMainWindow : public QMainWindow {
 	Q_OBJECT

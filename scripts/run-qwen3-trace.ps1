@@ -1,4 +1,6 @@
 #requires -Version 5.1
+# Leftover: looks for retdec-qwen3-runner.exe, which does not ship (DOC-06 / B5).
+# Product neural path is RETDEC_NEURAL_REFINE + RETDEC_NEURAL_MODEL.
 param(
     [Parameter(Mandatory = $true)]
     [string] $Model,

@@ -190,7 +190,6 @@ New-Item -ItemType Directory -Force -Path $DistDirFull | Out-Null
 $exesToCopy = @(
     "retdec-decompiler.exe",
     "retdec-unpacker.exe",
-    "retdec-qwen3-runner.exe",
     "retdec-gui.exe",
     "retdec-fileinfo.exe"
 )
@@ -372,7 +371,7 @@ Contents:
   retdec-decompiler.exe   Main decompiler (CLI)
   retdec-gui.exe          Qt6 GUI application
   retdec-unpacker.exe     Archive unpacker
-  retdec-qwen3-runner.exe AI model runner (Qwen3)
+  retdec-fileinfo.exe     File-format inspector
 
 Usage:
   retdec-decompiler.exe binary.exe -o output.c
@@ -380,11 +379,11 @@ Usage:
   retdec-decompiler.exe script.pyc  -o output.py
   retdec-gui.exe binary.exe
 
-GPU acceleration (CUDA) is used automatically when an NVIDIA GPU is present.
-The build falls back to multi-threaded CPU analysis if no GPU is detected.
+There is no retdec-qwen3-runner. Optional neural refinement is
+RETDEC_NEURAL_REFINE + RETDEC_NEURAL_MODEL.
 
-For CUDA to work, the NVIDIA driver must be installed on the target machine
-(the CUDA runtime DLLs are bundled in this folder).
+src/cuda_accel is parked research (RETDEC_ENABLE_CUDA_ACCEL defaults OFF).
+Do not treat this folder as a GPU-accelerated decompiler.
 "@ | Set-Content $readmePath -Encoding UTF8
 
 # ── Final summary ─────────────────────────────────────────────────────────

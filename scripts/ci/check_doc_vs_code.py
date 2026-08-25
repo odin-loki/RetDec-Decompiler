@@ -456,6 +456,7 @@ def public_doc_files() -> list[Path]:
         "LICENSING_FAQ.md",
         "CODE_OF_CONDUCT.md",
         "releases/README.md",
+        "scripts/README.md",
     ):
         add(REPO_ROOT / rel)
     return files
