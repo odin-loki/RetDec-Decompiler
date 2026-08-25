@@ -10,6 +10,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 - Phase 1 `CACHE-06`: cache JSON with a mismatched or missing `version` loads empty (`VersionMismatchYieldsEmptyCache`, `MissingVersionYieldsEmptyCache`).
 - Phase 1 `CI-04`: `check_release_binaries.py` asserts table-named `retdec-*` tools are `add_executable` targets (or `OUTPUT_NAME`).
+- Phase 1 `CI-10`: Dependabot for Actions, pip, and Docker; `check_secrets.py` fails on committed key material.
 - Phase 1 `REL-02`: Docker image `analyse` shim execs `retdec-decompiler` (image not published).
 - Phase 1 `CACHE-05`: hash determinism and `RETDEC_INCREMENTAL_CACHE=0` unit tests.
 - Phase 1 `CLI-01`: `--output-lang cpp` is rejected until `LLVM-22`.
