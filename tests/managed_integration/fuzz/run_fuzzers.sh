@@ -125,6 +125,10 @@ run_fuzzer fuzz_unpacker \
     "$FUZZ_BIN_DIR/corpus_unpacker" \
     "$FIXTURES/unpacker"
 
+run_fuzzer fuzz_pdb \
+    "$FUZZ_BIN_DIR/corpus_pdb" \
+    "$FIXTURES/pdb"
+
 echo "=== All fuzz runs complete ==="
 echo "Logs:    $FUZZ_BIN_DIR/*.fuzz.log"
 echo "Corpus:  $FUZZ_BIN_DIR/corpus_*"

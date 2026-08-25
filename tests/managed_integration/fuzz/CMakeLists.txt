@@ -77,3 +77,9 @@ if(TARGET retdec::unpacker)
         retdec::unpacker
     )
 endif()
+
+if(TARGET retdec::pdbparser)
+    add_fuzz_target(fuzz_pdb fuzz_pdb.cpp
+        retdec::pdbparser
+    )
+endif()
