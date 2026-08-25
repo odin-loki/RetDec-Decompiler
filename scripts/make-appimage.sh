@@ -132,9 +132,8 @@ cat > "$APPDIR/usr/share/metainfo/retdec.appdata.xml" <<XML
   <description>
     <p>
       RetDec is an open-source retargetable machine-code decompiler based on LLVM.
-      This enhanced edition adds a Qt6 GUI, CUDA GPU acceleration, AI-assisted
-      variable naming via Qwen3-Coder, and advanced semantic recovery for STL
-      containers, cryptographic algorithms, and design patterns.
+      This package ships the CLI and, when built, the Qt 6 GUI. CUDA/OpenCL
+      acceleration is parked research, not a product feature.
     </p>
   </description>
   <url type="homepage">https://github.com/odin-loki/RetDec-Decompiler</url>
