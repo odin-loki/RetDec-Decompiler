@@ -129,6 +129,10 @@ run_fuzzer fuzz_pdb \
     "$FUZZ_BIN_DIR/corpus_pdb" \
     "$FIXTURES/pdb"
 
+run_fuzzer fuzz_cli \
+    "$FUZZ_BIN_DIR/corpus_cli" \
+    "$FIXTURES/dotnet"
+
 echo "=== All fuzz runs complete ==="
 echo "Logs:    $FUZZ_BIN_DIR/*.fuzz.log"
 echo "Corpus:  $FUZZ_BIN_DIR/corpus_*"

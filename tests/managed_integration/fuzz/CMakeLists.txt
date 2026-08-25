@@ -83,3 +83,8 @@ if(TARGET retdec::pdbparser)
         retdec::pdbparser
     )
 endif()
+
+add_fuzz_target(fuzz_cli fuzz_cli.cpp
+    retdec-cli-parser
+    retdec-bc-module
+)
