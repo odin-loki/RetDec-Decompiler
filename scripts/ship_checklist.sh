@@ -29,16 +29,20 @@ check() {
 
 VER_CMAKE="$(grep -E '^[[:space:]]*VERSION[[:space:]]' "${ROOT}/CMakeLists.txt" | head -1 | sed -E 's/.*VERSION[[:space:]]+([0-9.]+).*/\1/')"
 VER_RELEASE="$(sed '1s/^\xEF\xBB\xBF//' "${ROOT}/releases/VERSION" | grep -E '^version=' | head -1 | sed 's/^version=//' | tr -d '\r')"
+VER_CHANGELOG="$(grep -E '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "${ROOT}/CHANGELOG.md" | head -1 | sed -E 's/^## \[([0-9.]+)\].*/\1/')"
 
 echo "==> RetDec ship checklist"
 echo "CMake VERSION: ${VER_CMAKE}"
 echo "releases/VERSION: ${VER_RELEASE}"
+echo "CHANGELOG: ${VER_CHANGELOG}"
 
 if [[ -n "${EXPECTED}" ]]; then
 	check test "${VER_CMAKE}" = "${EXPECTED}"
 	check test "${VER_RELEASE}" = "${EXPECTED}"
+	check test "${VER_CHANGELOG}" = "${EXPECTED}"
 else
 	check test "${VER_CMAKE}" = "${VER_RELEASE}"
+	check test "${VER_CMAKE}" = "${VER_CHANGELOG}"
 fi
 
 check test -f "${ROOT}/LICENSE"

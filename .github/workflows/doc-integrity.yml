@@ -38,5 +38,8 @@ jobs:
       - name: LEG-03 provenance rewrite-tells
         run: python scripts/ci/generate_provenance.py
 
+      - name: REL-04 version drift
+        run: python scripts/ci/check_version_drift.py
+
 
 

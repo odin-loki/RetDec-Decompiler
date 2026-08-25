@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `REL-04`: CI fails if CMake, `releases/VERSION`, and CHANGELOG drift.
 - Phase 1 `CACHE-05`: `ctest-linux` diffs cache-off vs cache-on C on `fib_smoke`.
 - Phase 1 `SAN-01`: weekly sanitizer job turns UndefinedBehaviorSanitizer on.
 - Phase 1 `DOC-05`: `check_withdrawn_claims.py` fails if public docs
