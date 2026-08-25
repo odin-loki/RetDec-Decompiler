@@ -19,6 +19,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - Phase 1 `FUZZ-04`: `fuzz_pdb` libFuzzer harness for `PDBFile::load_pdb_file`.
 - Phase 1 `FUZZ-04`: `fuzz_cli` libFuzzer harness for `CLIReader` (.NET PE / CIL).
 - Phase 1 `FUZZ-04`: `fuzz_unpacker_plugins` libFuzzer harness for UPX and MPRESS plugins.
+- Phase 1 `CI-07`: weekly `coverage.yml` runs `scripts/run_coverage.sh` (ratchet floor pending a green artefact).
 - Phase 1 `REL-05`: workflow `sign-release-sbom.yml` keyless-signs a published CycloneDX JSON if the bundle is missing.
 - Phase 1 `REL-02`: `docker-publish.yml` builds the Dockerfile and pushes `ghcr.io/<owner>/retdec` (Docker Hub `imortek/retdec` still unpublished).
 - Phase 1 `LEG-09`: `LICENSING_FAQ.md` for procurement (air-gap / AGPL vs commercial).
