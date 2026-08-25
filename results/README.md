@@ -28,7 +28,7 @@ Live measurement contract for CI, ship checklist, and the release table.
 
 Algorithm-recovery F1 figures that depended on filename filters are
 **withdrawn** (B1–B5). Name-blind ci-core remasure:
-`results/algorithm-recovery-ci.json` `mean_f1` **0.126**. Do not
+`results/algorithm-recovery-ci.json` `mean_f1_raw` **0.126**. Do not
 advertise 1.0. Stock has no label export — F1 is fork-only.
 
 Live DecompileBench compare: `compare-fork-vs-stock.md` and

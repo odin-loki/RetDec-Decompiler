@@ -24,6 +24,6 @@ Notes (do not advertise a stock speed win):
 - Quality: raw `.c` `tu_valid` 0%. Opt-in `RETDEC_EMIT_BUILDABLE`
   `tu_valid_buildable` **1.000** (9/9) and `recompile_buildable` **1.000**
   (9/9). Default `.c` unchanged.
-- Algorithm recovery, name-blind extract: `mean_f1` **0.126**.
+- Algorithm recovery, name-blind extract: `mean_f1_raw` **0.126**.
   Prior 1.0 figures stay withdrawn.
 - Neural: no GGUF. Mock path still produces a syntax-valid TU.

@@ -13,7 +13,7 @@ Remasured after B7 tagged open-addressing as `evidence:symbol_name`.
 Mean F1 dropped from 0.107 to **0.056** because hash-table labels left
 the headline (tp 64 → 34). Do not advertise 0.107 as current.
 
-ci-core (9 gcc-O0 binaries) name-blind `mean_f1` is **0.126**
+ci-core (9 gcc-O0 binaries) name-blind `mean_f1_raw` is **0.126**
 (`results/algorithm-recovery-ci.json`; CI95 0.000–0.341). hash_table
 and pthread_mutex are both 0.000.
 

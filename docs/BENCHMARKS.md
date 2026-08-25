@@ -52,7 +52,7 @@ Custom metric for `algo_recover`, `sort_detect`, `concurrency_detect`,
 | Nightly | `.github/workflows/algorithm-recovery-nightly.yml` |
 
 Name-blind extract (`--no-stem-fallback`) is the headline figure.
-ci-core `mean_f1` **0.126**. Full 216 name-blind mean **0.056**
+ci-core `mean_f1_raw` **0.126**. Full 216 name-blind mean **0.056**
 (O0 0.050 / O2 0.059 / O3 0.059). That is lower than the previous
 0.107 because B7 excluded open-addressing symbol-name hits
 (tp 64 → 34). The checked-in `algorithm-recovery-full.json`
