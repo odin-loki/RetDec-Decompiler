@@ -79,7 +79,7 @@ Output is **input-keyed**, not a free-choice list of eleven languages.
 
 | Input | What the native/managed path emits |
 |-------|-------------------------------------|
-| Native binaries (ELF / PE / Mach-O) | **C**. “C++” is the same C writer with a `.cpp` filename. |
+| Native binaries (ELF / PE / Mach-O) | **C**. There is no dedicated C++ writer (`--output-lang cpp` is rejected). |
 | Python bytecode (`.pyc`) | Python |
 | Lua bytecode (`.luac`) | Lua |
 | WebAssembly (`.wasm`) | WAT |
@@ -402,6 +402,7 @@ retdec-decompiler binary.elf -o output.c
 
 | Document | Description |
 |----------|-------------|
+| [QUICKSTART.md](QUICKSTART.md) | Ten-minute decompile (Docker when published, or a local binary) |
 | [docs/README.md](docs/README.md) | **Documentation hub** — reading order, CI, Docker, diagnostics env vars, WSL/Windows quick refs |
 | [docs/BUILD_REFERENCE.md](docs/BUILD_REFERENCE.md) | **Canonical build guide** — presets, `build/linux` vs `build/windows`, superbuild, install, testing, troubleshooting |
 | [docs/user_manual.md](docs/user_manual.md) | GUI walkthrough, panels, settings, export, keyboard shortcuts |

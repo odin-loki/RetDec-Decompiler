@@ -33,14 +33,21 @@ These labels describe **semantics recovered from the binary**, not the syntax
 RetDec emits. With default C output, variables remain raw pointers/structs;
 the STL name appears in comments and JSON only.
 
-## `--output-lang c` vs `--output-lang cpp`
+## Native output is C
 
-| Aspect | `c` (default) | `cpp` |
-|--------|---------------|-------|
-| Emitted syntax | C (`.c`) | C++ (`.cpp`) |
-| `semanticDetections[].label` | C++ STL name (hint) | C++ STL name |
-| `semanticDetections[].cHint` | Present for containers | Omitted |
-| Source comment style | C-friendly layout + STL cross-ref | C++-style detection line |
+`--output-lang cpp` is **not** accepted (CLI-01 / `cxx_backend` unwired until
+Phase 4 `LLVM-22`). Use `c`. Older docs that treated `cpp` as a second native
+language were describing the C HLL writer with a `.cpp` filename.
+
+| Aspect | `c` (default, only native writer) |
+|--------|-----------------------------------|
+| Emitted syntax | C (`.c`) |
+| `semanticDetections[].label` | C++ STL name (hint) |
+| `semanticDetections[].cHint` | Present for containers |
+| Source comment style | C-friendly layout + STL cross-ref |
+
+Other `--output-lang` values (`python`, `csharp`, `java`, `wat`) apply to
+**managed** inputs via format-specific emitters, not the native LLVM path.
 
 ### C output (default)
 
@@ -55,20 +62,6 @@ void function_401000(void) {
     ...
 }
 ```
-
-### C++ output (`--output-lang cpp`)
-
-No `cHint` field in JSON. Comments keep the C++-oriented form:
-
-```cpp
-// [RetDec] std::vector<int32_t> detected (confidence 0.87)
-void function_401000(void) {
-    ...
-}
-```
-
-Other detection kinds (sort, algorithm, concurrency) use the same
-`[RetDec] <label> detected (confidence …)` form in both modes.
 
 ## GUI
 
@@ -91,7 +84,7 @@ typedef struct {
 
 Until that lands, **`cHint` + comments** are the C-facing recovery surface;
 full type replacement in emitted code remains partial (see
-[ENGINEERING_ROADMAP.md](ENGINEERING_ROADMAP.md)).
+[internal/ENGINEERING_ROADMAP.md](internal/ENGINEERING_ROADMAP.md)).
 
 ## Related files
 

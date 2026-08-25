@@ -969,7 +969,7 @@ General arguments:
 	[-o|--output FILE] Output file (default: INPUT_FILE.c if OUTPUT_FORMAT is plain, INPUT_FILE.c.json if OUTPUT_FORMAT is json|json-human).
 	[-s|--silent] Turns off informative output of the decompilation.
 	[-f|--output-format OUTPUT_FORMAT] Output format [plain|json|json-human] (default: plain).
-	[--output-lang LANG] Target source language for native binaries [c|cpp|python|csharp|java|wat] (default: c). Managed inputs ignore this and use format-specific emitters.
+	[--output-lang LANG] Target source language for native binaries [c|python|csharp|java|wat] (default: c). There is no dedicated C++ writer; use c. Managed inputs ignore this and use format-specific emitters.
 	[--buildable] Write .h, _stubs.c, and .buildable.c next to output C (default: on).
 	[--no-buildable] Disable buildable sidecars (same as RETDEC_EMIT_BUILDABLE=0).
 	[-m|--mode MODE] Force the type of decompilation mode [bin|raw] (default: bin).

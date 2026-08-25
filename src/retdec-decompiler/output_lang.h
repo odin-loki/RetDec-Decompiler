@@ -24,13 +24,13 @@ enum class OutputLangId {
 	Unknown
 };
 
-/** Parse CLI/config token (e.g. c, cpp, csharp). Throws on invalid value. */
+/** Parse CLI/config token (c, python, csharp, java, wat). Throws on cpp/c++/cxx. */
 OutputLangId parseOutputLang(const std::string& token);
 
-/** CLI spelling for @p id (e.g. "cpp"). Empty when Unknown. */
+/** CLI spelling for @p id. Empty when Unknown. */
 const char* outputLangCliName(OutputLangId id);
 
-/** Default file extension including dot (e.g. ".c", ".cpp", ".py"). */
+/** Default file extension including dot (e.g. ".c", ".py"). */
 const char* outputLangFileExtension(OutputLangId id);
 
 /** HLL writer factory id for the native LLVM pipeline (always "c" today). */

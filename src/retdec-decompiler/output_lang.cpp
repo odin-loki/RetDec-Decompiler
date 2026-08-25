@@ -30,14 +30,18 @@ OutputLangId parseOutputLang(const std::string& token)
 {
 	const std::string t = lowerCopy(token);
 	if (t == "c") return OutputLangId::C;
-	if (t == "cpp" || t == "c++" || t == "cxx") return OutputLangId::Cpp;
+	if (t == "cpp" || t == "c++" || t == "cxx") {
+		throw std::runtime_error(
+				"[--output-lang] cpp is not a dedicated C++ writer "
+				"(pending LLVM-22 / cxx_backend). Use c.");
+	}
 	if (t == "python" || t == "py") return OutputLangId::Python;
 	if (t == "csharp" || t == "cs") return OutputLangId::CSharp;
 	if (t == "java") return OutputLangId::Java;
 	if (t == "wat" || t == "wasm") return OutputLangId::Wat;
 	throw std::runtime_error(
 			"[--output-lang] unknown language: " + token
-			+ " (expected: c|cpp|python|csharp|java|wat)");
+			+ " (expected: c|python|csharp|java|wat)");
 }
 
 const char* outputLangCliName(OutputLangId id)
@@ -104,13 +108,9 @@ void applyNativeOutputLanguage(OutputLangId lang)
 
 	if (lang != OutputLangId::C && lang != OutputLangId::Cpp) {
 		retdec::utils::io::Log::info()
-				<< "[output-lang] Native pipeline only supports C/C++ emitters today; "
+				<< "[output-lang] Native pipeline emits C; "
 				<< "using C backend for requested "
 				<< outputLangCliName(lang) << "." << std::endl;
-	} else if (lang == OutputLangId::Cpp) {
-		retdec::utils::io::Log::info()
-				<< "[output-lang] C++ output uses the C HLL writer (C++-styled "
-				<< ".cpp extension); dedicated C++ writer pending." << std::endl;
 	}
 }
 

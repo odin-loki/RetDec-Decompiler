@@ -321,7 +321,7 @@ void logUnknownManagedFormat(const uint8_t* data, std::size_t size, const std::s
 		if (pe.open(data, size) && !pe.hasCLI())
 		{
 			os << "[managed] Hint: PE image without CLI metadata — use the native "
-				  "pipeline (omit --output-lang; default C/C++ emitters apply).\n";
+				  "pipeline (omit --output-lang; default C emitter applies).\n";
 			if (ext == ".dll" || ext == ".exe")
 				os << "[managed]       For .NET assemblies ensure the file contains "
 					  "a COM descriptor (#~ metadata).\n";
@@ -353,7 +353,7 @@ void logUnknownManagedFormat(const uint8_t* data, std::size_t size, const std::s
 		os << "[managed] Hint: supported managed inputs: .class, .jar, .dex, .apk, "
 			  ".pyc, .luac, .wasm, .NET PE (.dll/.exe with CLI metadata).\n";
 		os << "[managed]       Native PE/ELF/Mach-O use the default pipeline; "
-			  "optional --output-lang selects C, C++, etc.\n";
+			  "optional --output-lang selects c|python|csharp|java|wat.\n";
 	}
 }
 

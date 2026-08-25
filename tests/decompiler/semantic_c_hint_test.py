@@ -115,7 +115,7 @@ MOCK_C_CONFIG = {
 
 MOCK_CPP_CONFIG = {
     **MOCK_C_CONFIG,
-    "decompParams": {"outputLang": "cpp"},
+    "decompParams": {"outputLang": "python"},
     "functions": [
         {
             **MOCK_C_CONFIG["functions"][0],
@@ -137,7 +137,7 @@ class SemanticCHintTest(unittest.TestCase):
         errors = validate_config_with_c_hints(MOCK_C_CONFIG)
         self.assertEqual(errors, [])
 
-    def test_cpp_output_does_not_require_c_hint(self):
+    def test_non_c_output_does_not_require_c_hint(self):
         errors = validate_c_hint_detections(MOCK_CPP_CONFIG)
         self.assertEqual(errors, [])
 

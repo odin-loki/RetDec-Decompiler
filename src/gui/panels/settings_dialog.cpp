@@ -669,7 +669,6 @@ QWidget* SettingsDialog::buildDecompilerTab()
 		lbl->setMinimumWidth(180);
 		outputLangCombo_ = new QComboBox(row);
 		outputLangCombo_->addItem(QStringLiteral("C"), QStringLiteral("c"));
-		outputLangCombo_->addItem(QStringLiteral("C++"), QStringLiteral("cpp"));
 		outputLangCombo_->addItem(QStringLiteral("Python"), QStringLiteral("python"));
 		outputLangCombo_->addItem(QStringLiteral("C#"), QStringLiteral("csharp"));
 		outputLangCombo_->addItem(QStringLiteral("Java"), QStringLiteral("java"));

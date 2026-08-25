@@ -33,6 +33,15 @@ static QSettings makeQSettings()
 	return QSettings(QSettings::IniFormat, QSettings::UserScope, "retdec", "settings");
 }
 
+static QString coerceNativeOutputLang(QString lang)
+{
+	const QString lower = lang.toLower();
+	if (lower == QStringLiteral("cpp") || lower == QStringLiteral("c++")
+		|| lower == QStringLiteral("cxx"))
+		return QStringLiteral("c");
+	return lang;
+}
+
 // ─── Load ─────────────────────────────────────────────────────────────────────
 
 void AppSettings::load()
@@ -167,7 +176,8 @@ void AppSettings::loadDecompiler(QSettings& s)
 	decompiler.extraConfigPath = s.value("extraConfigPath").toString();
 	decompiler.decompileOutputDir = s.value("decompileOutputDir").toString();
 	decompiler.liveConsoleTail = s.value("liveConsoleTail", false).toBool();
-	decompiler.outputLang = s.value("outputLang", QStringLiteral("c")).toString();
+	decompiler.outputLang = coerceNativeOutputLang(
+			s.value("outputLang", QStringLiteral("c")).toString());
 	decompiler.decompileProfile = s.value("decompileProfile", QStringLiteral("balanced")).toString();
 	s.endGroup();
 }
@@ -539,7 +549,8 @@ bool AppSettings::importFromFile(const QString& path)
 		decompiler.extraConfigPath = d.value("extraConfigPath").toString();
 		decompiler.decompileOutputDir = d.value("decompileOutputDir").toString();
 		decompiler.liveConsoleTail = d.value("liveConsoleTail").toBool(false);
-		decompiler.outputLang = d.value("outputLang").toString(QStringLiteral("c"));
+		decompiler.outputLang = coerceNativeOutputLang(
+				d.value("outputLang").toString(QStringLiteral("c")));
 		decompiler.decompileProfile = d.value("decompileProfile").toString(QStringLiteral("balanced"));
 		decompiler.llvmPassesDisabled.clear();
 		const QJsonArray arr = d.value("llvmPassesDisabled").toArray();
