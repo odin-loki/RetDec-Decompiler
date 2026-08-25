@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `CACHE-05`: `ctest-linux` diffs cache-off vs cache-on C on `fib_smoke`.
 - Phase 1 `SAN-01`: weekly sanitizer job turns UndefinedBehaviorSanitizer on.
 - Phase 1 `DOC-05`: `check_withdrawn_claims.py` fails if public docs
   re-assert a withdrawn CLAIMS.md ID without a withdrawal marker.

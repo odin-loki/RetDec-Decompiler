@@ -92,6 +92,13 @@ jobs:
           if [ -z "$DEC" ]; then echo "retdec-decompiler not found"; exit 1; fi
           bash scripts/run_algorithm_recovery_ci.sh --decompiler "$DEC"
 
+      - name: CACHE-05 cache-on vs cache-off
+        run: |
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          FIB="$(find build/linux -name fib_smoke -type f | head -n1)"
+          if [ -z "$FIB" ]; then echo "fib_smoke fixture not found"; exit 1; fi
+          bash scripts/ci/check_cache_differential.sh --decompiler "$DEC" --binary "$FIB"
+
       - name: Filename-rename integrity guard
         run: |
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"

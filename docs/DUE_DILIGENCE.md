@@ -11,9 +11,9 @@ Phase 0 documentation pass (2026-08-25).
 | B3 | No CLA; dual-licence relicensing is not wired | [CLA.md](../CLA.md) + PR template / CONTRIBUTING outbound grant (`LEG-05`). | CLA-assistant required check (`LEG-06`) needs a GitHub app token. |
 | B4 | Detector confidence precision 0.000 (A4, n=160) | `results/a4-calibration.md` remains the measurement. README does not treat confidence as calibrated. Constants were not fitted. | Fitting is Phase 2+ (`DET` track). Do not advertise scores as probabilities. |
 | B5 | Documented `retdec-qwen3-runner` / `--model` did not exist | Purged from README, user manual, Windows/MinGW docs, whitepaper. Neural path is `RETDEC_NEURAL_REFINE` + `RETDEC_NEURAL_MODEL`. | None for the phantom binary. |
-| B6 | Incremental cache can return wrong results; on by default | `CACHE-01`: `computeFunctionBodyHash` now includes integer immediate operand values (`BodyHashDistinguishesConstantOperands`). | Detector-version tokens, BLAKE3, cache-on vs cache-off differential (`CACHE-02`–`CACHE-06`) remain. |
-| B7 | README advertised eleven output languages; native path is C | README / architecture / whitepaper / user manual rewritten as input-keyed tables. | Unwired emitters remain in-tree (`DEAD-02`, Phase 1B). |
-| B8 | No git tags / no downloadable release | Not started. | `REL-01`–`REL-07` Phase 1D. |
+| B6 | Incremental cache can return wrong results; on by default | `CACHE-01`: `computeFunctionBodyHash` now includes integer immediate operand values (`BodyHashDistinguishesConstantOperands`). Determinism test `BodyHashIsDeterministic`. `ctest-linux` runs cache-off vs cache-on on `fib_smoke` (`CACHE-05`). | Detector-version tokens and BLAKE3 (`CACHE-02`, `CACHE-03`) remain. Full 216-binary corpus differential is not yet gated. |
+| B7 | README advertised eleven output languages; native path is C | README / architecture / whitepaper / user manual rewritten as input-keyed tables. | Unwired emitters remain in-tree (`DEAD-02`, Phase 1B). Tests under `tests/fsharp_emitter` / `tests/vbnet_emitter` block deleting those emitters. |
+| B8 | No git tags / no downloadable release | [QUICKSTART.md](../QUICKSTART.md) exists (`REL-07`). | `REL-01`–`REL-05`: no `v2.0.21` tag, no published `imortek/retdec`, no cosign. |
 | B9 | AGPL is a procurement blocker for the stated buyer | Dual-licence text remains; commercial terms no longer publish a price list (`LEG-10`). | Commercial packaging and Keystone exclusion (`LEG-11`) Phase 1A. |
 
 ## Phase 0 exit (docs)
@@ -28,5 +28,6 @@ Phase 0 documentation pass (2026-08-25).
 ## Not in this pass
 
 Phase 1 (legal headers, dead modules, cache hash, releases, CI truth) and
-later phases. Track 1 `retdec.pointee` writers/readers are on `main`; Type*-only
-and ParamReturn-dump families stay until a larger change. LLVM pin is Track 2.
+later phases. `DEAD-02`/`DEAD-03` stay in-tree because their tests exist.
+`CI-02` stem-fallback deletion is blocked by `tests/algorithm_recovery/test_labels.py`.
+`SAN-04` (ASan on every PR) is not the 360-minute weekly job. LLVM pin is Track 2.
