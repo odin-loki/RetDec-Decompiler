@@ -1,15 +1,12 @@
 name: docker-publish
 
 # REL-02 — source rebuild of the in-tree Dockerfile (360 min, LLVM from source).
-# Prefer docker-from-release.yml to pack the published Linux tarball.
+# Dispatch only. Tag releases pack GHCR via docker-from-release.yml so this
+# job cannot overwrite the tarball image with a different layout.
 # Docker Hub imortek/retdec is still unpublished (no Hub credentials here).
-# Do not claim QUICKSTART docker pull works until a run of docker-from-release succeeds.
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
 
 permissions:
   contents: read

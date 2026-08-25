@@ -71,8 +71,9 @@ docker run --rm -v "$PWD":/work ghcr.io/odin-loki/retdec:v2.0.21 \
   analyse /opt/retdec/share/fib_smoke -o /work/fib.c
 ```
 
-The in-tree `Dockerfile` installs the CLI on `PATH` as `retdec-decompiler`
-and `analyse` (same argv).
+The GHCR image is `Dockerfile.runtime` packing the Linux tarball (not the
+360-minute in-tree `Dockerfile` LLVM rebuild). `analyse` is a shim for
+`retdec-decompiler`. The LLVM `Dockerfile` is dispatch-only.
 
 ## Local binary (this tree)
 

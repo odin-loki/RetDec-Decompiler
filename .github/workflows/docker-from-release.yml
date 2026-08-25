@@ -3,6 +3,7 @@ name: docker-from-release
 # REL-02 — pack the published Linux tarball into GHCR without rebuilding LLVM.
 # Docker Hub imortek/retdec stays unpublished (no Hub credentials here).
 # Do not claim QUICKSTART docker pull works until a run of this job succeeds.
+# Tag releases: wait for release-installers to finish so the tarball exists.
 
 on:
   workflow_dispatch:
@@ -16,6 +17,9 @@ on:
     paths:
       - ".github/workflows/docker-from-release.yml"
       - "Dockerfile.runtime"
+  workflow_run:
+    workflows: [release-installers]
+    types: [completed]
 
 permissions:
   contents: read
@@ -23,6 +27,9 @@ permissions:
 
 jobs:
   image:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -37,9 +44,22 @@ jobs:
       - name: Pack published Linux tarball and push GHCR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.inputs.tag || 'v2.0.21' }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ github.event.inputs.tag || '' }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}
         run: |
           set -euo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" && -n "${DISPATCH_TAG}" ]]; then
+            TAG="${DISPATCH_TAG}"
+          elif [[ "${EVENT_NAME}" == "workflow_run" ]]; then
+            TAG="${RUN_BRANCH}"
+            if [[ "${TAG}" != v* ]]; then
+              echo "release-installers did not run on a v* tag (${TAG}); skip pack"
+              exit 0
+            fi
+          else
+            TAG="v2.0.21"
+          fi
           IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/retdec"
           mkdir -p /tmp/docker-runtime
           cp Dockerfile.runtime /tmp/docker-runtime/Dockerfile
