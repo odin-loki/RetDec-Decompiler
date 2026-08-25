@@ -1,9 +1,27 @@
 # Quick start (ten minutes)
 
-Plan.md `REL-07`. The zero-build path is `docker pull` once `imortek/retdec`
-is published (`REL-02`). Until then, use a local `retdec-decompiler` from a
-preset build. The in-tree `Dockerfile` installs `retdec-decompiler` and an
-`analyse` shim that execs it.
+Plan.md `REL-07`. Linux x86_64 can skip the build: download the tarball from
+the [v2.0.21 GitHub Release](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.21).
+`docker pull imortek/retdec` is still unpublished (`REL-02`). Windows NSIS/zip
+are still building on that same tag workflow.
+
+Buildable C (`.h`, `_stubs.c`, `.buildable.c`) is **on by default**.
+Pass `--no-buildable` to skip sidecars.
+
+## Linux tarball (GitHub Release)
+
+```bash
+curl -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.21/retdec-2.0.21-linux-x64.tar.gz
+tar xzf retdec-2.0.21-linux-x64.tar.gz
+cd retdec-2.0.21-linux-x64
+chmod +x install.sh uninstall.sh
+./install.sh --user --add-path
+retdec-decompiler --help
+```
+
+Run without installing: `export PATH="$(pwd)/bin:$PATH"`. AppImage was not
+produced on this tag run. Cosign keyless bundles (`.sigstore.json`) attach
+when `sign-release-sbom.yml` or a later installer job has signed the tarball.
 
 ## Docker (when the image is published)
 
@@ -12,9 +30,6 @@ docker pull imortek/retdec
 docker run --rm -v "$PWD":/work imortek/retdec \
   analyse /work/sample.elf -o /work/sample.c
 ```
-
-Buildable C (`.h`, `_stubs.c`, `.buildable.c`) is **on by default**.
-Pass `--no-buildable` to skip sidecars.
 
 The in-tree `Dockerfile` installs the CLI on `PATH` as `retdec-decompiler`
 and `analyse` (same argv). The image is not on Docker Hub yet.
