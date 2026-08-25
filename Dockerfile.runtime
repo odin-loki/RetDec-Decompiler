@@ -1,6 +1,7 @@
 # Runtime image from a published Linux tarball (Plan.md REL-02).
 # Does not compile LLVM. Pair with .github/workflows/docker-from-release.yml.
-# Build context must contain retdec-linux-x64.tar.gz (renamed release asset).
+# Build context must contain retdec-linux-x64.tar.gz (renamed release asset)
+# and fib_smoke (Release sample ELF).
 
 FROM ubuntu:noble
 
@@ -16,6 +17,7 @@ RUN apt-get update -y && \
 RUN useradd -m retdec
 
 COPY retdec-linux-x64.tar.gz /tmp/retdec-linux-x64.tar.gz
+COPY fib_smoke /tmp/fib_smoke
 
 RUN tar xzf /tmp/retdec-linux-x64.tar.gz -C /opt && \
 	rm /tmp/retdec-linux-x64.tar.gz && \
@@ -26,7 +28,10 @@ RUN tar xzf /tmp/retdec-linux-x64.tar.gz -C /opt && \
 	printf '%s\n' '#!/bin/sh' 'exec retdec-decompiler "$@"' \
 		> /opt/retdec/bin/analyse && \
 	chmod 755 /opt/retdec/bin/analyse && \
-	mkdir -p /work && \
+	mkdir -p /opt/retdec/share /work && \
+	cp /tmp/fib_smoke /opt/retdec/share/fib_smoke && \
+	rm /tmp/fib_smoke && \
+	chmod 755 /opt/retdec/share/fib_smoke && \
 	chown -R retdec:retdec /opt/retdec /work
 
 USER retdec
