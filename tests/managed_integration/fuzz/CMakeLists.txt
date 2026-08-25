@@ -66,3 +66,8 @@ add_fuzz_target(fuzz_apk fuzz_apk.cpp
     retdec-dex-parser
     retdec-bc-module
 )
+
+add_fuzz_target(fuzz_jar fuzz_jar.cpp
+    retdec-jvm-parser
+    retdec-bc-module
+)
