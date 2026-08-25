@@ -57,3 +57,7 @@ add_fuzz_target(fuzz_elf fuzz_elf.cpp
 add_fuzz_target(fuzz_macho fuzz_macho.cpp
     retdec::fileformat
 )
+
+add_fuzz_target(fuzz_lua fuzz_lua.cpp
+    retdec-lua-parser
+)

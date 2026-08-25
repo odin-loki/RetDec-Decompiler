@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Confirm RETDEC_FUZZ and seven harness sources
+      - name: Confirm RETDEC_FUZZ and harness sources
         run: |
           set -euo pipefail
           cmake_file="tests/managed_integration/fuzz/CMakeLists.txt"
@@ -37,7 +37,7 @@ jobs:
           grep -q 'option(RETDEC_FUZZ' "${cmake_file}"
           echo "RETDEC_FUZZ option is present in ${cmake_file}"
           for src in fuzz_elf.cpp fuzz_pe.cpp fuzz_macho.cpp fuzz_wasm.cpp \
-                     fuzz_dex.cpp fuzz_jvm_class.cpp fuzz_pyc.cpp; do
+                     fuzz_dex.cpp fuzz_jvm_class.cpp fuzz_pyc.cpp fuzz_lua.cpp; do
             test -f "tests/managed_integration/fuzz/${src}"
             echo "ok ${src}"
           done
@@ -89,7 +89,7 @@ jobs:
         run: >
           cmake --build build/linux --parallel
           --target fuzz_elf fuzz_pe fuzz_macho fuzz_wasm
-          fuzz_dex fuzz_jvm_class fuzz_pyc
+          fuzz_dex fuzz_jvm_class fuzz_pyc fuzz_lua
 
       - name: Cache libFuzzer corpora
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -123,7 +123,7 @@ jobs:
           fi
           ran=0
           mkdir -p fuzz-corpora
-          for name in fuzz_elf fuzz_pe fuzz_macho fuzz_wasm fuzz_dex fuzz_jvm_class fuzz_pyc; do
+          for name in fuzz_elf fuzz_pe fuzz_macho fuzz_wasm fuzz_dex fuzz_jvm_class fuzz_pyc fuzz_lua; do
             bin="${BIN_DIR}/${name}"
             if [[ ! -x "${bin}" ]]; then
               echo "[skip] ${name} not built"

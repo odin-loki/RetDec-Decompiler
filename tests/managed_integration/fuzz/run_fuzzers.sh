@@ -109,6 +109,10 @@ run_fuzzer fuzz_macho \
     "$FUZZ_BIN_DIR/corpus_macho" \
     "$CORPUS_BIN"
 
+run_fuzzer fuzz_lua \
+    "$FUZZ_BIN_DIR/corpus_lua" \
+    "$FIXTURES/lua"
+
 echo "=== All fuzz runs complete ==="
 echo "Logs:    $FUZZ_BIN_DIR/*.fuzz.log"
 echo "Corpus:  $FUZZ_BIN_DIR/corpus_*"
