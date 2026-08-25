@@ -31,3 +31,5 @@ Phase 1 (legal headers, dead modules, cache hash, releases, CI truth) and
 later phases. `DEAD-02`/`DEAD-03` stay in-tree because their tests exist.
 `CI-02` stem-fallback deletion is blocked by `tests/algorithm_recovery/test_labels.py`.
 `SAN-04` (ASan on every PR) is not the 360-minute weekly job. LLVM pin is Track 2.
+GitHub secret scanning and push protection are enabled; Dependabot security
+updates and private vulnerability reporting were turned on 2026-08-25 (`CI-10`).

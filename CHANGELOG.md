@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `CI-10`: GitHub secret scanning and push protection were already on; Dependabot security updates and private vulnerability reporting are now on. `SECURITY.md` tracks 2.0.x (not 1.0.x).
 - Phase 1 `REL-07`: `v2.0.21` Release includes `fib_smoke` + `.sigstore.json` (run [32834649102](https://github.com/odin-loki/RetDec-Decompiler/actions/runs/32834649102)); QUICKSTART decompiles it after the tarball install.
 - Phase 1 `REL-07`: `upload-sample-binary.yml` attaches `fib_smoke` (gcc -O1 of `tests/test_binaries/fib.c`) plus a keyless Sigstore bundle to the Release.
 - Phase 1 `LEG-06`: CLA-assistant GitHub Action on `pull_request_target`; signatures on `cla-signatures`. Making the check required is branch protection.

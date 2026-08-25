@@ -4,16 +4,19 @@
 
 | Version | Supported |
 |---------|-----------|
-| 1.0.x   | Yes       |
-| < 1.0   | No        |
+| 2.0.x   | Yes       |
+| < 2.0   | No        |
 
-Security fixes land on `main` and the latest `v1.0.x` tag.
+Security fixes land on `main` and the latest `v2.0.x` tag (currently
+[`v2.0.21`](https://github.com/odin-loki/RetDec-Decompiler/releases/tag/v2.0.21)).
 
 ## Reporting a vulnerability
 
 **Do not open a public GitHub issue for security-sensitive reports.**
 
-Email **odin.loch@outlook.com** with:
+Prefer GitHub's **privately report a vulnerability** flow (repository
+Security tab). That is enabled on this repo. You can also email
+**odin.loch@outlook.com** with:
 
 - Description and impact
 - Reproduction steps or proof-of-concept
