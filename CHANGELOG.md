@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Master engineering review and execution plan (`Plan.md`).
 - Track 1 leftover: `IdiomsLibgcc` register load/store attach
   `retdec.pointee`. Test:
   `divsi3RegisterLoadStoreAttachesPointeeMetadata`.
