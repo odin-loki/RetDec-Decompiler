@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `REL-03`: AppImage wrap always writes a PNG icon and AppStream metainfo that `appimagetool` accepts.
 - Phase 1 `REL-03`: `appimage-from-release.yml` wraps the published Linux tarball as an AppImage without rebuilding LLVM.
 - Phase 1 `DEAD-05`: `src/experimental/README.md` documents the opt-in scaffold (not a product pipeline).
 - Phase 1 `REL-02`: `Dockerfile.runtime` packs the published Linux tarball; `docker-from-release.yml` pushes `ghcr.io/<owner>/retdec` (Docker Hub `imortek/retdec` still unpublished).

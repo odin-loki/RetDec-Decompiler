@@ -117,12 +117,15 @@ MimeType=application/x-executable;application/x-sharedlib;
 DESKTOP
 fi
 
-# AppStream metainfo
+# AppStream metainfo (filename must match the component id)
 if [[ "$DRY_RUN" -eq 0 ]]; then
-cat > "$APPDIR/usr/share/metainfo/retdec.appdata.xml" <<XML
+    rm -f "$APPDIR/usr/share/metainfo/retdec.appdata.xml"
+cat > "$APPDIR/usr/share/metainfo/io.github.odin_loki.retdec.metainfo.xml" <<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>retdec.desktop</id>
+  <id>io.github.odin_loki.retdec</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
   <name>RetDec</name>
   <summary>Retargetable Machine-Code Decompiler</summary>
   <description>
@@ -132,7 +135,12 @@ cat > "$APPDIR/usr/share/metainfo/retdec.appdata.xml" <<XML
       acceleration is parked research, not a product feature.
     </p>
   </description>
+  <launchable type="desktop-id">retdec.desktop</launchable>
   <url type="homepage">https://github.com/odin-loki/RetDec-Decompiler</url>
+  <developer id="io.github.odin_loki">
+    <name>Odin Loch trading as Imortek</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
   <releases>
     <release version="${VERSION}" date="$(date -u +%Y-%m-%d)"/>
   </releases>
@@ -140,20 +148,54 @@ cat > "$APPDIR/usr/share/metainfo/retdec.appdata.xml" <<XML
 XML
 fi
 
-# Placeholder icon (1x1 PNG; replace with real icon in production)
-if [[ "$DRY_RUN" -eq 0 && ! -f "$APPDIR/usr/share/icons/hicolor/256x256/apps/retdec.png" ]]; then
-    # Create a minimal valid PNG if ImageMagick is available; otherwise skip.
+# Placeholder icon. linuxdeploy requires a file matching Icon= in the
+# desktop entry. ImageMagick is optional; Python 3 writes a valid PNG.
+_ensure_icon() {
+    local _dest="$1"
     if command -v convert >/dev/null 2>&1; then
         convert -size 256x256 xc:'#1e1e2e' -fill '#89b4fa' \
             -gravity Center -pointsize 80 -annotate 0 'R' \
-            "$APPDIR/usr/share/icons/hicolor/256x256/apps/retdec.png" 2>/dev/null || true
+            "$_dest" 2>/dev/null && return 0
     fi
+    if command -v magick >/dev/null 2>&1; then
+        magick -size 256x256 xc:'#1e1e2e' -fill '#89b4fa' \
+            -gravity Center -pointsize 80 -annotate 0 'R' \
+            "$_dest" 2>/dev/null && return 0
+    fi
+    python3 - "$_dest" <<'PY'
+import pathlib, struct, sys, zlib
+
+def chunk(tag: bytes, data: bytes) -> bytes:
+    crc = zlib.crc32(tag + data) & 0xFFFFFFFF
+    return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
+
+w = h = 256
+rgb = bytes((0x1E, 0x1E, 0x2E))
+raw = b"".join(b"\x00" + rgb * w for _ in range(h))
+ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
+png = (
+    b"\x89PNG\r\n\x1a\n"
+    + chunk(b"IHDR", ihdr)
+    + chunk(b"IDAT", zlib.compress(raw, 9))
+    + chunk(b"IEND", b"")
+)
+pathlib.Path(sys.argv[1]).write_bytes(png)
+PY
+}
+
+if [[ "$DRY_RUN" -eq 0 ]]; then
+    ICON_PNG="$APPDIR/usr/share/icons/hicolor/256x256/apps/retdec.png"
+    if [[ ! -f "$ICON_PNG" ]]; then
+        _ensure_icon "$ICON_PNG"
+    fi
+    mkdir -p "$APPDIR/usr/share/pixmaps"
+    cp -f "$ICON_PNG" "$APPDIR/usr/share/pixmaps/retdec.png"
+    cp -f "$ICON_PNG" "$APPDIR/retdec.png"
 fi
 
 # ─── AppDir entry symlinks ─────────────────────────────────────────────────────
 if [[ "$DRY_RUN" -eq 0 ]]; then
-    ln -sf "usr/share/applications/retdec.desktop" "$APPDIR/retdec.desktop"
-    ln -sf "usr/share/icons/hicolor/256x256/apps/retdec.png" "$APPDIR/retdec.png" 2>/dev/null || true
+    ln -sfn "usr/share/applications/retdec.desktop" "$APPDIR/retdec.desktop"
 fi
 
 # ─── Run linuxdeploy ──────────────────────────────────────────────────────────
@@ -177,6 +219,7 @@ fi
 _run env \
     APPIMAGE_EXTRACT_AND_RUN=1 \
     OUTPUT="$OUT_FILE" \
+    LDAI_OUTPUT="$OUT_FILE" \
     "$LINUXDEPLOY" \
     "${LINUXDEPLOY_ARGS[@]}"
 
