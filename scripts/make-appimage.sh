@@ -67,10 +67,12 @@ if [[ -z "$LINUXDEPLOY" ]]; then
         "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
 fi
 
-# linuxdeploy-plugin-qt (for Qt6 library bundling)
+# linuxdeploy-plugin-qt (for Qt6 library bundling when retdec-gui is present)
 LINUXDEPLOY_PLUGIN_QT="$TOOLS_DIR/linuxdeploy-plugin-qt-x86_64.AppImage"
-_download_if_missing "$LINUXDEPLOY_PLUGIN_QT" \
-    "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
+if [[ -x "${INSTALL_DIR}/bin/retdec-gui" ]]; then
+    _download_if_missing "$LINUXDEPLOY_PLUGIN_QT" \
+        "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
+fi
 
 # appimagetool
 if [[ -z "$APPIMAGE_TOOL" ]]; then
@@ -92,29 +94,23 @@ _run mkdir -p "$APPDIR/usr/share/applications"
 _run mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 _run mkdir -p "$APPDIR/usr/share/metainfo"
 
-# .desktop file
-cat > "${DRY_RUN:+/dev/null}" <<'DESKTOP'
-[Desktop Entry]
-Name=RetDec
-GenericName=Binary Decompiler
-Comment=Retargetable Machine-Code Decompiler with AI assistance
-Exec=retdec-gui %f
-Icon=retdec
-Terminal=false
-Type=Application
-Categories=Development;Debugger;
-MimeType=application/x-executable;application/x-sharedlib;
-DESKTOP
+if [[ -x "${INSTALL_DIR}/bin/retdec-gui" ]]; then
+    APPIMAGE_EXEC="retdec-gui"
+    APPIMAGE_TERMINAL="false"
+else
+    APPIMAGE_EXEC="retdec-decompiler"
+    APPIMAGE_TERMINAL="true"
+fi
 
 if [[ "$DRY_RUN" -eq 0 ]]; then
-cat > "$APPDIR/usr/share/applications/retdec.desktop" <<'DESKTOP'
+cat > "$APPDIR/usr/share/applications/retdec.desktop" <<DESKTOP
 [Desktop Entry]
 Name=RetDec
 GenericName=Binary Decompiler
-Comment=Retargetable Machine-Code Decompiler with AI assistance
-Exec=retdec-gui %f
+Comment=Retargetable Machine-Code Decompiler
+Exec=${APPIMAGE_EXEC} %f
 Icon=retdec
-Terminal=false
+Terminal=${APPIMAGE_TERMINAL}
 Type=Application
 Categories=Development;Debugger;
 MimeType=application/x-executable;application/x-sharedlib;
@@ -160,21 +156,29 @@ if [[ "$DRY_RUN" -eq 0 ]]; then
     ln -sf "usr/share/icons/hicolor/256x256/apps/retdec.png" "$APPDIR/retdec.png" 2>/dev/null || true
 fi
 
-# ─── Run linuxdeploy to bundle Qt6 libraries ──────────────────────────────────
+# ─── Run linuxdeploy ──────────────────────────────────────────────────────────
 echo ""
-echo "=== Running linuxdeploy (Qt plugin) ==="
+echo "=== Running linuxdeploy ==="
 export APPIMAGE_EXTRACT_AND_RUN=1   # Avoid FUSE requirement in CI
 export QT_SELECT=qt6
+
+LINUXDEPLOY_ARGS=(
+    --appdir "$APPDIR"
+    --desktop-file "$APPDIR/usr/share/applications/retdec.desktop"
+    --output appimage
+)
+if [[ -f "$APPDIR/usr/share/icons/hicolor/256x256/apps/retdec.png" ]]; then
+    LINUXDEPLOY_ARGS+=(--icon-file "$APPDIR/usr/share/icons/hicolor/256x256/apps/retdec.png")
+fi
+if [[ -x "${INSTALL_DIR}/bin/retdec-gui" ]]; then
+    LINUXDEPLOY_ARGS+=(--plugin qt)
+fi
 
 _run env \
     APPIMAGE_EXTRACT_AND_RUN=1 \
     OUTPUT="$OUT_FILE" \
     "$LINUXDEPLOY" \
-    --appdir "$APPDIR" \
-    --desktop-file "$APPDIR/usr/share/applications/retdec.desktop" \
-    --icon-file "$APPDIR/usr/share/icons/hicolor/256x256/apps/retdec.png" \
-    --plugin qt \
-    --output appimage
+    "${LINUXDEPLOY_ARGS[@]}"
 
 echo ""
 echo "=== AppImage created: $OUT_FILE ==="

@@ -56,10 +56,11 @@ jobs:
           stage="$(find /tmp/rel -maxdepth 1 -type d -name 'retdec-*-linux-x64' | head -n1)"
           test -n "${stage}"
           test -x "${stage}/bin/retdec-decompiler"
-          test -x "${stage}/bin/retdec-gui" || {
-            echo "tarball has no retdec-gui; AppImage desktop file requires it"
-            exit 1
-          }
+          if [[ -x "${stage}/bin/retdec-gui" ]]; then
+            echo "tarball includes retdec-gui"
+          else
+            echo "tarball has no retdec-gui; wrapping CLI only"
+          fi
           out="/tmp/rel/${NAME}"
           bash scripts/make-appimage.sh \
             --install-dir "${stage}" \
