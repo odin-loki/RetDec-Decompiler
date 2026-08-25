@@ -11,6 +11,7 @@ name: fuzz-pr
 # pull_request: option + source presence only (no LLVM configure).
 # workflow_dispatch + weekly schedule: Clang + RETDEC_FUZZ=ON, then ~30s
 # libFuzzer per target if the build cache / compile succeeds.
+# FUZZ-02: libFuzzer corpora persist in actions/cache under fuzz-corpora/.
 
 on:
   pull_request:
@@ -89,6 +90,14 @@ jobs:
           --target fuzz_elf fuzz_pe fuzz_macho fuzz_wasm
           fuzz_dex fuzz_jvm_class fuzz_pyc
 
+      - name: Cache libFuzzer corpora
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: fuzz-corpora
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-
+
       - name: Run libFuzzer 30s per target
         run: |
           set -euo pipefail
@@ -97,13 +106,14 @@ jobs:
             BIN_DIR="$(dirname "$(find build/linux -name fuzz_elf -type f | head -n1)")"
           fi
           ran=0
+          mkdir -p fuzz-corpora
           for name in fuzz_elf fuzz_pe fuzz_macho fuzz_wasm fuzz_dex fuzz_jvm_class fuzz_pyc; do
             bin="${BIN_DIR}/${name}"
             if [[ ! -x "${bin}" ]]; then
               echo "[skip] ${name} not built"
               continue
             fi
-            corpus="${BIN_DIR}/corpus_${name}"
+            corpus="${GITHUB_WORKSPACE}/fuzz-corpora/${name}"
             mkdir -p "${corpus}"
             echo "=== ${name} -max_total_time=30 ==="
             "${bin}" "${corpus}" \
