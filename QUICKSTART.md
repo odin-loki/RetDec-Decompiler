@@ -15,11 +15,14 @@ tar xzf retdec-2.0.21-linux-x64.tar.gz
 cd retdec-2.0.21-linux-x64
 chmod +x install.sh uninstall.sh
 ./install.sh --user --add-path
-retdec-decompiler --help
+curl -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.21/fib_smoke
+retdec-decompiler fib_smoke -o fib.c
 ```
 
+`fib_smoke` is gcc -O1 of `tests/test_binaries/fib.c` (same flags as
+`retdec-decompiler-fixture-fib`). Read `fib.c` and `fib.buildable.c`.
 Run without installing: `export PATH="$(pwd)/bin:$PATH"`. The same Release has
-`retdec-2.0.21-linux-x64.tar.gz.sigstore.json` (keyless Sigstore).
+`retdec-2.0.21-linux-x64.tar.gz.sigstore.json` and `fib_smoke.sigstore.json`.
 
 ## Linux AppImage
 
