@@ -19,7 +19,7 @@ pass dominates wall time on target hardware.
 
 | Path | Tool |
 |------|------|
-| CLI / batch | `retdec-qwen3-runner`, `RETDEC_NEURAL_REFINE=1` + GGUF model |
+| CLI / batch | `RETDEC_NEURAL_REFINE=1` + `RETDEC_NEURAL_MODEL` (GGUF). There is no `retdec-qwen3-runner`. |
 | Optional HTTP | User-run Ollama on localhost (not bundled) |
 | In-process | `RETDEC_ENABLE_LLAMACPP=ON` for neural refinement hook only |
 
