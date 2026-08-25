@@ -54,6 +54,6 @@ jobs:
           docker push "${IMAGE}:latest"
           echo "pushed ${IMAGE}:${TAG} and ${IMAGE}:latest"
           gh api --method PUT \
-            "/user/packages/container/retdec/visibility" \
+            "/users/${GITHUB_REPOSITORY_OWNER}/packages/container/retdec/visibility" \
             -f visibility=public \
             || echo "package visibility left unchanged (set ghcr.io/${GITHUB_REPOSITORY_OWNER}/retdec public in GitHub Packages if pulls 401)"
