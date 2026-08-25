@@ -4,6 +4,10 @@
 
 FROM ubuntu:noble
 
+LABEL org.opencontainers.image.source="https://github.com/odin-loki/RetDec-Decompiler"
+LABEL org.opencontainers.image.description="RetDec runtime from the published Linux tarball"
+LABEL org.opencontainers.image.licenses="MIT"
+
 RUN apt-get update -y && \
 	DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 	openssl graphviz upx python3 ca-certificates \

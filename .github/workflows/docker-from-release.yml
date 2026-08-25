@@ -47,7 +47,9 @@ jobs:
           tb="$(find /tmp/rel -name 'retdec-*-linux-x64.tar.gz' | head -n1)"
           test -n "${tb}" || { echo "no Linux tarball on ${TAG}"; exit 1; }
           cp "${tb}" /tmp/docker-runtime/retdec-linux-x64.tar.gz
-          docker build -t "${IMAGE}:${TAG}" -t "${IMAGE}:latest" /tmp/docker-runtime
+          docker build \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            -t "${IMAGE}:${TAG}" -t "${IMAGE}:latest" /tmp/docker-runtime
           docker run --rm "${IMAGE}:${TAG}" retdec-decompiler --help
           docker run --rm "${IMAGE}:${TAG}" analyse --help
           docker push "${IMAGE}:${TAG}"
