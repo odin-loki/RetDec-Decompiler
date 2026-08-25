@@ -51,7 +51,8 @@ Full checklist: [docs/developer_guide.md#contributing](docs/developer_guide.md#c
 
 By submitting a pull request, you agree to [CLA.md](CLA.md) (outbound
 relicensing grant to Imortek). Without that grant, a contribution cannot be
-included in the commercial licence.
+included in the commercial licence. The **CLA Assistant** check comments on
+the PR; sign with the exact sentence in `CLA.md`. Dependabot is allowlisted.
 
 See [LICENSE](LICENSE).
 

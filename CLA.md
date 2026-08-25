@@ -27,6 +27,10 @@ repository, you agree that:
 Entity contributions (employees contributing on behalf of a company)
 need a signed entity CLA before merge. Email the maintainers.
 
-Until CLA-assistant is a required GitHub check (`LEG-06`), maintainers
-treat a pull request as acceptance of this CLA when the author ticks
-the box in `.github/PULL_REQUEST_TEMPLATE.md`.
+Workflow `.github/workflows/cla.yml` runs CLA-assistant on
+`pull_request_target` and stores signatures on the `cla-signatures`
+branch. Contributors sign by commenting
+`I have read the CLA Document and I hereby sign the CLA` on the PR.
+Making **CLA Assistant** a required check is a branch-protection setting
+(`LEG-06` leftover). Until that box is ticked, maintainers also treat the
+PR-template licence checkbox as acceptance.
