@@ -61,3 +61,8 @@ add_fuzz_target(fuzz_macho fuzz_macho.cpp
 add_fuzz_target(fuzz_lua fuzz_lua.cpp
     retdec-lua-parser
 )
+
+add_fuzz_target(fuzz_apk fuzz_apk.cpp
+    retdec-dex-parser
+    retdec-bc-module
+)

@@ -113,6 +113,10 @@ run_fuzzer fuzz_lua \
     "$FUZZ_BIN_DIR/corpus_lua" \
     "$FIXTURES/lua"
 
+run_fuzzer fuzz_apk \
+    "$FUZZ_BIN_DIR/corpus_apk" \
+    "$FIXTURES/dex"
+
 echo "=== All fuzz runs complete ==="
 echo "Logs:    $FUZZ_BIN_DIR/*.fuzz.log"
 echo "Corpus:  $FUZZ_BIN_DIR/corpus_*"
