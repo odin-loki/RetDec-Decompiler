@@ -354,7 +354,7 @@ scripts\Test-RetdecWindows.ps1
 
 ## Quick Start
 
-Prebuilt Linux x86_64 tarball, AppImage, Windows NSIS/zip, and `fib_smoke` sample: [QUICKSTART.md](QUICKSTART.md).
+Prebuilt Linux x86_64 tarball, AppImage, Windows NSIS/zip, and `fib_smoke` / `fib_smoke.exe` samples: [QUICKSTART.md](QUICKSTART.md).
 `docker pull imortek/retdec` is not published.
 
 ### GUI (Linux/WSL)

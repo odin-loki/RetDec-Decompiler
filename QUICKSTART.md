@@ -42,9 +42,18 @@ From the same Release:
 - `retdec-2.0.21-windows-x64-setup.exe` — NSIS installer
 - `retdec-2.0.21-windows-x64-portable.zip` — portable tree
 
-Keyless Sigstore bundles `retdec-2.0.21-windows-x64-portable.zip.sigstore.json`
-and `retdec-2.0.21-windows-x64-setup.exe.sigstore.json` are on the Release.
-Authenticode is not applied.
+After NSIS or unzipping the portable tree and putting `bin` on `PATH`:
+
+```powershell
+curl.exe -fL -O https://github.com/odin-loki/RetDec-Decompiler/releases/download/v2.0.21/fib_smoke.exe
+retdec-decompiler fib_smoke.exe -o fib.c
+```
+
+`fib_smoke.exe` is the MSVC fixture (same flags as
+`retdec-decompiler-fixture-fib`). Keyless Sigstore bundles
+`retdec-2.0.21-windows-x64-portable.zip.sigstore.json`,
+`retdec-2.0.21-windows-x64-setup.exe.sigstore.json`, and
+`fib_smoke.exe.sigstore.json` are on the Release. Authenticode is not applied.
 
 ## Docker (when the image is public)
 
