@@ -4,12 +4,20 @@
  */
 
 #include "retdec/retdec/function_analysis_cache.h"
+#include "retdec/ssa/ssa.h"
+
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IRReader/IRReader.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/SourceMgr.h>
 
 #include <gtest/gtest.h>
 
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <thread>
 
 namespace fs = std::filesystem;
@@ -119,3 +127,52 @@ TEST(FunctionAnalysisCacheTest, RoundTripSaveAndLoad)
 
     fs::remove(path);
 }
+
+namespace {
+
+std::unique_ptr<llvm::Module> parseIR(llvm::LLVMContext& ctx, const char* ir)
+{
+    auto mb = llvm::MemoryBuffer::getMemBuffer(ir);
+    llvm::SMDiagnostic err;
+    auto module = llvm::parseIR(mb->getMemBufferRef(), err, ctx);
+    if (!module)
+        ADD_FAILURE() << err.getMessage().str();
+    return module;
+}
+
+} // namespace
+
+TEST(FunctionAnalysisCacheTest, BodyHashDistinguishesConstantOperands)
+{
+    // 0x63 vs 0x99 — the AES S-box / CRC collision Plan.md CACHE-01 names.
+    constexpr const char* kXorSbox = R"IR(
+define i32 @xor_imm(i32 %x) {
+entry:
+  %y = xor i32 %x, 99
+  ret i32 %y
+}
+)IR";
+    constexpr const char* kXorOther = R"IR(
+define i32 @xor_imm(i32 %x) {
+entry:
+  %y = xor i32 %x, 153
+  ret i32 %y
+}
+)IR";
+
+    llvm::LLVMContext ctxA;
+    llvm::LLVMContext ctxB;
+    auto modA = parseIR(ctxA, kXorSbox);
+    auto modB = parseIR(ctxB, kXorOther);
+    ASSERT_NE(modA, nullptr);
+    ASSERT_NE(modB, nullptr);
+
+    retdec::ssa::SSAFunction fnA("xor_imm");
+    retdec::ssa::SSAFunction fnB("xor_imm");
+    const std::string hashA = computeFunctionBodyHash(*modA, fnA);
+    const std::string hashB = computeFunctionBodyHash(*modB, fnB);
+    EXPECT_NE(hashA, hashB);
+    EXPECT_FALSE(hashA.empty());
+    EXPECT_FALSE(hashB.empty());
+}
+

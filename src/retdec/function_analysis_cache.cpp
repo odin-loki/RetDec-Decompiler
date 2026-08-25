@@ -10,6 +10,7 @@
 #include "retdec/sort_detect/sort_detect.h"
 #include "retdec/ssa/ssa.h"
 
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Module.h>
@@ -240,6 +241,17 @@ std::string computeFunctionBodyHash(
             for (const llvm::Instruction& inst : bb) {
                 h = fnv1a64Update(h, inst.getOpcode());
                 h = fnv1a64Update(h, inst.getNumOperands());
+                for (unsigned oi = 0, on = inst.getNumOperands(); oi < on; ++oi) {
+                    if (const auto* cvi =
+                            llvm::dyn_cast<llvm::ConstantInt>(inst.getOperand(oi))) {
+                        const llvm::APInt& val = cvi->getValue();
+                        h = fnv1a64Update(h, val.getBitWidth());
+                        const unsigned nWords = val.getNumWords();
+                        const auto* words = val.getRawData();
+                        for (unsigned w = 0; w < nWords; ++w)
+                            h = fnv1a64Update(h, words[w]);
+                    }
+                }
                 if (const auto* ci = llvm::dyn_cast<llvm::CallInst>(&inst)) {
                     if (const llvm::Function* callee = ci->getCalledFunction()) {
                         for (char c : callee->getName())

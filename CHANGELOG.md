@@ -8,6 +8,10 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `CACHE-01`: `computeFunctionBodyHash` includes integer
+  immediate operand values so structurally identical functions with
+  different constants (e.g. AES S-box vs CRC) do not share a cache key.
+  Test: `BodyHashDistinguishesConstantOperands`.
 - Phase 0 (Plan.md): honest public numbers (name-blind F1 **0.056**,
   opt-in buildable **216/216** vs stock **0/216**); input-keyed output
   languages; GUI panel inventory; purge of `retdec-qwen3-runner` / `--model`;
