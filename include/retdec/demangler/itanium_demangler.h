@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/demangler/itanium_demangler.h
  * @brief Itanium demangler adapter.
- * @copyright (c) 2018 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_LLVM_ITANIUM_DEMANGLER_H

@@ -1,7 +1,8 @@
 /**
  * @file src/bin2llvmir/providers/abi/arm64.cpp
  * @brief ABI information for ARM64.
- * @copyright (c) 2018 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include "retdec/bin2llvmir/providers/abi/arm64.h"

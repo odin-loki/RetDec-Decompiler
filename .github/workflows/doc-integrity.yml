@@ -25,3 +25,7 @@ jobs:
 
       - name: E9 doc-vs-code
         run: python scripts/ci/check_doc_vs_code.py
+
+      - name: LEG-02 Avast MIT notice
+        run: python scripts/ci/check_avast_mit_notice.py
+

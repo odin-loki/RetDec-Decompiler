@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/bin2llvmir/optimizations/x86_addr_spaces/x86_addr_spaces.h
  * @brief Optimize a single x86 address spaces instruction.
- * @copyright (c) 2018 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_BIN2LLVMIR_OPTIMIZATIONS_X86_ADDR_SPACES_X86_ADDR_SPACES_H

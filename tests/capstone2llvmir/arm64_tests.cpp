@@ -1,7 +1,8 @@
 /**
  * @file tests/capstone2llvmir/arm64_tests.cpp
  * @brief Capstone2LlvmIrTranslatorArm64 unit tests.
- * @copyright (c) 2018 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include <llvm/IR/InstIterator.h>

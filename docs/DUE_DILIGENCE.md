@@ -7,7 +7,7 @@ Phase 0 documentation pass (2026-08-25).
 | ID | Finding | Response | Residual |
 |----|---------|----------|----------|
 | B1 | Public docs advertised withdrawn F1 1.0 and default-`.c` recompile 0 as the quality story | README **Results** and `docs/BENCHMARKS_TABLE.md` now lead with name-blind **0.056** (95% CI 0.034–0.083) and `--buildable` **216/216** vs stock **0/216**. Stem-fallback 1.0 is labelled a second mode, not the headline. | CI still gates `MIN_MEAN_F1=0.95` with stem fallback (`CI-01`, Phase 1E). |
-| B2 | 151 upstream files lack the Avast copyright line | `C-LICENCE` is **asserted**, not demonstrated. Dual MIT notice remains in `LICENSE-MIT` / `NOTICE`. | Restore headers (`LEG-01`) and CI gate (`LEG-02`) in Phase 1A. |
+| B2 | 151 upstream files lack the Avast copyright line | 2017 rewrite headers restored (L1). Phase 1 restored **40** 2018 files. CI fails on leftover 2017/2018 Odin Loch lines (`check_avast_mit_notice.py` in `doc-integrity.yml`). | 2019 (~149) and 2020 (~24) rewrite files remain (`LEG-01`). |
 | B3 | No CLA; dual-licence relicensing is not wired | Not started. | `LEG-05`/`LEG-06` Phase 1A. |
 | B4 | Detector confidence precision 0.000 (A4, n=160) | `results/a4-calibration.md` remains the measurement. README does not treat confidence as calibrated. Constants were not fitted. | Fitting is Phase 2+ (`DET` track). Do not advertise scores as probabilities. |
 | B5 | Documented `retdec-qwen3-runner` / `--model` did not exist | Purged from README, user manual, Windows/MinGW docs, whitepaper. Neural path is `RETDEC_NEURAL_REFINE` + `RETDEC_NEURAL_MODEL`. | None for the phantom binary. |

@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/demangler/borland_ast_parser.h
  * @brief Parser of mangled names into tree for borland demangler.
- * @copyright (c) 2018 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_BORLAND_AST_PARSER_H

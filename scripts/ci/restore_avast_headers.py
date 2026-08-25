@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Restore Avast MIT copyright on mechanically rewritten 2017 Imortek headers.
+"""Restore Avast MIT copyright on mechanically rewritten Imortek headers.
 
-Walks src/, include/, and tests/ (never deps/ or build/). Replaces the
-2017 Odin Loch / Imortek rewrite tell with the upstream Avast line plus a
-2025-2026 Imortek modifications line.
+Walks src/, include/, and tests/ (never deps/ or build/). Replaces
+@copyright (c) YEAR Odin Loch rewrite tells (Avast-era years 2017–2020)
+with the upstream Avast line plus a 2025-2026 Imortek modifications line.
 
 Skips files that retain Sebastian Porst copyright (pelib originals) and
 does not touch files that already correctly attribute Avast unless they
-still contain a leftover 2017 Odin Loch line.
+still contain a leftover rewrite line for the selected years.
 
 Usage:
-    python3 scripts/ci/restore_avast_headers.py [--dry-run]
+    python3 scripts/ci/restore_avast_headers.py [--dry-run] [--year 2018]
 """
 
 from __future__ import annotations
@@ -24,19 +24,25 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCAN_DIRS = ("src", "include", "tests")
 
-# Any 2017 Odin Loch @copyright line is the mechanical rewrite tell,
-# including optional suffixes such as "(original)".
-REWRITE_RE = (
-    r"^((?:[ \t]*//|[ \t]*\*)?[ \t]*)"
-    r"@copyright \(c\) 2017 Odin Loch\b.*$"
-)
+ALLOWED_YEARS = ("2017", "2018", "2019", "2020")
 
 AVAST_LINE = "@copyright (c) 2017 Avast Software, licensed under the MIT license"
 IMORTEK_LINE = "@copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)"
 
 PORST_MARKER = "Sebastian Porst"
 AVAST_OK_MARKER = "2017 Avast Software"
-REWRITE_MARKER = "@copyright (c) 2017 Odin Loch"
+
+
+def rewrite_pattern(years: tuple[str, ...]) -> re.Pattern[str]:
+    year_alt = "|".join(years)
+    return re.compile(
+        r"^((?:[ \t]*//|[ \t]*\*)?[ \t]*)"
+        rf"@copyright \(c\) ({year_alt}) Odin Loch\b.*$"
+    )
+
+
+def rewrite_marker(year: str) -> str:
+    return f"@copyright (c) {year} Odin Loch"
 
 
 def iter_text_files(root: Path):
@@ -59,10 +65,9 @@ def read_text(path: Path) -> str | None:
         return None
 
 
-def restore_text(text: str) -> tuple[str, int]:
+def restore_text(text: str, pattern: re.Pattern[str]) -> tuple[str, int]:
     rewritten = 0
     out_lines: list[str] = []
-    pattern = re.compile(REWRITE_RE)
     for line in text.splitlines(keepends=True):
         ending = ""
         body = line
@@ -101,7 +106,16 @@ def main() -> int:
         action="store_true",
         help="report files that would change without writing",
     )
+    parser.add_argument(
+        "--year",
+        action="append",
+        choices=ALLOWED_YEARS,
+        help="rewrite tell year to restore (repeatable; default: all 2017-2020)",
+    )
     args = parser.parse_args()
+    years = tuple(args.year) if args.year else ALLOWED_YEARS
+    pattern = rewrite_pattern(years)
+    markers = [rewrite_marker(y) for y in years]
 
     rewritten_files = 0
     rewritten_lines = 0
@@ -117,11 +131,11 @@ def main() -> int:
         if PORST_MARKER in text:
             skipped_porst += 1
             continue
-        if REWRITE_MARKER not in text:
+        if not any(m in text for m in markers):
             if AVAST_OK_MARKER in text:
                 skipped_already_avast += 1
             continue
-        new_text, n = restore_text(text)
+        new_text, n = restore_text(text, pattern)
         if n == 0:
             leftover.append(path)
             continue
@@ -139,16 +153,17 @@ def main() -> int:
         text = read_text(path)
         if text is None:
             continue
-        if REWRITE_MARKER in text:
+        if any(m in text for m in markers):
             leftover_after.append(str(path.relative_to(REPO_ROOT)))
 
     mode = "dry-run" if args.dry_run else "applied"
     print(f"mode: {mode}")
+    print(f"years: {','.join(years)}")
     print(f"files_rewritten: {rewritten_files}")
     print(f"copyright_lines_replaced: {rewritten_lines}")
     print(f"skipped_sebastian_porst: {skipped_porst}")
     print(f"skipped_already_avast_no_rewrite: {skipped_already_avast}")
-    print(f"leftover_2017_odin_loch: {len(leftover_after)}")
+    print(f"leftover_odin_loch_for_selected_years: {len(leftover_after)}")
     if leftover_after:
         print("leftover_paths:")
         for p in leftover_after:

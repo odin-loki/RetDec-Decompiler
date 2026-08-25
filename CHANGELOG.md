@@ -8,6 +8,9 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `LEG-01`/`LEG-02`: restore Avast MIT notice on **40** 2018 rewrite
+  headers; `check_avast_mit_notice.py` fails on leftover 2017/2018 Odin Loch
+  lines and runs in `doc-integrity.yml`. 2019–2020 rewrite years remain.
 - Phase 1 `CFG-02`: `--buildable` is a CLI flag and the default; `--no-buildable`
   / `RETDEC_EMIT_BUILDABLE=0` opts out. Tests: `EnabledWhenUnset`,
   `DisabledWhenZero`.

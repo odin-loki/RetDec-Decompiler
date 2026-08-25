@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail if LICENSE-MIT is missing or 2017 Odin Loch rewrite headers remain.
+"""Fail if LICENSE-MIT is missing or 2017/2018 Odin Loch rewrite headers remain.
 
 Scans src/, include/, and tests/ only (never deps/ or build/).
 
@@ -15,7 +15,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LICENSE_MIT = REPO_ROOT / "LICENSE-MIT"
 SCAN_DIRS = ("src", "include", "tests")
-REWRITE_NEEDLE = "@copyright (c) 2017 Odin Loch"
+REWRITE_NEEDLES = (
+    "@copyright (c) 2017 Odin Loch",
+    "@copyright (c) 2018 Odin Loch",
+)
 REQUIRED_MIT_SNIPPETS = (
     'Copyright (c) 2017 Avast Software',
     'Permission is hereby granted, free of charge',
@@ -57,13 +60,13 @@ def main() -> int:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        if REWRITE_NEEDLE in text:
+        if any(needle in text for needle in REWRITE_NEEDLES):
             hits.append(str(path.relative_to(REPO_ROOT)))
 
     if hits:
         errors.append(
-            f"{len(hits)} file(s) still contain {REWRITE_NEEDLE!r} "
-            f"under src/include/tests:"
+            f"{len(hits)} file(s) still contain a 2017/2018 Odin Loch rewrite "
+            f"header under src/include/tests:"
         )
         errors.extend(f"  {p}" for p in hits)
 
@@ -75,7 +78,7 @@ def main() -> int:
 
     print("check_avast_mit_notice: OK")
     print("LICENSE-MIT present with Avast MIT permission notice")
-    print("no @copyright (c) 2017 Odin Loch under src/include/tests")
+    print("no @copyright (c) 2017/2018 Odin Loch under src/include/tests")
     return 0
 
 

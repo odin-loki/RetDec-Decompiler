@@ -1,7 +1,8 @@
 /**
  * @file src/capstone2llvmir/llvmir_utils.h
  * @brief LLVM IR utilities.
- * @copyright (c) 2018 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  *
  * LLVM IR utilities (routines) that:
  * - Are unrelated to the translation itself.

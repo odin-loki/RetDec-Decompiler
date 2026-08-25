@@ -1,7 +1,8 @@
 /**
  * @file src/bin2llvmir/optimizations/x86_addr_spaces/x86_addr_spaces_pass.cpp
  * @brief x86 address spaces optimization pass.
- * @copyright (c) 2018 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #include <llvm/IR/InstIterator.h>
