@@ -150,7 +150,7 @@ From the repo root (prefer a **native Linux filesystem** under `~/` for I/O perf
 
 ```bash
 # Full preset: Qt6 dev packages required (e.g. sudo apt install qt6-base-dev qt6-base-dev-tools).
-# CUDA is requested by default; configure can succeed without NVCC (CPU fallback at runtime).
+# RETDEC_ENABLE_CUDA_ACCEL defaults OFF; NVCC is not required.
 bash scripts/wsl_configure_nosudo.sh   # cmake --preset full-linux-debug → build/linux/
 cmake --build build/linux -j"$(nproc)"
 ```

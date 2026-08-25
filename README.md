@@ -332,9 +332,10 @@ The `dist/windows/` folder will contain:
 scripts\Test-RetdecWindows.ps1
 ```
 
-> **Note:** CUDA acceleration is not supported in the Windows cross-compile
-> (NVCC cannot cross-compile). The Windows build falls back to CPU-only
-> analysis. For GPU-accelerated decompilation, use the Linux/WSL build.
+> **Note:** The MinGW cross-compile does not build NVCC kernels. That is not
+> a missing default-pipeline feature: `RETDEC_ENABLE_CUDA_ACCEL` is **OFF**
+> and unintegrated (`C-CUDA-PIPE` withdrawn). See
+> [docs/CUDA_CAPABILITIES.md](docs/CUDA_CAPABILITIES.md).
 
 See [docs/MINGW_CROSS_DEEP_DIVE.md](docs/MINGW_CROSS_DEEP_DIVE.md) for the
 complete walkthrough including troubleshooting.

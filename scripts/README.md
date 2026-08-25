@@ -19,7 +19,7 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 |--------|------|
 | `retdec-paths.ps1` | Dot-source: `Get-RetDecRepoRoot`, `Get-RetDecBuildDir`, VS Dev Shell |
 | `build-install-run-windows.ps1` | `cmake --preset`, build, install, run `retdec-decompiler` / GUI / tests |
-| `windows_native_configure.ps1` | Toolchain env + `cmake --preset full-windows-release` (CUDA + Qt6 by default; `-NoCuda` / `-AllowOptionalQt` to relax) |
+| `windows_native_configure.ps1` | Toolchain env + `cmake --preset full-windows-release` (Qt6 required; `RETDEC_ENABLE_CUDA_ACCEL` stays OFF unless you pass it ON; `-NoCuda` skips the NVCC probe) |
 | `windows_native_build.ps1` | Build, `cmake --install` → `install/windows/`, stage `dist/windows/` |
 | `windows_prepare_debuggable_gui.ps1` | PDB / debuggable GUI bundle |
 | `run-gui-headless-debug.ps1` | Qt offscreen + `RETDEC_GUI_HEADLESS` |

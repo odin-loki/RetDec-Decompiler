@@ -186,7 +186,7 @@ if (-not $NoCuda) {
         Write-Host "  [OK] CUDA: $CudaPath  ($nvccVer)" -ForegroundColor Green
         $enableCuda = $true
     } else {
-        Write-Warning "CUDA Toolkit not found in this shell; CMake will still probe for NVCC. Install CUDA for GPU acceleration, or use -NoCuda for a CPU-only configure."
+        Write-Warning "CUDA Toolkit not found in this shell; CMake will still probe for NVCC. RETDEC_ENABLE_CUDA_ACCEL stays OFF on full-windows presets. Pass -NoCuda to skip the probe, or -DRETDEC_ENABLE_CUDA_ACCEL=ON only for parked research builds."
     }
 }
 if ($NoCuda) {

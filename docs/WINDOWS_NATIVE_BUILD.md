@@ -1,17 +1,17 @@
-# Windows Native Build — MSVC + CUDA + Qt6 GUI
+# Windows Native Build — MSVC + Qt6 GUI
 
 This guide covers building RetDec **natively on Windows** to produce a full
 deployment with:
 
-- **CUDA GPU acceleration** (NVCC + MSVC host compiler)
 - **Qt6 GUI** (`retdec-gui.exe`)
-- All CLI tools (`retdec-decompiler.exe`, `retdec-unpacker.exe`, etc.)
+- CLI tools (`retdec-decompiler.exe`, `retdec-unpacker.exe`, `retdec-fileinfo.exe`)
+- Optional NVCC only if you opt into parked `RETDEC_ENABLE_CUDA_ACCEL` (defaults **OFF**; not the decompiler pipeline — `C-CUDA-PIPE` is withdrawn)
 
-> **Why native?** NVCC (the CUDA compiler) uses the system C++ compiler as
-> its host compiler. On Windows this must be MSVC. CUDA GPU kernels cannot
-> be cross-compiled from Linux. If you only need the CLI decompiler without
-> GPU acceleration, use the cheaper MinGW cross-compile path described in
-> [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md).
+> **Why native?** The Qt6 GUI and MSVC OpenSSL bundle live on this path.
+> NVCC (the CUDA compiler) also needs MSVC as host compiler **if** you opt
+> into experimental `cuda_accel`. That switch is unintegrated and off by
+> default. For CLI-only without a CUDA toolkit, use the MinGW cross-compile
+> path in [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md).
 
 **Related docs:** [BUILD_REFERENCE.md](BUILD_REFERENCE.md) (preset matrix, `build\windows`, `install\windows`, `dist\windows`, superbuild, CI) · [docs/README.md](README.md) (full index).
 
@@ -76,7 +76,7 @@ Optional parameters:
 | `-Preset` | `full-windows-release` | CMake preset; binary dir `build\<Preset>\` |
 | `-QtDir` | auto-detected | Qt6 CMake config dir (**required** for `full-*` unless `-AllowOptionalQt`) |
 | `-CudaPath` | `$env:CUDA_PATH` | CUDA Toolkit root |
-| `-NoCuda` | on (default) | `RETDEC_ENABLE_CUDA_ACCEL` is **OFF** unless you pass `-DRETDEC_ENABLE_CUDA_ACCEL=ON` |
+| `-NoCuda` | off | Skip the NVCC probe and pass `RETDEC_ENABLE_CUDA_ACCEL=OFF`. The `full-windows-*` presets already set that option OFF. |
 | `-AllowOptionalQt` | off | Pass `-DRETDEC_REQUIRE_QT6=OFF` if you cannot install Qt (CLI-only; not recommended for `full-*`) |
 
 Example with explicit paths:
@@ -227,7 +227,7 @@ Minimum driver versions (CUDA Toolkit → min driver):
 
 | Feature | MinGW cross-compile (WSL) | Native Windows (MSVC) |
 |---------|--------------------------|----------------------|
-| CUDA GPU acceleration | No (CPU fallback only) | **Yes** |
+| Experimental CUDA accel | No NVCC | Opt-in `RETDEC_ENABLE_CUDA_ACCEL` only; default **OFF**, unintegrated |
 | Qt6 GUI | No | **Yes** |
 | Build host | Linux / WSL | Windows |
 | Compiler | MinGW-w64 GCC | MSVC (cl.exe) |

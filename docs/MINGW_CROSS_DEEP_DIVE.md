@@ -295,10 +295,10 @@ This is already applied in the source tree.
 
 ## CUDA acceleration
 
-The Windows cross-compiled build does **not** include CUDA support. NVCC
-cannot cross-compile GPU kernels. The Windows build automatically uses the
-CPU-only fallback for all analysis passes. For GPU-accelerated decompilation,
-use the native Linux/WSL build.
+The Windows cross-compiled build does **not** compile NVCC kernels. That is
+not a missing default-pipeline feature: `RETDEC_ENABLE_CUDA_ACCEL` is **OFF**
+and unintegrated (`C-CUDA-PIPE` withdrawn). Native MSVC is required only if
+you opt into that research switch; see [CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md).
 
 ---
 
