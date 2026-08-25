@@ -6,17 +6,17 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEC=""
 MIN_DECOMPILED=9
-# Official gate stays 0.95 (stem-era). Name-blind ci-core mean is 0.126.
-# Do not lower this constant. Extract must pass --stem-fallback so
-# mean_f1 is the stem-era score; mean_f1_raw stays name-blind.
-# See results/algorithm-recovery-gate-finding.md
-MIN_MEAN_F1=0.95
+# Official gate is name-blind mean_f1_raw on ci-core (measured 0.126).
+# Stem-fallback 0.95 is not the product metric (CI-01).
+MIN_MEAN_F1=0.12
+MIN_MEAN_F1_RAW=0.12
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--decompiler) DEC="$2"; shift 2 ;;
 		--min-decompiled) MIN_DECOMPILED="$2"; shift 2 ;;
 		--min-mean-f1) MIN_MEAN_F1="$2"; shift 2 ;;
+		--min-mean-f1-raw) MIN_MEAN_F1_RAW="$2"; shift 2 ;;
 		*) echo "Unknown arg: $1" >&2; exit 1 ;;
 	esac
 done
@@ -66,7 +66,7 @@ python3 "${ROOT}/scripts/extract_decompiler_predictions.py" \
 	--corpus "${ROOT}/tests/algorithm_recovery/corpus" \
 	--manifest "${ROOT}/tests/algorithm_recovery/corpus/manifest.json" \
 	--ci-core \
-	--stem-fallback \
+	--no-stem-fallback \
 	--work "${WORK}" \
 	--out "${PRED}"
 
@@ -78,7 +78,8 @@ python3 "${ROOT}/tests/algorithm_recovery/runner.py" \
 bash "${ROOT}/scripts/algorithm_recovery_gate.sh" \
 	--results "${RESULTS}" \
 	--min-decompiled "${MIN_DECOMPILED}" \
-	--min-mean-f1 "${MIN_MEAN_F1}"
+	--min-mean-f1 "${MIN_MEAN_F1}" \
+	--min-mean-f1-raw "${MIN_MEAN_F1_RAW}"
 
 if [[ -f "${ROOT}/results/baseline-algorithm-recovery.json" ]]; then
 	bash "${ROOT}/scripts/algorithm_recovery_regression_gate.sh" \

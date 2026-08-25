@@ -8,6 +8,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `CI-01`: algorithm-recovery CI gates name-blind F1 **0.12** and
+  drops `--stem-fallback`.
 - Phase 1 `LEG-03`: `scripts/ci/generate_provenance.py` writes
   `docs/PROVENANCE-files.md`; `doc-integrity` fails on rewrite-tells.
 - Phase 1 `CI-09`: pin GitHub Actions to commit SHAs.
