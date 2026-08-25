@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `CACHE-06`: cache JSON with a mismatched or missing `version` loads empty (`VersionMismatchYieldsEmptyCache`, `MissingVersionYieldsEmptyCache`).
 - Phase 1 `REL-02`: Docker image `analyse` shim execs `retdec-decompiler` (image not published).
 - Phase 1 `CACHE-05`: hash determinism and `RETDEC_INCREMENTAL_CACHE=0` unit tests.
 - Phase 1 `CLI-01`: `--output-lang cpp` is rejected until `LLVM-22`.

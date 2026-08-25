@@ -128,6 +128,47 @@ TEST(FunctionAnalysisCacheTest, RoundTripSaveAndLoad)
     fs::remove(path);
 }
 
+TEST(FunctionAnalysisCacheTest, VersionMismatchYieldsEmptyCache)
+{
+    const fs::path path =
+        fs::temp_directory_path() / "retdec_fn_cache_mismatch.json";
+    {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(out);
+        out << "{\n  \"version\": " << (FunctionAnalysisCache::kVersion - 1)
+            << ",\n  \"functions\": [\n"
+               "    {\"name\": \"main\", \"bodyHash\": \"deadbeef\"}\n"
+               "  ]\n}\n";
+    }
+
+    FunctionAnalysisCache loaded =
+        FunctionAnalysisCache::loadFromFile(path.string());
+    EXPECT_TRUE(loaded.entries().empty());
+    EXPECT_EQ(loaded.lookup("main", "deadbeef"), nullptr);
+
+    fs::remove(path);
+}
+
+TEST(FunctionAnalysisCacheTest, MissingVersionYieldsEmptyCache)
+{
+    const fs::path path =
+        fs::temp_directory_path() / "retdec_fn_cache_no_version.json";
+    {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(out);
+        out << "{\n  \"functions\": [\n"
+               "    {\"name\": \"main\", \"bodyHash\": \"deadbeef\"}\n"
+               "  ]\n}\n";
+    }
+
+    FunctionAnalysisCache loaded =
+        FunctionAnalysisCache::loadFromFile(path.string());
+    EXPECT_TRUE(loaded.entries().empty());
+    EXPECT_EQ(loaded.lookup("main", "deadbeef"), nullptr);
+
+    fs::remove(path);
+}
+
 namespace {
 
 std::unique_ptr<llvm::Module> parseIR(llvm::LLVMContext& ctx, const char* ir)

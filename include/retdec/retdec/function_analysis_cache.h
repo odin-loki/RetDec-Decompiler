@@ -89,7 +89,7 @@ public:
         FunctionDetections detections;
     };
 
-    /// Load existing sidecar; missing or corrupt files are ignored.
+    /// Load existing sidecar; missing, corrupt, or version-mismatched files are ignored.
     static FunctionAnalysisCache loadFromFile(const std::string& path);
 
     /// Write sidecar atomically (best-effort).
