@@ -24,11 +24,11 @@ imports, and heuristics only.
 
 ```powershell
 retdec-decompiler.exe -o out.c `
-  --pdb-path "C:\symbols\MyApp\release" `
+  --pdb "C:\symbols\MyApp\release" `
   C:\samples\MyApp.exe
 ```
 
-The GUI **Analysis → Configure…** dialog exposes the same `--pdb-path` when
+The GUI **Analysis → Configure…** dialog exposes the same `--pdb` when
 present in your RetDec build.
 
 ## Option 2 — `_NT_SYMBOL_PATH` (system symbol cache)
@@ -40,13 +40,13 @@ $env:_NT_SYMBOL_PATH = "SRV*C:\symbols*https://msdl.microsoft.com/download/symbo
 ```
 
 RetDec does **not** read `_NT_SYMBOL_PATH` directly. Prefetch PDBs into a local
-folder, then pass `--pdb-path`:
+folder, then pass `--pdb`:
 
 ```powershell
 # Example: copy PDBs with symstore/symchk tooling you already use
 symchk /v C:\samples\MyApp.exe /s SRV*C:\symbols*https://msdl.microsoft.com/download/symbols
 
-retdec-decompiler.exe -o out.c --pdb-path C:\symbols C:\samples\MyApp.exe
+retdec-decompiler.exe -o out.c --pdb C:\symbols C:\samples\MyApp.exe
 ```
 
 ## Option 3 — Corporate symbol server
@@ -55,7 +55,7 @@ If your org hosts symbols at `https://symbols.corp.example/v2/symbols`:
 
 1. Mirror needed PDBs to disk with your approved fetch tool (do not embed
    credentials in RetDec command lines).
-2. Pass the mirror directory via `--pdb-path`.
+2. Pass the mirror directory via `--pdb`.
 
 Air-gapped labs should import PDBs on removable media and reference the mount
 point only.
@@ -82,7 +82,7 @@ If names stay synthetic, check:
 | Issue | Fix |
 |-------|-----|
 | PDB/build ID mismatch | Use the PDB from the same build as the binary |
-| Wrong `--pdb-path` | Directory must contain the PDB or a matching subtree |
+| Wrong `--pdb` | Directory must contain the PDB or a matching subtree |
 | Stripped + no PDB | Expected — only exports/imports remain |
 | OneDrive/sync locks | Copy binary + PDB to a local non-synced folder |
 

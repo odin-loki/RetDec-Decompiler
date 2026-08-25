@@ -295,7 +295,7 @@ ctest --test-dir build/linux --output-on-failure
 Test executables live under the build tree, e.g.:
 
 ```bash
-./build/linux/tests/utils/retdec-utils-tests
+./build/linux/tests/utils/tests-utils
 ./build/linux/tests/gui/retdec-gui-tests
 ```
 

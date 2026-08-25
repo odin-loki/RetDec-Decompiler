@@ -81,16 +81,15 @@ Dependencies flow strictly downward; no cycles.
 
 ```
 retdec-gui
-  ├── retdec-qwen3          (AI inference pipeline)
-  ├── retdec-profiling      (standalone — no deps)
-  ├── retdec-module-cluster (standalone)
-  ├── retdec-concurrency-detect (standalone)
-  ├── retdec-ptx-decompile  (standalone)
-  └── Qt6::Widgets/Core/Gui
+  ├── retdec-gui-panels
+  │     └── retdec::neural (optional llama.cpp refine)
+  └── Qt6::Widgets / Qt6::Core / Qt6::Gui (+ optional Qt6::Svg)
 
 retdec-testing              (standalone — test helpers only)
-retdec-qwen3                (standalone)
 retdec-profiling            (standalone)
+retdec-module-cluster       (standalone)
+retdec-concurrency-detect   (standalone)
+retdec-ptx-decompile        (standalone; not linked from the GUI)
 ```
 
 ---
@@ -378,7 +377,7 @@ Plugin types:
 ## AI Inference Engine (Qwen3) {#ai}
 
 **Not in the default decompiler pipeline.** `src/qwen3/` and FlashAttention
-are experimental / unintegrated (claims register C-QWEN3-GPU). Live refinement
+are experimental / unintegrated (claims register C-QWEN3-GPU withdrawn). Live refinement
 uses opt-in llama.cpp (`RETDEC_NEURAL_REFINE`) when a GGUF is on disk.
 
 ### Component Stack

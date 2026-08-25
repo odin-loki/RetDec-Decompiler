@@ -227,7 +227,9 @@ Prerequisites and canonical commands are centralized in **`docs/BUILD_REFERENCE.
 - **Profiling APIs** for wall-clock and resource measurement inside the codebase.  
 - **Diagnostic environment variables** (documented under `docs/README.md`) for deep pipeline logging when investigating edge cases.
 
-Note: full **external regression corpora** may require **CI secrets** configured in GitHub Actions (`RETDEC_REGRESSION_TESTS_GIT_URL`, `RETDEC_REGRESSION_FRAMEWORK_GIT_URL`); see `docs/BUILD_REFERENCE.md`.
+Note: this tree does **not** clone an external regression corpus from GitHub
+Actions secrets. In-tree CTest and `results/` JSON are the regression surface;
+see `docs/BUILD_REFERENCE.md`.
 
 ---
 

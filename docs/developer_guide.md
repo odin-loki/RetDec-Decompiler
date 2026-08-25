@@ -396,7 +396,7 @@ returns `syntheticCorpus()` automatically.
 AppSettings::instance().advanced.verbosity = AdvancedSettings::Verbosity::Debug;
 ```
 
-Or set the environment variable `RETDEC_LOG_LEVEL=debug` before launching.
+Or raise the GUI **Advanced → verbosity** setting to Debug before launching.
 
 ### Dump intermediate IR
 

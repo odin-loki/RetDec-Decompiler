@@ -8,6 +8,8 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `CI-03`: invert `check_doc_vs_code.py` so documented `retdec-*`,
+  `--flag`, and `RETDEC_*` tokens must resolve in the tree.
 - Phase 1 `REL-07`: `QUICKSTART.md` (Docker when published; local `fib_smoke` until then).
 - Phase 1 `CI-01`: algorithm-recovery CI gates name-blind F1 **0.12** and
   drops `--stem-fallback`.

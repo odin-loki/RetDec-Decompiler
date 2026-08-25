@@ -53,7 +53,7 @@ llama.cpp. CI default is OFF.
 - `RETDEC_NEURAL_SKIP_COMPILE_GATE`
 
 GUI: Settings → ML model path that exists on disk is passed to the
-decompiler child as these env vars. Headless `--quit-when-done` does
+decompiler child as these env vars. Headless `--headless-decompile` does
 not apply saved ML settings.
 
 - Compile gate is `cc`/`gcc -fsyntax-only`. Differential gate is **not
