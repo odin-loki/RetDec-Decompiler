@@ -26,6 +26,9 @@ jobs:
       - name: E9 doc-vs-code
         run: python scripts/ci/check_doc_vs_code.py
 
+      - name: DOC-05 withdrawn claims
+        run: python scripts/ci/check_withdrawn_claims.py
+
       - name: LEG-02 Avast MIT notice
         run: python scripts/ci/check_avast_mit_notice.py
 
