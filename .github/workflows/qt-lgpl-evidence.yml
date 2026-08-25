@@ -1,0 +1,54 @@
+name: qt-lgpl-evidence
+
+# LEG-12 — dumpbin /dependents on the published Windows portable zip.
+# Does not rebuild LLVM. Dispatch and weekly only (the zip is large).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag whose Windows zip is inspected
+        required: false
+        default: v2.0.21
+  schedule:
+    - cron: "0 7 * * 0"
+
+permissions:
+  contents: read
+
+jobs:
+  dumpbin-gui:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
+
+      - name: Download portable zip and dumpbin retdec-gui.exe
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || 'v2.0.21' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\rel" | Out-Null
+          gh release download $env:TAG --pattern "*-windows-x64-portable.zip" --dir "$env:RUNNER_TEMP\rel"
+          $zip = Get-ChildItem -Path "$env:RUNNER_TEMP\rel" -Filter "*-windows-x64-portable.zip" |
+            Select-Object -First 1
+          if (-not $zip) { throw "no Windows portable zip on $($env:TAG)" }
+          $dest = Join-Path $env:RUNNER_TEMP "win-portable"
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $dest -Force
+          $gui = Get-ChildItem -Path $dest -Filter "retdec-gui.exe" -Recurse |
+            Select-Object -First 1
+          if (-not $gui) { throw "retdec-gui.exe not in $($zip.Name)" }
+          Write-Host "dumpbin /dependents $($gui.FullName)"
+          $out = & dumpbin.exe /dependents $gui.FullName
+          $out | Write-Host
+          $text = ($out | Out-String)
+          if ($text -notmatch "Qt6Core\.dll") {
+            throw "retdec-gui.exe does not list Qt6Core.dll (static Qt?)"
+          }
+          Write-Host "qt-lgpl-evidence: OK (Qt6Core.dll)"

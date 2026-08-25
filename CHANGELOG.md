@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `LEG-12`: `check_qt_dynamic_link.py` forbids `find_package(Qt6 STATIC)`; weekly `qt-lgpl-evidence.yml` `dumpbin`s the published Windows zip for `Qt6Core.dll`.
 - Phase 1 `REL-02`: tag GHCR images come from `docker-from-release.yml` after `release-installers`; the LLVM `Dockerfile` rebuild is dispatch-only.
 - Phase 1 `DEAD-04`: developer guide no longer says `full-linux-*` presets turn CUDA accel on.
 - Phase 1 docs: developer guide no longer calls `container_detect` / `algo_recover` stubs.

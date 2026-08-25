@@ -47,6 +47,6 @@ Qt shared libraries.”
 
 ## Residual
 
-Confirm on a Release installer that `retdec-gui.exe` is not linked to a
-static Qt (`dumpbin /dependents` should list `Qt6Core.dll` etc.). That
-check is not yet a CI job.
+A weekly `qt-lgpl-evidence` job `dumpbin /dependents` the published Windows
+zip's `retdec-gui.exe` and requires `Qt6Core.dll`. CMake is gated by
+`scripts/ci/check_qt_dynamic_link.py` (no `find_package(Qt6 STATIC …)`).
