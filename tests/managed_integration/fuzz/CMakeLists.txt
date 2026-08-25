@@ -78,6 +78,15 @@ if(TARGET retdec::unpacker)
     )
 endif()
 
+if(TARGET retdec::unpackertool)
+    add_fuzz_target(fuzz_unpacker_plugins fuzz_unpacker_plugins.cpp
+        retdec::unpackertool
+    )
+    target_include_directories(fuzz_unpacker_plugins PRIVATE
+        "${CMAKE_SOURCE_DIR}/src"
+    )
+endif()
+
 if(TARGET retdec::pdbparser)
     add_fuzz_target(fuzz_pdb fuzz_pdb.cpp
         retdec::pdbparser

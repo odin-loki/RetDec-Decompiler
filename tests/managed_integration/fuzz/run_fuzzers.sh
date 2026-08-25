@@ -133,6 +133,10 @@ run_fuzzer fuzz_cli \
     "$FUZZ_BIN_DIR/corpus_cli" \
     "$FIXTURES/dotnet"
 
+run_fuzzer fuzz_unpacker_plugins \
+    "$FUZZ_BIN_DIR/corpus_unpacker_plugins" \
+    "$CORPUS_BIN"
+
 echo "=== All fuzz runs complete ==="
 echo "Logs:    $FUZZ_BIN_DIR/*.fuzz.log"
 echo "Corpus:  $FUZZ_BIN_DIR/corpus_*"
