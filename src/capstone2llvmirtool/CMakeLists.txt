@@ -16,6 +16,6 @@ set_target_properties(capstone2llvmirtool
 		OUTPUT_NAME "retdec-capstone2llvmir"
 )
 
-install(TARGETS capstone2llvmirtool
-	RUNTIME DESTINATION ${RETDEC_INSTALL_BIN_DIR}
-)
+# Keystone (GPL-2.0) is linked only into this tool. Do not install it into
+# commercial or cmake --install prefixes (LEG-11 / NOTICE).
+# The target still builds for tests and developer use.

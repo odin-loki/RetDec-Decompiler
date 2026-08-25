@@ -1,11 +1,13 @@
-# CUDA capabilities in RetDec
+# CUDA / OpenCL — parked research
 
-> **Experimental / unintegrated / opt-in.** The `cuda_accel` acceleration
-> layer and the `opencl` backend are **not wired** into the decompiler
-> pipeline, are **not linked** from `src/retdec`, default **OFF**, and are
-> **not product features**. Do not advertise them as shipped GPU
-> acceleration. Enable CUDA accel only with `-DRETDEC_ENABLE_CUDA_ACCEL=ON`
-> for research builds; OpenCL is not added from `src/CMakeLists.txt`.
+> **Not a product feature.** `src/cuda_accel/` and `src/opencl/` are parked
+> research trees. They are **not wired** into the decompiler pipeline, **not
+> linked** from `src/retdec`, default **OFF**, and must not be advertised as
+> shipped GPU acceleration. See [RESEARCH_FRONTIERS.md](RESEARCH_FRONTIERS.md)
+> § GPU acceleration (parked).
+>
+> Enable CUDA accel only with `-DRETDEC_ENABLE_CUDA_ACCEL=ON` for research
+> builds; OpenCL is not added from `src/CMakeLists.txt`.
 
 RetDec uses two independent CUDA-related build switches. They control different
 subsystems and should not be conflated.

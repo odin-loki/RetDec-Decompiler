@@ -18,7 +18,8 @@ Third-party components (see cmake/deps.cmake for pinned versions):
   OpenSSL (Apache-2.0)
   zlib (Zlib)
   googletest (BSD-3-Clause)
-  Qt6 (LGPL/GPL/commercial — runtime dependency when GUI enabled)
+  Qt6 (LGPL/GPL/commercial — runtime dependency when GUI enabled).
+    Evidence: docs/LGPL_QT.md (dynamic link + relink).
   Eigen (MPL-2.0)
   rapidjson (MIT)
   tinyxml2 (Zlib)

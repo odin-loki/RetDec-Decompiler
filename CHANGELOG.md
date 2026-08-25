@@ -8,6 +8,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `LEG-11`: do not `install()` Keystone-linked `capstone2llvmirtool`.
+- Phase 1 hygiene docs: Qt LGPL evidence (`docs/LGPL_QT.md`), CLA
+  (`CLA.md`), sole-authorship (`LEG-07`), `cxx_backend` marked unwired,
+  CUDA/OpenCL parked in `RESEARCH_FRONTIERS.md`, experimental scaffold
+  noted, Dependabot for GitHub Actions (`CI-10`).
 - Phase 1 `LEG-01`/`LEG-02`: restore Avast MIT notice on **40** 2018 rewrite
   headers; `check_avast_mit_notice.py` fails on leftover 2017/2018 Odin Loch
   lines and runs in `doc-integrity.yml`. 2019–2020 rewrite years remain.

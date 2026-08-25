@@ -49,7 +49,11 @@ Full checklist: [docs/developer_guide.md#contributing](docs/developer_guide.md#c
 
 ## Licence
 
-By submitting a pull request, you agree that your contribution is licensed under the same terms as this project (**AGPL-3.0+ with Imortek Section 7 additions**, or your existing commercial licence from Imortek). See [LICENSE](LICENSE).
+By submitting a pull request, you agree to [CLA.md](CLA.md) (outbound
+relicensing grant to Imortek). Without that grant, a contribution cannot be
+included in the commercial licence.
+
+See [LICENSE](LICENSE).
 
 ## Security and conduct
 

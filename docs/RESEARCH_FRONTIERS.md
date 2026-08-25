@@ -150,6 +150,18 @@ Beyond coroutines: Node-style callbacks, `.NET async/await` state machines, Qt s
 
 ---
 
+## GPU acceleration (parked)
+
+`src/cuda_accel/` and `src/opencl/` are **parked research** (~9.5k LOC).
+They are not on the product sprint. Default CMake is OFF; `src/retdec`
+does not link them. Public docs: [CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md).
+
+Phase 1 `DEAD-03` still wants the trees moved off `main` onto a research
+branch. Until that deletion, treat the directories as archival source, not
+as a capability.
+
+---
+
 ## References
 
 - [future_directions.md](future_directions.md) — STL recovery, targets, performance

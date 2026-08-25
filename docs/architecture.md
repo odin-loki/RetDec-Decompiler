@@ -139,7 +139,7 @@ and back-end is shared.
 | 21 STL/Container Recovery | `container_detect` | std::vector, map, list, string, etc. |
 | 22 Algorithm Recovery | `algo_recover` | sort, binary search, BFS/DFS, FFT |
 | 23 Crypto Detection | `crypto_detect` | AES, SHA, RSA, ChaCha20 implementations |
-| 24 C++ Lifting | `cxx_backend` | vtables, new/delete, constructors, namespaces |
+| 24 C++ Lifting | `cxx_backend` | **Unwired** until Phase 4 `LLVM-22`. Not a shipped `--output-lang cpp` writer. |
 | 25 CMake Generation | `module_cluster` | Emit `CMakeLists.txt` from module graph |
 
 ### Back-End (Stages 26–29): AST → Source Code

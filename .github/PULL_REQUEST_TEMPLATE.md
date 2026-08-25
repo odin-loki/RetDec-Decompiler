@@ -25,4 +25,6 @@
 
 ## Licence
 
-By submitting this pull request, I confirm that my contribution is made under the project's licence terms (AGPL-3.0+ with Imortek Section 7 additions, or an applicable commercial licence from Imortek).
+By submitting this pull request, I confirm that I have read [CLA.md](../CLA.md)
+and that my contribution is licensed under those terms (outbound relicensing
+to Imortek for AGPL-3.0+ and commercial).

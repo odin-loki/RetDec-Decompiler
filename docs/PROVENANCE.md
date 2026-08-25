@@ -25,6 +25,12 @@ See the root `LICENSE` for how to choose a path. `NOTICE` keeps the Avast attrib
 
 Relicensing MIT-origin code under AGPL-3.0+ / commercial is permitted. Stripping the MIT notice is not. This tree restores that notice.
 
+This fork's git history (all refs) contains a single author identity:
+`odin-loki <odin-loki@users.noreply.github.com>` (274 commits as of the
+Phase 1 `LEG-07` check; no `Co-authored-by` trailers). **Sole author of
+fork commits to date; no third-party GitHub contributions.** Upstream Avast
+files remain Avast's MIT-licensed work.
+
 ## How to classify a file
 
 Look at the file header, not the directory name alone.
@@ -126,7 +132,7 @@ Headers were restored by the 2017-rewrite heuristic, not by a per-file upstream 
 | `dce` | Imortek-new | |
 | `debug_info` | Imortek-new | |
 | `eh_reconstruct` | Imortek-new | |
-| `experimental` | Imortek-new | |
+| `experimental` | Imortek-new | Opt-in scaffold (`RETDEC_ENABLE_EXPERIMENTAL_SCAFFOLD`). Empty `task_*_scaffold` stubs; not a product pipeline. |
 | `func_boundary` | Imortek-new | |
 | `idiom_reconstruct` | Imortek-new | |
 | `ipa` | Imortek-new | |

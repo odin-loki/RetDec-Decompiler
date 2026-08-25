@@ -437,7 +437,7 @@ dependency graph and module layout.
 
 ---
 
-## GPU Acceleration (experimental, opt-in)
+## GPU acceleration (parked research, not a product feature)
 
 The in-tree **CUDA** (`src/cuda_accel`) and **OpenCL** (`src/opencl`)
 libraries are **experimental and unintegrated**: they are not wired into

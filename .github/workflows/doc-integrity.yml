@@ -29,3 +29,7 @@ jobs:
       - name: LEG-02 Avast MIT notice
         run: python scripts/ci/check_avast_mit_notice.py
 
+      - name: LEG-11 Keystone not installed
+        run: python scripts/ci/check_keystone_not_installed.py
+
+
