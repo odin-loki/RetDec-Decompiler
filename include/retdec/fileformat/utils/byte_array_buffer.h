@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/fileformat/utils/byte_array_buffer.h
  * @brief Array of bytes to std::istream abstraction.
- * @copyright (c) 2019 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_FILEFORMAT_UTILS_BYTE_ARRAY_BUFFER_H

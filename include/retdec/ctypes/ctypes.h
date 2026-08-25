@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/ctypes/ctypes.h
 * @brief File to include, when all ctypes files are needed.
-* @copyright (c) 2019 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_CTYPES_H

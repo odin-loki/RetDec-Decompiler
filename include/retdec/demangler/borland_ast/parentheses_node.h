@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/demangler/borland_ast/parentheses_node.h
 * @brief Representation of node that adds parentheses around another node in borland AST.
-* @copyright (c) 2019 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_PARENTHESES_NODE_H

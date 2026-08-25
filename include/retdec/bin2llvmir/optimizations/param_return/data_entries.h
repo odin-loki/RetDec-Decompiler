@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/bin2llvmir/optimizations/param_return/data_entries.h
 * @brief Data entries for parameter analysis.
-* @copyright (c) 2019 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_BIN2LLVMIR_OPTIMIZATIONS_PARAM_RETURN_DATA_ENTRIES_H

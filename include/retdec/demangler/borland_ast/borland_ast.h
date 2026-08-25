@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/demangler/borland_ast/borland_ast.h
 * @brief File to include, when all borland_ast node files are needed.
-* @copyright (c) 2019 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_BORLAND_AST_H

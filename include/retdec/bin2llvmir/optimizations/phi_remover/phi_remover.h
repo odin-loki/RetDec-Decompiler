@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/bin2llvmir/optimizations/phi_remover/phi_remover.h
  * @brief Remove all Phi nodes (instructions).
- * @copyright (c) 2019 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_BIN2LLVMIR_OPTIMIZATIONS_PHI_REMOVER_PHI_REMOVER_H

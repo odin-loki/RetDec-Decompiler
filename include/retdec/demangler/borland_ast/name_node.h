@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/demangler/borland_ast/name_node.h
 * @brief Representation of names in borland AST.
-* @copyright (c) 2019 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_NAME_NODE_H

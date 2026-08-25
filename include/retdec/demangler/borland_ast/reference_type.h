@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/demangler/borland_ast/reference_type.h
 * @brief Representation of L-value reference type in borland AST.
-* @copyright (c) 2019 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_REFERENCE_TYPE_H

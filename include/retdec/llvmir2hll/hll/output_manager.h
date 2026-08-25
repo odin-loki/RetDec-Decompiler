@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/llvmir2hll/hll/output_manager.h
 * @brief A base class of all output managers.
-* @copyright (c) 2019 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_LLVMIR2HLL_HLL_OUTPUT_MANAGER_H

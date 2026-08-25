@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/ctypes/named_type.h
 * @brief A representation of class and instantiated template class types.
-* @copyright (c) 2019 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_CTYPES_NAMED_TYPE_H

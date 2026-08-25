@@ -1,7 +1,8 @@
 /**
  * @file include/retdec/common/calling_convention.h
  * @brief Calling convention representation.
- * @copyright (c) 2019 Odin Loch Trading as Imortek
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
 #ifndef RETDEC_COMMON_CALLING_CONVENTION_H

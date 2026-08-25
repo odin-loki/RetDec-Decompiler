@@ -1,7 +1,8 @@
 /**
 * @file include/retdec/ctypesparser/type_config.h
 * @brief Defines type widths and singnedness for types that are implementation specific.
-* @copyright (c) 2019 Odin Loch Trading as Imortek
+* @copyright (c) 2017 Avast Software, licensed under the MIT license
+* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
 #ifndef RETDEC_DEFAULT_TYPE_CONFIG_H
