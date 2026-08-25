@@ -43,7 +43,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             file \
-            libfuse2 \
             qt6-base-dev \
             libqt6svg6 \
             libgl1-mesa-dev \
