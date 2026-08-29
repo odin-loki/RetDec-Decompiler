@@ -10,10 +10,11 @@ name: fuzz-pr
 # (src/fileformat/CMakeLists.txt). cmake -DRETDEC_FUZZ=ON on a clean runner
 # therefore builds the pinned Avast LLVM 8 fork — hours, not a PR smoke.
 # pull_request: option + source presence only (no LLVM configure).
-# workflow_dispatch + weekly schedule: Clang + RETDEC_FUZZ=ON, then ~30s
+# workflow_dispatch + weekly schedule: Clang + RETDEC_FUZZ=ON, then ~120s
 # libFuzzer per target if the build cache / compile succeeds.
 # FUZZ-02: libFuzzer corpora persist in actions/cache under fuzz-corpora/.
 # FUZZ-03: ELF seeds are compiled from tests/test_binaries/*.c when missing.
+# Other targets get existing small fixtures when present (skip-safe).
 
 on:
   pull_request:
@@ -120,7 +121,38 @@ jobs:
           echo "ELF seeds:"
           ls -la "${seed}" || true
 
-      - name: Run libFuzzer 30s per target
+      - name: Seed other corpora from existing fixtures
+        run: |
+          set -euo pipefail
+          seed_dir() {
+            local dest="$1"
+            shift
+            mkdir -p "${dest}"
+            local n=0
+            local f
+            for f in "$@"; do
+              if [[ -f "${f}" ]]; then
+                cp -n "${f}" "${dest}/" || true
+                n=$((n + 1))
+              fi
+            done
+            echo "seeded ${dest}: ${n} file(s)"
+          }
+
+          shopt -s nullglob
+          seed_dir fuzz-corpora/fuzz_lua tests/managed_integration/fixtures/lua/*.lua
+          seed_dir fuzz-corpora/fuzz_pyc tests/managed_integration/fixtures/python/*.py
+          seed_dir fuzz-corpora/fuzz_wasm tests/managed_integration/fixtures/wasm/*.wat
+
+          # PE / Mach-O / JAR / APK / PDB: copy only files that exist; do not invent binaries.
+          shopt -s globstar
+          seed_dir fuzz-corpora/fuzz_pe tests/**/*.exe tests/**/*.dll tests/**/*.pe
+          seed_dir fuzz-corpora/fuzz_macho tests/**/*.dylib tests/**/*.macho
+          seed_dir fuzz-corpora/fuzz_jar tests/**/*.jar
+          seed_dir fuzz-corpora/fuzz_apk tests/**/*.apk
+          seed_dir fuzz-corpora/fuzz_pdb tests/**/*.pdb
+
+      - name: Run libFuzzer 120s per target
         run: |
           set -euo pipefail
           BIN_DIR="build/linux/tests/managed_integration/fuzz"
@@ -137,9 +169,9 @@ jobs:
             fi
             corpus="${GITHUB_WORKSPACE}/fuzz-corpora/${name}"
             mkdir -p "${corpus}"
-            echo "=== ${name} -max_total_time=30 ==="
+            echo "=== ${name} -max_total_time=120 ==="
             "${bin}" "${corpus}" \
-              -max_total_time=30 \
+              -max_total_time=120 \
               -jobs=1 \
               -workers=1 \
               -max_len=65536 \
