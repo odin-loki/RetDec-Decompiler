@@ -102,6 +102,45 @@ jobs:
           if [ -z "$FIB" ]; then echo "fib_smoke fixture not found"; exit 1; fi
           bash scripts/ci/check_cache_differential.sh --decompiler "$DEC" --binary "$FIB"
 
+          CORPUS="tests/algorithm_recovery/corpus"
+          mapfile -t NAMES < <(python3 -c "
+          import importlib.util
+          spec = importlib.util.spec_from_file_location(
+              'extract', 'scripts/extract_decompiler_predictions.py')
+          mod = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          print('\n'.join(mod.CI_CORE_NAMES))
+          ")
+          EXTRA=()
+          MISSING=()
+          for name in "${NAMES[@]}"; do
+            cand=""
+            if [ -f "${CORPUS}/${name}" ]; then
+              cand="${CORPUS}/${name}"
+            elif [ -f "${CORPUS}/${name}.exe" ]; then
+              cand="${CORPUS}/${name}.exe"
+            else
+              cand="$(find build/linux \( -name "${name}" -o -name "${name}.exe" \) -type f 2>/dev/null | head -n1)"
+            fi
+            if [ -n "${cand}" ] && [ -f "${cand}" ]; then
+              EXTRA+=("${cand}")
+            else
+              MISSING+=("${name}")
+            fi
+          done
+          if [ ${#EXTRA[@]} -eq 0 ]; then
+            echo "CACHE-05: skipping ci-core extras — no CI_CORE_NAMES binaries under ${CORPUS} or build/linux (algorithm-recovery should have built the corpus)"
+          else
+            if [ ${#MISSING[@]} -gt 0 ]; then
+              echo "CACHE-05: ${#MISSING[@]} ci-core name(s) not found, checking ${#EXTRA[@]} present: ${MISSING[*]}"
+            fi
+            ARGS=()
+            for b in "${EXTRA[@]}"; do
+              ARGS+=(--binary "$b")
+            done
+            bash scripts/ci/check_cache_differential.sh --decompiler "$DEC" --timeout 90 "${ARGS[@]}"
+          fi
+
       - name: Filename-rename integrity guard
         run: |
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
