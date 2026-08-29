@@ -9,7 +9,8 @@
     as a normal build).  This script:
       1. Loads vcvars64 (same helper as windows_native_build.ps1).
       2. Reconfigures CMAKE_CXX_FLAGS_RELEASE with /Zi and linker /DEBUG:FULL.
-      3. Rebuilds retdec-gui and its dependencies (qwen3, panels, etc.).
+      3. Rebuilds retdec-gui and panels. Neural is RETDEC_NEURAL_REFINE
+         (no src/qwen3; qwen3 is not a GUI dependency).
       4. Mirrors dist\windows → dist\windows\debuggable and overwrites
          retdec-gui.exe + retdec-gui.pdb from the build tree.
 
@@ -107,7 +108,7 @@ cmake `
 if ($LASTEXITCODE -ne 0) { Write-Error "CMake reconfigure failed: $LASTEXITCODE"; exit $LASTEXITCODE }
 
 Write-Host ""
-Write-Host "=== Rebuild retdec-gui (pulls qwen3, panels, …) ===" -ForegroundColor Cyan
+Write-Host "=== Rebuild retdec-gui and panels (RETDEC_NEURAL_REFINE; no src/qwen3) ===" -ForegroundColor Cyan
 cmake --build $BuildDirFull --config Release --parallel $Jobs --target retdec-gui
 if ($LASTEXITCODE -ne 0) { Write-Error "Build failed: $LASTEXITCODE"; exit $LASTEXITCODE }
 

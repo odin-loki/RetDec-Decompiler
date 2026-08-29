@@ -22,7 +22,7 @@ if [[ "${1:-}" == "--build" ]]; then
     cmake -S "$REPO_ROOT" -B "$BUILD_DIR" \
         -DCMAKE_BUILD_TYPE=Release \
         -DRETDEC_ENABLE_ALL=OFF \
-        -DRETDEC_ENABLE_CUDA_ACCEL=ON
+        -DRETDEC_ENABLE_CUDA_ACCEL=OFF  # product default; C-CUDA-PIPE withdrawn
     cmake --build "$BUILD_DIR" --target retdec-gui --parallel "$(nproc)"
     echo ">>> Build done."
 fi

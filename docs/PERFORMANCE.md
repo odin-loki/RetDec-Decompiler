@@ -69,7 +69,7 @@ fast default-quality path. Neural refine is a separate cost axis.
 
 ## CUDA
 
-CUDA acceleration is **optional** and **off by default in CI** (`RETDEC_ENABLE_CUDA_ACCEL=OFF`).
+CUDA acceleration is **optional** and **off by default** in CI and full presets (`RETDEC_ENABLE_CUDA_ACCEL=OFF`; `C-CUDA-PIPE` withdrawn).
 Post-LLVM analysis detectors (container, sort, algo) run on CPU; see
 [GUI_PHASE_D.md](internal/GUI_PHASE_D.md) for the product decision.
 

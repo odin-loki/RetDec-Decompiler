@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 leftover scripts: `launch_gui.sh` defaults CUDA accel OFF; Windows GUI rebuild no longer lists `qwen3` as a dependency.
 - Phase 1 `SEC-09`: `SECURITY.md` states bundled OpenSSL 3.2.6 is not a FIPS module.
 - Phase 1 `LEG-01`: provenance CI text also names `docs/doxygen/` as scanned.
 - Phase 1 `QUAL-07`: GNU/Linux Release defines `_GLIBCXX_ASSERTIONS` and `_FORTIFY_SOURCE=3` after `deps/` so LLVM is unchanged.
