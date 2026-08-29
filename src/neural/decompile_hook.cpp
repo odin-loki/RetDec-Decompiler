@@ -8,6 +8,7 @@
 #include "retdec/common/storage.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -19,6 +20,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #ifdef RETDEC_HAS_TREE_SITTER
@@ -42,11 +44,20 @@ std::string modelPathFromEnv()
 	return p ? std::string(p) : std::string();
 }
 
+int envInt(const char* name, int fallback)
+{
+	const char* v = std::getenv(name);
+	if (!v || !v[0]) return fallback;
+	while (*v == ' ' || *v == '\t') ++v;
+	int n = 0;
+	const auto r = std::from_chars(v, v + std::strlen(v), n);
+	if (r.ec != std::errc{}) return fallback;
+	return n;
+}
+
 int tierMaxFromEnv()
 {
-	const char* t = std::getenv("RETDEC_NEURAL_TIER_MAX");
-	if (!t || !t[0]) return 3;
-	const int v = std::atoi(t);
+	const int v = envInt("RETDEC_NEURAL_TIER_MAX", 3);
 	return v < 1 ? 1 : (v > 5 ? 5 : v);
 }
 
@@ -58,14 +69,6 @@ float envFloat(const char* name, float fallback)
 	const float x = std::strtof(v, &end);
 	if (end == v) return fallback;
 	return x;
-}
-
-int envInt(const char* name, int fallback)
-{
-	const char* v = std::getenv(name);
-	if (!v || !v[0]) return fallback;
-	const int n = std::atoi(v);
-	return n == 0 && v[0] != '0' ? fallback : n;
 }
 
 void writeSidecar(const std::string& basePath, const std::string& refined, const std::string& manifest)
@@ -250,12 +253,8 @@ RefinePassResult runTieredRefine(Refiner& refiner, std::string current, const st
 			req.generation.grammarGbnf = namingRenameMapGbnf();
 			req.generation.grammarRoot = "root";
 		}
-		const char* maxTok = std::getenv("RETDEC_NEURAL_MAX_TOKENS");
-		if (maxTok && maxTok[0])
-		{
-			const int n = std::atoi(maxTok);
-			if (n > 0) req.generation.maxTokens = n;
-		}
+		const int n = envInt("RETDEC_NEURAL_MAX_TOKENS", 0);
+		if (n > 0) req.generation.maxTokens = n;
 
 		const auto resp = refiner.refine(req);
 		result.manifest = resp.manifestJson;
@@ -823,11 +822,8 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 		}
 	}
 	int ctxLen = 4096;
-	if (const char* ctxEnv = std::getenv("RETDEC_NEURAL_CTX"))
-	{
-		const int v = std::atoi(ctxEnv);
-		if (v >= 512) ctxLen = v;
-	}
+	const int v = envInt("RETDEC_NEURAL_CTX", 0);
+	if (v >= 512) ctxLen = v;
 	if (!backend->loadModel(model, ctxLen))
 	{
 		std::fprintf(stderr, "retdec-neural: failed to load GGUF: %s\n", model.c_str());

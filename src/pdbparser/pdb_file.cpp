@@ -150,7 +150,7 @@ bool PDBFile::save_streams_to_files(void)
 	for (unsigned int i = 0; i < num_streams;i++)
 	{
 		char stream_filename[MAX_PATH+4];
-		sprintf(stream_filename,"%s.%03d",pdb_filename,i);
+		std::snprintf(stream_filename, sizeof(stream_filename), "%s.%03d", pdb_filename, i);
 		FILE *fs = fopen(stream_filename,"wb");
 		if (fs == nullptr)
 			return false;

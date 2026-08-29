@@ -7,8 +7,9 @@
 #include <QByteArray>
 #include <QtGlobal>
 
-#include <cstdlib>
+#include <charconv>
 #include <cstring>
+#include <system_error>
 
 namespace retdec::gui {
 namespace {
@@ -18,6 +19,16 @@ bool envHeadless() {
     if (v.isEmpty()) return false;
     return v == "1" || qstricmp(v.constData(), "true") == 0 || qstricmp(v.constData(), "yes") == 0
            || qstricmp(v.constData(), "on") == 0;
+}
+
+int parseIntOrZero(const char* s)
+{
+    if (!s || !s[0]) return 0;
+    while (*s == ' ' || *s == '\t') ++s;
+    int n = 0;
+    const auto r = std::from_chars(s, s + std::strlen(s), n);
+    if (r.ec != std::errc{}) return 0;
+    return n;
 }
 
 } // namespace
@@ -46,7 +57,7 @@ ParsedLaunchOptions parseLaunchOptions(int argc, char** argv) {
         }
         if (std::strcmp(argv[i], "--headless-exit-ms") == 0 && i + 1 < argc) {
             out.headless = true;
-            out.headlessExitMs = std::atoi(argv[i + 1]);
+            out.headlessExitMs = parseIntOrZero(argv[i + 1]);
             ++i;
             continue;
         }
@@ -55,7 +66,7 @@ ParsedLaunchOptions parseLaunchOptions(int argc, char** argv) {
         const std::size_t klen = std::strlen(k);
         if (std::strncmp(a, k, klen) == 0) {
             out.headless = true;
-            out.headlessExitMs = std::atoi(a + klen);
+            out.headlessExitMs = parseIntOrZero(a + klen);
             continue;
         }
         out.argStorage.emplace_back(argv[i]);

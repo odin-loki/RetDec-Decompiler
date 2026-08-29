@@ -6,7 +6,10 @@
  */
 
 #include <algorithm>
+#include <charconv>
 #include <sstream>
+#include <string>
+#include <system_error>
 
 #include "retdec/common/tool_info.h"
 #include "retdec/utils/string.h"
@@ -205,12 +208,21 @@ void ToolInfo::setVersion(const std::string& n)
 	}
 	while(false);
 
-	// Sometimes version can not be parsed - e.g. 'delphi bobsoft mini?', 'borland delphi 6.0 - 7.0'.
-	// atoi() can handle this, stoi() throw an exception.
-	//
-	if (!tmpMaj.empty()) _majorVersion = atoi(tmpMaj.c_str());
-	if (!temMin.empty()) _minorVersion = atoi(temMin.c_str());
-	if (!temPat.empty()) _patchVersion = atoi(temPat.c_str());
+	// Sometimes version cannot be parsed - e.g. 'delphi bobsoft mini?',
+	// 'borland delphi 6.0 - 7.0'. from_chars does not throw (unlike stoi).
+	auto parsePart = [](const std::string& s) -> unsigned {
+		if (s.empty()) return 0;
+		unsigned n = 0;
+		const char* first = s.data();
+		const char* last = s.data() + s.size();
+		while (first < last && (*first == ' ' || *first == '\t')) ++first;
+		const auto r = std::from_chars(first, last, n);
+		if (r.ec != std::errc{}) return 0;
+		return n;
+	};
+	if (!tmpMaj.empty()) _majorVersion = parsePart(tmpMaj);
+	if (!temMin.empty()) _minorVersion = parsePart(temMin);
+	if (!temPat.empty()) _patchVersion = parsePart(temPat);
 }
 
 /**

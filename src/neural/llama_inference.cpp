@@ -9,9 +9,12 @@
 #include "retdec/neural/inference.h"
 #include "retdec/neural/model_verify.h"
 
+#include <charconv>
 #include <cstdlib>
+#include <cstring>
 #include <mutex>
 #include <string>
+#include <system_error>
 
 #if defined(RETDEC_HAS_LLAMACPP)
 #include "llama.h"
@@ -75,7 +78,11 @@ int envInt(const char* name, int fallback)
 {
 	const char* v = std::getenv(name);
 	if (!v || !v[0]) return fallback;
-	return std::atoi(v);
+	while (*v == ' ' || *v == '\t') ++v;
+	int n = 0;
+	const auto r = std::from_chars(v, v + std::strlen(v), n);
+	if (r.ec != std::errc{}) return fallback;
+	return n;
 }
 
 bool envFlag(const char* name)
