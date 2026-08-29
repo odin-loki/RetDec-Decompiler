@@ -84,7 +84,8 @@ static std::vector<uint8_t> readLocalEntry(const uint8_t* data, size_t size,
     if (dataStart + cd.compressedSize > size) return {};
 
     if (cd.method == 0) {
-        // STORED
+        // STORED — trust remaining input, not the ZIP size field (zip bomb).
+        if (cd.uncompressedSize > size - dataStart) return {};
         return std::vector<uint8_t>(data + dataStart,
                                     data + dataStart + cd.uncompressedSize);
     }

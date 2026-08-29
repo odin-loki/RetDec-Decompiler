@@ -23,6 +23,8 @@
 #include "retdec/dex_parser/dex_apk_reader.h"
 
 #include <cstring>
+#include <cstdint>
+#include <string>
 #include <vector>
 
 using namespace retdec::dex_parser;
@@ -723,6 +725,78 @@ TEST(ApkReader, RejectsBadZip) {
     ApkReader reader;
     auto result = reader.readApk(garbage);
     EXPECT_EQ(ApkReadResult::Error, result.status);
+}
+
+static void appendU16le(std::vector<uint8_t>& v, uint16_t x)
+{
+    v.push_back(static_cast<uint8_t>(x));
+    v.push_back(static_cast<uint8_t>(x >> 8));
+}
+
+static void appendU32le(std::vector<uint8_t>& v, uint32_t x)
+{
+    v.push_back(static_cast<uint8_t>(x));
+    v.push_back(static_cast<uint8_t>(x >> 8));
+    v.push_back(static_cast<uint8_t>(x >> 16));
+    v.push_back(static_cast<uint8_t>(x >> 24));
+}
+
+static std::vector<uint8_t> storedZipClaimedUncomp(
+        const std::string& name,
+        const std::vector<uint8_t>& payload,
+        uint32_t claimedUncomp)
+{
+    std::vector<uint8_t> z;
+    appendU32le(z, 0x04034b50u);
+    appendU16le(z, 20);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU32le(z, 0);
+    appendU32le(z, static_cast<uint32_t>(payload.size()));
+    appendU32le(z, claimedUncomp);
+    appendU16le(z, static_cast<uint16_t>(name.size()));
+    appendU16le(z, 0);
+    z.insert(z.end(), name.begin(), name.end());
+    z.insert(z.end(), payload.begin(), payload.end());
+    const uint32_t cdOff = static_cast<uint32_t>(z.size());
+    appendU32le(z, 0x02014b50u);
+    appendU16le(z, 20);
+    appendU16le(z, 20);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU32le(z, 0);
+    appendU32le(z, static_cast<uint32_t>(payload.size()));
+    appendU32le(z, claimedUncomp);
+    appendU16le(z, static_cast<uint16_t>(name.size()));
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU32le(z, 0);
+    appendU32le(z, 0);
+    z.insert(z.end(), name.begin(), name.end());
+    const uint32_t cdSize = static_cast<uint32_t>(z.size() - cdOff);
+    appendU32le(z, 0x06054b50u);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 1);
+    appendU16le(z, 1);
+    appendU32le(z, cdSize);
+    appendU32le(z, cdOff);
+    appendU16le(z, 0);
+    return z;
+}
+
+TEST(ApkReader, StoredClaimExceedsRemaining) {
+    auto zip = storedZipClaimedUncomp("classes.dex", {0x64, 0x65, 0x78, 0x0a}, 0xFFFFFFF0u);
+    ApkReader reader;
+    auto result = reader.readApk(zip);
+    EXPECT_EQ(ApkReadResult::PartialError, result.status);
+    EXPECT_FALSE(result.warnings.empty());
 }
 
 TEST(ApkReader, AppliesProGuardMapping) {

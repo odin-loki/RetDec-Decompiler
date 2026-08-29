@@ -22,7 +22,9 @@
 #include "retdec/jvm_parser/jvm_lifter.h"
 
 #include <gtest/gtest.h>
+#include <cstdint>
 #include <cstring>
+#include <string>
 #include <vector>
 
 using namespace retdec::jvm_parser;
@@ -631,6 +633,80 @@ TEST(JarReader, ListEntriesEmpty) {
     JarReader reader;
     auto entries = reader.listEntries(bad, sizeof(bad));
     EXPECT_TRUE(entries.empty());
+}
+
+static void appendU16le(std::vector<uint8_t>& v, uint16_t x)
+{
+    v.push_back(static_cast<uint8_t>(x));
+    v.push_back(static_cast<uint8_t>(x >> 8));
+}
+
+static void appendU32le(std::vector<uint8_t>& v, uint32_t x)
+{
+    v.push_back(static_cast<uint8_t>(x));
+    v.push_back(static_cast<uint8_t>(x >> 8));
+    v.push_back(static_cast<uint8_t>(x >> 16));
+    v.push_back(static_cast<uint8_t>(x >> 24));
+}
+
+// Minimal STORED ZIP whose central-directory uncompressed size exceeds remaining
+// payload bytes (zip-bomb style). Must not allocate the claimed size.
+static std::vector<uint8_t> storedZipClaimedUncomp(
+        const std::string& name,
+        const std::vector<uint8_t>& payload,
+        uint32_t claimedUncomp)
+{
+    std::vector<uint8_t> z;
+    appendU32le(z, 0x04034b50u);
+    appendU16le(z, 20);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU32le(z, 0);
+    appendU32le(z, static_cast<uint32_t>(payload.size()));
+    appendU32le(z, claimedUncomp);
+    appendU16le(z, static_cast<uint16_t>(name.size()));
+    appendU16le(z, 0);
+    z.insert(z.end(), name.begin(), name.end());
+    z.insert(z.end(), payload.begin(), payload.end());
+    const uint32_t cdOff = static_cast<uint32_t>(z.size());
+    appendU32le(z, 0x02014b50u);
+    appendU16le(z, 20);
+    appendU16le(z, 20);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU32le(z, 0);
+    appendU32le(z, static_cast<uint32_t>(payload.size()));
+    appendU32le(z, claimedUncomp);
+    appendU16le(z, static_cast<uint16_t>(name.size()));
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU32le(z, 0);
+    appendU32le(z, 0);
+    z.insert(z.end(), name.begin(), name.end());
+    const uint32_t cdSize = static_cast<uint32_t>(z.size() - cdOff);
+    appendU32le(z, 0x06054b50u);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 1);
+    appendU16le(z, 1);
+    appendU32le(z, cdSize);
+    appendU32le(z, cdOff);
+    appendU16le(z, 0);
+    return z;
+}
+
+TEST(JarReader, StoredClaimExceedsRemaining) {
+    auto zip = storedZipClaimedUncomp("Foo.class", {0x00, 0x01, 0x02, 0x03}, 0xFFFFFFF0u);
+    JarReader reader;
+    auto res = reader.read(zip.data(), zip.size());
+    EXPECT_TRUE(res.ok);
+    EXPECT_GE(res.parseErrors, 1u);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

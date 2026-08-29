@@ -145,7 +145,8 @@ std::vector<uint8_t> ApkReader::extractEntry(const uint8_t* data, size_t size,
     if (dataOff + entry.compressedSize > size) return {};
 
     if (entry.method == 0) {
-        // Stored
+        // STORED — trust remaining input, not the ZIP size field (zip bomb).
+        if (entry.uncompressedSize > size - dataOff) return {};
         return std::vector<uint8_t>(data + dataOff,
                                     data + dataOff + entry.uncompressedSize);
     } else {
