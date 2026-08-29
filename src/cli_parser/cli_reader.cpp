@@ -10,6 +10,7 @@
 #include <cassert>
 #include <cstring>
 #include <fstream>
+#include <stdexcept>
 #include <vector>
 
 namespace retdec {
@@ -135,7 +136,7 @@ CliReadResult CLIReader::read(const uint8_t* data, size_t size,
         try {
             BcClass cls = buildClass(ti, result);
             module.addClass(std::move(cls));
-        } catch (...) {
+        } catch (const std::exception&) {
             ++result.parseErrorCount;
         }
     }
@@ -260,7 +261,7 @@ BcClass CLIReader::buildClass(uint32_t typeDefIdx, CliReadResult& result) const 
         try {
             auto f = buildField(fi);
             cls.fields.push_back(std::move(f));
-        } catch (...) { ++result.parseErrorCount; }
+        } catch (const std::exception&) { ++result.parseErrorCount; }
     }
     result.fieldCount += static_cast<uint32_t>(cls.fields.size());
 
@@ -275,7 +276,7 @@ BcClass CLIReader::buildClass(uint32_t typeDefIdx, CliReadResult& result) const 
         try {
             auto m = buildMethod(mi, result);
             cls.methods.push_back(std::move(m));
-        } catch (...) { ++result.parseErrorCount; }
+        } catch (const std::exception&) { ++result.parseErrorCount; }
     }
     result.methodDefCount += static_cast<uint32_t>(cls.methods.size());
 

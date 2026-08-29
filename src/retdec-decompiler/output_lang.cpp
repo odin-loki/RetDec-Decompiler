@@ -86,7 +86,7 @@ OutputLangId defaultOutputLangForManaged(ManagedFormat fmt)
 	if (const char* hint = managedOutputLangHint(fmt)) {
 		try {
 			return parseOutputLang(hint);
-		} catch (...) {
+		} catch (const std::exception&) {
 			return OutputLangId::C;
 		}
 	}

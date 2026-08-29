@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <stdexcept>
 
 namespace retdec {
 namespace jvm_parser {
@@ -114,7 +115,11 @@ int JarReader::multiReleaseVersion(const std::string& path) const {
     if (slash == std::string::npos) return 0;
     try {
         return std::stoi(path.substr(start, slash - start));
-    } catch (...) { return 0; }
+    } catch (const std::invalid_argument&) {
+        return 0;
+    } catch (const std::out_of_range&) {
+        return 0;
+    }
 }
 
 std::string JarReader::stripMRPrefix(const std::string& path) const {

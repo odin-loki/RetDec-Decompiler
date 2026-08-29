@@ -240,7 +240,7 @@ ManagedFormat detectManagedFormat(const std::string& path)
 	{
 		buf = slurp(path);
 	}
-	catch (...)
+	catch (const std::exception&)
 	{
 		return ManagedFormat::Unknown;
 	}

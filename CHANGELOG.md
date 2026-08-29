@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `QUAL-04`: Imortek parsers catch `invalid_argument` / `out_of_range` / `exception` instead of `...`.
 - Phase 1 leftover: name-blind F1 0.056/0.126 in maintainer docs; `RETDEC_AUDIT.md` marked a snapshot; `--output-lang cpp` not done; `demo_v1.0.0.sh` follows CMake `VERSION`.
 - Phase 1 `QUAL-01`: warn-only clang-tidy also covers `src/codegen`, `src/ssa`, and `src/algo_recover`.
 - Phase 1 `QUAL-06`: GNU/Clang `-Werror` on `retdec-neural` and `retdec-gui-launch` (not Qt panels; not codegen, whose public headers warn).

@@ -10,6 +10,7 @@
 #include <cstring>
 #include <regex>
 #include <sstream>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -136,7 +137,10 @@ PtxOperand PtxParser::parseOperand(const std::string& tok) const {
         { op.fltVal = std::stod(tok); op.isFloat = true; }
         else
             op.immVal = std::stoll(tok);
-    } catch (...) {
+    } catch (const std::invalid_argument&) {
+        op.kind = PtxOperandKind::Label;
+        op.name = tok;
+    } catch (const std::out_of_range&) {
         op.kind = PtxOperandKind::Label;
         op.name = tok;
     }
@@ -292,7 +296,9 @@ PtxModule PtxParser::parse(const std::string& src) {
             std::string sm = toks[1];
             auto p = sm.find("sm_");
             if (p != std::string::npos) {
-                try { mod.smVersion = std::stoi(sm.substr(p + 3)); } catch (...) {}
+                try { mod.smVersion = std::stoi(sm.substr(p + 3)); }
+                catch (const std::invalid_argument&) {}
+                catch (const std::out_of_range&) {}
             }
             continue;
         }

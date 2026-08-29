@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <set>
+#include <stdexcept>
 
 namespace retdec {
 namespace jvm_parser {
@@ -504,7 +505,7 @@ BcInstruction JvmLifter::decodeInstr(
                     i.operands.push_back(BcIntOperand{(int64_t)idx});
                     i.effect = {0,1};
                 }
-            } catch (...) {
+            } catch (const std::exception&) {
                 i.opcode = BcOpcode::PushInt;
                 i.operands.push_back(BcIntOperand{idx});
                 i.effect = {0,1};
@@ -527,7 +528,7 @@ BcInstruction JvmLifter::decodeInstr(
                 i.opcode = BcOpcode::PushDouble;
                 i.operands.push_back(BcFloatOperand{std::get<CpDouble>(pool_.entry(idx)).value});
             }
-        } catch (...) {
+        } catch (const std::exception&) {
             i.opcode = BcOpcode::PushLong;
             i.operands.push_back(BcIntOperand{idx});
         }

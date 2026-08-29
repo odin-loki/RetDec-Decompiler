@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstring>
 #include <sstream>
+#include <stdexcept>
 
 namespace retdec {
 namespace pyc_parser {
@@ -163,7 +164,9 @@ bool MarshalReader::readNullTerminatedFloat(double& out) {
     if (!readString(s, len)) return false;
     try {
         out = std::stod(s);
-    } catch (...) {
+    } catch (const std::invalid_argument&) {
+        out = 0.0;
+    } catch (const std::out_of_range&) {
         out = 0.0;
     }
     return true;
