@@ -44,6 +44,8 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | `build_and_test.sh` | WSL: native debug build + tests, then MinGW cross-compile and stage `dist/windows/` |
 | `test_windows.bat` | Smoke tests in `dist/windows` (or set `RETDEC_WIN_RUNTIME`); run from repo: `scripts\\test_windows.bat` |
 | `run_coverage.sh` | `core-coverage` preset + lcov HTML under `docs/coverage/` |
+| `setup_qwen3.sh` | leftover GGUF helper for `RETDEC_NEURAL_MODEL` (not a shipped Qwen3 runner). Neural path is `RETDEC_NEURAL_REFINE` |
+| `download_and_run_qwen3.sh` | leftover wrapper that builds an external llama.cpp server (does not ship). Product path is `RETDEC_NEURAL_REFINE` (`C-QWEN3-GPU` withdrawn) |
 | `run_all_tests.sh` | CTest + optional PE smoke / Valgrind; auto-picks `build/linux` or `build/`; smoke PE from `dist/windows` or legacy `build-win/...` (`BUILD`, `SMOKE_BIN` override) |
 | `run_asan.sh` | ASan+LSan decompiler run; binary under `build/linux` or `build/`, test PE under `dist/windows` or `build-win/win-runtime` |
 | `superbuild-build-all-linux.sh` | Superbuild (GCC): `superbuild-debug` + `superbuild-release` under `build/linux/<preset>/`; optional `SUPERBUILD_MINGW=1`, `SUPERBUILD_CLANG=1` |

@@ -49,7 +49,7 @@ HF_REPO="bartowski/Qwen3-Coder-30B-A3B-Instruct-GGUF"
 MODEL_FILE="Qwen3-Coder-30B-A3B-Instruct-${QUANT}.gguf"
 
 echo "============================================================"
-echo " RetDec Qwen3 Setup"
+echo " Leftover GGUF helper for RETDEC_NEURAL_MODEL, not a shipped Qwen3 runner"
 echo "============================================================"
 echo " Model:     Qwen3-Coder-30B-A3B-Instruct"
 echo " Quantised: ${QUANT}  (file: ${MODEL_FILE})"

@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `DOC-06`: leftover Qwen setup scripts no longer claim RetDec queries llama-server.
 - Phase 1 `DEAD-04`: `cuda_accel` CMake comments mark the module parked (`C-CUDA-PIPE` withdrawn).
 - Phase 1 leftover: `BUILD_REFERENCE.md` `ctest-linux` row names QUAL-01, CACHE-05, and ELF hardening.
 - Phase 1 leftover: maintainer migration notes record live name-blind F1 floors 0.12 / 0.05 (0.95 is not the live gate).

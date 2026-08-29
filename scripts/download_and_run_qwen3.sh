@@ -73,8 +73,8 @@ fi
 RUNNER="$HOME/.retdec/run_qwen3_server.sh"
 cat > "$RUNNER" << SCRIPT
 #!/usr/bin/env bash
-# Starts the Qwen3 inference server on http://localhost:8080
-# OpenAI-compatible API — RetDec can query it for decompilation hints.
+# Starts an external llama-server on http://localhost:8080.
+# RetDec does not query llama-server. Product path is RETDEC_NEURAL_REFINE (C-QWEN3-GPU withdrawn).
 export PATH="/usr/local/cuda/bin:\$PATH"
 export LD_LIBRARY_PATH="/usr/local/cuda/lib64:\$LD_LIBRARY_PATH"
 
