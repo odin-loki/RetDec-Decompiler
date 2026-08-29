@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `SEC-03`: refinement prompts mark semantic-context JSON as untrusted data.
 - Phase 1 `LEG-01`: restore Avast MIT `\copyright` on `retdec.h` / `llvmir2hll.h` / `unpackertool.h`; MIT-notice CI matches both `@copyright` and `\copyright`.
 - Phase 1 `QUAL-04`: codegen `stoll` parse failures catch `invalid_argument` / `out_of_range` instead of `...`.
 - Phase 1 `FUZZ-02`/`FUZZ-03`: weekly libFuzzer runs 120s/target and seeds lua/python/wasm fixtures when present.

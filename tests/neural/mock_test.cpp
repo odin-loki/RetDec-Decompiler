@@ -845,6 +845,7 @@ TEST(NeuralPrompt, IncludesSemanticContextWhenSet)
 	const std::string p = buildRefinementPrompt(req);
 	EXPECT_NE(p.find("Semantic context (JSON):"), std::string::npos);
 	EXPECT_NE(p.find("\"used_crypto\":[\"AES\"]"), std::string::npos);
+	EXPECT_NE(p.find("UNTRUSTED DATA"), std::string::npos);
 	EXPECT_NE(p.find("Function source:"), std::string::npos);
 }
 
