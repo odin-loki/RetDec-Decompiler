@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 leftover: pyc marshal fixtures use CPython `TYPE_SMALL_TUPLE` `')'` / `TYPE_TUPLE` `'('`.
 - Phase 1 leftover: Qwen trace helper points at `RETDEC_NEURAL_REFINE`; GUI copy names native output as C (`C-QWEN3-GPU` withdrawn).
 - Phase 1 `QUAL-01`: warn-only clang-tidy also covers `src/cli_parser`, `src/crypto_detect`, and `src/sort_detect`.
 - Phase 1 `FUZZ-05`: JAR/APK STORED ZIP entries whose claimed uncompressed size exceeds remaining input are skipped (no huge alloc).

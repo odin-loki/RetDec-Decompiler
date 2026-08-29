@@ -36,8 +36,8 @@
  * | 'z'  | TYPE_SHORT_ASCII | len:uint8 + ASCII bytes                       |
  * | 'Z'  | TYPE_SHORT_ASCII_INTERNED | len:uint8 + ASCII bytes, interned   |
  * | 'B'  | TYPE_BYTES       | len:int32 + bytes (Python 3)                  |
- * | '('  | TYPE_SMALL_TUPLE | n:uint8 + n objects                           |
- * | ')'  | TYPE_TUPLE       | n:int32 + n objects                           |
+ * | '('  | TYPE_TUPLE       | n:int32 + n objects                           |
+ * | ')'  | TYPE_SMALL_TUPLE | n:uint8 + n objects                           |
  * | '['  | TYPE_LIST        | n:int32 + n objects                           |
  * | '{'  | TYPE_DICT        | alternating k, v until TYPE_NULL key          |
  * | '<'  | TYPE_SET         | n:int32 + n objects                           |

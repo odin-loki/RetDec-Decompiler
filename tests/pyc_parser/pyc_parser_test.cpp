@@ -91,12 +91,12 @@ struct MarshalBuilder {
     }
 
     void smallTuple(uint8_t n) {
-        byte('(');
+        byte(')');
         buf.push_back(n);
     }
 
     void tuple(uint32_t n) {
-        byte(')');
+        byte('(');
         for (int i = 0; i < 4; ++i) buf.push_back((n >> (8*i)) & 0xFF);
     }
 
@@ -640,20 +640,20 @@ static std::vector<uint8_t> buildMinimalPyc38() {
     buf.push_back(83);  buf.push_back(0); // RETURN_VALUE
 
     // co_consts: (None,) — small tuple of 1 element
-    buf.push_back('('); buf.push_back(1); // SMALL_TUPLE size=1
+    buf.push_back(')'); buf.push_back(1); // SMALL_TUPLE size=1
     buf.push_back('N'); // None
 
     // co_names: ()
-    buf.push_back('('); buf.push_back(0);
+    buf.push_back(')'); buf.push_back(0);
 
     // co_varnames: ()
-    buf.push_back('('); buf.push_back(0);
+    buf.push_back(')'); buf.push_back(0);
 
     // co_freevars: ()
-    buf.push_back('('); buf.push_back(0);
+    buf.push_back(')'); buf.push_back(0);
 
     // co_cellvars: ()
-    buf.push_back('('); buf.push_back(0);
+    buf.push_back(')'); buf.push_back(0);
 
     // co_filename: SHORT_ASCII "<string>"
     buf.push_back('z');
