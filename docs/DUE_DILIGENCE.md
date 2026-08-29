@@ -1,8 +1,8 @@
 # Due diligence register
 
 Responses to the blocking findings in [`Plan.md`](../Plan.md) Part 2.
-This file is the pre-empting artefact (`BIZ-04`). Status is as of the
-Phase 0 documentation pass (2026-08-25).
+This file is the pre-empting artefact (`BIZ-04`). Phase 0 docs landed
+2026-08-25; Phase 1 is largely in CHANGELOG [2.0.21].
 
 | ID | Finding | Response | Residual |
 |----|---------|----------|----------|
@@ -27,9 +27,19 @@ Phase 0 documentation pass (2026-08-25).
 
 ## Not in this pass
 
-Phase 1 (legal headers, dead modules, cache hash, releases, CI truth) and
-later phases. `DEAD-02`/`DEAD-03` stay in-tree because their tests exist.
-`CI-02` stem-fallback deletion is blocked by `tests/algorithm_recovery/test_labels.py`.
-`SAN-04` (ASan on every PR) is not the 360-minute weekly job. LLVM pin is Track 2.
-GitHub secret scanning and push protection are enabled; Dependabot security
-updates and private vulnerability reporting were turned on 2026-08-25 (`CI-10`).
+Phase 1 is largely landed in CHANGELOG [2.0.21]. Leftovers are tree-blocked
+or human/ops — not “Phase 1 has not started.”
+
+`DEAD-02`/`DEAD-03` stay in-tree because emitter and GPU tests exist; do not
+delete those tests. `CI-02` stem-fallback stays because
+`tests/algorithm_recovery/test_labels.py` uses it. `DET-01` is blocked:
+`tests/crypto_detect` asserts `emittedAnnotation`. `CACHE-02`/`CACHE-04`:
+do not invent detector-version tokens or HMAC keys.
+
+Human remaining: CLA as a required branch-protection check, GHCR package
+Public, Docker Hub `imortek/retdec` unpublished, Authenticode, `LEG-04`
+solicitor, OSS-Fuzz filing. LLVM pin is Track 2; never edit `deps/llvm/`.
+`SAN-04` ASan on PRs exists; `SAN-02` TSan and `CI-11` 360-min LLVM
+container are later. `CI-10` secret scanning/Dependabot already on.
+ci-core name-blind 0.12 is live; full-corpus name-blind 0.05 is live
+(`scripts/run_algorithm_recovery_full.sh`).
