@@ -48,8 +48,8 @@ set(RETDEC_SUPERBUILD_BUILD_TYPE
 # ─── Options ──────────────────────────────────────────────────────────────────
 option(RETDEC_SUPERBUILD_ENABLE_RETDEC_CORE "Build RetDec core from this repo"         ON)
 option(RETDEC_SUPERBUILD_ENABLE_QT_GUI      "Build Qt6 GUI component"                  ON)
-option(RETDEC_SUPERBUILD_ENABLE_CUDA_LAYER "Build CUDA acceleration layer"             ON)
-option(RETDEC_SUPERBUILD_ENABLE_ML_FRAMEWORK "Build Qwen3 ML inference framework"      ON)
+option(RETDEC_SUPERBUILD_ENABLE_CUDA_LAYER "Parked CUDA stub (not product)"            OFF)
+option(RETDEC_SUPERBUILD_ENABLE_ML_FRAMEWORK "Parked ML stub (not src/qwen3; C-QWEN3-GPU withdrawn)" OFF)
 option(RETDEC_SUPERBUILD_ENABLE_TESTS       "Build unit/integration tests in RetDec core" ON)
 
 # ─── Shared cmake args forwarded to every ExternalProject ─────────────────────
@@ -101,16 +101,15 @@ if(RETDEC_SUPERBUILD_ENABLE_RETDEC_CORE)
     )
 endif()
 
-# ─── 2. retdec-cuda-accel (CUDA acceleration layer) ──────────────────────────
-# Produces: libretdec-cuda-accel (static), headers installed to include/retdec/cuda_accel/.
-# Falls back to CPU-only (std::async) when no CUDA compiler is detected.
+# ─── 2. retdec-cuda-accel (parked CUDA stub, not product) ─────────────────────
+# Parked stub (not product). Opt-in only; default OFF.
 if(RETDEC_SUPERBUILD_ENABLE_CUDA_LAYER)
-    # cuda_accel is built as part of retdec-core — no separate stub needed.
-    message(STATUS "[superbuild] CUDA acceleration is built inside retdec-core.")
+    # Parked: cuda_accel is not a product layer — no separate stub tree here.
+    message(STATUS "[superbuild] CUDA layer is a parked stub (not product); default OFF.")
 endif()
 
-# ─── 3. retdec-ml (Qwen3 ML inference framework) ─────────────────────────────
-# Produces: libretdec-ml (static), headers installed to include/retdec/ml/.
+# ─── 3. retdec-ml (parked ML stub; not src/qwen3; C-QWEN3-GPU withdrawn) ──────
+# Parked stub (not product, not src/qwen3). Produces: libretdec-ml when enabled.
 if(RETDEC_SUPERBUILD_ENABLE_ML_FRAMEWORK)
     add_subdirectory(stubs/retdec-ml)
 endif()

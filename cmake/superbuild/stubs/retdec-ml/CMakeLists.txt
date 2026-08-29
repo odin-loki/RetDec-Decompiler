@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.26)
 project(retdec-ml-stub
     LANGUAGES C CXX
     VERSION 0.1.0
-    DESCRIPTION "RetDec Qwen3 ML inference framework — stub"
+    DESCRIPTION "Parked ML stub (not src/qwen3; C-QWEN3-GPU withdrawn)"
 )
 
 set(CMAKE_CXX_STANDARD 23)

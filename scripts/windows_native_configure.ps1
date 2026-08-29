@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Configure RetDec for a full native Windows build (MSVC + CUDA + Qt6 GUI).
+    Configure RetDec for a full native Windows build (MSVC + Qt6 required; RETDEC_ENABLE_CUDA_ACCEL=OFF).
     Self-bootstrapping: automatically finds and sources vcvars64.bat.
 
 .PARAMETER Preset
@@ -15,7 +15,7 @@
     Path to CUDA Toolkit root. Auto-detected from CUDA_PATH env or registry.
 
 .PARAMETER NoCuda
-    Disable CUDA acceleration in CMake (CPU-only; full presets default to CUDA ON when the toolkit is found).
+    Disable CUDA acceleration in CMake (RETDEC_ENABLE_CUDA_ACCEL=OFF; full presets do not default CUDA ON).
 
 .PARAMETER AllowOptionalQt
     Allow configure without Qt6 by passing -DRETDEC_REQUIRE_QT6=OFF (full-* presets normally require Qt for retdec-gui).

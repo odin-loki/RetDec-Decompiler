@@ -1,14 +1,10 @@
 #pragma once
 
-// RetDec Qwen3-Coder ML inference framework — public API.
+// Parked ML stub (not src/qwen3; C-QWEN3-GPU withdrawn).
 //
-// This header defines the interface that the Qt GUI and pipeline code use
-// to interact with the ML inference layer.  The full implementation (Task 44–47)
-// lives in src/ml/ and builds against safetensors, llama.cpp-compatible GGUF
-// loading, and the OpenCL FlashAttention-2 kernel.
-//
-// The stub here lets all consumer code compile and link before the real
-// inference engine is wired in.
+// Superbuild-only stub so existing consumers can still compile when
+// RETDEC_SUPERBUILD_ENABLE_ML_FRAMEWORK is enabled. Not a product API
+// and not an in-tree src/qwen3 stack (C-QWEN3-GPU withdrawn).
 
 #include <cstddef>
 #include <functional>

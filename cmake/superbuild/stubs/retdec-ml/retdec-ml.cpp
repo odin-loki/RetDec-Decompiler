@@ -1,7 +1,6 @@
 #include "retdec-ml.hpp"
 
-// Stub implementation of the RetDec Qwen3-Coder ML inference framework.
-// The real implementation is built from src/ml/ (Tasks 44–47).
+// Parked ML stub (not src/qwen3; C-QWEN3-GPU withdrawn).
 
 namespace retdec::ml {
 
