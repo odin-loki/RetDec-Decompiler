@@ -7,7 +7,7 @@
  * ┌─────────────────────────────────────────────────────────────────────┐
  * │  [◀][▶]  func_name @ 0x401000  │ Find: [_____________] [✕]  [⊕][⊗] │
  * ├──────────────────┬──────────────────┬──────────────────────────────┤
- * │   ASSEMBLY       │   SSA IR         │   DECOMPILED C / C++          │
+ * │   ASSEMBLY       │   SSA IR         │   DECOMPILED C                │
  * │                  │                  │                               │
  * │  1│ 401000 push  │  1│ %entry:      │  1│ int sub_401000(…) {       │
  * │  2│ 401002 mov   │  2│   %a = …     │  2│   int a = …;              │
@@ -27,7 +27,7 @@
  *           addresses (overlay0), comments (green)
  *   - IR:   keywords (blue), SSA names (mauve), types (yellow),
  *           BB labels (peach)
- *   - C/C++: keywords (blue), types (yellow), strings (green),
+ *   - C:     keywords (blue), types (yellow), strings (green),
  *             comments (overlay0), macros (red)
  *
  * ## Navigation History

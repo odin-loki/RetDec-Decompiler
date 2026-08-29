@@ -15,7 +15,7 @@ Phased plan for GUI/product work. Update checkboxes as items ship.
 - [x] **Decompiled C** — `setSourceFromPath()` (single read, async display)
 - [x] Decompile progress from log tail (stage keywords → status bar)
 - [x] Slim Problems dock tab (diagnostics without console noise)
-- [x] README / in-app text aligned with v3 (AI panel removed, etc.)
+- [x] README / in-app text aligned with v3 (AI Assistant is a Tools window, etc.)
 
 ## Phase B — Fast iteration (complete)
 
@@ -39,7 +39,7 @@ Phased plan for GUI/product work. Update checkboxes as items ship.
 
 - [x] CUDA wiring into hot analysis paths — **documented CPU-only default** ([GUI_PHASE_D.md](GUI_PHASE_D.md))
 - [x] Reference decompiler plugin sample — `examples/decompiler_plugin/`
-- [x] AI assistant — **external CLI / llama.cpp / optional Ollama**; no in-GUI chat ([GUI_PHASE_D.md](GUI_PHASE_D.md))
+- [x] AI assistant — Tools window (`AIAssistantPanel`); local GGUF / llama.cpp / optional Ollama. Not a neural-chat quality claim. No in-tree Qwen stack (`C-QWEN3-GPU` withdrawn) ([GUI_PHASE_D.md](GUI_PHASE_D.md))
 - [x] Multi-language output picker in GUI — Settings → Decompiler → Preferred output language (`--output-lang`)
 
 ## Phase E — GUI polish (May 2026)

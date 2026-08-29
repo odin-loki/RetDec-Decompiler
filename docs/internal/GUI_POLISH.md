@@ -9,7 +9,7 @@ Framework / docs polish shipped alongside GUI v3 (May 2026). Items below were on
 - [x] **CI badges** — README workflow badges for `perf-nightly` and `release-installers` only (`ctest-windows` / `ctest-linux` are manual-only, no badge)
 - [x] **Unit tests in CI** — GUI headless tests + `ctest -L unit` in `.github/workflows/ctest-windows.yml` and `ctest-linux.yml`
 - [x] **`retdec_cli.py` autodetect** — `_resolve_decompiler()` searches `install/`, `build/**`, and `build-decompiler-test/bin`
-- [x] **User manual sync** — `docs/user_manual.md` aligned with v3 layout; external `retdec-qwen3-runner` / CLI `--model` (no in-GUI AI chat)
+- [x] **User manual sync** — `docs/user_manual.md` aligned with v3 layout; AI Assistant Tools window (`AIAssistantPanel`); no `retdec-qwen3-runner` / CLI `--model` (`C-QWEN3-GPU` withdrawn)
 - [x] **`scripts/README.md` expansion** — CI/tooling table (`retdec_cli.py`, unpack/decompile, perf bench, install smoke, build-all)
 
 ## Tier 0 — Trust (stop lying) ✅

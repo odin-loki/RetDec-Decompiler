@@ -2,7 +2,7 @@
  * @file src/gui/panels/tri_pane_code_view.cpp
  * @brief TriPaneCodeView — synchronized three-column code browser implementation.
  *
- * Three SyncedCodePane widgets (assembly | SSA IR | decompiled C/C++) sit
+ * Three SyncedCodePane widgets (assembly | SSA IR | decompiled C) sit
  * inside a QSplitter.  A shared LineMapping table drives cross-pane
  * highlighting whenever the user clicks any line.  Vertical scrolling is
  * kept proportionally in sync across all three panes.
