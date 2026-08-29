@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# demo_v1.0.0.sh — smoke demo for RetDec v1.0.0 (Step 26 ship checklist).
+# demo_v1.0.0.sh — smoke demo for current CMake VERSION (not v1.0.0; script reads VER).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

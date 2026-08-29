@@ -5,6 +5,8 @@
 **Date:** 2026-08-17
 **Supersedes:** `RETDEC_IMPROVEMENT_PLAN.md`, `RETDEC_DEEP_AUDIT_PASS2.md`, `RETDEC_CLAIMS_AUDIT_PASS3.md`
 
+**Snapshot note:** This document is a 2026-08-17 snapshot. The current tree has CUDA accel default OFF (`C-CUDA-PIPE` withdrawn), N6 fail-closed empty allowlist, live F1 gates 0.12/0.05.
+
 ---
 
 ## Preface

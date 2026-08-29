@@ -4,7 +4,7 @@
 
 ## Shippable product
 
-v2.0.20 — automation steps 1–26 complete, plus stock RetDec 5.0 compare. Stock RetDec 5.0 compare is in
+v2.0.21 — automation steps 1–26 complete, plus stock RetDec 5.0 compare. Stock RetDec 5.0 compare is in
 `results/stock-retdec-docker-full.json` and [BENCHMARKS_TABLE.md](../BENCHMARKS_TABLE.md).
 Historical dumps: [data/README.md](../../data/README.md).
 

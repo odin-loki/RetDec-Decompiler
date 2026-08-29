@@ -4,10 +4,10 @@ This fork is shippable without a four-compiler toolchain farm or dual
 Windows/WSL Git. Docker is used **only** to pull a published stock RetDec
 image for the two-column DecompileBench table.
 
-## What is done (v2.0.20)
+## What is done (v2.0.21)
 
-- Algorithm recovery: **mean_f1_raw = 1.0** on the 216-binary stand-in corpus
-- CI core (9 binaries): **1.0 / 1.0**
+- Algorithm recovery: name-blind **mean_f1_raw = 0.056** on the 216-binary stand-in corpus; stem-era 1.0 withdrawn
+- CI core (9 binaries): name-blind **0.126**
 - DecompileBench on the **same stand-in corpus** (not OSS-Fuzz)
 - Stock RetDec **v5.0** compare via `remnux/retdec` (see `results/stock-retdec-docker-full.json`)
 - Doctor, ship checklist, baselines, release tags, LIEF adapter verify
@@ -41,8 +41,9 @@ Official Hub image `retdec/retdec:v5.0` **does not exist**. We use
 
 ## Honest metric caveats
 
-- `mean_f1_raw = 1.0` is benchmark-corpus tuning (stem augment + extract noise
-  strip), not proof that structural IR detection is solved in production.
+- Stem-era 1.0 is withdrawn. Name-blind `mean_f1_raw` is **0.056** (full) /
+  **0.126** (ci-core) — detector-only on the stand-in corpus, not proof that
+  structural IR detection is solved in production.
 - Stock compare is **emit quality** (syntax / recompile / wall time). Stock has
   **no algorithm-label export**, so F1 is fork-only.
 - On this small ELF stand-in set both sides are typically syntax 1.0 and

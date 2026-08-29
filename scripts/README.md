@@ -71,6 +71,11 @@ Paths are relative to the **repository root**. See [docs/BUILD_REFERENCE.md](../
 | `_stage_stock_docker_corpus.py` | Copy real ELF files for the stock Docker mount (dereferences WSL/OneDrive links) |
 | `simulate_raw_refine.py` / `reprocess_predictions_raw.py` | Offline label refine / re-score (no decompiler) |
 | `analyze_full_f1.py` | Summarize algorithm-recovery F1 results |
+| `demo.sh` | Five-minute smoke demo; reads CMake `VERSION` |
+| `demo_v1.0.0.sh` | Alias/smoke for current CMake `VERSION` (not a v1.0.0 pin; reads `VER`) |
+| `ci/run_clang_tidy.py` | QUAL-01: clang-tidy on Imortek-new modules; skip-safe, warn-only first land |
+| `ci/check_elf_hardening.py` | QUAL-08: RELRO/PIE/NX/canary-style ELF hardening on shipped Linux binaries |
+| `ci/check_doc_vs_code.py` | E9 / CI-03: advertised tokens in public docs must resolve in the tree |
 
 On Linux or WSL clones, shell scripts do **not** need `chmod +x` if you invoke them with `bash scripts/<name>.sh`. To run directly (`./scripts/...`), mark entrypoints executable once after checkout:
 

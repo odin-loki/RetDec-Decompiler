@@ -27,7 +27,7 @@ Shippable engineering tiers for RetDec. Research-only items live in
 
 ### Differentiation (CLI / GUI / tests)
 
-- [x] **`--output-lang`** on `retdec-decompiler` (`c|cpp|python|csharp|java|wat`); persisted as `outputLang` in config JSON; native pipeline sets `TargetHLL`
+- [x] **`--output-lang`** on `retdec-decompiler` (`c|python|csharp|java|wat`; `cpp` rejected until LLVM-22 / CLI-01); persisted as `outputLang` in config JSON; native pipeline sets `TargetHLL` to C
 - [x] **GUI preferred output language** — Settings → Decompiler combo → `buildDecompilerArguments()` passes `--output-lang`
 - [x] **Semantic detection confidence** — `semanticDetections` in `.config.json` shown in Problems dock (info >0.8, warning >0.5, muted otherwise)
 - [x] **Managed format smoke** — `tests/decompiler/managed_format_smoke_test.py` (skips missing fixtures)

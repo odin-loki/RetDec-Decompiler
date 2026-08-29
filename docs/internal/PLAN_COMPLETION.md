@@ -1,6 +1,6 @@
 # MASTER-UPGRADE-PLAN — automation completion status
 
-Last updated: v2.0.20 (stock compare + CI green + `data/` / `docs/internal/` layout)
+Last updated: v2.0.21
 
 ## Steps 1–26 (shippable product)
 
@@ -8,7 +8,7 @@ Last updated: v2.0.20 (stock compare + CI green + `data/` / `docs/internal/` lay
 |------|--------|-----------|
 | CI smoke + ctest | Done | `ci-smoke.yml`, `ctest-linux.yml` |
 | DecompileBench | **Done (stand-in + stock v5.0)** | 216-binary harness; stock via `remnux/retdec`; OSS-Fuzz paper corpus out of scope |
-| Algorithm recovery | Done (caveat) | **mean_f1_raw=1.0** on full corpus (v2.0.19 extract refinement; benchmark-tuned) |
+| Algorithm recovery | Done (caveat) | name-blind **mean_f1_raw=0.056** (full) / **0.126** (ci-core); stem-era 1.0 withdrawn |
 | Neural refinement | Done | tiers 1–5, gates, llama.cpp pin, opt-in via env |
 | Licensing | Done | AGPL + commercial, doctor checks |
 | Fuzz / sanitizers | Done | `sanitizers.yml`, `tests/crash_corpus/` |
