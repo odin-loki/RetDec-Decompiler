@@ -1,12 +1,10 @@
 ---
-# QUAL-01: Imortek-new modules only (src/neural, src/gui, src/codegen,
-# src/ssa, src/algo_recover, src/cli_parser, src/crypto_detect,
-# src/sort_detect, src/jvm_parser, src/pyc_parser, src/dex_parser,
-# src/ptx_decompile).
-# Allowlist is toolchain-stable globs; unknown check names are not listed.
+# QUAL-01: Imortek-new modules (see IMORTEK_REL_DIRS in
+# scripts/ci/run_clang_tidy.py). Allowlist is toolchain-stable globs;
+# unknown check names are not listed.
 # HeaderFilterRegex limits diagnostics to those retdec/ trees so
 # LLVM / Avast / Qt / system headers are not dumped into CI logs.
 Checks: '-*,bugprone-*,cert-*'
 WarningsAsErrors: ''
-HeaderFilterRegex: 'retdec/(neural|gui|codegen|ssa|algo_recover|cli_parser|crypto_detect|sort_detect|jvm_parser|pyc_parser|dex_parser|ptx_decompile)/'
+HeaderFilterRegex: 'retdec/(alias_analysis|algo_recover|bc_module|call_conv|cfg|cfg_structure|cil_reconstruct|cli_parser|code_data|codegen|compiler_abi|compiler_detect|concurrency_detect|container_detect|crypto_detect|csharp_emitter|cuda_accel|cxx_backend|dce|debug_info|dex_parser|eh_reconstruct|experimental|fsharp_emitter|func_boundary|gui|idiom_reconstruct|ipa|java_emitter|jvm_parser|jvm_reconstruct|kotlin_emitter|loader_sim|lua_parser|mini_emu|module_cluster|neural|opencl|packer|pattern_detect|profiling|ptx_decompile|pyc_parser|py_emitter|py_reconstruct|rtti|sem_decoder|serial_detect|sort_detect|ssa|string_detect|testing|type_inference|type_seed|var_recovery|vbnet_emitter|wasm_parser)/'
 FormatStyle: none

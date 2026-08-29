@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `QUAL-01`: warn-only clang-tidy covers remaining Imortek-new `src/` trees from `PROVENANCE.md` (271 sources; still not LLVM/Avast).
 - Phase 1 leftover: concurrency-detect tests construct real SSA Call/Lock instructions (no ODR stubs).
 - Phase 1 `QUAL-04`: decompiler CLI `stoull` / output-lang / managed-probe catches `std::exception` instead of `...`.
 - Phase 1 leftover: internal GUI docs name the AI Assistant Tools window; tri-pane comments say decompiled C (`C-QWEN3-GPU` withdrawn).

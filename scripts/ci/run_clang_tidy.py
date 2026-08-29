@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-"""QUAL-01 — clang-tidy on Imortek-new modules (src/neural, src/gui,
-src/codegen, src/ssa, src/algo_recover, src/cli_parser,
-src/crypto_detect, src/sort_detect, src/jvm_parser, src/pyc_parser,
-src/dex_parser, src/ptx_decompile).
+"""QUAL-01 — clang-tidy on Imortek-new modules listed in IMORTEK_REL_DIRS
+(docs/PROVENANCE.md Imortek-new src trees).
 
 Skip-safe if clang-tidy is missing (print SKIP, exit 0). Uses
 build/linux/compile_commands.json when present; otherwise runs --self-test.
@@ -30,18 +28,63 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CLANG_TIDY_CONFIG = REPO_ROOT / ".clang-tidy"
 DEFAULT_COMPILE_DB = REPO_ROOT / "build" / "linux" / "compile_commands.json"
 IMORTEK_REL_DIRS = (
-    "src/neural",
-    "src/gui",
-    "src/codegen",
-    "src/ssa",
+    "src/alias_analysis",
     "src/algo_recover",
+    "src/bc_module",
+    "src/call_conv",
+    "src/cfg",
+    "src/cfg_structure",
+    "src/cil_reconstruct",
     "src/cli_parser",
+    "src/code_data",
+    "src/codegen",
+    "src/compiler_abi",
+    "src/compiler_detect",
+    "src/concurrency_detect",
+    "src/container_detect",
     "src/crypto_detect",
-    "src/sort_detect",
-    "src/jvm_parser",
-    "src/pyc_parser",
+    "src/csharp_emitter",
+    "src/cuda_accel",
+    "src/cxx_backend",
+    "src/dce",
+    "src/debug_info",
     "src/dex_parser",
+    "src/eh_reconstruct",
+    "src/experimental",
+    "src/fsharp_emitter",
+    "src/func_boundary",
+    "src/gui",
+    "src/idiom_reconstruct",
+    "src/ipa",
+    "src/java_emitter",
+    "src/jvm_parser",
+    "src/jvm_reconstruct",
+    "src/kotlin_emitter",
+    "src/loader_sim",
+    "src/lua_parser",
+    "src/mini_emu",
+    "src/module_cluster",
+    "src/neural",
+    "src/opencl",
+    "src/packer",
+    "src/pattern_detect",
+    "src/profiling",
     "src/ptx_decompile",
+    "src/pyc_parser",
+    "src/py_emitter",
+    "src/py_reconstruct",
+    "src/rtti",
+    "src/sem_decoder",
+    "src/serial_detect",
+    "src/sort_detect",
+    "src/ssa",
+    "src/string_detect",
+    "src/testing",
+    "src/type_inference",
+    "src/type_seed",
+    "src/var_recovery",
+    "src/vbnet_emitter",
+    "src/wasm_parser",
 )
 SOURCE_SUFFIXES = frozenset({".c", ".cc", ".cpp", ".cxx"})
 SKIP_DIR_NAMES = frozenset(
@@ -150,46 +193,32 @@ def self_test() -> int:
     if "cert-" not in config:
         errors.append(".clang-tidy must allow cert-")
     if (
-        "retdec/(neural|gui|codegen|ssa|algo_recover|cli_parser|crypto_detect|"
-        "sort_detect|jvm_parser|pyc_parser|dex_parser|ptx_decompile)/"
-        not in config.replace(" ", "")
+        "retdec/(alias_analysis|algo_recover|bc_module|call_conv|cfg|"
+        "cfg_structure|cil_reconstruct|cli_parser|code_data|codegen|"
+        "compiler_abi|compiler_detect|concurrency_detect|container_detect|"
+        "crypto_detect|csharp_emitter|cuda_accel|cxx_backend|dce|debug_info|"
+        "dex_parser|eh_reconstruct|experimental|fsharp_emitter|func_boundary|"
+        "gui|idiom_reconstruct|ipa|java_emitter|jvm_parser|jvm_reconstruct|"
+        "kotlin_emitter|loader_sim|lua_parser|mini_emu|module_cluster|neural|"
+        "opencl|packer|pattern_detect|profiling|ptx_decompile|pyc_parser|"
+        "py_emitter|py_reconstruct|rtti|sem_decoder|serial_detect|sort_detect|"
+        "ssa|string_detect|testing|type_inference|type_seed|var_recovery|"
+        "vbnet_emitter|wasm_parser)/"
+        not in config.replace(" ", "").replace("\n", "")
     ):
         errors.append(
-            ".clang-tidy HeaderFilterRegex must limit to retdec/neural, "
-            "retdec/gui, retdec/codegen, retdec/ssa, retdec/algo_recover, "
-            "retdec/cli_parser, retdec/crypto_detect, retdec/sort_detect, "
-            "retdec/jvm_parser, retdec/pyc_parser, retdec/dex_parser, and "
-            "retdec/ptx_decompile"
+            ".clang-tidy HeaderFilterRegex must list Imortek-new retdec/ trees "
+            "matching IMORTEK_REL_DIRS (not LLVM/Avast)"
         )
     if "deps/llvm" in config or "bin2llvmir" in config:
         errors.append(".clang-tidy must not include LLVM/Avast header filters")
 
     sources = list_imortek_sources()
     rels = [posix_rel(p) for p in sources]
-    if not any(r.startswith("src/neural/") for r in rels):
-        errors.append("list_imortek_sources found no src/neural files")
-    if not any(r.startswith("src/gui/") for r in rels):
-        errors.append("list_imortek_sources found no src/gui files")
-    if not any(r.startswith("src/codegen/") for r in rels):
-        errors.append("list_imortek_sources found no src/codegen files")
-    if not any(r.startswith("src/ssa/") for r in rels):
-        errors.append("list_imortek_sources found no src/ssa files")
-    if not any(r.startswith("src/algo_recover/") for r in rels):
-        errors.append("list_imortek_sources found no src/algo_recover files")
-    if not any(r.startswith("src/cli_parser/") for r in rels):
-        errors.append("list_imortek_sources found no src/cli_parser files")
-    if not any(r.startswith("src/crypto_detect/") for r in rels):
-        errors.append("list_imortek_sources found no src/crypto_detect files")
-    if not any(r.startswith("src/sort_detect/") for r in rels):
-        errors.append("list_imortek_sources found no src/sort_detect files")
-    if not any(r.startswith("src/jvm_parser/") for r in rels):
-        errors.append("list_imortek_sources found no src/jvm_parser files")
-    if not any(r.startswith("src/pyc_parser/") for r in rels):
-        errors.append("list_imortek_sources found no src/pyc_parser files")
-    if not any(r.startswith("src/dex_parser/") for r in rels):
-        errors.append("list_imortek_sources found no src/dex_parser files")
-    if not any(r.startswith("src/ptx_decompile/") for r in rels):
-        errors.append("list_imortek_sources found no src/ptx_decompile files")
+    for rel_dir in IMORTEK_REL_DIRS:
+        prefix = rel_dir + "/"
+        if not any(r.startswith(prefix) for r in rels):
+            errors.append(f"list_imortek_sources found no {rel_dir} files")
     leaked = [r for r in rels if not is_imortek_rel(r)]
     if leaked:
         errors.append(f"list leaked non-Imortek paths: {leaked[:3]}")
