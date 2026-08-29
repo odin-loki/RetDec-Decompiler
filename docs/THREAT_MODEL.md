@@ -36,17 +36,52 @@ RetDec.
   `std::system` / shell concatenation.
 - If `RETDEC_NEURAL_DIFF_GATE` is set, the gate **warns and skips**.
   Runtime differential execution is treated as pass-without-run.
-- **N6 model allowlist is still default-off.** There is no shipped
-  `support/models.json`. SHA-256 is checked only when
+- `RETDEC_NEURAL_SKIP_COMPILE_GATE` skips the compile-gate.
+- **N6 allowlist is fail-closed and empty.** Shipped `support/models.json`
+  is `{"models": []}`. SHA-256 is checked when
   `RETDEC_NEURAL_MODEL_SHA256` is set, or when the filename matches the
-  pinned Qwen 3.5 Q4_K_M hint. Other GGUF paths load without a pin
-  (`tests/neural/mock_test.cpp` `UnpinnedOtherGgufPassesWithoutEnv`).
-- Multimodal `mmproj` / `-VL-` names are rejected.
-- Prompt construction strips C `"..."` and `'...'` literals so binary
-  strings cannot inject instructions into the prompt.
+  pinned Qwen 3.5 Q4_K_M hint. Other GGUF paths are refused unless the
+  hash is in the allowlist or `RETDEC_NEURAL_ALLOW_UNVERIFIED=1`
+  (`tests/neural/mock_test.cpp` `UnpinnedOtherGgufRefusedWithoutAllowlist`,
+  `TextGgufLoadsWhenUnverified`). Env SHA alone is not enough against an
+  empty allowlist (`EmptyAllowlistRefusesEvenWithMatchingEnvSha`).
+- Multimodal `mmproj` / `-VL-` names and CLIP/projector GGUF headers are
+  rejected (`RejectsMultimodalMmprojFilename`,
+  `StructuralRejectIgnoresUnverifiedAndFilename`).
+- Prompt construction runs `stripCStringLiterals` on function source:
+  C `"..."` / `'...'` bodies and comment text
+  (`StripsStringLiteralsFromFunctionSource`,
+  `StripsCommentBodiesFromFunctionSource`). Identifiers and
+  `semanticContextJson` are not stripped.
 
 Neural refinement itself is opt-in (`RETDEC_NEURAL_REFINE` + model path;
 llama.cpp is off in default installers).
+
+### Residual risks (neural)
+
+- **Model poisoning.** Unpinned GGUF loads when
+  `RETDEC_NEURAL_ALLOW_UNVERIFIED=1` (SHA unset, empty allowlist). There
+  is no signed model manifest. Env pin + empty `models.json` still
+  refuses (`EmptyAllowlistRefusesEvenWithMatchingEnvSha`).
+- **Sidecar / cache poisoning.** `writeSidecar` writes
+  `{output}.refined.c` and `{output}.refinement-manifest.json` with no
+  MAC. Optional `RETDEC_NEURAL_CACHE_DIR` stores `{key}.txt` and reuses
+  it verbatim (`CacheHitReusesAcceptedRefinement`); no HMAC.
+- **Gate bypass.** `RETDEC_NEURAL_DIFF_GATE` skips (pass-without-run).
+  Compile-gate is syntax-only (`-fsyntax-only -w`).
+  `RETDEC_NEURAL_SKIP_COMPILE_GATE` skips it. Structural shape/spawn
+  counts are not a sandbox.
+- **Resource exhaustion.** `RETDEC_NEURAL_DEADLINE_MS` (default 0 = off)
+  and `RETDEC_NEURAL_MAX_TOKENS` (else `GenerationConfig::maxTokens` =
+  512) cap generation in-process. They are not a sandbox.
+- **Prompt injection beyond literals.** After `stripCStringLiterals`,
+  hostile identifiers, DWARF-derived names (`from_debug`, `real_name`,
+  `source_file`, `demangled`), import/link names, and unstripped
+  `semanticContextJson` still enter the prompt
+  (`IncludesSemanticContextWhenSet`).
+- **“Nothing leaves the machine”** is policy (`RETDEC_NO_NETWORK` /
+  `RETDEC_NEURAL_OFFLINE_ONLY`; `RETDEC_NEURAL_ALLOW_NETWORK` overrides),
+  not a verified syscall filter.
 
 ## What is not a security boundary
 
@@ -61,5 +96,6 @@ llama.cpp is off in default installers).
 Parsers, YARA, and unpacker emulation share the analyst process. A
 malicious sample can attempt memory corruption, huge allocations, or
 hostile rule/data interaction. The GUI child can write wherever the user
-can. Until S15 (sandboxed worker) and N6 (default-on allowlist) exist,
-treat RetDec as an unsandboxed native analysis tool.
+can. Until S15 (sandboxed worker) exists, treat RetDec as an unsandboxed
+native analysis tool. N6 is fail-closed with an empty `support/models.json`
+(not a populated default-on allowlist).
