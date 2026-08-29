@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
+# Leftover wrapper: there is no in-tree src/qwen3/ and no retdec-qwen3-runner CMake target.
+# Product neural path is RETDEC_NEURAL_REFINE + RETDEC_NEURAL_MODEL.
+# C-QWEN3-GPU is withdrawn. This script only stages a GGUF; it does not ship a runner.
+#
 # setup_qwen3.sh — Install CUDA runtime and download the Qwen3-Coder-30B-A3B
-# GGUF model so RetDec's built-in qwen3 inference engine can use it.
+# GGUF model for optional RETDEC_NEURAL_REFINE use.
 #
 # What this does:
 #   1. Detect your GPU (NVIDIA) and verify CUDA availability
 #   2. Install CUDA toolkit (if not already present)
 #   3. Install huggingface-cli for reliable resumable downloads
 #   4. Download Qwen3-Coder-30B-A3B-Instruct Q4_K_M GGUF (~18 GB)
-#   5. Place it in ~/.retdec/models/ where RetDec looks by default
+#   5. Place it in ~/.retdec/models/ for RETDEC_NEURAL_MODEL
 #
 # Usage:
 #   bash scripts/setup_qwen3.sh [--quant Q4_K_M|Q3_K_M|Q5_K_M|IQ2_XS]
@@ -227,14 +231,11 @@ echo " Model:   ${DEST}"
 echo " Config:  ${CONFIG_FILE}"
 echo ""
 if [[ $HAS_NVIDIA -eq 1 ]]; then
-    echo " GPU:     NVIDIA $GPU_NAME — CUDA acceleration enabled"
+    echo " GPU:     NVIDIA $GPU_NAME"
 else
-    echo " GPU:     None detected — CPU-only inference (std::async)"
+    echo " GPU:     None detected"
 fi
 echo ""
-echo " Build RetDec with CUDA support:"
-echo "   cmake --preset core-release"
-echo "   cmake --build build/core-release --parallel"
-echo ""
-echo " The Qwen3Pipeline will load the model automatically."
-echo " Call pipe.enableCUDA() before pipe.load() to use the GPU."
+echo " Product neural path (no retdec-qwen3-runner / no src/qwen3/):"
+echo "   export RETDEC_NEURAL_REFINE=1"
+echo "   export RETDEC_NEURAL_MODEL=${DEST}"

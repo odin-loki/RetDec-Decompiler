@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Leftover wrapper: there is no in-tree src/qwen3/ and no retdec-qwen3-runner CMake target.
+# Product neural path is RETDEC_NEURAL_REFINE + RETDEC_NEURAL_MODEL.
+# C-QWEN3-GPU is withdrawn. This script only builds an external llama.cpp server.
 # download_and_run_qwen3.sh
 # Downloads Qwen3-Coder-30B-A3B Q4_K_M and builds llama.cpp with CUDA.
 # RTX 3090 has 24 GB VRAM — the full Q4_K_M (~18 GB) fits with room to spare.

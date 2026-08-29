@@ -1,6 +1,7 @@
 #requires -Version 5.1
-# Leftover: looks for retdec-qwen3-runner.exe, which does not ship (DOC-06 / B5).
+# Leftover: there is no in-tree src/qwen3/ and no retdec-qwen3-runner CMake target.
 # Product neural path is RETDEC_NEURAL_REFINE + RETDEC_NEURAL_MODEL.
+# C-QWEN3-GPU is withdrawn. This script looks for retdec-qwen3-runner.exe, which does not ship.
 param(
     [Parameter(Mandatory = $true)]
     [string] $Model,
@@ -24,7 +25,7 @@ if (-not $Runner) {
     }
 }
 if (-not $Runner -or -not (Test-Path $Runner)) {
-    Write-Error "retdec-qwen3-runner not found. Pass -Runner or build preset $Preset."
+    Write-Error "retdec-qwen3-runner does not ship (no CMake target). Use RETDEC_NEURAL_REFINE + RETDEC_NEURAL_MODEL."
 }
 
 $env:RETDEC_QWEN3_TRACE = "1"
