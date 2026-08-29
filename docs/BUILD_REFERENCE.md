@@ -266,7 +266,7 @@ GitHub Actions workflows under [.github/workflows/](../.github/workflows/):
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | [ci-smoke.yml](../.github/workflows/ci-smoke.yml) | Push / PR | Python smoke, ship checklist, benchmark gate (no decompiler build) |
-| [ctest-linux.yml](../.github/workflows/ctest-linux.yml) | PR to `main` + manual | Linux build, headless GUI, `ctest` |
+| [ctest-linux.yml](../.github/workflows/ctest-linux.yml) | PR to `main` + manual | Linux build, headless GUI, `ctest`, ELF hardening |
 | [ctest-windows.yml](../.github/workflows/ctest-windows.yml) | Schedule + manual | Windows build, headless GUI, `ctest` |
 | [release-installers.yml](../.github/workflows/release-installers.yml) | Tag `v*` + manual | GitHub Release + installers |
 | [docker-from-release.yml](../.github/workflows/docker-from-release.yml) | After installers + manual | GHCR from Linux tarball |
@@ -274,6 +274,16 @@ GitHub Actions workflows under [.github/workflows/](../.github/workflows/):
 | [algorithm-recovery-nightly.yml](../.github/workflows/algorithm-recovery-nightly.yml) | Schedule + manual | Full F1 corpus |
 | [perf-nightly.yml](../.github/workflows/perf-nightly.yml) | Weekly + manual | Performance trend JSON |
 | [sanitizers.yml](../.github/workflows/sanitizers.yml) | Weekly + manual | ASan/UBSan |
+| [doc-integrity.yml](../.github/workflows/doc-integrity.yml) | Push / PR to `main` + manual | Python doc/license integrity (no decompiler build) |
+| [cla.yml](../.github/workflows/cla.yml) | `pull_request_target` + issue comment | CLA-assistant (signatures on `cla-signatures`) |
+| [codeql.yml](../.github/workflows/codeql.yml) | Push / PR + weekly + manual | CodeQL for Python and Actions (not C++) |
+| [coverage.yml](../.github/workflows/coverage.yml) | Weekly + manual | gcov/lcov via `run_coverage.sh` (LLVM build) |
+| [fuzz-pr.yml](../.github/workflows/fuzz-pr.yml) | PR to `main` + weekly + manual | Fuzz option smoke on PR; libFuzzer on schedule/dispatch |
+| [benchmark-integrity.yml](../.github/workflows/benchmark-integrity.yml) | PR to `main` + manual | Filename-rename guard (skip-safe if no decompiler) |
+| [qt-lgpl-evidence.yml](../.github/workflows/qt-lgpl-evidence.yml) | Weekly + manual | dumpbin `/dependents` Qt6Core.dll on Windows zip |
+| [sign-release-sbom.yml](../.github/workflows/sign-release-sbom.yml) | After installers + push (this file) + manual | Cosign unsigned SBOM, tarball, Windows artefacts |
+| [upload-sample-binary.yml](../.github/workflows/upload-sample-binary.yml) | After installers + push (this file / `fib.c`) + manual | Upload `fib_smoke` sample binary to the Release |
+| [docker-publish.yml](../.github/workflows/docker-publish.yml) | Manual | GHCR from in-tree Dockerfile (LLVM rebuild) |
 
 Full RetDec builds are too heavy to run on every push. `ctest-linux` also runs on PRs to `main`. Use **Actions → Run workflow** for `ctest-windows`, or run `ctest` locally (see [Testing](#testing) below).
 
