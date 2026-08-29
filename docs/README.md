@@ -27,6 +27,7 @@ This directory contains **technical documentation** for building, operating, ext
 | Document | Audience | Contents |
 |----------|----------|----------|
 | [../QUICKSTART.md](../QUICKSTART.md) | New users | Ten-minute decompile (Docker when published) |
+| [../ROADMAP.md](../ROADMAP.md) | Buyers / planners | Public status (LLVM Track 2; no pin-bump date) |
 | [BUILD_REFERENCE.md](BUILD_REFERENCE.md) | Everyone building | Presets, paths, superbuild, Docker, CI, `deps.cmake`, test commands |
 | [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) | Windows developers | MSVC + Qt6 (CUDA optional), scripts, troubleshooting |
 | [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md) | Linux/WSL packagers | MinGW cross, tblgen, OpenSSL, `dist/windows` |
