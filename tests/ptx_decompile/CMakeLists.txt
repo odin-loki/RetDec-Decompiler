@@ -11,6 +11,7 @@ target_include_directories(retdec-ptx-decompile-tests
 target_link_libraries(retdec-ptx-decompile-tests
     PRIVATE
         retdec-ptx-decompile
+        retdec-ssa
         retdec::deps::gtest
         retdec::deps::gtest_main
 )
