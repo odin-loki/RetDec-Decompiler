@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `QUAL-01`: warn-only clang-tidy on `src/neural` and `src/gui` after `ctest-linux` builds; `doc-integrity` runs `--self-test`.
 - Phase 1 `CACHE-05`: `ctest-linux` also diffs cache-on vs cache-off on ci-core corpus binaries when they exist.
 - Phase 1 `LEG-01`: `DUE_DILIGENCE.md` B2 residual notes `check_avast_mit_notice.py` also scans `docs/doxygen/`.
 - Phase 1 leftover scripts: `launch_gui.sh` defaults CUDA accel OFF; Windows GUI rebuild no longer lists `qwen3` as a dependency.

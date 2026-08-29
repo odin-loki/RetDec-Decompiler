@@ -41,7 +41,8 @@ jobs:
             libxcb-keysyms1 \
             libxcb-render-util0 \
             libxcb-xinerama0 \
-            libxcb-xfixes0
+            libxcb-xfixes0 \
+            clang-tidy
 
       - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # latest
         with:
@@ -67,6 +68,7 @@ jobs:
           cmake --preset full-linux-debug
           -DRETDEC_ENABLE_CUDA_ACCEL=OFF
           -DRETDEC_ENABLE_NEURAL=OFF
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Build integration targets
         run: >
@@ -79,6 +81,9 @@ jobs:
 
       - name: QUAL-08 ELF hardening (readelf)
         run: python3 scripts/ci/check_elf_hardening.py build/linux
+
+      - name: QUAL-01 clang-tidy (Imortek modules)
+        run: python3 scripts/ci/run_clang_tidy.py --compile-commands build/linux/compile_commands.json
 
       - name: GUI unit tests (headless)
         run: ./build/linux/tests/gui/retdec-gui-tests

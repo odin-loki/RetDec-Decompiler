@@ -1,0 +1,9 @@
+---
+# QUAL-01: Imortek-new modules only (src/neural, src/gui).
+# Allowlist is toolchain-stable globs; unknown check names are not listed.
+# HeaderFilterRegex limits diagnostics to retdec/neural and retdec/gui so
+# LLVM / Avast / Qt / system headers are not dumped into CI logs.
+Checks: '-*,bugprone-*,cert-*'
+WarningsAsErrors: ''
+HeaderFilterRegex: 'retdec/(neural|gui)/'
+FormatStyle: none

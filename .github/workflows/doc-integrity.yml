@@ -41,6 +41,9 @@ jobs:
       - name: QUAL-08 ELF hardening self-test
         run: python scripts/ci/check_elf_hardening.py --self-test
 
+      - name: QUAL-01 clang-tidy self-test
+        run: python scripts/ci/run_clang_tidy.py --self-test
+
       - name: LEG-11 Keystone not installed
         run: python scripts/ci/check_keystone_not_installed.py
 
