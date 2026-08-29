@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `QUAL-04`: decompiler CLI `stoull` / output-lang / managed-probe catches `std::exception` instead of `...`.
 - Phase 1 leftover: internal GUI docs name the AI Assistant Tools window; tri-pane comments say decompiled C (`C-QWEN3-GPU` withdrawn).
 - Phase 1 `QUAL-01`: warn-only clang-tidy also covers `src/jvm_parser`, `src/pyc_parser`, `src/dex_parser`, and `src/ptx_decompile`.
 - Phase 1 leftover: CUDA host-recovery tests construct real SSA Call instructions (no ODR stubs).

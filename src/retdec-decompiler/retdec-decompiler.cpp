@@ -10,6 +10,7 @@
 #include <fstream>
 #include <future>
 #include <sstream>
+#include <stdexcept>
 #include <chrono>
 #include <iterator>
 #include <thread>
@@ -517,7 +518,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 				throw std::runtime_error("");
 			}
 		}
-		catch (...)
+		catch (const std::exception&)
 		{
 			throw std::runtime_error(
 				"[-b|--bit-size] invalid value: " + val
@@ -592,7 +593,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 			params.setMaxMemoryLimit(std::stoull(val));
 			params.setIsMaxMemoryLimitHalfRam(false);
 		}
-		catch (...)
+		catch (const std::exception&)
 		{
 			throw std::runtime_error(
 				"[--max-memory] invalid value: " + val
@@ -799,7 +800,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		{
 			arIdx = std::stoull(val);
 		}
-		catch (...)
+		catch (const std::exception&)
 		{
 			throw std::runtime_error(
 				"[--ar-index] invalid index: " + val
@@ -830,7 +831,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		{
 			params.setTimeout(std::stoull(t));
 		}
-		catch (...)
+		catch (const std::exception&)
 		{
 			throw std::runtime_error(
 				"[--timeout] invalid timeout value: " + t
@@ -853,7 +854,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 			numJobs = std::stoull(val);
 			if (numJobs == 0) numJobs = 1;
 		}
-		catch (...)
+		catch (const std::exception&)
 		{
 			throw std::runtime_error(
 				"[--jobs] invalid value: " + val
@@ -892,7 +893,7 @@ void ProgramOptions::afterLoad()
 		if (!params.getOutputLang().empty()) {
 			try {
 				lang = parseOutputLang(params.getOutputLang());
-			} catch (...) {
+			} catch (const std::exception&) {
 				lang = OutputLangId::C;
 			}
 		}
@@ -1273,7 +1274,7 @@ int decompile(retdec::config::Config& config, ProgramOptions& po)
 						static_cast<std::streamsize>(mfSize));
 			}
 		}
-		catch (...)
+		catch (const std::exception&)
 		{
 		}
 
