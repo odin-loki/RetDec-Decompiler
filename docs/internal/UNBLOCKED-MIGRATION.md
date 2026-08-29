@@ -16,7 +16,8 @@ This file is the working plan. Inventories are from in-repo search
 - One algorithm / one family per commit. Public `IrInstr::Op` changes
   are explicitly scoped here and still get their own commit.
 - Never delete, SKIP, or loosen a test. Official `MIN_MEAN_F1=0.95`
-  stays. Name-blind product F1 stays 0.056 / ci-core 0.126.
+  is **not** the live gate. Live CI is name-blind **0.12** ci-core /
+  **0.05** full. Stem-fallback path stays (`CI-02`).
 - Default F5 decompile path stays unchanged unless the user opts in.
 - Build after every C++ edit.
 
@@ -223,7 +224,9 @@ SHA-256 K[] / MD5 T[] rows. Do not mix Castagnoli into IEEE CRC.
 
 ## Honesty
 
-A 0.95 CI F1 pass is the **stem-era** gate, not product quality.
+Official `MIN_MEAN_F1=0.95` is the **stem-era** number, not the live
+gate. Live CI is name-blind **0.12** ci-core / **0.05** full
+(`--no-stem-fallback`). Stem-fallback stays for tests (`CI-02`).
 Name-blind full-216 mean F1 is **0.056**. Do not advertise 1.0.
 
 N17 is mean selected-token probability for the whole generation.

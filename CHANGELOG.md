@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 leftover: maintainer migration notes record live name-blind F1 floors 0.12 / 0.05 (0.95 is not the live gate).
 - Phase 1 `CI-01`: `results/baseline-2026-08.json` algorithm-recovery F1 is name-blind 0.056 (stem-era 1.0 withdrawn).
 - Phase 1 `QUAL-08`: GNU/Linux Release RetDec objects use `-fstack-protector-strong` after `deps/`.
 - Phase 1 `QUAL-02`: replace `atoi`/`sprintf` in neural env parsers, GUI `--headless-exit-ms`, PDB stream names, and tool-info versions.
