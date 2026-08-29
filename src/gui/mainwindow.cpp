@@ -703,7 +703,7 @@ void RetDecMainWindow::createDockLayout()
 	documentTabs_->addTab(irPanel_, QStringLiteral("IR (SSA)"));
 	documentTabs_->addTab(cfgPanel_, QStringLiteral("CFG"));
 	documentTabs_->addTab(triPane_, QStringLiteral("Synced (Asm ┃ IR ┃ C)"));
-	documentTabs_->setTabToolTip(kDocDecompiledC, QStringLiteral("Decompiled C/C++ source — primary view (Ctrl+1)."));
+	documentTabs_->setTabToolTip(kDocDecompiledC, QStringLiteral("Decompiled C source — primary view (Ctrl+1)."));
 	documentTabs_->setTabToolTip(kDocAssembly, QStringLiteral("Capstone-disassembled instructions (Ctrl+2)."));
 	documentTabs_->setTabToolTip(kDocIR, QStringLiteral("LLVM IR after RetDec passes (Ctrl+3)."));
 	documentTabs_->setTabToolTip(kDocCFG, QStringLiteral("Function control-flow graph (Ctrl+4)."));
@@ -3378,7 +3378,7 @@ void RetDecMainWindow::onAbout()
 		this,
 		QStringLiteral("About RetDec"),
 		QStringLiteral("<h3>RetDec — Retargetable Decompiler</h3>"
-					   "<p>A machine-code decompiler producing readable C/C++ output with "
+					   "<p>A machine-code decompiler producing readable C output with "
 					   "RTTI, exception handling, STL, and cryptographic primitive recovery.</p>"
 					   "<p><b>Layout (v3):</b> Functions dock (left), document tabs in the centre "
 					   "(Decompiled C, Assembly, IR, CFG, Synced), Workspace (Strings, Inspect, Binary) on "
