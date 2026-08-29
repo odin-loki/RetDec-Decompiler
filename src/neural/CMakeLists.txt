@@ -48,6 +48,10 @@ endif()
 
 target_compile_features(retdec-neural PUBLIC cxx_std_17)
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(retdec-neural PRIVATE -Werror)
+endif()
+
 file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}/support/models.json" _RETDEC_NEURAL_DEFAULT_MODELS_JSON)
 target_compile_definitions(retdec-neural PRIVATE
     "RETDEC_NEURAL_DEFAULT_MODELS_JSON=\"${_RETDEC_NEURAL_DEFAULT_MODELS_JSON}\""

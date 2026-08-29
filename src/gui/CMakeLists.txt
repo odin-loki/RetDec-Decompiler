@@ -105,6 +105,10 @@ target_link_libraries(retdec-gui-launch
         Qt6::Core
 )
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(retdec-gui-launch PRIVATE -Werror)
+endif()
+
 # ── Panel library (shared between executable and tests) ────────────────────────
 
 add_library(retdec-gui-panels STATIC
