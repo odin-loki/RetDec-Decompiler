@@ -159,7 +159,7 @@ file-level counts: [PROVENANCE-files.md](PROVENANCE-files.md)
 ## CI
 
 - `scripts/ci/restore_avast_headers.py` — restore Avast-era rewrite years (`--year 2017|2018|2019|2020`). L1 did 2017; Phase 1 did 2018+2019+2020; leftover rewrite tells 0.
-- `scripts/ci/check_avast_mit_notice.py` — fails if `LICENSE-MIT` is missing or if `@copyright (c) 2017|2018|2019|2020 Odin Loch` still exists under `src/`, `include/`, or `tests/`. Wired in `.github/workflows/doc-integrity.yml`.
+- `scripts/ci/check_avast_mit_notice.py` — fails if `LICENSE-MIT` is missing or if `@copyright (c) 2017|2018|2019|2020 Odin Loch` still exists under `src/`, `include/`, `tests/`, or `docs/doxygen/`. Wired in `.github/workflows/doc-integrity.yml`.
 
 ## Related files
 

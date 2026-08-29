@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `LEG-01`: provenance CI text also names `docs/doxygen/` as scanned.
 - Phase 1 `QUAL-07`: GNU/Linux Release defines `_GLIBCXX_ASSERTIONS` and `_FORTIFY_SOURCE=3` after `deps/` so LLVM is unchanged.
 - Phase 1 `POS-08`: public `ROADMAP.md` (LLVM Track 2, no pin-bump date; name-blind CI floors).
 - Phase 1 `QUAL-08`: `ctest-linux` fails shipped Linux ELFs that lack PIE, NX, or RELRO (`readelf`; canary is reported only).
