@@ -16,10 +16,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 LICENSE_MIT = REPO_ROOT / "LICENSE-MIT"
 SCAN_DIRS = ("src", "include", "tests", "docs/doxygen")
 REWRITE_NEEDLES = (
-    "@copyright (c) 2017 Odin Loch",
-    "@copyright (c) 2018 Odin Loch",
-    "@copyright (c) 2019 Odin Loch",
-    "@copyright (c) 2020 Odin Loch",
+    "copyright (c) 2017 Odin Loch",
+    "copyright (c) 2018 Odin Loch",
+    "copyright (c) 2019 Odin Loch",
+    "copyright (c) 2020 Odin Loch",
 )
 REQUIRED_MIT_SNIPPETS = (
     'Copyright (c) 2017 Avast Software',
