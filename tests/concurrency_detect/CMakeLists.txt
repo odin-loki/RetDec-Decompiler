@@ -10,6 +10,7 @@ target_include_directories(retdec-concurrency-detect-tests
 target_link_libraries(retdec-concurrency-detect-tests
     PRIVATE
         retdec-concurrency-detect
+        retdec-ssa
         retdec::deps::gtest
         retdec::deps::gtest_main
 )
