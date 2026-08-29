@@ -1,7 +1,6 @@
 
-# cuda_accel — CUDA replacement for the old opencl module.
-# Provides GPU-accelerated analysis passes: parallel disassembly, Steensgaard
-# alias analysis, type propagation, semantic hashing, and e-graph simplification.
+# cuda_accel — parked / unintegrated / not product pipeline (C-CUDA-PIPE withdrawn).
+# RETDEC_ENABLE_CUDA_ACCEL defaults OFF.
 # Falls back to CPU (std::async / std::thread) when CUDA is not available.
 
 cmake_minimum_required(VERSION 3.18)
