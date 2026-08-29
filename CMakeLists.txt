@@ -210,6 +210,19 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND (
 	add_compile_options(
 		$<$<CONFIG:Release>:-fstack-protector-strong>
 	)
+	# QUAL-08 CFI: Intel CET when the compiler accepts it (x86; ARM GNU rejects).
+	include(CheckCXXCompilerFlag)
+	check_cxx_compiler_flag("-fcf-protection=full" RETDEC_HAS_CF_PROTECTION)
+	if(RETDEC_HAS_CF_PROTECTION)
+		add_compile_options(
+			$<$<CONFIG:Release>:-fcf-protection=full>
+		)
+	endif()
+	# Full RELRO on GNU/Linux Release (Partial RELRO is already the CI hard floor).
+	add_link_options(
+		$<$<CONFIG:Release>:-Wl,-z,relro>
+		$<$<CONFIG:Release>:-Wl,-z,now>
+	)
 endif()
 add_subdirectory(src)
 add_subdirectory(support)
