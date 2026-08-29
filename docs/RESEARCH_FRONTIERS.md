@@ -55,7 +55,7 @@ Modern binaries mix languages via stable ABIs:
 
 Train models on **(source, compiled, decompiled)** triples at multiple `-O` levels:
 
-1. **Naming model** — function/variable names from IR + context (complements Qwen3 post-pass).
+1. **Naming model** — function/variable names from IR + context (complements opt-in llama.cpp refine (`RETDEC_NEURAL_REFINE`); `C-QWEN3-GPU` withdrawn).
 2. **Structure model** — predict `if`/`while`/`for` from CFG + memory accesses (seq2seq on graph).
 3. **Diff model** — patch-aware naming (“version bump changed bounds check here”).
 

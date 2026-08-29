@@ -37,7 +37,7 @@ retdec-master/
 │   ├── module_cluster/       — Module clustering and CMake generation
 │   ├── profiling/            — Performance profiling harness
 │   ├── ptx_decompile/        — PTX parser and CUDA C lifter
-│   ├── qwen3/                — AI inference engine components
+│   ├── neural/               — Opt-in llama.cpp refine (`RETDEC_NEURAL_REFINE`)
 │   ├── testing/              — Test harness utilities
 │   └── gui/
 │       ├── panels/           — Qt panel widgets

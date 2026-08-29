@@ -149,9 +149,8 @@ Headers were restored by the 2017-rewrite heuristic, not by a per-file upstream 
 | `type_inference` | Imortek-new | |
 | `type_seed` | Imortek-new | |
 | `var_recovery` | Imortek-new | |
-| `qwen3` / `qwen3_runner` | Imortek-new | Support dirs; no C/C++ of their own |
 
-Matching `include/retdec/<module>/` and `tests/<module>/` trees follow the same origin as `src/<module>/`.
+Matching `include/retdec/<module>/` and `tests/<module>/` trees follow the same origin as `src/<module>/`. There is no `src/qwen3/` or `src/qwen3_runner/` (`C-QWEN3-GPU` withdrawn).
 
 This is a module-level map, not a 5,000-file inventory. Regenerated
 file-level counts: [PROVENANCE-files.md](PROVENANCE-files.md)
@@ -159,7 +158,7 @@ file-level counts: [PROVENANCE-files.md](PROVENANCE-files.md)
 
 ## CI
 
-- `scripts/ci/restore_avast_headers.py` — restore Avast-era rewrite years (`--year 2017|2018|2019|2020`). L1 did 2017; Phase 1 did 2018.
+- `scripts/ci/restore_avast_headers.py` — restore Avast-era rewrite years (`--year 2017|2018|2019|2020`). L1 did 2017; Phase 1 did 2018+2019+2020; leftover rewrite tells 0.
 - `scripts/ci/check_avast_mit_notice.py` — fails if `LICENSE-MIT` is missing or if `@copyright (c) 2017|2018|2019|2020 Odin Loch` still exists under `src/`, `include/`, or `tests/`. Wired in `.github/workflows/doc-integrity.yml`.
 
 ## Related files

@@ -195,7 +195,7 @@ declarations and call-site reconstruction.
 | Language | Status | Notes |
 |----------|--------|-------|
 | C | Implemented | Default native output |
-| C++ | Filename only | Same C writer; `.cpp` extension |
+| C++ | Rejected | CLI rejects `--output-lang cpp` until LLVM-22; `cxx_backend` unwired |
 | Python | Implemented | From `.pyc` input |
 | Lua | Implemented | From `.luac` input |
 | WASM/WAT | Implemented | From `.wasm` input |
@@ -231,9 +231,10 @@ and `.fatbin` files embedded in executables, bypassing SASS entirely.
 
 ### Machine Learning Integration
 
-**AI-assisted naming**: use the Qwen3 model already integrated into the GUI to
-suggest meaningful variable and function names based on decompiled context.
-This requires fine-tuning or prompting with decompiler-specific examples.
+**AI-assisted naming**: opt-in llama.cpp refine (`RETDEC_NEURAL_REFINE`) and
+the GUI Tools → AI Assistant. There is no in-tree `src/qwen3`
+(`C-QWEN3-GPU` withdrawn). This still requires fine-tuning or prompting
+with decompiler-specific examples.
 
 **Semantic validation**: use the AI assistant to verify that reconstructed
 code is semantically equivalent to the original.  Input: original binary

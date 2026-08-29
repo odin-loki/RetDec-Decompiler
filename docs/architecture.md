@@ -15,7 +15,7 @@ the AI inference engine, and the plugin system.
 3. [Full Pipeline Stage Reference](#pipeline)
 4. [Core Library Details](#libraries)
 5. [Qt GUI Architecture](#gui)
-6. [AI Inference Engine (Qwen3)](#ai)
+6. [AI Inference Engine](#ai)
 7. [Plugin System](#plugins)
 8. [Performance and Threading Model](#threading)
 9. [Design Decisions](#decisions)
@@ -29,7 +29,7 @@ RetDec is a retargetable machine-code decompiler.  Given a binary (ELF, PE,
 Mach-O, CUDA, WASM, JVM, DEX, `.pyc`, `.luac`, CIL), it produces human-readable
 source code in **C** for native binaries. Managed formats emit the language
 of the input (Python from `.pyc`, Lua from `.luac`, WAT from `.wasm`, and
-so on). Native “C++” is the C writer with a `.cpp` filename.
+so on). The CLI rejects `--output-lang cpp` until LLVM-22; native output is C.
 
 The enhanced version adds:
 

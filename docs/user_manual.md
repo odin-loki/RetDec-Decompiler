@@ -259,16 +259,18 @@ Open **Settings** (Ctrl+,) or **Edit → Settings**.
 
 ### CUDA Tab
 
+These widgets persist `CUDASettings`. They do **not** drive `cuda_accel` or
+decompiler GPU analysis kernels (`C-CUDA-PIPE` withdrawn). Neural GPU offload
+is llama.cpp `n_gpu_layers` via `RETDEC_NEURAL_REFINE` (ML tab / Tools → AI
+Assistant). CUDA host recovery is the Analysis-tab checkbox (CPU-side
+`ptx_decompile` host API detection).
+
 | Setting | Default | Description |
 |---------|---------|-------------|
-| CUDA device | Auto | GPU device index (0 = first NVIDIA GPU) |
-| Use GPU | Yes | Prefer GPU over CPU for analysis kernels |
-| Block size | 256 | CUDA thread block size per kernel launch |
-| Enable profiling | No | Record CUDA event kernel timings |
-
-> **Note:** If no CUDA-capable GPU is detected at runtime, all GPU analysis
-> passes automatically fall back to multi-threaded CPU implementations with no
-> user action required.
+| CUDA device | Auto | Persisted device preference; not wired into `cuda_accel` |
+| Prefer GPU over CPU | Yes | Persisted; does not enable decompiler GPU kernels (`C-CUDA-PIPE` withdrawn) |
+| Work group size | 256 | Persisted; not a pipeline kernel launch parameter |
+| Enable cl_event profiling | No | Maps to `RETDEC_PROFILE_JSON` on the decompiler child; not CUDA kernel timings |
 
 ### ML Tab
 
@@ -376,7 +378,7 @@ Full feature lists and format tables: [README.md](../README.md).
 | Problem | What to check |
 |---------|----------------|
 | GUI does not start | Run from `dist\windows` (or install prefix `bin`) so Qt plugins and `platforms\qwindows.dll` sit next to the executable; re-run `windeployqt` if you moved files manually. |
-| “No CUDA” / slow analysis | In **Settings → CUDA**, confirm **Use GPU**; install an NVIDIA driver; full MSVC build required for Windows CUDA kernels (MinGW cross build is CPU-only for GPU passes). |
+| “No CUDA” / slow analysis | The decompiler pipeline is CPU. GUI CUDA settings do not drive `cuda_accel` (`C-CUDA-PIPE` withdrawn). Neural GPU is llama.cpp `n_gpu_layers` via `RETDEC_NEURAL_REFINE`. CUDA host recovery is the Analysis-tab checkbox (CPU-side). |
 | AI-assisted naming | Tools → AI Assistant, or `RETDEC_NEURAL_REFINE` + `RETDEC_NEURAL_MODEL`. There is no `--model` flag and no `retdec-qwen3-runner`. |
 | Empty decompilation | Check **Settings → Advanced → Max functions** (0 = all). Very large binaries may hit **Max analysis time** on the Analysis tab. |
 | Crash on open file | Try **File → Open** with a smaller sample; enable **Verbosity** under Advanced and capture console output; on Windows use `run_gui_with_procdump.ps1` (see [scripts/README.md](../scripts/README.md)). |

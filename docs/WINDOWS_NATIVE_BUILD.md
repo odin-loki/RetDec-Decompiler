@@ -126,7 +126,7 @@ For a **full** default component set (not the smaller `core-*` presets), use:
 |--------|------|--------|
 | `full-linux-debug` | Linux / WSL | Debug, tests, **`RETDEC_ENABLE_CUDA_ACCEL=OFF`**, **`RETDEC_REQUIRE_QT6=ON`** |
 | `full-linux-release` | Linux / WSL | Release + LTO, same |
-| `full-windows-release` | Windows | Shown only on Windows; Release + LTO, bundled OpenSSL, **CUDA + Qt6 GUI required** |
+| `full-windows-release` | Windows | Shown only on Windows; Release + LTO, bundled OpenSSL; **Qt6 required**; `RETDEC_ENABLE_CUDA_ACCEL=OFF` |
 | `full-windows-debug` | Windows | Same components as release, **Debug** (`/MDd`), no LTO — use for PDB debugging and `windows_native_build.ps1` → `dist\windows\` by default |
 
 Superbuild presets (`superbuild-debug`, `superbuild-release`, `superbuild-windows-cross-mingw`, `superbuild-linux-clang`) live in [`cmake/superbuild/CMakePresets.json`](../cmake/superbuild/CMakePresets.json). Configure with `cmake -S cmake/superbuild --preset <name>` from the repo root (CMake 4.x no longer allows `sourceDir` in root `CMakePresets.json`).

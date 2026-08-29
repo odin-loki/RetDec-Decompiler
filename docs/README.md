@@ -28,7 +28,7 @@ This directory contains **technical documentation** for building, operating, ext
 |----------|----------|----------|
 | [../QUICKSTART.md](../QUICKSTART.md) | New users | Ten-minute decompile (Docker when published) |
 | [BUILD_REFERENCE.md](BUILD_REFERENCE.md) | Everyone building | Presets, paths, superbuild, Docker, CI, `deps.cmake`, test commands |
-| [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) | Windows developers | MSVC + CUDA + Qt6, scripts, troubleshooting |
+| [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) | Windows developers | MSVC + Qt6 (CUDA optional), scripts, troubleshooting |
 | [MINGW_CROSS_DEEP_DIVE.md](MINGW_CROSS_DEEP_DIVE.md) | Linux/WSL packagers | MinGW cross, tblgen, OpenSSL, `dist/windows` |
 | [user_manual.md](user_manual.md) | GUI users | v3 layout, panels, settings, export, shortcuts |
 | [internal/GUI_POLISH.md](internal/GUI_POLISH.md) | GUI contributors | Polish checklist (navigation, docks, honest settings) |
@@ -50,7 +50,7 @@ This directory contains **technical documentation** for building, operating, ext
 | [pipeline_stage_map.md](pipeline_stage_map.md) | Contributors | Stage names ↔ directories |
 | [algorithm_reference.md](algorithm_reference.md) | Researchers | Math-heavy algorithm notes |
 | [future_directions.md](future_directions.md) | Planners | Roadmap-style topics |
-| [CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md) | GPU contributors | CUDA vs CUDA-accel flags, modules, CPU fallback |
+| [CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md) | Parked-research readers | CUDA vs CUDA-accel flags, modules, CPU fallback |
 | [SEMANTIC_OUTPUT.md](SEMANTIC_OUTPUT.md) | Output authors | C vs C++ semantics, STL recovery hints |
 | [SYMBOL_SERVER.md](SYMBOL_SERVER.md) | Windows analysts | PDB / symbol-server setup for richer names |
 | [RESEARCH_FRONTIERS.md](RESEARCH_FRONTIERS.md) | Researchers | Tier 7 long-horizon topics (not sprint work) |
