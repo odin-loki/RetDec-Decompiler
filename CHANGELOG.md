@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `LEG-01`: `DUE_DILIGENCE.md` B2 residual notes `check_avast_mit_notice.py` also scans `docs/doxygen/`.
 - Phase 1 leftover scripts: `launch_gui.sh` defaults CUDA accel OFF; Windows GUI rebuild no longer lists `qwen3` as a dependency.
 - Phase 1 `SEC-09`: `SECURITY.md` states bundled OpenSSL 3.2.6 is not a FIPS module.
 - Phase 1 `LEG-01`: provenance CI text also names `docs/doxygen/` as scanned.
