@@ -266,7 +266,7 @@ GitHub Actions workflows under [.github/workflows/](../.github/workflows/):
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | [ci-smoke.yml](../.github/workflows/ci-smoke.yml) | Push / PR | Python smoke, ship checklist, benchmark gate (no decompiler build) |
-| [ctest-linux.yml](../.github/workflows/ctest-linux.yml) | PR to `main` + manual | Linux build, headless GUI, `ctest`, ELF hardening |
+| [ctest-linux.yml](../.github/workflows/ctest-linux.yml) | Push / PR to `main` + manual | Linux build, headless GUI, `ctest`, QUAL-01 clang-tidy (warn-only), CACHE-05 cache differential (`fib_smoke` + ci-core when present), ELF hardening |
 | [ctest-windows.yml](../.github/workflows/ctest-windows.yml) | Schedule + manual | Windows build, headless GUI, `ctest` |
 | [release-installers.yml](../.github/workflows/release-installers.yml) | Tag `v*` + manual | GitHub Release + installers |
 | [docker-from-release.yml](../.github/workflows/docker-from-release.yml) | After installers + manual | GHCR from Linux tarball |
