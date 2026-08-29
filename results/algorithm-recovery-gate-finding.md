@@ -1,18 +1,16 @@
 # Official algorithm-recovery gate vs honest name-blind F1
 
-`scripts/run_algorithm_recovery_full.sh` still gates `MIN_MEAN_F1=0.95`.
-That constant is the stem-era threshold. It was **not** silently lowered.
+`scripts/run_algorithm_recovery_ci.sh` gates name-blind **0.12**
+(`--no-stem-fallback`). `scripts/run_algorithm_recovery_full.sh` gates
+name-blind **0.05** (measured full-corpus **0.056**). Stem-era **0.95**
+is not the product metric (`CI-01`). The `--stem-fallback` extract path
+stays for tests (`CI-02`); it is not the CI gate.
 
 | Artefact | mean F1 | What it is |
 |----------|---------|------------|
 | `results/algorithm-recovery-full.json` | **1.0** | Withdrawn stem-tuned score |
-| Official script gate | **0.95** | Still in force; will fail a name-blind run |
-| `results/algorithm-recovery-full-nameblind.json` | **0.056** | Honest name-blind full 216 (was 0.107 before OA symbol-name tag) |
-| `results/algorithm-recovery-ci.json` | **0.126** | Honest name-blind ci-core 9 (B7 dropped concurrency and OA) |
+| Official full-corpus script gate | **0.05** | Name-blind floor under measured 0.056 |
+| `results/algorithm-recovery-full-nameblind.json` | **0.056** | Honest name-blind full 216 |
+| `results/algorithm-recovery-ci.json` | **0.126** | Honest name-blind ci-core 9 |
 
-`scripts/run_algorithm_recovery_ci.sh` passes `--stem-fallback` so the
-0.95 `mean_f1` gate matches the stem-era score it was written for.
-`mean_f1_raw` stays name-blind. Graph-only FPs on a sort stem
-(`DFS`/`GraphTraversal` on `generated_quicksort`) are treated as
-cross-family noise so the gate is not stuck at 8/9 = 0.8889.
-A 0.95 CI pass is **not** current product quality. Do not advertise 1.0.
+A 0.95 stem-era pass is **not** current product quality. Do not advertise 1.0.

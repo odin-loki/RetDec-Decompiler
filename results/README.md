@@ -24,7 +24,7 @@ Live measurement contract for CI, ship checklist, and the release table.
 | `a4-calibration.md` | Reported confidence vs empirical precision (not fitted) |
 | `b6-rename-guard.md` | Named vs hashed labels on ci-core 9 |
 | `b7-name-evidence.md` | Symbol-name tag; concurrency excluded from headline |
-| `algorithm-recovery-gate-finding.md` | Official 0.95 gate vs honest 0.056 |
+| `algorithm-recovery-gate-finding.md` | Name-blind full-corpus 0.05 gate vs measured 0.056 |
 
 Algorithm-recovery F1 figures that depended on filename filters are
 **withdrawn** (B1–B5). Name-blind ci-core remasure:

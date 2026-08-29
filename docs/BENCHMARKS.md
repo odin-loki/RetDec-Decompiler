@@ -77,8 +77,8 @@ A4: 160 detections on remasured loop-negatives (`std::transform`,
 `unordered_map`, `std::find_if`); extract still yields FP **0.000**.
 Empirical precision **0**. Not fitted (`results/a4-calibration.md`).
 
-Official full-corpus gate is still `MIN_MEAN_F1=0.95`; honest
-name-blind is 0.056 (`results/algorithm-recovery-gate-finding.md`).
+Official full-corpus gate is name-blind `MIN_MEAN_F1=0.05` (measured 0.056;
+`results/algorithm-recovery-gate-finding.md`).
 
 Q4 goto baseline on ci-core gcc O0/O2/O3: mean **1.44**
 (`results/goto-optimizer-baseline.md`). O0 is still 0.

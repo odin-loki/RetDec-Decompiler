@@ -154,8 +154,9 @@ refine uses `RETDEC_NEURAL_REFINE` and `RETDEC_NEURAL_MODEL` — there is no
 
 **Shippable at v2.0.21** — measured results are in **Results** above. Stock
 RetDec 5.0 compare uses the published `remnux/retdec` image (official
-`retdec/retdec:v5.0` does not exist). CI still gates stem-era `MIN_MEAN_F1=0.95`;
-that is not product quality. This fork does **not** pursue the OSS-Fuzz paper
+`retdec/retdec:v5.0` does not exist). CI gates name-blind ci-core
+`MIN_MEAN_F1=0.12` and full-corpus `MIN_MEAN_F1=0.05`; that is not product
+quality. This fork does **not** pursue the OSS-Fuzz paper
 corpus or four-compiler support regen.
 
 - Git / GitHub CLI: **Windows PowerShell only** (not dual WSL + Windows)

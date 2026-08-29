@@ -6,8 +6,8 @@ stand-in 216 ELF corpus, scored by `tests/algorithm_recovery/runner.py`.
 
 This is **not** a product F1. Do not advertise it as one. The checked-in
 `algorithm-recovery-full.json` `mean_f1` **1.0** is the withdrawn stem-tuned
-score. Official `scripts/run_algorithm_recovery_full.sh` still gates
-`MIN_MEAN_F1=0.95`; that mismatch is a finding, not a silent gate change.
+score. Official `scripts/run_algorithm_recovery_full.sh` gates name-blind
+`MIN_MEAN_F1=0.05` (measured 0.056).
 
 Remasured after B7 tagged open-addressing as `evidence:symbol_name`.
 Mean F1 dropped from 0.107 to **0.056** because hash-table labels left
@@ -40,4 +40,4 @@ Name-blind recall is low at every level. That is honesty, not a quality win.
 
 - Not a CFG-aware structural score.
 - Not calibrated confidence (A4). B8 extract FP is 0.000 on loop-negatives.
-- Not an official CI pass of `MIN_MEAN_F1=0.95`.
+- Not an official CI pass of stem-era `MIN_MEAN_F1=0.95`. The live full-corpus gate is name-blind `0.05`.
