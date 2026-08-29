@@ -16,8 +16,9 @@
       "mean_wall_s": 0.242
     },
     "algorithm_recovery": {
-      "mean_f1": 1.0,
-      "mean_f1_raw": 1.0
+      "mean_f1": 0.056,
+      "mean_f1_raw": 0.056,
+      "note": "Name-blind full-corpus headline. Stem-era 1.0 is withdrawn."
     }
   },
   "thresholds": {
