@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `QUAL-01`: warn-only clang-tidy also covers `src/codegen`, `src/ssa`, and `src/algo_recover`.
 - Phase 1 `QUAL-06`: GNU/Clang `-Werror` on `retdec-neural` and `retdec-gui-launch` (not Qt panels; not codegen, whose public headers warn).
 - Phase 1 `SEC-03`: refinement prompts mark semantic-context JSON as untrusted data.
 - Phase 1 `LEG-01`: restore Avast MIT `\copyright` on `retdec.h` / `llvmir2hll.h` / `unpackertool.h`; MIT-notice CI matches both `@copyright` and `\copyright`.

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""QUAL-01 — clang-tidy on Imortek-new modules (src/neural, src/gui).
+"""QUAL-01 — clang-tidy on Imortek-new modules (src/neural, src/gui,
+src/codegen, src/ssa, src/algo_recover).
 
 Skip-safe if clang-tidy is missing (print SKIP, exit 0). Uses
 build/linux/compile_commands.json when present; otherwise runs --self-test.
-Only implementation files under src/neural/ and src/gui/ are listed.
+Only implementation files under those Imortek dirs are listed.
 
 First land is warn-only: tidy findings are printed and do not fail CI.
 The job fails only on script errors or a failed --self-test.
@@ -26,7 +27,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLANG_TIDY_CONFIG = REPO_ROOT / ".clang-tidy"
 DEFAULT_COMPILE_DB = REPO_ROOT / "build" / "linux" / "compile_commands.json"
-IMORTEK_REL_DIRS = ("src/neural", "src/gui")
+IMORTEK_REL_DIRS = (
+    "src/neural",
+    "src/gui",
+    "src/codegen",
+    "src/ssa",
+    "src/algo_recover",
+)
 SOURCE_SUFFIXES = frozenset({".c", ".cc", ".cpp", ".cxx"})
 SKIP_DIR_NAMES = frozenset(
     {".git", "deps", "build", "CMakeFiles", "__pycache__", "node_modules"}
@@ -133,8 +140,11 @@ def self_test() -> int:
         errors.append(".clang-tidy must allow bugprone-")
     if "cert-" not in config:
         errors.append(".clang-tidy must allow cert-")
-    if "retdec/(neural|gui)/" not in config.replace(" ", ""):
-        errors.append(".clang-tidy HeaderFilterRegex must limit to retdec/neural and retdec/gui")
+    if "retdec/(neural|gui|codegen|ssa|algo_recover)/" not in config.replace(" ", ""):
+        errors.append(
+            ".clang-tidy HeaderFilterRegex must limit to retdec/neural, "
+            "retdec/gui, retdec/codegen, retdec/ssa, and retdec/algo_recover"
+        )
     if "deps/llvm" in config or "bin2llvmir" in config:
         errors.append(".clang-tidy must not include LLVM/Avast header filters")
 
@@ -144,6 +154,12 @@ def self_test() -> int:
         errors.append("list_imortek_sources found no src/neural files")
     if not any(r.startswith("src/gui/") for r in rels):
         errors.append("list_imortek_sources found no src/gui files")
+    if not any(r.startswith("src/codegen/") for r in rels):
+        errors.append("list_imortek_sources found no src/codegen files")
+    if not any(r.startswith("src/ssa/") for r in rels):
+        errors.append("list_imortek_sources found no src/ssa files")
+    if not any(r.startswith("src/algo_recover/") for r in rels):
+        errors.append("list_imortek_sources found no src/algo_recover files")
     leaked = [r for r in rels if not is_imortek_rel(r)]
     if leaked:
         errors.append(f"list leaked non-Imortek paths: {leaked[:3]}")
@@ -161,7 +177,11 @@ def self_test() -> int:
     if any("bin2llvmir" in r for r in matched_rels):
         errors.append("compile_commands filter kept Avast path")
 
-    if not is_imortek_rel("src/neural/gates.cpp") or not is_imortek_rel("src/gui/main.cpp"):
+    if (
+        not is_imortek_rel("src/neural/gates.cpp")
+        or not is_imortek_rel("src/gui/main.cpp")
+        or not is_imortek_rel("src/codegen/emitter.cpp")
+    ):
         errors.append("is_imortek_rel rejected valid paths")
     if is_imortek_rel("src/bin2llvmir/foo.cpp") or is_imortek_rel("src/gui_extra/x.cpp"):
         errors.append("is_imortek_rel accepted a non-Imortek path")
@@ -196,7 +216,7 @@ def run_tidy(compile_db: Path) -> int:
     skipped = len(sources) - len(targets)
     if not targets:
         print(
-            "run_clang_tidy: SKIP (no src/neural or src/gui files in compile_commands.json)"
+            "run_clang_tidy: SKIP (no Imortek sources in compile_commands.json)"
         )
         return 0
     print(
