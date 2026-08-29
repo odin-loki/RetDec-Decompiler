@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `LEG-01`: restore Avast copyright on `docs/doxygen/doxygen.h`; MIT-notice CI also scans that tree.
 - Phase 1 `DEAD-04`: superbuild CUDA/ML stubs default OFF; Windows configure no longer says full presets default CUDA ON.
 - Phase 1 leftover: `BUILD_REFERENCE.md` CI table lists all 19 GitHub Actions workflows.
 - Phase 1 leftover register: `DUE_DILIGENCE.md` lists post-Phase-1 leftovers instead of treating Phase 1 as unstarted.
