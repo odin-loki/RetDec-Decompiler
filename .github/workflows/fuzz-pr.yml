@@ -71,7 +71,7 @@ jobs:
               --base-url "https://raw.githubusercontent.com/odin-loki/RetDec-Decompiler/main"
 
       - name: Cache CMake build
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             build/linux
@@ -99,7 +99,7 @@ jobs:
           fuzz_unpacker fuzz_pdb fuzz_cli fuzz_unpacker_plugins
 
       - name: Cache libFuzzer corpora
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: fuzz-corpora
           key: fuzz-corpus-${{ github.run_id }}
