@@ -47,8 +47,15 @@ Out of scope:
 - Use `RETDEC_NO_NETWORK=1` for air-gapped analysis; neural refinement uses local llama.cpp only.
 - Commercial packages must not include GPL-2.0 `capstone2llvmirtool` (see LICENSE-COMMERCIAL).
 
+## FIPS
+
+This tree bundles OpenSSL 3.2.6 (`deps/openssl`). The default configure
+does **not** enable the OpenSSL FIPS provider. Shipped binaries are **not**
+FIPS 140-3 validated. Do not treat `libcrypto` here as a FIPS module.
+
 ## PGP
 
-Contact the maintainer for a PGP key if required for encrypted reports.
+Contact the maintainer for a PGP key if required for encrypted reports. No
+public key is published in this repository.
 
 Copyright (c) 2025-2026 Odin Loch, trading as Imortek.
