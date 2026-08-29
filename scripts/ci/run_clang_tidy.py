@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """QUAL-01 — clang-tidy on Imortek-new modules (src/neural, src/gui,
 src/codegen, src/ssa, src/algo_recover, src/cli_parser,
-src/crypto_detect, src/sort_detect).
+src/crypto_detect, src/sort_detect, src/jvm_parser, src/pyc_parser,
+src/dex_parser, src/ptx_decompile).
 
 Skip-safe if clang-tidy is missing (print SKIP, exit 0). Uses
 build/linux/compile_commands.json when present; otherwise runs --self-test.
@@ -37,6 +38,10 @@ IMORTEK_REL_DIRS = (
     "src/cli_parser",
     "src/crypto_detect",
     "src/sort_detect",
+    "src/jvm_parser",
+    "src/pyc_parser",
+    "src/dex_parser",
+    "src/ptx_decompile",
 )
 SOURCE_SUFFIXES = frozenset({".c", ".cc", ".cpp", ".cxx"})
 SKIP_DIR_NAMES = frozenset(
@@ -145,13 +150,16 @@ def self_test() -> int:
     if "cert-" not in config:
         errors.append(".clang-tidy must allow cert-")
     if (
-        "retdec/(neural|gui|codegen|ssa|algo_recover|cli_parser|crypto_detect|sort_detect)/"
+        "retdec/(neural|gui|codegen|ssa|algo_recover|cli_parser|crypto_detect|"
+        "sort_detect|jvm_parser|pyc_parser|dex_parser|ptx_decompile)/"
         not in config.replace(" ", "")
     ):
         errors.append(
             ".clang-tidy HeaderFilterRegex must limit to retdec/neural, "
             "retdec/gui, retdec/codegen, retdec/ssa, retdec/algo_recover, "
-            "retdec/cli_parser, retdec/crypto_detect, and retdec/sort_detect"
+            "retdec/cli_parser, retdec/crypto_detect, retdec/sort_detect, "
+            "retdec/jvm_parser, retdec/pyc_parser, retdec/dex_parser, and "
+            "retdec/ptx_decompile"
         )
     if "deps/llvm" in config or "bin2llvmir" in config:
         errors.append(".clang-tidy must not include LLVM/Avast header filters")
@@ -174,6 +182,14 @@ def self_test() -> int:
         errors.append("list_imortek_sources found no src/crypto_detect files")
     if not any(r.startswith("src/sort_detect/") for r in rels):
         errors.append("list_imortek_sources found no src/sort_detect files")
+    if not any(r.startswith("src/jvm_parser/") for r in rels):
+        errors.append("list_imortek_sources found no src/jvm_parser files")
+    if not any(r.startswith("src/pyc_parser/") for r in rels):
+        errors.append("list_imortek_sources found no src/pyc_parser files")
+    if not any(r.startswith("src/dex_parser/") for r in rels):
+        errors.append("list_imortek_sources found no src/dex_parser files")
+    if not any(r.startswith("src/ptx_decompile/") for r in rels):
+        errors.append("list_imortek_sources found no src/ptx_decompile files")
     leaked = [r for r in rels if not is_imortek_rel(r)]
     if leaked:
         errors.append(f"list leaked non-Imortek paths: {leaked[:3]}")

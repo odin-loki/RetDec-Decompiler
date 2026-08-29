@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `QUAL-01`: warn-only clang-tidy also covers `src/jvm_parser`, `src/pyc_parser`, `src/dex_parser`, and `src/ptx_decompile`.
 - Phase 1 leftover: CUDA host-recovery tests construct real SSA Call instructions (no ODR stubs).
 - Phase 1 leftover: pyc marshal fixtures use CPython `TYPE_SMALL_TUPLE` `')'` / `TYPE_TUPLE` `'('`.
 - Phase 1 leftover: Qwen trace helper points at `RETDEC_NEURAL_REFINE`; GUI copy names native output as C (`C-QWEN3-GPU` withdrawn).

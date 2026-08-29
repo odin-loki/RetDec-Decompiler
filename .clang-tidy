@@ -1,11 +1,12 @@
 ---
 # QUAL-01: Imortek-new modules only (src/neural, src/gui, src/codegen,
 # src/ssa, src/algo_recover, src/cli_parser, src/crypto_detect,
-# src/sort_detect).
+# src/sort_detect, src/jvm_parser, src/pyc_parser, src/dex_parser,
+# src/ptx_decompile).
 # Allowlist is toolchain-stable globs; unknown check names are not listed.
 # HeaderFilterRegex limits diagnostics to those retdec/ trees so
 # LLVM / Avast / Qt / system headers are not dumped into CI logs.
 Checks: '-*,bugprone-*,cert-*'
 WarningsAsErrors: ''
-HeaderFilterRegex: 'retdec/(neural|gui|codegen|ssa|algo_recover|cli_parser|crypto_detect|sort_detect)/'
+HeaderFilterRegex: 'retdec/(neural|gui|codegen|ssa|algo_recover|cli_parser|crypto_detect|sort_detect|jvm_parser|pyc_parser|dex_parser|ptx_decompile)/'
 FormatStyle: none
