@@ -31,6 +31,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <stdexcept>
 
 namespace retdec {
 namespace codegen {
@@ -46,7 +47,8 @@ static bool isZero(const CExpr& e) {
 static bool isPow2Literal(const CExpr& e) {
     if (e.kind != CExpr::Kind::Literal) return false;
     int64_t v = 0;
-    try { v = std::stoll(e.literal); } catch (...) { return false; }
+    try { v = std::stoll(e.literal); } catch (const std::invalid_argument&) { return false; }
+    catch (const std::out_of_range&) { return false; }
     if (v <= 0) return false;
     return (v & (v - 1)) == 0;
 }

@@ -17,6 +17,7 @@
 #include "retdec/codegen/codegen.h"
 
 #include <cstdlib>
+#include <stdexcept>
 
 namespace retdec {
 namespace codegen {
@@ -27,7 +28,8 @@ namespace {
 static bool isLiteral(const CExpr& e, int64_t& val) {
     if (e.kind != CExpr::Kind::Literal) return false;
     try { val = std::stoll(e.literal); return true; }
-    catch (...) { return false; }
+    catch (const std::invalid_argument&) { return false; }
+    catch (const std::out_of_range&) { return false; }
 }
 
 static bool isZeroExpr(const CExpr& e) {

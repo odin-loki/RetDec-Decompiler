@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `QUAL-04`: codegen `stoll` parse failures catch `invalid_argument` / `out_of_range` instead of `...`.
 - Phase 1 `FUZZ-02`/`FUZZ-03`: weekly libFuzzer runs 120s/target and seeds lua/python/wasm fixtures when present.
 - Phase 1 `DOC-06`: leftover Qwen setup scripts no longer claim RetDec queries llama-server.
 - Phase 1 `DEAD-04`: `cuda_accel` CMake comments mark the module parked (`C-CUDA-PIPE` withdrawn).
