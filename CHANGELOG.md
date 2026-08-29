@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `QUAL-07`: GNU/Linux Release defines `_GLIBCXX_ASSERTIONS` and `_FORTIFY_SOURCE=3` after `deps/` so LLVM is unchanged.
 - Phase 1 `POS-08`: public `ROADMAP.md` (LLVM Track 2, no pin-bump date; name-blind CI floors).
 - Phase 1 `QUAL-08`: `ctest-linux` fails shipped Linux ELFs that lack PIE, NX, or RELRO (`readelf`; canary is reported only).
 - Phase 1 `DOC-06`: leftover `setup_qwen3.sh` / `download_and_run_qwen3.sh` / `run-qwen3-trace.ps1` headers point at `RETDEC_NEURAL_REFINE` (`C-QWEN3-GPU` withdrawn).

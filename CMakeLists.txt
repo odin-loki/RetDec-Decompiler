@@ -197,6 +197,17 @@ endif()
 add_subdirectory(deps)
 cond_add_subdirectory(docs RETDEC_DOC)
 add_subdirectory(scripts)
+# QUAL-07 after deps so the pinned LLVM is not compiled with these macros.
+# libstdc++ assertions and glibc FORTIFY on GNU/Linux Release only.
+# _FORTIFY_SOURCE=3 requires optimization and conflicts with Debug -O0.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND (
+		CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
+		CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
+	add_compile_definitions(
+		$<$<CONFIG:Release>:_GLIBCXX_ASSERTIONS>
+		$<$<CONFIG:Release>:_FORTIFY_SOURCE=3>
+	)
+endif()
 add_subdirectory(src)
 add_subdirectory(support)
 enable_testing()
