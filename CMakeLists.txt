@@ -207,6 +207,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND (
 		$<$<CONFIG:Release>:_GLIBCXX_ASSERTIONS>
 		$<$<CONFIG:Release>:_FORTIFY_SOURCE=3>
 	)
+	add_compile_options(
+		$<$<CONFIG:Release>:-fstack-protector-strong>
+	)
 endif()
 add_subdirectory(src)
 add_subdirectory(support)

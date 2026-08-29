@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `QUAL-08`: GNU/Linux Release RetDec objects use `-fstack-protector-strong` after `deps/`.
 - Phase 1 `QUAL-02`: replace `atoi`/`sprintf` in neural env parsers, GUI `--headless-exit-ms`, PDB stream names, and tool-info versions.
 - Phase 1 `SEC-02`: `THREAT_MODEL.md` neural residuals match fail-closed N6, sidecars, gate bypass, and prompt injection past literals.
 - Phase 1 `QUAL-01`: warn-only clang-tidy on `src/neural` and `src/gui` after `ctest-linux` builds; `doc-integrity` runs `--self-test`.
