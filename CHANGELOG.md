@@ -8,6 +8,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Phase 1 `QUAL-08`: `ctest-linux` fails shipped Linux ELFs that lack PIE, NX, or RELRO (`readelf`; canary is reported only).
 - Phase 1 `DOC-06`: leftover `setup_qwen3.sh` / `download_and_run_qwen3.sh` / `run-qwen3-trace.ps1` headers point at `RETDEC_NEURAL_REFINE` (`C-QWEN3-GPU` withdrawn).
 - Phase 1 `LEG-01`: restore Avast copyright on `docs/doxygen/doxygen.h`; MIT-notice CI also scans that tree.
 - Phase 1 `DEAD-04`: superbuild CUDA/ML stubs default OFF; Windows configure no longer says full presets default CUDA ON.

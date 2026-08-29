@@ -77,6 +77,9 @@ jobs:
           retdec-decompiler-corpus-fixtures
           retdec-gui-decompiler-staging
 
+      - name: QUAL-08 ELF hardening (readelf)
+        run: python3 scripts/ci/check_elf_hardening.py build/linux
+
       - name: GUI unit tests (headless)
         run: ./build/linux/tests/gui/retdec-gui-tests
 
