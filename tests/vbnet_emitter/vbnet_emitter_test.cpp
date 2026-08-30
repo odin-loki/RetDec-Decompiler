@@ -146,6 +146,56 @@ TEST(VbTypeEmitter, EmptyClass) {
     EXPECT_NE(std::string::npos, out.find("End Class"));
 }
 
+TEST(VbTypeEmitter, EmitsClassAttribute) {
+    VbWriter w;
+    VbTypeEmitter em(w);
+    BcClass cls = makeSimpleClass("Foo");
+    BcAnnotation ann;
+    ann.typeName = "System.ObsoleteAttribute";
+    cls.annotations.push_back(ann);
+    BcModule mod("A", SourceLang::VisualBasic);
+    em.emitClass(cls, mod);
+    std::string out = w.str();
+    EXPECT_NE(std::string::npos, out.find("<Obsolete>"));
+}
+
+TEST(VbTypeEmitter, EmitsAttributeArguments) {
+    VbWriter w;
+    VbTypeEmitter em(w);
+    BcClass cls = makeSimpleClass("Foo");
+    BcAnnotation ann;
+    ann.typeName = "System.ObsoleteAttribute";
+    BcAnnotationValue msg;
+    msg.kind = BcAnnotationValue::Kind::String;
+    msg.stringValue = "gone";
+    ann.elements["Value"] = msg;
+    cls.annotations.push_back(ann);
+    BcModule mod("A", SourceLang::VisualBasic);
+    em.emitClass(cls, mod);
+    std::string out = w.str();
+    EXPECT_NE(std::string::npos, out.find("<Obsolete(\"gone\")>"));
+}
+
+TEST(VbTypeEmitter, EmitsParamAttribute) {
+    VbWriter w;
+    VbTypeEmitter em(w);
+    BcClass cls = makeSimpleClass("Foo");
+    BcMethod m;
+    m.name = "Bar";
+    m.access = BcAccess::Public;
+    m.descriptor.returnType = std::make_shared<BcType>(types::Void());
+    m.descriptor.params.push_back(std::make_shared<BcType>(types::Int()));
+    m.paramNames = {"x"};
+    BcAnnotation ann;
+    ann.typeName = "System.ObsoleteAttribute";
+    m.paramAnnotations.push_back({ann});
+    cls.methods.push_back(m);
+    BcModule mod("A", SourceLang::VisualBasic);
+    em.emitClass(cls, mod);
+    std::string out = w.str();
+    EXPECT_NE(std::string::npos, out.find("<Obsolete> x As Integer"));
+}
+
 TEST(VbTypeEmitter, ClassWithMethod) {
     VbWriter w;
     VbTypeEmitter em(w);

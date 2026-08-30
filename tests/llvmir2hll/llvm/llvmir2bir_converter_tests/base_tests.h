@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Pass.h>
 
 #include "llvmir2hll/config/config_mock.h"
 #include "llvmir2hll/semantics/semantics_mock.h"

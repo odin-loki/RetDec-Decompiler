@@ -25,7 +25,10 @@
 #include <cstring>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
+
+#include <zlib.h>
 
 using namespace retdec::dex_parser;
 using namespace retdec::bc_module;
@@ -651,6 +654,99 @@ TEST(DexClassParser, OutOfRangeThrows) {
     EXPECT_EQ(DexClassResult::Error, result.status);
 }
 
+TEST(DexClassParser, FillsStaticFieldConstants) {
+    std::vector<uint8_t> dex(0x300, 0);
+    auto setU2 = [&](size_t off, uint16_t v) {
+        dex[off] = v & 0xFF; dex[off+1] = (v >> 8) & 0xFF;
+    };
+    auto setU4 = [&](size_t off, uint32_t v) {
+        dex[off] = v & 0xFF; dex[off+1] = (v >> 8) & 0xFF;
+        dex[off+2] = (v >> 16) & 0xFF; dex[off+3] = (v >> 24) & 0xFF;
+    };
+    auto setStr = [&](size_t off, const std::string& s) {
+        for (size_t i = 0; i < s.size(); ++i)
+            dex[off + i] = static_cast<uint8_t>(s[i]);
+        dex[off + s.size()] = 0;
+    };
+    auto setUleb = [&](size_t off, uint32_t v) -> size_t {
+        size_t n = 0;
+        do {
+            uint8_t b = v & 0x7F;
+            v >>= 7;
+            if (v) b |= 0x80;
+            dex[off + n++] = b;
+        } while (v);
+        return n;
+    };
+    static const char magic[] = "dex\n035";
+    for (int i = 0; i < 8; ++i)
+        dex[i] = static_cast<uint8_t>(i < 7 ? magic[i] : 0);
+    setU4(0x24, 0x70);
+    setU4(0x28, 0x12345678u);
+    setU4(0x38, 7);  setU4(0x3C, 0x70); // string_ids
+    setU4(0x40, 3);  setU4(0x44, 0x8C); // type_ids
+    setU4(0x48, 1);  setU4(0x4C, 0x98); // proto_ids
+    setU4(0x50, 1);  setU4(0x54, 0xA4); // field_ids
+    setU4(0x58, 1);  setU4(0x5C, 0xAC); // method_ids
+    setU4(0x60, 1);  setU4(0x64, 0xB4); // class_defs
+    setU4(0x68, 0x80); setU4(0x6C, 0xD4);
+    setU4(0x70, 0xD4); // "Hello"
+    setU4(0x74, 0xDB); // "LHello;"
+    setU4(0x78, 0xE4); // "V"
+    setU4(0x7C, 0xE7); // "()V"
+    setU4(0x80, 0xEC); // "main"
+    setU4(0x84, 0xF2); // "I"
+    setU4(0x88, 0xF5); // "VALUE"
+    setU4(0x8C, 1); // type LHello;
+    setU4(0x90, 2); // type V
+    setU4(0x94, 5); // type I
+    setU4(0x98, 3); setU4(0x9C, 1); setU4(0xA0, 0); // proto
+    setU2(0xA4, 0); setU2(0xA6, 2); setU4(0xA8, 6); // field Hello.VALUE:I
+    setU2(0xAC, 0); setU2(0xAE, 0); setU4(0xB0, 4); // method main
+    setU4(0xB4, 0);
+    setU4(0xB8, 0x0009);
+    setU4(0xBC, 0xFFFFFFFF);
+    setU4(0xC0, 0);
+    setU4(0xC4, 0xFFFFFFFF);
+    setU4(0xC8, 0);
+    setU4(0xCC, 0x100); // classDataOff
+    setU4(0xD0, 0x110); // staticValuesOff
+    size_t off = 0xD4;
+    off += setUleb(off, 5); setStr(off, "Hello"); off += 6;
+    off += setUleb(off, 7); setStr(off, "LHello;"); off += 8;
+    off += setUleb(off, 1); setStr(off, "V"); off += 2;
+    off += setUleb(off, 3); setStr(off, "()V"); off += 4;
+    off += setUleb(off, 4); setStr(off, "main"); off += 5;
+    off += setUleb(off, 1); setStr(off, "I"); off += 2;
+    off += setUleb(off, 5); setStr(off, "VALUE"); off += 6;
+    // class_data at 0x100
+    off = 0x100;
+    off += setUleb(off, 1); // static_fields
+    off += setUleb(off, 0);
+    off += setUleb(off, 1); // direct methods
+    off += setUleb(off, 0);
+    off += setUleb(off, 0); // field_idx_diff
+    off += setUleb(off, 0x19); // public static final
+    off += setUleb(off, 0); // method_idx_diff
+    off += setUleb(off, 0x09);
+    off += setUleb(off, 0); // no code
+    // encoded_array at 0x110: count=1, VALUE_INT 42 (1 byte)
+    dex[0x110] = 1;
+    dex[0x111] = 0x04; // VALUE_INT, size-1 = 0
+    dex[0x112] = 42;
+    dex.resize(0x120);
+    setU4(0x20, 0x120);
+
+    DexFile df = DexFile::parse(dex);
+    DexClassParser parser(df);
+    auto result = parser.parseClass(0);
+    ASSERT_EQ(DexClassResult::OK, result.status);
+    ASSERT_EQ(1u, result.bcClass->fields.size());
+    EXPECT_EQ("VALUE", result.bcClass->fields[0].name);
+    ASSERT_TRUE(result.bcClass->fields[0].constantIntValue.has_value());
+    EXPECT_EQ(42, *result.bcClass->fields[0].constantIntValue);
+}
+
 // ─── ProGuardMapping ─────────────────────────────────────────────────────────
 
 TEST(ProGuardMapping, ParsesClassMapping) {
@@ -791,12 +887,154 @@ static std::vector<uint8_t> storedZipClaimedUncomp(
     return z;
 }
 
+static std::vector<uint8_t> storedZip(
+        const std::vector<std::pair<std::string, std::vector<uint8_t>>>& items)
+{
+    std::vector<uint8_t> z;
+    std::vector<uint32_t> localOffs;
+    localOffs.reserve(items.size());
+    for (const auto& it : items) {
+        localOffs.push_back(static_cast<uint32_t>(z.size()));
+        const auto& name = it.first;
+        const auto& payload = it.second;
+        appendU32le(z, 0x04034b50u);
+        appendU16le(z, 20);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU32le(z, 0);
+        appendU32le(z, static_cast<uint32_t>(payload.size()));
+        appendU32le(z, static_cast<uint32_t>(payload.size()));
+        appendU16le(z, static_cast<uint16_t>(name.size()));
+        appendU16le(z, 0);
+        z.insert(z.end(), name.begin(), name.end());
+        z.insert(z.end(), payload.begin(), payload.end());
+    }
+    const uint32_t cdOff = static_cast<uint32_t>(z.size());
+    for (size_t i = 0; i < items.size(); ++i) {
+        const auto& name = items[i].first;
+        const auto& payload = items[i].second;
+        appendU32le(z, 0x02014b50u);
+        appendU16le(z, 20);
+        appendU16le(z, 20);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU32le(z, 0);
+        appendU32le(z, static_cast<uint32_t>(payload.size()));
+        appendU32le(z, static_cast<uint32_t>(payload.size()));
+        appendU16le(z, static_cast<uint16_t>(name.size()));
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU32le(z, 0);
+        appendU32le(z, localOffs[i]);
+        z.insert(z.end(), name.begin(), name.end());
+    }
+    const uint32_t cdSize = static_cast<uint32_t>(z.size() - cdOff);
+    appendU32le(z, 0x06054b50u);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, static_cast<uint16_t>(items.size()));
+    appendU16le(z, static_cast<uint16_t>(items.size()));
+    appendU32le(z, cdSize);
+    appendU32le(z, cdOff);
+    appendU16le(z, 0);
+    return z;
+}
+
+static std::vector<uint8_t> deflateRaw(const std::vector<uint8_t>& in)
+{
+    z_stream strm{};
+    if (deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
+                     -MAX_WBITS, 8, Z_DEFAULT_STRATEGY) != Z_OK)
+        return {};
+    std::vector<uint8_t> out(in.size() + 64);
+    strm.next_in = const_cast<Bytef*>(in.data());
+    strm.avail_in = static_cast<uInt>(in.size());
+    strm.next_out = out.data();
+    strm.avail_out = static_cast<uInt>(out.size());
+    const int rc = deflate(&strm, Z_FINISH);
+    const size_t n = static_cast<size_t>(strm.total_out);
+    deflateEnd(&strm);
+    if (rc != Z_STREAM_END)
+        return {};
+    out.resize(n);
+    return out;
+}
+
+static std::vector<uint8_t> deflateZip(
+        const std::string& name,
+        const std::vector<uint8_t>& payload)
+{
+    auto comp = deflateRaw(payload);
+    if (comp.empty())
+        return {};
+    std::vector<uint8_t> z;
+    appendU32le(z, 0x04034b50u);
+    appendU16le(z, 20);
+    appendU16le(z, 0);
+    appendU16le(z, 8); // DEFLATE
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU32le(z, 0);
+    appendU32le(z, static_cast<uint32_t>(comp.size()));
+    appendU32le(z, static_cast<uint32_t>(payload.size()));
+    appendU16le(z, static_cast<uint16_t>(name.size()));
+    appendU16le(z, 0);
+    z.insert(z.end(), name.begin(), name.end());
+    z.insert(z.end(), comp.begin(), comp.end());
+    const uint32_t cdOff = static_cast<uint32_t>(z.size());
+    appendU32le(z, 0x02014b50u);
+    appendU16le(z, 20);
+    appendU16le(z, 20);
+    appendU16le(z, 0);
+    appendU16le(z, 8); // DEFLATE
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU32le(z, 0);
+    appendU32le(z, static_cast<uint32_t>(comp.size()));
+    appendU32le(z, static_cast<uint32_t>(payload.size()));
+    appendU16le(z, static_cast<uint16_t>(name.size()));
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU32le(z, 0);
+    appendU32le(z, 0);
+    z.insert(z.end(), name.begin(), name.end());
+    const uint32_t cdSize = static_cast<uint32_t>(z.size() - cdOff);
+    appendU32le(z, 0x06054b50u);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, 1);
+    appendU16le(z, 1);
+    appendU32le(z, cdSize);
+    appendU32le(z, cdOff);
+    appendU16le(z, 0);
+    return z;
+}
+
 TEST(ApkReader, StoredClaimExceedsRemaining) {
     auto zip = storedZipClaimedUncomp("classes.dex", {0x64, 0x65, 0x78, 0x0a}, 0xFFFFFFF0u);
     ApkReader reader;
     auto result = reader.readApk(zip);
     EXPECT_EQ(ApkReadResult::PartialError, result.status);
     EXPECT_FALSE(result.warnings.empty());
+}
+
+TEST(ApkReader, InflatesDeflateClassesDex) {
+    auto dex = buildMinimalDex();
+    auto zip = deflateZip("classes.dex", dex);
+    ASSERT_FALSE(zip.empty());
+    ApkReader reader;
+    auto result = reader.readApk(zip);
+    EXPECT_EQ(ApkReadResult::OK, result.status);
+    ASSERT_FALSE(result.module.classes().empty());
+    EXPECT_EQ("Hello", result.module.classes().front().fqName);
 }
 
 TEST(ApkReader, AppliesProGuardMapping) {
@@ -810,6 +1048,27 @@ TEST(ApkReader, AppliesProGuardMapping) {
     std::string mappingText = "Hello -> a:\n    void main() -> b\n";
     auto mapping = ProGuardMapping::parse(mappingText);
     EXPECT_EQ("Hello", mapping.classMap["a"]);
+}
+
+TEST(ApkReader, AppliesProGuardMembersUsingObfuscatedClassKey) {
+    auto dex = buildMinimalDex();
+    const std::string mappingText =
+        "OriginalHello -> Hello:\n"
+        "    void originalMain() -> main\n";
+    std::vector<uint8_t> mappingBytes(mappingText.begin(), mappingText.end());
+    auto zip = storedZip({
+        {"classes.dex", dex},
+        {"mapping.txt", mappingBytes},
+    });
+    ApkReader reader;
+    auto result = reader.readApk(zip);
+    ASSERT_EQ(ApkReadResult::OK, result.status);
+    ASSERT_TRUE(result.hadMapping);
+    ASSERT_FALSE(result.module.classes().empty());
+    const auto& cls = result.module.classes().front();
+    EXPECT_EQ("OriginalHello", cls.name);
+    ASSERT_FALSE(cls.methods.empty());
+    EXPECT_EQ("originalMain", cls.methods[0].name);
 }
 
 // ─── BcType descriptor conversions ───────────────────────────────────────────

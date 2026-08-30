@@ -90,6 +90,9 @@ CryptoDetector::CryptoDetector(Config cfg) : cfg_(cfg) {
     detectors_.push_back(std::make_unique<SHADetector>());
     detectors_.push_back(std::make_unique<MD5Detector>());
     detectors_.push_back(std::make_unique<ChaCha20Detector>());
+    detectors_.push_back(std::make_unique<Salsa20Detector>());
+    detectors_.push_back(std::make_unique<Poly1305Detector>());
+    detectors_.push_back(std::make_unique<Curve25519Detector>());
     detectors_.push_back(std::make_unique<CRCDetector>());
     detectors_.push_back(std::make_unique<BlowfishDetector>());
     detectors_.push_back(std::make_unique<DESDetector>());

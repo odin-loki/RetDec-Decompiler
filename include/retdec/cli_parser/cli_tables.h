@@ -190,6 +190,11 @@ struct CustomAttributeRow {
     uint32_t      value = 0; ///< #Blob
 };
 
+struct FieldMarshalRow {
+    MetadataToken parent;          ///< HasFieldMarshal: Field or Param
+    uint32_t      nativeType = 0;  ///< #Blob NativeType
+};
+
 struct ClassLayoutRow {
     uint16_t packingSize = 0;
     uint32_t classSize   = 0;
@@ -428,6 +433,7 @@ public:
     MemberRefRow           memberRef(uint32_t idx) const;
     ConstantRow            constant(uint32_t idx) const;
     CustomAttributeRow     customAttribute(uint32_t idx) const;
+    FieldMarshalRow        fieldMarshal(uint32_t idx) const;
     ClassLayoutRow         classLayout(uint32_t idx) const;
     StandAloneSigRow       standAloneSig(uint32_t idx) const;
     PropertyRow            property(uint32_t idx) const;

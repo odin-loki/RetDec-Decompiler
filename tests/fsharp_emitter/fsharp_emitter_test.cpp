@@ -149,6 +149,56 @@ TEST(FsTypeEmitter, EmptyClass) {
     EXPECT_NE(std::string::npos, out.find("type Foo"));
 }
 
+TEST(FsTypeEmitter, EmitsClassAttribute) {
+    FsWriter w;
+    FsTypeEmitter em(w);
+    BcClass cls = makeSimpleClass("Foo");
+    BcAnnotation ann;
+    ann.typeName = "System.ObsoleteAttribute";
+    cls.annotations.push_back(ann);
+    BcModule mod("TestAssembly", SourceLang::FSharp);
+    em.emitClass(cls, mod);
+    std::string out = w.str();
+    EXPECT_NE(std::string::npos, out.find("[<Obsolete>]"));
+}
+
+TEST(FsTypeEmitter, EmitsAttributeArguments) {
+    FsWriter w;
+    FsTypeEmitter em(w);
+    BcClass cls = makeSimpleClass("Foo");
+    BcAnnotation ann;
+    ann.typeName = "System.ObsoleteAttribute";
+    BcAnnotationValue msg;
+    msg.kind = BcAnnotationValue::Kind::String;
+    msg.stringValue = "gone";
+    ann.elements["Value"] = msg;
+    cls.annotations.push_back(ann);
+    BcModule mod("TestAssembly", SourceLang::FSharp);
+    em.emitClass(cls, mod);
+    std::string out = w.str();
+    EXPECT_NE(std::string::npos, out.find("[<Obsolete(\"gone\")>]"));
+}
+
+TEST(FsTypeEmitter, EmitsParamAttribute) {
+    FsWriter w;
+    FsTypeEmitter em(w);
+    BcClass cls = makeSimpleClass("Foo");
+    BcMethod m;
+    m.name = "Bar";
+    m.access = BcAccess::Public;
+    m.descriptor.returnType = std::make_shared<BcType>(types::Void());
+    m.descriptor.params.push_back(std::make_shared<BcType>(types::Int()));
+    m.paramNames = {"x"};
+    BcAnnotation ann;
+    ann.typeName = "System.ObsoleteAttribute";
+    m.paramAnnotations.push_back({ann});
+    cls.methods.push_back(m);
+    BcModule mod("A", SourceLang::FSharp);
+    em.emitClass(cls, mod);
+    std::string out = w.str();
+    EXPECT_NE(std::string::npos, out.find("[<Obsolete>] x: int"));
+}
+
 TEST(FsTypeEmitter, ClassWithMethod) {
     FsWriter w;
     FsTypeEmitter em(w);

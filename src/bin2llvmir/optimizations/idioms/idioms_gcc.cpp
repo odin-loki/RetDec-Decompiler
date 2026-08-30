@@ -60,7 +60,7 @@ Instruction * IdiomsGCC::exchangeXorMinusOne(BasicBlock::iterator iter) const {
 		Constant *NewCst = ConstantInt::get(op0->getType(), 1);
 
 		Instruction * neg = BinaryOperator::CreateNeg(op0);
-		val.getParent()->getInstList().insert(iter, neg);
+		neg->insertBefore(iter);
 
 		return BinaryOperator::CreateSub(neg, NewCst);
 	}
@@ -141,7 +141,7 @@ Instruction * IdiomsGCC::exchangeCondBitShiftDiv1(BasicBlock::iterator iter) con
 	Value * op_select = nullptr;
 	Value * op_cmp = nullptr;
 	ConstantInt * cnst = nullptr;
-	ICmpInst::Predicate pred;
+	CmpPredicate pred;
 
 	// (X < 0 ? X + (N-1) : X) a>> log2(N) --> X s/ N
 	if (! match(&val, m_AShr(m_Value(op_select), m_ConstantInt(cnst))))
@@ -284,7 +284,7 @@ Instruction * IdiomsGCC::exchangeFloatAbs(BasicBlock::iterator iter) const {
 	if (*cnst->getValue().getRawData() != 0x7FFFFFFF)
 		return nullptr;
 
-	auto* fun = llvm::Intrinsic::getDeclaration(
+	auto* fun = llvm::Intrinsic::getOrInsertDeclaration(
 			M,
 			llvm::Intrinsic::fabs,
 			Type::getFloatTy(Context));
@@ -301,8 +301,8 @@ Instruction * IdiomsGCC::exchangeFloatAbs(BasicBlock::iterator iter) const {
 	Instruction * ret_cast = CastInst::Create(Instruction::BitCast, call, Type::getInt32Ty(Context));
 
 	// insert in reverse order
-	val.getParent()->getInstList().insert(iter, x_cast);
-	val.getParent()->getInstList().insert(iter, call);
+	x_cast->insertBefore(iter);
+	call->insertBefore(iter);
 
 	return ret_cast;
 }
@@ -369,7 +369,7 @@ int IdiomsGCC::exchangeCondBitShiftDivMultiBB(Function & f, Pass * pass) const {
 	Value * op_and       = nullptr;
 	Value * op_n         = nullptr;
 	ConstantInt * cnst   = nullptr;
-	ICmpInst::Predicate pred;
+	CmpPredicate pred;
 	BasicBlock * if_true_bb = nullptr;
 	int num_idioms = 0;
 
@@ -454,7 +454,7 @@ int IdiomsGCC::exchangeCondBitShiftDivMultiBB(Function & f, Pass * pass) const {
 								srem->takeName(phi);
 								// insert point is first insn, not the PHI
 								BasicBlock::iterator iter = phi->getParent()->getFirstInsertionPt();
-								phi->getParent()->getInstList().insert(iter, srem);
+								srem->insertBefore(iter);
 								phi->eraseFromParent();
 								num_idioms++;
 
@@ -552,7 +552,7 @@ Instruction * IdiomsGCC::exchangeCopysign(BasicBlock::iterator iter) const {
 	if (*cnst2->getValue().getRawData() != second_cnst)
 		return nullptr;
 
-	auto* fun = llvm::Intrinsic::getDeclaration(
+	auto* fun = llvm::Intrinsic::getOrInsertDeclaration(
 			M,
 			llvm::Intrinsic::copysign,
 			Type::getFloatTy(Context));
@@ -595,12 +595,12 @@ Instruction * IdiomsGCC::exchangeCopysign(BasicBlock::iterator iter) const {
 	eraseInstFromBasicBlock(op_and2, val.getParent());
 
 	// insert in reverse order
-	val.getParent()->getInstList().insert(iter, b_cast);
+	b_cast->insertBefore(iter);
 	if (a_cast != op_a)
 	{
-		val.getParent()->getInstList().insert(iter, a_cast);
+		a_cast->insertBefore(iter);
 	}
-	val.getParent()->getInstList().insert(iter, call);
+	call->insertBefore(iter);
 
 	return ret_cast;
 }

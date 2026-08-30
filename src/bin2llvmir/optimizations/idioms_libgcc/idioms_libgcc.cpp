@@ -260,12 +260,7 @@ void IdiomsLibgccImpl::log(
 
 llvm::Value* IdiomsLibgccImpl::loadReg(llvm::GlobalVariable* reg, llvm::CallInst* call)
 {
-	auto* l = new llvm::LoadInst(reg, "", call);
-	if (auto* ptee = llvm_utils::pointeeType(reg))
-	{
-		llvm_utils::setPointeeTypeMetadata(l, ptee);
-	}
-	return l;
+	return llvm_utils::createLoadInst(reg, "", call);
 }
 
 llvm::Value* IdiomsLibgccImpl::storeReg(
@@ -750,7 +745,7 @@ template<typename N>
 void IdiomsLibgccImpl::negf(llvm::CallInst* inst)
 {
 	auto* l0 = getOp0<N>(inst);
-	auto* zero = ConstantFP::getZeroValueForNegation(l0->getType());
+	auto* zero = ConstantFP::getNegativeZero(l0->getType());
 	auto* r0 = BinaryOperator::CreateFSub(zero, l0, "", inst);
 	auto* s0 = getRes0<N>(inst, r0);
 
@@ -1487,7 +1482,7 @@ bool IdiomsLibgcc::runInstruction(llvm::Instruction* inst)
 		return false;
 	}
 
-	std::string calledFnc = call->getCalledFunction()->getName();
+	std::string calledFnc = call->getCalledFunction()->getName().str();
 
 	for (auto& p : _fnc2action)
 	{

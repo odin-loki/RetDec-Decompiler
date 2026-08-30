@@ -169,6 +169,8 @@ GetSymbolicNamesForParamForKnownFunctionsReturnsCorrectAnswer) {
 	refMap[0] = "SEEK_SET";
 	refMap[1] = "SEEK_CUR";
 	refMap[2] = "SEEK_END";
+	refMap[3] = "SEEK_DATA";
+	refMap[4] = "SEEK_HOLE";
 
 	EXPECT_EQ(refMap, fseekSymbolicNames.value());
 }

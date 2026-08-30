@@ -55,7 +55,7 @@ static CallInst* replaceWithIntrinsic(Instruction* toReplace,
                                        ArrayRef<Value*> args,
                                        ArrayRef<Type*> tys) {
     Module* m = toReplace->getModule();
-    Function* fn = Intrinsic::getDeclaration(m, id, tys);
+    Function* fn = Intrinsic::getOrInsertDeclaration(m, id, tys);
     IRBuilder<> irb(toReplace);
     auto* call = irb.CreateCall(fn, args);
     toReplace->replaceAllUsesWith(call);

@@ -31,9 +31,8 @@
         "retdec-entry-alloca",
         "instcombine",
         "tbaa",
-        "basicaa",
+        "basic-aa",
         "early-cse",
-        "globalopt",
         "mem2reg",
         "simplifycfg",
         "instcombine",
@@ -41,20 +40,12 @@
         "loops",
         "loop-simplify",
         "lcssa",
-        "loop-rotate",
         "licm",
-        "indvars",
-        "loop-idiom",
-        "loop-deletion",
         "gvn",
-        "sccp",
         "simplifycfg",
         "instcombine",
         "dse",
-        "adce",
-        "strip-dead-prototypes",
         "globaldce",
-        "constmerge",
         "retdec-inst-opt",
         "retdec-simple-types",
         "retdec-stack-ptr-op-remove",
@@ -69,5 +60,9 @@
     "backend": {
         "noOpts": true
     },
-    "tags": ["fast", "ci", "gui"]
+    "tags": [
+        "fast",
+        "ci",
+        "gui"
+    ]
 }

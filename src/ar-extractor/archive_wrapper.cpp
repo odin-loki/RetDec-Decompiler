@@ -435,7 +435,7 @@ bool ArchiveWrapper::getNames(
 			result.emplace_back("invalid_name");
 		}
 		else {
-			result.push_back(*nameOrErr);
+			result.push_back(nameOrErr->str());
 		}
 	}
 

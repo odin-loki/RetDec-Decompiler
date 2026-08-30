@@ -16,7 +16,7 @@
 #include <thread>
 #include <vector>
 
-#include <llvm/ADT/Triple.h>
+#include <llvm/TargetParser/Triple.h>
 #include <llvm/Analysis/LoopInfo.h>
 #include <llvm/Analysis/ScalarEvolution.h>
 #include <llvm/Analysis/TargetLibraryInfo.h>
@@ -25,20 +25,19 @@
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IRReader/IRReader.h>
-#include <llvm/MC/SubtargetFeature.h>
+#include <llvm/TargetParser/SubtargetFeature.h>
 #include <llvm/Pass.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/FormattedStream.h>
-#include <llvm/Support/Host.h>
+#include <llvm/TargetParser/Host.h>
 #include <llvm/Support/ManagedStatic.h>
-#include <llvm/Support/PluginLoader.h>
 #include <llvm/Support/PrettyStackTrace.h>
 #include <llvm/Support/Signals.h>
 #include <llvm/Support/SourceMgr.h>
-#include <llvm/Support/TargetRegistry.h>
+#include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Target/TargetMachine.h>
@@ -478,7 +477,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 	}
 	else if (isParam(i, "", "--print-after-all"))
 	{
-		llvm::StringMap<llvm::cl::Option*> &opts =
+		llvm::DenseMap<llvm::StringRef, llvm::cl::Option*> &opts =
 				llvm::cl::getRegisteredOptions();
 
 		auto* paa = static_cast<llvm::cl::opt<bool>*>(
@@ -488,7 +487,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 	}
 	else if (isParam(i, "", "--print-before-all"))
 	{
-		llvm::StringMap<llvm::cl::Option*> &opts =
+		llvm::DenseMap<llvm::StringRef, llvm::cl::Option*> &opts =
 				llvm::cl::getRegisteredOptions();
 
 		auto* paa = static_cast<llvm::cl::opt<bool>*>(
@@ -1013,7 +1012,7 @@ Backend arguments:
 	[--backend-no-compound-operators] Do not emit compound operators (like +=) instead of assignments.
 	[--backend-no-symbolic-names] Disables the conversion of constant arguments to their symbolic names.
 Decompilation process arguments:
-	[--try-emulation] When plugin-based unpacking finds no match, attempt Stage 3 emulation-based unpacking (not yet implemented; logs and continues with packed input).
+	[--try-emulation] When plugin-based unpacking finds no match, attempt Stage 3 emulation-based unpacking. If it produces no output, continue with packed input.
 	[--jobs N] Number of binaries to decompile in parallel (default: 1).
 	[--timeout SECONDS]
 	[--max-memory MAX_MEMORY] Limits the maximal memory used by the given number of bytes.

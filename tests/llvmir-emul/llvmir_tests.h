@@ -16,6 +16,9 @@
 #include <llvm/IR/PassManager.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IRReader/IRReader.h>
+#include <llvm/InitializePasses.h>
+#include <llvm/Pass.h>
+#include <llvm/PassRegistry.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
@@ -133,7 +136,7 @@ class LlvmIrTests : public ::testing::Test
 		 */
 		llvm::Value* getValueByName(const std::string& n)
 		{
-			for (auto& g : module->getGlobalList())
+			for (auto& g : module->globals())
 			{
 				if (g.getName() == n)
 				{

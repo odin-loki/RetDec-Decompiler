@@ -24,25 +24,11 @@ namespace {
  */
 std::string toString(llvm::ms_demangle::Node *node)
 {
-
-	llvm::itanium_demangle::OutputStream s;
-	char *buf = nullptr;
-
 	if (!node) {
 		return {};
 	}
 
-	if (!initializeOutputStream(buf, nullptr, s, 1024)) {
-		return {};
-	}
-
-	node->output(s, llvm::ms_demangle::OutputFlags::OF_Default);
-	s += '\0';
-	buf = s.getBuffer();
-
-	std::string name(buf);
-	free(buf);
-	return name;
+	return node->toString();
 }
 
 }    // anonymous namespace

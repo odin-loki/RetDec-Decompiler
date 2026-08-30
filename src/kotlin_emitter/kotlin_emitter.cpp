@@ -173,12 +173,34 @@ void KotlinEmitter::emitFunctionBody(
         const KtFunction& fn,
         const ReconstructResult& recon,
         CodeWriter& writer) {
-    // For now, emit a stub body.  The full body would require adapting
-    // JavaStmtEmitter to Kotlin syntax, which is a follow-on task.
-    // We emit TODO() for abstract/native stubs and placeholder for others.
-    (void)recon;
-    (void)fn;
-    writer.writeLine("TODO(\"Decompiled body\")");
+    if (!fn.bcMethod) {
+        writer.writeLine("TODO(\"Decompiled body\")");
+        return;
+    }
+    ImportSet imports("", "");
+    JavaTypePrinter tyPrinter(imports);
+    JavaStmtEmitter stmt(*fn.bcMethod, recon, tyPrinter);
+    std::string body = stmt.emitBody();
+    auto first = body.find('{');
+    auto last  = body.rfind('}');
+    if (first == std::string::npos || last == std::string::npos || last <= first) {
+        writer.writeLine("TODO(\"Decompiled body\")");
+        return;
+    }
+    std::string inner = body.substr(first + 1, last - first - 1);
+    std::istringstream iss(inner);
+    std::string line;
+    bool any = false;
+    while (std::getline(iss, line)) {
+        if (line.size() >= 4 && line.compare(0, 4, "    ") == 0)
+            line = line.substr(4);
+        if (!any && line.empty())
+            continue;
+        writer.writeLine(line);
+        any = true;
+    }
+    if (!any)
+        writer.writeLine("TODO(\"Decompiled body\")");
 }
 
 void KotlinEmitter::emitFunction(

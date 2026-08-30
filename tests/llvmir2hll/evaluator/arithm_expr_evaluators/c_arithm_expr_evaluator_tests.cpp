@@ -21,6 +21,7 @@
 #include "retdec/llvmir2hll/ir/bit_xor_op_expr.h"
 #include "retdec/llvmir2hll/ir/call_expr.h"
 #include "retdec/llvmir2hll/ir/const_array.h"
+#include "retdec/llvmir2hll/ir/const_float.h"
 #include "retdec/llvmir2hll/ir/const_int.h"
 #include "retdec/llvmir2hll/ir/const_null_pointer.h"
 #include "retdec/llvmir2hll/ir/const_string.h"
@@ -404,13 +405,13 @@ FPToIntCastExprInfinityTest) {
 
 TEST_F(CArithmExprEvaluatorTests,
 NumConstFloatFloatTypeExtCastExprTest) {
-	SCOPED_TRACE("ExtCastExpr(2.0, FloatType)  ->   Not evaluated");
+	SCOPED_TRACE("ExtCastExpr(2.0, FloatType)  ->   2.0");
 	ShPtr<ExtCastExpr> inputExpr(ExtCastExpr::create(
 		ConstFloat::create(llvm::APFloat(2.0)),
 		FloatType::create(32)
 	));
 
-	evaluateAndCheckResult(inputExpr, ShPtr<Constant>());
+	evaluateAndCheckResult(inputExpr, ConstFloat::create(llvm::APFloat(2.0f)));
 }
 
 TEST_F(CArithmExprEvaluatorTests,
@@ -448,13 +449,13 @@ NumConstBoolIntTypeSameBitWidthExtCastExprTest) {
 
 TEST_F(CArithmExprEvaluatorTests,
 NumConstFloatFloatTypeTruncCastExprTest) {
-	SCOPED_TRACE("TruncCastExpr(2.0, FloatType)  ->   Not evaluated");
+	SCOPED_TRACE("TruncCastExpr(2.0, FloatType)  ->   2.0");
 	ShPtr<TruncCastExpr> inputExpr(TruncCastExpr::create(
 		ConstFloat::create(llvm::APFloat(2.0)),
 		FloatType::create(32)
 	));
 
-	evaluateAndCheckResult(inputExpr, ShPtr<Constant>());
+	evaluateAndCheckResult(inputExpr, ConstFloat::create(llvm::APFloat(2.0f)));
 }
 
 TEST_F(CArithmExprEvaluatorTests,
@@ -481,13 +482,14 @@ NumConstIntTypeSameBitWidthTruncCastTest) {
 
 TEST_F(CArithmExprEvaluatorTests,
 NumConstIntBitCastExprFloatTypeTest) {
-	SCOPED_TRACE("BitCastExpr(2, FloatType)  ->   Not evaluated");
+	SCOPED_TRACE("BitCastExpr(2, FloatType)  ->   bitcast of 2");
 	ShPtr<BitCastExpr> inputExpr(BitCastExpr::create(
 		ConstInt::create(2, 64),
 		FloatType::create(32)
 	));
 
-	evaluateAndCheckResult(inputExpr, ShPtr<Constant>());
+	evaluateAndCheckResult(inputExpr, ConstFloat::create(
+		llvm::APFloat(llvm::APFloat::IEEEsingle(), llvm::APInt(32, 2))));
 }
 
 //

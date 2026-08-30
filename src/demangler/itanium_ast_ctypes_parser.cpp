@@ -5,8 +5,13 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include <cstdlib>
+#include <exception>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <llvm/Demangle/ItaniumDemangle.h>
+#include <llvm/Demangle/Utility.h>
 
 #include "retdec/demangler/itanium_ast_ctypes_parser.h"
 
@@ -14,7 +19,6 @@ namespace retdec {
 namespace demangler {
 
 using Kind = llvm::itanium_demangle::Node::Kind;
-using StringView = llvm::itanium_demangle::StringView;
 
 namespace {
 
@@ -23,33 +27,15 @@ namespace {
  */
 std::string toString(const llvm::itanium_demangle::Node *node)
 {
-
-	llvm::itanium_demangle::OutputStream s;
-	char *buf = nullptr;
-
 	if (!node) {
 		return {};
 	}
 
-	if (!initializeOutputStream(buf, nullptr, s, 1024)) {
-		return {};
-	}
-
+	llvm::itanium_demangle::OutputBuffer s;
 	node->print(s);
-	s += '\0';
-	buf = s.getBuffer();
-
-	std::string name(buf);
-	free(buf);
+	std::string name(static_cast<std::string_view>(s));
+	std::free(s.getBuffer());
 	return name;
-}
-
-/*
- * @brief Converts StringView text to std::string.
- */
-inline std::string toString(const StringView &s)
-{
-	return {s.begin(), s.size()};
 }
 
 }    // anonymous namespace
@@ -201,7 +187,12 @@ std::shared_ptr<ctypes::Type> ItaniumAstCtypesParser::parseReference(
 {
 	assert(typeNode && "Violated precondition.");
 
-	auto pointee = parseType(typeNode->getPointee());
+	const llvm::itanium_demangle::Node *pointeeNode = nullptr;
+	typeNode->match([&](const llvm::itanium_demangle::Node *p,
+			llvm::itanium_demangle::ReferenceKind) {
+		pointeeNode = p;
+	});
+	auto pointee = parseType(pointeeNode);
 	unsigned bitWidth = getBitWidth("ptr_t");
 
 	return ctypes::ReferenceType::create(context, pointee, bitWidth);	// both LValue and RValue
@@ -219,7 +210,7 @@ std::shared_ptr<ctypes::Type> ItaniumAstCtypesParser::parseNameTypeNode(
 {
 	assert(typeNode && "Violated precondition.");
 
-	std::string name = toString(typeNode->getName());
+	std::string name = std::string(typeNode->getName());
 
 	if (name == "void") {
 		return ctypes::VoidType::create();
@@ -252,7 +243,8 @@ std::shared_ptr<ctypes::Type> ItaniumAstCtypesParser::parseNameTypeNode(
 		|| name == "decimal64"
 		|| name == "decimal128"
 		|| name == "decimal32"
-		|| name == "decimal16") {
+		|| name == "decimal16"
+		|| name == "half") {
 		return parseFloatingPointType(name);
 	}
 
@@ -276,30 +268,37 @@ std::shared_ptr<ctypes::ArrayType> ItaniumAstCtypesParser::parseArrayType(
 
 	Dimensions dimensions;
 
-	dimensions.emplace_back(parseDimension(typeNode->getDimension()));
+	const llvm::itanium_demangle::Node *base = nullptr;
+	llvm::itanium_demangle::Node *dim = nullptr;
+	typeNode->match([&](const llvm::itanium_demangle::Node *b,
+			llvm::itanium_demangle::Node *d) {
+		base = b;
+		dim = d;
+	});
+	dimensions.emplace_back(parseDimension(dim));
 
-	const llvm::itanium_demangle::Node *arrayTypeNode = typeNode->getBase();
-	while (arrayTypeNode->getKind() == Kind::KArrayType) {
-		auto nestedArrayType = static_cast<const llvm::itanium_demangle::ArrayType *>(arrayTypeNode);
-		dimensions.emplace_back(parseDimension(nestedArrayType->getDimension()));
-		arrayTypeNode = nestedArrayType->getBase();
+	while (base && base->getKind() == Kind::KArrayType) {
+		auto nestedArrayType = static_cast<const llvm::itanium_demangle::ArrayType *>(base);
+		nestedArrayType->match([&](const llvm::itanium_demangle::Node *b,
+				llvm::itanium_demangle::Node *d) {
+			base = b;
+			dim = d;
+		});
+		dimensions.emplace_back(parseDimension(dim));
 	}
 
-	auto type = parseType(arrayTypeNode);
+	auto type = parseType(base);
 
 	return ctypes::ArrayType::create(context, type, dimensions);
 }
 
-unsigned ItaniumAstCtypesParser::parseDimension(const llvm::itanium_demangle::NodeOrString *dimensions)
+unsigned ItaniumAstCtypesParser::parseDimension(const llvm::itanium_demangle::Node *dimensions)
 {
-	assert(dimensions && "Violated precondition.");
-
-	std::string dimStr;
-	if (dimensions->isString()) {
-		dimStr = toString(dimensions->asString());
-	} else {
-		dimStr = toString(dimensions->asNode());
+	if (!dimensions) {
+		return 0;
 	}
+
+	std::string dimStr = toString(dimensions);
 
 	unsigned dim = 0;
 	try {
@@ -318,10 +317,21 @@ unsigned ItaniumAstCtypesParser::parseDimension(const llvm::itanium_demangle::No
 std::shared_ptr<ctypes::FunctionType> ItaniumAstCtypesParser::parseFuntionType(
 	const llvm::itanium_demangle::FunctionType *typeNode)
 {
-	std::shared_ptr<ctypes::Type> returnType = parseType(typeNode->getReturnType());
+	const llvm::itanium_demangle::Node *ret = nullptr;
+	llvm::itanium_demangle::NodeArray params;
+	typeNode->match([&](const llvm::itanium_demangle::Node *r,
+			llvm::itanium_demangle::NodeArray p,
+			llvm::itanium_demangle::Qualifiers,
+			llvm::itanium_demangle::FunctionRefQual,
+			const llvm::itanium_demangle::Node *) {
+		ret = r;
+		params = p;
+	});
+
+	std::shared_ptr<ctypes::Type> returnType = parseType(ret);
 	bool isVarArg = false;
 	ctypes::FunctionType::Parameters parameters =
-		parseFuncTypeParameters(typeNode->getParameters(), isVarArg);
+		parseFuncTypeParameters(params, isVarArg);
 	ctypes::Function::VarArgness varArgness = toVarArgness(isVarArg);
 	ctypes::CallConvention callConvention = ctypes::CallConvention("unknown");	// itanium scheme never mangles call conv
 

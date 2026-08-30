@@ -26,7 +26,7 @@ namespace llvmir2hll {
 */
 std::string LabelsHandler::getLabel(const llvm::BasicBlock *bb) const {
 	return getAddressFromLabel(
-		bb->getName(),
+		bb->getName().str(),
 		LLVMSupport::getBasicBlockLabelPrefix()
 	);
 }

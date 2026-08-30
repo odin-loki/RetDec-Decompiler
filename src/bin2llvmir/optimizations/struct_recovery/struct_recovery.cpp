@@ -63,7 +63,7 @@ void attachPointeeOnPointerCast(Value* v)
     {
         return;
     }
-    llvm_utils::setPointeeTypeMetadata(i, pt->getPointerElementType());
+    llvm_utils::setPointeeTypeMetadata(i, llvm_utils::pointeeType(i));
 }
 
 } // namespace
@@ -381,7 +381,7 @@ bool StructRecovery::materializeStruct(RecoveredStruct& rs) {
             // Note: padding interleaving means we can't use fieldIdx directly.
             // Instead, use a byte-offset approach for robustness.
             Value* i8Base = builder.CreateBitCast(rw.base,
-                                Type::getInt8PtrTy(_module->getContext()), "sr_i8");
+                                PointerType::get(Type::getInt8Ty(_module->getContext()), 0), "sr_i8");
             attachPointeeOnPointerCast(i8Base);
             Value* byteGep = builder.CreateConstGEP1_64(
                                 Type::getInt8Ty(_module->getContext()),

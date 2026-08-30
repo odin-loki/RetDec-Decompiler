@@ -766,10 +766,6 @@ void DwarfExtractor::collectFunctions(DebugGroundTruth& out) {
             DebugSourceFile sf;
             sf.compDir = rootDie.getString(DW_AT_comp_dir);
             sf.path    = rootDie.getString(DW_AT_name);
-            if (!sf.compDir.empty() && !sf.path.empty() &&
-                sf.path[0] != '/') {
-                sf.path = sf.compDir + "/" + sf.path;
-            }
             out.sourceFiles.push_back(std::move(sf));
         }
 

@@ -65,7 +65,7 @@ static Value* asXmm(Value* v, IRBuilder<>& irb) {
 
 /// Build <N x ElemTy> LLVM vector type.
 static VectorType* vecType(Type* elem, unsigned n) {
-    return VectorType::get(elem, n);
+    return FixedVectorType::get(elem, n);
 }
 
 //===========================================================================
@@ -192,7 +192,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateMovShDup(
     unsigned lane1 = isHigh ? 3 : 2;
 
     // Build shuffle: [lane0, lane0, lane1, lane1]
-    std::vector<uint32_t> mask = {
+    std::vector<int> mask = {
         static_cast<uint32_t>(lane0),
         static_cast<uint32_t>(lane0),
         static_cast<uint32_t>(lane1),
@@ -223,7 +223,7 @@ static Value* packedIntBinOp(
         unsigned elemBits, unsigned numElems,
         unsigned opcode,   // llvm::Instruction::Add etc.
         IRBuilder<>& irb) {
-    auto* vecTy = VectorType::get(irb.getIntNTy(elemBits), numElems);
+    auto* vecTy = FixedVectorType::get(irb.getIntNTy(elemBits), numElems);
     Value* v0 = irb.CreateBitCast(toI128(op0, irb), vecTy);
     Value* v1 = irb.CreateBitCast(toI128(op1, irb), vecTy);
     Value* result = irb.CreateBinOp(
@@ -330,7 +330,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSsePcmpeq(
         default: bits = 32; break;
     }
     unsigned lanes = 128 / bits;
-    auto* vecTy = VectorType::get(irb.getIntNTy(bits), lanes);
+    auto* vecTy = FixedVectorType::get(irb.getIntNTy(bits), lanes);
     Value* v0 = irb.CreateBitCast(toI128(op0, irb), vecTy);
     Value* v1 = irb.CreateBitCast(toI128(op1, irb), vecTy);
     // i1 vector comparison.
@@ -352,13 +352,13 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSsePunpckl(
 
     unsigned bits = (i->id == X86_INS_PUNPCKLBW) ? 8 : 32;
     unsigned lanes = 128 / bits;
-    auto* vecTy = VectorType::get(irb.getIntNTy(bits), lanes);
+    auto* vecTy = FixedVectorType::get(irb.getIntNTy(bits), lanes);
     Value* v0 = irb.CreateBitCast(toI128(op0, irb), vecTy);
     Value* v1 = irb.CreateBitCast(toI128(op1, irb), vecTy);
 
     // Interleave low half: [v0[0], v1[0], v0[1], v1[1], ...]
     unsigned halfLanes = lanes / 2;
-    std::vector<uint32_t> mask;
+    std::vector<int> mask;
     mask.reserve(lanes);
     for (unsigned n = 0; n < halfLanes; ++n) {
         mask.push_back(static_cast<uint32_t>(n));
@@ -382,7 +382,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSsePshufd(
     auto* vec4i = vecType(irb.getInt32Ty(), 4);
     Value* v = irb.CreateBitCast(src, vec4i);
 
-    std::vector<uint32_t> mask = {
+    std::vector<int> mask = {
         static_cast<uint32_t>((ctrl >> 0) & 3),
         static_cast<uint32_t>((ctrl >> 2) & 3),
         static_cast<uint32_t>((ctrl >> 4) & 3),
@@ -427,7 +427,7 @@ static Value* packedFltBinOp(
         IRBuilder<>& irb) {
     Type* elemTy = isDouble ? irb.getDoubleTy() : irb.getFloatTy();
     unsigned n   = isDouble ? 2 : 4;
-    auto* vecTy  = VectorType::get(elemTy, n);
+    auto* vecTy  = FixedVectorType::get(elemTy, n);
     Value* v0    = irb.CreateBitCast(toI128(op0, irb), vecTy);
     Value* v1    = irb.CreateBitCast(toI128(op1, irb), vecTy);
     Value* res   = irb.CreateBinOp(
@@ -443,7 +443,7 @@ static Value* scalarFltBinOp(
         IRBuilder<>& irb) {
     Type* elemTy = isDouble ? irb.getDoubleTy() : irb.getFloatTy();
     unsigned n   = isDouble ? 2 : 4;
-    auto* vecTy  = VectorType::get(elemTy, n);
+    auto* vecTy  = FixedVectorType::get(elemTy, n);
     // For scalar ops, src lane 0 can be extracted from a narrower value
     // (e.g. a 32-bit float loaded from memory for MULSS).
     Value* i128Dst = toI128(dst, irb);
@@ -488,7 +488,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseAddPs(
         Value* adds = irb.CreateFAdd(v0, v1);
         Value* subs = irb.CreateFSub(v0, v1);
         // Blend: even from subs, odd from adds.
-        std::vector<uint32_t> mask = {4, 1, 6, 3}; // subs[0], adds[1], subs[2], adds[3]
+        std::vector<int> mask = {4, 1, 6, 3}; // subs[0], adds[1], subs[2], adds[3]
         Value* blended = irb.CreateShuffleVector(subs, adds, mask);
         storeOp(xi->operands[0], irb.CreateBitCast(blended, irb.getInt128Ty()),
                 irb, eOpConv::NOTHING);

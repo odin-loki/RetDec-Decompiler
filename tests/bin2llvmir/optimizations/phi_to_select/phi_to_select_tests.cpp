@@ -24,16 +24,19 @@ class PhiToSelectTests: public LlvmIrTests
 TEST_F(PhiToSelectTests, pointerSelectAttachesPointeeMetadata)
 {
 	parseInput(R"(
-		define i32* @fnc(i1 %c, i32* %x, i32* %y) {
+		define i32 @fnc(i1 %c) {
 		entry:
+			%x = alloca i32
+			%y = alloca i32
 			br i1 %c, label %a, label %b
 		a:
 			br label %join
 		b:
 			br label %join
 		join:
-			%p = phi i32* [ %x, %a ], [ %y, %b ]
-			ret i32* %p
+			%p = phi ptr [ %x, %a ], [ %y, %b ]
+			%v = load i32, ptr %p
+			ret i32 %v
 		}
 	)");
 

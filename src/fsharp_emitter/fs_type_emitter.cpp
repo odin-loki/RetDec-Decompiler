@@ -13,6 +13,67 @@ namespace fsharp_emitter {
 FsTypeEmitter::FsTypeEmitter(FsWriter& writer, Options opts)
     : writer_(writer), opts_(std::move(opts)) {}
 
+static std::string fsAttrName(const std::string& typeName) {
+    std::string n = typeName;
+    auto sep = n.find_last_of("/.");
+    if (sep != std::string::npos)
+        n = n.substr(sep + 1);
+    const std::string suf = "Attribute";
+    if (n.size() > suf.size() &&
+        n.compare(n.size() - suf.size(), suf.size(), suf) == 0)
+        n.resize(n.size() - suf.size());
+    return n;
+}
+
+static std::string fsAttrLit(const BcAnnotationValue& val) {
+    switch (val.kind) {
+    case BcAnnotationValue::Kind::Int:
+        return std::to_string(val.intValue);
+    case BcAnnotationValue::Kind::Float:
+        return std::to_string(val.floatValue);
+    case BcAnnotationValue::Kind::Bool:
+        return val.boolValue ? "true" : "false";
+    case BcAnnotationValue::Kind::String:
+        return "\"" + val.stringValue + "\"";
+    case BcAnnotationValue::Kind::Enum:
+        return val.enumTypeName + "." + val.enumConstant;
+    default:
+        return "\"" + val.stringValue + "\"";
+    }
+}
+
+static std::string fsAttrSuffix(const BcAnnotation& ann) {
+    if (ann.elements.empty()) return "";
+    std::string args;
+    auto itVal = ann.elements.find("Value");
+    if (itVal == ann.elements.end())
+        itVal = ann.elements.find("value");
+    bool first = true;
+    if (itVal != ann.elements.end()) {
+        args += fsAttrLit(itVal->second);
+        first = false;
+    }
+    for (const auto& kv : ann.elements) {
+        if (kv.first == "Value" || kv.first == "value") continue;
+        if (!first) args += ", ";
+        first = false;
+        args += kv.first + " = " + fsAttrLit(kv.second);
+    }
+    return "(" + args + ")";
+}
+
+static std::string fsAttrText(const BcAnnotation& ann) {
+    return fsAttrName(ann.typeName) + fsAttrSuffix(ann);
+}
+
+static void emitFsAttributes(FsWriter& w,
+                             const std::vector<BcAnnotation>& anns) {
+    for (const auto& ann : anns) {
+        if (ann.typeName.empty()) continue;
+        w.line("[<" + fsAttrText(ann) + ">]");
+    }
+}
+
 // ─── typeStr ─────────────────────────────────────────────────────────────────
 
 std::string FsTypeEmitter::typeStr(const BcType& t) const {
@@ -149,6 +210,12 @@ std::string FsTypeEmitter::methodParams(const BcMethod& m) const {
     ss << "(";
     for (size_t i = 0; i < pts.size(); ++i) {
         if (i) ss << ", ";
+        if (i < m.paramAnnotations.size()) {
+            for (const auto& ann : m.paramAnnotations[i]) {
+                if (ann.typeName.empty()) continue;
+                ss << "[<" << fsAttrText(ann) << ">] ";
+            }
+        }
         std::string pname = (i < m.paramNames.size()) ? m.paramNames[i]
                                                        : "arg" + std::to_string(i);
         ss << FsWriter::safeName(pname) << ": " << typeStr(pts[i] ? *pts[i] : BcType{});
@@ -292,6 +359,7 @@ void FsTypeEmitter::emitLetBinding(const BcMethod& m) {
 // ─── emitInterfaceType ───────────────────────────────────────────────────────
 
 void FsTypeEmitter::emitInterfaceType(const BcClass& cls) {
+    emitFsAttributes(writer_, cls.annotations);
     // Emit attribute if needed
     writer_.line("[<Interface>]");
     std::string hdr = "type " + FsWriter::safeName(cls.name);
@@ -325,6 +393,7 @@ void FsTypeEmitter::emitInterfaceType(const BcClass& cls) {
 // ─── emitAbstractMember ──────────────────────────────────────────────────────
 
 void FsTypeEmitter::emitAbstractMember(const BcMethod& m) {
+    emitFsAttributes(writer_, m.annotations);
     if (isPropertyGetter(m)) {
         std::string propName = m.name.substr(4);
         writer_.line("abstract member " + FsWriter::safeName(propName) +
@@ -347,6 +416,7 @@ void FsTypeEmitter::emitAbstractMember(const BcMethod& m) {
 // ─── emitClassType ───────────────────────────────────────────────────────────
 
 void FsTypeEmitter::emitClassType(const BcClass& cls, const BcModule& /*module*/) {
+    emitFsAttributes(writer_, cls.annotations);
     // Attributes
     if (cls.isAbstract && !cls.isInterface)
         writer_.line("[<AbstractClass>]");
@@ -434,6 +504,7 @@ void FsTypeEmitter::emitClassType(const BcClass& cls, const BcModule& /*module*/
 // ─── emitField ───────────────────────────────────────────────────────────────
 
 void FsTypeEmitter::emitField(const BcField& f, bool isLet) {
+    emitFsAttributes(writer_, f.annotations);
     std::string acc = accessStr(f.access);
     if (isLet) {
         // Module-level
@@ -466,6 +537,7 @@ void FsTypeEmitter::emitConstructor(const BcClass& /*cls*/, const BcMethod& m) {
 // ─── emitMember ──────────────────────────────────────────────────────────────
 
 void FsTypeEmitter::emitMember(const BcClass& /*cls*/, const BcMethod& m) {
+    emitFsAttributes(writer_, m.annotations);
     bool inInterface = false;
     std::string mods = memberModifiers(m, inInterface);
     std::string acc  = accessStr(m.access);

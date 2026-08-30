@@ -408,6 +408,14 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::extractVectorValue(
 			val = irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt128Ty(_module->getContext()));
 			return irb.CreateBitCast(val, llvm::Type::getFP128Ty(_module->getContext()));
 		case ARM64_VAS_INVALID:
+			// Newer Capstone may leave VAS unset on `vN.d[i]`; still extract a D lane.
+			if (op.vector_index >= 0)
+			{
+				val = irb.CreateLShr(val, llvm::ConstantInt::get(
+					val->getType(), 64u * static_cast<unsigned>(op.vector_index)));
+				return irb.CreateZExtOrTrunc(
+					val, llvm::IntegerType::getInt64Ty(_module->getContext()));
+			}
 			return val;
 		default:
 			throw GenericError("Arm64: extractVectorValue(): Unknown VESS type");
@@ -652,7 +660,7 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::generateGetOperandMemAddr(
 	auto* baseR = loadRegister(op.mem.base, irb);
 	auto* t = baseR ? baseR->getType() : getDefaultType();
 	llvm::Value* disp = op.mem.disp
-			? llvm::ConstantInt::get(t, op.mem.disp)
+			? llvm::ConstantInt::getSigned(t, op.mem.disp)
 			: nullptr;
 
 	auto* idxR = loadRegister(op.mem.index, irb);
@@ -737,7 +745,7 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::loadRegister(
 		throw GenericError("loadRegister() unhandled reg.");
 	}
 
-	llvm::Value* ret = irb.CreateLoad(llvmReg);
+	llvm::Value* ret = createLoad(irb, llvmReg);
 	if (r != pr)
 	{
 		ret = irb.CreateTrunc(ret, rt);
@@ -757,6 +765,13 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::loadOp(
 	{
 		case ARM64_OP_PSTATE:
 		case ARM64_OP_SYS:
+		case ARM64_OP_SVCR:
+		case ARM64_OP_PREFETCH:
+		case ARM64_OP_BARRIER:
+			// Operation selectors (AT/IC/DC/TLBI, PSTATE, …), not GP/FP regs.
+			// Capstone's union aliases these onto op.reg and can collide with
+			// ARM64_REG_S10 etc.
+			return nullptr;
 		case ARM64_OP_REG_MRS:
 		case ARM64_OP_REG_MSR:
 		case ARM64_OP_REG:
@@ -772,7 +787,9 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::loadOp(
 		}
 		case ARM64_OP_IMM:
 		{
-			auto* val = llvm::ConstantInt::getSigned(getDefaultType(), op.imm);
+			auto* t = getDefaultType();
+			auto* val = llvm::ConstantInt::get(t, llvm::APInt(t->getIntegerBitWidth(),
+					static_cast<uint64_t>(op.imm), false, /*implicitTrunc=*/true));
 			return generateOperandShift(irb, op, val);
 		}
 		case ARM64_OP_MEM:
@@ -797,8 +814,6 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::loadOp(
 		}
 		case ARM64_OP_INVALID:
 		case ARM64_OP_CIMM:
-		case ARM64_OP_PREFETCH:
-		case ARM64_OP_BARRIER:
 		default:
 		{
 			return llvm::UndefValue::get(ty ? ty : getDefaultType());
@@ -865,7 +880,9 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm64_impl::storeRegister(
 		}
 	}
 
-	return irb.CreateStore(val, llvmReg);
+	auto* s = irb.CreateStore(val, llvmReg);
+	attachPointeeType(s, llvmReg->getValueType());
+	return s;
 }
 
 llvm::Instruction* Capstone2LlvmIrTranslatorArm64_impl::storeOp(
@@ -1063,7 +1080,17 @@ bool Capstone2LlvmIrTranslatorArm64_impl::isVectorRegister(cs_arm64_op& op) cons
 
 uint8_t Capstone2LlvmIrTranslatorArm64_impl::getOperandAccess(cs_arm64_op& op)
 {
-	return op.access;
+	switch (op.type)
+	{
+		case ARM64_OP_PSTATE:
+		case ARM64_OP_SYS:
+		case ARM64_OP_SVCR:
+		case ARM64_OP_PREFETCH:
+		case ARM64_OP_BARRIER:
+			return 0;
+		default:
+			return op.access;
+	}
 }
 
 bool Capstone2LlvmIrTranslatorArm64_impl::isCondIns(cs_arm64 * i) const
@@ -1125,7 +1152,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::generatePseudoInstruction(cs_insn* i, 
 		_inCondition = true;
 
 		auto* cond = generateInsnConditionCode(irb, ai);
-		auto bodyIrb = generateIfThen(cond, irb);
+		llvm::IRBuilder<> bodyIrb(generateIfThen(cond, irb));
 
 		translatePseudoAsmGeneric(i, ai, bodyIrb);
 	}
@@ -1379,9 +1406,27 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateMov(cs_insn* i, cs_arm64* ai,
 	EXPECT_IS_BINARY(i, ai, irb);
 
 	op1 = loadOp(ai->operands[1], irb);
-	if (!op1->getType()->isFloatingPointTy())
+	auto* dstTy = getRegisterType(ai->operands[0].reg);
+	if (op1->getType() != dstTy)
 	{
-		op1 = irb.CreateZExtOrTrunc(op1, getRegisterType(ai->operands[0].reg));
+		if (op1->getType()->isIntegerTy() && dstTy->isIntegerTy())
+			op1 = irb.CreateZExtOrTrunc(op1, dstTy);
+		else if (op1->getType()->isIntegerTy() && dstTy->isFloatingPointTy())
+		{
+			auto* intTy = llvm::Type::getIntNTy(
+				_module->getContext(), dstTy->getPrimitiveSizeInBits());
+			op1 = irb.CreateZExtOrTrunc(op1, intTy);
+			op1 = irb.CreateBitCast(op1, dstTy);
+		}
+		else if (op1->getType()->isFloatingPointTy() && dstTy->isIntegerTy())
+		{
+			auto* intTy = llvm::Type::getIntNTy(
+				_module->getContext(), op1->getType()->getPrimitiveSizeInBits());
+			op1 = irb.CreateBitCast(op1, intTy);
+			op1 = irb.CreateZExtOrTrunc(op1, dstTy);
+		}
+		else
+			op1 = irb.CreateBitCast(op1, dstTy);
 	}
 
 	if (i->id == ARM64_INS_MVN || i->id == ARM64_INS_MOVN)
@@ -2025,7 +2070,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateClz(cs_insn* i, cs_arm64* ai,
 
 	op1 = loadOpBinaryOp1(ai, irb);
 
-	auto* f = llvm::Intrinsic::getDeclaration(
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(
 	    _module,
 	    llvm::Intrinsic::ctlz,
 	    op1->getType());
@@ -2073,7 +2118,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateCondCompare(cs_insn* i, cs_ar
 
 	auto* cond = generateInsnConditionCode(irb, ai);
 	auto irbP = generateIfThenElse(cond, irb);
-	llvm::IRBuilder<>& bodyIf(irbP.first), bodyElse(irbP.second);
+	llvm::IRBuilder<> bodyIf(irbP.first);
+	llvm::IRBuilder<> bodyElse(irbP.second);
 
 	//IF - condition holds
 	llvm::Value* val = nullptr;
@@ -2137,7 +2183,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateCondOp(cs_insn* i, cs_arm64* 
 	// Invert the condition
 	cond = generateValueNegate(irb, cond);
 	auto irbP = generateIfThenElse(cond, irb);
-	llvm::IRBuilder<>& bodyIf(irbP.first), bodyElse(irbP.second);
+	llvm::IRBuilder<> bodyIf(irbP.first);
+	llvm::IRBuilder<> bodyElse(irbP.second);
 
 	//IF - store first operand
 	storeOp(ai->operands[0], op1, bodyIf);
@@ -2176,7 +2223,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateCondSelOp(cs_insn* i, cs_arm6
 
 	auto* cond = generateInsnConditionCode(irb, ai);
 	auto irbP = generateIfThenElse(cond, irb);
-	llvm::IRBuilder<>& bodyIf(irbP.first), bodyElse(irbP.second);
+	llvm::IRBuilder<> bodyIf(irbP.first);
+	llvm::IRBuilder<> bodyElse(irbP.second);
 
 	//IF
 	storeOp(ai->operands[0], op1, bodyIf);
@@ -2219,7 +2267,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateCset(cs_insn* i, cs_arm64* ai
 	}
 	else if (i->id == ARM64_INS_CSETM)
 	{
-		one = llvm::ConstantInt::get(rt, ~0);
+		one = llvm::ConstantInt::getSigned(rt, -1);
 		// 0xffffffffffffffff - one in all bits
 	}
 	else
@@ -2384,7 +2432,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateDiv(cs_insn* i, cs_arm64* ai,
 	llvm::Value* zero = llvm::ConstantInt::get(op1->getType(), 0);
 	auto* cond = irb.CreateICmpEQ(op2, zero);
 	auto irbP = generateIfThenElse(cond, irb);
-	llvm::IRBuilder<>& bodyIf(irbP.first), bodyElse(irbP.second);
+	llvm::IRBuilder<> bodyIf(irbP.first);
+	llvm::IRBuilder<> bodyElse(irbP.second);
 
 	//IF - store zero
 	storeOp(ai->operands[0], zero, bodyIf);
@@ -2674,14 +2723,14 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateRev(cs_insn* i, cs_arm64* ai,
 	llvm::Function* f = nullptr;
 	if (i->id == ARM64_INS_REV)
 	{
-		f = llvm::Intrinsic::getDeclaration(
+		f = llvm::Intrinsic::getOrInsertDeclaration(
 				_module,
 				llvm::Intrinsic::bswap,
 				op1->getType());
 	}
 	else if (i->id == ARM64_INS_RBIT)
 	{
-		f = llvm::Intrinsic::getDeclaration(
+		f = llvm::Intrinsic::getOrInsertDeclaration(
 				_module,
 				llvm::Intrinsic::bitreverse,
 				op1->getType());
@@ -2727,14 +2776,16 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCCmp(cs_insn* i, cs_arm64* a
 
 	auto* cond = generateInsnConditionCode(irb, ai);
 	auto irbCond = generateIfThenElse(cond, irb);
-	llvm::IRBuilder<>& condIf(irbCond.first), condElse(irbCond.second);
+	llvm::IRBuilder<> condIf(irbCond.first);
+	llvm::IRBuilder<> condElse(irbCond.second);
 
 	// IF condition holds
 
 	// IF op1 == op2
 	auto* fcmpOeq = condIf.CreateFCmpOEQ(op0, op1);
 	auto irbP = generateIfThenElse(fcmpOeq, condIf);
-	llvm::IRBuilder<>& bodyIf(irbP.first), bodyElse(irbP.second);
+	llvm::IRBuilder<> bodyIf(irbP.first);
+	llvm::IRBuilder<> bodyElse(irbP.second);
 
 	storeRegister(ARM64_REG_CPSR_N, bodyIf.getFalse(), bodyIf);
 	storeRegister(ARM64_REG_CPSR_Z, bodyIf.getTrue(), bodyIf);
@@ -2744,7 +2795,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCCmp(cs_insn* i, cs_arm64* a
 	// ELSE IF op1 < op2
 	auto* fcmpOgt = bodyElse.CreateFCmpOGT(op0, op1);
 	auto irbP1 = generateIfThenElse(fcmpOgt, bodyElse);
-	llvm::IRBuilder<>& bodyIf1(irbP1.first), bodyElse1(irbP1.second);
+	llvm::IRBuilder<> bodyIf1(irbP1.first);
+	llvm::IRBuilder<> bodyElse1(irbP1.second);
 
 	storeRegister(ARM64_REG_CPSR_N, bodyIf1.getTrue(), bodyIf1);
 	storeRegister(ARM64_REG_CPSR_Z, bodyIf1.getFalse(), bodyIf1);
@@ -2754,7 +2806,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCCmp(cs_insn* i, cs_arm64* a
 	// ELSE IF op1 > op2
 	auto* fcmpOlt = bodyElse1.CreateFCmpOLT(op0, op1);
 	auto irbP2 = generateIfThenElse(fcmpOlt, bodyElse1);
-	llvm::IRBuilder<>& bodyIf2(irbP2.first), bodyElse2(irbP2.second);
+	llvm::IRBuilder<> bodyIf2(irbP2.first);
+	llvm::IRBuilder<> bodyElse2(irbP2.second);
 
 	storeRegister(ARM64_REG_CPSR_N, bodyIf2.getFalse(), bodyIf2);
 	storeRegister(ARM64_REG_CPSR_Z, bodyIf2.getFalse(), bodyIf2);
@@ -2791,7 +2844,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCmp(cs_insn* i, cs_arm64* ai
 	// IF op1 == op2
 	auto* fcmpOeq = irb.CreateFCmpOEQ(op0, op1);
 	auto irbP = generateIfThenElse(fcmpOeq, irb);
-	llvm::IRBuilder<>& bodyIf(irbP.first), bodyElse(irbP.second);
+	llvm::IRBuilder<> bodyIf(irbP.first);
+	llvm::IRBuilder<> bodyElse(irbP.second);
 
 	storeRegister(ARM64_REG_CPSR_N, bodyIf.getFalse(), bodyIf);
 	storeRegister(ARM64_REG_CPSR_Z, bodyIf.getTrue(), bodyIf);
@@ -2801,7 +2855,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCmp(cs_insn* i, cs_arm64* ai
 	// ELSE IF op1 < op2
 	auto* fcmpOgt = bodyElse.CreateFCmpOGT(op0, op1);
 	auto irbP1 = generateIfThenElse(fcmpOgt, bodyElse);
-	llvm::IRBuilder<>& bodyIf1(irbP1.first), bodyElse1(irbP1.second);
+	llvm::IRBuilder<> bodyIf1(irbP1.first);
+	llvm::IRBuilder<> bodyElse1(irbP1.second);
 
 	storeRegister(ARM64_REG_CPSR_N, bodyIf1.getTrue(), bodyIf1);
 	storeRegister(ARM64_REG_CPSR_Z, bodyIf1.getFalse(), bodyIf1);
@@ -2811,7 +2866,8 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFCmp(cs_insn* i, cs_arm64* ai
 	// ELSE IF op1 > op2
 	auto* fcmpOlt = bodyElse1.CreateFCmpOLT(op0, op1);
 	auto irbP2 = generateIfThenElse(fcmpOlt, bodyElse1);
-	llvm::IRBuilder<>& bodyIf2(irbP2.first), bodyElse2(irbP2.second);
+	llvm::IRBuilder<> bodyIf2(irbP2.first);
+	llvm::IRBuilder<> bodyElse2(irbP2.second);
 
 	storeRegister(ARM64_REG_CPSR_N, bodyIf2.getFalse(), bodyIf2);
 	storeRegister(ARM64_REG_CPSR_Z, bodyIf2.getFalse(), bodyIf2);
@@ -2988,10 +3044,10 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFMinMaxNum(cs_insn* i, cs_arm
 	switch(i->id)
 	{
 	case ARM64_INS_FMINNM:
-		intrinsic = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::minnum, op1->getType());
+		intrinsic = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::minnum, op1->getType());
 		break;
 	case ARM64_INS_FMAXNM:
-		intrinsic = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::maxnum, op1->getType());
+		intrinsic = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::maxnum, op1->getType());
 		break;
 	default:
 		throw GenericError("Arm64: translateFMinMaxNum(): Unsupported instruction id");
@@ -3135,11 +3191,11 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFUnaryOp(cs_insn* i, cs_arm64
 		val = irb.CreateFNeg(op1);
 		break;
 	case ARM64_INS_FABS:
-		intrinsic = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::fabs, op1->getType());
+		intrinsic = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fabs, op1->getType());
 		val = irb.CreateCall(intrinsic, {op1});
 		break;
 	case ARM64_INS_FSQRT:
-		intrinsic = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::sqrt, op1->getType());
+		intrinsic = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::sqrt, op1->getType());
 		val = irb.CreateCall(intrinsic, {op1});
 		break;
 	default:

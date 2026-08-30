@@ -88,15 +88,16 @@ TEST_F(ParamReturnTests, x86PtrCallBasicFunctionality)
 			store i32 123, i32* %stack_-4
 			store i32 456, i32* %stack_-8
 			%a = bitcast i32* @r to void()*
-			%1 = load i32, i32* %stack_-8
-			%2 = load i32, i32* %stack_-4
-			%3 = bitcast void ()* %a to void (i32, i32)*, !retdec.pointee !0
+			%1 = load i32, i32* %stack_-8, !retdec.pointee !0
+			%2 = load i32, i32* %stack_-4, !retdec.pointee !0
+			%3 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %3(i32 %1, i32 %2)
 			ret void
 		}
 
-		!0 = !{!"void (i32, i32)"}
-	)IR";
+		!0 = !{!"i32"}
+		!1 = !{!"void (i32, i32)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -162,15 +163,16 @@ TEST_F(ParamReturnTests, x86PtrCallPrevBbIsUsedOnlyIfItIsASinglePredecessor)
 		lab2:
 			store i32 456, i32* %stack_-8
 			%a = bitcast i32* @r to void()*
-			%1 = load i32, i32* %stack_-8
-			%2 = load i32, i32* %stack_-4
-			%3 = bitcast void ()* %a to void (i32, i32)*, !retdec.pointee !0
+			%1 = load i32, i32* %stack_-8, !retdec.pointee !0
+			%2 = load i32, i32* %stack_-4, !retdec.pointee !0
+			%3 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %3(i32 %1, i32 %2)
 			ret void
 		}
 
-		!0 = !{!"void (i32, i32)"}
-	)IR";
+		!0 = !{!"i32"}
+		!1 = !{!"void (i32, i32)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -237,15 +239,16 @@ TEST_F(ParamReturnTests, x86PtrCallPrevBbIsNotUsedIfItIsNotASinglePredecessor)
 		lab2:
 			store i32 456, i32* %stack_-8
 			%a = bitcast i32* @r to void()*
-			%1 = load i32, i32* %stack_-8
-			%2 = bitcast void ()* %a to void (i32)*, !retdec.pointee !0
+			%1 = load i32, i32* %stack_-8, !retdec.pointee !0
+			%2 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %2(i32 %1)
 			br label %lab2
 			ret void
 		}
 
-		!0 = !{!"void (i32)"}
-	)IR";
+		!0 = !{!"i32"}
+		!1 = !{!"void (i32)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -307,16 +310,17 @@ TEST_F(ParamReturnTests, x86PtrCallOnlyStackStoresAreUsed)
 			store i32 456, i32* %local
 			store i32 789, i32* @eax
 			%a = bitcast i32* @r to void()*
-			%1 = load i32, i32* %stack_-4
-			%2 = bitcast void ()* %a to void (i32)*, !retdec.pointee !0
+			%1 = load i32, i32* %stack_-4, !retdec.pointee !0
+			%2 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %2(i32 %1)
-			%3 = load i32, i32* @eax
+			%3 = load i32, i32* @eax, !retdec.pointee !0
 			ret i32 %3
 		}
 		declare void @0()
 
-		!0 = !{!"void (i32)"}
-	)IR";
+		!0 = !{!"i32"}
+		!1 = !{!"void (i32)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -374,15 +378,16 @@ TEST_F(ParamReturnTests, x86PtrCallStackAreUsedAsArgumentsInCorrectOrder)
 			store i32 456, i32* %stack_-8
 			store i32 123, i32* %stack_-4
 			%a = bitcast i32* @r to void()*
-			%1 = load i32, i32* %stack_-8
-			%2 = load i32, i32* %stack_-4
-			%3 = bitcast void ()* %a to void (i32, i32)*, !retdec.pointee !0
+			%1 = load i32, i32* %stack_-8, !retdec.pointee !0
+			%2 = load i32, i32* %stack_-4, !retdec.pointee !0
+			%3 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %3(i32 %1, i32 %2)
 			ret void
 		}
 
-		!0 = !{!"void (i32, i32)"}
-	)IR";
+		!0 = !{!"i32"}
+		!1 = !{!"void (i32, i32)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -456,16 +461,17 @@ TEST_F(ParamReturnTests, x86PtrCallOnlyContinuousStackOffsetsAreUsed)
 			store i32 3, i32* %stack_-24
 			store i32 4, i32* %stack_-4
 			%a = bitcast i32* @r to void()*
-			%1 = load i32, i32* %stack_-24
-			%2 = load i32, i32* %stack_-20
-			%3 = load i32, i32* %stack_-16
-			%4 = bitcast void ()* %a to void (i32, i32, i32)*, !retdec.pointee !0
+			%1 = load i32, i32* %stack_-24, !retdec.pointee !0
+			%2 = load i32, i32* %stack_-20, !retdec.pointee !0
+			%3 = load i32, i32* %stack_-16, !retdec.pointee !0
+			%4 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %4(i32 %1, i32 %2, i32 %3)
 			ret void
 		}
 
-		!0 = !{!"void (i32, i32, i32)"}
-	)IR";
+		!0 = !{!"i32"}
+		!1 = !{!"void (i32, i32, i32)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -522,12 +528,14 @@ TEST_F(ParamReturnTests, x86ExternalCallBasicFunctionality)
 			%stack_-8 = alloca i32
 			store i32 123, i32* %stack_-4
 			store i32 456, i32* %stack_-8
-			%1 = load i32, i32* %stack_-8
-			%2 = load i32, i32* %stack_-4
+			%1 = load i32, i32* %stack_-8, !retdec.pointee !0
+			%2 = load i32, i32* %stack_-4, !retdec.pointee !0
 			call void @print(i32 %1, i32 %2)
 			ret void
 		}
-	)";
+
+		!0 = !{!"i32"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -612,8 +620,8 @@ TEST_F(ParamReturnTests, x86ExternalCallFixOnMultiplePlaces)
 			%stack_-8 = alloca i32
 			store i32 123, i32* %stack_-4
 			store i32 456, i32* %stack_-8
-			%1 = load i32, i32* %stack_-8
-			%2 = load i32, i32* %stack_-4
+			%1 = load i32, i32* %stack_-8, !retdec.pointee !0
+			%2 = load i32, i32* %stack_-4, !retdec.pointee !0
 			call void @print(i32 %1, i32 %2)
 			ret void
 		}
@@ -624,12 +632,14 @@ TEST_F(ParamReturnTests, x86ExternalCallFixOnMultiplePlaces)
 			store i32 456, i32* %stack_-20
 			store i32 123, i32* %stack_-16
 			store i32 123, i32* %stack_-24
-			%1 = load i32, i32* %stack_-24
-			%2 = load i32, i32* %stack_-20
+			%1 = load i32, i32* %stack_-24, !retdec.pointee !0
+			%2 = load i32, i32* %stack_-20, !retdec.pointee !0
 			call void @print(i32 %1, i32 %2)
 			ret void
 		}
-	)";
+
+		!0 = !{!"i32"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -1007,18 +1017,19 @@ TEST_F(ParamReturnTests, x86_64PtrCallBasicFunctionality)
 			store i64 123, i64* @rdi
 			store i64 456, i64* @rsi
 			%a = bitcast i64* @r to void()*
-			%1 = load i64, i64* @rdi
-			%2 = load i64, i64* @rsi
-			%3 = bitcast void ()* %a to void (i64, i64)*, !retdec.pointee !0
+			%1 = load i64, i64* @rdi, !retdec.pointee !0
+			%2 = load i64, i64* @rsi, !retdec.pointee !0
+			%3 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %3(i64 %1, i64 %2)
-			%4 = load i64, i64* @rax
+			%4 = load i64, i64* @rax, !retdec.pointee !0
 			ret i64 %4
 		}
 
 		declare void @0()
 
-		!0 = !{!"void (i64, i64)"}
-	)IR";
+		!0 = !{!"i64"}
+		!1 = !{!"void (i64, i64)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -1084,18 +1095,19 @@ TEST_F(ParamReturnTests, x86_64PtrCallPrevBbIsUsedOnlyIfItIsASinglePredecessor)
 		lab2:
 			store i64 456, i64* @rsi
 			%a = bitcast i64* @r to void ()*
-			%1 = load i64, i64* @rdi
-			%2 = load i64, i64* @rsi
-			%3 = bitcast void ()* %a to void (i64, i64)*, !retdec.pointee !0
+			%1 = load i64, i64* @rdi, !retdec.pointee !0
+			%2 = load i64, i64* @rsi, !retdec.pointee !0
+			%3 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %3(i64 %1, i64 %2)
-			%4 = load i64, i64* @rax
+			%4 = load i64, i64* @rax, !retdec.pointee !0
 			ret i64 %4
 		}
 
 		declare void @0()
 
-		!0 = !{!"void (i64, i64)"}
-	)IR";
+		!0 = !{!"i64"}
+		!1 = !{!"void (i64, i64)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -1201,22 +1213,24 @@ TEST_F(ParamReturnTests, x86_64ExternalCallUseStacksIf6RegistersUsed)
 			store i64 1, i64* @rdx
 			store i64 2, i64* %stack_-16
 			store i64 1, i64* @rcx
-			%1 = load i64, i64* @rdi
-			%2 = load i64, i64* @rsi
-			%3 = load i64, i64* @rdx
-			%4 = load i64, i64* @rcx
-			%5 = load i64, i64* @r8
-			%6 = load i64, i64* @r9
-			%7 = load i64, i64* %stack_-16
-			%8 = load i64, i64* %stack_-8
+			%1 = load i64, i64* @rdi, !retdec.pointee !0
+			%2 = load i64, i64* @rsi, !retdec.pointee !0
+			%3 = load i64, i64* @rdx, !retdec.pointee !0
+			%4 = load i64, i64* @rcx, !retdec.pointee !0
+			%5 = load i64, i64* @r8, !retdec.pointee !0
+			%6 = load i64, i64* @r9, !retdec.pointee !0
+			%7 = load i64, i64* %stack_-16, !retdec.pointee !0
+			%8 = load i64, i64* %stack_-8, !retdec.pointee !0
 			%9 = call i64 @print(i64 %1, i64 %2, i64 %3, i64 %4, i64 %5, i64 %6, i64 %7, i64 %8)
-			store i64 %9, i64* @rax
-			%10 = load i64, i64* @rax
+			store i64 %9, i64* @rax, !retdec.pointee !0
+			%10 = load i64, i64* @rax, !retdec.pointee !0
 			ret i64 %10
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"i64"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -1273,17 +1287,19 @@ TEST_F(ParamReturnTests, x86_64ExternalCallUsesFPRegistersBasic)
 	define i64 @fnc() {
 		store double 2.000000e+00, double* @xmm1
 		store double 2.000000e+00, double* @xmm0
-		%1 = load double, double* @xmm0
-		%2 = load double, double* @xmm1
+		%1 = load double, double* @xmm0, !retdec.pointee !0
+		%2 = load double, double* @xmm1, !retdec.pointee !0
 		%3 = call i64 @print(double %1, double %2)
-		store i64 %3, i64* @rax
-		%4 = load i64, i64* @rax
+		store i64 %3, i64* @rax, !retdec.pointee !1
+		%4 = load i64, i64* @rax, !retdec.pointee !1
 		ret i64 %4
 	}
 
 	declare void @1()
 
-	)";
+		!0 = !{!"double"}
+		!1 = !{!"i64"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -1375,23 +1391,25 @@ TEST_F(ParamReturnTests, x86_64ExternalCallUsesFPRegisters)
 		store i64 1, i64* @rdx
 		store double 2.000000e+00, double* @xmm0
 		store i64 1, i64* @rcx
-		%1 = load i64, i64* @rdi
-		%2 = load i64, i64* @rsi
-		%3 = load i64, i64* @rdx
-		%4 = load i64, i64* @rcx
-		%5 = load i64, i64* @r8
-		%6 = load i64, i64* @r9
-		%7 = load double, double* @xmm0
-		%8 = load double, double* @xmm1
+		%1 = load i64, i64* @rdi, !retdec.pointee !0
+		%2 = load i64, i64* @rsi, !retdec.pointee !0
+		%3 = load i64, i64* @rdx, !retdec.pointee !0
+		%4 = load i64, i64* @rcx, !retdec.pointee !0
+		%5 = load i64, i64* @r8, !retdec.pointee !0
+		%6 = load i64, i64* @r9, !retdec.pointee !0
+		%7 = load double, double* @xmm0, !retdec.pointee !1
+		%8 = load double, double* @xmm1, !retdec.pointee !1
 		%9 = call i64 @print(i64 %1, i64 %2, i64 %3, i64 %4, i64 %5, i64 %6, double %7, double %8)
-		store i64 %9, i64* @rax
-		%10 = load i64, i64* @rax
+		store i64 %9, i64* @rax, !retdec.pointee !0
+		%10 = load i64, i64* @rax, !retdec.pointee !0
 		ret i64 %10
 	}
 
 	declare void @1()
 
-	)";
+		!0 = !{!"i64"}
+		!1 = !{!"double"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -1456,15 +1474,17 @@ TEST_F(ParamReturnTests, x86_64UsesJustContinuousSequenceOfRegisters)
 			store i64 1, i64* @rdi
 			store i64 1, i64* @rdx
 			store i64 1, i64* @rcx
-			%1 = load i64, i64* @rdi
+			%1 = load i64, i64* @rdi, !retdec.pointee !0
 			%2 = call i64 @print(i64 %1)
-			store i64 %2, i64* @rax
-			%3 = load i64, i64* @rax
+			store i64 %2, i64* @rax, !retdec.pointee !0
+			%3 = load i64, i64* @rax, !retdec.pointee !0
 			ret i64 %3
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"i64"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -1524,18 +1544,19 @@ TEST_F(ParamReturnTests, ms_x64PtrCallBasicFunctionality)
 			store i64 123, i64* @rcx
 			store i64 456, i64* @rdx
 			%a = bitcast i64* @r to void()*
-			%1 = load i64, i64* @rcx
-			%2 = load i64, i64* @rdx
-			%3 = bitcast void ()* %a to void (i64, i64)*, !retdec.pointee !0
+			%1 = load i64, i64* @rcx, !retdec.pointee !0
+			%2 = load i64, i64* @rdx, !retdec.pointee !0
+			%3 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %3(i64 %1, i64 %2)
-			%4 = load i64, i64* @rax
+			%4 = load i64, i64* @rax, !retdec.pointee !0
 			ret i64 %4
 		}
 
 		declare void @0()
 
-		!0 = !{!"void (i64, i64)"}
-	)IR";
+		!0 = !{!"i64"}
+		!1 = !{!"void (i64, i64)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -1606,18 +1627,19 @@ TEST_F(ParamReturnTests, ms_x64PtrCallPrevBbIsUsedOnlyIfItIsASinglePredecessor)
 		lab2:
 			store i64 456, i64* @rdx
 			%a = bitcast i64* @r to void ()*
-			%1 = load i64, i64* @rcx
-			%2 = load i64, i64* @rdx
-			%3 = bitcast void ()* %a to void (i64, i64)*, !retdec.pointee !0
+			%1 = load i64, i64* @rcx, !retdec.pointee !0
+			%2 = load i64, i64* @rdx, !retdec.pointee !0
+			%3 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %3(i64 %1, i64 %2)
-			%4 = load i64, i64* @rax
+			%4 = load i64, i64* @rax, !retdec.pointee !0
 			ret i64 %4
 		}
 
 		declare void @0()
 
-		!0 = !{!"void (i64, i64)"}
-	)IR";
+		!0 = !{!"i64"}
+		!1 = !{!"void (i64, i64)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -1719,20 +1741,22 @@ TEST_F(ParamReturnTests, ms_x64ExternalCallUseStacksIf4RegistersUsed)
 			store i64 1, i64* @rdx
 			store i64 2, i64* %stack_-16
 			store i64 1, i64* @rcx
-			%1 = load i64, i64* @rcx
-			%2 = load i64, i64* @rdx
-			%3 = load i64, i64* @r8
-			%4 = load i64, i64* @r9
-			%5 = load i64, i64* %stack_-16
-			%6 = load i64, i64* %stack_-8
+			%1 = load i64, i64* @rcx, !retdec.pointee !0
+			%2 = load i64, i64* @rdx, !retdec.pointee !0
+			%3 = load i64, i64* @r8, !retdec.pointee !0
+			%4 = load i64, i64* @r9, !retdec.pointee !0
+			%5 = load i64, i64* %stack_-16, !retdec.pointee !0
+			%6 = load i64, i64* %stack_-8, !retdec.pointee !0
 			%7 = call i64 @print(i64 %1, i64 %2, i64 %3, i64 %4, i64 %5, i64 %6)
-			store i64 %7, i64* @rax
-			%8 = load i64, i64* @rax
+			store i64 %7, i64* @rax, !retdec.pointee !0
+			%8 = load i64, i64* @rax, !retdec.pointee !0
 			ret i64 %8
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"i64"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -1800,17 +1824,19 @@ TEST_F(ParamReturnTests, ms_x64ExternalCallUsesFPRegisters)
 	define i64 @fnc() {
 		store double 2.000000e+00, double* @xmm1
 		store double 2.000000e+00, double* @xmm0
-		%1 = load double, double* @xmm0
-		%2 = load double, double* @xmm1
+		%1 = load double, double* @xmm0, !retdec.pointee !0
+		%2 = load double, double* @xmm1, !retdec.pointee !0
 		%3 = call i64 @print(double %1, double %2)
-		store i64 %3, i64* @rax
-		%4 = load i64, i64* @rax
+		store i64 %3, i64* @rax, !retdec.pointee !1
+		%4 = load i64, i64* @rax, !retdec.pointee !1
 		ret i64 %4
 	}
 
 	declare void @1()
 
-	)";
+		!0 = !{!"double"}
+		!1 = !{!"i64"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -1880,15 +1906,17 @@ TEST_F(ParamReturnTests, ms_x64UsesJustContinuousSequenceOfRegisters)
 			store i64 1, i64* @r9
 			store i64 1, i64* @r8
 			store i64 1, i64* @rcx
-			%1 = load i64, i64* @rcx
+			%1 = load i64, i64* @rcx, !retdec.pointee !0
 			%2 = call i64 @print(i64 %1)
-			store i64 %2, i64* @rax
-			%3 = load i64, i64* @rax
+			store i64 %2, i64* @rax, !retdec.pointee !0
+			%3 = load i64, i64* @rax, !retdec.pointee !0
 			ret i64 %3
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"i64"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -1960,19 +1988,21 @@ TEST_F(ParamReturnTests, ms_x64ExternalCallUsesFPRegistersAdvanced)
 		store i64 1, i64* @rdx
 		store double 2.000000e+00, double* @xmm2
 		store double 2.000000e+00, double* @xmm3
-		%1 = load i64, i64* @rcx
-		%2 = load i64, i64* @rdx
-		%3 = load double, double* @xmm2
-		%4 = load double, double* @xmm3
+		%1 = load i64, i64* @rcx, !retdec.pointee !0
+		%2 = load i64, i64* @rdx, !retdec.pointee !0
+		%3 = load double, double* @xmm2, !retdec.pointee !1
+		%4 = load double, double* @xmm3, !retdec.pointee !1
 		%5 = call i64 @print(i64 %1, i64 %2, double %3, double %4)
-		store i64 %5, i64* @rax
-		%6 = load i64, i64* @rax
+		store i64 %5, i64* @rax, !retdec.pointee !0
+		%6 = load i64, i64* @rax, !retdec.pointee !0
 		ret i64 %6
 	}
 
 	declare void @1()
 
-	)";
+		!0 = !{!"i64"}
+		!1 = !{!"double"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2074,18 +2104,19 @@ TEST_F(ParamReturnTests, ppcPtrCallBasicFunctionality)
 			store i32 123, i32* @r3
 			store i32 456, i32* @r4
 			%a = bitcast i32* @r to void ()*
-			%1 = load i32, i32* @r3
-			%2 = load i32, i32* @r4
-			%3 = bitcast void ()* %a to void (i32, i32)*, !retdec.pointee !0
+			%1 = load i32, i32* @r3, !retdec.pointee !0
+			%2 = load i32, i32* @r4, !retdec.pointee !0
+			%3 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %3(i32 %1, i32 %2)
-			%4 = load i32, i32* @r3
+			%4 = load i32, i32* @r3, !retdec.pointee !0
 			ret i32 %4
 		}
 
 		declare void @0()
 
-		!0 = !{!"void (i32, i32)"}
-	)IR";
+		!0 = !{!"i32"}
+		!1 = !{!"void (i32, i32)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2133,16 +2164,18 @@ TEST_F(ParamReturnTests, ppcExternalCallBasicFunctionality)
 		define i32 @fnc() {
 			store i32 123, i32* @r3
 			store i32 456, i32* @r4
-			%1 = load i32, i32* @r3
-			%2 = load i32, i32* @r4
+			%1 = load i32, i32* @r3, !retdec.pointee !0
+			%2 = load i32, i32* @r4, !retdec.pointee !0
 			%3 = call i32 @print(i32 %1, i32 %2)
-			store i32 %3, i32* @r3
-			%4 = load i32, i32* @r3
+			store i32 %3, i32* @r3, !retdec.pointee !0
+			%4 = load i32, i32* @r3, !retdec.pointee !0
 			ret i32 %4
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"i32"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2200,18 +2233,21 @@ TEST_F(ParamReturnTests, ppcExternalCallBasicFPFunctionality)
 			store i32 456, i32* @r4
 			store double 0.0, double* @f1
 			store double 0.0, double* @f2
-			%1 = load i32, i32* @r3
-			%2 = load i32, i32* @r4
-			%3 = load double, double* @f1
-			%4 = load double, double* @f2
+			%1 = load i32, i32* @r3, !retdec.pointee !0
+			%2 = load i32, i32* @r4, !retdec.pointee !0
+			%3 = load double, double* @f1, !retdec.pointee !1
+			%4 = load double, double* @f2, !retdec.pointee !1
 			%5 = call i32 @print(i32 %1, i32 %2, double %3, double %4)
-			store i32 %5, i32* @r3
-			%6 = load i32, i32* @r3
+			store i32 %5, i32* @r3, !retdec.pointee !0
+			%6 = load i32, i32* @r3, !retdec.pointee !0
 			ret i32 %6
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"i32"}
+		!1 = !{!"double"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2251,8 +2287,7 @@ TEST_F(ParamReturnTests, ppcExternalCallDoNotUseObjectsIfTheyAreNotRegisters)
 			store i32 123, i32* @r3
 			call void @print()
 			ret void
-		}
-	)";
+		})";
 	checkModuleAgainstExpectedIr(exp);
 }
 /*
@@ -2303,10 +2338,10 @@ TEST_F(ParamReturnTests, ppcExternalCallFilterRegistersOnMultiplePlaces)
 		define i32 @fnc1() {
 			store i32 123, i32* @r3
 			store i32 456, i32* @r4
-			%1 = load i32, i32* @r3
+			%1 = load i32, i32* @r3, !retdec.pointee !0
 			%2 = call i32 @print(i32 %1)
-			store i32 %2, i32* @r3
-			%3 = load i32, i32* @r3
+			store i32 %2, i32* @r3, !retdec.pointee !0
+			%3 = load i32, i32* @r3, !retdec.pointee !0
 			ret i32 %3
 		}
 
@@ -2315,15 +2350,17 @@ TEST_F(ParamReturnTests, ppcExternalCallFilterRegistersOnMultiplePlaces)
 		define i32 @fnc2() {
 			store i32 123, i32* @r3
 			store i32 456, i32* @r5
-			%1 = load i32, i32* @r3
+			%1 = load i32, i32* @r3, !retdec.pointee !0
 			%2 = call i32 @print(i32 %1)
-			store i32 %2, i32* @r3
-			%3 = load i32, i32* @r3
+			store i32 %2, i32* @r3, !retdec.pointee !0
+			%3 = load i32, i32* @r3, !retdec.pointee !0
 			ret i32 %3
 		}
 
 		declare void @2()
-	)";
+
+		!0 = !{!"i32"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2371,15 +2408,17 @@ TEST_F(ParamReturnTests, ppcExternalCallDoNotUseAllRegisters)
 			store i32 123, i32* @r1
 			store i32 456, i32* @r3
 			store i32 789, i32* @r2
-			%1 = load i32, i32* @r3
+			%1 = load i32, i32* @r3, !retdec.pointee !0
 			%2 = call i32 @print(i32 %1)
-			store i32 %2, i32* @r3
-			%3 = load i32, i32* @r3
+			store i32 %2, i32* @r3, !retdec.pointee !0
+			%3 = load i32, i32* @r3, !retdec.pointee !0
 			ret i32 %3
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"i32"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 */
@@ -2434,17 +2473,19 @@ TEST_F(ParamReturnTests, ppcExternalCallSortRegistersIntoCorrectOrder)
 			store i32 123, i32* @r5
 			store i32 456, i32* @r3
 			store i32 789, i32* @r4
-			%1 = load i32, i32* @r3
-			%2 = load i32, i32* @r4
-			%3 = load i32, i32* @r5
+			%1 = load i32, i32* @r3, !retdec.pointee !0
+			%2 = load i32, i32* @r4, !retdec.pointee !0
+			%3 = load i32, i32* @r5, !retdec.pointee !0
 			%4 = call i32 @print(i32 %1, i32 %2, i32 %3)
-			store i32 %4, i32* @r3
-			%5 = load i32, i32* @r3
+			store i32 %4, i32* @r3, !retdec.pointee !0
+			%5 = load i32, i32* @r3, !retdec.pointee !0
 			ret i32 %5
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"i32"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2504,15 +2545,17 @@ TEST_F(ParamReturnTests, ppcExternalCallDoNotUseStacksIfLessThan7RegistersUsed)
 			%stack_-4 = alloca i32
 			store i32 123, i32* @r3
 			store i32 456, i32* %stack_-4
-			%1 = load i32, i32* @r3
+			%1 = load i32, i32* @r3, !retdec.pointee !0
 			%2 = call i32 @print(i32 %1)
-			store i32 %2, i32* @r3
-			%3 = load i32, i32* @r3
+			store i32 %2, i32* @r3, !retdec.pointee !0
+			%3 = load i32, i32* @r3, !retdec.pointee !0
 			ret i32 %3
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"i32"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2563,18 +2606,19 @@ TEST_F(ParamReturnTests, ppc64PtrCallBasicFunctionality)
 			store i64 123, i64* @r3
 			store i64 456, i64* @r4
 			%a = bitcast i64* @r to void ()*
-			%1 = load i64, i64* @r3
-			%2 = load i64, i64* @r4
-			%3 = bitcast void ()* %a to void (i64, i64)*, !retdec.pointee !0
+			%1 = load i64, i64* @r3, !retdec.pointee !0
+			%2 = load i64, i64* @r4, !retdec.pointee !0
+			%3 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %3(i64 %1, i64 %2)
-			%4 = load i64, i64* @r3
+			%4 = load i64, i64* @r3, !retdec.pointee !0
 			ret i64 %4
 		}
 
 		declare void @0()
 
-		!0 = !{!"void (i64, i64)"}
-	)IR";
+		!0 = !{!"i64"}
+		!1 = !{!"void (i64, i64)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2647,18 +2691,19 @@ TEST_F(ParamReturnTests, armPtrCallBasicFunctionality)
 			store i32 123, i32* @r0
 			store i32 456, i32* @r1
 			%a = bitcast i32* @r to void ()*
-			%1 = load i32, i32* @r0
-			%2 = load i32, i32* @r1
-			%3 = bitcast void ()* %a to void (i32, i32)*, !retdec.pointee !0
+			%1 = load i32, i32* @r0, !retdec.pointee !0
+			%2 = load i32, i32* @r1, !retdec.pointee !0
+			%3 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %3(i32 %1, i32 %2)
-			%4 = load i32, i32* @r0
+			%4 = load i32, i32* @r0, !retdec.pointee !0
 			ret i32 %4
 		}
 
 		declare void @0()
 
-		!0 = !{!"void (i32, i32)"}
-	)IR";
+		!0 = !{!"i32"}
+		!1 = !{!"void (i32, i32)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2707,17 +2752,18 @@ TEST_F(ParamReturnTests, armExternalCallBasicFunctionality)
 		define i32 @fnc() {
 			store i32 123, i32* @r0
 			store i32 456, i32* @r1
-			%1 = load i32, i32* @r0
-			%2 = load i32, i32* @r1
+			%1 = load i32, i32* @r0, !retdec.pointee !0
+			%2 = load i32, i32* @r1, !retdec.pointee !0
 			%3 = call i32 @print(i32 %1, i32 %2)
-			store i32 %3, i32* @r0
-			%4 = load i32, i32* @r0
+			store i32 %3, i32* @r0, !retdec.pointee !0
+			%4 = load i32, i32* @r0, !retdec.pointee !0
 			ret i32 %4
 		}
 
 		declare void @1()
 
-	)";
+		!0 = !{!"i32"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2805,20 +2851,22 @@ TEST_F(ParamReturnTests, armExternalCallUseStacksIf4RegistersUsed)
 			store i32 1, i32* @r0
 			store i32 2, i32* %stack_-8
 			store i32 1, i32* @r3
-			%1 = load i32, i32* @r0
-			%2 = load i32, i32* @r1
-			%3 = load i32, i32* @r2
-			%4 = load i32, i32* @r3
-			%5 = load i32, i32* %stack_-8
-			%6 = load i32, i32* %stack_-4
+			%1 = load i32, i32* @r0, !retdec.pointee !0
+			%2 = load i32, i32* @r1, !retdec.pointee !0
+			%3 = load i32, i32* @r2, !retdec.pointee !0
+			%4 = load i32, i32* @r3, !retdec.pointee !0
+			%5 = load i32, i32* %stack_-8, !retdec.pointee !0
+			%6 = load i32, i32* %stack_-4, !retdec.pointee !0
 			%7 = call i32 @print(i32 %1, i32 %2, i32 %3, i32 %4, i32 %5, i32 %6)
-			store i32 %7, i32* @r0
-			%8 = load i32, i32* @r0
+			store i32 %7, i32* @r0, !retdec.pointee !0
+			%8 = load i32, i32* @r0, !retdec.pointee !0
 			ret i32 %8
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"i32"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2870,18 +2918,19 @@ TEST_F(ParamReturnTests, arm64PtrCallBasicFunctionality)
 			store i64 123, i64* @x0
 			store i64 456, i64* @x1
 			%a = bitcast i64* @r to void ()*
-			%1 = load i64, i64* @x0
-			%2 = load i64, i64* @x1
-			%3 = bitcast void ()* %a to void (i64, i64)*, !retdec.pointee !0
+			%1 = load i64, i64* @x0, !retdec.pointee !0
+			%2 = load i64, i64* @x1, !retdec.pointee !0
+			%3 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %3(i64 %1, i64 %2)
-			%4 = load i64, i64* @x0
+			%4 = load i64, i64* @x0, !retdec.pointee !0
 			ret i64 %4
 		}
 
 		declare void @0()
 
-		!0 = !{!"void (i64, i64)"}
-	)IR";
+		!0 = !{!"i64"}
+		!1 = !{!"void (i64, i64)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -2930,17 +2979,18 @@ TEST_F(ParamReturnTests, arm64ExternalCallBasicFunctionality)
 		define i64 @fnc() {
 			store i64 123, i64* @x0
 			store i64 456, i64* @x1
-			%1 = load i64, i64* @x0
-			%2 = load i64, i64* @x1
+			%1 = load i64, i64* @x0, !retdec.pointee !0
+			%2 = load i64, i64* @x1, !retdec.pointee !0
 			%3 = call i64 @print(i64 %1, i64 %2)
-			store i64 %3, i64* @x0
-			%4 = load i64, i64* @x0
+			store i64 %3, i64* @x0, !retdec.pointee !0
+			%4 = load i64, i64* @x0, !retdec.pointee !0
 			ret i64 %4
 		}
 
 		declare void @1()
 
-	)";
+		!0 = !{!"i64"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -3049,24 +3099,26 @@ TEST_F(ParamReturnTests, arm64ExternalCallUseStacksIf8RegistersUsed)
 			store i64 2, i64* %stack_-12
 			store i64 1, i64* @x3
 
-			%1 = load i64, i64* @x0
-			%2 = load i64, i64* @x1
-			%3 = load i64, i64* @x2
-			%4 = load i64, i64* @x3
-			%5 = load i64, i64* @x4
-			%6 = load i64, i64* @x5
-			%7 = load i64, i64* @x6
-			%8 = load i64, i64* @x7
-			%9 = load i64, i64* %stack_-12
-			%10 = load i64, i64* %stack_-4
+			%1 = load i64, i64* @x0, !retdec.pointee !0
+			%2 = load i64, i64* @x1, !retdec.pointee !0
+			%3 = load i64, i64* @x2, !retdec.pointee !0
+			%4 = load i64, i64* @x3, !retdec.pointee !0
+			%5 = load i64, i64* @x4, !retdec.pointee !0
+			%6 = load i64, i64* @x5, !retdec.pointee !0
+			%7 = load i64, i64* @x6, !retdec.pointee !0
+			%8 = load i64, i64* @x7, !retdec.pointee !0
+			%9 = load i64, i64* %stack_-12, !retdec.pointee !0
+			%10 = load i64, i64* %stack_-4, !retdec.pointee !0
 			%11 = call i64 @print(i64 %1, i64 %2, i64 %3, i64 %4, i64 %5, i64 %6, i64 %7, i64 %8, i64 %9, i64 %10)
-			store i64 %11, i64* @x0
-			%12 = load i64, i64* @x0
+			store i64 %11, i64* @x0, !retdec.pointee !0
+			%12 = load i64, i64* @x0, !retdec.pointee !0
 			ret i64 %12
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"i64"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -3125,15 +3177,18 @@ TEST_F(ParamReturnTests, arm64ExternalCallHasDouleParameter)
 
 		define i64 @fnc() {
 			store double 0.0, double* @v0
-			%1 = load double, double* @v0
+			%1 = load double, double* @v0, !retdec.pointee !0
 			%2 = call i64 @foo(double %1)
-			store i64 %2, i64* @x0
-			%3 = load i64, i64* @x0
+			store i64 %2, i64* @x0, !retdec.pointee !1
+			%3 = load i64, i64* @x0, !retdec.pointee !1
 			ret i64 %3
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"double"}
+		!1 = !{!"i64"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -3279,15 +3334,16 @@ TEST_F(ParamReturnTests, mipsPtrCallBasicFunctionality)
 			store i32 123, i32* @a0
 			store i32 456, i32* @a1
 			%a = bitcast i32* @r to void()*
-			%1 = load i32, i32* @a0
-			%2 = load i32, i32* @a1
-			%3 = bitcast void ()* %a to void (i32, i32)*, !retdec.pointee !0
+			%1 = load i32, i32* @a0, !retdec.pointee !0
+			%2 = load i32, i32* @a1, !retdec.pointee !0
+			%3 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %3(i32 %1, i32 %2)
 			ret void
 		}
 
-		!0 = !{!"void (i32, i32)"}
-	)IR";
+		!0 = !{!"i32"}
+		!1 = !{!"void (i32, i32)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -3333,12 +3389,14 @@ TEST_F(ParamReturnTests, mipsExternalCallBasicFunctionality)
 		define void @fnc() {
 			store i32 123, i32* @a0
 			store i32 456, i32* @a1
-			%1 = load i32, i32* @a0
-			%2 = load i32, i32* @a1
+			%1 = load i32, i32* @a0, !retdec.pointee !0
+			%2 = load i32, i32* @a1, !retdec.pointee !0
 			call void @print(i32 %1, i32 %2)
 			ret void
 		}
-	)";
+
+		!0 = !{!"i32"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -3423,16 +3481,18 @@ TEST_F(ParamReturnTests, mipsExternalCallUseStacksIf4RegistersUsed)
 			store i32 1, i32* @a0
 			store i32 2, i32* %stack_-8
 			store i32 1, i32* @a3
-			%1 = load i32, i32* @a0
-			%2 = load i32, i32* @a1
-			%3 = load i32, i32* @a2
-			%4 = load i32, i32* @a3
-			%5 = load i32, i32* %stack_-8
-			%6 = load i32, i32* %stack_-4
+			%1 = load i32, i32* @a0, !retdec.pointee !0
+			%2 = load i32, i32* @a1, !retdec.pointee !0
+			%3 = load i32, i32* @a2, !retdec.pointee !0
+			%4 = load i32, i32* @a3, !retdec.pointee !0
+			%5 = load i32, i32* %stack_-8, !retdec.pointee !0
+			%6 = load i32, i32* %stack_-4, !retdec.pointee !0
 			call void @print(i32 %1, i32 %2, i32 %3, i32 %4, i32 %5, i32 %6)
 			ret void
 		}
-	)";
+
+		!0 = !{!"i32"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -3483,15 +3543,16 @@ TEST_F(ParamReturnTests, mips64PtrCallBasicFunctionality)
 			store i64 123, i64* @a0
 			store i64 456, i64* @a1
 			%a = bitcast i64* @r to void()*
-			%1 = load i64, i64* @a0
-			%2 = load i64, i64* @a1
-			%3 = bitcast void ()* %a to void (i64, i64)*, !retdec.pointee !0
+			%1 = load i64, i64* @a0, !retdec.pointee !0
+			%2 = load i64, i64* @a1, !retdec.pointee !0
+			%3 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %3(i64 %1, i64 %2)
 			ret void
 		}
 
-		!0 = !{!"void (i64, i64)"}
-	)IR";
+		!0 = !{!"i64"}
+		!1 = !{!"void (i64, i64)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -3541,12 +3602,14 @@ TEST_F(ParamReturnTests, mips64ExternalCallBasicFunctionality)
 		define void @fnc() {
 			store i64 123, i64* @a0
 			store i64 456, i64* @a1
-			%1 = load i64, i64* @a0
-			%2 = load i64, i64* @a1
+			%1 = load i64, i64* @a0, !retdec.pointee !0
+			%2 = load i64, i64* @a1, !retdec.pointee !0
 			call void @print(i64 %1, i64 %2)
 			ret void
 		}
-	)";
+
+		!0 = !{!"i64"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -3658,20 +3721,22 @@ TEST_F(ParamReturnTests, mips64ExternalCallUseStacksIf8RegistersUsed)
 			store i64 1, i64* @a5
 			store i64 1, i64* @a3
 
-			%1 = load i64, i64* @a0
-			%2 = load i64, i64* @a1
-			%3 = load i64, i64* @a2
-			%4 = load i64, i64* @a3
-			%5 = load i64, i64* @a4
-			%6 = load i64, i64* @a5
-			%7 = load i64, i64* @a6
-			%8 = load i64, i64* @a7
-			%9 = load i64, i64* %stack_-12
-			%10 = load i64, i64* %stack_-4
+			%1 = load i64, i64* @a0, !retdec.pointee !0
+			%2 = load i64, i64* @a1, !retdec.pointee !0
+			%3 = load i64, i64* @a2, !retdec.pointee !0
+			%4 = load i64, i64* @a3, !retdec.pointee !0
+			%5 = load i64, i64* @a4, !retdec.pointee !0
+			%6 = load i64, i64* @a5, !retdec.pointee !0
+			%7 = load i64, i64* @a6, !retdec.pointee !0
+			%8 = load i64, i64* @a7, !retdec.pointee !0
+			%9 = load i64, i64* %stack_-12, !retdec.pointee !0
+			%10 = load i64, i64* %stack_-4, !retdec.pointee !0
 			call void @print(i64 %1, i64 %2, i64 %3, i64 %4, i64 %5, i64 %6, i64 %7, i64 %8, i64 %9, i64 %10)
 			ret void
 		}
-	)";
+
+		!0 = !{!"i64"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -3757,18 +3822,20 @@ TEST_F(ParamReturnTests, x86FastcallBasic)
 			store i32 1, i32* @edx
 			store i32 123, i32* %stack_-4
 			store i32 456, i32* %stack_-8
-			%1 = load i32, i32* @ecx
-			%2 = load i32, i32* @edx
-			%3 = load i32, i32* %stack_-8
-			%4 = load i32, i32* %stack_-4
+			%1 = load i32, i32* @ecx, !retdec.pointee !0
+			%2 = load i32, i32* @edx, !retdec.pointee !0
+			%3 = load i32, i32* %stack_-8, !retdec.pointee !0
+			%4 = load i32, i32* %stack_-4, !retdec.pointee !0
 			%5 = call i32 @a(i32 %1, i32 %2, i32 %3, i32 %4)
-			store i32 %5, i32* @eax
-			%6 = load i32, i32* @eax
+			store i32 %5, i32* @eax, !retdec.pointee !0
+			%6 = load i32, i32* @eax, !retdec.pointee !0
 			ret i32 %6
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"i32"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -3853,17 +3920,19 @@ TEST_F(ParamReturnTests, x86FastcallLargeTypeCatch)
 			store i32 123, i32* @ecx
 			store i32 456, i32* %stack_-4
 			store i32 789, i32* %stack_-8
-			%1 = load i32, i32* @ecx
-			%2 = load i32, i32* %stack_-8
-			%3 = load i32, i32* %stack_-4
+			%1 = load i32, i32* @ecx, !retdec.pointee !0
+			%2 = load i32, i32* %stack_-8, !retdec.pointee !0
+			%3 = load i32, i32* %stack_-4, !retdec.pointee !0
 			%4 = call i32 @a(i32 %1, i32 %2, i32 %3)
-			store i32 %4, i32* @eax
-			%5 = load i32, i32* @eax
+			store i32 %4, i32* @eax, !retdec.pointee !0
+			%5 = load i32, i32* @eax, !retdec.pointee !0
 			ret i32 %5
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"i32"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -3927,15 +3996,16 @@ TEST_F(ParamReturnTests, x86PascalBasic)
 			store i32 123, i32* %stack_-4
 			store i32 456, i32* %stack_-8
 			%a = bitcast i32* @r to void()*
-			%1 = load i32, i32* %stack_-4
-			%2 = load i32, i32* %stack_-8
-			%3 = bitcast void ()* %a to void (i32, i32)*, !retdec.pointee !0
+			%1 = load i32, i32* %stack_-4, !retdec.pointee !0
+			%2 = load i32, i32* %stack_-8, !retdec.pointee !0
+			%3 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %3(i32 %1, i32 %2)
 			ret void
 		}
 
-		!0 = !{!"void (i32, i32)"}
-	)IR";
+		!0 = !{!"i32"}
+		!1 = !{!"void (i32, i32)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -4025,19 +4095,21 @@ TEST_F(ParamReturnTests, x86PascalFastcallBasic)
 			store i32 1, i32* @edx
 			store i32 123, i32* %stack_-4
 			store i32 456, i32* %stack_-8
-			%1 = load i32, i32* @eax
-			%2 = load i32, i32* @edx
-			%3 = load i32, i32* @ecx
-			%4 = load i32, i32* %stack_-4
-			%5 = load i32, i32* %stack_-8
+			%1 = load i32, i32* @eax, !retdec.pointee !0
+			%2 = load i32, i32* @edx, !retdec.pointee !0
+			%3 = load i32, i32* @ecx, !retdec.pointee !0
+			%4 = load i32, i32* %stack_-4, !retdec.pointee !0
+			%5 = load i32, i32* %stack_-8, !retdec.pointee !0
 			%6 = call i32 @a(i32 %1, i32 %2, i32 %3, i32 %4, i32 %5)
-			store i32 %6, i32* @eax
-			%7 = load i32, i32* @eax
+			store i32 %6, i32* @eax, !retdec.pointee !0
+			%7 = load i32, i32* @eax, !retdec.pointee !0
 			ret i32 %7
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"i32"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -4122,18 +4194,20 @@ TEST_F(ParamReturnTests, x86PascalFastcallLargeType)
 			store i32 456, i32* %stack_-8
 			store i32 123, i32* %stack_-4
 			store i32 1, i32* @edx
-			%1 = load i32, i32* @eax
-			%2 = load i32, i32* @edx
-			%3 = load i32, i32* %stack_-4
-			%4 = load i32, i32* %stack_-8
+			%1 = load i32, i32* @eax, !retdec.pointee !0
+			%2 = load i32, i32* @edx, !retdec.pointee !0
+			%3 = load i32, i32* %stack_-4, !retdec.pointee !0
+			%4 = load i32, i32* %stack_-8, !retdec.pointee !0
 			%5 = call i32 @a(i32 %1, i32 %2, i32 %3, i32 %4)
-			store i32 %5, i32* @eax
-			%6 = load i32, i32* @eax
+			store i32 %5, i32* @eax, !retdec.pointee !0
+			%6 = load i32, i32* @eax, !retdec.pointee !0
 			ret i32 %6
 		}
 
 		declare void @1()
-	)";
+
+		!0 = !{!"i32"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -4218,22 +4292,23 @@ TEST_F(ParamReturnTests, x86WatcomBasic)
 			store i32 123, i32* %stack_-4
 			store i32 456, i32* %stack_-8
 			%a = bitcast i32* @r to void()*
-			%1 = load i32, i32* @eax
-			%2 = load i32, i32* @edx
-			%3 = load i32, i32* @ebx
-			%4 = load i32, i32* @ecx
-			%5 = load i32, i32* %stack_-8
-			%6 = load i32, i32* %stack_-4
-			%7 = bitcast void ()* %a to void (i32, i32, i32, i32, i32, i32)*, !retdec.pointee !0
+			%1 = load i32, i32* @eax, !retdec.pointee !0
+			%2 = load i32, i32* @edx, !retdec.pointee !0
+			%3 = load i32, i32* @ebx, !retdec.pointee !0
+			%4 = load i32, i32* @ecx, !retdec.pointee !0
+			%5 = load i32, i32* %stack_-8, !retdec.pointee !0
+			%6 = load i32, i32* %stack_-4, !retdec.pointee !0
+			%7 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %7(i32 %1, i32 %2, i32 %3, i32 %4, i32 %5, i32 %6)
-			%8 = load i32, i32* @eax
+			%8 = load i32, i32* @eax, !retdec.pointee !0
 			ret i32 %8
 		}
 
 		declare void @0()
 
-		!0 = !{!"void (i32, i32, i32, i32, i32, i32)"}
-	)IR";
+		!0 = !{!"i32"}
+		!1 = !{!"void (i32, i32, i32, i32, i32, i32)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 
@@ -4308,20 +4383,21 @@ TEST_F(ParamReturnTests, x86WatcomPassDouble)
 			store i32 456, i32* %stack_-8
 			store i32 123, i32* %stack_-4
 			%a = bitcast i32* @r to void()*
-			%1 = load i32, i32* @eax
-			%2 = load i32, i32* @edx
-			%3 = load i32, i32* %stack_-8
-			%4 = load i32, i32* %stack_-4
-			%5 = bitcast void ()* %a to void (i32, i32, i32, i32)*, !retdec.pointee !0
+			%1 = load i32, i32* @eax, !retdec.pointee !0
+			%2 = load i32, i32* @edx, !retdec.pointee !0
+			%3 = load i32, i32* %stack_-8, !retdec.pointee !0
+			%4 = load i32, i32* %stack_-4, !retdec.pointee !0
+			%5 = getelementptr i8, ptr %a, i64 0, !retdec.pointee !1
 			call void %5(i32 %1, i32 %2, i32 %3, i32 %4)
-			%6 = load i32, i32* @eax
+			%6 = load i32, i32* @eax, !retdec.pointee !0
 			ret i32 %6
 		}
 
 		declare void @0()
 
-		!0 = !{!"void (i32, i32, i32, i32)"}
-	)IR";
+		!0 = !{!"i32"}
+		!1 = !{!"void (i32, i32, i32, i32)"}
+)IR";
 	checkModuleAgainstExpectedIr(exp);
 }
 

@@ -96,20 +96,28 @@ AsmInstruction::AsmInstruction(llvm::Module* m, retdec::common::Address addr)
 		return;
 	}
 
-	ConstantInt* ci = ConstantInt::get(
-			Type::getInt64Ty(m->getContext()),
-			addr,
-			false);
-	if (ci == nullptr)
+	// LLVM 23: ConstantData (including ConstantInt) has no use-list.
+	// ConstantInt::users() asserts hasUseList(). Find the llvm-to-asm
+	// store by walking the mapping global's users instead.
+	auto* gv = getLlvmToAsmGlobalVariable(m);
+	if (gv == nullptr || !gv->hasUseList())
 	{
 		return;
 	}
 
-	for (auto* u : ci->users())
+	for (auto* u : gv->users())
 	{
-		if (isLlvmToAsmInstructionPrivate(u))
+		auto* s = dyn_cast<StoreInst>(u);
+		if (s == nullptr)
 		{
-			_llvmToAsmInstr = dyn_cast_or_null<StoreInst>(u);
+			continue;
+		}
+		auto* ci = dyn_cast<ConstantInt>(s->getValueOperand());
+		if (ci
+				&& ci->getZExtValue() == addr.getValue()
+				&& isLlvmToAsmInstructionPrivate(s))
+		{
+			_llvmToAsmInstr = s;
 			return;
 		}
 	}
@@ -255,7 +263,7 @@ retdec::common::Address AsmInstruction::getBasicBlockAddress(
 
 retdec::common::Address getBasicBlockAddressFromName(llvm::BasicBlock* b)
 {
-	std::string n = b->getName();
+	std::string n = b->getName().str();
 	unsigned long long a = 0;
 	std::string pattern = names::generatedBasicBlockPrefix+"%llx";
 	int ret = std::sscanf(n.c_str(), pattern.c_str(), &a);
@@ -266,7 +274,7 @@ retdec::common::Address getBasicBlockAddressFromName(llvm::BasicBlock* b)
 retdec::common::Address AsmInstruction::getTrueBasicBlockAddress(
 		llvm::BasicBlock* bb)
 {
-	std::string n = bb->getName();
+	std::string n = bb->getName().str();
 	if (!retdec::utils::startsWith(n, names::generatedBasicBlockPrefix))
 	{
 		return common::Address();

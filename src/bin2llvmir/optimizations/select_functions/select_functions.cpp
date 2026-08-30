@@ -118,7 +118,7 @@ bool SelectFunctions::run(Module& M)
 		if (inFunctions)
 		{
 			_config->getConfig().parameters.selectedNotFoundFunctions.erase(
-					f.getName());
+					f.getName().str());
 			LOG << "\t\tin function -- keep" << std::endl;
 			continue;
 		}

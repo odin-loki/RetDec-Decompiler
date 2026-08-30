@@ -159,7 +159,7 @@ for (auto* p : vtable)
 	assert(global);
 
 	retdec::common::Object cg(
-			global->getName(),
+			global->getName().str(),
 			retdec::common::Storage::inMemory(vt.getAddress())
 	);
 	cg.setIsFromDebug(true);

@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace retdec::jvm_parser;
@@ -469,6 +470,619 @@ TEST(ClassFileParser, HelloWorldAccessFlags) {
     EXPECT_FALSE(res.cls.isInterface);
 }
 
+static std::vector<uint8_t> makeClassWithSourceAndSignature() {
+    std::vector<uint8_t> raw;
+    auto push4 = [&](uint32_t v) {
+        raw.push_back((v>>24)&0xFF); raw.push_back((v>>16)&0xFF);
+        raw.push_back((v>>8)&0xFF);  raw.push_back(v&0xFF);
+    };
+    auto push2 = [&](uint16_t v) {
+        raw.push_back((v>>8)&0xFF); raw.push_back(v&0xFF);
+    };
+    auto pushUtf8 = [&](const std::string& s) {
+        raw.push_back(1);
+        push2(static_cast<uint16_t>(s.size()));
+        for (char c : s) raw.push_back(static_cast<uint8_t>(c));
+    };
+
+    push4(0xCAFEBABE);
+    push2(0);
+    push2(52);
+    push2(9); // cp_count
+    pushUtf8("Box");                   // #1
+    raw.push_back(7); push2(1);        // #2 Class(#1)
+    pushUtf8("java/lang/Object");      // #3
+    raw.push_back(7); push2(3);        // #4 Class(#3)
+    pushUtf8("SourceFile");            // #5
+    pushUtf8("Box.java");              // #6
+    pushUtf8("Signature");             // #7
+    pushUtf8("Ljava/lang/Object;");    // #8
+    push2(0x0021); // public + super
+    push2(2);
+    push2(4);
+    push2(0); // interfaces
+    push2(0); // fields
+    push2(0); // methods
+    push2(2); // class attributes
+    push2(5); push4(2); push2(6); // SourceFile → #6
+    push2(7); push4(2); push2(8); // Signature → #8
+    return raw;
+}
+
+static std::vector<uint8_t> makeClassWithFieldSignature() {
+    std::vector<uint8_t> raw;
+    auto push4 = [&](uint32_t v) {
+        raw.push_back((v>>24)&0xFF); raw.push_back((v>>16)&0xFF);
+        raw.push_back((v>>8)&0xFF);  raw.push_back(v&0xFF);
+    };
+    auto push2 = [&](uint16_t v) {
+        raw.push_back((v>>8)&0xFF); raw.push_back(v&0xFF);
+    };
+    auto pushUtf8 = [&](const std::string& s) {
+        raw.push_back(1);
+        push2(static_cast<uint16_t>(s.size()));
+        for (char c : s) raw.push_back(static_cast<uint8_t>(c));
+    };
+
+    push4(0xCAFEBABE);
+    push2(0);
+    push2(52);
+    push2(9);
+    pushUtf8("Box");                   // #1
+    raw.push_back(7); push2(1);        // #2 Class(#1)
+    pushUtf8("java/lang/Object");      // #3
+    raw.push_back(7); push2(3);        // #4 Class(#3)
+    pushUtf8("items");                 // #5
+    pushUtf8("Ljava/util/List;");      // #6
+    pushUtf8("Signature");             // #7
+    pushUtf8("Ljava/util/List<TE;>;"); // #8
+    push2(0x0021);
+    push2(2);
+    push2(4);
+    push2(0);
+    push2(1); // 1 field
+    push2(0x0001); // public
+    push2(5);
+    push2(6);
+    push2(1); // 1 attr
+    push2(7); push4(2); push2(8); // Signature
+    push2(0); // methods
+    push2(0); // class attrs
+    return raw;
+}
+
+TEST(ClassFileParser, ParsesSourceFileAndClassSignature) {
+    auto cls = makeClassWithSourceAndSignature();
+    auto res = parseClassFile(cls);
+    ASSERT_TRUE(res.ok) << res.error;
+    EXPECT_EQ(res.cls.sourceFile, "Box.java");
+    EXPECT_EQ(res.cls.signature, "Ljava/lang/Object;");
+}
+
+TEST(ClassFileParser, ParsesFieldSignature) {
+    auto cls = makeClassWithFieldSignature();
+    auto res = parseClassFile(cls);
+    ASSERT_TRUE(res.ok) << res.error;
+    ASSERT_EQ(res.cls.fields.size(), 1u);
+    EXPECT_EQ(res.cls.fields[0].name, "items");
+    EXPECT_EQ(res.cls.fields[0].signature, "Ljava/util/List<TE;>;");
+    EXPECT_EQ(res.cls.fields[0].type.ref().kind, BcRefKind::Generic);
+}
+
+static std::vector<uint8_t> makeClassWithThrows() {
+    std::vector<uint8_t> raw;
+    auto push4 = [&](uint32_t v) {
+        raw.push_back((v>>24)&0xFF); raw.push_back((v>>16)&0xFF);
+        raw.push_back((v>>8)&0xFF);  raw.push_back(v&0xFF);
+    };
+    auto push2 = [&](uint16_t v) {
+        raw.push_back((v>>8)&0xFF); raw.push_back(v&0xFF);
+    };
+    auto pushUtf8 = [&](const std::string& s) {
+        raw.push_back(1);
+        push2(static_cast<uint16_t>(s.size()));
+        for (char c : s) raw.push_back(static_cast<uint8_t>(c));
+    };
+
+    push4(0xCAFEBABE);
+    push2(0);
+    push2(52);
+    push2(11); // cp_count
+    pushUtf8("Box");                      // #1
+    raw.push_back(7); push2(1);           // #2 Class(#1)
+    pushUtf8("java/lang/Object");         // #3
+    raw.push_back(7); push2(3);           // #4 Class(#3)
+    pushUtf8("foo");                      // #5
+    pushUtf8("()V");                      // #6
+    pushUtf8("Code");                     // #7
+    pushUtf8("Exceptions");               // #8
+    pushUtf8("java/io/IOException");      // #9
+    raw.push_back(7); push2(9);           // #10 Class(#9)
+    push2(0x0021);
+    push2(2);
+    push2(4);
+    push2(0);
+    push2(0);
+    push2(1); // 1 method
+    push2(0x0001); // public
+    push2(5);
+    push2(6);
+    push2(2); // Code + Exceptions
+    push2(7); push4(13);
+    push2(0); push2(0); push4(1); raw.push_back(0xB1); push2(0); push2(0);
+    push2(8); push4(4); push2(1); push2(10);
+    push2(0);
+    return raw;
+}
+
+static std::vector<uint8_t> makeClassWithConstantInt() {
+    std::vector<uint8_t> raw;
+    auto push4 = [&](uint32_t v) {
+        raw.push_back((v>>24)&0xFF); raw.push_back((v>>16)&0xFF);
+        raw.push_back((v>>8)&0xFF);  raw.push_back(v&0xFF);
+    };
+    auto push2 = [&](uint16_t v) {
+        raw.push_back((v>>8)&0xFF); raw.push_back(v&0xFF);
+    };
+    auto pushUtf8 = [&](const std::string& s) {
+        raw.push_back(1);
+        push2(static_cast<uint16_t>(s.size()));
+        for (char c : s) raw.push_back(static_cast<uint8_t>(c));
+    };
+
+    push4(0xCAFEBABE);
+    push2(0);
+    push2(52);
+    push2(9);
+    pushUtf8("Box");                   // #1
+    raw.push_back(7); push2(1);        // #2 Class(#1)
+    pushUtf8("java/lang/Object");      // #3
+    raw.push_back(7); push2(3);        // #4 Class(#3)
+    pushUtf8("MAX");                   // #5
+    pushUtf8("I");                     // #6
+    pushUtf8("ConstantValue");         // #7
+    raw.push_back(3); push4(42);       // #8 Integer 42
+    push2(0x0021);
+    push2(2);
+    push2(4);
+    push2(0);
+    push2(1); // 1 field
+    push2(0x0019); // public static final
+    push2(5);
+    push2(6);
+    push2(1);
+    push2(7); push4(2); push2(8);
+    push2(0);
+    push2(0);
+    return raw;
+}
+
+TEST(ClassFileParser, ParsesMethodExceptions) {
+    auto cls = makeClassWithThrows();
+    auto res = parseClassFile(cls);
+    ASSERT_TRUE(res.ok) << res.error;
+    ASSERT_EQ(res.cls.methods.size(), 1u);
+    ASSERT_EQ(res.cls.methods[0].throwsList.size(), 1u);
+    EXPECT_EQ(res.cls.methods[0].throwsList[0], "java/io/IOException");
+}
+
+TEST(ClassFileParser, ParsesFieldConstantValue) {
+    auto cls = makeClassWithConstantInt();
+    auto res = parseClassFile(cls);
+    ASSERT_TRUE(res.ok) << res.error;
+    ASSERT_EQ(res.cls.fields.size(), 1u);
+    ASSERT_TRUE(res.cls.fields[0].constantIntValue.has_value());
+    EXPECT_EQ(*res.cls.fields[0].constantIntValue, 42);
+}
+
+TEST(ClassFileParser, ParsesAbstractNativeFlags) {
+    // Reuse Hello World (public static, not abstract/native).
+    auto cls = makeHelloWorldClass();
+    auto res = parseClassFile(cls);
+    ASSERT_TRUE(res.ok);
+    ASSERT_EQ(res.cls.methods.size(), 1u);
+    EXPECT_FALSE(res.cls.methods[0].isAbstract);
+    EXPECT_FALSE(res.cls.methods[0].isNative);
+}
+
+TEST(ClassFileParser, ParsesAbstractMethod) {
+    std::vector<uint8_t> raw;
+    auto push4 = [&](uint32_t v) {
+        raw.push_back((v>>24)&0xFF); raw.push_back((v>>16)&0xFF);
+        raw.push_back((v>>8)&0xFF);  raw.push_back(v&0xFF);
+    };
+    auto push2 = [&](uint16_t v) {
+        raw.push_back((v>>8)&0xFF); raw.push_back(v&0xFF);
+    };
+    auto pushUtf8 = [&](const std::string& s) {
+        raw.push_back(1);
+        push2(static_cast<uint16_t>(s.size()));
+        for (char c : s) raw.push_back(static_cast<uint8_t>(c));
+    };
+    push4(0xCAFEBABE);
+    push2(0);
+    push2(52);
+    push2(7);
+    pushUtf8("Box");
+    raw.push_back(7); push2(1);
+    pushUtf8("java/lang/Object");
+    raw.push_back(7); push2(3);
+    pushUtf8("foo");
+    pushUtf8("()V");
+    push2(0x0421); // public super abstract class
+    push2(2);
+    push2(4);
+    push2(0);
+    push2(0);
+    push2(1);
+    push2(0x0401); // public abstract method
+    push2(5);
+    push2(6);
+    push2(0); // no method attrs
+    push2(0);
+    auto res = parseClassFile(raw);
+    ASSERT_TRUE(res.ok) << res.error;
+    EXPECT_TRUE(res.cls.isAbstract);
+    ASSERT_EQ(res.cls.methods.size(), 1u);
+    EXPECT_TRUE(res.cls.methods[0].isAbstract);
+    EXPECT_FALSE(res.cls.methods[0].isNative);
+}
+
+TEST(ClassFileParser, ParsesModuleFlag) {
+    std::vector<uint8_t> raw;
+    auto push4 = [&](uint32_t v) {
+        raw.push_back((v>>24)&0xFF); raw.push_back((v>>16)&0xFF);
+        raw.push_back((v>>8)&0xFF);  raw.push_back(v&0xFF);
+    };
+    auto push2 = [&](uint16_t v) {
+        raw.push_back((v>>8)&0xFF); raw.push_back(v&0xFF);
+    };
+    auto pushUtf8 = [&](const std::string& s) {
+        raw.push_back(1);
+        push2(static_cast<uint16_t>(s.size()));
+        for (char c : s) raw.push_back(static_cast<uint8_t>(c));
+    };
+    push4(0xCAFEBABE);
+    push2(0);
+    push2(53);
+    push2(5);
+    pushUtf8("module-info");
+    raw.push_back(7); push2(1);
+    pushUtf8("java/lang/Object");
+    raw.push_back(7); push2(3);
+    push2(0x8000); // ACC_MODULE
+    push2(2);
+    push2(4);
+    push2(0);
+    push2(0);
+    push2(0);
+    push2(0);
+    auto res = parseClassFile(raw);
+    ASSERT_TRUE(res.ok) << res.error;
+    EXPECT_TRUE(res.cls.isModule);
+}
+
+TEST(ClassFileParser, ParsesNestHostAndMembers) {
+    std::vector<uint8_t> raw;
+    auto push4 = [&](uint32_t v) {
+        raw.push_back((v>>24)&0xFF); raw.push_back((v>>16)&0xFF);
+        raw.push_back((v>>8)&0xFF);  raw.push_back(v&0xFF);
+    };
+    auto push2 = [&](uint16_t v) {
+        raw.push_back((v>>8)&0xFF); raw.push_back(v&0xFF);
+    };
+    auto pushUtf8 = [&](const std::string& s) {
+        raw.push_back(1);
+        push2(static_cast<uint16_t>(s.size()));
+        for (char c : s) raw.push_back(static_cast<uint8_t>(c));
+    };
+    push4(0xCAFEBABE);
+    push2(0); push2(55); push2(8);
+    pushUtf8("Inner");
+    raw.push_back(7); push2(1);
+    pushUtf8("java/lang/Object");
+    raw.push_back(7); push2(3);
+    pushUtf8("Outer");
+    raw.push_back(7); push2(5);
+    pushUtf8("NestHost");
+    push2(0x0021); // public super
+    push2(2); push2(4); push2(0); push2(0); push2(0);
+    push2(1);
+    push2(7); push4(2); push2(6); // NestHost, host = Outer
+    auto res = parseClassFile(raw);
+    ASSERT_TRUE(res.ok) << res.error;
+    EXPECT_EQ("Outer", res.cls.nestHost);
+}
+
+TEST(ClassFileParser, ParsesPermittedSubclasses) {
+    std::vector<uint8_t> raw;
+    auto push4 = [&](uint32_t v) {
+        raw.push_back((v>>24)&0xFF); raw.push_back((v>>16)&0xFF);
+        raw.push_back((v>>8)&0xFF);  raw.push_back(v&0xFF);
+    };
+    auto push2 = [&](uint16_t v) {
+        raw.push_back((v>>8)&0xFF); raw.push_back(v&0xFF);
+    };
+    auto pushUtf8 = [&](const std::string& s) {
+        raw.push_back(1);
+        push2(static_cast<uint16_t>(s.size()));
+        for (char c : s) raw.push_back(static_cast<uint8_t>(c));
+    };
+    push4(0xCAFEBABE);
+    push2(0); push2(61); push2(8);
+    pushUtf8("Shape");
+    raw.push_back(7); push2(1);
+    pushUtf8("java/lang/Object");
+    raw.push_back(7); push2(3);
+    pushUtf8("Circle");
+    raw.push_back(7); push2(5);
+    pushUtf8("PermittedSubclasses");
+    push2(0x0021);
+    push2(2); push2(4); push2(0); push2(0); push2(0);
+    push2(1);
+    push2(7); push4(4); push2(1); push2(6); // 1 permitted = Circle
+    auto res = parseClassFile(raw);
+    ASSERT_TRUE(res.ok) << res.error;
+    ASSERT_EQ(1u, res.cls.permittedSubclasses.size());
+    EXPECT_EQ("Circle", res.cls.permittedSubclasses[0]);
+    EXPECT_TRUE(hasFlag(res.cls.access, BcAccess::Sealed));
+}
+
+TEST(ClassFileParser, ParsesAnnotationDefault) {
+    std::vector<uint8_t> raw;
+    auto push4 = [&](uint32_t v) {
+        raw.push_back((v>>24)&0xFF); raw.push_back((v>>16)&0xFF);
+        raw.push_back((v>>8)&0xFF);  raw.push_back(v&0xFF);
+    };
+    auto push2 = [&](uint16_t v) {
+        raw.push_back((v>>8)&0xFF); raw.push_back(v&0xFF);
+    };
+    auto pushUtf8 = [&](const std::string& s) {
+        raw.push_back(1);
+        push2(static_cast<uint16_t>(s.size()));
+        for (char c : s) raw.push_back(static_cast<uint8_t>(c));
+    };
+    push4(0xCAFEBABE);
+    push2(0); push2(52); push2(9);
+    pushUtf8("Ann");
+    raw.push_back(7); push2(1);
+    pushUtf8("java/lang/Object");
+    raw.push_back(7); push2(3);
+    pushUtf8("value");
+    pushUtf8("()I");
+    pushUtf8("AnnotationDefault");
+    raw.push_back(3); push4(42); // Integer 42 at cp 8
+    push2(0x2001); // public annotation
+    push2(2); push2(4); push2(0); // interfaces
+    push2(0); // fields
+    push2(1); // methods
+    push2(0x0401); // public abstract
+    push2(5); push2(6);
+    push2(1);
+    push2(7); push4(3); raw.push_back('I'); push2(8);
+    push2(0);
+    auto res = parseClassFile(raw);
+    ASSERT_TRUE(res.ok) << res.error;
+    ASSERT_EQ(1u, res.cls.methods.size());
+    bool found = false;
+    for (const auto& a : res.cls.methods[0].annotations) {
+        if (a.typeName != "AnnotationDefault") continue;
+        auto it = a.elements.find("value");
+        ASSERT_NE(it, a.elements.end());
+        EXPECT_EQ(BcAnnotationValue::Kind::Int, it->second.kind);
+        EXPECT_EQ(42, it->second.intValue);
+        found = true;
+    }
+    EXPECT_TRUE(found);
+}
+
+TEST(ClassFileParser, ParsesClassTypeParams) {
+    std::vector<uint8_t> raw;
+    auto push4 = [&](uint32_t v) {
+        raw.push_back((v>>24)&0xFF); raw.push_back((v>>16)&0xFF);
+        raw.push_back((v>>8)&0xFF);  raw.push_back(v&0xFF);
+    };
+    auto push2 = [&](uint16_t v) {
+        raw.push_back((v>>8)&0xFF); raw.push_back(v&0xFF);
+    };
+    auto pushUtf8 = [&](const std::string& s) {
+        raw.push_back(1);
+        push2(static_cast<uint16_t>(s.size()));
+        for (char c : s) raw.push_back(static_cast<uint8_t>(c));
+    };
+    const std::string sig = "<T:Ljava/lang/Object;>Ljava/lang/Object;";
+    push4(0xCAFEBABE);
+    push2(0); push2(52); push2(7);
+    pushUtf8("Box");
+    raw.push_back(7); push2(1);
+    pushUtf8("java/lang/Object");
+    raw.push_back(7); push2(3);
+    pushUtf8("Signature");
+    pushUtf8(sig);
+    push2(0x0021); push2(2); push2(4); push2(0); push2(0); push2(0);
+    push2(1);
+    push2(5); push4(2); push2(6);
+    auto res = parseClassFile(raw);
+    ASSERT_TRUE(res.ok) << res.error;
+    ASSERT_EQ(res.cls.typeParams.size(), 1u);
+    EXPECT_EQ(res.cls.typeParams[0], "T");
+}
+
+TEST(ClassFileParser, ParsesEmptyRecordAttribute) {
+    std::vector<uint8_t> raw;
+    auto push4 = [&](uint32_t v) {
+        raw.push_back((v>>24)&0xFF); raw.push_back((v>>16)&0xFF);
+        raw.push_back((v>>8)&0xFF);  raw.push_back(v&0xFF);
+    };
+    auto push2 = [&](uint16_t v) {
+        raw.push_back((v>>8)&0xFF); raw.push_back(v&0xFF);
+    };
+    auto pushUtf8 = [&](const std::string& s) {
+        raw.push_back(1);
+        push2(static_cast<uint16_t>(s.size()));
+        for (char c : s) raw.push_back(static_cast<uint8_t>(c));
+    };
+    push4(0xCAFEBABE);
+    push2(0); push2(61); push2(6); // Java 17
+    pushUtf8("Point");
+    raw.push_back(7); push2(1);
+    pushUtf8("java/lang/Record");
+    raw.push_back(7); push2(3);
+    pushUtf8("Record");
+    push2(0x0031); // public final super
+    push2(2); push2(4); push2(0); push2(0); push2(0);
+    push2(1);
+    push2(5); push4(2); push2(0); // Record, 0 components
+    auto res = parseClassFile(raw);
+    ASSERT_TRUE(res.ok) << res.error;
+    EXPECT_TRUE(res.cls.isRecord);
+}
+
+TEST(ClassFileParser, ParsesEnumConstantField) {
+    std::vector<uint8_t> raw;
+    auto push4 = [&](uint32_t v) {
+        raw.push_back((v>>24)&0xFF); raw.push_back((v>>16)&0xFF);
+        raw.push_back((v>>8)&0xFF);  raw.push_back(v&0xFF);
+    };
+    auto push2 = [&](uint16_t v) {
+        raw.push_back((v>>8)&0xFF); raw.push_back(v&0xFF);
+    };
+    auto pushUtf8 = [&](const std::string& s) {
+        raw.push_back(1);
+        push2(static_cast<uint16_t>(s.size()));
+        for (char c : s) raw.push_back(static_cast<uint8_t>(c));
+    };
+    push4(0xCAFEBABE);
+    push2(0); push2(52); push2(7);
+    pushUtf8("Color");
+    raw.push_back(7); push2(1);
+    pushUtf8("java/lang/Enum");
+    raw.push_back(7); push2(3);
+    pushUtf8("RED");
+    pushUtf8("LColor;");
+    push2(0x4021); // public super enum
+    push2(2); push2(4); push2(0);
+    push2(1);
+    push2(0x4019); // public static final enum
+    push2(5); push2(6); push2(0);
+    push2(0); push2(0);
+    auto res = parseClassFile(raw);
+    ASSERT_TRUE(res.ok) << res.error;
+    EXPECT_TRUE(res.cls.isEnum);
+    ASSERT_EQ(res.cls.enumConstants.size(), 1u);
+    EXPECT_EQ(res.cls.enumConstants[0], "RED");
+}
+
+TEST(ClassFileParser, ParsesRuntimeVisibleAnnotation) {
+    std::vector<uint8_t> raw;
+    auto push4 = [&](uint32_t v) {
+        raw.push_back((v>>24)&0xFF); raw.push_back((v>>16)&0xFF);
+        raw.push_back((v>>8)&0xFF);  raw.push_back(v&0xFF);
+    };
+    auto push2 = [&](uint16_t v) {
+        raw.push_back((v>>8)&0xFF); raw.push_back(v&0xFF);
+    };
+    auto pushUtf8 = [&](const std::string& s) {
+        raw.push_back(1);
+        push2(static_cast<uint16_t>(s.size()));
+        for (char c : s) raw.push_back(static_cast<uint8_t>(c));
+    };
+    push4(0xCAFEBABE);
+    push2(0); push2(52);
+    push2(7); // cp_count = last index + 1
+    pushUtf8("Box");                              // #1
+    raw.push_back(7); push2(1);                   // #2 Class(#1)
+    pushUtf8("java/lang/Object");                 // #3
+    raw.push_back(7); push2(3);                   // #4 Class(#3)
+    pushUtf8("RuntimeVisibleAnnotations");        // #5
+    pushUtf8("Ljava/lang/Deprecated;");           // #6
+    push2(0x0021);
+    push2(2); push2(4); push2(0); push2(0); push2(0);
+    push2(1); // 1 class attr
+    push2(5); push4(6); push2(1); push2(6); push2(0);
+    auto res = parseClassFile(raw);
+    ASSERT_TRUE(res.ok) << res.error;
+    ASSERT_EQ(res.cls.annotations.size(), 1u);
+    EXPECT_EQ(res.cls.annotations[0].typeName, "java/lang/Deprecated");
+    EXPECT_TRUE(res.cls.annotations[0].isVisible);
+}
+
+TEST(ClassFileParser, ParsesDeprecatedAttribute) {
+    std::vector<uint8_t> raw;
+    auto push4 = [&](uint32_t v) {
+        raw.push_back((v>>24)&0xFF); raw.push_back((v>>16)&0xFF);
+        raw.push_back((v>>8)&0xFF);  raw.push_back(v&0xFF);
+    };
+    auto push2 = [&](uint16_t v) {
+        raw.push_back((v>>8)&0xFF); raw.push_back(v&0xFF);
+    };
+    auto pushUtf8 = [&](const std::string& s) {
+        raw.push_back(1);
+        push2(static_cast<uint16_t>(s.size()));
+        for (char c : s) raw.push_back(static_cast<uint8_t>(c));
+    };
+    push4(0xCAFEBABE);
+    push2(0); push2(52);
+    push2(6);
+    pushUtf8("Box");
+    raw.push_back(7); push2(1);
+    pushUtf8("java/lang/Object");
+    raw.push_back(7); push2(3);
+    pushUtf8("Deprecated");
+    push2(0x0021);
+    push2(2); push2(4); push2(0); push2(0); push2(0);
+    push2(1);
+    push2(5); push4(0);
+    auto res = parseClassFile(raw);
+    ASSERT_TRUE(res.ok) << res.error;
+    ASSERT_EQ(res.cls.annotations.size(), 1u);
+    EXPECT_EQ(res.cls.annotations[0].typeName, "java/lang/Deprecated");
+}
+
+TEST(ClassFileParser, ParsesParameterAnnotations) {
+    std::vector<uint8_t> raw;
+    auto push4 = [&](uint32_t v) {
+        raw.push_back((v>>24)&0xFF); raw.push_back((v>>16)&0xFF);
+        raw.push_back((v>>8)&0xFF);  raw.push_back(v&0xFF);
+    };
+    auto push2 = [&](uint16_t v) {
+        raw.push_back((v>>8)&0xFF); raw.push_back(v&0xFF);
+    };
+    auto pushUtf8 = [&](const std::string& s) {
+        raw.push_back(1);
+        push2(static_cast<uint16_t>(s.size()));
+        for (char c : s) raw.push_back(static_cast<uint8_t>(c));
+    };
+    push4(0xCAFEBABE);
+    push2(0); push2(52);
+    push2(9);
+    pushUtf8("Box");                              // #1
+    raw.push_back(7); push2(1);                   // #2
+    pushUtf8("java/lang/Object");                 // #3
+    raw.push_back(7); push2(3);                   // #4
+    pushUtf8("foo");                              // #5
+    pushUtf8("(I)V");                             // #6
+    pushUtf8("RuntimeVisibleParameterAnnotations"); // #7
+    pushUtf8("Ljava/lang/Deprecated;");           // #8
+    push2(0x0021);
+    push2(2); push2(4); push2(0); push2(0);
+    push2(1); // 1 method
+    push2(0x0401); // public abstract
+    push2(5); push2(6);
+    push2(1); // 1 attr
+    push2(7); push4(7);
+    raw.push_back(1); // 1 parameter
+    push2(1); push2(8); push2(0);
+    push2(0); // class attrs
+    auto res = parseClassFile(raw);
+    ASSERT_TRUE(res.ok) << res.error;
+    ASSERT_EQ(res.cls.methods.size(), 1u);
+    ASSERT_EQ(res.cls.methods[0].paramAnnotations.size(), 1u);
+    ASSERT_EQ(res.cls.methods[0].paramAnnotations[0].size(), 1u);
+    EXPECT_EQ(res.cls.methods[0].paramAnnotations[0][0].typeName,
+              "java/lang/Deprecated");
+}
+
 TEST(ClassFileParser, InvalidMagic) {
     uint8_t bad[] = {0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00, 0x00, 0x34};
     auto res = parseClassFile(bad, sizeof(bad));
@@ -701,12 +1315,106 @@ static std::vector<uint8_t> storedZipClaimedUncomp(
     return z;
 }
 
+static std::vector<uint8_t> storedZip(
+        const std::vector<std::pair<std::string, std::vector<uint8_t>>>& items)
+{
+    std::vector<uint8_t> z;
+    std::vector<uint32_t> localOffs;
+    localOffs.reserve(items.size());
+    for (const auto& it : items) {
+        localOffs.push_back(static_cast<uint32_t>(z.size()));
+        const auto& name = it.first;
+        const auto& payload = it.second;
+        appendU32le(z, 0x04034b50u);
+        appendU16le(z, 20);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU32le(z, 0);
+        appendU32le(z, static_cast<uint32_t>(payload.size()));
+        appendU32le(z, static_cast<uint32_t>(payload.size()));
+        appendU16le(z, static_cast<uint16_t>(name.size()));
+        appendU16le(z, 0);
+        z.insert(z.end(), name.begin(), name.end());
+        z.insert(z.end(), payload.begin(), payload.end());
+    }
+    const uint32_t cdOff = static_cast<uint32_t>(z.size());
+    for (size_t i = 0; i < items.size(); ++i) {
+        const auto& name = items[i].first;
+        const auto& payload = items[i].second;
+        appendU32le(z, 0x02014b50u);
+        appendU16le(z, 20);
+        appendU16le(z, 20);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU32le(z, 0);
+        appendU32le(z, static_cast<uint32_t>(payload.size()));
+        appendU32le(z, static_cast<uint32_t>(payload.size()));
+        appendU16le(z, static_cast<uint16_t>(name.size()));
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU16le(z, 0);
+        appendU32le(z, 0);
+        appendU32le(z, localOffs[i]);
+        z.insert(z.end(), name.begin(), name.end());
+    }
+    const uint32_t cdSize = static_cast<uint32_t>(z.size() - cdOff);
+    appendU32le(z, 0x06054b50u);
+    appendU16le(z, 0);
+    appendU16le(z, 0);
+    appendU16le(z, static_cast<uint16_t>(items.size()));
+    appendU16le(z, static_cast<uint16_t>(items.size()));
+    appendU32le(z, cdSize);
+    appendU32le(z, cdOff);
+    appendU16le(z, 0);
+    return z;
+}
+
 TEST(JarReader, StoredClaimExceedsRemaining) {
     auto zip = storedZipClaimedUncomp("Foo.class", {0x00, 0x01, 0x02, 0x03}, 0xFFFFFFF0u);
     JarReader reader;
     auto res = reader.read(zip.data(), zip.size());
     EXPECT_TRUE(res.ok);
     EXPECT_GE(res.parseErrors, 1u);
+}
+
+TEST(JarReader, ParsesBootInfLibJar) {
+    auto inner = storedZip({{"Hello.class", makeHelloWorldClass()}});
+    auto outer = storedZip({{"BOOT-INF/lib/dep.jar", inner}});
+    JarReader reader; // parseBoot defaults true
+    auto res = reader.read(outer.data(), outer.size());
+    ASSERT_TRUE(res.ok) << res.error;
+    EXPECT_GE(res.classesParsed, 1u);
+    ASSERT_NE(res.module.findClass("Hello"), nullptr);
+}
+
+TEST(JarReader, LooseLibJarSkippedUnlessParseNested) {
+    auto inner = storedZip({{"Hello.class", makeHelloWorldClass()}});
+    auto outer = storedZip({{"lib/dep.jar", inner}});
+    JarReadOptions opts;
+    opts.parseBoot = true;
+    opts.parseNestedJars = false;
+    JarReader reader(opts);
+    auto res = reader.read(outer.data(), outer.size());
+    ASSERT_TRUE(res.ok) << res.error;
+    EXPECT_EQ(res.classesParsed, 0u);
+    EXPECT_EQ(res.module.findClass("Hello"), nullptr);
+}
+
+TEST(JarReader, ParseNestedJarsAnyPath) {
+    auto inner = storedZip({{"Hello.class", makeHelloWorldClass()}});
+    auto outer = storedZip({{"lib/dep.jar", inner}});
+    JarReadOptions opts;
+    opts.parseNestedJars = true;
+    JarReader reader(opts);
+    auto res = reader.read(outer.data(), outer.size());
+    ASSERT_TRUE(res.ok) << res.error;
+    EXPECT_GE(res.classesParsed, 1u);
+    ASSERT_NE(res.module.findClass("Hello"), nullptr);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

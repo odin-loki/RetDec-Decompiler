@@ -42,7 +42,7 @@ if need kotlinc "Kotlin"; then
     log "Compiling Kotlin..."
     cd "$FIXTURES/kotlin"
     # Hello and DataClass (no coroutines dependency)
-    kotlinc Hello.kt DataClass.kt -include-runtime -d kotlin_fixtures.jar 2>/dev/null
+    kotlinc Hello.kt DataClass.kt -d kotlin_fixtures.jar 2>/dev/null
     log "  Hello.kt DataClass.kt → kotlin_fixtures.jar"
     # Coroutines (needs -cp kotlinx-coroutines; skip gracefully if not present)
     if kotlinc -version 2>&1 | grep -q "2\." ; then
@@ -75,20 +75,29 @@ fi
 if need dotnet ".NET"; then
     log "Compiling C#..."
     cd "$FIXTURES/csharp"
-    dotnet build csharp_fixtures.csproj -c Release -o ./bin/ 2>/dev/null
-    log "  → bin/csharp_fixtures.dll"
+    if ! dotnet build csharp_fixtures.csproj -c Release -o ./bin/; then
+        warn "C# compile failed"
+    else
+        log "  → bin/csharp_fixtures.dll"
+    fi
     cd "$SCRIPT_DIR"
 
     log "Compiling VB.NET..."
     cd "$FIXTURES/vbnet"
-    dotnet build vbnet_fixtures.vbproj -c Release -o ./bin/ 2>/dev/null
-    log "  → bin/vbnet_fixtures.dll"
+    if ! dotnet build vbnet_fixtures.vbproj -c Release -o ./bin/; then
+        warn "VB.NET compile failed"
+    else
+        log "  → bin/vbnet_fixtures.dll"
+    fi
     cd "$SCRIPT_DIR"
 
     log "Compiling F#..."
     cd "$FIXTURES/fsharp"
-    dotnet build fsharp_fixtures.fsproj -c Release -o ./bin/ 2>/dev/null
-    log "  → bin/fsharp_fixtures.dll"
+    if ! dotnet build fsharp_fixtures.fsproj -c Release -o ./bin/; then
+        warn "F# compile failed"
+    else
+        log "  → bin/fsharp_fixtures.dll"
+    fi
     cd "$SCRIPT_DIR"
 fi
 
@@ -115,7 +124,8 @@ for lua_src in hello tables closures coroutines; do
     for luabin in luac5.1 luac5.4; do
         if command -v "$luabin" &>/dev/null; then
             ver="${luabin#luac}"
-            out="$FIXTURES/lua/$lua_src.luac$ver"
+            ver_nodot="${ver//./}"
+            out="$FIXTURES/lua/$lua_src.luac$ver_nodot"
             "$luabin" -o "$out" "$FIXTURES/lua/$lua_src.lua"
             log "  $lua_src.lua → $lua_src.luac$ver ($luabin)"
         else

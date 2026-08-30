@@ -103,7 +103,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateInstruction(
 			_inCondition = true;
 
 			auto* cond = generateInsnConditionCode(irb, ai);
-			auto bodyIrb = generateIfThen(cond, irb);
+			llvm::IRBuilder<> bodyIrb(generateIfThen(cond, irb));
 
 			(this->*f)(i, ai, bodyIrb);
 		}
@@ -122,7 +122,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateInstruction(
 			_inCondition = true;
 
 			auto* cond = generateInsnConditionCode(irb, ai);
-			auto bodyIrb = generateIfThen(cond, irb);
+			llvm::IRBuilder<> bodyIrb(generateIfThen(cond, irb));
 
 			translatePseudoAsmGeneric(i, ai, bodyIrb);
 		}
@@ -188,7 +188,7 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadRegister(
 
 	llvmReg = generateTypeConversion(irb, llvmReg, dstType, ct);
 
-	return irb.CreateLoad(llvmReg);
+	return createLoad(irb, llvmReg);
 }
 
 llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateOperandShift(
@@ -403,7 +403,9 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadOp(
 		case ARM_OP_PIMM:
 		case ARM_OP_CIMM:
 		{
-			auto* val = llvm::ConstantInt::getSigned(getDefaultType(), op.imm);
+			auto* t = getDefaultType();
+			auto* val = llvm::ConstantInt::get(t, llvm::APInt(t->getIntegerBitWidth(),
+					static_cast<uint64_t>(op.imm), false, /*implicitTrunc=*/true));
 			return generateOperandShift(irb, op, val);
 		}
 		case ARM_OP_MEM:
@@ -411,7 +413,7 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadOp(
 			auto* baseR = loadRegister(op.mem.base, irb);
 			auto* t = baseR ? baseR->getType() : getDefaultType();
 			llvm::Value* disp = op.mem.disp
-					? llvm::ConstantInt::get(t, op.mem.disp)
+					? llvm::ConstantInt::getSigned(t, op.mem.disp)
 					: nullptr;
 
 			auto* idxR = loadRegister(op.mem.index, irb);
@@ -428,7 +430,7 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadOp(
 				// arm.h says this is only 1 || -1 -> ignore anything != -1.
 				if (op.mem.scale == -1)
 				{
-					auto* scale = llvm::ConstantInt::get(
+					auto* scale = llvm::ConstantInt::getSigned(
 							idxR->getType(),
 							op.mem.scale);
 					idxR = irb.CreateMul(idxR, scale);
@@ -543,7 +545,9 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeRegister(
 		}
 	}
 
-	return irb.CreateStore(val, llvmReg);
+	auto* s = irb.CreateStore(val, llvmReg);
+	attachPointeeType(s, llvmReg->getValueType());
+	return s;
 }
 
 llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeOp(
@@ -572,7 +576,7 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeOp(
 			auto* baseR = loadRegister(op.mem.base, irb);
 			auto* t = baseR ? baseR->getType() : getDefaultType();
 			llvm::Value* disp = op.mem.disp
-					? llvm::ConstantInt::get(t, op.mem.disp)
+					? llvm::ConstantInt::getSigned(t, op.mem.disp)
 					: nullptr;
 
 			auto* idxR = loadRegister(op.mem.index, irb);
@@ -589,7 +593,7 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeOp(
 				// arm.h says this is only 1 || -1 -> ignore anything != -1.
 				if (op.mem.scale == -1)
 				{
-					auto* scale = llvm::ConstantInt::get(
+					auto* scale = llvm::ConstantInt::getSigned(
 							idxR->getType(),
 							op.mem.scale);
 					idxR = irb.CreateMul(idxR, scale);
@@ -962,7 +966,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateClz(cs_insn* i, cs_arm* ai, llv
 	EXPECT_IS_BINARY(i, ai, irb);
 
 	op1 = loadOpBinaryOp1(ai, irb);
-	auto* f = llvm::Intrinsic::getDeclaration(
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(
 			_module,
 			llvm::Intrinsic::ctlz,
 			op1->getType());
@@ -1379,7 +1383,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateRev(cs_insn* i, cs_arm* ai, llv
 	EXPECT_IS_BINARY(i, ai, irb);
 
 	op1 = loadOpBinaryOp1(ai, irb);
-	auto* f = llvm::Intrinsic::getDeclaration(
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(
 			_module,
 			llvm::Intrinsic::bswap,
 			op1->getType());
@@ -1935,6 +1939,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateSwp(cs_insn* i, cs_arm* ai, llv
 			llvm::AtomicRMWInst::Xchg,
 			ptr,
 			val,
+			llvm::MaybeAlign(),
 			llvm::AtomicOrdering::SequentiallyConsistent);
 	attachPointeeType(old, ty);
 	storeRegister(

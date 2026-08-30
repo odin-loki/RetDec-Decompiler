@@ -165,19 +165,13 @@ TEST_F(InstCombinePassTests, unreachableBasicBlocksKeep)
 		@llvm2asm = global i64 0
 
 		define void @fnc() {
-
-		; 7b
-		  store volatile i64 123, i64* @llvm2asm, align 8, !asm !1
+		  store volatile i64 123, i64* @llvm2asm, !asm !1
 		  ret void
-														  ; No predecessors!
 
-		; 1c8
-		  store volatile i64 456, i64* @llvm2asm, !asm !2
+		1:
 		  ret void
-														  ; No predecessors!
 
-		; 315
-		  store volatile i64 789, i64* @llvm2asm, !asm !3
+		2:
 		  ret void
 		}
 
@@ -185,8 +179,6 @@ TEST_F(InstCombinePassTests, unreachableBasicBlocksKeep)
 
 		!0 = !{!"llvm2asm"}
 		!1 = !{!"name", i64 123, i64 10, !"asm", !"annotation"}
-		!2 = !{!"name", i64 456, i64 10, !"asm", !"annotation"}
-		!3 = !{!"name", i64 789, i64 10, !"asm", !"annotation"}
 	)";
 	checkModuleAgainstExpectedIr(exp);
 }
@@ -261,9 +253,11 @@ TEST_F(InstCombinePassTests, undesirableStoreOptimizatonIsNotPerformed)
 			%func_res = call double @func()
 			%1 = fptrunc double %func_res to float
 			%2 = bitcast float %1 to i32
-			store i32 %2, i32* @g
+			store i32 %2, i32* @g, !retdec.pointee !0
 			ret i32 0
 		}
+
+		!0 = !{!"i32"}
 	)";
 	checkModuleAgainstExpectedIr(exp);
 }
@@ -286,10 +280,12 @@ TEST_F(InstCombinePassTests, undesirableLoadOptimizatonIsNotPerformed_1)
 		@g = global i32 0
 
 		define float @func() {
-			%1 = load i32, i32* @g, align 4
+			%1 = load i32, i32* @g, align 4, !retdec.pointee !0
 			%2 = bitcast i32 %1 to float
 			ret float %2
 		}
+
+		!0 = !{!"i32"}
 	)";
 	checkModuleAgainstExpectedIr(exp);
 }

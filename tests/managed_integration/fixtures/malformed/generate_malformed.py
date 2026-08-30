@@ -15,7 +15,7 @@ import shutil
 import struct
 import random
 
-FIXTURES_DIR = os.path.dirname(os.path.abspath(__file__))
+FIXTURES_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(FIXTURES_DIR, "malformed")
 
 def ensure_dir(path: str):

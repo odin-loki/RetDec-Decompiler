@@ -117,7 +117,9 @@ ExitCode unpackFile(const std::string& inputFile, const std::string& outputFile,
 				Log::error() << "No matching plugins found for '" << detectedPacker.name;
 				if (detectedPacker.versionInfo != WILDCARD_ALL_VERSIONS)
 					Log::error() << " " << detectedPacker.versionInfo;
-				Log::error() << "'. Stage 3 (emulation-based unpacking) may support unknown packers in future." << std::endl;
+				Log::error() << "'. No matching unpacker plugin. Run retdec-decompiler --try-emulation "
+						<< "for Stage 3 emulation-based unpacking when static unpack returns nothing to do."
+						<< std::endl;
 			}
 			continue;
 		}

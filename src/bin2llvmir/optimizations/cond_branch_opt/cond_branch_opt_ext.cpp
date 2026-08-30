@@ -28,6 +28,7 @@
 *       icmp ule/uge/sle/sge %x, %x  →  true
 */
 
+#include <llvm/IR/CmpPredicate.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/PatternMatch.h>
@@ -47,7 +48,7 @@ namespace bin2llvmir {
 static bool foldZextBool(Instruction& inst) {
     // Match: icmp ne (zext i1 %cmp), 0
     Value* cmpVal = nullptr;
-    ICmpInst::Predicate pred;
+    CmpPredicate pred;
     if (!match(&inst, m_ICmp(pred,
                              m_ZExt(m_Value(cmpVal)),
                              m_Zero()))) return false;
@@ -81,7 +82,7 @@ static bool foldSubUlt(Instruction& inst) {
     // Match: icmp ult (sub %a, %b), 0   →   icmp ne %a, %b
     // Match: icmp ule (sub %a, %b), 0   →   icmp eq %a, %b (false→same)
     Value* a = nullptr, *b = nullptr;
-    ICmpInst::Predicate pred;
+    CmpPredicate pred;
     if (!match(&inst, m_ICmp(pred,
                              m_Sub(m_Value(a), m_Value(b)),
                              m_Zero()))) return false;

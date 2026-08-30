@@ -809,6 +809,7 @@ llvm::StoreInst* Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::generateSpecial
 	auto* gv = getAsm2LlvmMapGlobalVariable();
 	auto* ci = llvm::ConstantInt::get(gv->getValueType(), a, false);
 	auto* s = irb.CreateStore(ci, gv, true);
+	attachPointeeType(s, gv->getValueType());
 	return s;
 }
 
@@ -843,7 +844,7 @@ llvm::CallInst* Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::generateCondCall
 		llvm::Value* cond,
 		llvm::Value* t)
 {
-	auto bodyIrb = generateIfThen(cond, irb);
+	llvm::IRBuilder<> bodyIrb(generateIfThen(cond, irb));
 
 	auto* a1t = _callFunction->arg_begin()->getType();
 	t = bodyIrb.CreateSExtOrTrunc(t, a1t);
@@ -883,7 +884,7 @@ llvm::CallInst* Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::generateCondRetu
 		llvm::Value* cond,
 		llvm::Value* t)
 {
-	auto bodyIrb = generateIfThen(cond, irb);
+	llvm::IRBuilder<> bodyIrb(generateIfThen(cond, irb));
 
 	auto* a1t = _returnFunction->arg_begin()->getType();
 	t = bodyIrb.CreateSExtOrTrunc(t, a1t);
@@ -2169,6 +2170,10 @@ void Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::translatePseudoAsmGeneric(
 		if (access == CS_AC_INVALID || (access & CS_AC_READ))
 		{
 			auto* o = loadOp(op, irb);
+			if (o == nullptr)
+			{
+				continue;
+			}
 			vals.push_back(o);
 			types.push_back(o->getType());
 		}

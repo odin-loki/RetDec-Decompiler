@@ -36,7 +36,7 @@ void attachPointeeOnPointerCast(Value* v)
 	{
 		return;
 	}
-	llvm_utils::setPointeeTypeMetadata(i, pt->getPointerElementType());
+	llvm_utils::setPointeeTypeMetadata(i, llvm_utils::pointeeType(i));
 }
 
 bool instOptPatternTraceEnabled()
@@ -551,12 +551,17 @@ bool storeToBitcastPointer(llvm::Instruction* insn)
 {
 	Value* val;
 	Value* op;
-	if (!match(insn, m_Store(m_Value(val), m_BitCast(m_Value(op)))))
+	if (match(insn, m_Store(m_Value(val), m_BitCast(m_Value(op)))))
+	{
+		;
+	}
+	else if (!match(insn, m_Store(m_Value(val), m_Value(op))))
 	{
 		return false;
 	}
 	auto* ptee = llvm_utils::pointeeType(op);
 	if (!ptee
+			|| ptee == val->getType()
 			|| !ptee->isFirstClassType()
 			|| ptee->isAggregateType()
 			|| ptee->isPointerTy())
@@ -574,8 +579,7 @@ bool storeToBitcastPointer(llvm::Instruction* insn)
 			ptee,
 			"",
 			insn);
-	auto* st = new StoreInst(conv, op, insn);
-	llvm_utils::setPointeeTypeMetadata(st, ptee);
+	auto* st = llvm_utils::createStoreInst(conv, op, insn);
 
 	auto* bitcastI = dyn_cast<BitCastInst>(insn->getOperand(1));
 	auto* bitcastCE = dyn_cast<ConstantExpr>(insn->getOperand(1));
@@ -608,12 +612,23 @@ bool storeToBitcastPointer(llvm::Instruction* insn)
 bool loadFromBitcastPointer(llvm::Instruction* insn)
 {
 	Value* op;
-	if (!match(insn, m_Load(m_BitCast(m_Value(op)))))
+	if (match(insn, m_Load(m_BitCast(m_Value(op)))))
+	{
+		;
+	}
+	else if (auto* li = dyn_cast<LoadInst>(insn))
+	{
+		op = li->getPointerOperand();
+	}
+	else
 	{
 		return false;
 	}
 	auto* ptee = llvm_utils::pointeeType(op);
-	if (!ptee || !ptee->isFirstClassType() || ptee->isAggregateType())
+	if (!ptee
+			|| ptee == insn->getType()
+			|| !ptee->isFirstClassType()
+			|| ptee->isAggregateType())
 	{
 		return false;
 	}
@@ -626,12 +641,11 @@ bool loadFromBitcastPointer(llvm::Instruction* insn)
 		return false;
 	}
 
-	auto* l = new LoadInst(op, "", insn);
-	l->setAlignment(cast<LoadInst>(insn)->getAlignment());
-	llvm_utils::setPointeeTypeMetadata(l, ptee);
+	auto* l = llvm_utils::createLoadInst(op, ptee, "", insn);
+	l->setAlignment(cast<LoadInst>(insn)->getAlign());
 	auto* conv = CastInst::CreateBitOrPointerCast(l, insn->getType(), "", insn);
-	attachPointeeOnPointerCast(conv);
 	insn->replaceAllUsesWith(conv);
+	attachPointeeOnPointerCast(conv);
 
 	auto* bitcastI = dyn_cast<BitCastInst>(insn->getOperand(0));
 	auto* bitcastCE = dyn_cast<ConstantExpr>(insn->getOperand(0));

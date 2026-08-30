@@ -38,7 +38,7 @@ namespace retdec::gui::panels {
 namespace {
 
 constexpr const char* kNoBackend =
-	"No inference backend configured. Neural refinement (llama.cpp) is not yet available.";
+	"This build has no inference backend. Rebuild with neural support, then load a GGUF to use the assistant.";
 
 #ifdef RETDEC_GUI_HAS_NEURAL
 constexpr const char* kLoadGgufHint = "Load a Qwen 3.5 9B Q4_K_M GGUF to use the assistant.";

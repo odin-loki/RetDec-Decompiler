@@ -1021,7 +1021,7 @@ TEST_F(AsmInstructionTests, backForValidNonEmptyReturnsLastInstruction)
 TEST_F(AsmInstructionTests, insertBackForInvalidDoesNotInsert)
 {
 	auto a = AsmInstruction();
-	auto* i = new AllocaInst(Type::getInt32Ty(module->getContext()), 0);
+	auto* i = new AllocaInst(Type::getInt32Ty(module->getContext()), 0, nullptr, Align(4), "", nullptr);
 
 	ASSERT_TRUE(a.isInvalid());
 	ASSERT_NE(nullptr, i);
@@ -1051,7 +1051,7 @@ TEST_F(AsmInstructionTests, insertBackForValidComplexAsmInstruction)
 	auto* mapGv = getGlobalByName("llvm2asm");
 	AsmInstruction::setLlvmToAsmGlobalVariable(module.get(), mapGv);
 	auto a = AsmInstruction(module.get(), 1234);
-	auto* i = new AllocaInst(Type::getInt32Ty(module->getContext()), 0, "test");
+	auto* i = new AllocaInst(Type::getInt32Ty(module->getContext()), 0, nullptr, Align(4), "test", nullptr);
 
 	a.insertBack(i);
 
@@ -1077,7 +1077,7 @@ TEST_F(AsmInstructionTests, insertBackForValidComplexAsmInstruction)
 TEST_F(AsmInstructionTests, insertBackSafeForInvalidDoesNotInsert)
 {
 	auto a = AsmInstruction();
-	auto* i = new AllocaInst(Type::getInt32Ty(module->getContext()), 0);
+	auto* i = new AllocaInst(Type::getInt32Ty(module->getContext()), 0, nullptr, Align(4), "", nullptr);
 
 	ASSERT_TRUE(a.isInvalid());
 	ASSERT_NE(nullptr, i);
@@ -1107,7 +1107,7 @@ TEST_F(AsmInstructionTests, insertBackSafeForValidComplexAsmInstruction)
 	auto* mapGv = getGlobalByName("llvm2asm");
 	AsmInstruction::setLlvmToAsmGlobalVariable(module.get(), mapGv);
 	auto a = AsmInstruction(module.get(), 1234);
-	auto* i = new AllocaInst(Type::getInt32Ty(module->getContext()), 0, "test");
+	auto* i = new AllocaInst(Type::getInt32Ty(module->getContext()), 0, nullptr, Align(4), "test", nullptr);
 
 	a.insertBackSafe(i);
 
@@ -1138,7 +1138,7 @@ TEST_F(AsmInstructionTests, insertBackSafeForTerminatorAsmInstruction)
 	auto* mapGv = getGlobalByName("llvm2asm");
 	AsmInstruction::setLlvmToAsmGlobalVariable(module.get(), mapGv);
 	auto a = AsmInstruction(module.get(), 1234);
-	auto* i = new AllocaInst(Type::getInt32Ty(module->getContext()), 0, "test");
+	auto* i = new AllocaInst(Type::getInt32Ty(module->getContext()), 0, nullptr, Align(4), "test", nullptr);
 
 	a.insertBackSafe(i);
 

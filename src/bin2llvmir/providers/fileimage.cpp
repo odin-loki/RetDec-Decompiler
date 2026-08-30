@@ -367,14 +367,14 @@ llvm::Constant* FileImage::getConstant(
 				c = ConstantDataArray::get(ctx, array);
 			}
 
-			c->setValueName(ValueName::Create("wide-string"));
+			c->setName("wide-string");
 			return c;
 		}
 		else
 		{
 			std::vector<unsigned int> array = {0};
 			c = ConstantDataArray::get(ctx, array);
-			c->setValueName(ValueName::Create("wide-string"));
+			c->setName("wide-string");
 			return c;
 		}
 	}
@@ -397,10 +397,6 @@ llvm::Constant* FileImage::getConstant(
 	else if (type->isX86_FP80Ty())
 	{
 		c = getConstantLongDouble(addr);
-	}
-	else if (llvm_utils::isCharPointerType(type))
-	{
-		c = getConstantCharPointer(addr);
 	}
 	else if (auto* ptr = dyn_cast_or_null<PointerType>(type))
 	{
@@ -569,7 +565,7 @@ llvm::Constant* FileImage::getConstant(
 		}
 
 		// Simple Value::setName() does not work on Constant.
-		c->setValueName(ValueName::Create("wide-string"));
+		c->setName("wide-string");
 	}
 	else if (!seg
 			&& _image->getNTBS(addr, str)

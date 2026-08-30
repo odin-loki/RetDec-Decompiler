@@ -76,7 +76,7 @@ llvm::Type *parsePrintedLlvmType(llvm::LLVMContext &ctx, llvm::StringRef s)
 	{
 		return nullptr;
 	}
-	if (s.endswith("*"))
+	if (s.ends_with("*"))
 	{
 		auto *inner = parsePrintedLlvmType(ctx, s.drop_back());
 		if (!inner || !llvm::PointerType::isValidElementType(inner))
@@ -109,7 +109,7 @@ llvm::Type *parsePrintedLlvmType(llvm::LLVMContext &ctx, llvm::StringRef s)
 	{
 		return llvm::Type::getFP128Ty(ctx);
 	}
-	if (s.startswith("i"))
+	if (s.starts_with("i"))
 	{
 		unsigned bits = 0;
 		if (!s.drop_front().getAsInteger(10, bits) && bits > 0)
@@ -164,9 +164,12 @@ ShPtr<Expression> LLVMInstructionConverter::convertConstExprToExpression(
 			// be a better way to deal with them.
 			return convertCastInstToExpression<BitCastExpr>(*cExpr);
 
-		case llvm::Instruction::FCmp:
-			return convertFCmpInstToExpression(*cExpr,
-				cExpr->getPredicate());
+		case llvm::Instruction::FCmp: {
+			llvm::Instruction *tmp = cExpr->getAsInstruction();
+			unsigned pred = llvm::cast<llvm::CmpInst>(tmp)->getPredicate();
+			tmp->deleteValue();
+			return convertFCmpInstToExpression(*cExpr, pred);
+		}
 
 		case llvm::Instruction::FPExt:
 			return convertExtCastInstToExpression(*cExpr,
@@ -183,9 +186,12 @@ ShPtr<Expression> LLVMInstructionConverter::convertConstExprToExpression(
 		case llvm::Instruction::GetElementPtr:
 			return convertGetElementPtrToExpression(*cExpr);
 
-		case llvm::Instruction::ICmp:
-			return convertICmpInstToExpression(*cExpr,
-				cExpr->getPredicate());
+		case llvm::Instruction::ICmp: {
+			llvm::Instruction *tmp = cExpr->getAsInstruction();
+			unsigned pred = llvm::cast<llvm::CmpInst>(tmp)->getPredicate();
+			tmp->deleteValue();
+			return convertICmpInstToExpression(*cExpr, pred);
+		}
 
 		case llvm::Instruction::IntToPtr:
 			return convertCastInstToExpression<IntToPtrCastExpr>(*cExpr);
@@ -239,11 +245,11 @@ ShPtr<Expression> LLVMInstructionConverter::convertInstructionToExpression(
 */
 ShPtr<CallExpr> LLVMInstructionConverter::convertCallInstToCallExpr(llvm::CallInst &inst) {
 	ExprVector args;
-	for (auto &arg: inst.arg_operands()) {
+	for (auto &arg: inst.args()) {
 		args.push_back(getConverter()->convertValueToExpression(arg));
 	}
 
-	auto calledExpr = getConverter()->convertValueToExpression(inst.getCalledValue());
+	auto calledExpr = getConverter()->convertValueToExpression(inst.getCalledOperand());
 	return CallExpr::create(calledExpr, args);
 }
 
@@ -256,7 +262,7 @@ ShPtr<CallExpr> LLVMInstructionConverter::convertCallInstToCallExpr(llvm::CallIn
 * @param[in] indices Array of indices.
 */
 ShPtr<Expression> LLVMInstructionConverter::generateAccessToAggregateType(
-		llvm::CompositeType *type, const ShPtr<Expression> &base,
+		llvm::Type *type, const ShPtr<Expression> &base,
 		const llvm::ArrayRef<unsigned> &indices) {
 	auto typeIt = type;
 	auto access = base;
@@ -269,7 +275,18 @@ ShPtr<Expression> LLVMInstructionConverter::generateAccessToAggregateType(
 			access = ArrayIndexOpExpr::create(access, indexBir);
 		}
 
-		typeIt = llvm::dyn_cast<llvm::CompositeType>(typeIt->getTypeAtIndex(index));
+		if (auto *st = llvm::dyn_cast<llvm::StructType>(typeIt)) {
+			typeIt = index < st->getNumElements() ? st->getElementType(index) : nullptr;
+		} else if (auto *at = llvm::dyn_cast<llvm::ArrayType>(typeIt)) {
+			typeIt = at->getElementType();
+		} else if (auto *vt = llvm::dyn_cast<llvm::FixedVectorType>(typeIt)) {
+			typeIt = vt->getElementType();
+		} else {
+			typeIt = nullptr;
+		}
+		if (!typeIt) {
+			break;
+		}
 	}
 
 	return access;
@@ -451,7 +468,7 @@ ShPtr<Expression> LLVMInstructionConverter::visitGetElementPtrInst(
 */
 ShPtr<Expression> LLVMInstructionConverter::visitExtractValueInst(
 		llvm::ExtractValueInst &inst) {
-	auto type = llvm::cast<llvm::CompositeType>(inst.getAggregateOperand()->getType());
+	auto type = inst.getAggregateOperand()->getType();
 	auto base = getConverter()->convertValueToExpression(inst.getAggregateOperand());
 	return generateAccessToAggregateType(type, base, inst.getIndices());
 }

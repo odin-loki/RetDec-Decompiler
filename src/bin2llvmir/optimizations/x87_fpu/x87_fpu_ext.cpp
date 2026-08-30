@@ -57,7 +57,7 @@ static bool isFpuPseudo(Instruction* i, StringRef prefix) {
     if (!call) return false;
     Function* fn = call->getCalledFunction();
     if (!fn) return false;
-    return fn->getName().startswith(prefix);
+    return fn->getName().starts_with(prefix);
 }
 
 /// Return the FPU stack delta for a pseudo-call instruction.

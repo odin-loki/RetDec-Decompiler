@@ -125,7 +125,7 @@ void CtorDtor::analyseFunction(Function* fnc)
 		if (auto* store = findPreviousStoreToECX(call))
 			offset = getOffset(store->getValueOperand());
 
-		if (offset < 0 && call->getNumArgOperands() > 0)
+		if (offset < 0 && call->arg_size() > 0)
 			offset = getOffset(call->getArgOperand(0));
 
 		if (offset < 0)
@@ -151,7 +151,7 @@ CtorDtor::FunctionInfo CtorDtor::analyseFunctionForward(Function* fnc)
 	LOG << "\n*** analyseFunctionForward() : "
 		<< fnc->getName().str() << std::endl;
 
-	if (fnc->getBasicBlockList().empty())
+	if (fnc->empty())
 		return CtorDtor::FunctionInfo();
 
 	auto& bb = fnc->front();
@@ -163,7 +163,7 @@ CtorDtor::FunctionInfo CtorDtor::analyseFunctionBackward(Function* fnc)
 	LOG << "\n*** analyseFunctionBackward() : "
 		<< fnc->getName().str() << std::endl;
 
-	if (fnc->getBasicBlockList().empty())
+	if (fnc->empty())
 		return CtorDtor::FunctionInfo();
 
 	auto& bb = fnc->back();

@@ -7,6 +7,7 @@
 
 #include <fstream>
 
+#include <llvm/Object/Archive.h>
 #include <llvm/Support/Path.h>
 #include <rapidjson/document.h>
 #include <rapidjson/prettywriter.h>

@@ -24,9 +24,12 @@ class EntryAllocaTests: public LlvmIrTests
 TEST_F(EntryAllocaTests, pointerSelectAttachesPointeeMetadata)
 {
 	parseInput(R"(
-		define i32* @fnc(i1 %c, i32* %x, i32* %y) {
-			%s = select i1 %c, i32* %x, i32* %y
-			ret i32* %s
+		define i32 @fnc(i1 %c) {
+			%x = alloca i32
+			%y = alloca i32
+			%s = select i1 %c, ptr %x, ptr %y
+			%v = load i32, ptr %s
+			ret i32 %v
 		}
 	)");
 
@@ -43,9 +46,11 @@ TEST_F(EntryAllocaTests, pointerSelectAttachesPointeeMetadata)
 TEST_F(EntryAllocaTests, pointerBitCastAttachesPointeeMetadata)
 {
 	parseInput(R"(
-		define i32* @fnc(i8* %p) {
-			%q = bitcast i8* %p to i32*
-			ret i32* %q
+		define i32 @fnc() {
+			%a = alloca i32
+			%q = bitcast ptr %a to ptr
+			%v = load i32, ptr %q
+			ret i32 %v
 		}
 	)");
 
@@ -62,9 +67,10 @@ TEST_F(EntryAllocaTests, pointerBitCastAttachesPointeeMetadata)
 TEST_F(EntryAllocaTests, intToPtrAttachesPointeeMetadata)
 {
 	parseInput(R"(
-		define i32* @fnc(i32 %a) {
-			%p = inttoptr i32 %a to i32*
-			ret i32* %p
+		define i32 @fnc(i32 %a) {
+			%p = inttoptr i32 %a to ptr
+			%v = load i32, ptr %p
+			ret i32 %v
 		}
 	)");
 

@@ -221,6 +221,7 @@ const EnclosingMethodAttr*      getEnclosing(const std::vector<ParsedAttr>& attr
 const RecordAttr*               getRecord(const std::vector<ParsedAttr>& attrs);
 const PermittedSubclassesAttr*  getPermittedSubclasses(const std::vector<ParsedAttr>& attrs);
 const NestHostAttr*             getNestHost(const std::vector<ParsedAttr>& attrs);
+const NestMembersAttr*          getNestMembers(const std::vector<ParsedAttr>& attrs);
 const MethodParametersAttr*     getMethodParameters(const std::vector<ParsedAttr>& attrs);
 
 /// Return the raw Signature string, or "" if absent.

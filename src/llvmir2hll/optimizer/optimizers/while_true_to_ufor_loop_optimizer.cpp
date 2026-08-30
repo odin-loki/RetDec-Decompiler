@@ -88,7 +88,7 @@ void WhileTrueToUForLoopOptimizer::tryReplacementWithUForLoop(
 	}
 
 	// -----------------------------------------------------------------------
-	// Universal for-loop fallback (stub kept for future implementation).
+	// Universal for-loop fallback (`tryConversionToUForLoop` / UForLoopStmt).
 	// -----------------------------------------------------------------------
 
 	// Store the last statement of the original loop for later use. Usually,

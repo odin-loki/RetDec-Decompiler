@@ -304,7 +304,7 @@ llvm::Value* Capstone2LlvmIrTranslatorMips_impl::loadRegister(
 
 	llvmReg = generateTypeConversion(irb, llvmReg, dstType, ct);
 
-	return irb.CreateLoad(llvmReg);
+	return createLoad(irb, llvmReg);
 }
 
 llvm::Value* Capstone2LlvmIrTranslatorMips_impl::loadOp(
@@ -322,7 +322,9 @@ llvm::Value* Capstone2LlvmIrTranslatorMips_impl::loadOp(
 		}
 		case MIPS_OP_IMM:
 		{
-			return llvm::ConstantInt::getSigned(getDefaultType(), op.imm);
+			auto* t = getDefaultType();
+			return llvm::ConstantInt::get(t, llvm::APInt(t->getIntegerBitWidth(),
+					static_cast<uint64_t>(op.imm), false, /*implicitTrunc=*/true));
 		}
 		case MIPS_OP_MEM:
 		{
@@ -398,7 +400,9 @@ llvm::StoreInst* Capstone2LlvmIrTranslatorMips_impl::storeRegister(
 	}
 	val = generateTypeConversion(irb, val, llvmReg->getValueType(),  llvmReg->getValueType()->isFloatingPointTy()? eOpConv::FPCAST_OR_BITCAST : ct);
 
-	return irb.CreateStore(val, llvmReg);
+	auto* s = irb.CreateStore(val, llvmReg);
+	attachPointeeType(s, llvmReg->getValueType());
+	return s;
 }
 
 /**
@@ -591,7 +595,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateBcondal(cs_insn* i, cs_mips* m
 			throw GenericError("Unhandled insn ID in translateBcondal().");
 	}
 
-	auto bodyIrb = generateIfThen(cond, irb);
+	llvm::IRBuilder<> bodyIrb(generateIfThen(cond, irb));
 
 	storeRegister(MIPS_REG_RA, getNextNextInsnAddress(i), bodyIrb);
 	generateCallFunctionCall(bodyIrb, op1);
@@ -624,7 +628,9 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, l
 	{
 		op1 = loadRegister(r1, irb);
 		op1 = irb.CreateFPCast(op1, getRegisterType(r0));
-		irb.CreateStore(op1, getRegister(r0));
+		auto* dst = getRegister(r0);
+		auto* st = irb.CreateStore(op1, dst);
+		attachPointeeType(st, dst->getValueType());
 	}
 	else if (mnem == "cvt.s.w" // should be only on MIPS32
 			|| mnem == "cvt.s.l") // should be only on MIPS64
@@ -636,19 +642,21 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, l
 				: irb.getInt32Ty();
 		op1 = irb.CreateBitCast(op1, iTy);
 		op1 = irb.CreateSIToFP(op1, op0Ty);
-		irb.CreateStore(op1, getRegister(r0));
+		auto* dst = getRegister(r0);
+		auto* st = irb.CreateStore(op1, dst);
+		attachPointeeType(st, dst->getValueType());
 	}
 	// CVT.D.fmt
 	//
 	else if (mnem == "cvt.d.s")
 	{
-		op1 = irb.CreateLoad(getRegister(r1));
+		op1 = createLoad(irb, getRegister(r1));
 		storeRegister(r0, op1, irb, eOpConv::SITOFP_OR_FPCAST);
 	}
 	else if (mnem == "cvt.d.w" // should be only on MIPS32
 			|| mnem == "cvt.d.l") // should be only on MIPS64
 	{
-		op1 = irb.CreateLoad(getRegister(r1));
+		op1 = createLoad(irb, getRegister(r1));
 		auto* iTy = op1->getType()->isDoubleTy()
 				? irb.getInt64Ty()
 				: irb.getInt32Ty();
@@ -671,7 +679,9 @@ void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, l
 				: irb.getInt32Ty();
 		op1 = irb.CreateSExtOrTrunc(op1, iTy2);
 		op1 = irb.CreateBitCast(op1, getRegisterType(r0));
-		irb.CreateStore(op1, getRegister(r0));
+		auto* dst = getRegister(r0);
+		auto* st = irb.CreateStore(op1, dst);
+		attachPointeeType(st, dst->getValueType());
 	}
 	else
 	{
@@ -896,7 +906,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateClo(cs_insn* i, cs_mips* mi, l
 
 	op1 = loadOpBinaryOp1(mi, irb);
 	op1 = irb.CreateXor(op1, llvm::ConstantInt::getSigned(op1->getType(), -1));
-	auto* f = llvm::Intrinsic::getDeclaration(
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(
 			_module,
 			llvm::Intrinsic::ctlz,
 			op1->getType());
@@ -912,7 +922,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateClz(cs_insn* i, cs_mips* mi, l
 	EXPECT_IS_BINARY(i, mi, irb);
 
 	op1 = loadOpBinaryOp1(mi, irb);
-	auto* f = llvm::Intrinsic::getDeclaration(
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(
 			_module,
 			llvm::Intrinsic::ctlz,
 			op1->getType());
@@ -988,7 +998,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateExt(cs_insn* i, cs_mips* mi, l
 				== op1Ty->getBitWidth())
 	{
 		auto* fTy = getFloatTypeFromByteSize(_module, op1Ty->getBitWidth() / 8);
-		auto* f = llvm::Intrinsic::getDeclaration(
+		auto* f = llvm::Intrinsic::getOrInsertDeclaration(
 				_module,
 				llvm::Intrinsic::fabs,
 				fTy);

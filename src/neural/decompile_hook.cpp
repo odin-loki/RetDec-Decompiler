@@ -4,6 +4,7 @@
 #include "retdec/neural/refiner.h"
 
 #include "retdec/common/function.h"
+#include "retdec/common/object.h"
 #include "retdec/common/semantic_detection.h"
 #include "retdec/common/storage.h"
 
@@ -112,6 +113,17 @@ void appendStorageFields(std::ostringstream& oss, const retdec::common::Storage&
 	}
 	if (st.isMemory() && st.getAddress().isDefined())
 		oss << ",\"address\":\"" << jsonEscape(st.getAddress().toHexPrefixString()) << '"';
+}
+
+void appendObjectJson(std::ostringstream& oss, const retdec::common::Object& o)
+{
+	oss << "{\"name\":\"" << jsonEscape(o.getName()) << '"';
+	if (o.type.isDefined()) oss << ",\"type\":\"" << jsonEscape(o.type.getId()) << '"';
+	if (!o.getRealName().empty() && o.getRealName() != o.getName())
+		oss << ",\"real_name\":\"" << jsonEscape(o.getRealName()) << '"';
+	if (o.isFromDebug()) oss << ",\"from_debug\":true";
+	appendStorageFields(oss, o.getStorage());
+	oss << '}';
 }
 
 #ifdef RETDEC_HAS_TREE_SITTER
@@ -352,8 +364,12 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		const bool hasCrypto = !fn.usedCryptoConstants.empty();
 		const bool hasDemangled = !fn.getDemangledName().empty();
 		const bool hasDecl = !fn.getDeclarationString().empty();
+		const bool hasComment = !fn.getComment().empty();
+		const bool hasLocals = !fn.locals.empty();
 		const bool hasCallGraph = callersOf.count(fn.getName()) || calleesOf.count(fn.getName());
-		if (!hasDetections && !hasCrypto && !hasDemangled && !hasDecl && !hasCallGraph) continue;
+		if (!hasDetections && !hasCrypto && !hasDemangled && !hasDecl && !hasCallGraph
+			&& !hasComment && !hasLocals)
+			continue;
 		if (!firstFn) oss << ',';
 		firstFn = false;
 		oss << "{\"name\":\"" << jsonEscape(fn.getName()) << '"';
@@ -361,6 +377,7 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		if (fn.getStart().isDefined()) oss << ",\"start\":\"" << jsonEscape(fn.getStart().toHexPrefixString()) << '"';
 		if (fn.getEnd().isDefined()) oss << ",\"end\":\"" << jsonEscape(fn.getEnd().toHexPrefixString()) << '"';
 		if (hasDecl) oss << ",\"declaration\":\"" << jsonEscape(fn.getDeclarationString()) << '"';
+		if (hasComment) oss << ",\"comment\":\"" << jsonEscape(fn.getComment()) << '"';
 		if (!fn.getRealName().empty() && fn.getRealName() != fn.getName())
 			oss << ",\"real_name\":\"" << jsonEscape(fn.getRealName()) << '"';
 		if (!fn.getSourceFileName().empty()) oss << ",\"source_file\":\"" << jsonEscape(fn.getSourceFileName()) << '"';
@@ -412,13 +429,19 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 			{
 				if (!firstP) oss << ',';
 				firstP = false;
-				oss << "{\"name\":\"" << jsonEscape(p.getName()) << '"';
-				if (p.type.isDefined()) oss << ",\"type\":\"" << jsonEscape(p.type.getId()) << '"';
-				if (!p.getRealName().empty() && p.getRealName() != p.getName())
-					oss << ",\"real_name\":\"" << jsonEscape(p.getRealName()) << '"';
-				if (p.isFromDebug()) oss << ",\"from_debug\":true";
-				appendStorageFields(oss, p.getStorage());
-				oss << '}';
+				appendObjectJson(oss, p);
+			}
+			oss << ']';
+		}
+		if (hasLocals)
+		{
+			oss << ",\"locals\":[";
+			bool firstL = true;
+			for (const auto& loc: fn.locals)
+			{
+				if (!firstL) oss << ',';
+				firstL = false;
+				appendObjectJson(oss, loc);
 			}
 			oss << ']';
 		}
@@ -444,6 +467,7 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 				<< "\",\"confidence\":" << d.confidence;
 			if (!d.detail.empty()) oss << ",\"detail\":\"" << jsonEscape(d.detail) << '"';
 			if (!d.cHint.empty()) oss << ",\"cHint\":\"" << jsonEscape(d.cHint) << '"';
+			if (d.cElemBytes > 0) oss << ",\"cElemBytes\":" << static_cast<unsigned>(d.cElemBytes);
 			oss << '}';
 		}
 		oss << ']';
@@ -541,6 +565,7 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		firstPat = false;
 		oss << "{\"name\":\"" << jsonEscape(pat.getName()) << '"';
 		if (!pat.getYaraRuleName().empty()) oss << ",\"yara_rule\":\"" << jsonEscape(pat.getYaraRuleName()) << '"';
+		if (!pat.getDescription().empty()) oss << ",\"description\":\"" << jsonEscape(pat.getDescription()) << '"';
 		const char* kind = "other";
 		if (pat.isTypeCrypto())
 			kind = "crypto";
@@ -616,6 +641,8 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 			oss << ",\"totalSignificantNibbles\":" << tool.getTotalSignificantNibbles();
 		if (tool.getIdenticalSignificantNibbles() != 0)
 			oss << ",\"identicalSignificantNibbles\":" << tool.getIdenticalSignificantNibbles();
+		if (!tool.getAdditionalInfo().empty())
+			oss << ",\"additionalInfo\":\"" << jsonEscape(tool.getAdditionalInfo()) << '"';
 		oss << '}';
 	}
 	oss << "],\"languages\":[";
@@ -631,6 +658,18 @@ std::string serializeSemanticContext(const retdec::config::Config& config)
 		oss << '}';
 	}
 	oss << ']';
+	if (!config.globals.empty())
+	{
+		oss << ",\"globals\":[";
+		bool firstG = true;
+		for (const auto& g: config.globals)
+		{
+			if (!firstG) oss << ',';
+			firstG = false;
+			appendObjectJson(oss, g);
+		}
+		oss << ']';
+	}
 	if (config.architecture.isKnown())
 	{
 		oss << ",\"architecture\":{\"name\":\"" << jsonEscape(config.architecture.getName()) << '"';

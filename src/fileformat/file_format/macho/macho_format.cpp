@@ -474,7 +474,7 @@ void MachOFormat::handleRelocation(std::uint32_t firstDword, std::uint32_t secon
 		auto errOrName = file->getSymbolName(file->getSymbolByIndex(rLink)->getRawDataRefImpl());
 		if (errOrName)
 		{
-			relocation.setName(errOrName.get());
+			relocation.setName(errOrName->str());
 		}
 		// Unhandled errors cause abort()
 		consumeError(errOrName.takeError());
@@ -1069,7 +1069,7 @@ std::unique_ptr<Import> MachOFormat::getImportFromBindEntry(const llvm::object::
 	}
 
 	auto result = std::make_unique<Import>();
-	result->setName(input.symbolName());
+	result->setName(input.symbolName().str());
 	result->setLibraryIndex(input.ordinal() - 1);
 	result->invalidateOrdinalNumber();
 	result->setAddress(getSegment(input.segmentIndex())->getAddress() + input.segmentOffset());

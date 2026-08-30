@@ -272,9 +272,18 @@ void CoffFormat::initStructures()
 	file = nullptr;
 	if(fileBuffer && !fileBuffer.getError())
 	{
-		std::error_code errorCode;
-		file = new COFFObjectFile(fileBuffer.get()->getMemBufferRef(), errorCode);
-		stateIsValid = !errorCode;
+		auto objOrErr = ObjectFile::createCOFFObjectFile(
+				fileBuffer.get()->getMemBufferRef());
+		if (!objOrErr)
+		{
+			consumeError(objOrErr.takeError());
+			stateIsValid = false;
+		}
+		else
+		{
+			file = objOrErr->release();
+			stateIsValid = true;
+		}
 	}
 	else
 	{
@@ -313,15 +322,20 @@ void CoffFormat::loadSections()
 		auto *section = new PeCoffSection();
 		const auto *coffSec = file->getCOFFSection(item);
 		StringRef name;
-		if(item.getName(name))
+		if (auto nameOrErr = item.getName())
 		{
+			name = *nameOrErr;
+		}
+		else
+		{
+			consumeError(nameOrErr.takeError());
 			name = "";
 		}
-		section->setName(name);
+		section->setName(name.str());
 		section->setIndex(index++);
 		if(coffSec)
 		{
-			section->setType(getSectionType(name, coffSec->Characteristics));
+			section->setType(getSectionType(name.str(), coffSec->Characteristics));
 			section->setOffset(coffSec->PointerToRawData);
 			section->setSizeInFile(coffSec->SizeOfRawData);
 			section->setSizeInMemory(coffSec->VirtualSize);
@@ -351,8 +365,13 @@ void CoffFormat::loadSymbols()
 		auto symbol = std::make_shared<Symbol>();
 		const auto symbolRef = file->getCOFFSymbol(item);
 		StringRef name;
-		if(file->getSymbolName(symbolRef, name))
+		if (auto nameOrErr = file->getSymbolName(symbolRef))
 		{
+			name = *nameOrErr;
+		}
+		else
+		{
+			consumeError(nameOrErr.takeError());
 			name = "";
 		}
 		const auto link = symbolRef.getSectionNumber();
@@ -375,8 +394,8 @@ void CoffFormat::loadSymbols()
 				symbol->invalidateAddress();
 			}
 		}
-		symbol->setOriginalName(name);
-		symbol->setName(name);
+		symbol->setOriginalName(name.str());
+		symbol->setName(name.str());
 		symbol->setIndex(index);
 		symbol->setType(getSymbolType(link, symbolRef.getValue(), symbolRef.getStorageClass()));
 		symbol->setUsageType(getSymbolUsageType(symbolRef.getStorageClass(), symbolRef.getComplexType()));
@@ -509,8 +528,7 @@ bool CoffFormat::getRelocationMask(unsigned relType, std::vector<std::uint8_t> &
 
 retdec::utils::Endianness CoffFormat::getEndianness() const
 {
-	const llvm::object::coff_bigobj_file_header* bigHeader = nullptr;
-	if (!file->getCOFFBigObjHeader(bigHeader) && bigHeader)
+	if (file->getCOFFBigObjHeader())
 	{
 		return Endianness::BIG;
 	}

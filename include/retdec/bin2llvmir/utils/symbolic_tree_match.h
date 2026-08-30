@@ -1071,7 +1071,7 @@ struct match_any_zero
 	{
 		if (const auto *C = llvm::dyn_cast<llvm::Constant>(st.value))
 		{
-			return C->isZeroValue();
+			return C->isNullValue() || C->isNegativeZeroValue();
 		}
 		return false;
 	}

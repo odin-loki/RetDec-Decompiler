@@ -66,7 +66,8 @@ bool isFunctionTypeOrPointerToFunction(Type* t)
 	}
 	if (auto* p = dyn_cast<PointerType>(t))
 	{
-		return isa<FunctionType>(p->getElementType());
+		auto* elem = llvm_utils::typedPointerElement(p);
+		return elem && isa<FunctionType>(elem);
 	}
 	return false;
 }
@@ -223,12 +224,12 @@ void ParamReturn::collectAllCalls()
 	for (auto& i : b)
 	{
 		auto* call = dyn_cast<CallInst>(&i);
-		if (call == nullptr || call->getNumArgOperands() != 0)
+		if (call == nullptr || call->arg_size() != 0)
 		{
 			continue;
 		}
 
-		auto* calledVal = call->getCalledValue();
+		auto* calledVal = call->getCalledOperand();
 		auto* calledFnc = call->getCalledFunction();
 		if (calledVal == nullptr)
 		{
@@ -317,7 +318,7 @@ void ParamReturn::collectExtraData(DataFlowEntry* dataflow) const
 					continue;
 				}
 				argTypes.push_back(a.getType());
-				argNames.push_back(a.getName());
+				argNames.push_back(a.getName().str());
 			}
 			dataflow->setArgTypes(
 					std::move(argTypes),
@@ -477,7 +478,7 @@ void ParamReturn::collectExtraData(DataFlowEntry* dataflow) const
 	{
 		dataflow->setWrappedCall(wrappedCall);
 		auto* wf = wrappedCall->getCalledFunction();
-		auto* ltiFnc = _lti->getLlvmFunctionFree(wf->getName());
+		auto* ltiFnc = _lti->getLlvmFunctionFree(wf->getName().str());
 		if (ltiFnc)
 		{
 			std::vector<Type*> argTypes;
@@ -489,7 +490,7 @@ void ParamReturn::collectExtraData(DataFlowEntry* dataflow) const
 					continue;
 				}
 				argTypes.push_back(a.getType());
-				argNames.push_back(a.getName());
+				argNames.push_back(a.getName().str());
 			}
 			dataflow->setArgTypes(
 					std::move(argTypes),
@@ -504,10 +505,10 @@ void ParamReturn::collectExtraData(DataFlowEntry* dataflow) const
 			return;
 		}
 
-		auto demFuncPair = _demangler->getPairFunction(wf->getName());
+		auto demFuncPair = _demangler->getPairFunction(wf->getName().str());
 		if (demFuncPair.first)
 		{
-			LOG << "wrapper: " << _demangler->demangleToString(wf->getName()) << std::endl;
+			LOG << "wrapper: " << _demangler->demangleToString(wf->getName().str()) << std::endl;
 			modifyWithDemangledData(*dataflow, demFuncPair);
 
 			return;
@@ -608,7 +609,7 @@ CallInst* ParamReturn::getWrapper(Function* fnc) const
 		{
 			if (auto* l = dyn_cast<LoadInst>(&*it))
 			{
-				std::string n = l->getPointerOperand()->getName();
+				std::string n = l->getPointerOperand()->getName().str();
 				if (n == "lr" || n == "sp")
 				{
 					return nullptr;
@@ -616,7 +617,7 @@ CallInst* ParamReturn::getWrapper(Function* fnc) const
 			}
 			else if (auto* s = dyn_cast<StoreInst>(&*it))
 			{
-				std::string n = s->getPointerOperand()->getName();
+				std::string n = s->getPointerOperand()->getName().str();
 				if (n == "lr" || n == "sp")
 				{
 					return nullptr;
@@ -888,7 +889,7 @@ void ParamReturn::modifyWithDemangledData(DataFlowEntry &de, Demangler::Function
 		if (demParam.getType()->isSized())
 		{
 			argTypes.push_back(demParam.getType());
-			argNames.push_back(demParam.getName());
+			argNames.push_back(demParam.getName().str());
 		}
 	}
 
@@ -1181,7 +1182,7 @@ void ParamReturn::applyToIr(DataFlowEntry& de)
 		{
 			if (de.getRetValue()->getType()->isPointerTy())
 			{
-				auto* l = new LoadInst(de.getRetValue(), "", e.getRetInstruction());
+				auto* l = llvm_utils::createLoadInst(de.getRetValue(), "", e.getRetInstruction());
 				rets2vals[e.getRetInstruction()] = l;
 			}
 			else
@@ -1286,7 +1287,7 @@ void ParamReturn::applyToIr(DataFlowEntry& de)
 					{
 						break;
 					}
-					Value* l = new LoadInst(argPtr, "", call);
+					Value* l = llvm_utils::createLoadInst(argPtr, "", call);
 					auto* t = ti < definitionArgTypes.size()
 							? definitionArgTypes[ti]
 							: _abi->getDefaultType();
@@ -1318,7 +1319,7 @@ void ParamReturn::applyToIr(DataFlowEntry& de)
 					continue;
 				}
 
-				Value* l = new LoadInst(argPtr, "", call);
+				Value* l = llvm_utils::createLoadInst(argPtr, "", call);
 				auto* t = i < definitionArgTypes.size()
 						? definitionArgTypes[i]
 						: _abi->getDefaultType();
@@ -1442,12 +1443,12 @@ void ParamReturn::connectWrappers(const DataFlowEntry& de)
 		return;
 	}
 
-	if (wrappedCall->getNumArgOperands() != fnc->arg_size())
+	if (wrappedCall->arg_size() != fnc->arg_size())
 	{
 		// TODO: enable assert and inspect these cases.
 		return;
 	}
-	assert(wrappedCall->getNumArgOperands() == fnc->arg_size());
+	assert(wrappedCall->arg_size() == fnc->arg_size());
 
 	unsigned i = 0;
 	for (auto& a : fnc->args())
@@ -1509,7 +1510,7 @@ void ParamReturn::connectWrappers(const DataFlowEntry& de)
 		std::vector<Value*> args;
 		unsigned numParams = wrappedFnc->getFunctionType()->getNumParams();
 		unsigned i = 0;
-		for (auto& a : c->arg_operands())
+		for (auto& a : c->args())
 		{
 			if (i >= numParams) // var args fncs
 			{
@@ -1580,7 +1581,7 @@ std::map<CallInst*, std::vector<Value*>> ParamReturn::fetchLoadsOfCalls(
 				}
 			}
 
-			Value* l = new LoadInst(*aIt, "", call);
+			Value* l = llvm_utils::createLoadInst(*aIt, "", call);
 
 			if (tIt != types.end())
 			{

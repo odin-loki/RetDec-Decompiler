@@ -185,7 +185,18 @@ std::string JavaClassEmitter::buildParamList(const BcMethod& method,
                 pname = "p" + std::to_string(i);
         }
 
-        out += ptype + " " + pname;
+        std::string prefix;
+        if (i < method.paramAnnotations.size()) {
+            for (const auto& ann : method.paramAnnotations[i]) {
+                if (!ann.isVisible) continue;
+                prefix += emitAnnotation(ann) + " ";
+            }
+        }
+        if (i + 1 == desc.params.size() &&
+            hasFlag(method.access, BcAccess::VarArgs) &&
+            ptype.size() >= 2 && ptype.compare(ptype.size() - 2, 2, "[]") == 0)
+            ptype = ptype.substr(0, ptype.size() - 2) + "...";
+        out += prefix + ptype + " " + pname;
     }
     return out;
 }
@@ -311,11 +322,15 @@ void JavaClassEmitter::emitMethod(const BcMethod& method, const BcClass& cls,
 // ─── Class header emission ────────────────────────────────────────────────────
 
 void JavaClassEmitter::emitClassHeader(const BcClass& cls, CodeWriter& writer) {
+    if (!cls.sourceFile.empty())
+        writer.writeLine("// SourceFile: " + cls.sourceFile);
+
     emitAnnotations(cls.annotations, writer);
 
     // Determine kind.
     std::string keyword;
     if (cls.isAnnotation) keyword = "@interface";
+    else if (cls.isModule) keyword = "module";
     else if (cls.isInterface) keyword = "interface";
     else if (cls.isEnum) keyword = "enum";
     else if (cls.isRecord && opts_.javaVersion >= 16) keyword = "record";
@@ -354,8 +369,39 @@ void JavaClassEmitter::emitClassHeader(const BcClass& cls, CodeWriter& writer) {
     }
 
     std::string header = (mods.empty() ? "" : mods + " ") + keyword + " " +
-                          cls.name + typeParams + extendsClause +
-                          implementsClause + " {";
+                          cls.name + typeParams;
+    if (cls.isRecord && opts_.javaVersion >= 16) {
+        std::string comps;
+        for (const auto& m : cls.methods) {
+            if (m.isConstructor) {
+                comps = "(" + buildParamList(m, reconFor(m)) + ")";
+                break;
+            }
+        }
+        if (comps.empty()) {
+            comps = "(";
+            bool first = true;
+            for (const auto& f : cls.fields) {
+                if (hasFlag(f.access, BcAccess::Static)) continue;
+                if (!first) comps += ", ";
+                first = false;
+                comps += tyPrinter_.print(f.type) + " " + f.name;
+            }
+            comps += ")";
+        }
+        header += comps;
+    }
+
+    std::string permitsClause;
+    if (!cls.permittedSubclasses.empty()) {
+        permitsClause = " permits ";
+        for (size_t i = 0; i < cls.permittedSubclasses.size(); ++i) {
+            if (i) permitsClause += ", ";
+            permitsClause += tyPrinter_.print(
+                types::Class(cls.permittedSubclasses[i]));
+        }
+    }
+    header += extendsClause + implementsClause + permitsClause + " {";
     writer.writeLine(header);
 }
 
@@ -392,16 +438,9 @@ void JavaClassEmitter::emitEnumConstants(const BcClass& cls,
 
 void JavaClassEmitter::emitRecordComponents(const BcClass& cls,
                                              CodeWriter& writer) {
-    if (!cls.isRecord) return;
-    // Record components are the constructor parameters.
-    for (const auto& m : cls.methods) {
-        if (m.isConstructor) {
-            // Emit as a record header after the class name.
-            // (This requires a more sophisticated approach — placeholder.)
-            (void)writer;
-            break;
-        }
-    }
+    (void)cls;
+    (void)writer;
+    // Record components are emitted in the class header as `record Name(T a, U b)`.
 }
 
 // ─── Fields emission ──────────────────────────────────────────────────────────
@@ -411,6 +450,8 @@ void JavaClassEmitter::emitFields(const BcClass& cls, CodeWriter& writer) {
         if (cls.isEnum && hasFlag(field.access, BcAccess::Static) &&
             hasFlag(field.access, BcAccess::Final))
             continue; // Already emitted as enum constants.
+        if (cls.isRecord && !hasFlag(field.access, BcAccess::Static))
+            continue; // Record components live in the header.
         emitField(field, cls, writer);
     }
 }
@@ -418,8 +459,11 @@ void JavaClassEmitter::emitFields(const BcClass& cls, CodeWriter& writer) {
 // ─── Methods emission ─────────────────────────────────────────────────────────
 
 void JavaClassEmitter::emitMethods(const BcClass& cls, CodeWriter& writer) {
-    for (const auto& method : cls.methods)
+    for (const auto& method : cls.methods) {
+        if (cls.isRecord && method.isConstructor)
+            continue;
         emitMethod(method, cls, writer);
+    }
 }
 
 // ─── Inner classes ────────────────────────────────────────────────────────────

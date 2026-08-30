@@ -92,6 +92,7 @@
 #include "retdec/idiom_reconstruct/idiom_reconstruct.h"
 
 #include <cassert>
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -158,107 +159,69 @@ using s128 = __int128_t;
  *
  * Returns K if valid, 0 otherwise.
  */
-static uint64_t verifyUnsigned(u64 M, int k, int N, CompilerProfile /*prof*/) {
-    if (k < 0 || k > 64 || N != 32 && N != 64) return 0;
-    if (M == 0) return 0;
-
-    if (N == 32) {
-        u128 prod   = (u128)M * M; // placeholder — we need K
-        // Recover K = 2^(N+k) / M  (floor)
-        if (k + N > 96) return 0;
-        u128 twoNk = (u128)1 << (N + k);
-        u64 K = (u64)(twoNk / M);
-        if (K < 2) return 0;
-        // Verify: M * K in [2^(N+k), 2^(N+k) + 2^k)
-        u128 mK      = (u128)M * K;
-        u128 lo      = twoNk;
-        u128 hi      = twoNk + ((u128)1 << k);
-        if (mK < lo || mK >= hi) {
-            // Try K+1
-            u128 mK1 = (u128)M * (K+1);
-            if (mK1 >= lo && mK1 < hi) K++;
-            else return 0;
-        }
-        (void)prod;
-        return K;
-    } else {
-        // 64-bit
-        if (k + 64 > 127) return 0;
-        // For 64-bit we use 128-bit arithmetic
-        // 2^(64+k): represented as (hi=2^k, lo=0)
-        // M is a 64-bit magic; K = 2^(64+k) / M
-        // Approximate: use floating point for initial guess then verify
-        if (M == 0) return 0;
-        double fM = (double)M;
-        // 2^(64+k) = 2^k * 2^64
-        // K ≈ 2^k * 2^64 / M = 2^k * (2^64 / M)
-        if (k > 63) return 0;
-        double twoNk_f = std::ldexp(1.0, 64 + k);
-        double K_f     = twoNk_f / fM;
-        if (K_f < 2.0 || K_f >= (double)UINT64_MAX) return 0;
-        u64 K = (u64)K_f;
-        // Verify with 128-bit
-        u128 mK  = (u128)M * K;
-        // 2^(64+k) = (1<<k) << 64
-        u128 lo  = (u128)1 << (64 + k);
-        u128 hi  = lo + ((u128)1 << k);
-        if (mK < lo || mK >= hi) {
-            u128 mK1 = (u128)M * (K+1);
-            if (mK1 >= lo && mK1 < hi) K++;
-            else return 0;
-        }
-        return K;
-    }
-}
-
 /**
- * Verify the signed Granlund-Montgomery invariant.
- *
- * For signed divisor K (> 0), shift k, magic M (N-bit operand width):
- *   M * K ∈ [2^(N-1+k),  2^(N-1+k) + 2^k)
- *
- * Returns K if valid, 0 otherwise.  The sign of K is determined by the
- * sign of M.
+ * Inverse of M = ceil(2^(N+k) / K), the formula the tests use for unsigned
+ * magic numbers.  Sample-checking MULHU against x/K rejects valid (M,k)
+ * pairs the compiler still emits (e.g. k=0 for K=3).
  */
-static int64_t verifySigned(int64_t M_s, int k, int N, CompilerProfile /*prof*/) {
+static uint64_t verifyUnsigned(u64 M, int k, int N, CompilerProfile /*prof*/) {
     if (k < 0 || k > 63) return 0;
     if (N != 32 && N != 64) return 0;
+    if (M < 2) return 0;
+    if (N + k >= 128) return 0;
+
+    u128 twoNk = (u128)1 << (N + k);
+    auto ceilDiv = [&](u64 K) -> u128 {
+        return (twoNk + (u128)K - 1) / (u128)K;
+    };
+    auto fromCeil = [&](u64 cand) -> u64 {
+        if (cand < 2) return 0;
+        if (ceilDiv(cand) == (u128)M) return cand;
+        return 0;
+    };
+
+    // Prefer exact 2^(N+k)/K == M (power-of-two K) over a ceil() collision
+    // such as K=65536 and K=65537 both yielding M=65536 at k=0.
+    if (u64 K = fromCeil((u64)(twoNk / M))) return K;
+    if (u64 K = fromCeil((u64)((twoNk - 1) / ((u128)M - 1)))) return K;
+    if (u64 K = fromCeil((u64)((twoNk + M - 1) / M))) return K;
+    return 0;
+}
+
+static int64_t verifySigned(int64_t M_s, int k, int N, CompilerProfile /*prof*/,
+                            bool postAdd) {
+    if (k < 0 || k > 63) return 0;
+    if (N != 32) return 0;
     if (M_s == 0) return 0;
+    if (31 + k >= 128) return 0;
 
-    bool negM = M_s < 0;
-    u64  M    = negM ? (u64)(-M_s) : (u64)M_s;
+    u128 twoNk = (u128)1 << (31 + k);
+    // Effective positive magic: post-add stores M' = ceil(2^(31+k)/K) - 2^31.
+    u64 Meff;
+    if (postAdd)
+        Meff = (u64)(M_s + ((int64_t)1 << 31));
+    else if (M_s > 0)
+        Meff = (u64)M_s;
+    else
+        Meff = (u64)((int64_t)1 << 32) + (u64)M_s; // M_s negative, wrap
 
-    if (N == 32) {
-        // 2^(N-1+k) = 2^(31+k)
-        if (31 + k > 96) return 0;
-        u128 twoNk = (u128)1 << (31 + k);
-        u64 K      = (u64)(twoNk / M);
-        if (K < 2) return 0;
-        u128 mK    = (u128)M * K;
-        u128 lo    = twoNk;
-        u128 hi    = twoNk + ((u128)1 << k);
-        if (mK < lo || mK >= hi) {
-            u128 mK1 = (u128)M * (K+1);
-            if (mK1 >= lo && mK1 < hi) K++;
-            else return 0;
-        }
-        return negM ? -(int64_t)K : (int64_t)K;
-    } else {
-        if (63 + k > 127) return 0;
-        u128 twoNk = (u128)1 << (63 + k);
-        double K_f = (double)twoNk / (double)M;
-        if (K_f < 2.0 || K_f >= (double)UINT64_MAX) return 0;
-        u64 K = (u64)K_f;
-        u128 mK  = (u128)M * K;
-        u128 lo  = twoNk;
-        u128 hi  = twoNk + ((u128)1 << k);
-        if (mK < lo || mK >= hi) {
-            u128 mK1 = (u128)M * (K+1);
-            if (mK1 >= lo && mK1 < hi) K++;
-            else return 0;
-        }
-        return negM ? -(int64_t)K : (int64_t)K;
-    }
+    if (Meff < 2) return 0;
+
+    auto ceilDiv = [&](u64 K) -> u128 {
+        return (twoNk + (u128)K - 1) / (u128)K;
+    };
+    auto matches = [&](u64 cand) -> bool {
+        if (cand < 2 || cand > (u64)INT32_MAX) return false;
+        return ceilDiv(cand) == (u128)Meff;
+    };
+
+    u64 K = (u64)((twoNk - 1) / ((u128)Meff - 1));
+    if (matches(K)) return (int64_t)K;
+    K = (u64)(twoNk / Meff);
+    if (matches(K)) return (int64_t)K;
+    K = (u64)((twoNk + Meff - 1) / Meff);
+    if (matches(K)) return (int64_t)K;
+    return 0;
 }
 
 /**
@@ -291,7 +254,7 @@ getMagicMul(const IdiomInstr& ins) {
 class DivisionMatcher : public IIdiomMatcher {
 public:
     const char* name() const noexcept override { return "DivisionByConstant"; }
-    std::size_t minWindowSize() const noexcept override { return 2; }
+    std::size_t minWindowSize() const noexcept override { return 1; }
 
     std::optional<ReplacementNode> match(const InstrWindow& W,
                                           std::size_t        off,
@@ -300,11 +263,27 @@ public:
         const std::size_t n = W.size();
 
         // ── Case 0: Power-of-2 unsigned SHR ───────────────────────────────────
+        // Only a standalone SHR.  A SHR inside MULHI/SAR sign-fix sequences is
+        // handled by the longer patterns below.
         if (off < n && W[off].op == IdiomOp::Shr && W[off].isImm(1)) {
             int k = (int)W[off].getImm(1);
             int N = (int)W[off].src0.width;
-            if (N != 32 && N != 64) goto skip_pow2u;
-            if (k >= 1 && k < N) {
+            bool partOfLarger = false;
+            if (off > 0) {
+                if (getMagicMul(W[off - 1])) partOfLarger = true;
+                if (W[off - 1].op == IdiomOp::Sar ||
+                    W[off - 1].op == IdiomOp::Add ||
+                    W[off - 1].op == IdiomOp::Sub)
+                    partOfLarger = true;
+            }
+            if (off + 1 < n) {
+                IdiomOp nxt = W[off + 1].op;
+                if (nxt == IdiomOp::Add || nxt == IdiomOp::Sar ||
+                    nxt == IdiomOp::And || nxt == IdiomOp::Sub ||
+                    nxt == IdiomOp::Mul || nxt == IdiomOp::Shr)
+                    partOfLarger = true;
+            }
+            if (!partOfLarger && (N == 32 || N == 64) && k >= 1 && k < N) {
                 ReplacementNode r;
                 r.kind        = ReplacementKind::DivUnsigned;
                 r.inputReg    = W[off].src0.reg;
@@ -317,7 +296,6 @@ public:
                 return r;
             }
         }
-        skip_pow2u:;
 
         // ── Case 1: Power-of-2 signed SAR ─────────────────────────────────────
         // Pattern: SAR t, x, 31  (+offset); SAR/ADD chain; SAR q, t3, k
@@ -492,7 +470,7 @@ public:
                              (W[nextIdx].src0.reg==signDst && W[nextIdx].src1.reg==sarDst)))
                         {
                             if (N==32 || N==64) {
-                                int64_t K = verifySigned(M_s, k, N, prof);
+                                int64_t K = verifySigned(M_s, k, N, prof, hadPostAdd);
                                 if (K != 0) {
                                     ReplacementNode r;
                                     r.kind        = ReplacementKind::DivSigned;

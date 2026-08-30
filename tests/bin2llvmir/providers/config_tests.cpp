@@ -567,7 +567,7 @@ TEST_F(ConfigTests, insertStackVariableNew)
 	EXPECT_TRUE(csv->getStorage().isStack());
 	EXPECT_EQ(4, csv->getStorage().getStackOffset());
 	EXPECT_TRUE(csv->isFromDebug());
-	EXPECT_EQ("i32*", csv->type.getLlvmIr());
+	EXPECT_EQ("i32", csv->type.getLlvmIr());
 }
 
 //

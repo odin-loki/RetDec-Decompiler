@@ -9,6 +9,8 @@
 #ifndef CAPSTONE2LLVMIR_CAPSTONE2LLVMIR_IMPL_H
 #define CAPSTONE2LLVMIR_CAPSTONE2LLVMIR_IMPL_H
 
+#include <map>
+
 #include "capstone2llvmir/llvmir_utils.h"
 #include "retdec/capstone2llvmir/capstone2llvmir.h"
 

@@ -40,7 +40,7 @@ void attachPointeeOnPointerCast(Value* v)
 	{
 		return;
 	}
-	llvm_utils::setPointeeTypeMetadata(i, pt->getPointerElementType());
+	llvm_utils::setPointeeTypeMetadata(i, llvm_utils::pointeeType(i));
 }
 
 bool valueProtectTraceEnabled()
@@ -604,6 +604,10 @@ void _getConstantExprInstructionUsers(
 		std::set<llvm::Instruction*>& users,
 		std::set<llvm::ConstantExpr*>& seen)
 {
+	if (!expr->hasUseList())
+	{
+		return;
+	}
 	for (auto uIt = expr->user_begin(); uIt != expr->user_end(); ++uIt)
 	{
 		User* user = *uIt;
@@ -715,7 +719,7 @@ void ValueProtect::protectValue(
 	}
 	auto* c = CallInst::Create(fnc);
 	c->insertBefore(before);
-	auto* s = new StoreInst(c, val);
+	auto* s = llvm_utils::createStoreInst(c, val);
 	s->insertAfter(c);
 	if (auto* ptee = llvm_utils::pointeeType(val))
 	{
@@ -941,11 +945,7 @@ bool ValueProtect::unprotect()
 					ft2v[{i->getFunction(), i->getType()}] = v;
 				}
 
-				auto* load = new LoadInst(v, "", i);
-				if (auto* ptee = llvm_utils::pointeeType(v))
-				{
-					llvm_utils::setPointeeTypeMetadata(load, ptee);
-				}
+				auto* load = llvm_utils::createLoadInst(v, "", i);
 				i->replaceAllUsesWith(load);
 			}
 

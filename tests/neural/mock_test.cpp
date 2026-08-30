@@ -1217,6 +1217,95 @@ TEST(NeuralSemanticContext, SerializesRttiClassNames)
 	EXPECT_NE(json.find("\"functions\":[]"), std::string::npos);
 }
 
+TEST(NeuralSemanticContext, SerializesFunctionComment)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Function fn("fn_401000");
+	fn.setComment("AES key schedule");
+	cfg.functions.insert(fn);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"name\":\"fn_401000\""), std::string::npos);
+	EXPECT_NE(json.find("\"comment\":\"AES key schedule\""), std::string::npos);
+}
+
+TEST(NeuralSemanticContext, SerializesLocals)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Function fn("fn_401000");
+	fn.setDeclarationString("void expand_key(void)");
+	retdec::common::Object loc("i", retdec::common::Storage::onStack(-4));
+	loc.type.setLlvmIr("i32");
+	loc.setRealName("round");
+	loc.setIsFromDebug(true);
+	fn.locals.insert(loc);
+	cfg.functions.insert(fn);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"locals\":["), std::string::npos);
+	EXPECT_NE(json.find("\"name\":\"i\""), std::string::npos);
+	EXPECT_NE(json.find("\"type\":\"i32\""), std::string::npos);
+	EXPECT_NE(json.find("\"real_name\":\"round\""), std::string::npos);
+	EXPECT_NE(json.find("\"from_debug\":true"), std::string::npos);
+	EXPECT_NE(json.find("\"stack_offset\":-4"), std::string::npos);
+}
+
+TEST(NeuralSemanticContext, SerializesGlobals)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Object gv("sbox", retdec::common::Storage::inMemory(retdec::common::Address(0x402000)));
+	gv.type.setLlvmIr("[256 x i8]");
+	gv.setRealName("Te0");
+	cfg.globals.insert(gv);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"globals\":["), std::string::npos);
+	EXPECT_NE(json.find("\"name\":\"sbox\""), std::string::npos);
+	EXPECT_NE(json.find("\"type\":\"[256 x i8]\""), std::string::npos);
+	EXPECT_NE(json.find("\"real_name\":\"Te0\""), std::string::npos);
+	EXPECT_NE(json.find("\"address\":\"0x402000\""), std::string::npos);
+}
+
+TEST(NeuralSemanticContext, SerializesPatternDescription)
+{
+	auto cfg = retdec::config::Config::empty();
+	auto pat = retdec::common::Pattern::cryptoLittle("AES", "Rijndael S-box", "crypto_aes_sbox");
+	cfg.patterns.push_back(pat);
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"description\":\"Rijndael S-box\""), std::string::npos);
+}
+
+TEST(NeuralSemanticContext, SerializesToolAdditionalInfo)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::ToolInfo gcc;
+	gcc.setName("gcc");
+	gcc.setType("compiler");
+	gcc.setAdditionalInfo("gnutools");
+	cfg.tools.push_back(gcc);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"additionalInfo\":\"gnutools\""), std::string::npos);
+}
+
+TEST(NeuralSemanticContext, SerializesDetectionElemBytes)
+{
+	auto cfg = retdec::config::Config::empty();
+	retdec::common::Function fn("fn_401000");
+	retdec::common::SemanticDetection det;
+	det.kind = "container";
+	det.label = "std::vector";
+	det.confidence = 0.9f;
+	det.cHint = "vector_like_3ptr";
+	det.cElemBytes = 4;
+	fn.semanticDetections.push_back(det);
+	cfg.functions.insert(fn);
+
+	const std::string json = serializeSemanticContext(cfg);
+	EXPECT_NE(json.find("\"cHint\":\"vector_like_3ptr\""), std::string::npos);
+	EXPECT_NE(json.find("\"cElemBytes\":4"), std::string::npos);
+}
+
 TEST(NeuralTopoOrder, CalleeBeforeCaller)
 {
 	const std::map<std::string, std::set<std::string>> calleesOf = {{"main", {"helper"}}};

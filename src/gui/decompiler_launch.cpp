@@ -99,6 +99,7 @@ constexpr LogStageRule kLogStageRules[] = {
 	{"alias", "Alias analysis", 5},
 	{"tbaa", "Alias analysis", 5},
 	{"basicaa", "Alias analysis", 5},
+	{"basic-aa", "Alias analysis", 5},
 	{"type", "Type inference", 6},
 	{"simple-types", "Type inference", 6},
 	{"simple types", "Type inference", 6},

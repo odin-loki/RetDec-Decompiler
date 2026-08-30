@@ -5,8 +5,8 @@
  * Algorithm overview:
  *
  * scanVtables():
- *   Walk every readable non-executable section.  For each pointer-aligned
- *   word that:
+ *   Walk every readable non-executable section.  For each byte offset
+ *   that:
  *     1. Points into a readable non-executable section (COL candidate)
  *     2. The COL candidate has signature == 0 or 1 (MSVC COL signature)
  *   → parse the COL to get the class name + hierarchy.
@@ -332,7 +332,7 @@ void MsvcRttiReconstructor::scanVtables(
 
         uint64_t vma = sec.vma;
         uint64_t end = sec.vma + sec.size;
-        uint64_t p   = (vma + ps - 1) & ~uint64_t(ps - 1);
+        uint64_t p   = vma;
 
         while (p + ps <= end) {
             uint64_t candidateColVma;
@@ -357,7 +357,7 @@ void MsvcRttiReconstructor::scanVtables(
                 }
             }
 
-            p += ps;
+            p += 1;
         }
     }
 }

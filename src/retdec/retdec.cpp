@@ -15,7 +15,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include <llvm/ADT/Triple.h>
+#include <llvm/TargetParser/Triple.h>
 #include <llvm/Analysis/CallGraph.h>
 #include <llvm/Analysis/CallGraphSCCPass.h>
 #include <llvm/Analysis/LoopPass.h>
@@ -23,32 +23,30 @@
 #include <llvm/Analysis/ScalarEvolution.h>
 #include <llvm/Analysis/TargetLibraryInfo.h>
 #include <llvm/Analysis/TargetTransformInfo.h>
-#include <llvm/CodeGen/CommandFlags.inc>
+#include <llvm/CodeGen/CommandFlags.h>
 #include <llvm/IR/CFG.h>
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/DebugInfo.h>
 #include <llvm/IR/IRPrintingPasses.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/LegacyPassManager.h>
-#include <llvm/IR/LegacyPassNameParser.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IRReader/IRReader.h>
 #include <llvm/InitializePasses.h>
 #include <llvm/LinkAllIR.h>
-#include <llvm/MC/SubtargetFeature.h>
+#include <llvm/TargetParser/SubtargetFeature.h>
 #include <llvm/Support/Debug.h>
-#include <llvm/Support/Host.h>
+#include <llvm/TargetParser/Host.h>
 #include <llvm/Support/ManagedStatic.h>
 #include <llvm/Support/PrettyStackTrace.h>
 #include <llvm/Support/Signals.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/SystemUtils.h>
-#include <llvm/Support/TargetRegistry.h>
+#include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Target/TargetMachine.h>
-#include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Transforms/Utils/Cloning.h>
 
 #include "retdec/bin2llvmir/optimizations/decoder/decoder.h"
@@ -105,7 +103,7 @@ std::unique_ptr<llvm::Module> createLlvmModule(llvm::LLVMContext& Context)
 	{
 		throw std::runtime_error("failed to create llvm::MemoryBuffer");
 	}
-	std::unique_ptr<Module> M = parseIR(mb->getMemBufferRef(), Err, Context);
+	std::unique_ptr<llvm::Module> M = llvm::parseIR(mb->getMemBufferRef(), Err, Context);
 	if (M == nullptr)
 	{
 		throw std::runtime_error("failed to create llvm::Module");
@@ -114,7 +112,7 @@ std::unique_ptr<llvm::Module> createLlvmModule(llvm::LLVMContext& Context)
 	// Immediately run the verifier to catch any problems before starting up the
 	// pass pipelines. Otherwise we can crash on broken code during
 	// doInitialization().
-	if (verifyModule(*M, &errs()))
+	if (llvm::verifyModule(*M, &llvm::errs()))
 	{
 		throw std::runtime_error("created llvm::Module is broken");
 	}
@@ -404,7 +402,7 @@ common::Function fillFunction(bin2llvmir::Config* config, llvm::Function& f)
 	common::Function ret(
 		bin2llvmir::AsmInstruction::getFunctionAddress(&f),
 		bin2llvmir::AsmInstruction::getFunctionEndAddress(&f),
-		f.getName());
+		f.getName().str());
 
 	for (llvm::BasicBlock& bb: f)
 	{
@@ -480,7 +478,7 @@ void fillFunctions(llvm::Module& module, retdec::common::FunctionSet* fs)
 			auto sa = config->getFunctionAddress(&f);
 			if (sa.isDefined())
 			{
-				fs->emplace(common::Function(sa, sa, f.getName()));
+				fs->emplace(common::Function(sa, sa, f.getName().str()));
 			}
 			continue;
 		}
@@ -551,10 +549,17 @@ llvm::PassRegistry& initializeLlvmPasses()
 	return Registry;
 }
 
+/// LLVM 23 registers BasicAA as `basic-aa`. Keep the LLVM 8 `basicaa` JSON
+/// argument as an alias so stale decompiler-config copies still load.
+llvm::StringRef llvm23PassLookupName(llvm::StringRef name)
+{
+	return name == "basicaa" ? llvm::StringRef("basic-aa") : name;
+}
+
 /**
  * Add the pass to the pass manager - no verification.
  */
-static inline void addPass(legacy::PassManagerBase& PM, Pass* P, const PassInfo* PI)
+static inline void addPass(llvm::legacy::PassManagerBase& PM, llvm::Pass* P, const llvm::PassInfo* PI)
 {
 	PM.add(new ModulePassPrinter(PI->getPassName().str(), PI->getPassArgument().str()));
 	PM.add(P);
@@ -618,17 +623,17 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 	//
 	// Add an appropriate TargetLibraryInfo pass for the module's triple.
 	// TLII must outlive pm.run() — WrapperPass may retain it.
-	Triple ModuleTriple(module->getTargetTriple());
-	TargetLibraryInfoImpl TLII(ModuleTriple);
+	llvm::Triple ModuleTriple(module->getTargetTriple());
+	llvm::TargetLibraryInfoImpl TLII(ModuleTriple);
 	// The -disable-simplify-libcalls flag actually disables all builtin optzns.
 	TLII.disableAllFunctions();
-	pm.add(new TargetLibraryInfoWrapperPass(TLII));
+	pm.add(new llvm::TargetLibraryInfoWrapperPass(TLII));
 
 	{
 		auto setupTimer = profiling::Profiler::instance().measure("init.pass_setup");
 		for (auto& p: config.parameters.llvmPasses)
 		{
-			if (auto* info = passRegistry->getPassInfo(p))
+			if (auto* info = passRegistry->getPassInfo(llvm23PassLookupName(p)))
 			{
 				auto* pass = info->createPass();
 				addPass(pm, pass, info);
@@ -1090,16 +1095,16 @@ LlvmModuleContextPair decompileToLlvmIr(retdec::config::Config& config, const st
 
 	llvm::legacy::PassManager pm;
 
-	Triple ModuleTriple(module->getTargetTriple());
-	TargetLibraryInfoImpl TLII(ModuleTriple);
+	llvm::Triple ModuleTriple(module->getTargetTriple());
+	llvm::TargetLibraryInfoImpl TLII(ModuleTriple);
 	TLII.disableAllFunctions();
-	pm.add(new TargetLibraryInfoWrapperPass(TLII));
+	pm.add(new llvm::TargetLibraryInfoWrapperPass(TLII));
 
 	for (auto& p: config.parameters.llvmPasses)
 	{
 		if (p == stopBeforePass) break;
 
-		if (auto* info = passRegistry.getPassInfo(p))
+		if (auto* info = passRegistry.getPassInfo(llvm23PassLookupName(p)))
 		{
 			auto* pass = info->createPass();
 			addPass(pm, pass, info);

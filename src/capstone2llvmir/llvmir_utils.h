@@ -16,6 +16,7 @@
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Module.h>
+#include <llvm/IR/GlobalVariable.h>
 
 namespace retdec {
 namespace capstone2llvmir {
@@ -29,13 +30,15 @@ llvm::IntegerType* getIntegerTypeFromByteSize(llvm::Module* module, unsigned sz)
 
 llvm::Type* getFloatTypeFromByteSize(llvm::Module* module, unsigned sz);
 
-/// LLVM 8 pointee snapshot. Kind `retdec.pointee` (same as bin2llvmir).
+/// RetDec pointee type. Kind `retdec.pointee` (same as bin2llvmir).
 void attachPointeeType(llvm::Instruction* i, llvm::Type* pointee);
 llvm::LoadInst* loadIntPtr(llvm::IRBuilder<>& irb, llvm::Value* addr, llvm::Type* elem, unsigned addrSpace = 0);
 llvm::StoreInst*
 storeIntPtr(llvm::IRBuilder<>& irb, llvm::Value* val, llvm::Value* addr, llvm::Type* elem, unsigned addrSpace = 0);
 /// IntToPtr + `retdec.pointee` (for AtomicRMW / typed pointer uses).
 llvm::Value* intToPtr(llvm::IRBuilder<>& irb, llvm::Value* addr, llvm::Type* elem, unsigned addrSpace = 0);
+/// Typed `CreateLoad` (LLVM 15+ requires an explicit loaded type).
+llvm::LoadInst* createLoad(llvm::IRBuilder<>& irb, llvm::Value* ptr);
 
 /**
  * Generate if-then statement at the current insert point of @p irb builder.
@@ -52,7 +55,7 @@ llvm::Value* intToPtr(llvm::IRBuilder<>& irb, llvm::Value* addr, llvm::Type* ele
  * @return IR builder whose insert point is set to if-then body BB's
  *         terminator instruction. Use this builder to fill the body.
  */
-llvm::IRBuilder<> generateIfThen(llvm::Value* cond, llvm::IRBuilder<>& irb);
+llvm::Instruction* generateIfThen(llvm::Value* cond, llvm::IRBuilder<>& irb);
 
 /**
  * Same as @c generateIfThen() but if @p cond is @c true, body is skipped:
@@ -63,7 +66,7 @@ llvm::IRBuilder<> generateIfThen(llvm::Value* cond, llvm::IRBuilder<>& irb);
 	// after
  * @endcode
  */
-llvm::IRBuilder<> generateIfNotThen(llvm::Value* cond, llvm::IRBuilder<>& irb);
+llvm::Instruction* generateIfNotThen(llvm::Value* cond, llvm::IRBuilder<>& irb);
 
 /**
  * Generate if-then-else statement at the current insert point of @p irb builder.
@@ -83,7 +86,7 @@ llvm::IRBuilder<> generateIfNotThen(llvm::Value* cond, llvm::IRBuilder<>& irb);
  *         bodyIf (first) and bodyElse (second) terminator instructions.
  *         Use these builders to fill the bodies.
  */
-std::pair<llvm::IRBuilder<>, llvm::IRBuilder<>> generateIfThenElse(llvm::Value* cond, llvm::IRBuilder<>& irb);
+std::pair<llvm::Instruction*, llvm::Instruction*> generateIfThenElse(llvm::Value* cond, llvm::IRBuilder<>& irb);
 
 /**
  * Generate while statement at the current insert point of @p irb builder.
@@ -105,7 +108,7 @@ std::pair<llvm::IRBuilder<>, llvm::IRBuilder<>> generateIfThenElse(llvm::Value* 
  *         while body BB's terminator instructions.
  *         Use these builders to fill while's condition and body.
  */
-std::pair<llvm::IRBuilder<>, llvm::IRBuilder<>> generateWhile(llvm::BranchInst*& branch, llvm::IRBuilder<>& irb);
+std::pair<llvm::Instruction*, llvm::Instruction*> generateWhile(llvm::BranchInst*& branch, llvm::IRBuilder<>& irb);
 
 } // namespace capstone2llvmir
 } // namespace retdec

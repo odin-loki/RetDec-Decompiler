@@ -143,11 +143,7 @@ bool SyscallFixer::transform(
 	{
 		if (auto* reg = _abi->getSyscallArgumentRegister(cntr++))
 		{
-			auto* l = new LoadInst(reg, "", next);
-			if (auto* ptee = llvm_utils::pointeeType(reg))
-			{
-				llvm_utils::setPointeeTypeMetadata(l, ptee);
-			}
+			auto* l = llvm_utils::createLoadInst(reg, "", next);
 			args.push_back(IrModifier::convertValueToType(l, a.getType(), next));
 		}
 		else
@@ -169,7 +165,7 @@ bool SyscallFixer::transform(
 					call,
 					llvm_utils::pointeeType(reg),
 					next);
-			auto* s = new StoreInst(conv, reg, next);
+			auto* s = llvm_utils::createStoreInst(conv, reg, next);
 			if (auto* ptee = llvm_utils::pointeeType(reg))
 			{
 				llvm_utils::setPointeeTypeMetadata(s, ptee);

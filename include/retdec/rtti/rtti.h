@@ -53,11 +53,11 @@ struct VtableEntry {
 };
 
 struct VtableInfo {
-    uint64_t                   vtableVma;    ///< VMA of first slot (past header)
-    uint64_t                   typeInfoVma;  ///< VMA of the type_info ptr (Itanium)
-    int64_t                    offsetToTop;  ///< offset-to-top value
+    uint64_t                   vtableVma = 0;    ///< VMA of first slot (past header)
+    uint64_t                   typeInfoVma = 0;  ///< VMA of the type_info ptr (Itanium)
+    int64_t                    offsetToTop = 0;  ///< offset-to-top value
     std::vector<VtableEntry>   slots;
-    uint32_t                   subVtableIdx; ///< 0 = primary, >0 = secondary
+    uint32_t                   subVtableIdx = 0; ///< 0 = primary, >0 = secondary
 };
 
 // ─── Class hierarchy graph ─────────────────────────────────────────────────────

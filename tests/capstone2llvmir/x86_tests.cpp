@@ -149,7 +149,7 @@ class Capstone2LlvmIrTranslatorX86Tests :
 					}
 					assert(reg);
 
-					auto* l = new LoadInst(reg, "", i);
+					auto* l = new LoadInst(reg->getValueType(), reg, "", i);
 					call->replaceAllUsesWith(l);
 					E = llvm::inst_end(f);
 				}
@@ -232,7 +232,8 @@ class Capstone2LlvmIrTranslatorX86Tests :
 			if (reg == preg)
 			{
 				bool isSigned = false;
-				v.IntVal = APInt(t->getBitWidth(), val, isSigned);
+				v.IntVal = APInt(t->getBitWidth(), val, isSigned,
+						/*implicitTrunc=*/true);
 				_emulator->setGlobalVariableValue(gv, v);
 				return;
 			}
@@ -275,7 +276,8 @@ class Capstone2LlvmIrTranslatorX86Tests :
 
 			val = old | val;
 			bool isSigned = false;
-			v.IntVal = APInt(t->getBitWidth(), val, isSigned);
+			v.IntVal = APInt(t->getBitWidth(), val, isSigned,
+					/*implicitTrunc=*/true);
 			_emulator->setGlobalVariableValue(gv, v);
 			return;
 		}
@@ -13981,6 +13983,26 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, MemoryStoreAttachesPointeeMetadata)
 {
 	SKIP_MODE_16;
 	auto* f = translate(assemble("mov dword ptr [0x1234], eax"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* s = dyn_cast<StoreInst>(&*it))
+		{
+			if (s->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, RegisterStoreAttachesPointeeMetadata)
+{
+	SKIP_MODE_16;
+	auto* f = translate(assemble("mov eax, 1"));
 	ASSERT_NE(nullptr, f);
 	bool found = false;
 	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)

@@ -409,6 +409,67 @@ TEST(KtClassReconstructorTest, RegularClass) {
     EXPECT_EQ(KtClassKind::Class, kt.kind);
 }
 
+TEST(KtClassReconstructorTest, CopiesBcAnnotations) {
+    BcClass cls = makeClass("MyClass", "com/example/MyClass");
+    BcAnnotation metaAnn;
+    metaAnn.typeName = "kotlin/Metadata";
+    cls.annotations.push_back(metaAnn);
+    BcAnnotation dep;
+    dep.typeName = "Lkotlin/Deprecated;";
+    cls.annotations.push_back(dep);
+    KotlinClassMetadata meta = makeMetaForClass("com/example/MyClass");
+    KtClassReconstructor recon;
+    KtClass kt = recon.reconstruct(cls, meta);
+    ASSERT_EQ(1u, kt.annotations.size());
+    EXPECT_EQ("Deprecated", kt.annotations[0]);
+}
+
+TEST(KtClassReconstructorTest, CopiesMethodAnnotations) {
+    BcClass cls = makeClass("MyClass", "com/example/MyClass");
+    BcMethod m;
+    m.name = "foo";
+    BcAnnotation dep;
+    dep.typeName = "Lkotlin/Deprecated;";
+    m.annotations.push_back(dep);
+    cls.methods.push_back(m);
+    KotlinClassMetadata meta = makeMetaForClass("com/example/MyClass");
+    KotlinFunction fn;
+    fn.name = "foo";
+    fn.returnType = std::make_shared<KotlinType>();
+    fn.returnType->className = "kotlin/Unit";
+    meta.functions.push_back(fn);
+    KtClassReconstructor recon;
+    KtClass kt = recon.reconstruct(cls, meta);
+    ASSERT_EQ(1u, kt.functions.size());
+    ASSERT_EQ(1u, kt.functions[0].annotations.size());
+    EXPECT_EQ("Deprecated", kt.functions[0].annotations[0]);
+}
+
+TEST(KtClassReconstructorTest, FillsDefaultParamMask) {
+    BcClass cls = makeClass("MyClass", "com/example/MyClass");
+    BcMethod m;
+    m.name = "foo";
+    cls.methods.push_back(m);
+    KotlinClassMetadata meta = makeMetaForClass("com/example/MyClass");
+    KotlinFunction fn;
+    fn.name = "foo";
+    fn.returnType = std::make_shared<KotlinType>();
+    fn.returnType->className = "kotlin/Unit";
+    KotlinValueParam p0;
+    p0.name = "a";
+    p0.hasDefault = false;
+    KotlinValueParam p1;
+    p1.name = "b";
+    p1.hasDefault = true;
+    fn.valueParams.push_back(p0);
+    fn.valueParams.push_back(p1);
+    meta.functions.push_back(fn);
+    KtClassReconstructor recon;
+    KtClass kt = recon.reconstruct(cls, meta);
+    ASSERT_EQ(1u, cls.methods.size());
+    EXPECT_EQ(uint64_t{1} << 1, cls.methods[0].defaultParamMask);
+}
+
 TEST(KtClassReconstructorTest, DataClass) {
     BcClass cls = makeClass("Point", "com/example/Point");
     KotlinClassFlags flags;
@@ -801,6 +862,32 @@ TEST(KotlinEmitterTest, EmitSuperClass) {
     std::string code = writer.str();
     EXPECT_NE(code.find("class Dog"), std::string::npos);
     EXPECT_NE(code.find("Animal"), std::string::npos);
+}
+
+TEST(KotlinEmitterTest, EmitsStmtBodyFromJavaEmitter) {
+    KotlinEmitter emitter;
+    KtClass cls = makeKtClass("Foo", KtClassKind::Class);
+    BcMethod method;
+    method.name = "bar";
+    method.cfg.addBlock();
+    BcLocalVar lv;
+    lv.name = "x";
+    lv.type = types::Int();
+    lv.isParam = false;
+    method.locals.push_back(lv);
+    KtFunction fn;
+    fn.name = "bar";
+    fn.returnType = "Unit";
+    fn.bcMethod = &method;
+    cls.functions.push_back(fn);
+    CodeWriter writer;
+    std::unordered_map<std::string, ReconstructResult> recon;
+    recon[method.name + method.descriptor.jvmDescriptor()] = ReconstructResult{};
+    emitter.emitClass(cls, recon, writer);
+    std::string code = writer.str();
+    EXPECT_NE(code.find("fun bar()"), std::string::npos);
+    EXPECT_NE(code.find("int x"), std::string::npos);
+    EXPECT_EQ(code.find("TODO"), std::string::npos);
 }
 
 // ─── KtImportSet ─────────────────────────────────────────────────────────────

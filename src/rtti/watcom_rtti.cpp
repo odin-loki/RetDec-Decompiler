@@ -113,7 +113,7 @@ void WatcomRttiReconstructor::scanVtables(
 
         uint64_t vma = sec.vma;
         uint64_t end = sec.vma + sec.size;
-        uint64_t p   = (vma + 3) & ~uint64_t(3); // 4-byte align
+        uint64_t p   = vma;
 
         while (p + ps <= end) {
             uint64_t candidate = view.readPtr(p);
@@ -140,7 +140,7 @@ void WatcomRttiReconstructor::scanVtables(
                 }
             }
 
-            p += 4; // Watcom type-info is 4-byte aligned
+            p += 1;
         }
     }
 }

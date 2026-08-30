@@ -43,7 +43,7 @@ llvm::LoadInst* loadIntPtr(llvm::IRBuilder<>& irb, llvm::Value* addr, llvm::Type
 {
 	auto* pt = llvm::PointerType::get(elem, addrSpace);
 	auto* ptr = irb.CreateIntToPtr(addr, pt);
-	auto* ld = irb.CreateLoad(ptr);
+	auto* ld = irb.CreateLoad(elem, ptr);
 	if (auto* i = llvm::dyn_cast<llvm::Instruction>(ptr))
 	{
 		attachPointeeType(i, elem);
@@ -81,6 +81,42 @@ llvm::Value* intToPtr(llvm::IRBuilder<>& irb, llvm::Value* addr, llvm::Type* ele
 	return ptr;
 }
 
+llvm::LoadInst* createLoad(llvm::IRBuilder<>& irb, llvm::Value* ptr)
+{
+	llvm::Type* ty = nullptr;
+	llvm::Value* p = ptr;
+	while (p)
+	{
+		if (auto* gv = llvm::dyn_cast<llvm::GlobalVariable>(p))
+		{
+			ty = gv->getValueType();
+			break;
+		}
+		if (auto* ai = llvm::dyn_cast<llvm::AllocaInst>(p))
+		{
+			ty = ai->getAllocatedType();
+			break;
+		}
+		if (auto* c = llvm::dyn_cast<llvm::CastInst>(p))
+		{
+			if (c->getOpcode() == llvm::Instruction::BitCast
+				|| c->getOpcode() == llvm::Instruction::AddrSpaceCast)
+			{
+				p = c->getOperand(0);
+				continue;
+			}
+		}
+		break;
+	}
+	if (!ty)
+	{
+		throw GenericError("createLoad: missing pointee type");
+	}
+	auto* ld = irb.CreateLoad(ty, ptr);
+	attachPointeeType(ld, ty);
+	return ld;
+}
+
 llvm::Type* getFloatTypeFromByteSize(llvm::Module* module, unsigned sz)
 {
 	auto& ctx = module->getContext();
@@ -95,7 +131,7 @@ llvm::Type* getFloatTypeFromByteSize(llvm::Module* module, unsigned sz)
 	}
 }
 
-llvm::IRBuilder<> _generateIfThen(llvm::Value* cond, llvm::IRBuilder<>& irb, bool reverse)
+llvm::Instruction* _generateIfThen(llvm::Value* cond, llvm::IRBuilder<>& irb, bool reverse)
 {
 	if (auto* ci = llvm::dyn_cast<llvm::ConstantInt>(cond))
 	{
@@ -105,7 +141,11 @@ llvm::IRBuilder<> _generateIfThen(llvm::Value* cond, llvm::IRBuilder<>& irb, boo
 			{
 				// llvm::BranchInst::Create(after, body, cond, ipBb->getTerminator());
 				// cond == false -> never jump to after -> body always executed
-				return irb;
+				if (irb.GetInsertPoint() == irb.GetInsertBlock()->end())
+				{
+					throw GenericError("Bad insert point in _generateIfThen().");
+				}
+				return &*irb.GetInsertPoint();
 			}
 			else
 			{
@@ -124,7 +164,11 @@ llvm::IRBuilder<> _generateIfThen(llvm::Value* cond, llvm::IRBuilder<>& irb, boo
 			{
 				// llvm::BranchInst::Create(body, after, cond, ipBb->getTerminator());
 				// cond == true -> always jump to body -> body always executed
-				return irb;
+				if (irb.GetInsertPoint() == irb.GetInsertBlock()->end())
+				{
+					throw GenericError("Bad insert point in _generateIfThen().");
+				}
+				return &*irb.GetInsertPoint();
 			}
 		}
 	}
@@ -151,20 +195,20 @@ llvm::IRBuilder<> _generateIfThen(llvm::Value* cond, llvm::IRBuilder<>& irb, boo
 	ipBb->getTerminator()->eraseFromParent();
 	irb.SetInsertPoint(ip);
 
-	return llvm::IRBuilder<>(body->getTerminator());
+	return body->getTerminator();
 }
 
-llvm::IRBuilder<> generateIfThen(llvm::Value* cond, llvm::IRBuilder<>& irb)
+llvm::Instruction* generateIfThen(llvm::Value* cond, llvm::IRBuilder<>& irb)
 {
 	return _generateIfThen(cond, irb, false);
 }
 
-llvm::IRBuilder<> generateIfNotThen(llvm::Value* cond, llvm::IRBuilder<>& irb)
+llvm::Instruction* generateIfNotThen(llvm::Value* cond, llvm::IRBuilder<>& irb)
 {
 	return _generateIfThen(cond, irb, true);
 }
 
-std::pair<llvm::IRBuilder<>, llvm::IRBuilder<>> generateIfThenElse(llvm::Value* cond, llvm::IRBuilder<>& irb)
+std::pair<llvm::Instruction*, llvm::Instruction*> generateIfThenElse(llvm::Value* cond, llvm::IRBuilder<>& irb)
 {
 	auto* ipBb = irb.GetInsertBlock();
 	auto ipIt = irb.GetInsertPoint();
@@ -186,10 +230,10 @@ std::pair<llvm::IRBuilder<>, llvm::IRBuilder<>> generateIfThenElse(llvm::Value* 
 
 	irb.SetInsertPoint(ip);
 
-	return std::make_pair(llvm::IRBuilder<>(bodyIf->getTerminator()), llvm::IRBuilder<>(bodyElse->getTerminator()));
+	return {bodyIf->getTerminator(), bodyElse->getTerminator()};
 }
 
-std::pair<llvm::IRBuilder<>, llvm::IRBuilder<>> generateWhile(llvm::BranchInst*& branch, llvm::IRBuilder<>& irb)
+std::pair<llvm::Instruction*, llvm::Instruction*> generateWhile(llvm::BranchInst*& branch, llvm::IRBuilder<>& irb)
 {
 	auto* ipBb = irb.GetInsertBlock();
 	auto ipIt = irb.GetInsertPoint();
@@ -211,7 +255,7 @@ std::pair<llvm::IRBuilder<>, llvm::IRBuilder<>> generateWhile(llvm::BranchInst*&
 
 	irb.SetInsertPoint(ip);
 
-	return std::make_pair(llvm::IRBuilder<>(before->getTerminator()), llvm::IRBuilder<>(body->getTerminator()));
+	return {before->getTerminator(), body->getTerminator()};
 }
 
 } // namespace capstone2llvmir

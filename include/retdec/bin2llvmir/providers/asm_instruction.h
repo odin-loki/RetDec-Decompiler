@@ -8,6 +8,8 @@
 #ifndef RETDEC_BIN2LLVMIR_PROVIDERS_ASM_INSTRUCTION_H
 #define RETDEC_BIN2LLVMIR_PROVIDERS_ASM_INSTRUCTION_H
 
+#include <map>
+
 #include <capstone/capstone.h>
 #include "retdec/capstone2llvmir/arm/arm_defs.h"
 #include "retdec/capstone2llvmir/mips/mips_defs.h"

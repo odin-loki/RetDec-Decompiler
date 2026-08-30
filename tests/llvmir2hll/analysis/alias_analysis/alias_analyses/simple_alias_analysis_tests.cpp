@@ -163,11 +163,11 @@ LocalPointerVariableMayPointToAnythingInFuncWithAddressTaken) {
 
 	analysis->init(module);
 
-	// `p1` may point to only to `g1`, not to `g2`.
+	// `p1` is assigned exactly `&g1`, so it points to `g1` (not `g2`).
 	VarSet refP1MayPointTo;
 	refP1MayPointTo.insert(varG1);
 	EXPECT_EQ(refP1MayPointTo, analysis->mayPointTo(varP1));
-	EXPECT_EQ(ShPtr<Variable>(), analysis->pointsTo(varP1));
+	EXPECT_EQ(varG1, analysis->pointsTo(varP1));
 }
 
 TEST_F(SimpleAliasAnalysisTests,

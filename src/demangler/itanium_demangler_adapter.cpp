@@ -5,17 +5,64 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cstdlib>
 #include <memory>
-#include <llvm/Demangle/ItaniumDemangle.h>
+#include <new>
+#include <vector>
+
 #include <llvm/Demangle/Demangle.h>
-#include <llvm/Demangle/Allocator.h>
-#include <llvm/Demangle/Utility.h>
+#include <llvm/Demangle/ItaniumDemangle.h>
 
 #include "retdec/demangler/itanium_ast_ctypes_parser.h"
 #include "retdec/demangler/itanium_demangler.h"
 
 namespace retdec {
 namespace demangler {
+
+namespace {
+
+class RetDecItaniumAlloc
+{
+public:
+	void reset()
+	{
+		for (void* p : owned)
+		{
+			std::free(p);
+		}
+		owned.clear();
+	}
+
+	~RetDecItaniumAlloc() { reset(); }
+
+	template<typename T, typename... Args>
+	T* makeNode(Args&&... args)
+	{
+		void* mem = std::malloc(sizeof(T));
+		if (!mem)
+		{
+			std::abort();
+		}
+		owned.push_back(mem);
+		return new (mem) T(std::forward<Args>(args)...);
+	}
+
+	void* allocateNodeArray(size_t sz)
+	{
+		void* mem = std::malloc(sizeof(llvm::itanium_demangle::Node*) * sz);
+		if (!mem)
+		{
+			std::abort();
+		}
+		owned.push_back(mem);
+		return mem;
+	}
+
+private:
+	std::vector<void*> owned;
+};
+
+} // anonymous namespace
 
 /**
  * @brief Constructor for adapter.
@@ -29,27 +76,18 @@ ItaniumDemangler::ItaniumDemangler() : Demangler("itanium") {}
  */
 std::string ItaniumDemangler::demangleToString(const std::string &mangled)
 {
-	const char *mangled_c = mangled.c_str();
 	std::string demangled_str = "";
-	int llvm_status{};
 
-	char *demangled_c = llvm::itaniumDemangle(mangled_c, nullptr, nullptr, &llvm_status);
-
-	switch (llvm_status) {
-	case llvm::demangle_success:
+	char *demangled_c = llvm::itaniumDemangle(mangled);
+	if (demangled_c)
+	{
 		_status = success;
 		demangled_str = demangled_c;
-		free(demangled_c);
-		break;
-	case llvm::demangle_invalid_mangled_name:
+		std::free(demangled_c);
+	}
+	else
+	{
 		_status = invalid_mangled_name;
-		break;
-	case llvm::demangle_memory_alloc_failure:
-		_status = memory_alloc_failure;
-		break;
-	default:
-		_status = unknown;
-		break;
 	}
 
 	return demangled_str;
@@ -62,11 +100,9 @@ std::shared_ptr<ctypes::Function> ItaniumDemangler::demangleFunctionToCtypes(
 	const ctypesparser::CTypesParser::TypeSignedness &typeSignedness,
 	unsigned defaultBitWidth)
 {
-	using DefaultAllocator = llvm::itanium_demangle::DefaultAllocator;
-	using Demangler = llvm::itanium_demangle::ManglingParser<DefaultAllocator>;
+	using DemanglerParser = llvm::itanium_demangle::ManglingParser<RetDecItaniumAlloc>;
 
-	DefaultAllocator allocator;
-	Demangler Parser(mangled.c_str(), mangled.c_str() + mangled.size(), allocator);
+	DemanglerParser Parser(mangled.c_str(), mangled.c_str() + mangled.size());
 
 	llvm::itanium_demangle::Node *AST = Parser.parse();
 	if (AST == nullptr) {

@@ -120,7 +120,7 @@ TEST_F(X87FpuAnalysisTests, x86_16bit_cdecl_call_of_analyzed_function_success)
 		  %1 = sub i3 %0, 1
 		  store i3 %1, i3* @fpu_stat_TOP
 		  %2 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  %3 = add i3 %2, 1
 		  store i3 %3, i3* @fpu_stat_TOP
 		  ret void
@@ -129,7 +129,10 @@ TEST_F(X87FpuAnalysisTests, x86_16bit_cdecl_call_of_analyzed_function_success)
 		bb:
 		  call void @foo()
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_16bit_cdecl_call_of_analyzed_function_success
@@ -172,16 +175,19 @@ TEST_F(X87FpuAnalysisTests, x86_16bit_cdecl_call_of_not_analyzed_function_succes
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
 		  store i3 %1, i3* @fpu_stat_TOP
 		  %2 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
-		  %3 = load x86_fp80, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
+		  %3 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %4 = add i3 %2, 1
 		  store i3 %4, i3* @fpu_stat_TOP
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_16bit_cdecl_call_of_not_analyzed_function_success
@@ -222,14 +228,14 @@ TEST_F(X87FpuAnalysisTests, x86_16bit_pascal_call_of_analyzed_function_success)
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  %2 = sub i3 %0, 2
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6, !retdec.pointee !0
 		  store i3 %2, i3* @fpu_stat_TOP
 		  %3 = load i3, i3* @fpu_stat_TOP
-		  %4 = load x86_fp80, x86_fp80* @st6
+		  %4 = load x86_fp80, x86_fp80* @st6, !retdec.pointee !0
 		  %5 = add i3 %3, 1
 		  %6 = add i3 %3, 2
 		  store i3 %6, i3* @fpu_stat_TOP
@@ -239,7 +245,10 @@ TEST_F(X87FpuAnalysisTests, x86_16bit_pascal_call_of_analyzed_function_success)
 		bb:
 		  call void @foo()
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_16bit_pascal_call_of_analyzed_function_success
@@ -281,19 +290,22 @@ TEST_F(X87FpuAnalysisTests, x86_16bit_pascal_call_of_not_analyzed_function_succe
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
 		  %2 = sub i3 %1, 1
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6, !retdec.pointee !0
 		  store i3 %2, i3* @fpu_stat_TOP
 		  %3 = load i3, i3* @fpu_stat_TOP
-		  %4 = load x86_fp80, x86_fp80* @st6
+		  %4 = load x86_fp80, x86_fp80* @st6, !retdec.pointee !0
 		  %5 = add i3 %3, 1
 		  %6 = add i3 %5, 1
 		  store i3 %6, i3* @fpu_stat_TOP
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_16bit_pascal_call_of_not_analyzed_function_success
@@ -343,31 +355,34 @@ TEST_F(X87FpuAnalysisTests, x86_16bit_fastcall_call_of_analyzed_function_success
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
 		  store i3 %1, i3* @fpu_stat_TOP
 		  %2 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  %3 = sub i3 %2, 1
 		  store i3 %3, i3* @fpu_stat_TOP
 		  %4 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6
-		  %5 = load x86_fp80, x86_fp80* @st6
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6, !retdec.pointee !0
+		  %5 = load x86_fp80, x86_fp80* @st6, !retdec.pointee !0
 		  %6 = add i3 %4, 1
 		  store i3 %6, i3* @fpu_stat_TOP
 		  %7 = load i3, i3* @fpu_stat_TOP
-		  %8 = load x86_fp80, x86_fp80* @st7
+		  %8 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %9 = add i3 %7, 1
 		  store i3 %9, i3* @fpu_stat_TOP
 		  %10 = load i3, i3* @fpu_stat_TOP
-		  %11 = load x86_fp80, x86_fp80* @st0
+		  %11 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  ret void
 		}
 		define void @boo() {
 		bb:
 		  call void @foo()
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_16bit_fastcall_call_of_analyzed_function_success
@@ -416,26 +431,29 @@ TEST_F(X87FpuAnalysisTests, x86_16bit_fastcall_call_of_not_analyzed_function_suc
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 3
 		  %2 = sub i3 %1, 3
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st2
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st2, !retdec.pointee !0
 		  %3 = sub i3 %2, 2
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %4 = sub i3 %3, 2
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6, !retdec.pointee !0
 		  store i3 %4, i3* @fpu_stat_TOP
 		  %5 = load i3, i3* @fpu_stat_TOP
-		  %6 = load x86_fp80, x86_fp80* @st6
+		  %6 = load x86_fp80, x86_fp80* @st6, !retdec.pointee !0
 		  %7 = add i3 %5, 3
 		  %8 = add i3 %7, 3
-		  %9 = load x86_fp80, x86_fp80* @st4
+		  %9 = load x86_fp80, x86_fp80* @st4, !retdec.pointee !0
 		  %10 = add i3 %8, 2
 		  %11 = add i3 %10, 2
-		  %12 = load x86_fp80, x86_fp80* @st0
+		  %12 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  store i3 %11, i3* @fpu_stat_TOP
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_16bit_fastcall_call_of_not_analyzed_function_success
@@ -478,24 +496,27 @@ TEST_F(X87FpuAnalysisTests, x86_32bit_cdecl_call_of_analyzed_function_success)
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
 		  store i3 %1, i3* @fpu_stat_TOP
 		  %2 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  ret void
 		}
 		define void @boo() {
 		bb:
 		  call void @foo()
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  %1 = load x86_fp80, x86_fp80* @st7
+		  %1 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %2 = add i3 %0, 1
 		  store i3 %2, i3* @fpu_stat_TOP
 		  %3 = load i3, i3* @fpu_stat_TOP
-		  %4 = load x86_fp80, x86_fp80* @st0
+		  %4 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_32bit_cdecl_call_of_analyzed_function_success
@@ -533,23 +554,26 @@ TEST_F(X87FpuAnalysisTests, x86_32bit_cdecl_call_of_not_analyzed_function_succes
 		bb:
 		  call void @foo()
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  %1 = load x86_fp80, x86_fp80* @st7
+		  %1 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %2 = add i3 %0, 1
 		  store i3 %2, i3* @fpu_stat_TOP
 		  %3 = load i3, i3* @fpu_stat_TOP
-		  %4 = load x86_fp80, x86_fp80* @st0
+		  %4 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  ret void
 		}
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
 		  store i3 %1, i3* @fpu_stat_TOP
 		  %2 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_32bit_cdecl_call_of_not_analyzed_function_success
@@ -602,33 +626,36 @@ TEST_F(X87FpuAnalysisTests, x86_32bit_stdcall_call_of_analyzed_function_success)
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
 		  store i3 %1, i3* @fpu_stat_TOP
 		  %2 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  %3 = sub i3 %2, 1
 		  store i3 %3, i3* @fpu_stat_TOP
 		  %4 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6
-		  %5 = load x86_fp80, x86_fp80* @st6
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6, !retdec.pointee !0
+		  %5 = load x86_fp80, x86_fp80* @st6, !retdec.pointee !0
 		  %6 = add i3 %4, 1
 		  store i3 %6, i3* @fpu_stat_TOP
 		  %7 = load i3, i3* @fpu_stat_TOP
-		  %8 = load x86_fp80, x86_fp80* @st7
+		  %8 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  ret void
 		}
 		define void @boo() {
 		bb:
 		  call void @foo()
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  %1 = load x86_fp80, x86_fp80* @st7
+		  %1 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %2 = add i3 %0, 1
 		  store i3 %2, i3* @fpu_stat_TOP
 		  %3 = load i3, i3* @fpu_stat_TOP
-		  %4 = load x86_fp80, x86_fp80* @st0
+		  %4 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_32bit_stdcall_call_of_analyzed_function_success
@@ -667,24 +694,27 @@ TEST_F(X87FpuAnalysisTests, x86_32bit_stdcall_call_of_not_analyzed_function_succ
 		bb:
 		  call void @foo()
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  %1 = load x86_fp80, x86_fp80* @st7
+		  %1 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %2 = add i3 %0, 1
 		  store i3 %2, i3* @fpu_stat_TOP
 		  %3 = load i3, i3* @fpu_stat_TOP
-		  %4 = load x86_fp80, x86_fp80* @st0
+		  %4 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  ret void
 		}
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  %2 = sub i3 %0, 2
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6, !retdec.pointee !0
 		  store i3 %1, i3* @fpu_stat_TOP
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_32bit_stdcall_call_of_not_analyzed_function_success
@@ -723,20 +753,23 @@ TEST_F(X87FpuAnalysisTests, x86_32bit_pascal_call_of_analyzed_function_success)
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  ret void
 		}
 		define void @boo() {
 		bb:
 		  call void @foo()
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_32bit_pascal_call_of_analyzed_function_success
@@ -781,30 +814,33 @@ TEST_F(X87FpuAnalysisTests, x86_32bit_pascal_call_of_not_analyzed_function_succe
 		bb:
 		  call void @foo()
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  %1 = load x86_fp80, x86_fp80* @st7
+		  %1 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %2 = add i3 %0, 1
-		  %3 = load x86_fp80, x86_fp80* @st0
+		  %3 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  store i3 %2, i3* @fpu_stat_TOP
 		  ret void
 		}
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
 		  br i1 true, label %A, label %B
 		A:
 		  %2 = sub i3 %1, 1
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6, !retdec.pointee !0
 		  br label %C
 		B:
 		  %3 = sub i3 %1, 2
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st5
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st5, !retdec.pointee !0
 		  br label %C
 		C:
 		  store i3 %1, i3* @fpu_stat_TOP
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_32bit_pascal_call_of_not_analyzed_function_success
@@ -858,20 +894,20 @@ TEST_F(X87FpuAnalysisTests, x86_32bit_fastcall_call_of_analyzed_function_success
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 2
 		  store i3 %1, i3* @fpu_stat_TOP
 		  br i1 true, label %A, label %B
 		A:
 		  %2 = load i3, i3* @fpu_stat_TOP
 		  %3 = add i3 %2, 1
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  store i3 %3, i3* @fpu_stat_TOP
 		  br label %C
 		B:
 		  %4 = load i3, i3* @fpu_stat_TOP
 		  %5 = add i3 %4, 1
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  store i3 %5, i3* @fpu_stat_TOP
 		  br label %C
 		C:
@@ -881,12 +917,15 @@ TEST_F(X87FpuAnalysisTests, x86_32bit_fastcall_call_of_analyzed_function_success
 		bb:
 		  call void @foo()
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  %1 = load x86_fp80, x86_fp80* @st7
+		  %1 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %2 = add i3 %0, 1
-		  %3 = load x86_fp80, x86_fp80* @st0
+		  %3 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 	      store i3 %2, i3* @fpu_stat_TOP
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_32bit_fastcall_call_of_analyzed_function_success
@@ -936,35 +975,38 @@ TEST_F(X87FpuAnalysisTests, x86_32bit_fastcall_call_of_not_analyzed_function_suc
 		bb:
 		  call void @foo()
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  ret void
 		}
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 2
 		  store i3 %1, i3* @fpu_stat_TOP
 		  br i1 true, label %A, label %B
 		A:
 		  %2 = load i3, i3* @fpu_stat_TOP
 		  %3 = add i3 %2, 1
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  store i3 %3, i3* @fpu_stat_TOP
 		  br label %C
 		B:
 		  %4 = load i3, i3* @fpu_stat_TOP
 		  %5 = add i3 %4, 1
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  store i3 %5, i3* @fpu_stat_TOP
 		  br label %C
 		C:
 		  %6 = load i3, i3* @fpu_stat_TOP
 		  %7 = add i3 %6, 1
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  store i3 %7, i3* @fpu_stat_TOP
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_32bit_fastcall_call_of_not_analyzed_function_success
@@ -1005,9 +1047,9 @@ TEST_F(X87FpuAnalysisTests, x86_32bit_thiscall)
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  store i3 %1, i3* @fpu_stat_TOP
 		  ret void
 		}
@@ -1015,12 +1057,15 @@ TEST_F(X87FpuAnalysisTests, x86_32bit_thiscall)
 		bb:
 		  call void @foo()
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  %1 = load x86_fp80, x86_fp80* @st7
+		  %1 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %2 = add i3 %0, 1
-		  %3 = load x86_fp80, x86_fp80* @st0
+		  %3 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  store i3 %2, i3* @fpu_stat_TOP
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_32bit_thiscall
@@ -1059,20 +1104,23 @@ TEST_F(X87FpuAnalysisTests, x86_32bit_watcom)
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 3
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st5
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st5, !retdec.pointee !0
 		  ret void
 		}
 		define void @boo() {
 		bb:
 		  call void @foo()
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = add i3 %0, 2
-		  %2 = load x86_fp80, x86_fp80* @st2
+		  %2 = load x86_fp80, x86_fp80* @st2, !retdec.pointee !0
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_32bit_watcom
@@ -1114,23 +1162,26 @@ TEST_F(X87FpuAnalysisTests, x86_32bit_analyze_not_FP_return_success)
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
 		  store i3 %1, i3* @fpu_stat_TOP
 		  %2 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
-		  %3 = load x86_fp80, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
+		  %3 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %4 = add i3 %2, 1
 		  store i3 %4, i3* @fpu_stat_TOP
 		  %5 = load i3, i3* @fpu_stat_TOP
-		  %6 = load x86_fp80, x86_fp80* @st0
+		  %6 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  ret void
 		}
 		define void @boo() {
 		bb:
 		  call void @foo()
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_32bit_analyze_not_FP_return_success
@@ -1172,23 +1223,26 @@ TEST_F(X87FpuAnalysisTests, x86_64bit_call_of_analyzed_function_success)
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
 		  store i3 %1, i3* @fpu_stat_TOP
 		  %2 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
-		  %3 = load x86_fp80, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
+		  %3 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %4 = add i3 %2, 1
 		  store i3 %4, i3* @fpu_stat_TOP
 		  %5 = load i3, i3* @fpu_stat_TOP
-		  %6 = load x86_fp80, x86_fp80* @st0
+		  %6 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  ret void
 		}
 		define void @boo() {
 		bb:
 		  call void @foo()
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_64bit_call_of_analyzed_function_success
@@ -1229,18 +1283,21 @@ TEST_F(X87FpuAnalysisTests, x86_64bit_call_of_not_analyzed_function_success)
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
 		  store i3 %1, i3* @fpu_stat_TOP
 		  %2 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
-		  %3 = load x86_fp80, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
+		  %3 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %4 = add i3 %2, 1
 		  store i3 %4, i3* @fpu_stat_TOP
 		  %5 = load i3, i3* @fpu_stat_TOP
-		  %6 = load x86_fp80, x86_fp80* @st0
+		  %6 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  ret void
-		})";
+		}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // x86_64bit_call_of_not_analyzed_function_success
@@ -1289,32 +1346,35 @@ TEST_F(X87FpuAnalysisTests, if_branch_or_loop)
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
 		  store i3 %1, i3* @fpu_stat_TOP
 		  %2 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  br i1 true, label %dec_label_if_true, label %dec_label_end_branch
 		dec_label_if_true:
 		  %3 = load i3, i3* @fpu_stat_TOP
-		  %4 = load x86_fp80, x86_fp80* @st7
+		  %4 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %5 = sub i3 %3, 1
 		  store i3 %5, i3* @fpu_stat_TOP
 		  %6 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6
-		  %7 = load x86_fp80, x86_fp80* @st6
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6, !retdec.pointee !0
+		  %7 = load x86_fp80, x86_fp80* @st6, !retdec.pointee !0
 		  %8 = add i3 %6, 1
 		  store i3 %8, i3* @fpu_stat_TOP
 		  br label %dec_label_end_branch
 		dec_label_end_branch:
 		  %9 = load i3, i3* @fpu_stat_TOP
-		  %10 = load x86_fp80, x86_fp80* @st7
+		  %10 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %11 = add i3 %9, 1
 		  store i3 %11, i3* @fpu_stat_TOP
 		  %12 = load i3, i3* @fpu_stat_TOP
-		  %13 = load x86_fp80, x86_fp80* @st0
+		  %13 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  ret void
-})";
+}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // if_branch
@@ -1371,43 +1431,46 @@ TEST_F(X87FpuAnalysisTests, if_else_branch)
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
 		  store i3 %1, i3* @fpu_stat_TOP
 		  %2 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  br i1 true, label %dec_label_if_true, label %dec_label_if_false
 		dec_label_if_true:
 		  %3 = load i3, i3* @fpu_stat_TOP
-		  %4 = load x86_fp80, x86_fp80* @st7
+		  %4 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %5 = sub i3 %3, 1
 		  store i3 %5, i3* @fpu_stat_TOP
 		  %6 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6
-		  %7 = load x86_fp80, x86_fp80* @st6
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6, !retdec.pointee !0
+		  %7 = load x86_fp80, x86_fp80* @st6, !retdec.pointee !0
 		  %8 = add i3 %6, 1
 		  store i3 %8, i3* @fpu_stat_TOP
 		  br label %dec_label_end_branch
 		dec_label_if_false:
 		  %9 = load i3, i3* @fpu_stat_TOP
-		  %10 = load x86_fp80, x86_fp80* @st7
+		  %10 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %11 = sub i3 %9, 1
 		  store i3 %11, i3* @fpu_stat_TOP
 		  %12 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6
-		  %13 = load x86_fp80, x86_fp80* @st6
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6, !retdec.pointee !0
+		  %13 = load x86_fp80, x86_fp80* @st6, !retdec.pointee !0
 		  %14 = add i3 %12, 1
 		  store i3 %14, i3* @fpu_stat_TOP
 		  br label %dec_label_end_branch
 		dec_label_end_branch:
 		  %15 = load i3, i3* @fpu_stat_TOP
-		  %16 = load x86_fp80, x86_fp80* @st7
+		  %16 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %17 = add i3 %15, 1
 		  store i3 %17, i3* @fpu_stat_TOP
 		  %18 = load i3, i3* @fpu_stat_TOP
-		  %19 = load x86_fp80, x86_fp80* @st0
+		  %19 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  ret void
-})";
+}
+
+		!0 = !{!"x86_fp80"}
+)";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
 } // if_else_branch
@@ -1468,20 +1531,20 @@ TEST_F(X87FpuAnalysisTests, if_elseif_else_branch_or_switch)
 		define void @foo() {
 		bb:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
 		  store i3 %1, i3* @fpu_stat_TOP
 		  %2 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  br i1 true, label %dec_label_if_then_true, label %dec_label_if_then_false
 		dec_label_if_then_true:
 		  %3 = load i3, i3* @fpu_stat_TOP
-		  %4 = load x86_fp80, x86_fp80* @st7
+		  %4 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %5 = sub i3 %3, 1
 		  store i3 %5, i3* @fpu_stat_TOP
 		  %6 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6
-		  %7 = load x86_fp80, x86_fp80* @st6
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6, !retdec.pointee !0
+		  %7 = load x86_fp80, x86_fp80* @st6, !retdec.pointee !0
 		  %8 = add i3 %6, 1
 		  store i3 %8, i3* @fpu_stat_TOP
 		  br label %dec_label_end_branch
@@ -1489,12 +1552,12 @@ TEST_F(X87FpuAnalysisTests, if_elseif_else_branch_or_switch)
 		  br i1 true, label %dec_label_else_if_true, label %dec_label_else_if_false
 		dec_label_else_if_true:
 		  %9 = load i3, i3* @fpu_stat_TOP
-		  %10 = load x86_fp80, x86_fp80* @st7
+		  %10 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %11 = sub i3 %9, 1
 		  store i3 %11, i3* @fpu_stat_TOP
 		  %12 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6
-		  %13 = load x86_fp80, x86_fp80* @st6
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6, !retdec.pointee !0
+		  %13 = load x86_fp80, x86_fp80* @st6, !retdec.pointee !0
 		  %14 = add i3 %12, 1
 		  store i3 %14, i3* @fpu_stat_TOP
 		  br label %dec_label_end_branch
@@ -1502,13 +1565,15 @@ TEST_F(X87FpuAnalysisTests, if_elseif_else_branch_or_switch)
 		  br label %dec_label_end_branch
 		dec_label_end_branch:
 		  %15 = load i3, i3* @fpu_stat_TOP
-		  %16 = load x86_fp80, x86_fp80* @st7
+		  %16 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  %17 = add i3 %15, 1
 		  store i3 %17, i3* @fpu_stat_TOP
 		  %18 = load i3, i3* @fpu_stat_TOP
-		  %19 = load x86_fp80, x86_fp80* @st0
+		  %19 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  ret void
 		}
+
+		!0 = !{!"x86_fp80"}
 )";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
@@ -1553,26 +1618,28 @@ TEST_F(X87FpuAnalysisTests, nested_branch_0)
 		  br i1 true, label %B, label %C
 		B:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
 		  store i3 %1, i3* @fpu_stat_TOP
 		  %2 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  br i1 true, label %D, label %E
 		D:
 		  %3 = load i3, i3* @fpu_stat_TOP
-		  %4 = load x86_fp80, x86_fp80* @st7
+		  %4 = load x86_fp80, x86_fp80* @st7, !retdec.pointee !0
 		  br label %E
 		E:
 		  %5 = load i3, i3* @fpu_stat_TOP
 		  %6 = add i3 %5, 1
 		  store i3 %6, i3* @fpu_stat_TOP
 		  %7 = load i3, i3* @fpu_stat_TOP
-		  %8 = load x86_fp80, x86_fp80* @st0
+		  %8 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  br label %C
 		C:
 		  ret void
 	}
+
+		!0 = !{!"x86_fp80"}
 )";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);
@@ -1630,27 +1697,27 @@ TEST_F(X87FpuAnalysisTests, nested_branch_1)
 		  br i1 true, label %B, label %C
 		B:
 		  %0 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st0, !retdec.pointee !0
 		  %1 = sub i3 %0, 1
 		  store i3 %1, i3* @fpu_stat_TOP
 		  %2 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st7, !retdec.pointee !0
 		  %3 = sub i3 %2, 1
 		  store i3 %3, i3* @fpu_stat_TOP
 		  %4 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st6, !retdec.pointee !0
 		  %5 = sub i3 %4, 1
 		  store i3 %5, i3* @fpu_stat_TOP
 		  %6 = load i3, i3* @fpu_stat_TOP
-		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st5
+		  store x86_fp80 0xK3FFF8000000000000000, x86_fp80* @st5, !retdec.pointee !0
 		  br i1 true, label %D, label %E
 		D:
 		  %7 = load i3, i3* @fpu_stat_TOP
-		  %8 = load x86_fp80, x86_fp80* @st5
+		  %8 = load x86_fp80, x86_fp80* @st5, !retdec.pointee !0
 		  br label %E
 		E:
 		  %9 = load i3, i3* @fpu_stat_TOP
-		  %10 = load x86_fp80, x86_fp80* @st5
+		  %10 = load x86_fp80, x86_fp80* @st5, !retdec.pointee !0
 		  %11 = add i3 %9, 1
 		  store i3 %11, i3* @fpu_stat_TOP
 		  %12 = load i3, i3* @fpu_stat_TOP
@@ -1658,11 +1725,13 @@ TEST_F(X87FpuAnalysisTests, nested_branch_1)
 		  %14 = add i3 %13, 1
 		  store i3 %14, i3* @fpu_stat_TOP
 		  %15 = load i3, i3* @fpu_stat_TOP
-		  %16 = load x86_fp80, x86_fp80* @st0
+		  %16 = load x86_fp80, x86_fp80* @st0, !retdec.pointee !0
 		  br label %C
 		C:
 		  ret void
 	}
+
+		!0 = !{!"x86_fp80"}
 )";
 	checkModuleAgainstExpectedIr(exp);
 	EXPECT_TRUE(b);

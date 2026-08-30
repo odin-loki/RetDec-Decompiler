@@ -21,7 +21,6 @@ class Node;
 class PointerType;
 class ReferenceType;
 class ArrayType;
-class NodeOrString;
 }
 }
 
@@ -73,7 +72,7 @@ private:
 		const llvm::itanium_demangle::ArrayType *typeNode);
 
 	unsigned parseDimension(
-		const llvm::itanium_demangle::NodeOrString *dimensions);
+		const llvm::itanium_demangle::Node *dimensions);
 
 	std::shared_ptr<ctypes::FunctionType> parseFuntionType(
 		const llvm::itanium_demangle::FunctionType *typeNode);

@@ -108,7 +108,7 @@ FunctionAsVariableIsReturnedForExistingFunctionInModule) {
 	auto funcType = llvm::FunctionType::get(funcRetType, false);
 	auto func = UPtr<llvm::Function>(llvm::Function::Create(funcType,
 		llvm::Function::ExternalLinkage, "exampleFunction"));
-	auto f = addFuncDecl(func->getName());
+	auto f = addFuncDecl(func->getName().str());
 	variablesManager->addGlobalValVarPair(func.get(), f->getAsVar());
 
 	auto var = variablesManager->getVarByValue(func.get());
@@ -123,7 +123,7 @@ GlobalVariableIsReturnedForExistingGlobalVariableInModule) {
 	auto llvmIntType = llvm::Type::getInt32Ty(context);
 	auto llvmGlobVar = std::make_unique<llvm::GlobalVariable>(llvmIntType,
 		false, llvm::GlobalVariable::ExternalLinkage, nullptr, "g");
-	auto globVar = Variable::create(llvmGlobVar->getName(), IntType::create(32));
+	auto globVar = Variable::create(llvmGlobVar->getName().str(), IntType::create(32));
 	module->addGlobalVar(globVar);
 	variablesManager->addGlobalValVarPair(llvmGlobVar.get(), globVar);
 

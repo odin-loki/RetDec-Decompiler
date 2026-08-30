@@ -182,7 +182,7 @@ bool BorlandASTParser::consume(const StringView &s)
 void BorlandASTParser::parse(const std::string &mangled)
 {
 	_status = in_progress;
-	_mangled = llvm::itanium_demangle::StringView{mangled.c_str(), mangled.length()};
+	_mangled = StringView{mangled.c_str(), mangled.length()};
 
 	auto func = parseFunction();
 	if (checkResult(func)) {

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <string>
 
 namespace retdec {
 namespace csharp_emitter {
@@ -38,10 +39,80 @@ std::string CsTypeEmitter::accessModifiers(BcAccess access) const {
     if (has(A::Extern))    mods += "extern ";
     if (has(A::Readonly))  mods += "readonly ";
 
-    // Remove trailing space
     if (!mods.empty() && mods.back() == ' ')
         mods.pop_back();
     return mods;
+}
+
+static std::string csharpAttrName(const std::string& typeName) {
+    std::string n = typeName;
+    auto sep = n.find_last_of("/.");
+    if (sep != std::string::npos)
+        n = n.substr(sep + 1);
+    const std::string suf = "Attribute";
+    if (n.size() > suf.size() &&
+        n.compare(n.size() - suf.size(), suf.size(), suf) == 0)
+        n.resize(n.size() - suf.size());
+    return n;
+}
+
+static std::string csharpAttrLit(const BcAnnotationValue& val) {
+    switch (val.kind) {
+    case BcAnnotationValue::Kind::Int:
+        return std::to_string(val.intValue);
+    case BcAnnotationValue::Kind::Float:
+        return std::to_string(val.floatValue);
+    case BcAnnotationValue::Kind::Bool:
+        return val.boolValue ? "true" : "false";
+    case BcAnnotationValue::Kind::String:
+        return "\"" + val.stringValue + "\"";
+    case BcAnnotationValue::Kind::Enum:
+        return val.enumTypeName + "." + val.enumConstant;
+    case BcAnnotationValue::Kind::Type:
+        return val.stringValue;
+    case BcAnnotationValue::Kind::Array: {
+        std::string out = "new[] {";
+        for (size_t i = 0; i < val.arrayValue.size(); ++i) {
+            if (i) out += ", ";
+            out += csharpAttrLit(val.arrayValue[i]);
+        }
+        out += "}";
+        return out;
+    }
+    case BcAnnotationValue::Kind::Annotation:
+        return val.stringValue;
+    default:
+        return "\"\"";
+    }
+}
+
+static std::string csharpAttrSuffix(const BcAnnotation& ann) {
+    if (ann.elements.empty()) return "";
+    std::string args;
+    auto itVal = ann.elements.find("Value");
+    if (itVal == ann.elements.end())
+        itVal = ann.elements.find("value");
+    bool first = true;
+    if (itVal != ann.elements.end()) {
+        args += csharpAttrLit(itVal->second);
+        first = false;
+    }
+    for (const auto& kv : ann.elements) {
+        if (kv.first == "Value" || kv.first == "value") continue;
+        if (!first) args += ", ";
+        first = false;
+        args += kv.first + " = " + csharpAttrLit(kv.second);
+    }
+    return "(" + args + ")";
+}
+
+static void emitCsharpAttributes(CsWriter& w,
+                                 const std::vector<BcAnnotation>& anns) {
+    for (const auto& ann : anns) {
+        if (ann.typeName.empty())
+            continue;
+        w.line("[" + csharpAttrName(ann.typeName) + csharpAttrSuffix(ann) + "]");
+    }
 }
 
 std::string CsTypeEmitter::methodKey(const BcClass& cls, const BcMethod& m) const {
@@ -206,7 +277,11 @@ void CsTypeEmitter::emitGenericParams(const std::vector<std::string>& typeParams
     writer_.write("<");
     for (size_t i = 0; i < typeParams.size(); ++i) {
         if (i > 0) writer_.write(", ");
-        writer_.write(typeParams[i]);
+        const auto& tp = typeParams[i];
+        auto pos = tp.find(" extends ");
+        if (pos == std::string::npos)
+            pos = tp.find(" : ");
+        writer_.write(pos == std::string::npos ? tp : tp.substr(0, pos));
     }
     writer_.write(">");
 }
@@ -232,9 +307,25 @@ void CsTypeEmitter::emitBaseList(const BcClass& cls) {
 
 void CsTypeEmitter::emitGenericConstraints(const std::vector<std::string>& typeParams) {
     for (const auto& tp : typeParams) {
-        // TODO: extract constraint info from generic param annotations
-        // For now, skip
-        (void)tp;
+        auto pos = tp.find(" extends ");
+        std::string bound;
+        std::string name;
+        if (pos != std::string::npos) {
+            name = tp.substr(0, pos);
+            bound = tp.substr(pos + 9);
+        } else {
+            pos = tp.find(" : ");
+            if (pos == std::string::npos)
+                continue;
+            name = tp.substr(0, pos);
+            bound = tp.substr(pos + 3);
+        }
+        if (name.empty() || bound.empty())
+            continue;
+        writer_.write(" where ");
+        writer_.write(CsWriter::safeName(name));
+        writer_.write(" : ");
+        writer_.write(CsWriter::clrToCsharpType(bound));
     }
 }
 
@@ -283,6 +374,8 @@ void CsTypeEmitter::emitField(const BcField& f) {
     using A = BcAccess;
     auto has = [&](A fl) { return (static_cast<uint32_t>(f.access) & static_cast<uint32_t>(fl)) != 0; };
 
+    emitCsharpAttributes(writer_, f.annotations);
+
     // Modifiers
     std::string mods = accessModifiers(f.access);
     if (!mods.empty()) mods += " ";
@@ -330,6 +423,7 @@ void CsTypeEmitter::emitFields(const BcClass& cls) {
 // ─── Enum ────────────────────────────────────────────────────────────────────
 
 void CsTypeEmitter::emitEnum(const BcClass& cls) {
+    emitCsharpAttributes(writer_, cls.annotations);
     emitTypeHeader(cls);
     {
         auto g = writer_.block();
@@ -508,6 +602,13 @@ void CsTypeEmitter::emitMethodSignature(const BcClass& cls, const BcMethod& m) {
     writer_.write("(");
     for (size_t i = 0; i < m.descriptor.params.size(); ++i) {
         if (i > 0) writer_.write(", ");
+        if (i < m.paramAnnotations.size()) {
+            for (const auto& ann : m.paramAnnotations[i]) {
+                if (ann.typeName.empty()) continue;
+                writer_.write("[" + csharpAttrName(ann.typeName) +
+                              csharpAttrSuffix(ann) + "] ");
+            }
+        }
         const auto& pt = *m.descriptor.params[i];
         writer_.write(expr_.emitType(pt));
         writer_.write(" ");
@@ -580,6 +681,7 @@ void CsTypeEmitter::emitMethod(
         return;
     }
 
+    emitCsharpAttributes(writer_, m.annotations);
     emitMethodSignature(cls, m);
     emitMethodBody(m, results);
     writer_.blank();
@@ -610,10 +712,12 @@ void CsTypeEmitter::emitClass(
     }
 
     if (isDelegate(cls)) {
+        emitCsharpAttributes(writer_, cls.annotations);
         emitTypeHeader(cls);
         return;
     }
 
+    emitCsharpAttributes(writer_, cls.annotations);
     emitTypeHeader(cls);
     {
         auto g = writer_.block();

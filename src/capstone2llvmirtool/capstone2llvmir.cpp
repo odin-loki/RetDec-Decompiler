@@ -425,7 +425,7 @@ int main(int argc, char *argv[])
 	}
 
 	std::error_code ec;
-	llvm::raw_fd_ostream out(po.outFile, ec, llvm::sys::fs::F_None);
+	llvm::raw_fd_ostream out(po.outFile, ec, llvm::sys::fs::OF_None);
 	module.print(out, nullptr);
 
 	return EXIT_SUCCESS;

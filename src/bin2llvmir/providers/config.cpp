@@ -106,7 +106,7 @@ retdec::common::Function* Config::getConfigFunction(
 	// TODO: remove horrible const_cast
 	return fnc
 		? const_cast<retdec::common::Function*>(
-				_configDB.functions.getFunctionByName(fnc->getName()))
+				_configDB.functions.getFunctionByName(fnc->getName().str()))
 		: nullptr;
 }
 
@@ -136,7 +136,7 @@ llvm::Function* Config::getIntrinsicFunction(IntrinsicFunctionCreatorPtr f)
 const retdec::common::Object* Config::getConfigGlobalVariable(
 		const llvm::GlobalVariable* gv)
 {
-	return gv ? _configDB.globals.getObjectByName(gv->getName()) : nullptr;
+	return gv ? _configDB.globals.getObjectByName(gv->getName().str()) : nullptr;
 }
 
 const retdec::common::Object* Config::getConfigGlobalVariable(
@@ -178,7 +178,7 @@ retdec::common::Address Config::getGlobalAddress(
 		const llvm::GlobalVariable* gv)
 {
 	assert(gv);
-	auto* cgv = gv ? _configDB.globals.getObjectByName(gv->getName()) : nullptr;
+	auto* cgv = gv ? _configDB.globals.getObjectByName(gv->getName().str()) : nullptr;
 	return cgv ? cgv->getStorage().getAddress() : retdec::common::Address();
 }
 
@@ -201,7 +201,7 @@ const retdec::common::Object* Config::getConfigLocalVariable(
 	{
 		return nullptr;
 	}
-	auto* cl = cf->locals.getObjectByName(a->getName());
+	auto* cl = cf->locals.getObjectByName(a->getName().str());
 	return cl && cl->getStorage().isUndefined() ? cl : nullptr;
 }
 
@@ -219,7 +219,7 @@ retdec::common::Object* Config::getConfigStackVariable(
 		return nullptr;
 	}
 	auto* cl = const_cast<retdec::common::Object*>(
-			cf->locals.getObjectByName(a->getName()));
+			cf->locals.getObjectByName(a->getName().str()));
 	return cl && cl->getStorage().isStack() ? cl : nullptr;
 }
 
@@ -316,7 +316,7 @@ const retdec::common::Object* Config::insertGlobalVariable(
 		const std::string& cryptoDesc)
 {
 	retdec::common::Object cgv(
-			gv->getName(),
+			gv->getName().str(),
 			retdec::common::Storage::inMemory(address));
 	cgv.setIsFromDebug(fromDebug);
 	cgv.setRealName(realName);
@@ -349,18 +349,25 @@ const retdec::common::Object* Config::insertStackVariable(
 	}
 
 	retdec::common::Object local(
-			sv->getName(),
+			sv->getName().str(),
 			retdec::common::Storage::onStack(offset));
 	if (realName.empty())
 	{
-		local.setRealName(sv->getName());
+		local.setRealName(sv->getName().str());
 	}
 	else
 	{
 		local.setRealName(realName);
 	}
 	local.setIsFromDebug(fromDebug);
-	local.type.setLlvmIr(llvmObjToString(sv->getType()));
+	if (auto* ptee = llvm_utils::pointeeType(sv))
+	{
+		local.type.setLlvmIr(llvmObjToString(ptee));
+	}
+	else
+	{
+		local.type.setLlvmIr(llvmObjToString(sv->getType()));
+	}
 
 	auto p = cf->locals.insert(local);
 	return &(*p.first);
@@ -378,7 +385,7 @@ const retdec::common::Function* Config::insertFunction(
 		dm = old->getDemangledName();
 	}
 
-	retdec::common::Function cf(fnc->getName());
+	retdec::common::Function cf(fnc->getName().str());
 	cf.setDemangledName(dm);
 	cf.setIsFromDebug(fromDebug);
 	cf.setStartEnd(start, end);
@@ -388,7 +395,7 @@ const retdec::common::Function* Config::insertFunction(
 		Demangler* d = DemanglerProvider::getDemangler(_module);
 		if (d)
 		{
-			auto s = d->demangleToString(fnc->getName());
+			auto s = d->demangleToString(fnc->getName().str());
 			if (!s.empty())
 			{
 				cf.setDemangledName(s);
@@ -431,7 +438,7 @@ const retdec::common::Object* Config::getConfigRegister(
 		const llvm::Value* val)
 {
 	auto* gv = dyn_cast_or_null<GlobalVariable>(val);
-	return gv ? _configDB.registers.getObjectByName(gv->getName()) : nullptr;
+	return gv ? _configDB.registers.getObjectByName(gv->getName().str()) : nullptr;
 }
 
 std::optional<unsigned> Config::getConfigRegisterNumber(
@@ -481,7 +488,7 @@ bool Config::isLlvmCallPseudoFunction(llvm::Value* f)
 llvm::CallInst* Config::isLlvmCallPseudoFunctionCall(llvm::Value* c)
 {
 	auto* cc = dyn_cast_or_null<CallInst>(c);
-	return cc && cc->getCalledValue() == _callFunction ? cc : nullptr;
+	return cc && cc->getCalledOperand() == _callFunction ? cc : nullptr;
 }
 
 void Config::setLlvmReturnPseudoFunction(llvm::Function* f)
@@ -499,7 +506,7 @@ bool Config::isLlvmReturnPseudoFunction(llvm::Value* f)
 llvm::CallInst* Config::isLlvmReturnPseudoFunctionCall(llvm::Value* c)
 {
 	auto* cc = dyn_cast_or_null<CallInst>(c);
-	return cc && cc->getCalledValue() == _returnFunction ? cc : nullptr;
+	return cc && cc->getCalledOperand() == _returnFunction ? cc : nullptr;
 }
 
 void Config::setLlvmBranchPseudoFunction(llvm::Function* f)
@@ -517,7 +524,7 @@ bool Config::isLlvmBranchPseudoFunction(llvm::Value* f)
 llvm::CallInst* Config::isLlvmBranchPseudoFunctionCall(llvm::Value* c)
 {
 	auto* cc = dyn_cast_or_null<CallInst>(c);
-	return cc && cc->getCalledValue() == _branchFunction ? cc : nullptr;
+	return cc && cc->getCalledOperand() == _branchFunction ? cc : nullptr;
 }
 
 void Config::setLlvmCondBranchPseudoFunction(llvm::Function* f)
@@ -535,7 +542,7 @@ bool Config::isLlvmCondBranchPseudoFunction(llvm::Value* f)
 llvm::CallInst* Config::isLlvmCondBranchPseudoFunctionCall(llvm::Value* c)
 {
 	auto* cc = dyn_cast_or_null<CallInst>(c);
-	return cc && cc->getCalledValue() == _condBranchFunction ? cc : nullptr;
+	return cc && cc->getCalledOperand() == _condBranchFunction ? cc : nullptr;
 }
 
 void Config::setLlvmX87DataStorePseudoFunction(llvm::Function* f)
@@ -553,7 +560,7 @@ bool Config::isLlvmX87DataStorePseudoFunction(llvm::Value* f)
 llvm::CallInst* Config::isLlvmX87DataStorePseudoFunctionCall(llvm::Value* c)
 {
 	auto* cc = dyn_cast_or_null<CallInst>(c);
-	return cc && cc->getCalledValue() == _x87DataStoreFunction ? cc : nullptr;
+	return cc && cc->getCalledOperand() == _x87DataStoreFunction ? cc : nullptr;
 }
 
 void Config::setLlvmX87DataLoadPseudoFunction(llvm::Function* f)
@@ -571,7 +578,7 @@ bool Config::isLlvmX87DataLoadPseudoFunction(llvm::Value* f)
 llvm::CallInst* Config::isLlvmX87DataLoadPseudoFunctionCall(llvm::Value* c)
 {
 	auto* cc = dyn_cast_or_null<CallInst>(c);
-	return cc && cc->getCalledValue() == _x87DataLoadFunction ? cc : nullptr;
+	return cc && cc->getCalledOperand() == _x87DataLoadFunction ? cc : nullptr;
 }
 
 llvm::CallInst* Config::isLlvmX87StorePseudoFunctionCall(llvm::Value* c)
@@ -692,7 +699,7 @@ bool Config::getCryptoPattern(
 
 void Config::tagFunctionsWithUsedCryptoGlobals()
 {
-	for (GlobalVariable& lgv : _module->getGlobalList())
+	for (GlobalVariable& lgv : _module->globals())
 	{
 		auto* cgv = getConfigGlobalVariable(&lgv);
 		if (cgv == nullptr || cgv->getCryptoDescription().empty())
@@ -710,6 +717,10 @@ void Config::tagFunctionsWithUsedCryptoGlobals()
 			}
 			else if (auto* e = dyn_cast_or_null<ConstantExpr>(user))
 			{
+				if (!e->hasUseList())
+				{
+					continue;
+				}
 				for (auto* u : e->users())
 				{
 					if (auto* i = dyn_cast_or_null<Instruction>(u))

@@ -170,14 +170,14 @@ bool SimpleTypesAnalysis::runOnModule(Module& M)
 		IrModifier irModif(module, config);
 
 		std::vector<GlobalVariable*> gvs;
-		for (auto& glob : M.getGlobalList())
+		for (auto& glob : M.globals())
 		{
 			gvs.push_back(&glob);
 		}
 
 		for (auto* glob : gvs)
 		{
-			auto* cgv = config->getConfig().globals.getObjectByName(glob->getName());
+			auto* cgv = config->getConfig().globals.getObjectByName(glob->getName().str());
 			if (cgv == nullptr)
 			{
 				continue;
@@ -192,6 +192,10 @@ bool SimpleTypesAnalysis::runOnModule(Module& M)
 				bool done = false;
 				if (auto* ce = dyn_cast<ConstantExpr>(u))
 				{
+					if (!ce->hasUseList())
+					{
+						continue;
+					}
 					for (auto* uu : ce->users())
 					{
 						if (auto* call = dyn_cast<CallInst>(uu))
@@ -203,7 +207,7 @@ bool SimpleTypesAnalysis::runOnModule(Module& M)
 							}
 
 							std::size_t n = 0;
-							for (auto& a : call->arg_operands())
+							for (auto& a : call->args())
 							{
 								if (a == ce)
 								{
@@ -250,7 +254,7 @@ bool SimpleTypesAnalysis::runOnModule(Module& M)
 					}
 
 					std::size_t n = 0;
-					for (auto& a : call->arg_operands())
+					for (auto& a : call->args())
 					{
 						if (a == glob)
 						{
@@ -290,9 +294,9 @@ bool SimpleTypesAnalysis::runOnModule(Module& M)
 
 void SimpleTypesAnalysis::setGlobalConstants()
 {
-	for (auto& glob : module->getGlobalList())
+	for (auto& glob : module->globals())
 	{
-		if (config->getConfig().globals.getObjectByName(glob.getName()) == nullptr)
+		if (config->getConfig().globals.getObjectByName(glob.getName().str()) == nullptr)
 		{
 			continue;
 		}
@@ -316,6 +320,11 @@ void SimpleTypesAnalysis::setGlobalConstants()
 				break;
 			}
 
+			if (!u->hasUseList())
+			{
+				continue;
+			}
+
 			for (auto* uu : u->users())
 			{
 				auto* ss = dyn_cast_or_null<StoreInst>(uu);
@@ -323,6 +332,11 @@ void SimpleTypesAnalysis::setGlobalConstants()
 				{
 					c = false;
 					break;
+				}
+
+				if (!uu->hasUseList())
+				{
+					continue;
 				}
 
 				for (auto* uuu : uu->users())
@@ -355,9 +369,9 @@ void SimpleTypesAnalysis::setGlobalConstants()
 
 void SimpleTypesAnalysis::buildEqSets(Module& M)
 {
-	for (auto& glob : M.getGlobalList())
+	for (auto& glob : M.globals())
 	{
-		if (config->getConfig().globals.getObjectByName(glob.getName()) == nullptr)
+		if (config->getConfig().globals.getObjectByName(glob.getName().str()) == nullptr)
 		{
 			continue;
 		}
@@ -533,6 +547,11 @@ void SimpleTypesAnalysis::processValue(std::queue<Value*>& toProcess, EqSet*& eq
 		eqSetPtr->insert(config, current);
 		processedObjs.insert({current, eqSetPtr});
 
+		if (!current->hasUseList())
+		{
+			continue;
+		}
+
 		for (auto uIt = current->user_begin(); uIt != current->user_end(); ++uIt)
 		{
 			processUse(current, *uIt, toProcess, *eqSetPtr);
@@ -546,6 +565,11 @@ void SimpleTypesAnalysis::processUse(llvm::Value* current, Value* u, std::queue<
 	{
 		LOG << "\t\t[EU]: " << llvmObjToString(eu) << " -> " << llvmObjToString(eu->getType()) << std::endl;
 
+		if (!eu->hasUseList())
+		{
+			return;
+		}
+
 		for (auto uIt = eu->user_begin(); uIt != eu->user_end(); ++uIt)
 		{
 			toProcess.push(*uIt);
@@ -556,7 +580,7 @@ void SimpleTypesAnalysis::processUse(llvm::Value* current, Value* u, std::queue<
 
 				if (isa<GlobalVariable>(ptr))
 				{
-					if (config->getConfig().globals.getObjectByName(ptr->getName()))
+					if (config->getConfig().globals.getObjectByName(ptr->getName().str()))
 					{
 						toProcess.push(ptr);
 					}
@@ -603,7 +627,7 @@ void SimpleTypesAnalysis::processUse(llvm::Value* current, Value* u, std::queue<
 	if (isa<ReturnInst>(user))
 	{
 		auto* fnc = user->getParent()->getParent();
-		auto* cf = config->getConfig().functions.getFunctionByName(fnc->getName());
+		auto* cf = config->getConfig().functions.getFunctionByName(fnc->getName().str());
 
 		eSourcePriority p = eSourcePriority::PRIORITY_NONE;
 		if (cf && cf->isFromDebug())
@@ -682,7 +706,7 @@ void SimpleTypesAnalysis::processUse(llvm::Value* current, Value* u, std::queue<
 
 		if (isa<GlobalVariable>(ptr))
 		{
-			if (config->getConfig().globals.getObjectByName(ptr->getName()))
+			if (config->getConfig().globals.getObjectByName(ptr->getName().str()))
 			{
 				toProcess.push(ptr);
 			}
@@ -916,7 +940,7 @@ void SimpleTypesAnalysis::processUse(llvm::Value* current, Value* u, std::queue<
 					|| id == Intrinsic::memmove
 					|| id == Intrinsic::memcpy_element_unordered_atomic
 					|| id == Intrinsic::memmove_element_unordered_atomic
-					|| fnc->getName().startswith("llvm.memcmp")) {
+					|| fnc->getName().starts_with("llvm.memcmp")) {
 				Value* dest = call->getArgOperand(0);
 				Value* src = call->getArgOperand(1);
 				if (current == dest) {
@@ -933,7 +957,7 @@ void SimpleTypesAnalysis::processUse(llvm::Value* current, Value* u, std::queue<
 			// llvm.memset.* : dest, fill value, length (same arg layout as MemIntrinsicBase).
 			if (id == Intrinsic::memset
 					|| id == Intrinsic::memset_element_unordered_atomic
-					|| fnc->getName().startswith("llvm.memset")) {
+					|| fnc->getName().starts_with("llvm.memset")) {
 				Value* dest = call->getArgOperand(0);
 				Value* val = call->getArgOperand(1);
 				Value* len = call->arg_size() > 2 ? call->getArgOperand(2)
@@ -966,14 +990,14 @@ void SimpleTypesAnalysis::processUse(llvm::Value* current, Value* u, std::queue<
 		// If called function is not user defined, we can probably rely
 		// on its parameter types -> set LTI.
 		//
-		auto* cf = config->getConfig().functions.getFunctionByName(fnc->getName());
+		auto* cf = config->getConfig().functions.getFunctionByName(fnc->getName().str());
 		if (cf && (cf->isFromDebug()
 				|| cf->isDynamicallyLinked()
 				|| cf->isIdiom()
 				|| cf->isStaticallyLinked()
 				|| cf->isSyscall()))
 		{
-			for (auto& tmp : call->arg_operands())
+			for (auto& tmp : call->args())
 			{
 				if (tmp == current && tmp->getType() != Abi::getDefaultType(module))
 				{
@@ -1093,7 +1117,7 @@ void EqSet::insert(Config* config, llvm::Value* v, eSourcePriority p)
 	{
 		if (auto* fnc = dyn_cast<Function>(v))
 		{
-			auto* cf = conf.functions.getFunctionByName(fnc->getName());
+			auto* cf = conf.functions.getFunctionByName(fnc->getName().str());
 			if (cf && cf->isFromDebug())
 			{
 				p = eSourcePriority::PRIORITY_DEBUG;
@@ -1105,10 +1129,10 @@ void EqSet::insert(Config* config, llvm::Value* v, eSourcePriority p)
 			assert(alloca->getParent()->getParent());
 			auto* fnc = alloca->getParent()->getParent();
 
-			auto* cf = conf.functions.getFunctionByName(fnc->getName());
+			auto* cf = conf.functions.getFunctionByName(fnc->getName().str());
 			if (cf)
 			{
-				auto* local = cf->locals.getObjectByName(alloca->getName());
+				auto* local = cf->locals.getObjectByName(alloca->getName().str());
 				if (local && local->isFromDebug())
 				{
 					p = eSourcePriority::PRIORITY_DEBUG;
@@ -1117,7 +1141,7 @@ void EqSet::insert(Config* config, llvm::Value* v, eSourcePriority p)
 		}
 		else if (auto* global = dyn_cast<GlobalVariable>(v))
 		{
-			auto* cg = conf.globals.getObjectByName(global->getName());
+			auto* cg = conf.globals.getObjectByName(global->getName().str());
 			if (cg && cg->isFromDebug())
 			{
 				p = eSourcePriority::PRIORITY_DEBUG;
@@ -1128,10 +1152,10 @@ void EqSet::insert(Config* config, llvm::Value* v, eSourcePriority p)
 			assert(param->getParent());
 			auto* fnc = param->getParent();
 
-			auto* cf = conf.functions.getFunctionByName(fnc->getName());
+			auto* cf = conf.functions.getFunctionByName(fnc->getName().str());
 			if (cf)
 			{
-				auto* cp = cf->parameters.getObjectByName(param->getName());
+				auto* cp = cf->parameters.getObjectByName(param->getName().str());
 				if (cp && cp->isFromDebug())
 				{
 					p = eSourcePriority::PRIORITY_DEBUG;
@@ -1201,8 +1225,8 @@ llvm::Type* EqSet::getHigherPriorityTypePrivate(
 	//
 	if (t1->isPointerTy() && t2->isPointerTy())
 	{
-		auto* t1p = t1->getPointerElementType();
-		auto* t2p = t2->getPointerElementType();
+		auto* t1p = llvm_utils::typedPointerElement(t1);
+		auto* t2p = llvm_utils::typedPointerElement(t2);
 		auto* thp = getHigherPriorityTypePrivate(module, t1p, t2p, seen);
 		return thp == t1p ? t1 : t2;
 	}
@@ -1351,8 +1375,8 @@ llvm::Type* EqSet::getHigherPriorityTypePrivate(
 	//
 	else if (t1->isVectorTy() && t2->isVectorTy())
 	{
-		auto* t1p = t1->getVectorElementType();
-		auto* t2p = t2->getVectorElementType();
+		auto* t1p = llvm::cast<llvm::FixedVectorType>(t1)->getElementType();
+		auto* t2p = llvm::cast<llvm::FixedVectorType>(t2)->getElementType();
 		auto* thp = getHigherPriorityTypePrivate(module, t1p, t2p, seen);
 		return thp == t1p ? t1 : t2;
 	}
@@ -1361,22 +1385,6 @@ llvm::Type* EqSet::getHigherPriorityTypePrivate(
 		return t1;
 	}
 	else if (t2->isVectorTy())
-	{
-		return t2;
-	}
-	// X86 MMX.
-	//
-	else if (t1->isX86_MMXTy() && t2->isX86_MMXTy())
-	{
-		auto sz1 = module->getDataLayout().getTypeSizeInBits(t1);
-		auto sz2 = module->getDataLayout().getTypeSizeInBits(t2);
-		return sz1 >= sz2 ? t1 : t2;
-	}
-	else if (t1->isX86_MMXTy())
-	{
-		return t1;
-	}
-	else if (t2->isX86_MMXTy())
 	{
 		return t2;
 	}
@@ -1555,7 +1563,7 @@ void EqSet::apply(
 		{
 			continue;
 		}
-		if (conf.registers.getObjectByName(vs.value->getName()))
+		if (conf.registers.getObjectByName(vs.value->getName().str()))
 		{
 			continue;
 		}
@@ -1639,9 +1647,14 @@ llvm::Type* ValueEntry::getTypeForPropagation() const
 			{
 				return PointerType::get(elem->getArrayElementType(), 0);
 			}
-			else if (elem->isPointerTy() && elem->getPointerElementType()->isArrayTy())
+			else if (elem->isPointerTy())
 			{
-				return PointerType::get(elem->getPointerElementType()->getArrayElementType(), 0);
+				if (auto* inner = llvm_utils::typedPointerElement(elem);
+					inner && inner->isArrayTy())
+				{
+					return PointerType::get(inner->getArrayElementType(), 0);
+				}
+				return elem;
 			}
 			else
 			{

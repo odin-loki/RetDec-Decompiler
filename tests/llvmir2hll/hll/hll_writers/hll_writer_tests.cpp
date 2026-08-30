@@ -207,6 +207,7 @@ EmitsDetectedCryptoPatternsInCommentWhenAvailable) {
 		"// Used cryptographic patterns:\n"
 		"//  - CRC32\n"
 		"//  - MD5\n"
+		"// recovered range: test @ 0x0 .. 0x0\n"
 		"void test(void) {"
 	);
 	ASSERT_TRUE(contains(code, expectedCodePart))

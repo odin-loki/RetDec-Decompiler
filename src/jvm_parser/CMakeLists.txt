@@ -16,6 +16,7 @@ target_include_directories(retdec-jvm-parser
 target_link_libraries(retdec-jvm-parser
     PUBLIC
         retdec-bc-module
+        z
 )
 
 set_target_properties(retdec-jvm-parser PROPERTIES

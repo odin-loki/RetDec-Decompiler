@@ -4,7 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Hello.fs" />
     <Compile Include="Sequences.fs" />
+    <Compile Include="Hello.fs" />
   </ItemGroup>
 </Project>

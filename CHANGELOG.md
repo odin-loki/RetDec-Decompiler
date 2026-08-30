@@ -8,7 +8,158 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
-- Phase 1 `QUAL-01`: warn-only clang-tidy covers remaining Imortek-new `src/` trees from `PROVENANCE.md` (271 sources; still not LLVM/Avast).
+- C# leftover: annotation `elements` emit `[Name(a, b = …)]`; file header
+  prints `BcModule::version` and `[assembly: Name]`. Tests: csharp-emitter
+  83/83 including `EmitsAttributeArguments` and `EmitsAssemblyVersion`.
+- VB.NET leftover: attribute arguments and per-param `<Name>`. Tests:
+  vbnet-emitter 37/37 including `EmitsAttributeArguments` and `EmitsParamAttribute`.
+- F# leftover: attribute arguments and per-param `[<Name>]`. Tests:
+  fsharp-emitter 33/33 including `EmitsAttributeArguments` and `EmitsParamAttribute`.
+- Kotlin leftover: method/property annotations copied from matching
+  `BcMethod`/`BcField`. Tests: kotlin-emitter 69/69 including
+  `CopiesMethodAnnotations`.
+- Java leftover: `// SourceFile:` from `BcClass::sourceFile`; `module`
+  keyword from `isModule`. Tests: java-emitter 49/49 including
+  `EmitsSourceFileComment` and `EmitsModuleKeyword`.
+- JVM leftover: `ACC_MODULE` (0x8000) sets `BcClass::isModule`. Tests:
+  jvm-parser 65/65 including `ParsesModuleFlag`.
+- CLI leftover: `Virtual && !NewSlot` → `BcAccess::Override` (and
+  `Sealed` when also `Final`); TypeRef names fill `externalRefs`. Tests:
+  cli-parser 51/51.
+- Python leftover: `co_filename` fills `BcClass::sourceFile`. Tests:
+  pyc-parser 68/68 including `ParseMinimalPyc38HasMethod`.
+- CLI leftover: GenericParamConstraint rows append `" : Bound"` onto
+  `genericParams`; TypeDef/MethodDef/Field non-visibility flags OR into
+  `BcAccess`; `Assembly` version fills `BcModule::version` and assembly
+  custom attributes fill `moduleAnnotations`; `System.Enum` sets `isEnum`
+  plus `enumConstants`; Param custom attributes fill `paramAnnotations`;
+  ImplMap P/Invoke becomes `Extern` plus `[DllImport]`. Tests: cli-parser
+  51/51.
+- C# leftover: method parameter lists emit `[Name]` from
+  `paramAnnotations`. Tests: csharp-emitter 81/81 including `EmitsParamAttribute`.
+- VB.NET leftover: class/field/method `BcAnnotation` values emit `<Name>`.
+  Tests: vbnet-emitter 35/35 including `EmitsClassAttribute`.
+- F# leftover: class/field/method `BcAnnotation` values emit `[<Name>]`.
+  Tests: fsharp-emitter 31/31 including `EmitsClassAttribute`.
+- Kotlin leftover: `KtClassReconstructor` copies `BcClass` annotations
+  (skips `@kotlin.Metadata`). Tests: kotlin-emitter 68/68 including
+  `CopiesBcAnnotations`.
+- JVM leftover: field/method `Signature` fills generic `BcType`s;
+  `toAccess` maps Strict/Synthetic/Abstract/VarArgs/Volatile; Invisible
+  annotations set `isVisible=false`; Record components copy onto fields;
+  LVTT fills generic local types. Tests: jvm-parser 64/64 including
+  `ParsesFieldSignature`.
+- Java leftover: last parameter emits `T... name` when `BcAccess::VarArgs`.
+  Tests: java-emitter 47/47 including `EmitsVarArgs`.
+- DEX leftover: `convertAccessFlags` maps volatile/bridge/transient/
+  varargs/strict. Tests: dex-parser 49/49.
+- JVM leftover: `getParamAnnotations` fills `BcMethod::paramAnnotations`;
+  the marker `Deprecated` attribute becomes `java/lang/Deprecated` when
+  RuntimeVisible* did not already carry it. Tests: jvm-parser 64/64
+  including `ParsesParameterAnnotations` and `ParsesDeprecatedAttribute`.
+- Java leftover: method parameter lists emit `@Ann Type name` from
+  `paramAnnotations`. Tests: java-emitter 46/46 including
+  `EmitsParamAnnotations`.
+- DEX leftover: `parameter_annotation` lists fill `BcMethod::paramAnnotations`
+  via `annotation_set_ref_list`. Tests: dex-parser 49/49.
+- C# leftover: class/field/method `BcAnnotation` values emit `[Name]`
+  (strips `Attribute` suffix). Tests: csharp-emitter 80/80 including
+  `EmitsClassAttribute`.
+- JVM leftover: `RuntimeVisibleAnnotations` / `RuntimeInvisibleAnnotations`
+  keep raw bytes in `RawAttr`; `getAnnotations` parses them onto
+  `BcClass`/`BcField`/`BcMethod::annotations`. Tests: jvm-parser 62/62
+  including `ParsesRuntimeVisibleAnnotation`.
+- CLI leftover: Constant table fills field `constantIntValue` /
+  `constantFltValue` / `constantStrValue`; NestedClass map fills
+  `BcClass::outerClass`; Field/MethodDef custom attributes attach.
+  Tests: cli-parser 51/51.
+- Java leftover: record classes emit `record Name(T a, U b)` from the
+  canonical constructor (else non-static fields). Tests: java-emitter
+  45/45 including `EmitsRecordComponents`.
+- DEX leftover: annotations_directory field/method lists attach to
+  matching members; `resolveGenericSignature` uses `memberIdx`/`isMethod`.
+  Tests: dex-parser 49/49.
+- Python leftover: `emitPattern` emits match/case patterns (`MatchValue`,
+  `MatchAs`, `MatchSequence`, `MatchClass`, `MatchOr`, …). Tests:
+  py-emitter 81/81 including `MatchValuePattern` /
+  `MatchCaptureAndSequence`.
+- Honesty leftover: unpacker `plugin_mgr` documents existing Stage 3
+  `--try-emulation`; ufor optimizer comment names the live converter
+  (not a future stub).
+- JVM leftover: `Exceptions` fills `BcMethod::throwsList`; `ConstantValue`
+  fills field constant int/long/float/double/string; method
+  `isAbstract` / `isNative` come from access flags; class `typeParams`
+  from `parseClassSig`; `isRecord` from the Record attribute; enum
+  field ACC_ENUM fills `enumConstants`; `EnclosingMethod` fills
+  `outerClass` when InnerClasses did not. Tests: jvm-parser 61/61.
+- C# leftover: `emitGenericConstraints` emits `where T : Bound` from
+  `BcClass::typeParams` (`"E extends …"` or `"T : …"`). Tests:
+  csharp-emitter 79/79 including `EmitsGenericConstraints`.
+- JVM leftover: `Signature` / `SourceFile` attributes store UTF-8 in
+  `RawAttr` and fill `BcClass`/`BcField`/`BcMethod` fields. Tests:
+  jvm-parser 54/54 including `ParsesSourceFileAndClassSignature` and
+  `ParsesFieldSignature`.
+- Capstone leftover: register `CreateStore` and asm2llvm map stores
+  attach `retdec.pointee` from `GlobalVariable::getValueType()`.
+  Tests: `RegisterStoreAttachesPointeeMetadata` 3/3 plus
+  `MemoryStoreAttachesPointeeMetadata` 10/10.
+- Crypto leftover: `Poly1305Detector` scores RFC 7539 clamp masks
+  `0x0ffffffc0fffffff` / `0x0ffffffc0ffffffc` and donna limbs
+  `0x3ffff03` / `0x3ffc0ff` / `0x3f03fff` (not the common `0x3ffffff`
+  mask). Tests: crypto-detect 92/92 including `Poly1305DetectorTest` and
+  `CryptoDetectorTest.Poly1305Detected`.
+- Crypto leftover: `Salsa20Detector` scores quarter-round rotations 7/9/13/18
+  (ChaCha20 keeps the shared "expand 32-byte k" sigma words). Tests:
+  crypto-detect 85/85 including `Salsa20DetectorTest` and
+  `CryptoDetectorTest.Salsa20Detected`.
+  (`sizeof(lua_Number)`, big-endian DumpSize, `readString54` /
+  `readDebugInfo54`). Unit fixture `minimalLua54()` uses the same layout.
+  Tests: lua_parser 43/43, managed lua 9/9 (`.luac51` + `.luac54`).
+- APK leftover: `ApkReader::extractEntry` inflates ZIP method-8 (DEFLATE)
+  entries with zlib raw inflate (16 MiB cap); `retdec-dex-parser` links `z`.
+  ProGuard member rename looks up `memberMap` by the obfuscated class name
+  (before rewriting `cls.name`). Tests: dex-parser 49/49 including
+  `InflatesDeflateClassesDex` and
+  `AppliesProGuardMembersUsingObfuscatedClassKey`.
+- JAR leftover: `JarReader` inflates ZIP method-8 (DEFLATE) entries with
+  zlib raw inflate (16 MiB cap per class); `retdec-jvm-parser` links `z`.
+  Inner-class `.class` files are emitted instead of being dropped because
+  `$` is in the name. `parseBoot` (default) opens `BOOT-INF/lib` and
+  `WEB-INF/lib` nested JARs; `parseNestedJars` opens any nested `.jar`
+  (depth 4, 16 MiB cap). Tests: jvm-parser 52/52 including
+  `ParsesBootInfLibJar` / `ParseNestedJarsAnyPath`, java-emitter 44/44,
+  Hello.jar 1/1 classes, kotlin_fixtures.jar 7/7 classes.
+- Managed WASM leftover: `decompileWasm` writes WAT to the `-o` path
+  instead of stripping the last suffix (which turned
+  `memory.wasm.retdec_out` into a sibling `memory.wasm.wat` the harness
+  never read). `compile_fixtures.sh` names Lua bytecode `.luac51` /
+  `.luac54`, compiles C#/VB as libraries, puts F# `EntryPoint` last,
+  and does not abort the rest of the script on one language fail.
+  Integration discovery skips satellite `*.resources.dll` under fixture
+  `bin/` trees (not fixtures). F# `Sequences.fs` is a library module
+  (single `EntryPoint` stays in `Hello.fs`).
+- Managed-integration leftover: `generate_malformed.py` treats its
+  parent directory as the fixtures root (not `malformed/` itself), so
+  synthetic `Tiny.class` / `MaxPool.class` land under
+  `fixtures/malformed/java/`. C# fixture project is a class library so
+  multiple `Main` methods do not fail `compile_fixtures.sh` with CS0017.
+- CMake leftover: `RETDEC_ENABLE=retdec-decompiler` matches the component
+  name (`retde-decompiler` never did); `RETDEC_ENABLE_LLVMIR_EMUL` is
+  turned on from ALL/RETDEC before `RETDEC_ENABLE_LLVMIR_EMUL_TESTS` is
+  computed so the emul gtest target is registered when tests are on.
+- Honesty leftover: `--try-emulation` help and unpackertool unknown-packer
+  text no longer claim Stage 3 is unimplemented; GUI `kNoBackend` no
+  longer says llama.cpp is “not yet available”.
+- LLVM 23 leftover: `basicaa` in pass JSON is looked up as
+  `basic-aa` (legacy PassRegistry name). Tests: decompile smoke.
+- Wave 5 leftover (N16): `serializeSemanticContext` also dumps
+  function comments, locals, config globals, pattern descriptions,
+  detection `cElemBytes` (when non-zero), and tool
+  `getAdditionalInfo()`. Tests: `SerializesFunctionComment`,
+  `SerializesLocals`, `SerializesGlobals`,
+  `SerializesPatternDescription`, `SerializesToolAdditionalInfo`,
+  `SerializesDetectionElemBytes`.
+- Track 2: pin LLVM to upstream `llvmorg-23.1.0`. RetDec `retdec.pointee` metadata stays the pointer-element source (opaque `ptr` has none). `pointeeType` also walks bitcast/select/PHI to alloca/GV and load/store users (`ConstantData` has no use-list).
 - Phase 1 leftover: concurrency-detect tests construct real SSA Call/Lock instructions (no ODR stubs).
 - Phase 1 `QUAL-04`: decompiler CLI `stoull` / output-lang / managed-probe catches `std::exception` instead of `...`.
 - Phase 1 leftover: internal GUI docs name the AI Assistant Tools window; tri-pane comments say decompiled C (`C-QWEN3-GPU` withdrawn).
@@ -314,8 +465,7 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   `MemoryStoreAttachesPointeeMetadata`.
 - Wave 5 leftover (N16): semantic JSON dumps detection `cHint`,
   pattern `endian`/`matches`, and tool significant-nibble counts.
-  Comments, locals, globals, descriptions, `cElemBytes`, and
-  `getAdditionalInfo()` stay omitted. Tests:
+  Tests:
   `SerializesExistingFunctionFields`, `SerializesCryptoPatternNames`,
   `SerializesPatternMatches`, `SerializesToolConfidence`.
 - Wave 5 leftover (N18): call-graph-only functions are included in

@@ -466,7 +466,8 @@ class Capstone2LlvmIrTranslatorTests : public ::testing::Test
 
 			llvm::GenericValue v = _emulator->getGlobalVariableValue(gv);
 			bool isSigned = false;
-			v.IntVal = llvm::APInt(t->getBitWidth(), val, isSigned);
+			v.IntVal = llvm::APInt(t->getBitWidth(), val, isSigned,
+					/*implicitTrunc=*/true);
 			_emulator->setGlobalVariableValue(gv, v);
 		}
 
@@ -494,7 +495,7 @@ class Capstone2LlvmIrTranslatorTests : public ::testing::Test
 		{
 			llvm::GenericValue v;
 			bool isSigned = false;
-			v.IntVal = llvm::APInt(s, val, isSigned);
+			v.IntVal = llvm::APInt(s, val, isSigned, /*implicitTrunc=*/true);
 			_emulator->setMemoryValue(addr, v);
 		}
 
@@ -767,8 +768,20 @@ class Capstone2LlvmIrTranslatorTests : public ::testing::Test
 				auto* v = p.first;
 				auto& args = p.second;
 				auto* ce = _emulator->getCallEntry(v);
-
-				EXPECT_EQ(args.size(), ce->calledArguments.size());
+				if (ce == nullptr)
+				{
+					ADD_FAILURE()
+						<< "no call entry for "
+						<< (v ? llvmObjToString(v) : "nullptr") << "\n"
+						<< dumpFunction(_function);
+					continue;
+				}
+				if (args.size() != ce->calledArguments.size())
+				{
+					EXPECT_EQ(args.size(), ce->calledArguments.size())
+						<< dumpFunction(_function);
+					continue;
+				}
 
 				size_t cntr = 0;
 				for (auto& sv : args)
@@ -821,8 +834,20 @@ class Capstone2LlvmIrTranslatorTests : public ::testing::Test
 				auto* v = p.first;
 				auto& args = p.second;
 				auto* ce = _emulator->getCallEntry(v);
-
-				EXPECT_EQ(args.size(), ce->calledArguments.size());
+				if (ce == nullptr)
+				{
+					ADD_FAILURE()
+						<< "no call entry for "
+						<< (v ? llvmObjToString(v) : "nullptr") << "\n"
+						<< dumpFunction(_function);
+					continue;
+				}
+				if (args.size() != ce->calledArguments.size())
+				{
+					EXPECT_EQ(args.size(), ce->calledArguments.size())
+						<< dumpFunction(_function);
+					continue;
+				}
 
 				size_t cntr = 0;
 				for (auto& sv : args)

@@ -317,7 +317,7 @@ TEST_F(ItaniumCtypesTests, TemplateTypeAsParameter)
 	EXPECT_FALSE(func->isVarArg());
 	EXPECT_TRUE(func->getParameter(1).getType()->isNamed());
 	auto namedType = std::static_pointer_cast<ctypes::NamedType>(func->getParameter(1).getType());
-	EXPECT_EQ(namedType->getName(), "std::basic_string<char, std::char_traits<char>, std::allocator<char> >");
+	EXPECT_EQ(namedType->getName(), "std::basic_string<char, std::char_traits<char>, std::allocator<char>>");
 }
 
 TEST_F(ItaniumCtypesTests, PointerTypeToNamedTypeParameterTest)

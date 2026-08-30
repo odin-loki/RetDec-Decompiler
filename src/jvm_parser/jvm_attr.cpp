@@ -6,6 +6,7 @@
 #include "retdec/jvm_parser/jvm_attr.h"
 
 #include <algorithm>
+#include <exception>
 
 namespace retdec {
 namespace jvm_parser {
@@ -299,6 +300,38 @@ ParsedAttr parseAttribute(BinaryReader& r, const ConstPool& pool,
     } else if (name == "MethodParameters") {
         result = parseMethodParameters(r, pool);
         parsed = true;
+    } else if (name == "Signature") {
+        std::string sig = pool.utf8(r.u2());
+        result = RawAttr{name, std::vector<uint8_t>(sig.begin(), sig.end())};
+        parsed = true;
+    } else if (name == "SourceFile") {
+        std::string src = pool.utf8(r.u2());
+        result = RawAttr{name, std::vector<uint8_t>(src.begin(), src.end())};
+        parsed = true;
+    } else if (name == "Exceptions") {
+        uint16_t n = r.u2();
+        std::string packed;
+        for (uint16_t i = 0; i < n; ++i) {
+            if (i)
+                packed.push_back('\0');
+            packed += pool.className(r.u2());
+        }
+        result = RawAttr{name, std::vector<uint8_t>(packed.begin(), packed.end())};
+        parsed = true;
+    } else if (name == "ConstantValue") {
+        uint16_t idx = r.u2();
+        result = RawAttr{name, {static_cast<uint8_t>(idx >> 8),
+                                static_cast<uint8_t>(idx & 0xff)}};
+        parsed = true;
+    } else if (name == "RuntimeVisibleAnnotations" ||
+               name == "RuntimeInvisibleAnnotations" ||
+               name == "RuntimeVisibleParameterAnnotations" ||
+               name == "RuntimeInvisibleParameterAnnotations") {
+        result = RawAttr{name, r.bytes(length)};
+        parsed = true;
+    } else if (name == "AnnotationDefault") {
+        result = RawAttr{name, r.bytes(length)};
+        parsed = true;
     }
 
     if (!parsed) {
@@ -355,22 +388,21 @@ const NestHostAttr* getNestHost(const std::vector<ParsedAttr>& attrs) {
     for (const auto& a : attrs) if (const auto* n = std::get_if<NestHostAttr>(&a)) return n;
     return nullptr;
 }
+const NestMembersAttr* getNestMembers(const std::vector<ParsedAttr>& attrs) {
+    for (const auto& a : attrs) if (const auto* n = std::get_if<NestMembersAttr>(&a)) return n;
+    return nullptr;
+}
 const MethodParametersAttr* getMethodParameters(const std::vector<ParsedAttr>& attrs) {
     for (const auto& a : attrs) if (const auto* m = std::get_if<MethodParametersAttr>(&a)) return m;
     return nullptr;
 }
 
 std::string getSignature(const std::vector<ParsedAttr>& attrs,
-                          const ConstPool& pool) {
-    // Signature is stored as RawAttr with name "Signature" and 2 bytes of data.
-    // We need to handle it specially since it is parsed as RawAttr.
-    // (It could be promoted later; for now search raw attrs.)
+                          const ConstPool& /*pool*/) {
     for (const auto& a : attrs) {
         const auto* raw = std::get_if<RawAttr>(&a);
-        if (raw && raw->name == "Signature" && raw->data.empty()) {
-            // Already consumed during parsing — stored index-only is not cached
-            // here. Return "" to signal "check pool directly".
-        }
+        if (raw && raw->name == "Signature")
+            return std::string(raw->data.begin(), raw->data.end());
     }
     return "";
 }
@@ -379,21 +411,57 @@ std::string getSourceFile(const std::vector<ParsedAttr>& attrs,
                            const ConstPool& /*pool*/) {
     for (const auto& a : attrs) {
         const auto* raw = std::get_if<RawAttr>(&a);
-        if (raw && raw->name == "SourceFile") return "";
+        if (raw && raw->name == "SourceFile")
+            return std::string(raw->data.begin(), raw->data.end());
     }
     return "";
 }
 
-std::vector<RawAnnotation> getAnnotations(const std::vector<ParsedAttr>& /*attrs*/,
-                                           const ConstPool& /*pool*/) {
-    // RuntimeVisibleAnnotations are parsed inline during class file parsing.
-    return {};
+std::vector<RawAnnotation> getAnnotations(const std::vector<ParsedAttr>& attrs,
+                                           const ConstPool& pool) {
+    std::vector<RawAnnotation> out;
+    for (const auto& a : attrs) {
+        const auto* raw = std::get_if<RawAttr>(&a);
+        if (!raw || raw->data.size() < 2)
+            continue;
+        if (raw->name != "RuntimeVisibleAnnotations" &&
+            raw->name != "RuntimeInvisibleAnnotations")
+            continue;
+        try {
+            BinaryReader br(raw->data.data(), raw->data.size());
+            uint16_t n = br.u2();
+            for (uint16_t i = 0; i < n; ++i)
+                out.push_back(parseAnnotation(br, pool));
+        } catch (const std::exception&) {
+        }
+    }
+    return out;
 }
 
 std::vector<std::vector<RawAnnotation>>
-getParamAnnotations(const std::vector<ParsedAttr>& /*attrs*/,
-                    const ConstPool& /*pool*/) {
-    return {};
+getParamAnnotations(const std::vector<ParsedAttr>& attrs,
+                    const ConstPool& pool) {
+    std::vector<std::vector<RawAnnotation>> out;
+    for (const auto& a : attrs) {
+        const auto* raw = std::get_if<RawAttr>(&a);
+        if (!raw || raw->data.empty())
+            continue;
+        if (raw->name != "RuntimeVisibleParameterAnnotations" &&
+            raw->name != "RuntimeInvisibleParameterAnnotations")
+            continue;
+        try {
+            BinaryReader br(raw->data.data(), raw->data.size());
+            uint8_t nparams = br.u1();
+            out.resize(nparams);
+            for (uint8_t p = 0; p < nparams; ++p) {
+                uint16_t n = br.u2();
+                for (uint16_t i = 0; i < n; ++i)
+                    out[p].push_back(parseAnnotation(br, pool));
+            }
+        } catch (const std::exception&) {
+        }
+    }
+    return out;
 }
 
 } // namespace jvm_parser

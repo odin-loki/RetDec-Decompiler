@@ -15,6 +15,29 @@ namespace kotlin_emitter {
 
 // ─── JVM-to-Kotlin name mapping ───────────────────────────────────────────────
 
+static std::string ktAnnSimpleName(const std::string& typeName) {
+    std::string n = typeName;
+    if (n.size() >= 2 && n.front() == 'L' && n.back() == ';')
+        n = n.substr(1, n.size() - 2);
+    if (n == "kotlin/Metadata" || n == "kotlin.Metadata")
+        return {};
+    auto sep = n.find_last_of("/.");
+    if (sep != std::string::npos)
+        n = n.substr(sep + 1);
+    if (n.empty() || n == "Metadata")
+        return {};
+    return n;
+}
+
+static void copyKtAnnotations(std::vector<std::string>& dest,
+                              const std::vector<BcAnnotation>& src) {
+    for (const auto& ann : src) {
+        std::string n = ktAnnSimpleName(ann.typeName);
+        if (!n.empty())
+            dest.push_back(std::move(n));
+    }
+}
+
 static const std::unordered_map<std::string, std::string> kJvmToKotlin = {
     // Primitives via boxed/kotlin names
     {"kotlin/Any",           "Any"},
@@ -258,6 +281,14 @@ KtFunction KtClassReconstructor::buildFunction(
     fn.visibility  = toVisibility(kfun.visibility);
     fn.typeParams  = kfun.typeParams;
     fn.bcMethod    = findBcMethod(cls, kfun);
+    if (fn.bcMethod) {
+        uint64_t mask = 0;
+        for (size_t i = 0; i < kfun.valueParams.size() && i < 64; ++i) {
+            if (kfun.valueParams[i].hasDefault)
+                mask |= (uint64_t{1} << i);
+        }
+        const_cast<BcMethod*>(fn.bcMethod)->defaultParamMask = mask;
+    }
 
     // Build parameter list, skipping the Continuation<T> of suspend fns.
     for (const auto& vp : kfun.valueParams) {
@@ -365,6 +396,8 @@ KtClass KtClassReconstructor::reconstruct(
     // Type parameters
     kt.typeParams = renderTypeParams(meta.typeParams, renderer);
 
+    copyKtAnnotations(kt.annotations, cls.annotations);
+
     // Supertypes → superClass + interfaces
     for (const auto& st : meta.supertypes) {
         if (!st) continue;
@@ -396,12 +429,20 @@ KtClass KtClassReconstructor::reconstruct(
 
     for (const auto& kprop : meta.properties) {
         KtProperty prop = buildProperty(kprop, renderer);
+        for (const auto& f : cls.fields) {
+            if (f.name == prop.name) {
+                copyKtAnnotations(prop.annotations, f.annotations);
+                break;
+            }
+        }
         kt.properties.push_back(std::move(prop));
     }
 
     // Functions
     for (const auto& kfun : meta.functions) {
         KtFunction fn = buildFunction(kfun, cls, renderer);
+        if (fn.bcMethod)
+            copyKtAnnotations(fn.annotations, fn.bcMethod->annotations);
         kt.functions.push_back(std::move(fn));
     }
 

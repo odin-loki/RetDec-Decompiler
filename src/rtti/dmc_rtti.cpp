@@ -101,7 +101,7 @@ void DmcRttiReconstructor::scanVtables(
 
         uint64_t vma = sec.vma;
         uint64_t end = sec.vma + sec.size;
-        uint64_t p   = (vma + ps - 1) & ~uint64_t(ps - 1);
+        uint64_t p   = vma;
 
         while (p + ps <= end) {
             uint64_t candidate = view.readPtr(p);
@@ -131,7 +131,7 @@ void DmcRttiReconstructor::scanVtables(
                 }
             }
 
-            p += ps;
+            p += 1;
         }
     }
 }

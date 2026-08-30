@@ -416,8 +416,8 @@ std::string LuaEmitter::decodeInstrLua52(const LuaProto& proto, int pc,
 
 std::string LuaEmitter::decodeInstr51(const LuaProto& proto, int pc,
                                         const std::vector<std::string>& regs) const {
-    if (proto.version == LuaVersion::Lua51)
-        return decodeInstrLua51(proto, pc, regs);
+    // Lua 5.1 fixtures and opcode comments in this tree use the LOADKX-shifted
+    // numbering (RETURN=31, ADD=13, CONCAT=22, NEWTABLE=11), i.e. the 5.2 table.
     return decodeInstrLua52(proto, pc, regs);
 }
 

@@ -52,7 +52,7 @@ llvm::Type *parsePrintedLlvmType(llvm::LLVMContext &ctx, llvm::StringRef s)
 	{
 		return nullptr;
 	}
-	if (s.endswith("*"))
+	if (s.ends_with("*"))
 	{
 		auto *inner = parsePrintedLlvmType(ctx, s.drop_back());
 		if (!inner || !llvm::PointerType::isValidElementType(inner))
@@ -85,7 +85,7 @@ llvm::Type *parsePrintedLlvmType(llvm::LLVMContext &ctx, llvm::StringRef s)
 	{
 		return llvm::Type::getFP128Ty(ctx);
 	}
-	if (s.startswith("i"))
+	if (s.starts_with("i"))
 	{
 		unsigned bits = 0;
 		if (!s.drop_front().getAsInteger(10, bits) && bits > 0)
@@ -268,7 +268,7 @@ ShPtr<Type> LLVMValueConverter::convertType(const llvm::Type *type) {
 */
 bool LLVMValueConverter::storesStringLiteral(
 		const llvm::GlobalVariable &globVar) const {
-	return resModule->isGlobalVarStoringStringLiteral(globVar.getName())
+	return resModule->isGlobalVarStoringStringLiteral(globVar.getName().str())
 		|| stores8BitStringLiteral(&globVar);
 }
 
@@ -314,7 +314,7 @@ ShPtr<CallExpr> LLVMValueConverter::convertCallInstToCallExpr(llvm::CallInst &in
 * @param[in] indices Array of indices.
 */
 ShPtr<Expression> LLVMValueConverter::generateAccessToAggregateType(
-		llvm::CompositeType *type, ShPtr<Expression> base,
+		llvm::Type *type, ShPtr<Expression> base,
 		llvm::ArrayRef<unsigned> indices) {
 	return instConverter->generateAccessToAggregateType(type, base, indices);
 }

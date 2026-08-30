@@ -49,7 +49,7 @@ NonEmptyFunctionWithoutNullPointersDoesNotUseThem) {
 	// }
 	//
 	ShPtr<Variable> varA(Variable::create("a", PointerType::create(IntType::create(32))));
-	ShPtr<VarDefStmt> varDefA(VarDefStmt::create(varA, ConstInt::create(32, 1)));
+	ShPtr<VarDefStmt> varDefA(VarDefStmt::create(varA, ConstInt::create(1, 32)));
 	testFunc->setBody(varDefA);
 
 	// Run the analysis and verify the result.

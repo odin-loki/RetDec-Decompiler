@@ -66,13 +66,17 @@ uint64_t LuaReader::readU64() {
 // Lua 5.4 modified LEB128: MSB=1 means this is the LAST byte.
 // Bits are packed big-endian within the sequence.
 size_t LuaReader::readLuaSize54() {
-    size_t result = 0;
-    for (int shift = 0; ; shift += 7) {
+    // Official lundump.c loadUnsigned: x = (x << 7) | (b & 0x7f); stop when MSB=1.
+    size_t x = 0;
+    for (int i = 0; i < 10; ++i) {
         uint8_t b = readU8();
-        result |= static_cast<size_t>(b & 0x7F) << shift;
-        if (b & 0x80) break;  // MSB=1 → last byte
+        if (x > (static_cast<size_t>(-1) >> 7))
+            throw ParseError{"Lua 5.4 size overflow"};
+        x = (x << 7) | static_cast<size_t>(b & 0x7F);
+        if (b & 0x80)
+            return x;
     }
-    return result;
+    throw ParseError{"Lua 5.4 size encoding too long"};
 }
 
 int32_t LuaReader::readInt() {
@@ -148,7 +152,7 @@ std::string LuaReader::readString54() {
 }
 
 std::string LuaReader::readString() {
-    if (ver_ == LuaVersion::Lua54) return readString54();
+    if (ver_ >= LuaVersion::Lua54) return readString54();
     if (ver_ >= LuaVersion::Lua53) return readString53();
     return readString51();
 }
@@ -211,14 +215,14 @@ LuaVersion LuaReader::parseHeader() {
         readU8(); // format
         // LUAC_DATA: "\x19\x93\r\n\x1a\n"
         pos_ += 6;
-        intSz_   = readU8(); // sizeof(Instruction) = 4
-        sizetSz_ = readU8(); // sizeof(lua_Integer) = 8
-        readU8();            // sizeof(lua_Number) = 8 (Lua 5.4 header has 3 size bytes)
+        readU8();            // sizeof(Instruction)
+        intSz_   = readU8(); // sizeof(lua_Integer)
+        sizetSz_ = intSz_;
+        readU8();            // sizeof(lua_Number)
         // Two test values: integer 0x5678, float 370.5
-        readU64(); // test integer (lua_Integer)
-        readU64(); // test float  (lua_Number)
+        if (intSz_ == 4) readU32(); else readU64();
+        readU64();           // test float (lua_Number)
         le_ = true;
-        // Lua 5.4.6 uses modified LEB128 for all integer/size values in bytecode
         useLeb128_ = true;
     }
 
@@ -298,7 +302,7 @@ std::vector<LuaConst> LuaReader::readConstants53() {
 std::vector<LuaConst> LuaReader::readConstants54() {
     // Lua 5.4 variant tags (makevariant(type, variant)):
     //   0x00 = LUA_VNIL,  0x01 = LUA_VFALSE, 0x11 = LUA_VTRUE
-    //   0x03 = LUA_VNUMINT (integer, LEB128), 0x13 = LUA_VNUMFLT (float, 8 bytes)
+    //   0x03 = LUA_VNUMINT (integer, raw lua_Integer), 0x13 = LUA_VNUMFLT (float, 8 bytes)
     //   0x04 = LUA_VSHRSTR (short string),    0x14 = LUA_VLNGSTR (long string)
     int n = readInt();
     std::vector<LuaConst> consts;
@@ -309,7 +313,7 @@ std::vector<LuaConst> LuaReader::readConstants54() {
         case 0x00: consts.emplace_back(LuaNil{}); break;
         case 0x01: consts.emplace_back(LuaBool{false}); break;
         case 0x11: consts.emplace_back(LuaBool{true}); break;
-        case 0x03: // LUA_VNUMINT — integer stored as LEB128
+        case 0x03: // LUA_VNUMINT — raw lua_Integer (DumpInteger)
             consts.emplace_back(LuaInt{readLuaInt()});
             break;
         case 0x13: // LUA_VNUMFLT — float stored as 8 raw bytes

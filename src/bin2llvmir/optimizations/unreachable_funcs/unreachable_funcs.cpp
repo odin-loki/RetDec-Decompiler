@@ -103,6 +103,10 @@ bool userPreventsElim(User* user, const std::set<Function*>& liveFuncs, int dept
 	}
 	if (auto* ce = dyn_cast<ConstantExpr>(user))
 	{
+		if (!ce->hasUseList())
+		{
+			return false;
+		}
 		for (auto* u: ce->users())
 			if (userPreventsElim(u, liveFuncs, depth + 1)) return true;
 		return false;

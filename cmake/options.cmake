@@ -126,7 +126,7 @@ foreach(t ${RETDEC_ENABLE})
 	set_if_equal(${t} "pdbparser" RETDEC_ENABLE_PDBPARSER)
 	set_if_equal(${t} "pelib" RETDEC_ENABLE_PELIB)
 	set_if_equal(${t} "retdec" RETDEC_ENABLE_RETDEC)
-	set_if_equal(${t} "retde-decompiler" RETDEC_ENABLE_RETDEC_DECOMPILER)
+	set_if_equal(${t} "retdec-decompiler" RETDEC_ENABLE_RETDEC_DECOMPILER)
 	set_if_equal(${t} "retdectool" RETDEC_ENABLE_RETDECTOOL)
 	set_if_equal(${t} "rtti-finder" RETDEC_ENABLE_RTTI_FINDER)
 	set_if_equal(${t} "serdes" RETDEC_ENABLE_SERDES)
@@ -423,6 +423,12 @@ set_if_all_set(RETDEC_ENABLE_BIN2LLVMIR_TESTS
 set_if_all_set(RETDEC_ENABLE_CAPSTONE2LLVMIR_TESTS
 		RETDEC_TESTS
 		RETDEC_ENABLE_CAPSTONE2LLVMIR)
+# Enable llvmir-emul before LLVMIR_EMUL_TESTS; otherwise ALL/RETDEC never
+# turns the emul gtest target on (this block used to run after the tests flag).
+set_if_at_least_one_set(RETDEC_ENABLE_LLVMIR_EMUL
+		RETDEC_ENABLE_ALL
+		RETDEC_ENABLE_RETDEC
+		RETDEC_ENABLE_CAPSTONE2LLVMIR_TESTS)
 set_if_all_set(RETDEC_ENABLE_CONFIG_TESTS
 		RETDEC_TESTS
 		RETDEC_ENABLE_CONFIG)
@@ -462,12 +468,6 @@ set_if_all_set(RETDEC_ENABLE_COMMON_TESTS
 set_if_all_set(RETDEC_ENABLE_UTILS_TESTS
 		RETDEC_TESTS
 		RETDEC_ENABLE_UTILS)
-
-# src depending on tests
-set_if_at_least_one_set(RETDEC_ENABLE_LLVMIR_EMUL
-		RETDEC_ENABLE_ALL
-		RETDEC_ENABLE_RETDEC
-		RETDEC_ENABLE_CAPSTONE2LLVMIR_TESTS)
 
 # deps
 set_if_at_least_one_set(RETDEC_ENABLE_AUTHENTICODE_PARSER

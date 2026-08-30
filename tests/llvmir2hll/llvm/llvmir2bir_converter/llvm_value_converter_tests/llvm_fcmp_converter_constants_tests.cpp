@@ -97,7 +97,10 @@ void LLVMFCmpConverterConstantsTests::fcmpIsConvertedAsSimpleExpression(
 		@g = global i32 1
 
 		define i1 @function() {
-			ret i1 fcmp )" + pred + R"( (double sitofp (i32 ptrtoint (i32* @g to i32) to double), double 1.0)
+			%p = ptrtoint ptr @g to i32
+			%f = sitofp i32 %p to double
+			%c = fcmp )" + pred + R"( double %f, 1.0
+			ret i1 %c
 		}
 	)");
 
@@ -144,7 +147,10 @@ void LLVMFCmpConverterConstantsTests::unorderedFCmpIsConvertedCorrectlyWithStric
 		@g = global i32 1
 
 		define i1 @function() {
-			ret i1 fcmp )" + pred + R"( (double sitofp (i32 ptrtoint (i32* @g to i32) to double), double 1.0)
+			%p = ptrtoint ptr @g to i32
+			%f = sitofp i32 %p to double
+			%c = fcmp )" + pred + R"( double %f, 1.0
+			ret i1 %c
 		}
 	)");
 
@@ -333,7 +339,10 @@ FCmpFalseInstructionIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i1 @function() {
-			ret i1 fcmp false (double sitofp (i32 ptrtoint (i32* @g to i32) to double), double 1.0)
+			%p = ptrtoint ptr @g to i32
+			%f = sitofp i32 %p to double
+			%c = fcmp false double %f, 1.0
+			ret i1 %c
 		}
 	)");
 
@@ -352,7 +361,10 @@ FCmpORDInstructionIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i1 @function() {
-			ret i1 fcmp ord (double sitofp (i32 ptrtoint (i32* @g to i32) to double), double 1.0)
+			%p = ptrtoint ptr @g to i32
+			%f = sitofp i32 %p to double
+			%c = fcmp ord double %f, 1.0
+			ret i1 %c
 		}
 	)");
 
@@ -376,7 +388,10 @@ FCmpUNOInstructionIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i1 @function() {
-			ret i1 fcmp uno (double sitofp (i32 ptrtoint (i32* @g to i32) to double), double 1.0)
+			%p = ptrtoint ptr @g to i32
+			%f = sitofp i32 %p to double
+			%c = fcmp uno double %f, 1.0
+			ret i1 %c
 		}
 	)");
 
@@ -394,7 +409,10 @@ FCmpTrueInstructionIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i1 @function() {
-			ret i1 fcmp true (double sitofp (i32 ptrtoint (i32* @g to i32) to double), double 1.0)
+			%p = ptrtoint ptr @g to i32
+			%f = sitofp i32 %p to double
+			%c = fcmp true double %f, 1.0
+			ret i1 %c
 		}
 	)");
 

@@ -38,6 +38,26 @@ public:
     }
     void emptyStr51() { u64(0); } // empty string = size 0
 
+    // Official ldump.c dumpSize (DIBS-sized buffer): 7-bit chunks high-first,
+    // last byte | 0x80.
+    void size54(size_t x) {
+        constexpr int dibs = 16;
+        uint8_t buff[dibs] = {};
+        int n = 0;
+        do {
+            buff[dibs - (++n)] = static_cast<uint8_t>(x & 0x7F);
+            x >>= 7;
+        } while (x != 0);
+        buff[dibs - 1] |= 0x80;
+        for (int i = dibs - n; i < dibs; ++i)
+            data_.push_back(buff[i]);
+    }
+    void str54(const std::string& s) {
+        size54(s.size() + 1);
+        for (char c : s) data_.push_back(static_cast<uint8_t>(c));
+    }
+    void emptyStr54() { size54(0); }
+
     const std::vector<uint8_t>& bytes() const { return data_; }
 private:
     std::vector<uint8_t> data_;
@@ -99,6 +119,7 @@ static std::vector<uint8_t> minimalLua54() {
     b.u8(0x19); b.u8(0x93); b.u8(0x0D); b.u8(0x0A); b.u8(0x1A); b.u8(0x0A);
     b.u8(4);    // instruction size
     b.u8(8);    // integer size
+    b.u8(8);    // number size
     // Test integer (0x5678)
     b.u64(0x5678);
     // Test float (370.5)
@@ -108,41 +129,38 @@ static std::vector<uint8_t> minimalLua54() {
     // upvalue count for main chunk
     b.u8(1);
 
-    // Top-level proto (5.4 format)
-    // source name (5.3+ format: 0 = empty)
-    b.u8(0); // empty string
-
-    b.i32(0); // lineDefined
-    b.i32(0); // lastLineDefined
+    // Top-level proto (official 5.4 dump: DumpSize for ints/strings)
+    b.emptyStr54(); // source name = NULL
+    b.size54(0);    // lineDefined
+    b.size54(0);    // lastLineDefined
     b.u8(0);  // numParams
     b.u8(1);  // isVarArg
     b.u8(2);  // maxStackSize
 
     // Code: RETURN0 A=0 (opcode=70 in 5.4)
-    b.i32(1);
+    b.size54(1);
     // opcode=70 (0x46), A=0, B=0, C=0
     // 5.4 layout: bits 0-6=op, 7-14=A, 15-22=B, 23-31=C
     uint32_t ret0 = 70; // RETURN0
     b.u32(ret0);
 
     // Constants: 0
-    b.i32(0);
+    b.size54(0);
     // Upvalues: 1 (for _ENV)
-    b.i32(1);
+    b.size54(1);
     b.u8(1); // inStack
     b.u8(0); // idx
     b.u8(0); // kind
 
     // Sub-protos: 0
-    b.i32(0);
+    b.size54(0);
 
-    // Debug info
-    b.i32(1); b.i32(1); // 1 lineinfo entry
-    b.i32(0); // 0 locals
-    b.i32(1); // 1 upvalue name
-    // upvalue name "_ENV" (5.3+ format: length byte)
-    b.u8(5);   // length 4+1=5
-    b.u8('_'); b.u8('E'); b.u8('N'); b.u8('V');
+    // Debug info (DumpDebug): lineinfo bytes, abslineinfo, locals, upvalue names
+    b.size54(1); b.u8(1); // 1 lineinfo byte
+    b.size54(0);          // 0 abslineinfo
+    b.size54(0);          // 0 locals
+    b.size54(1);          // 1 upvalue name
+    b.str54("_ENV");
 
     return b.bytes();
 }

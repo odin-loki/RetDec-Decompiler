@@ -24,12 +24,12 @@ namespace {
 * @brief Returns how large are characters in the given type.
 *
 * @par Preconditions
-*  - @c type is an instance of @c llvm::SequentialType and stores characters
+*  - @c type is an instance of @c llvm::ArrayType and stores characters
 *    (of arbitrary length)
 */
 std::size_t getCharSize(const llvm::Type *type) {
-	auto arrayType = llvm::dyn_cast<llvm::SequentialType>(type);
-	PRECONDITION(arrayType, "expected type to be llvm::SequentialType");
+	auto arrayType = llvm::dyn_cast<llvm::ArrayType>(type);
+	PRECONDITION(arrayType, "expected type to be llvm::ArrayType");
 	return arrayType->getElementType()->getPrimitiveSizeInBits();
 }
 
@@ -163,7 +163,7 @@ ShPtr<ConstString> toConstString(llvm::ConstantDataArray *cda) {
 ShPtr<ConstString> getInitializerAsConstString(llvm::GlobalVariable *v) {
 	if (!v->hasInitializer() || v->getInitializer()->isNullValue()) {
 		// There is no initializer, which means it is the empty string.
-		return ConstString::create({}, getCharSize(v->getType()->getContainedType(0)));
+		return ConstString::create({}, getCharSize(v->getValueType()));
 	}
 
 	// There is an initializer. The string literal itself may be stored in

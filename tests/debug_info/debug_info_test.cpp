@@ -149,7 +149,7 @@ TEST(DebugLocEvaluator, SLEB128_decoding_negative) {
 }
 
 TEST(DebugLocEvaluator, SLEB128_decoding_multibyte) {
-    uint8_t buf[] = {0xd4, 0x7e}; // -300
+    uint8_t buf[] = {0xd4, 0x7d}; // -300
     const uint8_t* p = buf;
     int64_t v = DebugLocEvaluator::readSLEB128(p, buf + 2);
     EXPECT_EQ(v, -300);

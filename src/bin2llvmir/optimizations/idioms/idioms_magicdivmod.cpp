@@ -45,7 +45,7 @@ unsigned IdiomsMagicDivMod::divisorByMagicNumberUnsigned(unsigned magic_number, 
 
 	llvm::APInt x, y, q, r;
 	// Set n to 0xFFFFFFFF FFFFFFFF FFFFFFFF (i.e. 96 bits)
-	x = x.getAllOnesValue(96).zext(128);
+	x = llvm::APInt::getAllOnes(96).zext(128);
 	y = (x * llvm::APInt(128, magic_number)).lshr(32);
 	q = ((x - y).lshr(sh_pre) + y).lshr(sh_post);
 
@@ -85,7 +85,7 @@ unsigned IdiomsMagicDivMod::divisorByMagicNumberUnsigned2(unsigned magic_number,
 
 	llvm::APInt x, q, r;
 	// Set n to 0xFFFFFFFF FFFFFFFF FFFFFFFF (i.e. 96 bits)
-	x = x.getAllOnesValue(96).zext(128);
+	x = llvm::APInt::getAllOnes(96).zext(128);
 	q = (x * llvm::APInt(128, magic_number)).lshr(sh_post);
 
 	if (q == 0)
@@ -144,7 +144,7 @@ unsigned IdiomsMagicDivMod::divisorByMagicNumberSigned3(unsigned magic_number, u
 {
 	llvm::APInt x, q, r, m(128, magic_number); // true = signed
 	// Set n to 0xFFFFFFFF FFFFFFFF FFFFFFFF (i.e. 96 bits)
-	x = x.getAllOnesValue(96).zext(128);
+	x = llvm::APInt::getAllOnes(96).zext(128);
 	q = (x * m).lshr(shift);
 	if (q == 0)
 		return 0;
@@ -166,7 +166,7 @@ unsigned IdiomsMagicDivMod::divisorByMagicNumberSigned4(unsigned magic_number, u
 {
 	llvm::APInt x, q, r, m(128, magic_number); // true = signed
 	// Set n to 0xFFFFFFFF FFFFFFFF FFFFFFFF (i.e. 96 bits)
-	x = x.getAllOnesValue(96).zext(128);
+	x = llvm::APInt::getAllOnes(96).zext(128);
 	q = (x * m + x).lshr(32 + shift);
 	if (q == 0)
 		return 0;
@@ -244,10 +244,10 @@ Instruction * IdiomsMagicDivMod::magicUnsignedDiv1(BasicBlock::iterator iter) co
 	// value and divisor have different types, conversion needed
 	// conversion can be from to smaller or even bigger
 	if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::ZExt, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::ZExt, div, val.getType());
 	} else if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::Trunc, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::Trunc, div, val.getType());
 	} else
 		return div;
@@ -367,10 +367,10 @@ Instruction * IdiomsMagicDivMod::magicUnsignedDiv2(BasicBlock::iterator iter) co
 	// value and divisor have different types, conversion needed
 	// conversion can be from to smaller or even bigger
 	if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::ZExt, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::ZExt, div, val.getType());
 	} else if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::Trunc, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::Trunc, div, val.getType());
 	} else
 		return div;
@@ -474,10 +474,10 @@ Instruction * IdiomsMagicDivMod::magicSignedDiv1(BasicBlock::iterator iter) cons
 	// value and divisor have different types, conversion needed
 	// conversion can be from to smaller or even bigger
 	if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::ZExt, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::ZExt, div, val.getType());
 	} else if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::Trunc, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::Trunc, div, val.getType());
 	} else
 		return div;
@@ -576,10 +576,10 @@ Instruction * IdiomsMagicDivMod::magicSignedDiv2(BasicBlock::iterator iter) cons
 	// value and divisor have different types, conversion needed
 	// conversion can be from to smaller or even bigger
 	if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::ZExt, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::ZExt, div, val.getType());
 	} else if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::Trunc, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::Trunc, div, val.getType());
 	} else
 		return div;
@@ -681,10 +681,10 @@ Instruction * IdiomsMagicDivMod::magicSignedDiv3(BasicBlock::iterator iter) cons
 	// value and divisor have different types, conversion needed
 	// conversion can be from to smaller or even bigger
 	if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::ZExt, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::ZExt, div, val.getType());
 	} else if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::Trunc, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::Trunc, div, val.getType());
 	} else
 		return div;
@@ -791,10 +791,10 @@ Instruction * IdiomsMagicDivMod::magicSignedDiv4(BasicBlock::iterator iter) cons
 	// value and divisor have different types, conversion needed
 	// conversion can be from to smaller or even bigger
 	if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::ZExt, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::ZExt, div, val.getType());
 	} else if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::Trunc, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::Trunc, div, val.getType());
 	} else
 		return div;
@@ -884,10 +884,10 @@ Instruction * IdiomsMagicDivMod::magicSignedDiv5(BasicBlock::iterator iter) cons
 	// value and divisor have different types, conversion needed
 	// conversion can be from to smaller or even bigger
 	if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::ZExt, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::ZExt, div, val.getType());
 	} else if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::Trunc, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::Trunc, div, val.getType());
 	} else
 		return div;
@@ -974,10 +974,10 @@ Instruction * IdiomsMagicDivMod::magicSignedDiv6(BasicBlock::iterator iter) cons
 	// value and divisor have different types, conversion needed
 	// conversion can be from to smaller or even bigger
 	if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::ZExt, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::ZExt, div, val.getType());
 	} else if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::Trunc, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::Trunc, div, val.getType());
 	} else
 		return div;
@@ -1267,10 +1267,10 @@ Instruction * IdiomsMagicDivMod::magicSignedDiv7(BasicBlock::iterator iter, bool
 	// value and divisor have different types, conversion needed
 	// conversion can be from to smaller or even bigger
 	if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::ZExt, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::ZExt, div, val.getType());
 	} else if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::Trunc, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::Trunc, div, val.getType());
 	} else
 		return div;
@@ -1423,10 +1423,10 @@ Instruction * IdiomsMagicDivMod::magicSignedDiv8(BasicBlock::iterator iter, bool
 	// value and divisor have different types, conversion needed
 	// conversion can be from to smaller or even bigger
 	if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::ZExt, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::ZExt, div, val.getType());
 	} else if (val.getType() != div->getType() && CastInst::castIsValid(Instruction::Trunc, div, val.getType())) {
-		val.getParent()->getInstList().insert(iter, div);
+		div->insertBefore(iter);
 		return CastInst::Create(Instruction::Trunc, div, val.getType());
 	} else
 		return div;
@@ -1575,10 +1575,10 @@ Instruction * IdiomsMagicDivMod::signedMod1(BasicBlock::iterator iter) const {
 	// value and modulo may have different types -> a conversion is needed
 	// conversion can be from to smaller or even bigger
 	if (val.getType() != mod->getType() && CastInst::castIsValid(Instruction::ZExt, mod, val.getType())) {
-		val.getParent()->getInstList().insert(iter, mod);
+		mod->insertBefore(iter);
 		return CastInst::Create(Instruction::ZExt, mod, val.getType());
 	} else if (val.getType() != mod->getType() && CastInst::castIsValid(Instruction::Trunc, mod, val.getType())) {
-		val.getParent()->getInstList().insert(iter, mod);
+		mod->insertBefore(iter);
 		return CastInst::Create(Instruction::Trunc, mod, val.getType());
 	} else
 		return mod;

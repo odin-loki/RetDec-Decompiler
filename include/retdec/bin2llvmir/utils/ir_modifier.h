@@ -36,16 +36,19 @@ class IrModifier
 		static llvm::Value* convertValueToType(
 				llvm::Value* val,
 				llvm::Type* type,
-				llvm::Instruction* before);
+				llvm::Instruction* before,
+				llvm::Type* destPointee = nullptr);
 
 		static llvm::Value* convertValueToTypeAfter(
 				llvm::Value* val,
 				llvm::Type* type,
-				llvm::Instruction* after);
+				llvm::Instruction* after,
+				llvm::Type* destPointee = nullptr);
 
 		static llvm::Constant* convertConstantToType(
 				llvm::Constant* val,
-				llvm::Type* type);
+				llvm::Type* type,
+				llvm::Type* destPointee = nullptr);
 
 		static llvm::CallInst* modifyCallInst(
 				llvm::CallInst* call,

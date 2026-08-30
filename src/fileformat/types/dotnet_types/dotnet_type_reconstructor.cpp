@@ -1472,7 +1472,31 @@ const DotnetClass* DotnetTypeReconstructor::selectClass(const TypeDefOrRef& type
 
 		result = itr->second.get();
 	}
-	// TODO TypeSpec is missing here
+	else if (refTable == MetadataTableType::TypeSpec)
+	{
+		if (!metadataStream || !blobStream)
+			return nullptr;
+		auto typeSpecTable = static_cast<const MetadataTable<TypeSpec>*>(
+			metadataStream->getMetadataTable(MetadataTableType::TypeSpec));
+		if (!typeSpecTable)
+			return nullptr;
+		auto typeSpec = typeSpecTable->getRow(typeDefOrRef.getIndex());
+		if (!typeSpec)
+			return nullptr;
+		auto signature = blobStream->getElement(typeSpec->signature.getIndex());
+		if (signature.empty())
+			return nullptr;
+		auto elem = static_cast<ElementType>(signature[0]);
+		if (elem != ElementType::Class && elem != ElementType::ValueType)
+			return nullptr;
+		signature.erase(signature.begin());
+		std::uint64_t bytesRead = 0;
+		TypeDefOrRef inner;
+		inner.setIndex(decodeUnsigned(signature, bytesRead));
+		if (bytesRead == 0)
+			return nullptr;
+		return selectClass(inner);
+	}
 
 	return result;
 }

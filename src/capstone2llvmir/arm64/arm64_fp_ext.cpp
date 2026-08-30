@@ -52,7 +52,7 @@ using namespace llvm;
 //===========================================================================
 static Value* callRoundIntrinsic(Intrinsic::ID id, Value* v, IRBuilder<>& irb) {
     Module* m = irb.GetInsertBlock()->getModule();
-    Function* fn = Intrinsic::getDeclaration(m, id, {v->getType()});
+    Function* fn = Intrinsic::getOrInsertDeclaration(m, id, {v->getType()});
     return irb.CreateCall(fn, {v});
 }
 
@@ -263,7 +263,7 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFMinMaxP(
 
     // Use minnum/maxnum intrinsic to get IEEE NaN propagation right.
     Module* m = irb.GetInsertBlock()->getModule();
-    Function* fn = Intrinsic::getDeclaration(m, intrin, {elemTy});
+    Function* fn = Intrinsic::getOrInsertDeclaration(m, intrin, {elemTy});
     Value* result = irb.CreateCall(fn, {lo_fp, hi_fp});
 
     storeOp(ai->operands[0], result, irb);

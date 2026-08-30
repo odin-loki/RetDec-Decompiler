@@ -431,21 +431,20 @@ struct ItaniumParser {
 
         if (outClass && parts.size() >= 2) {
             // Last part is the function name; everything before is the class chain.
+            // Well-known substitutions (Ss → "std::string") are not a class scope.
             std::string cls;
             for (std::size_t i=0; i+1<parts.size(); ++i) {
-                if (i) cls += "::";
+                if (parts[i].find("::") != std::string::npos) continue;
+                if (!cls.empty()) cls += "::";
                 cls += parts[i];
             }
             *outClass = cls;
         }
 
         if (parts.empty()) return {};
-        std::string result;
-        for (std::size_t i=0; i<parts.size(); ++i) {
-            if (i) result += "::";
-            result += parts[i];
-        }
-        return result;
+        // Nested name: last component is the function; callers store class
+        // chain separately via outClass.
+        return parts.back();
     }
 
     // ── Bare function type ────────────────────────────────────────────────────

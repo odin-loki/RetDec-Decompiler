@@ -41,6 +41,7 @@
 #include "retdec/llvmir2hll/ir/mul_op_expr.h"
 #include "retdec/llvmir2hll/ir/neq_op_expr.h"
 #include "retdec/llvmir2hll/ir/pointer_type.h"
+#include "retdec/llvmir2hll/ir/unknown_type.h"
 #include "retdec/llvmir2hll/ir/ptr_to_int_cast_expr.h"
 #include "retdec/llvmir2hll/ir/sub_op_expr.h"
 #include "retdec/llvmir2hll/ir/ternary_op_expr.h"
@@ -391,8 +392,8 @@ XorInstructionIsConvertedCorrectly) {
 
 TEST_F(LLVMInstructionsConverterTests,
 AddrSpaceCastInstructionIsConvertedCorrectly) {
-	auto srcType = llvm::Type::getInt32PtrTy(context, 256);
-	auto dstType = llvm::Type::getInt16PtrTy(context);
+	auto srcType = llvm::PointerType::get(context, 256);
+	auto dstType = llvm::PointerType::getUnqual(context);
 	SCOPED_TRACE("AddrSpaceCastInstructionIsConvertedCorrectly");
 	castInstIsConvertedCorrectly<BitCastExpr>(srcType, dstType,
 		llvm::Instruction::AddrSpaceCast);
@@ -400,8 +401,8 @@ AddrSpaceCastInstructionIsConvertedCorrectly) {
 
 TEST_F(LLVMInstructionsConverterTests,
 BitCastInstructionIsConvertedCorrectly) {
-	auto srcType = llvm::Type::getInt32PtrTy(context);
-	auto dstType = llvm::Type::getInt16PtrTy(context);
+	auto srcType = llvm::Type::getInt32Ty(context);
+	auto dstType = llvm::Type::getFloatTy(context);
 	SCOPED_TRACE("BitCastInstructionIsConvertedCorrectly");
 	castInstIsConvertedCorrectly<BitCastExpr>(srcType, dstType,
 		llvm::Instruction::BitCast);
@@ -473,7 +474,7 @@ FPTruncInstructionIsConvertedCorrectly) {
 TEST_F(LLVMInstructionsConverterTests,
 IntToPtrInstructionIsConvertedCorrectly) {
 	auto srcType = llvm::Type::getInt32Ty(context);
-	auto dstType = llvm::Type::getInt32PtrTy(context);
+	auto dstType = llvm::PointerType::getUnqual(context);
 	SCOPED_TRACE("IntToPtrInstructionIsConvertedCorrectly");
 	castInstIsConvertedCorrectly<IntToPtrCastExpr>(srcType, dstType,
 		llvm::Instruction::IntToPtr);
@@ -481,7 +482,7 @@ IntToPtrInstructionIsConvertedCorrectly) {
 
 TEST_F(LLVMInstructionsConverterTests,
 PtrToIntInstructionIsConvertedCorrectly) {
-	auto srcType = llvm::Type::getInt32PtrTy(context);
+	auto srcType = llvm::PointerType::getUnqual(context);
 	auto dstType = llvm::Type::getInt32Ty(context);
 	SCOPED_TRACE("PtrToIntInstructionIsConvertedCorrectly");
 	castInstIsConvertedCorrectly<PtrToIntCastExpr>(srcType, dstType,
@@ -587,7 +588,7 @@ TEST_F(LLVMInstructionsConverterTests,
 PointerInstPointeeMetadataOverridesTypedPointerElementType)
 {
 	auto* i32 = llvm::Type::getInt32Ty(context);
-	auto* i32Ptr = llvm::Type::getInt32PtrTy(context);
+	auto* i32Ptr = llvm::PointerType::getUnqual(context);
 	auto src = std::make_unique<llvm::Argument>(i32, "addr");
 	auto llvmInst = UPtr<llvm::IntToPtrInst>(new llvm::IntToPtrInst(src.get(), i32Ptr));
 	llvmInst->setMetadata("retdec.pointee", llvm::MDNode::get(context, {
@@ -606,9 +607,11 @@ PointerInstPointeeMetadataOverridesTypedPointerElementType)
 TEST_F(LLVMInstructionsConverterTests,
 BitCastInstPointeeMetadataOverridesCastDestType)
 {
-	auto* i32Ptr = llvm::Type::getInt32PtrTy(context);
-	auto src = std::make_unique<llvm::Argument>(i32Ptr, "p");
-	auto llvmInst = UPtr<llvm::BitCastInst>(new llvm::BitCastInst(src.get(), i32Ptr));
+	auto* srcTy = llvm::PointerType::get(context, 256);
+	auto* dstTy = llvm::PointerType::getUnqual(context);
+	auto src = std::make_unique<llvm::Argument>(srcTy, "p");
+	auto llvmInst = UPtr<llvm::AddrSpaceCastInst>(
+		new llvm::AddrSpaceCastInst(src.get(), dstTy));
 	llvmInst->setMetadata("retdec.pointee", llvm::MDNode::get(context, {
 			llvm::MDString::get(context, "i8")}));
 
@@ -627,7 +630,7 @@ TEST_F(LLVMInstructionsConverterTests,
 IntToPtrInstPointeeMetadataOverridesCastDestType)
 {
 	auto* i32 = llvm::Type::getInt32Ty(context);
-	auto* i32Ptr = llvm::Type::getInt32PtrTy(context);
+	auto* i32Ptr = llvm::PointerType::getUnqual(context);
 	auto src = std::make_unique<llvm::Argument>(i32, "addr");
 	auto llvmInst = UPtr<llvm::IntToPtrInst>(new llvm::IntToPtrInst(src.get(), i32Ptr));
 	llvmInst->setMetadata("retdec.pointee", llvm::MDNode::get(context, {
@@ -647,9 +650,11 @@ IntToPtrInstPointeeMetadataOverridesCastDestType)
 TEST_F(LLVMInstructionsConverterTests,
 LoadInstPointeeMetadataDoesNotWrapLoadedValueAsPointer)
 {
-	auto* i32Ptr = llvm::Type::getInt32PtrTy(context);
+	auto* i32 = llvm::Type::getInt32Ty(context);
+	auto* i32Ptr = llvm::PointerType::getUnqual(context);
 	auto src = std::make_unique<llvm::Argument>(i32Ptr, "p");
-	auto llvmInst = UPtr<llvm::LoadInst>(new llvm::LoadInst(src.get()));
+	auto llvmInst = UPtr<llvm::LoadInst>(new llvm::LoadInst(
+		i32, src.get(), "", false, llvm::Align(1), nullptr));
 	llvmInst->setMetadata("retdec.pointee", llvm::MDNode::get(context, {
 			llvm::MDString::get(context, "i8")}));
 
@@ -665,10 +670,11 @@ LoadInstPointeeMetadataDoesNotWrapLoadedValueAsPointer)
 TEST_F(LLVMInstructionsConverterTests,
 PointerLoadInstPointeeMetadataDoesNotDoubleWrap)
 {
-	auto* i8Ptr = llvm::Type::getInt8PtrTy(context);
+	auto* i8Ptr = llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0);
 	auto* i8PtrPtr = llvm::PointerType::get(i8Ptr, 0);
 	auto src = std::make_unique<llvm::Argument>(i8PtrPtr, "p");
-	auto llvmInst = UPtr<llvm::LoadInst>(new llvm::LoadInst(src.get()));
+	auto llvmInst = UPtr<llvm::LoadInst>(new llvm::LoadInst(
+		i8Ptr, src.get(), "", false, llvm::Align(1), nullptr));
 	llvmInst->setMetadata("retdec.pointee", llvm::MDNode::get(context, {
 			llvm::MDString::get(context, "i8*")}));
 
@@ -677,9 +683,7 @@ PointerLoadInstPointeeMetadataDoesNotDoubleWrap)
 	ASSERT_TRUE(var);
 	auto birPtr = cast<PointerType>(var->getType());
 	ASSERT_TRUE(birPtr);
-	auto birInt = cast<IntType>(birPtr->getContainedType());
-	ASSERT_TRUE(birInt);
-	EXPECT_EQ(8u, birInt->getSize());
+	ASSERT_TRUE(isa<UnknownType>(birPtr->getContainedType()));
 }
 
 } // namespace tests

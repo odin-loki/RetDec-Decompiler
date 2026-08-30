@@ -14,7 +14,7 @@
 
 #include <llvm/CodeGen/IntrinsicLowering.h>
 #include <llvm/ExecutionEngine/GenericValue.h>
-#include <llvm/IR/CallSite.h>
+#include <llvm/IR/InstrTypes.h>
 #include <llvm/IR/InstVisitor.h>
 #include <llvm/IR/Module.h>
 
@@ -137,7 +137,7 @@ class LocalExecutionContext
 		llvm::BasicBlock::iterator curInst;
 		/// Holds the call that called subframes.
 		/// NULL if main func or debugger invoked fn
-		llvm::CallSite caller;
+		llvm::CallBase* caller = nullptr;
 		/// Track memory allocated by alloca
 		AllocaHolder allocas;
 };

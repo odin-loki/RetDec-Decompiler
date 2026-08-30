@@ -19,6 +19,7 @@
 #include "retdec/llvmir2hll/ir/pointer_type.h"
 #include "retdec/llvmir2hll/ir/struct_type.h"
 #include "retdec/llvmir2hll/ir/type.h"
+#include "retdec/llvmir2hll/ir/unknown_type.h"
 #include "retdec/llvmir2hll/ir/void_type.h"
 #include "retdec/llvmir2hll/support/smart_ptr.h"
 
@@ -250,8 +251,7 @@ RecursiveStructTypeIsConvertedCorrectly) {
 	ASSERT_TRUE(isa<IntType>(birStructElemTypes[0]));
 	auto birStructElem2Type = cast<PointerType>(birStructElemTypes[1]);
 	ASSERT_TRUE(birStructElem2Type);
-	auto birContainedStruct = cast<StructType>(birStructElem2Type->getContainedType());
-	ASSERT_TRUE(birStructType->isEqualTo(birContainedStruct));
+	ASSERT_TRUE(isa<UnknownType>(birStructElem2Type->getContainedType()));
 }
 
 TEST_F(LLVMTypeConverterTests,
@@ -260,7 +260,7 @@ IntPointerTypeIsConvertedCorrectly) {
 
 	auto birPointerType = cast<PointerType>(birType);
 	ASSERT_TRUE(birPointerType);
-	ASSERT_TRUE(isa<IntType>(birPointerType->getContainedType()));
+	ASSERT_TRUE(isa<UnknownType>(birPointerType->getContainedType()));
 }
 
 TEST_F(LLVMTypeConverterTests,
@@ -269,7 +269,7 @@ FPPointerTypeIsConvertedCorrectly) {
 
 	auto birPointerType = cast<PointerType>(birType);
 	ASSERT_TRUE(birPointerType);
-	ASSERT_TRUE(isa<FloatType>(birPointerType->getContainedType()));
+	ASSERT_TRUE(isa<UnknownType>(birPointerType->getContainedType()));
 }
 
 TEST_F(LLVMTypeConverterTests,
@@ -278,12 +278,7 @@ FunctionPointerTypeWithoutVariableArgumentsIsConvertedCorrectly) {
 
 	auto birPointerType = cast<PointerType>(birType);
 	ASSERT_TRUE(birPointerType);
-	auto birFuncType = cast<FunctionType>(birPointerType->getContainedType());
-	ASSERT_TRUE(birFuncType);
-	ASSERT_TRUE(isa<IntType>(birFuncType->getRetType()));
-	ASSERT_EQ(1, birFuncType->getNumOfParams());
-	ASSERT_FALSE(birFuncType->isVarArg());
-	ASSERT_TRUE(isa<FloatType>(birFuncType->getParam(1)));
+	ASSERT_TRUE(isa<UnknownType>(birPointerType->getContainedType()));
 }
 
 TEST_F(LLVMTypeConverterTests,
@@ -292,9 +287,7 @@ FunctionPointerTypeWithVariableArgumentsIsConvertedCorrectly) {
 
 	auto birPointerType = cast<PointerType>(birType);
 	ASSERT_TRUE(birPointerType);
-	auto birFuncType = cast<FunctionType>(birPointerType->getContainedType());
-	ASSERT_TRUE(birFuncType);
-	ASSERT_TRUE(birFuncType->isVarArg());
+	ASSERT_TRUE(isa<UnknownType>(birPointerType->getContainedType()));
 }
 
 TEST_F(LLVMTypeConverterTests,

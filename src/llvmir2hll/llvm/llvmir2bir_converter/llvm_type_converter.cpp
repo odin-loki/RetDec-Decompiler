@@ -174,7 +174,7 @@ ShPtr<PointerType> LLVMTypeConverter::convert(const llvm::PointerType *type) {
 	auto birType = PointerType::create(UnknownType::create());
 	mapLLVMTypeToType.emplace(type, birType);
 
-	birType->setContainedType(convert(type->getElementType()));
+	birType->setContainedType(UnknownType::create());
 	return birType;
 }
 
@@ -213,7 +213,7 @@ ShPtr<StructType> LLVMTypeConverter::convert(const llvm::StructType *type) {
 		elemTypes.push_back(convert(elem));
 	}
 
-	std::string name = type->hasName() ? type->getName() : "";
+	std::string name = type->hasName() ? type->getName().str() : "";
 	return StructType::create(elemTypes, name);
 }
 

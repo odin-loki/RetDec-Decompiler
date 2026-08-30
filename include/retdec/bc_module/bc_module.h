@@ -195,6 +195,9 @@ struct BcClass {
     std::string fqName;         ///< Fully-qualified: "java/lang/String" or "System.String"
     std::string packageName;    ///< "java/lang" or "System"
     std::string outerClass;     ///< For inner/nested classes
+    std::string nestHost;       ///< JVM NestHost class name (slash-separated)
+    std::vector<std::string> nestMembers;          ///< JVM NestMembers
+    std::vector<std::string> permittedSubclasses;  ///< JVM PermittedSubclasses
 
     // Generics
     std::vector<std::string> typeParams;    ///< "T", "E extends Comparable<E>"

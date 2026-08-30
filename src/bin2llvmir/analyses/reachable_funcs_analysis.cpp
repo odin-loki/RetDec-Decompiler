@@ -179,7 +179,7 @@ std::set<llvm::Function*> ReachableFuncsAnalysis::getReachableDefinedFuncsFor(
 */
 std::set<llvm::Function*> ReachableFuncsAnalysis::getGloballyReachableFuncsFor(llvm::Module &module) {
 	std::set<llvm::Function*> reachableFuncs;
-	for (GlobalVariable &global : module.getGlobalList()) {
+	for (GlobalVariable &global : module.globals()) {
 		if (global.hasInitializer() && isa<ConstantStruct>(global.getInitializer())) {
 			ConstantStruct *Struct = cast<ConstantStruct>(global.getInitializer());
 			for (unsigned i = 0; i < Struct->getNumOperands(); ++i) {

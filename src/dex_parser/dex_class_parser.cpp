@@ -7,12 +7,163 @@
 #include "retdec/dex_parser/dex_class_parser.h"
 #include "retdec/bc_module/bc_type.h"
 
+#include <algorithm>
+#include <cstring>
 #include <sstream>
+#include <vector>
 
 namespace retdec {
 namespace dex_parser {
 
 using namespace bc_module;
+
+static void skipEncodedValue(DexReader& br);
+
+static void skipEncodedArray(DexReader& br) {
+    uint32_t n = br.uleb128();
+    for (uint32_t i = 0; i < n; ++i)
+        skipEncodedValue(br);
+}
+
+static void skipEncodedAnnotation(DexReader& br) {
+    br.uleb128();
+    uint32_t n = br.uleb128();
+    for (uint32_t i = 0; i < n; ++i) {
+        br.uleb128();
+        skipEncodedValue(br);
+    }
+}
+
+static void skipEncodedValue(DexReader& br) {
+    uint8_t hdr  = br.u1();
+    uint8_t type = hdr & 0x1f;
+    uint8_t arg  = (hdr >> 5) & 0x7;
+    switch (type) {
+    case 0x1e: // VALUE_NULL
+    case 0x1f: // VALUE_BOOLEAN (value in arg bits)
+        return;
+    case 0x1c: // VALUE_ARRAY
+        skipEncodedArray(br);
+        return;
+    case 0x1d: // VALUE_ANNOTATION
+        skipEncodedAnnotation(br);
+        return;
+    default:
+        br.skip(static_cast<size_t>(arg) + 1);
+        return;
+    }
+}
+
+static uint64_t readEncodedBits(DexReader& br, uint8_t n) {
+    uint64_t v = 0;
+    for (uint8_t i = 0; i < n; ++i)
+        v |= static_cast<uint64_t>(br.u1()) << (8 * i);
+    return v;
+}
+
+static int64_t signExtendEncoded(uint64_t v, uint8_t n) {
+    if (n == 0) return 0;
+    if (n >= 8) return static_cast<int64_t>(v);
+    int bits = static_cast<int>(n) * 8;
+    return static_cast<int64_t>(v << (64 - bits)) >> (64 - bits);
+}
+
+static void applyEncodedValue(BcField& field, DexReader& br, const DexFile& dex) {
+    uint8_t hdr  = br.u1();
+    uint8_t type = hdr & 0x1f;
+    uint8_t arg  = (hdr >> 5) & 0x7;
+    uint8_t nbytes = static_cast<uint8_t>(arg + 1);
+    switch (type) {
+    case 0x00: case 0x02: case 0x03: case 0x04: case 0x06:
+        field.constantIntValue = signExtendEncoded(readEncodedBits(br, nbytes), nbytes);
+        break;
+    case 0x10: {
+        uint32_t bits = static_cast<uint32_t>(readEncodedBits(br, nbytes > 4 ? 4 : nbytes));
+        if (nbytes > 4) br.skip(nbytes - 4);
+        float f = 0.0f;
+        std::memcpy(&f, &bits, sizeof(f));
+        field.constantFltValue = static_cast<double>(f);
+        break;
+    }
+    case 0x11: {
+        uint64_t bits = readEncodedBits(br, nbytes > 8 ? 8 : nbytes);
+        double d = 0.0;
+        std::memcpy(&d, &bits, sizeof(d));
+        field.constantFltValue = d;
+        break;
+    }
+    case 0x17: {
+        uint64_t idx = readEncodedBits(br, nbytes);
+        if (idx < dex.stringCount())
+            field.constantStrValue = dex.string(static_cast<uint32_t>(idx));
+        break;
+    }
+    case 0x1e:
+        break;
+    case 0x1f:
+        field.constantIntValue = arg != 0 ? 1 : 0;
+        break;
+    case 0x1c:
+        skipEncodedArray(br);
+        break;
+    case 0x1d:
+        skipEncodedAnnotation(br);
+        break;
+    default:
+        br.skip(nbytes);
+        break;
+    }
+}
+
+static void fillStaticConstants(BcClass& cls, const DexFile& dex,
+                                uint32_t off, size_t nStatic) {
+    if (off == 0 || nStatic == 0)
+        return;
+    try {
+        DexReader br(dex.rawData(), dex.rawSize());
+        br.seek(off);
+        uint32_t count = br.uleb128();
+        size_t n = std::min({static_cast<size_t>(count), nStatic, cls.fields.size()});
+        for (size_t i = 0; i < n; ++i)
+            applyEncodedValue(cls.fields[i], br, dex);
+        for (size_t i = n; i < count; ++i)
+            skipEncodedValue(br);
+    } catch (const DexParseError&) {
+    }
+}
+
+static std::vector<BcAnnotation> readAnnotationSet(const DexFile& dex,
+                                                   uint32_t setOff) {
+    std::vector<BcAnnotation> out;
+    if (setOff == 0)
+        return out;
+    DexReader ar(dex.rawData(), dex.rawSize());
+    ar.seek(setOff);
+    uint32_t annSetSize = ar.u4();
+    for (uint32_t i = 0; i < annSetSize; ++i) {
+        uint32_t annOff = ar.u4();
+        if (annOff == 0) continue;
+        DexReader br(dex.rawData(), dex.rawSize());
+        br.seek(annOff);
+        br.u1(); // visibility
+        uint32_t typeIdx  = br.uleb128();
+        uint32_t numElems = br.uleb128();
+        if (typeIdx >= dex.typeCount()) continue;
+        BcAnnotation ann;
+        ann.typeName = dex.typeName(typeIdx);
+        for (uint32_t e = 0; e < numElems; ++e) {
+            uint32_t nameIdx = br.uleb128();
+            std::string key = (nameIdx < dex.stringCount())
+                              ? dex.string(nameIdx) : "";
+            skipEncodedValue(br);
+            BcAnnotationValue val;
+            val.kind = BcAnnotationValue::Kind::String;
+            ann.elements[key] = val;
+        }
+        out.push_back(std::move(ann));
+    }
+    return out;
+}
 
 DexClassParser::DexClassParser(const DexFile& dexFile, DexParseOptions opts)
     : dex_(dexFile), opts_(opts), lifter_(dexFile, LiftOptions{opts.parseBytecode}) {}
@@ -30,6 +181,11 @@ BcAccess DexClassParser::convertAccessFlags(uint32_t flags) const {
     if (flags & ACC_SYNTHETIC)    acc |= static_cast<uint32_t>(BcAccess::Synthetic);
     if (flags & ACC_NATIVE)       acc |= static_cast<uint32_t>(BcAccess::Native);
     if (flags & ACC_SYNCHRONIZED) acc |= static_cast<uint32_t>(BcAccess::Synchronized);
+    if (flags & ACC_VOLATILE)     acc |= static_cast<uint32_t>(BcAccess::Volatile);
+    if (flags & ACC_BRIDGE)       acc |= static_cast<uint32_t>(BcAccess::Bridge);
+    if (flags & ACC_TRANSIENT)    acc |= static_cast<uint32_t>(BcAccess::Transient);
+    if (flags & ACC_VARARGS)      acc |= static_cast<uint32_t>(BcAccess::VarArgs);
+    if (flags & ACC_STRICT)       acc |= static_cast<uint32_t>(BcAccess::Strict);
     return static_cast<BcAccess>(acc);
 }
 
@@ -165,43 +321,55 @@ void DexClassParser::parseAnnotations(BcClass& cls, uint32_t annotationsOff) {
         uint32_t fieldsSize    = r.u4();
         uint32_t methodsSize   = r.u4();
         uint32_t paramsSize    = r.u4();
-        r.skip((fieldsSize + methodsSize + paramsSize) * 8u);
 
         if (classAnnotOff != 0) {
-            DexReader ar(dex_.rawData(), dex_.rawSize());
-            ar.seek(classAnnotOff);
-            uint32_t annSetSize = ar.u4();
-            for (uint32_t i = 0; i < annSetSize; ++i) {
-                uint32_t annOff = ar.u4();
-                if (annOff == 0) continue;
+            auto anns = readAnnotationSet(dex_, classAnnotOff);
+            cls.annotations.insert(cls.annotations.end(),
+                                   anns.begin(), anns.end());
+        }
 
-                DexReader br(dex_.rawData(), dex_.rawSize());
-                br.seek(annOff);
-                br.u1(); // visibility
-                uint32_t typeIdx  = br.uleb128();
-                uint32_t numElems = br.uleb128();
-
-                if (typeIdx >= dex_.typeCount()) continue;
-
-                BcAnnotation ann;
-                ann.typeName = dex_.typeName(typeIdx);
-
-                for (uint32_t e = 0; e < numElems; ++e) {
-                    uint32_t nameIdx = br.uleb128();
-                    std::string key = (nameIdx < dex_.stringCount())
-                                      ? dex_.string(nameIdx) : "";
-                    // Skip encoded_value (simplified, just read the type byte)
-                    uint8_t valueArg  = br.u1();
-                    uint8_t argBits   = (valueArg >> 5) & 0x7;
-                    br.skip(static_cast<size_t>(argBits) + 1);
-
-                    BcAnnotationValue val;
-                    val.kind = BcAnnotationValue::Kind::String;
-                    ann.elements[key] = val;
-                }
-
-                cls.annotations.push_back(std::move(ann));
+        for (uint32_t i = 0; i < fieldsSize; ++i) {
+            uint32_t fieldIdx = r.u4();
+            uint32_t setOff   = r.u4();
+            if (fieldIdx >= dex_.fieldCount())
+                continue;
+            if (BcField* f = cls.findField(dex_.fieldName(fieldIdx))) {
+                f->annotations = readAnnotationSet(dex_, setOff);
+                if (opts_.resolveGenerics)
+                    f->signature = resolveGenericSignature(
+                        annotationsOff, fieldIdx, false);
             }
+        }
+        for (uint32_t i = 0; i < methodsSize; ++i) {
+            uint32_t methodIdx = r.u4();
+            uint32_t setOff    = r.u4();
+            if (methodIdx >= dex_.methodCount())
+                continue;
+            if (BcMethod* m = cls.findMethod(dex_.methodName(methodIdx),
+                                             dex_.methodProto(methodIdx))) {
+                m->annotations = readAnnotationSet(dex_, setOff);
+                if (opts_.resolveGenerics)
+                    m->signature = resolveGenericSignature(
+                        annotationsOff, methodIdx, true);
+            }
+        }
+        for (uint32_t i = 0; i < paramsSize; ++i) {
+            uint32_t methodIdx = r.u4();
+            uint32_t listOff   = r.u4();
+            if (methodIdx >= dex_.methodCount() || listOff == 0)
+                continue;
+            DexReader lr(dex_.rawData(), dex_.rawSize());
+            lr.seek(listOff);
+            uint32_t nsets = lr.u4();
+            std::vector<std::vector<BcAnnotation>> params;
+            params.reserve(nsets);
+            for (uint32_t p = 0; p < nsets; ++p) {
+                uint32_t setOff = lr.u4();
+                params.push_back(readAnnotationSet(dex_, setOff));
+            }
+            if (BcMethod* m = cls.findMethod(dex_.methodName(methodIdx),
+                                             dex_.methodProto(methodIdx)))
+                m->paramAnnotations = std::move(params);
         }
     } catch (const std::exception&) {
         // Non-fatal
@@ -213,7 +381,6 @@ void DexClassParser::parseAnnotations(BcClass& cls, uint32_t annotationsOff) {
 std::string DexClassParser::resolveGenericSignature(uint32_t annotationsOff,
                                                       uint32_t memberIdx,
                                                       bool isMethod) const {
-    (void)memberIdx; (void)isMethod;
     if (!opts_.resolveGenerics || annotationsOff == 0)
         return {};
 
@@ -221,41 +388,66 @@ std::string DexClassParser::resolveGenericSignature(uint32_t annotationsOff,
         DexReader r(dex_.rawData(), dex_.rawSize());
         r.seek(annotationsOff);
         uint32_t classAnnotOff = r.u4();
-        r.u4(); r.u4(); r.u4();
+        uint32_t fieldsSize    = r.u4();
+        uint32_t methodsSize   = r.u4();
+        r.u4(); // paramsSize
 
-        if (classAnnotOff == 0) return {};
-        DexReader ar(dex_.rawData(), dex_.rawSize());
-        ar.seek(classAnnotOff);
-        uint32_t annSetSize = ar.u4();
-        for (uint32_t i = 0; i < annSetSize; ++i) {
-            uint32_t annOff = ar.u4();
-            if (annOff == 0) continue;
-            DexReader br(dex_.rawData(), dex_.rawSize());
-            br.seek(annOff);
-            br.u1();
-            uint32_t typeIdx = br.uleb128();
-            if (typeIdx >= dex_.typeCount()) continue;
-            std::string tname = dex_.typeName(typeIdx);
-            if (tname != "Ldalvik/annotation/Signature;") continue;
+        auto sigFromSet = [&](uint32_t setOff) -> std::string {
+            if (setOff == 0) return {};
+            DexReader ar(dex_.rawData(), dex_.rawSize());
+            ar.seek(setOff);
+            uint32_t annSetSize = ar.u4();
+            for (uint32_t i = 0; i < annSetSize; ++i) {
+                uint32_t annOff = ar.u4();
+                if (annOff == 0) continue;
+                DexReader br(dex_.rawData(), dex_.rawSize());
+                br.seek(annOff);
+                br.u1();
+                uint32_t typeIdx = br.uleb128();
+                if (typeIdx >= dex_.typeCount()) continue;
+                std::string tname = dex_.typeName(typeIdx);
+                if (tname != "Ldalvik/annotation/Signature;") continue;
 
-            uint32_t numElems = br.uleb128();
-            for (uint32_t e = 0; e < numElems; ++e) {
-                br.uleb128(); // name idx
-                uint8_t va = br.u1();
-                if ((va & 0x1F) != 0x1c) break;
-                uint32_t arrSize = br.uleb128();
-                std::string sig;
-                for (uint32_t j = 0; j < arrSize; ++j) {
-                    uint8_t ev = br.u1();
-                    uint8_t argBits = (ev >> 5) & 0x7;
-                    uint32_t strIdx = 0;
-                    for (uint32_t b = 0; b <= argBits; ++b)
-                        strIdx |= (static_cast<uint32_t>(br.u1()) << (b * 8));
-                    if (strIdx < dex_.stringCount())
-                        sig += dex_.string(strIdx);
+                uint32_t numElems = br.uleb128();
+                for (uint32_t e = 0; e < numElems; ++e) {
+                    br.uleb128(); // name idx
+                    uint8_t va = br.u1();
+                    if ((va & 0x1F) != 0x1c) break;
+                    uint32_t arrSize = br.uleb128();
+                    std::string sig;
+                    for (uint32_t j = 0; j < arrSize; ++j) {
+                        uint8_t ev = br.u1();
+                        uint8_t argBits = (ev >> 5) & 0x7;
+                        uint32_t strIdx = 0;
+                        for (uint32_t b = 0; b <= argBits; ++b)
+                            strIdx |= (static_cast<uint32_t>(br.u1()) << (b * 8));
+                        if (strIdx < dex_.stringCount())
+                            sig += dex_.string(strIdx);
+                    }
+                    return sig;
                 }
-                return sig;
             }
+            return {};
+        };
+
+        if (!isMethod && memberIdx == 0)
+            return sigFromSet(classAnnotOff);
+
+        if (!isMethod) {
+            for (uint32_t i = 0; i < fieldsSize; ++i) {
+                uint32_t fidx = r.u4();
+                uint32_t off  = r.u4();
+                if (fidx == memberIdx)
+                    return sigFromSet(off);
+            }
+            return {};
+        }
+        r.skip(fieldsSize * 8u);
+        for (uint32_t i = 0; i < methodsSize; ++i) {
+            uint32_t midx = r.u4();
+            uint32_t off  = r.u4();
+            if (midx == memberIdx)
+                return sigFromSet(off);
         }
     } catch (const std::exception&) {}
     return {};
@@ -310,22 +502,24 @@ DexClassResult DexClassParser::parseClass(uint32_t classDefIdx) {
     if (cd.sourceFileIdx != ClassDef::NO_INDEX && cd.sourceFileIdx < dex_.stringCount())
         bcClass->sourceFile = dex_.string(cd.sourceFileIdx);
 
-    // Annotations
-    if (opts_.parseAnnotations)
-        parseAnnotations(*bcClass, cd.annotationsOff);
-
-    // Generic signature
-    if (opts_.resolveGenerics)
-        bcClass->signature = resolveGenericSignature(cd.annotationsOff, cd.classIdx, false);
-
-    // Fields and methods
+    // Fields and methods first so field/method annotation lists can attach.
+    size_t nStatic = 0;
     if (cd.classDataOff != 0) {
         ClassData classData = dex_.readClassData(cd.classDataOff);
+        nStatic = classData.staticFields.size();
         parseFields(*bcClass, classData.staticFields,   true);
         parseFields(*bcClass, classData.instanceFields, false);
         parseMethods(*bcClass, classData.directMethods);
         parseMethods(*bcClass, classData.virtualMethods);
     }
+
+    fillStaticConstants(*bcClass, dex_, cd.staticValuesOff, nStatic);
+
+    if (opts_.parseAnnotations)
+        parseAnnotations(*bcClass, cd.annotationsOff);
+
+    if (opts_.resolveGenerics)
+        bcClass->signature = resolveGenericSignature(cd.annotationsOff, 0, false);
 
     result.bcClass = std::move(bcClass);
     return result;

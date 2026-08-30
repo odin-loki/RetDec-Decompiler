@@ -47,7 +47,7 @@ bool IdiomsAnalysis::analyse(llvm::BasicBlock & bb, llvm::Instruction * (IdiomsA
 			if (! isa<PHINode>(res) && isa<PHINode>(insn))
 				insn = InstParent->getFirstInsertionPt();
 
-			InstParent->getInstList().insert(insn, res);
+			res->insertBefore(insn);
 
 			(*insn).eraseFromParent();
 		}

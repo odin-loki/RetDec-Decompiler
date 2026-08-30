@@ -245,6 +245,27 @@ struct ChaCha20Evidence {
     int   sigmaWords       = 0;       ///< how many of the four sigma words
 };
 
+struct Salsa20Evidence {
+    bool  found            = false;
+    float confidence       = 0.0f;
+    bool  hasRotConst7     = false;
+    bool  hasRotConst9     = false;
+    bool  hasRotConst13    = false;
+    bool  hasRotConst18    = false;
+    bool  hasAddXorRotSeq  = false;   ///< Add+Xor+(Shl or Or)
+};
+
+/** RFC 7539 clamp / poly1305-donna 26-bit limb masks. */
+struct Poly1305Evidence {
+    bool  found            = false;
+    float confidence       = 0.0f;
+    bool  hasClampLo       = false;   ///< 0x0ffffffc0fffffff
+    bool  hasClampHi       = false;   ///< 0x0ffffffc0ffffffc
+    bool  hasDonnaR1       = false;   ///< 0x3ffff03
+    bool  hasDonnaR2       = false;   ///< 0x3ffc0ff
+    bool  hasDonnaR3       = false;   ///< 0x3f03fff
+};
+
 struct HMACEvidence {
     bool  found            = false;
     float confidence       = 0.0f;
@@ -339,6 +360,42 @@ public:
 private:
     ChaCha20Evidence analyse(const ssa::SSAFunction& fn) const;
     float            score(const ChaCha20Evidence& ev) const;
+};
+
+/**
+ * Salsa20 detector — quarter-round Add+Xor+Rotate with constants 7/9/13/18.
+ * Does not score the shared "expand 32-byte k" sigma words (ChaCha20 owns those).
+ */
+class Salsa20Detector : public ICryptoDetector {
+public:
+    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
+    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::Salsa20; }
+private:
+    Salsa20Evidence analyse(const ssa::SSAFunction& fn) const;
+    float           score(const Salsa20Evidence& ev) const;
+};
+
+/**
+ * Poly1305 detector — RFC 7539 64-bit clamp masks and donna 26-bit r limbs.
+ * Does not score 0x3ffffff / 0x0fffffff (too common as bit masks).
+ */
+class Poly1305Detector : public ICryptoDetector {
+public:
+    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
+    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::Poly1305; }
+private:
+    Poly1305Evidence analyse(const ssa::SSAFunction& fn) const;
+    float            score(const Poly1305Evidence& ev) const;
+};
+
+/**
+ * Curve25519 detector — unique Montgomery-ladder constant 121665 (0x1db41).
+ * Does not score generic Montgomery multiplication (RSADetector owns that).
+ */
+class Curve25519Detector : public ICryptoDetector {
+public:
+    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
+    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::ECC; }
 };
 
 /** HMAC detector — ipad/opad constant XOR. */

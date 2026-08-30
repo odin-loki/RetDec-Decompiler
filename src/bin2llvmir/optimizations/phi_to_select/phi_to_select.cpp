@@ -44,7 +44,7 @@ void attachPointeeOnPointerCast(Value* v)
     {
         return;
     }
-    llvm_utils::setPointeeTypeMetadata(i, pt->getPointerElementType());
+    llvm_utils::setPointeeTypeMetadata(i, llvm_utils::pointeeType(i));
 }
 
 } // namespace

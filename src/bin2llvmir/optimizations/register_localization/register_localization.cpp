@@ -159,7 +159,7 @@ bool RegisterLocalization::run()
 				{
 					continue;
 				}
-				if (a->hasName() && a->getName().startswith("stack_var_"))
+				if (a->hasName() && a->getName().starts_with("stack_var_"))
 				{
 					traceRegLoc(
 						"stack-var "

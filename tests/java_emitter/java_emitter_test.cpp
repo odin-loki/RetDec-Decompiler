@@ -378,6 +378,128 @@ TEST(JavaClassEmitter, EmitsAnnotation) {
     EXPECT_TRUE(contains(writer.str(), "@Deprecated"));
 }
 
+TEST(JavaClassEmitter, EmitsRecordComponents) {
+    ImportSet imports("", "Point");
+    JavaTypePrinter tp(imports);
+    JavaClassEmitter emitter(imports, tp, nullptr);
+
+    BcClass cls = makeClass("Point");
+    cls.isRecord = true;
+    cls.access = BcAccess::Public;
+
+    BcField x;
+    x.name = "x";
+    x.type = types::Int();
+    cls.fields.push_back(x);
+    BcField y = x;
+    y.name = "y";
+    cls.fields.push_back(y);
+
+    BcMethod ctor;
+    ctor.name = "<init>";
+    ctor.isConstructor = true;
+    ctor.paramNames = {"x", "y"};
+    ctor.descriptor.params = {
+        std::make_shared<BcType>(types::Int()),
+        std::make_shared<BcType>(types::Int())
+    };
+    cls.methods.push_back(ctor);
+
+    CodeWriter writer;
+    emitter.emitClass(cls, writer);
+    EXPECT_TRUE(contains(writer.str(), "record Point(int x, int y) {"));
+}
+
+TEST(JavaClassEmitter, EmitsParamAnnotations) {
+    ImportSet imports("", "Foo");
+    JavaTypePrinter tp(imports);
+    JavaClassEmitter emitter(imports, tp, nullptr);
+
+    BcClass cls = makeClass("Foo");
+    cls.access = BcAccess::Public;
+
+    BcMethod m;
+    m.name = "foo";
+    m.access = BcAccess::Public;
+    m.isAbstract = true;
+    m.descriptor.returnType = std::make_shared<BcType>(types::Void());
+    m.descriptor.params = {std::make_shared<BcType>(types::Int())};
+    m.paramNames = {"n"};
+    BcAnnotation ann;
+    ann.typeName = "java.lang.Deprecated";
+    m.paramAnnotations.push_back({ann});
+    cls.methods.push_back(m);
+
+    CodeWriter writer;
+    emitter.emitClass(cls, writer);
+    EXPECT_TRUE(contains(writer.str(), "@Deprecated int n"));
+}
+
+TEST(JavaClassEmitter, EmitsVarArgs) {
+    ImportSet imports("", "Foo");
+    JavaTypePrinter tp(imports);
+    JavaClassEmitter emitter(imports, tp, nullptr);
+
+    BcClass cls = makeClass("Foo");
+    cls.access = BcAccess::Public;
+
+    BcMethod m;
+    m.name = "log";
+    m.access = BcAccess::Public | BcAccess::VarArgs;
+    m.isAbstract = true;
+    m.descriptor.returnType = std::make_shared<BcType>(types::Void());
+    m.descriptor.params = {std::make_shared<BcType>(arrayType(types::Int()))};
+    m.paramNames = {"xs"};
+    cls.methods.push_back(m);
+
+    CodeWriter writer;
+    emitter.emitClass(cls, writer);
+    EXPECT_TRUE(contains(writer.str(), "int... xs"));
+}
+
+TEST(JavaClassEmitter, EmitsSourceFileComment) {
+    ImportSet imports("", "Foo");
+    JavaTypePrinter tp(imports);
+    JavaClassEmitter emitter(imports, tp, nullptr);
+
+    BcClass cls = makeClass("Foo");
+    cls.access = BcAccess::Public;
+    cls.sourceFile = "Foo.java";
+
+    CodeWriter writer;
+    emitter.emitClass(cls, writer);
+    EXPECT_TRUE(contains(writer.str(), "// SourceFile: Foo.java"));
+}
+
+TEST(JavaClassEmitter, EmitsModuleKeyword) {
+    ImportSet imports("", "mod");
+    JavaTypePrinter tp(imports);
+    JavaClassEmitter emitter(imports, tp, nullptr);
+
+    BcClass cls = makeClass("mod");
+    cls.access = BcAccess::Public;
+    cls.isModule = true;
+
+    CodeWriter writer;
+    emitter.emitClass(cls, writer);
+    EXPECT_TRUE(contains(writer.str(), "module mod"));
+}
+
+TEST(JavaClassEmitter, EmitsSealedWithPermits) {
+    ImportSet imports("", "Shape");
+    JavaTypePrinter tp(imports);
+    JavaClassEmitter emitter(imports, tp, nullptr);
+
+    BcClass cls = makeClass("Shape");
+    cls.access = BcAccess::Public | BcAccess::Sealed;
+    cls.permittedSubclasses.push_back("Circle");
+
+    CodeWriter writer;
+    emitter.emitClass(cls, writer);
+    EXPECT_TRUE(contains(writer.str(), "sealed class Shape"));
+    EXPECT_TRUE(contains(writer.str(), "permits Circle"));
+}
+
 // ─── JavaFileEmitter tests ────────────────────────────────────────────────────
 
 TEST(JavaFileEmitter, EmitsPackageDeclaration) {

@@ -12,6 +12,7 @@
 #include "retdec/llvmir2hll/ir/int_type.h"
 #include "retdec/llvmir2hll/ir/module.h"
 #include "retdec/llvmir2hll/ir/pointer_type.h"
+#include "retdec/llvmir2hll/ir/unknown_type.h"
 #include "retdec/llvmir2hll/ir/variable.h"
 #include "retdec/llvmir2hll/ir/void_type.h"
 #include "retdec/llvmir2hll/support/smart_ptr.h"
@@ -94,9 +95,7 @@ FunctionDefinitionParametersAreConvertedCorrectly) {
 	ASSERT_EQ("str"s, param2->getName());
 	auto param2Type = cast<PointerType>(param2->getType());
 	ASSERT_TRUE(param2Type);
-	auto param2ContainedType = cast<IntType>(param2Type->getContainedType());
-	ASSERT_TRUE(param2ContainedType);
-	ASSERT_EQ(8, param2ContainedType->getSize());
+	ASSERT_TRUE(isa<UnknownType>(param2Type->getContainedType()));
 }
 
 TEST_F(LLVMIR2BIRConverterFunctionsTests,

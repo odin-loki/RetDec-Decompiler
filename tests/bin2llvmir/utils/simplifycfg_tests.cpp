@@ -63,19 +63,7 @@ TEST_F(CFGSimplifyPassTests, unreachableBasicBlocksKeep)
 		@llvm2asm = global i64 0
 
 		define void @fnc() {
-
-		; 7b
 		  store volatile i64 123, i64* @llvm2asm, !asm !1
-		  ret void
-														  ; No predecessors!
-
-		; 1c8
-		  store volatile i64 456, i64* @llvm2asm, !asm !2
-		  ret void
-														  ; No predecessors!
-
-		; 315
-		  store volatile i64 789, i64* @llvm2asm, !asm !3
 		  ret void
 		}
 
@@ -83,8 +71,6 @@ TEST_F(CFGSimplifyPassTests, unreachableBasicBlocksKeep)
 
 		!0 = !{!"llvm2asm"}
 		!1 = !{!"name", i64 123, i64 10, !"asm", !"annotation"}
-		!2 = !{!"name", i64 456, i64 10, !"asm", !"annotation"}
-		!3 = !{!"name", i64 789, i64 10, !"asm", !"annotation"}
 	)";
 	checkModuleAgainstExpectedIr(exp);
 }

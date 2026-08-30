@@ -532,7 +532,7 @@ bool MainDetection::applyResult(retdec::common::Address mainAddr)
 			return false;
 		}
 
-		std::string n = f->getName();
+		std::string n = f->getName().str();
 		// TODO: better, we want to know it is main, but we do not want to
 		// rename it if it is from IDA (and maybe never).
 		if (n != "main")

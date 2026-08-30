@@ -11,6 +11,7 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Pass.h>
 
 #include "retdec/bin2llvmir/optimizations/idioms/idioms_types.h"
 

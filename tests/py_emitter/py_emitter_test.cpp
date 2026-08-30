@@ -593,6 +593,56 @@ TEST_F(StmtEmitterTest, TryFinally) {
     EXPECT_NE(std::string::npos, out.find("finally:"));
 }
 
+TEST_F(StmtEmitterTest, MatchValuePattern) {
+    PyStmt s;
+    s.kind = PyStmt::Kind::Match;
+    s.expr = makeName("x");
+    auto pat = std::make_shared<PyPattern>();
+    pat->kind = PyPattern::Kind::MatchValue;
+    pat->value = makeConst(int64_t{1});
+    PyMatchCase mc;
+    mc.pattern = pat;
+    mc.body = {makePass()};
+    s.cases.push_back(mc);
+    stmt.emitStmt(s);
+    std::string out = writer.str();
+    EXPECT_NE(std::string::npos, out.find("match x:"));
+    EXPECT_NE(std::string::npos, out.find("case 1:"));
+}
+
+TEST_F(StmtEmitterTest, MatchCaptureAndSequence) {
+    PyStmt s;
+    s.kind = PyStmt::Kind::Match;
+    s.expr = makeName("v");
+
+    auto asPat = std::make_shared<PyPattern>();
+    asPat->kind = PyPattern::Kind::MatchAs;
+    asPat->name = std::string{"y"};
+    PyMatchCase c0;
+    c0.pattern = asPat;
+    c0.body = {makePass()};
+    s.cases.push_back(c0);
+
+    auto seq = std::make_shared<PyPattern>();
+    seq->kind = PyPattern::Kind::MatchSequence;
+    auto p0 = std::make_shared<PyPattern>();
+    p0->kind = PyPattern::Kind::MatchValue;
+    p0->value = makeConst(int64_t{0});
+    auto p1 = std::make_shared<PyPattern>();
+    p1->kind = PyPattern::Kind::MatchAs;
+    p1->name = std::string{"rest"};
+    seq->patterns = {p0, p1};
+    PyMatchCase c1;
+    c1.pattern = seq;
+    c1.body = {makePass()};
+    s.cases.push_back(c1);
+
+    stmt.emitStmt(s);
+    std::string out = writer.str();
+    EXPECT_NE(std::string::npos, out.find("case y:"));
+    EXPECT_NE(std::string::npos, out.find("case [0, rest]:"));
+}
+
 // ─── PyFileEmitter ───────────────────────────────────────────────────────────
 
 TEST(PyFileEmitter, EmptyModule) {

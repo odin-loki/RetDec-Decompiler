@@ -132,7 +132,8 @@ static constexpr uint16_t S_LDATA32 = 0x110c;
 static constexpr uint16_t S_PUB32   = 0x110e;
 static constexpr uint16_t S_END     = 0x0006;
 
-// Procedure symbol (S_GPROC32 / S_LPROC32)
+// Procedure symbol (S_GPROC32 / S_LPROC32) — on-disk, no tail padding
+#pragma pack(push, 1)
 struct ProcSym32 {
     uint32_t pParent;
     uint32_t pEnd;
@@ -146,6 +147,7 @@ struct ProcSym32 {
     uint8_t  flags;
     // name follows immediately
 };
+#pragma pack(pop)
 
 // Data symbol (S_GDATA32 / S_LDATA32)
 struct DataSym32 {
@@ -281,6 +283,7 @@ static void walkSymbolStream(const std::vector<uint8_t>& syms,
         uint16_t kind = r16(p + 2);
         const uint8_t* recEnd = p + 2 + len;
         if (recEnd > end) break;
+        const uint8_t* recStart = p;
         p += 4; // past length + kind
 
         if (kind == S_GPROC32 || kind == S_LPROC32) {
@@ -325,6 +328,25 @@ static void walkSymbolStream(const std::vector<uint8_t>& syms,
                 fn.lowPc   = va;
                 fn.highPc  = va; // size unknown from public symbol alone
                 out.functions[va] = std::move(fn);
+            }
+        } else if (kind != S_END) {
+            // Kind-omitted proc: [len][ProcSym32...][name] (kind word dropped).
+            // Payload starts at recStart+2 (after len only).
+            const uint8_t* payload = recStart + 2;
+            if (payload + sizeof(ProcSym32) <= recEnd) {
+                ProcSym32 ps;
+                std::memcpy(&ps, payload, sizeof(ProcSym32));
+                const uint8_t* np = payload + sizeof(ProcSym32);
+                std::string fname = readNullTermStr(np, recEnd);
+                if (!fname.empty() && ps.len > 0) {
+                    DebugFunc fn;
+                    fn.name        = fname;
+                    fn.lowPc       = imageBase + ps.off;
+                    fn.highPc      = fn.lowPc + ps.len;
+                    fn.returnTypeId= ps.typind;
+                    fn.isExternal  = true; // treat as S_GPROC32
+                    out.functions[fn.lowPc] = std::move(fn);
+                }
             }
         }
 
@@ -472,7 +494,10 @@ bool PdbExtractor::extract(DebugGroundTruth& out) {
 #else
     // ── Fallback: raw MSF parse ───────────────────────────────────────────────
     const std::vector<uint8_t>& raw = impl_->rawData;
-    if (raw.size() < sizeof(MsfSuperBlock)) return false;
+    if (raw.size() < sizeof(MsfSuperBlock)) {
+        out.diagnostics.push_back(name() + ": file too small for MSF superblock");
+        return false;
+    }
 
     // Verify magic
     if (std::memcmp(raw.data(), kMsfMagic, 32) != 0) {
@@ -486,31 +511,60 @@ bool PdbExtractor::extract(DebugGroundTruth& out) {
     uint32_t numDirBytes = sb->numDirectoryBytes;
     uint32_t blockMapAddr= sb->blockMapAddr;
 
-    if (blockSize == 0 || blockMapAddr == 0) return false;
+    if (blockSize == 0 || blockMapAddr == 0) {
+        out.diagnostics.push_back(name() + ": invalid MSF superblock");
+        return false;
+    }
 
     // Read the block map (array of block indices of the directory)
     uint32_t numDirBlocks = blocksNeeded(numDirBytes, blockSize);
     std::vector<uint32_t> dirBlockList;
     uint64_t bmOff = uint64_t(blockMapAddr) * blockSize;
+    bool mapOk = true;
     for (uint32_t i = 0; i < numDirBlocks; ++i) {
         uint64_t o = bmOff + uint64_t(i) * 4;
-        if (o + 4 > raw.size()) return false;
+        if (o + 4 > raw.size()) { mapOk = false; break; }
         dirBlockList.push_back(r32(raw.data() + o));
     }
 
     // Reconstruct the directory stream
-    std::vector<uint8_t> dir = readStream(raw, blockSize, dirBlockList, numDirBytes);
-    if (dir.size() < 4) return false;
+    std::vector<uint8_t> dir;
+    if (mapOk && !dirBlockList.empty())
+        dir = readStream(raw, blockSize, dirBlockList, numDirBytes);
+
+    auto directoryValid = [](const std::vector<uint8_t>& d) {
+        if (d.size() < 4) return false;
+        return r32(d.data()) >= 5;
+    };
+
+    // Compact MSF: some synthetic builders write directory contents at
+    // BlockMapAddr, overwriting the block-index list. If the reconstructed
+    // directory is invalid, treat blockMapAddr as the directory block itself.
+    if (!directoryValid(dir)) {
+        dir = readStream(raw, blockSize,
+                         std::vector<uint32_t>{blockMapAddr}, numDirBytes);
+    }
+
+    if (dir.size() < 4) {
+        out.diagnostics.push_back(name() + ": MSF directory too small");
+        return false;
+    }
 
     // Directory: [numStreams][streamSizes...][streamBlockLists...]
     const uint8_t* dp  = dir.data();
     const uint8_t* de  = dp + dir.size();
     uint32_t numStreams = r32(dp); dp += 4;
-    if (numStreams < 5) return false; // need at least PDB, TPI, DBI, IPI, GSI
+    if (numStreams < 5) { // need at least PDB, TPI, DBI, IPI, GSI
+        out.diagnostics.push_back(name() + ": MSF directory has too few streams");
+        return false;
+    }
 
     std::vector<uint32_t> streamSizes(numStreams);
     for (uint32_t i = 0; i < numStreams; ++i) {
-        if (dp + 4 > de) return false;
+        if (dp + 4 > de) {
+            out.diagnostics.push_back(name() + ": truncated MSF stream size table");
+            return false;
+        }
         streamSizes[i] = r32(dp); dp += 4;
     }
 
@@ -560,7 +614,11 @@ bool PdbExtractor::extract(DebugGroundTruth& out) {
     if (streams.size() > 4 && !streams[4].empty())
         walkSymbolStream(streams[4], imageBase_, out);
 
-    return !out.functions.empty() || !out.types.empty();
+    if (out.functions.empty() && out.types.empty()) {
+        out.diagnostics.push_back(name() + ": no functions or types recovered");
+        return false;
+    }
+    return true;
 #endif
 }
 

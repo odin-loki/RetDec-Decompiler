@@ -4,6 +4,7 @@
 
 #include "retdec/py_emitter/py_stmt_emitter.h"
 
+#include <algorithm>
 #include <sstream>
 
 namespace retdec {
@@ -290,18 +291,94 @@ void PyStmtEmitter::emitExceptHandler(const PyExceptHandler& h) {
 }
 
 void PyStmtEmitter::emitMatchCase(const PyMatchCase& mc) {
-    std::ostringstream ss;
-    ss << "case ";
+    writer_.write("case ");
     if (mc.pattern) emitPattern(*mc.pattern);
-    if (mc.guard) ss << " if " << expr_.emit(mc.guard);
-    writer_.line(ss.str() + ":");
+    else writer_.write("_");
+    if (mc.guard) writer_.write(" if " + expr_.emit(mc.guard));
+    writer_.write(":");
+    writer_.nl();
     emitBlock(mc.body);
 }
 
 void PyStmtEmitter::emitPattern(const PyPattern& pat) {
-    // Patterns are complex; emit a placeholder for now
-    writer_.write("_");
-    (void)pat;
+    using Kind = PyPattern::Kind;
+    switch (pat.kind) {
+    case Kind::MatchValue:
+    case Kind::MatchSingleton:
+        writer_.write(pat.value ? expr_.emit(pat.value) : "_");
+        return;
+    case Kind::MatchStar:
+        writer_.write("*");
+        writer_.write(pat.name ? PyWriter::safeName(*pat.name) : "_");
+        return;
+    case Kind::MatchAs:
+        if (!pat.patterns.empty() && pat.patterns[0]) {
+            emitPattern(*pat.patterns[0]);
+            if (pat.name) {
+                writer_.write(" as ");
+                writer_.write(PyWriter::safeName(*pat.name));
+            }
+        } else {
+            writer_.write(pat.name ? PyWriter::safeName(*pat.name) : "_");
+        }
+        return;
+    case Kind::MatchSequence: {
+        writer_.write("[");
+        for (size_t i = 0; i < pat.patterns.size(); ++i) {
+            if (i) writer_.write(", ");
+            if (pat.patterns[i]) emitPattern(*pat.patterns[i]);
+            else writer_.write("_");
+        }
+        writer_.write("]");
+        return;
+    }
+    case Kind::MatchMapping: {
+        writer_.write("{");
+        size_t n = std::min(pat.keys.size(), pat.patterns.size());
+        for (size_t i = 0; i < n; ++i) {
+            if (i) writer_.write(", ");
+            writer_.write(expr_.emit(pat.keys[i]));
+            writer_.write(": ");
+            if (pat.patterns[i]) emitPattern(*pat.patterns[i]);
+            else writer_.write("_");
+        }
+        writer_.write("}");
+        return;
+    }
+    case Kind::MatchClass: {
+        writer_.write(pat.value ? expr_.emit(pat.value) : "_");
+        writer_.write("(");
+        if (!pat.cls_patterns_keys.empty()) {
+            size_t n = std::min(pat.cls_patterns_keys.size(), pat.patterns.size());
+            for (size_t i = 0; i < n; ++i) {
+                if (i) writer_.write(", ");
+                writer_.write(expr_.emit(pat.cls_patterns_keys[i]));
+                writer_.write("=");
+                if (pat.patterns[i]) emitPattern(*pat.patterns[i]);
+                else writer_.write("_");
+            }
+        } else {
+            for (size_t i = 0; i < pat.patterns.size(); ++i) {
+                if (i) writer_.write(", ");
+                if (pat.patterns[i]) emitPattern(*pat.patterns[i]);
+                else writer_.write("_");
+            }
+        }
+        writer_.write(")");
+        return;
+    }
+    case Kind::MatchOr: {
+        for (size_t i = 0; i < pat.patterns.size(); ++i) {
+            if (i) writer_.write(" | ");
+            if (pat.patterns[i]) emitPattern(*pat.patterns[i]);
+            else writer_.write("_");
+        }
+        return;
+    }
+    default:
+        writer_.write("_");
+        return;
+    }
 }
 
 // ─── Functions and Classes ───────────────────────────────────────────────────

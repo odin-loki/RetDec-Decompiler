@@ -227,7 +227,7 @@ ShPtr<Expression> LLVMConstantConverter::convertToExpression(
 		const llvm::ConstantPointerNull *cNullPtr) {
 	PRECONDITION_NON_NULL(cNullPtr);
 
-	auto type = typeConverter->convert(cNullPtr->getType());
+	auto type = typeConverter->convert(cNullPtr->getPointerType());
 	return ConstNullPointer::create(type);
 }
 
@@ -373,7 +373,7 @@ ShPtr<Expression> LLVMConstantConverter::convertZeroInitializer(
 bool LLVMConstantConverter::isBool(const llvm::ConstantInt *cInt) const {
 	PRECONDITION_NON_NULL(cInt);
 
-	return typeConverter->isBool(cInt->getType());
+	return typeConverter->isBool(cInt->getIntegerType());
 }
 
 /**

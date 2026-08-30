@@ -304,6 +304,7 @@ void PycReader::buildModule(const PyCodeObject& root,
     cls.fqName      = moduleName;
     cls.packageName = "";
     cls.access      = BcAccess::Public;
+    cls.sourceFile  = root.co_filename;
 
     emitCodeObject(root, cls, result, moduleName);
 

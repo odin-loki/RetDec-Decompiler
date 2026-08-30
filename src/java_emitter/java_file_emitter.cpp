@@ -115,10 +115,9 @@ JavaModuleResult JavaFileEmitter::emitModule(const BcModule& module) {
     JavaModuleResult result;
 
     for (const auto& cls : module.classes()) {
-        // Skip inner classes (they have a '$' in their name); they'll be emitted
-        // as part of their enclosing class.
-        if (cls.name.find('$') != std::string::npos) continue;
-
+        // Inner classes (`$` in the binary name) are separate BcClass entries.
+        // emitInnerClasses is a placeholder, so emit them as their own files
+        // (needed for a standalone Foo$Bar.class as well as JAR contents).
         JavaFileResult fileResult = emitClass(cls);
         if (fileResult.hasErrors) ++result.totalErrors;
         result.totalWarnings += static_cast<int>(fileResult.warnings.size());

@@ -25,7 +25,7 @@ Instruction * IdiomsLLVM::exchangeIsGreaterThanMinusOne(BasicBlock::iterator ite
 	Instruction & val = (*iter);
 	Value * op_and = nullptr;
 	Value * op_x = nullptr;
-	ICmpInst::Predicate pred;
+	CmpPredicate pred;
 	ConstantInt * cnst = nullptr;
 
 	// (X & SignBit) == 0 --> X > -1

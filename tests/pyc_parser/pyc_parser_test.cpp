@@ -704,6 +704,7 @@ TEST(PycReader, ParseMinimalPyc38HasMethod) {
     const auto& cls = result.module.classes().front();
     EXPECT_FALSE(cls.methods.empty());
     EXPECT_EQ("<module>", cls.methods.front().name);
+    EXPECT_EQ("<string>", cls.sourceFile);
 }
 
 TEST(PycReader, ParseMinimalPyc38CFGNotEmpty) {

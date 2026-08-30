@@ -22,7 +22,7 @@ namespace {
 */
 bool hasEqArgsAndParams(const CallInst &call, Function &func)
 {
-	if (func.arg_size() != call.getNumArgOperands())
+	if (func.arg_size() != call.arg_size())
 	{
 		return false;
 	}

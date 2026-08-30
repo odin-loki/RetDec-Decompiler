@@ -174,8 +174,8 @@ TEST_F(DemanglerProviderTests, addedDemanglerWorks)
 		module.get(),
 		&config,
 		std::move(typeConfig));
-	std::string name = d->demangleToString(f->getName());
-	auto func_pair = d->getPairFunction(f->getName());
+	std::string name = d->demangleToString(f->getName().str());
+	auto func_pair = d->getPairFunction(f->getName().str());
 
 	EXPECT_EQ("wikipedia::article::print_to(std::ostream&)", name);
 }

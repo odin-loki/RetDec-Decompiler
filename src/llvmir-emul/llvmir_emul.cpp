@@ -5,9 +5,13 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
-#include <llvm/IR/CallSite.h>
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/GetElementPtrTypeIterator.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/InstrTypes.h>
+#include <llvm/IR/Instructions.h>
 #include <llvm/IR/InstVisitor.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -34,6 +38,7 @@
 #include <llvm/IR/Intrinsics.h>
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 using namespace llvm;
@@ -149,11 +154,11 @@ void executeFRemInst(
 	switch (Ty->getTypeID())
 	{
 		case Type::FloatTyID:
-			Dest.FloatVal = fmod(Src1.FloatVal, Src2.FloatVal);
+			Dest.FloatVal = std::fmod(Src1.FloatVal, Src2.FloatVal);
 			break;
 		case Type::X86_FP80TyID:
 		case Type::DoubleTyID:
-			Dest.DoubleVal = fmod(Src1.DoubleVal, Src2.DoubleVal);
+			Dest.DoubleVal = std::fmod(Src1.DoubleVal, Src2.DoubleVal);
 			break;
 		default:
 			dbgs() << "Unhandled type for Rem instruction: " << *Ty << "\n";
@@ -167,7 +172,7 @@ void executeFRemInst(
 		break;
 
 #define IMPLEMENT_VECTOR_INTEGER_ICMP(OP, TY)                              \
-	case Type::VectorTyID:                                                 \
+	case Type::FixedVectorTyID:                                                 \
 	{                                                                      \
 		assert(Src1.AggregateVal.size() == Src2.AggregateVal.size());      \
 		Dest.AggregateVal.resize( Src1.AggregateVal.size() );              \
@@ -381,7 +386,7 @@ GenericValue executeICMP_SGE(
 	break;
 
 #define IMPLEMENT_VECTOR_FCMP(OP)                                   \
-	case Type::VectorTyID:                                          \
+	case Type::FixedVectorTyID:                                          \
 	if (cast<VectorType>(Ty)->getElementType()->isFloatTy())        \
 	{                                                               \
 		IMPLEMENT_VECTOR_FCMP_T(OP, Float);                         \
@@ -1049,7 +1054,7 @@ GenericValue executeFPTruncInst(
 {
 	GenericValue Dest, Src = GC.getOperandValue(SrcVal, SF);
 
-	if (SrcVal->getType()->getTypeID() == Type::VectorTyID)
+	if (SrcVal->getType()->isVectorTy())
 	{
 		assert(SrcVal->getType()->getScalarType()->isDoubleTy() &&
 				DstTy->getScalarType()->isFloatTy() &&
@@ -1091,7 +1096,7 @@ GenericValue executeFPExtInst(
 {
 	GenericValue Dest, Src = GC.getOperandValue(SrcVal, SF);
 
-	if (SrcVal->getType()->getTypeID() == Type::VectorTyID)
+	if (SrcVal->getType()->isVectorTy())
 	{
 		assert(SrcVal->getType()->getScalarType()->isFloatTy() &&
 				DstTy->getScalarType()->isDoubleTy() && "Invalid FPExt instruction");
@@ -1128,7 +1133,7 @@ GenericValue executeFPToUIInst(
 	Type *SrcTy = SrcVal->getType();
 	GenericValue Dest, Src = GC.getOperandValue(SrcVal, SF);
 
-	if (SrcTy->getTypeID() == Type::VectorTyID)
+	if (SrcTy->isVectorTy())
 	{
 		Type *DstVecTy = DstTy->getScalarType();
 		Type *SrcVecTy = SrcTy->getScalarType();
@@ -1179,7 +1184,7 @@ GenericValue executeFPToSIInst(
 	Type *SrcTy = SrcVal->getType();
 	GenericValue Dest, Src = GC.getOperandValue(SrcVal, SF);
 
-	if (SrcTy->getTypeID() == Type::VectorTyID)
+	if (SrcTy->isVectorTy())
 	{
 		Type *DstVecTy = DstTy->getScalarType();
 		Type *SrcVecTy = SrcTy->getScalarType();
@@ -1228,7 +1233,7 @@ GenericValue executeUIToFPInst(
 {
 	GenericValue Dest, Src = GC.getOperandValue(SrcVal, SF);
 
-	if (SrcVal->getType()->getTypeID() == Type::VectorTyID)
+	if (SrcVal->getType()->isVectorTy())
 	{
 		Type *DstVecTy = DstTy->getScalarType();
 		unsigned size = Src.AggregateVal.size();
@@ -1274,7 +1279,7 @@ GenericValue executeSIToFPInst(
 {
 	GenericValue Dest, Src = GC.getOperandValue(SrcVal, SF);
 
-	if (SrcVal->getType()->getTypeID() == Type::VectorTyID)
+	if (SrcVal->getType()->isVectorTy())
 	{
 		Type *DstVecTy = DstTy->getScalarType();
 		unsigned size = Src.AggregateVal.size();
@@ -1323,7 +1328,9 @@ GenericValue executePtrToIntInst(
 	GenericValue Dest, Src = GC.getOperandValue(SrcVal, SF);
 	assert(SrcVal->getType()->isPointerTy() && "Invalid PtrToInt instruction");
 
-	Dest.IntVal = APInt(DBitWidth, reinterpret_cast<intptr_t>(Src.PointerVal));
+	Dest.IntVal = APInt(DBitWidth, static_cast<uint64_t>(
+			reinterpret_cast<intptr_t>(Src.PointerVal)),
+			/*isSigned=*/false, /*implicitTrunc=*/true);
 	return Dest;
 }
 
@@ -1357,8 +1364,8 @@ GenericValue executeBitCastInst(
 	Type *SrcTy = SrcVal->getType();
 	GenericValue Dest, Src = GC.getOperandValue(SrcVal, SF);
 
-	if ((SrcTy->getTypeID() == Type::VectorTyID)
-			|| (DstTy->getTypeID() == Type::VectorTyID))
+	if ((SrcTy->isVectorTy())
+			|| (DstTy->isVectorTy()))
 	{
 		// vector src bitcast to vector dst or vector src bitcast to scalar dst or
 		// scalar src bitcast to vector dst
@@ -1371,7 +1378,7 @@ GenericValue executeBitCastInst(
 		unsigned SrcNum;
 		unsigned DstNum;
 
-		if (SrcTy->getTypeID() == Type::VectorTyID)
+		if (SrcTy->isVectorTy())
 		{
 			SrcElemTy = SrcTy->getScalarType();
 			SrcBitSize = SrcTy->getScalarSizeInBits();
@@ -1387,7 +1394,7 @@ GenericValue executeBitCastInst(
 			SrcVec.AggregateVal.push_back(Src);
 		}
 
-		if (DstTy->getTypeID() == Type::VectorTyID)
+		if (DstTy->isVectorTy())
 		{
 			DstElemTy = DstTy->getScalarType();
 			DstBitSize = DstTy->getScalarSizeInBits();
@@ -1479,7 +1486,7 @@ GenericValue executeBitCastInst(
 		}
 
 		// convert result from integer to specified type
-		if (DstTy->getTypeID() == Type::VectorTyID)
+		if (DstTy->isVectorTy())
 		{
 			if (DstElemTy->isDoubleTy())
 			{
@@ -1515,8 +1522,8 @@ GenericValue executeBitCastInst(
 		}
 	}
 	else
-	{ //  if ((SrcTy->getTypeID() == Type::VectorTyID) ||
-		//     (DstTy->getTypeID() == Type::VectorTyID))
+	{ //  if ((SrcTy->isVectorTy()) ||
+		//     (DstTy->isVectorTy()))
 
 		// scalar src bitcast to scalar dst
 		if (DstTy->isPointerTy())
@@ -1616,11 +1623,16 @@ llvm::GenericValue getConstantExprValue(
 					gep_type_end(CE), SF, GC);
 		case Instruction::FCmp:
 		case Instruction::ICmp:
+		{
+			Instruction* tmp = CE->getAsInstruction();
+			unsigned pred = cast<CmpInst>(tmp)->getPredicate();
+			tmp->deleteValue();
 			return executeCmpInst(
-					CE->getPredicate(),
+					pred,
 					GC.getOperandValue(CE->getOperand(0), SF),
 					GC.getOperandValue(CE->getOperand(1), SF),
 					CE->getOperand(0)->getType());
+		}
 		case Instruction::Select:
 			return executeSelectInst(
 					GC.getOperandValue(CE->getOperand(0), SF),
@@ -1719,9 +1731,9 @@ llvm::GenericValue getConstantValue(const llvm::Constant* C, llvm::Module* m)
 				}
 				break;
 			}
-			case Type::VectorTyID:
+			case Type::FixedVectorTyID:
 				// if the whole vector is 'undef' just reserve memory for the value.
-				auto* VTy = dyn_cast<VectorType>(C->getType());
+				auto* VTy = dyn_cast<FixedVectorType>(C->getType());
 				Type *ElemTy = VTy->getElementType();
 				unsigned int elemNum = VTy->getNumElements();
 				Result.AggregateVal.resize(elemNum);
@@ -1833,7 +1845,7 @@ llvm::GenericValue getConstantValue(const llvm::Constant* C, llvm::Module* m)
 					uint64_t v;
 					bool ignored;
 					(void)apf.convertToInteger(
-							makeMutableArrayRef(v),
+							MutableArrayRef<APInt::WordType>(v),
 							BitWidth,
 							CE->getOpcode()==Instruction::FPToSI,
 							APFloat::rmTowardZero,
@@ -1847,7 +1859,8 @@ llvm::GenericValue getConstantValue(const llvm::Constant* C, llvm::Module* m)
 				GenericValue GV = getConstantValue(Op0, m);
 				uint32_t PtrWidth = DL.getTypeSizeInBits(Op0->getType());
 				assert(PtrWidth <= 64 && "Bad pointer width");
-				GV.IntVal = APInt(PtrWidth, uintptr_t(GV.PointerVal));
+				GV.IntVal = APInt(PtrWidth, uintptr_t(GV.PointerVal),
+						/*isSigned=*/false, /*implicitTrunc=*/true);
 				uint32_t IntWidth = DL.getTypeSizeInBits(CE->getType());
 				GV.IntVal = GV.IntVal.zextOrTrunc(IntWidth);
 				return GV;
@@ -2056,7 +2069,7 @@ llvm::GenericValue getConstantValue(const llvm::Constant* C, llvm::Module* m)
 				llvm_unreachable("Unknown constant pointer type!");
 			}
 			break;
-		case Type::VectorTyID:
+		case Type::FixedVectorTyID:
 		{
 			unsigned elemNum;
 			Type* ElemTy;
@@ -2071,7 +2084,7 @@ llvm::GenericValue getConstantValue(const llvm::Constant* C, llvm::Module* m)
 			}
 			else if (CV || CAZ)
 			{
-				VectorType* VTy = dyn_cast<VectorType>(C->getType());
+				FixedVectorType* VTy = dyn_cast<FixedVectorType>(C->getType());
 				elemNum = VTy->getNumElements();
 				ElemTy = VTy->getElementType();
 			}
@@ -2656,10 +2669,10 @@ void LlvmIrEmulator::popStackAndReturnValueToCaller(
 	else
 	{
 		LocalExecutionContext& callingEc = _ecStack.back();
-		if (Instruction* I = callingEc.caller.getInstruction())
+		if (Instruction* I = callingEc.caller)
 		{
 			// Save result...
-			if (!callingEc.caller.getType()->isVoidTy())
+			if (!callingEc.caller->getType()->isVoidTy())
 			{
 				_globalEc.setValue(I, res);
 			}
@@ -2668,7 +2681,7 @@ void LlvmIrEmulator::popStackAndReturnValueToCaller(
 				switchToNewBasicBlock(II->getNormalDest (), callingEc, _globalEc);
 			}
 			// We returned from the call...
-			callingEc.caller = CallSite();
+			callingEc.caller = nullptr;
 		}
 	}
 }
@@ -2826,7 +2839,7 @@ void LlvmIrEmulator::visitBinaryOperator(llvm::BinaryOperator& I)
 				{
 					for (unsigned i = 0; i < res.AggregateVal.size(); ++i)
 						res.AggregateVal[i].FloatVal =
-						fmod(op0.AggregateVal[i].FloatVal, op1.AggregateVal[i].FloatVal);
+						std::fmod(op0.AggregateVal[i].FloatVal, op1.AggregateVal[i].FloatVal);
 				}
 				else
 				{
@@ -2834,7 +2847,7 @@ void LlvmIrEmulator::visitBinaryOperator(llvm::BinaryOperator& I)
 					{
 						for (unsigned i = 0; i < res.AggregateVal.size(); ++i)
 							res.AggregateVal[i].DoubleVal =
-							fmod(op0.AggregateVal[i].DoubleVal, op1.AggregateVal[i].DoubleVal);
+							std::fmod(op0.AggregateVal[i].DoubleVal, op1.AggregateVal[i].DoubleVal);
 					}
 					else
 					{
@@ -2856,11 +2869,13 @@ void LlvmIrEmulator::visitBinaryOperator(llvm::BinaryOperator& I)
 		//
 		if (op0.IntVal.getBitWidth() < op1.IntVal.getBitWidth())
 		{
-			op0.IntVal = APInt(op1.IntVal.getBitWidth(), op0.IntVal.getZExtValue());
+			op0.IntVal = APInt(op1.IntVal.getBitWidth(), op0.IntVal.getZExtValue(),
+					/*isSigned=*/false, /*implicitTrunc=*/true);
 		}
 		else if (op0.IntVal.getBitWidth() > op1.IntVal.getBitWidth())
 		{
-			op1.IntVal = APInt(op0.IntVal.getBitWidth(), op1.IntVal.getZExtValue());
+			op1.IntVal = APInt(op0.IntVal.getBitWidth(), op1.IntVal.getZExtValue(),
+					/*isSigned=*/false, /*implicitTrunc=*/true);
 		}
 
 		switch (I.getOpcode())
@@ -3075,7 +3090,7 @@ bool LlvmIrEmulator::tryHandleExternalCall(
 	if (!f || !f->isDeclaration())
 		return false;
 
-	std::string name = f->getName();
+	std::string name = f->getName().str();
 	// Normalize: strip leading/trailing underscores and common decorations.
 	auto baseName = [&name]() -> std::string {
 		std::string s = name;
@@ -3095,7 +3110,8 @@ bool LlvmIrEmulator::tryHandleExternalCall(
 		if (size == 0) size = 4096;
 		// Align to page
 		size = (size + 4095) & ~uint64_t(4095);
-		result.IntVal = APInt(f->getReturnType()->getIntegerBitWidth(), _nextAllocAddr);
+		result.IntVal = APInt(f->getReturnType()->getIntegerBitWidth(), _nextAllocAddr,
+				/*isSigned=*/false, /*implicitTrunc=*/true);
 		_nextAllocAddr += size;
 		return true;
 	}
@@ -3113,7 +3129,8 @@ bool LlvmIrEmulator::tryHandleExternalCall(
 		uint64_t size = args.size() >= 1 ? args[0].IntVal.getZExtValue() : 0;
 		if (size == 0) size = 16;
 		size = (size + 15) & ~uint64_t(15); // 16-byte align
-		result.IntVal = APInt(f->getReturnType()->getIntegerBitWidth(), _nextAllocAddr);
+		result.IntVal = APInt(f->getReturnType()->getIntegerBitWidth(), _nextAllocAddr,
+				/*isSigned=*/false, /*implicitTrunc=*/true);
 		_nextAllocAddr += size;
 		return true;
 	}
@@ -3184,6 +3201,39 @@ void LlvmIrEmulator::visitCallInst(llvm::CallInst& I)
 	LocalExecutionContext& ec = _ecStack.back();
 
 	auto* cf = I.getCalledFunction();
+	if (cf && cf->isIntrinsic())
+	{
+		auto id = cf->getIntrinsicID();
+		if (id == Intrinsic::ctlz || id == Intrinsic::cttz
+				|| id == Intrinsic::ctpop || id == Intrinsic::bswap
+				|| id == Intrinsic::bitreverse)
+		{
+			GenericValue src = _globalEc.getOperandValue(I.getArgOperand(0), ec);
+			GenericValue dest;
+			unsigned bw = I.getType()->getIntegerBitWidth();
+			if (id == Intrinsic::ctlz)
+				dest.IntVal = APInt(bw, src.IntVal.countl_zero());
+			else if (id == Intrinsic::cttz)
+				dest.IntVal = APInt(bw, src.IntVal.countr_zero());
+			else if (id == Intrinsic::ctpop)
+				dest.IntVal = APInt(bw, src.IntVal.popcount());
+			else if (id == Intrinsic::bswap)
+				dest.IntVal = src.IntVal.byteSwap();
+			else
+				dest.IntVal = src.IntVal.reverseBits();
+			_globalEc.setValue(&I, dest);
+			// RBIT tests expect llvm.bitreverse.* to appear in getCalledValuesSet().
+			if (id == Intrinsic::bitreverse)
+			{
+				CallEntry ce;
+				ce.calledValue = I.getCalledOperand();
+				for (auto aIt = I.arg_begin(), eIt = I.arg_end(); aIt != eIt; ++aIt)
+					ce.calledArguments.push_back(_globalEc.getOperandValue(*aIt, ec));
+				_calls.push_back(ce);
+			}
+			return;
+		}
+	}
 	if (cf && cf->isDeclaration() && cf->isIntrinsic() &&
 		    !(cf->getIntrinsicID() == Intrinsic::bitreverse
 		    || cf->getIntrinsicID() == Intrinsic::maxnum
@@ -3246,21 +3296,21 @@ void LlvmIrEmulator::visitCallInst(llvm::CallInst& I)
 			}
 			return;
 		}
-		// Unhandled external: set 0/null to avoid crash; caller may use result
+		// Unhandled external (__pseudo_branch, __asm_*, …): set a default
+		// return, then fall through so the call is recorded in _calls.
 		if (!I.getType()->isVoidTy())
 		{
 			GenericValue defVal;
 			if (I.getType()->isPointerTy())
 				defVal.PointerVal = nullptr;
-			else
+			else if (I.getType()->isIntegerTy())
 				defVal.IntVal = APInt(I.getType()->getIntegerBitWidth(), 0);
 			_globalEc.setValue(&I, defVal);
 		}
-		return;
 	}
 
 	CallEntry ce;
-	ce.calledValue = I.getCalledValue();
+	ce.calledValue = I.getCalledOperand();
 
 	for (auto aIt = I.arg_begin(), eIt = I.arg_end(); aIt != eIt; ++aIt)
 	{
@@ -3308,7 +3358,7 @@ void LlvmIrEmulator::visitInvokeInst(llvm::InvokeInst& I)
 			GenericValue defVal;
 			if (I.getType()->isPointerTy())
 				defVal.PointerVal = nullptr;
-			else
+			else if (I.getType()->isIntegerTy())
 				defVal.IntVal = APInt(I.getType()->getIntegerBitWidth(), 0);
 			_globalEc.setValue(&I, defVal);
 		}
@@ -3320,7 +3370,7 @@ void LlvmIrEmulator::visitInvokeInst(llvm::InvokeInst& I)
 	// always branch to the normal destination (we do not model C++ exceptions
 	// in the emulator).  Record the call in _calls so callers can inspect it.
 	CallEntry ce;
-	ce.calledValue = I.getCalledValue();
+	ce.calledValue = I.getCalledOperand();
 	for (auto aIt = I.arg_begin(), eIt = I.arg_end(); aIt != eIt; ++aIt)
 		ce.calledArguments.push_back(_globalEc.getOperandValue(*aIt, ec));
 	_calls.push_back(ce);
@@ -3586,7 +3636,7 @@ void LlvmIrEmulator::visitShuffleVectorInst(llvm::ShuffleVectorInst& I)
 	GenericValue v0 = _globalEc.getOperandValue(I.getOperand(0), ec);
 	GenericValue v1 = _globalEc.getOperandValue(I.getOperand(1), ec);
 	GenericValue dest;
-	auto* dstVT = cast<llvm::VectorType>(I.getType());
+	auto* dstVT = cast<llvm::FixedVectorType>(I.getType());
 	unsigned dstLen = dstVT->getNumElements();
 	unsigned srcLen = static_cast<unsigned>(v0.AggregateVal.size());
 	dest.AggregateVal.resize(dstLen);
@@ -3662,6 +3712,20 @@ void LlvmIrEmulator::visitPHINode(llvm::PHINode& PN)
  */
 void LlvmIrEmulator::visitInstruction(llvm::Instruction& I)
 {
+	if (I.getOpcode() == Instruction::FNeg)
+	{
+		LocalExecutionContext& ec = _ecStack.back();
+		GenericValue src = _globalEc.getOperandValue(I.getOperand(0), ec);
+		GenericValue dest;
+		Type* ty = I.getType();
+		if (ty->isFloatTy())
+			dest.FloatVal = -src.FloatVal;
+		else
+			dest.DoubleVal = -src.DoubleVal;
+		_globalEc.setValue(&I, dest);
+		return;
+	}
+
 	if (auto* rmw = dyn_cast<AtomicRMWInst>(&I))
 	{
 		if (rmw->getOperation() != AtomicRMWInst::Xchg)

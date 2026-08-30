@@ -423,12 +423,15 @@ public:
         if (!par.atEnd()) { par.get(); } // access flags
 
         // ── 4. Calling convention + CV-this ───────────────────────────────────
-        if (!par.atEnd()) {
-            info.callingConvention = par.parseCalling();
-        }
+        // Member: <access><cv-this><calling-conv>  e.g. QAE / QBE (thiscall).
+        // Free:   <access><calling-conv>           e.g. YA / YG / YI.
         bool isConst = false;
-        if (!par.atEnd()) {
-            isConst = par.parseCVThis();
+        if (!info.className.empty()) {
+            if (!par.atEnd()) isConst = par.parseCVThis();
+            if (!par.atEnd()) info.callingConvention = par.parseCalling();
+        } else {
+            if (!par.atEnd()) info.callingConvention = par.parseCalling();
+            if (!par.atEnd()) isConst = par.parseCVThis();
         }
         info.isConst = isConst;
 

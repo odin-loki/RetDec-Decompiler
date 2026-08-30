@@ -79,7 +79,7 @@ bool LLVMSupport::isInlineAsm(const llvm::Instruction *i) {
 	PRECONDITION_NON_NULL(i);
 
 	if (const llvm::CallInst *ci = llvm::dyn_cast<llvm::CallInst>(i)) {
-		return llvm::isa<llvm::InlineAsm>(ci->getCalledValue());
+		return llvm::isa<llvm::InlineAsm>(ci->getCalledOperand());
 	}
 	return false;
 }

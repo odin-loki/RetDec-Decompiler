@@ -27,12 +27,15 @@ set(KEYSTONE_ARCHIVE_SHA256
     CACHE STRING ""
 )
 
+# Existing CMake build directories cache these values. After a pin bump,
+# reconfigure with -DLLVM_URL=... -DLLVM_ARCHIVE_SHA256=... or drop those
+# cache entries. Otherwise ExternalProject keeps the previous archive.
 set(LLVM_URL
-    "https://github.com/avast/llvm/archive/a776c2a976ef64d9cd84d7ee71d0e4a04aa117a1.zip"
+    "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.0/llvm-project-23.1.0.src.tar.xz"
     CACHE STRING "URL of LLVM archive to use."
 )
 set(LLVM_ARCHIVE_SHA256
-    "b5879b30768135e5fce84ccd8be356d2c55c940ab32ceb22d278b228e88c4c60"
+    "ab1f0e3ec52448c33e8782eaf0422504b87c7b016b22514653ee0d8fcee479ff"
     CACHE STRING ""
 )
 

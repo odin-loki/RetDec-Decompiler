@@ -146,7 +146,10 @@ AssertionResult StructureConverterTests::isTerminatingSwitchClause(
 			<< funcParam << ")";
 	}
 
-	if (!isa<T>(getFirstNonEmptySuccOf(clauseBody))) {
+	// LLVM 23 stock IR: `call void @test(i32 N); ret void` collapses to
+	// `return test(N)`, so the terminator may be the call itself.
+	auto successor = getFirstNonEmptySuccOf(clauseBody);
+	if (!isa<T>(successor) && !(isa<T>(clauseBody) && isa<ReturnStmt>(clauseBody))) {
 		return AssertionFailure()
 			<< "This clause is not terminated correctly";
 	}
@@ -973,7 +976,10 @@ IfElseConditionWithClonedBlockWithReturnIsConvertedCorrectly) {
 	ASSERT_TRUE(isCallOfFuncTest(ifBody, 5));
 	auto callStmt2 = getFirstNonEmptySuccOf(ifBody);
 	ASSERT_TRUE(isCallOfFuncTest(callStmt2, 6));
-	auto ret1 = getFirstNonEmptySuccOf(callStmt2);
+	// LLVM 23: `test(6); return;` collapses to `return test(6)`.
+	auto ret1 = isa<ReturnStmt>(callStmt2)
+		? callStmt2
+		: getFirstNonEmptySuccOf(callStmt2);
 	ASSERT_TRUE(isa<ReturnStmt>(ret1));
 	ASSERT_FALSE(ifStmt1->hasElseClause());
 	auto callStmt3 = getFirstNonEmptySuccOf(ifStmt1);
@@ -987,7 +993,9 @@ IfElseConditionWithClonedBlockWithReturnIsConvertedCorrectly) {
 	ASSERT_TRUE(isCallOfFuncTest(callStmt6, 4));
 	auto callStmt7 = getFirstNonEmptySuccOf(callStmt6);
 	ASSERT_TRUE(isCallOfFuncTest(callStmt7, 6));
-	auto ret2 = getFirstNonEmptySuccOf(callStmt7);
+	auto ret2 = isa<ReturnStmt>(callStmt7)
+		? callStmt7
+		: getFirstNonEmptySuccOf(callStmt7);
 	ASSERT_TRUE(isa<ReturnStmt>(ret2));
 	ASSERT_NE(callStmt3, callStmt7)
 		<< "Call statements test(6) are not cloned.";
@@ -3827,7 +3835,8 @@ SwitchWithDefaultClauseTerminatedByReturnIsConvertedCorrectly) {
 	ASSERT_FALSE(defaultClause->first) << "This is not a default clause.";
 	auto defaultBody = skipEmptyStmts(defaultClause->second);
 	ASSERT_TRUE(isCallOfFuncTest(defaultBody, 4));
-	ASSERT_TRUE(isa<ReturnStmt>(getFirstNonEmptySuccOf(defaultBody)));
+	ASSERT_TRUE(isa<ReturnStmt>(defaultBody)
+		|| isa<ReturnStmt>(getFirstNonEmptySuccOf(defaultBody)));
 	ASSERT_TRUE(isCallOfFuncTest(getFirstNonEmptySuccOf(switchStmt), 5));
 }
 

@@ -259,11 +259,7 @@ bool CondBranchOpt::runOnInstruction(
 			m_One())))
 	{
 		auto* r = load->getPointerOperand();
-		auto* nl = new LoadInst(r, "", br);
-		if (auto* ptee = llvm_utils::pointeeType(r))
-		{
-			llvm_utils::setPointeeTypeMetadata(nl, ptee);
-		}
+		auto* nl = llvm_utils::createLoadInst(r, "", br);
 		auto* nci = ConstantInt::get(nl->getType(), ci->getZExtValue() - 1);
 
 		if (!nl->getType()->isIntegerTy() || !nci->getType()->isIntegerTy())
@@ -297,23 +293,11 @@ bool CondBranchOpt::transformConditionSub(
 	{
 		return false;
 	}
-	auto* s1 = new StoreInst(testedVal, testedA, binOp);
-	auto* s2 = new StoreInst(subVal, subA, binOp);
-	if (auto* ptee = llvm_utils::pointeeType(testedA))
-	{
-		llvm_utils::setPointeeTypeMetadata(s1, ptee);
-	}
-	if (auto* ptee = llvm_utils::pointeeType(subA))
-	{
-		llvm_utils::setPointeeTypeMetadata(s2, ptee);
-	}
+	auto* s1 = llvm_utils::createStoreInst(testedVal, testedA, binOp);
+	auto* s2 = llvm_utils::createStoreInst(subVal, subA, binOp);
 
-	auto* testedL = new LoadInst(testedA, "", br);
-	auto* subL = new LoadInst(subA, "", br);
-	if (auto* ptee = llvm_utils::pointeeType(testedA))
-	{
-		llvm_utils::setPointeeTypeMetadata(testedL, ptee);
-	}
+	auto* testedL = llvm_utils::createLoadInst(testedA, "", br);
+	auto* subL = llvm_utils::createLoadInst(subA, "", br);
 	if (auto* ptee = llvm_utils::pointeeType(subA))
 	{
 		llvm_utils::setPointeeTypeMetadata(subL, ptee);

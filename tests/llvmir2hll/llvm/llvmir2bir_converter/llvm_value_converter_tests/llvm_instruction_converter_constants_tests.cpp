@@ -11,6 +11,7 @@
 #include "llvmir2hll/ir/assertions.h"
 #include "llvmir2hll/llvm/llvmir2bir_converter_tests/base_tests.h"
 #include "retdec/llvmir2hll/ir/add_op_expr.h"
+#include "retdec/llvmir2hll/ir/assign_stmt.h"
 #include "retdec/llvmir2hll/ir/address_op_expr.h"
 #include "retdec/llvmir2hll/ir/array_index_op_expr.h"
 #include "retdec/llvmir2hll/ir/bit_and_op_expr.h"
@@ -82,7 +83,9 @@ ShPtr<Expression> LLVMInstructionConverterConstExpressionsTests::createICmpInstA
 		@g = global i32 1
 
 		define i1 @function() {
-			ret i1 icmp )" + pred + R"( (i32 ptrtoint (i32* @g to i32), i32 1)
+			%p = ptrtoint ptr @g to i32
+			%c = icmp )" + pred + R"( i32 %p, 1
+			ret i1 %c
 		}
 	)");
 
@@ -156,9 +159,9 @@ ConstantGetElementPtrWhichGetsStringConstantIsConvertedCorrectly) {
 
 	auto f = module->getFuncByName("function");
 	ASSERT_TRUE(f);
-	auto callStmt = cast<CallStmt>(f->getBody());
-	ASSERT_TRUE(callStmt);
-	auto callExpr = cast<CallExpr>(callStmt->getCall());
+	auto retStmt = cast<ReturnStmt>(f->getBody());
+	ASSERT_TRUE(retStmt);
+	auto callExpr = cast<CallExpr>(retStmt->getRetVal());
 	ASSERT_TRUE(callExpr);
 	auto callArg = cast<ConstString>(callExpr->getArg(1));
 	ASSERT_TRUE(callArg);
@@ -183,9 +186,9 @@ ConstantGetElementPtrWhichGetsWideStringConstantIsConvertedCorrectly) {
 
 	auto f = module->getFuncByName("function");
 	ASSERT_TRUE(f);
-	auto callStmt = cast<CallStmt>(f->getBody());
-	ASSERT_TRUE(callStmt);
-	auto callExpr = cast<CallExpr>(callStmt->getCall());
+	auto retStmt = cast<ReturnStmt>(f->getBody());
+	ASSERT_TRUE(retStmt);
+	auto callExpr = cast<CallExpr>(retStmt->getRetVal());
 	ASSERT_TRUE(callExpr);
 	auto callArg = cast<ConstString>(callExpr->getArg(1));
 	ASSERT_TRUE(callArg);
@@ -229,9 +232,9 @@ ConstantGetElementPtrWithNonZeroFirstIndexIsConvertedCorrectly) {
 
 	auto f = module->getFuncByName("function");
 	ASSERT_TRUE(f);
-	auto callStmt = cast<CallStmt>(f->getBody());
-	ASSERT_TRUE(callStmt);
-	auto callExpr = cast<CallExpr>(callStmt->getCall());
+	auto retStmt = cast<ReturnStmt>(f->getBody());
+	ASSERT_TRUE(retStmt);
+	auto callExpr = cast<CallExpr>(retStmt->getRetVal());
 	ASSERT_TRUE(callExpr);
 	auto addrOp1 = cast<AddressOpExpr>(callExpr->getArg(1));
 	ASSERT_TRUE(addrOp1);
@@ -276,7 +279,9 @@ ConstantAddIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 add (i32 ptrtoint (i32* @g to i32), i32 2)
+			%p = ptrtoint ptr @g to i32
+			%r = add i32 %p, 2
+			ret i32 %r
 		}
 	)");
 
@@ -293,7 +298,10 @@ ConstantFAddIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define double @function() {
-			ret double fadd (double sitofp (i32 ptrtoint (i32* @g to i32) to double), double 2.5)
+			%p = ptrtoint ptr @g to i32
+			%f = sitofp i32 %p to double
+			%r = fadd double %f, 2.5
+			ret double %r
 		}
 	)");
 
@@ -310,7 +318,9 @@ ConstantSubIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 sub (i32 ptrtoint (i32* @g to i32), i32 2)
+			%p = ptrtoint ptr @g to i32
+			%r = sub i32 %p, 2
+			ret i32 %r
 		}
 	)");
 
@@ -327,7 +337,10 @@ ConstantFSubIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define double @function() {
-			ret double fsub (double sitofp (i32 ptrtoint (i32* @g to i32) to double), double 2.5)
+			%p = ptrtoint ptr @g to i32
+			%f = sitofp i32 %p to double
+			%r = fsub double %f, 2.5
+			ret double %r
 		}
 	)");
 
@@ -344,7 +357,9 @@ ConstantMulIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 mul (i32 ptrtoint (i32* @g to i32), i32 2)
+			%p = ptrtoint ptr @g to i32
+			%r = mul i32 %p, 2
+			ret i32 %r
 		}
 	)");
 
@@ -361,7 +376,10 @@ ConstantFMulIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define double @function() {
-			ret double fmul (double sitofp (i32 ptrtoint (i32* @g to i32) to double), double 2.5)
+			%p = ptrtoint ptr @g to i32
+			%f = sitofp i32 %p to double
+			%r = fmul double %f, 2.5
+			ret double %r
 		}
 	)");
 
@@ -378,7 +396,9 @@ ConstantUDivIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 udiv (i32 ptrtoint (i32* @g to i32), i32 2)
+			%p = ptrtoint ptr @g to i32
+			%r = udiv i32 %p, 2
+			ret i32 %r
 		}
 	)");
 
@@ -397,7 +417,9 @@ ConstantSDivIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 sdiv (i32 ptrtoint (i32* @g to i32), i32 2)
+			%p = ptrtoint ptr @g to i32
+			%r = sdiv i32 %p, 2
+			ret i32 %r
 		}
 	)");
 
@@ -416,7 +438,10 @@ ConstantFDivIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define double @function() {
-			ret double fdiv (double sitofp (i32 ptrtoint (i32* @g to i32) to double), double 2.5)
+			%p = ptrtoint ptr @g to i32
+			%f = sitofp i32 %p to double
+			%r = fdiv double %f, 2.5
+			ret double %r
 		}
 	)");
 
@@ -435,7 +460,9 @@ ConstantURemIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 urem (i32 ptrtoint (i32* @g to i32), i32 2)
+			%p = ptrtoint ptr @g to i32
+			%r = urem i32 %p, 2
+			ret i32 %r
 		}
 	)");
 
@@ -454,7 +481,9 @@ ConstantSRemIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 srem (i32 ptrtoint (i32* @g to i32), i32 2)
+			%p = ptrtoint ptr @g to i32
+			%r = srem i32 %p, 2
+			ret i32 %r
 		}
 	)");
 
@@ -473,7 +502,10 @@ ConstantFRemIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define double @function() {
-			ret double frem (double sitofp (i32 ptrtoint (i32* @g to i32) to double), double 2.5)
+			%p = ptrtoint ptr @g to i32
+			%f = sitofp i32 %p to double
+			%r = frem double %f, 2.5
+			ret double %r
 		}
 	)");
 
@@ -492,7 +524,9 @@ ConstantShlIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 shl (i32 ptrtoint (i32* @g to i32), i32 2)
+			%p = ptrtoint ptr @g to i32
+			%r = shl i32 %p, 2
+			ret i32 %r
 		}
 	)");
 
@@ -509,7 +543,9 @@ ConstantLShrIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 lshr (i32 ptrtoint (i32* @g to i32), i32 2)
+			%p = ptrtoint ptr @g to i32
+			%r = lshr i32 %p, 2
+			ret i32 %r
 		}
 	)");
 
@@ -528,7 +564,9 @@ ConstantAShrIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 ashr (i32 ptrtoint (i32* @g to i32), i32 2)
+			%p = ptrtoint ptr @g to i32
+			%r = ashr i32 %p, 2
+			ret i32 %r
 		}
 	)");
 
@@ -547,7 +585,9 @@ ConstantAndIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 and (i32 ptrtoint (i32* @g to i32), i32 2)
+			%p = ptrtoint ptr @g to i32
+			%r = and i32 %p, 2
+			ret i32 %r
 		}
 	)");
 
@@ -564,7 +604,9 @@ ConstantOrIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 or (i32 ptrtoint (i32* @g to i32), i32 2)
+			%p = ptrtoint ptr @g to i32
+			%r = or i32 %p, 2
+			ret i32 %r
 		}
 	)");
 
@@ -581,7 +623,9 @@ ConstantXorIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 xor (i32 ptrtoint (i32* @g to i32), i32 2)
+			%p = ptrtoint ptr @g to i32
+			%r = xor i32 %p, 2
+			ret i32 %r
 		}
 	)");
 
@@ -595,10 +639,12 @@ ConstantXorIsConvertedCorrectly) {
 TEST_F(LLVMInstructionConverterConstExpressionsTests,
 ConstantBitCastIsConvertedCorrectly) {
 	auto module = convertLLVMIR2BIR(R"(
-		@g = constant [2 x i16] [i16 40, i16 0]
+		@g = global i32 1
 
-		define i32* @function() {
-			ret i32* bitcast ([2 x i16]* @g to i32*)
+		define float @function() {
+			%p = ptrtoint ptr @g to i32
+			%r = bitcast i32 %p to float
+			ret float %r
 		}
 	)");
 
@@ -615,7 +661,10 @@ ConstantFPExtIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define fp128 @function() {
-			ret fp128 fpext (double sitofp (i32 ptrtoint (i32* @g to i32) to double) to fp128)
+			%p = ptrtoint ptr @g to i32
+			%f = sitofp i32 %p to double
+			%r = fpext double %f to fp128
+			ret fp128 %r
 		}
 	)");
 
@@ -634,7 +683,9 @@ ConstantSExtIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i64 @function() {
-			ret i64 sext (i32 ptrtoint (i32* @g to i32) to i64)
+			%p = ptrtoint ptr @g to i32
+			%r = sext i32 %p to i64
+			ret i64 %r
 		}
 	)");
 
@@ -653,7 +704,9 @@ ConstantZExtIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i64 @function() {
-			ret i64 zext (i32 ptrtoint (i32* @g to i32) to i64)
+			%p = ptrtoint ptr @g to i32
+			%r = zext i32 %p to i64
+			ret i64 %r
 		}
 	)");
 
@@ -672,7 +725,10 @@ ConstantFPToSIIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 fptosi (double sitofp (i32 ptrtoint (i32* @g to i32) to double) to i32)
+			%p = ptrtoint ptr @g to i32
+			%f = sitofp i32 %p to double
+			%r = fptosi double %f to i32
+			ret i32 %r
 		}
 	)");
 
@@ -689,7 +745,10 @@ ConstantFPToUIIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 fptoui (double sitofp (i32 ptrtoint (i32* @g to i32) to double) to i32)
+			%p = ptrtoint ptr @g to i32
+			%f = sitofp i32 %p to double
+			%r = fptoui double %f to i32
+			ret i32 %r
 		}
 	)");
 
@@ -706,7 +765,10 @@ ConstantTruncIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i16 @function() {
-			ret i16 trunc (i32 add (i32 ptrtoint (i32* @g to i32), i32 2) to i16)
+			%p = ptrtoint ptr @g to i32
+			%a = add i32 %p, 2
+			%r = trunc i32 %a to i16
+			ret i16 %r
 		}
 	)");
 
@@ -723,7 +785,10 @@ ConstantFPTruncIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define float @function() {
-			ret float fptrunc (double sitofp (i32 ptrtoint (i32* @g to i32) to double) to float)
+			%p = ptrtoint ptr @g to i32
+			%f = sitofp i32 %p to double
+			%r = fptrunc double %f to float
+			ret float %r
 		}
 	)");
 
@@ -772,7 +837,9 @@ ConstantSIToFPIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define double @function() {
-			ret double sitofp (i32 ptrtoint (i32* @g to i32) to double)
+			%p = ptrtoint ptr @g to i32
+			%r = sitofp i32 %p to double
+			ret double %r
 		}
 	)");
 
@@ -791,7 +858,9 @@ ConstantUIToFPIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define double @function() {
-			ret double uitofp (i32 ptrtoint (i32* @g to i32) to double)
+			%p = ptrtoint ptr @g to i32
+			%r = uitofp i32 %p to double
+			ret double %r
 		}
 	)");
 
@@ -870,15 +939,31 @@ ConstantSelectIsConvertedCorrectly) {
 		@g = global i32 1
 
 		define i32 @function() {
-			ret i32 select (i1 icmp eq (i32 ptrtoint (i32* @g to i32), i32 1), i32 1, i32 2)
+			%p = ptrtoint ptr @g to i32
+			%c = icmp eq i32 %p, 1
+			%s = select i1 %c, i32 1, i32 2
+			ret i32 %s
 		}
 	)");
 
 	auto f = module->getFuncByName("function");
 	ASSERT_TRUE(f);
-	auto retStmt = cast<ReturnStmt>(f->getBody());
-	ASSERT_TRUE(retStmt);
-	ASSERT_TRUE(isa<TernaryOpExpr>(retStmt->getRetVal()));
+	bool foundSelect = false;
+	for (auto stmt = f->getBody(); stmt; stmt = stmt->getSuccessor()) {
+		if (auto retStmt = cast<ReturnStmt>(stmt)) {
+			if (isa<TernaryOpExpr>(retStmt->getRetVal())) {
+				foundSelect = true;
+				break;
+			}
+		}
+		if (auto assignStmt = cast<AssignStmt>(stmt)) {
+			if (isa<TernaryOpExpr>(assignStmt->getRhs())) {
+				foundSelect = true;
+				break;
+			}
+		}
+	}
+	ASSERT_TRUE(foundSelect);
 }
 
 } // namespace tests

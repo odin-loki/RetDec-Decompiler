@@ -45,7 +45,7 @@ void attachPointeeOnPointerCast(llvm::Value* v)
     {
         return;
     }
-    llvm_utils::setPointeeTypeMetadata(i, pt->getPointerElementType());
+    llvm_utils::setPointeeTypeMetadata(i, llvm_utils::pointeeType(i));
 }
 
 } // namespace
@@ -259,11 +259,10 @@ bool PhiRemover::demotePhiToStack(llvm::PHINode* phi, llvm::MDNode* faddr) {
     for (; llvm::isa<llvm::PHINode>(InsertPt) || InsertPt->isEHPad(); ++InsertPt);
 
     auto a = getInstAddress(phi);
-    auto* l = new llvm::LoadInst(alloca, phi->getName() + ".reload", &*InsertPt);
+    auto* l = llvm_utils::createLoadInst(
+        alloca, phi->getType(), phi->getName() + ".reload", &*InsertPt);
     if (a.isDefined())
         l->setMetadata("insn.addr", getInstAddressMeta(a, _module));
-    if (auto* ptee = llvm_utils::pointeeType(alloca))
-        llvm_utils::setPointeeTypeMetadata(l, ptee);
 
     phi->replaceAllUsesWith(l);
     phi->eraseFromParent();

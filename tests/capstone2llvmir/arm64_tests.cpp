@@ -102,7 +102,8 @@ class Capstone2LlvmIrTranslatorArm64Tests :
 			if (reg == preg)
 			{
 				bool isSigned = false;
-				v.IntVal = APInt(t->getBitWidth(), val, isSigned);
+				v.IntVal = APInt(t->getBitWidth(), val, isSigned,
+						/*implicitTrunc=*/true);
 				_emulator->setGlobalVariableValue(gv, v);
 				return;
 			}
@@ -125,7 +126,8 @@ class Capstone2LlvmIrTranslatorArm64Tests :
 
 			val = old | val;
 			bool isSigned = false;
-			v.IntVal = APInt(t->getBitWidth(), val, isSigned);
+			v.IntVal = APInt(t->getBitWidth(), val, isSigned,
+					/*implicitTrunc=*/true);
 			_emulator->setGlobalVariableValue(gv, v);
 			return;
 		}
@@ -8501,13 +8503,13 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_MOVI_v_i)
 	// Generate pseudo instruction in this case
 	emulate("movi v15.4h, #0xcf");
 
-	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_V15});
+	EXPECT_NO_REGISTERS_LOADED();
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM64_REG_V15, ANY},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_movi"), {0, 207}},
+		{_module.getFunction("__asm_movi"), {207}},
 	});
 }
 

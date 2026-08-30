@@ -99,86 +99,69 @@ if(LLVM_LOCAL_DIR)
 	message(STATUS "LLVM: using local LLVM directory.")
 	set(LLVM_SOURCE_DIR "${LLVM_LOCAL_DIR}")
 	set(_LLVM_URL "")
+	set(_LLVM_SOURCE_SUBDIR "")
 else()
 	message(STATUS "LLVM: using remote LLVM revision.")
 	set(LLVM_SOURCE_DIR "")
 	set(_LLVM_URL "${LLVM_URL}")
+	# llvm-project tarball: CMakeLists.txt lives in llvm/.
+	set(_LLVM_SOURCE_SUBDIR "llvm")
+endif()
+
+set(_LLVM_EP_SOURCE_SUBDIR "")
+if(_LLVM_SOURCE_SUBDIR)
+	set(_LLVM_EP_SOURCE_SUBDIR SOURCE_SUBDIR ${_LLVM_SOURCE_SUBDIR})
 endif()
 
 ExternalProject_Add(llvm-project
 	SOURCE_DIR ${LLVM_SOURCE_DIR}
 	URL ${_LLVM_URL}
 	URL_HASH SHA256=${LLVM_ARCHIVE_SHA256}
-	DOWNLOAD_NAME llvm.zip
+	DOWNLOAD_NAME llvm-project.src.tar.xz
 	DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+	${_LLVM_EP_SOURCE_SUBDIR}
 	${_LLVM_EP_DEPS}
 	CMAKE_ARGS
 		-DCMAKE_INSTALL_PREFIX=${LLVM_INSTALL_DIR}
-		# CMake 4.x rejects cmake_minimum_required < 3.5; LLVM 14 still declares 3.4.3.
 		-DCMAKE_POLICY_VERSION_MINIMUM=3.5
-		# Match top-level single-config build type (MSVC+Ninja needs consistent /MD vs /MDd).
 		-DCMAKE_BUILD_TYPE=${RETDEC_EP_CMAKE_BUILD_TYPE}
 		-DCMAKE_CXX_FLAGS_RELEASE=${CMAKE_CXX_FLAGS_RELEASE}
 		-DCMAKE_CXX_FLAGS_DEBUG=${CMAKE_CXX_FLAGS_DEBUG}
+		-DCMAKE_CXX_STANDARD=17
 
-		# Force Python3.
 		-DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
 
-		# Use provided libtool
 		-DCMAKE_LIBTOOL=${CMAKE_LIBTOOL}
 
-		# Targets to be build.
 		-DLLVM_TARGETS_TO_BUILD=X86
 
-		# Our tools depending on LLVM require RTTI, so build LLVM with it.
-		-DLLVM_REQUIRES_RTTI=YES
-
-		# Debug builds enable assertions; LLVM must be built with matching
-		# LLVM_ENABLE_ASSERTIONS to avoid link errors in middle/back-end tools.
-		-DLLVM_ENABLE_ASSERTIONS=${IS_DEBUG_BUILD}
-
-		# Disable the emission of warnings, which are useless since we do
-		# not modify the LLVM sources (of course, except for a few
-		# exceptions).
-		-DLLVM_ENABLE_WARNINGS=NO
-
-		# DIA SDK requires ATL (atlbase.h) which is not included in the
-		# minimal Build Tools install. We don't need DIA for RetDec.
-		-DLLVM_ENABLE_DIA_SDK=OFF
-
-		# Enable exceptions. We want to get std::bad_alloc().
-		# Without this, LLVM aborts instead of throwing.
 		-DLLVM_ENABLE_RTTI=ON
 		-DLLVM_ENABLE_EH=ON
+		-DLLVM_ENABLE_ASSERTIONS=${IS_DEBUG_BUILD}
+		-DLLVM_ENABLE_WARNINGS=NO
+		-DLLVM_ENABLE_DIA_SDK=OFF
+		-DLLVM_ENABLE_Z3_SOLVER=OFF
+		-DLLVM_ENABLE_LIBXML2=OFF
+		-DLLVM_ENABLE_TERMINFO=OFF
+		-DLLVM_ENABLE_BINDINGS=OFF
+		-DLLVM_ENABLE_FFI=OFF
 
-		# Disable the generation of targets for tests (we don't need them).
 		-DLLVM_INCLUDE_TOOLS=OFF
 		-DLLVM_INCLUDE_UTILS=OFF
 		-DLLVM_INCLUDE_RUNTIMES=OFF
 		-DLLVM_INCLUDE_EXAMPLES=OFF
 		-DLLVM_INCLUDE_TESTS=OFF
-		-DLLVM_INCLUDE_GO_TESTS=OFF
 		-DLLVM_INCLUDE_BENCHMARKS=OFF
 		-DLLVM_INCLUDE_DOCS=OFF
 
-		# Disable build of unnecessary LLVM parts.
 		-DLLVM_BUILD_TOOLS=OFF
-		-DLLVM_TOOL_LTO_BUILD=OFF
 		-DLLVM_BUILD_UTILS=OFF
 		-DLLVM_BUILD_RUNTIMES=OFF
-		-DLLVM_BUILD_RUNTIME=OFF
 		-DLLVM_BUILD_EXAMPLES=OFF
 		-DLLVM_BUILD_TESTS=OFF
 		-DLLVM_BUILD_BENCHMARKS=OFF
 		-DLLVM_BUILD_DOCS=OFF
-		-DLLVM_ENABLE_BINDINGS=OFF
-		# We don't want this so that we don't have to link with tinfo.
-		# It looks like terminal colors are working even without this.
-		-DLLVM_ENABLE_TERMINFO=OFF
 
-		# Force the use of the same compiler as used to build the top-level
-		# project. Otherwise, the external project may pick up a different
-		# compiler, which may result in link errors.
 		"${CMAKE_C_COMPILER_OPTION}"
 		"${CMAKE_CXX_COMPILER_OPTION}"
 		${LLVM_CROSS_ARGS}
@@ -206,8 +189,29 @@ ExternalProject_Add(llvm-project
 		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMCore${CMAKE_STATIC_LIBRARY_SUFFIX}
 		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMMC${CMAKE_STATIC_LIBRARY_SUFFIX}
 		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMPasses${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMTargetParser${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMRemarks${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMBitstreamReader${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMDebugInfoDWARFLowLevel${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMTextAPI${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMProfileData${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMFrontendHLSL${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMCodeGenTypes${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMCGData${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMObjCARCOpts${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMAggressiveInstCombine${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMIRPrinter${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMVectorize${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMSandboxIR${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMLinker${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMInstrumentation${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMCFGuard${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMCoroutines${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMHipStdPar${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMGlobalISel${CMAKE_STATIC_LIBRARY_SUFFIX}
+		${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMSelectionDAG${CMAKE_STATIC_LIBRARY_SUFFIX}
 )
-if(LLVM_LOCAL_DIR)
+if(LLVM_LOCAL_DIR AND NOT EXISTS "${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}LLVMCore${CMAKE_STATIC_LIBRARY_SUFFIX}")
 	force_configure_step(llvm-project)
 endif()
 
@@ -240,9 +244,38 @@ set(LLVM_LIB_LIST
 	LLVMMC
 	LLVMObject
 	LLVMPasses
+	LLVMTargetParser
+	LLVMRemarks
+	LLVMBitstreamReader
+	LLVMDebugInfoDWARFLowLevel
+	LLVMTextAPI
+	LLVMProfileData
+	LLVMFrontendHLSL
+	LLVMCodeGenTypes
+	LLVMCGData
+	LLVMObjCARCOpts
+	LLVMAggressiveInstCombine
+	LLVMIRPrinter
+	LLVMVectorize
+	LLVMSandboxIR
+	LLVMLinker
+	LLVMInstrumentation
+	LLVMCFGuard
+	LLVMCoroutines
+	LLVMHipStdPar
+	LLVMGlobalISel
+	LLVMSelectionDAG
+	LLVMAnalysis
+	LLVMTransformUtils
 )
 
 ExternalProject_Get_Property(llvm-project source_dir)
+
+if(_LLVM_SOURCE_SUBDIR)
+	set(_LLVM_SRC_INCLUDE "${source_dir}/${_LLVM_SOURCE_SUBDIR}/include")
+else()
+	set(_LLVM_SRC_INCLUDE "${source_dir}/include")
+endif()
 
 # Create target.
 
@@ -252,7 +285,7 @@ add_dependencies(llvm llvm-project)
 
 target_include_directories(llvm
 	SYSTEM INTERFACE
-		$<BUILD_INTERFACE:${source_dir}/include>
+		$<BUILD_INTERFACE:${_LLVM_SRC_INCLUDE}>
 		$<BUILD_INTERFACE:${LLVM_INSTALL_DIR}/include>
 		$<INSTALL_INTERFACE:${RETDEC_INSTALL_DEPS_INCLUDE_DIR}>
 )
@@ -277,6 +310,18 @@ foreach(LLVM_LIB ${LLVM_LIB_LIST})
 	list(APPEND LLVM_LIBS_PATHS "${RETDEC_INSTALL_LIB_DIR_ABS}/${LLVM_LIB_PNAME}")
 endforeach(LLVM_LIB)
 
+# GNU ld scans each archive once. LLVM 23 has circular refs
+# (LLVMObjCARCOpts -> LLVMAnalysis, LLVMInstrumentation -> LLVMTransformUtils).
+if(UNIX AND NOT APPLE)
+	foreach(_llvm_rescan LLVMAnalysis LLVMTransformUtils)
+		set(_llvm_rescan_path
+			${LLVM_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}${_llvm_rescan}${CMAKE_STATIC_LIBRARY_SUFFIX})
+		target_link_libraries(llvm INTERFACE
+			$<BUILD_INTERFACE:${_llvm_rescan_path}>
+		)
+	endforeach()
+endif()
+
 target_link_libraries(llvm
 	INTERFACE
 		$<INSTALL_INTERFACE:retdec::deps::llvm-libs>
@@ -290,6 +335,10 @@ if(UNIX)
 	endif()
 	if(RETDEC_LLVM_WITH_ZLIB)
 		target_link_libraries(llvm INTERFACE ${ZLIB_LIBRARIES})
+	endif()
+	find_library(ZSTD_LIBRARY zstd)
+	if(ZSTD_LIBRARY)
+		target_link_libraries(llvm INTERFACE ${ZSTD_LIBRARY})
 	endif()
 	target_link_libraries(llvm
 		INTERFACE

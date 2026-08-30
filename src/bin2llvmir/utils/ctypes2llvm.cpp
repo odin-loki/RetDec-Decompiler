@@ -180,7 +180,7 @@ void Ctypes2LlvmTypeVisitor::visit(
 		name.erase(0, prefix.length());
 	}
 
-	if (auto *ex = _module->getTypeByName(name)) {
+	if (auto *ex = llvm::StructType::getTypeByName(_module->getContext(), name)) {
 		_type = ex;
 		return;
 	}

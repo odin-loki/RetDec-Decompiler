@@ -28,9 +28,9 @@ const std::vector<Plugin*> PluginMgr::plugins =
 /**
  * Find the matching plugins in the registered plugins table.
  *
- * Stage 3 (Emulation-Bounded Unpacking): When no plugin matches, a future
- * generic emulation path could run the decompiler to produce LLVM IR, then
- * use llvmir-emul to emulate until OEP and dump unpacked memory.
+ * Stage 3 (Emulation-Bounded Unpacking): When no plugin matches,
+ * `--try-emulation` / `retdec::tryEmulationUnpacking` runs the decompiler
+ * to LLVM IR and uses llvmir-emul until OEP, then dumps unpacked memory.
  *
  * @param packerName The packer name for which the plugins are found.
  * @param packerVersion The packer version for which the plugins are found.

@@ -8,9 +8,13 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <optional>
+#include <span>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace retdec {
@@ -107,6 +111,22 @@ CliReadResult CLIReader::read(const uint8_t* data, size_t size,
     // Phase 8: Build BcModule
     BcModule module(asmName, SourceLang::CSharp);
     module.setName(asmName);
+    if (tables_->rowCount(TableId::Assembly) >= 1) {
+        auto asmRow = tables_->assembly(1);
+        module.version =
+            std::to_string(asmRow.majorVersion) + "." +
+            std::to_string(asmRow.minorVersion) + "." +
+            std::to_string(asmRow.buildNumber) + "." +
+            std::to_string(asmRow.revisionNumber);
+        if (opts_.decodeCustomAttrs) {
+            MetadataToken parent{static_cast<uint8_t>(TableId::Assembly), 1};
+            module.moduleAnnotations = customAttributes(parent);
+        }
+    }
+    for (const auto& n : typeRefNames_) {
+        if (n.empty() || n == "<unknown>") continue;
+        module.addExternalRef(n, n);
+    }
 
     uint32_t numTypeDefs = tables_->rowCount(TableId::TypeDef);
     result.typeDefCount = numTypeDefs;
@@ -229,6 +249,13 @@ BcClass CLIReader::buildClass(uint32_t typeDefIdx, CliReadResult& result) const 
     // Access flags
     cls.access = typeDefAccess(row.flags);
 
+    // Nested type → outer class name
+    if (opts_.decodeNestedClasses && isNested(typeDefIdx)) {
+        uint32_t enc = enclosingClass(typeDefIdx);
+        if (enc != 0)
+            cls.outerClass = typeDefName(enc);
+    }
+
     // is interface / abstract / sealed
     cls.isInterface = (row.flags & TypeAttributes::ClassSemanticsMask) == TypeAttributes::Interface;
     cls.isAbstract  = (row.flags & TypeAttributes::Abstract) != 0;
@@ -237,6 +264,13 @@ BcClass CLIReader::buildClass(uint32_t typeDefIdx, CliReadResult& result) const 
     if (row.extends.valid()) {
         auto sup = resolveExtends(row.extends);
         if (sup) cls.superClass = *sup;
+    }
+    if (cls.superClass) {
+        std::string sn = cls.superClass->isRef()
+            ? cls.superClass->ref().className
+            : cls.superClass->toString();
+        if (sn == "System.Enum")
+            cls.isEnum = true;
     }
 
     // Interfaces
@@ -264,6 +298,14 @@ BcClass CLIReader::buildClass(uint32_t typeDefIdx, CliReadResult& result) const 
         } catch (const std::exception&) { ++result.parseErrorCount; }
     }
     result.fieldCount += static_cast<uint32_t>(cls.fields.size());
+
+    if (cls.isEnum) {
+        for (const auto& f : cls.fields) {
+            if (f.name == "value__") continue;
+            if (hasFlag(f.access, BcAccess::Static))
+                cls.enumConstants.push_back(f.name);
+        }
+    }
 
     // Methods
     uint32_t methodEnd;
@@ -299,6 +341,38 @@ BcField CLIReader::buildField(uint32_t fieldIdx) const {
     if (!blob.empty()) {
         auto ct = sigDecoder_->decodeField(blob);
         if (ct) f.type = ct->base;
+    }
+    f.constantIntValue = fieldConstantInt(fieldIdx);
+    f.constantFltValue = fieldConstantFloat(fieldIdx);
+    f.constantStrValue = fieldConstantString(fieldIdx);
+    if (opts_.decodeCustomAttrs) {
+        MetadataToken parent{static_cast<uint8_t>(TableId::Field), fieldIdx};
+        f.annotations = customAttributes(parent);
+    }
+    uint32_t nFm = tables_->rowCount(TableId::FieldMarshal);
+    for (uint32_t i = 1; i <= nFm; ++i) {
+        auto fm = tables_->fieldMarshal(i);
+        if (fm.parent.table != static_cast<uint8_t>(TableId::Field)
+            || fm.parent.index != fieldIdx)
+            continue;
+        BcAnnotation ma;
+        ma.typeName = "System.Runtime.InteropServices.MarshalAsAttribute";
+        auto blob = heaps_->blobs.get(fm.nativeType);
+        if (!blob.empty()) {
+            static const char* digits = "0123456789ABCDEF";
+            std::string hex;
+            hex.reserve(blob.size() * 2);
+            for (uint8_t b : blob) {
+                hex.push_back(digits[b >> 4]);
+                hex.push_back(digits[b & 0x0F]);
+            }
+            BcAnnotationValue ev;
+            ev.kind = BcAnnotationValue::Kind::String;
+            ev.stringValue = std::move(hex);
+            ma.elements["NativeType"] = std::move(ev);
+        }
+        f.annotations.push_back(std::move(ma));
+        break;
     }
     return f;
 }
@@ -344,6 +418,16 @@ BcMethod CLIReader::buildMethod(uint32_t methodDefIdx, CliReadResult& result) co
             m.paramNames.push_back(pname);
         else
             m.paramNames.push_back("p" + std::to_string(prow.sequence));
+        if (opts_.decodeCustomAttrs && prow.sequence > 0) {
+            size_t pidx = static_cast<size_t>(prow.sequence - 1);
+            if (m.paramAnnotations.size() <= pidx)
+                m.paramAnnotations.resize(pidx + 1);
+            MetadataToken parent{static_cast<uint8_t>(TableId::Param), pi};
+            auto anns = customAttributes(parent);
+            m.paramAnnotations[pidx].insert(
+                m.paramAnnotations[pidx].end(),
+                anns.begin(), anns.end());
+        }
     }
 
     // CIL method body
@@ -373,6 +457,43 @@ BcMethod CLIReader::buildMethod(uint32_t methodDefIdx, CliReadResult& result) co
                     }
                 }
             }
+        }
+    }
+
+    if (opts_.decodeCustomAttrs) {
+        MetadataToken parent{static_cast<uint8_t>(TableId::MethodDef), methodDefIdx};
+        m.annotations = customAttributes(parent);
+    }
+
+    if (row.flags & MethodAttributes::PInvokeImpl) {
+        uint32_t nImpl = tables_->rowCount(TableId::ImplMap);
+        for (uint32_t i = 1; i <= nImpl; ++i) {
+            auto im = tables_->implMap(i);
+            if (im.memberForwarded.table != static_cast<uint8_t>(TableId::MethodDef)
+                || im.memberForwarded.index != methodDefIdx)
+                continue;
+            m.access = m.access | BcAccess::Extern;
+            BcAnnotation dll;
+            dll.typeName = "System.Runtime.InteropServices.DllImportAttribute";
+            std::string entry = heaps_->strings.get(im.importName);
+            if (!entry.empty()) {
+                BcAnnotationValue ev;
+                ev.kind = BcAnnotationValue::Kind::String;
+                ev.stringValue = entry;
+                dll.elements["EntryPoint"] = std::move(ev);
+            }
+            if (im.importScope != 0) {
+                auto mr = tables_->moduleRef(im.importScope);
+                std::string dllName = heaps_->strings.get(mr.name);
+                if (!dllName.empty()) {
+                    BcAnnotationValue dv;
+                    dv.kind = BcAnnotationValue::Kind::String;
+                    dv.stringValue = dllName;
+                    dll.elements["Value"] = std::move(dv);
+                }
+            }
+            m.annotations.push_back(std::move(dll));
+            break;
         }
     }
 
@@ -432,6 +553,24 @@ std::vector<std::string> CLIReader::genericParams(uint32_t owner, bool isMethod)
         if (row.owner.table == expectedTable && row.owner.index == owner) {
             std::string pname = heaps_->strings.get(row.name);
             if (pname.empty()) pname = "T" + std::to_string(row.number);
+            std::string bounds;
+            uint32_t nc = tables_->rowCount(TableId::GenericParamConstraint);
+            for (uint32_t c = 1; c <= nc; ++c) {
+                auto cr = tables_->genericParamConstraint(c);
+                if (cr.owner != i) continue;
+                std::string tn;
+                if (cr.constraint.table == static_cast<uint8_t>(TableId::TypeDef))
+                    tn = typeDefName(cr.constraint.index);
+                else if (cr.constraint.table == static_cast<uint8_t>(TableId::TypeRef))
+                    tn = typeRefName(cr.constraint.index);
+                else if (cr.constraint.table == static_cast<uint8_t>(TableId::TypeSpec))
+                    tn = typeSpecType(cr.constraint.index).toString();
+                if (tn.empty() || tn == "<unknown>") continue;
+                if (!bounds.empty()) bounds += ", ";
+                bounds += tn;
+            }
+            if (!bounds.empty())
+                pname += " : " + bounds;
             params.emplace_back(row.number, pname);
         }
     }
@@ -481,39 +620,63 @@ std::vector<BcAnnotation> CLIReader::customAttributes(MetadataToken parent) cons
 
 BcAccess CLIReader::typeDefAccess(uint32_t flags) {
     uint32_t vis = flags & TypeAttributes::VisibilityMask;
+    BcAccess a = BcAccess::Internal;
     switch (vis) {
     case TypeAttributes::Public:
-    case TypeAttributes::NestedPublic:     return BcAccess::Public;
+    case TypeAttributes::NestedPublic:     a = BcAccess::Public; break;
     case TypeAttributes::NestedFamily:
-    case TypeAttributes::NestedFamORAssem: return BcAccess::Protected;
-    case TypeAttributes::NestedPrivate:    return BcAccess::Private;
+    case TypeAttributes::NestedFamORAssem: a = BcAccess::Protected; break;
+    case TypeAttributes::NestedPrivate:    a = BcAccess::Private; break;
     case TypeAttributes::NestedAssembly:
-    case TypeAttributes::NestedFamANDAssem:return BcAccess::Internal;
-    default:                               return BcAccess::Internal;
+    case TypeAttributes::NestedFamANDAssem:a = BcAccess::Internal; break;
+    default:                               a = BcAccess::Internal; break;
     }
+    if (flags & TypeAttributes::Abstract) a = a | BcAccess::Abstract;
+    if (flags & TypeAttributes::Sealed)   a = a | BcAccess::Sealed;
+    return a;
 }
 
 BcAccess CLIReader::methodDefAccess(uint16_t flags) {
     uint16_t acc = flags & MethodAttributes::MemberAccessMask;
+    BcAccess a = BcAccess::Private;
     switch (acc) {
-    case MethodAttributes::Public:   return BcAccess::Public;
+    case MethodAttributes::Public:   a = BcAccess::Public; break;
     case MethodAttributes::Family:
-    case MethodAttributes::FamORAssem: return BcAccess::Protected;
-    case MethodAttributes::Private:  return BcAccess::Private;
-    case MethodAttributes::Assem:    return BcAccess::Internal;
-    default:                         return BcAccess::Private;
+    case MethodAttributes::FamORAssem: a = BcAccess::Protected; break;
+    case MethodAttributes::Private:  a = BcAccess::Private; break;
+    case MethodAttributes::Assem:    a = BcAccess::Internal; break;
+    default:                         a = BcAccess::Private; break;
     }
+    if (flags & MethodAttributes::Static)      a = a | BcAccess::Static;
+    if (flags & MethodAttributes::Final)       a = a | BcAccess::Final;
+    if (flags & MethodAttributes::Virtual) {
+        if (flags & MethodAttributes::NewSlot)
+            a = a | BcAccess::Virtual;
+        else {
+            a = a | BcAccess::Override;
+            if (flags & MethodAttributes::Final)
+                a = a | BcAccess::Sealed;
+        }
+    }
+    if (flags & MethodAttributes::Abstract)    a = a | BcAccess::Abstract;
+    if (flags & MethodAttributes::PInvokeImpl) a = a | BcAccess::Extern;
+    return a;
 }
 
 BcAccess CLIReader::fieldAccess(uint16_t flags) {
     uint16_t acc = flags & 0x0007;  // FieldAttributes MemberAccessMask
+    BcAccess a = BcAccess::Private;
     switch (acc) {
-    case 0x0006: return BcAccess::Public;
-    case 0x0004: return BcAccess::Protected;
-    case 0x0001: return BcAccess::Private;
-    case 0x0003: return BcAccess::Internal;
-    default:     return BcAccess::Private;
+    case 0x0006: a = BcAccess::Public; break;
+    case 0x0004: a = BcAccess::Protected; break;
+    case 0x0001: a = BcAccess::Private; break;
+    case 0x0003: a = BcAccess::Internal; break;
+    default:     a = BcAccess::Private; break;
     }
+    if (flags & 0x0010) a = a | BcAccess::Static;    // FieldAttributes.Static
+    if (flags & 0x0020) a = a | BcAccess::Readonly;  // FieldAttributes.InitOnly
+    if (flags & 0x0020) a = a | BcAccess::Final;
+    return a;
 }
 
 bool CLIReader::isNested(uint32_t typeDefIdx) const {
@@ -526,6 +689,113 @@ uint32_t CLIReader::enclosingClass(uint32_t typeDefIdx) const {
     for (const auto& [n, e] : nestedMap_)
         if (n == typeDefIdx) return e;
     return 0;
+}
+
+static std::optional<ConstantRow> findFieldConstantRow(const MetadataTables& tables,
+                                                       uint32_t fieldIdx) {
+    uint32_t n = tables.rowCount(TableId::Constant);
+    for (uint32_t i = 1; i <= n; ++i) {
+        auto row = tables.constant(i);
+        if (row.parent.table == static_cast<uint8_t>(TableId::Field) &&
+            row.parent.index == fieldIdx)
+            return row;
+    }
+    return std::nullopt;
+}
+
+static int64_t readSignedLE(std::span<const uint8_t> b, size_t n) {
+    uint64_t u = 0;
+    for (size_t i = 0; i < n && i < b.size(); ++i)
+        u |= static_cast<uint64_t>(b[i]) << (8 * i);
+    if (n < 8 && n > 0 && (b[n - 1] & 0x80))
+        u |= ~0ull << (8 * n);
+    return static_cast<int64_t>(u);
+}
+
+std::optional<int64_t> CLIReader::fieldConstantInt(uint32_t fieldIdx) const {
+    if (!tables_ || !heaps_) return std::nullopt;
+    auto row = findFieldConstantRow(*tables_, fieldIdx);
+    if (!row) return std::nullopt;
+    auto blob = heaps_->blobs.get(row->value);
+    auto ty = static_cast<ElementType>(row->type);
+    switch (ty) {
+    case ElementType::Boolean:
+    case ElementType::I1:
+        if (!blob.empty()) return static_cast<int8_t>(blob[0]);
+        break;
+    case ElementType::U1:
+        if (!blob.empty()) return blob[0];
+        break;
+    case ElementType::Char:
+    case ElementType::I2:
+        if (blob.size() >= 2) return readSignedLE(blob, 2);
+        break;
+    case ElementType::U2:
+        if (blob.size() >= 2)
+            return static_cast<int64_t>(blob[0] | (blob[1] << 8));
+        break;
+    case ElementType::I4:
+        if (blob.size() >= 4) return readSignedLE(blob, 4);
+        break;
+    case ElementType::U4:
+        if (blob.size() >= 4) {
+            uint32_t u = 0;
+            std::memcpy(&u, blob.data(), 4);
+            return static_cast<int64_t>(u);
+        }
+        break;
+    case ElementType::I8:
+    case ElementType::U8:
+        if (blob.size() >= 8) return readSignedLE(blob, 8);
+        break;
+    default:
+        break;
+    }
+    return std::nullopt;
+}
+
+std::optional<double> CLIReader::fieldConstantFloat(uint32_t fieldIdx) const {
+    if (!tables_ || !heaps_) return std::nullopt;
+    auto row = findFieldConstantRow(*tables_, fieldIdx);
+    if (!row) return std::nullopt;
+    auto blob = heaps_->blobs.get(row->value);
+    auto ty = static_cast<ElementType>(row->type);
+    if (ty == ElementType::R4 && blob.size() >= 4) {
+        float f = 0;
+        std::memcpy(&f, blob.data(), 4);
+        return static_cast<double>(f);
+    }
+    if (ty == ElementType::R8 && blob.size() >= 8) {
+        double d = 0;
+        std::memcpy(&d, blob.data(), 8);
+        return d;
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> CLIReader::fieldConstantString(uint32_t fieldIdx) const {
+    if (!tables_ || !heaps_) return std::nullopt;
+    auto row = findFieldConstantRow(*tables_, fieldIdx);
+    if (!row || static_cast<ElementType>(row->type) != ElementType::String)
+        return std::nullopt;
+    auto blob = heaps_->blobs.get(row->value);
+    if (blob.empty()) return std::string{};
+    std::string out;
+    for (size_t i = 0; i + 1 < blob.size(); i += 2) {
+        uint16_t cu = static_cast<uint16_t>(blob[i]) |
+                      (static_cast<uint16_t>(blob[i + 1]) << 8);
+        if (cu < 0x80)
+            out.push_back(static_cast<char>(cu));
+        else if (cu < 0x800) {
+            out.push_back(static_cast<char>(0xC0 | (cu >> 6)));
+            out.push_back(static_cast<char>(0x80 | (cu & 0x3F)));
+        } else {
+            out.push_back(static_cast<char>(0xE0 | (cu >> 12)));
+            out.push_back(static_cast<char>(0x80 | ((cu >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cu & 0x3F)));
+        }
+    }
+    return out;
 }
 
 } // namespace cli_parser

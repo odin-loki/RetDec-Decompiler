@@ -22,6 +22,7 @@
  *    instruction is in a different function's entry block.
  */
 
+#include <map>
 #include <vector>
 
 #include <llvm/IR/BasicBlock.h>
@@ -56,7 +57,7 @@ void attachPointeeOnPointerCast(Value* v)
 	{
 		return;
 	}
-	llvm_utils::setPointeeTypeMetadata(i, pt->getPointerElementType());
+	llvm_utils::setPointeeTypeMetadata(i, llvm_utils::pointeeType(i));
 }
 
 void attachPointeeOnPointerSelect(SelectInst* sel, bool& changed)
@@ -437,8 +438,7 @@ bool EntryAlloca::runOnModule(Module& M)
 			unsigned pteeBits = pteeTy->getIntegerBitWidth();
 
 			// Create a new load with the pointer's native type.
-			auto* newLoad = new LoadInst(l->getPointerOperand(), "", l);
-			llvm_utils::setPointeeTypeMetadata(newLoad, pteeTy);
+			auto* newLoad = llvm_utils::createLoadInst(l->getPointerOperand(), pteeTy, "", l);
 			Value* conv = nullptr;
 			if (pteeBits > loadBits)
 			{

@@ -22,7 +22,8 @@
 #include <system_error>
 
 #include <llvm/Object/COFF.h>
-#include <llvm/Support/Host.h>
+#include <llvm/Support/SwapByteOrder.h>
+#include <llvm/TargetParser/Host.h>
 
 #include "retdec/utils/conversion.h"
 #include "retdec/utils/io/log.h"
@@ -139,7 +140,7 @@ bool isJava(std::istream& stream)
 		if (sys::IsLittleEndianHost)
 		{
 			// Both are in big endian std::uint8_t order
-			fatCount = sys::SwapByteOrder_32(fatCount);
+			sys::swapByteOrder(fatCount);
 		}
 
 		// Mach-O currently supports up to 18 architectures
@@ -172,7 +173,7 @@ bool isStrangeFeedface(std::istream& stream)
 		// All such files found were in little endian std::uint8_t order
 		for (int i = 0; i < 4; ++i)
 		{
-			ints[i] = sys::SwapByteOrder_32(ints[i]);
+			sys::swapByteOrder(ints[i]);
 		}
 	}
 
@@ -304,7 +305,7 @@ Format dispatchByLattice(const std::string& buf)
 				(static_cast<std::uint8_t>(buf[7]) << 24);
 			if (sys::IsLittleEndianHost)
 			{
-				w = sys::SwapByteOrder_32(w);
+				sys::swapByteOrder(w);
 			}
 			if (w > 30)
 			{
@@ -425,7 +426,7 @@ FormatLatticeHints computeFormatLatticeHints(
 					| (static_cast<std::uint8_t>(data[7]) << 24);
 			if (sys::IsLittleEndianHost)
 			{
-				w = sys::SwapByteOrder_32(w);
+				sys::swapByteOrder(w);
 			}
 			h.cafeBabeSecondWord = w;
 			if (w > 30)

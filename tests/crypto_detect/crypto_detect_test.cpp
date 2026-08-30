@@ -70,6 +70,8 @@ TEST(CryptoResultTest, AlgorithmNames) {
     r.algorithm = CryptoAlgorithm::CRC;      EXPECT_EQ(r.algorithmName(), "CRC");
     r.algorithm = CryptoAlgorithm::Blowfish; EXPECT_EQ(r.algorithmName(), "Blowfish");
     r.algorithm = CryptoAlgorithm::DES;      EXPECT_EQ(r.algorithmName(), "DES");
+    r.algorithm = CryptoAlgorithm::Salsa20;  EXPECT_EQ(r.algorithmName(), "Salsa20");
+    r.algorithm = CryptoAlgorithm::Poly1305; EXPECT_EQ(r.algorithmName(), "Poly1305");
     r.algorithm = CryptoAlgorithm::Unknown;  EXPECT_EQ(r.algorithmName(), "Unknown");
 }
 
@@ -362,6 +364,183 @@ TEST(ChaCha20DetectorTest, TwoSigmaWordsReachThreshold) {
     addImmUse(*fn, w1, 0x6b206574ULL);
     auto r = det.detect(*fn);
     EXPECT_NEAR(r.confidence, 0.50f, 0.01f);
+}
+
+// ─── 4b. Salsa20 Detector ────────────────────────────────────────────────────
+
+TEST(Salsa20DetectorTest, AllFourRotationConstants) {
+    Salsa20Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* a1 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a1, 7);
+    auto* a2 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a2, 9);
+    auto* a3 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a3, 13);
+    auto* a4 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a4, 18);
+    for (int k = 0; k < 4; ++k) addInstr(*fn, blk, IrInstr::Op::Xor);
+    addInstr(*fn, blk, IrInstr::Op::Shl);
+    auto r = det.detect(*fn);
+    EXPECT_NEAR(r.confidence, 1.0f, 0.01f);
+    EXPECT_EQ(r.algorithm, CryptoAlgorithm::Salsa20);
+    EXPECT_NE(r.emittedAnnotation.find("Salsa20"), std::string::npos);
+}
+
+TEST(Salsa20DetectorTest, MissingXorGivesLowConfidence) {
+    Salsa20Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* a1 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a1, 7);
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.50f);
+}
+
+TEST(Salsa20DetectorTest, TwoSalsaSpecificRotations) {
+    Salsa20Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* a1 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a1, 9);
+    auto* a2 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a2, 13);
+    for (int k = 0; k < 4; ++k) addInstr(*fn, blk, IrInstr::Op::Xor);
+    addInstr(*fn, blk, IrInstr::Op::Shl);
+    auto r = det.detect(*fn);
+    EXPECT_NEAR(r.confidence, 0.50f, 0.01f);
+}
+
+TEST(Salsa20DetectorTest, AlgorithmIsSalsa20) {
+    Salsa20Detector det;
+    EXPECT_EQ(det.algorithm(), CryptoAlgorithm::Salsa20);
+}
+
+TEST(Salsa20DetectorTest, DoesNotFireOnChaChaRotations) {
+    Salsa20Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* a1 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a1, 16);
+    auto* a2 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a2, 12);
+    auto* a3 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a3, 8);
+    for (int k = 0; k < 4; ++k) addInstr(*fn, blk, IrInstr::Op::Xor);
+    addInstr(*fn, blk, IrInstr::Op::Shl);
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.50f);
+}
+
+// ─── 4c. Poly1305 Detector ───────────────────────────────────────────────────
+
+TEST(Poly1305DetectorTest, BothClampMasks) {
+    Poly1305Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* a1 = addInstr(*fn, blk, IrInstr::Op::And);
+    addImmUse(*fn, a1, 0x0ffffffc0fffffffULL);
+    auto* a2 = addInstr(*fn, blk, IrInstr::Op::And);
+    addImmUse(*fn, a2, 0x0ffffffc0ffffffcULL);
+    auto r = det.detect(*fn);
+    EXPECT_NEAR(r.confidence, 1.0f, 0.01f);
+    EXPECT_EQ(r.algorithm, CryptoAlgorithm::Poly1305);
+    EXPECT_NE(r.emittedAnnotation.find("Poly1305"), std::string::npos);
+}
+
+TEST(Poly1305DetectorTest, OneClampMaskReachesThreshold) {
+    Poly1305Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* a1 = addInstr(*fn, blk, IrInstr::Op::And);
+    addImmUse(*fn, a1, 0x0ffffffc0fffffffULL);
+    auto r = det.detect(*fn);
+    EXPECT_NEAR(r.confidence, 0.50f, 0.01f);
+}
+
+TEST(Poly1305DetectorTest, DonnaLimbs) {
+    Poly1305Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* a1 = addInstr(*fn, blk, IrInstr::Op::And);
+    addImmUse(*fn, a1, 0x3ffff03ULL);
+    auto* a2 = addInstr(*fn, blk, IrInstr::Op::And);
+    addImmUse(*fn, a2, 0x3ffc0ffULL);
+    auto r = det.detect(*fn);
+    EXPECT_NEAR(r.confidence, 0.50f, 0.01f);
+}
+
+TEST(Poly1305DetectorTest, AlgorithmIsPoly1305) {
+    Poly1305Detector det;
+    EXPECT_EQ(det.algorithm(), CryptoAlgorithm::Poly1305);
+}
+
+TEST(Curve25519DetectorTest, LadderConstant) {
+    Curve25519Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* a1 = addInstr(*fn, blk, IrInstr::Op::Mul);
+    addImmUse(*fn, a1, 121665);
+    auto r = det.detect(*fn);
+    EXPECT_NEAR(r.confidence, 1.0f, 0.01f);
+    EXPECT_EQ(r.algorithm, CryptoAlgorithm::ECC);
+    EXPECT_EQ(r.variant, CryptoVariant::Curve25519);
+    EXPECT_NE(r.emittedAnnotation.find("Curve25519"), std::string::npos);
+}
+
+TEST(Curve25519DetectorTest, HexImmediate) {
+    Curve25519Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* a1 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a1, 0x1db41);
+    auto r = det.detect(*fn);
+    EXPECT_NEAR(r.confidence, 1.0f, 0.01f);
+    EXPECT_EQ(r.variant, CryptoVariant::Curve25519);
+}
+
+TEST(Curve25519DetectorTest, DoesNotFireOnUnrelatedImmediate) {
+    Curve25519Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* a1 = addInstr(*fn, blk, IrInstr::Op::And);
+    addImmUse(*fn, a1, 0x1b);
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.50f);
+}
+
+TEST(Curve25519DetectorTest, AlgorithmIsECC) {
+    Curve25519Detector det;
+    EXPECT_EQ(det.algorithm(), CryptoAlgorithm::ECC);
+}
+
+TEST(Poly1305DetectorTest, DoesNotFireOnCommonBitMask) {
+    Poly1305Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* a1 = addInstr(*fn, blk, IrInstr::Op::And);
+    addImmUse(*fn, a1, 0x3ffffffULL);
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.50f);
+}
+
+TEST(Poly1305DetectorTest, DoesNotFireOnChaChaRotations) {
+    Poly1305Detector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* a1 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a1, 16);
+    auto* a2 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a2, 12);
+    auto* a3 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a3, 8);
+    auto* a4 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a4, 7);
+    for (int k = 0; k < 4; ++k) addInstr(*fn, blk, IrInstr::Op::Xor);
+    addInstr(*fn, blk, IrInstr::Op::Shl);
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.50f);
 }
 
 // ─── 5. HMAC Detector ────────────────────────────────────────────────────────
@@ -697,6 +876,45 @@ TEST(CryptoDetectorTest, DESDetected) {
     for (auto& r : results)
         if (r.algorithm == CryptoAlgorithm::DES) hasDES = true;
     EXPECT_TRUE(hasDES);
+}
+
+TEST(CryptoDetectorTest, Salsa20Detected) {
+    CryptoDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* a1 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a1, 7);
+    auto* a2 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a2, 9);
+    auto* a3 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a3, 13);
+    auto* a4 = addInstr(*fn, blk, IrInstr::Op::Add);
+    addImmUse(*fn, a4, 18);
+    for (int k = 0; k < 4; ++k) addInstr(*fn, blk, IrInstr::Op::Xor);
+    addInstr(*fn, blk, IrInstr::Op::Shl);
+    auto results = det.detect(*fn);
+    bool hasSalsa = false;
+    for (auto& r : results)
+        if (r.algorithm == CryptoAlgorithm::Salsa20) hasSalsa = true;
+    EXPECT_TRUE(hasSalsa);
+}
+
+TEST(CryptoDetectorTest, Poly1305Detected) {
+    CryptoDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* a1 = addInstr(*fn, blk, IrInstr::Op::And);
+    addImmUse(*fn, a1, 0x0ffffffc0fffffffULL);
+    auto* a2 = addInstr(*fn, blk, IrInstr::Op::And);
+    addImmUse(*fn, a2, 0x0ffffffc0ffffffcULL);
+    // Default preflight requires minInstrs=4.
+    addInstr(*fn, blk, IrInstr::Op::And);
+    addInstr(*fn, blk, IrInstr::Op::And);
+    auto results = det.detect(*fn);
+    bool hasPoly = false;
+    for (auto& r : results)
+        if (r.algorithm == CryptoAlgorithm::Poly1305) hasPoly = true;
+    EXPECT_TRUE(hasPoly);
 }
 
 TEST(CryptoDetectorTest, ConfidenceThresholdFilters) {

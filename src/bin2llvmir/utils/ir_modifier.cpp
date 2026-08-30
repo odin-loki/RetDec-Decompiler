@@ -5,7 +5,12 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <llvm/IR/ConstantFold.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/DataLayout.h>
+#include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/InstIterator.h>
+#include <llvm/IR/InstrTypes.h>
 
 #include "retdec/utils/string.h"
 #include "retdec/bin2llvmir/providers/abi/abi.h"
@@ -40,12 +45,68 @@ Instruction* insertBeforeAfter(Instruction* i, Instruction* b, Instruction* a)
 	return i;
 }
 
+void stampPointerPointee(Value* conv, Type* destPointee, Value* src)
+{
+	auto* i = dyn_cast<Instruction>(conv);
+	if (!i)
+	{
+		return;
+	}
+	Type* p = destPointee ? destPointee : llvm_utils::pointeeType(src);
+	if (p)
+	{
+		llvm_utils::setPointeeTypeMetadata(i, p);
+	}
+}
+
+Constant* foldOrGetCast(Constant* c, Type* ty, bool isSigned)
+{
+	auto opc = CastInst::getCastOpcode(c, isSigned, ty, isSigned);
+	if (Constant* folded = ConstantFoldCastInstruction(opc, c, ty))
+	{
+		return folded;
+	}
+	if (ConstantExpr::isSupportedCastOp(opc))
+	{
+		return ConstantExpr::getCast(opc, c, ty);
+	}
+	return UndefValue::get(ty);
+}
+
+Value* identityPointerWithPointee(
+		Value* val,
+		Type* destPointee,
+		Instruction* before,
+		Instruction* after,
+		bool constExpr)
+{
+	auto& ctx = val->getContext();
+	Value* zero = ConstantInt::get(Type::getInt64Ty(ctx), 0);
+	if (constExpr)
+	{
+		auto* cval = cast<Constant>(val);
+		return ConstantExpr::getGetElementPtr(
+				Type::getInt8Ty(ctx),
+				cval,
+				ArrayRef<Value*>{zero});
+	}
+	auto* gep = GetElementPtrInst::Create(
+			Type::getInt8Ty(ctx),
+			val,
+			ArrayRef<Value*>{zero},
+			Twine(""));
+	insertBeforeAfter(gep, before, after);
+	llvm_utils::setPointeeTypeMetadata(gep, destPointee);
+	return gep;
+}
+
 Value* convertToType(
 		Value* val,
 		Type* type,
 		Instruction* before,
 		Instruction* after,
-		bool constExpr)
+		bool constExpr,
+		Type* destPointee = nullptr)
 {
 	if (val == nullptr
 			|| type == nullptr
@@ -65,7 +126,17 @@ Value* convertToType(
 
 	if (val->getType() == type)
 	{
-		conv = val;
+		if (type->isPointerTy() && destPointee
+				&& llvm_utils::pointeeType(val) != destPointee
+				&& !constExpr)
+		{
+			conv = identityPointerWithPointee(
+					val, destPointee, before, after, constExpr);
+		}
+		else
+		{
+			conv = val;
+		}
 	}
 	else if (val->getType()->isPointerTy() && type->isPointerTy())
 	{
@@ -82,13 +153,13 @@ Value* convertToType(
 			{
 				auto* i = new BitCastInst(val, type, "");
 				conv = insertBeforeAfter(i, before, after);
-				llvm_utils::setPointeeTypeMetadata(i, type->getPointerElementType());
+				stampPointerPointee(i, destPointee, val);
 			}
 			else
 			{
 				auto* i = new AddrSpaceCastInst(val, type, "");
 				conv = insertBeforeAfter(i, before, after);
-				llvm_utils::setPointeeTypeMetadata(i, type->getPointerElementType());
+				stampPointerPointee(i, destPointee, val);
 			}
 		}
 	}
@@ -114,14 +185,14 @@ Value* convertToType(
 		{
 			auto* i = new IntToPtrInst(val, type, "");
 			conv = insertBeforeAfter(i, before, after);
-			llvm_utils::setPointeeTypeMetadata(i, type->getPointerElementType());
+			stampPointerPointee(i, destPointee, val);
 		}
 	}
 	else if (val->getType()->isIntegerTy() && type->isIntegerTy())
 	{
 		if (constExpr)
 		{
-			conv = ConstantExpr::getIntegerCast(cval, type, true);
+			conv = foldOrGetCast(cval, type, true);
 		}
 		else
 		{
@@ -208,7 +279,7 @@ Value* convertToType(
 	{
 		if (constExpr)
 		{
-			conv = ConstantExpr::getFPCast(cval, type);
+			conv = foldOrGetCast(cval, type, false);
 		}
 		else
 		{
@@ -218,7 +289,7 @@ Value* convertToType(
 	}
 	else if (val->getType()->isVectorTy() && type->isIntegerTy())
 	{
-		auto* vty = dyn_cast<VectorType>(val->getType());
+		auto* vty = dyn_cast<FixedVectorType>(val->getType());
 		auto* ity = dyn_cast<IntegerType>(type);
 		if (vty && ity)
 		{
@@ -241,7 +312,7 @@ Value* convertToType(
 	else if (val->getType()->isIntegerTy() && type->isVectorTy())
 	{
 		auto* ity = dyn_cast<IntegerType>(val->getType());
-		auto* vty = dyn_cast<VectorType>(type);
+		auto* vty = dyn_cast<FixedVectorType>(type);
 		if (vty && ity)
 		{
 			const unsigned vecBits = vty->getNumElements()
@@ -275,10 +346,10 @@ Value* convertToType(
 				PointerType::get(type, 0),
 				before,
 				after,
-				constExpr));
-		auto* nl = new LoadInst(c);
+				constExpr,
+				type));
+		auto* nl = llvm_utils::createLoadInst(c, type);
 		nl->insertAfter(c);
-		llvm_utils::setPointeeTypeMetadata(nl, type);
 		conv = nl;
 	}
 	else if (val->getType()->isAggregateType())
@@ -287,7 +358,7 @@ Value* convertToType(
 		Value* toSimple = nullptr;
 		if (constExpr)
 		{
-			toSimple = ConstantExpr::getExtractValue(
+			toSimple = ConstantFoldExtractValueInstruction(
 					cval,
 					ArrayRef<unsigned>(idxs));
 		}
@@ -302,26 +373,26 @@ Value* convertToType(
 		auto* a = dyn_cast<Instruction>(toSimple);
 		conv = convertToType(toSimple, type, before, a, constExpr);
 	}
-	else if (CompositeType* cmp = dyn_cast<CompositeType>(type))
+	else if (type->isStructTy() || type->isArrayTy() || type->isVectorTy())
 	{
-		assert(!cmp->isEmptyTy());
+		auto* idxt = llvm_utils::aggregateTypeAtIndex(type, 0);
+		assert(idxt);
 		std::vector<unsigned> idxs = { 0 };
-		auto* idxt = cmp->getTypeAtIndex(0u);
 		auto* tmp = convertToType(val, idxt, before, after, constExpr);
 
 		if (constExpr)
 		{
 			auto* c = dyn_cast<Constant>(tmp);
 			assert(c);
-			conv = ConstantExpr::getInsertValue(
-					UndefValue::get(cmp),
+			conv = ConstantFoldInsertValueInstruction(
+					UndefValue::get(type),
 					c,
 					ArrayRef<unsigned>(idxs));
 		}
 		else
 		{
 			auto* i = InsertValueInst::Create(
-					UndefValue::get(cmp),
+					UndefValue::get(type),
 					tmp,
 					ArrayRef<unsigned>(idxs),
 					"");
@@ -365,10 +436,26 @@ Value* convertToType(
 llvm::CallInst* _modifyCallInst(
 		llvm::CallInst* call,
 		llvm::Value* calledVal,
-		llvm::ArrayRef<llvm::Value*> args)
+		llvm::ArrayRef<llvm::Value*> args,
+		llvm::FunctionType* fty = nullptr)
 {
 	std::set<Instruction*> toEraseCast;
-	auto* newCall = CallInst::Create(calledVal, args, "", call);
+	if (!fty)
+	{
+		if (auto* f = dyn_cast<Function>(calledVal))
+		{
+			fty = f->getFunctionType();
+		}
+		else if (auto* f = call->getCalledFunction())
+		{
+			fty = f->getFunctionType();
+		}
+		else
+		{
+			fty = call->getFunctionType();
+		}
+	}
+	auto* newCall = CallInst::Create(fty, calledVal, args, "", call);
 	if (call->getNumUses())
 	{
 		if (!newCall->getType()->isVoidTy())
@@ -569,7 +656,7 @@ IrModifier::FunctionPair IrModifier::renameFunction(
 	fnc->setName(n);
 	if (cf)
 	{
-		cf = _config->renameFunction(cf, fnc->getName());
+		cf = _config->renameFunction(cf, fnc->getName().str());
 	}
 	else
 	{
@@ -617,7 +704,13 @@ IrModifier::StackPair IrModifier::getStackVariable(
 		return {ret, csv};
 	}
 
-	ret = new AllocaInst(type, Abi::DEFAULT_ADDR_SPACE, n);
+	ret = new AllocaInst(
+			type,
+			Abi::DEFAULT_ADDR_SPACE,
+			nullptr,
+			fnc->getParent()->getDataLayout().getPrefTypeAlign(type),
+			n,
+			nullptr);
 
 	auto it = inst_begin(fnc);
 	assert(it != inst_end(fnc)); // -> create bb, insert alloca.
@@ -904,9 +997,12 @@ llvm::Value* IrModifier::changeObjectType(
 	// Therefore, we store all uses to our own container.
 	//
 	std::list<User*> users;
-	for (const auto& U : val->users())
+	if (val->hasUseList())
 	{
-		users.push_back(U);
+		for (const auto& U : val->users())
+		{
+			users.push_back(U);
+		}
 	}
 
 	for (auto* user : users)
@@ -937,12 +1033,10 @@ llvm::Value* IrModifier::changeObjectType(
 		{
 			assert(val == load->getPointerOperand());
 
-			auto* newLoad = new LoadInst(nval);
+			auto* ptee = llvm_utils::pointeeType(nval);
+			assert(ptee);
+			auto* newLoad = llvm_utils::createLoadInst(nval, ptee);
 			newLoad->insertBefore(load);
-			if (auto* ptee = llvm_utils::pointeeType(nval))
-			{
-				llvm_utils::setPointeeTypeMetadata(newLoad, ptee);
-			}
 
 			// load->getType() stays unchanged even after loaded object's type is mutated.
 			// we can use it here as a target type, but the origianl load instruction can
@@ -1095,7 +1189,7 @@ IrModifier::FunctionPair IrModifier::modifyFunction(
 
 		fnc->getParent()->getFunctionList().insert(fnc->getIterator(), nf);
 		nf->takeName(fnc);
-		nf->getBasicBlockList().splice(nf->begin(), fnc->getBasicBlockList());
+		nf->splice(nf->begin(), fnc);
 	}
 
 	// Rename arguments.
@@ -1151,7 +1245,7 @@ IrModifier::FunctionPair IrModifier::modifyFunction(
 		std::size_t idx = 0;
 		for (auto i = nf->arg_begin(), e = nf->arg_end(); i != e; ++i, ++idx)
 		{
-			std::string n = i->getName();
+			std::string n = i->getName().str();
 			assert(!n.empty());
 			auto s = retdec::common::Storage::undefined();
 			retdec::common::Object arg(n, s);
@@ -1168,7 +1262,7 @@ IrModifier::FunctionPair IrModifier::modifyFunction(
 			auto* ptee = llvm_utils::pointeeType(i);
 			if (i->getType()->isPointerTy()
 					&& ptee && ptee->isIntegerTy()
-					&& retdec::utils::contains(nf->getName(), "wprintf"))
+					&& retdec::utils::contains(nf->getName().str(), "wprintf"))
 			{
 				arg.type.setIsWideString(true);
 			}
@@ -1227,7 +1321,7 @@ IrModifier::FunctionPair IrModifier::modifyFunction(
 					llvm_utils::pointeeType(v),
 					&nf->front().front());
 
-			auto* s = new StoreInst(conv, v);
+			auto* s = llvm_utils::createStoreInst(conv, v);
 
 			if (auto* alloca = dyn_cast<AllocaInst>(v))
 			{
@@ -1347,7 +1441,7 @@ IrModifier::FunctionPair IrModifier::modifyFunction(
 			else
 			{
 				unsigned ai = 0;
-				unsigned ae = call->getNumArgOperands();
+				unsigned ae = call->arg_size();
 				for (auto fa = nf->arg_begin(); fa != nf->arg_end(); ++fa)
 				{
 					if (ai != ae)
@@ -1384,7 +1478,7 @@ IrModifier::FunctionPair IrModifier::modifyFunction(
 						nc,
 						llvm_utils::pointeeType(retVal),
 						n);
-				new StoreInst(conv, retVal, n);
+				llvm_utils::createStoreInst(conv, retVal, n);
 			}
 		}
 		else if (StoreInst* s = dyn_cast<StoreInst>(u))
@@ -1482,9 +1576,13 @@ llvm::AllocaInst* IrModifier::createAlloca(
  *        are inserted.
  * @return Final value of the specified type.
  */
-Value* IrModifier::convertValueToType(Value* val, Type* type, Instruction* before)
+Value* IrModifier::convertValueToType(
+		Value* val,
+		Type* type,
+		Instruction* before,
+		Type* destPointee)
 {
-	return convertToType(val, type, before, nullptr, false);
+	return convertToType(val, type, before, nullptr, false, destPointee);
 }
 
 /**
@@ -1499,9 +1597,10 @@ Value* IrModifier::convertValueToType(Value* val, Type* type, Instruction* befor
 llvm::Value* IrModifier::convertValueToTypeAfter(
 		llvm::Value* val,
 		llvm::Type* type,
-		llvm::Instruction* after)
+		llvm::Instruction* after,
+		llvm::Type* destPointee)
 {
-	return convertToType(val, type, nullptr, after, false);
+	return convertToType(val, type, nullptr, after, false, destPointee);
 }
 
 /**
@@ -1512,9 +1611,12 @@ llvm::Value* IrModifier::convertValueToTypeAfter(
  * @param type Type to convert to.
  * @return Constant expression representing type conversion.
  */
-Constant* IrModifier::convertConstantToType(Constant* val, Type* type)
+Constant* IrModifier::convertConstantToType(
+		Constant* val,
+		Type* type,
+		Type* destPointee)
 {
-	auto* v = convertToType(val, type, nullptr, nullptr, true);
+	auto* v = convertToType(val, type, nullptr, nullptr, true, destPointee);
 	auto* c = dyn_cast_or_null<Constant>(v);
 	if (v)
 	{
@@ -1550,15 +1652,14 @@ llvm::CallInst* IrModifier::modifyCallInst(
 	{
 		argTypes.push_back(v->getType());
 	}
-	auto* t = llvm::PointerType::get(
-			llvm::FunctionType::get(
-					ret,
-					argTypes,
-					false), // isVarArg
-			0);
-	auto* conv = IrModifier::convertValueToType(call->getCalledValue(), t, call);
+	auto* fty = llvm::FunctionType::get(
+			ret,
+			argTypes,
+			false); // isVarArg
+	auto* t = llvm::PointerType::get(fty, 0);
+	auto* conv = IrModifier::convertValueToType(call->getCalledOperand(), t, call, fty);
 
-	return _modifyCallInst(call, conv, args);
+	return _modifyCallInst(call, conv, args, fty);
 }
 
 void _eraseUnusedInstructionRecursive(

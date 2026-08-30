@@ -12,6 +12,7 @@
 #ifndef RETDEC_BIN2LLVMIR_UTILS_LLVM_H
 #define RETDEC_BIN2LLVMIR_UTILS_LLVM_H
 
+#include <llvm/ADT/Twine.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
@@ -48,12 +49,36 @@ bool isStringArrayPointeType(const llvm::Type* t);
 llvm::Type* stringToLlvmType(llvm::LLVMContext& ctx, const std::string& str);
 llvm::Type* stringToLlvmTypeDefault(llvm::Module* m, const std::string& str);
 
-/// LLVM 8 pointee snapshot (opaque-pointer port). Kind `retdec.pointee`.
-/// Same attachment pattern as `insn.addr`. See UNBLOCKED-MIGRATION.md.
+/// RetDec pointee type on an instruction. Kind `retdec.pointee`.
+/// Same attachment pattern as `insn.addr`. Opaque LLVM `ptr` has no element
+/// type; load/store and type recovery read this metadata.
 void setPointeeTypeMetadata(llvm::Instruction* i, llvm::Type* pointee);
 llvm::Type* getPointeeTypeMetadata(const llvm::Instruction* i);
-/// Metadata first; then `PointerType::getElementType()` on LLVM 8.
+/// Metadata first, then alloca allocated type / global value type,
+/// then bitcast/select/PHI operands, then load/store users (LLVM 23
+/// `ConstantData` has no use-list — those are skipped).
 llvm::Type* pointeeType(const llvm::Value* v);
+/// Opaque `ptr` has no Type* element. Always null; use `pointeeType(Value*)`.
+llvm::Type* typedPointerElement(const llvm::Type* t);
+
+/// Struct / array / fixed-vector element at `idx`. Null if `t` is not aggregate.
+llvm::Type* aggregateTypeAtIndex(llvm::Type* t, unsigned idx);
+
+/// Typed load: LLVM 23 `LoadInst` requires an explicit type. Stamps `retdec.pointee`.
+llvm::LoadInst* createLoadInst(
+		llvm::Value* ptr,
+		llvm::Type* ty,
+		const llvm::Twine& name = "",
+		llvm::Instruction* insertBefore = nullptr);
+llvm::LoadInst* createLoadInst(
+		llvm::Value* ptr,
+		const llvm::Twine& name = "",
+		llvm::Instruction* insertBefore = nullptr);
+
+llvm::StoreInst* createStoreInst(
+		llvm::Value* val,
+		llvm::Value* ptr,
+		llvm::Instruction* insertBefore = nullptr);
 
 std::vector<llvm::Type*>
 parseFormatString(llvm::Module* module, const std::string& format, llvm::Function* calledFnc = nullptr);

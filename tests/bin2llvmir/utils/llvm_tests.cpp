@@ -6,6 +6,7 @@
  */
 
 #include <gtest/gtest.h>
+#include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IRReader/IRReader.h>
 #include <llvm/Support/MemoryBuffer.h>
@@ -41,7 +42,7 @@ TEST_F(LlvmUtilsTests, stringToLlvmTypeCreatesPrimitiveTypes)
 	EXPECT_EQ(Type::getX86_FP80Ty(context), stringToLlvmType(context, "x86_fp80"));
 	EXPECT_EQ(Type::getFP128Ty(context), stringToLlvmType(context, "fp128"));
 	EXPECT_EQ(Type::getPPC_FP128Ty(context), stringToLlvmType(context, "ppc_fp128"));
-	EXPECT_EQ(Type::getX86_MMXTy(context), stringToLlvmType(context, "x86_mmx"));
+	EXPECT_EQ(FixedVectorType::get(Type::getInt64Ty(context), 1), stringToLlvmType(context, "x86_mmx"));
 
 	EXPECT_EQ(Type::getIntNTy(context, 1), stringToLlvmType(context, "i1"));
 	EXPECT_EQ(Type::getIntNTy(context, 5), stringToLlvmType(context, "i5"));
@@ -74,7 +75,7 @@ TEST_F(LlvmUtilsTests, stringToLlvmTypeCreatesArrayTypes)
 
 TEST_F(LlvmUtilsTests, stringToLlvmTypeCreatesVectorTypes)
 {
-	EXPECT_EQ(VectorType::get(Type::getInt32Ty(context), 10), stringToLlvmType(context, "<10 x i32>"));
+	EXPECT_EQ(FixedVectorType::get(Type::getInt32Ty(context), 10), stringToLlvmType(context, "<10 x i32>"));
 }
 
 TEST_F(LlvmUtilsTests, stringToLlvmTypeOnlyPrimitiveTypesCanBeVectorTypeElements)
@@ -199,13 +200,21 @@ TEST_F(LlvmUtilsTests, stringToLlvmTypeCreatesComplicatedType)
 		"[10xi32({float,double})*]}*";
 	auto* t = stringToLlvmType(context, str);
 	ASSERT_NE(nullptr, t);
+	ASSERT_TRUE(t->isPointerTy());
+
+	std::string innerStr =
+		"{i16*, i32**, {i16, {i32(float, double)*}, half}*, "
+		"[10xi32({float,double})*]}";
+	auto* inner = stringToLlvmType(context, innerStr);
+	ASSERT_NE(nullptr, inner);
+	ASSERT_TRUE(inner->isStructTy());
 
 	std::string out;
 	raw_string_ostream ros(out);
 	t->print(ros);
 	ros.str();
 
-	EXPECT_EQ(retdec::utils::removeWhitespace(str), retdec::utils::removeWhitespace(out));
+	EXPECT_EQ("ptr", retdec::utils::removeWhitespace(out));
 }
 
 TEST_F(LlvmUtilsTests, stringToLlvmTypeReturnsAlreadyExistingTypeForStructureId)

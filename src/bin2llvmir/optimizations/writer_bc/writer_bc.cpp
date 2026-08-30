@@ -47,7 +47,7 @@ std::unique_ptr<ToolOutputFile> createBitcodeOutputFile(
 	}
 
 	std::error_code EC;
-	Out.reset(new ToolOutputFile(outputFile, EC, sys::fs::F_None));
+	Out.reset(new ToolOutputFile(outputFile, EC, sys::fs::OF_None));
 	if (EC)
 	{
 		throw std::runtime_error(

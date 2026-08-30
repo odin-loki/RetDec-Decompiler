@@ -92,12 +92,12 @@ void SymbianRttiReconstructor::scanTMetaClass(
 
         uint64_t vma = sec.vma;
         uint64_t end = sec.vma + sec.size;
-        uint64_t p   = (vma + 3) & ~uint64_t(3);
+        uint64_t p   = vma;
 
         while (p + 8 + 2 * ps <= end) {
             TMetaClassInfo info;
             if (parseTMetaClass(view, p, info)) {
-                if (visited_.count(p)) { p += 4; continue; }
+                if (visited_.count(p)) { p += 1; continue; }
                 visited_.insert(p);
 
                 ClassNode& node = out.classes[info.iName];
@@ -123,7 +123,7 @@ void SymbianRttiReconstructor::scanTMetaClass(
                 p += 4 + 4 + 2 * ps; // skip past this TMetaClass
                 continue;
             }
-            p += 4;
+            p += 1;
         }
     }
 }
@@ -162,7 +162,7 @@ void SymbianRttiReconstructor::scanNamePattern(
             uint64_t nameVma = sec.vma + off;
             for (const auto& dsec : view.sections) {
                 if (!dsec.readable || !dsec.data) continue;
-                for (uint64_t doff = 0; doff + ps <= dsec.size; doff += ps) {
+                for (uint64_t doff = 0; doff + ps <= dsec.size; doff += 1) {
                     uint64_t ptr = view.readPtr(dsec.vma + doff);
                     if (ptr == nameVma) {
                         // Found a pointer to this name; check if it's near a vtable

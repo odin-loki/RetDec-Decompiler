@@ -68,7 +68,12 @@ SequenceOfStatementsIsConvertedCorrectly) {
 	ASSERT_TRUE(isCallOfFuncTest(call1, 1));
 	auto call2 = call1->getSuccessor();
 	ASSERT_TRUE(isCallOfFuncTest(call2, 2));
-	ASSERT_TRUE(isCallOfFuncTest(call2->getSuccessor(), 3));
+	// Last call; ret void is collapsed to return test(3).
+	auto ret3 = cast<ReturnStmt>(call2->getSuccessor());
+	ASSERT_TRUE(ret3);
+	auto call3 = cast<CallExpr>(ret3->getRetVal());
+	ASSERT_TRUE(call3);
+	ASSERT_TRUE(isConstInt(call3->getArg(1), 3));
 }
 
 //
@@ -145,9 +150,9 @@ FunctionCallWithUsedResultIsConvertedCorrectlyAsAssignStmtWithCallExprInRhs) {
 	ASSERT_TRUE(f);
 	auto varDefStmt = f->getBody();
 	ASSERT_TRUE(isVarDef<IntType>(varDefStmt, "result"));
-	auto assignStmt = cast<AssignStmt>(varDefStmt->getSuccessor());
-	ASSERT_TRUE(assignStmt);
-	auto callExpr = cast<CallExpr>(assignStmt->getRhs());
+	auto retStmt = cast<ReturnStmt>(varDefStmt->getSuccessor());
+	ASSERT_TRUE(retStmt);
+	auto callExpr = cast<CallExpr>(retStmt->getRetVal());
 	ASSERT_TRUE(callExpr);
 	auto calledExpr = cast<Variable>(callExpr->getCalledExpr());
 	ASSERT_TRUE(calledExpr);
@@ -174,9 +179,9 @@ FunctionCallWithUnusedResultIsConvertedCorrectlyAsCallStmt) {
 
 	auto f = module->getFuncByName("function");
 	ASSERT_TRUE(f);
-	auto callStmt = cast<CallStmt>(f->getBody());
-	ASSERT_TRUE(callStmt);
-	ASSERT_TRUE(isa<CallExpr>(callStmt->getCall()));
+	auto retStmt = cast<ReturnStmt>(f->getBody());
+	ASSERT_TRUE(retStmt);
+	ASSERT_TRUE(isa<CallExpr>(retStmt->getRetVal()));
 }
 
 TEST_F(BasicBlockConverterTests,
@@ -192,9 +197,9 @@ FunctionCallWithIgnoredResultIsConvertedCorrectlyAsCallStmt) {
 
 	auto f = module->getFuncByName("function");
 	ASSERT_TRUE(f);
-	auto callStmt = cast<CallStmt>(f->getBody());
-	ASSERT_TRUE(callStmt);
-	ASSERT_TRUE(isa<CallExpr>(callStmt->getCall()));
+	auto retStmt = cast<ReturnStmt>(f->getBody());
+	ASSERT_TRUE(retStmt);
+	ASSERT_TRUE(isa<CallExpr>(retStmt->getRetVal()));
 }
 
 TEST_F(BasicBlockConverterTests,
@@ -210,9 +215,9 @@ VoidFunctionCallIsConvertedCorrectlyAsCallStmt) {
 
 	auto f = module->getFuncByName("function");
 	ASSERT_TRUE(f);
-	auto callStmt = cast<CallStmt>(f->getBody());
-	ASSERT_TRUE(callStmt);
-	ASSERT_TRUE(isa<CallExpr>(callStmt->getCall()));
+	auto retStmt = cast<ReturnStmt>(f->getBody());
+	ASSERT_TRUE(retStmt);
+	ASSERT_TRUE(isa<CallExpr>(retStmt->getRetVal()));
 }
 
 TEST_F(BasicBlockConverterTests,
@@ -228,9 +233,9 @@ CallOfFunctionDeclaredAfterCallerIsConvertedCorrectly) {
 
 	auto f = module->getFuncByName("function");
 	ASSERT_TRUE(f);
-	auto callStmt = cast<CallStmt>(f->getBody());
-	ASSERT_TRUE(callStmt);
-	auto callExpr = cast<CallExpr>(callStmt->getCall());
+	auto retStmt = cast<ReturnStmt>(f->getBody());
+	ASSERT_TRUE(retStmt);
+	auto callExpr = cast<CallExpr>(retStmt->getRetVal());
 	ASSERT_TRUE(callExpr);
 	auto calledExpr = cast<Variable>(callExpr->getCalledExpr());
 	ASSERT_TRUE(calledExpr);
@@ -260,9 +265,9 @@ CallOfFunctionWithPointerInParamIsConvertedCorrectly) {
 	auto varDefStr = cast<VarDefStmt>(f->getBody());
 	ASSERT_TRUE(isVarDef<ArrayType>(varDefStr, "str"));
 	auto varStr = varDefStr->getVar();
-	auto callStmt = cast<CallStmt>(varDefStr->getSuccessor());
-	ASSERT_TRUE(callStmt);
-	auto callExpr = cast<CallExpr>(callStmt->getCall());
+	auto retStmt = cast<ReturnStmt>(varDefStr->getSuccessor());
+	ASSERT_TRUE(retStmt);
+	auto callExpr = cast<CallExpr>(retStmt->getRetVal());
 	ASSERT_TRUE(callExpr);
 	auto calledExpr = cast<Variable>(callExpr->getCalledExpr());
 	ASSERT_TRUE(calledExpr);

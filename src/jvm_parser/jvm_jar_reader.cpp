@@ -2,10 +2,15 @@
  * @file src/jvm_parser/jvm_jar_reader.cpp
  * @brief JAR reader: ZIP enumeration and cross-class type resolver.
  *
- * Uses a minimal built-in ZIP central-directory parser (no external library).
- * Only STORED (method 0) and DEFLATE (method 8) entries are supported.
- * DEFLATE decompression delegates to zlib if available; otherwise entries
- * with method 8 are skipped (still counted in classesFound).
+ * Uses a minimal built-in ZIP central-directory parser (no external ZIP library).
+ * STORED (method 0) and DEFLATE (method 8) entries are supported. DEFLATE uses
+ * zlib raw inflate (`inflateInit2(..., -MAX_WBITS)`). Uncompressed size is capped
+ * so a bogus ZIP size field cannot allocate unbounded output.
+ *
+ * Nested JARs: `parseBoot` (default on) reads Spring Boot `BOOT-INF/lib`
+ * and `WEB-INF/lib` JARs; `parseNestedJars` reads any nested `.jar` entry.
+ * Recursion is capped (depth and size) so a zip-bomb of nested archives
+ * cannot explode.
  */
 
 #include "retdec/jvm_parser/jvm_jar_reader.h"
@@ -13,9 +18,24 @@
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>
+#include <unordered_map>
+
+#include <zlib.h>
 
 namespace retdec {
 namespace jvm_parser {
+
+namespace {
+thread_local int g_nestedJarDepth = 0;
+constexpr int kMaxNestedJarDepth = 4;
+constexpr uint32_t kMaxNestedJarBytes = 16u * 1024u * 1024u;
+
+struct NestedJarDepthGuard {
+    NestedJarDepthGuard() { ++g_nestedJarDepth; }
+    ~NestedJarDepthGuard() { --g_nestedJarDepth; }
+    int depth() const { return g_nestedJarDepth; }
+};
+} // namespace
 
 // ─── Minimal ZIP reader ───────────────────────────────────────────────────────
 
@@ -89,8 +109,27 @@ static std::vector<uint8_t> readLocalEntry(const uint8_t* data, size_t size,
         return std::vector<uint8_t>(data + dataStart,
                                     data + dataStart + cd.uncompressedSize);
     }
-    // DEFLATE — not decompressing here (would require zlib).
-    // Return empty to signal "compressed, not available".
+    if (cd.method == 8) {
+        // Raw DEFLATE (ZIP method 8), not a zlib wrapper.
+        constexpr uint32_t kMaxInflate = 16u * 1024u * 1024u;
+        if (cd.uncompressedSize == 0 || cd.uncompressedSize > kMaxInflate)
+            return {};
+        std::vector<uint8_t> out(cd.uncompressedSize);
+        z_stream strm{};
+        strm.next_in = const_cast<Bytef*>(data + dataStart);
+        strm.avail_in = cd.compressedSize;
+        strm.next_out = out.data();
+        strm.avail_out = cd.uncompressedSize;
+        if (inflateInit2(&strm, -MAX_WBITS) != Z_OK)
+            return {};
+        const int rc = inflate(&strm, Z_FINISH);
+        const uLong produced = strm.total_out;
+        inflateEnd(&strm);
+        if (rc != Z_STREAM_END)
+            return {};
+        out.resize(static_cast<size_t>(produced));
+        return out;
+    }
     return {};
 }
 
@@ -147,6 +186,7 @@ JarReadResult JarReader::read(const std::vector<uint8_t>& data) {
 }
 
 JarReadResult JarReader::read(const uint8_t* data, size_t size) {
+    NestedJarDepthGuard depthGuard;
     JarReadResult res;
     res.module = bc_module::BcModule("jar", bc_module::SourceLang::Java);
     try {
@@ -178,9 +218,8 @@ JarReadResult JarReader::read(const uint8_t* data, size_t size) {
         for (const auto& [base, e] : bestEntries) {
             auto bytes = readLocalEntry(data, size, e);
             if (bytes.empty()) {
-                // Compressed entry — count as found but not parsed.
                 ++res.parseErrors;
-                res.errorList.push_back(base + ": compressed (DEFLATE) — skipped");
+                res.errorList.push_back(base + ": failed to extract ZIP entry");
                 continue;
             }
             auto pr = parseClassFile(bytes, opts_.classOpts);
@@ -197,7 +236,42 @@ JarReadResult JarReader::read(const uint8_t* data, size_t size) {
         for (auto& pr : parseResults)
             res.module.addClass(std::move(pr.cls));
 
-        // Cross-class type resolution.
+        const bool nestFurther = depthGuard.depth() < kMaxNestedJarDepth;
+        if (nestFurther) {
+            auto wantNested = [&](const std::string& path) {
+                if (!isNestedJar(path)) return false;
+                if (opts_.parseNestedJars) return true;
+                if (opts_.parseBoot &&
+                    (path.compare(0, 13, "BOOT-INF/lib/") == 0 ||
+                     path.compare(0, 12, "WEB-INF/lib/") == 0))
+                    return true;
+                return false;
+            };
+            for (const auto& e : cd) {
+                if (!wantNested(e.path)) continue;
+                auto bytes = readLocalEntry(data, size, e);
+                if (bytes.empty() || bytes.size() > kMaxNestedJarBytes) {
+                    ++res.parseErrors;
+                    res.errorList.push_back(e.path + ": failed to extract nested JAR");
+                    continue;
+                }
+                JarReader nested(opts_);
+                auto nr = nested.read(bytes.data(), bytes.size());
+                res.classesFound += nr.classesFound;
+                res.classesParsed += nr.classesParsed;
+                res.parseErrors += nr.parseErrors;
+                for (const auto& err : nr.errorList)
+                    res.errorList.push_back(e.path + ": " + err);
+                if (!nr.ok && !nr.error.empty())
+                    res.errorList.push_back(e.path + ": " + nr.error);
+                for (auto& cls : nr.module.classes())
+                    res.module.addClass(std::move(cls));
+                for (const auto& [name, form] : nr.module.externalRefs())
+                    res.module.addExternalRef(name, form);
+            }
+        }
+
+        // Cross-class type resolution (includes classes from nested JARs).
         if (opts_.resolveTypes) {
             TypeResolver resolver(res.module);
             resolver.resolve(parseResults);

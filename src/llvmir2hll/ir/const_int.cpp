@@ -5,6 +5,8 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include <llvm/ADT/SmallVector.h>
+
 #include "retdec/llvmir2hll/ir/const_int.h"
 #include "retdec/llvmir2hll/ir/int_type.h"
 #include "retdec/llvmir2hll/ir/unknown_type.h"
@@ -113,7 +115,9 @@ std::string ConstInt::toString(unsigned radix, const std::string &prefix) const 
 	PRECONDITION(radix == 2 || radix == 8 || radix == 10 || radix == 16 || radix == 36,
 		"invalid radix " << radix);
 
-	std::string asString(toLower(value.toString(radix, isSigned())));
+	llvm::SmallVector<char, 64> buf;
+	value.toString(buf, radix);
+	std::string asString(toLower(std::string(buf.begin(), buf.end())));
 	if (prefix.empty()) {
 		return asString;
 	}
@@ -177,7 +181,7 @@ bool ConstInt::isNegative() const {
 bool ConstInt::isNegativeOne() const {
 	PRECONDITION(isSigned(), "the constant is not signed");
 
-	return getValue().eq(llvm::APInt(getValue().getBitWidth(), -1, true));
+	return getValue().eq(llvm::APInt::getAllOnes(getValue().getBitWidth()));
 }
 
 /**
@@ -200,7 +204,7 @@ bool ConstInt::isZero() const {
 * It returns @c true only for @c +1; for @c -1, it returns @c false.
 */
 bool ConstInt::isOne() const {
-	return getValue().eq(llvm::APInt(getValue().getBitWidth(), 1, isSigned()));
+	return getValue().eq(llvm::APInt(getValue().getBitWidth(), 1));
 }
 
 /**
@@ -300,7 +304,10 @@ bool ConstInt::isMoreReadableInHexa() const {
 */
 ShPtr<ConstInt> ConstInt::create(std::int64_t value, unsigned bitWidth,
 		bool isSigned) {
-	return ConstInt::create(llvm::APInt(bitWidth, value, isSigned), isSigned);
+	return ConstInt::create(
+		llvm::APInt(bitWidth, static_cast<uint64_t>(value), isSigned,
+			/*implicitTrunc=*/true),
+		isSigned);
 }
 
 /**

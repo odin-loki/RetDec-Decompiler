@@ -238,7 +238,7 @@ TEST_F(FileImageTests, getConstantReadsCorrectValuesForPointerType)
 
 	auto c = Config::empty(module.get());
 	auto image = FileImage(module.get(), format, &c);
-	Type* ptrType = Type::getInt32PtrTy(module->getContext());
+	Type* ptrType = PointerType::getUnqual(module->getContext());
 	ConstantExpr* ptrConst = dyn_cast_or_null<ConstantExpr>(image.getConstant(
 			ptrType, i32Pos));
 	ASSERT_NE(nullptr, ptrConst);
@@ -257,14 +257,18 @@ TEST_F(FileImageTests, getConstantReadsCorrectValuesForStringType)
 
 	auto c = Config::empty(module.get());
 	auto image = FileImage(module.get(), format, &c);
-	Type* strType = Type::getInt8PtrTy(module->getContext());
 
-	ConstantExpr* i8Const = dyn_cast_or_null<ConstantExpr>(
-			image.getConstant(strType, strPos));
-	ASSERT_NE(nullptr, i8Const);
+	llvm::Constant* strConstVal = image.getConstantCharPointer(strPos);
+	ASSERT_NE(nullptr, strConstVal);
 
-	GlobalVariable* strGv = dyn_cast<GlobalVariable>(
-			i8Const->getOperand(0));
+	GlobalVariable* strGv = dyn_cast<GlobalVariable>(strConstVal);
+	if (strGv == nullptr)
+	{
+		if (auto* ce = dyn_cast<ConstantExpr>(strConstVal))
+		{
+			strGv = dyn_cast<GlobalVariable>(ce->getOperand(0));
+		}
+	}
 	ASSERT_NE(nullptr, strGv);
 
 	ConstantDataArray* strConst = dyn_cast_or_null<ConstantDataArray>(

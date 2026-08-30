@@ -5,7 +5,9 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cmath>
 #include <iomanip>
+#include <memory>
 
 #include "capstone2llvmir/x86/x86_impl.h"
 
@@ -687,7 +689,7 @@ llvm::Value* Capstone2LlvmIrTranslatorX86_impl::loadRegister(
 	}
 	else
 	{
-		ret = irb.CreateLoad(reg);
+		ret = createLoad(irb, reg);
 
 		if (r != pr)
 // TODO: We want to do this for register storing, but probably not here?
@@ -763,7 +765,7 @@ llvm::StoreInst* Capstone2LlvmIrTranslatorX86_impl::storeRegister(
 	}
 	else
 	{
-		llvm::Value* l = irb.CreateLoad(reg);
+		llvm::Value* l = createLoad(irb, reg);
 		if (!(l->getType()->isIntegerTy(16)
 				|| l->getType()->isIntegerTy(32)
 				|| l->getType()->isIntegerTy(64)))
@@ -835,6 +837,8 @@ llvm::StoreInst* Capstone2LlvmIrTranslatorX86_impl::storeRegister(
 		ret = irb.CreateStore(o, reg);
 	}
 
+	if (ret)
+		attachPointeeType(ret, reg->getValueType());
 	return ret;
 }
 
@@ -987,14 +991,15 @@ llvm::Value* Capstone2LlvmIrTranslatorX86_impl::loadOp(
 		case X86_OP_IMM:
 		{
 			auto* t = getIntegerTypeFromByteSize(_module, op.size);
-			return llvm::ConstantInt::get(t, op.imm, false);
+			return llvm::ConstantInt::get(t, llvm::APInt(t->getIntegerBitWidth(),
+					static_cast<uint64_t>(op.imm), false, /*implicitTrunc=*/true));
 		}
 		case X86_OP_MEM:
 		{
 			auto* baseR = loadRegister(op.mem.base, irb);
 			auto* t = baseR ? baseR->getType() : getDefaultType();
 			llvm::Value* disp = op.mem.disp
-					? llvm::ConstantInt::get(t, op.mem.disp)
+					? llvm::ConstantInt::getSigned(t, op.mem.disp)
 					: nullptr;
 
 			auto* idxR = loadRegister(op.mem.index, irb);
@@ -1074,7 +1079,7 @@ llvm::Instruction* Capstone2LlvmIrTranslatorX86_impl::storeOp(
 			auto* baseR = loadRegister(op.mem.base, irb);
 			auto* t = baseR ? baseR->getType() : getDefaultType();
 			llvm::Value* disp = op.mem.disp
-					? llvm::ConstantInt::get(t, op.mem.disp)
+					? llvm::ConstantInt::getSigned(t, op.mem.disp)
 					: nullptr;
 
 			auto* idxR = loadRegister(op.mem.index, irb);
@@ -1350,7 +1355,7 @@ llvm::Value* Capstone2LlvmIrTranslatorX86_impl::generateParityFlag(
 {
 	auto* i8t = irb.getInt8Ty();
 	auto* trunc = irb.CreateTrunc(val, i8t);
-	auto* f = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::ctpop, i8t);
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::ctpop, i8t);
 	auto* c = irb.CreateCall(f, {trunc});
 	auto* a = irb.CreateAnd(c, llvm::ConstantInt::get(c->getType(), 1));
 	return irb.CreateICmpEQ(a, llvm::ConstantInt::get(a->getType(), 0));
@@ -1617,7 +1622,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateDaaDas(cs_insn* i, cs_x86* xi, 
 	auto* cnd = irb.CreateOr(alIcmp, af);
 
 	auto irbP = generateIfThenElse(cnd, irb);
-	llvm::IRBuilder<>& bodyIf(irbP.first), bodyElse(irbP.second);
+	llvm::IRBuilder<> bodyIf(irbP.first);
+	llvm::IRBuilder<> bodyElse(irbP.second);
 
 	{
 		auto* alAdd = i->id == X86_INS_DAA
@@ -1771,7 +1777,7 @@ bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedRmw(
 	auto* elem = getIntegerTypeFromByteSize(_module, xi->operands[0].size);
 	rhs = generateTypeConversion(irb, rhs, elem, eOpConv::SEXT_TRUNC_OR_BITCAST);
 	auto* ptr = intToPtr(irb, addr, elem, getAddrSpace(xi->operands[0].mem.segment));
-	auto* old = irb.CreateAtomicRMW(aop, ptr, rhs, llvm::AtomicOrdering::SequentiallyConsistent);
+	auto* old = irb.CreateAtomicRMW(aop, ptr, rhs, llvm::MaybeAlign(), llvm::AtomicOrdering::SequentiallyConsistent);
 	attachPointeeType(old, elem);
 
 	llvm::Value* result = nullptr;
@@ -1855,7 +1861,7 @@ bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedBit(
 		rhs = irb.CreateXor(mask, llvm::ConstantInt::getSigned(elem, -1));
 	}
 	auto* ptr = intToPtr(irb, addr, elem, getAddrSpace(xi->operands[0].mem.segment));
-	auto* old = irb.CreateAtomicRMW(aop, ptr, rhs, llvm::AtomicOrdering::SequentiallyConsistent);
+	auto* old = irb.CreateAtomicRMW(aop, ptr, rhs, llvm::MaybeAlign(), llvm::AtomicOrdering::SequentiallyConsistent);
 	attachPointeeType(old, elem);
 	auto* andd = irb.CreateAnd(old, mask);
 	auto* icmp = irb.CreateICmpNE(andd, llvm::ConstantInt::get(elem, 0));
@@ -1888,6 +1894,7 @@ bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedCmpxchg(
 			ptr,
 			accum,
 			desired,
+			llvm::MaybeAlign(),
 			llvm::AtomicOrdering::SequentiallyConsistent,
 			llvm::AtomicOrdering::SequentiallyConsistent);
 	attachPointeeType(cx, elem);
@@ -1936,6 +1943,7 @@ bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedCmpxchgWide(
 			ptr,
 			expected,
 			desired,
+			llvm::MaybeAlign(),
 			llvm::AtomicOrdering::SequentiallyConsistent,
 			llvm::AtomicOrdering::SequentiallyConsistent);
 	attachPointeeType(cx, wide);
@@ -1967,7 +1975,7 @@ bool Capstone2LlvmIrTranslatorX86_impl::tryTranslateLockedIncDec(
 	auto* one = llvm::ConstantInt::get(elem, 1);
 	auto* ptr = intToPtr(irb, addr, elem, getAddrSpace(xi->operands[0].mem.segment));
 	auto aop = isDec ? llvm::AtomicRMWInst::Sub : llvm::AtomicRMWInst::Add;
-	auto* old = irb.CreateAtomicRMW(aop, ptr, one, llvm::AtomicOrdering::SequentiallyConsistent);
+	auto* old = irb.CreateAtomicRMW(aop, ptr, one, llvm::MaybeAlign(), llvm::AtomicOrdering::SequentiallyConsistent);
 	attachPointeeType(old, elem);
 	llvm::Value* result = isDec ? irb.CreateSub(old, one) : irb.CreateAdd(old, one);
 	if (isDec)
@@ -2047,7 +2055,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateBsf(cs_insn* i, cs_x86* xi, llv
 
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::THROW);
 	auto fnc = i->id == X86_INS_BSF ? llvm::Intrinsic::cttz : llvm::Intrinsic::ctlz;
-	auto* f = llvm::Intrinsic::getDeclaration(
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(
 			_module,
 			fnc,
 			op1->getType());
@@ -2075,7 +2083,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateBswap(cs_insn* i, cs_x86* xi, l
 	EXPECT_IS_UNARY(i, xi, irb);
 
 	op0 = loadOpUnary(xi, irb);
-	auto* f = llvm::Intrinsic::getDeclaration(
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(
 			_module,
 			llvm::Intrinsic::bswap,
 			op0->getType());
@@ -2350,7 +2358,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCmpxchg8b(cs_insn* i, cs_x86* x
 	auto* cnd = irb.CreateICmpEQ(op0, rval);
 
 	auto irbP = generateIfThenElse(cnd, irb);
-	llvm::IRBuilder<>& bodyIf(irbP.first), bodyElse(irbP.second);
+	llvm::IRBuilder<> bodyIf(irbP.first);
+	llvm::IRBuilder<> bodyElse(irbP.second);
 
 	storeRegister(X86_REG_ZF, bodyIf.getInt1(true), bodyIf);
 	auto* ecx = loadRegister(X86_REG_ECX, bodyIf, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
@@ -2386,7 +2395,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCmpxchg16b(cs_insn* i, cs_x86* 
 	auto* cnd = irb.CreateICmpEQ(op0, rval);
 
 	auto irbP = generateIfThenElse(cnd, irb);
-	llvm::IRBuilder<>& bodyIf(irbP.first), bodyElse(irbP.second);
+	llvm::IRBuilder<> bodyIf(irbP.first);
+	llvm::IRBuilder<> bodyElse(irbP.second);
 
 	storeRegister(X86_REG_ZF, bodyIf.getInt1(true), bodyIf);
 	auto* rcx = loadRegister(X86_REG_RCX, bodyIf, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
@@ -3039,6 +3049,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateNot(cs_insn* i, cs_x86* xi, llv
 				llvm::AtomicRMWInst::Xor,
 				ptr,
 				ones,
+				llvm::MaybeAlign(),
 				llvm::AtomicOrdering::SequentiallyConsistent);
 		attachPointeeType(old, elem);
 		return;
@@ -3494,7 +3505,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateShiftLeft(cs_insn* i, cs_x86* x
 	// It is not a big deal, because it will be optimized, but with a bit better
 	// code here, we could generate much simpler customized translations.
 	//
-	auto bodyIrb = generateIfNotThen(op1Zero, irb);
+	llvm::IRBuilder<> bodyIrb(generateIfNotThen(op1Zero, irb));
 
 	auto* shl = bodyIrb.CreateShl(op0, op1);
 	generateSetSflags(shl, bodyIrb);
@@ -3537,7 +3548,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateShiftRight(cs_insn* i, cs_x86* 
 	op1 = irb.CreateAnd(op1, mask);
 	auto* of = llvm::cast<llvm::Instruction>(loadRegister(X86_REG_OF, irb));
 	auto* op1Zero = irb.CreateICmpEQ(op1, llvm::ConstantInt::get(op1->getType(), 0));
-	auto bodyIrb = generateIfNotThen(op1Zero, irb);
+	llvm::IRBuilder<> bodyIrb(generateIfNotThen(op1Zero, irb));
 
 	llvm::Value* shift = i->id == X86_INS_SHR
 			? bodyIrb.CreateLShr(op0, op1)  // X86_INS_SHR
@@ -3583,7 +3594,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateShld(cs_insn* i, cs_x86* xi, ll
 	}
 
 	auto* op2Zero = irb.CreateICmpEQ(op2, llvm::ConstantInt::get(op2->getType(), 0));
-	auto bodyIrb = generateIfNotThen(op2Zero, irb);
+	llvm::IRBuilder<> bodyIrb(generateIfNotThen(op2Zero, irb));
 
 	auto* shl = bodyIrb.CreateShl(op0, op2);
 	auto* it = llvm::cast<llvm::IntegerType>(shl->getType());
@@ -3626,7 +3637,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateShrd(cs_insn* i, cs_x86* xi, ll
 	}
 
 	auto* op2Zero = irb.CreateICmpEQ(op2, llvm::ConstantInt::get(op2->getType(), 0));
-	auto bodyIrb = generateIfNotThen(op2Zero, irb);
+	llvm::IRBuilder<> bodyIrb(generateIfNotThen(op2Zero, irb));
 
 	auto* lshr = bodyIrb.CreateLShr(op0, op2);
 	auto* it = llvm::cast<llvm::IntegerType>(op2->getType());
@@ -3664,7 +3675,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRcr(cs_insn* i, cs_x86* xi, llv
 	op1 = irb.CreateAnd(op1, mask);
 	auto* op1NotZero = irb.CreateICmpNE(op1, llvm::ConstantInt::get(op1->getType(), 0));
 
-	auto bodyIrb = generateIfThen(op1NotZero, irb);
+	llvm::IRBuilder<> bodyIrb(generateIfThen(op1NotZero, irb));
 
 	auto* cf = loadRegister(X86_REG_CF, bodyIrb, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
 
@@ -3711,7 +3722,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRcl(cs_insn* i, cs_x86* xi, llv
 	op1 = irb.CreateAnd(op1, mask);
 	auto* op1NotZero = irb.CreateICmpNE(op1, llvm::ConstantInt::get(op1->getType(), 0));
 
-	auto bodyIrb = generateIfThen(op1NotZero, irb);
+	llvm::IRBuilder<> bodyIrb(generateIfThen(op1NotZero, irb));
 
 	auto* cf = loadRegister(X86_REG_CF, bodyIrb, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
 
@@ -3756,7 +3767,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRol(cs_insn* i, cs_x86* xi, llv
 	op1 = irb.CreateAnd(op1, mask);
 	auto* op1NotZero = irb.CreateICmpNE(op1, llvm::ConstantInt::get(op1->getType(), 0));
 
-	auto bodyIrb = generateIfThen(op1NotZero, irb);
+	llvm::IRBuilder<> bodyIrb(generateIfThen(op1NotZero, irb));
 
 	auto* shl = bodyIrb.CreateShl(op0, op1);
 	auto* sub = bodyIrb.CreateSub(llvm::ConstantInt::get(op1->getType(), op0BitW), op1);
@@ -3791,7 +3802,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRor(cs_insn* i, cs_x86* xi, llv
 	op1 = irb.CreateAnd(op1, mask);
 	auto* op1NotZero = irb.CreateICmpNE(op1, llvm::ConstantInt::get(op1->getType(), 0));
 
-	auto bodyIrb = generateIfThen(op1NotZero, irb);
+	llvm::IRBuilder<> bodyIrb(generateIfThen(op1NotZero, irb));
 
 	auto* srl = bodyIrb.CreateLShr(op0, op1);
 	auto* sub = bodyIrb.CreateSub(llvm::ConstantInt::get(op1->getType(), op0BitW), op1);
@@ -3894,6 +3905,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateXchg(cs_insn* i, cs_x86* xi, ll
 				llvm::AtomicRMWInst::Xchg,
 				ptr,
 				val,
+				llvm::MaybeAlign(),
 				llvm::AtomicOrdering::SequentiallyConsistent);
 		attachPointeeType(old, elem);
 		storeOp(xi->operands[otherIdx], old, irb);
@@ -3982,15 +3994,19 @@ void Capstone2LlvmIrTranslatorX86_impl::translateLoadString(cs_insn* i, cs_x86* 
 	bool isRepPrefix = xi->prefix[0] == X86_PREFIX_REP;
 	llvm::BranchInst* branch = nullptr;
 	llvm::Value* cntr = nullptr;
-	auto irbP = isRepPrefix ? generateWhile(branch, irb) : std::make_pair(irb, irb);
-	llvm::IRBuilder<>& body = isRepPrefix ? irbP.second : irb;
+	std::unique_ptr<llvm::IRBuilder<>> beforeStorage;
+	std::unique_ptr<llvm::IRBuilder<>> bodyStorage;
 	if (isRepPrefix)
 	{
-		llvm::IRBuilder<>& before = irbP.first;
+		auto pts = generateWhile(branch, irb);
+		beforeStorage = std::make_unique<llvm::IRBuilder<>>(pts.first);
+		bodyStorage = std::make_unique<llvm::IRBuilder<>>(pts.second);
+		llvm::IRBuilder<>& before = *beforeStorage;
 		cntr = loadRegister(getParentRegister(X86_REG_CX), before);
 		auto* cond = before.CreateICmpNE(cntr, llvm::ConstantInt::get(cntr->getType(), 0));
 		branch->setCondition(cond);
 	}
+	llvm::IRBuilder<>& body = isRepPrefix ? *bodyStorage : irb;
 
 	// Body.
 	//
@@ -4031,7 +4047,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateStoreString(cs_insn* i, cs_x86*
 	{
 		auto ediId = getParentRegister(X86_REG_DI);
 		auto* edi = loadRegister(ediId, irb);
-		auto* ediPtr = irb.CreateIntToPtr(edi, irb.getInt8PtrTy(0));
+		auto* ediPtr = irb.CreateIntToPtr(edi, llvm::PointerType::get(irb.getInt8Ty(), 0));
 		if (auto* ediI = llvm::dyn_cast<llvm::Instruction>(ediPtr))
 		{
 			attachPointeeType(ediI, irb.getInt8Ty());
@@ -4144,7 +4160,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateMoveString(cs_insn* i, cs_x86* 
 
 		auto esiId = getParentRegister(X86_REG_SI);
 		auto* esi = loadRegister(esiId, irb);
-		auto* esiPtr = irb.CreateIntToPtr(esi, irb.getInt8PtrTy(0));
+		auto* esiPtr = irb.CreateIntToPtr(esi, llvm::PointerType::get(irb.getInt8Ty(), 0));
 		if (auto* esiI = llvm::dyn_cast<llvm::Instruction>(esiPtr))
 		{
 			attachPointeeType(esiI, irb.getInt8Ty());
@@ -4152,7 +4168,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateMoveString(cs_insn* i, cs_x86* 
 
 		auto ediId = getParentRegister(X86_REG_DI);
 		auto* edi = loadRegister(ediId, irb);
-		auto* ediPtr = irb.CreateIntToPtr(edi, irb.getInt8PtrTy(0));
+		auto* ediPtr = irb.CreateIntToPtr(edi, llvm::PointerType::get(irb.getInt8Ty(), 0));
 		if (auto* ediI = llvm::dyn_cast<llvm::Instruction>(ediPtr))
 		{
 			attachPointeeType(ediI, irb.getInt8Ty());
@@ -4235,15 +4251,19 @@ void Capstone2LlvmIrTranslatorX86_impl::translateScanString(cs_insn* i, cs_x86* 
 	bool isPrefix = isRepePrefix || isRepnePrefix;
 	llvm::BranchInst* branch = nullptr;
 	llvm::Value* cntr = nullptr;
-	auto irbP = isPrefix ? generateWhile(branch, irb) : std::make_pair(irb, irb);
-	llvm::IRBuilder<>& body = isPrefix ? irbP.second : irb;
+	std::unique_ptr<llvm::IRBuilder<>> beforeStorage;
+	std::unique_ptr<llvm::IRBuilder<>> bodyStorage;
 	if (isPrefix)
 	{
-		llvm::IRBuilder<>& before = irbP.first;
+		auto pts = generateWhile(branch, irb);
+		beforeStorage = std::make_unique<llvm::IRBuilder<>>(pts.first);
+		bodyStorage = std::make_unique<llvm::IRBuilder<>>(pts.second);
+		llvm::IRBuilder<>& before = *beforeStorage;
 		cntr = loadRegister(getParentRegister(X86_REG_CX), before);
 		auto* cond = before.CreateICmpNE(cntr, llvm::ConstantInt::get(cntr->getType(), 0));
 		branch->setCondition(cond);
 	}
+	llvm::IRBuilder<>& body = isPrefix ? *bodyStorage : irb;
 
 	// Body.
 	//
@@ -4281,14 +4301,14 @@ void Capstone2LlvmIrTranslatorX86_impl::translateScanString(cs_insn* i, cs_x86* 
 		{
 			llvm::BranchInst::Create(
 					irb.GetInsertBlock(),        // zf == true -> break
-					irbP.first.GetInsertBlock(),
+					beforeStorage->GetInsertBlock(),
 					zf,
 					body.GetInsertBlock()->getTerminator());
 		}
 		else if (isRepePrefix)
 		{
 			llvm::BranchInst::Create(
-					irbP.first.GetInsertBlock(), // zf == true -> continue
+					beforeStorage->GetInsertBlock(), // zf == true -> continue
 					irb.GetInsertBlock(),
 					zf,
 					body.GetInsertBlock()->getTerminator());
@@ -4323,15 +4343,19 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCompareString(cs_insn* i, cs_x8
 	bool isPrefix = isRepePrefix || isRepnePrefix;
 	llvm::BranchInst* branch = nullptr;
 	llvm::Value* cntr = nullptr;
-	auto irbP = isPrefix ? generateWhile(branch, irb) : std::make_pair(irb, irb);
-	llvm::IRBuilder<>& body = isPrefix ? irbP.second : irb;
+	std::unique_ptr<llvm::IRBuilder<>> beforeStorage;
+	std::unique_ptr<llvm::IRBuilder<>> bodyStorage;
 	if (isPrefix)
 	{
-		llvm::IRBuilder<>& before = irbP.first;
+		auto pts = generateWhile(branch, irb);
+		beforeStorage = std::make_unique<llvm::IRBuilder<>>(pts.first);
+		bodyStorage = std::make_unique<llvm::IRBuilder<>>(pts.second);
+		llvm::IRBuilder<>& before = *beforeStorage;
 		cntr = loadRegister(getParentRegister(X86_REG_CX), before);
 		auto* cond = before.CreateICmpNE(cntr, llvm::ConstantInt::get(cntr->getType(), 0));
 		branch->setCondition(cond);
 	}
+	llvm::IRBuilder<>& body = isPrefix ? *bodyStorage : irb;
 
 	// Body.
 	//
@@ -4375,14 +4399,14 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCompareString(cs_insn* i, cs_x8
 		{
 			llvm::BranchInst::Create(
 					irb.GetInsertBlock(),        // zf == true -> break
-					irbP.first.GetInsertBlock(),
+					beforeStorage->GetInsertBlock(),
 					zf,
 					body.GetInsertBlock()->getTerminator());
 		}
 		else if (isRepePrefix)
 		{
 			llvm::BranchInst::Create(
-					irbP.first.GetInsertBlock(), // zf == true -> continue
+					beforeStorage->GetInsertBlock(), // zf == true -> continue
 					irb.GetInsertBlock(),
 					zf,
 					body.GetInsertBlock()->getTerminator());
@@ -4937,7 +4961,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFabs(cs_insn* i, cs_x86* xi, ll
 
 	auto* top = loadX87Top(irb);
 	op0 = loadX87DataReg(irb, top);
-	auto* f = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::fabs, op0->getType());
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fabs, op0->getType());
 	auto* fabs = irb.CreateCall(f, {op0});
 
 	storeX87DataReg(irb, top, fabs);
@@ -4952,7 +4976,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFchs(cs_insn* i, cs_x86* xi, ll
 
 	auto* top = loadX87Top(irb);
 	op0 = loadX87DataReg(irb, top);
-	auto* res = irb.CreateFSub(llvm::ConstantFP::getZeroValueForNegation(op0->getType()), op0);
+	auto* res = irb.CreateFSub(llvm::ConstantFP::getNegativeZero(op0->getType()), op0);
 
 	storeX87DataReg(irb, top, res);
 }
@@ -4966,7 +4990,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFsqrt(cs_insn* i, cs_x86* xi, l
 
 	auto* top = loadX87Top(irb);
 	op0 = loadX87DataReg(irb, top);
-	auto* f = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::sqrt, op0->getType());
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::sqrt, op0->getType());
 	auto* fabs = irb.CreateCall(f, {op0});
 
 	storeX87DataReg(irb, top, fabs);
@@ -4980,9 +5004,9 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFscale(cs_insn* i, cs_x86* xi, 
 	EXPECT_IS_NULLARY(i, xi, irb);
 
 	std::tie(op0, op1, top, idx) = loadOpFloatingBinaryTop(i, xi, irb);
-	auto* roundDown = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::round, op1->getType());
+	auto* roundDown = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::round, op1->getType());
 	op1 = irb.CreateCall(roundDown, {op1});
-	auto* exp2 = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::exp2, op1->getType());
+	auto* exp2 = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::exp2, op1->getType());
 	op1 = irb.CreateCall(exp2, {op1});
 	op0 = irb.CreateFMul(op0, op1);
 
@@ -5000,7 +5024,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateF2xm1(cs_insn* i, cs_x86* xi, l
 	op0 = loadX87DataReg(irb, top);
 	op1 = llvm::ConstantFP::get(op0->getType(), 1);
 	op0 = irb.CreateFSub(op0, op1);
-	auto* f = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::exp2, op0->getType());
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::exp2, op0->getType());
 	auto* res = irb.CreateCall(f, {op0});
 
 	storeX87DataReg(irb, top, res);
@@ -5021,7 +5045,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFyl2x(cs_insn* i, cs_x86* xi, l
 		op0 = irb.CreateFAdd(op0, op2);
 	}
 
-	auto* f = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::log2, op0->getType());
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::log2, op0->getType());
 	auto* log2 = irb.CreateCall(f, {op0});
 	auto* fmulLog2 = irb.CreateFMul(op1, log2);
 
@@ -5051,16 +5075,17 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFcos(cs_insn* i, cs_x86* xi, ll
 
 	auto* top = loadX87Top(irb);
 	op0 = loadX87DataReg(irb, top);
-	auto* fabs = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::fabs, op0->getType());
+	auto* fabs = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fabs, op0->getType());
 	auto* absCall = irb.CreateCall(fabs, {op0});
 	auto* fc = llvm::ConstantFP::get(absCall->getType(), 9223372036854775808.0); // 1 << 63
 	auto* olt = irb.CreateFCmpOLT(absCall, fc);
 
 	auto irbP = generateIfThenElse(olt, irb);
-	llvm::IRBuilder<>& bodyIf(irbP.first), bodyElse(irbP.second);
+	llvm::IRBuilder<> bodyIf(irbP.first);
+	llvm::IRBuilder<> bodyElse(irbP.second);
 
 	storeRegister(X87_REG_C2, bodyIf.getFalse(), bodyIf);
-	auto* cos = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::cos, op0->getType());
+	auto* cos = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::cos, op0->getType());
 	auto* cosCall = bodyIf.CreateCall(cos, {op0});
 	storeX87DataReg(bodyIf, top, cosCall);
 
@@ -5076,20 +5101,21 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFsincos(cs_insn* i, cs_x86* xi,
 
 	auto* top = loadX87Top(irb);
 	op0 = loadX87DataReg(irb, top);
-	auto* fabs = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::fabs, op0->getType());
+	auto* fabs = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fabs, op0->getType());
 	auto* absCall = irb.CreateCall(fabs, {op0});
 	auto* fc = llvm::ConstantFP::get(absCall->getType(), 9223372036854775808.0); // 1 << 63
 	auto* olt = irb.CreateFCmpOLT(absCall, fc);
 
 	auto irbP = generateIfThenElse(olt, irb);
-	llvm::IRBuilder<>& bodyIf(irbP.first), bodyElse(irbP.second);
+	llvm::IRBuilder<> bodyIf(irbP.first);
+	llvm::IRBuilder<> bodyElse(irbP.second);
 
 	storeRegister(X87_REG_C2, bodyIf.getFalse(), bodyIf);
-	auto* sin = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::sin, op0->getType());
+	auto* sin = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::sin, op0->getType());
 	auto* sinCall = bodyIf.CreateCall(sin, {op0});
 	storeX87DataReg(bodyIf, top, sinCall);
 
-	auto* cos = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::cos, op0->getType());
+	auto* cos = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::cos, op0->getType());
 	auto* cosCall = bodyIf.CreateCall(cos, {op0});
 	auto* nTop = x87DecTop(bodyIf, top);
 	storeX87DataReg(bodyIf, nTop, cosCall);
@@ -5106,16 +5132,17 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFsin(cs_insn* i, cs_x86* xi, ll
 
 	auto* top = loadX87Top(irb);
 	op0 = loadX87DataReg(irb, top);
-	auto* fabs = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::fabs, op0->getType());
+	auto* fabs = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fabs, op0->getType());
 	auto* absCall = irb.CreateCall(fabs, {op0});
 	auto* fc = llvm::ConstantFP::get(absCall->getType(), 9223372036854775808.0); // 1 << 63
 	auto* olt = irb.CreateFCmpOLT(absCall, fc);
 
 	auto irbP = generateIfThenElse(olt, irb);
-	llvm::IRBuilder<>& bodyIf(irbP.first), bodyElse(irbP.second);
+	llvm::IRBuilder<> bodyIf(irbP.first);
+	llvm::IRBuilder<> bodyElse(irbP.second);
 
 	storeRegister(X87_REG_C2, bodyIf.getFalse(), bodyIf);
-	auto* sin = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::sin, op0->getType());
+	auto* sin = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::sin, op0->getType());
 	auto* sinCall = bodyIf.CreateCall(sin, {op0});
 	storeX87DataReg(bodyIf, top, sinCall);
 
@@ -5135,7 +5162,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFtan(cs_insn* i, cs_x86* xi, ll
 	auto* olt = irb.CreateFCmpOLT(op0, fc);
 
 	auto irbP = generateIfThenElse(olt, irb);
-	llvm::IRBuilder<>& bodyIf(irbP.first), bodyElse(irbP.second);
+	llvm::IRBuilder<> bodyIf(irbP.first);
+	llvm::IRBuilder<> bodyElse(irbP.second);
 
 	storeRegister(X87_REG_C2, bodyIf.getFalse(), bodyIf);
 	llvm::Function* fnc = getPseudoAsmFunction(
@@ -5332,7 +5360,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFxsave(cs_insn *i, cs_x86 *xi, 
 	auto* baseR = loadRegister(xi->operands[0].mem.base, irb);
 	auto* t = baseR ? baseR->getType() : getDefaultType();
 	llvm::Value* disp = xi->operands[0].mem.disp
-						? llvm::ConstantInt::get(t, xi->operands[0].mem.disp)
+						? llvm::ConstantInt::getSigned(t, xi->operands[0].mem.disp)
 						: nullptr;
 
 	auto* idxR = loadRegister(xi->operands[0].mem.index, irb);
@@ -5389,7 +5417,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFxstor(cs_insn *i, cs_x86 *xi, 
 	auto* baseR = loadRegister(xi->operands[0].mem.base, irb);
 	auto* t = baseR ? baseR->getType() : getDefaultType();
 	llvm::Value* disp = xi->operands[0].mem.disp
-						? llvm::ConstantInt::get(t, xi->operands[0].mem.disp)
+						? llvm::ConstantInt::getSigned(t, xi->operands[0].mem.disp)
 						: nullptr;
 
 	auto* idxR = loadRegister(xi->operands[0].mem.index, irb);
@@ -5480,7 +5508,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFucomPop(cs_insn* i, cs_x86* xi
 
 	auto* fcmpOgt = irb.CreateFCmpOGT(op0, op1);
 	auto irbP = generateIfThenElse(fcmpOgt, irb);
-	llvm::IRBuilder<>& bodyIf(irbP.first), bodyElse(irbP.second);
+	llvm::IRBuilder<> bodyIf(irbP.first);
+	llvm::IRBuilder<> bodyElse(irbP.second);
 
 	storeRegister(r1, bodyIf.getFalse(), bodyIf);
 	storeRegister(r2, bodyIf.getFalse(), bodyIf);
@@ -5488,7 +5517,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFucomPop(cs_insn* i, cs_x86* xi
 
 	auto* fcmpOlt = bodyElse.CreateFCmpOLT(op0, op1);
 	auto irbP1 = generateIfThenElse(fcmpOlt, bodyElse);
-	llvm::IRBuilder<>& bodyIf1(irbP1.first), bodyElse1(irbP1.second);
+	llvm::IRBuilder<> bodyIf1(irbP1.first);
+	llvm::IRBuilder<> bodyElse1(irbP1.second);
 
 	storeRegister(r1, bodyIf1.getTrue(), bodyIf1);
 	storeRegister(r2, bodyIf1.getFalse(), bodyIf1);
@@ -5497,7 +5527,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFucomPop(cs_insn* i, cs_x86* xi
 	auto* fcmpOeq = bodyElse1.CreateFCmpOEQ(op0, op1);
 	storeRegister(r3, bodyElse1.getTrue(), bodyElse1);
 	auto irbP2 = generateIfThenElse(fcmpOeq, bodyElse1);
-	llvm::IRBuilder<>& bodyIf2(irbP2.first), bodyElse2(irbP2.second);
+	llvm::IRBuilder<> bodyIf2(irbP2.first);
+	llvm::IRBuilder<> bodyElse2(irbP2.second);
 
 	storeRegister(r1, bodyIf2.getFalse(), bodyIf2);
 	storeRegister(r2, bodyIf2.getFalse(), bodyIf2);
@@ -5593,7 +5624,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFrndint(cs_insn* i, cs_x86* xi,
 
 	auto* top = loadX87Top(irb);
 	llvm::Value* src = loadX87DataReg(irb, top);
-	auto* f = llvm::Intrinsic::getDeclaration(_module, llvm::Intrinsic::round, src->getType());
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::round, src->getType());
 	auto* val = irb.CreateCall(f, {src});
 	storeX87DataReg(irb, top, val);
 }
@@ -5647,15 +5678,19 @@ void Capstone2LlvmIrTranslatorX86_impl::translateOuts(cs_insn* i, cs_x86* xi, ll
 	bool isRepPrefix = xi->prefix[0] == X86_PREFIX_REP;
 	llvm::BranchInst* branch = nullptr;
 	llvm::Value* cntr = nullptr;
-	auto irbP = isRepPrefix ? generateWhile(branch, irb) : std::make_pair(irb, irb);
-	llvm::IRBuilder<>& body = isRepPrefix ? irbP.second : irb;
+	std::unique_ptr<llvm::IRBuilder<>> beforeStorage;
+	std::unique_ptr<llvm::IRBuilder<>> bodyStorage;
 	if (isRepPrefix)
 	{
-		llvm::IRBuilder<>& before = irbP.first;
+		auto pts = generateWhile(branch, irb);
+		beforeStorage = std::make_unique<llvm::IRBuilder<>>(pts.first);
+		bodyStorage = std::make_unique<llvm::IRBuilder<>>(pts.second);
+		llvm::IRBuilder<>& before = *beforeStorage;
 		cntr = loadRegister(getParentRegister(X86_REG_CX), before);
 		auto* cond = before.CreateICmpNE(cntr, llvm::ConstantInt::get(cntr->getType(), 0));
 		branch->setCondition(cond);
 	}
+	llvm::IRBuilder<>& body = isRepPrefix ? *bodyStorage : irb;
 
 	// Body.
 	//
@@ -5700,15 +5735,19 @@ void Capstone2LlvmIrTranslatorX86_impl::translateIns(cs_insn* i, cs_x86* xi, llv
 	bool isRepPrefix = xi->prefix[0] == X86_PREFIX_REP;
 	llvm::BranchInst* branch = nullptr;
 	llvm::Value* cntr = nullptr;
-	auto irbP = isRepPrefix ? generateWhile(branch, irb) : std::make_pair(irb, irb);
-	llvm::IRBuilder<>& body = isRepPrefix ? irbP.second : irb;
+	std::unique_ptr<llvm::IRBuilder<>> beforeStorage;
+	std::unique_ptr<llvm::IRBuilder<>> bodyStorage;
 	if (isRepPrefix)
 	{
-		llvm::IRBuilder<>& before = irbP.first;
+		auto pts = generateWhile(branch, irb);
+		beforeStorage = std::make_unique<llvm::IRBuilder<>>(pts.first);
+		bodyStorage = std::make_unique<llvm::IRBuilder<>>(pts.second);
+		llvm::IRBuilder<>& before = *beforeStorage;
 		cntr = loadRegister(getParentRegister(X86_REG_CX), before);
 		auto* cond = before.CreateICmpNE(cntr, llvm::ConstantInt::get(cntr->getType(), 0));
 		branch->setCondition(cond);
 	}
+	llvm::IRBuilder<>& body = isRepPrefix ? *bodyStorage : irb;
 
 	// Body.
 	//

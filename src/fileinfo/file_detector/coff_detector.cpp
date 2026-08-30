@@ -185,11 +185,16 @@ void CoffDetector::getCoffSymbols()
 	{
 		const auto symbolRef = parser->getCOFFSymbol(item);
 		StringRef name;
-		if(parser->getSymbolName(symbolRef, name))
+		if (auto nameOrErr = parser->getSymbolName(symbolRef))
 		{
+			name = *nameOrErr;
+		}
+		else
+		{
+			consumeError(nameOrErr.takeError());
 			name = "";
 		}
-		symbol.setName(name);
+		symbol.setName(name.str());
 		symbol.setIndex(index);
 		symbol.setValue(symbolRef.getValue());
 		symbol.setLinkToSection(getSymbolLinkToSection(symbolRef.getSectionNumber()));
@@ -317,12 +322,17 @@ void CoffDetector::getSections()
 	for(const auto &item : parser->sections())
 	{
 		StringRef name;
-		if(item.getName(name))
+		if (auto nameOrErr = item.getName())
 		{
+			name = *nameOrErr;
+		}
+		else
+		{
+			consumeError(nameOrErr.takeError());
 			name = "";
 		}
 		FileSection fs;
-		fs.setName(name);
+		fs.setName(name.str());
 		fs.setIndex(index);
 		const auto *sect = parser->getCOFFSection(item);
 		if(sect)

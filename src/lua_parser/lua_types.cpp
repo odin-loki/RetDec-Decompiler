@@ -28,11 +28,6 @@ std::string luaConstStr(const LuaConst& c) {
         if constexpr (std::is_same_v<T, LuaInt>)   return std::to_string(v.value);
         if constexpr (std::is_same_v<T, LuaFloat>) {
             double val = v.value;
-            // Display whole numbers as integers (Lua 5.1 stores all numbers as doubles)
-            if (val == static_cast<double>(static_cast<int64_t>(val))
-                    && val >= -9.0e18 && val <= 9.0e18) {
-                return std::to_string(static_cast<int64_t>(val));
-            }
             std::ostringstream ss;
             ss << std::setprecision(14) << val;
             std::string s = ss.str();

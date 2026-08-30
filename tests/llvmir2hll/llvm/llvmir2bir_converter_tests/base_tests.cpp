@@ -11,6 +11,8 @@
 #include <llvm/Analysis/ScalarEvolution.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IRReader/IRReader.h>
+#include <llvm/InitializePasses.h>
+#include <llvm/PassRegistry.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
 
@@ -111,6 +113,13 @@ ShPtr<Module> LLVMIR2BIRConverterBaseTests::convertLLVMIR2BIR(const std::string 
 	//
 	//     Pass has not been inserted into a PassManager object!
 	//
+	// LLVM 23 requires analysis passes to be registered before they can be
+	// scheduled as required dependencies of ConversionPass.
+	llvm::PassRegistry &registry = *llvm::PassRegistry::getPassRegistry();
+	llvm::initializeCore(registry);
+	llvm::initializeAnalysis(registry);
+	llvm::initializeTransformUtils(registry);
+
 	llvm::legacy::PassManager passManager;
 
 	// Our LLVMIR2BIR converter requires the LoopInfo and
@@ -178,14 +187,27 @@ AssertionResult LLVMIR2BIRConverterBaseTests::isConstInt(
 * @brief Assertion, that the given BIR statement @a statement is a call
 *        statement of the function test with the given parameter @a param.
 */
+namespace {
+
+ShPtr<CallExpr> callExprOfTestOrTailReturn(ShPtr<Statement> statement) {
+	if (auto callStmt = cast<CallStmt>(statement)) {
+		return callStmt->getCall();
+	}
+	if (auto retStmt = cast<ReturnStmt>(statement)) {
+		return cast<CallExpr>(retStmt->getRetVal());
+	}
+	return nullptr;
+}
+
+} // anonymous namespace
+
 AssertionResult LLVMIR2BIRConverterBaseTests::isCallOfFuncTest(
 		ShPtr<Statement> statement, ShPtr<Variable> param) {
-	auto callStmt = cast<CallStmt>(statement);
-	if (!callStmt) {
-		return AssertionFailure() << statement << " is not CallStmt";
+	auto callExpr = callExprOfTestOrTailReturn(statement);
+	if (!callExpr) {
+		return AssertionFailure() << statement
+			<< " is not CallStmt or return test(...)";
 	}
-
-	auto callExpr = callStmt->getCall();
 	auto calledExpr = cast<Variable>(callExpr->getCalledExpr());
 	if (!calledExpr || calledExpr->getName() != "test"s) {
 		return AssertionFailure() << statement
@@ -211,12 +233,11 @@ AssertionResult LLVMIR2BIRConverterBaseTests::isCallOfFuncTest(
 */
 AssertionResult LLVMIR2BIRConverterBaseTests::isCallOfFuncTest(
 		ShPtr<Statement> statement, int param) {
-	auto callStmt = cast<CallStmt>(statement);
-	if (!callStmt) {
-		return AssertionFailure() << statement << " is not CallStmt";
+	auto callExpr = callExprOfTestOrTailReturn(statement);
+	if (!callExpr) {
+		return AssertionFailure() << statement
+			<< " is not CallStmt or return test(...)";
 	}
-
-	auto callExpr = callStmt->getCall();
 	auto calledExpr = cast<Variable>(callExpr->getCalledExpr());
 	if (!calledExpr || calledExpr->getName() != "test"s) {
 		return AssertionFailure() << statement

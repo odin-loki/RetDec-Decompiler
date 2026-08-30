@@ -8,8 +8,10 @@
 #ifndef RETDEC_BORLAND_AST_PARSER_H
 #define RETDEC_BORLAND_AST_PARSER_H
 
+#include <algorithm>
+#include <cstddef>
 #include <memory>
-#include <llvm/Demangle/StringView.h>
+#include <string_view>
 
 #include "retdec/demangler/context.h"
 #include "retdec/demangler/borland_ast/node.h"
@@ -18,7 +20,73 @@ namespace retdec {
 namespace demangler {
 namespace borland {
 
-using StringView = llvm::itanium_demangle::StringView;
+/// RetDec-owned view with the LLVM 8 itanium `StringView` operations the
+/// Borland parser uses. LLVM 23 demangler uses `std::string_view` only.
+class StringView
+{
+	public:
+		StringView() = default;
+		StringView(const char* s) : v(s ? std::string_view(s) : std::string_view()) {}
+		StringView(const char* s, std::size_t n) : v(s, n) {}
+		StringView(const char* first, const char* last)
+			: v(first, static_cast<std::size_t>(last - first)) {}
+
+		const char* begin() const { return v.data(); }
+		const char* end() const { return v.data() + v.size(); }
+		std::size_t size() const { return v.size(); }
+		bool empty() const { return v.empty(); }
+		char front() const { return v.front(); }
+
+		bool startsWith(char c) const { return !v.empty() && v.front() == c; }
+		bool startsWith(StringView s) const
+		{
+			return v.size() >= s.size() && v.substr(0, s.size()) == s.v;
+		}
+
+		bool consumeFront(char c)
+		{
+			if (!startsWith(c))
+			{
+				return false;
+			}
+			v.remove_prefix(1);
+			return true;
+		}
+		bool consumeFront(const char* s) { return consumeFront(StringView(s)); }
+		bool consumeFront(StringView s)
+		{
+			if (!startsWith(s))
+			{
+				return false;
+			}
+			v.remove_prefix(s.size());
+			return true;
+		}
+
+		char popFront()
+		{
+			char c = front();
+			v.remove_prefix(1);
+			return c;
+		}
+
+		void drop(std::size_t n) { v.remove_prefix(std::min(n, v.size())); }
+
+		StringView cutUntil(char c)
+		{
+			std::size_t pos = 0;
+			while (pos < v.size() && v[pos] != c)
+			{
+				++pos;
+			}
+			StringView prefix(v.data(), pos);
+			v.remove_prefix(pos);
+			return prefix;
+		}
+
+	private:
+		std::string_view v;
+};
 
 class FunctionTypeNode;
 class NodeArray;

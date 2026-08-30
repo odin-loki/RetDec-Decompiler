@@ -145,7 +145,7 @@ llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::loadRegister(
 
 	llvmReg = generateTypeConversion(irb, llvmReg, dstType, ct);
 
-	return irb.CreateLoad(llvmReg);
+	return createLoad(irb, llvmReg);
 }
 
 llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::loadOp(
@@ -163,7 +163,9 @@ llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::loadOp(
 		}
 		case PPC_OP_IMM:
 		{
-			return llvm::ConstantInt::getSigned(getDefaultType(), op.imm);
+			auto* t = getDefaultType();
+			return llvm::ConstantInt::get(t, llvm::APInt(t->getIntegerBitWidth(),
+					static_cast<uint64_t>(op.imm), false, /*implicitTrunc=*/true));
 			break;
 		}
 		case PPC_OP_MEM:
@@ -230,7 +232,9 @@ llvm::StoreInst* Capstone2LlvmIrTranslatorPowerpc_impl::storeRegister(
 	}
 	val = generateTypeConversion(irb, val, llvmReg->getValueType(), ct);
 
-	return irb.CreateStore(val, llvmReg);
+	auto* s = irb.CreateStore(val, llvmReg);
+	attachPointeeType(s, llvmReg->getValueType());
+	return s;
 }
 
 llvm::Instruction* Capstone2LlvmIrTranslatorPowerpc_impl::storeOp(
@@ -840,7 +844,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateCntlzw(cs_insn* i, cs_ppc* 
 	EXPECT_IS_BINARY(i, pi, irb);
 
 	op1 = loadOpBinaryOp1(pi, irb);
-	auto* f = llvm::Intrinsic::getDeclaration(
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(
 			_module,
 			llvm::Intrinsic::ctlz,
 			op1->getType());

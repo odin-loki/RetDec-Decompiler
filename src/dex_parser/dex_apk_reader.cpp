@@ -1,6 +1,10 @@
 /**
  * @file src/dex_parser/dex_apk_reader.cpp
  * @brief APK/ZIP reader, multidex support, OAT header, ProGuard mapping.
+ *
+ * STORED (method 0) and DEFLATE (method 8) ZIP entries are supported. DEFLATE
+ * uses zlib raw inflate (`inflateInit2(..., -MAX_WBITS)`). Uncompressed size
+ * is capped so a bogus ZIP size field cannot allocate unbounded output.
  */
 
 #include "retdec/dex_parser/dex_apk_reader.h"
@@ -9,6 +13,8 @@
 #include <cassert>
 #include <cstring>
 #include <sstream>
+
+#include <zlib.h>
 
 namespace retdec {
 namespace dex_parser {
@@ -149,13 +155,29 @@ std::vector<uint8_t> ApkReader::extractEntry(const uint8_t* data, size_t size,
         if (entry.uncompressedSize > size - dataOff) return {};
         return std::vector<uint8_t>(data + dataOff,
                                     data + dataOff + entry.uncompressedSize);
-    } else {
-        // Deflated — we need zlib. For now, return raw compressed bytes with a
-        // note: in a full implementation this would call inflate().
-        // We return empty to signal "can't decompress" gracefully.
-        (void)entry.compressedSize;
-        return {};
     }
+    if (entry.method == 8) {
+        // Raw DEFLATE (ZIP method 8), not a zlib wrapper.
+        constexpr uint32_t kMaxInflate = 16u * 1024u * 1024u;
+        if (entry.uncompressedSize == 0 || entry.uncompressedSize > kMaxInflate)
+            return {};
+        std::vector<uint8_t> out(entry.uncompressedSize);
+        z_stream strm{};
+        strm.next_in = const_cast<Bytef*>(data + dataOff);
+        strm.avail_in = entry.compressedSize;
+        strm.next_out = out.data();
+        strm.avail_out = entry.uncompressedSize;
+        if (inflateInit2(&strm, -MAX_WBITS) != Z_OK)
+            return {};
+        const int rc = inflate(&strm, Z_FINISH);
+        const uLong produced = strm.total_out;
+        inflateEnd(&strm);
+        if (rc != Z_STREAM_END)
+            return {};
+        out.resize(static_cast<size_t>(produced));
+        return out;
+    }
+    return {};
 }
 
 // ─── ApkReader ───────────────────────────────────────────────────────────────
@@ -269,8 +291,7 @@ ApkReadResult ApkReader::readApk(const uint8_t* data, size_t size) {
             break;
         auto dexData = extractEntry(data, size, *entry);
         if (dexData.empty()) {
-            result.warnings.push_back("could not extract " + entry->name +
-                                      " (deflated compression not supported yet)");
+            result.warnings.push_back("could not extract " + entry->name);
             continue;
         }
         result.dexNames.push_back(entry->name);
@@ -323,25 +344,28 @@ ApkReadResult ApkReader::readOat(const uint8_t* data, size_t size) {
 void ApkReader::applyProGuardMapping(bc_module::BcModule& module,
                                       const ProGuardMapping& mapping) {
     for (auto& cls : module.classes()) {
-        auto classIt = mapping.classMap.find(cls.name);
-        if (classIt != mapping.classMap.end())
-            cls.name = classIt->second;
-
-        // Rename methods and fields
-        auto memberIt = mapping.memberMap.find(cls.name);
-        if (memberIt == mapping.memberMap.end())
-            continue;
-        const auto& memberMap = memberIt->second;
-
-        for (auto& method : cls.methods) {
-            auto it = memberMap.find(method.name);
-            if (it != memberMap.end())
-                method.name = it->second.originalName;
+        // memberMap is keyed by the obfuscated class name (see parse()).
+        const std::string obfName = cls.name;
+        auto memberIt = mapping.memberMap.find(obfName);
+        if (memberIt != mapping.memberMap.end()) {
+            const auto& members = memberIt->second;
+            for (auto& method : cls.methods) {
+                auto it = members.find(method.name);
+                if (it != members.end())
+                    method.name = it->second.originalName;
+            }
+            for (auto& field : cls.fields) {
+                auto it = members.find(field.name);
+                if (it != members.end())
+                    field.name = it->second.originalName;
+            }
         }
-        for (auto& field : cls.fields) {
-            auto it = memberMap.find(field.name);
-            if (it != memberMap.end())
-                field.name = it->second.originalName;
+
+        auto classIt = mapping.classMap.find(obfName);
+        if (classIt != mapping.classMap.end()) {
+            if (cls.fqName == obfName)
+                cls.fqName = classIt->second;
+            cls.name = classIt->second;
         }
     }
 }

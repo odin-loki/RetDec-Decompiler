@@ -127,6 +127,8 @@ def discover_fixtures(fixtures_dir: Path, languages: List[str]) -> List[TestCase
         else:
             for f in sorted(lang_dir.rglob("*")):
                 if f.is_file() and any(f.suffix == ext or f.name.endswith(ext) for ext in spec["exts"]):
+                    if f.name.endswith(".resources.dll"):
+                        continue
                     rel = f.relative_to(fixtures_dir / lang)
                     golden = golden_base / lang / (str(rel) + ".expected")
                     cases.append(TestCase(

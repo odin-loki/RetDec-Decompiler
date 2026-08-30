@@ -685,7 +685,7 @@ std::string DsmWriter::getString(
 
 	if (cda && cda->isCString())
 	{
-		ret = "\"" + escapeString(cda->getAsCString()) + "\"";
+		ret = "\"" + escapeString(cda->getAsCString().str()) + "\"";
 	}
 	else if (cda && cgv->type.isWideString())
 	{

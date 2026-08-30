@@ -266,6 +266,12 @@ bool MetadataTables::parseTable(TableId id, RowReader& rr) {
             fields[f++] = rr.blobIdx();
             break;
         }
+        case TableId::FieldMarshal: {
+            auto tok = rr.codedToken(kHasFieldMarshal, 2, 1);
+            fields[f++] = tok.table; fields[f++] = tok.index;
+            fields[f++] = rr.blobIdx();
+            break;
+        }
         case TableId::ClassLayout:
             fields[f++] = rr.u16();  // PackingSize
             fields[f++] = rr.u32();  // ClassSize
@@ -494,6 +500,15 @@ CustomAttributeRow MetadataTables::customAttribute(uint32_t idx) const {
     r.parent = {static_cast<uint8_t>(f[0]), f[1]};
     r.type   = {static_cast<uint8_t>(f[2]), f[3]};
     r.value  = f[4];
+    return r;
+}
+
+FieldMarshalRow MetadataTables::fieldMarshal(uint32_t idx) const {
+    const auto* f = rowFields(tables_[static_cast<size_t>(TableId::FieldMarshal)], idx);
+    if (!f) return {};
+    FieldMarshalRow r;
+    r.parent = {static_cast<uint8_t>(f[0]), f[1]};
+    r.nativeType = f[2];
     return r;
 }
 

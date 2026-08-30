@@ -6,6 +6,8 @@
  */
 
 #include <memory>
+#include <string_view>
+
 #include <llvm/Demangle/Demangle.h>
 #include <llvm/Demangle/MicrosoftDemangle.h>
 
@@ -28,11 +30,10 @@ MicrosoftDemangler::MicrosoftDemangler() : Demangler("microsoft") {}
 
 std::string MicrosoftDemangler::demangleToString(const std::string &mangled)
 {
-	const char *mangled_c = mangled.c_str();
 	std::string demangled_str = "";
 	int llvm_status{};
 
-	char *demangled_c = llvm::microsoftDemangle(mangled_c, nullptr, nullptr, &llvm_status);
+	char *demangled_c = llvm::microsoftDemangle(mangled, nullptr, &llvm_status);
 
 	switch (llvm_status) {
 	case llvm::demangle_success:
@@ -61,10 +62,9 @@ std::shared_ptr<ctypes::Function> MicrosoftDemangler::demangleFunctionToCtypes(
 	const ctypesparser::CTypesParser::TypeSignedness &typeSignedness,
 	unsigned defaultBitWidth)
 {
-	llvm::ms_demangle::ArenaAllocator Arena;
-	llvm::ms_demangle::Demangler D(Arena);
+	llvm::ms_demangle::Demangler D;
 
-	StringView Name{mangled.c_str()};
+	std::string_view Name = mangled;
 	llvm::ms_demangle::SymbolNode *AST = D.parse(Name);
 
 	if (D.Error) {

@@ -791,7 +791,7 @@ void Heuristics::getDwarfInfo()
 		if (auto p = llvm::dwarf::toString(unitDie.find(
 				llvm::dwarf::DW_AT_producer)))
 		{
-			std::string producer = p.getValue();
+			std::string producer = *p;
 			parseGccProducer(producer)
 					|| parseClangProducer(producer)
 					|| parseTmsProducer(producer);
@@ -800,7 +800,7 @@ void Heuristics::getDwarfInfo()
 		if (auto l = llvm::dwarf::toUnsigned(unitDie.find(
 				llvm::dwarf::DW_AT_language)))
 		{
-			uint64_t language = l.getValue();
+			uint64_t language = *l;
 			if (getDwarfLanguageString(language, lang))
 			{
 				if (addUniqueValue(languages, lang, langIndex))

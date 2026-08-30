@@ -58,7 +58,7 @@ Instruction * IdiomsCommon::exchangeLessThanZero(BasicBlock::iterator iter) cons
 		Constant *NewCst = ConstantInt::get(op0->getType(), 0);
 
 		Instruction * cmp = CmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, op0, NewCst);
-		val.getParent()->getInstList().insert(iter, cmp);
+		cmp->insertBefore(iter);
 
 		return CastInst::CreateZExtOrBitCast(cmp, val.getType());
 	}
@@ -92,7 +92,7 @@ Instruction * IdiomsCommon::exchangeGreaterEqualZero(BasicBlock::iterator iter) 
 			Constant *NewCst = ConstantInt::get(op0->getType(), 0);
 
 			Instruction * cmp = CmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SGE, op1, NewCst);
-			val.getParent()->getInstList().insert(iter, cmp);
+			cmp->insertBefore(iter);
 
 			// erase lshr
 			eraseInstFromBasicBlock(op0, val.getParent());
@@ -111,7 +111,7 @@ Instruction * IdiomsCommon::exchangeGreaterEqualZero(BasicBlock::iterator iter) 
 		Constant *NewCst = ConstantInt::get(op1->getType(), 0);
 
 		Instruction * cmp = CmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SGE, op1, NewCst);
-		val.getParent()->getInstList().insert(iter, cmp);
+		cmp->insertBefore(iter);
 
 		return CastInst::CreateZExtOrBitCast(cmp, val.getType());
 	}
@@ -403,8 +403,8 @@ Instruction * IdiomsCommon::exchangeIntegerAbs(BasicBlock::iterator iter) const
 	Constant * zero = ConstantInt::get(op_x->getType(), 0);
 	Instruction * cmp = CmpInst::Create(Instruction::ICmp, ICmpInst::ICMP_SLT, op_x, zero, "abs.cmp");
 	BinaryOperator * neg = BinaryOperator::CreateSub(zero, op_x, "abs.neg");
-	val.getParent()->getInstList().insert(iter, cmp);
-	val.getParent()->getInstList().insert(iter, neg);
+	cmp->insertBefore(iter);
+	neg->insertBefore(iter);
 	return SelectInst::Create(cmp, neg, op_x, "abs");
 }
 

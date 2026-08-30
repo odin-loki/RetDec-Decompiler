@@ -37,6 +37,7 @@ unsigned AstToCtypesParser::getBitWidth(const std::string &typeName) const
 		{"char16_t", 16},
 		{"char32_t", 32},
 		{"__float128", 128},
+		{"half", 16},
 		{"decimal16", 16},
 		{"decimal32", 32},
 		{"decimal64", 64},

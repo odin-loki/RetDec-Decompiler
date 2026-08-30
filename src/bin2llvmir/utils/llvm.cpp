@@ -5,15 +5,19 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cassert>
 #include <fstream>
 #include <regex>
 
-#include <llvm/../../lib/IR/LLVMContextImpl.h>
+#include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/Support/Casting.h>
 
+#include <llvm/IR/DataLayout.h>
+#include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/GlobalVariable.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Metadata.h>
+#include <llvm/IR/Module.h>
 
 #include "retdec/bin2llvmir/providers/abi/abi.h"
 #include "retdec/bin2llvmir/utils/debug.h"
@@ -103,9 +107,50 @@ llvm::Type* getPointeeTypeMetadata(const llvm::Instruction* i)
 	return stringToLlvmType(i->getContext(), mds->getString().str());
 }
 
-llvm::Type* pointeeType(const llvm::Value* v)
+namespace {
+
+llvm::Type* inferPointeeFromUsers(const llvm::Value* v)
 {
-	if (!v)
+	if (!v || !v->hasUseList())
+	{
+		return nullptr;
+	}
+	llvm::Type* found = nullptr;
+	for (const llvm::User* u : v->users())
+	{
+		llvm::Type* t = nullptr;
+		if (auto* li = dyn_cast<LoadInst>(u))
+		{
+			t = li->getType();
+		}
+		else if (auto* si = dyn_cast<StoreInst>(u))
+		{
+			if (si->getPointerOperand() == v)
+			{
+				t = si->getValueOperand()->getType();
+			}
+		}
+		if (!t)
+		{
+			continue;
+		}
+		if (!found)
+		{
+			found = t;
+		}
+		else if (found != t)
+		{
+			return nullptr;
+		}
+	}
+	return found;
+}
+
+llvm::Type* pointeeTypeImpl(
+		const llvm::Value* v,
+		SmallPtrSetImpl<const Value*>& seen)
+{
+	if (!v || !seen.insert(v).second)
 	{
 		return nullptr;
 	}
@@ -124,11 +169,162 @@ llvm::Type* pointeeType(const llvm::Value* v)
 	{
 		return gv->getValueType();
 	}
-	if (auto* pt = dyn_cast<PointerType>(v->getType()))
+	if (auto* c = dyn_cast<CastInst>(v))
 	{
-		return pt->getElementType();
+		if (c->getType()->isPointerTy())
+		{
+			// IntToPtr's operand is an integer; walking it would pick up
+			// retdec.pointee on a source load (object type), not the result
+			// pointer's element. Recover from load/store users instead.
+			if (!isa<IntToPtrInst>(c))
+			{
+				if (auto* t = pointeeTypeImpl(c->getOperand(0), seen))
+				{
+					return t;
+				}
+			}
+			return inferPointeeFromUsers(c);
+		}
+	}
+	if (auto* sel = dyn_cast<SelectInst>(v))
+	{
+		if (auto* t = pointeeTypeImpl(sel->getTrueValue(), seen))
+		{
+			return t;
+		}
+		if (auto* t = pointeeTypeImpl(sel->getFalseValue(), seen))
+		{
+			return t;
+		}
+	}
+	if (auto* phi = dyn_cast<PHINode>(v))
+	{
+		for (unsigned i = 0, n = phi->getNumIncomingValues(); i < n; ++i)
+		{
+			if (auto* t = pointeeTypeImpl(phi->getIncomingValue(i), seen))
+			{
+				return t;
+			}
+		}
+	}
+	if (auto* ce = dyn_cast<ConstantExpr>(v))
+	{
+		if (ce->isCast() || ce->getOpcode() == Instruction::GetElementPtr)
+		{
+			if (auto* t = pointeeTypeImpl(ce->getOperand(0), seen))
+			{
+				return t;
+			}
+		}
+	}
+	if (v->getType()->isPointerTy())
+	{
+		return inferPointeeFromUsers(v);
 	}
 	return nullptr;
+}
+
+} // namespace
+
+llvm::Type* pointeeType(const llvm::Value* v)
+{
+	SmallPtrSet<const Value*, 8> seen;
+	return pointeeTypeImpl(v, seen);
+}
+
+llvm::Type* typedPointerElement(const llvm::Type* t)
+{
+	(void)t;
+	return nullptr;
+}
+
+llvm::Type* aggregateTypeAtIndex(llvm::Type* t, unsigned idx)
+{
+	if (auto* st = dyn_cast<StructType>(t))
+	{
+		return idx < st->getNumElements() ? st->getElementType(idx) : nullptr;
+	}
+	if (auto* at = dyn_cast<ArrayType>(t))
+	{
+		return at->getElementType();
+	}
+	if (auto* vt = dyn_cast<FixedVectorType>(t))
+	{
+		return vt->getElementType();
+	}
+	return nullptr;
+}
+
+static llvm::Align loadStoreAlign(
+		llvm::Type* ty,
+		llvm::Value* hint,
+		llvm::Instruction* insertBefore)
+{
+	llvm::Module* m = nullptr;
+	if (insertBefore)
+	{
+		m = insertBefore->getModule();
+	}
+	if (!m)
+	{
+		if (auto* i = llvm::dyn_cast<llvm::Instruction>(hint))
+		{
+			m = i->getModule();
+		}
+		else if (auto* gv = llvm::dyn_cast<llvm::GlobalValue>(hint))
+		{
+			m = gv->getParent();
+		}
+	}
+	if (m)
+	{
+		return m->getDataLayout().getABITypeAlign(ty);
+	}
+	return llvm::Align(1);
+}
+
+llvm::LoadInst* createLoadInst(
+		llvm::Value* ptr,
+		llvm::Type* ty,
+		const llvm::Twine& name,
+		llvm::Instruction* insertBefore)
+{
+	assert(ptr && ty);
+	auto* ld = new LoadInst(
+			ty,
+			ptr,
+			name,
+			false,
+			loadStoreAlign(ty, ptr, insertBefore),
+			insertBefore);
+	setPointeeTypeMetadata(ld, ty);
+	return ld;
+}
+
+llvm::LoadInst* createLoadInst(
+		llvm::Value* ptr,
+		const llvm::Twine& name,
+		llvm::Instruction* insertBefore)
+{
+	auto* ty = pointeeType(ptr);
+	assert(ty && "createLoadInst: missing retdec.pointee / alloca / global type");
+	return createLoadInst(ptr, ty, name, insertBefore);
+}
+
+llvm::StoreInst* createStoreInst(
+		llvm::Value* val,
+		llvm::Value* ptr,
+		llvm::Instruction* insertBefore)
+{
+	assert(val && ptr);
+	auto* st = new StoreInst(
+			val,
+			ptr,
+			false,
+			loadStoreAlign(val->getType(), ptr, insertBefore),
+			insertBefore);
+	setPointeeTypeMetadata(st, val->getType());
+	return st;
 }
 
 //
@@ -181,8 +377,7 @@ bool isStringArrayType(const llvm::Type* t)
  */
 bool isStringArrayPointeType(const llvm::Type* t)
 {
-	auto* pt = dyn_cast_or_null<PointerType>(t);
-	return pt ? isStringArrayType(pt->getElementType()) : false;
+	return t && t->isPointerTy() ? isStringArrayType(typedPointerElement(t)) : false;
 }
 
 /**
@@ -275,7 +470,13 @@ Type* stringToLlvmType(LLVMContext& ctx, const std::string& str)
 	else if (s == "ppc_fp128")
 		return Type::getPPC_FP128Ty(ctx);
 	else if (s == "x86_mmx")
-		return Type::getX86_MMXTy(ctx);
+	{
+		return llvm::FixedVectorType::get(Type::getInt64Ty(ctx), 1);
+	}
+	else if (s == "ptr")
+	{
+		return PointerType::get(ctx, Abi::DEFAULT_ADDR_SPACE);
+	}
 	else if (std::regex_match(s, match, regexInt))
 	{
 		unsigned intBits = 0;
@@ -335,7 +536,11 @@ Type* stringToLlvmType(LLVMContext& ctx, const std::string& str)
 		if (retdec::utils::strToNum(match[1], n))
 		{
 			auto* t = stringToLlvmType(ctx, match[2]);
-			return t == nullptr ? t : VectorType::isValidElementType(t) ? VectorType::get(t, n) : nullptr;
+			if (t == nullptr || !VectorType::isValidElementType(t))
+			{
+				return nullptr;
+			}
+			return llvm::FixedVectorType::get(t, n);
 		}
 		else
 		{
@@ -427,27 +632,10 @@ Type* stringToLlvmType(LLVMContext& ctx, const std::string& str)
 
 		return StructType::create(ctx, elems, std::string(match[1]), s.back() == '>');
 	}
-	// Structure ID.
-	// We need to get to structures that were already added to the current
-	// LLVM contex. The problem is that context itself, or any other LLVM
-	// object accessible from here, does not offer method to get to the
-	// existing structures.
-	// Possible solutions:
-	// 1. Use LLVMContext::pImpl member -- private implementation of context.
-	//    It offers exactly what we need -- an access to the named structures.
-	//    However, it should not be used by external tools based on LLVM.
-	//    This is the currently used solution.
-	// 2. Cache already added structures -- this function would have to maintain
-	//    static/global std::map<LLVMContext*, StructType> with all created
-	//    structures. This may be dangerous -- this functions would not be
-	//    aware of context's structures that were not added by it. Moreover,
-	//   structures might change and I'm not sure what would happen to cached
-	//   pointes.
-	//
+	// Structure ID — named types already in this LLVMContext.
 	else if (std::regex_match(s, match, regexStructId))
 	{
-		auto* r = ctx.pImpl->NamedStructTypes.lookup(std::string(match[1]));
-		return r;
+		return StructType::getTypeByName(ctx, match[1].str());
 	}
 
 	return nullptr;
@@ -825,7 +1013,7 @@ std::vector<llvm::Type*> parseFormatString(llvm::Module* module, const std::stri
 		}
 	}
 
-	if (calledFnc && retdec::utils::contains(calledFnc->getName(), "scan"))
+	if (calledFnc && retdec::utils::contains(calledFnc->getName().str(), "scan"))
 	{
 		for (size_t i = 0; i < ret.size(); ++i)
 		{

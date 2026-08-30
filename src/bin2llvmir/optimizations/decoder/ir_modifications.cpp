@@ -24,7 +24,7 @@ llvm::CallInst* Decoder::transformToCall(
 	{
 		auto* cc = cast<Instruction>(
 				IrModifier::convertValueToTypeAfter(c, retObj->getValueType(), c));
-		auto* s = new StoreInst(cc, retObj);
+		auto* s = llvm_utils::createStoreInst(cc, retObj);
 		s->insertAfter(cc);
 		if (auto* ptee = llvm_utils::pointeeType(retObj))
 		{
@@ -124,15 +124,10 @@ llvm::SwitchInst* Decoder::transformToSwitch(
 				false,
 				GlobalValue::ExternalLinkage,
 				nullptr);
-		auto* s = new StoreInst(insn, gv);
+		auto* s = llvm_utils::createStoreInst(insn, gv);
 		s->insertAfter(insn);
 
-		val = new LoadInst(gv, "", pseudo);
-		if (auto* ptee = llvm_utils::pointeeType(gv))
-		{
-			llvm_utils::setPointeeTypeMetadata(s, ptee);
-			llvm_utils::setPointeeTypeMetadata(cast<LoadInst>(val), ptee);
-		}
+		val = llvm_utils::createLoadInst(gv, "", pseudo);
 	}
 
 	auto* term = pseudo->getParent()->getTerminator();
@@ -581,11 +576,11 @@ llvm::Function* Decoder::splitFunctionOn(
 
 		addFunction(splitAddr, newFnc);
 
-		newFnc->getBasicBlockList().splice(
+		newFnc->splice(
 				newFnc->begin(),
-				oldFnc->getBasicBlockList(),
+				oldFnc,
 				splitBb->getIterator(),
-				oldFnc->getBasicBlockList().end());
+				oldFnc->end());
 
 		newFncs.insert(oldFnc);
 		newFncs.insert(newFnc);
@@ -610,7 +605,7 @@ llvm::Function* Decoder::splitFunctionOn(
 			{
 				auto* cc = cast<Instruction>(
 						IrModifier::convertValueToTypeAfter(c, retObj->getValueType(), c));
-				auto* s = new StoreInst(cc, retObj);
+				auto* s = llvm_utils::createStoreInst(cc, retObj);
 				s->insertAfter(cc);
 				if (auto* ptee = llvm_utils::pointeeType(retObj))
 				{

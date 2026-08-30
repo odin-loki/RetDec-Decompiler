@@ -131,7 +131,7 @@ std::list<FunctionAnalyzeMetadata> getFunctions2Analyze(llvm::GlobalVariable* to
 		for (Function::iterator it = f->begin(), end = f->end(); it != end; ++it)
 		{
 			BasicBlock* bb = it.operator->();
-			Instruction& endInst = bb->getInstList().back();
+			Instruction& endInst = bb->back();
 			if (dyn_cast<ReturnInst>(&endInst)) //it is terminating block
 			{
 				metadata.terminatingBasicBlocks.push_back(bb);
@@ -175,7 +175,7 @@ bool X87FpuAnalysis::checkArchAndCallConvException(llvm::Function* fun)
 {
 	using CallingConvention = common::CallingConvention::eCC;
 
-	auto configFunctionMetadata = _config->getConfig().functions.getFunctionByName(fun->getName());
+	auto configFunctionMetadata = _config->getConfig().functions.getFunctionByName(fun->getName().str());
 	if (!configFunctionMetadata)
 		return false;
 
@@ -505,12 +505,12 @@ bool X87FpuAnalysis::optimizeAnalyzedFpuInstruction(
 
 			if (callStore)
 			{
-				new StoreInst(callStore->getArgOperand(1), reg, callStore);
+				llvm_utils::createStoreInst(callStore->getArgOperand(1), reg, callStore);
 				callStore->eraseFromParent();
 			}
 			if (callLoad)
 			{
-				auto *lTmp = new LoadInst(reg, "", callLoad);
+				auto *lTmp = llvm_utils::createLoadInst(reg, "", callLoad);
 				auto *conv = IrModifier::convertValueToType(lTmp, callLoad->getType(), callLoad);
 				callLoad->replaceAllUsesWith(conv);
 				callLoad->eraseFromParent();

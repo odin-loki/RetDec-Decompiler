@@ -1,6 +1,6 @@
 /**
  * @file include/retdec/gui/panels/ai_assistant_panel.h
- * @brief AI Assistant panel — stub until llama.cpp neural backend lands.
+ * @brief AI Assistant Tools window — InferenceWorker talks to retdec::neural when linked.
  */
 
 #ifndef RETDEC_GUI_PANELS_AI_ASSISTANT_H
@@ -59,9 +59,6 @@ signals:
     void loadModelFinished(bool ok, const QString& path, const QString& failKind);
 
 private:
-    static constexpr const char* kNoBackend =
-        "No inference backend configured. Neural refinement (llama.cpp) is not yet available.";
-
     float temperature_ = 0.7f;
     float topP_        = 0.9f;
     int   topK_        = 0;

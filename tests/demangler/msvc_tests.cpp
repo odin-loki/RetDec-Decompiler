@@ -944,7 +944,7 @@ TEST_F(MicrosoftDemanglerTests, msstringliterals) {
 	DEM_EQ(
 		"??_C@_1EK@KFPEBLPK@?$AA0?$AA1?$AA2?$AA3?$AA4?$AA5?$AA6?$AA7?$AA8?$AA9?$AA0?$AA1?$AA2?$AA3?$AA4?$AA5?$AA6?$AA7?$AA8?$AA9?$AA0?$AA1?$AA2?$AA3?$AA4?$AA5?$AA6?$AA7?$AA8?$AA9?$AAA?$AAB@",
 		"L\"012345678901234567890123456789AB\"...");
-	DEM_EQ("??_C@_13IIHIAFKH@?W?$PP?$AA?$AA@", "L\"\\xD7\\xFF\"");
+	DEM_EQ("??_C@_13IIHIAFKH@?W?$PP?$AA?$AA@", "L\"\\xD7FF\"");
 	DEM_EQ("??_C@_02PCEFGMJL@hi?$AA@", "\"hi\"");
 	DEM_EQ("??_C@_05OMLEGLOC@h?$AAi?$AA?$AA?$AA@", "u\"hi\"");
 	DEM_EQ(

@@ -21,17 +21,17 @@ This file is the working plan. Inventories are from in-repo search
 - Default F5 decompile path stays unchanged unless the user opts in.
 - Build after every C++ edit.
 
-## Current LLVM pin (do not change in Track 1)
+## Current LLVM pin
 
 | Field | Value |
 |-------|--------|
-| URL | `https://github.com/avast/llvm/archive/a776c2a976ef64d9cd84d7ee71d0e4a04aa117a1.zip` |
-| Commit | `a776c2a976ef64d9cd84d7ee71d0e4a04aa117a1` |
-| SHA-256 | `b5879b30768135e5fce84ccd8be356d2c55c940ab32ceb22d278b228e88c4c60` |
+| URL | `https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.0/llvm-project-23.1.0.src.tar.xz` |
+| Tag | `llvmorg-23.1.0` |
+| SHA-256 | `ab1f0e3ec52448c33e8782eaf0422504b87c7b016b22514653ee0d8fcee479ff` |
 
-Avast LLVM 8-era fork, not upstream 8. Clang is **not** a separate pin;
-it lives in that monorepo. Host `clang-18` in toolchains is the
-**compiler that builds RetDec**, not the IR library.
+Upstream llvm-project (not the Avast LLVM 8 fork). Clang is still not a separate pin.
+Configure from the `llvm/` subdirectory (`SOURCE_SUBDIR` in `deps/llvm/CMakeLists.txt`).
+Host `clang-18` in toolchains is the **compiler that builds RetDec**, not the IR library.
 
 `llvm::` appears in **373** files (367 excluding docs). Older note
 said 314. There is **no** `RETDEC_LLVM_NEXT` flag. Do not add one as

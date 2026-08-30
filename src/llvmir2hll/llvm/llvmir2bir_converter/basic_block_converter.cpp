@@ -147,7 +147,7 @@ bool BasicBlockConverter::shouldBeConverted(const llvm::Instruction &inst) const
 */
 ShPtr<Statement> BasicBlockConverter::convertInstructionsOf(llvm::BasicBlock &bb) {
 	ShPtr<Statement> firstStmt;
-	for (auto &inst: bb.getInstList()) {
+	for (auto &inst: bb) {
 		if (shouldBeConverted(inst)) {
 			auto stmt = visit(inst);
 			firstStmt = Statement::mergeStatements(firstStmt, stmt);
@@ -211,7 +211,7 @@ ShPtr<Statement> BasicBlockConverter::visitCallInst(llvm::CallInst &inst) {
 * @endcode
 */
 ShPtr<Statement> BasicBlockConverter::visitInsertValueInst(llvm::InsertValueInst &inst) {
-	auto type = llvm::cast<llvm::CompositeType>(inst.getAggregateOperand()->getType());
+	auto type = inst.getAggregateOperand()->getType();
 	auto base = converter->convertValueToExpression(&inst);
 
 	auto lhs = converter->generateAccessToAggregateType(type, base, inst.getIndices());

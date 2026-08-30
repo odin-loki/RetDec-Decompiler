@@ -725,16 +725,9 @@ static int decompileWasm(const std::string& inputFile, const std::string& output
 	retdec::wasm_parser::WatEmitter emitter;
 	auto emitResult = emitter.emit(wasmResult.module);
 
-	std::string watOut = outputFile;
-	{
-		auto dot = watOut.rfind('.');
-		if (dot != std::string::npos) watOut = watOut.substr(0, dot);
-		watOut += ".wat";
-	}
-
 	try
 	{
-		writeText(watOut, emitResult.source);
+		writeText(outputFile, emitResult.source);
 	}
 	catch (const std::exception& e)
 	{
@@ -742,7 +735,7 @@ static int decompileWasm(const std::string& inputFile, const std::string& output
 		return 1;
 	}
 
-	std::cerr << "[managed] WASM (WAT) decompilation written to: " << watOut << "\n";
+	std::cerr << "[managed] WASM (WAT) decompilation written to: " << outputFile << "\n";
 	return 0;
 }
 

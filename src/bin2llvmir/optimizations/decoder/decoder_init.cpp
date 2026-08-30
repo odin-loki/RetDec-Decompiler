@@ -24,7 +24,7 @@
 #include <llvm/DebugInfo/DWARF/DWARFDataExtractor.h>
 #include <llvm/DebugInfo/DWARF/DWARFDebugFrame.h>
 #include <llvm/Support/Error.h>
-#include <llvm/ADT/Triple.h>
+#include <llvm/TargetParser/Triple.h>
 
 #include <elfio/elf_types.hpp>
 
@@ -236,11 +236,11 @@ void Decoder::initEnvironmentRegisters()
 		if (_c2l->isRegister(&gv))
 		{
 			unsigned regNum = _c2l->getCapstoneRegister(&gv);
-			auto s = common::Storage::inRegister(gv.getName(), regNum);
+			auto s = common::Storage::inRegister(gv.getName().str(), regNum);
 
-			common::Object cr(gv.getName(), s);
+			common::Object cr(gv.getName().str(), s);
 			cr.type.setLlvmIr(llvmObjToString(gv.getValueType()));
-			cr.setRealName(gv.getName());
+			cr.setRealName(gv.getName().str());
 			_config->getConfig().registers.insert(cr);
 
 			_abi->addRegister(regNum, &gv);
@@ -1392,13 +1392,10 @@ void Decoder::initJumpTargetsEhFrame()
 	}
 
 	llvm::DWARFDebugFrame ehFrame(arch, true, ehFrameAddr);
-	try
+	if (llvm::Error parseErr = ehFrame.parse(data))
 	{
-		ehFrame.parse(data);
-	}
-	catch (...)
-	{
-		LOG << "\t" << "failed to parse .eh_frame -> skip" << std::endl;
+		LOG << "\t" << "failed to parse .eh_frame -> skip: "
+			<< llvm::toString(std::move(parseErr)) << std::endl;
 		return;
 	}
 

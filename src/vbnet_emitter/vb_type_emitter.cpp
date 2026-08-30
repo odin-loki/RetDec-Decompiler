@@ -13,6 +13,67 @@ namespace vbnet_emitter {
 VbTypeEmitter::VbTypeEmitter(VbWriter& writer, Options opts)
     : writer_(writer), opts_(std::move(opts)) {}
 
+static std::string vbAttrName(const std::string& typeName) {
+    std::string n = typeName;
+    auto sep = n.find_last_of("/.");
+    if (sep != std::string::npos)
+        n = n.substr(sep + 1);
+    const std::string suf = "Attribute";
+    if (n.size() > suf.size() &&
+        n.compare(n.size() - suf.size(), suf.size(), suf) == 0)
+        n.resize(n.size() - suf.size());
+    return n;
+}
+
+static std::string vbAttrLit(const BcAnnotationValue& val) {
+    switch (val.kind) {
+    case BcAnnotationValue::Kind::Int:
+        return std::to_string(val.intValue);
+    case BcAnnotationValue::Kind::Float:
+        return std::to_string(val.floatValue);
+    case BcAnnotationValue::Kind::Bool:
+        return val.boolValue ? "True" : "False";
+    case BcAnnotationValue::Kind::String:
+        return "\"" + val.stringValue + "\"";
+    case BcAnnotationValue::Kind::Enum:
+        return val.enumTypeName + "." + val.enumConstant;
+    default:
+        return "\"" + val.stringValue + "\"";
+    }
+}
+
+static std::string vbAttrSuffix(const BcAnnotation& ann) {
+    if (ann.elements.empty()) return "";
+    std::string args;
+    auto itVal = ann.elements.find("Value");
+    if (itVal == ann.elements.end())
+        itVal = ann.elements.find("value");
+    bool first = true;
+    if (itVal != ann.elements.end()) {
+        args += vbAttrLit(itVal->second);
+        first = false;
+    }
+    for (const auto& kv : ann.elements) {
+        if (kv.first == "Value" || kv.first == "value") continue;
+        if (!first) args += ", ";
+        first = false;
+        args += kv.first + " := " + vbAttrLit(kv.second);
+    }
+    return "(" + args + ")";
+}
+
+static std::string vbAttrText(const BcAnnotation& ann) {
+    return vbAttrName(ann.typeName) + vbAttrSuffix(ann);
+}
+
+static void emitVbAttributes(VbWriter& w,
+                             const std::vector<BcAnnotation>& anns) {
+    for (const auto& ann : anns) {
+        if (ann.typeName.empty()) continue;
+        w.line("<" + vbAttrText(ann) + ">");
+    }
+}
+
 // ─── typeStr ─────────────────────────────────────────────────────────────────
 
 std::string VbTypeEmitter::typeStr(const BcType& t) const {
@@ -102,6 +163,12 @@ std::string VbTypeEmitter::paramList(const BcMethod& m) const {
     ss << "(";
     for (size_t i = 0; i < pts.size(); ++i) {
         if (i) ss << ", ";
+        if (i < m.paramAnnotations.size()) {
+            for (const auto& ann : m.paramAnnotations[i]) {
+                if (ann.typeName.empty()) continue;
+                ss << "<" << vbAttrText(ann) << "> ";
+            }
+        }
         std::string pname = (i < m.paramNames.size()) ? m.paramNames[i]
                                                        : "arg" + std::to_string(i);
         ss << VbWriter::safeName(pname) << " As " << typeStr(pts[i] ? *pts[i] : BcType{});
@@ -173,6 +240,7 @@ std::vector<VbTypeEmitter::PropGroup> VbTypeEmitter::collectProperties(
 // ─── emitField ───────────────────────────────────────────────────────────────
 
 void VbTypeEmitter::emitField(const BcField& f) {
+    emitVbAttributes(writer_, f.annotations);
     std::string acc  = accessStr(f.access);
     std::string mods = fieldModifiers(f);
     std::string name = VbWriter::safeName(f.name);
@@ -223,6 +291,7 @@ void VbTypeEmitter::emitProperty(const std::string& propName, const BcType& prop
 // ─── emitAbstractMethod ──────────────────────────────────────────────────────
 
 void VbTypeEmitter::emitAbstractMethod(const BcMethod& m) {
+    emitVbAttributes(writer_, m.annotations);
     std::string acc  = accessStr(m.access);
     std::string name = VbWriter::safeName(m.name);
     std::string params = paramList(m);
@@ -237,6 +306,7 @@ void VbTypeEmitter::emitAbstractMethod(const BcMethod& m) {
 // ─── emitMethod ──────────────────────────────────────────────────────────────
 
 void VbTypeEmitter::emitMethod(const BcClass& /*cls*/, const BcMethod& m) {
+    emitVbAttributes(writer_, m.annotations);
     if (m.isAbstract) {
         emitAbstractMethod(m);
         return;
@@ -376,6 +446,7 @@ void VbTypeEmitter::emitModule(const BcClass& cls) {
 // ─── emitInterface ───────────────────────────────────────────────────────────
 
 void VbTypeEmitter::emitInterface(const BcClass& cls) {
+    emitVbAttributes(writer_, cls.annotations);
     std::string hdr = "Public Interface " + VbWriter::safeName(cls.name);
     if (!cls.typeParams.empty()) {
         hdr += "(Of ";
@@ -417,6 +488,7 @@ void VbTypeEmitter::emitInterface(const BcClass& cls) {
 // ─── emitRegularClass ────────────────────────────────────────────────────────
 
 void VbTypeEmitter::emitRegularClass(const BcClass& cls) {
+    emitVbAttributes(writer_, cls.annotations);
     std::string hdr;
     // Access
     if (hasFlag(cls.access, BcAccess::Public)) hdr += "Public ";

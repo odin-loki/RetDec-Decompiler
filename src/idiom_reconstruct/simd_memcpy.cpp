@@ -123,15 +123,17 @@ public:
             if (ins.op == IdiomOp::VecStore || ins.op == IdiomOp::VecLoad) {
                 MemAccess acc;
                 acc.isLoad    = (ins.op == IdiomOp::VecLoad);
-                acc.vecReg    = ins.dst.reg;
                 acc.vecWidth  = ins.vecWidth > 0 ? ins.vecWidth : ins.dst.width / 8;
                 acc.vma       = ins.vma;
-                // For stores: dst=memory(base,offset), src0=vecReg
-                // For loads:  dst=vecReg, src0=memory(base,offset)
-                // We encode: baseReg in src0.reg, offset in src1.imm
-                acc.baseReg     = ins.src0.reg;
                 acc.offsetBytes = ins.src1.kind==OperandKind::Imm ? ins.src1.imm : 0;
-                if (ins.op==IdiomOp::VecStore) acc.vecReg = ins.src0.reg; // store: src0=vecReg, dst=mem
+                if (ins.op == IdiomOp::VecStore) {
+                    // Tests encode store as dst=mem base, src0=vecReg, src1=offset.
+                    acc.vecReg  = ins.src0.reg;
+                    acc.baseReg = ins.dst.reg;
+                } else {
+                    acc.vecReg  = ins.dst.reg;
+                    acc.baseReg = ins.src0.reg;
+                }
                 accesses.push_back(acc);
                 lastIdx = i;
                 continue;
