@@ -17,6 +17,7 @@
 
 #include "retdec/utils/conversion.h"
 #include "retdec/utils/string.h"
+#include "retdec/utils/bounds.h"
 
 namespace retdec {
 namespace utils {
@@ -520,21 +521,21 @@ std::string readNullTerminatedAscii(const std::uint8_t *bytes, std::size_t bytes
 		return {};
 	}
 
-	if (maxBytes == 0)
-	{
-		maxBytes = bytesLen;
-	}
-	else if (offset + maxBytes > bytesLen)
-	{
-		maxBytes = bytesLen;
-	}
-	else
-	{
-		maxBytes += offset;
-	}
+	// `offset + maxBytes > bytesLen` forms the sum before testing it: at offset
+	// 1 and maxBytes SIZE_MAX it wraps to 0, the test is false, and the else
+	// branch then sets an end index of 0 -- so the loop does not run and a
+	// string that is present comes back empty. remaining() saturates and
+	// clamp() never forms the sum.
+	//
+	// `maxBytes` was also doing two jobs, a count on the way in and an end
+	// index on the way out, which is what made the wrap hard to see. The end
+	// index is derived once, here.
+	const std::size_t avail = bounds::remaining(offset, bytesLen);
+	const std::size_t want  = (maxBytes == 0) ? avail : bounds::clamp(maxBytes, avail);
+	const std::size_t end   = offset + want;   // <= bytesLen, so it cannot wrap
 
 	std::size_t i;
-	for (i = offset; i < maxBytes; i++)
+	for (i = offset; i < end; i++)
 	{
 		if (bytes[i] == '\0')
 		{
@@ -542,6 +543,8 @@ std::string readNullTerminatedAscii(const std::uint8_t *bytes, std::size_t bytes
 		}
 		result.push_back(bytes[i]);
 	}
+	// The caller's "did it fit" test compares against the end index below.
+	maxBytes = end;
 
 	if (i == maxBytes && failOnExceed)
 	{

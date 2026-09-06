@@ -7,6 +7,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include "retdec/utils/conversion.h"
 
 using namespace ::testing;
@@ -282,6 +284,39 @@ bytesToHexStringSuccess) {
 	EXPECT_EQ("0b 84 d1 a0 80 60 40", res);
 }
 
+// ─── wrapping length arithmetic ──────────────────────────────────────────────
+//
+// `offset + size > dataSize` forms the sum before testing it. At offset 1 and
+// size SIZE_MAX it wraps to 0, the clamp does not fire, and the size survives
+// unchanged into `size * 2` -- which wraps in turn, so `result.resize()` gets a
+// small number and the loop then writes 2*SIZE_MAX characters into it.
+
+TEST_F(ConversionTests, BytesToHexStringSizeThatWrapsIsClamped)
+{
+	const std::uint8_t data[] = {0x01, 0x02, 0x03, 0x04};
+	std::string result;
+	bytesToHexString(data, sizeof(data), result, 1, std::numeric_limits<std::size_t>::max());
+	// Three bytes remain from offset 1, so six hex characters.
+	EXPECT_EQ("020304", result);
+}
+
+TEST_F(ConversionTests, BytesToHexStringOffsetPastEndProducesNothing)
+{
+	const std::uint8_t data[] = {0x01, 0x02};
+	std::string result = "stale";
+	bytesToHexString(data, sizeof(data), result, 64, 4);
+	EXPECT_TRUE(result.empty());
+}
+
+TEST_F(ConversionTests, BytesToStringSizeThatWrapsIsClamped)
+{
+	const std::uint8_t data[] = {'a', 'b', 'c', 'd'};
+	std::string result;
+	bytesToString(data, sizeof(data), result, 1, std::numeric_limits<std::size_t>::max());
+	EXPECT_EQ("bcd", result);
+}
+
 } // namespace tests
 } // namespace utils
+
 } // namespace retdec

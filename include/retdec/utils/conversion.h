@@ -17,6 +17,8 @@
 #include <type_traits>
 #include <vector>
 
+#include "retdec/utils/bounds.h"
+
 namespace retdec {
 namespace utils {
 
@@ -47,15 +49,34 @@ template<typename N> void bytesToHexString(
 {
 	if (data == nullptr || offset >= dataSize)
 	{
+		// Clear rather than return silently: `result` is an output parameter,
+		// and leaving the caller's previous value in it means a rejected
+		// request looks like a successful one. bytesToString below already
+		// clears on the same path; the two disagreed.
+		result.clear();
 		return;
 	}
 
-	size = (size == 0 || offset + size > dataSize)
-			? dataSize - offset
+	// `offset + size > dataSize` forms the sum first: at offset 1 and size
+	// SIZE_MAX it wraps to 0, the test is false, and `size` survives the clamp
+	// unchanged. rangeFits asks the same question without forming it.
+	size = (size == 0 || !bounds::rangeFits(offset, dataSize, size))
+			? bounds::remaining(offset, dataSize)
 			: size;
 
 	std::size_t hexIndex = 0;
 
+	// Two characters per byte, three with spacing. Both products are formed
+	// from a length that came from a file, and `result.resize(wrapped)` followed
+	// by a loop writing 2*size characters is a heap overflow rather than a
+	// short string. Refuse rather than truncate: a caller asking for a
+	// rendering that cannot be represented has asked for nothing.
+	const std::size_t perByte = spacing ? 3 : 2;
+	if (!bounds::mulFits(size, perByte))
+	{
+		result.clear();
+		return;
+	}
 	std::size_t sz = spacing ? (size * 3 - 1) : (size * 2);
 	result.resize(sz);
 
@@ -259,8 +280,11 @@ template<typename N> void bytesToString(
 	}
 	else
 	{
-		size = (size == 0 || offset + size > dataSize)
-				? dataSize - offset
+		// Same wrapping sum as bytesToHexString above; same fix. Here the
+		// consequence is `std::string(data + offset, size)` reading `size`
+		// bytes from a buffer that has fewer.
+		size = (size == 0 || !bounds::rangeFits(offset, dataSize, size))
+				? bounds::remaining(offset, dataSize)
 				: size;
 	}
 

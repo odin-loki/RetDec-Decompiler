@@ -7,6 +7,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include "retdec/utils/string.h"
 
 using namespace ::testing;
@@ -1485,6 +1487,40 @@ extractVersionFromStringContainingVersion) {
 		"3.14.15",
 		extractVersion("hello 3.14.15 world")
 	);
+}
+
+
+// ─── readNullTerminatedAscii bounds ──────────────────────────────────────────
+//
+// `offset + maxBytes > bytesLen` formed the sum before testing it. At offset 1
+// and maxBytes SIZE_MAX it wraps to 0, the test is false, and the else branch
+// set an end index of 0 -- so the loop never ran and a string that is present
+// came back empty.
+
+TEST_F(StringTests, ReadNullTerminatedAsciiMaxBytesThatWrapsStillReads)
+{
+	const std::uint8_t data[] = {'x', 'a', 'b', 'c', '\0'};
+	EXPECT_EQ("abc", readNullTerminatedAscii(
+		data, sizeof(data), 1, std::numeric_limits<std::size_t>::max(), false));
+}
+
+TEST_F(StringTests, ReadNullTerminatedAsciiRespectsMaxBytes)
+{
+	const std::uint8_t data[] = {'a', 'b', 'c', 'd', '\0'};
+	EXPECT_EQ("ab", readNullTerminatedAscii(data, sizeof(data), 0, 2, false));
+}
+
+TEST_F(StringTests, ReadNullTerminatedAsciiOffsetPastEndIsEmpty)
+{
+	const std::uint8_t data[] = {'a', 'b', '\0'};
+	EXPECT_EQ("", readNullTerminatedAscii(data, sizeof(data), 64, 4, false));
+}
+
+TEST_F(StringTests, ReadNullTerminatedAsciiUnterminatedWithinMaxBytesFails)
+{
+	// failOnExceed: the string does not terminate inside the window asked for.
+	const std::uint8_t data[] = {'a', 'b', 'c', 'd'};
+	EXPECT_EQ("", readNullTerminatedAscii(data, sizeof(data), 0, 2, true));
 }
 
 } // namespace tests
