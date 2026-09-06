@@ -14,6 +14,8 @@
 #include <memory>
 #include "retdec/mini_emu/mini_emu.h"
 
+#include "retdec/utils/bounds.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cstring>
@@ -22,6 +24,8 @@
 
 namespace retdec {
 namespace mini_emu {
+
+namespace bounds = retdec::utils::bounds;
 
 // ─── String helpers ───────────────────────────────────────────────────────────
 
@@ -795,14 +799,15 @@ void MiniEmu::mapPage(uint64_t va, PagePerms perms, const uint8_t *data, size_t 
     // `size` bounds the caller's source buffer, so it must never be rounded up:
     // doing that makes MemMap::mapPage memcpy a whole page out of a shorter
     // buffer.  Round the *page count* up instead, and map a single zero page
-    // when there is no data at all.
+    // when there is no data at all.  bounds::pageCount is the proved form of
+    // that distinction (tests/verification/bounds_proof.cpp).
     uint64_t cur = impl_->mem.pageBase(va);
 
-    const size_t pageCount = size > 0 ? (size + kPageSize - 1) / kPageSize : 1;
+    const size_t pages = bounds::pageCount(size, kPageSize);
 
     size_t copied = 0;
-    for (size_t i = 0; i < pageCount; ++i) {
-        const size_t chunk = size > copied ? std::min(size - copied, kPageSize) : 0;
+    for (size_t i = 0; i < pages; ++i) {
+        const size_t chunk = bounds::clamp(bounds::remaining(copied, size), kPageSize);
         impl_->mem.mapPage(cur, perms, (data && chunk > 0) ? data + copied : nullptr, chunk);
         cur += kPageSize;
         copied += chunk;
@@ -839,14 +844,16 @@ void MiniEmu::load(const uint8_t *data, size_t size, const FormatResult &fmt)
             // Every term has to be range-checked first: fo + pageOff can wrap,
             // and pageOff may already be past the end of the section's file
             // data, in which case fsz - pageOff would wrap to a huge length.
+            // bounds::addFits and bounds::remaining are the proved forms of
+            // those two checks (tests/verification/bounds_proof.cpp).
             size_t copyLen = 0;
             const uint8_t *src = nullptr;
-            if (fsz > 0 && pageOff < fsz && fo <= size - pageOff) {
+            if (bounds::addFits(fo, pageOff)) {
                 const size_t srcOff = fo + pageOff;
-                if (srcOff < size) {
-                    copyLen = std::min({ kPageSize, size - srcOff, fsz - pageOff });
-                    if (copyLen > 0) src = data + srcOff;
-                }
+                copyLen = bounds::clamp(
+                    std::min(bounds::remaining(srcOff, size), bounds::remaining(pageOff, fsz)),
+                    kPageSize);
+                if (copyLen > 0) src = data + srcOff;
             }
 
             // Pass copyLen, not kPageSize: MemMap::mapPage zero-fills the whole

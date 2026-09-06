@@ -233,6 +233,14 @@ std::vector<uint32_t> JvmLifter::findLeaders(
         uint8_t op = bc[pc];
         int sz = instrSize(op);
 
+        // code[] is copied verbatim out of the class file, so nothing guarantees
+        // that an instruction's operands are inside it: a method body can end
+        // mid-instruction. Every read below is bounded against bc.size(), and
+        // the scan stops at the first operand that does not fit, because from
+        // there on the stream is not decodable.
+        auto fits = [&](size_t off, size_t n) -> bool {
+            return off <= bc.size() && n <= bc.size() - off;
+        };
         auto readS2 = [&](size_t off) -> int16_t {
             return static_cast<int16_t>(
                 (static_cast<uint16_t>(bc[off]) << 8) | bc[off+1]);
@@ -244,38 +252,56 @@ std::vector<uint32_t> JvmLifter::findLeaders(
                 (static_cast<uint32_t>(bc[off+2]) << 8) |
                 static_cast<uint32_t>(bc[off+3]));
         };
+        // A switch declares its own entry count (hi-lo+1, or npairs) and both
+        // numbers come out of the file. An entry costs entrySize bytes, so a
+        // table claiming more entries than code[] can still supply is malformed
+        // by construction: clamp to what is actually there instead of reading
+        // past the end. A well-formed table is always fully present, so this
+        // never changes what a real class file decodes to.
+        auto tableEntries = [&](size_t tableStart, int64_t declared,
+                                size_t entrySize) -> size_t {
+            if (declared <= 0 || tableStart > bc.size()) return 0;
+            int64_t avail = static_cast<int64_t>((bc.size() - tableStart) / entrySize);
+            return static_cast<size_t>(std::min(declared, avail));
+        };
 
         if (op == OP_TABLESWITCH) {
             size_t pad = (4 - ((pc + 1) & 3)) & 3;
             size_t base = pc + 1 + pad;
+            if (!fits(base, 12)) break;
             int32_t def   = readS4(base);
             int32_t lo    = readS4(base + 4);
             int32_t hi    = readS4(base + 8);
             leaders.insert(static_cast<uint32_t>(pc + def));
-            int32_t n = hi - lo + 1;
-            for (int32_t i = 0; i < n; ++i) {
-                int32_t off = readS4(base + 12 + static_cast<size_t>(i) * 4);
+            // Widened: hi - lo + 1 overflows int32_t for a hostile lo/hi pair.
+            int64_t declared = static_cast<int64_t>(hi) - static_cast<int64_t>(lo) + 1;
+            size_t n = tableEntries(base + 12, declared, 4);
+            for (size_t i = 0; i < n; ++i) {
+                int32_t off = readS4(base + 12 + i * 4);
                 leaders.insert(static_cast<uint32_t>(pc + off));
             }
-            size_t total = 1 + pad + 12 + static_cast<size_t>(n) * 4;
+            size_t total = 1 + pad + 12 + n * 4;
             pc += total;
             if (pc < bc.size()) leaders.insert(static_cast<uint32_t>(pc));
             continue;
         } else if (op == OP_LOOKUPSWITCH) {
             size_t pad = (4 - ((pc + 1) & 3)) & 3;
             size_t base = pc + 1 + pad;
+            if (!fits(base, 8)) break;
             int32_t def   = readS4(base);
             int32_t npairs = readS4(base + 4);
             leaders.insert(static_cast<uint32_t>(pc + def));
-            for (int32_t i = 0; i < npairs; ++i) {
-                int32_t off = readS4(base + 8 + static_cast<size_t>(i) * 8 + 4);
+            size_t n = tableEntries(base + 8, npairs, 8);
+            for (size_t i = 0; i < n; ++i) {
+                int32_t off = readS4(base + 8 + i * 8 + 4);
                 leaders.insert(static_cast<uint32_t>(pc + off));
             }
-            size_t total = 1 + pad + 8 + static_cast<size_t>(npairs) * 8;
+            size_t total = 1 + pad + 8 + n * 8;
             pc += total;
             if (pc < bc.size()) leaders.insert(static_cast<uint32_t>(pc));
             continue;
         } else if (op == OP_WIDE) {
+            if (!fits(pc + 1, 1)) break;
             uint8_t wop = bc[pc + 1];
             if (wop == OP_IINC) { sz = 6; } else { sz = 4; }
         } else if (op == OP_GOTO || op == OP_JSR) {
@@ -436,14 +462,27 @@ BcInstruction JvmLifter::decodeInstr(
     i.id = instrId;
     uint8_t op = bc[pc++];
 
-    auto readU1 = [&]() -> uint8_t { return bc[pc++]; };
-    auto readS1 = [&]() -> int8_t  { return static_cast<int8_t>(bc[pc++]); };
+    // buildBlocks() only guarantees that the opcode byte is inside code[]; its
+    // operands live further in, and code[] is attacker-controlled, so a method
+    // body can stop mid-instruction. An operand read that does not fit yields 0
+    // and parks pc at the end of the stream, which ends the enclosing decode
+    // loop rather than walking off the buffer.
+    auto avail = [&]() -> size_t {
+        return pc < bc.size() ? bc.size() - pc : 0;
+    };
+    auto readU1 = [&]() -> uint8_t {
+        if (avail() < 1) { pc = static_cast<uint32_t>(bc.size()); return 0; }
+        return bc[pc++];
+    };
+    auto readS1 = [&]() -> int8_t  { return static_cast<int8_t>(readU1()); };
     auto readU2 = [&]() -> uint16_t {
+        if (avail() < 2) { pc = static_cast<uint32_t>(bc.size()); return 0; }
         uint16_t v = (static_cast<uint16_t>(bc[pc]) << 8) | bc[pc+1];
         pc += 2; return v;
     };
     auto readS2 = [&]() -> int16_t { return static_cast<int16_t>(readU2()); };
     auto readS4 = [&]() -> int32_t {
+        if (avail() < 4) { pc = static_cast<uint32_t>(bc.size()); return 0; }
         int32_t v = static_cast<int32_t>(
             (static_cast<uint32_t>(bc[pc]) << 24) |
             (static_cast<uint32_t>(bc[pc+1]) << 16) |
@@ -718,9 +757,16 @@ BcInstruction JvmLifter::decodeInstr(
         int32_t hi  = readS4();
         BcSwitchTable sw;
         sw.defaultBlock = branchPc(def, instrPc);
-        for (int32_t k = lo; k <= hi; ++k) {
+        // Same bound as in findLeaders: lo/hi are file data and can claim
+        // billions of cases, but each case is a 4-byte offset, so whatever is
+        // left of code[] is the real limit. Counting in int64_t also keeps
+        // hi == INT32_MAX from overflowing the loop variable.
+        int64_t declared = static_cast<int64_t>(hi) - static_cast<int64_t>(lo) + 1;
+        int64_t n = std::min<int64_t>(std::max<int64_t>(declared, 0),
+                                      static_cast<int64_t>(avail() / 4));
+        for (int64_t e = 0; e < n; ++e) {
             int32_t off = readS4();
-            sw.cases.push_back({k, branchPc(off, instrPc)});
+            sw.cases.push_back({static_cast<int64_t>(lo) + e, branchPc(off, instrPc)});
         }
         i.opcode = BcOpcode::TableSwitch;
         i.operands.push_back(std::move(sw));
@@ -734,7 +780,11 @@ BcInstruction JvmLifter::decodeInstr(
         int32_t npairs = readS4();
         BcSwitchTable sw;
         sw.defaultBlock = branchPc(def, instrPc);
-        for (int32_t k = 0; k < npairs; ++k) {
+        // npairs is file data just like hi/lo above; a (key, offset) pair costs
+        // 8 bytes, so code[] itself bounds how many can exist.
+        int64_t n = std::min<int64_t>(std::max<int64_t>(npairs, 0),
+                                      static_cast<int64_t>(avail() / 8));
+        for (int64_t k = 0; k < n; ++k) {
             int32_t key = readS4();
             int32_t off = readS4();
             sw.cases.push_back({key, branchPc(off, instrPc)});

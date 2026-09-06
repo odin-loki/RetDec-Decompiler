@@ -1,6 +1,7 @@
 
 cond_add_subdirectory(common RETDEC_ENABLE_COMMON_TESTS)
 cond_add_subdirectory(bin2llvmir RETDEC_ENABLE_BIN2LLVMIR_TESTS)
+cond_add_subdirectory(bounds RETDEC_ENABLE_BOUNDS_TESTS)
 cond_add_subdirectory(capstone2llvmir RETDEC_ENABLE_CAPSTONE2LLVMIR_TESTS)
 cond_add_subdirectory(config RETDEC_ENABLE_CONFIG_TESTS)
 cond_add_subdirectory(cpdetect RETDEC_ENABLE_CPDETECT_TESTS)

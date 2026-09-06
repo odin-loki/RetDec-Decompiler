@@ -914,6 +914,27 @@ TEST(PycReader, ExtendedArgChainDoesNotOverflow311) {
     EXPECT_FALSE(result.module.classes().front().methods.empty());
 }
 
+// The operand a prefix chain builds can land in the top half of the int32_t
+// range, where doubling it to scale a wordcode jump offset no longer fits.
+TEST(PycReader, ExtendedArgJumpOperandNearInt32Max) {
+    std::vector<uint8_t> code;
+    for (int i = 0; i < 3; ++i) {
+        code.push_back(90);   // EXTENDED_ARG
+        code.push_back(0x80);
+    }
+    code.push_back(110); code.push_back(0x80); // JUMP_FORWARD
+    code.push_back(83);  code.push_back(0);    // RETURN_VALUE
+
+    auto buf = buildPyc38WithCode(code);
+    PycReadOptions opts;
+    opts.buildCFG = true;
+    PycReader reader(opts);
+    auto result = reader.read(buf.data(), buf.size());
+    ASSERT_TRUE(result.success) << result.error;
+    ASSERT_FALSE(result.module.classes().empty());
+    EXPECT_FALSE(result.module.classes().front().methods.empty());
+}
+
 TEST(PycReader, TooSmallFileFails) {
     std::vector<uint8_t> buf = {1, 2, 3};
     PycReader reader;

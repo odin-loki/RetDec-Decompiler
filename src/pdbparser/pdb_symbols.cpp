@@ -297,6 +297,8 @@ void PDBSymbols::parse_symbols(void)
 		if (modules[m].stream_num == 65535)
 			continue;
 		PDBStream *stream = modules[m].stream;
+		if (stream == nullptr)  // Module names a stream that the file does not contain
+			continue;
 		position = 4;
 		int cnt = 0;
 		PDBFunction * new_function = nullptr;
@@ -432,6 +434,11 @@ void PDBSymbols::dump_module_symbols(int index)
 		return;
 	}
 	PDBStream *stream = modules[index].stream;
+	if (stream == nullptr)
+	{
+		puts("Module stream is not present in PDB file.\n");
+		return;
+	}
 	int position = 4;
 	int cnt = 0;
 

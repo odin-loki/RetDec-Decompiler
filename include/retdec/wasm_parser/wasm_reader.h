@@ -63,6 +63,15 @@ private:
     bool     eof() const { return pos_ >= data_.size(); }
     size_t   remaining() const { return pos_ < data_.size() ? data_.size() - pos_ : 0; }
     void     skip(size_t n);
+
+    /// Reads the count prefix of a wasm vector and rejects it if the enclosing
+    /// region cannot possibly hold that many elements. @a regionEnd is the end
+    /// offset of the section, body or subsection the vector lives in; it is a
+    /// file-declared bound, so it is clamped to the buffer before use.
+    uint32_t readVecCount(size_t regionEnd);
+    /// As above, for vectors that carry no enclosing region of their own and
+    /// are therefore bounded only by the rest of the file.
+    uint32_t readVecCount() { return readVecCount(data_.size()); }
     std::vector<uint8_t> readBytes(size_t n);
     std::string readUtf8(uint32_t len);
 

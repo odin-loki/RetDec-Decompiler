@@ -569,11 +569,11 @@ std::vector<uint32_t> PycReader::findLeaders(const PyCodeObject& code) const {
     // prefixes it chains -- a compiler emits at most three, a hostile file as
     // many as it likes -- so the accumulator has to wrap at that width instead
     // of shifting a signed value out of range.
-    int32_t extArg = 0;
+    uint32_t extArg = 0;
 
     while (pos < bytecode.size()) {
         uint8_t op = bytecode[pos];
-        int32_t  arg = 0;
+        uint32_t arg = 0;
         size_t   instrSize = 2; // always 2 bytes in wordcode
 
         if (pos + 1 < bytecode.size())
@@ -662,12 +662,12 @@ void PycReader::buildCFG(const PyCodeObject& code, BcMethod& method) const {
     const bool is311 = code.version.atLeast(3, 11);
     const uint8_t haveArg = haveArgument(code.version);
     size_t pos   = 0;
-    int32_t extArg = 0;
+    uint32_t extArg = 0;  // unsigned for the reason given in findLeaders
     size_t   curBlockIdx = 0;
 
     while (pos < bytecode.size()) {
         uint8_t op = bytecode[pos];
-        int32_t  arg = (pos + 1 < bytecode.size()) ? bytecode[pos+1] : 0;
+        uint32_t arg = (pos + 1 < bytecode.size()) ? bytecode[pos+1] : 0;
 
         // Check if we've entered a new block
         {
@@ -685,7 +685,7 @@ void PycReader::buildCFG(const PyCodeObject& code, BcMethod& method) const {
             continue;
         }
 
-        int32_t fullArg = (extArg | arg);
+        int32_t fullArg = static_cast<int32_t>(extArg | arg);
         extArg = 0;
 
         BcInstruction insn;

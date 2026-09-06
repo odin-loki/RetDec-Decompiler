@@ -80,6 +80,21 @@ public:
 
     std::vector<uint8_t> bytes(size_t n);
 
+    /**
+     * @brief Reject an element count that the file cannot possibly supply.
+     *
+     * A table of @p count items, each occupying at least @p minItemSize bytes
+     * on disk, starting at @p offset, has to fit inside the file. Counts come
+     * straight out of an attacker-controlled header, so this is checked before
+     * any container is sized for them. Arithmetic is done in size_t as a
+     * division so a 32-bit count cannot wrap the product.
+     */
+    void checkArray(size_t offset, size_t count, size_t minItemSize) const;
+
+    /// As checkArray(), but for a table that starts at the current position —
+    /// used for the ULEB128-encoded lists, where minItemSize is a lower bound.
+    void checkCount(size_t count, size_t minItemSize) const;
+
     const uint8_t* data() const { return data_; }
     const uint8_t* ptr()  const { return data_ + pos_; }
 
@@ -109,6 +124,35 @@ static constexpr uint8_t kDexMagic[8]  = {0x64,0x65,0x78,0x0a,'0','3','5',0x00};
 static constexpr uint8_t kCdexMagic[4] = {0x63,0x64,0x65,0x78}; // "cdex"
 static constexpr uint32_t kEndianConst     = 0x12345678u;
 static constexpr uint32_t kEndianConstSwap = 0x78563412u;
+
+// ─── On-disk item sizes (dex-format.html § 4.2, § 4.3) ───────────────────────
+//
+// The header declares an offset+count for every index table, and class_data /
+// code_item declare further counts inline. Both are attacker-controlled, so
+// each count is bounded against the bytes the file can actually supply before
+// the corresponding container is sized. These are the per-element costs used
+// for that: exact for the fixed-size items, a lower bound for the ULEB128
+// ones (every ULEB128 field is at least one byte).
+
+static constexpr size_t kStringIdItemSize = 4;   ///< string_id_item
+static constexpr size_t kTypeIdItemSize   = 4;   ///< type_id_item
+static constexpr size_t kProtoIdItemSize  = 12;  ///< proto_id_item
+static constexpr size_t kFieldIdItemSize  = 8;   ///< field_id_item
+static constexpr size_t kMethodIdItemSize = 8;   ///< method_id_item
+static constexpr size_t kClassDefItemSize = 32;  ///< class_def_item
+static constexpr size_t kTypeItemSize     = 2;   ///< type_item inside a type_list
+static constexpr size_t kTryItemSize      = 8;   ///< try_item
+static constexpr size_t kInsnUnitSize     = 2;   ///< one 16-bit instruction unit
+static constexpr size_t kAnnotationOffSize = 4;  ///< one u4 offset in an offset list
+
+/// encoded_field: field_idx_diff + access_flags, one byte each at minimum.
+static constexpr size_t kMinEncodedFieldSize = 2;
+/// encoded_method: method_idx_diff + access_flags + code_off.
+static constexpr size_t kMinEncodedMethodSize = 3;
+/// encoded_catch_handler: the SLEB128 size field alone.
+static constexpr size_t kMinCatchHandlerSize = 1;
+/// encoded_type_addr_pair: type_idx + addr.
+static constexpr size_t kMinCatchHandlerPairSize = 2;
 
 struct DexHeader {
     uint8_t  magic[8];         ///< "dex\n035\0" or similar

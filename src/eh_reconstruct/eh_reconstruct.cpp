@@ -5,6 +5,8 @@
 
 #include <memory>
 #include "retdec/eh_reconstruct/eh_reconstruct.h"
+
+#include "retdec/utils/leb128.h"
 #include <algorithm>
 #include <cassert>
 #include <cstring>
@@ -46,32 +48,45 @@ int32_t IBinaryView::readI32LE(uint64_t vma) const {
     return static_cast<int32_t>(readU32LE(vma));
 }
 
+// These read through the virtual view rather than a flat buffer, so they cannot
+// call retdec/utils/leb128.h directly. The dangerous part -- accumulating and
+// sign-extending -- is that header's, and is proved in
+// tests/verification/leb128_proof.cpp; only the byte fetching is local.
+//
+// What was here before accumulated into an int64_t with no bound on the shift.
+// Both halves of that are undefined behaviour on attacker-controlled DWARF:
+// `(int64_t)0x7F << 57` overflows the signed range, and a run of bytes with the
+// continuation bit set drives the shift past 64. The loop also had no byte
+// limit, relying on readU8 returning 0 past the end of the view to stop it.
 uint64_t IBinaryView::readULEB128(uint64_t& cursor) const {
+    namespace leb = retdec::utils::leb128;
+
     uint64_t result = 0;
     unsigned shift  = 0;
-    while (true) {
-        uint8_t b = readU8(cursor++);
-        result |= (uint64_t)(b & 0x7F) << shift;
+    for (std::size_t i = 0; i < leb::kMaxBytes; ++i) {
+        const uint8_t b = readU8(cursor++);
+        if (shift < 64) result |= leb::payloadFitting(b, shift) << shift;
         if (!(b & 0x80)) break;
-        shift += 7;
-        if (shift >= 64) break;
+        shift += leb::kBitsPerByte;
     }
     return result;
 }
 
 int64_t IBinaryView::readSLEB128(uint64_t& cursor) const {
-    int64_t  result = 0;
+    namespace leb = retdec::utils::leb128;
+
+    uint64_t result = 0;
     unsigned shift  = 0;
     uint8_t  b      = 0;
-    do {
+    for (std::size_t i = 0; i < leb::kMaxBytes; ++i) {
         b = readU8(cursor++);
-        result |= (int64_t)(b & 0x7F) << shift;
-        shift  += 7;
-    } while (b & 0x80);
-    // Sign extend
-    if (shift < 64 && (b & 0x40))
-        result |= -(int64_t)(1ULL << shift);
-    return result;
+        if (shift < 64) result |= leb::payloadFitting(b, shift) << shift;
+        shift += leb::kBitsPerByte;
+        if (!(b & 0x80)) break;
+    }
+    // Sign extend from the last payload bit, in unsigned arithmetic.
+    if (shift < 64 && (b & 0x40)) result |= leb::maskFrom(shift);
+    return leb::toSigned(result);
 }
 
 uint64_t IBinaryView::readEncodedPtr(uint64_t& cursor,

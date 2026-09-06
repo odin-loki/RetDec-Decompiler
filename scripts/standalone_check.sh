@@ -10,9 +10,9 @@
 # and hours of CPU, which means the ordinary answer to "does my detector change
 # still pass its tests?" is "wait for CI".
 #
-# But 56 of the src/ modules — the whole Imortek detector, SSA, codegen, type
-# and bytecode-parser layer — depend only on the in-house `retdec/ssa` IR and
-# the C++17 standard library.  This script compiles those, links their existing
+# But most of the src/ modules — the whole Imortek detector, SSA, codegen, type
+# and bytecode-parser layer — depend only on the in-house `retdec/ssa` IR, the
+# C++17 standard library, and two headers vendored in deps/.  This script compiles those, links their existing
 # GoogleTest suites against the shim in tests/standalone/gtest/, and runs them.
 #
 # Usage
@@ -63,23 +63,25 @@ TESTFLAGS="-std=c++17 $INCLUDES $DEFINES -Itests/standalone -O1 -g0 -Wall -Wno-u
 readonly MODULES=(
 	algo_recover alias_analysis bc_module call_conv cfg cfg_structure
 	cil_reconstruct cli_parser code_data codegen common compiler_abi
-	compiler_detect
-	concurrency_detect config container_detect crypto_detect csharp_emitter ctypes
-	ctypesparser cuda_accel cxx_backend dce debug_info dex_parser eh_reconstruct
-	experimental fsharp_emitter func_boundary idiom_reconstruct ipa java_emitter
-	jvm_parser jvm_reconstruct kotlin_emitter loader_sim lua_parser mini_emu
-	module_cluster neural packer pattern_detect pdbparser pelib profiling
-	ptx_decompile py_emitter py_reconstruct pyc_parser rtti serdes serial_detect
-	sort_detect ssa string_detect testing type_inference type_seed utils
-	var_recovery vbnet_emitter wasm_parser
+	compiler_detect concurrency_detect config container_detect crypto_detect
+	csharp_emitter ctypes ctypesparser cuda_accel cxx_backend dce debug_info
+	dex_parser eh_reconstruct experimental fsharp_emitter func_boundary
+	idiom_reconstruct ipa java_emitter jvm_parser jvm_reconstruct kotlin_emitter
+	loader_sim lua_parser mini_emu module_cluster neural packer pattern_detect
+	pdbparser pelib profiling ptx_decompile py_emitter py_reconstruct pyc_parser
+	rtti serdes serial_detect sort_detect ssa string_detect testing
+	type_inference type_seed utils var_recovery vbnet_emitter wasm_parser
 )
 
 # Test suites that build against the shim.  Each entry is a tests/ subdirectory
 # whose sources use only the supported GoogleTest subset (no gmock, no death
 # tests).  Suites outside this list still build the normal way through CMake --
 # tests/utils, for one, includes <gmock/gmock.h>.
+#
+# `bounds` covers the header-only retdec/utils/bounds.h and leb128.h, so it has
+# no entry in MODULES; it links against nothing.
 readonly SUITES=(
-	algo_recover alias_analysis bc_module call_conv cfg cfg_structure
+	algo_recover alias_analysis bc_module bounds call_conv cfg cfg_structure
 	code_data codegen compiler_abi concurrency_detect container_detect
 	cli_parser config crypto_detect ctypes ctypesparser dce eh_reconstruct
 	dex_parser func_boundary idiom_reconstruct ipa jvm_parser loader_sim
@@ -88,9 +90,6 @@ readonly SUITES=(
 	type_inference type_seed var_recovery wasm_parser
 )
 
-# Modules that happen to compile standalone but are deliberately not part of the
-# fast path, with the reason.  --audit consults this so it can distinguish
-# "nobody wired this up" from "we decided not to".
 # Modules whose own CMakeLists asks for a later language standard than the rest
 # of the tree.  Kept in sync by --audit, which probes each module at its
 # declared standard.
@@ -104,6 +103,9 @@ readonly EXCLUDED_SOURCES=(
 	"neural/llama_inference.cpp:only built with retdec::deps::llamacpp; mock_inference.cpp provides createLlamaInference() otherwise"
 )
 
+# Modules that happen to compile standalone but are deliberately not part of the
+# fast path, with the reason.  --audit consults this so it can distinguish
+# "nobody wired this up" from "we decided not to".
 readonly EXCLUDED_REASONS=(
 	"demanglertool:command-line tool with its own main(), not a library"
 )

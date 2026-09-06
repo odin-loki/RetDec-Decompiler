@@ -1137,6 +1137,15 @@ void PDBTypes::parse_types(void)
 	// NCVPTR
 
 	// User-defined types
+	// The type index the records start numbering at comes from the TPI header,
+	// which is only there if the stream is long enough to hold it: the header
+	// used to be read out of whatever the stream was, an absent stream (data
+	// pointer of an unused stream) included.
+	if (pdb_tpi_size < sizeof(HDR))
+	{
+		parsed = true;
+		return;
+	}
 	unsigned int position = sizeof(HDR);
 	int index = tpi_header->tiMin;
 	while (position < pdb_tpi_size)

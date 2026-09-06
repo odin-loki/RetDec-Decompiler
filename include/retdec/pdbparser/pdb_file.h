@@ -137,7 +137,7 @@ class PDBFile
 				pdb_loaded(false), pdb_initialized(false), pdb_filename(nullptr), pdb_version(0), page_size(0), pdb_file_size(
 				        0), pdb_file_data(
 				nullptr), num_streams(0), pdb_fpo_num(0), pdb_newfpo_num(0), pdb_sec_num(0), pdb_header(nullptr), pdb_root_dir(
-				nullptr), pdb_info_v700(nullptr), dbi_header_v700(nullptr), pdb_types(nullptr), pdb_symbols(nullptr)
+				nullptr), pdb_root_dir_linear(true), pdb_info_v700(nullptr), dbi_header_v700(nullptr), pdb_types(nullptr), pdb_symbols(nullptr)
 		{
 		}
 		;
@@ -198,6 +198,9 @@ class PDBFile
 
 	private:
 		// Internal functions
+		bool has_signature(const char *signature, unsigned int header_size);
+		bool pages_in_file(uint64_t first_page, uint64_t num_pages);
+		bool stream_num_is_valid(int num);
 		bool stream_is_linear(PDB_DWORD *pages, int num_pages);
 		char * extract_stream(PDB_DWORD *pages, int num_pages);
 		PDBFileState load_pdb_v200(void);
@@ -221,6 +224,7 @@ class PDBFile
 		// Data structure pointers
 		PDB_HEADER * pdb_header;
 		PDB_ROOT * pdb_root_dir;
+		bool pdb_root_dir_linear;  // root directory points into the file image
 		PDBInfo70 * pdb_info_v700;
 		NewDBIHdr * dbi_header_v700;
 

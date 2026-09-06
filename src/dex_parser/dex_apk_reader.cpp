@@ -115,11 +115,16 @@ std::vector<ApkReader::ZipEntry> ApkReader::parseCentralDirectory(
     uint32_t cdSize   = readU4LE(eocd + 12);
     uint32_t cdOffset = readU4LE(eocd + 16);
 
-    if (cdOffset + cdSize > size) return entries;
+    // cdOffset and cdSize are attacker-controlled 32-bit fields. Added in
+    // uint32 their sum wraps, so an offset near 4 GiB passes this end-of-file
+    // test and then walks `pos` far outside the buffer; widen to size_t first.
+    const size_t cdStart = cdOffset;
+    const size_t cdEnd   = cdStart + static_cast<size_t>(cdSize);
+    if (cdStart > size || cdEnd > size) return entries;
 
     static const uint8_t kCDSig[4] = {0x50, 0x4b, 0x01, 0x02};
-    uint32_t pos = cdOffset;
-    while (pos + 46 <= cdOffset + cdSize) {
+    size_t pos = cdStart;
+    while (pos + 46 <= cdEnd) {
         if (std::memcmp(data + pos, kCDSig, 4) != 0) break;
 
         uint16_t method     = readU2LE(data + pos + 10);
@@ -129,6 +134,10 @@ std::vector<ApkReader::ZipEntry> ApkReader::parseCentralDirectory(
         uint16_t extraLen   = readU2LE(data + pos + 30);
         uint16_t commentLen = readU2LE(data + pos + 32);
         uint32_t localHdrOff= readU4LE(data + pos + 42);
+
+        // The file name is stored inline after the 46-byte fixed header; a
+        // length reaching past the directory means the entry is truncated.
+        if (nameLen > cdEnd - (pos + 46)) break;
 
         std::string name(reinterpret_cast<const char*>(data + pos + 46), nameLen);
         entries.push_back({name, localHdrOff, compSize, uncompSize, method});
@@ -141,14 +150,20 @@ std::vector<uint8_t> ApkReader::extractEntry(const uint8_t* data, size_t size,
                                                const ZipEntry& entry) {
     // Local file header signature: 0x04034b50
     static const uint8_t kLFHSig[4] = {0x50, 0x4b, 0x03, 0x04};
-    if (entry.localHeaderOff + 30 > size) return {};
-    if (std::memcmp(data + entry.localHeaderOff, kLFHSig, 4) != 0) return {};
+    // localHeaderOff and compressedSize also come from the central directory,
+    // so every bound below is computed in size_t and as a subtraction from the
+    // real buffer size — a 32-bit sum would wrap and admit an out-of-range
+    // pointer to the memcmp and the copy that follow.
+    const size_t lfhOff = entry.localHeaderOff;
+    if (lfhOff > size || size - lfhOff < 30) return {};
+    if (std::memcmp(data + lfhOff, kLFHSig, 4) != 0) return {};
 
-    uint16_t nameLen  = readU2LE(data + entry.localHeaderOff + 26);
-    uint16_t extraLen = readU2LE(data + entry.localHeaderOff + 28);
-    uint32_t dataOff  = entry.localHeaderOff + 30 + nameLen + extraLen;
+    uint16_t nameLen  = readU2LE(data + lfhOff + 26);
+    uint16_t extraLen = readU2LE(data + lfhOff + 28);
+    const size_t dataOff = lfhOff + 30 + static_cast<size_t>(nameLen)
+                                       + static_cast<size_t>(extraLen);
 
-    if (dataOff + entry.compressedSize > size) return {};
+    if (dataOff > size || size - dataOff < entry.compressedSize) return {};
 
     if (entry.method == 0) {
         // STORED — trust remaining input, not the ZIP size field (zip bomb).

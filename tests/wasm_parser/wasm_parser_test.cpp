@@ -339,6 +339,146 @@ TEST(WasmReaderTest, ParsesTable) {
     EXPECT_EQ(result.module.tables[0].limits.min, 10u);
 }
 
+// ─── Malformed-input tests ───────────────────────────────────────────────────
+
+// An element segment (flags=4) whose element-expression vector claims far more
+// entries than the file has bytes. The count used to be trusted as a loop
+// bound, and readConstExpr returned an empty expression at end of input rather
+// than failing, so the loop appended ~268M vectors and exhausted memory.
+TEST(WasmReaderTest, RejectsElementSegmentExprCountBeyondInput) {
+    WasmBuilder elemContent;
+    elemContent.uleb(1);      // 1 segment
+    elemContent.uleb(4);      // flags=4: active, table 0, elem exprs
+    elemContent.u8(0x41); elemContent.sleb(0); elemContent.u8(0x0B); // offset
+    elemContent.uleb(0x0FFFFFFF); // element count, nothing follows it
+
+    WasmBuilder full;
+    full.magic();
+    full.section(9, elemContent);
+
+    WasmReader reader(full.bytes());
+    auto result = reader.read();
+    EXPECT_FALSE(result.ok);
+    EXPECT_FALSE(result.error.empty());
+    EXPECT_TRUE(result.module.elements.empty());
+}
+
+// The same shape with a count small enough to allocate: before the fix this
+// parsed "successfully" into 4096 empty expressions read from zero bytes, which
+// is the behaviour that scales into the out-of-memory above.
+TEST(WasmReaderTest, ElementSegmentExprCountIsBoundedByInput) {
+    WasmBuilder elemContent;
+    elemContent.uleb(1);      // 1 segment
+    elemContent.uleb(4);      // flags=4: active, table 0, elem exprs
+    elemContent.u8(0x41); elemContent.sleb(0); elemContent.u8(0x0B); // offset
+    elemContent.uleb(4096);   // element count, nothing follows it
+
+    WasmBuilder full;
+    full.magic();
+    full.section(9, elemContent);
+
+    WasmReader reader(full.bytes());
+    auto result = reader.read();
+    EXPECT_FALSE(result.ok);
+    EXPECT_TRUE(result.module.elements.empty());
+}
+
+// Same wrong assumption in the func-index variant of the element section.
+TEST(WasmReaderTest, RejectsElementSegmentFuncCountBeyondInput) {
+    WasmBuilder elemContent;
+    elemContent.uleb(1);      // 1 segment
+    elemContent.uleb(0);      // flags=0: active, table 0, func indices
+    elemContent.u8(0x41); elemContent.sleb(0); elemContent.u8(0x0B); // offset
+    elemContent.uleb(0x0FFFFFFF); // func index count, nothing follows it
+
+    WasmBuilder full;
+    full.magic();
+    full.section(9, elemContent);
+
+    WasmReader reader(full.bytes());
+    auto result = reader.read();
+    EXPECT_FALSE(result.ok);
+    EXPECT_TRUE(result.module.elements.empty());
+}
+
+// A section-level vector count that no section body could supply.
+TEST(WasmReaderTest, RejectsSectionVectorCountBeyondInput) {
+    WasmBuilder typeContent;
+    typeContent.uleb(0x0FFFFFFF); // functype count, nothing follows it
+
+    WasmBuilder full;
+    full.magic();
+    full.section(1, typeContent);
+
+    WasmReader reader(full.bytes());
+    auto result = reader.read();
+    EXPECT_FALSE(result.ok);
+    EXPECT_TRUE(result.module.types.empty());
+}
+
+// A functype carries its param/result vectors with no length prefix of their
+// own, so they are bounded by the rest of the file.
+TEST(WasmReaderTest, RejectsFuncTypeParamCountBeyondInput) {
+    WasmBuilder typeContent;
+    typeContent.uleb(1);
+    typeContent.u8(0x60);
+    typeContent.uleb(0x0FFFFFFF); // param count
+    typeContent.uleb(0);
+
+    WasmBuilder full;
+    full.magic();
+    full.section(1, typeContent);
+
+    WasmReader reader(full.bytes());
+    auto result = reader.read();
+    EXPECT_FALSE(result.ok);
+    EXPECT_TRUE(result.module.types.empty());
+}
+
+// A function body whose local-declaration vector is larger than the body.
+TEST(WasmReaderTest, RejectsCodeLocalCountBeyondBody) {
+    WasmBuilder body;
+    body.uleb(0x0FFFFFFF); // local decl count
+    body.u8(0x0B);
+
+    WasmBuilder codeContent;
+    codeContent.uleb(1);
+    codeContent.uleb((uint32_t)body.bytes().size());
+    for (auto by : body.bytes()) codeContent.u8(by);
+
+    WasmBuilder full;
+    full.magic();
+    full.section(10, codeContent);
+
+    WasmReader reader(full.bytes());
+    auto result = reader.read();
+    EXPECT_FALSE(result.ok);
+    EXPECT_TRUE(result.module.codes.empty());
+}
+
+// The name section is best-effort and must not fail the module, but an
+// impossible name count must not be looped over either.
+TEST(WasmReaderTest, ClampsNameSectionCountBeyondInput) {
+    WasmBuilder sub;
+    sub.uleb(0x0FFFFFFF); // func name count, nothing follows it
+
+    WasmBuilder customContent;
+    customContent.str("name");
+    customContent.u8(1);   // func names subsection
+    customContent.uleb((uint32_t)sub.bytes().size());
+    for (auto by : sub.bytes()) customContent.u8(by);
+
+    WasmBuilder full;
+    full.magic();
+    full.section(0, customContent);
+
+    WasmReader reader(full.bytes());
+    auto result = reader.read();
+    EXPECT_TRUE(result.ok) << result.error;
+    ASSERT_TRUE(result.module.names.has_value());
+    EXPECT_TRUE(result.module.names->funcNames.empty());
+}
+
 // ─── ValType tests ────────────────────────────────────────────────────────────
 
 TEST(ValTypeTest, Names) {

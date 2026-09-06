@@ -1093,3 +1093,203 @@ TEST(DexHeader, VersionIs035) {
     DexFile df = DexFile::parse(dex);
     EXPECT_EQ(DexVersion::V035, df.version());
 }
+
+// ─── Malformed-input regression tests ────────────────────────────────────────
+//
+// Every offset+size pair in the DEX header, and every count embedded in the
+// data section, is attacker-controlled.  The parser used to size its containers
+// straight from those counts, so a header claiming 0xFFFFFFFF string_ids in a
+// 494-byte file asked for 128 GiB before the first read could fail.  The counts
+// are now bounded against the bytes the file can actually supply.
+
+/// Patch a u4 header field in a copy of the minimal DEX.
+static std::vector<uint8_t> minimalDexWithU4(size_t off, uint32_t value) {
+    auto dex = buildMinimalDex();
+    dex[off + 0] = static_cast<uint8_t>(value);
+    dex[off + 1] = static_cast<uint8_t>(value >> 8);
+    dex[off + 2] = static_cast<uint8_t>(value >> 16);
+    dex[off + 3] = static_cast<uint8_t>(value >> 24);
+    return dex;
+}
+
+TEST(DexFile, StringIdsCountExceedsFileThrows) {
+    // header_item.string_ids_size @ 0x38 — the crash-2db5d740 reproducer.
+    EXPECT_THROW(DexFile::parse(minimalDexWithU4(0x38, 0xFFFFFFFFu)),
+                 DexParseError);
+}
+
+TEST(DexFile, TypeIdsCountExceedsFileThrows) {
+    EXPECT_THROW(DexFile::parse(minimalDexWithU4(0x40, 0xFFFFFFFFu)),
+                 DexParseError);
+}
+
+TEST(DexFile, ProtoIdsCountExceedsFileThrows) {
+    EXPECT_THROW(DexFile::parse(minimalDexWithU4(0x48, 0xFFFFFFFFu)),
+                 DexParseError);
+}
+
+TEST(DexFile, FieldIdsCountExceedsFileThrows) {
+    EXPECT_THROW(DexFile::parse(minimalDexWithU4(0x50, 0xFFFFFFFFu)),
+                 DexParseError);
+}
+
+TEST(DexFile, MethodIdsCountExceedsFileThrows) {
+    EXPECT_THROW(DexFile::parse(minimalDexWithU4(0x58, 0xFFFFFFFFu)),
+                 DexParseError);
+}
+
+TEST(DexFile, ClassDefsCountExceedsFileThrows) {
+    EXPECT_THROW(DexFile::parse(minimalDexWithU4(0x60, 0xFFFFFFFFu)),
+                 DexParseError);
+}
+
+TEST(DexFile, IndexTableCountJustPastEndThrows) {
+    // Off-by-one on the real boundary: string_ids_off 0x70 leaves
+    // (size - 0x70) bytes, so exactly one more entry than that fits is bad.
+    auto dex = buildMinimalDex();
+    const uint32_t fits =
+        static_cast<uint32_t>((dex.size() - 0x70) / kStringIdItemSize);
+    EXPECT_THROW(DexFile::parse(minimalDexWithU4(0x38, fits + 1)),
+                 DexParseError);
+}
+
+TEST(DexFile, TypeListSizeExceedsFileThrows) {
+    auto dex = buildMinimalDex();
+    const uint32_t listOff = static_cast<uint32_t>(dex.size());
+    appendU32le(dex, 0xFFFFFFFFu); // type_list.size
+    DexFile df = DexFile::parse(dex);
+    EXPECT_THROW(df.readTypeList(listOff), DexParseError);
+}
+
+TEST(DexFile, ClassDataFieldCountExceedsFileThrows) {
+    auto dex = buildMinimalDex();
+    const uint32_t cdOff = static_cast<uint32_t>(dex.size());
+    // static_fields_size = 0xFFFFFFFF (ULEB128), then three zero counts.
+    dex.insert(dex.end(), {0xFF, 0xFF, 0xFF, 0xFF, 0x0F, 0x00, 0x00, 0x00});
+    DexFile df = DexFile::parse(dex);
+    EXPECT_THROW(df.readClassData(cdOff), DexParseError);
+}
+
+TEST(DexFile, ClassDataMethodCountExceedsFileThrows) {
+    auto dex = buildMinimalDex();
+    const uint32_t cdOff = static_cast<uint32_t>(dex.size());
+    // static/instance fields = 0, direct_methods_size = 0xFFFFFFFF.
+    dex.insert(dex.end(), {0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F, 0x00});
+    DexFile df = DexFile::parse(dex);
+    EXPECT_THROW(df.readClassData(cdOff), DexParseError);
+}
+
+TEST(DexFile, CodeItemInsnsSizeExceedsFileThrows) {
+    auto dex = buildMinimalDex();
+    const uint32_t codeOff = static_cast<uint32_t>(dex.size());
+    appendU16le(dex, 1);           // registers_size
+    appendU16le(dex, 0);           // ins_size
+    appendU16le(dex, 0);           // outs_size
+    appendU16le(dex, 0);           // tries_size
+    appendU32le(dex, 0);           // debug_info_off
+    appendU32le(dex, 0xFFFFFFFFu); // insns_size
+    DexFile df = DexFile::parse(dex);
+    EXPECT_THROW(df.readCodeItem(codeOff), DexParseError);
+}
+
+TEST(DexFile, CodeItemTriesSizeExceedsFileThrows) {
+    auto dex = buildMinimalDex();
+    const uint32_t codeOff = static_cast<uint32_t>(dex.size());
+    appendU16le(dex, 1);      // registers_size
+    appendU16le(dex, 0);      // ins_size
+    appendU16le(dex, 0);      // outs_size
+    appendU16le(dex, 0xFFFF); // tries_size
+    appendU32le(dex, 0);      // debug_info_off
+    appendU32le(dex, 0);      // insns_size
+    DexFile df = DexFile::parse(dex);
+    EXPECT_THROW(df.readCodeItem(codeOff), DexParseError);
+}
+
+TEST(DexFile, CatchHandlerListSizeExceedsFileThrows) {
+    auto dex = buildMinimalDex();
+    const uint32_t codeOff = static_cast<uint32_t>(dex.size());
+    appendU16le(dex, 1);  // registers_size
+    appendU16le(dex, 0);  // ins_size
+    appendU16le(dex, 0);  // outs_size
+    appendU16le(dex, 1);  // tries_size
+    appendU32le(dex, 0);  // debug_info_off
+    appendU32le(dex, 0);  // insns_size (even — no padding unit)
+    appendU32le(dex, 0);  // try_item.start_addr
+    appendU16le(dex, 0);  // try_item.insn_count
+    appendU16le(dex, 0);  // try_item.handler_off
+    // encoded_catch_handler_list.size = 0xFFFFFFFF (ULEB128)
+    dex.insert(dex.end(), {0xFF, 0xFF, 0xFF, 0xFF, 0x0F});
+    DexFile df = DexFile::parse(dex);
+    EXPECT_THROW(df.readCodeItem(codeOff), DexParseError);
+}
+
+TEST(DexReader, CheckCountRejectsUnbackedCount) {
+    // The bound used by every count in the parser, including the
+    // annotation_set_ref_list count in DexClassParser::readAnnotations().
+    std::vector<uint8_t> buf(32, 0);
+    DexReader r(buf.data(), buf.size());
+    EXPECT_NO_THROW(r.checkCount(8, kAnnotationOffSize));   // 32 bytes exactly
+    EXPECT_THROW(r.checkCount(9, kAnnotationOffSize), DexParseError);
+    EXPECT_THROW(r.checkCount(0xFFFFFFFFu, 1), DexParseError);
+    EXPECT_NO_THROW(r.checkCount(0, 1)); // an empty table reads nothing
+}
+
+TEST(ApkReader, CentralDirectoryOffsetOverflowsEndOfFile) {
+    // crash-61a2a35364423eaaf6dffec651d17aa0c097c228: the EOCD declares
+    // cd_offset = 0xFFFFFFFE and cd_size = 0x40.  Summed in uint32 those wrap
+    // to 0x3E, which slipped past the end-of-file test and left the walker
+    // memcmp()ing at data + 0xFFFFFFFE.
+    static const uint8_t kBytes[] = {
+        0xde, 0xfe, 0xba, 0xbe, 0x50, 0x4b, 0x05, 0x06,
+        0x01, 0x00, 0x00, 0x00, 0xcf, 0xd2, 0x00, 0x00,
+        0x40, 0x00, 0x00, 0x00, 0xfe, 0xff, 0xff, 0xff,
+        0x00, 0x00, 0x00, 0x50, 0x00, 0x00, 0x0a, 0x03,
+        0x07, 0x00, 0x04, 0x0c, 0xd3, 0x1d, 0x00, 0x02,
+        0x00, 0x03, 0x07, 0x00, 0x04, 0x0c, 0x00, 0x05,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7e, 0x06,
+        0x00, 0x2f, 0x01, 0x00, 0x3f, 0x00, 0x06, 0x3c,
+    };
+    std::vector<uint8_t> apk(std::begin(kBytes), std::end(kBytes));
+    ApkReader reader;
+    auto result = reader.readApk(apk);
+    EXPECT_EQ(ApkReadResult::Error, result.status);
+    EXPECT_EQ("not a valid ZIP/APK file", result.error);
+}
+
+TEST(ApkReader, CentralDirectoryEntryNameRunsPastDirectory) {
+    // A well-formed STORED zip, with the central directory entry's name length
+    // rewritten to reach past the directory it lives in.  The name used to be
+    // copied straight out of the buffer at that length.
+    auto zip = storedZip({{"classes.dex", buildMinimalDex()}});
+    // The EOCD is the trailing 22 bytes; cd_offset is at EOCD + 16.
+    const size_t eocd = zip.size() - 22;
+    const uint32_t cdOff = static_cast<uint32_t>(zip[eocd + 16]) |
+                           (static_cast<uint32_t>(zip[eocd + 17]) << 8) |
+                           (static_cast<uint32_t>(zip[eocd + 18]) << 16) |
+                           (static_cast<uint32_t>(zip[eocd + 19]) << 24);
+    zip[cdOff + 28] = 0xFF; // central_directory_header.file_name_length lo
+    zip[cdOff + 29] = 0xFF; // hi
+    ApkReader reader;
+    auto result = reader.readApk(zip);
+    // The truncated entry must be dropped, not admitted with 65535 bytes of
+    // whatever follows the buffer read in as its name.
+    EXPECT_EQ(ApkReadResult::Error, result.status);
+    EXPECT_EQ("not a valid ZIP/APK file", result.error);
+}
+
+TEST(ApkReader, LocalHeaderOffsetNearFourGibIsRejected) {
+    // local_header_offset + 30 wrapped in uint32, so an offset just below 4 GiB
+    // passed the bounds test and dereferenced far outside the buffer.
+    auto zip = storedZip({{"classes.dex", buildMinimalDex()}});
+    const size_t eocd = zip.size() - 22;
+    const uint32_t cdOff = static_cast<uint32_t>(zip[eocd + 16]) |
+                           (static_cast<uint32_t>(zip[eocd + 17]) << 8) |
+                           (static_cast<uint32_t>(zip[eocd + 18]) << 16) |
+                           (static_cast<uint32_t>(zip[eocd + 19]) << 24);
+    for (int i = 0; i < 4; ++i)
+        zip[cdOff + 42 + i] = 0xFF; // relative_offset_of_local_header
+    ApkReader reader;
+    auto result = reader.readApk(zip);
+    EXPECT_EQ(ApkReadResult::PartialError, result.status);
+    EXPECT_FALSE(result.warnings.empty());
+}

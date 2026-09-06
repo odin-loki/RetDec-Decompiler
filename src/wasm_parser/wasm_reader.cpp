@@ -124,6 +124,23 @@ std::vector<uint8_t> WasmReader::readBytes(size_t n) {
     return v;
 }
 
+uint32_t WasmReader::readVecCount(size_t regionEnd) {
+    uint32_t count = readULEB128();
+    // The encoding of a wasm vector spends at least one byte per element, so a
+    // count larger than the bytes left in the enclosing region cannot be
+    // satisfied by this input. The counts used to be trusted as loop bounds,
+    // which let a truncated file drive a loop whose body consumes nothing at
+    // end of input and appends an element every iteration until the process
+    // ran out of memory.
+    if (regionEnd > data_.size()) regionEnd = data_.size(); // declared, so unverified
+    size_t avail = regionEnd > pos_ ? regionEnd - pos_ : 0;
+    if (count > avail)
+        throw ParseError{"Vector count " + std::to_string(count)
+                         + " exceeds " + std::to_string(avail)
+                         + " remaining byte(s)"};
+    return count;
+}
+
 std::string WasmReader::readUtf8(uint32_t len) {
     if (pos_ + len > data_.size()) throw ParseError{"String read past end"};
     std::string s(reinterpret_cast<const char*>(&data_[pos_]), len);
@@ -153,10 +170,10 @@ FuncType WasmReader::readFuncType() {
     uint8_t tag = readU8();
     if (tag != 0x60) throw ParseError{"Expected functype tag 0x60"};
     FuncType ft;
-    uint32_t paramCount = readULEB128();
+    uint32_t paramCount = readVecCount();
     for (uint32_t i = 0; i < paramCount; ++i)
         ft.params.push_back(readValType());
-    uint32_t resultCount = readULEB128();
+    uint32_t resultCount = readVecCount();
     for (uint32_t i = 0; i < resultCount; ++i)
         ft.results.push_back(readValType());
     return ft;
@@ -195,23 +212,27 @@ std::vector<uint8_t> WasmReader::readConstExpr() {
     while (!eof()) {
         uint8_t b = readU8();
         expr.push_back(b);
-        if (b == 0x0B) break; // END
+        if (b == 0x0B) return expr; // END
     }
-    return expr;
+    // Every expression in the binary format is terminated by END; running into
+    // the end of the file instead means the expression is truncated. Returning
+    // what we had made this the one reader that consumes nothing and still
+    // succeeds at EOF, so callers looping over a count made no progress.
+    throw ParseError{"Unterminated const expression"};
 }
 
 // ─── Section parsers ─────────────────────────────────────────────────────────
 
 void WasmReader::parseTypeSection(WasmModule& mod, uint32_t size) {
     size_t end = pos_ + size;
-    uint32_t count = readULEB128();
+    uint32_t count = readVecCount(end);
     for (uint32_t i = 0; i < count && pos_ < end; ++i)
         mod.types.push_back(readFuncType());
 }
 
 void WasmReader::parseImportSection(WasmModule& mod, uint32_t size) {
     size_t end = pos_ + size;
-    uint32_t count = readULEB128();
+    uint32_t count = readVecCount(end);
     for (uint32_t i = 0; i < count && pos_ < end; ++i) {
         Import imp;
         uint32_t modLen = readULEB128();
@@ -244,28 +265,28 @@ void WasmReader::parseImportSection(WasmModule& mod, uint32_t size) {
 
 void WasmReader::parseFunctionSection(WasmModule& mod, uint32_t size) {
     size_t end = pos_ + size;
-    uint32_t count = readULEB128();
+    uint32_t count = readVecCount(end);
     for (uint32_t i = 0; i < count && pos_ < end; ++i)
         mod.funcTypeIndices.push_back(readULEB128());
 }
 
 void WasmReader::parseTableSection(WasmModule& mod, uint32_t size) {
     size_t end = pos_ + size;
-    uint32_t count = readULEB128();
+    uint32_t count = readVecCount(end);
     for (uint32_t i = 0; i < count && pos_ < end; ++i)
         mod.tables.push_back(readTableType());
 }
 
 void WasmReader::parseMemorySection(WasmModule& mod, uint32_t size) {
     size_t end = pos_ + size;
-    uint32_t count = readULEB128();
+    uint32_t count = readVecCount(end);
     for (uint32_t i = 0; i < count && pos_ < end; ++i)
         mod.memories.push_back(readMemType());
 }
 
 void WasmReader::parseGlobalSection(WasmModule& mod, uint32_t size) {
     size_t end = pos_ + size;
-    uint32_t count = readULEB128();
+    uint32_t count = readVecCount(end);
     for (uint32_t i = 0; i < count && pos_ < end; ++i) {
         WasmGlobal g;
         g.type     = readGlobalType();
@@ -276,7 +297,7 @@ void WasmReader::parseGlobalSection(WasmModule& mod, uint32_t size) {
 
 void WasmReader::parseExportSection(WasmModule& mod, uint32_t size) {
     size_t end = pos_ + size;
-    uint32_t count = readULEB128();
+    uint32_t count = readVecCount(end);
     for (uint32_t i = 0; i < count && pos_ < end; ++i) {
         Export exp;
         uint32_t nameLen = readULEB128();
@@ -293,7 +314,7 @@ void WasmReader::parseStartSection(WasmModule& mod, uint32_t /*size*/) {
 
 void WasmReader::parseElementSection(WasmModule& mod, uint32_t size) {
     size_t end = pos_ + size;
-    uint32_t count = readULEB128();
+    uint32_t count = readVecCount(end);
     for (uint32_t i = 0; i < count && pos_ < end; ++i) {
         ElementSegment seg;
         uint32_t flags = readULEB128();
@@ -301,13 +322,13 @@ void WasmReader::parseElementSection(WasmModule& mod, uint32_t size) {
         if (flags == 0) {
             // Legacy: active, implicit table 0, funcref
             seg.offsetExpr = readConstExpr();
-            uint32_t n = readULEB128();
+            uint32_t n = readVecCount(end);
             for (uint32_t j = 0; j < n; ++j)
                 seg.funcIndices.push_back(readULEB128());
         } else if (flags == 1) {
             // Passive, elemkind funcref
             readU8(); // elemkind
-            uint32_t n = readULEB128();
+            uint32_t n = readVecCount(end);
             for (uint32_t j = 0; j < n; ++j)
                 seg.funcIndices.push_back(readULEB128());
             seg.isPassive = true;
@@ -316,14 +337,14 @@ void WasmReader::parseElementSection(WasmModule& mod, uint32_t size) {
             seg.tableIndex = readULEB128();
             seg.offsetExpr = readConstExpr();
             readU8(); // elemkind
-            uint32_t n = readULEB128();
+            uint32_t n = readVecCount(end);
             for (uint32_t j = 0; j < n; ++j)
                 seg.funcIndices.push_back(readULEB128());
         } else if (flags == 4) {
             // Active, table 0, elem exprs
             seg.offsetExpr = readConstExpr();
             seg.refType    = ValType::FuncRef;
-            uint32_t n = readULEB128();
+            uint32_t n = readVecCount(end);
             for (uint32_t j = 0; j < n; ++j)
                 seg.elemExprs.push_back(readConstExpr());
         } else {
@@ -339,13 +360,13 @@ void WasmReader::parseElementSection(WasmModule& mod, uint32_t size) {
 
 void WasmReader::parseCodeSection(WasmModule& mod, uint32_t size) {
     size_t end = pos_ + size;
-    uint32_t count = readULEB128();
+    uint32_t count = readVecCount(end);
     for (uint32_t i = 0; i < count && pos_ < end; ++i) {
         uint32_t bodySize = readULEB128();
         size_t   bodyEnd  = pos_ + bodySize;
 
         FuncCode fc;
-        uint32_t localCount = readULEB128();
+        uint32_t localCount = readVecCount(bodyEnd);
         for (uint32_t j = 0; j < localCount; ++j) {
             WasmLocal loc;
             loc.count = readULEB128();
@@ -361,7 +382,7 @@ void WasmReader::parseCodeSection(WasmModule& mod, uint32_t size) {
 
 void WasmReader::parseDataSection(WasmModule& mod, uint32_t size) {
     size_t end = pos_ + size;
-    uint32_t count = readULEB128();
+    uint32_t count = readVecCount(end);
     for (uint32_t i = 0; i < count && pos_ < end; ++i) {
         DataSegment seg;
         uint32_t flags = readULEB128();
@@ -423,9 +444,18 @@ static uint32_t readULEB_local_u32(const uint8_t* d, size_t& pos, size_t end) {
     return readULEB_local(d, pos, end);
 }
 
+/// Same one-byte-per-element argument as WasmReader::readVecCount, but the name
+/// section is best-effort and never fails the module, so an impossible count is
+/// clamped to what the subsection can hold instead of rejecting the file.
+static uint32_t readVecCount_local(const uint8_t* d, size_t& pos, size_t end) {
+    uint32_t count = readULEB_local(d, pos, end);
+    size_t avail = end > pos ? end - pos : 0;
+    return count > avail ? static_cast<uint32_t>(avail) : count;
+}
+
 std::vector<NameMap> WasmReader::readNameMap(const uint8_t* d,
                                                size_t& pos, size_t end) {
-    uint32_t count = readULEB_local(d, pos, end);
+    uint32_t count = readVecCount_local(d, pos, end);
     std::vector<NameMap> nms;
     for (uint32_t i = 0; i < count && pos < end; ++i) {
         NameMap nm;
@@ -442,7 +472,7 @@ std::vector<NameMap> WasmReader::readNameMap(const uint8_t* d,
 
 std::vector<IndirectNameMap> WasmReader::readIndirectNameMap(
         const uint8_t* d, size_t& pos, size_t end) {
-    uint32_t count = readULEB_local(d, pos, end);
+    uint32_t count = readVecCount_local(d, pos, end);
     std::vector<IndirectNameMap> nms;
     for (uint32_t i = 0; i < count && pos < end; ++i) {
         IndirectNameMap nm;

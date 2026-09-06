@@ -1,0 +1,89 @@
+# Formal verification of the bounds arithmetic.
+#
+# scripts/standalone_fuzz.sh shows that a bug exists; it cannot show that one
+# does not. The arithmetic every parser depends on -- counts, lengths and
+# offsets read out of untrusted files -- lives in include/retdec/utils/bounds.h,
+# and this job proves it correct for all inputs over the whole 64-bit range with
+# ESBMC and an SMT solver.
+#
+# Scope and limits are in docs/VERIFICATION.md. In short: the header is proved,
+# the parsers are not, because ESBMC's models of the C++ standard library do not
+# stretch to this codebase.
+name: verify-esbmc
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'include/retdec/utils/bounds.h'
+      - 'tests/verification/**'
+      - 'scripts/verify_esbmc.sh'
+      - '.github/workflows/verify-esbmc.yml'
+  workflow_dispatch:
+  schedule:
+    # The full run is minutes of solver time; once a week catches drift in the
+    # header even when a pull request does not touch the paths above.
+    - cron: "0 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-esbmc-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  syntax:
+    name: harness syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Seconds, and it catches a typo in a harness without waiting for the
+      # solver job below.
+      - name: Type-check the proof harnesses
+        run: ./scripts/verify_esbmc.sh --syntax
+
+  prove:
+    name: prove (${{ matrix.solver }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: syntax
+    strategy:
+      fail-fast: false
+      matrix:
+        # Two independent solvers: a proof that only one of them can discharge
+        # is worth knowing about.
+        solver: ['--z3', '--boolector']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache the ESBMC release build
+        id: esbmc-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/esbmc
+          key: esbmc-release-v1
+
+      # ESBMC is not in the Ubuntu archive, so take the upstream release build.
+      - name: Install ESBMC
+        if: steps.esbmc-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -fsSL -o esbmc-linux.zip \
+            https://github.com/esbmc/esbmc/releases/latest/download/esbmc-linux.zip
+          unzip -q esbmc-linux.zip
+          mkdir -p ~/.local/esbmc
+          cp -r release/* ~/.local/esbmc/
+          chmod +x ~/.local/esbmc/bin/esbmc
+
+      - name: Prove the bounds arithmetic
+        env:
+          ESBMC: /home/runner/.local/esbmc/bin/esbmc
+          SOLVER: ${{ matrix.solver }}
+          TIMEOUT: 600
+        run: |
+          "$ESBMC" --version
+          ./scripts/verify_esbmc.sh

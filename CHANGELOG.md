@@ -20,6 +20,31 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   direction. Docs: [docs/STANDALONE_CHECK.md](docs/STANDALONE_CHECK.md).
 - `.github/workflows/standalone-check.yml`: the above under `g++` and
   `clang++`, plus an ASan/UBSan job, on every pull request.
+- Formal verification: `include/retdec/utils/bounds.h` and
+  `include/retdec/utils/leb128.h` are the single home for the arithmetic every
+  parser depends on — declared counts, lengths and offsets, and continuation-bit
+  decoding — and `scripts/verify_esbmc.sh` proves them correct with ESBMC and an
+  SMT solver: 39 properties over the whole 64-bit range, not for sampled values.
+  Fuzzing shows a bug exists; this shows the arithmetic under it has none.
+  Callers use the headers rather than re-deriving the logic, so the proofs cover
+  code that runs: `mini_emu` for page arithmetic, `eh_reconstruct` for LEB128.
+  Scope and limits — the parsers themselves are not verified, because ESBMC's
+  models of the C++ standard library do not stretch to this codebase — are in
+  [docs/VERIFICATION.md](docs/VERIFICATION.md).
+  Writing the proofs refuted four claims. Two were about the headers, caught
+  before either had a caller: `countFits` accepted a zero count from a position
+  past the end of the buffer, breaking composition with `rangeFits`, and
+  `pageCount(...) * pageSize` is not always representable. One was a silent
+  truncation in the LEB128 accumulator. The fourth was in the harnesses
+  themselves, which asserted `a + b < a` and built a symbolic value with
+  `v = (v << 8) | byte` — both committing the fault they were proving absent.
+- `tests/bounds/`: runtime tests for those two headers, carrying the DWARF
+  standard's LEB128 vectors and the concrete boundary cases the fuzzer hit.
+  Proofs cover the safety properties for all inputs; they do not pin down the
+  values a decoder produces. Both are kept.
+- `.github/workflows/verify-esbmc.yml`: harness type-check on every pull
+  request that touches the header or the proofs, full proof run under both Z3
+  and Boolector.
 - Dependency-free fuzzing: `scripts/standalone_fuzz.sh` builds and runs the
   libFuzzer harnesses for the nine parsers that read attacker-controlled bytes
   and do not need LLVM — pyc, lua, wasm, dex, apk, jvm, jar, pdb and cil — using
@@ -38,6 +63,16 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- `eh_reconstruct`: `IBinaryView::readSLEB128` accumulated into an `int64_t`
+  with no bound on the shift. Both halves are undefined behaviour on
+  attacker-controlled DWARF — `(int64_t)0x7F << 57` overflows the signed range,
+  and a run of continuation bytes drives the shift past 64 — and the loop had no
+  byte limit, relying on `readU8` returning 0 past the end of the view to stop
+  it. Both decoders now accumulate unsigned through the verified helpers in
+  `retdec/utils/leb128.h` and stop at `kMaxBytes`.
+- `mini_emu`: page and offset arithmetic now goes through
+  `retdec/utils/bounds.h` rather than being spelled out at the call site.
 
 - `cfg`: `CFGBuilder::resolveVirtualCalls()` wrote through an edge reference
   that `addEdge()` had already invalidated by reallocating the same `succs`

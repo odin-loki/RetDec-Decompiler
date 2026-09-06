@@ -362,6 +362,10 @@ void DexClassParser::parseAnnotations(BcClass& cls, uint32_t annotationsOff) {
             lr.seek(listOff);
             uint32_t nsets = lr.u4();
             std::vector<std::vector<BcAnnotation>> params;
+            // annotation_set_ref_list.size is followed by that many u4 offsets;
+            // reserving for a count the file cannot back would allocate
+            // gigabytes before the first read ever fails.
+            lr.checkCount(nsets, kAnnotationOffSize);
             params.reserve(nsets);
             for (uint32_t p = 0; p < nsets; ++p) {
                 uint32_t setOff = lr.u4();

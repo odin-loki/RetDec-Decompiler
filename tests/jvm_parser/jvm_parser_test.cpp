@@ -1225,6 +1225,135 @@ TEST(JvmLifter, WideInstruction) {
     EXPECT_TRUE(res.ok);
 }
 
+// ── Malformed code[] ─────────────────────────────────────────────────────────
+// code[] is copied verbatim out of an attacker-controlled class file, so an
+// instruction's operands and a switch's jump table need not be inside it.
+// These feed bodies that stop mid-instruction or declare a jump table far
+// larger than the array can hold; the lifter must stay inside code[].
+
+// Returns the first switch table decoded anywhere in the CFG, or nullptr.
+static const BcSwitchTable* firstSwitchTable(const BcCFG& cfg) {
+    for (uint32_t b = 0; b < cfg.blockCount(); ++b)
+        for (const auto& in : cfg.block(b).instrs)
+            if (in.opcode == BcOpcode::TableSwitch
+                    || in.opcode == BcOpcode::LookupSwitch)
+                return &std::get<BcSwitchTable>(in.operands[0]);
+    return nullptr;
+}
+
+TEST(JvmLifter, TableSwitchTableRunsPastEndOfCode) {
+    // hi - lo + 1 claims 0x40000001 cases while only two 4-byte entries are
+    // present. Each case costs 4 bytes, so at most two can exist here.
+    CodeAttr code;
+    code.bytecode = {
+        0xAA,                   // tableswitch (PC 0)
+        0x00, 0x00, 0x00,       // padding
+        0x00, 0x00, 0x00, 0x10, // default = +16
+        0x00, 0x00, 0x00, 0x00, // lo = 0
+        0x40, 0x00, 0x00, 0x00, // hi = 0x40000000
+        0x00, 0x00, 0x00, 0x04, // case 0 → +4
+        0x00, 0x00, 0x00, 0x08  // case 1 → +8   (code[] ends here)
+    };
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool);
+    auto res = lifter.lift(code, "()V");
+    EXPECT_TRUE(res.ok) << res.error;
+    const BcSwitchTable* sw = firstSwitchTable(res.cfg);
+    ASSERT_NE(sw, nullptr);
+    EXPECT_EQ(sw->cases.size(), 2u);
+}
+
+TEST(JvmLifter, TableSwitchHeaderRunsPastEndOfCode) {
+    // The 12-byte default/lo/hi header itself is truncated.
+    CodeAttr code;
+    code.bytecode = {
+        0xAA,                   // tableswitch (PC 0)
+        0x00, 0x00, 0x00,       // padding
+        0x00, 0x00, 0x00, 0x10, // default = +16
+        0x00, 0x00              // lo, truncated
+    };
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool);
+    auto res = lifter.lift(code, "()V");
+    EXPECT_TRUE(res.ok) << res.error;
+    const BcSwitchTable* sw = firstSwitchTable(res.cfg);
+    ASSERT_NE(sw, nullptr);
+    EXPECT_TRUE(sw->cases.empty());
+}
+
+TEST(JvmLifter, LookupSwitchPairCountRunsPastEndOfCode) {
+    // npairs claims INT32_MAX pairs with a single 8-byte pair present.
+    CodeAttr code;
+    code.bytecode = {
+        0xAB,                   // lookupswitch (PC 0)
+        0x00, 0x00, 0x00,       // padding
+        0x00, 0x00, 0x00, 0x0C, // default = +12
+        0x7F, 0xFF, 0xFF, 0xFF, // npairs = 2147483647
+        0x00, 0x00, 0x00, 0x01, // key = 1
+        0x00, 0x00, 0x00, 0x0C  // → +12          (code[] ends here)
+    };
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool);
+    auto res = lifter.lift(code, "()V");
+    EXPECT_TRUE(res.ok) << res.error;
+    const BcSwitchTable* sw = firstSwitchTable(res.cfg);
+    ASSERT_NE(sw, nullptr);
+    EXPECT_EQ(sw->cases.size(), 1u);
+    EXPECT_EQ(sw->cases[0].first, 1);
+}
+
+TEST(JvmLifter, LookupSwitchNegativePairCount) {
+    // A negative npairs used to make the decode loop a no-op only by accident;
+    // it must not be sign-extended into a huge unsigned count either.
+    CodeAttr code;
+    code.bytecode = {
+        0xAB,                   // lookupswitch (PC 0)
+        0x00, 0x00, 0x00,       // padding
+        0x00, 0x00, 0x00, 0x08, // default = +8
+        0xFF, 0xFF, 0xFF, 0xFF, // npairs = -1
+        0xB1                    // return (PC 12)
+    };
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool);
+    auto res = lifter.lift(code, "()V");
+    EXPECT_TRUE(res.ok) << res.error;
+    const BcSwitchTable* sw = firstSwitchTable(res.cfg);
+    ASSERT_NE(sw, nullptr);
+    EXPECT_TRUE(sw->cases.empty());
+}
+
+TEST(JvmLifter, OperandTruncatedAtEndOfCode) {
+    // getstatic is the last byte of code[]: its u2 constant-pool index is not
+    // in the array at all. The index cannot resolve against the empty pool, so
+    // the lift reports an error — the point is that it stays inside code[].
+    CodeAttr code;
+    code.bytecode = {0x00, 0xB2};  // nop, getstatic <operand missing>
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool);
+    auto res = lifter.lift(code, "()V");
+    EXPECT_FALSE(res.ok);
+}
+
+TEST(JvmLifter, BranchOperandTruncatedAtEndOfCode) {
+    // goto with only one of its two offset bytes present.
+    CodeAttr code;
+    code.bytecode = {0x00, 0xA7, 0x00};  // nop, goto <offset truncated>
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool);
+    auto res = lifter.lift(code, "()V");
+    EXPECT_TRUE(res.ok) << res.error;
+}
+
+TEST(JvmLifter, WideOpcodeAtEndOfCode) {
+    // The wide prefix is the last byte, so the opcode it modifies is missing.
+    CodeAttr code;
+    code.bytecode = {0x00, 0xC4};  // nop, wide <modified opcode missing>
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool);
+    auto res = lifter.lift(code, "()V");
+    EXPECT_TRUE(res.ok) << res.error;
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // JarReader
 // ══════════════════════════════════════════════════════════════════════════════
