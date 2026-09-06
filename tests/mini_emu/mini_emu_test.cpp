@@ -52,6 +52,53 @@ TEST(MiniEmuTest, LoadAndReadByte)
     EXPECT_TRUE(emu.readByte(0x1002, b)); EXPECT_EQ(b, 0xCCu);
 }
 
+// Regression: MiniEmu::mapPage() rounded the *copy length* up to a whole page
+// (std::max(size, kPageSize)) instead of the page count, so a 3-byte source
+// buffer was memcpy'd 4096 bytes -- a buffer over-read ASan flags immediately.
+// The bytes past the caller's buffer must read back as zero, not as whatever
+// followed it in memory.
+TEST(MiniEmuTest, ShortBufferDoesNotOverRead)
+{
+    MiniEmu emu;
+    PagePerms rw{true, true, false};
+    const uint8_t data[] = {0x11, 0x22, 0x33};
+    emu.mapPage(0x1000, rw, data, sizeof(data));
+
+    uint8_t b = 0;
+    EXPECT_TRUE(emu.readByte(0x1002, b)); EXPECT_EQ(b, 0x33u);
+    // Everything after the supplied bytes is zero fill.
+    EXPECT_TRUE(emu.readByte(0x1003, b)); EXPECT_EQ(b, 0x00u);
+    EXPECT_TRUE(emu.readByte(0x1FFF, b)); EXPECT_EQ(b, 0x00u);
+}
+
+// A buffer spanning more than one page still maps every page, and only the
+// final page is partially filled.
+TEST(MiniEmuTest, MultiPageBufferMapsEveryPage)
+{
+    MiniEmu emu;
+    PagePerms rw{true, true, false};
+    std::vector<uint8_t> data(0x1000 + 4, 0x5A);
+    emu.mapPage(0x3000, rw, data.data(), data.size());
+
+    uint8_t b = 0;
+    EXPECT_TRUE(emu.readByte(0x3000, b)); EXPECT_EQ(b, 0x5Au);
+    EXPECT_TRUE(emu.readByte(0x3FFF, b)); EXPECT_EQ(b, 0x5Au);
+    EXPECT_TRUE(emu.readByte(0x4003, b)); EXPECT_EQ(b, 0x5Au);
+    EXPECT_TRUE(emu.readByte(0x4004, b)); EXPECT_EQ(b, 0x00u);
+}
+
+// Mapping with no data still maps one zeroed, readable page.
+TEST(MiniEmuTest, NullDataMapsOneZeroPage)
+{
+    MiniEmu emu;
+    PagePerms rw{true, true, false};
+    emu.mapPage(0x5000, rw, nullptr, 0);
+
+    uint8_t b = 0xFF;
+    EXPECT_TRUE(emu.readByte(0x5000, b)); EXPECT_EQ(b, 0x00u);
+    EXPECT_TRUE(emu.readByte(0x5FFF, b)); EXPECT_EQ(b, 0x00u);
+}
+
 TEST(MiniEmuTest, WriteByte)
 {
     MiniEmu emu;

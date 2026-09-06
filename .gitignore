@@ -150,3 +150,9 @@ _license_preamble.txt
 _license_section7.txt
 LICENSE.full
 scripts/run-linux-release-build.cmd
+
+# Editor and merge leftovers -- never belong in the tree.
+*.bak
+*.bak[0-9]
+*.orig
+*.rej

@@ -317,6 +317,22 @@ private:
 
     void resolveExceptionEdges();
     void resolveJumpTables();
+
+    /// One indirect branch that a jump table resolves, recorded during a scan
+    /// so the graph can be mutated after the scan finishes rather than during
+    /// it.  Identifies the edge by (block address, index) because appending to
+    /// a succs vector reallocates it, and inserting a block rehashes
+    /// CFGGraph::nodes -- either one invalidates an iterator held across the
+    /// mutation.
+    struct ResolvedTable {
+        uint64_t              block;         ///< start address of the owning block
+        std::size_t           edgeIndex;     ///< index of the placeholder edge in succs
+        uint64_t              functionAddr;  ///< owning function, for new blocks
+        std::vector<uint64_t> targets;       ///< switch targets, case order
+    };
+
+    void applyResolvedTables(const std::vector<ResolvedTable>& pending);
+
     void resolveVirtualCalls();
     void emitUnresolvedDiagnostics();
 

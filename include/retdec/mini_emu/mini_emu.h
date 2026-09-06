@@ -56,6 +56,12 @@ constexpr size_t   kStackSize          = 0x10000; // 64 KiB
 constexpr size_t   kPageSize           = 0x1000;  // 4 KiB
 constexpr uint64_t kMaxInstructions    = 10'000'000ULL;
 
+/// Upper bound on the address space a single section may claim when loading.
+/// Section headers come from an untrusted file, so a declared virtualSize of
+/// 2^40 must not turn into 2^28 page allocations.  256 MiB is far above any
+/// real packed section and still cheap to refuse.
+constexpr size_t   kMaxSectionMapBytes = 0x1000'0000; // 256 MiB
+
 // ─── Page permissions ─────────────────────────────────────────────────────────
 
 struct PagePerms {

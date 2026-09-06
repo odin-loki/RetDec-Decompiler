@@ -496,6 +496,16 @@ uint64_t CFGBuilder::detectJumpTableBase(uint64_t jmpAddr) const noexcept
 
 void CFGBuilder::resolveJumpTables()
 {
+    // Both loops below mutate the graph while walking it, so each one scans
+    // first and applies afterwards.  See the note on ResolvedTable.
+    //
+    // addEdge() appends to the very succs vector being iterated, which
+    // reallocates it and dangles the loop's reference; ensureBlock() inserts
+    // into _graph.nodes, which rehashes and invalidates the outer iterator.
+    // Recording (block address, edge index) survives both: appends never move
+    // an existing element, and unordered_map keeps references stable.
+    std::vector<ResolvedTable> pending;
+
     // Process explicitly registered jump tables.
     for (const auto& jt : _jumpTables) {
         auto targets = resolveJumpTable(jt);
@@ -503,34 +513,33 @@ void CFGBuilder::resolveJumpTables()
 
         // Find the block that owns the jump instruction.
         // The indirect JMP block will have an UnresolvedIndirect edge.
-        for (auto& [addr, blk] : _graph.nodes) {
-            for (auto& edge : blk.succs) {
-                if (edge.type != EdgeType::UnresolvedIndirect) continue;
+        for (const auto& [addr, blk] : _graph.nodes) {
+            bool matched = false;
+            for (std::size_t i = 0; i < blk.succs.size(); ++i) {
+                if (blk.succs[i].type != EdgeType::UnresolvedIndirect) continue;
                 // Match by proximity: the indirect JMP should be in a block
                 // whose start is ≤ instrAddr < end.
                 if (jt.instrAddr >= addr &&
                     (blk.endAddr == 0 || jt.instrAddr < blk.endAddr)) {
-                    // Replace with SwitchEdges.
-                    edge.type = EdgeType::SwitchEdge; // reuse first slot
-                    edge.to   = targets[0];
-                    edge.switchIndex = 0;
-                    for (std::size_t i = 1; i < targets.size(); ++i) {
-                        addEdge(addr, targets[i], EdgeType::SwitchEdge,
-                                static_cast<uint32_t>(i));
-                        // Ensure target block exists.
-                        ensureBlock(targets[i], blk.functionAddr);
-                    }
-                    ensureBlock(targets[0], blk.functionAddr);
+                    pending.push_back({addr, i, blk.functionAddr, targets});
+                    matched = true;
                     break;
                 }
+            }
+            if (matched) {
+                // One registered table resolves at most one block, as before.
+                break;
             }
         }
     }
 
+    applyResolvedTables(pending);
+    pending.clear();
+
     // Auto-detect remaining unresolved indirect JMPs (VSA-lite).
-    for (auto& [addr, blk] : _graph.nodes) {
-        for (auto& edge : blk.succs) {
-            if (edge.type != EdgeType::UnresolvedIndirect) continue;
+    for (const auto& [addr, blk] : _graph.nodes) {
+        for (std::size_t i = 0; i < blk.succs.size(); ++i) {
+            if (blk.succs[i].type != EdgeType::UnresolvedIndirect) continue;
 
             // Try to infer a jump table.
             uint32_t bound = detectJumpTableBound(blk.endAddr > 0 ? blk.endAddr - 1 : addr);
@@ -549,17 +558,34 @@ void CFGBuilder::resolveJumpTables()
             auto targets = resolveJumpTable(autoJT);
             if (targets.empty()) continue;
 
-            edge.type        = EdgeType::SwitchEdge;
-            edge.to          = targets[0];
-            edge.switchIndex = 0;
-            ensureBlock(targets[0], blk.functionAddr);
-
-            for (std::size_t i = 1; i < targets.size(); ++i) {
-                addEdge(addr, targets[i], EdgeType::SwitchEdge,
-                        static_cast<uint32_t>(i));
-                ensureBlock(targets[i], blk.functionAddr);
-            }
+            pending.push_back({addr, i, blk.functionAddr, std::move(targets)});
         }
+    }
+
+    applyResolvedTables(pending);
+}
+
+void CFGBuilder::applyResolvedTables(const std::vector<ResolvedTable>& pending)
+{
+    for (const auto& r : pending) {
+        auto it = _graph.nodes.find(r.block);
+        if (it == _graph.nodes.end()) continue;
+        if (r.edgeIndex >= it->second.succs.size()) continue;
+
+        // Rewrite the placeholder in place, then append the remaining cases.
+        // Appending cannot move the placeholder, so the recorded index stays
+        // correct even though addEdge() may reallocate the vector.
+        CFGEdge& edge    = it->second.succs[r.edgeIndex];
+        edge.type        = EdgeType::SwitchEdge;
+        edge.to          = r.targets[0];
+        edge.switchIndex = 0;
+
+        for (std::size_t i = 1; i < r.targets.size(); ++i) {
+            addEdge(r.block, r.targets[i], EdgeType::SwitchEdge,
+                    static_cast<uint32_t>(i));
+            ensureBlock(r.targets[i], r.functionAddr);
+        }
+        ensureBlock(r.targets[0], r.functionAddr);
     }
 }
 
@@ -569,25 +595,43 @@ void CFGBuilder::resolveVirtualCalls()
 {
     if (_vtables.empty()) return;
 
-    for (auto& [addr, blk] : _graph.nodes) {
-        for (auto& edge : blk.succs) {
-            if (edge.type != EdgeType::UnresolvedIndirect) continue;
-            // Emit one VirtualCallEdge per vtable slot across all known vtables.
-            bool anyVtable = false;
-            for (const auto& vt : _vtables) {
-                for (const auto& slot : vt.slots) {
-                    if (slot == 0) continue;
-                    addEdge(addr, slot, EdgeType::VirtualCallEdge);
-                    ensureBlock(slot, slot);
-                    anyVtable = true;
-                }
-            }
-            if (anyVtable) {
-                // Remove the original unresolved placeholder (mark as resolved).
-                edge.type = EdgeType::VirtualCallEdge;
-                edge.to   = _vtables[0].slots.empty() ? 0 : _vtables[0].slots[0];
+    // Every non-null slot across every known vtable becomes an outgoing edge
+    // of each unresolved indirect branch, so compute the slot list once.
+    std::vector<uint64_t> slots;
+    for (const auto& vt : _vtables) {
+        for (const auto& slot : vt.slots) {
+            if (slot != 0) slots.push_back(slot);
+        }
+    }
+    if (slots.empty()) return;
+
+    // Scan first, mutate second: addEdge() reallocates the succs vector this
+    // loop iterates (a heap-use-after-free on the `edge` reference), and
+    // ensureBlock() rehashes _graph.nodes under the outer iterator.
+    std::vector<std::pair<uint64_t, std::size_t>> placeholders;
+    for (const auto& [addr, blk] : _graph.nodes) {
+        for (std::size_t i = 0; i < blk.succs.size(); ++i) {
+            if (blk.succs[i].type == EdgeType::UnresolvedIndirect) {
+                placeholders.emplace_back(addr, i);
             }
         }
+    }
+
+    const uint64_t firstSlot = _vtables[0].slots.empty() ? 0 : _vtables[0].slots[0];
+
+    for (const auto& [addr, edgeIndex] : placeholders) {
+        for (const uint64_t slot : slots) {
+            addEdge(addr, slot, EdgeType::VirtualCallEdge);
+            ensureBlock(slot, slot);
+        }
+
+        // Retire the placeholder.  Appends never move an existing element, so
+        // the index recorded during the scan still addresses the same edge.
+        auto it = _graph.nodes.find(addr);
+        if (it == _graph.nodes.end()) continue;
+        if (edgeIndex >= it->second.succs.size()) continue;
+        it->second.succs[edgeIndex].type = EdgeType::VirtualCallEdge;
+        it->second.succs[edgeIndex].to   = firstSlot;
     }
 }
 

@@ -790,16 +790,22 @@ MiniEmu::~MiniEmu() = default;
 
 void MiniEmu::mapPage(uint64_t va, PagePerms perms, const uint8_t *data, size_t size)
 {
-    // Map one or more pages
+    // Map one or more pages.
+    //
+    // `size` bounds the caller's source buffer, so it must never be rounded up:
+    // doing that makes MemMap::mapPage memcpy a whole page out of a shorter
+    // buffer.  Round the *page count* up instead, and map a single zero page
+    // when there is no data at all.
     uint64_t cur = impl_->mem.pageBase(va);
-    size_t remaining = std::max(size, kPageSize);
+
+    const size_t pageCount = size > 0 ? (size + kPageSize - 1) / kPageSize : 1;
+
     size_t copied = 0;
-    while (remaining > 0) {
-        size_t chunk = std::min(remaining, kPageSize);
-        impl_->mem.mapPage(cur, perms, data ? data + copied : nullptr, chunk);
+    for (size_t i = 0; i < pageCount; ++i) {
+        const size_t chunk = size > copied ? std::min(size - copied, kPageSize) : 0;
+        impl_->mem.mapPage(cur, perms, (data && chunk > 0) ? data + copied : nullptr, chunk);
         cur += kPageSize;
         copied += chunk;
-        remaining = (remaining > chunk) ? (remaining - chunk) : 0;
     }
 }
 
@@ -819,16 +825,34 @@ void MiniEmu::load(const uint8_t *data, size_t size, const FormatResult &fmt)
         perms.write   = sec.isWritable;
         perms.execute = sec.isExecutable;
 
+        // Section headers are attacker-controlled, so clamp the span this
+        // section may claim before turning it into page allocations.
+        if (vsz > kMaxSectionMapBytes) vsz = kMaxSectionMapBytes;
+
         // Map pages for this section
         size_t mapped = 0;
         uint64_t cur  = impl_->mem.pageBase(va);
         while (mapped < vsz) {
             size_t pageOff = (cur < va) ? 0 : static_cast<size_t>(cur - va);
-            size_t srcOff  = fo + pageOff;
-            size_t copyLen = (srcOff < size && fsz > 0)
-                ? std::min({ kPageSize, size - srcOff, fsz - pageOff }) : 0;
-            const uint8_t *src = (copyLen > 0) ? (data + srcOff) : nullptr;
-            impl_->mem.mapPage(cur, perms, src, kPageSize);
+
+            // Bytes of this page that are actually backed by file content.
+            // Every term has to be range-checked first: fo + pageOff can wrap,
+            // and pageOff may already be past the end of the section's file
+            // data, in which case fsz - pageOff would wrap to a huge length.
+            size_t copyLen = 0;
+            const uint8_t *src = nullptr;
+            if (fsz > 0 && pageOff < fsz && fo <= size - pageOff) {
+                const size_t srcOff = fo + pageOff;
+                if (srcOff < size) {
+                    copyLen = std::min({ kPageSize, size - srcOff, fsz - pageOff });
+                    if (copyLen > 0) src = data + srcOff;
+                }
+            }
+
+            // Pass copyLen, not kPageSize: MemMap::mapPage zero-fills the whole
+            // page and copies exactly the bytes it is given, so handing it a
+            // page length reads past the end of `data`.
+            impl_->mem.mapPage(cur, perms, src, copyLen);
 
             if (perms.execute) {
                 impl_->origExecPages.push_back(cur);

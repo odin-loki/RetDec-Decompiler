@@ -387,6 +387,56 @@ TEST(VirtualCall, SlotsEmittedAsVirtualCallEdges)
     EXPECT_GE(countEdgeType(b.graph(), EdgeType::VirtualCallEdge), 1u);
 }
 
+// Regression: resolveVirtualCalls() used to rewrite an edge reference that
+// addEdge() had already invalidated by reallocating the same succs vector, and
+// ensureBlock() inserted into CFGGraph::nodes while the outer loop iterated it.
+// Both are undefined behaviour; ASan reported the first as a heap-use-after-free.
+// Enough vtable slots to force at least one vector reallocation, plus enough
+// blocks to force a rehash, so the bug reproduces rather than surviving by luck.
+TEST(VirtualCall, ManySlotsDoNotInvalidateIterators)
+{
+    auto img = makeImage(0x40000);
+    auto b = makeBuilder(img);
+
+    for (int f = 0; f < 8; ++f) {
+        uint64_t func = kBase + 0x1000 + static_cast<uint64_t>(f) * 0x100;
+        b.addFunction(func, func + 5, { ins(func, 2, InstrKind::IndirectCall) });
+    }
+
+    VtableInfo vt;
+    vt.tableAddr = kBase + 0x20000;
+    for (int i = 0; i < 64; ++i) {
+        vt.slots.push_back(kBase + 0x21000 + static_cast<uint64_t>(i) * 0x40);
+    }
+    b.addVtable(vt);
+
+    b.build();
+
+    // 8 call sites x 64 slots, and every placeholder is retired rather than
+    // left behind as an UnresolvedIndirect.
+    EXPECT_EQ(countEdgeType(b.graph(), EdgeType::VirtualCallEdge), 8u * 64u + 8u);
+    EXPECT_EQ(countEdgeType(b.graph(), EdgeType::UnresolvedIndirect), 0u);
+}
+
+// A vtable whose slots are all null must not retire the placeholder: there is
+// no resolved target to point it at.
+TEST(VirtualCall, AllNullSlotsLeaveEdgeUnresolved)
+{
+    auto img = makeImage();
+    auto b = makeBuilder(img);
+    uint64_t func = kBase + 0x1000;
+    b.addFunction(func, func + 5, { ins(func, 2, InstrKind::IndirectCall) });
+
+    VtableInfo vt;
+    vt.tableAddr = kBase + 0x5000;
+    vt.slots = {0, 0};
+    b.addVtable(vt);
+    b.build();
+
+    EXPECT_EQ(countEdgeType(b.graph(), EdgeType::VirtualCallEdge), 0u);
+    EXPECT_EQ(countEdgeType(b.graph(), EdgeType::UnresolvedIndirect), 1u);
+}
+
 TEST(VirtualCall, EmptyVtableNoEdges)
 {
     auto img = makeImage();

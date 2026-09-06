@@ -17,6 +17,7 @@
 
 #include "retdec/idiom_reconstruct/idiom_reconstruct.h"
 #include <gtest/gtest.h>
+#include <cassert>
 #include <cstdint>
 
 #if defined(_MSC_VER)

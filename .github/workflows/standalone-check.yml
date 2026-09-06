@@ -1,0 +1,63 @@
+# Fast dependency-free gate.
+#
+# The normal ctest workflows build LLVM, Capstone, Keystone, YARA and YaraMod
+# from source, which takes hours.  This job compiles the 56 src/ modules that
+# need nothing but a C++17 compiler and runs their existing unit suites against
+# the shim in tests/standalone/gtest/, so a pull request gets a real
+# compile-and-test signal in about a minute.
+#
+# It is a supplement to, not a replacement for, ctest-linux / ctest-windows.
+name: standalone-check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: standalone-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  standalone:
+    name: ${{ matrix.cxx }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        cxx: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile every dependency-free module and run its tests
+        env:
+          CXX: ${{ matrix.cxx }}
+        run: ./scripts/standalone_check.sh
+
+      # Guards the hard-coded module list in the script against drift: a module
+      # that gains a third-party dependency, or a new dependency-free module
+      # that nobody added to the fast path, both fail here.
+      - name: Audit the dependency-free module list
+        env:
+          CXX: ${{ matrix.cxx }}
+        run: ./scripts/standalone_check.sh --audit
+
+  sanitizers:
+    name: asan+ubsan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the dependency-free suites under ASan and UBSan
+        env:
+          CXX: g++
+          EXTRA_CXXFLAGS: -fsanitize=address,undefined -fno-sanitize-recover=undefined -g -O1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          ASAN_OPTIONS: detect_leaks=1
+        run: ./scripts/standalone_check.sh
