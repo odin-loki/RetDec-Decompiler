@@ -538,7 +538,16 @@ bool CILLifter::decodeOne(std::span<const uint8_t> code, size_t& pos,
     case 0x45: {
         if (!need(4)) return false;
         uint32_t n = r32(code, pos); pos += 4;
-        uint32_t afterSwitch = static_cast<uint32_t>(pos + n * 4);
+        // The switch targets are relative to the end of the whole instruction,
+        // which is `n` four-byte deltas past here. `n` is a raw file-supplied
+        // uint32 and `n * 4` wraps in 32 bits, so this is formed in 64 to say
+        // what it means. It is not a behaviour change: the result is truncated
+        // back to uint32 either way, so the two spellings agree on every input.
+        // Kept in the wide form because the next reader should not have to
+        // re-derive that, and because a later change to the label width would
+        // make the narrow form wrong.
+        const uint32_t afterSwitch = static_cast<uint32_t>(
+            static_cast<uint64_t>(pos) + static_cast<uint64_t>(n) * 4);
         for (uint32_t i = 0; i < n && need(4); ++i) {
             int32_t delta = static_cast<int32_t>(r32(code, pos)); pos += 4;
             addBlock(static_cast<uint32_t>(
@@ -548,6 +557,10 @@ bool CILLifter::decodeOne(std::span<const uint8_t> code, size_t& pos,
     }
 
     // InlineMethod / InlineField / InlineType / InlineSig / InlineTok / InlineString
+    // 0x27 is `jmp`, whose InlineMethod token was consumed by nothing: it fell
+    // to the default arm, so its four operand bytes were decoded as the next
+    // instruction and the decoder ran out of step for the rest of the method.
+    case 0x27:
     case 0x28: case 0x29: case 0x6F: case 0x73: case 0x74: case 0x75:
     case 0x79: case 0x7B: case 0x7C: case 0x7D: case 0x7E: case 0x7F:
     case 0x80: case 0x81: case 0x8C: case 0x8D: case 0x8F:

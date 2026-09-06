@@ -85,6 +85,34 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `cli_parser`: six metadata tables in the standard set were never decoded —
+  DeclSecurity, FieldLayout, AssemblyProcessor, AssemblyOS,
+  AssemblyRefProcessor and AssemblyRefOS — on the stated grounds that they "are
+  always empty in practice". They are not: any signed assembly carries
+  DeclSecurity and any explicit-layout struct carries FieldLayout. Rows are laid
+  out end to end with no length prefix, so a table of unknown width hides where
+  the next one starts: each of the six consumed no bytes, and every table after
+  it decoded at the wrong offset. The zero width also defeated the row-count
+  bound, which then measured the count at one byte per row and handed each such
+  table the whole remaining stream — zero-filled at 48 bytes a row, so roughly
+  48× the stream per table and nearly 300× across the six. All six are decoded
+  now, and a table this reader genuinely has no layout for (the
+  uncompressed-metadata and edit-and-continue tables, which a `#~` stream does
+  not carry) fails the parse instead of being believed.
+- `cli_parser`: a failed `MetadataTables::parse` left row counts standing. They
+  are copied for all 45 tables before any table is parsed, so a stream that
+  failed partway left new counts over the previous file's buffers on a reused
+  object, and `rowFields` gated on the count alone. Every exit now leaves the
+  object with no rows, and `rowFields` asks the buffer it is about to index
+  rather than the count.
+- `cli_parser`: `jmp` (0x27) carries a 4-byte method token and was in neither
+  the no-operand nor the token list, so it fell to the decoder's default arm,
+  its operand was never consumed, and every instruction after it in the method
+  decoded at the wrong offset.
+- `cli_parser`: `PeReader::checkRange` formed `off + len` and then checked the
+  sum had not wrapped — the exact shape `bounds::rangeFits` exists to replace.
+  It is the one bounds primitive the whole module funnels through, and it now
+  goes through the proved helper.
 - `dex_parser`: a Dalvik switch reached its cases through no CFG edge at all.
   The instruction names its targets indirectly — a signed offset to a payload,
   which carries one signed offset per case — and only the fall-through was ever

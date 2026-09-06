@@ -5,6 +5,8 @@
 
 #include "retdec/cli_parser/pe_reader.h"
 
+#include "retdec/utils/bounds.h"
+
 #include <algorithm>
 #include <cstring>
 
@@ -14,7 +16,10 @@ namespace cli_parser {
 // ─── Low-level helpers ────────────────────────────────────────────────────────
 
 bool PeReader::checkRange(size_t off, size_t len) const {
-    return off + len <= size_ && off + len >= off;
+    // Every bounds question in this file funnels through here, so it is stated
+    // once, through the proved helper, rather than as the sum-then-check-it-
+    // did-not-wrap form it used to carry. rangeFits never forms `off + len`.
+    return utils::bounds::rangeFits(off, size_, len);
 }
 
 uint8_t PeReader::read8(size_t off) const {

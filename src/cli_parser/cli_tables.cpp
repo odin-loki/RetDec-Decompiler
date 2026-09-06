@@ -119,6 +119,20 @@ static const uint8_t kTypeOrMethodDef[] = {0x02, 0x06};               // 1 bit
 bool MetadataTables::parse(std::span<const uint8_t> tilde, const CliHeaps& heaps) {
     valid_ = false;
 
+    // Every exit from here on must leave the object with no rows. This matters
+    // on a reused MetadataTables: the row counts are copied for all 45 tables
+    // before any table is parsed, so without this a stream that fails partway
+    // leaves new counts standing over the previous file's buffers, and the
+    // typed accessors read one against the other.
+    auto dropRows = [this]() {
+        for (auto& tbl : tables_) {
+            tbl.rowCount = 0;
+            tbl.rowSize  = 0;
+            tbl.data.clear();
+        }
+    };
+    dropRows();
+
     if (tilde.size() < 24) { error_ = "#~ stream too small"; return false; }
 
     // #~ stream header (§II.24.2.6)
@@ -176,7 +190,10 @@ bool MetadataTables::parse(std::span<const uint8_t> tilde, const CliHeaps& heaps
 
     for (int t = 0; t < static_cast<int>(TableId::_Count); ++t) {
         if (rowCount_[t] == 0) continue;
-        if (!parseTable(static_cast<TableId>(t), rr)) return false;
+        if (!parseTable(static_cast<TableId>(t), rr)) {
+            dropRows();  // a stream that failed to parse has no rows
+            return false;
+        }
     }
 
     valid_ = true;
@@ -407,10 +424,54 @@ void MetadataTables::decodeRow(TableId id, RowReader& rr, uint32_t* fields) {
         fields[f++] = tok.table; fields[f++] = tok.index;
         break;
     }
+    case TableId::DeclSecurity: {
+        fields[f++] = rr.u16();                     // Action
+        auto tok = rr.codedToken(kHasDeclSecurity, 3, 2);
+        fields[f++] = tok.table; fields[f++] = tok.index;  // Parent
+        fields[f++] = rr.blobIdx();                 // PermissionSet
+        break;
+    }
+    case TableId::FieldLayout:
+        fields[f++] = rr.u32();                     // Offset
+        fields[f++] = rr.tableIdx(TableId::Field);  // Field
+        break;
+    case TableId::AssemblyProcessor:
+        fields[f++] = rr.u32();                     // Processor
+        break;
+    case TableId::AssemblyOS:
+        fields[f++] = rr.u32();                     // OSPlatformID
+        fields[f++] = rr.u32();                     // OSMajorVersion
+        fields[f++] = rr.u32();                     // OSMinorVersion
+        break;
+    case TableId::AssemblyRefProcessor:
+        fields[f++] = rr.u32();                          // Processor
+        fields[f++] = rr.tableIdx(TableId::AssemblyRef); // AssemblyRef
+        break;
+    case TableId::AssemblyRefOS:
+        fields[f++] = rr.u32();                          // OSPlatformID
+        fields[f++] = rr.u32();                          // OSMajorVersion
+        fields[f++] = rr.u32();                          // OSMinorVersion
+        fields[f++] = rr.tableIdx(TableId::AssemblyRef); // AssemblyRef
+        break;
     default:
-        // Tables not decoded (AssemblyProcessor, AssemblyOS, etc.) — skip
-        // We can't know the row size without knowing what's here, so
-        // just treat them as 0-row tables (they're always empty in practice).
+        // A table this decoder has no layout for. Rows are laid out end to end
+        // with no length prefix and no padding, so a table whose width is
+        // unknown is not merely unreadable itself -- it hides where the next
+        // table starts, and every table after it decodes at the wrong offset.
+        //
+        // This arm used to fall through silently, on the stated grounds that
+        // such tables "are always empty in practice". They are not: this is
+        // where DeclSecurity and FieldLayout landed, and both appear in
+        // ordinary assemblies (any signed assembly, any explicit-layout
+        // struct). Those six are decoded above now. What is left is the
+        // uncompressed-metadata and edit-and-continue tables, which the `#~`
+        // stream this reader accepts does not carry, so reaching here means
+        // the stream is not what it claims to be.
+        //
+        // Marking the reader truncated is what says so: computeRowSize returns
+        // 0 for such a table and parseTable turns that into a parse failure,
+        // rather than reporting rows it has no way to locate.
+        rr.truncated = true;
         break;
     }
     (void)f;
@@ -424,9 +485,15 @@ size_t MetadataTables::computeRowSize(TableId id) const {
     // to get it is to run the decoder over a zeroed scratch row and measure how
     // far it advanced, rather than maintaining a second table of widths.
     //
-    // Returns 0 for a table parseTable does not decode; those consume no bytes,
-    // and countFits() treats a zero element width as one byte so the row count
-    // is still bounded by the input rather than believed.
+    // Returns 0 for a table this decoder has no layout for -- decodeRow marks
+    // the probe truncated in that case. parseTable turns a zero width into a
+    // parse failure rather than a row count it cannot bound: such a table
+    // consumes no bytes, so countFits would hand it the entire remaining
+    // stream as its row count and parseTable would zero-fill 48 bytes per
+    // "row" -- roughly 48x the stream per undecoded table, and the six that
+    // used to land here compounded to nearly 300x. The row data would be
+    // meaningless either way, since not advancing the cursor desynchronises
+    // every table after it.
     uint8_t scratch[kMaxRowBytes] = {};
 
     RowReader probe;
@@ -459,6 +526,12 @@ bool MetadataTables::parseTable(TableId id, RowReader& rr) {
     // is malformed by construction, and used to both run the reader off the end
     // of the buffer and size the row buffer below at hundreds of gigabytes.
     const size_t rowBytes = computeRowSize(id);
+    if (rowBytes == 0) {
+        // See computeRowSize: no layout, so no way to say where this table
+        // ends or the next one begins, and no bound to hold the row count to.
+        error_ = "#~ stream declares a table this reader cannot lay out";
+        return false;
+    }
     if (!utils::bounds::countFits(rr.pos, rr.size, n, rowBytes)) {
         error_ = "#~ table declares more rows than the stream can hold";
         return false;
@@ -485,8 +558,12 @@ bool MetadataTables::parseTable(TableId id, RowReader& rr) {
             tbl.data.data() + static_cast<size_t>(row) * tbl.rowSize);
         decodeRow(id, rr, fields);
         if (rr.truncated) {
-            // countFits bounded the count at the table's nominal row width, so
-            // reaching here means the stream ran out mid-row anyway.
+            // Not reachable through a well-formed path: countFits above was
+            // evaluated at this table's own measured row width, so the bytes
+            // every row needs are guaranteed to be there. Reaching here means
+            // computeRowSize and decodeRow disagreed about the width -- the
+            // one thing sharing this switch between them is meant to prevent.
+            // Fail rather than hand back rows read from somewhere unknown.
             error_ = "#~ table row truncated";
             return false;
         }
@@ -498,9 +575,19 @@ bool MetadataTables::parseTable(TableId id, RowReader& rr) {
 
 static const uint32_t* rowFields(const RawTable& tbl, uint32_t idx) {
     if (idx == 0 || idx > tbl.rowCount) return nullptr;
-    size_t rowSize = tbl.rowSize;
+    // rowCount alone is not enough to say the row is there. It is set for every
+    // table in the Valid mask before any of them is parsed, so it can outrun
+    // what was actually allocated; and rowSize is 0 on a table that was never
+    // parsed at all. Ask the buffer, which is the thing being indexed: rowSize
+    // rows of `rowSize` bytes have to be inside it. parseTable sets rowSize to
+    // the full row width whenever it allocates, so this both rejects the
+    // never-parsed case and bounds the read for the parsed one.
+    const size_t rowSize = tbl.rowSize;
+    if (rowSize == 0) return nullptr;
+    if (!utils::bounds::countFits(0, tbl.data.size(), idx, rowSize))
+        return nullptr;
     return reinterpret_cast<const uint32_t*>(
-        tbl.data.data() + (idx - 1) * rowSize);
+        tbl.data.data() + static_cast<size_t>(idx - 1) * rowSize);
 }
 
 ModuleRow MetadataTables::module(uint32_t idx) const {

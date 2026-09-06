@@ -527,6 +527,98 @@ TEST(MetadataTablesTest, ExactlySizedStreamStillParses) {
     EXPECT_EQ(5u, tables.typeRef(2).name);
 }
 
+// ─── previously undecoded tables ─────────────────────────────────────────────
+//
+// Metadata rows are laid out end to end with no length prefix and no padding,
+// so a table whose width the decoder does not know hides where the *next*
+// table starts. Six tables in the standard set fell through decodeRow's
+// default arm on the stated grounds that they "are always empty in practice"
+// -- DeclSecurity and FieldLayout among them, which any signed assembly and
+// any explicit-layout struct carries. Each consumed no bytes, so every table
+// after it decoded at the wrong offset, and the zero width also handed each of
+// them the whole remaining stream as a row count to zero-fill at 48 bytes a
+// row.
+
+TEST(MetadataTablesTest, AllSixFormerlyUndecodedTablesKeepTheStreamAligned) {
+    std::vector<uint8_t> rows;
+    // DeclSecurity: Action(2) + Parent coded HasDeclSecurity(2) + Blob(2)
+    writeU16(rows, 0x0002); writeU16(rows, 0x0000); writeU16(rows, 0x0000);
+    // FieldLayout: Offset(4) + Field(2)
+    writeU32(rows, 0x11223344); writeU16(rows, 0x0000);
+    // AssemblyProcessor: Processor(4)
+    writeU32(rows, 0x00000006);
+    // AssemblyOS: PlatformID(4) + Major(4) + Minor(4)
+    writeU32(rows, 2); writeU32(rows, 6); writeU32(rows, 1);
+    // AssemblyRefProcessor: Processor(4) + AssemblyRef(2)
+    writeU32(rows, 0x00000006); writeU16(rows, 0x0000);
+    // AssemblyRefOS: PlatformID(4) + Major(4) + Minor(4) + AssemblyRef(2)
+    writeU32(rows, 2); writeU32(rows, 6); writeU32(rows, 1); writeU16(rows, 0);
+    // NestedClass: NestedClass(2) + EnclosingClass(2) -- the marker.  It sits
+    // after all six, so it lands on its own bytes only if every one of them
+    // consumed exactly the width it declares.
+    writeU16(rows, 0x0041); writeU16(rows, 0x0042);
+
+    const uint64_t valid =
+        (1ULL << 0x0E) | (1ULL << 0x10) | (1ULL << 0x21) | (1ULL << 0x22) |
+        (1ULL << 0x24) | (1ULL << 0x25) | (1ULL << 0x29);
+    auto tilde = buildTildeStream(valid, {1, 1, 1, 1, 1, 1, 1}, rows);
+
+    CliHeaps heaps({}, {}, {}, {}, 0);
+    MetadataTables tables;
+    ASSERT_TRUE(tables.parse({tilde.data(), tilde.size()}, heaps))
+        << tables.error();
+    EXPECT_EQ(1u, tables.rowCount(TableId::DeclSecurity));
+    EXPECT_EQ(1u, tables.rowCount(TableId::FieldLayout));
+    EXPECT_EQ(1u, tables.rowCount(TableId::AssemblyRefOS));
+
+    auto nc = tables.nestedClass(1);
+    EXPECT_EQ(0x41u, nc.nestedClass);
+    EXPECT_EQ(0x42u, nc.enclosingClass);
+}
+
+TEST(MetadataTablesTest, ATableWithNoLayoutIsRejectedNotZeroFilled) {
+    // Bit 0x03 is FieldPtr, one of the uncompressed-metadata tables a `#~`
+    // stream does not carry and this decoder has no layout for.  Because such
+    // a table consumes no bytes, the row-count bound was evaluated at one byte
+    // per row and handed it the whole remaining stream: 900 rows here, each
+    // zero-filled to 48 bytes, from 900 bytes of input -- and the rows would
+    // have been meaningless anyway, since nothing knows where they end.
+    std::vector<uint8_t> rows(900, 0);
+    auto tilde = buildTildeStream(1ULL << 0x03, {900}, rows);
+
+    CliHeaps heaps({}, {}, {}, {}, 0);
+    MetadataTables tables;
+    EXPECT_FALSE(tables.parse({tilde.data(), tilde.size()}, heaps));
+    EXPECT_FALSE(tables.isValid());
+    EXPECT_NE(std::string::npos, tables.error().find("cannot lay out"));
+}
+
+TEST(MetadataTablesTest, AFailedParseLeavesNoRowsBehind) {
+    // Row counts are copied for all 45 tables before any of them is parsed, so
+    // a parse that fails partway used to leave the new counts standing over
+    // whatever the previous file had allocated.  rowFields() gated on the
+    // count alone, so the typed accessors read one against the other.
+    const char strData[] = "\0test\0System\0";
+    std::span<const uint8_t> strSpan{
+        reinterpret_cast<const uint8_t*>(strData), sizeof(strData)};
+    CliHeaps heaps(strSpan, {}, {}, {}, 0);
+
+    MetadataTables tables;
+    auto good = buildMinimalTildeStream();
+    ASSERT_TRUE(tables.parse({good.data(), good.size()}, heaps));
+    ASSERT_EQ(2u, tables.rowCount(TableId::TypeRef));
+
+    // Now a stream that fails: TypeRef declares far more rows than it carries.
+    auto bad = buildTildeStream(0x3ULL, {1, 0x00FFFFFFu}, {});
+    EXPECT_FALSE(tables.parse({bad.data(), bad.size()}, heaps));
+    EXPECT_FALSE(tables.isValid());
+    for (int t = 0; t < static_cast<int>(TableId::_Count); ++t)
+        EXPECT_EQ(0u, tables.rowCount(static_cast<TableId>(t)))
+            << "table 0x" << std::hex << t << " kept its row count";
+    EXPECT_EQ(0u, tables.module(1).name);
+    EXPECT_EQ(0u, tables.typeRef(1).name);
+}
+
 // ─── CliSigDecoderTest ────────────────────────────────────────────────────────
 
 TEST(CliSigDecoderTest, DecodeVoidField) {
@@ -700,6 +792,26 @@ TEST(CILLifterTest, TruncatedTokenOperandDoesNotReadPastCode) {
     CILMethodHeader hdr;
     auto cfg = lifter.lift({body.data(), body.size()}, hdr);
     EXPECT_EQ(0u, cfg.blockCount());
+}
+
+TEST(CILLifterTest, JmpConsumesItsMethodToken) {
+    // jmp (0x27) carries a 4-byte InlineMethod token.  It appeared in neither
+    // the no-operand list nor the token list, so it fell to the default arm and
+    // its operand was never consumed: the four token bytes were decoded as the
+    // next four instructions and the decoder stayed out of step for the rest of
+    // the method.  Here the token bytes are 0x2A 0x00 0x00 0x00 -- the first of
+    // them is `ret`, so unconsumed they end the method one instruction early
+    // and hide the `nop` that really follows.
+    //   jmp <token 0x0000002A> ; nop ; ret
+    auto body = tinyBody({0x27, 0x2A, 0x00, 0x00, 0x00, 0x00, 0x2A});
+    CILLifter lifter;
+    CILMethodHeader hdr;
+    auto cfg = lifter.lift({body.data(), body.size()}, hdr);
+    ASSERT_FALSE(cfg.blocks().empty());
+    const auto& instrs = cfg.blocks()[0].instrs;
+    ASSERT_EQ(3u, instrs.size());
+    EXPECT_EQ(BcOpcode::DOTNET_NOP, instrs[1].opcode);
+    EXPECT_EQ(BcOpcode::DOTNET_RET, instrs[2].opcode);
 }
 
 TEST(CILLifterTest, TruncatedBranchOperandDoesNotReadPastCode) {
