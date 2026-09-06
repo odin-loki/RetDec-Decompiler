@@ -192,9 +192,19 @@ bool PeReader::parseMetadataRoot() {
 
     metadataRootOffset_ = mdOff;
 
-    uint32_t versionLength = read32(mdOff + 12);
-    // VersionLength is padded to 4-byte boundary
-    versionLength = (versionLength + 3) & ~3u;
+    const uint32_t declaredVersionLength = read32(mdOff + 12);
+
+    // VersionLength is padded to a 4-byte boundary. Round in 64 bits: computed
+    // in uint32, `(n + 3)` wraps for a declared length near UINT32_MAX and
+    // rounds *down* to 0 or 4, so a hostile length sails through the range
+    // check below disguised as a tiny one.
+    const uint64_t paddedVersionLength =
+        (static_cast<uint64_t>(declaredVersionLength) + 3) & ~UINT64_C(3);
+    if (paddedVersionLength > UINT32_MAX) {
+        error_ = "Metadata version string length out of range";
+        return false;
+    }
+    const uint32_t versionLength = static_cast<uint32_t>(paddedVersionLength);
 
     size_t versionStart = mdOff + 16;
     if (!checkRange(versionStart, versionLength)) {
@@ -202,11 +212,17 @@ bool PeReader::parseMetadataRoot() {
         return false;
     }
 
-    // Version string is null-terminated within versionLength bytes
+    // The version string is NUL-terminated *within* versionLength bytes -- or
+    // it is not, since both the bytes and the length come from the file.
+    // strlen() would read on past the end of the mapping looking for a
+    // terminator that need not be there, and taking std::min afterwards does
+    // not help: the over-read has already happened. memchr stops at the bound.
     const char* ver = reinterpret_cast<const char*>(data_ + versionStart);
-    clrVersion_ = std::string(ver, std::min(versionLength,
-                               static_cast<uint32_t>(
-                                   std::strlen(ver))));
+    const void* verEnd = std::memchr(ver, '\0', versionLength);
+    const size_t verLen = verEnd != nullptr
+        ? static_cast<size_t>(static_cast<const char*>(verEnd) - ver)
+        : versionLength;
+    clrVersion_.assign(ver, verLen);
 
     // After version: Flags(2) + NumberOfStreams(2)
     size_t hdrAfterVer = versionStart + versionLength;

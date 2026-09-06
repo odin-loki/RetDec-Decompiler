@@ -85,6 +85,20 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `cli_parser`: two same-class defects in the .NET metadata root, both reached
+  from `PeReader::open()` on any managed image. `VersionLength` is rounded up to
+  a 4-byte boundary, and the rounding was done in 32 bits, so `0xFFFFFFFD..
+  0xFFFFFFFF` wrapped and rounded *down* to 0 or 4 — the largest length the file
+  can name arrived at the range check disguised as the smallest one and passed
+  it. It is rounded in 64 bits now and a length that cannot fit is rejected.
+  Downstream, the version string was measured with `strlen()` and only then
+  clamped with `std::min(versionLength, ...)`: the clamp is too late, because
+  the scan has already run off the end of the mapping looking for a terminator
+  the file need not supply. `std::memchr` bounded by the declared length stops
+  where the buffer does. Regression tests cover both; the second is a
+  `heap-buffer-overflow` under `EXTRA_CXXFLAGS="-fsanitize=address"`, and the
+  first is deterministic — unfixed, the truncated length parses to the end and
+  `open()` wrongly succeeds.
 - `cli_parser`, `container_detect`, `crypto_detect`, `dex_parser`,
   `func_boundary`, `jvm_parser`, `loader_sim`, `pattern_detect`, `pdbparser`,
   `sort_detect`: memory-safety and detector-precision fixes from the subsystem

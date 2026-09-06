@@ -91,6 +91,134 @@ TEST(PeReaderTest, RvaToOffsetNoSections) {
     EXPECT_EQ(0u, pe.rvaToOffset(0x1000));
 }
 
+// Build a .NET PE that reaches PeReader::parseMetadataRoot() carrying a chosen
+// VersionLength field and version bytes.  Everything ahead of the metadata root
+// is the minimum the reader insists on: a DOS stub, the PE signature, a COFF
+// header, a PE32 optional header whose COM descriptor directory points at a CLI
+// header, and one section mapping RVA 0x2000 onto file offset 0x200.
+//
+// `tail` is appended after the version bytes.  Four zero bytes there are a
+// well-formed Flags + NumberOfStreams pair; an empty tail ends the file flush
+// against the version bytes, leaving no terminator for a scan to find.
+static std::vector<uint8_t> buildNetPEWithVersion(
+        uint32_t versionLengthField,
+        const std::vector<uint8_t>& versionBytes,
+        const std::vector<uint8_t>& tail) {
+    constexpr size_t   kPeOff      = 0x80;
+    constexpr size_t   kOptOff     = kPeOff + 4 + 20;
+    constexpr size_t   kOptSize    = 224;
+    constexpr size_t   kSectOff    = kOptOff + kOptSize;
+    constexpr size_t   kSectionRaw = 0x200;
+    constexpr uint32_t kSectionRva = 0x2000;
+    constexpr uint32_t kCliRva     = kSectionRva;
+    constexpr uint32_t kMdRva      = kSectionRva + 72;
+
+    std::vector<uint8_t> buf(kSectionRaw, 0);
+    auto put16 = [&buf](size_t off, uint16_t v) {
+        buf[off] = v & 0xFF; buf[off + 1] = (v >> 8) & 0xFF;
+    };
+    auto put32 = [&buf](size_t off, uint32_t v) {
+        buf[off + 0] = v & 0xFF;         buf[off + 1] = (v >> 8) & 0xFF;
+        buf[off + 2] = (v >> 16) & 0xFF; buf[off + 3] = (v >> 24) & 0xFF;
+    };
+
+    buf[0] = 'M'; buf[1] = 'Z';
+    put32(0x3C, kPeOff);
+    put32(kPeOff, 0x00004550u);              // "PE\0\0"
+
+    // COFF FileHeader
+    put16(kPeOff + 4 + 0,  0x014C);          // Machine = i386
+    put16(kPeOff + 4 + 2,  1);               // NumberOfSections
+    put16(kPeOff + 4 + 16, kOptSize);        // SizeOfOptionalHeader
+
+    // Optional header (PE32) + COM descriptor data directory (index 14)
+    put16(kOptOff, 0x010B);
+    const size_t comOff = kOptOff + 96 + 14 * 8;
+    put32(comOff,     kCliRva);
+    put32(comOff + 4, 72);                   // >= 72 marks the image managed
+
+    // Section header: RVA 0x2000 -> file offset 0x200
+    std::memcpy(&buf[kSectOff], ".text\0\0", 7);
+    put32(kSectOff + 12, kSectionRva);
+    put32(kSectOff + 20, static_cast<uint32_t>(kSectionRaw));
+
+    // CLI header (72 bytes) at file offset 0x200
+    std::vector<uint8_t> body(72, 0);
+    auto bput32 = [&body](size_t off, uint32_t v) {
+        body[off + 0] = v & 0xFF;         body[off + 1] = (v >> 8) & 0xFF;
+        body[off + 2] = (v >> 16) & 0xFF; body[off + 3] = (v >> 24) & 0xFF;
+    };
+    bput32(0, 72);                           // cb
+    body[4] = 2; body[6] = 5;                // runtime version 2.5
+    bput32(8,  kMdRva);                      // MetaData.rva
+    bput32(12, 0);                           // MetaData.size (span left unbuilt)
+
+    // Metadata root: BSJB, versions, reserved, VersionLength, version bytes
+    std::vector<uint8_t> md;
+    const char sig[4] = {'B', 'S', 'J', 'B'};
+    md.insert(md.end(), sig, sig + 4);
+    writeU16(md, 1); writeU16(md, 1);        // Major/MinorVersion
+    writeU32(md, 0);                         // Reserved
+    writeU32(md, versionLengthField);
+    md.insert(md.end(), versionBytes.begin(), versionBytes.end());
+    md.insert(md.end(), tail.begin(), tail.end());
+
+    body.insert(body.end(), md.begin(), md.end());
+    buf.insert(buf.end(), body.begin(), body.end());
+
+    // The section must cover what we appended, or rvaToOffset refuses the RVAs.
+    put32(kSectOff + 16, static_cast<uint32_t>(buf.size() - kSectionRaw));
+    return buf;
+}
+
+TEST(PeReaderTest, MetadataVersionLengthPaddingDoesNotWrap) {
+    // VersionLength is rounded up to a 4-byte boundary.  Rounded in uint32,
+    // 0xFFFFFFFD + 3 wraps to 0, so the largest length the file can name
+    // arrives at the range check disguised as the smallest one and sails
+    // through it.  Rounding in 64 bits makes the overflow visible instead.
+    //
+    // The four zero bytes of tail are what makes this test load-bearing: with
+    // the wrap in place the truncated length parses cleanly to the end and
+    // open() *succeeds*, so nothing but the range rejection distinguishes the
+    // two versions.
+    auto buf = buildNetPEWithVersion(0xFFFFFFFDu, {'v', '4', '.', '0'},
+                                     {0, 0, 0, 0});
+    PeReader pe;
+    EXPECT_FALSE(pe.open(buf.data(), buf.size()));
+    EXPECT_NE(std::string::npos, pe.error().find("out of range"));
+}
+
+TEST(PeReaderTest, MetadataVersionStringNotScannedPastDeclaredLength) {
+    // The version string is NUL-terminated within VersionLength bytes only if
+    // the file says so.  Here it is not: eight version bytes with no
+    // terminator, and the file ends flush against them.  strlen() runs off the
+    // end of the buffer looking for one; taking std::min afterwards is too
+    // late, the read has already happened.  Bounded scanning stops at the
+    // declared length.
+    //
+    // Both versions reject this image -- the header past the version string is
+    // missing either way -- so the over-read is the whole difference.  Build
+    // with EXTRA_CXXFLAGS="-fsanitize=address -g" to see it: unfixed, this is
+    // a heap-buffer-overflow inside strlen.
+    auto buf = buildNetPEWithVersion(
+        8u, {'v', '4', '.', '0', '.', '3', '0', '3'}, {});
+    PeReader pe;
+    EXPECT_FALSE(pe.open(buf.data(), buf.size()));
+    EXPECT_NE(std::string::npos, pe.error().find("stream count truncated"));
+}
+
+TEST(PeReaderTest, MetadataVersionStringStopsAtEmbeddedNul) {
+    // The ordinary case still has to work: a terminator inside the declared
+    // length ends the string, and the padding bytes after it are not part of
+    // it.
+    auto buf = buildNetPEWithVersion(
+        12u, {'v', '4', '.', '0', '.', '3', '0', '3', '1', '9', 0, 0},
+        {0, 0, 0, 0});
+    PeReader pe;
+    ASSERT_TRUE(pe.open(buf.data(), buf.size())) << pe.error();
+    EXPECT_EQ("v4.0.30319", pe.clrVersion());
+}
+
 // ─── CliHeapsTest ─────────────────────────────────────────────────────────────
 
 TEST(CliHeapsTest, CompressedUIntOneByte) {
