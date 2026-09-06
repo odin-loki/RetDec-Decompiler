@@ -219,6 +219,72 @@ TEST(PeReaderTest, MetadataVersionStringStopsAtEmbeddedNul) {
     EXPECT_EQ("v4.0.30319", pe.clrVersion());
 }
 
+// ─── RVA translation ─────────────────────────────────────────────────────────
+//
+// The section containment test was `rva >= va && rva < va + max(vsize, rsize)`
+// in uint32, so the sum wrapped. ESBMC found the witness and this is it, as a
+// test: the section genuinely covers the address, but the end computation
+// wraps to a small number, the test says no, and the walk goes on to whatever
+// section follows. A file picks which section an address resolves into.
+TEST(PeReaderTest, SectionEndDoesNotWrapWhenLocatingAnRva)
+{
+    // virtualAddress = 2692743171, span = 2675966078: the true end is
+    // 5368709249, which does not fit in 32 bits and wrapped to 1073741953.
+    auto buf = buildNetPEWithVersion(4u, {'v', '4', '.', '0'}, {0, 0, 0, 0});
+
+    // Overwrite the section header the helper wrote with the pathological one,
+    // and point it at bytes that really are in the file.
+    const size_t kSectOff = 0x80 + 4 + 20 + 224;
+    auto put32 = [&buf](size_t off, uint32_t v) {
+        buf[off + 0] = v & 0xFF;         buf[off + 1] = (v >> 8) & 0xFF;
+        buf[off + 2] = (v >> 16) & 0xFF; buf[off + 3] = (v >> 24) & 0xFF;
+    };
+    const uint32_t kVa   = 2692743171u;
+    const uint32_t kSpan = 2675966078u;
+    put32(kSectOff + 8,  kSpan);                        // VirtualSize
+    put32(kSectOff + 12, kVa);                          // VirtualAddress
+    put32(kSectOff + 16, static_cast<uint32_t>(buf.size() - 0x200)); // rawSize
+    put32(kSectOff + 20, 0x200);                        // rawDataOffset
+
+    PeReader pe;
+    (void)pe.open(buf.data(), buf.size());
+
+    // An address inside the section's *stored* bytes must resolve.
+    const uint32_t insideRva = kVa + 4;
+    EXPECT_NE(0u, pe.rvaToOffset(insideRva));
+
+    // The one the wrap used to reject: past 2^32 - va, so `va + span` wrapped
+    // below it. It is in the section's virtual extent but past its stored
+    // bytes, so the honest answer is "unmapped" -- not an offset into whatever
+    // follows on disk, which is what the wrapped test produced.
+    const uint32_t tailRva = 3221225600u;
+    const uint64_t off = pe.rvaToOffset(tailRva);
+    EXPECT_TRUE(off == 0 || off < buf.size());
+}
+
+TEST(PeReaderTest, RvaToOffsetNeverPointsOutsideTheFile)
+{
+    // The return was `rawDataOffset + delta`, both file-controlled, handed back
+    // with no check -- so a caller testing the sentinel got an offset outside
+    // the buffer that passed the test.
+    auto buf = buildNetPEWithVersion(4u, {'v', '4', '.', '0'}, {0, 0, 0, 0});
+    const size_t kSectOff = 0x80 + 4 + 20 + 224;
+    auto put32 = [&buf](size_t off, uint32_t v) {
+        buf[off + 0] = v & 0xFF;         buf[off + 1] = (v >> 8) & 0xFF;
+        buf[off + 2] = (v >> 16) & 0xFF; buf[off + 3] = (v >> 24) & 0xFF;
+    };
+    put32(kSectOff + 12, 0x2000);        // VirtualAddress
+    put32(kSectOff + 8,  0x1000);        // VirtualSize
+    put32(kSectOff + 16, 0xFFFF0000u);   // rawDataSize far past the file
+    put32(kSectOff + 20, 0xFFFF0000u);   // rawDataOffset far past the file
+
+    PeReader pe;
+    (void)pe.open(buf.data(), buf.size());
+    const uint64_t off = pe.rvaToOffset(0x2004);
+    EXPECT_TRUE(off == 0 || off < buf.size())
+        << "rvaToOffset returned " << off << " for a " << buf.size() << "-byte file";
+}
+
 // ─── CliHeapsTest ─────────────────────────────────────────────────────────────
 
 TEST(CliHeapsTest, CompressedUIntOneByte) {

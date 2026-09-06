@@ -26,6 +26,22 @@
  * that runs.
  */
 
+// ESBMC-SOLVER: --z3
+//
+// Pinned, and the reason is a defect in the tool rather than in this file.
+// proof_page_count, proof_count_fits_bounded_by_input and
+// proof_signed_count_fits divide two std::size_t values. Unsigned division
+// cannot overflow in C++ -- the only overflowing division is signed
+// INT_MIN / -1 -- but ESBMC emits its div-overflow check regardless of
+// signedness, and the bitvector backends discharge it as SAT: boolector and
+// bitwuzla both return the witness bytes = 0x8000000000000001,
+// pageSize = 0xFFFFFFFFFFFFFFFF, which is exactly that signed pair. z3 does
+// not. `scripts/verify_esbmc.sh --cross` reports the disagreement as expected
+// because of this line, and would report any other disagreement as a finding.
+//
+// The false alarm is in the safe direction: it cannot hide a real bug, only
+// invent one. But a verdict has to say which solver produced it.
+
 #include "retdec/utils/bounds.h"
 
 #include <cassert>

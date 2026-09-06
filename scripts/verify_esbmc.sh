@@ -59,10 +59,45 @@ readonly CHECKS=(
 #   // ESBMC-OPTIONS: --unwind 14 --unwinding-assertions
 # Loop-bearing harnesses need an unwind bound, and it belongs next to the code
 # whose bound it is rather than in a table here that can drift out of step.
-# Without --unwinding-assertions a bound is an assumption, not a proof, so a
-# harness that sets one is expected to ask for the assertions too.
+#
+# A bound is only a proof if exceeding it is reported. ESBMC 8.5.0 generates
+# unwinding assertions by default -- there is no --unwinding-assertions flag to
+# ask for, only --no-unwinding-assertions to turn them off -- so a harness that
+# sets --unwind gets them, and a bound that is too small fails loudly rather
+# than silently truncating the search. Nothing here may pass
+# --no-unwinding-assertions.
 harness_options() {
 	grep -oE '^// ESBMC-OPTIONS:.*' "$1" | head -1 | sed 's|^// ESBMC-OPTIONS:||'
+}
+
+# A harness may pin its own solver with
+#   // ESBMC-SOLVER: --z3
+#
+# It needs to, because the backends disagree. ESBMC emits an "arithmetic
+# overflow on div" check for *unsigned* division, which cannot overflow in C++;
+# boolector and bitwuzla find a witness for it (the signed INT64_MIN / -1 pair,
+# 0x8000000000000001 - 1 over 0xFFFFFFFFFFFFFFFF) and report a violation, while
+# z3 does not. The false alarm is in the safe direction -- it cannot hide a real
+# bug -- but a harness doing unsigned division has to say which solver its
+# verdict came from. Measured, not assumed: see --cross.
+harness_solver() {
+	grep -oE '^// ESBMC-SOLVER:.*' "$1" | head -1 | sed 's|^// ESBMC-SOLVER:||' | tr -d ' \t'
+}
+
+# A whole-function proof needs the implementation, not just the header:
+#   // ESBMC-LINK: src/cli_parser/pe_reader.cpp
+# Several may be listed on the one line. Without this a harness calling a real
+# parser verifies against an empty body and proves nothing about it.
+harness_link() {
+	grep -oE '^// ESBMC-LINK:.*' "$1" | head -1 | sed 's|^// ESBMC-LINK:||'
+}
+
+# C++ standard for this harness:  // ESBMC-STD: c++20
+# std::span needs c++20; the default stays c++17 to match the tree.
+harness_std() {
+	local v
+	v="$(grep -oE '^// ESBMC-STD:.*' "$1" | head -1 | sed 's|^// ESBMC-STD:||' | tr -d ' \t')"
+	printf '%s' "${v:-c++17}"
 }
 
 # A directive the parser cannot see is worse than no directive: the harness runs
@@ -74,6 +109,27 @@ check_options_syntax() {
 	if grep -q 'ESBMC-OPTIONS' "$file" && [ -z "$(harness_options "$file")" ]; then
 		bad "$(basename "$file"): ESBMC-OPTIONS present but not at the start of a // line"
 		return 1
+	fi
+	if grep -q 'ESBMC-SOLVER' "$file" && [ -z "$(harness_solver "$file")" ]; then
+		bad "$(basename "$file"): ESBMC-SOLVER present but not at the start of a // line"
+		return 1
+	fi
+	if grep -q 'ESBMC-STD' "$file" && [ -z "$(harness_std "$file")" ]; then
+		bad "$(basename "$file"): ESBMC-STD present but not at the start of a // line"
+		return 1
+	fi
+	if grep -q 'ESBMC-LINK' "$file"; then
+		if [ -z "$(harness_link "$file")" ]; then
+			bad "$(basename "$file"): ESBMC-LINK present but not at the start of a // line"
+			return 1
+		fi
+		local d
+		for d in $(harness_link "$file"); do
+			if [ ! -f "$d" ]; then
+				bad "$(basename "$file"): ESBMC-LINK names $d, which does not exist"
+				return 1
+			fi
+		done
 	fi
 	return 0
 }
@@ -97,6 +153,7 @@ while [ $# -gt 0 ]; do
 	case "$1" in
 		--list)    MODE=list ;;
 		--syntax)  MODE=syntax ;;
+		--cross)   MODE=cross ;;
 		-h|--help) usage; exit 0 ;;
 		-*)        say "unknown option: $1"; usage; exit 2 ;;
 		*)         WANTED+=("$1") ;;
@@ -159,6 +216,81 @@ if [ "$MODE" = list ]; then
 	exit 0
 fi
 
+# ── cross-check ──────────────────────────────────────────────────────────────
+#
+# A proof is a claim about a program, not about a solver. Two backends that
+# disagree mean at least one is wrong, and until it is known which, the property
+# is not proved. This runs everything under z3 and under boolector and reports
+# every disagreement.
+#
+# One disagreement is already known and is a tool artifact rather than a code
+# defect: ESBMC emits an "arithmetic overflow on div" check for unsigned
+# division, which cannot overflow in C++, and the bitvector backends find the
+# signed INT64_MIN / -1 witness for it while z3 does not. Harnesses doing
+# unsigned division pin a solver and are reported EXPECTED here. Anything else
+# is a finding.
+verdict_of() {   # harness fn solver std extraOpts [linkSrcs...]
+	local harness="$1" fn="$2" solver="$3" std="$4" extra="$5"; shift 5
+	local log rc; log="$(mktemp)"
+	# shellcheck disable=SC2086
+	timeout "$TIMEOUT" "$ESBMC" "$harness" "$@" -I include "$solver" --std "$std" \
+		--function "$fn" "${CHECKS[@]}" $extra > "$log" 2>&1
+	rc=$?
+	rm -f "$log"
+	case $rc in
+		0)   printf 'pass' ;;
+		124) printf 'timeout' ;;
+		*)   printf 'fail' ;;
+	esac
+}
+
+if [ "$MODE" = cross ]; then
+	hdr "cross-checking every proof under z3 and boolector"
+	agree=0; disagree=0; expected=0
+	declare -a mismatches=()
+	for harness in "${HARNESSES[@]}"; do
+		check_options_syntax "$harness" || { disagree=$((disagree+1)); continue; }
+		extraOpts="$(harness_options "$harness")"
+		harnessStd="$(harness_std "$harness")"
+		pinned="$(harness_solver "$harness")"
+		# shellcheck disable=SC2206
+		linkSrcs=($(harness_link "$harness"))
+		mapfile -t proofs < <(collect_proofs "$harness")
+		for fn in "${proofs[@]}"; do
+			if [ ${#WANTED[@]} -gt 0 ]; then
+				match=0
+				for w in "${WANTED[@]}"; do [ "$w" = "$fn" ] && match=1; done
+				[ $match -eq 0 ] && continue
+			fi
+			a="$(verdict_of "$harness" "$fn" --z3        "$harnessStd" "$extraOpts" "${linkSrcs[@]}")"
+			b="$(verdict_of "$harness" "$fn" --boolector "$harnessStd" "$extraOpts" "${linkSrcs[@]}")"
+			if [ "$a" = "$b" ]; then
+				ok "$fn — z3 and boolector agree ($a)"
+				agree=$((agree + 1))
+			elif [ -n "$pinned" ]; then
+				skip "$fn — z3=$a boolector=$b; harness pins $pinned"
+				expected=$((expected + 1))
+			else
+				bad "$fn — z3=$a boolector=$b"
+				mismatches+=("$fn")
+				disagree=$((disagree + 1))
+			fi
+		done
+	done
+	hdr "summary"
+	say "agreed: $agree   expected disagreement: $expected   unexplained: $disagree"
+	if [ $disagree -gt 0 ]; then
+		bad "solvers disagree on: ${mismatches[*]}"
+		say ""
+		say "A property two solvers disagree about is not proved. Either the"
+		say "harness has undefined behaviour they model differently, or one of"
+		say "them is wrong. Find out which before trusting the verdict."
+		exit 1
+	fi
+	ok "no unexplained disagreement"
+	exit 0
+fi
+
 hdr "$($ESBMC --version | head -1)"
 say "solver: $SOLVER   timeout: ${TIMEOUT}s per proof"
 
@@ -175,6 +307,13 @@ for harness in "${HARNESSES[@]}"; do
 	fi
 	extraOpts="$(harness_options "$harness")"
 	[ -n "$extraOpts" ] && say "extra options:$extraOpts"
+	harnessSolver="$(harness_solver "$harness")"
+	: "${harnessSolver:=$SOLVER}"
+	[ "$harnessSolver" != "$SOLVER" ] && say "solver: $harnessSolver (pinned by the harness)"
+	harnessStd="$(harness_std "$harness")"
+	# shellcheck disable=SC2206
+	linkSrcs=($(harness_link "$harness"))
+	[ ${#linkSrcs[@]} -gt 0 ] && say "linking: ${linkSrcs[*]}"
 
 	mapfile -t proofs < <(collect_proofs "$harness")
 	if [ ${#proofs[@]} -eq 0 ]; then
@@ -195,7 +334,8 @@ for harness in "${HARNESSES[@]}"; do
 		# Each proof is verified on its own so a counterexample names the
 		# property that broke rather than the file.
 		# shellcheck disable=SC2086
-		if timeout "$TIMEOUT" "$ESBMC" "$harness" -I include "$SOLVER" \
+		if timeout "$TIMEOUT" "$ESBMC" "$harness" "${linkSrcs[@]}" -I include \
+				"$harnessSolver" --std "$harnessStd" \
 				--function "$fn" "${CHECKS[@]}" $extraOpts > "$log" 2>&1; then
 			n="$(grep -oE '[0-9]+ passed' "$log" | head -1)"
 			ok "$fn — ${n:-verified}"

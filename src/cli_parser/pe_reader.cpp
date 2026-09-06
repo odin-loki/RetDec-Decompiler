@@ -6,10 +6,12 @@
 #include "retdec/cli_parser/pe_reader.h"
 
 #include "retdec/utils/bounded_string.h"
+#include "retdec/utils/section_map.h"
 #include "retdec/utils/bounds.h"
 
 #include <algorithm>
 #include <cstring>
+#include <vector>
 
 namespace retdec {
 namespace cli_parser {
@@ -142,13 +144,39 @@ bool PeReader::parseSections(size_t sectOffset, uint16_t count) {
 }
 
 uint64_t PeReader::rvaToOffset(uint32_t rva) const {
+    // The containment test used to be
+    //
+    //     rva >= s.virtualAddress &&
+    //     rva < s.virtualAddress + std::max(s.virtualSize, s.rawDataSize)
+    //
+    // with every operand a uint32 out of the file, so the sum wrapped. ESBMC
+    // returns the witness: virtualAddress = 2692743171, span = 2675966078,
+    // rva = 3221225600. The true end is 5368709249, the section does contain
+    // the address, the sum wrapped to 1073741953, and the test said no -- so
+    // the walk asked the next section instead and a file chose which section an
+    // address resolves into. The return was unbounded too: rawDataOffset plus
+    // the delta, both file-controlled, handed back without a check.
+    //
+    // Both are the shared kernel's job now; it is proved in
+    // tests/verification/section_map_proof.cpp, and loader_sim had the same two
+    // faults from its own copy of the same six lines.
+    std::vector<utils::secmap::Section> secs;
+    secs.reserve(sections_.size());
     for (const auto& s : sections_) {
-        if (rva >= s.virtualAddress &&
-            rva < s.virtualAddress + std::max(s.virtualSize, s.rawDataSize)) {
-            return s.rawDataOffset + (rva - s.virtualAddress);
-        }
+        utils::secmap::Section e;
+        e.address   = s.virtualAddress;
+        e.virtSize  = s.virtualSize;
+        e.rawSize   = s.rawDataSize;
+        e.rawOffset = s.rawDataOffset;
+        secs.push_back(e);
     }
-    return 0;
+
+    const uint64_t off = utils::secmap::addressToOffset(
+        rva, secs.data(), secs.size(), size_);
+    // This function's own sentinel is 0, which every caller in this file tests
+    // for. Kept, rather than exposing the kernel's, so the change is to the
+    // arithmetic and not to the interface.
+    return off == utils::secmap::kUnmapped ? 0 : off;
 }
 
 std::span<const uint8_t> PeReader::rvaToSpan(uint32_t rva, size_t maxSize) const {

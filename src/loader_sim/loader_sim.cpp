@@ -55,6 +55,7 @@
 #include "retdec/loader_sim/loader_sim.h"
 
 #include "retdec/utils/bounds.h"
+#include "retdec/utils/section_map.h"
 
 #include <algorithm>
 #include <cstring>
@@ -257,26 +258,35 @@ std::size_t LoaderSim::vaToOffset(uint64_t va,
             ? r64(ntOff + 4 + 20 + kImageBase64)
             : r32(ntOff + 4 + 20 + kImageBase32);
         uint32_t rva = static_cast<uint32_t>(va - ib);
+
+        // The containment test here was
+        //
+        //     rva >= secRva && rva < secRva + std::max(s.rawSize, s.virtSize)
+        //
+        // in uint32, and the sum wraps: ESBMC returns secRva = 2692743171,
+        // span = 2675966078, rva = 3221225600, where the true end is
+        // 5368709249 and the wrapped one is 1073741953, so a section that
+        // really contains the address is passed over. cli_parser's PeReader had
+        // the identical six lines with the identical fault.
+        //
+        // The kernel also maintains the sentinel this function documents: an
+        // address it cannot map is `_size` and nothing else, so a caller testing
+        // `off != _size` -- which is the contract advertised here -- cannot get
+        // an offset outside the buffer that passes the test.
+        std::vector<utils::secmap::Section> mapped;
+        mapped.reserve(secs.size());
         for (const auto& s : secs) {
-            uint32_t secRva = static_cast<uint32_t>(s.vma - ib);
-            if (rva >= secRva && rva < secRva + std::max(s.rawSize, s.virtSize)) {
-                // `_size` is documented as the unmapped sentinel, so it has to
-                // be the *only* out-of-range answer. rawOff and the RVA delta
-                // both come from the file, so their sum can be anything up to
-                // about 8.6e9; returning it unchecked meant a caller testing
-                // `off != _size` -- the contract this function advertises --
-                // got an offset outside the buffer that passed the test.
-                // Every caller today re-checks with inBounds instead, which is
-                // why it is safe today and would stop being safe on the next
-                // one. func_boundary's vaToOffset maintains the sentinel; these
-                // two implement the same contract and disagreed about it.
-                const std::size_t base = static_cast<std::size_t>(s.rawOff);
-                const std::size_t d    = static_cast<std::size_t>(rva - secRva);
-                if (!utils::bounds::rangeFits(base, _size, d + 1)) return _size;
-                return base + d;
-            }
+            utils::secmap::Section e;
+            e.address   = static_cast<uint32_t>(s.vma - ib);
+            e.virtSize  = s.virtSize;
+            e.rawSize   = s.rawSize;
+            e.rawOffset = s.rawOff;
+            mapped.push_back(e);
         }
+        const uint64_t off = utils::secmap::addressToOffset(
+            rva, mapped.data(), mapped.size(), _size);
         (void)optOff;
+        if (off != utils::secmap::kUnmapped) return static_cast<std::size_t>(off);
     }
     return _size; // unmapped
 }
