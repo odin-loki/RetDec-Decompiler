@@ -8,6 +8,62 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- Nine more verified kernels, taking `scripts/verify_esbmc.sh` from 50 proofs
+  over four headers to **272 over thirteen**. Each exists because a survey found
+  the same primitive re-derived at several call sites with at least one copy
+  wrong, and each was written from the counterexample rather than from the
+  intention: `section_map.h` (which section holds this address — two of the
+  three translators in the tree tested containment with a sum that wraps, so a
+  containing section is passed over and the address resolves into a later one),
+  `byte_order.h` (the same read under nine names, three of them undefined
+  behaviour), `scan_cursor.h` (does this walk over an untrusted buffer
+  terminate — the question `bounds.h` does not answer, and the one behind every
+  `timeout-*` artifact in the corpus), `index_translation.h` (a file's number
+  about to become a subscript, 1-based rows and ECMA-335 coded tokens),
+  `align.h` (rounding to an alignment a PE header supplies, where the tree's own
+  public helper returned a value 2^64 *below* its argument), `text_transcode.h`
+  (how many bytes does rendering take, and did I have them — every converter
+  sized its own output with an unchecked multiplication), `branch_target.h`
+  (where a signed displacement lands), `compressed_int.h` (ECMA-335 II.23.2,
+  whose sign handling was wrong at all three widths and whose specification's
+  own formula the proofs refuted), and `float_predicate.h` (decisions taken on
+  doubles that came out of a binary, where a NaN silently answered "no").
+- `scripts/verify_esbmc.sh --routing`: the gap between a proof and the code that
+  runs was the one part of this enforced by review, and review is what let
+  `src/utils` include none of the proved headers while carrying eight wrong
+  re-derivations of them. The mode counts, for every kernel with a harness, the
+  files that include it, and fails on a kernel with none — a proof about code
+  nothing calls is a proof about code that does not run. `UNROUTED_KERNELS`
+  takes a reason, not just a name.
+- `tests/verification/pe_reader_proof.cpp`, the first whole-function harness,
+  and an honest account of why it does not run. It links the real
+  `src/cli_parser/pe_reader.cpp` and states seven properties about
+  `PeReader::open` over a buffer the solver chooses — the kernel proofs cannot
+  state them, because `section_map.h` is proved total for every section table
+  and says nothing about whether `PeReader` builds its table from bytes it was
+  entitled to read. Every backend is **OOM-killed** discharging them: boolector
+  at 13.9 GB anon-rss, and z3, bitwuzla and cvc5 the same, thirteen kills in
+  `dmesg` on a 15 GB machine, at the smallest `--unwind` that reaches `open` at
+  all. What blows up is not the parser — ESBMC symexes the whole translation
+  unit including its `std::vector`/`std::string`/`std::span` models, and
+  constructing a `PeReader` and calling `isValid()` with the same file linked
+  takes 1.3s. So the harness carries a new `// ESBMC-OPTIONAL:` directive: it is
+  skipped by default, `--optional` runs it on a machine with the memory, and the
+  driver prints the reason on every run so a harness nobody is verifying says
+  so out loud.
+- `// ESBMC-SOLVER:`, `// ESBMC-STD:` and `// ESBMC-LINK:` directives, each
+  checked by the driver for being in a form it can actually read. The backends
+  are not interchangeable and a verdict has to say which one produced it:
+  ESBMC reports a spurious `arithmetic overflow on div` for *unsigned* division,
+  which boolector and bitwuzla find a witness for and z3 does not, so a harness
+  that divides pins z3; the four table-walking `section_map` properties run past
+  300s under z3 and discharge in 0–22s under boolector; and the floating-point
+  harness discharges all 27 under cvc5, 8 under z3, and none at all under
+  boolector, which pays for the float theory ESBMC bit-blasts on its behalf --
+  67s on one of these against under 5s for cvc5, and no answer at all within
+  240s on another. `--cross` runs everything under two backends and reports any
+  unexplained disagreement as a finding.
+
 - `tests/pdbparser/`: the module had no tests at all. It is compiled on every
   run of the dependency-free check, it is fuzzed, and it has been fixed for
   memory safety a dozen times on this branch — and nothing asserted anything
@@ -106,6 +162,39 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   back to counting keywords in text. `GateReport::summary()` marks the fallback.
 
 ### Fixed
+
+- Every proved kernel now has a caller, and three that did not were the reason
+  `--routing` was written. `float_predicate.h` was the last: the four decisions
+  it exists for were still being taken on unchecked doubles.
+  `utils::areEqual` for floating-point types compared `std::isinf(x) ==
+  std::isinf(y)`, which compares two **bools** — so `areEqual(+inf, -inf)`
+  returned true, and `src/cpdetect/search.cpp:528` sorts by it. Its
+  `std::abs(x - y)` is an overflow for `DBL_MAX` against `-DBL_MAX`, and its
+  `epsilon * std::abs(x)` scaled by the first operand alone, so the predicate
+  was not symmetric — its own doc comment recorded that as a known limitation.
+  `isNiceString` and `isNiceAsciiWideString` stated their ratio precondition as
+  an `assert`, which is compiled out of every release build: what was left
+  answered "not nice" for **every** string given a NaN ratio and "nice" for a
+  string of pure control bytes given a negative one. `GpuScanner::fileEntropy`
+  formed `hi - lo + 1` before checking `lo <= hi`, so a window past the end of
+  the file underflowed the size, ran no histogram loop, and returned 0.0 — which
+  is also exactly what it returns for a genuinely uniform region, and entropy is
+  what decides whether a file looks packed. All four now call the proved
+  predicate, `tests/utils/equality_tests.cpp` is new (that module had no tests
+  at all), and each regression test was watched failing with the routing
+  reverted.
+- `tableAlwaysAdvances` answered true for a count of zero, on the reading that a
+  table with no entries contains no zero entry. That made its own contract false:
+  `advanceByTable` refuses every key at that count with the buffer still full,
+  which is the stall in the middle of a walk the predicate exists to rule out.
+  Found by the adversarial audit rather than by a proof — every proof fixed the
+  count at `kTableSize`, so none of them could see it.
+- `mutf8ToUtf8Ex` accepted overlong MUTF-8 and silently normalised it: `C0 AF`
+  and `E0 80 AF` both decoded and re-encoded as `/`, `C1 BF` as `0x7F`. That is
+  the oldest UTF-8 filter bypass there is — a name checked before decoding and
+  used after it are two different names. MUTF-8 admits exactly one overlong,
+  `C0 80` for the NUL; every other one is now the replacement character, like
+  every other malformed sequence in that decoder.
 
 - `dex_parser`: a method signature could exhaust memory. `parseDexProto`
   allocates a `BcType` node per parameter, and the parameter count came only

@@ -3,10 +3,13 @@ add_executable(tests-utils
 	alignment_tests.cpp
 	array_tests.cpp
 	binary_path_tests.cpp
+	byte_value_storage_kernel_tests.cpp
 	byte_value_storage_tests.cpp
 	container_tests.cpp
 	conversion_tests.cpp
+	equality_tests.cpp
 	filter_iterator_tests.cpp
+	gpu_scanner_tests.cpp
 	math_tests.cpp
 	memory_tests.cpp
 	scope_exit_tests.cpp
@@ -17,6 +20,7 @@ add_executable(tests-utils
 
 target_link_libraries(tests-utils
 	retdec::utils
+	retdec::gpu-scanner
 	retdec::deps::gmock_main
 )
 

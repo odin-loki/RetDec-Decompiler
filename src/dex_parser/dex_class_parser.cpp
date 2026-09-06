@@ -6,6 +6,7 @@
 #include <memory>
 #include "retdec/dex_parser/dex_class_parser.h"
 #include "retdec/bc_module/bc_type.h"
+#include "retdec/utils/byte_order.h"
 
 #include <algorithm>
 #include <cstring>
@@ -69,18 +70,27 @@ static void skipEncodedValue(DexReader& br, unsigned depth) {
     }
 }
 
-static uint64_t readEncodedBits(DexReader& br, uint8_t n) {
-    uint64_t v = 0;
-    for (uint8_t i = 0; i < n; ++i)
-        v |= static_cast<uint64_t>(br.u1()) << (8 * i);
-    return v;
-}
+/// Widest encoded_value payload: value_arg is three bits, so size-1 is at most
+/// 7 and the payload is at most 8 bytes -- DEX "encoded_value encoding".
+static constexpr uint8_t kMaxEncodedValueBytes = 8;
 
-static int64_t signExtendEncoded(uint64_t v, uint8_t n) {
-    if (n == 0) return 0;
-    if (n >= 8) return static_cast<int64_t>(v);
-    int bits = static_cast<int>(n) * 8;
-    return static_cast<int64_t>(v << (64 - bits)) >> (64 - bits);
+/// Assemble @p n little-endian payload bytes at the cursor and consume them.
+///
+/// The assembly itself is utils::byteorder::readLE, which owns the shift bound
+/// and the range check. Doing it here with `v |= byte << (8 * i)` is the shape
+/// that is undefined at every other call site in the tree -- see the header
+/// comment of byte_order.h -- and there is no reason for this file to keep its
+/// own copy of it.
+static uint64_t readEncodedBits(DexReader& br, uint8_t n) {
+    if (n == 0)
+        return 0;
+    uint64_t v = 0;
+    if (n > kMaxEncodedValueBytes ||
+        !utils::byteorder::readLE(br.data(), br.size(), br.pos(), n, v))
+        throw DexParseError("encoded_value payload of " + std::to_string(n) +
+                            " bytes runs past the end of the file");
+    br.skip(n);
+    return v;
 }
 
 static void applyEncodedValue(BcField& field, DexReader& br, const DexFile& dex) {
@@ -88,20 +98,55 @@ static void applyEncodedValue(BcField& field, DexReader& br, const DexFile& dex)
     uint8_t type = hdr & 0x1f;
     uint8_t arg  = (hdr >> 5) & 0x7;
     uint8_t nbytes = static_cast<uint8_t>(arg + 1);
+    const unsigned payloadBits = utils::byteorder::kBitsPerByte * nbytes;
     switch (type) {
-    case 0x00: case 0x02: case 0x03: case 0x04: case 0x06:
-        field.constantIntValue = signExtendEncoded(readEncodedBits(br, nbytes), nbytes);
+    // VALUE_BYTE, VALUE_SHORT, VALUE_INT, VALUE_LONG: signed by the DEX
+    // specification, so the encoding's top payload bit is a sign bit.
+    case 0x00: case 0x02: case 0x04: case 0x06:
+        field.constantIntValue = utils::byteorder::signExtendFrom(
+                readEncodedBits(br, nbytes), payloadBits);
+        break;
+    // VALUE_CHAR is an UNSIGNED 16-bit code unit -- DEX "encoded_value
+    // encoding" lists it as `ushort`. It used to share the arm above, so the
+    // one-byte encoding of U+0080 (type 0x03, value_arg 0, payload byte 0x80)
+    // came out as -128 rather than 128, and every character above U+007F that
+    // fits in one byte came out negative. zeroExtendFrom and signExtendFrom
+    // are separate names in the kernel precisely so this choice cannot be made
+    // by accident; proof_zero_and_sign_extension_are_distinct pins that they
+    // genuinely differ for exactly this input class.
+    case 0x03:
+        field.constantIntValue = static_cast<int64_t>(
+                utils::byteorder::zeroExtendFrom(readEncodedBits(br, nbytes), payloadBits));
         break;
     case 0x10: {
-        uint32_t bits = static_cast<uint32_t>(readEncodedBits(br, nbytes > 4 ? 4 : nbytes));
-        if (nbytes > 4) br.skip(nbytes - 4);
+        // A shortened VALUE_FLOAT drops the LOW-order zero bytes: DEX says the
+        // surviving bytes are "zero-extended to the right", i.e. they are the
+        // HIGH bytes of the IEEE-754 pattern. Assembling them at the low end
+        // is wrong for every value_arg below 3 -- 1.0f is 0x3F800000, encoded
+        // as the two bytes 80 3F, and the low-end assembly gives 0x00003F80,
+        // a denormal of about 2.3e-41. byteorder::extendHigh does the
+        // placement, with the shift bound proved.
+        const unsigned kFloatBytes = sizeof(float);
+        const unsigned supplied = nbytes > kFloatBytes ? kFloatBytes : nbytes;
+        const uint64_t raw = readEncodedBits(br, static_cast<uint8_t>(supplied));
+        // A value_arg above 3 is malformed for a float; the extra bytes are
+        // consumed so the cursor stays where the next encoded_value begins.
+        if (nbytes > kFloatBytes) br.skip(nbytes - kFloatBytes);
+        uint32_t bits = static_cast<uint32_t>(
+                utils::byteorder::extendHigh(raw, supplied, kFloatBytes));
         float f = 0.0f;
         std::memcpy(&f, &bits, sizeof(f));
         field.constantFltValue = static_cast<double>(f);
         break;
     }
     case 0x11: {
-        uint64_t bits = readEncodedBits(br, nbytes > 8 ? 8 : nbytes);
+        // The same shortening rule for VALUE_DOUBLE: the one-byte encoding of
+        // 1.0 (0x3FF0000000000000) is the single byte 0x3F, and assembling it
+        // at the low end gives 63, a denormal of about 3.1e-322.
+        const unsigned kDoubleBytes = sizeof(double);
+        const unsigned supplied = nbytes > kDoubleBytes ? kDoubleBytes : nbytes;
+        const uint64_t raw = readEncodedBits(br, static_cast<uint8_t>(supplied));
+        uint64_t bits = utils::byteorder::extendHigh(raw, supplied, kDoubleBytes);
         double d = 0.0;
         std::memcpy(&d, &bits, sizeof(d));
         field.constantFltValue = d;
@@ -436,12 +481,21 @@ std::string DexClassParser::resolveGenericSignature(uint32_t annotationsOff,
                     std::string sig;
                     for (uint32_t j = 0; j < arrSize; ++j) {
                         uint8_t ev = br.u1();
+                        // value_arg is the top three bits of the encoded_value
+                        // header, so it reaches 7 and the payload reaches 8
+                        // bytes. This accumulated into a uint32_t with
+                        // `(uint32_t)br.u1() << (b * 8)` for b up to value_arg:
+                        // for the header byte 0xE0, straight out of the file,
+                        // value_arg is 7 and the last shift is a uint32_t
+                        // shifted by 56 -- undefined behaviour, which ESBMC
+                        // reports as "arithmetic overflow on shl". readEncodedBits
+                        // accumulates in a uint64_t through byteorder::readLE,
+                        // where the shift count is bounded by the proof.
                         uint8_t argBits = (ev >> 5) & 0x7;
-                        uint32_t strIdx = 0;
-                        for (uint32_t b = 0; b <= argBits; ++b)
-                            strIdx |= (static_cast<uint32_t>(br.u1()) << (b * 8));
+                        uint64_t strIdx = readEncodedBits(
+                                br, static_cast<uint8_t>(argBits + 1));
                         if (strIdx < dex_.stringCount())
-                            sig += dex_.string(strIdx);
+                            sig += dex_.string(static_cast<uint32_t>(strIdx));
                     }
                     return sig;
                 }

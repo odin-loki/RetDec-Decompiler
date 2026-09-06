@@ -202,17 +202,22 @@ constexpr bool isPowerOfTwo(std::size_t a) noexcept
 /// the buffer. Never decreases c.pos -- which is the property the CIL section
 /// walk depends on and does not have.
 ///
-/// This does NOT call retdec::utils::alignUp, and the reason is the bug.
-/// alignUp is `alignDown(value + (alignment - 1), alignment)`: it forms the
-/// sum. The same expression is written out at cil_lifter.cpp:326 and 408 as
-/// `sectStart = (sectStart + 3) & ~3ULL`, and for a position within 3 bytes of
+/// Computes the padding from the remainder rather than by forming
+/// `pos + (a - 1)`. That sum is where this goes wrong everywhere it is written
+/// out by hand: at cil_lifter.cpp:326 and 408 as
+/// `sectStart = (sectStart + 3) & ~3ULL`, for a position within 3 bytes of
 /// SIZE_MAX the sum wraps and the result is *smaller* than the input --
 /// pos = 0xFFFFFFFFFFFFFFFE rounds to 0, which sends the section walk back to
-/// the start of the buffer. Computing the padding from the remainder never
-/// forms the sum at all, and then bounds::rangeFits decides whether it fits.
-/// (alignUp is also a non-constexpr declaration whose body lives in
-/// src/utils/alignment.cpp, so it could not be used from a header-only kernel
-/// in any case.)
+/// the start of the buffer. From the remainder the sum is never formed at all,
+/// and bounds::rangeFits then decides whether the padding fits.
+///
+/// retdec::utils::align::alignUp in align.h is the same rule stated for a bare
+/// value, and it is proved in tests/verification/align_proof.cpp. This does not
+/// call it because a cursor move is not just an arithmetic result: it has to
+/// leave the cursor untouched on refusal, which is a property of this type and
+/// not of the number. (retdec::utils::alignUp, the older non-constexpr helper
+/// in src/utils/alignment.cpp, could not be used from a header-only kernel in
+/// any case -- it now calls align.h itself.)
 constexpr bool alignForward(Cursor& c, std::size_t a) noexcept
 {
 	if (!isPowerOfTwo(a)) return false;
@@ -247,7 +252,7 @@ constexpr std::size_t stepFromTable(
 /// (byte_value_storage.cpp:1077) or a silent one-byte slide
 /// (jvm_lifter.cpp:343). The walk then terminates for EVERY table, including a
 /// wrong one -- which matters, because the table at jvm_lifter.cpp:189 has
-/// twenty wrong entries today.
+/// twenty-three wrong entries today.
 constexpr bool advanceByTable(
 		Cursor& c,
 		const std::uint8_t* table,
@@ -263,9 +268,18 @@ constexpr bool advanceByTable(
 /// this refuses only at the end of the buffer, never in the middle; a walk over
 /// a table that does not still terminates, it just stops early. Both are safe;
 /// this distinguishes them.
+///
+/// An empty table -- or no table at all -- is false, not vacuously true. The
+/// vacuous reading is the tempting one, since a table with no entries has no
+/// zero entry in it, and it was what this returned. It makes the contract above
+/// false: stepFromTable has nothing to return but 0 for a count of 0, so
+/// `advanceByTable(c, table, 0, key)` refuses for EVERY key with the buffer
+/// still full, which is precisely the stall in the middle that this predicate
+/// exists to rule out. Found by the audit, not by a proof -- the proofs all fix
+/// count at kTableSize, so none of them could see it.
 constexpr bool tableAlwaysAdvances(const std::uint8_t* table, std::size_t count) noexcept
 {
-	if (table == nullptr) return count == 0;
+	if (table == nullptr || count == 0) return false;
 	for (std::size_t i = 0; i < count; ++i)
 		if (table[i] == 0) return false;
 	return true;

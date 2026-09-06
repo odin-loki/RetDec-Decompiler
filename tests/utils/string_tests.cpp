@@ -1523,6 +1523,58 @@ TEST_F(StringTests, ReadNullTerminatedAsciiUnterminatedWithinMaxBytesFails)
 	EXPECT_EQ("", readNullTerminatedAscii(data, sizeof(data), 0, 2, true));
 }
 
+
+//
+// isNiceString / isNiceAsciiWideString: the ratio is now checked, not asserted
+//
+
+/// The precondition `0.0 <= minRatio && minRatio <= 1.0` was stated only as an
+/// assert, which is compiled out of every release build. What was left was
+/// `niceCharCount >= s.size() * minRatio`, a comparison against a product
+/// formed in double.
+///
+/// For a NaN ratio every comparison against it is false, so EVERY string came
+/// back "not nice" -- silently, with no way for a caller to tell the refusal
+/// from a genuine verdict. For a negative ratio the product is negative and
+/// every non-empty string came back nice, including one made entirely of
+/// unprintable bytes. Both are decisions taken on a value that came out of a
+/// file, and both are now refusals: fpred::ratioAtLeast returns false for any
+/// ratio outside [0, 1], NaN included.
+TEST_F(StringTests,
+IsNiceStringRefusesARatioThatIsNotOne) {
+	const double nan = std::numeric_limits<double>::quiet_NaN();
+	const double inf = std::numeric_limits<double>::infinity();
+
+	// A string that is nice at every legitimate ratio.
+	EXPECT_TRUE(isNiceString("abcdef", 1.0));
+
+	// ... and is refused, not judged, at every ratio that is not one.
+	EXPECT_FALSE(isNiceString("abcdef", nan));
+	EXPECT_FALSE(isNiceString("abcdef", -0.5));
+	EXPECT_FALSE(isNiceString("abcdef", 1.5));
+	EXPECT_FALSE(isNiceString("abcdef", inf));
+	EXPECT_FALSE(isNiceString("abcdef", -inf));
+
+	// The negative-ratio direction, which used to answer "nice" for a string
+	// with no nice character in it at all.
+	EXPECT_FALSE(isNiceString("\x01\x02\x03", -1.0));
+
+	// The two legitimate ends still behave exactly as before.
+	EXPECT_TRUE(isNiceString("\x01", 0.0));
+	EXPECT_FALSE(isNiceString("abcdef\x01", 1.0));
+}
+
+TEST_F(StringTests,
+IsNiceAsciiWideStringRefusesARatioThatIsNotOne) {
+	const std::vector<unsigned long long> nice = {'a', 'b', 'c', 'd'};
+	const double nan = std::numeric_limits<double>::quiet_NaN();
+
+	EXPECT_TRUE(isNiceAsciiWideString(nice, 1.0));
+	EXPECT_FALSE(isNiceAsciiWideString(nice, nan));
+	EXPECT_FALSE(isNiceAsciiWideString(nice, -0.5));
+	EXPECT_FALSE(isNiceAsciiWideString(nice, 2.0));
+}
+
 } // namespace tests
 } // namespace utils
 } // namespace retdec

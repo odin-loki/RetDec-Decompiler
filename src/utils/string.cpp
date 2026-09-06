@@ -16,6 +16,7 @@
 #include <sstream>
 
 #include "retdec/utils/conversion.h"
+#include "retdec/utils/float_predicate.h"
 #include "retdec/utils/string.h"
 #include "retdec/utils/bounds.h"
 
@@ -1009,14 +1010,22 @@ bool isNiceCharacter(unsigned char c) {
 * Empty string is never nice.
 */
 bool isNiceString(const std::string &str, double minRatio) {
-	assert(0.0 <= minRatio && minRatio <= 1.0);
-
+	// No assert. An assert is compiled out of every release build, and
+	// minRatio reaches here from callers that compute it; the comparison below
+	// used to be `niceCharCount >= s.size() * minRatio` with the product formed
+	// in double, which for a NaN minRatio is false for every string -- so a bad
+	// ratio silently answered "not nice" for everything instead of being
+	// refused. fpred::ratioAtLeast refuses a ratio outside [0, 1], NaN
+	// included, and compares by multiplying the count rather than the size, so
+	// no string long enough to lose precision can round the threshold down.
 	std::string s = str;
 	if (!s.empty() && s.back() == '\00')
 		s.pop_back();
 
-	auto niceCharCount = std::count_if(s.begin(), s.end(), isNiceCharacter);
-	return !s.empty() && (niceCharCount) >= (s.size() * minRatio);
+	const auto niceCharCount = std::count_if(s.begin(), s.end(), isNiceCharacter);
+	return !s.empty()
+		&& fpred::ratioAtLeast(
+			static_cast<std::size_t>(niceCharCount), s.size(), minRatio);
 }
 
 /**
@@ -1036,14 +1045,16 @@ bool isNiceAsciiWideCharacter(unsigned long long c) {
  * @return @c True if the string seems nice, @c false otherwise.
  */
 bool isNiceAsciiWideString(const std::vector<unsigned long long> &str, double minRatio) {
-	assert(0.0 <= minRatio && minRatio <= 1.0);
-
+	// Same question, same answer as isNiceString above -- one rule, called
+	// twice, rather than the same expression written twice.
 	auto s = str;
 	if (!s.empty() && s.back() == 0)
 		s.pop_back();
 
-	auto niceCnt = std::count_if(s.begin(), s.end(), isNiceAsciiWideCharacter);
-	return !s.empty() && (niceCnt) >= (s.size() * minRatio);
+	const auto niceCnt = std::count_if(s.begin(), s.end(), isNiceAsciiWideCharacter);
+	return !s.empty()
+		&& fpred::ratioAtLeast(
+			static_cast<std::size_t>(niceCnt), s.size(), minRatio);
 }
 
 /**

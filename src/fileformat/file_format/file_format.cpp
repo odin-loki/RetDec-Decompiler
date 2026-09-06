@@ -13,6 +13,8 @@
 #include <functional>
 #include <sstream>
 
+#include "retdec/utils/bounds.h"
+#include "retdec/utils/byte_order.h"
 #include "retdec/utils/conversion.h"
 #include "retdec/utils/file_io.h"
 #include "retdec/utils/string.h"
@@ -40,6 +42,78 @@ namespace
 {
 
 const std::size_t DefaultMinStringLength = 4;
+
+/**
+ * Decide whether @a x units of @a unitBits bits each fit in a 64-bit result.
+ *
+ * The guard this replaces -- at FileFormat::getXByte and
+ * FileFormat::getXByteOffset, and in the same two shapes at
+ * src/loader/loader/image.cpp -- was spelled
+ *
+ *     x * getByteLength() > sizeof(res) * CHAR_BIT
+ *
+ * which forms the product before comparing it. x is a std::uint64_t the caller
+ * supplies, so the product is not bounded by anything. ESBMC's witness is
+ * x = 2305843009213693954 (0x2000000000000002) with getByteLength() == 8: the
+ * true product 0x10000000000000010 wraps to 16, `16 > 64` is false, and the
+ * guard admits a width of 2.3e18 units. It is reported as "arithmetic overflow
+ * on mul, !overflow(\"*\", x, byteLength)" (CWE-190/191).
+ *
+ * byteorder::widthFits is the same test with the product formed only once both
+ * factors are known to be at most 64, proved equivalent over the whole 64-bit
+ * domain in tests/verification/byte_order_proof.cpp.
+ *
+ * The two narrowings on the way in are refused rather than cast away. The unit
+ * width is a std::size_t and widthFits takes an unsigned, so on this host a
+ * width of 0x100000008 would truncate to 8 and be accepted; x is a
+ * std::uint64_t and widthFits takes a std::size_t, which is narrower on a
+ * 32-bit host, so x = 0x100000002 would truncate to 2. Neither can fit a
+ * 64-bit accumulator at any unit width, so both lose here.
+ *
+ * Zero units is not this function's case: widthFits refuses n == 0 by design
+ * ("read nothing" is how a caller ends up reading a whole section), while the
+ * getXByte family answers x == 0 with res = 0. The call sites keep that branch.
+ */
+bool xWidthFitsAccumulator(std::uint64_t x, std::size_t unitBits)
+{
+	if (x > byteorder::kAccumulatorBits || unitBits > byteorder::kAccumulatorBits)
+	{
+		return false;
+	}
+
+	return byteorder::widthFits(
+			static_cast<std::size_t>(x), static_cast<unsigned>(unitBits));
+}
+
+/**
+ * bounds::rangeFits for a 64-bit offset and length against a std::size_t buffer.
+ *
+ * The offset-taking readers spell containment as `offset + x > length`, which
+ * forms a sum of two values the caller supplies. At offset SIZE_MAX and x = 1
+ * the sum is 0, which is not greater than any length, so the guard passes --
+ * and in getXBytesOffset the next statement is
+ * `res.assign(loadedBytes->begin() + offset, loadedBytes->begin() + offset + x)`,
+ * so a wrapped sum means iterators SIZE_MAX elements past a vector that may
+ * hold a few hundred bytes. bounds::rangeFits compares against the bytes that
+ * remain instead and never forms the sum; it is proved in
+ * tests/verification/bounds_proof.cpp.
+ *
+ * The 64-bit arguments are refused above SIZE_MAX rather than cast, because on
+ * a host where std::size_t is narrower the cast is the bug it is meant to
+ * prevent: offset 0x100000005 truncates to 5, which is inside almost every
+ * buffer. Nothing above SIZE_MAX can index a std::vector anyway.
+ */
+bool rangeFitsWide(std::uint64_t offset, std::size_t size, std::uint64_t len)
+{
+	if (offset > static_cast<std::uint64_t>(SIZE_MAX)
+			|| len > static_cast<std::uint64_t>(SIZE_MAX))
+	{
+		return false;
+	}
+
+	return bounds::rangeFits(
+			static_cast<std::size_t>(offset), size, static_cast<std::size_t>(len));
+}
 
 /**
  * Decide whether @a offset is part of region (section or segment) @a newRegion
@@ -1995,7 +2069,12 @@ const std::vector<std::pair<std::string,std::string>> &FileFormat::getAnomalies(
 bool FileFormat::getXByte(std::uint64_t address, std::uint64_t x, std::uint64_t &res, retdec::utils::Endianness e) const
 {
 	const auto *secSeg = getSectionOrSegmentFromAddress(address);
-	if(!secSeg || x * getByteLength() > sizeof(res) * CHAR_BIT)
+	static_assert(sizeof(res) * CHAR_BIT == byteorder::kAccumulatorBits,
+			"widthFits bounds the width against a 64-bit accumulator; res must be one");
+	// x == 0 is admitted here and answered by the `else if(!x)` branch below,
+	// which is what the wrapping product did too: 0 * anything is 0, which is
+	// not greater than 64.
+	if(!secSeg || (x != 0 && !xWidthFitsAccumulator(x, getByteLength())))
 	{
 		return false;
 	}
@@ -2138,7 +2217,10 @@ bool FileFormat::get10ByteOffset(std::uint64_t offset, long double &res) const
  */
 bool FileFormat::getXByteOffset(std::uint64_t offset, std::uint64_t x, std::uint64_t &res, retdec::utils::Endianness e) const
 {
-	if(offset + x > getLoadedFileLength() || x * getByteLength() > sizeof(res) * CHAR_BIT)
+	static_assert(sizeof(res) * CHAR_BIT == byteorder::kAccumulatorBits,
+			"widthFits bounds the width against a 64-bit accumulator; res must be one");
+	if(!rangeFitsWide(offset, getLoadedFileLength(), x)
+			|| (x != 0 && !xWidthFitsAccumulator(x, getByteLength())))
 	{
 		return false;
 	}
@@ -2161,9 +2243,14 @@ bool FileFormat::getXByteOffset(std::uint64_t offset, std::uint64_t x, std::uint
 bool FileFormat::getXBytesOffset(std::uint64_t offset, std::uint64_t x, std::vector<std::uint8_t> &res) const
 {
 	res.clear();
-	if(offset + x <= getLoadedFileLength())
+	// `offset + x <= getLoadedFileLength()` was the guard, and the two
+	// iterators below are why it mattered: at offset SIZE_MAX and x = 1 the sum
+	// is 0, the guard passes, and begin() + SIZE_MAX is formed on a vector of a
+	// few hundred bytes.
+	if(rangeFitsWide(offset, getLoadedFileLength(), x))
 	{
-		res.assign(loadedBytes->begin() + offset, loadedBytes->begin() + offset + x);
+		const auto first = loadedBytes->begin() + static_cast<std::ptrdiff_t>(offset);
+		res.assign(first, first + static_cast<std::ptrdiff_t>(x));
 		return res.size() == x;
 	}
 

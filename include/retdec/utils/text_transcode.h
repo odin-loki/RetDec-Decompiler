@@ -10,7 +10,8 @@
  *
  *   include/retdec/utils/conversion.h:59  `size * 3 - 1` / `size * 2`, handed
  *       straight to result.resize(), then 2*size characters written into it;
- *   src/utils/gpu_scanner_cpu.cpp:32      `h_fileNibs.resize(size * 2)` then
+ *   src/utils/gpu_scanner_cpu.cpp         `h_fileNibs.resize(size * 2)` in
+ *       GpuScanner::uploadFile, then
  *       writes at i*2 and i*2+1 for every i < size;
  *   src/utils/string.cpp:399              toWide reserves `str.length()*length`.
  *
@@ -564,7 +565,16 @@ inline Mutf8Result mutf8ToUtf8Ex(
 		{
 			const std::uint32_t cp = (static_cast<std::uint32_t>(c & 0x1Fu) << 6)
 				| static_cast<std::uint32_t>(in[pos + 1] & 0x3Fu);
-			r.written += encodeUtf8(cp, out + r.written);
+			// An overlong two-byte form -- C0 or C1 as the lead -- encodes a
+			// value below 0x80, which has a one-byte form. This used to decode
+			// it and then re-encode it short, so C0 AF came out as '/' and
+			// C1 BF as 0x7F: a filter that inspected the bytes saw neither.
+			// That is the oldest UTF-8 attack there is, and MUTF-8 admits
+			// exactly one overlong, C0 80 for the NUL, which the branch above
+			// has already taken. Everything else here is malformed and gets the
+			// replacement character, like every other malformed sequence in
+			// this decoder.
+			r.written += encodeUtf8(cp < 0x80u ? kReplacement : cp, out + r.written);
 			pos += 2;
 			++done;
 		}
@@ -593,8 +603,11 @@ inline Mutf8Result mutf8ToUtf8Ex(
 				}
 			}
 			// encodeUtf8 turns an unpaired surrogate into U+FFFD; nothing here
-			// has to test for it a second time.
-			r.written += encodeUtf8(cp, out + r.written);
+			// has to test for it a second time. An overlong three-byte form --
+			// anything below 0x800, which E0 80..9F leads produce -- is the
+			// same attack as the two-byte case one branch up: E0 80 AF decoded
+			// and re-encoded as '/'.
+			r.written += encodeUtf8(cp < 0x800u ? kReplacement : cp, out + r.written);
 			pos += 3;
 			++done;
 		}

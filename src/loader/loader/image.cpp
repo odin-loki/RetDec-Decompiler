@@ -9,6 +9,7 @@
 #include <climits>
 #include <cstring>
 
+#include "retdec/utils/byte_order.h"
 #include "retdec/utils/conversion.h"
 #include "retdec/utils/string.h"
 #include "retdec/utils/system.h"
@@ -18,6 +19,52 @@ using namespace retdec::utils;
 
 namespace retdec {
 namespace loader {
+
+namespace
+{
+
+/**
+ * Decide whether @a x units of @a unitBits bits each fit in a 64-bit result.
+ *
+ * The guard this replaces -- at Image::getXByte and Image::setXByte, and in the
+ * same two shapes at src/fileformat/file_format/file_format.cpp -- was spelled
+ *
+ *     x * getByteLength() > sizeof(res) * CHAR_BIT
+ *
+ * which forms the product before comparing it. x is a std::uint64_t the caller
+ * supplies, so the product is not bounded by anything. ESBMC's witness is
+ * x = 2305843009213693954 (0x2000000000000002) with getByteLength() == 8: the
+ * true product 0x10000000000000010 wraps to 16, `16 > 64` is false, and the
+ * guard admits a width of 2.3e18 units. It is reported as "arithmetic overflow
+ * on mul, !overflow(\"*\", x, byteLength)" (CWE-190/191).
+ *
+ * byteorder::widthFits is the same test with the product formed only once both
+ * factors are known to be at most 64, proved equivalent over the whole 64-bit
+ * domain in tests/verification/byte_order_proof.cpp.
+ *
+ * The two narrowings on the way in are refused rather than cast away. The unit
+ * width is a std::size_t and widthFits takes an unsigned, so on this host a
+ * width of 0x100000008 would truncate to 8 and be accepted; x is a
+ * std::uint64_t and widthFits takes a std::size_t, which is narrower on a
+ * 32-bit host, so x = 0x100000002 would truncate to 2. Neither can fit a
+ * 64-bit accumulator at any unit width, so both lose here.
+ *
+ * Zero units is not this function's case: widthFits refuses n == 0 by design,
+ * while the getXByte family answered x == 0 through the byte-fetch below. The
+ * call sites keep that behaviour by testing x separately.
+ */
+bool xWidthFitsAccumulator(std::uint64_t x, std::size_t unitBits)
+{
+	if (x > byteorder::kAccumulatorBits || unitBits > byteorder::kAccumulatorBits)
+	{
+		return false;
+	}
+
+	return byteorder::widthFits(
+			static_cast<std::size_t>(x), static_cast<unsigned>(unitBits));
+}
+
+} // anonymous namespace
 
 Image::Image(const std::shared_ptr<retdec::fileformat::FileFormat>& fileFormat) : _fileFormat(fileFormat), _segments(),
 	_baseAddress(0), _namelessSegNameGen("seg", '0', 4), _statusMessage()
@@ -333,7 +380,13 @@ std::pair<const std::uint8_t*, std::uint64_t> Image::getRawSegmentData(std::uint
 bool Image::getXByte(std::uint64_t address, std::uint64_t x, std::uint64_t& res, Endianness e/* = UNKNOWN*/) const
 {
 	const auto *seg = getSegmentFromAddress(address);
-	if (!seg || x * getByteLength() > sizeof(res) * CHAR_BIT)
+	static_assert(sizeof(res) * CHAR_BIT == byteorder::kAccumulatorBits,
+			"widthFits bounds the width against a 64-bit accumulator; res must be one");
+	// x == 0 is still let past this guard, exactly as the product did (0 times
+	// anything is 0, which is not greater than 64); what a zero-width read
+	// means is then decided below by getBytes and createValueFromBytes, which
+	// is where it was decided before. Only the wrapped widths are new here.
+	if (!seg || (x != 0 && !xWidthFitsAccumulator(x, getByteLength())))
 	{
 		return false;
 	}
@@ -376,7 +429,12 @@ bool Image::getXBytes(std::uint64_t address, std::uint64_t x, std::vector<std::u
 bool Image::setXByte(std::uint64_t address, std::uint64_t x, std::uint64_t val, retdec::utils::Endianness e/* = retdec::utils::Endianness::UNKNOWN*/)
 {
 	const auto *seg = getSegmentFromAddress(address);
-	if (!seg || x * getByteLength() > sizeof(val) * CHAR_BIT)
+	static_assert(sizeof(val) * CHAR_BIT == byteorder::kAccumulatorBits,
+			"widthFits bounds the width against a 64-bit accumulator; val must be one");
+	// Same guard as getXByte, and the same witness: x = 0x2000000000000002 with
+	// an 8-bit byte length wrapped to 16, so `16 > 64` was false and the width
+	// was let through. x == 0 is left to createBytesFromValue below, as before.
+	if (!seg || (x != 0 && !xWidthFitsAccumulator(x, getByteLength())))
 	{
 		return false;
 	}

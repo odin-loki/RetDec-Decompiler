@@ -37,10 +37,13 @@
  * A coded token packs a small table selector into the low bits of an index
  * (ECMA-335 II.24.2.6). A DEX `encoded_value` header packs the same way -- the
  * value_type in the low 5 bits, the value_arg above it -- which is why
- * `src/dex_parser/dex_class_parser.cpp:434` and `:439` read the one byte twice,
- * as `(va & 0x1F)` and `(ev >> 5) & 0x7`; that is @ref splitTag at tagBits 5,
- * once. A metadata token packs the other way round, the table id in the top 8
- * bits of a uint32, which is @ref splitHigh. All of them go wrong the same two
+ * `src/dex_parser/dex_class_parser.cpp:434` and `:439` each split such a byte
+ * by hand, as `(va & 0x1F)` and `(ev >> 5) & 0x7`. They are two different
+ * bytes -- `va` is read at :433 and `ev` at :438, inside the nested loop --
+ * and each takes one half of the same split; that is @ref splitTag at
+ * tagBits 5, written twice and half of it each time. A metadata token packs
+ * the other way round, the table id in the top 8 bits of a uint32, which is
+ * @ref splitHigh. All of them go wrong the same two
  * ways: a shift count that reaches the width of the type,
  * which is undefined; and a mask that does not match the shift, which silently
  * drops an index bit and aliases two rows onto one. @ref splitTag and

@@ -7,8 +7,11 @@
 #include <cassert>
 #include <cstring>
 
+#include "retdec/utils/bounds.h"
+#include "retdec/utils/byte_order.h"
 #include "retdec/utils/byte_value_storage.h"
 #include "retdec/utils/conversion.h"
+#include "retdec/utils/scan_cursor.h"
 #include "retdec/utils/string.h"
 #include "retdec/utils/system.h"
 
@@ -931,10 +934,20 @@ bool ByteValueStorage::createValueFromBytes(
 		std::uint64_t offset,
 		std::uint64_t size) const
 {
-	const std::uint64_t realSize = (!size || offset + size > data.size())
-			? data.size() - offset
-			: size;
-	if (offset >= data.size() || (size && realSize != size))
+	if (offset >= data.size())
+	{
+		return false;
+	}
+
+	// `offset + size > data.size()` formed the sum first, so at offset 1 and
+	// size SIZE_MAX it wrapped to 0, the test was false, and `size` survived as
+	// the real size. bounds::rangeFits asks the same question without forming
+	// the sum, and bounds::remaining saturates instead of underflowing.
+	const std::uint64_t realSize =
+			(!size || !bounds::rangeFits(offset, data.size(), size))
+					? bounds::remaining(offset, data.size())
+					: size;
+	if (size && realSize != size)
 	{
 		return false;
 	}
@@ -952,16 +965,37 @@ bool ByteValueStorage::createValueFromBytes(
 		return false;
 	}
 
-	value = 0;
-
-	for (std::uint64_t i = 0; i < realSize; ++i)
-	{
-		value += static_cast<std::uint64_t>(data[offset + i])
-				<< (getByteLength()
-					* (endian == Endianness::LITTLE ? i : realSize - i - 1));
-	}
-
-	return true;
+	// The loop this replaces was
+	//
+	//     value += data[offset + i] << (getByteLength()
+	//                 * (endian == LITTLE ? i : realSize - i - 1));
+	//
+	// on a std::uint64_t accumulator, and nothing bounded realSize at 8 --
+	// a caller passing size 0 means "all bytes from offset", so realSize is
+	// data.size() - offset and grows with the file. ESBMC's witness is
+	// dataSize = 10, offset = 0, size = 0, byteLength = 8: at i = 8 the
+	// expression is `(uint64)data[8] << 64`, reported as "arithmetic overflow
+	// on shl, !overflow("shl", (unsigned long int)(data[offset + i]),
+	// byteLength * i)". The witness sets data[8] = data[9] = 1, so the bits
+	// that fall off the end are real bits and not a discarded zero.
+	//
+	// The `+=` was a second defect: with a byteLength below 8 the units
+	// overlap, and an addition carries into the next place where an OR of the
+	// masked payload does not.
+	//
+	// byteorder::readWidened refuses n * bitsPerUnit > 64 through widthFits,
+	// which never forms the product, masks each unit to bitsPerUnit bits
+	// before placing it, accumulates with |=, and writes `value` only on
+	// success. It is proved over the whole 64-bit domain in
+	// tests/verification/byte_order_proof.cpp.
+	return byteorder::readWidened(
+			data.data(),
+			data.size(),
+			static_cast<std::size_t>(offset),
+			static_cast<std::size_t>(realSize),
+			static_cast<unsigned>(getByteLength()),
+			endian == Endianness::BIG,
+			value);
 }
 
 /**
@@ -995,17 +1029,63 @@ bool ByteValueStorage::createBytesFromValue(
 	}
 
 	value.clear();
-	value.resize(x);
 
-	for (std::uint8_t i = 0; i < x; ++i)
+	// A zero width emits nothing and always did: the old loop simply never
+	// executed. Kept as it was, so a caller asking for zero bytes still sees
+	// success rather than a new failure.
+	if (x == 0)
 	{
-		if (endian == Endianness::LITTLE)
-			value[i] = (data >> (getByteLength() * i)) & 0xFF;
-		else
-			value[i] = (data >> (getByteLength() * (x - i - 1))) & 0xFF;
+		return true;
 	}
 
-	return true;
+	// `for (std::uint8_t i = 0; i < x; ++i)` counted a std::uint64_t width the
+	// caller supplies. The counter cannot represent any index at or above 256:
+	// at x = 256 it wraps 255 -> 0 and the loop never terminates, and for any
+	// larger x the same. Asked whether the last index the loop must reach,
+	// x - 1, is representable in the counter's type, ESBMC answers
+	// x = 0x8000000000000008 (9223372036854775816), for which
+	// x - 1 = 9223372036854775815 > 255 -- "assertion x - 1 <= 255u" violated.
+	// Everything from index 256 up was left as resize() wrote it.
+	//
+	// Every x above 8 is undefined for a second reason as well:
+	// `data >> (getByteLength() * i)` reaches a shift count of 64 at i = 8 on
+	// a 64-bit operand.
+	//
+	// The width has to be refused BEFORE resize(), not inside the writer:
+	// resize() is what turns a bogus x into an allocation, and
+	// value.resize(0x8000000000000008) throws length_error long before any
+	// counter is involved. byteorder::kMaxBytes is the kernel's own bound --
+	// the accumulator width in bytes -- not a number chosen here.
+	if (x > byteorder::kMaxBytes)
+	{
+		return false;
+	}
+
+	// byteorder::writeLE/writeBE place one byte per 8 bits, which is what
+	// every getByteLength() in this tree reports: FileFormat::getByteLength
+	// returns a literal 8 and RawDataFormat's bytesLength field is 8 with no
+	// caller of setBytesLength anywhere in src/ or include/. Refuse rather
+	// than silently emit a different layout if that ever stops being true --
+	// the old loop shifted by getByteLength() and then masked with 0xFF, which
+	// drops bits for any width above 8 and overlaps units for any below it.
+	if (getByteLength() != byteorder::kBitsPerByte)
+	{
+		return false;
+	}
+
+	value.resize(static_cast<std::size_t>(x));
+
+	// byteorder::writeLE/writeBE count with a std::size_t against a
+	// std::size_t bound, refuse n outside 1..8 and n > outCap, and write
+	// nothing at all on a refusal rather than a prefix.
+	const bool ok = endian == Endianness::LITTLE
+			? byteorder::writeLE(data, value.size(), value.data(), value.size())
+			: byteorder::writeBE(data, value.size(), value.data(), value.size());
+	if (!ok)
+	{
+		value.clear();
+	}
+	return ok;
 }
 
 bool ByteValueStorage::get10ByteImpl(
@@ -1084,8 +1164,27 @@ bool ByteValueStorage::getNTWSImpl(
 	std::uint64_t item = 0;
 	res.clear();
 
+	// The walk's buffer is the address space itself: getXByteFn is what knows
+	// where the segments end, and it refuses anything outside them. What this
+	// loop owns is that it ADVANCES and that it does not wrap off the top.
+	//
+	// `address += width` with nothing rejecting width == 0 does neither: a
+	// caller asking for a zero-width wide string re-reads the same non-zero
+	// element forever and pushes it into `tmp` on every iteration, so it is an
+	// unbounded vector and not merely a spin. ESBMC refutes
+	// `address + width > address` for the expression as written -- the
+	// reachable case is simply width = 0, where address = 0x1000 gives
+	// next = 0x1000, unchanged; the wrapping case it also finds is
+	// width = 0x8000020C00200910 at address = 0x8000000405200103.
+	//
+	// scan::advance refuses a zero step outright and refuses a step that would
+	// leave the buffer, and it leaves the cursor bitwise unchanged on a
+	// refusal. tests/verification/scan_cursor_proof.cpp proves the walk
+	// terminates.
+	scan::Cursor cursor{static_cast<std::size_t>(address), SIZE_MAX};
+
 	bool ret = false;
-	while (getXByteFn(address, width, item, getEndianness()))
+	while (getXByteFn(cursor.pos, width, item, getEndianness()))
 	{
 		tmp.push_back(item);
 		if (!item)
@@ -1093,9 +1192,9 @@ bool ByteValueStorage::getNTWSImpl(
 			ret = true;
 			break;
 		}
-		else
+		else if (!scan::advance(cursor, width))
 		{
-			address += width;
+			break;
 		}
 	}
 
@@ -1117,20 +1216,26 @@ bool ByteValueStorage::getNTWSNiceImpl(
 	std::uint64_t item = 0;
 	res.clear();
 
-	while (getXByteFn(address, width, item, getEndianness()))
+	// The same unbounded walk as getNTWSImpl above, with the same zero width
+	// and the same wrap, so it gets the same cursor. Leaving one of two
+	// identical loops guarded is worse than guarding neither, because the next
+	// reader assumes the unguarded one was examined and found safe.
+	scan::Cursor cursor{static_cast<std::size_t>(address), SIZE_MAX};
+
+	while (getXByteFn(cursor.pos, width, item, getEndianness()))
 	{
 		tmp.push_back(item);
 		if (!item)
 		{
 			break;
 		}
-		else if (isNiceAsciiWideCharacter(item))
-		{
-			address += width;
-		}
-		else
+		else if (!isNiceAsciiWideCharacter(item))
 		{
 			return false;
+		}
+		else if (!scan::advance(cursor, width))
+		{
+			break;
 		}
 	}
 

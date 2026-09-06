@@ -316,6 +316,92 @@ TEST_F(ConversionTests, BytesToStringSizeThatWrapsIsClamped)
 	EXPECT_EQ("bcd", result);
 }
 
+// --- hexStringToBytes parses whole bytes, or nothing ---
+//
+// The loop this replaces was
+//     for (unsigned int i = 0; i < hex.length(); i += 2)
+//         bytes.push_back(strtol(hex.substr(i, 2).c_str(), nullptr, 16));
+// and it had three defects. The counter is `unsigned int` against a
+// std::string::size_type bound (ESBMC: length = 0xFC0000007FFFFFFF, i =
+// 4294967294, `i += 2` overflows back to 0 and the loop never terminates); an
+// odd length is accepted (ESBMC refutes "push_back count * 2 == character
+// count" at len = 7); and strtol returns a silent 0 for a non-hex substring
+// (ESBMC: a = 'l', b = 'K', v = 0, indistinguishable from "00").
+//
+// The counter defect needs a 4-gigacharacter string to exercise and so is not
+// unit-testable here; it is gone by construction, because txt::hexToBytes
+// counts with a std::size_t against a std::size_t bound. The other two are
+// below.
+
+TEST_F(ConversionTests, HexStringToBytesRefusesAnOddNumberOfCharacters)
+{
+	// "abc" used to parse as ab 0c: the lone 'c' became a whole byte with the
+	// nibble that was written as the HIGH half sitting in the LOW half.
+	EXPECT_TRUE(hexStringToBytes("abc").empty());
+	EXPECT_TRUE(hexStringToBytes("0b84d1a0806040f").empty());
+	// Whitespace is removed first, so this is seven characters, not eight.
+	EXPECT_TRUE(hexStringToBytes("0b 84 d1 a").empty());
+}
+
+TEST_F(ConversionTests, HexStringToBytesRefusesNonHexCharacters)
+{
+	// strtol returned 0 here with nothing the caller could inspect, so a
+	// corrupt dump became a run of NUL bytes that every caller believed.
+	EXPECT_TRUE(hexStringToBytes("lK").empty());
+	EXPECT_TRUE(hexStringToBytes("zz").empty());
+	// One bad byte refuses the whole run rather than contributing a zero.
+	EXPECT_TRUE(hexStringToBytes("0b84zz").empty());
+	EXPECT_TRUE(hexStringToBytes("0b 84 d1 a0 8g").empty());
+}
+
+TEST_F(ConversionTests, HexStringToBytesStillAcceptsWellFormedInput)
+{
+	const std::vector<uint8_t> expected = {0x0b, 0x84, 0xd1, 0xa0, 0x80, 0x60, 0x40};
+	EXPECT_EQ(expected, hexStringToBytes("0b84d1a0806040"));
+	EXPECT_EQ(expected, hexStringToBytes("0b 84 d1 a0 80 60 40"));
+	EXPECT_EQ(expected, hexStringToBytes("0B84D1A0806040"));
+	EXPECT_TRUE(hexStringToBytes("").empty());
+}
+
+// --- bytesToBits never left-shifts a negative value ---
+//
+// The body was `((item << j) & 0x80)` in a template instantiated for
+// std::int8_t. For any element with the top bit set, `item` promotes to a
+// negative int and `item << j` left-shifts a negative value -- undefined
+// behaviour in C++17. ESBMC's witness is item = -96 (the byte 0xA0) with j = 7:
+// "undefined behavior on shift operation shl". On x86 the answer happened to
+// come out right, so this test pins the answer while
+// -fsanitize=undefined -fno-sanitize-recover=undefined is what makes the old
+// body abort: "runtime error: left shift of negative value -96".
+
+TEST_F(ConversionTests, BytesToBitsRendersSignedBytesWithTheTopBitSet)
+{
+	const std::vector<std::int8_t> vec = {static_cast<std::int8_t>(0xA0)};
+	EXPECT_EQ("10100000", bytesToBits(vec.data(), vec.size()));
+
+	const std::vector<std::int8_t> all = {
+		static_cast<std::int8_t>(0x80),
+		static_cast<std::int8_t>(0xFF),
+		static_cast<std::int8_t>(0x7F)};
+	EXPECT_EQ("100000001111111101111111", bytesToBits(all.data(), all.size()));
+}
+
+TEST_F(ConversionTests, BytesToBitsRefusesALengthWhoseBitCountDoesNotFit)
+{
+	// `result.reserve(dataSize * BITS_IN_BYTE)` formed the product first, so a
+	// dataSize above SIZE_MAX/8 wrapped to a small reservation while the loop
+	// still appended eight characters per element. There is no answer to give:
+	// the string would be longer than the address space. No element is read,
+	// so the pointer is never dereferenced.
+	const std::uint8_t one = 0x5A;
+	EXPECT_TRUE(bytesToBits(&one, std::numeric_limits<std::size_t>::max()).empty());
+	EXPECT_TRUE(
+		bytesToBits(&one, std::numeric_limits<std::size_t>::max() / 8 + 1).empty());
+	// One below the limit is representable, so it is not refused here -- it is
+	// refused by the allocator, which is a different and honest failure.
+	EXPECT_EQ("01011010", bytesToBits(&one, 1));
+}
+
 } // namespace tests
 } // namespace utils
 

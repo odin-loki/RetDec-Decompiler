@@ -15,7 +15,10 @@
 
 #include "retdec/jvm_parser/jvm_jar_reader.h"
 
+#include "retdec/utils/text_transcode.h"
+
 #include <algorithm>
+#include <limits>
 #include <cstring>
 #include <stdexcept>
 #include <unordered_map>
@@ -135,6 +138,12 @@ static std::vector<uint8_t> readLocalEntry(const uint8_t* data, size_t size,
 
 // ─── JarReader ────────────────────────────────────────────────────────────────
 
+// The multi-release directory prefix, JAR File Specification. Its length is
+// taken from the literal with sizeof - 1 rather than counted by hand, which is
+// the mistake that made multiReleaseVersion dead code for every JAR.
+static constexpr char kMultiReleasePrefix[] = "META-INF/versions/";
+static constexpr size_t kMultiReleasePrefixLen = sizeof(kMultiReleasePrefix) - 1;
+
 JarReader::JarReader(JarReadOptions opts) : opts_(std::move(opts)) {}
 
 bool JarReader::isClassEntry(const std::string& path) const {
@@ -148,23 +157,50 @@ bool JarReader::isNestedJar(const std::string& path) const {
 }
 
 int JarReader::multiReleaseVersion(const std::string& path) const {
-    // "META-INF/versions/N/..."
-    if (path.substr(0, 19) != "META-INF/versions/") return 0;
-    size_t start = 18;
-    size_t slash = path.find('/', start);
-    if (slash == std::string::npos) return 0;
-    try {
-        return std::stoi(path.substr(start, slash - start));
-    } catch (const std::invalid_argument&) {
+    // "META-INF/versions/N/..." -- JAR File Specification, Multi-Release JARs.
+    //
+    // This used to read `path.substr(0, 19) != "META-INF/versions/"`. The
+    // literal is 18 characters, so for any real entry -- say the 27-character
+    // "META-INF/versions/9/A.class" -- substr yields 19 characters, the lengths
+    // differ, and operator!= is true before a single byte is compared.
+    // probe_jar_reader_152_prefix_never_matches modelled exactly that and ESBMC
+    // reported FAILED on `assertion equal`. So multiReleaseVersion returned 0
+    // for every path in every JAR: multi-release selection was dead code,
+    // stripMRPrefix was never reached, and every versioned class was added to
+    // the module a second time under a junk package name ("META-INF.versions.9")
+    // derived from the unstripped path. The one path that could have matched,
+    // the bare directory entry "META-INF/versions/", is never a class.
+    //
+    // The length now comes from the literal itself rather than being retyped.
+    if (path.compare(0, kMultiReleasePrefixLen, kMultiReleasePrefix) != 0)
         return 0;
-    } catch (const std::out_of_range&) {
+
+    // The digit run after the prefix. txt::decimalRun reports an empty run as
+    // failure rather than as zero -- "META-INF/versions//A.class" has no
+    // version -- and refuses a run whose value would wrap, which is what
+    // std::stoi signalled with an exception and what a hand-rolled accumulator
+    // gets wrong.
+    uint64_t version = 0;
+    size_t end = 0;
+    if (!utils::txt::decimalRun(path.data(), path.size(),
+                                kMultiReleasePrefixLen, version, end))
         return 0;
-    }
+    // The run must be the whole path segment: "META-INF/versions/9x/A.class"
+    // declares no version the specification recognises.
+    if (end >= path.size() || path[end] != '/') return 0;
+
+    // Saturate rather than wrap or reject. The caller skips any entry whose
+    // version exceeds opts_.targetJavaVersion, so a release number too large
+    // for an int must compare greater than the target -- returning 0 would
+    // instead treat the entry as an ordinary class and reintroduce the
+    // duplicate this function exists to prevent.
+    constexpr uint64_t kMaxInt = static_cast<uint64_t>(std::numeric_limits<int>::max());
+    return static_cast<int>(version > kMaxInt ? kMaxInt : version);
 }
 
 std::string JarReader::stripMRPrefix(const std::string& path) const {
     // "META-INF/versions/N/foo/Bar.class" → "foo/Bar.class"
-    size_t slash = path.find('/', 18);
+    size_t slash = path.find('/', kMultiReleasePrefixLen);
     if (slash == std::string::npos) return path;
     return path.substr(slash + 1);
 }

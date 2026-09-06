@@ -11,7 +11,8 @@
  * Two of them are counterexamples turned into properties, so the mistakes
  * cannot come back:
  *
- *   - proof_align_up_never_moves_backwards. src/utils/alignment.cpp:59 computes
+ *   - proof_align_up_never_moves_backwards. retdec::utils::alignUp in
+ *     src/utils/alignment.cpp used to compute
  *     `alignDown(value + (alignment - 1), alignment)`. ESBMC returns
  *     value = 18446744073709551440, alignment = 512: the sum wraps to 335, the
  *     mask takes it to 256, and alignUp returns a value 2^64 smaller than its
@@ -21,7 +22,7 @@
  *     computes `(nameLen + 4) & ~3u`, whose mask is an unsigned int and so
  *     clears bits 32-63 as well as bits 0-1. ESBMC returns the pair
  *     m = 6917529027634356166, n = 18446744071562067948, where m < n but the
- *     expression maps m to 4288954312 and n to 2147483632. The legible member
+ *     expression maps m to 4288241608 and n to 2147483632. The legible member
  *     of the same family, run rather than solved: nameLen = 0x100000001 gives
  *     4 while nameLen = 0x10 gives 20, and the stream-header cursor at
  *     pe_reader.cpp:286 is computed from it.
@@ -180,7 +181,7 @@ extern "C" void proof_align_up_is_the_least_aligned_value_at_or_above()
 
 extern "C" void proof_align_up_refuses_a_zero_alignment()
 {
-	// alignment.cpp:57 computes `alignment - 1` == UINT64_MAX and hands it to
+	// The old alignment.cpp computed `alignment - 1` == UINT64_MAX and handed it to
 	// alignDown, whose mask is then 0, so every value rounds to 0. A PE
 	// FileAlignment of 0 is a field a file may simply contain.
 	const std::uint64_t v = nondet_u64();
@@ -279,7 +280,7 @@ extern "C" void proof_is_aligned_to_is_exact_for_a_real_alignment()
 
 extern "C" void proof_is_aligned_to_refuses_a_zero_alignment()
 {
-	// alignment.cpp:31 masks with `0 - 1` == UINT64_MAX, so remainder becomes v
+	// The old alignment.cpp masked with `0 - 1` == UINT64_MAX, so remainder became v
 	// and every non-zero value is reported unaligned -- an answer, not a
 	// refusal. pe_format_parser.h:123 reports that as a header anomaly.
 	const std::uint64_t v = nondet_u64();

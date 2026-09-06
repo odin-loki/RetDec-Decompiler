@@ -6,6 +6,9 @@
 #include <memory>
 #include "retdec/cli_parser/cli_reader.h"
 
+#include "retdec/utils/byte_order.h"
+#include "retdec/utils/text_transcode.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
@@ -703,13 +706,61 @@ static std::optional<ConstantRow> findFieldConstantRow(const MetadataTables& tab
     return std::nullopt;
 }
 
-static int64_t readSignedLE(std::span<const uint8_t> b, size_t n) {
+// Widths of the fixed-size #Blob constant encodings, ECMA-335 II.23.1.16
+// (ELEMENT_TYPE_*). They are the byte counts the element type itself names, not
+// sizeof() of whatever C++ type happens to hold the result.
+static constexpr size_t kU2Bytes = 2;  ///< CHAR, I2, U2
+static constexpr size_t kU4Bytes = 4;  ///< I4, U4
+static constexpr size_t kU8Bytes = 8;  ///< I8, U8
+
+/// Bytes one UTF-16 code unit occupies in a #Blob string constant
+/// (ECMA-335 II.23.1.16 ELEMENT_TYPE_STRING: "a UTF-16 string").
+static constexpr size_t kUtf16BytesPerUnit = 2;
+
+/// The low @p n bytes of @p b, little-endian, read as a two's-complement value.
+///
+/// Was a hand-rolled accumulate whose two halves disagreed about the bound: the
+/// loop stopped at `i < n && i < b.size()`, and the sign test on the next line
+/// read `b[n - 1]` with no reference to b.size() at all. ESBMC, with the blob
+/// malloc'd at exactly its symbolic length: blen = 1, n = 4 -- the loop reads
+/// b[0] and stops, then the sign test reads b[3], two bytes past the end of a
+/// one-byte heap object ("dereference failure: array bounds violated: heap
+/// object"). Every call site below happens to pre-check `blob.size() >= n`, so
+/// nothing in this tree reaches that read today; the trap is that the guard
+/// lives at three call sites rather than in the function that needs it, and the
+/// next `case` added to the switch inherits the hazard rather than the check.
+///
+/// byteorder::readLE refuses the whole read unless n is in 1..8 AND
+/// bounds::rangeFits(0, b.size(), n) holds, so there is one bound and it is the
+/// one the read uses; byteorder::signExtendFrom then does the extension in
+/// unsigned arithmetic (the `~0ull << (8 * n)` here was fine only because n < 8
+/// was tested first -- at n = 8 that shift is undefined).
+static std::optional<int64_t> readSignedLE(std::span<const uint8_t> b, size_t n) {
     uint64_t u = 0;
-    for (size_t i = 0; i < n && i < b.size(); ++i)
-        u |= static_cast<uint64_t>(b[i]) << (8 * i);
-    if (n < 8 && n > 0 && (b[n - 1] & 0x80))
-        u |= ~0ull << (8 * n);
-    return static_cast<int64_t>(u);
+    if (n > utils::byteorder::kMaxBytes) return std::nullopt;
+    if (!utils::byteorder::readLE(b.data(), b.size(), 0,
+                                  static_cast<unsigned>(n), u))
+        return std::nullopt;
+    return utils::byteorder::signExtendFrom(
+        u, static_cast<unsigned>(n) * utils::byteorder::kBitsPerByte);
+}
+
+/// The low @p n bytes of @p b, little-endian, read as an unsigned value.
+///
+/// The U2 arm below was `blob[0] | (blob[1] << 8)` and the U4 arm was a
+/// `std::memcpy` into a uint32_t. The memcpy is host-endian: ECMA-335 II.22.9
+/// says a #Blob constant is stored little-endian, so on a big-endian host it
+/// returned the byte-swapped constant. Both now go through the same kernel read
+/// as the signed arms, so the width, the bound and the byte order are stated
+/// once each.
+static std::optional<int64_t> readUnsignedLE(std::span<const uint8_t> b, size_t n) {
+    uint64_t u = 0;
+    if (n > utils::byteorder::kMaxBytes) return std::nullopt;
+    if (!utils::byteorder::readLE(b.data(), b.size(), 0,
+                                  static_cast<unsigned>(n), u))
+        return std::nullopt;
+    return static_cast<int64_t>(utils::byteorder::zeroExtendFrom(
+        u, static_cast<unsigned>(n) * utils::byteorder::kBitsPerByte));
 }
 
 std::optional<int64_t> CLIReader::fieldConstantInt(uint32_t fieldIdx) const {
@@ -728,25 +779,26 @@ std::optional<int64_t> CLIReader::fieldConstantInt(uint32_t fieldIdx) const {
         break;
     case ElementType::Char:
     case ElementType::I2:
-        if (blob.size() >= 2) return readSignedLE(blob, 2);
+        // ECMA-335 II.23.1.16: Char and I2 are two bytes wide.
+        if (blob.size() >= kU2Bytes) return readSignedLE(blob, kU2Bytes);
         break;
     case ElementType::U2:
-        if (blob.size() >= 2)
-            return static_cast<int64_t>(blob[0] | (blob[1] << 8));
+        // ECMA-335 II.23.1.16 kElementTypeU2: two little-endian bytes.
+        if (blob.size() >= kU2Bytes) return readUnsignedLE(blob, kU2Bytes);
         break;
     case ElementType::I4:
-        if (blob.size() >= 4) return readSignedLE(blob, 4);
+        // ECMA-335 II.23.1.16: I4 is four bytes wide.
+        if (blob.size() >= kU4Bytes) return readSignedLE(blob, kU4Bytes);
         break;
     case ElementType::U4:
-        if (blob.size() >= 4) {
-            uint32_t u = 0;
-            std::memcpy(&u, blob.data(), 4);
-            return static_cast<int64_t>(u);
-        }
+        // ECMA-335 II.23.1.16 kElementTypeU4: four little-endian bytes.
+        if (blob.size() >= kU4Bytes) return readUnsignedLE(blob, kU4Bytes);
         break;
     case ElementType::I8:
     case ElementType::U8:
-        if (blob.size() >= 8) return readSignedLE(blob, 8);
+        // ECMA-335 II.23.1.16: I8 and U8 are eight bytes wide. U8 shares the
+        // signed arm because the result type is int64_t either way.
+        if (blob.size() >= kU8Bytes) return readSignedLE(blob, kU8Bytes);
         break;
     default:
         break;
@@ -780,21 +832,38 @@ std::optional<std::string> CLIReader::fieldConstantString(uint32_t fieldIdx) con
         return std::nullopt;
     auto blob = heaps_->blobs.get(row->value);
     if (blob.empty()) return std::string{};
-    std::string out;
-    for (size_t i = 0; i + 1 < blob.size(); i += 2) {
-        uint16_t cu = static_cast<uint16_t>(blob[i]) |
-                      (static_cast<uint16_t>(blob[i + 1]) << 8);
-        if (cu < 0x80)
-            out.push_back(static_cast<char>(cu));
-        else if (cu < 0x800) {
-            out.push_back(static_cast<char>(0xC0 | (cu >> 6)));
-            out.push_back(static_cast<char>(0x80 | (cu & 0x3F)));
-        } else {
-            out.push_back(static_cast<char>(0xE0 | (cu >> 12)));
-            out.push_back(static_cast<char>(0x80 | ((cu >> 6) & 0x3F)));
-            out.push_back(static_cast<char>(0x80 | (cu & 0x3F)));
-        }
-    }
+
+    // The loop this replaces took the three-byte `else` arm for every code unit
+    // at or above 0x800, surrogates included. A surrogate is not a scalar value
+    // and has no UTF-8 encoding: ESBMC's witness cu = 0xD800 came out as
+    // ED A0 80, which no UTF-8 decoder accepts. Worse, a surrogate PAIR -- the
+    // entire reason UTF-16 has surrogates -- came out as two such ill-formed
+    // sequences rather than as the one character it denotes, so the .NET string
+    // constant "\U0001F600" (units D83D DE00, the bytes 3D D8 00 DE in the
+    // #Blob) decompiled as the six bytes ED A0 BD ED B8 80 instead of the four
+    // bytes F0 9F 98 80.
+    //
+    // txt::utf16leToUtf8 combines a well-formed pair, replaces a lone surrogate
+    // with U+FFFD, and is proved never to emit an ED A0..BF lead
+    // (proof_encode_utf8_is_well_formed, proof_utf16_never_emits_a_surrogate).
+    // It is also proved byte-identical to this loop on every input carrying no
+    // surrogate unit (proof_the_kernel_matches_dotnet_off_the_surrogates), so
+    // routing here changes the output only where it was already ill-formed.
+    //
+    // The trailing odd byte is dropped exactly as `i + 1 < blob.size()` dropped
+    // it: the kernel's unit count is `inBytes >> 1`, so the highest index it
+    // touches is 2*units - 1 <= blob.size() - 1.
+    const size_t units = blob.size() / kUtf16BytesPerUnit;
+    // utf8CapacityForUtf16 checks the 3-bytes-per-unit product with
+    // bounds::mulFits and yields 0 when it would wrap, which is the sizing step
+    // the hand-rolled loop never had to do because it push_back'd instead.
+    const size_t cap = utils::txt::utf8CapacityForUtf16(units);
+    if (cap == 0) return std::string{};
+
+    std::string out(cap, '\0');
+    const size_t written = utils::txt::utf16leToUtf8(
+        blob.data(), blob.size(), out.data(), out.size());
+    out.resize(written);
     return out;
 }
 

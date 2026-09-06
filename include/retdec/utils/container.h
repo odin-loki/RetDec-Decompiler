@@ -17,11 +17,13 @@
 #include <queue>
 #include <set>
 #include <stack>
+#include <stdexcept>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
 #include "retdec/utils/filter_iterator.h"
+#include "retdec/utils/index_translation.h"
 
 namespace retdec {
 namespace utils {
@@ -65,18 +67,33 @@ bool hasItem(const std::vector<Item> &container, const Item &item) {
 }
 
 /**
-* @brief Returns the n-th item in @a container.
+* @brief Translates the 1-based @a n into a 0-based subscript, or throws.
 *
-* @tparam Item Type of the items that @a container holds.
+* The precondition <tt>1 <= n <= container.size()</tt> used to be stated only as
+* an @c assert, which is compiled out under NDEBUG -- every release build of
+* this tree. What was left was @c container[n-1] with @a n unconstrained: at
+* @c n==0 the subtraction wraps and the subscript is SIZE_MAX. The probe
+* probe_get_nth_item reports "FAILED assertion.1 line 40 subscript <
+* containerSize" with n = 0xF4F7F59FA9E6B690 and containerSize = 7, i.e. ANY
+* @a n outside 1..size is admitted once the assert is gone; @c n==0 is the
+* reachable one, because that is how a 1-based metadata table spells "no item".
 *
-* @par Preconditions
-*  - <tt>1 <= n <= container.size()</tt>
+* idxmap::slotFor1Based is the proved translation: it refuses 0 and
+* it refuses anything above the count, and it never forms @c n-1 unless the
+* result is known to be a valid subscript.
+*
+* These functions return a reference, so there is no in-band way to report the
+* refusal; @c std::out_of_range is what the standard library does for the same
+* question (@c vector::at) and it is what the callers in src/ctypes and
+* src/llvmir2hll already document as a precondition violation.
 */
-template<typename Item>
-const Item &getNthItem(const std::vector<Item> &container, std::size_t n) {
-	assert(1 <= n && n <= container.size() && "n is out of bounds");
-
-	return container[n - 1];
+template<typename Container>
+std::size_t nthItemSlot(const Container &container, std::size_t n) {
+	std::size_t slot = 0;
+	if (!idxmap::slotFor1Based(n, container.size(), slot)) {
+		throw std::out_of_range("getNthItem: n is out of bounds");
+	}
+	return slot;
 }
 
 /**
@@ -86,13 +103,36 @@ const Item &getNthItem(const std::vector<Item> &container, std::size_t n) {
 *
 * @par Preconditions
 *  - <tt>1 <= n <= container.size()</tt>
+*
+* Throws @c std::out_of_range when the precondition does not hold; see
+* @c nthItemSlot.
+*/
+template<typename Item>
+const Item &getNthItem(const std::vector<Item> &container, std::size_t n) {
+	// No assert: an assert is compiled out of every release build, which is
+	// exactly how this precondition came to be unenforced. nthItemSlot checks
+	// it unconditionally.
+	return container[nthItemSlot(container, n)];
+}
+
+/**
+* @brief Returns the n-th item in @a container.
+*
+* @tparam Item Type of the items that @a container holds.
+*
+* @par Preconditions
+*  - <tt>1 <= n <= container.size()</tt>
+*
+* Throws @c std::out_of_range when the precondition does not hold; see
+* @c nthItemSlot.
 */
 template<typename Item>
 const Item &getNthItem(const std::list<Item> &container, std::size_t n) {
-	assert(1 <= n && n <= container.size() && "n is out of bounds");
-
+	// The slot is < container.size() before std::advance is called with it, so
+	// the walk cannot run off the end. `std::advance(it, n - 1)` on the raw n
+	// advanced 0xF4F7F59FA9E6B68F times through a seven-element list.
 	auto itemIt = container.begin();
-	std::advance(itemIt, n - 1);
+	std::advance(itemIt, nthItemSlot(container, n));
 	return *itemIt;
 }
 

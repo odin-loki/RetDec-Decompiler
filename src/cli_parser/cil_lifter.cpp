@@ -5,7 +5,9 @@
 
 #include "retdec/cli_parser/cil_lifter.h"
 
+#include "retdec/utils/align.h"
 #include "retdec/utils/bounds.h"
+#include "retdec/utils/branch_target.h"
 
 #include <algorithm>
 #include <cassert>
@@ -15,6 +17,29 @@
 
 namespace retdec {
 namespace cli_parser {
+
+namespace {
+
+// Every bound below comes from ECMA-335, not from a guess about how big a
+// method "should" be.
+//
+// II.25.4.5: a method data section begins on the next 4-byte boundary after
+// the code, its header is 4 bytes (Kind, then a 1-byte DataSize and two
+// reserved bytes for the small form, or a 3-byte DataSize for the fat form),
+// and the DataSize field counts that header as part of the section.
+constexpr std::size_t kSectAlignment   = 4;
+constexpr std::size_t kSectHeaderBytes = 4;
+
+// II.25.4.6: a small exception clause is 12 bytes, a fat one 24.
+constexpr std::size_t kSmallClauseBytes = 12;
+constexpr std::size_t kFatClauseBytes   = 24;
+
+// III.3.66: an InlineSwitch instruction's case labels are 4-byte signed
+// displacements, and the base they are measured from is the byte after the
+// last of them.
+constexpr std::size_t kSwitchLabelBytes = 4;
+
+} // anonymous namespace
 
 // ─── Little-endian read helpers ───────────────────────────────────────────────
 
@@ -321,9 +346,26 @@ bool CILLifter::parseHeader(std::span<const uint8_t> body,
     // Parse exception handling sections (immediately after code)
     bool hasMoreSections = (flags & 0x008) != 0;  // CorILMethod_MoreSects
     if (hasMoreSections && body.size() > codeStart + hdr.codeSize) {
-        size_t sectStart = codeStart + hdr.codeSize;
-        // Align to 4 bytes
-        sectStart = (sectStart + 3) & ~3ULL;
+        // ECMA-335 II.25.4.5: the section table starts on the next 4-byte
+        // boundary after the code.
+        //
+        // This was `sectStart = (sectStart + 3) & ~3ULL`, which forms the sum
+        // before masking. For a position within 3 bytes of SIZE_MAX the sum
+        // wraps and the mask then rounds *down*: sectStart =
+        // 18446744073709551614 gives (sectStart + 3) & ~3 == 0, so the cursor
+        // jumps 18446744073709551614 bytes backwards to the first byte of the
+        // method body and the walk below re-parses the header as an EH section.
+        // align::alignUpSaturating computes the padding from the remainder, so
+        // the sum is never formed, and saturates at SIZE_MAX -- a value the
+        // `sectStart < body.size()` test never accepts, so a walk that reaches
+        // the top of the range stops instead of running backwards.
+        //
+        // Honest scope note: with sectStart bounded by body.size() the wrap is
+        // not reachable through lift() on a 64-bit host today. The expression is
+        // unsound regardless; the bound that saved it lived in the surrounding
+        // loop rather than here.
+        size_t sectStart = utils::align::alignUpSaturating(
+            codeStart + hdr.codeSize, kSectAlignment);
 
         while (sectStart < body.size()) {
             uint8_t sectFlags = body[sectStart];
@@ -335,24 +377,43 @@ bool CILLifter::parseHeader(std::span<const uint8_t> body,
             size_t clauseSize;
             size_t numClauses;
 
+            // `sectStart + 4 > body.size()` was the spelling here; it forms
+            // the sum, which is the shape bounds.h exists to replace even where
+            // the operands happen to be small.
+            if (!utils::bounds::rangeFits(sectStart, body.size(), kSectHeaderBytes))
+                break;
+
             if (isFat) {
-                if (sectStart + 4 > body.size()) break;
                 dataSize   = static_cast<size_t>(body[sectStart + 1]) |
                              (static_cast<size_t>(body[sectStart + 2]) << 8) |
                              (static_cast<size_t>(body[sectStart + 3]) << 16);
-                clauseSize = 24;
-                numClauses = (dataSize - 4) / clauseSize;
-                sectStart += 4;
+                clauseSize = kFatClauseBytes;
             } else {
-                if (sectStart + 4 > body.size()) break;
                 dataSize   = body[sectStart + 1];
-                clauseSize = 12;
-                numClauses = (dataSize - 4) / clauseSize;
-                sectStart += 4;
+                clauseSize = kSmallClauseBytes;
             }
 
+            // DataSize counts the 4-byte section header (II.25.4.5), so the
+            // clause bytes are whatever is left after it -- and a file is free
+            // to declare less than that.
+            //
+            // This was `numClauses = (dataSize - 4) / clauseSize`, which wraps
+            // for every declared dataSize below 4. dataSize = 0 gives
+            // (0 - 4) / 12 == 1537228672809129301 clauses on the small path and
+            // (0 - 4) / 24 == 768614336404564650 on the fat one; the only thing
+            // that stopped the loop was its second condition running out of
+            // buffer, so the declared count itself meant nothing and one
+            // 4-byte section header claiming zero bytes of data made the parser
+            // read every remaining byte of the body as exception clauses.
+            // bounds::remaining saturates at 0 instead of wrapping.
+            numClauses = utils::bounds::remaining(kSectHeaderBytes, dataSize) / clauseSize;
+            sectStart += kSectHeaderBytes;
+
             if (isEH) {
-                for (size_t ci = 0; ci < numClauses && sectStart + clauseSize <= body.size(); ++ci) {
+                for (size_t ci = 0;
+                     ci < numClauses
+                     && utils::bounds::rangeFits(sectStart, body.size(), clauseSize);
+                     ++ci) {
                     CILExceptionClause clause;
                     if (isFat) {
                         clause.kind          = static_cast<EHClauseKind>(
@@ -405,7 +466,8 @@ bool CILLifter::parseHeader(std::span<const uint8_t> body,
             }
 
             if (!hasMore) break;
-            sectStart = (sectStart + 3) & ~3ULL;
+            // Same rounding, same reason -- see the comment on the first call.
+            sectStart = utils::align::alignUpSaturating(sectStart, kSectAlignment);
         }
     }
 
@@ -447,6 +509,30 @@ bool CILLifter::decodeOne(std::span<const uint8_t> code, size_t& pos,
     };
     auto addBlock = [&](uint32_t target) {
         out.operands.push_back(BcBlockOperand{target});
+    };
+    // A relative branch target, resolved against the code span instead of being
+    // truncated into it.
+    //
+    // This was `addBlock(static_cast<uint32_t>(static_cast<int64_t>(pos) + delta))`.
+    // The int64 widening made the addition itself right and then threw the
+    // answer away: the sum was narrowed to uint32 with no range check at all.
+    // Backwards, pos = 16 with delta = -128 has the true target -112 and stored
+    // the leader 4294967184 (0xFFFFFF90), 4 GB past a 32769-byte method;
+    // forwards, pos = 1007 with delta = 98 in a 1058-byte method stored 1105,
+    // 47 bytes past the end. buildCFG turned either into a basic block that no
+    // instruction falls into and wired real predecessors' successor edges to it.
+    //
+    // btgt::relative is exact over the whole 64-bit domain -- including
+    // delta == INT64_MIN, where negating the displacement is undefined -- and
+    // writes `target` only when the result lands inside [0, code.size()). On a
+    // refusal no operand is recorded: the instruction still decodes and `pos`
+    // still points at the next one, so the decoder stays in step, but the CFG
+    // never learns a leader that is not in the method. The narrowing cast is
+    // exact because on success target < code.size() == hdr.codeSize, a uint32.
+    auto addRelBlock = [&](uint64_t base, int64_t delta) {
+        uint64_t target = 0;
+        if (utils::btgt::relative(base, delta, code.size(), target))
+            addBlock(static_cast<uint32_t>(target));
     };
     // Only the opcode byte was ever checked against the span. The operand
     // width, though, comes from the opcode -- also attacker data -- and a body
@@ -519,8 +605,7 @@ bool CILLifter::decodeOne(std::span<const uint8_t> code, size_t& pos,
     case 0x35: case 0x36: case 0x37: case 0xDE: {
         if (!need(1)) return false;
         int8_t delta = static_cast<int8_t>(code[pos++]);
-        addBlock(static_cast<uint32_t>(
-            static_cast<int64_t>(pos) + delta));
+        addRelBlock(pos, delta);
         break;
     }
     // InlineBrTarget (int32 relative offset)
@@ -529,8 +614,7 @@ bool CILLifter::decodeOne(std::span<const uint8_t> code, size_t& pos,
     case 0x42: case 0x43: case 0x44: case 0xDD: {
         if (!need(4)) return false;
         int32_t delta = static_cast<int32_t>(r32(code, pos)); pos += 4;
-        addBlock(static_cast<uint32_t>(
-            static_cast<int64_t>(pos) + delta));
+        addRelBlock(pos, delta);
         break;
     }
 
@@ -538,20 +622,33 @@ bool CILLifter::decodeOne(std::span<const uint8_t> code, size_t& pos,
     case 0x45: {
         if (!need(4)) return false;
         uint32_t n = r32(code, pos); pos += 4;
-        // The switch targets are relative to the end of the whole instruction,
-        // which is `n` four-byte deltas past here. `n` is a raw file-supplied
-        // uint32 and `n * 4` wraps in 32 bits, so this is formed in 64 to say
-        // what it means. It is not a behaviour change: the result is truncated
-        // back to uint32 either way, so the two spellings agree on every input.
-        // Kept in the wide form because the next reader should not have to
-        // re-derive that, and because a later change to the label width would
-        // make the narrow form wrong.
-        const uint32_t afterSwitch = static_cast<uint32_t>(
-            static_cast<uint64_t>(pos) + static_cast<uint64_t>(n) * 4);
+        // The case targets are relative to the end of the whole instruction,
+        // which is `n` four-byte labels past here (III.3.66). `n` is a raw
+        // file-supplied uint32, so it is the count that decides where every one
+        // of this switch's targets is measured from -- one bad count corrupts
+        // every case label, not just one.
+        //
+        // This was
+        //   const uint32_t afterSwitch = static_cast<uint32_t>(
+        //       static_cast<uint64_t>(pos) + static_cast<uint64_t>(n) * 4);
+        // which forms the product correctly in 64 bits and then truncates the
+        // base back to uint32. codeSize = 8192, pos = 5, n = 3221234185 has the
+        // true end 12884936745; truncated it is 34857, which is 26665 bytes past
+        // the end of an 8192-byte method, and every case target of that switch
+        // was then resolved relative to it.
+        //
+        // btgt::tableEnd checks the product for representability before forming
+        // it and then checks the whole label span against the code, so this
+        // refuses exactly when the labels do not fit in the method. That is the
+        // same verdict `need(4)` gives for every other operand, so refusing the
+        // instruction is what the rest of this decoder already does with an
+        // operand that runs off the end.
+        uint64_t afterSwitch = 0;
+        if (!utils::btgt::tableEnd(pos, n, kSwitchLabelBytes, code.size(), afterSwitch))
+            return false;
         for (uint32_t i = 0; i < n && need(4); ++i) {
             int32_t delta = static_cast<int32_t>(r32(code, pos)); pos += 4;
-            addBlock(static_cast<uint32_t>(
-                static_cast<int64_t>(afterSwitch) + delta));
+            addRelBlock(afterSwitch, delta);
         }
         break;
     }
@@ -774,9 +871,32 @@ BcCFG CILLifter::buildCFG(
         auto hndIt = offsetToBlock.find(clause.handlerOffset);
         if (tryIt == offsetToBlock.end() || hndIt == offsetToBlock.end()) continue;
 
+        // The exclusive end of the protected region.
+        //
+        // This was `eh.endOffset = clause.tryOffset + clause.tryLength` with
+        // both operands uint32 (cil_lifter.h) and endOffset uint32 too
+        // (bc_cfg.h), so the addition wrapped in 32 bits and the wrapped value
+        // was stored as the end of a region whose start was not wrapped.
+        // tryOffset = 310550527 with tryLength = 3984416769 sums to exactly
+        // 2^32 and stored endOffset = 0: the region ends 310550527 bytes before
+        // it begins, and every consumer computing `end - start` gets 3984416769
+        // -- a protected range longer than the method, read backwards.
+        //
+        // btgt::region forms the sum only after bounds::rangeFits has
+        // established both that it does not wrap and that it lands inside the
+        // code, and writes `end` only on success. A clause whose try block is
+        // not inside the method is dropped rather than recorded inside out,
+        // which is what the two `continue`s above already do for a clause whose
+        // offsets are not block leaders. The cast back to uint32 is exact
+        // because on success tryEnd <= hdr.codeSize, itself a uint32.
+        uint64_t tryEnd = 0;
+        if (!utils::btgt::region(clause.tryOffset, clause.tryLength,
+                                 hdr.codeSize, tryEnd))
+            continue;
+
         BcExceptionHandler eh;
         eh.startOffset  = clause.tryOffset;
-        eh.endOffset    = clause.tryOffset + clause.tryLength;
+        eh.endOffset    = static_cast<uint32_t>(tryEnd);
         eh.handlerBlock = hndIt->second;
 
         if (clause.kind == EHClauseKind::Finally)

@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <zlib.h>
@@ -1911,4 +1912,407 @@ TEST(DexFile, StringDataUtf16SizeExceedsFileThrows) {
         dex[off++] = b;
     } while (declared);
     EXPECT_THROW(DexFile::parse(dex), DexParseError);
+}
+
+// ─── MUTF-8 supplementary characters (dex_header.cpp) ────────────────────────
+
+TEST(DexReader, Mutf8CombinesASurrogatePairIntoOneScalarValue) {
+    // MUTF-8 (JVM 4.4.7, and DEX "MUTF-8 (Modified UTF-8) Encoding") writes a
+    // supplementary character as its two UTF-16 surrogates, each as a
+    // three-byte sequence. The decoder re-encoded whatever it decoded verbatim
+    // -- 0xE0 | (cp >> 12) and so on -- with no surrogate test and no pairing,
+    // so U+10000 came back as the six bytes it went in as: ED A0 80 ED B0 80.
+    // ED A0 80 is the UTF-8 spelling of U+D800, which is not a scalar value,
+    // so no UTF-8 consumer accepts it and the character is lost. ESBMC refutes
+    // "the re-encoding is not an ED A0..BF sequence" at c = 0xED, c2 = 0x20,
+    // c3 = 0x00, cp = U+D800.
+    const uint8_t data[] = {0xED, 0xA0, 0x80, 0xED, 0xB0, 0x80};
+    DexReader r(data, sizeof(data));
+    // utf16_size counts UTF-16 units, so the pair is two units.
+    const std::string s = r.mutf8(2);
+    EXPECT_EQ(std::string("\xF0\x90\x80\x80"), s); // U+10000
+    EXPECT_EQ(sizeof(data), r.pos());
+}
+
+TEST(DexReader, Mutf8ReplacesALoneSurrogate) {
+    // A high surrogate with nothing after it is not a character. It used to be
+    // re-emitted as ED A0 80; U+FFFD is what a well-formed UTF-8 stream can
+    // carry instead.
+    const uint8_t data[] = {0xED, 0xA0, 0x80};
+    DexReader r(data, sizeof(data));
+    EXPECT_EQ(std::string("\xEF\xBF\xBD"), r.mutf8(1)); // U+FFFD
+}
+
+TEST(DexReader, Mutf8StillFoldsTheModifiedNulAndPlainAscii) {
+    // The two things the old loop did get right, pinned so the kernel route
+    // cannot quietly drop them: C0 80 is the MUTF-8 NUL, and a raw 0x00 byte
+    // (which real DEX files contain) is tolerated as one too.
+    const uint8_t data[] = {'a', 0xC0, 0x80, 'b', 0x00, 'c'};
+    DexReader r(data, sizeof(data));
+    EXPECT_EQ(std::string("a\0b\0c", 5), r.mutf8(5));
+}
+
+// ─── encoded_value payloads (dex_class_parser.cpp) ───────────────────────────
+
+// One class LHello; with a single static field VALUE whose static_values
+// encoded_array holds exactly @p value. Everything outside the encoded_array
+// is the file DexClassParser.FillsStaticFieldConstants above already parses,
+// so any difference in the result is a difference in how the encoded_value
+// itself was read.
+static std::vector<uint8_t> buildDexWithStaticValue(
+        const std::vector<uint8_t>& value,
+        uint32_t annotationsOff = 0,
+        const std::vector<uint8_t>& signaturePayload = {}) {
+    std::vector<uint8_t> dex(0x300, 0);
+    auto setU2 = [&](size_t off, uint16_t v) {
+        dex[off] = v & 0xFF; dex[off+1] = (v >> 8) & 0xFF;
+    };
+    auto setU4 = [&](size_t off, uint32_t v) {
+        dex[off] = v & 0xFF; dex[off+1] = (v >> 8) & 0xFF;
+        dex[off+2] = (v >> 16) & 0xFF; dex[off+3] = (v >> 24) & 0xFF;
+    };
+    auto setStr = [&](size_t off, const std::string& s) {
+        for (size_t i = 0; i < s.size(); ++i)
+            dex[off + i] = static_cast<uint8_t>(s[i]);
+        dex[off + s.size()] = 0;
+    };
+    auto setUleb = [&](size_t off, uint32_t v) -> size_t {
+        size_t n = 0;
+        do {
+            uint8_t b = v & 0x7F;
+            v >>= 7;
+            if (v) b |= 0x80;
+            dex[off + n++] = b;
+        } while (v);
+        return n;
+    };
+    static const char magic[] = "dex\n035";
+    for (int i = 0; i < 8; ++i)
+        dex[i] = static_cast<uint8_t>(i < 7 ? magic[i] : 0);
+    setU4(0x24, 0x70);
+    setU4(0x28, 0x12345678u);
+    setU4(0x38, 7);  setU4(0x3C, 0x70); // string_ids
+    setU4(0x40, 3);  setU4(0x44, 0x8C); // type_ids
+    setU4(0x48, 1);  setU4(0x4C, 0x98); // proto_ids
+    setU4(0x50, 1);  setU4(0x54, 0xA4); // field_ids
+    setU4(0x58, 1);  setU4(0x5C, 0xAC); // method_ids
+    setU4(0x60, 1);  setU4(0x64, 0xB4); // class_defs
+    setU4(0x68, 0x80); setU4(0x6C, 0xD4);
+    setU4(0x70, 0xD4); // "Hello"
+    setU4(0x74, 0xDB); // "LHello;"
+    setU4(0x78, 0xE4); // "V"
+    setU4(0x7C, 0xE7); // "()V"
+    setU4(0x80, 0xEC); // "main"
+    // string[5] is the descriptor type[2] names. With an annotation directory
+    // it has to be dalvik.annotation.Signature for resolveGenericSignature to
+    // look at the annotation at all; without one it stays "I".
+    setU4(0x84, annotationsOff != 0 ? 0x170u : 0xF2u);
+    setU4(0x88, 0xF5); // "VALUE"
+    setU4(0x8C, 1); // type LHello;
+    setU4(0x90, 2); // type V
+    setU4(0x94, 5); // type string[5]
+    setU4(0x98, 3); setU4(0x9C, 1); setU4(0xA0, 0); // proto
+    setU2(0xA4, 0); setU2(0xA6, 2); setU4(0xA8, 6); // field Hello.VALUE
+    setU2(0xAC, 0); setU2(0xAE, 0); setU4(0xB0, 4); // method main
+    setU4(0xB4, 0);
+    setU4(0xB8, 0x0009);
+    setU4(0xBC, 0xFFFFFFFF);
+    setU4(0xC0, 0);
+    setU4(0xC4, 0xFFFFFFFF);
+    setU4(0xC8, annotationsOff); // annotations_off
+    setU4(0xCC, 0x100); // classDataOff
+    setU4(0xD0, 0x110); // staticValuesOff
+    size_t off = 0xD4;
+    off += setUleb(off, 5); setStr(off, "Hello"); off += 6;
+    off += setUleb(off, 7); setStr(off, "LHello;"); off += 8;
+    off += setUleb(off, 1); setStr(off, "V"); off += 2;
+    off += setUleb(off, 3); setStr(off, "()V"); off += 4;
+    off += setUleb(off, 4); setStr(off, "main"); off += 5;
+    off += setUleb(off, 1); setStr(off, "I"); off += 2;
+    off += setUleb(off, 5); setStr(off, "VALUE"); off += 6;
+    // class_data at 0x100
+    off = 0x100;
+    off += setUleb(off, 1); // static_fields
+    off += setUleb(off, 0);
+    off += setUleb(off, 1); // direct methods
+    off += setUleb(off, 0);
+    off += setUleb(off, 0); // field_idx_diff
+    off += setUleb(off, 0x19); // public static final
+    off += setUleb(off, 0); // method_idx_diff
+    off += setUleb(off, 0x09);
+    off += setUleb(off, 0); // no code
+    // encoded_array at 0x110: one element, the caller's encoded_value
+    dex[0x110] = 1;
+    for (size_t k = 0; k < value.size(); ++k)
+        dex[0x111 + k] = value[k];
+
+    size_t total = 0x120;
+    if (annotationsOff != 0) {
+        // annotations_directory_item at 0x140
+        setU4(0x140, 0x150); // class_annotations_off
+        setU4(0x144, 0);     // fields_size
+        setU4(0x148, 0);     // annotated_methods_size
+        setU4(0x14C, 0);     // annotated_parameters_size
+        // annotation_set_item at 0x150
+        setU4(0x150, 1);
+        setU4(0x154, 0x160);
+        // annotation_item at 0x160
+        off = 0x160;
+        dex[off++] = 0x00;          // visibility = BUILD
+        off += setUleb(off, 2);     // type_idx = type[2] = Signature
+        off += setUleb(off, 1);     // element count
+        off += setUleb(off, 6);     // name_idx = "VALUE" (unused by the walk)
+        dex[off++] = 0x1c;          // VALUE_ARRAY, value_arg 0
+        off += setUleb(off, 1);     // one array element
+        for (uint8_t b : signaturePayload)
+            dex[off++] = b;
+        // string[5] = "Ldalvik/annotation/Signature;" at 0x170
+        const std::string sigType = "Ldalvik/annotation/Signature;";
+        off = 0x170;
+        off += setUleb(off, static_cast<uint32_t>(sigType.size()));
+        setStr(off, sigType);
+        off += sigType.size() + 1;
+        total = 0x1A0;
+    }
+    dex.resize(total);
+    setU4(0x20, static_cast<uint32_t>(total));
+    return dex;
+}
+
+// VALUE_CHAR is an *unsigned* 16-bit code unit -- DEX lists it as `ushort` in
+// "encoded_value encoding". It shared a case label with VALUE_BYTE/SHORT/INT/
+// LONG and so went through the sign-extending path, and ESBMC reports the
+// difference directly: signExtendEncoded(128, 1) is -128 where the encoding
+// means 128. Every character above U+007F that fits in one byte came out
+// negative, which is a silent wrong answer, not a crash.
+TEST(DexEncodedValue, ValueCharIsUnsigned) {
+    auto dex = buildDexWithStaticValue({0x03, 0x80}); // VALUE_CHAR, one byte
+    DexFile df = DexFile::parse(dex);
+    DexClassParser parser(df);
+    auto result = parser.parseClass(0);
+    ASSERT_EQ(DexClassResult::OK, result.status);
+    ASSERT_EQ(1u, result.bcClass->fields.size());
+    ASSERT_TRUE(result.bcClass->fields[0].constantIntValue.has_value());
+    EXPECT_EQ(128, *result.bcClass->fields[0].constantIntValue);
+}
+
+// The other side of the same split: VALUE_BYTE really is signed, so the same
+// payload byte means -128 there. If both arms ever answer the same thing again
+// one of them is wrong.
+TEST(DexEncodedValue, ValueByteIsSigned) {
+    auto dex = buildDexWithStaticValue({0x00, 0x80}); // VALUE_BYTE, one byte
+    DexFile df = DexFile::parse(dex);
+    DexClassParser parser(df);
+    auto result = parser.parseClass(0);
+    ASSERT_EQ(DexClassResult::OK, result.status);
+    ASSERT_TRUE(result.bcClass->fields[0].constantIntValue.has_value());
+    EXPECT_EQ(-128, *result.bcClass->fields[0].constantIntValue);
+}
+
+// VALUE_INT, four bytes, the value whose sign extension used to be performed
+// by `(int64_t)(v << (64 - bits)) >> (64 - bits)`: the cast converts
+// 0x8000000000000000 to int64_t (implementation-defined before C++20) and the
+// >> then shifts a negative signed value (implementation-defined in every
+// standard). byteorder::signExtendFrom fills in unsigned arithmetic and
+// converts once through leb128::toSigned, which is total.
+TEST(DexEncodedValue, ValueIntSignExtendsTheTopBit) {
+    auto dex = buildDexWithStaticValue({0x64, 0x00, 0x00, 0x00, 0x80});
+    DexFile df = DexFile::parse(dex);
+    DexClassParser parser(df);
+    auto result = parser.parseClass(0);
+    ASSERT_EQ(DexClassResult::OK, result.status);
+    ASSERT_TRUE(result.bcClass->fields[0].constantIntValue.has_value());
+    EXPECT_EQ(INT64_C(-2147483648), *result.bcClass->fields[0].constantIntValue);
+}
+
+// A shortened VALUE_FLOAT drops the LOW-order zero bytes and DEX says the
+// survivors are "zero-extended to the right" -- they are the HIGH bytes.
+// 1.0f is 0x3F800000, so its two-byte encoding is 80 3F; assembling those at
+// the low end gives 0x00003F80, a denormal of about 2.3e-41.
+TEST(DexEncodedValue, ShortenedFloatFillsFromTheHighEnd) {
+    // header: VALUE_FLOAT (0x10) with value_arg 1 == two payload bytes.
+    auto dex = buildDexWithStaticValue({0x30, 0x80, 0x3F});
+    DexFile df = DexFile::parse(dex);
+    DexClassParser parser(df);
+    auto result = parser.parseClass(0);
+    ASSERT_EQ(DexClassResult::OK, result.status);
+    ASSERT_TRUE(result.bcClass->fields[0].constantFltValue.has_value());
+    EXPECT_DOUBLE_EQ(1.0, *result.bcClass->fields[0].constantFltValue);
+}
+
+// The same rule for VALUE_DOUBLE: 1.0 is 0x3FF0000000000000, so its two-byte
+// encoding is F0 3F and the low-end assembly gives 0x3FF0 -- a denormal of
+// about 3.1e-320.
+TEST(DexEncodedValue, ShortenedDoubleFillsFromTheHighEnd) {
+    // header: VALUE_DOUBLE (0x11) with value_arg 1 == two payload bytes.
+    auto dex = buildDexWithStaticValue({0x31, 0xF0, 0x3F});
+    DexFile df = DexFile::parse(dex);
+    DexClassParser parser(df);
+    auto result = parser.parseClass(0);
+    ASSERT_EQ(DexClassResult::OK, result.status);
+    ASSERT_TRUE(result.bcClass->fields[0].constantFltValue.has_value());
+    EXPECT_DOUBLE_EQ(1.0, *result.bcClass->fields[0].constantFltValue);
+}
+
+// A full-width VALUE_FLOAT must not be disturbed by the high-end placement.
+TEST(DexEncodedValue, FullWidthFloatIsUnchanged) {
+    // header: VALUE_FLOAT with value_arg 3 == four payload bytes, 1.0f LE.
+    auto dex = buildDexWithStaticValue({0x70, 0x00, 0x00, 0x80, 0x3F});
+    DexFile df = DexFile::parse(dex);
+    DexClassParser parser(df);
+    auto result = parser.parseClass(0);
+    ASSERT_EQ(DexClassResult::OK, result.status);
+    ASSERT_TRUE(result.bcClass->fields[0].constantFltValue.has_value());
+    EXPECT_DOUBLE_EQ(1.0, *result.bcClass->fields[0].constantFltValue);
+}
+
+// ─── Signature annotation payload width (dex_class_parser.cpp) ───────────────
+
+// The array element of a dalvik.annotation.Signature is an encoded_value whose
+// value_arg is three bits, so it declares up to eight payload bytes. The walk
+// accumulated them into a *uint32_t* with `(uint32_t)br.u1() << (b * 8)`: for
+// the header byte 0xE0 straight out of the file, value_arg is 7 and the last
+// shift is a uint32_t shifted by 56, which is undefined behaviour ("arithmetic
+// overflow on shl" / "undefined behavior on shift operation shl"). On x86 the
+// count is masked to 24 and the byte lands back in the low word, so the eight
+// bytes 00 00 00 00 01 00 00 00 -- which denote 0x100000000, far beyond the
+// file's seven strings -- used to fold onto string index 1 and yield the
+// unrelated string "LHello;".
+TEST(DexGenericSignature, EightBytePayloadDoesNotFoldOntoALowStringIndex) {
+    auto dex = buildDexWithStaticValue(
+            {0x04, 0x2A}, // VALUE_INT 42, so the field parse is unremarkable
+            0x140,
+            {0xE0, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00});
+    DexFile df = DexFile::parse(dex);
+    DexClassParser parser(df);
+    auto result = parser.parseClass(0);
+    ASSERT_EQ(DexClassResult::OK, result.status);
+    EXPECT_EQ("", result.bcClass->signature);
+}
+
+// The path that a real Signature annotation takes, so the fix above is not
+// "reject everything".
+TEST(DexGenericSignature, OneBytePayloadStillResolvesTheString) {
+    auto dex = buildDexWithStaticValue(
+            {0x04, 0x2A},
+            0x140,
+            {0x17, 0x01}); // VALUE_STRING, value_arg 0, string index 1
+    DexFile df = DexFile::parse(dex);
+    DexClassParser parser(df);
+    auto result = parser.parseClass(0);
+    ASSERT_EQ(DexClassResult::OK, result.status);
+    EXPECT_EQ("LHello;", result.bcClass->signature);
+}
+
+// ─── method descriptor walk (dex_lifter.cpp) ─────────────────────────────────
+
+// buildMinimalDex with proto[0].parameters pointing at a one-element type_list
+// whose type is @p paramDescriptor, so a lifted invoke carries the descriptor
+// "(<paramDescriptor>)V".
+static std::vector<uint8_t> buildDexWithProtoParam(const std::string& paramDescriptor) {
+    auto dex = buildMinimalDex();
+    auto setU2 = [&](size_t off, uint16_t v) {
+        dex[off] = v & 0xFF; dex[off+1] = (v >> 8) & 0xFF;
+    };
+    auto setU4 = [&](size_t off, uint32_t v) {
+        dex[off] = v & 0xFF; dex[off+1] = (v >> 8) & 0xFF;
+        dex[off+2] = (v >> 16) & 0xFF; dex[off+3] = (v >> 24) & 0xFF;
+    };
+    // Everything new goes past the end of the file buildMinimalDex produced,
+    // so no existing item moves and the descriptor can be any length: the
+    // string_data_items in the data section are packed end to end and
+    // overwriting one in place would run into the next.
+    const size_t base = (dex.size() + 3u) & ~size_t{3};
+    const size_t typeIds  = base;              // 3 * 4 bytes
+    const size_t typeList = typeIds + 12;      // u4 size + u2 entry
+    const size_t strData  = typeList + 8;      // uleb utf16_size + bytes + NUL
+    dex.resize(strData + 1 + paramDescriptor.size() + 1);
+
+    // string[0] is "Hello" and nothing in the minimal file references it, so
+    // it becomes the parameter descriptor.
+    dex[strData] = static_cast<uint8_t>(paramDescriptor.size()); // utf16_size
+    for (size_t i = 0; i < paramDescriptor.size(); ++i)
+        dex[strData + 1 + i] = static_cast<uint8_t>(paramDescriptor[i]);
+    dex[strData + 1 + paramDescriptor.size()] = 0;
+    setU4(0x70, static_cast<uint32_t>(strData)); // string_ids[0]
+
+    // A third type_id, naming that string.
+    setU4(0x40, 3); setU4(0x44, static_cast<uint32_t>(typeIds));
+    setU4(typeIds + 0, 1); // type[0] = "LHello;"
+    setU4(typeIds + 4, 2); // type[1] = "V"
+    setU4(typeIds + 8, 0); // type[2] = string[0] = paramDescriptor
+
+    // type_list: u4 size, then u2 per entry.
+    setU4(typeList, 1);
+    setU2(typeList + 4, 2); // the one parameter is type[2]
+    setU4(0x94, static_cast<uint32_t>(typeList)); // proto[0].parametersOff
+
+    setU4(0x20, static_cast<uint32_t>(dex.size())); // file_size
+    return dex;
+}
+
+// parseDexProto's array arm did `end = proto.find(';', j); ... i = end + 1;`
+// with no `end == npos` guard, where its sibling 'L' arm has one. On "([L)V" --
+// a '[' whose element type names no class, which the string table can hand us
+// -- closeP is 3, the arm runs at i = 1 with j = 2, find(';', 2) is npos, and
+// `i = end + 1` wraps to 0. The cursor then cycles 0 -> 1 -> 0 -> 1 pushing two
+// BcType nodes per turn, and the only thing that stops it is the kMaxParams =
+// 65535 cap -- which is why the artifact was 65535 bogus parameters rather than
+// a hang. ESBMC refutes `iNext > i` at i = 4, end = 18446744073709551615.
+TEST(DexLifter, ArrayParamWithNoSemicolonDoesNotRestartTheDescriptorWalk) {
+    auto dex = buildDexWithProtoParam("[L");
+    DexFile df = DexFile::parse(dex);
+    ASSERT_EQ("([L)V", df.methodProto(0));
+
+    CodeItem code;
+    code.registersSize = 1;
+    code.insns = {
+        static_cast<uint16_t>(0x0071u), // invoke-static, count=0
+        static_cast<uint16_t>(0x0000u), // method@0
+        static_cast<uint16_t>(0x0000u), // registers
+    };
+    code.insnsSize = 3;
+
+    DexLifter lifter(df);
+    auto result = lifter.lift(code, 0);
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+
+    const BcMethodRef* ref = nullptr;
+    for (const auto& blk : result.cfg.blocks())
+        for (const auto& insn : blk.instrs)
+            for (const auto& op : insn.operands)
+                if (const auto* m = std::get_if<BcMethodRef>(&op))
+                    ref = m;
+    ASSERT_NE(nullptr, ref);
+    EXPECT_TRUE(ref->descriptor.params.empty());
+}
+
+// The descriptor the array arm is actually for, so the npos guard above is not
+// refusing well-formed input: "([Ljava/lang/String;)V" is one parameter.
+TEST(DexLifter, ArrayOfObjectsIsOneParameter) {
+    auto dex = buildDexWithProtoParam("[LHello;");
+    DexFile df = DexFile::parse(dex);
+    ASSERT_EQ("([LHello;)V", df.methodProto(0));
+
+    CodeItem code;
+    code.registersSize = 1;
+    code.insns = {
+        static_cast<uint16_t>(0x0071u),
+        static_cast<uint16_t>(0x0000u),
+        static_cast<uint16_t>(0x0000u),
+    };
+    code.insnsSize = 3;
+
+    DexLifter lifter(df);
+    auto result = lifter.lift(code, 0);
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+
+    const BcMethodRef* ref = nullptr;
+    for (const auto& blk : result.cfg.blocks())
+        for (const auto& insn : blk.instrs)
+            for (const auto& op : insn.operands)
+                if (const auto* m = std::get_if<BcMethodRef>(&op))
+                    ref = m;
+    ASSERT_NE(nullptr, ref);
+    EXPECT_EQ(1u, ref->descriptor.params.size());
 }

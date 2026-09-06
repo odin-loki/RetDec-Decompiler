@@ -9,7 +9,10 @@
 #include "retdec/jvm_parser/jvm_lifter.h"
 #include "retdec/jvm_parser/jvm_signature.h"
 
+#include "retdec/utils/branch_target.h"
+
 #include <algorithm>
+#include <cstdint>
 #include <set>
 #include <stdexcept>
 
@@ -183,25 +186,67 @@ static constexpr uint8_t OP_IFNONNULL       = 0xC7;
 static constexpr uint8_t OP_GOTO_W          = 0xC8;
 static constexpr uint8_t OP_JSR_W           = 0xC9;
 
+// A pc that is not a branch target.
+//
+// A JVM Code attribute's code_length is a u4 (JVMS 4.7.3) and every leader is
+// an offset strictly inside code[], so the branch resolution below never
+// produces UINT32_MAX: kCodeSizeCap keeps the code size it checks against at or
+// below UINT32_MAX, and btgt::relative only succeeds for a target strictly
+// below that. buildBlocks() looks every target up with pcToBlock_.count(), so a
+// branch that did not resolve simply gets no edge instead of an edge to a block
+// that is not there.
+static constexpr uint32_t kNoBranchTarget = UINT32_MAX;
+
+// The largest code size the leader set can address. Leaders are uint32_t
+// because code_length is a u4; clamping here is what makes the narrowing cast
+// of a resolved target exact for any code[] a caller hands us.
+static constexpr uint64_t kCodeSizeCap = UINT32_MAX;
+
 // ─── Instruction size table ───────────────────────────────────────────────────
-// Returns the total byte size of the instruction including opcode.
-// Returns 0 for variable-length instructions (tableswitch/lookupswitch/wide).
+// Returns the total byte size of the instruction including opcode, per JVMS 6.5.
+// Returns 0 for variable-length instructions (tableswitch/lookupswitch/wide) and
+// for the opcodes JVMS 6.2 leaves unassigned.
+//
+// 23 of these entries used to disagree with JVMS 6.5, and nothing failed loudly:
+// findLeaders() below writes `if (sz <= 0) sz = 1;`, so a wrong size simply puts
+// the scan cursor on an operand byte, which is then decoded as an opcode, and
+// every leader found from there on is wrong. ESBMC refuted
+// `tblAsWritten[op] == tblJvms[op]` over a symbolic op < 256; the first
+// counterexample was op = 0x30 (faload: the table said 2, JVMS says 1).
+// Enumerated, the 23 were two shifted rows and one shifted-by-four row:
+//
+//   0x2E-0x34 iaload..caload      said 2, are 1 (no operand at all)
+//   0x36-0x3A istore..astore      said 1, are 2 (they carry a local index)
+//   0x99      ifeq                said 1, is  3
+//   0xB2-0xB5 getstatic..putfield said 1, are 3 (a u2 constant-pool index)
+//   0xB9      invokeinterface     said 3, is  5 (index, count, and a zero byte)
+//   0xBC      newarray            said 3, is  2 (a one-byte atype)
+//   0xBD      anewarray           said 1, is  3
+//   0xBE-0xBF arraylength, athrow said 3, are 1
+//   0xC9      jsr_w               said 3, is  5
+//
+// getfield and getstatic are in every non-trivial method, so the desynchronised
+// walk was the normal case rather than a corner one: on `getstatic #2; goto L`
+// the old table advanced 1 byte from the getstatic and read its index high byte
+// 0x00 as `nop`, then its low byte 0x02 as `iconst_m1`, and the goto that
+// followed was never seen as a branch, so L never became a leader and the block
+// containing it was never split.
 static int instrSize(uint8_t op) {
     static const int8_t tbl[256] = {
     //  0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 00-0F
-        2, 3, 2, 3, 3, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, // 10-1F
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, // 20-2F
-        2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 30-3F
+        2, 3, 2, 3, 3, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, // 10-1F (0x15-0x19 loads take an index)
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 20-2F (0x2E-0x2F iaload/laload: no operand)
+        1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, // 30-3F (0x36-0x3A istore..astore take an index)
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 40-4F
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 50-5F
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 60-6F
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 70-7F
         1, 1, 1, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 80-8F (0x84 = iinc = 3)
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 3, // 90-9F (0x99-0x9E = 3)
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 3, 3, // 90-9F (0x99-0x9F = ifeq..if_icmpeq = 3)
         3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0, 0, 1, 1, 1, 1, // A0-AF (0xA7=goto=3,0xA8=jsr=3,0xA9=ret=2,0xAA-0xAB=var)
-        1, 1, 1, 1, 1, 1, 3, 3, 3, 3, 5, 3, 3, 1, 3, 3, // B0-BF
-        3, 3, 1, 1, 0, 4, 3, 3, 5, 3, 0, 0, 0, 0, 0, 0, // C0-CF (0xC4=wide=var,0xC5=multianewarray=4,0xC6-7=3,0xC8-9=5)
+        1, 1, 3, 3, 3, 3, 3, 3, 3, 5, 5, 3, 2, 3, 1, 1, // B0-BF (0xB9=invokeinterface=5,0xBA=invokedynamic=5,0xBC=newarray=2)
+        3, 3, 1, 1, 0, 4, 3, 3, 5, 5, 0, 0, 0, 0, 0, 0, // C0-CF (0xC4=wide=var,0xC5=multianewarray=4,0xC6-7=3,0xC8-9=5)
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // D0-DF
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // E0-EF
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // F0-FF
@@ -252,6 +297,30 @@ std::vector<uint32_t> JvmLifter::findLeaders(
                 (static_cast<uint32_t>(bc[off+2]) << 8) |
                 static_cast<uint32_t>(bc[off+3]));
         };
+        // A branch displacement is signed file data measured from the start of
+        // the instruction, and every one of the eight sites below used to write
+        // `leaders.insert(static_cast<uint32_t>(pc + off))`. `pc` is a size_t,
+        // so the int32_t converts to uint64 first: probe_jvm275.cpp asserted
+        // `leader < codeLen` under `codeLen in (0, 0xFFFF], pc < codeLen` and
+        // ESBMC refuted it twice. Forward, codeLen = 33012, pc = 193,
+        // def = 94928897 gives leader 94929090 -- 2876 times the length of the
+        // method. Backward, codeLen = 32773, pc = 32769, def = -1073774593 has
+        // true target -1041005824, which wraps and narrows to 0xC0000000: a
+        // branch to before the code became a leader near 3 GB, and buildBlocks
+        // then created a block there that no instruction falls into.
+        //
+        // btgt::relative forms the sum only where it exists, splits on the sign
+        // of the displacement so it is exact for every base and every
+        // displacement including INT64_MIN, and writes its output only when the
+        // target lands inside [0, codeSize). A target that does not is not a
+        // leader at all -- there is no instruction there to lead a block.
+        auto addRelativeLeader = [&](size_t from, int32_t off) {
+            uint64_t target = 0;
+            if (utils::btgt::relative(from, off,
+                                      std::min<uint64_t>(bc.size(), kCodeSizeCap),
+                                      target))
+                leaders.insert(static_cast<uint32_t>(target));
+        };
         // A switch declares its own entry count (hi-lo+1, or npairs) and both
         // numbers come out of the file. An entry costs entrySize bytes, so a
         // table claiming more entries than code[] can still supply is malformed
@@ -272,13 +341,13 @@ std::vector<uint32_t> JvmLifter::findLeaders(
             int32_t def   = readS4(base);
             int32_t lo    = readS4(base + 4);
             int32_t hi    = readS4(base + 8);
-            leaders.insert(static_cast<uint32_t>(pc + def));
+            addRelativeLeader(pc, def);
             // Widened: hi - lo + 1 overflows int32_t for a hostile lo/hi pair.
             int64_t declared = static_cast<int64_t>(hi) - static_cast<int64_t>(lo) + 1;
             size_t n = tableEntries(base + 12, declared, 4);
             for (size_t i = 0; i < n; ++i) {
                 int32_t off = readS4(base + 12 + i * 4);
-                leaders.insert(static_cast<uint32_t>(pc + off));
+                addRelativeLeader(pc, off);
             }
             size_t total = 1 + pad + 12 + n * 4;
             pc += total;
@@ -290,11 +359,11 @@ std::vector<uint32_t> JvmLifter::findLeaders(
             if (!fits(base, 8)) break;
             int32_t def   = readS4(base);
             int32_t npairs = readS4(base + 4);
-            leaders.insert(static_cast<uint32_t>(pc + def));
+            addRelativeLeader(pc, def);
             size_t n = tableEntries(base + 8, npairs, 8);
             for (size_t i = 0; i < n; ++i) {
                 int32_t off = readS4(base + 8 + i * 8 + 4);
-                leaders.insert(static_cast<uint32_t>(pc + off));
+                addRelativeLeader(pc, off);
             }
             size_t total = 1 + pad + 8 + n * 8;
             pc += total;
@@ -307,28 +376,28 @@ std::vector<uint32_t> JvmLifter::findLeaders(
         } else if (op == OP_GOTO || op == OP_JSR) {
             if (pc + 2 < bc.size()) {
                 int16_t off = readS2(pc + 1);
-                leaders.insert(static_cast<uint32_t>(pc + static_cast<int32_t>(off)));
+                addRelativeLeader(pc, off);
             }
             if (pc + 3 < bc.size()) leaders.insert(static_cast<uint32_t>(pc + 3));
             sz = 3;
         } else if (op == OP_GOTO_W || op == OP_JSR_W) {
             if (pc + 4 < bc.size()) {
                 int32_t off = readS4(pc + 1);
-                leaders.insert(static_cast<uint32_t>(pc + off));
+                addRelativeLeader(pc, off);
             }
             if (pc + 5 < bc.size()) leaders.insert(static_cast<uint32_t>(pc + 5));
             sz = 5;
         } else if (op >= OP_IFEQ && op <= OP_IF_ACMPNE) {
             if (pc + 2 < bc.size()) {
                 int16_t off = readS2(pc + 1);
-                leaders.insert(static_cast<uint32_t>(pc + static_cast<int32_t>(off)));
+                addRelativeLeader(pc, off);
             }
             if (pc + 3 < bc.size()) leaders.insert(static_cast<uint32_t>(pc + 3));
             sz = 3;
         } else if (op == OP_IFNULL || op == OP_IFNONNULL) {
             if (pc + 2 < bc.size()) {
                 int16_t off = readS2(pc + 1);
-                leaders.insert(static_cast<uint32_t>(pc + static_cast<int32_t>(off)));
+                addRelativeLeader(pc, off);
             }
             if (pc + 3 < bc.size()) leaders.insert(static_cast<uint32_t>(pc + 3));
             sz = 3;
@@ -492,8 +561,32 @@ BcInstruction JvmLifter::decodeInstr(
     };
 
     // Helper: resolve a branch offset relative to the start of this instruction.
+    //
+    // This was `static_cast<uint32_t>(static_cast<int32_t>(instrPc) + offset)`,
+    // an addition of two int32_t values both derived from the file, and that is
+    // undefined behaviour rather than merely a wrong answer: a Code attribute's
+    // code_length is a u4 (JVMS 4.7.3) so instrPc genuinely reaches values that
+    // cast negative, and goto_w/jsr_w carry a full int32 displacement.
+    // probe_jvm495.cpp encoded the old body verbatim and --overflow-check alone
+    // refuted it with no assertion needed: ESBMC reported "arithmetic overflow
+    // on add" for instrPc = 1073741825, offset = 1073741825, whose true sum
+    // 2147483650 exceeds INT32_MAX by 3. For that class file the program had no
+    // defined behaviour at all.
+    //
+    // btgt::relative does the same computation with no signed overflow anywhere
+    // and answers whether the target is inside code[] at the same time. A
+    // branch that leaves the method resolves to kNoBranchTarget, which
+    // buildBlocks()'s pcToBlock_.count() lookups miss, so it contributes no CFG
+    // edge -- as against the old behaviour, where the truncated wrap could
+    // collide with the pc of a real leader and wire an edge to a block the
+    // branch has nothing to do with.
     auto branchPc = [&](int32_t offset, uint32_t instrPc) -> uint32_t {
-        return static_cast<uint32_t>(static_cast<int32_t>(instrPc) + offset);
+        uint64_t target = 0;
+        if (!utils::btgt::relative(instrPc, offset,
+                                   std::min<uint64_t>(bc.size(), kCodeSizeCap),
+                                   target))
+            return kNoBranchTarget;
+        return static_cast<uint32_t>(target);
     };
 
     uint32_t instrPc = pc - 1;  // PC of this opcode.

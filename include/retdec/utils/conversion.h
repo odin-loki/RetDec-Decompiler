@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "retdec/utils/bounds.h"
+#include "retdec/utils/text_transcode.h"
 
 namespace retdec {
 namespace utils {
@@ -227,16 +228,37 @@ std::string bytesToBits(const N *data, std::size_t dataSize) {
 		dataSize = 0;
 	}
 
-	std::string result;
-	result.reserve(dataSize * BITS_IN_BYTE);
+	// `result.reserve(dataSize * BITS_IN_BYTE)` formed the product first, so a
+	// dataSize above SIZE_MAX/8 wrapped to a small reservation while the loop
+	// still appended eight characters per element. bitsCapacity refuses the
+	// rendering outright when 8*n is not representable, which is the only
+	// honest answer: a caller asking for a string longer than the address space
+	// has asked for nothing.
+	const std::size_t need = txt::bitsCapacity(dataSize);
+	if (need == 0) {
+		return std::string();
+	}
+
+	std::string result(need, '0');
 
 	for (std::size_t i = 0; i < dataSize; ++i) {
-		auto& item = data[i];
-
-		for(std::size_t j = 0; j < BITS_IN_BYTE; ++j) {
-			// 0x80 = 0b10000000
-			result += ((item << j) & 0x80) ? '1' : '0';
-		}
+		// The old body was `((item << j) & 0x80)`, and this template is
+		// instantiated for std::int8_t. For any element with the top bit set,
+		// `item` promotes to a NEGATIVE int and `item << j` left-shifts a
+		// negative value, which is undefined behaviour in C++17 -- not a wrong
+		// answer, no answer. ESBMC's witness is item = -96 (the byte 0xA0) with
+		// j = 7: "undefined behavior on shift operation shl".
+		//
+		// Only bits 0..7 of the promoted value were ever inspected (`& 0x80`
+		// after a left shift of at most 7), so converting the element to
+		// std::uint8_t first reproduces the intended rendering bit for bit --
+		// the same low byte, most significant bit first -- and hands it to
+		// txt::bytesToBits, which shifts an unsigned value RIGHT and
+		// so cannot be undefined at any element value.
+		const std::uint8_t byte = static_cast<std::uint8_t>(data[i]);
+		// need == dataSize * 8 exactly, so this window is inside the string.
+		txt::bytesToBits(
+				&byte, 1, &result[i * BITS_IN_BYTE], BITS_IN_BYTE);
 	}
 
 	return result;

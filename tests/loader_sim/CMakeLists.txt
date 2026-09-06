@@ -1,5 +1,6 @@
 add_executable(retdec-loader-sim-tests
     loader_sim_test.cpp
+    xbyte_width_guard_test.cpp
 )
 
 target_link_libraries(retdec-loader-sim-tests

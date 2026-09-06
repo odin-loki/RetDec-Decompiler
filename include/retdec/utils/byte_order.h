@@ -71,8 +71,12 @@ constexpr unsigned kAccumulatorBits = 64;
 ///
 /// Written as a literal rather than as kAccumulatorBits / kBitsPerByte because
 /// ESBMC emits an arithmetic-overflow check for unsigned division even at
-/// namespace scope, and the bitvector backends this harness pins report that
-/// check as a violation. The static_assert keeps the two in step.
+/// namespace scope, and the bitvector backends -- boolector and bitwuzla --
+/// report that check as a violation. byte_order_proof.cpp pins --z3, which does
+/// not, so this constant would be safe there; it is written as a literal anyway
+/// so that a harness reaching this header from a bitvector backend, as
+/// compressed_int_proof.cpp does, is not refuted by a division that is not
+/// there. The static_assert keeps the two in step.
 constexpr unsigned kMaxBytes = 8;
 static_assert(kMaxBytes * kBitsPerByte == kAccumulatorBits,
               "kMaxBytes must be exactly the accumulator width in bytes");

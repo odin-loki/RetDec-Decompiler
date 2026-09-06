@@ -6,6 +6,7 @@
 #include "retdec/cli_parser/cli_tables.h"
 
 #include "retdec/utils/bounds.h"
+#include "retdec/utils/index_translation.h"
 
 #include <algorithm>
 #include <cassert>
@@ -71,13 +72,30 @@ uint32_t MetadataTables::RowReader::tableIdx(TableId tbl) {
 // Coded token: tagBits low bits = tag, remaining high bits = row index
 uint32_t MetadataTables::RowReader::codedIdx(
         const uint8_t* tableIds, size_t count, uint8_t tagBits) {
-    // Determine if we need 4 bytes: any referenced table has > 2^(16-tagBits)-1 rows
-    uint32_t maxRows = 1u << (16 - tagBits);
+    // Determine if we need 4 bytes: any referenced table has >= 2^(16-tagBits)
+    // rows (ECMA-335 II.24.2.6 gives a coded index 16 bits, tagBits of which
+    // are the tag).
+    //
+    // This was `uint32_t maxRows = 1u << (16 - tagBits);` with tagBits a
+    // uint8_t. The subtraction is done on unsigned int, so for any tagBits
+    // above 16 it wraps and the shift count becomes astronomical -- undefined
+    // behaviour, not merely a wrong threshold. ESBMC discharges the line as
+    // written for the widths II.24.2.6 actually defines (1..5, every current
+    // caller passes a literal in that range) and refutes it as soon as tagBits
+    // is unconstrained: FAILED shift-undefined-behavior at tagBits = 65. So
+    // this is the line a new coded-token kind added with the wrong constant
+    // would break, and nothing here would say so.
+    //
+    // idxmap::wideThreshold clamps instead of wrapping and computes at 64 bits,
+    // so the shift is defined for every unsigned tagBits. The comparison is
+    // widened to match; at tagBits == 0 the threshold is 65536, which no longer
+    // has to fit the 32-bit type the old maxRows used.
+    const uint64_t maxRows = utils::idxmap::wideThreshold(tagBits);
     bool wide = false;
     for (size_t i = 0; i < count && !wide; ++i) {
         uint8_t tid = tableIds[i];
         if (tid < static_cast<uint8_t>(TableId::_Count) &&
-            rowCounts[tid] >= maxRows)
+            static_cast<uint64_t>(rowCounts[tid]) >= maxRows)
             wide = true;
     }
     return wide ? u32() : u16();

@@ -9,13 +9,14 @@
  *
  * What goes wrong, in the order it was found:
  *
- *   - `alignDown(value + (alignment - 1), alignment)` -- src/utils/alignment.cpp:59,
- *     the tree's public helper -- forms the sum first. For a value within
+ *   - `alignDown(value + (alignment - 1), alignment)` -- what
+ *     retdec::utils::alignUp in src/utils/alignment.cpp WAS, before it was
+ *     changed to call this header -- forms the sum first. For a value within
  *     `alignment - 1` of UINT64_MAX the sum wraps and the result is SMALLER than
  *     the input. ESBMC returns value = 18446744073709551440, alignment = 512:
  *     the true rounded value 18446744073709551616 is not representable, the sum
- *     wrapped to 335, the mask took that to 256, and alignUp returned a number
- *     2^64 below its input. Confirmed by execution.
+ *     wrapped to 335, the mask took that to 0, and alignUp returned 0 for an
+ *     input 2^64 - 176. Confirmed by execution.
  *
  *     Its callers pass it a value they have already bounded --
  *     src/fileformat/types/resource_table/resource_table.cpp:783 rounds
@@ -36,7 +37,8 @@
  *     paddedNameLen = 4, and `streamHdrOff = nameOff + 4` walks the stream
  *     header table backwards.
  *
- *   - `isAligned(value, alignment, remainder)` -- src/utils/alignment.cpp:31 --
+ *   - `isAligned(value, alignment, remainder)` -- what
+ *     retdec::utils::isAligned in src/utils/alignment.cpp WAS --
  *     masks with `alignment - 1` without asking whether that is a mask, and the
  *     answer is then wrong in both directions. ESBMC returns value = 128,
  *     alignment = 9223372036854775811: the mask is 9223372036854775810, the AND
@@ -153,7 +155,7 @@ constexpr std::uint64_t padTo(std::uint64_t v, std::uint64_t a) noexcept
 /// out is a multiple of a.
 ///
 /// The sum is never formed before it is known to fit. `v + (a - 1)` -- the
-/// spelling at alignment.cpp:59, at cil_lifter.cpp:326 and 408 as
+/// spelling alignment.cpp used to carry, at cil_lifter.cpp:326 and 408 as
 /// `(sectStart + 3) & ~3ULL`, and at resource_table.cpp:783 through the helper
 /// -- wraps and rounds *down*: v = 18446744073709551614 with a = 4 gives 0, run
 /// and confirmed. Comparing the padding against the room left cannot wrap.
@@ -196,7 +198,7 @@ constexpr bool alignDown(std::uint64_t v, std::uint64_t a, std::uint64_t& out) n
 /// True when @p v is a multiple of @p a, with @p remainder set to v mod a.
 ///
 /// Refuses -- returns false, with remainder set to v -- when @p a is not a
-/// power of two. isAligned at alignment.cpp:31 answers anyway: with a = 0 the
+/// power of two. isAligned in alignment.cpp used to answer anyway: with a = 0 the
 /// mask is UINT64_MAX and remainder becomes v, so it reports every non-zero
 /// value unaligned without ever saying that the alignment itself was the
 /// problem. pe_format_parser.h:123 turns that into a header-anomaly verdict on

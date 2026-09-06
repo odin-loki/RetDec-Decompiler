@@ -5,6 +5,9 @@
 
 #include "retdec/jvm_parser/jvm_const_pool.h"
 
+#include "retdec/utils/bounds.h"
+#include "retdec/utils/text_transcode.h"
+
 #include <cstring>
 #include <sstream>
 
@@ -14,7 +17,16 @@ namespace jvm_parser {
 // ─── BinaryReader ─────────────────────────────────────────────────────────────
 
 void BinaryReader::check(size_t n) const {
-    if (pos_ + n > size_)
+    // The sum pos_ + n is never formed. `pos_ + n > size_` is the natural way
+    // to write this and is wrong for an n taken from the file: at pos_ = 4,
+    // size_ = 8 and n = 18446744073709551612 the sum is 0, the test is false,
+    // and check() ACCEPTS a read of 2^64-4 bytes out of an 8-byte buffer.
+    // ESBMC refuted `!(pos + n > size) == (n <= size - pos)` for pos <= size
+    // (witness pos = 3855085765655085184, n = 0xF19FFC0C00834003,
+    // size = 0xB408202000856400). bounds::rangeFits compares against the bytes
+    // remaining instead, which cannot wrap; src/dex_parser/dex_header.cpp:34
+    // already refuses the same read.
+    if (!utils::bounds::rangeFits(pos_, size_, n))
         throw JvmParseError("unexpected end of file at offset "
                             + std::to_string(pos_));
 }
@@ -78,25 +90,43 @@ std::string BinaryReader::utf8(uint16_t len) {
     return s;
 }
 
-// Modified UTF-8 → standard UTF-8.
-// JVM Modified UTF-8 differs in:
-//   1. null byte encoded as 0xC0 0x80 instead of 0x00.
-//   2. Supplementary chars encoded as two 3-byte sequences (surrogate pair).
+// Modified UTF-8 (JVMS 4.4.7) -> standard UTF-8.
+// MUTF-8 differs from UTF-8 in two ways, and both have to be undone here:
+//   1. U+0000 is written C0 80 instead of 00.
+//   2. A supplementary character is written as its two UTF-16 surrogates, each
+//      as a three-byte sequence, rather than as one four-byte sequence.
+//
+// This loop used to fold (1) and copy every other byte through unchanged, so
+// (2) survived verbatim into a std::string the rest of the tree hands to
+// consumers as UTF-8. probe_jvm_const_pool_85_passes_surrogates_through ran the
+// old loop over ED A0 80 (the high surrogate of a supplementary character) and
+// ESBMC reported FAILED on "the output is not an ED A0..BF lead pair": the
+// bytes came out untouched. ED A0 80 is not UTF-8 at all -- D800 is not a
+// scalar value -- so a class whose name or string constant contains an emoji
+// produced output no UTF-8 decoder accepts.
+//
+// txt::mutf8ToUtf8Ex combines a well-formed pair into the one four-byte
+// sequence and replaces a lone surrogate with U+FFFD (proved by
+// proof_mutf8_stays_inside_both_buffers and proof_encode_utf8_is_well_formed),
+// and it owns the output sizing: the capacity and the conversion are one call,
+// so the loop cannot write more than was reserved.
 std::string BinaryReader::mutf8(uint16_t len) {
     check(len);
+    // len is the CONSTANT_Utf8_info length field, a byte count (JVMS 4.4.7), so
+    // it bounds the character count too: no MUTF-8 character is under one byte.
+    const size_t cap = utils::txt::utf8CapacityForMutf8(len);
     std::string out;
-    out.reserve(len);
-    size_t end = pos_ + len;
-    while (pos_ < end) {
-        uint8_t b = data_[pos_++];
-        if (b == 0xC0 && pos_ < end && data_[pos_] == 0x80) {
-            // Null byte encoding
-            out += '\0';
-            ++pos_;
-        } else {
-            out += static_cast<char>(b);
-        }
+    if (cap == 0) {
+        // len == 0. utf8CapacityForMutf8 also returns 0 when the product would
+        // not fit, which a uint16_t length cannot reach.
+        pos_ += len;
+        return out;
     }
+    out.resize(cap);
+    const size_t written = utils::txt::mutf8ToUtf8(
+        data_ + pos_, len, len, &out[0], cap);
+    out.resize(written);
+    pos_ += len;
     return out;
 }
 

@@ -25,12 +25,14 @@
  * and a loop that could run further fails loudly.
  */
 
-// ESBMC-OPTIONS: --unwind 18
+// ESBMC-OPTIONS: --unwind 22
 // ESBMC-SOLVER: --boolector
 //
-// 18, because the longest loop in this file is a checking loop over a 16-byte
-// output buffer (bytesToBits of two bytes) and the unwinding assertion needs
-// one iteration past its trip count. This was measured rather than guessed:
+// 22, because the longest loop in this file is decimalRun over a twenty-digit
+// run -- the width of UINT64_MAX, which is where its overflow guard has to be
+// exercised -- and the unwinding assertion needs one iteration past the trip
+// count. It was 18 for the next longest, a checking loop over a 16-byte output
+// buffer (bytesToBits of two bytes). This was measured rather than guessed:
 // at --unwind 14 ESBMC failed proof_bytes_to_bits_refuses_a_short_buffer with
 // "unwinding assertion loop 6" -- the bound is real, and a loop that could run
 // further is reported rather than silently truncated.
@@ -287,7 +289,7 @@ extern "C" void proof_bytes_to_hex_refuses_a_short_buffer()
 }
 
 /// A null input is a refusal, not a dereference: conversion.h checks `data ==
-/// nullptr` but gpu_scanner_cpu.cpp:32 does not.
+/// nullptr` but GpuScanner::uploadFile did not.
 extern "C" void proof_bytes_to_hex_tolerates_null()
 {
 	char out[kHexPlain];
@@ -567,18 +569,78 @@ extern "C" void proof_utf16_combines_a_surrogate_pair()
 /// non-surrogate, or a bare low -- becomes U+FFFD, EF BF BD.
 extern "C" void proof_utf16_lone_surrogate_becomes_replacement()
 {
-	const std::uint32_t u = nondet_u32();
-	__ESBMC_assume(u >= kHighSurrogateFirst && u <= kLowSurrogateLast);
+	// A surrogate is lone in three different ways, and this proof covered only
+	// one of them until the audit said so: it passed a single unit, which is
+	// the "high surrogate at the very end of the buffer" case alone. The other
+	// two -- a high surrogate followed by something that is not a low one, and
+	// a bare low surrogate -- go down different branches of the decoder, and
+	// the second is the one cli_heaps.cpp got wrong.
+	//
+	// All three are below, and the surrogate is symbolic across the whole
+	// D800..DFFF range in each.
 
-	std::uint8_t in[2] = {
-		static_cast<std::uint8_t>(u & 0xFFu), static_cast<std::uint8_t>(u >> 8)
-	};
-	char out[3];
+	// ── 1. a lone surrogate that is the whole input ──
+	{
+		const std::uint32_t u = nondet_u32();
+		__ESBMC_assume(u >= kHighSurrogateFirst && u <= kLowSurrogateLast);
 
-	assert(utf16leToUtf8(in, 2, out, 3) == 3);
-	assert(byteAt(out, 0) == 0xEF);
-	assert(byteAt(out, 1) == 0xBF);
-	assert(byteAt(out, 2) == 0xBD);
+		std::uint8_t in[2] = {
+			static_cast<std::uint8_t>(u & 0xFFu), static_cast<std::uint8_t>(u >> 8)
+		};
+		char out[3];
+
+		assert(utf16leToUtf8(in, 2, out, 3) == 3);
+		assert(byteAt(out, 0) == 0xEF);
+		assert(byteAt(out, 1) == 0xBF);
+		assert(byteAt(out, 2) == 0xBD);
+	}
+
+	// ── 2. a HIGH surrogate followed by a unit that is not a low one ──
+	{
+		const std::uint32_t hi = nondet_u32();
+		__ESBMC_assume(hi >= kHighSurrogateFirst && hi <= kHighSurrogateLast);
+		const std::uint32_t next = nondet_u32();
+		__ESBMC_assume(next <= 0xFFFFu);
+		// Not a low surrogate, so the pair cannot combine. Kept in the ASCII
+		// range as well, so the second unit's own encoding is one byte and the
+		// replacement is distinguishable from it by length.
+		__ESBMC_assume(next < 0x80u);
+
+		std::uint8_t in[4] = {
+			static_cast<std::uint8_t>(hi & 0xFFu),   static_cast<std::uint8_t>(hi >> 8),
+			static_cast<std::uint8_t>(next & 0xFFu), static_cast<std::uint8_t>(next >> 8)
+		};
+		char out[6];
+
+		// Three bytes of replacement, then one for the ASCII unit.
+		assert(utf16leToUtf8(in, 4, out, 6) == 4);
+		assert(byteAt(out, 0) == 0xEF);
+		assert(byteAt(out, 1) == 0xBF);
+		assert(byteAt(out, 2) == 0xBD);
+		assert(byteAt(out, 3) == static_cast<std::uint8_t>(next));
+	}
+
+	// ── 3. a bare LOW surrogate, with anything after it ──
+	{
+		const std::uint32_t lo = nondet_u32();
+		__ESBMC_assume(lo >= kLowSurrogateFirst && lo <= kLowSurrogateLast);
+		const std::uint32_t next = nondet_u32();
+		__ESBMC_assume(next < 0x80u);
+
+		std::uint8_t in[4] = {
+			static_cast<std::uint8_t>(lo & 0xFFu),   static_cast<std::uint8_t>(lo >> 8),
+			static_cast<std::uint8_t>(next & 0xFFu), static_cast<std::uint8_t>(next >> 8)
+		};
+		char out[6];
+
+		// A low surrogate never begins a pair, so it is replaced on its own and
+		// the unit after it is untouched -- not swallowed as a second half.
+		assert(utf16leToUtf8(in, 4, out, 6) == 4);
+		assert(byteAt(out, 0) == 0xEF);
+		assert(byteAt(out, 1) == 0xBF);
+		assert(byteAt(out, 2) == 0xBD);
+		assert(byteAt(out, 3) == static_cast<std::uint8_t>(next));
+	}
 }
 
 /// The structural form of the same thing over a whole symbolic buffer: no
@@ -764,6 +826,56 @@ extern "C" void proof_mutf8_cursor_lands_on_the_declared_end()
 /// The C0 80 fold is exact: it produces one 0x00 byte, not two, and not the
 /// two-byte overlong form. This is what puts an embedded NUL in a JVM name and
 /// is why jvm_class_parser.cpp:253 must split with bstr::terminatorAt.
+extern "C" void proof_mutf8_refuses_every_overlong_but_the_nul()
+{
+	// MUTF-8 admits exactly one overlong form: C0 80 for U+0000. Every other
+	// sequence that spells a value below the shortest form for its length is
+	// malformed, and the decoder used to normalise it instead of refusing it --
+	// C0 AF and E0 80 AF both came out as '/', C1 BF as 0x7F, E0 80 80 as a
+	// NUL. That is the oldest UTF-8 filter bypass there is: a name checked
+	// before decoding and used after it are two different names.
+	//
+	// The lead bytes are symbolic within the overlong range rather than
+	// enumerated, so this is a statement about every overlong two-byte
+	// sequence, not about the four the audit happened to try.
+	std::uint8_t in[3];
+	// One unit can produce at most four bytes of UTF-8; utf8CapacityForMutf8(1)
+	// is what the decoder itself requires, so the buffer is sized from it.
+	char out[4];
+
+	// ── two-byte overlongs: leads C0 and C1, minus the C0 80 exception ──
+	in[0] = static_cast<std::uint8_t>(0xC0u | (nondet_u8() & 0x01u));  // C0 or C1
+	in[1] = static_cast<std::uint8_t>(0x80u | (nondet_u8() & 0x3Fu));  // any continuation
+	__ESBMC_assume(!(in[0] == 0xC0u && in[1] == 0x80u));               // not the NUL
+
+	Mutf8Result r = mutf8ToUtf8Ex(in, 2, 1, out, sizeof(out));
+	assert(r.consumed == 2);
+	// U+FFFD is EF BF BD. Nothing shorter, and in particular not the ASCII
+	// character the overlong was spelling.
+	assert(r.written == 3);
+	assert(static_cast<std::uint8_t>(out[0]) == 0xEFu);
+	assert(static_cast<std::uint8_t>(out[1]) == 0xBFu);
+	assert(static_cast<std::uint8_t>(out[2]) == 0xBDu);
+
+	// ── the one legitimate overlong still folds to a real NUL ──
+	in[0] = 0xC0u; in[1] = 0x80u;
+	r = mutf8ToUtf8Ex(in, 2, 1, out, sizeof(out));
+	assert(r.consumed == 2 && r.written == 1 && out[0] == '\0');
+
+	// ── three-byte overlongs: lead E0 with a second byte below A0 ──
+	in[0] = 0xE0u;
+	in[1] = static_cast<std::uint8_t>(0x80u | (nondet_u8() & 0x1Fu));  // 80..9F
+	in[2] = static_cast<std::uint8_t>(0x80u | (nondet_u8() & 0x3Fu));
+	__ESBMC_assume(in[1] < 0xA0u);
+
+	r = mutf8ToUtf8Ex(in, 3, 1, out, sizeof(out));
+	assert(r.consumed == 3);
+	assert(r.written == 3);
+	assert(static_cast<std::uint8_t>(out[0]) == 0xEFu);
+	assert(static_cast<std::uint8_t>(out[1]) == 0xBFu);
+	assert(static_cast<std::uint8_t>(out[2]) == 0xBDu);
+}
+
 extern "C" void proof_mutf8_nul_fold_is_exact()
 {
 	std::uint8_t in[4] = {0xC0, 0x80, 0, 0};
@@ -836,14 +948,17 @@ extern "C" void proof_decimal_run_reads_within_bounds()
 /// is the only way to reach values near UINT64_MAX at all.
 extern "C" void proof_decimal_run_accumulates_without_wrapping()
 {
+	// Two halves, and the second one is the reason the first is not enough.
+	//
+	// The lemma: the guard admits a step exactly when the step is
+	// representable, for every accumulator and every digit. Written by division
+	// so the harness does not form the product it is checking.
 	const std::uint64_t acc = nondet_u64();
 	const std::uint64_t d = nondet_u64();
 	__ESBMC_assume(d <= 9);
 
 	const bool guard = !(acc > kMaxU64Div10 || (acc == kMaxU64Div10 && d > kMaxU64Mod10));
 
-	// The guard admits a step exactly when the step is representable. Written
-	// by division so the harness does not form the product it is checking.
 	assert(guard == (acc <= (UINT64_MAX - d) / 10));
 	if (guard)
 	{
@@ -851,6 +966,38 @@ extern "C" void proof_decimal_run_accumulates_without_wrapping()
 		assert(next >= acc);
 		assert((next - d) / 10 == acc);
 	}
+
+	// That lemma is a property of the expression written on the line above it,
+	// not of decimalRun -- the audit made the point by changing the kernel's
+	// `acc > kMaxU64Div10` to `>=` and watching this proof still pass, because
+	// the harness carried its own copy of the guard.
+	//
+	// So the guard is exercised through the real function, at the only place it
+	// can be reached: a twenty-digit run, which is the width of UINT64_MAX. The
+	// three runs below are the boundary and the two steps either side of it,
+	// and each is a separate direction of failure -- a guard that is too tight
+	// refuses kBoundary, one that is too loose accepts kOverByOne.
+	static const std::size_t kDigits = 20;
+	const char kBoundary[]  = "18446744073709551615";  // UINT64_MAX exactly
+	const char kOverByOne[] = "18446744073709551616";  // one more
+	const char kAllNines[]  = "99999999999999999999";  // far over
+
+	std::uint64_t value = 7;
+	std::size_t   end   = 7;
+
+	assert(decimalRun(kBoundary, kDigits, 0, value, end));
+	assert(value == UINT64_MAX);
+	assert(end == kDigits);
+
+	// A refusal reports nothing consumed and no value, so a caller that
+	// advances its cursor by `end` after a failure does not move.
+	value = 7; end = 7;
+	assert(!decimalRun(kOverByOne, kDigits, 0, value, end));
+	assert(value == 0 && end == 0);
+
+	value = 7; end = 7;
+	assert(!decimalRun(kAllNines, kDigits, 0, value, end));
+	assert(value == 0 && end == 0);
 }
 
 /// The digits it accepts are the value it reports, for a run short enough to

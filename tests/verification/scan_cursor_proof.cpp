@@ -16,9 +16,12 @@
 
 // ESBMC-OPTIONS: --unwind 8
 //
-// The longest loop in this file is the six-step walk in
-// proof_a_walk_takes_at_most_left_steps and its table-driven twin; six
-// iterations plus the unwinding assertion needs 8. Unwinding assertions are on
+// The longest loop in this file is the kFreeWalkSteps walk in
+// proof_a_walk_takes_at_most_left_steps and its table-driven twin, which is
+// four iterations (see kFreeWalkSteps below, and the paragraph there on why a
+// bounded walk is enough once the induction is proved separately). Four plus
+// the unwinding assertion would need 6; the bound is 8 so that raising
+// kFreeWalkSteps by one does not silently need a second edit here. Unwinding assertions are on
 // by default in ESBMC 8.5.0, so a bound that is too small fails loudly instead
 // of silently truncating the search -- which is what makes the walk length a
 // stated limitation rather than a hidden one.
@@ -503,7 +506,7 @@ extern "C" void proof_align_forward_is_idempotent()
 
 // The call-site obligation, proved over the table rather than over the cursor:
 // whatever the table says, a step taken through it is either refused or is
-// real progress. This is what makes the twenty wrong entries in the table at
+// real progress. This is what makes the twenty-three wrong entries in the table at
 // jvm_lifter.cpp:189 a decoding error rather than a hang -- and what makes
 // jvm_lifter.cpp:343's `if (sz <= 0) sz = 1` unnecessary.
 extern "C" void proof_a_table_step_is_progress_or_a_refusal()
@@ -592,6 +595,30 @@ extern "C" void proof_a_table_that_always_advances_refuses_only_at_the_end()
 	const std::size_t step = stepFromTable(table, kTableSize, key);
 	assert(step >= 1);
 	if (!advanceByTable(c, table, kTableSize, key)) assert(step > left(c));
+}
+
+extern "C" void proof_an_empty_table_never_always_advances()
+{
+	// The audit's finding, turned into a property so it cannot come back.
+	// tableAlwaysAdvances used to answer true for a count of 0, on the reading
+	// that a table with no entries has no zero entry -- while advanceByTable
+	// refuses every key at that count with the buffer still full, which is a
+	// stall in the middle of a walk and is exactly what this predicate promises
+	// does not happen. Stated for a table the solver chooses, so it is not a
+	// claim about one array.
+	std::uint8_t table[kTableSize];
+	for (std::size_t i = 0; i < kTableSize; ++i) table[i] = nondet_u8();
+
+	assert(!tableAlwaysAdvances(table, 0));
+	assert(!tableAlwaysAdvances(nullptr, 0));
+	assert(!tableAlwaysAdvances(nullptr, nondet_size()));
+
+	// And the contract the answer is about: at count 0 every key really is
+	// refused, with room left in the buffer.
+	Cursor c = nondetCursor();
+	__ESBMC_assume(valid(c));
+	__ESBMC_assume(left(c) > 0);
+	assert(!advanceByTable(c, table, 0, nondet_size()));
 }
 
 extern "C" void proof_a_table_with_a_zero_entry_is_reported()

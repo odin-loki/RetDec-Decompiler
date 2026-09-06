@@ -353,16 +353,25 @@ static void tableEndFitsAtWidth()
 	}
 }
 
-/// 16-bit code units: a DEX packed-switch target array is one unit per entry
-/// and a sparse-switch key/target pair is two, both counted in units at
-/// dex_lifter.cpp:235,238.
+/// A two-byte stride: the narrowest table entry this kernel accepts, and so the
+/// width at which a declared count can be largest before the product stops
+/// fitting. It is the boundary case rather than a format's, and that is why it
+/// is here.
+///
+/// It is NOT the DEX switch stride, which an earlier version of this comment
+/// claimed. dex_lifter.cpp:235 computes `need = 4 + count * 2` and :238
+/// `need = 2 + count * 4`, both in 16-bit CODE UNITS: a packed-switch target is
+/// two units and a sparse-switch key/target pair is four, which is 4 and 8
+/// BYTES. Those two are the width-4 and width-8 instances below.
 extern "C" void proof_table_end_fits_at_width_2() { tableEndFitsAtWidth<2>(); }
 
-/// A CIL InlineSwitch label (cil_lifter.cpp:550 forms n * 4) and a JVM
-/// tableswitch jump-offset entry (jvm_lifter.cpp:278).
+/// A CIL InlineSwitch label (cil_lifter.cpp:550 forms n * 4), a JVM tableswitch
+/// jump-offset entry (jvm_lifter.cpp:278), and a DEX packed-switch target
+/// (dex_lifter.cpp:235, two code units).
 extern "C" void proof_table_end_fits_at_width_4() { tableEndFitsAtWidth<4>(); }
 
-/// A JVM lookupswitch match/offset pair, jvm_lifter.cpp:294.
+/// A JVM lookupswitch match/offset pair (jvm_lifter.cpp:294) and a DEX
+/// sparse-switch key/target pair (dex_lifter.cpp:238, four code units).
 extern "C" void proof_table_end_fits_at_width_8() { tableEndFitsAtWidth<8>(); }
 
 extern "C" void proof_table_end_rejects_the_widest_jvm_tableswitch()

@@ -5,7 +5,9 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include <limits>
 #include <map>
+#include <stdexcept>
 
 #include <gtest/gtest.h>
 
@@ -538,6 +540,50 @@ NonIterableSetInsertsFindsAndClearsElements) {
 	c.clear();
 	EXPECT_FALSE(c.has(&i));
 	EXPECT_TRUE(c.hasNot(&i));
+}
+
+// --- getNthItem is 1-based, and the translation is unconditional ---
+//
+// The only bound getNthItem had was `assert(1 <= n && n <= container.size())`,
+// which is compiled out under NDEBUG -- every release build. What was left was
+// `container[n - 1]` with n unconstrained. At n == 0 the subtraction wraps and
+// the subscript is SIZE_MAX; the list overload does `std::advance(it, n - 1)`
+// on the same value. The probe reports "FAILED assertion.1 line 40 subscript <
+// containerSize" with n = 0xF4F7F59FA9E6B690 and containerSize = 7, i.e. every
+// n outside 1..size is admitted once the assert is gone. n == 0 is the
+// reachable one: that is how a 1-based metadata table spells "no item".
+
+TEST_F(ContainerTests, GetNthItemForVectorRefusesTheNullToken)
+{
+	const std::vector<int> container = {1, 2, 3};
+	EXPECT_THROW(getNthItem(container, 0), std::out_of_range);
+}
+
+TEST_F(ContainerTests, GetNthItemForVectorRefusesAnIndexPastTheEnd)
+{
+	const std::vector<int> container = {1, 2, 3};
+	EXPECT_THROW(getNthItem(container, 4), std::out_of_range);
+	EXPECT_THROW(
+		getNthItem(container, std::numeric_limits<std::size_t>::max()),
+		std::out_of_range);
+}
+
+TEST_F(ContainerTests, GetNthItemForVectorRefusesEveryIndexIntoAnEmptyContainer)
+{
+	const std::vector<int> container;
+	EXPECT_THROW(getNthItem(container, 1), std::out_of_range);
+}
+
+TEST_F(ContainerTests, GetNthItemForListRefusesTheNullToken)
+{
+	const std::list<int> container = {1, 2, 3};
+	EXPECT_THROW(getNthItem(container, 0), std::out_of_range);
+}
+
+TEST_F(ContainerTests, GetNthItemForListRefusesAnIndexPastTheEnd)
+{
+	const std::list<int> container = {1, 2, 3};
+	EXPECT_THROW(getNthItem(container, 4), std::out_of_range);
 }
 
 } // namespace tests

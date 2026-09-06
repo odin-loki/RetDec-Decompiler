@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# scripts/verify_esbmc.sh — prove the bounds arithmetic with ESBMC.
+# scripts/verify_esbmc.sh — prove the verified kernels with ESBMC.
 #
 # What this proves, and what it does not
 # --------------------------------------
@@ -9,29 +9,38 @@
 # of arithmetic: a count, length or offset read out of a file and used before
 # anything checked the input could supply it.
 #
-# That arithmetic now lives in one place, include/retdec/utils/bounds.h, and
-# this script proves it — for ALL inputs over the whole 64-bit domain, by SMT,
-# not for sampled values. The harnesses in tests/verification/ have no loops, so
-# no unwinding bound applies and the results are proofs, not bounded searches.
+# That arithmetic now lives in the verified kernels under include/retdec/utils/,
+# and this script proves them — for ALL inputs over the whole 64-bit domain, by
+# SMT, not for sampled values. A harness with no loops is a proof outright; one
+# that walks a buffer pins its bound with // ESBMC-OPTIONS: --unwind N, and
+# ESBMC's unwinding assertions (on by default in 8.5.0) make exceeding that
+# bound a failure rather than a silently truncated search.
 #
-# What is NOT proved: the parsers themselves. ESBMC's operational models of the
-# C++ standard library do not stretch to this codebase (std::variant is capped
-# at four alternatives, std::min has no initializer_list overload), so whole-
-# module verification is not available. The value here is that the arithmetic
-# every parser depends on is proved once, and the parsers call it rather than
-# re-deriving it. Coverage of the call sites is the job of the unit suites and
-# the fuzzer.
+# What is NOT proved: the parsers themselves, mostly — but not for the reason
+# this comment used to give. std::vector, std::string, std::optional,
+# std::variant and classes with methods all verify against ESBMC 8.5.0, and
+# std::span does under --std c++20. The two real limits are that std::unique_ptr
+# is a PARSE ERROR (so anything reaching retdec/ssa/ssa.h cannot be verified at
+# all) and cost: PeReader::open over a fully symbolic buffer discharges in 1s at
+# 16 bytes and does not return within 400s at 64. So whole-function proofs are
+# available where a header-sized symbolic input is enough — use // ESBMC-LINK:
+# to bring the implementation in — and coverage of everything else is the job of
+# the unit suites and the fuzzer. See docs/VERIFICATION.md.
 #
 # Usage
 #   scripts/verify_esbmc.sh              # every proof
 #   scripts/verify_esbmc.sh proof_remaining proof_page_count
 #   scripts/verify_esbmc.sh --list
 #   scripts/verify_esbmc.sh --syntax   # type-check the harnesses, no solver
+#   scripts/verify_esbmc.sh --cross    # every proof under two backends, diffed
+#   scripts/verify_esbmc.sh --routing  # does anything CALL each proved kernel?
+#   scripts/verify_esbmc.sh --optional # include harnesses marked ESBMC-OPTIONAL
 #
 # Environment
-#   ESBMC     path to the esbmc binary          (default: esbmc on PATH)
-#   SOLVER    --z3 | --boolector | --bitwuzla   (default: --z3)
-#   TIMEOUT   seconds per proof                 (default: 300)
+#   ESBMC     path to the esbmc binary                    (default: esbmc)
+#   SOLVER    --z3 | --boolector | --bitwuzla | --cvc5    (default: --z3)
+#   TIMEOUT   seconds per proof                           (default: 300)
+#             a harness may raise its own with // ESBMC-TIMEOUT: <seconds>
 
 set -u -o pipefail
 
@@ -92,6 +101,36 @@ harness_link() {
 	grep -oE '^// ESBMC-LINK:.*' "$1" | head -1 | sed 's|^// ESBMC-LINK:||'
 }
 
+# A harness that does not run by default:  // ESBMC-OPTIONAL: <reason>
+#
+# For a harness whose proofs are real and reproducible but do not fit this
+# machine. The alternative is worse in both directions: shipping it in the
+# default run leaves the suite red for a reason that is not a defect, and
+# deleting it loses a measurement the documentation depends on.
+#
+# The reason is not optional. It is printed on every skipped run, so a harness
+# that is quietly not being verified says so out loud each time.
+#
+# `--optional` runs them.
+harness_optional() {
+	grep -oE '^// ESBMC-OPTIONAL:.*' "$1" | head -1 | sed 's|^// ESBMC-OPTIONAL:||' | sed 's/^ *//'
+}
+
+# Seconds this harness may spend on one proof:  // ESBMC-TIMEOUT: 1800
+#
+# A kernel proof that needs more than the default 300s is usually a proof that
+# is wrong, so the default stays where it is. A whole-function proof is a
+# different animal: pe_reader_proof.cpp links a real translation unit and puts
+# 30,000 verification conditions in front of the solver, and 75s of that is
+# spent encoding before the solver starts. Raising TIMEOUT globally to suit it
+# would hide a kernel proof that had quietly become expensive, so the budget is
+# stated per harness, by the harness that needs it.
+harness_timeout() {
+	local v
+	v="$(grep -oE '^// ESBMC-TIMEOUT:.*' "$1" | head -1 | sed 's|^// ESBMC-TIMEOUT:||' | tr -d ' \t')"
+	printf '%s' "${v:-$TIMEOUT}"
+}
+
 # C++ standard for this harness:  // ESBMC-STD: c++20
 # std::span needs c++20; the default stays c++17 to match the tree.
 harness_std() {
@@ -117,6 +156,17 @@ check_options_syntax() {
 	if grep -q 'ESBMC-STD' "$file" && [ -z "$(harness_std "$file")" ]; then
 		bad "$(basename "$file"): ESBMC-STD present but not at the start of a // line"
 		return 1
+	fi
+	if grep -q 'ESBMC-OPTIONAL' "$file" && [ -z "$(harness_optional "$file")" ]; then
+		bad "$(basename "$file"): ESBMC-OPTIONAL present with no reason, or not at the start of a // line"
+		return 1
+	fi
+	if grep -q 'ESBMC-TIMEOUT' "$file"; then
+		local t; t="$(harness_timeout "$file")"
+		if ! printf '%s' "$t" | grep -qE '^[0-9]+$'; then
+			bad "$(basename "$file"): ESBMC-TIMEOUT is not a whole number of seconds"
+			return 1
+		fi
 	fi
 	if grep -q 'ESBMC-LINK' "$file"; then
 		if [ -z "$(harness_link "$file")" ]; then
@@ -145,15 +195,18 @@ bad()  { printf '%s FAIL %s%s\n' "$C_RED" "$C_OFF" "$*"; }
 skip() { printf '%s skip %s%s\n' "$C_YELLOW" "$C_OFF" "$*"; }
 hdr()  { printf '\n%s== %s ==%s\n' "$C_DIM" "$*" "$C_OFF"; }
 
-usage() { sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; }
 
 MODE=run
+RUN_OPTIONAL=0
 declare -a WANTED=()
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--list)    MODE=list ;;
 		--syntax)  MODE=syntax ;;
 		--cross)   MODE=cross ;;
+		--routing) MODE=routing ;;
+		--optional) RUN_OPTIONAL=1 ;;
 		-h|--help) usage; exit 0 ;;
 		-*)        say "unknown option: $1"; usage; exit 2 ;;
 		*)         WANTED+=("$1") ;;
@@ -161,14 +214,84 @@ while [ $# -gt 0 ]; do
 	shift
 done
 
+# ── routing ──────────────────────────────────────────────────────────────────
+#
+# The weak point of this whole approach is not the solver, it is the gap between
+# a proof and the code that runs. A proof about a re-typed copy of the logic
+# says nothing about the copy that ships, and this tree has demonstrated that
+# repeatedly: src/utils, the module the proved headers live in, included none of
+# them while carrying eight re-derivations of what they prove, every one wrong.
+#
+# So "prove it once and call it" is checked here rather than left to review. For
+# every kernel with a harness, count the files that include it. Zero callers
+# means the kernel is proved and nothing uses it, which is a finding — the bug
+# it was written to stop is still in the tree, in the copy nobody routed.
+#
+# UNROUTED_KERNELS is the escape hatch, and it takes a reason, not just a name:
+# a kernel is allowed no callers only while someone has written down why.
+declare -A UNROUTED_KERNELS=()
+
+# A harness whose name does not correspond to include/retdec/utils/<name>.h is a
+# whole-function proof (it links real code and proves that code directly), so
+# there is nothing to route and it is skipped rather than reported.
+if [ "$MODE" = routing ]; then
+	hdr "who calls each proved kernel"
+	shopt -s nullglob
+	harnesses=("$PROOF_DIR"/*.cpp)
+	shopt -u nullglob
+	status=0
+	routed=0; unrouted=0; skipped=0
+	for h in "${harnesses[@]}"; do
+		base="$(basename "$h" .cpp)"; base="${base%_proof}"
+		kernel="include/retdec/utils/${base}.h"
+		if [ ! -f "$kernel" ]; then
+			skip "$(basename "$h") — proves code directly, nothing to route"
+			skipped=$((skipped + 1))
+			continue
+		fi
+		# Callers: anything under src/ or include/ that includes the kernel,
+		# except the kernel itself. Harnesses are excluded by not being searched.
+		mapfile -t callers < <(
+			grep -rl "retdec/utils/${base}\.h" src include 				--include='*.cpp' --include='*.h' 2>/dev/null 				| grep -v "^${kernel}$" | sort)
+		if [ ${#callers[@]} -gt 0 ]; then
+			ok "${base}.h — ${#callers[@]} caller(s): ${callers[*]}"
+			routed=$((routed + 1))
+		elif [ -n "${UNROUTED_KERNELS[$base]:-}" ]; then
+			skip "${base}.h — no callers, allowed: ${UNROUTED_KERNELS[$base]}"
+			unrouted=$((unrouted + 1))
+		else
+			bad "${base}.h — proved, and nothing in src/ or include/ calls it"
+			status=1
+			unrouted=$((unrouted + 1))
+		fi
+	done
+	hdr "summary"
+	say "routed: $routed   unrouted: $unrouted   not applicable: $skipped"
+	if [ $status -ne 0 ]; then
+		say ""
+		say "A kernel with no callers is a proof about code that does not run."
+		say "Either route the call sites it was written for, or add it to"
+		say "UNROUTED_KERNELS in this script with the reason it is waiting."
+		exit 1
+	fi
+	ok "every proved kernel has a caller"
+	exit 0
+fi
+
 # A typo in a harness should not cost a solver run to find.
+#
+# The standard used here is the harness's own, not a fixed c++17: type-checking
+# a harness at a standard the solver run will not use is worse than not checking
+# it, because it reports errors that do not exist (a c++20 harness saw
+# "std::span is only available from C++20 onwards" while the ESBMC run of the
+# same file was fine) and would miss ones that do.
 if [ "$MODE" = syntax ]; then
 	shopt -s nullglob
 	harnesses=("$PROOF_DIR"/*.cpp)
 	shopt -u nullglob
 	status=0
 	for h in "${harnesses[@]}"; do
-		if "${CXX:-g++}" -std=c++17 -Wall -Wextra -fsyntax-only -Iinclude \
+		if "${CXX:-g++}" -std="$(harness_std "$h")" -Wall -Wextra -fsyntax-only -Iinclude \
 				-DRETDEC_VERIFY_SYNTAX_ONLY "$h" && check_options_syntax "$h"; then
 			ok "$(basename "$h")"
 		else
@@ -223,6 +346,12 @@ fi
 # is not proved. This runs everything under z3 and under boolector and reports
 # every disagreement.
 #
+# The cross-check runs at the default TIMEOUT for both backends, not at a
+# harness's raised ESBMC-TIMEOUT. A harness that needs longer than the default
+# then times out on both sides, which agrees, or on one, which its pin already
+# explains -- and the alternative, running a whole-function harness twice at its
+# own budget, turns this from a check you run into one you do not.
+#
 # One disagreement is already known and is a tool artifact rather than a code
 # defect: ESBMC emits an "arithmetic overflow on div" check for unsigned
 # division, which cannot overflow in C++, and the bitvector backends find the
@@ -246,7 +375,7 @@ verdict_of() {   # harness fn solver std extraOpts [linkSrcs...]
 
 if [ "$MODE" = cross ]; then
 	hdr "cross-checking every proof under z3 and boolector"
-	agree=0; disagree=0; expected=0
+	agree=0; disagree=0; expected=0; noverdict=0
 	declare -a mismatches=()
 	for harness in "${HARNESSES[@]}"; do
 		check_options_syntax "$harness" || { disagree=$((disagree+1)); continue; }
@@ -264,7 +393,14 @@ if [ "$MODE" = cross ]; then
 			fi
 			a="$(verdict_of "$harness" "$fn" --z3        "$harnessStd" "$extraOpts" "${linkSrcs[@]}")"
 			b="$(verdict_of "$harness" "$fn" --boolector "$harnessStd" "$extraOpts" "${linkSrcs[@]}")"
-			if [ "$a" = "$b" ]; then
+			if [ "$a" = timeout ] && [ "$b" = timeout ]; then
+				# Not an agreement. Two backends that both ran out of time have
+				# said nothing about the property, and counting that as
+				# agreement is how a cross-check comes back clean on a file it
+				# never actually checked.
+				skip "$fn — neither backend returned within ${TIMEOUT}s"
+				noverdict=$((noverdict + 1))
+			elif [ "$a" = "$b" ]; then
 				ok "$fn — z3 and boolector agree ($a)"
 				agree=$((agree + 1))
 			elif [ -n "$pinned" ]; then
@@ -278,7 +414,13 @@ if [ "$MODE" = cross ]; then
 		done
 	done
 	hdr "summary"
-	say "agreed: $agree   expected disagreement: $expected   unexplained: $disagree"
+	say "agreed: $agree   expected disagreement: $expected   no verdict: $noverdict   unexplained: $disagree"
+	if [ $noverdict -gt 0 ]; then
+		say ""
+		say "A property neither backend finished is not cross-checked. Raise"
+		say "TIMEOUT and run those names again, or accept that the single-solver"
+		say "verdict in the main run is all there is for them."
+	fi
 	if [ $disagree -gt 0 ]; then
 		bad "solvers disagree on: ${mismatches[*]}"
 		say ""
@@ -296,6 +438,7 @@ say "solver: $SOLVER   timeout: ${TIMEOUT}s per proof"
 
 total=0
 passed=0
+skipped=0
 failed=()
 
 for harness in "${HARNESSES[@]}"; do
@@ -307,10 +450,18 @@ for harness in "${HARNESSES[@]}"; do
 	fi
 	extraOpts="$(harness_options "$harness")"
 	[ -n "$extraOpts" ] && say "extra options:$extraOpts"
+	harnessOptional="$(harness_optional "$harness")"
+	if [ -n "$harnessOptional" ] && [ "$RUN_OPTIONAL" -eq 0 ]; then
+		skip "$(basename "$harness") — not run by default: $harnessOptional"
+		skipped=$((skipped + 1))
+		continue
+	fi
 	harnessSolver="$(harness_solver "$harness")"
 	: "${harnessSolver:=$SOLVER}"
 	[ "$harnessSolver" != "$SOLVER" ] && say "solver: $harnessSolver (pinned by the harness)"
 	harnessStd="$(harness_std "$harness")"
+	harnessTimeout="$(harness_timeout "$harness")"
+	[ "$harnessTimeout" != "$TIMEOUT" ] && say "timeout: ${harnessTimeout}s (raised by the harness)"
 	# shellcheck disable=SC2206
 	linkSrcs=($(harness_link "$harness"))
 	[ ${#linkSrcs[@]} -gt 0 ] && say "linking: ${linkSrcs[*]}"
@@ -334,7 +485,7 @@ for harness in "${HARNESSES[@]}"; do
 		# Each proof is verified on its own so a counterexample names the
 		# property that broke rather than the file.
 		# shellcheck disable=SC2086
-		if timeout "$TIMEOUT" "$ESBMC" "$harness" "${linkSrcs[@]}" -I include \
+		if timeout "$harnessTimeout" "$ESBMC" "$harness" "${linkSrcs[@]}" -I include \
 				"$harnessSolver" --std "$harnessStd" \
 				--function "$fn" "${CHECKS[@]}" $extraOpts > "$log" 2>&1; then
 			n="$(grep -oE '[0-9]+ passed' "$log" | head -1)"
@@ -343,7 +494,7 @@ for harness in "${HARNESSES[@]}"; do
 		else
 			status=$?
 			if [ $status -eq 124 ]; then
-				bad "$fn — timed out after ${TIMEOUT}s"
+				bad "$fn — timed out after ${harnessTimeout}s"
 			else
 				bad "$fn"
 				# The counterexample is the useful part of the output.
@@ -358,6 +509,7 @@ done
 
 hdr "summary"
 say "proofs passed: $passed / $total"
+[ $skipped -gt 0 ] && say "harnesses not run (ESBMC-OPTIONAL): $skipped"
 if [ ${#failed[@]} -gt 0 ]; then
 	bad "failing: ${failed[*]}"
 	exit 1

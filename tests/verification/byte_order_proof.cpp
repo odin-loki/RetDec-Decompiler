@@ -433,6 +433,22 @@ extern "C" void proof_writes_stay_inside_the_capacity()
 		for (std::size_t i = n; i < outCap; ++i) assert(buf[i] == kFill);
 	}
 
+	// And the same for writeBE, on a buffer refilled so the two do not stand in
+	// for each other. This proof called writeLE alone until the audit pointed
+	// it out: the two functions have separate index arithmetic -- one counts up
+	// from the low byte, the other down from the high one -- so a proof about
+	// either says nothing about the other, and the big-endian direction is the
+	// one where an off-by-one lands at index n rather than at index -1.
+	for (std::size_t i = 0; i < outCap; ++i) buf[i] = kFill;
+
+	const bool okBE = writeBE(v, n, buf, outCap);
+	assert(okBE == (n >= 1 && n <= kMaxBytes && n <= outCap));
+
+	if (okBE)
+	{
+		for (std::size_t i = n; i < outCap; ++i) assert(buf[i] == kFill);
+	}
+
 	std::free(buf);
 }
 
@@ -440,11 +456,16 @@ extern "C" void proof_writes_stay_inside_the_capacity()
 // bytes that would have fitted. createBytesFromValue (byte_value_storage.cpp:978)
 // resizes to a file-supplied x before it decides anything, and then runs
 // `for (std::uint8_t i = 0; i < x; ++i)` against a std::uint64_t bound: for
-// x = 256 the counter wraps from 255 to 0 and the loop never terminates, and for
-// any larger x the same. The loop here uses a std::size_t counter against a
-// std::size_t bound, so every index it reaches is representable -- which is what
-// the unwinding assertion at --unwind 10 confirms, since a non-terminating loop
-// would exceed the bound rather than pass.
+// x = 256 the counter wraps from 255 to 0 and the loop never terminates.
+//
+// What this kernel does about that is NOT the counter type, and an earlier
+// version of this comment said it was. The audit rewrote all three of
+// byte_order.h's loops with a std::uint8_t counter -- literally the defect
+// named above -- and every proof still passed, because widthFits has already
+// refused any n above kMaxBytes = 8 and a uint8_t counts to 8 perfectly well.
+// The fix at the call site is the refusal, not the counter: the bound reaching
+// the loop is file-supplied and unbounded there, and bounded to 8 here before
+// the loop is entered.
 extern "C" void proof_a_refused_write_touches_nothing()
 {
 	const std::size_t outCap = nondet_size();

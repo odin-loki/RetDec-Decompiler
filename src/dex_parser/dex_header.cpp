@@ -6,6 +6,7 @@
 #include "retdec/dex_parser/dex_header.h"
 
 #include "retdec/utils/bounds.h"
+#include "retdec/utils/text_transcode.h"
 
 #include <cstring>
 #include <sstream>
@@ -144,62 +145,55 @@ int32_t DexReader::uleb128p1() {
 }
 
 std::string DexReader::mutf8(uint32_t len) {
-    // DEX strings are MUTF-8 encoded (like JVM).
-    // We do a basic decode — surrogate pairs for U+10000+ are not common in DEX.
-    //
     // utf16_size is a ULEB128 out of the file, and reserving for it before
     // reading anything was the same mistake the index tables used to make: a
     // 668-byte file declaring a 0x93A25C0D-unit string asked for 2.4 GB and
-    // was killed rather than rejected. Every character this loop decodes costs
-    // at least one byte on the wire (the shortest MUTF-8 sequence), so a
-    // length the rest of the file cannot supply is malformed by construction.
+    // was killed rather than rejected. Every character this decodes costs at
+    // least one byte on the wire (the shortest MUTF-8 sequence), so a length
+    // the rest of the file cannot supply is malformed by construction.
     checkCount(len, kMinMutf8CharSize);
-    std::string result;
-    result.reserve(len);
-    for (uint32_t i = 0; i < len; ) {
-        uint8_t c = u1();
-        if (c == 0) {
-            // Modified UTF-8 encodes NUL as 0xC0 0x80, but raw NUL is also used
-            // in some DEX files. We tolerate both.
-            result += '\0';
-            ++i;
-        } else if (c < 0x80) {
-            result += static_cast<char>(c);
-            ++i;
-        } else if ((c & 0xE0) == 0xC0) {
-            uint8_t c2 = u1();
-            uint32_t cp = ((c & 0x1F) << 6) | (c2 & 0x3F);
-            // Re-encode as UTF-8
-            if (cp < 0x80) { result += static_cast<char>(cp); }
-            else {
-                result += static_cast<char>(0xC0 | (cp >> 6));
-                result += static_cast<char>(0x80 | (cp & 0x3F));
-            }
-            ++i;
-        } else if ((c & 0xF0) == 0xE0) {
-            uint8_t c2 = u1();
-            uint8_t c3 = u1();
-            uint32_t cp = ((c & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
-            result += static_cast<char>(0xE0 | (cp >> 12));
-            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            result += static_cast<char>(0x80 | (cp & 0x3F));
-            ++i;
-        } else if ((c & 0xF8) == 0xF0) {
-            // 4-byte sequence
-            uint8_t c2 = u1(); uint8_t c3 = u1(); uint8_t c4 = u1();
-            uint32_t cp = ((c & 0x07) << 18) | ((c2 & 0x3F) << 12)
-                        | ((c3 & 0x3F) << 6) | (c4 & 0x3F);
-            result += static_cast<char>(0xF0 | (cp >> 18));
-            result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
-            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            result += static_cast<char>(0x80 | (cp & 0x3F));
-            ++i;
-        } else {
-            // Unknown byte — skip.
-            ++i;
-        }
-    }
-    return result;
+    if (len == 0)
+        return {};
+
+    // The decode itself is utils::txt::mutf8ToUtf8Ex. The loop that used to be
+    // here re-encoded whatever it decoded verbatim -- `0xE0 | (cp >> 12)` for
+    // the three-byte form -- with no surrogate test and no pairing of two
+    // adjacent surrogate sequences, which MUTF-8 (JVM 4.4.7, DEX
+    // "MUTF-8 (Modified UTF-8) Encoding") uses for every supplementary
+    // character. For the input ED A0 80 ED B0 80, which is U+10000, it emitted
+    // those six bytes back unchanged: ED A0 80 is the UTF-8 spelling of
+    // U+D800, a surrogate, which is not a scalar value, so no UTF-8 decoder
+    // will accept it and the character is lost. ESBMC refutes "the
+    // re-encoding is not an ED A0..BF sequence" with c = 0xED, c2 = 0x20,
+    // c3 = 0x00, cp = U+D800. The kernel combines a well-formed pair into the
+    // one scalar value and replaces a lone surrogate with U+FFFD, so every
+    // byte written here is well-formed UTF-8 (proved:
+    // proof_utf16_never_emits_a_surrogate, proof_encode_utf8_is_well_formed).
+    // It also folds the MUTF-8 NUL C0 80 and refuses the overlong forms the
+    // old loop decoded and silently re-encoded short.
+    //
+    // The capacity is the kernel's too: utf8CapacityForMutf8 is where the
+    // 4-bytes-per-declared-unit multiplication is checked for wrap, so the
+    // buffer cannot be sized by a product that came out small while the write
+    // loop runs to the declared length.
+    const size_t cap = utils::txt::utf8CapacityForMutf8(len);
+    if (cap == 0)
+        throw DexParseError("string of " + std::to_string(len) +
+                            " characters is too long to transcode");
+
+    // The scratch buffer is separate from the returned string so the string is
+    // built at its actual length: cap is four bytes per declared unit, and
+    // almost every DEX string is ASCII, so returning the oversized buffer would
+    // hold four times the string table in memory for the life of the DexFile.
+    std::vector<char> buf(cap);
+    // A sequence cut short by the end of the file yields U+FFFD and stops
+    // there, rather than throwing out of u1() as the old loop did: the cursor
+    // is bounded by the bytes that exist either way, and a truncated tail is
+    // not a reason to discard the characters already decoded.
+    const utils::txt::Mutf8Result r = utils::txt::mutf8ToUtf8Ex(
+            data_ + pos_, remaining(), len, buf.data(), cap);
+    pos_ += r.consumed;
+    return std::string(buf.data(), r.written);
 }
 
 std::vector<uint8_t> DexReader::bytes(size_t n) {

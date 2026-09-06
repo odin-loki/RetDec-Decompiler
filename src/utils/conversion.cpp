@@ -173,13 +173,50 @@ std::vector<uint8_t> hexStringToBytes(const std::string& hexIn)
 	std::vector<uint8_t> bytes;
 
 	auto hex = removeWhitespace(hexIn);
-	for (unsigned int i = 0; i < hex.length(); i += 2)
+
+	// Three separate defects lived in the loop this replaces:
+	//
+	//     for (unsigned int i = 0; i < hex.length(); i += 2) {
+	//         std::string byteString = hex.substr(i, 2);
+	//         char byte = strtol(byteString.c_str(), nullptr, 16);
+	//         bytes.push_back(byte);
+	//     }
+	//
+	//  1. The counter is `unsigned int` against a std::string::size_type bound,
+	//     so it cannot represent the indices it must reach. ESBMC's witness is
+	//     length = 0xFC0000007FFFFFFF with i = 4294967294: `i += 2` overflows,
+	//     the counter returns to 0, and the loop never terminates.
+	//  2. An odd number of characters is accepted. "abc" steps to i = 2 and
+	//     takes the one-character substring "c", which strtol parses as the
+	//     whole byte 0x0c -- so "abc" becomes ab 0c, and the nibble the writer
+	//     put in the HIGH half arrives in the LOW half. ESBMC refutes
+	//     "push_back count * 2 == character count" at len = 7, where the loop
+	//     produces four bytes from seven characters.
+	//  3. strtol reports nothing the caller inspects. For the two characters
+	//     'l' and 'K' it returns 0, indistinguishable from "00", so a corrupt
+	//     hex dump silently becomes a run of NUL bytes that every caller
+	//     believes it parsed.
+	//
+	// txt::hexToBytes counts with a std::size_t against a std::size_t bound,
+	// refuses an odd length outright, and refuses the whole run on the first
+	// character that is not a hex digit -- txt::hexValue returns -1 exactly
+	// where strtol returns a silent 0.
+	//
+	// A malformed run now yields an empty vector rather than a plausible one.
+	// That is the point: the two callers (src/capstone2llvmirtool and the
+	// capstone2llvmir test harness) hand this a hand-written instruction
+	// encoding, and "you typed something that is not hex" has to be
+	// distinguishable from "you asked me to disassemble zero bytes".
+	bytes.resize(hex.length() / txt::kHexCharsPerByte);
+
+	std::size_t written = 0;
+	if (!txt::hexToBytes(hex.data(), hex.length(), bytes.data(), bytes.size(), written))
 	{
-		std::string byteString = hex.substr(i, 2);
-		char byte = strtol(byteString.c_str(), nullptr, 16);
-		bytes.push_back(byte);
+		bytes.clear();
+		return bytes;
 	}
 
+	bytes.resize(written);
 	return bytes;
 }
 

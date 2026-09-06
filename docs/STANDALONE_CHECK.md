@@ -32,7 +32,7 @@ suites against a shim, and runs them.
 |---|---|---|
 | Prerequisites | network, ~30 GB, CMake, Ninja | a C++17 compiler |
 | Cold time | hours | ~1 minute |
-| Coverage | whole product | 60 suites, ~3500 assertions over 62 modules |
+| Coverage | whole product | 62 suites, ~3500 assertions over 62 modules |
 
 Two vendored header-only dependencies are used because they are already in the
 tree and cost nothing: `deps/rapidjson` (which unlocks `config`, `serdes`,

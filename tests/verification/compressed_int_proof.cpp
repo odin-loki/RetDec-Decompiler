@@ -452,23 +452,45 @@ extern "C" void proof_two_byte_prefix_needs_two_bytes()
 
 extern "C" void proof_encoder_never_writes_past_the_cap()
 {
-	// The cap is symbolic and the buffer is a real four-byte array, so ESBMC's
-	// array-bounds check refutes any partial write: an encoder that emits the
-	// first byte and then discovers the buffer is short has already written
-	// past a cap of zero.
-	std::uint8_t buf[kMaxBytes] = {0, 0, 0, 0};
+	// The buffer is DELIBERATELY larger than any cap this proof allows, and
+	// that is the whole point of the shape.
+	//
+	// The first version of this proof sized the buffer at kMaxBytes and assumed
+	// `cap <= kMaxBytes`, then said the array-bounds check refuted a partial
+	// write. It does not and cannot: a write at index 0 with a cap of 0 is
+	// inside the array, so the bounds check has nothing to say about it, and
+	// the proof passed for the wrong reason. The audit demonstrated it by
+	// injecting an unconditional `out[0] = ...` before the cap test.
+	//
+	// A tail of sentinel bytes past the cap is what actually carries the
+	// property: they are checked byte by byte, so any write at or beyond `cap`
+	// -- including one the array happily accommodates -- is a failed assertion
+	// naming the byte.
+	static const std::size_t kSlack = kMaxBytes;
+	std::uint8_t buf[kMaxBytes + kSlack];
+	for (std::size_t i = 0; i < kMaxBytes + kSlack; ++i) buf[i] = 0;
+
 	const std::uint32_t v = nondet_uint32();
 	const std::size_t cap = nondet_size();
 	__ESBMC_assume(cap <= kMaxBytes);
 
 	const std::size_t n = encodeUnsigned(v, buf, cap);
 	assert(n <= cap);
-	if (n == 0) assert(buf[0] == 0 && buf[1] == 0 && buf[2] == 0 && buf[3] == 0);
+	// Nothing at or past the cap was touched, whether the encode succeeded or
+	// refused. On a refusal that is every byte, which is the partial-write
+	// property; on success it is the tail, which is the overrun property.
+	for (std::size_t i = cap; i < kMaxBytes + kSlack; ++i) assert(buf[i] == 0);
+	if (n == 0)
+		for (std::size_t i = 0; i < kMaxBytes + kSlack; ++i) assert(buf[i] == 0);
 
-	std::uint8_t sbuf[kMaxBytes] = {0, 0, 0, 0};
+	std::uint8_t sbuf[kMaxBytes + kSlack];
+	for (std::size_t i = 0; i < kMaxBytes + kSlack; ++i) sbuf[i] = 0;
+
 	const std::size_t m = encodeSigned(nondet_int32(), sbuf, cap);
 	assert(m <= cap);
-	if (m == 0) assert(sbuf[0] == 0 && sbuf[1] == 0 && sbuf[2] == 0 && sbuf[3] == 0);
+	for (std::size_t i = cap; i < kMaxBytes + kSlack; ++i) assert(sbuf[i] == 0);
+	if (m == 0)
+		for (std::size_t i = 0; i < kMaxBytes + kSlack; ++i) assert(sbuf[i] == 0);
 }
 
 extern "C" void proof_encoder_refuses_a_null_buffer()

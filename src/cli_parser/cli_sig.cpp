@@ -6,6 +6,8 @@
 #include <memory>
 #include "retdec/cli_parser/cli_sig.h"
 
+#include "retdec/utils/bounds.h"
+
 #include <cassert>
 #include <cstring>
 #include <stdexcept>
@@ -115,6 +117,19 @@ void CliSigDecoder::decodeCustomMods(
     }
 }
 
+/// Smallest number of bytes one compressed integer occupies on the wire.
+///
+/// ECMA-335 II.23.2: the narrowest of the three forms is the one-byte
+/// `0xxxxxxx`. An ArrayShape declaring more sizes or lower bounds than there
+/// are bytes left is malformed by construction.
+static constexpr size_t kMinBytesPerCompressedInt = 1;
+
+/// Smallest number of bytes one Type occupies inside a signature.
+///
+/// ECMA-335 II.23.2.12: a Type is at minimum a single ElementType byte
+/// (`ELEMENT_TYPE_I4` and friends carry no operand).
+static constexpr size_t kMinBytesPerGenericArg = 1;
+
 void CliSigDecoder::decodeArrayShape(
         std::span<const uint8_t> blob, size_t& pos,
         uint32_t& rank,
@@ -122,15 +137,45 @@ void CliSigDecoder::decodeArrayShape(
         std::vector<int32_t>& loBounds) const {
     auto rankOpt = decodeCompressedUInt(blob, pos);
     rank = rankOpt.value_or(0);
-    auto numSizes = decodeCompressedUInt(blob, pos).value_or(0);
-    for (uint32_t i = 0; i < numSizes; ++i) {
-        auto sz = decodeCompressedUInt(blob, pos).value_or(0);
-        sizes.push_back(static_cast<int32_t>(sz));
+
+    // `.value_or(0)` on the COUNT was the whole defect: once pos reaches the
+    // end of the blob every further decode refuses, value_or supplies a 0, and
+    // the loop below still ran its full declared length pushing an element per
+    // iteration. ESBMC's witness is a five-byte blob: 01 DF FF FF FF -- the
+    // one-byte 0x01 gives rank 1 (pos = 1), then the four-byte DF FF FF FF
+    // gives numSizes = 536870911 with pos = 5 and nothing left to read. The
+    // old loop pushed an int32 536,870,911 times, a 2048 MB vector grown out of
+    // a five-byte signature.
+    //
+    // bounds::countFits is the bound the data itself provides: each ArrayShape
+    // size is a compressed integer, so it occupies at least one byte
+    // (ECMA-335 II.23.2, the narrowest form), and a count above the bytes
+    // remaining is malformed by construction. Refusing the whole shape rather
+    // than truncating it keeps a hostile count from producing a plausible
+    // partial answer.
+    auto numSizes = decodeCompressedUInt(blob, pos);
+    if (!numSizes ||
+        !utils::bounds::countFits(pos, blob.size(), *numSizes,
+                                  kMinBytesPerCompressedInt))
+        return;
+    for (uint32_t i = 0; i < *numSizes; ++i) {
+        // A refusal mid-run stops the walk. The count survived countFits, but
+        // that is a lower bound on the bytes each element needs, not a promise
+        // that each one decodes.
+        auto sz = decodeCompressedUInt(blob, pos);
+        if (!sz) return;
+        sizes.push_back(static_cast<int32_t>(*sz));
     }
-    auto numLoBounds = decodeCompressedUInt(blob, pos).value_or(0);
-    for (uint32_t i = 0; i < numLoBounds; ++i) {
-        auto lb = decodeCompressedInt(blob, pos).value_or(0);
-        loBounds.push_back(lb);
+
+    auto numLoBounds = decodeCompressedUInt(blob, pos);
+    if (!numLoBounds ||
+        !utils::bounds::countFits(pos, blob.size(), *numLoBounds,
+                                  kMinBytesPerCompressedInt))
+        return;
+    for (uint32_t i = 0; i < *numLoBounds; ++i) {
+        auto lb = decodeCompressedInt(blob, pos);
+        if (!lb) return;
+        loBounds.push_back(*lb);
     }
 }
 
@@ -212,8 +257,19 @@ CliType CliSigDecoder::decodeType(
         ++pos;  // skip CLASS/VALUETYPE
         MetadataToken tok = readTypeDefOrRef(blob, pos);
         std::string baseName = tokenName(tok);
+        // Same shape as decodeArrayShape above: a declared count that no
+        // continuation of this blob could supply. Every generic argument is a
+        // Type, and the shortest Type is a single ElementType byte
+        // (ECMA-335 II.23.2.12), so one byte per argument is the bound the
+        // format itself justifies. Without it, DF FF FF FF here asks for
+        // 536,870,911 recursive decodeType calls on an exhausted blob, each
+        // pushing a BcType.
         auto countOpt = decodeCompressedUInt(blob, pos);
         uint32_t count = countOpt.value_or(0);
+        if (!countOpt ||
+            !utils::bounds::countFits(pos, blob.size(), count,
+                                      kMinBytesPerGenericArg))
+            count = 0;
         std::vector<BcType> args;
         for (uint32_t i = 0; i < count; ++i) {
             CliType argType = decodeType(blob, pos);

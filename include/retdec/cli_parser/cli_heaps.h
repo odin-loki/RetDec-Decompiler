@@ -101,7 +101,16 @@ public:
 private:
     std::span<const uint8_t> data_;
 
-    static std::string utf16leToUtf8(const uint8_t* src, size_t chars);
+    /// Decode @p chars UTF-16LE units from @p src, which is @p srcBytes long.
+    ///
+    /// The count and the buffer size are both parameters on purpose. This used
+    /// to take the count alone, so the only bound on @p src lived in the
+    /// caller, and a helper that cannot state its own bound is a helper whose
+    /// next caller will not honour it. txt::utf16leToUtf8 takes both, and the
+    /// two are now passed through rather than one being reconstructed from the
+    /// other.
+    static std::string utf16leToUtf8(
+            const uint8_t* src, size_t srcBytes, size_t chars);
 };
 
 // ─── #GUID heap ───────────────────────────────────────────────────────────────

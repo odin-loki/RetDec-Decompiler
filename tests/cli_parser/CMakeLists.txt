@@ -1,5 +1,8 @@
 add_executable(retdec-cli-parser-tests
     cli_parser_test.cpp
+    cli_heaps_regression_test.cpp
+    cli_reader_regression_test.cpp
+    cil_lifter_regression_test.cpp
 )
 
 target_include_directories(retdec-cli-parser-tests

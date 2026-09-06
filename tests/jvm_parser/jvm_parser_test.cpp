@@ -1676,3 +1676,379 @@ TEST(AttributeParser, AcceptsAnnotationNestingUpToTheLimit) {
     ASSERT_EQ(anns.size(), 1u);
     EXPECT_EQ(anns[0].typeName, "x");
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Regressions for the SMT-confirmed defects
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── BinaryReader::check formed pos_ + n ──────────────────────────────────────
+// ESBMC refuted `!(pos + n > size) == (n <= size - pos)` under pos <= size.
+// Reduced: pos = 4, size = 8, n = SIZE_MAX - 3 makes pos_ + n exactly 0, so the
+// old `pos_ + n > size_` was false and check() accepted a read of 2^64-4 bytes
+// out of an eight-byte buffer. skip() is the one caller that then does nothing
+// but advance, so it shows the acceptance without also dereferencing.
+
+TEST(BinaryReader, CheckRefusesALengthThatWrapsThePosition) {
+    uint8_t data[8] = {0};
+    BinaryReader r(data, sizeof(data));
+    r.skip(4);
+    ASSERT_EQ(r.pos(), 4u);
+    // 4 + (SIZE_MAX - 3) == 0 in size_t arithmetic.
+    EXPECT_THROW(r.skip(SIZE_MAX - 3), JvmParseError);
+    // And the reader is still where it was, not wrapped round to 0.
+    EXPECT_EQ(r.pos(), 4u);
+}
+
+TEST(BinaryReader, CheckStillAcceptsAReadThatExactlyFits) {
+    // The fix must not cost the boundary case: n == size_ - pos_ is legal.
+    uint8_t data[8] = {0};
+    BinaryReader r(data, sizeof(data));
+    r.skip(4);
+    EXPECT_NO_THROW(r.skip(4));
+    EXPECT_EQ(r.pos(), 8u);
+    EXPECT_THROW(r.skip(1), JvmParseError);
+}
+
+// ── BinaryReader::mutf8 passed surrogate pairs through ───────────────────────
+// MUTF-8 (JVMS 4.4.7) writes a supplementary character as its two UTF-16
+// surrogates, each as its own three-byte sequence. The old loop folded C0 80
+// and copied everything else byte for byte, so U+1F600 left the parser as
+// ED A0 BD ED B8 80 -- six bytes that are not UTF-8 at all, since D83D and
+// DE00 are not scalar values.
+
+TEST(BinaryReader, Mutf8CombinesASurrogatePairIntoOneCharacter) {
+    // U+1F600 GRINNING FACE: UTF-16 D83D DE00, MUTF-8 ED A0 BD ED B8 80.
+    uint8_t data[] = {0xED, 0xA0, 0xBD, 0xED, 0xB8, 0x80};
+    BinaryReader r(data, sizeof(data));
+    const std::string s = r.mutf8(sizeof(data));
+    EXPECT_EQ(s, std::string("\xF0\x9F\x98\x80"));
+    EXPECT_EQ(s.size(), 4u);
+    EXPECT_EQ(r.pos(), sizeof(data));
+}
+
+TEST(BinaryReader, Mutf8ReplacesALoneSurrogate) {
+    // A high surrogate with nothing after it denotes no character; it becomes
+    // U+FFFD rather than an ED A0..BF sequence no UTF-8 decoder accepts.
+    uint8_t data[] = {0xED, 0xA0, 0xBD};
+    BinaryReader r(data, sizeof(data));
+    EXPECT_EQ(r.mutf8(sizeof(data)), std::string("\xEF\xBF\xBD"));
+}
+
+TEST(BinaryReader, Mutf8StillFoldsTheNulEncodingAndPlainAscii) {
+    // The one thing the old loop got right must survive the rewrite.
+    uint8_t data[] = {0xC0, 0x80, 'A', 'B'};
+    BinaryReader r(data, sizeof(data));
+    const std::string s = r.mutf8(sizeof(data));
+    ASSERT_EQ(s.size(), 3u);
+    EXPECT_EQ(s, std::string("\0AB", 3));
+}
+
+// ── instrSize disagreed with JVMS 6.5 in 23 places ───────────────────────────
+// findLeaders() walks code[] by instrSize(op). A wrong size parks the cursor on
+// an operand byte, which is then decoded as an opcode, and every leader found
+// from there is wrong. Each case below is a code array whose leader set differs
+// between the JVMS size and the size the table used to claim, so the block
+// count is the observable.
+//
+// The three remaining wrong entries -- 0x99 ifeq, 0xBF athrow and 0xC9 jsr_w --
+// are not observable here: findLeaders assigns sz explicitly in the branch,
+// throw and wide-goto arms before it ever consults the table, so those entries
+// were dead. They are corrected for the table's own sake.
+
+namespace {
+
+struct LeaderCase {
+    const char*          what;
+    std::vector<uint8_t> code;
+    uint32_t             expectedBlocks;
+};
+
+// Leaders only; the stack annotator and the ldc resolver would object to these
+// deliberately meaningless instruction sequences and are not under test.
+LiftOptions leadersOnly() {
+    LiftOptions o;
+    o.annotateStack  = false;
+    o.mapLineNumbers = false;
+    o.resolveLdc     = false;
+    return o;
+}
+
+} // namespace
+
+TEST(JvmLifter, InstructionSizesFollowJvms_NoPoolNeeded) {
+    std::vector<LeaderCase> cases;
+
+    // 0x2E-0x34 iaload..caload: the table said 2, JVMS 6.5 says 1 (no operand).
+    // [op, return, return]: with the true size the first return is at pc 1 and
+    // makes pc 2 a leader; with the old size the cursor jumps over it to pc 2
+    // and nothing after the opcode is ever a leader.
+    for (uint8_t op = 0x2E; op <= 0x34; ++op)
+        cases.push_back({"one-byte array load", {op, 0xB1, 0xB1}, 2});
+
+    // 0x36-0x3A istore..astore: the table said 1, JVMS says 2 -- they carry a
+    // local-variable index. With the old size that index byte, 0xB1, decoded as
+    // a return and split the block.
+    for (uint8_t op = 0x36; op <= 0x3A; ++op)
+        cases.push_back({"store with an index", {op, 0xB1, 0xB1}, 1});
+
+    // 0xBC newarray: the table said 3, JVMS says 2 (a one-byte atype).
+    // atype 10 = T_INT.
+    cases.push_back({"newarray", {0xBC, 0x0A, 0xB1, 0xB1}, 2});
+
+    // 0xBE arraylength: the table said 3, JVMS says 1.
+    cases.push_back({"arraylength", {0xBE, 0xB1, 0xB1}, 2});
+
+    auto pool = makeEmptyPool();
+    for (const auto& c : cases) {
+        CodeAttr code;
+        code.bytecode = c.code;
+        JvmLifter lifter(pool, leadersOnly());
+        auto res = lifter.lift(code, "()V");
+        ASSERT_TRUE(res.ok) << c.what << ": " << res.error;
+        EXPECT_EQ(res.cfg.blockCount(), c.expectedBlocks)
+            << c.what << " (opcode 0x" << std::hex
+            << static_cast<unsigned>(c.code[0]) << ")";
+    }
+}
+
+// A pool whose entry 17 is a Methodref, so getstatic/putstatic/getfield/
+// putfield/invokeinterface #17 resolve. 17 is 0x0011 on the wire, and 0x11 is
+// sipush: that is what makes a one-byte step through the opcode desynchronise
+// the scan instead of accidentally landing back on the next instruction.
+static ConstPool makeRefPoolWithEntry17() {
+    std::vector<std::vector<uint8_t>> e;
+    e.push_back(cpUtf8("Owner"));   // 1
+    e.push_back(cpClass(1));        // 2
+    e.push_back(cpUtf8("f"));       // 3
+    e.push_back(cpUtf8("()V"));     // 4
+    e.push_back(cpNaT(3, 4));       // 5
+    while (e.size() < 16) e.push_back(cpUtf8("p"));  // 6..16
+    e.push_back(cpMethodref(2, 5)); // 17
+    auto raw = makeCP(e);
+    BinaryReader r(raw.data(), raw.size());
+    return ConstPool::read(r);
+}
+
+// The same shape with a Class at 17, for anewarray.
+static ConstPool makeClassPoolWithEntry17() {
+    std::vector<std::vector<uint8_t>> e;
+    e.push_back(cpUtf8("Owner"));   // 1
+    while (e.size() < 16) e.push_back(cpUtf8("p"));  // 2..16
+    e.push_back(cpClass(1));        // 17
+    auto raw = makeCP(e);
+    BinaryReader r(raw.data(), raw.size());
+    return ConstPool::read(r);
+}
+
+TEST(JvmLifter, InstructionSizesFollowJvms_FieldAndInvokeOpcodes) {
+    // 0xB2-0xB5 getstatic/putstatic/getfield/putfield: the table said 1, JVMS
+    // says 3 (a u2 constant-pool index). These are in every non-trivial method,
+    // so the desynchronised walk was the normal case: from `getstatic #17` the
+    // old size stepped one byte, read the index high byte 0x00 as nop and its
+    // low byte 0x11 as sipush, and swallowed the return that followed.
+    auto refPool = makeRefPoolWithEntry17();
+    for (uint8_t op : {0xB2, 0xB3, 0xB4, 0xB5}) {
+        CodeAttr code;
+        code.bytecode = {op, 0x00, 0x11, 0xB1, 0xB1};
+        JvmLifter lifter(refPool, leadersOnly());
+        auto res = lifter.lift(code, "()V");
+        ASSERT_TRUE(res.ok) << res.error;
+        EXPECT_EQ(res.cfg.blockCount(), 2u)
+            << "opcode 0x" << std::hex << static_cast<unsigned>(op);
+    }
+
+    // 0xB9 invokeinterface: the table said 3, JVMS says 5 -- a u2 index, a
+    // one-byte argument count, and a reserved zero byte.
+    {
+        CodeAttr code;
+        code.bytecode = {0xB9, 0x00, 0x11, 0x11, 0x00, 0xB1, 0xB1};
+        JvmLifter lifter(refPool, leadersOnly());
+        auto res = lifter.lift(code, "()V");
+        ASSERT_TRUE(res.ok) << res.error;
+        EXPECT_EQ(res.cfg.blockCount(), 2u);
+    }
+
+    // 0xBD anewarray: the table said 1, JVMS says 3.
+    {
+        auto classPool = makeClassPoolWithEntry17();
+        CodeAttr code;
+        code.bytecode = {0xBD, 0x00, 0x11, 0xB1, 0xB1};
+        JvmLifter lifter(classPool, leadersOnly());
+        auto res = lifter.lift(code, "()V");
+        ASSERT_TRUE(res.ok) << res.error;
+        EXPECT_EQ(res.cfg.blockCount(), 2u);
+    }
+}
+
+TEST(JvmLifter, GetStaticThenGotoStillFindsTheBranchTarget) {
+    // The end-to-end symptom: `getstatic #17; goto +4; nop; return`. Stepping
+    // one byte from the getstatic desynchronised the scan onto its operand
+    // bytes, the goto was never seen as a branch, and its target never became a
+    // leader -- so the method came back as one straight-line block.
+    auto pool = makeRefPoolWithEntry17();
+    CodeAttr code;
+    code.bytecode = {
+        0xB2, 0x00, 0x11,   // pc 0: getstatic #17
+        0xA7, 0x00, 0x04,   // pc 3: goto +4 -> pc 7
+        0x00,               // pc 6: nop
+        0xB1                // pc 7: return
+    };
+    JvmLifter lifter(pool, leadersOnly());
+    auto res = lifter.lift(code, "()V");
+    ASSERT_TRUE(res.ok) << res.error;
+    // Leaders 0, 6 (fall-through past the goto) and 7 (the branch target).
+    ASSERT_EQ(res.cfg.blockCount(), 3u);
+    ASSERT_FALSE(res.cfg.block(2).instrs.empty());
+    EXPECT_EQ(res.cfg.block(2).instrs.front().offset, 7u);
+    // And the goto's edge reaches it.
+    EXPECT_TRUE(res.cfg.hasEdge(0, 2));
+}
+
+// ── pc + off wrapped, and the narrowed result became a leader ────────────────
+// probe_jvm275.cpp asserted `leader < codeLen` for the eight
+// `leaders.insert(static_cast<uint32_t>(pc + off))` sites and ESBMC refuted it
+// twice: forward with codeLen = 33012, pc = 193, def = 94928897 giving leader
+// 94929090, and backward with codeLen = 32773, pc = 32769, def = -1073774593,
+// whose true target -1041005824 wrapped and narrowed to 0xC0000000. Both
+// produced a block that no instruction falls into.
+
+TEST(JvmLifter, ForwardBranchPastTheEndOfCodeIsNotALeader) {
+    CodeAttr code;
+    // goto +32767 from pc 0, in a four-byte method.
+    code.bytecode = {0xA7, 0x7F, 0xFF, 0xB1};
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool, leadersOnly());
+    auto res = lifter.lift(code, "()V");
+    ASSERT_TRUE(res.ok) << res.error;
+    // Leaders are 0 and 3 (the byte after the goto). 32767 is not one.
+    EXPECT_EQ(res.cfg.blockCount(), 2u);
+    for (uint32_t b = 0; b < res.cfg.blockCount(); ++b)
+        EXPECT_FALSE(res.cfg.block(b).instrs.empty())
+            << "block " << b << " leads nothing";
+}
+
+TEST(JvmLifter, BackwardBranchBeforeTheStartOfCodeIsNotALeader) {
+    CodeAttr code;
+    // nop, then goto -16 from pc 1: the true target is -15, before the method.
+    code.bytecode = {0x00, 0xA7, 0xFF, 0xF0, 0xB1};
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool, leadersOnly());
+    auto res = lifter.lift(code, "()V");
+    ASSERT_TRUE(res.ok) << res.error;
+    // Leaders are 0 and 4. The old code inserted (uint32_t)(1 - 16) =
+    // 0xFFFFFFF1 as a third.
+    EXPECT_EQ(res.cfg.blockCount(), 2u);
+    for (uint32_t b = 0; b < res.cfg.blockCount(); ++b)
+        EXPECT_FALSE(res.cfg.block(b).instrs.empty())
+            << "block " << b << " leads nothing";
+}
+
+TEST(JvmLifter, TableSwitchDefaultPastTheEndOfCodeIsNotALeader) {
+    // The same defect at the tableswitch default site.
+    CodeAttr code;
+    code.bytecode = {
+        0xAA,                    // pc 0: tableswitch
+        0x00, 0x00, 0x00,        // pad to a 4-byte boundary
+        0x7F, 0xFF, 0xFF, 0xFF,  // default = +INT32_MAX
+        0x00, 0x00, 0x00, 0x00,  // lo = 0
+        0x00, 0x00, 0x00, 0x00,  // hi = 0
+        0x00, 0x00, 0x00, 0x14,  // case 0 -> +20 -> pc 20
+        0xB1                     // pc 20: return
+    };
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool, leadersOnly());
+    auto res = lifter.lift(code, "()V");
+    ASSERT_TRUE(res.ok) << res.error;
+    // Leaders: 0 and 20. The default lands 2147483647 bytes past pc 0 and is
+    // no leader at all; the in-range case still is.
+    ASSERT_EQ(res.cfg.blockCount(), 2u);
+    ASSERT_FALSE(res.cfg.block(1).instrs.empty());
+    EXPECT_EQ(res.cfg.block(1).instrs.front().offset, 20u);
+}
+
+TEST(JvmLifter, InRangeBranchesStillResolve) {
+    // The range check must not cost a valid branch: both directions inside the
+    // method still produce leaders and edges.
+    CodeAttr code;
+    code.bytecode = {
+        0x00,               // pc 0: nop
+        0xA7, 0x00, 0x03,   // pc 1: goto +3 -> pc 4
+        0xA7, 0xFF, 0xFD,   // pc 4: goto -3 -> pc 1
+    };
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool, leadersOnly());
+    auto res = lifter.lift(code, "()V");
+    ASSERT_TRUE(res.ok) << res.error;
+    // Leaders 0, 1 and 4.
+    ASSERT_EQ(res.cfg.blockCount(), 3u);
+    EXPECT_EQ(res.cfg.block(1).instrs.front().offset, 1u);
+    EXPECT_EQ(res.cfg.block(2).instrs.front().offset, 4u);
+    EXPECT_TRUE(res.cfg.hasEdge(1, 2));  // pc 1 -> pc 4
+    EXPECT_TRUE(res.cfg.hasEdge(2, 1));  // pc 4 -> pc 1
+}
+
+// ── multiReleaseVersion compared 19 characters against an 18-character literal
+// `path.substr(0, 19) != "META-INF/versions/"` is true for every entry in every
+// JAR, so multi-release selection was dead code and every versioned class was
+// added a second time under a package name derived from the unstripped path.
+
+TEST(JarReader, MultiReleaseEntryReportsItsVersion) {
+    auto zip = storedZip({
+        {"META-INF/versions/9/Hello.class", {0x00}},
+        {"Hello.class", {0x00}},
+        {"META-INF/versions/17/Hello.class", {0x00}},
+    });
+    JarReader reader;
+    auto entries = reader.listEntries(zip.data(), zip.size());
+    ASSERT_EQ(entries.size(), 3u);
+    EXPECT_EQ(entries[0].version, 9);
+    EXPECT_EQ(entries[1].version, 0);
+    EXPECT_EQ(entries[2].version, 17);
+}
+
+TEST(JarReader, MultiReleaseNonVersionsAreNotVersions) {
+    // A near miss and a malformed run must both stay at 0 rather than being
+    // read as a version: decimalRun reports an empty digit run as failure, and
+    // the run has to be a whole path segment.
+    auto zip = storedZip({
+        {"META-INF/versionsX/9/Hello.class", {0x00}},
+        {"META-INF/versions//Hello.class",   {0x00}},
+        {"META-INF/versions/9x/Hello.class", {0x00}},
+        {"META-INF/versions/",               {0x00}},
+    });
+    JarReader reader;
+    auto entries = reader.listEntries(zip.data(), zip.size());
+    ASSERT_EQ(entries.size(), 4u);
+    for (const auto& e : entries)
+        EXPECT_EQ(e.version, 0) << e.path;
+}
+
+TEST(JarReader, MultiReleaseClassIsNotCountedTwice) {
+    // The base class and its Java 9 override are one class, not two.
+    auto cls = makeHelloWorldClass();
+    auto zip = storedZip({
+        {"Hello.class", cls},
+        {"META-INF/versions/9/Hello.class", cls},
+    });
+    JarReader reader;  // targetJavaVersion defaults to 21
+    auto res = reader.read(zip.data(), zip.size());
+    ASSERT_TRUE(res.ok) << res.error;
+    EXPECT_EQ(res.classesFound, 1u);
+}
+
+TEST(JarReader, MultiReleaseEntryAboveTheTargetIsSkipped) {
+    // Selection is live again, so a versioned entry newer than the target
+    // runtime is dropped and the base class is the one that is kept.
+    auto cls = makeHelloWorldClass();
+    auto zip = storedZip({
+        {"Hello.class", cls},
+        {"META-INF/versions/17/Hello.class", cls},
+    });
+    JarReadOptions opts;
+    opts.targetJavaVersion = 11;
+    JarReader reader(opts);
+    auto res = reader.read(zip.data(), zip.size());
+    ASSERT_TRUE(res.ok) << res.error;
+    EXPECT_EQ(res.classesFound, 1u);
+    EXPECT_GE(res.classesParsed, 1u);
+}

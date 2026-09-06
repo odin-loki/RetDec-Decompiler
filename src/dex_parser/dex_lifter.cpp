@@ -17,6 +17,7 @@
 #include "retdec/dex_parser/dex_lifter.h"
 #include "retdec/bc_module/bc_instr.h"
 #include "retdec/utils/bounds.h"
+#include "retdec/utils/scan_cursor.h"
 
 #include <algorithm>
 #include <cassert>
@@ -296,31 +297,53 @@ static BcFuncType parseDexProto(const std::string& proto) {
     // number, not a cap chosen here.
     static constexpr size_t kMaxParams = 65535;
 
-    // Parse params
-    size_t i = 1;
-    while (i < closeP && ft.params.size() < kMaxParams) {
+    // Parse params.
+    //
+    // The step is taken by utils::scan::advance rather than by assigning to a
+    // bare index, because the array arm below had no `end == std::string::npos`
+    // guard where its sibling 'L' arm at the top of the loop does. On the
+    // descriptor "([L)V" -- a '[' whose element type names no class, which the
+    // string table can hand us -- closeP is 3, the '[' arm runs at i = 1 with
+    // j = 2, proto.find(';', 2) is npos = SIZE_MAX, and `i = end + 1` wraps to
+    // 0. The cursor then cycles 0 -> 1 -> 0 -> 1, pushing two BcType nodes per
+    // cycle, and the only thing that stops it is the kMaxParams cap -- which is
+    // why the artifact was 65535 bogus parameters rather than a hang. The npos
+    // guard is restored below; advance() is what makes the absence of another
+    // one a refusal rather than a wrap, since it rejects a step of zero and a
+    // step that leaves the descriptor.
+    utils::scan::Cursor cur = utils::scan::cursorOver(proto.size());
+    utils::scan::seek(cur, 1); // past the '(' proto[0] was checked to be
+
+    while (cur.pos < closeP && ft.params.size() < kMaxParams) {
+        const size_t i = cur.pos;
         char c = proto[i];
+        size_t next = i + 1;
         if (c == 'L') {
             size_t end = proto.find(';', i);
             if (end == std::string::npos) break;
             ft.params.push_back(std::make_shared<BcType>(dexDescToType(proto.substr(i, end - i + 1))));
-            i = end + 1;
+            next = end + 1;
         } else if (c == '[') {
             // Array type — find element
             size_t j = i + 1;
             while (j < closeP && proto[j] == '[') ++j;
             if (j < closeP && proto[j] == 'L') {
                 size_t end = proto.find(';', j);
+                if (end == std::string::npos) break;
                 ft.params.push_back(std::make_shared<BcType>(dexDescToType(proto.substr(i, end - i + 1))));
-                i = end + 1;
+                next = end + 1;
             } else {
                 ft.params.push_back(std::make_shared<BcType>(dexDescToType(proto.substr(i, j - i + 1))));
-                i = j + 1;
+                next = j + 1;
             }
         } else {
             ft.params.push_back(std::make_shared<BcType>(dexDescToType(std::string(1, c))));
-            ++i;
+            next = i + 1;
         }
+        // next > i on every path above, and next <= proto.size(), so this
+        // refuses only when the arms themselves have gone wrong.
+        if (!utils::scan::advance(cur, next - i))
+            break;
     }
     ft.returnType = std::make_shared<BcType>(dexDescToType(proto.substr(closeP + 1)));
     return ft;

@@ -394,12 +394,19 @@ extern "C" void proof_the_guid_heap_wraps_at_index_16m()
 
 extern "C" void proof_split_tag_is_lossless()
 {
-	// Every uint32 and every tag width ECMA-335 II.24.2.6 defines. A dropped
-	// index bit here does not fail -- it silently addresses a different row of
-	// the same table, which is two metadata rows aliased onto one.
+	// Every uint32 and every tag width splitTag accepts -- not only the 1 to 5
+	// bits ECMA-335 II.24.2.6 defines, and not only the 0 to 16 an earlier
+	// version of this proof assumed. The header states losslessness "for every
+	// uint32 and every tagBits below 32", so that is what is proved; a header
+	// claiming more than its harness discharges is how a reader ends up
+	// trusting the wrong bound.
+	//
+	// A dropped index bit here does not fail -- it silently addresses a
+	// different row of the same table, which is two metadata rows aliased onto
+	// one.
 	const std::uint32_t coded = nondet_u32();
 	const unsigned tagBits = nondet_unsigned();
-	__ESBMC_assume(tagBits <= 16);
+	__ESBMC_assume(tagBits < 32);
 
 	std::uint32_t tag = 0xDEADBEEF, payload = 0xDEADBEEF;
 	const bool ok = splitTag(coded, tagBits, tag, payload);
@@ -502,15 +509,63 @@ extern "C" void proof_split_high_refuses_a_width_past_the_word()
 	assert(high == 3 && low == 5);
 }
 
-// ─── tagIndexes and the eleven decoders ──────────────────────────────────────
+// ─── tagIndexes and the thirteen coded-token kinds ───────────────────────────
 //
-// src/cli_parser/cli_tables.cpp:96-114 declares the coded-token tables and
-// :858-928 the eleven decoders that read them. Each decoder pairs a mask width
-// with a table length by inspection; seven check the pairing with an explicit
-// `if (tag >= N) return {};` and four do not. Modelled below at their exact
-// lengths, so ESBMC's array-bounds checking -- not an assertion anyone had to
-// think to write -- carries the property that no coded value can drive a
-// subscript outside its table.
+// src/cli_parser/cli_tables.cpp:99-115 declares thirteen coded-token tables.
+// Eleven have a decoder at :858-928; the other two, HasFieldMarshal and
+// HasDeclSecurity, are reached through RowReader::codedToken instead. All
+// thirteen are modelled below at their exact lengths.
+//
+// A coded token carries a tag in its low bits and a row index above them, and
+// the tag is a subscript into the table. So there are two different properties
+// here and an earlier version of this block proved neither of them properly.
+//
+// It read:
+//
+//     if (tagIndexes(tag, Len)) sink = table[tag];
+//     assert(tagIndexes(tag, Len) == (tag < Len));
+//
+// for every kind. The subscript sits inside the guard, so the array-bounds
+// check is satisfied by construction whatever the tag width is, and the
+// assertion restates tagIndexes' own one-line body. Measured, not argued: the
+// audit changed proof_type_def_or_ref_stays_in_table to a 5-bit tag over the
+// 3-entry table -- the exact mismatch the proof advertised catching -- and it
+// still reported VERIFICATION SUCCESSFUL.
+//
+// The two properties are separated below, and which one a kind gets is decided
+// by a static_assert on its own numbers rather than by whoever writes the call:
+//
+//   tagFitsTheTableExactly  2^TagBits == Len. The mask admits exactly the
+//                           table's entries, so the guard is unnecessary --
+//                           which is precisely why cli_tables.cpp:895, :901,
+//                           :907 and :913 are sound without one. Proved by
+//                           subscripting WITHOUT a guard, so ESBMC's
+//                           array-bounds check is the property.
+//
+//   tagNeedsItsGuard        2^TagBits > Len. The mask admits rows the table
+//                           does not have, so the guard is load-bearing. Proved
+//                           with the guard, plus a witness that the guard
+//                           really refuses something the mask can produce.
+//
+// Pairing a kind with the wrong width now fails to compile -- in the direction
+// that matters. tagFitsTheTableExactly rejects any width but the exact one, so
+// the five unguarded kinds cannot be mis-stated at all.
+//
+// What is deliberately NOT claimed: tagNeedsItsGuard proves "with the guard, no
+// read leaves the table", and that is true for any width wider than the table,
+// so widening a guarded kind from 2 bits to 5 still verifies. It has to: the
+// property is about the guard, not about ECMA-335. Whether cli_tables.cpp uses
+// the width ECMA-335 assigns to each kind is a fact about the specification,
+// and no proof over this harness can check it -- only reading the decoder
+// against the standard can, or linking cli_tables.cpp and proving the decoders
+// themselves. The table of widths above is the place a reviewer checks.
+//
+// The new form was watched failing before it was trusted. Dropping the mask in
+// splitTag (`tag = coded` instead of `tag = coded & mask`) fails
+// proof_has_semantics_stays_in_table and proof_resolution_scope_stays_in_table
+// on the array read. Under the guarded form that defect passes, because the
+// guard filters it out before the subscript -- which is the whole reason this
+// block was rewritten.
 
 static const std::uint8_t kTypeDefOrRef[]    = {0x02, 0x01, 0x1B};             // 2 bits
 static const std::uint8_t kHasConstant[]     = {0x04, 0x08, 0x17};             // 2 bits
@@ -519,6 +574,8 @@ static const std::uint8_t kHasCustomAttr[]   = {0x06, 0x04, 0x01, 0x02, 0x08,  /
                                                 0x17, 0x18, 0x1A, 0x1B, 0x20,
                                                 0x23, 0x26, 0x27, 0x28, 0x2A,
                                                 0x2B, 0x2C};
+static const std::uint8_t kHasFieldMarshal[] = {0x04, 0x08};                   // 1 bit
+static const std::uint8_t kHasDeclSecurity[] = {0x02, 0x06, 0x20};             // 2 bits
 static const std::uint8_t kMemberRefParent[] = {0x02, 0x01, 0x1A, 0x06, 0x1B}; // 3 bits
 static const std::uint8_t kHasSemantics[]    = {0x14, 0x17};                   // 1 bit
 static const std::uint8_t kMethodDefOrRef[]  = {0x06, 0x0A};                   // 1 bit
@@ -528,37 +585,99 @@ static const std::uint8_t kCustomAttrType[]  = {0xFF, 0xFF, 0x06, 0x0A, 0xFF}; /
 static const std::uint8_t kResolutionScope[] = {0x00, 0x1A, 0x23, 0x01};       // 2 bits
 static const std::uint8_t kTypeOrMethodDef[] = {0x02, 0x06};                   // 1 bit
 
+/// 2^TagBits == Len: the mask admits exactly the table's entries.
+///
+/// Stated by subscripting with NO guard, so the array read itself is the
+/// property -- if any uint32 at all could drive `tag` past the end, ESBMC
+/// reports the out-of-bounds access and names the line. This is the property
+/// that makes the four unguarded decoders in cli_tables.cpp sound, and it is
+/// not expressible with the guard in place.
 template <unsigned TagBits, std::size_t Len>
-static void tagNeverLeavesTheTable(const std::uint8_t (&table)[Len])
+static void tagFitsTheTableExactly(const std::uint8_t (&table)[Len])
 {
+	static_assert(TagBits < 32,
+		"splitTag refuses a tag at or above the word width");
+	static_assert((static_cast<std::size_t>(1) << TagBits) == Len,
+		"tagFitsTheTableExactly is for a mask that admits exactly the table's "
+		"entries; a mask wider than the table belongs in tagNeedsItsGuard");
+
 	const std::uint32_t coded = nondet_u32();
 
 	std::uint32_t tag = 0, payload = 0;
 	assert(splitTag(coded, TagBits, tag, payload));
 
-	if (tagIndexes(tag, Len)) {
-		// The subscript. If any uint32 at all could drive `tag` past the end of
-		// this table, ESBMC reports an out-of-bounds read here rather than a
-		// failed assertion -- which is the point: the guard is checked against
-		// the array it guards, not against a number in a comment.
-		idxmap_proof_sink = table[tag];
-	}
+	// No guard. The mask is the bound, and this read is the proof of it.
+	idxmap_proof_sink = table[tag];
 
-	// The guard is exactly the subscript condition, neither wider nor narrower.
-	assert(tagIndexes(tag, Len) == (static_cast<std::size_t>(tag) < Len));
+	// ... so a caller that writes the guard anyway can never see it refuse.
+	assert(tagIndexes(tag, Len));
 }
 
-extern "C" void proof_type_def_or_ref_stays_in_table()    { tagNeverLeavesTheTable<2>(kTypeDefOrRef); }
-extern "C" void proof_has_constant_stays_in_table()       { tagNeverLeavesTheTable<2>(kHasConstant); }
-extern "C" void proof_has_custom_attr_stays_in_table()    { tagNeverLeavesTheTable<5>(kHasCustomAttr); }
-extern "C" void proof_member_ref_parent_stays_in_table()  { tagNeverLeavesTheTable<3>(kMemberRefParent); }
-extern "C" void proof_has_semantics_stays_in_table()      { tagNeverLeavesTheTable<1>(kHasSemantics); }
-extern "C" void proof_method_def_or_ref_stays_in_table()  { tagNeverLeavesTheTable<1>(kMethodDefOrRef); }
-extern "C" void proof_member_forwarded_stays_in_table()   { tagNeverLeavesTheTable<1>(kMemberForwarded); }
-extern "C" void proof_implementation_stays_in_table()     { tagNeverLeavesTheTable<2>(kImplementation); }
-extern "C" void proof_custom_attr_type_stays_in_table()   { tagNeverLeavesTheTable<3>(kCustomAttrType); }
-extern "C" void proof_resolution_scope_stays_in_table()   { tagNeverLeavesTheTable<2>(kResolutionScope); }
-extern "C" void proof_type_or_method_def_stays_in_table() { tagNeverLeavesTheTable<1>(kTypeOrMethodDef); }
+/// 2^TagBits > Len: the mask admits rows the table does not have.
+///
+/// Two properties, because either one alone is satisfiable by a mistake. With
+/// the guard, no coded token reaches a subscript outside the table -- carried
+/// by the array-bounds check on the real read. And the guard is not a
+/// tautology: there is a tag the mask produces and the table refuses. The
+/// second is what the static_assert makes true and the assume below makes
+/// reachable, so the property is not vacuous.
+template <unsigned TagBits, std::size_t Len>
+static void tagNeedsItsGuard(const std::uint8_t (&table)[Len])
+{
+	static_assert(TagBits < 32,
+		"splitTag refuses a tag at or above the word width");
+	static_assert((static_cast<std::size_t>(1) << TagBits) > Len,
+		"tagNeedsItsGuard is for a mask wider than the table; a mask that fits "
+		"exactly belongs in tagFitsTheTableExactly, where the bound is proved "
+		"without a guard at all");
+
+	const std::uint32_t coded = nondet_u32();
+
+	std::uint32_t tag = 0, payload = 0;
+	assert(splitTag(coded, TagBits, tag, payload));
+
+	if (tagIndexes(tag, Len))
+		idxmap_proof_sink = table[tag];
+
+	// The guard refuses something the mask can produce. The token is not
+	// hand-picked: it is any token at all whose tag comes out as Len, and one
+	// exists because Len < 2^TagBits -- which is the static_assert above, so
+	// this assume cannot be unsatisfiable and make the assertion vacuous.
+	const std::uint32_t other = nondet_u32();
+	std::uint32_t otherTag = 0, otherPayload = 0;
+	assert(splitTag(other, TagBits, otherTag, otherPayload));
+	__ESBMC_assume(otherTag == static_cast<std::uint32_t>(Len));
+	assert(!tagIndexes(otherTag, Len));
+}
+
+// The six kinds whose mask is wider than their table. Each `if (tag >= N)` in
+// cli_tables.cpp is the guard this proves load-bearing.
+extern "C" void proof_type_def_or_ref_stays_in_table()    { tagNeedsItsGuard<2>(kTypeDefOrRef); }
+extern "C" void proof_has_constant_stays_in_table()       { tagNeedsItsGuard<2>(kHasConstant); }
+extern "C" void proof_has_custom_attr_stays_in_table()    { tagNeedsItsGuard<5>(kHasCustomAttr); }
+extern "C" void proof_has_decl_security_stays_in_table()  { tagNeedsItsGuard<2>(kHasDeclSecurity); }
+extern "C" void proof_member_ref_parent_stays_in_table()  { tagNeedsItsGuard<3>(kMemberRefParent); }
+extern "C" void proof_implementation_stays_in_table()     { tagNeedsItsGuard<2>(kImplementation); }
+extern "C" void proof_custom_attr_type_stays_in_table()   { tagNeedsItsGuard<3>(kCustomAttrType); }
+
+// The five whose mask fits their table exactly. Four of these are the decoders
+// that carry no guard at all, and this is the proof that they need none.
+extern "C" void proof_has_field_marshal_stays_in_table()  { tagFitsTheTableExactly<1>(kHasFieldMarshal); }
+extern "C" void proof_has_semantics_stays_in_table()      { tagFitsTheTableExactly<1>(kHasSemantics); }
+extern "C" void proof_method_def_or_ref_stays_in_table()  { tagFitsTheTableExactly<1>(kMethodDefOrRef); }
+extern "C" void proof_member_forwarded_stays_in_table()   { tagFitsTheTableExactly<1>(kMemberForwarded); }
+extern "C" void proof_type_or_method_def_stays_in_table() { tagFitsTheTableExactly<1>(kTypeOrMethodDef); }
+extern "C" void proof_resolution_scope_stays_in_table()   { tagFitsTheTableExactly<2>(kResolutionScope); }
+
+/// The number of entries in one of the tables above, as a std::size_t.
+///
+/// The assertions below used to spell the lengths out as literals -- three
+/// separate `assert(!tagIndexes(3, 3))` for three different tables, which is
+/// one SMT query and not three, and which silently stops describing its table
+/// the moment an entry is added. Deriving the length from the array keeps the
+/// assertion attached to the thing it is about.
+template <std::size_t Len>
+static constexpr std::size_t entriesIn(const std::uint8_t (&)[Len]) { return Len; }
 
 extern "C" void proof_a_one_bit_tag_needs_no_guard()
 {
@@ -567,35 +686,59 @@ extern "C" void proof_a_one_bit_tag_needs_no_guard()
 	// :907 and :913 -- are all 1-bit tags over 2-entry tables. This is why they
 	// are sound: the mask admits exactly the two subscripts the table has, so
 	// tagIndexes is a tautology there rather than a missing check.
+	//
+	// The four tables are named rather than assumed to be two entries long, so
+	// adding an entry to any of them makes this fail instead of quietly ceasing
+	// to be about them.
+	static_assert(entriesIn(kTypeOrMethodDef) == 2, "no longer a 1-bit kind");
+	static_assert(entriesIn(kMethodDefOrRef)  == 2, "no longer a 1-bit kind");
+	static_assert(entriesIn(kHasSemantics)    == 2, "no longer a 1-bit kind");
+	static_assert(entriesIn(kMemberForwarded) == 2, "no longer a 1-bit kind");
+
 	const std::uint32_t coded = nondet_u32();
 	std::uint32_t tag = 0, payload = 0;
 	assert(splitTag(coded, 1, tag, payload));
 	assert(tag < 2);
-	assert(tagIndexes(tag, 2));
+	assert(tagIndexes(tag, entriesIn(kTypeOrMethodDef)));
 }
 
 extern "C" void proof_the_tag_guard_is_load_bearing_everywhere_else()
 {
-	// The other seven pair a mask with a shorter table, so the guard is the
-	// only thing between a coded token and a read past the end. Each assertion
-	// names a tag the mask can produce and the table does not have.
-	assert(!tagIndexes(3, 3));   // TypeDefOrRef:   2 bits admit 0..3, 3 entries
-	assert(!tagIndexes(3, 3));   // HasConstant:    2 bits admit 0..3, 3 entries
-	assert(!tagIndexes(22, 22)); // HasCustomAttribute: 5 bits admit 0..31, 22 entries
-	assert(!tagIndexes(31, 22));
-	assert(!tagIndexes(5, 5));   // MemberRefParent: 3 bits admit 0..7, 5 entries
-	assert(!tagIndexes(7, 5));
-	assert(!tagIndexes(3, 3));   // Implementation: 2 bits admit 0..3, 3 entries
-	assert(!tagIndexes(5, 5));   // CustomAttributeType: 3 bits admit 0..7, 5 entries
+	// Seven kinds pair a mask with a shorter table, so the guard is the only
+	// thing between a coded token and a read past the end. Each assertion names
+	// a tag the mask can produce and the table does not have -- and takes the
+	// table's length FROM the table, so if an entry is ever added the assertion
+	// follows it rather than describing a length that no longer exists.
+	const std::uint32_t coded = nondet_u32();
+	std::uint32_t tag = 0, payload = 0;
 
-	// ResolutionScope is the exception among the guarded seven: 2 bits admit
+	// 2 bits admit 0..3.
+	assert(splitTag(coded, 2, tag, payload));
+	if (tag >= entriesIn(kTypeDefOrRef))    assert(!tagIndexes(tag, entriesIn(kTypeDefOrRef)));
+	if (tag >= entriesIn(kHasConstant))     assert(!tagIndexes(tag, entriesIn(kHasConstant)));
+	if (tag >= entriesIn(kHasDeclSecurity)) assert(!tagIndexes(tag, entriesIn(kHasDeclSecurity)));
+	if (tag >= entriesIn(kImplementation))  assert(!tagIndexes(tag, entriesIn(kImplementation)));
+	// ... and 3 is a tag those 2 bits really produce, so the refusal above is
+	// reachable rather than a statement about an empty set.
+	assert(!tagIndexes(3, entriesIn(kTypeDefOrRef)));
+
+	// 3 bits admit 0..7.
+	assert(splitTag(coded, 3, tag, payload));
+	if (tag >= entriesIn(kMemberRefParent)) assert(!tagIndexes(tag, entriesIn(kMemberRefParent)));
+	if (tag >= entriesIn(kCustomAttrType))  assert(!tagIndexes(tag, entriesIn(kCustomAttrType)));
+	assert(!tagIndexes(7, entriesIn(kMemberRefParent)));
+
+	// 5 bits admit 0..31 over 22 entries, the widest gap of the thirteen.
+	assert(splitTag(coded, 5, tag, payload));
+	if (tag >= entriesIn(kHasCustomAttr))   assert(!tagIndexes(tag, entriesIn(kHasCustomAttr)));
+	assert(!tagIndexes(31, entriesIn(kHasCustomAttr)));
+
+	// ResolutionScope is the exception among the guarded kinds: 2 bits admit
 	// exactly its 4 entries, so its `if (tag >= 4)` never fires. Harmless, but
 	// stated here so nobody removes the guard from a neighbour by analogy with
 	// this one.
-	const std::uint32_t coded = nondet_u32();
-	std::uint32_t tag = 0, payload = 0;
 	assert(splitTag(coded, 2, tag, payload));
-	assert(tagIndexes(tag, 4));
+	assert(tagIndexes(tag, entriesIn(kResolutionScope)));
 }
 
 // ─── codedTokenIsWide ────────────────────────────────────────────────────────
