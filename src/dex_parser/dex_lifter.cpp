@@ -302,8 +302,8 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const {
     // supply the unit before touching it, and reads zero when it cannot.  The
     // question is asked in size_t via the verified kernel because `off + i`
     // is 32-bit here and would wrap for an offset near the end of the range.
-    // decodeInsn() already guards its reads the same way; this is the copy of
-    // that lambda findLeaders was missing.
+    // decodeInsn()'s `w` accessor guards its reads through the same helper;
+    // this is the copy of that lambda findLeaders was missing.
     auto unit = [&](uint32_t i) -> uint16_t {
         return utils::bounds::rangeFits(off, total, static_cast<size_t>(i) + 1)
             ? insns[off + i] : 0;
@@ -556,7 +556,11 @@ uint32_t DexLifter::decodeInsn(BcBasicBlock& blk,
     insn.offset = off * 2u; // byte offset
 
     auto w = [&](uint32_t i) -> uint16_t {
-        return (off + i < insns.size()) ? insns[off + i] : 0;
+        // Same guard as findLeaders' `unit`, through the same verified helper:
+        // `off + i` is 32-bit here and would wrap for an offset near the end of
+        // the range, so the question is asked in size_t instead.
+        return utils::bounds::rangeFits(off, insns.size(), static_cast<size_t>(i) + 1)
+            ? insns[off + i] : 0;
     };
 
     // Lambda to build invocation operands (method ref + arg registers)

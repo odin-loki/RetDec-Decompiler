@@ -747,6 +747,112 @@ TEST(DexClassParser, FillsStaticFieldConstants) {
     EXPECT_EQ(42, *result.bcClass->fields[0].constantIntValue);
 }
 
+// VALUE_ARRAY and VALUE_ANNOTATION nest through skipEncodedValue, and each
+// level costs two bytes on the wire -- so without a depth bound a small file
+// asks for arbitrarily deep recursion and exhausts the stack. No bound derived
+// from the input size catches that; the parser carries a fixed depth limit.
+//
+// Built from FillsStaticFieldConstants above, changing only the encoded_array
+// so the surrounding file is known to parse.
+TEST(DexClassParser, RefusesDeeplyNestedEncodedArray) {
+    std::vector<uint8_t> dex(0x300, 0);
+    auto setU2 = [&](size_t off, uint16_t v) {
+        dex[off] = v & 0xFF; dex[off+1] = (v >> 8) & 0xFF;
+    };
+    auto setU4 = [&](size_t off, uint32_t v) {
+        dex[off] = v & 0xFF; dex[off+1] = (v >> 8) & 0xFF;
+        dex[off+2] = (v >> 16) & 0xFF; dex[off+3] = (v >> 24) & 0xFF;
+    };
+    auto setStr = [&](size_t off, const std::string& s) {
+        for (size_t i = 0; i < s.size(); ++i)
+            dex[off + i] = static_cast<uint8_t>(s[i]);
+        dex[off + s.size()] = 0;
+    };
+    auto setUleb = [&](size_t off, uint32_t v) -> size_t {
+        size_t n = 0;
+        do {
+            uint8_t b = v & 0x7F;
+            v >>= 7;
+            if (v) b |= 0x80;
+            dex[off + n++] = b;
+        } while (v);
+        return n;
+    };
+    static const char magic[] = "dex\n035";
+    for (int i = 0; i < 8; ++i)
+        dex[i] = static_cast<uint8_t>(i < 7 ? magic[i] : 0);
+    setU4(0x24, 0x70);
+    setU4(0x28, 0x12345678u);
+    setU4(0x38, 7);  setU4(0x3C, 0x70); // string_ids
+    setU4(0x40, 3);  setU4(0x44, 0x8C); // type_ids
+    setU4(0x48, 1);  setU4(0x4C, 0x98); // proto_ids
+    setU4(0x50, 1);  setU4(0x54, 0xA4); // field_ids
+    setU4(0x58, 1);  setU4(0x5C, 0xAC); // method_ids
+    setU4(0x60, 1);  setU4(0x64, 0xB4); // class_defs
+    setU4(0x68, 0x80); setU4(0x6C, 0xD4);
+    setU4(0x70, 0xD4); // "Hello"
+    setU4(0x74, 0xDB); // "LHello;"
+    setU4(0x78, 0xE4); // "V"
+    setU4(0x7C, 0xE7); // "()V"
+    setU4(0x80, 0xEC); // "main"
+    setU4(0x84, 0xF2); // "I"
+    setU4(0x88, 0xF5); // "VALUE"
+    setU4(0x8C, 1); // type LHello;
+    setU4(0x90, 2); // type V
+    setU4(0x94, 5); // type I
+    setU4(0x98, 3); setU4(0x9C, 1); setU4(0xA0, 0); // proto
+    setU2(0xA4, 0); setU2(0xA6, 2); setU4(0xA8, 6); // field Hello.VALUE:I
+    setU2(0xAC, 0); setU2(0xAE, 0); setU4(0xB0, 4); // method main
+    setU4(0xB4, 0);
+    setU4(0xB8, 0x0009);
+    setU4(0xBC, 0xFFFFFFFF);
+    setU4(0xC0, 0);
+    setU4(0xC4, 0xFFFFFFFF);
+    setU4(0xC8, 0);
+    setU4(0xCC, 0x100); // classDataOff
+    setU4(0xD0, 0x110); // staticValuesOff
+    size_t off = 0xD4;
+    off += setUleb(off, 5); setStr(off, "Hello"); off += 6;
+    off += setUleb(off, 7); setStr(off, "LHello;"); off += 8;
+    off += setUleb(off, 1); setStr(off, "V"); off += 2;
+    off += setUleb(off, 3); setStr(off, "()V"); off += 4;
+    off += setUleb(off, 4); setStr(off, "main"); off += 5;
+    off += setUleb(off, 1); setStr(off, "I"); off += 2;
+    off += setUleb(off, 5); setStr(off, "VALUE"); off += 6;
+    // class_data at 0x100
+    off = 0x100;
+    off += setUleb(off, 1); // static_fields
+    off += setUleb(off, 0);
+    off += setUleb(off, 1); // direct methods
+    off += setUleb(off, 0);
+    off += setUleb(off, 0); // field_idx_diff
+    off += setUleb(off, 0x19); // public static final
+    off += setUleb(off, 0); // method_idx_diff
+    off += setUleb(off, 0x09);
+    off += setUleb(off, 0); // no code
+    // encoded_array at 0x110: one element, then VALUE_ARRAY nested as deep as
+    // the buffer allows -- two bytes per level.
+    // Large enough that the nesting really exhausts the stack without the
+    // depth bound: two bytes a level over 1 MB is ~500,000 frames.
+    dex.resize(0x100000);
+    dex[0x110] = 1;
+    size_t nest = 0x111;
+    while (nest + 2 < dex.size() - 1) {
+        dex[nest++] = 0x1c; // VALUE_ARRAY
+        dex[nest++] = 0x01; // one element
+    }
+    dex[nest] = 0x1e;       // VALUE_NULL terminates the innermost element
+    setU4(0x20, static_cast<uint32_t>(dex.size()));
+
+    DexFile df = DexFile::parse(dex);
+    DexClassParser parser(df);
+
+    // Must return rather than recurse. The point is that it returns at all:
+    // without the depth bound this is a SIGSEGV on stack exhaustion.
+    auto result = parser.parseClass(0);
+    (void) result;
+}
+
 // ─── ProGuardMapping ─────────────────────────────────────────────────────────
 
 TEST(ProGuardMapping, ParsesClassMapping) {

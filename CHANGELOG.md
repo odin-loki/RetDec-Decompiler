@@ -98,6 +98,22 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   labelled introsort; and SHA-256 fired at 0.55 with no SHA constant present.
   Several audit findings were correctly rejected as already fixed earlier in
   this branch rather than fixed twice.
+- `dex_parser`: `skipEncodedValue`, `skipEncodedArray` and
+  `skipEncodedAnnotation` mutually recurse on a file-declared nesting depth with
+  nothing bounding it. `VALUE_ARRAY` costs two bytes per level, so a small file
+  asks for arbitrarily deep recursion and exhausts the stack -- a hard SIGSEGV,
+  not a caught error. Bounded by `kMaxEncodedValueDepth`, the same way
+  `MarshalReader::readObject` is. Found by the adversarial reviewer looking for
+  siblings of a bug class, not by the fuzzer.
+- `dex_parser`: the `DexFile` resolution helpers used `std::vector::at()`, which
+  throws `std::out_of_range`. Every caller in this tree catches `DexParseError`
+  and nothing else, so an out-of-range index from a malformed file escaped past
+  the handler meant to contain it. They now report the module's own error type,
+  as `DexFile::string()` already did.
+- `dex_parser`: `decodeInsn`'s word accessor computed `off + i` in 32 bits,
+  which wraps near the end of the range. It now goes through the same verified
+  `bounds::rangeFits` helper as the matching accessor in `findLeaders` -- whose
+  comment claimed the two already agreed, and did not.
 - `pelib`: 9,791 lines of PE parsing that had neither a unit suite nor any
   fuzzing now have a libFuzzer target (`fuzz_pelib`, driving `PeLib::PeFileT`
   over a stream) and three generated PE seeds. `fuzz_pe.cpp` did not cover this

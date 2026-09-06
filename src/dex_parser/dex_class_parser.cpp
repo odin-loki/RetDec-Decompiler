@@ -17,24 +17,39 @@ namespace dex_parser {
 
 using namespace bc_module;
 
-static void skipEncodedValue(DexReader& br);
+/// Deepest encoded_value nesting accepted before a file is called malformed.
+///
+/// VALUE_ARRAY and VALUE_ANNOTATION nest through skipEncodedValue, and each
+/// level costs about two bytes on the wire -- so without a bound a small file
+/// asks for arbitrarily deep recursion and exhausts the stack. No bound derived
+/// from the input size catches that, which is why this one is a fixed depth.
+/// dx and d8 do not emit anything close to it; the DEX format itself sets no
+/// limit, so this is a parser policy rather than a spec constant.
+static constexpr unsigned kMaxEncodedValueDepth = 64;
 
-static void skipEncodedArray(DexReader& br) {
+static void skipEncodedValue(DexReader& br, unsigned depth);
+
+static void skipEncodedArray(DexReader& br, unsigned depth) {
     uint32_t n = br.uleb128();
+    br.checkCount(n, 1);
     for (uint32_t i = 0; i < n; ++i)
-        skipEncodedValue(br);
+        skipEncodedValue(br, depth);
 }
 
-static void skipEncodedAnnotation(DexReader& br) {
+static void skipEncodedAnnotation(DexReader& br, unsigned depth) {
     br.uleb128();
     uint32_t n = br.uleb128();
+    br.checkCount(n, 2);
     for (uint32_t i = 0; i < n; ++i) {
         br.uleb128();
-        skipEncodedValue(br);
+        skipEncodedValue(br, depth);
     }
 }
 
-static void skipEncodedValue(DexReader& br) {
+static void skipEncodedValue(DexReader& br, unsigned depth) {
+    if (depth >= kMaxEncodedValueDepth)
+        throw DexParseError("encoded_value nested deeper than the parser accepts");
+
     uint8_t hdr  = br.u1();
     uint8_t type = hdr & 0x1f;
     uint8_t arg  = (hdr >> 5) & 0x7;
@@ -43,10 +58,10 @@ static void skipEncodedValue(DexReader& br) {
     case 0x1f: // VALUE_BOOLEAN (value in arg bits)
         return;
     case 0x1c: // VALUE_ARRAY
-        skipEncodedArray(br);
+        skipEncodedArray(br, depth + 1);
         return;
     case 0x1d: // VALUE_ANNOTATION
-        skipEncodedAnnotation(br);
+        skipEncodedAnnotation(br, depth + 1);
         return;
     default:
         br.skip(static_cast<size_t>(arg) + 1);
@@ -104,10 +119,10 @@ static void applyEncodedValue(BcField& field, DexReader& br, const DexFile& dex)
         field.constantIntValue = arg != 0 ? 1 : 0;
         break;
     case 0x1c:
-        skipEncodedArray(br);
+        skipEncodedArray(br, 0);
         break;
     case 0x1d:
-        skipEncodedAnnotation(br);
+        skipEncodedAnnotation(br, 0);
         break;
     default:
         br.skip(nbytes);
@@ -127,7 +142,7 @@ static void fillStaticConstants(BcClass& cls, const DexFile& dex,
         for (size_t i = 0; i < n; ++i)
             applyEncodedValue(cls.fields[i], br, dex);
         for (size_t i = n; i < count; ++i)
-            skipEncodedValue(br);
+            skipEncodedValue(br, 0);
     } catch (const DexParseError&) {
     }
 }
@@ -155,7 +170,7 @@ static std::vector<BcAnnotation> readAnnotationSet(const DexFile& dex,
             uint32_t nameIdx = br.uleb128();
             std::string key = (nameIdx < dex.stringCount())
                               ? dex.string(nameIdx) : "";
-            skipEncodedValue(br);
+            skipEncodedValue(br, 0);
             BcAnnotationValue val;
             val.kind = BcAnnotationValue::Kind::String;
             ann.elements[key] = val;

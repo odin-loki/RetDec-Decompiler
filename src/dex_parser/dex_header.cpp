@@ -391,8 +391,26 @@ const std::string& DexFile::string(uint32_t idx) const {
     return strings_[idx];
 }
 
+namespace {
+
+/// Bounds-check a table index and report it as this module's error type.
+///
+/// The accessors below used std::vector::at(), which throws std::out_of_range.
+/// Every caller in this tree catches DexParseError and nothing else -- see
+/// DexClassParser::parseClass -- so an out-of-range index taken from a
+/// malformed file escaped as a different exception type past the handler meant
+/// to contain it. string() above already got this right; the rest did not.
+template <typename Table>
+const typename Table::value_type& itemAt(const Table& table, uint32_t idx, const char* what) {
+    if (idx >= table.size())
+        throw DexParseError(std::string(what) + " index out of range: " + std::to_string(idx));
+    return table[idx];
+}
+
+} // namespace
+
 const std::string& DexFile::typeName(uint32_t typeIdx) const {
-    return string(typeIds_.at(typeIdx).descriptorIdx);
+    return string(itemAt(typeIds_, typeIdx, "type").descriptorIdx);
 }
 
 std::string DexFile::typeDescriptor(uint32_t typeIdx) const {
@@ -400,28 +418,28 @@ std::string DexFile::typeDescriptor(uint32_t typeIdx) const {
 }
 
 std::string DexFile::fieldClass(uint32_t fieldIdx) const {
-    return typeName(fieldIds_.at(fieldIdx).classIdx);
+    return typeName(itemAt(fieldIds_, fieldIdx, "field").classIdx);
 }
 
 std::string DexFile::fieldType(uint32_t fieldIdx) const {
-    return typeName(fieldIds_.at(fieldIdx).typeIdx);
+    return typeName(itemAt(fieldIds_, fieldIdx, "field").typeIdx);
 }
 
 std::string DexFile::fieldName(uint32_t fieldIdx) const {
-    return string(fieldIds_.at(fieldIdx).nameIdx);
+    return string(itemAt(fieldIds_, fieldIdx, "field").nameIdx);
 }
 
 std::string DexFile::methodClass(uint32_t methodIdx) const {
-    return typeName(methodIds_.at(methodIdx).classIdx);
+    return typeName(itemAt(methodIds_, methodIdx, "method").classIdx);
 }
 
 std::string DexFile::methodName(uint32_t methodIdx) const {
-    return string(methodIds_.at(methodIdx).nameIdx);
+    return string(itemAt(methodIds_, methodIdx, "method").nameIdx);
 }
 
 std::string DexFile::methodProto(uint32_t methodIdx) const {
-    const MethodId& mid   = methodIds_.at(methodIdx);
-    const ProtoId&  proto = protoIds_.at(mid.protoIdx);
+    const MethodId& mid   = itemAt(methodIds_, methodIdx, "method");
+    const ProtoId&  proto = itemAt(protoIds_, mid.protoIdx, "proto");
 
     // Build descriptor "(params)retType"
     std::string result = "(";
