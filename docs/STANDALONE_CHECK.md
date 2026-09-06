@@ -32,7 +32,12 @@ suites against a shim, and runs them.
 |---|---|---|
 | Prerequisites | network, ~30 GB, CMake, Ninja | a C++17 compiler |
 | Cold time | hours | ~1 minute |
-| Coverage | whole product | 30 suites, ~1700 assertions over 56 modules |
+| Coverage | whole product | 35 suites, ~2200 assertions over 61 modules |
+
+Two vendored header-only dependencies are used because they are already in the
+tree and cost nothing: `deps/rapidjson` (which unlocks `config`, `serdes`,
+`ctypesparser` and `neural`) and `deps/whereami` (`utils`). Everything else
+under `deps/` is a download stub and stays out.
 
 ## The GoogleTest shim
 
@@ -71,7 +76,33 @@ guards:
   fails if that disagrees with the declared list in either direction — a module
   that grew a dependency, or a new dependency-free module nobody wired up.
 * `.github/workflows/standalone-check.yml` runs the check under both `g++` and
-  `clang++`, plus an ASan/UBSan job, on every pull request.
+  `clang++`, plus an ASan/UBSan job, on every pull request. Two compilers is not
+  redundancy: Clang rejects code GCC quietly miscompiles, and the first run of
+  this job found exactly that.
+
+`EXCLUDED_SOURCES` in the script mirrors a conditional in a module's own
+CMakeLists — `neural/llama_inference.cpp` is only built when llama.cpp is
+present, and compiling it here would collide with `mock_inference.cpp`.
+`EXCLUDED_REASONS` records modules that compile standalone but are deliberately
+left out, so `--audit` can tell "nobody wired this up" from "we decided not to".
+
+## What it has already caught
+
+Everything below was found by the first few runs of this script, in code that
+was passing CI:
+
+| Defect | Where | Found by |
+|---|---|---|
+| Heap-use-after-free on a reallocated vector | `src/cfg/cfg.cpp` `resolveVirtualCalls` | ASan job |
+| Iterator invalidation across a rehash | `src/cfg/cfg.cpp` `resolveJumpTables` | reading the ASan fix |
+| 4096-byte read from a 3-byte buffer | `src/mini_emu/mini_emu.cpp` `mapPage` | ASan job |
+| Page-length read past the end of the input image | `src/mini_emu/mini_emu.cpp` `load` | ASan job |
+| `shared_ptr` cycle leaking recursive struct types | `src/ctypes/context.cpp` | LeakSanitizer |
+| Spawn call able to pass the neural structural gate by trading against a comment | `src/neural/gates.cpp` | building `neural` without tree-sitter |
+| `'\u2588'` in a narrow char literal: mojibake on GCC, build failure on Clang | `src/profiling/profiling.cpp` | Clang job |
+| `%lld` into an `int64_t` | `src/profiling/profiling.cpp` | Clang job |
+| Missing `<cassert>`, masked by GoogleTest's transitive includes | `tests/idiom_reconstruct` | shim build |
+| Leaked visitor in a test fixture | `tests/ctypes` | LeakSanitizer |
 
 ## Scope
 

@@ -6,10 +6,13 @@
 #include "retdec/profiling/profiling.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <numeric>
+#include <system_error>
 #include <sstream>
 
 #if defined(_WIN32)
@@ -307,16 +310,41 @@ int64_t RssTracker::currentRssBytes() {
     return 0;
 }
 #else
+namespace {
+
+/// Reads the kilobyte value from a `/proc/self/status` line such as
+/// "VmPeak:    12345 kB" and returns it in bytes, or 0 if the line does not
+/// carry a number.
+///
+/// This used to be sscanf with "%lld" into an int64_t. That is not int64_t's
+/// format specifier on any LP64 platform -- where int64_t is long -- so both
+/// GCC and Clang warn, and it only works because the two types happen to be
+/// the same width there. std::from_chars has no format string to get wrong.
+int64_t statusLineKbToBytes(const std::string& line, std::size_t labelLen) {
+    if (line.size() <= labelLen) return 0;
+
+    const char* first = line.c_str() + labelLen;
+    const char* last = line.c_str() + line.size();
+    while (first != last && (*first == ' ' || *first == '\t')) ++first;
+
+    int64_t kb = 0;
+    const auto res = std::from_chars(first, last, kb);
+    if (res.ec != std::errc() || kb < 0) return 0;
+
+    // A hostile or corrupt value must not overflow the byte conversion.
+    if (kb > std::numeric_limits<int64_t>::max() / 1024) return 0;
+    return kb * 1024;
+}
+
+} // namespace
+
 int64_t RssTracker::peakRssBytes() {
     std::ifstream f("/proc/self/status");
     std::string line;
     while (std::getline(f, line)) {
-        if (line.rfind("VmPeak:", 0) == 0) {
-            // VmPeak:   12345 kB
-            int64_t kb = 0;
-            sscanf(line.c_str() + 7, " %lld", &kb);
-            return kb * 1024;
-        }
+        // VmPeak:   12345 kB
+        if (line.rfind("VmPeak:", 0) == 0)
+            return statusLineKbToBytes(line, sizeof("VmPeak:") - 1);
     }
     return 0;
 }
@@ -324,11 +352,8 @@ int64_t RssTracker::currentRssBytes() {
     std::ifstream f("/proc/self/status");
     std::string line;
     while (std::getline(f, line)) {
-        if (line.rfind("VmRSS:", 0) == 0) {
-            int64_t kb = 0;
-            sscanf(line.c_str() + 6, " %lld", &kb);
-            return kb * 1024;
-        }
+        if (line.rfind("VmRSS:", 0) == 0)
+            return statusLineKbToBytes(line, sizeof("VmRSS:") - 1);
     }
     return 0;
 }
@@ -372,6 +397,26 @@ Nanos FunctionHistogram::percentile(double p) const {
     return sorted[idx];
 }
 
+namespace {
+
+/// One histogram cell: U+2588 FULL BLOCK, as its three UTF-8 bytes.
+///
+/// A narrow character literal cannot hold a multi-byte character. Writing
+/// std::string(n, '\u2588') made GCC fold the literal to the single byte 0x88
+/// -- so every bar rendered as mojibake rather than a block -- and made Clang
+/// reject the translation unit outright ("character too large for enclosing
+/// character literal type"). Repeat the encoded sequence instead.
+std::string bar(int cells) {
+    static constexpr char kFullBlock[] = "\u2588";
+    std::string out;
+    if (cells <= 0) return out;
+    out.reserve(static_cast<std::size_t>(cells) * (sizeof(kFullBlock) - 1));
+    for (int i = 0; i < cells; ++i) out += kFullBlock;
+    return out;
+}
+
+} // namespace
+
 std::string FunctionHistogram::format() const {
     std::ostringstream os;
     os << "Function timing histogram (" << totalSamples_ << " samples):\n";
@@ -381,7 +426,7 @@ std::string FunctionHistogram::format() const {
         int barLen = maxCount > 0 ?
             static_cast<int>(40.0 * b.count / maxCount) : 0;
         os << std::setw(8) << static_cast<double>(b.lo) / 1e6 << "ms "
-           << std::string(barLen, '█')
+           << bar(barLen)
            << " " << b.count << "\n";
     }
     if (!rawSamples_.empty()) {

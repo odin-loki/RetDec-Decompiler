@@ -17,9 +17,20 @@ struct GateReport {
     GateResult structural   = GateResult::Pass;
     GateResult differential = GateResult::Pass;
 
+    /// False when the structural gate had to fall back to counting keywords in
+    /// the text because no C parser was available. The fallback is strictly
+    /// weaker than the AST comparison, so a caller that cares about the
+    /// strength of the check -- not just its verdict -- should look at this.
+    bool structuralUsedParser = true;
+
     bool allPassed() const;
     std::string summary() const;
 };
+
+/// True when this build can parse C (tree-sitter is linked in), which is what
+/// decides whether the structural gate compares parse trees or falls back to
+/// counting keywords in the raw text.
+bool hasCParserSupport();
 
 GateReport runVerificationGates(const std::string& originalC,
                                 const std::string& refinedC);

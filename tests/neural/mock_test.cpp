@@ -280,6 +280,55 @@ TEST(NeuralGates, ControlKeywordInCommentDoesNotChangeShape)
 	EXPECT_EQ(r.structural, GateResult::Pass);
 }
 
+// The structural gate's textual fallback used to count keywords over the raw
+// source, so a refinement could introduce a real spawn call and delete a
+// comment mentioning the same word: the two cancelled out, the count matched,
+// and the call passed the gate. Counting over code only closes that.
+TEST(NeuralGates, SpawnCallSubstitutedForCommentFailsStructural)
+{
+	const std::string original =
+		"int f(int x) { if (x > 0) return 1; /* system */ return 0; }\n";
+	const std::string refined =
+		"int f(int x) { if (x > 0) return 1; system(\"id\"); return 0; }\n";
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_FALSE(r.allPassed());
+	EXPECT_EQ(r.structural, GateResult::FailStructural);
+}
+
+// Same substitution, one level further: control keywords hidden in a string
+// literal must not offset a real control-flow change either.
+TEST(NeuralGates, ControlKeywordInStringLiteralDoesNotMaskAddedBranch)
+{
+	const std::string original =
+		"int f(int x) { const char* s = \"while\"; (void)s; return 0; }\n";
+	const std::string refined =
+		"int f(int x) { const char* s = \"\"; (void)s; while (x) { x--; } return 0; }\n";
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_EQ(r.structural, GateResult::FailStructural);
+}
+
+// A comparison operator inside a comment is not a comparison.
+TEST(NeuralGates, ComparisonOperatorInCommentDoesNotChangeShape)
+{
+	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
+	const std::string refined =
+		"int f(int x) { if (x > 0) return 1; /* checks x == 0 and x != 1 */ return 0; }\n";
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_EQ(r.structural, GateResult::Pass);
+}
+
+// A build without a C parser still runs the structural gate, but says so.
+TEST(NeuralGates, ReportsWhetherTheParserWasUsed)
+{
+	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
+	const std::string refined = "int f(int y) { if (y > 0) return 1; return 0; }\n";
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_EQ(r.structuralUsedParser, hasCParserSupport());
+	if (!hasCParserSupport()) {
+		EXPECT_NE(r.summary().find("text-fallback"), std::string::npos);
+	}
+}
+
 TEST(NeuralGates, SystemCallInCommentDoesNotChangeShape)
 {
 	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
@@ -1347,6 +1396,10 @@ TEST(NeuralTopoOrder, AppendRefinedCalleesIntoSemanticJson)
 
 TEST(NeuralTopoOrder, ExtractsFunctionNamesFromAst)
 {
+	// Reading function names out of the source needs a C parser; a build
+	// without tree-sitter has no way to do it and returns nothing.
+	if (!hasCParserSupport()) GTEST_SKIP() << "built without a C parser";
+
 	const std::string src = "int helper(int x) { return x + 1; }\nint main(void) { return helper(0); }\n";
 	const auto names = extractCFunctionNames(src);
 	ASSERT_EQ(names.size(), 2u);

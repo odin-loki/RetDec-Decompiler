@@ -143,6 +143,7 @@ struct State {
 	bool skipped = false;
 	std::string skipReason;
 	std::vector<std::string> failures;
+	std::vector<std::string> traces;
 };
 
 inline State& state()
@@ -150,6 +151,22 @@ inline State& state()
 	static State s;
 	return s;
 }
+
+/// RAII entry on the scoped-trace stack; see SCOPED_TRACE.
+class ScopedTrace {
+public:
+	ScopedTrace(std::string label, const char* file, int line)
+	{
+		state().traces.push_back(
+			std::string(file) + ":" + std::to_string(line) + ": " + std::move(label));
+	}
+	~ScopedTrace()
+	{
+		if (!state().traces.empty()) state().traces.pop_back();
+	}
+	ScopedTrace(const ScopedTrace&) = delete;
+	ScopedTrace& operator=(const ScopedTrace&) = delete;
+};
 
 /// `AssertHelper(...) = Message() << ...`.  `operator=` returns void so a fatal
 /// assertion can be written `return AssertHelper(...) = Message();` inside a
@@ -165,6 +182,8 @@ public:
 		os << file_ << ":" << line_ << (fatal_ ? "  [fatal]" : "") << "\n  " << detail_;
 		const std::string e = extra.str();
 		if (!e.empty()) os << "\n  " << e;
+		for (auto it = state().traces.rbegin(); it != state().traces.rend(); ++it)
+			os << "\n  Google Test trace:\n  " << *it;
 		state().failed = true;
 		state().failures.push_back(os.str());
 	}
@@ -567,6 +586,14 @@ int RUN_ALL_TESTS();
 #define ASSERT_THROW(stmt, ex) GTEST_LITE_THROW_(stmt, ex, GTEST_LITE_FATAL_)
 #define EXPECT_ANY_THROW(stmt) GTEST_LITE_ANY_THROW_(stmt, GTEST_LITE_NONFATAL_)
 #define ASSERT_ANY_THROW(stmt) GTEST_LITE_ANY_THROW_(stmt, GTEST_LITE_FATAL_)
+
+/// Pushes a label onto the trace stack for the enclosing scope; every failure
+/// reported while it is live carries the label.  Matches GoogleTest's
+/// SCOPED_TRACE closely enough for tests that use it to explain which loop
+/// iteration or table row failed.
+#define SCOPED_TRACE(msg) \
+	const ::testing::lite::ScopedTrace GTEST_LITE_CONCAT_(gtlTrace_, __LINE__)( \
+		(::testing::lite::Message() << msg).str(), __FILE__, __LINE__)
 
 #define ADD_FAILURE() GTEST_LITE_FAIL_(::testing::lite::Result(false, "Failed"), false)
 #define FAIL() return GTEST_LITE_FAIL_(::testing::lite::Result(false, "Failed"), true)

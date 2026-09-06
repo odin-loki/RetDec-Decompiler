@@ -4,6 +4,67 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- Dependency-free build and test path: `scripts/standalone_check.sh` compiles
+  the 61 `src/` modules that need only a C++17 compiler and the two vendored
+  header-only deps (`deps/rapidjson`, `deps/whereami`), links their existing
+  GoogleTest suites against a shim in `tests/standalone/gtest/`, and runs them.
+  35 suites, ~2200 assertions, about a minute from cold, no network and no LLVM.
+  The suites are unmodified — the same sources build against real GoogleTest
+  under CMake. `EXTRA_CXXFLAGS` reaches every translation unit, so the same
+  command runs the layer under sanitizers. `--audit` re-derives the module list
+  from the tree and fails if the hard-coded list has drifted in either
+  direction. Docs: [docs/STANDALONE_CHECK.md](docs/STANDALONE_CHECK.md).
+- `.github/workflows/standalone-check.yml`: the above under `g++` and
+  `clang++`, plus an ASan/UBSan job, on every pull request.
+- `retdec::neural::hasCParserSupport()` and `GateReport::structuralUsedParser`:
+  a caller can now tell whether the structural gate compared parse trees or fell
+  back to counting keywords in text. `GateReport::summary()` marks the fallback.
+
+### Fixed
+
+- `cfg`: `CFGBuilder::resolveVirtualCalls()` wrote through an edge reference
+  that `addEdge()` had already invalidated by reallocating the same `succs`
+  vector — a heap-use-after-free — and `ensureBlock()` rehashed
+  `CFGGraph::nodes` while the outer loop iterated it. `resolveJumpTables()` had
+  both faults again in two more loops. All three now scan first and mutate
+  afterwards, identifying edges by (block address, index).
+- `mini_emu`: `MiniEmu::mapPage()` rounded the copy length up to a whole page
+  instead of the page count, `memcpy`ing 4096 bytes out of a caller's 3-byte
+  buffer.
+- `mini_emu`: `MiniEmu::load()` computed a correctly clamped `copyLen` and then
+  passed `kPageSize` to `mapPage()` anyway, reading past the end of the input
+  image for any section whose file data is shorter than a page. Section headers
+  are attacker-controlled, so the offset arithmetic around it is now
+  range-checked and a section's mapped span is capped (`kMaxSectionMapBytes`).
+- `ctypes`: `Context` had no destructor, so a self-referential type
+  (`struct node { struct node *next; };`) formed a `shared_ptr` cycle that
+  outlived the `Context` and leaked every type reachable through it.
+  `~Context` now cuts the member edges.
+- `neural`: the structural gate's textual fallback counted keywords over raw
+  source, including comments and string literals. A refinement could introduce a
+  real `system()` call while deleting a `/* system */` comment: the counts
+  cancelled and the call passed the gate. It now counts over code only. This
+  path is only reached in builds without tree-sitter.
+- `profiling`: `std::string(n, '\u2588')` cannot hold a multi-byte character —
+  GCC folded it to the single byte `0x88`, so every histogram bar was invalid
+  UTF-8, and Clang refused to compile the file. Bars are now built from the
+  encoded sequence.
+- `profiling`: `sscanf(..., "%lld", &kb)` with `kb` an `int64_t` is the wrong
+  format specifier on LP64. `/proc/self/status` parsing now uses
+  `std::from_chars` and rejects values that would overflow the byte conversion.
+
+### Removed
+
+- `src/retdec/retdec.cpp.orig`, `src/serial_detect/serial_detect.cpp.bak` and
+  `.bak2`: editor leftovers committed by accident. `.gitignore` now covers
+  `*.bak`, `*.orig` and `*.rej`.
+
+---
+
 ## [2.0.21] — 2026-08-17
 
 ### Added

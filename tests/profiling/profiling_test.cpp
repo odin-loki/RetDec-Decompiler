@@ -319,6 +319,34 @@ TEST_F(ProfilingTest, HistogramFormatNonEmpty) {
     EXPECT_FALSE(h.format().empty());
 }
 
+// The histogram bar used to be built with std::string(n, '\u2588'), which no
+// narrow character literal can hold: GCC folded it to the single byte 0x88, so
+// every bar was invalid UTF-8, and Clang refused to compile the file at all.
+// Assert the bar is the real three-byte encoding of U+2588 FULL BLOCK.
+TEST_F(ProfilingTest, HistogramBarIsValidUtf8FullBlock) {
+    FunctionHistogram h;
+    for (int i = 0; i < 64; ++i) h.add(5'000'000);
+
+    const std::string out = h.format();
+    ASSERT_NE(out.find("\u2588"), std::string::npos)
+        << "no FULL BLOCK in histogram output";
+
+    // A lone 0x88 would be a continuation byte with no lead byte before it.
+    for (std::size_t i = 0; i < out.size(); ++i) {
+        if (static_cast<unsigned char>(out[i]) == 0x88u) {
+            ASSERT_GE(i, 2u) << "0x88 at the very start of the output";
+            EXPECT_EQ(static_cast<unsigned char>(out[i - 2]), 0xE2u);
+            EXPECT_EQ(static_cast<unsigned char>(out[i - 1]), 0x96u);
+        }
+    }
+}
+
+// /proc/self/status parsing must survive a line with no number after the label.
+TEST_F(ProfilingTest, RssTrackerReturnsNonNegative) {
+    EXPECT_GE(RssTracker::currentRssBytes(), 0);
+    EXPECT_GE(RssTracker::peakRssBytes(), 0);
+}
+
 // ─── Thread safety ────────────────────────────────────────────────────────────
 
 TEST_F(ProfilingTest, ConcurrentRecordingNoDataRace) {

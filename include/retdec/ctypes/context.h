@@ -32,6 +32,8 @@ class Type;
 class Context
 {
 	public:
+		~Context();
+
 		/// @name Access to functions.
 		/// @{
 		bool hasFunctionWithName(const std::string &name) const;

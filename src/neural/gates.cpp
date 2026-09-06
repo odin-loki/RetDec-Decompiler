@@ -224,6 +224,112 @@ bool tryCompileCheck(const std::string& sourceC)
 	return tryCompileCheck(sourceC, nullptr);
 }
 
+/// Replace the contents of comments and string/character literals with spaces,
+/// keeping length and newlines so offsets and line numbers still line up.
+///
+/// The textual fallback below counts keywords and comparison operators in raw
+/// source.  Doing that over comments and literals is wrong in both directions:
+/// adding an explanatory comment that happens to contain "if" or "while" looks
+/// like a control-flow change and gets a benign refinement rejected, and -- the
+/// dangerous direction -- a refinement that introduces a real system() call
+/// while dropping a `/* system */` comment leaves the raw count unchanged, so
+/// the spawn check cancels out and the call passes the gate.
+///
+/// Only the fallback needs this.  When tree-sitter is available the shape comes
+/// from the parse tree, which never sees comments or literal contents.
+std::string blankNonCode(const std::string& s)
+{
+	enum class Ctx { Code, LineComment, BlockComment, StringLit, CharLit };
+
+	std::string out = s;
+	Ctx ctx = Ctx::Code;
+	bool escaped = false;
+
+	for (std::size_t i = 0; i < s.size(); ++i)
+	{
+		const char c = s[i];
+		const char next = (i + 1 < s.size()) ? s[i + 1] : '\0';
+
+		switch (ctx)
+		{
+			case Ctx::Code:
+				if (c == '/' && next == '/')
+				{
+					ctx = Ctx::LineComment;
+					out[i] = ' ';
+					out[i + 1] = ' ';
+					++i;
+				}
+				else if (c == '/' && next == '*')
+				{
+					ctx = Ctx::BlockComment;
+					out[i] = ' ';
+					out[i + 1] = ' ';
+					++i;
+				}
+				else if (c == '"')
+				{
+					ctx = Ctx::StringLit;
+					escaped = false;
+				}
+				else if (c == '\'')
+				{
+					ctx = Ctx::CharLit;
+					escaped = false;
+				}
+				break;
+
+			case Ctx::LineComment:
+				// A backslash at end of line continues the comment onto the
+				// next one, exactly as the preprocessor sees it.
+				if (c == '\n' && !(i > 0 && s[i - 1] == '\\')) ctx = Ctx::Code;
+				else if (c != '\n') out[i] = ' ';
+				break;
+
+			case Ctx::BlockComment:
+				if (c == '*' && next == '/')
+				{
+					out[i] = ' ';
+					out[i + 1] = ' ';
+					++i;
+					ctx = Ctx::Code;
+				}
+				else if (c != '\n')
+				{
+					out[i] = ' ';
+				}
+				break;
+
+			case Ctx::StringLit:
+			case Ctx::CharLit:
+			{
+				const char closer = (ctx == Ctx::StringLit) ? '"' : '\'';
+				if (escaped)
+				{
+					escaped = false;
+					if (c != '\n') out[i] = ' ';
+				}
+				else if (c == '\\')
+				{
+					escaped = true;
+					out[i] = ' ';
+				}
+				else if (c == closer)
+				{
+					ctx = Ctx::Code;  // keep the delimiter itself
+				}
+				else if (c != '\n')
+				{
+					out[i] = ' ';
+				}
+				break;
+			}
+		}
+	}
+
+	return out;
+}
+
 int countIdent(const std::string& s, const char* word)
 {
 	int n = 0;
@@ -441,26 +547,34 @@ bool astShapeChanged(const AstShape& a, const AstShape& b)
 
 #endif
 
-bool controlShapeChanged(const std::string& originalC, const std::string& refinedC)
+bool controlShapeChanged(const std::string& originalC, const std::string& refinedC, bool& usedParser)
 {
+	usedParser = false;
 #ifdef RETDEC_HAS_TREE_SITTER
 	AstShape a;
 	AstShape b;
 	if (fillAstShape(originalC, a) && fillAstShape(refinedC, b))
+	{
+		usedParser = true;
 		return astShapeChanged(a, b);
+	}
 #endif
-	if (countIdent(originalC, "if") != countIdent(refinedC, "if")) return true;
-	if (countIdent(originalC, "else") != countIdent(refinedC, "else")) return true;
-	if (countIdent(originalC, "while") != countIdent(refinedC, "while")) return true;
-	if (countIdent(originalC, "for") != countIdent(refinedC, "for")) return true;
-	if (countIdent(originalC, "goto") != countIdent(refinedC, "goto")) return true;
-	if (countIdent(originalC, "return") != countIdent(refinedC, "return")) return true;
+	// Fallback: count over code only.  See blankNonCode.
+	const std::string original = blankNonCode(originalC);
+	const std::string refined = blankNonCode(refinedC);
+
+	if (countIdent(original, "if") != countIdent(refined, "if")) return true;
+	if (countIdent(original, "else") != countIdent(refined, "else")) return true;
+	if (countIdent(original, "while") != countIdent(refined, "while")) return true;
+	if (countIdent(original, "for") != countIdent(refined, "for")) return true;
+	if (countIdent(original, "goto") != countIdent(refined, "goto")) return true;
+	if (countIdent(original, "return") != countIdent(refined, "return")) return true;
 	for (int i = 0; kSpawnIdents[i]; ++i)
 	{
-		if (countIdent(originalC, kSpawnIdents[i]) != countIdent(refinedC, kSpawnIdents[i]))
+		if (countIdent(original, kSpawnIdents[i]) != countIdent(refined, kSpawnIdents[i]))
 			return true;
 	}
-	if (!(countCmpOps(originalC) == countCmpOps(refinedC))) return true;
+	if (!(countCmpOps(original) == countCmpOps(refined))) return true;
 	return false;
 }
 
@@ -489,7 +603,17 @@ std::string GateReport::summary() const
 {
 	return std::string("compile=") + (compile == GateResult::Pass ? "pass" : "fail")
 		 + " structural=" + (structural == GateResult::Pass ? "pass" : "fail")
+		 + (structuralUsedParser ? "" : "(text-fallback)")
 		 + " differential=" + (differential == GateResult::Pass ? "pass" : "fail");
+}
+
+bool hasCParserSupport()
+{
+#ifdef RETDEC_HAS_TREE_SITTER
+	return true;
+#else
+	return false;
+#endif
 }
 
 GateReport runVerificationGates(const std::string& originalC, const std::string& refinedC)
@@ -511,10 +635,16 @@ GateReport runVerificationGates(const std::string& originalC, const std::string&
 	// TU skips this check.
 	const bool similarSize =
 		originalC.size() > 16 && refinedC.size() * 4 > originalC.size() && originalC.size() * 4 > refinedC.size();
-	if (similarSize && controlShapeChanged(originalC, refinedC))
+	if (similarSize)
 	{
-		report.structural = GateResult::FailStructural;
-		return report;
+		bool usedParser = false;
+		const bool changed = controlShapeChanged(originalC, refinedC, usedParser);
+		report.structuralUsedParser = usedParser;
+		if (changed)
+		{
+			report.structural = GateResult::FailStructural;
+			return report;
+		}
 	}
 
 	const char* skipCompile = std::getenv("RETDEC_NEURAL_SKIP_COMPILE_GATE");

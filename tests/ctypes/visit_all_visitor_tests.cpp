@@ -44,14 +44,16 @@ class VisitAllVisitorTests : public Test
 {
 	public:
 		VisitAllVisitorTests():
-			visitor(new VisitAll()),
+			visitor(std::make_unique<VisitAll>()),
 			context(std::make_shared<Context>()),
 			intType(IntegralType::create(context, "int", 32)),
 			floatType(FloatingPointType::create(context, "float", 32)),
 			ptrToInt(PointerType::create(context, intType)) {}
 
 	public:
-		VisitAll *visitor;
+		// Owning: a raw `new` here leaked the visitor and, with it, every type
+		// it had recorded -- 3.7 KB across the suite under LeakSanitizer.
+		std::unique_ptr<VisitAll> visitor;
 		std::shared_ptr<Context> context;
 		std::shared_ptr<IntegralType> intType;
 		std::shared_ptr<FloatingPointType> floatType;
@@ -64,7 +66,7 @@ VisitAllFunctionTypeParametersAndReturnType)
 	auto funcType = FunctionType::create(context, intType, {floatType, ptrToInt});
 	VisitAll::AccessedTypes expected{funcType, intType, floatType, ptrToInt};
 
-	funcType->accept(visitor);
+	funcType->accept(visitor.get());
 
 	EXPECT_EQ(expected, visitor->getAccessedTypes());
 }
@@ -77,7 +79,7 @@ VisitAllStructMembers)
 	auto structType = StructType::create(context, "s", mem);
 	VisitAll::AccessedTypes expected{structType, intType, floatType};
 
-	structType->accept(visitor);
+	structType->accept(visitor.get());
 
 	EXPECT_EQ(expected, visitor->getAccessedTypes());
 }
@@ -90,7 +92,7 @@ VisitAllUnionMembers)
 	auto unionType = UnionType::create(context, "s", mem);
 	VisitAll::AccessedTypes expected{unionType, intType, floatType};
 
-	unionType->accept(visitor);
+	unionType->accept(visitor.get());
 
 	EXPECT_EQ(expected, visitor->getAccessedTypes());
 }
@@ -102,7 +104,7 @@ VisitEnumTypeVisitsOnlyEnum)
 	auto enumType = EnumType::create(context, "s", values);
 	VisitAll::AccessedTypes expected{enumType};
 
-	enumType->accept(visitor);
+	enumType->accept(visitor.get());
 
 	EXPECT_EQ(expected, visitor->getAccessedTypes());
 }
@@ -115,7 +117,7 @@ VisitElementTypeInArray)
 	auto arrayType = ArrayType::create(context, intType, {1});
 	VisitAll::AccessedTypes expected{arrayType, intType};
 
-	arrayType->accept(visitor);
+	arrayType->accept(visitor.get());
 
 	EXPECT_EQ(expected, visitor->getAccessedTypes());
 }
@@ -128,7 +130,7 @@ VisitTypedefedTypeVisitsAlisedType)
 	auto typedefedType = TypedefedType::create(context, "newInt", intType);
 	VisitAll::AccessedTypes expected{typedefedType, intType};
 
-	typedefedType->accept(visitor);
+	typedefedType->accept(visitor.get());
 
 	EXPECT_EQ(expected, visitor->getAccessedTypes());
 }
@@ -140,7 +142,7 @@ VisitTypedefedTypeToUnknownTypeVisitsUnknwonType)
 	auto typedefedType = TypedefedType::create(context, "noname", unknown);
 	VisitAll::AccessedTypes expected{typedefedType, unknown};
 
-	typedefedType->accept(visitor);
+	typedefedType->accept(visitor.get());
 
 	EXPECT_EQ(expected, visitor->getAccessedTypes());
 }
@@ -151,7 +153,7 @@ VisitVoidType)
 	auto voidType = VoidType::create();
 	VisitAll::AccessedTypes expected{voidType};
 
-	voidType->accept(visitor);
+	voidType->accept(visitor.get());
 
 	EXPECT_EQ(expected, visitor->getAccessedTypes());
 }

@@ -9,6 +9,8 @@
 #include <cassert>
 
 #include "retdec/ctypes/annotation.h"
+#include "retdec/ctypes/composite_type.h"
+#include "retdec/ctypes/member.h"
 #include "retdec/ctypes/context.h"
 #include "retdec/ctypes/function.h"
 #include "retdec/ctypes/pointer_type.h"
@@ -18,6 +20,37 @@
 
 namespace retdec {
 namespace ctypes {
+
+/**
+* @brief Releases the type graph, breaking the reference cycles in it first.
+*
+* Ownership in ctypes runs strongly in both directions: a struct or union owns
+* its members, and a member's pointer type owns the type it points at.  A
+* self-referential declaration --
+*
+* @code
+*     struct node { struct node *next; };
+* @endcode
+*
+* -- therefore forms a std::shared_ptr cycle that outlives the Context that
+* created it, and every type reachable only through that cycle leaks with it.
+* LeakSanitizer reports these as indirect leaks with no direct leak, which is
+* the signature of a cycle rather than a dropped pointer.
+*
+* Cutting the member edges here is enough to make the whole graph collectable.
+* No type is observable once its Context is gone, so this is invisible to
+* callers.
+*/
+Context::~Context()
+{
+	for (auto &entry: namedTypes)
+	{
+		if (auto composite = std::dynamic_pointer_cast<CompositeType>(entry.second))
+		{
+			composite->setMembers({});
+		}
+	}
+}
 
 /**
 * @brief Checks if context contains function.

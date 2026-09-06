@@ -11,6 +11,8 @@
 
 #include "retdec/ctypes/array_type.h"
 #include "retdec/ctypes/context.h"
+#include "retdec/ctypes/member.h"
+#include "retdec/ctypes/struct_type.h"
 #include "retdec/ctypes/function.h"
 #include "retdec/ctypes/function_type.h"
 #include "retdec/ctypes/integral_type.h"
@@ -161,6 +163,57 @@ AddNamedTypeKeepsFirstOne)
 	context->addNamedType(i2);
 
 	EXPECT_EQ(32, context->getNamedType("int")->getBitWidth());
+}
+
+// A self-referential type -- `struct node { struct node *next; };` -- links the
+// struct to a pointer type that links straight back to the struct, both with
+// shared_ptr. Destroying the Context that owns them is not enough to collect
+// that cycle, so the whole subgraph used to leak. ~Context cuts the member
+// edges; this test proves the objects actually die with their Context.
+TEST(ContextLifetime, RecursiveStructDoesNotOutliveItsContext)
+{
+	std::weak_ptr<Type> weakStruct;
+	std::weak_ptr<Type> weakPointer;
+
+	{
+		auto context = std::make_shared<Context>();
+
+		auto node = StructType::create(context, "node", {});
+		auto nodePtr = PointerType::create(context, node);
+		node->setMembers({Member("next", nodePtr)});
+
+		weakStruct = node;
+		weakPointer = nodePtr;
+
+		// Both are alive while the local shared_ptrs and the Context are.
+		EXPECT_FALSE(weakStruct.expired());
+		EXPECT_FALSE(weakPointer.expired());
+	}
+
+	EXPECT_TRUE(weakStruct.expired());
+	EXPECT_TRUE(weakPointer.expired());
+}
+
+// The same must hold for a longer cycle: two structs pointing at each other.
+TEST(ContextLifetime, MutuallyRecursiveStructsDoNotOutliveTheirContext)
+{
+	std::weak_ptr<Type> weakA;
+	std::weak_ptr<Type> weakB;
+
+	{
+		auto context = std::make_shared<Context>();
+
+		auto a = StructType::create(context, "a", {});
+		auto b = StructType::create(context, "b", {});
+		a->setMembers({Member("toB", PointerType::create(context, b))});
+		b->setMembers({Member("toA", PointerType::create(context, a))});
+
+		weakA = a;
+		weakB = b;
+	}
+
+	EXPECT_TRUE(weakA.expired());
+	EXPECT_TRUE(weakB.expired());
 }
 
 } // namespace tests

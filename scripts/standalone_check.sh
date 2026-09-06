@@ -40,35 +40,63 @@ JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 BUILD_DIR="${BUILD_DIR:-build/standalone}"
 EXTRA_CXXFLAGS="${EXTRA_CXXFLAGS:-}"
 
+# Header-only dependencies that are vendored in the tree, so they cost nothing
+# to use here.  Everything else under deps/ is a download stub and stays out.
+INCLUDES="-Iinclude -Ideps/rapidjson/include -Ideps/whereami"
+
+# RAPIDJSON_HAS_STDSTRING mirrors deps/rapidjson/CMakeLists.txt; retdec/serdes
+# passes std::string straight to rapidjson and does not compile without it.
+# The version strings are normally stamped in by the top-level CMakeLists; a
+# standalone run is not a release build, so it says so.
+DEFINES="-DRAPIDJSON_HAS_STDSTRING=1"
+DEFINES="$DEFINES -DRETDEC_GIT_COMMIT_HASH=\"standalone\""
+DEFINES="$DEFINES -DRETDEC_GIT_VERSION_TAG=\"standalone\""
+DEFINES="$DEFINES -DRETDEC_BUILD_DATE=\"standalone\""
+
 # -Wno-unused-parameter: the upstream style leaves interface parameters named.
-CXXFLAGS="-std=c++17 -Iinclude -O1 -g0 -fno-omit-frame-pointer -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
-TESTFLAGS="-std=c++17 -Iinclude -Itests/standalone -O1 -g0 -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
+CXXFLAGS="-std=c++17 $INCLUDES $DEFINES -O1 -g0 -fno-omit-frame-pointer -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
+TESTFLAGS="-std=c++17 $INCLUDES $DEFINES -Itests/standalone -O1 -g0 -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
 
 # Modules that build with no third-party dependency.  Keep alphabetical.
-# A module belongs here only if `$CXX -std=c++17 -fsyntax-only -Iinclude src/<m>/*.cpp`
+# A module belongs here only if `$CXX -std=c++17 $INCLUDES $DEFINES -fsyntax-only src/<m>/*.cpp`
 # succeeds; scripts/standalone_check.sh --audit re-verifies that claim.
 readonly MODULES=(
 	algo_recover alias_analysis bc_module call_conv cfg cfg_structure
 	cil_reconstruct code_data codegen common compiler_abi compiler_detect
-	concurrency_detect container_detect crypto_detect csharp_emitter ctypes
-	cuda_accel cxx_backend dce debug_info dex_parser eh_reconstruct experimental
-	fsharp_emitter func_boundary idiom_reconstruct ipa java_emitter jvm_parser
-	jvm_reconstruct kotlin_emitter loader_sim lua_parser mini_emu module_cluster
-	packer pattern_detect pdbparser pelib profiling ptx_decompile py_emitter
-	py_reconstruct pyc_parser rtti serial_detect sort_detect ssa string_detect
-	testing type_inference type_seed var_recovery vbnet_emitter wasm_parser
+	concurrency_detect config container_detect crypto_detect csharp_emitter ctypes
+	ctypesparser cuda_accel cxx_backend dce debug_info dex_parser eh_reconstruct
+	experimental fsharp_emitter func_boundary idiom_reconstruct ipa java_emitter
+	jvm_parser jvm_reconstruct kotlin_emitter loader_sim lua_parser mini_emu
+	module_cluster neural packer pattern_detect pdbparser pelib profiling
+	ptx_decompile py_emitter py_reconstruct pyc_parser rtti serdes serial_detect
+	sort_detect ssa string_detect testing type_inference type_seed utils
+	var_recovery vbnet_emitter wasm_parser
 )
 
 # Test suites that build against the shim.  Each entry is a tests/ subdirectory
 # whose sources use only the supported GoogleTest subset (no gmock, no death
-# tests).  Suites outside this list still build the normal way through CMake.
+# tests).  Suites outside this list still build the normal way through CMake --
+# tests/utils, for one, includes <gmock/gmock.h>.
 readonly SUITES=(
 	algo_recover alias_analysis bc_module call_conv cfg cfg_structure
 	code_data codegen compiler_abi concurrency_detect container_detect
-	crypto_detect dce eh_reconstruct func_boundary idiom_reconstruct ipa
-	loader_sim mini_emu module_cluster pattern_detect profiling rtti
-	serial_detect sort_detect ssa string_detect type_inference type_seed
-	var_recovery
+	config crypto_detect ctypes ctypesparser dce eh_reconstruct func_boundary
+	idiom_reconstruct ipa loader_sim mini_emu module_cluster neural
+	pattern_detect profiling rtti serial_detect sort_detect ssa string_detect
+	serdes type_inference type_seed var_recovery
+)
+
+# Modules that happen to compile standalone but are deliberately not part of the
+# fast path, with the reason.  --audit consults this so it can distinguish
+# "nobody wired this up" from "we decided not to".
+# Sources inside an included module that must NOT be compiled here, mirroring a
+# conditional in that module's CMakeLists.  "module/file.cpp:reason".
+readonly EXCLUDED_SOURCES=(
+	"neural/llama_inference.cpp:only built with retdec::deps::llamacpp; mock_inference.cpp provides createLlamaInference() otherwise"
+)
+
+readonly EXCLUDED_REASONS=(
+	"demanglertool:command-line tool with its own main(), not a library"
 )
 
 C_GREEN=''; C_RED=''; C_YELLOW=''; C_DIM=''; C_OFF=''
@@ -123,14 +151,24 @@ if [ "$MODE" = audit ]; then
 	status=0
 	declare -A declared=()
 	for m in "${MODULES[@]}"; do declared["$m"]=1; done
+	declare -A excluded=()
+	for entry in "${EXCLUDED_REASONS[@]}"; do excluded["${entry%%:*}"]=1; done
+	declare -A skipAudit=()
+	for entry in "${EXCLUDED_SOURCES[@]}"; do skipAudit["${entry%%:*}"]=1; done
 	for d in src/*/; do
 		m="$(basename "$d")"
 		shopt -s nullglob
-		srcs=("$d"*.cpp)
+		local_srcs=("$d"*.cpp)
 		shopt -u nullglob
+		srcs=()
+		for f in "${local_srcs[@]}"; do
+			[ -n "${skipAudit[$m/$(basename "$f")]:-}" ] && continue
+			srcs+=("$f")
+		done
 		[ ${#srcs[@]} -eq 0 ] && continue
-		if $CXX -std=c++17 -fsyntax-only -Iinclude "${srcs[@]}" >/dev/null 2>&1; then
-			if [ -z "${declared[$m]:-}" ]; then
+		# shellcheck disable=SC2086
+		if $CXX -std=c++17 $INCLUDES $DEFINES -fsyntax-only "${srcs[@]}" >/dev/null 2>&1; then
+			if [ -z "${declared[$m]:-}" ] && [ -z "${excluded[$m]:-}" ]; then
 				bad "$m compiles standalone but is missing from MODULES"
 				status=1
 			fi
@@ -157,8 +195,11 @@ compile_one() {
 	obj="${line%%$'\t'*}"
 	kind="${line#*$'\t'}"
 
+	local compiler="$CXX"
 	case "$kind" in
 		test) flags="$SC_TESTFLAGS" ;;
+		# whereami is vendored C, not C++; retdec/utils links against it.
+		cc)   flags="-O1 -g0 -w $SC_EXTRA_CXXFLAGS"; compiler="${CC:-cc}" ;;
 		*)    flags="$SC_CXXFLAGS" ;;
 	esac
 
@@ -167,7 +208,7 @@ compile_one() {
 	fi
 	mkdir -p "$(dirname "$obj")"
 	# shellcheck disable=SC2086
-	if ! $CXX $flags -c "$src" -o "$obj" 2> "$obj.log"; then
+	if ! $compiler $flags -c "$src" -o "$obj" 2> "$obj.log"; then
 		return 1
 	fi
 	rm -f "$obj.log"
@@ -178,6 +219,8 @@ export CXX
 export SC_CXXFLAGS="$CXXFLAGS"
 export SC_TESTFLAGS="$TESTFLAGS"
 export SC_SELF="$ROOT/scripts/standalone_check.sh"
+export SC_EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS"
+export CC
 
 # Build a job list, then run it with xargs -P for parallelism.
 JOBLIST="$BUILD_DIR/jobs.txt"
@@ -191,13 +234,18 @@ if [ ${#WANTED[@]} -gt 0 ]; then
 	:
 fi
 
+declare -A skip_source=()
+for entry in "${EXCLUDED_SOURCES[@]}"; do skip_source["${entry%%:*}"]=1; done
+
 for m in "${selected_modules[@]}"; do
 	shopt -s nullglob
 	for src in "src/$m"/*.cpp; do
+		[ -n "${skip_source[$m/$(basename "$src")]:-}" ] && continue
 		printf '%s\t%s\tmod\n' "$src" "$BUILD_DIR/obj/$m/$(basename "${src%.cpp}").o" >> "$JOBLIST"
 	done
 	shopt -u nullglob
 done
+printf '%s\t%s\tcc\n' deps/whereami/whereami/whereami.c "$BUILD_DIR/obj/utils/whereami.o" >> "$JOBLIST"
 printf '%s\t%s\ttest\n' tests/standalone/gtest_lite.cpp "$BUILD_DIR/obj/gtest_lite.o" >> "$JOBLIST"
 printf '%s\t%s\ttest\n' tests/standalone/gtest_lite_main.cpp "$BUILD_DIR/obj/gtest_lite_main.o" >> "$JOBLIST"
 
@@ -223,9 +271,14 @@ for m in "${selected_modules[@]}"; do
 	objs=("$BUILD_DIR/obj/$m"/*.o)
 	shopt -u nullglob
 	[ ${#objs[@]} -eq 0 ] && continue
-	ar rcs "$BUILD_DIR/lib/lib$m.a" "${objs[@]}"
+	# Recreate rather than update: `ar r` keeps members whose source has since
+	# been deleted, renamed or excluded, which shows up as a duplicate-symbol
+	# link error long after the fact.
+	rm -f "$BUILD_DIR/lib/lib$m.a"
+	ar qcs "$BUILD_DIR/lib/lib$m.a" "${objs[@]}"
 done
-ar rcs "$BUILD_DIR/lib/libgtest_lite_main.a" "$BUILD_DIR/obj/gtest_lite_main.o"
+rm -f "$BUILD_DIR/lib/libgtest_lite_main.a"
+ar qcs "$BUILD_DIR/lib/libgtest_lite_main.a" "$BUILD_DIR/obj/gtest_lite_main.o"
 
 if [ "$MODE" = compile ]; then
 	ok "compile-only run finished"
