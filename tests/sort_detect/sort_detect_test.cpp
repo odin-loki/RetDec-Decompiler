@@ -96,6 +96,64 @@ static std::unique_ptr<ssa::SSAFunction> makeBubbleSort(const std::string& name)
 	return fn;
 }
 
+// Find a block by label; the fixtures below need a specific loop header and
+// the ids are an implementation detail of the order they were added in.
+static ssa::BasicBlock* blockNamed(ssa::SSAFunction& fn, const std::string& label)
+{
+	for (std::uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		auto* blk = fn.block(b);
+		if (blk && blk->name == label) return blk;
+	}
+	return nullptr;
+}
+
+// The descending form:
+//
+//     for (i = n - 1; i > 0; --i)
+//         for (j = 0; j < i; ++j)
+//
+// which is also what -O2 makes of the ascending one when it turns the
+// `n - 1 - i` bound into a loop-carried decrement.  The outer index retreats
+// and the inner advances, so the function has both an Add-fed and a Sub-fed
+// phi -- but in *different* loop headers, because neither loop updates both.
+static std::unique_ptr<ssa::SSAFunction> makeDescendingBubbleSort(const std::string& name)
+{
+	auto fn = std::make_unique<ssa::SSAFunction>(name);
+	auto* entry = fn->addBlock("entry");
+	auto* outer = fn->addBlock("outer");
+	auto* inner = fn->addBlock("inner");
+	fn->addBlock("exit");
+
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Sub);        // i = n - 1
+	auto* iDec = fn->addInstr(outer->id, ssa::IrInstr::Op::Sub);   // --i
+	fn->addInstr(outer->id, ssa::IrInstr::Op::Compare);    // i > 0
+	fn->addInstr(outer->id, ssa::IrInstr::Op::CondBranch);
+	auto* jInc = fn->addInstr(inner->id, ssa::IrInstr::Op::Add);   // ++j
+	fn->addInstr(inner->id, ssa::IrInstr::Op::Load);
+	fn->addInstr(inner->id, ssa::IrInstr::Op::Load);
+	fn->addInstr(inner->id, ssa::IrInstr::Op::Compare);
+	fn->addInstr(inner->id, ssa::IrInstr::Op::CondBranch);
+	fn->addInstr(inner->id, ssa::IrInstr::Op::Store);      // the adjacent swap
+	fn->addInstr(inner->id, ssa::IrInstr::Op::Store);
+	fn->addInstr(inner->id, ssa::IrInstr::Op::Compare);    // j < i
+	fn->addInstr(inner->id, ssa::IrInstr::Op::CondBranch);
+	for (int k = 0; k < 4; ++k)
+		fn->addInstr(inner->id, ssa::IrInstr::Op::Add);
+
+	// The outer index retreats, the inner one advances, and each phi is in the
+	// header of the loop that updates it -- so no single loop updates both.
+	auto* iPhi = fn->addPhi(outer->id, 0);
+	auto* iVal = fn->allocValue(ssa::ValueKind::VirtualReg);
+	iVal->defInstr = iDec;
+	iPhi->addOperand(inner->id, iVal->id);
+	auto* jPhi = fn->addPhi(inner->id, 1);
+	auto* jVal = fn->allocValue(ssa::ValueKind::VirtualReg);
+	jVal->defInstr = jInc;
+	jPhi->addOperand(inner->id, jVal->id);
+	return fn;
+}
+
 // ─── ElementType tests ────────────────────────────────────────────────────────
 
 TEST(ElementTypeTest, UnknownToString)
@@ -719,16 +777,36 @@ TEST(BubbleSortDetectorTest, BubbleSortWinsOverIntrosort)
 // retreats its right index, and that decrement feeds the loop-header phi.
 TEST(BubbleSortDetectorTest, ConvergingIndicesStillSuppressBubble)
 {
+	// A Hoare partition carries *both* indices in one loop, so the advancing
+	// and the retreating phi sit in the same header.  This fixture used to put
+	// the retreating phi in the entry block, where no advancing phi lives --
+	// which is not a partition at all, it is the descending-bubble-sort shape
+	// below, and asserting suppression for it asserted the bug.
 	auto fn = makeBubbleSort("hoare_partition");
-	auto* blk = fn->block(fn->entryId());
-	auto* dec = fn->addInstr(blk->id, ssa::IrInstr::Op::Sub);   // hi = hi - 1
-	auto* hiPhi = fn->addPhi(blk->id, 2);
+	auto* inner = blockNamed(*fn, "inner");   // the header the Add-fed phi is in
+	auto* dec = fn->addInstr(inner->id, ssa::IrInstr::Op::Sub);   // hi = hi - 1
+	auto* hiPhi = fn->addPhi(inner->id, 2);
 	auto* hiVal = fn->allocValue(ssa::ValueKind::VirtualReg);
 	hiVal->defInstr = dec;
-	hiPhi->addOperand(blk->id, hiVal->id);
+	hiPhi->addOperand(inner->id, hiVal->id);
 	BubbleSortDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_LT(r.confidence, 0.45f);
+}
+
+// The reason the gate above has to ask which loop the phis belong to.
+TEST(BubbleSortDetectorTest, DescendingBubbleSortIsStillABubbleSort)
+{
+	// Both an Add-fed and a Sub-fed phi exist here, in different loop headers.
+	// Asking only that both exist somewhere in the function suppressed this as
+	// a partition, so the textbook descending bubble sort came back as
+	// `introsort (std::sort)` at 0.700 -- a false positive for introsort and a
+	// false negative for bubble sort from one predicate.
+	auto fn = makeDescendingBubbleSort("bubble_descending");
+	BubbleSortDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_GE(r.confidence, 0.45f);
+	EXPECT_EQ(r.algorithm, SortAlgorithm::BubbleSort);
 }
 
 // Sift-down evidence may only veto a bubble sort when it carries the one
@@ -747,6 +825,51 @@ TEST(BubbleSortDetectorTest, ChildIndexArithmeticStillSuppressesBubble)
 	BubbleSortDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_LT(r.confidence, 0.45f);
+}
+
+// IntrosortDetector had no gate at all: half the partition confidence plus a
+// flat 0.20 for an "insertion sort tail" whose predicate is only
+// `>= 1 Sub, >= 2 Compares, >= 1 Store, >= 3 blocks`.  Introsort is quicksort
+// with a depth bound and two fallbacks, so it recurses or it delegates; asking
+// for one of the two is what the sibling QuicksortDetector already does, and
+// for the same measured reason.
+TEST(IntrosortDetectorTest, PlainCopyLoopIsNotIntrosort)
+{
+	// A backwards memmove-style copy: two loads, two stores, a Sub, two
+	// compares, two conditional branches.  No calls of any kind.
+	auto fn = std::make_unique<ssa::SSAFunction>("copy_backwards");
+	auto* entry = fn->addBlock("entry");
+	auto* loop  = fn->addBlock("loop");
+	fn->addBlock("exit");
+
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Compare);
+	fn->addInstr(entry->id, ssa::IrInstr::Op::CondBranch);
+	fn->addInstr(loop->id, ssa::IrInstr::Op::Sub);        // --i
+	fn->addInstr(loop->id, ssa::IrInstr::Op::Load);
+	fn->addInstr(loop->id, ssa::IrInstr::Op::Load);
+	fn->addInstr(loop->id, ssa::IrInstr::Op::Store);
+	fn->addInstr(loop->id, ssa::IrInstr::Op::Store);
+	fn->addInstr(loop->id, ssa::IrInstr::Op::Compare);
+	fn->addInstr(loop->id, ssa::IrInstr::Op::CondBranch);
+
+	IntrosortDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.50f);
+}
+
+// The gate may not cost a real introsort its score.
+TEST(IntrosortDetectorTest, RecursivePartitionStillScores)
+{
+	auto fn = makeDescendingBubbleSort("__introsort_loop");
+	// Two self-calls on the sub-ranges, which is what makes it introsort.
+	for (int k = 0; k < 2; ++k) {
+		auto* call = fn->addInstr(fn->block(1)->id, ssa::IrInstr::Op::Call);
+		call->calleeName = "__introsort_loop";
+	}
+	IntrosortDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_GT(r.confidence, 0.0f);
+	EXPECT_EQ(r.algorithm, SortAlgorithm::Introsort);
 }
 
 // ─── InsertionSortDetector tests ──────────────────────────────────────────────

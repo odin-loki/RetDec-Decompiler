@@ -246,6 +246,10 @@ struct RAIIEvidence {
     bool  hasAcquireInCtor = false;
     bool  hasReleaseInDtor = false;
     bool  hasMatchingPair  = false;  ///< acquire/release are paired functions
+    /// The acquire and the release were seen in *different* functions of a
+    /// class, which is what makes the idiom RAII rather than scoped cleanup.
+    /// Only detectGroup() can establish this; a single function cannot.
+    bool  spansTwoFunctions = false;
     std::string acquireName;
     std::string releaseName;
 };
@@ -355,6 +359,15 @@ private:
     bool isAcquireCall(const std::string& callee) const;
     bool isReleaseCall(const std::string& callee) const;
     std::string matchingRelease(const std::string& acquire) const;
+    /// Accumulate one function's acquire and release calls into @p ev.
+    /// Shared by detect() and detectGroup(), which used to carry a copy each.
+    void collectCalls(const ssa::SSAFunction& fn, RAIIEvidence& ev,
+                      std::vector<std::string>& acquires,
+                      std::vector<std::string>& releases) const;
+    /// Match each acquire against the release the table says closes it.
+    void pairUp(RAIIEvidence& ev,
+                const std::vector<std::string>& acquires,
+                const std::vector<std::string>& releases) const;
 };
 
 // ─── Pattern detector orchestrator ───────────────────────────────────────────

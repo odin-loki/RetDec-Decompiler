@@ -55,9 +55,15 @@ static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
 
 // Setter: a Store of a pointer to a struct field (Store + Load present).
 static bool isSetterFunction(const ssa::SSAFunction& fn) {
-    // A setter has a Store and minimal other computation.
+    // A setter installs the policy and returns; it does not dispatch. Without
+    // the call check a function could be scored as the setter *and* the
+    // executor at once, which is what took a five-instruction dispatcher --
+    // two loads, a call, a store, a return -- to 1.00: 0.30 for the interface
+    // field, 0.35 for being a setter and 0.35 for being the executor, three
+    // scores for one function that can only be playing one of those roles.
     return countOp(fn, ssa::IrInstr::Op::Store) >= 1 &&
-           countOp(fn, ssa::IrInstr::Op::Load)  <= 2;
+           countOp(fn, ssa::IrInstr::Op::Load)  <= 2 &&
+           countOp(fn, ssa::IrInstr::Op::Call)  == 0;
 }
 
 // Executor: Load chain + indirect Call.
@@ -69,11 +75,17 @@ static bool isExecutorFunction(const ssa::SSAFunction& fn) {
         if (!blk) continue;
         for (const auto* i : blk->instrs) {
             if (!i || i->op != ssa::IrInstr::Op::Call) continue;
+            // An unresolved callee is not an indirect one -- see the same
+            // change in command_detect.cpp. This IR leaves calleeName empty
+            // when the pipeline could not resolve the target, which in a
+            // stripped binary is most calls, so `cn.empty()` made this true
+            // for nearly every function that calls anything.
             const auto& cn = i->calleeName;
-            if (cn.empty() || cn[0] == '*' ||
-                cn.find("doAlgorithm") != std::string::npos ||
-                cn.find("execute")     != std::string::npos ||
-                cn.find("sort")        != std::string::npos)
+            if (!cn.empty() &&
+                (cn[0] == '*' ||
+                 cn.find("doAlgorithm") != std::string::npos ||
+                 cn.find("execute")     != std::string::npos ||
+                 cn.find("sort")        != std::string::npos))
                 hasIndirectCall = true;
         }
     }

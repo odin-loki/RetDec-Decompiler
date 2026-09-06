@@ -63,29 +63,6 @@ static int countSelfCalls(const ssa::SSAFunction& fn) {
     return n;
 }
 
-// A Hoare partition's two indices *converge*: the left one is advanced by an
-// Add that feeds its loop-header phi, the right one is retreated by a Sub that
-// feeds its own phi.  Bubble sort also contains an Add and a Sub, but its Sub
-// computes the inner-loop *bound* (n - 1 - i) and never flows back into a phi,
-// so a loop-carried decrement is the one partition signal a bubble sort does
-// not produce.  Everything else PartitionFingerprint scores — an element
-// compare, a two-store swap, a couple of conditional branches — is shared with
-// bubble sort, which is why the score alone cannot separate the two.
-static bool hasConvergingIndexPhis(const ssa::SSAFunction& fn) {
-    bool advancing = false;
-    bool retreating = false;
-    for (const auto& phi : fn.phis()) {
-        if (!phi) continue;
-        for (const auto& op : phi->operands) {
-            const auto* val = fn.value(op.second);
-            if (!val || !val->defInstr) continue;
-            if (val->defInstr->op == ssa::IrInstr::Op::Add) advancing = true;
-            if (val->defInstr->op == ssa::IrInstr::Op::Sub) retreating = true;
-        }
-    }
-    return advancing && retreating;
-}
-
 } // anonymous namespace
 
 SortResult BubbleSortDetector::detect(const ssa::SSAFunction& fn) const {
@@ -103,7 +80,10 @@ SortResult BubbleSortDetector::detect(const ssa::SSAFunction& fn) const {
     // reproduce.
     PartitionFingerprint pf;
     const auto part = pf.analyse(fn);
-    if (part.found && part.confidence >= 0.45f && hasConvergingIndexPhis(fn))
+    // The converging-index test lives on PartitionFingerprint, where every
+    // consumer gets it: this file used to carry a private, weaker copy while
+    // the shared predicate's answer sat unread on the evidence as isHoareStyle.
+    if (part.found && part.confidence >= 0.45f && part.isHoareStyle)
         return result;
 
     // Same mistake, second guard: SiftDownEvidence.found needs two of its

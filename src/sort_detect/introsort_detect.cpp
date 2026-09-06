@@ -153,11 +153,28 @@ SortResult IntrosortDetector::detect(const ssa::SSAFunction& fn) const {
     // Phase 1: Partition fingerprint.
     PartitionFingerprint pf;
     auto pe = pf.analyse(fn);
+
+    // Introsort is quicksort with a depth bound and two fallbacks, so it is
+    // recursive or it delegates -- one of the two, always. Without asking for
+    // either, this detector had no gate at all: partScore is half the
+    // partition confidence and the insertion-sort tail is a flat 0.20 for
+    // `>= 1 Sub, >= 2 Compares, >= 1 Store, >= 3 blocks`, so a plain backwards
+    // memmove-style copy loop -- two loads, two stores, a Sub, two compares,
+    // two conditional branches, no calls at all -- came back as
+    // `introsort (std::sort)` at 0.575.
+    //
+    // The sibling file already carries this remedy and the empirical note
+    // behind it: QuicksortDetector requires a self-call because
+    // partition-shaped FIR, histogram and dot-product loops were labelled
+    // quicksort at 0.90 with precision 0. The same loops reach here.
+    RecursiveHalvingFingerprint rhf;
+    auto re = rhf.analyse(fn);
+    if (!pe.found) return result;
+    if (re.selfCallCount < 1 && !hasHeapsortDelegate(fn)) return result;
+
     float partScore = pe.confidence * 0.50f;
 
     // Phase 2: Recursive calls on sub-ranges.
-    RecursiveHalvingFingerprint rhf;
-    auto re = rhf.analyse(fn);
     float recursionScore = (re.selfCallCount >= 2) ? 0.30f : 0.0f;
 
     // Phase 3: Insertion sort tail.

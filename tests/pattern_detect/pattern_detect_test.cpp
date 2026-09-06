@@ -457,13 +457,24 @@ TEST(RAIIDetectorTest, EmptyFunctionLowConfidence) {
     EXPECT_LT(det.detect(*fn).confidence, 0.30f);
 }
 
+// One function that acquires and releases is scoped cleanup, not the RAII
+// class idiom.  The two 0.45 weights are named hasAcquireInCtor and
+// hasReleaseInDtor, and that placement -- acquire in a constructor, release in
+// the *destructor*, so leaving scope frees the resource -- is the whole idiom.
+// detect() is handed one function and cannot establish either, so it used to
+// award both on the strength of the names of the calls alone: an ordinary C
+// helper that mallocs a buffer and frees it before returning scored a flat
+// 1.00, the same as a recovered ctor/dtor pair.  Still reported, because
+// "this could be RAII" is useful output, but no longer with the confidence of
+// something actually recovered.  detectGroup(), which sees a class's
+// functions, is what can reach 1.00 -- see CtorDtorPairOutranksScopedCleanup.
 TEST(RAIIDetectorTest, FopenFcloseMatched) {
     auto fn = makeFunc("FileHandle", {});
     addCall(*fn, "fopen");
     addCall(*fn, "fclose");
     RAIIDetector det;
     auto r = det.detect(*fn);
-    EXPECT_GE(r.confidence, 0.90f);  // acquire + release + matching pair
+    EXPECT_NEAR(0.55f, r.confidence, 1e-5f);
     EXPECT_EQ(r.kind, PatternKind::RAII);
 }
 
@@ -473,7 +484,7 @@ TEST(RAIIDetectorTest, MallocFreeMatched) {
     addCall(*fn, "free");
     RAIIDetector det;
     auto r = det.detect(*fn);
-    EXPECT_GE(r.confidence, 0.90f);
+    EXPECT_NEAR(0.55f, r.confidence, 1e-5f);
 }
 
 TEST(RAIIDetectorTest, PthreadMutexMatched) {
@@ -482,7 +493,26 @@ TEST(RAIIDetectorTest, PthreadMutexMatched) {
     addCall(*fn, "pthread_mutex_unlock");
     RAIIDetector det;
     auto r = det.detect(*fn);
-    EXPECT_GE(r.confidence, 0.90f);
+    EXPECT_NEAR(0.55f, r.confidence, 1e-5f);
+}
+
+// The ctor/dtor split is what the two 0.45 weights are for, and only the group
+// path can see it.  A genuine RAII class must outrank the scoped-cleanup
+// helper above, or a ranked list puts them side by side.
+TEST(RAIIDetectorTest, CtorDtorPairOutranksScopedCleanup) {
+    auto ctor = makeFunc("FileHandle::FileHandle", {});
+    addCall(*ctor, "fopen");
+    auto dtor = makeFunc("FileHandle::~FileHandle", {});
+    addCall(*dtor, "fclose");
+
+    RAIIDetector det;
+    std::vector<const ssa::SSAFunction*> cls = {ctor.get(), dtor.get()};
+    auto group = det.detectGroup(cls);
+    auto single = det.detect(*ctor);   // acquire only: not the idiom at all
+
+    EXPECT_NEAR(1.0f, group.confidence, 1e-5f);
+    EXPECT_EQ(0.0f, single.confidence);
+    EXPECT_GT(group.confidence, 0.55f);
 }
 
 TEST(RAIIDetectorTest, UnmatchedAcquireOnly) {
@@ -561,7 +591,67 @@ TEST(RAIIDetectorTest, TwoResourcesInOneScopeStillPair) {
     RAIIDetector det;
     auto r = det.detect(*fn);
     EXPECT_EQ(r.kind, PatternKind::RAII);
-    EXPECT_GE(r.confidence, 0.90f);
+    // Two resources in one scope is still one function, so still scoped
+    // cleanup -- see FopenFcloseMatched. What this test is for is that the
+    // pairing survives interleaving: the last acquire is fclose's partner and
+    // the last release is malloc's, so matching them pairwise is required.
+    EXPECT_NEAR(0.55f, r.confidence, 1e-5f);
+}
+
+// ─── unresolved calls are not virtual dispatch ───────────────────────────────
+//
+// This IR leaves calleeName empty when the pipeline could not work out what is
+// being called -- llvm_to_ssa.cpp assigns it only when a name is available --
+// which in a stripped binary is most calls.  Both Command's hasVtableExecute
+// and Strategy's hasIndirectCall accepted an empty name as evidence of a call
+// through a vtable, so a five-instruction callback dispatcher reported Command
+// at 0.65 and Strategy at 1.00.
+
+static std::unique_ptr<ssa::SSAFunction> makeCallbackDispatcher() {
+    auto fn = makeFunc("dispatch", {ssa::IrInstr::Op::Load,
+                                    ssa::IrInstr::Op::Load});
+    addCall(*fn, "");                                   // target not resolved
+    fn->addInstr(fn->block(0)->id, ssa::IrInstr::Op::Store);
+    fn->addInstr(fn->block(0)->id, ssa::IrInstr::Op::Ret);
+    return fn;
+}
+
+TEST(CommandDetectorTest, UnresolvedCallIsNotAVtableDispatch) {
+    auto fn = makeCallbackDispatcher();
+    CommandDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_EQ(0.0f, r.confidence);
+}
+
+TEST(StrategyDetectorTest, UnresolvedCallIsNotAnIndirectCall) {
+    auto fn = makeCallbackDispatcher();
+    StrategyDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.45f);
+}
+
+TEST(StrategyDetectorTest, OneFunctionIsNotBothSetterAndExecutor) {
+    // A setter installs the policy and returns; an executor reads it and
+    // dispatches. Scoring both for one function was three scores -- interface
+    // field, setter, executor -- for a role it can only be playing one of.
+    auto fn = makeFunc("execute", {ssa::IrInstr::Op::Load,
+                                   ssa::IrInstr::Op::Load});
+    addCall(*fn, "doAlgorithm");
+    fn->addInstr(fn->block(0)->id, ssa::IrInstr::Op::Store);
+    StrategyDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 1.0f);
+}
+
+TEST(CommandDetectorTest, OneDispatchSiteIsACallbackNotTheCommandPattern) {
+    // A named virtual dispatch with no container of commands and no loop over
+    // one. The Command pattern is a container of command objects executed
+    // through their vtable; one dispatch site is a callback.
+    auto fn = makeFunc("run", {ssa::IrInstr::Op::Load});
+    addCall(*fn, "execute");
+    CommandDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_EQ(0.0f, r.confidence);
 }
 
 // ─── PatternDetector orchestration tests ──────────────────────────────────────

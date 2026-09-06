@@ -29,6 +29,8 @@
 #include "retdec/crypto_detect/crypto_detect.h"
 #include "retdec/ssa/ssa.h"
 
+#include "arx_rotate.h"
+
 #include <set>
 
 namespace retdec {
@@ -82,14 +84,18 @@ static int countSigmaWords(const ssa::SSAFunction& fn) {
 
 ChaCha20Evidence ChaCha20Detector::analyse(const ssa::SSAFunction& fn) const {
     ChaCha20Evidence ev;
-    ev.hasRotConst16   = hasImmediate(fn, 16);
-    ev.hasRotConst12   = hasImmediate(fn, 12);
-    ev.hasRotConst8    = hasImmediate(fn, 8);
-    ev.hasRotConst7    = hasImmediate(fn, 7);
-    ev.hasAddXorRotSeq = countOp(fn, ssa::IrInstr::Op::Add) >= 1 &&
-                         countOp(fn, ssa::IrInstr::Op::Xor) >= 1 &&
-                         (countOp(fn, ssa::IrInstr::Op::Shl) >= 1 ||
-                          countOp(fn, ssa::IrInstr::Op::Or)  >= 1);
+    // A ChaCha20 quarter-round rotates by 16, 12, 8 and 7. These used to ask
+    // only whether those numbers appeared as an immediate anywhere in the
+    // function, and the "rotation sequence" asked for `an Add, a Xor, and a
+    // Shl or an Or` -- which is not a rotation. An ordinary byte-mixing string
+    // hash satisfied all of it and was annotated as ChaCha20 at 0.50. A
+    // rotation is a specific shape and arx::hasRotateBy asks for it.
+    static constexpr uint64_t kQuarterRoundRotations[] = {16, 12, 8, 7};
+    ev.hasRotConst16   = arx::hasRotateBy(fn, 16);
+    ev.hasRotConst12   = arx::hasRotateBy(fn, 12);
+    ev.hasRotConst8    = arx::hasRotateBy(fn, 8);
+    ev.hasRotConst7    = arx::hasRotateBy(fn, 7);
+    ev.hasAddXorRotSeq = arx::hasAddRotateXor(fn, kQuarterRoundRotations, 4);
     ev.sigmaWords      = countSigmaWords(fn);
     ev.hasSigmaConst   = ev.sigmaWords > 0;
     // Rotation path still requires the structural sequence; sigma words

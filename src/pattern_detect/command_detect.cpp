@@ -74,13 +74,23 @@ static bool hasVtableExecute(const ssa::SSAFunction& fn) {
             if (!i) continue;
             if (i->op == ssa::IrInstr::Op::Load) { loadSeen = true; continue; }
             if (loadSeen && i->op == ssa::IrInstr::Op::Call) {
-                // Accept an indirect call (empty callee or '*' prefix) or
-                // a call whose name suggests execute.
+                // An *unresolved* callee is not an indirect one. This IR leaves
+                // calleeName empty when the pipeline could not work out what is
+                // being called (llvm_to_ssa.cpp only assigns it when a name is
+                // available), which in a stripped binary is most calls -- so
+                // accepting `cn.empty()` made this predicate true for almost
+                // any function with a load and a call in it, and Command was
+                // reported at 0.65 for a five-instruction callback dispatcher.
+                //
+                // The '*' prefix stays because it is how a genuinely indirect
+                // target is spelled where one is known, but nothing in the
+                // current pipeline produces it.
                 const auto& cn = i->calleeName;
-                if (cn.empty() || cn[0] == '*' ||
-                    cn.find("execute") != std::string::npos ||
-                    cn.find("Execute") != std::string::npos ||
-                    cn.find("run")     != std::string::npos)
+                if (!cn.empty() &&
+                    (cn[0] == '*' ||
+                     cn.find("execute") != std::string::npos ||
+                     cn.find("Execute") != std::string::npos ||
+                     cn.find("run")     != std::string::npos))
                     return true;
             }
         }
@@ -132,7 +142,12 @@ CommandEvidence CommandDetector::analyse(const ssa::SSAFunction& fn) const {
     ev.hasContainerOfPtrs = hasContainerOfPtrs(fn);
     ev.hasLoopExecute     = hasBackEdge(fn) && ev.hasVtableExecute;
     ev.hasUndo            = hasUndoMethod(fn);
-    ev.found = ev.hasVtableExecute;
+    // A dispatch site on its own is a callback, not the Command pattern: the
+    // pattern is a *container* of command objects, executed through their
+    // vtable, usually in a loop. Asking for the dispatch alone reported Command
+    // for any function that loads a function pointer and calls it.
+    ev.found = ev.hasVtableExecute &&
+               (ev.hasContainerOfPtrs || ev.hasLoopExecute);
     ev.confidence = score(ev);
     return ev;
 }

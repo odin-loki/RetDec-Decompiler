@@ -154,8 +154,48 @@ static float scoreHoare(const ssa::SSAFunction& fn)
 
 bool PartitionFingerprint::hasConvergingIndices(const ssa::SSAFunction& fn) const
 {
-	// Converging indices: function has phi nodes and both Add + Sub.
-	return countPhis(fn) >= 2 && countAdds(fn) >= 1 && countSubs(fn) >= 1;
+	// A Hoare partition carries *both* indices in one loop: the left one is
+	// advanced by an Add that feeds its phi, the right one retreated by a Sub
+	// that feeds its own, and the two phis therefore sit in the same loop
+	// header, because it is one loop that updates both.
+	//
+	// That last clause is the whole discriminator, and it was missing in two
+	// places at once. Here the test was "two phis, an Add and a Sub, anywhere
+	// in the function"; BubbleSortDetector carried a private copy that asked
+	// for an Add-fed phi and a Sub-fed phi without requiring them to be
+	// different phis, let alone phis of the same loop. Both are satisfied by
+	//
+	//     for (i = n - 1; i > 0; --i)
+	//         for (j = 0; j < i; ++j)
+	//
+	// which is the descending bubble sort, and also what -O2 makes of the
+	// ascending one when it turns the `n - 1 - i` bound into a loop-carried
+	// decrement. Its two indices live in *different* loop headers: the outer
+	// loop updates i and the inner updates j, and neither updates both. So a
+	// textbook bubble sort passed the one gate meant to keep it from being
+	// reported as introsort, and came back as `introsort (std::sort)` at 0.700.
+	auto fedBy = [&fn](const ssa::PhiNode& phi, ssa::IrInstr::Op op) {
+		for (const auto& in : phi.operands)
+		{
+			const auto* val = fn.value(in.second);
+			if (val && val->defInstr && val->defInstr->op == op) return true;
+		}
+		return false;
+	};
+
+	for (const auto& advancing: fn.phis())
+	{
+		if (!advancing || advancing->block == ssa::kInvalidBlock) continue;
+		if (!fedBy(*advancing, ssa::IrInstr::Op::Add)) continue;
+
+		for (const auto& retreating: fn.phis())
+		{
+			if (!retreating || retreating.get() == advancing.get()) continue;
+			if (retreating->block != advancing->block) continue;
+			if (fedBy(*retreating, ssa::IrInstr::Op::Sub)) return true;
+		}
+	}
+	return false;
 }
 
 bool PartitionFingerprint::hasSwapPattern(const ssa::SSAFunction& fn) const

@@ -85,6 +85,62 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `sort_detect`: a textbook bubble sort was reported as `introsort (std::sort)`.
+  The one gate meant to stop that, `hasConvergingIndexPhis`, asked whether an
+  Add-fed phi and a Sub-fed phi both existed somewhere in the function, without
+  requiring them to be different phis or to belong to the same loop — and
+  `for (i = n-1; i > 0; --i) for (j = 0; j < i; ++j)` has both, in different
+  loop headers. A Hoare partition carries both indices in *one* loop, so the two
+  phis sit in the same header; that is what is asked now. The predicate lives on
+  `PartitionFingerprint`, where every consumer gets it: this file had a private,
+  weaker copy while the shared predicate's answer sat unread on the evidence as
+  `isHoareStyle`.
+- `sort_detect`: `IntrosortDetector` had no gate at all — half the partition
+  confidence plus a flat 0.20 for an "insertion sort tail" whose predicate is
+  `≥1 Sub, ≥2 Compares, ≥1 Store, ≥3 blocks`. A backwards memmove-style copy
+  loop with no calls in it came back as `introsort (std::sort)` at 0.575.
+  Introsort is quicksort with a depth bound and two fallbacks, so it recurses or
+  it delegates; it now has to show one of the two, which is the remedy the
+  sibling `QuicksortDetector` already carries and the empirical note behind it.
+- `crypto_detect`: an ordinary byte-mixing string hash was three ciphers at
+  once. ChaCha20 and Salsa20 scored their quarter-round *rotation amounts* by
+  asking whether the number appeared as an immediate anywhere, and asked for the
+  rotation itself as `≥1 Add && ≥1 Xor && (≥1 Shl || ≥1 Or)` — which is not a
+  rotation, and 7, 8, 12, 13, 16 and 18 are ordinary numbers. A rotation is a
+  specific shape: a `Rol`/`Ror`, or a shift each way by complementary amounts
+  recombined with an `Or`. `arx_rotate.h` asks for that, and both detectors use
+  it. RC4's PRGA was `≥1 Xor && ≥2 Load && (imm 255 || imm 256)` — no loop, no
+  swap, no state array — and the same masking constant was then scored a second
+  time on its own, for 0.65. The state shuffle is mandatory now and the constant
+  is a precondition rather than independent evidence. RSA's `hasLargeConstant`
+  is strictly implied by `hasMultiPrecMul`, and adding both carried a nested
+  integer matrix multiply containing a 32 to 1.00 as "RSA / Montgomery
+  multiplication"; its `hasConditionalSub` also matched a Compare with a Sub
+  after it, with no branch between them, in any successor of any block.
+- `pattern_detect`: an unresolved callee was being read as a virtual dispatch.
+  This IR leaves `calleeName` empty when the pipeline could not work out what is
+  being called — which in a stripped binary is most calls — and both Command's
+  `hasVtableExecute` and Strategy's `hasIndirectCall` accepted that as evidence,
+  so a five-instruction callback dispatcher reported Command at 0.65 and
+  Strategy at 1.00. Strategy also scored one function as the setter *and* the
+  executor, roles it can only be playing one of. Command additionally now needs
+  the container or the loop that makes it the Command pattern rather than a
+  callback. **This is a recall loss**: both detectors are now entirely dependent
+  on recognised callee names, so they contribute nothing to a name-blind metric.
+  That is the honest position — they had no name-blind signal before, only a
+  name-blind way of being wrong — and the export layer tags them as name
+  evidence so a name-blind harness excludes them.
+- `pattern_detect`: RAII scored a single function that acquires and releases at
+  a flat 1.00, the same as a recovered constructor/destructor pair. The two 0.45
+  weights are named `hasAcquireInCtor` and `hasReleaseInDtor`, and that
+  placement is the whole idiom; `detect()` is handed one function and can
+  establish neither. An ordinary C helper that mallocs a buffer and frees it
+  before returning is scoped cleanup, and is reported at 0.55 — still useful
+  output, no longer outranking the thing it is not. Only `detectGroup()`, which
+  sees a class's functions, reaches 1.00. Its duplicated acquire/release scan is
+  now shared with `detect()` rather than maintained twice by hand, and
+  `AESDetector::score` asks `ev.found` instead of re-deriving the disjunction
+  that defines it.
 - `container_detect`: three residual detector defects the adversarial re-review
   found after the first round of fixes. `MapDetector::hasRotation` never
   required the demoted and promoted nodes to be different, so

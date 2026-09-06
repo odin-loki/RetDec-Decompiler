@@ -882,7 +882,56 @@ TEST(SemanticExport, SingletonLockExportsAsPatternNameEvidence)
 	EXPECT_TRUE(found);
 }
 
-TEST(SemanticExport, CommandIndirectCallDoesNotTagSymbolName)
+// Command detection is name evidence, and is now tagged as such.
+//
+// This test used to build a Call with no callee name and assert that the
+// Command it produced was *not* tagged evidence:symbol_name -- a name-blind
+// detection. It was not name-blind, it was evidence-blind: this IR leaves
+// calleeName empty when the pipeline could not resolve the target, which in a
+// stripped binary is most calls, so the detector was treating "unknown" as
+// "virtual dispatch" and firing on nearly any function with a load and a call.
+//
+// Since an unresolved call is no longer evidence, every Command detection now
+// rests on a recognised callee name, and the tagging is what lets a name-blind
+// harness exclude it. That is a real recall loss on stripped binaries, and it
+// is the honest position: the detector had no name-blind signal, only a
+// name-blind way of being wrong.
+TEST(SemanticExport, CommandDetectionIsTaggedAsNameEvidence)
+{
+	retdec::ssa::SSAFunction fn("runQueue");
+	auto* entry = fn.addBlock();
+	ASSERT_NE(entry, nullptr);
+	auto* loop = fn.addBlock();
+	ASSERT_NE(loop, nullptr);
+	loop->succs.push_back(entry->id);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Load, 0);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Load, 0);
+	fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Store, 0);
+	retdec::ssa::IrInstr* exec = fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Call, 0);
+	exec->calleeName = "execute";
+	retdec::ssa::IrInstr* push = fn.addInstr(entry->id, retdec::ssa::IrInstr::Op::Call, 0);
+	push->calleeName = "push_back";
+
+	retdec::analysis::SemanticDetectionMap map;
+	retdec::analysis::appendPatternDetections(map, fn);
+
+	ASSERT_EQ(map.count("runQueue"), 1u);
+	bool found = false;
+	for (const auto& d: map.at("runQueue"))
+	{
+		if (d.kind == "pattern" && d.label == "Command")
+		{
+			found = true;
+			EXPECT_GE(d.confidence, 0.45f);
+			EXPECT_NE(d.detail.find("evidence:symbol_name"), std::string::npos);
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+// The shape the old test built -- an unresolved call -- must now produce
+// nothing at all rather than an untagged Command.
+TEST(SemanticExport, UnresolvedCallProducesNoCommandDetection)
 {
 	retdec::ssa::SSAFunction fn("runQueue");
 	auto* entry = fn.addBlock();
@@ -898,18 +947,8 @@ TEST(SemanticExport, CommandIndirectCallDoesNotTagSymbolName)
 	retdec::analysis::SemanticDetectionMap map;
 	retdec::analysis::appendPatternDetections(map, fn);
 
-	ASSERT_EQ(map.count("runQueue"), 1u);
-	bool found = false;
-	for (const auto& d: map.at("runQueue"))
-	{
-		if (d.kind == "pattern" && d.label == "Command")
-		{
-			found = true;
-			EXPECT_GE(d.confidence, 0.45f);
-			EXPECT_EQ(d.detail.find("evidence:symbol_name"), std::string::npos);
-		}
-	}
-	EXPECT_TRUE(found);
+	for (const auto& d: map["runQueue"])
+		EXPECT_NE(d.label, "Command");
 }
 
 TEST(SemanticExport, FactoryAllocExportsAsPatternNameEvidence)
@@ -980,7 +1019,10 @@ TEST(SemanticExport, StrategyDoAlgorithmExportsAsPatternNameEvidence)
 	EXPECT_TRUE(found);
 }
 
-TEST(SemanticExport, StrategyIndirectCallDoesNotTagSymbolName)
+// The same change as CommandDetectionIsTaggedAsNameEvidence above: an
+// unresolved callee is not an indirect call, so this shape now produces no
+// Strategy detection rather than an untagged one.
+TEST(SemanticExport, UnresolvedCallProducesNoStrategyDetection)
 {
 	retdec::ssa::SSAFunction fn("delegate");
 	auto* entry = fn.addBlock();
@@ -994,16 +1036,6 @@ TEST(SemanticExport, StrategyIndirectCallDoesNotTagSymbolName)
 	retdec::analysis::SemanticDetectionMap map;
 	retdec::analysis::appendPatternDetections(map, fn);
 
-	ASSERT_EQ(map.count("delegate"), 1u);
-	bool found = false;
-	for (const auto& d: map.at("delegate"))
-	{
-		if (d.kind == "pattern" && d.label == "Strategy")
-		{
-			found = true;
-			EXPECT_GE(d.confidence, 0.45f);
-			EXPECT_EQ(d.detail.find("evidence:symbol_name"), std::string::npos);
-		}
-	}
-	EXPECT_TRUE(found);
+	for (const auto& d: map["delegate"])
+		EXPECT_NE(d.label, "Strategy");
 }

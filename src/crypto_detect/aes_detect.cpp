@@ -238,7 +238,12 @@ AESEvidence AESDetector::analyse(const ssa::SSAFunction& fn) const {
 float AESDetector::score(const AESEvidence& ev) const {
     // Supporting evidence stays supporting: without a discriminating signal it
     // sums to nothing, the way MD5Detector::score requires its K[] table.
-    if (!ev.hasSBoxTable && !ev.hasAESNI) return 0.0f;
+    //
+    // `found` *is* that disjunction -- analyse() sets it two lines above the
+    // call to this function -- so asking it here keeps one rule in one place.
+    // Re-deriving it was two copies of the gate that would drift apart the
+    // first time either changed.
+    if (!ev.found) return 0.0f;
     float s = 0.0f;
     if (ev.hasSBox)      s += 0.30f;
     if (ev.hasRcon)      s += 0.20f;

@@ -99,25 +99,34 @@ static int countBackEdges(const ssa::SSAFunction& fn) {
     return n;
 }
 
-// Detect conditional subtract: Compare followed by Branch followed by Sub.
+// Montgomery reduction ends with `if (t >= n) t -= n;` -- a compare, a
+// conditional branch, and a subtract on the taken arm.
+//
+// The branch is the part that makes it *conditional*, and it was not being
+// asked for: any Compare with a Sub after it in the same block matched, as did
+// any Compare at all with a Sub anywhere in any successor. In a function with a
+// compare and a subtract in it -- which is most functions -- that is always
+// true.
 static bool hasConditionalSub(const ssa::SSAFunction& fn) {
     for (uint32_t b = 0; b < fn.blockCount(); ++b) {
         const auto* blk = fn.block(b);
         if (!blk) continue;
-        bool seenCmp = false;
+
+        bool seenCmp = false, seenBranch = false;
         for (const auto* i : blk->instrs) {
             if (!i) continue;
-            if (i->op == ssa::IrInstr::Op::Compare) seenCmp = true;
-            if (seenCmp && i->op == ssa::IrInstr::Op::Sub) return true;
+            if (i->op == ssa::IrInstr::Op::Compare) { seenCmp = true; continue; }
+            if (seenCmp && i->op == ssa::IrInstr::Op::CondBranch) seenBranch = true;
         }
-        // Also check successor blocks for the Sub after a branch.
-        if (seenCmp) {
-            for (uint32_t s : blk->succs) {
-                const auto* sb = fn.block(s);
-                if (!sb) continue;
-                for (const auto* i : sb->instrs)
-                    if (i && i->op == ssa::IrInstr::Op::Sub) return true;
-            }
+        if (!seenCmp || !seenBranch) continue;
+
+        // The subtract is on an arm of that branch, so it is in a successor of
+        // this block -- not "any successor of any block with a compare in it".
+        for (uint32_t sid : blk->succs) {
+            const auto* sb = fn.block(sid);
+            if (!sb || sb == blk) continue;
+            for (const auto* i : sb->instrs)
+                if (i && i->op == ssa::IrInstr::Op::Sub) return true;
         }
     }
     return false;
@@ -134,6 +143,8 @@ RSAEvidence RSADetector::analyse(const ssa::SSAFunction& fn) const {
                          hasImmediate(fn, 32);  // Shr by 32 for carry extraction
     ev.hasConditionalSub = hasConditionalSub(fn);
     // Large constant: detect Shr by 32 and wide Mul (heuristic for 64-bit limbs).
+    // Note this is strictly implied by hasMultiPrecMul above, which requires the
+    // same immediate and more Muls -- see score(), which does not add both.
     ev.hasLargeConstant = hasImmediate(fn, 32) && countOp(fn, ssa::IrInstr::Op::Mul) >= 1;
     ev.found = ev.hasMultiPrecMul || (ev.hasConditionalSub && ev.hasLargeConstant);
     ev.confidence = score(ev);
@@ -144,7 +155,12 @@ float RSADetector::score(const RSAEvidence& ev) const {
     float s = 0.0f;
     if (ev.hasMultiPrecMul)   s += 0.60f;
     if (ev.hasConditionalSub) s += 0.25f;
-    if (ev.hasLargeConstant)  s += 0.15f;
+    // hasLargeConstant is `the immediate 32 and >= 1 Mul`, which hasMultiPrecMul
+    // already requires along with a second Mul, four Adds and two back edges --
+    // so adding both scored one piece of evidence twice, and it was the 0.15
+    // that carried a nested integer matrix multiply containing a 32 from 0.85
+    // to 1.00 as "RSA / Montgomery multiplication".
+    if (ev.hasLargeConstant && !ev.hasMultiPrecMul) s += 0.15f;
     return s > 1.0f ? 1.0f : s;
 }
 

@@ -103,11 +103,22 @@ static bool hasSwapPattern(const ssa::SSAFunction& fn) {
     return false;
 }
 
-// PRGA: Xor of Load from state array — heuristic: Xor + Load in a loop.
+// PRGA: the keystream byte is `S[(S[i] + S[j]) % 256]` xored into the output,
+// and getting there means the state array has already been shuffled -- the
+// swap of S[i] and S[j] happens on every output byte, not only during key
+// setup. So the PRGA is the KSA's swap loop *plus* the xor, and asking for the
+// swap is what separates RC4 from any byte mixer.
+//
+// This used to be `>= 1 Xor && >= 2 Load && (imm 255 || imm 256)`: no loop, no
+// swap, no state array. An ordinary string hash -- two loads, a xor, a mask by
+// 255 -- matched it, and because the 255 was also scored separately as
+// has256Constant the same masking constant was counted twice and the function
+// came back as RC4 at 0.65, annotated into the emitted C.
 static bool hasPRGA(const ssa::SSAFunction& fn) {
     return countOp(fn, ssa::IrInstr::Op::Xor) >= 1 &&
            countOp(fn, ssa::IrInstr::Op::Load) >= 2 &&
-           (hasImmediate(fn, 255) || hasImmediate(fn, 256));
+           (hasImmediate(fn, 255) || hasImmediate(fn, 256)) &&
+           hasSwapPattern(fn);
 }
 
 } // anonymous namespace
@@ -123,11 +134,18 @@ RC4Evidence RC4Detector::analyse(const ssa::SSAFunction& fn) const {
 }
 
 float RC4Detector::score(const RC4Evidence& ev) const {
-    float s = 0.0f;
-    if (ev.has256Constant) s += 0.30f;
-    if (ev.hasKSA)         s += 0.35f;
-    if (ev.hasPRGA)        s += 0.35f;
-    return s > 1.0f ? 1.0f : s;
+    // The 255/256 constant is a *precondition* of both signals below, not
+    // independent evidence: hasKSA and hasPRGA each already require it. Scoring
+    // it again on its own was counting one masking constant twice, and it was
+    // 0.30 of the 0.65 a plain byte hash used to collect here.
+    //
+    // The state shuffle is what makes a function RC4 rather than a byte mixer,
+    // so nothing is claimed without it; the keystream xor on top of it is the
+    // whole cipher, and only that reaches the 0.50 threshold at which an
+    // annotation is emitted.
+    if (!ev.has256Constant) return 0.0f;
+    if (!ev.hasKSA)         return 0.0f;
+    return ev.hasPRGA ? 0.85f : 0.45f;
 }
 
 CryptoResult RC4Detector::detect(const ssa::SSAFunction& fn) const {

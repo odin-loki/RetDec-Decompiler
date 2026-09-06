@@ -20,6 +20,8 @@
 #include "retdec/crypto_detect/crypto_detect.h"
 #include "retdec/ssa/ssa.h"
 
+#include "arx_rotate.h"
+
 namespace retdec {
 namespace crypto_detect {
 
@@ -56,14 +58,18 @@ static bool hasImmediate(const ssa::SSAFunction& fn, uint64_t val) {
 
 Salsa20Evidence Salsa20Detector::analyse(const ssa::SSAFunction& fn) const {
     Salsa20Evidence ev;
-    ev.hasRotConst7  = hasImmediate(fn, 7);
-    ev.hasRotConst9  = hasImmediate(fn, 9);
-    ev.hasRotConst13 = hasImmediate(fn, 13);
-    ev.hasRotConst18 = hasImmediate(fn, 18);
-    ev.hasAddXorRotSeq = countOp(fn, ssa::IrInstr::Op::Add) >= 1 &&
-                         countOp(fn, ssa::IrInstr::Op::Xor) >= 1 &&
-                         (countOp(fn, ssa::IrInstr::Op::Shl) >= 1 ||
-                          countOp(fn, ssa::IrInstr::Op::Or)  >= 1);
+    ev.hasRotConst7  = arx::hasRotateBy(fn, 7);
+    // Same defect as ChaCha20's, in the same shape: the quarter-round rotations
+    // 7, 9, 13 and 18 were "detected" as immediates appearing anywhere, and the
+    // rotation sequence asked for a Shl or an Or rather than a rotate. Adding a
+    // single `<< 13` to a plain string hash was enough to have it annotated as
+    // Salsa20 at 0.50, alongside the ChaCha20 and RC4 annotations the same
+    // function was already collecting.
+    static constexpr uint64_t kQuarterRoundRotations[] = {7, 9, 13, 18};
+    ev.hasRotConst9  = arx::hasRotateBy(fn, 9);
+    ev.hasRotConst13 = arx::hasRotateBy(fn, 13);
+    ev.hasRotConst18 = arx::hasRotateBy(fn, 18);
+    ev.hasAddXorRotSeq = arx::hasAddRotateXor(fn, kQuarterRoundRotations, 4);
     ev.found = ev.hasAddXorRotSeq &&
                (ev.hasRotConst7 || ev.hasRotConst9 ||
                 ev.hasRotConst13 || ev.hasRotConst18);

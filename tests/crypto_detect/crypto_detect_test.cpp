@@ -55,6 +55,22 @@ static void addImmUse(SSAFunction& fn, IrInstr* instr, uint64_t imm) {
     instr->uses.push_back(u);
 }
 
+// Emit a 32-bit rotation by `k`, the way a compiler without a rotate opcode
+// does it: `(x << k) | (x >> (32 - k))`.
+//
+// The ARX detectors used to accept the rotation *amount* appearing as any
+// immediate anywhere, so these fixtures hung the constants off Add
+// instructions and never contained a rotation at all -- which meant they
+// asserted nothing the detector was supposed to be looking for, and passed
+// equally on an ordinary string hash.
+static void addRotate32(SSAFunction& fn, BasicBlock* blk, uint64_t k) {
+    auto* shl = addInstr(fn, blk, IrInstr::Op::Shl);
+    addImmUse(fn, shl, k);
+    auto* shr = addInstr(fn, blk, IrInstr::Op::Shr);
+    addImmUse(fn, shr, 32 - k);
+    addInstr(fn, blk, IrInstr::Op::Or);
+}
+
 // Emit the first four AES S-box entries, in table order, as Immediate uses.
 // This is the discriminating evidence AESDetector requires: a single S-box
 // byte is an ordinary small integer, four of them in table order are not.
@@ -354,17 +370,10 @@ TEST(ChaCha20DetectorTest, AllFourRotationConstants) {
     ChaCha20Detector det;
     auto fn = makeEmptyFn();
     auto* blk = addBlock(*fn);
-    // Quarter-round: 4x Add + 4x Xor + Shl, with rotation constants 16, 12, 8, 7.
-    auto* a1 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a1, 16);
-    auto* a2 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a2, 12);
-    auto* a3 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a3, 8);
-    auto* a4 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a4, 7);
+    // Quarter-round: 4x Add, 4x Xor, and the four rotations 16, 12, 8, 7.
+    for (int k = 0; k < 4; ++k) addInstr(*fn, blk, IrInstr::Op::Add);
     for (int k = 0; k < 4; ++k) addInstr(*fn, blk, IrInstr::Op::Xor);
-    addInstr(*fn, blk, IrInstr::Op::Shl);
+    for (uint64_t rot : {16u, 12u, 8u, 7u}) addRotate32(*fn, blk, rot);
     auto r = det.detect(*fn);
     EXPECT_NEAR(r.confidence, 1.0f, 0.01f);
 }
@@ -384,14 +393,9 @@ TEST(ChaCha20DetectorTest, ThreeOfFourConstants) {
     ChaCha20Detector det;
     auto fn = makeEmptyFn();
     auto* blk = addBlock(*fn);
-    auto* a1 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a1, 16);
-    auto* a2 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a2, 12);
-    auto* a3 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a3, 8);
+    for (int k = 0; k < 3; ++k) addInstr(*fn, blk, IrInstr::Op::Add);
     for (int k = 0; k < 4; ++k) addInstr(*fn, blk, IrInstr::Op::Xor);
-    addInstr(*fn, blk, IrInstr::Op::Shl);
+    for (uint64_t rot : {16u, 12u, 8u}) addRotate32(*fn, blk, rot);
     auto r = det.detect(*fn);
     EXPECT_NEAR(r.confidence, 0.75f, 0.05f);
 }
@@ -438,16 +442,9 @@ TEST(Salsa20DetectorTest, AllFourRotationConstants) {
     Salsa20Detector det;
     auto fn = makeEmptyFn();
     auto* blk = addBlock(*fn);
-    auto* a1 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a1, 7);
-    auto* a2 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a2, 9);
-    auto* a3 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a3, 13);
-    auto* a4 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a4, 18);
+    for (int k = 0; k < 4; ++k) addInstr(*fn, blk, IrInstr::Op::Add);
     for (int k = 0; k < 4; ++k) addInstr(*fn, blk, IrInstr::Op::Xor);
-    addInstr(*fn, blk, IrInstr::Op::Shl);
+    for (uint64_t rot : {7u, 9u, 13u, 18u}) addRotate32(*fn, blk, rot);
     auto r = det.detect(*fn);
     EXPECT_NEAR(r.confidence, 1.0f, 0.01f);
     EXPECT_EQ(r.algorithm, CryptoAlgorithm::Salsa20);
@@ -468,12 +465,9 @@ TEST(Salsa20DetectorTest, TwoSalsaSpecificRotations) {
     Salsa20Detector det;
     auto fn = makeEmptyFn();
     auto* blk = addBlock(*fn);
-    auto* a1 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a1, 9);
-    auto* a2 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a2, 13);
+    for (int k = 0; k < 2; ++k) addInstr(*fn, blk, IrInstr::Op::Add);
     for (int k = 0; k < 4; ++k) addInstr(*fn, blk, IrInstr::Op::Xor);
-    addInstr(*fn, blk, IrInstr::Op::Shl);
+    for (uint64_t rot : {9u, 13u}) addRotate32(*fn, blk, rot);
     auto r = det.detect(*fn);
     EXPECT_NEAR(r.confidence, 0.50f, 0.01f);
 }
@@ -713,13 +707,62 @@ TEST(RSADetectorTest, ConditionalSubtractContributes) {
     for (int k = 0; k < 4; ++k) addInstr(*fn, blk1, IrInstr::Op::Add);
     auto* sh = addInstr(*fn, blk1, IrInstr::Op::Shr);
     addImmUse(*fn, sh, 32);
-    // Block 2: conditional subtract.
+    // Block 2: `if (t >= n)` -- the compare and the branch it feeds.  A Compare
+    // with a Sub after it, which is what this fixture used to build, is not a
+    // *conditional* subtract; the branch is the whole of what makes it one.
     auto* blk2 = addBlock(*fn);
     addEdge(blk1, 2);
     addInstr(*fn, blk2, IrInstr::Op::Compare);
-    addInstr(*fn, blk2, IrInstr::Op::Sub);
+    addInstr(*fn, blk2, IrInstr::Op::CondBranch);
+    // Block 3: the taken arm, `t -= n`.
+    auto* blk3 = addBlock(*fn);
+    addEdge(blk2, 3);
+    addInstr(*fn, blk3, IrInstr::Op::Sub);
     auto r = det.detect(*fn);
     EXPECT_GT(r.confidence, 0.70f);
+}
+
+TEST(RSADetectorTest, UnbranchedCompareAndSubtractIsNotAConditionalSubtract) {
+    // A compare and a subtract in one straight-line block. Montgomery's
+    // reduction subtracts on a branch arm; this does not branch at all, and
+    // matching it meant almost every function carried the 0.25.
+    RSADetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    addInstr(*fn, blk, IrInstr::Op::Compare);
+    addInstr(*fn, blk, IrInstr::Op::Sub);
+    auto r = det.detect(*fn);
+    EXPECT_EQ(0.0f, r.confidence);
+}
+
+TEST(RSADetectorTest, NestedIntegerMatrixMultiplyIsNotAnnotated) {
+    // Two nested loops, several multiplies and adds, a shift by 32, and a
+    // compare-and-branch with a subtract on the arm -- an ordinary fixed-point
+    // or matrix kernel. hasLargeConstant is `the immediate 32 and >= 1 Mul`,
+    // which hasMultiPrecMul already requires with more besides, so scoring both
+    // counted one piece of evidence twice and carried this to 1.00 as
+    // "RSA / Montgomery multiplication".
+    RSADetector det;
+    auto fn = makeEmptyFn();
+    auto* blk0 = addBlock(*fn);
+    addBackEdge(blk0, 0);
+    auto* blk1 = addBlock(*fn);
+    addBackEdge(blk1, 1);
+    for (int k = 0; k < 2; ++k) addInstr(*fn, blk1, IrInstr::Op::Mul);
+    for (int k = 0; k < 4; ++k) addInstr(*fn, blk1, IrInstr::Op::Add);
+    auto* sh = addInstr(*fn, blk1, IrInstr::Op::Shr);
+    addImmUse(*fn, sh, 32);
+    auto* blk2 = addBlock(*fn);
+    addEdge(blk1, 2);
+    addInstr(*fn, blk2, IrInstr::Op::Compare);
+    addInstr(*fn, blk2, IrInstr::Op::CondBranch);
+    auto* blk3 = addBlock(*fn);
+    addEdge(blk2, 3);
+    addInstr(*fn, blk3, IrInstr::Op::Sub);
+    auto r = det.detect(*fn);
+    // Still over the annotation threshold -- the shape really is close -- but
+    // no longer saturated, so a genuine Montgomery multiply can outrank it.
+    EXPECT_LT(r.confidence, 1.0f);
 }
 
 TEST(RSADetectorTest, EmptyFunctionNoDetection) {
@@ -749,9 +792,16 @@ TEST(RC4DetectorTest, KSAPatternDetected) {
     addInstr(*fn, blk, IrInstr::Op::Add);
     addInstr(*fn, blk, IrInstr::Op::Store);
     addInstr(*fn, blk, IrInstr::Op::Store);
+    // A loop that swaps two array elements under a 255 mask is the KSA shape,
+    // but on its own it is also a byte histogram, an in-place shuffle, or any
+    // number of ordinary things. It is recorded as evidence and deliberately
+    // left below the 0.50 at which an annotation is emitted; the keystream xor
+    // in the next test is what makes the claim.
     auto r = det.detect(*fn);
-    EXPECT_GT(r.confidence, 0.50f);
+    EXPECT_GT(r.confidence, 0.0f);
+    EXPECT_LT(r.confidence, 0.50f);
     EXPECT_EQ(r.algorithm, CryptoAlgorithm::RC4);
+    EXPECT_TRUE(r.emittedAnnotation.empty());
 }
 
 TEST(RC4DetectorTest, PRGAXorBoostsConfidence) {
@@ -942,20 +992,78 @@ TEST(CryptoDetectorTest, DESDetected) {
     EXPECT_TRUE(hasDES);
 }
 
+// ─── the string hash that was three ciphers at once ──────────────────────────
+//
+// crypto_detect::detect() reports every detector over threshold rather than
+// racing them, so a function that trips several collects several annotations in
+// the emitted C.  This is the shape that did: an ordinary byte-mixing string
+// hash -- two loads, a xor, a mask by 255, a shift left by 8, a shift right by
+// 7, two adds.  It was RC4 at 0.65 (a xor, two loads and a 255, with no loop,
+// no swap and no state array, and the 255 scored a second time on its own),
+// ChaCha20 at 0.50 (the immediates 8 and 7 read as rotation amounts, and "an
+// Add, a Xor and a Shl" read as a rotation), and one added `<< 13` away from
+// Salsa20 at 0.50 as well.
+static std::unique_ptr<SSAFunction> makeStringHash() {
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    addBackEdge(blk, 0);
+    addInstr(*fn, blk, IrInstr::Op::Load);
+    addInstr(*fn, blk, IrInstr::Op::Load);
+    addInstr(*fn, blk, IrInstr::Op::Xor);
+    auto* mask = addInstr(*fn, blk, IrInstr::Op::And);
+    addImmUse(*fn, mask, 255);
+    auto* shl = addInstr(*fn, blk, IrInstr::Op::Shl);
+    addImmUse(*fn, shl, 8);
+    auto* shr = addInstr(*fn, blk, IrInstr::Op::Shr);
+    addImmUse(*fn, shr, 7);
+    addInstr(*fn, blk, IrInstr::Op::Add);
+    addInstr(*fn, blk, IrInstr::Op::Add);
+    return fn;
+}
+
+TEST(CryptoDetectorTest, PlainStringHashIsNotAnyCipher) {
+    auto fn = makeStringHash();
+    CryptoDetector det;
+    for (const auto& r : det.detect(*fn))
+        EXPECT_TRUE(r.emittedAnnotation.empty())
+            << "annotated as a cipher: " << r.emittedAnnotation;
+}
+
+TEST(CryptoDetectorTest, PlainStringHashWithASpareShiftIsStillNotSalsa20) {
+    auto fn = makeStringHash();
+    auto* shl13 = addInstr(*fn, fn->block(0), IrInstr::Op::Shl);
+    addImmUse(*fn, shl13, 13);
+    Salsa20Detector det;
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.50f);
+    EXPECT_TRUE(r.emittedAnnotation.empty());
+}
+
+TEST(RC4DetectorTest, StringHashWithA255MaskIsNotRC4) {
+    auto fn = makeStringHash();
+    RC4Detector det;
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.50f);
+    EXPECT_TRUE(r.emittedAnnotation.empty());
+}
+
+TEST(ChaCha20DetectorTest, ShiftsThatAreNotAComplementaryPairAreNotARotation) {
+    // `<< 8` and `>> 7` are two shifts, not a rotation: a 32-bit rotate by 8
+    // pairs `<< 8` with `>> 24`.
+    auto fn = makeStringHash();
+    ChaCha20Detector det;
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.50f);
+    EXPECT_TRUE(r.emittedAnnotation.empty());
+}
+
 TEST(CryptoDetectorTest, Salsa20Detected) {
     CryptoDetector det;
     auto fn = makeEmptyFn();
     auto* blk = addBlock(*fn);
-    auto* a1 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a1, 7);
-    auto* a2 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a2, 9);
-    auto* a3 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a3, 13);
-    auto* a4 = addInstr(*fn, blk, IrInstr::Op::Add);
-    addImmUse(*fn, a4, 18);
+    for (int k = 0; k < 4; ++k) addInstr(*fn, blk, IrInstr::Op::Add);
     for (int k = 0; k < 4; ++k) addInstr(*fn, blk, IrInstr::Op::Xor);
-    addInstr(*fn, blk, IrInstr::Op::Shl);
+    for (uint64_t rot : {7u, 9u, 13u, 18u}) addRotate32(*fn, blk, rot);
     auto results = det.detect(*fn);
     bool hasSalsa = false;
     for (auto& r : results)
