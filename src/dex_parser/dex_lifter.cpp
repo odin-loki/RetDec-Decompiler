@@ -141,27 +141,57 @@ enum DalvikOp : uint8_t {
 
 // ─── Code unit size lookup ────────────────────────────────────────────────────
 
-// Returns the instruction size in code units for each opcode.
-// 0 = variable/payload (packed-switch, sparse-switch, fill-array-data).
+// Payload pseudo-instructions (packed-switch, sparse-switch, fill-array-data)
+// sit in the instruction stream and are named by their whole first code unit.
+// Their low byte -- the part that would be the opcode -- is 0x00, which is
+// `nop`, so a payload cannot be recognised from an opcode table at all.
+static constexpr uint16_t kPackedSwitchPayload  = 0x0100;
+static constexpr uint16_t kSparseSwitchPayload  = 0x0200;
+static constexpr uint16_t kFillArrayDataPayload = 0x0300;
+
+// Instruction size in code units per opcode, from the format each opcode is
+// declared with in the Dalvik bytecode reference: 10x/12x/11n/11x/10t are one
+// unit, the 2* formats two, the 3* formats three, 45cc/4rcc four, 51l five.
+// 0 marks an opcode the format does not define; the walkers step one unit for
+// those rather than trusting a size nothing specifies.
+//
+// This table is load-bearing for correctness, not just for speed: every walk
+// over a code_item steps by it, so a wrong entry does not fail loudly -- the
+// walk lands mid-instruction and decodes operand words as opcodes, and valid
+// Java comes out as a plausible but wrong CFG.  Sixteen entries were wrong,
+// including invoke-virtual and invoke-super (the two most common instructions
+// in compiled Java, sized 2 instead of 3) and goto (sized 2 instead of 1).
+// packed-switch and sparse-switch were given a size of 0 to route them into
+// the payload arm of the walker, which is what a payload's *identifier* is
+// for; that made both switch instructions undecodable and left the real
+// payloads to be decoded as instructions.  See DexInsnSize.* in
+// tests/dex_parser/dex_parser_test.cpp, which pins each of these.
 static const uint8_t kInsnSize[256] = {
 //  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
     1, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 1, 1, 1, 1, 1,  // 00-0f
-    1, 1, 1, 2, 3, 2, 2, 3, 5, 2, 3, 1, 1, 2, 2, 2,  // 10-1f
-    2, 2, 2, 3, 3, 3, 3, 1, 2, 3, 3, 0, 0, 2, 2, 2,  // 20-2f (2b,2c = switch)
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0,  // 30-3f
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,  // 40-4f
+    1, 1, 1, 2, 3, 2, 2, 3, 5, 2, 2, 3, 2, 1, 1, 2,  // 10-1f
+    2, 1, 2, 2, 3, 3, 3, 1, 1, 2, 3, 3, 3, 2, 2, 2,  // 20-2f
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0,  // 30-3f (3e,3f unused)
+    0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,  // 40-4f (40-43 unused)
     2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,  // 50-5f
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,  // 60-6f
-    3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 1, 1, 1, 1, 1,  // 70-7f
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3,  // 60-6f (6e,6f = invoke)
+    3, 3, 3, 0, 3, 3, 3, 3, 3, 0, 0, 1, 1, 1, 1, 1,  // 70-7f (73,79,7a unused)
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 80-8f
     2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,  // 90-9f
     2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,  // a0-af
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // b0-bf
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // c0-cf
     2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,  // d0-df
-    2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // e0-ef
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 3, 3, 2, 2,  // f0-ff
+    2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // e0-ef (e3-ef unused)
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 3, 3, 2, 2,  // f0-ff (f0-f9 unused)
 };
+
+// True when this code unit begins a payload rather than an instruction.
+static inline bool isPayloadIdent(uint16_t ident) {
+    return ident == kPackedSwitchPayload ||
+           ident == kSparseSwitchPayload ||
+           ident == kFillArrayDataPayload;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -310,24 +340,28 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const {
     };
 
     while (off < total) {
-        uint8_t op = insns[off] & 0xFF;
-        uint32_t sz = kInsnSize[op];
+        const uint16_t ident = insns[off];
 
-        if (sz == 0) {
-            // Payload: pseudo-instruction. Size is encoded in payload.
-            // packed-switch: word[0]=0x0100, word[1]=size, then entries
-            // sparse-switch: word[0]=0x0200, word[1]=size, then keys+targets
-            // fill-array-data: word[0]=0x0300, word[1]=elem_width, word[2..3]=num_elems
-            uint16_t ident = insns[off];
+        // A payload is named by its whole first code unit, not by the low byte
+        // of it.  This arm used to be reached through `kInsnSize[op] == 0` --
+        // with packed-switch and sparse-switch given a size of 0 so that they
+        // would reach it -- and then asked whether `ident & 0xFF` was 1, 2 or
+        // 3.  The low byte of a payload identifier is 0x00, so that test could
+        // never hold; the arm only ever ran for the two switch *instructions*,
+        // where it fell through to `advance = 1` and walked into their
+        // operands.  Real payloads, meanwhile, look like `nop` and were
+        // decoded as instructions.  Ask the question the format answers.
+        if (isPayloadIdent(ident)) {
+            // packed-switch:    word[0]=0x0100, word[1]=size, then targets
+            // sparse-switch:    word[0]=0x0200, word[1]=size, keys+targets
+            // fill-array-data:  word[0]=0x0300, word[1]=elem_width,
+            //                   word[2..3]=num_elems, then the data
             size_t advance;
-            if ((ident & 0xFF) == 0x01) {
-                // packed-switch payload
+            if (ident == kPackedSwitchPayload) {
                 advance = 4 + static_cast<size_t>(unit(1)) * 2;
-            } else if ((ident & 0xFF) == 0x02) {
-                // sparse-switch payload
+            } else if (ident == kSparseSwitchPayload) {
                 advance = 2 + static_cast<size_t>(unit(1)) * 4;
-            } else if ((ident & 0xFF) == 0x03) {
-                // fill-array-data payload
+            } else {
                 const size_t elemWidth = unit(1);
                 const size_t numElems  = static_cast<size_t>(unit(2)) |
                                          (static_cast<size_t>(unit(3)) << 16);
@@ -336,8 +370,6 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const {
                 // that comes back drops the walk into the middle of the
                 // payload, where it decodes array data as opcodes.
                 advance = 4 + (numElems * elemWidth + 1) / 2;
-            } else {
-                advance = 1; // unknown, treat as 1
             }
             // A payload declares its own length, so cap the step at one unit
             // past the end of the array: an oversized length then leaves the
@@ -348,6 +380,10 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const {
                     advance, utils::bounds::remaining(off, total) + 1));
             continue;
         }
+
+        const uint8_t op = ident & 0xFF;
+        // An opcode the format does not define carries no operands to skip.
+        const uint32_t sz = kInsnSize[op] ? kInsnSize[op] : 1u;
 
         switch (op) {
             case OP_GOTO: {
@@ -441,15 +477,19 @@ void DexLifter::buildBlocks(BcCFG& cfg,
 
         uint32_t off = start;
         while (off < end && off < total) {
-            uint8_t  op = insns[off] & 0xFF;
-            uint32_t sz = kInsnSize[op];
-            if (sz == 0) {
-                // Skip payload blocks
+            // Payload data, not instructions.  Recognised by the whole code
+            // unit; the low byte of a payload identifier is `nop`, so keying
+            // this off the opcode (as `kInsnSize[op] == 0` did) both missed
+            // every real payload and stopped the block at the two switch
+            // instructions, which is why no switch was ever decoded.
+            if (isPayloadIdent(insns[off]))
                 break;
-            }
+
+            const uint8_t  op = insns[off] & 0xFF;
+            const uint32_t sz = kInsnSize[op] ? kInsnSize[op] : 1u;
             uint32_t consumed = decodeInsn(*blk, insns, off, dex_);
             if (consumed == 0)
-                consumed = sz ? sz : 1;
+                consumed = sz;
             off += consumed;
         }
 

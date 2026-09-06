@@ -1409,8 +1409,8 @@ TEST(ApkReader, LocalHeaderOffsetNearFourGibIsRejected) {
 // These lift a code_item holding nothing but the first unit of such a branch;
 // under ASan the pre-fix reader is a heap-buffer-overflow, and without it the
 // lift must still come back clean.
-static DexLiftResult liftTruncated(const DexFile& df,
-                                   std::vector<uint16_t> units) {
+static DexLiftResult liftUnits(const DexFile& df,
+                               std::vector<uint16_t> units) {
     CodeItem code;
     code.registersSize = 2;
     code.insSize       = 0;
@@ -1427,7 +1427,7 @@ TEST(DexLifter, TruncatedGoto16DoesNotReadPastInsns) {
     auto dex = buildMinimalDex();
     DexFile df = DexFile::parse(dex);
     // goto/16 declares a following branch-offset unit that is not there.
-    auto result = liftTruncated(df, {static_cast<uint16_t>(0x0029u)});
+    auto result = liftUnits(df, {static_cast<uint16_t>(0x0029u)});
     EXPECT_EQ(DexLiftResult::OK, result.status);
 }
 
@@ -1435,7 +1435,7 @@ TEST(DexLifter, TruncatedGoto32DoesNotReadPastInsns) {
     auto dex = buildMinimalDex();
     DexFile df = DexFile::parse(dex);
     // goto/32 declares two following units; only one of them is stored.
-    auto result = liftTruncated(df, {static_cast<uint16_t>(0x002Au),
+    auto result = liftUnits(df, {static_cast<uint16_t>(0x002Au),
                                      static_cast<uint16_t>(0x0000u)});
     EXPECT_EQ(DexLiftResult::OK, result.status);
 }
@@ -1444,7 +1444,7 @@ TEST(DexLifter, TruncatedConditionalBranchDoesNotReadPastInsns) {
     auto dex = buildMinimalDex();
     DexFile df = DexFile::parse(dex);
     // if-eqz v0, +? — the branch offset unit is missing.
-    auto result = liftTruncated(df, {static_cast<uint16_t>(0x0038u)});
+    auto result = liftUnits(df, {static_cast<uint16_t>(0x0038u)});
     EXPECT_EQ(DexLiftResult::OK, result.status);
 }
 
@@ -1453,7 +1453,7 @@ TEST(DexLifter, TruncatedConditionalBranchDoesNotReadPastInsns) {
 TEST(DexLifter, CompleteGoto16StillReachesItsTarget) {
     auto dex = buildMinimalDex();
     DexFile df = DexFile::parse(dex);
-    auto result = liftTruncated(df, {
+    auto result = liftUnits(df, {
         static_cast<uint16_t>(0x0029u), // goto/16 +2
         static_cast<uint16_t>(0x0002u),
         static_cast<uint16_t>(0x000Eu), // return-void (offset 2)
@@ -1463,6 +1463,242 @@ TEST(DexLifter, CompleteGoto16StillReachesItsTarget) {
     for (const auto& blk : result.cfg.blocks())
         if (blk.label == "L2") hasTargetBlock = true;
     EXPECT_TRUE(hasTargetBlock);
+}
+
+// ─── Instruction size table (kInsnSize) ──────────────────────────────────────
+//
+// Every walk over a code_item -- findLeaders, buildBlocks, decodeInsn -- steps
+// by kInsnSize[opcode].  A wrong entry does not fail loudly: the walk lands
+// mid-instruction and decodes operand words as opcodes, so valid Java produces
+// a plausible-looking but wrong CFG.  These tests pin the sizes the Dalvik
+// formats fix (ECMA of the DEX world: the "Dalvik bytecode" and "instruction
+// formats" documents), one instruction against a following return-void, and
+// assert on what the block actually contains.  A size that is too large
+// swallows the return-void; one that is too small decodes the operand units
+// as extra instructions.
+
+// Lift `units` as a method body and return the first block's instructions.
+static const std::vector<BcInstruction>& firstBlockInstrs(const DexLiftResult& r) {
+    static const std::vector<BcInstruction> kEmpty;
+    return r.cfg.blocks().empty() ? kEmpty : r.cfg.blocks()[0].instrs;
+}
+
+// One instruction followed by return-void must lift to exactly those two.
+static void expectInsnThenReturn(const DexFile& df,
+                                 std::vector<uint16_t> units,
+                                 BcOpcode expected) {
+    auto result = liftUnits(df, std::move(units));
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+    const auto& instrs = firstBlockInstrs(result);
+    ASSERT_EQ(2u, instrs.size());
+    EXPECT_EQ(expected, instrs[0].opcode);
+    EXPECT_EQ(BcOpcode::DALVIK_RETURN_VOID, instrs[1].opcode);
+}
+
+TEST(DexInsnSize, ConstStringIsTwoCodeUnits) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // 21c: const-string v0, string@0 | return-void
+    expectInsnThenReturn(df, {0x001A, 0x0000, 0x000E},
+                         BcOpcode::DALVIK_CONST_STRING);
+}
+
+TEST(DexInsnSize, ConstStringJumboIsThreeCodeUnits) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // 31c: const-string/jumbo v0, string@0 | return-void
+    expectInsnThenReturn(df, {0x001B, 0x0000, 0x0000, 0x000E},
+                         BcOpcode::DALVIK_CONST_STRING);
+}
+
+TEST(DexInsnSize, ConstClassIsTwoCodeUnits) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // 21c: const-class v0, type@0 | return-void
+    expectInsnThenReturn(df, {0x001C, 0x0000, 0x000E},
+                         BcOpcode::DALVIK_CONST_CLASS);
+}
+
+TEST(DexInsnSize, MonitorEnterIsOneCodeUnit) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // 11x: monitor-enter v0 | return-void
+    expectInsnThenReturn(df, {0x001D, 0x000E},
+                         BcOpcode::DALVIK_MONITOR_ENTER);
+}
+
+TEST(DexInsnSize, ArrayLengthIsOneCodeUnit) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // 12x: array-length v0, v1 | return-void
+    expectInsnThenReturn(df, {0x1021, 0x000E},
+                         BcOpcode::DALVIK_ARRAY_LENGTH);
+}
+
+TEST(DexInsnSize, NewArrayIsTwoCodeUnits) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // 22c: new-array v0, v1, type@0 | return-void
+    expectInsnThenReturn(df, {0x1023, 0x0000, 0x000E},
+                         BcOpcode::DALVIK_NEW_ARRAY);
+}
+
+TEST(DexInsnSize, InvokeVirtualIsThreeCodeUnits) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // 35c: invoke-virtual {v0}, method@0 | return-void.  This is the most
+    // common instruction in compiled Java; sized at two units the walk lands
+    // on the register-list word and decodes it as a second instruction.
+    expectInsnThenReturn(df, {0x106E, 0x0000, 0x0000, 0x000E},
+                         BcOpcode::DALVIK_INVOKE_VIRTUAL);
+}
+
+TEST(DexInsnSize, InvokeSuperIsThreeCodeUnits) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // 35c: invoke-super {v0}, method@0 | return-void
+    expectInsnThenReturn(df, {0x106F, 0x0000, 0x0000, 0x000E},
+                         BcOpcode::DALVIK_INVOKE_SUPER);
+}
+
+TEST(DexInsnSize, UnusedOpcodeAdvancesOneUnit) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // 0x73 is unused.  Sized at three units it swallowed the instruction
+    // after it; an unused opcode has no operands to skip.
+    auto result = liftUnits(df, {0x0073, 0x000E});
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+    const auto& instrs = firstBlockInstrs(result);
+    ASSERT_FALSE(instrs.empty());
+    EXPECT_EQ(BcOpcode::DALVIK_RETURN_VOID, instrs.back().opcode);
+}
+
+TEST(DexInsnSize, GotoIsOneCodeUnitSoTheUnitAfterItIsALeader) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // 10t: goto +2 | return-void | return-void.  goto is one unit, so the
+    // instruction at offset 1 begins its own (unreachable) block.  Sized at
+    // two units, offset 1 is inside the goto and no block starts there.
+    auto result = liftUnits(df, {0x0228, 0x000E, 0x000E});
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+    bool hasL1 = false;
+    for (const auto& blk : result.cfg.blocks())
+        if (blk.label == "L1") hasL1 = true;
+    EXPECT_TRUE(hasL1);
+}
+
+TEST(DexInsnSize, IfGtzBranchesInsteadOfBeingTreatedAsAPayload) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // 21t: if-gtz v0, +3 | return-void | return-void.  if-gtz and if-lez were
+    // the two conditional branches sized 0, which routed them into the payload
+    // arm and lost both the branch target and the fall-through.
+    auto result = liftUnits(df, {0x003C, 0x0003, 0x000E, 0x000E});
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+    const auto& instrs = firstBlockInstrs(result);
+    ASSERT_FALSE(instrs.empty());
+    EXPECT_EQ(BcOpcode::DALVIK_IF_Z, instrs[0].opcode);
+    bool hasTarget = false, hasFallThrough = false;
+    for (const auto& blk : result.cfg.blocks()) {
+        if (blk.label == "L3") hasTarget = true;
+        if (blk.label == "L2") hasFallThrough = true;
+    }
+    EXPECT_TRUE(hasTarget);
+    EXPECT_TRUE(hasFallThrough);
+}
+
+TEST(DexInsnSize, IfLezBranchesInsteadOfBeingTreatedAsAPayload) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // 21t: if-lez v0, +3 | return-void | return-void
+    auto result = liftUnits(df, {0x003D, 0x0003, 0x000E, 0x000E});
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+    const auto& instrs = firstBlockInstrs(result);
+    ASSERT_FALSE(instrs.empty());
+    EXPECT_EQ(BcOpcode::DALVIK_IF_Z, instrs[0].opcode);
+}
+
+// ─── switch payloads ─────────────────────────────────────────────────────────
+//
+// A payload is a pseudo-instruction sitting in the instruction stream, and it
+// is identified by its whole first code unit (0x0100, 0x0200, 0x0300), not by
+// its low byte -- the low byte is 0x00, which is nop.  The walker keyed the
+// payload arm on kInsnSize == 0 and then asked for `ident & 0xFF`, so it could
+// only ever enter that arm for packed-switch and sparse-switch, whose sizes
+// were set to 0 for exactly that reason, and once inside it the low byte was
+// 0x2b/0x2c rather than 0x01/0x02.  Both halves were wrong, and between them
+// no switch was decoded at all and no payload was skipped.
+
+TEST(DexInsnSize, PackedSwitchIsDecodedAndItsPayloadIsSkipped) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    //  0: packed-switch v0, +4      (31t, three units)
+    //  3: return-void
+    //  4: packed-switch-payload: ident, size=1, first_key(2), target(2)
+    auto result = liftUnits(df, {
+        0x002B, 0x0004, 0x0000,   // packed-switch v0, payload at +4
+        0x000E,                   // return-void
+        0x0100, 0x0001,           // payload ident, size = 1
+        0x0000, 0x0000,           // first_key = 0
+        0x0000, 0x0000,           // targets[0] = 0
+    });
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+    const auto& instrs = firstBlockInstrs(result);
+    ASSERT_FALSE(instrs.empty());
+    EXPECT_EQ(BcOpcode::DALVIK_SWITCH, instrs[0].opcode);
+
+    // Nothing may be decoded out of the payload: its six units are data.
+    for (const auto& blk : result.cfg.blocks())
+        for (const auto& in : blk.instrs)
+            EXPECT_LT(in.offset, 4u * 2u)
+                << "instruction decoded at code-unit " << (in.offset / 2)
+                << ", inside the payload";
+}
+
+TEST(DexInsnSize, SparseSwitchIsDecodedAndItsPayloadIsSkipped) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    //  0: sparse-switch v0, +4     (31t, three units)
+    //  3: return-void
+    //  4: sparse-switch-payload: ident, size=1, key(2), target(2)
+    auto result = liftUnits(df, {
+        0x002C, 0x0004, 0x0000,
+        0x000E,
+        0x0200, 0x0001,
+        0x0000, 0x0000,
+        0x0000, 0x0000,
+    });
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+    const auto& instrs = firstBlockInstrs(result);
+    ASSERT_FALSE(instrs.empty());
+    EXPECT_EQ(BcOpcode::DALVIK_SWITCH, instrs[0].opcode);
+    for (const auto& blk : result.cfg.blocks())
+        for (const auto& in : blk.instrs)
+            EXPECT_LT(in.offset, 4u * 2u)
+                << "instruction decoded at code-unit " << (in.offset / 2)
+                << ", inside the payload";
+}
+
+TEST(DexInsnSize, FillArrayDataPayloadIsSkipped) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    //  0: fill-array-data v0, +3   (31t, three units)
+    //  3: fill-array-data-payload: ident, element_width=4, size=1, data(2)
+    auto result = liftUnits(df, {
+        0x0026, 0x0003, 0x0000,
+        0x0300, 0x0004,           // payload ident, element_width = 4
+        0x0001, 0x0000,           // size = 1
+        0x0000, 0x0000,           // one 4-byte element
+    });
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+    const auto& instrs = firstBlockInstrs(result);
+    ASSERT_FALSE(instrs.empty());
+    EXPECT_EQ(BcOpcode::DALVIK_FILL_ARRAY_DATA, instrs[0].opcode);
+    for (const auto& blk : result.cfg.blocks())
+        for (const auto& in : blk.instrs)
+            EXPECT_LT(in.offset, 3u * 2u)
+                << "instruction decoded at code-unit " << (in.offset / 2)
+                << ", inside the payload";
 }
 
 // ─── string_data_item length (mutf8 bounds) ──────────────────────────────────

@@ -85,6 +85,28 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `dex_parser`: the Dalvik instruction-size table had sixteen wrong entries, and
+  every walk over a `code_item` steps by it. A wrong size does not fail loudly —
+  the walk lands mid-instruction and decodes operand words as opcodes — so valid
+  Java came out as a plausible but wrong CFG. `invoke-virtual` and
+  `invoke-super`, the two commonest instructions in compiled Java, were sized 2
+  code units instead of 3; `goto` was 2 instead of 1; `const-string`,
+  `const-string/jumbo`, `const-class`, `monitor-enter`, `monitor-exit`,
+  `array-length` and `new-array` were each off by one; `if-gtz` and `if-lez`
+  were 0.
+  The root cause of the last of those is that 0 was overloaded. It meant
+  "payload", and `packed-switch` and `sparse-switch` were given a size of 0 to
+  route them into the walker's payload arm — but a payload is a
+  pseudo-instruction named by its whole first code unit (`0x0100`, `0x0200`,
+  `0x0300`), and the arm then tested `ident & 0xFF` against 1, 2 and 3. The low
+  byte of a payload identifier is `0x00`, which is `nop`, so that test could
+  never hold. Between the two halves, no switch was ever decoded (`buildBlocks`
+  broke out of the block on sight of one) and no payload was ever skipped
+  (payloads look like `nop`, so they were decoded as instructions). Payloads are
+  now recognised by their identifier and the two switch opcodes carry their real
+  size; 0 now means only "an opcode the format does not define", and the walkers
+  step one unit for those. Fifteen `DexInsnSize.*` tests pin the sizes, and
+  fourteen of them fail against the old table.
 - `cli_parser`: two same-class defects in the .NET metadata root, both reached
   from `PeReader::open()` on any managed image. `VersionLength` is rounded up to
   a 4-byte boundary, and the rounding was done in 32 bits, so `0xFFFFFFFD..
