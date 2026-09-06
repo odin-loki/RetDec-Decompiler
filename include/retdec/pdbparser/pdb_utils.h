@@ -56,13 +56,23 @@ typedef size_t PDB_SIZE_T;
 #define ULONG_ sizeof(PDB_ULONG)
 #define DWORD_ sizeof(PDB_DWORD)
 
+// A GUID is sixteen bytes on the wire: 4 + 2 + 2 + 8. Data1 was `unsigned
+// long`, which is eight bytes on LP64, so sizeof(PDB_GUID) came out 24 -- and
+// PDBInfo70, which embeds one at a documented offset of 0x1C, came out 36
+// instead of 28. pdb_info_v700 is bound straight to the raw bytes of stream 1,
+// so every field after the GUID was read from the wrong offset, and
+// print_pdb_file_info's print_bytes(&sig70, sizeof(PDB_GUID)) read 24 bytes of
+// a 16-byte field. Latent only because that printer has no in-tree caller.
+// Fixed-width types say what the format says.
 typedef struct PDB__GUID
 {
-		unsigned long Data1;
-		unsigned short Data2;
-		unsigned short Data3;
-		unsigned char Data4[8];
+		uint32_t Data1;
+		uint16_t Data2;
+		uint16_t Data3;
+		uint8_t  Data4[8];
 } PDB_GUID;
+
+static_assert(sizeof(PDB_GUID) == 16, "a GUID is sixteen bytes on the wire");
 
 #define IMAGE_SIZEOF_SHORT_NAME 8
 

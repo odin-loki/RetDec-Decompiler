@@ -83,6 +83,31 @@ static bool record_name_terminated(PDBGeneralSymbol *symbol, std::size_t nameOff
 }
 
 /**
+ * Bytes of a record's trailing name that may be printed, given the record's own
+ * length.
+ *
+ * The dump path prints these with `%s`, which scans for a terminator the file
+ * need not supply. There is no `printf` that takes a bound and a possibly
+ * unterminated string, so the callers use `%.*s` with this length, which stops
+ * at the record's end whether or not a NUL arrives first.
+ *
+ * Returns 0 when the name does not start inside the record at all.
+ */
+static int record_name_span(PDBGeneralSymbol *symbol, std::size_t nameOffset)
+{
+	const std::size_t total = symbol_record_size(symbol);
+	if (nameOffset >= total)
+		return 0;
+	const char *begin = reinterpret_cast<const char *>(symbol) + nameOffset;
+	const std::size_t avail = total - nameOffset;
+	const void *nul = std::memchr(begin, '\0', avail);
+	const std::size_t len = (nul != nullptr)
+	        ? static_cast<std::size_t>(static_cast<const char *>(nul) - begin)
+	        : avail;
+	return static_cast<int>(len);
+}
+
+/**
  * Returns the symbol record at @p position of a symbol stream, or nullptr when
  * the stream cannot supply a whole one there.
  * @param data Stream data
@@ -429,14 +454,20 @@ void PDBSymbols::parse_symbols(void)
 	std::size_t position = 0;
 	while (PDBGeneralSymbol *symbol = symbol_at(pdb_sym_data, pdb_sym_size, position))
 	{
+		// A record too short to hold a DATASYM32 does not describe one, whatever
+		// its type says, and the name has to end inside the record or the
+		// `char *` handed out below runs off the end of the stream.
+		//
+		// The name check used to sit inside the body as `if (!terminated)
+		// continue;`, which skipped the position advance at the bottom of the
+		// loop and spun on the same record forever -- a hang instead of an
+		// over-read, which is not an improvement. As a condition it skips the
+		// variable and steps over the record, which is what was meant.
 		if (symbol->type == S_GDATA32 /*|| symbol->type == S_LDATA32*/
-		        // A record too short to hold a DATASYM32 does not describe one,
-		        // whatever its type says.
-		        && record_holds(symbol, sizeof(DATASYM32)))
+		        && record_holds(symbol, sizeof(DATASYM32))
+		        && record_name_terminated(symbol, offsetof(DATASYM32, name)))
 		{  // Global variable
 			DATASYM32 * sym = reinterpret_cast<DATASYM32 *>(symbol);
-			if (!record_name_terminated(symbol, offsetof(DATASYM32, name)))
-				continue;
 			PDBGlobalVariable new_var =
 			{reinterpret_cast<char *>(sym->name),  // Name
 			        get_virtual_address(sym->seg, sym->off),  // Address
@@ -477,6 +508,14 @@ void PDBSymbols::parse_symbols(void)
 				case S_GPROC32:
 				case S_LPROC32:
 				{  // Symbol is function begin
+					// A function record is handed to `functions` only when a
+					// later record closes it (S_END). One that never gets its
+					// S_END before the next S_GPROC32 was simply overwritten
+					// here, and nothing owned it any more: N unterminated
+					// function records leaked N objects, which LeakSanitizer
+					// reports on a malformed PDB the moment the fuzz corpus
+					// reaches this shape.
+					delete new_function;
 					new_function = new PDBFunction(m);  // Create new function
 					new_function->parse_symbol(symbol, types, this);
 
@@ -557,6 +596,12 @@ void PDBSymbols::parse_symbols(void)
 			position += symbol_record_size(symbol);
 		}
 
+		// A module stream that ends without closing its last function leaves
+		// that record owned by nobody. Same leak as the overwrite above, at the
+		// other end of the walk.
+		delete new_function;
+		new_function = nullptr;
+
 		cnt = 0;
 		while (PDBBigSymbol *symbol = big_symbol_at(stream->data, stream_size, position))
 		{  // Process all big symbols in module stream
@@ -631,6 +676,19 @@ void PDBSymbols::dump_module_symbols(int index)
 		if (symbol->size == 0xf4 || symbol->type == 0)
 			break;
 		printf("Symbol %3d: size %04x type %04x: ", cnt, symbol->size - 2, symbol->type);
+
+		// symbol_at() guarantees a four-byte record and no more. The casts
+		// below are made on symbol->type alone and read whole structures, so a
+		// record shorter than the structure its type names reads past its own
+		// end -- and past the stream, for the last record. The parse path got
+		// this check; the dump path did not.
+		if (!record_holds(symbol, symbol_struct_size(symbol->type)))
+		{
+			printf("<record too short for its type>\n");
+			position += symbol_record_size(symbol);
+			cnt++;
+			continue;
+		}
 
 		switch (symbol->type)
 		{
@@ -997,6 +1055,17 @@ PDBSymbols::~PDBSymbols(void)
 
 void PDBSymbols::dump_symbol(PSYM Sym)
 {
+	// A PSYM begins with the same length-then-type header every record has, so
+	// this can bound itself without the caller passing a length: the union
+	// members below are read whole on the strength of rectyp alone, and a
+	// record shorter than the one its type names reads past its own end.
+	PDBGeneralSymbol *hdr = reinterpret_cast<PDBGeneralSymbol *>(Sym);
+	if (!record_holds(hdr, symbol_struct_size(hdr->type)))
+	{
+		printf("<record too short for its type>");
+		return;
+	}
+
 	switch (Sym->Sym.rectyp)
 	{
 		case S_PUB32:

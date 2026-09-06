@@ -78,9 +78,33 @@ std::string PDBTypeBase::to_llvm(void)
 //
 // =================================================================
 
+// Length of a subrecord's name, bounded by the field list's own bytes.
+//
+// RecordValue() hands back a pointer into stream memory, and the name that
+// follows a subrecord is NUL-terminated only if the file says so. strlen()
+// there runs off the end of the field list -- and off the end of the TPI
+// stream -- looking for a terminator that need not be present, and the
+// subrecord size computed from it then walks the rest of the list from
+// somewhere arbitrary. memchr stops where the list does.
+//
+// Returns SIZE_MAX when the name is not terminated inside the list, which the
+// caller treats as the end of the walk: there is no next subrecord to find.
+static std::size_t subrecord_name_length(const char *name, const char *listEnd)
+{
+	if (name == nullptr || name >= listEnd) return SIZE_MAX;
+	const void *nul = std::memchr(name, '\0', static_cast<std::size_t>(listEnd - name));
+	if (nul == nullptr) return SIZE_MAX;
+	return static_cast<std::size_t>(static_cast<const char *>(nul) - name);
+}
+
 void PDBTypeFieldList::parse(lfFieldList *record, int size, PDBTypeDefIndexMap &types)
 {
 	int position = 0;
+	// The subrecords occupy the bytes the record's own length declares, and
+	// nothing may be read past them. parse_types() has already checked that
+	// span is inside the TPI stream.
+	const char *const listStart = reinterpret_cast<char *>(&record->SubRecord);
+	const char *const listEnd   = listStart + (size > 2 ? size - 2 : 0);
 	while (position < size - 2)
 	{  // Process all subrecords
 		lfSubRecord *subrecord =
@@ -107,7 +131,12 @@ void PDBTypeFieldList::parse(lfFieldList *record, int size, PDBTypeDefIndexMap &
 				// Add this field to fields vector
 				fields.push_back(new_field);
 				// Compute the subrecord size
-				subrecord_size = (name - reinterpret_cast<char *>(subrecord)) + strlen(name) + 1;
+				{
+					const std::size_t nameLen = subrecord_name_length(name, listEnd);
+					if (nameLen == SIZE_MAX) return;
+					subrecord_size = (name - reinterpret_cast<char *>(subrecord))
+					        + static_cast<int>(nameLen) + 1;
+				}
 				break;
 			}
 			case LF_MEMBER:
@@ -130,7 +159,12 @@ void PDBTypeFieldList::parse(lfFieldList *record, int size, PDBTypeDefIndexMap &
 				// Add this field to fields vector
 				fields.push_back(new_field);
 				// Compute the subrecord size
-				subrecord_size = (name - reinterpret_cast<char *>(subrecord)) + strlen(name) + 1;
+				{
+					const std::size_t nameLen = subrecord_name_length(name, listEnd);
+					if (nameLen == SIZE_MAX) return;
+					subrecord_size = (name - reinterpret_cast<char *>(subrecord))
+					        + static_cast<int>(nameLen) + 1;
+				}
 				break;
 			}
 			case LF_NESTTYPE:
@@ -141,7 +175,12 @@ void PDBTypeFieldList::parse(lfFieldList *record, int size, PDBTypeDefIndexMap &
 				{
 					return;
 				}
-				subrecord_size = (name - reinterpret_cast<char *>(subrecord)) + strlen(name) + 1;
+				{
+					const std::size_t nameLen = subrecord_name_length(name, listEnd);
+					if (nameLen == SIZE_MAX) return;
+					subrecord_size = (name - reinterpret_cast<char *>(subrecord))
+					        + static_cast<int>(nameLen) + 1;
+				}
 				break;
 			}
 			default:
@@ -354,15 +393,35 @@ void PDBTypeFunction::parse(lfProc *record, int, PDBTypeDefIndexMap &types)
 	func_calltype = record->calltype;
 	// Get list of arguments
 	func_args_count = record->parmcount;
-	PDBTypeArglist * arglisttypedef = reinterpret_cast<PDBTypeArglist *>(types[record->arglist]);  // Get auxiliary type definition containing arglist
-	if (arglisttypedef != nullptr)
+	// `record->arglist` is a type index out of the file, and types[] is seeded
+	// with the base types, so index 0 resolves to T_NOTYPE rather than to
+	// nothing. Casting that to a PDBTypeArglist and asserting afterwards is an
+	// abort on attacker input in any build without NDEBUG, and a type-confused
+	// read of `->arglist` in one with it. Ask first.
+	PDBTypeDef * arglistdef = types[record->arglist];
+	if (arglistdef != nullptr && arglistdef->type_class == PDBTYPE_ARGLIST)
 	{
-		assert(arglisttypedef->type_class == PDBTYPE_ARGLIST);
+		PDBTypeArglist * arglisttypedef = static_cast<PDBTypeArglist *>(arglistdef);
 		lfArgList * arglist = arglisttypedef->arglist;
-		if (record->parmcount == 0)
+		if (arglist == nullptr)
+		{
 			func_args_count = 0;
-		else
-			assert(arglist->count == record->parmcount);
+		}
+		else if (record->parmcount == 0)
+		{
+			func_args_count = 0;
+		}
+		else if (arglist->count != static_cast<PDB_DWORD>(record->parmcount))
+		{
+			// The function record and the argument list disagree about how many
+			// arguments there are, and only the list knows how many it stores.
+			// This was an assert, so a file could abort the process by saying
+			// one number in two places; taking the smaller reads no further
+			// than the list actually goes.
+			func_args_count = (arglist->count < static_cast<PDB_DWORD>(record->parmcount))
+			        ? static_cast<int>(arglist->count)
+			        : record->parmcount;
+		}
 		func_args = new PDBTypeFuncArg[func_args_count];
 		for (int i = 0; i < func_args_count; i++)
 		{  // Process all arguments

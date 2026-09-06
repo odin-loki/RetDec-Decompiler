@@ -85,6 +85,39 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `pdbparser`: an **infinite loop** in `PDBSymbols::parse_symbols`, introduced by
+  the name-termination guard added earlier on this branch. The guard was written
+  as `if (!record_name_terminated(...)) continue;` inside the walk's body, and
+  `continue` skips the position advance at the bottom of the loop — so a global
+  symbol whose name is not terminated inside its record made the walk spin on
+  that record forever. A hang instead of an over-read is not an improvement.
+  Found by adding the reviewer's reproducer to the crash corpus and noticing the
+  replay time out; it is kept there, and reintroducing the `continue` makes it
+  time out again.
+- `pdbparser`: `PDBTypeFieldList::parse` measured each subrecord's trailing name
+  with `strlen` over stream memory, so a name the file never terminated ran off
+  the end of the TPI stream and the subrecord size computed from it walked the
+  rest of the list from somewhere arbitrary. Bounded by the field list's own
+  declared extent now.
+- `pdbparser`: `PDBTypeFunction::parse` cast `types[record->arglist]` to a
+  `PDBTypeArglist` and asserted its class afterwards — and index 0 resolves to
+  the pre-seeded `T_NOTYPE`, so a file could abort the process in any build
+  without `NDEBUG`, or get a type-confused read in one with it. It also
+  asserted the argument list's count equalled the function record's and then
+  trusted the record's; the two come from the file separately and only the list
+  knows how many arguments it stores.
+- `pdbparser`: two leaks of `PDBFunction` in `parse_symbols` — a function record
+  that never gets its `S_END` before the next one was overwritten, and one left
+  open at the end of a module stream was never freed. LeakSanitizer reports them
+  on a malformed PDB, which the crash corpus now contains.
+- `pdbparser`: the dump path (`dump_module_symbols`, `dump_symbol`) cast on the
+  record type alone and read whole structures out of records guaranteed only to
+  be four bytes. The parse path got that check; the dump path did not.
+- `pdbparser`: `PDB_GUID::Data1` was `unsigned long`, eight bytes on LP64, so
+  `sizeof(PDB_GUID)` was 24 rather than 16 and `PDBInfo70` — which embeds one at
+  a documented offset — was 36 rather than 28. `pdb_info_v700` is bound straight
+  to the raw bytes of stream 1, so every field after the GUID was read from the
+  wrong offset. A `static_assert` now says what the format says.
 - `func_boundary`: `detectThunkAt` bounded its `rel32` read by the whole buffer
   instead of by the section that supplied the address, so a lone `0xE9` as the
   last stored byte of `.text` read its operand out of whatever section follows
