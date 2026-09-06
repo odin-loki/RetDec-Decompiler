@@ -85,6 +85,25 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `dex_parser`: a Dalvik switch reached its cases through no CFG edge at all.
+  The instruction names its targets indirectly — a signed offset to a payload,
+  which carries one signed offset per case — and only the fall-through was ever
+  recorded as a leader, so every case body looked unreachable. `switchTargets()`
+  resolves both payload shapes and the targets become leaders and block
+  operands, so `buildBlocks` wires an edge to each the same way it does for a
+  `goto`. Every quantity it reads comes out of the file — the branch offset, the
+  identifier at the far end of it, the entry count, each target — so each is
+  checked in `size_t` through the verified bounds kernel first; an unresolvable
+  switch yields no targets rather than a guess. Six tests cover it, four of them
+  malformed payloads that fail under `-fsanitize=address` if the extent check is
+  removed.
+- `dex_parser`: `DexReader::sleb128` accumulated into an `int32_t`, so the fifth
+  byte's `(b & 0x7F) << 28` overflowed the signed range — undefined behaviour,
+  which UBSan reports as "left shift of 32 by 28 places cannot be represented in
+  type 'int'". Found by the DEX fuzzer once the lifter changes above opened up
+  new paths; the input is kept as a regression case. It accumulates unsigned and
+  sign-extends at the end now, which is what `utils::leb128::decodeSigned`
+  already does and says why.
 - `dex_parser`: the Dalvik instruction-size table had sixteen wrong entries, and
   every walk over a `code_item` steps by it. A wrong size does not fail loudly —
   the walk lands mid-instruction and decodes operand words as opcodes — so valid

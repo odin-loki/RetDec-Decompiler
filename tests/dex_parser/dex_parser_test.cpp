@@ -1701,6 +1701,182 @@ TEST(DexInsnSize, FillArrayDataPayloadIsSkipped) {
                 << ", inside the payload";
 }
 
+// ─── sleb128 accumulator ─────────────────────────────────────────────────────
+
+TEST(DexReader, Sleb128FifthByteDoesNotOverflowASignedShift) {
+    // A five-byte sleb128 shifts its last payload by 28.  Accumulated in an
+    // int32_t, `(b & 0x7F) << 28` is undefined for any payload above 7; UBSan
+    // reports it as "left shift of 32 by 28 places cannot be represented in
+    // type 'int'".  Accumulated unsigned it is a defined truncation, and the
+    // format only makes bits 28..31 of that byte representable anyway -- 0x20
+    // shifted by 28 keeps none of them.
+    std::vector<uint8_t> buf = {0x80, 0x80, 0x80, 0x80, 0x20};
+    DexReader r(buf.data(), buf.size());
+    EXPECT_EQ(0, r.sleb128());
+}
+
+TEST(DexReader, Sleb128DecodesNegativeOne) {
+    std::vector<uint8_t> buf = {0x7F};
+    DexReader r(buf.data(), buf.size());
+    EXPECT_EQ(-1, r.sleb128());
+}
+
+TEST(DexReader, Sleb128DecodesIntMin) {
+    // -2147483648 sets only bit 31, which lands in the fifth byte as 0x08.
+    std::vector<uint8_t> buf = {0x80, 0x80, 0x80, 0x80, 0x08};
+    DexReader r(buf.data(), buf.size());
+    EXPECT_EQ(INT32_MIN, r.sleb128());
+}
+
+TEST(DexReader, Sleb128DecodesSmallValuesBothWays) {
+    std::vector<uint8_t> pos = {0x3F};   // +63, sign bit clear
+    std::vector<uint8_t> neg = {0x40};   // -64, sign bit set
+    DexReader rp(pos.data(), pos.size());
+    DexReader rn(neg.data(), neg.size());
+    EXPECT_EQ(63,  rp.sleb128());
+    EXPECT_EQ(-64, rn.sleb128());
+}
+
+TEST(DexReader, Sleb128RejectsAnEncodingLongerThanTheFormatAllows) {
+    std::vector<uint8_t> buf = {0x80, 0x80, 0x80, 0x80, 0x80, 0x00};
+    DexReader r(buf.data(), buf.size());
+    EXPECT_THROW(r.sleb128(), DexParseError);
+}
+
+// ─── switch CFG edges ────────────────────────────────────────────────────────
+//
+// A Dalvik switch names its case targets indirectly: the instruction carries a
+// signed offset to a payload, and the payload carries one signed offset per
+// case, each relative to the switch itself.  Only the fall-through was ever
+// recorded as a leader, so a switch reached its cases through no edge at all
+// and every case body looked unreachable.
+
+// True when the block labelled `from` has an edge to the block labelled `to`.
+static bool hasEdge(const BcCFG& cfg, const std::string& from,
+                    const std::string& to) {
+    const BcBasicBlock* src = nullptr;
+    uint32_t dstId = ~0u;
+    for (const auto& blk : cfg.blocks()) {
+        if (blk.label == from) src = &blk;
+        if (blk.label == to)   dstId = blk.id;
+    }
+    if (src == nullptr || dstId == ~0u) return false;
+    return std::find(src->succs.begin(), src->succs.end(), dstId)
+        != src->succs.end();
+}
+
+TEST(DexSwitch, PackedSwitchWiresAnEdgeToEveryCase) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    //  0: packed-switch v0, payload at +6
+    //  3: return-void          (fall-through, no case matched)
+    //  4: return-void          (case 0)
+    //  5: return-void          (case 1)
+    //  6: payload: ident, size=2, first_key=0, targets = {+4, +5}
+    auto result = liftUnits(df, {
+        0x002B, 0x0006, 0x0000,
+        0x000E,
+        0x000E,
+        0x000E,
+        0x0100, 0x0002,
+        0x0000, 0x0000,          // first_key = 0
+        0x0004, 0x0000,          // targets[0] = +4
+        0x0005, 0x0000,          // targets[1] = +5
+    });
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+    const auto& instrs = firstBlockInstrs(result);
+    ASSERT_FALSE(instrs.empty());
+    EXPECT_EQ(BcOpcode::DALVIK_SWITCH, instrs[0].opcode);
+    EXPECT_TRUE(hasEdge(result.cfg, "L0", "L4"));
+    EXPECT_TRUE(hasEdge(result.cfg, "L0", "L5"));
+    // A Dalvik switch falls through when no case matches.
+    EXPECT_TRUE(hasEdge(result.cfg, "L0", "L3"));
+}
+
+TEST(DexSwitch, SparseSwitchWiresAnEdgeToEveryCase) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    //  6: payload: ident, size=2, keys = {10, 20}, targets = {+4, +5}
+    auto result = liftUnits(df, {
+        0x002C, 0x0006, 0x0000,
+        0x000E,
+        0x000E,
+        0x000E,
+        0x0200, 0x0002,
+        0x000A, 0x0000,          // keys[0] = 10
+        0x0014, 0x0000,          // keys[1] = 20
+        0x0004, 0x0000,          // targets[0] = +4
+        0x0005, 0x0000,          // targets[1] = +5
+    });
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+    const auto& instrs = firstBlockInstrs(result);
+    ASSERT_FALSE(instrs.empty());
+    EXPECT_EQ(BcOpcode::DALVIK_SWITCH, instrs[0].opcode);
+    EXPECT_TRUE(hasEdge(result.cfg, "L0", "L4"));
+    EXPECT_TRUE(hasEdge(result.cfg, "L0", "L5"));
+}
+
+TEST(DexSwitch, PayloadOffsetOutsideTheArrayYieldsNoTargets) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // The branch offset names a payload far past the end of the instruction
+    // array.  Nothing there can be read, so the switch resolves to no cases
+    // and the lift still comes back clean.
+    auto result = liftUnits(df, {
+        0x002B, 0x7000, 0x0000,
+        0x000E,
+    });
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+    const auto& instrs = firstBlockInstrs(result);
+    ASSERT_FALSE(instrs.empty());
+    EXPECT_EQ(BcOpcode::DALVIK_SWITCH, instrs[0].opcode);
+    EXPECT_EQ(2u, instrs[0].operands.size());  // register + payload offset only
+}
+
+TEST(DexSwitch, NegativePayloadOffsetBeforeTheArrayYieldsNoTargets) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // -16 from offset 0 is before the start of the array.
+    auto result = liftUnits(df, {
+        0x002B, 0xFFF0, 0xFFFF,
+        0x000E,
+    });
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+    const auto& instrs = firstBlockInstrs(result);
+    ASSERT_FALSE(instrs.empty());
+    EXPECT_EQ(2u, instrs[0].operands.size());
+}
+
+TEST(DexSwitch, PayloadSizeTheArrayCannotSupplyYieldsNoTargets) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // The payload declares 0xFFFF cases and supplies none of them.
+    auto result = liftUnits(df, {
+        0x002B, 0x0003, 0x0000,
+        0x0100, 0xFFFF,
+        0x0000, 0x0000,
+    });
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+    const auto& instrs = firstBlockInstrs(result);
+    ASSERT_FALSE(instrs.empty());
+    EXPECT_EQ(2u, instrs[0].operands.size());
+}
+
+TEST(DexSwitch, BranchOffsetNamingSomethingOtherThanAPayloadYieldsNoTargets) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // +3 lands on a return-void, not on a payload identifier.
+    auto result = liftUnits(df, {
+        0x002B, 0x0003, 0x0000,
+        0x000E,
+        0x000E,
+    });
+    ASSERT_EQ(DexLiftResult::OK, result.status) << result.error;
+    const auto& instrs = firstBlockInstrs(result);
+    ASSERT_FALSE(instrs.empty());
+    EXPECT_EQ(2u, instrs[0].operands.size());
+}
+
 // ─── string_data_item length (mutf8 bounds) ──────────────────────────────────
 
 TEST(DexReader, Mutf8RejectsLengthTheFileCannotSupply) {

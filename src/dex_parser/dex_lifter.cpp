@@ -193,6 +193,68 @@ static inline bool isPayloadIdent(uint16_t ident) {
            ident == kFillArrayDataPayload;
 }
 
+/// Resolve the case targets of a packed-switch or sparse-switch at @p off.
+///
+/// The instruction carries a signed 32-bit branch offset in word[1..2], taken
+/// relative to the switch instruction itself, naming a payload elsewhere in
+/// the same instruction array:
+///
+///   packed-switch-payload   ident, size, first_key(2 units), targets[size](2)
+///   sparse-switch-payload   ident, size, keys[size](2), targets[size](2)
+///
+/// and each target is itself a signed offset relative to the switch. Every
+/// quantity here comes out of the file -- the branch offset, the identifier at
+/// the far end of it, the entry count, each target -- so each is checked
+/// against what the array can supply before it is used, in size_t, through the
+/// verified kernel. An unresolvable switch yields no targets rather than a
+/// guess; a switch whose payload is truncated yields the targets that are
+/// actually there.
+static std::vector<uint32_t> switchTargets(const std::vector<uint16_t>& insns,
+                                           uint32_t off) {
+    std::vector<uint32_t> targets;
+    const size_t total = insns.size();
+    if (!utils::bounds::rangeFits(off, total, 3))
+        return targets;
+
+    const int32_t rel = static_cast<int32_t>(
+        static_cast<uint32_t>(insns[off + 1]) |
+        (static_cast<uint32_t>(insns[off + 2]) << 16));
+    const int64_t payloadOff = static_cast<int64_t>(off) + rel;
+    if (payloadOff < 0 || static_cast<uint64_t>(payloadOff) >= total)
+        return targets;
+    const size_t p = static_cast<size_t>(payloadOff);
+
+    if (!utils::bounds::rangeFits(p, total, 2))
+        return targets;
+    const uint16_t ident = insns[p];
+    const size_t   count = insns[p + 1];
+
+    size_t firstTarget, need;
+    if (ident == kPackedSwitchPayload) {
+        firstTarget = p + 4;
+        need        = 4 + count * 2;
+    } else if (ident == kSparseSwitchPayload) {
+        firstTarget = p + 2 + count * 2;
+        need        = 2 + count * 4;
+    } else {
+        return targets;  // the branch offset does not name a switch payload
+    }
+    if (!utils::bounds::rangeFits(p, total, need))
+        return targets;
+
+    targets.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        const size_t t = firstTarget + i * 2;
+        const int32_t delta = static_cast<int32_t>(
+            static_cast<uint32_t>(insns[t]) |
+            (static_cast<uint32_t>(insns[t + 1]) << 16));
+        const int64_t target = static_cast<int64_t>(off) + delta;
+        if (target >= 0 && static_cast<uint64_t>(target) < total)
+            targets.push_back(static_cast<uint32_t>(target));
+    }
+    return targets;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 // Convert a DEX type descriptor string to BcType (minimal version for lifter).
@@ -426,7 +488,13 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const {
                 break;
             case OP_PACKED_SWITCH:
             case OP_SPARSE_SWITCH:
-                // Payload offset in word[1] relative to current insn
+                // Each case target begins a block, and so does the unit after
+                // the switch -- a Dalvik switch falls through when no case
+                // matches. Only the fall-through was recorded before, so a
+                // switch reached its cases through no edge at all and every
+                // case body looked unreachable.
+                for (uint32_t target : switchTargets(insns, off))
+                    leaders.insert(target);
                 leaders.insert(off + sz);
                 break;
             default:
@@ -874,6 +942,11 @@ uint32_t DexLifter::decodeInsn(BcBasicBlock& blk,
                               makeInt(static_cast<int32_t>(
                                   static_cast<uint32_t>(w(1)) |
                                   (static_cast<uint32_t>(w(2)) << 16))) };
+            // The case targets follow the payload offset as block operands, so
+            // that buildBlocks wires an edge to each of them the same way it
+            // does for a goto or an if.
+            for (uint32_t target : switchTargets(insns, off))
+                insn.operands.push_back(makeBlock(target));
             sz = 3; break;
 
         // ── CMP ───────────────────────────────────────────────────────────────

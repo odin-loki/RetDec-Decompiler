@@ -105,22 +105,38 @@ uint32_t DexReader::uleb128() {
 }
 
 int32_t DexReader::sleb128() {
-    int32_t  result = 0;
+    // Accumulate unsigned and sign-extend at the end, for the reason
+    // utils::leb128::decodeSigned gives: building the value in a signed type is
+    // undefined well before the shift count reaches the type's width. The fifth
+    // byte of a DEX sleb128 shifts its payload by 28, and in an int32_t that
+    // overflows for any payload above 7 -- UBSan reports it as "left shift of
+    // 32 by 28 places cannot be represented in type 'int'". Found by the dex
+    // fuzzer; the input is kept as
+    // tests/crash_corpus/dex/crash-6571908d6a946750191c403f9a41770b5b3b66ab.
+    // Unsigned, the same shift is a defined truncation, which is what the
+    // format asks for: only bits 28..31 of the fifth byte are representable.
+    uint32_t result = 0;
     uint32_t shift  = 0;
     uint8_t  b      = 0;
     for (;;) {
         b = u1();
-        result |= (static_cast<int32_t>(b & 0x7F) << shift);
+        result |= static_cast<uint32_t>(b & 0x7F) << shift;
         shift += 7;
         if ((b & 0x80) == 0)
             break;
         if (shift >= 35)
             throw DexParseError("SLEB128 overflow");
     }
-    // Sign extend
-    if ((b & 0x40) && shift < 32)
-        result |= -(1 << shift);
-    return result;
+    // Sign extend from the last payload bit. `-(1 << shift)` was signed too.
+    if (shift < 32 && (b & 0x40))
+        result |= ~UINT32_C(0) << shift;
+
+    // Reinterpret rather than convert: narrowing a uint32_t above INT32_MAX is
+    // implementation-defined in C++17, and this file already reads floats out
+    // of their bit patterns the same way.
+    int32_t signedResult;
+    std::memcpy(&signedResult, &result, sizeof signedResult);
+    return signedResult;
 }
 
 int32_t DexReader::uleb128p1() {
