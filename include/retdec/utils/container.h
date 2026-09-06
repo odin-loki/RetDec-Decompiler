@@ -9,7 +9,6 @@
 #define RETDEC_UTILS_CONTAINER_H
 
 #include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <iterator>
 #include <list>
