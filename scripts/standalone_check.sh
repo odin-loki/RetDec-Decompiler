@@ -88,7 +88,7 @@ readonly SUITES=(
 	dex_parser eh_reconstruct fsharp_emitter func_boundary idiom_reconstruct
 	ipa java_emitter jvm_parser jvm_reconstruct kotlin_emitter loader_sim
 	lua_parser mini_emu module_cluster neural packer pattern_detect profiling
-	ptx_decompile py_emitter py_reconstruct pyc_parser rtti serdes
+	ptx_decompile py_emitter py_reconstruct pyc_parser retdec rtti serdes
 	serial_detect sort_detect ssa string_detect testing type_inference
 	type_seed var_recovery vbnet_emitter wasm_parser
 )
@@ -115,6 +115,22 @@ readonly CXX20_MODULES=(
 # which is how it was found.
 readonly CU_AS_CXX_MODULES=(
 	cuda_accel
+)
+
+# Individual sources from a module whose directory is otherwise excluded.  The
+# module as a whole needs LLVM; these files do not.  Selecting by directory
+# would leave them untested, and semantic_recovery_export.cpp in particular is
+# the 1773-line emitter behind the --buildable sidecar.
+readonly EXTRA_SOURCES=(
+	"retdec/semantic_recovery_export.cpp"
+	"retdec/neural_refine_stub.cpp"
+)
+
+# Test suites where only some files build here, for the same reason.  The rest
+# of the directory keeps building through CMake.
+# "suite:file.cpp file.cpp"
+readonly PARTIAL_SUITES=(
+	"retdec:semantic_recovery_export_test.cpp thread_pool_test.cpp"
 )
 
 # Sources inside an included module that must NOT be compiled here, mirroring a
@@ -326,6 +342,11 @@ for m in "${selected_modules[@]}"; do
 	fi
 	shopt -u nullglob
 done
+for extra in "${EXTRA_SOURCES[@]}"; do
+	[ -f "src/$extra" ] || continue
+	printf '%s\t%s\tmod\n' "src/$extra" \
+		"$BUILD_DIR/obj/$(dirname "$extra")/$(basename "${extra%.cpp}").o" >> "$JOBLIST"
+done
 printf '%s\t%s\tcc\n' deps/whereami/whereami/whereami.c "$BUILD_DIR/obj/utils/whereami.o" >> "$JOBLIST"
 printf '%s\t%s\ttest\n' tests/standalone/gtest_lite.cpp "$BUILD_DIR/obj/gtest_lite.o" >> "$JOBLIST"
 printf '%s\t%s\ttest\n' tests/standalone/gtest_lite_main.cpp "$BUILD_DIR/obj/gtest_lite_main.o" >> "$JOBLIST"
@@ -358,6 +379,15 @@ for m in "${selected_modules[@]}"; do
 	rm -f "$BUILD_DIR/lib/lib$m.a"
 	ar qcs "$BUILD_DIR/lib/lib$m.a" "${objs[@]}"
 done
+for extra in "${EXTRA_SOURCES[@]}"; do
+	d="$(dirname "$extra")"
+	shopt -s nullglob
+	eobjs=("$BUILD_DIR/obj/$d"/*.o)
+	shopt -u nullglob
+	if [ ${#eobjs[@]} -gt 0 ] && [ ! -f "$BUILD_DIR/lib/libextra_$d.a" ]; then
+		ar qcs "$BUILD_DIR/lib/libextra_$d.a" "${eobjs[@]}"
+	fi
+done
 rm -f "$BUILD_DIR/lib/libgtest_lite_main.a"
 ar qcs "$BUILD_DIR/lib/libgtest_lite_main.a" "$BUILD_DIR/obj/gtest_lite_main.o"
 
@@ -387,13 +417,27 @@ declare -a libargs=()
 for m in "${selected_modules[@]}"; do
 	[ -f "$BUILD_DIR/lib/lib$m.a" ] && libargs+=("$BUILD_DIR/lib/lib$m.a")
 done
+shopt -s nullglob
+for extralib in "$BUILD_DIR/lib"/libextra_*.a; do libargs+=("$extralib"); done
+shopt -u nullglob
 
 failed_suites=()
 passed=0
 for s in "${run_suites[@]}"; do
-	shopt -s nullglob
-	srcs=(tests/"$s"/*.cpp)
-	shopt -u nullglob
+	srcs=()
+	partial=""
+	for entry in "${PARTIAL_SUITES[@]}"; do
+		[ "${entry%%:*}" = "$s" ] && partial="${entry#*:}"
+	done
+	if [ -n "$partial" ]; then
+		for f in $partial; do
+			[ -f "tests/$s/$f" ] && srcs+=("tests/$s/$f")
+		done
+	else
+		shopt -s nullglob
+		srcs=(tests/"$s"/*.cpp)
+		shopt -u nullglob
+	fi
 	if [ ${#srcs[@]} -eq 0 ]; then
 		skip "$s (no sources)"
 		continue

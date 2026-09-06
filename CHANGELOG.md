@@ -43,14 +43,22 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   proved not to index outside either buffer for any input. It reads and writes
   one character ahead of its cursor, which is where this shape of loop goes
   wrong.
-- `scripts/standalone_check.sh` now runs 59 suites, not 42. Seventeen test
+- `scripts/standalone_check.sh` now runs 60 suites, not 42. Seventeen test
   directories had a module already in the fast path but no entry in `SUITES` --
   933 GoogleTest cases nobody was running, including all five language emitters,
   `common` and `ptx_decompile`. `--audit` now guards `SUITES` against the same
   drift it already guarded `MODULES` against, with `EXCLUDED_SUITES` recording
   the one deliberate omission (`tests/utils` needs gmock). `cuda_accel`'s `.cu`
   sources are compiled as plain C++, mirroring what its own CMakeLists does when
-  CUDA is absent.
+  CUDA is absent. `EXTRA_SOURCES` and `PARTIAL_SUITES` add file-granular
+  selection, which brings `src/retdec/semantic_recovery_export.cpp` -- the
+  emitter behind the `--buildable` sidecar -- into the fast path even though
+  three of the five files in its directory need LLVM.
+- `scripts/standalone_fuzz.sh`: a target whose harness source has gone missing
+  now fails the gate instead of printing a skip, and a target with no seeds and
+  no reproducers is reported as ungated rather than green. Replaying nothing
+  proved nothing, and a presence check not noticing a harness had stopped
+  compiling is what prompted the script in the first place.
 - `tests/bounds/`: runtime tests for those two headers, carrying the DWARF
   standard's LEB128 vectors and the concrete boundary cases the fuzzer hit.
   Proofs cover the safety properties for all inputs; they do not pin down the

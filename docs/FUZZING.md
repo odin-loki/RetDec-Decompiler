@@ -86,6 +86,14 @@ Some things stay out of reach even so: the Python 3.11 line-table accumulator
 needs roughly a 34 MB input to overflow. That one is covered by a unit test
 instead. Fuzzing is not a substitute for reading the code.
 
+### The gate does not skip
+
+A target listed in `TARGETS` whose harness source has gone missing is a failure,
+not a skip — the whole reason this script exists is that a presence check did
+not notice `fuzz_dex.cpp` had stopped compiling. Retire a target by deleting its
+row, deliberately. A target with no seeds and no reproducers is reported as
+ungated rather than printed green, since replaying nothing proves nothing.
+
 ## Seeds
 
 Each target is seeded from its fixtures under

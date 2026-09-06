@@ -32,7 +32,7 @@ suites against a shim, and runs them.
 |---|---|---|
 | Prerequisites | network, ~30 GB, CMake, Ninja | a C++17 compiler |
 | Cold time | hours | ~1 minute |
-| Coverage | whole product | 41 suites, ~2500 assertions over 62 modules |
+| Coverage | whole product | 60 suites, ~3500 assertions over 62 modules |
 
 Two vendored header-only dependencies are used because they are already in the
 tree and cost nothing: `deps/rapidjson` (which unlocks `config`, `serdes`,
@@ -42,6 +42,15 @@ present, for the suites that read JAR and APK archives.
 
 `cli_parser` declares `cxx_std_20` in its own CMakeLists; `CXX20_MODULES` in the
 script mirrors that, and `--audit` probes each module at its declared standard.
+`cuda_accel` keeps its implementation in `.cu` files, which its own CMakeLists
+compiles as plain C++ when CUDA is absent — `CU_AS_CXX_MODULES` does the same.
+
+Selection is by directory, with two escapes. `EXTRA_SOURCES` names individual
+files from a module that is otherwise excluded: `src/retdec/` needs LLVM in
+three of its five files, but `semantic_recovery_export.cpp` — the 1773-line
+emitter behind the `--buildable` sidecar — does not, and selecting by directory
+would leave it untested. `PARTIAL_SUITES` does the same for a test directory
+where only some files build here.
 
 ## The GoogleTest shim
 
@@ -78,7 +87,10 @@ guards:
 
 * `--audit` re-derives which `src/` modules compile with `-Iinclude` alone and
   fails if that disagrees with the declared list in either direction — a module
-  that grew a dependency, or a new dependency-free module nobody wired up.
+  that grew a dependency, or a new dependency-free module nobody wired up. It
+  checks `SUITES` the same way: a test directory whose module is already in the
+  fast path but which nothing runs is a failure. That check found 933 test
+  cases across 17 suites that were being compiled and never run.
 * `.github/workflows/standalone-check.yml` runs the check under both `g++` and
   `clang++`, plus an ASan/UBSan job, on every pull request. Two compilers is not
   redundancy: Clang rejects code GCC quietly miscompiles, and the first run of

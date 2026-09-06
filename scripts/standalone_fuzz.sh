@@ -183,8 +183,17 @@ declare -a runnable=()
 for t in "${selected[@]}"; do
 	name="$(field "$t" 1)"
 	case "$buildOut" in
-		*"BUILT $name"*)   ok "built $name"; runnable+=("$t") ;;
-		*"MISSING $name"*) skip "$name (no harness source)" ;;
+		*"BUILT $name"*) ok "built $name"; runnable+=("$t") ;;
+		*"MISSING $name"*)
+			# A target listed in TARGETS whose harness has gone missing is a
+			# hole in the gate, not something to skip past: the whole point of
+			# this workflow existing is that fuzz_dex.cpp stopped compiling and
+			# a presence check did not notice. Delete the row to retire a
+			# target deliberately.
+			bad "$name: no harness at $HARNESS_DIR/$(field "$t" 2).cpp"
+			say "  remove the row from TARGETS to retire this target on purpose"
+			exit 1
+			;;
 		*)
 			bad "$name (build)"
 			head -20 "$BUILD_DIR/bin/$name.log" 2>/dev/null
@@ -222,6 +231,7 @@ seed_corpus() {
 hdr "replaying seeds and known reproducers"
 
 replayFailed=()
+ungated=()
 for t in "${runnable[@]}"; do
 	name="$(field "$t" 1)"
 	glob="$(field "$t" 6)"
@@ -232,7 +242,10 @@ for t in "${runnable[@]}"; do
 
 	count=$(find "${inputs[@]}" -type f 2>/dev/null | wc -l)
 	if [ "$count" -eq 0 ]; then
-		skip "$name (no inputs to replay)"
+		# Replaying nothing proves nothing. Report it rather than printing a
+		# green line, so a target whose seeds have gone missing is visible.
+		skip "$name: no seeds and no reproducers -- this target is not gated"
+		ungated+=("$name")
 		continue
 	fi
 
@@ -260,7 +273,10 @@ fi
 
 if [ "$MODE" = replay ]; then
 	hdr "summary"
-	ok "replay clean"
+	if [ ${#ungated[@]} -gt 0 ]; then
+		skip "no inputs for: ${ungated[*]}"
+	fi
+	ok "replay clean (${#runnable[@]} target(s), $(( ${#runnable[@]} - ${#ungated[@]} )) with inputs)"
 	exit 0
 fi
 
