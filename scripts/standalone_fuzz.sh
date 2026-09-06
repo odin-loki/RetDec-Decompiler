@@ -57,6 +57,17 @@ FUZZ_TIME="${FUZZ_TIME:-60}"
 # not silently skipped.
 MAX_LEN="${MAX_LEN:-65536}"
 
+# Seconds one input may take before libFuzzer calls it a hang.
+#
+# libFuzzer's default is 1200, which does gate hangs -- but at twenty minutes
+# per input, so a regression run that trips one looks like CI wedging rather
+# than like a failure, and nobody waits for it. A parser that cannot decode a
+# few kilobytes in this long is not slow, it is looping: the pdb corpus of 89
+# inputs replays in under a second, and the infinite loop in
+# PDBSymbols::parse_symbols that this bound was added for spun on one record
+# forever.
+FUZZ_TIMEOUT="${FUZZ_TIMEOUT:-25}"
+
 readonly HARNESS_DIR="tests/managed_integration/fuzz"
 readonly CRASH_DIR="tests/crash_corpus"
 
@@ -282,6 +293,7 @@ for t in "${runnable[@]}"; do
 	# an out-of-memory reproducer passes and the whole OOM class goes ungated.
 	if out="$("$BUILD_DIR/bin/$name" "${inputs[@]}" -runs=0 \
 			-max_len="$MAX_LEN" \
+			-timeout="$FUZZ_TIMEOUT" \
 			-rss_limit_mb=2048 \
 			-malloc_limit_mb=512 2>&1)"; then
 		ok "$name replayed $count input(s)"
@@ -321,6 +333,7 @@ for t in "${runnable[@]}"; do
 	if out="$("$BUILD_DIR/bin/$name" "$dir" \
 			-max_total_time="$FUZZ_TIME" \
 			-max_len="$MAX_LEN" \
+			-timeout="$FUZZ_TIMEOUT" \
 			-rss_limit_mb=2048 \
 			-malloc_limit_mb=512 \
 			-artifact_prefix="$CRASH_DIR/$name/" \

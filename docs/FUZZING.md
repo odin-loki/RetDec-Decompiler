@@ -74,6 +74,23 @@ have watched it fail on its own:
 ./build/fuzz/bin/<target> <artifact> -rss_limit_mb=2048 -malloc_limit_mb=512
 ```
 
+### A hang is a finding, and it needs its own bound
+
+libFuzzer's default `-timeout` is 1200 seconds. That does gate hangs, but at
+twenty minutes an input, so a regression run that trips one looks like CI
+wedging rather than like a failure — and a hang gates nothing anybody waits for.
+Replay and fuzzing both pass `-timeout=25` (override with `FUZZ_TIMEOUT`). A
+parser that cannot decode a few kilobytes in that long is not slow, it is
+looping.
+
+This is not hypothetical: an infinite loop reached `PDBSymbols::parse_symbols`
+on this branch, introduced by a *security* fix. The guard was written as
+`if (!record_name_terminated(...)) continue;` inside a walk whose position
+advance sits at the bottom of the loop, so `continue` skipped it and the walk
+spun on one record forever — a hang where there had been an over-read, which is
+not an improvement. The corpus entry caught it; a hand check for sanitizer
+output did not, because a hang produces none.
+
 ### `-max_len` is not a tuning knob
 
 libFuzzer defaults to 4096-byte inputs, and that default hides whole bug classes
