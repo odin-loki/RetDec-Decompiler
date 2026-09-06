@@ -144,6 +144,14 @@ public:
     /// Elements reserved up front for a container, however many it declares.
     static constexpr size_t kInitialElementReserve = 64;
 
+    /// Deepest container nesting accepted before a stream is called malformed.
+    ///
+    /// CPython's own compiler does not emit anything close to this; the limit
+    /// exists so a hostile file cannot turn two bytes per level into a stack
+    /// overflow. Each level here is a few hundred bytes of frame, so 200 is
+    /// comfortably inside any normal thread stack.
+    static constexpr unsigned kMaxNestingDepth = 200;
+
     /// Width of one marshalled long digit; CPython stores longs in base 2^15.
     static constexpr size_t kLongDigitBits = 15;
     /// Bytes one such digit occupies on the wire (a little-endian uint16).
@@ -162,6 +170,12 @@ public:
 
     /// Read the next object from the stream.
     /// Returns nullptr on EOF or error.
+    /// Read the next object from the stream.
+    ///
+    /// Nesting is bounded by kMaxNestingDepth. A marshal container costs only
+    /// two bytes per level on the wire, so a 30 KB file can ask for 15,000
+    /// levels of recursion and exhaust the stack -- no bound derived from the
+    /// input size can catch that, which is why this one is a fixed depth.
     std::shared_ptr<MarshalObject> readObject();
 
     /// True if the entire buffer has been consumed.
@@ -211,6 +225,9 @@ private:
     size_t           pos_ = 0;
     PythonVersion    version_;
     std::vector<std::shared_ptr<MarshalObject>> refs_;
+    /// Current container nesting depth; see kMaxNestingDepth.
+    unsigned depth_ = 0;
+
     bool             hasError_ = false;
     std::string      error_;
 

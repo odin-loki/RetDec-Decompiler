@@ -352,6 +352,24 @@ ctest --test-dir build/linux --output-on-failure
 scripts\Test-RetdecWindows.ps1
 ```
 
+#### Without building LLVM
+
+Most of this fork's own code — the detector, SSA, codegen, type-recovery and
+bytecode-parser layers — needs nothing but a C++17 compiler. Three checks run
+against it directly, with no network and no LLVM:
+
+```bash
+./scripts/standalone_check.sh    # 42 suites over 62 modules, ~1 min from cold
+./scripts/standalone_fuzz.sh --replay   # the parser crash corpus, deterministic
+./scripts/verify_esbmc.sh        # SMT proofs of the bounds and LEB128 arithmetic
+```
+
+They are a fast gate, not a substitute for `ctest`: they say nothing about
+lifting, LLVM-side optimisation, the C backend, or end-to-end decompilation.
+See [docs/STANDALONE_CHECK.md](docs/STANDALONE_CHECK.md),
+[docs/FUZZING.md](docs/FUZZING.md) and
+[docs/VERIFICATION.md](docs/VERIFICATION.md).
+
 ---
 
 ## Quick Start
@@ -417,6 +435,9 @@ retdec-decompiler binary.elf -o output.c
 | [docs/pipeline_stage_map.md](docs/pipeline_stage_map.md) | Stage names ↔ source directories |
 | [docs/MINGW_CROSS_DEEP_DIVE.md](docs/MINGW_CROSS_DEEP_DIVE.md) | Linux/WSL → Windows PE (MinGW), `llvm-tblgen`, OpenSSL, staging |
 | [docs/WINDOWS_NATIVE_BUILD.md](docs/WINDOWS_NATIVE_BUILD.md) | Native Windows: MSVC + CUDA + Qt6, deployment, troubleshooting |
+| [docs/STANDALONE_CHECK.md](docs/STANDALONE_CHECK.md) | Building and testing the LLVM-free layer with just a compiler |
+| [docs/FUZZING.md](docs/FUZZING.md) | Fuzzing the untrusted-input parsers; the crash corpus and how to add a harness |
+| [docs/VERIFICATION.md](docs/VERIFICATION.md) | ESBMC proofs of the bounds and LEB128 arithmetic — what is proved, and what is not |
 | [docs/future_directions.md](docs/future_directions.md) | Research agenda, recovery targets, open problems |
 | [scripts/README.md](scripts/README.md) | Every major `scripts/*.sh` and `*.ps1` helper |
 

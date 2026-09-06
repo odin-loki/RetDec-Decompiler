@@ -1061,3 +1061,94 @@ TEST(PythonVersion, Equal) {
     PythonVersion b{3, 10, 3450, "3.10"};
     EXPECT_EQ(a, b); // Same major.minor = same version
 }
+
+// ─── Line-table accumulation and nesting depth ───────────────────────────────
+
+// `line` is an int32_t accumulating deltas that come out of the file, and
+// nothing bounded it. A long enough table walks it past INT32_MAX, which is
+// signed overflow -- undefined behaviour, not a wrong line number. Reaching it
+// takes roughly a 34 MB co_linetable, which is why the fuzzer never did: its
+// inputs are capped far below that.
+TEST(LineTable, LnotabLineAccumulationSaturatesInsteadOfOverflowing)
+{
+	// Each pair is (byte delta, line delta); 255 line delta per entry, repeated
+	// until the accumulator would pass INT32_MAX.
+	std::vector<uint8_t> lnotab;
+	lnotab.reserve(2 * 9'000'000);
+	for (int i = 0; i < 9'000'000; ++i) { lnotab.push_back(0); lnotab.push_back(255); }
+
+	const auto entries = decodeLnotab(lnotab, INT32_MAX - 1000, 64);
+	ASSERT_FALSE(entries.empty());
+	for (const auto& e: entries)
+	{
+		EXPECT_GE(e.line, 0);
+		EXPECT_LE(e.line, INT32_MAX);
+	}
+}
+
+TEST(LineTable, Lnotab311LineAccumulationSaturates)
+{
+	// codeType 2 (no-col form): one signed line delta per entry.
+	std::vector<uint8_t> table;
+	table.reserve(2 * 9'000'000);
+	for (int i = 0; i < 9'000'000; ++i)
+	{
+		table.push_back(0x02);  // entry: 1 code unit, codeType 2
+		table.push_back(0x7F);  // +127
+	}
+
+	const auto entries = decodeLnotab311(table, INT32_MAX - 1000, 64);
+	for (const auto& e: entries)
+	{
+		EXPECT_GE(e.line, 0);
+		EXPECT_LE(e.line, INT32_MAX);
+	}
+}
+
+// A negative delta must not drive the line below zero either.
+TEST(LineTable, Lnotab311LineDoesNotGoNegative)
+{
+	std::vector<uint8_t> table;
+	for (int i = 0; i < 64; ++i)
+	{
+		table.push_back(0x02);
+		table.push_back(0x80);  // -128 as int8_t
+	}
+
+	const auto entries = decodeLnotab311(table, 1, 64);
+	for (const auto& e: entries) EXPECT_GE(e.line, 0);
+}
+
+// A marshal container costs two bytes per nesting level, so a 30 KB file can
+// ask for 15,000 levels of recursion and exhaust the stack. No bound derived
+// from the input size catches that; readObject carries a fixed depth limit.
+TEST(MarshalReader, RefusesNestingDeeperThanTheLimit)
+{
+	std::vector<uint8_t> stream;
+	for (int i = 0; i < 15000; ++i) { stream.push_back(')'); stream.push_back(1); }
+	stream.push_back('N');
+
+	PythonVersion v{3, 8};
+	MarshalReader reader(stream.data(), stream.size(), v);
+
+	// Must refuse rather than recurse. The point is that it returns at all.
+	const auto obj = reader.readObject();
+	EXPECT_TRUE(reader.hasError());
+	EXPECT_EQ(obj, nullptr);
+}
+
+// Nesting within the limit still parses, so the bound does not reject
+// legitimate files.
+TEST(MarshalReader, AcceptsNestingWithinTheLimit)
+{
+	std::vector<uint8_t> stream;
+	for (int i = 0; i < 50; ++i) { stream.push_back(')'); stream.push_back(1); }
+	stream.push_back('N');
+
+	PythonVersion v{3, 8};
+	MarshalReader reader(stream.data(), stream.size(), v);
+
+	const auto obj = reader.readObject();
+	EXPECT_NE(obj, nullptr);
+	EXPECT_FALSE(reader.hasError());
+}

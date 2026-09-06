@@ -16,6 +16,25 @@
 namespace retdec {
 namespace pyc_parser {
 
+namespace {
+
+/// Increments a depth counter for the lifetime of the scope.
+///
+/// readObject has many early returns; a guard keeps the count correct on every
+/// one of them without a decrement at each exit to forget.
+class DepthGuard {
+public:
+    explicit DepthGuard(unsigned& depth) noexcept: depth_(depth) { ++depth_; }
+    ~DepthGuard() { --depth_; }
+    DepthGuard(const DepthGuard&) = delete;
+    DepthGuard& operator=(const DepthGuard&) = delete;
+
+private:
+    unsigned& depth_;
+};
+
+} // namespace
+
 // ─── MarshalObject::toConst ───────────────────────────────────────────────────
 
 PyCodeObject::Const MarshalObject::toConst() const {
@@ -601,6 +620,17 @@ std::shared_ptr<MarshalObject> MarshalReader::readRef() {
 
 std::shared_ptr<MarshalObject> MarshalReader::readObject() {
     if (eof()) return nullptr;
+
+    // Containers recurse through here. Each level costs only two bytes on the
+    // wire -- `)\x01` is a one-element tuple -- so a 30 KB file can request
+    // 15,000 levels and exhaust the stack before any length check has anything
+    // to object to. A bound derived from the input size cannot catch that; this
+    // one has to be a fixed depth.
+    if (depth_ >= kMaxNestingDepth) {
+        setError("Marshal nesting deeper than " + std::to_string(kMaxNestingDepth));
+        return nullptr;
+    }
+    const DepthGuard guard(depth_);
 
     uint8_t typeByte;
     if (!readByte(typeByte)) return nullptr;

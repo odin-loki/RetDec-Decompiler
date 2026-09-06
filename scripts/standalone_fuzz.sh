@@ -33,6 +33,7 @@
 # Environment
 #   CXX           compiler, must support -fsanitize=fuzzer  (default: clang++)
 #   FUZZ_TIME     seconds per target                        (default: 60)
+#   MAX_LEN       largest input libFuzzer will generate      (default: 65536)
 #   JOBS          parallel build jobs                       (default: nproc)
 #   BUILD_DIR     build output                              (default: build/fuzz)
 #   CORPUS_DIR    persistent corpus                         (default: build/fuzz/corpus)
@@ -47,6 +48,14 @@ JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 BUILD_DIR="${BUILD_DIR:-build/fuzz}"
 CORPUS_DIR="${CORPUS_DIR:-$BUILD_DIR/corpus}"
 FUZZ_TIME="${FUZZ_TIME:-60}"
+
+# libFuzzer defaults to 4096, and that default hides whole bug classes rather
+# than merely slowing their discovery. A marshal container costs two bytes per
+# nesting level, so 4 KB caps nesting at about 2000 -- comfortably survivable --
+# and the stack overflow a 30 KB file triggers is unreachable no matter how long
+# the fuzzer runs. Replay uses the same value so a large committed reproducer is
+# not silently skipped.
+MAX_LEN="${MAX_LEN:-65536}"
 
 readonly HARNESS_DIR="tests/managed_integration/fuzz"
 readonly CRASH_DIR="tests/crash_corpus"
@@ -231,7 +240,10 @@ for t in "${runnable[@]}"; do
 	# parser makes because the file *claimed* a huge count shows up as one
 	# oversized malloc, not as steadily growing RSS, so without this a replay of
 	# an out-of-memory reproducer passes and the whole OOM class goes ungated.
-	if out="$("$BUILD_DIR/bin/$name" "${inputs[@]}" -runs=0 			-rss_limit_mb=2048 -malloc_limit_mb=512 2>&1)"; then
+	if out="$("$BUILD_DIR/bin/$name" "${inputs[@]}" -runs=0 \
+			-max_len="$MAX_LEN" \
+			-rss_limit_mb=2048 \
+			-malloc_limit_mb=512 2>&1)"; then
 		ok "$name replayed $count input(s)"
 	else
 		bad "$name (replay)"
@@ -265,6 +277,7 @@ for t in "${runnable[@]}"; do
 	# find survives the run and becomes a regression case.
 	if out="$("$BUILD_DIR/bin/$name" "$dir" \
 			-max_total_time="$FUZZ_TIME" \
+			-max_len="$MAX_LEN" \
 			-rss_limit_mb=2048 \
 			-malloc_limit_mb=512 \
 			-artifact_prefix="$CRASH_DIR/$name/" \

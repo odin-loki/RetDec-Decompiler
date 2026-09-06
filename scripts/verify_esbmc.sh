@@ -65,6 +65,19 @@ harness_options() {
 	grep -oE '^// ESBMC-OPTIONS:.*' "$1" | head -1 | sed 's|^// ESBMC-OPTIONS:||'
 }
 
+# A directive the parser cannot see is worse than no directive: the harness runs
+# with the wrong options and still reports a verdict. This happened once, with
+# the line written inside a /** */ block, so mention it anywhere in a harness
+# and it must be in a form that is actually read.
+check_options_syntax() {
+	local file="$1"
+	if grep -q 'ESBMC-OPTIONS' "$file" && [ -z "$(harness_options "$file")" ]; then
+		bad "$(basename "$file"): ESBMC-OPTIONS present but not at the start of a // line"
+		return 1
+	fi
+	return 0
+}
+
 C_GREEN=''; C_RED=''; C_YELLOW=''; C_DIM=''; C_OFF=''
 if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ]; then
 	C_GREEN=$'\033[0;32m'; C_RED=$'\033[0;31m'; C_YELLOW=$'\033[0;33m'
@@ -99,7 +112,7 @@ if [ "$MODE" = syntax ]; then
 	status=0
 	for h in "${harnesses[@]}"; do
 		if "${CXX:-g++}" -std=c++17 -Wall -Wextra -fsyntax-only -Iinclude \
-				-DRETDEC_VERIFY_SYNTAX_ONLY "$h"; then
+				-DRETDEC_VERIFY_SYNTAX_ONLY "$h" && check_options_syntax "$h"; then
 			ok "$(basename "$h")"
 		else
 			bad "$(basename "$h")"
@@ -156,6 +169,10 @@ failed=()
 for harness in "${HARNESSES[@]}"; do
 	hdr "$(basename "$harness")"
 
+	if ! check_options_syntax "$harness"; then
+		failed+=("$(basename "$harness") options")
+		continue
+	fi
 	extraOpts="$(harness_options "$harness")"
 	[ -n "$extraOpts" ] && say "extra options:$extraOpts"
 

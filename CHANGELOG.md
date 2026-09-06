@@ -38,6 +38,11 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   truncation in the LEB128 accumulator. The fourth was in the harnesses
   themselves, which asserted `a + b < a` and built a symbolic value with
   `v = (v << 8) | byte` — both committing the fault they were proving absent.
+- `include/retdec/utils/c_source_scan.h`: the comment/literal blanking the
+  neural structural gate relies on, extracted from `src/neural/gates.cpp` and
+  proved not to index outside either buffer for any input. It reads and writes
+  one character ahead of its cursor, which is where this shape of loop goes
+  wrong.
 - `tests/bounds/`: runtime tests for those two headers, carrying the DWARF
   standard's LEB128 vectors and the concrete boundary cases the fuzzer hit.
   Proofs cover the safety properties for all inputs; they do not pin down the
@@ -71,6 +76,19 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   byte limit, relying on `readU8` returning 0 past the end of the view to stop
   it. Both decoders now accumulate unsigned through the verified helpers in
   `retdec/utils/leb128.h` and stop at `kMaxBytes`.
+- `pyc_parser`: `MarshalReader::readObject` had no nesting limit. A marshal
+  container costs two bytes per level, so a 30 KB file asking for 15,000 levels
+  exhausted the stack. No bound derived from the input size catches that, so
+  the limit is a fixed depth (`kMaxNestingDepth`). The fuzzer could not find it
+  either: libFuzzer's default `-max_len=4096` caps nesting at about 2000, which
+  survives. `scripts/standalone_fuzz.sh` now passes `-max_len=65536` in both
+  modes.
+- `pyc_parser`: the line-table decoders accumulated file-supplied deltas into an
+  `int32_t` with nothing bounding them, so a long enough table walked `line`
+  past `INT32_MAX` -- signed overflow, undefined behaviour rather than a wrong
+  line number. Reaching it takes roughly a 34 MB `co_linetable`, out of reach of
+  fuzzing at any input size; it is covered by a unit test. Accumulation now
+  saturates.
 - `mini_emu`: page and offset arithmetic now goes through
   `retdec/utils/bounds.h` rather than being spelled out at the call site.
 

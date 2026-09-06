@@ -1,5 +1,7 @@
 #include "retdec/neural/gates.h"
 
+#include "retdec/utils/c_source_scan.h"
+
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
@@ -228,105 +230,26 @@ bool tryCompileCheck(const std::string& sourceC)
 /// keeping length and newlines so offsets and line numbers still line up.
 ///
 /// The textual fallback below counts keywords and comparison operators in raw
-/// source.  Doing that over comments and literals is wrong in both directions:
+/// source. Doing that over comments and literals is wrong in both directions:
 /// adding an explanatory comment that happens to contain "if" or "while" looks
 /// like a control-flow change and gets a benign refinement rejected, and -- the
 /// dangerous direction -- a refinement that introduces a real system() call
 /// while dropping a `/* system */` comment leaves the raw count unchanged, so
 /// the spawn check cancels out and the call passes the gate.
 ///
-/// Only the fallback needs this.  When tree-sitter is available the shape comes
+/// Only the fallback needs this. When tree-sitter is available the shape comes
 /// from the parse tree, which never sees comments or literal contents.
+///
+/// The scanner itself lives in retdec/utils/c_source_scan.h, where it is proved
+/// not to index outside either buffer for any input
+/// (tests/verification/source_scan_proof.cpp). It reads one character ahead,
+/// which is where this shape of loop usually goes wrong.
 std::string blankNonCode(const std::string& s)
 {
-	enum class Ctx { Code, LineComment, BlockComment, StringLit, CharLit };
+	if (s.empty()) return {};
 
-	std::string out = s;
-	Ctx ctx = Ctx::Code;
-	bool escaped = false;
-
-	for (std::size_t i = 0; i < s.size(); ++i)
-	{
-		const char c = s[i];
-		const char next = (i + 1 < s.size()) ? s[i + 1] : '\0';
-
-		switch (ctx)
-		{
-			case Ctx::Code:
-				if (c == '/' && next == '/')
-				{
-					ctx = Ctx::LineComment;
-					out[i] = ' ';
-					out[i + 1] = ' ';
-					++i;
-				}
-				else if (c == '/' && next == '*')
-				{
-					ctx = Ctx::BlockComment;
-					out[i] = ' ';
-					out[i + 1] = ' ';
-					++i;
-				}
-				else if (c == '"')
-				{
-					ctx = Ctx::StringLit;
-					escaped = false;
-				}
-				else if (c == '\'')
-				{
-					ctx = Ctx::CharLit;
-					escaped = false;
-				}
-				break;
-
-			case Ctx::LineComment:
-				// A backslash at end of line continues the comment onto the
-				// next one, exactly as the preprocessor sees it.
-				if (c == '\n' && !(i > 0 && s[i - 1] == '\\')) ctx = Ctx::Code;
-				else if (c != '\n') out[i] = ' ';
-				break;
-
-			case Ctx::BlockComment:
-				if (c == '*' && next == '/')
-				{
-					out[i] = ' ';
-					out[i + 1] = ' ';
-					++i;
-					ctx = Ctx::Code;
-				}
-				else if (c != '\n')
-				{
-					out[i] = ' ';
-				}
-				break;
-
-			case Ctx::StringLit:
-			case Ctx::CharLit:
-			{
-				const char closer = (ctx == Ctx::StringLit) ? '"' : '\'';
-				if (escaped)
-				{
-					escaped = false;
-					if (c != '\n') out[i] = ' ';
-				}
-				else if (c == '\\')
-				{
-					escaped = true;
-					out[i] = ' ';
-				}
-				else if (c == closer)
-				{
-					ctx = Ctx::Code;  // keep the delimiter itself
-				}
-				else if (c != '\n')
-				{
-					out[i] = ' ';
-				}
-				break;
-			}
-		}
-	}
-
+	std::string out(s.size(), '\0');
+	retdec::utils::source_scan::blankNonCode(s.data(), s.size(), &out[0]);
 	return out;
 }
 

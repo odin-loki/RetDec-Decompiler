@@ -40,7 +40,7 @@ copy this arithmetic into a call site, call it.
 
 ## What is proved
 
-39 properties across two headers, all discharged.
+45 properties across three headers, all discharged.
 
 ### `utils/bounds.h` — count, length and offset arithmetic
 
@@ -80,6 +80,27 @@ than an assumption.
 | Sign extension is exact | the signed-accumulator formulation, undefined twice over |
 | `toSigned` is total and reversible | a cast that assumes its input is in range |
 
+### `utils/c_source_scan.h` — blanking comments and literals
+
+The neural refinement gate compares the control-flow shape of the original and
+refined function. Counting over raw text lets a refinement introduce a real
+`system()` call while deleting a comment mentioning the same word, so the counts
+cancel and the call passes; blanking comment and literal contents first closes
+that. The scanner reads and writes one character ahead of its cursor, which is
+where this shape of loop goes wrong.
+
+The input buffer is fully symbolic, so ESBMC's array-bounds checking carries
+these proofs: if any input at all could drive an index outside either array, the
+run fails.
+
+| Property | What it rules out |
+|---|---|
+| No index leaves either buffer | the one-character lookahead stepping past the last character |
+| A short length is respected | writing into the caller's tail past `n` |
+| Newlines survive | line numbers computed from the result drifting from the input |
+| Every output character is the input character or a space | the scanner inventing a keyword, operator or quote |
+| A null pointer or zero length is a no-op | a crash on `.data()` of an empty string |
+
 Every run also enables `--overflow-check`, `--unsigned-overflow-check`,
 `--nan-check` and `--memory-leak-check`, so a proof fails if its own arithmetic
 wraps. That is not a formality: two harnesses failed on the first run because
@@ -98,6 +119,11 @@ alternatives (`MarshalObject::Value` has eight) and `std::min` has no
 the proofs give is that the arithmetic every parser depends on is correct, and
 the parsers call it instead of re-deriving it. Coverage of the call sites
 themselves is the job of the unit suites and `scripts/standalone_fuzz.sh`.
+
+**A large input.** The proofs model an 8- to 12-byte buffer. That is enough for
+every token the scanners recognise plus a character at each end to sit the
+lookahead against, and the loops are structurally identical at any length — but
+it is a bounded model, not an inductive proof over arbitrary lengths.
 
 **A symbolic element width.** A query holding both a symbolic 64-bit
 multiplication and a symbolic 64-bit division is nonlinear bitvector arithmetic,

@@ -5,10 +5,32 @@
 
 #include "retdec/pyc_parser/py_code_object.h"
 
+#include <climits>
+
 #include <algorithm>
 
 namespace retdec {
 namespace pyc_parser {
+
+/// Add a line delta to a line number without overflowing.
+///
+/// `line` is an int32_t and the deltas come straight out of the line table, so
+/// a long enough table walks it past INT32_MAX -- signed overflow, which is
+/// undefined behaviour, not merely a wrong line number. It takes roughly a
+/// 34 MB co_linetable to get there, which is why fuzzing never reached it.
+///
+/// Saturating is both safe and the right answer here: line numbers are bounded
+/// by any real source file, a table claiming more lines than an int32 can count
+/// is malformed, and clamping leaves the rest of the decode usable instead of
+/// discarding it. The low end is clamped at 0 because a signed delta in the
+/// 3.11 format can otherwise drive the line negative.
+static int32_t addLineDelta(int32_t line, int64_t delta) noexcept {
+    const int64_t sum = static_cast<int64_t>(line) + delta;
+    if (sum > INT32_MAX) return INT32_MAX;
+    if (sum < 0) return 0;
+    return static_cast<int32_t>(sum);
+}
+
 
 // ─── PyCodeObject::lineAt / columnAt ─────────────────────────────────────────
 
@@ -63,11 +85,11 @@ std::vector<LineEntry> decodeLnotab(
                 LineEntry e;
                 e.startOffset = byteOffset;
                 e.endOffset   = byteOffset; // will be updated
-                e.line        = line + lineInc;
+                e.line        = addLineDelta(line, lineInc);
                 e.column      = -1;
                 result.push_back(e);
             }
-            line += lineInc;
+            line = addLineDelta(line, lineInc);
         }
     }
 
@@ -86,10 +108,10 @@ std::vector<LineEntry> decodeLnotab(
             if (byteInc > 0 || result.empty()) {
                 result.push_back({segStart, byteOffset + byteInc, line, -1, -1, -1});
                 segStart = byteOffset + byteInc;
-                line    += lineInc;
+                line     = addLineDelta(line, lineInc);
             } else {
                 // byteInc == 0: same offset, just bump line
-                line += lineInc;
+                line = addLineDelta(line, lineInc);
             }
         }
         byteOffset += byteInc;
@@ -196,7 +218,7 @@ std::vector<LineEntry> decodeLnotab311(
             if (pos + 2 > size) goto done;
             int8_t lineDelta = static_cast<int8_t>(data[pos++]);
             int8_t colStart  = static_cast<int8_t>(data[pos++]);
-            line += lineDelta;
+            line = addLineDelta(line, lineDelta);
             col   = colStart;
             endLine = line;
             endCol  = -1;
@@ -210,7 +232,7 @@ std::vector<LineEntry> decodeLnotab311(
             int8_t colStart   = static_cast<int8_t>(data[pos++]);
             int8_t colEnd     = static_cast<int8_t>(data[pos++]);
             (void)colEnd;
-            line += lineDelta;
+            line = addLineDelta(line, lineDelta);
             col   = colStart;
             endLine = line;
             endCol  = colEnd >= 0 ? colEnd : -1;
@@ -220,7 +242,7 @@ std::vector<LineEntry> decodeLnotab311(
             // No-col form: line delta, no column
             if (pos + 1 > size) goto done;
             int8_t lineDelta = static_cast<int8_t>(data[pos++]);
-            line += lineDelta;
+            line = addLineDelta(line, lineDelta);
             col   = -1;
             endLine = line;
             endCol  = -1;
@@ -233,8 +255,8 @@ std::vector<LineEntry> decodeLnotab311(
             int8_t eLine = static_cast<int8_t>(data[pos++]);
             int8_t sCol  = static_cast<int8_t>(data[pos++]);
             int8_t eCol  = static_cast<int8_t>(data[pos++]);
-            line   += sLine;
-            endLine = line + eLine;
+            line    = addLineDelta(line, sLine);
+            endLine = addLineDelta(line, eLine);
             col     = sCol;
             endCol  = eCol;
             break;

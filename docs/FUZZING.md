@@ -70,6 +70,22 @@ have watched it fail on its own:
 ./build/fuzz/bin/<target> <artifact> -rss_limit_mb=2048 -malloc_limit_mb=512
 ```
 
+### `-max_len` is not a tuning knob
+
+libFuzzer defaults to 4096-byte inputs, and that default hides whole bug classes
+rather than merely slowing their discovery.
+
+A Python marshal container costs two bytes per nesting level, so 4 KB caps
+nesting at about 2000 — comfortably survivable. The stack overflow that a 30 KB
+file triggers is unreachable at the default no matter how long the fuzzer runs,
+and 1.4 million executions duly reported nothing. Both modes therefore pass
+`-max_len=65536`, and replay passes it too so a large committed reproducer is
+not silently skipped.
+
+Some things stay out of reach even so: the Python 3.11 line-table accumulator
+needs roughly a 34 MB input to overflow. That one is covered by a unit test
+instead. Fuzzing is not a substitute for reading the code.
+
 ## Seeds
 
 Each target is seeded from its fixtures under
@@ -90,6 +106,7 @@ Within the first few minutes of its first run:
 | Crashes in eight of the nine targets on the first four-minute-per-target run; only the CIL parser survived, at 48 million executions | across the parsers |
 | Heap-buffer-overflow: the 3.11 line-table decoder checked for one byte and read two, and for two and read three | `src/pyc_parser/py_code_object.cpp` |
 | `fuzz_dex.cpp` did not compile — it called a `DexFile::classDefsSize()` that no longer exists | `tests/managed_integration/fuzz/` |
+| Stack exhaustion from 15,000 levels of marshal nesting in a 30 KB file — invisible at the default `-max_len` | `src/pyc_parser/py_marshal.cpp` |
 
 That last one is the reason this script exists. The pull-request job could only
 check that the harness *files were present*, so a harness that had stopped

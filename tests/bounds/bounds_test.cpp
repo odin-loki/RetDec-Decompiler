@@ -12,11 +12,13 @@
  */
 
 #include "retdec/utils/bounds.h"
+#include "retdec/utils/c_source_scan.h"
 #include "retdec/utils/leb128.h"
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 using namespace retdec::utils;
@@ -223,4 +225,89 @@ TEST(Leb128, ToSignedIsAnExactRoundTrip)
 	EXPECT_EQ(leb128::toSigned(UINT64_MAX), -1);
 	EXPECT_EQ(leb128::toSigned(static_cast<std::uint64_t>(INT64_MAX)), INT64_MAX);
 	EXPECT_EQ(leb128::toSigned(static_cast<std::uint64_t>(INT64_MAX) + 1), INT64_MIN);
+}
+
+// ─── C source scanning ───────────────────────────────────────────────────────
+
+namespace {
+
+std::string blanked(const std::string& in)
+{
+	std::string out(in.size(), '\0');
+	if (!in.empty()) retdec::utils::source_scan::blankNonCode(in.data(), in.size(), &out[0]);
+	return out;
+}
+
+} // namespace
+
+TEST(SourceScan, BlanksLineCommentBodies)
+{
+	const std::string code = "int x; ";
+	const std::string comment = "// if while";
+	const std::string tail = "\nint y;";
+
+	// Built rather than written out, so the expectation cannot be off by a
+	// space: the comment becomes exactly as many blanks as it had characters.
+	EXPECT_EQ(blanked(code + comment + tail),
+			  code + std::string(comment.size(), ' ') + tail);
+}
+
+TEST(SourceScan, BlanksBlockCommentBodies)
+{
+	EXPECT_EQ(blanked("a/* if */b"), "a        b");
+}
+
+TEST(SourceScan, KeepsNewlinesInsideBlockComments)
+{
+	// Offsets and line numbers computed from the result have to still match.
+	const std::string in = "a/*\n\n*/b";
+	const std::string out = blanked(in);
+	ASSERT_EQ(out.size(), in.size());
+	EXPECT_EQ(out[3], '\n');
+	EXPECT_EQ(out[4], '\n');
+}
+
+TEST(SourceScan, BlanksStringAndCharLiteralContents)
+{
+	// Delimiters are kept; only what is between them goes.
+	EXPECT_EQ(blanked("s = \"if\";"), "s = \"  \";");
+	EXPECT_EQ(blanked("c = 'x';"), "c = ' ';");
+}
+
+TEST(SourceScan, HandlesEscapedQuotesInsideLiterals)
+{
+	// Source text: "a\"b" x  -- the middle quote is escaped, so the literal
+	// does not end there. Four characters of content become four blanks.
+	const std::string in = "\"a\\\"b\" x";
+	EXPECT_EQ(blanked(in), "\"    \" x");
+	EXPECT_EQ(blanked(in).size(), in.size());
+}
+
+TEST(SourceScan, LeavesPlainCodeAlone)
+{
+	const std::string code = "if (x > 0) { return 1; }";
+	EXPECT_EQ(blanked(code), code);
+}
+
+TEST(SourceScan, NeverInventsCharacters)
+{
+	const std::string in = "a\"b\"/*c*/'d'//e";
+	const std::string out = blanked(in);
+	ASSERT_EQ(out.size(), in.size());
+	for (std::size_t i = 0; i < in.size(); ++i)
+	{
+		EXPECT_TRUE(out[i] == in[i] || out[i] == ' ') << "at " << i;
+	}
+}
+
+TEST(SourceScan, HandlesTruncatedTokensAtTheEnd)
+{
+	// A lone '/' or an unterminated comment or literal at the very end is where
+	// the one-character lookahead would run off the buffer.
+	EXPECT_EQ(blanked("a/"), "a/");
+	EXPECT_EQ(blanked("a/*"), "a  ");
+	EXPECT_EQ(blanked("a//"), "a  ");
+	EXPECT_EQ(blanked("a\""), "a\"");
+	EXPECT_EQ(blanked("*"), "*");
+	EXPECT_EQ(blanked(""), "");
 }
