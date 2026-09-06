@@ -399,12 +399,17 @@ bool PDBFile::pages_in_file(uint64_t first_page, uint64_t num_pages)
 
 /**
  * Determines whether a stream number read from the file names an existing stream.
+ * Every stream number in a PDB is a 16 bit field, and the format reserves
+ * 0xffff in all of them to say "this stream is not here". The range check alone
+ * usually rejects it, because a file rarely has that many streams -- but a file
+ * that does would have turned the marker back into an index, which is not what
+ * it means.
  * @param num Stream number
  * @return Stream with this number is present in the file
  */
 bool PDBFile::stream_num_is_valid(int num)
 {
-	return num >= 0 && static_cast<unsigned int>(num) < num_streams;
+	return num >= 0 && num != PDB_STREAM_NONE && static_cast<unsigned int>(num) < num_streams;
 }
 
 /**
@@ -628,10 +633,10 @@ void PDBFile::parse_modules(void)
 			break;
 
 		// Add module into vector
-		// 0xffff means that the module has no stream; any other number has to
-		// name a stream this file really contains, indexing the vector with it
-		// used to be done on the file's word alone.
-		PDBStream *s = (entry->sn == 0xffff || !stream_num_is_valid(entry->sn))?nullptr:&streams[entry->sn]; // Get module stream
+		// PDB_STREAM_NONE means that the module has no stream; any other number
+		// has to name a stream this file really contains, indexing the vector
+		// with it used to be done on the file's word alone.
+		PDBStream *s = (entry->sn == PDB_STREAM_NONE || !stream_num_is_valid(entry->sn))?nullptr:&streams[entry->sn]; // Get module stream
 		PDBModule new_module =
 		{
 			reinterpret_cast<char *>(entry->rgch),  // name

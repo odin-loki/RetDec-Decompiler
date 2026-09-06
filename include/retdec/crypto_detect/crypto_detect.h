@@ -215,7 +215,8 @@ struct CryptoResult {
 struct AESEvidence {
     bool  found            = false;
     float confidence       = 0.0f;
-    bool  hasSBox          = false;   ///< 0x63 S-box constant
+    bool  hasSBox          = false;   ///< a single S-box byte (supporting only)
+    bool  hasSBoxTable     = false;   ///< >=4 S-box entries in table order
     bool  hasRcon          = false;   ///< Rcon XOR in key schedule
     bool  hasMixCols       = false;   ///< 0x1b GF multiplier
     bool  hasAESNI         = false;   ///< aesenc/aesenclast call

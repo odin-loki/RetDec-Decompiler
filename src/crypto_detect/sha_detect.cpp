@@ -29,7 +29,7 @@
  *
  * ## Confidence scoring
  *
- *   round constants                +0.45
+ *   round constants                +0.45  (required)
  *   Ch function (And+Xor pattern)  +0.30
  *   Maj function                   +0.15
  *   rotation constants             +0.10
@@ -175,8 +175,14 @@ SHAEvidence SHADetector::analyse(const ssa::SSAFunction& fn) const
 
 float SHADetector::score(const SHAEvidence& ev) const
 {
-	float s = 0.0f;
-	if (ev.hasRoundConst) s += 0.45f;
+	// A round constant is necessary, not merely worth 0.45.  Ch, Maj and the
+	// rotation amounts are all generic bit-mixing shapes: three Ands, two Xors
+	// and a shift by one of eleven common amounts sum to 0.55 and annotated the
+	// output "SHA-256" with no SHA constant anywhere in the function — MT19937
+	// tempering, bitfield packers and PRNGs all hit it.  MD5Detector::score
+	// already gates on its own K[] table this way.
+	if (!ev.hasRoundConst) return 0.0f;
+	float s = 0.45f;
 	if (ev.hasChFunction) s += 0.30f;
 	if (ev.hasMajFunction) s += 0.15f;
 	if (ev.hasRotations) s += 0.10f;
@@ -188,6 +194,7 @@ CryptoResult SHADetector::detect(const ssa::SSAFunction& fn) const
 	CryptoResult r;
 	r.algorithm = CryptoAlgorithm::SHA256;
 	auto ev = analyse(fn);
+	if (!ev.found) return r;
 	r.confidence = ev.confidence;
 	if (ev.isSHA1)
 	{

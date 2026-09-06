@@ -332,6 +332,41 @@ TEST(JvmSigParser, MethodSignatureThrows) {
     EXPECT_EQ(ms.throwsTypes[0].ref().className, "java/io/IOException");
 }
 
+// ── Runaway nesting ──────────────────────────────────────────────────────────
+// A signature is a constant-pool Utf8, so the file bounds its length but not
+// its nesting: "L<" is two bytes and buys one more recursive descent, so a
+// single constant of the size the pool already permits used to recurse tens of
+// thousands of levels and blow the stack. The parser must reject the nesting
+// instead of following it.
+
+TEST(JvmSigParser, RejectsRunawayNesting) {
+    // 32767 levels of "L<…", the most a 65535-byte Utf8 constant can encode.
+    std::string sig;
+    for (int i = 0; i < 32767; ++i) sig += "L<";
+    EXPECT_THROW(JvmSignatureParser::parseFieldSig(sig), JvmParseError);
+    EXPECT_THROW(JvmSignatureParser::parseDescriptor(sig), JvmParseError);
+}
+
+TEST(JvmSigParser, RejectsRunawayNestingInMethodDescriptor) {
+    // Same shape reached through a method descriptor's parameter list.
+    std::string desc = "(";
+    for (int i = 0; i < 32767; ++i) desc += "L<";
+    EXPECT_THROW(JvmSignatureParser::parseMethodDescriptor(desc), JvmParseError);
+}
+
+TEST(JvmSigParser, AcceptsNestingUpToTheLimit) {
+    // The cap must not cost valid input: a signature nested as deep as the
+    // limit allows still parses. Depth counts every ReferenceTypeSignature,
+    // so MAX_SIGNATURE_DEPTH levels of "L<" plus the innermost "Ljava/lang/
+    // Object;" is exactly at the limit.
+    const unsigned levels = JvmSignatureParser::MAX_SIGNATURE_DEPTH - 1;
+    std::string sig;
+    for (unsigned i = 0; i < levels; ++i) sig += "L<";
+    sig += "Ljava/lang/Object;";
+    for (unsigned i = 0; i < levels; ++i) sig += ">;";
+    EXPECT_NO_THROW(JvmSignatureParser::parseFieldSig(sig));
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ClassFile parser — hand-crafted minimal .class bytes
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1334,6 +1369,18 @@ TEST(JvmLifter, OperandTruncatedAtEndOfCode) {
     EXPECT_FALSE(res.ok);
 }
 
+TEST(JvmLifter, InvokeVirtualIsTheWholeCodeArray) {
+    // code_length = 1 and the only byte is invokevirtual, whose u2 constant
+    // pool index therefore lies entirely outside code[]. The decoder must not
+    // read it. The index cannot resolve either, so the lift reports an error.
+    CodeAttr code;
+    code.bytecode = {0xB6};
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool);
+    auto res = lifter.lift(code, "()V");
+    EXPECT_FALSE(res.ok);
+}
+
 TEST(JvmLifter, BranchOperandTruncatedAtEndOfCode) {
     // goto with only one of its two offset bytes present.
     CodeAttr code;
@@ -1570,4 +1617,62 @@ TEST(AttributeParser, ParseBootstrapMethodsAttr) {
     ASSERT_TRUE(res.ok);
     // No BootstrapMethods expected.
     EXPECT_EQ(res.bootstrap.methods.size(), 0u);
+}
+
+// ── Runaway annotation nesting ───────────────────────────────────────────────
+// An element_value can be an array of element_values, and nothing in the file
+// bounds that nesting: a '[' tag plus its u2 count is three bytes, so a modest
+// RuntimeVisibleAnnotations blob used to drive hundreds of thousands of
+// recursive calls and exhaust the stack. getAnnotations() swallows parse
+// errors, so the visible symptom of the fix is that it returns instead of
+// crashing.
+
+TEST(AttributeParser, RejectsRunawayAnnotationNesting) {
+    // cp: [1=Utf8("x"), 2=Integer(42)]
+    std::vector<uint8_t> raw = {0, 3};
+    for (uint8_t b : cpUtf8("x")) raw.push_back(b);
+    for (uint8_t b : cpInt(42))   raw.push_back(b);
+    BinaryReader pr(raw.data(), raw.size());
+    auto pool = ConstPool::read(pr);
+
+    // num_annotations=1, type_index=1, num_pairs=1, name_index=1,
+    // then 200000 nested one-element arrays, then an 'I' leaf.
+    std::vector<uint8_t> blob = {0,1, 0,1, 0,1, 0,1};
+    for (int i = 0; i < 200000; ++i) {
+        blob.push_back('[');
+        blob.push_back(0);
+        blob.push_back(1);
+    }
+    blob.push_back('I'); blob.push_back(0); blob.push_back(2);
+
+    std::vector<ParsedAttr> attrs;
+    attrs.push_back(RawAttr{"RuntimeVisibleAnnotations", blob});
+    auto anns = getAnnotations(attrs, pool);
+    EXPECT_TRUE(anns.empty());
+}
+
+TEST(AttributeParser, AcceptsAnnotationNestingUpToTheLimit) {
+    // The cap must not cost valid input: nesting inside the limit still
+    // decodes, so the annotation comes back rather than being dropped.
+    // cp: [1=Utf8("x"), 2=Integer(42)]
+    std::vector<uint8_t> raw = {0, 3};
+    for (uint8_t b : cpUtf8("x")) raw.push_back(b);
+    for (uint8_t b : cpInt(42))   raw.push_back(b);
+    BinaryReader pr(raw.data(), raw.size());
+    auto pool = ConstPool::read(pr);
+
+    // MAX_ANNOTATION_DEPTH nested arrays put the 'I' leaf exactly at the cap.
+    std::vector<uint8_t> blob = {0,1, 0,1, 0,1, 0,1};
+    for (unsigned i = 0; i < MAX_ANNOTATION_DEPTH; ++i) {
+        blob.push_back('[');
+        blob.push_back(0);
+        blob.push_back(1);
+    }
+    blob.push_back('I'); blob.push_back(0); blob.push_back(2);
+
+    std::vector<ParsedAttr> attrs;
+    attrs.push_back(RawAttr{"RuntimeVisibleAnnotations", blob});
+    auto anns = getAnnotations(attrs, pool);
+    ASSERT_EQ(anns.size(), 1u);
+    EXPECT_EQ(anns[0].typeName, "x");
 }

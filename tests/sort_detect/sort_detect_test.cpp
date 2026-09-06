@@ -55,6 +55,47 @@ static void addPhi(ssa::SSAFunction& fn, ssa::VarId var = 0)
 	fn.addPhi(fn.block(0)->id, var);
 }
 
+// Build the opcode bag of a compiled bubble sort: nested loops (two phis, no
+// loop-carried decrement), three element compares, a two-store adjacent swap
+// and three conditional branches.  `n - 1 - i` is the inner-loop bound, so the
+// Sub does not feed a phi.
+static std::unique_ptr<ssa::SSAFunction> makeBubbleSort(const std::string& name)
+{
+	auto fn = std::make_unique<ssa::SSAFunction>(name);
+	auto* entry = fn->addBlock("entry");
+	auto* outer = fn->addBlock("outer");
+	auto* inner = fn->addBlock("inner");
+	fn->addBlock("exit");
+
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Sub);        // n - 1
+	auto* iInc = fn->addInstr(outer->id, ssa::IrInstr::Op::Add);
+	fn->addInstr(outer->id, ssa::IrInstr::Op::Sub);        // n - 1 - i (bound)
+	fn->addInstr(outer->id, ssa::IrInstr::Op::Compare);
+	fn->addInstr(outer->id, ssa::IrInstr::Op::CondBranch);
+	auto* jInc = fn->addInstr(inner->id, ssa::IrInstr::Op::Add);
+	fn->addInstr(inner->id, ssa::IrInstr::Op::Load);
+	fn->addInstr(inner->id, ssa::IrInstr::Op::Load);
+	fn->addInstr(inner->id, ssa::IrInstr::Op::Compare);
+	fn->addInstr(inner->id, ssa::IrInstr::Op::CondBranch);
+	fn->addInstr(inner->id, ssa::IrInstr::Op::Store);      // the adjacent swap
+	fn->addInstr(inner->id, ssa::IrInstr::Op::Store);
+	fn->addInstr(inner->id, ssa::IrInstr::Op::Compare);
+	fn->addInstr(inner->id, ssa::IrInstr::Op::CondBranch);
+	for (int k = 0; k < 4; ++k)
+		fn->addInstr(inner->id, ssa::IrInstr::Op::Add);
+
+	// Both induction variables advance; neither retreats.
+	auto* iPhi = fn->addPhi(outer->id, 0);
+	auto* iVal = fn->allocValue(ssa::ValueKind::VirtualReg);
+	iVal->defInstr = iInc;
+	iPhi->addOperand(inner->id, iVal->id);
+	auto* jPhi = fn->addPhi(inner->id, 1);
+	auto* jVal = fn->allocValue(ssa::ValueKind::VirtualReg);
+	jVal->defInstr = jInc;
+	jPhi->addOperand(inner->id, jVal->id);
+	return fn;
+}
+
 // ─── ElementType tests ────────────────────────────────────────────────────────
 
 TEST(ElementTypeTest, UnknownToString)
@@ -649,6 +690,63 @@ TEST(QuicksortDetectorTest, PartitionWithSelfCallIsQuicksort)
 	EXPECT_EQ(r.algorithm, SortAlgorithm::Quicksort);
 	EXPECT_GE(r.confidence, 0.45f);
 	EXPECT_NEAR(r.confidence, 0.70f, 0.30f);
+}
+
+// ─── BubbleSortDetector tests ─────────────────────────────────────────────────
+
+// BubbleSortDetector was unreachable: its own entry conditions (>= 3 compares,
+// a swap, >= 3 branches) already put PartitionFingerprint at 0.75, so the
+// "partition evidence exists" guard fired on every bubble sort and returned
+// confidence 0.  Every bubble sort came back as introsort instead.
+TEST(BubbleSortDetectorTest, BubbleSortIsDetected)
+{
+	auto fn = makeBubbleSort("bubble_sort");
+	BubbleSortDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_EQ(r.algorithm, SortAlgorithm::BubbleSort);
+	EXPECT_GE(r.confidence, 0.45f);
+}
+
+TEST(BubbleSortDetectorTest, BubbleSortWinsOverIntrosort)
+{
+	auto fn = makeBubbleSort("bubble_sort");
+	SortDetector det;
+	auto r = det.analyseFunction(*fn);
+	EXPECT_EQ(r.algorithm, SortAlgorithm::BubbleSort);
+}
+
+// The suppression must still hold where it means something: a Hoare partition
+// retreats its right index, and that decrement feeds the loop-header phi.
+TEST(BubbleSortDetectorTest, ConvergingIndicesStillSuppressBubble)
+{
+	auto fn = makeBubbleSort("hoare_partition");
+	auto* blk = fn->block(fn->entryId());
+	auto* dec = fn->addInstr(blk->id, ssa::IrInstr::Op::Sub);   // hi = hi - 1
+	auto* hiPhi = fn->addPhi(blk->id, 2);
+	auto* hiVal = fn->allocValue(ssa::ValueKind::VirtualReg);
+	hiVal->defInstr = dec;
+	hiPhi->addOperand(blk->id, hiVal->id);
+	BubbleSortDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.45f);
+}
+
+// Sift-down evidence may only veto a bubble sort when it carries the one
+// heap-specific signal, the 2*i+1 child-index arithmetic.
+TEST(BubbleSortDetectorTest, ChildIndexArithmeticStillSuppressesBubble)
+{
+	auto fn = makeBubbleSort("sift_down");
+	auto* blk = fn->block(fn->entryId());
+	auto* shl = fn->addInstr(blk->id, ssa::IrInstr::Op::Shl);
+	auto* imm1 = fn->allocValue(ssa::ValueKind::Immediate);
+	imm1->imm = 1;
+	ssa::Use u;
+	u.valueId = imm1->id;
+	u.operandIndex = 1;
+	shl->uses.push_back(u);
+	BubbleSortDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.45f);
 }
 
 // ─── InsertionSortDetector tests ──────────────────────────────────────────────

@@ -105,6 +105,10 @@ PatternResult StrategyDetector::detect(const ssa::SSAFunction& fn) const {
     PatternResult r;
     r.kind = PatternKind::Strategy;
     auto ev = analyse(fn);
+    // The delegation call is the pattern.  Without it a function that merely
+    // loads and stores scored 0.65 (field + "setter"), so every accessor in
+    // the binary came back as a Strategy.
+    if (!ev.found) return PatternResult{};
     r.confidence = ev.confidence;
     if (ev.confidence >= 0.45f) {
         r.emittedForm =
@@ -132,6 +136,9 @@ PatternResult StrategyDetector::detectGroup(
                           countOp(*fn, ssa::IrInstr::Op::Store) >= 1))
             hasField = true;
     }
+    // Same necessary signal in group mode: a setter with no executor
+    // anywhere in the group is not a Strategy.
+    if (!hasExecutor) return PatternResult{};
     r.confidence = (hasField    ? 0.30f : 0.0f)
                  + (hasSetter   ? 0.35f : 0.0f)
                  + (hasExecutor ? 0.35f : 0.0f);

@@ -125,6 +125,26 @@ BcType JvmSignatureParser::parseArrayTypeSignature(Cursor& c) {
 }
 
 BcType JvmSignatureParser::parseReferenceTypeSignature(Cursor& c) {
+    // Every recursive cycle in this grammar comes back through here:
+    //   TypeArgument → ReferenceTypeSignature → ClassTypeSignature → TypeArgument
+    //   ArrayTypeSignature → JavaTypeSignature → ReferenceTypeSignature
+    // The string is a constant-pool Utf8 and its length bounds nothing useful:
+    // two bytes of it buy one more stack frame, so a 64 KiB constant used to be
+    // enough to run the stack out before the grammar ever rejected it. Count
+    // the depth at the one choke point instead.
+    struct DepthGuard {
+        Cursor& cur;
+        explicit DepthGuard(Cursor& c_) : cur(c_) {
+            // The message deliberately does not quote the signature the way
+            // the rest of this file does: one that reaches this limit is tens
+            // of kilobytes of nesting, which does not belong in a message.
+            if (++cur.depth > MAX_SIGNATURE_DEPTH)
+                throw JvmParseError("signature nested deeper than "
+                                    + std::to_string(MAX_SIGNATURE_DEPTH));
+        }
+        ~DepthGuard() { --cur.depth; }
+    } depthGuard(c);
+
     char ch = c.peek();
     if (ch == 'L') { c.get(); return parseClassTypeSignature(c); }
     if (ch == 'T') { c.get(); return parseTypeVariableSignature(c); }

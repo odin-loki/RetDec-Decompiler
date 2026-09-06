@@ -48,7 +48,9 @@
 #include "retdec/pattern_detect/pattern_detect.h"
 #include "retdec/ssa/ssa.h"
 
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace retdec {
 namespace pattern_detect {
@@ -95,6 +97,11 @@ std::string RAIIDetector::matchingRelease(const std::string& acquire) const {
 
 RAIIEvidence RAIIDetector::analyse(const ssa::SSAFunction& fn) const {
     RAIIEvidence ev;
+    // Keep every acquire and every release, not just the last of each: a scope
+    // guard that opens a file and allocates a buffer used to end up comparing
+    // the last acquire against the unrelated last release and lose its pair.
+    std::vector<std::string> acquires;
+    std::vector<std::string> releases;
     for (uint32_t b = 0; b < fn.blockCount(); ++b) {
         const auto* blk = fn.block(b);
         if (!blk) continue;
@@ -102,19 +109,32 @@ RAIIEvidence RAIIDetector::analyse(const ssa::SSAFunction& fn) const {
             if (!i || i->op != ssa::IrInstr::Op::Call) continue;
             if (isAcquireCall(i->calleeName)) {
                 ev.hasAcquireInCtor = true;
-                ev.acquireName = i->calleeName;
+                if (ev.acquireName.empty()) ev.acquireName = i->calleeName;
+                acquires.push_back(i->calleeName);
             }
             if (isReleaseCall(i->calleeName)) {
                 ev.hasReleaseInDtor = true;
-                ev.releaseName = i->calleeName;
+                if (ev.releaseName.empty()) ev.releaseName = i->calleeName;
+                releases.push_back(i->calleeName);
             }
         }
     }
-    if (!ev.acquireName.empty() && !ev.releaseName.empty()) {
-        auto expected = matchingRelease(ev.acquireName);
-        ev.hasMatchingPair = (expected == ev.releaseName);
+    for (const auto& acq : acquires) {
+        const auto expected = matchingRelease(acq);
+        for (const auto& rel : releases) {
+            if (rel != expected) continue;
+            ev.hasMatchingPair = true;
+            // Report the pair that actually matched.
+            ev.acquireName = acq;
+            ev.releaseName = rel;
+            break;
+        }
+        if (ev.hasMatchingPair) break;
     }
-    ev.found = ev.hasAcquireInCtor || ev.hasReleaseInDtor;
+    // An acquire with no matching release is half an idiom, and it scored
+    // exactly 0.45 — enough to report RAII on any function that calls malloc.
+    // The idiom is the *pair*; that is what makes the emitted destructor true.
+    ev.found = ev.hasMatchingPair;
     ev.confidence = score(ev);
     return ev;
 }
@@ -131,6 +151,7 @@ PatternResult RAIIDetector::detect(const ssa::SSAFunction& fn) const {
     PatternResult r;
     r.kind = PatternKind::RAII;
     auto ev = analyse(fn);
+    if (!ev.found) return PatternResult{};
     r.confidence = ev.confidence;
     if (ev.confidence >= 0.45f) {
         std::string acq = ev.acquireName.empty() ? "acquire()" : ev.acquireName + "()";
@@ -153,22 +174,44 @@ PatternResult RAIIDetector::detectGroup(
     PatternResult r;
     r.kind = PatternKind::RAII;
     RAIIEvidence combined;
+    // As in the single-function case, every acquire in the group has to be
+    // tried against every release: the ctor may take two resources, and the
+    // first acquire is not necessarily the one the first release closes.
+    std::vector<std::string> acquires;
+    std::vector<std::string> releases;
     for (const auto* fn : fns) {
         if (!fn) continue;
-        auto ev = analyse(*fn);
-        if (ev.hasAcquireInCtor && combined.acquireName.empty()) {
-            combined.hasAcquireInCtor = true;
-            combined.acquireName = ev.acquireName;
-        }
-        if (ev.hasReleaseInDtor && combined.releaseName.empty()) {
-            combined.hasReleaseInDtor = true;
-            combined.releaseName = ev.releaseName;
+        for (uint32_t b = 0; b < fn->blockCount(); ++b) {
+            const auto* blk = fn->block(b);
+            if (!blk) continue;
+            for (const auto* i : blk->instrs) {
+                if (!i || i->op != ssa::IrInstr::Op::Call) continue;
+                if (isAcquireCall(i->calleeName)) {
+                    combined.hasAcquireInCtor = true;
+                    if (combined.acquireName.empty()) combined.acquireName = i->calleeName;
+                    acquires.push_back(i->calleeName);
+                }
+                if (isReleaseCall(i->calleeName)) {
+                    combined.hasReleaseInDtor = true;
+                    if (combined.releaseName.empty()) combined.releaseName = i->calleeName;
+                    releases.push_back(i->calleeName);
+                }
+            }
         }
     }
-    if (!combined.acquireName.empty() && !combined.releaseName.empty()) {
-        auto expected = matchingRelease(combined.acquireName);
-        combined.hasMatchingPair = (expected == combined.releaseName);
+    for (const auto& acq : acquires) {
+        const auto expected = matchingRelease(acq);
+        for (const auto& rel : releases) {
+            if (rel != expected) continue;
+            combined.hasMatchingPair = true;
+            combined.acquireName = acq;
+            combined.releaseName = rel;
+            break;
+        }
+        if (combined.hasMatchingPair) break;
     }
+    // A ctor that acquires with no dtor releasing it is not RAII either.
+    if (!combined.hasMatchingPair) return PatternResult{};
     r.confidence = score(combined);
     if (r.confidence >= 0.45f) {
         std::string acq = combined.acquireName.empty() ? "acquire()" : combined.acquireName + "()";

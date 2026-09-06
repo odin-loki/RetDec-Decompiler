@@ -68,7 +68,11 @@ def section(name, va, raw):
     s += u32(0) + u32(0) + u16(0) + u16(0) + u32(0x60000020)
     return s
 
-def build(nonlinear=False):
+def build(nonlinear=False, sym_records=None, scatter=()):
+    """sym_records replaces the contents of the symbol record stream, and
+    scatter names streams whose pages are stored out of order even when the
+    file is otherwise linear -- those get copied into an allocation of their
+    own, which is what makes a read past the end of one visible."""
     sym = b"\x04\x00\x00\x00"                        # CV signature
     sections = section(".text", 0x1000, 0x400) + section(".data", 0x2000, 0x600)
     streams = [
@@ -78,7 +82,7 @@ def build(nonlinear=False):
         None,                 # 3 DBI, filled below
         sym,                  # 4 GSI
         sym,                  # 5 PSI
-        sym,                  # 6 symbol records
+        sym if sym_records is None else sym_records,  # 6 symbol records
         sections * 20,         # 7 section headers (spans several pages)
         b"",                  # 8 module stream (empty)
     ]
@@ -92,7 +96,7 @@ def build(nonlinear=False):
     for idx, s in enumerate(streams):
         n = (len(s) + PAGE - 1) // PAGE
         bl = list(range(next_block, next_block + n))
-        if nonlinear and n > 1:
+        if (nonlinear or idx in scatter) and n > 1:
             bl.reverse()
         blocks.append(bl)
         next_block += n
@@ -181,6 +185,35 @@ def make_malformed(base, outdir):
     struct.pack_into("<H", b, dbi + dbi_size - 22 + 10, 0x7FFF); emit("sections-stream-missing", b)
     # 15. module stream number that names no stream
     b = bytearray(base); struct.pack_into("<H", b, dbi + 0x40 + 0x22, 0x7FFE); emit("module-stream-missing", b)
+
+    # The last two are whole files rather than mutations of the good one: they
+    # need a symbol record stream of their own, which the good file does not
+    # have room for. Both walk the record chain in the symbol stream, where the
+    # record length is the file's word for how far the next record is.
+
+    # 16. a record header that straddles the end of its stream. The chain is
+    # laid out so the last record starts two bytes before the end, and the
+    # stream is scattered over its pages so it is copied into an allocation
+    # that ends exactly where the stream does -- reading the four byte header
+    # there runs off it.
+    recs = bytearray(2 * PAGE)
+    recs[0:4] = u16(4) + u16(0)               # CV signature, read as a span of 6
+    pos = 6
+    while pos < 2 * PAGE - 2:
+        struct.pack_into("<HH", recs, pos, 2, 0)
+        pos += 4
+    assert pos == 2 * PAGE - 2
+    struct.pack_into("<H", recs, pos, 2)      # header runs two bytes past the end
+    emit("symrec-past-stream-end", build(sym_records=bytes(recs), scatter={6}))
+
+    # 17. an odd record length, which puts the next record on an odd offset of
+    # the stream. The record structures are what the file says they are, so
+    # they may start anywhere; reading one through a pointer that expects to be
+    # aligned is undefined behaviour.
+    recs = bytearray(PAGE)
+    recs[0:4] = u16(3) + u16(0)               # span of 5, so the next record is at 5
+    struct.pack_into("<HH", recs, 5, 2, 0)
+    emit("symrec-odd-length", build(sym_records=bytes(recs)))
 
 
 if __name__ == "__main__":

@@ -110,6 +110,11 @@ PatternResult FactoryDetector::detect(const ssa::SSAFunction& fn) const {
     PatternResult r;
     r.kind = PatternKind::Factory;
     auto ev = analyse(fn);
+    // The evidence was computed and then thrown away: a discriminant plus a
+    // Ret scored 0.60 and was reported as a factory with zero allocation
+    // sites, which is the one thing a factory must have.  Say Unknown unless
+    // the necessary signals are all present.
+    if (!ev.found) return PatternResult{};
     r.confidence = ev.confidence;
     if (ev.confidence >= 0.45f) {
         r.emittedForm =

@@ -126,6 +126,17 @@ typedef struct _PDBPESection
 // PDB PE sections vector
 typedef std::vector<PDBPESection> PDBSectionsVec;
 
+// These two describe bytes as they lie in a symbol stream, like the records in
+// pdb_info.h do, and they are overlaid on the stream at an offset the file
+// chooses through its record lengths. They were the only on-disk structures in
+// the parser left unpacked, so they inherited the alignment of their 16 and 32
+// bit fields: a file whose record lengths put the next record on an odd offset
+// made the parser read one through a pointer that may not be that misaligned,
+// which is undefined behaviour rather than merely a wrong answer. Packing does
+// not move a field; it only says what was always true of these bytes, that
+// nothing guarantees where in the stream they start.
+#pragma pack (1)
+
 // General PDB symbol structure
 typedef struct _PDBGeneralSymbol
 {
@@ -141,6 +152,8 @@ typedef struct _PDBBigSymbol
 		PDB_DWORD size;  // symbol data size
 		PDB_BYTE data[];  // symbol data
 } PDBBigSymbol;
+
+#pragma pack ()
 
 // =================================================================
 // UTILITY FUNCTIONS

@@ -9,6 +9,7 @@ Maintainer notes. Start with **[MAINTAINER_SCOPE.md](MAINTAINER_SCOPE.md)**.
 | [MAINTAINER_SCOPE.md](MAINTAINER_SCOPE.md) | What we ship vs skip |
 | [PLAN_COMPLETION.md](PLAN_COMPLETION.md) | Automation steps 1–26 status |
 | [NEXT_STEPS.md](NEXT_STEPS.md) | Optional follow-ups |
+| [UNFIXED_AUDIT_FINDINGS.md](UNFIXED_AUDIT_FINDINGS.md) | Confirmed audit findings behind the LLVM build — including the single cause of the 0/216 default-`.c` recompile |
 | [backlog.md](backlog.md) | ID table (done / out of scope) |
 | [D7_DECISION.md](D7_DECISION.md) | Specification-extraction positioning |
 | [LLVM_MIGRATION_SCOPE.md](LLVM_MIGRATION_SCOPE.md) | D1 — LLVM pin and migration research (no bump) |

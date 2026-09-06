@@ -53,6 +53,12 @@ enum PDBFileState
 #define PDB_STREAM_TPI      2 // type info
 #define PDB_STREAM_DBI      3 // debug info
 
+// Every stream number in a PDB is a 16 bit field, and this value is what all of
+// them use to say the stream is absent. It is a marker, not an index, so it is
+// named here rather than compared against as a literal at each of the places
+// that reads one out of the file.
+#define PDB_STREAM_NONE     0xffff // stream is not present
+
 // =================================================================
 // PDB 2.00 STRUCTURES
 // =================================================================

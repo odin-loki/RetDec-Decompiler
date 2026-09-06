@@ -1293,3 +1293,104 @@ TEST(ApkReader, LocalHeaderOffsetNearFourGibIsRejected) {
     EXPECT_EQ(ApkReadResult::PartialError, result.status);
     EXPECT_FALSE(result.warnings.empty());
 }
+
+// ─── Truncated instruction streams (findLeaders bounds) ──────────────────────
+
+// insns_size comes out of the file, so the instruction array can stop in the
+// middle of an instruction. findLeaders decided how many code units to read
+// from the opcode alone and indexed word[1]/word[2] unconditionally, running
+// off the end of the vector for a branch whose target unit was never stored.
+// These lift a code_item holding nothing but the first unit of such a branch;
+// under ASan the pre-fix reader is a heap-buffer-overflow, and without it the
+// lift must still come back clean.
+static DexLiftResult liftTruncated(const DexFile& df,
+                                   std::vector<uint16_t> units) {
+    CodeItem code;
+    code.registersSize = 2;
+    code.insSize       = 0;
+    code.outsSize      = 0;
+    code.triesSize     = 0;
+    code.debugInfoOff  = 0;
+    code.insnsSize     = static_cast<uint32_t>(units.size());
+    code.insns         = std::move(units);
+    DexLifter lifter(df);
+    return lifter.lift(code, 0);
+}
+
+TEST(DexLifter, TruncatedGoto16DoesNotReadPastInsns) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // goto/16 declares a following branch-offset unit that is not there.
+    auto result = liftTruncated(df, {static_cast<uint16_t>(0x0029u)});
+    EXPECT_EQ(DexLiftResult::OK, result.status);
+}
+
+TEST(DexLifter, TruncatedGoto32DoesNotReadPastInsns) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // goto/32 declares two following units; only one of them is stored.
+    auto result = liftTruncated(df, {static_cast<uint16_t>(0x002Au),
+                                     static_cast<uint16_t>(0x0000u)});
+    EXPECT_EQ(DexLiftResult::OK, result.status);
+}
+
+TEST(DexLifter, TruncatedConditionalBranchDoesNotReadPastInsns) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // if-eqz v0, +? — the branch offset unit is missing.
+    auto result = liftTruncated(df, {static_cast<uint16_t>(0x0038u)});
+    EXPECT_EQ(DexLiftResult::OK, result.status);
+}
+
+// A well-formed goto/16 must still be followed: the guard may not change what
+// a complete instruction stream lifts to.
+TEST(DexLifter, CompleteGoto16StillReachesItsTarget) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    auto result = liftTruncated(df, {
+        static_cast<uint16_t>(0x0029u), // goto/16 +2
+        static_cast<uint16_t>(0x0002u),
+        static_cast<uint16_t>(0x000Eu), // return-void (offset 2)
+    });
+    ASSERT_EQ(DexLiftResult::OK, result.status);
+    bool hasTargetBlock = false;
+    for (const auto& blk : result.cfg.blocks())
+        if (blk.label == "L2") hasTargetBlock = true;
+    EXPECT_TRUE(hasTargetBlock);
+}
+
+// ─── string_data_item length (mutf8 bounds) ──────────────────────────────────
+
+TEST(DexReader, Mutf8RejectsLengthTheFileCannotSupply) {
+    // string_data_item.utf16_size is a ULEB128 out of the file and mutf8()
+    // reserved for it before reading a byte: the oom-b507582e reproducer is a
+    // 668-byte DEX declaring a 0x93A25C0D-character string, which asked for
+    // 2.4 GB and was OOM-killed instead of rejected. Every character costs at
+    // least one byte on the wire, so the length is now checked against what is
+    // left first — the read must fail before anything is consumed for it.
+    const uint8_t data[] = {'a', 'b', 'c', 'd'};
+    DexReader r(data, sizeof(data));
+    EXPECT_THROW(r.mutf8(0x93A25C0Du), DexParseError);
+    EXPECT_EQ(0u, r.pos());
+}
+
+TEST(DexReader, Mutf8AcceptsLengthTheFileCanSupply) {
+    const uint8_t data[] = {'a', 'b', 'c', 'd'};
+    DexReader r(data, sizeof(data));
+    EXPECT_EQ("abcd", r.mutf8(4));
+}
+
+TEST(DexFile, StringDataUtf16SizeExceedsFileThrows) {
+    // The same lie reached through DexFile::parse: overwrite the first
+    // string_data_item's utf16_size with a five-byte ULEB128 for 0x93A25C0D.
+    auto dex = buildMinimalDex();
+    uint32_t declared = 0x93A25C0Du;
+    size_t off = 0xC0; // string_data[0], see buildMinimalDex()
+    do {
+        uint8_t b = declared & 0x7F;
+        declared >>= 7;
+        if (declared) b |= 0x80;
+        dex[off++] = b;
+    } while (declared);
+    EXPECT_THROW(DexFile::parse(dex), DexParseError);
+}

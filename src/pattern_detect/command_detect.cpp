@@ -150,6 +150,9 @@ PatternResult CommandDetector::detect(const ssa::SSAFunction& fn) const {
     PatternResult r;
     r.kind = PatternKind::Command;
     auto ev = analyse(fn);
+    // The vtable execute call is necessary; a container of pointers on its own
+    // is just a container.
+    if (!ev.found) return PatternResult{};
     r.confidence = ev.confidence;
     r.hasVariant  = ev.hasUndo;
     r.variantName = ev.hasUndo ? "with-undo" : "";

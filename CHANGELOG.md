@@ -85,6 +85,19 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `cli_parser`, `container_detect`, `crypto_detect`, `dex_parser`,
+  `func_boundary`, `jvm_parser`, `loader_sim`, `pattern_detect`, `pdbparser`,
+  `sort_detect`: memory-safety and detector-precision fixes from the subsystem
+  audit. Among them: the CIL metadata `RowReader` carried no size, so declared
+  row counts walked off the end of the input; `LoaderSim::peNtOffset` overflowed
+  in 32 bits on the PE signature check; `ListDetector::hasSentinelInit` read
+  `uses[1]` behind an `!uses.empty()` guard; `MapDetector::hasRotation` compared
+  an `InstrId` against `ValueId`, emitting `std::map` at confidence 1.00 for
+  ordinary loop code; every pattern detector computed `ev.found` and then
+  ignored it; `BubbleSortDetector` was unreachable, so bubble sorts were
+  labelled introsort; and SHA-256 fired at 0.55 with no SHA constant present.
+  Several audit findings were correctly rejected as already fixed earlier in
+  this branch rather than fixed twice.
 - `pelib`: 9,791 lines of PE parsing that had neither a unit suite nor any
   fuzzing now have a libFuzzer target (`fuzz_pelib`, driving `PeLib::PeFileT`
   over a stream) and three generated PE seeds. `fuzz_pe.cpp` did not cover this
@@ -173,6 +186,18 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 - `profiling`: `sscanf(..., "%lld", &kb)` with `kb` an `int64_t` is the wrong
   format specifier on LP64. `/proc/self/status` parsing now uses
   `std::from_chars` and rejects values that would overflow the byte conversion.
+
+### Documentation
+
+- [docs/internal/UNFIXED_AUDIT_FINDINGS.md](docs/internal/UNFIXED_AUDIT_FINDINGS.md):
+  confirmed audit findings that sit behind the LLVM build and so could not be
+  compiled or tested here. First among them is the single cause of the 0/216
+  default-`.c` recompile rate: `NoInitVarDefOptimizer` deletes every
+  initializer-less local declaration for C output, while the comment at its call
+  site describes a use check the pass does not perform. Also records two further
+  whole-file compile failures in the C backend, four silent miscompilations, and
+  the fact that the public `decompile()` API cannot report failure at all.
+  README now points at it rather than leaving the 0/216 unexplained.
 
 ### Removed
 

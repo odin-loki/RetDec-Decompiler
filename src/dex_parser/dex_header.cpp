@@ -5,6 +5,8 @@
 
 #include "retdec/dex_parser/dex_header.h"
 
+#include "retdec/utils/bounds.h"
+
 #include <cstring>
 #include <sstream>
 
@@ -128,6 +130,14 @@ int32_t DexReader::uleb128p1() {
 std::string DexReader::mutf8(uint32_t len) {
     // DEX strings are MUTF-8 encoded (like JVM).
     // We do a basic decode — surrogate pairs for U+10000+ are not common in DEX.
+    //
+    // utf16_size is a ULEB128 out of the file, and reserving for it before
+    // reading anything was the same mistake the index tables used to make: a
+    // 668-byte file declaring a 0x93A25C0D-unit string asked for 2.4 GB and
+    // was killed rather than rejected. Every character this loop decodes costs
+    // at least one byte on the wire (the shortest MUTF-8 sequence), so a
+    // length the rest of the file cannot supply is malformed by construction.
+    checkCount(len, kMinMutf8CharSize);
     std::string result;
     result.reserve(len);
     for (uint32_t i = 0; i < len; ) {
@@ -186,7 +196,11 @@ std::vector<uint8_t> DexReader::bytes(size_t n) {
 void DexReader::checkArray(size_t offset, size_t count, size_t minItemSize) const {
     if (count == 0)
         return; // nothing is read, so the offset is never dereferenced
-    if (offset > size_ || count > (size_ - offset) / minItemSize)
+    // The comparison itself lives in the verified kernel rather than here: it
+    // is the same "can the rest of the file supply this many elements?" test
+    // every parser in the tree needs, and writing it out by hand once per
+    // parser is how the wrapping versions got in.
+    if (!utils::bounds::countFits(offset, size_, count, minItemSize))
         throw DexParseError("declared element count " + std::to_string(count) +
                             " at offset " + std::to_string(offset) +
                             " needs at least " +

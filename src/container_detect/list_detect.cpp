@@ -59,11 +59,31 @@ static int countStores(const ssa::SSAFunction& fn)
 	return n;
 }
 
-// A self-referential store is a Store where the destination address and the
-// stored value are derived from the same base register / phi-node.
-// We approximate this by looking for ≥2 Store instructions in the function
-// entry block where the stored value feeds another memory slot in the same block
-// (short-distance address reuse within 2 instructions).
+// A sentinel init writes one address -- the header's own -- into two different
+// slots of the object living at that address:
+//
+//   _M_header._M_next = &_M_header;
+//   _M_header._M_prev = &_M_header;
+//
+// so the thing to look for is a pair of adjacent Stores that share a stored
+// value and whose destination slots both hang off the variable that value
+// names.  The old code claimed to check "both stores reference the same base
+// address value" but actually compared a->uses[1] against b->uses[1] + 1, which
+// is neither that nor anything else meaningful -- and it read uses[1] behind an
+// !uses.empty() guard, so a pair of half-formed single-operand Stores (address
+// never renamed) walked off the end of both use-lists.
+static bool isSlotOf(const ssa::SSAFunction& fn, ssa::ValueId addr, ssa::ValueId base)
+{
+	const auto* slot = fn.value(addr);
+	const auto* obj = fn.value(base);
+	if (!slot || !obj) return false;
+	if (slot->kind != ssa::ValueKind::MemRef) return false;
+	// memBaseReg is a VarId while `base` is a ValueId; the comparison has to go
+	// through the value's originating variable or it is comparing two unrelated
+	// numbering spaces, which is exactly the mistake this replaces.
+	return slot->memBaseReg != ssa::kInvalidVar && slot->memBaseReg == obj->varId;
+}
+
 static bool hasSentinelInit(const ssa::SSAFunction& fn)
 {
 	if (fn.blockCount() == 0) return false;
@@ -76,14 +96,26 @@ static bool hasSentinelInit(const ssa::SSAFunction& fn)
 		const auto* a = entry->instrs[i];
 		const auto* b = entry->instrs[i + 1];
 		if (!a || !b) continue;
-		if (a->op == ssa::IrInstr::Op::Store && b->op == ssa::IrInstr::Op::Store)
+		if (a->op != ssa::IrInstr::Op::Store || b->op != ssa::IrInstr::Op::Store) continue;
+
+		// A Store carries (value, address).  Anything with fewer than two
+		// operands has no address to inspect, so there is nothing to compare.
+		if (a->uses.size() < 2 || b->uses.size() < 2) continue;
+
+		const ssa::ValueId storedA = a->uses[0].valueId;
+		const ssa::ValueId storedB = b->uses[0].valueId;
+		const ssa::ValueId addrA = a->uses[1].valueId;
+		const ssa::ValueId addrB = b->uses[1].valueId;
+
+		// Same value into two *different* slots: equal stored values alone is a
+		// memset, and distinct slots alone is any struct initialiser.
+		if (storedA == ssa::kInvalidValue || storedA != storedB) continue;
+		if (addrA == ssa::kInvalidValue || addrB == ssa::kInvalidValue) continue;
+		if (addrA == addrB) continue;
+
+		if (isSlotOf(fn, addrA, storedA) && isSlotOf(fn, addrB, storedB))
 		{
-			// If both stores have overlapping use-sets (both reference the same
-			// base address value), it's a sentinel init.
-			if (!a->uses.empty() && !b->uses.empty() && a->uses[1].valueId == b->uses[1].valueId + 1)
-			{
-				++selfRefStores;
-			}
+			++selfRefStores;
 		}
 	}
 	return selfRefStores >= 1;

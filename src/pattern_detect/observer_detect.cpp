@@ -110,9 +110,14 @@ PatternResult ObserverDetector::detect(const ssa::SSAFunction& fn) const {
     r.kind = PatternKind::Observer;
     bool reg    = hasRegisterPattern(fn);
     bool notify = hasNotifyPattern(fn);
-    r.confidence = (reg ? 0.45f : 0.0f) + (notify ? 0.45f : 0.0f);
-    // Small bonus if both patterns co-exist in one function.
-    if (reg && notify) r.confidence = std::min(1.0f, r.confidence + 0.10f);
+    // Both halves are necessary.  A lone push_back scored exactly 0.45 and
+    // tripped the 0.45 gate, so every function that appends to a vector was
+    // reported as an Observer; a container with nothing subscribing to it is
+    // not an event emitter.  The docstring's single-function mode already says
+    // "push_back + indirect call in same fn".
+    if (!reg || !notify) return PatternResult{};
+    // Both halves present: register 0.45 + notify 0.45 + co-existence 0.10.
+    r.confidence = std::min(1.0f, 0.45f + 0.45f + 0.10f);
     if (r.confidence >= 0.45f) {
         r.emittedForm =
             "template<typename Event>\n"
@@ -136,8 +141,10 @@ PatternResult ObserverDetector::detectGroup(
         if (!reg && hasRegisterPattern(*fn))  reg = true;
         if (!notify && hasNotifyPattern(*fn)) notify = true;
     }
-    r.confidence = (reg ? 0.45f : 0.0f) + (notify ? 0.45f : 0.0f);
-    if (reg && notify) r.confidence = std::min(1.0f, r.confidence + 0.10f);
+    // Same in group mode: register in one function and notify in another are
+    // both required, not 0.45 each.
+    if (!reg || !notify) return PatternResult{};
+    r.confidence = std::min(1.0f, 0.45f + 0.45f + 0.10f);
     if (r.confidence >= 0.45f) {
         r.emittedForm =
             "template<typename Event>\n"

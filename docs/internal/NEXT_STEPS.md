@@ -28,6 +28,15 @@ gh auth login
 .\scripts\dispatch_algorithm_recovery_nightly.ps1 -FullCorpus
 ```
 
+## Confirmed defects behind the LLVM build
+
+[UNFIXED_AUDIT_FINDINGS.md](UNFIXED_AUDIT_FINDINGS.md) records audit findings
+that could not be built or tested without the LLVM pin, so were written down
+rather than attempted. The first entry is the single cause of the 0/216
+default-`.c` recompile rate: `NoInitVarDefOptimizer` deletes every
+initializer-less local declaration for C output, and the call-site comment
+describes a use check the pass does not perform.
+
 ## Not planned
 
 - OSS-Fuzz 23k corpus

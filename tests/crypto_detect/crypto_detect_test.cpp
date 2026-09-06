@@ -55,6 +55,16 @@ static void addImmUse(SSAFunction& fn, IrInstr* instr, uint64_t imm) {
     instr->uses.push_back(u);
 }
 
+// Emit the first four AES S-box entries, in table order, as Immediate uses.
+// This is the discriminating evidence AESDetector requires: a single S-box
+// byte is an ordinary small integer, four of them in table order are not.
+static void addSBoxRun(SSAFunction& fn, BasicBlock* blk) {
+    for (uint64_t b : {0x63ULL, 0x7cULL, 0x77ULL, 0x7bULL}) {
+        IrInstr* i = addInstr(fn, blk, IrInstr::Op::Xor);
+        addImmUse(fn, i, b);
+    }
+}
+
 // ─── 1. CryptoResult utilities ────────────────────────────────────────────────
 
 TEST(CryptoResultTest, AlgorithmNames) {
@@ -116,7 +126,10 @@ TEST(CryptoResultTest, ToStringAESNI) {
 
 // ─── 2. AES Detector ─────────────────────────────────────────────────────────
 
-TEST(AESDetectorTest, SBoxConstantRaisesConfidence) {
+// A lone S-box byte plus the generic "round structure" used to score 0.75 and
+// annotate the emitted C with AES.  0x63 on its own carries almost no
+// information, so it must score nothing without a discriminating signal.
+TEST(AESDetectorTest, SingleSBoxByteDoesNotFire) {
     AESDetector det;
     auto fn = makeEmptyFn();
     auto* blk = addBlock(*fn);
@@ -127,7 +140,37 @@ TEST(AESDetectorTest, SBoxConstantRaisesConfidence) {
     auto* a = addInstr(*fn, blk, IrInstr::Op::And);
     addImmUse(*fn, a, 0xff);
     auto r = det.detect(*fn);
+    EXPECT_EQ(r.confidence, 0.0f);
+    EXPECT_TRUE(r.emittedAnnotation.empty());
+}
+
+TEST(AESDetectorTest, SBoxTableRunRaisesConfidence) {
+    AESDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    addSBoxRun(*fn, blk);
+    auto* a = addInstr(*fn, blk, IrInstr::Op::And);
+    addImmUse(*fn, a, 0xff);
+    auto r = det.detect(*fn);
     EXPECT_GT(r.confidence, 0.0f);
+}
+
+// The trigger from the audit: a plain string hash (xor/shift mixing with a
+// 0xff mask and a couple of small shift amounts) was reported as AES.
+TEST(AESDetectorTest, StringHashIsNotAES) {
+    AESDetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    for (int k = 0; k < 4; ++k) addInstr(*fn, blk, IrInstr::Op::Xor);
+    auto* a = addInstr(*fn, blk, IrInstr::Op::And);
+    addImmUse(*fn, a, 0xff);
+    auto* sh = addInstr(*fn, blk, IrInstr::Op::Shl);
+    addImmUse(*fn, sh, 0x02);         // an Rcon "constant"
+    auto* sh2 = addInstr(*fn, blk, IrInstr::Op::Shr);
+    addImmUse(*fn, sh2, 0x09);        // an inverse-S-box "constant"
+    auto r = det.detect(*fn);
+    EXPECT_LT(r.confidence, 0.50f);
+    EXPECT_TRUE(r.emittedAnnotation.empty());
 }
 
 TEST(AESDetectorTest, AESNICallDetected) {
@@ -159,8 +202,7 @@ TEST(AESDetectorTest, MixColumnsConstantContributes) {
     AESDetector det;
     auto fn = makeEmptyFn();
     auto* blk = addBlock(*fn);
-    auto* i1 = addInstr(*fn, blk, IrInstr::Op::Xor);
-    addImmUse(*fn, i1, 0x63);
+    addSBoxRun(*fn, blk);
     auto* i2 = addInstr(*fn, blk, IrInstr::Op::And);
     addImmUse(*fn, i2, 0x1b);
     for (int k = 0; k < 3; ++k) addInstr(*fn, blk, IrInstr::Op::Xor);
@@ -174,8 +216,7 @@ TEST(AESDetectorTest, GCMModeDetected) {
     AESDetector det;
     auto fn = makeEmptyFn();
     auto* blk = addBlock(*fn);
-    auto* i1 = addInstr(*fn, blk, IrInstr::Op::Xor);
-    addImmUse(*fn, i1, 0x63);
+    addSBoxRun(*fn, blk);
     auto* i2 = addInstr(*fn, blk, IrInstr::Op::And);
     addImmUse(*fn, i2, 0xe1);
     addInstr(*fn, blk, IrInstr::Op::Xor);
@@ -267,6 +308,31 @@ TEST(SHADetectorTest, ChFunctionBoostsConfidence) {
     addInstr(*fn, blk, IrInstr::Op::Xor);
     auto r = det.detect(*fn);
     EXPECT_GT(r.confidence, 0.70f);
+}
+
+// MT19937 tempering: y ^= y >> 11; y ^= (y << 7) & 0x9d2c5680;
+// y ^= (y << 15) & 0xefc60000; y ^= y >> 18.  Three Ands, two Xors and shift
+// amounts that happen to sit in the SHA-256 rotation set summed to 0.55 and
+// annotated the output "Cryptographic primitive: SHA-256" — with no SHA
+// constant anywhere.  A round constant is necessary evidence.
+TEST(SHADetectorTest, MT19937TemperingIsNotSHA) {
+    SHADetector det;
+    auto fn = makeEmptyFn();
+    auto* blk = addBlock(*fn);
+    auto* s1 = addInstr(*fn, blk, IrInstr::Op::Shr);
+    addImmUse(*fn, s1, 11);            // a SHA-256 Sigma1 rotation amount
+    addInstr(*fn, blk, IrInstr::Op::Xor);
+    auto* a1 = addInstr(*fn, blk, IrInstr::Op::And);
+    addImmUse(*fn, a1, 0x9d2c5680ULL);
+    auto* a2 = addInstr(*fn, blk, IrInstr::Op::And);
+    addImmUse(*fn, a2, 0xefc60000ULL);
+    addInstr(*fn, blk, IrInstr::Op::And);
+    addInstr(*fn, blk, IrInstr::Op::Xor);
+    auto* s2 = addInstr(*fn, blk, IrInstr::Op::Shr);
+    addImmUse(*fn, s2, 18);            // a SHA-256 sigma0 rotation amount
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.confidence, 0.0f);
+    EXPECT_TRUE(r.emittedAnnotation.empty());
 }
 
 TEST(SHADetectorTest, EmptyFunctionLowConfidence) {
@@ -779,9 +845,8 @@ TEST(CryptoDetectorTest, ResultsSortedByConfidenceDescending) {
     addImmUse(*fn, i1, 0x36363636ULL);
     auto* i2 = addInstr(*fn, blk, IrInstr::Op::Xor);
     addImmUse(*fn, i2, 0x5c5c5c5cULL);
-    // AES S-box + MixColumns constant → confidence 0.55 (above default 0.50 threshold).
-    auto* i3 = addInstr(*fn, blk, IrInstr::Op::Xor);
-    addImmUse(*fn, i3, 0x63);
+    // AES S-box run + MixColumns constant → above the default 0.50 threshold.
+    addSBoxRun(*fn, blk);
     for (int k = 0; k < 3; ++k) addInstr(*fn, blk, IrInstr::Op::Xor);
     auto* iand = addInstr(*fn, blk, IrInstr::Op::And);
     addImmUse(*fn, iand, 0x1b);  // MixColumns constant: raises AES confidence to 0.55
@@ -807,8 +872,7 @@ TEST(CryptoDetectorTest, ModuleDetectAggregatesResults) {
     // Function 2: AES.
     auto fn2 = makeEmptyFn("aes_fn");
     auto* blk2 = addBlock(*fn2);
-    auto* a1 = addInstr(*fn2, blk2, IrInstr::Op::Xor);
-    addImmUse(*fn2, a1, 0x63);
+    addSBoxRun(*fn2, blk2);
     for (int k = 0; k < 4; ++k) addInstr(*fn2, blk2, IrInstr::Op::Xor);
     auto* a2 = addInstr(*fn2, blk2, IrInstr::Op::And);
     addImmUse(*fn2, a2, 0x1b);

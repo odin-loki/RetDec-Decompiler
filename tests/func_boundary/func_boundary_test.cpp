@@ -543,3 +543,135 @@ TEST(Integration, EmptyDetectorHasNoFunctions)
     det.runAll();
     EXPECT_TRUE(det.functions().empty());
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Section mapping — file offset is not (VA - imageBase)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// vaToOffset used to return va - imageBase for every address, which assumes the
+// bytes on disk sit exactly where they sit in memory.  They never do: a PE maps
+// sections at SectionAlignment (0x1000) and stores them at FileAlignment
+// (0x200), so the canonical .text at RVA 0x1000 / raw 0x400 was read 3 KB past
+// its own bytes, and every ELF segment after the first is skewed the same way.
+// These tests use that canonical layout: .text is at VA kBase+0x1000 but its
+// bytes live at file offset 0x400.
+
+static constexpr uint64_t kTextVa      = kBase + 0x1000;
+static constexpr uint64_t kTextRawOff  = 0x400;
+static constexpr uint64_t kTextRawSize = 0x200;
+
+// A "file" holding page-aligned headers and one .text section stored at 0x400.
+static std::vector<uint8_t> makeFileAlignedImage()
+{
+    return std::vector<uint8_t>(kTextRawOff + kTextRawSize, 0);
+}
+
+static void writeRaw(std::vector<uint8_t>& img, std::size_t off,
+                     std::initializer_list<uint8_t> bytes)
+{
+    for (uint8_t b : bytes) {
+        if (off < img.size()) img[off++] = b;
+    }
+}
+
+TEST(SectionMapping, PrologueFoundThroughRawOffset)
+{
+    auto img = makeFileAlignedImage();
+    // GCC frame setup for the first function of .text, i.e. at VA kTextVa,
+    // which is stored at file offset 0x400.
+    writeRaw(img, kTextRawOff + 0x20, {0x55, 0x48, 0x89, 0xE5, 0xC3});
+
+    FuncBoundaryDetector det(kBase, img.data(), img.size(), true);
+    det.addExecutableSection(kTextVa, kTextVa + kTextRawSize,
+                             kTextRawOff, kTextRawSize);
+    det.runPass2(CompilerHint::GCC);
+
+    // Reading at (VA - imageBase) = 0x1000 is past the end of this 0x600-byte
+    // file, so the buggy version found nothing at all.
+    auto* fb = det.functionAt(kTextVa + 0x20);
+    ASSERT_NE(fb, nullptr);
+    EXPECT_GE(fb->confidence, 0.80);
+}
+
+TEST(SectionMapping, CallTargetUsesSectionRelativeBytes)
+{
+    auto img = makeFileAlignedImage();
+    // CALL rel32 at VA kTextVa (file offset 0x400) targeting kTextVa + 0x80.
+    int32_t rel = 0x80 - 5;
+    writeRaw(img, kTextRawOff, {0xE8,
+        static_cast<uint8_t>(rel),
+        static_cast<uint8_t>(rel >> 8),
+        static_cast<uint8_t>(rel >> 16),
+        static_cast<uint8_t>(rel >> 24)});
+
+    FuncBoundaryDetector det(kBase, img.data(), img.size(), true);
+    det.addExecutableSection(kTextVa, kTextVa + kTextRawSize,
+                             kTextRawOff, kTextRawSize);
+    det.runPass2(CompilerHint::GCC);
+
+    auto* fb = det.functionAt(kTextVa + 0x80);
+    ASSERT_NE(fb, nullptr);
+    EXPECT_EQ(fb->primaryEvidence, EvidenceSource::CallTarget);
+}
+
+TEST(SectionMapping, ThunkTargetComputedFromAddressNotOffset)
+{
+    auto img = makeFileAlignedImage();
+    // E9 rel32 at VA kTextVa (file offset 0x400) jumping to kTextVa + 0x100.
+    uint64_t targetVa = kTextVa + 0x100;
+    int32_t rel = static_cast<int32_t>(targetVa - (kTextVa + 5));
+    writeRaw(img, kTextRawOff, {0xE9,
+        static_cast<uint8_t>(rel),
+        static_cast<uint8_t>(rel >> 8),
+        static_cast<uint8_t>(rel >> 16),
+        static_cast<uint8_t>(rel >> 24)});
+
+    FuncBoundaryDetector det(kBase, img.data(), img.size(), true);
+    det.addExecutableSection(kTextVa, kTextVa + kTextRawSize,
+                             kTextRawOff, kTextRawSize);
+    det.addEntryPoint(kTextVa);
+    det.addSymbol("real_func", targetVa, EvidenceSource::Export);
+    det.runAll(CompilerHint::GCC);
+
+    auto* fb = det.functionAt(kTextVa);
+    ASSERT_NE(fb, nullptr);
+    EXPECT_TRUE(fb->isThunk);
+    // The target has to be the real function, not whatever the flat guess
+    // (imageBase + 0x400 + 5 + rel) happened to land on.
+    EXPECT_EQ(fb->thunkTarget, "real_func");
+}
+
+TEST(SectionMapping, VirtualTailWithoutFileBytesIsNotScanned)
+{
+    // .text is 0x1000 bytes once mapped but only 0x200 bytes on disk; the rest
+    // is the zero-filled tail, which has no file bytes at all.  The flat guess
+    // used to translate an address in that tail straight to (VA - imageBase)
+    // and read whatever else happens to sit at that offset -- here a stray E9
+    // that then reads as a JMP thunk.
+    std::vector<uint8_t> img(0x2000, 0);
+    writeRaw(img, 0x1800, {0xE9, 0x00, 0x00, 0x00, 0x00});
+
+    FuncBoundaryDetector det(kBase, img.data(), img.size(), true);
+    det.addExecutableSection(kTextVa, kTextVa + 0x1000,
+                             kTextRawOff, kTextRawSize);
+    det.addEntryPoint(kTextVa + 0x800); // inside the virtual tail
+
+    det.runAll(CompilerHint::GCC);
+
+    auto* fb = det.functionAt(kTextVa + 0x800);
+    ASSERT_NE(fb, nullptr);
+    EXPECT_FALSE(fb->isThunk);
+}
+
+TEST(SectionMapping, FlatImageStillWorksWithTwoArgForm)
+{
+    // The two-argument overload keeps the flat mapping, for callers whose
+    // buffer really is the memory image.
+    auto img = makeImage(0x3000);
+    writeAt(img, kCode + 0x40, {0x55, 0x48, 0x89, 0xE5, 0xC3});
+
+    auto det = makeDetector(img);
+    det.runPass2(CompilerHint::GCC);
+
+    EXPECT_NE(det.functionAt(kCode + 0x40), nullptr);
+}

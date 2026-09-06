@@ -323,6 +323,82 @@ TEST(MetadataTablesTest, EmptyStreamFails) {
     EXPECT_FALSE(tables.parse({}, heaps));
 }
 
+// A #~ stream whose header is well formed but whose declared row counts are
+// larger than the stream could ever supply. The row counts are attacker data;
+// before RowReader carried a size, the row loop read straight off the end of
+// the stream and kept going for as many rows as the header claimed.
+static std::vector<uint8_t> buildTildeStream(
+        uint64_t validMask,
+        const std::vector<uint32_t>& rowCounts,
+        const std::vector<uint8_t>& rowBytes) {
+    std::vector<uint8_t> v;
+    writeU32(v, 0);          // Reserved
+    writeU8(v, 2);           // MajorVersion
+    writeU8(v, 0);           // MinorVersion
+    writeU8(v, 0);           // HeapSizes (all 2-byte)
+    writeU8(v, 1);           // Reserved2
+    writeU64(v, validMask);  // Valid
+    writeU64(v, 0);          // Sorted
+    for (uint32_t rc : rowCounts) writeU32(v, rc);
+    v.insert(v.end(), rowBytes.begin(), rowBytes.end());
+    return v;
+}
+
+TEST(MetadataTablesTest, RowCountBeyondStreamRejected) {
+    // Module declares 0xFFFFFFFF rows; the stream carries none.
+    auto tilde = buildTildeStream(0x1ULL, {0xFFFFFFFFu}, {});
+    CliHeaps heaps({}, {}, {}, {}, 0);
+    MetadataTables tables;
+    EXPECT_FALSE(tables.parse({tilde.data(), tilde.size()}, heaps));
+    EXPECT_FALSE(tables.isValid());
+}
+
+TEST(MetadataTablesTest, RowCountOverflowingRowSizeProductRejected) {
+    // 0x10000000 rows × the 48-byte storage row is exactly 3·2^32, so the
+    // uint32 product used to size the row buffer wrapped to zero: resize(0)
+    // followed by writes through the row pointer.
+    auto tilde = buildTildeStream(0x1ULL, {0x10000000u}, {});
+    CliHeaps heaps({}, {}, {}, {}, 0);
+    MetadataTables tables;
+    EXPECT_FALSE(tables.parse({tilde.data(), tilde.size()}, heaps));
+}
+
+TEST(MetadataTablesTest, PartialFinalRowRejected) {
+    // Module rows are 10 bytes with narrow heaps. Declare two, supply 15.
+    std::vector<uint8_t> rows(15, 0);
+    auto tilde = buildTildeStream(0x1ULL, {2u}, rows);
+    CliHeaps heaps({}, {}, {}, {}, 0);
+    MetadataTables tables;
+    EXPECT_FALSE(tables.parse({tilde.data(), tilde.size()}, heaps));
+}
+
+TEST(MetadataTablesTest, SecondTableRowCountBoundedByRemainingBytes) {
+    // Module (1 row, 10 bytes) is satisfied; TypeRef then claims 0x40000000
+    // rows out of the 8 bytes left. The bound has to be against what is left
+    // after Module, not against the whole stream.
+    std::vector<uint8_t> rows(18, 0);
+    auto tilde = buildTildeStream(0x3ULL, {1u, 0x40000000u}, rows);
+    CliHeaps heaps({}, {}, {}, {}, 0);
+    MetadataTables tables;
+    EXPECT_FALSE(tables.parse({tilde.data(), tilde.size()}, heaps));
+}
+
+TEST(MetadataTablesTest, ExactlySizedStreamStillParses) {
+    // The bound must not reject a stream that supplies exactly the declared
+    // rows and not one byte more.
+    auto tilde = buildMinimalTildeStream();
+    const char strData[] = "\0test\0System\0";
+    std::span<const uint8_t> strSpan{
+        reinterpret_cast<const uint8_t*>(strData), sizeof(strData)};
+    CliHeaps heaps(strSpan, {}, {}, {}, 0);
+    MetadataTables tables;
+    ASSERT_TRUE(tables.parse({tilde.data(), tilde.size()}, heaps));
+    EXPECT_EQ(1u, tables.rowCount(TableId::Module));
+    EXPECT_EQ(2u, tables.rowCount(TableId::TypeRef));
+    EXPECT_EQ(1u, tables.module(1).name);
+    EXPECT_EQ(5u, tables.typeRef(2).name);
+}
+
 // ─── CliSigDecoderTest ────────────────────────────────────────────────────────
 
 TEST(CliSigDecoderTest, DecodeVoidField) {
@@ -458,6 +534,78 @@ TEST(CILLifterTest, TinyHeader) {
     EXPECT_TRUE(hdr.isTiny);
     EXPECT_EQ(1u, hdr.codeSize);
     EXPECT_EQ(8u, hdr.maxStack);
+}
+
+// A method body that ends in the middle of an instruction's operand. Only the
+// opcode byte was ever bounds-checked, so an operand read ran off the end of
+// the code span -- and the code span ends where the body does, so it ran off
+// the end of the caller's buffer too.
+static std::vector<uint8_t> tinyBody(const std::vector<uint8_t>& code) {
+    std::vector<uint8_t> body;
+    body.push_back(0x02 | (static_cast<uint8_t>(code.size()) << 2));
+    body.insert(body.end(), code.begin(), code.end());
+    return body;
+}
+
+TEST(CILLifterTest, TruncatedInlineOperandDoesNotReadPastCode) {
+    // ldc.i4 (0x20) wants a 4-byte operand; the body ends after the opcode.
+    auto body = tinyBody({0x20});
+    CILLifter lifter;
+    CILMethodHeader hdr;
+    auto cfg = lifter.lift({body.data(), body.size()}, hdr);
+    EXPECT_EQ(0u, cfg.blockCount());
+}
+
+TEST(CILLifterTest, TruncatedShortOperandDoesNotReadPastCode) {
+    // ldc.i4.s (0x1F) wants one operand byte; supply none.
+    auto body = tinyBody({0x1F});
+    CILLifter lifter;
+    CILMethodHeader hdr;
+    auto cfg = lifter.lift({body.data(), body.size()}, hdr);
+    EXPECT_EQ(0u, cfg.blockCount());
+}
+
+TEST(CILLifterTest, TruncatedTokenOperandDoesNotReadPastCode) {
+    // call (0x28) wants a 4-byte token; supply three bytes of it.
+    auto body = tinyBody({0x28, 0x01, 0x02, 0x03});
+    CILLifter lifter;
+    CILMethodHeader hdr;
+    auto cfg = lifter.lift({body.data(), body.size()}, hdr);
+    EXPECT_EQ(0u, cfg.blockCount());
+}
+
+TEST(CILLifterTest, TruncatedBranchOperandDoesNotReadPastCode) {
+    // br.s (0x2B) wants a 1-byte displacement; supply none.
+    auto body = tinyBody({0x2B});
+    CILLifter lifter;
+    CILMethodHeader hdr;
+    auto cfg = lifter.lift({body.data(), body.size()}, hdr);
+    EXPECT_EQ(0u, cfg.blockCount());
+}
+
+TEST(CILLifterTest, TruncatedTwoByteOperandDoesNotReadPastCode) {
+    // 0xFE 0x09 = ldarg <uint16>; the operand's second byte is missing.
+    auto body = tinyBody({0xFE, 0x09, 0x00});
+    CILLifter lifter;
+    CILMethodHeader hdr;
+    auto cfg = lifter.lift({body.data(), body.size()}, hdr);
+    EXPECT_EQ(0u, cfg.blockCount());
+}
+
+TEST(CILLifterTest, CompleteOperandsStillDecode) {
+    // The guard must not reject a body whose last instruction is complete.
+    auto body = tinyBody({
+        0x20, 0x2A, 0x00, 0x00, 0x00,  // ldc.i4 42
+        0x1F, 0x07,                    // ldc.i4.s 7
+        0x2A                           // ret
+    });
+    CILLifter lifter;
+    CILMethodHeader hdr;
+    auto cfg = lifter.lift({body.data(), body.size()}, hdr);
+    ASSERT_FALSE(cfg.blocks().empty());
+    const auto& blk = cfg.blocks()[0];
+    ASSERT_EQ(3u, blk.instrs.size());
+    EXPECT_EQ(BcOpcode::DOTNET_RET, blk.instrs[2].opcode);
 }
 
 TEST(CILLifterTest, FatHeaderBasic) {

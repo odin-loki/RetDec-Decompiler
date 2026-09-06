@@ -16,6 +16,7 @@
 #include <memory>
 #include "retdec/dex_parser/dex_lifter.h"
 #include "retdec/bc_module/bc_instr.h"
+#include "retdec/utils/bounds.h"
 
 #include <algorithm>
 #include <cassert>
@@ -291,6 +292,23 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const {
     const uint32_t total = static_cast<uint32_t>(insns.size());
 
     uint32_t off = 0;
+    // insns_size is a file-declared count, so a code_item may legitimately stop
+    // in the middle of an instruction: the opcode in the last code unit can
+    // declare two or three units and the array supplies only one.  The switch
+    // below used to index word[1] and word[2] straight off `insns` on the
+    // strength of the opcode alone, which reads past the end of the vector for
+    // a truncated goto/16, goto/32 or if-*.  Every unit after the opcode goes
+    // through this accessor instead; it asks whether the array can actually
+    // supply the unit before touching it, and reads zero when it cannot.  The
+    // question is asked in size_t via the verified kernel because `off + i`
+    // is 32-bit here and would wrap for an offset near the end of the range.
+    // decodeInsn() already guards its reads the same way; this is the copy of
+    // that lambda findLeaders was missing.
+    auto unit = [&](uint32_t i) -> uint16_t {
+        return utils::bounds::rangeFits(off, total, static_cast<size_t>(i) + 1)
+            ? insns[off + i] : 0;
+    };
+
     while (off < total) {
         uint8_t op = insns[off] & 0xFF;
         uint32_t sz = kInsnSize[op];
@@ -301,25 +319,33 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const {
             // sparse-switch: word[0]=0x0200, word[1]=size, then keys+targets
             // fill-array-data: word[0]=0x0300, word[1]=elem_width, word[2..3]=num_elems
             uint16_t ident = insns[off];
+            size_t advance;
             if ((ident & 0xFF) == 0x01) {
                 // packed-switch payload
-                uint16_t n = (off + 1 < total) ? insns[off + 1] : 0;
-                sz = 4 + n * 2u;
+                advance = 4 + static_cast<size_t>(unit(1)) * 2;
             } else if ((ident & 0xFF) == 0x02) {
                 // sparse-switch payload
-                uint16_t n = (off + 1 < total) ? insns[off + 1] : 0;
-                sz = 2 + n * 4u;
+                advance = 2 + static_cast<size_t>(unit(1)) * 4;
             } else if ((ident & 0xFF) == 0x03) {
                 // fill-array-data payload
-                uint16_t elemWidth = (off + 1 < total) ? insns[off + 1] : 1;
-                uint32_t numElems  = (off + 3 < total) ?
-                    (static_cast<uint32_t>(insns[off + 2]) |
-                     (static_cast<uint32_t>(insns[off + 3]) << 16)) : 0;
-                sz = 4 + ((numElems * elemWidth + 1) / 2);
+                const size_t elemWidth = unit(1);
+                const size_t numElems  = static_cast<size_t>(unit(2)) |
+                                         (static_cast<size_t>(unit(3)) << 16);
+                // num_elements * element_width is a 48-bit product; forming
+                // it in uint32_t (as this did) wraps, and the short advance
+                // that comes back drops the walk into the middle of the
+                // payload, where it decodes array data as opcodes.
+                advance = 4 + (numElems * elemWidth + 1) / 2;
             } else {
-                sz = 1; // unknown, treat as 1
+                advance = 1; // unknown, treat as 1
             }
-            off += sz;
+            // A payload declares its own length, so cap the step at one unit
+            // past the end of the array: an oversized length then leaves the
+            // loop instead of overflowing the 32-bit `off` back to the start.
+            // For a well-formed payload the whole of it is inside the array,
+            // so the clamp never binds.
+            off += static_cast<uint32_t>(utils::bounds::clamp(
+                    advance, utils::bounds::remaining(off, total) + 1));
             continue;
         }
 
@@ -332,7 +358,7 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const {
                 break;
             }
             case OP_GOTO_16: {
-                int16_t offset = static_cast<int16_t>(insns[off + 1]);
+                int16_t offset = static_cast<int16_t>(unit(1));
                 uint32_t target = static_cast<uint32_t>(static_cast<int32_t>(off) + offset);
                 leaders.insert(target);
                 leaders.insert(off + sz);
@@ -340,8 +366,8 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const {
             }
             case OP_GOTO_32: {
                 int32_t offset = static_cast<int32_t>(
-                    static_cast<uint32_t>(insns[off + 1]) |
-                    (static_cast<uint32_t>(insns[off + 2]) << 16));
+                    static_cast<uint32_t>(unit(1)) |
+                    (static_cast<uint32_t>(unit(2)) << 16));
                 uint32_t target = static_cast<uint32_t>(static_cast<int32_t>(off) + offset);
                 leaders.insert(target);
                 leaders.insert(off + sz);
@@ -351,7 +377,7 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const {
             case OP_IF_GE: case OP_IF_GT: case OP_IF_LE:
             case OP_IF_EQZ: case OP_IF_NEZ: case OP_IF_LTZ:
             case OP_IF_GEZ: case OP_IF_GTZ: case OP_IF_LEZ: {
-                int16_t offset = static_cast<int16_t>(insns[off + 1]);
+                int16_t offset = static_cast<int16_t>(unit(1));
                 uint32_t target = static_cast<uint32_t>(static_cast<int32_t>(off) + offset);
                 leaders.insert(target);
                 leaders.insert(off + sz);

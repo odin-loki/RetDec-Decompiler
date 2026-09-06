@@ -69,6 +69,18 @@ struct ParsedMethodSignature {
  */
 class JvmSignatureParser {
 public:
+    /// Deepest nesting the recursive-descent parser will accept.
+    ///
+    /// A signature is a Utf8 constant, so the file bounds its *length* (65535
+    /// bytes) but nothing in it bounds its *nesting*: "L<L<L<…" costs two
+    /// bytes per level, so one well-formed-looking constant used to drive tens
+    /// of thousands of recursive descents and exhaust the stack long before
+    /// the grammar rejected it. There is no count in the file to bound this
+    /// against, which is why it is a fixed limit and not a bounds:: check.
+    /// 64 is far past any signature a compiler emits -- javac's own generics
+    /// nest single digits -- and far short of what the stack can take.
+    static constexpr unsigned MAX_SIGNATURE_DEPTH = 64;
+
     /// Parse a field/type generic signature → BcType.
     static BcType parseFieldSig(const std::string& sig);
 
@@ -91,6 +103,7 @@ private:
     struct Cursor {
         const std::string& s;
         size_t pos = 0;
+        unsigned depth = 0;   ///< current recursion depth, see MAX_SIGNATURE_DEPTH
 
         char peek()  const { return pos < s.size() ? s[pos] : '\0'; }
         char get();

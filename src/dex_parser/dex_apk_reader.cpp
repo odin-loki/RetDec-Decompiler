@@ -9,6 +9,8 @@
 
 #include "retdec/dex_parser/dex_apk_reader.h"
 
+#include "retdec/utils/bounds.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cstring>
@@ -117,10 +119,11 @@ std::vector<ApkReader::ZipEntry> ApkReader::parseCentralDirectory(
 
     // cdOffset and cdSize are attacker-controlled 32-bit fields. Added in
     // uint32 their sum wraps, so an offset near 4 GiB passes this end-of-file
-    // test and then walks `pos` far outside the buffer; widen to size_t first.
+    // test and then walks `pos` far outside the buffer; widen to size_t and
+    // ask the verified kernel, which never forms the sum at all.
     const size_t cdStart = cdOffset;
-    const size_t cdEnd   = cdStart + static_cast<size_t>(cdSize);
-    if (cdStart > size || cdEnd > size) return entries;
+    if (!utils::bounds::rangeFits(cdStart, size, cdSize)) return entries;
+    const size_t cdEnd = cdStart + static_cast<size_t>(cdSize);
 
     static const uint8_t kCDSig[4] = {0x50, 0x4b, 0x01, 0x02};
     size_t pos = cdStart;
@@ -137,7 +140,7 @@ std::vector<ApkReader::ZipEntry> ApkReader::parseCentralDirectory(
 
         // The file name is stored inline after the 46-byte fixed header; a
         // length reaching past the directory means the entry is truncated.
-        if (nameLen > cdEnd - (pos + 46)) break;
+        if (!utils::bounds::rangeFits(pos + 46, cdEnd, nameLen)) break;
 
         std::string name(reinterpret_cast<const char*>(data + pos + 46), nameLen);
         entries.push_back({name, localHdrOff, compSize, uncompSize, method});
@@ -155,7 +158,7 @@ std::vector<uint8_t> ApkReader::extractEntry(const uint8_t* data, size_t size,
     // real buffer size — a 32-bit sum would wrap and admit an out-of-range
     // pointer to the memcmp and the copy that follow.
     const size_t lfhOff = entry.localHeaderOff;
-    if (lfhOff > size || size - lfhOff < 30) return {};
+    if (!utils::bounds::rangeFits(lfhOff, size, 30)) return {};
     if (std::memcmp(data + lfhOff, kLFHSig, 4) != 0) return {};
 
     uint16_t nameLen  = readU2LE(data + lfhOff + 26);
@@ -163,11 +166,11 @@ std::vector<uint8_t> ApkReader::extractEntry(const uint8_t* data, size_t size,
     const size_t dataOff = lfhOff + 30 + static_cast<size_t>(nameLen)
                                        + static_cast<size_t>(extraLen);
 
-    if (dataOff > size || size - dataOff < entry.compressedSize) return {};
+    if (!utils::bounds::rangeFits(dataOff, size, entry.compressedSize)) return {};
 
     if (entry.method == 0) {
         // STORED — trust remaining input, not the ZIP size field (zip bomb).
-        if (entry.uncompressedSize > size - dataOff) return {};
+        if (!utils::bounds::rangeFits(dataOff, size, entry.uncompressedSize)) return {};
         return std::vector<uint8_t>(data + dataOff,
                                     data + dataOff + entry.uncompressedSize);
     }

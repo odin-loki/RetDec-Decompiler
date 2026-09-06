@@ -38,12 +38,16 @@
 
 #include "retdec/func_boundary/func_boundary.h"
 
+#include "retdec/utils/bounds.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cstring>
 
 namespace retdec {
 namespace func_boundary {
+
+namespace bounds = ::retdec::utils::bounds;
 
 // ─── Constructor ─────────────────────────────────────────────────────────────
 
@@ -58,10 +62,68 @@ FuncBoundaryDetector::FuncBoundaryDetector(uint64_t imageBase,
 
 std::size_t FuncBoundaryDetector::vaToOffset(uint64_t va) const noexcept
 {
+    // This used to be nothing but (va - imageBase), which assumes the file on
+    // disk is laid out exactly as it is mapped.  No real image is: a PE maps
+    // at SectionAlignment (0x1000) and stores at FileAlignment (0x200), so the
+    // canonical .text at RVA 0x1000 / raw 0x400 was read 3 KB past its own
+    // bytes; every ELF segment after the first is skewed the same way.  Go
+    // through the section that contains the address instead, using the raw
+    // offset registered with it.
+    for (const auto& s : _execSections) {
+        if (va < s.start || va >= s.end) continue;
+
+        const uint64_t delta = va - s.start;
+        // Past the section's file bytes: the virtual tail (.bss, a PE
+        // virtual-size overhang) exists in memory but not in the buffer, so
+        // there is no offset to give — saying "unmapped" beats handing back
+        // whatever section happens to follow on disk.
+        if (delta >= s.rawSize) return _size;
+        if (delta >= _size)     return _size;
+
+        const std::size_t base = (s.rawOffset > _size)
+            ? _size
+            : static_cast<std::size_t>(s.rawOffset);
+        const std::size_t d = static_cast<std::size_t>(delta);
+        // At least one byte has to be readable at base + d.
+        if (!bounds::rangeFits(base, _size, d + 1)) return _size;
+        return base + d;
+    }
+
+    // A section map was supplied and the address is in none of it: unmapped.
+    // Falling back to the flat guess here would reintroduce the bug for every
+    // address outside the sections the caller told us about.
+    if (!_execSections.empty()) return _size;
+
+    // No section map at all — the caller's buffer is the memory image.
     if (va < _imageBase) return _size;
     uint64_t off = va - _imageBase;
     if (off >= _size) return _size;
     return static_cast<std::size_t>(off);
+}
+
+bool FuncBoundaryDetector::sectionRawRange(const ExecSection& sec,
+                                            std::size_t& startOff,
+                                            std::size_t& endOff) const noexcept
+{
+    startOff = 0;
+    endOff   = 0;
+    if (sec.end <= sec.start) return false;
+    if (sec.rawOffset >= _size) return false;
+
+    const std::size_t start = static_cast<std::size_t>(sec.rawOffset);
+    // The scannable span is the smaller of the virtual extent and the bytes
+    // stored for the section, and then only as far as the buffer reaches.
+    const uint64_t virtSpan = sec.end - sec.start;
+    const uint64_t span64   = std::min(virtSpan, sec.rawSize);
+    const std::size_t span  = (span64 > _size)
+        ? _size
+        : static_cast<std::size_t>(span64);
+    const std::size_t len = bounds::clamp(span, bounds::remaining(start, _size));
+    if (len == 0) return false;
+
+    startOff = start;
+    endOff   = start + len;
+    return true;
 }
 
 uint8_t FuncBoundaryDetector::readU8(std::size_t off) const noexcept
@@ -153,7 +215,25 @@ void FuncBoundaryDetector::addExceptionHandler(uint64_t addr)
 
 void FuncBoundaryDetector::addExecutableSection(uint64_t start, uint64_t end)
 {
-    _execSections.push_back({start, end});
+    // Caller gave us no file layout, so the only mapping we can assume is the
+    // flat one this class used to assume for everything.  It is correct when
+    // the buffer already is the memory image, which is what this overload
+    // documents; anything read out of a file should use the four-argument form.
+    //
+    // A section starting below the image base has no flat mapping to express
+    // (the offset would be negative), so it contributes no readable bytes —
+    // which is what vaToOffset already answered for those addresses.
+    const bool mappable = (start >= _imageBase) && (end > start);
+    const uint64_t rawOffset = mappable ? (start - _imageBase) : 0;
+    const uint64_t rawSize   = mappable ? (end - start) : 0;
+    _execSections.push_back({start, end, rawOffset, rawSize});
+}
+
+void FuncBoundaryDetector::addExecutableSection(uint64_t start, uint64_t end,
+                                                 uint64_t rawOffset,
+                                                 uint64_t rawSize)
+{
+    _execSections.push_back({start, end, rawOffset, rawSize});
 }
 
 void FuncBoundaryDetector::addImport(uint64_t vma, const std::string& dll,
@@ -248,11 +328,15 @@ double FuncBoundaryDetector::matchPrologue(const ProloguePattern& pat,
 
 // ─── Pass 2: CALL target scan ─────────────────────────────────────────────────
 
-void FuncBoundaryDetector::scanCallTargets(uint64_t secStart, uint64_t secEnd)
+void FuncBoundaryDetector::scanCallTargets(const ExecSection& sec)
 {
-    std::size_t startOff = vaToOffset(secStart);
-    std::size_t endOff   = vaToOffset(secEnd);
-    if (startOff >= _size || endOff > _size || endOff <= startOff) return;
+    // The buffer range comes from the section's own raw offset and size, not
+    // from translating its end VA: the end is one past the section, so it maps
+    // to nothing, and the virtual extent may be larger than the stored bytes.
+    std::size_t startOff = 0, endOff = 0;
+    if (!sectionRawRange(sec, startOff, endOff)) return;
+
+    const uint64_t secStart = sec.start;
 
     for (std::size_t off = startOff; off + 4 < endOff; ++off) {
         uint8_t b = _data[off];
@@ -261,7 +345,11 @@ void FuncBoundaryDetector::scanCallTargets(uint64_t secStart, uint64_t secEnd)
         if (b == 0xE8) {
             int32_t rel = static_cast<int32_t>(readU32(off + 1));
             uint64_t target = secStart + (off - startOff) + 5 + rel;
-            if (target >= _imageBase && target < _imageBase + _size) {
+            // Accept a target we can actually translate to bytes.  The old
+            // test was [imageBase, imageBase + size), which is the flat
+            // assumption again and lets through addresses that are nowhere in
+            // the file once sections are mapped at their real offsets.
+            if (vaToOffset(target) < _size) {
                 ensureCandidate(target, EvidenceSource::CallTarget);
             }
             off += 4; // skip rel32
@@ -274,15 +362,17 @@ void FuncBoundaryDetector::scanCallTargets(uint64_t secStart, uint64_t secEnd)
 // ─── Pass 2: prologue scan ────────────────────────────────────────────────────
 
 void FuncBoundaryDetector::scanSectionPrologues(
-    uint64_t secStart, uint64_t secEnd,
+    const ExecSection& sec,
     const std::vector<ProloguePattern>& patterns)
 {
-    std::size_t startOff = vaToOffset(secStart);
-    std::size_t endOff   = vaToOffset(secEnd);
-    if (startOff >= _size || endOff > _size) return;
+    std::size_t startOff = 0, endOff = 0;
+    if (!sectionRawRange(sec, startOff, endOff)) return;
 
     for (std::size_t off = startOff; off < endOff; ++off) {
-        uint64_t va = _imageBase + off;
+        // The address of these bytes is the section's start plus how far into
+        // the section they are — `_imageBase + off` only agrees with that when
+        // the file happens to be laid out like the memory image.
+        uint64_t va = sec.start + (off - startOff);
         // Skip addresses already confirmed at high confidence.
         auto it = _candidates.find(va);
         if (it != _candidates.end() && it->second.confidence >= 0.85) continue;
@@ -322,8 +412,8 @@ void FuncBoundaryDetector::runPass2(CompilerHint hint)
     auto patterns = prologuePatterns(hint);
 
     for (const auto& sec : _execSections) {
-        scanCallTargets(sec.start, sec.end);
-        scanSectionPrologues(sec.start, sec.end, patterns);
+        scanCallTargets(sec);
+        scanSectionPrologues(sec, patterns);
     }
     _sortedDirty = true;
 }
@@ -395,7 +485,8 @@ void FuncBoundaryDetector::propagateNonReturning()
 
 // ─── Pass 3: thunk detection ─────────────────────────────────────────────────
 
-uint64_t FuncBoundaryDetector::detectThunkAt(std::size_t off) const noexcept
+uint64_t FuncBoundaryDetector::detectThunkAt(uint64_t va,
+                                              std::size_t off) const noexcept
 {
     if (off + 2 >= _size) return 0;
 
@@ -405,14 +496,18 @@ uint64_t FuncBoundaryDetector::detectThunkAt(std::size_t off) const noexcept
     // JMP rel32: E9 <rel32>
     if (b0 == 0xE9 && off + 5 <= _size) {
         int32_t rel = static_cast<int32_t>(readU32(off + 1));
-        uint64_t targetVA = _imageBase + off + 5 + rel;
+        // rel32 is relative to the next instruction's *address*, so it is
+        // added to va.  The old code added it to `_imageBase + off`, which is
+        // the same number only in a flat image and lands in the wrong section
+        // in any file whose raw offsets differ from its RVAs.
+        uint64_t targetVA = va + 5 + rel;
         return targetVA;
     }
 
     // JMP [RIP+rel32]: FF 25 <rel32>  (x86-64 indirect via GOT/IAT)
     if (b0 == 0xFF && b1 == 0x25 && off + 6 <= _size) {
         int32_t rel = static_cast<int32_t>(readU32(off + 2));
-        uint64_t ptrVA = _imageBase + off + 6 + rel;
+        uint64_t ptrVA = va + 6 + rel;
         // The IAT slot holds the actual target; return the IAT VA as target key.
         return ptrVA;
     }
@@ -441,7 +536,7 @@ void FuncBoundaryDetector::detectThunks()
         std::size_t off = vaToOffset(addr);
         if (off >= _size) continue;
 
-        uint64_t target = detectThunkAt(off);
+        uint64_t target = detectThunkAt(addr, off);
         if (target == 0) continue;
 
         fb.isThunk = true;

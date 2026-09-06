@@ -154,8 +154,33 @@ public:
     void addTLSCallback(uint64_t addr);
     void addExceptionHandler(uint64_t addr);
 
-    /// Register an executable section so Pass 2 knows where to scan.
+    /**
+     * Register an executable section so Pass 2 knows where to scan.
+     *
+     * Use this form only when the buffer handed to the constructor *is* the
+     * memory image, i.e. the bytes of every address sit at (va - imageBase).
+     * That holds for a flat dump, and for nothing else: a PE maps sections at
+     * SectionAlignment (0x1000) but stores them at FileAlignment (0x200), and
+     * every ELF segment after the first has p_offset != p_vaddr - base.  For a
+     * file on disk pass the raw offset as well — see the four-argument form.
+     */
     void addExecutableSection(uint64_t start, uint64_t end);
+
+    /**
+     * Register an executable section together with where its bytes live in the
+     * buffer, so addresses can be translated through it.
+     *
+     * @param start      VA of the first byte of the section.
+     * @param end        One past the last VA of the section (virtual size).
+     * @param rawOffset  Offset of the section's first byte in the buffer.
+     * @param rawSize    Bytes of the section actually present in the buffer.
+     *                   May be smaller than end - start; the tail beyond it
+     *                   (.bss, a PE virtual-size overhang) has no file bytes
+     *                   and is reported as unmapped rather than translated to
+     *                   somebody else's data.
+     */
+    void addExecutableSection(uint64_t start, uint64_t end,
+                              uint64_t rawOffset, uint64_t rawSize);
 
     /// Register an import for non-returning detection and thunk naming.
     void addImport(uint64_t vma, const std::string& dll,
@@ -215,8 +240,15 @@ private:
     // Candidate table: addr → best record so far.
     std::unordered_map<uint64_t, FunctionBoundary> _candidates;
 
-    // Executable sections.
-    struct ExecSection { uint64_t start, end; };
+    // Executable sections, each carrying where its bytes are in the buffer.
+    // rawOffset/rawSize are what make vaToOffset able to answer for a file on
+    // disk; without them the only possible answer was the flat guess.
+    struct ExecSection {
+        uint64_t start;      ///< VA of the first byte
+        uint64_t end;        ///< One past the last VA (virtual extent)
+        uint64_t rawOffset;  ///< Offset of the first byte in the buffer
+        uint64_t rawSize;    ///< Bytes present in the buffer (may be < end-start)
+    };
     std::vector<ExecSection> _execSections;
 
     // Imports map: vma → ImportEntry.
@@ -239,16 +271,22 @@ private:
 
     std::size_t vaToOffset(uint64_t va) const noexcept;
 
+    // Buffer range holding the bytes of `sec`, clamped to what is present.
+    // False when the section contributes no readable bytes at all.
+    bool sectionRawRange(const ExecSection& sec,
+                         std::size_t& startOff,
+                         std::size_t& endOff) const noexcept;
+
     uint8_t  readU8(std::size_t off)  const noexcept;
     uint32_t readU32(std::size_t off) const noexcept;
     uint64_t readU64(std::size_t off) const noexcept;
 
     // Pass 2 internal: scan one section.
-    void scanSectionPrologues(uint64_t secStart, uint64_t secEnd,
+    void scanSectionPrologues(const ExecSection& sec,
                               const std::vector<ProloguePattern>& patterns);
 
     // Pass 2: detect CALL targets by linear scan of the section.
-    void scanCallTargets(uint64_t secStart, uint64_t secEnd);
+    void scanCallTargets(const ExecSection& sec);
 
     // Pass 3: non-returning seed + fixpoint.
     void seedNonReturning();
@@ -257,9 +295,12 @@ private:
     // Pass 3: thunk detection.
     void detectThunks();
 
-    // Check if the bytes at `off` look like a single-JMP thunk.
+    // Check if the bytes at buffer offset `off` — which hold the instruction
+    // at address `va` — look like a single-JMP thunk.  Both are needed: the
+    // bytes come from the file, the rel32 is relative to the address, and the
+    // two are only the same number in a flat image.
     // Returns the target VMA, or 0 if not a thunk.
-    uint64_t detectThunkAt(std::size_t off) const noexcept;
+    uint64_t detectThunkAt(uint64_t va, std::size_t off) const noexcept;
 
     std::string nameForVma(uint64_t vma) const;
 };

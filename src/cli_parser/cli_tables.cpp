@@ -5,6 +5,8 @@
 
 #include "retdec/cli_parser/cli_tables.h"
 
+#include "retdec/utils/bounds.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cstring>
@@ -15,11 +17,22 @@ namespace cli_parser {
 
 // ─── RowReader helpers ────────────────────────────────────────────────────────
 
+// Every read is guarded. `pos + n <= size` is the natural way to write the
+// guard and is wrong once pos comes from a file-declared row count, so the
+// comparison lives in bounds::rangeFits, which cannot wrap. A refused read
+// yields zero and latches `truncated`: the row is meaningless either way, and
+// the caller checks the flag rather than every return value.
+bool MetadataTables::RowReader::has(size_t n) const {
+    return utils::bounds::rangeFits(pos, size, n);
+}
+
 uint8_t MetadataTables::RowReader::u8() {
+    if (!has(1)) { truncated = true; return 0; }
     return data[pos++];
 }
 
 uint16_t MetadataTables::RowReader::u16() {
+    if (!has(2)) { truncated = true; pos = size; return 0; }
     uint16_t v = static_cast<uint16_t>(data[pos]) |
                  (static_cast<uint16_t>(data[pos + 1]) << 8);
     pos += 2;
@@ -27,6 +40,7 @@ uint16_t MetadataTables::RowReader::u16() {
 }
 
 uint32_t MetadataTables::RowReader::u32() {
+    if (!has(4)) { truncated = true; pos = size; return 0; }
     uint32_t v = static_cast<uint32_t>(data[pos])        |
                  (static_cast<uint32_t>(data[pos + 1]) << 8)  |
                  (static_cast<uint32_t>(data[pos + 2]) << 16) |
@@ -131,7 +145,7 @@ bool MetadataTables::parse(std::span<const uint8_t> tilde, const CliHeaps& heaps
     std::memset(rowCount_, 0, sizeof(rowCount_));
     for (int t = 0; t < 64 && t < static_cast<int>(TableId::_Count); ++t) {
         if (valid & (1ULL << t)) {
-            if (rowPos + 4 > tilde.size()) {
+            if (!utils::bounds::rangeFits(rowPos, tilde.size(), 4)) {
                 error_ = "#~ row count truncated";
                 return false;
             }
@@ -148,10 +162,13 @@ bool MetadataTables::parse(std::span<const uint8_t> tilde, const CliHeaps& heaps
     for (int t = 0; t < static_cast<int>(TableId::_Count); ++t)
         tables_[t].rowCount = rowCount_[t];
 
-    // Now parse each table's rows
+    // Now parse each table's rows. The reader spans the whole #~ stream and
+    // starts at the first row, so its bound is the bound the caller already
+    // established on the stream; nothing downstream may read past it.
     RowReader rr;
-    rr.data      = tilde.data() + rowPos;
-    rr.pos       = 0;
+    rr.data      = tilde.data();
+    rr.size      = tilde.size();
+    rr.pos       = rowPos;   // <= tilde.size(), checked in the loop above
     rr.wideStr   = wideStrings_;
     rr.wideGuid  = wideGuid_;
     rr.wideBlob  = wideBlob_;
@@ -174,240 +191,305 @@ uint32_t MetadataTables::rowCount(TableId id) const {
 
 // ─── parseTable ──────────────────────────────────────────────────────────────
 
+// The field layout of every decoded table, in one place. parseTable walks it to
+// fill a row; computeRowSize walks it over a scratch buffer to learn how wide a
+// row is. Keeping both on the same switch is the point: a second, hand-written
+// copy of the widths is exactly the sort of thing that drifts out of step with
+// the decoder and reintroduces the overrun this bound exists to stop.
+void MetadataTables::decodeRow(TableId id, RowReader& rr, uint32_t* fields) {
+    size_t f = 0;
+
+    // Field layout per table:
+    switch (id) {
+    case TableId::Module:
+        fields[f++] = rr.u16();         // Generation
+        fields[f++] = rr.strIdx();      // Name
+        fields[f++] = rr.guidIdx();     // MvId
+        fields[f++] = rr.guidIdx();     // EncId
+        fields[f++] = rr.guidIdx();     // EncBaseId
+        break;
+    case TableId::TypeRef: {
+        static const uint8_t tbl2[] = {0x00, 0x1A, 0x23, 0x01};
+        auto tok = rr.codedToken(tbl2, 4, 2);
+        fields[f++] = tok.table; fields[f++] = tok.index; // ResolutionScope
+        fields[f++] = rr.strIdx(); // Name
+        fields[f++] = rr.strIdx(); // Namespace
+        break;
+    }
+    case TableId::TypeDef: {
+        fields[f++] = rr.u32();         // Flags
+        fields[f++] = rr.strIdx();      // Name
+        fields[f++] = rr.strIdx();      // Namespace
+        auto tok = rr.codedToken(kTypeDefOrRef, 3, 2);
+        fields[f++] = tok.table; fields[f++] = tok.index; // Extends
+        fields[f++] = rr.tableIdx(TableId::Field);      // FieldList
+        fields[f++] = rr.tableIdx(TableId::MethodDef);  // MethodList
+        break;
+    }
+    case TableId::Field:
+        fields[f++] = rr.u16();         // Flags
+        fields[f++] = rr.strIdx();      // Name
+        fields[f++] = rr.blobIdx();     // Signature
+        break;
+    case TableId::MethodDef:
+        fields[f++] = rr.u32();         // RVA
+        fields[f++] = rr.u16();         // ImplFlags
+        fields[f++] = rr.u16();         // Flags
+        fields[f++] = rr.strIdx();      // Name
+        fields[f++] = rr.blobIdx();     // Signature
+        fields[f++] = rr.tableIdx(TableId::Param); // ParamList
+        break;
+    case TableId::Param:
+        fields[f++] = rr.u16();         // Flags
+        fields[f++] = rr.u16();         // Sequence
+        fields[f++] = rr.strIdx();      // Name
+        break;
+    case TableId::InterfaceImpl:
+        fields[f++] = rr.tableIdx(TableId::TypeDef); // Class
+        { auto tok = rr.codedToken(kTypeDefOrRef, 3, 2);
+          fields[f++] = tok.table; fields[f++] = tok.index; }
+        break;
+    case TableId::MemberRef: {
+        auto tok = rr.codedToken(kMemberRefParent, 5, 3);
+        fields[f++] = tok.table; fields[f++] = tok.index;
+        fields[f++] = rr.strIdx();
+        fields[f++] = rr.blobIdx();
+        break;
+    }
+    case TableId::Constant: {
+        fields[f++] = rr.u8(); rr.u8(); // Type + padding
+        auto tok = rr.codedToken(kHasConstant, 3, 2);
+        fields[f++] = tok.table; fields[f++] = tok.index;
+        fields[f++] = rr.blobIdx();
+        break;
+    }
+    case TableId::CustomAttribute: {
+        auto tok = rr.codedToken(kHasCustomAttr,
+            static_cast<size_t>(22), 5);
+        fields[f++] = tok.table; fields[f++] = tok.index;
+        auto tok2 = rr.codedToken(kCustomAttrType, 5, 3);
+        fields[f++] = tok2.table; fields[f++] = tok2.index;
+        fields[f++] = rr.blobIdx();
+        break;
+    }
+    case TableId::FieldMarshal: {
+        auto tok = rr.codedToken(kHasFieldMarshal, 2, 1);
+        fields[f++] = tok.table; fields[f++] = tok.index;
+        fields[f++] = rr.blobIdx();
+        break;
+    }
+    case TableId::ClassLayout:
+        fields[f++] = rr.u16();  // PackingSize
+        fields[f++] = rr.u32();  // ClassSize
+        fields[f++] = rr.tableIdx(TableId::TypeDef);
+        break;
+    case TableId::StandAloneSig:
+        fields[f++] = rr.blobIdx();
+        break;
+    case TableId::PropertyMap:
+        fields[f++] = rr.tableIdx(TableId::TypeDef);
+        fields[f++] = rr.tableIdx(TableId::Property);
+        break;
+    case TableId::Property:
+        fields[f++] = rr.u16();
+        fields[f++] = rr.strIdx();
+        fields[f++] = rr.blobIdx();
+        break;
+    case TableId::MethodSemantics: {
+        fields[f++] = rr.u16();
+        fields[f++] = rr.tableIdx(TableId::MethodDef);
+        auto tok = rr.codedToken(kHasSemantics, 2, 1);
+        fields[f++] = tok.table; fields[f++] = tok.index;
+        break;
+    }
+    case TableId::MethodImpl: {
+        fields[f++] = rr.tableIdx(TableId::TypeDef);
+        auto body = rr.codedToken(kMethodDefOrRef, 2, 1);
+        fields[f++] = body.table; fields[f++] = body.index;
+        auto decl = rr.codedToken(kMethodDefOrRef, 2, 1);
+        fields[f++] = decl.table; fields[f++] = decl.index;
+        break;
+    }
+    case TableId::ModuleRef:
+        fields[f++] = rr.strIdx();
+        break;
+    case TableId::TypeSpec:
+        fields[f++] = rr.blobIdx();
+        break;
+    case TableId::ImplMap: {
+        fields[f++] = rr.u16();
+        auto tok = rr.codedToken(kMemberForwarded, 2, 1);
+        fields[f++] = tok.table; fields[f++] = tok.index;
+        fields[f++] = rr.strIdx();
+        fields[f++] = rr.tableIdx(TableId::ModuleRef);
+        break;
+    }
+    case TableId::FieldRVA:
+        fields[f++] = rr.u32();
+        fields[f++] = rr.tableIdx(TableId::Field);
+        break;
+    case TableId::Assembly:
+        fields[f++] = rr.u32();  // HashAlgId
+        fields[f++] = rr.u16();  // MajorVersion
+        fields[f++] = rr.u16();  // MinorVersion
+        fields[f++] = rr.u16();  // BuildNumber
+        fields[f++] = rr.u16();  // RevisionNumber
+        fields[f++] = rr.u32();  // Flags
+        fields[f++] = rr.blobIdx(); // PublicKey
+        fields[f++] = rr.strIdx();  // Name
+        fields[f++] = rr.strIdx();  // Culture
+        break;
+    case TableId::AssemblyRef:
+        fields[f++] = rr.u16();
+        fields[f++] = rr.u16();
+        fields[f++] = rr.u16();
+        fields[f++] = rr.u16();
+        fields[f++] = rr.u32();
+        fields[f++] = rr.blobIdx();
+        fields[f++] = rr.strIdx();
+        fields[f++] = rr.strIdx();
+        fields[f++] = rr.blobIdx();
+        break;
+    case TableId::NestedClass:
+        fields[f++] = rr.tableIdx(TableId::TypeDef);
+        fields[f++] = rr.tableIdx(TableId::TypeDef);
+        break;
+    case TableId::GenericParam: {
+        fields[f++] = rr.u16();  // Number
+        fields[f++] = rr.u16();  // Flags
+        auto tok = rr.codedToken(kTypeOrMethodDef, 2, 1);
+        fields[f++] = tok.table; fields[f++] = tok.index;
+        fields[f++] = rr.strIdx();
+        break;
+    }
+    case TableId::MethodSpec: {
+        auto tok = rr.codedToken(kMethodDefOrRef, 2, 1);
+        fields[f++] = tok.table; fields[f++] = tok.index;
+        fields[f++] = rr.blobIdx();
+        break;
+    }
+    case TableId::GenericParamConstraint: {
+        fields[f++] = rr.tableIdx(TableId::GenericParam);
+        auto tok = rr.codedToken(kTypeDefOrRef, 3, 2);
+        fields[f++] = tok.table; fields[f++] = tok.index;
+        break;
+    }
+    case TableId::EventMap:
+        fields[f++] = rr.tableIdx(TableId::TypeDef);
+        fields[f++] = rr.tableIdx(TableId::Event);
+        break;
+    case TableId::Event: {
+        fields[f++] = rr.u16();
+        fields[f++] = rr.strIdx();
+        auto tok = rr.codedToken(kTypeDefOrRef, 3, 2);
+        fields[f++] = tok.table; fields[f++] = tok.index;
+        break;
+    }
+    case TableId::File:
+        fields[f++] = rr.u32();
+        fields[f++] = rr.strIdx();
+        fields[f++] = rr.blobIdx();
+        break;
+    case TableId::ManifestResource: {
+        fields[f++] = rr.u32();
+        fields[f++] = rr.u32();
+        fields[f++] = rr.strIdx();
+        auto tok = rr.codedToken(kImplementation, 3, 2);
+        fields[f++] = tok.table; fields[f++] = tok.index;
+        break;
+    }
+    case TableId::ExportedType: {
+        fields[f++] = rr.u32();
+        fields[f++] = rr.u32();
+        fields[f++] = rr.strIdx();
+        fields[f++] = rr.strIdx();
+        auto tok = rr.codedToken(kImplementation, 3, 2);
+        fields[f++] = tok.table; fields[f++] = tok.index;
+        break;
+    }
+    default:
+        // Tables not decoded (AssemblyProcessor, AssemblyOS, etc.) — skip
+        // We can't know the row size without knowing what's here, so
+        // just treat them as 0-row tables (they're always empty in practice).
+        break;
+    }
+    (void)f;
+}
+
+// ─── computeRowSize ────────────────────────────────────────────────
+
+size_t MetadataTables::computeRowSize(TableId id) const {
+    // Row width depends only on the heap-size flags and the row counts of the
+    // referenced tables ─ never on the row bytes themselves. So the honest way
+    // to get it is to run the decoder over a zeroed scratch row and measure how
+    // far it advanced, rather than maintaining a second table of widths.
+    //
+    // Returns 0 for a table parseTable does not decode; those consume no bytes,
+    // and countFits() treats a zero element width as one byte so the row count
+    // is still bounded by the input rather than believed.
+    uint8_t scratch[kMaxRowBytes] = {};
+
+    RowReader probe;
+    probe.data      = scratch;
+    probe.size      = sizeof(scratch);
+    probe.pos       = 0;
+    probe.wideStr   = wideStrings_;
+    probe.wideGuid  = wideGuid_;
+    probe.wideBlob  = wideBlob_;
+    probe.rowCounts = rowCount_;
+
+    uint32_t fields[kMaxFields] = {};
+    decodeRow(id, probe, fields);
+
+    // kMaxRowBytes is meant to cover every layout; if it somehow did not, the
+    // measurement is not trustworthy and must not be used as a bound.
+    return probe.truncated ? 0 : probe.pos;
+}
+
+// ─── parseTable ───────────────────────────────────────────────────
+
 bool MetadataTables::parseTable(TableId id, RowReader& rr) {
     auto& tbl = tables_[static_cast<size_t>(id)];
     uint32_t n = tbl.rowCount;
     if (n == 0) return true;
 
-    // We store rows in a generic byte buffer, then access them via typed methods.
-    // For simplicity, store each row as a vector of up to 10 uint32_t fields.
-    // This avoids per-table struct sizing complexity in the parse loop.
-    // Each row is stored as: [field0, field1, …, fieldN-1] as uint32_t values.
+    // The row count came out of the stream header, and nothing had checked it
+    // against the stream. Bound it against the bytes still ahead of this table
+    // at this table's own row width: a count the remaining input cannot supply
+    // is malformed by construction, and used to both run the reader off the end
+    // of the buffer and size the row buffer below at hundreds of gigabytes.
+    const size_t rowBytes = computeRowSize(id);
+    if (!utils::bounds::countFits(rr.pos, rr.size, n, rowBytes)) {
+        error_ = "#~ table declares more rows than the stream can hold";
+        return false;
+    }
 
-    static constexpr size_t kMaxFields = 12;
-    tbl.rowSize  = kMaxFields * sizeof(uint32_t);
-    tbl.data.resize(n * tbl.rowSize, 0);
+    // We store rows in a generic byte buffer, then access them via typed methods.
+    // For simplicity, store each row as a vector of up to kMaxFields uint32_t
+    // fields. This avoids per-table struct sizing complexity in the parse loop.
+    // Each row is stored as: [field0, field1, …, fieldN-1] as uint32_t values.
+    tbl.rowSize = kMaxFields * sizeof(uint32_t);
+
+    // In size_t, not uint32_t: `n * tbl.rowSize` was unsigned-int arithmetic, so
+    // 0x10000000 rows of 48 bytes (exactly 3·2^32) wrapped to zero and the loop
+    // below then wrote rows through a zero-length buffer. The product is not
+    // formed until mulFits says it is representable, for the same reason.
+    if (!utils::bounds::mulFits(static_cast<size_t>(n), tbl.rowSize)) {
+        error_ = "#~ table row storage overflows";
+        return false;
+    }
+    tbl.data.assign(static_cast<size_t>(n) * tbl.rowSize, 0);
 
     for (uint32_t row = 0; row < n; ++row) {
         uint32_t* fields = reinterpret_cast<uint32_t*>(
-            tbl.data.data() + row * tbl.rowSize);
-        size_t f = 0;
-
-        // Field layout per table:
-        switch (id) {
-        case TableId::Module:
-            fields[f++] = rr.u16();         // Generation
-            fields[f++] = rr.strIdx();      // Name
-            fields[f++] = rr.guidIdx();     // MvId
-            fields[f++] = rr.guidIdx();     // EncId
-            fields[f++] = rr.guidIdx();     // EncBaseId
-            break;
-        case TableId::TypeRef: {
-            static const uint8_t tbl2[] = {0x00, 0x1A, 0x23, 0x01};
-            auto tok = rr.codedToken(tbl2, 4, 2);
-            fields[f++] = tok.table; fields[f++] = tok.index; // ResolutionScope
-            fields[f++] = rr.strIdx(); // Name
-            fields[f++] = rr.strIdx(); // Namespace
-            break;
+            tbl.data.data() + static_cast<size_t>(row) * tbl.rowSize);
+        decodeRow(id, rr, fields);
+        if (rr.truncated) {
+            // countFits bounded the count at the table's nominal row width, so
+            // reaching here means the stream ran out mid-row anyway.
+            error_ = "#~ table row truncated";
+            return false;
         }
-        case TableId::TypeDef: {
-            fields[f++] = rr.u32();         // Flags
-            fields[f++] = rr.strIdx();      // Name
-            fields[f++] = rr.strIdx();      // Namespace
-            auto tok = rr.codedToken(kTypeDefOrRef, 3, 2);
-            fields[f++] = tok.table; fields[f++] = tok.index; // Extends
-            fields[f++] = rr.tableIdx(TableId::Field);      // FieldList
-            fields[f++] = rr.tableIdx(TableId::MethodDef);  // MethodList
-            break;
-        }
-        case TableId::Field:
-            fields[f++] = rr.u16();         // Flags
-            fields[f++] = rr.strIdx();      // Name
-            fields[f++] = rr.blobIdx();     // Signature
-            break;
-        case TableId::MethodDef:
-            fields[f++] = rr.u32();         // RVA
-            fields[f++] = rr.u16();         // ImplFlags
-            fields[f++] = rr.u16();         // Flags
-            fields[f++] = rr.strIdx();      // Name
-            fields[f++] = rr.blobIdx();     // Signature
-            fields[f++] = rr.tableIdx(TableId::Param); // ParamList
-            break;
-        case TableId::Param:
-            fields[f++] = rr.u16();         // Flags
-            fields[f++] = rr.u16();         // Sequence
-            fields[f++] = rr.strIdx();      // Name
-            break;
-        case TableId::InterfaceImpl:
-            fields[f++] = rr.tableIdx(TableId::TypeDef); // Class
-            { auto tok = rr.codedToken(kTypeDefOrRef, 3, 2);
-              fields[f++] = tok.table; fields[f++] = tok.index; }
-            break;
-        case TableId::MemberRef: {
-            auto tok = rr.codedToken(kMemberRefParent, 5, 3);
-            fields[f++] = tok.table; fields[f++] = tok.index;
-            fields[f++] = rr.strIdx();
-            fields[f++] = rr.blobIdx();
-            break;
-        }
-        case TableId::Constant: {
-            fields[f++] = rr.u8(); rr.u8(); // Type + padding
-            auto tok = rr.codedToken(kHasConstant, 3, 2);
-            fields[f++] = tok.table; fields[f++] = tok.index;
-            fields[f++] = rr.blobIdx();
-            break;
-        }
-        case TableId::CustomAttribute: {
-            auto tok = rr.codedToken(kHasCustomAttr,
-                static_cast<size_t>(22), 5);
-            fields[f++] = tok.table; fields[f++] = tok.index;
-            auto tok2 = rr.codedToken(kCustomAttrType, 5, 3);
-            fields[f++] = tok2.table; fields[f++] = tok2.index;
-            fields[f++] = rr.blobIdx();
-            break;
-        }
-        case TableId::FieldMarshal: {
-            auto tok = rr.codedToken(kHasFieldMarshal, 2, 1);
-            fields[f++] = tok.table; fields[f++] = tok.index;
-            fields[f++] = rr.blobIdx();
-            break;
-        }
-        case TableId::ClassLayout:
-            fields[f++] = rr.u16();  // PackingSize
-            fields[f++] = rr.u32();  // ClassSize
-            fields[f++] = rr.tableIdx(TableId::TypeDef);
-            break;
-        case TableId::StandAloneSig:
-            fields[f++] = rr.blobIdx();
-            break;
-        case TableId::PropertyMap:
-            fields[f++] = rr.tableIdx(TableId::TypeDef);
-            fields[f++] = rr.tableIdx(TableId::Property);
-            break;
-        case TableId::Property:
-            fields[f++] = rr.u16();
-            fields[f++] = rr.strIdx();
-            fields[f++] = rr.blobIdx();
-            break;
-        case TableId::MethodSemantics: {
-            fields[f++] = rr.u16();
-            fields[f++] = rr.tableIdx(TableId::MethodDef);
-            auto tok = rr.codedToken(kHasSemantics, 2, 1);
-            fields[f++] = tok.table; fields[f++] = tok.index;
-            break;
-        }
-        case TableId::MethodImpl: {
-            fields[f++] = rr.tableIdx(TableId::TypeDef);
-            auto body = rr.codedToken(kMethodDefOrRef, 2, 1);
-            fields[f++] = body.table; fields[f++] = body.index;
-            auto decl = rr.codedToken(kMethodDefOrRef, 2, 1);
-            fields[f++] = decl.table; fields[f++] = decl.index;
-            break;
-        }
-        case TableId::ModuleRef:
-            fields[f++] = rr.strIdx();
-            break;
-        case TableId::TypeSpec:
-            fields[f++] = rr.blobIdx();
-            break;
-        case TableId::ImplMap: {
-            fields[f++] = rr.u16();
-            auto tok = rr.codedToken(kMemberForwarded, 2, 1);
-            fields[f++] = tok.table; fields[f++] = tok.index;
-            fields[f++] = rr.strIdx();
-            fields[f++] = rr.tableIdx(TableId::ModuleRef);
-            break;
-        }
-        case TableId::FieldRVA:
-            fields[f++] = rr.u32();
-            fields[f++] = rr.tableIdx(TableId::Field);
-            break;
-        case TableId::Assembly:
-            fields[f++] = rr.u32();  // HashAlgId
-            fields[f++] = rr.u16();  // MajorVersion
-            fields[f++] = rr.u16();  // MinorVersion
-            fields[f++] = rr.u16();  // BuildNumber
-            fields[f++] = rr.u16();  // RevisionNumber
-            fields[f++] = rr.u32();  // Flags
-            fields[f++] = rr.blobIdx(); // PublicKey
-            fields[f++] = rr.strIdx();  // Name
-            fields[f++] = rr.strIdx();  // Culture
-            break;
-        case TableId::AssemblyRef:
-            fields[f++] = rr.u16();
-            fields[f++] = rr.u16();
-            fields[f++] = rr.u16();
-            fields[f++] = rr.u16();
-            fields[f++] = rr.u32();
-            fields[f++] = rr.blobIdx();
-            fields[f++] = rr.strIdx();
-            fields[f++] = rr.strIdx();
-            fields[f++] = rr.blobIdx();
-            break;
-        case TableId::NestedClass:
-            fields[f++] = rr.tableIdx(TableId::TypeDef);
-            fields[f++] = rr.tableIdx(TableId::TypeDef);
-            break;
-        case TableId::GenericParam: {
-            fields[f++] = rr.u16();  // Number
-            fields[f++] = rr.u16();  // Flags
-            auto tok = rr.codedToken(kTypeOrMethodDef, 2, 1);
-            fields[f++] = tok.table; fields[f++] = tok.index;
-            fields[f++] = rr.strIdx();
-            break;
-        }
-        case TableId::MethodSpec: {
-            auto tok = rr.codedToken(kMethodDefOrRef, 2, 1);
-            fields[f++] = tok.table; fields[f++] = tok.index;
-            fields[f++] = rr.blobIdx();
-            break;
-        }
-        case TableId::GenericParamConstraint: {
-            fields[f++] = rr.tableIdx(TableId::GenericParam);
-            auto tok = rr.codedToken(kTypeDefOrRef, 3, 2);
-            fields[f++] = tok.table; fields[f++] = tok.index;
-            break;
-        }
-        case TableId::EventMap:
-            fields[f++] = rr.tableIdx(TableId::TypeDef);
-            fields[f++] = rr.tableIdx(TableId::Event);
-            break;
-        case TableId::Event: {
-            fields[f++] = rr.u16();
-            fields[f++] = rr.strIdx();
-            auto tok = rr.codedToken(kTypeDefOrRef, 3, 2);
-            fields[f++] = tok.table; fields[f++] = tok.index;
-            break;
-        }
-        case TableId::File:
-            fields[f++] = rr.u32();
-            fields[f++] = rr.strIdx();
-            fields[f++] = rr.blobIdx();
-            break;
-        case TableId::ManifestResource: {
-            fields[f++] = rr.u32();
-            fields[f++] = rr.u32();
-            fields[f++] = rr.strIdx();
-            auto tok = rr.codedToken(kImplementation, 3, 2);
-            fields[f++] = tok.table; fields[f++] = tok.index;
-            break;
-        }
-        case TableId::ExportedType: {
-            fields[f++] = rr.u32();
-            fields[f++] = rr.u32();
-            fields[f++] = rr.strIdx();
-            fields[f++] = rr.strIdx();
-            auto tok = rr.codedToken(kImplementation, 3, 2);
-            fields[f++] = tok.table; fields[f++] = tok.index;
-            break;
-        }
-        default:
-            // Tables not decoded (AssemblyProcessor, AssemblyOS, etc.) — skip
-            // We can't know the row size without knowing what's here, so
-            // just treat them as 0-row tables (they're always empty in practice).
-            break;
-        }
-        (void)f;
     }
     return true;
 }

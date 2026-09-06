@@ -154,6 +154,10 @@ static constexpr size_t kMinCatchHandlerSize = 1;
 /// encoded_type_addr_pair: type_idx + addr.
 static constexpr size_t kMinCatchHandlerPairSize = 2;
 
+/// Shortest MUTF-8 sequence, so the smallest number of bytes one character of
+/// a string_data_item can occupy: utf16_size is bounded by the bytes left.
+static constexpr size_t kMinMutf8CharSize = 1;
+
 struct DexHeader {
     uint8_t  magic[8];         ///< "dex\n035\0" or similar
     uint32_t checksum;         ///< Adler-32 over rest of file

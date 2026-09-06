@@ -74,10 +74,55 @@ static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
     return n;
 }
 
-// Left / right rotation: we look for a Load whose result feeds a Store where
-// the stored value is itself a load-dependent pointer, AND a cross-store where
-// the original base is stored elsewhere (x->right = y->left pattern).
-// Approximation: function contains both Load + two linked Stores in the same bb.
+// Resolve the (base register, offset) pair a memory operand names.  Returns
+// false for anything that is not a MemRef, so an operand we cannot place inside
+// a node can never be mistaken for one of its slots.
+static bool memSlot(const ssa::SSAFunction& fn, ssa::ValueId id,
+                    ssa::VarId& base, int64_t& off) {
+    const auto* v = fn.value(id);
+    if (!v || v->kind != ssa::ValueKind::MemRef) return false;
+    if (v->memBaseReg == ssa::kInvalidVar) return false;
+    base = v->memBaseReg;
+    off  = v->memOffset;
+    return true;
+}
+
+// The pre-SSA variable a value came from, or kInvalidVar.
+static ssa::VarId varOf(const ssa::SSAFunction& fn, ssa::ValueId id) {
+    const auto* v = fn.value(id);
+    return v ? v->varId : ssa::kInvalidVar;
+}
+
+// Rotation, as the file header describes it:
+//
+//   left_rotate:  y = x->_M_right; x->_M_right = y->_M_left; y->_M_left  = x;
+//   right_rotate: x = y->_M_left;  y->_M_left  = x->_M_right; x->_M_right = y;
+//
+// Three things have to line up, and all three are about *slots*, not about
+// instruction counts:
+//   1. a Load reads a child slot (base x, offset Oc);
+//   2. that same slot is written back  -- `x->child = ...`;
+//   3. the loaded pointer y is linked the other way round, `y->other = x`,
+//      i.e. a Store whose address hangs off y and whose stored value is x.
+//
+// Step 3 is what makes the pair a *cross*-link, and its offset is what makes
+// the direction real: libstdc++ lays a node out as _M_parent, _M_left,
+// _M_right in ascending order, so a left rotation promotes the higher child
+// into the lower slot (Os < Oc) and a right rotation does the mirror image
+// (Os > Oc).  The two are therefore mutually exclusive on one pair of stores,
+// which they were not before: the old code ignored leftRotate entirely (the
+// `(void)leftRotate` sat after an unconditional return) and awarded +0.30
+// twice for the same evidence.
+//
+// The old evidence was not evidence at all.  It collected `instr->id` -- an
+// InstrId -- into a list it then searched for store operand ValueIds, two
+// unrelated numbering spaces that both start at 0 and count up, so any function
+// with a couple of loads and a couple of stores collided by accident.  Combined
+// with the "partial cross-link" escape hatch (a single collision plus two
+// stores anywhere in the block) that scored 0.60 on ordinary loop code, and
+// with the colour-field and rebalancing heuristics on top it reached 1.00 --
+// which, because container_detector.cpp keeps the maximum-confidence answer,
+// silently suppressed every other detector.
 static bool hasRotation(const ssa::SSAFunction& fn, bool leftRotate) {
     // Need at least 2 Loads and 2 Stores to form a rotation.
     if (countOp(fn, ssa::IrInstr::Op::Load)  < 2) return false;
@@ -87,29 +132,46 @@ static bool hasRotation(const ssa::SSAFunction& fn, bool leftRotate) {
         const auto* blk = fn.block(b);
         if (!blk) continue;
 
-        // Collect load result value IDs and store source value IDs in this block.
-        std::vector<ssa::ValueId> loadResults, storeSrcs, storeAddrs;
-        for (const auto* instr : blk->instrs) {
-            if (!instr) continue;
-            if (instr->op == ssa::IrInstr::Op::Load && instr->id != ssa::kInvalidValue)
-                loadResults.push_back(instr->id);
-            if (instr->op == ssa::IrInstr::Op::Store && instr->uses.size() >= 2) {
-                storeSrcs.push_back(instr->uses[0].valueId);
-                storeAddrs.push_back(instr->uses[1].valueId);
-            }
-        }
+        for (const auto* ld : blk->instrs) {
+            if (!ld || ld->op != ssa::IrInstr::Op::Load) continue;
+            // A Load defines its result in defValue; an unrenamed Load defines
+            // nothing and cannot be the y of a rotation.
+            if (ld->defValue == ssa::kInvalidValue) continue;
+            if (ld->uses.empty()) continue;
 
-        // Cross-link: a load result appears as a store source AND as a store address.
-        for (auto lv : loadResults) {
-            bool asSrc  = std::find(storeSrcs.begin(),  storeSrcs.end(),  lv) != storeSrcs.end();
-            bool asAddr = std::find(storeAddrs.begin(), storeAddrs.end(), lv) != storeAddrs.end();
-            if (asSrc && asAddr) return true;
-            // Accept partial cross-link (used as src or addr) if ≥3 stores in block.
-            if ((asSrc || asAddr) && (int)storeSrcs.size() >= 2) return true;
+            ssa::VarId xBase    = ssa::kInvalidVar;  // node being demoted (x)
+            int64_t    childOff = 0;                 // child slot y was read from
+            if (!memSlot(fn, ld->uses[0].valueId, xBase, childOff)) continue;
+
+            const ssa::VarId yVar = varOf(fn, ld->defValue);  // promoted child (y)
+            if (yVar == ssa::kInvalidVar) continue;
+
+            bool slotRewritten = false;  // x->child = ...
+            bool crossLinked   = false;  // y->other = x, on the far side of Oc
+
+            for (const auto* st : blk->instrs) {
+                if (!st || st->op != ssa::IrInstr::Op::Store) continue;
+                // (value, address); a Store with one operand has no address.
+                if (st->uses.size() < 2) continue;
+
+                ssa::VarId sBase = ssa::kInvalidVar;
+                int64_t    sOff  = 0;
+                if (!memSlot(fn, st->uses[1].valueId, sBase, sOff)) continue;
+
+                if (sBase == xBase && sOff == childOff) slotRewritten = true;
+
+                if (sBase == yVar
+                    && varOf(fn, st->uses[0].valueId) == xBase
+                    && sOff != childOff) {
+                    crossLinked = leftRotate ? (sOff < childOff)
+                                             : (sOff > childOff);
+                }
+            }
+
+            if (slotRewritten && crossLinked) return true;
         }
     }
     return false;
-    (void)leftRotate;
 }
 
 // Colour field: AND instruction with constant 1 (bit-packed) or a Compare

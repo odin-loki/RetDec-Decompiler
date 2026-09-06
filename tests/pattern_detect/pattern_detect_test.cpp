@@ -205,6 +205,19 @@ TEST(FactoryDetectorTest, EmittedFormContainsSwitch) {
         EXPECT_NE(r.emittedForm.find("switch"), std::string::npos);
 }
 
+// Every pattern detector computed ev.found and then ignored it.  A
+// discriminant plus a Ret scored 0.60 and was reported as a Factory Method
+// with no allocation site anywhere in the function.
+TEST(FactoryDetectorTest, ZeroAllocSitesIsNotFactory) {
+    auto fn = makeFunc("dispatch", { ssa::IrInstr::Op::Ret }, 3);
+    addImmCompare(*fn, 0);
+    addImmCompare(*fn, 1);
+    FactoryDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.kind, PatternKind::Unknown);
+    EXPECT_LT(r.confidence, 0.45f);
+}
+
 // ─── ObserverDetector tests ───────────────────────────────────────────────────
 
 TEST(ObserverDetectorTest, EmptyFunctionLowConfidence) {
@@ -243,6 +256,26 @@ TEST(ObserverDetectorTest, EmittedFormContainsEventEmitter) {
     auto r = det.detect(*fn);
     if (r.confidence >= 0.45f)
         EXPECT_NE(r.emittedForm.find("EventEmitter"), std::string::npos);
+}
+
+// A container that nothing ever notifies is not an event emitter; a lone
+// push_back scored exactly 0.45 and tripped the reporting gate.
+TEST(ObserverDetectorTest, RegisterWithoutNotifyIsNotObserver) {
+    auto fn = makeFunc("appendItem", { ssa::IrInstr::Op::Load }, 1);
+    addCall(*fn, "push_back");
+    ObserverDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.kind, PatternKind::Unknown);
+    EXPECT_LT(r.confidence, 0.45f);
+}
+
+TEST(ObserverDetectorTest, GroupModeRegisterAloneIsNotObserver) {
+    auto regFn = makeFunc("subscribe", {});
+    addCall(*regFn, "push_back");
+    std::vector<const ssa::SSAFunction*> fns = { regFn.get() };
+    ObserverDetector det;
+    auto r = det.detectGroup(fns);
+    EXPECT_EQ(r.kind, PatternKind::Unknown);
 }
 
 // ─── CommandDetector tests ────────────────────────────────────────────────────
@@ -285,6 +318,15 @@ TEST(CommandDetectorTest, EmittedFormContainsICommand) {
         EXPECT_NE(r.emittedForm.find("ICommand"), std::string::npos);
 }
 
+TEST(CommandDetectorTest, ContainerWithoutExecuteIsNotCommand) {
+    auto fn = makeFunc("enqueueItem", { ssa::IrInstr::Op::Load, ssa::IrInstr::Op::Load,
+                                        ssa::IrInstr::Op::Store }, 1);
+    addCall(*fn, "push_back");
+    CommandDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.kind, PatternKind::Unknown);
+}
+
 // ─── StrategyDetector tests ───────────────────────────────────────────────────
 
 TEST(StrategyDetectorTest, EmptyFunctionLowConfidence) {
@@ -323,6 +365,27 @@ TEST(StrategyDetectorTest, EmittedFormContainsIStrategy) {
     auto r = det.detect(*fn);
     if (r.confidence >= 0.45f)
         EXPECT_NE(r.emittedForm.find("IStrategy"), std::string::npos);
+}
+
+// Without the delegation call, "stored field" + "setter" scored 0.65 — that
+// is every accessor in the binary.
+TEST(StrategyDetectorTest, LoadStoreWithoutIndirectCallIsNotStrategy) {
+    auto fn = makeFunc("setField", {
+        ssa::IrInstr::Op::Load,
+        ssa::IrInstr::Op::Store,
+    });
+    StrategyDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.kind, PatternKind::Unknown);
+    EXPECT_LT(r.confidence, 0.45f);
+}
+
+TEST(StrategyDetectorTest, GroupModeSetterWithoutExecutorIsNotStrategy) {
+    auto setter = makeFunc("setField", { ssa::IrInstr::Op::Load, ssa::IrInstr::Op::Store });
+    std::vector<const ssa::SSAFunction*> fns = { setter.get() };
+    StrategyDetector det;
+    auto r = det.detectGroup(fns);
+    EXPECT_EQ(r.kind, PatternKind::Unknown);
 }
 
 // ─── StateMachineDetector tests ───────────────────────────────────────────────
@@ -365,6 +428,25 @@ TEST(StateMachineDetectorTest, EmittedFormContainsStateEnum) {
     auto r = det.detect(*fn);
     if (r.confidence >= 0.45f)
         EXPECT_NE(r.emittedForm.find("enum State"), std::string::npos);
+}
+
+// "Any loop reports 1.00": a loop that loads, compares against its bound twice
+// and stores satisfies hasStateVar, hasSwitchOnState and hasStateModify.  Two
+// *distinct* case constants are what make it a state machine, and that was
+// worth only +0.10.
+TEST(StateMachineDetectorTest, PlainLoopIsNotStateMachine) {
+    auto fn = makeFunc("copy_loop", {
+        ssa::IrInstr::Op::Load,
+        ssa::IrInstr::Op::Store,
+        ssa::IrInstr::Op::Store,
+    }, 2);
+    addImmCompare(*fn, 16);   // the same loop bound, tested twice
+    addImmCompare(*fn, 16);
+    addBackEdge(*fn);
+    StateMachineDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.kind, PatternKind::Unknown);
+    EXPECT_LT(r.confidence, 0.45f);
 }
 
 // ─── RAIIDetector tests ───────────────────────────────────────────────────────
@@ -412,6 +494,22 @@ TEST(RAIIDetectorTest, UnmatchedAcquireOnly) {
     EXPECT_LT(r.confidence, 0.50f);
 }
 
+// Group mode must pair across functions the same way: a ctor that takes two
+// resources and a dtor that releases both is still RAII.
+TEST(RAIIDetectorTest, GroupModeTwoResourcesStillPair) {
+    auto ctor = makeFunc("TwoRes_ctor", {});
+    addCall(*ctor, "fopen");
+    addCall(*ctor, "malloc");
+    auto dtor = makeFunc("TwoRes_dtor", {});
+    addCall(*dtor, "free");
+    addCall(*dtor, "fclose");
+    std::vector<const ssa::SSAFunction*> fns = { ctor.get(), dtor.get() };
+    RAIIDetector det;
+    auto r = det.detectGroup(fns);
+    EXPECT_EQ(r.kind, PatternKind::RAII);
+    EXPECT_GE(r.confidence, 0.90f);
+}
+
 TEST(RAIIDetectorTest, GroupModeCtorDtor) {
     auto ctor = makeFunc("FileHandle_ctor", {});
     addCall(*ctor, "fopen");
@@ -430,6 +528,40 @@ TEST(RAIIDetectorTest, EmittedFormContainsRAIIHandle) {
     auto r = det.detect(*fn);
     if (r.confidence >= 0.45f)
         EXPECT_NE(r.emittedForm.find("RAIIHandle"), std::string::npos);
+}
+
+// An acquire whose release belongs to a different resource is not an RAII
+// pair, yet acquire (+0.45) and release (+0.45) summed to 0.90.
+TEST(RAIIDetectorTest, MismatchedAcquireReleaseIsNotRAII) {
+    auto fn = makeFunc("mixed", {});
+    addCall(*fn, "malloc");
+    addCall(*fn, "fclose");
+    RAIIDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.kind, PatternKind::Unknown);
+    EXPECT_LT(r.confidence, 0.45f);
+}
+
+TEST(RAIIDetectorTest, UnmatchedAcquireIsNotRAII) {
+    auto fn = makeFunc("partial2", {});
+    addCall(*fn, "fopen");
+    RAIIDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.kind, PatternKind::Unknown);
+}
+
+// Two resources in one scope guard still pair up: the matcher must consider
+// every acquire against every release, not just the last of each.
+TEST(RAIIDetectorTest, TwoResourcesInOneScopeStillPair) {
+    auto fn = makeFunc("twoRes", {});
+    addCall(*fn, "fopen");
+    addCall(*fn, "malloc");
+    addCall(*fn, "free");
+    addCall(*fn, "fclose");
+    RAIIDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.kind, PatternKind::RAII);
+    EXPECT_GE(r.confidence, 0.90f);
 }
 
 // ─── PatternDetector orchestration tests ──────────────────────────────────────
@@ -489,6 +621,38 @@ TEST(PatternDetectorTest, MultiplePatternsSameFunction) {
     auto results = det.detectFunction(*fn);
     // Should detect at least one pattern.
     EXPECT_GE(results.size(), 1u);
+}
+
+// Singleton without the first-access allocation is a lazy accessor.
+TEST(SingletonDetectorTest, NullCheckWithoutAllocIsNotSingleton) {
+    auto fn = makeFunc("getCached", {
+        ssa::IrInstr::Op::Load,
+        ssa::IrInstr::Op::Ret,
+    }, 1);
+    addImmCompare(*fn, 0);
+    SingletonDetector det;
+    auto r = det.detect(*fn);
+    EXPECT_EQ(r.kind, PatternKind::Unknown);
+    EXPECT_LT(r.confidence, 0.45f);
+}
+
+// End to end: an ordinary loop over an array must not be reported as any
+// design pattern at all.
+TEST(PatternDetectorTest, PlainLoopReportsNoPattern) {
+    PatternDetector det;
+    auto fn = makeFunc("sum_array", {
+        ssa::IrInstr::Op::Load,
+        ssa::IrInstr::Op::Load,
+        ssa::IrInstr::Op::Add,
+        ssa::IrInstr::Op::Store,
+        ssa::IrInstr::Op::Store,
+        ssa::IrInstr::Op::Ret,
+    }, 2);
+    addImmCompare(*fn, 0);
+    addImmCompare(*fn, 0);
+    addBackEdge(*fn);
+    auto results = det.detectFunction(*fn);
+    EXPECT_TRUE(results.empty());
 }
 
 TEST(PatternDetectorTest, StatsUpdated) {

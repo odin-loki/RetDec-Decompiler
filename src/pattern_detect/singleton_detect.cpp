@@ -158,6 +158,11 @@ PatternResult SingletonDetector::detect(const ssa::SSAFunction& fn) const {
     PatternResult r;
     r.kind = PatternKind::Singleton;
     auto ev = analyse(fn);
+    // Without the first-access allocation a null-checked load that returns a
+    // pointer scored 0.70 — that is every lazy accessor, cache lookup and
+    // "return m_ptr" in the program, not a Singleton.  ev.found already says
+    // so; honour it.
+    if (!ev.found) return PatternResult{};
     r.confidence = ev.confidence;
     if (ev.hasDoubleLock) {
         r.hasVariant  = true;

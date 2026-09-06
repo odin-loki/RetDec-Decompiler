@@ -25,7 +25,12 @@ Stand-in corpus: 216 ELF binaries. Not the OSS-Fuzz paper set.
 Name-blind is the headline. Name-assisted is a second mode on binaries that
 still have symbol names; it is not a product F1. Do not advertise 1.0.
 
-Default `.c` still does not recompile on either side. The buildable sidecar
+Default `.c` still does not recompile on either side. The cause is now known and
+recorded in
+[docs/internal/UNFIXED_AUDIT_FINDINGS.md](docs/internal/UNFIXED_AUDIT_FINDINGS.md):
+`NoInitVarDefOptimizer` deletes every initializer-less local declaration for C
+output, so the emitted C assigns to variables it never declares. It is unfixed
+because it cannot be tested without the LLVM build. The buildable sidecar
 is on by default (`--buildable` / `C-EMIT` in [docs/CLAIMS.md](docs/CLAIMS.md));
 `--no-buildable` or `RETDEC_EMIT_BUILDABLE=0` turns it off.
 

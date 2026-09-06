@@ -498,12 +498,35 @@ private:
     // Coding helpers
     bool codedTokenWide(const uint8_t* tables, size_t count, uint8_t tagBits) const;
 
-    // Row parsing: returns the typed struct from raw bytes at position pos.
+    /// Largest number of bytes one metadata row can occupy on the wire.
+    ///
+    /// A decoded row is at most kMaxFields fields wide and no single field
+    /// reads more than four bytes (a wide heap index, a wide table index or a
+    /// wide coded token), so kMaxFields * 4 bounds every row layout in
+    /// parseTable's switch. It is only used to size the scratch buffer
+    /// computeRowSize() measures a row against.
+    static constexpr size_t kMaxFields   = 12;
+    static constexpr size_t kMaxRowBytes = kMaxFields * sizeof(uint32_t);
+
+    // Row parsing: reads one row's fields from the #~ stream at `pos`.
+    //
+    // `data`/`size` are the whole #~ stream. The reader used to carry only a
+    // pointer, on the assumption that the row counts in the stream header
+    // described bytes that were actually there. They are attacker data: a
+    // declared count the stream cannot supply walked these readers straight
+    // off the end of the input buffer. Every read now refuses to cross `size`
+    // and latches `truncated`, so parseTable can fail the stream instead of
+    // decoding whatever follows it in memory.
     struct RowReader {
-        const uint8_t*          data;
-        size_t                  pos;
-        bool wideStr, wideGuid, wideBlob;
-        const uint32_t*         rowCounts;
+        const uint8_t*          data = nullptr;
+        size_t                  size = 0;   ///< bytes readable from @c data
+        size_t                  pos = 0;
+        bool wideStr = false, wideGuid = false, wideBlob = false;
+        const uint32_t*         rowCounts = nullptr;
+        bool                    truncated = false; ///< a read hit the end
+
+        /// True when @p n more bytes can be read from the current position.
+        bool has(size_t n) const;
 
         uint8_t  u8();
         uint16_t u16();
@@ -515,6 +538,9 @@ private:
         uint32_t codedIdx(const uint8_t* tableIds, size_t count, uint8_t tagBits);
         MetadataToken codedToken(const uint8_t* tableIds, size_t count, uint8_t tagBits);
     };
+
+    /// Decode one row of @p id into @p fields (kMaxFields wide), advancing @p rr.
+    static void decodeRow(TableId id, RowReader& rr, uint32_t* fields);
 
     bool parseTable(TableId id, RowReader& rr);
     size_t computeRowSize(TableId id) const;

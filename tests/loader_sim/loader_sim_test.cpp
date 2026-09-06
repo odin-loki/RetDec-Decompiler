@@ -382,6 +382,66 @@ TEST(PESectionParsing, EmptyImageReturnsNoSections)
     EXPECT_TRUE(sim.parseSections().empty());
 }
 
+// ─── e_lfanew bounds ──────────────────────────────────────────────────────────
+//
+// peNtOffset used to test `e_lfanew + 24 >= size`.  e_lfanew is a uint32_t read
+// straight out of the DOS stub, so the addition is done in 32 bits and wraps:
+// 0xFFFFFFE8 + 24 == 0, the guard passes, and the four signature bytes are then
+// read from data[0xFFFFFFE8] — four gigabytes past a 64-byte buffer.  Every PE
+// entry point in this class goes through peNtOffset, so each of these calls is
+// a distinct way in.  Run under ASan to see the fault; without it the reads are
+// silent.
+
+// A DOS header just big enough to be considered, with a hostile e_lfanew.
+static std::vector<uint8_t> makeDosStubWithLfanew(uint32_t lfanew)
+{
+    std::vector<uint8_t> buf(0x40, 0);
+    buf[0] = 'M'; buf[1] = 'Z';
+    w32(buf, 0x3C, lfanew);
+    return buf;
+}
+
+TEST(PENtHeaderBounds, WrappingLfanewIsRejected)
+{
+    // Each of these wraps to something small when 24 is added in uint32_t.
+    for (uint32_t lfanew : {0xFFFFFFE8u, 0xFFFFFFF0u, 0xFFFFFFFFu, 0xFFFFF000u}) {
+        auto buf = makeDosStubWithLfanew(lfanew);
+        LoaderSim sim(buf.data(), buf.size(), 0x400000, true, false);
+
+        EXPECT_TRUE(sim.parseSections().empty()) << "lfanew=" << lfanew;
+        EXPECT_TRUE(sim.resolvePEImports().empty()) << "lfanew=" << lfanew;
+        EXPECT_TRUE(sim.resolvePEDelayImports().empty()) << "lfanew=" << lfanew;
+        EXPECT_TRUE(sim.parsePETLS().empty()) << "lfanew=" << lfanew;
+        EXPECT_TRUE(sim.applyPERelocations(0x400000).empty()) << "lfanew=" << lfanew;
+
+        LoadedImage img = sim.load();
+        EXPECT_TRUE(img.sections.empty()) << "lfanew=" << lfanew;
+    }
+}
+
+TEST(PENtHeaderBounds, LfanewPastEndOfFileIsRejected)
+{
+    // No wrap involved, just out of range: the guard must still say no.
+    for (uint32_t lfanew : {0x40u, 0x1000u, 0x80000000u}) {
+        auto buf = makeDosStubWithLfanew(lfanew);
+        LoaderSim sim(buf.data(), buf.size(), 0x400000, true, false);
+        EXPECT_TRUE(sim.parseSections().empty()) << "lfanew=" << lfanew;
+        EXPECT_TRUE(sim.load().sections.empty()) << "lfanew=" << lfanew;
+    }
+}
+
+TEST(PENtHeaderBounds, ValidImageStillParses)
+{
+    // The rewritten guard must not have moved the accepting boundary the wrong
+    // way: an ordinary PE still resolves its sections.
+    PEBuilder pb;
+    pb.addSection(".text", {0xC3}, 0x60000020);
+
+    LoaderSim sim(pb.buf.data(), pb.buf.size(),
+                  PEBuilder::kImageBase, true, false);
+    ASSERT_EQ(sim.parseSections().size(), 1u);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tests: PE IAT import resolution
 // ═══════════════════════════════════════════════════════════════════════════════

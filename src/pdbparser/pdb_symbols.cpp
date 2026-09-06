@@ -11,11 +11,124 @@
 #include <sstream>
 
 #include "retdec/pdbparser/pdb_symbols.h"
+#include "retdec/utils/bounds.h"
 
 using namespace std;
 
 namespace retdec {
 namespace pdbparser {
+
+// =================================================================
+// SYMBOL RECORD BOUNDS
+// =================================================================
+
+// A symbol stream is a chain of records, each one a header followed by as many
+// bytes as its length field declares -- and that length is the file's word for
+// it, nothing more. Every walk below used to take the word at face value: it
+// checked only that the position was still inside the stream, which promises a
+// single byte, then read the whole header there and stepped on by the declared
+// length. So the header could straddle the end of the stream, a record could
+// claim bytes that were never read from disk, and the walk could be driven off
+// the end of the stream entirely by a chain of made up lengths.
+//
+// The two helpers here bound a record against the bytes the stream actually
+// has, which is the quantity the file cannot lie about, and hand back nullptr
+// when it cannot supply one. A malformed chain ends the walk instead of
+// continuing it into memory that belongs to something else.
+
+/// Smallest record length that describes a record. The length counts the bytes
+/// that follow it, and every record has at least its two byte type behind it.
+static const unsigned int PDB_MIN_SYMBOL_RECLEN = sizeof(PDB_WORD);
+
+/**
+ * Bytes the record at @p symbol spans, header included.
+ * Only meaningful for a record that symbol_at() has accepted, so the span is
+ * known to lie inside its stream.
+ */
+static std::size_t symbol_record_size(PDBGeneralSymbol *symbol)
+{
+	return sizeof(PDB_WORD) + symbol->size;
+}
+
+/**
+ * Determines whether a record is long enough to be read as a structure of
+ * @p len bytes. A record's type says which structure it is; its length says
+ * how much of one the file bothered to store, and the two need not agree.
+ */
+static bool record_holds(PDBGeneralSymbol *symbol, std::size_t len)
+{
+	return symbol_record_size(symbol) >= len;
+}
+
+/**
+ * Returns the symbol record at @p position of a symbol stream, or nullptr when
+ * the stream cannot supply a whole one there.
+ * @param data Stream data
+ * @param size Stream size in bytes
+ * @param position Offset of the record in the stream
+ */
+static PDBGeneralSymbol *symbol_at(char *data, std::size_t size, std::size_t position)
+{
+	namespace bounds = retdec::utils::bounds;
+	if (data == nullptr || !bounds::rangeFits(position, size, sizeof(PDBGeneralSymbol)))
+		return nullptr;
+	PDBGeneralSymbol *symbol = reinterpret_cast<PDBGeneralSymbol *>(data + position);
+	if (symbol->size < PDB_MIN_SYMBOL_RECLEN
+	        || !bounds::rangeFits(position, size, symbol_record_size(symbol)))
+		return nullptr;
+	return symbol;
+}
+
+/**
+ * Returns the big (subsection) record at @p position of a module stream, or
+ * nullptr when the stream cannot supply a whole one there.
+ * Its length counts only the bytes after the eight byte header, unlike the
+ * length of a general record.
+ * @param data Stream data
+ * @param size Stream size in bytes
+ * @param position Offset of the record in the stream
+ */
+static PDBBigSymbol *big_symbol_at(char *data, std::size_t size, std::size_t position)
+{
+	namespace bounds = retdec::utils::bounds;
+	if (data == nullptr || !bounds::rangeFits(position, size, sizeof(PDBBigSymbol)))
+		return nullptr;
+	PDBBigSymbol *symbol = reinterpret_cast<PDBBigSymbol *>(data + position);
+	if (!bounds::rangeFits(position + sizeof(PDBBigSymbol), size, symbol->size))
+		return nullptr;
+	return symbol;
+}
+
+/**
+ * Bytes the structure a record of @p type is read as occupies.
+ * A record whose length does not cover it is truncated, not a symbol of that
+ * type: the cast used to be made on the type alone, so a four byte record
+ * announcing itself as a procedure was read as a forty byte one.
+ */
+static std::size_t symbol_struct_size(PDB_WORD type)
+{
+	switch (type)
+	{
+		case S_GPROC32:
+		case S_LPROC32:
+			return sizeof(PROCSYM32);
+		case S_REGREL32:
+			return sizeof(REGREL32);
+		case S_BPREL32:
+			return sizeof(BPRELSYM32);
+		case S_BLOCK32:
+			return sizeof(BLOCKSYM32);
+		case S_REGISTER:
+			return sizeof(REGSYM);
+		case S_GDATA32:
+		case S_LDATA32:
+			return sizeof(DATASYM32);
+		default:
+			// Every other type is used as a tag only; nothing behind the header
+			// is read.
+			return sizeof(PDBGeneralSymbol);
+	}
+}
 
 // =================================================================
 //
@@ -113,6 +226,11 @@ void PDBFunction::dump(void)
 
 bool PDBFunction::parse_symbol(PDBGeneralSymbol *symbol, PDBTypes *types, PDBSymbols *pdbsyms)
 {
+	// The caller has bounded the record against its stream; what is still open
+	// is whether the record is as long as the structure its type claims it is.
+	if (!record_holds(symbol, symbol_struct_size(symbol->type)))
+		return false;
+
 	switch (symbol->type)
 	{
 		case S_GPROC32:
@@ -230,6 +348,15 @@ void PDBFunction::parse_line_info(LineInfoHeader *hdr)
 {
 	if (hdr == nullptr || hdr->off != unsigned(offset))
 		return;
+	// num_records is the file's claim about how many records follow this
+	// header, and the records live in what is left of the subsection behind it
+	// -- big_symbol_at() has already bounded that subsection against its
+	// stream, and reclen here is the same field it checked. The two were never
+	// compared, so a header claiming millions of lines walked off the stream.
+	namespace bounds = retdec::utils::bounds;
+	std::size_t record_bytes = bounds::remaining(sizeof(LineInfoHeader), sizeof(PDBBigSymbol) + hdr->reclen);
+	if (!bounds::countFits(0, record_bytes, hdr->num_records, sizeof(LineInfoRecord)))
+		return;
 	for (unsigned int i = 0; i < hdr->num_records; i++)
 	{  // Process all lines
 		LineInfoRecord * record = &hdr->records[i];
@@ -267,11 +394,13 @@ void PDBSymbols::parse_symbols(void)
 		return;
 
 	// Process SYM stream to find global variables
-	int position = 0;
-	while (unsigned(position) < pdb_sym_size)
+	std::size_t position = 0;
+	while (PDBGeneralSymbol *symbol = symbol_at(pdb_sym_data, pdb_sym_size, position))
 	{
-		PDBGeneralSymbol *symbol = reinterpret_cast<PDBGeneralSymbol *>(pdb_sym_data + position);
-		if (symbol->type == S_GDATA32 /*|| symbol->type == S_LDATA32*/)
+		if (symbol->type == S_GDATA32 /*|| symbol->type == S_LDATA32*/
+		        // A record too short to hold a DATASYM32 does not describe one,
+		        // whatever its type says.
+		        && record_holds(symbol, sizeof(DATASYM32)))
 		{  // Global variable
 			DATASYM32 * sym = reinterpret_cast<DATASYM32 *>(symbol);
 			PDBGlobalVariable new_var =
@@ -285,7 +414,7 @@ void PDBSymbols::parse_symbols(void)
 			        };
 			global_variables[new_var.address] = new_var;
 		}
-		position += symbol->size + 2;
+		position += symbol_record_size(symbol);
 	}
 
 	// Map to help find overloaded functions (key is function name)
@@ -299,13 +428,15 @@ void PDBSymbols::parse_symbols(void)
 		PDBStream *stream = modules[m].stream;
 		if (stream == nullptr)  // Module names a stream that the file does not contain
 			continue;
+		// An unused stream carries no data at all, and size is the only thing
+		// that says how much of it there is.
+		std::size_t stream_size = stream->size > 0 ? static_cast<std::size_t>(stream->size) : 0;
 		position = 4;
 		int cnt = 0;
 		PDBFunction * new_function = nullptr;
-		while (position < stream->size)
+		while (PDBGeneralSymbol *symbol = symbol_at(stream->data, stream_size, position))
 		{  // Process all symbols in module stream
-			PDBGeneralSymbol *symbol = reinterpret_cast<PDBGeneralSymbol *>(stream->data + position);
-			if (symbol->size == 0xf4 || symbol->size == 0 || symbol->type == 0)
+			if (symbol->size == 0xf4 || symbol->type == 0)
 				break;  // Determine the end of symbol list
 			switch (symbol->type)
 			{
@@ -326,6 +457,11 @@ void PDBSymbols::parse_symbols(void)
 				case S_GDATA32:
 				case S_LDATA32:
 				{  // Data symbol
+					// The record has to be long enough to be the structure its
+					// type says it is; the cast used to be made on the type
+					// alone.
+					if (!record_holds(symbol, sizeof(DATASYM32)))
+						break;
 					DATASYM32 * sym = reinterpret_cast<DATASYM32 *>(symbol);
 					if (new_function != nullptr && sym->seg <= sections[0].file_address)
 						// Data inside function's code
@@ -375,19 +511,22 @@ void PDBSymbols::parse_symbols(void)
 				}
 			}
 			cnt++;
-			position += symbol->size + 2;
+			position += symbol_record_size(symbol);
 		}
 
 		cnt = 0;
-		while (position < stream->size)
+		while (PDBBigSymbol *symbol = big_symbol_at(stream->data, stream_size, position))
 		{  // Process all big symbols in module stream
-			PDBBigSymbol *symbol = reinterpret_cast<PDBBigSymbol *>(stream->data + position);
-			if (symbol->type == 0 || symbol->type > 0xFF || position + int(symbol->size) > stream->size)
+			if (symbol->type == 0 || symbol->type > 0xFF)
 				break;
 			switch (symbol->type)
 			{
 				case 0xF2:
 				{  // Symbol is line info header
+					// A subsection shorter than the line info header does not
+					// carry one, so its fields are not there to be read.
+					if (symbol->size + sizeof(PDBBigSymbol) < sizeof(LineInfoHeader))
+						break;
 					LineInfoHeader *sym = reinterpret_cast<LineInfoHeader *>(symbol);
 					auto addr = get_virtual_address(sym->seg, sym->off);
 
@@ -399,7 +538,7 @@ void PDBSymbols::parse_symbols(void)
 				default:
 					break;
 			}
-			position += symbol->size + 8;
+			position += sizeof(PDBBigSymbol) + symbol->size;
 			cnt++;
 		}
 	}
@@ -408,16 +547,15 @@ void PDBSymbols::parse_symbols(void)
 
 void PDBSymbols::dump_global_symbols(void)
 {
-	unsigned int position = 0;
+	std::size_t position = 0;
 	int cnt = 0;
 	puts("******* SYM global symbols *******");
-	while (position < pdb_sym_size)
+	while (PDBGeneralSymbol *symbol = symbol_at(pdb_sym_data, pdb_sym_size, position))
 	{
-		PDBGeneralSymbol *symbol = reinterpret_cast<PDBGeneralSymbol *>(pdb_sym_data + position);
 		printf("Symbol %3d: size %04x type %04x: ", cnt, symbol->size, symbol->type);
 		dump_symbol(reinterpret_cast<PSYM>(symbol));
 
-		position += symbol->size + 2;
+		position += symbol_record_size(symbol);
 		cnt++;
 	}
 	puts("");
@@ -439,13 +577,15 @@ void PDBSymbols::dump_module_symbols(int index)
 		puts("Module stream is not present in PDB file.\n");
 		return;
 	}
-	int position = 4;
+	// An unused stream carries no data at all, and size is the only thing that
+	// says how much of it there is.
+	std::size_t stream_size = stream->size > 0 ? static_cast<std::size_t>(stream->size) : 0;
+	std::size_t position = 4;
 	int cnt = 0;
 
-	while (position < stream->size)
+	while (PDBGeneralSymbol *symbol = symbol_at(stream->data, stream_size, position))
 	{  // Dump symbols
-		PDBGeneralSymbol *symbol = reinterpret_cast<PDBGeneralSymbol *>(stream->data + position);
-		if (symbol->size == 0xf4 || symbol->size == 0 || symbol->type == 0)
+		if (symbol->size == 0xf4 || symbol->type == 0)
 			break;
 		printf("Symbol %3d: size %04x type %04x: ", cnt, symbol->size - 2, symbol->type);
 
@@ -718,17 +858,16 @@ void PDBSymbols::dump_module_symbols(int index)
 			}
 		}
 
-		position += symbol->size + 2;
+		position += symbol_record_size(symbol);
 		cnt++;
 	}
 
 	puts("");
 	cnt = 0;
 
-	while (position < stream->size)
+	while (PDBBigSymbol *symbol = big_symbol_at(stream->data, stream_size, position))
 	{  // Dump big symbols
-		PDBBigSymbol *symbol = reinterpret_cast<PDBBigSymbol *>(stream->data + position);
-		if (symbol->type == 0 || symbol->type > 0xFF || position + int(symbol->size) > stream->size)
+		if (symbol->type == 0 || symbol->type > 0xFF)
 			break;
 		printf("Big symbol %2d: size %08x type %08x: ", cnt, symbol->size, symbol->type);
 
@@ -736,6 +875,13 @@ void PDBSymbols::dump_module_symbols(int index)
 		{
 			case 0xF2:
 			{
+				// A subsection shorter than the line info header does not carry
+				// one, so its fields are not there to be read.
+				if (symbol->size + sizeof(PDBBigSymbol) < sizeof(LineInfoHeader))
+				{
+					printf("\n");
+					break;
+				}
 				LineInfoHeader *sym = reinterpret_cast<LineInfoHeader *>(symbol);
 				printf("FUNCTION LINE INFO off: %08x seg: %08x len: %08x lines: %3d u1: %08x u2: %08x\n", sym->off,
 				        sym->seg, sym->len, sym->num_records, sym->unknown1, sym->unknown2);
@@ -746,7 +892,7 @@ void PDBSymbols::dump_module_symbols(int index)
 				printf("\n");
 			}
 		}
-		position += symbol->size + 8;
+		position += sizeof(PDBBigSymbol) + symbol->size;
 		cnt++;
 	}
 	puts("");

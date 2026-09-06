@@ -104,7 +104,12 @@ StateMachineEvidence StateMachineDetector::analyse(const ssa::SSAFunction& fn) c
     ev.hasSwitchOnState = hasSwitchOnState(fn);
     ev.hasStateModify   = hasStateModifyInBranch(fn);
     ev.stateCount       = countCaseConstants(fn);
-    ev.found = ev.hasStateVar && ev.hasSwitchOnState;
+    // Two distinct case constants are what makes this a state machine rather
+    // than a loop: hasStateVar and hasSwitchOnState are satisfied by any loop
+    // that loads, compares and stores, and the four scoring terms then summed
+    // to exactly 1.00 on it.  The module's own docstring already lists ">= 2
+    // distinct states" as an invariant; it was only worth +0.10.
+    ev.found = ev.hasStateVar && ev.hasSwitchOnState && ev.stateCount >= 2;
     ev.confidence = score(ev);
     return ev;
 }
@@ -122,6 +127,7 @@ PatternResult StateMachineDetector::detect(const ssa::SSAFunction& fn) const {
     PatternResult r;
     r.kind = PatternKind::StateMachine;
     auto ev = analyse(fn);
+    if (!ev.found) return PatternResult{};
     r.confidence = ev.confidence;
     if (ev.confidence >= 0.45f) {
         // Build synthetic state names.

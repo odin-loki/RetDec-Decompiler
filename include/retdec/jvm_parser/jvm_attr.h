@@ -29,6 +29,21 @@ namespace jvm_parser {
 
 using BcAnnotation = bc_module::BcAnnotation;
 
+// ─── Recursion limits ─────────────────────────────────────────────────────────
+
+/// Deepest annotation nesting the element-value parser will descend into.
+///
+/// An element_value can be an array of element_values, or a nested annotation
+/// whose pairs are element_values again, so the grammar is unboundedly
+/// recursive and the *only* thing the file supplies to bound it is the length
+/// of the attribute -- a '[' tag plus its u2 count is three bytes, so a few
+/// hundred kilobytes of annotation data is a few hundred thousand recursive
+/// calls and a blown stack. There is no count in the file to bound this
+/// against, which is why this is a fixed limit and not a bounds:: check.
+/// 64 is far past anything a compiler emits (javac's own nesting is single
+/// digits) and far short of what the stack can take.
+constexpr unsigned MAX_ANNOTATION_DEPTH = 64;
+
 // ─── Exception table entry (Code attribute) ───────────────────────────────────
 
 struct ExceptionEntry {

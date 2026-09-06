@@ -458,6 +458,147 @@ TEST(ListDetectorTest, AccessPatternsHaveIterate)
 	EXPECT_TRUE(hasIter);
 }
 
+// Regression: two adjacent Stores whose address operand never got renamed carry
+// a single use each.  hasSentinelInit guarded only on !uses.empty() and then
+// read uses[1], walking off the end of both use-lists (ASan: heap-buffer-
+// overflow).  Nothing here is a sentinel, so no sentinel evidence either.
+TEST(ListDetectorTest, SingleOperandStorePairDoesNotReadPastUses)
+{
+	auto fn = makeFunc(
+		"half_formed_stores",
+		{
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Store,
+		});
+	for (auto* instr: fn->block(0)->instrs)
+	{
+		ssa::Use u;
+		u.valueId = 0;
+		instr->uses.push_back(u);
+	}
+	ListDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.35f);
+}
+
+// Regression: the real sentinel shape -- one address written into two different
+// slots of the object it points at -- must still score.  The old predicate
+// (a->uses[1] == b->uses[1] + 1) had nothing to do with self-reference.
+TEST(ListDetectorTest, SelfReferentialSentinelPairDetected)
+{
+	auto fn = std::make_unique<ssa::SSAFunction>("list_ctor");
+	auto* entry = fn->addBlock("entry");
+
+	// `hdr` (variable 5) holds the sentinel node's own address.
+	auto* hdrAddr = fn->allocValue(ssa::ValueKind::VirtualReg, /*varId=*/5);
+	// &hdr->_next and &hdr->_prev: two distinct slots off that same variable.
+	auto* nextSlot = fn->allocValue(ssa::ValueKind::MemRef);
+	nextSlot->memBaseReg = 5;
+	nextSlot->memOffset = 0;
+	auto* prevSlot = fn->allocValue(ssa::ValueKind::MemRef);
+	prevSlot->memBaseReg = 5;
+	prevSlot->memOffset = 8;
+
+	for (auto* slot: {nextSlot, prevSlot})
+	{
+		auto* st = fn->addInstr(entry->id, ssa::IrInstr::Op::Store);
+		ssa::Use v;
+		v.valueId = hdrAddr->id;
+		st->uses.push_back(v);
+		ssa::Use a;
+		a.valueId = slot->id;
+		st->uses.push_back(a);
+	}
+
+	ListDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_GE(r.confidence, 0.35f);
+}
+
+// Two stores of the same value into the *same* slot are a plain overwrite, and
+// two stores into adjacent slots of an unrelated object are a struct
+// initialiser.  Neither is a circular sentinel.
+TEST(ListDetectorTest, NonSelfReferentialStorePairIsNotASentinel)
+{
+	auto fn = std::make_unique<ssa::SSAFunction>("struct_init");
+	auto* entry = fn->addBlock("entry");
+
+	auto* payload = fn->allocValue(ssa::ValueKind::VirtualReg, /*varId=*/9);
+	auto* fieldA = fn->allocValue(ssa::ValueKind::MemRef);
+	fieldA->memBaseReg = 5;
+	fieldA->memOffset = 0;
+	auto* fieldB = fn->allocValue(ssa::ValueKind::MemRef);
+	fieldB->memBaseReg = 5;
+	fieldB->memOffset = 8;
+
+	for (auto* slot: {fieldA, fieldB})
+	{
+		auto* st = fn->addInstr(entry->id, ssa::IrInstr::Op::Store);
+		ssa::Use v;
+		v.valueId = payload->id;
+		st->uses.push_back(v);
+		ssa::Use a;
+		a.valueId = slot->id;
+		st->uses.push_back(a);
+	}
+
+	ListDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.35f);
+}
+
+// Build one CLRS rotation in a fresh function.  `readOff` is the child slot the
+// load reads off x, `writeOff` the slot of y that x gets linked into; a left
+// rotation promotes the higher child into the lower slot and a right rotation
+// mirrors that.
+static std::unique_ptr<ssa::SSAFunction>
+makeRotation(const std::string& name, int64_t readOff, int64_t writeOff)
+{
+	auto fn = std::make_unique<ssa::SSAFunction>(name);
+	auto* entry = fn->addBlock("entry");
+
+	const ssa::VarId xVar = 1; // node being demoted
+	const ssa::VarId yVar = 2; // child being promoted
+
+	auto* xVal = fn->allocValue(ssa::ValueKind::VirtualReg, xVar);
+	auto* yVal = fn->allocValue(ssa::ValueKind::VirtualReg, yVar);
+	auto* xChild = fn->allocValue(ssa::ValueKind::MemRef); // &x->child
+	xChild->memBaseReg = xVar;
+	xChild->memOffset = readOff;
+	auto* yOther = fn->allocValue(ssa::ValueKind::MemRef); // &y->other
+	yOther->memBaseReg = yVar;
+	yOther->memOffset = writeOff;
+
+	// y = x->child
+	auto* ld = fn->addInstr(entry->id, ssa::IrInstr::Op::Load);
+	ld->defValue = yVal->id;
+	ssa::Use la;
+	la.valueId = xChild->id;
+	ld->uses.push_back(la);
+
+	// x->child = <y's other subtree>  (the slot just read is written back)
+	auto* s1 = fn->addInstr(entry->id, ssa::IrInstr::Op::Store);
+	ssa::Use s1v;
+	s1v.valueId = yVal->id;
+	s1->uses.push_back(s1v);
+	ssa::Use s1a;
+	s1a.valueId = xChild->id;
+	s1->uses.push_back(s1a);
+
+	// y->other = x  (the cross-link, on the far side of the read slot)
+	auto* s2 = fn->addInstr(entry->id, ssa::IrInstr::Op::Store);
+	ssa::Use s2v;
+	s2v.valueId = xVal->id;
+	s2->uses.push_back(s2v);
+	ssa::Use s2a;
+	s2a.valueId = yOther->id;
+	s2->uses.push_back(s2a);
+
+	// Second load, so the ">= 2 Loads" precondition holds.
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Load);
+	return fn;
+}
+
 // ─── MapDetector tests ────────────────────────────────────────────────────────
 
 TEST(MapDetectorTest, EmptyFunctionLowConfidence)
@@ -490,33 +631,24 @@ TEST(MapDetectorTest, ColourFieldDetected)
 
 TEST(MapDetectorTest, RotationPatternBoostsConfidence)
 {
-	// Rotation: load → store as both src and addr in same block.
-	auto fn = std::make_unique<ssa::SSAFunction>("rb_rotate");
-	auto* entry = fn->addBlock("entry");
+	// Rotation: a load off x's child slot, that slot written back, and x linked
+	// into y's opposite slot.  This fixture used to wire the store operands to
+	// L1->id -- an InstrId -- and "matched" only because hasRotation searched a
+	// list of InstrIds for ValueIds.  It now builds the real value graph; the
+	// expectations below are unchanged.
+	auto fn = makeRotation("rb_rotate", /*readOff=*/24, /*writeOff=*/16);
+	fn->addInstr(fn->block(0)->id, ssa::IrInstr::Op::Load);
 
-	// L1: loadResult = Load(...)
-	auto* L1 = fn->addInstr(entry->id, ssa::IrInstr::Op::Load);
-	// S1: Store(loadResult, addr1)  — loadResult used as source.
-	auto* S1 = fn->addInstr(entry->id, ssa::IrInstr::Op::Store);
-	// S2: Store(val, loadResult)   — loadResult used as address.
-	auto* S2 = fn->addInstr(entry->id, ssa::IrInstr::Op::Store);
-	if (L1 && S1 && S2)
-	{
-		ssa::Use u1;
-		u1.valueId = L1->id;
-		S1->uses.push_back(u1); // src
-		ssa::Use u2;
-		u2.valueId = L1->id;
-		S2->uses.push_back(u2);
-		ssa::Use u3;
-		u3.valueId = L1->id + 1; // dummy
-		S2->uses.push_back(u3);  // addr slot
-		// Over-write addr slot with L1->id so it appears as address.
-		S2->uses[1].valueId = L1->id;
-	}
-	fn->addInstr(entry->id, ssa::IrInstr::Op::Load);
-	fn->addInstr(entry->id, ssa::IrInstr::Op::Load);
-	addImmInstr(*fn, ssa::IrInstr::Op::And, 1);
+	// Colour bit: And against the immediate 1 as the second operand.
+	auto* one = fn->allocValue(ssa::ValueKind::Immediate);
+	one->imm = 1;
+	auto* andI = fn->addInstr(fn->block(0)->id, ssa::IrInstr::Op::And);
+	ssa::Use lhs;
+	lhs.valueId = ssa::kInvalidValue;
+	andI->uses.push_back(lhs);
+	ssa::Use rhs;
+	rhs.valueId = one->id;
+	andI->uses.push_back(rhs);
 
 	MapDetector det;
 	auto r = det.detect(*fn);
@@ -540,6 +672,70 @@ TEST(MapDetectorTest, EmittedTypeContainsMap)
 	MapDetector det;
 	auto r = det.detect(*fn);
 	if (r.confidence >= 0.10f) EXPECT_NE(r.emittedType.find("std::map"), std::string::npos);
+}
+
+// Regression: hasRotation used to collect InstrIds and search them for
+// ValueIds.  Both spaces start at 0 and count up, so ordinary struct-walking
+// code collided by accident, matched as *both* a left and a right rotation
+// (leftRotate was never read) and reached 1.00 -- which suppressed every other
+// detector in container_detector.cpp's max-confidence race.
+TEST(MapDetectorTest, GenericStoreLoopIsNotAMapAtFullConfidence)
+{
+	auto fn = std::make_unique<ssa::SSAFunction>("walk_nodes");
+	auto* entry = fn->addBlock("entry");
+
+	auto* src = fn->allocValue(ssa::ValueKind::VirtualReg);
+	auto* addr = fn->allocValue(ssa::ValueKind::VirtualReg);
+	auto* zero = fn->allocValue(ssa::ValueKind::Immediate);
+	zero->imm = 0;
+
+	for (int i = 0; i < 3; ++i) fn->addInstr(entry->id, ssa::IrInstr::Op::Load);
+	for (int i = 0; i < 3; ++i)
+	{
+		auto* st = fn->addInstr(entry->id, ssa::IrInstr::Op::Store);
+		ssa::Use v;
+		v.valueId = src->id;
+		st->uses.push_back(v);
+		ssa::Use a;
+		a.valueId = addr->id;
+		st->uses.push_back(a);
+	}
+	for (int i = 0; i < 2; ++i)
+	{
+		auto* cmp = fn->addInstr(entry->id, ssa::IrInstr::Op::Compare);
+		ssa::Use l;
+		l.valueId = src->id;
+		cmp->uses.push_back(l);
+		ssa::Use r;
+		r.valueId = zero->id;
+		cmp->uses.push_back(r);
+	}
+
+	MapDetector det;
+	auto r = det.detect(*fn);
+	// Colour field + three-pointer + rebalancing is the most generic code may
+	// claim; no rotation evidence exists here.
+	EXPECT_LT(r.confidence, 0.60f);
+}
+
+// A real left rotation still scores, and scores *once*: reading the high child
+// into the low slot is a left rotation and not simultaneously a right one.
+TEST(MapDetectorTest, LeftRotationScoresOneDirectionOnly)
+{
+	auto fn = makeRotation("rb_rotate_left", /*readOff=*/24, /*writeOff=*/16);
+	MapDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_NEAR(r.confidence, 0.30f, 1e-4f);
+}
+
+// The mirror image: reading the low child into the high slot is a right
+// rotation, again exactly one direction.
+TEST(MapDetectorTest, RightRotationScoresOneDirectionOnly)
+{
+	auto fn = makeRotation("rb_rotate_right", /*readOff=*/16, /*writeOff=*/24);
+	MapDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_NEAR(r.confidence, 0.30f, 1e-4f);
 }
 
 // ─── UnorderedMapDetector tests ───────────────────────────────────────────────

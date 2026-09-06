@@ -54,12 +54,16 @@
 
 #include "retdec/loader_sim/loader_sim.h"
 
+#include "retdec/utils/bounds.h"
+
 #include <algorithm>
 #include <cstring>
 #include <sstream>
 
 namespace retdec {
 namespace loader_sim {
+
+namespace bounds = ::retdec::utils::bounds;
 
 // ─── LoadedImage query helpers ────────────────────────────────────────────────
 
@@ -184,7 +188,15 @@ static std::size_t peNtOffset(const uint8_t* data, std::size_t size)
                         (static_cast<uint32_t>(data[0x3D]) << 8) |
                         (static_cast<uint32_t>(data[0x3E]) << 16) |
                         (static_cast<uint32_t>(data[0x3F]) << 24);
-    if (e_lfanew + 24 >= size) return 0;
+    // e_lfanew comes straight out of the DOS stub, so it is whatever the file
+    // says it is.  The old test formed the sum first — `e_lfanew + 24 >= size`
+    // — and the addition happens in uint32_t: 0xFFFFFFE8 + 24 wraps to 0, the
+    // check passes, and the signature bytes below are read a gigabyte past the
+    // end of the buffer.  Ask instead whether the input can supply the header
+    // starting at e_lfanew; that is a subtraction and cannot wrap.  It is also
+    // the correct boundary: `>= size` rejected an e_lfanew of exactly
+    // size - kOptHdr, whose 24 header bytes are all present.
+    if (!bounds::rangeFits(e_lfanew, size, kOptHdr)) return 0;
     // Verify "PE\0\0" signature.
     if (data[e_lfanew]   != 'P' || data[e_lfanew+1] != 'E' ||
         data[e_lfanew+2] != 0   || data[e_lfanew+3] != 0)

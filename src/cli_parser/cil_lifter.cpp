@@ -5,6 +5,8 @@
 
 #include "retdec/cli_parser/cil_lifter.h"
 
+#include "retdec/utils/bounds.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cstring>
@@ -446,6 +448,15 @@ bool CILLifter::decodeOne(std::span<const uint8_t> code, size_t& pos,
     auto addBlock = [&](uint32_t target) {
         out.operands.push_back(BcBlockOperand{target});
     };
+    // Only the opcode byte was ever checked against the span. The operand
+    // width, though, comes from the opcode -- also attacker data -- and a body
+    // that ends mid-instruction made r16/r32/r64 read past the end of the code
+    // span, which is the end of the caller's buffer. Refuse the instruction
+    // instead; decodeInstructions already stops at the first refusal, which is
+    // what it does for a truncated 0xFE prefix.
+    auto need = [&](size_t n) {
+        return utils::bounds::rangeFits(pos, code.size(), n);
+    };
 
     switch (cilOpc) {
     // No operand
@@ -471,30 +482,42 @@ bool CILLifter::decodeOne(std::span<const uint8_t> code, size_t& pos,
         break;
 
     // InlineI (int32)
-    case 0x20: addI4(static_cast<int32_t>(r32(code, pos))); pos += 4; break;
+    case 0x20: if (!need(4)) return false;
+        addI4(static_cast<int32_t>(r32(code, pos))); pos += 4; break;
     // InlineI8 (int64)
-    case 0x21: addI8(static_cast<int64_t>(r64(code, pos))); pos += 8; break;
+    case 0x21: if (!need(8)) return false;
+        addI8(static_cast<int64_t>(r64(code, pos))); pos += 8; break;
     // InlineR4 (float32)
-    case 0x22: out.operands.push_back(BcIntOperand{0}); pos += 4; break;
+    case 0x22: if (!need(4)) return false;
+        out.operands.push_back(BcIntOperand{0}); pos += 4; break;
     // InlineR8 (float64)
-    case 0x23: out.operands.push_back(BcIntOperand{0}); pos += 8; break;
+    case 0x23: if (!need(8)) return false;
+        out.operands.push_back(BcIntOperand{0}); pos += 8; break;
     // ShortInlineI (int8)
-    case 0x1F: addI4(static_cast<int8_t>(code[pos++])); break;
+    case 0x1F: if (!need(1)) return false;
+        addI4(static_cast<int8_t>(code[pos++])); break;
 
     // ShortInlineVar (uint8 local/arg)
-    case 0x0E: case 0x0F: case 0x10: addLocal(code[pos++]); break;
-    case 0x11: case 0x12: case 0x13: addLocal(code[pos++]); break;
+    case 0x0E: case 0x0F: case 0x10:
+        if (!need(1)) return false;
+        addLocal(code[pos++]); break;
+    case 0x11: case 0x12: case 0x13:
+        if (!need(1)) return false;
+        addLocal(code[pos++]); break;
 
     // InlineVar (uint16 local/arg)
     case kFEPrefix | 0x09: case kFEPrefix | 0x0A: case kFEPrefix | 0x0B:
+        if (!need(2)) return false;
         addLocal(r16(code, pos)); pos += 2; break;
     case kFEPrefix | 0x0C: case kFEPrefix | 0x0D: case kFEPrefix | 0x0E:
+        if (!need(2)) return false;
         addLocal(r16(code, pos)); pos += 2; break;
 
     // ShortInlineBrTarget (int8 relative offset)
     case 0x2B: case 0x2C: case 0x2D: case 0x2E: case 0x2F:
     case 0x30: case 0x31: case 0x32: case 0x33: case 0x34:
     case 0x35: case 0x36: case 0x37: case 0xDE: {
+        if (!need(1)) return false;
         int8_t delta = static_cast<int8_t>(code[pos++]);
         addBlock(static_cast<uint32_t>(
             static_cast<int64_t>(pos) + delta));
@@ -504,6 +527,7 @@ bool CILLifter::decodeOne(std::span<const uint8_t> code, size_t& pos,
     case 0x38: case 0x39: case 0x3A: case 0x3B: case 0x3C:
     case 0x3D: case 0x3E: case 0x3F: case 0x40: case 0x41:
     case 0x42: case 0x43: case 0x44: case 0xDD: {
+        if (!need(4)) return false;
         int32_t delta = static_cast<int32_t>(r32(code, pos)); pos += 4;
         addBlock(static_cast<uint32_t>(
             static_cast<int64_t>(pos) + delta));
@@ -512,9 +536,10 @@ bool CILLifter::decodeOne(std::span<const uint8_t> code, size_t& pos,
 
     // InlineSwitch
     case 0x45: {
+        if (!need(4)) return false;
         uint32_t n = r32(code, pos); pos += 4;
         uint32_t afterSwitch = static_cast<uint32_t>(pos + n * 4);
-        for (uint32_t i = 0; i < n && pos + 4 <= code.size(); ++i) {
+        for (uint32_t i = 0; i < n && need(4); ++i) {
             int32_t delta = static_cast<int32_t>(r32(code, pos)); pos += 4;
             addBlock(static_cast<uint32_t>(
                 static_cast<int64_t>(afterSwitch) + delta));
@@ -534,6 +559,7 @@ bool CILLifter::decodeOne(std::span<const uint8_t> code, size_t& pos,
     case kFEPrefix | 0x06: case kFEPrefix | 0x07:
     case kFEPrefix | 0x15: case kFEPrefix | 0x16:
     case kFEPrefix | 0x1C: {
+        if (!need(4)) return false;
         uint32_t tok = r32(code, pos); pos += 4;
         if (cilOpc == 0x72)  // ldstr uses #US token
             out.operands.push_back(BcStringOperand{"<string:" + std::to_string(tok) + ">"});
@@ -547,6 +573,7 @@ bool CILLifter::decodeOne(std::span<const uint8_t> code, size_t& pos,
 
     // Prefix opcodes with 1-byte operand (unaligned / no)
     case kFEPrefix | 0x12: case kFEPrefix | 0x19:
+        if (!need(1)) return false;
         addI4(code[pos++]); break;
 
     // kFEPrefix | 0x16 already handled above in InlineMethod block
@@ -766,7 +793,7 @@ BcCFG CILLifter::lift(std::span<const uint8_t> body,
         return {};
     }
 
-    if (codeStart + outHeader.codeSize > body.size()) {
+    if (!utils::bounds::rangeFits(codeStart, body.size(), outHeader.codeSize)) {
         error_ = "Method code extends past end of buffer";
         return {};
     }

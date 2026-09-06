@@ -14,10 +14,23 @@ namespace jvm_parser {
 // ─── Annotation parsing ───────────────────────────────────────────────────────
 
 static AnnotationElem parseAnnotationElement(BinaryReader& r,
-                                              const ConstPool& pool);
+                                              const ConstPool& pool,
+                                              unsigned depth);
 
+// Every recursive cycle in the element_value grammar comes back through here:
+// '[' descends into its elements, '@' descends through parseAnnotationElement.
+// Nothing in the file bounds that nesting -- the reader stops at the end of the
+// annotation blob, but three bytes of blob buy one more stack frame, so a
+// modest attribute used to be enough to run the stack out. Count the depth at
+// the one choke point and refuse to go past MAX_ANNOTATION_DEPTH; every caller
+// already treats a throw from here as "this annotation is not readable".
 static AnnotationValue parseElementValue(BinaryReader& r,
-                                          const ConstPool& pool) {
+                                          const ConstPool& pool,
+                                          unsigned depth) {
+    if (depth > MAX_ANNOTATION_DEPTH)
+        throw JvmParseError("annotation nested deeper than "
+                            + std::to_string(MAX_ANNOTATION_DEPTH));
+
     AnnotationValue av;
     av.tag = static_cast<char>(r.u1());
     switch (av.tag) {
@@ -65,7 +78,7 @@ static AnnotationValue parseElementValue(BinaryReader& r,
         nested.typeName = pool.utf8(typeIdx);
         uint16_t n = r.u2();
         for (uint16_t k = 0; k < n; ++k)
-            nested.elements.push_back(parseAnnotationElement(r, pool));
+            nested.elements.push_back(parseAnnotationElement(r, pool, depth + 1));
         BcAnnotation ba;
         ba.typeName = nested.typeName;
         av.value = std::move(ba);
@@ -76,7 +89,7 @@ static AnnotationValue parseElementValue(BinaryReader& r,
         AnnotationElemArray arr;
         for (uint16_t k = 0; k < n; ++k) {
             AnnotationElem ae;
-            ae.elementValue = parseElementValue(r, pool);
+            ae.elementValue = parseElementValue(r, pool, depth + 1);
             arr.values.push_back(std::move(ae));
         }
         av.value = std::move(arr);
@@ -91,19 +104,21 @@ static AnnotationValue parseElementValue(BinaryReader& r,
 }
 
 static AnnotationElem parseAnnotationElement(BinaryReader& r,
-                                              const ConstPool& pool) {
+                                              const ConstPool& pool,
+                                              unsigned depth) {
     AnnotationElem ae;
     ae.name         = pool.utf8(r.u2());
-    ae.elementValue = parseElementValue(r, pool);
+    ae.elementValue = parseElementValue(r, pool, depth);
     return ae;
 }
 
-static RawAnnotation parseAnnotation(BinaryReader& r, const ConstPool& pool) {
+static RawAnnotation parseAnnotation(BinaryReader& r, const ConstPool& pool,
+                                      unsigned depth = 0) {
     RawAnnotation ann;
     ann.typeName = pool.utf8(r.u2());
     uint16_t n = r.u2();
     for (uint16_t k = 0; k < n; ++k)
-        ann.elements.push_back(parseAnnotationElement(r, pool));
+        ann.elements.push_back(parseAnnotationElement(r, pool, depth));
     return ann;
 }
 
