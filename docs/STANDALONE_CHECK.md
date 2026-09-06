@@ -32,12 +32,16 @@ suites against a shim, and runs them.
 |---|---|---|
 | Prerequisites | network, ~30 GB, CMake, Ninja | a C++17 compiler |
 | Cold time | hours | ~1 minute |
-| Coverage | whole product | 35 suites, ~2200 assertions over 61 modules |
+| Coverage | whole product | 41 suites, ~2500 assertions over 62 modules |
 
 Two vendored header-only dependencies are used because they are already in the
 tree and cost nothing: `deps/rapidjson` (which unlocks `config`, `serdes`,
 `ctypesparser` and `neural`) and `deps/whereami` (`utils`). Everything else
-under `deps/` is a download stub and stays out.
+under `deps/` is a download stub and stays out. System zlib is linked when
+present, for the suites that read JAR and APK archives.
+
+`cli_parser` declares `cxx_std_20` in its own CMakeLists; `CXX20_MODULES` in the
+script mirrors that, and `--audit` probes each module at its declared standard.
 
 ## The GoogleTest shim
 
@@ -103,6 +107,11 @@ was passing CI:
 | `%lld` into an `int64_t` | `src/profiling/profiling.cpp` | Clang job |
 | Missing `<cassert>`, masked by GoogleTest's transitive includes | `tests/idiom_reconstruct` | shim build |
 | Leaked visitor in a test fixture | `tests/ctypes` | LeakSanitizer |
+
+## Related
+
+`scripts/standalone_fuzz.sh` applies the same idea to the libFuzzer harnesses —
+see [docs/FUZZING.md](FUZZING.md).
 
 ## Scope
 

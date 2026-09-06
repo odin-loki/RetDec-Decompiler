@@ -47,6 +47,14 @@ private:
     struct ParseError { std::string msg; };
     void warn(const std::string& msg) { warnings_.push_back(msg); }
 
+    // ── Bounds helpers ───────────────────────────────────────────────────────
+    // Bytes of input the file still has to offer at the current position.
+    size_t remaining() const { return pos_ < data_.size() ? data_.size() - pos_ : 0; }
+    // Validate a count/length that came out of the file against what the rest
+    // of the file could actually supply. See lua_reader.cpp for the reasoning.
+    size_t checkedSize(size_t n, size_t minBytesPerElem, const char* what);
+    size_t checkedCount(int32_t n, size_t minBytesPerElem, const char* what);
+
     // ── Primitives ────────────────────────────────────────────────────────────
     uint8_t  readU8();
     uint32_t readU32();

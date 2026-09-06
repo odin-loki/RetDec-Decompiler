@@ -9,7 +9,14 @@ name: fuzz-pr
 # fuzz_elf links retdec::fileformat, which PUBLIC-links retdec::deps::llvm
 # (src/fileformat/CMakeLists.txt). cmake -DRETDEC_FUZZ=ON on a clean runner
 # therefore builds the pinned Avast LLVM 8 fork — hours, not a PR smoke.
-# pull_request: option + source presence only (no LLVM configure).
+#
+# But only the elf/pe/macho/unpacker harnesses need any of that. The bytecode
+# and metadata parsers — pyc, lua, wasm, dex, jvm, jar, apk, pdb, cil — are in
+# the dependency-free set (scripts/standalone_check.sh) and build with clang++
+# alone. scripts/standalone_fuzz.sh does exactly that, so a pull request gets a
+# real fuzz signal in about a minute instead of a check that the harness files
+# still exist. The presence check stays as a guard for the harnesses that
+# genuinely need LLVM.
 # workflow_dispatch + weekly schedule: Clang + RETDEC_FUZZ=ON, then ~120s
 # libFuzzer per target if the build cache / compile succeeds.
 # FUZZ-02: libFuzzer corpora persist in actions/cache under fuzz-corpora/.
@@ -47,6 +54,57 @@ jobs:
           done
           test -f tests/managed_integration/fuzz/run_fuzzers.sh
           echo "fuzz-option-smoke: OK (compile fuzz_elf is nightly/dispatch only; needs LLVM)"
+
+  # Deterministic gate: replays every seed and every reproducer committed under
+  # tests/crash_corpus/. No mutation, so it cannot be flaky, and a regression on
+  # a previously fixed crash fails the pull request.
+  fuzz-standalone-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Clang with the sanitizer runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-rt-18-dev zlib1g-dev
+
+      - name: Replay seeds and known reproducers
+        run: ./scripts/standalone_fuzz.sh --replay
+
+  # Discovery run. Mutates, so it may find something new; a reproducer is
+  # written under tests/crash_corpus/ and uploaded, and the job fails so the
+  # find is not silently lost.
+  fuzz-standalone-discover:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Clang with the sanitizer runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-rt-18-dev zlib1g-dev
+
+      - name: Cache the standalone corpus
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build/fuzz/corpus
+          key: standalone-fuzz-corpus-${{ github.run_id }}
+          restore-keys: |
+            standalone-fuzz-corpus-
+
+      - name: Fuzz each dependency-free parser
+        run: FUZZ_TIME=300 ./scripts/standalone_fuzz.sh
+
+      - name: Upload any reproducers
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-reproducers
+          path: tests/crash_corpus/
+          if-no-files-found: ignore
 
   fuzz-libfuzzer:
     if: github.event_name != 'pull_request'

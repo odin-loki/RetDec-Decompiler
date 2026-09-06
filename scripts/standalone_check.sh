@@ -62,7 +62,8 @@ TESTFLAGS="-std=c++17 $INCLUDES $DEFINES -Itests/standalone -O1 -g0 -Wall -Wno-u
 # succeeds; scripts/standalone_check.sh --audit re-verifies that claim.
 readonly MODULES=(
 	algo_recover alias_analysis bc_module call_conv cfg cfg_structure
-	cil_reconstruct code_data codegen common compiler_abi compiler_detect
+	cil_reconstruct cli_parser code_data codegen common compiler_abi
+	compiler_detect
 	concurrency_detect config container_detect crypto_detect csharp_emitter ctypes
 	ctypesparser cuda_accel cxx_backend dce debug_info dex_parser eh_reconstruct
 	experimental fsharp_emitter func_boundary idiom_reconstruct ipa java_emitter
@@ -80,15 +81,23 @@ readonly MODULES=(
 readonly SUITES=(
 	algo_recover alias_analysis bc_module call_conv cfg cfg_structure
 	code_data codegen compiler_abi concurrency_detect container_detect
-	config crypto_detect ctypes ctypesparser dce eh_reconstruct func_boundary
-	idiom_reconstruct ipa loader_sim mini_emu module_cluster neural
-	pattern_detect profiling rtti serial_detect sort_detect ssa string_detect
-	serdes type_inference type_seed var_recovery
+	cli_parser config crypto_detect ctypes ctypesparser dce eh_reconstruct
+	dex_parser func_boundary idiom_reconstruct ipa jvm_parser loader_sim
+	lua_parser mini_emu module_cluster neural pattern_detect profiling
+	pyc_parser rtti serdes serial_detect sort_detect ssa string_detect
+	type_inference type_seed var_recovery wasm_parser
 )
 
 # Modules that happen to compile standalone but are deliberately not part of the
 # fast path, with the reason.  --audit consults this so it can distinguish
 # "nobody wired this up" from "we decided not to".
+# Modules whose own CMakeLists asks for a later language standard than the rest
+# of the tree.  Kept in sync by --audit, which probes each module at its
+# declared standard.
+readonly CXX20_MODULES=(
+	cli_parser
+)
+
 # Sources inside an included module that must NOT be compiled here, mirroring a
 # conditional in that module's CMakeLists.  "module/file.cpp:reason".
 readonly EXCLUDED_SOURCES=(
@@ -166,8 +175,10 @@ if [ "$MODE" = audit ]; then
 			srcs+=("$f")
 		done
 		[ ${#srcs[@]} -eq 0 ] && continue
+		std=c++17
+		for c20 in "${CXX20_MODULES[@]}"; do [ "$c20" = "$m" ] && std=c++20; done
 		# shellcheck disable=SC2086
-		if $CXX -std=c++17 $INCLUDES $DEFINES -fsyntax-only "${srcs[@]}" >/dev/null 2>&1; then
+		if $CXX -std=$std $INCLUDES $DEFINES -fsyntax-only "${srcs[@]}" >/dev/null 2>&1; then
 			if [ -z "${declared[$m]:-}" ] && [ -z "${excluded[$m]:-}" ]; then
 				bad "$m compiles standalone but is missing from MODULES"
 				status=1
@@ -197,10 +208,12 @@ compile_one() {
 
 	local compiler="$CXX"
 	case "$kind" in
-		test) flags="$SC_TESTFLAGS" ;;
+		test)  flags="$SC_TESTFLAGS" ;;
+		test20) flags="${SC_TESTFLAGS/-std=c++17/-std=c++20}" ;;
 		# whereami is vendored C, not C++; retdec/utils links against it.
-		cc)   flags="-O1 -g0 -w $SC_EXTRA_CXXFLAGS"; compiler="${CC:-cc}" ;;
-		*)    flags="$SC_CXXFLAGS" ;;
+		cc)    flags="-O1 -g0 -w $SC_EXTRA_CXXFLAGS"; compiler="${CC:-cc}" ;;
+		mod20) flags="${SC_CXXFLAGS/-std=c++17/-std=c++20}" ;;
+		*)     flags="$SC_CXXFLAGS" ;;
 	esac
 
 	if [ -f "$obj" ] && [ "$obj" -nt "$src" ] && [ "$obj" -nt "$SC_SELF" ]; then
@@ -236,12 +249,16 @@ fi
 
 declare -A skip_source=()
 for entry in "${EXCLUDED_SOURCES[@]}"; do skip_source["${entry%%:*}"]=1; done
+declare -A is_cxx20=()
+for m in "${CXX20_MODULES[@]}"; do is_cxx20["$m"]=1; done
 
 for m in "${selected_modules[@]}"; do
+	kind=mod
+	[ -n "${is_cxx20[$m]:-}" ] && kind=mod20
 	shopt -s nullglob
 	for src in "src/$m"/*.cpp; do
 		[ -n "${skip_source[$m/$(basename "$src")]:-}" ] && continue
-		printf '%s\t%s\tmod\n' "$src" "$BUILD_DIR/obj/$m/$(basename "${src%.cpp}").o" >> "$JOBLIST"
+		printf '%s\t%s\t%s\n' "$src" "$BUILD_DIR/obj/$m/$(basename "${src%.cpp}").o" "$kind" >> "$JOBLIST"
 	done
 	shopt -u nullglob
 done
@@ -321,9 +338,19 @@ for s in "${run_suites[@]}"; do
 	bin="$BUILD_DIR/bin/$s"
 	# --start-group/--end-group resolves the undeclared cycles between module
 	# archives without needing a topological order.
-	if ! $CXX $TESTFLAGS "${srcs[@]}" \
+	suiteFlags="$TESTFLAGS"
+	for c20 in "${CXX20_MODULES[@]}"; do [ "$c20" = "$s" ] && suiteFlags="${TESTFLAGS/-std=c++17/-std=c++20}"; done
+
+	# The archive readers (JAR, APK) call into zlib, which is a system library
+	# rather than anything vendored; link it when it is present.
+	extraLibs=""
+	if [ -n "${ZLIB_LIB:-}" ] || printf 'int main(void){return 0;}' | $CXX -x c++ - -lz -o /dev/null >/dev/null 2>&1; then
+		extraLibs="${ZLIB_LIB:--lz}"
+	fi
+	# shellcheck disable=SC2086
+	if ! $CXX $suiteFlags "${srcs[@]}" \
 			-Wl,--start-group "${libargs[@]}" "$BUILD_DIR/lib/libgtest_lite_main.a" -Wl,--end-group \
-			"$BUILD_DIR/obj/gtest_lite.o" \
+			"$BUILD_DIR/obj/gtest_lite.o" $extraLibs \
 			-o "$bin" > "$bin.buildlog" 2>&1; then
 		bad "$s (build)"
 		head -25 "$bin.buildlog"

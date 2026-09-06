@@ -20,6 +20,19 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   direction. Docs: [docs/STANDALONE_CHECK.md](docs/STANDALONE_CHECK.md).
 - `.github/workflows/standalone-check.yml`: the above under `g++` and
   `clang++`, plus an ASan/UBSan job, on every pull request.
+- Dependency-free fuzzing: `scripts/standalone_fuzz.sh` builds and runs the
+  libFuzzer harnesses for the nine parsers that read attacker-controlled bytes
+  and do not need LLVM — pyc, lua, wasm, dex, apk, jvm, jar, pdb and cil — using
+  `clang++` alone. `--replay` re-runs every seed and every reproducer under
+  `tests/crash_corpus/` deterministically, which is what now gates a pull
+  request; mutation-based discovery runs on a schedule and commits its
+  reproducers. Docs: [docs/FUZZING.md](docs/FUZZING.md).
+  Before this, `.github/workflows/fuzz-pr.yml` could only check on a pull
+  request that the harness *files still existed*, because `-DRETDEC_FUZZ=ON`
+  builds LLVM. `fuzz_dex.cpp` had in fact stopped compiling — it called a
+  `DexFile::classDefsSize()` that no longer exists — and nothing noticed.
+- `.github/workflows/fuzz-pr.yml`: `fuzz-standalone-replay` (pull-request gate)
+  and `fuzz-standalone-discover` (scheduled, uploads reproducers).
 - `retdec::neural::hasCParserSupport()` and `GateReport::structuralUsedParser`:
   a caller can now tell whether the structural gate compared parse trees or fell
   back to counting keywords in text. `GateReport::summary()` marks the fallback.

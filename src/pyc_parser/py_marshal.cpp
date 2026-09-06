@@ -3,6 +3,7 @@
  * @brief Python marshal format reader implementation.
  */
 
+#include <algorithm>
 #include <memory>
 #include "retdec/pyc_parser/py_marshal.h"
 
@@ -132,6 +133,30 @@ bool MarshalReader::readF64LE(double& out) {
     return true;
 }
 
+/// Rejects a declared element count that the remaining input cannot possibly
+/// satisfy.
+///
+/// Every marshal object costs at least one byte -- its type code -- so a
+/// container claiming more elements than there are bytes left is malformed by
+/// construction. The count is read straight out of the file, where five bytes
+/// can name 2^31 elements; reserving for that count exhausted memory before a
+/// single element had been read. Bounding against the input makes the limit a
+/// property of the data rather than an arbitrary cap.
+///
+/// @p bytesPerElement is the smallest encoding of one element; a marshal long,
+/// for instance, spends two bytes on every digit it declares.
+bool MarshalReader::countFitsInRemainingInput(size_t n, const char* what,
+                                              size_t bytesPerElement) {
+    const size_t remaining = size_ > pos_ ? size_ - pos_ : 0;
+    // Divide rather than multiply: n comes from the file and n*bytesPerElement
+    // is exactly the product that could wrap back under the limit.
+    if (bytesPerElement == 0 || n > remaining / bytesPerElement) {
+        setError(std::string("Declared ") + what + " size exceeds remaining input");
+        return false;
+    }
+    return true;
+}
+
 bool MarshalReader::readBytes(std::vector<uint8_t>& out, size_t n) {
     if (pos_ + n > size_) {
         setError("Unexpected EOF reading bytes");
@@ -203,18 +228,37 @@ std::shared_ptr<MarshalObject> MarshalReader::readLong() {
     // Python TYPE_LONG: int32 n, then n uint16 "digits" in base 2^15
     int32_t n;
     if (!readS32LE(n)) return nullptr;
-    int sign = (n < 0) ? -1 : 1;
-    if (n < 0) n = -n;
-    int64_t result = 0;
-    for (int32_t i = 0; i < n; ++i) {
+
+    // The sign of a marshalled long lives in the sign of its digit count, so
+    // the magnitude has to be taken in unsigned form: negating INT32_MIN as an
+    // int32_t overflows, and the count comes straight out of the file.
+    const int sign = (n < 0) ? -1 : 1;
+    const size_t digits = (n < 0)
+        ? static_cast<size_t>(-static_cast<int64_t>(n))
+        : static_cast<size_t>(n);
+    if (!countFitsInRemainingInput(digits, "long", kBytesPerLongDigit))
+        return nullptr;
+
+    // Digits are little-endian base 2^15 and the accumulator is a fixed 64-bit
+    // int, so only the low digits can contribute anything. The shift used to be
+    // taken as 15*i for every declared digit, which is undefined once it
+    // reaches the width of the type -- a file naming five digits reached it.
+    // Accumulate modulo 2^64 in unsigned form and let the surplus digits fall
+    // off the top; a long too wide for int64_t is truncated, not undefined.
+    uint64_t magnitude = 0;
+    for (size_t i = 0; i < digits; ++i) {
         uint16_t d;
         if (!readU16LE(d)) return nullptr;
-        result |= static_cast<int64_t>(d) << (15 * i);
+        const size_t shift = kLongDigitBits * i;
+        if (shift < 64)
+            magnitude |= static_cast<uint64_t>(d) << shift;
     }
-    result *= sign;
+    if (sign < 0)
+        magnitude = ~magnitude + 1;  // two's-complement negate without overflow
+
     auto obj = std::make_shared<MarshalObject>();
     obj->type  = MarshalObject::Type::Long;
-    obj->value = result;
+    obj->value = static_cast<int64_t>(magnitude);
     return obj;
 }
 
@@ -289,7 +333,10 @@ std::shared_ptr<MarshalObject> MarshalReader::readTuple(bool small) {
     obj->type  = MarshalObject::Type::Tuple;
     obj->value = std::vector<std::shared_ptr<MarshalObject>>{};
     auto& elems = std::get<std::vector<std::shared_ptr<MarshalObject>>>(obj->value);
-    elems.reserve(n);
+    if (!countFitsInRemainingInput(n, "tuple")) return nullptr;
+    // Reserve for a small container only; growth covers the rest, so a large
+    // declared count cannot commit memory before its elements are read.
+    elems.reserve(std::min<size_t>(n, kInitialElementReserve));
 
     for (size_t i = 0; i < n; ++i) {
         auto elem = readObject();
@@ -303,11 +350,13 @@ std::shared_ptr<MarshalObject> MarshalReader::readList() {
     int32_t n;
     if (!readS32LE(n)) return nullptr;
     if (n < 0) { setError("Negative list size"); return nullptr; }
+    if (!countFitsInRemainingInput(static_cast<size_t>(n), "list")) return nullptr;
 
     auto obj = std::make_shared<MarshalObject>();
     obj->type  = MarshalObject::Type::List;
     obj->value = std::vector<std::shared_ptr<MarshalObject>>{};
     auto& elems = std::get<std::vector<std::shared_ptr<MarshalObject>>>(obj->value);
+    elems.reserve(std::min<size_t>(static_cast<size_t>(n), kInitialElementReserve));
 
     for (int32_t i = 0; i < n; ++i) {
         auto elem = readObject();
@@ -321,11 +370,13 @@ std::shared_ptr<MarshalObject> MarshalReader::readSet(bool frozen) {
     int32_t n;
     if (!readS32LE(n)) return nullptr;
     if (n < 0) { setError("Negative set size"); return nullptr; }
+    if (!countFitsInRemainingInput(static_cast<size_t>(n), "set")) return nullptr;
 
     auto obj = std::make_shared<MarshalObject>();
     obj->type  = frozen ? MarshalObject::Type::FrozenSet : MarshalObject::Type::Set;
     obj->value = std::vector<std::shared_ptr<MarshalObject>>{};
     auto& elems = std::get<std::vector<std::shared_ptr<MarshalObject>>>(obj->value);
+    elems.reserve(std::min<size_t>(static_cast<size_t>(n), kInitialElementReserve));
 
     for (int32_t i = 0; i < n; ++i) {
         auto elem = readObject();

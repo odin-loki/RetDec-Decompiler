@@ -361,6 +361,218 @@ TEST(LuaReaderTest, LittleEndianFlag) {
     EXPECT_TRUE(result.module.littleEndian);
 }
 
+// ─── Malformed-input regression tests ────────────────────────────────────────
+//
+// Every count in a .luac file is attacker-controlled. These build a well-formed
+// prefix and then declare a container far larger than the file could possibly
+// hold, or a negative one. The reader must reject the declaration on its own
+// terms — the errors below are the parser's, not the allocator's, which is what
+// distinguishes a bounds check from merely surviving a failed reserve().
+
+static LuaReadResult parseLua(const std::vector<uint8_t>& bytes) {
+    LuaReader reader(bytes);
+    return reader.read();
+}
+
+// Lua 5.1 header plus the fixed part of the top-level prototype; the stream is
+// left exactly where the code-array count goes.
+static LuaBuilder lua51Prefix() {
+    LuaBuilder b;
+    b.u8(0x1B); b.u8('L'); b.u8('u'); b.u8('a');
+    b.u8(0x51); // version 5.1
+    b.u8(0x00); // official format
+    b.u8(0x01); // little-endian
+    b.u8(0x04); // int size = 4
+    b.u8(0x08); // size_t = 8
+    b.u8(0x04); // instruction size = 4
+    b.u8(0x08); // lua_Number size = 8
+    b.u8(0x00); // integral flag = 0 (double)
+
+    b.emptyStr51();    // source name = ""
+    b.i32(0);          // lineDefined
+    b.i32(0);          // lastLineDefined
+    b.u8(0);           // numUpvalues
+    b.u8(0);           // numParams
+    b.u8(0);           // isVarArg
+    b.u8(2);           // maxStackSize
+    return b;
+}
+
+// Lua 5.4 header up to (but not including) the top-level code-array count.
+static LuaBuilder lua54Prefix() {
+    LuaBuilder b;
+    b.u8(0x1B); b.u8('L'); b.u8('u'); b.u8('a');
+    b.u8(0x54); // version 5.4
+    b.u8(0x00); // format
+    b.u8(0x19); b.u8(0x93); b.u8(0x0D); b.u8(0x0A); b.u8(0x1A); b.u8(0x0A);
+    b.u8(4);    // instruction size
+    b.u8(8);    // integer size
+    b.u8(8);    // number size
+    b.u64(0x5678);
+    double testfloat = 370.5;
+    uint64_t tf; std::memcpy(&tf, &testfloat, 8);
+    b.u64(tf);
+    b.u8(1);           // upvalue count for main chunk
+
+    b.emptyStr54();    // source name = NULL
+    b.size54(0);       // lineDefined
+    b.size54(0);       // lastLineDefined
+    b.u8(0);           // numParams
+    b.u8(1);           // isVarArg
+    b.u8(2);           // maxStackSize
+    return b;
+}
+
+// This is the shape of tests/crash_corpus/lua/crash-a56affbe...: a real 5.1
+// chunk whose constant count was flipped to a value the file cannot back.
+TEST(LuaReaderMalformedTest, Lua51RejectsOversizedConstantCount) {
+    LuaBuilder b = lua51Prefix();
+    b.i32(0);            // code: 0 instructions
+    b.i32(0x7FFFFFFF);   // constants: more than the file has bytes
+    auto result = parseLua(b.bytes());
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("exceeds remaining input"), std::string::npos)
+        << result.error;
+}
+
+TEST(LuaReaderMalformedTest, Lua51RejectsNegativeConstantCount) {
+    LuaBuilder b = lua51Prefix();
+    b.i32(0);            // code: 0 instructions
+    b.i32(-1);           // constants: negative, huge once it becomes a size_t
+    auto result = parseLua(b.bytes());
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("is negative"), std::string::npos)
+        << result.error;
+}
+
+TEST(LuaReaderMalformedTest, Lua51RejectsOversizedInstructionCount) {
+    LuaBuilder b = lua51Prefix();
+    b.i32(0x7FFFFFFF);   // code
+    auto result = parseLua(b.bytes());
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("exceeds remaining input"), std::string::npos)
+        << result.error;
+}
+
+TEST(LuaReaderMalformedTest, Lua51RejectsNegativeInstructionCount) {
+    LuaBuilder b = lua51Prefix();
+    b.i32(-2);           // code
+    auto result = parseLua(b.bytes());
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("is negative"), std::string::npos)
+        << result.error;
+}
+
+TEST(LuaReaderMalformedTest, Lua51RejectsOversizedSubProtoCount) {
+    LuaBuilder b = lua51Prefix();
+    b.i32(0);            // code
+    b.i32(0);            // constants
+    b.i32(0x7FFFFFFF);   // sub-protos
+    auto result = parseLua(b.bytes());
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("exceeds remaining input"), std::string::npos)
+        << result.error;
+}
+
+TEST(LuaReaderMalformedTest, Lua51RejectsOversizedLineInfoCount) {
+    LuaBuilder b = lua51Prefix();
+    b.i32(0);            // code
+    b.i32(0);            // constants
+    b.i32(0);            // sub-protos
+    b.i32(0x7FFFFFFF);   // debug: line info entries
+    auto result = parseLua(b.bytes());
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("exceeds remaining input"), std::string::npos)
+        << result.error;
+}
+
+TEST(LuaReaderMalformedTest, Lua51RejectsNegativeUpvalueNameCount) {
+    LuaBuilder b = lua51Prefix();
+    b.i32(0);            // code
+    b.i32(0);            // constants
+    b.i32(0);            // sub-protos
+    b.i32(0);            // debug: line info entries
+    b.i32(0);            // debug: locals
+    b.i32(-1);           // debug: upvalue names
+    auto result = parseLua(b.bytes());
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("is negative"), std::string::npos)
+        << result.error;
+}
+
+// The 5.1 string length is a full 64-bit size_t, so `pos_ + len` wraps and the
+// old end-offset comparison waved it through.
+TEST(LuaReaderMalformedTest, Lua51RejectsWrappingStringLength) {
+    LuaBuilder b;
+    b.u8(0x1B); b.u8('L'); b.u8('u'); b.u8('a');
+    b.u8(0x51); b.u8(0x00); b.u8(0x01);
+    b.u8(0x04); b.u8(0x08); b.u8(0x04); b.u8(0x08); b.u8(0x00);
+    b.u64(0xFFFFFFFFFFFFFFFFULL); // source name length
+    auto result = parseLua(b.bytes());
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("exceeds remaining input"), std::string::npos)
+        << result.error;
+}
+
+// Lua 5.3 long string: the dumped length includes the null terminator, so a
+// stored zero underflows to SIZE_MAX when the terminator is subtracted.
+TEST(LuaReaderMalformedTest, Lua53RejectsZeroLongStringLength) {
+    LuaBuilder b;
+    b.u8(0x1B); b.u8('L'); b.u8('u'); b.u8('a');
+    b.u8(0x53); b.u8(0x00);
+    b.u8(0x19); b.u8(0x93); b.u8(0x0D); b.u8(0x0A); b.u8(0x1A); b.u8(0x0A);
+    b.u8(4);            // int size
+    b.u8(8);            // size_t size
+    b.u8(4);            // instruction size
+    b.u8(8); b.u8(8);   // lua_Integer / lua_Number sizes
+    b.u32(0x5678);      // test integer
+    double testfloat = 370.5;
+    uint64_t tf; std::memcpy(&tf, &testfloat, 8);
+    b.u64(tf);          // test float
+    b.u8(1);            // numUpvalues of main chunk
+    b.u8(0xFF);         // source name: long-string prefix
+    b.u64(0);           // ... with a length of zero
+    auto result = parseLua(b.bytes());
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("underflow"), std::string::npos) << result.error;
+}
+
+TEST(LuaReaderMalformedTest, Lua54RejectsOversizedConstantCount) {
+    LuaBuilder b = lua54Prefix();
+    b.size54(0);          // code: 0 instructions
+    b.size54(0x7FFFFFFF); // constants
+    auto result = parseLua(b.bytes());
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("exceeds remaining input"), std::string::npos)
+        << result.error;
+}
+
+TEST(LuaReaderMalformedTest, Lua54RejectsOversizedUpvalueCount) {
+    LuaBuilder b = lua54Prefix();
+    b.size54(0);          // code
+    b.size54(0);          // constants
+    b.size54(0x7FFFFFFF); // upvalues
+    auto result = parseLua(b.bytes());
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("exceeds remaining input"), std::string::npos)
+        << result.error;
+}
+
+// The 5.4 debug counts are unsigned LEB128, so they can exceed INT32_MAX
+// without ever looking negative.
+TEST(LuaReaderMalformedTest, Lua54RejectsOversizedLineInfoCount) {
+    LuaBuilder b = lua54Prefix();
+    b.size54(0);          // code
+    b.size54(0);          // constants
+    b.size54(0);          // upvalues
+    b.size54(0);          // sub-protos
+    b.size54(0x100000000ULL); // debug: line info bytes
+    auto result = parseLua(b.bytes());
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.error.find("exceeds remaining input"), std::string::npos)
+        << result.error;
+}
+
 // ─── LuaEmitter tests ────────────────────────────────────────────────────────
 
 TEST(LuaEmitterTest, EmitsFileHeader) {

@@ -529,17 +529,19 @@ void PycReader::liftInstruction(uint8_t rawOp, int32_t arg,
     case BcOpcode::PYTHON_JUMP_IF_FALSE_OR_POP:
     case BcOpcode::PYTHON_FOR_ITER:
     case BcOpcode::PYTHON_SEND: {
-        // Compute absolute target
-        int32_t target = arg;
+        // Compute absolute target. A chain of EXTENDED_ARG prefixes can carry
+        // any 32-bit operand, so the doubling is done in 64 bits: arg * 2 does
+        // not fit an int32_t for every operand a stream can encode.
+        int64_t target = arg;
         if (info.kind == OpcodeKind::JumpForward)
-            target = static_cast<int32_t>(offset) + 2 + arg * 2;
+            target = static_cast<int64_t>(offset) + 2 + static_cast<int64_t>(arg) * 2;
         else if (info.kind == OpcodeKind::JumpBackward)
-            target = static_cast<int32_t>(offset) + 2 - arg * 2;
+            target = static_cast<int64_t>(offset) + 2 - static_cast<int64_t>(arg) * 2;
         else if (!code.version.atLeast(3, 11))
             target = arg; // absolute offset
         else
-            target = static_cast<int32_t>(offset) + 2 + arg * 2;
-        operand = BcIntOperand{static_cast<int64_t>(target)};
+            target = static_cast<int64_t>(offset) + 2 + static_cast<int64_t>(arg) * 2;
+        operand = BcIntOperand{target};
         break;
     }
     default:
@@ -562,6 +564,11 @@ std::vector<uint32_t> PycReader::findLeaders(const PyCodeObject& code) const {
     const uint8_t haveArg = haveArgument(code.version);
 
     size_t pos = 0;
+    // EXTENDED_ARG prefixes accumulate into an unsigned 32-bit operand, which
+    // is the width the wordcode encodes. Nothing in the stream limits how many
+    // prefixes it chains -- a compiler emits at most three, a hostile file as
+    // many as it likes -- so the accumulator has to wrap at that width instead
+    // of shifting a signed value out of range.
     int32_t extArg = 0;
 
     while (pos < bytecode.size()) {
@@ -591,15 +598,18 @@ std::vector<uint32_t> PycReader::findLeaders(const PyCodeObject& code) const {
 
         OpcodeInfo info = opcodeInfo(op, code.version);
         if (info.isJump() && hasArg) {
-            int32_t target = arg;
+            // Widened for the same reason as in liftInstruction: the operand is
+            // a full 32 bits and pos + arg*2 overruns an int32_t well before it
+            // overruns the bytecode.
+            int64_t target = arg;
             if (info.kind == OpcodeKind::JumpForward)
-                target = static_cast<int32_t>(pos) + static_cast<int32_t>(instrSize)
-                       + arg * 2;
+                target = static_cast<int64_t>(pos) + static_cast<int64_t>(instrSize)
+                       + static_cast<int64_t>(arg) * 2;
             else if (info.kind == OpcodeKind::JumpBackward)
-                target = static_cast<int32_t>(pos) + static_cast<int32_t>(instrSize)
-                       - arg * 2;
+                target = static_cast<int64_t>(pos) + static_cast<int64_t>(instrSize)
+                       - static_cast<int64_t>(arg) * 2;
 
-            if (target >= 0 && static_cast<size_t>(target) < bytecode.size())
+            if (target >= 0 && static_cast<uint64_t>(target) < bytecode.size())
                 leaders.insert(static_cast<uint32_t>(target));
             // Fall-through is a leader too (conditional jumps)
             if (info.kind != OpcodeKind::JumpAbsolute &&

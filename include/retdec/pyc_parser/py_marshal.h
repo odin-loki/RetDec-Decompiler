@@ -141,6 +141,14 @@ struct MarshalObject {
  */
 class MarshalReader {
 public:
+    /// Elements reserved up front for a container, however many it declares.
+    static constexpr size_t kInitialElementReserve = 64;
+
+    /// Width of one marshalled long digit; CPython stores longs in base 2^15.
+    static constexpr size_t kLongDigitBits = 15;
+    /// Bytes one such digit occupies on the wire (a little-endian uint16).
+    static constexpr size_t kBytesPerLongDigit = 2;
+
     /**
      * @brief Construct a reader for the given buffer.
      *
@@ -178,6 +186,11 @@ public:
     bool     readS32LE(int32_t& out);
     bool     readU32LE(uint32_t& out);
     bool     readF64LE(double& out);
+    /// Rejects a declared container element count larger than the number of
+    /// bytes left, which no well-formed stream can satisfy. See the definition.
+    bool     countFitsInRemainingInput(size_t n, const char* what,
+                                       size_t bytesPerElement = 1);
+
     bool     readBytes(std::vector<uint8_t>& out, size_t n);
     bool     readString(std::string& out, size_t n);  ///< n UTF-8 bytes
     bool     readAscii(std::string& out, size_t n);   ///< n ASCII bytes

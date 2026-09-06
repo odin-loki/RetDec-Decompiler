@@ -156,3 +156,12 @@ scripts/run-linux-release-build.cmd
 *.bak[0-9]
 *.orig
 *.rej
+
+# libFuzzer writes its reproducers to the working directory unless
+# -artifact_prefix points elsewhere. Real finds belong in tests/crash_corpus/
+# (scripts/standalone_fuzz.sh puts them there); strays in the root do not.
+/crash-*
+/oom-*
+/timeout-*
+/leak-*
+/slow-unit-*

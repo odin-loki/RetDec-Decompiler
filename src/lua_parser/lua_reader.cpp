@@ -28,6 +28,32 @@ LuaReader::LuaReader(std::vector<uint8_t> bytes)
 LuaReader::LuaReader(const uint8_t* data, size_t size)
     : data_(data, data + size) {}
 
+// ─── Bounds helpers ──────────────────────────────────────────────────────────
+
+// A count or length read out of a .luac file is a claim, not a fact. Every
+// element of every array in the format occupies at least minBytesPerElem bytes
+// on the wire, so a container claiming more elements than the file has bytes
+// left is malformed by construction — no amount of well-formed data could
+// follow it. Rejecting the claim before it reaches reserve()/vector() keeps an
+// attacker-chosen number from turning into an attacker-chosen allocation.
+size_t LuaReader::checkedSize(size_t n, size_t minBytesPerElem, const char* what) {
+    // A hostile header can declare a zero-byte int or size_t; charge at least
+    // one byte per element so the ratio below stays meaningful.
+    if (minBytesPerElem == 0) minBytesPerElem = 1;
+    if (n > remaining() / minBytesPerElem)
+        throw ParseError{std::string(what) + " exceeds remaining input"};
+    return n;
+}
+
+// Same check for the counts that arrive through readInt(), which is int32_t:
+// a negative count is not merely odd, it becomes an enormous size_t the moment
+// it is used as a length, so it has to be rejected before the conversion.
+size_t LuaReader::checkedCount(int32_t n, size_t minBytesPerElem, const char* what) {
+    if (n < 0)
+        throw ParseError{std::string(what) + " is negative"};
+    return checkedSize(static_cast<size_t>(n), minBytesPerElem, what);
+}
+
 // ─── Primitives ──────────────────────────────────────────────────────────────
 
 uint8_t LuaReader::readU8() {
@@ -110,7 +136,9 @@ size_t LuaReader::readSizet() {
 std::string LuaReader::readString51() {
     size_t len = readSizet();
     if (len == 0) return "";
-    if (pos_ + len > data_.size()) throw ParseError{"String read past end"};
+    // len is a 64-bit value straight from the file, so `pos_ + len` would wrap
+    // and let an absurd length through; measure it against what is left instead.
+    checkedSize(len, 1, "String length");
     // len includes the null terminator
     std::string s(reinterpret_cast<const char*>(&data_[pos_]), len - 1);
     pos_ += len;
@@ -123,11 +151,15 @@ std::string LuaReader::readString53() {
     if (first == 0) return "";
     size_t len;
     if (first == 0xFF) {
-        len = (size_t)readU64() - 1; // includes null terminator
+        uint64_t raw = readU64();
+        // The dumped length counts the null terminator, so zero is not a value
+        // luac can emit — and subtracting from it would wrap to SIZE_MAX.
+        if (raw == 0) throw ParseError{"String53 length underflow"};
+        len = (size_t)raw - 1; // includes null terminator
     } else {
         len = (size_t)(first - 1); // length includes null, subtract 1
     }
-    if (pos_ + len > data_.size()) throw ParseError{"String53 read past end"};
+    checkedSize(len, 1, "String53 length");
     std::string s(reinterpret_cast<const char*>(&data_[pos_]), len);
     pos_ += len;
     return s;
@@ -142,8 +174,7 @@ std::string LuaReader::readString54() {
     // Back-references use a different mechanism; for simplicity we handle
     // the common case: size >= 1 means (size-1) bytes of content follow.
     size_t contentLen = size - 1;
-    if (pos_ + contentLen > data_.size())
-        throw ParseError{"String54 read past end"};
+    checkedSize(contentLen, 1, "String54 length");
     std::string s(reinterpret_cast<const char*>(&data_[pos_]), contentLen);
     pos_ += contentLen;
     // Add to deduplication table for potential back-references
@@ -232,10 +263,11 @@ LuaVersion LuaReader::parseHeader() {
 // ─── Code ────────────────────────────────────────────────────────────────────
 
 std::vector<LuaInstr> LuaReader::readCode() {
-    int n = readInt();
+    // Every supported version dumps instructions as fixed 4-byte words.
+    size_t n = checkedCount(readInt(), 4, "Instruction count");
     std::vector<LuaInstr> code;
     code.reserve(n);
-    for (int i = 0; i < n; ++i) {
+    for (size_t i = 0; i < n; ++i) {
         LuaInstr instr;
         instr.raw = readU32();
         code.push_back(instr);
@@ -246,10 +278,11 @@ std::vector<LuaInstr> LuaReader::readCode() {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 std::vector<LuaConst> LuaReader::readConstants51() {
-    int n = readInt();
+    // The cheapest constant is a bare nil tag: one byte each, at least.
+    size_t n = checkedCount(readInt(), 1, "Constant count");
     std::vector<LuaConst> consts;
     consts.reserve(n);
-    for (int i = 0; i < n; ++i) {
+    for (size_t i = 0; i < n; ++i) {
         uint8_t tag = readU8();
         switch (tag) {
         case 0: consts.emplace_back(LuaNil{}); break;
@@ -273,10 +306,11 @@ std::vector<LuaConst> LuaReader::readConstants52() {
 }
 
 std::vector<LuaConst> LuaReader::readConstants53() {
-    int n = readInt();
+    // The cheapest constant is a bare nil tag: one byte each, at least.
+    size_t n = checkedCount(readInt(), 1, "Lua 5.3 constant count");
     std::vector<LuaConst> consts;
     consts.reserve(n);
-    for (int i = 0; i < n; ++i) {
+    for (size_t i = 0; i < n; ++i) {
         uint8_t tag = readU8();
         switch (tag) {
         case 0: consts.emplace_back(LuaNil{}); break;
@@ -304,10 +338,11 @@ std::vector<LuaConst> LuaReader::readConstants54() {
     //   0x00 = LUA_VNIL,  0x01 = LUA_VFALSE, 0x11 = LUA_VTRUE
     //   0x03 = LUA_VNUMINT (integer, raw lua_Integer), 0x13 = LUA_VNUMFLT (float, 8 bytes)
     //   0x04 = LUA_VSHRSTR (short string),    0x14 = LUA_VLNGSTR (long string)
-    int n = readInt();
+    // The cheapest constant is a bare nil tag: one byte each, at least.
+    size_t n = checkedCount(readInt(), 1, "Lua 5.4 constant count");
     std::vector<LuaConst> consts;
     consts.reserve(n);
-    for (int i = 0; i < n; ++i) {
+    for (size_t i = 0; i < n; ++i) {
         uint8_t tag = readU8();
         switch (tag) {
         case 0x00: consts.emplace_back(LuaNil{}); break;
@@ -334,15 +369,20 @@ std::vector<LuaConst> LuaReader::readConstants54() {
 // ─── Upvalues ────────────────────────────────────────────────────────────────
 
 std::vector<LuaUpvalue> LuaReader::readUpvalues51(int n) {
-    // In Lua 5.1 upvalue info is minimal (just count, no inStack/idx)
-    std::vector<LuaUpvalue> uvs(n);
+    // In Lua 5.1 upvalue info is minimal (just count, no inStack/idx); the
+    // names arrive later, in the debug section. Nothing is consumed here, but
+    // the count still sizes an allocation, so it has to be credible.
+    std::vector<LuaUpvalue> uvs(checkedCount(n, 1, "Lua 5.1 upvalue count"));
     return uvs;
 }
 
 std::vector<LuaUpvalue> LuaReader::readUpvalues52plus(int n) {
+    // Each descriptor is inStack + idx, plus a kind byte from 5.4 on.
+    size_t count = checkedCount(
+        n, ver_ == LuaVersion::Lua54 ? 3 : 2, "Upvalue count");
     std::vector<LuaUpvalue> uvs;
-    uvs.reserve(n);
-    for (int i = 0; i < n; ++i) {
+    uvs.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
         LuaUpvalue uv;
         uv.inStack = readU8();
         uv.idx     = readU8();
@@ -355,13 +395,14 @@ std::vector<LuaUpvalue> LuaReader::readUpvalues52plus(int n) {
 // ─── Proto readers ───────────────────────────────────────────────────────────
 
 void LuaReader::readDebugInfo51(LuaProto& proto) {
-    // Line info
-    int n = readInt();
+    // Line info — one readInt() per entry, so each costs a whole int on the wire.
+    size_t n = checkedCount(readInt(), useLeb128_ ? 1 : (size_t)intSz_,
+                            "Lua 5.1 line info count");
     proto.lineInfo.reserve(n);
-    for (int i = 0; i < n; ++i) proto.lineInfo.push_back(readInt());
-    // Locals
-    int nl = readInt();
-    for (int i = 0; i < nl; ++i) {
+    for (size_t i = 0; i < n; ++i) proto.lineInfo.push_back(readInt());
+    // Locals — a name plus two ints, so at minimum one byte each.
+    size_t nl = checkedCount(readInt(), 1, "Lua 5.1 local count");
+    for (size_t i = 0; i < nl; ++i) {
         LuaLocal loc;
         loc.name     = readString51();
         loc.startPc  = readInt();
@@ -370,22 +411,23 @@ void LuaReader::readDebugInfo51(LuaProto& proto) {
     }
     // Upvalue names — must be read in full to keep the stream aligned,
     // even if proto.upvalues hasn't been pre-populated.
-    int nu = readInt();
-    for (int i = 0; i < nu; ++i) {
+    size_t nu = checkedCount(readInt(), 1, "Lua 5.1 upvalue name count");
+    for (size_t i = 0; i < nu; ++i) {
         std::string name = readString51();
-        if (i < (int)proto.upvalues.size())
+        if (i < proto.upvalues.size())
             proto.upvalues[i].name = std::move(name);
     }
 }
 
 void LuaReader::readDebugInfo52plus(LuaProto& proto) {
-    // Line info
-    int n = readInt();
+    // Line info — one readInt() per entry, so each costs a whole int on the wire.
+    size_t n = checkedCount(readInt(), useLeb128_ ? 1 : (size_t)intSz_,
+                            "Lua 5.2+ line info count");
     proto.lineInfo.reserve(n);
-    for (int i = 0; i < n; ++i) proto.lineInfo.push_back(readInt());
-    // Locals
-    int nl = readInt();
-    for (int i = 0; i < nl; ++i) {
+    for (size_t i = 0; i < n; ++i) proto.lineInfo.push_back(readInt());
+    // Locals — a name plus two ints, so at minimum one byte each.
+    size_t nl = checkedCount(readInt(), 1, "Lua 5.2+ local count");
+    for (size_t i = 0; i < nl; ++i) {
         LuaLocal loc;
         loc.name     = readString();
         loc.startPc  = readInt();
@@ -393,10 +435,10 @@ void LuaReader::readDebugInfo52plus(LuaProto& proto) {
         proto.locals.push_back(std::move(loc));
     }
     // Upvalue names — must be read in full to keep stream aligned.
-    int nu = readInt();
-    for (int i = 0; i < nu; ++i) {
+    size_t nu = checkedCount(readInt(), 1, "Lua 5.2+ upvalue name count");
+    for (size_t i = 0; i < nu; ++i) {
         std::string name = readString();
-        if (i < (int)proto.upvalues.size())
+        if (i < proto.upvalues.size())
             proto.upvalues[i].name = std::move(name);
     }
 }
@@ -409,21 +451,22 @@ void LuaReader::readDebugInfo54(LuaProto& proto) {
     //   DumpInt(n_upvalue_names) + n × DumpString(name)
 
     // Line info: raw bytes (one signed byte per instruction = delta from previous abs line)
-    int nLine = static_cast<int>(readLuaSize54());
+    size_t nLine = checkedSize(readLuaSize54(), 1, "Lua 5.4 line info count");
     proto.lineInfo.reserve(nLine);
-    for (int i = 0; i < nLine; ++i)
+    for (size_t i = 0; i < nLine; ++i)
         proto.lineInfo.push_back(static_cast<int>(static_cast<int8_t>(readU8())));
 
-    // Absolute line info: LEB128 pairs (pc, line)
-    int nAbs = static_cast<int>(readLuaSize54());
-    for (int i = 0; i < nAbs; ++i) {
+    // Absolute line info: LEB128 pairs (pc, line), one byte apiece at minimum
+    size_t nAbs = checkedSize(readLuaSize54(), 2, "Lua 5.4 abs line info count");
+    for (size_t i = 0; i < nAbs; ++i) {
         (void)readLuaSize54(); // pc
         (void)readLuaSize54(); // line
     }
 
     // Local variable names
-    int nl = static_cast<int>(readLuaSize54());
-    for (int i = 0; i < nl; ++i) {
+    // A local is a string plus startpc and endpc: three LEB128 bytes minimum.
+    size_t nl = checkedSize(readLuaSize54(), 3, "Lua 5.4 local count");
+    for (size_t i = 0; i < nl; ++i) {
         LuaLocal loc;
         loc.name    = readString54();
         loc.startPc = static_cast<int>(readLuaSize54());
@@ -432,10 +475,10 @@ void LuaReader::readDebugInfo54(LuaProto& proto) {
     }
 
     // Upvalue names — read all to keep stream aligned
-    int nu = static_cast<int>(readLuaSize54());
-    for (int i = 0; i < nu; ++i) {
+    size_t nu = checkedSize(readLuaSize54(), 1, "Lua 5.4 upvalue name count");
+    for (size_t i = 0; i < nu; ++i) {
         std::string name = readString54();
-        if (i < (int)proto.upvalues.size())
+        if (i < proto.upvalues.size())
             proto.upvalues[i].name = std::move(name);
     }
 }
@@ -455,9 +498,9 @@ LuaProto LuaReader::readProto51() {
     proto.code      = readCode();
     proto.constants = readConstants51();
 
-    // Sub-protos
-    int np = readInt();
-    for (int i = 0; i < np; ++i)
+    // Sub-protos — the shortest possible prototype is still several bytes.
+    size_t np = checkedCount(readInt(), 1, "Sub-prototype count");
+    for (size_t i = 0; i < np; ++i)
         proto.protos.push_back(readProto51());
 
     readDebugInfo51(proto);
@@ -478,9 +521,9 @@ LuaProto LuaReader::readProto52() {
     proto.code      = readCode();
     proto.constants = readConstants52();
 
-    // Sub-protos
-    int np = readInt();
-    for (int i = 0; i < np; ++i)
+    // Sub-protos — the shortest possible prototype is still several bytes.
+    size_t np = checkedCount(readInt(), 1, "Sub-prototype count");
+    for (size_t i = 0; i < np; ++i)
         proto.protos.push_back(readProto52());
 
     proto.upvalues = readUpvalues52plus(numUpvals);
@@ -507,9 +550,9 @@ LuaProto LuaReader::readProto53() {
     int numUpvals = readInt();
     proto.upvalues = readUpvalues52plus(numUpvals);
 
-    // Sub-protos
-    int np = readInt();
-    for (int i = 0; i < np; ++i)
+    // Sub-protos — the shortest possible prototype is still several bytes.
+    size_t np = checkedCount(readInt(), 1, "Sub-prototype count");
+    for (size_t i = 0; i < np; ++i)
         proto.protos.push_back(readProto53());
 
     readDebugInfo52plus(proto);
@@ -534,9 +577,9 @@ LuaProto LuaReader::readProto54() {
     int numUpvals = readInt();
     proto.upvalues = readUpvalues52plus(numUpvals);
 
-    // Sub-protos
-    int np = readInt();
-    for (int i = 0; i < np; ++i)
+    // Sub-protos — the shortest possible prototype is still several bytes.
+    size_t np = checkedCount(readInt(), 1, "Sub-prototype count");
+    for (size_t i = 0; i < np; ++i)
         proto.protos.push_back(readProto54());
 
     readDebugInfo54(proto);

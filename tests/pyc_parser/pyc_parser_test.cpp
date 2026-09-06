@@ -100,6 +100,18 @@ struct MarshalBuilder {
         for (int i = 0; i < 4; ++i) buf.push_back((n >> (8*i)) & 0xFF);
     }
 
+    // TYPE_LONG: int32 digit count (negative = negative value), then that many
+    // little-endian uint16 digits in base 2^15.
+    void longObj(int32_t n, const std::vector<uint16_t>& digits) {
+        byte('l');
+        for (int i = 0; i < 4; ++i)
+            buf.push_back((static_cast<uint32_t>(n) >> (8*i)) & 0xFF);
+        for (uint16_t d : digits) {
+            buf.push_back(d & 0xFF);
+            buf.push_back((d >> 8) & 0xFF);
+        }
+    }
+
     void ref(int32_t idx) {
         byte('r');
         for (int i = 0; i < 4; ++i) buf.push_back((idx >> (8*i)) & 0xFF);
@@ -412,6 +424,78 @@ TEST(MarshalReader, UnknownTypeByteSetsError) {
     EXPECT_TRUE(mr.hasError());
 }
 
+// ─── TYPE_LONG tests ──────────────────────────────────────────────────────────
+
+TEST(MarshalReader, ReadLongThreeDigits) {
+    PythonVersion ver{3, 10, 0, ""};
+    MarshalBuilder mb;
+    mb.longObj(3, {1, 2, 3}); // 1 + 2*2^15 + 3*2^30
+    MarshalReader mr(mb.buf.data(), mb.buf.size(), ver);
+    auto obj = mr.readObject();
+    ASSERT_NE(nullptr, obj);
+    EXPECT_EQ(MarshalObject::Type::Long, obj->type);
+    EXPECT_EQ(3221291009LL, obj->asInt());
+    EXPECT_FALSE(mr.hasError());
+}
+
+TEST(MarshalReader, ReadLongNegativeDigitCountIsNegativeValue) {
+    PythonVersion ver{3, 10, 0, ""};
+    MarshalBuilder mb;
+    mb.longObj(-3, {1, 2, 3});
+    MarshalReader mr(mb.buf.data(), mb.buf.size(), ver);
+    auto obj = mr.readObject();
+    ASSERT_NE(nullptr, obj);
+    EXPECT_EQ(-3221291009LL, obj->asInt());
+}
+
+// A long wider than int64_t must truncate, not shift past the width of the
+// accumulator. Six digits put the last shift at 75.
+TEST(MarshalReader, ReadLongWiderThanInt64) {
+    PythonVersion ver{3, 10, 0, ""};
+    MarshalBuilder mb;
+    mb.longObj(6, {0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF});
+    MarshalReader mr(mb.buf.data(), mb.buf.size(), ver);
+    auto obj = mr.readObject();
+    ASSERT_NE(nullptr, obj);
+    EXPECT_EQ(MarshalObject::Type::Long, obj->type);
+    EXPECT_FALSE(mr.hasError());
+}
+
+// The fifth digit sits at bit 60, so a large one overflows the signed
+// accumulator even though the shift itself is still in range.
+TEST(MarshalReader, ReadLongFifthDigitOverflowsSignedRange) {
+    PythonVersion ver{3, 10, 0, ""};
+    MarshalBuilder mb;
+    mb.longObj(5, {0, 0, 0, 0, 17775});
+    MarshalReader mr(mb.buf.data(), mb.buf.size(), ver);
+    auto obj = mr.readObject();
+    ASSERT_NE(nullptr, obj);
+    EXPECT_EQ(MarshalObject::Type::Long, obj->type);
+    EXPECT_FALSE(mr.hasError());
+}
+
+TEST(MarshalReader, ReadLongDigitCountExceedsRemainingInput) {
+    PythonVersion ver{3, 10, 0, ""};
+    MarshalBuilder mb;
+    mb.longObj(0x7FFFFFFF, {1, 2}); // claims 2^31-1 digits, supplies two
+    MarshalReader mr(mb.buf.data(), mb.buf.size(), ver);
+    auto obj = mr.readObject();
+    EXPECT_EQ(nullptr, obj);
+    EXPECT_TRUE(mr.hasError());
+}
+
+// INT32_MIN cannot be negated as an int32_t; the magnitude has to be taken in
+// unsigned form before it is bounded against the input.
+TEST(MarshalReader, ReadLongMostNegativeDigitCount) {
+    PythonVersion ver{3, 10, 0, ""};
+    MarshalBuilder mb;
+    mb.longObj(-2147483647 - 1, {1, 2});
+    MarshalReader mr(mb.buf.data(), mb.buf.size(), ver);
+    auto obj = mr.readObject();
+    EXPECT_EQ(nullptr, obj);
+    EXPECT_TRUE(mr.hasError());
+}
+
 // ─── PyCodeObject helpers tests ───────────────────────────────────────────────
 
 TEST(PyCodeObject, CoFlags) {
@@ -516,6 +600,26 @@ TEST(ExceptionTableDecoder, SimpleEntry) {
     EXPECT_FALSE(result[0].lasti);
 }
 
+// A ULEB128 field whose continuation bits never clear drives the shift past
+// the width of the uint32_t result; the surplus groups must be consumed
+// without shifting.
+TEST(ExceptionTableDecoder, UnterminatedUleb128Run) {
+    std::vector<uint8_t> table(24, 0xFF);
+    table.push_back(0x00);
+    auto result = decodeExceptionTable(table);
+    for (const auto& e : result) {
+        EXPECT_GE(e.end, e.start);
+    }
+}
+
+TEST(ExceptionTableDecoder, Uleb128WideValueKeepsLowGroups) {
+    // start = 0x81 0x80 0x80 0x80 0x00 -> five groups, only bit 7 set.
+    std::vector<uint8_t> table = {0x81, 0x80, 0x80, 0x80, 0x00, 0x00, 0x00, 0x00};
+    auto result = decodeExceptionTable(table);
+    ASSERT_EQ(1u, result.size());
+    EXPECT_EQ(1u, result[0].start);
+}
+
 TEST(ExceptionTableDecoder, MultipleEntries) {
     // Two entries: [4,8,20,2] and [0,4,10,3]
     std::vector<uint8_t> table = {0x04, 0x08, 0x14, 0x02, 0x00, 0x04, 0x0A, 0x03};
@@ -592,7 +696,7 @@ TEST(OpcodeInfo, CallFunctionIsCall) {
 // Minimal .pyc for Python 3.10: "pass" in a module
 // This is a hand-crafted .pyc that represents a trivial code object.
 
-static std::vector<uint8_t> buildMinimalPyc38() {
+static std::vector<uint8_t> buildPyc38WithCode(const std::vector<uint8_t>& coCode) {
     // Python 3.8 magic
     uint32_t magic = makeRawMagic(3413);
     std::vector<uint8_t> buf;
@@ -633,11 +737,10 @@ static std::vector<uint8_t> buildMinimalPyc38() {
     writeI32(1); // co_stacksize
     writeI32(static_cast<int32_t>(CO_NOFREE)); // co_flags
 
-    // co_code: LOAD_CONST 0 (100 0), RETURN_VALUE (83)
+    // co_code
     buf.push_back('B'); // TYPE_BYTES
-    writeI32(4);
-    buf.push_back(100); buf.push_back(0); // LOAD_CONST 0
-    buf.push_back(83);  buf.push_back(0); // RETURN_VALUE
+    writeI32(static_cast<int32_t>(coCode.size()));
+    for (uint8_t b : coCode) buf.push_back(b);
 
     // co_consts: (None,) — small tuple of 1 element
     buf.push_back(')'); buf.push_back(1); // SMALL_TUPLE size=1
@@ -672,6 +775,54 @@ static std::vector<uint8_t> buildMinimalPyc38() {
     buf.push_back('B');
     writeI32(0);
 
+    return buf;
+}
+
+static std::vector<uint8_t> buildMinimalPyc38() {
+    // LOAD_CONST 0 (100 0), RETURN_VALUE (83)
+    return buildPyc38WithCode({100, 0, 83, 0});
+}
+
+// 3.11 drops co_nlocals and the separate free/cell tuples and gains qualname
+// and an exception table; the field order is the one readCodeFields expects.
+static std::vector<uint8_t> buildPyc311WithCode(const std::vector<uint8_t>& coCode) {
+    uint32_t magic = makeRawMagic(3495);
+    std::vector<uint8_t> buf;
+    for (int i = 0; i < 4; ++i) buf.push_back((magic >> (8*i)) & 0xFF);
+    for (int i = 0; i < 12; ++i) buf.push_back(0); // bit_field, mtime, source_size
+
+    auto writeI32 = [&](int32_t v) {
+        for (int i = 0; i < 4; ++i) buf.push_back((v >> (8*i)) & 0xFF);
+    };
+    auto shortAscii = [&](const std::string& str) {
+        buf.push_back('z');
+        buf.push_back(static_cast<uint8_t>(str.size()));
+        for (char c : str) buf.push_back(static_cast<uint8_t>(c));
+    };
+    auto emptyBytes = [&]() { buf.push_back('B'); writeI32(0); };
+    auto emptyTuple = [&]() { buf.push_back(')'); buf.push_back(0); };
+
+    buf.push_back(0x80 | 'c'); // TYPE_CODE with FLAG_REF
+    writeI32(0); // co_argcount
+    writeI32(0); // co_posonlyargcount
+    writeI32(0); // co_kwonlyargcount
+    writeI32(1); // co_stacksize
+    writeI32(static_cast<int32_t>(CO_NOFREE)); // co_flags
+
+    buf.push_back('B'); // co_code
+    writeI32(static_cast<int32_t>(coCode.size()));
+    for (uint8_t b : coCode) buf.push_back(b);
+
+    buf.push_back(')'); buf.push_back(1); buf.push_back('N'); // co_consts = (None,)
+    emptyTuple();               // co_names
+    emptyTuple();               // co_localsplusnames
+    emptyBytes();               // co_localspluskinds
+    shortAscii("<string>");     // co_filename
+    shortAscii("<module>");     // co_name
+    shortAscii("<module>");     // co_qualname
+    writeI32(1);                // co_firstlineno
+    emptyBytes();               // co_linetable
+    emptyBytes();               // co_exceptiontable
     return buf;
 }
 
@@ -718,6 +869,49 @@ TEST(PycReader, ParseMinimalPyc38CFGNotEmpty) {
     const auto& cls = result.module.classes().front();
     ASSERT_FALSE(cls.methods.empty());
     EXPECT_GT(cls.methods.front().cfg.blockCount(), 0u);
+}
+
+// A compiler emits at most three EXTENDED_ARG prefixes; nothing stops a file
+// from chaining forty. The accumulated operand must wrap at the width the
+// wordcode encodes instead of shifting a signed accumulator out of range, and
+// the jump target it feeds must be computed wide enough not to overflow.
+TEST(PycReader, ExtendedArgChainDoesNotOverflow) {
+    std::vector<uint8_t> code;
+    for (int i = 0; i < 40; ++i) {
+        code.push_back(90);   // EXTENDED_ARG
+        code.push_back(0xFF);
+    }
+    code.push_back(110); code.push_back(0xFF); // JUMP_FORWARD
+    code.push_back(83);  code.push_back(0);    // RETURN_VALUE
+
+    auto buf = buildPyc38WithCode(code);
+    PycReadOptions opts;
+    opts.buildCFG = true;
+    PycReader reader(opts);
+    auto result = reader.read(buf.data(), buf.size());
+    ASSERT_TRUE(result.success) << result.error;
+    ASSERT_FALSE(result.module.classes().empty());
+    EXPECT_FALSE(result.module.classes().front().methods.empty());
+}
+
+// Same chain on the 3.11+ opcode, which takes the other EXTENDED_ARG branch.
+TEST(PycReader, ExtendedArgChainDoesNotOverflow311) {
+    std::vector<uint8_t> code;
+    for (int i = 0; i < 40; ++i) {
+        code.push_back(144);  // EXTENDED_ARG in 3.11+
+        code.push_back(0xFF);
+    }
+    code.push_back(110); code.push_back(0xFF); // JUMP_FORWARD
+    code.push_back(83);  code.push_back(0);    // RETURN_VALUE
+
+    auto buf = buildPyc311WithCode(code);
+    PycReadOptions opts;
+    opts.buildCFG = true;
+    PycReader reader(opts);
+    auto result = reader.read(buf.data(), buf.size());
+    ASSERT_TRUE(result.success) << result.error;
+    ASSERT_FALSE(result.module.classes().empty());
+    EXPECT_FALSE(result.module.classes().front().methods.empty());
 }
 
 TEST(PycReader, TooSmallFileFails) {

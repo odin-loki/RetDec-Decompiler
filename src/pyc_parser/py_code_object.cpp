@@ -122,12 +122,19 @@ std::vector<LineEntry> decodeLnotab310(
 // ─── decodeLnotab311 (Python 3.11+ PEP 657) ──────────────────────────────────
 
 // Helper: decode unsigned ULEB128
+//
+// The continuation bit is set by the file, so the shift is driven by the input
+// too: a run of 0xFF bytes used to push it past the width of the result, which
+// is undefined. A uint32_t holds at most five 7-bit groups, so groups beyond
+// that carry no representable bits -- they are consumed to keep the caller's
+// position on an entry boundary, but contribute nothing.
 static uint32_t readUleb128(const uint8_t* data, size_t size, size_t& pos) {
     uint32_t result = 0;
-    int shift = 0;
+    unsigned shift = 0;
     while (pos < size) {
         uint8_t b = data[pos++];
-        result |= static_cast<uint32_t>(b & 0x7F) << shift;
+        if (shift < 32)
+            result |= static_cast<uint32_t>(b & 0x7F) << shift;
         if ((b & 0x80) == 0) break;
         shift += 7;
     }
@@ -183,8 +190,10 @@ std::vector<LineEntry> decodeLnotab311(
 
         switch (codeType) {
         case 0: {
-            // Short form: line delta in [0..2], col in [0..64]
-            if (pos + 1 > size) goto done;
+            // Short form: line delta in [0..2], col in [0..64].
+            // Two bytes follow, so two must be available -- the check used to
+            // ask for one and read past the end of a truncated table.
+            if (pos + 2 > size) goto done;
             int8_t lineDelta = static_cast<int8_t>(data[pos++]);
             int8_t colStart  = static_cast<int8_t>(data[pos++]);
             line += lineDelta;
@@ -194,8 +203,9 @@ std::vector<LineEntry> decodeLnotab311(
             break;
         }
         case 1: {
-            // One-line form
-            if (pos + 2 > size) goto done;
+            // One-line form: three bytes follow (line delta, start and end
+            // column), not two.
+            if (pos + 3 > size) goto done;
             int8_t lineDelta  = static_cast<int8_t>(data[pos++]);
             int8_t colStart   = static_cast<int8_t>(data[pos++]);
             int8_t colEnd     = static_cast<int8_t>(data[pos++]);

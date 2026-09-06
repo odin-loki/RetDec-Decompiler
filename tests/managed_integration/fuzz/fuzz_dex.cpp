@@ -11,7 +11,7 @@
  *     -o fuzz_dex
  *
  * Run:
- *   mkdir -p corpus_dex && cp <fixtures>/dex/*.dex corpus_dex/
+ *   mkdir -p corpus_dex && cp <fixtures>/dex/[*].dex corpus_dex/
  *   ./fuzz_dex corpus_dex/ -max_total_time=600 -jobs=4 -runs=1000000
  *
  * @copyright (c) 2024 Odin Loch Trading as Imortek
@@ -38,7 +38,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         opts.strict           = false;
 
         DexClassParser parser(dex, opts);
-        for (uint32_t i = 0; i < dex.classDefsSize(); ++i) {
+        for (uint32_t i = 0; i < dex.classCount(); ++i) {
             (void)parser.parseClass(i);
         }
     } catch (const std::exception&) {
