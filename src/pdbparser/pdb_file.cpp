@@ -666,6 +666,13 @@ void PDBFile::parse_sections(uint64_t image_base)
 	unsigned int pdb_sect_size = pdb_sect_stream->size;
 	char * pdb_sect_data = pdb_sect_stream->data;
 
+	// A stream can be in range and still carry no data -- an unused or
+	// unreadable one has data == nullptr -- while its recorded size is
+	// non-zero, so the count below would be positive and the loop would walk a
+	// null pointer.
+	if (pdb_sect_data == nullptr)
+		return;
+
 	// Get number of sections and array of section headers
 	int num_sects = pdb_sect_size / sizeof(PDB_IMAGE_SECTION_HEADER);
 	PDB_IMAGE_SECTION_HEADER * sects = reinterpret_cast<PDB_IMAGE_SECTION_HEADER *>(pdb_sect_data);

@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include "retdec/utils/bounds.h"
 #include <cassert>
 #include <cstdarg>
 #include <cstdio>
@@ -1141,16 +1142,38 @@ void PDBTypes::parse_types(void)
 	// which is only there if the stream is long enough to hold it: the header
 	// used to be read out of whatever the stream was, an absent stream (data
 	// pointer of an unused stream) included.
-	if (pdb_tpi_size < sizeof(HDR))
+	// A stream can be in range and still carry no data -- an unused or
+	// unreadable one has data == nullptr -- while its recorded size is
+	// non-zero, so the size check alone still leaves tpi_header null.
+	if (pdb_tpi_data == nullptr || pdb_tpi_size < sizeof(HDR))
 	{
 		parsed = true;
 		return;
 	}
+	namespace bounds = retdec::utils::bounds;
+
 	unsigned int position = sizeof(HDR);
 	int index = tpi_header->tiMin;
 	while (position < pdb_tpi_size)
 	{  // Process all data-type records in TPI stream
+		// `position < pdb_tpi_size` only promises one byte. Reading the record
+		// header needs four (a size word and a leaf word), and the record body
+		// the header then declares need not be present at all -- the length
+		// comes out of the file. Check both before casting, the same way
+		// symbol_at() does on the symbols side; without this the walk reads
+		// past the end of the TPI stream on any truncated or hostile PDB.
+		if (!bounds::rangeFits(position, pdb_tpi_size, 2 * sizeof(PDB_WORD)))
+			break;
+
 		PDBGeneralSymbol * symbol = reinterpret_cast<PDBGeneralSymbol *>(pdb_tpi_data + position);
+
+		// A zero-length record carries no leaf and would leave the walk
+		// stepping two bytes at a time through the rest of the stream.
+		if (symbol->size < sizeof(PDB_WORD))
+			break;
+		if (!bounds::rangeFits(position + sizeof(PDB_WORD), pdb_tpi_size, symbol->size))
+			break;
+
 		lfRecord * record = reinterpret_cast<lfRecord *>(pdb_tpi_data + position + 2);
 
 		switch (record->leaf)

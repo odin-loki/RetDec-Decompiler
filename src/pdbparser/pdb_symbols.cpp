@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cstddef>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -58,6 +59,27 @@ static std::size_t symbol_record_size(PDBGeneralSymbol *symbol)
 static bool record_holds(PDBGeneralSymbol *symbol, std::size_t len)
 {
 	return symbol_record_size(symbol) >= len;
+}
+
+/**
+ * Determines whether a record's trailing name is NUL-terminated inside the
+ * record.
+ *
+ * record_holds() bounds the fixed part of a structure; the name that follows it
+ * is a string whose terminator the file is under no obligation to supply. Every
+ * site below hands the name out as a `char *`, so without this a caller reads
+ * on into the rest of the symbol stream -- and past it, for a name at the end.
+ *
+ * @param symbol Record to check
+ * @param nameOffset Offset of the name field within the record
+ */
+static bool record_name_terminated(PDBGeneralSymbol *symbol, std::size_t nameOffset)
+{
+	const std::size_t total = symbol_record_size(symbol);
+	if (nameOffset >= total)
+		return false;
+	const char *begin = reinterpret_cast<const char *>(symbol) + nameOffset;
+	return std::memchr(begin, '\0', total - nameOffset) != nullptr;
 }
 
 /**
@@ -237,6 +259,8 @@ bool PDBFunction::parse_symbol(PDBGeneralSymbol *symbol, PDBTypes *types, PDBSym
 		case S_LPROC32:
 		{  // Function definition
 			PROCSYM32 *func_sym = reinterpret_cast<PROCSYM32 *>(symbol);
+			if (!record_name_terminated(symbol, offsetof(PROCSYM32, name)))
+				break;
 			name = reinterpret_cast<char *>(func_sym->name);
 			overload_index = 0;
 			address = pdbsyms->get_virtual_address(func_sym->seg, func_sym->off);
@@ -271,6 +295,8 @@ bool PDBFunction::parse_symbol(PDBGeneralSymbol *symbol, PDBTypes *types, PDBSym
 		case S_REGREL32:
 		{  // Local variable register-relative
 			REGREL32 *lvar_sym = reinterpret_cast<REGREL32 *>(symbol);
+			if (!record_name_terminated(symbol, offsetof(REGREL32, name)))
+				break;
 			PDBLocalVariable new_var =
 			{  // Fill local variable structure
 			        reinterpret_cast<char *>(lvar_sym->name), PDBLVLOC_REGREL32, cur_block, lvar_sym->off,
@@ -284,6 +310,8 @@ bool PDBFunction::parse_symbol(PDBGeneralSymbol *symbol, PDBTypes *types, PDBSym
 		case S_BPREL32:
 		{  // Local variable EBP-relative
 			BPRELSYM32 *lvar_sym = reinterpret_cast<BPRELSYM32 *>(symbol);
+			if (!record_name_terminated(symbol, offsetof(BPRELSYM32, name)))
+				break;
 			PDBLocalVariable new_var =
 			{  // Fill local variable structure
 			        reinterpret_cast<char *>(lvar_sym->name), PDBLVLOC_BPREL32, cur_block, lvar_sym->off, 0,
@@ -305,6 +333,8 @@ bool PDBFunction::parse_symbol(PDBGeneralSymbol *symbol, PDBTypes *types, PDBSym
 		case S_REGISTER:
 		{  // Local variable in register
 			REGSYM *lvar_sym = reinterpret_cast<REGSYM *>(symbol);
+			if (!record_name_terminated(symbol, offsetof(REGSYM, name)))
+				break;
 			PDBLocalVariable new_var =
 			{  // Fill local variable structure
 			        reinterpret_cast<char *>(lvar_sym->name), PDBLVLOC_REGISTER, cur_block, 0, lvar_sym->reg,
@@ -319,6 +349,8 @@ bool PDBFunction::parse_symbol(PDBGeneralSymbol *symbol, PDBTypes *types, PDBSym
 		case S_LDATA32:
 		{  // Data inside function code
 			DATASYM32 *data_sym = reinterpret_cast<DATASYM32 *>(symbol);
+			if (!record_name_terminated(symbol, offsetof(DATASYM32, name)))
+				break;
 			PDBFunctionData new_data =
 			{  // Fill structure
 			        reinterpret_cast<char *>(data_sym->name),  // Name
@@ -403,6 +435,8 @@ void PDBSymbols::parse_symbols(void)
 		        && record_holds(symbol, sizeof(DATASYM32)))
 		{  // Global variable
 			DATASYM32 * sym = reinterpret_cast<DATASYM32 *>(symbol);
+			if (!record_name_terminated(symbol, offsetof(DATASYM32, name)))
+				continue;
 			PDBGlobalVariable new_var =
 			{reinterpret_cast<char *>(sym->name),  // Name
 			        get_virtual_address(sym->seg, sym->off),  // Address
@@ -463,7 +497,16 @@ void PDBSymbols::parse_symbols(void)
 					if (!record_holds(symbol, sizeof(DATASYM32)))
 						break;
 					DATASYM32 * sym = reinterpret_cast<DATASYM32 *>(symbol);
-					if (new_function != nullptr && sym->seg <= sections[0].file_address)
+					if (!record_name_terminated(symbol, offsetof(DATASYM32, name)))
+						break;
+					// `sections` is empty whenever the PDB carries no section
+					// headers -- which a malformed one need not -- so this
+					// comparison indexed an empty vector. Elsewhere in this file
+					// every section lookup goes through a size check; this one
+					// did not. With no sections there is nothing to be "inside",
+					// so treat the symbol as global.
+					if (new_function != nullptr && !sections.empty()
+						&& sym->seg <= sections[0].file_address)
 						// Data inside function's code
 						new_function->parse_symbol(symbol, types, this);
 					else

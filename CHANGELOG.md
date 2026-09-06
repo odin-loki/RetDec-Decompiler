@@ -98,6 +98,19 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   labelled introsort; and SHA-256 fired at 0.55 with no SHA constant present.
   Several audit findings were correctly rejected as already fixed earlier in
   this branch rather than fixed twice.
+- `pdbparser`: five further defects, all found by the adversarial reviewer
+  asking whether the fix had siblings rather than whether it worked.
+  `PDBTypes::parse_types` walked TPI records checking only that one byte
+  remained, so a record header and the body its own length field declared were
+  both read past the end of the stream. `parse_symbols` indexed `sections[0]`
+  on a PDB carrying no section headers. `record_holds()` bounds a record's
+  fixed structure but not the NUL-terminated name after it, so every symbol
+  name was handed out as a `char *` that could run off the end of the stream;
+  `record_name_terminated()` now checks for the terminator inside the record at
+  all seven sites. And a stream can be in range while carrying a null data
+  pointer with a non-zero recorded size, which walked a null pointer in both
+  `parse_sections` and the TPI header. After these, 7.3 million fuzz executions
+  found nothing further.
 - `dex_parser`: `skipEncodedValue`, `skipEncodedArray` and
   `skipEncodedAnnotation` mutually recurse on a file-declared nesting depth with
   nothing bounding it. `VALUE_ARRAY` costs two bytes per level, so a small file
