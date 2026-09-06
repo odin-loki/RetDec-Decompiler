@@ -69,6 +69,15 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `neural`: the structural gate ran only when the refinement was within 4x the
+  original's size, so a model could defeat it by being verbose. That skipped the
+  spawn-call rejection `docs/CLAIMS.md` advertises by identifier under
+  `C-NEURAL` and `C-N14` (`system`, `execv`, `_popen`, `ShellExecuteA`,
+  `CreateProcessAsUserA`, `posix_spawn`, …): padding the output past the
+  threshold let an injected `system()` call through. The spawn check is now
+  unconditional; the control-flow half stays size-gated, since a rewrite that
+  legitimately adds statements does change those counts. Found by a subsystem
+  audit, not by the fuzzer.
 - `eh_reconstruct`: `IBinaryView::readSLEB128` accumulated into an `int64_t`
   with no bound on the shift. Both halves are undefined behaviour on
   attacker-controlled DWARF — `(int64_t)0x7F << 57` overflows the signed range,

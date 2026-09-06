@@ -284,6 +284,44 @@ TEST(NeuralGates, ControlKeywordInCommentDoesNotChangeShape)
 // source, so a refinement could introduce a real spawn call and delete a
 // comment mentioning the same word: the two cancelled out, the count matched,
 // and the call passed the gate. Counting over code only closes that.
+// The structural gate only ran when the refinement was within 4x the original's
+// size, so padding the output past that threshold skipped it entirely --
+// including the spawn-call rejection docs/CLAIMS.md names under C-NEURAL and
+// C-N14. A model could smuggle in a system() call by being verbose.
+TEST(NeuralGates, OversizedRefinementCannotSmuggleASpawnCall)
+{
+	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
+
+	// Well past 4x the original, which is what used to disable the check.
+	std::string refined = "int f(int x) {\n  system(\"id\");\n";
+	for (int i = 0; i < 200; ++i) {
+		refined += "  int pad" + std::to_string(i) + " = " + std::to_string(i) + ";\n";
+	}
+	refined += "  if (x > 0) return 1;\n  return 0;\n}\n";
+	ASSERT_GT(refined.size(), original.size() * 4);
+
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_FALSE(r.allPassed());
+	EXPECT_EQ(r.structural, GateResult::FailStructural);
+}
+
+// The size gate still has a job: a large rewrite that adds no spawn call must
+// not be rejected merely for being large.
+TEST(NeuralGates, OversizedRefinementWithoutSpawnCallIsAllowedThrough)
+{
+	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
+
+	std::string refined = "int f(int x) {\n";
+	for (int i = 0; i < 200; ++i) {
+		refined += "  int pad" + std::to_string(i) + " = " + std::to_string(i) + ";\n";
+	}
+	refined += "  if (x > 0) return 1;\n  return 0;\n}\n";
+	ASSERT_GT(refined.size(), original.size() * 4);
+
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_EQ(r.structural, GateResult::Pass);
+}
+
 TEST(NeuralGates, SpawnCallSubstitutedForCommentFailsStructural)
 {
 	const std::string original =

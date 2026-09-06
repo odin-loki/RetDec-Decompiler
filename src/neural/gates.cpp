@@ -455,12 +455,8 @@ bool fillAstShape(const std::string& src, AstShape& out)
 	return ok;
 }
 
-bool astShapeChanged(const AstShape& a, const AstShape& b)
+bool astSpawnChanged(const AstShape& a, const AstShape& b)
 {
-	if (a.ifN != b.ifN || a.elseN != b.elseN || a.whileN != b.whileN || a.forN != b.forN
-		|| a.gotoN != b.gotoN || a.returnN != b.returnN)
-		return true;
-	if (!(a.cmp == b.cmp)) return true;
 	for (int i = 0; kSpawnIdents[i]; ++i)
 	{
 		if (a.spawn[i] != b.spawn[i]) return true;
@@ -468,7 +464,48 @@ bool astShapeChanged(const AstShape& a, const AstShape& b)
 	return false;
 }
 
+bool astControlFlowChanged(const AstShape& a, const AstShape& b)
+{
+	if (a.ifN != b.ifN || a.elseN != b.elseN || a.whileN != b.whileN || a.forN != b.forN
+		|| a.gotoN != b.gotoN || a.returnN != b.returnN)
+		return true;
+	return !(a.cmp == b.cmp);
+}
+
 #endif
+
+/// Did the refinement add or remove a process-spawning call?
+///
+/// Asked on EVERY refinement, whatever its size. This used to be one half of
+/// controlShapeChanged, which only ran when the refinement was within 4x the
+/// original's size -- so a model could smuggle in a system() call simply by
+/// padding its output past that threshold, defeating the spawn-call rejection
+/// docs/CLAIMS.md advertises under C-NEURAL and C-N14. The control-flow half
+/// legitimately varies when a rewrite adds statements; this half never does.
+bool spawnCallsChanged(const std::string& originalC, const std::string& refinedC, bool& usedParser)
+{
+	usedParser = false;
+#ifdef RETDEC_HAS_TREE_SITTER
+	{
+		AstShape a;
+		AstShape b;
+		if (fillAstShape(originalC, a) && fillAstShape(refinedC, b))
+		{
+			usedParser = true;
+			return astSpawnChanged(a, b);
+		}
+	}
+#endif
+	const std::string original = blankNonCode(originalC);
+	const std::string refined = blankNonCode(refinedC);
+
+	for (int i = 0; kSpawnIdents[i]; ++i)
+	{
+		if (countIdent(original, kSpawnIdents[i]) != countIdent(refined, kSpawnIdents[i]))
+			return true;
+	}
+	return false;
+}
 
 bool controlShapeChanged(const std::string& originalC, const std::string& refinedC, bool& usedParser)
 {
@@ -479,7 +516,7 @@ bool controlShapeChanged(const std::string& originalC, const std::string& refine
 	if (fillAstShape(originalC, a) && fillAstShape(refinedC, b))
 	{
 		usedParser = true;
-		return astShapeChanged(a, b);
+		return astControlFlowChanged(a, b) || astSpawnChanged(a, b);
 	}
 #endif
 	// Fallback: count over code only.  See blankNonCode.
@@ -556,6 +593,24 @@ GateReport runVerificationGates(const std::string& originalC, const std::string&
 	// shape, comparison operators, or spawn calls. Parse failure
 	// falls back to the N5 keyword scan. FullRewrite that grows the
 	// TU skips this check.
+	// The spawn-call check is unconditional. A refinement more than 4x the
+	// original's size used to skip the whole structural gate, so padding the
+	// output was enough to smuggle a system() call past the one protection
+	// docs/CLAIMS.md names by identifier.
+	{
+		bool usedParser = false;
+		const bool spawnChanged = spawnCallsChanged(originalC, refinedC, usedParser);
+		report.structuralUsedParser = usedParser;
+		if (spawnChanged)
+		{
+			report.structural = GateResult::FailStructural;
+			return report;
+		}
+	}
+
+	// The control-flow half stays size-gated: a FullRewrite that legitimately
+	// grows the translation unit does change the statement counts, and failing
+	// it there would reject every such refinement.
 	const bool similarSize =
 		originalC.size() > 16 && refinedC.size() * 4 > originalC.size() && originalC.size() * 4 > refinedC.size();
 	if (similarSize)
