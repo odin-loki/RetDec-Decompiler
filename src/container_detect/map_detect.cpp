@@ -145,6 +145,12 @@ static bool hasRotation(const ssa::SSAFunction& fn, bool leftRotate) {
 
             const ssa::VarId yVar = varOf(fn, ld->defValue);  // promoted child (y)
             if (yVar == ssa::kInvalidVar) continue;
+            // A rotation moves a node into a *different* node's slot. Without
+            // this, `p = p->next; p->next = p; p->prev = p` -- the circular
+            // sentinel std::list uses, which ListDetector in this same module
+            // is looking for -- satisfies both halves below with x and y the
+            // same variable, and comes back as a map at 0.30.
+            if (yVar == xBase) continue;
 
             bool slotRewritten = false;  // x->child = ...
             bool crossLinked   = false;  // y->other = x, on the far side of Oc
@@ -163,8 +169,14 @@ static bool hasRotation(const ssa::SSAFunction& fn, bool leftRotate) {
                 if (sBase == yVar
                     && varOf(fn, st->uses[0].valueId) == xBase
                     && sOff != childOff) {
-                    crossLinked = leftRotate ? (sOff < childOff)
-                                             : (sOff > childOff);
+                    // Accumulate. Assigning here let a later candidate store
+                    // overwrite an earlier match -- including overwriting true
+                    // with false -- so the direction reported for a block with
+                    // two cross-link-shaped stores depended on which came
+                    // first. The two directions are mutually exclusive per
+                    // store, not per block, and this is the difference.
+                    crossLinked |= leftRotate ? (sOff < childOff)
+                                              : (sOff > childOff);
                 }
             }
 

@@ -85,6 +85,24 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `container_detect`: three residual detector defects the adversarial re-review
+  found after the first round of fixes. `MapDetector::hasRotation` never
+  required the demoted and promoted nodes to be different, so
+  `p = p->next; p->next = p; p->prev = p` — the circular sentinel `ListDetector`
+  in the same module hunts for — came back as a map. The cross-link direction
+  was assigned inside the store loop rather than accumulated, so a later store
+  erased an earlier match and a block with a cross-link on each side of the read
+  slot scored one rotation instead of two, whichever came last.
+  `ListDetector::hasSentinelInit` required the two self-referential stores to be
+  strictly adjacent, in block 0, and to store the same `ValueId` — while the
+  slot test it calls already resolves a value to its variable. All three
+  narrowings dropped real sentinels; the relation is between variables and is
+  asked that way now, between any two stores in any block.
+- `container_detect`: `MapDetectorTest.ColourFieldDetected` asserted nothing
+  about the colour field. It built the bit with a helper that pushes a single
+  operand, so the predicate's `uses.size() >= 2` never held and the 0.20 it
+  checked came entirely from unrelated evidence. It now measures the bit's
+  contribution against the same fixture without it.
 - `cli_parser`: six metadata tables in the standard set were never decoded —
   DeclSecurity, FieldLayout, AssemblyProcessor, AssemblyOS,
   AssemblyRefProcessor and AssemblyRefOS — on the stated grounds that they "are

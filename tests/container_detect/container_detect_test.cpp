@@ -55,6 +55,26 @@ static void addCall(ssa::SSAFunction& fn, const std::string& callee)
 }
 
 // Add an instruction whose immediate operand has a given value.
+// A binary instruction with a real left operand and an immediate right one.
+//
+// addImmInstr below pushes a single Use, so every predicate that reads
+// `uses[1]` -- which is all of the ones asking about an immediate *operand* --
+// sees a one-element use list and declines. A fixture built with it therefore
+// asserts nothing about the predicate it names.
+static void addBinaryImmInstr(ssa::SSAFunction& fn, ssa::IrInstr::Op op,
+                              uint64_t immVal)
+{
+	auto* instr = fn.addInstr(fn.block(0)->id, op);
+	if (!instr) return;
+	ssa::IrValue* lhs = fn.allocValue(ssa::ValueKind::VirtualReg);
+	ssa::IrValue* imm = fn.allocValue(ssa::ValueKind::Immediate);
+	if (imm) imm->imm = immVal;
+	ssa::Use l; l.valueId = lhs ? lhs->id : ssa::kInvalidValue; l.operandIndex = 0;
+	ssa::Use r; r.valueId = imm ? imm->id : ssa::kInvalidValue; r.operandIndex = 1;
+	instr->uses.push_back(l);
+	instr->uses.push_back(r);
+}
+
 static void addImmInstr(ssa::SSAFunction& fn, ssa::IrInstr::Op op, uint64_t immVal)
 {
 	auto* instr = fn.addInstr(fn.block(0)->id, op);
@@ -611,22 +631,33 @@ TEST(MapDetectorTest, EmptyFunctionLowConfidence)
 
 TEST(MapDetectorTest, ColourFieldDetected)
 {
-	auto fn = makeFunc(
-		"rb_insert",
-		{
-			ssa::IrInstr::Op::Load,
-			ssa::IrInstr::Op::Load,
-			ssa::IrInstr::Op::Load,
-			ssa::IrInstr::Op::Store,
-			ssa::IrInstr::Op::Store,
-			ssa::IrInstr::Op::Store,
-			ssa::IrInstr::Op::Compare,
-			ssa::IrInstr::Op::Compare,
-		});
-	addImmInstr(*fn, ssa::IrInstr::Op::And, 1); // colour bit
+	// The colour bit has to actually raise the score, or this asserts only that
+	// hasThreePtrNode and hasRebalancing fire -- which they do on the three
+	// Loads, three Stores and two Compares below with no colour bit at all.
+	// It used to be built with addImmInstr, which pushes one Use, so
+	// hasColourField's `uses.size() >= 2` never held and the test passed on
+	// 0.20 of unrelated evidence.
+	const std::vector<ssa::IrInstr::Op> body = {
+		ssa::IrInstr::Op::Load,
+		ssa::IrInstr::Op::Load,
+		ssa::IrInstr::Op::Load,
+		ssa::IrInstr::Op::Store,
+		ssa::IrInstr::Op::Store,
+		ssa::IrInstr::Op::Store,
+		ssa::IrInstr::Op::Compare,
+		ssa::IrInstr::Op::Compare,
+	};
+
+	auto without = makeFunc("rb_insert_nocolour", body);
 	MapDetector det;
-	auto r = det.detect(*fn);
-	EXPECT_GE(r.confidence, 0.20f);
+	const float baseline = det.detect(*without).confidence;
+
+	auto with = makeFunc("rb_insert", body);
+	addBinaryImmInstr(*with, ssa::IrInstr::Op::And, 1); // colour bit
+	const float scored = det.detect(*with).confidence;
+
+	EXPECT_GT(scored, baseline);
+	EXPECT_NEAR(0.20f, scored - baseline, 1e-5f);
 }
 
 TEST(MapDetectorTest, RotationPatternBoostsConfidence)
@@ -655,6 +686,118 @@ TEST(MapDetectorTest, RotationPatternBoostsConfidence)
 	// We should get some confidence from the colour field at minimum.
 	EXPECT_GE(r.confidence, 0.20f);
 	EXPECT_EQ(r.kind, ContainerKind::Map);
+}
+
+// Regression: a rotation moves a node into a *different* node's slot.
+// hasRotation never required x and y to be distinct, so the circular sentinel
+// `p = p->next; p->next = p; p->prev = p` -- the shape ListDetector in this
+// same module hunts for -- satisfied both halves with one variable playing
+// both parts and came back as a map.
+TEST(MapDetectorTest, SelfReferentialNodeIsNotARotation)
+{
+	auto fn = std::make_unique<ssa::SSAFunction>("list_init");
+	auto* entry = fn->addBlock("entry");
+
+	const ssa::VarId p = 1;
+	auto* pVal  = fn->allocValue(ssa::ValueKind::VirtualReg, p);
+	auto* pNext = fn->allocValue(ssa::ValueKind::MemRef);   // &p->next
+	pNext->memBaseReg = p; pNext->memOffset = 8;
+	auto* pPrev = fn->allocValue(ssa::ValueKind::MemRef);   // &p->prev
+	pPrev->memBaseReg = p; pPrev->memOffset = 0;
+
+	// p = p->next  -- the load defines the same variable it reads off.
+	auto* ld = fn->addInstr(entry->id, ssa::IrInstr::Op::Load);
+	ld->defValue = pVal->id;
+	ssa::Use la; la.valueId = pNext->id; ld->uses.push_back(la);
+
+	// A second Load, so the >= 2 Loads precondition holds.
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Load);
+
+	// p->next = p;  p->prev = p;
+	for (auto* slot : {pNext, pPrev}) {
+		auto* st = fn->addInstr(entry->id, ssa::IrInstr::Op::Store);
+		ssa::Use v; v.valueId = pVal->id;  st->uses.push_back(v);
+		ssa::Use a; a.valueId = slot->id;  st->uses.push_back(a);
+	}
+
+	// The rotation predicates are private, so this asserts through the score:
+	// either rotation is worth 0.30, and nothing else in this fixture scores
+	// above 0.10 (three Loads are needed for hasThreePtrNode, three Stores and
+	// two Compares for hasRebalancing, and there are two Loads and two Stores).
+	MapDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.30f);
+}
+
+// Regression: the direction was assigned inside the store loop rather than
+// accumulated, so a later candidate store overwrote an earlier match.  Since
+// every store that is a cross-link at all is a cross-link on exactly one side,
+// the last one in the block decided both answers: it set its own direction and
+// cleared the other, whatever had already been found.  A block carrying a
+// cross-link on each side of the read slot therefore reported one rotation
+// instead of two, and which one depended on instruction order alone.
+TEST(MapDetectorTest, ALaterStoreDoesNotEraseAnEarlierCrossLink)
+{
+	auto fn = makeRotation("rb_rotate_left", /*readOff=*/24, /*writeOff=*/16);
+
+	// A second cross-link off y, on the other side of the read slot.
+	const ssa::VarId yVar = 2;
+	auto* xVal = fn->allocValue(ssa::ValueKind::VirtualReg, 1);
+	auto* yFar = fn->allocValue(ssa::ValueKind::MemRef);
+	yFar->memBaseReg = yVar;
+	yFar->memOffset  = 32;                    // > readOff, so a right-side link
+	auto* st = fn->addInstr(fn->block(0)->id, ssa::IrInstr::Op::Store);
+	ssa::Use v; v.valueId = xVal->id;  st->uses.push_back(v);
+	ssa::Use a; a.valueId = yFar->id;  st->uses.push_back(a);
+
+	MapDetector det;
+	const float both = det.detect(*fn).confidence;
+
+	auto plain = makeRotation("rb_rotate_left_plain", 24, 16);
+	const float one = det.detect(*plain).confidence;
+
+	// Each direction is worth 0.30. Assigning rather than accumulating meant
+	// the second link took the first one's score away instead of adding to it,
+	// so `both` came out equal to `one`.
+	EXPECT_GT(both, one);
+	EXPECT_NEAR(0.30f, both - one, 1e-5f);
+}
+
+// Regression: the sentinel pair had to be two strictly adjacent Stores in
+// block 0 whose stored values were the same ValueId.  All three narrowings
+// dropped real sentinels: renaming routinely gives one variable two value
+// versions, an Assign between the stores is ordinary, and the initialisation
+// need not be on the entry path.
+TEST(ListDetectorTest, SentinelSurvivesTwoValueVersionsAndAnInterveningInstr)
+{
+	auto fn = std::make_unique<ssa::SSAFunction>("list_ctor");
+	fn->addBlock("entry");
+	auto* body = fn->addBlock("init");
+
+	const ssa::VarId h = 7;
+	// Two SSA versions of the same variable -- what renaming produces when the
+	// header address is materialised twice.
+	auto* h1 = fn->allocValue(ssa::ValueKind::VirtualReg, h);
+	auto* h2 = fn->allocValue(ssa::ValueKind::VirtualReg, h);
+	auto* hNext = fn->allocValue(ssa::ValueKind::MemRef);
+	hNext->memBaseReg = h; hNext->memOffset = 0;
+	auto* hPrev = fn->allocValue(ssa::ValueKind::MemRef);
+	hPrev->memBaseReg = h; hPrev->memOffset = 8;
+
+	auto store = [&](ssa::IrValue* val, ssa::IrValue* slot) {
+		auto* st = fn->addInstr(body->id, ssa::IrInstr::Op::Store);
+		ssa::Use v; v.valueId = val->id;  st->uses.push_back(v);
+		ssa::Use a; a.valueId = slot->id; st->uses.push_back(a);
+	};
+
+	store(h1, hNext);
+	fn->addInstr(body->id, ssa::IrInstr::Op::Assign);   // not adjacent any more
+	store(h2, hPrev);
+
+	// hasSentinelInit is private; the sentinel is worth 0.35 and nothing else
+	// in this fixture scores at all (no allocation call, no chain traversal).
+	ListDetector det;
+	EXPECT_GE(det.detect(*fn).confidence, 0.35f);
 }
 
 TEST(MapDetectorTest, EmittedTypeContainsMap)

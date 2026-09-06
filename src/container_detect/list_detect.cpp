@@ -40,6 +40,9 @@
 #include "retdec/container_detect/container_detect.h"
 #include "retdec/ssa/ssa.h"
 
+#include <cstdint>
+#include <vector>
+
 namespace retdec {
 namespace container_detect {
 
@@ -86,39 +89,68 @@ static bool isSlotOf(const ssa::SSAFunction& fn, ssa::ValueId addr, ssa::ValueId
 
 static bool hasSentinelInit(const ssa::SSAFunction& fn)
 {
-	if (fn.blockCount() == 0) return false;
-	const auto* entry = fn.block(0);
-	if (!entry) return false;
+	// The shape is `h->next = h; h->prev = h` -- one value stored into two
+	// different slots of the object that value names.  Three things used to
+	// narrow this well past the shape it describes, and all three dropped
+	// genuine sentinels:
+	//
+	//   - only block 0 was scanned, so a sentinel set up on any other path
+	//     (an `if (empty)` arm, a loop preheader) was invisible;
+	//   - the two Stores had to be strictly adjacent, so a single Assign
+	//     between them was enough to lose it;
+	//   - the stored values had to be the same ValueId, while isSlotOf()
+	//     already resolves a value to its originating variable. If the header
+	//     address was materialised twice -- two SSA versions of one variable,
+	//     which is the normal outcome of renaming -- the pair was missed.
+	//
+	// The relation is between variables, so it is asked between variables, and
+	// between any two Stores in a block rather than adjacent ones.
+	auto storedVar = [&fn](ssa::ValueId v) -> ssa::VarId {
+		const auto* val = fn.value(v);
+		return val ? val->varId : ssa::kInvalidVar;
+	};
 
-	int selfRefStores = 0;
-	for (std::size_t i = 0; i + 1 < entry->instrs.size(); ++i)
+	for (std::uint32_t b = 0; b < fn.blockCount(); ++b)
 	{
-		const auto* a = entry->instrs[i];
-		const auto* b = entry->instrs[i + 1];
-		if (!a || !b) continue;
-		if (a->op != ssa::IrInstr::Op::Store || b->op != ssa::IrInstr::Op::Store) continue;
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
 
-		// A Store carries (value, address).  Anything with fewer than two
-		// operands has no address to inspect, so there is nothing to compare.
-		if (a->uses.size() < 2 || b->uses.size() < 2) continue;
-
-		const ssa::ValueId storedA = a->uses[0].valueId;
-		const ssa::ValueId storedB = b->uses[0].valueId;
-		const ssa::ValueId addrA = a->uses[1].valueId;
-		const ssa::ValueId addrB = b->uses[1].valueId;
-
-		// Same value into two *different* slots: equal stored values alone is a
-		// memset, and distinct slots alone is any struct initialiser.
-		if (storedA == ssa::kInvalidValue || storedA != storedB) continue;
-		if (addrA == ssa::kInvalidValue || addrB == ssa::kInvalidValue) continue;
-		if (addrA == addrB) continue;
-
-		if (isSlotOf(fn, addrA, storedA) && isSlotOf(fn, addrB, storedB))
+		std::vector<const ssa::IrInstr*> stores;
+		for (const auto* in : blk->instrs)
 		{
-			++selfRefStores;
+			// A Store carries (value, address).  Anything with fewer than two
+			// operands has no address to inspect, so there is nothing to
+			// compare.
+			if (in && in->op == ssa::IrInstr::Op::Store && in->uses.size() >= 2)
+				stores.push_back(in);
+		}
+
+		for (std::size_t i = 0; i + 1 < stores.size(); ++i)
+		{
+			const ssa::ValueId storedA = stores[i]->uses[0].valueId;
+			const ssa::ValueId addrA   = stores[i]->uses[1].valueId;
+			if (addrA == ssa::kInvalidValue) continue;
+			const ssa::VarId varA = storedVar(storedA);
+			if (varA == ssa::kInvalidVar) continue;
+
+			for (std::size_t j = i + 1; j < stores.size(); ++j)
+			{
+				const ssa::ValueId storedB = stores[j]->uses[0].valueId;
+				const ssa::ValueId addrB   = stores[j]->uses[1].valueId;
+				if (addrB == ssa::kInvalidValue) continue;
+
+				// Same value into two *different* slots: equal stored values
+				// alone is a memset, and distinct slots alone is any struct
+				// initialiser.
+				if (storedVar(storedB) != varA) continue;
+				if (addrA == addrB) continue;
+
+				if (isSlotOf(fn, addrA, storedA) && isSlotOf(fn, addrB, storedB))
+					return true;
+			}
 		}
 	}
-	return selfRefStores >= 1;
+	return false;
 }
 
 // Node heap allocation: a malloc/new call followed by a pointer store.

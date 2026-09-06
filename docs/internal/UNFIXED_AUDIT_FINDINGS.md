@@ -155,24 +155,88 @@ the build only because `src/retdec/` and `src/llvmir2hll/` link LLVM.
 
 ---
 
-## 5. Two detectors that cannot fire on real input
+## 5. The SSA the detectors run on is not the SSA they were written against
 
-Both are recall the fork is not getting and could.
+`src/retdec/llvm_to_ssa.cpp`
 
-`src/algo_recover/binary_search_detect.cpp:379` — the only genuinely structural,
-def-use-based algorithm detector is unreachable in production, because the
-pipeline's SSA producer (`src/retdec/llvm_to_ssa.cpp`) never sets
-`IrInstr::defValue`. `binary_search` is one of only two `AlgorithmKind` labels
-that survive harness extraction, and it can never be produced from a real
-binary. Its unit tests pass because they hand-build IR with `defValue` set.
+This is the widest finding in the file, and it is one defect, not a family of
+them. `src/retdec/retdec.cpp:684` builds the module every structural detector
+consumes:
 
-`src/algo_recover/find_detect.cpp:88` — `hasImmediateComparand` can never be true
-on real input for the same reason, so `std::find` is always downgraded to
-`std::find_if` and `std::count` to `count_if`.
+```cpp
+ssaMod = buildSsaModule(*module);
+```
 
-Both are downstream of one defect: the LLVM-to-SSA adapter does not populate the
-fields the detectors were designed against. Fixing that adapter is likely worth
-more to the name-blind F1 than any individual detector change.
+`buildSsaModule` calls `translateInstr` per instruction, and `translateInstr`
+populates `IrInstr::uses` in exactly one place:
+
+```cpp
+if (instr
+    && (llvm::isa<llvm::BinaryOperator>(li) || llvm::isa<llvm::PHINode>(li)
+        || llvm::isa<llvm::AtomicRMWInst>(li) || llvm::isa<llvm::AtomicCmpXchgInst>(li)))
+{
+    for (unsigned i = 0, n = li.getNumOperands(); i < n; ++i)
+    {
+        const auto* c = llvm::dyn_cast<llvm::ConstantInt>(li.getOperand(i));
+        if (!c || c->getBitWidth() > 64) continue;      // <- everything else dropped
+        ...
+        instr->uses.push_back(u);
+    }
+}
+```
+
+Three things follow, and each was checked by reading the whole file:
+
+1. **`defValue` is never assigned.** The string `defValue` does not appear in
+   `llvm_to_ssa.cpp` at all (a grep for it matches only `UndefValue`). Every
+   instruction in a production module therefore defines nothing.
+2. **Only immediate operands ever become uses**, and only on four instruction
+   classes. A register operand — the entire point of a def-use graph — is
+   skipped by the `continue`.
+3. **`Load` and `Store` are not in that list**, so they arrive with empty use
+   lists. Not "partially populated": empty.
+
+No `SSAPass` runs on the result either; `retdec.cpp` never calls one. And it
+could not help if it did, because renaming needs value operands to rename and
+there are none.
+
+**What this costs.** Any predicate that reads `instr->defValue`, follows a
+non-immediate use, or relates two instructions by value is dead on the
+production path — it cannot return true for any binary, however well the code
+matches. Confirmed dead by this route, at least:
+
+| File | Predicate | Needs |
+|---|---|---|
+| `algo_recover/binary_search_detect.cpp:379` | the whole detector | `defValue` |
+| `algo_recover/find_detect.cpp:88` | `hasImmediateComparand` | `defValue` |
+| `container_detect/list_detect.cpp` | `hasSentinelInit` | `Store::uses[0..1]` |
+| `container_detect/map_detect.cpp` | `hasRotation` | `Load::defValue`, `Store::uses[0..1]` |
+
+Their unit tests pass because the fixtures hand-build IR with `defValue` set and
+real operand lists — which is what the detectors were designed against, and what
+the adapter does not deliver.
+
+Two consequences worth stating plainly, because they change how other findings
+should be read:
+
+- The *precision* fixes made to these detectors on this branch are real and
+  worth keeping, but their corpus impact is nil until the adapter is fixed:
+  a predicate that cannot fire cannot fire wrongly either.
+- Conversely, any claim that a detector's false positives explain part of the
+  0.056 name-blind F1 is unearned for the detectors above. They contribute
+  nothing on real input, in either direction. That is its own kind of bad.
+
+**The fix.** Give `translateInstr` a `DenseMap<const llvm::Value*, ssa::ValueId>`
+memo, allocate an `IrValue` per LLVM `Value` on first sight, set
+`instr->defValue` for every instruction that produces one, and push a `Use` for
+every operand rather than only `ConstantInt` ones — with `Load` and `Store` in
+the set, and the `Store` operand order (value, address) that the detectors
+already document. It is a self-contained change to one file, but it needs LLVM
+to compile and the 216-binary corpus to show it helped, so it is not attempted
+here.
+
+Worth doing before any further detector tuning: the tuning is currently being
+measured against fixtures rather than against anything the pipeline produces.
 
 ---
 
