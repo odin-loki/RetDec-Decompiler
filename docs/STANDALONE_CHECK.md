@@ -98,7 +98,13 @@ guards:
   fails if that disagrees with the declared list in either direction — a module
   that grew a dependency, or a new dependency-free module nobody wired up. It
   checks `SUITES` the same way: a test directory whose module is already in the
-  fast path but which nothing runs is a failure. That check found 933 test
+  fast path but which nothing runs is a failure. And it checks the case neither
+  of those can see — a module compiled on every run with no `tests/` directory
+  at all, which is invisible to a check that only looks at suites that exist.
+  That is how `pdbparser` came to be compiled every run, fuzzed, and fixed for
+  memory safety a dozen times while nothing asserted anything about it. A module
+  may be listed in `UNTESTED_MODULES` with a reason, which makes having no tests
+  a decision rather than an oversight. That check found 933 test
   cases across 17 suites that were being compiled and never run.
 * `.github/workflows/standalone-check.yml` runs the check under both `g++` and
   `clang++`, plus an ASan/UBSan job, on every pull request. Two compilers is not

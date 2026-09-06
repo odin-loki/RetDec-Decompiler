@@ -88,7 +88,7 @@ readonly SUITES=(
 	dex_parser eh_reconstruct fsharp_emitter func_boundary idiom_reconstruct
 	ipa java_emitter jvm_parser jvm_reconstruct kotlin_emitter loader_sim
 	lua_parser mini_emu module_cluster neural packer pattern_detect profiling
-	ptx_decompile py_emitter py_reconstruct pyc_parser retdec rtti serdes
+	pdbparser ptx_decompile py_emitter py_reconstruct pyc_parser retdec rtti serdes
 	serial_detect sort_detect ssa string_detect testing type_inference
 	type_seed var_recovery vbnet_emitter wasm_parser
 )
@@ -98,6 +98,19 @@ readonly SUITES=(
 # forgotten -- 933 test cases were, until it started checking.
 readonly EXCLUDED_SUITES=(
 	"utils:includes <gmock/gmock.h>, which the shim does not provide"
+)
+
+# Modules compiled here that have no tests/ directory at all, with the reason.
+#
+# The SUITES drift check below can only see a suite that exists: a module with
+# no test directory is invisible to it, which is how pdbparser and pelib came to
+# be compiled on every run, fuzzed, and repeatedly fixed for memory safety while
+# nothing asserted anything about either of them. A module belongs here only
+# when having no unit tests is a decision somebody made, not an oversight
+# nobody noticed.
+readonly UNTESTED_MODULES=(
+	"experimental:staging area for code that has not settled; nothing here is API yet"
+	"pelib:vendored from the upstream PeLib fork and tracked against it, so tests live with the fuzz corpus in tests/managed_integration/fuzz/fuzz_pelib.cpp"
 )
 
 # Modules whose own CMakeLists asks for a later language standard than the rest
@@ -253,6 +266,24 @@ if [ "$MODE" = audit ]; then
 		# Only complain when the code under test is already being compiled.
 		if [ -n "${declared[$t]:-}" ]; then
 			bad "$t has a test suite and its module is in the fast path, but SUITES does not run it"
+			status=1
+		fi
+	done
+
+	# And the case neither check above can see: a module compiled on every run
+	# with no tests/ directory at all. The SUITES check only looks at suites
+	# that exist, so a module nobody ever wrote a test for is invisible to it --
+	# which is how a parser of untrusted input can be fuzzed and fixed for
+	# memory safety a dozen times while nothing asserts anything about it.
+	declare -A untested=()
+	for entry in "${UNTESTED_MODULES[@]}"; do untested["${entry%%:*}"]=1; done
+	for m in "${MODULES[@]}"; do
+		[ -n "${untested[$m]:-}" ] && continue
+		shopt -s nullglob
+		tsrcs=(tests/"$m"/*.cpp)
+		shopt -u nullglob
+		if [ ${#tsrcs[@]} -eq 0 ]; then
+			bad "$m is compiled on every run but has no tests/$m -- add a suite, or say why not in UNTESTED_MODULES"
 			status=1
 		fi
 	done

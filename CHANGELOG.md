@@ -8,6 +8,15 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- `tests/pdbparser/`: the module had no tests at all. It is compiled on every
+  run of the dependency-free check, it is fuzzed, and it has been fixed for
+  memory safety a dozen times on this branch — and nothing asserted anything
+  about it, because the suite drift check can only see a test directory that
+  exists. `--audit` now reports a compiled module with no `tests/` directory,
+  with `UNTESTED_MODULES` for the cases where that is a decision rather than an
+  oversight; it flagged `pdbparser` immediately. Ten tests: the on-disk
+  structure widths (the `PDB_GUID` fix is load-bearing against them), and the
+  contract the loader owes a caller for a file it refuses.
 - `include/retdec/utils/bounded_string.h`: the fourth member of the verified
   kernel, for measuring a string a file was under no obligation to terminate.
   `strlen` on a pointer into a mapped file reads until it finds a zero byte,
