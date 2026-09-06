@@ -107,6 +107,20 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `dex_parser`: a method signature could exhaust memory. `parseDexProto`
+  allocates a `BcType` node per parameter, and the parameter count came only
+  from the descriptor's length — which `methodProto` builds from the file's own
+  type list, so N parameters each naming an L-byte type give an N×L descriptor.
+  A method's arguments have to fit in a caller's `code_item.outs_size`, a `u2`,
+  so no callable method has more than 65535 of them; that is the format's
+  number and it is the bound now. Found by fuzzing the DEX target after the
+  instruction-size fix above made the invoke path decodable — libFuzzer
+  out-of-memory at the 2 GB limit, all of it `BcType` nodes.
+  Separately, and not the fix for that: `methodProto` and `parseDexProto` both
+  ran again for every invoke instruction naming the same method, so the work was
+  the product of two independently file-chosen quantities. `DexLifter` caches
+  the built operand per method index, which makes a call site a vector of
+  pointers to shared nodes rather than a fresh parse.
 - `pdbparser`: an **infinite loop** in `PDBSymbols::parse_symbols`, introduced by
   the name-termination guard added earlier on this branch. The guard was written
   as `if (!record_name_terminated(...)) continue;` inside the walk's body, and

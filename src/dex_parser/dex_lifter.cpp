@@ -288,9 +288,17 @@ static BcFuncType parseDexProto(const std::string& proto) {
     }
     size_t closeP = proto.find(')');
     if (closeP == std::string::npos) { ft.returnType = nullptr; return ft; }
+    // A method's arguments have to fit in a caller's code_item.outs_size, which
+    // is a u2, so no callable method has more than 65535 of them. Without that
+    // bound the descriptor's length is the only limit, and it is built from the
+    // file's own type list -- N parameters each naming an L-byte type give an
+    // N*L descriptor and one BcType node per parameter. It is the format's
+    // number, not a cap chosen here.
+    static constexpr size_t kMaxParams = 65535;
+
     // Parse params
     size_t i = 1;
-    while (i < closeP) {
+    while (i < closeP && ft.params.size() < kMaxParams) {
         char c = proto[i];
         if (c == 'L') {
             size_t end = proto.find(';', i);
@@ -675,8 +683,14 @@ uint32_t DexLifter::decodeInsn(BcBasicBlock& blk,
     auto makeInvoke = [&](BcOpcode opc, uint16_t methIdx,
                           const std::vector<uint32_t>& args) {
         insn.opcode = opc;
-        insn.operands.push_back(makeMethodRef(
-            dex.methodClass(methIdx), dex.methodName(methIdx), dex.methodProto(methIdx)));
+        // Built once per method, not once per call site -- see methodRefCache_.
+        auto it = methodRefCache_.find(methIdx);
+        if (it == methodRefCache_.end()) {
+            it = methodRefCache_.emplace(methIdx, makeMethodRef(
+                dex.methodClass(methIdx), dex.methodName(methIdx),
+                dex.methodProto(methIdx))).first;
+        }
+        insn.operands.push_back(it->second);
         for (uint32_t r : args)
             insn.operands.push_back(makeReg(r));
     };

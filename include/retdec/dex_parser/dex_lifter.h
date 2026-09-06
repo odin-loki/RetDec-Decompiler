@@ -27,6 +27,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 namespace retdec {
 namespace dex_parser {
@@ -78,6 +79,25 @@ private:
                         const std::vector<uint16_t>& insns,
                         uint32_t off,
                         const DexFile& dex);
+
+    /// The operand form of a method reference, by method index.
+    ///
+    /// Building one means DexFile::methodProto() reading the method's type list
+    /// out of the file and concatenating a descriptor from it, and then
+    /// parseDexProto() allocating a BcType node per parameter -- and both ran
+    /// again for every invoke instruction naming the method. Both the
+    /// descriptor's length and the number of invokes are file-controlled, so
+    /// the work was the product of two quantities an input chooses
+    /// independently.
+    ///
+    /// To be accurate about what this fixed: the out-of-memory the fuzzer found
+    /// here is closed by the parameter bound in parseDexProto, not by this --
+    /// removing the cache and keeping the bound, the fuzzer no longer reaches
+    /// it. What the cache removes is the repeated work, and it makes the
+    /// per-call-site cost a vector of pointers to shared nodes rather than a
+    /// fresh parse and a fresh node per parameter. One entry per method index,
+    /// so it is bounded by the file's own method_ids count.
+    std::unordered_map<uint32_t, bc_module::BcOperand> methodRefCache_;
 };
 
 } // namespace dex_parser
