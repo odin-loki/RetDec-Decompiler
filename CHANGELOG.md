@@ -43,6 +43,14 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   proved not to index outside either buffer for any input. It reads and writes
   one character ahead of its cursor, which is where this shape of loop goes
   wrong.
+- `scripts/standalone_check.sh` now runs 59 suites, not 42. Seventeen test
+  directories had a module already in the fast path but no entry in `SUITES` --
+  933 GoogleTest cases nobody was running, including all five language emitters,
+  `common` and `ptx_decompile`. `--audit` now guards `SUITES` against the same
+  drift it already guarded `MODULES` against, with `EXCLUDED_SUITES` recording
+  the one deliberate omission (`tests/utils` needs gmock). `cuda_accel`'s `.cu`
+  sources are compiled as plain C++, mirroring what its own CMakeLists does when
+  CUDA is absent.
 - `tests/bounds/`: runtime tests for those two headers, carrying the DWARF
   standard's LEB128 vectors and the concrete boundary cases the fuzzer hit.
   Proofs cover the safety properties for all inputs; they do not pin down the
@@ -69,6 +77,13 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `wasm_parser`: `readSLEB128` and `readSLEB128_64` accumulated into the signed
+  result type with no bound on the shift -- undefined behaviour twice over on a
+  hostile module, since `(int32_t)0x7F << 28` already overflows the signed range
+  and a continuation run drives the shift past the type's width -- and the
+  name-section decoder had no bound at all. All three now go through the proved
+  helpers in `retdec/utils/leb128.h`. Found by re-running the fuzzer at the
+  larger `-max_len`; a 28-byte module reproduces it.
 - `neural`: the structural gate ran only when the refinement was within 4x the
   original's size, so a model could defeat it by being verbose. That skipped the
   spawn-call rejection `docs/CLAIMS.md` advertises by identifier under

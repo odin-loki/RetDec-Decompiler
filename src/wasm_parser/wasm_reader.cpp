@@ -5,6 +5,8 @@
 
 #include "retdec/wasm_parser/wasm_reader.h"
 
+#include "retdec/utils/leb128.h"
+
 #include <cassert>
 #include <cstring>
 #include <sstream>
@@ -69,33 +71,45 @@ uint64_t WasmReader::readULEB128_64() {
     return result;
 }
 
+// The two signed readers below used to accumulate into the signed result type
+// with no bound on the shift, which is undefined behaviour twice over on a
+// hostile module: `(int32_t)0x7F << 28` already overflows the signed range, and
+// a run of continuation bytes drives the shift past the type's width. They now
+// accumulate unsigned through the helpers in retdec/utils/leb128.h, which are
+// proved not to shift out of range (tests/verification/leb128_proof.cpp), and
+// stop after the most bytes the encoding can need.
+
 int32_t WasmReader::readSLEB128() {
-    int32_t result = 0;
-    int     shift  = 0;
-    uint8_t byte   = 0;
-    do {
-        byte    = readU8();
-        result |= (int32_t)(byte & 0x7F) << shift;
-        shift  += 7;
-    } while (byte & 0x80);
-    // Sign extend
-    if (shift < 32 && (byte & 0x40))
-        result |= -(1 << shift);
-    return result;
+    namespace leb = retdec::utils::leb128;
+
+    uint32_t result = 0;
+    unsigned shift  = 0;
+    uint8_t  byte   = 0;
+    // ceil(32 / 7) -- more bytes than that cannot describe a 32-bit value.
+    for (unsigned i = 0; i < 5; ++i) {
+        byte = readU8();
+        if (shift < 32) result |= uint32_t(leb::payloadFitting(byte, shift)) << shift;
+        shift += leb::kBitsPerByte;
+        if (!(byte & 0x80)) break;
+    }
+    if (shift < 32 && (byte & 0x40)) result |= uint32_t(leb::maskFrom(shift));
+    return static_cast<int32_t>(result);
 }
 
 int64_t WasmReader::readSLEB128_64() {
-    int64_t result = 0;
-    int     shift  = 0;
-    uint8_t byte   = 0;
-    do {
-        byte    = readU8();
-        result |= (int64_t)(byte & 0x7F) << shift;
-        shift  += 7;
-    } while (byte & 0x80);
-    if (shift < 64 && (byte & 0x40))
-        result |= -(int64_t(1) << shift);
-    return result;
+    namespace leb = retdec::utils::leb128;
+
+    uint64_t result = 0;
+    unsigned shift  = 0;
+    uint8_t  byte   = 0;
+    for (unsigned i = 0; i < leb::kMaxBytes; ++i) {
+        byte = readU8();
+        if (shift < 64) result |= leb::payloadFitting(byte, shift) << shift;
+        shift += leb::kBitsPerByte;
+        if (!(byte & 0x80)) break;
+    }
+    if (shift < 64 && (byte & 0x40)) result |= leb::maskFrom(shift);
+    return leb::toSigned(result);
 }
 
 float WasmReader::readF32() {
@@ -428,14 +442,21 @@ void WasmReader::parseCustomSection(WasmModule& mod, uint32_t size) {
 
 // ─── Name section ────────────────────────────────────────────────────────────
 
+// Bounded like the members above. This one had no shift limit at all, so a name
+// section full of continuation bytes shifted a uint32_t by 35 -- the finding
+// that a larger fuzzer -max_len turned up.
 static uint32_t readULEB_local(const uint8_t* d, size_t& pos, size_t end) {
+    namespace leb = retdec::utils::leb128;
+
     uint32_t result = 0;
-    int shift = 0;
-    while (pos < end) {
+    unsigned shift = 0;
+    unsigned used = 0;
+    while (pos < end && used < 5) {
         uint8_t b = d[pos++];
-        result |= (uint32_t)(b & 0x7F) << shift;
+        ++used;
+        if (shift < 32) result |= uint32_t(leb::payloadFitting(b, shift)) << shift;
         if (!(b & 0x80)) break;
-        shift += 7;
+        shift += leb::kBitsPerByte;
     }
     return result;
 }

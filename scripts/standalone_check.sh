@@ -82,12 +82,22 @@ readonly MODULES=(
 # no entry in MODULES; it links against nothing.
 readonly SUITES=(
 	algo_recover alias_analysis bc_module bounds call_conv cfg cfg_structure
-	code_data codegen compiler_abi concurrency_detect container_detect
-	cli_parser config crypto_detect ctypes ctypesparser dce eh_reconstruct
-	dex_parser func_boundary idiom_reconstruct ipa jvm_parser loader_sim
-	lua_parser mini_emu module_cluster neural pattern_detect profiling
-	pyc_parser rtti serdes serial_detect sort_detect ssa string_detect
-	type_inference type_seed var_recovery wasm_parser
+	cil_reconstruct cli_parser code_data codegen common compiler_abi
+	compiler_detect concurrency_detect config container_detect crypto_detect
+	csharp_emitter ctypes ctypesparser cuda_accel cxx_backend dce debug_info
+	dex_parser eh_reconstruct fsharp_emitter func_boundary idiom_reconstruct
+	ipa java_emitter jvm_parser jvm_reconstruct kotlin_emitter loader_sim
+	lua_parser mini_emu module_cluster neural packer pattern_detect profiling
+	ptx_decompile py_emitter py_reconstruct pyc_parser rtti serdes
+	serial_detect sort_detect ssa string_detect testing type_inference
+	type_seed var_recovery vbnet_emitter wasm_parser
+)
+
+# Test suites deliberately NOT run here, with the reason.  --audit consults this
+# so a suite whose module is already in the fast path cannot be silently
+# forgotten -- 933 test cases were, until it started checking.
+readonly EXCLUDED_SUITES=(
+	"utils:includes <gmock/gmock.h>, which the shim does not provide"
 )
 
 # Modules whose own CMakeLists asks for a later language standard than the rest
@@ -95,6 +105,16 @@ readonly SUITES=(
 # declared standard.
 readonly CXX20_MODULES=(
 	cli_parser
+	cuda_accel
+)
+
+# Modules with .cu sources.  Their CMakeLists compiles those with nvcc when CUDA
+# is present and as plain C++ otherwise, with the device code behind #ifdef; the
+# CPU path is what this script builds, so the .cu files are compiled as C++ too.
+# Without this the module's objects are missing and its suite fails to link --
+# which is how it was found.
+readonly CU_AS_CXX_MODULES=(
+	cuda_accel
 )
 
 # Sources inside an included module that must NOT be compiled here, mirroring a
@@ -176,11 +196,18 @@ if [ "$MODE" = audit ]; then
 			[ -n "${skipAudit[$m/$(basename "$f")]:-}" ] && continue
 			srcs+=("$f")
 		done
+		for c20 in "${CU_AS_CXX_MODULES[@]}"; do
+			if [ "$c20" = "$m" ]; then
+				shopt -s nullglob
+				srcs+=("$d"*.cu)
+				shopt -u nullglob
+			fi
+		done
 		[ ${#srcs[@]} -eq 0 ] && continue
 		std=c++17
 		for c20 in "${CXX20_MODULES[@]}"; do [ "$c20" = "$m" ] && std=c++20; done
 		# shellcheck disable=SC2086
-		if $CXX -std=$std $INCLUDES $DEFINES -fsyntax-only "${srcs[@]}" >/dev/null 2>&1; then
+		if $CXX -std=$std $INCLUDES $DEFINES -fsyntax-only -x c++ "${srcs[@]}" >/dev/null 2>&1; then
 			if [ -z "${declared[$m]:-}" ] && [ -z "${excluded[$m]:-}" ]; then
 				bad "$m compiles standalone but is missing from MODULES"
 				status=1
@@ -190,7 +217,31 @@ if [ "$MODE" = audit ]; then
 			status=1
 		fi
 	done
-	[ $status -eq 0 ] && ok "MODULES matches the tree"
+
+	# The same drift check for SUITES: a tests/ directory whose module is
+	# already compiled here, that is neither run nor explicitly excluded, is a
+	# suite nobody wired up.
+	declare -A declaredSuite=()
+	for t in "${SUITES[@]}"; do declaredSuite["$t"]=1; done
+	declare -A excludedSuite=()
+	for entry in "${EXCLUDED_SUITES[@]}"; do excludedSuite["${entry%%:*}"]=1; done
+
+	for d in tests/*/; do
+		t="$(basename "$d")"
+		shopt -s nullglob
+		tsrcs=("$d"*.cpp)
+		shopt -u nullglob
+		[ ${#tsrcs[@]} -eq 0 ] && continue
+		[ -n "${declaredSuite[$t]:-}" ] && continue
+		[ -n "${excludedSuite[$t]:-}" ] && continue
+		# Only complain when the code under test is already being compiled.
+		if [ -n "${declared[$t]:-}" ]; then
+			bad "$t has a test suite and its module is in the fast path, but SUITES does not run it"
+			status=1
+		fi
+	done
+
+	[ $status -eq 0 ] && ok "MODULES and SUITES match the tree"
 	exit $status
 fi
 
@@ -214,7 +265,10 @@ compile_one() {
 		test20) flags="${SC_TESTFLAGS/-std=c++17/-std=c++20}" ;;
 		# whereami is vendored C, not C++; retdec/utils links against it.
 		cc)    flags="-O1 -g0 -w $SC_EXTRA_CXXFLAGS"; compiler="${CC:-cc}" ;;
-		mod20) flags="${SC_CXXFLAGS/-std=c++17/-std=c++20}" ;;
+		mod20)   flags="${SC_CXXFLAGS/-std=c++17/-std=c++20}" ;;
+		# -x c++ so the compiler does not refuse an unknown .cu extension.
+		modcu)   flags="$SC_CXXFLAGS -x c++" ;;
+		mod20cu) flags="${SC_CXXFLAGS/-std=c++17/-std=c++20} -x c++" ;;
 		*)     flags="$SC_CXXFLAGS" ;;
 	esac
 
@@ -254,6 +308,9 @@ for entry in "${EXCLUDED_SOURCES[@]}"; do skip_source["${entry%%:*}"]=1; done
 declare -A is_cxx20=()
 for m in "${CXX20_MODULES[@]}"; do is_cxx20["$m"]=1; done
 
+declare -A has_cu=()
+for m in "${CU_AS_CXX_MODULES[@]}"; do has_cu["$m"]=1; done
+
 for m in "${selected_modules[@]}"; do
 	kind=mod
 	[ -n "${is_cxx20[$m]:-}" ] && kind=mod20
@@ -262,6 +319,11 @@ for m in "${selected_modules[@]}"; do
 		[ -n "${skip_source[$m/$(basename "$src")]:-}" ] && continue
 		printf '%s\t%s\t%s\n' "$src" "$BUILD_DIR/obj/$m/$(basename "${src%.cpp}").o" "$kind" >> "$JOBLIST"
 	done
+	if [ -n "${has_cu[$m]:-}" ]; then
+		for src in "src/$m"/*.cu; do
+			printf '%s\t%s\t%s\n' "$src" "$BUILD_DIR/obj/$m/$(basename "${src%.cu}").o" "${kind}cu" >> "$JOBLIST"
+		done
+	fi
 	shopt -u nullglob
 done
 printf '%s\t%s\tcc\n' deps/whereami/whereami/whereami.c "$BUILD_DIR/obj/utils/whereami.o" >> "$JOBLIST"

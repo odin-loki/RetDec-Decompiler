@@ -683,3 +683,49 @@ TEST(WatEmitterTest, FullRoundTrip) {
     EXPECT_NE(result.source.find("(type"), std::string::npos);
     EXPECT_NE(result.source.find("i32.const"), std::string::npos);
 }
+
+// ─── LEB128 shift bounds ─────────────────────────────────────────────────────
+
+// The signed readers accumulated into the signed result type with no bound on
+// the shift. That is undefined behaviour twice over on a hostile module:
+// (int32_t)0x7F << 28 already overflows the signed range, and a run of
+// continuation bytes drives the shift past the type's width. The name-section
+// reader had no bound at all -- a fuzzer run with a larger -max_len shifted a
+// uint32_t by 35.
+TEST(WasmLeb128, SignedReadersSurviveAContinuationRun)
+{
+	// A module truncated after a run of continuation bytes: whatever the reader
+	// returns, it must not be undefined behaviour getting there.
+	std::vector<uint8_t> mod = {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00};
+	for (int i = 0; i < 40; ++i) mod.push_back(0xFF);
+
+	WasmReader reader(mod.data(), mod.size());
+	EXPECT_NO_THROW((void) reader.read());
+}
+
+// Value correctness for these encodings is covered where the shared helpers
+// live -- tests/bounds carries the DWARF standard's LEB128 vectors and
+// tests/verification proves the shift bounds. The readers here are private, so
+// what this suite can check is that a hostile module does not reach undefined
+// behaviour through the public entry point.
+TEST(WasmLeb128, NameSectionContinuationRunIsBounded)
+{
+	// Minimised from the fuzzer's reproducer. A custom section actually named
+	// "name" -- which is what routes it to parseNameSection -- whose first
+	// subsection length is a run of continuation bytes. Twelve of them drive
+	// readULEB_local's shift to 35 on a uint32_t, which UBSan reports as
+	// "shift exponent 35 is too large for 32-bit type". 28 bytes total.
+	const std::vector<uint8_t> mod = {
+		0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00,  // magic, version
+		0x00,                                             // custom section
+		0x12,                                             // payload length 18
+		0x04, 'n', 'a', 'm', 'e',                         // section name
+		0x00,                                             // subsection id 0
+		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,               // continuation run
+		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+	};
+
+	WasmReader reader(mod.data(), mod.size());
+	EXPECT_NO_THROW((void) reader.read());
+}
+
