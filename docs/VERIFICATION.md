@@ -40,7 +40,7 @@ copy this arithmetic into a call site, call it.
 
 ## What is proved
 
-45 properties across three headers, all discharged.
+50 properties across four headers, all discharged.
 
 ### `utils/bounds.h` — count, length and offset arithmetic
 
@@ -79,6 +79,35 @@ than an assumption.
 | One- and two-byte encodings equal their definition | a safety-only proof that says nothing about correctness |
 | Sign extension is exact | the signed-accumulator formulation, undefined twice over |
 | `toSigned` is total and reversible | a cast that assumes its input is in range |
+
+### `utils/bounded_string.h` — measuring a string the file need not terminate
+
+Every parser reaches a name eventually — a section name, a metadata version, a
+symbol, a type — and both the bytes and the length that is supposed to bound
+them come out of the file. `strlen` on such a pointer reads until it finds a
+zero byte, which may be past the end of the mapping; taking `std::min` with the
+declared length afterwards does not help, because the read has already happened.
+
+That bug appeared four separate times in one review pass — in the .NET metadata
+root, twice in the PDB symbol walker, and in the PDB type field list — and was
+fixed four separate ways. It is one rule, so it is stated once and proved once,
+and those four sites call it.
+
+The property that matters is not only that the answer is within the bound, but
+that no byte at or beyond it is read. That is not expressible as an assertion
+about a return value, so the proof buffers are exactly the scanned size and
+ESBMC's array-bounds checking carries it: a scan one byte too far is reported as
+an out-of-bounds access. The bytes and the length are symbolic; the loop is
+bounded, so this is a proof over every buffer up to that size.
+
+| Property | What it rules out |
+|---|---|
+| The terminator found is the first one, and inside the bound | a length measured past an earlier NUL |
+| `npos` is reported only when there genuinely is none | a silent zero length for an unterminated field |
+| `boundedLength` never exceeds its bound | the `strlen`-then-`min` shape, where the read precedes the clamp |
+| `boundedLength` stops at the bound or at a terminator, never before | a field padded with NULs measured short |
+| The two entry points agree | one convention drifting from the other as callers pick between them |
+| A null pointer is never dereferenced | a caller that computed its own offset wrongly |
 
 ### `utils/c_source_scan.h` — blanking comments and literals
 

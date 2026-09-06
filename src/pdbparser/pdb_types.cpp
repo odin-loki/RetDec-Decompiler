@@ -10,6 +10,8 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include "retdec/utils/bounded_string.h"
+
 #include <cstring>
 #include <sstream>
 
@@ -92,9 +94,9 @@ std::string PDBTypeBase::to_llvm(void)
 static std::size_t subrecord_name_length(const char *name, const char *listEnd)
 {
 	if (name == nullptr || name >= listEnd) return SIZE_MAX;
-	const void *nul = std::memchr(name, '\0', static_cast<std::size_t>(listEnd - name));
-	if (nul == nullptr) return SIZE_MAX;
-	return static_cast<std::size_t>(static_cast<const char *>(nul) - name);
+	const std::size_t at = retdec::utils::bstr::terminatorAt(
+	        name, static_cast<std::size_t>(listEnd - name));
+	return at == retdec::utils::bstr::npos ? SIZE_MAX : at;
 }
 
 void PDBTypeFieldList::parse(lfFieldList *record, int size, PDBTypeDefIndexMap &types)

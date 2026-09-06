@@ -366,7 +366,7 @@ against it directly, with no network and no LLVM:
 ```bash
 ./scripts/standalone_check.sh    # 42 suites over 62 modules, ~1 min from cold
 ./scripts/standalone_fuzz.sh --replay   # the parser crash corpus, deterministic
-./scripts/verify_esbmc.sh        # SMT proofs of the bounds and LEB128 arithmetic
+./scripts/verify_esbmc.sh        # SMT proofs of the bounds, LEB128 and string arithmetic
 ```
 
 They are a fast gate, not a substitute for `ctest`: they say nothing about
@@ -442,7 +442,7 @@ retdec-decompiler binary.elf -o output.c
 | [docs/WINDOWS_NATIVE_BUILD.md](docs/WINDOWS_NATIVE_BUILD.md) | Native Windows: MSVC + CUDA + Qt6, deployment, troubleshooting |
 | [docs/STANDALONE_CHECK.md](docs/STANDALONE_CHECK.md) | Building and testing the LLVM-free layer with just a compiler |
 | [docs/FUZZING.md](docs/FUZZING.md) | Fuzzing the untrusted-input parsers; the crash corpus and how to add a harness |
-| [docs/VERIFICATION.md](docs/VERIFICATION.md) | ESBMC proofs of the bounds and LEB128 arithmetic — what is proved, and what is not |
+| [docs/VERIFICATION.md](docs/VERIFICATION.md) | ESBMC proofs of the bounds, LEB128 and bounded-string primitives — what is proved, and what is not |
 | [docs/future_directions.md](docs/future_directions.md) | Research agenda, recovery targets, open problems |
 | [scripts/README.md](scripts/README.md) | Every major `scripts/*.sh` and `*.ps1` helper |
 

@@ -5,6 +5,7 @@
 
 #include "retdec/cli_parser/pe_reader.h"
 
+#include "retdec/utils/bounded_string.h"
 #include "retdec/utils/bounds.h"
 
 #include <algorithm>
@@ -223,11 +224,7 @@ bool PeReader::parseMetadataRoot() {
     // terminator that need not be there, and taking std::min afterwards does
     // not help: the over-read has already happened. memchr stops at the bound.
     const char* ver = reinterpret_cast<const char*>(data_ + versionStart);
-    const void* verEnd = std::memchr(ver, '\0', versionLength);
-    const size_t verLen = verEnd != nullptr
-        ? static_cast<size_t>(static_cast<const char*>(verEnd) - ver)
-        : versionLength;
-    clrVersion_.assign(ver, verLen);
+    clrVersion_.assign(ver, utils::bstr::boundedLength(ver, versionLength));
 
     // After version: Flags(2) + NumberOfStreams(2)
     size_t hdrAfterVer = versionStart + versionLength;

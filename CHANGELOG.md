@@ -8,6 +8,19 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Added
 
+- `include/retdec/utils/bounded_string.h`: the fourth member of the verified
+  kernel, for measuring a string a file was under no obligation to terminate.
+  `strlen` on a pointer into a mapped file reads until it finds a zero byte,
+  which may be past the end of the mapping, and clamping the result afterwards
+  does not help because the read has already happened. That bug appeared four
+  separate times in one review pass — in the .NET metadata root, twice in the
+  PDB symbol walker, and in the PDB type field list — and was fixed four
+  separate ways; it is one rule, so it is stated once and proved once, and those
+  four sites call it. Six ESBMC proofs (50 across the kernel now), and the
+  property that matters — that no byte at or beyond the bound is *read* — is
+  carried by ESBMC's array-bounds checking rather than by an assertion about the
+  return value, because a return value cannot say where a scan went. Introducing
+  the obvious off-by-one (`i <= len`) fails `proof_terminator_is_the_first_one`.
 - Dependency-free build and test path: `scripts/standalone_check.sh` compiles
   the 61 `src/` modules that need only a C++17 compiler and the two vendored
   header-only deps (`deps/rapidjson`, `deps/whereami`), links their existing

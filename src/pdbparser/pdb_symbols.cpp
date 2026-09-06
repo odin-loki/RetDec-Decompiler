@@ -12,6 +12,7 @@
 #include <sstream>
 
 #include "retdec/pdbparser/pdb_symbols.h"
+#include "retdec/utils/bounded_string.h"
 #include "retdec/utils/bounds.h"
 
 using namespace std;
@@ -79,7 +80,7 @@ static bool record_name_terminated(PDBGeneralSymbol *symbol, std::size_t nameOff
 	if (nameOffset >= total)
 		return false;
 	const char *begin = reinterpret_cast<const char *>(symbol) + nameOffset;
-	return std::memchr(begin, '\0', total - nameOffset) != nullptr;
+	return retdec::utils::bstr::isTerminated(begin, total - nameOffset);
 }
 
 /**
@@ -99,12 +100,8 @@ static int record_name_span(PDBGeneralSymbol *symbol, std::size_t nameOffset)
 	if (nameOffset >= total)
 		return 0;
 	const char *begin = reinterpret_cast<const char *>(symbol) + nameOffset;
-	const std::size_t avail = total - nameOffset;
-	const void *nul = std::memchr(begin, '\0', avail);
-	const std::size_t len = (nul != nullptr)
-	        ? static_cast<std::size_t>(static_cast<const char *>(nul) - begin)
-	        : avail;
-	return static_cast<int>(len);
+	return static_cast<int>(
+	        retdec::utils::bstr::boundedLength(begin, total - nameOffset));
 }
 
 /**

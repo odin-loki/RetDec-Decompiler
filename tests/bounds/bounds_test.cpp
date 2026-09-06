@@ -11,6 +11,7 @@
  * Proofs and tests answer different questions here. Keep both.
  */
 
+#include "retdec/utils/bounded_string.h"
 #include "retdec/utils/bounds.h"
 #include "retdec/utils/c_source_scan.h"
 #include "retdec/utils/leb128.h"
@@ -310,4 +311,55 @@ TEST(SourceScan, HandlesTruncatedTokensAtTheEnd)
 	EXPECT_EQ(blanked("a\""), "a\"");
 	EXPECT_EQ(blanked("*"), "*");
 	EXPECT_EQ(blanked(""), "");
+}
+
+// ─── bounded_string.h ────────────────────────────────────────────────────────
+//
+// The proofs in tests/verification/bounded_string_proof.cpp establish these
+// over every buffer up to eight bytes with symbolic contents. These pin the
+// concrete answers a reader can check by eye, and the two shapes that actually
+// occur in the formats: a field padded with NULs, and one that fills its space
+// exactly with no terminator at all.
+
+namespace bstr = retdec::utils::bstr;
+
+TEST(BoundedString, TerminatorAtFindsTheFirstOne)
+{
+	const char buf[] = {'a', 'b', '\0', 'c', '\0'};
+	EXPECT_EQ(2u, bstr::terminatorAt(buf, sizeof(buf)));
+	// Bounded before the terminator: reports none rather than reading on.
+	EXPECT_EQ(bstr::npos, bstr::terminatorAt(buf, 2));
+	EXPECT_EQ(bstr::npos, bstr::terminatorAt(buf, 0));
+}
+
+TEST(BoundedString, BoundedLengthStopsAtTheBoundWithNoTerminator)
+{
+	// A version string that fills its field exactly -- the .NET metadata root
+	// case, where the declared length is the only thing that ends it.
+	const char buf[] = {'v', '4', '.', '0'};
+	EXPECT_EQ(4u, bstr::boundedLength(buf, sizeof(buf)));
+	EXPECT_FALSE(bstr::isTerminated(buf, sizeof(buf)));
+}
+
+TEST(BoundedString, BoundedLengthStopsAtAnEmbeddedTerminator)
+{
+	// A field padded with NULs -- the PDB symbol-name case.
+	const char buf[] = {'m', 'a', 'i', 'n', '\0', '\0', '\0', '\0'};
+	EXPECT_EQ(4u, bstr::boundedLength(buf, sizeof(buf)));
+	EXPECT_TRUE(bstr::isTerminated(buf, sizeof(buf)));
+}
+
+TEST(BoundedString, ANullPointerIsNeverDereferenced)
+{
+	EXPECT_EQ(bstr::npos, bstr::terminatorAt(nullptr, 16));
+	EXPECT_EQ(0u, bstr::boundedLength(nullptr, 16));
+	EXPECT_FALSE(bstr::isTerminated(nullptr, 16));
+}
+
+TEST(BoundedString, LeadingTerminatorIsAnEmptyString)
+{
+	const char buf[] = {'\0', 'x', 'y'};
+	EXPECT_EQ(0u, bstr::terminatorAt(buf, sizeof(buf)));
+	EXPECT_EQ(0u, bstr::boundedLength(buf, sizeof(buf)));
+	EXPECT_TRUE(bstr::isTerminated(buf, sizeof(buf)));
 }
