@@ -69,11 +69,26 @@ struct Section {
 
 /// True when @p addr lies within the mapped extent of @p s.
 ///
-/// The extent is the larger of the two sizes, because a PE section's virtual
-/// size may exceed what it stores and an address in that tail is still mapped
-/// -- it is simply not in the file, which is what @ref addressToOffset reports
-/// separately. The sum is formed in 64 bits and, since both operands come out
-/// of a file, checked for representability rather than assumed.
+/// The extent is the larger of the two sizes. That is what both callers this
+/// replaces did, so the refactor changes no answers -- but it is worth being
+/// exact about what it means, because a proved implementation of the wrong
+/// contract is worse than an unproved one: it gets trusted.
+///
+/// The Windows loader maps VirtualSize when VirtualSize is non-zero, and falls
+/// back to SizeOfRawData only when it is zero. SizeOfRawData is rounded up to
+/// FileAlignment and is routinely LARGER than VirtualSize, so `max` maps
+/// addresses in [VirtualSize, SizeOfRawData) that the real loader does not.
+/// This is therefore more permissive than a loader, in the direction of
+/// resolving an address the process would fault on.
+///
+/// It is kept because tightening it changes which addresses resolve, and that
+/// is a corpus-measurable behaviour change rather than a bug fix -- and because
+/// the permissive form is what handles the linkers that write VirtualSize as 0.
+/// src/func_boundary/func_boundary.cpp deliberately uses the stricter test
+/// (`va < s.end`, the virtual extent alone) and is NOT routed through here for
+/// that reason; it is already 64-bit and already maintains the sentinel.
+///
+/// The sum is never formed: the delta is compared against the span instead.
 constexpr bool contains(const Section& s, std::uint64_t addr) noexcept
 {
 	const std::uint64_t span = s.virtSize > s.rawSize ? s.virtSize : s.rawSize;

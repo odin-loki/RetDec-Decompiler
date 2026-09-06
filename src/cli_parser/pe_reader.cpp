@@ -278,10 +278,24 @@ bool PeReader::parseMetadataRoot() {
         // Name: null-terminated, padded to 4 bytes
         size_t nameOff = streamHdrOff + 8;
         const char* namePtr = reinterpret_cast<const char*>(data_ + nameOff);
-        size_t nameLen = 0;
-        while (nameOff + nameLen < size_ && namePtr[nameLen] != '\0') ++nameLen;
+        // The fifth private spelling of bounded_string.h's rule in this tree,
+        // eleven lines after a correct bstr::boundedLength call above. An
+        // unterminated name previously came back as the whole rest of the
+        // file, because the scan simply stopped at the buffer end and handed
+        // that length back as a name; terminatorAt refuses it instead, which
+        // is what the format says -- a stream name is NUL-terminated inside
+        // the metadata root or the root is malformed.
+        const size_t avail = utils::bounds::remaining(nameOff, size_);
+        const size_t nameLen = utils::bstr::terminatorAt(namePtr, avail);
+        if (nameLen == utils::bstr::npos) {
+            error_ = "Metadata stream name is not terminated";
+            return false;
+        }
         sh.name = std::string(namePtr, nameLen);
-        size_t paddedNameLen = (nameLen + 4) & ~3u;
+        // Round the padded length in size_t: `(nameLen + 4) & ~3u` masks with
+        // an unsigned int, which truncates the result to 32 bits on a 64-bit
+        // size_t before it is added to the cursor.
+        size_t paddedNameLen = (nameLen + 4) & ~static_cast<size_t>(3);
 
         streams_.push_back(sh);
         streamHdrOff = nameOff + paddedNameLen;

@@ -285,6 +285,43 @@ TEST(PeReaderTest, RvaToOffsetNeverPointsOutsideTheFile)
         << "rvaToOffset returned " << off << " for a " << buf.size() << "-byte file";
 }
 
+// A stream name is NUL-terminated inside the metadata root, or the root is
+// malformed. The scan here stopped at the end of the buffer and handed that
+// length back as the name, so an unterminated one became a "name" consisting
+// of the whole rest of the file.
+TEST(PeReaderTest, UnterminatedStreamNameIsRejected)
+{
+    // Version bytes, then Flags + NumberOfStreams = 1, then a stream header
+    // whose name runs to the end of the image with no terminator.
+    std::vector<uint8_t> tail = {
+        0, 0, 1, 0,              // Flags = 0, NumberOfStreams = 1
+        0, 0, 0, 0,              // stream Offset
+        0, 0, 0, 0,              // stream Size
+        '#', '~', 'x', 'y',      // name, no NUL, and the image ends here
+    };
+    auto buf = buildNetPEWithVersion(4u, {'v', '4', '.', '0'}, tail);
+
+    PeReader pe;
+    EXPECT_FALSE(pe.open(buf.data(), buf.size()));
+    EXPECT_NE(std::string::npos, pe.error().find("not terminated"));
+}
+
+TEST(PeReaderTest, TerminatedStreamNameIsAccepted)
+{
+    std::vector<uint8_t> tail = {
+        0, 0, 1, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        '#', '~', 0, 0,          // "#~", terminated and padded
+    };
+    auto buf = buildNetPEWithVersion(4u, {'v', '4', '.', '0'}, tail);
+
+    PeReader pe;
+    ASSERT_TRUE(pe.open(buf.data(), buf.size())) << pe.error();
+    ASSERT_EQ(1u, pe.streams().size());
+    EXPECT_EQ("#~", pe.streams()[0].name);
+}
+
 // ─── CliHeapsTest ─────────────────────────────────────────────────────────────
 
 TEST(CliHeapsTest, CompressedUIntOneByte) {
