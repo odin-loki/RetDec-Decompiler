@@ -260,7 +260,20 @@ std::size_t LoaderSim::vaToOffset(uint64_t va,
         for (const auto& s : secs) {
             uint32_t secRva = static_cast<uint32_t>(s.vma - ib);
             if (rva >= secRva && rva < secRva + std::max(s.rawSize, s.virtSize)) {
-                return static_cast<std::size_t>(s.rawOff) + (rva - secRva);
+                // `_size` is documented as the unmapped sentinel, so it has to
+                // be the *only* out-of-range answer. rawOff and the RVA delta
+                // both come from the file, so their sum can be anything up to
+                // about 8.6e9; returning it unchecked meant a caller testing
+                // `off != _size` -- the contract this function advertises --
+                // got an offset outside the buffer that passed the test.
+                // Every caller today re-checks with inBounds instead, which is
+                // why it is safe today and would stop being safe on the next
+                // one. func_boundary's vaToOffset maintains the sentinel; these
+                // two implement the same contract and disagreed about it.
+                const std::size_t base = static_cast<std::size_t>(s.rawOff);
+                const std::size_t d    = static_cast<std::size_t>(rva - secRva);
+                if (!utils::bounds::rangeFits(base, _size, d + 1)) return _size;
+                return base + d;
             }
         }
         (void)optOff;

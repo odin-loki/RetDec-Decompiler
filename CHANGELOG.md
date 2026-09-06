@@ -85,6 +85,28 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `func_boundary`: `detectThunkAt` bounded its `rel32` read by the whole buffer
+  instead of by the section that supplied the address, so a lone `0xE9` as the
+  last stored byte of `.text` read its operand out of whatever section follows
+  on disk and reported a jump to an address in no registered section. In bounds,
+  so not a memory-safety bug — a fabricated thunk target, which is worse to read
+  in decompiled output than a missing one. `scanSectionPrologues` and
+  `scanCallTargets` already bound by the section; this was the one that did not,
+  in the same file as the fix that added `sectionRawRange()` for exactly this.
+- `loader_sim`: `vaToOffset` documents `_size` as its unmapped sentinel but
+  could also return `rawOff + (rva - secRva)`, a file-controlled sum well past
+  the end of the buffer. Safe only because every caller re-checks with
+  `inBounds` rather than trusting the sentinel it advertises; the sibling
+  `func_boundary::vaToOffset` maintains it properly, so the two implementations
+  of one contract disagreed. No behaviour change today, by construction — hence
+  no test, which could only have been a vacuous one.
+- `scripts/standalone_check.sh`: the object cache is keyed on modification time,
+  which cannot see a flag change, so one run with
+  `EXTRA_CXXFLAGS="-fsanitize=address"` left sanitized objects behind and the
+  next plain run reused them and died at the link with undefined `__asan_*`
+  symbols — in a directory the user did not think they had touched. The build
+  now stamps the compiler and flags it used and rebuilds when they differ,
+  saying so.
 - `sort_detect`: a textbook bubble sort was reported as `introsort (std::sort)`.
   The one gate meant to stop that, `hasConvergingIndexPhis`, asked whether an
   Add-fed phi and a Sub-fed phi both existed somewhere in the function, without

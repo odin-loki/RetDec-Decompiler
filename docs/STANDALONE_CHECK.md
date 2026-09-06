@@ -80,6 +80,15 @@ EXTRA_CXXFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined -g"
   ./scripts/standalone_check.sh
 ```
 
+A separate `BUILD_DIR` is a convenience, not a requirement. The object cache is
+keyed on modification time, which cannot see a flag change, so the script stamps
+the compiler and flags each build used and starts over when they differ —
+otherwise a sanitized run would leave sanitized objects behind and the next
+plain run would reuse them and die at the link with undefined `__asan_*`
+symbols, in a directory the user did not think they had touched. Reusing one
+directory therefore costs a full rebuild each time you switch; separate
+directories keep both caches warm.
+
 ## Keeping the list honest
 
 The module and suite lists in the script are hard-coded, which can rot. Two

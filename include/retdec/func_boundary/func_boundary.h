@@ -277,9 +277,11 @@ private:
                          std::size_t& startOff,
                          std::size_t& endOff) const noexcept;
 
-    uint8_t  readU8(std::size_t off)  const noexcept;
+    /// Little-endian 32-bit read, zero when the buffer cannot supply it.
+    /// readU8 and readU64 sat beside this one and had no callers; a reader
+    /// nobody uses is a bound nobody checks, which is where the next one gets
+    /// copied from.
     uint32_t readU32(std::size_t off) const noexcept;
-    uint64_t readU64(std::size_t off) const noexcept;
 
     // Pass 2 internal: scan one section.
     void scanSectionPrologues(const ExecSection& sec,
@@ -300,7 +302,13 @@ private:
     // bytes come from the file, the rel32 is relative to the address, and the
     // two are only the same number in a flat image.
     // Returns the target VMA, or 0 if not a thunk.
-    uint64_t detectThunkAt(uint64_t va, std::size_t off) const noexcept;
+    /// Decode a thunk at @p off, reading no further than @p endOff.
+    ///
+    /// @p endOff is the end of the *section* that supplied @p va, not of the
+    /// buffer: a thunk's operand lives in the same section as its opcode, and
+    /// reading past the section reports jumps to addresses in no section.
+    uint64_t detectThunkAt(uint64_t va, std::size_t off,
+                           std::size_t endOff) const noexcept;
 
     std::string nameForVma(uint64_t vma) const;
 };

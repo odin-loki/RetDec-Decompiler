@@ -263,6 +263,22 @@ fi
 
 mkdir -p "$BUILD_DIR/obj" "$BUILD_DIR/lib" "$BUILD_DIR/bin"
 
+# The object cache is keyed on modification time, which cannot see a flag
+# change.  So one run with EXTRA_CXXFLAGS="-fsanitize=address" leaves sanitized
+# objects in the build directory, and the next plain run happily reuses them and
+# dies at the link with undefined __asan_report_load8 -- an error that says
+# nothing about what actually happened, in a directory the user did not think
+# they had touched.  Stamp what the objects were built with, and start over when
+# it changes.
+BUILD_STAMP="$BUILD_DIR/.build-flags"
+BUILD_KEY="$CXX|${CC:-cc}|$CXXFLAGS|$TESTFLAGS"
+if [ -f "$BUILD_STAMP" ] && [ "$(cat "$BUILD_STAMP")" != "$BUILD_KEY" ]; then
+	hdr "compiler or flags changed since the last build in $BUILD_DIR — rebuilding"
+	rm -rf "$BUILD_DIR/obj" "$BUILD_DIR/lib" "$BUILD_DIR/bin"
+	mkdir -p "$BUILD_DIR/obj" "$BUILD_DIR/lib" "$BUILD_DIR/bin"
+fi
+printf '%s\n' "$BUILD_KEY" > "$BUILD_STAMP"
+
 # ── compile one source file if its object is stale ───────────────────────────
 # Takes a single tab-separated "source<TAB>object<TAB>kind" record.  Flags are
 # passed through the environment rather than the record because they contain

@@ -126,25 +126,15 @@ bool FuncBoundaryDetector::sectionRawRange(const ExecSection& sec,
     return true;
 }
 
-uint8_t FuncBoundaryDetector::readU8(std::size_t off) const noexcept
-{
-    if (off >= _size) return 0;
-    return _data[off];
-}
-
 uint32_t FuncBoundaryDetector::readU32(std::size_t off) const noexcept
 {
-    if (off + 4 > _size) return 0;
+    // `off + 4 > _size` forms the sum first, which is the idiom bounds.h exists
+    // to replace. Not reachable today -- every caller's off is already inside
+    // the buffer -- but the sibling LoaderSim::inBounds is already written the
+    // other way, and one of the two spellings is going to be copied next.
+    if (!bounds::rangeFits(off, _size, 4)) return 0;
     uint32_t v = 0;
     for (int i = 0; i < 4; ++i) v |= static_cast<uint32_t>(_data[off+i]) << (i*8);
-    return v;
-}
-
-uint64_t FuncBoundaryDetector::readU64(std::size_t off) const noexcept
-{
-    if (off + 8 > _size) return 0;
-    uint64_t v = 0;
-    for (int i = 0; i < 8; ++i) v |= static_cast<uint64_t>(_data[off+i]) << (i*8);
     return v;
 }
 
@@ -486,15 +476,27 @@ void FuncBoundaryDetector::propagateNonReturning()
 // ─── Pass 3: thunk detection ─────────────────────────────────────────────────
 
 uint64_t FuncBoundaryDetector::detectThunkAt(uint64_t va,
-                                              std::size_t off) const noexcept
+                                              std::size_t off,
+                                              std::size_t endOff) const noexcept
 {
-    if (off + 2 >= _size) return 0;
+    // Bounded by the section that supplied `va`, not by the buffer.
+    //
+    // A thunk's operand belongs to the same section as its opcode. Reading to
+    // the end of the *buffer* means a lone 0xE9 as the last stored byte of
+    // .text reads its rel32 out of whatever section follows on disk, and
+    // reports a jump to an address in no registered section at all -- in
+    // bounds, so not a memory-safety bug, but a fabricated thunk target.
+    // scanSectionPrologues and scanCallTargets already bound by the section;
+    // this was the one that did not, in the same file as the fix that added
+    // sectionRawRange() for exactly this.
+    const std::size_t limit = (endOff < _size) ? endOff : _size;
+    if (!bounds::rangeFits(off, limit, 3)) return 0;
 
     uint8_t b0 = _data[off];
-    uint8_t b1 = (off + 1 < _size) ? _data[off + 1] : 0;
+    uint8_t b1 = _data[off + 1];
 
     // JMP rel32: E9 <rel32>
-    if (b0 == 0xE9 && off + 5 <= _size) {
+    if (b0 == 0xE9 && bounds::rangeFits(off, limit, 5)) {
         int32_t rel = static_cast<int32_t>(readU32(off + 1));
         // rel32 is relative to the next instruction's *address*, so it is
         // added to va.  The old code added it to `_imageBase + off`, which is
@@ -505,7 +507,7 @@ uint64_t FuncBoundaryDetector::detectThunkAt(uint64_t va,
     }
 
     // JMP [RIP+rel32]: FF 25 <rel32>  (x86-64 indirect via GOT/IAT)
-    if (b0 == 0xFF && b1 == 0x25 && off + 6 <= _size) {
+    if (b0 == 0xFF && b1 == 0x25 && bounds::rangeFits(off, limit, 6)) {
         int32_t rel = static_cast<int32_t>(readU32(off + 2));
         uint64_t ptrVA = va + 6 + rel;
         // The IAT slot holds the actual target; return the IAT VA as target key.
@@ -518,9 +520,9 @@ uint64_t FuncBoundaryDetector::detectThunkAt(uint64_t va,
     }
 
     // REX.W prefix + JMP reg: 48 FF E? or 41 FF E?
-    if ((b0 == 0x48 || b0 == 0x41) && off + 3 <= _size) {
+    if ((b0 == 0x48 || b0 == 0x41) && bounds::rangeFits(off, limit, 3)) {
         uint8_t b2 = _data[off + 2];
-        if (_data[off + 1] == 0xFF && (b2 >= 0xE0 && b2 <= 0xE7)) {
+        if (b1 == 0xFF && (b2 >= 0xE0 && b2 <= 0xE7)) {
             return 1;
         }
     }
@@ -536,7 +538,16 @@ void FuncBoundaryDetector::detectThunks()
         std::size_t off = vaToOffset(addr);
         if (off >= _size) continue;
 
-        uint64_t target = detectThunkAt(addr, off);
+        // The bytes a thunk is made of are the ones its own section stores.
+        std::size_t endOff = _size;
+        for (const auto& sec : _execSections) {
+            if (addr < sec.start || addr >= sec.end) continue;
+            std::size_t s0 = 0, s1 = 0;
+            if (sectionRawRange(sec, s0, s1)) endOff = s1;
+            break;
+        }
+
+        uint64_t target = detectThunkAt(addr, off, endOff);
         if (target == 0) continue;
 
         fb.isThunk = true;

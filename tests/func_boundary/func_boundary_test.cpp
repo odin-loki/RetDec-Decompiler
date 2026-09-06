@@ -410,6 +410,72 @@ TEST(Thunks, JMPrel32IsThunk)
     EXPECT_TRUE(fb->isThunk);
 }
 
+// A thunk's operand belongs to the same section as its opcode.
+//
+// detectThunkAt bounded its rel32 read by the whole buffer, so a lone 0xE9 as
+// the last stored byte of .text read its operand out of whatever section
+// follows on disk and reported a jump to an address in no registered section.
+// In bounds of the buffer, so not a memory-safety bug -- a fabricated thunk
+// target, which is worse to read in decompiled output than a missing one.
+TEST(Thunks, OperandIsNotReadOutOfTheNextSection)
+{
+    std::vector<uint8_t> img(0x800, 0);
+
+    // .text: VA kBase+0x1000, raw 0x400, 0x200 bytes stored.
+    const uint64_t textVA  = kBase + 0x1000;
+    const std::size_t rawOff = 0x400;
+    const std::size_t rawSz  = 0x200;
+
+    // A lone 0xE9 as the section's last stored byte, with nothing after it
+    // inside the section.
+    img[rawOff + rawSz - 1] = 0xE9;
+    // The next section's data, which the rel32 read used to pick up.
+    img[rawOff + rawSz + 0] = 0x11;
+    img[rawOff + rawSz + 1] = 0x22;
+    img[rawOff + rawSz + 2] = 0x33;
+    img[rawOff + rawSz + 3] = 0x44;
+
+    FuncBoundaryDetector det(kBase, img.data(), img.size(), true);
+    det.addExecutableSection(textVA, textVA + rawSz, rawOff, rawSz);
+    const uint64_t jmpVA = textVA + rawSz - 1;
+    det.addEntryPoint(jmpVA);
+    det.runAll();
+
+    auto* fb = det.functionAt(jmpVA);
+    ASSERT_NE(fb, nullptr);
+    EXPECT_FALSE(fb->isThunk);
+    EXPECT_TRUE(fb->thunkTarget.empty());
+}
+
+// The same shape with the operand actually inside the section still resolves.
+TEST(Thunks, OperandInsideTheSectionStillResolves)
+{
+    std::vector<uint8_t> img(0x800, 0);
+    const uint64_t textVA  = kBase + 0x1000;
+    const std::size_t rawOff = 0x400;
+    const std::size_t rawSz  = 0x200;
+
+    const uint64_t jmpVA    = textVA;
+    const uint64_t targetVA = textVA + 0x100;
+    const int32_t rel = static_cast<int32_t>(targetVA - (jmpVA + 5));
+    img[rawOff + 0] = 0xE9;
+    img[rawOff + 1] = static_cast<uint8_t>(rel);
+    img[rawOff + 2] = static_cast<uint8_t>(rel >> 8);
+    img[rawOff + 3] = static_cast<uint8_t>(rel >> 16);
+    img[rawOff + 4] = static_cast<uint8_t>(rel >> 24);
+
+    FuncBoundaryDetector det(kBase, img.data(), img.size(), true);
+    det.addExecutableSection(textVA, textVA + rawSz, rawOff, rawSz);
+    det.addEntryPoint(jmpVA);
+    det.addSymbol("real_func", targetVA, EvidenceSource::Export);
+    det.runAll();
+
+    auto* fb = det.functionAt(jmpVA);
+    ASSERT_NE(fb, nullptr);
+    EXPECT_TRUE(fb->isThunk);
+    EXPECT_EQ(fb->thunkTarget, "real_func");
+}
+
 TEST(Thunks, JMPIndirectIsThunk)
 {
     auto img = makeImage(0x3000);
