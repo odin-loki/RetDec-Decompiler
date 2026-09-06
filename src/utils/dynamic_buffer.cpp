@@ -7,6 +7,8 @@
 
 #include "retdec/utils/dynamic_buffer.h"
 
+#include "retdec/utils/bounds.h"
+
 using namespace retdec::utils;
 
 namespace retdec {
@@ -79,10 +81,19 @@ DynamicBuffer::DynamicBuffer(
 		uint32_t startPos,
 		uint32_t amount)
 {
-	std::vector<uint8_t> tmpBuffer = dynamicBuffer.getBuffer();
+	// This had no bounds check at all: both iterators were formed from
+	// startPos and amount straight away, so a startPos past the end of the
+	// source is undefined before the vector is even constructed. Every caller
+	// is unpacker code taking both from the packed file -- pe_upx_stub.cpp
+	// reaches here four times with offsets it read out of the input.
+	const std::vector<uint8_t> tmpBuffer = dynamicBuffer.getBuffer();
+	const std::size_t start = bounds::clamp(static_cast<std::size_t>(startPos),
+	                                        tmpBuffer.size());
+	const std::size_t take  = bounds::clamp(static_cast<std::size_t>(amount),
+	                                        bounds::remaining(start, tmpBuffer.size()));
 	std::vector<uint8_t> buffer(
-			tmpBuffer.begin() + startPos,
-			tmpBuffer.begin() + startPos + amount
+			tmpBuffer.begin() + start,
+			tmpBuffer.begin() + start + take
 	);
 
 	_data = buffer;
@@ -170,8 +181,14 @@ void DynamicBuffer::erase(uint32_t startPos, uint32_t amount)
 	if (startPos >= _data.size())
 		return;
 
-	amount = startPos + amount > _data.size() ? _data.size() - startPos : amount;
-	_data.erase(_data.begin() + startPos, _data.begin() + startPos + amount);
+	// `startPos + amount > _data.size()` is a uint32 sum: at startPos 100 and
+	// amount 0xFFFFFFFF it wraps to 99, the test is false, amount survives
+	// unclamped and the second iterator is formed 4 GB past the end.
+	amount = static_cast<uint32_t>(
+		bounds::clamp(static_cast<std::size_t>(amount),
+		              bounds::remaining(startPos, _data.size())));
+	_data.erase(_data.begin() + startPos,
+	            _data.begin() + startPos + static_cast<std::size_t>(amount));
 }
 
 /**
@@ -257,11 +274,26 @@ void DynamicBuffer::writeRepeatingByte(
 		uint32_t pos,
 		uint32_t repeatAmount)
 {
-	if (pos + repeatAmount > _capacity)
-		repeatAmount = _capacity - pos;
+	// `pos + repeatAmount > _capacity` then `repeatAmount = _capacity - pos`
+	// is wrong twice over once pos is past the capacity: the sum is uint32 and
+	// wraps, and the subtraction underflows. At capacity 100, pos 200 and
+	// repeatAmount 1 the clamp produced 4294967196; the resize test then formed
+	// 200 + 4294967196, wrapped back to 100, found it not greater than the
+	// hundred bytes already there and did nothing; and the memset wrote about
+	// four gigabytes starting a hundred bytes past a hundred-byte vector.
+	// &_data[pos] was already undefined before it ran.
+	//
+	// remaining() saturates at zero instead of underflowing and clamp() never
+	// forms the sum, which is the whole reason they are in a proved header.
+	repeatAmount = static_cast<uint32_t>(
+		bounds::clamp(static_cast<std::size_t>(repeatAmount),
+		              bounds::remaining(pos, _capacity)));
+	if (repeatAmount == 0)
+		return;
 
-	if (pos + repeatAmount > _data.size())
-		_data.resize(pos + repeatAmount);
+	const std::size_t end = static_cast<std::size_t>(pos) + repeatAmount;
+	if (end > _data.size())
+		_data.resize(end);
 
 	memset(&_data[pos], byte, repeatAmount);
 }

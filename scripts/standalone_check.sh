@@ -90,14 +90,29 @@ readonly SUITES=(
 	lua_parser mini_emu module_cluster neural packer pattern_detect profiling
 	pdbparser ptx_decompile py_emitter py_reconstruct pyc_parser retdec rtti serdes
 	serial_detect sort_detect ssa string_detect testing type_inference
-	type_seed var_recovery vbnet_emitter wasm_parser
+	type_seed utils var_recovery vbnet_emitter wasm_parser
 )
 
 # Test suites deliberately NOT run here, with the reason.  --audit consults this
 # so a suite whose module is already in the fast path cannot be silently
 # forgotten -- 933 test cases were, until it started checking.
 readonly EXCLUDED_SUITES=(
-	"utils:includes <gmock/gmock.h>, which the shim does not provide"
+)
+
+# Individual test files that must not be built here, with the reason.
+# "suite/file.cpp:reason"
+#
+# The inverse of PARTIAL_SUITES, and the difference matters: PARTIAL_SUITES
+# names the files that DO build, so a test added later is silently left out,
+# while this names the ones that do not and picks up everything else by default.
+#
+# `utils` was excluded wholesale for gmock. Two of its thirteen files include
+# it; the other eleven -- alignment, conversion, string, math, container, array,
+# filter_iterator, memory, scope_exit, time, binary_path -- had never run in the
+# fast path because of those two. That is the module the proved kernels live in.
+readonly EXCLUDED_TEST_SOURCES=(
+	"utils/byte_value_storage_tests.cpp:includes <gmock/gmock.h>, which the shim does not provide"
+	"utils/version_tests.cpp:includes <gmock/gmock.h>, which the shim does not provide"
 )
 
 # Modules compiled here that have no tests/ directory at all, with the reason.
@@ -482,8 +497,17 @@ for s in "${run_suites[@]}"; do
 		done
 	else
 		shopt -s nullglob
-		srcs=(tests/"$s"/*.cpp)
+		local_tsrcs=(tests/"$s"/*.cpp)
 		shopt -u nullglob
+		srcs=()
+		for f in "${local_tsrcs[@]}"; do
+			skipThis=""
+			for entry in "${EXCLUDED_TEST_SOURCES[@]}"; do
+				[ "${entry%%:*}" = "$s/$(basename "$f")" ] && skipThis=1
+			done
+			[ -n "$skipThis" ] && continue
+			srcs+=("$f")
+		done
 	fi
 	if [ ${#srcs[@]} -eq 0 ]; then
 		skip "$s (no sources)"
