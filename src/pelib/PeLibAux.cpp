@@ -135,11 +135,26 @@ namespace PeLib
 		return (ByteSize >> PELIB_PAGE_SIZE_SHIFT) + ((ByteSize & (PELIB_PAGE_SIZE - 1)) != 0);
 	}
 
+	namespace
+	{
+		/// tellg()/tellp() return -1 on a stream that is not open or has failed.
+		///
+		/// Returning that as an unsigned size makes it 0xFFFF'FFFF'FFFF'FFFF,
+		/// and every "does this range fit in the file" check downstream then
+		/// passes -- so a caller allocates whatever the header asked for. That
+		/// is how a 240-byte input reached a 1.9 GB allocation in
+		/// SecurityDirectory::read. A failed stream has no size; say zero.
+		std::uint64_t nonNegativeSize(std::streamoff off)
+		{
+			return off < 0 ? 0 : static_cast<std::uint64_t>(off);
+		}
+	}
+
 	std::uint64_t fileSize(const std::string& filename)
 	{
 		std::fstream file(filename.c_str());
 		file.seekg(0, std::ios::end);
-		return file.tellg();
+		return nonNegativeSize(file.tellg());
 	}
 
 	std::uint64_t fileSize(std::istream& stream)
@@ -148,7 +163,7 @@ namespace PeLib
 		stream.seekg(0, std::ios::end);
 		std::streamoff filesize = stream.tellg();
 		stream.seekg(oldpos, std::ios::beg);
-		return filesize;
+		return nonNegativeSize(filesize);
 	}
 
 	std::uint64_t fileSize(std::fstream& file)
@@ -157,7 +172,7 @@ namespace PeLib
 		file.seekg(0, std::ios::end);
 		std::streamoff filesize = file.tellg();
 		file.seekg(oldpos, std::ios::beg);
-		return filesize;
+		return nonNegativeSize(filesize);
 	}
 
 	std::uint64_t fileSize(std::ofstream& file)
@@ -166,7 +181,7 @@ namespace PeLib
 		file.seekp(0, std::ios::end);
 		std::streamoff filesize = file.tellp();
 		file.seekp(oldpos, std::ios::beg);
-		return filesize;
+		return nonNegativeSize(filesize);
 	}
 
 	const char * getLoaderErrorString(LoaderError ldrError, bool userFriendly)

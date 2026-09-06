@@ -43,7 +43,14 @@ namespace PeLib
 		}
 
 		std::uint64_t ulFileSize = fileSize(inStream_w);
-		if (ulFileSize < uiOffset + uiSize)
+
+		// uiOffset and uiSize are 32-bit and come from a data directory, so
+		// `uiOffset + uiSize` wraps: 0xFFFFFF00 + 0x200 is 0x100, which passes
+		// a "does it fit" test while naming a range far outside the file. The
+		// allocation below then trusts uiSize and asks for up to 4 GB.
+		// Comparing in 64 bits, in subtraction form, never forms the sum and
+		// bounds uiSize by the file that has to supply it.
+		if (uiOffset > ulFileSize || uiSize > ulFileSize - uiOffset)
 		{
 			m_ldrError = LDR_ERROR_DIGITAL_SIGNATURE_CUT;
 			return ERROR_INVALID_FILE;

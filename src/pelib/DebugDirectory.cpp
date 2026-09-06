@@ -78,6 +78,19 @@ namespace PeLib
 		std::size_t entryCount = size / PELIB_IMAGE_DEBUG_DIRECTORY::size();
 		std::uint32_t bytesRead;
 
+		// `size` is a data-directory field and can name 4 GB, which is 153
+		// million entries -- and the read loop below does not stop on its own,
+		// because the loader supplies zero-filled pages for any RVA inside the
+		// declared image. Bounding by SizeOfImage does not help either: that is
+		// another field out of the same header. The real limit is the file
+		// actually on disk, which is the only quantity here an attacker cannot
+		// inflate for free.
+		const std::uint64_t fileSize = imageLoader.getSizeOfFile();
+		const std::size_t maxEntries =
+			static_cast<std::size_t>(fileSize / PELIB_IMAGE_DEBUG_DIRECTORY::size());
+		if(entryCount > maxEntries)
+			entryCount = maxEntries;
+
 		for (std::size_t i = 0; i < entryCount; i++)
 		{
 			bytesRead = imageLoader.readImage(&iddCurr.idd, rva, sizeof(PELIB_IMAGE_DEBUG_DIRECTORY));

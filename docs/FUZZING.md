@@ -30,10 +30,14 @@ link time.
 | `jar` | `jvm_parser` | JAR archives |
 | `pdb` | `pdbparser` | Microsoft PDB |
 | `cil` | `cli_parser` | .NET CIL metadata |
+| `pelib` | `pelib` | PE headers and every data directory |
 
-ELF, PE, Mach-O and the unpacker harnesses are **not** here: they link
+ELF, Mach-O and the unpacker harnesses are **not** here: they link
 `retdec::fileformat`, which publicly links LLVM. Those stay on the
-`-DRETDEC_FUZZ=ON` path in `.github/workflows/fuzz-pr.yml`.
+`-DRETDEC_FUZZ=ON` path in `.github/workflows/fuzz-pr.yml`. `fuzz_pe.cpp` is on
+that path too — but PeLib itself is not, which is why `pelib` above drives
+`PeLib::PeFileT` directly. It is 9,791 lines that read attacker-controlled bytes
+and had neither a unit suite nor any fuzzing.
 
 ## The two modes, and why they are separate
 
@@ -101,6 +105,16 @@ Each target is seeded from its fixtures under
 `fixtures/malformed/`. The malformed fixtures matter more than the valid ones —
 they already sit on the error paths, which is where the bugs are.
 
+But there has to be at least one *valid* seed, or the fuzzer spends its whole
+budget rediscovering the file's magic number. The `pelib` target proved that the
+hard way: with no PE anywhere in the tree it ran 423,000 executions and found
+nothing, because almost every input was rejected at the `MZ` check. Three
+minimal PEs later — built by `fixtures/pe/make_pe_corpus.py`, so a reader can
+see what each one is rather than trusting a blob — it found a bug within
+minutes, then two more.
+
+If you add a target, add a valid seed with it.
+
 The corpus lives in `build/fuzz/corpus/<target>/` and is cached between CI runs,
 so coverage accumulates rather than restarting from the seeds every night.
 
@@ -115,6 +129,10 @@ Within the first few minutes of its first run:
 | Heap-buffer-overflow: the 3.11 line-table decoder checked for one byte and read two, and for two and read three | `src/pyc_parser/py_code_object.cpp` |
 | `fuzz_dex.cpp` did not compile — it called a `DexFile::classDefsSize()` that no longer exists | `tests/managed_integration/fuzz/` |
 | Stack exhaustion from 15,000 levels of marshal nesting in a 30 KB file — invisible at the default `-max_len` | `src/pyc_parser/py_marshal.cpp` |
+| Misaligned `uint32_t`/`uint16_t` loads at a file-controlled offset | `src/pelib/ImageLoader.cpp` |
+| `fileSize()` returning `tellg()`'s `-1` as an unsigned size, so every bounds check downstream passed | `src/pelib/PeLibAux.cpp` |
+| A 32-bit `offset + size` that wraps, then allocating the unbounded size | `src/pelib/SecurityDirectory.cpp` |
+| Non-zero offset applied to a null pointer on an absent relocation directory | `src/pelib/RelocationsDirectory.cpp` |
 
 That last one is the reason this script exists. The pull-request job could only
 check that the harness *files were present*, so a harness that had stopped

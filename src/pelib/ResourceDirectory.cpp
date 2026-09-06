@@ -339,9 +339,32 @@ namespace PeLib
 		if((uiRsrcRva + entry.OffsetToData) < uiRsrcRva || (uiRsrcRva + entry.OffsetToData + entry.Size) < uiRsrcRva)
 			return ERROR_NONE;
 
-		// Load the resource data
-		m_data.resize(entry.Size);
-		imageLoader.readImage(m_data.data(), entry.OffsetToData, entry.Size);
+		// Load the resource data.
+		//
+		// entry.Size is bounded above only by sizeOfImage, which is itself a
+		// declared header field and can name 4 GB -- so the checks above let an
+		// 882-byte file ask for a 1.6 GB allocation. Read in bounded steps and
+		// keep only what the loader actually supplied: a resource cannot be
+		// larger than the image behind it, and a short read means there is no
+		// more to give. The step size is a granularity, not a cap; a genuinely
+		// large resource still loads in full.
+		constexpr std::uint32_t readStep = 0x10000;
+		std::uint32_t remaining = entry.Size;
+		std::uint32_t rva = entry.OffsetToData;
+		while(remaining > 0)
+		{
+			const std::uint32_t want = (remaining < readStep) ? remaining : readStep;
+			const std::size_t filled = m_data.size();
+
+			m_data.resize(filled + want);
+			const std::uint32_t got = imageLoader.readImage(m_data.data() + filled, rva, want);
+			m_data.resize(filled + got);
+
+			if(got < want)
+				break;
+			remaining -= want;
+			rva += want;
+		}
 
 		// Add the data range to the occupied map
 		if(entry.Size > 0)

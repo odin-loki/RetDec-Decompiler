@@ -10,6 +10,8 @@
 * of PeLib.
 */
 
+#include <cstddef>
+#include <cstring>
 #include "retdec/pelib/PeLibInc.h"
 #include "retdec/pelib/RelocationsDirectory.h"
 
@@ -76,10 +78,18 @@ namespace PeLib
 
 	void RelocationsDirectory::read(const std::uint8_t * data, std::uint32_t uiSize, std::uint32_t sizeOfImage)
 	{
-		const std::uint8_t * dataEnd = data + uiSize;
-
 		// Clear the current relocations
 		m_vRelocations.clear();
+
+		// An absent relocation directory arrives here as a null pointer, and
+		// forming `data + uiSize` on a null pointer is undefined behaviour even
+		// when the result is never dereferenced -- UBSan reports "applying
+		// non-zero offset 8 to null pointer". Nothing below can do useful work
+		// on a buffer too small to hold one block header either.
+		if (data == nullptr || uiSize < PELIB_IMAGE_SIZEOF_BASE_RELOCATION)
+			return;
+
+		const std::uint8_t * dataEnd = data + uiSize;
 
 		// The entire relocation block looks like this:
 		// * PELIB_IMAGE_BASE_RELOCATION (header of block)
@@ -89,14 +99,23 @@ namespace PeLib
 		// ... and so on, up to uiSize
 		while((data + PELIB_IMAGE_SIZEOF_BASE_RELOCATION) < dataEnd)
 		{
-			const PELIB_IMAGE_BASE_RELOCATION * pRelocBlock = (const PELIB_IMAGE_BASE_RELOCATION *)data;
+			const std::uint8_t * blockStart = data;
 			IMG_BASE_RELOC ibrCurr;
 
 			// Retrieve the single PELIB_IMAGE_BASE_RELOCATION entry.
 			// Note that SizeOfBlock contains size of PELIB_IMAGE_BASE_RELOCATION itself
-			// plus sizes of all subsequent fixup entries
-			ibrCurr.ibrRelocation.VirtualAddress = pRelocBlock->VirtualAddress;
-			ibrCurr.ibrRelocation.SizeOfBlock = pRelocBlock->SizeOfBlock;
+			// plus sizes of all subsequent fixup entries.
+			//
+			// Copied out rather than read through a struct pointer: `data`
+			// walks by SizeOfBlock, which comes from the file, so the next
+			// block header need not be 4-byte aligned. Reading a member through
+			// a misaligned pointer is undefined behaviour, and UBSan reports it.
+			std::memcpy(&ibrCurr.ibrRelocation.VirtualAddress,
+			            blockStart + offsetof(PELIB_IMAGE_BASE_RELOCATION, VirtualAddress),
+			            sizeof(ibrCurr.ibrRelocation.VirtualAddress));
+			std::memcpy(&ibrCurr.ibrRelocation.SizeOfBlock,
+			            blockStart + offsetof(PELIB_IMAGE_BASE_RELOCATION, SizeOfBlock),
+			            sizeof(ibrCurr.ibrRelocation.SizeOfBlock));
 
 			// Verify whether the base virtual address is within the image
 			if(ibrCurr.ibrRelocation.VirtualAddress > sizeOfImage)
@@ -118,7 +137,7 @@ namespace PeLib
 			if(ibrCurr.ibrRelocation.SizeOfBlock >= PELIB_IMAGE_SIZEOF_BASE_RELOCATION)
 			{
 				// Get the number of fixup entries
-				const std::uint16_t * typeAndOffsets = (const std::uint16_t *)(pRelocBlock + 1);
+				const std::uint8_t * typeAndOffsets = blockStart + PELIB_IMAGE_SIZEOF_BASE_RELOCATION;
 				std::uint32_t numberOfEntries = (ibrCurr.ibrRelocation.SizeOfBlock - PELIB_IMAGE_SIZEOF_BASE_RELOCATION) / sizeof(uint16_t);
 
 				for (std::uint32_t i = 0; i < numberOfEntries; i++)
@@ -126,7 +145,14 @@ namespace PeLib
 					// Read the type and offset
 					if((data + sizeof(std::uint16_t)) > dataEnd)
 						break;
-					uint16_t typeAndOffset = typeAndOffsets[i];
+					// Same alignment argument as the block header above; and
+					// bound the entry against the buffer, since numberOfEntries
+					// is derived from the file's SizeOfBlock.
+					const std::uint8_t * entryPtr = typeAndOffsets + i * sizeof(std::uint16_t);
+					if((entryPtr + sizeof(std::uint16_t)) > dataEnd)
+						break;
+					uint16_t typeAndOffset;
+					std::memcpy(&typeAndOffset, entryPtr, sizeof(typeAndOffset));
 
 					// Verify the type and offset
 					switch(typeAndOffset >> 12)

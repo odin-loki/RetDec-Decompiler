@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cstring>
 #include <cstdint>
 #include <iostream>
 #include <fstream>
@@ -1719,8 +1720,15 @@ int PeLib::ImageLoader::captureNtHeaders(ByteBuffer & fileData)
 		return ERROR_INVALID_FILE;
 	}
 
-	// Check the NT signature
-	if((ntSignature = *(std::uint32_t *)(filePtr)) != PELIB_IMAGE_NT_SIGNATURE)
+	// Check the NT signature.
+	//
+	// Read through memcpy rather than a cast: filePtr lands at e_lfanew, which
+	// comes out of the file and is under no obligation to be 4-byte aligned.
+	// Dereferencing a misaligned uint32_t pointer is undefined behaviour --
+	// tolerated on x86, a fault or a wrong value elsewhere -- and UBSan reports
+	// it. The compiler folds the memcpy back into a single load.
+	std::memcpy(&ntSignature, filePtr, sizeof(ntSignature));
+	if(ntSignature != PELIB_IMAGE_NT_SIGNATURE)
 	{
 		setLoaderError(LDR_ERROR_NO_NT_SIGNATURE);
 		return ERROR_INVALID_FILE;
@@ -1754,8 +1762,10 @@ int PeLib::ImageLoader::captureNtHeaders(ByteBuffer & fileData)
 
 	// Capture optional header. Note that we need to parse it
 	// according to IMAGE_OPTIONAL_HEADER::Magic
+	// Same alignment argument as the NT signature above: this offset is
+	// file-controlled.
 	if((filePtr + sizeof(std::uint16_t)) < fileEnd)
-		optionalHeaderMagic = *(std::uint16_t *)(filePtr);
+		std::memcpy(&optionalHeaderMagic, filePtr, sizeof(optionalHeaderMagic));
 	if(optionalHeaderMagic == PELIB_IMAGE_NT_OPTIONAL_HDR64_MAGIC)
 		captureOptionalHeader64(fileBegin, filePtr, fileEnd);
 	else

@@ -85,6 +85,25 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `pelib`: 9,791 lines of PE parsing that had neither a unit suite nor any
+  fuzzing now have a libFuzzer target (`fuzz_pelib`, driving `PeLib::PeFileT`
+  over a stream) and three generated PE seeds. `fuzz_pe.cpp` did not cover this
+  code: it drives `retdec::fileformat`, which publicly links LLVM. Five defects
+  followed, all reachable from a file under 1 KB:
+  - `ImageLoader.cpp`: `uint32_t`/`uint16_t` read through a pointer cast at
+    `e_lfanew`, which is file-controlled and need not be aligned.
+  - `PeLibAux.cpp`: `fileSize()` returned `tellg()`'s `-1` as an unsigned size,
+    i.e. `SIZE_MAX`, so every "does this fit in the file" check downstream
+    passed. This was the root cause behind the next one.
+  - `SecurityDirectory.cpp`: `uiOffset + uiSize` computed in 32 bits wraps, and
+    the allocation behind it trusted `uiSize` — a 240-byte input reached a
+    1.9 GB allocation.
+  - `RelocationsDirectory.cpp`: non-zero offset applied to a null pointer on an
+    absent directory, and block headers read through a struct pointer at a
+    file-controlled, unaligned offset.
+  - `ResourceDirectory.cpp` and `DebugDirectory.cpp`: sizes bounded only against
+    other header fields (`SizeOfImage`), which an attacker inflates for free.
+    Both now bound against the file actually on disk.
 - `wasm_parser`: `readSLEB128` and `readSLEB128_64` accumulated into the signed
   result type with no bound on the shift -- undefined behaviour twice over on a
   hostile module, since `(int32_t)0x7F << 28` already overflows the signed range

@@ -71,13 +71,22 @@ readonly TARGETS=(
 	"apk:fuzz_apk:dex_parser bc_module:17:-lz:tests/managed_integration/fixtures/dex/*.apk"
 	"pdb:fuzz_pdb:pdbparser:17::tests/managed_integration/fixtures/pdb/*.pdb"
 	"cil:fuzz_cli:cli_parser bc_module:20:-lz:tests/managed_integration/fixtures/dotnet/*.dll"
+	# PeLib is 9,791 lines of PE parsing that had neither a unit suite nor any
+	# fuzzing. fuzz_pe.cpp does not cover it: that harness drives
+	# retdec::fileformat, which publicly links LLVM. PeLib itself does not.
+	"pelib:fuzz_pelib:pelib utils:17:-lz:tests/managed_integration/fixtures/pe/*"
 )
 
 # Malformed fixtures make excellent seeds: they already sit on the error paths.
 readonly MALFORMED_ROOT="tests/managed_integration/fixtures/malformed"
 
-INCLUDES="-Iinclude -Ideps/rapidjson/include"
+# Same vendored headers and defines as scripts/standalone_check.sh; see the
+# comments there for why each is needed.
+INCLUDES="-Iinclude -Ideps/rapidjson/include -Ideps/whereami"
 DEFINES="-DRAPIDJSON_HAS_STDSTRING=1"
+DEFINES="$DEFINES -DRETDEC_GIT_COMMIT_HASH=\"standalone\""
+DEFINES="$DEFINES -DRETDEC_GIT_VERSION_TAG=\"standalone\""
+DEFINES="$DEFINES -DRETDEC_BUILD_DATE=\"standalone\""
 SAN="-fsanitize=fuzzer,address,undefined -fno-sanitize-recover=undefined"
 
 C_GREEN=''; C_RED=''; C_YELLOW=''; C_DIM=''; C_OFF=''
@@ -126,6 +135,20 @@ fi
 
 mkdir -p "$BUILD_DIR/bin" "$CORPUS_DIR"
 
+# Compiled once, as C, and linked into any target that pulls in retdec/utils.
+WHEREAMI_OBJ="$BUILD_DIR/whereami.o"
+if [ ! -f "$WHEREAMI_OBJ" ] || [ deps/whereami/whereami/whereami.c -nt "$WHEREAMI_OBJ" ]; then
+	# Built with the same compiler and sanitizers as everything else so the
+	# runtimes match, but without -fsanitize=fuzzer: that instruments a target's
+	# own code and belongs only on the harness, and a C driver rejects it.
+	# shellcheck disable=SC2086
+	"$CXX" -x c -O1 -g -w -fsanitize=address,undefined \
+			-c deps/whereami/whereami/whereami.c -o "$WHEREAMI_OBJ" || {
+		say "could not build the vendored whereami object"
+		exit 2
+	}
+fi
+
 selected=()
 for t in "${TARGETS[@]}"; do
 	name="$(field "$t" 1)"
@@ -164,6 +187,10 @@ build_one() {
 		shopt -s nullglob
 		srcs+=("src/$m"/*.cpp)
 		shopt -u nullglob
+		# retdec/utils calls into the vendored whereami, which is C.
+		if [ "$m" = utils ]; then
+			srcs+=("$WHEREAMI_OBJ")
+		fi
 	done
 
 	# shellcheck disable=SC2086
@@ -175,7 +202,7 @@ build_one() {
 	fi
 }
 export -f build_one
-export CXX BUILD_DIR HARNESS_DIR INCLUDES DEFINES SAN
+export CXX BUILD_DIR HARNESS_DIR INCLUDES DEFINES SAN WHEREAMI_OBJ
 
 buildOut="$(printf '%s\n' "${selected[@]}" | xargs -d '\n' -P "$JOBS" -n 1 bash -c 'build_one "$0"')"
 
