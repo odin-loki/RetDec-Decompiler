@@ -41,8 +41,7 @@ using namespace PeLib;
 namespace retdec {
 namespace fileformat {
 
-namespace
-{
+namespace {
 
 /// Size of buffer for signature-lattice parsing (decision over first N bytes).
 const std::size_t LATTICE_BUFFER_SIZE = 512;
@@ -51,39 +50,35 @@ const std::size_t COFF_FILE_HEADER_BYTE_SIZE = 20;
 
 bool formatLatticeDiagEnabled()
 {
-	const char *e = std::getenv("RETDEC_FORMAT_LATTICE_DIAG");
+	const char* e = std::getenv("RETDEC_FORMAT_LATTICE_DIAG");
 	return e != nullptr && e[0] != '\0' && e[0] != '0';
 }
 
-const char *formatLatticeFormatTag(Format f)
+const char* formatLatticeFormatTag(Format f)
 {
 	switch (f)
 	{
-	case Format::UNDETECTABLE:
-		return "UNDETECTABLE";
-	case Format::UNKNOWN:
-		return "UNKNOWN";
-	case Format::PE:
-		return "PE";
-	case Format::ELF:
-		return "ELF";
-	case Format::COFF:
-		return "COFF";
-	case Format::MACHO:
-		return "MACHO";
-	case Format::INTEL_HEX:
-		return "INTEL_HEX";
-	case Format::RAW_DATA:
-		return "RAW_DATA";
+	case Format::UNDETECTABLE: return "UNDETECTABLE";
+	case Format::UNKNOWN: return "UNKNOWN";
+	case Format::PE: return "PE";
+	case Format::ELF: return "ELF";
+	case Format::COFF: return "COFF";
+	case Format::MACHO: return "MACHO";
+	case Format::INTEL_HEX: return "INTEL_HEX";
+	case Format::RAW_DATA: return "RAW_DATA";
 	}
 	return "FORMAT?";
 }
 
-const std::map<std::pair<std::size_t, std::string>, Format> unknownFormatMap =
-{
-	{{0, "\x7""\x1""\x64""\x00"}, Format::UNKNOWN}, // a.out
+const std::map<std::pair<std::size_t, std::string>, Format> unknownFormatMap = {
+	{{0,
+	  "\x7"
+	  "\x1"
+	  "\x64"
+	  "\x00"},
+	 Format::UNKNOWN},                  // a.out
 	{{0, "PS-X EXE"}, Format::UNKNOWN}, // PS-X
-	{{257, "ustar"}, Format::UNKNOWN} // tar
+	{{257, "ustar"}, Format::UNKNOWN}   // tar
 };
 
 void resetStream(std::istream& stream)
@@ -95,7 +90,7 @@ void resetStream(std::istream& stream)
 std::uint64_t streamSize(std::istream& stream)
 {
 	stream.seekg(0, std::ios::end);
-	std::uint64_t sz =stream.tellg();
+	std::uint64_t sz = stream.tellg();
 	resetStream(stream);
 	return sz;
 }
@@ -191,43 +186,62 @@ bool isKnownCoffMachineLittleEndian(std::uint16_t machine)
 {
 	switch (machine)
 	{
-	case 0x014C: case 0x014D: case 0x014E: case 0x0184: case 0x01A2:
-	case 0x01A3: case 0x01A4: case 0x01A6: case 0x01A8: case 0x01C0:
-	case 0x01C2: case 0x01C4: case 0x01D3: case 0x01F0: case 0x0200:
-	case 0x0268: case 0x0290: case 0x0284: case 0x0160:
-	case 0x0162: case 0x0163: case 0x0166: case 0x0140: case 0x0142:
-	case 0x0266: case 0x0168: case 0x0169: case 0x0366: case 0x0466:
-	case 0x0520: case 0x0EBC: case 0x8664: case 0x9041: case 0xAA64:
-	case 0xC0EE:
-		return true;
-	default:
-		return false;
+	case 0x014C:
+	case 0x014D:
+	case 0x014E:
+	case 0x0184:
+	case 0x01A2:
+	case 0x01A3:
+	case 0x01A4:
+	case 0x01A6:
+	case 0x01A8:
+	case 0x01C0:
+	case 0x01C2:
+	case 0x01C4:
+	case 0x01D3:
+	case 0x01F0:
+	case 0x0200:
+	case 0x0268:
+	case 0x0290:
+	case 0x0284:
+	case 0x0160:
+	case 0x0162:
+	case 0x0163:
+	case 0x0166:
+	case 0x0140:
+	case 0x0142:
+	case 0x0266:
+	case 0x0168:
+	case 0x0169:
+	case 0x0366:
+	case 0x0466:
+	case 0x0520:
+	case 0x0EBC:
+	case 0x8664:
+	case 0x9041:
+	case 0xAA64:
+	case 0xC0EE: return true;
+	default: return false;
 	}
 }
 
-bool hasCoffBigObjMagicAt12(const std::uint8_t *buf, std::size_t size)
+bool hasCoffBigObjMagicAt12(const std::uint8_t* buf, std::size_t size)
 {
 	if (size < 28)
 	{
 		return false;
 	}
-	static const char bigObjMagic[] =
-			"\xc7\xa1\xba\xd1\xee\xba\xa9\x4b\xaf\x20\xfa\xf6\x6a\xa4\xdc\xb8";
+	static const char bigObjMagic[] = "\xc7\xa1\xba\xd1\xee\xba\xa9\x4b\xaf\x20\xfa\xf6\x6a\xa4\xdc\xb8";
 	return std::equal(bigObjMagic, bigObjMagic + 16, buf + 12);
 }
 
 std::string formatLatticeHintsDiagSuffix(const FormatLatticeHints& h)
 {
 	std::ostringstream oss;
-	oss << "peStrength=" << h.peStrength
-			<< " elfStrength=" << h.elfStrength
-			<< " ihex=" << h.ihexStrength
-			<< " machoSlice=" << h.machoSliceStrength
-			<< " coff=" << h.coffStrength
-			<< " ar=" << h.arArchiveStrength
-			<< " cafe2nd=" << h.cafeBabeSecondWord
-			<< " javaLattice=" << h.javaClassLatticeStrength
-			<< " machoFatLattice=" << h.machoFatLatticeStrength;
+	oss << "peStrength=" << h.peStrength << " elfStrength=" << h.elfStrength << " ihex=" << h.ihexStrength
+		<< " machoSlice=" << h.machoSliceStrength << " coff=" << h.coffStrength << " ar=" << h.arArchiveStrength
+		<< " cafe2nd=" << h.cafeBabeSecondWord << " javaLattice=" << h.javaClassLatticeStrength
+		<< " machoFatLattice=" << h.machoFatLatticeStrength;
 	return oss.str();
 }
 
@@ -239,31 +253,25 @@ Format dispatchByLattice(const std::string& buf)
 {
 	if (buf.size() < 4)
 	{
-		if (buf.size() >= 1 && buf[0] == ':')
-			return Format::INTEL_HEX;
+		if (buf.size() >= 1 && buf[0] == ':') return Format::INTEL_HEX;
 		return Format::UNKNOWN;
 	}
 
 	// Offset 0: Intel HEX
-	if (buf[0] == ':')
-		return Format::INTEL_HEX;
+	if (buf[0] == ':') return Format::INTEL_HEX;
 
 	// Offset 0: ELF (7F 45 4C 46)
-	if (buf[0] == '\x7F' && buf.size() >= 4 &&
-	    buf[1] == 'E' && buf[2] == 'L' && buf[3] == 'F')
-		return Format::ELF;
+	if (buf[0] == '\x7F' && buf.size() >= 4 && buf[1] == 'E' && buf[2] == 'L' && buf[3] == 'F') return Format::ELF;
 
 	// Offset 0: PE (MZ or ZM)
 	if (buf.size() >= 2)
 	{
-		if ((buf[0] == 'M' && buf[1] == 'Z') || (buf[0] == 'Z' && buf[1] == 'M'))
-			return Format::PE;
+		if ((buf[0] == 'M' && buf[1] == 'Z') || (buf[0] == 'Z' && buf[1] == 'M')) return Format::PE;
 	}
 
 	// Offset 0: Unix ar / thin archive (not a single object — explicit lattice leaf)
 	if (buf.size() >= 8
-			&& (std::memcmp(buf.data(), "!<arch>\n", 8) == 0
-				|| std::memcmp(buf.data(), "!<thin>\n", 8) == 0))
+		&& (std::memcmp(buf.data(), "!<arch>\n", 8) == 0 || std::memcmp(buf.data(), "!<thin>\n", 8) == 0))
 	{
 		return Format::UNKNOWN;
 	}
@@ -271,18 +279,15 @@ Format dispatchByLattice(const std::string& buf)
 	// Offset 0: Mach-O variants (32/64 slice magic vs fat / Java polyglot)
 	if (buf.size() >= 4)
 	{
-		const std::uint32_t magic = static_cast<std::uint8_t>(buf[0]) |
-			(static_cast<std::uint8_t>(buf[1]) << 8) |
-			(static_cast<std::uint8_t>(buf[2]) << 16) |
-			(static_cast<std::uint8_t>(buf[3]) << 24);
-		const std::uint32_t magicBE = static_cast<std::uint8_t>(buf[3]) |
-			(static_cast<std::uint8_t>(buf[2]) << 8) |
-			(static_cast<std::uint8_t>(buf[1]) << 16) |
-			(static_cast<std::uint8_t>(buf[0]) << 24);
+		const std::uint32_t magic = static_cast<std::uint8_t>(buf[0]) | (static_cast<std::uint8_t>(buf[1]) << 8)
+								  | (static_cast<std::uint8_t>(buf[2]) << 16)
+								  | (static_cast<std::uint8_t>(buf[3]) << 24);
+		const std::uint32_t magicBE = static_cast<std::uint8_t>(buf[3]) | (static_cast<std::uint8_t>(buf[2]) << 8)
+									| (static_cast<std::uint8_t>(buf[1]) << 16)
+									| (static_cast<std::uint8_t>(buf[0]) << 24);
 
 		// MH_MAGIC, MH_MAGIC_64, MH_CIGAM, MH_CIGAM_64 — no Java ambiguity
-		if (magic == 0xFEEDFACE || magic == 0xFEEDFACF ||
-		    magicBE == 0xFEEDFACE || magicBE == 0xFEEDFACF)
+		if (magic == 0xFEEDFACE || magic == 0xFEEDFACF || magicBE == 0xFEEDFACE || magicBE == 0xFEEDFACF)
 		{
 			return Format::MACHO;
 		}
@@ -298,11 +303,8 @@ Format dispatchByLattice(const std::string& buf)
 			{
 				return Format::UNKNOWN;
 			}
-			std::uint32_t w =
-				static_cast<std::uint8_t>(buf[4]) |
-				(static_cast<std::uint8_t>(buf[5]) << 8) |
-				(static_cast<std::uint8_t>(buf[6]) << 16) |
-				(static_cast<std::uint8_t>(buf[7]) << 24);
+			std::uint32_t w = static_cast<std::uint8_t>(buf[4]) | (static_cast<std::uint8_t>(buf[5]) << 8)
+							| (static_cast<std::uint8_t>(buf[6]) << 16) | (static_cast<std::uint8_t>(buf[7]) << 24);
 			if (sys::IsLittleEndianHost)
 			{
 				sys::swapByteOrder(w);
@@ -318,8 +320,7 @@ Format dispatchByLattice(const std::string& buf)
 	// Offset 0: COFF (2-byte machine type, little-endian)
 	if (buf.size() >= 2)
 	{
-		const std::uint16_t machine = static_cast<std::uint8_t>(buf[0]) |
-			(static_cast<std::uint8_t>(buf[1]) << 8);
+		const std::uint16_t machine = static_cast<std::uint8_t>(buf[0]) | (static_cast<std::uint8_t>(buf[1]) << 8);
 		if (isKnownCoffMachineLittleEndian(machine))
 		{
 			return Format::COFF;
@@ -327,8 +328,7 @@ Format dispatchByLattice(const std::string& buf)
 	}
 
 	// Offset 0x0C: COFF BigObj
-	if (hasCoffBigObjMagicAt12(reinterpret_cast<const std::uint8_t *>(buf.data()),
-				buf.size()))
+	if (hasCoffBigObjMagicAt12(reinterpret_cast<const std::uint8_t*>(buf.data()), buf.size()))
 	{
 		return Format::COFF;
 	}
@@ -338,9 +338,7 @@ Format dispatchByLattice(const std::string& buf)
 
 } // anonymous namespace
 
-FormatLatticeHints computeFormatLatticeHints(
-		const std::uint8_t *data,
-		std::size_t size)
+FormatLatticeHints computeFormatLatticeHints(const std::uint8_t* data, std::size_t size)
 {
 	FormatLatticeHints h;
 	if (data == nullptr || size == 0)
@@ -353,25 +351,21 @@ FormatLatticeHints computeFormatLatticeHints(
 		h.ihexStrength = 100;
 	}
 
-	if (size >= 4 && data[0] == '\x7F' && data[1] == 'E' && data[2] == 'L'
-			&& data[3] == 'F')
+	if (size >= 4 && data[0] == '\x7F' && data[1] == 'E' && data[2] == 'L' && data[3] == 'F')
 	{
 		h.elfStrength = 100;
 	}
 
-	if (size >= 2
-			&& ((data[0] == 'M' && data[1] == 'Z')
-					|| (data[0] == 'Z' && data[1] == 'M')))
+	if (size >= 2 && ((data[0] == 'M' && data[1] == 'Z') || (data[0] == 'Z' && data[1] == 'M')))
 	{
 		h.peStrength = 25;
 		if (size >= 0x40)
 		{
-			const std::uint32_t peOff = static_cast<std::uint32_t>(data[0x3C])
-					| (static_cast<std::uint32_t>(data[0x3D]) << 8)
-					| (static_cast<std::uint32_t>(data[0x3E]) << 16)
-					| (static_cast<std::uint32_t>(data[0x3F]) << 24);
-			if (peOff + 4 <= size && data[peOff] == 'P' && data[peOff + 1] == 'E'
-					&& data[peOff + 2] == 0 && data[peOff + 3] == 0)
+			const std::uint32_t peOff =
+				static_cast<std::uint32_t>(data[0x3C]) | (static_cast<std::uint32_t>(data[0x3D]) << 8)
+				| (static_cast<std::uint32_t>(data[0x3E]) << 16) | (static_cast<std::uint32_t>(data[0x3F]) << 24);
+			if (peOff + 4 <= size && data[peOff] == 'P' && data[peOff + 1] == 'E' && data[peOff + 2] == 0
+				&& data[peOff + 3] == 0)
 			{
 				h.peStrength = 100;
 			}
@@ -382,9 +376,7 @@ FormatLatticeHints computeFormatLatticeHints(
 		}
 	}
 
-	if (size >= 8
-			&& (std::memcmp(data, "!<arch>\n", 8) == 0
-				|| std::memcmp(data, "!<thin>\n", 8) == 0))
+	if (size >= 8 && (std::memcmp(data, "!<arch>\n", 8) == 0 || std::memcmp(data, "!<thin>\n", 8) == 0))
 	{
 		h.arArchiveStrength = 100;
 	}
@@ -392,16 +384,13 @@ FormatLatticeHints computeFormatLatticeHints(
 	// Mach-O thin slice (MH_MAGIC / MH_MAGIC_64 / swapped) — not CAFE fat/Java
 	if (size >= 4)
 	{
-		const std::uint32_t magic = static_cast<std::uint8_t>(data[0])
-				| (static_cast<std::uint8_t>(data[1]) << 8)
-				| (static_cast<std::uint8_t>(data[2]) << 16)
-				| (static_cast<std::uint8_t>(data[3]) << 24);
-		const std::uint32_t magicBE = static_cast<std::uint8_t>(data[3])
-				| (static_cast<std::uint8_t>(data[2]) << 8)
-				| (static_cast<std::uint8_t>(data[1]) << 16)
-				| (static_cast<std::uint8_t>(data[0]) << 24);
-		if (magic == 0xFEEDFACE || magic == 0xFEEDFACF ||
-				magicBE == 0xFEEDFACE || magicBE == 0xFEEDFACF)
+		const std::uint32_t magic = static_cast<std::uint8_t>(data[0]) | (static_cast<std::uint8_t>(data[1]) << 8)
+								  | (static_cast<std::uint8_t>(data[2]) << 16)
+								  | (static_cast<std::uint8_t>(data[3]) << 24);
+		const std::uint32_t magicBE = static_cast<std::uint8_t>(data[3]) | (static_cast<std::uint8_t>(data[2]) << 8)
+									| (static_cast<std::uint8_t>(data[1]) << 16)
+									| (static_cast<std::uint8_t>(data[0]) << 24);
+		if (magic == 0xFEEDFACE || magic == 0xFEEDFACF || magicBE == 0xFEEDFACE || magicBE == 0xFEEDFACF)
 		{
 			h.machoSliceStrength = 100;
 		}
@@ -410,20 +399,16 @@ FormatLatticeHints computeFormatLatticeHints(
 	// CAFE polyglot (Mach-O fat vs Java .class) — mirror dispatchByLattice word test
 	if (size >= 8)
 	{
-		const std::uint32_t magic = static_cast<std::uint8_t>(data[0])
-				| (static_cast<std::uint8_t>(data[1]) << 8)
-				| (static_cast<std::uint8_t>(data[2]) << 16)
-				| (static_cast<std::uint8_t>(data[3]) << 24);
-		const std::uint32_t magicBE = static_cast<std::uint8_t>(data[3])
-				| (static_cast<std::uint8_t>(data[2]) << 8)
-				| (static_cast<std::uint8_t>(data[1]) << 16)
-				| (static_cast<std::uint8_t>(data[0]) << 24);
+		const std::uint32_t magic = static_cast<std::uint8_t>(data[0]) | (static_cast<std::uint8_t>(data[1]) << 8)
+								  | (static_cast<std::uint8_t>(data[2]) << 16)
+								  | (static_cast<std::uint8_t>(data[3]) << 24);
+		const std::uint32_t magicBE = static_cast<std::uint8_t>(data[3]) | (static_cast<std::uint8_t>(data[2]) << 8)
+									| (static_cast<std::uint8_t>(data[1]) << 16)
+									| (static_cast<std::uint8_t>(data[0]) << 24);
 		if (magic == 0xCAFEBABE || magicBE == 0xCAFEBABE)
 		{
-			std::uint32_t w = static_cast<std::uint8_t>(data[4])
-					| (static_cast<std::uint8_t>(data[5]) << 8)
-					| (static_cast<std::uint8_t>(data[6]) << 16)
-					| (static_cast<std::uint8_t>(data[7]) << 24);
+			std::uint32_t w = static_cast<std::uint8_t>(data[4]) | (static_cast<std::uint8_t>(data[5]) << 8)
+							| (static_cast<std::uint8_t>(data[6]) << 16) | (static_cast<std::uint8_t>(data[7]) << 24);
 			if (sys::IsLittleEndianHost)
 			{
 				sys::swapByteOrder(w);
@@ -442,8 +427,7 @@ FormatLatticeHints computeFormatLatticeHints(
 
 	if (size >= 2)
 	{
-		const std::uint16_t machine = static_cast<std::uint8_t>(data[0])
-				| (static_cast<std::uint8_t>(data[1]) << 8);
+		const std::uint16_t machine = static_cast<std::uint8_t>(data[0]) | (static_cast<std::uint8_t>(data[1]) << 8);
 		if (isKnownCoffMachineLittleEndian(machine))
 		{
 			h.coffStrength = 100;
@@ -457,7 +441,7 @@ FormatLatticeHints computeFormatLatticeHints(
 	return h;
 }
 
-Format detectFileFormat(std::istream &inputStream, bool isRaw)
+Format detectFileFormat(std::istream& inputStream, bool isRaw)
 {
 	if (isRaw)
 	{
@@ -479,10 +463,10 @@ Format detectFileFormat(std::istream &inputStream, bool isRaw)
 	}
 
 	// Unknown formats (a.out, PS-X, tar) — check before known formats
-	for (const auto& item : unknownFormatMap)
+	for (const auto& item: unknownFormatMap)
 	{
-		if (item.first.first + item.first.second.length() <= latticeBuf.size() &&
-		    hasSubstringOnPosition(latticeBuf, item.first.second, item.first.first))
+		if (item.first.first + item.first.second.length() <= latticeBuf.size()
+			&& hasSubstringOnPosition(latticeBuf, item.first.second, item.first.first))
 		{
 			return Format::UNKNOWN;
 		}
@@ -494,17 +478,15 @@ Format detectFileFormat(std::istream &inputStream, bool isRaw)
 	FormatLatticeHints latticeHints;
 	if (!latticeBuf.empty())
 	{
-		latticeHints = computeFormatLatticeHints(
-				reinterpret_cast<const std::uint8_t *>(latticeBuf.data()),
-				latticeBuf.size());
+		latticeHints =
+			computeFormatLatticeHints(reinterpret_cast<const std::uint8_t*>(latticeBuf.data()), latticeBuf.size());
 	}
 
 	if (formatLatticeDiagEnabled() && !latticeBuf.empty())
 	{
-		retdec::utils::io::Log::info()
-				<< "format lattice: dispatch_candidate=" << formatLatticeFormatTag(candidate)
-				<< "(" << static_cast<int>(candidate) << ") "
-				<< formatLatticeHintsDiagSuffix(latticeHints) << std::endl;
+		retdec::utils::io::Log::info() << "format lattice: dispatch_candidate=" << formatLatticeFormatTag(candidate)
+									   << "(" << static_cast<int>(candidate) << ") "
+									   << formatLatticeHintsDiagSuffix(latticeHints) << std::endl;
 	}
 
 	// Format-specific validation (requires full stream)
@@ -512,79 +494,68 @@ Format detectFileFormat(std::istream &inputStream, bool isRaw)
 
 	switch (candidate)
 	{
-		case Format::PE:
+	case Format::PE: {
+		const bool peOk = isPe(inputStream);
+		if (formatLatticeDiagEnabled())
 		{
-			const bool peOk = isPe(inputStream);
-			if (formatLatticeDiagEnabled())
+			if (peOk)
 			{
-				if (peOk)
-				{
-					retdec::utils::io::Log::info()
-							<< "format lattice: PE ImageLoader validation ok (peStrength="
-							<< latticeHints.peStrength << ")" << std::endl;
-				}
-				else
-				{
-					retdec::utils::io::Log::info()
-							<< "format lattice: PE ImageLoader validation failed; "
-							<< formatLatticeHintsDiagSuffix(latticeHints) << std::endl;
-				}
+				retdec::utils::io::Log::info()
+					<< "format lattice: PE ImageLoader validation ok (peStrength=" << latticeHints.peStrength << ")"
+					<< std::endl;
 			}
-			return peOk ? Format::PE : Format::UNKNOWN;
+			else
+			{
+				retdec::utils::io::Log::info() << "format lattice: PE ImageLoader validation failed; "
+											   << formatLatticeHintsDiagSuffix(latticeHints) << std::endl;
+			}
 		}
-		case Format::COFF:
+		return peOk ? Format::PE : Format::UNKNOWN;
+	}
+	case Format::COFF: {
+		if (streamSize(inputStream) < COFF_FILE_HEADER_BYTE_SIZE)
 		{
-			if (streamSize(inputStream) < COFF_FILE_HEADER_BYTE_SIZE)
-			{
-				if (formatLatticeDiagEnabled())
-				{
-					retdec::utils::io::Log::info()
-							<< "format lattice: COFF rejected (stream smaller than "
-							<< COFF_FILE_HEADER_BYTE_SIZE << " bytes); "
-							<< formatLatticeHintsDiagSuffix(latticeHints) << std::endl;
-				}
-				return Format::UNKNOWN;
-			}
 			if (formatLatticeDiagEnabled())
 			{
 				retdec::utils::io::Log::info()
-						<< "format lattice: COFF minimum size check ok; "
-						<< formatLatticeHintsDiagSuffix(latticeHints) << std::endl;
-			}
-			return Format::COFF;
-		}
-		case Format::MACHO:
-		{
-			const bool reject = isStrangeFeedface(inputStream)
-					|| isJava(inputStream);
-			if (formatLatticeDiagEnabled())
-			{
-				retdec::utils::io::Log::info()
-						<< "format lattice: MACHO polyglot guard "
-						<< (reject ? "rejected (Java/strange FEEDFACE)"
-							    : "passed")
-						<< "; " << formatLatticeHintsDiagSuffix(latticeHints) << std::endl;
-			}
-			return reject ? Format::UNKNOWN : Format::MACHO;
-		}
-		case Format::ELF:
-		case Format::INTEL_HEX:
-			if (formatLatticeDiagEnabled())
-			{
-				retdec::utils::io::Log::info()
-						<< "format lattice: " << formatLatticeFormatTag(candidate)
-						<< " accepted (no extra stream validation); "
-						<< formatLatticeHintsDiagSuffix(latticeHints) << std::endl;
-			}
-			return candidate;
-		default:
-			if (formatLatticeDiagEnabled())
-			{
-				retdec::utils::io::Log::info()
-						<< "format lattice: UNKNOWN (no validation branch); "
-						<< formatLatticeHintsDiagSuffix(latticeHints) << std::endl;
+					<< "format lattice: COFF rejected (stream smaller than " << COFF_FILE_HEADER_BYTE_SIZE
+					<< " bytes); " << formatLatticeHintsDiagSuffix(latticeHints) << std::endl;
 			}
 			return Format::UNKNOWN;
+		}
+		if (formatLatticeDiagEnabled())
+		{
+			retdec::utils::io::Log::info() << "format lattice: COFF minimum size check ok; "
+										   << formatLatticeHintsDiagSuffix(latticeHints) << std::endl;
+		}
+		return Format::COFF;
+	}
+	case Format::MACHO: {
+		const bool reject = isStrangeFeedface(inputStream) || isJava(inputStream);
+		if (formatLatticeDiagEnabled())
+		{
+			retdec::utils::io::Log::info()
+				<< "format lattice: MACHO polyglot guard " << (reject ? "rejected (Java/strange FEEDFACE)" : "passed")
+				<< "; " << formatLatticeHintsDiagSuffix(latticeHints) << std::endl;
+		}
+		return reject ? Format::UNKNOWN : Format::MACHO;
+	}
+	case Format::ELF:
+	case Format::INTEL_HEX:
+		if (formatLatticeDiagEnabled())
+		{
+			retdec::utils::io::Log::info()
+				<< "format lattice: " << formatLatticeFormatTag(candidate) << " accepted (no extra stream validation); "
+				<< formatLatticeHintsDiagSuffix(latticeHints) << std::endl;
+		}
+		return candidate;
+	default:
+		if (formatLatticeDiagEnabled())
+		{
+			retdec::utils::io::Log::info() << "format lattice: UNKNOWN (no validation branch); "
+										   << formatLatticeHintsDiagSuffix(latticeHints) << std::endl;
+		}
+		return Format::UNKNOWN;
 	}
 }
 
@@ -594,10 +565,10 @@ Format detectFileFormat(std::istream &inputStream, bool isRaw)
  * @param isRaw Is the input is a raw binary?
  * @return Detected file format in enumeration representation
  */
-Format detectFileFormat(const std::string &filePath, bool isRaw)
+Format detectFileFormat(const std::string& filePath, bool isRaw)
 {
 	std::ifstream stream(filePath, std::ifstream::in | std::ifstream::binary);
-	if(!stream.is_open())
+	if (!stream.is_open())
 	{
 		return Format::UNDETECTABLE;
 	}
