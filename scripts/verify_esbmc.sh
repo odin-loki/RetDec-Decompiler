@@ -379,6 +379,17 @@ if [ "$MODE" = cross ]; then
 	declare -a mismatches=()
 	for harness in "${HARNESSES[@]}"; do
 		check_options_syntax "$harness" || { disagree=$((disagree+1)); continue; }
+		# ESBMC-OPTIONAL applies here too, and it matters more here than in the
+		# run loop: cross-checking runs each proof TWICE, so a harness that
+		# cannot finish costs double, and an OOM kill comes back as a non-zero
+		# exit from both backends -- which this mode would otherwise record as
+		# "z3 and boolector agree (fail)". Two crashed processes are not a
+		# consensus about a property. Skipped unless --optional asks for it.
+		crossOptional="$(harness_optional "$harness")"
+		if [ -n "$crossOptional" ] && [ "$RUN_OPTIONAL" -eq 0 ]; then
+			skip "$(basename "$harness") — not cross-checked: $crossOptional"
+			continue
+		fi
 		extraOpts="$(harness_options "$harness")"
 		harnessStd="$(harness_std "$harness")"
 		pinned="$(harness_solver "$harness")"
