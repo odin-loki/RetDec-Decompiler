@@ -286,3 +286,107 @@ ctest --test-dir build/linux --output-on-failure
 For section 1, the measurement that matters is the corpus recompile rate:
 `results/decompilebench-full.json`, regenerated per `docs/BENCHMARKS.md`. If
 `tu_valid_rate` moves off 0.000, the fix landed.
+
+---
+
+# Residual findings from the SMT/adversarial-verification pass
+
+A separate exercise from the audit above: thirteen arithmetic kernels were
+proved with ESBMC, the call sites were routed through them, and every round of
+fixes was then handed to an adversarial verifier whose brief was to disbelieve
+it. Three rounds ran. What follows is what the third round's verifiers still
+list as live, after everything reachable in this environment was fixed.
+
+**These are not the same kind of finding as the ones above.** Those are behind
+an LLVM build this environment cannot produce. These are mostly reachable — some
+were measured by execution — and were left because they are in a sibling file
+outside the agent's assigned set, because they need a build this container
+cannot run, or because the work converged and stopping was a judgement call
+rather than a completion.
+
+**Adversarial verification does not terminate.** Each round found fewer defects
+in the fixes and more sites of the same class elsewhere; a fourth round would
+find a fifth. What follows is the state at the point where that was called,
+written down so the call is visible.
+
+## Reachable and worth fixing
+
+* `src/jvm_parser/jvm_class_parser.cpp:348-349` — the same unchecked
+  LocalVariableTable extent fixed in `jvm_lifter.cpp`, in a sibling file the
+  same `CMakeLists.txt` compiles into the same library. One-line fix, same
+  shape.
+* `src/jvm_reconstruct/local_rebuild.cpp:26-42` — an exact second copy of
+  `descriptorToType`, still recursing once per `[` with no depth bound. Measured:
+  20,000 brackets returns, 40,000 gives SIGSEGV at `-O1`. Fed from a `.class`
+  file's descriptor. The `dex_parser` copy is fixed; this one is not.
+* `src/jvm_reconstruct/local_rebuild.cpp:264-265` — `entry->startPc + entry->length`
+  copied unchecked, the same LVT extent again in a third module.
+* `src/dex_parser/dex_header.cpp:566` — `static_cast<int32_t>(r.uleb128())` in
+  `parseCodeItem`; out-of-range unsigned-to-signed conversion of a value taken
+  straight from the file, measured reachable with `0xFFFFFFFF`.
+* `src/dex_parser/dex_header.cpp:74-77` and `:144` — the same conversion in
+  `DexReader::s1/s2/s4/s8` and `uleb128p1`. No production caller today; the
+  tests call them.
+* `src/utils/byte_value_storage.cpp` — `set10Byte` memcpy's a `long double`'s
+  object representation into eight bytes on the `!systemHasLongDouble()` path.
+  The un-inverted twin of the `get10ByteImpl` path that was corrected.
+* `src/utils/gpu_scanner.cu`, `gpuscan::nibblesFor` — the guard asks whether
+  `size * 2` fits in `std::size_t`, not whether a `std::string` can hold it.
+  Every size in `[2^61, 2^63)` passes and then throws `std::length_error` out of
+  a `void` function. Refuse against `max_size()`, or return the failure.
+* `src/cli_parser/cli_sig.cpp` — a self-referential TypeSpec whose signature is
+  a GENERICINST with two or more self-referencing type arguments (e.g.
+  `15 12 06 02 12 06 12 06`) drives an exponentially wide traversal under the
+  depth-64 bound. The bound stops the depth, not the width.
+
+## Behind a build this environment cannot run
+
+Everything in `src/fileformat/` and `src/loader/` below is compiled only by the
+LLVM-dependent build, so a change to it here would ship untested — the same
+reason the audit findings above were written down rather than attempted.
+
+* `src/fileformat/file_format/elf/elf_format.cpp:2770-2773` and
+  `coff_format.cpp:600-609` — `getDeclaredFileLength` overrides that shadow the
+  base function which *was* fixed, each forming unclamped 64-bit sums (and, in
+  the COFF case, an unchecked multiply) of header fields.
+* `src/fileformat/file_format/file_format.cpp:2309` — `getXByte` still forms
+  `secSeg->getOffset() + secOffset`.
+* `file_format.cpp:583-593` (`computeSectionTableHashes`) and `:1380`
+  (`getOverlayEntropy`) — unchecked multiply and sums on header fields.
+* `src/fileformat/utils/other.cpp:407` — `getRealSizeInRegion`'s wrapping clamp.
+  Re-measured: `(10, 2^64-5, 512)` returns `18446744073709551611`. Reached from
+  `sec_seg.cpp:235/402` and `resource.cpp:93/218`.
+* `src/fileformat/types/resource_table/bitmap_image.cpp:210, 302, 383, 437, 490`
+  — unchecked `nBytesInRow * nRows` from header width/height/bitCount, feeding
+  the clamp above.
+* `src/loader/loader/segment.cpp:205`, `segment_data_source.cpp:81-82, 91` —
+  post-hoc and pre-copy wrapping clamps. `Image::getXBytes` now refuses before
+  them, but both have other callers.
+
+## Structural: code no test can reach
+
+* `src/utils/gpu_scanner.cu:234-895` is outside every suite in the tree.
+  `src/utils/CMakeLists.txt` builds `retdec-gpu-scanner` from `gpu_scanner.cu`
+  when CUDA is found and from `gpu_scanner_cpu.cpp` otherwise, and only the
+  latter is ever compiled here. The shared arithmetic in the file's prologue is
+  now covered — `gpu_scanner_cpu.cpp` includes it — but the six CUDA-side call
+  sites that decide whether that arithmetic is called are not: a verifier
+  reverted four fixes inside that region and the suite stayed green, 13/13.
+  It is not unreachable in principle. The same verifier ran the real
+  `__global__` kernel text under ASan with stub CUDA headers and caught a
+  heap-buffer-overflow that way; the host half is easier still.
+* `src/utils/gpu_scanner.cu` (`cpuMatchOne`) and `gpu_scanner_cpu.cpp` hold two
+  copies of the match loop that **disagree**. Measured on `DE AD BE EF` with
+  pattern `de/d`: `bestRatio 1.000000 / totalNibs 3` on the CPU build,
+  `0.750000 / totalNibs 4` through the `.cu` copy.
+
+## Documentation and hygiene
+
+* Three stale line citations into `cli_reader.cpp` survive in
+  `include/retdec/utils/byte_order.h:21` and
+  `tests/verification/byte_order_proof.cpp:121, 202`. The routing that made them
+  false is the fix in this branch. Cite functions, not lines.
+* `src/utils/gpu_scanner.cu:626, 367` — `pos / 2` written as a bare literal in
+  the file whose own comment says the factor is "stated here and nowhere else".
+* `src/utils/gpu_scanner.cu:545-546, 719-720` — silent `static_cast<uint32_t>`
+  narrowing of `size_t` file and window quantities into the kernel parameters.
