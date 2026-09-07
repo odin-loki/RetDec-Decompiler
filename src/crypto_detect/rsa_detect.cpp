@@ -60,43 +60,50 @@ namespace crypto_detect {
 
 namespace {
 
-static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
-    int n = 0;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs)
-            if (i && i->op == op) ++n;
-    }
-    return n;
+static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+			if (i && i->op == op) ++n;
+	}
+	return n;
 }
 
-static bool hasImmediate(const ssa::SSAFunction& fn, uint64_t val) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs) {
-            if (!i) continue;
-            for (const auto& u : i->uses) {
-                const auto* v = fn.value(u.valueId);
-                if (v && v->kind == ssa::ValueKind::Immediate && v->imm == val)
-                    return true;
-            }
-        }
-    }
-    return false;
+static bool hasImmediate(const ssa::SSAFunction& fn, uint64_t val)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i) continue;
+			for (const auto& u: i->uses)
+			{
+				const auto* v = fn.value(u.valueId);
+				if (v && v->kind == ssa::ValueKind::Immediate && v->imm == val) return true;
+			}
+		}
+	}
+	return false;
 }
 
 // Count back-edges (loops): edge (pred → succ) where succ.id <= pred.id.
-static int countBackEdges(const ssa::SSAFunction& fn) {
-    int n = 0;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (uint32_t s : blk->succs)
-            if (s <= b) ++n;
-    }
-    return n;
+static int countBackEdges(const ssa::SSAFunction& fn)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (uint32_t s: blk->succs)
+			if (s <= b) ++n;
+	}
+	return n;
 }
 
 // Montgomery reduction ends with `if (t >= n) t -= n;` -- a compare, a
@@ -107,75 +114,86 @@ static int countBackEdges(const ssa::SSAFunction& fn) {
 // any Compare at all with a Sub anywhere in any successor. In a function with a
 // compare and a subtract in it -- which is most functions -- that is always
 // true.
-static bool hasConditionalSub(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
+static bool hasConditionalSub(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
 
-        bool seenCmp = false, seenBranch = false;
-        for (const auto* i : blk->instrs) {
-            if (!i) continue;
-            if (i->op == ssa::IrInstr::Op::Compare) { seenCmp = true; continue; }
-            if (seenCmp && i->op == ssa::IrInstr::Op::CondBranch) seenBranch = true;
-        }
-        if (!seenCmp || !seenBranch) continue;
+		bool seenCmp = false, seenBranch = false;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i) continue;
+			if (i->op == ssa::IrInstr::Op::Compare)
+			{
+				seenCmp = true;
+				continue;
+			}
+			if (seenCmp && i->op == ssa::IrInstr::Op::CondBranch) seenBranch = true;
+		}
+		if (!seenCmp || !seenBranch) continue;
 
-        // The subtract is on an arm of that branch, so it is in a successor of
-        // this block -- not "any successor of any block with a compare in it".
-        for (uint32_t sid : blk->succs) {
-            const auto* sb = fn.block(sid);
-            if (!sb || sb == blk) continue;
-            for (const auto* i : sb->instrs)
-                if (i && i->op == ssa::IrInstr::Op::Sub) return true;
-        }
-    }
-    return false;
+		// The subtract is on an arm of that branch, so it is in a successor of
+		// this block -- not "any successor of any block with a compare in it".
+		for (uint32_t sid: blk->succs)
+		{
+			const auto* sb = fn.block(sid);
+			if (!sb || sb == blk) continue;
+			for (const auto* i: sb->instrs)
+				if (i && i->op == ssa::IrInstr::Op::Sub) return true;
+		}
+	}
+	return false;
 }
 
 } // anonymous namespace
 
-RSAEvidence RSADetector::analyse(const ssa::SSAFunction& fn) const {
-    RSAEvidence ev;
-    int backEdges = countBackEdges(fn);
-    ev.hasMultiPrecMul = backEdges >= 2 &&
-                         countOp(fn, ssa::IrInstr::Op::Mul) >= 2 &&
-                         countOp(fn, ssa::IrInstr::Op::Add) >= 4 &&
-                         hasImmediate(fn, 32);  // Shr by 32 for carry extraction
-    ev.hasConditionalSub = hasConditionalSub(fn);
-    // Large constant: detect Shr by 32 and wide Mul (heuristic for 64-bit limbs).
-    // Note this is strictly implied by hasMultiPrecMul above, which requires the
-    // same immediate and more Muls -- see score(), which does not add both.
-    ev.hasLargeConstant = hasImmediate(fn, 32) && countOp(fn, ssa::IrInstr::Op::Mul) >= 1;
-    ev.found = ev.hasMultiPrecMul || (ev.hasConditionalSub && ev.hasLargeConstant);
-    ev.confidence = score(ev);
-    return ev;
+RSAEvidence RSADetector::analyse(const ssa::SSAFunction& fn) const
+{
+	RSAEvidence ev;
+	int backEdges = countBackEdges(fn);
+	ev.hasMultiPrecMul = backEdges >= 2 && countOp(fn, ssa::IrInstr::Op::Mul) >= 2
+					  && countOp(fn, ssa::IrInstr::Op::Add) >= 4
+					  && hasImmediate(fn, 32); // Shr by 32 for carry extraction
+	ev.hasConditionalSub = hasConditionalSub(fn);
+	// Large constant: detect Shr by 32 and wide Mul (heuristic for 64-bit limbs).
+	// Note this is strictly implied by hasMultiPrecMul above, which requires the
+	// same immediate and more Muls -- see score(), which does not add both.
+	ev.hasLargeConstant = hasImmediate(fn, 32) && countOp(fn, ssa::IrInstr::Op::Mul) >= 1;
+	ev.found = ev.hasMultiPrecMul || (ev.hasConditionalSub && ev.hasLargeConstant);
+	ev.confidence = score(ev);
+	return ev;
 }
 
-float RSADetector::score(const RSAEvidence& ev) const {
-    float s = 0.0f;
-    if (ev.hasMultiPrecMul)   s += 0.60f;
-    if (ev.hasConditionalSub) s += 0.25f;
-    // hasLargeConstant is `the immediate 32 and >= 1 Mul`, which hasMultiPrecMul
-    // already requires along with a second Mul, four Adds and two back edges --
-    // so adding both scored one piece of evidence twice, and it was the 0.15
-    // that carried a nested integer matrix multiply containing a 32 from 0.85
-    // to 1.00 as "RSA / Montgomery multiplication".
-    if (ev.hasLargeConstant && !ev.hasMultiPrecMul) s += 0.15f;
-    return s > 1.0f ? 1.0f : s;
+float RSADetector::score(const RSAEvidence& ev) const
+{
+	float s = 0.0f;
+	if (ev.hasMultiPrecMul) s += 0.60f;
+	if (ev.hasConditionalSub) s += 0.25f;
+	// hasLargeConstant is `the immediate 32 and >= 1 Mul`, which hasMultiPrecMul
+	// already requires along with a second Mul, four Adds and two back edges --
+	// so adding both scored one piece of evidence twice, and it was the 0.15
+	// that carried a nested integer matrix multiply containing a 32 from 0.85
+	// to 1.00 as "RSA / Montgomery multiplication".
+	if (ev.hasLargeConstant && !ev.hasMultiPrecMul) s += 0.15f;
+	return s > 1.0f ? 1.0f : s;
 }
 
-CryptoResult RSADetector::detect(const ssa::SSAFunction& fn) const {
-    CryptoResult r;
-    r.algorithm = CryptoAlgorithm::RSA;
-    auto ev = analyse(fn);
-    r.confidence = ev.confidence;
-    if (ev.confidence >= 0.50f) {
-        r.emittedAnnotation =
-            "// Cryptographic primitive: RSA / Montgomery multiplication\n"
-            "// Multi-precision limb-by-limb multiply + conditional subtract detected\n"
-            "// Usage: RSA_private_decrypt(len, in, out, rsa_key, RSA_PKCS1_OAEP_PADDING);";
-    }
-    return r;
+CryptoResult RSADetector::detect(const ssa::SSAFunction& fn) const
+{
+	CryptoResult r;
+	r.algorithm = CryptoAlgorithm::RSA;
+	auto ev = analyse(fn);
+	r.confidence = ev.confidence;
+	if (ev.confidence >= 0.50f)
+	{
+		r.emittedAnnotation =
+			"// Cryptographic primitive: RSA / Montgomery multiplication\n"
+			"// Multi-precision limb-by-limb multiply + conditional subtract detected\n"
+			"// Usage: RSA_private_decrypt(len, in, out, rsa_key, RSA_PKCS1_OAEP_PADDING);";
+	}
+	return r;
 }
 
 } // namespace crypto_detect

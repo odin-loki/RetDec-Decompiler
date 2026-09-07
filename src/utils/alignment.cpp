@@ -48,10 +48,7 @@ namespace utils {
  * answering about it, so a FileAlignment of 0 or 3 now reads as "not a multiple
  * of the file alignment" rather than as a clean header.
  */
-bool isAligned(
-		std::uint64_t value,
-		std::uint64_t alignment,
-		std::uint64_t& remainder)
+bool isAligned(std::uint64_t value, std::uint64_t alignment, std::uint64_t& remainder)
 {
 	return align::isAlignedTo(value, alignment, remainder);
 }

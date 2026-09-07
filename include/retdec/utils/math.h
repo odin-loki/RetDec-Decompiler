@@ -1,9 +1,9 @@
 /**
-* @file include/retdec/utils/math.h
-* @brief Mathematical utilities.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file include/retdec/utils/math.h
+ * @brief Mathematical utilities.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #ifndef RETDEC_UTILS_MATH_H
 #define RETDEC_UTILS_MATH_H
@@ -17,15 +17,17 @@ namespace retdec {
 namespace utils {
 
 /**
-* @brief Check if @a number is power of two.
-*
-* @param[in] number Value which will be checked.
-*
-* @tparam N Type of @a number.
-*/
-template<typename N>
-bool isPowerOfTwo(N number) {
-	static_assert(std::is_integral<N>::value,
+ * @brief Check if @a number is power of two.
+ *
+ * @param[in] number Value which will be checked.
+ *
+ * @tparam N Type of @a number.
+ */
+template <typename N>
+bool isPowerOfTwo(N number)
+{
+	static_assert(
+		std::is_integral<N>::value,
 		"isPowerOfTwo is defined for integral types only; a power of two is a "
 		"property of an integer bit pattern and of nothing else");
 
@@ -43,22 +45,26 @@ bool isPowerOfTwo(N number) {
 	// and align::isPowerOfTwo does the unsigned case. Both are proved over the
 	// whole 64-bit domain against an independent bit count in
 	// tests/verification/align_proof.cpp, so this does not re-derive the test.
-	if constexpr (std::is_signed<N>::value) {
+	if constexpr (std::is_signed<N>::value)
+	{
 		return align::isPowerOfTwoSigned(static_cast<std::int64_t>(number));
-	} else {
+	}
+	else
+	{
 		return align::isPowerOfTwo(static_cast<std::uint64_t>(number));
 	}
 }
 
 /**
-* @brief Check if @a number is power of two or zero.
-*
-* @param[in] number Value which will be checked.
-*
-* @tparam N Type of @a number.
-*/
-template<typename N>
-bool isPowerOfTwoOrZero(N number) {
+ * @brief Check if @a number is power of two or zero.
+ *
+ * @param[in] number Value which will be checked.
+ *
+ * @tparam N Type of @a number.
+ */
+template <typename N>
+bool isPowerOfTwoOrZero(N number)
+{
 	return !number || isPowerOfTwo(number);
 }
 

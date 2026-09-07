@@ -118,8 +118,7 @@ constexpr bool isPowerOfTwoOrZero(std::uint64_t a) noexcept
 /// by being read as a bit pattern.
 constexpr bool isPowerOfTwoSigned(std::int64_t n) noexcept
 {
-	return n > 0
-		&& (static_cast<std::uint64_t>(n) & (static_cast<std::uint64_t>(n) - 1)) == 0;
+	return n > 0 && (static_cast<std::uint64_t>(n) & (static_cast<std::uint64_t>(n) - 1)) == 0;
 }
 
 /// isPowerOfTwoOrZero for a value that arrived in a signed field.

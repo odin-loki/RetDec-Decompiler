@@ -32,10 +32,7 @@ namespace utils {
 /// @p remainder set to @p value. There is no modulus to report in that case,
 /// and @p value is non-zero exactly when the "aligned" answer would have been
 /// wrong, so a caller reading only the remainder still concludes "not aligned".
-bool isAligned(
-		std::uint64_t value,
-		std::uint64_t alignment,
-		std::uint64_t& remainder);
+bool isAligned(std::uint64_t value, std::uint64_t alignment, std::uint64_t& remainder);
 
 /// @p value rounded down to a multiple of @p alignment.
 ///

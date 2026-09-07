@@ -34,163 +34,173 @@ namespace sort_detect {
 
 namespace {
 
-static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
-    int n = 0;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs)
-            if (instr && instr->op == op) ++n;
-    }
-    return n;
+static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+			if (instr && instr->op == op) ++n;
+	}
+	return n;
 }
 
 // Count self-recursive calls.
-static int countSelfCalls(const ssa::SSAFunction& fn) {
-    int n = 0;
-    const std::string& name = fn.name();
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs)
-            if (instr && instr->op == ssa::IrInstr::Op::Call &&
-                instr->calleeName == name)
-                ++n;
-    }
-    return n;
+static int countSelfCalls(const ssa::SSAFunction& fn)
+{
+	int n = 0;
+	const std::string& name = fn.name();
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+			if (instr && instr->op == ssa::IrInstr::Op::Call && instr->calleeName == name) ++n;
+	}
+	return n;
 }
 
 // Depth counter heuristic: a function argument (phi at entry) that is
 // decremented (Sub or Add with negative immediate) and compared against zero,
 // then branches to a heapsort delegate.
-static bool hasDepthCounter(const ssa::SSAFunction& fn) {
-    // Proxy: function has a Sub somewhere (depth counter decrements by 1 or 2)
-    // and a Compare against zero (checking depth == 0).
-    bool hasSub = countOp(fn, ssa::IrInstr::Op::Sub) >= 1;
-    bool hasCmpZero = false;
+static bool hasDepthCounter(const ssa::SSAFunction& fn)
+{
+	// Proxy: function has a Sub somewhere (depth counter decrements by 1 or 2)
+	// and a Compare against zero (checking depth == 0).
+	bool hasSub = countOp(fn, ssa::IrInstr::Op::Sub) >= 1;
+	bool hasCmpZero = false;
 
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs) {
-            if (!instr || instr->op != ssa::IrInstr::Op::Compare) continue;
-            for (const auto& use : instr->uses) {
-                const auto* val = fn.value(use.valueId);
-                if (val && val->kind == ssa::ValueKind::Immediate && val->imm == 0) {
-                    hasCmpZero = true; break;
-                }
-            }
-            if (hasCmpZero) break;
-        }
-        if (hasCmpZero) break;
-    }
-    return hasSub && hasCmpZero;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+		{
+			if (!instr || instr->op != ssa::IrInstr::Op::Compare) continue;
+			for (const auto& use: instr->uses)
+			{
+				const auto* val = fn.value(use.valueId);
+				if (val && val->kind == ssa::ValueKind::Immediate && val->imm == 0)
+				{
+					hasCmpZero = true;
+					break;
+				}
+			}
+			if (hasCmpZero) break;
+		}
+		if (hasCmpZero) break;
+	}
+	return hasSub && hasCmpZero;
 }
 
 // Heapsort delegate: a call to a function whose name suggests heapsort,
 // or a block with sift-down arithmetic (Shl by 1, Mul by 2).
-static bool hasHeapsortDelegate(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs) {
-            if (!instr || instr->op != ssa::IrInstr::Op::Call) continue;
-            const std::string& callee = instr->calleeName;
-            // Recognise common heapsort helper names.
-            if (callee.find("heap") != std::string::npos ||
-                callee.find("Heap") != std::string::npos ||
-                callee.find("push_heap") != std::string::npos ||
-                callee.find("sort_heap") != std::string::npos ||
-                callee.find("make_heap") != std::string::npos)
-                return true;
-        }
-    }
-    return false;
+static bool hasHeapsortDelegate(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+		{
+			if (!instr || instr->op != ssa::IrInstr::Op::Call) continue;
+			const std::string& callee = instr->calleeName;
+			// Recognise common heapsort helper names.
+			if (callee.find("heap") != std::string::npos || callee.find("Heap") != std::string::npos
+				|| callee.find("push_heap") != std::string::npos || callee.find("sort_heap") != std::string::npos
+				|| callee.find("make_heap") != std::string::npos)
+				return true;
+		}
+	}
+	return false;
 }
 
 } // anonymous namespace
 
 // ─── IntrosortDetector ────────────────────────────────────────────────────────
 
-bool IntrosortDetector::hasDepthCounter(const ssa::SSAFunction& fn) const {
-    return ::retdec::sort_detect::hasDepthCounter(fn);
+bool IntrosortDetector::hasDepthCounter(const ssa::SSAFunction& fn) const
+{
+	return ::retdec::sort_detect::hasDepthCounter(fn);
 }
 
-bool IntrosortDetector::hasHeapsortDelegate(const ssa::SSAFunction& fn) const {
-    return ::retdec::sort_detect::hasHeapsortDelegate(fn);
+bool IntrosortDetector::hasHeapsortDelegate(const ssa::SSAFunction& fn) const
+{
+	return ::retdec::sort_detect::hasHeapsortDelegate(fn);
 }
 
-CompilerVariant IntrosortDetector::detectVariant(const ssa::SSAFunction& fn) const {
-    const std::string& name = fn.name();
-    if (name.find("_introsort")  != std::string::npos ||
-        name.find("__sort")      != std::string::npos)
-        return CompilerVariant::GCC;
-    if (name.find("introsort_loop") != std::string::npos)
-        return CompilerVariant::Clang;
-    if (name.find("Sort_unchecked") != std::string::npos ||
-        name.find("?std@@sort")     != std::string::npos)
-        return CompilerVariant::MSVC;
+CompilerVariant IntrosortDetector::detectVariant(const ssa::SSAFunction& fn) const
+{
+	const std::string& name = fn.name();
+	if (name.find("_introsort") != std::string::npos || name.find("__sort") != std::string::npos)
+		return CompilerVariant::GCC;
+	if (name.find("introsort_loop") != std::string::npos) return CompilerVariant::Clang;
+	if (name.find("Sort_unchecked") != std::string::npos || name.find("?std@@sort") != std::string::npos)
+		return CompilerVariant::MSVC;
 
-    // Check callee names for variant clues.
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs) {
-            if (!instr || instr->op != ssa::IrInstr::Op::Call) continue;
-            if (instr->calleeName.find("_introsort") != std::string::npos)
-                return CompilerVariant::GCC;
-            if (instr->calleeName.find("_Sort_unchecked") != std::string::npos)
-                return CompilerVariant::MSVC;
-        }
-    }
-    return CompilerVariant::Unknown;
+	// Check callee names for variant clues.
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+		{
+			if (!instr || instr->op != ssa::IrInstr::Op::Call) continue;
+			if (instr->calleeName.find("_introsort") != std::string::npos) return CompilerVariant::GCC;
+			if (instr->calleeName.find("_Sort_unchecked") != std::string::npos) return CompilerVariant::MSVC;
+		}
+	}
+	return CompilerVariant::Unknown;
 }
 
-SortResult IntrosortDetector::detect(const ssa::SSAFunction& fn) const {
-    SortResult result;
-    result.algorithm = SortAlgorithm::Introsort;
+SortResult IntrosortDetector::detect(const ssa::SSAFunction& fn) const
+{
+	SortResult result;
+	result.algorithm = SortAlgorithm::Introsort;
 
-    // Phase 1: Partition fingerprint.
-    PartitionFingerprint pf;
-    auto pe = pf.analyse(fn);
+	// Phase 1: Partition fingerprint.
+	PartitionFingerprint pf;
+	auto pe = pf.analyse(fn);
 
-    // Introsort is quicksort with a depth bound and two fallbacks, so it is
-    // recursive or it delegates -- one of the two, always. Without asking for
-    // either, this detector had no gate at all: partScore is half the
-    // partition confidence and the insertion-sort tail is a flat 0.20 for
-    // `>= 1 Sub, >= 2 Compares, >= 1 Store, >= 3 blocks`, so a plain backwards
-    // memmove-style copy loop -- two loads, two stores, a Sub, two compares,
-    // two conditional branches, no calls at all -- came back as
-    // `introsort (std::sort)` at 0.575.
-    //
-    // The sibling file already carries this remedy and the empirical note
-    // behind it: QuicksortDetector requires a self-call because
-    // partition-shaped FIR, histogram and dot-product loops were labelled
-    // quicksort at 0.90 with precision 0. The same loops reach here.
-    RecursiveHalvingFingerprint rhf;
-    auto re = rhf.analyse(fn);
-    if (!pe.found) return result;
-    if (re.selfCallCount < 1 && !hasHeapsortDelegate(fn)) return result;
+	// Introsort is quicksort with a depth bound and two fallbacks, so it is
+	// recursive or it delegates -- one of the two, always. Without asking for
+	// either, this detector had no gate at all: partScore is half the
+	// partition confidence and the insertion-sort tail is a flat 0.20 for
+	// `>= 1 Sub, >= 2 Compares, >= 1 Store, >= 3 blocks`, so a plain backwards
+	// memmove-style copy loop -- two loads, two stores, a Sub, two compares,
+	// two conditional branches, no calls at all -- came back as
+	// `introsort (std::sort)` at 0.575.
+	//
+	// The sibling file already carries this remedy and the empirical note
+	// behind it: QuicksortDetector requires a self-call because
+	// partition-shaped FIR, histogram and dot-product loops were labelled
+	// quicksort at 0.90 with precision 0. The same loops reach here.
+	RecursiveHalvingFingerprint rhf;
+	auto re = rhf.analyse(fn);
+	if (!pe.found) return result;
+	if (re.selfCallCount < 1 && !hasHeapsortDelegate(fn)) return result;
 
-    float partScore = pe.confidence * 0.50f;
+	float partScore = pe.confidence * 0.50f;
 
-    // Phase 2: Recursive calls on sub-ranges.
-    float recursionScore = (re.selfCallCount >= 2) ? 0.30f : 0.0f;
+	// Phase 2: Recursive calls on sub-ranges.
+	float recursionScore = (re.selfCallCount >= 2) ? 0.30f : 0.0f;
 
-    // Phase 3: Insertion sort tail.
-    InsertionSortFingerprint isf;
-    auto ie = isf.analyse(fn);
-    float insertionScore = ie.found ? 0.20f : 0.0f;
+	// Phase 3: Insertion sort tail.
+	InsertionSortFingerprint isf;
+	auto ie = isf.analyse(fn);
+	float insertionScore = ie.found ? 0.20f : 0.0f;
 
-    result.confidence = partScore + recursionScore + insertionScore;
+	result.confidence = partScore + recursionScore + insertionScore;
 
-    // Extra bonus for depth counter + heapsort delegate.
-    if (hasDepthCounter(fn))    result.confidence += 0.05f;
-    if (hasHeapsortDelegate(fn)) result.confidence += 0.05f;
-    if (result.confidence > 1.0f) result.confidence = 1.0f;
+	// Extra bonus for depth counter + heapsort delegate.
+	if (hasDepthCounter(fn)) result.confidence += 0.05f;
+	if (hasHeapsortDelegate(fn)) result.confidence += 0.05f;
+	if (result.confidence > 1.0f) result.confidence = 1.0f;
 
-    result.compilerVariant = detectVariant(fn);
-    return result;
+	result.compilerVariant = detectVariant(fn);
+	return result;
 }
 
 } // namespace sort_detect

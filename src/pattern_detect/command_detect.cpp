@@ -44,147 +44,161 @@ namespace pattern_detect {
 
 namespace {
 
-static bool hasBackEdge(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (uint32_t s : blk->succs) if (s <= b) return true;
-    }
-    return false;
+static bool hasBackEdge(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (uint32_t s: blk->succs)
+			if (s <= b) return true;
+	}
+	return false;
 }
 
-static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
-    int n = 0;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs)
-            if (i && i->op == op) ++n;
-    }
-    return n;
+static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+			if (i && i->op == op) ++n;
+	}
+	return n;
 }
 
 // Vtable execute: a Load followed by an indirect Call in the same block.
-static bool hasVtableExecute(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        bool loadSeen = false;
-        for (const auto* i : blk->instrs) {
-            if (!i) continue;
-            if (i->op == ssa::IrInstr::Op::Load) { loadSeen = true; continue; }
-            if (loadSeen && i->op == ssa::IrInstr::Op::Call) {
-                // An *unresolved* callee is not an indirect one. This IR leaves
-                // calleeName empty when the pipeline could not work out what is
-                // being called (llvm_to_ssa.cpp only assigns it when a name is
-                // available), which in a stripped binary is most calls -- so
-                // accepting `cn.empty()` made this predicate true for almost
-                // any function with a load and a call in it, and Command was
-                // reported at 0.65 for a five-instruction callback dispatcher.
-                //
-                // The '*' prefix stays because it is how a genuinely indirect
-                // target is spelled where one is known, but nothing in the
-                // current pipeline produces it.
-                const auto& cn = i->calleeName;
-                if (!cn.empty() &&
-                    (cn[0] == '*' ||
-                     cn.find("execute") != std::string::npos ||
-                     cn.find("Execute") != std::string::npos ||
-                     cn.find("run")     != std::string::npos))
-                    return true;
-            }
-        }
-    }
-    return false;
+static bool hasVtableExecute(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		bool loadSeen = false;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i) continue;
+			if (i->op == ssa::IrInstr::Op::Load)
+			{
+				loadSeen = true;
+				continue;
+			}
+			if (loadSeen && i->op == ssa::IrInstr::Op::Call)
+			{
+				// An *unresolved* callee is not an indirect one. This IR leaves
+				// calleeName empty when the pipeline could not work out what is
+				// being called (llvm_to_ssa.cpp only assigns it when a name is
+				// available), which in a stripped binary is most calls -- so
+				// accepting `cn.empty()` made this predicate true for almost
+				// any function with a load and a call in it, and Command was
+				// reported at 0.65 for a five-instruction callback dispatcher.
+				//
+				// The '*' prefix stays because it is how a genuinely indirect
+				// target is spelled where one is known, but nothing in the
+				// current pipeline produces it.
+				const auto& cn = i->calleeName;
+				if (!cn.empty()
+					&& (cn[0] == '*' || cn.find("execute") != std::string::npos
+						|| cn.find("Execute") != std::string::npos || cn.find("run") != std::string::npos))
+					return true;
+			}
+		}
+	}
+	return false;
 }
 
 // Container of ptrs: push_back of a command pointer or Load+Store of ptrs.
-static bool hasContainerOfPtrs(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs) {
-            if (!i || i->op != ssa::IrInstr::Op::Call) continue;
-            const auto& cn = i->calleeName;
-            if (cn.find("push_back")    != std::string::npos ||
-                cn.find("emplace_back") != std::string::npos ||
-                cn.find("enqueue")      != std::string::npos ||
-                cn.find("push")         != std::string::npos)
-                return true;
-        }
-    }
-    return countOp(fn, ssa::IrInstr::Op::Load)  >= 2 &&
-           countOp(fn, ssa::IrInstr::Op::Store) >= 1;
+static bool hasContainerOfPtrs(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != ssa::IrInstr::Op::Call) continue;
+			const auto& cn = i->calleeName;
+			if (cn.find("push_back") != std::string::npos || cn.find("emplace_back") != std::string::npos
+				|| cn.find("enqueue") != std::string::npos || cn.find("push") != std::string::npos)
+				return true;
+		}
+	}
+	return countOp(fn, ssa::IrInstr::Op::Load) >= 2 && countOp(fn, ssa::IrInstr::Op::Store) >= 1;
 }
 
 } // anonymous namespace
 
-bool CommandDetector::hasUndoMethod(const ssa::SSAFunction& fn) const {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs) {
-            if (!i || i->op != ssa::IrInstr::Op::Call) continue;
-            const auto& cn = i->calleeName;
-            if (cn.find("undo")     != std::string::npos ||
-                cn.find("Undo")     != std::string::npos ||
-                cn.find("rollback") != std::string::npos ||
-                cn.find("revert")   != std::string::npos)
-                return true;
-        }
-    }
-    return false;
+bool CommandDetector::hasUndoMethod(const ssa::SSAFunction& fn) const
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != ssa::IrInstr::Op::Call) continue;
+			const auto& cn = i->calleeName;
+			if (cn.find("undo") != std::string::npos || cn.find("Undo") != std::string::npos
+				|| cn.find("rollback") != std::string::npos || cn.find("revert") != std::string::npos)
+				return true;
+		}
+	}
+	return false;
 }
 
-CommandEvidence CommandDetector::analyse(const ssa::SSAFunction& fn) const {
-    CommandEvidence ev;
-    ev.hasVtableExecute   = hasVtableExecute(fn);
-    ev.hasContainerOfPtrs = hasContainerOfPtrs(fn);
-    ev.hasLoopExecute     = hasBackEdge(fn) && ev.hasVtableExecute;
-    ev.hasUndo            = hasUndoMethod(fn);
-    // A dispatch site on its own is a callback, not the Command pattern: the
-    // pattern is a *container* of command objects, executed through their
-    // vtable, usually in a loop. Asking for the dispatch alone reported Command
-    // for any function that loads a function pointer and calls it.
-    ev.found = ev.hasVtableExecute &&
-               (ev.hasContainerOfPtrs || ev.hasLoopExecute);
-    ev.confidence = score(ev);
-    return ev;
+CommandEvidence CommandDetector::analyse(const ssa::SSAFunction& fn) const
+{
+	CommandEvidence ev;
+	ev.hasVtableExecute = hasVtableExecute(fn);
+	ev.hasContainerOfPtrs = hasContainerOfPtrs(fn);
+	ev.hasLoopExecute = hasBackEdge(fn) && ev.hasVtableExecute;
+	ev.hasUndo = hasUndoMethod(fn);
+	// A dispatch site on its own is a callback, not the Command pattern: the
+	// pattern is a *container* of command objects, executed through their
+	// vtable, usually in a loop. Asking for the dispatch alone reported Command
+	// for any function that loads a function pointer and calls it.
+	ev.found = ev.hasVtableExecute && (ev.hasContainerOfPtrs || ev.hasLoopExecute);
+	ev.confidence = score(ev);
+	return ev;
 }
 
-float CommandDetector::score(const CommandEvidence& ev) const {
-    float s = 0.0f;
-    if (ev.hasVtableExecute)   s += 0.35f;
-    if (ev.hasContainerOfPtrs) s += 0.30f;
-    if (ev.hasLoopExecute)     s += 0.25f;
-    if (ev.hasUndo)            s += 0.10f;
-    return s > 1.0f ? 1.0f : s;
+float CommandDetector::score(const CommandEvidence& ev) const
+{
+	float s = 0.0f;
+	if (ev.hasVtableExecute) s += 0.35f;
+	if (ev.hasContainerOfPtrs) s += 0.30f;
+	if (ev.hasLoopExecute) s += 0.25f;
+	if (ev.hasUndo) s += 0.10f;
+	return s > 1.0f ? 1.0f : s;
 }
 
-PatternResult CommandDetector::detect(const ssa::SSAFunction& fn) const {
-    PatternResult r;
-    r.kind = PatternKind::Command;
-    auto ev = analyse(fn);
-    // The vtable execute call is necessary; a container of pointers on its own
-    // is just a container.
-    if (!ev.found) return PatternResult{};
-    r.confidence = ev.confidence;
-    r.hasVariant  = ev.hasUndo;
-    r.variantName = ev.hasUndo ? "with-undo" : "";
-    if (ev.confidence >= 0.45f) {
-        r.emittedForm =
-            "struct ICommand { virtual void execute() = 0; };\n"
-            "std::queue<ICommand*> history;\n"
-            "void runAll() {\n"
-            "    while (!history.empty()) {\n"
-            "        history.front()->execute();\n"
-            "        history.pop();\n"
-            "    }\n"
-            "}";
-        r.comment = "// Design pattern: Command" +
-            std::string(ev.hasUndo ? " (with undo support)" : "");
-    }
-    return r;
+PatternResult CommandDetector::detect(const ssa::SSAFunction& fn) const
+{
+	PatternResult r;
+	r.kind = PatternKind::Command;
+	auto ev = analyse(fn);
+	// The vtable execute call is necessary; a container of pointers on its own
+	// is just a container.
+	if (!ev.found) return PatternResult{};
+	r.confidence = ev.confidence;
+	r.hasVariant = ev.hasUndo;
+	r.variantName = ev.hasUndo ? "with-undo" : "";
+	if (ev.confidence >= 0.45f)
+	{
+		r.emittedForm =
+			"struct ICommand { virtual void execute() = 0; };\n"
+			"std::queue<ICommand*> history;\n"
+			"void runAll() {\n"
+			"    while (!history.empty()) {\n"
+			"        history.front()->execute();\n"
+			"        history.pop();\n"
+			"    }\n"
+			"}";
+		r.comment = "// Design pattern: Command" + std::string(ev.hasUndo ? " (with undo support)" : "");
+	}
+	return r;
 }
 
 } // namespace pattern_detect

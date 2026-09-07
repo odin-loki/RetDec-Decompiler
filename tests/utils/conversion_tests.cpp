@@ -1,9 +1,9 @@
 /**
-* @file tests/utils/conversion_tests.cpp
-* @brief Tests for the @c conversion module.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file tests/utils/conversion_tests.cpp
+ * @brief Tests for the @c conversion module.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #include <gtest/gtest.h>
 
@@ -12,26 +12,26 @@
 #include "retdec/utils/conversion.h"
 
 /**
-* @brief Make UndefinedBehaviorSanitizer stop the run at the first diagnostic.
-*
-* UBSan's default is to print a "runtime error:" line and CARRY ON, so a build
-* with -fsanitize=undefined still exits 0 and the suite still reports green
-* while the diagnostic scrolls past. That is exactly what happened to the
-* BytesToBitsRendersSignedBytesWithTheTopBitSet regression below: the shift of
-* a negative value it exists to rule out produces the same digits on x86, so
-* the ONLY thing that distinguishes the fixed body from the broken one is the
-* sanitizer diagnostic, and a diagnostic nothing fails on is not a test.
-*
-* __ubsan_default_options is the runtime's own documented hook, weak-linked and
-* only consulted when the UBSan runtime is present -- in a build without
-* -fsanitize=undefined this function is simply never called. halt_on_error=1
-* makes the first diagnostic abort with a non-zero exit, which is what turns
-* the sanitizer run into a gate instead of a log.
-*
-* It lives here, in the file whose regression depends on it, rather than in the
-* harness: the harness cannot know that a suite has a test whose only evidence
-* is a sanitizer report.
-*/
+ * @brief Make UndefinedBehaviorSanitizer stop the run at the first diagnostic.
+ *
+ * UBSan's default is to print a "runtime error:" line and CARRY ON, so a build
+ * with -fsanitize=undefined still exits 0 and the suite still reports green
+ * while the diagnostic scrolls past. That is exactly what happened to the
+ * BytesToBitsRendersSignedBytesWithTheTopBitSet regression below: the shift of
+ * a negative value it exists to rule out produces the same digits on x86, so
+ * the ONLY thing that distinguishes the fixed body from the broken one is the
+ * sanitizer diagnostic, and a diagnostic nothing fails on is not a test.
+ *
+ * __ubsan_default_options is the runtime's own documented hook, weak-linked and
+ * only consulted when the UBSan runtime is present -- in a build without
+ * -fsanitize=undefined this function is simply never called. halt_on_error=1
+ * makes the first diagnostic abort with a non-zero exit, which is what turns
+ * the sanitizer run into a gate instead of a log.
+ *
+ * It lives here, in the file whose regression depends on it, rather than in the
+ * harness: the harness cannot know that a suite has a test whose only evidence
+ * is a sanitizer report.
+ */
 extern "C" const char* __ubsan_default_options()
 {
 	return "halt_on_error=1";
@@ -44,16 +44,16 @@ namespace utils {
 namespace tests {
 
 /**
-* @brief Tests for the @c conversion module.
-*/
-class ConversionTests: public Test {};
+ * @brief Tests for the @c conversion module.
+ */
+class ConversionTests : public Test {};
 
 //
 // intToHexString()
 //
 
-TEST_F(ConversionTests,
-ToHexCorrectConversionNoBase) {
+TEST_F(ConversionTests, ToHexCorrectConversionNoBase)
+{
 	EXPECT_EQ("0", intToHexString(0x0, false));
 	EXPECT_EQ("1", intToHexString(0x1, false));
 	EXPECT_EQ("f", intToHexString(0xf, false));
@@ -61,8 +61,8 @@ ToHexCorrectConversionNoBase) {
 	EXPECT_EQ("ffff", intToHexString(0xffff, false));
 }
 
-TEST_F(ConversionTests,
-ToHexCorrectConversionWithBase) {
+TEST_F(ConversionTests, ToHexCorrectConversionWithBase)
+{
 	EXPECT_EQ("0x0", intToHexString(0x0, true));
 	EXPECT_EQ("0x1", intToHexString(0x1, true));
 	EXPECT_EQ("0xf", intToHexString(0xf, true));
@@ -70,8 +70,8 @@ ToHexCorrectConversionWithBase) {
 	EXPECT_EQ("0xffff", intToHexString(0xffff, true));
 }
 
-TEST_F(ConversionTests,
-ToHexCorrectConversionWithFill) {
+TEST_F(ConversionTests, ToHexCorrectConversionWithFill)
+{
 	EXPECT_EQ("0x0", intToHexString(0x0, true, 0));
 	EXPECT_EQ("0", intToHexString(0x0, false, 0));
 	EXPECT_EQ("0x0000", intToHexString(0x0, true, 4));
@@ -88,8 +88,8 @@ ToHexCorrectConversionWithFill) {
 // strToNum()
 //
 
-TEST_F(ConversionTests,
-StrToNumIntDecimalSuccess) {
+TEST_F(ConversionTests, StrToNumIntDecimalSuccess)
+{
 	int out = 0;
 	EXPECT_TRUE(strToNum("-100", out, std::dec));
 	EXPECT_EQ(-100, out);
@@ -121,8 +121,8 @@ StrToNumIntDecimalSuccess) {
 	// TODO How to test std::numeric_limit<int>::max?
 }
 
-TEST_F(ConversionTests,
-StrToNumIntDecimalFailure) {
+TEST_F(ConversionTests, StrToNumIntDecimalFailure)
+{
 	int out = -1;
 	EXPECT_FALSE(strToNum("", out, std::dec));
 	EXPECT_EQ(-1, out);
@@ -142,8 +142,8 @@ StrToNumIntDecimalFailure) {
 	// TODO How to test overflow?
 }
 
-TEST_F(ConversionTests,
-StrToNumIntHexSuccess) {
+TEST_F(ConversionTests, StrToNumIntHexSuccess)
+{
 	int out = 0;
 	EXPECT_TRUE(strToNum("-0xFA", out, std::hex));
 	EXPECT_EQ(-0xFA, out);
@@ -169,8 +169,8 @@ StrToNumIntHexSuccess) {
 	EXPECT_EQ(0x00F, out);
 }
 
-TEST_F(ConversionTests,
-StrToNumIntHexFailure) {
+TEST_F(ConversionTests, StrToNumIntHexFailure)
+{
 	int out = -1;
 	EXPECT_FALSE(strToNum("", out, std::hex));
 	EXPECT_EQ(-1, out);
@@ -192,8 +192,8 @@ StrToNumIntHexFailure) {
 	EXPECT_EQ(-1, out);
 }
 
-TEST_F(ConversionTests,
-StrToNumConversionFailsWhenConvertingNegativeNumberIntoUnsignedInt) {
+TEST_F(ConversionTests, StrToNumConversionFailsWhenConvertingNegativeNumberIntoUnsignedInt)
+{
 	unsigned out = 0;
 	EXPECT_FALSE(strToNum("-1", out, std::dec));
 	EXPECT_EQ(0, out);
@@ -207,18 +207,18 @@ StrToNumConversionFailsWhenConvertingNegativeNumberIntoUnsignedInt) {
 // bytesToBits()
 //
 
-TEST_F(ConversionTests,
-BytesToBits) {
+TEST_F(ConversionTests, BytesToBits)
+{
 	std::vector<std::uint8_t> vec;
 	EXPECT_EQ(bytesToBits(vec.data(), vec.size()), "");
 
-	vec = { 0xAB };
+	vec = {0xAB};
 	EXPECT_EQ(bytesToBits(vec.data(), vec.size()), "10101011");
 
-	vec = { 0x11, 0x55, 0xFF };
+	vec = {0x11, 0x55, 0xFF};
 	EXPECT_EQ(bytesToBits(vec.data(), vec.size()), "000100010101010111111111");
 
-	std::vector<std::uint16_t> u16vec = { 0xDEAD, 0xBEEF };
+	std::vector<std::uint16_t> u16vec = {0xDEAD, 0xBEEF};
 	EXPECT_EQ(bytesToBits(u16vec), "1010110111101111");
 }
 
@@ -226,10 +226,11 @@ BytesToBits) {
 // double10toDouble8()
 //
 
-TEST_F(ConversionTests,
-double10ToDouble8Success) {
+TEST_F(ConversionTests, double10ToDouble8Success)
+{
 	std::vector<unsigned char> dest;
-	std::vector<unsigned char> src = {0x60, 0xe5, 0xd0, 0x22, 0xdb, 0xf9, 0x7e, 0xf2, 0x00, 0x40}; // 80-bit double for 3.789
+	std::vector<unsigned char> src = {
+		0x60, 0xe5, 0xd0, 0x22, 0xdb, 0xf9, 0x7e, 0xf2, 0x00, 0x40};                  // 80-bit double for 3.789
 	std::vector<unsigned char> ok = {0x1c, 0x5a, 0x64, 0x3b, 0xdf, 0x4f, 0x0e, 0x40}; // 64-bit double for 3.789
 
 	double10ToDouble8(dest, src);
@@ -282,10 +283,8 @@ TEST_F(ConversionTests, Double10ToDouble8StillConvertsTenBytesAndMore)
 {
 	// Exactly ten: the 80-bit encoding of 3.789 and its 64-bit answer.
 	std::vector<unsigned char> dest;
-	const std::vector<unsigned char> src = {
-			0x60, 0xe5, 0xd0, 0x22, 0xdb, 0xf9, 0x7e, 0xf2, 0x00, 0x40};
-	const std::vector<unsigned char> ok = {
-			0x1c, 0x5a, 0x64, 0x3b, 0xdf, 0x4f, 0x0e, 0x40};
+	const std::vector<unsigned char> src = {0x60, 0xe5, 0xd0, 0x22, 0xdb, 0xf9, 0x7e, 0xf2, 0x00, 0x40};
+	const std::vector<unsigned char> ok = {0x1c, 0x5a, 0x64, 0x3b, 0xdf, 0x4f, 0x0e, 0x40};
 	double10ToDouble8(dest, src);
 	EXPECT_EQ(ok, dest);
 
@@ -307,8 +306,8 @@ TEST_F(ConversionTests, Double10ToDouble8StillConvertsTenBytesAndMore)
 // byteSwap16()
 //
 
-TEST_F(ConversionTests,
-byteSwap16Success) {
+TEST_F(ConversionTests, byteSwap16Success)
+{
 	EXPECT_EQ(0x0, byteSwap16(0x0));
 	EXPECT_EQ(0x1200, byteSwap16(0x0012));
 	EXPECT_EQ(0x0012, byteSwap16(0x1200));
@@ -319,8 +318,8 @@ byteSwap16Success) {
 // byteSwap32()
 //
 
-TEST_F(ConversionTests,
-byteSwap32Success) {
+TEST_F(ConversionTests, byteSwap32Success)
+{
 	EXPECT_EQ(0x0, byteSwap32(0x0));
 	EXPECT_EQ(0x12000000, byteSwap32(0x00000012));
 	EXPECT_EQ(0x12340000, byteSwap32(0x00003412));
@@ -332,8 +331,8 @@ byteSwap32Success) {
 // byteSwap16()
 //
 
-TEST_F(ConversionTests,
-byteSwap16SSuccess) {
+TEST_F(ConversionTests, byteSwap16SSuccess)
+{
 	EXPECT_EQ("0000000000000000", byteSwap16("0000000000000000"));
 	EXPECT_EQ("1010101000000000", byteSwap16("0000000010101010"));
 	EXPECT_EQ("0000000010101010", byteSwap16("1010101000000000"));
@@ -344,8 +343,8 @@ byteSwap16SSuccess) {
 // byteSwap32()
 //
 
-TEST_F(ConversionTests,
-byteSwap32SSuccess) {
+TEST_F(ConversionTests, byteSwap32SSuccess)
+{
 	EXPECT_EQ("00000000000000000000000000000000", byteSwap32("00000000000000000000000000000000"));
 	EXPECT_EQ("11111111000000000000000000000000", byteSwap32("00000000000000000000000011111111"));
 	EXPECT_EQ("00000000111111110000000000000000", byteSwap32("00000000000000001111111100000000"));
@@ -357,8 +356,8 @@ byteSwap32SSuccess) {
 // hexStringToBytes()
 //
 
-TEST_F(ConversionTests,
-hexStringToBytesSuccess) {
+TEST_F(ConversionTests, hexStringToBytesSuccess)
+{
 	EXPECT_EQ(hexStringToBytes("0b84d1a0806040"), hexStringToBytes("0b 84 d1 a0 80 60 40"));
 	std::vector<uint8_t> vres = {0x0b, 0x84, 0xd1, 0xa0, 0x80, 0x60, 0x40};
 	EXPECT_EQ(vres, hexStringToBytes("0b 84 d1 a0 80 60 40"));
@@ -368,8 +367,8 @@ hexStringToBytesSuccess) {
 // bytesToHexString()
 //
 
-TEST_F(ConversionTests,
-bytesToHexStringSuccess) {
+TEST_F(ConversionTests, bytesToHexStringSuccess)
+{
 	std::vector<uint8_t> vres = {0x0b, 0x84, 0xd1, 0xa0, 0x80, 0x60, 0x40};
 	std::string res;
 	bytesToHexString(vres, res, 0, 0, false, true);
@@ -472,9 +471,7 @@ TEST_F(ConversionTests, BytesToBitsRendersSignedBytesWithTheTopBitSet)
 	EXPECT_EQ("10100000", bytesToBits(vec.data(), vec.size()));
 
 	const std::vector<std::int8_t> all = {
-		static_cast<std::int8_t>(0x80),
-		static_cast<std::int8_t>(0xFF),
-		static_cast<std::int8_t>(0x7F)};
+		static_cast<std::int8_t>(0x80), static_cast<std::int8_t>(0xFF), static_cast<std::int8_t>(0x7F)};
 	EXPECT_EQ("100000001111111101111111", bytesToBits(all.data(), all.size()));
 }
 
@@ -487,8 +484,7 @@ TEST_F(ConversionTests, BytesToBitsRefusesALengthWhoseBitCountDoesNotFit)
 	// so the pointer is never dereferenced.
 	const std::uint8_t one = 0x5A;
 	EXPECT_TRUE(bytesToBits(&one, std::numeric_limits<std::size_t>::max()).empty());
-	EXPECT_TRUE(
-		bytesToBits(&one, std::numeric_limits<std::size_t>::max() / 8 + 1).empty());
+	EXPECT_TRUE(bytesToBits(&one, std::numeric_limits<std::size_t>::max() / 8 + 1).empty());
 	// One below the limit is representable, so it is not refused here -- it is
 	// refused by the allocator, which is a different and honest failure.
 	EXPECT_EQ("01011010", bytesToBits(&one, 1));

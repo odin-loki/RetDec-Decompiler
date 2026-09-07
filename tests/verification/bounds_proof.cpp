@@ -62,7 +62,7 @@ std::int64_t nondet_int64();
 // a typo in a second instead of after a solver run; ESBMC itself never sees
 // the macro.
 #ifdef RETDEC_VERIFY_SYNTAX_ONLY
-#define __ESBMC_assume(cond) ((void) sizeof((cond) ? 1 : 0))
+#define __ESBMC_assume(cond) ((void)sizeof((cond) ? 1 : 0))
 #endif
 
 // ─── remaining ───────────────────────────────────────────────────────────────
@@ -127,12 +127,30 @@ static void mulFitsIsExact()
 	}
 }
 
-extern "C" void proof_mul_fits_by0()  { mulFitsIsExact<0>(); }
-extern "C" void proof_mul_fits_by1()  { mulFitsIsExact<1>(); }
-extern "C" void proof_mul_fits_by2()  { mulFitsIsExact<2>(); }
-extern "C" void proof_mul_fits_by4()  { mulFitsIsExact<4>(); }
-extern "C" void proof_mul_fits_by8()  { mulFitsIsExact<8>(); }
-extern "C" void proof_mul_fits_by16() { mulFitsIsExact<16>(); }
+extern "C" void proof_mul_fits_by0()
+{
+	mulFitsIsExact<0>();
+}
+extern "C" void proof_mul_fits_by1()
+{
+	mulFitsIsExact<1>();
+}
+extern "C" void proof_mul_fits_by2()
+{
+	mulFitsIsExact<2>();
+}
+extern "C" void proof_mul_fits_by4()
+{
+	mulFitsIsExact<4>();
+}
+extern "C" void proof_mul_fits_by8()
+{
+	mulFitsIsExact<8>();
+}
+extern "C" void proof_mul_fits_by16()
+{
+	mulFitsIsExact<16>();
+}
 
 // Zero on either side never overflows, for any partner. Symbolic and linear.
 extern "C" void proof_mul_fits_zero()
@@ -220,11 +238,26 @@ static void countFitsComposesWithRangeFits()
 
 // The widths these formats actually use: a tag byte, a 16-bit index, a 32-bit
 // word, a 64-bit word, and a 16-byte DEX map entry.
-extern "C" void proof_count_fits_width1()  { countFitsComposesWithRangeFits<1>(); }
-extern "C" void proof_count_fits_width2()  { countFitsComposesWithRangeFits<2>(); }
-extern "C" void proof_count_fits_width4()  { countFitsComposesWithRangeFits<4>(); }
-extern "C" void proof_count_fits_width8()  { countFitsComposesWithRangeFits<8>(); }
-extern "C" void proof_count_fits_width16() { countFitsComposesWithRangeFits<16>(); }
+extern "C" void proof_count_fits_width1()
+{
+	countFitsComposesWithRangeFits<1>();
+}
+extern "C" void proof_count_fits_width2()
+{
+	countFitsComposesWithRangeFits<2>();
+}
+extern "C" void proof_count_fits_width4()
+{
+	countFitsComposesWithRangeFits<4>();
+}
+extern "C" void proof_count_fits_width8()
+{
+	countFitsComposesWithRangeFits<8>();
+}
+extern "C" void proof_count_fits_width16()
+{
+	countFitsComposesWithRangeFits<16>();
+}
 
 extern "C" void proof_count_fits_zero_width_not_vacuous()
 {
@@ -332,12 +365,30 @@ static void arrayFitsIsSound()
 	}
 }
 
-extern "C" void proof_array_fits_elem1()  { arrayFitsIsSound<1>(); }
-extern "C" void proof_array_fits_elem2()  { arrayFitsIsSound<2>(); }
-extern "C" void proof_array_fits_elem4()  { arrayFitsIsSound<4>(); }
-extern "C" void proof_array_fits_elem8()  { arrayFitsIsSound<8>(); }
-extern "C" void proof_array_fits_elem12() { arrayFitsIsSound<12>(); }
-extern "C" void proof_array_fits_elem16() { arrayFitsIsSound<16>(); }
+extern "C" void proof_array_fits_elem1()
+{
+	arrayFitsIsSound<1>();
+}
+extern "C" void proof_array_fits_elem2()
+{
+	arrayFitsIsSound<2>();
+}
+extern "C" void proof_array_fits_elem4()
+{
+	arrayFitsIsSound<4>();
+}
+extern "C" void proof_array_fits_elem8()
+{
+	arrayFitsIsSound<8>();
+}
+extern "C" void proof_array_fits_elem12()
+{
+	arrayFitsIsSound<12>();
+}
+extern "C" void proof_array_fits_elem16()
+{
+	arrayFitsIsSound<16>();
+}
 
 extern "C" void proof_offset_fits()
 {
@@ -353,4 +404,7 @@ extern "C" void proof_offset_fits()
 	}
 }
 
-int main() { return 0; }
+int main()
+{
+	return 0;
+}

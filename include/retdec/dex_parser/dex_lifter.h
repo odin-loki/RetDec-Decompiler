@@ -32,18 +32,27 @@
 namespace retdec {
 namespace dex_parser {
 
-struct LiftOptions {
-    bool emitLineNumbers = true;    ///< Populate BcInstruction::line when debug info present
-    bool emitAnnotations = true;    ///< Wire exception handlers from try/catch table
-    bool resolveStrings  = true;    ///< Resolve string-const indices to BcOperand::Str
+struct LiftOptions
+{
+	bool emitLineNumbers = true; ///< Populate BcInstruction::line when debug info present
+	bool emitAnnotations = true; ///< Wire exception handlers from try/catch table
+	bool resolveStrings = true;  ///< Resolve string-const indices to BcOperand::Str
 };
-static LiftOptions defaultLiftOptions() noexcept { return {}; }
+static LiftOptions defaultLiftOptions() noexcept
+{
+	return {};
+}
 
-struct DexLiftResult {
-    enum Status { OK, Error };
-    Status             status = OK;
-    std::string        error;
-    bc_module::BcCFG   cfg;
+struct DexLiftResult
+{
+	enum Status
+	{
+		OK,
+		Error
+	};
+	Status status = OK;
+	std::string error;
+	bc_module::BcCFG cfg;
 };
 
 /**
@@ -51,53 +60,48 @@ struct DexLiftResult {
  */
 class DexLifter {
 public:
-    DexLifter(const DexFile& dexFile, LiftOptions opts = defaultLiftOptions());
+	DexLifter(const DexFile& dexFile, LiftOptions opts = defaultLiftOptions());
 
-    DexLiftResult lift(const CodeItem& code, uint32_t methodIdx);
+	DexLiftResult lift(const CodeItem& code, uint32_t methodIdx);
 
 private:
-    const DexFile& dex_;
-    LiftOptions    opts_;
+	const DexFile& dex_;
+	LiftOptions opts_;
 
-    using BlockId = uint32_t;
+	using BlockId = uint32_t;
 
-    // Pass 1: find leader addresses (code unit offsets).
-    std::vector<uint32_t> findLeaders(const CodeItem& code) const;
+	// Pass 1: find leader addresses (code unit offsets).
+	std::vector<uint32_t> findLeaders(const CodeItem& code) const;
 
-    // Pass 2: build BcBasicBlock skeletons.
-    void buildBlocks(bc_module::BcCFG& cfg,
-                     const CodeItem& code,
-                     const std::vector<uint32_t>& leaders);
+	// Pass 2: build BcBasicBlock skeletons.
+	void buildBlocks(bc_module::BcCFG& cfg, const CodeItem& code, const std::vector<uint32_t>& leaders);
 
-    // Pass 3: wire exception handlers.
-    void wireExceptions(bc_module::BcCFG& cfg, const CodeItem& code,
-                        const std::vector<uint32_t>& leaders);
+	// Pass 3: wire exception handlers.
+	void wireExceptions(bc_module::BcCFG& cfg, const CodeItem& code, const std::vector<uint32_t>& leaders);
 
-    // Decode one Dalvik instruction starting at codeUnit offset `off`.
-    // Returns number of code units consumed.
-    uint32_t decodeInsn(bc_module::BcBasicBlock& blk,
-                        const std::vector<uint16_t>& insns,
-                        uint32_t off,
-                        const DexFile& dex);
+	// Decode one Dalvik instruction starting at codeUnit offset `off`.
+	// Returns number of code units consumed.
+	uint32_t
+	decodeInsn(bc_module::BcBasicBlock& blk, const std::vector<uint16_t>& insns, uint32_t off, const DexFile& dex);
 
-    /// The operand form of a method reference, by method index.
-    ///
-    /// Building one means DexFile::methodProto() reading the method's type list
-    /// out of the file and concatenating a descriptor from it, and then
-    /// parseDexProto() allocating a BcType node per parameter -- and both ran
-    /// again for every invoke instruction naming the method. Both the
-    /// descriptor's length and the number of invokes are file-controlled, so
-    /// the work was the product of two quantities an input chooses
-    /// independently.
-    ///
-    /// To be accurate about what this fixed: the out-of-memory the fuzzer found
-    /// here is closed by the parameter bound in parseDexProto, not by this --
-    /// removing the cache and keeping the bound, the fuzzer no longer reaches
-    /// it. What the cache removes is the repeated work, and it makes the
-    /// per-call-site cost a vector of pointers to shared nodes rather than a
-    /// fresh parse and a fresh node per parameter. One entry per method index,
-    /// so it is bounded by the file's own method_ids count.
-    std::unordered_map<uint32_t, bc_module::BcOperand> methodRefCache_;
+	/// The operand form of a method reference, by method index.
+	///
+	/// Building one means DexFile::methodProto() reading the method's type list
+	/// out of the file and concatenating a descriptor from it, and then
+	/// parseDexProto() allocating a BcType node per parameter -- and both ran
+	/// again for every invoke instruction naming the method. Both the
+	/// descriptor's length and the number of invokes are file-controlled, so
+	/// the work was the product of two quantities an input chooses
+	/// independently.
+	///
+	/// To be accurate about what this fixed: the out-of-memory the fuzzer found
+	/// here is closed by the parameter bound in parseDexProto, not by this --
+	/// removing the cache and keeping the bound, the fuzzer no longer reaches
+	/// it. What the cache removes is the repeated work, and it makes the
+	/// per-call-site cost a vector of pointers to shared nodes rather than a
+	/// fresh parse and a fresh node per parameter. One entry per method index,
+	/// so it is bounded by the file's own method_ids count.
+	std::unordered_map<uint32_t, bc_module::BcOperand> methodRefCache_;
 };
 
 } // namespace dex_parser

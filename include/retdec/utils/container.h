@@ -1,9 +1,9 @@
 /**
-* @file include/retdec/utils/container.h
-* @brief Container utilities.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file include/retdec/utils/container.h
+ * @brief Container utilities.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #ifndef RETDEC_UTILS_CONTAINER_H
 #define RETDEC_UTILS_CONTAINER_H
@@ -31,83 +31,89 @@ namespace utils {
 /// @{
 
 /**
-* @brief Returns @c true if @a container contains @a item, @c false otherwise.
-*
-* @tparam Container Type of the container.
-* @tparam Item Type of the items that @a container holds.
-*
-* If Container is a map, Item has to be a key. To check whether a map contains
-* a value, use mapHasValue<>().
-*/
+ * @brief Returns @c true if @a container contains @a item, @c false otherwise.
+ *
+ * @tparam Container Type of the container.
+ * @tparam Item Type of the items that @a container holds.
+ *
+ * If Container is a map, Item has to be a key. To check whether a map contains
+ * a value, use mapHasValue<>().
+ */
 // Note to developers: For sequential containers that don't have the find()
 // member function, like std::vector or std::list, add a "specialization" which
 // uses std::find() from the <algorithm> header file.
-template<class Container, typename Item>
-bool hasItem(const Container &container, const Item &item) {
+template <class Container, typename Item>
+bool hasItem(const Container& container, const Item& item)
+{
 	return container.find(item) != container.end();
 }
 
 /**
-* @brief A "specialization" of hasItem<>() for std::list.
-*/
-template<typename Item>
-bool hasItem(const std::list<Item> &container, const Item &item) {
+ * @brief A "specialization" of hasItem<>() for std::list.
+ */
+template <typename Item>
+bool hasItem(const std::list<Item>& container, const Item& item)
+{
 	// std::list doesn't have the find() member function.
 	return find(container.begin(), container.end(), item) != container.end();
 }
 
 /**
-* @brief A "specialization" of hasItem<>() for std::vector.
-*/
-template<typename Item>
-bool hasItem(const std::vector<Item> &container, const Item &item) {
+ * @brief A "specialization" of hasItem<>() for std::vector.
+ */
+template <typename Item>
+bool hasItem(const std::vector<Item>& container, const Item& item)
+{
 	// std::vector doesn't have the find() member function.
 	return find(container.begin(), container.end(), item) != container.end();
 }
 
 /**
-* @brief Translates the 1-based @a n into a 0-based subscript, or throws.
-*
-* The precondition <tt>1 <= n <= container.size()</tt> used to be stated only as
-* an @c assert, which is compiled out under NDEBUG -- every release build of
-* this tree. What was left was @c container[n-1] with @a n unconstrained: at
-* @c n==0 the subtraction wraps and the subscript is SIZE_MAX. The probe
-* probe_get_nth_item reports "FAILED assertion.1 line 40 subscript <
-* containerSize" with n = 0xF4F7F59FA9E6B690 and containerSize = 7, i.e. ANY
-* @a n outside 1..size is admitted once the assert is gone; @c n==0 is the
-* reachable one, because that is how a 1-based metadata table spells "no item".
-*
-* idxmap::slotFor1Based is the proved translation: it refuses 0 and
-* it refuses anything above the count, and it never forms @c n-1 unless the
-* result is known to be a valid subscript.
-*
-* These functions return a reference, so there is no in-band way to report the
-* refusal; @c std::out_of_range is what the standard library does for the same
-* question (@c vector::at) and it is what the callers in src/ctypes and
-* src/llvmir2hll already document as a precondition violation.
-*/
-template<typename Container>
-std::size_t nthItemSlot(const Container &container, std::size_t n) {
+ * @brief Translates the 1-based @a n into a 0-based subscript, or throws.
+ *
+ * The precondition <tt>1 <= n <= container.size()</tt> used to be stated only as
+ * an @c assert, which is compiled out under NDEBUG -- every release build of
+ * this tree. What was left was @c container[n-1] with @a n unconstrained: at
+ * @c n==0 the subtraction wraps and the subscript is SIZE_MAX. The probe
+ * probe_get_nth_item reports "FAILED assertion.1 line 40 subscript <
+ * containerSize" with n = 0xF4F7F59FA9E6B690 and containerSize = 7, i.e. ANY
+ * @a n outside 1..size is admitted once the assert is gone; @c n==0 is the
+ * reachable one, because that is how a 1-based metadata table spells "no item".
+ *
+ * idxmap::slotFor1Based is the proved translation: it refuses 0 and
+ * it refuses anything above the count, and it never forms @c n-1 unless the
+ * result is known to be a valid subscript.
+ *
+ * These functions return a reference, so there is no in-band way to report the
+ * refusal; @c std::out_of_range is what the standard library does for the same
+ * question (@c vector::at) and it is what the callers in src/ctypes and
+ * src/llvmir2hll already document as a precondition violation.
+ */
+template <typename Container>
+std::size_t nthItemSlot(const Container& container, std::size_t n)
+{
 	std::size_t slot = 0;
-	if (!idxmap::slotFor1Based(n, container.size(), slot)) {
+	if (!idxmap::slotFor1Based(n, container.size(), slot))
+	{
 		throw std::out_of_range("getNthItem: n is out of bounds");
 	}
 	return slot;
 }
 
 /**
-* @brief Returns the n-th item in @a container.
-*
-* @tparam Item Type of the items that @a container holds.
-*
-* @par Preconditions
-*  - <tt>1 <= n <= container.size()</tt>
-*
-* Throws @c std::out_of_range when the precondition does not hold; see
-* @c nthItemSlot.
-*/
-template<typename Item>
-const Item &getNthItem(const std::vector<Item> &container, std::size_t n) {
+ * @brief Returns the n-th item in @a container.
+ *
+ * @tparam Item Type of the items that @a container holds.
+ *
+ * @par Preconditions
+ *  - <tt>1 <= n <= container.size()</tt>
+ *
+ * Throws @c std::out_of_range when the precondition does not hold; see
+ * @c nthItemSlot.
+ */
+template <typename Item>
+const Item& getNthItem(const std::vector<Item>& container, std::size_t n)
+{
 	// No assert: an assert is compiled out of every release build, which is
 	// exactly how this precondition came to be unenforced. nthItemSlot checks
 	// it unconditionally.
@@ -115,18 +121,19 @@ const Item &getNthItem(const std::vector<Item> &container, std::size_t n) {
 }
 
 /**
-* @brief Returns the n-th item in @a container.
-*
-* @tparam Item Type of the items that @a container holds.
-*
-* @par Preconditions
-*  - <tt>1 <= n <= container.size()</tt>
-*
-* Throws @c std::out_of_range when the precondition does not hold; see
-* @c nthItemSlot.
-*/
-template<typename Item>
-const Item &getNthItem(const std::list<Item> &container, std::size_t n) {
+ * @brief Returns the n-th item in @a container.
+ *
+ * @tparam Item Type of the items that @a container holds.
+ *
+ * @par Preconditions
+ *  - <tt>1 <= n <= container.size()</tt>
+ *
+ * Throws @c std::out_of_range when the precondition does not hold; see
+ * @c nthItemSlot.
+ */
+template <typename Item>
+const Item& getNthItem(const std::list<Item>& container, std::size_t n)
+{
 	// The slot is < container.size() before std::advance is called with it, so
 	// the walk cannot run off the end. `std::advance(it, n - 1)` on the raw n
 	// advanced 0xF4F7F59FA9E6B68F times through a seven-element list.
@@ -136,131 +143,139 @@ const Item &getNthItem(const std::list<Item> &container, std::size_t n) {
 }
 
 /**
-* @brief Returns the found value if @a container contains @a item, @a
-*        defaultValue otherwise.
-*
-* @tparam Container Type of the container.
-* @tparam Item Type of the items that @a container holds.
-*
-* If Container is a map, the searched and returned values are pairs. To get a
-* value corresponding to a given key from a map, use mapGetValueOrDefault<>().
-*/
+ * @brief Returns the found value if @a container contains @a item, @a
+ *        defaultValue otherwise.
+ *
+ * @tparam Container Type of the container.
+ * @tparam Item Type of the items that @a container holds.
+ *
+ * If Container is a map, the searched and returned values are pairs. To get a
+ * value corresponding to a given key from a map, use mapGetValueOrDefault<>().
+ */
 // Note to developers: For sequential containers that don't have the find()
 // member function, like std::vector or std::list, add a "specialization" which
 // uses std::find() from the <algorithm> header file.
-template<class Container, typename Item>
-Item getValueOrDefault(const Container &container, const Item &item,
-		Item defaultValue = Item()) {
+template <class Container, typename Item>
+Item getValueOrDefault(const Container& container, const Item& item, Item defaultValue = Item())
+{
 	auto i = container.find(item);
 	return i != container.end() ? *i : defaultValue;
 }
 
 /**
-* @brief A "specialization" of getValueOrDefault<>() for std::list.
-*/
-template<typename Item>
-Item getValueOrDefault(const std::list<Item> &container,
-		const Item &item, Item defaultValue = Item()) {
+ * @brief A "specialization" of getValueOrDefault<>() for std::list.
+ */
+template <typename Item>
+Item getValueOrDefault(const std::list<Item>& container, const Item& item, Item defaultValue = Item())
+{
 	// std::list doesn't have the find() member function.
 	auto i = std::find(container.begin(), container.end(), item);
 	return i != container.end() ? *i : defaultValue;
 }
 
 /**
-* @brief A "specialization" of getValueOrDefault<>() for std::vector.
-*/
-template<typename Item>
-Item getValueOrDefault(const std::vector<Item> &container,
-		const Item &item, Item defaultValue = Item()) {
+ * @brief A "specialization" of getValueOrDefault<>() for std::vector.
+ */
+template <typename Item>
+Item getValueOrDefault(const std::vector<Item>& container, const Item& item, Item defaultValue = Item())
+{
 	// std::vector doesn't have the find() member function.
 	auto i = std::find(container.begin(), container.end(), item);
 	return i != container.end() ? *i : defaultValue;
 }
 
 /**
-* @brief Removes all occurrences of the given @a item from the given vector.
-*
-* @tparam Item Type of the items that the vector holds.
-*/
-template<typename Item>
-void removeItem(std::vector<Item> &v, const Item &item) {
+ * @brief Removes all occurrences of the given @a item from the given vector.
+ *
+ * @tparam Item Type of the items that the vector holds.
+ */
+template <typename Item>
+void removeItem(std::vector<Item>& v, const Item& item)
+{
 	// std::vector does not provide erase() that takes an item as its argument,
 	// so we have to use the following idiom, called "erase-remove".
 	v.erase(std::remove(v.begin(), v.end(), item), v.end());
 }
 
 /**
-* @brief Clears the given container.
-*
-* @tparam Container Type of the container.
-*/
-template<class Container>
-void clear(Container &container) {
+ * @brief Clears the given container.
+ *
+ * @tparam Container Type of the container.
+ */
+template <class Container>
+void clear(Container& container)
+{
 	container.clear();
 }
 
 /**
-* @brief A "specialization" of clear<>() for std::queue.
-*/
-template<typename Item>
-void clear(std::queue<Item> &q) {
+ * @brief A "specialization" of clear<>() for std::queue.
+ */
+template <typename Item>
+void clear(std::queue<Item>& q)
+{
 	// std::queue doesn't provide the clear() member function.
-	while (!q.empty()) {
+	while (!q.empty())
+	{
 		q.pop();
 	}
 }
 
 /**
-* @brief A "specialization" of clear<>() for std::stack.
-*/
-template<typename Item>
-void clear(std::stack<Item> &s) {
+ * @brief A "specialization" of clear<>() for std::stack.
+ */
+template <typename Item>
+void clear(std::stack<Item>& s)
+{
 	// std::stack doesn't provide the clear() member function.
-	while (!s.empty()) {
+	while (!s.empty())
+	{
 		s.pop();
 	}
 }
 
 /**
-* @brief Returns @c OutputContainer with items from @a input that satistfy @a
-*        predicate.
-*
-* This function is an implementation of the standard functional @c filter()
-* function.
-*
-* Usage example:
-* @code
-* auto result = filterTo<std::set<int>>(
-*     std::vector<int>{1, 2, 3, 4, 5},
-*     [](auto i) { return i % 2 == 0; }
-* );
-* @endcode
-* The type of @c result is @c OutputContainer, i.e. @c std::set<int>.
-*/
-template<typename OutputContainer, typename InputContainer, typename Predicate>
-OutputContainer filterTo(const InputContainer &input, const Predicate &predicate) {
+ * @brief Returns @c OutputContainer with items from @a input that satistfy @a
+ *        predicate.
+ *
+ * This function is an implementation of the standard functional @c filter()
+ * function.
+ *
+ * Usage example:
+ * @code
+ * auto result = filterTo<std::set<int>>(
+ *     std::vector<int>{1, 2, 3, 4, 5},
+ *     [](auto i) { return i % 2 == 0; }
+ * );
+ * @endcode
+ * The type of @c result is @c OutputContainer, i.e. @c std::set<int>.
+ */
+template <typename OutputContainer, typename InputContainer, typename Predicate>
+OutputContainer filterTo(const InputContainer& input, const Predicate& predicate)
+{
 	FilterIterator<typename InputContainer::const_iterator> begin(input, predicate);
 	decltype(begin) end(input.end());
 	return {begin, end};
 }
 
 /**
-* @brief Returns @c Container with items from @a input that satistfy @a
-*        predicate.
-*
-* It is a shortcut for <tt>filterTo<Container>(input, predicate)</tt>.
-*
-* Usage example:
-* @code
-* auto result = filter(
-*     std::vector<int>{1, 2, 3, 4, 5},
-*     [](auto i) { return i % 2 == 0; }
-* );
-* @endcode
-* The type of @c result is @c Container, i.e. @c std::vector<int>.
-*/
-template<typename Container, typename Predicate>
-Container filter(const Container &input, const Predicate &predicate) {
+ * @brief Returns @c Container with items from @a input that satistfy @a
+ *        predicate.
+ *
+ * It is a shortcut for <tt>filterTo<Container>(input, predicate)</tt>.
+ *
+ * Usage example:
+ * @code
+ * auto result = filter(
+ *     std::vector<int>{1, 2, 3, 4, 5},
+ *     [](auto i) { return i % 2 == 0; }
+ * );
+ * @endcode
+ * The type of @c result is @c Container, i.e. @c std::vector<int>.
+ */
+template <typename Container, typename Predicate>
+Container filter(const Container& input, const Predicate& predicate)
+{
 	return filterTo<Container>(input, predicate);
 }
 
@@ -270,70 +285,72 @@ Container filter(const Container &input, const Predicate &predicate) {
 /// @{
 
 /**
-* @brief Adds all values from @a from into @a to.
-*
-* @tparam T Type of elements in the sets.
-*/
-template<typename T>
-void addToSet(const std::set<T> &from, std::set<T> &to) {
+ * @brief Adds all values from @a from into @a to.
+ *
+ * @tparam T Type of elements in the sets.
+ */
+template <typename T>
+void addToSet(const std::set<T>& from, std::set<T>& to)
+{
 	to.insert(from.begin(), from.end());
 }
 
 /**
-* @brief Returns the set union <tt>s1 \\cup s2</tt>.
-*
-* In other words, this function returns the set whose elements are in @a s1 or
-* in @a s2.
-*
-* @tparam T Type of elements in the sets.
-*/
-template<typename T>
-std::set<T> setUnion(const std::set<T> &s1, const std::set<T> &s2) {
+ * @brief Returns the set union <tt>s1 \\cup s2</tt>.
+ *
+ * In other words, this function returns the set whose elements are in @a s1 or
+ * in @a s2.
+ *
+ * @tparam T Type of elements in the sets.
+ */
+template <typename T>
+std::set<T> setUnion(const std::set<T>& s1, const std::set<T>& s2)
+{
 	std::set<T> result;
-	std::set_union(s1.begin(), s1.end(), s2.begin(), s2.end(),
-		std::inserter(result, result.end()));
+	std::set_union(s1.begin(), s1.end(), s2.begin(), s2.end(), std::inserter(result, result.end()));
 	return result;
 }
 
 /**
-* @brief Returns the set intersection <tt>s1 \\cap s2</tt>.
-*
-* In other words, this function returns the set whose elements are in both @a
-* s1 and @a s2.
-*
-* @tparam T Type of elements in the sets.
-*/
-template<typename T>
-std::set<T> setIntersection(const std::set<T> &s1, const std::set<T> &s2) {
+ * @brief Returns the set intersection <tt>s1 \\cap s2</tt>.
+ *
+ * In other words, this function returns the set whose elements are in both @a
+ * s1 and @a s2.
+ *
+ * @tparam T Type of elements in the sets.
+ */
+template <typename T>
+std::set<T> setIntersection(const std::set<T>& s1, const std::set<T>& s2)
+{
 	std::set<T> result;
-	std::set_intersection(s1.begin(), s1.end(), s2.begin(), s2.end(),
-		std::inserter(result, result.end()));
+	std::set_intersection(s1.begin(), s1.end(), s2.begin(), s2.end(), std::inserter(result, result.end()));
 	return result;
 }
 
 /**
-* @brief Returns the set difference <tt>s1 \\setminus s2</tt>.
-*
-* In other words, this function returns the set whose elements are in @a s1
-* but are not in @a s2.
-*
-* @tparam T Type of elements in the sets.
-*/
-template<typename T>
-std::set<T> setDifference(const std::set<T> &s1, const std::set<T> &s2) {
+ * @brief Returns the set difference <tt>s1 \\setminus s2</tt>.
+ *
+ * In other words, this function returns the set whose elements are in @a s1
+ * but are not in @a s2.
+ *
+ * @tparam T Type of elements in the sets.
+ */
+template <typename T>
+std::set<T> setDifference(const std::set<T>& s1, const std::set<T>& s2)
+{
 	std::set<T> result;
-	std::set_difference(s1.begin(), s1.end(), s2.begin(), s2.end(),
-		std::inserter(result, result.end()));
+	std::set_difference(s1.begin(), s1.end(), s2.begin(), s2.end(), std::inserter(result, result.end()));
 	return result;
 }
 
 /**
-* @brief Removes all values that are in @a toRemove from @a from.
-*
-* @tparam T Type of elements in the sets.
-*/
-template<typename T>
-void removeFromSet(std::set<T> &from, const std::set<T> &toRemove) {
+ * @brief Removes all values that are in @a toRemove from @a from.
+ *
+ * @tparam T Type of elements in the sets.
+ */
+template <typename T>
+void removeFromSet(std::set<T>& from, const std::set<T>& toRemove)
+{
 	// The solution using std::set_difference<> is slightly faster
 	// than this manual loop:
 	//
@@ -352,24 +369,26 @@ void removeFromSet(std::set<T> &from, const std::set<T> &toRemove) {
 }
 
 /**
-* @brief Returns @c true if @a s1 is disjoint with @a s2.
-*
-* @tparam T Type of elements in the sets.
-*/
-template<typename T>
-bool areDisjoint(const std::set<T> &s1, const std::set<T> &s2) {
+ * @brief Returns @c true if @a s1 is disjoint with @a s2.
+ *
+ * @tparam T Type of elements in the sets.
+ */
+template <typename T>
+bool areDisjoint(const std::set<T>& s1, const std::set<T>& s2)
+{
 	// s1 and s2 are disjoint iff s1 \cap s2 = \emptyset
 	// (see http://en.wikipedia.org/wiki/Disjoint_set)
 	return setIntersection(s1, s2).empty();
 }
 
 /**
-* @brief Returns @c true if @a s1 and @a s2 have at least one item in common.
-*
-* @tparam T Type of elements in the sets.
-*/
-template<typename T>
-bool shareSomeItem(const std::set<T> &s1, const std::set<T> &s2) {
+ * @brief Returns @c true if @a s1 and @a s2 have at least one item in common.
+ *
+ * @tparam T Type of elements in the sets.
+ */
+template <typename T>
+bool shareSomeItem(const std::set<T>& s1, const std::set<T>& s2)
+{
 	return !areDisjoint(s1, s2);
 }
 
@@ -379,58 +398,66 @@ bool shareSomeItem(const std::set<T> &s1, const std::set<T> &s2) {
 /// @{
 
 /**
-* @brief Returns all keys in the given map @a m.
-*
-* @tparam Map Type of the map (<tt>std::map</tt> or
-*             <tt>std::unordered_map</tt>).
-*/
-template<typename Map>
-std::set<typename Map::key_type> getKeysFromMap(const Map &m) {
+ * @brief Returns all keys in the given map @a m.
+ *
+ * @tparam Map Type of the map (<tt>std::map</tt> or
+ *             <tt>std::unordered_map</tt>).
+ */
+template <typename Map>
+std::set<typename Map::key_type> getKeysFromMap(const Map& m)
+{
 	std::set<typename Map::key_type> keys;
-	for (auto &p : m) {
+	for (auto& p: m)
+	{
 		keys.insert(p.first);
 	}
 	return keys;
 }
 
 /**
-* @brief Returns all values in the given map @a m.
-*
-* @tparam Map Type of the map (<tt>std::map</tt> or
-*             <tt>std::unordered_map</tt>).
-*/
-template<typename Map>
-std::set<typename Map::mapped_type> getValuesFromMap(const Map &m) {
+ * @brief Returns all values in the given map @a m.
+ *
+ * @tparam Map Type of the map (<tt>std::map</tt> or
+ *             <tt>std::unordered_map</tt>).
+ */
+template <typename Map>
+std::set<typename Map::mapped_type> getValuesFromMap(const Map& m)
+{
 	std::set<typename Map::mapped_type> keys;
-	for (auto &p : m) {
+	for (auto& p: m)
+	{
 		keys.insert(p.second);
 	}
 	return keys;
 }
 
 /**
-* @brief Returns @c true if the given map @a m has a key @a k, @c false
-*        otherwise.
-*
-* @tparam Map Type of the map (<tt>std::map</tt> or
-*             <tt>std::unordered_map</tt>).
-*/
-template<typename Map>
-bool mapHasKey(const Map &m, const typename Map::key_type &k) {
+ * @brief Returns @c true if the given map @a m has a key @a k, @c false
+ *        otherwise.
+ *
+ * @tparam Map Type of the map (<tt>std::map</tt> or
+ *             <tt>std::unordered_map</tt>).
+ */
+template <typename Map>
+bool mapHasKey(const Map& m, const typename Map::key_type& k)
+{
 	return m.find(k) != m.end();
 }
 
 /**
-* @brief Returns @c true if the given map @a m has a value @a v, @c false
-*        otherwise.
-*
-* @tparam Map Type of the map (<tt>std::map</tt> or
-*             <tt>std::unordered_map</tt>).
-*/
-template<typename Map>
-bool mapHasValue(const Map &m, const typename Map::mapped_type &v) {
-	for (auto &p : m) {
-		if (p.second == v) {
+ * @brief Returns @c true if the given map @a m has a value @a v, @c false
+ *        otherwise.
+ *
+ * @tparam Map Type of the map (<tt>std::map</tt> or
+ *             <tt>std::unordered_map</tt>).
+ */
+template <typename Map>
+bool mapHasValue(const Map& m, const typename Map::mapped_type& v)
+{
+	for (auto& p: m)
+	{
+		if (p.second == v)
+		{
 			return true;
 		}
 	}
@@ -438,56 +465,57 @@ bool mapHasValue(const Map &m, const typename Map::mapped_type &v) {
 }
 
 /**
-* @brief Returns the value associated to the given @a key in @a m, or
-*        @a defaultValue if there is no @a key in @a m.
-*
-* @tparam Map Type of the map (<tt>std::map</tt> or
-*             <tt>std::unordered_map</tt>).
-*/
-template<typename Map>
+ * @brief Returns the value associated to the given @a key in @a m, or
+ *        @a defaultValue if there is no @a key in @a m.
+ *
+ * @tparam Map Type of the map (<tt>std::map</tt> or
+ *             <tt>std::unordered_map</tt>).
+ */
+template <typename Map>
 typename Map::mapped_type mapGetValueOrDefault(
-		const Map &m,
-		const typename Map::key_type &key,
-		typename Map::mapped_type defaultValue = typename Map::mapped_type()) {
+	const Map& m,
+	const typename Map::key_type& key,
+	typename Map::mapped_type defaultValue = typename Map::mapped_type())
+{
 	auto i = m.find(key);
 	return i != m.end() ? i->second : defaultValue;
 }
 
 /**
-* @brief Returns the maximum value from @a m.
-*
-* If @a m is empty, this function returns <tt>Map::mapped_type()</tt>
-* (default-constructed value).
-*/
-template<typename Map>
-typename Map::mapped_type mapGetMaxValue(const Map &m) {
-	auto max = std::max_element(m.begin(), m.end(),
-		[] (const auto &p1, const auto &p2) { return p1.second < p2.second; });
+ * @brief Returns the maximum value from @a m.
+ *
+ * If @a m is empty, this function returns <tt>Map::mapped_type()</tt>
+ * (default-constructed value).
+ */
+template <typename Map>
+typename Map::mapped_type mapGetMaxValue(const Map& m)
+{
+	auto max =
+		std::max_element(m.begin(), m.end(), [](const auto& p1, const auto& p2) { return p1.second < p2.second; });
 	return max != m.end() ? max->second : typename Map::mapped_type();
 }
 
 /**
-* @brief Adds the pair <tt><key, value></tt> to map @a m.
-*
-* @return Reference to the added value.
-*
-* @tparam Map Type of the map (<tt>std::map</tt> or
-*             <tt>std::unordered_map</tt>).
-*
-* If the key already exists in the map, its value is overwritten.
-*
-* The behavior of this function is similar to <tt>m[key] = value</tt>, but does
-* not require values in the map to have the default constructor. To use @c
-* operator[] in a map, values in the map must have a default constructor. If
-* this is not the case, you cannot use @c operator[].
-*/
-template<typename Map>
-typename Map::mapped_type &addToMap(
-		const typename Map::key_type &key,
-		const typename Map::mapped_type &value,
-		Map &m) {
+ * @brief Adds the pair <tt><key, value></tt> to map @a m.
+ *
+ * @return Reference to the added value.
+ *
+ * @tparam Map Type of the map (<tt>std::map</tt> or
+ *             <tt>std::unordered_map</tt>).
+ *
+ * If the key already exists in the map, its value is overwritten.
+ *
+ * The behavior of this function is similar to <tt>m[key] = value</tt>, but does
+ * not require values in the map to have the default constructor. To use @c
+ * operator[] in a map, values in the map must have a default constructor. If
+ * this is not the case, you cannot use @c operator[].
+ */
+template <typename Map>
+typename Map::mapped_type& addToMap(const typename Map::key_type& key, const typename Map::mapped_type& value, Map& m)
+{
 	auto i = m.find(key);
-	if (i != m.end()) {
+	if (i != m.end())
+	{
 		i->second = value;
 		return i->second;
 	}
@@ -495,21 +523,23 @@ typename Map::mapped_type &addToMap(
 }
 
 /**
-* @brief Returns a new map that has swapped keys and values.
-*
-* @tparam K Type of objects serving as keys.
-* @tparam V Type of objects serving as values.
-*
-* For example, if you have <tt>std::map<int, std::string></tt>, this function
-* returns <tt>std::map<std::string, int></tt>.
-*
-* You have to ensure that all values in @c m are distinct; otherwise, the
-* returned map may have less elements than @c m.
-*/
-template<typename K, typename V>
-std::map<V, K> getMapWithSwappedKeysAndValues(const std::map<K, V> &m) {
+ * @brief Returns a new map that has swapped keys and values.
+ *
+ * @tparam K Type of objects serving as keys.
+ * @tparam V Type of objects serving as values.
+ *
+ * For example, if you have <tt>std::map<int, std::string></tt>, this function
+ * returns <tt>std::map<std::string, int></tt>.
+ *
+ * You have to ensure that all values in @c m are distinct; otherwise, the
+ * returned map may have less elements than @c m.
+ */
+template <typename K, typename V>
+std::map<V, K> getMapWithSwappedKeysAndValues(const std::map<K, V>& m)
+{
 	std::map<V, K> result;
-	for (const auto &p : m) {
+	for (const auto& p: m)
+	{
 		result.emplace(p.second, p.first);
 	}
 	return result;
@@ -530,36 +560,33 @@ std::map<V, K> getMapWithSwappedKeysAndValues(const std::map<K, V> &m) {
 
 template <class Elem>
 class NonIterableSet {
-	public:
-		NonIterableSet()
-		{
+public:
+	NonIterableSet() {}
+	NonIterableSet(std::initializer_list<Elem> il): _data(il) {}
 
-		}
-		NonIterableSet(std::initializer_list<Elem> il) :
-			_data(il)
-		{
+	void clear()
+	{
+		_data.clear();
+	}
 
-		}
+	std::pair<Elem, bool> insert(const Elem& val)
+	{
+		auto p = _data.insert(val);
+		return {*p.first, p.second};
+	}
 
-		void clear() {
-			_data.clear();
-		}
+	bool has(const Elem& val) const
+	{
+		return _data.find(val) != _data.end();
+	}
 
-		std::pair<Elem, bool> insert(const Elem& val) {
-			auto p = _data.insert(val);
-			return {*p.first, p.second};
-		}
+	bool hasNot(const Elem& val) const
+	{
+		return _data.find(val) == _data.end();
+	}
 
-		bool has(const Elem& val) const {
-			return _data.find(val) != _data.end();
-		}
-
-		bool hasNot(const Elem& val) const {
-			return _data.find(val) == _data.end();
-		}
-
-	protected:
-		std::set<Elem> _data;
+protected:
+	std::set<Elem> _data;
 };
 
 /// @}

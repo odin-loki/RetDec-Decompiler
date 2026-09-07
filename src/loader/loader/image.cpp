@@ -74,14 +74,12 @@ namespace bounds_kernels {
  */
 inline bool xWidthFitsAccumulator(std::uint64_t x, std::uint64_t unitBits)
 {
-	if (x > retdec::utils::byteorder::kAccumulatorBits
-			|| unitBits > retdec::utils::byteorder::kAccumulatorBits)
+	if (x > retdec::utils::byteorder::kAccumulatorBits || unitBits > retdec::utils::byteorder::kAccumulatorBits)
 	{
 		return false;
 	}
 
-	return retdec::utils::byteorder::widthFits(
-			static_cast<std::size_t>(x), static_cast<unsigned>(unitBits));
+	return retdec::utils::byteorder::widthFits(static_cast<std::size_t>(x), static_cast<unsigned>(unitBits));
 }
 
 /**
@@ -101,20 +99,16 @@ inline bool xWidthFitsAccumulator(std::uint64_t x, std::uint64_t unitBits)
  */
 inline bool rangeFitsWide(std::uint64_t offset, std::uint64_t size, std::uint64_t len)
 {
-	if (offset > static_cast<std::uint64_t>(SIZE_MAX)
-			|| len > static_cast<std::uint64_t>(SIZE_MAX))
+	if (offset > static_cast<std::uint64_t>(SIZE_MAX) || len > static_cast<std::uint64_t>(SIZE_MAX))
 	{
 		return false;
 	}
 
-	const std::size_t cappedSize = size > static_cast<std::uint64_t>(SIZE_MAX)
-			? SIZE_MAX
-			: static_cast<std::size_t>(size);
+	const std::size_t cappedSize =
+		size > static_cast<std::uint64_t>(SIZE_MAX) ? SIZE_MAX : static_cast<std::size_t>(size);
 
 	return retdec::utils::bounds::rangeFits(
-			static_cast<std::size_t>(offset),
-			cappedSize,
-			static_cast<std::size_t>(len));
+		static_cast<std::size_t>(offset), cappedSize, static_cast<std::size_t>(len));
 }
 
 } // namespace bounds_kernels
@@ -137,10 +131,9 @@ using namespace retdec::utils;
 namespace retdec {
 namespace loader {
 
-Image::Image(const std::shared_ptr<retdec::fileformat::FileFormat>& fileFormat) : _fileFormat(fileFormat), _segments(),
-	_baseAddress(0), _namelessSegNameGen("seg", '0', 4), _statusMessage()
-{
-}
+Image::Image(const std::shared_ptr<retdec::fileformat::FileFormat>& fileFormat):
+	_fileFormat(fileFormat), _segments(), _baseAddress(0), _namelessSegNameGen("seg", '0', 4), _statusMessage()
+{}
 
 Endianness Image::getEndianness() const
 {
@@ -264,7 +257,8 @@ bool Image::hasDataOnAddress(std::uint64_t address) const
 }
 
 /**
- * Checks whether there are data on the provided address -- address must belong to some segment and it cannot be BSS segment.
+ * Checks whether there are data on the provided address -- address must belong to some segment and it cannot be BSS
+ * segment.
  *
  * @param address The address to check.
  *
@@ -289,8 +283,8 @@ bool Image::hasDataInitializedOnAddress(std::uint64_t address) const
 bool Image::hasReadOnlyDataOnAddress(std::uint64_t address) const
 {
 	auto* s = getSegmentFromAddress(address);
-	return s && s->getSecSeg() && !s->getSecSeg()->isBss() &&
-		!s->getSecSeg()->isDebug() && s->getSecSeg()->isReadOnly();
+	return s && s->getSecSeg() && !s->getSecSeg()->isBss() && !s->getSecSeg()->isDebug()
+		&& s->getSecSeg()->isReadOnly();
 }
 
 /**
@@ -409,8 +403,7 @@ const Segment* Image::getSegmentFromAddress(std::uint64_t address) const
 const Segment* Image::getEpSegment()
 {
 	std::uint64_t epAddress;
-	if (!getFileFormat()->getEpAddress(epAddress))
-		return nullptr;
+	if (!getFileFormat()->getEpAddress(epAddress)) return nullptr;
 
 	return getSegmentFromAddress(epAddress);
 }
@@ -427,15 +420,13 @@ const Segment* Image::getEpSegment()
 std::pair<const std::uint8_t*, std::uint64_t> Image::getRawSegmentData(std::uint64_t address) const
 {
 	auto segment = getSegmentFromAddress(address);
-	if (!segment)
-		return { nullptr, 0 };
+	if (!segment) return {nullptr, 0};
 
 	auto offset = address - segment->getAddress();
 	auto rawData = segment->getRawData();
-	if (!rawData.first || offset > rawData.second)
-		return { nullptr, 0 };
+	if (!rawData.first || offset > rawData.second) return {nullptr, 0};
 
-	return { rawData.first + offset, rawData.second - offset };
+	return {rawData.first + offset, rawData.second - offset};
 }
 
 /**
@@ -448,11 +439,12 @@ std::pair<const std::uint8_t*, std::uint64_t> Image::getRawSegmentData(std::uint
  *
  * @return Status of operation (@c true if all is OK, @c false otherwise)
  */
-bool Image::getXByte(std::uint64_t address, std::uint64_t x, std::uint64_t& res, Endianness e/* = UNKNOWN*/) const
+bool Image::getXByte(std::uint64_t address, std::uint64_t x, std::uint64_t& res, Endianness e /* = UNKNOWN*/) const
 {
-	const auto *seg = getSegmentFromAddress(address);
-	static_assert(sizeof(res) * CHAR_BIT == byteorder::kAccumulatorBits,
-			"widthFits bounds the width against a 64-bit accumulator; res must be one");
+	const auto* seg = getSegmentFromAddress(address);
+	static_assert(
+		sizeof(res) * CHAR_BIT == byteorder::kAccumulatorBits,
+		"widthFits bounds the width against a 64-bit accumulator; res must be one");
 	// x == 0 is still let past this guard, exactly as the product did (0 times
 	// anything is 0, which is not greater than 64); what a zero-width read
 	// means is then decided below by getBytes and createValueFromBytes, which
@@ -480,9 +472,9 @@ bool Image::getXByte(std::uint64_t address, std::uint64_t x, std::uint64_t& res,
  *
  * @return Status of operation (@c true if all is OK, @c false otherwise)
  */
-bool Image::getXBytes(std::uint64_t address, std::uint64_t x, std::vector<std::uint8_t> &res) const
+bool Image::getXBytes(std::uint64_t address, std::uint64_t x, std::vector<std::uint8_t>& res) const
 {
-	const auto *seg = getSegmentFromAddress(address);
+	const auto* seg = getSegmentFromAddress(address);
 	if (!seg)
 	{
 		return false;
@@ -515,11 +507,16 @@ bool Image::getXBytes(std::uint64_t address, std::uint64_t x, std::vector<std::u
 	return true;
 }
 
-bool Image::setXByte(std::uint64_t address, std::uint64_t x, std::uint64_t val, retdec::utils::Endianness e/* = retdec::utils::Endianness::UNKNOWN*/)
+bool Image::setXByte(
+	std::uint64_t address,
+	std::uint64_t x,
+	std::uint64_t val,
+	retdec::utils::Endianness e /* = retdec::utils::Endianness::UNKNOWN*/)
 {
-	const auto *seg = getSegmentFromAddress(address);
-	static_assert(sizeof(val) * CHAR_BIT == byteorder::kAccumulatorBits,
-			"widthFits bounds the width against a 64-bit accumulator; val must be one");
+	const auto* seg = getSegmentFromAddress(address);
+	static_assert(
+		sizeof(val) * CHAR_BIT == byteorder::kAccumulatorBits,
+		"widthFits bounds the width against a 64-bit accumulator; val must be one");
 	// Same guard as getXByte, and the same witness: x = 0x2000000000000002 with
 	// an 8-bit byte length wrapped to 16, so `16 > 64` was false and the width
 	// was let through. x == 0 is left to createBytesFromValue below, as before.
@@ -539,7 +536,7 @@ bool Image::setXByte(std::uint64_t address, std::uint64_t x, std::uint64_t val, 
 
 bool Image::setXBytes(std::uint64_t address, const std::vector<std::uint8_t>& val)
 {
-	auto *seg = getSegmentFromAddress(address);
+	auto* seg = getSegmentFromAddress(address);
 	if (!seg)
 	{
 		return false;
@@ -579,7 +576,7 @@ void Image::setStatusMessage(const std::string& message)
 	_statusMessage = message;
 }
 
-const retdec::fileformat::LoaderErrorInfo & Image::getLoaderErrorInfo() const
+const retdec::fileformat::LoaderErrorInfo& Image::getLoaderErrorInfo() const
 {
 	return getFileFormat()->getLoaderErrorInfo();
 }
@@ -617,26 +614,26 @@ void Image::nameSegment(Segment* segment)
 
 void Image::sortSegments()
 {
-	std::stable_sort(_segments.begin(), _segments.end(), [](const std::unique_ptr<Segment>& seg1, const std::unique_ptr<Segment>& seg2)
-			{
-				return seg1->getAddress() < seg2->getAddress();
-			});
+	std::stable_sort(
+		_segments.begin(),
+		_segments.end(),
+		[](const std::unique_ptr<Segment>& seg1, const std::unique_ptr<Segment>& seg2) {
+			return seg1->getAddress() < seg2->getAddress();
+		});
 }
 
 const Segment* Image::_getSegment(std::size_t index) const
 {
-	if (index >= getNumberOfSegments())
-		return nullptr;
+	if (index >= getNumberOfSegments()) return nullptr;
 
 	return _segments[index].get();
 }
 
 const Segment* Image::_getSegment(const std::string& name) const
 {
-	for (const auto& segment : getSegments())
+	for (const auto& segment: getSegments())
 	{
-		if (segment->getName() == name)
-			return segment.get();
+		if (segment->getName() == name) return segment.get();
 	}
 
 	return nullptr;
@@ -644,10 +641,9 @@ const Segment* Image::_getSegment(const std::string& name) const
 
 const Segment* Image::_getSegmentWithIndex(std::size_t index) const
 {
-	for (const auto& seg : _segments)
+	for (const auto& seg: _segments)
 	{
-		if (seg->getSecSeg()->getIndex() == index)
-			return seg.get();
+		if (seg->getSecSeg()->getIndex() == index) return seg.get();
 	}
 
 	return nullptr;
@@ -655,10 +651,9 @@ const Segment* Image::_getSegmentWithIndex(std::size_t index) const
 
 const Segment* Image::_getSegmentFromAddress(std::uint64_t address) const
 {
-	for (const auto& segment : getSegments())
+	for (const auto& segment: getSegments())
 	{
-		if (segment->containsAddress(address))
-			return segment.get();
+		if (segment->containsAddress(address)) return segment.get();
 	}
 
 	return nullptr;

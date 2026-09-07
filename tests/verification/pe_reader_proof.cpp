@@ -116,13 +116,13 @@
 using retdec::cli_parser::PeReader;
 
 extern "C" {
-std::uint8_t  nondet_u8();
+std::uint8_t nondet_u8();
 std::uint16_t nondet_u16();
 std::uint32_t nondet_u32();
 }
 
 #ifdef RETDEC_VERIFY_SYNTAX_ONLY
-#define __ESBMC_assume(cond) ((void) sizeof((cond) ? 1 : 0))
+#define __ESBMC_assume(cond) ((void)sizeof((cond) ? 1 : 0))
 #endif
 
 // 0x40 is the smallest file open() will look at; below it the DOS-header check
@@ -175,15 +175,15 @@ static void put16(std::uint8_t* p, std::uint16_t v)
 /// section table.
 static void buildSymbolicSectionTable(std::uint8_t* buf)
 {
-	put16(&buf[0], 0x5A4D);                 // MZ
+	put16(&buf[0], 0x5A4D); // MZ
 	put32(&buf[0x3C], static_cast<std::uint32_t>(kPeOffset));
-	put32(&buf[kPeOffset], 0x00004550);     // PE\0\0
+	put32(&buf[kPeOffset], 0x00004550); // PE\0\0
 
 	// COFF FileHeader, 20 bytes at kPeOffset + 4.
 	std::uint8_t* coff = &buf[kPeOffset + 4];
-	put16(&coff[0],  nondet_u16());         // Machine -- whatever the file says
-	put16(&coff[2],  kSections);            // NumberOfSections -- see kSections
-	put16(&coff[16], 0);                    // SizeOfOptionalHeader: none
+	put16(&coff[0], nondet_u16()); // Machine -- whatever the file says
+	put16(&coff[2], kSections);    // NumberOfSections -- see kSections
+	put16(&coff[16], 0);           // SizeOfOptionalHeader: none
 
 	// The section table starts right after the (empty) optional header. Every
 	// byte of it is symbolic, including the eight-character name.
@@ -208,7 +208,7 @@ extern "C" void proof_open_reads_no_byte_outside_the_file()
 	put32(&buf[0x3C], nondet_u32());
 
 	PeReader r;
-	(void) r.open(buf, kFileSize);
+	(void)r.open(buf, kFileSize);
 }
 
 extern "C" void proof_open_through_the_section_table_reads_no_byte_outside()
@@ -220,7 +220,7 @@ extern "C" void proof_open_through_the_section_table_reads_no_byte_outside()
 	buildSymbolicSectionTable(buf);
 
 	PeReader r;
-	(void) r.open(buf, kBigFileSize);
+	(void)r.open(buf, kBigFileSize);
 }
 
 extern "C" void proof_a_short_file_is_refused_and_nothing_is_read()
@@ -230,7 +230,8 @@ extern "C" void proof_a_short_file_is_refused_and_nothing_is_read()
 	// be reported as an out-of-bounds access rather than passing unnoticed.
 	const std::size_t size = nondet_u32() % 0x40;
 	std::uint8_t buf[0x3F] = {};
-	for (std::size_t i = 0; i < size && i < sizeof(buf); ++i) buf[i] = nondet_u8();
+	for (std::size_t i = 0; i < size && i < sizeof(buf); ++i)
+		buf[i] = nondet_u8();
 
 	PeReader r;
 	assert(!r.open(buf, size));
@@ -258,8 +259,7 @@ extern "C" void proof_a_refused_open_is_not_valid()
 	put32(&buf[0x3C], nondet_u32());
 
 	PeReader r;
-	if (!r.open(buf, kFileSize))
-		assert(!r.isValid());
+	if (!r.open(buf, kFileSize)) assert(!r.isValid());
 }
 
 // ─── rvaToOffset / rvaToSpan, over a table the parser built itself ───────────
@@ -275,7 +275,7 @@ extern "C" void proof_rva_to_offset_is_inside_the_file_or_zero()
 	buildSymbolicSectionTable(buf);
 
 	PeReader r;
-	(void) r.open(buf, kBigFileSize);
+	(void)r.open(buf, kBigFileSize);
 
 	const std::uint64_t off = r.rvaToOffset(nondet_u32());
 	// 0 is this function's own sentinel, kept for its callers. Everything else
@@ -291,13 +291,14 @@ extern "C" void proof_rva_to_span_stays_inside_the_file()
 	buildSymbolicSectionTable(buf);
 
 	PeReader r;
-	(void) r.open(buf, kBigFileSize);
+	(void)r.open(buf, kBigFileSize);
 
 	const std::size_t want = nondet_u32();
 	const auto sp = r.rvaToSpan(nondet_u32(), want);
 
 	assert(sp.size() <= want);
-	if (!sp.empty()) {
+	if (!sp.empty())
+	{
 		// Stated by subtraction on the pointers rather than by forming
 		// `sp.data() + sp.size()`, which is the sum this property exists to say
 		// does not run past the end.

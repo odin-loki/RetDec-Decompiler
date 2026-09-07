@@ -386,12 +386,18 @@ struct AstShape
 
 void addCmpOp(AstShape& s, const std::string& op)
 {
-	if (op == "==") ++s.cmp.eq;
-	else if (op == "!=") ++s.cmp.ne;
-	else if (op == "<=") ++s.cmp.le;
-	else if (op == ">=") ++s.cmp.ge;
-	else if (op == "<") ++s.cmp.lt;
-	else if (op == ">") ++s.cmp.gt;
+	if (op == "==")
+		++s.cmp.eq;
+	else if (op == "!=")
+		++s.cmp.ne;
+	else if (op == "<=")
+		++s.cmp.le;
+	else if (op == ">=")
+		++s.cmp.ge;
+	else if (op == "<")
+		++s.cmp.lt;
+	else if (op == ">")
+		++s.cmp.gt;
 }
 
 void addSpawn(AstShape& s, const std::string& id)
@@ -409,12 +415,18 @@ void addSpawn(AstShape& s, const std::string& id)
 void walkAst(TSNode n, const std::string& src, AstShape& s)
 {
 	const char* ty = ts_node_type(n);
-	if (std::strcmp(ty, "if_statement") == 0) ++s.ifN;
-	else if (std::strcmp(ty, "else_clause") == 0) ++s.elseN;
-	else if (std::strcmp(ty, "while_statement") == 0) ++s.whileN;
-	else if (std::strcmp(ty, "for_statement") == 0) ++s.forN;
-	else if (std::strcmp(ty, "goto_statement") == 0) ++s.gotoN;
-	else if (std::strcmp(ty, "return_statement") == 0) ++s.returnN;
+	if (std::strcmp(ty, "if_statement") == 0)
+		++s.ifN;
+	else if (std::strcmp(ty, "else_clause") == 0)
+		++s.elseN;
+	else if (std::strcmp(ty, "while_statement") == 0)
+		++s.whileN;
+	else if (std::strcmp(ty, "for_statement") == 0)
+		++s.forN;
+	else if (std::strcmp(ty, "goto_statement") == 0)
+		++s.gotoN;
+	else if (std::strcmp(ty, "return_statement") == 0)
+		++s.returnN;
 	else if (std::strcmp(ty, "binary_expression") == 0)
 	{
 		TSNode op = ts_node_child_by_field_name(n, "operator", 8);
@@ -423,8 +435,7 @@ void walkAst(TSNode n, const std::string& src, AstShape& s)
 	else if (std::strcmp(ty, "call_expression") == 0)
 	{
 		TSNode fn = ts_node_child_by_field_name(n, "function", 8);
-		if (!ts_node_is_null(fn) && std::strcmp(ts_node_type(fn), "identifier") == 0)
-			addSpawn(s, nodeText(src, fn));
+		if (!ts_node_is_null(fn) && std::strcmp(ts_node_type(fn), "identifier") == 0) addSpawn(s, nodeText(src, fn));
 	}
 
 	const uint32_t nch = ts_node_child_count(n);
@@ -466,8 +477,8 @@ bool astSpawnChanged(const AstShape& a, const AstShape& b)
 
 bool astControlFlowChanged(const AstShape& a, const AstShape& b)
 {
-	if (a.ifN != b.ifN || a.elseN != b.elseN || a.whileN != b.whileN || a.forN != b.forN
-		|| a.gotoN != b.gotoN || a.returnN != b.returnN)
+	if (a.ifN != b.ifN || a.elseN != b.elseN || a.whileN != b.whileN || a.forN != b.forN || a.gotoN != b.gotoN
+		|| a.returnN != b.returnN)
 		return true;
 	return !(a.cmp == b.cmp);
 }
@@ -501,8 +512,7 @@ bool spawnCallsChanged(const std::string& originalC, const std::string& refinedC
 
 	for (int i = 0; kSpawnIdents[i]; ++i)
 	{
-		if (countIdent(original, kSpawnIdents[i]) != countIdent(refined, kSpawnIdents[i]))
-			return true;
+		if (countIdent(original, kSpawnIdents[i]) != countIdent(refined, kSpawnIdents[i])) return true;
 	}
 	return false;
 }
@@ -531,8 +541,7 @@ bool controlShapeChanged(const std::string& originalC, const std::string& refine
 	if (countIdent(original, "return") != countIdent(refined, "return")) return true;
 	for (int i = 0; kSpawnIdents[i]; ++i)
 	{
-		if (countIdent(original, kSpawnIdents[i]) != countIdent(refined, kSpawnIdents[i]))
-			return true;
+		if (countIdent(original, kSpawnIdents[i]) != countIdent(refined, kSpawnIdents[i])) return true;
 	}
 	if (!(countCmpOps(original) == countCmpOps(refined))) return true;
 	return false;
@@ -561,9 +570,8 @@ bool GateReport::allPassed() const
 
 std::string GateReport::summary() const
 {
-	return std::string("compile=") + (compile == GateResult::Pass ? "pass" : "fail")
-		 + " structural=" + (structural == GateResult::Pass ? "pass" : "fail")
-		 + (structuralUsedParser ? "" : "(text-fallback)")
+	return std::string("compile=") + (compile == GateResult::Pass ? "pass" : "fail") + " structural="
+		 + (structural == GateResult::Pass ? "pass" : "fail") + (structuralUsedParser ? "" : "(text-fallback)")
 		 + " differential=" + (differential == GateResult::Pass ? "pass" : "fail");
 }
 

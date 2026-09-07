@@ -1,9 +1,9 @@
 /**
-* @file src/utils/conversion.cpp
-* @brief Implementation of the conversion utilities.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file src/utils/conversion.cpp
+ * @brief Implementation of the conversion utilities.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #include <bitset>
 #include <cstring>
@@ -58,22 +58,22 @@ char* byteToHexString(uint8_t b, bool uppercase)
 	const char* lut = uppercase ? digits : digitsLowerAlpha;
 	std::size_t pos = b * 2;
 	result[0] = lut[pos];
-	result[1] = lut[pos+1];
+	result[1] = lut[pos + 1];
 
 	return &(result[0]);
 }
 
 /**
-* @brief Convert 80-bit (10-byte) <tt>long double</tt> binary data (byte array)
-*        into 64-bit (8-byte) <tt>double</tt> binary data.
-*
-* @param[out] dest 64-bit double to create, or left EMPTY when @a src is too
-*             short to hold an 80-bit datum.
-* @param[in] src 80-bit long double to convert; must be at least
-*            @c kExtendedBytes bytes.
-*/
-void double10ToDouble8(std::vector<unsigned char> &dest,
-		const std::vector<unsigned char> &src) {
+ * @brief Convert 80-bit (10-byte) <tt>long double</tt> binary data (byte array)
+ *        into 64-bit (8-byte) <tt>double</tt> binary data.
+ *
+ * @param[out] dest 64-bit double to create, or left EMPTY when @a src is too
+ *             short to hold an 80-bit datum.
+ * @param[in] src 80-bit long double to convert; must be at least
+ *            @c kExtendedBytes bytes.
+ */
+void double10ToDouble8(std::vector<unsigned char>& dest, const std::vector<unsigned char>& src)
+{
 	// Taken from:
 	// http://blogs.perl.org/users/rurban/2012/09/reading-binary-floating-point-numbers-numbers-part2.html
 	dest.clear();
@@ -95,7 +95,8 @@ void double10ToDouble8(std::vector<unsigned char> &dest,
 	// tell "the input was too short" from "the input encoded +0.0" -- eight
 	// zero bytes is a valid answer for the latter. ByteValueStorage::
 	// get10ByteImpl is the one in-tree caller and it now checks dest.size().
-	if (!bounds::rangeFits(0, src.size(), kExtendedBytes)) {
+	if (!bounds::rangeFits(0, src.size(), kExtendedBytes))
+	{
 		return;
 	}
 
@@ -104,29 +105,30 @@ void double10ToDouble8(std::vector<unsigned char> &dest,
 	int expo, i, sign;
 	// exponents 15 -> 11 bits
 	sign = src[9] & 0x80;
-	expo = (src[9] & 0x7f)<< 8 | src[8];
-	if (expo == 0) {
+	expo = (src[9] & 0x7f) << 8 | src[8];
+	if (expo == 0)
+	{
 	nul:
-		if (sign)
-			dest[7] |= 0x80;
+		if (sign) dest[7] |= 0x80;
 		return;
 	}
-	expo -= 16383;       // - bias long double
-	expo += 1023;        // + bias for double
-	if (expo <= 0)       // underflow
+	expo -= 16383; // - bias long double
+	expo += 1023;  // + bias for double
+	if (expo <= 0) // underflow
 		goto nul;
-	if (expo > 0x7ff) {  // inf/nan
+	if (expo > 0x7ff)
+	{ // inf/nan
 		dest[7] = 0x7f;
-		dest[6] = src[7] == 0xc0 ? 0xf8 : 0xf0 ;
+		dest[6] = src[7] == 0xc0 ? 0xf8 : 0xf0;
 		goto nul;
 	}
 	expo <<= 4;
 	dest[6] = expo & 0xff;
 	dest[7] = (expo & 0x7f00) >> 8;
-	if (sign)
-		dest[7] |= 0x80;
+	if (sign) dest[7] |= 0x80;
 	// long double frac 63 bits => 52 bits src[7] &= 0x7f; reset intbit 63.
-	for (i = 0; i < 6; ++i) {
+	for (i = 0; i < 6; ++i)
+	{
 		dest[i + 1] |= (i == 5 ? src[7] & 0x7f : src[i + 2]) >> 3;
 		dest[i] |= (src[i + 2] & 0x1f) << 5;
 	}
@@ -134,57 +136,55 @@ void double10ToDouble8(std::vector<unsigned char> &dest,
 }
 
 /**
-* @brief Swap bytes for Intel x86 16-bit little-endian immediate.
-*
-* @param val Original value.
-*
-* @return Value with swapped bytes
-*/
-unsigned short byteSwap16(unsigned short val) {
+ * @brief Swap bytes for Intel x86 16-bit little-endian immediate.
+ *
+ * @param val Original value.
+ *
+ * @return Value with swapped bytes
+ */
+unsigned short byteSwap16(unsigned short val)
+{
 	return (0xFF00 & val) >> 8 | (0xFF & val) << 8;
 }
 
 /**
-* @brief Swap bytes for Intel x86 32-bit little-endian immediate.
-*
-* @param val Original value.
-*
-* @return Value with swapped bytes
-*/
-unsigned int byteSwap32(unsigned int val) {
-	return (0xFF000000 & val) >> 24 |
-		(0xFF0000 & val) >> 8 |
-		(0xFF00 & val) << 8 |
-		(0xFF & val) << 24;
+ * @brief Swap bytes for Intel x86 32-bit little-endian immediate.
+ *
+ * @param val Original value.
+ *
+ * @return Value with swapped bytes
+ */
+unsigned int byteSwap32(unsigned int val)
+{
+	return (0xFF000000 & val) >> 24 | (0xFF0000 & val) >> 8 | (0xFF00 & val) << 8 | (0xFF & val) << 24;
 }
 
 /**
-* @brief Swap bytes for Intel x86 16-bit little-endian immediate.
-*
-* @param val Original value.
-*
-* @return Value with swapped bytes or original value if its size is not 16.
-*/
-std::string byteSwap16(const std::string &val) {
-	if (val.length() != 16)
-		return val;
+ * @brief Swap bytes for Intel x86 16-bit little-endian immediate.
+ *
+ * @param val Original value.
+ *
+ * @return Value with swapped bytes or original value if its size is not 16.
+ */
+std::string byteSwap16(const std::string& val)
+{
+	if (val.length() != 16) return val;
 
 	return val.substr(8, 8) + val.substr(0, 8);
 }
 
 /**
-* @brief Swap bytes for Intel x86 32-bit little-endian immediate.
-*
-* @param val Original value.
-*
-* @return Value with swapped bytes or original value if its size is not 32.
-*/
-std::string byteSwap32(const std::string &val) {
-	if (val.length() != 32)
-		return val;
+ * @brief Swap bytes for Intel x86 32-bit little-endian immediate.
+ *
+ * @param val Original value.
+ *
+ * @return Value with swapped bytes or original value if its size is not 32.
+ */
+std::string byteSwap32(const std::string& val)
+{
+	if (val.length() != 32) return val;
 
-	return val.substr(24, 8) + val.substr(16, 8) +
-		val.substr(8, 8) + val.substr(0, 8);
+	return val.substr(24, 8) + val.substr(16, 8) + val.substr(8, 8) + val.substr(0, 8);
 }
 
 /**

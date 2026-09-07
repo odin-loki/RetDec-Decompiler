@@ -24,28 +24,35 @@
 #include <cstdint>
 #include <stdexcept>
 
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-    using namespace retdec::dex_parser;
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
+{
+	using namespace retdec::dex_parser;
 
-    try {
-        DexFile dex = DexFile::parse(data, size);
+	try
+	{
+		DexFile dex = DexFile::parse(data, size);
 
-        // If header parsed successfully, also try parsing all class defs.
-        DexParseOptions opts;
-        opts.parseBytecode    = true;
-        opts.parseAnnotations = true;
-        opts.resolveGenerics  = true;
-        opts.strict           = false;
+		// If header parsed successfully, also try parsing all class defs.
+		DexParseOptions opts;
+		opts.parseBytecode = true;
+		opts.parseAnnotations = true;
+		opts.resolveGenerics = true;
+		opts.strict = false;
 
-        DexClassParser parser(dex, opts);
-        for (uint32_t i = 0; i < dex.classCount(); ++i) {
-            (void)parser.parseClass(i);
-        }
-    } catch (const std::exception&) {
-        // Expected for malformed input — must not abort/crash.
-    } catch (...) {
-        // Any other exception is also acceptable; only hard crashes are bugs.
-    }
+		DexClassParser parser(dex, opts);
+		for (uint32_t i = 0; i < dex.classCount(); ++i)
+		{
+			(void)parser.parseClass(i);
+		}
+	}
+	catch (const std::exception&)
+	{
+		// Expected for malformed input — must not abort/crash.
+	}
+	catch (...)
+	{
+		// Any other exception is also acceptable; only hard crashes are bugs.
+	}
 
-    return 0;
+	return 0;
 }

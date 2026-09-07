@@ -1,9 +1,9 @@
 /**
-* @file tests/utils/string_tests.cpp
-* @brief Tests for the @c string module.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file tests/utils/string_tests.cpp
+ * @brief Tests for the @c string module.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #include <gtest/gtest.h>
 
@@ -19,16 +19,16 @@ namespace utils {
 namespace tests {
 
 /**
-* @brief Tests for the @c string module.
-*/
-class StringTests: public Test {};
+ * @brief Tests for the @c string module.
+ */
+class StringTests : public Test {};
 
 //
 // hasOnlyDecimalDigits()
 //
 
-TEST_F(StringTests,
-HasOnlyDecimalDigitsHasOnlyDecimalDigits) {
+TEST_F(StringTests, HasOnlyDecimalDigitsHasOnlyDecimalDigits)
+{
 	EXPECT_TRUE(hasOnlyDecimalDigits(""));
 	EXPECT_TRUE(hasOnlyDecimalDigits("1"));
 	EXPECT_TRUE(hasOnlyDecimalDigits("134573908"));
@@ -43,8 +43,8 @@ HasOnlyDecimalDigitsHasOnlyDecimalDigits) {
 // hasOnlyHexadecimalDigits()
 //
 
-TEST_F(StringTests,
-HasOnlyHexadecimalDigitsHasOnlyHexadecimalDigits) {
+TEST_F(StringTests, HasOnlyHexadecimalDigitsHasOnlyHexadecimalDigits)
+{
 	EXPECT_TRUE(hasOnlyHexadecimalDigits(""));
 	EXPECT_TRUE(hasOnlyHexadecimalDigits("1"));
 	EXPECT_TRUE(hasOnlyHexadecimalDigits("d"));
@@ -61,13 +61,15 @@ HasOnlyHexadecimalDigitsHasOnlyHexadecimalDigits) {
 // hasNonprintableChars()
 //
 
-TEST_F(StringTests,
-HasNonprintableCharsTrue) {
-	EXPECT_TRUE(hasNonprintableChars("\x7F""ELF"));
+TEST_F(StringTests, HasNonprintableCharsTrue)
+{
+	EXPECT_TRUE(
+		hasNonprintableChars("\x7F"
+							 "ELF"));
 }
 
-TEST_F(StringTests,
-HasNonprintableCharsFalse) {
+TEST_F(StringTests, HasNonprintableCharsFalse)
+{
 	EXPECT_FALSE(hasNonprintableChars(""));
 	EXPECT_FALSE(hasNonprintableChars("abcd"));
 	EXPECT_FALSE(hasNonprintableChars("0123456789ABCDEFGHijklm"));
@@ -78,13 +80,15 @@ HasNonprintableCharsFalse) {
 // hasNonasciiChars()
 //
 
-TEST_F(StringTests,
-HasNonasciiCharsTrue) {
-	EXPECT_TRUE(hasNonasciiChars("\x80""ELF"));
+TEST_F(StringTests, HasNonasciiCharsTrue)
+{
+	EXPECT_TRUE(
+		hasNonasciiChars("\x80"
+						 "ELF"));
 }
 
-TEST_F(StringTests,
-HasNonasciiCharsFalse) {
+TEST_F(StringTests, HasNonasciiCharsFalse)
+{
 	EXPECT_FALSE(hasNonasciiChars(""));
 	EXPECT_FALSE(hasNonasciiChars("abcd"));
 	EXPECT_FALSE(hasNonasciiChars("0123456789ABCDEFGHijklm"));
@@ -95,28 +99,28 @@ HasNonasciiCharsFalse) {
 // contains()
 //
 
-TEST_F(StringTests,
-ContainsEmptyStringIsContainedInEveryString) {
+TEST_F(StringTests, ContainsEmptyStringIsContainedInEveryString)
+{
 	EXPECT_TRUE(contains("abcd", ""));
 }
 
-TEST_F(StringTests,
-ContainsEmptyStringDoesNotContainNonEmptyString) {
+TEST_F(StringTests, ContainsEmptyStringDoesNotContainNonEmptyString)
+{
 	EXPECT_FALSE(contains("", "abcd"));
 }
 
-TEST_F(StringTests,
-ContainsEmptyStringIsContainedInAnotherEmptyString) {
+TEST_F(StringTests, ContainsEmptyStringIsContainedInAnotherEmptyString)
+{
 	ASSERT_TRUE(contains("", ""));
 }
 
-TEST_F(StringTests,
-ContainsSubstringIsContained) {
+TEST_F(StringTests, ContainsSubstringIsContained)
+{
 	EXPECT_TRUE(contains("abcd", "bc"));
 }
 
-TEST_F(StringTests,
-ContainsSubstringIsNotContained) {
+TEST_F(StringTests, ContainsSubstringIsNotContained)
+{
 	EXPECT_FALSE(contains("abcd", "BC"));
 }
 
@@ -124,18 +128,18 @@ ContainsSubstringIsNotContained) {
 // containsAny()
 //
 
-TEST_F(StringTests,
-ContainsAnyEmptyStringIsContainedInEveryString) {
+TEST_F(StringTests, ContainsAnyEmptyStringIsContainedInEveryString)
+{
 	EXPECT_TRUE(containsAny("abcd", {""}));
 }
 
-TEST_F(StringTests,
-ContainsAnyNoStringIsContained) {
+TEST_F(StringTests, ContainsAnyNoStringIsContained)
+{
 	EXPECT_FALSE(containsAny("abcd", {"ac", "bd", "ad", "acd", "bcba"}));
 }
 
-TEST_F(StringTests,
-ContainsAnyAtLeastOneStringIsContained) {
+TEST_F(StringTests, ContainsAnyAtLeastOneStringIsContained)
+{
 	EXPECT_TRUE(containsAny("abcd", {"ac", "bd", "bc"}));
 }
 
@@ -143,38 +147,38 @@ ContainsAnyAtLeastOneStringIsContained) {
 // containsCaseInsensitive()
 //
 
-TEST_F(StringTests,
-ContainsCaseInsensitiveEmptyStringIsContainedInEveryString) {
+TEST_F(StringTests, ContainsCaseInsensitiveEmptyStringIsContainedInEveryString)
+{
 	EXPECT_TRUE(containsCaseInsensitive("abcd", ""));
 }
 
-TEST_F(StringTests,
-ContainsCaseInsensitiveEmptyStringDoesNotContainOtherString) {
+TEST_F(StringTests, ContainsCaseInsensitiveEmptyStringDoesNotContainOtherString)
+{
 	EXPECT_FALSE(containsCaseInsensitive("", "abcd"));
 }
 
-TEST_F(StringTests,
-ContainsCaseInsensitiveEmptyStringIsContainedInAnotherEmptyString) {
+TEST_F(StringTests, ContainsCaseInsensitiveEmptyStringIsContainedInAnotherEmptyString)
+{
 	ASSERT_TRUE(containsCaseInsensitive("", ""));
 }
 
-TEST_F(StringTests,
-ContainsCaseInsensitiveSubstringIsContainedWhenCaseMatches) {
+TEST_F(StringTests, ContainsCaseInsensitiveSubstringIsContainedWhenCaseMatches)
+{
 	EXPECT_TRUE(containsCaseInsensitive("abcd", "bc"));
 }
 
-TEST_F(StringTests,
-ContainsCaseInsensitiveSubstringIsContainedEvenWhenCaseDoesNotMatch) {
+TEST_F(StringTests, ContainsCaseInsensitiveSubstringIsContainedEvenWhenCaseDoesNotMatch)
+{
 	EXPECT_TRUE(containsCaseInsensitive("abCd", "Bc"));
 }
 
-TEST_F(StringTests,
-ContainsCaseInsensitiveWorksEvenWhenStringContainsOtherSymbolsThanLetters) {
+TEST_F(StringTests, ContainsCaseInsensitiveWorksEvenWhenStringContainsOtherSymbolsThanLetters)
+{
 	EXPECT_TRUE(containsCaseInsensitive("145_%|E", "45_%|"));
 }
 
-TEST_F(StringTests,
-ContainsCaseInsensitiveReturnsFalseWhenSubstringIsNotContained) {
+TEST_F(StringTests, ContainsCaseInsensitiveReturnsFalseWhenSubstringIsNotContained)
+{
 	EXPECT_FALSE(containsCaseInsensitive("abcd", "hello"));
 }
 
@@ -182,15 +186,15 @@ ContainsCaseInsensitiveReturnsFalseWhenSubstringIsNotContained) {
 // containsAnyOfChars()
 //
 
-TEST_F(StringTests,
-ContainsAnyOfCharsTrue) {
+TEST_F(StringTests, ContainsAnyOfCharsTrue)
+{
 	EXPECT_TRUE(containsAnyOfChars("abcd", "axyz"));
 	EXPECT_TRUE(containsAnyOfChars("abcd", "xyzb"));
 	EXPECT_TRUE(containsAnyOfChars("abcd", 'c'));
 }
 
-TEST_F(StringTests,
-ContainsAnyOfCharsFalse) {
+TEST_F(StringTests, ContainsAnyOfCharsFalse)
+{
 	EXPECT_FALSE(containsAnyOfChars("abcd", ""));
 	EXPECT_FALSE(containsAnyOfChars("abcd", "xyz"));
 	EXPECT_FALSE(containsAnyOfChars("abcd", 'x'));
@@ -200,23 +204,23 @@ ContainsAnyOfCharsFalse) {
 // isLowerThanCaseInsensitive()
 //
 
-TEST_F(StringTests,
-IsLowerThanCaseInsensitiveStr1LowerThanStr2) {
+TEST_F(StringTests, IsLowerThanCaseInsensitiveStr1LowerThanStr2)
+{
 	EXPECT_TRUE(isLowerThanCaseInsensitive("", "a"));
 	EXPECT_TRUE(isLowerThanCaseInsensitive("A", "ab"));
 	EXPECT_TRUE(isLowerThanCaseInsensitive("abc", "abd"));
 }
 
-TEST_F(StringTests,
-IsLowerThanCaseInsensitiveStr1EqualToStr2) {
+TEST_F(StringTests, IsLowerThanCaseInsensitiveStr1EqualToStr2)
+{
 	EXPECT_FALSE(isLowerThanCaseInsensitive("", ""));
 	EXPECT_FALSE(isLowerThanCaseInsensitive("a", "A"));
 	EXPECT_FALSE(isLowerThanCaseInsensitive("A", "a"));
 	EXPECT_FALSE(isLowerThanCaseInsensitive("abC", "aBc"));
 }
 
-TEST_F(StringTests,
-IsLowerThanCaseInsensitiveStr1GreaterThanStr2) {
+TEST_F(StringTests, IsLowerThanCaseInsensitiveStr1GreaterThanStr2)
+{
 	EXPECT_FALSE(isLowerThanCaseInsensitive("a", ""));
 	EXPECT_FALSE(isLowerThanCaseInsensitive("ab", "A"));
 	EXPECT_FALSE(isLowerThanCaseInsensitive("abd", "abc"));
@@ -226,18 +230,18 @@ IsLowerThanCaseInsensitiveStr1GreaterThanStr2) {
 // areEqualCaseInsensitive()
 //
 
-TEST_F(StringTests,
-AreEqualCaseInsensitiveReturnsTrueWhenStringsAreEqualCaseInsensitively) {
+TEST_F(StringTests, AreEqualCaseInsensitiveReturnsTrueWhenStringsAreEqualCaseInsensitively)
+{
 	EXPECT_TRUE(areEqualCaseInsensitive("AbCdE", "aBcDE"));
 }
 
-TEST_F(StringTests,
-AreEqualCaseInsensitiveReturnsFalseWhenStringsHaveDifferentLengths) {
+TEST_F(StringTests, AreEqualCaseInsensitiveReturnsFalseWhenStringsHaveDifferentLengths)
+{
 	EXPECT_FALSE(areEqualCaseInsensitive("ab", "abcde"));
 }
 
-TEST_F(StringTests,
-AreEqualCaseInsensitiveReturnsFalseWhenStringsAreNotEqualCaseInsensitively) {
+TEST_F(StringTests, AreEqualCaseInsensitiveReturnsFalseWhenStringsAreNotEqualCaseInsensitively)
+{
 	EXPECT_FALSE(areEqualCaseInsensitive("abcccc", "abdddd"));
 }
 
@@ -245,8 +249,8 @@ AreEqualCaseInsensitiveReturnsFalseWhenStringsAreNotEqualCaseInsensitively) {
 // toLower()
 //
 
-TEST_F(StringTests,
-ToLowerCorrectConversion) {
+TEST_F(StringTests, ToLowerCorrectConversion)
+{
 	EXPECT_EQ("", toLower(""));
 	EXPECT_EQ("a", toLower("a"));
 	EXPECT_EQ("abc", toLower("abc"));
@@ -258,8 +262,8 @@ ToLowerCorrectConversion) {
 // toUpper()
 //
 
-TEST_F(StringTests,
-ToUpperCorrectConversion) {
+TEST_F(StringTests, ToUpperCorrectConversion)
+{
 	EXPECT_EQ("", toUpper(""));
 	EXPECT_EQ("A", toUpper("a"));
 	EXPECT_EQ("ABC", toUpper("abc"));
@@ -272,8 +276,8 @@ ToUpperCorrectConversion) {
 // toWide()
 //
 
-TEST_F(StringTests,
-ToWideCorrectConversion) {
+TEST_F(StringTests, ToWideCorrectConversion)
+{
 	EXPECT_EQ(toWide("abcd", 0), "");
 	EXPECT_EQ(toWide("abcd", 1), "abcd");
 	EXPECT_EQ(toWide("abcd", 2), "a\0b\0c\0d\0"s);
@@ -284,8 +288,8 @@ ToWideCorrectConversion) {
 // trim()
 //
 
-TEST_F(StringTests,
-TrimNothingToTrim) {
+TEST_F(StringTests, TrimNothingToTrim)
+{
 	// Whitespace (the second argument is the default one).
 	EXPECT_EQ(std::string("aa"), trim("aa"));
 
@@ -293,8 +297,8 @@ TrimNothingToTrim) {
 	EXPECT_EQ(std::string(" bb"), trim(" bb", "cd"));
 }
 
-TEST_F(StringTests,
-TrimFromBeginning) {
+TEST_F(StringTests, TrimFromBeginning)
+{
 	// Whitespace. Try all kinds of whitespace.
 	EXPECT_EQ(std::string("aa"), trim("  aa"));
 	EXPECT_EQ(std::string("aa"), trim("\taa"));
@@ -306,8 +310,8 @@ TrimFromBeginning) {
 	EXPECT_EQ(std::string("e"), trim("ccdde", "cd"));
 }
 
-TEST_F(StringTests,
-TrimFromEnd) {
+TEST_F(StringTests, TrimFromEnd)
+{
 	// Whitespace. Try all kinds of whitespace.
 	EXPECT_EQ(std::string("aa"), trim("aa  "));
 	EXPECT_EQ(std::string("aa"), trim("aa\t"));
@@ -319,8 +323,8 @@ TrimFromEnd) {
 	EXPECT_EQ(std::string("c"), trim("cdeeeee", "ed"));
 }
 
-TEST_F(StringTests,
-TrimFromBothSides) {
+TEST_F(StringTests, TrimFromBothSides)
+{
 	// Whitespace. Try all kinds of whitespace.
 	EXPECT_EQ(std::string("aa"), trim("\taa  "));
 	EXPECT_EQ(std::string("aa"), trim("\naa\t"));
@@ -332,8 +336,8 @@ TrimFromBothSides) {
 	EXPECT_EQ(std::string("c"), trim("ddddcdeeeee", "ed"));
 }
 
-TEST_F(StringTests,
-TrimNoNotTrimFromMiddle) {
+TEST_F(StringTests, TrimNoNotTrimFromMiddle)
+{
 	// Whitespace. Try all kinds of whitespace.
 	EXPECT_EQ(std::string("a a"), trim("a a"));
 	EXPECT_EQ(std::string("a\ta"), trim("a\ta"));
@@ -343,11 +347,10 @@ TrimNoNotTrimFromMiddle) {
 
 	// Other.
 	EXPECT_EQ(std::string("cbc"), trim("cbc", "b"));
-
 }
 
-TEST_F(StringTests,
-TrimFromEmptyString) {
+TEST_F(StringTests, TrimFromEmptyString)
+{
 	// Whitespace.
 	EXPECT_EQ(std::string(""), trim(""));
 
@@ -355,8 +358,8 @@ TrimFromEmptyString) {
 	EXPECT_EQ(std::string(""), trim("", "abc"));
 }
 
-TEST_F(StringTests,
-TrimResultsInRemovingEverythingFromTheString) {
+TEST_F(StringTests, TrimResultsInRemovingEverythingFromTheString)
+{
 	// Whitespace.
 	EXPECT_EQ(std::string(""), trim("    "));
 
@@ -364,8 +367,8 @@ TrimResultsInRemovingEverythingFromTheString) {
 	EXPECT_EQ(std::string(""), trim("aa", "a"));
 }
 
-TEST_F(StringTests,
-TrimEmptyToTrimString) {
+TEST_F(StringTests, TrimEmptyToTrimString)
+{
 	EXPECT_EQ(std::string("abc"), trim("abc", ""));
 }
 
@@ -373,48 +376,48 @@ TrimEmptyToTrimString) {
 // split()
 //
 
-TEST_F(StringTests,
-SplitEmptyStringNoTrim) {
+TEST_F(StringTests, SplitEmptyStringNoTrim)
+{
 	EXPECT_EQ(std::vector<std::string>(), split("", ';', false));
 }
 
-TEST_F(StringTests,
-SplitEmptyStringWithTrim) {
+TEST_F(StringTests, SplitEmptyStringWithTrim)
+{
 	EXPECT_EQ(std::vector<std::string>(), split("", ';', true));
 }
 
-TEST_F(StringTests,
-SplitNothingToSplitNoTrim) {
+TEST_F(StringTests, SplitNothingToSplitNoTrim)
+{
 	std::vector<std::string> ref;
 	ref.push_back("abcd efgh");
 	EXPECT_EQ(ref, split("abcd efgh", ';', false));
 }
 
-TEST_F(StringTests,
-SplitNothingToSplitWithTrim) {
+TEST_F(StringTests, SplitNothingToSplitWithTrim)
+{
 	std::vector<std::string> ref;
 	ref.push_back("abcd efgh");
 	EXPECT_EQ(ref, split("abcd efgh", ';', true));
 }
 
-TEST_F(StringTests,
-SplitSplitsCorrectlyInOnePlaceNoTrim) {
+TEST_F(StringTests, SplitSplitsCorrectlyInOnePlaceNoTrim)
+{
 	std::vector<std::string> ref;
 	ref.push_back("\n abcd ");
 	ref.push_back(" ef gh \t ");
 	EXPECT_EQ(ref, split("\n abcd ; ef gh \t ", ';', false));
 }
 
-TEST_F(StringTests,
-SplitSplitsCorrectlyInOnePlaceWithTrim) {
+TEST_F(StringTests, SplitSplitsCorrectlyInOnePlaceWithTrim)
+{
 	std::vector<std::string> ref;
 	ref.push_back("abcd");
 	ref.push_back("ef gh");
 	EXPECT_EQ(ref, split("\n abcd ; ef gh \t ", ';', true));
 }
 
-TEST_F(StringTests,
-SplitSplitsCorrectlyInTwoPlacesNoTrim) {
+TEST_F(StringTests, SplitSplitsCorrectlyInTwoPlacesNoTrim)
+{
 	std::vector<std::string> ref;
 	ref.push_back("\n abcd ");
 	ref.push_back(" ef gh \t ");
@@ -422,8 +425,8 @@ SplitSplitsCorrectlyInTwoPlacesNoTrim) {
 	EXPECT_EQ(ref, split("\n abcd ; ef gh \t ; CCC", ';', false));
 }
 
-TEST_F(StringTests,
-SplitSplitsCorrectlyInTwoPlacesWithTrim) {
+TEST_F(StringTests, SplitSplitsCorrectlyInTwoPlacesWithTrim)
+{
 	std::vector<std::string> ref;
 	ref.push_back("abcd");
 	ref.push_back("ef gh");
@@ -431,24 +434,24 @@ SplitSplitsCorrectlyInTwoPlacesWithTrim) {
 	EXPECT_EQ(ref, split("\n abcd ; ef gh \t ; CCC", ';', true));
 }
 
-TEST_F(StringTests,
-SplitSplitsCorrectlyWhenSeparatorIsAtTheBeginningOfString) {
+TEST_F(StringTests, SplitSplitsCorrectlyWhenSeparatorIsAtTheBeginningOfString)
+{
 	std::vector<std::string> ref;
 	ref.push_back("");
 	ref.push_back("abcd");
 	EXPECT_EQ(ref, split(";abcd", ';', true));
 }
 
-TEST_F(StringTests,
-SplitSplitsCorrectlyWhenSeparatorIsAtTheEndOfString) {
+TEST_F(StringTests, SplitSplitsCorrectlyWhenSeparatorIsAtTheEndOfString)
+{
 	std::vector<std::string> ref;
 	ref.push_back("abcd");
 	ref.push_back("");
 	EXPECT_EQ(ref, split("abcd;", ';', true));
 }
 
-TEST_F(StringTests,
-SplitSplitsCorrectlyWhenThereAreJustSeparators) {
+TEST_F(StringTests, SplitSplitsCorrectlyWhenThereAreJustSeparators)
+{
 	std::vector<std::string> ref;
 	ref.push_back("");
 	ref.push_back("");
@@ -461,23 +464,23 @@ SplitSplitsCorrectlyWhenThereAreJustSeparators) {
 // unifyLineEnds()
 //
 
-TEST_F(StringTests,
-UnifyLineEndsReturnsOriginalStringWhenThereAreNoLineEnds) {
+TEST_F(StringTests, UnifyLineEndsReturnsOriginalStringWhenThereAreNoLineEnds)
+{
 	EXPECT_EQ("abcd", unifyLineEnds("abcd"));
 }
 
-TEST_F(StringTests,
-UnifyLineEndsReturnsOriginalStringWhenThereAreLFLineEnds) {
+TEST_F(StringTests, UnifyLineEndsReturnsOriginalStringWhenThereAreLFLineEnds)
+{
 	EXPECT_EQ("\n\n", unifyLineEnds("\n\n"));
 }
 
-TEST_F(StringTests,
-UnifyLineEndsConvertsCRLFToLF) {
+TEST_F(StringTests, UnifyLineEndsConvertsCRLFToLF)
+{
 	EXPECT_EQ("\n\n", unifyLineEnds("\r\n\r\n"));
 }
 
-TEST_F(StringTests,
-UnifyLineEndsConvertsCRToLF) {
+TEST_F(StringTests, UnifyLineEndsConvertsCRToLF)
+{
 	EXPECT_EQ("\n\n", unifyLineEnds("\r\r"));
 }
 
@@ -485,15 +488,15 @@ UnifyLineEndsConvertsCRToLF) {
 // joinStrings()
 //
 
-TEST_F(StringTests,
-JoinStringsEmptyVector) {
+TEST_F(StringTests, JoinStringsEmptyVector)
+{
 	EXPECT_EQ("", joinStrings(std::vector<std::string>(), ""));
 	EXPECT_EQ("", joinStrings(std::vector<std::string>(), ";"));
 	EXPECT_EQ("", joinStrings(std::vector<std::string>(), "XXX"));
 }
 
-TEST_F(StringTests,
-JoinStringsOneItemVector) {
+TEST_F(StringTests, JoinStringsOneItemVector)
+{
 	std::vector<std::string> strings;
 	strings.push_back("test");
 	EXPECT_EQ("test", joinStrings(strings, ""));
@@ -501,8 +504,8 @@ JoinStringsOneItemVector) {
 	EXPECT_EQ("test", joinStrings(strings, "XXX"));
 }
 
-TEST_F(StringTests,
-JoinStringsTwoItemsVector) {
+TEST_F(StringTests, JoinStringsTwoItemsVector)
+{
 	std::vector<std::string> strings;
 	strings.push_back("abc");
 	strings.push_back("efg");
@@ -511,8 +514,8 @@ JoinStringsTwoItemsVector) {
 	EXPECT_EQ("abcXXXefg", joinStrings(strings, "XXX"));
 }
 
-TEST_F(StringTests,
-JoinStringsThreeItemsVectorEmptySeparator) {
+TEST_F(StringTests, JoinStringsThreeItemsVectorEmptySeparator)
+{
 	std::vector<std::string> strings;
 	strings.push_back("abc");
 	strings.push_back("efg");
@@ -522,15 +525,15 @@ JoinStringsThreeItemsVectorEmptySeparator) {
 	EXPECT_EQ("abcXXXefgXXX ijK ", joinStrings(strings, "XXX"));
 }
 
-TEST_F(StringTests,
-JoinStringsEmptySet) {
+TEST_F(StringTests, JoinStringsEmptySet)
+{
 	EXPECT_EQ("", joinStrings(std::set<std::string>(), ""));
 	EXPECT_EQ("", joinStrings(std::set<std::string>(), ";"));
 	EXPECT_EQ("", joinStrings(std::set<std::string>(), "XXX"));
 }
 
-TEST_F(StringTests,
-JoinStringsOneItemSet) {
+TEST_F(StringTests, JoinStringsOneItemSet)
+{
 	std::set<std::string> strings;
 	strings.insert("test");
 	EXPECT_EQ("test", joinStrings(strings, ""));
@@ -538,8 +541,8 @@ JoinStringsOneItemSet) {
 	EXPECT_EQ("test", joinStrings(strings, "XXX"));
 }
 
-TEST_F(StringTests,
-JoinStringsTwoItemsSet) {
+TEST_F(StringTests, JoinStringsTwoItemsSet)
+{
 	std::set<std::string> strings;
 	strings.insert("abc");
 	strings.insert("efg");
@@ -550,8 +553,8 @@ JoinStringsTwoItemsSet) {
 	EXPECT_EQ("abcXXXefg", joinStrings(strings, "XXX"));
 }
 
-TEST_F(StringTests,
-JoinStringsThreeItemsSetEmptySeparator) {
+TEST_F(StringTests, JoinStringsThreeItemsSetEmptySeparator)
+{
 	std::set<std::string> strings;
 	strings.insert("abc");
 	strings.insert("efg");
@@ -567,8 +570,8 @@ JoinStringsThreeItemsSetEmptySeparator) {
 // startsWith()
 //
 
-TEST_F(StringTests,
-StartsWithStarts) {
+TEST_F(StringTests, StartsWithStarts)
+{
 	EXPECT_TRUE(startsWith("", ""));
 	EXPECT_TRUE(startsWith("a", ""));
 	EXPECT_TRUE(startsWith("a", "a"));
@@ -577,16 +580,16 @@ StartsWithStarts) {
 	EXPECT_TRUE(startsWith("abcDEF", "abc"));
 }
 
-TEST_F(StringTests,
-StartsWithDoesNotStart) {
+TEST_F(StringTests, StartsWithDoesNotStart)
+{
 	EXPECT_FALSE(startsWith("", "a"));
 	EXPECT_FALSE(startsWith("b", "c"));
 	EXPECT_FALSE(startsWith("  X", " X"));
 	EXPECT_FALSE(startsWith("abcDEF", "abd"));
 }
 
-TEST_F(StringTests,
-CanBeCalledWithEitherCharStarOrStdStringLiteral) {
+TEST_F(StringTests, CanBeCalledWithEitherCharStarOrStdStringLiteral)
+{
 	EXPECT_TRUE(startsWith("abc", "abc"));
 	EXPECT_TRUE(startsWith("abc", "abc"s));
 }
@@ -595,8 +598,8 @@ CanBeCalledWithEitherCharStarOrStdStringLiteral) {
 // endsWith()
 //
 
-TEST_F(StringTests,
-EndsWithEnds) {
+TEST_F(StringTests, EndsWithEnds)
+{
 	EXPECT_TRUE(endsWith("", ""));
 	EXPECT_TRUE(endsWith("a", ""));
 	EXPECT_TRUE(endsWith("a", "a"));
@@ -605,16 +608,16 @@ EndsWithEnds) {
 	EXPECT_TRUE(endsWith("abcDEF", "DEF"));
 }
 
-TEST_F(StringTests,
-EndsWithDoesNotEnd) {
+TEST_F(StringTests, EndsWithDoesNotEnd)
+{
 	EXPECT_FALSE(endsWith("", "a"));
 	EXPECT_FALSE(endsWith("b", "c"));
 	EXPECT_FALSE(endsWith("X  ", "X "));
 	EXPECT_FALSE(endsWith("abcDEF", "DEG"));
 }
 
-TEST_F(StringTests,
-EndsWithSetDoesNotEnd) {
+TEST_F(StringTests, EndsWithSetDoesNotEnd)
+{
 	EXPECT_FALSE(endsWith("", std::set<std::string>{}));
 	EXPECT_FALSE(endsWith("", std::set<std::string>{"a", "bb", "ccc"}));
 	EXPECT_FALSE(endsWith("b", std::set<std::string>{"c"}));
@@ -622,8 +625,8 @@ EndsWithSetDoesNotEnd) {
 	EXPECT_FALSE(endsWith("abcDEF", std::set<std::string>{"DEG"}));
 }
 
-TEST_F(StringTests,
-EndsWithSetEnds) {
+TEST_F(StringTests, EndsWithSetEnds)
+{
 	EXPECT_TRUE(endsWith("", std::set<std::string>{""}));
 	EXPECT_TRUE(endsWith("abcde", std::set<std::string>{"e"}));
 	EXPECT_TRUE(endsWith("abcde", std::set<std::string>{"de"}));
@@ -635,16 +638,16 @@ EndsWithSetEnds) {
 // hasSubstringOnPosition()
 //
 
-TEST_F(StringTests,
-HasSubstringOnPositionTrue) {
+TEST_F(StringTests, HasSubstringOnPositionTrue)
+{
 	EXPECT_TRUE(hasSubstringOnPosition("a", "a", 0));
 	EXPECT_TRUE(hasSubstringOnPosition(" C", " ", 0));
 	EXPECT_TRUE(hasSubstringOnPosition("X  ", " ", 2));
 	EXPECT_TRUE(hasSubstringOnPosition("abcDEF", "DEF", 3));
 }
 
-TEST_F(StringTests,
-HasSubstringOnPositionFalse) {
+TEST_F(StringTests, HasSubstringOnPositionFalse)
+{
 	EXPECT_FALSE(hasSubstringOnPosition("a", "a", 1));
 	EXPECT_FALSE(hasSubstringOnPosition(" C", " ", 20));
 	EXPECT_FALSE(hasSubstringOnPosition("X  ", "xAxAxAx", 2));
@@ -655,8 +658,8 @@ HasSubstringOnPositionFalse) {
 // hasSubstringInArea()
 //
 
-TEST_F(StringTests,
-HasSubstringInAreaTrue) {
+TEST_F(StringTests, HasSubstringInAreaTrue)
+{
 	EXPECT_TRUE(hasSubstringInArea("0", "", 0, 0));
 	EXPECT_TRUE(hasSubstringInArea("0123", "01", 0, 1));
 	EXPECT_TRUE(hasSubstringInArea("0123456789", "0123456789", 0, 9));
@@ -664,8 +667,8 @@ HasSubstringInAreaTrue) {
 	EXPECT_TRUE(hasSubstringInArea("0123456789", "12345678", 1, 8));
 }
 
-TEST_F(StringTests,
-HasSubstringInAreaFalse) {
+TEST_F(StringTests, HasSubstringInAreaFalse)
+{
 	EXPECT_FALSE(hasSubstringInArea("0123456789", "0123456789", 0, 8));
 }
 
@@ -673,27 +676,27 @@ HasSubstringInAreaFalse) {
 // isComposedOnlyOfChars()
 //
 
-TEST_F(StringTests,
-IsComposedOnlyOfCharsEmptyStringIsComposedOnlyOfAnything) {
+TEST_F(StringTests, IsComposedOnlyOfCharsEmptyStringIsComposedOnlyOfAnything)
+{
 	EXPECT_TRUE(isComposedOnlyOfChars("", "abcd"));
 	EXPECT_TRUE(isComposedOnlyOfChars("", "012345"));
 	EXPECT_TRUE(isComposedOnlyOfChars("", 'a'));
 }
 
-TEST_F(StringTests,
-IsComposedOnlyOfCharsAnyStringIsNotComposedOnlyOfNoCharacters) {
+TEST_F(StringTests, IsComposedOnlyOfCharsAnyStringIsNotComposedOnlyOfNoCharacters)
+{
 	EXPECT_FALSE(isComposedOnlyOfChars("abcd", ""));
 }
 
-TEST_F(StringTests,
-IsComposedOnlyOfCharsIsComposed) {
+TEST_F(StringTests, IsComposedOnlyOfCharsIsComposed)
+{
 	EXPECT_TRUE(isComposedOnlyOfChars("aaa", 'a'));
 	EXPECT_TRUE(isComposedOnlyOfChars("aaa", "a"));
 	EXPECT_TRUE(isComposedOnlyOfChars("aaba", "ba"));
 }
 
-TEST_F(StringTests,
-IsComposedOnlyOfCharsIsNotComposed) {
+TEST_F(StringTests, IsComposedOnlyOfCharsIsNotComposed)
+{
 	EXPECT_FALSE(isComposedOnlyOfChars("abcde", 'a'));
 	EXPECT_FALSE(isComposedOnlyOfChars("abcde", "abc"));
 	EXPECT_FALSE(isComposedOnlyOfChars("012345", "012346"));
@@ -703,28 +706,28 @@ IsComposedOnlyOfCharsIsNotComposed) {
 // isComposedOnlyOfStrings()
 //
 
-TEST_F(StringTests,
-IsComposedOnlyOfStringsEmptyStringIsComposedOnlyOfEmptyString) {
+TEST_F(StringTests, IsComposedOnlyOfStringsEmptyStringIsComposedOnlyOfEmptyString)
+{
 	EXPECT_TRUE(isComposedOnlyOfStrings("", ""));
 	EXPECT_FALSE(isComposedOnlyOfStrings("", "a"));
 	EXPECT_FALSE(isComposedOnlyOfStrings("", "012345"));
 }
 
-TEST_F(StringTests,
-IsComposedOnlyOfStringsAnyNonEmptyStringIsNotComposedOnlyOfEmptyString) {
+TEST_F(StringTests, IsComposedOnlyOfStringsAnyNonEmptyStringIsNotComposedOnlyOfEmptyString)
+{
 	EXPECT_FALSE(isComposedOnlyOfStrings("a", ""));
 	EXPECT_FALSE(isComposedOnlyOfStrings("abcd", ""));
 }
 
-TEST_F(StringTests,
-IsComposedOnlyOfStringsIsComposed) {
-	EXPECT_TRUE(isComposedOnlyOfStrings("abcd",   "abcd"));
+TEST_F(StringTests, IsComposedOnlyOfStringsIsComposed)
+{
+	EXPECT_TRUE(isComposedOnlyOfStrings("abcd", "abcd"));
 	EXPECT_TRUE(isComposedOnlyOfStrings("ababab", "ab"));
-	EXPECT_TRUE(isComposedOnlyOfStrings("aaaaa",  "aa"));
+	EXPECT_TRUE(isComposedOnlyOfStrings("aaaaa", "aa"));
 }
 
-TEST_F(StringTests,
-IsComposedOnlyOfStringsIsNotComposed) {
+TEST_F(StringTests, IsComposedOnlyOfStringsIsNotComposed)
+{
 	EXPECT_FALSE(isComposedOnlyOfStrings("ababab", "ba"));
 }
 
@@ -732,18 +735,18 @@ IsComposedOnlyOfStringsIsNotComposed) {
 // stripDirs()
 //
 
-TEST_F(StringTests,
-StripDirsStripsAbsoluteUnixPaths) {
+TEST_F(StringTests, StripDirsStripsAbsoluteUnixPaths)
+{
 	EXPECT_EQ("test.c", stripDirs("/home/user/test.c"));
 }
 
-TEST_F(StringTests,
-StripDirsDoesNothingWhenFilenameIsProvided) {
+TEST_F(StringTests, StripDirsDoesNothingWhenFilenameIsProvided)
+{
 	EXPECT_EQ("test.c", stripDirs("test.c"));
 }
 
-TEST_F(StringTests,
-StripDirsStripsAbsoluteWindowsPathUsingSlashes) {
+TEST_F(StringTests, StripDirsStripsAbsoluteWindowsPathUsingSlashes)
+{
 	EXPECT_EQ("test.c", stripDirs("C:/home/user/test.c"));
 }
 
@@ -751,40 +754,40 @@ StripDirsStripsAbsoluteWindowsPathUsingSlashes) {
 // replaceAll()
 //
 
-TEST_F(StringTests,
-ReplaceAllWhenFromIsEmptyOriginalStringIsReturned) {
+TEST_F(StringTests, ReplaceAllWhenFromIsEmptyOriginalStringIsReturned)
+{
 	EXPECT_EQ("abcd", replaceAll("abcd", "", ""));
 	EXPECT_EQ("abcd", replaceAll("abcd", "", "aa"));
 }
 
-TEST_F(StringTests,
-ReplaceAllNothingToBeReplaceInEmptyString) {
+TEST_F(StringTests, ReplaceAllNothingToBeReplaceInEmptyString)
+{
 	EXPECT_EQ("", replaceAll("", "aa", ""));
 	EXPECT_EQ("", replaceAll("", "aa", "aa"));
 }
 
-TEST_F(StringTests,
-ReplaceAllReplaceWholeString) {
+TEST_F(StringTests, ReplaceAllReplaceWholeString)
+{
 	EXPECT_EQ("", replaceAll("abcd", "abcd", ""));
 	EXPECT_EQ("xyxy", replaceAll("abcd", "abcd", "xyxy"));
 }
 
-TEST_F(StringTests,
-ReplaceAllOnlySingleOccurrence) {
+TEST_F(StringTests, ReplaceAllOnlySingleOccurrence)
+{
 	EXPECT_EQ("Axyxy", replaceAll("Aabcd", "abcd", "xyxy"));
 	EXPECT_EQ("xyxyB", replaceAll("abcdB", "abcd", "xyxy"));
 	EXPECT_EQ("AxyxyB", replaceAll("AabcdB", "abcd", "xyxy"));
 }
 
-TEST_F(StringTests,
-ReplaceAllManyOccurrences) {
+TEST_F(StringTests, ReplaceAllManyOccurrences)
+{
 	EXPECT_EQ("yAyAyAy", replaceAll("xAxAxAx", "x", "y"));
 	EXPECT_EQ("AAA", replaceAll("xAxAxAx", "x", ""));
 	EXPECT_EQ("", replaceAll("xxxx", "x", ""));
 }
 
-TEST_F(StringTests,
-ReplaceAllNoOccurrences) {
+TEST_F(StringTests, ReplaceAllNoOccurrences)
+{
 	EXPECT_EQ("abcdefgh", replaceAll("abcdefgh", "x", "y"));
 }
 
@@ -792,8 +795,8 @@ ReplaceAllNoOccurrences) {
 // removeWhitespace()
 //
 
-TEST_F(StringTests,
-RemoveWhitespaceCorrectResults) {
+TEST_F(StringTests, RemoveWhitespaceCorrectResults)
+{
 	EXPECT_EQ("", removeWhitespace(""));
 	EXPECT_EQ("", removeWhitespace("   "));
 	EXPECT_EQ("", removeWhitespace("\t"));
@@ -807,19 +810,19 @@ RemoveWhitespaceCorrectResults) {
 // replaceNonprintableChars()
 //
 
-TEST_F(StringTests,
-ReplaceNonprintableCharsDoesNothingWhenThereAreNoNonprintableChars) {
+TEST_F(StringTests, ReplaceNonprintableCharsDoesNothingWhenThereAreNoNonprintableChars)
+{
 	EXPECT_EQ("", replaceNonprintableChars(""));
 	EXPECT_EQ("abc def", replaceNonprintableChars("abc def"));
 }
 
-TEST_F(StringTests,
-ReplaceNonprintableCharsReplacesNonprintableCharsWithTheirHexadecimalValues) {
+TEST_F(StringTests, ReplaceNonprintableCharsReplacesNonprintableCharsWithTheirHexadecimalValues)
+{
 	EXPECT_EQ("X\\x1cY\\x1dZ", replaceNonprintableChars("X\x1cY\x1dZ"));
 }
 
-TEST_F(StringTests,
-ReplaceNonprintableCharsEnsuresThatHexadecimalValuesAreTwoCharsLong) {
+TEST_F(StringTests, ReplaceNonprintableCharsEnsuresThatHexadecimalValuesAreTwoCharsLong)
+{
 	EXPECT_EQ("\\x00", replaceNonprintableChars("\0"s));
 }
 
@@ -827,19 +830,19 @@ ReplaceNonprintableCharsEnsuresThatHexadecimalValuesAreTwoCharsLong) {
 // replaceNonasciiChars()
 //
 
-TEST_F(StringTests,
-ReplaceNonasciiCharsDoesNothingWhenThereAreNoNonasciiChars) {
+TEST_F(StringTests, ReplaceNonasciiCharsDoesNothingWhenThereAreNoNonasciiChars)
+{
 	EXPECT_EQ("", replaceNonasciiChars(""));
 	EXPECT_EQ("abc def", replaceNonasciiChars("abc def"));
 }
 
-TEST_F(StringTests,
-ReplaceNonasciiCharsReplacesNonasciiCharsWithTheirHexadecimalValues) {
+TEST_F(StringTests, ReplaceNonasciiCharsReplacesNonasciiCharsWithTheirHexadecimalValues)
+{
 	EXPECT_EQ("X\\xacY\\xadZ", replaceNonasciiChars("X\xacY\xadZ"));
 }
 
-TEST_F(StringTests,
-ReplaceNonasciiCharsEnsuresThatHexadecimalValuesAreTwoCharsLong) {
+TEST_F(StringTests, ReplaceNonasciiCharsEnsuresThatHexadecimalValuesAreTwoCharsLong)
+{
 	EXPECT_EQ("\\x80", replaceNonprintableChars("\x80"s));
 }
 
@@ -847,8 +850,8 @@ ReplaceNonasciiCharsEnsuresThatHexadecimalValuesAreTwoCharsLong) {
 // replaceNonalnumCharsWith()
 //
 
-TEST_F(StringTests,
-ReplaceNonalnumCharsWithUnderscore) {
+TEST_F(StringTests, ReplaceNonalnumCharsWithUnderscore)
+{
 	EXPECT_EQ("", replaceNonalnumCharsWith("", '_'));
 	EXPECT_EQ("__", replaceNonalnumCharsWith("__", '_'));
 	EXPECT_EQ("7za", replaceNonalnumCharsWith("7za", '_'));
@@ -858,22 +861,21 @@ ReplaceNonalnumCharsWithUnderscore) {
 //
 // getLineAndColumnFromPosition()
 //
-TEST_F(StringTests,
-GetLineAndColumnFromPositionTransformsPositionsIntoLinesAndColumns) {
-
-	std::pair<std::size_t, std::size_t> a{0,0};
+TEST_F(StringTests, GetLineAndColumnFromPositionTransformsPositionsIntoLinesAndColumns)
+{
+	std::pair<std::size_t, std::size_t> a{0, 0};
 	EXPECT_EQ(a, getLineAndColumnFromPosition("", 0));
 
-	std::pair<std::size_t, std::size_t> b{1,1};
+	std::pair<std::size_t, std::size_t> b{1, 1};
 	EXPECT_EQ(b, getLineAndColumnFromPosition("abc", 0));
 
-	std::pair<std::size_t, std::size_t> c{1,3};
+	std::pair<std::size_t, std::size_t> c{1, 3};
 	EXPECT_EQ(c, getLineAndColumnFromPosition("abc", 2));
 
-	std::pair<std::size_t, std::size_t> d{0,0};
+	std::pair<std::size_t, std::size_t> d{0, 0};
 	EXPECT_EQ(d, getLineAndColumnFromPosition("abc", 3));
 
-	std::pair<std::size_t, std::size_t> e{2,2};
+	std::pair<std::size_t, std::size_t> e{2, 2};
 	EXPECT_EQ(e, getLineAndColumnFromPosition("abc\ndef", 5));
 }
 
@@ -881,8 +883,8 @@ GetLineAndColumnFromPositionTransformsPositionsIntoLinesAndColumns) {
 // isNumber()
 //
 
-TEST_F(StringTests,
-isNumberAcceptsNumbers) {
+TEST_F(StringTests, isNumberAcceptsNumbers)
+{
 	EXPECT_TRUE(isNumber("0"));
 	EXPECT_TRUE(isNumber("1"));
 	EXPECT_TRUE(isNumber("+1"));
@@ -892,8 +894,8 @@ isNumberAcceptsNumbers) {
 	EXPECT_TRUE(isNumber("-123"));
 }
 
-TEST_F(StringTests,
-isNumberRejectsNonNumbers) {
+TEST_F(StringTests, isNumberRejectsNonNumbers)
+{
 	EXPECT_FALSE(isNumber("a"));
 	EXPECT_FALSE(isNumber("+a"));
 	EXPECT_FALSE(isNumber("-a"));
@@ -907,8 +909,8 @@ isNumberRejectsNonNumbers) {
 // isIdentifier()
 //
 
-TEST_F(StringTests,
-isIdentifierAcceptValidIds) {
+TEST_F(StringTests, isIdentifierAcceptValidIds)
+{
 	EXPECT_TRUE(isIdentifier("_ymbol"));
 	EXPECT_TRUE(isIdentifier("symBOL"));
 	EXPECT_TRUE(isIdentifier("sym80L"));
@@ -917,8 +919,8 @@ isIdentifierAcceptValidIds) {
 	EXPECT_TRUE(isIdentifier("SYMBOL"));
 }
 
-TEST_F(StringTests,
-isIdentifierRejectsInvalidIds) {
+TEST_F(StringTests, isIdentifierRejectsInvalidIds)
+{
 	EXPECT_FALSE(isIdentifier("0_symbo"));
 	EXPECT_FALSE(isIdentifier("0symbol"));
 	EXPECT_FALSE(isIdentifier("%symBOL"));
@@ -932,15 +934,15 @@ isIdentifierRejectsInvalidIds) {
 // isPrintable()
 //
 
-TEST_F(StringTests,
-isPrintableAccept) {
+TEST_F(StringTests, isPrintableAccept)
+{
 	EXPECT_TRUE(isPrintable("abcd468445efs1f"));
 	EXPECT_TRUE(isPrintable("!@#$%^&*{}-+|/"));
 	EXPECT_TRUE(isPrintable(""));
 }
 
-TEST_F(StringTests,
-isPrintableReject) {
+TEST_F(StringTests, isPrintableReject)
+{
 	EXPECT_FALSE(isPrintable("abcd468445 \n efs1f"));
 	EXPECT_FALSE(isPrintable("!@#$%^&*{}-+|/\r"));
 	EXPECT_FALSE(isPrintable("\n"));
@@ -950,8 +952,8 @@ isPrintableReject) {
 // removeLeadingCharacter()
 //
 
-TEST_F(StringTests,
-removeLeadingCharacterRemovesAllMatchingLeadingCharacters) {
+TEST_F(StringTests, removeLeadingCharacterRemovesAllMatchingLeadingCharacters)
+{
 	EXPECT_EQ("abc", removeLeadingCharacter("_abc", '_'));
 	EXPECT_EQ("abc", removeLeadingCharacter("__abc", '_'));
 	EXPECT_EQ("abc", removeLeadingCharacter("____abc", '_'));
@@ -961,16 +963,16 @@ removeLeadingCharacterRemovesAllMatchingLeadingCharacters) {
 	EXPECT_EQ("abc", removeLeadingCharacter("xxxxabc", 'x'));
 }
 
-TEST_F(StringTests,
-removeLeadingCharacterDoesNothingIfThereAreNoSpecifiedLeadingCharacters) {
+TEST_F(StringTests, removeLeadingCharacterDoesNothingIfThereAreNoSpecifiedLeadingCharacters)
+{
 	EXPECT_EQ("abc", removeLeadingCharacter("abc", '_'));
 	EXPECT_EQ("a_b_c_", removeLeadingCharacter("a_b_c_", '_'));
 	EXPECT_EQ("abc", removeLeadingCharacter("abc", 'x'));
 	EXPECT_EQ("abc", removeLeadingCharacter("abc", '&'));
 }
 
-TEST_F(StringTests,
-removeLeadingCharacterRemovesOnlySpecifiedNumberOfCharacters) {
+TEST_F(StringTests, removeLeadingCharacterRemovesOnlySpecifiedNumberOfCharacters)
+{
 	EXPECT_EQ("___abc", removeLeadingCharacter("___abc", '_', 0));
 	EXPECT_EQ("__abc", removeLeadingCharacter("___abc", '_', 1));
 	EXPECT_EQ("_abc", removeLeadingCharacter("___abc", '_', 2));
@@ -982,8 +984,8 @@ removeLeadingCharacterRemovesOnlySpecifiedNumberOfCharacters) {
 // isContolCharacter()
 //
 
-TEST_F(StringTests,
-isContolCharacterCorrectlyDecidesForControlAndNonControlChars) {
+TEST_F(StringTests, isContolCharacterCorrectlyDecidesForControlAndNonControlChars)
+{
 	EXPECT_TRUE(isContolCharacter('\b'));
 	EXPECT_TRUE(isContolCharacter('\f'));
 	EXPECT_TRUE(isContolCharacter('\n'));
@@ -1008,8 +1010,8 @@ isContolCharacterCorrectlyDecidesForControlAndNonControlChars) {
 // isNiceCharacter()
 //
 
-TEST_F(StringTests,
-isNiceCharacterCorrectlyDecidesForNiceAndNonNiceChars) {
+TEST_F(StringTests, isNiceCharacterCorrectlyDecidesForNiceAndNonNiceChars)
+{
 	EXPECT_TRUE(isNiceCharacter(' '));
 	EXPECT_TRUE(isNiceCharacter('!'));
 	EXPECT_TRUE(isNiceCharacter('"'));
@@ -1045,8 +1047,8 @@ isNiceCharacterCorrectlyDecidesForNiceAndNonNiceChars) {
 // isNiceString()
 //
 
-TEST_F(StringTests,
-IsNiceStringCorrectlyDecidesForDefaultRation) {
+TEST_F(StringTests, IsNiceStringCorrectlyDecidesForDefaultRation)
+{
 	EXPECT_TRUE(isNiceString("a"));
 	EXPECT_TRUE(isNiceString("ab"));
 	EXPECT_TRUE(isNiceString("ab\x01"));
@@ -1063,8 +1065,8 @@ IsNiceStringCorrectlyDecidesForDefaultRation) {
 	EXPECT_FALSE(isNiceString("abcd\x01\x02\x03"));
 }
 
-TEST_F(StringTests,
-IsNiceStringCorrectlyDecidesForCustomRation) {
+TEST_F(StringTests, IsNiceStringCorrectlyDecidesForCustomRation)
+{
 	EXPECT_TRUE(isNiceString("abcdef", 1.0));
 	EXPECT_FALSE(isNiceString("abcdef\x01", 1.0));
 
@@ -1080,8 +1082,8 @@ IsNiceStringCorrectlyDecidesForCustomRation) {
 // isNiceAsciiWideCharacter()
 //
 
-TEST_F(StringTests,
-isNiceAsciiWideCharacterCorrectlyDecidesForNiceAndNonNiceChars) {
+TEST_F(StringTests, isNiceAsciiWideCharacterCorrectlyDecidesForNiceAndNonNiceChars)
+{
 	EXPECT_TRUE(isNiceAsciiWideCharacter(' '));
 	EXPECT_TRUE(isNiceAsciiWideCharacter('!'));
 	EXPECT_TRUE(isNiceAsciiWideCharacter('"'));
@@ -1120,8 +1122,8 @@ isNiceAsciiWideCharacterCorrectlyDecidesForNiceAndNonNiceChars) {
 // isNiceAsciiWideString()
 //
 
-TEST_F(StringTests,
-isNiceAsciiWideStringCorrectlyDecidesForDefaultRatio) {
+TEST_F(StringTests, isNiceAsciiWideStringCorrectlyDecidesForDefaultRatio)
+{
 	std::vector<unsigned long long> s1 = {'a', 'b', 'c', 'd'};
 	EXPECT_TRUE(isNiceAsciiWideString(s1));
 
@@ -1147,8 +1149,8 @@ isNiceAsciiWideStringCorrectlyDecidesForDefaultRatio) {
 	EXPECT_FALSE(isNiceAsciiWideString(s8));
 }
 
-TEST_F(StringTests,
-isNiceAsciiWideStringCorrectlyDecidesForCustomRatio) {
+TEST_F(StringTests, isNiceAsciiWideStringCorrectlyDecidesForCustomRatio)
+{
 	std::vector<unsigned long long> s1 = {'a', 'b', 'c', 1234};
 	EXPECT_TRUE(isNiceAsciiWideString(s1, 0.75));
 	EXPECT_FALSE(isNiceAsciiWideString(s1, 0.8));
@@ -1166,15 +1168,15 @@ isNiceAsciiWideStringCorrectlyDecidesForCustomRatio) {
 // getIndentation()
 //
 
-TEST_F(StringTests,
-GetIndentationReturnsCorrectStringForDefaultCharacter) {
+TEST_F(StringTests, GetIndentationReturnsCorrectStringForDefaultCharacter)
+{
 	EXPECT_EQ("", getIndentation(0));
 	EXPECT_EQ("\t", getIndentation(1));
 	EXPECT_EQ("\t\t\t\t\t", getIndentation(5));
 }
 
-TEST_F(StringTests,
-GetIndentationReturnsCorrectStringForCustomCharacter) {
+TEST_F(StringTests, GetIndentationReturnsCorrectStringForCustomCharacter)
+{
 	EXPECT_EQ("", getIndentation(0, ' '));
 	EXPECT_EQ(" ", getIndentation(1, ' '));
 	EXPECT_EQ("     ", getIndentation(5, ' '));
@@ -1184,8 +1186,8 @@ GetIndentationReturnsCorrectStringForCustomCharacter) {
 // appendHex()
 //
 
-TEST_F(StringTests,
-appendHexAddsHexSuffix) {
+TEST_F(StringTests, appendHexAddsHexSuffix)
+{
 	std::string s = "object";
 	appendHex(s, 0x1234);
 	EXPECT_EQ("object_1234", s);
@@ -1195,8 +1197,8 @@ appendHexAddsHexSuffix) {
 // appendDec()
 //
 
-TEST_F(StringTests,
-appendDecAddsDecSuffix) {
+TEST_F(StringTests, appendDecAddsDecSuffix)
+{
 	std::string s = "object";
 	appendDec(s, 1234);
 	EXPECT_EQ("object_1234", s);
@@ -1206,8 +1208,8 @@ appendDecAddsDecSuffix) {
 // appendHexRet()
 //
 
-TEST_F(StringTests,
-appendHexRetAddsHexSuffix) {
+TEST_F(StringTests, appendHexRetAddsHexSuffix)
+{
 	EXPECT_EQ("object_1234", appendHexRet("object", 0x1234));
 }
 
@@ -1215,8 +1217,8 @@ appendHexRetAddsHexSuffix) {
 // appendDecRet()
 //
 
-TEST_F(StringTests,
-appendDecRetAddsHexSuffix) {
+TEST_F(StringTests, appendDecRetAddsHexSuffix)
+{
 	EXPECT_EQ("object_1234", appendDecRet("object", 1234));
 }
 
@@ -1224,8 +1226,8 @@ appendDecRetAddsHexSuffix) {
 // removeSuffix()
 //
 
-TEST_F(StringTests,
-removeSuffixRemovesSpecifiedSuffix) {
+TEST_F(StringTests, removeSuffixRemovesSpecifiedSuffix)
+{
 	std::string s = "object_1234";
 	removeSuffix(s);
 	EXPECT_EQ("object", s);
@@ -1243,8 +1245,8 @@ removeSuffixRemovesSpecifiedSuffix) {
 	EXPECT_EQ("object", s);
 }
 
-TEST_F(StringTests,
-removeSuffixDoesNothingWhenSuffixNotFound) {
+TEST_F(StringTests, removeSuffixDoesNothingWhenSuffixNotFound)
+{
 	std::string s = "object-1234";
 	removeSuffix(s);
 	EXPECT_EQ("object-1234", s);
@@ -1258,16 +1260,16 @@ removeSuffixDoesNothingWhenSuffixNotFound) {
 // removeSuffixRet()
 //
 
-TEST_F(StringTests,
-removeSuffixRetRemovesSpecifiedSuffix) {
+TEST_F(StringTests, removeSuffixRetRemovesSpecifiedSuffix)
+{
 	EXPECT_EQ("object", removeSuffixRet("object_1234"));
 	EXPECT_EQ("object", removeSuffixRet("object_1234", "_12"));
 	EXPECT_EQ("object", removeSuffixRet("object=1234", "="));
 	EXPECT_EQ("object", removeSuffixRet("object===1234", "==="));
 }
 
-TEST_F(StringTests,
-removeSuffixRetDoesNothingWhenSuffixNotFound) {
+TEST_F(StringTests, removeSuffixRetDoesNothingWhenSuffixNotFound)
+{
 	EXPECT_EQ("object-1234", removeSuffixRet("object-1234"));
 	EXPECT_EQ("object_1234", removeSuffixRet("object_1234", "="));
 }
@@ -1276,8 +1278,8 @@ removeSuffixRetDoesNothingWhenSuffixNotFound) {
 // normalizeName()
 //
 
-TEST_F(StringTests,
-normalizeNameSuccess) {
+TEST_F(StringTests, normalizeNameSuccess)
+{
 	EXPECT_EQ("", normalizeName(""));
 	EXPECT_EQ("_lt_", normalizeName("<"));
 	EXPECT_EQ("_gt_", normalizeName(">"));
@@ -1302,8 +1304,8 @@ normalizeNameSuccess) {
 // findFirstInEmbeddedLists()
 //
 
-TEST_F(StringTests,
-findFirstInEmbeddedListsReturnsNposIfNotFound) {
+TEST_F(StringTests, findFirstInEmbeddedListsReturnsNposIfNotFound)
+{
 	size_t pos = 0;
 
 	EXPECT_FALSE(findFirstInEmbeddedLists(pos, "", ',', {}));
@@ -1312,18 +1314,18 @@ findFirstInEmbeddedListsReturnsNposIfNotFound) {
 	EXPECT_FALSE(findFirstInEmbeddedLists(pos, "abcdef", ',', {}));
 	EXPECT_EQ(std::string::npos, pos);
 
-	EXPECT_FALSE(findFirstInEmbeddedLists(pos, "{ab,cd,ef}", ',', { {'{','}'} }));
+	EXPECT_FALSE(findFirstInEmbeddedLists(pos, "{ab,cd,ef}", ',', {{'{', '}'}}));
 	EXPECT_EQ(std::string::npos, pos);
 
-	EXPECT_FALSE(findFirstInEmbeddedLists(pos, "{a,b}cd(e,f)", ',', { {'{','}'}, {'(',')'} }));
+	EXPECT_FALSE(findFirstInEmbeddedLists(pos, "{a,b}cd(e,f)", ',', {{'{', '}'}, {'(', ')'}}));
 	EXPECT_EQ(std::string::npos, pos);
 
-	EXPECT_FALSE(findFirstInEmbeddedLists(pos, "{{a,b},(c,{d}),(e,f)}", ',', { {'{','}'}, {'(',')'} }));
+	EXPECT_FALSE(findFirstInEmbeddedLists(pos, "{{a,b},(c,{d}),(e,f)}", ',', {{'{', '}'}, {'(', ')'}}));
 	EXPECT_EQ(std::string::npos, pos);
 }
 
-TEST_F(StringTests,
-findFirstInEmbeddedListsReturnsFirstOkOccurrence) {
+TEST_F(StringTests, findFirstInEmbeddedListsReturnsFirstOkOccurrence)
+{
 	size_t pos = 0;
 
 	EXPECT_FALSE(findFirstInEmbeddedLists(pos, ",", ',', {}));
@@ -1332,21 +1334,21 @@ findFirstInEmbeddedListsReturnsFirstOkOccurrence) {
 	EXPECT_FALSE(findFirstInEmbeddedLists(pos, "ab,cd,ef", ',', {}));
 	EXPECT_EQ(2, pos);
 
-	EXPECT_FALSE(findFirstInEmbeddedLists(pos, "{ab,cd},(ef)", ',', { {'{','}'}, {'(',')'} }));
+	EXPECT_FALSE(findFirstInEmbeddedLists(pos, "{ab,cd},(ef)", ',', {{'{', '}'}, {'(', ')'}}));
 	EXPECT_EQ(7, pos);
 
-	EXPECT_FALSE(findFirstInEmbeddedLists(pos, "{{(a,b)},(c),d},(ef)", ',', { {'{','}'}, {'(',')'} }));
+	EXPECT_FALSE(findFirstInEmbeddedLists(pos, "{{(a,b)},(c),d},(ef)", ',', {{'{', '}'}, {'(', ')'}}));
 	EXPECT_EQ(15, pos);
 }
 
-TEST_F(StringTests,
-findFirstInEmbeddedListsReturnsTrueIfListMalformedPosIsNotChanged) {
+TEST_F(StringTests, findFirstInEmbeddedListsReturnsTrueIfListMalformedPosIsNotChanged)
+{
 	size_t pos = 123;
 
-	EXPECT_TRUE(findFirstInEmbeddedLists(pos, "{{ab},cd", ',', { {'{','}'} }));
+	EXPECT_TRUE(findFirstInEmbeddedLists(pos, "{{ab},cd", ',', {{'{', '}'}}));
 	EXPECT_EQ(123, pos);
 
-	EXPECT_TRUE(findFirstInEmbeddedLists(pos, "{{a(b)},(c},d", ',', { {'{','}'}, {'(',')'} }));
+	EXPECT_TRUE(findFirstInEmbeddedLists(pos, "{{a(b)},(c},d", ',', {{'{', '}'}, {'(', ')'}}));
 	EXPECT_EQ(123, pos);
 }
 
@@ -1354,24 +1356,22 @@ findFirstInEmbeddedListsReturnsTrueIfListMalformedPosIsNotChanged) {
 // removeConsecutiveSpaces()
 //
 
-TEST_F(StringTests,
-removeConsecutiveSpacesRemovesSpaces) {
-	EXPECT_EQ(
-			"I Like StackOverflow a lot",
-			removeConsecutiveSpaces("I    Like    StackOverflow a      lot"));
+TEST_F(StringTests, removeConsecutiveSpacesRemovesSpaces)
+{
+	EXPECT_EQ("I Like StackOverflow a lot", removeConsecutiveSpaces("I    Like    StackOverflow a      lot"));
 }
 
 //
 // asEscapedCString()
 //
 
-TEST_F(StringTests,
-AsEscapedCStringReturnsSameStringFor8BitTextStringWithoutSpecialCharacters) {
+TEST_F(StringTests, AsEscapedCStringReturnsSameStringFor8BitTextStringWithoutSpecialCharacters)
+{
 	ASSERT_EQ("test", asEscapedCString({'t', 'e', 's', 't'}, 8));
 }
 
-TEST_F(StringTests,
-AsEscapedCStringReturnsCorrectlyEscapedStringFor8BitTextStringWithSpecialCharacters) {
+TEST_F(StringTests, AsEscapedCStringReturnsCorrectlyEscapedStringFor8BitTextStringWithSpecialCharacters)
+{
 	// Based on http://en.cppreference.com/w/c/language/escape
 	ASSERT_EQ("\\\"", asEscapedCString({'\"'}, 8));
 	ASSERT_EQ("\\\\", asEscapedCString({'\\'}, 8));
@@ -1390,103 +1390,74 @@ AsEscapedCStringReturnsCorrectlyEscapedStringFor8BitTextStringWithSpecialCharact
 	ASSERT_EQ("?", asEscapedCString({'\?'}, 8));
 }
 
-TEST_F(StringTests,
-AsEscapedCStringReturnsCorrectlyEscapedStringFor8BitBinaryString) {
-	ASSERT_EQ(
-		"\\x01\\x02\\x03\\x04\\xff",
-		asEscapedCString({1, 2, 3, 4, std::numeric_limits<std::uint8_t>::max()}, 8)
-	);
+TEST_F(StringTests, AsEscapedCStringReturnsCorrectlyEscapedStringFor8BitBinaryString)
+{
+	ASSERT_EQ("\\x01\\x02\\x03\\x04\\xff", asEscapedCString({1, 2, 3, 4, std::numeric_limits<std::uint8_t>::max()}, 8));
 }
 
-TEST_F(StringTests,
-AsEscapedCStringReturnsCorrectlyEscapedStringForBinaryWideStringWith16BitCharSize) {
+TEST_F(StringTests, AsEscapedCStringReturnsCorrectlyEscapedStringForBinaryWideStringWith16BitCharSize)
+{
 	ASSERT_EQ(
 		"\\x0001\\x0002\\x0003\\x0004\\xffff",
-		asEscapedCString({1, 2, 3, 4, std::numeric_limits<std::uint16_t>::max()}, 16)
-	);
+		asEscapedCString({1, 2, 3, 4, std::numeric_limits<std::uint16_t>::max()}, 16));
 }
 
-TEST_F(StringTests,
-AsEscapedCStringReturnsCorrectlyEscapedStringForBinaryWideStringWith32BitCharSize) {
+TEST_F(StringTests, AsEscapedCStringReturnsCorrectlyEscapedStringForBinaryWideStringWith32BitCharSize)
+{
 	ASSERT_EQ(
 		"\\x00000001\\x00000002\\x00000003\\x00000004\\xffffffff",
-		asEscapedCString({1, 2, 3, 4, std::numeric_limits<std::uint32_t>::max()}, 32)
-	);
+		asEscapedCString({1, 2, 3, 4, std::numeric_limits<std::uint32_t>::max()}, 32));
 }
 
-TEST_F(StringTests,
-AsEscapedCStringDoesNotEscapeAllCharsWhenOnlyNonPrintableCharsAreNullBytes) {
-	ASSERT_EQ(
-		"zz\\x00zz\\x00zz"s,
-		asEscapedCString({'z', 'z', '\x00', 'z', 'z', '\x00', 'z', 'z'}, 8)
-	);
+TEST_F(StringTests, AsEscapedCStringDoesNotEscapeAllCharsWhenOnlyNonPrintableCharsAreNullBytes)
+{
+	ASSERT_EQ("zz\\x00zz\\x00zz"s, asEscapedCString({'z', 'z', '\x00', 'z', 'z', '\x00', 'z', 'z'}, 8));
 }
 
-TEST_F(StringTests,
-AsEscapedCStringCorrectlyEscapesCharAfterZeroByte) {
+TEST_F(StringTests, AsEscapedCStringCorrectlyEscapesCharAfterZeroByte)
+{
 	// We cannot generate "a\\x00a" because that would mean a two-character
 	// string composed of characters 'a' and '\x00a'.
-	ASSERT_EQ(
-		"a\\x00\\x61"s,
-		asEscapedCString({'a', '\x00', '\x61'}, 8)
-	);
+	ASSERT_EQ("a\\x00\\x61"s, asEscapedCString({'a', '\x00', '\x61'}, 8));
 }
 
 //
 // removeComments()
 //
 
-//void removeComments(std::string& str, char commentChar)
+// void removeComments(std::string& str, char commentChar)
 
-TEST_F(StringTests,
-removeCommentsDoesNothingIfNoCommentsInString) {
-	ASSERT_EQ(
-		"hello world",
-		removeComments("hello world", ';')
-	);
+TEST_F(StringTests, removeCommentsDoesNothingIfNoCommentsInString)
+{
+	ASSERT_EQ("hello world", removeComments("hello world", ';'));
 }
 
-TEST_F(StringTests,
-removeCommentsRemovesCommentsFromString) {
-	ASSERT_EQ(
-		"hello world ",
-		removeComments("hello world ; this should be removed", ';')
-	);
+TEST_F(StringTests, removeCommentsRemovesCommentsFromString)
+{
+	ASSERT_EQ("hello world ", removeComments("hello world ; this should be removed", ';'));
 }
 
-TEST_F(StringTests,
-removeCommentsRemovesDoesNotRemoveIfDifferentCommentCharProvided) {
-	ASSERT_EQ(
-		"hello world ; this should be removed",
-		removeComments("hello world ; this should be removed", '/')
-	);
+TEST_F(StringTests, removeCommentsRemovesDoesNotRemoveIfDifferentCommentCharProvided)
+{
+	ASSERT_EQ("hello world ; this should be removed", removeComments("hello world ; this should be removed", '/'));
 }
 
 //
 // extractVersion()
 //
-TEST_F(StringTests,
-extractVersionFromEmptyString) {
-	ASSERT_EQ(
-		"",
-		extractVersion("")
-	);
+TEST_F(StringTests, extractVersionFromEmptyString)
+{
+	ASSERT_EQ("", extractVersion(""));
 }
 
-TEST_F(StringTests,
-extractVersionFromStringNotContainingVersion) {
-	ASSERT_EQ(
-		"",
-		extractVersion("hello world")
-	);
+TEST_F(StringTests, extractVersionFromStringNotContainingVersion)
+{
+	ASSERT_EQ("", extractVersion("hello world"));
 }
 
-TEST_F(StringTests,
-extractVersionFromStringContainingVersion) {
-	ASSERT_EQ(
-		"3.14.15",
-		extractVersion("hello 3.14.15 world")
-	);
+TEST_F(StringTests, extractVersionFromStringContainingVersion)
+{
+	ASSERT_EQ("3.14.15", extractVersion("hello 3.14.15 world"));
 }
 
 
@@ -1500,8 +1471,7 @@ extractVersionFromStringContainingVersion) {
 TEST_F(StringTests, ReadNullTerminatedAsciiMaxBytesThatWrapsStillReads)
 {
 	const std::uint8_t data[] = {'x', 'a', 'b', 'c', '\0'};
-	EXPECT_EQ("abc", readNullTerminatedAscii(
-		data, sizeof(data), 1, std::numeric_limits<std::size_t>::max(), false));
+	EXPECT_EQ("abc", readNullTerminatedAscii(data, sizeof(data), 1, std::numeric_limits<std::size_t>::max(), false));
 }
 
 TEST_F(StringTests, ReadNullTerminatedAsciiRespectsMaxBytes)
@@ -1540,8 +1510,8 @@ TEST_F(StringTests, ReadNullTerminatedAsciiUnterminatedWithinMaxBytesFails)
 /// unprintable bytes. Both are decisions taken on a value that came out of a
 /// file, and both are now refusals: fpred::ratioAtLeast returns false for any
 /// ratio outside [0, 1], NaN included.
-TEST_F(StringTests,
-IsNiceStringRefusesARatioThatIsNotOne) {
+TEST_F(StringTests, IsNiceStringRefusesARatioThatIsNotOne)
+{
 	const double nan = std::numeric_limits<double>::quiet_NaN();
 	const double inf = std::numeric_limits<double>::infinity();
 
@@ -1564,8 +1534,8 @@ IsNiceStringRefusesARatioThatIsNotOne) {
 	EXPECT_FALSE(isNiceString("abcdef\x01", 1.0));
 }
 
-TEST_F(StringTests,
-IsNiceAsciiWideStringRefusesARatioThatIsNotOne) {
+TEST_F(StringTests, IsNiceAsciiWideStringRefusesARatioThatIsNotOne)
+{
 	const std::vector<unsigned long long> nice = {'a', 'b', 'c', 'd'};
 	const double nan = std::numeric_limits<double>::quiet_NaN();
 

@@ -49,8 +49,8 @@ namespace cli_parser {
 // ─── HeapSizes flags (from #~ stream header) ─────────────────────────────────
 
 static constexpr uint8_t kHeapSizeStrings = 0x01; ///< #Strings indices are 4 bytes
-static constexpr uint8_t kHeapSizeGUID    = 0x02; ///< #GUID indices are 4 bytes
-static constexpr uint8_t kHeapSizeBlob    = 0x04; ///< #Blob indices are 4 bytes
+static constexpr uint8_t kHeapSizeGUID = 0x02;    ///< #GUID indices are 4 bytes
+static constexpr uint8_t kHeapSizeBlob = 0x04;    ///< #Blob indices are 4 bytes
 
 // ─── Compressed integer decoding ─────────────────────────────────────────────
 
@@ -60,121 +60,148 @@ static constexpr uint8_t kHeapSizeBlob    = 0x04; ///< #Blob indices are 4 bytes
  * Advances `pos` past the decoded bytes.
  * Returns std::nullopt if the span is too short or the encoding is invalid.
  */
-std::optional<uint32_t> decodeCompressedUInt(
-    std::span<const uint8_t> blob, size_t& pos);
+std::optional<uint32_t> decodeCompressedUInt(std::span<const uint8_t> blob, size_t& pos);
 
 /**
  * @brief Decode a compressed signed integer from a byte span.
  *
  * Like decodeCompressedUInt but sign-extends the result.
  */
-std::optional<int32_t> decodeCompressedInt(
-    std::span<const uint8_t> blob, size_t& pos);
+std::optional<int32_t> decodeCompressedInt(std::span<const uint8_t> blob, size_t& pos);
 
 // ─── #Strings heap ───────────────────────────────────────────────────────────
 
 class StringsHeap {
 public:
-    explicit StringsHeap(std::span<const uint8_t> data);
+	explicit StringsHeap(std::span<const uint8_t> data);
 
-    /// Read a null-terminated UTF-8 string at `offset`.
-    std::string get(uint32_t offset) const;
+	/// Read a null-terminated UTF-8 string at `offset`.
+	std::string get(uint32_t offset) const;
 
-    bool empty() const { return data_.empty(); }
-    size_t size() const { return data_.size(); }
+	bool empty() const
+	{
+		return data_.empty();
+	}
+	size_t size() const
+	{
+		return data_.size();
+	}
 
 private:
-    std::span<const uint8_t> data_;
+	std::span<const uint8_t> data_;
 };
 
 // ─── #US heap ────────────────────────────────────────────────────────────────
 
 class UserStringsHeap {
 public:
-    explicit UserStringsHeap(std::span<const uint8_t> data);
+	explicit UserStringsHeap(std::span<const uint8_t> data);
 
-    /// Read a UTF-16LE user string at `offset`.  Returns UTF-8.
-    std::string get(uint32_t offset) const;
+	/// Read a UTF-16LE user string at `offset`.  Returns UTF-8.
+	std::string get(uint32_t offset) const;
 
-    bool empty() const { return data_.empty(); }
+	bool empty() const
+	{
+		return data_.empty();
+	}
 
 private:
-    std::span<const uint8_t> data_;
+	std::span<const uint8_t> data_;
 
-    /// Decode @p chars UTF-16LE units from @p src, which is @p srcBytes long.
-    ///
-    /// The count and the buffer size are both parameters on purpose. This used
-    /// to take the count alone, so the only bound on @p src lived in the
-    /// caller, and a helper that cannot state its own bound is a helper whose
-    /// next caller will not honour it. txt::utf16leToUtf8 takes both, and the
-    /// two are now passed through rather than one being reconstructed from the
-    /// other.
-    static std::string utf16leToUtf8(
-            const uint8_t* src, size_t srcBytes, size_t chars);
+	/// Decode @p chars UTF-16LE units from @p src, which is @p srcBytes long.
+	///
+	/// The count and the buffer size are both parameters on purpose. This used
+	/// to take the count alone, so the only bound on @p src lived in the
+	/// caller, and a helper that cannot state its own bound is a helper whose
+	/// next caller will not honour it. txt::utf16leToUtf8 takes both, and the
+	/// two are now passed through rather than one being reconstructed from the
+	/// other.
+	static std::string utf16leToUtf8(const uint8_t* src, size_t srcBytes, size_t chars);
 };
 
 // ─── #GUID heap ───────────────────────────────────────────────────────────────
 
-struct Guid {
-    uint8_t bytes[16] = {};
+struct Guid
+{
+	uint8_t bytes[16] = {};
 
-    std::string toString() const;
-    bool operator==(const Guid& o) const;
+	std::string toString() const;
+	bool operator==(const Guid& o) const;
 };
 
 class GuidHeap {
 public:
-    explicit GuidHeap(std::span<const uint8_t> data);
+	explicit GuidHeap(std::span<const uint8_t> data);
 
-    /// Read a GUID by 1-based index.  Returns all-zeros GUID for index 0.
-    Guid get(uint32_t index) const;
+	/// Read a GUID by 1-based index.  Returns all-zeros GUID for index 0.
+	Guid get(uint32_t index) const;
 
-    bool empty() const { return data_.empty(); }
+	bool empty() const
+	{
+		return data_.empty();
+	}
 
 private:
-    std::span<const uint8_t> data_;
+	std::span<const uint8_t> data_;
 };
 
 // ─── #Blob heap ───────────────────────────────────────────────────────────────
 
 class BlobHeap {
 public:
-    explicit BlobHeap(std::span<const uint8_t> data);
+	explicit BlobHeap(std::span<const uint8_t> data);
 
-    /// Read a blob at `offset`.  Returns the raw bytes (no length prefix).
-    std::span<const uint8_t> get(uint32_t offset) const;
+	/// Read a blob at `offset`.  Returns the raw bytes (no length prefix).
+	std::span<const uint8_t> get(uint32_t offset) const;
 
-    /// Convenience: read blob and return as vector.
-    std::vector<uint8_t> getVec(uint32_t offset) const;
+	/// Convenience: read blob and return as vector.
+	std::vector<uint8_t> getVec(uint32_t offset) const;
 
-    bool empty() const { return data_.empty(); }
-    size_t size() const { return data_.size(); }
+	bool empty() const
+	{
+		return data_.empty();
+	}
+	size_t size() const
+	{
+		return data_.size();
+	}
 
 private:
-    std::span<const uint8_t> data_;
+	std::span<const uint8_t> data_;
 };
 
 // ─── Combined heap set ────────────────────────────────────────────────────────
 
-struct CliHeaps {
-    StringsHeap     strings;
-    UserStringsHeap userStrings;
-    GuidHeap        guids;
-    BlobHeap        blobs;
-    uint8_t         heapSizes = 0; ///< From #~ header
+struct CliHeaps
+{
+	StringsHeap strings;
+	UserStringsHeap userStrings;
+	GuidHeap guids;
+	BlobHeap blobs;
+	uint8_t heapSizes = 0; ///< From #~ header
 
-    CliHeaps(std::span<const uint8_t> strData,
-             std::span<const uint8_t> usData,
-             std::span<const uint8_t> guidData,
-             std::span<const uint8_t> blobData,
-             uint8_t                  heapSizes);
+	CliHeaps(
+		std::span<const uint8_t> strData,
+		std::span<const uint8_t> usData,
+		std::span<const uint8_t> guidData,
+		std::span<const uint8_t> blobData,
+		uint8_t heapSizes);
 
-    /// Returns true if #Strings indices are 4-byte wide.
-    bool wideStrings() const { return (heapSizes & kHeapSizeStrings) != 0; }
-    /// Returns true if #GUID indices are 4-byte wide.
-    bool wideGuid()    const { return (heapSizes & kHeapSizeGUID)    != 0; }
-    /// Returns true if #Blob indices are 4-byte wide.
-    bool wideBlob()    const { return (heapSizes & kHeapSizeBlob)    != 0; }
+	/// Returns true if #Strings indices are 4-byte wide.
+	bool wideStrings() const
+	{
+		return (heapSizes & kHeapSizeStrings) != 0;
+	}
+	/// Returns true if #GUID indices are 4-byte wide.
+	bool wideGuid() const
+	{
+		return (heapSizes & kHeapSizeGUID) != 0;
+	}
+	/// Returns true if #Blob indices are 4-byte wide.
+	bool wideBlob() const
+	{
+		return (heapSizes & kHeapSizeBlob) != 0;
+	}
 };
 
 } // namespace cli_parser

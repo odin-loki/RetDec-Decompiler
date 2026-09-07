@@ -1,9 +1,9 @@
 /**
-* @file tests/utils/math_tests.cpp
-* @brief Tests for the @c math module.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file tests/utils/math_tests.cpp
+ * @brief Tests for the @c math module.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #include <cstdint>
 #include <limits>
@@ -19,15 +19,16 @@ namespace utils {
 namespace tests {
 
 /**
-* @brief Tests for the @c math module.
-*/
-class MathTests: public Test {};
+ * @brief Tests for the @c math module.
+ */
+class MathTests : public Test {};
 
 //
 // countBits()
 //
 
-TEST_F(MathTests, countBitsCountsOK) {
+TEST_F(MathTests, countBitsCountsOK)
+{
 	EXPECT_EQ(0, countBits(0));
 	EXPECT_EQ(1, countBits(1));
 	EXPECT_EQ(1, countBits(2));
@@ -43,7 +44,8 @@ TEST_F(MathTests, countBitsCountsOK) {
 // bitSizeOfNumber()
 //
 
-TEST_F(MathTests, bitSizeOfNumberCountsOK) {
+TEST_F(MathTests, bitSizeOfNumberCountsOK)
+{
 	EXPECT_EQ(1, bitSizeOfNumber(0));
 	EXPECT_EQ(1, bitSizeOfNumber(1));
 	EXPECT_EQ(2, bitSizeOfNumber(2));
@@ -65,7 +67,8 @@ TEST_F(MathTests, bitSizeOfNumberCountsOK) {
 // -fsanitize=undefined -fno-sanitize-recover=undefined catches, and it aborts
 // on the INT64_MIN case with the old body.
 
-TEST_F(MathTests, IsPowerOfTwoAtInt64MinIsFalseAndNotUndefined) {
+TEST_F(MathTests, IsPowerOfTwoAtInt64MinIsFalseAndNotUndefined)
+{
 	// The bit pattern 0x8000000000000000 has exactly one bit set, so a caller
 	// reading it as unsigned would say "power of two". Read as int64_t it is
 	// negative, and a negative alignment is not a power of two under any
@@ -74,7 +77,8 @@ TEST_F(MathTests, IsPowerOfTwoAtInt64MinIsFalseAndNotUndefined) {
 	EXPECT_FALSE(isPowerOfTwoOrZero(std::numeric_limits<std::int64_t>::min()));
 }
 
-TEST_F(MathTests, IsPowerOfTwoRefusesEveryNegativeValue) {
+TEST_F(MathTests, IsPowerOfTwoRefusesEveryNegativeValue)
+{
 	// A signed minimum is what discriminates here, not the small negatives.
 	// `number && !(number & (number - 1))` already answers false for -1, -2
 	// and -8: after promotion those have more than one bit set, so the AND is
@@ -101,7 +105,8 @@ TEST_F(MathTests, IsPowerOfTwoRefusesEveryNegativeValue) {
 	EXPECT_FALSE(isPowerOfTwoOrZero(std::int64_t(-1)));
 }
 
-TEST_F(MathTests, IsPowerOfTwoStillAnswersTheOrdinaryCases) {
+TEST_F(MathTests, IsPowerOfTwoStillAnswersTheOrdinaryCases)
+{
 	EXPECT_FALSE(isPowerOfTwo(0u));
 	EXPECT_TRUE(isPowerOfTwo(1u));
 	EXPECT_TRUE(isPowerOfTwo(2u));

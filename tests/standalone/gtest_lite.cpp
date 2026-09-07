@@ -19,10 +19,22 @@ bool startsWith(const char* s, const char* prefix)
 	return std::strncmp(s, prefix, std::strlen(prefix)) == 0;
 }
 
-const char* green(bool colour) { return colour ? "\033[0;32m" : ""; }
-const char* red(bool colour) { return colour ? "\033[0;31m" : ""; }
-const char* yellow(bool colour) { return colour ? "\033[0;33m" : ""; }
-const char* reset(bool colour) { return colour ? "\033[m" : ""; }
+const char* green(bool colour)
+{
+	return colour ? "\033[0;32m" : "";
+}
+const char* red(bool colour)
+{
+	return colour ? "\033[0;31m" : "";
+}
+const char* yellow(bool colour)
+{
+	return colour ? "\033[0;33m" : "";
+}
+const char* reset(bool colour)
+{
+	return colour ? "\033[m" : "";
+}
 
 bool useColour()
 {
@@ -31,7 +43,7 @@ bool useColour()
 	return term != nullptr && std::strcmp(term, "dumb") != 0;
 }
 
-}  // namespace
+} // namespace
 
 namespace testing {
 
@@ -82,7 +94,7 @@ void InitGoogleTest()
 	InitGoogleTest(&argc, p);
 }
 
-}  // namespace testing
+} // namespace testing
 
 int RUN_ALL_TESTS()
 {
@@ -114,9 +126,8 @@ int RUN_ALL_TESTS()
 		return 0;
 	}
 
-	std::cout << "[==========] Running " << selected.size() << " test"
-			  << (selected.size() == 1 ? "" : "s") << " (gtest-lite, "
-			  << all.size() << " registered).\n";
+	std::cout << "[==========] Running " << selected.size() << " test" << (selected.size() == 1 ? "" : "s")
+			  << " (gtest-lite, " << all.size() << " registered).\n";
 
 	int failed = 0;
 	int skipped = 0;
@@ -139,8 +150,7 @@ int RUN_ALL_TESTS()
 			catch (const std::exception& e)
 			{
 				state().failed = true;
-				state().failures.push_back(
-					std::string("uncaught exception: ") + e.what());
+				state().failures.push_back(std::string("uncaught exception: ") + e.what());
 			}
 			catch (...)
 			{
@@ -160,8 +170,8 @@ int RUN_ALL_TESTS()
 			{
 				++skipped;
 				if (!opts.brief)
-					std::cout << yellow(colour) << "[  SKIPPED ] " << reset(colour)
-							  << full << " (" << state().skipReason << ")\n";
+					std::cout << yellow(colour) << "[  SKIPPED ] " << reset(colour) << full << " ("
+							  << state().skipReason << ")\n";
 			}
 			else if (!opts.brief)
 			{
@@ -170,22 +180,19 @@ int RUN_ALL_TESTS()
 		}
 	}
 
-	const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-						std::chrono::steady_clock::now() - begin)
-						.count();
+	const auto ms =
+		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - begin).count();
 
 	const std::size_t ran = selected.size() * static_cast<std::size_t>(opts.repeat);
-	std::cout << "[==========] " << ran << " test" << (ran == 1 ? "" : "s")
-			  << " ran (" << ms << " ms total).\n";
+	std::cout << "[==========] " << ran << " test" << (ran == 1 ? "" : "s") << " ran (" << ms << " ms total).\n";
 	std::cout << green(colour) << "[  PASSED  ] " << reset(colour)
-			  << (ran - static_cast<std::size_t>(failed) - static_cast<std::size_t>(skipped))
-			  << " test(s).\n";
-	if (skipped > 0)
-		std::cout << yellow(colour) << "[  SKIPPED ] " << reset(colour) << skipped << " test(s).\n";
+			  << (ran - static_cast<std::size_t>(failed) - static_cast<std::size_t>(skipped)) << " test(s).\n";
+	if (skipped > 0) std::cout << yellow(colour) << "[  SKIPPED ] " << reset(colour) << skipped << " test(s).\n";
 	if (failed > 0)
 	{
 		std::cout << red(colour) << "[  FAILED  ] " << reset(colour) << failed << " test(s):\n";
-		for (const auto& n: failedNames) std::cout << red(colour) << "[  FAILED  ] " << reset(colour) << n << "\n";
+		for (const auto& n: failedNames)
+			std::cout << red(colour) << "[  FAILED  ] " << reset(colour) << n << "\n";
 	}
 
 	return failed == 0 ? 0 : 1;

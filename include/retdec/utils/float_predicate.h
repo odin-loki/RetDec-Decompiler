@@ -167,8 +167,14 @@ constexpr bool sameClassT(T x, T y) noexcept
 	return true;
 }
 
-constexpr bool sameClass(double x, double y) noexcept { return sameClassT(x, y); }
-constexpr bool sameClass(float x, float y) noexcept { return sameClassT(x, y); }
+constexpr bool sameClass(double x, double y) noexcept
+{
+	return sameClassT(x, y);
+}
+constexpr bool sameClass(float x, float y) noexcept
+{
+	return sameClassT(x, y);
+}
 
 // ─── nearlyEqual ─────────────────────────────────────────────────────────────
 
@@ -278,11 +284,7 @@ constexpr bool ratioIsValid(double ratio) noexcept
 /// nice. Both call sites in string.cpp already say `!s.empty() && ...`, so
 /// that rule is theirs, hoisted here where it also keeps the zero out of the
 /// multiplication.
-inline bool checkedRatioAtLeast(
-		std::size_t count,
-		std::size_t total,
-		double ratio,
-		bool& atLeast) noexcept
+inline bool checkedRatioAtLeast(std::size_t count, std::size_t total, double ratio, bool& atLeast) noexcept
 {
 	atLeast = false;
 	if (!ratioIsValid(ratio)) return false;
@@ -320,10 +322,7 @@ inline bool ratioAtLeast(std::size_t count, std::size_t total, double ratio) noe
 /// @p total is written on every path. The addition is guarded by
 /// bounds::addFits rather than checked after the fact, which is the same rule
 /// every count in this tree goes through.
-constexpr bool histogramTotal(
-		const std::uint32_t* histogram,
-		std::size_t buckets,
-		std::size_t& total) noexcept
+constexpr bool histogramTotal(const std::uint32_t* histogram, std::size_t buckets, std::size_t& total) noexcept
 {
 	total = 0;
 	if (histogram == nullptr) return false;
@@ -359,12 +358,12 @@ constexpr bool histogramTotal(
 /// bucket count -- 8.0 for a byte histogram.
 template <typename Log2Fn>
 inline bool entropyBitsWith(
-		const std::uint32_t* histogram,
-		std::size_t buckets,
-		std::size_t total,
-		double maxBits,
-		double& out,
-		Log2Fn log2fn) noexcept
+	const std::uint32_t* histogram,
+	std::size_t buckets,
+	std::size_t total,
+	double maxBits,
+	double& out,
+	Log2Fn log2fn) noexcept
 {
 	out = 0.0;
 	if (histogram == nullptr) return false;
@@ -423,17 +422,16 @@ inline bool entropyBitsWith(
 /// std::log2 as a callable, for the production instantiation below.
 struct StdLog2
 {
-	double operator()(double p) const noexcept { return std::log2(p); }
+	double operator()(double p) const noexcept
+	{
+		return std::log2(p);
+	}
 };
 
 /// Entropy of a 256-bucket byte histogram, in bits, in [0, 8].
-inline bool entropyBits(
-		const std::uint32_t* histogram256,
-		std::size_t total,
-		double& out) noexcept
+inline bool entropyBits(const std::uint32_t* histogram256, std::size_t total, double& out) noexcept
 {
-	return entropyBitsWith(
-			histogram256, kByteValues, total, kByteEntropyMax, out, StdLog2{});
+	return entropyBitsWith(histogram256, kByteValues, total, kByteEntropyMax, out, StdLog2{});
 }
 
 } // namespace fpred

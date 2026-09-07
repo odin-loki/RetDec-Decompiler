@@ -64,13 +64,21 @@ namespace {
 
 // AES S-box first-byte fingerprint constants.
 static const std::set<uint64_t> kSBoxConstants = {
-    0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5,
-    0x52, 0x09, 0x6a, 0xd5,  // inverse S-box
+	0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x52, 0x09, 0x6a, 0xd5, // inverse S-box
 };
 
 // Rcon + MixColumns constants.
 static const std::set<uint64_t> kRconConstants = {
-    0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36,
+	0x01,
+	0x02,
+	0x04,
+	0x08,
+	0x10,
+	0x20,
+	0x40,
+	0x80,
+	0x1b,
+	0x36,
 };
 
 // The first row of the S-box and of the inverse S-box, in table order.
@@ -78,12 +86,40 @@ static const std::set<uint64_t> kRconConstants = {
 // ordinary small integers that turn up in any byte-shuffling code — but the
 // *order* is a fingerprint: these are the bytes of a specific permutation.
 static const uint64_t kSBoxTable[] = {
-    0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5,
-    0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
+	0x63,
+	0x7c,
+	0x77,
+	0x7b,
+	0xf2,
+	0x6b,
+	0x6f,
+	0xc5,
+	0x30,
+	0x01,
+	0x67,
+	0x2b,
+	0xfe,
+	0xd7,
+	0xab,
+	0x76,
 };
 static const uint64_t kInvSBoxTable[] = {
-    0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38,
-    0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb,
+	0x52,
+	0x09,
+	0x6a,
+	0xd5,
+	0x30,
+	0x36,
+	0xa5,
+	0x38,
+	0xbf,
+	0x40,
+	0xa3,
+	0x9e,
+	0x81,
+	0xf3,
+	0xd7,
+	0xfb,
 };
 
 // How many consecutive table entries must appear, in table order, before a run
@@ -93,187 +129,207 @@ static const uint64_t kInvSBoxTable[] = {
 // single byte (the old test) matches roughly one function in five.
 static constexpr std::size_t kMinSBoxRun = 4;
 
-static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
-    int n = 0;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs)
-            if (i && i->op == op) ++n;
-    }
-    return n;
+static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+			if (i && i->op == op) ++n;
+	}
+	return n;
 }
 
-static bool hasImmediate(const ssa::SSAFunction& fn, uint64_t val) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs) {
-            if (!i) continue;
-            for (const auto& u : i->uses) {
-                const auto* v = fn.value(u.valueId);
-                if (v && v->kind == ssa::ValueKind::Immediate && v->imm == val)
-                    return true;
-            }
-        }
-    }
-    return false;
+static bool hasImmediate(const ssa::SSAFunction& fn, uint64_t val)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i) continue;
+			for (const auto& u: i->uses)
+			{
+				const auto* v = fn.value(u.valueId);
+				if (v && v->kind == ssa::ValueKind::Immediate && v->imm == val) return true;
+			}
+		}
+	}
+	return false;
 }
 
-static bool hasAnyImmediate(const ssa::SSAFunction& fn, const std::set<uint64_t>& vals) {
-    for (uint64_t v : vals)
-        if (hasImmediate(fn, v)) return true;
-    return false;
+static bool hasAnyImmediate(const ssa::SSAFunction& fn, const std::set<uint64_t>& vals)
+{
+	for (uint64_t v: vals)
+		if (hasImmediate(fn, v)) return true;
+	return false;
 }
 
 // Every Immediate operand in the function, in program order.
-static std::vector<uint64_t> immediateStream(const ssa::SSAFunction& fn) {
-    std::vector<uint64_t> out;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs) {
-            if (!i) continue;
-            for (const auto& u : i->uses) {
-                const auto* v = fn.value(u.valueId);
-                if (v && v->kind == ssa::ValueKind::Immediate) out.push_back(v->imm);
-            }
-        }
-    }
-    return out;
+static std::vector<uint64_t> immediateStream(const ssa::SSAFunction& fn)
+{
+	std::vector<uint64_t> out;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i) continue;
+			for (const auto& u: i->uses)
+			{
+				const auto* v = fn.value(u.valueId);
+				if (v && v->kind == ssa::ValueKind::Immediate) out.push_back(v->imm);
+			}
+		}
+	}
+	return out;
 }
 
 // True when >= kMinSBoxRun consecutive entries of `table` appear in the
 // immediate stream in table order.  Unrelated constants may sit between them —
 // the compiler interleaves indices and addresses — but the relative order of
 // the table entries is preserved, and that is what carries the information.
-static bool hasOrderedRun(const std::vector<uint64_t>& stream,
-                          const uint64_t* table, std::size_t tableLen) {
-    for (std::size_t start = 0; start + kMinSBoxRun <= tableLen; ++start) {
-        std::size_t want = start;
-        for (uint64_t imm : stream) {
-            if (imm != table[want]) continue;
-            ++want;
-            if (want - start >= kMinSBoxRun) return true;
-        }
-    }
-    return false;
+static bool hasOrderedRun(const std::vector<uint64_t>& stream, const uint64_t* table, std::size_t tableLen)
+{
+	for (std::size_t start = 0; start + kMinSBoxRun <= tableLen; ++start)
+	{
+		std::size_t want = start;
+		for (uint64_t imm: stream)
+		{
+			if (imm != table[want]) continue;
+			++want;
+			if (want - start >= kMinSBoxRun) return true;
+		}
+	}
+	return false;
 }
 
-static bool hasSBoxTable(const ssa::SSAFunction& fn) {
-    const auto stream = immediateStream(fn);
-    if (stream.size() < kMinSBoxRun) return false;
-    return hasOrderedRun(stream, kSBoxTable, sizeof(kSBoxTable) / sizeof(kSBoxTable[0]))
-        || hasOrderedRun(stream, kInvSBoxTable, sizeof(kInvSBoxTable) / sizeof(kInvSBoxTable[0]));
+static bool hasSBoxTable(const ssa::SSAFunction& fn)
+{
+	const auto stream = immediateStream(fn);
+	if (stream.size() < kMinSBoxRun) return false;
+	return hasOrderedRun(stream, kSBoxTable, sizeof(kSBoxTable) / sizeof(kSBoxTable[0]))
+		|| hasOrderedRun(stream, kInvSBoxTable, sizeof(kInvSBoxTable) / sizeof(kInvSBoxTable[0]));
 }
 
 } // anonymous namespace
 
-bool AESDetector::hasAESNI(const ssa::SSAFunction& fn) const {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs) {
-            if (!i || i->op != ssa::IrInstr::Op::Call) continue;
-            const auto& cn = i->calleeName;
-            if (cn.find("aesenc")           != std::string::npos ||
-                cn.find("aesenclast")       != std::string::npos ||
-                cn.find("aesdec")           != std::string::npos ||
-                cn.find("aeskeygenassist")  != std::string::npos ||
-                cn.find("_mm_aesenc")       != std::string::npos ||
-                cn.find("_mm_aesdec")       != std::string::npos)
-                return true;
-        }
-    }
-    return false;
+bool AESDetector::hasAESNI(const ssa::SSAFunction& fn) const
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != ssa::IrInstr::Op::Call) continue;
+			const auto& cn = i->calleeName;
+			if (cn.find("aesenc") != std::string::npos || cn.find("aesenclast") != std::string::npos
+				|| cn.find("aesdec") != std::string::npos || cn.find("aeskeygenassist") != std::string::npos
+				|| cn.find("_mm_aesenc") != std::string::npos || cn.find("_mm_aesdec") != std::string::npos)
+				return true;
+		}
+	}
+	return false;
 }
 
-CryptoMode AESDetector::detectMode(const ssa::SSAFunction& fn) const {
-    // GCM: And with 0xe1 (GHASH polynomial) + Xor + Shl.
-    if (hasImmediate(fn, 0xe1) &&
-        countOp(fn, ssa::IrInstr::Op::Xor) >= 2 &&
-        countOp(fn, ssa::IrInstr::Op::Shl) >= 1)
-        return CryptoMode::GCM;
+CryptoMode AESDetector::detectMode(const ssa::SSAFunction& fn) const
+{
+	// GCM: And with 0xe1 (GHASH polynomial) + Xor + Shl.
+	if (hasImmediate(fn, 0xe1) && countOp(fn, ssa::IrInstr::Op::Xor) >= 2 && countOp(fn, ssa::IrInstr::Op::Shl) >= 1)
+		return CryptoMode::GCM;
 
-    // CTR: a counter increment (Add in encryption loop with back-edge).
-    bool hasBackEdge = false;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (uint32_t s : blk->succs) if (s <= b) { hasBackEdge = true; break; }
-    }
-    if (hasBackEdge && countOp(fn, ssa::IrInstr::Op::Add) >= 2 &&
-        countOp(fn, ssa::IrInstr::Op::Xor) >= 1)
-        return CryptoMode::CTR;
+	// CTR: a counter increment (Add in encryption loop with back-edge).
+	bool hasBackEdge = false;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (uint32_t s: blk->succs)
+			if (s <= b)
+			{
+				hasBackEdge = true;
+				break;
+			}
+	}
+	if (hasBackEdge && countOp(fn, ssa::IrInstr::Op::Add) >= 2 && countOp(fn, ssa::IrInstr::Op::Xor) >= 1)
+		return CryptoMode::CTR;
 
-    // CBC: XOR present (IV XOR before encryption).
-    if (countOp(fn, ssa::IrInstr::Op::Xor) >= 1)
-        return CryptoMode::CBC;
+	// CBC: XOR present (IV XOR before encryption).
+	if (countOp(fn, ssa::IrInstr::Op::Xor) >= 1) return CryptoMode::CBC;
 
-    return CryptoMode::ECB;
+	return CryptoMode::ECB;
 }
 
-AESEvidence AESDetector::analyse(const ssa::SSAFunction& fn) const {
-    AESEvidence ev;
-    ev.hasSBox      = hasAnyImmediate(fn, kSBoxConstants);
-    ev.hasRcon      = hasAnyImmediate(fn, kRconConstants) || hasImmediate(fn, 0x1b);
-    ev.hasMixCols   = hasImmediate(fn, 0x1b);
-    ev.hasAESNI     = hasAESNI(fn);
-    ev.hasRoundLoop = countOp(fn, ssa::IrInstr::Op::Xor) >= 4 &&
-                      countOp(fn, ssa::IrInstr::Op::And) >= 1 &&
-                      (countOp(fn, ssa::IrInstr::Op::Shl) >= 1 ||
-                       countOp(fn, ssa::IrInstr::Op::Shr) >= 1);
-    ev.hasSBoxTable = hasSBoxTable(fn);
-    ev.mode = detectMode(fn);
-    // Discriminating evidence only: an ordered run of S-box entries, or an
-    // AES-NI intrinsic.  A lone S-box byte used to be enough, and since the
-    // Rcon set is {1,2,4,8,...} and the "round structure" is four Xors with a
-    // shift, a plain string hash scored 0.75 and was annotated AES — at the
-    // same time as ChaCha20 and RC4 claimed it.
-    ev.found = ev.hasSBoxTable || ev.hasAESNI;
-    ev.confidence = score(ev);
-    return ev;
+AESEvidence AESDetector::analyse(const ssa::SSAFunction& fn) const
+{
+	AESEvidence ev;
+	ev.hasSBox = hasAnyImmediate(fn, kSBoxConstants);
+	ev.hasRcon = hasAnyImmediate(fn, kRconConstants) || hasImmediate(fn, 0x1b);
+	ev.hasMixCols = hasImmediate(fn, 0x1b);
+	ev.hasAESNI = hasAESNI(fn);
+	ev.hasRoundLoop = countOp(fn, ssa::IrInstr::Op::Xor) >= 4 && countOp(fn, ssa::IrInstr::Op::And) >= 1
+				   && (countOp(fn, ssa::IrInstr::Op::Shl) >= 1 || countOp(fn, ssa::IrInstr::Op::Shr) >= 1);
+	ev.hasSBoxTable = hasSBoxTable(fn);
+	ev.mode = detectMode(fn);
+	// Discriminating evidence only: an ordered run of S-box entries, or an
+	// AES-NI intrinsic.  A lone S-box byte used to be enough, and since the
+	// Rcon set is {1,2,4,8,...} and the "round structure" is four Xors with a
+	// shift, a plain string hash scored 0.75 and was annotated AES — at the
+	// same time as ChaCha20 and RC4 claimed it.
+	ev.found = ev.hasSBoxTable || ev.hasAESNI;
+	ev.confidence = score(ev);
+	return ev;
 }
 
-float AESDetector::score(const AESEvidence& ev) const {
-    // Supporting evidence stays supporting: without a discriminating signal it
-    // sums to nothing, the way MD5Detector::score requires its K[] table.
-    //
-    // `found` *is* that disjunction -- analyse() sets it two lines above the
-    // call to this function -- so asking it here keeps one rule in one place.
-    // Re-deriving it was two copies of the gate that would drift apart the
-    // first time either changed.
-    if (!ev.found) return 0.0f;
-    float s = 0.0f;
-    if (ev.hasSBox)      s += 0.30f;
-    if (ev.hasRcon)      s += 0.20f;
-    if (ev.hasMixCols)   s += 0.05f;
-    if (ev.hasRoundLoop) s += 0.25f;
-    if (ev.hasAESNI)     s += 0.20f;
-    return s > 1.0f ? 1.0f : s;
+float AESDetector::score(const AESEvidence& ev) const
+{
+	// Supporting evidence stays supporting: without a discriminating signal it
+	// sums to nothing, the way MD5Detector::score requires its K[] table.
+	//
+	// `found` *is* that disjunction -- analyse() sets it two lines above the
+	// call to this function -- so asking it here keeps one rule in one place.
+	// Re-deriving it was two copies of the gate that would drift apart the
+	// first time either changed.
+	if (!ev.found) return 0.0f;
+	float s = 0.0f;
+	if (ev.hasSBox) s += 0.30f;
+	if (ev.hasRcon) s += 0.20f;
+	if (ev.hasMixCols) s += 0.05f;
+	if (ev.hasRoundLoop) s += 0.25f;
+	if (ev.hasAESNI) s += 0.20f;
+	return s > 1.0f ? 1.0f : s;
 }
 
-CryptoResult AESDetector::detect(const ssa::SSAFunction& fn) const {
-    CryptoResult r;
-    r.algorithm = CryptoAlgorithm::AES;
-    auto ev = analyse(fn);
-    if (!ev.found) return r;
-    r.confidence = ev.confidence;
-    r.hasAESNI   = ev.hasAESNI;
-    r.mode       = ev.mode;
-    if (ev.confidence >= 0.50f) {
-        std::string modeStr = (ev.mode == CryptoMode::CBC) ? "-CBC" :
-                              (ev.mode == CryptoMode::CTR) ? "-CTR" :
-                              (ev.mode == CryptoMode::GCM) ? "-GCM" : "-ECB";
-        r.emittedAnnotation =
-            "// Cryptographic primitive: AES" + modeStr +
-            (ev.hasAESNI ? " (AES-NI hardware acceleration)\n" : "\n") +
-            "// Usage: EVP_EncryptInit_ex(ctx, EVP_aes_128_" +
-            std::string(ev.mode == CryptoMode::GCM ? "gcm" :
-                        ev.mode == CryptoMode::CTR ? "ctr" : "cbc") +
-            "(), nullptr, key, iv);";
-    }
-    return r;
+CryptoResult AESDetector::detect(const ssa::SSAFunction& fn) const
+{
+	CryptoResult r;
+	r.algorithm = CryptoAlgorithm::AES;
+	auto ev = analyse(fn);
+	if (!ev.found) return r;
+	r.confidence = ev.confidence;
+	r.hasAESNI = ev.hasAESNI;
+	r.mode = ev.mode;
+	if (ev.confidence >= 0.50f)
+	{
+		std::string modeStr = (ev.mode == CryptoMode::CBC) ? "-CBC"
+							: (ev.mode == CryptoMode::CTR) ? "-CTR"
+							: (ev.mode == CryptoMode::GCM) ? "-GCM"
+														   : "-ECB";
+		r.emittedAnnotation = "// Cryptographic primitive: AES" + modeStr
+							+ (ev.hasAESNI ? " (AES-NI hardware acceleration)\n" : "\n")
+							+ "// Usage: EVP_EncryptInit_ex(ctx, EVP_aes_128_"
+							+ std::string(
+								  ev.mode == CryptoMode::GCM   ? "gcm"
+								  : ev.mode == CryptoMode::CTR ? "ctr"
+															   : "cbc")
+							+ "(), nullptr, key, iv);";
+	}
+	return r;
 }
 
 } // namespace crypto_detect

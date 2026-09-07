@@ -51,616 +51,625 @@ namespace bounds = ::retdec::utils::bounds;
 
 // ─── Constructor ─────────────────────────────────────────────────────────────
 
-FuncBoundaryDetector::FuncBoundaryDetector(uint64_t imageBase,
-                                           const uint8_t* data,
-                                           std::size_t size,
-                                           bool is64Bit)
-    : _imageBase(imageBase), _data(data), _size(size), _is64Bit(is64Bit)
+FuncBoundaryDetector::FuncBoundaryDetector(uint64_t imageBase, const uint8_t* data, std::size_t size, bool is64Bit):
+	_imageBase(imageBase), _data(data), _size(size), _is64Bit(is64Bit)
 {}
 
 // ─── Raw memory helpers ───────────────────────────────────────────────────────
 
 std::size_t FuncBoundaryDetector::vaToOffset(uint64_t va) const noexcept
 {
-    // This used to be nothing but (va - imageBase), which assumes the file on
-    // disk is laid out exactly as it is mapped.  No real image is: a PE maps
-    // at SectionAlignment (0x1000) and stores at FileAlignment (0x200), so the
-    // canonical .text at RVA 0x1000 / raw 0x400 was read 3 KB past its own
-    // bytes; every ELF segment after the first is skewed the same way.  Go
-    // through the section that contains the address instead, using the raw
-    // offset registered with it.
-    for (const auto& s : _execSections) {
-        if (va < s.start || va >= s.end) continue;
+	// This used to be nothing but (va - imageBase), which assumes the file on
+	// disk is laid out exactly as it is mapped.  No real image is: a PE maps
+	// at SectionAlignment (0x1000) and stores at FileAlignment (0x200), so the
+	// canonical .text at RVA 0x1000 / raw 0x400 was read 3 KB past its own
+	// bytes; every ELF segment after the first is skewed the same way.  Go
+	// through the section that contains the address instead, using the raw
+	// offset registered with it.
+	for (const auto& s: _execSections)
+	{
+		if (va < s.start || va >= s.end) continue;
 
-        const uint64_t delta = va - s.start;
-        // Past the section's file bytes: the virtual tail (.bss, a PE
-        // virtual-size overhang) exists in memory but not in the buffer, so
-        // there is no offset to give — saying "unmapped" beats handing back
-        // whatever section happens to follow on disk.
-        if (delta >= s.rawSize) return _size;
-        if (delta >= _size)     return _size;
+		const uint64_t delta = va - s.start;
+		// Past the section's file bytes: the virtual tail (.bss, a PE
+		// virtual-size overhang) exists in memory but not in the buffer, so
+		// there is no offset to give — saying "unmapped" beats handing back
+		// whatever section happens to follow on disk.
+		if (delta >= s.rawSize) return _size;
+		if (delta >= _size) return _size;
 
-        const std::size_t base = (s.rawOffset > _size)
-            ? _size
-            : static_cast<std::size_t>(s.rawOffset);
-        const std::size_t d = static_cast<std::size_t>(delta);
-        // At least one byte has to be readable at base + d.
-        if (!bounds::rangeFits(base, _size, d + 1)) return _size;
-        return base + d;
-    }
+		const std::size_t base = (s.rawOffset > _size) ? _size : static_cast<std::size_t>(s.rawOffset);
+		const std::size_t d = static_cast<std::size_t>(delta);
+		// At least one byte has to be readable at base + d.
+		if (!bounds::rangeFits(base, _size, d + 1)) return _size;
+		return base + d;
+	}
 
-    // A section map was supplied and the address is in none of it: unmapped.
-    // Falling back to the flat guess here would reintroduce the bug for every
-    // address outside the sections the caller told us about.
-    if (!_execSections.empty()) return _size;
+	// A section map was supplied and the address is in none of it: unmapped.
+	// Falling back to the flat guess here would reintroduce the bug for every
+	// address outside the sections the caller told us about.
+	if (!_execSections.empty()) return _size;
 
-    // No section map at all — the caller's buffer is the memory image.
-    if (va < _imageBase) return _size;
-    uint64_t off = va - _imageBase;
-    if (off >= _size) return _size;
-    return static_cast<std::size_t>(off);
+	// No section map at all — the caller's buffer is the memory image.
+	if (va < _imageBase) return _size;
+	uint64_t off = va - _imageBase;
+	if (off >= _size) return _size;
+	return static_cast<std::size_t>(off);
 }
 
-bool FuncBoundaryDetector::sectionRawRange(const ExecSection& sec,
-                                            std::size_t& startOff,
-                                            std::size_t& endOff) const noexcept
+bool FuncBoundaryDetector::sectionRawRange(
+	const ExecSection& sec, std::size_t& startOff, std::size_t& endOff) const noexcept
 {
-    startOff = 0;
-    endOff   = 0;
-    if (sec.end <= sec.start) return false;
-    if (sec.rawOffset >= _size) return false;
+	startOff = 0;
+	endOff = 0;
+	if (sec.end <= sec.start) return false;
+	if (sec.rawOffset >= _size) return false;
 
-    const std::size_t start = static_cast<std::size_t>(sec.rawOffset);
-    // The scannable span is the smaller of the virtual extent and the bytes
-    // stored for the section, and then only as far as the buffer reaches.
-    const uint64_t virtSpan = sec.end - sec.start;
-    const uint64_t span64   = std::min(virtSpan, sec.rawSize);
-    const std::size_t span  = (span64 > _size)
-        ? _size
-        : static_cast<std::size_t>(span64);
-    const std::size_t len = bounds::clamp(span, bounds::remaining(start, _size));
-    if (len == 0) return false;
+	const std::size_t start = static_cast<std::size_t>(sec.rawOffset);
+	// The scannable span is the smaller of the virtual extent and the bytes
+	// stored for the section, and then only as far as the buffer reaches.
+	const uint64_t virtSpan = sec.end - sec.start;
+	const uint64_t span64 = std::min(virtSpan, sec.rawSize);
+	const std::size_t span = (span64 > _size) ? _size : static_cast<std::size_t>(span64);
+	const std::size_t len = bounds::clamp(span, bounds::remaining(start, _size));
+	if (len == 0) return false;
 
-    startOff = start;
-    endOff   = start + len;
-    return true;
+	startOff = start;
+	endOff = start + len;
+	return true;
 }
 
 uint32_t FuncBoundaryDetector::readU32(std::size_t off) const noexcept
 {
-    // `off + 4 > _size` forms the sum first, which is the idiom bounds.h exists
-    // to replace. Not reachable today -- every caller's off is already inside
-    // the buffer -- but the sibling LoaderSim::inBounds is already written the
-    // other way, and one of the two spellings is going to be copied next.
-    if (!bounds::rangeFits(off, _size, 4)) return 0;
-    uint32_t v = 0;
-    for (int i = 0; i < 4; ++i) v |= static_cast<uint32_t>(_data[off+i]) << (i*8);
-    return v;
+	// `off + 4 > _size` forms the sum first, which is the idiom bounds.h exists
+	// to replace. Not reachable today -- every caller's off is already inside
+	// the buffer -- but the sibling LoaderSim::inBounds is already written the
+	// other way, and one of the two spellings is going to be copied next.
+	if (!bounds::rangeFits(off, _size, 4)) return 0;
+	uint32_t v = 0;
+	for (int i = 0; i < 4; ++i)
+		v |= static_cast<uint32_t>(_data[off + i]) << (i * 8);
+	return v;
 }
 
 // ─── Candidate management ─────────────────────────────────────────────────────
 
-void FuncBoundaryDetector::updateConfidence(FunctionBoundary& fb,
-                                             EvidenceSource src)
+void FuncBoundaryDetector::updateConfidence(FunctionBoundary& fb, EvidenceSource src)
 {
-    double w = evidenceConfidence(src);
-    // Bayesian-like update: combine existing confidence with new evidence.
-    // P(func | e1, e2) ∝ P(func | e1) * w  (simplified product rule).
-    // Capped at 1.0.
-    fb.confidence = std::min(1.0, fb.confidence + w * (1.0 - fb.confidence));
-    fb.allEvidence.push_back(src);
+	double w = evidenceConfidence(src);
+	// Bayesian-like update: combine existing confidence with new evidence.
+	// P(func | e1, e2) ∝ P(func | e1) * w  (simplified product rule).
+	// Capped at 1.0.
+	fb.confidence = std::min(1.0, fb.confidence + w * (1.0 - fb.confidence));
+	fb.allEvidence.push_back(src);
 
-    if (w > evidenceConfidence(fb.primaryEvidence))
-        fb.primaryEvidence = src;
+	if (w > evidenceConfidence(fb.primaryEvidence)) fb.primaryEvidence = src;
 }
 
-void FuncBoundaryDetector::ensureCandidate(uint64_t addr,
-                                            EvidenceSource src,
-                                            const std::string& name)
+void FuncBoundaryDetector::ensureCandidate(uint64_t addr, EvidenceSource src, const std::string& name)
 {
-    auto it = _candidates.find(addr);
-    if (it == _candidates.end()) {
-        FunctionBoundary fb;
-        fb.startAddr      = addr;
-        fb.confidence     = evidenceConfidence(src);
-        fb.primaryEvidence = src;
-        fb.allEvidence.push_back(src);
-        if (!name.empty()) fb.name = name;
-        _candidates[addr] = std::move(fb);
-    } else {
-        updateConfidence(it->second, src);
-        if (!name.empty() && it->second.name.empty())
-            it->second.name = name;
-    }
-    _sortedDirty = true;
+	auto it = _candidates.find(addr);
+	if (it == _candidates.end())
+	{
+		FunctionBoundary fb;
+		fb.startAddr = addr;
+		fb.confidence = evidenceConfidence(src);
+		fb.primaryEvidence = src;
+		fb.allEvidence.push_back(src);
+		if (!name.empty()) fb.name = name;
+		_candidates[addr] = std::move(fb);
+	}
+	else
+	{
+		updateConfidence(it->second, src);
+		if (!name.empty() && it->second.name.empty()) it->second.name = name;
+	}
+	_sortedDirty = true;
 }
 
 // ─── Evidence injection ───────────────────────────────────────────────────────
 
 void FuncBoundaryDetector::addEntryPoint(uint64_t addr)
 {
-    ensureCandidate(addr, EvidenceSource::EntryPoint, "entry");
+	ensureCandidate(addr, EvidenceSource::EntryPoint, "entry");
 }
 
 void FuncBoundaryDetector::addCallTarget(uint64_t addr)
 {
-    ensureCandidate(addr, EvidenceSource::CallTarget);
+	ensureCandidate(addr, EvidenceSource::CallTarget);
 }
 
-void FuncBoundaryDetector::addSymbol(const std::string& name, uint64_t addr,
-                                      EvidenceSource src)
+void FuncBoundaryDetector::addSymbol(const std::string& name, uint64_t addr, EvidenceSource src)
 {
-    ensureCandidate(addr, src, name);
+	ensureCandidate(addr, src, name);
 }
 
 void FuncBoundaryDetector::addTLSCallback(uint64_t addr)
 {
-    ensureCandidate(addr, EvidenceSource::TLSCallback, "__tls_init");
+	ensureCandidate(addr, EvidenceSource::TLSCallback, "__tls_init");
 }
 
 void FuncBoundaryDetector::addExceptionHandler(uint64_t addr)
 {
-    ensureCandidate(addr, EvidenceSource::ExceptionHandler);
+	ensureCandidate(addr, EvidenceSource::ExceptionHandler);
 }
 
 void FuncBoundaryDetector::addExecutableSection(uint64_t start, uint64_t end)
 {
-    // Caller gave us no file layout, so the only mapping we can assume is the
-    // flat one this class used to assume for everything.  It is correct when
-    // the buffer already is the memory image, which is what this overload
-    // documents; anything read out of a file should use the four-argument form.
-    //
-    // A section starting below the image base has no flat mapping to express
-    // (the offset would be negative), so it contributes no readable bytes —
-    // which is what vaToOffset already answered for those addresses.
-    const bool mappable = (start >= _imageBase) && (end > start);
-    const uint64_t rawOffset = mappable ? (start - _imageBase) : 0;
-    const uint64_t rawSize   = mappable ? (end - start) : 0;
-    _execSections.push_back({start, end, rawOffset, rawSize});
+	// Caller gave us no file layout, so the only mapping we can assume is the
+	// flat one this class used to assume for everything.  It is correct when
+	// the buffer already is the memory image, which is what this overload
+	// documents; anything read out of a file should use the four-argument form.
+	//
+	// A section starting below the image base has no flat mapping to express
+	// (the offset would be negative), so it contributes no readable bytes —
+	// which is what vaToOffset already answered for those addresses.
+	const bool mappable = (start >= _imageBase) && (end > start);
+	const uint64_t rawOffset = mappable ? (start - _imageBase) : 0;
+	const uint64_t rawSize = mappable ? (end - start) : 0;
+	_execSections.push_back({start, end, rawOffset, rawSize});
 }
 
-void FuncBoundaryDetector::addExecutableSection(uint64_t start, uint64_t end,
-                                                 uint64_t rawOffset,
-                                                 uint64_t rawSize)
+void FuncBoundaryDetector::addExecutableSection(uint64_t start, uint64_t end, uint64_t rawOffset, uint64_t rawSize)
 {
-    _execSections.push_back({start, end, rawOffset, rawSize});
+	_execSections.push_back({start, end, rawOffset, rawSize});
 }
 
-void FuncBoundaryDetector::addImport(uint64_t vma, const std::string& dll,
-                                      const std::string& symbol)
+void FuncBoundaryDetector::addImport(uint64_t vma, const std::string& dll, const std::string& symbol)
 {
-    ImportEntry ie;
-    ie.vma    = vma;
-    ie.dll    = dll;
-    ie.symbol = symbol;
-    _imports[vma]    = ie;
-    _importByName[symbol] = vma;
+	ImportEntry ie;
+	ie.vma = vma;
+	ie.dll = dll;
+	ie.symbol = symbol;
+	_imports[vma] = ie;
+	_importByName[symbol] = vma;
 }
 
 // ─── Prologue patterns ────────────────────────────────────────────────────────
 
-std::vector<ProloguePattern>
-FuncBoundaryDetector::prologuePatterns(CompilerHint hint)
+std::vector<ProloguePattern> FuncBoundaryDetector::prologuePatterns(CompilerHint hint)
 {
-    std::vector<ProloguePattern> pats;
+	std::vector<ProloguePattern> pats;
 
-    // ── GCC / Clang x86-64 ───────────────────────────────────────────────────
+	// ── GCC / Clang x86-64 ───────────────────────────────────────────────────
 
-    if (hint == CompilerHint::Unknown || hint == CompilerHint::GCC ||
-        hint == CompilerHint::Clang) {
+	if (hint == CompilerHint::Unknown || hint == CompilerHint::GCC || hint == CompilerHint::Clang)
+	{
+		// push rbp; mov rbp, rsp  (55 48 89 E5)
+		pats.push_back({"gcc_frame", {0x55, 0x48, 0x89, 0xE5}, 0.85, 0.60});
 
-        // push rbp; mov rbp, rsp  (55 48 89 E5)
-        pats.push_back({"gcc_frame", {0x55, 0x48, 0x89, 0xE5}, 0.85, 0.60});
+		// push rbp; mov rbp, rsp; push rbx  (55 48 89 E5 53)
+		pats.push_back({"gcc_frame_rbx", {0x55, 0x48, 0x89, 0xE5, 0x53}, 0.87, 0.65});
 
-        // push rbp; mov rbp, rsp; push rbx  (55 48 89 E5 53)
-        pats.push_back({"gcc_frame_rbx", {0x55, 0x48, 0x89, 0xE5, 0x53}, 0.87, 0.65});
+		// push rbp; mov rbp, rsp; sub rsp, N  (55 48 89 E5 48 83 EC -1)
+		pats.push_back({"gcc_frame_sub", {0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xEC, -1}, 0.88, 0.65});
 
-        // push rbp; mov rbp, rsp; sub rsp, N  (55 48 89 E5 48 83 EC -1)
-        pats.push_back({"gcc_frame_sub", {0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xEC, -1}, 0.88, 0.65});
+		// endbr64; push rbp; mov rbp, rsp  (F3 0F 1E FA 55 48 89 E5)
+		pats.push_back({"clang_endbr64", {0xF3, 0x0F, 0x1E, 0xFA, 0x55, 0x48, 0x89, 0xE5}, 0.90, 0.70});
 
-        // endbr64; push rbp; mov rbp, rsp  (F3 0F 1E FA 55 48 89 E5)
-        pats.push_back({"clang_endbr64", {0xF3, 0x0F, 0x1E, 0xFA, 0x55, 0x48, 0x89, 0xE5}, 0.90, 0.70});
+		// sub rsp, N (no frame pointer — leaf function)  (48 83 EC -1)
+		pats.push_back({"gcc_leaf_sub4", {0x48, 0x83, 0xEC, -1}, 0.75, 0.55});
 
-        // sub rsp, N (no frame pointer — leaf function)  (48 83 EC -1)
-        pats.push_back({"gcc_leaf_sub4", {0x48, 0x83, 0xEC, -1}, 0.75, 0.55});
+		// sub rsp, N32  (48 81 EC -1 -1 -1 -1)
+		pats.push_back({"gcc_leaf_sub32", {0x48, 0x81, 0xEC, -1, -1, -1, -1}, 0.75, 0.55});
 
-        // sub rsp, N32  (48 81 EC -1 -1 -1 -1)
-        pats.push_back({"gcc_leaf_sub32", {0x48, 0x81, 0xEC, -1, -1, -1, -1}, 0.75, 0.55});
+		// push r15; push r14; push r13 (common in large GCC functions)
+		pats.push_back({"gcc_pushregs", {0x41, 0x57, 0x41, 0x56, 0x41, 0x55}, 0.70, 0.50});
+	}
 
-        // push r15; push r14; push r13 (common in large GCC functions)
-        pats.push_back({"gcc_pushregs", {0x41, 0x57, 0x41, 0x56, 0x41, 0x55}, 0.70, 0.50});
-    }
+	// ── MSVC x86-64 ──────────────────────────────────────────────────────────
 
-    // ── MSVC x86-64 ──────────────────────────────────────────────────────────
+	if (hint == CompilerHint::Unknown || hint == CompilerHint::MSVC)
+	{
+		// mov [rsp+8], rcx  (48 89 4C 24 08) — MSVC homespill pattern
+		pats.push_back({"msvc_homespill", {0x48, 0x89, 0x4C, 0x24, 0x08}, 0.75, 0.55});
 
-    if (hint == CompilerHint::Unknown || hint == CompilerHint::MSVC) {
+		// sub rsp, 28h  (48 83 EC 28)  — 5-element shadow space
+		pats.push_back({"msvc_shadow28", {0x48, 0x83, 0xEC, 0x28}, 0.80, 0.60});
 
-        // mov [rsp+8], rcx  (48 89 4C 24 08) — MSVC homespill pattern
-        pats.push_back({"msvc_homespill", {0x48, 0x89, 0x4C, 0x24, 0x08}, 0.75, 0.55});
+		// sub rsp, 38h  (48 83 EC 38)
+		pats.push_back({"msvc_shadow38", {0x48, 0x83, 0xEC, 0x38}, 0.80, 0.60});
 
-        // sub rsp, 28h  (48 83 EC 28)  — 5-element shadow space
-        pats.push_back({"msvc_shadow28", {0x48, 0x83, 0xEC, 0x28}, 0.80, 0.60});
+		// push rdi; push rsi; push rbx; sub rsp, N  (57 56 53 48 83 EC -1)
+		pats.push_back({"msvc_saveregs", {0x57, 0x56, 0x53, 0x48, 0x83, 0xEC, -1}, 0.82, 0.62});
 
-        // sub rsp, 38h  (48 83 EC 38)
-        pats.push_back({"msvc_shadow38", {0x48, 0x83, 0xEC, 0x38}, 0.80, 0.60});
+		// mov [rsp+8], rbx; mov [rsp+16], rbp  (MSVC non-volatile saves)
+		pats.push_back({"msvc_save_rbx", {0x48, 0x89, 0x5C, 0x24, -1, 0x48, 0x89, 0x6C}, 0.78, 0.58});
+	}
 
-        // push rdi; push rsi; push rbx; sub rsp, N  (57 56 53 48 83 EC -1)
-        pats.push_back({"msvc_saveregs", {0x57, 0x56, 0x53, 0x48, 0x83, 0xEC, -1}, 0.82, 0.62});
-
-        // mov [rsp+8], rbx; mov [rsp+16], rbp  (MSVC non-volatile saves)
-        pats.push_back({"msvc_save_rbx", {0x48, 0x89, 0x5C, 0x24, -1, 0x48, 0x89, 0x6C}, 0.78, 0.58});
-    }
-
-    return pats;
+	return pats;
 }
 
-double FuncBoundaryDetector::matchPrologue(const ProloguePattern& pat,
-                                            const uint8_t*         bytes,
-                                            std::size_t            available)
+double FuncBoundaryDetector::matchPrologue(const ProloguePattern& pat, const uint8_t* bytes, std::size_t available)
 {
-    if (pat.bytes.empty() || available == 0) return 0.0;
+	if (pat.bytes.empty() || available == 0) return 0.0;
 
-    std::size_t patLen = pat.bytes.size();
-    std::size_t matchLen = std::min(patLen, available);
-    std::size_t matched = 0;
+	std::size_t patLen = pat.bytes.size();
+	std::size_t matchLen = std::min(patLen, available);
+	std::size_t matched = 0;
 
-    for (std::size_t i = 0; i < matchLen; ++i) {
-        int pb = pat.bytes[i];
-        if (pb == -1) { ++matched; continue; }   // wildcard
-        if (bytes[i] == static_cast<uint8_t>(pb)) { ++matched; continue; }
-        break; // mismatch terminates
-    }
+	for (std::size_t i = 0; i < matchLen; ++i)
+	{
+		int pb = pat.bytes[i];
+		if (pb == -1)
+		{
+			++matched;
+			continue;
+		} // wildcard
+		if (bytes[i] == static_cast<uint8_t>(pb))
+		{
+			++matched;
+			continue;
+		}
+		break; // mismatch terminates
+	}
 
-    if (matched == patLen) return pat.fullScore;
-    if (matched * 2 >= patLen) return pat.partialScore; // ≥50% matched
-    return 0.0;
+	if (matched == patLen) return pat.fullScore;
+	if (matched * 2 >= patLen) return pat.partialScore; // ≥50% matched
+	return 0.0;
 }
 
 // ─── Pass 2: CALL target scan ─────────────────────────────────────────────────
 
 void FuncBoundaryDetector::scanCallTargets(const ExecSection& sec)
 {
-    // The buffer range comes from the section's own raw offset and size, not
-    // from translating its end VA: the end is one past the section, so it maps
-    // to nothing, and the virtual extent may be larger than the stored bytes.
-    std::size_t startOff = 0, endOff = 0;
-    if (!sectionRawRange(sec, startOff, endOff)) return;
+	// The buffer range comes from the section's own raw offset and size, not
+	// from translating its end VA: the end is one past the section, so it maps
+	// to nothing, and the virtual extent may be larger than the stored bytes.
+	std::size_t startOff = 0, endOff = 0;
+	if (!sectionRawRange(sec, startOff, endOff)) return;
 
-    const uint64_t secStart = sec.start;
+	const uint64_t secStart = sec.start;
 
-    for (std::size_t off = startOff; off + 4 < endOff; ++off) {
-        uint8_t b = _data[off];
+	for (std::size_t off = startOff; off + 4 < endOff; ++off)
+	{
+		uint8_t b = _data[off];
 
-        // E8 rel32 — CALL rel32
-        if (b == 0xE8) {
-            int32_t rel = static_cast<int32_t>(readU32(off + 1));
-            uint64_t target = secStart + (off - startOff) + 5 + rel;
-            // Accept a target we can actually translate to bytes.  The old
-            // test was [imageBase, imageBase + size), which is the flat
-            // assumption again and lets through addresses that are nowhere in
-            // the file once sections are mapped at their real offsets.
-            if (vaToOffset(target) < _size) {
-                ensureCandidate(target, EvidenceSource::CallTarget);
-            }
-            off += 4; // skip rel32
-        }
-        // FF 15 rel32 (CALL [RIP+rel]) — indirect, skip
-        // FF D? — CALL reg — indirect, target unknown at scan time
-    }
+		// E8 rel32 — CALL rel32
+		if (b == 0xE8)
+		{
+			int32_t rel = static_cast<int32_t>(readU32(off + 1));
+			uint64_t target = secStart + (off - startOff) + 5 + rel;
+			// Accept a target we can actually translate to bytes.  The old
+			// test was [imageBase, imageBase + size), which is the flat
+			// assumption again and lets through addresses that are nowhere in
+			// the file once sections are mapped at their real offsets.
+			if (vaToOffset(target) < _size)
+			{
+				ensureCandidate(target, EvidenceSource::CallTarget);
+			}
+			off += 4; // skip rel32
+		}
+		// FF 15 rel32 (CALL [RIP+rel]) — indirect, skip
+		// FF D? — CALL reg — indirect, target unknown at scan time
+	}
 }
 
 // ─── Pass 2: prologue scan ────────────────────────────────────────────────────
 
-void FuncBoundaryDetector::scanSectionPrologues(
-    const ExecSection& sec,
-    const std::vector<ProloguePattern>& patterns)
+void FuncBoundaryDetector::scanSectionPrologues(const ExecSection& sec, const std::vector<ProloguePattern>& patterns)
 {
-    std::size_t startOff = 0, endOff = 0;
-    if (!sectionRawRange(sec, startOff, endOff)) return;
+	std::size_t startOff = 0, endOff = 0;
+	if (!sectionRawRange(sec, startOff, endOff)) return;
 
-    for (std::size_t off = startOff; off < endOff; ++off) {
-        // The address of these bytes is the section's start plus how far into
-        // the section they are — `_imageBase + off` only agrees with that when
-        // the file happens to be laid out like the memory image.
-        uint64_t va = sec.start + (off - startOff);
-        // Skip addresses already confirmed at high confidence.
-        auto it = _candidates.find(va);
-        if (it != _candidates.end() && it->second.confidence >= 0.85) continue;
+	for (std::size_t off = startOff; off < endOff; ++off)
+	{
+		// The address of these bytes is the section's start plus how far into
+		// the section they are — `_imageBase + off` only agrees with that when
+		// the file happens to be laid out like the memory image.
+		uint64_t va = sec.start + (off - startOff);
+		// Skip addresses already confirmed at high confidence.
+		auto it = _candidates.find(va);
+		if (it != _candidates.end() && it->second.confidence >= 0.85) continue;
 
-        std::size_t avail = endOff - off;
-        for (const auto& pat : patterns) {
-            double score = matchPrologue(pat, _data + off, avail);
-            if (score <= 0.0) continue;
+		std::size_t avail = endOff - off;
+		for (const auto& pat: patterns)
+		{
+			double score = matchPrologue(pat, _data + off, avail);
+			if (score <= 0.0) continue;
 
-            EvidenceSource src = (score >= pat.fullScore)
-                ? EvidenceSource::PrologueFull
-                : EvidenceSource::ProloguePartial;
+			EvidenceSource src =
+				(score >= pat.fullScore) ? EvidenceSource::PrologueFull : EvidenceSource::ProloguePartial;
 
-            // Only promote if score ≥ 0.70 for partial, always for full.
-            if (score < 0.70 && src == EvidenceSource::ProloguePartial) continue;
+			// Only promote if score ≥ 0.70 for partial, always for full.
+			if (score < 0.70 && src == EvidenceSource::ProloguePartial) continue;
 
-            ensureCandidate(va, src);
-            break; // one pattern match per offset is enough
-        }
-    }
+			ensureCandidate(va, src);
+			break; // one pattern match per offset is enough
+		}
+	}
 }
 
 // ─── Pass 1 ───────────────────────────────────────────────────────────────────
 
 void FuncBoundaryDetector::runPass1()
 {
-    // All direct evidence was already injected by the caller via add*().
-    // Pass 1 just finalises the existing candidates — nothing more to do here
-    // since candidates are accumulated on injection.
-    _sortedDirty = true;
+	// All direct evidence was already injected by the caller via add*().
+	// Pass 1 just finalises the existing candidates — nothing more to do here
+	// since candidates are accumulated on injection.
+	_sortedDirty = true;
 }
 
 // ─── Pass 2 ───────────────────────────────────────────────────────────────────
 
 void FuncBoundaryDetector::runPass2(CompilerHint hint)
 {
-    auto patterns = prologuePatterns(hint);
+	auto patterns = prologuePatterns(hint);
 
-    for (const auto& sec : _execSections) {
-        scanCallTargets(sec);
-        scanSectionPrologues(sec, patterns);
-    }
-    _sortedDirty = true;
+	for (const auto& sec: _execSections)
+	{
+		scanCallTargets(sec);
+		scanSectionPrologues(sec, patterns);
+	}
+	_sortedDirty = true;
 }
 
 // ─── Pass 3: non-returning ────────────────────────────────────────────────────
 
 bool FuncBoundaryDetector::isKnownNonReturner(const std::string& sym) noexcept
 {
-    static const char* const kSeeds[] = {
-        "exit", "_exit", "_Exit", "abort", "__stack_chk_fail",
-        "longjmp", "__longjmp_chk", "siglongjmp", "quick_exit",
-        "TerminateProcess", "RaiseException", "_endthread",
-        "__cxa_throw", "__cxa_rethrow",
-        "terminate",       // std::terminate
-        "std::terminate",
-        "std::abort",
-        "__assert_fail", "__assert_rtn",
-        "_wassert",        // MSVC assertion
-        "FatalAppExitA", "FatalAppExitW",
-        "ExitProcess",
-        nullptr
-    };
-    for (const char* const* p = kSeeds; *p; ++p) {
-        if (sym == *p) return true;
-    }
-    return false;
+	static const char* const kSeeds[] = {
+		"exit",           "_exit",         "_Exit",         "abort",         "__stack_chk_fail",
+		"longjmp",        "__longjmp_chk", "siglongjmp",    "quick_exit",    "TerminateProcess",
+		"RaiseException", "_endthread",    "__cxa_throw",   "__cxa_rethrow",
+		"terminate", // std::terminate
+		"std::terminate", "std::abort",    "__assert_fail", "__assert_rtn",
+		"_wassert", // MSVC assertion
+		"FatalAppExitA",  "FatalAppExitW", "ExitProcess",   nullptr};
+	for (const char* const* p = kSeeds; *p; ++p)
+	{
+		if (sym == *p) return true;
+	}
+	return false;
 }
 
 void FuncBoundaryDetector::seedNonReturning()
 {
-    // Seed from import names.
-    for (const auto& [vma, imp] : _imports) {
-        if (isKnownNonReturner(imp.symbol)) {
-            _nonReturning.insert(vma);
-            // If there's a candidate for this VMA, mark it.
-            auto it = _candidates.find(vma);
-            if (it != _candidates.end())
-                it->second.isNonReturning = true;
-        }
-    }
-    // Seed from symbol names of candidates.
-    for (auto& [addr, fb] : _candidates) {
-        if (!fb.name.empty() && isKnownNonReturner(fb.name)) {
-            fb.isNonReturning = true;
-            _nonReturning.insert(addr);
-        }
-    }
+	// Seed from import names.
+	for (const auto& [vma, imp]: _imports)
+	{
+		if (isKnownNonReturner(imp.symbol))
+		{
+			_nonReturning.insert(vma);
+			// If there's a candidate for this VMA, mark it.
+			auto it = _candidates.find(vma);
+			if (it != _candidates.end()) it->second.isNonReturning = true;
+		}
+	}
+	// Seed from symbol names of candidates.
+	for (auto& [addr, fb]: _candidates)
+	{
+		if (!fb.name.empty() && isKnownNonReturner(fb.name))
+		{
+			fb.isNonReturning = true;
+			_nonReturning.insert(addr);
+		}
+	}
 }
 
 void FuncBoundaryDetector::propagateNonReturning()
 {
-    // Simple fixpoint: iterate over all candidates and mark any whose name
-    // is a known non-returner.  A full propagation would require CFG analysis;
-    // here we do a conservative name-based + import-address propagation.
-    bool changed = true;
-    while (changed) {
-        changed = false;
-        for (auto& [addr, fb] : _candidates) {
-            if (fb.isNonReturning) continue;
-            // Check if the function name matches any seed.
-            if (!fb.name.empty() && isKnownNonReturner(fb.name)) {
-                fb.isNonReturning = true;
-                _nonReturning.insert(addr);
-                changed = true;
-            }
-        }
-    }
+	// Simple fixpoint: iterate over all candidates and mark any whose name
+	// is a known non-returner.  A full propagation would require CFG analysis;
+	// here we do a conservative name-based + import-address propagation.
+	bool changed = true;
+	while (changed)
+	{
+		changed = false;
+		for (auto& [addr, fb]: _candidates)
+		{
+			if (fb.isNonReturning) continue;
+			// Check if the function name matches any seed.
+			if (!fb.name.empty() && isKnownNonReturner(fb.name))
+			{
+				fb.isNonReturning = true;
+				_nonReturning.insert(addr);
+				changed = true;
+			}
+		}
+	}
 }
 
 // ─── Pass 3: thunk detection ─────────────────────────────────────────────────
 
-uint64_t FuncBoundaryDetector::detectThunkAt(uint64_t va,
-                                              std::size_t off,
-                                              std::size_t endOff) const noexcept
+uint64_t FuncBoundaryDetector::detectThunkAt(uint64_t va, std::size_t off, std::size_t endOff) const noexcept
 {
-    // Bounded by the section that supplied `va`, not by the buffer.
-    //
-    // A thunk's operand belongs to the same section as its opcode. Reading to
-    // the end of the *buffer* means a lone 0xE9 as the last stored byte of
-    // .text reads its rel32 out of whatever section follows on disk, and
-    // reports a jump to an address in no registered section at all -- in
-    // bounds, so not a memory-safety bug, but a fabricated thunk target.
-    // scanSectionPrologues and scanCallTargets already bound by the section;
-    // this was the one that did not, in the same file as the fix that added
-    // sectionRawRange() for exactly this.
-    const std::size_t limit = (endOff < _size) ? endOff : _size;
-    if (!bounds::rangeFits(off, limit, 3)) return 0;
+	// Bounded by the section that supplied `va`, not by the buffer.
+	//
+	// A thunk's operand belongs to the same section as its opcode. Reading to
+	// the end of the *buffer* means a lone 0xE9 as the last stored byte of
+	// .text reads its rel32 out of whatever section follows on disk, and
+	// reports a jump to an address in no registered section at all -- in
+	// bounds, so not a memory-safety bug, but a fabricated thunk target.
+	// scanSectionPrologues and scanCallTargets already bound by the section;
+	// this was the one that did not, in the same file as the fix that added
+	// sectionRawRange() for exactly this.
+	const std::size_t limit = (endOff < _size) ? endOff : _size;
+	if (!bounds::rangeFits(off, limit, 3)) return 0;
 
-    uint8_t b0 = _data[off];
-    uint8_t b1 = _data[off + 1];
+	uint8_t b0 = _data[off];
+	uint8_t b1 = _data[off + 1];
 
-    // JMP rel32: E9 <rel32>
-    if (b0 == 0xE9 && bounds::rangeFits(off, limit, 5)) {
-        int32_t rel = static_cast<int32_t>(readU32(off + 1));
-        // rel32 is relative to the next instruction's *address*, so it is
-        // added to va.  The old code added it to `_imageBase + off`, which is
-        // the same number only in a flat image and lands in the wrong section
-        // in any file whose raw offsets differ from its RVAs.
-        uint64_t targetVA = va + 5 + rel;
-        return targetVA;
-    }
+	// JMP rel32: E9 <rel32>
+	if (b0 == 0xE9 && bounds::rangeFits(off, limit, 5))
+	{
+		int32_t rel = static_cast<int32_t>(readU32(off + 1));
+		// rel32 is relative to the next instruction's *address*, so it is
+		// added to va.  The old code added it to `_imageBase + off`, which is
+		// the same number only in a flat image and lands in the wrong section
+		// in any file whose raw offsets differ from its RVAs.
+		uint64_t targetVA = va + 5 + rel;
+		return targetVA;
+	}
 
-    // JMP [RIP+rel32]: FF 25 <rel32>  (x86-64 indirect via GOT/IAT)
-    if (b0 == 0xFF && b1 == 0x25 && bounds::rangeFits(off, limit, 6)) {
-        int32_t rel = static_cast<int32_t>(readU32(off + 2));
-        uint64_t ptrVA = va + 6 + rel;
-        // The IAT slot holds the actual target; return the IAT VA as target key.
-        return ptrVA;
-    }
+	// JMP [RIP+rel32]: FF 25 <rel32>  (x86-64 indirect via GOT/IAT)
+	if (b0 == 0xFF && b1 == 0x25 && bounds::rangeFits(off, limit, 6))
+	{
+		int32_t rel = static_cast<int32_t>(readU32(off + 2));
+		uint64_t ptrVA = va + 6 + rel;
+		// The IAT slot holds the actual target; return the IAT VA as target key.
+		return ptrVA;
+	}
 
-    // JMP reg: FF E0..E7
-    if (b0 == 0xFF && (b1 >= 0xE0 && b1 <= 0xE7)) {
-        return 1; // non-zero but unknown target
-    }
+	// JMP reg: FF E0..E7
+	if (b0 == 0xFF && (b1 >= 0xE0 && b1 <= 0xE7))
+	{
+		return 1; // non-zero but unknown target
+	}
 
-    // REX.W prefix + JMP reg: 48 FF E? or 41 FF E?
-    if ((b0 == 0x48 || b0 == 0x41) && bounds::rangeFits(off, limit, 3)) {
-        uint8_t b2 = _data[off + 2];
-        if (b1 == 0xFF && (b2 >= 0xE0 && b2 <= 0xE7)) {
-            return 1;
-        }
-    }
+	// REX.W prefix + JMP reg: 48 FF E? or 41 FF E?
+	if ((b0 == 0x48 || b0 == 0x41) && bounds::rangeFits(off, limit, 3))
+	{
+		uint8_t b2 = _data[off + 2];
+		if (b1 == 0xFF && (b2 >= 0xE0 && b2 <= 0xE7))
+		{
+			return 1;
+		}
+	}
 
-    return 0;
+	return 0;
 }
 
 void FuncBoundaryDetector::detectThunks()
 {
-    for (auto& [addr, fb] : _candidates) {
-        if (fb.isThunk) continue;
+	for (auto& [addr, fb]: _candidates)
+	{
+		if (fb.isThunk) continue;
 
-        std::size_t off = vaToOffset(addr);
-        if (off >= _size) continue;
+		std::size_t off = vaToOffset(addr);
+		if (off >= _size) continue;
 
-        // The bytes a thunk is made of are the ones its own section stores.
-        std::size_t endOff = _size;
-        for (const auto& sec : _execSections) {
-            if (addr < sec.start || addr >= sec.end) continue;
-            std::size_t s0 = 0, s1 = 0;
-            if (sectionRawRange(sec, s0, s1)) endOff = s1;
-            break;
-        }
+		// The bytes a thunk is made of are the ones its own section stores.
+		std::size_t endOff = _size;
+		for (const auto& sec: _execSections)
+		{
+			if (addr < sec.start || addr >= sec.end) continue;
+			std::size_t s0 = 0, s1 = 0;
+			if (sectionRawRange(sec, s0, s1)) endOff = s1;
+			break;
+		}
 
-        uint64_t target = detectThunkAt(addr, off, endOff);
-        if (target == 0) continue;
+		uint64_t target = detectThunkAt(addr, off, endOff);
+		if (target == 0) continue;
 
-        fb.isThunk = true;
-        fb.thunkTarget = nameForVma(target);
-        if (fb.name.empty()) {
-            fb.name = "thunk_" + fb.thunkTarget;
-        }
-    }
+		fb.isThunk = true;
+		fb.thunkTarget = nameForVma(target);
+		if (fb.name.empty())
+		{
+			fb.name = "thunk_" + fb.thunkTarget;
+		}
+	}
 }
 
 std::string FuncBoundaryDetector::nameForVma(uint64_t vma) const
 {
-    // Check imports.
-    auto iit = _imports.find(vma);
-    if (iit != _imports.end()) {
-        return iit->second.symbol.empty()
-            ? iit->second.dll + "_" + std::to_string(vma)
-            : iit->second.symbol;
-    }
-    // Check function candidates.
-    auto cit = _candidates.find(vma);
-    if (cit != _candidates.end() && !cit->second.name.empty()) {
-        return cit->second.name;
-    }
-    // Hex fallback.
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), "sub_%llx",
-                  static_cast<unsigned long long>(vma));
-    return buf;
+	// Check imports.
+	auto iit = _imports.find(vma);
+	if (iit != _imports.end())
+	{
+		return iit->second.symbol.empty() ? iit->second.dll + "_" + std::to_string(vma) : iit->second.symbol;
+	}
+	// Check function candidates.
+	auto cit = _candidates.find(vma);
+	if (cit != _candidates.end() && !cit->second.name.empty())
+	{
+		return cit->second.name;
+	}
+	// Hex fallback.
+	char buf[32];
+	std::snprintf(buf, sizeof(buf), "sub_%llx", static_cast<unsigned long long>(vma));
+	return buf;
 }
 
 // ─── runPass3 ─────────────────────────────────────────────────────────────────
 
 void FuncBoundaryDetector::runPass3()
 {
-    seedNonReturning();
-    propagateNonReturning();
-    detectThunks();
+	seedNonReturning();
+	propagateNonReturning();
+	detectThunks();
 
-    // Estimate end addresses: sort all start addresses; end = next start.
-    std::vector<uint64_t> addrs;
-    addrs.reserve(_candidates.size());
-    for (auto& [a, _] : _candidates) addrs.push_back(a);
-    std::sort(addrs.begin(), addrs.end());
+	// Estimate end addresses: sort all start addresses; end = next start.
+	std::vector<uint64_t> addrs;
+	addrs.reserve(_candidates.size());
+	for (auto& [a, _]: _candidates)
+		addrs.push_back(a);
+	std::sort(addrs.begin(), addrs.end());
 
-    for (std::size_t i = 0; i < addrs.size(); ++i) {
-        auto& fb = _candidates[addrs[i]];
-        if (i + 1 < addrs.size()) {
-            fb.endAddr = addrs[i + 1];
-        } else {
-            // Last function: extend to end of last exec section.
-            fb.endAddr = fb.startAddr + 1;
-            for (const auto& sec : _execSections) {
-                if (sec.start <= fb.startAddr && fb.startAddr < sec.end) {
-                    fb.endAddr = sec.end;
-                    break;
-                }
-            }
-        }
-    }
-    _sortedDirty = true;
+	for (std::size_t i = 0; i < addrs.size(); ++i)
+	{
+		auto& fb = _candidates[addrs[i]];
+		if (i + 1 < addrs.size())
+		{
+			fb.endAddr = addrs[i + 1];
+		}
+		else
+		{
+			// Last function: extend to end of last exec section.
+			fb.endAddr = fb.startAddr + 1;
+			for (const auto& sec: _execSections)
+			{
+				if (sec.start <= fb.startAddr && fb.startAddr < sec.end)
+				{
+					fb.endAddr = sec.end;
+					break;
+				}
+			}
+		}
+	}
+	_sortedDirty = true;
 }
 
 // ─── runAll ───────────────────────────────────────────────────────────────────
 
 void FuncBoundaryDetector::runAll(CompilerHint hint)
 {
-    runPass1();
-    runPass2(hint);
-    runPass3();
+	runPass1();
+	runPass2(hint);
+	runPass3();
 }
 
 // ─── Results ─────────────────────────────────────────────────────────────────
 
-const std::vector<FunctionBoundary>&
-FuncBoundaryDetector::functions() const noexcept
+const std::vector<FunctionBoundary>& FuncBoundaryDetector::functions() const noexcept
 {
-    if (_sortedDirty) {
-        _sorted.clear();
-        _sorted.reserve(_candidates.size());
-        for (const auto& [_, fb] : _candidates) _sorted.push_back(fb);
-        std::sort(_sorted.begin(), _sorted.end(),
-                  [](const FunctionBoundary& a, const FunctionBoundary& b) {
-                      return a.startAddr < b.startAddr;
-                  });
-        _sortedDirty = false;
-    }
-    return _sorted;
+	if (_sortedDirty)
+	{
+		_sorted.clear();
+		_sorted.reserve(_candidates.size());
+		for (const auto& [_, fb]: _candidates)
+			_sorted.push_back(fb);
+		std::sort(_sorted.begin(), _sorted.end(), [](const FunctionBoundary& a, const FunctionBoundary& b) {
+			return a.startAddr < b.startAddr;
+		});
+		_sortedDirty = false;
+	}
+	return _sorted;
 }
 
-const FunctionBoundary*
-FuncBoundaryDetector::functionAt(uint64_t addr) const noexcept
+const FunctionBoundary* FuncBoundaryDetector::functionAt(uint64_t addr) const noexcept
 {
-    auto it = _candidates.find(addr);
-    if (it == _candidates.end()) return nullptr;
-    // Return pointer into _sorted to ensure stability.
-    // Build sorted list first.
-    (void)functions();
-    for (const auto& fb : _sorted) {
-        if (fb.startAddr == addr) return &fb;
-    }
-    return nullptr;
+	auto it = _candidates.find(addr);
+	if (it == _candidates.end()) return nullptr;
+	// Return pointer into _sorted to ensure stability.
+	// Build sorted list first.
+	(void)functions();
+	for (const auto& fb: _sorted)
+	{
+		if (fb.startAddr == addr) return &fb;
+	}
+	return nullptr;
 }
 
 bool FuncBoundaryDetector::isNonReturning(uint64_t addr) const noexcept
 {
-    return _nonReturning.count(addr) > 0;
+	return _nonReturning.count(addr) > 0;
 }
 
 bool FuncBoundaryDetector::isThunk(uint64_t addr) const noexcept
 {
-    auto it = _candidates.find(addr);
-    return it != _candidates.end() && it->second.isThunk;
+	auto it = _candidates.find(addr);
+	return it != _candidates.end() && it->second.isThunk;
 }
 
 } // namespace func_boundary

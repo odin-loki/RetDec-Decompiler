@@ -130,14 +130,11 @@ constexpr bool slotFor1Based(std::uint64_t idx, std::size_t count, std::size_t& 
 /// zero-width element occupies nothing, so there is nothing to bound; callers
 /// for which a zero width means "this table was never parsed" want
 /// @ref rowAt1Based, which refuses it.
-constexpr bool elementAt(
-		std::size_t base,
-		std::size_t size,
-		std::uint64_t i,
-		std::size_t width,
-		std::size_t& off) noexcept
+constexpr bool
+elementAt(std::size_t base, std::size_t size, std::uint64_t i, std::size_t width, std::size_t& off) noexcept
 {
-	if (width == 0) {
+	if (width == 0)
+	{
 		// No multiplication at all: an element of no bytes is readable wherever
 		// base is a position in the buffer, however large i is.
 		if (!bounds::rangeFits(base, size, 0)) return false;
@@ -180,11 +177,7 @@ constexpr bool elementAt(
 /// Refuses `width == 0`, so a table that was never parsed -- rowSize is 0 until
 /// parseTable sets it -- cannot alias one that was; and refuses `idx == 0`, so
 /// a 1-based off-by-one cannot address the row before the buffer.
-constexpr bool rowAt1Based(
-		std::size_t size,
-		std::uint64_t idx,
-		std::size_t width,
-		std::size_t& off) noexcept
+constexpr bool rowAt1Based(std::size_t size, std::uint64_t idx, std::size_t width, std::size_t& off) noexcept
 {
 	if (width == 0) return false;
 	if (idx == 0) return false;
@@ -207,11 +200,7 @@ constexpr bool rowAt1Based(
 /// Refuses `tagBits >= 32`, which is the shift that is undefined rather than
 /// merely wrong. `tagBits == 0` is accepted and means the whole word is the
 /// payload.
-constexpr bool splitTag(
-		std::uint32_t coded,
-		unsigned tagBits,
-		std::uint32_t& tag,
-		std::uint32_t& payload) noexcept
+constexpr bool splitTag(std::uint32_t coded, unsigned tagBits, std::uint32_t& tag, std::uint32_t& payload) noexcept
 {
 	if (tagBits >= 32) return false;
 
@@ -221,7 +210,7 @@ constexpr bool splitTag(
 	// shift to drift apart, which is the bug.
 	const std::uint32_t mask = static_cast<std::uint32_t>(~leb128::maskFrom(tagBits));
 
-	tag     = coded & mask;
+	tag = coded & mask;
 	payload = coded >> tagBits;
 	return true;
 }
@@ -236,11 +225,7 @@ constexpr bool splitTag(
 ///
 /// `highBits` may be 0 (no high field) or 32 (no low field); both are defined
 /// here and neither performs a 32-bit shift by 32. Refuses `highBits > 32`.
-constexpr bool splitHigh(
-		std::uint32_t tok,
-		unsigned highBits,
-		std::uint32_t& high,
-		std::uint32_t& low) noexcept
+constexpr bool splitHigh(std::uint32_t tok, unsigned highBits, std::uint32_t& high, std::uint32_t& low) noexcept
 {
 	if (highBits > 32) return false;
 
@@ -291,15 +276,13 @@ constexpr std::uint64_t wideThreshold(unsigned tagBits) noexcept
 /// failure without anything checking for it.
 ///
 /// Monotone in the counts: a table that grows never makes the token narrower.
-constexpr bool codedTokenIsWide(
-		const std::uint32_t* rowCounts,
-		std::size_t n,
-		unsigned tagBits) noexcept
+constexpr bool codedTokenIsWide(const std::uint32_t* rowCounts, std::size_t n, unsigned tagBits) noexcept
 {
 	if (rowCounts == nullptr) return false;
 
 	const std::uint64_t threshold = wideThreshold(tagBits);
-	for (std::size_t i = 0; i < n; ++i) {
+	for (std::size_t i = 0; i < n; ++i)
+	{
 		// Widened before the comparison: at tagBits == 0 the threshold is
 		// 65536, which is representable in 32 bits, but nothing here depends on
 		// that staying true.

@@ -36,33 +36,36 @@ namespace crypto_detect {
 namespace arx {
 
 /// True when @p op appears with @p amount as an immediate operand.
-inline bool hasShiftBy(const ssa::SSAFunction& fn, ssa::IrInstr::Op op,
-                       uint64_t amount) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs) {
-            if (!instr || instr->op != op) continue;
-            for (const auto& use : instr->uses) {
-                const auto* val = fn.value(use.valueId);
-                if (val && val->kind == ssa::ValueKind::Immediate &&
-                    val->imm == amount)
-                    return true;
-            }
-        }
-    }
-    return false;
+inline bool hasShiftBy(const ssa::SSAFunction& fn, ssa::IrInstr::Op op, uint64_t amount)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+		{
+			if (!instr || instr->op != op) continue;
+			for (const auto& use: instr->uses)
+			{
+				const auto* val = fn.value(use.valueId);
+				if (val && val->kind == ssa::ValueKind::Immediate && val->imm == amount) return true;
+			}
+		}
+	}
+	return false;
 }
 
 /// True when @p op appears at all.
-inline bool hasOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs)
-            if (instr && instr->op == op) return true;
-    }
-    return false;
+inline bool hasOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+			if (instr && instr->op == op) return true;
+	}
+	return false;
 }
 
 /// True when the function rotates a @p width -bit value by @p k.
@@ -70,27 +73,23 @@ inline bool hasOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
 /// Either a Rol/Ror carrying k or width - k, or the shift pair a compiler
 /// without a rotate opcode emits: `(x << k) | (x >> (width - k))`, in either
 /// direction, with the Or that puts the halves back together.
-inline bool hasRotateBy(const ssa::SSAFunction& fn, uint64_t k,
-                        uint64_t width = 32) {
-    if (k == 0 || k >= width) return false;
-    const uint64_t co = width - k;
+inline bool hasRotateBy(const ssa::SSAFunction& fn, uint64_t k, uint64_t width = 32)
+{
+	if (k == 0 || k >= width) return false;
+	const uint64_t co = width - k;
 
-    if (hasShiftBy(fn, ssa::IrInstr::Op::Rol, k) ||
-        hasShiftBy(fn, ssa::IrInstr::Op::Rol, co) ||
-        hasShiftBy(fn, ssa::IrInstr::Op::Ror, k) ||
-        hasShiftBy(fn, ssa::IrInstr::Op::Ror, co))
-        return true;
+	if (hasShiftBy(fn, ssa::IrInstr::Op::Rol, k) || hasShiftBy(fn, ssa::IrInstr::Op::Rol, co)
+		|| hasShiftBy(fn, ssa::IrInstr::Op::Ror, k) || hasShiftBy(fn, ssa::IrInstr::Op::Ror, co))
+		return true;
 
-    if (!hasOp(fn, ssa::IrInstr::Op::Or)) return false;
+	if (!hasOp(fn, ssa::IrInstr::Op::Or)) return false;
 
-    const bool leftK  = hasShiftBy(fn, ssa::IrInstr::Op::Shl, k);
-    const bool rightC = hasShiftBy(fn, ssa::IrInstr::Op::Shr, co) ||
-                        hasShiftBy(fn, ssa::IrInstr::Op::Sar, co);
-    const bool leftC  = hasShiftBy(fn, ssa::IrInstr::Op::Shl, co);
-    const bool rightK = hasShiftBy(fn, ssa::IrInstr::Op::Shr, k) ||
-                        hasShiftBy(fn, ssa::IrInstr::Op::Sar, k);
+	const bool leftK = hasShiftBy(fn, ssa::IrInstr::Op::Shl, k);
+	const bool rightC = hasShiftBy(fn, ssa::IrInstr::Op::Shr, co) || hasShiftBy(fn, ssa::IrInstr::Op::Sar, co);
+	const bool leftC = hasShiftBy(fn, ssa::IrInstr::Op::Shl, co);
+	const bool rightK = hasShiftBy(fn, ssa::IrInstr::Op::Shr, k) || hasShiftBy(fn, ssa::IrInstr::Op::Sar, k);
 
-    return (leftK && rightC) || (leftC && rightK);
+	return (leftK && rightC) || (leftC && rightK);
 }
 
 /// True when the function has the add-rotate-xor shape at all: an Add, a Xor
@@ -98,14 +97,13 @@ inline bool hasRotateBy(const ssa::SSAFunction& fn, uint64_t k,
 ///
 /// The rotation is the part that was missing. `>= 1 Shl || >= 1 Or` is not a
 /// rotation and does not distinguish an ARX round from any integer arithmetic.
-inline bool hasAddRotateXor(const ssa::SSAFunction& fn,
-                            const uint64_t* amounts, std::size_t count,
-                            uint64_t width = 32) {
-    if (!hasOp(fn, ssa::IrInstr::Op::Add)) return false;
-    if (!hasOp(fn, ssa::IrInstr::Op::Xor)) return false;
-    for (std::size_t i = 0; i < count; ++i)
-        if (hasRotateBy(fn, amounts[i], width)) return true;
-    return false;
+inline bool hasAddRotateXor(const ssa::SSAFunction& fn, const uint64_t* amounts, std::size_t count, uint64_t width = 32)
+{
+	if (!hasOp(fn, ssa::IrInstr::Op::Add)) return false;
+	if (!hasOp(fn, ssa::IrInstr::Op::Xor)) return false;
+	for (std::size_t i = 0; i < count; ++i)
+		if (hasRotateBy(fn, amounts[i], width)) return true;
+	return false;
 }
 
 } // namespace arx

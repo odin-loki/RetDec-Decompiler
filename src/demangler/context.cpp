@@ -15,7 +15,7 @@ namespace retdec {
 namespace demangler {
 namespace borland {
 
-std::shared_ptr<BuiltInTypeNode> Context::getBuiltInType(const std::string &name, const Qualifiers &quals) const
+std::shared_ptr<BuiltInTypeNode> Context::getBuiltInType(const std::string& name, const Qualifiers& quals) const
 {
 	bool isVolatile = quals.isVolatile();
 	bool isConst = quals.isConst();
@@ -25,7 +25,7 @@ std::shared_ptr<BuiltInTypeNode> Context::getBuiltInType(const std::string &name
 	return retdec::utils::mapGetValueOrDefault(builtInTypes, key);
 }
 
-void Context::addBuiltInType(const std::shared_ptr<BuiltInTypeNode> &type)
+void Context::addBuiltInType(const std::shared_ptr<BuiltInTypeNode>& type)
 {
 	assert(type && "violated precondition - type cannot be null");
 
@@ -38,9 +38,8 @@ void Context::addBuiltInType(const std::shared_ptr<BuiltInTypeNode> &type)
 	builtInTypes.emplace(key, type);
 }
 
-std::shared_ptr<CharTypeNode> Context::getCharType(
-	const ThreeStateSignedness &signedness,
-	const Qualifiers &quals) const
+std::shared_ptr<CharTypeNode>
+Context::getCharType(const ThreeStateSignedness& signedness, const Qualifiers& quals) const
 {
 	bool isVolatile = quals.isVolatile();
 	bool isConst = quals.isConst();
@@ -50,7 +49,7 @@ std::shared_ptr<CharTypeNode> Context::getCharType(
 	return retdec::utils::mapGetValueOrDefault(charTypes, key);
 }
 
-void Context::addCharType(const std::shared_ptr<CharTypeNode> &type)
+void Context::addCharType(const std::shared_ptr<CharTypeNode>& type)
 {
 	assert(type && "violated precondition - type cannot be null");
 
@@ -63,8 +62,8 @@ void Context::addCharType(const std::shared_ptr<CharTypeNode> &type)
 	charTypes.emplace(key, type);
 }
 
-std::shared_ptr<IntegralTypeNode> Context::getIntegralType(
-	const std::string &name, bool isUnsigned, const Qualifiers &quals) const
+std::shared_ptr<IntegralTypeNode>
+Context::getIntegralType(const std::string& name, bool isUnsigned, const Qualifiers& quals) const
 {
 	bool isVolatile = quals.isVolatile();
 	bool isConst = quals.isConst();
@@ -74,7 +73,7 @@ std::shared_ptr<IntegralTypeNode> Context::getIntegralType(
 	return retdec::utils::mapGetValueOrDefault(integralTypes, key);
 }
 
-void Context::addIntegralType(const std::shared_ptr<IntegralTypeNode> &type)
+void Context::addIntegralType(const std::shared_ptr<IntegralTypeNode>& type)
 {
 	assert(type && "violated precondition - type cannot be null");
 
@@ -88,7 +87,7 @@ void Context::addIntegralType(const std::shared_ptr<IntegralTypeNode> &type)
 	integralTypes.emplace(key, type);
 }
 
-std::shared_ptr<FloatTypeNode> Context::getFloatType(const std::string &name, const Qualifiers &quals) const
+std::shared_ptr<FloatTypeNode> Context::getFloatType(const std::string& name, const Qualifiers& quals) const
 {
 	bool isVolatile = quals.isVolatile();
 	bool isConst = quals.isConst();
@@ -98,7 +97,7 @@ std::shared_ptr<FloatTypeNode> Context::getFloatType(const std::string &name, co
 	return std::static_pointer_cast<FloatTypeNode>(retdec::utils::mapGetValueOrDefault(builtInTypes, key));
 }
 
-void Context::addFloatType(const std::shared_ptr<FloatTypeNode> &type)
+void Context::addFloatType(const std::shared_ptr<FloatTypeNode>& type)
 {
 	assert(type && "violated precondition - type cannot be null");
 
@@ -111,14 +110,13 @@ void Context::addFloatType(const std::shared_ptr<FloatTypeNode> &type)
 	builtInTypes.emplace(key, type);
 }
 
-std::shared_ptr<PointerTypeNode> Context::getPointerType(
-	std::shared_ptr<Node> pointee, const Qualifiers &quals) const
+std::shared_ptr<PointerTypeNode> Context::getPointerType(std::shared_ptr<Node> pointee, const Qualifiers& quals) const
 {
 	auto key = std::make_tuple(pointee, quals.isVolatile(), quals.isConst());
 	return retdec::utils::mapGetValueOrDefault(pointerTypes, key);
 }
 
-void Context::addPointerType(const std::shared_ptr<PointerTypeNode> &type)
+void Context::addPointerType(const std::shared_ptr<PointerTypeNode>& type)
 {
 	assert(type && "violated precondition - type cannot be null");
 
@@ -135,7 +133,7 @@ std::shared_ptr<ReferenceTypeNode> Context::getReferenceType(std::shared_ptr<Nod
 	return retdec::utils::mapGetValueOrDefault(referenceTypes, pointee);
 }
 
-void Context::addReferenceType(const std::shared_ptr<ReferenceTypeNode> &type)
+void Context::addReferenceType(const std::shared_ptr<ReferenceTypeNode>& type)
 {
 	assert(type && "violated precondition - type cannot be null");
 
@@ -147,14 +145,14 @@ std::shared_ptr<RReferenceTypeNode> Context::getRReferenceType(std::shared_ptr<N
 	return retdec::utils::mapGetValueOrDefault(rReferenceTypes, pointee);
 }
 
-void Context::addRReferenceType(const std::shared_ptr<RReferenceTypeNode> &type)
+void Context::addRReferenceType(const std::shared_ptr<RReferenceTypeNode>& type)
 {
 	assert(type && "violated precondition - type cannot be null");
 
 	rReferenceTypes.emplace(type->pointee(), type);
 }
 
-std::shared_ptr<NamedTypeNode> Context::getNamedType(const std::string &name, const Qualifiers &quals) const
+std::shared_ptr<NamedTypeNode> Context::getNamedType(const std::string& name, const Qualifiers& quals) const
 {
 	bool isVolatile = quals.isVolatile();
 	bool isConst = quals.isConst();
@@ -165,9 +163,7 @@ std::shared_ptr<NamedTypeNode> Context::getNamedType(const std::string &name, co
 }
 
 void Context::addNamedType(
-	const std::string &mangled,
-	const Qualifiers &quals,
-	const std::shared_ptr<NamedTypeNode> &type)
+	const std::string& mangled, const Qualifiers& quals, const std::shared_ptr<NamedTypeNode>& type)
 {
 	assert(type && "violated precondition - type cannot be null");
 
@@ -179,26 +175,24 @@ void Context::addNamedType(
 	namedTypes.emplace(key, type);
 }
 
-std::shared_ptr<Node> Context::getFunction(const std::string &mangled) const
+std::shared_ptr<Node> Context::getFunction(const std::string& mangled) const
 {
 	return retdec::utils::mapGetValueOrDefault(functions, mangled);
 }
 
-void Context::addFunction(
-	const std::string &mangled,
-	const std::shared_ptr<Node> &function)
+void Context::addFunction(const std::string& mangled, const std::shared_ptr<Node>& function)
 {
 	assert(function && "violated precondition - function cannot be null");
 
 	functions.emplace(mangled, function);
 }
 
-std::shared_ptr<NameNode> Context::getName(const std::string &name) const
+std::shared_ptr<NameNode> Context::getName(const std::string& name) const
 {
 	return retdec::utils::mapGetValueOrDefault(nameNodes, name);
 }
 
-void Context::addName(const std::shared_ptr<NameNode> &name)
+void Context::addName(const std::shared_ptr<NameNode>& name)
 {
 	assert(name && "violated precondition - function cannot be null");
 
@@ -206,15 +200,13 @@ void Context::addName(const std::shared_ptr<NameNode> &name)
 	nameNodes.emplace(key, name);
 }
 
-std::shared_ptr<NestedNameNode> Context::getNestedName(
-	std::shared_ptr<Node> super,
-	std::shared_ptr<Node> name)
+std::shared_ptr<NestedNameNode> Context::getNestedName(std::shared_ptr<Node> super, std::shared_ptr<Node> name)
 {
 	auto key = std::make_tuple(super, name);
 	return retdec::utils::mapGetValueOrDefault(nestedNameNodes, key);
 }
 
-void Context::addNestedName(const std::shared_ptr<NestedNameNode> &name)
+void Context::addNestedName(const std::shared_ptr<NestedNameNode>& name)
 {
 	assert(name && "violated precondition - function cannot be null");
 
@@ -222,16 +214,14 @@ void Context::addNestedName(const std::shared_ptr<NestedNameNode> &name)
 	nestedNameNodes.emplace(key, name);
 }
 
-std::shared_ptr<ArrayNode> Context::getArray(
-	std::shared_ptr<Node> pointee,
-	unsigned size,
-	const Qualifiers &quals)
+std::shared_ptr<ArrayNode> Context::getArray(std::shared_ptr<Node> pointee, unsigned size, const Qualifiers& quals)
 {
 	auto key = std::make_tuple(pointee, size, quals.isVolatile(), quals.isConst());
 	return retdec::utils::mapGetValueOrDefault(arrayNodes, key);
 }
 
-void Context::addArrayType(const std::shared_ptr<ArrayNode> &array) {
+void Context::addArrayType(const std::shared_ptr<ArrayNode>& array)
+{
 	assert(array && "violated precondition - array cannot be null");
 
 	auto pointee = array->pointee();
@@ -244,6 +234,6 @@ void Context::addArrayType(const std::shared_ptr<ArrayNode> &array) {
 	arrayNodes.emplace(key, array);
 }
 
-}    // borland
-}    // demangler
-}    // retdec
+} // namespace borland
+} // namespace demangler
+} // namespace retdec

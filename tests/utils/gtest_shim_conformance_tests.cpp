@@ -47,8 +47,8 @@ protected:
 /// If this body runs, the harness is wrong -- but a failure here is only half
 /// the evidence, because a harness that skipped correctly would not run it at
 /// all and the failure would be invisible. The observation is next door.
-TEST_F(GtestShimSkipInSetUp,
-ABodyDoesNotRunWhenSetUpSkips) {
+TEST_F(GtestShimSkipInSetUp, ABodyDoesNotRunWhenSetUpSkips)
+{
 	skippedFixtureBodyRan = true;
 	FAIL() << "the body ran after SetUp() called GTEST_SKIP()";
 }
@@ -56,11 +56,10 @@ ABodyDoesNotRunWhenSetUpSkips) {
 /// Declared after the fixture above so it observes the flag afterwards: both
 /// GoogleTest and the shim register tests in declaration order within a
 /// translation unit.
-TEST(GtestShimConformance,
-ASkippedSetUpReallyStopsTheBody) {
-	EXPECT_FALSE(skippedFixtureBodyRan)
-		<< "GTEST_SKIP() in SetUp() must stop the test body; the shim used to "
-		   "set the skipped flag and run it anyway";
+TEST(GtestShimConformance, ASkippedSetUpReallyStopsTheBody)
+{
+	EXPECT_FALSE(skippedFixtureBodyRan) << "GTEST_SKIP() in SetUp() must stop the test body; the shim used to "
+										   "set the skipped flag and run it anyway";
 }
 
 } // anonymous namespace

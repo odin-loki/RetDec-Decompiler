@@ -54,14 +54,14 @@ using namespace retdec::utils::btgt;
 // choice of that type.
 extern "C" {
 std::uint64_t nondet_u64();
-std::int64_t  nondet_i64();
+std::int64_t nondet_i64();
 }
 
 // __ESBMC_assume is a verifier builtin, so this file does not type-check under
 // a plain compiler without a stand-in. `scripts/verify_esbmc.sh --syntax` uses
 // one; it never reaches the solver.
 #ifdef RETDEC_VERIFY_SYNTAX_ONLY
-#define __ESBMC_assume(cond) ((void) sizeof((cond) ? 1 : 0))
+#define __ESBMC_assume(cond) ((void)sizeof((cond) ? 1 : 0))
 #endif
 
 /// The largest code size any of these formats can declare.
@@ -84,7 +84,7 @@ static const std::int64_t kMaxDisp = INT32_MAX;
 extern "C" void proof_relative_matches_the_int64_sum()
 {
 	std::uint64_t base = nondet_u64();
-	std::int64_t  delta = nondet_i64();
+	std::int64_t delta = nondet_i64();
 	std::uint64_t codeSize = nondet_u64();
 	__ESBMC_assume(base <= kMaxCodeSize);
 	__ESBMC_assume(delta >= kMinDisp && delta <= kMaxDisp);
@@ -114,7 +114,7 @@ extern "C" void proof_relative_matches_the_int64_sum_at_63_bits()
 	// not an artifact of small operands. The bound is the largest base for
 	// which base + INT32_MAX is still an exact int64.
 	std::uint64_t base = nondet_u64();
-	std::int64_t  delta = nondet_i64();
+	std::int64_t delta = nondet_i64();
 	std::uint64_t codeSize = nondet_u64();
 	__ESBMC_assume(base <= static_cast<std::uint64_t>(INT64_MAX) - static_cast<std::uint64_t>(INT32_MAX));
 	__ESBMC_assume(delta >= kMinDisp && delta <= kMaxDisp);
@@ -138,7 +138,7 @@ extern "C" void proof_relative_no_signed_overflow_in_the_format_domain()
 	// instrPc reaches 2^32-1 and casts negative; offset is a full int32 from
 	// goto_w. In int64 the sum is bounded and defined for every such pair.
 	std::uint64_t base = nondet_u64();
-	std::int64_t  delta = nondet_i64();
+	std::int64_t delta = nondet_i64();
 	__ESBMC_assume(base <= kMaxCodeSize);
 	__ESBMC_assume(delta >= kMinDisp && delta <= kMaxDisp);
 
@@ -153,8 +153,7 @@ extern "C" void proof_relative_no_signed_overflow_in_the_format_domain()
 	// it is what the kernel does.
 	std::uint64_t target = nondet_u64();
 	const std::uint64_t codeSize = nondet_u64();
-	if (relative(base, delta, codeSize, target))
-		assert(target == static_cast<std::uint64_t>(sum));
+	if (relative(base, delta, codeSize, target)) assert(target == static_cast<std::uint64_t>(sum));
 }
 
 extern "C" void proof_relative_is_total_over_the_whole_domain()
@@ -165,18 +164,21 @@ extern "C" void proof_relative_is_total_over_the_whole_domain()
 	// codeSize. Nothing here may overflow, shift out of range, or be undefined,
 	// and a success must be usable as an index.
 	const std::uint64_t base = nondet_u64();
-	const std::int64_t  delta = nondet_i64();
+	const std::int64_t delta = nondet_i64();
 	const std::uint64_t codeSize = nondet_u64();
 
 	std::uint64_t target = nondet_u64();
-	if (relative(base, delta, codeSize, target)) {
+	if (relative(base, delta, codeSize, target))
+	{
 		assert(target < codeSize);
 		// Direction is preserved: a forward branch cannot land behind the
 		// instruction and a backward branch cannot land ahead of it. This is
 		// the property that fails at jvm_lifter.cpp:275, where a negative
 		// offset from pc = 0 wraps forward to 0xFFFFFFFFFFFFFFFF.
-		if (delta >= 0) assert(target >= base);
-		else            assert(target < base);
+		if (delta >= 0)
+			assert(target >= base);
+		else
+			assert(target < base);
 	}
 }
 
@@ -230,11 +232,12 @@ extern "C" void proof_relative_and_absolute_agree()
 	// form of the opcode it met -- pyc_reader.cpp:535-543 takes both branches
 	// in one switch, absolute before Python 3.11 and relative after.
 	const std::uint64_t base = nondet_u64();
-	const std::int64_t  delta = nondet_i64();
+	const std::int64_t delta = nondet_i64();
 	const std::uint64_t codeSize = nondet_u64();
 
 	std::uint64_t t = nondet_u64();
-	if (relative(base, delta, codeSize, t)) {
+	if (relative(base, delta, codeSize, t))
+	{
 		std::uint64_t t2 = nondet_u64();
 		assert(absolute(t, codeSize, t2));
 		assert(t2 == t);
@@ -253,20 +256,17 @@ extern "C" void proof_refusal_never_writes_the_target()
 	const std::uint64_t sentinel = nondet_u64();
 
 	std::uint64_t target = sentinel;
-	if (!relative(nondet_u64(), nondet_i64(), nondet_u64(), target))
-		assert(target == sentinel);
+	if (!relative(nondet_u64(), nondet_i64(), nondet_u64(), target)) assert(target == sentinel);
 
 	std::uint64_t target2 = sentinel;
-	if (!absolute(nondet_u64(), nondet_u64(), target2))
-		assert(target2 == sentinel);
+	if (!absolute(nondet_u64(), nondet_u64(), target2)) assert(target2 == sentinel);
 }
 
 extern "C" void proof_region_refusal_never_writes_the_end()
 {
 	const std::uint64_t sentinel = nondet_u64();
 	std::uint64_t end = sentinel;
-	if (!region(nondet_u64(), nondet_u64(), nondet_u64(), end))
-		assert(end == sentinel);
+	if (!region(nondet_u64(), nondet_u64(), nondet_u64(), end)) assert(end == sentinel);
 }
 
 // The same property for tableEnd is proved inside tableEndFitsAtWidth<W>
@@ -289,12 +289,13 @@ extern "C" void proof_region_refuses_unless_the_range_fits()
 	std::uint64_t end = nondet_u64();
 	const bool ok = region(start, len, codeSize, end);
 
-	assert(ok == retdec::utils::bounds::rangeFits(
-		static_cast<std::size_t>(start),
-		static_cast<std::size_t>(codeSize),
-		static_cast<std::size_t>(len)));
+	assert(
+		ok
+		== retdec::utils::bounds::rangeFits(
+			static_cast<std::size_t>(start), static_cast<std::size_t>(codeSize), static_cast<std::size_t>(len)));
 
-	if (ok) {
+	if (ok)
+	{
 		// A region never ends before it begins. tryOffset = 0xFFFFFFFF with
 		// tryLength = 2 gives endOffset = 1 at cil_lifter.cpp:779, and the
 		// consumers of BcExceptionHandler compute end - start as 0xFFFFFFFE.
@@ -332,17 +333,15 @@ static void tableEndFitsAtWidth()
 
 	// Stated in two steps because the product may not exist: n * W is formed
 	// only under mulOk, which is the whole point of the first test.
-	const bool mulOk = retdec::utils::bounds::mulFits(
-		static_cast<std::size_t>(n), static_cast<std::size_t>(W));
+	const bool mulOk = retdec::utils::bounds::mulFits(static_cast<std::size_t>(n), static_cast<std::size_t>(W));
 	bool truth = false;
 	if (mulOk)
 		truth = retdec::utils::bounds::rangeFits(
-			static_cast<std::size_t>(pos),
-			static_cast<std::size_t>(codeSize),
-			static_cast<std::size_t>(n * W));
+			static_cast<std::size_t>(pos), static_cast<std::size_t>(codeSize), static_cast<std::size_t>(n * W));
 	assert(ok == truth);
 
-	if (ok) {
+	if (ok)
+	{
 		// The base every case target of this switch is measured from is inside
 		// the method. cil_lifter.cpp:549 truncates it to uint32 instead, so a
 		// count of 2^30 puts afterSwitch back near zero and every case label of
@@ -363,16 +362,25 @@ static void tableEndFitsAtWidth()
 /// `need = 2 + count * 4`, both in 16-bit CODE UNITS: a packed-switch target is
 /// two units and a sparse-switch key/target pair is four, which is 4 and 8
 /// BYTES. Those two are the width-4 and width-8 instances below.
-extern "C" void proof_table_end_fits_at_width_2() { tableEndFitsAtWidth<2>(); }
+extern "C" void proof_table_end_fits_at_width_2()
+{
+	tableEndFitsAtWidth<2>();
+}
 
 /// A CIL InlineSwitch label (cil_lifter.cpp:550 forms n * 4), a JVM tableswitch
 /// jump-offset entry (jvm_lifter.cpp:278), and a DEX packed-switch target
 /// (dex_lifter.cpp:235, two code units).
-extern "C" void proof_table_end_fits_at_width_4() { tableEndFitsAtWidth<4>(); }
+extern "C" void proof_table_end_fits_at_width_4()
+{
+	tableEndFitsAtWidth<4>();
+}
 
 /// A JVM lookupswitch match/offset pair (jvm_lifter.cpp:294) and a DEX
 /// sparse-switch key/target pair (dex_lifter.cpp:238, four code units).
-extern "C" void proof_table_end_fits_at_width_8() { tableEndFitsAtWidth<8>(); }
+extern "C" void proof_table_end_fits_at_width_8()
+{
+	tableEndFitsAtWidth<8>();
+}
 
 extern "C" void proof_table_end_rejects_the_widest_jvm_tableswitch()
 {

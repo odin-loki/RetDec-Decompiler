@@ -32,7 +32,7 @@ std::size_t nondet_size();
 }
 
 #ifdef RETDEC_VERIFY_SYNTAX_ONLY
-#define __ESBMC_assume(cond) ((void) sizeof((cond) ? 1 : 0))
+#define __ESBMC_assume(cond) ((void)sizeof((cond) ? 1 : 0))
 #endif
 
 // Long enough to hold every two-character token the scanner recognises, a
@@ -44,7 +44,8 @@ namespace {
 
 void fillNondet(char (&buf)[kLen])
 {
-	for (std::size_t i = 0; i < kLen; ++i) buf[i] = nondet_char();
+	for (std::size_t i = 0; i < kLen; ++i)
+		buf[i] = nondet_char();
 }
 
 } // namespace
@@ -57,13 +58,15 @@ extern "C" void proof_scan_stays_in_bounds()
 	char in[kLen];
 	char out[kLen];
 	fillNondet(in);
-	for (std::size_t i = 0; i < kLen; ++i) out[i] = '\0';
+	for (std::size_t i = 0; i < kLen; ++i)
+		out[i] = '\0';
 
 	blankNonCode(in, kLen, out);
 
 	// Every position was written exactly once, so nothing was skipped and
 	// nothing was left holding its initial value by accident.
-	for (std::size_t i = 0; i < kLen; ++i) assert(out[i] != '\0' || in[i] == '\0');
+	for (std::size_t i = 0; i < kLen; ++i)
+		assert(out[i] != '\0' || in[i] == '\0');
 }
 
 // A length shorter than the buffer must be respected: the scanner may not read
@@ -75,7 +78,8 @@ extern "C" void proof_scan_respects_a_short_length()
 	fillNondet(in);
 
 	const char sentinel = '\x7F';
-	for (std::size_t i = 0; i < kLen; ++i) out[i] = sentinel;
+	for (std::size_t i = 0; i < kLen; ++i)
+		out[i] = sentinel;
 
 	const std::size_t n = nondet_size();
 	__ESBMC_assume(n <= kLen);
@@ -128,7 +132,8 @@ extern "C" void proof_scan_handles_empty_and_null()
 {
 	char out[kLen];
 	const char sentinel = '\x7F';
-	for (std::size_t i = 0; i < kLen; ++i) out[i] = sentinel;
+	for (std::size_t i = 0; i < kLen; ++i)
+		out[i] = sentinel;
 
 	char in[kLen];
 	fillNondet(in);
@@ -137,7 +142,11 @@ extern "C" void proof_scan_handles_empty_and_null()
 	blankNonCode(nullptr, kLen, out);
 	blankNonCode(in, kLen, nullptr);
 
-	for (std::size_t i = 0; i < kLen; ++i) assert(out[i] == sentinel);
+	for (std::size_t i = 0; i < kLen; ++i)
+		assert(out[i] == sentinel);
 }
 
-int main() { return 0; }
+int main()
+{
+	return 0;
+}

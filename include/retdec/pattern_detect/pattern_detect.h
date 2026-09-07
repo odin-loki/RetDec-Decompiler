@@ -152,7 +152,9 @@
 #include <unordered_map>
 
 namespace retdec {
-namespace ssa { class SSAFunction; }
+namespace ssa {
+class SSAFunction;
+}
 } // namespace retdec
 
 namespace retdec {
@@ -160,98 +162,107 @@ namespace pattern_detect {
 
 // ─── Enumerations ─────────────────────────────────────────────────────────────
 
-enum class PatternKind : uint8_t {
-    Unknown,
-    Singleton,
-    Factory,
-    Observer,
-    Command,
-    Strategy,
-    StateMachine,
-    RAII,
+enum class PatternKind : uint8_t
+{
+	Unknown,
+	Singleton,
+	Factory,
+	Observer,
+	Command,
+	Strategy,
+	StateMachine,
+	RAII,
 };
 
 // ─── Pattern detection result ─────────────────────────────────────────────────
 
-struct PatternResult {
-    PatternKind  kind         = PatternKind::Unknown;
-    float        confidence   = 0.0f;
-    bool         hasVariant   = false;  ///< e.g. double-checked-lock, undo()
-    std::string  variantName;           ///< e.g. "double-checked-lock"
-    std::string  emittedForm;           ///< annotated C++ skeleton
-    std::string  comment;               ///< pattern commentary for code annotation
+struct PatternResult
+{
+	PatternKind kind = PatternKind::Unknown;
+	float confidence = 0.0f;
+	bool hasVariant = false; ///< e.g. double-checked-lock, undo()
+	std::string variantName; ///< e.g. "double-checked-lock"
+	std::string emittedForm; ///< annotated C++ skeleton
+	std::string comment;     ///< pattern commentary for code annotation
 
-    std::string kindName() const noexcept;
-    std::string toString() const;
+	std::string kindName() const noexcept;
+	std::string toString() const;
 };
 
 // ─── Evidence structs ─────────────────────────────────────────────────────────
 
-struct SingletonEvidence {
-    bool  found            = false;
-    float confidence       = 0.0f;
-    bool  hasStaticPtrLoad = false;
-    bool  hasNullCheck     = false;
-    bool  hasFirstAlloc    = false;
-    bool  hasReturn        = false;
-    bool  hasDoubleLock    = false;  ///< double-checked locking variant
+struct SingletonEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasStaticPtrLoad = false;
+	bool hasNullCheck = false;
+	bool hasFirstAlloc = false;
+	bool hasReturn = false;
+	bool hasDoubleLock = false; ///< double-checked locking variant
 };
 
-struct FactoryEvidence {
-    bool  found             = false;
-    float confidence        = 0.0f;
-    bool  hasSwitchOrIfElse = false;
-    bool  hasMultipleAllocs = false; ///< ≥2 distinct new/malloc sites in branches
-    bool  hasBaseReturn     = false; ///< all paths return same ptr type
-    int   branchCount       = 0;
+struct FactoryEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasSwitchOrIfElse = false;
+	bool hasMultipleAllocs = false; ///< ≥2 distinct new/malloc sites in branches
+	bool hasBaseReturn = false;     ///< all paths return same ptr type
+	int branchCount = 0;
 };
 
-struct ObserverEvidence {
-    bool  found             = false;
-    float confidence        = 0.0f;
-    bool  hasRegisterFn     = false; ///< push_back of callback into container field
-    bool  hasNotifyFn       = false; ///< loop + indirect call over same container
-    bool  hasSameContainer  = false; ///< register + notify act on same field
+struct ObserverEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasRegisterFn = false;    ///< push_back of callback into container field
+	bool hasNotifyFn = false;      ///< loop + indirect call over same container
+	bool hasSameContainer = false; ///< register + notify act on same field
 };
 
-struct CommandEvidence {
-    bool  found              = false;
-    float confidence         = 0.0f;
-    bool  hasVtableExecute   = false;
-    bool  hasContainerOfPtrs = false;
-    bool  hasLoopExecute     = false;
-    bool  hasUndo            = false; ///< undo method present (history variant)
+struct CommandEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasVtableExecute = false;
+	bool hasContainerOfPtrs = false;
+	bool hasLoopExecute = false;
+	bool hasUndo = false; ///< undo method present (history variant)
 };
 
-struct StrategyEvidence {
-    bool  found            = false;
-    float confidence       = 0.0f;
-    bool  hasInterfaceField = false; ///< stored interface pointer in struct
-    bool  hasSetter        = false;  ///< setStrategy / setAlgorithm function
-    bool  hasIndirectCall  = false;  ///< call through the stored pointer
+struct StrategyEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasInterfaceField = false; ///< stored interface pointer in struct
+	bool hasSetter = false;         ///< setStrategy / setAlgorithm function
+	bool hasIndirectCall = false;   ///< call through the stored pointer
 };
 
-struct StateMachineEvidence {
-    bool  found            = false;
-    float confidence       = 0.0f;
-    bool  hasStateVar      = false;  ///< load + store of same variable
-    bool  hasSwitchOnState = false;  ///< switch/compare on that variable
-    bool  hasStateModify   = false;  ///< state variable written in branches
-    int   stateCount       = 0;      ///< number of distinct case constants
+struct StateMachineEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasStateVar = false;      ///< load + store of same variable
+	bool hasSwitchOnState = false; ///< switch/compare on that variable
+	bool hasStateModify = false;   ///< state variable written in branches
+	int stateCount = 0;            ///< number of distinct case constants
 };
 
-struct RAIIEvidence {
-    bool  found            = false;
-    float confidence       = 0.0f;
-    bool  hasAcquireInCtor = false;
-    bool  hasReleaseInDtor = false;
-    bool  hasMatchingPair  = false;  ///< acquire/release are paired functions
-    /// The acquire and the release were seen in *different* functions of a
-    /// class, which is what makes the idiom RAII rather than scoped cleanup.
-    /// Only detectGroup() can establish this; a single function cannot.
-    bool  spansTwoFunctions = false;
-    std::string acquireName;
-    std::string releaseName;
+struct RAIIEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasAcquireInCtor = false;
+	bool hasReleaseInDtor = false;
+	bool hasMatchingPair = false; ///< acquire/release are paired functions
+	/// The acquire and the release were seen in *different* functions of a
+	/// class, which is what makes the idiom RAII rather than scoped cleanup.
+	/// Only detectGroup() can establish this; a single function cannot.
+	bool spansTwoFunctions = false;
+	std::string acquireName;
+	std::string releaseName;
 };
 
 // ─── Detector interface ───────────────────────────────────────────────────────
@@ -264,19 +275,19 @@ struct RAIIEvidence {
  */
 class IPatternDetector {
 public:
-    virtual ~IPatternDetector() = default;
+	virtual ~IPatternDetector() = default;
 
-    /// Detect from a single function (intra-procedural patterns).
-    virtual PatternResult detect(const ssa::SSAFunction& fn) const = 0;
+	/// Detect from a single function (intra-procedural patterns).
+	virtual PatternResult detect(const ssa::SSAFunction& fn) const = 0;
 
-    /// Detect from a group of related functions (same class's methods).
-    virtual PatternResult detectGroup(
-        const std::vector<const ssa::SSAFunction*>& fns) const {
-        if (fns.empty()) return {};
-        return detect(*fns.front());
-    }
+	/// Detect from a group of related functions (same class's methods).
+	virtual PatternResult detectGroup(const std::vector<const ssa::SSAFunction*>& fns) const
+	{
+		if (fns.empty()) return {};
+		return detect(*fns.front());
+	}
 
-    virtual PatternKind kind() const noexcept = 0;
+	virtual PatternKind kind() const noexcept = 0;
 };
 
 // ─── Per-pattern detectors ────────────────────────────────────────────────────
@@ -284,90 +295,119 @@ public:
 /** Singleton: static pointer null-check + first-access allocation. */
 class SingletonDetector : public IPatternDetector {
 public:
-    PatternResult detect(const ssa::SSAFunction& fn) const override;
-    PatternResult detectGroup(const std::vector<const ssa::SSAFunction*>& fns) const override;
-    PatternKind   kind() const noexcept override { return PatternKind::Singleton; }
+	PatternResult detect(const ssa::SSAFunction& fn) const override;
+	PatternResult detectGroup(const std::vector<const ssa::SSAFunction*>& fns) const override;
+	PatternKind kind() const noexcept override
+	{
+		return PatternKind::Singleton;
+	}
+
 private:
-    SingletonEvidence analyse(const ssa::SSAFunction& fn) const;
-    float             score(const SingletonEvidence& ev) const;
-    bool hasDoubleLock(const ssa::SSAFunction& fn) const;
+	SingletonEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const SingletonEvidence& ev) const;
+	bool hasDoubleLock(const ssa::SSAFunction& fn) const;
 };
 
 /** Factory: switch/if-else over discriminant, each branch allocates derived type. */
 class FactoryDetector : public IPatternDetector {
 public:
-    PatternResult detect(const ssa::SSAFunction& fn) const override;
-    PatternKind   kind() const noexcept override { return PatternKind::Factory; }
+	PatternResult detect(const ssa::SSAFunction& fn) const override;
+	PatternKind kind() const noexcept override
+	{
+		return PatternKind::Factory;
+	}
+
 private:
-    FactoryEvidence analyse(const ssa::SSAFunction& fn) const;
-    float           score(const FactoryEvidence& ev) const;
+	FactoryEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const FactoryEvidence& ev) const;
 };
 
 /** Observer: register() + notify() across two functions on same container field. */
 class ObserverDetector : public IPatternDetector {
 public:
-    PatternResult detect(const ssa::SSAFunction& fn) const override;
-    PatternResult detectGroup(const std::vector<const ssa::SSAFunction*>& fns) const override;
-    PatternKind   kind() const noexcept override { return PatternKind::Observer; }
+	PatternResult detect(const ssa::SSAFunction& fn) const override;
+	PatternResult detectGroup(const std::vector<const ssa::SSAFunction*>& fns) const override;
+	PatternKind kind() const noexcept override
+	{
+		return PatternKind::Observer;
+	}
+
 private:
-    bool hasRegisterPattern(const ssa::SSAFunction& fn) const;
-    bool hasNotifyPattern(const ssa::SSAFunction& fn) const;
+	bool hasRegisterPattern(const ssa::SSAFunction& fn) const;
+	bool hasNotifyPattern(const ssa::SSAFunction& fn) const;
 };
 
 /** Command: vtable execute(), container of base ptrs, loop invocation. */
 class CommandDetector : public IPatternDetector {
 public:
-    PatternResult detect(const ssa::SSAFunction& fn) const override;
-    PatternKind   kind() const noexcept override { return PatternKind::Command; }
+	PatternResult detect(const ssa::SSAFunction& fn) const override;
+	PatternKind kind() const noexcept override
+	{
+		return PatternKind::Command;
+	}
+
 private:
-    CommandEvidence analyse(const ssa::SSAFunction& fn) const;
-    float           score(const CommandEvidence& ev) const;
-    bool hasUndoMethod(const ssa::SSAFunction& fn) const;
+	CommandEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const CommandEvidence& ev) const;
+	bool hasUndoMethod(const ssa::SSAFunction& fn) const;
 };
 
 /** Strategy: stored interface pointer, setter, indirect call delegation. */
 class StrategyDetector : public IPatternDetector {
 public:
-    PatternResult detect(const ssa::SSAFunction& fn) const override;
-    PatternResult detectGroup(const std::vector<const ssa::SSAFunction*>& fns) const override;
-    PatternKind   kind() const noexcept override { return PatternKind::Strategy; }
+	PatternResult detect(const ssa::SSAFunction& fn) const override;
+	PatternResult detectGroup(const std::vector<const ssa::SSAFunction*>& fns) const override;
+	PatternKind kind() const noexcept override
+	{
+		return PatternKind::Strategy;
+	}
+
 private:
-    StrategyEvidence analyse(const ssa::SSAFunction& fn) const;
-    float            score(const StrategyEvidence& ev) const;
+	StrategyEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const StrategyEvidence& ev) const;
 };
 
 /** State Machine: integer state var, switch-on-self, in-case mutations. */
 class StateMachineDetector : public IPatternDetector {
 public:
-    PatternResult detect(const ssa::SSAFunction& fn) const override;
-    PatternKind   kind() const noexcept override { return PatternKind::StateMachine; }
+	PatternResult detect(const ssa::SSAFunction& fn) const override;
+	PatternKind kind() const noexcept override
+	{
+		return PatternKind::StateMachine;
+	}
+
 private:
-    StateMachineEvidence analyse(const ssa::SSAFunction& fn) const;
-    float                score(const StateMachineEvidence& ev) const;
-    int                  countCaseConstants(const ssa::SSAFunction& fn) const;
+	StateMachineEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const StateMachineEvidence& ev) const;
+	int countCaseConstants(const ssa::SSAFunction& fn) const;
 };
 
 /** RAII: ctor acquires resource, dtor releases matching resource. */
 class RAIIDetector : public IPatternDetector {
 public:
-    PatternResult detect(const ssa::SSAFunction& fn) const override;
-    PatternResult detectGroup(const std::vector<const ssa::SSAFunction*>& fns) const override;
-    PatternKind   kind() const noexcept override { return PatternKind::RAII; }
+	PatternResult detect(const ssa::SSAFunction& fn) const override;
+	PatternResult detectGroup(const std::vector<const ssa::SSAFunction*>& fns) const override;
+	PatternKind kind() const noexcept override
+	{
+		return PatternKind::RAII;
+	}
+
 private:
-    RAIIEvidence analyse(const ssa::SSAFunction& fn) const;
-    float        score(const RAIIEvidence& ev) const;
-    bool isAcquireCall(const std::string& callee) const;
-    bool isReleaseCall(const std::string& callee) const;
-    std::string matchingRelease(const std::string& acquire) const;
-    /// Accumulate one function's acquire and release calls into @p ev.
-    /// Shared by detect() and detectGroup(), which used to carry a copy each.
-    void collectCalls(const ssa::SSAFunction& fn, RAIIEvidence& ev,
-                      std::vector<std::string>& acquires,
-                      std::vector<std::string>& releases) const;
-    /// Match each acquire against the release the table says closes it.
-    void pairUp(RAIIEvidence& ev,
-                const std::vector<std::string>& acquires,
-                const std::vector<std::string>& releases) const;
+	RAIIEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const RAIIEvidence& ev) const;
+	bool isAcquireCall(const std::string& callee) const;
+	bool isReleaseCall(const std::string& callee) const;
+	std::string matchingRelease(const std::string& acquire) const;
+	/// Accumulate one function's acquire and release calls into @p ev.
+	/// Shared by detect() and detectGroup(), which used to carry a copy each.
+	void collectCalls(
+		const ssa::SSAFunction& fn,
+		RAIIEvidence& ev,
+		std::vector<std::string>& acquires,
+		std::vector<std::string>& releases) const;
+	/// Match each acquire against the release the table says closes it.
+	void
+	pairUp(RAIIEvidence& ev, const std::vector<std::string>& acquires, const std::vector<std::string>& releases) const;
 };
 
 // ─── Pattern detector orchestrator ───────────────────────────────────────────
@@ -378,35 +418,43 @@ private:
  */
 class PatternDetector {
 public:
-    struct Config {
-        float minConfidence = 0.45f;
-        int   minBlocks     = 2;
-        int   minInstrs     = 4;
-    };
-    static Config defaultConfig() noexcept { return {}; }
+	struct Config
+	{
+		float minConfidence = 0.45f;
+		int minBlocks = 2;
+		int minInstrs = 4;
+	};
+	static Config defaultConfig() noexcept
+	{
+		return {};
+	}
 
-    struct Stats {
-        uint32_t functionsAnalysed = 0;
-        uint32_t groupsAnalysed    = 0;
-        uint32_t detections        = 0;
-        std::unordered_map<PatternKind, uint32_t> byKind;
-    };
+	struct Stats
+	{
+		uint32_t functionsAnalysed = 0;
+		uint32_t groupsAnalysed = 0;
+		uint32_t detections = 0;
+		std::unordered_map<PatternKind, uint32_t> byKind;
+	};
 
-    using ResultList = std::vector<PatternResult>;
+	using ResultList = std::vector<PatternResult>;
 
-    explicit PatternDetector(Config cfg = defaultConfig());
+	explicit PatternDetector(Config cfg = defaultConfig());
 
-    ResultList detectFunction(const ssa::SSAFunction& fn) const;
-    ResultList detectGroup(const std::vector<const ssa::SSAFunction*>& fns) const;
+	ResultList detectFunction(const ssa::SSAFunction& fn) const;
+	ResultList detectGroup(const std::vector<const ssa::SSAFunction*>& fns) const;
 
-    const Stats& stats() const { return stats_; }
+	const Stats& stats() const
+	{
+		return stats_;
+	}
 
 private:
-    Config cfg_;
-    mutable Stats stats_;
-    std::vector<std::unique_ptr<IPatternDetector>> detectors_;
+	Config cfg_;
+	mutable Stats stats_;
+	std::vector<std::unique_ptr<IPatternDetector>> detectors_;
 
-    bool passesPreflight(const ssa::SSAFunction& fn) const;
+	bool passesPreflight(const ssa::SSAFunction& fn) const;
 };
 
 } // namespace pattern_detect

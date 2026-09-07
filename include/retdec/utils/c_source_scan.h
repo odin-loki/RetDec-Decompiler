@@ -30,7 +30,14 @@ namespace utils {
 namespace source_scan {
 
 /// What the scanner is inside at a given character.
-enum class Ctx { Code, LineComment, BlockComment, StringLit, CharLit };
+enum class Ctx
+{
+	Code,
+	LineComment,
+	BlockComment,
+	StringLit,
+	CharLit
+};
 
 /// Copy @p n characters from @p in to @p out, replacing the contents of
 /// comments and string/character literals with spaces.
@@ -62,78 +69,79 @@ inline void blankNonCode(const char* in, std::size_t n, char* out) noexcept
 
 		switch (ctx)
 		{
-			case Ctx::Code:
-				if (haveNext && c == '/' && next == '/')
-				{
-					ctx = Ctx::LineComment;
-					out[i] = ' ';
-					out[i + 1] = ' ';
-					++i;
-				}
-				else if (haveNext && c == '/' && next == '*')
-				{
-					ctx = Ctx::BlockComment;
-					out[i] = ' ';
-					out[i + 1] = ' ';
-					++i;
-				}
-				else if (c == '"')
-				{
-					ctx = Ctx::StringLit;
-					escaped = false;
-				}
-				else if (c == '\'')
-				{
-					ctx = Ctx::CharLit;
-					escaped = false;
-				}
-				break;
-
-			case Ctx::LineComment:
-				// A backslash at end of line continues the comment onto the
-				// next, exactly as the preprocessor sees it.
-				if (c == '\n' && !(i > 0 && in[i - 1] == '\\')) ctx = Ctx::Code;
-				else if (c != '\n') out[i] = ' ';
-				break;
-
-			case Ctx::BlockComment:
-				if (haveNext && c == '*' && next == '/')
-				{
-					out[i] = ' ';
-					out[i + 1] = ' ';
-					++i;
-					ctx = Ctx::Code;
-				}
-				else if (c != '\n')
-				{
-					out[i] = ' ';
-				}
-				break;
-
-			case Ctx::StringLit:
-			case Ctx::CharLit:
+		case Ctx::Code:
+			if (haveNext && c == '/' && next == '/')
 			{
-				const char closer = (ctx == Ctx::StringLit) ? '"' : '\'';
-				if (escaped)
-				{
-					escaped = false;
-					if (c != '\n') out[i] = ' ';
-				}
-				else if (c == '\\')
-				{
-					escaped = true;
-					out[i] = ' ';
-				}
-				else if (c == closer)
-				{
-					ctx = Ctx::Code;  // keep the delimiter itself
-				}
-				else if (c != '\n')
-				{
-					out[i] = ' ';
-				}
-				break;
+				ctx = Ctx::LineComment;
+				out[i] = ' ';
+				out[i + 1] = ' ';
+				++i;
 			}
+			else if (haveNext && c == '/' && next == '*')
+			{
+				ctx = Ctx::BlockComment;
+				out[i] = ' ';
+				out[i + 1] = ' ';
+				++i;
+			}
+			else if (c == '"')
+			{
+				ctx = Ctx::StringLit;
+				escaped = false;
+			}
+			else if (c == '\'')
+			{
+				ctx = Ctx::CharLit;
+				escaped = false;
+			}
+			break;
+
+		case Ctx::LineComment:
+			// A backslash at end of line continues the comment onto the
+			// next, exactly as the preprocessor sees it.
+			if (c == '\n' && !(i > 0 && in[i - 1] == '\\'))
+				ctx = Ctx::Code;
+			else if (c != '\n')
+				out[i] = ' ';
+			break;
+
+		case Ctx::BlockComment:
+			if (haveNext && c == '*' && next == '/')
+			{
+				out[i] = ' ';
+				out[i + 1] = ' ';
+				++i;
+				ctx = Ctx::Code;
+			}
+			else if (c != '\n')
+			{
+				out[i] = ' ';
+			}
+			break;
+
+		case Ctx::StringLit:
+		case Ctx::CharLit: {
+			const char closer = (ctx == Ctx::StringLit) ? '"' : '\'';
+			if (escaped)
+			{
+				escaped = false;
+				if (c != '\n') out[i] = ' ';
+			}
+			else if (c == '\\')
+			{
+				escaped = true;
+				out[i] = ' ';
+			}
+			else if (c == closer)
+			{
+				ctx = Ctx::Code; // keep the delimiter itself
+			}
+			else if (c != '\n')
+			{
+				out[i] = ' ';
+			}
+			break;
+		}
 		}
 	}
 }

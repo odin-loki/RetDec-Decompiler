@@ -71,15 +71,15 @@ using namespace retdec::utils::byteorder;
 namespace bounds = retdec::utils::bounds;
 
 extern "C" {
-std::uint8_t   nondet_uchar();
-unsigned       nondet_uint();
-std::size_t    nondet_size();
-std::uint64_t  nondet_uint64();
-bool           nondet_bool();
+std::uint8_t nondet_uchar();
+unsigned nondet_uint();
+std::size_t nondet_size();
+std::uint64_t nondet_uint64();
+bool nondet_bool();
 }
 
 #ifdef RETDEC_VERIFY_SYNTAX_ONLY
-#define __ESBMC_assume(cond) ((void) sizeof((cond) ? 1 : 0))
+#define __ESBMC_assume(cond) ((void)sizeof((cond) ? 1 : 0))
 #endif
 
 /// Two bytes wider than the widest legal read.
@@ -106,7 +106,8 @@ namespace {
 
 void fillNondet(std::uint8_t* buf, std::size_t len)
 {
-	for (std::size_t i = 0; i < len; ++i) buf[i] = nondet_uchar();
+	for (std::size_t i = 0; i < len; ++i)
+		buf[i] = nondet_uchar();
 }
 
 } // namespace
@@ -180,8 +181,7 @@ extern "C" void proof_a_refused_read_leaves_out_alone()
 	if (!readBE(buf, size, pos, n, b)) assert(b == sentinel);
 
 	std::uint64_t c = sentinel;
-	if (!readWidened(buf, size, pos, n, bitsPerUnit, nondet_bool(), c))
-		assert(c == sentinel);
+	if (!readWidened(buf, size, pos, n, bitsPerUnit, nondet_bool(), c)) assert(c == sentinel);
 
 	// A null buffer is refused rather than dereferenced, on all three.
 	std::uint64_t d = sentinel;
@@ -272,7 +272,7 @@ extern "C" void proof_no_shift_count_reaches_the_width_of_its_operand()
 	// gets the same fully symbolic treatment: its own multiplication must not
 	// wrap either, which --unsigned-overflow-check checks here.
 	const bool fits = shiftFits(nondet_size(), nondet_uint(), nondet_uint());
-	(void) fits;
+	(void)fits;
 
 	// shiftFits agrees with the product wherever the product is exact. Stated
 	// only under bounds that make the product safe to form in the harness --
@@ -306,10 +306,8 @@ extern "C" void proof_little_endian_is_the_arithmetic_identity()
 	assert(readLE(buf, size, pos, 4, v));
 
 	const std::uint64_t expect =
-			  static_cast<std::uint64_t>(buf[pos])
-			+ static_cast<std::uint64_t>(buf[pos + 1]) * 256ull
-			+ static_cast<std::uint64_t>(buf[pos + 2]) * 65536ull
-			+ static_cast<std::uint64_t>(buf[pos + 3]) * 16777216ull;
+		static_cast<std::uint64_t>(buf[pos]) + static_cast<std::uint64_t>(buf[pos + 1]) * 256ull
+		+ static_cast<std::uint64_t>(buf[pos + 2]) * 65536ull + static_cast<std::uint64_t>(buf[pos + 3]) * 16777216ull;
 	assert(v == expect);
 
 	// The one-byte read is the identity on the byte itself, which is what
@@ -323,10 +321,8 @@ extern "C" void proof_little_endian_is_the_arithmetic_identity()
 	std::uint64_t b = 0;
 	assert(readBE(buf, size, pos, 4, b));
 	const std::uint64_t expectBE =
-			  static_cast<std::uint64_t>(buf[pos + 3])
-			+ static_cast<std::uint64_t>(buf[pos + 2]) * 256ull
-			+ static_cast<std::uint64_t>(buf[pos + 1]) * 65536ull
-			+ static_cast<std::uint64_t>(buf[pos]) * 16777216ull;
+		static_cast<std::uint64_t>(buf[pos + 3]) + static_cast<std::uint64_t>(buf[pos + 2]) * 256ull
+		+ static_cast<std::uint64_t>(buf[pos + 1]) * 65536ull + static_cast<std::uint64_t>(buf[pos]) * 16777216ull;
 	assert(b == expectBE);
 }
 
@@ -419,7 +415,8 @@ extern "C" void proof_writes_stay_inside_the_capacity()
 	// A pattern no correct write produces for every byte at once, so an
 	// unwritten byte is distinguishable from a written one.
 	const std::uint8_t kFill = 0xAA;
-	for (std::size_t i = 0; i < outCap; ++i) buf[i] = kFill;
+	for (std::size_t i = 0; i < outCap; ++i)
+		buf[i] = kFill;
 
 	const std::uint64_t v = nondet_uint64();
 	const std::size_t n = nondet_size();
@@ -431,7 +428,8 @@ extern "C" void proof_writes_stay_inside_the_capacity()
 	if (ok)
 	{
 		// Nothing at or past n was touched: the write was exactly n bytes wide.
-		for (std::size_t i = n; i < outCap; ++i) assert(buf[i] == kFill);
+		for (std::size_t i = n; i < outCap; ++i)
+			assert(buf[i] == kFill);
 	}
 
 	// And the same for writeBE, on a buffer refilled so the two do not stand in
@@ -440,14 +438,16 @@ extern "C" void proof_writes_stay_inside_the_capacity()
 	// from the low byte, the other down from the high one -- so a proof about
 	// either says nothing about the other, and the big-endian direction is the
 	// one where an off-by-one lands at index n rather than at index -1.
-	for (std::size_t i = 0; i < outCap; ++i) buf[i] = kFill;
+	for (std::size_t i = 0; i < outCap; ++i)
+		buf[i] = kFill;
 
 	const bool okBE = writeBE(v, n, buf, outCap);
 	assert(okBE == (n >= 1 && n <= kMaxBytes && n <= outCap));
 
 	if (okBE)
 	{
-		for (std::size_t i = n; i < outCap; ++i) assert(buf[i] == kFill);
+		for (std::size_t i = n; i < outCap; ++i)
+			assert(buf[i] == kFill);
 	}
 
 	std::free(buf);
@@ -476,7 +476,8 @@ extern "C" void proof_a_refused_write_touches_nothing()
 	__ESBMC_assume(buf != nullptr);
 
 	const std::uint8_t kFill = 0x5C;
-	for (std::size_t i = 0; i < outCap; ++i) buf[i] = kFill;
+	for (std::size_t i = 0; i < outCap; ++i)
+		buf[i] = kFill;
 
 	const std::uint64_t v = nondet_uint64();
 	const std::size_t n = nondet_size();
@@ -487,7 +488,8 @@ extern "C" void proof_a_refused_write_touches_nothing()
 	assert(be == (n >= 1 && n <= kMaxBytes && n <= outCap));
 
 	if (!le && !be)
-		for (std::size_t i = 0; i < outCap; ++i) assert(buf[i] == kFill);
+		for (std::size_t i = 0; i < outCap; ++i)
+			assert(buf[i] == kFill);
 
 	// A null destination is refused rather than written through.
 	assert(!writeLE(v, n, nullptr, outCap));
@@ -537,9 +539,8 @@ extern "C" void proof_widened_refuses_rather_than_shifting()
 
 	// && short-circuits, so `n * bitsPerUnit` is formed only once both factors
 	// are known to be at most 64 and the product is at most 4096.
-	const bool widthOk = n >= 1 && n <= kAccumulatorBits
-			&& bitsPerUnit >= kBitsPerByte && bitsPerUnit <= kAccumulatorBits
-			&& n * bitsPerUnit <= kAccumulatorBits;
+	const bool widthOk = n >= 1 && n <= kAccumulatorBits && bitsPerUnit >= kBitsPerByte
+					  && bitsPerUnit <= kAccumulatorBits && n * bitsPerUnit <= kAccumulatorBits;
 
 	assert(ok == (widthOk && bounds::rangeFits(pos, size, n)));
 
@@ -647,7 +648,8 @@ extern "C" void proof_extend_high_places_supplied_bytes_at_the_top()
 		// pattern. Multiplication rather than a shift, so the identity does not
 		// restate the operation it is checking. 2^(8 * (4 - k)) for k in 1..4.
 		std::uint64_t scale = 1;
-		for (unsigned i = k; i < 4; ++i) scale *= 256ull;
+		for (unsigned i = k; i < 4; ++i)
+			scale *= 256ull;
 		assert(extendHigh(supplied, k, 4) == supplied * scale);
 		// And the whole answer fits a 32-bit pattern: nothing spilled above.
 		assert(extendHigh(supplied, k, 4) <= 0xFFFFFFFFull);
@@ -656,7 +658,8 @@ extern "C" void proof_extend_high_places_supplied_bytes_at_the_top()
 	// A shortened VALUE_DOUBLE. For k = 8 this is the identity, which is the
 	// only case dex_class_parser.cpp:103 gets right.
 	std::uint64_t scale8 = 1;
-	for (unsigned i = k; i < 8; ++i) scale8 *= 256ull;
+	for (unsigned i = k; i < 8; ++i)
+		scale8 *= 256ull;
 	assert(extendHigh(supplied, k, 8) == supplied * scale8);
 
 	// Out-of-range requests are refused rather than shifted by a count they

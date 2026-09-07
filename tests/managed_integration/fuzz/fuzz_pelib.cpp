@@ -25,49 +25,54 @@
 #include <sstream>
 #include <string>
 
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-    // A 32-bit PE header is 24 bytes past e_lfanew; below that there is nothing
-    // to parse and every input is the same rejection.
-    if (size < 64) return 0;
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
+{
+	// A 32-bit PE header is 24 bytes past e_lfanew; below that there is nothing
+	// to parse and every input is the same rejection.
+	if (size < 64) return 0;
 
-    try {
-        PeLib::ByteBuffer buf(data, data + size);
+	try
+	{
+		PeLib::ByteBuffer buf(data, data + size);
 
-        // Drive it through a stream, which is how PeFileT is actually used --
-        // the directory readers below take their bytes from m_iStream, not from
-        // the ByteBuffer, so a default-constructed file would have them reading
-        // an unopened stream rather than the input.
-        std::string asString(reinterpret_cast<const char*>(data), size);
-        std::istringstream stream(asString, std::ios::binary);
-        PeLib::PeFileT file(stream);
+		// Drive it through a stream, which is how PeFileT is actually used --
+		// the directory readers below take their bytes from m_iStream, not from
+		// the ByteBuffer, so a default-constructed file would have them reading
+		// an unopened stream rather than the input.
+		std::string asString(reinterpret_cast<const char*>(data), size);
+		std::istringstream stream(asString, std::ios::binary);
+		PeLib::PeFileT file(stream);
 
-        // Headers first: everything below depends on them, and each directory
-        // reader is exercised whether or not the headers parsed, since a
-        // partially-initialised file is exactly the state a malformed input
-        // leaves behind.
-        (void) file.loadPeHeaders(buf);
+		// Headers first: everything below depends on them, and each directory
+		// reader is exercised whether or not the headers parsed, since a
+		// partially-initialised file is exactly the state a malformed input
+		// leaves behind.
+		(void)file.loadPeHeaders(buf);
 
-        (void) file.readExportDirectory();
-        (void) file.readImportDirectory();
-        (void) file.readBoundImportDirectory();
-        (void) file.readResourceDirectory();
-        (void) file.readRelocationsDirectory();
-        (void) file.readComHeaderDirectory();
-        (void) file.readIatDirectory();
-        (void) file.readDebugDirectory();
-        (void) file.readTlsDirectory();
-        (void) file.readDelayImportDirectory();
-        (void) file.readSecurityDirectory();
+		(void)file.readExportDirectory();
+		(void)file.readImportDirectory();
+		(void)file.readBoundImportDirectory();
+		(void)file.readResourceDirectory();
+		(void)file.readRelocationsDirectory();
+		(void)file.readComHeaderDirectory();
+		(void)file.readIatDirectory();
+		(void)file.readDebugDirectory();
+		(void)file.readTlsDirectory();
+		(void)file.readDelayImportDirectory();
+		(void)file.readSecurityDirectory();
 
-        // The Rich header is addressed by an explicit offset and size, which is
-        // its own bounds surface. Drive it with values taken from the input.
-        const std::size_t offset = data[0] | (std::size_t(data[1]) << 8);
-        const std::size_t len = data[2] | (std::size_t(data[3]) << 8);
-        (void) file.readRichHeader(offset, len);
-    } catch (const std::exception&) {
-        // Rejecting malformed input is correct; only a crash is a bug.
-    } catch (...) {
-    }
+		// The Rich header is addressed by an explicit offset and size, which is
+		// its own bounds surface. Drive it with values taken from the input.
+		const std::size_t offset = data[0] | (std::size_t(data[1]) << 8);
+		const std::size_t len = data[2] | (std::size_t(data[3]) << 8);
+		(void)file.readRichHeader(offset, len);
+	}
+	catch (const std::exception&)
+	{
+		// Rejecting malformed input is correct; only a crash is a bug.
+	}
+	catch (...)
+	{}
 
-    return 0;
+	return 0;
 }

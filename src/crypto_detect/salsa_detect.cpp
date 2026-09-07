@@ -27,94 +27,102 @@ namespace crypto_detect {
 
 namespace {
 
-static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
-    int n = 0;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs)
-            if (i && i->op == op) ++n;
-    }
-    return n;
+static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+			if (i && i->op == op) ++n;
+	}
+	return n;
 }
 
-static bool hasImmediate(const ssa::SSAFunction& fn, uint64_t val) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs) {
-            if (!i) continue;
-            for (const auto& u : i->uses) {
-                const auto* v = fn.value(u.valueId);
-                if (v && v->kind == ssa::ValueKind::Immediate && v->imm == val)
-                    return true;
-            }
-        }
-    }
-    return false;
+static bool hasImmediate(const ssa::SSAFunction& fn, uint64_t val)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i) continue;
+			for (const auto& u: i->uses)
+			{
+				const auto* v = fn.value(u.valueId);
+				if (v && v->kind == ssa::ValueKind::Immediate && v->imm == val) return true;
+			}
+		}
+	}
+	return false;
 }
 
 } // anonymous namespace
 
-Salsa20Evidence Salsa20Detector::analyse(const ssa::SSAFunction& fn) const {
-    Salsa20Evidence ev;
-    ev.hasRotConst7  = arx::hasRotateBy(fn, 7);
-    // Same defect as ChaCha20's, in the same shape: the quarter-round rotations
-    // 7, 9, 13 and 18 were "detected" as immediates appearing anywhere, and the
-    // rotation sequence asked for a Shl or an Or rather than a rotate. Adding a
-    // single `<< 13` to a plain string hash was enough to have it annotated as
-    // Salsa20 at 0.50, alongside the ChaCha20 and RC4 annotations the same
-    // function was already collecting.
-    static constexpr uint64_t kQuarterRoundRotations[] = {7, 9, 13, 18};
-    ev.hasRotConst9  = arx::hasRotateBy(fn, 9);
-    ev.hasRotConst13 = arx::hasRotateBy(fn, 13);
-    ev.hasRotConst18 = arx::hasRotateBy(fn, 18);
-    ev.hasAddXorRotSeq = arx::hasAddRotateXor(fn, kQuarterRoundRotations, 4);
-    ev.found = ev.hasAddXorRotSeq &&
-               (ev.hasRotConst7 || ev.hasRotConst9 ||
-                ev.hasRotConst13 || ev.hasRotConst18);
-    ev.confidence = score(ev);
-    return ev;
+Salsa20Evidence Salsa20Detector::analyse(const ssa::SSAFunction& fn) const
+{
+	Salsa20Evidence ev;
+	ev.hasRotConst7 = arx::hasRotateBy(fn, 7);
+	// Same defect as ChaCha20's, in the same shape: the quarter-round rotations
+	// 7, 9, 13 and 18 were "detected" as immediates appearing anywhere, and the
+	// rotation sequence asked for a Shl or an Or rather than a rotate. Adding a
+	// single `<< 13` to a plain string hash was enough to have it annotated as
+	// Salsa20 at 0.50, alongside the ChaCha20 and RC4 annotations the same
+	// function was already collecting.
+	static constexpr uint64_t kQuarterRoundRotations[] = {7, 9, 13, 18};
+	ev.hasRotConst9 = arx::hasRotateBy(fn, 9);
+	ev.hasRotConst13 = arx::hasRotateBy(fn, 13);
+	ev.hasRotConst18 = arx::hasRotateBy(fn, 18);
+	ev.hasAddXorRotSeq = arx::hasAddRotateXor(fn, kQuarterRoundRotations, 4);
+	ev.found = ev.hasAddXorRotSeq && (ev.hasRotConst7 || ev.hasRotConst9 || ev.hasRotConst13 || ev.hasRotConst18);
+	ev.confidence = score(ev);
+	return ev;
 }
 
-float Salsa20Detector::score(const Salsa20Evidence& ev) const {
-    if (!ev.hasAddXorRotSeq)
-        return 0.0f;
-    float s = 0.0f;
-    if (ev.hasRotConst7)  s += 0.25f;
-    if (ev.hasRotConst9)  s += 0.25f;
-    if (ev.hasRotConst13) s += 0.25f;
-    if (ev.hasRotConst18) s += 0.25f;
-    return s > 1.0f ? 1.0f : s;
+float Salsa20Detector::score(const Salsa20Evidence& ev) const
+{
+	if (!ev.hasAddXorRotSeq) return 0.0f;
+	float s = 0.0f;
+	if (ev.hasRotConst7) s += 0.25f;
+	if (ev.hasRotConst9) s += 0.25f;
+	if (ev.hasRotConst13) s += 0.25f;
+	if (ev.hasRotConst18) s += 0.25f;
+	return s > 1.0f ? 1.0f : s;
 }
 
-CryptoResult Salsa20Detector::detect(const ssa::SSAFunction& fn) const {
-    CryptoResult r;
-    r.algorithm = CryptoAlgorithm::Salsa20;
-    auto ev = analyse(fn);
-    r.confidence = ev.confidence;
-    if (ev.confidence >= 0.50f) {
-        r.emittedAnnotation =
-            "// Cryptographic primitive: Salsa20\n"
-            "// Quarter-round rotation constants: 7, 9, 13, 18\n"
-            "// Usage: salsa20_encrypt(key, nonce, counter, plaintext, ciphertext, len);";
-    }
-    return r;
+CryptoResult Salsa20Detector::detect(const ssa::SSAFunction& fn) const
+{
+	CryptoResult r;
+	r.algorithm = CryptoAlgorithm::Salsa20;
+	auto ev = analyse(fn);
+	r.confidence = ev.confidence;
+	if (ev.confidence >= 0.50f)
+	{
+		r.emittedAnnotation =
+			"// Cryptographic primitive: Salsa20\n"
+			"// Quarter-round rotation constants: 7, 9, 13, 18\n"
+			"// Usage: salsa20_encrypt(key, nonce, counter, plaintext, ciphertext, len);";
+	}
+	return r;
 }
 
-CryptoResult Curve25519Detector::detect(const ssa::SSAFunction& fn) const {
-    CryptoResult r;
-    r.algorithm = CryptoAlgorithm::ECC;
-    // 121665 == 0x1db41 is (A-2)/4 for Curve25519's Montgomery a=486662.
-    if (hasImmediate(fn, 121665) || hasImmediate(fn, 0x1db41)) {
-        r.variant = CryptoVariant::Curve25519;
-        r.confidence = 1.0f;
-        r.emittedAnnotation =
-            "// Cryptographic primitive: Curve25519\n"
-            "// Montgomery-ladder constant 121665 (0x1db41)\n"
-            "// Usage: crypto_scalarmult(q, n, p);";
-    }
-    return r;
+CryptoResult Curve25519Detector::detect(const ssa::SSAFunction& fn) const
+{
+	CryptoResult r;
+	r.algorithm = CryptoAlgorithm::ECC;
+	// 121665 == 0x1db41 is (A-2)/4 for Curve25519's Montgomery a=486662.
+	if (hasImmediate(fn, 121665) || hasImmediate(fn, 0x1db41))
+	{
+		r.variant = CryptoVariant::Curve25519;
+		r.confidence = 1.0f;
+		r.emittedAnnotation =
+			"// Cryptographic primitive: Curve25519\n"
+			"// Montgomery-ladder constant 121665 (0x1db41)\n"
+			"// Usage: crypto_scalarmult(q, n, p);";
+	}
+	return r;
 }
 
 } // namespace crypto_detect

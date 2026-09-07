@@ -85,14 +85,12 @@ namespace bounds_kernels {
  */
 inline bool xWidthFitsAccumulator(std::uint64_t x, std::uint64_t unitBits)
 {
-	if (x > retdec::utils::byteorder::kAccumulatorBits
-			|| unitBits > retdec::utils::byteorder::kAccumulatorBits)
+	if (x > retdec::utils::byteorder::kAccumulatorBits || unitBits > retdec::utils::byteorder::kAccumulatorBits)
 	{
 		return false;
 	}
 
-	return retdec::utils::byteorder::widthFits(
-			static_cast<std::size_t>(x), static_cast<unsigned>(unitBits));
+	return retdec::utils::byteorder::widthFits(static_cast<std::size_t>(x), static_cast<unsigned>(unitBits));
 }
 
 /**
@@ -115,20 +113,16 @@ inline bool xWidthFitsAccumulator(std::uint64_t x, std::uint64_t unitBits)
  */
 inline bool rangeFitsWide(std::uint64_t offset, std::uint64_t size, std::uint64_t len)
 {
-	if (offset > static_cast<std::uint64_t>(SIZE_MAX)
-			|| len > static_cast<std::uint64_t>(SIZE_MAX))
+	if (offset > static_cast<std::uint64_t>(SIZE_MAX) || len > static_cast<std::uint64_t>(SIZE_MAX))
 	{
 		return false;
 	}
 
-	const std::size_t cappedSize = size > static_cast<std::uint64_t>(SIZE_MAX)
-			? SIZE_MAX
-			: static_cast<std::size_t>(size);
+	const std::size_t cappedSize =
+		size > static_cast<std::uint64_t>(SIZE_MAX) ? SIZE_MAX : static_cast<std::size_t>(size);
 
 	return retdec::utils::bounds::rangeFits(
-			static_cast<std::size_t>(offset),
-			cappedSize,
-			static_cast<std::size_t>(len));
+		static_cast<std::size_t>(offset), cappedSize, static_cast<std::size_t>(len));
 }
 
 /**
@@ -158,28 +152,21 @@ inline bool rangeFitsWide(std::uint64_t offset, std::uint64_t size, std::uint64_
  * it across the offsets and lengths that wrap.
  */
 inline bool clampedReadLength(
-		std::uint64_t offset,
-		std::uint64_t size,
-		std::uint64_t requested,
-		std::size_t& outOffset,
-		std::size_t& outLength)
+	std::uint64_t offset, std::uint64_t size, std::uint64_t requested, std::size_t& outOffset, std::size_t& outLength)
 {
 	if (offset > static_cast<std::uint64_t>(SIZE_MAX) || offset >= size)
 	{
 		return false;
 	}
 
-	const std::size_t cappedSize = size > static_cast<std::uint64_t>(SIZE_MAX)
-			? SIZE_MAX
-			: static_cast<std::size_t>(size);
+	const std::size_t cappedSize =
+		size > static_cast<std::uint64_t>(SIZE_MAX) ? SIZE_MAX : static_cast<std::size_t>(size);
 	const std::size_t start = static_cast<std::size_t>(offset);
-	const std::size_t want = requested > static_cast<std::uint64_t>(SIZE_MAX)
-			? SIZE_MAX
-			: static_cast<std::size_t>(requested);
+	const std::size_t want =
+		requested > static_cast<std::uint64_t>(SIZE_MAX) ? SIZE_MAX : static_cast<std::size_t>(requested);
 
 	outOffset = start;
-	outLength = retdec::utils::bounds::clamp(
-			want, retdec::utils::bounds::remaining(start, cappedSize));
+	outLength = retdec::utils::bounds::clamp(want, retdec::utils::bounds::remaining(start, cappedSize));
 	return true;
 }
 
@@ -197,11 +184,11 @@ inline bool clampedReadLength(
  * available bytes otherwise, which is what getBytes promised before.
  */
 inline bool copyClampedRange(
-		const unsigned char* data,
-		std::uint64_t size,
-		std::uint64_t offset,
-		std::uint64_t requested,
-		std::vector<std::uint8_t>& out)
+	const unsigned char* data,
+	std::uint64_t size,
+	std::uint64_t offset,
+	std::uint64_t requested,
+	std::vector<std::uint8_t>& out)
 {
 	std::size_t start = 0;
 	std::size_t length = 0;
@@ -241,8 +228,7 @@ inline bool copyClampedRange(
  */
 inline std::size_t regionEndSaturating(std::uint64_t offset, std::uint64_t size)
 {
-	if (offset > static_cast<std::uint64_t>(SIZE_MAX)
-			|| size > static_cast<std::uint64_t>(SIZE_MAX))
+	if (offset > static_cast<std::uint64_t>(SIZE_MAX) || size > static_cast<std::uint64_t>(SIZE_MAX))
 	{
 		return SIZE_MAX;
 	}
@@ -270,24 +256,17 @@ enum class ObjectPlacement
  * reports "not stretched" for an object it never classified; a wrapped object
  * end reports "not stretched" for an object that plainly is.
  */
-inline ObjectPlacement placeObjectInRegion(
-		std::uint64_t regionStart,
-		std::uint64_t regionSize,
-		std::uint64_t addr,
-		std::uint64_t size)
+inline ObjectPlacement
+placeObjectInRegion(std::uint64_t regionStart, std::uint64_t regionSize, std::uint64_t addr, std::uint64_t size)
 {
-	const std::uint64_t regionEnd =
-			static_cast<std::uint64_t>(regionEndSaturating(regionStart, regionSize));
+	const std::uint64_t regionEnd = static_cast<std::uint64_t>(regionEndSaturating(regionStart, regionSize));
 	if (addr < regionStart || addr >= regionEnd)
 	{
 		return ObjectPlacement::Elsewhere;
 	}
 
-	const std::uint64_t objectEnd =
-			static_cast<std::uint64_t>(regionEndSaturating(addr, size));
-	return objectEnd > regionEnd
-			? ObjectPlacement::Stretched
-			: ObjectPlacement::Contained;
+	const std::uint64_t objectEnd = static_cast<std::uint64_t>(regionEndSaturating(addr, size));
+	return objectEnd > regionEnd ? ObjectPlacement::Stretched : ObjectPlacement::Contained;
 }
 
 } // namespace bounds_kernels
@@ -326,8 +305,7 @@ using namespace PeLib;
 namespace retdec {
 namespace fileformat {
 
-namespace
-{
+namespace {
 
 const std::size_t DefaultMinStringLength = 4;
 
@@ -340,19 +318,20 @@ const std::size_t DefaultMinStringLength = 4;
  * @return @c true if @a offset is in range of @a newRegion and @a actualRegion is
  *    @c nullptr or @a newRegion is subset of @a actualRegion, @c false otherwise
  */
-bool isOffsetFromRegion(const SecSeg *actualRegion, const SecSeg *newRegion, std::size_t offset)
+bool isOffsetFromRegion(const SecSeg* actualRegion, const SecSeg* newRegion, std::size_t offset)
 {
-	if(!newRegion)
+	if (!newRegion)
 	{
 		return false;
 	}
 
 	const auto newRegionSize = newRegion->getSizeInFile();
 	const auto actualRegionSize = (actualRegion ? actualRegion->getSizeInFile() : 0);
-	if(offset >= newRegion->getOffset() && offset - newRegion->getOffset() < newRegionSize)
+	if (offset >= newRegion->getOffset() && offset - newRegion->getOffset() < newRegionSize)
 	{
-		if(!actualRegion || (newRegion->getOffset() > actualRegion->getOffset() ||
-			(newRegion->getOffset() == actualRegion->getOffset() && newRegionSize < actualRegionSize)))
+		if (!actualRegion
+			|| (newRegion->getOffset() > actualRegion->getOffset()
+				|| (newRegion->getOffset() == actualRegion->getOffset() && newRegionSize < actualRegionSize)))
 		{
 			return true;
 		}
@@ -369,32 +348,34 @@ bool isOffsetFromRegion(const SecSeg *actualRegion, const SecSeg *newRegion, std
  * @return @c true if @a address is in range of @a newRegion and @a actualRegion is
  *    @c nullptr or @a newRegion is subset of @a actualRegion, @c false otherwise
  */
-bool isAddressFromRegion(const SecSeg *actualRegion, const SecSeg *newRegion, std::size_t address)
+bool isAddressFromRegion(const SecSeg* actualRegion, const SecSeg* newRegion, std::size_t address)
 {
-	if(!newRegion)
+	if (!newRegion)
 	{
 		return false;
 	}
 
 	unsigned long long newRegionSize = 0;
-	if(!newRegion->getSizeInMemory(newRegionSize))
+	if (!newRegion->getSizeInMemory(newRegionSize))
 	{
 		newRegionSize = newRegion->getSizeInFile();
 	}
 
 	unsigned long long actualRegionSize = 0;
-	if(actualRegion)
+	if (actualRegion)
 	{
-		if(!actualRegion->getSizeInMemory(actualRegionSize))
+		if (!actualRegion->getSizeInMemory(actualRegionSize))
 		{
 			actualRegionSize = actualRegion->getSizeInFile();
 		}
 	}
 
-	if(newRegion->getMemory() && address >= newRegion->getAddress() && address - newRegion->getAddress() < newRegionSize)
+	if (newRegion->getMemory() && address >= newRegion->getAddress()
+		&& address - newRegion->getAddress() < newRegionSize)
 	{
-		if(!actualRegion || (newRegion->getAddress() > actualRegion->getAddress() ||
-			(newRegion->getAddress() == actualRegion->getAddress() && newRegionSize < actualRegionSize)))
+		if (!actualRegion
+			|| (newRegion->getAddress() > actualRegion->getAddress()
+				|| (newRegion->getAddress() == actualRegion->getAddress() && newRegionSize < actualRegionSize)))
 		{
 			return true;
 		}
@@ -410,14 +391,9 @@ bool isAddressFromRegion(const SecSeg *actualRegion, const SecSeg *newRegion, st
  * @param pathToFile Path to input file
  * @param loadFlags Load flags
  */
-FileFormat::FileFormat(const std::string & pathToFile, LoadFlags loadFlags) :
-		auxBuff(nullptr, nullptr),
-		auxIStream(&auxBuff),
-		loadedBytes(&bytes),
-		loadFlags(loadFlags),
-		filePath(pathToFile),
-		fileStream(auxFStream),
-		_ldrErrInfo()
+FileFormat::FileFormat(const std::string& pathToFile, LoadFlags loadFlags):
+	auxBuff(nullptr, nullptr), auxIStream(&auxBuff), loadedBytes(&bytes), loadFlags(loadFlags), filePath(pathToFile),
+	fileStream(auxFStream), _ldrErrInfo()
 {
 	auxFStream.open(filePath, std::ifstream::binary);
 	stateIsValid = auxFStream.is_open();
@@ -429,13 +405,9 @@ FileFormat::FileFormat(const std::string & pathToFile, LoadFlags loadFlags) :
  * @param inputStream Stream which represents input file
  * @param loadFlags Load flags
  */
-FileFormat::FileFormat(std::istream &inputStream, LoadFlags loadFlags) :
-		auxBuff(nullptr, nullptr),
-		auxIStream(&auxBuff),
-		loadedBytes(&bytes),
-		loadFlags(loadFlags),
-		fileStream(inputStream),
-		_ldrErrInfo()
+FileFormat::FileFormat(std::istream& inputStream, LoadFlags loadFlags):
+	auxBuff(nullptr, nullptr), auxIStream(&auxBuff), loadedBytes(&bytes), loadFlags(loadFlags), fileStream(inputStream),
+	_ldrErrInfo()
 {
 	stateIsValid = !inputStream.fail();
 	init();
@@ -447,13 +419,9 @@ FileFormat::FileFormat(std::istream &inputStream, LoadFlags loadFlags) :
  * @param size Input data size.
  * @param loadFlags Load flags
  */
-FileFormat::FileFormat(const std::uint8_t *data, std::size_t size, LoadFlags loadFlags) :
-		auxBuff(data, size),
-		auxIStream(&auxBuff),
-		loadedBytes(&bytes),
-		loadFlags(loadFlags),
-		fileStream(auxIStream),
-		_ldrErrInfo()
+FileFormat::FileFormat(const std::uint8_t* data, std::size_t size, LoadFlags loadFlags):
+	auxBuff(data, size), auxIStream(&auxBuff), loadedBytes(&bytes), loadFlags(loadFlags), fileStream(auxIStream),
+	_ldrErrInfo()
 {
 	stateIsValid = true;
 	init();
@@ -528,27 +496,27 @@ void FileFormat::clear()
 	delete tlsInfo;
 	delete elfCoreInfo;
 
-	for(auto *item : sections)
+	for (auto* item: sections)
 	{
 		delete item;
 	}
 
-	for(auto *item : segments)
+	for (auto* item: segments)
 	{
 		delete item;
 	}
 
-	for(auto *item : symbolTables)
+	for (auto* item: symbolTables)
 	{
 		delete item;
 	}
 
-	for(auto *item : relocationTables)
+	for (auto* item: relocationTables)
 	{
 		delete item;
 	}
 
-	for(auto *item : dynamicTables)
+	for (auto* item: dynamicTables)
 	{
 		delete item;
 	}
@@ -571,42 +539,39 @@ void FileFormat::computeSectionTableHashes()
 		return;
 	}
 
-	if(!initSectionTableHashOffsets() || secHashInfo.empty())
+	if (!initSectionTableHashOffsets() || secHashInfo.empty())
 	{
 		return;
 	}
 
 	std::vector<unsigned char> data;
 
-	for(std::size_t i = 0, e = sections.size(); i < e; ++i)
+	for (std::size_t i = 0, e = sections.size(); i < e; ++i)
 	{
-		if(!sections[i])
+		if (!sections[i])
 		{
 			continue;
 		}
 		auto baseOffset = getSectionTableOffset() + i * getSectionTableEntrySize();
 		std::string actHashStr;
-		if(std::all_of(secHashInfo.begin(), secHashInfo.end(),
-			[&] (const auto &item)
-			{
+		if (std::all_of(secHashInfo.begin(), secHashInfo.end(), [&](const auto& item) {
 				std::string act;
-				if(item.second && this->getNTBSOffset(baseOffset + item.first, act, item.second))
+				if (item.second && this->getNTBSOffset(baseOffset + item.first, act, item.second))
 				{
 					actHashStr += act;
 					return true;
 				}
 				return false;
-			}
-		))
+			}))
 		{
-			for(const auto c : actHashStr)
+			for (const auto c: actHashStr)
 			{
 				data.push_back(static_cast<unsigned char>(c));
 			}
 		}
 	}
 
-	if(!data.empty())
+	if (!data.empty())
 	{
 		sectionCrc32 = retdec::fileformat::getCrc32(data.data(), data.size());
 		sectionMd5 = retdec::fileformat::getMd5(data.data(), data.size());
@@ -620,7 +585,7 @@ void FileFormat::computeSectionTableHashes()
  * formats (e.g. Intel HEX) it is necessary to call this method.
  * @param lBytes Pointer to serialized bytes
  */
-void FileFormat::setLoadedBytes(std::vector<unsigned char> *lBytes)
+void FileFormat::setLoadedBytes(std::vector<unsigned char>* lBytes)
 {
 	loadedBytes = lBytes;
 }
@@ -632,29 +597,29 @@ void FileFormat::setLoadedBytes(std::vector<unsigned char> *lBytes)
  * Therefore, this method needs to be called to set these critical information.
  */
 void FileFormat::initArchitecture(
-		Architecture arch,
-		retdec::utils::Endianness endian,
-		std::size_t bytesPerWord,
-		retdec::common::Address entryPoint,
-		retdec::common::Address sectionVMA)
+	Architecture arch,
+	retdec::utils::Endianness endian,
+	std::size_t bytesPerWord,
+	retdec::common::Address entryPoint,
+	retdec::common::Address sectionVMA)
 {
-	if(IntelHexFormat *ihex = dynamic_cast<IntelHexFormat*>(this))
+	if (IntelHexFormat* ihex = dynamic_cast<IntelHexFormat*>(this))
 	{
 		ihex->setTargetArchitecture(arch);
 		ihex->setBytesPerWord(bytesPerWord);
 		ihex->setEndianness(endian);
 	}
-	else if(RawDataFormat *raw = dynamic_cast<RawDataFormat*>(this))
+	else if (RawDataFormat* raw = dynamic_cast<RawDataFormat*>(this))
 	{
 		raw->setTargetArchitecture(arch);
 		raw->setBytesPerWord(bytesPerWord);
 		raw->setEndianness(endian);
 
-		if(sectionVMA.isDefined())
+		if (sectionVMA.isDefined())
 		{
 			raw->setBaseAddress(sectionVMA);
 		}
-		if(entryPoint.isDefined())
+		if (entryPoint.isDefined())
 		{
 			raw->setEntryPoint(entryPoint);
 		}
@@ -666,8 +631,7 @@ void FileFormat::initArchitecture(
  */
 void FileFormat::loadStrings()
 {
-	if (!(getLoadFlags() & LoadFlags::DETECT_STRINGS))
-		return;
+	if (!(getLoadFlags() & LoadFlags::DETECT_STRINGS)) return;
 
 	loadStrings(StringType::Ascii, 1);
 	loadStrings(StringType::Wide, 2);
@@ -687,20 +651,18 @@ void FileFormat::loadStrings(StringType type, std::size_t charSize)
 {
 	if (!sections.empty())
 	{
-		for (const auto* sec : sections)
+		for (const auto* sec: sections)
 		{
-			if (!sec->isSomeData() && !sec->isDebug())
-				continue;
+			if (!sec->isSomeData() && !sec->isDebug()) continue;
 
 			loadStrings(type, charSize, sec);
 		}
 	}
 	else
 	{
-		for (const auto* seg : segments)
+		for (const auto* seg: segments)
 		{
-			if (!seg->isSomeData() && !seg->isDebug())
-				continue;
+			if (!seg->isSomeData() && !seg->isDebug()) continue;
 
 			loadStrings(type, charSize, seg);
 		}
@@ -722,7 +684,11 @@ void FileFormat::loadStrings(StringType type, std::size_t charSize, const SecSeg
 				++stringEndItr;
 
 			if (static_cast<std::size_t>(stringEndItr - stringBeginItr) >= DefaultMinStringLength)
-				strings.emplace_back(type, secSeg->getOffset() + (itr - begin), secSeg->getName(), std::string{stringBeginItr, stringEndItr});
+				strings.emplace_back(
+					type,
+					secSeg->getOffset() + (itr - begin),
+					secSeg->getName(),
+					std::string{stringBeginItr, stringEndItr});
 
 			itr = stringEndItr.getUnderlyingIterator();
 		}
@@ -796,11 +762,11 @@ LoadFlags FileFormat::getLoadFlags() const
  */
 const Section* FileFormat::getSectionFromOffset(unsigned long long offset) const
 {
-	const Section *actSec = nullptr;
+	const Section* actSec = nullptr;
 
-	for(const auto *item : sections)
+	for (const auto* item: sections)
 	{
-		if(isOffsetFromRegion(actSec, item, offset))
+		if (isOffsetFromRegion(actSec, item, offset))
 		{
 			actSec = item;
 		}
@@ -817,11 +783,11 @@ const Section* FileFormat::getSectionFromOffset(unsigned long long offset) const
  */
 const Segment* FileFormat::getSegmentFromOffset(unsigned long long offset) const
 {
-	const Segment *actSeg = nullptr;
+	const Segment* actSeg = nullptr;
 
-	for(const auto *item : segments)
+	for (const auto* item: segments)
 	{
-		if(isOffsetFromRegion(actSeg, item, offset))
+		if (isOffsetFromRegion(actSeg, item, offset))
 		{
 			actSeg = item;
 		}
@@ -838,8 +804,8 @@ const Segment* FileFormat::getSegmentFromOffset(unsigned long long offset) const
  */
 const SecSeg* FileFormat::getSectionOrSegmentFromOffset(unsigned long long offset) const
 {
-	const SecSeg *ret = getSectionFromOffset(offset);
-	if(!ret)
+	const SecSeg* ret = getSectionFromOffset(offset);
+	if (!ret)
 	{
 		ret = getSegmentFromOffset(offset);
 	}
@@ -866,7 +832,7 @@ bool FileFormat::haveSectionOrSegmentOnOffset(unsigned long long offset) const
  */
 bool FileFormat::haveDataOnOffset(unsigned long long offset) const
 {
-	const auto *s = getSectionOrSegmentFromOffset(offset);
+	const auto* s = getSectionOrSegmentFromOffset(offset);
 	return s && !s->isBss() && !s->isDebug();
 }
 
@@ -878,11 +844,11 @@ bool FileFormat::haveDataOnOffset(unsigned long long offset) const
  */
 const Section* FileFormat::getSectionFromAddress(unsigned long long address) const
 {
-	const Section *actSec = nullptr;
+	const Section* actSec = nullptr;
 
-	for(const auto *item : sections)
+	for (const auto* item: sections)
 	{
-		if(isAddressFromRegion(actSec, item, address))
+		if (isAddressFromRegion(actSec, item, address))
 		{
 			actSec = item;
 		}
@@ -899,11 +865,11 @@ const Section* FileFormat::getSectionFromAddress(unsigned long long address) con
  */
 const Segment* FileFormat::getSegmentFromAddress(unsigned long long address) const
 {
-	const Segment *actSeg = nullptr;
+	const Segment* actSeg = nullptr;
 
-	for(const auto *item : segments)
+	for (const auto* item: segments)
 	{
-		if(isAddressFromRegion(actSeg, item, address))
+		if (isAddressFromRegion(actSeg, item, address))
 		{
 			actSeg = item;
 		}
@@ -920,8 +886,8 @@ const Segment* FileFormat::getSegmentFromAddress(unsigned long long address) con
  */
 const SecSeg* FileFormat::getSectionOrSegmentFromAddress(unsigned long long address) const
 {
-	const SecSeg *ret = getSectionFromAddress(address);
-	if(!ret)
+	const SecSeg* ret = getSectionFromAddress(address);
+	if (!ret)
 	{
 		ret = getSegmentFromAddress(address);
 	}
@@ -948,7 +914,7 @@ bool FileFormat::haveSectionOrSegmentOnAddress(unsigned long long address) const
  */
 bool FileFormat::haveDataOnAddress(unsigned long long address) const
 {
-	const auto *s = getSectionOrSegmentFromAddress(address);
+	const auto* s = getSectionOrSegmentFromAddress(address);
 	return s && !s->isBss() && !s->isDebug();
 }
 
@@ -973,7 +939,7 @@ bool FileFormat::haveReadOnlyDataOnAddress(unsigned long long address) const
  */
 std::size_t FileFormat::getNibbleLength() const
 {
-	//return isUnknownArch() ? 0 : 4;
+	// return isUnknownArch() ? 0 : 4;
 	return 4;
 }
 
@@ -985,7 +951,7 @@ std::size_t FileFormat::getNibbleLength() const
  */
 std::size_t FileFormat::getByteLength() const
 {
-	//return isUnknownArch() ? 0 : 8;
+	// return isUnknownArch() ? 0 : 8;
 	return 8;
 }
 
@@ -1014,10 +980,10 @@ std::size_t FileFormat::getNumberOfNibblesInByte() const
 }
 
 /**
-* Get reference to the loader error info
-* @return The LoaderErrorInfo structire
-*/
-const LoaderErrorInfo & FileFormat::getLoaderErrorInfo() const
+ * Get reference to the loader error info
+ * @return The LoaderErrorInfo structire
+ */
+const LoaderErrorInfo& FileFormat::getLoaderErrorInfo() const
 {
 	return _ldrErrInfo;
 }
@@ -1154,7 +1120,7 @@ bool FileFormat::isUnknownFormat() const
  */
 bool FileFormat::isWindowsDriver() const
 {
-	if(!importTable || !isPe())
+	if (!importTable || !isPe())
 	{
 		return false;
 	}
@@ -1372,11 +1338,11 @@ std::size_t FileFormat::getOverlaySize() const
  * @param res Variable to store the result to
  * @return @c true if entropy calculation succeeded, @c false otherwise
  */
-bool FileFormat::getOverlayEntropy(double &res) const
+bool FileFormat::getOverlayEntropy(double& res) const
 {
 	const auto overlaySize = getOverlaySize();
 	const auto declSize = getDeclaredFileLength();
-	const auto &bytes = getBytes();
+	const auto& bytes = getBytes();
 	if (overlaySize == 0 || declSize == 0 || bytes.size() < declSize + overlaySize)
 	{
 		return false;
@@ -1425,10 +1391,10 @@ std::size_t FileFormat::bytesFromNibblesRounded(std::size_t nibbles) const
  *
  * If method returns @c false, @a result is left unchanged
  */
-bool FileFormat::getOffsetFromAddress(std::uint64_t &result, std::uint64_t address) const
+bool FileFormat::getOffsetFromAddress(std::uint64_t& result, std::uint64_t address) const
 {
-	const auto *secSeg = getSectionOrSegmentFromAddress(address);
-	if(!secSeg)
+	const auto* secSeg = getSectionOrSegmentFromAddress(address);
+	if (!secSeg)
 	{
 		return false;
 	}
@@ -1451,10 +1417,10 @@ bool FileFormat::getOffsetFromAddress(std::uint64_t &result, std::uint64_t addre
  *
  * If method returns @c false, @a result is left unchanged
  */
-bool FileFormat::getAddressFromOffset(std::uint64_t &result, std::uint64_t offset) const
+bool FileFormat::getAddressFromOffset(std::uint64_t& result, std::uint64_t offset) const
 {
-	const auto *secSeg = getSectionOrSegmentFromOffset(offset);
-	if(!secSeg)
+	const auto* secSeg = getSectionOrSegmentFromOffset(offset);
+	if (!secSeg)
 	{
 		return false;
 	}
@@ -1476,7 +1442,8 @@ bool FileFormat::getAddressFromOffset(std::uint64_t &result, std::uint64_t offse
  * @param numberOfBytes Number of bytes for read
  * @return Status of operation (@c true if all is OK)
  */
-bool FileFormat::getBytes(std::vector<std::uint8_t> &result, unsigned long long offset, unsigned long long numberOfBytes) const
+bool FileFormat::getBytes(
+	std::vector<std::uint8_t>& result, unsigned long long offset, unsigned long long numberOfBytes) const
 {
 	// The clamp, the copy and the bound that ties them together all live in
 	// bounds_kernels::copyClampedRange. The expression that used to stand here
@@ -1484,8 +1451,7 @@ bool FileFormat::getBytes(std::vector<std::uint8_t> &result, unsigned long long 
 	// -- skipped the clamp precisely when the sum wrapped, so a request of
 	// 0xFFFFFFFFFFFFFFFB bytes at offset 10 of a 512-byte file kept its length
 	// and copied it.
-	return bounds_kernels::copyClampedRange(
-			loadedBytes->data(), loadedBytes->size(), offset, numberOfBytes, result);
+	return bounds_kernels::copyClampedRange(loadedBytes->data(), loadedBytes->size(), offset, numberOfBytes, result);
 }
 
 /**
@@ -1500,10 +1466,10 @@ bool FileFormat::getBytes(std::vector<std::uint8_t> &result, unsigned long long 
  * occurs while reading bytes from file, instance method @a isInValidState() returns
  * @c false after its invocation.
  */
-bool FileFormat::getEpBytes(std::vector<std::uint8_t> &result, unsigned long long numberOfBytes) const
+bool FileFormat::getEpBytes(std::vector<std::uint8_t>& result, unsigned long long numberOfBytes) const
 {
 	std::uint64_t epOffset;
-	if(stateIsValid && getEpOffset(epOffset))
+	if (stateIsValid && getEpOffset(epOffset))
 	{
 		return getBytes(result, epOffset, numberOfBytes);
 	}
@@ -1518,7 +1484,7 @@ bool FileFormat::getEpBytes(std::vector<std::uint8_t> &result, unsigned long lon
  * @param numberOfBytes Number of bytes for read
  * @return Status of operation (@c true if all is OK)
  */
-bool FileFormat::getHexBytes(std::string &result, unsigned long long offset, unsigned long long numberOfBytes) const
+bool FileFormat::getHexBytes(std::string& result, unsigned long long offset, unsigned long long numberOfBytes) const
 {
 	bytesToHexString(*loadedBytes, result, offset, numberOfBytes);
 	return offset < getLoadedFileLength();
@@ -1536,10 +1502,10 @@ bool FileFormat::getHexBytes(std::string &result, unsigned long long offset, uns
  * occurs while reading bytes from file, instance method @a isInValidState() returns
  * @c false after its invocation.
  */
-bool FileFormat::getHexEpBytes(std::string &result, unsigned long long numberOfBytes) const
+bool FileFormat::getHexEpBytes(std::string& result, unsigned long long numberOfBytes) const
 {
 	std::uint64_t epOffset;
-	if(stateIsValid && getEpOffset(epOffset))
+	if (stateIsValid && getEpOffset(epOffset))
 	{
 		return getHexBytes(result, epOffset, numberOfBytes);
 	}
@@ -1556,7 +1522,7 @@ bool FileFormat::getHexEpBytes(std::string &result, unsigned long long numberOfB
  *
  * If length of file is smaller than @a numberOfBytes, as many bytes as possible are read.
  */
-bool FileFormat::getHexBytesFromEnd(std::string &result, unsigned long long numberOfBytes) const
+bool FileFormat::getHexBytesFromEnd(std::string& result, unsigned long long numberOfBytes) const
 {
 	numberOfBytes = std::min(numberOfBytes, static_cast<unsigned long long>(getLoadedFileLength()));
 	return getHexBytes(result, getLoadedFileLength() - numberOfBytes, numberOfBytes);
@@ -1569,7 +1535,7 @@ bool FileFormat::getHexBytesFromEnd(std::string &result, unsigned long long numb
  * @param numberOfBytes Number of bytes for read
  * @return Status of operation (@c true if all is OK)
  */
-bool FileFormat::getString(std::string &result, unsigned long long offset, unsigned long long numberOfBytes) const
+bool FileFormat::getString(std::string& result, unsigned long long offset, unsigned long long numberOfBytes) const
 {
 	bytesToString(*loadedBytes, result, offset, numberOfBytes);
 	return offset < getLoadedFileLength();
@@ -1583,7 +1549,7 @@ bool FileFormat::getString(std::string &result, unsigned long long offset, unsig
  *
  * If length of file is smaller than @a numberOfBytes, as many bytes as possible are read.
  */
-bool FileFormat::getStringFromEnd(std::string &result, unsigned long long numberOfBytes) const
+bool FileFormat::getStringFromEnd(std::string& result, unsigned long long numberOfBytes) const
 {
 	numberOfBytes = std::min(numberOfBytes, static_cast<unsigned long long>(getLoadedFileLength()));
 	return getString(result, getLoadedFileLength() - numberOfBytes, numberOfBytes);
@@ -1597,7 +1563,7 @@ bool FileFormat::getStringFromEnd(std::string &result, unsigned long long number
  */
 bool FileFormat::isObjectStretchedOverSections(std::size_t addr, std::size_t size) const
 {
-	for (const auto sec : sections)
+	for (const auto sec: sections)
 	{
 		if (!sec)
 		{
@@ -1608,15 +1574,11 @@ bool FileFormat::isObjectStretchedOverSections(std::size_t addr, std::size_t siz
 		// wrapped: a wrapped section end hides the containing section from the
 		// `addr < secEnd` test, so the loop walks past it and the method
 		// answers about no section at all.
-		switch (bounds_kernels::placeObjectInRegion(
-				sec->getOffset(), sec->getSizeInFile(), addr, size))
+		switch (bounds_kernels::placeObjectInRegion(sec->getOffset(), sec->getSizeInFile(), addr, size))
 		{
-			case bounds_kernels::ObjectPlacement::Elsewhere:
-				continue;
-			case bounds_kernels::ObjectPlacement::Stretched:
-				return true;
-			case bounds_kernels::ObjectPlacement::Contained:
-				return false;
+		case bounds_kernels::ObjectPlacement::Elsewhere: continue;
+		case bounds_kernels::ObjectPlacement::Stretched: return true;
+		case bounds_kernels::ObjectPlacement::Contained: return false;
 		}
 	}
 
@@ -1627,11 +1589,11 @@ bool FileFormat::isObjectStretchedOverSections(std::size_t addr, std::size_t siz
  * Get information about section containing entry point
  * @return Pointer to EP section if file has entry point and EP section was detected, @c nullptr otherwise
  */
- // useless?
+// useless?
 const Section* FileFormat::getEpSection()
 {
 	std::uint64_t ep;
-	if(!getEpOffset(ep))
+	if (!getEpOffset(ep))
 	{
 		return nullptr;
 	}
@@ -1646,11 +1608,11 @@ const Section* FileFormat::getEpSection()
  *
  * If file has more sections with name equal to @a secName, then is returned first such section.
  */
-const Section* FileFormat::getSection(const std::string &secName) const
+const Section* FileFormat::getSection(const std::string& secName) const
 {
-	for(const auto *item : sections)
+	for (const auto* item: sections)
 	{
-		if(item && item->getName() == secName)
+		if (item && item->getName() == secName)
 		{
 			return item;
 		}
@@ -1666,20 +1628,20 @@ const Section* FileFormat::getSection(const std::string &secName) const
  */
 const Section* FileFormat::getSection(unsigned long long secIndex) const
 {
-	if(secIndex >= getNumberOfSections())
+	if (secIndex >= getNumberOfSections())
 	{
 		return nullptr;
 	}
 
-	const auto *iSec = sections[secIndex];
-	if(iSec && iSec->getIndex() == secIndex)
+	const auto* iSec = sections[secIndex];
+	if (iSec && iSec->getIndex() == secIndex)
 	{
 		return iSec;
 	}
 
-	for(const auto *sec : sections)
+	for (const auto* sec: sections)
 	{
-		if(sec && sec->getIndex() == secIndex)
+		if (sec && sec->getIndex() == secIndex)
 		{
 			return sec;
 		}
@@ -1715,7 +1677,7 @@ const Section* FileFormat::getLastButOneSection() const
 const Segment* FileFormat::getEpSegment()
 {
 	std::uint64_t epAddress;
-	if(!getEpAddress(epAddress))
+	if (!getEpAddress(epAddress))
 	{
 		return nullptr;
 	}
@@ -1730,11 +1692,11 @@ const Segment* FileFormat::getEpSegment()
  *
  * If file has more segments with name equal to @a segName, then is returned first such segment.
  */
-const Segment* FileFormat::getSegment(const std::string &segName) const
+const Segment* FileFormat::getSegment(const std::string& segName) const
 {
-	for(const auto *item : segments)
+	for (const auto* item: segments)
 	{
-		if(item && item->getName() == segName)
+		if (item && item->getName() == segName)
 		{
 			return item;
 		}
@@ -1750,20 +1712,20 @@ const Segment* FileFormat::getSegment(const std::string &segName) const
  */
 const Segment* FileFormat::getSegment(unsigned long long segIndex) const
 {
-	if(segIndex >= getNumberOfSegments())
+	if (segIndex >= getNumberOfSegments())
 	{
 		return nullptr;
 	}
 
-	const auto *iSeg = segments[segIndex];
-	if(iSeg && iSeg->getIndex() == segIndex)
+	const auto* iSeg = segments[segIndex];
+	if (iSeg && iSeg->getIndex() == segIndex)
 	{
 		return iSeg;
 	}
 
-	for(const auto *seg : segments)
+	for (const auto* seg: segments)
 	{
-		if(seg && seg->getIndex() == segIndex)
+		if (seg && seg->getIndex() == segIndex)
 		{
 			return seg;
 		}
@@ -1908,14 +1870,14 @@ const ElfCoreInfo* FileFormat::getElfCoreInfo() const
  * @param name Name of symbol to get
  * @return Pointer to symbol with name @a name or @c nullptr if such symbol is not found
  */
-const Symbol* FileFormat::getSymbol(const std::string &name) const
+const Symbol* FileFormat::getSymbol(const std::string& name) const
 {
-	for(const auto *table : getSymbolTables())
+	for (const auto* table: getSymbolTables())
 	{
-		if(table)
+		if (table)
 		{
-			const auto *item = table->getSymbol(name);
-			if(item)
+			const auto* item = table->getSymbol(name);
+			if (item)
 			{
 				return item;
 			}
@@ -1932,12 +1894,12 @@ const Symbol* FileFormat::getSymbol(const std::string &name) const
  */
 const Symbol* FileFormat::getSymbol(unsigned long long address) const
 {
-	for(const auto *table : getSymbolTables())
+	for (const auto* table: getSymbolTables())
 	{
-		if(table)
+		if (table)
 		{
-			const auto *item = table->getSymbolOnAddress(address);
-			if(item)
+			const auto* item = table->getSymbolOnAddress(address);
+			if (item)
 			{
 				return item;
 			}
@@ -1952,14 +1914,14 @@ const Symbol* FileFormat::getSymbol(unsigned long long address) const
  * @param name Name of relocation to get
  * @return Pointer to relocation with name @a name or @c nullptr if such relocation is not found
  */
-const Relocation* FileFormat::getRelocation(const std::string &name) const
+const Relocation* FileFormat::getRelocation(const std::string& name) const
 {
-	for(const auto *table : getRelocationTables())
+	for (const auto* table: getRelocationTables())
 	{
-		if(table)
+		if (table)
 		{
-			const auto *item = table->getRelocation(name);
-			if(item)
+			const auto* item = table->getRelocation(name);
+			if (item)
 			{
 				return item;
 			}
@@ -1976,12 +1938,12 @@ const Relocation* FileFormat::getRelocation(const std::string &name) const
  */
 const Relocation* FileFormat::getRelocation(unsigned long long address) const
 {
-	for(const auto *table : getRelocationTables())
+	for (const auto* table: getRelocationTables())
 	{
-		if(table)
+		if (table)
 		{
-			const auto *item = table->getRelocationOnAddress(address);
-			if(item)
+			const auto* item = table->getRelocationOnAddress(address);
+			if (item)
 			{
 				return item;
 			}
@@ -1996,7 +1958,7 @@ const Relocation* FileFormat::getRelocation(unsigned long long address) const
  * @param name Name of import to get
  * @return Pointer to import with name @a name or @c nullptr if such import is not found
  */
-const Import* FileFormat::getImport(const std::string &name) const
+const Import* FileFormat::getImport(const std::string& name) const
 {
 	return importTable ? importTable->getImport(name) : nullptr;
 }
@@ -2016,7 +1978,7 @@ const Import* FileFormat::getImport(unsigned long long address) const
  * @param name Name of export to get
  * @return Pointer to export with name @a name or @c nullptr if such export is not found
  */
-const Export* FileFormat::getExport(const std::string &name) const
+const Export* FileFormat::getExport(const std::string& name) const
 {
 	return exportTable ? exportTable->getExport(name) : nullptr;
 }
@@ -2094,14 +2056,10 @@ const std::vector<Section*> FileFormat::getSections(std::initializer_list<std::s
 {
 	std::vector<Section*> result;
 
-	for(auto *region : sections)
+	for (auto* region: sections)
 	{
-		if(region && std::any_of(secs.begin(), secs.end(),
-			[&] (const auto &name)
-			{
-				return region->getName() == name;
-			}
-		))
+		if (region
+			&& std::any_of(secs.begin(), secs.end(), [&](const auto& name) { return region->getName() == name; }))
 		{
 			result.push_back(region);
 		}
@@ -2128,14 +2086,10 @@ const std::vector<Segment*> FileFormat::getSegments(std::initializer_list<std::s
 {
 	std::vector<Segment*> result;
 
-	for(auto *region : segments)
+	for (auto* region: segments)
 	{
-		if(region && std::any_of(segs.begin(), segs.end(),
-			[&] (const auto &name)
-			{
-				return region->getName() == name;
-			}
-		))
+		if (region
+			&& std::any_of(segs.begin(), segs.end(), [&](const auto& name) { return region->getName() == name; }))
 		{
 			result.push_back(region);
 		}
@@ -2223,34 +2177,29 @@ const std::vector<String>& FileFormat::getStrings() const
  */
 std::optional<String> FileFormat::getStringAtAddress(std::uint64_t address, StringType type) const
 {
-	const auto *secSeg = getSectionOrSegmentFromAddress(address);
-	if (!secSeg || !secSeg->isSomeData())
-		return std::nullopt;
+	const auto* secSeg = getSectionOrSegmentFromAddress(address);
+	if (!secSeg || !secSeg->isSomeData()) return std::nullopt;
 
 	std::size_t charSize = (type == StringType::Wide) ? 2 : 1;
-	const auto &bytes = secSeg->getBytes();
+	const auto& bytes = secSeg->getBytes();
 	std::size_t secOffset = address - secSeg->getAddress();
-	if (secOffset >= bytes.size())
-		return std::nullopt;
+	if (secOffset >= bytes.size()) return std::nullopt;
 
 	auto begin = bytes.begin();
 	auto end = bytes.end();
 	auto itr = begin + secOffset;
-	if (itr >= end)
-		return std::nullopt;
+	if (itr >= end) return std::nullopt;
 
 	CharacterEndianness endian = isLittleEndian() ? CharacterEndianness::Little : CharacterEndianness::Big;
 	auto stringBeginItr = makeCharacterIterator(itr, begin, end, charSize);
-	if (!stringBeginItr.pointsToValidCharacter(endian))
-		return std::nullopt;
+	if (!stringBeginItr.pointsToValidCharacter(endian)) return std::nullopt;
 
 	auto stringDataEndItr = makeCharacterIterator(end, begin, end, charSize);
 	auto stringEndItr = stringBeginItr + 1;
 	while (stringEndItr != stringDataEndItr && stringEndItr.pointsToValidCharacter(endian))
 		++stringEndItr;
 
-	if (static_cast<std::size_t>(stringEndItr - stringBeginItr) < DefaultMinStringLength)
-		return std::nullopt;
+	if (static_cast<std::size_t>(stringEndItr - stringBeginItr) < DefaultMinStringLength) return std::nullopt;
 
 	std::string content{stringBeginItr, stringEndItr};
 	std::uint64_t fileOffset = secSeg->getOffset() + (itr - begin);
@@ -2261,12 +2210,12 @@ std::optional<String> FileFormat::getStringAtAddress(std::uint64_t address, Stri
  * Get all detected notes
  * @return Reference to notes
  */
-const std::vector<ElfNoteSecSeg>&FileFormat::getElfNoteSecSegs() const
+const std::vector<ElfNoteSecSeg>& FileFormat::getElfNoteSecSegs() const
 {
 	return noteSecSegs;
 }
 
-const std::set<std::uint64_t> &FileFormat::getUnknownRelocations() const
+const std::set<std::uint64_t>& FileFormat::getUnknownRelocations() const
 {
 	return unknownRelocs;
 }
@@ -2275,7 +2224,7 @@ const std::set<std::uint64_t> &FileFormat::getUnknownRelocations() const
  * Get all anomalies
  * @return Reference to anomalies
  */
-const std::vector<std::pair<std::string,std::string>> &FileFormat::getAnomalies() const
+const std::vector<std::pair<std::string, std::string>>& FileFormat::getAnomalies() const
 {
 	return anomalies;
 }
@@ -2288,19 +2237,20 @@ const std::vector<std::pair<std::string,std::string>> &FileFormat::getAnomalies(
  * @param e Endian - if specified it is forced, otherwise file's endian is used
  * @return Status of operation (@c true if all is OK, @c false otherwise)
  */
-bool FileFormat::getXByte(std::uint64_t address, std::uint64_t x, std::uint64_t &res, retdec::utils::Endianness e) const
+bool FileFormat::getXByte(std::uint64_t address, std::uint64_t x, std::uint64_t& res, retdec::utils::Endianness e) const
 {
-	const auto *secSeg = getSectionOrSegmentFromAddress(address);
-	static_assert(sizeof(res) * CHAR_BIT == byteorder::kAccumulatorBits,
-			"widthFits bounds the width against a 64-bit accumulator; res must be one");
+	const auto* secSeg = getSectionOrSegmentFromAddress(address);
+	static_assert(
+		sizeof(res) * CHAR_BIT == byteorder::kAccumulatorBits,
+		"widthFits bounds the width against a 64-bit accumulator; res must be one");
 	// x == 0 is admitted here and answered by the `else if(!x)` branch below,
 	// which is what the wrapping product did too: 0 * anything is 0, which is
 	// not greater than 64.
-	if(!secSeg || (x != 0 && !bounds_kernels::xWidthFitsAccumulator(x, getByteLength())))
+	if (!secSeg || (x != 0 && !bounds_kernels::xWidthFitsAccumulator(x, getByteLength())))
 	{
 		return false;
 	}
-	else if(!x)
+	else if (!x)
 	{
 		res = 0;
 		return true;
@@ -2315,7 +2265,8 @@ bool FileFormat::getXByte(std::uint64_t address, std::uint64_t x, std::uint64_t 
 	// such bound, so the second sum can still wrap.
 	return (bounds_kernels::rangeFitsWide(secOffset, secSeg->getLoadedSize(), x)
 			&& bounds_kernels::rangeFitsWide(offset, getLoadedFileLength(), x))
-		? createValueFromBytes(*loadedBytes, res, e, offset, x) : false;
+			 ? createValueFromBytes(*loadedBytes, res, e, offset, x)
+			 : false;
 }
 
 /**
@@ -2325,11 +2276,11 @@ bool FileFormat::getXByte(std::uint64_t address, std::uint64_t x, std::uint64_t 
  * @param res Result array
  * @return Status of operation (@c true if all is OK, @c false otherwise)
  */
-bool FileFormat::getXBytes(std::uint64_t address, std::uint64_t x, std::vector<std::uint8_t> &res) const
+bool FileFormat::getXBytes(std::uint64_t address, std::uint64_t x, std::vector<std::uint8_t>& res) const
 {
 	res.clear();
-	const auto *secSeg = getSectionOrSegmentFromAddress(address);
-	if(!secSeg)
+	const auto* secSeg = getSectionOrSegmentFromAddress(address);
+	if (!secSeg)
 	{
 		return false;
 	}
@@ -2343,7 +2294,7 @@ bool FileFormat::getXBytes(std::uint64_t address, std::uint64_t x, std::vector<s
 	// the wrap, and it changes no in-range answer: a read that runs past the
 	// section already failed the `res.size() == x` test below.
 	const auto secOffset = address - secSeg->getAddress();
-	if(!bounds_kernels::rangeFitsWide(secOffset, secSeg->getLoadedSize(), x))
+	if (!bounds_kernels::rangeFitsWide(secOffset, secSeg->getLoadedSize(), x))
 	{
 		return false;
 	}
@@ -2351,12 +2302,16 @@ bool FileFormat::getXBytes(std::uint64_t address, std::uint64_t x, std::vector<s
 	return secSeg->getBytes(res, secOffset, x) && res.size() == x;
 }
 
-bool FileFormat::setXByte(std::uint64_t address, std::uint64_t x, std::uint64_t val, retdec::utils::Endianness e/* = retdec::utils::Endianness::UNKNOWN*/)
+bool FileFormat::setXByte(
+	std::uint64_t address,
+	std::uint64_t x,
+	std::uint64_t val,
+	retdec::utils::Endianness e /* = retdec::utils::Endianness::UNKNOWN*/)
 {
 	return false;
 }
 
-bool FileFormat::setXBytes(std::uint64_t address, const std::vector<std::uint8_t> &val)
+bool FileFormat::setXBytes(std::uint64_t address, const std::vector<std::uint8_t>& val)
 {
 	return false;
 }
@@ -2389,7 +2344,7 @@ bool FileFormat::isPointer(unsigned long long address, std::uint64_t* pointer) c
  * @param e Endian - if specified it is forced, otherwise file's endian is used
  * @return Status of operation (@c true if all is OK, @c false otherwise)
  */
-bool FileFormat::get1ByteOffset(std::uint64_t offset, std::uint64_t &res, retdec::utils::Endianness e) const
+bool FileFormat::get1ByteOffset(std::uint64_t offset, std::uint64_t& res, retdec::utils::Endianness e) const
 {
 	return getXByteOffset(offset, 1, res, e);
 }
@@ -2401,7 +2356,7 @@ bool FileFormat::get1ByteOffset(std::uint64_t offset, std::uint64_t &res, retdec
  * @param e Endian - if specified it is forced, otherwise file's endian is used
  * @return Status of operation (@c true if all is OK, @c false otherwise)
  */
-bool FileFormat::get2ByteOffset(std::uint64_t offset, std::uint64_t &res, retdec::utils::Endianness e) const
+bool FileFormat::get2ByteOffset(std::uint64_t offset, std::uint64_t& res, retdec::utils::Endianness e) const
 {
 	return getXByteOffset(offset, 2, res, e);
 }
@@ -2413,7 +2368,7 @@ bool FileFormat::get2ByteOffset(std::uint64_t offset, std::uint64_t &res, retdec
  * @param e Endian - if specified it is forced, otherwise file's endian is used
  * @return Status of operation (@c true if all is OK, @c false otherwise)
  */
-bool FileFormat::get4ByteOffset(std::uint64_t offset, std::uint64_t &res, retdec::utils::Endianness e) const
+bool FileFormat::get4ByteOffset(std::uint64_t offset, std::uint64_t& res, retdec::utils::Endianness e) const
 {
 	return getXByteOffset(offset, 4, res, e);
 }
@@ -2425,7 +2380,7 @@ bool FileFormat::get4ByteOffset(std::uint64_t offset, std::uint64_t &res, retdec
  * @param e Endian - if specified it is forced, otherwise file's endian is used
  * @return Status of operation (@c true if all is OK, @c false otherwise)
  */
-bool FileFormat::get8ByteOffset(std::uint64_t offset, std::uint64_t &res, retdec::utils::Endianness e) const
+bool FileFormat::get8ByteOffset(std::uint64_t offset, std::uint64_t& res, retdec::utils::Endianness e) const
 {
 	return getXByteOffset(offset, 8, res, e);
 }
@@ -2438,10 +2393,10 @@ bool FileFormat::get8ByteOffset(std::uint64_t offset, std::uint64_t &res, retdec
  * @param res Result double
  * @return Status of operation (@c true if all is OK, @c false otherwise)
  */
-bool FileFormat::get10ByteOffset(std::uint64_t offset, long double &res) const
+bool FileFormat::get10ByteOffset(std::uint64_t offset, long double& res) const
 {
 	std::vector<std::uint8_t> d10;
-	if(!getXBytesOffset(offset, 10, d10))
+	if (!getXBytesOffset(offset, 10, d10))
 	{
 		return false;
 	}
@@ -2462,16 +2417,18 @@ bool FileFormat::get10ByteOffset(std::uint64_t offset, long double &res) const
  * @param e Endian - if specified it is forced, otherwise file's endian is used
  * @return Status of operation (@c true if all is OK, @c false otherwise)
  */
-bool FileFormat::getXByteOffset(std::uint64_t offset, std::uint64_t x, std::uint64_t &res, retdec::utils::Endianness e) const
+bool FileFormat::getXByteOffset(
+	std::uint64_t offset, std::uint64_t x, std::uint64_t& res, retdec::utils::Endianness e) const
 {
-	static_assert(sizeof(res) * CHAR_BIT == byteorder::kAccumulatorBits,
-			"widthFits bounds the width against a 64-bit accumulator; res must be one");
-	if(!bounds_kernels::rangeFitsWide(offset, getLoadedFileLength(), x)
-			|| (x != 0 && !bounds_kernels::xWidthFitsAccumulator(x, getByteLength())))
+	static_assert(
+		sizeof(res) * CHAR_BIT == byteorder::kAccumulatorBits,
+		"widthFits bounds the width against a 64-bit accumulator; res must be one");
+	if (!bounds_kernels::rangeFitsWide(offset, getLoadedFileLength(), x)
+		|| (x != 0 && !bounds_kernels::xWidthFitsAccumulator(x, getByteLength())))
 	{
 		return false;
 	}
-	else if(!x)
+	else if (!x)
 	{
 		res = 0;
 		return true;
@@ -2487,14 +2444,14 @@ bool FileFormat::getXByteOffset(std::uint64_t offset, std::uint64_t x, std::uint
  * @param res Result array
  * @return Status of operation (@c true if all is OK, @c false otherwise)
  */
-bool FileFormat::getXBytesOffset(std::uint64_t offset, std::uint64_t x, std::vector<std::uint8_t> &res) const
+bool FileFormat::getXBytesOffset(std::uint64_t offset, std::uint64_t x, std::vector<std::uint8_t>& res) const
 {
 	res.clear();
 	// `offset + x <= getLoadedFileLength()` was the guard, and the two
 	// iterators below are why it mattered: at offset SIZE_MAX and x = 1 the sum
 	// is 0, the guard passes, and begin() + SIZE_MAX is formed on a vector of a
 	// few hundred bytes.
-	if(bounds_kernels::rangeFitsWide(offset, getLoadedFileLength(), x))
+	if (bounds_kernels::rangeFitsWide(offset, getLoadedFileLength(), x))
 	{
 		const auto first = loadedBytes->begin() + static_cast<std::ptrdiff_t>(offset);
 		res.assign(first, first + static_cast<std::ptrdiff_t>(x));
@@ -2511,7 +2468,7 @@ bool FileFormat::getXBytesOffset(std::uint64_t offset, std::uint64_t x, std::vec
  * @param e Endian - if specified it is forced, otherwise file's endian is used
  * @return Status of operation (@c true if all is OK, @c false otherwise)
  */
-bool FileFormat::getWordOffset(std::uint64_t offset, std::uint64_t &res, retdec::utils::Endianness e) const
+bool FileFormat::getWordOffset(std::uint64_t offset, std::uint64_t& res, retdec::utils::Endianness e) const
 {
 	return getXByteOffset(offset, getBytesPerWord(), res, e);
 }
@@ -2523,7 +2480,7 @@ bool FileFormat::getWordOffset(std::uint64_t offset, std::uint64_t &res, retdec:
  * @param size Requested size of string (if @a size is zero, read until zero byte)
  * @return Status of operation (@c true if all is OK, @c false otherwise)
  */
-bool FileFormat::getNTBSOffset(std::uint64_t offset, std::string &res, std::size_t size) const
+bool FileFormat::getNTBSOffset(std::uint64_t offset, std::string& res, std::size_t size) const
 {
 	using namespace std::placeholders;
 
@@ -2538,7 +2495,7 @@ bool FileFormat::getNTBSOffset(std::uint64_t offset, std::string &res, std::size
  * @param res Result character array
  * @return Status of operation (@c true if all is OK, @c false otherwise)
  */
-bool FileFormat::getNTWSOffset(std::uint64_t offset, std::size_t width, std::vector<std::uint64_t> &res) const
+bool FileFormat::getNTWSOffset(std::uint64_t offset, std::size_t width, std::vector<std::uint64_t>& res) const
 {
 	using namespace std::placeholders;
 
@@ -2572,21 +2529,21 @@ std::size_t FileFormat::getDeclaredFileLength() const
 	// ELFIO's 64-bit sec->get_size() -- so a section declaring offset 0x10 and
 	// size 0xFFFFFFFFFFFFFFF0 contributed 0 and left declSize understated,
 	// which getOverlaySize and getOverlayEntropy then answer from.
-	for(const auto *item : sections)
+	for (const auto* item: sections)
 	{
-		if(item && item->getType() != Section::Type::BSS)
+		if (item && item->getType() != Section::Type::BSS)
 		{
-			declSize = std::max(declSize, bounds_kernels::regionEndSaturating(
-					item->getOffset(), item->getSizeInFile()));
+			declSize =
+				std::max(declSize, bounds_kernels::regionEndSaturating(item->getOffset(), item->getSizeInFile()));
 		}
 	}
 
-	for(const auto *item : segments)
+	for (const auto* item: segments)
 	{
-		if(item)
+		if (item)
 		{
-			declSize = std::max(declSize, bounds_kernels::regionEndSaturating(
-					item->getOffset(), item->getSizeInFile()));
+			declSize =
+				std::max(declSize, bounds_kernels::regionEndSaturating(item->getOffset(), item->getSizeInFile()));
 		}
 	}
 
@@ -2600,12 +2557,9 @@ std::size_t FileFormat::getDeclaredFileLength() const
  */
 bool FileFormat::areSectionsValid() const
 {
-	return std::any_of(sections.begin(), sections.end(),
-		[this] (const auto *s)
-		{
-			return s && s->isSomeCode() && s->isValid(this);
-		}
-	);
+	return std::any_of(sections.begin(), sections.end(), [this](const auto* s) {
+		return s && s->isSomeCode() && s->isValid(this);
+	});
 }
 
 /**
@@ -2729,53 +2683,37 @@ void FileFormat::dump()
  * Dump information about input file
  * @param dumpFile Into this parameter is stored dump of input file in an LLVM style
  */
-void FileFormat::dump(std::string &dumpFile)
+void FileFormat::dump(std::string& dumpFile)
 {
 	std::stringstream ret;
 	std::string sArch, sEndian, sType, sDump;
 
-	switch(getTargetArchitecture())
+	switch (getTargetArchitecture())
 	{
-		case Architecture::X86:
-			sArch = "x86";
-			break;
-		case Architecture::X86_64:
-			sArch = "x86-64";
-			break;
-		case Architecture::ARM:
-			sArch = "ARM";
-			break;
-		case Architecture::POWERPC:
-			sArch = "PowerPC";
-			break;
-		case Architecture::MIPS:
-			sArch = "MIPS";
-			break;
-		default:
-			sArch = "unknown";
+	case Architecture::X86: sArch = "x86"; break;
+	case Architecture::X86_64: sArch = "x86-64"; break;
+	case Architecture::ARM: sArch = "ARM"; break;
+	case Architecture::POWERPC: sArch = "PowerPC"; break;
+	case Architecture::MIPS: sArch = "MIPS"; break;
+	default: sArch = "unknown";
 	}
 
-	switch(getEndianness())
+	switch (getEndianness())
 	{
-		case Endianness::LITTLE:
-			sEndian = "little";
-			break;
-		case Endianness::BIG:
-			sEndian = "big";
-			break;
-		default:
-			sEndian = "unknown";
+	case Endianness::LITTLE: sEndian = "little"; break;
+	case Endianness::BIG: sEndian = "big"; break;
+	default: sEndian = "unknown";
 	}
 
-	if(isObjectFile())
+	if (isObjectFile())
 	{
 		sType = "object file";
 	}
-	else if(isDll())
+	else if (isDll())
 	{
 		sType = "DLL";
 	}
-	else if(isExecutable())
+	else if (isExecutable())
 	{
 		sType = "executable file";
 	}
@@ -2786,27 +2724,27 @@ void FileFormat::dump(std::string &dumpFile)
 
 	ret << "; ------------ Input file ------------\n";
 	ret << "; Path to file: " << filePath << "\n";
-	if(hasCrc32())
+	if (hasCrc32())
 	{
 		ret << "; CRC32: " << getCrc32() << "\n";
 	}
-	if(hasMd5())
+	if (hasMd5())
 	{
 		ret << "; MD5: " << getMd5() << "\n";
 	}
-	if(hasSha256())
+	if (hasSha256())
 	{
 		ret << "; SHA256: " << getSha256() << "\n";
 	}
-	if(hasSectionTableCrc32())
+	if (hasSectionTableCrc32())
 	{
 		ret << "; Section CRC32: " << getSectionTableCrc32() << "\n";
 	}
-	if(hasSectionTableMd5())
+	if (hasSectionTableMd5())
 	{
 		ret << "; Section MD5: " << getSectionTableMd5() << "\n";
 	}
-	if(hasSectionTableSha256())
+	if (hasSectionTableSha256())
 	{
 		ret << "; Section SHA256: " << getSectionTableSha256() << "\n";
 	}
@@ -2820,13 +2758,13 @@ void FileFormat::dump(std::string &dumpFile)
 	ret << "; Type: " << sType << "\n";
 
 	std::uint64_t addr;
-	if(getEpAddress(addr))
+	if (getEpAddress(addr))
 	{
 		ret << "; Entry point address: " << std::hex << addr << "\n";
 	}
 
 	std::uint64_t offset;
-	if(getEpOffset(offset))
+	if (getEpOffset(offset))
 	{
 		ret << "; Entry point offset: " << offset << "\n";
 	}
@@ -2837,101 +2775,106 @@ void FileFormat::dump(std::string &dumpFile)
 	ret << "; Bits per nibble: " << getNibbleLength() << "\n";
 	ret << "; Nibbles per byte: " << getNumberOfNibblesInByte() << "\n";
 
-	if(getNumberOfSections())
+	if (getNumberOfSections())
 	{
-		ret << "\n" << "; Number of sections: " << getNumberOfSections() << "\n";
+		ret << "\n"
+			<< "; Number of sections: " << getNumberOfSections() << "\n";
 	}
 
-	for(const auto *item : getSections())
+	for (const auto* item: getSections())
 	{
-		if(item)
+		if (item)
 		{
 			item->dump(sDump);
 			ret << sDump;
 		}
 	}
 
-	if(getNumberOfSegments())
+	if (getNumberOfSegments())
 	{
-		ret << "\n" << "; Number of segments: " << getNumberOfSegments() << "\n";
+		ret << "\n"
+			<< "; Number of segments: " << getNumberOfSegments() << "\n";
 	}
 
-	for(const auto *item : getSegments())
+	for (const auto* item: getSegments())
 	{
-		if(item)
+		if (item)
 		{
 			item->dump(sDump);
 			ret << sDump;
 		}
 	}
 
-	if(getNumberOfSymbolTables())
+	if (getNumberOfSymbolTables())
 	{
-		ret << "\n" << "; Number of symbol tables: " << getNumberOfSymbolTables() << "\n";
+		ret << "\n"
+			<< "; Number of symbol tables: " << getNumberOfSymbolTables() << "\n";
 	}
 
-	for(const auto *item : getSymbolTables())
+	for (const auto* item: getSymbolTables())
 	{
-		if(item)
+		if (item)
 		{
 			item->dump(sDump);
 			ret << sDump;
 		}
 	}
 
-	if(getNumberOfRelocationTables())
+	if (getNumberOfRelocationTables())
 	{
-		ret << "\n" << "; Number of relocation tables: " << getNumberOfRelocationTables() << "\n";
+		ret << "\n"
+			<< "; Number of relocation tables: " << getNumberOfRelocationTables() << "\n";
 	}
 
-	for(const auto *item : getRelocationTables())
+	for (const auto* item: getRelocationTables())
 	{
-		if(item)
+		if (item)
 		{
 			item->dump(sDump);
 			ret << sDump;
 		}
 	}
 
-	if(getNumberOfDynamicTables())
+	if (getNumberOfDynamicTables())
 	{
-		ret << "\n" << "; Number of dynamic tables: " << getNumberOfDynamicTables() << "\n";
+		ret << "\n"
+			<< "; Number of dynamic tables: " << getNumberOfDynamicTables() << "\n";
 	}
 
-	for(const auto *item : getDynamicTables())
+	for (const auto* item: getDynamicTables())
 	{
-		if(item)
+		if (item)
 		{
 			item->dump(sDump);
 			ret << sDump;
 		}
 	}
 
-	if(importTable && !importTable->empty())
+	if (importTable && !importTable->empty())
 	{
 		getImportTable()->dump(sDump);
 		ret << sDump;
 	}
 
-	if(exportTable && !exportTable->empty())
+	if (exportTable && !exportTable->empty())
 	{
 		getExportTable()->dump(sDump);
 		ret << sDump;
 	}
 
-	if(getRichHeader())
+	if (getRichHeader())
 	{
 		getRichHeader()->dump(sDump);
 		ret << sDump;
 	}
 
-	if(getPdbInfo())
+	if (getPdbInfo())
 	{
 		getPdbInfo()->dump(sDump);
 		ret << sDump;
 	}
 
-	if(getResourceTable())
+	if (getResourceTable())
 	{
 		getResourceTable()->dump(sDump);
 		ret << sDump;
@@ -2954,27 +2897,27 @@ void FileFormat::dumpRegionsValidity()
  * Dump information about validity of sections and segments
  * @param dumpStr Parameter for store the dump in LLVM format
  */
-void FileFormat::dumpRegionsValidity(std::string &dumpStr)
+void FileFormat::dumpRegionsValidity(std::string& dumpStr)
 {
 	std::stringstream ret;
 	ret << "; Are sections valid: " << areSectionsValid() << "\n";
 
-	if(getNumberOfSections())
+	if (getNumberOfSections())
 	{
 		ret << "\n; ------------ Sections ------------\n";
 	}
 
-	for(const auto *s : sections)
+	for (const auto* s: sections)
 	{
 		ret << "; " << s->getIndex() << ": " << s->isValid(this) << "\n";
 	}
 
-	if(getNumberOfSegments())
+	if (getNumberOfSegments())
 	{
 		ret << "\n; ------------ Segments ------------\n";
 	}
 
-	for(const auto *s : segments)
+	for (const auto* s: segments)
 	{
 		ret << "; " << s->getIndex() << ": " << s->isValid(this) << "\n";
 	}
@@ -2992,9 +2935,9 @@ void FileFormat::dumpResourceTree()
 	Log::info() << output;
 }
 
-void FileFormat::dumpResourceTree(std::string &dumpStr)
+void FileFormat::dumpResourceTree(std::string& dumpStr)
 {
-	if(!resourceTree)
+	if (!resourceTree)
 	{
 		dumpStr.clear();
 	}

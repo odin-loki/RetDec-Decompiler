@@ -1,15 +1,15 @@
 /**
-* @file tests/utils/byte_value_storage_kernel_tests.cpp
-* @brief Regression tests for the ByteValueStorage defects that ESBMC refuted.
-* @copyright (c) 2026 Odin Loch trading as Imortek
-*
-* These live apart from byte_value_storage_tests.cpp because that file includes
-* <gmock/gmock.h>, which the standalone shim in tests/standalone/gtest does not
-* provide, so it never runs in the fast path
-* (scripts/standalone_check.sh, EXCLUDED_TEST_SOURCES). A regression test that
-* only runs in the slow CMake build is a regression test nobody watches, so the
-* fake below is hand-written and this file uses nothing but <gtest/gtest.h>.
-*/
+ * @file tests/utils/byte_value_storage_kernel_tests.cpp
+ * @brief Regression tests for the ByteValueStorage defects that ESBMC refuted.
+ * @copyright (c) 2026 Odin Loch trading as Imortek
+ *
+ * These live apart from byte_value_storage_tests.cpp because that file includes
+ * <gmock/gmock.h>, which the standalone shim in tests/standalone/gtest does not
+ * provide, so it never runs in the fast path
+ * (scripts/standalone_check.sh, EXCLUDED_TEST_SOURCES). A regression test that
+ * only runs in the slow CMake build is a regression test nobody watches, so the
+ * fake below is hand-written and this file uses nothing but <gtest/gtest.h>.
+ */
 
 #include <atomic>
 #include <chrono>
@@ -35,16 +35,15 @@ namespace tests {
 namespace {
 
 /**
-* @brief A ByteValueStorage whose getXByte is scripted and, crucially, BOUNDED.
-*
-* The walks under test used to run forever when handed a zero width. A fake
-* that answers forever would turn those regressions into hangs rather than
-* failures, and a test nobody can watch fail is not a regression test -- so
-* getXByte here refuses after @c maxCalls answers. With the defect present the
-* walk takes all of them; with it fixed the walk stops itself.
-*/
-class FakeStorage : public ByteValueStorage
-{
+ * @brief A ByteValueStorage whose getXByte is scripted and, crucially, BOUNDED.
+ *
+ * The walks under test used to run forever when handed a zero width. A fake
+ * that answers forever would turn those regressions into hangs rather than
+ * failures, and a test nobody can watch fail is not a regression test -- so
+ * getXByte here refuses after @c maxCalls answers. With the defect present the
+ * walk takes all of them; with it fixed the walk stops itself.
+ */
+class FakeStorage : public ByteValueStorage {
 public:
 	Endianness endianness = Endianness::LITTLE;
 	std::size_t byteLength = 8;
@@ -72,22 +71,36 @@ public:
 	mutable std::size_t calls = 0;
 	mutable std::vector<std::uint64_t> addressesSeen;
 
-	Endianness getEndianness() const override { return endianness; }
-	std::size_t getNibbleLength() const override { return 4; }
-	std::size_t getByteLength() const override { return byteLength; }
-	std::size_t getWordLength() const override { return 32; }
-	std::size_t getBytesPerWord() const override { return bytesPerWord; }
+	Endianness getEndianness() const override
+	{
+		return endianness;
+	}
+	std::size_t getNibbleLength() const override
+	{
+		return 4;
+	}
+	std::size_t getByteLength() const override
+	{
+		return byteLength;
+	}
+	std::size_t getWordLength() const override
+	{
+		return 32;
+	}
+	std::size_t getBytesPerWord() const override
+	{
+		return bytesPerWord;
+	}
 	std::size_t getNumberOfNibblesInByte() const override
 	{
 		return nibblesInByte;
 	}
-	bool hasMixedEndianForDouble() const override { return false; }
+	bool hasMixedEndianForDouble() const override
+	{
+		return false;
+	}
 
-	bool getXByte(
-			std::uint64_t address,
-			std::uint64_t,
-			std::uint64_t& res,
-			Endianness) const override
+	bool getXByte(std::uint64_t address, std::uint64_t, std::uint64_t& res, Endianness) const override
 	{
 		if (calls >= maxCalls)
 		{
@@ -111,10 +124,7 @@ public:
 	/// terminate fails the test instead of hanging it.
 	std::size_t maxXBytesCalls = 64;
 
-	bool getXBytes(
-			std::uint64_t address,
-			std::uint64_t x,
-			std::vector<std::uint8_t>& res) const override
+	bool getXBytes(std::uint64_t address, std::uint64_t x, std::vector<std::uint8_t>& res) const override
 	{
 		if (xBytesAddressesSeen.size() >= maxXBytesCalls)
 		{
@@ -131,16 +141,12 @@ public:
 		// check that a caller notices when it does not, and a fake that
 		// silently corrects the width would pass them against any caller at
 		// all. `x` is unused for that reason.
-		(void) x;
+		(void)x;
 		res = xBytesAnswer;
 		return true;
 	}
 
-	bool setXByte(
-			std::uint64_t,
-			std::uint64_t,
-			std::uint64_t,
-			Endianness) override
+	bool setXByte(std::uint64_t, std::uint64_t, std::uint64_t, Endianness) override
 	{
 		return false;
 	}
@@ -151,9 +157,7 @@ public:
 	bool setXBytesOk = false;
 	std::vector<std::uint8_t>* setXBytesSeen = nullptr;
 
-	bool setXBytes(
-			std::uint64_t,
-			const std::vector<std::uint8_t>& data) override
+	bool setXBytes(std::uint64_t, const std::vector<std::uint8_t>& data) override
 	{
 		if (!setXBytesOk)
 		{
@@ -169,29 +173,29 @@ public:
 	// createValueFromBytes and createBytesFromValue are protected; the whole
 	// point of the fixes is what they refuse, so expose them.
 	using ByteValueStorage::createBytesFromValue;
-	using ByteValueStorage::extendedBytesFor;
 	using ByteValueStorage::createValueFromBytes;
+	using ByteValueStorage::extendedBytesFor;
 };
 
 /**
-* @brief Run @a body on another thread; answer whether it returned in time.
-*
-* FakeStorage's maxCalls ceiling makes every walk-shaped defect in this file
-* show up as a wrong answer rather than a hang, because a walk has to ask the
-* fake for the next element. createBytesFromValue's counter defect is the one
-* shape that ceiling cannot reach: the loop calls nothing, so with the defect
-* present it spins inside the function under test with no way out. A test that
-* hangs is not a regression test -- it turns a returning defect into a CI
-* timeout with no message instead of a named failure -- so the call is made
-* somewhere it can be abandoned.
-*
-* Everything the body touches is heap-allocated and owned by the closure, so a
-* body that never returns keeps writing to memory that is still alive rather
-* than to a destroyed test frame. The thread is detached and never joined:
-* returning from main() calls exit(), which does not wait for detached threads,
-* so a stuck body costs the run one spinning thread and nothing else.
-*/
-template<typename Fn>
+ * @brief Run @a body on another thread; answer whether it returned in time.
+ *
+ * FakeStorage's maxCalls ceiling makes every walk-shaped defect in this file
+ * show up as a wrong answer rather than a hang, because a walk has to ask the
+ * fake for the next element. createBytesFromValue's counter defect is the one
+ * shape that ceiling cannot reach: the loop calls nothing, so with the defect
+ * present it spins inside the function under test with no way out. A test that
+ * hangs is not a regression test -- it turns a returning defect into a CI
+ * timeout with no message instead of a named failure -- so the call is made
+ * somewhere it can be abandoned.
+ *
+ * Everything the body touches is heap-allocated and owned by the closure, so a
+ * body that never returns keeps writing to memory that is still alive rather
+ * than to a destroyed test frame. The thread is detached and never joined:
+ * returning from main() calls exit(), which does not wait for detached threads,
+ * so a stuck body costs the run one spinning thread and nothing else.
+ */
+template <typename Fn>
 bool completesWithin(std::chrono::milliseconds timeout, Fn body)
 {
 	auto done = std::make_shared<std::atomic<bool>>(false);
@@ -226,8 +230,7 @@ class ByteValueStorageKernelTests : public Test {};
 // The witness sets data[8] = data[9] = 1, so the bits that fall off the end are
 // real bits and not a discarded zero.
 
-TEST_F(ByteValueStorageKernelTests,
-CreateValueFromBytesRefusesMoreBytesThanTheAccumulatorHolds)
+TEST_F(ByteValueStorageKernelTests, CreateValueFromBytesRefusesMoreBytesThanTheAccumulatorHolds)
 {
 	FakeStorage storage;
 
@@ -237,42 +240,33 @@ CreateValueFromBytesRefusesMoreBytesThanTheAccumulatorHolds)
 	data[9] = 1;
 
 	std::uint64_t value = 0xDEADBEEF;
-	EXPECT_FALSE(storage.createValueFromBytes(
-			data, value, Endianness::LITTLE, 0, 0));
+	EXPECT_FALSE(storage.createValueFromBytes(data, value, Endianness::LITTLE, 0, 0));
 	// Refused means untouched, not half-assembled.
 	EXPECT_EQ(std::uint64_t(0xDEADBEEF), value);
 
-	EXPECT_FALSE(storage.createValueFromBytes(
-			data, value, Endianness::BIG, 0, 0));
+	EXPECT_FALSE(storage.createValueFromBytes(data, value, Endianness::BIG, 0, 0));
 	// Nine bytes is already one too many for a 64-bit accumulator.
-	EXPECT_FALSE(storage.createValueFromBytes(
-			data, value, Endianness::LITTLE, 1, 9));
+	EXPECT_FALSE(storage.createValueFromBytes(data, value, Endianness::LITTLE, 1, 9));
 }
 
-TEST_F(ByteValueStorageKernelTests,
-CreateValueFromBytesStillDecodesTheOrdinaryWidths)
+TEST_F(ByteValueStorageKernelTests, CreateValueFromBytesStillDecodesTheOrdinaryWidths)
 {
 	FakeStorage storage;
-	const std::vector<std::uint8_t> data = {
-			0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88};
+	const std::vector<std::uint8_t> data = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88};
 
 	std::uint64_t value = 0;
-	ASSERT_TRUE(storage.createValueFromBytes(
-			data, value, Endianness::LITTLE, 0, 0));
+	ASSERT_TRUE(storage.createValueFromBytes(data, value, Endianness::LITTLE, 0, 0));
 	EXPECT_EQ(std::uint64_t(0x8877665544332211), value);
 
-	ASSERT_TRUE(storage.createValueFromBytes(
-			data, value, Endianness::BIG, 0, 0));
+	ASSERT_TRUE(storage.createValueFromBytes(data, value, Endianness::BIG, 0, 0));
 	EXPECT_EQ(std::uint64_t(0x1122334455667788), value);
 
 	// A sub-range, and an offset that is not zero.
-	ASSERT_TRUE(storage.createValueFromBytes(
-			data, value, Endianness::LITTLE, 2, 2));
+	ASSERT_TRUE(storage.createValueFromBytes(data, value, Endianness::LITTLE, 2, 2));
 	EXPECT_EQ(std::uint64_t(0x4433), value);
 }
 
-TEST_F(ByteValueStorageKernelTests,
-CreateValueFromBytesRefusesASizeThatWrapsTheOffsetSum)
+TEST_F(ByteValueStorageKernelTests, CreateValueFromBytesRefusesASizeThatWrapsTheOffsetSum)
 {
 	FakeStorage storage;
 	const std::vector<std::uint8_t> data = {0x01, 0x02, 0x03, 0x04};
@@ -281,37 +275,28 @@ CreateValueFromBytesRefusesASizeThatWrapsTheOffsetSum)
 	// SIZE_MAX it wraps to 0, the test is false, `size` survives as the real
 	// size, and the loop then indexes data[1 + i] for SIZE_MAX iterations.
 	std::uint64_t value = 0;
-	EXPECT_FALSE(storage.createValueFromBytes(
-			data,
-			value,
-			Endianness::LITTLE,
-			1,
-			std::numeric_limits<std::uint64_t>::max()));
+	EXPECT_FALSE(
+		storage.createValueFromBytes(data, value, Endianness::LITTLE, 1, std::numeric_limits<std::uint64_t>::max()));
 }
 
-TEST_F(ByteValueStorageKernelTests,
-CreateValueFromBytesRefusesAnOffsetPastTheEnd)
+TEST_F(ByteValueStorageKernelTests, CreateValueFromBytesRefusesAnOffsetPastTheEnd)
 {
 	FakeStorage storage;
 	const std::vector<std::uint8_t> data = {0x01, 0x02};
 
 	std::uint64_t value = 0;
-	EXPECT_FALSE(storage.createValueFromBytes(
-			data, value, Endianness::LITTLE, 2, 0));
-	EXPECT_FALSE(storage.createValueFromBytes(
-			data, value, Endianness::LITTLE, 64, 1));
+	EXPECT_FALSE(storage.createValueFromBytes(data, value, Endianness::LITTLE, 2, 0));
+	EXPECT_FALSE(storage.createValueFromBytes(data, value, Endianness::LITTLE, 64, 1));
 }
 
-TEST_F(ByteValueStorageKernelTests,
-CreateValueFromBytesRefusesAnUnknownEndianness)
+TEST_F(ByteValueStorageKernelTests, CreateValueFromBytesRefusesAnUnknownEndianness)
 {
 	FakeStorage storage;
 	storage.endianness = Endianness::UNKNOWN;
 	const std::vector<std::uint8_t> data = {0x01, 0x02};
 
 	std::uint64_t value = 0;
-	EXPECT_FALSE(storage.createValueFromBytes(
-			data, value, Endianness::UNKNOWN, 0, 0));
+	EXPECT_FALSE(storage.createValueFromBytes(data, value, Endianness::UNKNOWN, 0, 0));
 }
 
 // --- createBytesFromValue: the counter and the shift bound ---
@@ -326,25 +311,21 @@ CreateValueFromBytesRefusesAnUnknownEndianness)
 // Every x above 8 is undefined for a second reason as well:
 // `data >> (getByteLength() * i)` reaches a shift count of 64 at i = 8.
 
-TEST_F(ByteValueStorageKernelTests,
-CreateBytesFromValueRefusesAWidthWiderThanTheAccumulator)
+TEST_F(ByteValueStorageKernelTests, CreateBytesFromValueRefusesAWidthWiderThanTheAccumulator)
 {
 	FakeStorage storage;
 	std::vector<std::uint8_t> out;
 
 	// Nine bytes is the first width whose last shift count is 64.
-	EXPECT_FALSE(storage.createBytesFromValue(
-			0x1122334455667788ull, 9, out, Endianness::LITTLE));
+	EXPECT_FALSE(storage.createBytesFromValue(0x1122334455667788ull, 9, out, Endianness::LITTLE));
 	EXPECT_TRUE(out.empty());
 
-	EXPECT_FALSE(storage.createBytesFromValue(
-			0x1122334455667788ull, 16, out, Endianness::BIG));
+	EXPECT_FALSE(storage.createBytesFromValue(0x1122334455667788ull, 16, out, Endianness::BIG));
 	EXPECT_TRUE(out.empty());
 
 	// 255 is the largest width the old std::uint8_t counter could represent at
 	// all, and it is still eight bytes past the end of the accumulator.
-	EXPECT_FALSE(storage.createBytesFromValue(
-			0x1122334455667788ull, 255, out, Endianness::LITTLE));
+	EXPECT_FALSE(storage.createBytesFromValue(0x1122334455667788ull, 255, out, Endianness::LITTLE));
 	EXPECT_TRUE(out.empty());
 }
 
@@ -355,8 +336,7 @@ CreateBytesFromValueRefusesAWidthWiderThanTheAccumulator)
 // produces is a named one ("did not return within ..."), which is the whole
 // point: a hang in a suite that a human or CI runs is a timeout with no
 // message attached to it.
-TEST_F(ByteValueStorageKernelTests,
-CreateBytesFromValueRefusesAWidthThatWrapsTheCounter)
+TEST_F(ByteValueStorageKernelTests, CreateBytesFromValueRefusesAWidthThatWrapsTheCounter)
 {
 	// Owned by the closure rather than by this frame: if the width counter
 	// wraps again, the abandoned thread goes on writing into `out` long after
@@ -367,54 +347,45 @@ CreateBytesFromValueRefusesAWidthThatWrapsTheCounter)
 
 	const auto attempt = [storage, out, accepted](std::uint64_t x) {
 		return [storage, out, accepted, x]() {
-			accepted->store(storage->createBytesFromValue(
-					0x1122334455667788ull, x, *out, Endianness::LITTLE));
+			accepted->store(storage->createBytesFromValue(0x1122334455667788ull, x, *out, Endianness::LITTLE));
 		};
 	};
 
 	ASSERT_TRUE(completesWithin(std::chrono::seconds(5), attempt(256)))
-			<< "createBytesFromValue did not return for a width of 256: the "
-			   "width counter cannot represent 256, so it wrapped to 0 and the "
-			   "loop never reached its bound";
+		<< "createBytesFromValue did not return for a width of 256: the "
+		   "width counter cannot represent 256, so it wrapped to 0 and the "
+		   "loop never reached its bound";
 	EXPECT_FALSE(accepted->load());
 	EXPECT_TRUE(out->empty());
 
 	// The exact ESBMC witness: x - 1 = 9223372036854775815, which is not
 	// representable in the counter's type either.
-	ASSERT_TRUE(completesWithin(
-			std::chrono::seconds(5), attempt(0x8000000000000008ull)))
-			<< "createBytesFromValue did not return for a width of "
-			   "0x8000000000000008";
+	ASSERT_TRUE(completesWithin(std::chrono::seconds(5), attempt(0x8000000000000008ull)))
+		<< "createBytesFromValue did not return for a width of "
+		   "0x8000000000000008";
 	EXPECT_FALSE(accepted->load());
 	EXPECT_TRUE(out->empty());
 }
 
-TEST_F(ByteValueStorageKernelTests,
-CreateBytesFromValueStillEmitsTheOrdinaryWidths)
+TEST_F(ByteValueStorageKernelTests, CreateBytesFromValueStillEmitsTheOrdinaryWidths)
 {
 	FakeStorage storage;
 	std::vector<std::uint8_t> out;
 
-	ASSERT_TRUE(storage.createBytesFromValue(
-			0x1122334455667788ull, 8, out, Endianness::LITTLE));
-	const std::vector<std::uint8_t> le = {
-			0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11};
+	ASSERT_TRUE(storage.createBytesFromValue(0x1122334455667788ull, 8, out, Endianness::LITTLE));
+	const std::vector<std::uint8_t> le = {0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11};
 	EXPECT_EQ(le, out);
 
-	ASSERT_TRUE(storage.createBytesFromValue(
-			0x1122334455667788ull, 8, out, Endianness::BIG));
-	const std::vector<std::uint8_t> be = {
-			0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88};
+	ASSERT_TRUE(storage.createBytesFromValue(0x1122334455667788ull, 8, out, Endianness::BIG));
+	const std::vector<std::uint8_t> be = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88};
 	EXPECT_EQ(be, out);
 
-	ASSERT_TRUE(storage.createBytesFromValue(
-			0x1122334455667788ull, 2, out, Endianness::LITTLE));
+	ASSERT_TRUE(storage.createBytesFromValue(0x1122334455667788ull, 2, out, Endianness::LITTLE));
 	const std::vector<std::uint8_t> two = {0x88, 0x77};
 	EXPECT_EQ(two, out);
 
 	// A zero width emits nothing and always did; the old loop simply never ran.
-	ASSERT_TRUE(storage.createBytesFromValue(
-			0x1122334455667788ull, 0, out, Endianness::LITTLE));
+	ASSERT_TRUE(storage.createBytesFromValue(0x1122334455667788ull, 0, out, Endianness::LITTLE));
 	EXPECT_TRUE(out.empty());
 }
 
@@ -447,8 +418,7 @@ TEST_F(ByteValueStorageKernelTests, GetNTWSRefusesAZeroWidthWalk)
 	EXPECT_EQ(std::uint64_t(0x1000), storage.addressesSeen[0]);
 }
 
-TEST_F(ByteValueStorageKernelTests,
-GetNTWSDoesNotWalkPastTheTopOfTheAddressSpace)
+TEST_F(ByteValueStorageKernelTests, GetNTWSDoesNotWalkPastTheTopOfTheAddressSpace)
 {
 	FakeStorage storage;
 	storage.maxCalls = 64;
@@ -457,8 +427,7 @@ GetNTWSDoesNotWalkPastTheTopOfTheAddressSpace)
 	// `address += width` here wraps to 0x0FF and the walk carries on reading
 	// from the bottom of the address space as though nothing happened.
 	std::vector<std::uint64_t> res;
-	EXPECT_FALSE(storage.getNTWS(
-			std::numeric_limits<std::uint64_t>::max() - 0xFF, 0x1000, res));
+	EXPECT_FALSE(storage.getNTWS(std::numeric_limits<std::uint64_t>::max() - 0xFF, 0x1000, res));
 	EXPECT_EQ(std::size_t(1), res.size());
 	EXPECT_EQ(std::size_t(1), storage.calls);
 }
@@ -538,8 +507,7 @@ TEST_F(ByteValueStorageKernelTests, GetXByteArrayRefusesAZeroWidthStep)
 	EXPECT_EQ(addresses, storage.addressesSeen);
 }
 
-TEST_F(ByteValueStorageKernelTests,
-GetXByteArrayDoesNotWalkPastTheTopOfTheAddressSpace)
+TEST_F(ByteValueStorageKernelTests, GetXByteArrayDoesNotWalkPastTheTopOfTheAddressSpace)
 {
 	FakeStorage storage;
 	storage.maxCalls = 64;
@@ -549,10 +517,8 @@ GetXByteArrayDoesNotWalkPastTheTopOfTheAddressSpace)
 	// 0xffffffffffffff00, 0xf00, 0x1f00 and 0x2f00 -- three of the four reads
 	// came from the bottom of the address space after the sum wrapped.
 	std::vector<std::uint64_t> res;
-	EXPECT_FALSE(storage.getXByteArray(
-			std::numeric_limits<std::uint64_t>::max() - 0xFF, 0x1000, res, 4));
-	const std::vector<std::uint64_t> addresses = {
-			std::numeric_limits<std::uint64_t>::max() - 0xFF};
+	EXPECT_FALSE(storage.getXByteArray(std::numeric_limits<std::uint64_t>::max() - 0xFF, 0x1000, res, 4));
+	const std::vector<std::uint64_t> addresses = {std::numeric_limits<std::uint64_t>::max() - 0xFF};
 	EXPECT_EQ(addresses, storage.addressesSeen);
 }
 
@@ -580,8 +546,7 @@ TEST_F(ByteValueStorageKernelTests, GetXByteArrayStillReadsAnOrdinaryArray)
 	// top of the address space is still a legal read.
 	storage.addressesSeen.clear();
 	res.clear();
-	EXPECT_TRUE(storage.getXByteArray(
-			std::numeric_limits<std::uint64_t>::max(), 8, res, 1));
+	EXPECT_TRUE(storage.getXByteArray(std::numeric_limits<std::uint64_t>::max(), 8, res, 1));
 	EXPECT_EQ(std::size_t(1), res.size());
 }
 
@@ -591,8 +556,7 @@ TEST_F(ByteValueStorageKernelTests, GetXByteArrayStillReadsAnOrdinaryArray)
 // spin, but it wraps: at UINT64_MAX the next read is at 0 and the scan carries
 // on from the bottom of the address space.
 
-TEST_F(ByteValueStorageKernelTests,
-GetNTBSDoesNotWalkPastTheTopOfTheAddressSpace)
+TEST_F(ByteValueStorageKernelTests, GetNTBSDoesNotWalkPastTheTopOfTheAddressSpace)
 {
 	FakeStorage storage;
 	storage.maxCalls = 8;
@@ -603,11 +567,9 @@ GetNTBSDoesNotWalkPastTheTopOfTheAddressSpace)
 	// non-empty result; what changed is that the walk stopped at the top of
 	// the address space instead of continuing at 0, 1, 2 ... until the fake ran
 	// out of answers.
-	EXPECT_TRUE(storage.getNTBS(
-			std::numeric_limits<std::uint64_t>::max(), res));
+	EXPECT_TRUE(storage.getNTBS(std::numeric_limits<std::uint64_t>::max(), res));
 	EXPECT_EQ(std::string("A"), res);
-	const std::vector<std::uint64_t> addresses = {
-			std::numeric_limits<std::uint64_t>::max()};
+	const std::vector<std::uint64_t> addresses = {std::numeric_limits<std::uint64_t>::max()};
 	EXPECT_EQ(addresses, storage.addressesSeen);
 }
 
@@ -620,8 +582,7 @@ TEST_F(ByteValueStorageKernelTests, GetNTBSStillWalksAndTerminatesOnNul)
 	std::string res;
 	ASSERT_TRUE(storage.getNTBS(0x1000, res));
 	EXPECT_EQ(std::string("AAA"), res);
-	const std::vector<std::uint64_t> addresses = {
-			0x1000, 0x1001, 0x1002, 0x1003};
+	const std::vector<std::uint64_t> addresses = {0x1000, 0x1001, 0x1002, 0x1003};
 	EXPECT_EQ(addresses, storage.addressesSeen);
 
 	// And the fixed-size form still stops after exactly `size` bytes.
@@ -644,8 +605,7 @@ TEST_F(ByteValueStorageKernelTests, GetNTBSStillWalksAndTerminatesOnNul)
 // either -- the bit does not survive the narrowing back to unsigned char, so
 // the reversal loop never runs and every element is silently set to 0.
 
-TEST_F(ByteValueStorageKernelTests,
-BitsToBigRefusesAByteLengthWiderThanTheElement)
+TEST_F(ByteValueStorageKernelTests, BitsToBigRefusesAByteLengthWiderThanTheElement)
 {
 	FakeStorage storage;
 	storage.endianness = Endianness::LITTLE; // so the swap is actually done
@@ -784,8 +744,7 @@ TEST_F(ByteValueStorageKernelTests, Get10ByteStillDecodesTenBytes)
 	storage.xBytesOk = true;
 	// The 80-bit extended-precision encoding of 3.789, the same pattern
 	// conversion_tests.cpp pins for double10ToDouble8.
-	storage.xBytesAnswer = {
-			0x60, 0xe5, 0xd0, 0x22, 0xdb, 0xf9, 0x7e, 0xf2, 0x00, 0x40};
+	storage.xBytesAnswer = {0x60, 0xe5, 0xd0, 0x22, 0xdb, 0xf9, 0x7e, 0xf2, 0x00, 0x40};
 
 	long double res = 0.0L;
 	ASSERT_TRUE(storage.get10Byte(0x1000, res));
@@ -813,8 +772,8 @@ TEST_F(ByteValueStorageKernelTests, Get10ByteStillDecodesTenBytes)
 /// The addresses are the assertion. A step is an address sequence, and a test
 /// that only inspected the returned values would pass against any stride that
 /// happens to read in-range bytes.
-TEST_F(ByteValueStorageKernelTests,
-GetDoubleArrayStepsByTheWidthOfADouble) {
+TEST_F(ByteValueStorageKernelTests, GetDoubleArrayStepsByTheWidthOfADouble)
+{
 	FakeStorage storage;
 	storage.xBytesOk = true;
 	storage.xBytesAnswer.assign(sizeof(double), 0);
@@ -833,8 +792,8 @@ GetDoubleArrayStepsByTheWidthOfADouble) {
 /// The float walk reads four bytes at a time, so its stride is genuinely
 /// sizeof(float) -- stated so the fix above cannot be "corrected" into
 /// striding both arrays by eight.
-TEST_F(ByteValueStorageKernelTests,
-GetFloatArrayStepsByTheWidthOfAFloat) {
+TEST_F(ByteValueStorageKernelTests, GetFloatArrayStepsByTheWidthOfAFloat)
+{
 	FakeStorage storage;
 	storage.xBytesOk = true;
 	storage.xBytesAnswer.assign(sizeof(float), 0);
@@ -848,8 +807,8 @@ GetFloatArrayStepsByTheWidthOfAFloat) {
 }
 
 /// And the ten-byte walk, whose step is the x87 extended width.
-TEST_F(ByteValueStorageKernelTests,
-Get10ByteArrayStepsByTheExtendedWidth) {
+TEST_F(ByteValueStorageKernelTests, Get10ByteArrayStepsByTheExtendedWidth)
+{
 	FakeStorage storage;
 	storage.xBytesOk = true;
 	storage.xBytesAnswer.assign(10, 0);
@@ -867,8 +826,8 @@ Get10ByteArrayStepsByTheExtendedWidth) {
 /// res, 4) returned TRUE having read 0xfffffffffffffff8, 0xfffffffffffffffc,
 /// 0x0 and 0x4 -- the last two being the bottom of the address space, which is
 /// a different part of the file entirely.
-TEST_F(ByteValueStorageKernelTests,
-ArrayWalksRefuseRatherThanWrapPastTheTopOfTheAddressSpace) {
+TEST_F(ByteValueStorageKernelTests, ArrayWalksRefuseRatherThanWrapPastTheTopOfTheAddressSpace)
+{
 	const std::uint64_t top = std::numeric_limits<std::uint64_t>::max();
 
 	{
@@ -906,8 +865,8 @@ ArrayWalksRefuseRatherThanWrapPastTheTopOfTheAddressSpace) {
 /// constant per host and is always true on x86-64, so with the decision inside
 /// the function the broken path could not be reached from a test at all -- and
 /// a first version of this test, written that way, passed against the old body.
-TEST_F(ByteValueStorageKernelTests,
-ExtendedBytesAreWrittenOnlyWhereTheHostHasTheDatum) {
+TEST_F(ByteValueStorageKernelTests, ExtendedBytesAreWrittenOnlyWhereTheHostHasTheDatum)
+{
 	std::vector<std::uint8_t> out;
 
 	// A host with the 80-bit datum: ten bytes of it, which is exactly what
@@ -923,12 +882,13 @@ ExtendedBytesAreWrittenOnlyWhereTheHostHasTheDatum) {
 }
 
 /// And the round trip on this host, which is the property the encoding is for.
-TEST_F(ByteValueStorageKernelTests,
-Set10ByteRoundTripsThroughGet10Byte) {
-	if (!systemHasLongDouble()) {
+TEST_F(ByteValueStorageKernelTests, Set10ByteRoundTripsThroughGet10Byte)
+{
+	if (!systemHasLongDouble())
+	{
 		GTEST_SKIP() << "this host has no 80-bit long double, so there is no "
-		                "datum to round-trip; extendedBytesFor refuses and the "
-		                "test above covers that";
+						"datum to round-trip; extendedBytesFor refuses and the "
+						"test above covers that";
 	}
 
 	FakeStorage storage;

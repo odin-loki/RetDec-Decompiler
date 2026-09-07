@@ -1,9 +1,9 @@
 /**
-* @file tests/utils/container_tests.cpp
-* @brief Tests for the @c container module.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file tests/utils/container_tests.cpp
+ * @brief Tests for the @c container module.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #include <limits>
 #include <map>
@@ -20,17 +20,17 @@ namespace utils {
 namespace tests {
 
 /**
-* @brief Tests for the @c container module.
-*/
-class ContainerTests: public Test {};
+ * @brief Tests for the @c container module.
+ */
+class ContainerTests : public Test {};
 
 //
 // hasItem()
 //
 
-template<class ContainerType>
-void refHasItemTestCheckWhetherContainerContainsNumbers(
-		const ContainerType &container) {
+template <class ContainerType>
+void refHasItemTestCheckWhetherContainerContainsNumbers(const ContainerType& container)
+{
 	EXPECT_TRUE(hasItem(container, 1));
 	EXPECT_TRUE(hasItem(container, 5));
 	EXPECT_TRUE(hasItem(container, 10));
@@ -38,10 +38,11 @@ void refHasItemTestCheckWhetherContainerContainsNumbers(
 	EXPECT_FALSE(hasItem(container, 11));
 }
 
-TEST_F(ContainerTests,
-HasItemForList) {
+TEST_F(ContainerTests, HasItemForList)
+{
 	std::list<int> container;
-	for (int i = 1; i <= 10; ++i) {
+	for (int i = 1; i <= 10; ++i)
+	{
 		container.push_back(i);
 	}
 
@@ -49,10 +50,11 @@ HasItemForList) {
 	refHasItemTestCheckWhetherContainerContainsNumbers(container);
 }
 
-TEST_F(ContainerTests,
-HasItemForVector) {
+TEST_F(ContainerTests, HasItemForVector)
+{
 	std::vector<int> container;
-	for (int i = 1; i <= 10; ++i) {
+	for (int i = 1; i <= 10; ++i)
+	{
 		container.push_back(i);
 	}
 
@@ -60,10 +62,11 @@ HasItemForVector) {
 	refHasItemTestCheckWhetherContainerContainsNumbers(container);
 }
 
-TEST_F(ContainerTests,
-HasItemForSet) {
+TEST_F(ContainerTests, HasItemForSet)
+{
 	std::set<int> container;
-	for (int i = 1; i <= 10; ++i) {
+	for (int i = 1; i <= 10; ++i)
+	{
 		container.insert(i);
 	}
 
@@ -71,10 +74,11 @@ HasItemForSet) {
 	refHasItemTestCheckWhetherContainerContainsNumbers(container);
 }
 
-TEST_F(ContainerTests,
-HasItemForMap) {
+TEST_F(ContainerTests, HasItemForMap)
+{
 	std::map<int, int> container;
-	for (int i = 1; i <= 10; ++i) {
+	for (int i = 1; i <= 10; ++i)
+	{
 		container[i] = i + 1;
 	}
 
@@ -86,8 +90,8 @@ HasItemForMap) {
 // getNthItem()
 //
 
-TEST_F(ContainerTests,
-GetNthItemWorksCorrectlyForVector) {
+TEST_F(ContainerTests, GetNthItemWorksCorrectlyForVector)
+{
 	std::vector<int> container;
 	container.push_back(1);
 	container.push_back(2);
@@ -98,8 +102,8 @@ GetNthItemWorksCorrectlyForVector) {
 	EXPECT_EQ(3, getNthItem(container, 3));
 }
 
-TEST_F(ContainerTests,
-GetNthItemWorksCorrectlyForList) {
+TEST_F(ContainerTests, GetNthItemWorksCorrectlyForList)
+{
 	std::list<int> container;
 	container.push_back(1);
 	container.push_back(2);
@@ -114,18 +118,19 @@ GetNthItemWorksCorrectlyForList) {
 // getValueOrDefault()
 //
 
-template<class ContainerType>
-void refGetValueOrDefaultTestGetSomeNumbers(
-		const ContainerType &container) {
+template <class ContainerType>
+void refGetValueOrDefaultTestGetSomeNumbers(const ContainerType& container)
+{
 	EXPECT_EQ(3, getValueOrDefault(container, 3, 5));
 	EXPECT_EQ(5, getValueOrDefault(container, 0, 5));
 	EXPECT_EQ(int(), getValueOrDefault(container, 11));
 }
 
-TEST_F(ContainerTests,
-GetValueOrDefaultForSet) {
+TEST_F(ContainerTests, GetValueOrDefaultForSet)
+{
 	std::set<int> container;
-	for (int i = 1; i <= 10; ++i) {
+	for (int i = 1; i <= 10; ++i)
+	{
 		container.insert(i);
 	}
 
@@ -133,10 +138,11 @@ GetValueOrDefaultForSet) {
 	refGetValueOrDefaultTestGetSomeNumbers(container);
 }
 
-TEST_F(ContainerTests,
-GetValueOrDefaultForList) {
+TEST_F(ContainerTests, GetValueOrDefaultForList)
+{
 	std::list<int> container;
-	for (int i = 1; i <= 10; ++i) {
+	for (int i = 1; i <= 10; ++i)
+	{
 		container.push_back(i);
 	}
 
@@ -144,10 +150,11 @@ GetValueOrDefaultForList) {
 	refGetValueOrDefaultTestGetSomeNumbers(container);
 }
 
-TEST_F(ContainerTests,
-GetValueOrDefaultForVector) {
+TEST_F(ContainerTests, GetValueOrDefaultForVector)
+{
 	std::vector<int> container;
-	for (int i = 1; i <= 10; ++i) {
+	for (int i = 1; i <= 10; ++i)
+	{
 		container.push_back(i);
 	}
 
@@ -159,8 +166,8 @@ GetValueOrDefaultForVector) {
 // removeItem()
 //
 
-TEST_F(ContainerTests,
-RemoveItemDoesNothingWhenThereIsNoSuchItem) {
+TEST_F(ContainerTests, RemoveItemDoesNothingWhenThereIsNoSuchItem)
+{
 	std::vector<int> v{1, 2, 3};
 
 	removeItem(v, 77);
@@ -168,8 +175,8 @@ RemoveItemDoesNothingWhenThereIsNoSuchItem) {
 	ASSERT_EQ(3, v.size());
 }
 
-TEST_F(ContainerTests,
-RemoveItemRemovesItemWhenItContainsOneOcurrenceOfItem) {
+TEST_F(ContainerTests, RemoveItemRemovesItemWhenItContainsOneOcurrenceOfItem)
+{
 	std::vector<int> v{1, 2, 3};
 
 	removeItem(v, 2);
@@ -178,8 +185,8 @@ RemoveItemRemovesItemWhenItContainsOneOcurrenceOfItem) {
 	ASSERT_EQ(refV, v);
 }
 
-TEST_F(ContainerTests,
-RemoveItemRemovesAllOccurrencesOfItem) {
+TEST_F(ContainerTests, RemoveItemRemovesAllOccurrencesOfItem)
+{
 	std::vector<int> v{2, 1, 2, 2, 3, 2};
 
 	removeItem(v, 2);
@@ -192,21 +199,22 @@ RemoveItemRemovesAllOccurrencesOfItem) {
 // clear()
 //
 
-template<class ContainerType>
-void scenarioClearEmptiesNonEmptyContainer(ContainerType &container) {
+template <class ContainerType>
+void scenarioClearEmptiesNonEmptyContainer(ContainerType& container)
+{
 	ASSERT_FALSE(container.empty());
 	clear(container);
 	ASSERT_TRUE(container.empty());
 }
 
-TEST_F(ContainerTests,
-ClearForVector) {
+TEST_F(ContainerTests, ClearForVector)
+{
 	std::vector<int> v(100, 0);
 	scenarioClearEmptiesNonEmptyContainer(v);
 }
 
-TEST_F(ContainerTests,
-ClearForQueue) {
+TEST_F(ContainerTests, ClearForQueue)
+{
 	std::queue<int> q;
 	q.push(1);
 	q.push(2);
@@ -214,8 +222,8 @@ ClearForQueue) {
 	scenarioClearEmptiesNonEmptyContainer(q);
 }
 
-TEST_F(ContainerTests,
-ClearForStack) {
+TEST_F(ContainerTests, ClearForStack)
+{
 	std::stack<int> s;
 	s.push(1);
 	s.push(2);
@@ -227,14 +235,11 @@ ClearForStack) {
 // filter()
 //
 
-TEST_F(ContainerTests,
-FilterReturnsCorrectlyFilteredContainerOfSameType) {
+TEST_F(ContainerTests, FilterReturnsCorrectlyFilteredContainerOfSameType)
+{
 	std::vector<int> input{1, 2, 3, 4, 5};
 
-	auto result = filter(
-		input,
-		[](auto i) { return i % 2 == 0; }
-	);
+	auto result = filter(input, [](auto i) { return i % 2 == 0; });
 
 	ASSERT_EQ(typeid(input), typeid(result));
 	ASSERT_EQ(std::vector<int>({2, 4}), result);
@@ -244,14 +249,11 @@ FilterReturnsCorrectlyFilteredContainerOfSameType) {
 // filterTo()
 //
 
-TEST_F(ContainerTests,
-FilterToReturnsCorrectlyFilteredContainerOfGivenType) {
+TEST_F(ContainerTests, FilterToReturnsCorrectlyFilteredContainerOfGivenType)
+{
 	std::vector<int> input{1, 2, 3, 4, 5};
 
-	auto result = filterTo<std::set<int>>(
-		input,
-		[](auto i) { return i % 2 == 0; }
-	);
+	auto result = filterTo<std::set<int>>(input, [](auto i) { return i % 2 == 0; });
 
 	ASSERT_EQ(typeid(std::set<int>), typeid(result));
 	ASSERT_EQ(std::set<int>({2, 4}), result);
@@ -261,8 +263,8 @@ FilterToReturnsCorrectlyFilteredContainerOfGivenType) {
 // removeFromSet()
 //
 
-TEST_F(ContainerTests,
-RemoveFromSetDoesNothingWhenFromSetIsAlreadyEmpty) {
+TEST_F(ContainerTests, RemoveFromSetDoesNothingWhenFromSetIsAlreadyEmpty)
+{
 	std::set<int> from{};
 	std::set<int> toRemove{1, 2, 3};
 
@@ -271,8 +273,8 @@ RemoveFromSetDoesNothingWhenFromSetIsAlreadyEmpty) {
 	EXPECT_TRUE(from.empty());
 }
 
-TEST_F(ContainerTests,
-RemoveFromSetRemovesEverythingThatIsInToRemove) {
+TEST_F(ContainerTests, RemoveFromSetRemovesEverythingThatIsInToRemove)
+{
 	std::set<int> from{1, 2, 3};
 	std::set<int> toRemove{2, 3, 4};
 
@@ -281,8 +283,8 @@ RemoveFromSetRemovesEverythingThatIsInToRemove) {
 	EXPECT_EQ(std::set<int>{1}, from);
 }
 
-TEST_F(ContainerTests,
-RemoveFromSetRemovesEverythingWhenToRemoveIsFrom) {
+TEST_F(ContainerTests, RemoveFromSetRemovesEverythingWhenToRemoveIsFrom)
+{
 	std::set<int> from{1, 2, 3};
 
 	removeFromSet(from, from);
@@ -294,8 +296,8 @@ RemoveFromSetRemovesEverythingWhenToRemoveIsFrom) {
 // shareSomeItem()
 //
 
-TEST_F(ContainerTests,
-ShareSomeItemTwoEmptySetsDontShareAnyItem) {
+TEST_F(ContainerTests, ShareSomeItemTwoEmptySetsDontShareAnyItem)
+{
 	std::set<int> s1;
 	std::set<int> s2;
 
@@ -303,8 +305,8 @@ ShareSomeItemTwoEmptySetsDontShareAnyItem) {
 	EXPECT_FALSE(shareSomeItem(s2, s1));
 }
 
-TEST_F(ContainerTests,
-ShareSomeItemEmptySetDoesntShareAnyItemWithANonEmptySet) {
+TEST_F(ContainerTests, ShareSomeItemEmptySetDoesntShareAnyItemWithANonEmptySet)
+{
 	std::set<int> s1;
 	s1.insert(1);
 	std::set<int> s2;
@@ -313,8 +315,8 @@ ShareSomeItemEmptySetDoesntShareAnyItemWithANonEmptySet) {
 	EXPECT_FALSE(shareSomeItem(s2, s1));
 }
 
-TEST_F(ContainerTests,
-ShareSomeItemSetsShareASingleItem) {
+TEST_F(ContainerTests, ShareSomeItemSetsShareASingleItem)
+{
 	std::set<int> s1;
 	s1.insert(1);
 	s1.insert(2);
@@ -329,8 +331,8 @@ ShareSomeItemSetsShareASingleItem) {
 	EXPECT_TRUE(shareSomeItem(s2, s1));
 }
 
-TEST_F(ContainerTests,
-ShareSomeItemSetsShareTwoItems) {
+TEST_F(ContainerTests, ShareSomeItemSetsShareTwoItems)
+{
 	std::set<int> s1;
 	s1.insert(1);
 	s1.insert(2);
@@ -349,13 +351,9 @@ ShareSomeItemSetsShareTwoItems) {
 // getKeysFromMap()
 //
 
-TEST_F(ContainerTests,
-GetKeysFromMapReturnsCorrectKeys) {
-	std::map<std::string, int> m{
-		{"a", 1},
-		{"b", 2},
-		{"c", 3}
-	};
+TEST_F(ContainerTests, GetKeysFromMapReturnsCorrectKeys)
+{
+	std::map<std::string, int> m{{"a", 1}, {"b", 2}, {"c", 3}};
 
 	ASSERT_EQ(std::set<std::string>({"a", "b", "c"}), getKeysFromMap(m));
 }
@@ -364,13 +362,9 @@ GetKeysFromMapReturnsCorrectKeys) {
 // getValuesFromMap()
 //
 
-TEST_F(ContainerTests,
-GetValuesFromMapReturnsCorrectKeys) {
-	std::map<std::string, int> m{
-		{"a", 1},
-		{"b", 2},
-		{"c", 3}
-	};
+TEST_F(ContainerTests, GetValuesFromMapReturnsCorrectKeys)
+{
+	std::map<std::string, int> m{{"a", 1}, {"b", 2}, {"c", 3}};
 
 	ASSERT_EQ(std::set<int>({1, 2, 3}), getValuesFromMap(m));
 }
@@ -379,17 +373,15 @@ GetValuesFromMapReturnsCorrectKeys) {
 // mapHasKey()
 //
 
-TEST_F(ContainerTests,
-MapHasKeyReturnsTrueWhenMapHasGivenKey) {
-	std::map<std::string, int> m{
-		{"a", 1}
-	};
+TEST_F(ContainerTests, MapHasKeyReturnsTrueWhenMapHasGivenKey)
+{
+	std::map<std::string, int> m{{"a", 1}};
 
 	ASSERT_TRUE(mapHasKey(m, "a"));
 }
 
-TEST_F(ContainerTests,
-MapHasKeyReturnsFalseWhenMapDoesNotHaveGivenKey) {
+TEST_F(ContainerTests, MapHasKeyReturnsFalseWhenMapDoesNotHaveGivenKey)
+{
 	std::map<std::string, int> m;
 
 	ASSERT_FALSE(mapHasKey(m, "a"));
@@ -399,17 +391,15 @@ MapHasKeyReturnsFalseWhenMapDoesNotHaveGivenKey) {
 // mapHasValue()
 //
 
-TEST_F(ContainerTests,
-MapHasValueReturnsTrueWhenMapHasGivenValue) {
-	std::map<std::string, int> m{
-		{"a", 1}
-	};
+TEST_F(ContainerTests, MapHasValueReturnsTrueWhenMapHasGivenValue)
+{
+	std::map<std::string, int> m{{"a", 1}};
 
 	ASSERT_TRUE(mapHasValue(m, 1));
 }
 
-TEST_F(ContainerTests,
-MapHasValueReturnsFalseWhenMapDoesNotHaveGivenValue) {
+TEST_F(ContainerTests, MapHasValueReturnsFalseWhenMapDoesNotHaveGivenValue)
+{
 	std::map<std::string, int> m;
 
 	ASSERT_FALSE(mapHasValue(m, 1));
@@ -419,17 +409,15 @@ MapHasValueReturnsFalseWhenMapDoesNotHaveGivenValue) {
 // mapGetValueOrDefault()
 //
 
-TEST_F(ContainerTests,
-MapGetValueOrDefaultReturnsPassedValueWhenMapHasValue) {
-	std::map<std::string, int> m{
-		{"a", 1}
-	};
+TEST_F(ContainerTests, MapGetValueOrDefaultReturnsPassedValueWhenMapHasValue)
+{
+	std::map<std::string, int> m{{"a", 1}};
 
 	ASSERT_EQ(1, mapGetValueOrDefault(m, "a"));
 }
 
-TEST_F(ContainerTests,
-MapGetValueOrDefaultReturnsDefaultValueWhenMapDoesNotHaveValue) {
+TEST_F(ContainerTests, MapGetValueOrDefaultReturnsDefaultValueWhenMapDoesNotHaveValue)
+{
 	std::map<std::string, int> m;
 
 	ASSERT_EQ(0, mapGetValueOrDefault(m, "a"));
@@ -439,20 +427,15 @@ MapGetValueOrDefaultReturnsDefaultValueWhenMapDoesNotHaveValue) {
 // mapGetMaxValue()
 //
 
-TEST_F(ContainerTests,
-MapGetMaxValueReturnsCorrectValueWhenMapIsNonEmpty) {
-	std::map<std::string, int> m{
-		{"a", 1},
-		{"b", 2},
-		{"c", 3},
-		{"d", 2}
-	};
+TEST_F(ContainerTests, MapGetMaxValueReturnsCorrectValueWhenMapIsNonEmpty)
+{
+	std::map<std::string, int> m{{"a", 1}, {"b", 2}, {"c", 3}, {"d", 2}};
 
 	ASSERT_EQ(3, mapGetMaxValue(m));
 }
 
-TEST_F(ContainerTests,
-MapGetMaxValueReturnsDefaultConstructedValueTypeWhenMapIsEmpty) {
+TEST_F(ContainerTests, MapGetMaxValueReturnsDefaultConstructedValueTypeWhenMapIsEmpty)
+{
 	std::map<std::string, int> m;
 
 	ASSERT_EQ(0, mapGetMaxValue(m));
@@ -462,16 +445,16 @@ MapGetMaxValueReturnsDefaultConstructedValueTypeWhenMapIsEmpty) {
 // addToMap()
 //
 
-TEST_F(ContainerTests,
-AddToMapWorksCorrectlyWhenAddingValueToNonExistingKey) {
+TEST_F(ContainerTests, AddToMapWorksCorrectlyWhenAddingValueToNonExistingKey)
+{
 	std::map<std::string, int> m;
 	addToMap(std::string("test"), 5, m);
 	EXPECT_EQ(1, m.size());
 	EXPECT_EQ(5, m["test"]);
 }
 
-TEST_F(ContainerTests,
-AddToMapWorksCorrectlyWhenAddingValueToExistingKey) {
+TEST_F(ContainerTests, AddToMapWorksCorrectlyWhenAddingValueToExistingKey)
+{
 	std::map<std::string, int> m;
 	addToMap(std::string("test"), 5, m);
 	addToMap(std::string("test"), 6, m);
@@ -483,37 +466,23 @@ AddToMapWorksCorrectlyWhenAddingValueToExistingKey) {
 // getMapWithSwappedKeysAndValues()
 //
 
-TEST_F(ContainerTests,
-GetMapWithSwappedKeysAndValuesReturnsCorrectMapWhenOriginalMapHasDistinctValues) {
-	std::map<std::string, int> m{
-		{"a", 1},
-		{"b", 2},
-		{"c", 3}
-	};
+TEST_F(ContainerTests, GetMapWithSwappedKeysAndValuesReturnsCorrectMapWhenOriginalMapHasDistinctValues)
+{
+	std::map<std::string, int> m{{"a", 1}, {"b", 2}, {"c", 3}};
 
 	auto swapped = getMapWithSwappedKeysAndValues(m);
 
-	std::map<int, std::string> expected{
-		{1, "a"},
-		{2, "b"},
-		{3, "c"}
-	};
+	std::map<int, std::string> expected{{1, "a"}, {2, "b"}, {3, "c"}};
 	EXPECT_EQ(expected, swapped);
 }
 
-TEST_F(ContainerTests,
-GetMapWithSwappedKeysAndValuesReturnsCorrectMapWhenOriginalMapDoesNotHaveDistinctValues) {
-	std::map<std::string, int> m{
-		{"a", 1},
-		{"b", 1},
-		{"c", 1}
-	};
+TEST_F(ContainerTests, GetMapWithSwappedKeysAndValuesReturnsCorrectMapWhenOriginalMapDoesNotHaveDistinctValues)
+{
+	std::map<std::string, int> m{{"a", 1}, {"b", 1}, {"c", 1}};
 
 	auto swapped = getMapWithSwappedKeysAndValues(m);
 
-	std::map<int, std::string> expected{
-		{1, "a"}
-	};
+	std::map<int, std::string> expected{{1, "a"}};
 	EXPECT_EQ(expected, swapped);
 }
 
@@ -528,8 +497,8 @@ GetMapWithSwappedKeysAndValuesReturnsCorrectMapWhenOriginalMapDoesNotHaveDistinc
 // NonIterableSet::hasNot()
 //
 
-TEST_F(ContainerTests,
-NonIterableSetInsertsFindsAndClearsElements) {
+TEST_F(ContainerTests, NonIterableSetInsertsFindsAndClearsElements)
+{
 	int i = 123;
 	NonIterableSet<int*> c;
 
@@ -563,9 +532,7 @@ TEST_F(ContainerTests, GetNthItemForVectorRefusesAnIndexPastTheEnd)
 {
 	const std::vector<int> container = {1, 2, 3};
 	EXPECT_THROW(getNthItem(container, 4), std::out_of_range);
-	EXPECT_THROW(
-		getNthItem(container, std::numeric_limits<std::size_t>::max()),
-		std::out_of_range);
+	EXPECT_THROW(getNthItem(container, std::numeric_limits<std::size_t>::max()), std::out_of_range);
 }
 
 TEST_F(ContainerTests, GetNthItemForVectorRefusesEveryIndexIntoAnEmptyContainer)

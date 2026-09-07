@@ -175,7 +175,7 @@ bool PartitionFingerprint::hasConvergingIndices(const ssa::SSAFunction& fn) cons
 	// textbook bubble sort passed the one gate meant to keep it from being
 	// reported as introsort, and came back as `introsort (std::sort)` at 0.700.
 	auto fedBy = [&fn](const ssa::PhiNode& phi, ssa::IrInstr::Op op) {
-		for (const auto& in : phi.operands)
+		for (const auto& in: phi.operands)
 		{
 			const auto* val = fn.value(in.second);
 			if (val && val->defInstr && val->defInstr->op == op) return true;

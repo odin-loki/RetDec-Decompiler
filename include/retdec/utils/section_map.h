@@ -60,10 +60,11 @@ inline constexpr std::uint64_t kUnmapped = ~static_cast<std::uint64_t>(0);
 ///
 /// All four fields are 64-bit even where the format stores 32, because the
 /// arithmetic below must not be done in the width the file chose.
-struct Section {
-	std::uint64_t address  = 0;  ///< first address of the section as mapped
+struct Section
+{
+	std::uint64_t address = 0;   ///< first address of the section as mapped
 	std::uint64_t virtSize = 0;  ///< extent in memory (may exceed rawSize)
-	std::uint64_t rawSize  = 0;  ///< bytes actually stored in the file
+	std::uint64_t rawSize = 0;   ///< bytes actually stored in the file
 	std::uint64_t rawOffset = 0; ///< offset of those bytes in the file
 };
 
@@ -109,13 +110,12 @@ constexpr bool contains(const Section& s, std::uint64_t addr) noexcept
 /// The first containing section wins, which is what all three callers did and
 /// what a loader does. Overlapping sections are malformed; this does not try to
 /// adjudicate between them, it is deterministic about which it picks.
-inline std::uint64_t addressToOffset(std::uint64_t addr,
-                                     const Section* sections,
-                                     std::size_t count,
-                                     std::size_t fileSize) noexcept
+inline std::uint64_t
+addressToOffset(std::uint64_t addr, const Section* sections, std::size_t count, std::size_t fileSize) noexcept
 {
 	if (sections == nullptr) return kUnmapped;
-	for (std::size_t i = 0; i < count; ++i) {
+	for (std::size_t i = 0; i < count; ++i)
+	{
 		const Section& s = sections[i];
 		if (!contains(s, addr)) continue;
 
@@ -124,12 +124,9 @@ inline std::uint64_t addressToOffset(std::uint64_t addr,
 		if (delta >= s.rawSize) return kUnmapped;
 		// rawOffset and delta are both file-controlled, so the sum is formed
 		// only once it is known to be representable and inside the file.
-		if (!bounds::addFits(static_cast<std::size_t>(s.rawOffset),
-		                     static_cast<std::size_t>(delta)))
-			return kUnmapped;
+		if (!bounds::addFits(static_cast<std::size_t>(s.rawOffset), static_cast<std::size_t>(delta))) return kUnmapped;
 		const std::uint64_t off = s.rawOffset + delta;
-		if (!bounds::rangeFits(static_cast<std::size_t>(off), fileSize, 1))
-			return kUnmapped;
+		if (!bounds::rangeFits(static_cast<std::size_t>(off), fileSize, 1)) return kUnmapped;
 		return off;
 	}
 	return kUnmapped;
@@ -140,11 +137,8 @@ inline std::uint64_t addressToOffset(std::uint64_t addr,
 /// Zero when the address is unmapped, so a caller can ask for a span without
 /// asking for the offset first and then bounding it themselves -- which is the
 /// step each of the three callers had to remember, and one of them did not.
-inline std::size_t readableAt(std::uint64_t addr,
-                              const Section* sections,
-                              std::size_t count,
-                              std::size_t fileSize,
-                              std::size_t want) noexcept
+inline std::size_t readableAt(
+	std::uint64_t addr, const Section* sections, std::size_t count, std::size_t fileSize, std::size_t want) noexcept
 {
 	const std::uint64_t off = addressToOffset(addr, sections, count, fileSize);
 	if (off == kUnmapped) return 0;

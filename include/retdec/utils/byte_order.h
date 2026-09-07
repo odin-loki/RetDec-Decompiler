@@ -78,8 +78,7 @@ constexpr unsigned kAccumulatorBits = 64;
 /// compressed_int_proof.cpp does, is not refuted by a division that is not
 /// there. The static_assert keeps the two in step.
 constexpr unsigned kMaxBytes = 8;
-static_assert(kMaxBytes * kBitsPerByte == kAccumulatorBits,
-              "kMaxBytes must be exactly the accumulator width in bytes");
+static_assert(kMaxBytes * kBitsPerByte == kAccumulatorBits, "kMaxBytes must be exactly the accumulator width in bytes");
 
 /// Low @p bits bits set, every bit above them clear.
 ///
@@ -155,8 +154,7 @@ constexpr bool widthFits(std::size_t n, unsigned bitsPerUnit) noexcept
 ///
 /// @p out is written only on success, so a caller that ignores the return value
 /// keeps whatever it had rather than a half-assembled value.
-inline bool readLE(const std::uint8_t* data, std::size_t size, std::size_t pos,
-                   unsigned n, std::uint64_t& out) noexcept
+inline bool readLE(const std::uint8_t* data, std::size_t size, std::size_t pos, unsigned n, std::uint64_t& out) noexcept
 {
 	if (data == nullptr) return false;
 	if (n < 1 || n > kMaxBytes) return false;
@@ -178,8 +176,7 @@ inline bool readLE(const std::uint8_t* data, std::size_t size, std::size_t pos,
 ///
 /// Same contract as readLE, most significant byte first. This is the order the
 /// JVM constant pool and every DEX-adjacent big-endian container uses.
-inline bool readBE(const std::uint8_t* data, std::size_t size, std::size_t pos,
-                   unsigned n, std::uint64_t& out) noexcept
+inline bool readBE(const std::uint8_t* data, std::size_t size, std::size_t pos, unsigned n, std::uint64_t& out) noexcept
 {
 	if (data == nullptr) return false;
 	if (n < 1 || n > kMaxBytes) return false;
@@ -212,9 +209,14 @@ inline bool readBE(const std::uint8_t* data, std::size_t size, std::size_t pos,
 /// Each unit's payload is masked to @p bitsPerUnit bits before it is placed, so
 /// nothing is discarded by the shift; the accumulate is `|=` rather than the
 /// `+=` at byte_value_storage.cpp:959, which lets overlapping units carry.
-inline bool readWidened(const std::uint8_t* data, std::size_t size, std::size_t pos,
-                        std::size_t n, unsigned bitsPerUnit, bool bigEndian,
-                        std::uint64_t& out) noexcept
+inline bool readWidened(
+	const std::uint8_t* data,
+	std::size_t size,
+	std::size_t pos,
+	std::size_t n,
+	unsigned bitsPerUnit,
+	bool bigEndian,
+	std::uint64_t& out) noexcept
 {
 	if (data == nullptr) return false;
 	if (bitsPerUnit < kBitsPerByte) return false;
@@ -228,8 +230,7 @@ inline bool readWidened(const std::uint8_t* data, std::size_t size, std::size_t 
 		// widthFits(n, bitsPerUnit) means n * bitsPerUnit <= 64 and unit <= n-1,
 		// so the count is at most 64 - bitsPerUnit <= 56.
 		const unsigned shift = static_cast<unsigned>(unit) * bitsPerUnit;
-		const std::uint64_t payload =
-				static_cast<std::uint64_t>(data[pos + i]) & lowMask(bitsPerUnit);
+		const std::uint64_t payload = static_cast<std::uint64_t>(data[pos + i]) & lowMask(bitsPerUnit);
 		v |= payload << shift;
 	}
 	out = v;
@@ -247,8 +248,7 @@ inline bool readWidened(const std::uint8_t* data, std::size_t size, std::size_t 
 /// represent any index at or above 256. For x = 256 the counter wraps to 0 and
 /// the loop never terminates; for x > 256 it never terminates either, and every
 /// byte from 256 up is left as the resize wrote it.
-inline bool writeLE(std::uint64_t value, std::size_t n,
-                    std::uint8_t* out, std::size_t outCap) noexcept
+inline bool writeLE(std::uint64_t value, std::size_t n, std::uint8_t* out, std::size_t outCap) noexcept
 {
 	if (out == nullptr) return false;
 	if (n < 1 || n > kMaxBytes) return false;
@@ -265,8 +265,7 @@ inline bool writeLE(std::uint64_t value, std::size_t n,
 }
 
 /// Write the low @p n bytes of @p value big-endian into @p out.
-inline bool writeBE(std::uint64_t value, std::size_t n,
-                    std::uint8_t* out, std::size_t outCap) noexcept
+inline bool writeBE(std::uint64_t value, std::size_t n, std::uint8_t* out, std::size_t outCap) noexcept
 {
 	if (out == nullptr) return false;
 	if (n < 1 || n > kMaxBytes) return false;
@@ -329,13 +328,12 @@ constexpr std::int64_t signExtendFrom(std::uint64_t v, unsigned bits) noexcept
 /// Returns 0 for a request that has no meaning -- totalBytes outside 1..8, or
 /// suppliedBytes outside 1..totalBytes -- rather than shifting by a count it
 /// cannot justify.
-constexpr std::uint64_t extendHigh(std::uint64_t v, unsigned suppliedBytes,
-                                   unsigned totalBytes) noexcept
+constexpr std::uint64_t extendHigh(std::uint64_t v, unsigned suppliedBytes, unsigned totalBytes) noexcept
 {
 	if (totalBytes == 0 || totalBytes > kMaxBytes) return 0;
 	if (suppliedBytes == 0 || suppliedBytes > totalBytes) return 0;
 
-	const unsigned suppliedBits = kBitsPerByte * suppliedBytes; // 8..64
+	const unsigned suppliedBits = kBitsPerByte * suppliedBytes;         // 8..64
 	const unsigned shift = kBitsPerByte * (totalBytes - suppliedBytes); // 0..56
 	// Anything above the supplied bytes is not part of the encoded value; drop
 	// it here rather than letting the shift decide, so the shift is lossless.

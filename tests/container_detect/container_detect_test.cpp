@@ -61,16 +61,19 @@ static void addCall(ssa::SSAFunction& fn, const std::string& callee)
 // `uses[1]` -- which is all of the ones asking about an immediate *operand* --
 // sees a one-element use list and declines. A fixture built with it therefore
 // asserts nothing about the predicate it names.
-static void addBinaryImmInstr(ssa::SSAFunction& fn, ssa::IrInstr::Op op,
-                              uint64_t immVal)
+static void addBinaryImmInstr(ssa::SSAFunction& fn, ssa::IrInstr::Op op, uint64_t immVal)
 {
 	auto* instr = fn.addInstr(fn.block(0)->id, op);
 	if (!instr) return;
 	ssa::IrValue* lhs = fn.allocValue(ssa::ValueKind::VirtualReg);
 	ssa::IrValue* imm = fn.allocValue(ssa::ValueKind::Immediate);
 	if (imm) imm->imm = immVal;
-	ssa::Use l; l.valueId = lhs ? lhs->id : ssa::kInvalidValue; l.operandIndex = 0;
-	ssa::Use r; r.valueId = imm ? imm->id : ssa::kInvalidValue; r.operandIndex = 1;
+	ssa::Use l;
+	l.valueId = lhs ? lhs->id : ssa::kInvalidValue;
+	l.operandIndex = 0;
+	ssa::Use r;
+	r.valueId = imm ? imm->id : ssa::kInvalidValue;
+	r.operandIndex = 1;
 	instr->uses.push_back(l);
 	instr->uses.push_back(r);
 }
@@ -571,8 +574,7 @@ TEST(ListDetectorTest, NonSelfReferentialStorePairIsNotASentinel)
 // load reads off x, `writeOff` the slot of y that x gets linked into; a left
 // rotation promotes the higher child into the lower slot and a right rotation
 // mirrors that.
-static std::unique_ptr<ssa::SSAFunction>
-makeRotation(const std::string& name, int64_t readOff, int64_t writeOff)
+static std::unique_ptr<ssa::SSAFunction> makeRotation(const std::string& name, int64_t readOff, int64_t writeOff)
 {
 	auto fn = std::make_unique<ssa::SSAFunction>(name);
 	auto* entry = fn->addBlock("entry");
@@ -699,25 +701,34 @@ TEST(MapDetectorTest, SelfReferentialNodeIsNotARotation)
 	auto* entry = fn->addBlock("entry");
 
 	const ssa::VarId p = 1;
-	auto* pVal  = fn->allocValue(ssa::ValueKind::VirtualReg, p);
-	auto* pNext = fn->allocValue(ssa::ValueKind::MemRef);   // &p->next
-	pNext->memBaseReg = p; pNext->memOffset = 8;
-	auto* pPrev = fn->allocValue(ssa::ValueKind::MemRef);   // &p->prev
-	pPrev->memBaseReg = p; pPrev->memOffset = 0;
+	auto* pVal = fn->allocValue(ssa::ValueKind::VirtualReg, p);
+	auto* pNext = fn->allocValue(ssa::ValueKind::MemRef); // &p->next
+	pNext->memBaseReg = p;
+	pNext->memOffset = 8;
+	auto* pPrev = fn->allocValue(ssa::ValueKind::MemRef); // &p->prev
+	pPrev->memBaseReg = p;
+	pPrev->memOffset = 0;
 
 	// p = p->next  -- the load defines the same variable it reads off.
 	auto* ld = fn->addInstr(entry->id, ssa::IrInstr::Op::Load);
 	ld->defValue = pVal->id;
-	ssa::Use la; la.valueId = pNext->id; ld->uses.push_back(la);
+	ssa::Use la;
+	la.valueId = pNext->id;
+	ld->uses.push_back(la);
 
 	// A second Load, so the >= 2 Loads precondition holds.
 	fn->addInstr(entry->id, ssa::IrInstr::Op::Load);
 
 	// p->next = p;  p->prev = p;
-	for (auto* slot : {pNext, pPrev}) {
+	for (auto* slot: {pNext, pPrev})
+	{
 		auto* st = fn->addInstr(entry->id, ssa::IrInstr::Op::Store);
-		ssa::Use v; v.valueId = pVal->id;  st->uses.push_back(v);
-		ssa::Use a; a.valueId = slot->id;  st->uses.push_back(a);
+		ssa::Use v;
+		v.valueId = pVal->id;
+		st->uses.push_back(v);
+		ssa::Use a;
+		a.valueId = slot->id;
+		st->uses.push_back(a);
 	}
 
 	// The rotation predicates are private, so this asserts through the score:
@@ -745,10 +756,14 @@ TEST(MapDetectorTest, ALaterStoreDoesNotEraseAnEarlierCrossLink)
 	auto* xVal = fn->allocValue(ssa::ValueKind::VirtualReg, 1);
 	auto* yFar = fn->allocValue(ssa::ValueKind::MemRef);
 	yFar->memBaseReg = yVar;
-	yFar->memOffset  = 32;                    // > readOff, so a right-side link
+	yFar->memOffset = 32; // > readOff, so a right-side link
 	auto* st = fn->addInstr(fn->block(0)->id, ssa::IrInstr::Op::Store);
-	ssa::Use v; v.valueId = xVal->id;  st->uses.push_back(v);
-	ssa::Use a; a.valueId = yFar->id;  st->uses.push_back(a);
+	ssa::Use v;
+	v.valueId = xVal->id;
+	st->uses.push_back(v);
+	ssa::Use a;
+	a.valueId = yFar->id;
+	st->uses.push_back(a);
 
 	MapDetector det;
 	const float both = det.detect(*fn).confidence;
@@ -780,18 +795,24 @@ TEST(ListDetectorTest, SentinelSurvivesTwoValueVersionsAndAnInterveningInstr)
 	auto* h1 = fn->allocValue(ssa::ValueKind::VirtualReg, h);
 	auto* h2 = fn->allocValue(ssa::ValueKind::VirtualReg, h);
 	auto* hNext = fn->allocValue(ssa::ValueKind::MemRef);
-	hNext->memBaseReg = h; hNext->memOffset = 0;
+	hNext->memBaseReg = h;
+	hNext->memOffset = 0;
 	auto* hPrev = fn->allocValue(ssa::ValueKind::MemRef);
-	hPrev->memBaseReg = h; hPrev->memOffset = 8;
+	hPrev->memBaseReg = h;
+	hPrev->memOffset = 8;
 
 	auto store = [&](ssa::IrValue* val, ssa::IrValue* slot) {
 		auto* st = fn->addInstr(body->id, ssa::IrInstr::Op::Store);
-		ssa::Use v; v.valueId = val->id;  st->uses.push_back(v);
-		ssa::Use a; a.valueId = slot->id; st->uses.push_back(a);
+		ssa::Use v;
+		v.valueId = val->id;
+		st->uses.push_back(v);
+		ssa::Use a;
+		a.valueId = slot->id;
+		st->uses.push_back(a);
 	};
 
 	store(h1, hNext);
-	fn->addInstr(body->id, ssa::IrInstr::Op::Assign);   // not adjacent any more
+	fn->addInstr(body->id, ssa::IrInstr::Op::Assign); // not adjacent any more
 	store(h2, hPrev);
 
 	// hasSentinelInit is private; the sentinel is worth 0.35 and nothing else
@@ -832,7 +853,8 @@ TEST(MapDetectorTest, GenericStoreLoopIsNotAMapAtFullConfidence)
 	auto* zero = fn->allocValue(ssa::ValueKind::Immediate);
 	zero->imm = 0;
 
-	for (int i = 0; i < 3; ++i) fn->addInstr(entry->id, ssa::IrInstr::Op::Load);
+	for (int i = 0; i < 3; ++i)
+		fn->addInstr(entry->id, ssa::IrInstr::Op::Load);
 	for (int i = 0; i < 3; ++i)
 	{
 		auto* st = fn->addInstr(entry->id, ssa::IrInstr::Op::Store);

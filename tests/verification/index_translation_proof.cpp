@@ -68,10 +68,10 @@ namespace bounds = retdec::utils::bounds;
 // ESBMC treats an undefined function returning a value as an unconstrained
 // choice of that type.
 extern "C" {
-std::size_t   nondet_size();
+std::size_t nondet_size();
 std::uint64_t nondet_u64();
 std::uint32_t nondet_u32();
-unsigned      nondet_unsigned();
+unsigned nondet_unsigned();
 }
 
 // __ESBMC_assume is a verifier builtin, so this file does not type-check under
@@ -79,7 +79,7 @@ unsigned      nondet_unsigned();
 // a typo in a second instead of after a solver run; ESBMC itself never sees
 // the macro.
 #ifdef RETDEC_VERIFY_SYNTAX_ONLY
-#define __ESBMC_assume(cond) ((void) sizeof((cond) ? 1 : 0))
+#define __ESBMC_assume(cond) ((void)sizeof((cond) ? 1 : 0))
 #endif
 
 // A sink for the lookup-table reads below. Without somewhere for the byte to
@@ -102,14 +102,17 @@ extern "C" void proof_slot_for_1_based_is_exact()
 	// Succeeds exactly on the 1-based domain, no wider and no narrower.
 	assert(ok == (idx >= 1 && idx <= static_cast<std::uint64_t>(count)));
 
-	if (ok) {
+	if (ok)
+	{
 		// The translation itself. Stated as an addition on the slot rather than
 		// a subtraction on the index so that a slot of SIZE_MAX -- the value
 		// container.h:79 produces at n == 0 -- could not satisfy it.
 		assert(static_cast<std::uint64_t>(slot) + 1 == idx);
 		// And the slot is a subscript the container really has.
 		assert(slot < count);
-	} else {
+	}
+	else
+	{
 		assert(slot == 0xA5A5A5A5A5A5A5A5ull);
 	}
 }
@@ -152,9 +155,10 @@ extern "C" void proof_slot_refutes_both_off_by_one_spellings()
 	// index, so the highest-numbered type in every assembly resolves to
 	// "<unknown>".
 	const bool spellingA = idx < static_cast<std::uint64_t>(count);
-	if (idx != 0 && idx == static_cast<std::uint64_t>(count)) {
-		assert(ok);          // the row exists
-		assert(!spellingA);  // and spelling A refuses it
+	if (idx != 0 && idx == static_cast<std::uint64_t>(count))
+	{
+		assert(ok);         // the row exists
+		assert(!spellingA); // and spelling A refuses it
 	}
 
 	// Spelling B: `if (idx > size() - 1) refuse`, with size() a size_t. At
@@ -165,10 +169,10 @@ extern "C" void proof_slot_refutes_both_off_by_one_spellings()
 	// fault being demonstrated, and --unsigned-overflow-check failed this proof
 	// on the harness's own arithmetic when it was: "arithmetic overflow on sub",
 	// at the line that was meant to be showing the overflow off.
-	const std::uint64_t bTop =
-		count == 0 ? kMaxOffset : static_cast<std::uint64_t>(count) - 1;
+	const std::uint64_t bTop = count == 0 ? kMaxOffset : static_cast<std::uint64_t>(count) - 1;
 	const bool spellingB = idx <= bTop;
-	if (count == 0) {
+	if (count == 0)
+	{
 		assert(spellingB);
 		assert(!ok);
 	}
@@ -197,13 +201,12 @@ static void elementAtIsExact()
 	// says it does not wrap -- writing it first is the fault --unsigned-
 	// overflow-check exists to catch, and it would fail this proof on the
 	// harness's own arithmetic.
-	const bool fits =
-		i < kMaxOffset
-		&& bounds::mulFits(Width, static_cast<std::size_t>(i) + 1)
-		&& bounds::rangeFits(base, size, (static_cast<std::size_t>(i) + 1) * Width);
+	const bool fits = i < kMaxOffset && bounds::mulFits(Width, static_cast<std::size_t>(i) + 1)
+				   && bounds::rangeFits(base, size, (static_cast<std::size_t>(i) + 1) * Width);
 	assert(ok == fits);
 
-	if (ok) {
+	if (ok)
+	{
 		// off == base + i * Width, stated as a subtraction so the harness does
 		// not form the sum the kernel refuses to form until it is safe.
 		assert(off >= base);
@@ -212,7 +215,9 @@ static void elementAtIsExact()
 		// again without the sum.
 		assert(off <= size);
 		assert(Width <= size - off);
-	} else {
+	}
+	else
+	{
 		assert(off == 0xA5A5A5A5A5A5A5A5ull);
 	}
 }
@@ -222,15 +227,42 @@ static void elementAtIsExact()
 // a method_id_item and a try_item; 12 a proto_id_item; 16 a GUID and a DEX map
 // entry; 24 the #~ stream header; 40 a PE section header; 46 a zip central
 // directory record (src/dex_parser/dex_apk_reader.cpp:147).
-extern "C" void proof_element_at_width1()  { elementAtIsExact<1>(); }
-extern "C" void proof_element_at_width2()  { elementAtIsExact<2>(); }
-extern "C" void proof_element_at_width4()  { elementAtIsExact<4>(); }
-extern "C" void proof_element_at_width8()  { elementAtIsExact<8>(); }
-extern "C" void proof_element_at_width12() { elementAtIsExact<12>(); }
-extern "C" void proof_element_at_width16() { elementAtIsExact<16>(); }
-extern "C" void proof_element_at_width24() { elementAtIsExact<24>(); }
-extern "C" void proof_element_at_width40() { elementAtIsExact<40>(); }
-extern "C" void proof_element_at_width46() { elementAtIsExact<46>(); }
+extern "C" void proof_element_at_width1()
+{
+	elementAtIsExact<1>();
+}
+extern "C" void proof_element_at_width2()
+{
+	elementAtIsExact<2>();
+}
+extern "C" void proof_element_at_width4()
+{
+	elementAtIsExact<4>();
+}
+extern "C" void proof_element_at_width8()
+{
+	elementAtIsExact<8>();
+}
+extern "C" void proof_element_at_width12()
+{
+	elementAtIsExact<12>();
+}
+extern "C" void proof_element_at_width16()
+{
+	elementAtIsExact<16>();
+}
+extern "C" void proof_element_at_width24()
+{
+	elementAtIsExact<24>();
+}
+extern "C" void proof_element_at_width40()
+{
+	elementAtIsExact<40>();
+}
+extern "C" void proof_element_at_width46()
+{
+	elementAtIsExact<46>();
+}
 
 extern "C" void proof_element_at_needs_the_add_fits_conjunct()
 {
@@ -248,10 +280,10 @@ extern "C" void proof_element_at_needs_the_add_fits_conjunct()
 	__ESBMC_assume(i == SIZE_MAX);
 	__ESBMC_assume(width == 1);
 
-	assert(bounds::mulFits(i, width));            // the product is representable
+	assert(bounds::mulFits(i, width)); // the product is representable
 	const std::size_t product = i * width;
 	assert(product == SIZE_MAX);
-	assert(!bounds::addFits(product, width));     // but one more width is not
+	assert(!bounds::addFits(product, width)); // but one more width is not
 
 	// `product + width` is NOT formed. Forming it is the fault this proof is
 	// about, and --unsigned-overflow-check failed the proof on that line when
@@ -260,7 +292,7 @@ extern "C" void proof_element_at_needs_the_add_fits_conjunct()
 	// product - (SIZE_MAX - width) - 1, which stays in range at every step.
 	const std::size_t wrapped = product - (SIZE_MAX - width) - 1;
 	assert(wrapped == 0);
-	assert(bounds::rangeFits(0, 0, wrapped));     // so the naive predicate says yes
+	assert(bounds::rangeFits(0, 0, wrapped)); // so the naive predicate says yes
 
 	std::size_t off = 0;
 	assert(!elementAt(0, 0, i, width, off));
@@ -281,8 +313,10 @@ extern "C" void proof_element_at_zero_width_is_total()
 	const bool ok = elementAt(base, size, i, 0, off);
 
 	assert(ok == (base <= size));
-	if (ok) assert(off == base);
-	else    assert(off == 0xA5A5A5A5A5A5A5A5ull);
+	if (ok)
+		assert(off == base);
+	else
+		assert(off == 0xA5A5A5A5A5A5A5A5ull);
 }
 
 // ─── rowAt1Based ─────────────────────────────────────────────────────────────
@@ -323,7 +357,8 @@ static void rowAt1BasedIsExact()
 	std::size_t off = 0xA5A5A5A5A5A5A5A5ull;
 	const bool ok = rowAt1Based(size, idx, Width, off);
 
-	if (ok) {
+	if (ok)
+	{
 		assert(idx >= 1);
 		// The offset is the right multiple of the row width -- the property the
 		// 32-bit product at cli_heaps.cpp:128 violates, because a wrapped
@@ -333,18 +368,28 @@ static void rowAt1BasedIsExact()
 		// And the whole row is in the table.
 		assert(off <= size);
 		assert(Width <= size - off);
-	} else {
+	}
+	else
+	{
 		assert(off == 0xA5A5A5A5A5A5A5A5ull);
 		// Refused only for a reason: the null row, or a row the table does not
 		// have. Stated by division so the harness never forms the product.
-		assert(idx == 0 || idx - 1 > (size / Width) || size / Width == 0
-		       || idx - 1 > (size - Width) / Width);
+		assert(idx == 0 || idx - 1 > (size / Width) || size / Width == 0 || idx - 1 > (size - Width) / Width);
 	}
 }
 
-extern "C" void proof_row_at_1_based_width2()  { rowAt1BasedIsExact<2>(); }
-extern "C" void proof_row_at_1_based_width4()  { rowAt1BasedIsExact<4>(); }
-extern "C" void proof_row_at_1_based_width16() { rowAt1BasedIsExact<16>(); }
+extern "C" void proof_row_at_1_based_width2()
+{
+	rowAt1BasedIsExact<2>();
+}
+extern "C" void proof_row_at_1_based_width4()
+{
+	rowAt1BasedIsExact<4>();
+}
+extern "C" void proof_row_at_1_based_width16()
+{
+	rowAt1BasedIsExact<16>();
+}
 
 extern "C" void proof_the_guid_heap_wraps_at_index_16m()
 {
@@ -381,8 +426,8 @@ extern "C" void proof_the_guid_heap_wraps_at_index_16m()
 	// failure is itself the finding; this line keeps the proof discharging
 	// while computing the identical value.
 	const std::uint32_t siteOff = static_cast<std::uint32_t>(trueOff);
-	assert(siteOff == 0);                       // the product wrapped to zero
-	assert(static_cast<std::size_t>(siteOff) + 16 <= heapSize);  // and passed the guard
+	assert(siteOff == 0);                                       // the product wrapped to zero
+	assert(static_cast<std::size_t>(siteOff) + 16 <= heapSize); // and passed the guard
 
 	// The kernel refuses it, because 4294967296 is not in a 16-byte heap.
 	std::size_t off = 7;
@@ -419,8 +464,7 @@ extern "C" void proof_split_tag_is_lossless()
 	// And put back together they are the word that arrived. Assembled at 64
 	// bits so the harness's own shift is defined at tagBits == 0, where a
 	// 32-bit `payload << 32` would be undefined rather than merely wrong.
-	const std::uint64_t rebuilt = (static_cast<std::uint64_t>(payload) << tagBits)
-	                            | static_cast<std::uint64_t>(tag);
+	const std::uint64_t rebuilt = (static_cast<std::uint64_t>(payload) << tagBits) | static_cast<std::uint64_t>(tag);
 	assert(rebuilt == static_cast<std::uint64_t>(coded));
 }
 
@@ -493,8 +537,7 @@ extern "C" void proof_split_high_is_lossless_at_every_width()
 	assert(static_cast<std::uint64_t>(low) < (std::uint64_t{1} << lowBits));
 	assert(static_cast<std::uint64_t>(high) < (std::uint64_t{1} << highBits));
 
-	const std::uint64_t rebuilt = (static_cast<std::uint64_t>(high) << lowBits)
-	                            | static_cast<std::uint64_t>(low);
+	const std::uint64_t rebuilt = (static_cast<std::uint64_t>(high) << lowBits) | static_cast<std::uint64_t>(low);
 	assert(rebuilt == static_cast<std::uint64_t>(tok));
 }
 
@@ -567,21 +610,19 @@ extern "C" void proof_split_high_refuses_a_width_past_the_word()
 // guard filters it out before the subscript -- which is the whole reason this
 // block was rewritten.
 
-static const std::uint8_t kTypeDefOrRef[]    = {0x02, 0x01, 0x1B};             // 2 bits
-static const std::uint8_t kHasConstant[]     = {0x04, 0x08, 0x17};             // 2 bits
-static const std::uint8_t kHasCustomAttr[]   = {0x06, 0x04, 0x01, 0x02, 0x08,  // 5 bits
-                                                0x09, 0x0A, 0x00, 0x11, 0x14,
-                                                0x17, 0x18, 0x1A, 0x1B, 0x20,
-                                                0x23, 0x26, 0x27, 0x28, 0x2A,
-                                                0x2B, 0x2C};
+static const std::uint8_t kTypeDefOrRef[] = {0x02, 0x01, 0x1B};             // 2 bits
+static const std::uint8_t kHasConstant[] = {0x04, 0x08, 0x17};              // 2 bits
+static const std::uint8_t kHasCustomAttr[] = {0x06, 0x04, 0x01, 0x02, 0x08, // 5 bits
+											  0x09, 0x0A, 0x00, 0x11, 0x14, 0x17, 0x18, 0x1A, 0x1B,
+											  0x20, 0x23, 0x26, 0x27, 0x28, 0x2A, 0x2B, 0x2C};
 static const std::uint8_t kHasFieldMarshal[] = {0x04, 0x08};                   // 1 bit
 static const std::uint8_t kHasDeclSecurity[] = {0x02, 0x06, 0x20};             // 2 bits
 static const std::uint8_t kMemberRefParent[] = {0x02, 0x01, 0x1A, 0x06, 0x1B}; // 3 bits
-static const std::uint8_t kHasSemantics[]    = {0x14, 0x17};                   // 1 bit
-static const std::uint8_t kMethodDefOrRef[]  = {0x06, 0x0A};                   // 1 bit
+static const std::uint8_t kHasSemantics[] = {0x14, 0x17};                      // 1 bit
+static const std::uint8_t kMethodDefOrRef[] = {0x06, 0x0A};                    // 1 bit
 static const std::uint8_t kMemberForwarded[] = {0x04, 0x06};                   // 1 bit
-static const std::uint8_t kImplementation[]  = {0x26, 0x23, 0x27};             // 2 bits
-static const std::uint8_t kCustomAttrType[]  = {0xFF, 0xFF, 0x06, 0x0A, 0xFF}; // 3 bits
+static const std::uint8_t kImplementation[] = {0x26, 0x23, 0x27};              // 2 bits
+static const std::uint8_t kCustomAttrType[] = {0xFF, 0xFF, 0x06, 0x0A, 0xFF};  // 3 bits
 static const std::uint8_t kResolutionScope[] = {0x00, 0x1A, 0x23, 0x01};       // 2 bits
 static const std::uint8_t kTypeOrMethodDef[] = {0x02, 0x06};                   // 1 bit
 
@@ -595,9 +636,9 @@ static const std::uint8_t kTypeOrMethodDef[] = {0x02, 0x06};                   /
 template <unsigned TagBits, std::size_t Len>
 static void tagFitsTheTableExactly(const std::uint8_t (&table)[Len])
 {
-	static_assert(TagBits < 32,
-		"splitTag refuses a tag at or above the word width");
-	static_assert((static_cast<std::size_t>(1) << TagBits) == Len,
+	static_assert(TagBits < 32, "splitTag refuses a tag at or above the word width");
+	static_assert(
+		(static_cast<std::size_t>(1) << TagBits) == Len,
 		"tagFitsTheTableExactly is for a mask that admits exactly the table's "
 		"entries; a mask wider than the table belongs in tagNeedsItsGuard");
 
@@ -624,9 +665,9 @@ static void tagFitsTheTableExactly(const std::uint8_t (&table)[Len])
 template <unsigned TagBits, std::size_t Len>
 static void tagNeedsItsGuard(const std::uint8_t (&table)[Len])
 {
-	static_assert(TagBits < 32,
-		"splitTag refuses a tag at or above the word width");
-	static_assert((static_cast<std::size_t>(1) << TagBits) > Len,
+	static_assert(TagBits < 32, "splitTag refuses a tag at or above the word width");
+	static_assert(
+		(static_cast<std::size_t>(1) << TagBits) > Len,
 		"tagNeedsItsGuard is for a mask wider than the table; a mask that fits "
 		"exactly belongs in tagFitsTheTableExactly, where the bound is proved "
 		"without a guard at all");
@@ -636,8 +677,7 @@ static void tagNeedsItsGuard(const std::uint8_t (&table)[Len])
 	std::uint32_t tag = 0, payload = 0;
 	assert(splitTag(coded, TagBits, tag, payload));
 
-	if (tagIndexes(tag, Len))
-		idxmap_proof_sink = table[tag];
+	if (tagIndexes(tag, Len)) idxmap_proof_sink = table[tag];
 
 	// The guard refuses something the mask can produce. The token is not
 	// hand-picked: it is any token at all whose tag comes out as Len, and one
@@ -652,22 +692,61 @@ static void tagNeedsItsGuard(const std::uint8_t (&table)[Len])
 
 // The six kinds whose mask is wider than their table. Each `if (tag >= N)` in
 // cli_tables.cpp is the guard this proves load-bearing.
-extern "C" void proof_type_def_or_ref_stays_in_table()    { tagNeedsItsGuard<2>(kTypeDefOrRef); }
-extern "C" void proof_has_constant_stays_in_table()       { tagNeedsItsGuard<2>(kHasConstant); }
-extern "C" void proof_has_custom_attr_stays_in_table()    { tagNeedsItsGuard<5>(kHasCustomAttr); }
-extern "C" void proof_has_decl_security_stays_in_table()  { tagNeedsItsGuard<2>(kHasDeclSecurity); }
-extern "C" void proof_member_ref_parent_stays_in_table()  { tagNeedsItsGuard<3>(kMemberRefParent); }
-extern "C" void proof_implementation_stays_in_table()     { tagNeedsItsGuard<2>(kImplementation); }
-extern "C" void proof_custom_attr_type_stays_in_table()   { tagNeedsItsGuard<3>(kCustomAttrType); }
+extern "C" void proof_type_def_or_ref_stays_in_table()
+{
+	tagNeedsItsGuard<2>(kTypeDefOrRef);
+}
+extern "C" void proof_has_constant_stays_in_table()
+{
+	tagNeedsItsGuard<2>(kHasConstant);
+}
+extern "C" void proof_has_custom_attr_stays_in_table()
+{
+	tagNeedsItsGuard<5>(kHasCustomAttr);
+}
+extern "C" void proof_has_decl_security_stays_in_table()
+{
+	tagNeedsItsGuard<2>(kHasDeclSecurity);
+}
+extern "C" void proof_member_ref_parent_stays_in_table()
+{
+	tagNeedsItsGuard<3>(kMemberRefParent);
+}
+extern "C" void proof_implementation_stays_in_table()
+{
+	tagNeedsItsGuard<2>(kImplementation);
+}
+extern "C" void proof_custom_attr_type_stays_in_table()
+{
+	tagNeedsItsGuard<3>(kCustomAttrType);
+}
 
 // The five whose mask fits their table exactly. Four of these are the decoders
 // that carry no guard at all, and this is the proof that they need none.
-extern "C" void proof_has_field_marshal_stays_in_table()  { tagFitsTheTableExactly<1>(kHasFieldMarshal); }
-extern "C" void proof_has_semantics_stays_in_table()      { tagFitsTheTableExactly<1>(kHasSemantics); }
-extern "C" void proof_method_def_or_ref_stays_in_table()  { tagFitsTheTableExactly<1>(kMethodDefOrRef); }
-extern "C" void proof_member_forwarded_stays_in_table()   { tagFitsTheTableExactly<1>(kMemberForwarded); }
-extern "C" void proof_type_or_method_def_stays_in_table() { tagFitsTheTableExactly<1>(kTypeOrMethodDef); }
-extern "C" void proof_resolution_scope_stays_in_table()   { tagFitsTheTableExactly<2>(kResolutionScope); }
+extern "C" void proof_has_field_marshal_stays_in_table()
+{
+	tagFitsTheTableExactly<1>(kHasFieldMarshal);
+}
+extern "C" void proof_has_semantics_stays_in_table()
+{
+	tagFitsTheTableExactly<1>(kHasSemantics);
+}
+extern "C" void proof_method_def_or_ref_stays_in_table()
+{
+	tagFitsTheTableExactly<1>(kMethodDefOrRef);
+}
+extern "C" void proof_member_forwarded_stays_in_table()
+{
+	tagFitsTheTableExactly<1>(kMemberForwarded);
+}
+extern "C" void proof_type_or_method_def_stays_in_table()
+{
+	tagFitsTheTableExactly<1>(kTypeOrMethodDef);
+}
+extern "C" void proof_resolution_scope_stays_in_table()
+{
+	tagFitsTheTableExactly<2>(kResolutionScope);
+}
 
 /// The number of entries in one of the tables above, as a std::size_t.
 ///
@@ -677,7 +756,10 @@ extern "C" void proof_resolution_scope_stays_in_table()   { tagFitsTheTableExact
 /// the moment an entry is added. Deriving the length from the array keeps the
 /// assertion attached to the thing it is about.
 template <std::size_t Len>
-static constexpr std::size_t entriesIn(const std::uint8_t (&)[Len]) { return Len; }
+static constexpr std::size_t entriesIn(const std::uint8_t (&)[Len])
+{
+	return Len;
+}
 
 extern "C" void proof_a_one_bit_tag_needs_no_guard()
 {
@@ -691,8 +773,8 @@ extern "C" void proof_a_one_bit_tag_needs_no_guard()
 	// adding an entry to any of them makes this fail instead of quietly ceasing
 	// to be about them.
 	static_assert(entriesIn(kTypeOrMethodDef) == 2, "no longer a 1-bit kind");
-	static_assert(entriesIn(kMethodDefOrRef)  == 2, "no longer a 1-bit kind");
-	static_assert(entriesIn(kHasSemantics)    == 2, "no longer a 1-bit kind");
+	static_assert(entriesIn(kMethodDefOrRef) == 2, "no longer a 1-bit kind");
+	static_assert(entriesIn(kHasSemantics) == 2, "no longer a 1-bit kind");
 	static_assert(entriesIn(kMemberForwarded) == 2, "no longer a 1-bit kind");
 
 	const std::uint32_t coded = nondet_u32();
@@ -714,10 +796,10 @@ extern "C" void proof_the_tag_guard_is_load_bearing_everywhere_else()
 
 	// 2 bits admit 0..3.
 	assert(splitTag(coded, 2, tag, payload));
-	if (tag >= entriesIn(kTypeDefOrRef))    assert(!tagIndexes(tag, entriesIn(kTypeDefOrRef)));
-	if (tag >= entriesIn(kHasConstant))     assert(!tagIndexes(tag, entriesIn(kHasConstant)));
+	if (tag >= entriesIn(kTypeDefOrRef)) assert(!tagIndexes(tag, entriesIn(kTypeDefOrRef)));
+	if (tag >= entriesIn(kHasConstant)) assert(!tagIndexes(tag, entriesIn(kHasConstant)));
 	if (tag >= entriesIn(kHasDeclSecurity)) assert(!tagIndexes(tag, entriesIn(kHasDeclSecurity)));
-	if (tag >= entriesIn(kImplementation))  assert(!tagIndexes(tag, entriesIn(kImplementation)));
+	if (tag >= entriesIn(kImplementation)) assert(!tagIndexes(tag, entriesIn(kImplementation)));
 	// ... and 3 is a tag those 2 bits really produce, so the refusal above is
 	// reachable rather than a statement about an empty set.
 	assert(!tagIndexes(3, entriesIn(kTypeDefOrRef)));
@@ -725,12 +807,12 @@ extern "C" void proof_the_tag_guard_is_load_bearing_everywhere_else()
 	// 3 bits admit 0..7.
 	assert(splitTag(coded, 3, tag, payload));
 	if (tag >= entriesIn(kMemberRefParent)) assert(!tagIndexes(tag, entriesIn(kMemberRefParent)));
-	if (tag >= entriesIn(kCustomAttrType))  assert(!tagIndexes(tag, entriesIn(kCustomAttrType)));
+	if (tag >= entriesIn(kCustomAttrType)) assert(!tagIndexes(tag, entriesIn(kCustomAttrType)));
 	assert(!tagIndexes(7, entriesIn(kMemberRefParent)));
 
 	// 5 bits admit 0..31 over 22 entries, the widest gap of the thirteen.
 	assert(splitTag(coded, 5, tag, payload));
-	if (tag >= entriesIn(kHasCustomAttr))   assert(!tagIndexes(tag, entriesIn(kHasCustomAttr)));
+	if (tag >= entriesIn(kHasCustomAttr)) assert(!tagIndexes(tag, entriesIn(kHasCustomAttr)));
 	assert(!tagIndexes(31, entriesIn(kHasCustomAttr)));
 
 	// ResolutionScope is the exception among the guarded kinds: 2 bits admit
@@ -763,7 +845,8 @@ extern "C" void proof_wide_threshold_shift_is_bounded()
 
 	// Over the widths the format actually defines, the shift is 11..15 -- never
 	// 16 or more, which is the bound property 8 asks for.
-	if (tagBits >= 1 && tagBits <= 5) {
+	if (tagBits >= 1 && tagBits <= 5)
+	{
 		assert(t == (std::uint64_t{1} << (16 - tagBits)));
 		assert(t >= 2048 && t <= 32768);
 	}
@@ -772,7 +855,8 @@ extern "C" void proof_wide_threshold_shift_is_bounded()
 extern "C" void proof_coded_token_is_wide_is_exact()
 {
 	std::uint32_t counts[kMaxRefs];
-	for (std::size_t k = 0; k < kMaxRefs; ++k) counts[k] = nondet_u32();
+	for (std::size_t k = 0; k < kMaxRefs; ++k)
+		counts[k] = nondet_u32();
 
 	const std::size_t n = nondet_size();
 	__ESBMC_assume(n <= kMaxRefs);
@@ -799,9 +883,10 @@ extern "C" void proof_coded_token_is_wide_is_monotone()
 	// offset -- there is no length prefix to resynchronise against.
 	std::uint32_t before[kMaxRefs];
 	std::uint32_t after[kMaxRefs];
-	for (std::size_t k = 0; k < kMaxRefs; ++k) {
+	for (std::size_t k = 0; k < kMaxRefs; ++k)
+	{
 		before[k] = nondet_u32();
-		after[k]  = nondet_u32();
+		after[k] = nondet_u32();
 		__ESBMC_assume(after[k] >= before[k]);
 	}
 
@@ -810,8 +895,7 @@ extern "C" void proof_coded_token_is_wide_is_monotone()
 	const unsigned tagBits = nondet_unsigned();
 	__ESBMC_assume(tagBits >= 1 && tagBits <= 5);
 
-	if (codedTokenIsWide(before, n, tagBits))
-		assert(codedTokenIsWide(after, n, tagBits));
+	if (codedTokenIsWide(before, n, tagBits)) assert(codedTokenIsWide(after, n, tagBits));
 }
 
 extern "C" void proof_coded_token_is_wide_is_narrow_when_it_can_be()
@@ -820,7 +904,8 @@ extern "C" void proof_coded_token_is_wide_is_narrow_when_it_can_be()
 	// correctness: a token is not made wide by a table nobody referenced. n is
 	// the number of referenced tables, not the number of tables in the stream.
 	std::uint32_t counts[kMaxRefs];
-	for (std::size_t k = 0; k < kMaxRefs; ++k) counts[k] = nondet_u32();
+	for (std::size_t k = 0; k < kMaxRefs; ++k)
+		counts[k] = nondet_u32();
 
 	const unsigned tagBits = nondet_unsigned();
 	__ESBMC_assume(tagBits >= 1 && tagBits <= 5);

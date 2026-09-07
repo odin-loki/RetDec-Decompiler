@@ -66,14 +66,14 @@
 using namespace retdec::utils::cint;
 
 extern "C" {
-std::uint8_t  nondet_uchar();
+std::uint8_t nondet_uchar();
 std::uint32_t nondet_uint32();
-std::int32_t  nondet_int32();
-std::size_t   nondet_size();
+std::int32_t nondet_int32();
+std::size_t nondet_size();
 }
 
 #ifdef RETDEC_VERIFY_SYNTAX_ONLY
-#define __ESBMC_assume(cond) ((void) sizeof((cond) ? 1 : 0))
+#define __ESBMC_assume(cond) ((void)sizeof((cond) ? 1 : 0))
 #endif
 
 // Twice the widest encoding, so a decode can start partway in and still have a
@@ -85,7 +85,8 @@ namespace {
 
 void fillNondet(std::uint8_t (&buf)[kBufLen])
 {
-	for (std::size_t i = 0; i < kBufLen; ++i) buf[i] = nondet_uchar();
+	for (std::size_t i = 0; i < kBufLen; ++i)
+		buf[i] = nondet_uchar();
 }
 
 } // namespace
@@ -151,10 +152,18 @@ extern "C" void proof_failure_consumes_nothing()
 	// The leb128.h convention. The caller advances by bytesRead, so a refusal
 	// that reported a non-zero count would move the cursor into the middle of
 	// whatever follows and desynchronise every later read from the same blob.
-	if (!r.ok) { assert(r.bytesRead == 0); assert(r.value == 0); }
+	if (!r.ok)
+	{
+		assert(r.bytesRead == 0);
+		assert(r.value == 0);
+	}
 
 	const SResult s = decodeSigned(buf, size, pos);
-	if (!s.ok) { assert(s.bytesRead == 0); assert(s.value == 0); }
+	if (!s.ok)
+	{
+		assert(s.bytesRead == 0);
+		assert(s.value == 0);
+	}
 
 	// Signed and unsigned refuse together: the signed form is the unsigned one
 	// plus a rotate, so a caller cannot get a different answer about whether
@@ -222,17 +231,16 @@ extern "C" void proof_value_matches_the_definition()
 	else if (r.bytesRead == 2)
 	{
 		assert((b0 & 0xC0u) == 0x80u);
-		assert(r.value == ((static_cast<std::uint32_t>(b0 & 0x3Fu) << 8)
-		                   | static_cast<std::uint32_t>(buf[pos + 1])));
+		assert(r.value == ((static_cast<std::uint32_t>(b0 & 0x3Fu) << 8) | static_cast<std::uint32_t>(buf[pos + 1])));
 	}
 	else
 	{
 		assert(r.bytesRead == 4);
 		assert((b0 & 0xE0u) == 0xC0u);
-		assert(r.value == ((static_cast<std::uint32_t>(b0 & 0x1Fu) << 24)
-		                   | (static_cast<std::uint32_t>(buf[pos + 1]) << 16)
-		                   | (static_cast<std::uint32_t>(buf[pos + 2]) <<  8)
-		                   |  static_cast<std::uint32_t>(buf[pos + 3])));
+		assert(
+			r.value
+			== ((static_cast<std::uint32_t>(b0 & 0x1Fu) << 24) | (static_cast<std::uint32_t>(buf[pos + 1]) << 16)
+				| (static_cast<std::uint32_t>(buf[pos + 2]) << 8) | static_cast<std::uint32_t>(buf[pos + 3])));
 	}
 }
 
@@ -262,7 +270,7 @@ extern "C" void proof_extension_depends_only_on_width()
 	__ESBMC_assume(size <= kBufLen);
 	const std::size_t pos = nondet_size();
 
-	const Result  r = decodeUnsigned(buf, size, pos);
+	const Result r = decodeUnsigned(buf, size, pos);
 	const SResult s = decodeSigned(buf, size, pos);
 	if (!r.ok) return;
 
@@ -275,8 +283,7 @@ extern "C" void proof_extension_depends_only_on_width()
 	// `bits` is payloadBits(bytesRead) -- so the whole point of the property is
 	// that r.value appears here only as `>> 1` and `& 1`, never in a range test.
 	const std::int64_t half = static_cast<std::int64_t>(std::uint64_t{1} << (bits - 1));
-	const std::int64_t want = static_cast<std::int64_t>(r.value >> 1)
-	                        - ((r.value & 1u) ? half : 0);
+	const std::int64_t want = static_cast<std::int64_t>(r.value >> 1) - ((r.value & 1u) ? half : 0);
 
 	assert(static_cast<std::int64_t>(s.value) == want);
 }
@@ -297,10 +304,19 @@ extern "C" void proof_signed_range_is_set_by_width()
 	// the form a reader can check against the II.23.2 text directly, and it is
 	// the form the live code fails: one byte 0x7F returns -8129, which is not
 	// in [-64, 63], and 0x41 returns -8160.
-	if (s.bytesRead == 1)      { assert(s.value >= -64 && s.value <= 63); }
-	else if (s.bytesRead == 2) { assert(s.value >= -8192 && s.value <= 8191); }
-	else                       { assert(s.bytesRead == 4);
-	                             assert(s.value >= -268435456 && s.value <= 268435455); }
+	if (s.bytesRead == 1)
+	{
+		assert(s.value >= -64 && s.value <= 63);
+	}
+	else if (s.bytesRead == 2)
+	{
+		assert(s.value >= -8192 && s.value <= 8191);
+	}
+	else
+	{
+		assert(s.bytesRead == 4);
+		assert(s.value >= -268435456 && s.value <= 268435455);
+	}
 }
 
 extern "C" void proof_ecma_signed_examples()
@@ -309,19 +325,19 @@ extern "C" void proof_ecma_signed_examples()
 	// stated over all inputs can still be the wrong property; these anchor it
 	// to the document. 0x7F and 0x01 are the two the magnitude-driven mask gets
 	// wrong and right respectively, despite both being one byte.
-	const std::uint8_t m1[]  = {0x7F};                   // -1
+	const std::uint8_t m1[] = {0x7F};                    // -1
 	const std::uint8_t m64[] = {0x01};                   // -64
-	const std::uint8_t m3[]  = {0x7B};                   // -3
-	const std::uint8_t p3[]  = {0x06};                   //  3
+	const std::uint8_t m3[] = {0x7B};                    // -3
+	const std::uint8_t p3[] = {0x06};                    //  3
 	const std::uint8_t p64[] = {0x80, 0x80};             //  64
 	const std::uint8_t m8k[] = {0x80, 0x01};             // -8192
 	const std::uint8_t big[] = {0xDF, 0xFF, 0xFF, 0xFE}; //  268435455
 	const std::uint8_t sml[] = {0xC0, 0x00, 0x00, 0x01}; // -268435456
 
-	assert(decodeSigned(m1,  1, 0).value == -1);
+	assert(decodeSigned(m1, 1, 0).value == -1);
 	assert(decodeSigned(m64, 1, 0).value == -64);
-	assert(decodeSigned(m3,  1, 0).value == -3);
-	assert(decodeSigned(p3,  1, 0).value == 3);
+	assert(decodeSigned(m3, 1, 0).value == -3);
+	assert(decodeSigned(p3, 1, 0).value == 3);
 	assert(decodeSigned(p64, 2, 0).value == 64);
 	assert(decodeSigned(m8k, 2, 0).value == -8192);
 	assert(decodeSigned(big, 4, 0).value == 268435455);
@@ -356,9 +372,12 @@ extern "C" void proof_unsigned_encode_is_narrowest()
 	std::uint8_t buf[kMaxBytes];
 	const std::size_t n = encodeUnsigned(v, buf, kMaxBytes);
 
-	if (v <= 0x7Fu)          assert(n == 1);
-	else if (v <= 0x3FFFu)   assert(n == 2);
-	else                     assert(n == 4);
+	if (v <= 0x7Fu)
+		assert(n == 1);
+	else if (v <= 0x3FFFu)
+		assert(n == 2);
+	else
+		assert(n == 4);
 }
 
 extern "C" void proof_unencodable_value_is_refused()
@@ -422,8 +441,8 @@ extern "C" void proof_truncated_wide_prefix_is_refused()
 	__ESBMC_assume(size <= kBufLen);
 	const std::size_t pos = nondet_size();
 	__ESBMC_assume(pos < size);
-	__ESBMC_assume(size - pos < kMaxBytes);       // fewer than four bytes left
-	__ESBMC_assume((buf[pos] & 0xE0u) == 0xC0u);  // but four are declared
+	__ESBMC_assume(size - pos < kMaxBytes);      // fewer than four bytes left
+	__ESBMC_assume((buf[pos] & 0xE0u) == 0xC0u); // but four are declared
 
 	const Result r = decodeUnsigned(buf, size, pos);
 	assert(!r.ok);
@@ -468,7 +487,8 @@ extern "C" void proof_encoder_never_writes_past_the_cap()
 	// naming the byte.
 	static const std::size_t kSlack = kMaxBytes;
 	std::uint8_t buf[kMaxBytes + kSlack];
-	for (std::size_t i = 0; i < kMaxBytes + kSlack; ++i) buf[i] = 0;
+	for (std::size_t i = 0; i < kMaxBytes + kSlack; ++i)
+		buf[i] = 0;
 
 	const std::uint32_t v = nondet_uint32();
 	const std::size_t cap = nondet_size();
@@ -479,18 +499,23 @@ extern "C" void proof_encoder_never_writes_past_the_cap()
 	// Nothing at or past the cap was touched, whether the encode succeeded or
 	// refused. On a refusal that is every byte, which is the partial-write
 	// property; on success it is the tail, which is the overrun property.
-	for (std::size_t i = cap; i < kMaxBytes + kSlack; ++i) assert(buf[i] == 0);
+	for (std::size_t i = cap; i < kMaxBytes + kSlack; ++i)
+		assert(buf[i] == 0);
 	if (n == 0)
-		for (std::size_t i = 0; i < kMaxBytes + kSlack; ++i) assert(buf[i] == 0);
+		for (std::size_t i = 0; i < kMaxBytes + kSlack; ++i)
+			assert(buf[i] == 0);
 
 	std::uint8_t sbuf[kMaxBytes + kSlack];
-	for (std::size_t i = 0; i < kMaxBytes + kSlack; ++i) sbuf[i] = 0;
+	for (std::size_t i = 0; i < kMaxBytes + kSlack; ++i)
+		sbuf[i] = 0;
 
 	const std::size_t m = encodeSigned(nondet_int32(), sbuf, cap);
 	assert(m <= cap);
-	for (std::size_t i = cap; i < kMaxBytes + kSlack; ++i) assert(sbuf[i] == 0);
+	for (std::size_t i = cap; i < kMaxBytes + kSlack; ++i)
+		assert(sbuf[i] == 0);
 	if (m == 0)
-		for (std::size_t i = 0; i < kMaxBytes + kSlack; ++i) assert(sbuf[i] == 0);
+		for (std::size_t i = 0; i < kMaxBytes + kSlack; ++i)
+			assert(sbuf[i] == 0);
 }
 
 extern "C" void proof_encoder_refuses_a_null_buffer()

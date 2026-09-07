@@ -10,21 +10,28 @@
 
 namespace retdec::neural {
 
-enum class GateResult { Pass, FailCompile, FailStructural, FailDifferential };
+enum class GateResult
+{
+	Pass,
+	FailCompile,
+	FailStructural,
+	FailDifferential
+};
 
-struct GateReport {
-    GateResult compile      = GateResult::Pass;
-    GateResult structural   = GateResult::Pass;
-    GateResult differential = GateResult::Pass;
+struct GateReport
+{
+	GateResult compile = GateResult::Pass;
+	GateResult structural = GateResult::Pass;
+	GateResult differential = GateResult::Pass;
 
-    /// False when the structural gate had to fall back to counting keywords in
-    /// the text because no C parser was available. The fallback is strictly
-    /// weaker than the AST comparison, so a caller that cares about the
-    /// strength of the check -- not just its verdict -- should look at this.
-    bool structuralUsedParser = true;
+	/// False when the structural gate had to fall back to counting keywords in
+	/// the text because no C parser was available. The fallback is strictly
+	/// weaker than the AST comparison, so a caller that cares about the
+	/// strength of the check -- not just its verdict -- should look at this.
+	bool structuralUsedParser = true;
 
-    bool allPassed() const;
-    std::string summary() const;
+	bool allPassed() const;
+	std::string summary() const;
 };
 
 /// True when this build can parse C (tree-sitter is linked in), which is what
@@ -32,8 +39,7 @@ struct GateReport {
 /// counting keywords in the raw text.
 bool hasCParserSupport();
 
-GateReport runVerificationGates(const std::string& originalC,
-                                const std::string& refinedC);
+GateReport runVerificationGates(const std::string& originalC, const std::string& refinedC);
 
 /// `cc -fsyntax-only` (or `RETDEC_NEURAL_GATE_CC` / `gcc` on Windows).
 /// Empty source is always false. Missing compiler is false.

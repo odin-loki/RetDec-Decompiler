@@ -138,7 +138,9 @@
 #include <unordered_map>
 
 namespace retdec {
-namespace ssa { class SSAFunction; }
+namespace ssa {
+class SSAFunction;
+}
 } // namespace retdec
 
 namespace retdec {
@@ -146,185 +148,201 @@ namespace crypto_detect {
 
 // ─── Enumerations ─────────────────────────────────────────────────────────────
 
-enum class CryptoAlgorithm : uint8_t {
-    Unknown,
-    AES,
-    SHA256,
-    SHA1,
-    ChaCha20,
-    HMAC,        ///< HMAC wrapper (combined with underlying hash)
-    RSA,         ///< RSA via Montgomery multiplication
-    ECC,         ///< Elliptic curve field arithmetic
-    RC4,
-    DH,          ///< Diffie-Hellman (same Montgomery multiply pattern as RSA)
-    BLAKE2,
-    MD5,
-    CRC,         ///< CRC-32 / CRC-32C polynomial fingerprint
-    Poly1305,
-    Salsa20,
-    Blowfish,    ///< Blowfish P-array (π digits) fingerprint
-    DES,         ///< DES_SPtrans packed S-box+P fingerprint
+enum class CryptoAlgorithm : uint8_t
+{
+	Unknown,
+	AES,
+	SHA256,
+	SHA1,
+	ChaCha20,
+	HMAC, ///< HMAC wrapper (combined with underlying hash)
+	RSA,  ///< RSA via Montgomery multiplication
+	ECC,  ///< Elliptic curve field arithmetic
+	RC4,
+	DH, ///< Diffie-Hellman (same Montgomery multiply pattern as RSA)
+	BLAKE2,
+	MD5,
+	CRC, ///< CRC-32 / CRC-32C polynomial fingerprint
+	Poly1305,
+	Salsa20,
+	Blowfish, ///< Blowfish P-array (π digits) fingerprint
+	DES,      ///< DES_SPtrans packed S-box+P fingerprint
 };
 
-enum class CryptoMode : uint8_t {
-    Unknown,
-    ECB,
-    CBC,
-    CTR,
-    GCM,
-    CCM,
-    XTS,
-    OCB,
+enum class CryptoMode : uint8_t
+{
+	Unknown,
+	ECB,
+	CBC,
+	CTR,
+	GCM,
+	CCM,
+	XTS,
+	OCB,
 };
 
-enum class CryptoVariant : uint8_t {
-    Unknown,
-    AES128,
-    AES192,
-    AES256,
-    SHA1_160,
-    SHA256_256,
-    SHA512_512,
-    RSA1024,
-    RSA2048,
-    RSA4096,
-    P256,        ///< NIST P-256 (secp256r1)
-    P384,
-    P521,
-    Curve25519,
+enum class CryptoVariant : uint8_t
+{
+	Unknown,
+	AES128,
+	AES192,
+	AES256,
+	SHA1_160,
+	SHA256_256,
+	SHA512_512,
+	RSA1024,
+	RSA2048,
+	RSA4096,
+	P256, ///< NIST P-256 (secp256r1)
+	P384,
+	P521,
+	Curve25519,
 };
 
 // ─── Crypto detection result ──────────────────────────────────────────────────
 
-struct CryptoResult {
-    CryptoAlgorithm algorithm  = CryptoAlgorithm::Unknown;
-    CryptoVariant   variant    = CryptoVariant::Unknown;
-    CryptoMode      mode       = CryptoMode::Unknown;
-    float           confidence = 0.0f;
-    bool            hasAESNI   = false;   ///< hardware AES-NI detected
-    std::string     emittedAnnotation;    ///< C++ comment + API sketch
+struct CryptoResult
+{
+	CryptoAlgorithm algorithm = CryptoAlgorithm::Unknown;
+	CryptoVariant variant = CryptoVariant::Unknown;
+	CryptoMode mode = CryptoMode::Unknown;
+	float confidence = 0.0f;
+	bool hasAESNI = false;         ///< hardware AES-NI detected
+	std::string emittedAnnotation; ///< C++ comment + API sketch
 
-    std::string algorithmName() const noexcept;
-    std::string variantName()   const noexcept;
-    std::string modeName()      const noexcept;
-    std::string toString()      const;
+	std::string algorithmName() const noexcept;
+	std::string variantName() const noexcept;
+	std::string modeName() const noexcept;
+	std::string toString() const;
 };
 
 // ─── Evidence structs ─────────────────────────────────────────────────────────
 
-struct AESEvidence {
-    bool  found            = false;
-    float confidence       = 0.0f;
-    bool  hasSBox          = false;   ///< a single S-box byte (supporting only)
-    bool  hasSBoxTable     = false;   ///< >=4 S-box entries in table order
-    bool  hasRcon          = false;   ///< Rcon XOR in key schedule
-    bool  hasMixCols       = false;   ///< 0x1b GF multiplier
-    bool  hasAESNI         = false;   ///< aesenc/aesenclast call
-    bool  hasRoundLoop     = false;   ///< XOR+And+Shl structure
-    CryptoMode mode        = CryptoMode::Unknown;
+struct AESEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasSBox = false;      ///< a single S-box byte (supporting only)
+	bool hasSBoxTable = false; ///< >=4 S-box entries in table order
+	bool hasRcon = false;      ///< Rcon XOR in key schedule
+	bool hasMixCols = false;   ///< 0x1b GF multiplier
+	bool hasAESNI = false;     ///< aesenc/aesenclast call
+	bool hasRoundLoop = false; ///< XOR+And+Shl structure
+	CryptoMode mode = CryptoMode::Unknown;
 };
 
-struct SHAEvidence {
-    bool  found            = false;
-    float confidence       = 0.0f;
-    bool  hasRoundConst    = false;   ///< 0x428a2f98 or 0x5A827999
-    bool  hasChFunction    = false;   ///< And+Xor+Not pattern
-    bool  hasMajFunction   = false;   ///< triple And+Xor
-    bool  hasRotations     = false;   ///< specific rotation amounts
-    bool  isSHA1           = false;   ///< SHA-1 vs SHA-256
+struct SHAEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasRoundConst = false;  ///< 0x428a2f98 or 0x5A827999
+	bool hasChFunction = false;  ///< And+Xor+Not pattern
+	bool hasMajFunction = false; ///< triple And+Xor
+	bool hasRotations = false;   ///< specific rotation amounts
+	bool isSHA1 = false;         ///< SHA-1 vs SHA-256
 };
 
-struct ChaCha20Evidence {
-    bool  found            = false;
-    float confidence       = 0.0f;
-    bool  hasRotConst16    = false;
-    bool  hasRotConst12    = false;
-    bool  hasRotConst8     = false;
-    bool  hasRotConst7     = false;
-    bool  hasAddXorRotSeq  = false;   ///< Add+Xor+(Shl+Shr+Or) sequence
-    bool  hasSigmaConst    = false;   ///< "expand 32-byte k" ASCII words
-    int   sigmaWords       = 0;       ///< how many of the four sigma words
+struct ChaCha20Evidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasRotConst16 = false;
+	bool hasRotConst12 = false;
+	bool hasRotConst8 = false;
+	bool hasRotConst7 = false;
+	bool hasAddXorRotSeq = false; ///< Add+Xor+(Shl+Shr+Or) sequence
+	bool hasSigmaConst = false;   ///< "expand 32-byte k" ASCII words
+	int sigmaWords = 0;           ///< how many of the four sigma words
 };
 
-struct Salsa20Evidence {
-    bool  found            = false;
-    float confidence       = 0.0f;
-    bool  hasRotConst7     = false;
-    bool  hasRotConst9     = false;
-    bool  hasRotConst13    = false;
-    bool  hasRotConst18    = false;
-    bool  hasAddXorRotSeq  = false;   ///< Add+Xor+(Shl or Or)
+struct Salsa20Evidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasRotConst7 = false;
+	bool hasRotConst9 = false;
+	bool hasRotConst13 = false;
+	bool hasRotConst18 = false;
+	bool hasAddXorRotSeq = false; ///< Add+Xor+(Shl or Or)
 };
 
 /** RFC 7539 clamp / poly1305-donna 26-bit limb masks. */
-struct Poly1305Evidence {
-    bool  found            = false;
-    float confidence       = 0.0f;
-    bool  hasClampLo       = false;   ///< 0x0ffffffc0fffffff
-    bool  hasClampHi       = false;   ///< 0x0ffffffc0ffffffc
-    bool  hasDonnaR1       = false;   ///< 0x3ffff03
-    bool  hasDonnaR2       = false;   ///< 0x3ffc0ff
-    bool  hasDonnaR3       = false;   ///< 0x3f03fff
+struct Poly1305Evidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasClampLo = false; ///< 0x0ffffffc0fffffff
+	bool hasClampHi = false; ///< 0x0ffffffc0ffffffc
+	bool hasDonnaR1 = false; ///< 0x3ffff03
+	bool hasDonnaR2 = false; ///< 0x3ffc0ff
+	bool hasDonnaR3 = false; ///< 0x3f03fff
 };
 
-struct HMACEvidence {
-    bool  found            = false;
-    float confidence       = 0.0f;
-    bool  hasIpad          = false;   ///< 0x36363636
-    bool  hasOpad          = false;   ///< 0x5c5c5c5c
+struct HMACEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasIpad = false; ///< 0x36363636
+	bool hasOpad = false; ///< 0x5c5c5c5c
 };
 
-struct RSAEvidence {
-    bool  found              = false;
-    float confidence         = 0.0f;
-    bool  hasMultiPrecMul    = false; ///< nested loop with Mul+Add+carry
-    bool  hasConditionalSub  = false; ///< Compare + Sub (Montgomery reduction)
-    bool  hasLargeConstant   = false; ///< large modulus in data section
+struct RSAEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasMultiPrecMul = false;   ///< nested loop with Mul+Add+carry
+	bool hasConditionalSub = false; ///< Compare + Sub (Montgomery reduction)
+	bool hasLargeConstant = false;  ///< large modulus in data section
 };
 
-struct RC4Evidence {
-    bool  found              = false;
-    float confidence         = 0.0f;
-    bool  hasKSA             = false; ///< 256-iteration init+swap loop
-    bool  hasPRGA            = false; ///< XOR with S[S[i]+S[j]]
-    bool  has256Constant     = false; ///< loop bound 256
+struct RC4Evidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasKSA = false;         ///< 256-iteration init+swap loop
+	bool hasPRGA = false;        ///< XOR with S[S[i]+S[j]]
+	bool has256Constant = false; ///< loop bound 256
 };
 
-struct MD5Evidence {
-    bool  found              = false;
-    float confidence         = 0.0f;
-    bool  hasSineK           = false; ///< MD5-only T/K table (e.g. 0xd76aa478)
-    bool  hasInitMagic       = false; ///< 0x67452301 / 0xefcdab89 / …
+struct MD5Evidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasSineK = false;     ///< MD5-only T/K table (e.g. 0xd76aa478)
+	bool hasInitMagic = false; ///< 0x67452301 / 0xefcdab89 / …
 };
 
-struct CRCEvidence {
-    bool  found              = false;
-    float confidence         = 0.0f;
-    bool  hasReflectedPoly   = false; ///< 0xEDB88320 CRC-32 IEEE reflected
-    bool  hasNormalPoly      = false; ///< 0x04C11DB7 CRC-32 normal
+struct CRCEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasReflectedPoly = false; ///< 0xEDB88320 CRC-32 IEEE reflected
+	bool hasNormalPoly = false;    ///< 0x04C11DB7 CRC-32 normal
 };
 
-struct BlowfishEvidence {
-    bool  found              = false;
-    float confidence         = 0.0f;
-    bool  hasPArray          = false; ///< P-array first words (e.g. 0x243f6a88)
-    int   pArrayWords        = 0;     ///< how many of the first four P words
+struct BlowfishEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasPArray = false; ///< P-array first words (e.g. 0x243f6a88)
+	int pArrayWords = 0;    ///< how many of the first four P words
 };
 
-struct DESEvidence {
-    bool  found              = false;
-    float confidence         = 0.0f;
-    bool  hasSPtrans         = false; ///< DES_SPtrans packed words (e.g. 0x02080800)
-    int   sptransWords       = 0;     ///< how many distinctive SPtrans words
+struct DESEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasSPtrans = false; ///< DES_SPtrans packed words (e.g. 0x02080800)
+	int sptransWords = 0;    ///< how many distinctive SPtrans words
 };
 
 // ─── Detector interface ───────────────────────────────────────────────────────
 
 class ICryptoDetector {
 public:
-    virtual ~ICryptoDetector() = default;
-    virtual CryptoResult    detect(const ssa::SSAFunction& fn) const = 0;
-    virtual CryptoAlgorithm algorithm() const noexcept = 0;
+	virtual ~ICryptoDetector() = default;
+	virtual CryptoResult detect(const ssa::SSAFunction& fn) const = 0;
+	virtual CryptoAlgorithm algorithm() const noexcept = 0;
 };
 
 // ─── Per-algorithm detectors ──────────────────────────────────────────────────
@@ -332,35 +350,47 @@ public:
 /** AES detector — S-box, key schedule, round structure, AES-NI, mode. */
 class AESDetector : public ICryptoDetector {
 public:
-    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
-    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::AES; }
+	CryptoResult detect(const ssa::SSAFunction& fn) const override;
+	CryptoAlgorithm algorithm() const noexcept override
+	{
+		return CryptoAlgorithm::AES;
+	}
+
 private:
-    AESEvidence analyse(const ssa::SSAFunction& fn) const;
-    float       score(const AESEvidence& ev) const;
-    CryptoMode  detectMode(const ssa::SSAFunction& fn) const;
-    bool        hasAESNI(const ssa::SSAFunction& fn) const;
+	AESEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const AESEvidence& ev) const;
+	CryptoMode detectMode(const ssa::SSAFunction& fn) const;
+	bool hasAESNI(const ssa::SSAFunction& fn) const;
 };
 
 /** SHA-256 / SHA-1 detector — round constants, Ch, Maj, Sigma rotations. */
 class SHADetector : public ICryptoDetector {
 public:
-    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
-    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::SHA256; }
+	CryptoResult detect(const ssa::SSAFunction& fn) const override;
+	CryptoAlgorithm algorithm() const noexcept override
+	{
+		return CryptoAlgorithm::SHA256;
+	}
+
 private:
-    SHAEvidence analyse(const ssa::SSAFunction& fn) const;
-    float       score(const SHAEvidence& ev) const;
-    bool        hasSHA1Constants(const ssa::SSAFunction& fn) const;
-    bool        hasSHA256Constants(const ssa::SSAFunction& fn) const;
+	SHAEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const SHAEvidence& ev) const;
+	bool hasSHA1Constants(const ssa::SSAFunction& fn) const;
+	bool hasSHA256Constants(const ssa::SSAFunction& fn) const;
 };
 
 /** ChaCha20 detector — quarter-round Add+Xor+Rotate with constants 16/12/8/7. */
 class ChaCha20Detector : public ICryptoDetector {
 public:
-    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
-    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::ChaCha20; }
+	CryptoResult detect(const ssa::SSAFunction& fn) const override;
+	CryptoAlgorithm algorithm() const noexcept override
+	{
+		return CryptoAlgorithm::ChaCha20;
+	}
+
 private:
-    ChaCha20Evidence analyse(const ssa::SSAFunction& fn) const;
-    float            score(const ChaCha20Evidence& ev) const;
+	ChaCha20Evidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const ChaCha20Evidence& ev) const;
 };
 
 /**
@@ -369,11 +399,15 @@ private:
  */
 class Salsa20Detector : public ICryptoDetector {
 public:
-    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
-    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::Salsa20; }
+	CryptoResult detect(const ssa::SSAFunction& fn) const override;
+	CryptoAlgorithm algorithm() const noexcept override
+	{
+		return CryptoAlgorithm::Salsa20;
+	}
+
 private:
-    Salsa20Evidence analyse(const ssa::SSAFunction& fn) const;
-    float           score(const Salsa20Evidence& ev) const;
+	Salsa20Evidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const Salsa20Evidence& ev) const;
 };
 
 /**
@@ -382,11 +416,15 @@ private:
  */
 class Poly1305Detector : public ICryptoDetector {
 public:
-    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
-    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::Poly1305; }
+	CryptoResult detect(const ssa::SSAFunction& fn) const override;
+	CryptoAlgorithm algorithm() const noexcept override
+	{
+		return CryptoAlgorithm::Poly1305;
+	}
+
 private:
-    Poly1305Evidence analyse(const ssa::SSAFunction& fn) const;
-    float            score(const Poly1305Evidence& ev) const;
+	Poly1305Evidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const Poly1305Evidence& ev) const;
 };
 
 /**
@@ -395,38 +433,53 @@ private:
  */
 class Curve25519Detector : public ICryptoDetector {
 public:
-    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
-    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::ECC; }
+	CryptoResult detect(const ssa::SSAFunction& fn) const override;
+	CryptoAlgorithm algorithm() const noexcept override
+	{
+		return CryptoAlgorithm::ECC;
+	}
 };
 
 /** HMAC detector — ipad/opad constant XOR. */
 class HMACDetector : public ICryptoDetector {
 public:
-    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
-    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::HMAC; }
+	CryptoResult detect(const ssa::SSAFunction& fn) const override;
+	CryptoAlgorithm algorithm() const noexcept override
+	{
+		return CryptoAlgorithm::HMAC;
+	}
+
 private:
-    HMACEvidence analyse(const ssa::SSAFunction& fn) const;
-    float        score(const HMACEvidence& ev) const;
+	HMACEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const HMACEvidence& ev) const;
 };
 
 /** RSA/DH detector — Montgomery multi-precision multiplication loop. */
 class RSADetector : public ICryptoDetector {
 public:
-    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
-    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::RSA; }
+	CryptoResult detect(const ssa::SSAFunction& fn) const override;
+	CryptoAlgorithm algorithm() const noexcept override
+	{
+		return CryptoAlgorithm::RSA;
+	}
+
 private:
-    RSAEvidence analyse(const ssa::SSAFunction& fn) const;
-    float       score(const RSAEvidence& ev) const;
+	RSAEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const RSAEvidence& ev) const;
 };
 
 /** RC4 detector — KSA 256-iteration swap loop, PRGA XOR. */
 class RC4Detector : public ICryptoDetector {
 public:
-    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
-    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::RC4; }
+	CryptoResult detect(const ssa::SSAFunction& fn) const override;
+	CryptoAlgorithm algorithm() const noexcept override
+	{
+		return CryptoAlgorithm::RC4;
+	}
+
 private:
-    RC4Evidence analyse(const ssa::SSAFunction& fn) const;
-    float       score(const RC4Evidence& ev) const;
+	RC4Evidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const RC4Evidence& ev) const;
 };
 
 /**
@@ -436,21 +489,29 @@ private:
  */
 class MD5Detector : public ICryptoDetector {
 public:
-    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
-    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::MD5; }
+	CryptoResult detect(const ssa::SSAFunction& fn) const override;
+	CryptoAlgorithm algorithm() const noexcept override
+	{
+		return CryptoAlgorithm::MD5;
+	}
+
 private:
-    MD5Evidence analyse(const ssa::SSAFunction& fn) const;
-    float       score(const MD5Evidence& ev) const;
+	MD5Evidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const MD5Evidence& ev) const;
 };
 
 /** CRC-32 detector — IEEE reflected (0xEDB88320) / normal (0x04C11DB7) polynomials. */
 class CRCDetector : public ICryptoDetector {
 public:
-    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
-    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::CRC; }
+	CryptoResult detect(const ssa::SSAFunction& fn) const override;
+	CryptoAlgorithm algorithm() const noexcept override
+	{
+		return CryptoAlgorithm::CRC;
+	}
+
 private:
-    CRCEvidence analyse(const ssa::SSAFunction& fn) const;
-    float       score(const CRCEvidence& ev) const;
+	CRCEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const CRCEvidence& ev) const;
 };
 
 /**
@@ -459,11 +520,15 @@ private:
  */
 class BlowfishDetector : public ICryptoDetector {
 public:
-    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
-    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::Blowfish; }
+	CryptoResult detect(const ssa::SSAFunction& fn) const override;
+	CryptoAlgorithm algorithm() const noexcept override
+	{
+		return CryptoAlgorithm::Blowfish;
+	}
+
 private:
-    BlowfishEvidence analyse(const ssa::SSAFunction& fn) const;
-    float            score(const BlowfishEvidence& ev) const;
+	BlowfishEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const BlowfishEvidence& ev) const;
 };
 
 /**
@@ -472,11 +537,15 @@ private:
  */
 class DESDetector : public ICryptoDetector {
 public:
-    CryptoResult    detect(const ssa::SSAFunction& fn) const override;
-    CryptoAlgorithm algorithm() const noexcept override { return CryptoAlgorithm::DES; }
+	CryptoResult detect(const ssa::SSAFunction& fn) const override;
+	CryptoAlgorithm algorithm() const noexcept override
+	{
+		return CryptoAlgorithm::DES;
+	}
+
 private:
-    DESEvidence analyse(const ssa::SSAFunction& fn) const;
-    float       score(const DESEvidence& ev) const;
+	DESEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const DESEvidence& ev) const;
 };
 
 // ─── Crypto detector orchestrator ────────────────────────────────────────────
@@ -488,34 +557,42 @@ private:
  */
 class CryptoDetector {
 public:
-    struct Config {
-        float minConfidence = 0.50f;
-        int   minBlocks     = 1;
-        int   minInstrs     = 4;
-    };
-    static Config defaultConfig() noexcept { return {}; }
+	struct Config
+	{
+		float minConfidence = 0.50f;
+		int minBlocks = 1;
+		int minInstrs = 4;
+	};
+	static Config defaultConfig() noexcept
+	{
+		return {};
+	}
 
-    struct Stats {
-        uint32_t functionsAnalysed = 0;
-        uint32_t detections        = 0;
-        std::unordered_map<CryptoAlgorithm, uint32_t> byAlgorithm;
-    };
+	struct Stats
+	{
+		uint32_t functionsAnalysed = 0;
+		uint32_t detections = 0;
+		std::unordered_map<CryptoAlgorithm, uint32_t> byAlgorithm;
+	};
 
-    using ResultList = std::vector<CryptoResult>;
+	using ResultList = std::vector<CryptoResult>;
 
-    explicit CryptoDetector(Config cfg = defaultConfig());
+	explicit CryptoDetector(Config cfg = defaultConfig());
 
-    ResultList detect(const ssa::SSAFunction& fn) const;
-    ResultList detectModule(const std::vector<const ssa::SSAFunction*>& fns) const;
+	ResultList detect(const ssa::SSAFunction& fn) const;
+	ResultList detectModule(const std::vector<const ssa::SSAFunction*>& fns) const;
 
-    const Stats& stats() const { return stats_; }
+	const Stats& stats() const
+	{
+		return stats_;
+	}
 
 private:
-    Config cfg_;
-    mutable Stats stats_;
-    std::vector<std::unique_ptr<ICryptoDetector>> detectors_;
+	Config cfg_;
+	mutable Stats stats_;
+	std::vector<std::unique_ptr<ICryptoDetector>> detectors_;
 
-    bool passesPreflight(const ssa::SSAFunction& fn) const;
+	bool passesPreflight(const ssa::SSAFunction& fn) const;
 };
 
 } // namespace crypto_detect

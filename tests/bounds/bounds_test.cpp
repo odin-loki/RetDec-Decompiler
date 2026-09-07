@@ -164,8 +164,7 @@ TEST(Leb128, DecodesTheStandardSignedVectors)
 
 TEST(Leb128, DecodesTheWidestRepresentableValues)
 {
-	EXPECT_EQ(decodeU({0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01}).value,
-			  UINT64_MAX);
+	EXPECT_EQ(decodeU({0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01}).value, UINT64_MAX);
 	EXPECT_EQ(decodeS({0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F}), -1);
 }
 
@@ -199,8 +198,7 @@ TEST(Leb128, RefusesAnOverLongEncoding)
 	EXPECT_FALSE(leb128::decodeSigned(tooLong.data(), tooLong.size(), 0).ok);
 
 	std::vector<std::uint8_t> allContinuation(64, 0xFF);
-	EXPECT_FALSE(
-		leb128::decodeUnsigned(allContinuation.data(), allContinuation.size(), 0).ok);
+	EXPECT_FALSE(leb128::decodeUnsigned(allContinuation.data(), allContinuation.size(), 0).ok);
 }
 
 TEST(Leb128, RefusesAPositionPastTheEnd)
@@ -249,8 +247,7 @@ TEST(SourceScan, BlanksLineCommentBodies)
 
 	// Built rather than written out, so the expectation cannot be off by a
 	// space: the comment becomes exactly as many blanks as it had characters.
-	EXPECT_EQ(blanked(code + comment + tail),
-			  code + std::string(comment.size(), ' ') + tail);
+	EXPECT_EQ(blanked(code + comment + tail), code + std::string(comment.size(), ' ') + tail);
 }
 
 TEST(SourceScan, BlanksBlockCommentBodies)

@@ -47,138 +47,142 @@ namespace retdec {
 namespace mini_emu {
 
 using FormatResult = retdec::fileformat::lattice::FormatResult;
-using SectionInfo  = retdec::fileformat::lattice::SectionInfo;
+using SectionInfo = retdec::fileformat::lattice::SectionInfo;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-constexpr uint64_t kDefaultStackBase   = 0x0000'7FFF'FFFF'0000ULL;
-constexpr size_t   kStackSize          = 0x10000; // 64 KiB
-constexpr size_t   kPageSize           = 0x1000;  // 4 KiB
-constexpr uint64_t kMaxInstructions    = 10'000'000ULL;
+constexpr uint64_t kDefaultStackBase = 0x0000'7FFF'FFFF'0000ULL;
+constexpr size_t kStackSize = 0x10000; // 64 KiB
+constexpr size_t kPageSize = 0x1000;   // 4 KiB
+constexpr uint64_t kMaxInstructions = 10'000'000ULL;
 
 /// Upper bound on the address space a single section may claim when loading.
 /// Section headers come from an untrusted file, so a declared virtualSize of
 /// 2^40 must not turn into 2^28 page allocations.  256 MiB is far above any
 /// real packed section and still cheap to refuse.
-constexpr size_t   kMaxSectionMapBytes = 0x1000'0000; // 256 MiB
+constexpr size_t kMaxSectionMapBytes = 0x1000'0000; // 256 MiB
 
 // ─── Page permissions ─────────────────────────────────────────────────────────
 
-struct PagePerms {
-    bool read    = false;
-    bool write   = false;
-    bool execute = false;
+struct PagePerms
+{
+	bool read = false;
+	bool write = false;
+	bool execute = false;
 };
 
 // ─── Memory page ─────────────────────────────────────────────────────────────
 
-struct MemPage {
-    std::vector<uint8_t> data;
-    PagePerms            perms;
-    bool                 wasWritten  = false; ///< received a write during emulation
-    bool                 wasExecuted = false; ///< at least one insn executed from here
+struct MemPage
+{
+	std::vector<uint8_t> data;
+	PagePerms perms;
+	bool wasWritten = false;  ///< received a write during emulation
+	bool wasExecuted = false; ///< at least one insn executed from here
 };
 
 // ─── Emulation stop reason ────────────────────────────────────────────────────
 
-enum class StopReason {
-    EnteredNewCode,          ///< (a)/(b) JMP/CALL to written/foreign region
-    VProtectExec,            ///< (c) new PROT_EXEC region
-    MaxInstructions,         ///< (d) instruction limit reached
-    Halt,                    ///< HLT instruction
-    Error,                   ///< unrecoverable fetch/decode error
+enum class StopReason
+{
+	EnteredNewCode,  ///< (a)/(b) JMP/CALL to written/foreign region
+	VProtectExec,    ///< (c) new PROT_EXEC region
+	MaxInstructions, ///< (d) instruction limit reached
+	Halt,            ///< HLT instruction
+	Error,           ///< unrecoverable fetch/decode error
 };
 
 std::string stopReasonToString(StopReason r);
 
 // ─── CPU state ────────────────────────────────────────────────────────────────
 
-struct CPUState {
-    uint64_t rax = 0, rbx = 0, rcx = 0, rdx = 0;
-    uint64_t rsi = 0, rdi = 0, rbp = 0, rsp = 0;
-    uint64_t r8  = 0, r9  = 0, r10 = 0, r11 = 0;
-    uint64_t r12 = 0, r13 = 0, r14 = 0, r15 = 0;
-    uint64_t rip = 0;
-    uint64_t rflags = 0x202; ///< IF=1, reserved=1
+struct CPUState
+{
+	uint64_t rax = 0, rbx = 0, rcx = 0, rdx = 0;
+	uint64_t rsi = 0, rdi = 0, rbp = 0, rsp = 0;
+	uint64_t r8 = 0, r9 = 0, r10 = 0, r11 = 0;
+	uint64_t r12 = 0, r13 = 0, r14 = 0, r15 = 0;
+	uint64_t rip = 0;
+	uint64_t rflags = 0x202; ///< IF=1, reserved=1
 
-    uint64_t tscBase = 0; ///< used for RDTSC spoofing
-    uint64_t tscStep = 1000; ///< monotonic step per emulated insn
+	uint64_t tscBase = 0;    ///< used for RDTSC spoofing
+	uint64_t tscStep = 1000; ///< monotonic step per emulated insn
 };
 
 // ─── UnpackResult ─────────────────────────────────────────────────────────────
 
-struct UnpackedRegion {
-    uint64_t             startVA;
-    std::vector<uint8_t> bytes;
-    bool                 isCode;   ///< true if this region was executed
+struct UnpackedRegion
+{
+	uint64_t startVA;
+	std::vector<uint8_t> bytes;
+	bool isCode; ///< true if this region was executed
 };
 
-struct UnpackResult {
-    bool     success      = false;
-    StopReason stopReason  = StopReason::Error;
-    uint64_t   epAfterUnpack = 0; ///< RIP at termination (new entry point)
-    uint64_t   instructionsExecuted = 0;
+struct UnpackResult
+{
+	bool success = false;
+	StopReason stopReason = StopReason::Error;
+	uint64_t epAfterUnpack = 0; ///< RIP at termination (new entry point)
+	uint64_t instructionsExecuted = 0;
 
-    std::vector<UnpackedRegion> regions;
-    std::vector<SectionInfo>    syntheticSections; ///< reconstructed from written+exec pages
+	std::vector<UnpackedRegion> regions;
+	std::vector<SectionInfo> syntheticSections; ///< reconstructed from written+exec pages
 
-    bool needsManualReview = false; ///< true when MaxInstructions reached
+	bool needsManualReview = false; ///< true when MaxInstructions reached
 };
 
 // ─── MiniEmu ──────────────────────────────────────────────────────────────────
 
 class MiniEmu {
 public:
-    MiniEmu();
-    ~MiniEmu();
+	MiniEmu();
+	~MiniEmu();
 
-    MiniEmu(const MiniEmu &) = delete;
-    MiniEmu &operator=(const MiniEmu &) = delete;
+	MiniEmu(const MiniEmu&) = delete;
+	MiniEmu& operator=(const MiniEmu&) = delete;
 
-    /**
-     * Load a binary image and set up the address space.
-     * Must be called before run().
-     *
-     * @param data          Raw binary bytes.
-     * @param size          Total file size.
-     * @param fmt           Parsed format result (sections, EP, imageBase).
-     */
-    void load(const uint8_t *data, size_t size, const FormatResult &fmt);
+	/**
+	 * Load a binary image and set up the address space.
+	 * Must be called before run().
+	 *
+	 * @param data          Raw binary bytes.
+	 * @param size          Total file size.
+	 * @param fmt           Parsed format result (sections, EP, imageBase).
+	 */
+	void load(const uint8_t* data, size_t size, const FormatResult& fmt);
 
-    /**
-     * Run the emulator starting at the given entry point.
-     * Returns when a termination condition is hit.
-     *
-     * @param entryPoint    Virtual address to start execution.
-     * @param maxInsns      Maximum instructions before forced stop.
-     */
-    UnpackResult run(uint64_t entryPoint,
-                     uint64_t maxInsns = kMaxInstructions);
+	/**
+	 * Run the emulator starting at the given entry point.
+	 * Returns when a termination condition is hit.
+	 *
+	 * @param entryPoint    Virtual address to start execution.
+	 * @param maxInsns      Maximum instructions before forced stop.
+	 */
+	UnpackResult run(uint64_t entryPoint, uint64_t maxInsns = kMaxInstructions);
 
-    /**
-     * Read a byte from the emulated address space.
-     * Returns false if the address is not mapped/readable.
-     */
-    bool readByte(uint64_t va, uint8_t &out) const;
+	/**
+	 * Read a byte from the emulated address space.
+	 * Returns false if the address is not mapped/readable.
+	 */
+	bool readByte(uint64_t va, uint8_t& out) const;
 
-    /**
-     * Write a byte into the emulated address space.
-     * Returns false if the address is not mapped/writable.
-     */
-    bool writeByte(uint64_t va, uint8_t val);
+	/**
+	 * Write a byte into the emulated address space.
+	 * Returns false if the address is not mapped/writable.
+	 */
+	bool writeByte(uint64_t va, uint8_t val);
 
-    /**
-     * Map a new page into the address space.
-     * Existing pages at overlapping addresses are overwritten.
-     */
-    void mapPage(uint64_t va, PagePerms perms, const uint8_t *data = nullptr,
-                 size_t size = kPageSize);
+	/**
+	 * Map a new page into the address space.
+	 * Existing pages at overlapping addresses are overwritten.
+	 */
+	void mapPage(uint64_t va, PagePerms perms, const uint8_t* data = nullptr, size_t size = kPageSize);
 
-    const CPUState &cpuState() const;
+	const CPUState& cpuState() const;
 
 private:
-    struct Impl;
-    std::unique_ptr<Impl> impl_;
+	struct Impl;
+	std::unique_ptr<Impl> impl_;
 };
 
 } // namespace mini_emu

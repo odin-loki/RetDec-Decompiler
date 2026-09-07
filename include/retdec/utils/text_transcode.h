@@ -93,9 +93,9 @@ inline constexpr std::uint32_t kMaxCodePoint = 0x10FFFF;
 
 /// The UTF-16 surrogate range, which UTF-8 may not encode.
 inline constexpr std::uint32_t kHighSurrogateFirst = 0xD800;
-inline constexpr std::uint32_t kHighSurrogateLast  = 0xDBFF;
-inline constexpr std::uint32_t kLowSurrogateFirst  = 0xDC00;
-inline constexpr std::uint32_t kLowSurrogateLast   = 0xDFFF;
+inline constexpr std::uint32_t kHighSurrogateLast = 0xDBFF;
+inline constexpr std::uint32_t kLowSurrogateFirst = 0xDC00;
+inline constexpr std::uint32_t kLowSurrogateLast = 0xDFFF;
 
 /// U+FFFD REPLACEMENT CHARACTER, what an ill-formed unit becomes.
 inline constexpr std::uint32_t kReplacement = 0xFFFD;
@@ -158,9 +158,7 @@ inline constexpr char kHexPairsLower[513] =
 constexpr char hexDigit(unsigned v, bool upper) noexcept
 {
 	const unsigned d = v & 0xFu;
-	return d < 10
-		? static_cast<char>('0' + d)
-		: static_cast<char>((upper ? 'A' : 'a') + (d - 10));
+	return d < 10 ? static_cast<char>('0' + d) : static_cast<char>((upper ? 'A' : 'a') + (d - 10));
 }
 
 /// Value of the hex digit @p c, or -1 when @p c is not one.
@@ -219,13 +217,8 @@ constexpr void byteToHex(std::uint8_t b, bool upper, char& hi, char& lo) noexcep
 /// Returns 0 and writes nothing unless `outCap >= hexCapacity(n, spaced)`, so
 /// the caller cannot state the length and forget the capacity: there is only
 /// one number and this function computes it.
-inline std::size_t bytesToHex(
-		const std::uint8_t* in,
-		std::size_t n,
-		char* out,
-		std::size_t outCap,
-		bool upper,
-		bool spaced) noexcept
+inline std::size_t
+bytesToHex(const std::uint8_t* in, std::size_t n, char* out, std::size_t outCap, bool upper, bool spaced) noexcept
 {
 	if (in == nullptr || out == nullptr) return 0;
 	const std::size_t need = hexCapacity(n, spaced);
@@ -251,12 +244,8 @@ inline std::size_t bytesToHex(
 ///
 /// A non-hex character anywhere refuses the whole run and leaves @p written 0,
 /// rather than contributing a zero byte the way strtol does.
-inline bool hexToBytes(
-		const char* in,
-		std::size_t n,
-		std::uint8_t* out,
-		std::size_t outCap,
-		std::size_t& written) noexcept
+inline bool
+hexToBytes(const char* in, std::size_t n, std::uint8_t* out, std::size_t outCap, std::size_t& written) noexcept
 {
 	written = 0;
 	if (in == nullptr || out == nullptr) return false;
@@ -282,8 +271,7 @@ inline bool hexToBytes(
 			written = 0;
 			return false;
 		}
-		out[i] = static_cast<std::uint8_t>((static_cast<unsigned>(hi) << 4)
-			| static_cast<unsigned>(lo));
+		out[i] = static_cast<std::uint8_t>((static_cast<unsigned>(hi) << 4) | static_cast<unsigned>(lo));
 	}
 
 	written = need;
@@ -308,11 +296,7 @@ constexpr std::size_t bitsCapacity(std::size_t n) noexcept
 /// element with the top bit set -- every byte from 0x80 up -- `item` promotes
 /// to a negative int and `item << j` left-shifts a negative value, which is
 /// undefined behaviour in C++17. Shifting an unsigned value right cannot be.
-inline std::size_t bytesToBits(
-		const std::uint8_t* in,
-		std::size_t n,
-		char* out,
-		std::size_t outCap) noexcept
+inline std::size_t bytesToBits(const std::uint8_t* in, std::size_t n, char* out, std::size_t outCap) noexcept
 {
 	if (in == nullptr || out == nullptr) return 0;
 	const std::size_t need = bitsCapacity(n);
@@ -339,11 +323,7 @@ inline std::size_t bytesToBits(
 /// undefined-behaviour template. The reinterpret is defined: int8_t and uint8_t
 /// have the same size and alignment, and reading either through a narrow
 /// character type is explicitly permitted.
-inline std::size_t bytesToBits(
-		const std::int8_t* in,
-		std::size_t n,
-		char* out,
-		std::size_t outCap) noexcept
+inline std::size_t bytesToBits(const std::int8_t* in, std::size_t n, char* out, std::size_t outCap) noexcept
 {
 	return bytesToBits(reinterpret_cast<const std::uint8_t*>(in), n, out, outCap);
 }
@@ -353,8 +333,7 @@ inline std::size_t bytesToBits(
 /// Bytes the UTF-8 encoding of @p cp occupies, after replacement.
 constexpr std::size_t utf8Length(std::uint32_t cp) noexcept
 {
-	if (cp > kMaxCodePoint || (cp >= kHighSurrogateFirst && cp <= kLowSurrogateLast))
-		cp = kReplacement;
+	if (cp > kMaxCodePoint || (cp >= kHighSurrogateFirst && cp <= kLowSurrogateLast)) cp = kReplacement;
 	if (cp < 0x80) return 1;
 	if (cp < 0x800) return 2;
 	if (cp < kSupplementaryBase) return 3;
@@ -372,8 +351,7 @@ constexpr std::size_t utf8Length(std::uint32_t cp) noexcept
 /// header checks the whole output capacity before the loop starts.
 constexpr std::size_t encodeUtf8(std::uint32_t cp, char* out) noexcept
 {
-	if (cp > kMaxCodePoint || (cp >= kHighSurrogateFirst && cp <= kLowSurrogateLast))
-		cp = kReplacement;
+	if (cp > kMaxCodePoint || (cp >= kHighSurrogateFirst && cp <= kLowSurrogateLast)) cp = kReplacement;
 
 	if (cp < 0x80)
 	{
@@ -417,8 +395,7 @@ constexpr bool isLowSurrogate(std::uint32_t u) noexcept
 /// The scalar value a well-formed surrogate pair denotes.
 constexpr std::uint32_t combineSurrogates(std::uint32_t hi, std::uint32_t lo) noexcept
 {
-	return kSupplementaryBase
-		+ (((hi - kHighSurrogateFirst) << kSurrogateBits) | (lo - kLowSurrogateFirst));
+	return kSupplementaryBase + (((hi - kHighSurrogateFirst) << kSurrogateBits) | (lo - kLowSurrogateFirst));
 }
 
 /// Bytes needed to transcode @p units UTF-16 units to UTF-8, or 0 if that does
@@ -441,11 +418,7 @@ constexpr std::size_t utf8CapacityForUtf16(std::size_t units) noexcept
 /// it is what cli_heaps.cpp:83 risks by taking a unit count with no buffer size
 /// beside it -- `src[i * 2 + 1]` for i < chars, where `chars` came from a
 /// compressed integer in the file and the length check lives in the caller.
-inline std::size_t utf16leToUtf8(
-		const std::uint8_t* in,
-		std::size_t inBytes,
-		char* out,
-		std::size_t outCap) noexcept
+inline std::size_t utf16leToUtf8(const std::uint8_t* in, std::size_t inBytes, char* out, std::size_t outCap) noexcept
 {
 	if (in == nullptr || out == nullptr) return 0;
 	const std::size_t units = inBytes >> 1;
@@ -458,8 +431,7 @@ inline std::size_t utf16leToUtf8(
 	while (i < units)
 	{
 		const std::size_t at = i * 2;
-		std::uint32_t u = static_cast<std::uint32_t>(in[at])
-			| (static_cast<std::uint32_t>(in[at + 1]) << 8);
+		std::uint32_t u = static_cast<std::uint32_t>(in[at]) | (static_cast<std::uint32_t>(in[at + 1]) << 8);
 		std::uint32_t cp = u;
 
 		if (isHighSurrogate(u))
@@ -468,8 +440,8 @@ inline std::size_t utf16leToUtf8(
 			// count: i + 1 < units is what keeps in[at + 3] inside the buffer.
 			if (i + 1 < units)
 			{
-				const std::uint32_t lo = static_cast<std::uint32_t>(in[at + 2])
-					| (static_cast<std::uint32_t>(in[at + 3]) << 8);
+				const std::uint32_t lo =
+					static_cast<std::uint32_t>(in[at + 2]) | (static_cast<std::uint32_t>(in[at + 3]) << 8);
 				if (isLowSurrogate(lo))
 				{
 					cp = combineSurrogates(u, lo);
@@ -505,7 +477,8 @@ constexpr std::size_t utf8CapacityForMutf8(std::size_t units) noexcept
 }
 
 /// What @ref mutf8ToUtf8Ex produced and how much of the input it used.
-struct Mutf8Result {
+struct Mutf8Result
+{
 	std::size_t written = 0;  ///< bytes written to out
 	std::size_t consumed = 0; ///< bytes read from in; always <= inBytes
 };
@@ -525,12 +498,8 @@ struct Mutf8Result {
 /// produces an embedded NUL, which is why src/jvm_parser/jvm_class_parser.cpp:253
 /// must split the Exceptions attribute with bstr::terminatorAt rather than by
 /// hand.
-inline Mutf8Result mutf8ToUtf8Ex(
-		const std::uint8_t* in,
-		std::size_t inBytes,
-		std::size_t units,
-		char* out,
-		std::size_t outCap) noexcept
+inline Mutf8Result
+mutf8ToUtf8Ex(const std::uint8_t* in, std::size_t inBytes, std::size_t units, char* out, std::size_t outCap) noexcept
 {
 	Mutf8Result r;
 	if (in == nullptr || out == nullptr) return r;
@@ -563,8 +532,8 @@ inline Mutf8Result mutf8ToUtf8Ex(
 		}
 		else if ((c & 0xE0) == 0xC0 && left >= 2 && (in[pos + 1] & 0xC0) == 0x80)
 		{
-			const std::uint32_t cp = (static_cast<std::uint32_t>(c & 0x1Fu) << 6)
-				| static_cast<std::uint32_t>(in[pos + 1] & 0x3Fu);
+			const std::uint32_t cp =
+				(static_cast<std::uint32_t>(c & 0x1Fu) << 6) | static_cast<std::uint32_t>(in[pos + 1] & 0x3Fu);
 			// An overlong two-byte form -- C0 or C1 as the lead -- encodes a
 			// value below 0x80, which has a one-byte form. This used to decode
 			// it and then re-encode it short, so C0 AF came out as '/' and
@@ -578,22 +547,20 @@ inline Mutf8Result mutf8ToUtf8Ex(
 			pos += 2;
 			++done;
 		}
-		else if ((c & 0xF0) == 0xE0 && left >= 3
-			&& (in[pos + 1] & 0xC0) == 0x80 && (in[pos + 2] & 0xC0) == 0x80)
+		else if ((c & 0xF0) == 0xE0 && left >= 3 && (in[pos + 1] & 0xC0) == 0x80 && (in[pos + 2] & 0xC0) == 0x80)
 		{
 			const std::uint32_t cp = (static_cast<std::uint32_t>(c & 0x0Fu) << 12)
-				| (static_cast<std::uint32_t>(in[pos + 1] & 0x3Fu) << 6)
-				| static_cast<std::uint32_t>(in[pos + 2] & 0x3Fu);
+								   | (static_cast<std::uint32_t>(in[pos + 1] & 0x3Fu) << 6)
+								   | static_cast<std::uint32_t>(in[pos + 2] & 0x3Fu);
 
 			// A supplementary character: two three-byte sequences, six bytes,
 			// two units by the declared count, one scalar value out.
-			if (isHighSurrogate(cp) && left >= 6 && done + 1 < units
-				&& (in[pos + 3] & 0xF0) == 0xE0
+			if (isHighSurrogate(cp) && left >= 6 && done + 1 < units && (in[pos + 3] & 0xF0) == 0xE0
 				&& (in[pos + 4] & 0xC0) == 0x80 && (in[pos + 5] & 0xC0) == 0x80)
 			{
 				const std::uint32_t lo = (static_cast<std::uint32_t>(in[pos + 3] & 0x0Fu) << 12)
-					| (static_cast<std::uint32_t>(in[pos + 4] & 0x3Fu) << 6)
-					| static_cast<std::uint32_t>(in[pos + 5] & 0x3Fu);
+									   | (static_cast<std::uint32_t>(in[pos + 4] & 0x3Fu) << 6)
+									   | static_cast<std::uint32_t>(in[pos + 5] & 0x3Fu);
 				if (isLowSurrogate(lo))
 				{
 					r.written += encodeUtf8(combineSurrogates(cp, lo), out + r.written);
@@ -627,12 +594,8 @@ inline Mutf8Result mutf8ToUtf8Ex(
 }
 
 /// mutf8ToUtf8Ex, for callers that only need the output length.
-inline std::size_t mutf8ToUtf8(
-		const std::uint8_t* in,
-		std::size_t inBytes,
-		std::size_t units,
-		char* out,
-		std::size_t outCap) noexcept
+inline std::size_t
+mutf8ToUtf8(const std::uint8_t* in, std::size_t inBytes, std::size_t units, char* out, std::size_t outCap) noexcept
 {
 	return mutf8ToUtf8Ex(in, inBytes, units, out, outCap).written;
 }
@@ -656,12 +619,8 @@ inline constexpr std::uint64_t kMaxU64Mod10 = UINT64_MAX % 10;
 /// 0 unconditionally, and multi-release selection is dead code -- every
 /// versioned class is added to the module a second time under a junk package
 /// name derived from the unstripped path.
-inline bool decimalRun(
-		const char* in,
-		std::size_t n,
-		std::size_t start,
-		std::uint64_t& value,
-		std::size_t& end) noexcept
+inline bool
+decimalRun(const char* in, std::size_t n, std::size_t start, std::uint64_t& value, std::size_t& end) noexcept
 {
 	value = 0;
 	end = start;

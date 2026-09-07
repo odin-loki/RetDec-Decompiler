@@ -66,317 +66,358 @@ namespace cli_parser {
 
 // ─── Table IDs ────────────────────────────────────────────────────────────────
 
-enum class TableId : uint8_t {
-    Module              = 0x00,
-    TypeRef             = 0x01,
-    TypeDef             = 0x02,
-    Field               = 0x04,
-    MethodDef           = 0x06,
-    Param               = 0x08,
-    InterfaceImpl       = 0x09,
-    MemberRef           = 0x0A,
-    Constant            = 0x0B,
-    CustomAttribute     = 0x0C,
-    FieldMarshal        = 0x0D,
-    DeclSecurity        = 0x0E,
-    ClassLayout         = 0x0F,
-    FieldLayout         = 0x10,
-    StandAloneSig       = 0x11,
-    EventMap            = 0x12,
-    Event               = 0x14,
-    PropertyMap         = 0x15,
-    Property            = 0x17,
-    MethodSemantics     = 0x18,
-    MethodImpl          = 0x19,
-    ModuleRef           = 0x1A,
-    TypeSpec            = 0x1B,
-    ImplMap             = 0x1C,
-    FieldRVA            = 0x1D,
-    Assembly            = 0x20,
-    AssemblyProcessor   = 0x21,
-    AssemblyOS          = 0x22,
-    AssemblyRef         = 0x23,
-    AssemblyRefProcessor= 0x24,
-    AssemblyRefOS       = 0x25,
-    File                = 0x26,
-    ExportedType        = 0x27,
-    ManifestResource    = 0x28,
-    NestedClass         = 0x29,
-    GenericParam        = 0x2A,
-    MethodSpec          = 0x2B,
-    GenericParamConstraint = 0x2C,
-    _Count              = 0x2D,
+enum class TableId : uint8_t
+{
+	Module = 0x00,
+	TypeRef = 0x01,
+	TypeDef = 0x02,
+	Field = 0x04,
+	MethodDef = 0x06,
+	Param = 0x08,
+	InterfaceImpl = 0x09,
+	MemberRef = 0x0A,
+	Constant = 0x0B,
+	CustomAttribute = 0x0C,
+	FieldMarshal = 0x0D,
+	DeclSecurity = 0x0E,
+	ClassLayout = 0x0F,
+	FieldLayout = 0x10,
+	StandAloneSig = 0x11,
+	EventMap = 0x12,
+	Event = 0x14,
+	PropertyMap = 0x15,
+	Property = 0x17,
+	MethodSemantics = 0x18,
+	MethodImpl = 0x19,
+	ModuleRef = 0x1A,
+	TypeSpec = 0x1B,
+	ImplMap = 0x1C,
+	FieldRVA = 0x1D,
+	Assembly = 0x20,
+	AssemblyProcessor = 0x21,
+	AssemblyOS = 0x22,
+	AssemblyRef = 0x23,
+	AssemblyRefProcessor = 0x24,
+	AssemblyRefOS = 0x25,
+	File = 0x26,
+	ExportedType = 0x27,
+	ManifestResource = 0x28,
+	NestedClass = 0x29,
+	GenericParam = 0x2A,
+	MethodSpec = 0x2B,
+	GenericParamConstraint = 0x2C,
+	_Count = 0x2D,
 };
 
 // ─── Metadata token ───────────────────────────────────────────────────────────
 
-struct MetadataToken {
-    uint8_t  table = 0;    ///< Table ID (0x00–0x2C)
-    uint32_t index = 0;    ///< 1-based row index within the table
+struct MetadataToken
+{
+	uint8_t table = 0;  ///< Table ID (0x00–0x2C)
+	uint32_t index = 0; ///< 1-based row index within the table
 
-    bool valid() const { return index != 0; }
-    uint32_t raw() const { return (static_cast<uint32_t>(table) << 24) | index; }
-    static MetadataToken fromRaw(uint32_t tok) {
-        return {static_cast<uint8_t>(tok >> 24), tok & 0x00FFFFFF};
-    }
+	bool valid() const
+	{
+		return index != 0;
+	}
+	uint32_t raw() const
+	{
+		return (static_cast<uint32_t>(table) << 24) | index;
+	}
+	static MetadataToken fromRaw(uint32_t tok)
+	{
+		return {static_cast<uint8_t>(tok >> 24), tok & 0x00FFFFFF};
+	}
 };
 
 // ─── Row types for each metadata table ───────────────────────────────────────
 
-struct ModuleRow {
-    uint16_t generation = 0;
-    uint32_t name = 0;        ///< #Strings offset
-    uint32_t mvId = 0;        ///< #GUID index
-    uint32_t encId = 0;
-    uint32_t encBaseId = 0;
+struct ModuleRow
+{
+	uint16_t generation = 0;
+	uint32_t name = 0; ///< #Strings offset
+	uint32_t mvId = 0; ///< #GUID index
+	uint32_t encId = 0;
+	uint32_t encBaseId = 0;
 };
 
-struct TypeRefRow {
-    MetadataToken resolutionScope;  ///< Module | ModuleRef | AssemblyRef | TypeRef
-    uint32_t      name = 0;         ///< #Strings
-    uint32_t      ns   = 0;         ///< #Strings (namespace)
+struct TypeRefRow
+{
+	MetadataToken resolutionScope; ///< Module | ModuleRef | AssemblyRef | TypeRef
+	uint32_t name = 0;             ///< #Strings
+	uint32_t ns = 0;               ///< #Strings (namespace)
 };
 
-struct TypeDefRow {
-    uint32_t      flags = 0;        ///< TypeAttributes
-    uint32_t      name  = 0;        ///< #Strings
-    uint32_t      ns    = 0;        ///< #Strings
-    MetadataToken extends;          ///< TypeDefOrRef
-    uint32_t      fieldList   = 0;  ///< 1-based start into Field table
-    uint32_t      methodList  = 0;  ///< 1-based start into MethodDef table
+struct TypeDefRow
+{
+	uint32_t flags = 0;      ///< TypeAttributes
+	uint32_t name = 0;       ///< #Strings
+	uint32_t ns = 0;         ///< #Strings
+	MetadataToken extends;   ///< TypeDefOrRef
+	uint32_t fieldList = 0;  ///< 1-based start into Field table
+	uint32_t methodList = 0; ///< 1-based start into MethodDef table
 };
 
-struct FieldRow {
-    uint16_t flags      = 0;  ///< FieldAttributes
-    uint32_t name       = 0;  ///< #Strings
-    uint32_t signature  = 0;  ///< #Blob: FieldSig
+struct FieldRow
+{
+	uint16_t flags = 0;     ///< FieldAttributes
+	uint32_t name = 0;      ///< #Strings
+	uint32_t signature = 0; ///< #Blob: FieldSig
 };
 
-struct MethodDefRow {
-    uint32_t rva          = 0;  ///< RVA of CIL method body
-    uint16_t implFlags    = 0;  ///< MethodImplAttributes
-    uint16_t flags        = 0;  ///< MethodAttributes
-    uint32_t name         = 0;  ///< #Strings
-    uint32_t signature    = 0;  ///< #Blob: MethodDefSig
-    uint32_t paramList    = 0;  ///< 1-based start into Param table
+struct MethodDefRow
+{
+	uint32_t rva = 0;       ///< RVA of CIL method body
+	uint16_t implFlags = 0; ///< MethodImplAttributes
+	uint16_t flags = 0;     ///< MethodAttributes
+	uint32_t name = 0;      ///< #Strings
+	uint32_t signature = 0; ///< #Blob: MethodDefSig
+	uint32_t paramList = 0; ///< 1-based start into Param table
 };
 
-struct ParamRow {
-    uint16_t flags    = 0;
-    uint16_t sequence = 0;  ///< 0 = return type, 1..N = parameters
-    uint32_t name     = 0;  ///< #Strings
+struct ParamRow
+{
+	uint16_t flags = 0;
+	uint16_t sequence = 0; ///< 0 = return type, 1..N = parameters
+	uint32_t name = 0;     ///< #Strings
 };
 
-struct InterfaceImplRow {
-    uint32_t      clazz     = 0;  ///< 1-based TypeDef index
-    MetadataToken interface_;
+struct InterfaceImplRow
+{
+	uint32_t clazz = 0; ///< 1-based TypeDef index
+	MetadataToken interface_;
 };
 
-struct MemberRefRow {
-    MetadataToken clazz;    ///< MemberRefParent coded token
-    uint32_t      name      = 0;
-    uint32_t      signature = 0;  ///< #Blob
+struct MemberRefRow
+{
+	MetadataToken clazz; ///< MemberRefParent coded token
+	uint32_t name = 0;
+	uint32_t signature = 0; ///< #Blob
 };
 
-struct ConstantRow {
-    uint8_t       type   = 0;   ///< ELEMENT_TYPE_*
-    MetadataToken parent;        ///< HasConstant coded token
-    uint32_t      value  = 0;   ///< #Blob
+struct ConstantRow
+{
+	uint8_t type = 0;     ///< ELEMENT_TYPE_*
+	MetadataToken parent; ///< HasConstant coded token
+	uint32_t value = 0;   ///< #Blob
 };
 
-struct CustomAttributeRow {
-    MetadataToken parent;   ///< HasCustomAttribute
-    MetadataToken type;     ///< CustomAttributeType
-    uint32_t      value = 0; ///< #Blob
+struct CustomAttributeRow
+{
+	MetadataToken parent; ///< HasCustomAttribute
+	MetadataToken type;   ///< CustomAttributeType
+	uint32_t value = 0;   ///< #Blob
 };
 
-struct FieldMarshalRow {
-    MetadataToken parent;          ///< HasFieldMarshal: Field or Param
-    uint32_t      nativeType = 0;  ///< #Blob NativeType
+struct FieldMarshalRow
+{
+	MetadataToken parent;    ///< HasFieldMarshal: Field or Param
+	uint32_t nativeType = 0; ///< #Blob NativeType
 };
 
-struct ClassLayoutRow {
-    uint16_t packingSize = 0;
-    uint32_t classSize   = 0;
-    uint32_t parent      = 0;  ///< TypeDef index
+struct ClassLayoutRow
+{
+	uint16_t packingSize = 0;
+	uint32_t classSize = 0;
+	uint32_t parent = 0; ///< TypeDef index
 };
 
-struct StandAloneSigRow {
-    uint32_t signature = 0;  ///< #Blob
+struct StandAloneSigRow
+{
+	uint32_t signature = 0; ///< #Blob
 };
 
-struct PropertyRow {
-    uint16_t flags     = 0;
-    uint32_t name      = 0;
-    uint32_t type      = 0;  ///< #Blob: PropertySig
+struct PropertyRow
+{
+	uint16_t flags = 0;
+	uint32_t name = 0;
+	uint32_t type = 0; ///< #Blob: PropertySig
 };
 
-struct MethodSemanticsRow {
-    uint16_t      semantics = 0;  ///< Getter=0x0002, Setter=0x0001, Other=0x0004
-    uint32_t      method    = 0;  ///< MethodDef index
-    MetadataToken association;    ///< HasSemantics coded
+struct MethodSemanticsRow
+{
+	uint16_t semantics = 0;    ///< Getter=0x0002, Setter=0x0001, Other=0x0004
+	uint32_t method = 0;       ///< MethodDef index
+	MetadataToken association; ///< HasSemantics coded
 };
 
-struct MethodImplRow {
-    uint32_t      clazz           = 0;
-    MetadataToken methodBody;      ///< MethodDefOrRef
-    MetadataToken methodDeclaration;
+struct MethodImplRow
+{
+	uint32_t clazz = 0;
+	MetadataToken methodBody; ///< MethodDefOrRef
+	MetadataToken methodDeclaration;
 };
 
-struct ModuleRefRow {
-    uint32_t name = 0;
+struct ModuleRefRow
+{
+	uint32_t name = 0;
 };
 
-struct TypeSpecRow {
-    uint32_t signature = 0;  ///< #Blob: TypeSpec
+struct TypeSpecRow
+{
+	uint32_t signature = 0; ///< #Blob: TypeSpec
 };
 
-struct ImplMapRow {
-    uint16_t      mappingFlags  = 0;
-    MetadataToken memberForwarded;
-    uint32_t      importName    = 0;
-    uint32_t      importScope   = 0;  ///< ModuleRef index
+struct ImplMapRow
+{
+	uint16_t mappingFlags = 0;
+	MetadataToken memberForwarded;
+	uint32_t importName = 0;
+	uint32_t importScope = 0; ///< ModuleRef index
 };
 
-struct FieldRVARow {
-    uint32_t rva   = 0;
-    uint32_t field = 0;  ///< Field index
+struct FieldRVARow
+{
+	uint32_t rva = 0;
+	uint32_t field = 0; ///< Field index
 };
 
-struct AssemblyRow {
-    uint32_t hashAlgId         = 0;
-    uint16_t majorVersion      = 0;
-    uint16_t minorVersion      = 0;
-    uint16_t buildNumber       = 0;
-    uint16_t revisionNumber    = 0;
-    uint32_t flags             = 0;
-    uint32_t publicKey         = 0;  ///< #Blob
-    uint32_t name              = 0;  ///< #Strings
-    uint32_t culture           = 0;  ///< #Strings
+struct AssemblyRow
+{
+	uint32_t hashAlgId = 0;
+	uint16_t majorVersion = 0;
+	uint16_t minorVersion = 0;
+	uint16_t buildNumber = 0;
+	uint16_t revisionNumber = 0;
+	uint32_t flags = 0;
+	uint32_t publicKey = 0; ///< #Blob
+	uint32_t name = 0;      ///< #Strings
+	uint32_t culture = 0;   ///< #Strings
 };
 
-struct AssemblyRefRow {
-    uint16_t majorVersion      = 0;
-    uint16_t minorVersion      = 0;
-    uint16_t buildNumber       = 0;
-    uint16_t revisionNumber    = 0;
-    uint32_t flags             = 0;
-    uint32_t publicKeyOrToken  = 0;  ///< #Blob
-    uint32_t name              = 0;  ///< #Strings
-    uint32_t culture           = 0;  ///< #Strings
-    uint32_t hashValue         = 0;  ///< #Blob
+struct AssemblyRefRow
+{
+	uint16_t majorVersion = 0;
+	uint16_t minorVersion = 0;
+	uint16_t buildNumber = 0;
+	uint16_t revisionNumber = 0;
+	uint32_t flags = 0;
+	uint32_t publicKeyOrToken = 0; ///< #Blob
+	uint32_t name = 0;             ///< #Strings
+	uint32_t culture = 0;          ///< #Strings
+	uint32_t hashValue = 0;        ///< #Blob
 };
 
-struct NestedClassRow {
-    uint32_t nestedClass    = 0;  ///< TypeDef index
-    uint32_t enclosingClass = 0;  ///< TypeDef index
+struct NestedClassRow
+{
+	uint32_t nestedClass = 0;    ///< TypeDef index
+	uint32_t enclosingClass = 0; ///< TypeDef index
 };
 
-struct GenericParamRow {
-    uint16_t      number    = 0;  ///< Zero-based parameter index
-    uint16_t      flags     = 0;  ///< GenericParamAttributes
-    MetadataToken owner;          ///< TypeOrMethodDef coded
-    uint32_t      name      = 0;  ///< #Strings
+struct GenericParamRow
+{
+	uint16_t number = 0; ///< Zero-based parameter index
+	uint16_t flags = 0;  ///< GenericParamAttributes
+	MetadataToken owner; ///< TypeOrMethodDef coded
+	uint32_t name = 0;   ///< #Strings
 };
 
-struct MethodSpecRow {
-    MetadataToken method;         ///< MethodDefOrRef
-    uint32_t      instantiation = 0; ///< #Blob: MethodSpec signature
+struct MethodSpecRow
+{
+	MetadataToken method;       ///< MethodDefOrRef
+	uint32_t instantiation = 0; ///< #Blob: MethodSpec signature
 };
 
-struct GenericParamConstraintRow {
-    uint32_t      owner      = 0;  ///< GenericParam index
-    MetadataToken constraint;      ///< TypeDefOrRef
+struct GenericParamConstraintRow
+{
+	uint32_t owner = 0;       ///< GenericParam index
+	MetadataToken constraint; ///< TypeDefOrRef
 };
 
-struct EventRow {
-    uint16_t      flags     = 0;
-    uint32_t      name      = 0;
-    MetadataToken eventType;   ///< TypeDefOrRef
+struct EventRow
+{
+	uint16_t flags = 0;
+	uint32_t name = 0;
+	MetadataToken eventType; ///< TypeDefOrRef
 };
 
-struct PropertyMapRow {
-    uint32_t parent       = 0;  ///< TypeDef index
-    uint32_t propertyList = 0;  ///< Property index
+struct PropertyMapRow
+{
+	uint32_t parent = 0;       ///< TypeDef index
+	uint32_t propertyList = 0; ///< Property index
 };
 
-struct EventMapRow {
-    uint32_t parent    = 0;  ///< TypeDef index
-    uint32_t eventList = 0;  ///< Event index
+struct EventMapRow
+{
+	uint32_t parent = 0;    ///< TypeDef index
+	uint32_t eventList = 0; ///< Event index
 };
 
-struct FileRow {
-    uint32_t flags     = 0;
-    uint32_t name      = 0;
-    uint32_t hashValue = 0;  ///< #Blob
+struct FileRow
+{
+	uint32_t flags = 0;
+	uint32_t name = 0;
+	uint32_t hashValue = 0; ///< #Blob
 };
 
-struct ManifestResourceRow {
-    uint32_t      offset         = 0;
-    uint32_t      flags          = 0;
-    uint32_t      name           = 0;
-    MetadataToken implementation;
+struct ManifestResourceRow
+{
+	uint32_t offset = 0;
+	uint32_t flags = 0;
+	uint32_t name = 0;
+	MetadataToken implementation;
 };
 
-struct ExportedTypeRow {
-    uint32_t      flags          = 0;
-    uint32_t      typeDefId      = 0;
-    uint32_t      typeName       = 0;
-    uint32_t      typeNamespace  = 0;
-    MetadataToken implementation;
+struct ExportedTypeRow
+{
+	uint32_t flags = 0;
+	uint32_t typeDefId = 0;
+	uint32_t typeName = 0;
+	uint32_t typeNamespace = 0;
+	MetadataToken implementation;
 };
 
 // ─── TypeDef flags ────────────────────────────────────────────────────────────
 
 namespace TypeAttributes {
-    static constexpr uint32_t VisibilityMask      = 0x00000007;
-    static constexpr uint32_t NotPublic           = 0x00000000;
-    static constexpr uint32_t Public              = 0x00000001;
-    static constexpr uint32_t NestedPublic        = 0x00000002;
-    static constexpr uint32_t NestedPrivate       = 0x00000003;
-    static constexpr uint32_t NestedFamily        = 0x00000004;
-    static constexpr uint32_t NestedAssembly      = 0x00000005;
-    static constexpr uint32_t NestedFamANDAssem   = 0x00000006;
-    static constexpr uint32_t NestedFamORAssem    = 0x00000007;
-    static constexpr uint32_t LayoutMask          = 0x00000018;
-    static constexpr uint32_t AutoLayout          = 0x00000000;
-    static constexpr uint32_t SequentialLayout    = 0x00000008;
-    static constexpr uint32_t ExplicitLayout      = 0x00000010;
-    static constexpr uint32_t ClassSemanticsMask  = 0x00000020;
-    static constexpr uint32_t Class               = 0x00000000;
-    static constexpr uint32_t Interface           = 0x00000020;
-    static constexpr uint32_t Abstract            = 0x00000080;
-    static constexpr uint32_t Sealed              = 0x00000100;
-    static constexpr uint32_t SpecialName         = 0x00000400;
-    static constexpr uint32_t Import              = 0x00001000;  // COM import
-    static constexpr uint32_t Serializable        = 0x00002000;
-    static constexpr uint32_t WindowsRuntime      = 0x00004000;
-    static constexpr uint32_t StringFormatMask    = 0x00030000;
-    static constexpr uint32_t BeforeFieldInit     = 0x00100000;
-}
+static constexpr uint32_t VisibilityMask = 0x00000007;
+static constexpr uint32_t NotPublic = 0x00000000;
+static constexpr uint32_t Public = 0x00000001;
+static constexpr uint32_t NestedPublic = 0x00000002;
+static constexpr uint32_t NestedPrivate = 0x00000003;
+static constexpr uint32_t NestedFamily = 0x00000004;
+static constexpr uint32_t NestedAssembly = 0x00000005;
+static constexpr uint32_t NestedFamANDAssem = 0x00000006;
+static constexpr uint32_t NestedFamORAssem = 0x00000007;
+static constexpr uint32_t LayoutMask = 0x00000018;
+static constexpr uint32_t AutoLayout = 0x00000000;
+static constexpr uint32_t SequentialLayout = 0x00000008;
+static constexpr uint32_t ExplicitLayout = 0x00000010;
+static constexpr uint32_t ClassSemanticsMask = 0x00000020;
+static constexpr uint32_t Class = 0x00000000;
+static constexpr uint32_t Interface = 0x00000020;
+static constexpr uint32_t Abstract = 0x00000080;
+static constexpr uint32_t Sealed = 0x00000100;
+static constexpr uint32_t SpecialName = 0x00000400;
+static constexpr uint32_t Import = 0x00001000; // COM import
+static constexpr uint32_t Serializable = 0x00002000;
+static constexpr uint32_t WindowsRuntime = 0x00004000;
+static constexpr uint32_t StringFormatMask = 0x00030000;
+static constexpr uint32_t BeforeFieldInit = 0x00100000;
+} // namespace TypeAttributes
 
 // ─── MethodDef flags ──────────────────────────────────────────────────────────
 
 namespace MethodAttributes {
-    static constexpr uint16_t MemberAccessMask    = 0x0007;
-    static constexpr uint16_t CompilerControlled  = 0x0000;
-    static constexpr uint16_t Private             = 0x0001;
-    static constexpr uint16_t FamANDAssem         = 0x0002;
-    static constexpr uint16_t Assem               = 0x0003;
-    static constexpr uint16_t Family              = 0x0004;
-    static constexpr uint16_t FamORAssem          = 0x0005;
-    static constexpr uint16_t Public              = 0x0006;
-    static constexpr uint16_t Static              = 0x0010;
-    static constexpr uint16_t Final               = 0x0020;
-    static constexpr uint16_t Virtual             = 0x0040;
-    static constexpr uint16_t HideBySig           = 0x0080;
-    static constexpr uint16_t NewSlot             = 0x0100;
-    static constexpr uint16_t CheckAccessOnOverride= 0x0200;
-    static constexpr uint16_t Abstract            = 0x0400;
-    static constexpr uint16_t SpecialName         = 0x0800;
-    static constexpr uint16_t PInvokeImpl         = 0x2000;
-    static constexpr uint16_t RTSpecialName       = 0x1000;
-}
+static constexpr uint16_t MemberAccessMask = 0x0007;
+static constexpr uint16_t CompilerControlled = 0x0000;
+static constexpr uint16_t Private = 0x0001;
+static constexpr uint16_t FamANDAssem = 0x0002;
+static constexpr uint16_t Assem = 0x0003;
+static constexpr uint16_t Family = 0x0004;
+static constexpr uint16_t FamORAssem = 0x0005;
+static constexpr uint16_t Public = 0x0006;
+static constexpr uint16_t Static = 0x0010;
+static constexpr uint16_t Final = 0x0020;
+static constexpr uint16_t Virtual = 0x0040;
+static constexpr uint16_t HideBySig = 0x0080;
+static constexpr uint16_t NewSlot = 0x0100;
+static constexpr uint16_t CheckAccessOnOverride = 0x0200;
+static constexpr uint16_t Abstract = 0x0400;
+static constexpr uint16_t SpecialName = 0x0800;
+static constexpr uint16_t PInvokeImpl = 0x2000;
+static constexpr uint16_t RTSpecialName = 0x1000;
+} // namespace MethodAttributes
 
 // ─── MetadataTable — raw row storage and typed row access ────────────────────
 
@@ -386,10 +427,11 @@ namespace MethodAttributes {
  * Rows are stored as parsed structs in a type-erased vector.
  * Typed access is via the strongly-typed getter methods on MetadataTables.
  */
-struct RawTable {
-    uint32_t rowCount = 0;
-    uint32_t rowSize  = 0;
-    std::vector<uint8_t> data; ///< rowCount × rowSize bytes
+struct RawTable
+{
+	uint32_t rowCount = 0;
+	uint32_t rowSize = 0;
+	std::vector<uint8_t> data; ///< rowCount × rowSize bytes
 };
 
 // ─── MetadataTables ───────────────────────────────────────────────────────────
@@ -404,147 +446,154 @@ struct RawTable {
  */
 class MetadataTables {
 public:
-    MetadataTables() = default;
+	MetadataTables() = default;
 
-    /**
-     * @brief Parse the #~ (or #-) stream.
-     *
-     * @param tilde   Byte span of the entire #~ stream.
-     * @param heaps   Heap set for index width determination.
-     * @return true on success.
-     */
-    bool parse(std::span<const uint8_t> tilde, const CliHeaps& heaps);
+	/**
+	 * @brief Parse the #~ (or #-) stream.
+	 *
+	 * @param tilde   Byte span of the entire #~ stream.
+	 * @param heaps   Heap set for index width determination.
+	 * @return true on success.
+	 */
+	bool parse(std::span<const uint8_t> tilde, const CliHeaps& heaps);
 
-    bool isValid() const { return valid_; }
-    const std::string& error() const { return error_; }
+	bool isValid() const
+	{
+		return valid_;
+	}
+	const std::string& error() const
+	{
+		return error_;
+	}
 
-    /// Number of rows in a table (0 if table is absent).
-    uint32_t rowCount(TableId id) const;
+	/// Number of rows in a table (0 if table is absent).
+	uint32_t rowCount(TableId id) const;
 
-    // ── Typed row accessors ────────────────────────────────────────────────
+	// ── Typed row accessors ────────────────────────────────────────────────
 
-    ModuleRow              module(uint32_t idx) const;          ///< 1-based
-    TypeRefRow             typeRef(uint32_t idx) const;
-    TypeDefRow             typeDef(uint32_t idx) const;
-    FieldRow               field(uint32_t idx) const;
-    MethodDefRow           methodDef(uint32_t idx) const;
-    ParamRow               param(uint32_t idx) const;
-    InterfaceImplRow       interfaceImpl(uint32_t idx) const;
-    MemberRefRow           memberRef(uint32_t idx) const;
-    ConstantRow            constant(uint32_t idx) const;
-    CustomAttributeRow     customAttribute(uint32_t idx) const;
-    FieldMarshalRow        fieldMarshal(uint32_t idx) const;
-    ClassLayoutRow         classLayout(uint32_t idx) const;
-    StandAloneSigRow       standAloneSig(uint32_t idx) const;
-    PropertyRow            property(uint32_t idx) const;
-    MethodSemanticsRow     methodSemantics(uint32_t idx) const;
-    MethodImplRow          methodImpl(uint32_t idx) const;
-    ModuleRefRow           moduleRef(uint32_t idx) const;
-    TypeSpecRow            typeSpec(uint32_t idx) const;
-    ImplMapRow             implMap(uint32_t idx) const;
-    FieldRVARow            fieldRVA(uint32_t idx) const;
-    AssemblyRow            assembly(uint32_t idx) const;
-    AssemblyRefRow         assemblyRef(uint32_t idx) const;
-    NestedClassRow         nestedClass(uint32_t idx) const;
-    GenericParamRow        genericParam(uint32_t idx) const;
-    MethodSpecRow          methodSpec(uint32_t idx) const;
-    GenericParamConstraintRow genericParamConstraint(uint32_t idx) const;
-    EventRow               event(uint32_t idx) const;
-    PropertyMapRow         propertyMap(uint32_t idx) const;
-    EventMapRow            eventMap(uint32_t idx) const;
-    FileRow                file(uint32_t idx) const;
-    ManifestResourceRow    manifestResource(uint32_t idx) const;
-    ExportedTypeRow        exportedType(uint32_t idx) const;
+	ModuleRow module(uint32_t idx) const; ///< 1-based
+	TypeRefRow typeRef(uint32_t idx) const;
+	TypeDefRow typeDef(uint32_t idx) const;
+	FieldRow field(uint32_t idx) const;
+	MethodDefRow methodDef(uint32_t idx) const;
+	ParamRow param(uint32_t idx) const;
+	InterfaceImplRow interfaceImpl(uint32_t idx) const;
+	MemberRefRow memberRef(uint32_t idx) const;
+	ConstantRow constant(uint32_t idx) const;
+	CustomAttributeRow customAttribute(uint32_t idx) const;
+	FieldMarshalRow fieldMarshal(uint32_t idx) const;
+	ClassLayoutRow classLayout(uint32_t idx) const;
+	StandAloneSigRow standAloneSig(uint32_t idx) const;
+	PropertyRow property(uint32_t idx) const;
+	MethodSemanticsRow methodSemantics(uint32_t idx) const;
+	MethodImplRow methodImpl(uint32_t idx) const;
+	ModuleRefRow moduleRef(uint32_t idx) const;
+	TypeSpecRow typeSpec(uint32_t idx) const;
+	ImplMapRow implMap(uint32_t idx) const;
+	FieldRVARow fieldRVA(uint32_t idx) const;
+	AssemblyRow assembly(uint32_t idx) const;
+	AssemblyRefRow assemblyRef(uint32_t idx) const;
+	NestedClassRow nestedClass(uint32_t idx) const;
+	GenericParamRow genericParam(uint32_t idx) const;
+	MethodSpecRow methodSpec(uint32_t idx) const;
+	GenericParamConstraintRow genericParamConstraint(uint32_t idx) const;
+	EventRow event(uint32_t idx) const;
+	PropertyMapRow propertyMap(uint32_t idx) const;
+	EventMapRow eventMap(uint32_t idx) const;
+	FileRow file(uint32_t idx) const;
+	ManifestResourceRow manifestResource(uint32_t idx) const;
+	ExportedTypeRow exportedType(uint32_t idx) const;
 
-    /// Resolve a coded token to a MetadataToken for TypeDefOrRef.
-    MetadataToken decodeTypeDefOrRef(uint32_t coded) const;
-    /// Resolve a coded token for ResolutionScope.
-    MetadataToken decodeResolutionScope(uint32_t coded) const;
-    /// Resolve a coded token for MemberRefParent.
-    MetadataToken decodeMemberRefParent(uint32_t coded) const;
-    /// Resolve a coded token for HasCustomAttribute.
-    MetadataToken decodeHasCustomAttribute(uint32_t coded) const;
-    /// Resolve a coded token for CustomAttributeType.
-    MetadataToken decodeCustomAttributeType(uint32_t coded) const;
-    /// Resolve a coded token for TypeOrMethodDef.
-    MetadataToken decodeTypeOrMethodDef(uint32_t coded) const;
-    /// Resolve a coded token for MethodDefOrRef.
-    MetadataToken decodeMethodDefOrRef(uint32_t coded) const;
-    /// Resolve a coded token for HasSemantics.
-    MetadataToken decodeHasSemantics(uint32_t coded) const;
-    /// Resolve a coded token for MemberForwarded.
-    MetadataToken decodeMemberForwarded(uint32_t coded) const;
-    /// Resolve a coded token for Implementation.
-    MetadataToken decodeImplementation(uint32_t coded) const;
-    /// Resolve a coded token for HasConstant.
-    MetadataToken decodeHasConstant(uint32_t coded) const;
+	/// Resolve a coded token to a MetadataToken for TypeDefOrRef.
+	MetadataToken decodeTypeDefOrRef(uint32_t coded) const;
+	/// Resolve a coded token for ResolutionScope.
+	MetadataToken decodeResolutionScope(uint32_t coded) const;
+	/// Resolve a coded token for MemberRefParent.
+	MetadataToken decodeMemberRefParent(uint32_t coded) const;
+	/// Resolve a coded token for HasCustomAttribute.
+	MetadataToken decodeHasCustomAttribute(uint32_t coded) const;
+	/// Resolve a coded token for CustomAttributeType.
+	MetadataToken decodeCustomAttributeType(uint32_t coded) const;
+	/// Resolve a coded token for TypeOrMethodDef.
+	MetadataToken decodeTypeOrMethodDef(uint32_t coded) const;
+	/// Resolve a coded token for MethodDefOrRef.
+	MetadataToken decodeMethodDefOrRef(uint32_t coded) const;
+	/// Resolve a coded token for HasSemantics.
+	MetadataToken decodeHasSemantics(uint32_t coded) const;
+	/// Resolve a coded token for MemberForwarded.
+	MetadataToken decodeMemberForwarded(uint32_t coded) const;
+	/// Resolve a coded token for Implementation.
+	MetadataToken decodeImplementation(uint32_t coded) const;
+	/// Resolve a coded token for HasConstant.
+	MetadataToken decodeHasConstant(uint32_t coded) const;
 
 private:
-    static constexpr size_t kMaxTables = static_cast<size_t>(TableId::_Count);
+	static constexpr size_t kMaxTables = static_cast<size_t>(TableId::_Count);
 
-    bool        valid_ = false;
-    std::string error_;
+	bool valid_ = false;
+	std::string error_;
 
-    std::array<RawTable, kMaxTables> tables_;
+	std::array<RawTable, kMaxTables> tables_;
 
-    // Width information computed during parse
-    bool wideStrings_ = false;
-    bool wideGuid_    = false;
-    bool wideBlob_    = false;
+	// Width information computed during parse
+	bool wideStrings_ = false;
+	bool wideGuid_ = false;
+	bool wideBlob_ = false;
 
-    // Row counts for coded-token width decisions
-    uint32_t rowCount_[kMaxTables] = {};
+	// Row counts for coded-token width decisions
+	uint32_t rowCount_[kMaxTables] = {};
 
-    // Coding helpers
-    bool codedTokenWide(const uint8_t* tables, size_t count, uint8_t tagBits) const;
+	// Coding helpers
+	bool codedTokenWide(const uint8_t* tables, size_t count, uint8_t tagBits) const;
 
-    /// Largest number of bytes one metadata row can occupy on the wire.
-    ///
-    /// A decoded row is at most kMaxFields fields wide and no single field
-    /// reads more than four bytes (a wide heap index, a wide table index or a
-    /// wide coded token), so kMaxFields * 4 bounds every row layout in
-    /// parseTable's switch. It is only used to size the scratch buffer
-    /// computeRowSize() measures a row against.
-    static constexpr size_t kMaxFields   = 12;
-    static constexpr size_t kMaxRowBytes = kMaxFields * sizeof(uint32_t);
+	/// Largest number of bytes one metadata row can occupy on the wire.
+	///
+	/// A decoded row is at most kMaxFields fields wide and no single field
+	/// reads more than four bytes (a wide heap index, a wide table index or a
+	/// wide coded token), so kMaxFields * 4 bounds every row layout in
+	/// parseTable's switch. It is only used to size the scratch buffer
+	/// computeRowSize() measures a row against.
+	static constexpr size_t kMaxFields = 12;
+	static constexpr size_t kMaxRowBytes = kMaxFields * sizeof(uint32_t);
 
-    // Row parsing: reads one row's fields from the #~ stream at `pos`.
-    //
-    // `data`/`size` are the whole #~ stream. The reader used to carry only a
-    // pointer, on the assumption that the row counts in the stream header
-    // described bytes that were actually there. They are attacker data: a
-    // declared count the stream cannot supply walked these readers straight
-    // off the end of the input buffer. Every read now refuses to cross `size`
-    // and latches `truncated`, so parseTable can fail the stream instead of
-    // decoding whatever follows it in memory.
-    struct RowReader {
-        const uint8_t*          data = nullptr;
-        size_t                  size = 0;   ///< bytes readable from @c data
-        size_t                  pos = 0;
-        bool wideStr = false, wideGuid = false, wideBlob = false;
-        const uint32_t*         rowCounts = nullptr;
-        bool                    truncated = false; ///< a read hit the end
+	// Row parsing: reads one row's fields from the #~ stream at `pos`.
+	//
+	// `data`/`size` are the whole #~ stream. The reader used to carry only a
+	// pointer, on the assumption that the row counts in the stream header
+	// described bytes that were actually there. They are attacker data: a
+	// declared count the stream cannot supply walked these readers straight
+	// off the end of the input buffer. Every read now refuses to cross `size`
+	// and latches `truncated`, so parseTable can fail the stream instead of
+	// decoding whatever follows it in memory.
+	struct RowReader
+	{
+		const uint8_t* data = nullptr;
+		size_t size = 0; ///< bytes readable from @c data
+		size_t pos = 0;
+		bool wideStr = false, wideGuid = false, wideBlob = false;
+		const uint32_t* rowCounts = nullptr;
+		bool truncated = false; ///< a read hit the end
 
-        /// True when @p n more bytes can be read from the current position.
-        bool has(size_t n) const;
+		/// True when @p n more bytes can be read from the current position.
+		bool has(size_t n) const;
 
-        uint8_t  u8();
-        uint16_t u16();
-        uint32_t u32();
-        uint32_t strIdx();    ///< 2 or 4 bytes
-        uint32_t guidIdx();
-        uint32_t blobIdx();
-        uint32_t tableIdx(TableId tbl);  ///< 2 or 4 bytes depending on table size
-        uint32_t codedIdx(const uint8_t* tableIds, size_t count, uint8_t tagBits);
-        MetadataToken codedToken(const uint8_t* tableIds, size_t count, uint8_t tagBits);
-    };
+		uint8_t u8();
+		uint16_t u16();
+		uint32_t u32();
+		uint32_t strIdx(); ///< 2 or 4 bytes
+		uint32_t guidIdx();
+		uint32_t blobIdx();
+		uint32_t tableIdx(TableId tbl); ///< 2 or 4 bytes depending on table size
+		uint32_t codedIdx(const uint8_t* tableIds, size_t count, uint8_t tagBits);
+		MetadataToken codedToken(const uint8_t* tableIds, size_t count, uint8_t tagBits);
+	};
 
-    /// Decode one row of @p id into @p fields (kMaxFields wide), advancing @p rr.
-    static void decodeRow(TableId id, RowReader& rr, uint32_t* fields);
+	/// Decode one row of @p id into @p fields (kMaxFields wide), advancing @p rr.
+	static void decodeRow(TableId id, RowReader& rr, uint32_t* fields);
 
-    bool parseTable(TableId id, RowReader& rr);
-    size_t computeRowSize(TableId id) const;
-    void computeWidths(const CliHeaps& heaps);
+	bool parseTable(TableId id, RowReader& rr);
+	size_t computeRowSize(TableId id) const;
+	void computeWidths(const CliHeaps& heaps);
 };
 
 } // namespace cli_parser

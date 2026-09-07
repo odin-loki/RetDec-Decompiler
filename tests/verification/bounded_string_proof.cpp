@@ -36,7 +36,7 @@ char nondet_char();
 }
 
 #ifdef RETDEC_VERIFY_SYNTAX_ONLY
-#define __ESBMC_assume(cond) ((void) sizeof((cond) ? 1 : 0))
+#define __ESBMC_assume(cond) ((void)sizeof((cond) ? 1 : 0))
 #endif
 
 // One less than the unwind bound, so the loop is always fully unrolled and the
@@ -123,7 +123,7 @@ extern "C" void proof_bounded_length_agrees_with_terminator_at()
 	__ESBMC_assume(len <= kMax);
 
 	const std::size_t at = terminatorAt(buf, len);
-	const std::size_t n  = boundedLength(buf, len);
+	const std::size_t n = boundedLength(buf, len);
 
 	// The two are one function with two failure conventions, and they must not
 	// drift apart: an unterminated string measures to the bound, a terminated

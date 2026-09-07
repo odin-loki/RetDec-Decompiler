@@ -52,12 +52,12 @@ using namespace retdec::utils::scan;
 namespace bounds = retdec::utils::bounds;
 
 extern "C" {
-std::size_t   nondet_size();
-std::uint8_t  nondet_u8();
+std::size_t nondet_size();
+std::uint8_t nondet_u8();
 }
 
 #ifdef RETDEC_VERIFY_SYNTAX_ONLY
-#define __ESBMC_assume(cond) ((void) sizeof((cond) ? 1 : 0))
+#define __ESBMC_assume(cond) ((void)sizeof((cond) ? 1 : 0))
 #endif
 
 /// Steps in the bounded walks below. Six is enough to exhaust a buffer several
@@ -137,7 +137,8 @@ extern "C" void proof_an_accepted_seek_keeps_the_cursor_valid()
 	__ESBMC_assume(valid(c));
 	const std::size_t to = nondet_size();
 
-	if (seek(c, to)) {
+	if (seek(c, to))
+	{
 		assert(valid(c));
 		assert(c.pos == to);
 	}
@@ -150,9 +151,12 @@ extern "C" void proof_any_sequence_of_moves_keeps_the_cursor_valid()
 	Cursor c = nondetCursor();
 	__ESBMC_assume(valid(c));
 
-	for (std::size_t i = 0; i < kWalkSteps; ++i) {
-		if (nondet_size() & 1u) advance(c, nondet_size());
-		else                    seek(c, nondet_size());
+	for (std::size_t i = 0; i < kWalkSteps; ++i)
+	{
+		if (nondet_size() & 1u)
+			advance(c, nondet_size());
+		else
+			seek(c, nondet_size());
 		// Holds after every move, accepted or refused -- not only at the end.
 		assert(valid(c));
 	}
@@ -181,7 +185,8 @@ extern "C" void proof_an_accepted_advance_moves_strictly_forward()
 	const Cursor before = c;
 	const std::size_t step = nondet_size();
 
-	if (advance(c, step)) {
+	if (advance(c, step))
+	{
 		assert(c.pos > before.pos);
 		// Exactly the step, and stated by subtraction so the proof does not
 		// form the sum the kernel refuses to form.
@@ -200,7 +205,8 @@ extern "C" void proof_a_refused_advance_leaves_the_cursor_bitwise_unchanged()
 	const Cursor before = c;
 	const std::size_t step = nondet_size();
 
-	if (!advance(c, step)) {
+	if (!advance(c, step))
+	{
 		assert(c.pos == before.pos);
 		assert(c.size == before.size);
 	}
@@ -212,7 +218,8 @@ extern "C" void proof_a_refused_seek_leaves_the_cursor_bitwise_unchanged()
 	const Cursor before = c;
 	const std::size_t to = nondet_size();
 
-	if (!seek(c, to)) {
+	if (!seek(c, to))
+	{
 		assert(c.pos == before.pos);
 		assert(c.size == before.size);
 		// And it only ever refuses a target outside the buffer.
@@ -346,8 +353,7 @@ extern "C" void proof_count_fits_at_is_exactly_bounds_count_fits()
 	const std::size_t count = nondet_size();
 	const std::size_t width = nondet_size();
 
-	assert(countFitsAt(c, count, width)
-			== bounds::countFits(c.pos, c.size, count, width));
+	assert(countFitsAt(c, count, width) == bounds::countFits(c.pos, c.size, count, width));
 	// The default argument is the tagged-format case: one byte per element.
 	assert(countFitsAt(c, count) == bounds::countFits(c.pos, c.size, count, 1));
 }
@@ -363,7 +369,8 @@ static void countFitsAtComposesWithFits()
 	Cursor c = nondetCursor();
 	const std::size_t count = nondet_size();
 
-	if (countFitsAt(c, count, Width)) {
+	if (countFitsAt(c, count, Width))
+	{
 		assert(bounds::mulFits(count, Width));
 		assert(fits(c, count * Width));
 		assert(count * Width <= left(c));
@@ -374,10 +381,22 @@ static void countFitsAtComposesWithFits()
 
 // 1 is a tag byte; 12 and 24 are the small and fat CIL exception clauses
 // (cil_lifter.cpp:341, 349); 16 is a DEX map-list entry.
-extern "C" void proof_count_fits_at_width1()  { countFitsAtComposesWithFits<1>(); }
-extern "C" void proof_count_fits_at_width12() { countFitsAtComposesWithFits<12>(); }
-extern "C" void proof_count_fits_at_width16() { countFitsAtComposesWithFits<16>(); }
-extern "C" void proof_count_fits_at_width24() { countFitsAtComposesWithFits<24>(); }
+extern "C" void proof_count_fits_at_width1()
+{
+	countFitsAtComposesWithFits<1>();
+}
+extern "C" void proof_count_fits_at_width12()
+{
+	countFitsAtComposesWithFits<12>();
+}
+extern "C" void proof_count_fits_at_width16()
+{
+	countFitsAtComposesWithFits<16>();
+}
+extern "C" void proof_count_fits_at_width24()
+{
+	countFitsAtComposesWithFits<24>();
+}
 
 // The bound is derived from the input, not chosen: an accepted count can never
 // exceed the bytes left. This is what cli_sig.cpp:126 does not do -- a blob of
@@ -445,7 +464,8 @@ extern "C" void proof_align_forward_lands_on_a_multiple()
 	const std::size_t a = nondet_size();
 	__ESBMC_assume(isPowerOfTwo(a));
 
-	if (alignForward(c, a)) {
+	if (alignForward(c, a))
+	{
 		// a is a power of two, so a - 1 is its mask and this says c.pos is a
 		// multiple of a. Written with the mask rather than %, which would put
 		// a second symbolic division in the query.
@@ -476,10 +496,13 @@ extern "C" void proof_align_forward_refuses_to_leave_the_buffer()
 	const Cursor before = c;
 	const std::size_t a = nondet_size();
 
-	if (!alignForward(c, a)) {
+	if (!alignForward(c, a))
+	{
 		assert(c.pos == before.pos);
 		assert(c.size == before.size);
-	} else {
+	}
+	else
+	{
 		// An accepted alignment leaves a readable cursor, so the caller may go
 		// on to read at it.
 		assert(valid(c));
@@ -493,7 +516,8 @@ extern "C" void proof_align_forward_is_idempotent()
 	const std::size_t a = nondet_size();
 	__ESBMC_assume(isPowerOfTwo(a));
 
-	if (alignForward(c, a)) {
+	if (alignForward(c, a))
+	{
 		const Cursor once = c;
 		// A second alignment must be a no-op, or a walk that aligns on every
 		// iteration would drift.
@@ -512,20 +536,24 @@ extern "C" void proof_align_forward_is_idempotent()
 extern "C" void proof_a_table_step_is_progress_or_a_refusal()
 {
 	std::uint8_t table[kTableSize];
-	for (std::size_t i = 0; i < kTableSize; ++i) table[i] = nondet_u8();
+	for (std::size_t i = 0; i < kTableSize; ++i)
+		table[i] = nondet_u8();
 
 	Cursor c = nondetCursor();
 	__ESBMC_assume(valid(c));
 	const Cursor before = c;
 	const std::size_t key = nondet_size();
 
-	if (advanceByTable(c, table, kTableSize, key)) {
+	if (advanceByTable(c, table, kTableSize, key))
+	{
 		assert(c.pos > before.pos);
 		assert(valid(c));
 		// The step really was the table's entry, so the walk stays in step
 		// with the format.
 		assert(c.pos - before.pos == stepFromTable(table, kTableSize, key));
-	} else {
+	}
+	else
+	{
 		assert(c.pos == before.pos);
 		assert(c.size == before.size);
 	}
@@ -538,7 +566,8 @@ extern "C" void proof_a_table_step_is_progress_or_a_refusal()
 extern "C" void proof_a_key_outside_the_table_is_a_refusal()
 {
 	std::uint8_t table[kTableSize];
-	for (std::size_t i = 0; i < kTableSize; ++i) table[i] = nondet_u8();
+	for (std::size_t i = 0; i < kTableSize; ++i)
+		table[i] = nondet_u8();
 
 	Cursor c = nondetCursor();
 	const Cursor before = c;
@@ -564,7 +593,8 @@ extern "C" void proof_a_null_table_is_a_refusal()
 extern "C" void proof_a_table_driven_walk_takes_at_most_left_steps()
 {
 	std::uint8_t table[kTableSize];
-	for (std::size_t i = 0; i < kTableSize; ++i) table[i] = nondet_u8();
+	for (std::size_t i = 0; i < kTableSize; ++i)
+		table[i] = nondet_u8();
 
 	Cursor c = nondetCursor();
 	__ESBMC_assume(valid(c));
@@ -584,7 +614,8 @@ extern "C" void proof_a_table_driven_walk_takes_at_most_left_steps()
 extern "C" void proof_a_table_that_always_advances_refuses_only_at_the_end()
 {
 	std::uint8_t table[kTableSize];
-	for (std::size_t i = 0; i < kTableSize; ++i) table[i] = nondet_u8();
+	for (std::size_t i = 0; i < kTableSize; ++i)
+		table[i] = nondet_u8();
 	__ESBMC_assume(tableAlwaysAdvances(table, kTableSize));
 
 	Cursor c = nondetCursor();
@@ -607,7 +638,8 @@ extern "C" void proof_an_empty_table_never_always_advances()
 	// does not happen. Stated for a table the solver chooses, so it is not a
 	// claim about one array.
 	std::uint8_t table[kTableSize];
-	for (std::size_t i = 0; i < kTableSize; ++i) table[i] = nondet_u8();
+	for (std::size_t i = 0; i < kTableSize; ++i)
+		table[i] = nondet_u8();
 
 	assert(!tableAlwaysAdvances(table, 0));
 	assert(!tableAlwaysAdvances(nullptr, 0));
@@ -624,7 +656,8 @@ extern "C" void proof_an_empty_table_never_always_advances()
 extern "C" void proof_a_table_with_a_zero_entry_is_reported()
 {
 	std::uint8_t table[kTableSize];
-	for (std::size_t i = 0; i < kTableSize; ++i) table[i] = nondet_u8();
+	for (std::size_t i = 0; i < kTableSize; ++i)
+		table[i] = nondet_u8();
 
 	const std::size_t k = nondet_size();
 	__ESBMC_assume(k < kTableSize);

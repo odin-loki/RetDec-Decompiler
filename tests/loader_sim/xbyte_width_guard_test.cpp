@@ -195,20 +195,20 @@ TEST(XByteWidthGuard, RefusesTheWidthsThatSurviveNarrowing)
 
 TEST(XByteWidthGuard, AgreesWithAnUnwrappedOracleOverEveryUnitWidth)
 {
-	const std::uint64_t units[] = {0, 1, 2, 3, 4, 7, 8, 9, 16, 31, 32, 63, 64, 65,
-			128, 0x100000008ULL, UINT64_MAX};
-	const std::uint64_t widths[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 16, 32, 63, 64,
-			65, 100, kNarrowingWidth, kWidthWitness, kWrappingRequest, UINT64_MAX};
+	const std::uint64_t units[] = {0, 1, 2, 3, 4, 7, 8, 9, 16, 31, 32, 63, 64, 65, 128, 0x100000008ULL, UINT64_MAX};
+	const std::uint64_t widths[] = {
+		0,         1, 2, 3, 4, 5, 6, 7, 8, 9, 16, 32, 63, 64, 65, 100, kNarrowingWidth, kWidthWitness, kWrappingRequest,
+		UINT64_MAX};
 
-	for (std::uint64_t unitBits : units)
+	for (std::uint64_t unitBits: units)
 	{
-		for (std::uint64_t x : widths)
+		for (std::uint64_t x: widths)
 		{
 			const bool want = widthFitsOracle(x, unitBits);
 			EXPECT_EQ(ff::xWidthFitsAccumulator(x, unitBits), want)
-					<< "fileformat, x = " << x << ", unitBits = " << unitBits;
+				<< "fileformat, x = " << x << ", unitBits = " << unitBits;
 			EXPECT_EQ(ld::xWidthFitsAccumulator(x, unitBits), want)
-					<< "loader, x = " << x << ", unitBits = " << unitBits;
+				<< "loader, x = " << x << ", unitBits = " << unitBits;
 		}
 	}
 }
@@ -264,11 +264,9 @@ TEST(XByteRangeGuard, AgreesWithACountingOracleOverSmallBuffers)
 			{
 				const bool want = rangeFitsCountingOracle(offset, size, len);
 				EXPECT_EQ(ff::rangeFitsWide(offset, size, len), want)
-						<< "fileformat, offset = " << offset
-						<< ", size = " << size << ", len = " << len;
+					<< "fileformat, offset = " << offset << ", size = " << size << ", len = " << len;
 				EXPECT_EQ(ld::rangeFitsWide(offset, size, len), want)
-						<< "loader, offset = " << offset
-						<< ", size = " << size << ", len = " << len;
+					<< "loader, offset = " << offset << ", size = " << size << ", len = " << len;
 			}
 		}
 	}
@@ -302,16 +300,14 @@ TEST(ClampedRead, ShortensTheRequestThatWrapsToTheBytesThatRemain)
 TEST(ClampedRead, NeverPermitsAReadPastTheEndOfTheBuffer)
 {
 	const std::uint64_t sizes[] = {0, 1, 2, 7, 512, 0x100000000ULL, UINT64_MAX};
-	const std::uint64_t offsets[] = {0, 1, 6, 10, 511, 512, 513,
-			kWrappingRequest, SIZE_MAX, UINT64_MAX};
-	const std::uint64_t requests[] = {0, 1, 8, 502, 512, 5000,
-			kWrappingRequest, SIZE_MAX, UINT64_MAX};
+	const std::uint64_t offsets[] = {0, 1, 6, 10, 511, 512, 513, kWrappingRequest, SIZE_MAX, UINT64_MAX};
+	const std::uint64_t requests[] = {0, 1, 8, 502, 512, 5000, kWrappingRequest, SIZE_MAX, UINT64_MAX};
 
-	for (std::uint64_t size : sizes)
+	for (std::uint64_t size: sizes)
 	{
-		for (std::uint64_t offset : offsets)
+		for (std::uint64_t offset: offsets)
 		{
-			for (std::uint64_t requested : requests)
+			for (std::uint64_t requested: requests)
 			{
 				std::size_t start = 0;
 				std::size_t length = 0;
@@ -322,15 +318,12 @@ TEST(ClampedRead, NeverPermitsAReadPastTheEndOfTheBuffer)
 
 				// The postcondition the copy below relies on, stated without
 				// forming start + length.
-				ASSERT_LE(static_cast<std::uint64_t>(start), size)
-						<< "size = " << size << ", offset = " << offset;
+				ASSERT_LE(static_cast<std::uint64_t>(start), size) << "size = " << size << ", offset = " << offset;
 				ASSERT_LE(static_cast<std::uint64_t>(length), size - start)
-						<< "size = " << size << ", offset = " << offset
-						<< ", requested = " << requested;
+					<< "size = " << size << ", offset = " << offset << ", requested = " << requested;
 				// And it never invents bytes the caller did not ask for.
 				ASSERT_LE(static_cast<std::uint64_t>(length), requested)
-						<< "size = " << size << ", offset = " << offset
-						<< ", requested = " << requested;
+					<< "size = " << size << ", offset = " << offset << ", requested = " << requested;
 			}
 		}
 	}
@@ -356,8 +349,7 @@ TEST(ClampedRead, TheCopyStopsAtTheEndOfARealBuffer)
 	const std::vector<unsigned char> file = patternBuffer(512);
 	std::vector<std::uint8_t> out;
 
-	ASSERT_TRUE(ff::copyClampedRange(
-			file.data(), file.size(), 10, kWrappingRequest, out));
+	ASSERT_TRUE(ff::copyClampedRange(file.data(), file.size(), 10, kWrappingRequest, out));
 	ASSERT_EQ(out.size(), std::size_t(502));
 	EXPECT_EQ(out.front(), file[10]);
 	EXPECT_EQ(out.back(), file[511]);
@@ -385,23 +377,24 @@ TEST(ClampedRead, TheCopyIsExactForEveryOffsetOfASmallBuffer)
 
 	for (std::uint64_t offset = 0; offset < 64; ++offset)
 	{
-		for (std::uint64_t requested : {std::uint64_t(0), std::uint64_t(1),
-				std::uint64_t(31), std::uint64_t(64), std::uint64_t(1000),
-				kWrappingRequest, UINT64_MAX})
+		for (std::uint64_t requested:
+			 {std::uint64_t(0),
+			  std::uint64_t(1),
+			  std::uint64_t(31),
+			  std::uint64_t(64),
+			  std::uint64_t(1000),
+			  kWrappingRequest,
+			  UINT64_MAX})
 		{
-			ASSERT_TRUE(ff::copyClampedRange(
-					file.data(), file.size(), offset, requested, out))
-					<< "offset = " << offset << ", requested = " << requested;
+			ASSERT_TRUE(ff::copyClampedRange(file.data(), file.size(), offset, requested, out))
+				<< "offset = " << offset << ", requested = " << requested;
 
 			const std::size_t remaining = 64 - static_cast<std::size_t>(offset);
-			const std::size_t want = requested < remaining
-					? static_cast<std::size_t>(requested) : remaining;
-			ASSERT_EQ(out.size(), want)
-					<< "offset = " << offset << ", requested = " << requested;
+			const std::size_t want = requested < remaining ? static_cast<std::size_t>(requested) : remaining;
+			ASSERT_EQ(out.size(), want) << "offset = " << offset << ", requested = " << requested;
 			for (std::size_t i = 0; i < out.size(); ++i)
 			{
-				ASSERT_EQ(out[i], file[static_cast<std::size_t>(offset) + i])
-						<< "offset = " << offset << ", i = " << i;
+				ASSERT_EQ(out[i], file[static_cast<std::size_t>(offset) + i]) << "offset = " << offset << ", i = " << i;
 			}
 		}
 	}
@@ -442,9 +435,7 @@ TEST(ObjectPlacement, FindsAnObjectInsideASectionWhoseEndWouldWrap)
 {
 	// secEnd wrapped to 0, so `addr < secEnd` was false for every address and
 	// the loop walked straight past the section that contains the object.
-	EXPECT_EQ(
-			ff::placeObjectInRegion(0x10, 0xFFFFFFFFFFFFFFF0ULL, 0x100, 8),
-			ff::ObjectPlacement::Contained);
+	EXPECT_EQ(ff::placeObjectInRegion(0x10, 0xFFFFFFFFFFFFFFF0ULL, 0x100, 8), ff::ObjectPlacement::Contained);
 }
 
 TEST(ObjectPlacement, ReportsAnObjectWhoseOwnEndWouldWrapAsStretched)
@@ -452,29 +443,21 @@ TEST(ObjectPlacement, ReportsAnObjectWhoseOwnEndWouldWrapAsStretched)
 	// addrEnd wrapped to 255, and `255 > 512` is false, so an object running
 	// off the end of the address space was called contained.
 	EXPECT_EQ(static_cast<std::uint64_t>(256ULL + UINT64_MAX), 255ULL);
-	EXPECT_EQ(
-			ff::placeObjectInRegion(0, 512, 256, UINT64_MAX),
-			ff::ObjectPlacement::Stretched);
+	EXPECT_EQ(ff::placeObjectInRegion(0, 512, 256, UINT64_MAX), ff::ObjectPlacement::Stretched);
 }
 
 TEST(ObjectPlacement, ClassifiesOrdinarySectionsUnchanged)
 {
 	// Wholly inside.
-	EXPECT_EQ(ff::placeObjectInRegion(0x100, 0x200, 0x180, 0x10),
-			ff::ObjectPlacement::Contained);
+	EXPECT_EQ(ff::placeObjectInRegion(0x100, 0x200, 0x180, 0x10), ff::ObjectPlacement::Contained);
 	// Ends exactly at the section end.
-	EXPECT_EQ(ff::placeObjectInRegion(0x100, 0x200, 0x2F0, 0x10),
-			ff::ObjectPlacement::Contained);
+	EXPECT_EQ(ff::placeObjectInRegion(0x100, 0x200, 0x2F0, 0x10), ff::ObjectPlacement::Contained);
 	// One byte past it.
-	EXPECT_EQ(ff::placeObjectInRegion(0x100, 0x200, 0x2F0, 0x11),
-			ff::ObjectPlacement::Stretched);
+	EXPECT_EQ(ff::placeObjectInRegion(0x100, 0x200, 0x2F0, 0x11), ff::ObjectPlacement::Stretched);
 	// Before the section, after it, and against an empty section.
-	EXPECT_EQ(ff::placeObjectInRegion(0x100, 0x200, 0xFF, 4),
-			ff::ObjectPlacement::Elsewhere);
-	EXPECT_EQ(ff::placeObjectInRegion(0x100, 0x200, 0x300, 4),
-			ff::ObjectPlacement::Elsewhere);
-	EXPECT_EQ(ff::placeObjectInRegion(0x100, 0, 0x100, 4),
-			ff::ObjectPlacement::Elsewhere);
+	EXPECT_EQ(ff::placeObjectInRegion(0x100, 0x200, 0xFF, 4), ff::ObjectPlacement::Elsewhere);
+	EXPECT_EQ(ff::placeObjectInRegion(0x100, 0x200, 0x300, 4), ff::ObjectPlacement::Elsewhere);
+	EXPECT_EQ(ff::placeObjectInRegion(0x100, 0, 0x100, 4), ff::ObjectPlacement::Elsewhere);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -486,17 +469,16 @@ TEST(BothModules, GiveIdenticalAnswersToIdenticalQuestions)
 	// FileFormat::getXByte and Image::getXByte guard the same read of the same
 	// bytes; a fix applied to one file and not the other is a fix that is not
 	// finished.
-	const std::uint64_t probes[] = {0, 1, 8, 9, 64, 65, kNarrowingWidth,
-			kWidthWitness, kWrappingRequest, SIZE_MAX, UINT64_MAX};
+	const std::uint64_t probes[] = {
+		0, 1, 8, 9, 64, 65, kNarrowingWidth, kWidthWitness, kWrappingRequest, SIZE_MAX, UINT64_MAX};
 
-	for (std::uint64_t a : probes)
+	for (std::uint64_t a: probes)
 	{
-		EXPECT_EQ(ff::xWidthFitsAccumulator(a, 8), ld::xWidthFitsAccumulator(a, 8))
-				<< "x = " << a;
-		for (std::uint64_t b : probes)
+		EXPECT_EQ(ff::xWidthFitsAccumulator(a, 8), ld::xWidthFitsAccumulator(a, 8)) << "x = " << a;
+		for (std::uint64_t b: probes)
 		{
 			EXPECT_EQ(ff::rangeFitsWide(a, 512, b), ld::rangeFitsWide(a, 512, b))
-					<< "offset = " << a << ", len = " << b;
+				<< "offset = " << a << ", len = " << b;
 		}
 	}
 }

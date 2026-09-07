@@ -21,28 +21,28 @@ namespace pdbparser {
 // =================================================================
 
 typedef unsigned int PDB_DWORD;
-typedef PDB_DWORD * PDB_PDWORD;
-typedef char * PDB_DWORD_PTR;
+typedef PDB_DWORD* PDB_PDWORD;
+typedef char* PDB_DWORD_PTR;
 typedef int PDB_LONG;
-typedef PDB_LONG * PDB_PLONG;
+typedef PDB_LONG* PDB_PLONG;
 typedef unsigned int PDB_ULONG;
-typedef PDB_ULONG * PDB_PULONG;
-typedef char * PDB_ULONG_PTR;
+typedef PDB_ULONG* PDB_PULONG;
+typedef char* PDB_ULONG_PTR;
 typedef char PDB_CHAR;
-typedef PDB_CHAR * PDB_PCHAR;
+typedef PDB_CHAR* PDB_PCHAR;
 typedef unsigned char PDB_UCHAR;
-typedef PDB_UCHAR * PDB_PUCHAR;
+typedef PDB_UCHAR* PDB_PUCHAR;
 typedef unsigned char PDB_BYTE;
-typedef PDB_BYTE * PDB_PBYTE;
+typedef PDB_BYTE* PDB_PBYTE;
 typedef unsigned short PDB_WORD;
-typedef PDB_WORD * PDB_PWORD;
+typedef PDB_WORD* PDB_PWORD;
 typedef short PDB_SHORT;
-typedef PDB_SHORT * PDB_PSHORT;
+typedef PDB_SHORT* PDB_PSHORT;
 typedef unsigned short PDB_USHORT;
-typedef PDB_USHORT * PDB_PUSHORT;
+typedef PDB_USHORT* PDB_PUSHORT;
 typedef PDB_BYTE PDB_BOOLEAN;
 typedef void PDB_VOID;
-typedef void * PDB_PVOID;
+typedef void* PDB_PVOID;
 typedef size_t PDB_SIZE_T;
 
 #define TRUE true
@@ -66,10 +66,10 @@ typedef size_t PDB_SIZE_T;
 // Fixed-width types say what the format says.
 typedef struct PDB__GUID
 {
-		uint32_t Data1;
-		uint16_t Data2;
-		uint16_t Data3;
-		uint8_t  Data4[8];
+	uint32_t Data1;
+	uint16_t Data2;
+	uint16_t Data3;
+	uint8_t Data4[8];
 } PDB_GUID;
 
 static_assert(sizeof(PDB_GUID) == 16, "a GUID is sixteen bytes on the wire");
@@ -78,20 +78,19 @@ static_assert(sizeof(PDB_GUID) == 16, "a GUID is sixteen bytes on the wire");
 
 typedef struct PDB__IMAGE_SECTION_HEADER
 {
-		PDB_BYTE Name[IMAGE_SIZEOF_SHORT_NAME];
-		union
-		{
-				PDB_DWORD PhysicalAddress;
-				PDB_DWORD VirtualSize;
-		} Misc;
-		PDB_DWORD VirtualAddress;
-		PDB_DWORD SizeOfRawData;
-		PDB_DWORD PointerToRawData;
-		PDB_DWORD PointerToRelocations;
-		PDB_DWORD PointerToLinenumbers;
-		PDB_WORD NumberOfRelocations;
-		PDB_WORD NumberOfLinenumbers;
-		PDB_DWORD Characteristics;
+	PDB_BYTE Name[IMAGE_SIZEOF_SHORT_NAME];
+	union {
+		PDB_DWORD PhysicalAddress;
+		PDB_DWORD VirtualSize;
+	} Misc;
+	PDB_DWORD VirtualAddress;
+	PDB_DWORD SizeOfRawData;
+	PDB_DWORD PointerToRawData;
+	PDB_DWORD PointerToRelocations;
+	PDB_DWORD PointerToLinenumbers;
+	PDB_WORD NumberOfRelocations;
+	PDB_WORD NumberOfLinenumbers;
+	PDB_DWORD Characteristics;
 } PDB_IMAGE_SECTION_HEADER, *PDB_PIMAGE_SECTION_HEADER;
 
 #ifndef MAX_PATH
@@ -105,10 +104,10 @@ typedef struct PDB__IMAGE_SECTION_HEADER
 // PDB Stream
 typedef struct _PDBStream
 {
-		char * data;  // stream data pointer
-		int size;  // stream size in bytes
-		bool unused;  // indicates unused stream
-		bool linear;  // stream is linear in PDB file
+	char* data;  // stream data pointer
+	int size;    // stream size in bytes
+	bool unused; // indicates unused stream
+	bool linear; // stream is linear in PDB file
 } PDBStream;
 
 // PDB Modules vector
@@ -117,9 +116,9 @@ typedef std::vector<PDBStream> PDBStreamsVec;
 // PDB Module
 typedef struct _PDBModule
 {
-		const char * name;  // module name
-		int stream_num;  // number of stream with module symbols
-		PDBStream * stream;  // stream with module symbols
+	const char* name;  // module name
+	int stream_num;    // number of stream with module symbols
+	PDBStream* stream; // stream with module symbols
 } PDBModule;
 
 // PDB Modules vector
@@ -128,9 +127,9 @@ typedef std::vector<PDBModule> PDBModulesVec;
 // PDB PE Section
 typedef struct _PDBPESection
 {
-		const char * name;  // section name
-		uint64_t virtual_address;  // virtual address
-		uint64_t file_address;  // address in file
+	const char* name;         // section name
+	uint64_t virtual_address; // virtual address
+	uint64_t file_address;    // address in file
 } PDBPESection;
 
 // PDB PE sections vector
@@ -145,33 +144,33 @@ typedef std::vector<PDBPESection> PDBSectionsVec;
 // which is undefined behaviour rather than merely a wrong answer. Packing does
 // not move a field; it only says what was always true of these bytes, that
 // nothing guarantees where in the stream they start.
-#pragma pack (1)
+#pragma pack(1)
 
 // General PDB symbol structure
 typedef struct _PDBGeneralSymbol
 {
-		PDB_WORD size;  // symbol data size
-		PDB_WORD type;  // symbol type
-		PDB_BYTE data[];  // symbol data
+	PDB_WORD size;   // symbol data size
+	PDB_WORD type;   // symbol type
+	PDB_BYTE data[]; // symbol data
 } PDBGeneralSymbol;
 
 // Big PDB symbol structure
 typedef struct _PDBBigSymbol
 {
-		PDB_DWORD type;  // symbol type
-		PDB_DWORD size;  // symbol data size
-		PDB_BYTE data[];  // symbol data
+	PDB_DWORD type;  // symbol type
+	PDB_DWORD size;  // symbol data size
+	PDB_BYTE data[]; // symbol data
 } PDBBigSymbol;
 
-#pragma pack ()
+#pragma pack()
 
 // =================================================================
 // UTILITY FUNCTIONS
 // =================================================================
 
-PDB_PBYTE RecordValue(PDB_PBYTE pbData, PDB_PDWORD pdValue);  // Get numeric value followed by string from PDB record
-void print_dwords(PDB_DWORD *data, int len);  // Print list of dwords (hexadecomally)
-void print_bytes(PDB_BYTE *data, int len);  // Print list of bytes (hexadecomally)
+PDB_PBYTE RecordValue(PDB_PBYTE pbData, PDB_PDWORD pdValue); // Get numeric value followed by string from PDB record
+void print_dwords(PDB_DWORD* data, int len);                 // Print list of dwords (hexadecomally)
+void print_bytes(PDB_BYTE* data, int len);                   // Print list of bytes (hexadecomally)
 
 } // namespace pdbparser
 } // namespace retdec

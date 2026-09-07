@@ -1,5 +1,20 @@
 ---
 Language: Cpp
+
+# Do NOT reorder includes.
+#
+# This tree's headers are not all self-contained, so their order is load-bearing
+# and sorting them alphabetically breaks compilation. Demonstrated, not
+# supposed: running clang-format over src/pelib/SecurityDirectory.cpp moves
+# `SecurityDirectory.h` above `PeLibInc.h`, which is where the types it uses
+# come from, and the file stops compiling --
+# "class 'PeLib::SecurityDirectory' does not have any field named 'm_ldrError'".
+#
+# The risk is worse than that one file, because most of this tree is behind an
+# LLVM build that CI reformats but cannot compile: an include reorder there
+# would be committed with nothing to catch it. Whitespace is safe to mechanise;
+# include order in a codebase with non-self-contained headers is not.
+SortIncludes: Never
 AccessModifierOffset: -4
 AlignAfterOpenBracket: AlwaysBreak
 AlignEscapedNewlines: Left

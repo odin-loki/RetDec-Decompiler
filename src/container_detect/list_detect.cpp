@@ -116,19 +116,18 @@ static bool hasSentinelInit(const ssa::SSAFunction& fn)
 		if (!blk) continue;
 
 		std::vector<const ssa::IrInstr*> stores;
-		for (const auto* in : blk->instrs)
+		for (const auto* in: blk->instrs)
 		{
 			// A Store carries (value, address).  Anything with fewer than two
 			// operands has no address to inspect, so there is nothing to
 			// compare.
-			if (in && in->op == ssa::IrInstr::Op::Store && in->uses.size() >= 2)
-				stores.push_back(in);
+			if (in && in->op == ssa::IrInstr::Op::Store && in->uses.size() >= 2) stores.push_back(in);
 		}
 
 		for (std::size_t i = 0; i + 1 < stores.size(); ++i)
 		{
 			const ssa::ValueId storedA = stores[i]->uses[0].valueId;
-			const ssa::ValueId addrA   = stores[i]->uses[1].valueId;
+			const ssa::ValueId addrA = stores[i]->uses[1].valueId;
 			if (addrA == ssa::kInvalidValue) continue;
 			const ssa::VarId varA = storedVar(storedA);
 			if (varA == ssa::kInvalidVar) continue;
@@ -136,7 +135,7 @@ static bool hasSentinelInit(const ssa::SSAFunction& fn)
 			for (std::size_t j = i + 1; j < stores.size(); ++j)
 			{
 				const ssa::ValueId storedB = stores[j]->uses[0].valueId;
-				const ssa::ValueId addrB   = stores[j]->uses[1].valueId;
+				const ssa::ValueId addrB = stores[j]->uses[1].valueId;
 				if (addrB == ssa::kInvalidValue) continue;
 
 				// Same value into two *different* slots: equal stored values
@@ -145,8 +144,7 @@ static bool hasSentinelInit(const ssa::SSAFunction& fn)
 				if (storedVar(storedB) != varA) continue;
 				if (addrA == addrB) continue;
 
-				if (isSlotOf(fn, addrA, storedA) && isSlotOf(fn, addrB, storedB))
-					return true;
+				if (isSlotOf(fn, addrA, storedA) && isSlotOf(fn, addrB, storedB)) return true;
 			}
 		}
 	}

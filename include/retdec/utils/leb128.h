@@ -70,10 +70,11 @@ constexpr std::uint64_t maskFrom(unsigned shift) noexcept
 }
 
 /// Outcome of a decode.
-struct Result {
-	std::uint64_t value = 0;     ///< Decoded value; 0 when !ok.
-	std::size_t   bytesRead = 0; ///< Bytes consumed, 0 when !ok.
-	bool          ok = false;    ///< False on truncation or an over-long encoding.
+struct Result
+{
+	std::uint64_t value = 0;   ///< Decoded value; 0 when !ok.
+	std::size_t bytesRead = 0; ///< Bytes consumed, 0 when !ok.
+	bool ok = false;           ///< False on truncation or an over-long encoding.
 };
 
 /// Decode an unsigned LEB128 at @p pos in a buffer of @p size bytes.
@@ -90,8 +91,8 @@ constexpr Result decodeUnsigned(const std::uint8_t* data, std::size_t size, std:
 	if (data == nullptr || pos >= size) return Result{};
 
 	std::uint64_t value = 0;
-	std::size_t   used = 0;
-	unsigned      shift = 0;
+	std::size_t used = 0;
+	unsigned shift = 0;
 
 	while (pos + used < size && used < kMaxBytes)
 	{
@@ -125,9 +126,9 @@ constexpr Result decodeSigned(const std::uint8_t* data, std::size_t size, std::s
 	if (data == nullptr || pos >= size) return Result{};
 
 	std::uint64_t value = 0;
-	std::size_t   used = 0;
-	unsigned      shift = 0;
-	std::uint8_t  last = 0;
+	std::size_t used = 0;
+	unsigned shift = 0;
+	std::uint8_t last = 0;
 
 	while (pos + used < size && used < kMaxBytes)
 	{
@@ -165,9 +166,8 @@ constexpr std::int64_t toSigned(std::uint64_t value) noexcept
 	// Defined for every input, unlike a cast that assumes the value is in range:
 	// values above INT64_MAX map onto the negative half, which is exactly the
 	// two's-complement reading the encoding intends.
-	return value <= static_cast<std::uint64_t>(INT64_MAX)
-		? static_cast<std::int64_t>(value)
-		: -static_cast<std::int64_t>(~value) - 1;
+	return value <= static_cast<std::uint64_t>(INT64_MAX) ? static_cast<std::int64_t>(value)
+														  : -static_cast<std::int64_t>(~value) - 1;
 }
 
 } // namespace leb128

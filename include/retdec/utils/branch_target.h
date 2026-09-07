@@ -64,8 +64,8 @@ namespace btgt {
 // a 32-bit host they would silently truncate a 64-bit offset down into the
 // checker, which is the class of bug this header exists to remove, so say so at
 // compile time rather than discover it in a cross build.
-static_assert(sizeof(std::size_t) == sizeof(std::uint64_t),
-              "branch_target.h narrows uint64_t offsets into bounds.h's size_t");
+static_assert(
+	sizeof(std::size_t) == sizeof(std::uint64_t), "branch_target.h narrows uint64_t offsets into bounds.h's size_t");
 
 /// Resolve a signed displacement @p delta from @p base into @p target.
 ///
@@ -79,18 +79,14 @@ static_assert(sizeof(std::size_t) == sizeof(std::uint64_t),
 /// whose contract only holds below some bound is a function every caller has to
 /// re-check. Splitting on the sign of @p delta makes both halves exact over the
 /// whole 64-bit domain.
-constexpr bool relative(std::uint64_t base,
-                        std::int64_t delta,
-                        std::uint64_t codeSize,
-                        std::uint64_t& target) noexcept
+constexpr bool relative(std::uint64_t base, std::int64_t delta, std::uint64_t codeSize, std::uint64_t& target) noexcept
 {
-	if (delta >= 0) {
+	if (delta >= 0)
+	{
 		const std::uint64_t forward = static_cast<std::uint64_t>(delta);
 		// Representability first: the sum is not formed until it is known to
 		// exist, the same discipline bounds::rangeFits keeps.
-		if (!bounds::addFits(static_cast<std::size_t>(base),
-		                     static_cast<std::size_t>(forward)))
-			return false;
+		if (!bounds::addFits(static_cast<std::size_t>(base), static_cast<std::size_t>(forward))) return false;
 		const std::uint64_t t = base + forward;
 		if (t >= codeSize) return false;
 		target = t;
@@ -119,9 +115,7 @@ constexpr bool relative(std::uint64_t base,
 /// forms of branch -- Python before 3.11 has absolute jumps and after it has
 /// relative ones, in the same switch at pyc_reader.cpp:535-543 -- gets the same
 /// verdict and the same write-only-on-success discipline from both.
-constexpr bool absolute(std::uint64_t t,
-                        std::uint64_t codeSize,
-                        std::uint64_t& target) noexcept
+constexpr bool absolute(std::uint64_t t, std::uint64_t codeSize, std::uint64_t& target) noexcept
 {
 	if (t >= codeSize) return false;
 	target = t;
@@ -138,14 +132,10 @@ constexpr bool absolute(std::uint64_t t,
 /// operands uint32 and the destination uint32. tryOffset = 0xFFFFFFFF with
 /// tryLength = 2 gives endOffset = 1: a protected region that ends before it
 /// begins, whose consumers compute `end - start` as 0xFFFFFFFE bytes.
-constexpr bool region(std::uint64_t start,
-                      std::uint64_t len,
-                      std::uint64_t codeSize,
-                      std::uint64_t& end) noexcept
+constexpr bool region(std::uint64_t start, std::uint64_t len, std::uint64_t codeSize, std::uint64_t& end) noexcept
 {
-	if (!bounds::rangeFits(static_cast<std::size_t>(start),
-	                       static_cast<std::size_t>(codeSize),
-	                       static_cast<std::size_t>(len)))
+	if (!bounds::rangeFits(
+			static_cast<std::size_t>(start), static_cast<std::size_t>(codeSize), static_cast<std::size_t>(len)))
 		return false;
 	// Only now is the sum formed, and rangeFits has already established that it
 	// neither wraps nor exceeds codeSize.
@@ -166,18 +156,13 @@ constexpr bool region(std::uint64_t start,
 /// span is then checked to fit the code. cil_lifter.cpp:549 forms `n * 4` in
 /// 64 bits correctly and then truncates `afterSwitch` back to uint32, which
 /// puts the base for every one of that switch's case targets outside the method.
-constexpr bool tableEnd(std::uint64_t pos,
-                        std::uint64_t n,
-                        std::uint64_t width,
-                        std::uint64_t codeSize,
-                        std::uint64_t& end) noexcept
+constexpr bool
+tableEnd(std::uint64_t pos, std::uint64_t n, std::uint64_t width, std::uint64_t codeSize, std::uint64_t& end) noexcept
 {
-	if (!bounds::mulFits(static_cast<std::size_t>(n), static_cast<std::size_t>(width)))
-		return false;
+	if (!bounds::mulFits(static_cast<std::size_t>(n), static_cast<std::size_t>(width))) return false;
 	const std::uint64_t span = n * width;
-	if (!bounds::rangeFits(static_cast<std::size_t>(pos),
-	                       static_cast<std::size_t>(codeSize),
-	                       static_cast<std::size_t>(span)))
+	if (!bounds::rangeFits(
+			static_cast<std::size_t>(pos), static_cast<std::size_t>(codeSize), static_cast<std::size_t>(span)))
 		return false;
 	end = pos + span;
 	return true;

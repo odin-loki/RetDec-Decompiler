@@ -41,11 +41,11 @@ using namespace retdec::utils::secmap;
 
 extern "C" {
 std::uint64_t nondet_u64();
-std::size_t   nondet_size();
+std::size_t nondet_size();
 }
 
 #ifdef RETDEC_VERIFY_SYNTAX_ONLY
-#define __ESBMC_assume(cond) ((void) sizeof((cond) ? 1 : 0))
+#define __ESBMC_assume(cond) ((void)sizeof((cond) ? 1 : 0))
 #endif
 
 // One less than the unwind bound, so the search over the table is exhaustive.
@@ -58,9 +58,9 @@ static const std::size_t kMaxSections = 3;
 static Section nondetSection()
 {
 	Section s;
-	s.address   = nondet_u64();
-	s.virtSize  = nondet_u64();
-	s.rawSize   = nondet_u64();
+	s.address = nondet_u64();
+	s.virtSize = nondet_u64();
+	s.rawSize = nondet_u64();
 	s.rawOffset = nondet_u64();
 	return s;
 }
@@ -89,11 +89,15 @@ extern "C" void proof_containment_agrees_with_128_bit_arithmetic()
 	// store -- so this is the real case, stated so that a wrapping
 	// implementation is refuted rather than merely disagreed with.
 	Section s;
-	s.address  = nondet_u64(); __ESBMC_assume(s.address  <= 0xFFFFFFFFu);
-	s.virtSize = nondet_u64(); __ESBMC_assume(s.virtSize <= 0xFFFFFFFFu);
-	s.rawSize  = nondet_u64(); __ESBMC_assume(s.rawSize  <= 0xFFFFFFFFu);
+	s.address = nondet_u64();
+	__ESBMC_assume(s.address <= 0xFFFFFFFFu);
+	s.virtSize = nondet_u64();
+	__ESBMC_assume(s.virtSize <= 0xFFFFFFFFu);
+	s.rawSize = nondet_u64();
+	__ESBMC_assume(s.rawSize <= 0xFFFFFFFFu);
 	s.rawOffset = 0;
-	std::uint64_t addr = nondet_u64(); __ESBMC_assume(addr <= 0xFFFFFFFFu);
+	std::uint64_t addr = nondet_u64();
+	__ESBMC_assume(addr <= 0xFFFFFFFFu);
 
 	const std::uint64_t span = s.virtSize > s.rawSize ? s.virtSize : s.rawSize;
 	const bool wide = (span != 0) && addr >= s.address && addr < s.address + span;
@@ -105,7 +109,7 @@ extern "C" void proof_empty_section_contains_nothing()
 {
 	Section s = nondetSection();
 	s.virtSize = 0;
-	s.rawSize  = 0;
+	s.rawSize = 0;
 	assert(!contains(s, nondet_u64()));
 }
 
@@ -114,7 +118,8 @@ extern "C" void proof_empty_section_contains_nothing()
 extern "C" void proof_offset_is_readable_or_unmapped()
 {
 	Section secs[kMaxSections];
-	for (std::size_t i = 0; i < kMaxSections; ++i) secs[i] = nondetSection();
+	for (std::size_t i = 0; i < kMaxSections; ++i)
+		secs[i] = nondetSection();
 
 	const std::size_t count = nondet_size();
 	__ESBMC_assume(count <= kMaxSections);
@@ -140,14 +145,16 @@ extern "C" void proof_a_null_table_is_unmapped()
 extern "C" void proof_empty_table_is_unmapped()
 {
 	Section secs[kMaxSections];
-	for (std::size_t i = 0; i < kMaxSections; ++i) secs[i] = nondetSection();
+	for (std::size_t i = 0; i < kMaxSections; ++i)
+		secs[i] = nondetSection();
 	assert(addressToOffset(nondet_u64(), secs, 0, nondet_size()) == kUnmapped);
 }
 
 extern "C" void proof_offset_comes_from_a_containing_section()
 {
 	Section secs[kMaxSections];
-	for (std::size_t i = 0; i < kMaxSections; ++i) secs[i] = nondetSection();
+	for (std::size_t i = 0; i < kMaxSections; ++i)
+		secs[i] = nondetSection();
 	const std::size_t count = nondet_size();
 	__ESBMC_assume(count <= kMaxSections);
 	const std::size_t fileSize = nondet_size();
@@ -155,12 +162,14 @@ extern "C" void proof_offset_comes_from_a_containing_section()
 
 	const std::uint64_t off = addressToOffset(addr, secs, count, fileSize);
 
-	if (off != kUnmapped) {
+	if (off != kUnmapped)
+	{
 		// A mapped answer means some section really contained the address and
 		// really stored the byte. Without this the sentinel could be satisfied
 		// by returning any in-range number at all.
 		bool found = false;
-		for (std::size_t i = 0; i < count; ++i) {
+		for (std::size_t i = 0; i < count; ++i)
+		{
 			if (!contains(secs[i], addr)) continue;
 			const std::uint64_t delta = addr - secs[i].address;
 			if (delta >= secs[i].rawSize) continue;
@@ -170,8 +179,7 @@ extern "C" void proof_offset_comes_from_a_containing_section()
 			// commit the fault it is proving absent -- and ESBMC said so,
 			// reporting an overflow on add at this line rather than a failed
 			// property.
-			if (off >= secs[i].rawOffset && off - secs[i].rawOffset == delta)
-				found = true;
+			if (off >= secs[i].rawOffset && off - secs[i].rawOffset == delta) found = true;
 		}
 		assert(found);
 	}
@@ -197,7 +205,8 @@ extern "C" void proof_virtual_tail_is_unmapped()
 extern "C" void proof_readable_span_stays_inside_the_file()
 {
 	Section secs[kMaxSections];
-	for (std::size_t i = 0; i < kMaxSections; ++i) secs[i] = nondetSection();
+	for (std::size_t i = 0; i < kMaxSections; ++i)
+		secs[i] = nondetSection();
 	const std::size_t count = nondet_size();
 	__ESBMC_assume(count <= kMaxSections);
 	const std::size_t fileSize = nondet_size();
@@ -207,7 +216,8 @@ extern "C" void proof_readable_span_stays_inside_the_file()
 	const std::size_t n = readableAt(addr, secs, count, fileSize, want);
 
 	assert(n <= want);
-	if (n > 0) {
+	if (n > 0)
+	{
 		const std::uint64_t off = addressToOffset(addr, secs, count, fileSize);
 		assert(off != kUnmapped);
 		// off + n is the end of the readable span and must be inside the file.
@@ -218,7 +228,8 @@ extern "C" void proof_readable_span_stays_inside_the_file()
 extern "C" void proof_unmapped_address_reads_nothing()
 {
 	Section secs[kMaxSections];
-	for (std::size_t i = 0; i < kMaxSections; ++i) secs[i] = nondetSection();
+	for (std::size_t i = 0; i < kMaxSections; ++i)
+		secs[i] = nondetSection();
 	const std::size_t count = nondet_size();
 	__ESBMC_assume(count <= kMaxSections);
 	const std::size_t fileSize = nondet_size();

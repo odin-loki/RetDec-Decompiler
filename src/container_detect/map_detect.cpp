@@ -63,34 +63,37 @@ namespace container_detect {
 namespace {
 
 // Count all instructions of a given opcode across the function.
-static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
-    int n = 0;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs)
-            if (instr && instr->op == op) ++n;
-    }
-    return n;
+static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+			if (instr && instr->op == op) ++n;
+	}
+	return n;
 }
 
 // Resolve the (base register, offset) pair a memory operand names.  Returns
 // false for anything that is not a MemRef, so an operand we cannot place inside
 // a node can never be mistaken for one of its slots.
-static bool memSlot(const ssa::SSAFunction& fn, ssa::ValueId id,
-                    ssa::VarId& base, int64_t& off) {
-    const auto* v = fn.value(id);
-    if (!v || v->kind != ssa::ValueKind::MemRef) return false;
-    if (v->memBaseReg == ssa::kInvalidVar) return false;
-    base = v->memBaseReg;
-    off  = v->memOffset;
-    return true;
+static bool memSlot(const ssa::SSAFunction& fn, ssa::ValueId id, ssa::VarId& base, int64_t& off)
+{
+	const auto* v = fn.value(id);
+	if (!v || v->kind != ssa::ValueKind::MemRef) return false;
+	if (v->memBaseReg == ssa::kInvalidVar) return false;
+	base = v->memBaseReg;
+	off = v->memOffset;
+	return true;
 }
 
 // The pre-SSA variable a value came from, or kInvalidVar.
-static ssa::VarId varOf(const ssa::SSAFunction& fn, ssa::ValueId id) {
-    const auto* v = fn.value(id);
-    return v ? v->varId : ssa::kInvalidVar;
+static ssa::VarId varOf(const ssa::SSAFunction& fn, ssa::ValueId id)
+{
+	const auto* v = fn.value(id);
+	return v ? v->varId : ssa::kInvalidVar;
 }
 
 // Rotation, as the file header describes it:
@@ -123,175 +126,189 @@ static ssa::VarId varOf(const ssa::SSAFunction& fn, ssa::ValueId id) {
 // with the colour-field and rebalancing heuristics on top it reached 1.00 --
 // which, because container_detector.cpp keeps the maximum-confidence answer,
 // silently suppressed every other detector.
-static bool hasRotation(const ssa::SSAFunction& fn, bool leftRotate) {
-    // Need at least 2 Loads and 2 Stores to form a rotation.
-    if (countOp(fn, ssa::IrInstr::Op::Load)  < 2) return false;
-    if (countOp(fn, ssa::IrInstr::Op::Store) < 2) return false;
+static bool hasRotation(const ssa::SSAFunction& fn, bool leftRotate)
+{
+	// Need at least 2 Loads and 2 Stores to form a rotation.
+	if (countOp(fn, ssa::IrInstr::Op::Load) < 2) return false;
+	if (countOp(fn, ssa::IrInstr::Op::Store) < 2) return false;
 
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
 
-        for (const auto* ld : blk->instrs) {
-            if (!ld || ld->op != ssa::IrInstr::Op::Load) continue;
-            // A Load defines its result in defValue; an unrenamed Load defines
-            // nothing and cannot be the y of a rotation.
-            if (ld->defValue == ssa::kInvalidValue) continue;
-            if (ld->uses.empty()) continue;
+		for (const auto* ld: blk->instrs)
+		{
+			if (!ld || ld->op != ssa::IrInstr::Op::Load) continue;
+			// A Load defines its result in defValue; an unrenamed Load defines
+			// nothing and cannot be the y of a rotation.
+			if (ld->defValue == ssa::kInvalidValue) continue;
+			if (ld->uses.empty()) continue;
 
-            ssa::VarId xBase    = ssa::kInvalidVar;  // node being demoted (x)
-            int64_t    childOff = 0;                 // child slot y was read from
-            if (!memSlot(fn, ld->uses[0].valueId, xBase, childOff)) continue;
+			ssa::VarId xBase = ssa::kInvalidVar; // node being demoted (x)
+			int64_t childOff = 0;                // child slot y was read from
+			if (!memSlot(fn, ld->uses[0].valueId, xBase, childOff)) continue;
 
-            const ssa::VarId yVar = varOf(fn, ld->defValue);  // promoted child (y)
-            if (yVar == ssa::kInvalidVar) continue;
-            // A rotation moves a node into a *different* node's slot. Without
-            // this, `p = p->next; p->next = p; p->prev = p` -- the circular
-            // sentinel std::list uses, which ListDetector in this same module
-            // is looking for -- satisfies both halves below with x and y the
-            // same variable, and comes back as a map at 0.30.
-            if (yVar == xBase) continue;
+			const ssa::VarId yVar = varOf(fn, ld->defValue); // promoted child (y)
+			if (yVar == ssa::kInvalidVar) continue;
+			// A rotation moves a node into a *different* node's slot. Without
+			// this, `p = p->next; p->next = p; p->prev = p` -- the circular
+			// sentinel std::list uses, which ListDetector in this same module
+			// is looking for -- satisfies both halves below with x and y the
+			// same variable, and comes back as a map at 0.30.
+			if (yVar == xBase) continue;
 
-            bool slotRewritten = false;  // x->child = ...
-            bool crossLinked   = false;  // y->other = x, on the far side of Oc
+			bool slotRewritten = false; // x->child = ...
+			bool crossLinked = false;   // y->other = x, on the far side of Oc
 
-            for (const auto* st : blk->instrs) {
-                if (!st || st->op != ssa::IrInstr::Op::Store) continue;
-                // (value, address); a Store with one operand has no address.
-                if (st->uses.size() < 2) continue;
+			for (const auto* st: blk->instrs)
+			{
+				if (!st || st->op != ssa::IrInstr::Op::Store) continue;
+				// (value, address); a Store with one operand has no address.
+				if (st->uses.size() < 2) continue;
 
-                ssa::VarId sBase = ssa::kInvalidVar;
-                int64_t    sOff  = 0;
-                if (!memSlot(fn, st->uses[1].valueId, sBase, sOff)) continue;
+				ssa::VarId sBase = ssa::kInvalidVar;
+				int64_t sOff = 0;
+				if (!memSlot(fn, st->uses[1].valueId, sBase, sOff)) continue;
 
-                if (sBase == xBase && sOff == childOff) slotRewritten = true;
+				if (sBase == xBase && sOff == childOff) slotRewritten = true;
 
-                if (sBase == yVar
-                    && varOf(fn, st->uses[0].valueId) == xBase
-                    && sOff != childOff) {
-                    // Accumulate. Assigning here let a later candidate store
-                    // overwrite an earlier match -- including overwriting true
-                    // with false -- so the direction reported for a block with
-                    // two cross-link-shaped stores depended on which came
-                    // first. The two directions are mutually exclusive per
-                    // store, not per block, and this is the difference.
-                    crossLinked |= leftRotate ? (sOff < childOff)
-                                              : (sOff > childOff);
-                }
-            }
+				if (sBase == yVar && varOf(fn, st->uses[0].valueId) == xBase && sOff != childOff)
+				{
+					// Accumulate. Assigning here let a later candidate store
+					// overwrite an earlier match -- including overwriting true
+					// with false -- so the direction reported for a block with
+					// two cross-link-shaped stores depended on which came
+					// first. The two directions are mutually exclusive per
+					// store, not per block, and this is the difference.
+					crossLinked |= leftRotate ? (sOff < childOff) : (sOff > childOff);
+				}
+			}
 
-            if (slotRewritten && crossLinked) return true;
-        }
-    }
-    return false;
+			if (slotRewritten && crossLinked) return true;
+		}
+	}
+	return false;
 }
 
 // Colour field: AND instruction with constant 1 (bit-packed) or a Compare
 // against 0/1 of a single-byte load.
-static bool hasColourField(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* instr : blk->instrs) {
-            if (!instr) continue;
-            if (instr->op == ssa::IrInstr::Op::And && instr->uses.size() >= 2) {
-                const auto* iv = fn.value(instr->uses[1].valueId);
-                if (iv && iv->kind == ssa::ValueKind::Immediate && iv->imm == 1)
-                    return true;
-            }
-            if (instr->op == ssa::IrInstr::Op::Compare && instr->uses.size() >= 2) {
-                const auto* iv = fn.value(instr->uses[1].valueId);
-                if (iv && iv->kind == ssa::ValueKind::Immediate &&
-                    (iv->imm == 0 || iv->imm == 1))
-                    return true;
-            }
-        }
-    }
-    return false;
+static bool hasColourField(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* instr: blk->instrs)
+		{
+			if (!instr) continue;
+			if (instr->op == ssa::IrInstr::Op::And && instr->uses.size() >= 2)
+			{
+				const auto* iv = fn.value(instr->uses[1].valueId);
+				if (iv && iv->kind == ssa::ValueKind::Immediate && iv->imm == 1) return true;
+			}
+			if (instr->op == ssa::IrInstr::Op::Compare && instr->uses.size() >= 2)
+			{
+				const auto* iv = fn.value(instr->uses[1].valueId);
+				if (iv && iv->kind == ssa::ValueKind::Immediate && (iv->imm == 0 || iv->imm == 1)) return true;
+			}
+		}
+	}
+	return false;
 }
 
 // Three-pointer node: parent, left, right — three adjacent loads from same base.
-static bool hasThreePtrNode(const ssa::SSAFunction& fn) {
-    return countOp(fn, ssa::IrInstr::Op::Load) >= 3;
+static bool hasThreePtrNode(const ssa::SSAFunction& fn)
+{
+	return countOp(fn, ssa::IrInstr::Op::Load) >= 3;
 }
 
 // Rebalancing: multiple Compares + multiple Stores (colour flips + rotations).
-static bool hasRebalancing(const ssa::SSAFunction& fn) {
-    return countOp(fn, ssa::IrInstr::Op::Compare) >= 2 &&
-           countOp(fn, ssa::IrInstr::Op::Store)   >= 3;
+static bool hasRebalancing(const ssa::SSAFunction& fn)
+{
+	return countOp(fn, ssa::IrInstr::Op::Compare) >= 2 && countOp(fn, ssa::IrInstr::Op::Store) >= 3;
 }
 
 } // anonymous namespace
 
 // ─── MapDetector ─────────────────────────────────────────────────────────────
 
-bool MapDetector::hasLeftRotation(const ssa::SSAFunction& fn) const {
-    return ::retdec::container_detect::hasRotation(fn, true);
+bool MapDetector::hasLeftRotation(const ssa::SSAFunction& fn) const
+{
+	return ::retdec::container_detect::hasRotation(fn, true);
 }
 
-bool MapDetector::hasRightRotation(const ssa::SSAFunction& fn) const {
-    return ::retdec::container_detect::hasRotation(fn, false);
+bool MapDetector::hasRightRotation(const ssa::SSAFunction& fn) const
+{
+	return ::retdec::container_detect::hasRotation(fn, false);
 }
 
-bool MapDetector::hasColourField(const ssa::SSAFunction& fn) const {
-    return ::retdec::container_detect::hasColourField(fn);
+bool MapDetector::hasColourField(const ssa::SSAFunction& fn) const
+{
+	return ::retdec::container_detect::hasColourField(fn);
 }
 
-RbTreeEvidence MapDetector::analyseStructure(const ssa::SSAFunction& fn) const {
-    RbTreeEvidence ev;
-    ev.hasLeftRotation  = hasLeftRotation(fn);
-    ev.hasRightRotation = hasRightRotation(fn);
-    ev.hasColourField   = hasColourField(fn);
-    ev.hasThreePtrNode  = hasThreePtrNode(fn);
-    ev.hasRebalancing   = hasRebalancing(fn);
-    ev.found = ev.hasLeftRotation || ev.hasRightRotation;
-    ev.confidence = scoreEvidence(ev);
-    return ev;
+RbTreeEvidence MapDetector::analyseStructure(const ssa::SSAFunction& fn) const
+{
+	RbTreeEvidence ev;
+	ev.hasLeftRotation = hasLeftRotation(fn);
+	ev.hasRightRotation = hasRightRotation(fn);
+	ev.hasColourField = hasColourField(fn);
+	ev.hasThreePtrNode = hasThreePtrNode(fn);
+	ev.hasRebalancing = hasRebalancing(fn);
+	ev.found = ev.hasLeftRotation || ev.hasRightRotation;
+	ev.confidence = scoreEvidence(ev);
+	return ev;
 }
 
-float MapDetector::scoreEvidence(const RbTreeEvidence& ev) const {
-    float s = 0.0f;
-    if (ev.hasLeftRotation)  s += 0.30f;
-    if (ev.hasRightRotation) s += 0.30f;
-    if (ev.hasColourField)   s += 0.20f;
-    if (ev.hasThreePtrNode)  s += 0.10f;
-    if (ev.hasRebalancing)   s += 0.10f;
-    return s > 1.0f ? 1.0f : s;
+float MapDetector::scoreEvidence(const RbTreeEvidence& ev) const
+{
+	float s = 0.0f;
+	if (ev.hasLeftRotation) s += 0.30f;
+	if (ev.hasRightRotation) s += 0.30f;
+	if (ev.hasColourField) s += 0.20f;
+	if (ev.hasThreePtrNode) s += 0.10f;
+	if (ev.hasRebalancing) s += 0.10f;
+	return s > 1.0f ? 1.0f : s;
 }
 
-ContainerResult MapDetector::detect(const ssa::SSAFunction& fn) const {
-    ContainerResult result;
-    result.kind = ContainerKind::Map;
+ContainerResult MapDetector::detect(const ssa::SSAFunction& fn) const
+{
+	ContainerResult result;
+	result.kind = ContainerKind::Map;
 
-    auto ev = analyseStructure(fn);
-    result.confidence = ev.confidence;
+	auto ev = analyseStructure(fn);
+	result.confidence = ev.confidence;
 
-    if (ev.confidence < 0.10f) return result;
+	if (ev.confidence < 0.10f) return result;
 
-    result.emittedType = "std::map<int, int>";
-    result.elementType.kind = RecoveredType::Kind::Int32;
-    result.keyType.kind     = RecoveredType::Kind::Int32;
+	result.emittedType = "std::map<int, int>";
+	result.elementType.kind = RecoveredType::Kind::Int32;
+	result.keyType.kind = RecoveredType::Kind::Int32;
 
-    if (ev.hasThreePtrNode) {
-        AccessPattern ap;
-        ap.kind    = AccessKind::Lookup;
-        ap.emitted = "m.find(key)";
-        result.accessPatterns.push_back(ap);
-    }
-    if (ev.hasRebalancing) {
-        AccessPattern ap;
-        ap.kind    = AccessKind::Insert;
-        ap.emitted = "m.insert({key, val})";
-        result.accessPatterns.push_back(ap);
-    }
-    if (ev.hasThreePtrNode) {
-        AccessPattern ap;
-        ap.kind    = AccessKind::Iterate;
-        ap.emitted = "for (auto& [k,v] : m)";
-        result.accessPatterns.push_back(ap);
-    }
+	if (ev.hasThreePtrNode)
+	{
+		AccessPattern ap;
+		ap.kind = AccessKind::Lookup;
+		ap.emitted = "m.find(key)";
+		result.accessPatterns.push_back(ap);
+	}
+	if (ev.hasRebalancing)
+	{
+		AccessPattern ap;
+		ap.kind = AccessKind::Insert;
+		ap.emitted = "m.insert({key, val})";
+		result.accessPatterns.push_back(ap);
+	}
+	if (ev.hasThreePtrNode)
+	{
+		AccessPattern ap;
+		ap.kind = AccessKind::Iterate;
+		ap.emitted = "for (auto& [k,v] : m)";
+		result.accessPatterns.push_back(ap);
+	}
 
-    return result;
+	return result;
 }
 
 } // namespace container_detect

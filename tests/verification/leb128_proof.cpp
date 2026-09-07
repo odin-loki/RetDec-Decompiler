@@ -38,7 +38,7 @@ std::uint64_t nondet_uint64();
 }
 
 #ifdef RETDEC_VERIFY_SYNTAX_ONLY
-#define __ESBMC_assume(cond) ((void) sizeof((cond) ? 1 : 0))
+#define __ESBMC_assume(cond) ((void)sizeof((cond) ? 1 : 0))
 #endif
 
 // A buffer long enough that a maximal encoding fits and still overruns if the
@@ -49,7 +49,8 @@ namespace {
 
 void fillNondet(std::uint8_t (&buf)[kBufLen])
 {
-	for (std::size_t i = 0; i < kBufLen; ++i) buf[i] = nondet_uchar();
+	for (std::size_t i = 0; i < kBufLen; ++i)
+		buf[i] = nondet_uchar();
 }
 
 } // namespace
@@ -93,7 +94,8 @@ extern "C" void proof_uleb_stays_in_bounds()
 extern "C" void proof_uleb_rejects_unterminated()
 {
 	std::uint8_t buf[kBufLen];
-	for (std::size_t i = 0; i < kBufLen; ++i) buf[i] = nondet_uchar() | 0x80;
+	for (std::size_t i = 0; i < kBufLen; ++i)
+		buf[i] = nondet_uchar() | 0x80;
 
 	const std::size_t size = nondet_size();
 	__ESBMC_assume(size <= kBufLen);
@@ -176,7 +178,8 @@ extern "C" void proof_sleb_stays_in_bounds()
 extern "C" void proof_sleb_rejects_unterminated()
 {
 	std::uint8_t buf[kBufLen];
-	for (std::size_t i = 0; i < kBufLen; ++i) buf[i] = nondet_uchar() | 0x80;
+	for (std::size_t i = 0; i < kBufLen; ++i)
+		buf[i] = nondet_uchar() | 0x80;
 
 	const std::size_t size = nondet_size();
 	__ESBMC_assume(size <= kBufLen);
@@ -198,8 +201,10 @@ extern "C" void proof_sleb_single_byte_sign()
 	assert(r.bytesRead == 1);
 
 	const std::int64_t v = toSigned(r.value);
-	if ((buf[0] & 0x40) != 0) assert(v < 0);
-	else assert(v == static_cast<std::int64_t>(buf[0]));
+	if ((buf[0] & 0x40) != 0)
+		assert(v < 0);
+	else
+		assert(v == static_cast<std::int64_t>(buf[0]));
 }
 
 // ─── toSigned ────────────────────────────────────────────────────────────────
@@ -217,4 +222,7 @@ extern "C" void proof_to_signed_is_total_and_reversible()
 	assert((v <= static_cast<std::uint64_t>(INT64_MAX)) == (s >= 0));
 }
 
-int main() { return 0; }
+int main()
+{
+	return 0;
+}

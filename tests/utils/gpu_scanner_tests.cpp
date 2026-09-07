@@ -1,24 +1,24 @@
 /**
-* @file tests/utils/gpu_scanner_tests.cpp
-* @brief Tests for the @c GpuScanner module.
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek
-*
-* These cover the two public entry points that take numbers a caller supplied
-* and turn them into buffer arithmetic: uploadFile, which takes a raw pointer
-* and a length as two independent arguments, and batchMatch, which turns a byte
-* range into a nibble range by doubling both ends.
-*
-* Which implementation they are testing matters here. src/utils/CMakeLists.txt
-* builds retdec-gpu-scanner from src/utils/gpu_scanner.cu when a CUDA compiler
-* is found and from src/utils/gpu_scanner_cpu.cpp when one is not, and for a
-* while the two files carried separate copies of that arithmetic: a fix landed
-* in the CPU file, the CUDA file kept the original wrong answers, and no test
-* in the tree could see it, because a machine without nvcc cannot build a .cu
-* at all. The host-side arithmetic now lives once, in gpu_scanner.cu behind
-* RETDEC_GPU_SCANNER_HOST_ONLY, and gpu_scanner_cpu.cpp includes it. The
-* include below is the same one, so the assertions in this file are about the
-* text a CUDA build compiles and not about a copy of it.
-*/
+ * @file tests/utils/gpu_scanner_tests.cpp
+ * @brief Tests for the @c GpuScanner module.
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek
+ *
+ * These cover the two public entry points that take numbers a caller supplied
+ * and turn them into buffer arithmetic: uploadFile, which takes a raw pointer
+ * and a length as two independent arguments, and batchMatch, which turns a byte
+ * range into a nibble range by doubling both ends.
+ *
+ * Which implementation they are testing matters here. src/utils/CMakeLists.txt
+ * builds retdec-gpu-scanner from src/utils/gpu_scanner.cu when a CUDA compiler
+ * is found and from src/utils/gpu_scanner_cpu.cpp when one is not, and for a
+ * while the two files carried separate copies of that arithmetic: a fix landed
+ * in the CPU file, the CUDA file kept the original wrong answers, and no test
+ * in the tree could see it, because a machine without nvcc cannot build a .cu
+ * at all. The host-side arithmetic now lives once, in gpu_scanner.cu behind
+ * RETDEC_GPU_SCANNER_HOST_ONLY, and gpu_scanner_cpu.cpp includes it. The
+ * include below is the same one, so the assertions in this file are about the
+ * text a CUDA build compiles and not about a copy of it.
+ */
 
 #include <cstddef>
 #include <cstdint>
@@ -43,8 +43,8 @@ class GpuScannerTests : public Test {};
 
 /// A file that really was uploaded still scans, so the guards below are not
 /// just refusing everything.
-TEST_F(GpuScannerTests,
-UploadedFileIsScannable) {
+TEST_F(GpuScannerTests, UploadedFileIsScannable)
+{
 	const std::vector<std::uint8_t> bytes = {0xDE, 0xAD, 0xBE, 0xEF};
 
 	GpuScanner scanner;
@@ -81,8 +81,8 @@ UploadedFileIsScannable) {
 /// function that no caller wraps in a try block. Both are refusals the
 /// function is now able to make: bounds::mulFits is asked before anything is
 /// touched.
-TEST_F(GpuScannerTests,
-UploadRefusesASizeWhoseNibbleCountWouldWrap) {
+TEST_F(GpuScannerTests, UploadRefusesASizeWhoseNibbleCountWouldWrap)
+{
 	const std::uint8_t bytes[] = {0xDE, 0xAD, 0xBE, 0xEF};
 
 	GpuScanner scanner;
@@ -98,8 +98,7 @@ UploadRefusesASizeWhoseNibbleCountWouldWrap) {
 
 	// SIZE_MAX / 2 + 1 is the smallest size whose doubling wraps, so it is the
 	// boundary the check has to sit exactly on.
-	const std::size_t firstWrappingSize =
-			std::numeric_limits<std::size_t>::max() / 2 + 1;
+	const std::size_t firstWrappingSize = std::numeric_limits<std::size_t>::max() / 2 + 1;
 	EXPECT_NO_THROW(scanner.uploadFile(bytes, firstWrappingSize));
 	EXPECT_EQ(0.0, scanner.fileEntropy());
 }
@@ -107,8 +106,8 @@ UploadRefusesASizeWhoseNibbleCountWouldWrap) {
 /// The same call had no null check at all -- unlike conversion.h's
 /// bytesToHexString, which does. `assign(nullptr, nullptr + 8)` allocated eight
 /// bytes and then copied from address 0.
-TEST_F(GpuScannerTests,
-UploadRefusesANullPointerWithANonZeroSize) {
+TEST_F(GpuScannerTests, UploadRefusesANullPointerWithANonZeroSize)
+{
 	GpuScanner scanner;
 	scanner.uploadFile(nullptr, 8);
 
@@ -122,8 +121,8 @@ UploadRefusesANullPointerWithANonZeroSize) {
 
 /// An empty upload is legitimate -- a zero-byte file -- and must not be turned
 /// into a refusal by the null check.
-TEST_F(GpuScannerTests,
-UploadOfAnEmptyFileIsNotAnError) {
+TEST_F(GpuScannerTests, UploadOfAnEmptyFileIsNotAnError)
+{
 	GpuScanner scanner;
 	scanner.uploadFile(nullptr, 0);
 	EXPECT_EQ(0.0, scanner.fileEntropy());
@@ -136,8 +135,8 @@ UploadOfAnEmptyFileIsNotAnError) {
 /// A refused upload must not leave the bytes of the previous one behind, or a
 /// caller that checks the results of the second upload would be reading the
 /// first file.
-TEST_F(GpuScannerTests,
-RefusedUploadDiscardsThePreviousFile) {
+TEST_F(GpuScannerTests, RefusedUploadDiscardsThePreviousFile)
+{
 	const std::vector<std::uint8_t> bytes = {0xDE, 0xAD, 0xBE, 0xEF};
 
 	GpuScanner scanner;
@@ -172,8 +171,8 @@ RefusedUploadDiscardsThePreviousFile) {
 /// instead by TheByteWindowRefusesARangeThatSelectsNothing, which calls it
 /// directly -- and it is not redundant, because gpu_scanner.cu's fileEntropy
 /// divides by that length itself rather than going through entropyBits.
-TEST_F(GpuScannerTests,
-EntropyOfAnOutOfRangeWindowIsNotAMeasurement) {
+TEST_F(GpuScannerTests, EntropyOfAnOutOfRangeWindowIsNotAMeasurement)
+{
 	const std::vector<std::uint8_t> bytes = {0xDE, 0xAD, 0xBE, 0xEF};
 
 	GpuScanner scanner;
@@ -215,8 +214,8 @@ EntropyOfAnOutOfRangeWindowIsNotAMeasurement) {
 /// it. It is not memory-unsafe -- the scan still stops at the end of the
 /// nibble string -- it is a false positive, and a signature match is what names
 /// a packer, a compiler or a crypto constant.
-TEST_F(GpuScannerTests,
-AStartOffsetPastTheEndOfTheFileDoesNotMatchAtItsStart) {
+TEST_F(GpuScannerTests, AStartOffsetPastTheEndOfTheFileDoesNotMatchAtItsStart)
+{
 	const std::vector<std::uint8_t> bytes = {0xDE, 0xAD, 0xBE, 0xEF};
 
 	GpuScanner scanner;
@@ -229,8 +228,7 @@ AStartOffsetPastTheEndOfTheFileDoesNotMatchAtItsStart) {
 	// SIZE_MAX / 2 + 1 is the smallest start offset whose doubling does not
 	// fit -- 2^63 where std::size_t is 64 bits, which is the offset the wrong
 	// answer above was measured at -- so it is the boundary the check sits on.
-	const std::size_t firstWrapping =
-			std::numeric_limits<std::size_t>::max() / 2 + 1;
+	const std::size_t firstWrapping = std::numeric_limits<std::size_t>::max() / 2 + 1;
 
 	const auto wrapped = scanner.batchMatch(patterns, firstWrapping, SIZE_MAX);
 	ASSERT_EQ(1u, wrapped.size());
@@ -240,8 +238,7 @@ AStartOffsetPastTheEndOfTheFileDoesNotMatchAtItsStart) {
 
 	// Either side of that boundary, and the largest offset there is.
 	EXPECT_FALSE(scanner.batchMatch(patterns, firstWrapping - 1, SIZE_MAX)[0].matched);
-	EXPECT_FALSE(scanner.batchMatch(
-			patterns, std::numeric_limits<std::size_t>::max(), SIZE_MAX)[0].matched);
+	EXPECT_FALSE(scanner.batchMatch(patterns, std::numeric_limits<std::size_t>::max(), SIZE_MAX)[0].matched);
 
 	// The first offset that is genuinely outside a four-byte file, where no
 	// wrapping is involved at all.
@@ -264,8 +261,8 @@ AStartOffsetPastTheEndOfTheFileDoesNotMatchAtItsStart) {
 /// +1 made endNib = 1, and a caller asking to scan a whole file got the window
 /// collapsed to a single nibble. A false negative -- the opposite direction
 /// from the start-offset wrap, from the same missing question.
-TEST_F(GpuScannerTests,
-AStopOffsetPastTheEndOfTheFileStillScansTheWholeFile) {
+TEST_F(GpuScannerTests, AStopOffsetPastTheEndOfTheFileStillScansTheWholeFile)
+{
 	const std::vector<std::uint8_t> bytes = {0xDE, 0xAD, 0xBE, 0xEF};
 
 	GpuScanner scanner;
@@ -275,8 +272,7 @@ AStopOffsetPastTheEndOfTheFileStillScansTheWholeFile) {
 	// The control: a stop past the end whose doubling fits was always right.
 	EXPECT_TRUE(scanner.batchMatch(patterns, 0, 1000)[0].matched);
 
-	const std::size_t firstWrapping =
-			std::numeric_limits<std::size_t>::max() / 2 + 1;
+	const std::size_t firstWrapping = std::numeric_limits<std::size_t>::max() / 2 + 1;
 
 	const auto wrapped = scanner.batchMatch(patterns, 0, firstWrapping);
 	ASSERT_EQ(1u, wrapped.size());
@@ -288,8 +284,7 @@ AStopOffsetPastTheEndOfTheFileStillScansTheWholeFile) {
 	// Either side of the boundary, and the value the header documents as
 	// "scan to end of file", which must keep meaning that.
 	EXPECT_TRUE(scanner.batchMatch(patterns, 0, firstWrapping - 1)[0].matched);
-	EXPECT_TRUE(scanner.batchMatch(
-			patterns, 0, std::numeric_limits<std::size_t>::max())[0].matched);
+	EXPECT_TRUE(scanner.batchMatch(patterns, 0, std::numeric_limits<std::size_t>::max())[0].matched);
 	EXPECT_TRUE(scanner.batchMatch(patterns, 0, SIZE_MAX)[0].matched);
 
 	// A stop offset that really does narrow the window still narrows it: byte 0
@@ -309,8 +304,8 @@ AStopOffsetPastTheEndOfTheFileStillScansTheWholeFile) {
 /// gpu_scanner.cu computes the same quantity as `endPos + 1 - patLen` guarded
 /// by `endPos + 1 >= patLen`, which is correct, so the CPU and GPU halves of
 /// one class disagreed about the last window that fits.
-TEST_F(GpuScannerTests,
-AnExactWholeFileMatchIsFound) {
+TEST_F(GpuScannerTests, AnExactWholeFileMatchIsFound)
+{
 	const std::vector<std::uint8_t> two = {0xDE, 0xAD};
 
 	GpuScanner scanner;
@@ -351,8 +346,8 @@ AnExactWholeFileMatchIsFound) {
 /// Neither end of the window may wrap: a start that cannot be expressed in
 /// nibbles is past the end of any file, and a stop that cannot be expressed in
 /// nibbles means the end of this one.
-TEST_F(GpuScannerTests,
-TheNibbleWindowSaturatesAndRefusesRatherThanWrapping) {
+TEST_F(GpuScannerTests, TheNibbleWindowSaturatesAndRefusesRatherThanWrapping)
+{
 	// Eight nibbles is a four-byte file.
 	std::size_t startNib = 99;
 	std::size_t endNib = 99;
@@ -367,30 +362,26 @@ TheNibbleWindowSaturatesAndRefusesRatherThanWrapping) {
 	EXPECT_EQ(2u, startNib);
 	EXPECT_EQ(5u, endNib);
 
-	const std::size_t firstWrapping =
-			std::numeric_limits<std::size_t>::max() / 2 + 1;
+	const std::size_t firstWrapping = std::numeric_limits<std::size_t>::max() / 2 + 1;
 
 	// Starts: past the end, whether by wrapping or not.
 	EXPECT_FALSE(gpuscan::nibbleWindow(4, SIZE_MAX, 8, startNib, endNib));
 	EXPECT_FALSE(gpuscan::nibbleWindow(firstWrapping, SIZE_MAX, 8, startNib, endNib));
 	EXPECT_FALSE(gpuscan::nibbleWindow(firstWrapping - 1, SIZE_MAX, 8, startNib, endNib));
-	EXPECT_FALSE(gpuscan::nibbleWindow(
-			std::numeric_limits<std::size_t>::max(), SIZE_MAX, 8, startNib, endNib));
+	EXPECT_FALSE(gpuscan::nibbleWindow(std::numeric_limits<std::size_t>::max(), SIZE_MAX, 8, startNib, endNib));
 
 	// Stops: every one of these means "to the end of the file".
 	EXPECT_TRUE(gpuscan::nibbleWindow(0, firstWrapping, 8, startNib, endNib));
 	EXPECT_EQ(7u, endNib);
 	EXPECT_TRUE(gpuscan::nibbleWindow(0, firstWrapping - 1, 8, startNib, endNib));
 	EXPECT_EQ(7u, endNib);
-	EXPECT_TRUE(gpuscan::nibbleWindow(
-			0, std::numeric_limits<std::size_t>::max(), 8, startNib, endNib));
+	EXPECT_TRUE(gpuscan::nibbleWindow(0, std::numeric_limits<std::size_t>::max(), 8, startNib, endNib));
 	EXPECT_EQ(7u, endNib);
 
 	// A window big enough that the doubling is the only thing that could have
 	// gone wrong: the stop offset here doubles to just under SIZE_MAX.
 	const std::size_t hugeNibLen = std::numeric_limits<std::size_t>::max();
-	EXPECT_TRUE(gpuscan::nibbleWindow(
-			2, firstWrapping - 1, hugeNibLen, startNib, endNib));
+	EXPECT_TRUE(gpuscan::nibbleWindow(2, firstWrapping - 1, hugeNibLen, startNib, endNib));
 	EXPECT_EQ(4u, startNib);
 	EXPECT_EQ(std::numeric_limits<std::size_t>::max() - 1, endNib);
 
@@ -403,8 +394,8 @@ TheNibbleWindowSaturatesAndRefusesRatherThanWrapping) {
 
 /// The byte window fileEntropy measures over: an empty selection is refused
 /// rather than answered with an underflowed length.
-TEST_F(GpuScannerTests,
-TheByteWindowRefusesARangeThatSelectsNothing) {
+TEST_F(GpuScannerTests, TheByteWindowRefusesARangeThatSelectsNothing)
+{
 	std::size_t lo = 99;
 	std::size_t hi = 99;
 
@@ -423,8 +414,7 @@ TheByteWindowRefusesARangeThatSelectsNothing) {
 
 	// Past the end, backwards, and empty.
 	EXPECT_FALSE(gpuscan::byteWindow(4, SIZE_MAX, 4, lo, hi));
-	EXPECT_FALSE(gpuscan::byteWindow(
-			std::numeric_limits<std::size_t>::max(), SIZE_MAX, 4, lo, hi));
+	EXPECT_FALSE(gpuscan::byteWindow(std::numeric_limits<std::size_t>::max(), SIZE_MAX, 4, lo, hi));
 	EXPECT_FALSE(gpuscan::byteWindow(3, 1, 4, lo, hi));
 	EXPECT_FALSE(gpuscan::byteWindow(0, SIZE_MAX, 0, lo, hi));
 	EXPECT_EQ(0u, lo);
@@ -433,8 +423,8 @@ TheByteWindowRefusesARangeThatSelectsNothing) {
 
 /// The pattern that exactly fills the window has a position, and the pattern
 /// one nibble longer has none.
-TEST_F(GpuScannerTests,
-TheLastStartPositionIncludesTheWindowThatExactlyFits) {
+TEST_F(GpuScannerTests, TheLastStartPositionIncludesTheWindowThatExactlyFits)
+{
 	std::size_t maxStart = 99;
 
 	// Four nibbles in a four-nibble window: position 0, and only position 0.
@@ -454,8 +444,7 @@ TheLastStartPositionIncludesTheWindowThatExactlyFits) {
 	EXPECT_FALSE(gpuscan::lastStartFor(3, 5, maxStart));
 	EXPECT_FALSE(gpuscan::lastStartFor(0, 2, maxStart));
 	EXPECT_FALSE(gpuscan::lastStartFor(0, 0, maxStart));
-	EXPECT_FALSE(gpuscan::lastStartFor(
-			std::numeric_limits<std::size_t>::max(), 0, maxStart));
+	EXPECT_FALSE(gpuscan::lastStartFor(std::numeric_limits<std::size_t>::max(), 0, maxStart));
 	EXPECT_EQ(0u, maxStart);
 
 	// The largest windows there are, where the subtraction must not wrap. A
@@ -463,21 +452,17 @@ TheLastStartPositionIncludesTheWindowThatExactlyFits) {
 	// SIZE_MAX nibbles fills it exactly and has only position 0; one more
 	// nibble of window is one more position.
 	EXPECT_TRUE(gpuscan::lastStartFor(
-			std::numeric_limits<std::size_t>::max() - 1,
-			std::numeric_limits<std::size_t>::max(),
-			maxStart));
+		std::numeric_limits<std::size_t>::max() - 1, std::numeric_limits<std::size_t>::max(), maxStart));
 	EXPECT_EQ(0u, maxStart);
 	EXPECT_TRUE(gpuscan::lastStartFor(
-			std::numeric_limits<std::size_t>::max(),
-			std::numeric_limits<std::size_t>::max(),
-			maxStart));
+		std::numeric_limits<std::size_t>::max(), std::numeric_limits<std::size_t>::max(), maxStart));
 	EXPECT_EQ(1u, maxStart);
 }
 
 /// The byte-to-nibble expansion refuses what it cannot expand, and says so
 /// before it has touched anything.
-TEST_F(GpuScannerTests,
-NibbleExpansionRefusesWhatItCannotExpand) {
+TEST_F(GpuScannerTests, NibbleExpansionRefusesWhatItCannotExpand)
+{
 	const std::uint8_t bytes[] = {0xDE, 0xAD};
 	std::string out = "stale";
 
@@ -492,11 +477,9 @@ NibbleExpansionRefusesWhatItCannotExpand) {
 	// A length whose nibble count is not representable. SIZE_MAX / 2 + 1 is the
 	// smallest of them, so it is the boundary the check sits on.
 	out = "stale";
-	EXPECT_FALSE(gpuscan::nibblesFor(
-			bytes, std::numeric_limits<std::size_t>::max(), out));
+	EXPECT_FALSE(gpuscan::nibblesFor(bytes, std::numeric_limits<std::size_t>::max(), out));
 	EXPECT_TRUE(out.empty());
-	EXPECT_FALSE(gpuscan::nibblesFor(
-			bytes, std::numeric_limits<std::size_t>::max() / 2 + 1, out));
+	EXPECT_FALSE(gpuscan::nibblesFor(bytes, std::numeric_limits<std::size_t>::max() / 2 + 1, out));
 	EXPECT_TRUE(out.empty());
 
 	// A zero-byte file is a legitimate input, not a refusal, even with a null
@@ -517,8 +500,8 @@ NibbleExpansionRefusesWhatItCannotExpand) {
 ///
 /// The test asserts the refusal is the ordinary one: an empty scanner, which is
 /// what every caller already handles for a file it could not read.
-TEST_F(GpuScannerTests,
-UploadRefusesASizeNoStringCanHold) {
+TEST_F(GpuScannerTests, UploadRefusesASizeNoStringCanHold)
+{
 	const std::vector<std::uint8_t> bytes = {0xDE, 0xAD, 0xBE, 0xEF};
 	const std::size_t maxString = std::string().max_size();
 
@@ -529,13 +512,11 @@ UploadRefusesASizeNoStringCanHold) {
 	// The smallest size whose nibble count exceeds what a string can hold, and
 	// two more inside that band. Each passes bounds::mulFits.
 	const std::size_t justOver = maxString / 2 + 1;
-	for (std::size_t size : {justOver,
-	                         justOver + 1,
-	                         std::numeric_limits<std::size_t>::max() / 2}) {
+	for (std::size_t size: {justOver, justOver + 1, std::numeric_limits<std::size_t>::max() / 2})
+	{
 		ASSERT_TRUE(size <= std::numeric_limits<std::size_t>::max() / 2)
-				<< "the case must pass mulFits, or it tests the wrong guard";
-		ASSERT_TRUE(size * 2 > maxString)
-				<< "the case must exceed what a string can hold";
+			<< "the case must pass mulFits, or it tests the wrong guard";
+		ASSERT_TRUE(size * 2 > maxString) << "the case must exceed what a string can hold";
 
 		// No throw, and the scanner is left empty rather than half-filled.
 		EXPECT_NO_THROW(scanner.uploadFile(bytes.data(), size));
@@ -555,8 +536,8 @@ UploadRefusesASizeNoStringCanHold) {
 /// the copy. There is one implementation now, and this pins its reading so a
 /// second copy reintroduced later disagrees with a test rather than silently
 /// with itself.
-TEST_F(GpuScannerTests,
-SlashedJumpNibblesAreDontCares) {
+TEST_F(GpuScannerTests, SlashedJumpNibblesAreDontCares)
+{
 	const std::vector<std::uint8_t> bytes = {0xDE, 0xAD, 0xBE, 0xEF};
 	GpuScanner scanner;
 	scanner.uploadFile(bytes.data(), bytes.size());

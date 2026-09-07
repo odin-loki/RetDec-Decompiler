@@ -1,9 +1,9 @@
 /**
-* @file include/retdec/utils/conversion.h
-* @brief Conversion utilities.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file include/retdec/utils/conversion.h
+ * @brief Conversion utilities.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #ifndef RETDEC_UTILS_CONVERSION_H
 #define RETDEC_UTILS_CONVERSION_H
@@ -39,14 +39,15 @@ char* byteToHexString(uint8_t b, bool uppercase = true);
  * @param uppercase @c true if hex letters (A-F) should be uppercase
  * @param spacing insert ' ' between every byte
  */
-template<typename N> void bytesToHexString(
-		const N *data,
-		std::size_t dataSize,
-		std::string &result,
-		std::size_t offset = 0,
-		std::size_t size = 0,
-		bool uppercase = true,
-		bool spacing = false)
+template <typename N>
+void bytesToHexString(
+	const N* data,
+	std::size_t dataSize,
+	std::string& result,
+	std::size_t offset = 0,
+	std::size_t size = 0,
+	bool uppercase = true,
+	bool spacing = false)
 {
 	if (data == nullptr || offset >= dataSize)
 	{
@@ -61,9 +62,7 @@ template<typename N> void bytesToHexString(
 	// `offset + size > dataSize` forms the sum first: at offset 1 and size
 	// SIZE_MAX it wraps to 0, the test is false, and `size` survives the clamp
 	// unchanged. rangeFits asks the same question without forming it.
-	size = (size == 0 || !bounds::rangeFits(offset, dataSize, size))
-			? bounds::remaining(offset, dataSize)
-			: size;
+	size = (size == 0 || !bounds::rangeFits(offset, dataSize, size)) ? bounds::remaining(offset, dataSize) : size;
 
 	std::size_t hexIndex = 0;
 
@@ -103,46 +102,39 @@ template<typename N> void bytesToHexString(
  * @param uppercase @c true if hex letters (A-F) should be uppercase
  * @param spacing insert ' ' between every byte
  */
-template<typename N> void bytesToHexString(
-		const std::vector<N> &bytes,
-		std::string &result,
-		std::size_t offset = 0,
-		std::size_t size = 0,
-		bool uppercase = true,
-		bool spacing = false)
+template <typename N>
+void bytesToHexString(
+	const std::vector<N>& bytes,
+	std::string& result,
+	std::size_t offset = 0,
+	std::size_t size = 0,
+	bool uppercase = true,
+	bool spacing = false)
 {
-	bytesToHexString(
-			bytes.data(),
-			bytes.size(),
-			result,
-			offset,
-			size,
-			uppercase,
-			spacing
-	);
+	bytesToHexString(bytes.data(), bytes.size(), result, offset, size, uppercase, spacing);
 }
 
 /**
-* @brief Converts the given integer into its hexadecimal representation.
-*
-* @param[in] w Number to be converted.
-* @param[in] addBase Prepends "0x" before the result.
-* @param[in] fillToN If needed, prepends "0" before the result to get at least
-*                    @c fillToN characters long string.
-*
-* All letters in the result are lowercase.
-*/
-template<typename I>
+ * @brief Converts the given integer into its hexadecimal representation.
+ *
+ * @param[in] w Number to be converted.
+ * @param[in] addBase Prepends "0x" before the result.
+ * @param[in] fillToN If needed, prepends "0" before the result to get at least
+ *                    @c fillToN characters long string.
+ *
+ * All letters in the result are lowercase.
+ */
+template <typename I>
 std::string intToHexString(I w, bool addBase = false, unsigned fillToN = 0)
 {
 	static const char* digits = "0123456789abcdef";
 
-	size_t hex_len = sizeof(I)<<1;
+	size_t hex_len = sizeof(I) << 1;
 
-	std::string rc(hex_len,'0');
-	for (size_t i = 0, j = (hex_len-1)*4 ; i < hex_len; ++i, j -= 4)
+	std::string rc(hex_len, '0');
+	for (size_t i = 0, j = (hex_len - 1) * 4; i < hex_len; ++i, j -= 4)
 	{
-		rc[i] = digits[(w>>j) & 0x0f];
+		rc[i] = digits[(w >> j) & 0x0f];
 	}
 
 	bool started = false;
@@ -179,29 +171,31 @@ std::string intToHexString(I w, bool addBase = false, unsigned fillToN = 0)
 std::vector<uint8_t> hexStringToBytes(const std::string& hexIn);
 
 /**
-* @brief Converts the given string into a number.
-*
-* @param[in] str String to be converted into a number.
-* @param[out] number Into this parameter the resulting number is stored.
-* @param[in] format Number format (e.g. std::dec, std::hex).
-*
-* @return @c true if the conversion went ok, @c false otherwise.
-*
-* If the conversion fails, @a number is left unchanged.
-*/
-template<typename N>
-inline bool strToNum(const std::string &str, N &number,
-		std::ios_base &(* format)(std::ios_base &) = std::dec) {
+ * @brief Converts the given string into a number.
+ *
+ * @param[in] str String to be converted into a number.
+ * @param[out] number Into this parameter the resulting number is stored.
+ * @param[in] format Number format (e.g. std::dec, std::hex).
+ *
+ * @return @c true if the conversion went ok, @c false otherwise.
+ *
+ * If the conversion fails, @a number is left unchanged.
+ */
+template <typename N>
+inline bool strToNum(const std::string& str, N& number, std::ios_base& (*format)(std::ios_base&) = std::dec)
+{
 	std::istringstream strStream(str);
 	N convNumber = 0;
 	strStream >> format >> convNumber;
-	if (strStream.fail() || !strStream.eof()) {
+	if (strStream.fail() || !strStream.eof())
+	{
 		return false;
 	}
 
 	// The above checks do not detect conversion of a negative number into an
 	// unsigned integer. We have to perform an additional check here.
-	if (std::is_unsigned<N>::value && str[0] == '-') {
+	if (std::is_unsigned<N>::value && str[0] == '-')
+	{
 		return false;
 	}
 
@@ -209,9 +203,8 @@ inline bool strToNum(const std::string &str, N &number,
 	return true;
 }
 
-namespace
-{
-	const std::size_t BITS_IN_BYTE = 8;
+namespace {
+const std::size_t BITS_IN_BYTE = 8;
 }
 
 /**
@@ -222,9 +215,11 @@ namespace
  *
  * @return Resulting string.
  */
-template<typename N>
-std::string bytesToBits(const N *data, std::size_t dataSize) {
-	if(!data) {
+template <typename N>
+std::string bytesToBits(const N* data, std::size_t dataSize)
+{
+	if (!data)
+	{
 		dataSize = 0;
 	}
 
@@ -235,13 +230,15 @@ std::string bytesToBits(const N *data, std::size_t dataSize) {
 	// honest answer: a caller asking for a string longer than the address space
 	// has asked for nothing.
 	const std::size_t need = txt::bitsCapacity(dataSize);
-	if (need == 0) {
+	if (need == 0)
+	{
 		return std::string();
 	}
 
 	std::string result(need, '0');
 
-	for (std::size_t i = 0; i < dataSize; ++i) {
+	for (std::size_t i = 0; i < dataSize; ++i)
+	{
 		// The old body was `((item << j) & 0x80)`, and this template is
 		// instantiated for std::int8_t. For any element with the top bit set,
 		// `item` promotes to a NEGATIVE int and `item << j` left-shifts a
@@ -257,8 +254,7 @@ std::string bytesToBits(const N *data, std::size_t dataSize) {
 		// so cannot be undefined at any element value.
 		const std::uint8_t byte = static_cast<std::uint8_t>(data[i]);
 		// need == dataSize * 8 exactly, so this window is inside the string.
-		txt::bytesToBits(
-				&byte, 1, &result[i * BITS_IN_BYTE], BITS_IN_BYTE);
+		txt::bytesToBits(&byte, 1, &result[i * BITS_IN_BYTE], BITS_IN_BYTE);
 	}
 
 	return result;
@@ -271,8 +267,9 @@ std::string bytesToBits(const N *data, std::size_t dataSize) {
  *
  * @return Resulting string.
  */
-template<typename N>
-std::string bytesToBits(const std::vector<N> &bytes) {
+template <typename N>
+std::string bytesToBits(const std::vector<N>& bytes)
+{
 	return bytesToBits(bytes.data(), bytes.size());
 }
 /**
@@ -284,19 +281,16 @@ std::string bytesToBits(const std::vector<N> &bytes) {
  * @param size Number of bytes from @a data for conversion
  *    (0 means all bytes from @a offset)
  */
-template<typename N> void bytesToString(
-		const N *data,
-		std::size_t dataSize,
-		std::string &result,
-		std::size_t offset = 0,
-		std::size_t size = 0)
+template <typename N>
+void bytesToString(
+	const N* data, std::size_t dataSize, std::string& result, std::size_t offset = 0, std::size_t size = 0)
 {
-	if(!data)
+	if (!data)
 	{
 		dataSize = 0;
 	}
 
-	if(offset >= dataSize)
+	if (offset >= dataSize)
 	{
 		size = 0;
 	}
@@ -305,9 +299,7 @@ template<typename N> void bytesToString(
 		// Same wrapping sum as bytesToHexString above; same fix. Here the
 		// consequence is `std::string(data + offset, size)` reading `size`
 		// bytes from a buffer that has fewer.
-		size = (size == 0 || !bounds::rangeFits(offset, dataSize, size))
-				? bounds::remaining(offset, dataSize)
-				: size;
+		size = (size == 0 || !bounds::rangeFits(offset, dataSize, size)) ? bounds::remaining(offset, dataSize) : size;
 	}
 
 	result.clear();
@@ -323,11 +315,8 @@ template<typename N> void bytesToString(
  * @param size Number of bytes from @a bytes for conversion
  *    (0 means all bytes from @a offset)
  */
-template<typename N> void bytesToString(
-		const std::vector<N> &bytes,
-		std::string &result,
-		std::size_t offset = 0,
-		std::size_t size = 0)
+template <typename N>
+void bytesToString(const std::vector<N>& bytes, std::string& result, std::size_t offset = 0, std::size_t size = 0)
 {
 	bytesToString(bytes.data(), bytes.size(), result, offset, size);
 }
@@ -354,13 +343,12 @@ constexpr std::size_t kExtendedBytes = 10;
  * An empty @a dest is the refusal, and it is distinguishable from every
  * success: a successful conversion always resizes @a dest to eight bytes.
  */
-void double10ToDouble8(std::vector<unsigned char> &dest,
-	const std::vector<unsigned char> &src);
+void double10ToDouble8(std::vector<unsigned char>& dest, const std::vector<unsigned char>& src);
 
 unsigned short byteSwap16(unsigned short val);
 unsigned int byteSwap32(unsigned int val);
-std::string byteSwap16(const std::string &val);
-std::string byteSwap32(const std::string &val);
+std::string byteSwap16(const std::string& val);
+std::string byteSwap32(const std::string& val);
 
 /// @}
 

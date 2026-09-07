@@ -18,80 +18,90 @@
 namespace retdec {
 namespace lua_parser {
 
-struct LuaReadResult {
-    bool        ok = false;
-    std::string error;
-    LuaModule   module;
-    std::vector<std::string> warnings;
+struct LuaReadResult
+{
+	bool ok = false;
+	std::string error;
+	LuaModule module;
+	std::vector<std::string> warnings;
 };
 
 class LuaReader {
 public:
-    explicit LuaReader(std::vector<uint8_t> bytes);
-    explicit LuaReader(const uint8_t* data, size_t size);
+	explicit LuaReader(std::vector<uint8_t> bytes);
+	explicit LuaReader(const uint8_t* data, size_t size);
 
-    LuaReadResult read();
+	LuaReadResult read();
 
 private:
-    std::vector<uint8_t> data_;
-    size_t               pos_ = 0;
-    LuaVersion           ver_ = LuaVersion::Unknown;
-    bool                 le_  = true;  // little-endian
-    int                  intSz_   = 4;
-    int                  sizetSz_ = 8;
-    bool                 useLeb128_ = false; // Lua 5.4.6+ uses modified LEB128 for ints/sizes
-    std::vector<std::string> warnings_;
-    // String table for Lua 5.4 string deduplication (index → string)
-    std::vector<std::string> stringTable54_;
+	std::vector<uint8_t> data_;
+	size_t pos_ = 0;
+	LuaVersion ver_ = LuaVersion::Unknown;
+	bool le_ = true; // little-endian
+	int intSz_ = 4;
+	int sizetSz_ = 8;
+	bool useLeb128_ = false; // Lua 5.4.6+ uses modified LEB128 for ints/sizes
+	std::vector<std::string> warnings_;
+	// String table for Lua 5.4 string deduplication (index → string)
+	std::vector<std::string> stringTable54_;
 
-    struct ParseError { std::string msg; };
-    void warn(const std::string& msg) { warnings_.push_back(msg); }
+	struct ParseError
+	{
+		std::string msg;
+	};
+	void warn(const std::string& msg)
+	{
+		warnings_.push_back(msg);
+	}
 
-    // ── Bounds helpers ───────────────────────────────────────────────────────
-    // Bytes of input the file still has to offer at the current position.
-    size_t remaining() const { return pos_ < data_.size() ? data_.size() - pos_ : 0; }
-    // Validate a count/length that came out of the file against what the rest
-    // of the file could actually supply. See lua_reader.cpp for the reasoning.
-    size_t checkedSize(size_t n, size_t minBytesPerElem, const char* what);
-    size_t checkedCount(int32_t n, size_t minBytesPerElem, const char* what);
+	// ── Bounds helpers ───────────────────────────────────────────────────────
+	// Bytes of input the file still has to offer at the current position.
+	size_t remaining() const
+	{
+		return pos_ < data_.size() ? data_.size() - pos_ : 0;
+	}
+	// Validate a count/length that came out of the file against what the rest
+	// of the file could actually supply. See lua_reader.cpp for the reasoning.
+	size_t checkedSize(size_t n, size_t minBytesPerElem, const char* what);
+	size_t checkedCount(int32_t n, size_t minBytesPerElem, const char* what);
 
-    // ── Primitives ────────────────────────────────────────────────────────────
-    uint8_t  readU8();
-    uint32_t readU32();
-    uint64_t readU64();
-    int32_t  readInt();       // fixed-size or LEB128 depending on useLeb128_
-    int64_t  readLuaInt();
-    double   readLuaFloat();
-    size_t   readSizet();
-    size_t   readLuaSize54(); // Lua 5.4 modified LEB128 (MSB=1 → last byte)
-    std::string readString51();   // Lua 5.1/5.2 Pascal-style string
-    std::string readString53();   // Lua 5.3+ ULEB-length string
-    std::string readString54();   // Lua 5.4.6 modified LEB128 + dedup table
-    std::string readString();     // dispatches by version
+	// ── Primitives ────────────────────────────────────────────────────────────
+	uint8_t readU8();
+	uint32_t readU32();
+	uint64_t readU64();
+	int32_t readInt(); // fixed-size or LEB128 depending on useLeb128_
+	int64_t readLuaInt();
+	double readLuaFloat();
+	size_t readSizet();
+	size_t readLuaSize54();     // Lua 5.4 modified LEB128 (MSB=1 → last byte)
+	std::string readString51(); // Lua 5.1/5.2 Pascal-style string
+	std::string readString53(); // Lua 5.3+ ULEB-length string
+	std::string readString54(); // Lua 5.4.6 modified LEB128 + dedup table
+	std::string readString();   // dispatches by version
 
-    // ── Header ────────────────────────────────────────────────────────────────
-    LuaVersion parseHeader();
+	// ── Header ────────────────────────────────────────────────────────────────
+	LuaVersion parseHeader();
 
-    // ── Prototype parsers ────────────────────────────────────────────────────
-    LuaProto readProto51();
-    LuaProto readProto52();
-    LuaProto readProto53();
-    LuaProto readProto54();
+	// ── Prototype parsers ────────────────────────────────────────────────────
+	LuaProto readProto51();
+	LuaProto readProto52();
+	LuaProto readProto53();
+	LuaProto readProto54();
 
-    std::vector<LuaInstr>  readCode();
-    std::vector<LuaConst>  readConstants51();
-    std::vector<LuaConst>  readConstants52();
-    std::vector<LuaConst>  readConstants53();
-    std::vector<LuaConst>  readConstants54();
-    std::vector<LuaUpvalue> readUpvalues51(int n);
-    std::vector<LuaUpvalue> readUpvalues52plus(int n);
-    std::vector<LuaProto>  readProtos51();
-    std::vector<LuaProto>  readProtos52();
-    std::vector<LuaProto>  readProtos53();
-    std::vector<LuaProto>  readProtos54();
-    void readDebugInfo51(LuaProto& proto);
-    void readDebugInfo52plus(LuaProto& proto);
-    void readDebugInfo54(LuaProto& proto);
+	std::vector<LuaInstr> readCode();
+	std::vector<LuaConst> readConstants51();
+	std::vector<LuaConst> readConstants52();
+	std::vector<LuaConst> readConstants53();
+	std::vector<LuaConst> readConstants54();
+	std::vector<LuaUpvalue> readUpvalues51(int n);
+	std::vector<LuaUpvalue> readUpvalues52plus(int n);
+	std::vector<LuaProto> readProtos51();
+	std::vector<LuaProto> readProtos52();
+	std::vector<LuaProto> readProtos53();
+	std::vector<LuaProto> readProtos54();
+	void readDebugInfo51(LuaProto& proto);
+	void readDebugInfo52plus(LuaProto& proto);
+	void readDebugInfo54(LuaProto& proto);
 };
 
 } // namespace lua_parser

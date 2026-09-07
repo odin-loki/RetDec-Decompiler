@@ -65,10 +65,11 @@
 
 // ─── the launch geometry, per thread ─────────────────────────────────────────
 
-struct dim3 {
-    unsigned x = 1, y = 1, z = 1;
-    dim3() = default;
-    dim3(unsigned x_, unsigned y_ = 1, unsigned z_ = 1) : x(x_), y(y_), z(z_) {}
+struct dim3
+{
+	unsigned x = 1, y = 1, z = 1;
+	dim3() = default;
+	dim3(unsigned x_, unsigned y_ = 1, unsigned z_ = 1): x(x_), y(y_), z(z_) {}
 };
 
 namespace retdec {
@@ -81,34 +82,35 @@ namespace cudastub {
 /// what the rest of the tree builds at.
 class BlockBarrier {
 public:
-    explicit BlockBarrier(unsigned threads) : threads_(threads) {}
+	explicit BlockBarrier(unsigned threads): threads_(threads) {}
 
-    void arriveAndWait()
-    {
-        std::unique_lock<std::mutex> lock(m_);
-        const unsigned myGeneration = generation_;
-        if (++waiting_ == threads_) {
-            waiting_ = 0;
-            ++generation_;
-            cv_.notify_all();
-            return;
-        }
-        cv_.wait(lock, [&] { return generation_ != myGeneration; });
-    }
+	void arriveAndWait()
+	{
+		std::unique_lock<std::mutex> lock(m_);
+		const unsigned myGeneration = generation_;
+		if (++waiting_ == threads_)
+		{
+			waiting_ = 0;
+			++generation_;
+			cv_.notify_all();
+			return;
+		}
+		cv_.wait(lock, [&] { return generation_ != myGeneration; });
+	}
 
 private:
-    std::mutex m_;
-    std::condition_variable cv_;
-    unsigned threads_;
-    unsigned waiting_ = 0;
-    unsigned generation_ = 0;
+	std::mutex m_;
+	std::condition_variable cv_;
+	unsigned threads_;
+	unsigned waiting_ = 0;
+	unsigned generation_ = 0;
 };
 
 /// The block currently running. One at a time, so a plain pointer is enough.
 inline BlockBarrier*& currentBarrier()
 {
-    static BlockBarrier* b = nullptr;
-    return b;
+	static BlockBarrier* b = nullptr;
+	return b;
 }
 
 } // namespace cudastub
@@ -123,27 +125,33 @@ extern dim3 gridDim;
 
 inline void __syncthreads()
 {
-    auto* b = ::retdec::tests::cudastub::currentBarrier();
-    if (b != nullptr) {
-        b->arriveAndWait();
-    }
+	auto* b = ::retdec::tests::cudastub::currentBarrier();
+	if (b != nullptr)
+	{
+		b->arriveAndWait();
+	}
 }
 
 // ─── the runtime API this file uses ──────────────────────────────────────────
 
 using cudaError_t = int;
-enum : cudaError_t { cudaSuccess = 0, cudaErrorMemoryAllocation = 2 };
+enum : cudaError_t
+{
+	cudaSuccess = 0,
+	cudaErrorMemoryAllocation = 2
+};
 
-enum cudaMemcpyKind {
-    cudaMemcpyHostToDevice,
-    cudaMemcpyDeviceToHost,
-    cudaMemcpyDeviceToDevice,
-    cudaMemcpyHostToHost,
+enum cudaMemcpyKind
+{
+	cudaMemcpyHostToDevice,
+	cudaMemcpyDeviceToHost,
+	cudaMemcpyDeviceToDevice,
+	cudaMemcpyHostToHost,
 };
 
 inline const char* cudaGetErrorString(cudaError_t e)
 {
-    return e == cudaSuccess ? "no error" : "stubbed CUDA error";
+	return e == cudaSuccess ? "no error" : "stubbed CUDA error";
 }
 
 /// Host memory, so an over-read past the allocation is a real one and ASan
@@ -151,38 +159,40 @@ inline const char* cudaGetErrorString(cudaError_t e)
 template <typename T>
 inline cudaError_t cudaMalloc(T** p, std::size_t bytes)
 {
-    // A zero-byte allocation still yields a distinct pointer on the device;
-    // malloc(0) may return nullptr, which the caller would read as failure.
-    void* mem = std::malloc(bytes == 0 ? 1 : bytes);
-    if (mem == nullptr) {
-        *p = nullptr;
-        return cudaErrorMemoryAllocation;
-    }
-    *p = static_cast<T*>(mem);
-    return cudaSuccess;
+	// A zero-byte allocation still yields a distinct pointer on the device;
+	// malloc(0) may return nullptr, which the caller would read as failure.
+	void* mem = std::malloc(bytes == 0 ? 1 : bytes);
+	if (mem == nullptr)
+	{
+		*p = nullptr;
+		return cudaErrorMemoryAllocation;
+	}
+	*p = static_cast<T*>(mem);
+	return cudaSuccess;
 }
 
 inline cudaError_t cudaFree(void* p)
 {
-    std::free(p);
-    return cudaSuccess;
+	std::free(p);
+	return cudaSuccess;
 }
 
-inline cudaError_t cudaMemcpy(
-        void* dst, const void* src, std::size_t bytes, cudaMemcpyKind)
+inline cudaError_t cudaMemcpy(void* dst, const void* src, std::size_t bytes, cudaMemcpyKind)
 {
-    if (bytes != 0) {
-        std::memcpy(dst, src, bytes);
-    }
-    return cudaSuccess;
+	if (bytes != 0)
+	{
+		std::memcpy(dst, src, bytes);
+	}
+	return cudaSuccess;
 }
 
 inline cudaError_t cudaMemset(void* p, int v, std::size_t bytes)
 {
-    if (bytes != 0) {
-        std::memset(p, v, bytes);
-    }
-    return cudaSuccess;
+	if (bytes != 0)
+	{
+		std::memset(p, v, bytes);
+	}
+	return cudaSuccess;
 }
 
 /// A device-side atomic add. Mutex-guarded rather than std::atomic, because the
@@ -191,32 +201,46 @@ inline cudaError_t cudaMemset(void* p, int v, std::size_t bytes)
 template <typename T>
 inline T atomicAdd(T* address, T value)
 {
-    static std::mutex m;
-    std::lock_guard<std::mutex> lock(m);
-    const T old = *address;
-    *address = old + value;
-    return old;
+	static std::mutex m;
+	std::lock_guard<std::mutex> lock(m);
+	const T old = *address;
+	*address = old + value;
+	return old;
 }
 
-struct cudaDeviceProp {
-    char name[256] = "stub (no CUDA device)";
-    int major = 0;
-    int minor = 0;
-    std::size_t totalGlobalMem = 0;
-    int multiProcessorCount = 0;
+struct cudaDeviceProp
+{
+	char name[256] = "stub (no CUDA device)";
+	int major = 0;
+	int minor = 0;
+	std::size_t totalGlobalMem = 0;
+	int multiProcessorCount = 0;
 };
 
 /// No device: ensureGpu() must take its "CUDA absent" path, so the CPU
 /// fallback is what a test observes unless it drives the kernel itself.
-inline cudaError_t cudaSetDevice(int) { return cudaErrorMemoryAllocation; }
+inline cudaError_t cudaSetDevice(int)
+{
+	return cudaErrorMemoryAllocation;
+}
 inline cudaError_t cudaGetDeviceProperties(cudaDeviceProp*, int)
 {
-    return cudaErrorMemoryAllocation;
+	return cudaErrorMemoryAllocation;
 }
 
-inline cudaError_t cudaGetLastError() { return cudaSuccess; }
-inline cudaError_t cudaDeviceSynchronize() { return cudaSuccess; }
-inline cudaError_t cudaGetDeviceCount(int* n) { *n = 0; return cudaSuccess; }
+inline cudaError_t cudaGetLastError()
+{
+	return cudaSuccess;
+}
+inline cudaError_t cudaDeviceSynchronize()
+{
+	return cudaSuccess;
+}
+inline cudaError_t cudaGetDeviceCount(int* n)
+{
+	*n = 0;
+	return cudaSuccess;
+}
 
 // ─── the launch ──────────────────────────────────────────────────────────────
 
@@ -234,23 +258,25 @@ namespace cudastub {
 template <typename Kernel, typename... Args>
 void runBlock(Kernel kernel, unsigned blockIndex, unsigned threads, Args... args)
 {
-    BlockBarrier barrier(threads);
-    currentBarrier() = &barrier;
+	BlockBarrier barrier(threads);
+	currentBarrier() = &barrier;
 
-    std::vector<std::thread> lanes;
-    lanes.reserve(threads);
-    for (unsigned t = 0; t < threads; ++t) {
-        lanes.emplace_back([&, t] {
-            threadIdx = dim3(t);
-            blockIdx = dim3(blockIndex);
-            kernel(args...);
-        });
-    }
-    for (auto& lane : lanes) {
-        lane.join();
-    }
+	std::vector<std::thread> lanes;
+	lanes.reserve(threads);
+	for (unsigned t = 0; t < threads; ++t)
+	{
+		lanes.emplace_back([&, t] {
+			threadIdx = dim3(t);
+			blockIdx = dim3(blockIndex);
+			kernel(args...);
+		});
+	}
+	for (auto& lane: lanes)
+	{
+		lane.join();
+	}
 
-    currentBarrier() = nullptr;
+	currentBarrier() = nullptr;
 }
 
 /// `RETDEC_GPU_LAUNCH(k, grid, block)(args...)` -- the call this returns takes
@@ -262,13 +288,14 @@ void runBlock(Kernel kernel, unsigned blockIndex, unsigned threads, Args... args
 template <typename Kernel>
 auto launch(Kernel kernel, unsigned grid, unsigned block)
 {
-    return [kernel, grid, block](auto&&... args) {
-        blockDim = dim3(block);
-        gridDim = dim3(grid);
-        for (unsigned b = 0; b < grid; ++b) {
-            runBlock(kernel, b, block, args...);
-        }
-    };
+	return [kernel, grid, block](auto&&... args) {
+		blockDim = dim3(block);
+		gridDim = dim3(grid);
+		for (unsigned b = 0; b < grid; ++b)
+		{
+			runBlock(kernel, b, block, args...);
+		}
+	};
 }
 
 } // namespace cudastub

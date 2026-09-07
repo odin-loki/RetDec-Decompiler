@@ -79,11 +79,8 @@ constexpr bool rangeFits(std::size_t pos, std::size_t size, std::size_t len) noe
 ///
 /// A @p minBytesPerElement of 0 is treated as 1, so a hostile header that
 /// declares zero-width elements cannot make the bound vacuous.
-constexpr bool countFits(
-		std::size_t pos,
-		std::size_t size,
-		std::size_t count,
-		std::size_t minBytesPerElement = 1) noexcept
+constexpr bool
+countFits(std::size_t pos, std::size_t size, std::size_t count, std::size_t minBytesPerElement = 1) noexcept
 {
 	const std::size_t width = minBytesPerElement == 0 ? 1 : minBytesPerElement;
 	// `pos <= size` is not redundant with the division: remaining() saturates,
@@ -98,14 +95,10 @@ constexpr bool countFits(
 /// A negative count is rejected before the conversion, not after: converting
 /// first turns -1 into SIZE_MAX, which is exactly the value that then gets
 /// handed to reserve().
-constexpr bool signedCountFits(
-		std::int64_t count,
-		std::size_t pos,
-		std::size_t size,
-		std::size_t minBytesPerElement = 1) noexcept
+constexpr bool
+signedCountFits(std::int64_t count, std::size_t pos, std::size_t size, std::size_t minBytesPerElement = 1) noexcept
 {
-	return count >= 0
-		&& countFits(pos, size, static_cast<std::size_t>(count), minBytesPerElement);
+	return count >= 0 && countFits(pos, size, static_cast<std::size_t>(count), minBytesPerElement);
 }
 
 /// Pages of @p pageSize needed to hold @p bytes, never fewer than one.
@@ -147,11 +140,7 @@ constexpr std::size_t reserveFor(std::size_t declared, std::size_t cap) noexcept
 /// True when reading @p count elements of @p elementSize bytes from @p pos
 /// stays inside a buffer of @p size, with no overflow in the element-count
 /// multiplication.
-constexpr bool arrayFits(
-		std::size_t pos,
-		std::size_t size,
-		std::size_t count,
-		std::size_t elementSize) noexcept
+constexpr bool arrayFits(std::size_t pos, std::size_t size, std::size_t count, std::size_t elementSize) noexcept
 {
 	return mulFits(count, elementSize) && rangeFits(pos, size, count * elementSize);
 }

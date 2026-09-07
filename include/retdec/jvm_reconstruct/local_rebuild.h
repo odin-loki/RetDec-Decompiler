@@ -51,36 +51,43 @@ namespace jvm_reconstruct {
 
 // ─── Debug table entries (from JVM LocalVariableTable attribute) ──────────────
 
-struct LVTEntry {
-    uint16_t    startPc;     ///< Bytecode offset where the variable is live
-    uint16_t    length;      ///< Number of code bytes the variable is live
-    std::string name;        ///< Variable name (from class file)
-    std::string descriptor;  ///< JVM descriptor ("I", "Ljava/lang/String;", etc.)
-    std::string signature;   ///< Generic signature (may be empty)
-    uint16_t    index;       ///< JVM local variable slot index
+struct LVTEntry
+{
+	uint16_t startPc;       ///< Bytecode offset where the variable is live
+	uint16_t length;        ///< Number of code bytes the variable is live
+	std::string name;       ///< Variable name (from class file)
+	std::string descriptor; ///< JVM descriptor ("I", "Ljava/lang/String;", etc.)
+	std::string signature;  ///< Generic signature (may be empty)
+	uint16_t index;         ///< JVM local variable slot index
 };
 
 // ─── Options ─────────────────────────────────────────────────────────────────
 
-struct LocalRebuildOptions {
-    bool useDebugTables  = true; ///< Prefer LocalVariableTable if available
-    bool inferFromUsage  = true; ///< Fall back to type inference
-    bool nameParameters  = true; ///< Generate param0..paramN names
-    bool generateSyntheticNames = true; ///< Generate v0..vN for unnamed slots
+struct LocalRebuildOptions
+{
+	bool useDebugTables = true;         ///< Prefer LocalVariableTable if available
+	bool inferFromUsage = true;         ///< Fall back to type inference
+	bool nameParameters = true;         ///< Generate param0..paramN names
+	bool generateSyntheticNames = true; ///< Generate v0..vN for unnamed slots
 };
 
 // ─── Result ───────────────────────────────────────────────────────────────────
 
-struct LocalRebuildResult {
-    enum Status { OK, Error };
-    Status      status = OK;
-    std::string error;
+struct LocalRebuildResult
+{
+	enum Status
+	{
+		OK,
+		Error
+	};
+	Status status = OK;
+	std::string error;
 
-    /// Reconstructed local variables (includes parameters).
-    std::vector<BcLocalVar> locals;
+	/// Reconstructed local variables (includes parameters).
+	std::vector<BcLocalVar> locals;
 
-    /// Map from JVM slot index → BcLocalVar index in `locals`.
-    std::unordered_map<uint32_t, uint32_t> slotToLocal;
+	/// Map from JVM slot index → BcLocalVar index in `locals`.
+	std::unordered_map<uint32_t, uint32_t> slotToLocal;
 };
 
 // ─── Local variable rebuilder ─────────────────────────────────────────────────
@@ -92,46 +99,42 @@ struct LocalRebuildResult {
  */
 class LocalRebuilder {
 public:
-    explicit LocalRebuilder(LocalRebuildOptions opts = LocalRebuildOptions{});
+	explicit LocalRebuilder(LocalRebuildOptions opts = LocalRebuildOptions{});
 
-    /**
-     * @brief Run local variable reconstruction on one method.
-     *
-     * @param method     The BcMethod (descriptor provides param types).
-     * @param cfg        The BcCFG (for instruction scanning).
-     * @param simResult  Stack simulation result.
-     * @param coalesceResult  Coalescer result.
-     * @param lvtEntries  LocalVariableTable entries (may be empty).
-     */
-    LocalRebuildResult rebuild(const BcMethod& method,
-                                const BcCFG& cfg,
-                                const StackSimResult& simResult,
-                                const CoalesceResult& coalesceResult,
-                                const std::vector<LVTEntry>& lvtEntries = {});
+	/**
+	 * @brief Run local variable reconstruction on one method.
+	 *
+	 * @param method     The BcMethod (descriptor provides param types).
+	 * @param cfg        The BcCFG (for instruction scanning).
+	 * @param simResult  Stack simulation result.
+	 * @param coalesceResult  Coalescer result.
+	 * @param lvtEntries  LocalVariableTable entries (may be empty).
+	 */
+	LocalRebuildResult rebuild(
+		const BcMethod& method,
+		const BcCFG& cfg,
+		const StackSimResult& simResult,
+		const CoalesceResult& coalesceResult,
+		const std::vector<LVTEntry>& lvtEntries = {});
 
-    /// A JVM field descriptor as a BcType.
-    ///
-    /// Public because it is a pure function of a string that comes out of the
-    /// constant pool, and the '[' run it counts is the part a hostile .class
-    /// file controls. It was private, so the only way to reach it was through a
-    /// whole rebuild -- which is why the unbounded recursion it carried went
-    /// untested until an exact copy of the same function was fixed in another
-    /// module and someone went looking for siblings.
-    static BcType descriptorToType(const std::string& desc);
+	/// A JVM field descriptor as a BcType.
+	///
+	/// Public because it is a pure function of a string that comes out of the
+	/// constant pool, and the '[' run it counts is the part a hostile .class
+	/// file controls. It was private, so the only way to reach it was through a
+	/// whole rebuild -- which is why the unbounded recursion it carried went
+	/// untested until an exact copy of the same function was fixed in another
+	/// module and someone went looking for siblings.
+	static BcType descriptorToType(const std::string& desc);
 
 private:
-    LocalRebuildOptions opts_;
+	LocalRebuildOptions opts_;
 
-    // Build a slot→type map from instruction scanning.
-    std::unordered_map<uint32_t, BcType>
-        inferSlotTypes(const BcCFG& cfg,
-                       const StackSimResult& simResult) const;
+	// Build a slot→type map from instruction scanning.
+	std::unordered_map<uint32_t, BcType> inferSlotTypes(const BcCFG& cfg, const StackSimResult& simResult) const;
 
-    // Assign a human-readable name to a slot.
-    std::string nameSlot(uint32_t slotIdx,
-                          const BcType& type,
-                          bool isParam,
-                          uint32_t paramOrdinal) const;
+	// Assign a human-readable name to a slot.
+	std::string nameSlot(uint32_t slotIdx, const BcType& type, bool isParam, uint32_t paramOrdinal) const;
 };
 
 // ─── Exception variable introducer ────────────────────────────────────────────
@@ -150,10 +153,7 @@ private:
  */
 class ExceptionVarIntroducer {
 public:
-    void introduce(BcCFG& cfg,
-                   BcMethod& method,
-                   const StackSimResult& simResult,
-                   LocalRebuildResult& localResult);
+	void introduce(BcCFG& cfg, BcMethod& method, const StackSimResult& simResult, LocalRebuildResult& localResult);
 };
 
 } // namespace jvm_reconstruct

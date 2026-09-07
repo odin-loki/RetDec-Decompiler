@@ -79,9 +79,10 @@ namespace scan {
 /// The two are one value because every bug above came from carrying them
 /// separately: a `pos` that some other line advanced, compared against a
 /// `size` that meant something slightly different.
-struct Cursor {
-	std::size_t pos = 0;   ///< bytes consumed so far; always <= size
-	std::size_t size = 0;  ///< bytes the buffer holds
+struct Cursor
+{
+	std::size_t pos = 0;  ///< bytes consumed so far; always <= size
+	std::size_t size = 0; ///< bytes the buffer holds
 };
 
 /// A cursor at the start of a buffer of @p size bytes.
@@ -177,10 +178,7 @@ constexpr std::size_t maxSteps(const Cursor& c, std::size_t minStep) noexcept
 /// composition proved for countFits carries over: whatever this accepts,
 /// `fits(c, count * minBytesPerElement)` also accepts, with no wrap in the
 /// multiplication.
-constexpr bool countFitsAt(
-		const Cursor& c,
-		std::size_t count,
-		std::size_t minBytesPerElement = 1) noexcept
+constexpr bool countFitsAt(const Cursor& c, std::size_t count, std::size_t minBytesPerElement = 1) noexcept
 {
 	return bounds::countFits(c.pos, c.size, count, minBytesPerElement);
 }
@@ -235,10 +233,7 @@ constexpr bool alignForward(Cursor& c, std::size_t a) noexcept
 /// A key outside the table is 0 -- an undefined JVM opcode, a DEX unit that is
 /// not an instruction -- which @ref advanceByTable then refuses. The
 /// alternative, indexing anyway, is how a 256-entry table gets read at 0x1F4.
-constexpr std::size_t stepFromTable(
-		const std::uint8_t* table,
-		std::size_t count,
-		std::size_t key) noexcept
+constexpr std::size_t stepFromTable(const std::uint8_t* table, std::size_t count, std::size_t key) noexcept
 {
 	if (table == nullptr || key >= count) return 0;
 	return table[key];
@@ -253,11 +248,7 @@ constexpr std::size_t stepFromTable(
 /// (jvm_lifter.cpp:343). The walk then terminates for EVERY table, including a
 /// wrong one -- which matters, because the table at jvm_lifter.cpp:189 has
 /// twenty-three wrong entries today.
-constexpr bool advanceByTable(
-		Cursor& c,
-		const std::uint8_t* table,
-		std::size_t count,
-		std::size_t key) noexcept
+constexpr bool advanceByTable(Cursor& c, const std::uint8_t* table, std::size_t count, std::size_t key) noexcept
 {
 	return advance(c, stepFromTable(table, count, key));
 }

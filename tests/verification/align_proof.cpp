@@ -90,14 +90,14 @@ using namespace retdec::utils::align;
 // choice of that type.
 extern "C" {
 std::uint64_t nondet_u64();
-std::int64_t  nondet_int64();
-std::size_t   nondet_size();
+std::int64_t nondet_int64();
+std::size_t nondet_size();
 }
 
 // __ESBMC_assume is a verifier builtin, so this file does not type-check under
 // a plain compiler without it. --syntax defines this away.
 #ifdef RETDEC_VERIFY_SYNTAX_ONLY
-#define __ESBMC_assume(cond) ((void) sizeof((cond) ? 1 : 0))
+#define __ESBMC_assume(cond) ((void)sizeof((cond) ? 1 : 0))
 #endif
 
 /// Reference population count, defined the long way round.
@@ -142,8 +142,10 @@ extern "C" void proof_signed_is_power_of_two_is_total()
 	// -2^63 has a single bit set in its two's-complement representation, which
 	// is why the unsigned reading of it slips through. It is not a power of
 	// two: an alignment of -9223372036854775808 is not an alignment.
-	if (n <= 0) assert(!r);
-	else assert(r == (bitCount(static_cast<std::uint64_t>(n)) == 1));
+	if (n <= 0)
+		assert(!r);
+	else
+		assert(r == (bitCount(static_cast<std::uint64_t>(n)) == 1));
 
 	assert(isPowerOfTwoOrZeroSigned(n) == (n == 0 || r));
 }
@@ -174,9 +176,9 @@ extern "C" void proof_align_up_is_the_least_aligned_value_at_or_above()
 
 	if (!alignUp(v, a, out)) return;
 
-	assert(out >= v);          // never moves backwards
-	assert(out - v < a);       // by less than one alignment, so it is the least
-	assert((out & (a - 1)) == 0);  // and it really is aligned
+	assert(out >= v);             // never moves backwards
+	assert(out - v < a);          // by less than one alignment, so it is the least
+	assert((out & (a - 1)) == 0); // and it really is aligned
 }
 
 extern "C" void proof_align_up_refuses_a_zero_alignment()
@@ -188,7 +190,7 @@ extern "C" void proof_align_up_refuses_a_zero_alignment()
 	std::uint64_t out = nondet_u64();
 
 	assert(!alignUp(v, 0, out));
-	assert(out == v);  // and specifically NOT 0
+	assert(out == v); // and specifically NOT 0
 }
 
 extern "C" void proof_align_up_never_moves_backwards()
@@ -217,8 +219,7 @@ extern "C" void proof_align_up_agrees_with_pad_to()
 	std::uint64_t out = nondet_u64();
 
 	const std::uint64_t pad = padTo(v, a);
-	if (alignUp(v, a, out))
-		assert(out - v == pad);
+	if (alignUp(v, a, out)) assert(out - v == pad);
 }
 
 // ─── alignDown ───────────────────────────────────────────────────────────────
@@ -234,7 +235,8 @@ extern "C" void proof_align_down_is_exact()
 	// Rounding down cannot overflow, so a power-of-two alignment is the only
 	// requirement -- there is no second failure mode to get wrong.
 	assert(ok == isPowerOfTwo(a));
-	if (!ok) {
+	if (!ok)
+	{
 		assert(out == v);
 		return;
 	}
@@ -374,8 +376,8 @@ extern "C" void proof_align_up_saturating_rounds_up_and_saturates()
 
 	const std::size_t r = alignUpSaturating(n, a);
 
-	assert(r >= n);        // never backwards, saturated or not
-	assert(r - n < a);     // and within one alignment of the input either way
+	assert(r >= n);    // never backwards, saturated or not
+	assert(r - n < a); // and within one alignment of the input either way
 
 	// alignUp succeeds exactly for n at or below the largest a-aligned
 	// std::size_t -- that is proof_align_up_succeeds_exactly_when_the_rounded_
@@ -383,10 +385,13 @@ extern "C" void proof_align_up_saturating_rounds_up_and_saturates()
 	// rounding; above it the answer is SIZE_MAX, which no bounds check passes,
 	// rather than a wrapped offset that looks readable.
 	const std::size_t ceiling = SIZE_MAX & ~(a - 1);
-	if (n <= ceiling) {
+	if (n <= ceiling)
+	{
 		assert((r & (a - 1)) == 0);
 		assert(r == n + (n % a == 0 ? 0 : a - n % a));
-	} else {
+	}
+	else
+	{
 		assert(r == SIZE_MAX);
 	}
 }
@@ -411,8 +416,7 @@ extern "C" void proof_align_up_saturating_agrees_with_align_up_where_it_fits()
 	const std::size_t a = nondet_size();
 	std::uint64_t out = nondet_u64();
 
-	if (alignUp(n, a, out))
-		assert(alignUpSaturating(n, a) == out);
+	if (alignUp(n, a, out)) assert(alignUpSaturating(n, a) == out);
 }
 
 // ─── the whole header, at once ───────────────────────────────────────────────
@@ -429,15 +433,15 @@ extern "C" void proof_no_arithmetic_in_the_header_wraps()
 	std::uint64_t out = nondet_u64();
 	std::uint64_t rem = nondet_u64();
 
-	(void) isPowerOfTwo(a);
-	(void) isPowerOfTwoOrZero(a);
-	(void) isPowerOfTwoSigned(nondet_int64());
-	(void) isPowerOfTwoOrZeroSigned(nondet_int64());
-	(void) padTo(v, a);
-	(void) alignUp(v, a, out);
-	(void) alignDown(v, a, out);
-	(void) isAlignedTo(v, a, rem);
-	(void) alignUpSaturating(nondet_size(), nondet_size());
+	(void)isPowerOfTwo(a);
+	(void)isPowerOfTwoOrZero(a);
+	(void)isPowerOfTwoSigned(nondet_int64());
+	(void)isPowerOfTwoOrZeroSigned(nondet_int64());
+	(void)padTo(v, a);
+	(void)alignUp(v, a, out);
+	(void)alignDown(v, a, out);
+	(void)isAlignedTo(v, a, rem);
+	(void)alignUpSaturating(nondet_size(), nondet_size());
 }
 
 extern "C" void proof_no_arithmetic_wraps_at_the_extremes()

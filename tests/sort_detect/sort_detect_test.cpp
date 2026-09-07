@@ -67,9 +67,9 @@ static std::unique_ptr<ssa::SSAFunction> makeBubbleSort(const std::string& name)
 	auto* inner = fn->addBlock("inner");
 	fn->addBlock("exit");
 
-	fn->addInstr(entry->id, ssa::IrInstr::Op::Sub);        // n - 1
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Sub); // n - 1
 	auto* iInc = fn->addInstr(outer->id, ssa::IrInstr::Op::Add);
-	fn->addInstr(outer->id, ssa::IrInstr::Op::Sub);        // n - 1 - i (bound)
+	fn->addInstr(outer->id, ssa::IrInstr::Op::Sub); // n - 1 - i (bound)
 	fn->addInstr(outer->id, ssa::IrInstr::Op::Compare);
 	fn->addInstr(outer->id, ssa::IrInstr::Op::CondBranch);
 	auto* jInc = fn->addInstr(inner->id, ssa::IrInstr::Op::Add);
@@ -77,7 +77,7 @@ static std::unique_ptr<ssa::SSAFunction> makeBubbleSort(const std::string& name)
 	fn->addInstr(inner->id, ssa::IrInstr::Op::Load);
 	fn->addInstr(inner->id, ssa::IrInstr::Op::Compare);
 	fn->addInstr(inner->id, ssa::IrInstr::Op::CondBranch);
-	fn->addInstr(inner->id, ssa::IrInstr::Op::Store);      // the adjacent swap
+	fn->addInstr(inner->id, ssa::IrInstr::Op::Store); // the adjacent swap
 	fn->addInstr(inner->id, ssa::IrInstr::Op::Store);
 	fn->addInstr(inner->id, ssa::IrInstr::Op::Compare);
 	fn->addInstr(inner->id, ssa::IrInstr::Op::CondBranch);
@@ -125,18 +125,18 @@ static std::unique_ptr<ssa::SSAFunction> makeDescendingBubbleSort(const std::str
 	auto* inner = fn->addBlock("inner");
 	fn->addBlock("exit");
 
-	fn->addInstr(entry->id, ssa::IrInstr::Op::Sub);        // i = n - 1
-	auto* iDec = fn->addInstr(outer->id, ssa::IrInstr::Op::Sub);   // --i
-	fn->addInstr(outer->id, ssa::IrInstr::Op::Compare);    // i > 0
+	fn->addInstr(entry->id, ssa::IrInstr::Op::Sub);              // i = n - 1
+	auto* iDec = fn->addInstr(outer->id, ssa::IrInstr::Op::Sub); // --i
+	fn->addInstr(outer->id, ssa::IrInstr::Op::Compare);          // i > 0
 	fn->addInstr(outer->id, ssa::IrInstr::Op::CondBranch);
-	auto* jInc = fn->addInstr(inner->id, ssa::IrInstr::Op::Add);   // ++j
+	auto* jInc = fn->addInstr(inner->id, ssa::IrInstr::Op::Add); // ++j
 	fn->addInstr(inner->id, ssa::IrInstr::Op::Load);
 	fn->addInstr(inner->id, ssa::IrInstr::Op::Load);
 	fn->addInstr(inner->id, ssa::IrInstr::Op::Compare);
 	fn->addInstr(inner->id, ssa::IrInstr::Op::CondBranch);
-	fn->addInstr(inner->id, ssa::IrInstr::Op::Store);      // the adjacent swap
+	fn->addInstr(inner->id, ssa::IrInstr::Op::Store); // the adjacent swap
 	fn->addInstr(inner->id, ssa::IrInstr::Op::Store);
-	fn->addInstr(inner->id, ssa::IrInstr::Op::Compare);    // j < i
+	fn->addInstr(inner->id, ssa::IrInstr::Op::Compare); // j < i
 	fn->addInstr(inner->id, ssa::IrInstr::Op::CondBranch);
 	for (int k = 0; k < 4; ++k)
 		fn->addInstr(inner->id, ssa::IrInstr::Op::Add);
@@ -783,8 +783,8 @@ TEST(BubbleSortDetectorTest, ConvergingIndicesStillSuppressBubble)
 	// which is not a partition at all, it is the descending-bubble-sort shape
 	// below, and asserting suppression for it asserted the bug.
 	auto fn = makeBubbleSort("hoare_partition");
-	auto* inner = blockNamed(*fn, "inner");   // the header the Add-fed phi is in
-	auto* dec = fn->addInstr(inner->id, ssa::IrInstr::Op::Sub);   // hi = hi - 1
+	auto* inner = blockNamed(*fn, "inner");                     // the header the Add-fed phi is in
+	auto* dec = fn->addInstr(inner->id, ssa::IrInstr::Op::Sub); // hi = hi - 1
 	auto* hiPhi = fn->addPhi(inner->id, 2);
 	auto* hiVal = fn->allocValue(ssa::ValueKind::VirtualReg);
 	hiVal->defInstr = dec;
@@ -839,12 +839,12 @@ TEST(IntrosortDetectorTest, PlainCopyLoopIsNotIntrosort)
 	// compares, two conditional branches.  No calls of any kind.
 	auto fn = std::make_unique<ssa::SSAFunction>("copy_backwards");
 	auto* entry = fn->addBlock("entry");
-	auto* loop  = fn->addBlock("loop");
+	auto* loop = fn->addBlock("loop");
 	fn->addBlock("exit");
 
 	fn->addInstr(entry->id, ssa::IrInstr::Op::Compare);
 	fn->addInstr(entry->id, ssa::IrInstr::Op::CondBranch);
-	fn->addInstr(loop->id, ssa::IrInstr::Op::Sub);        // --i
+	fn->addInstr(loop->id, ssa::IrInstr::Op::Sub); // --i
 	fn->addInstr(loop->id, ssa::IrInstr::Op::Load);
 	fn->addInstr(loop->id, ssa::IrInstr::Op::Load);
 	fn->addInstr(loop->id, ssa::IrInstr::Op::Store);
@@ -862,7 +862,8 @@ TEST(IntrosortDetectorTest, RecursivePartitionStillScores)
 {
 	auto fn = makeDescendingBubbleSort("__introsort_loop");
 	// Two self-calls on the sub-ranges, which is what makes it introsort.
-	for (int k = 0; k < 2; ++k) {
+	for (int k = 0; k < 2; ++k)
+	{
 		auto* call = fn->addInstr(fn->block(1)->id, ssa::IrInstr::Op::Call);
 		call->calleeName = "__introsort_loop";
 	}

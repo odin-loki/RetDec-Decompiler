@@ -1,9 +1,9 @@
 /**
-* @file src/ctypes/context.cpp
-* @brief Implementation of Context.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file src/ctypes/context.cpp
+ * @brief Implementation of Context.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #include <memory>
 #include <cassert>
@@ -22,28 +22,28 @@ namespace retdec {
 namespace ctypes {
 
 /**
-* @brief Releases the type graph, breaking the reference cycles in it first.
-*
-* Ownership in ctypes runs strongly in both directions: a struct or union owns
-* its members, and a member's pointer type owns the type it points at.  A
-* self-referential declaration --
-*
-* @code
-*     struct node { struct node *next; };
-* @endcode
-*
-* -- therefore forms a std::shared_ptr cycle that outlives the Context that
-* created it, and every type reachable only through that cycle leaks with it.
-* LeakSanitizer reports these as indirect leaks with no direct leak, which is
-* the signature of a cycle rather than a dropped pointer.
-*
-* Cutting the member edges here is enough to make the whole graph collectable.
-* No type is observable once its Context is gone, so this is invisible to
-* callers.
-*/
+ * @brief Releases the type graph, breaking the reference cycles in it first.
+ *
+ * Ownership in ctypes runs strongly in both directions: a struct or union owns
+ * its members, and a member's pointer type owns the type it points at.  A
+ * self-referential declaration --
+ *
+ * @code
+ *     struct node { struct node *next; };
+ * @endcode
+ *
+ * -- therefore forms a std::shared_ptr cycle that outlives the Context that
+ * created it, and every type reachable only through that cycle leaks with it.
+ * LeakSanitizer reports these as indirect leaks with no direct leak, which is
+ * the signature of a cycle rather than a dropped pointer.
+ *
+ * Cutting the member edges here is enough to make the whole graph collectable.
+ * No type is observable once its Context is gone, so this is invisible to
+ * callers.
+ */
 Context::~Context()
 {
-	for (auto &entry: namedTypes)
+	for (auto& entry: namedTypes)
 	{
 		if (auto composite = std::dynamic_pointer_cast<CompositeType>(entry.second))
 		{
@@ -53,34 +53,34 @@ Context::~Context()
 }
 
 /**
-* @brief Checks if context contains function.
-*
-* @return True if context has function, false otherwise.
-*/
-bool Context::hasFunctionWithName(const std::string &name) const
+ * @brief Checks if context contains function.
+ *
+ * @return True if context has function, false otherwise.
+ */
+bool Context::hasFunctionWithName(const std::string& name) const
 {
 	return retdec::utils::mapHasKey(functions, name);
 }
 
 /**
-* @brief Returns function from context.
-*
-* @return Requested function. If it is not in context return @c nullptr.
-*/
-std::shared_ptr<Function> Context::getFunctionWithName(const std::string &name) const
+ * @brief Returns function from context.
+ *
+ * @return Requested function. If it is not in context return @c nullptr.
+ */
+std::shared_ptr<Function> Context::getFunctionWithName(const std::string& name) const
 {
 	return retdec::utils::mapGetValueOrDefault(functions, name);
 }
 
 /**
-* @brief Inserts new function to context.
-*
-* @par Preconditions
-*  - @a function is not null
-*
-* Function with same name will be overwritten.
-*/
-void Context::addFunction(const std::shared_ptr<Function> &function)
+ * @brief Inserts new function to context.
+ *
+ * @par Preconditions
+ *  - @a function is not null
+ *
+ * Function with same name will be overwritten.
+ */
+void Context::addFunction(const std::shared_ptr<Function>& function)
 {
 	assert(function && "violated precondition - function cannot be null");
 
@@ -88,17 +88,17 @@ void Context::addFunction(const std::shared_ptr<Function> &function)
 }
 
 /**
-* @brief Checks if context contains function type.
-*
-* @return True if context has function type, false otherwise.
-*
-* @par Preconditions
-*  - @a returnType is not null
-*/
+ * @brief Checks if context contains function type.
+ *
+ * @return True if context has function type, false otherwise.
+ *
+ * @par Preconditions
+ *  - @a returnType is not null
+ */
 bool Context::hasFunctionType(
-	const std::shared_ptr<Type> &returnType,
-	const FunctionType::Parameters &parameters,
-	const CallConvention &callConvention,
+	const std::shared_ptr<Type>& returnType,
+	const FunctionType::Parameters& parameters,
+	const CallConvention& callConvention,
 	FunctionType::VarArgness varArgness) const
 {
 	assert(returnType && "violated precondition - returnType cannot be null");
@@ -110,17 +110,17 @@ bool Context::hasFunctionType(
 }
 
 /**
-* @brief Returns function type from context.
-*
-* @return Requested type. If it is not in context return @c nullptr.
-*
-* @par Preconditions
-*  - @a returnType is not null
-*/
+ * @brief Returns function type from context.
+ *
+ * @return Requested type. If it is not in context return @c nullptr.
+ *
+ * @par Preconditions
+ *  - @a returnType is not null
+ */
 std::shared_ptr<FunctionType> Context::getFunctionType(
-	const std::shared_ptr<Type> &returnType,
-	const FunctionType::Parameters &parameters,
-	const CallConvention &callConvention,
+	const std::shared_ptr<Type>& returnType,
+	const FunctionType::Parameters& parameters,
+	const CallConvention& callConvention,
 	FunctionType::VarArgness varArgness) const
 {
 	assert(returnType && "violated precondition - returnType cannot be null");
@@ -132,12 +132,12 @@ std::shared_ptr<FunctionType> Context::getFunctionType(
 }
 
 /**
-* @brief Inserts new function type to context.
-*
-* @par Preconditions
-*  - @a functionType is not null
-*/
-void Context::addFunctionType(const std::shared_ptr<FunctionType> &functionType)
+ * @brief Inserts new function type to context.
+ *
+ * @par Preconditions
+ *  - @a functionType is not null
+ */
+void Context::addFunctionType(const std::shared_ptr<FunctionType>& functionType)
 {
 	assert(functionType && "violated precondition - functionType cannot be null");
 
@@ -151,32 +151,32 @@ void Context::addFunctionType(const std::shared_ptr<FunctionType> &functionType)
 }
 
 /**
-* @brief Checks if context contains type with specific name.
-*
-* @return True if context has type, false otherwise.
-*/
-bool Context::hasNamedType(const std::string &name) const
+ * @brief Checks if context contains type with specific name.
+ *
+ * @return True if context has type, false otherwise.
+ */
+bool Context::hasNamedType(const std::string& name) const
 {
 	return retdec::utils::mapHasKey(namedTypes, name);
 }
 
 /**
-* @brief Returns type with specific name from context.
-*
-* @return Requested type. If it is not in context return @c nullptr.
-*/
-std::shared_ptr<Type> Context::getNamedType(const std::string &name) const
+ * @brief Returns type with specific name from context.
+ *
+ * @return Requested type. If it is not in context return @c nullptr.
+ */
+std::shared_ptr<Type> Context::getNamedType(const std::string& name) const
 {
 	return retdec::utils::mapGetValueOrDefault(namedTypes, name);
 }
 
 /**
-* @brief Inserts new type with specific name to context.
-*
-* @par Preconditions
-*  - @a type is not null
-*/
-void Context::addNamedType(const std::shared_ptr<Type> &type)
+ * @brief Inserts new type with specific name to context.
+ *
+ * @par Preconditions
+ *  - @a type is not null
+ */
+void Context::addNamedType(const std::shared_ptr<Type>& type)
 {
 	assert(type && "violated precondition - type cannot be null");
 
@@ -184,14 +184,14 @@ void Context::addNamedType(const std::shared_ptr<Type> &type)
 }
 
 /**
-* @brief Checks if context contains pointer type.
-*
-* @return True if context has pointer type, false otherwise.
-*
-* @par Preconditions
-*  - @a pointedType is not null
-*/
-bool Context::hasPointerType(const std::shared_ptr<Type> &pointedType) const
+ * @brief Checks if context contains pointer type.
+ *
+ * @return True if context has pointer type, false otherwise.
+ *
+ * @par Preconditions
+ *  - @a pointedType is not null
+ */
+bool Context::hasPointerType(const std::shared_ptr<Type>& pointedType) const
 {
 	assert(pointedType && "violated precondition - pointedType cannot be null");
 
@@ -199,15 +199,14 @@ bool Context::hasPointerType(const std::shared_ptr<Type> &pointedType) const
 }
 
 /**
-* @brief Returns pointerType from context.
-*
-* @return Requested pointerType. If it is not in context return @c nullptr.
-*
-* @par Preconditions
-*  - @a pointedType is not null
-*/
-std::shared_ptr<PointerType> Context::getPointerType(
-	const std::shared_ptr<Type> &pointedType) const
+ * @brief Returns pointerType from context.
+ *
+ * @return Requested pointerType. If it is not in context return @c nullptr.
+ *
+ * @par Preconditions
+ *  - @a pointedType is not null
+ */
+std::shared_ptr<PointerType> Context::getPointerType(const std::shared_ptr<Type>& pointedType) const
 {
 	assert(pointedType && "violated precondition - pointedType cannot be null");
 
@@ -215,12 +214,12 @@ std::shared_ptr<PointerType> Context::getPointerType(
 }
 
 /**
-* @brief Inserts new pointerType with specific name to context.
-*
-* @par Preconditions
-*  - @a pointerType is not null
-*/
-void Context::addPointerType(const std::shared_ptr<PointerType> &pointerType)
+ * @brief Inserts new pointerType with specific name to context.
+ *
+ * @par Preconditions
+ *  - @a pointerType is not null
+ */
+void Context::addPointerType(const std::shared_ptr<PointerType>& pointerType)
 {
 	assert(pointerType && "violated precondition - pointerType cannot be null");
 
@@ -228,14 +227,14 @@ void Context::addPointerType(const std::shared_ptr<PointerType> &pointerType)
 }
 
 /**
-* @brief Checks if context contains reference type.
-*
-* @return True if context has reference type, false otherwise.
-*
-* @par Preconditions
-*  - @a referencedType is not null
-*/
-bool Context::hasReferenceType(const std::shared_ptr<Type> &referencedType) const
+ * @brief Checks if context contains reference type.
+ *
+ * @return True if context has reference type, false otherwise.
+ *
+ * @par Preconditions
+ *  - @a referencedType is not null
+ */
+bool Context::hasReferenceType(const std::shared_ptr<Type>& referencedType) const
 {
 	assert(referencedType && "violated precondition - referencedType cannot be null");
 
@@ -243,15 +242,14 @@ bool Context::hasReferenceType(const std::shared_ptr<Type> &referencedType) cons
 }
 
 /**
-* @brief Returns referenceType from context.
-*
-* @return Requested referenceType. If it is not in context return @c nullptr.
-*
-* @par Preconditions
-*  - @a referencedType is not null
-*/
-std::shared_ptr<ReferenceType> Context::getReferenceType(
-	const std::shared_ptr<Type> &referencedType) const
+ * @brief Returns referenceType from context.
+ *
+ * @return Requested referenceType. If it is not in context return @c nullptr.
+ *
+ * @par Preconditions
+ *  - @a referencedType is not null
+ */
+std::shared_ptr<ReferenceType> Context::getReferenceType(const std::shared_ptr<Type>& referencedType) const
 {
 	assert(referencedType && "violated precondition - referencedType cannot be null");
 
@@ -259,12 +257,12 @@ std::shared_ptr<ReferenceType> Context::getReferenceType(
 }
 
 /**
-* @brief Inserts new referenceType with specific name to context.
-*
-* @par Preconditions
-*  - @a referenceType is not null
-*/
-void Context::addReferenceType(const std::shared_ptr<ReferenceType> &referenceType)
+ * @brief Inserts new referenceType with specific name to context.
+ *
+ * @par Preconditions
+ *  - @a referenceType is not null
+ */
+void Context::addReferenceType(const std::shared_ptr<ReferenceType>& referenceType)
 {
 	assert(referenceType && "violated precondition - referenceType cannot be null");
 
@@ -272,15 +270,14 @@ void Context::addReferenceType(const std::shared_ptr<ReferenceType> &referenceTy
 }
 
 /**
-* @brief Checks if context contains array type.
-*
-* @return True if context has array type, false otherwise.
-*
-* @par Preconditions
-*  - @a elementType is not null
-*/
-bool Context::hasArrayType(const std::shared_ptr<Type> &elementType,
-	const ArrayType::Dimensions &dimensions) const
+ * @brief Checks if context contains array type.
+ *
+ * @return True if context has array type, false otherwise.
+ *
+ * @par Preconditions
+ *  - @a elementType is not null
+ */
+bool Context::hasArrayType(const std::shared_ptr<Type>& elementType, const ArrayType::Dimensions& dimensions) const
 {
 	assert(elementType && "violated precondition - elementType cannot be null");
 
@@ -288,15 +285,15 @@ bool Context::hasArrayType(const std::shared_ptr<Type> &elementType,
 }
 
 /**
-* @brief Returns array type from context.
-*
-* @return Requested pointerType. If it is not in context return @c nullptr.
-*
-* @par Preconditions
-*  - @a elementType is not null
-*/
-std::shared_ptr<ArrayType> Context::getArrayType(const std::shared_ptr<Type> &elementType,
-	const ArrayType::Dimensions &dimensions) const
+ * @brief Returns array type from context.
+ *
+ * @return Requested pointerType. If it is not in context return @c nullptr.
+ *
+ * @par Preconditions
+ *  - @a elementType is not null
+ */
+std::shared_ptr<ArrayType>
+Context::getArrayType(const std::shared_ptr<Type>& elementType, const ArrayType::Dimensions& dimensions) const
 {
 	assert(elementType && "violated precondition - elementType cannot be null");
 
@@ -304,12 +301,12 @@ std::shared_ptr<ArrayType> Context::getArrayType(const std::shared_ptr<Type> &el
 }
 
 /**
-* @brief Adds array type to context.
-*
-* @par Preconditions
-*  - @a arrayType is not null
-*/
-void Context::addArrayType(const std::shared_ptr<ArrayType> &arrayType)
+ * @brief Adds array type to context.
+ *
+ * @par Preconditions
+ *  - @a arrayType is not null
+ */
+void Context::addArrayType(const std::shared_ptr<ArrayType>& arrayType)
 {
 	assert(arrayType && "violated precondition - arrayType cannot be null");
 
@@ -319,29 +316,29 @@ void Context::addArrayType(const std::shared_ptr<ArrayType> &arrayType)
 }
 
 /**
-* @brief Checks if context contains annotation.
-*
-* @return True if context has annotation, false otherwise.
-*/
-bool Context::hasAnnotation(const std::string &name) const
+ * @brief Checks if context contains annotation.
+ *
+ * @return True if context has annotation, false otherwise.
+ */
+bool Context::hasAnnotation(const std::string& name) const
 {
 	return retdec::utils::mapHasKey(annotations, name);
 }
 
 /**
-* @brief Returns annotation from context.
-*
-* @return Requested annotation. If it is not in context return @c nullptr.
-*/
-std::shared_ptr<Annotation> Context::getAnnotation(const std::string &name) const
+ * @brief Returns annotation from context.
+ *
+ * @return Requested annotation. If it is not in context return @c nullptr.
+ */
+std::shared_ptr<Annotation> Context::getAnnotation(const std::string& name) const
 {
 	return retdec::utils::mapGetValueOrDefault(annotations, name);
 }
 
 /**
-* @brief Adds annotation to context.
-*/
-void Context::addAnnotation(const std::shared_ptr<Annotation> &annot)
+ * @brief Adds annotation to context.
+ */
+void Context::addAnnotation(const std::shared_ptr<Annotation>& annot)
 {
 	annotations.emplace(annot->getName(), annot);
 }

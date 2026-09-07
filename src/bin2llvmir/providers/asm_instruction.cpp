@@ -25,10 +25,7 @@ namespace bin2llvmir {
 std::vector<AsmInstruction::ModuleGlobalPair> AsmInstruction::_module2global;
 std::vector<AsmInstruction::ModuleInstructionMap> AsmInstruction::_module2instMap;
 
-AsmInstruction::AsmInstruction()
-{
-
-}
+AsmInstruction::AsmInstruction() {}
 
 AsmInstruction::AsmInstruction(llvm::Instruction* inst)
 {
@@ -106,7 +103,7 @@ AsmInstruction::AsmInstruction(llvm::Module* m, retdec::common::Address addr)
 		return;
 	}
 
-	for (auto* u : gv->users())
+	for (auto* u: gv->users())
 	{
 		auto* s = dyn_cast<StoreInst>(u);
 		if (s == nullptr)
@@ -114,9 +111,7 @@ AsmInstruction::AsmInstruction(llvm::Module* m, retdec::common::Address addr)
 			continue;
 		}
 		auto* ci = dyn_cast<ConstantInt>(s->getValueOperand());
-		if (ci
-				&& ci->getZExtValue() == addr.getValue()
-				&& isLlvmToAsmInstructionPrivate(s))
+		if (ci && ci->getZExtValue() == addr.getValue() && isLlvmToAsmInstructionPrivate(s))
 		{
 			_llvmToAsmInstr = s;
 			return;
@@ -180,8 +175,7 @@ AsmInstruction::const_reverse_iterator AsmInstruction::rend() const
 	return const_reverse_iterator(begin());
 }
 
-const llvm::GlobalVariable* AsmInstruction::getLlvmToAsmGlobalVariablePrivate(
-		llvm::Module* m) const
+const llvm::GlobalVariable* AsmInstruction::getLlvmToAsmGlobalVariablePrivate(llvm::Module* m) const
 {
 	if (_llvmToAsmInstr)
 	{
@@ -193,10 +187,9 @@ const llvm::GlobalVariable* AsmInstruction::getLlvmToAsmGlobalVariablePrivate(
 	}
 }
 
-Llvm2CapstoneInsnMap& AsmInstruction::getLlvmToCapstoneInsnMap(
-		const llvm::Module* m)
+Llvm2CapstoneInsnMap& AsmInstruction::getLlvmToCapstoneInsnMap(const llvm::Module* m)
 {
-	for (auto& p : _module2instMap)
+	for (auto& p: _module2instMap)
 	{
 		if (p.first == m)
 		{
@@ -204,16 +197,13 @@ Llvm2CapstoneInsnMap& AsmInstruction::getLlvmToCapstoneInsnMap(
 		}
 	}
 
-	auto it = _module2instMap.emplace(_module2instMap.end(), std::make_pair(
-			m,
-			std::map<llvm::StoreInst*, cs_insn*>()));
+	auto it = _module2instMap.emplace(_module2instMap.end(), std::make_pair(m, std::map<llvm::StoreInst*, cs_insn*>()));
 	return it->second;
 }
 
-llvm::GlobalVariable* AsmInstruction::getLlvmToAsmGlobalVariable(
-		const llvm::Module* m)
+llvm::GlobalVariable* AsmInstruction::getLlvmToAsmGlobalVariable(const llvm::Module* m)
 {
-	for (auto& p : _module2global)
+	for (auto& p: _module2global)
 	{
 		if (p.first == m)
 		{
@@ -223,15 +213,12 @@ llvm::GlobalVariable* AsmInstruction::getLlvmToAsmGlobalVariable(
 	return nullptr;
 }
 
-void AsmInstruction::setLlvmToAsmGlobalVariable(
-		const llvm::Module* m,
-		llvm::GlobalVariable* gv)
+void AsmInstruction::setLlvmToAsmGlobalVariable(const llvm::Module* m, llvm::GlobalVariable* gv)
 {
 	_module2global.emplace_back(m, gv);
 }
 
-retdec::common::Address AsmInstruction::getInstructionAddress(
-		llvm::Instruction* inst)
+retdec::common::Address AsmInstruction::getInstructionAddress(llvm::Instruction* inst)
 {
 	retdec::common::Address ret;
 	AsmInstruction ai(inst);
@@ -242,8 +229,7 @@ retdec::common::Address AsmInstruction::getInstructionAddress(
 	return ret;
 }
 
-retdec::common::Address AsmInstruction::getInstructionEndAddress(
-		llvm::Instruction* inst)
+retdec::common::Address AsmInstruction::getInstructionEndAddress(llvm::Instruction* inst)
 {
 	retdec::common::Address ret;
 	AsmInstruction ai(inst);
@@ -254,26 +240,22 @@ retdec::common::Address AsmInstruction::getInstructionEndAddress(
 	return ret;
 }
 
-retdec::common::Address AsmInstruction::getBasicBlockAddress(
-		llvm::BasicBlock* bb)
+retdec::common::Address AsmInstruction::getBasicBlockAddress(llvm::BasicBlock* bb)
 {
-	return bb->empty()
-			? retdec::common::Address()
-			: getInstructionAddress(&bb->front());
+	return bb->empty() ? retdec::common::Address() : getInstructionAddress(&bb->front());
 }
 
 retdec::common::Address getBasicBlockAddressFromName(llvm::BasicBlock* b)
 {
 	std::string n = b->getName().str();
 	unsigned long long a = 0;
-	std::string pattern = names::generatedBasicBlockPrefix+"%llx";
+	std::string pattern = names::generatedBasicBlockPrefix + "%llx";
 	int ret = std::sscanf(n.c_str(), pattern.c_str(), &a);
 	return ret == 1 ? common::Address(a) : common::Address();
 }
 
 // TODO: not ideal, returns only for BBs with specific names.
-retdec::common::Address AsmInstruction::getTrueBasicBlockAddress(
-		llvm::BasicBlock* bb)
+retdec::common::Address AsmInstruction::getTrueBasicBlockAddress(llvm::BasicBlock* bb)
 {
 	std::string n = bb->getName().str();
 	if (!retdec::utils::startsWith(n, names::generatedBasicBlockPrefix))
@@ -290,28 +272,19 @@ retdec::common::Address AsmInstruction::getTrueBasicBlockAddress(
 	return ai.isValid() ? ai.getAddress() : getBasicBlockAddressFromName(bb);
 }
 
-retdec::common::Address AsmInstruction::getBasicBlockEndAddress(
-		llvm::BasicBlock* bb)
+retdec::common::Address AsmInstruction::getBasicBlockEndAddress(llvm::BasicBlock* bb)
 {
-	return bb->empty()
-			? getBasicBlockAddress(bb)
-			: getInstructionEndAddress(&bb->back());
+	return bb->empty() ? getBasicBlockAddress(bb) : getInstructionEndAddress(&bb->back());
 }
 
-retdec::common::Address AsmInstruction::getFunctionAddress(
-		llvm::Function* f)
+retdec::common::Address AsmInstruction::getFunctionAddress(llvm::Function* f)
 {
-	return f->empty()
-			? retdec::common::Address()
-			: getBasicBlockAddress(&f->front());
+	return f->empty() ? retdec::common::Address() : getBasicBlockAddress(&f->front());
 }
 
-retdec::common::Address AsmInstruction::getFunctionEndAddress(
-		llvm::Function* f)
+retdec::common::Address AsmInstruction::getFunctionEndAddress(llvm::Function* f)
 {
-	return f->empty() || f->back().empty()
-			? getFunctionAddress(f)
-			: getBasicBlockEndAddress(&f->back());
+	return f->empty() || f->back().empty() ? getFunctionAddress(f) : getBasicBlockEndAddress(&f->back());
 }
 
 bool AsmInstruction::isLlvmToAsmInstructionPrivate(llvm::Value* inst) const
@@ -354,11 +327,11 @@ bool AsmInstruction::isInvalid() const
 
 cs_insn* AsmInstruction::getCapstoneInsn() const
 {
-	for (auto& p : _module2instMap)
+	for (auto& p: _module2instMap)
 	{
 		if (p.first == _llvmToAsmInstr->getModule())
 		{
-			auto it =  p.second.find(_llvmToAsmInstr);
+			auto it = p.second.find(_llvmToAsmInstr);
 			return it != p.second.end() ? it->second : nullptr;
 		}
 	}
@@ -492,7 +465,7 @@ bool AsmInstruction::instructionsCanBeErased()
 	for (auto it = rbegin(), e = rend(); it != e; ++it)
 	{
 		auto* i = &(*it);
-		for (auto* u : i->users())
+		for (auto* u: i->users())
 		{
 			if (seen.hasNot(u) && i != u)
 			{
@@ -501,11 +474,11 @@ bool AsmInstruction::instructionsCanBeErased()
 		}
 		seen.insert(i);
 	}
-	for (BasicBlock* bb : bbs)
+	for (BasicBlock* bb: bbs)
 	{
 		if (bb != _llvmToAsmInstr->getParent())
 		{
-			for (auto* u : bb->users())
+			for (auto* u: bb->users())
 			{
 				if (seen.hasNot(u))
 				{
@@ -540,8 +513,7 @@ bool AsmInstruction::eraseInstructions()
 	{
 		auto* i = *it;
 
-		if (it == insts.rbegin()
-				&& &i->getParent()->back() == i) // last inst in bb
+		if (it == insts.rbegin() && &i->getParent()->back() == i) // last inst in bb
 		{
 			auto* bb = i->getParent();
 			if (&bb->getParent()->back() == bb) // las bb in function
@@ -557,7 +529,7 @@ bool AsmInstruction::eraseInstructions()
 		i->eraseFromParent();
 	}
 
-	for (BasicBlock* bb : bbs)
+	for (BasicBlock* bb: bbs)
 	{
 		if (bb->user_empty() && bb->empty())
 		{
@@ -607,8 +579,7 @@ llvm::Instruction* AsmInstruction::makeTerminal()
 		if (bb == next.getBasicBlock())
 		{
 			next.getBasicBlock()->splitBasicBlock(
-					next.getLlvmToAsmInstruction(),
-					names::generateBasicBlockName(next.getAddress()));
+				next.getLlvmToAsmInstruction(), names::generateBasicBlockName(next.getAddress()));
 			auto* b = dyn_cast_or_null<Instruction>(back());
 			assert(b->isTerminator());
 			return b;
@@ -643,15 +614,12 @@ llvm::BasicBlock* AsmInstruction::makeStart(const std::string& name)
 	//
 	if (_llvmToAsmInstr->getPrevNode() == nullptr)
 	{
-		getBasicBlock()->setName(name.empty()
-				? names::generateBasicBlockName(getAddress())
-				: name);
+		getBasicBlock()->setName(name.empty() ? names::generateBasicBlockName(getAddress()) : name);
 		return getBasicBlock();
 	}
 
 	return getBasicBlock()->splitBasicBlock(
-			_llvmToAsmInstr,
-			name.empty() ? names::generateBasicBlockName(getAddress()) : name);
+		_llvmToAsmInstr, name.empty() ? names::generateBasicBlockName(getAddress()) : name);
 }
 
 /**
@@ -693,7 +661,7 @@ llvm::LLVMContext& AsmInstruction::getContext() const
 std::vector<llvm::Instruction*> AsmInstruction::getInstructions()
 {
 	std::vector<llvm::Instruction*> ret;
-	for (Instruction& i : *this)
+	for (Instruction& i: *this)
 	{
 		ret.push_back(&i);
 	}
@@ -703,7 +671,7 @@ std::vector<llvm::Instruction*> AsmInstruction::getInstructions()
 std::vector<llvm::BasicBlock*> AsmInstruction::getBasicBlocks()
 {
 	std::vector<llvm::BasicBlock*> ret;
-	for (Instruction& i : *this)
+	for (Instruction& i: *this)
 	{
 		if (ret.empty() || ret.back() != i.getParent())
 		{
@@ -785,7 +753,7 @@ llvm::Instruction* AsmInstruction::insertBackSafe(llvm::Instruction* i)
 
 bool AsmInstruction::storesValue(llvm::Value* val) const
 {
-	for (auto& i : *this)
+	for (auto& i: *this)
 	{
 		if (auto* s = dyn_cast<StoreInst>(&i))
 		{
@@ -804,12 +772,11 @@ std::string AsmInstruction::dump() const
 	std::stringstream out;
 	if (isValid())
 	{
-		out << "[ASM: " << getDsm() << " @ " << getAddress()
-				<< " -- " << getEndAddress() << "]" << std::endl;
+		out << "[ASM: " << getDsm() << " @ " << getAddress() << " -- " << getEndAddress() << "]" << std::endl;
 
 		out << llvmObjToString(_llvmToAsmInstr) << std::endl;
 		const BasicBlock* bb = _llvmToAsmInstr->getParent();
-		for (auto& i : *this)
+		for (auto& i: *this)
 		{
 			if (bb != i.getParent())
 			{

@@ -31,7 +31,7 @@ std::string appendRefinedCalleesJson(
 	const std::map<std::string, std::string>& refinedByName,
 	const std::set<std::string>& calleeNames);
 std::vector<std::string> extractCFunctionNames(const std::string& src);
-}
+} // namespace retdec::neural
 
 #include <atomic>
 #include <cstdint>
@@ -294,7 +294,8 @@ TEST(NeuralGates, OversizedRefinementCannotSmuggleASpawnCall)
 
 	// Well past 4x the original, which is what used to disable the check.
 	std::string refined = "int f(int x) {\n  system(\"id\");\n";
-	for (int i = 0; i < 200; ++i) {
+	for (int i = 0; i < 200; ++i)
+	{
 		refined += "  int pad" + std::to_string(i) + " = " + std::to_string(i) + ";\n";
 	}
 	refined += "  if (x > 0) return 1;\n  return 0;\n}\n";
@@ -312,7 +313,8 @@ TEST(NeuralGates, OversizedRefinementWithoutSpawnCallIsAllowedThrough)
 	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
 
 	std::string refined = "int f(int x) {\n";
-	for (int i = 0; i < 200; ++i) {
+	for (int i = 0; i < 200; ++i)
+	{
 		refined += "  int pad" + std::to_string(i) + " = " + std::to_string(i) + ";\n";
 	}
 	refined += "  if (x > 0) return 1;\n  return 0;\n}\n";
@@ -324,10 +326,8 @@ TEST(NeuralGates, OversizedRefinementWithoutSpawnCallIsAllowedThrough)
 
 TEST(NeuralGates, SpawnCallSubstitutedForCommentFailsStructural)
 {
-	const std::string original =
-		"int f(int x) { if (x > 0) return 1; /* system */ return 0; }\n";
-	const std::string refined =
-		"int f(int x) { if (x > 0) return 1; system(\"id\"); return 0; }\n";
+	const std::string original = "int f(int x) { if (x > 0) return 1; /* system */ return 0; }\n";
+	const std::string refined = "int f(int x) { if (x > 0) return 1; system(\"id\"); return 0; }\n";
 	const auto r = runVerificationGates(original, refined);
 	EXPECT_FALSE(r.allPassed());
 	EXPECT_EQ(r.structural, GateResult::FailStructural);
@@ -337,10 +337,8 @@ TEST(NeuralGates, SpawnCallSubstitutedForCommentFailsStructural)
 // literal must not offset a real control-flow change either.
 TEST(NeuralGates, ControlKeywordInStringLiteralDoesNotMaskAddedBranch)
 {
-	const std::string original =
-		"int f(int x) { const char* s = \"while\"; (void)s; return 0; }\n";
-	const std::string refined =
-		"int f(int x) { const char* s = \"\"; (void)s; while (x) { x--; } return 0; }\n";
+	const std::string original = "int f(int x) { const char* s = \"while\"; (void)s; return 0; }\n";
+	const std::string refined = "int f(int x) { const char* s = \"\"; (void)s; while (x) { x--; } return 0; }\n";
 	const auto r = runVerificationGates(original, refined);
 	EXPECT_EQ(r.structural, GateResult::FailStructural);
 }
@@ -349,8 +347,7 @@ TEST(NeuralGates, ControlKeywordInStringLiteralDoesNotMaskAddedBranch)
 TEST(NeuralGates, ComparisonOperatorInCommentDoesNotChangeShape)
 {
 	const std::string original = "int f(int x) { if (x > 0) return 1; return 0; }\n";
-	const std::string refined =
-		"int f(int x) { if (x > 0) return 1; /* checks x == 0 and x != 1 */ return 0; }\n";
+	const std::string refined = "int f(int x) { if (x > 0) return 1; /* checks x == 0 and x != 1 */ return 0; }\n";
 	const auto r = runVerificationGates(original, refined);
 	EXPECT_EQ(r.structural, GateResult::Pass);
 }
@@ -362,7 +359,8 @@ TEST(NeuralGates, ReportsWhetherTheParserWasUsed)
 	const std::string refined = "int f(int y) { if (y > 0) return 1; return 0; }\n";
 	const auto r = runVerificationGates(original, refined);
 	EXPECT_EQ(r.structuralUsedParser, hasCParserSupport());
-	if (!hasCParserSupport()) {
+	if (!hasCParserSupport())
+	{
 		EXPECT_NE(r.summary().find("text-fallback"), std::string::npos);
 	}
 }
@@ -1257,10 +1255,8 @@ TEST(NeuralSemanticContext, SerializesPatternMatches)
 {
 	auto cfg = retdec::config::Config::empty();
 	auto pat = retdec::common::Pattern::crypto("AES", "", "crypto_aes_sbox");
-	pat.matches.push_back(retdec::common::Pattern::Match::integral(
-			retdec::common::Address(0x40),
-			retdec::common::Address(0x401040),
-			16));
+	pat.matches.push_back(
+		retdec::common::Pattern::Match::integral(retdec::common::Address(0x40), retdec::common::Address(0x401040), 16));
 	cfg.patterns.push_back(pat);
 	const std::string json = serializeSemanticContext(cfg);
 	EXPECT_NE(json.find("\"offset\":\"0x40\""), std::string::npos);

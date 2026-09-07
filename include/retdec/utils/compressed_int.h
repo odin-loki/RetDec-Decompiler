@@ -106,10 +106,10 @@ constexpr unsigned payloadBits(std::size_t bytesConsumed) noexcept
 {
 	switch (bytesConsumed)
 	{
-		case 1:  return 7;
-		case 2:  return 14;
-		case 4:  return 29;
-		default: return 0;
+	case 1: return 7;
+	case 2: return 14;
+	case 4: return 29;
+	default: return 0;
 	}
 }
 
@@ -117,8 +117,7 @@ constexpr unsigned payloadBits(std::size_t bytesConsumed) noexcept
 ///
 /// From payloadBits(kMaxBytes) rather than written out, so the two cannot
 /// drift. byteorder::lowMask is the tree's one mask implementation.
-constexpr std::uint32_t kMaxValue =
-	static_cast<std::uint32_t>(byteorder::lowMask(payloadBits(kMaxBytes)));
+constexpr std::uint32_t kMaxValue = static_cast<std::uint32_t>(byteorder::lowMask(payloadBits(kMaxBytes)));
 
 /// Payload bits carried by the FIRST byte of a @p bytes-byte encoding: 7, 6, 5.
 ///
@@ -143,10 +142,10 @@ constexpr std::uint8_t tagFor(std::size_t bytes) noexcept
 {
 	switch (bytes)
 	{
-		case 1:  return 0x00; // 0xxxxxxx
-		case 2:  return 0x80; // 10xxxxxx
-		case 4:  return 0xC0; // 110xxxxx
-		default: return 0xFF; // 111xxxxx is not a compressed integer
+	case 1: return 0x00;  // 0xxxxxxx
+	case 2: return 0x80;  // 10xxxxxx
+	case 4: return 0xC0;  // 110xxxxx
+	default: return 0xFF; // 111xxxxx is not a compressed integer
 	}
 }
 
@@ -165,10 +164,11 @@ constexpr std::size_t widthOf(std::uint8_t b0) noexcept
 }
 
 /// Outcome of an unsigned decode.
-struct Result {
-	std::uint32_t value = 0;     ///< Decoded value, 0 when !ok; never above kMaxValue.
-	std::size_t   bytesRead = 0; ///< Bytes consumed, 0 when !ok.
-	bool          ok = false;    ///< False on a bad tag or a blob too short for it.
+struct Result
+{
+	std::uint32_t value = 0;   ///< Decoded value, 0 when !ok; never above kMaxValue.
+	std::size_t bytesRead = 0; ///< Bytes consumed, 0 when !ok.
+	bool ok = false;           ///< False on a bad tag or a blob too short for it.
 };
 
 /// Decode an unsigned compressed integer at @p pos in a buffer of @p size bytes.
@@ -183,8 +183,7 @@ struct Result {
 /// `pos + 3 >= blob.size()`: with pos within three of SIZE_MAX that sum wraps
 /// to a small number, the guard passes, and the four reads that follow are off
 /// the end of the blob.
-inline constexpr Result decodeUnsigned(
-		const std::uint8_t* data, std::size_t size, std::size_t pos) noexcept
+inline constexpr Result decodeUnsigned(const std::uint8_t* data, std::size_t size, std::size_t pos) noexcept
 {
 	if (data == nullptr) return Result{};
 	if (!bounds::rangeFits(pos, size, 1)) return Result{};
@@ -198,8 +197,7 @@ inline constexpr Result decodeUnsigned(
 
 	// The first byte's payload, with the tag masked off by the same width the
 	// tag selected.
-	std::uint32_t value =
-		static_cast<std::uint32_t>(b0 & byteorder::lowMask(firstByteBits(width)));
+	std::uint32_t value = static_cast<std::uint32_t>(b0 & byteorder::lowMask(firstByteBits(width)));
 
 	// Big-endian, most significant byte first -- II.23.2 stores the wide forms
 	// the other way round from every little-endian field in the same file.
@@ -214,10 +212,11 @@ inline constexpr Result decodeUnsigned(
 }
 
 /// Outcome of a signed decode.
-struct SResult {
-	std::int32_t value = 0;      ///< Decoded value, 0 when !ok.
-	std::size_t  bytesRead = 0;  ///< Bytes consumed, 0 when !ok.
-	bool         ok = false;     ///< False on a bad tag or a blob too short for it.
+struct SResult
+{
+	std::int32_t value = 0;    ///< Decoded value, 0 when !ok.
+	std::size_t bytesRead = 0; ///< Bytes consumed, 0 when !ok.
+	bool ok = false;           ///< False on a bad tag or a blob too short for it.
 };
 
 /// The rotate II.23.2 applies, undone: the low bit of @p u is the sign bit and
@@ -237,8 +236,7 @@ constexpr std::int32_t signFromWidth(std::uint32_t u, unsigned bits) noexcept
 	if (bits == 0) return 0;
 	// bits is 7, 14 or 29, so this shift count is at most 28.
 	const std::uint64_t rotated =
-		(static_cast<std::uint64_t>(u) >> 1)
-		| ((static_cast<std::uint64_t>(u) & 1) << (bits - 1));
+		(static_cast<std::uint64_t>(u) >> 1) | ((static_cast<std::uint64_t>(u) & 1) << (bits - 1));
 	// One sign-extension implementation in the tree, in byte_order.h, which
 	// does it in unsigned arithmetic and converts once at the end.
 	return static_cast<std::int32_t>(byteorder::signExtendFrom(rotated, bits));
@@ -249,8 +247,7 @@ constexpr std::int32_t signFromWidth(std::uint32_t u, unsigned bits) noexcept
 /// Same bound and same refusal convention as decodeUnsigned; the only addition
 /// is the rotate. The result lies in [-2^(n-1), 2^(n-1)-1] for the n payload
 /// bits of the width consumed: [-64, 63], [-8192, 8191], [-2^28, 2^28-1].
-inline constexpr SResult decodeSigned(
-		const std::uint8_t* data, std::size_t size, std::size_t pos) noexcept
+inline constexpr SResult decodeSigned(const std::uint8_t* data, std::size_t size, std::size_t pos) noexcept
 {
 	const Result u = decodeUnsigned(data, size, pos);
 	if (!u.ok) return SResult{};
@@ -266,10 +263,8 @@ constexpr std::uint32_t signToLowBit(std::int32_t v, unsigned bits) noexcept
 	if (bits == 0) return 0;
 	// Conversion to an unsigned type is modular for every input, so this is
 	// defined for negative v rather than implementation-defined.
-	const std::uint64_t w = byteorder::zeroExtendFrom(
-		static_cast<std::uint64_t>(static_cast<std::int64_t>(v)), bits);
-	const std::uint64_t rotated =
-		((w << 1) | (w >> (bits - 1))) & byteorder::lowMask(bits);
+	const std::uint64_t w = byteorder::zeroExtendFrom(static_cast<std::uint64_t>(static_cast<std::int64_t>(v)), bits);
+	const std::uint64_t rotated = ((w << 1) | (w >> (bits - 1))) & byteorder::lowMask(bits);
 	return static_cast<std::uint32_t>(rotated);
 }
 
@@ -287,8 +282,7 @@ constexpr bool signedFits(std::int64_t v, unsigned bits) noexcept
 /// widths, when @p v needs more payload bits than that width carries, or when
 /// @p outCap cannot hold it. A short buffer produces no partial encoding, so a
 /// caller that ignores the return value has still not been written past.
-inline std::size_t encodeUnsignedAs(
-		std::uint32_t v, std::size_t bytes, std::uint8_t* out, std::size_t outCap) noexcept
+inline std::size_t encodeUnsignedAs(std::uint32_t v, std::size_t bytes, std::uint8_t* out, std::size_t outCap) noexcept
 {
 	const unsigned bits = payloadBits(bytes);
 	if (bits == 0 || out == nullptr) return 0;
@@ -301,8 +295,7 @@ inline std::size_t encodeUnsignedAs(
 	out[0] = static_cast<std::uint8_t>(tagFor(bytes) | (v >> tailBits));
 	for (std::size_t i = 1; i < bytes; ++i)
 	{
-		const unsigned shift =
-			byteorder::kBitsPerByte * static_cast<unsigned>(bytes - 1 - i);
+		const unsigned shift = byteorder::kBitsPerByte * static_cast<unsigned>(bytes - 1 - i);
 		out[i] = static_cast<std::uint8_t>((v >> shift) & 0xFF);
 	}
 	return bytes;
@@ -317,12 +310,9 @@ inline std::size_t encodeUnsigned(std::uint32_t v, std::uint8_t* out, std::size_
 	// Ascending, so the narrowest width that holds v is the one chosen. The
 	// width test is `v fits in payloadBits(n)`, which is the same test
 	// encodeUnsignedAs applies, so a width accepted here is never refused there.
-	if (v <= static_cast<std::uint32_t>(byteorder::lowMask(payloadBits(1))))
-		return encodeUnsignedAs(v, 1, out, outCap);
-	if (v <= static_cast<std::uint32_t>(byteorder::lowMask(payloadBits(2))))
-		return encodeUnsignedAs(v, 2, out, outCap);
-	if (v <= kMaxValue)
-		return encodeUnsignedAs(v, 4, out, outCap);
+	if (v <= static_cast<std::uint32_t>(byteorder::lowMask(payloadBits(1)))) return encodeUnsignedAs(v, 1, out, outCap);
+	if (v <= static_cast<std::uint32_t>(byteorder::lowMask(payloadBits(2)))) return encodeUnsignedAs(v, 2, out, outCap);
+	if (v <= kMaxValue) return encodeUnsignedAs(v, 4, out, outCap);
 	return 0;
 }
 
@@ -338,10 +328,8 @@ inline std::size_t encodeUnsigned(std::uint32_t v, std::uint8_t* out, std::size_
 inline std::size_t encodeSigned(std::int32_t v, std::uint8_t* out, std::size_t outCap) noexcept
 {
 	const std::int64_t wide = v;
-	if (signedFits(wide, payloadBits(1)))
-		return encodeUnsignedAs(signToLowBit(v, payloadBits(1)), 1, out, outCap);
-	if (signedFits(wide, payloadBits(2)))
-		return encodeUnsignedAs(signToLowBit(v, payloadBits(2)), 2, out, outCap);
+	if (signedFits(wide, payloadBits(1))) return encodeUnsignedAs(signToLowBit(v, payloadBits(1)), 1, out, outCap);
+	if (signedFits(wide, payloadBits(2))) return encodeUnsignedAs(signToLowBit(v, payloadBits(2)), 2, out, outCap);
 	if (signedFits(wide, payloadBits(kMaxBytes)))
 		return encodeUnsignedAs(signToLowBit(v, payloadBits(kMaxBytes)), kMaxBytes, out, outCap);
 	return 0;

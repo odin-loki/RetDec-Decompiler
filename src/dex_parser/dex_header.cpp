@@ -18,59 +18,59 @@ namespace dex_parser {
 
 // ─── DexReader ────────────────────────────────────────────────────────────────
 
-DexReader::DexReader(const uint8_t* data, size_t size)
-    : data_(data), size_(size), pos_(0) {}
+DexReader::DexReader(const uint8_t* data, size_t size): data_(data), size_(size), pos_(0) {}
 
-void DexReader::seek(size_t offset) {
-    if (offset > size_)
-        throw DexParseError("seek past end of file (" +
-                            std::to_string(offset) + " > " +
-                            std::to_string(size_) + ")");
-    pos_ = offset;
+void DexReader::seek(size_t offset)
+{
+	if (offset > size_)
+		throw DexParseError("seek past end of file (" + std::to_string(offset) + " > " + std::to_string(size_) + ")");
+	pos_ = offset;
 }
 
-void DexReader::skip(size_t n) {
-    check(n);
-    pos_ += n;
+void DexReader::skip(size_t n)
+{
+	check(n);
+	pos_ += n;
 }
 
-void DexReader::check(size_t n) const {
-    // Written as a subtraction: pos_ never exceeds size_, so this cannot wrap,
-    // whereas pos_ + n can for a length taken from the file.
-    if (n > size_ - pos_)
-        throw DexParseError("unexpected end of data (need " +
-                            std::to_string(n) + " bytes at offset " +
-                            std::to_string(pos_) + ", file size " +
-                            std::to_string(size_) + ")");
+void DexReader::check(size_t n) const
+{
+	// Written as a subtraction: pos_ never exceeds size_, so this cannot wrap,
+	// whereas pos_ + n can for a length taken from the file.
+	if (n > size_ - pos_)
+		throw DexParseError(
+			"unexpected end of data (need " + std::to_string(n) + " bytes at offset " + std::to_string(pos_)
+			+ ", file size " + std::to_string(size_) + ")");
 }
 
-uint8_t DexReader::u1() {
-    check(1);
-    return data_[pos_++];
+uint8_t DexReader::u1()
+{
+	check(1);
+	return data_[pos_++];
 }
 
-uint16_t DexReader::u2() {
-    check(2);
-    uint16_t v = static_cast<uint16_t>(data_[pos_]) |
-                 (static_cast<uint16_t>(data_[pos_+1]) << 8);
-    pos_ += 2;
-    return v;
+uint16_t DexReader::u2()
+{
+	check(2);
+	uint16_t v = static_cast<uint16_t>(data_[pos_]) | (static_cast<uint16_t>(data_[pos_ + 1]) << 8);
+	pos_ += 2;
+	return v;
 }
 
-uint32_t DexReader::u4() {
-    check(4);
-    uint32_t v = static_cast<uint32_t>(data_[pos_])       |
-                (static_cast<uint32_t>(data_[pos_+1]) << 8) |
-                (static_cast<uint32_t>(data_[pos_+2]) << 16) |
-                (static_cast<uint32_t>(data_[pos_+3]) << 24);
-    pos_ += 4;
-    return v;
+uint32_t DexReader::u4()
+{
+	check(4);
+	uint32_t v = static_cast<uint32_t>(data_[pos_]) | (static_cast<uint32_t>(data_[pos_ + 1]) << 8)
+			   | (static_cast<uint32_t>(data_[pos_ + 2]) << 16) | (static_cast<uint32_t>(data_[pos_ + 3]) << 24);
+	pos_ += 4;
+	return v;
 }
 
-uint64_t DexReader::u8() {
-    uint64_t lo = u4();
-    uint64_t hi = u4();
-    return lo | (hi << 32);
+uint64_t DexReader::u8()
+{
+	uint64_t lo = u4();
+	uint64_t hi = u4();
+	return lo | (hi << 32);
 }
 
 // Each of these was `static_cast<intN_t>(uN())`, which for any value above the
@@ -86,361 +86,376 @@ uint64_t DexReader::u8() {
 // then exact by construction rather than by assumption: the result is already
 // inside the destination's range, because sign-extending from N bits produces a
 // value in [-2^(N-1), 2^(N-1)-1].
-int8_t DexReader::s1() {
-    return static_cast<int8_t>(
-        utils::byteorder::signExtendFrom(u1(), 8));
+int8_t DexReader::s1()
+{
+	return static_cast<int8_t>(utils::byteorder::signExtendFrom(u1(), 8));
 }
-int16_t DexReader::s2() {
-    return static_cast<int16_t>(
-        utils::byteorder::signExtendFrom(u2(), 16));
+int16_t DexReader::s2()
+{
+	return static_cast<int16_t>(utils::byteorder::signExtendFrom(u2(), 16));
 }
-int32_t DexReader::s4() {
-    return static_cast<int32_t>(
-        utils::byteorder::signExtendFrom(u4(), 32));
+int32_t DexReader::s4()
+{
+	return static_cast<int32_t>(utils::byteorder::signExtendFrom(u4(), 32));
 }
-int64_t DexReader::s8() {
-    return utils::leb128::toSigned(u8());
-}
-
-float DexReader::f4() {
-    uint32_t bits = u4();
-    float v;
-    std::memcpy(&v, &bits, 4);
-    return v;
+int64_t DexReader::s8()
+{
+	return utils::leb128::toSigned(u8());
 }
 
-double DexReader::f8() {
-    uint64_t bits = u8();
-    double v;
-    std::memcpy(&v, &bits, 8);
-    return v;
+float DexReader::f4()
+{
+	uint32_t bits = u4();
+	float v;
+	std::memcpy(&v, &bits, 4);
+	return v;
 }
 
-uint32_t DexReader::uleb128() {
-    uint32_t result = 0;
-    uint32_t shift  = 0;
-    for (;;) {
-        uint8_t b = u1();
-        result |= (static_cast<uint32_t>(b & 0x7F) << shift);
-        if ((b & 0x80) == 0)
-            break;
-        shift += 7;
-        if (shift >= 35)
-            throw DexParseError("ULEB128 overflow");
-    }
-    return result;
+double DexReader::f8()
+{
+	uint64_t bits = u8();
+	double v;
+	std::memcpy(&v, &bits, 8);
+	return v;
 }
 
-int32_t DexReader::sleb128() {
-    // Accumulate unsigned and sign-extend at the end, for the reason
-    // utils::leb128::decodeSigned gives: building the value in a signed type is
-    // undefined well before the shift count reaches the type's width. The fifth
-    // byte of a DEX sleb128 shifts its payload by 28, and in an int32_t that
-    // overflows for any payload above 7 -- UBSan reports it as "left shift of
-    // 32 by 28 places cannot be represented in type 'int'". Found by the dex
-    // fuzzer; the input is kept as
-    // tests/crash_corpus/dex/crash-6571908d6a946750191c403f9a41770b5b3b66ab.
-    // Unsigned, the same shift is a defined truncation, which is what the
-    // format asks for: only bits 28..31 of the fifth byte are representable.
-    uint32_t result = 0;
-    uint32_t shift  = 0;
-    uint8_t  b      = 0;
-    for (;;) {
-        b = u1();
-        result |= static_cast<uint32_t>(b & 0x7F) << shift;
-        shift += 7;
-        if ((b & 0x80) == 0)
-            break;
-        if (shift >= 35)
-            throw DexParseError("SLEB128 overflow");
-    }
-    // Sign extend from the last payload bit. `-(1 << shift)` was signed too.
-    if (shift < 32 && (b & 0x40))
-        result |= ~UINT32_C(0) << shift;
-
-    // Reinterpret rather than convert: narrowing a uint32_t above INT32_MAX is
-    // implementation-defined in C++17, and this file already reads floats out
-    // of their bit patterns the same way.
-    int32_t signedResult;
-    std::memcpy(&signedResult, &result, sizeof signedResult);
-    return signedResult;
+uint32_t DexReader::uleb128()
+{
+	uint32_t result = 0;
+	uint32_t shift = 0;
+	for (;;)
+	{
+		uint8_t b = u1();
+		result |= (static_cast<uint32_t>(b & 0x7F) << shift);
+		if ((b & 0x80) == 0) break;
+		shift += 7;
+		if (shift >= 35) throw DexParseError("ULEB128 overflow");
+	}
+	return result;
 }
 
-int32_t DexReader::uleb128p1() {
-    // "uleb128p1" is a ULEB128 whose value is one greater than the number it
-    // encodes, so the encoding's own -1 is written as 0. The subtraction has to
-    // happen in a type that can hold it.
-    //
-    // It was `static_cast<int32_t>(uleb128()) - 1`: the cast is an out-of-range
-    // conversion for anything above INT32_MAX, and the file supplies the value.
-    // Measured before the fix: a stored 0xFFFFFFFF came back as -2.
-    //
-    // Done at 64 bits the subtraction is exact, and the result is then reported
-    // only if it fits -- a uleb128p1 outside int32 does not name an index in
-    // any DEX table, so -1 -- the value this encoding already uses for
-    // "absent" -- is the honest answer rather than a wrapped one.
-    const std::int64_t v = static_cast<std::int64_t>(uleb128()) - 1;
-    if (v < INT32_MIN || v > INT32_MAX) {
-        return -1;
-    }
-    return static_cast<int32_t>(v);
+int32_t DexReader::sleb128()
+{
+	// Accumulate unsigned and sign-extend at the end, for the reason
+	// utils::leb128::decodeSigned gives: building the value in a signed type is
+	// undefined well before the shift count reaches the type's width. The fifth
+	// byte of a DEX sleb128 shifts its payload by 28, and in an int32_t that
+	// overflows for any payload above 7 -- UBSan reports it as "left shift of
+	// 32 by 28 places cannot be represented in type 'int'". Found by the dex
+	// fuzzer; the input is kept as
+	// tests/crash_corpus/dex/crash-6571908d6a946750191c403f9a41770b5b3b66ab.
+	// Unsigned, the same shift is a defined truncation, which is what the
+	// format asks for: only bits 28..31 of the fifth byte are representable.
+	uint32_t result = 0;
+	uint32_t shift = 0;
+	uint8_t b = 0;
+	for (;;)
+	{
+		b = u1();
+		result |= static_cast<uint32_t>(b & 0x7F) << shift;
+		shift += 7;
+		if ((b & 0x80) == 0) break;
+		if (shift >= 35) throw DexParseError("SLEB128 overflow");
+	}
+	// Sign extend from the last payload bit. `-(1 << shift)` was signed too.
+	if (shift < 32 && (b & 0x40)) result |= ~UINT32_C(0) << shift;
+
+	// Reinterpret rather than convert: narrowing a uint32_t above INT32_MAX is
+	// implementation-defined in C++17, and this file already reads floats out
+	// of their bit patterns the same way.
+	int32_t signedResult;
+	std::memcpy(&signedResult, &result, sizeof signedResult);
+	return signedResult;
 }
 
-std::string DexReader::mutf8(uint32_t len) {
-    // utf16_size is a ULEB128 out of the file, and reserving for it before
-    // reading anything was the same mistake the index tables used to make: a
-    // 668-byte file declaring a 0x93A25C0D-unit string asked for 2.4 GB and
-    // was killed rather than rejected. Every character this decodes costs at
-    // least one byte on the wire (the shortest MUTF-8 sequence), so a length
-    // the rest of the file cannot supply is malformed by construction.
-    checkCount(len, kMinMutf8CharSize);
-    if (len == 0)
-        return {};
-
-    // The decode itself is utils::txt::mutf8ToUtf8Ex. The loop that used to be
-    // here re-encoded whatever it decoded verbatim -- `0xE0 | (cp >> 12)` for
-    // the three-byte form -- with no surrogate test and no pairing of two
-    // adjacent surrogate sequences, which MUTF-8 (JVM 4.4.7, DEX
-    // "MUTF-8 (Modified UTF-8) Encoding") uses for every supplementary
-    // character. For the input ED A0 80 ED B0 80, which is U+10000, it emitted
-    // those six bytes back unchanged: ED A0 80 is the UTF-8 spelling of
-    // U+D800, a surrogate, which is not a scalar value, so no UTF-8 decoder
-    // will accept it and the character is lost. ESBMC refutes "the
-    // re-encoding is not an ED A0..BF sequence" with c = 0xED, c2 = 0x20,
-    // c3 = 0x00, cp = U+D800. The kernel combines a well-formed pair into the
-    // one scalar value and replaces a lone surrogate with U+FFFD, so every
-    // byte written here is well-formed UTF-8 (proved:
-    // proof_utf16_never_emits_a_surrogate, proof_encode_utf8_is_well_formed).
-    // It also folds the MUTF-8 NUL C0 80 and refuses the overlong forms the
-    // old loop decoded and silently re-encoded short.
-    //
-    // The capacity is the kernel's too: utf8CapacityForMutf8 is where the
-    // 4-bytes-per-declared-unit multiplication is checked for wrap, so the
-    // buffer cannot be sized by a product that came out small while the write
-    // loop runs to the declared length.
-    const size_t cap = utils::txt::utf8CapacityForMutf8(len);
-    if (cap == 0)
-        throw DexParseError("string of " + std::to_string(len) +
-                            " characters is too long to transcode");
-
-    // The scratch buffer is separate from the returned string so the string is
-    // built at its actual length: cap is four bytes per declared unit, and
-    // almost every DEX string is ASCII, so returning the oversized buffer would
-    // hold four times the string table in memory for the life of the DexFile.
-    std::vector<char> buf(cap);
-    // A sequence cut short by the end of the file yields U+FFFD and stops
-    // there, rather than throwing out of u1() as the old loop did: the cursor
-    // is bounded by the bytes that exist either way, and a truncated tail is
-    // not a reason to discard the characters already decoded.
-    const utils::txt::Mutf8Result r = utils::txt::mutf8ToUtf8Ex(
-            data_ + pos_, remaining(), len, buf.data(), cap);
-    pos_ += r.consumed;
-    return std::string(buf.data(), r.written);
+int32_t DexReader::uleb128p1()
+{
+	// "uleb128p1" is a ULEB128 whose value is one greater than the number it
+	// encodes, so the encoding's own -1 is written as 0. The subtraction has to
+	// happen in a type that can hold it.
+	//
+	// It was `static_cast<int32_t>(uleb128()) - 1`: the cast is an out-of-range
+	// conversion for anything above INT32_MAX, and the file supplies the value.
+	// Measured before the fix: a stored 0xFFFFFFFF came back as -2.
+	//
+	// Done at 64 bits the subtraction is exact, and the result is then reported
+	// only if it fits -- a uleb128p1 outside int32 does not name an index in
+	// any DEX table, so -1 -- the value this encoding already uses for
+	// "absent" -- is the honest answer rather than a wrapped one.
+	const std::int64_t v = static_cast<std::int64_t>(uleb128()) - 1;
+	if (v < INT32_MIN || v > INT32_MAX)
+	{
+		return -1;
+	}
+	return static_cast<int32_t>(v);
 }
 
-std::vector<uint8_t> DexReader::bytes(size_t n) {
-    check(n);
-    std::vector<uint8_t> buf(data_ + pos_, data_ + pos_ + n);
-    pos_ += n;
-    return buf;
+std::string DexReader::mutf8(uint32_t len)
+{
+	// utf16_size is a ULEB128 out of the file, and reserving for it before
+	// reading anything was the same mistake the index tables used to make: a
+	// 668-byte file declaring a 0x93A25C0D-unit string asked for 2.4 GB and
+	// was killed rather than rejected. Every character this decodes costs at
+	// least one byte on the wire (the shortest MUTF-8 sequence), so a length
+	// the rest of the file cannot supply is malformed by construction.
+	checkCount(len, kMinMutf8CharSize);
+	if (len == 0) return {};
+
+	// The decode itself is utils::txt::mutf8ToUtf8Ex. The loop that used to be
+	// here re-encoded whatever it decoded verbatim -- `0xE0 | (cp >> 12)` for
+	// the three-byte form -- with no surrogate test and no pairing of two
+	// adjacent surrogate sequences, which MUTF-8 (JVM 4.4.7, DEX
+	// "MUTF-8 (Modified UTF-8) Encoding") uses for every supplementary
+	// character. For the input ED A0 80 ED B0 80, which is U+10000, it emitted
+	// those six bytes back unchanged: ED A0 80 is the UTF-8 spelling of
+	// U+D800, a surrogate, which is not a scalar value, so no UTF-8 decoder
+	// will accept it and the character is lost. ESBMC refutes "the
+	// re-encoding is not an ED A0..BF sequence" with c = 0xED, c2 = 0x20,
+	// c3 = 0x00, cp = U+D800. The kernel combines a well-formed pair into the
+	// one scalar value and replaces a lone surrogate with U+FFFD, so every
+	// byte written here is well-formed UTF-8 (proved:
+	// proof_utf16_never_emits_a_surrogate, proof_encode_utf8_is_well_formed).
+	// It also folds the MUTF-8 NUL C0 80 and refuses the overlong forms the
+	// old loop decoded and silently re-encoded short.
+	//
+	// The capacity is the kernel's too: utf8CapacityForMutf8 is where the
+	// 4-bytes-per-declared-unit multiplication is checked for wrap, so the
+	// buffer cannot be sized by a product that came out small while the write
+	// loop runs to the declared length.
+	const size_t cap = utils::txt::utf8CapacityForMutf8(len);
+	if (cap == 0) throw DexParseError("string of " + std::to_string(len) + " characters is too long to transcode");
+
+	// The scratch buffer is separate from the returned string so the string is
+	// built at its actual length: cap is four bytes per declared unit, and
+	// almost every DEX string is ASCII, so returning the oversized buffer would
+	// hold four times the string table in memory for the life of the DexFile.
+	std::vector<char> buf(cap);
+	// A sequence cut short by the end of the file yields U+FFFD and stops
+	// there, rather than throwing out of u1() as the old loop did: the cursor
+	// is bounded by the bytes that exist either way, and a truncated tail is
+	// not a reason to discard the characters already decoded.
+	const utils::txt::Mutf8Result r = utils::txt::mutf8ToUtf8Ex(data_ + pos_, remaining(), len, buf.data(), cap);
+	pos_ += r.consumed;
+	return std::string(buf.data(), r.written);
 }
 
-void DexReader::checkArray(size_t offset, size_t count, size_t minItemSize) const {
-    if (count == 0)
-        return; // nothing is read, so the offset is never dereferenced
-    // The comparison itself lives in the verified kernel rather than here: it
-    // is the same "can the rest of the file supply this many elements?" test
-    // every parser in the tree needs, and writing it out by hand once per
-    // parser is how the wrapping versions got in.
-    if (!utils::bounds::countFits(offset, size_, count, minItemSize))
-        throw DexParseError("declared element count " + std::to_string(count) +
-                            " at offset " + std::to_string(offset) +
-                            " needs at least " +
-                            std::to_string(count * minItemSize) +
-                            " bytes, file size " + std::to_string(size_));
+std::vector<uint8_t> DexReader::bytes(size_t n)
+{
+	check(n);
+	std::vector<uint8_t> buf(data_ + pos_, data_ + pos_ + n);
+	pos_ += n;
+	return buf;
 }
 
-void DexReader::checkCount(size_t count, size_t minItemSize) const {
-    checkArray(pos_, count, minItemSize);
+void DexReader::checkArray(size_t offset, size_t count, size_t minItemSize) const
+{
+	if (count == 0) return; // nothing is read, so the offset is never dereferenced
+	// The comparison itself lives in the verified kernel rather than here: it
+	// is the same "can the rest of the file supply this many elements?" test
+	// every parser in the tree needs, and writing it out by hand once per
+	// parser is how the wrapping versions got in.
+	if (!utils::bounds::countFits(offset, size_, count, minItemSize))
+		throw DexParseError(
+			"declared element count " + std::to_string(count) + " at offset " + std::to_string(offset)
+			+ " needs at least " + std::to_string(count * minItemSize) + " bytes, file size " + std::to_string(size_));
+}
+
+void DexReader::checkCount(size_t count, size_t minItemSize) const
+{
+	checkArray(pos_, count, minItemSize);
 }
 
 // ─── DexHeader ────────────────────────────────────────────────────────────────
 
-DexVersion DexHeader::version() const {
-    // magic bytes [4..7] are the version string, e.g. "035\0"
-    if (magic[0] == 'c' && magic[1] == 'd' && magic[2] == 'e' && magic[3] == 'x')
-        return DexVersion::V040; // CDex
-    // Standard DEX: magic = "dex\n" + 3-digit version + '\0'
-    int v = (magic[4]-'0')*100 + (magic[5]-'0')*10 + (magic[6]-'0');
-    switch (v) {
-        case 35: return DexVersion::V035;
-        case 36: return DexVersion::V036;
-        case 37: return DexVersion::V037;
-        case 38: return DexVersion::V038;
-        case 39: return DexVersion::V039;
-        case 40: return DexVersion::V040;
-        default: return DexVersion::Unknown;
-    }
+DexVersion DexHeader::version() const
+{
+	// magic bytes [4..7] are the version string, e.g. "035\0"
+	if (magic[0] == 'c' && magic[1] == 'd' && magic[2] == 'e' && magic[3] == 'x') return DexVersion::V040; // CDex
+	// Standard DEX: magic = "dex\n" + 3-digit version + '\0'
+	int v = (magic[4] - '0') * 100 + (magic[5] - '0') * 10 + (magic[6] - '0');
+	switch (v)
+	{
+	case 35: return DexVersion::V035;
+	case 36: return DexVersion::V036;
+	case 37: return DexVersion::V037;
+	case 38: return DexVersion::V038;
+	case 39: return DexVersion::V039;
+	case 40: return DexVersion::V040;
+	default: return DexVersion::Unknown;
+	}
 }
 
-bool DexHeader::isCompact() const {
-    return magic[0] == 'c' && magic[1] == 'd' && magic[2] == 'e' && magic[3] == 'x';
+bool DexHeader::isCompact() const
+{
+	return magic[0] == 'c' && magic[1] == 'd' && magic[2] == 'e' && magic[3] == 'x';
 }
 
 // ─── DexFile ─────────────────────────────────────────────────────────────────
 
-DexFile DexFile::parse(const uint8_t* data, size_t size) {
-    DexFile df;
-    df.data_.assign(data, data + size);
+DexFile DexFile::parse(const uint8_t* data, size_t size)
+{
+	DexFile df;
+	df.data_.assign(data, data + size);
 
-    DexReader r(df.data_.data(), df.data_.size());
-    df.parseHeader(r);
-    df.parseStringIds(r);
-    df.parseTypeIds(r);
-    df.parseProtoIds(r);
-    df.parseFieldIds(r);
-    df.parseMethodIds(r);
-    df.parseClassDefs(r);
-    return df;
+	DexReader r(df.data_.data(), df.data_.size());
+	df.parseHeader(r);
+	df.parseStringIds(r);
+	df.parseTypeIds(r);
+	df.parseProtoIds(r);
+	df.parseFieldIds(r);
+	df.parseMethodIds(r);
+	df.parseClassDefs(r);
+	return df;
 }
 
-DexFile DexFile::parse(const std::vector<uint8_t>& data) {
-    return parse(data.data(), data.size());
+DexFile DexFile::parse(const std::vector<uint8_t>& data)
+{
+	return parse(data.data(), data.size());
 }
 
-void DexFile::parseHeader(DexReader& r) {
-    r.seek(0);
-    r.bytes(8); // magic — read and copy
-    std::memcpy(header_.magic, data_.data(), 8);
+void DexFile::parseHeader(DexReader& r)
+{
+	r.seek(0);
+	r.bytes(8); // magic — read and copy
+	std::memcpy(header_.magic, data_.data(), 8);
 
-    // Validate magic
-    bool isStdDex  = (std::memcmp(header_.magic, "dex\n", 4) == 0);
-    bool isCdex    = (std::memcmp(header_.magic, "cdex",  4) == 0);
-    if (!isStdDex && !isCdex)
-        throw DexParseError("invalid DEX magic");
+	// Validate magic
+	bool isStdDex = (std::memcmp(header_.magic, "dex\n", 4) == 0);
+	bool isCdex = (std::memcmp(header_.magic, "cdex", 4) == 0);
+	if (!isStdDex && !isCdex) throw DexParseError("invalid DEX magic");
 
-    header_.checksum         = r.u4();
-    r.bytes(20); // SHA-1
-    std::memcpy(header_.sha1, data_.data() + 12, 20);
+	header_.checksum = r.u4();
+	r.bytes(20); // SHA-1
+	std::memcpy(header_.sha1, data_.data() + 12, 20);
 
-    header_.fileSize         = r.u4();
-    header_.headerSize       = r.u4();
-    header_.endianTag        = r.u4();
+	header_.fileSize = r.u4();
+	header_.headerSize = r.u4();
+	header_.endianTag = r.u4();
 
-    if (header_.endianTag != kEndianConst && header_.endianTag != kEndianConstSwap)
-        throw DexParseError("invalid endian tag: " + std::to_string(header_.endianTag));
-    if (header_.endianTag == kEndianConstSwap)
-        throw DexParseError("big-endian DEX not supported (very rare in practice)");
+	if (header_.endianTag != kEndianConst && header_.endianTag != kEndianConstSwap)
+		throw DexParseError("invalid endian tag: " + std::to_string(header_.endianTag));
+	if (header_.endianTag == kEndianConstSwap)
+		throw DexParseError("big-endian DEX not supported (very rare in practice)");
 
-    header_.linkSize         = r.u4();
-    header_.linkOff          = r.u4();
-    header_.mapOff           = r.u4();
-    header_.stringIdsSize    = r.u4();
-    header_.stringIdsOff     = r.u4();
-    header_.typeIdsSize      = r.u4();
-    header_.typeIdsOff       = r.u4();
-    header_.protoIdsSize     = r.u4();
-    header_.protoIdsOff      = r.u4();
-    header_.fieldIdsSize     = r.u4();
-    header_.fieldIdsOff      = r.u4();
-    header_.methodIdsSize    = r.u4();
-    header_.methodIdsOff     = r.u4();
-    header_.classDefsSize    = r.u4();
-    header_.classDefsOff     = r.u4();
-    header_.dataSize         = r.u4();
-    header_.dataOff          = r.u4();
+	header_.linkSize = r.u4();
+	header_.linkOff = r.u4();
+	header_.mapOff = r.u4();
+	header_.stringIdsSize = r.u4();
+	header_.stringIdsOff = r.u4();
+	header_.typeIdsSize = r.u4();
+	header_.typeIdsOff = r.u4();
+	header_.protoIdsSize = r.u4();
+	header_.protoIdsOff = r.u4();
+	header_.fieldIdsSize = r.u4();
+	header_.fieldIdsOff = r.u4();
+	header_.methodIdsSize = r.u4();
+	header_.methodIdsOff = r.u4();
+	header_.classDefsSize = r.u4();
+	header_.classDefsOff = r.u4();
+	header_.dataSize = r.u4();
+	header_.dataOff = r.u4();
 }
 
-void DexFile::parseStringIds(DexReader& r) {
-    // stringIdsSize is a raw header field: the table of u4 offsets it describes
-    // must fit in the file, otherwise the count is a lie and resizing for it
-    // would allocate gigabytes for a few hundred bytes of input.
-    r.checkArray(header_.stringIdsOff, header_.stringIdsSize, kStringIdItemSize);
-    strings_.resize(header_.stringIdsSize);
-    for (uint32_t i = 0; i < header_.stringIdsSize; ++i) {
-        r.seek(static_cast<size_t>(header_.stringIdsOff) +
-               static_cast<size_t>(i) * kStringIdItemSize);
-        uint32_t off = r.u4();
-        // string_data_item: ULEB128 utf16_size, then MUTF-8 bytes.
-        r.seek(off);
-        uint32_t utf16len = r.uleb128();
-        strings_[i] = r.mutf8(utf16len);
-    }
+void DexFile::parseStringIds(DexReader& r)
+{
+	// stringIdsSize is a raw header field: the table of u4 offsets it describes
+	// must fit in the file, otherwise the count is a lie and resizing for it
+	// would allocate gigabytes for a few hundred bytes of input.
+	r.checkArray(header_.stringIdsOff, header_.stringIdsSize, kStringIdItemSize);
+	strings_.resize(header_.stringIdsSize);
+	for (uint32_t i = 0; i < header_.stringIdsSize; ++i)
+	{
+		r.seek(static_cast<size_t>(header_.stringIdsOff) + static_cast<size_t>(i) * kStringIdItemSize);
+		uint32_t off = r.u4();
+		// string_data_item: ULEB128 utf16_size, then MUTF-8 bytes.
+		r.seek(off);
+		uint32_t utf16len = r.uleb128();
+		strings_[i] = r.mutf8(utf16len);
+	}
 }
 
-void DexFile::parseTypeIds(DexReader& r) {
-    r.seek(header_.typeIdsOff);
-    // Same as the string table: the declared count has to be backed by
-    // real bytes before anything is allocated for it.
-    r.checkArray(header_.typeIdsOff, header_.typeIdsSize, kTypeIdItemSize);
-    typeIds_.resize(header_.typeIdsSize);
-    for (auto& t : typeIds_)
-        t.descriptorIdx = r.u4();
+void DexFile::parseTypeIds(DexReader& r)
+{
+	r.seek(header_.typeIdsOff);
+	// Same as the string table: the declared count has to be backed by
+	// real bytes before anything is allocated for it.
+	r.checkArray(header_.typeIdsOff, header_.typeIdsSize, kTypeIdItemSize);
+	typeIds_.resize(header_.typeIdsSize);
+	for (auto& t: typeIds_)
+		t.descriptorIdx = r.u4();
 }
 
-void DexFile::parseProtoIds(DexReader& r) {
-    r.seek(header_.protoIdsOff);
-    // Same as the string table: the declared count has to be backed by
-    // real bytes before anything is allocated for it.
-    r.checkArray(header_.protoIdsOff, header_.protoIdsSize, kProtoIdItemSize);
-    protoIds_.resize(header_.protoIdsSize);
-    for (auto& p : protoIds_) {
-        p.shortyIdx      = r.u4();
-        p.returnTypeIdx  = r.u4();
-        p.parametersOff  = r.u4();
-    }
+void DexFile::parseProtoIds(DexReader& r)
+{
+	r.seek(header_.protoIdsOff);
+	// Same as the string table: the declared count has to be backed by
+	// real bytes before anything is allocated for it.
+	r.checkArray(header_.protoIdsOff, header_.protoIdsSize, kProtoIdItemSize);
+	protoIds_.resize(header_.protoIdsSize);
+	for (auto& p: protoIds_)
+	{
+		p.shortyIdx = r.u4();
+		p.returnTypeIdx = r.u4();
+		p.parametersOff = r.u4();
+	}
 }
 
-void DexFile::parseFieldIds(DexReader& r) {
-    r.seek(header_.fieldIdsOff);
-    // Same as the string table: the declared count has to be backed by
-    // real bytes before anything is allocated for it.
-    r.checkArray(header_.fieldIdsOff, header_.fieldIdsSize, kFieldIdItemSize);
-    fieldIds_.resize(header_.fieldIdsSize);
-    for (auto& f : fieldIds_) {
-        f.classIdx = r.u2();
-        f.typeIdx  = r.u2();
-        f.nameIdx  = r.u4();
-    }
+void DexFile::parseFieldIds(DexReader& r)
+{
+	r.seek(header_.fieldIdsOff);
+	// Same as the string table: the declared count has to be backed by
+	// real bytes before anything is allocated for it.
+	r.checkArray(header_.fieldIdsOff, header_.fieldIdsSize, kFieldIdItemSize);
+	fieldIds_.resize(header_.fieldIdsSize);
+	for (auto& f: fieldIds_)
+	{
+		f.classIdx = r.u2();
+		f.typeIdx = r.u2();
+		f.nameIdx = r.u4();
+	}
 }
 
-void DexFile::parseMethodIds(DexReader& r) {
-    r.seek(header_.methodIdsOff);
-    // Same as the string table: the declared count has to be backed by
-    // real bytes before anything is allocated for it.
-    r.checkArray(header_.methodIdsOff, header_.methodIdsSize, kMethodIdItemSize);
-    methodIds_.resize(header_.methodIdsSize);
-    for (auto& m : methodIds_) {
-        m.classIdx = r.u2();
-        m.protoIdx = r.u2();
-        m.nameIdx  = r.u4();
-    }
+void DexFile::parseMethodIds(DexReader& r)
+{
+	r.seek(header_.methodIdsOff);
+	// Same as the string table: the declared count has to be backed by
+	// real bytes before anything is allocated for it.
+	r.checkArray(header_.methodIdsOff, header_.methodIdsSize, kMethodIdItemSize);
+	methodIds_.resize(header_.methodIdsSize);
+	for (auto& m: methodIds_)
+	{
+		m.classIdx = r.u2();
+		m.protoIdx = r.u2();
+		m.nameIdx = r.u4();
+	}
 }
 
-void DexFile::parseClassDefs(DexReader& r) {
-    r.seek(header_.classDefsOff);
-    // Same as the string table: the declared count has to be backed by
-    // real bytes before anything is allocated for it.
-    r.checkArray(header_.classDefsOff, header_.classDefsSize, kClassDefItemSize);
-    classDefs_.resize(header_.classDefsSize);
-    for (auto& cd : classDefs_) {
-        cd.classIdx        = r.u4();
-        cd.accessFlags     = r.u4();
-        cd.superclassIdx   = r.u4();
-        cd.interfacesOff   = r.u4();
-        cd.sourceFileIdx   = r.u4();
-        cd.annotationsOff  = r.u4();
-        cd.classDataOff    = r.u4();
-        cd.staticValuesOff = r.u4();
-    }
+void DexFile::parseClassDefs(DexReader& r)
+{
+	r.seek(header_.classDefsOff);
+	// Same as the string table: the declared count has to be backed by
+	// real bytes before anything is allocated for it.
+	r.checkArray(header_.classDefsOff, header_.classDefsSize, kClassDefItemSize);
+	classDefs_.resize(header_.classDefsSize);
+	for (auto& cd: classDefs_)
+	{
+		cd.classIdx = r.u4();
+		cd.accessFlags = r.u4();
+		cd.superclassIdx = r.u4();
+		cd.interfacesOff = r.u4();
+		cd.sourceFileIdx = r.u4();
+		cd.annotationsOff = r.u4();
+		cd.classDataOff = r.u4();
+		cd.staticValuesOff = r.u4();
+	}
 }
 
 // ─── DexFile resolution helpers ──────────────────────────────────────────────
 
-const std::string& DexFile::string(uint32_t idx) const {
-    if (idx >= strings_.size())
-        throw DexParseError("string index out of range: " + std::to_string(idx));
-    return strings_[idx];
+const std::string& DexFile::string(uint32_t idx) const
+{
+	if (idx >= strings_.size()) throw DexParseError("string index out of range: " + std::to_string(idx));
+	return strings_[idx];
 }
 
 namespace {
@@ -453,198 +468,213 @@ namespace {
 /// malformed file escaped as a different exception type past the handler meant
 /// to contain it. string() above already got this right; the rest did not.
 template <typename Table>
-const typename Table::value_type& itemAt(const Table& table, uint32_t idx, const char* what) {
-    if (idx >= table.size())
-        throw DexParseError(std::string(what) + " index out of range: " + std::to_string(idx));
-    return table[idx];
+const typename Table::value_type& itemAt(const Table& table, uint32_t idx, const char* what)
+{
+	if (idx >= table.size()) throw DexParseError(std::string(what) + " index out of range: " + std::to_string(idx));
+	return table[idx];
 }
 
 } // namespace
 
-const std::string& DexFile::typeName(uint32_t typeIdx) const {
-    return string(itemAt(typeIds_, typeIdx, "type").descriptorIdx);
+const std::string& DexFile::typeName(uint32_t typeIdx) const
+{
+	return string(itemAt(typeIds_, typeIdx, "type").descriptorIdx);
 }
 
-std::string DexFile::typeDescriptor(uint32_t typeIdx) const {
-    return typeName(typeIdx);
+std::string DexFile::typeDescriptor(uint32_t typeIdx) const
+{
+	return typeName(typeIdx);
 }
 
-std::string DexFile::fieldClass(uint32_t fieldIdx) const {
-    return typeName(itemAt(fieldIds_, fieldIdx, "field").classIdx);
+std::string DexFile::fieldClass(uint32_t fieldIdx) const
+{
+	return typeName(itemAt(fieldIds_, fieldIdx, "field").classIdx);
 }
 
-std::string DexFile::fieldType(uint32_t fieldIdx) const {
-    return typeName(itemAt(fieldIds_, fieldIdx, "field").typeIdx);
+std::string DexFile::fieldType(uint32_t fieldIdx) const
+{
+	return typeName(itemAt(fieldIds_, fieldIdx, "field").typeIdx);
 }
 
-std::string DexFile::fieldName(uint32_t fieldIdx) const {
-    return string(itemAt(fieldIds_, fieldIdx, "field").nameIdx);
+std::string DexFile::fieldName(uint32_t fieldIdx) const
+{
+	return string(itemAt(fieldIds_, fieldIdx, "field").nameIdx);
 }
 
-std::string DexFile::methodClass(uint32_t methodIdx) const {
-    return typeName(itemAt(methodIds_, methodIdx, "method").classIdx);
+std::string DexFile::methodClass(uint32_t methodIdx) const
+{
+	return typeName(itemAt(methodIds_, methodIdx, "method").classIdx);
 }
 
-std::string DexFile::methodName(uint32_t methodIdx) const {
-    return string(itemAt(methodIds_, methodIdx, "method").nameIdx);
+std::string DexFile::methodName(uint32_t methodIdx) const
+{
+	return string(itemAt(methodIds_, methodIdx, "method").nameIdx);
 }
 
-std::string DexFile::methodProto(uint32_t methodIdx) const {
-    const MethodId& mid   = itemAt(methodIds_, methodIdx, "method");
-    const ProtoId&  proto = itemAt(protoIds_, mid.protoIdx, "proto");
+std::string DexFile::methodProto(uint32_t methodIdx) const
+{
+	const MethodId& mid = itemAt(methodIds_, methodIdx, "method");
+	const ProtoId& proto = itemAt(protoIds_, mid.protoIdx, "proto");
 
-    // Build descriptor "(params)retType"
-    std::string result = "(";
-    if (proto.parametersOff != 0) {
-        auto params = readTypeList(proto.parametersOff);
-        for (uint32_t ti : params)
-            result += typeName(ti);
-    }
-    result += ')';
-    result += typeName(proto.returnTypeIdx);
-    return result;
+	// Build descriptor "(params)retType"
+	std::string result = "(";
+	if (proto.parametersOff != 0)
+	{
+		auto params = readTypeList(proto.parametersOff);
+		for (uint32_t ti: params)
+			result += typeName(ti);
+	}
+	result += ')';
+	result += typeName(proto.returnTypeIdx);
+	return result;
 }
 
-ClassData DexFile::readClassData(uint32_t offset) const {
-    DexReader r(data_.data(), data_.size());
-    r.seek(offset);
+ClassData DexFile::readClassData(uint32_t offset) const
+{
+	DexReader r(data_.data(), data_.size());
+	r.seek(offset);
 
-    ClassData cd;
-    uint32_t numStaticFields   = r.uleb128();
-    uint32_t numInstanceFields = r.uleb128();
-    uint32_t numDirectMethods  = r.uleb128();
-    uint32_t numVirtualMethods = r.uleb128();
+	ClassData cd;
+	uint32_t numStaticFields = r.uleb128();
+	uint32_t numInstanceFields = r.uleb128();
+	uint32_t numDirectMethods = r.uleb128();
+	uint32_t numVirtualMethods = r.uleb128();
 
-    auto readFields = [&](uint32_t count) {
-        std::vector<EncodedField> fields;
-        // An encoded_field is two ULEB128s, so at least two bytes on disk: a
-        // count larger than the rest of the file can encode is malformed and
-        // must not be allocated for.
-        r.checkCount(count, kMinEncodedFieldSize);
-        fields.resize(count);
-        uint32_t prevIdx = 0;
-        for (auto& f : fields) {
-            f.fieldIdxDiff = r.uleb128();
-            f.accessFlags  = r.uleb128();
-            f.fieldIdx     = prevIdx + f.fieldIdxDiff;
-            prevIdx        = f.fieldIdx;
-        }
-        return fields;
-    };
+	auto readFields = [&](uint32_t count) {
+		std::vector<EncodedField> fields;
+		// An encoded_field is two ULEB128s, so at least two bytes on disk: a
+		// count larger than the rest of the file can encode is malformed and
+		// must not be allocated for.
+		r.checkCount(count, kMinEncodedFieldSize);
+		fields.resize(count);
+		uint32_t prevIdx = 0;
+		for (auto& f: fields)
+		{
+			f.fieldIdxDiff = r.uleb128();
+			f.accessFlags = r.uleb128();
+			f.fieldIdx = prevIdx + f.fieldIdxDiff;
+			prevIdx = f.fieldIdx;
+		}
+		return fields;
+	};
 
-    auto readMethods = [&](uint32_t count) {
-        std::vector<EncodedMethod> methods;
-        // Likewise, an encoded_method is three ULEB128s.
-        r.checkCount(count, kMinEncodedMethodSize);
-        methods.resize(count);
-        uint32_t prevIdx = 0;
-        for (auto& m : methods) {
-            m.methodIdxDiff = r.uleb128();
-            m.accessFlags   = r.uleb128();
-            m.codeOff       = r.uleb128();
-            m.methodIdx     = prevIdx + m.methodIdxDiff;
-            prevIdx         = m.methodIdx;
-        }
-        return methods;
-    };
+	auto readMethods = [&](uint32_t count) {
+		std::vector<EncodedMethod> methods;
+		// Likewise, an encoded_method is three ULEB128s.
+		r.checkCount(count, kMinEncodedMethodSize);
+		methods.resize(count);
+		uint32_t prevIdx = 0;
+		for (auto& m: methods)
+		{
+			m.methodIdxDiff = r.uleb128();
+			m.accessFlags = r.uleb128();
+			m.codeOff = r.uleb128();
+			m.methodIdx = prevIdx + m.methodIdxDiff;
+			prevIdx = m.methodIdx;
+		}
+		return methods;
+	};
 
-    cd.staticFields   = readFields(numStaticFields);
-    cd.instanceFields = readFields(numInstanceFields);
-    cd.directMethods  = readMethods(numDirectMethods);
-    cd.virtualMethods = readMethods(numVirtualMethods);
-    return cd;
+	cd.staticFields = readFields(numStaticFields);
+	cd.instanceFields = readFields(numInstanceFields);
+	cd.directMethods = readMethods(numDirectMethods);
+	cd.virtualMethods = readMethods(numVirtualMethods);
+	return cd;
 }
 
-CodeItem DexFile::readCodeItem(uint32_t offset) const {
-    DexReader r(data_.data(), data_.size());
-    r.seek(offset);
+CodeItem DexFile::readCodeItem(uint32_t offset) const
+{
+	DexReader r(data_.data(), data_.size());
+	r.seek(offset);
 
-    CodeItem code;
-    code.registersSize = r.u2();
-    code.insSize       = r.u2();
-    code.outsSize      = r.u2();
-    code.triesSize     = r.u2();
-    code.debugInfoOff  = r.u4();
-    code.insnsSize     = r.u4();
+	CodeItem code;
+	code.registersSize = r.u2();
+	code.insSize = r.u2();
+	code.outsSize = r.u2();
+	code.triesSize = r.u2();
+	code.debugInfoOff = r.u4();
+	code.insnsSize = r.u4();
 
-    // insns_size counts 16-bit code units, so the instruction stream cannot be
-    // longer than the bytes remaining after the code_item header.
-    r.checkCount(code.insnsSize, kInsnUnitSize);
-    code.insns.resize(code.insnsSize);
-    for (auto& w : code.insns)
-        w = r.u2();
+	// insns_size counts 16-bit code units, so the instruction stream cannot be
+	// longer than the bytes remaining after the code_item header.
+	r.checkCount(code.insnsSize, kInsnUnitSize);
+	code.insns.resize(code.insnsSize);
+	for (auto& w: code.insns)
+		w = r.u2();
 
-    // Align to 4 bytes if tries present and instructions count is odd.
-    if (code.triesSize > 0 && (code.insnsSize & 1))
-        r.u2(); // padding
+	// Align to 4 bytes if tries present and instructions count is odd.
+	if (code.triesSize > 0 && (code.insnsSize & 1)) r.u2(); // padding
 
-    if (code.triesSize > 0) {
-        r.checkCount(code.triesSize, kTryItemSize);
-        code.tries.resize(code.triesSize);
-        for (auto& t : code.tries) {
-            t.startAddr  = r.u4();
-            t.insnCount  = r.u2();
-            t.handlerOff = r.u2();
-        }
+	if (code.triesSize > 0)
+	{
+		r.checkCount(code.triesSize, kTryItemSize);
+		code.tries.resize(code.triesSize);
+		for (auto& t: code.tries)
+		{
+			t.startAddr = r.u4();
+			t.insnCount = r.u2();
+			t.handlerOff = r.u2();
+		}
 
-        // encoded_catch_handler_list
-        size_t handlerListStart = r.pos();
-        uint32_t handlerListSize = r.uleb128(); // number of handler lists
-        // Every encoded_catch_handler carries at least its SLEB128 size field.
-        r.checkCount(handlerListSize, kMinCatchHandlerSize);
-        code.handlers.handlers.resize(handlerListSize);
-        code.handlers.catchAllAddrs.resize(handlerListSize, ~0u);
+		// encoded_catch_handler_list
+		size_t handlerListStart = r.pos();
+		uint32_t handlerListSize = r.uleb128(); // number of handler lists
+		// Every encoded_catch_handler carries at least its SLEB128 size field.
+		r.checkCount(handlerListSize, kMinCatchHandlerSize);
+		code.handlers.handlers.resize(handlerListSize);
+		code.handlers.catchAllAddrs.resize(handlerListSize, ~0u);
 
-        for (uint32_t i = 0; i < handlerListSize; ++i) {
-            int32_t size = r.sleb128(); // positive: type+addr pairs; negative: pairs + catch-all
-            // Negate in 64 bits: -size is undefined for INT32_MIN, which a
-            // crafted SLEB128 can produce.
-            const int64_t wide = size;
-            uint32_t pairCount = static_cast<uint32_t>(wide < 0 ? -wide : wide);
-            // Each encoded_type_addr_pair is two ULEB128s.
-            r.checkCount(pairCount, kMinCatchHandlerPairSize);
-            code.handlers.handlers[i].resize(pairCount);
-            for (auto& handler : code.handlers.handlers[i]) {
-                // A ULEB128 type index, cast straight to int32 -- an
-                // out-of-range conversion for anything above INT32_MAX, and
-                // measured reachable with 0xFFFFFFFF. A type index that large
-                // names no entry in the type table, so it is refused rather
-                // than wrapped into a plausible-looking small negative.
-                {
-                    const std::uint32_t raw = r.uleb128();
-                    // -1 is this field's documented "catch-all" value
-                    // (dex_header.h, EncodedTypeAddrPair::typeIdx), which is
-                    // the safe reading: a handler with no resolvable type
-                    // catches, it does not silently catch the wrong one.
-                    handler.typeIdx = raw > static_cast<std::uint32_t>(INT32_MAX)
-                            ? -1
-                            : static_cast<int32_t>(raw);
-                }
-                handler.addr    = r.uleb128();
-            }
-            if (size <= 0) {
-                // catch-all handler follows
-                code.handlers.catchAllAddrs[i] = r.uleb128();
-            }
-        }
-        (void)handlerListStart; // suppress unused warning
-    }
+		for (uint32_t i = 0; i < handlerListSize; ++i)
+		{
+			int32_t size = r.sleb128(); // positive: type+addr pairs; negative: pairs + catch-all
+			// Negate in 64 bits: -size is undefined for INT32_MIN, which a
+			// crafted SLEB128 can produce.
+			const int64_t wide = size;
+			uint32_t pairCount = static_cast<uint32_t>(wide < 0 ? -wide : wide);
+			// Each encoded_type_addr_pair is two ULEB128s.
+			r.checkCount(pairCount, kMinCatchHandlerPairSize);
+			code.handlers.handlers[i].resize(pairCount);
+			for (auto& handler: code.handlers.handlers[i])
+			{
+				// A ULEB128 type index, cast straight to int32 -- an
+				// out-of-range conversion for anything above INT32_MAX, and
+				// measured reachable with 0xFFFFFFFF. A type index that large
+				// names no entry in the type table, so it is refused rather
+				// than wrapped into a plausible-looking small negative.
+				{
+					const std::uint32_t raw = r.uleb128();
+					// -1 is this field's documented "catch-all" value
+					// (dex_header.h, EncodedTypeAddrPair::typeIdx), which is
+					// the safe reading: a handler with no resolvable type
+					// catches, it does not silently catch the wrong one.
+					handler.typeIdx = raw > static_cast<std::uint32_t>(INT32_MAX) ? -1 : static_cast<int32_t>(raw);
+				}
+				handler.addr = r.uleb128();
+			}
+			if (size <= 0)
+			{
+				// catch-all handler follows
+				code.handlers.catchAllAddrs[i] = r.uleb128();
+			}
+		}
+		(void)handlerListStart; // suppress unused warning
+	}
 
-    return code;
+	return code;
 }
 
-std::vector<uint32_t> DexFile::readTypeList(uint32_t offset) const {
-    if (offset == 0)
-        return {};
-    DexReader r(data_.data(), data_.size());
-    r.seek(offset);
-    uint32_t size = r.u4();
-    // type_list.size counts 2-byte type_items following it in the file.
-    r.checkCount(size, kTypeItemSize);
-    std::vector<uint32_t> result(size);
-    for (auto& t : result)
-        t = r.u2(); // type_item.typeIdx
-    return result;
+std::vector<uint32_t> DexFile::readTypeList(uint32_t offset) const
+{
+	if (offset == 0) return {};
+	DexReader r(data_.data(), data_.size());
+	r.seek(offset);
+	uint32_t size = r.u4();
+	// type_list.size counts 2-byte type_items following it in the file.
+	r.checkCount(size, kTypeItemSize);
+	std::vector<uint32_t> result(size);
+	for (auto& t: result)
+		t = r.u2(); // type_item.typeIdx
+	return result;
 }
 
 } // namespace dex_parser

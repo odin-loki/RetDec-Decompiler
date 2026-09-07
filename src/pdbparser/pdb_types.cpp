@@ -32,8 +32,7 @@ void PDBTypeBase::dump(bool nested)
 {
 	PDBTypeDef::dump(nested);
 	printf("%s", description);
-	if (!nested)
-		puts("");
+	if (!nested) puts("");
 }
 
 std::string PDBTypeBase::to_llvm(void)
@@ -48,8 +47,9 @@ std::string PDBTypeBase::to_llvm(void)
 	{
 		tmp << "i1";
 	}
-	else if (base_type == PDBBASETYPE_INT_SIGNED || base_type == PDBBASETYPE_INT_UNSIGNED
-	        || base_type == PDBBASETYPE_HRESULT)
+	else if (
+		base_type == PDBBASETYPE_INT_SIGNED || base_type == PDBBASETYPE_INT_UNSIGNED
+		|| base_type == PDBBASETYPE_HRESULT)
 	{
 		tmp << "i" << size_bits;
 	}
@@ -57,12 +57,12 @@ std::string PDBTypeBase::to_llvm(void)
 	{
 		switch (size_bits)
 		{
-			case 16: tmp << "half"; break;
-			case 32: tmp << "float"; break;
-			case 64: tmp << "double"; break;
-			case 128: tmp << "fp128"; break;
-			case 80: tmp << "x86_fp80"; break;
-			default: tmp << "double"; break;
+		case 16: tmp << "half"; break;
+		case 32: tmp << "float"; break;
+		case 64: tmp << "double"; break;
+		case 128: tmp << "fp128"; break;
+		case 80: tmp << "x86_fp80"; break;
+		default: tmp << "double"; break;
 		}
 	}
 
@@ -91,118 +91,106 @@ std::string PDBTypeBase::to_llvm(void)
 //
 // Returns SIZE_MAX when the name is not terminated inside the list, which the
 // caller treats as the end of the walk: there is no next subrecord to find.
-static std::size_t subrecord_name_length(const char *name, const char *listEnd)
+static std::size_t subrecord_name_length(const char* name, const char* listEnd)
 {
 	if (name == nullptr || name >= listEnd) return SIZE_MAX;
-	const std::size_t at = retdec::utils::bstr::terminatorAt(
-	        name, static_cast<std::size_t>(listEnd - name));
+	const std::size_t at = retdec::utils::bstr::terminatorAt(name, static_cast<std::size_t>(listEnd - name));
 	return at == retdec::utils::bstr::npos ? SIZE_MAX : at;
 }
 
-void PDBTypeFieldList::parse(lfFieldList *record, int size, PDBTypeDefIndexMap &types)
+void PDBTypeFieldList::parse(lfFieldList* record, int size, PDBTypeDefIndexMap& types)
 {
 	int position = 0;
 	// The subrecords occupy the bytes the record's own length declares, and
 	// nothing may be read past them. parse_types() has already checked that
 	// span is inside the TPI stream.
-	const char *const listStart = reinterpret_cast<char *>(&record->SubRecord);
-	const char *const listEnd   = listStart + (size > 2 ? size - 2 : 0);
+	const char* const listStart = reinterpret_cast<char*>(&record->SubRecord);
+	const char* const listEnd = listStart + (size > 2 ? size - 2 : 0);
 	while (position < size - 2)
-	{  // Process all subrecords
-		lfSubRecord *subrecord =
-		        reinterpret_cast<lfSubRecord *>(reinterpret_cast<char *>(&record->SubRecord) + position);  // Get pointer to current subrecord
+	{ // Process all subrecords
+		lfSubRecord* subrecord = reinterpret_cast<lfSubRecord*>(
+			reinterpret_cast<char*>(&record->SubRecord) + position); // Get pointer to current subrecord
 		int subrecord_size = 0;
 		PDBTypeField new_field;
 		bool end = false;
 		switch (subrecord->leaf)
 		{
-			case LF_ENUMERATE:
-			{  // Enum member
-				new_field.field_type = PDBFIELD_ENUMERATE;
-				// Get value and name of enum member
-				int value;
-				char * name;
-				name = reinterpret_cast<char *>(RecordValue(subrecord->Enumerate.value,
-				        reinterpret_cast<PDB_DWORD *>(&value)));
-				if (name == nullptr)
-				{
-					return;
-				}
-				new_field.Enumerate.name = name;
-				new_field.Enumerate.value = value;
-				// Add this field to fields vector
-				fields.push_back(new_field);
-				// Compute the subrecord size
-				{
-					const std::size_t nameLen = subrecord_name_length(name, listEnd);
-					if (nameLen == SIZE_MAX) return;
-					subrecord_size = (name - reinterpret_cast<char *>(subrecord))
-					        + static_cast<int>(nameLen) + 1;
-				}
-				break;
+		case LF_ENUMERATE: { // Enum member
+			new_field.field_type = PDBFIELD_ENUMERATE;
+			// Get value and name of enum member
+			int value;
+			char* name;
+			name =
+				reinterpret_cast<char*>(RecordValue(subrecord->Enumerate.value, reinterpret_cast<PDB_DWORD*>(&value)));
+			if (name == nullptr)
+			{
+				return;
 			}
-			case LF_MEMBER:
-			{  // Struct member
-				new_field.field_type = PDBFIELD_MEMBER;
-				// Get type of struct member
-				new_field.Member.type_index = subrecord->Member.index;
-				new_field.Member.type_def = types[subrecord->Member.index];
-				// Get offset and name of struct member
-				int value;
-				char * name;
-				name = reinterpret_cast<char *>(RecordValue(subrecord->Member.offset,
-				        reinterpret_cast<PDB_DWORD *>(&value)));
-				if (name == nullptr)
-				{
-					return;
-				}
-				new_field.Member.name = name;
-				new_field.Member.offset = value;
-				// Add this field to fields vector
-				fields.push_back(new_field);
-				// Compute the subrecord size
-				{
-					const std::size_t nameLen = subrecord_name_length(name, listEnd);
-					if (nameLen == SIZE_MAX) return;
-					subrecord_size = (name - reinterpret_cast<char *>(subrecord))
-					        + static_cast<int>(nameLen) + 1;
-				}
-				break;
+			new_field.Enumerate.name = name;
+			new_field.Enumerate.value = value;
+			// Add this field to fields vector
+			fields.push_back(new_field);
+			// Compute the subrecord size
+			{
+				const std::size_t nameLen = subrecord_name_length(name, listEnd);
+				if (nameLen == SIZE_MAX) return;
+				subrecord_size = (name - reinterpret_cast<char*>(subrecord)) + static_cast<int>(nameLen) + 1;
 			}
-			case LF_NESTTYPE:
-			{  // Nested typedef
-			   //TODO (skipping only now)
-				char * name = reinterpret_cast<char *>(subrecord->NestType.Name);
-				if (name == nullptr)
-				{
-					return;
-				}
-				{
-					const std::size_t nameLen = subrecord_name_length(name, listEnd);
-					if (nameLen == SIZE_MAX) return;
-					subrecord_size = (name - reinterpret_cast<char *>(subrecord))
-					        + static_cast<int>(nameLen) + 1;
-				}
-				break;
+			break;
+		}
+		case LF_MEMBER: { // Struct member
+			new_field.field_type = PDBFIELD_MEMBER;
+			// Get type of struct member
+			new_field.Member.type_index = subrecord->Member.index;
+			new_field.Member.type_def = types[subrecord->Member.index];
+			// Get offset and name of struct member
+			int value;
+			char* name;
+			name = reinterpret_cast<char*>(RecordValue(subrecord->Member.offset, reinterpret_cast<PDB_DWORD*>(&value)));
+			if (name == nullptr)
+			{
+				return;
 			}
-			default:
-				end = true;
-				break;
+			new_field.Member.name = name;
+			new_field.Member.offset = value;
+			// Add this field to fields vector
+			fields.push_back(new_field);
+			// Compute the subrecord size
+			{
+				const std::size_t nameLen = subrecord_name_length(name, listEnd);
+				if (nameLen == SIZE_MAX) return;
+				subrecord_size = (name - reinterpret_cast<char*>(subrecord)) + static_cast<int>(nameLen) + 1;
+			}
+			break;
+		}
+		case LF_NESTTYPE: { // Nested typedef
+							// TODO (skipping only now)
+			char* name = reinterpret_cast<char*>(subrecord->NestType.Name);
+			if (name == nullptr)
+			{
+				return;
+			}
+			{
+				const std::size_t nameLen = subrecord_name_length(name, listEnd);
+				if (nameLen == SIZE_MAX) return;
+				subrecord_size = (name - reinterpret_cast<char*>(subrecord)) + static_cast<int>(nameLen) + 1;
+			}
+			break;
+		}
+		default: end = true; break;
 		}
 		// Align the size to 4 bytes
 		subrecord_size = (subrecord_size + (DWORD_ - 1)) & (0 - DWORD_);
 		// Move position to next subrecord
 		position += subrecord_size;
-		if (end)
-			break;
+		if (end) break;
 	}
 }
 
 void PDBTypeFieldList::dump(bool nested)
 {
 	PDBTypeDef::dump(nested);
-	if (!nested)
-		printf("/* Field list */\n");
+	if (!nested) printf("/* Field list */\n");
 }
 
 // =================================================================
@@ -211,29 +199,28 @@ void PDBTypeFieldList::dump(bool nested)
 //
 // =================================================================
 
-void PDBTypeEnum::parse(lfEnum *record, int, PDBTypeDefIndexMap &types)
+void PDBTypeEnum::parse(lfEnum* record, int, PDBTypeDefIndexMap& types)
 {
 	// Copy member count and name
 	enum_count = record->count;
-	enum_name = reinterpret_cast<char *>(record->Name);
+	enum_name = reinterpret_cast<char*>(record->Name);
 	// Get enum size in bytes by underlying type
-	if (record->utype > 0 && types[record->utype] != nullptr)
-		size_bytes = types[record->utype]->size_bytes;
+	if (record->utype > 0 && types[record->utype] != nullptr) size_bytes = types[record->utype]->size_bytes;
 	// Fill the array of pointers to enum members
 	if (record->field > 0 && types[record->field] != nullptr)
 	{
 		// Get the type definition with field list
-		PDBTypeFieldList * fieldlist = reinterpret_cast<PDBTypeFieldList *>(types[record->field]);
+		PDBTypeFieldList* fieldlist = reinterpret_cast<PDBTypeFieldList*>(types[record->field]);
 		if (fieldlist->fields.size() != enum_count)
 		{
 			return;
 		}
 		// Allocate the array of pointers
-		enum_members = new PDBTypeFieldEnumerate *[enum_count];
+		enum_members = new PDBTypeFieldEnumerate*[enum_count];
 		for (unsigned int i = 0; i < enum_count; i++)
-		{  // Copy pointers to enum members from field list
+		{ // Copy pointers to enum members from field list
 			assert(fieldlist->fields[i].field_type == PDBFIELD_ENUMERATE);
-			enum_members[i] = &fieldlist->fields[i].Enumerate;  // Copying pointer
+			enum_members[i] = &fieldlist->fields[i].Enumerate; // Copying pointer
 		}
 	}
 }
@@ -241,8 +228,7 @@ void PDBTypeEnum::parse(lfEnum *record, int, PDBTypeDefIndexMap &types)
 void PDBTypeEnum::dump(bool nested)
 {
 	PDBTypeDef::dump(nested);
-	if (!nested)
-		printf("enum ");
+	if (!nested) printf("enum ");
 	printf("%s", enum_name);
 	if (!nested)
 	{
@@ -269,7 +255,7 @@ std::string PDBTypeEnum::to_llvm(void)
 //
 // =================================================================
 
-void PDBTypeArray::parse(lfArray *record, int, PDBTypeDefIndexMap &types)
+void PDBTypeArray::parse(lfArray* record, int, PDBTypeDefIndexMap& types)
 {
 	// Get element type
 	array_elemtype_index = record->elemtype;
@@ -279,7 +265,7 @@ void PDBTypeArray::parse(lfArray *record, int, PDBTypeDefIndexMap &types)
 	array_idxtype_def = types[array_idxtype_index];
 	// Get size of the array
 	int value;
-	RecordValue(record->data, reinterpret_cast<PDB_DWORD *>(&value));
+	RecordValue(record->data, reinterpret_cast<PDB_DWORD*>(&value));
 	size_bytes = value;
 	// Get number of elements
 	if (array_elemtype_def != nullptr && array_elemtype_def->size_bytes != 0)
@@ -298,8 +284,7 @@ void PDBTypeArray::dump(bool nested)
 		printf("(%04x)", array_elemtype_index);
 	// Print number of elements
 	printf("[%d]", array_count);
-	if (!nested)
-		puts("");
+	if (!nested) puts("");
 }
 
 std::string PDBTypeArray::to_llvm(void)
@@ -316,7 +301,7 @@ std::string PDBTypeArray::to_llvm(void)
 //
 // =================================================================
 
-void PDBTypePointer::parse(lfPointer *record, int, PDBTypeDefIndexMap &types)
+void PDBTypePointer::parse(lfPointer* record, int, PDBTypeDefIndexMap& types)
 {
 	// Get underlying type
 	ptr_utype_index = record->body.utype;
@@ -332,15 +317,14 @@ void PDBTypePointer::dump(bool nested)
 	{
 		ptr_utype_def->dump(true);
 		if (!(ptr_utype_def->type_class == PDBTYPE_POINTER
-		        || (ptr_utype_def->type_class == PDBTYPE_BASE
-		                && (reinterpret_cast<PDBTypeBase *>(ptr_utype_def))->is_pointer)))
+			  || (ptr_utype_def->type_class == PDBTYPE_BASE
+				  && (reinterpret_cast<PDBTypeBase*>(ptr_utype_def))->is_pointer)))
 			printf(" ");
 		printf("*");
 	}
 	else
 		printf("(%04x) *", ptr_utype_index);
-	if (!nested)
-		puts("");
+	if (!nested) puts("");
 }
 
 std::string PDBTypePointer::to_llvm(void)
@@ -355,12 +339,11 @@ std::string PDBTypePointer::to_llvm(void)
 //
 // =================================================================
 
-void PDBTypeConst::parse(lfModifier *record, int, PDBTypeDefIndexMap &types)
+void PDBTypeConst::parse(lfModifier* record, int, PDBTypeDefIndexMap& types)
 {
 	const_utype_index = record->utype;
 	const_utype_def = types[record->utype];
-	if (const_utype_def != nullptr)
-		size_bytes = const_utype_def->size_bytes;
+	if (const_utype_def != nullptr) size_bytes = const_utype_def->size_bytes;
 }
 
 void PDBTypeConst::dump(bool nested)
@@ -371,8 +354,7 @@ void PDBTypeConst::dump(bool nested)
 		const_utype_def->dump(true);
 	else
 		printf("(%04x)", const_utype_index);
-	if (!nested)
-		puts("");
+	if (!nested) puts("");
 }
 
 std::string PDBTypeConst::to_llvm(void)
@@ -386,7 +368,7 @@ std::string PDBTypeConst::to_llvm(void)
 //
 // =================================================================
 
-void PDBTypeFunction::parse(lfProc *record, int, PDBTypeDefIndexMap &types)
+void PDBTypeFunction::parse(lfProc* record, int, PDBTypeDefIndexMap& types)
 {
 	// Get function return value type
 	func_rettype_index = record->rvtype;
@@ -400,11 +382,11 @@ void PDBTypeFunction::parse(lfProc *record, int, PDBTypeDefIndexMap &types)
 	// nothing. Casting that to a PDBTypeArglist and asserting afterwards is an
 	// abort on attacker input in any build without NDEBUG, and a type-confused
 	// read of `->arglist` in one with it. Ask first.
-	PDBTypeDef * arglistdef = types[record->arglist];
+	PDBTypeDef* arglistdef = types[record->arglist];
 	if (arglistdef != nullptr && arglistdef->type_class == PDBTYPE_ARGLIST)
 	{
-		PDBTypeArglist * arglisttypedef = static_cast<PDBTypeArglist *>(arglistdef);
-		lfArgList * arglist = arglisttypedef->arglist;
+		PDBTypeArglist* arglisttypedef = static_cast<PDBTypeArglist*>(arglistdef);
+		lfArgList* arglist = arglisttypedef->arglist;
 		if (arglist == nullptr)
 		{
 			func_args_count = 0;
@@ -421,25 +403,24 @@ void PDBTypeFunction::parse(lfProc *record, int, PDBTypeDefIndexMap &types)
 			// one number in two places; taking the smaller reads no further
 			// than the list actually goes.
 			func_args_count = (arglist->count < static_cast<PDB_DWORD>(record->parmcount))
-			        ? static_cast<int>(arglist->count)
-			        : record->parmcount;
+								? static_cast<int>(arglist->count)
+								: record->parmcount;
 		}
 		func_args = new PDBTypeFuncArg[func_args_count];
 		for (int i = 0; i < func_args_count; i++)
-		{  // Process all arguments
+		{ // Process all arguments
 			func_args[i].type_index = arglist->arg[i];
 			func_args[i].type_def = types[arglist->arg[i]];
 		}
 		// Check if function is variadic
-		if (func_args_count > 0 && func_args[func_args_count - 1].type_index == T_NOTYPE)
-			func_is_variadic = true;
+		if (func_args_count > 0 && func_args[func_args_count - 1].type_index == T_NOTYPE) func_is_variadic = true;
 	}
 	func_is_clsmember = false;
 	func_clstype_index = 0;
 	func_thistype_index = 0;
 }
 
-void PDBTypeFunction::parse_mfunc(lfMFunc *record, int, PDBTypeDefIndexMap &types)
+void PDBTypeFunction::parse_mfunc(lfMFunc* record, int, PDBTypeDefIndexMap& types)
 {
 	// Get function return value type
 	func_rettype_index = record->rvtype;
@@ -448,18 +429,19 @@ void PDBTypeFunction::parse_mfunc(lfMFunc *record, int, PDBTypeDefIndexMap &type
 	func_calltype = record->calltype;
 	// Get list of arguments
 	func_args_count = record->parmcount;
-	PDBTypeArglist * arglisttypedef = reinterpret_cast<PDBTypeArglist *>(types[record->arglist]);  // Get auxiliary type definition containing arglist
+	PDBTypeArglist* arglisttypedef =
+		reinterpret_cast<PDBTypeArglist*>(types[record->arglist]); // Get auxiliary type definition containing arglist
 	if (arglisttypedef != nullptr)
 	{
 		assert(arglisttypedef->type_class == PDBTYPE_ARGLIST);
-		lfArgList * arglist = arglisttypedef->arglist;
+		lfArgList* arglist = arglisttypedef->arglist;
 		if (record->parmcount == 0)
 			func_args_count = 0;
 		else
 			assert(arglist->count == record->parmcount);
 		func_args = new PDBTypeFuncArg[func_args_count];
 		for (int i = 0; i < func_args_count; i++)
-		{  // Process all arguments
+		{ // Process all arguments
 			func_args[i].type_index = arglist->arg[i];
 			func_args[i].type_def = types[arglist->arg[i]];
 		}
@@ -487,17 +469,16 @@ void PDBTypeFunction::dump(bool nested)
 		printf(" FUNC (");
 	// Print arguments
 	if (func_thistype_index)
-	{  // Function has this-parameter
+	{ // Function has this-parameter
 		printf("THIS ");
 		if (func_thistype_def != nullptr)
 			func_thistype_def->dump(true);
 		else
 			printf("(%04x)", func_thistype_index);
-		if (func_args_count > 0)
-			printf(", ");
+		if (func_args_count > 0) printf(", ");
 	}
 	if (func_args_count > 0)
-	{  // Function has some arguments
+	{ // Function has some arguments
 		if (func_args != nullptr)
 		{
 			for (int i = 0; i < func_args_count; i++)
@@ -506,8 +487,7 @@ void PDBTypeFunction::dump(bool nested)
 					func_args[i].type_def->dump(true);
 				else
 					printf("(%04x)", func_args[i].type_index);
-				if (i < func_args_count - 1)
-					printf(", ");
+				if (i < func_args_count - 1) printf(", ");
 			};
 		}
 		else
@@ -516,8 +496,7 @@ void PDBTypeFunction::dump(bool nested)
 	else if (!func_thistype_index)
 		printf("void");
 	printf(")");
-	if (!nested)
-		puts("");
+	if (!nested) puts("");
 	// TODO calling convention
 }
 
@@ -532,27 +511,26 @@ std::string PDBTypeFunction::to_llvm(void)
 //
 // =================================================================
 
-void PDBTypeStruct::parse(lfStructure *record, int, PDBTypeDefIndexMap &types)
+void PDBTypeStruct::parse(lfStructure* record, int, PDBTypeDefIndexMap& types)
 {
 	// Get member count
 	struct_count = record->count;
 	// Get struct size and name
 	int value;
-	char * name;
-	name = reinterpret_cast<char *>(RecordValue(record->data, reinterpret_cast<PDB_DWORD *>(&value)));
+	char* name;
+	name = reinterpret_cast<char*>(RecordValue(record->data, reinterpret_cast<PDB_DWORD*>(&value)));
 	size_bytes = value;
-	if (name)
-		struct_name = name;
+	if (name) struct_name = name;
 	// Copy struct members
 	if (record->field > 0 && types[record->field] != nullptr)
 	{
 		// Get field list with struct members
-		PDBTypeFieldList * fieldlist = reinterpret_cast<PDBTypeFieldList *>(types[record->field]);
+		PDBTypeFieldList* fieldlist = reinterpret_cast<PDBTypeFieldList*>(types[record->field]);
 		// Copy all members from field list
 		for (unsigned int i = 0; i < fieldlist->fields.size(); i++)
-		{  // Copy pointers to struct members from field list
+		{ // Copy pointers to struct members from field list
 			if (fieldlist->fields[i].field_type == PDBFIELD_MEMBER)
-				struct_members.push_back(&fieldlist->fields[i].Member);  // Get struct member
+				struct_members.push_back(&fieldlist->fields[i].Member); // Get struct member
 		}
 	}
 
@@ -593,8 +571,7 @@ std::string PDBTypeStruct::to_llvm(void)
 	bool first = true;
 	std::stringstream ret;
 
-	if (!struct_name.empty())
-		ret << "%" << struct_name << " = type ";
+	if (!struct_name.empty()) ret << "%" << struct_name << " = type ";
 	ret << "{";
 
 	for (unsigned int i = 0; i < struct_members.size(); i++)
@@ -625,26 +602,26 @@ std::string PDBTypeStruct::to_llvm_identified(void)
 //
 // =================================================================
 
-void PDBTypeUnion::parse(lfUnion *record, int, PDBTypeDefIndexMap &types)
+void PDBTypeUnion::parse(lfUnion* record, int, PDBTypeDefIndexMap& types)
 {
 	// Copy member count
 	union_count = record->count;
 	// Get union size and name
 	int value;
-	char * name;
-	name = reinterpret_cast<char *>(RecordValue(record->data, reinterpret_cast<PDB_DWORD *>(&value)));
+	char* name;
+	name = reinterpret_cast<char*>(RecordValue(record->data, reinterpret_cast<PDB_DWORD*>(&value)));
 	size_bytes = value;
 	union_name = name;
 	// Copy union members
 	if (record->field > 0 && types[record->field] != nullptr)
 	{
 		// Get field list with union members
-		PDBTypeFieldList * fieldlist = reinterpret_cast<PDBTypeFieldList *>(types[record->field]);
+		PDBTypeFieldList* fieldlist = reinterpret_cast<PDBTypeFieldList*>(types[record->field]);
 		// Copy all members from field list
 		for (unsigned int i = 0; i < fieldlist->fields.size(); i++)
-		{  // Copy pointers to struct members from field list
+		{ // Copy pointers to struct members from field list
 			if (fieldlist->fields[i].field_type == PDBFIELD_MEMBER)
-				union_members.push_back(&fieldlist->fields[i].Member);  // Get struct member
+				union_members.push_back(&fieldlist->fields[i].Member); // Get struct member
 		}
 	}
 }
@@ -685,14 +662,14 @@ std::string PDBTypeUnion::to_llvm(void)
 //
 // =================================================================
 
-void PDBTypeClass::parse(lfClass *record, int, PDBTypeDefIndexMap &)
+void PDBTypeClass::parse(lfClass* record, int, PDBTypeDefIndexMap&)
 {
 	// Copy member count
 	class_count = record->count;
 	// Get struct size and name
 	int value;
-	char * name;
-	name = reinterpret_cast<char *>(RecordValue(record->data, reinterpret_cast<PDB_DWORD *>(&value)));
+	char* name;
+	name = reinterpret_cast<char*>(RecordValue(record->data, reinterpret_cast<PDB_DWORD*>(&value)));
 	size_bytes = value;
 	class_name = name;
 }
@@ -701,8 +678,7 @@ void PDBTypeClass::dump(bool nested)
 {
 	PDBTypeDef::dump(nested);
 	printf("class %s", class_name);
-	if (!nested)
-		puts("");
+	if (!nested) puts("");
 }
 
 std::string PDBTypeClass::to_llvm(void)
@@ -724,7 +700,7 @@ std::string PDBTypeClass::to_llvm(void)
 // TYPE INFO BROWSER
 // =================================================================
 
-#define SKIP(_p,_d)      (reinterpret_cast<PDB_PVOID>(reinterpret_cast<PDB_PBYTE>(_p) + (_d)))
+#define SKIP(_p, _d) (reinterpret_cast<PDB_PVOID>(reinterpret_cast<PDB_PBYTE>(_p) + (_d)))
 
 PDB_PBYTE MethodValue(CV_fldattr_t attr, PDB_PDWORD pdData, PDB_PDWORD pdValue)
 {
@@ -735,22 +711,19 @@ PDB_PBYTE MethodValue(CV_fldattr_t attr, PDB_PDWORD pdData, PDB_PDWORD pdValue)
 	{
 		switch (attr.mprop)
 		{
-			case CV_MTintro:
-			case CV_MTpureintro:
-			{
-				dValue = *pdData;
-				pbText = reinterpret_cast<PDB_PBYTE>(pdData + 1);
-				break;
-			}
-			default:
-			{
-				pbText = reinterpret_cast<PDB_PBYTE>(pdData);
-				break;
-			}
+		case CV_MTintro:
+		case CV_MTpureintro: {
+			dValue = *pdData;
+			pbText = reinterpret_cast<PDB_PBYTE>(pdData + 1);
+			break;
+		}
+		default: {
+			pbText = reinterpret_cast<PDB_PBYTE>(pdData);
+			break;
+		}
 		}
 	}
-	if (pdValue != nullptr)
-		*pdValue = dValue;
+	if (pdValue != nullptr) *pdValue = dValue;
 	return pbText;
 }
 
@@ -780,8 +753,14 @@ PDB_VOID DisplayClass(PlfClass plc, PDB_DWORD, PDB_DWORD)
 	PDB_DWORD dBytes;
 	PDB_PBYTE pbName = RecordValue(plc->data, &dBytes);
 
-	printf((" class  | fields: %08X bytes:  %08X count:  %04hX derived: %08X vshape: %08X [%s]\r\n"), plc->field,
-	        dBytes, plc->count, plc->derived, plc->vshape, pbName);
+	printf(
+		(" class  | fields: %08X bytes:  %08X count:  %04hX derived: %08X vshape: %08X [%s]\r\n"),
+		plc->field,
+		dBytes,
+		plc->count,
+		plc->derived,
+		plc->vshape,
+		pbName);
 	return;
 }
 
@@ -792,8 +771,14 @@ PDB_VOID DisplayStructure(PlfStructure pls, PDB_DWORD, PDB_DWORD)
 	PDB_DWORD dBytes;
 	PDB_PBYTE pbName = RecordValue(pls->data, &dBytes);
 
-	printf((" struct | fields: %08X bytes:  %08X count:  %04hX derived: %08X vshape: %08X [%s]\r\n"), pls->field,
-	        dBytes, pls->count, pls->derived, pls->vshape, pbName);
+	printf(
+		(" struct | fields: %08X bytes:  %08X count:  %04hX derived: %08X vshape: %08X [%s]\r\n"),
+		pls->field,
+		dBytes,
+		pls->count,
+		pls->derived,
+		pls->vshape,
+		pbName);
 	return;
 }
 
@@ -812,8 +797,8 @@ PDB_VOID DisplayUnion(PlfUnion plu, PDB_DWORD, PDB_DWORD)
 
 PDB_VOID DisplayEnum(PlfEnum ple, PDB_DWORD, PDB_DWORD)
 {
-	printf((" enum   | fields: %08X utype:  %08X count:  %04hX [%s]\r\n"), ple->field, ple->utype, ple->count,
-	        ple->Name);
+	printf(
+		(" enum   | fields: %08X utype:  %08X count:  %04hX [%s]\r\n"), ple->field, ple->utype, ple->count, ple->Name);
 	return;
 }
 
@@ -829,8 +814,12 @@ PDB_VOID DisplayPointer(PlfPointer plp, PDB_DWORD, PDB_DWORD)
 
 PDB_VOID DisplayProc(PlfProc plp, PDB_DWORD, PDB_DWORD)
 {
-	printf((" proc   | rvtype: %08X arglst: %08X parcnt: %04X calltype: %02X\r\n"), plp->rvtype, plp->arglist,
-	        plp->parmcount, plp->calltype);
+	printf(
+		(" proc   | rvtype: %08X arglst: %08X parcnt: %04X calltype: %02X\r\n"),
+		plp->rvtype,
+		plp->arglist,
+		plp->parmcount,
+		plp->calltype);
 	return;
 }
 
@@ -839,9 +828,15 @@ PDB_VOID DisplayProc(PlfProc plp, PDB_DWORD, PDB_DWORD)
 PDB_VOID DisplayMFunc(PlfMFunc plmf, PDB_DWORD, PDB_DWORD)
 {
 	printf(
-	        (" mfunc  | rvtype: %08X arglst: %08X parcnt: %04X calltype: %02X clstype: %08X thistype: %08X thisadjust: %08X\r\n"),
-	        plmf->rvtype, plmf->arglist, plmf->parmcount, plmf->calltype, plmf->classtype, plmf->thistype,
-	        plmf->thisadjust);
+		(" mfunc  | rvtype: %08X arglst: %08X parcnt: %04X calltype: %02X clstype: %08X thistype: %08X thisadjust: "
+		 "%08X\r\n"),
+		plmf->rvtype,
+		plmf->arglist,
+		plmf->parmcount,
+		plmf->calltype,
+		plmf->classtype,
+		plmf->thistype,
+		plmf->thisadjust);
 	return;
 }
 
@@ -897,77 +892,68 @@ PDB_VOID DisplayFieldList(PlfFieldList plfl, PDB_DWORD, PDB_DWORD dSize)
 
 		switch (plsr->leaf)
 		{
-			case LF_ENUMERATE:
-			{
-				pbName = RecordValue(plsr->Enumerate.value, &dValue);
+		case LF_ENUMERATE: {
+			pbName = RecordValue(plsr->Enumerate.value, &dValue);
 
-				printf((" const | value:  %08X [%s]\r\n"), dValue, pbName);
+			printf((" const | value:  %08X [%s]\r\n"), dValue, pbName);
 
-				n = (reinterpret_cast<PDB_DWORD_PTR>(pbName) - reinterpret_cast<PDB_DWORD_PTR>(plsr))
-				        + strlen(reinterpret_cast<const char *>(pbName)) + 1;
-				break;
-			}
-			case LF_MEMBER:
-			{
-				pbName = RecordValue(plsr->Member.offset, &dOffset);
-
-				printf((" field | offset: %08X type:   %08X [%s]\r\n"), dOffset, plsr->Member.index, pbName);
-
-				n = (reinterpret_cast<PDB_DWORD_PTR>(pbName) - reinterpret_cast<PDB_DWORD_PTR>(plsr))
-				        + strlen(reinterpret_cast<const char *>(pbName)) + 1;
-				break;
-			}
-			case LF_BCLASS:
-			{
-				pbNext = RecordValue(plsr->BClass.offset, &dOffset);
-
-				printf((" bclass %08X (%08X)\r\n"), dOffset, plsr->BClass.index);
-
-				n = reinterpret_cast<PDB_DWORD_PTR>(pbNext) - reinterpret_cast<PDB_DWORD_PTR>(plsr);
-				break;
-			}
-			case LF_VFUNCTAB:
-			{
-				printf((" vfunction table (%08X)\r\n"), plsr->VFuncTab.type);
-
-				n = lfVFuncTab_;
-				break;
-			}
-			case LF_ONEMETHOD:
-			{
-				pbName = MethodValue(plsr->OneMethod.attr, plsr->OneMethod.vbaseoff, &dValue);
-
-				printf((" single %08X (%08X) [%s]\r\n"), dValue, plsr->OneMethod.index, pbName);
-
-				n = (reinterpret_cast<PDB_DWORD_PTR>(pbName) - reinterpret_cast<PDB_DWORD_PTR>(plsr))
-				        + strlen(reinterpret_cast<const char *>(pbName)) + 1;
-				break;
-			}
-			case LF_METHOD:
-			{
-				printf((" method %08X (%08X) [%s]\r\n"), plsr->Method.count, plsr->Method.mList, plsr->Method.Name);
-
-				n = (reinterpret_cast<PDB_DWORD_PTR>(plsr->Method.Name) - reinterpret_cast<PDB_DWORD_PTR>(plsr))
-				        + strlen(reinterpret_cast<const char *>(plsr->Method.Name)) + 1;
-				break;
-			}
-			case LF_NESTTYPE:
-			{
-				printf((" nested typedef | type:   %08X [%s]\r\n"), plsr->NestType.index, plsr->NestType.Name);
-
-				n = (reinterpret_cast<PDB_DWORD_PTR>(plsr->NestType.Name) - reinterpret_cast<PDB_DWORD_PTR>(plsr))
-				        + strlen(reinterpret_cast<const char *>(plsr->NestType.Name)) + 1;
-				break;
-			}
-			default:
-			{
-				printf((" member ###\r\n"));
-				n = 0;
-				break;
-			}
-		}
-		if (!(n = (n + (DWORD_ - 1)) & (0 - DWORD_)))
+			n = (reinterpret_cast<PDB_DWORD_PTR>(pbName) - reinterpret_cast<PDB_DWORD_PTR>(plsr))
+			  + strlen(reinterpret_cast<const char*>(pbName)) + 1;
 			break;
+		}
+		case LF_MEMBER: {
+			pbName = RecordValue(plsr->Member.offset, &dOffset);
+
+			printf((" field | offset: %08X type:   %08X [%s]\r\n"), dOffset, plsr->Member.index, pbName);
+
+			n = (reinterpret_cast<PDB_DWORD_PTR>(pbName) - reinterpret_cast<PDB_DWORD_PTR>(plsr))
+			  + strlen(reinterpret_cast<const char*>(pbName)) + 1;
+			break;
+		}
+		case LF_BCLASS: {
+			pbNext = RecordValue(plsr->BClass.offset, &dOffset);
+
+			printf((" bclass %08X (%08X)\r\n"), dOffset, plsr->BClass.index);
+
+			n = reinterpret_cast<PDB_DWORD_PTR>(pbNext) - reinterpret_cast<PDB_DWORD_PTR>(plsr);
+			break;
+		}
+		case LF_VFUNCTAB: {
+			printf((" vfunction table (%08X)\r\n"), plsr->VFuncTab.type);
+
+			n = lfVFuncTab_;
+			break;
+		}
+		case LF_ONEMETHOD: {
+			pbName = MethodValue(plsr->OneMethod.attr, plsr->OneMethod.vbaseoff, &dValue);
+
+			printf((" single %08X (%08X) [%s]\r\n"), dValue, plsr->OneMethod.index, pbName);
+
+			n = (reinterpret_cast<PDB_DWORD_PTR>(pbName) - reinterpret_cast<PDB_DWORD_PTR>(plsr))
+			  + strlen(reinterpret_cast<const char*>(pbName)) + 1;
+			break;
+		}
+		case LF_METHOD: {
+			printf((" method %08X (%08X) [%s]\r\n"), plsr->Method.count, plsr->Method.mList, plsr->Method.Name);
+
+			n = (reinterpret_cast<PDB_DWORD_PTR>(plsr->Method.Name) - reinterpret_cast<PDB_DWORD_PTR>(plsr))
+			  + strlen(reinterpret_cast<const char*>(plsr->Method.Name)) + 1;
+			break;
+		}
+		case LF_NESTTYPE: {
+			printf((" nested typedef | type:   %08X [%s]\r\n"), plsr->NestType.index, plsr->NestType.Name);
+
+			n = (reinterpret_cast<PDB_DWORD_PTR>(plsr->NestType.Name) - reinterpret_cast<PDB_DWORD_PTR>(plsr))
+			  + strlen(reinterpret_cast<const char*>(plsr->NestType.Name)) + 1;
+			break;
+		}
+		default: {
+			printf((" member ###\r\n"));
+			n = 0;
+			break;
+		}
+		}
+		if (!(n = (n + (DWORD_ - 1)) & (0 - DWORD_))) break;
 	}
 	return;
 }
@@ -982,11 +968,11 @@ PDB_VOID DisplayRecord(PlfRecord, PDB_DWORD, PDB_DWORD)
 
 // -----------------------------------------------------------------
 
-bool DisplayTypes(char * ptSource, int ptSize)
+bool DisplayTypes(char* ptSource, int ptSize)
 {
 	PHDR pHdr;
 	PlfRecord plr;
-	char * pData;
+	char* pData;
 	PDB_DWORD dData, dTypes, dBase, dSize, i;
 	bool fOk = FALSE;
 
@@ -1003,33 +989,50 @@ bool DisplayTypes(char * ptSource, int ptSize)
 			{
 				dTypes = pHdr->tiMac - pHdr->tiMin;
 				dBase = pHdr->cbHdr;
-				pData = reinterpret_cast<char *>(SKIP(pHdr, dBase));
+				pData = reinterpret_cast<char*>(SKIP(pHdr, dBase));
 
-				printf("\r\n"
-						"TPI Version:  %u\r\n"
-						"Index range:  %X..%X\r\n"
-						"Type count:   %u\r\n", pHdr->vers, pHdr->tiMin, pHdr->tiMac - 1, dTypes);
+				printf(
+					"\r\n"
+					"TPI Version:  %u\r\n"
+					"Index range:  %X..%X\r\n"
+					"Type count:   %u\r\n",
+					pHdr->vers,
+					pHdr->tiMin,
+					pHdr->tiMac - 1,
+					dTypes);
 
-				printf("\r\n"
-						"HDR.vers                      = %u\r\n"
-						"HDR.cbHdr                     = 0x%08X\r\n"
-						"HDR.tiMin                     = 0x%08X\r\n"
-						"HDR.tiMac                     = 0x%08X\r\n"
-						"HDR.cbGprec                   = 0x%08X\r\n"
-						"HDR.tpihash.sn                = 0x%04hX\r\n"
-						"HDR.tpihash.snPad             = 0x%04hX\r\n"
-						"HDR.tpihash.cbHashKey         = 0x%08X\r\n"
-						"HDR.tpihash.cHashBuckets      = 0x%08X\r\n"
-						"HDR.tpihash.offcbHashVals.off = 0x%08X\r\n"
-						"HDR.tpihash.offcbHashVals.cb  = 0x%08X\r\n"
-						"HDR.tpihash.offcbTiOff.off    = 0x%08X\r\n"
-						"HDR.tpihash.offcbTiOff.cb     = 0x%08X\r\n"
-						"HDR.tpihash.offcbHashAdj.off  = 0x%08X\r\n"
-						"HDR.tpihash.offcbHashAdj.cb   = 0x%08X\r\n", pHdr->vers, pHdr->cbHdr, pHdr->tiMin, pHdr->tiMac,
-				        pHdr->cbGprec, pHdr->tpihash.sn, pHdr->tpihash.snPad, pHdr->tpihash.cbHashKey,
-				        pHdr->tpihash.cHashBuckets, pHdr->tpihash.offcbHashVals.off, pHdr->tpihash.offcbHashVals.cb,
-				        pHdr->tpihash.offcbTiOff.off, pHdr->tpihash.offcbTiOff.cb, pHdr->tpihash.offcbHashAdj.off,
-				        pHdr->tpihash.offcbHashAdj.cb);
+				printf(
+					"\r\n"
+					"HDR.vers                      = %u\r\n"
+					"HDR.cbHdr                     = 0x%08X\r\n"
+					"HDR.tiMin                     = 0x%08X\r\n"
+					"HDR.tiMac                     = 0x%08X\r\n"
+					"HDR.cbGprec                   = 0x%08X\r\n"
+					"HDR.tpihash.sn                = 0x%04hX\r\n"
+					"HDR.tpihash.snPad             = 0x%04hX\r\n"
+					"HDR.tpihash.cbHashKey         = 0x%08X\r\n"
+					"HDR.tpihash.cHashBuckets      = 0x%08X\r\n"
+					"HDR.tpihash.offcbHashVals.off = 0x%08X\r\n"
+					"HDR.tpihash.offcbHashVals.cb  = 0x%08X\r\n"
+					"HDR.tpihash.offcbTiOff.off    = 0x%08X\r\n"
+					"HDR.tpihash.offcbTiOff.cb     = 0x%08X\r\n"
+					"HDR.tpihash.offcbHashAdj.off  = 0x%08X\r\n"
+					"HDR.tpihash.offcbHashAdj.cb   = 0x%08X\r\n",
+					pHdr->vers,
+					pHdr->cbHdr,
+					pHdr->tiMin,
+					pHdr->tiMac,
+					pHdr->cbGprec,
+					pHdr->tpihash.sn,
+					pHdr->tpihash.snPad,
+					pHdr->tpihash.cbHashKey,
+					pHdr->tpihash.cHashBuckets,
+					pHdr->tpihash.offcbHashVals.off,
+					pHdr->tpihash.offcbHashVals.cb,
+					pHdr->tpihash.offcbTiOff.off,
+					pHdr->tpihash.offcbTiOff.cb,
+					pHdr->tpihash.offcbHashAdj.off,
+					pHdr->tpihash.offcbHashAdj.cb);
 
 				printf("\r\n");
 
@@ -1039,87 +1042,77 @@ bool DisplayTypes(char * ptSource, int ptSize)
 					dBase += WORD_;
 					plr = reinterpret_cast<PlfRecord>(SKIP(pHdr, dBase));
 
-					printf("%6X: %04hX %08lX", pHdr->tiMin + i, plr->leaf, static_cast<unsigned long int>(dBase - WORD_));
+					printf(
+						"%6X: %04hX %08lX", pHdr->tiMin + i, plr->leaf, static_cast<unsigned long int>(dBase - WORD_));
 
 					switch (plr->leaf)
 					{
-						case LF_MODIFIER:
-						{
-							printf((" modif  | type:   %08X\r\n"), plr->Array.elemtype);
-							break;
-						}
-						case LF_ARRAY:
-						{
-							DisplayArray(&plr->Array, dBase, dSize);
-							break;
-						}
-						case LF_BITFIELD:
-						{
-							DisplayBitfield(&plr->Bitfield, dBase, dSize);
-							break;
-						}
-						case LF_CLASS:
-						{
-							DisplayClass(&plr->Class, dBase, dSize);
-							break;
-						}
-						case LF_STRUCTURE:
-						{
-							DisplayStructure(&plr->Structure, dBase, dSize);
-							break;
-						}
-						case LF_UNION:
-						{
-							DisplayUnion(&plr->Union, dBase, dSize);
-							break;
-						}
-						case LF_ENUM:
-						{
-							DisplayEnum(&plr->Enum, dBase, dSize);
-							break;
-						}
-						case LF_POINTER:
-						{
-							DisplayPointer(&plr->Pointer, dBase, dSize);
-							break;
-						}
-						case LF_PROCEDURE:
-						{
-							DisplayProc(&plr->Proc, dBase, dSize);
-							break;
-						}
-						case LF_MFUNCTION:
-						{
-							DisplayMFunc(&plr->MFunc, dBase, dSize);
-							break;
-						}
-						case LF_ARGLIST:
-							//case LF_METHODLIST:
+					case LF_MODIFIER: {
+						printf((" modif  | type:   %08X\r\n"), plr->Array.elemtype);
+						break;
+					}
+					case LF_ARRAY: {
+						DisplayArray(&plr->Array, dBase, dSize);
+						break;
+					}
+					case LF_BITFIELD: {
+						DisplayBitfield(&plr->Bitfield, dBase, dSize);
+						break;
+					}
+					case LF_CLASS: {
+						DisplayClass(&plr->Class, dBase, dSize);
+						break;
+					}
+					case LF_STRUCTURE: {
+						DisplayStructure(&plr->Structure, dBase, dSize);
+						break;
+					}
+					case LF_UNION: {
+						DisplayUnion(&plr->Union, dBase, dSize);
+						break;
+					}
+					case LF_ENUM: {
+						DisplayEnum(&plr->Enum, dBase, dSize);
+						break;
+					}
+					case LF_POINTER: {
+						DisplayPointer(&plr->Pointer, dBase, dSize);
+						break;
+					}
+					case LF_PROCEDURE: {
+						DisplayProc(&plr->Proc, dBase, dSize);
+						break;
+					}
+					case LF_MFUNCTION: {
+						DisplayMFunc(&plr->MFunc, dBase, dSize);
+						break;
+					}
+					case LF_ARGLIST:
+						// case LF_METHODLIST:
 						{
 							DisplayArgList(&plr->ArgList, dBase, dSize);
 							break;
 						}
-						case LF_VTSHAPE:
-						{
-							DisplayVTShape(&plr->VTShape, dBase, dSize);
-							break;
-						}
-						case LF_FIELDLIST:
-						{
-							DisplayFieldList(&plr->FieldList, dBase, dSize);
-							break;
-						}
-						default:
-						{
-							DisplayRecord(plr, dBase, dSize);
-							break;
-						}
+					case LF_VTSHAPE: {
+						DisplayVTShape(&plr->VTShape, dBase, dSize);
+						break;
+					}
+					case LF_FIELDLIST: {
+						DisplayFieldList(&plr->FieldList, dBase, dSize);
+						break;
+					}
+					default: {
+						DisplayRecord(plr, dBase, dSize);
+						break;
+					}
 					}
 					dBase += dSize;
-					pData = reinterpret_cast<char *>(SKIP(pHdr, dBase));
+					pData = reinterpret_cast<char*>(SKIP(pHdr, dBase));
 				}
-				printf("\r\n"
-						"Offset:  %08X\r\n", dBase);
+				printf(
+					"\r\n"
+					"Offset:  %08X\r\n",
+					dBase);
 			}
 		}
 	}
@@ -1132,8 +1125,7 @@ bool DisplayTypes(char * ptSource, int ptSize)
 
 void PDBTypes::parse_types(void)
 {
-	if (parsed)
-		return;
+	if (parsed) return;
 	// Base types
 	types[T_NOTYPE] = new PDBTypeBase(0x00000000, PDBBASETYPE_VARIADIC, false, 0, "...");
 	types[T_VOID] = new PDBTypeBase(0x00000003, PDBBASETYPE_VOID, false, 0, "void");
@@ -1216,131 +1208,116 @@ void PDBTypes::parse_types(void)
 	unsigned int position = sizeof(HDR);
 	int index = tpi_header->tiMin;
 	while (position < pdb_tpi_size)
-	{  // Process all data-type records in TPI stream
+	{ // Process all data-type records in TPI stream
 		// `position < pdb_tpi_size` only promises one byte. Reading the record
 		// header needs four (a size word and a leaf word), and the record body
 		// the header then declares need not be present at all -- the length
 		// comes out of the file. Check both before casting, the same way
 		// symbol_at() does on the symbols side; without this the walk reads
 		// past the end of the TPI stream on any truncated or hostile PDB.
-		if (!bounds::rangeFits(position, pdb_tpi_size, 2 * sizeof(PDB_WORD)))
-			break;
+		if (!bounds::rangeFits(position, pdb_tpi_size, 2 * sizeof(PDB_WORD))) break;
 
-		PDBGeneralSymbol * symbol = reinterpret_cast<PDBGeneralSymbol *>(pdb_tpi_data + position);
+		PDBGeneralSymbol* symbol = reinterpret_cast<PDBGeneralSymbol*>(pdb_tpi_data + position);
 
 		// A zero-length record carries no leaf and would leave the walk
 		// stepping two bytes at a time through the rest of the stream.
-		if (symbol->size < sizeof(PDB_WORD))
-			break;
-		if (!bounds::rangeFits(position + sizeof(PDB_WORD), pdb_tpi_size, symbol->size))
-			break;
+		if (symbol->size < sizeof(PDB_WORD)) break;
+		if (!bounds::rangeFits(position + sizeof(PDB_WORD), pdb_tpi_size, symbol->size)) break;
 
-		lfRecord * record = reinterpret_cast<lfRecord *>(pdb_tpi_data + position + 2);
+		lfRecord* record = reinterpret_cast<lfRecord*>(pdb_tpi_data + position + 2);
 
 		switch (record->leaf)
 		{
-			case LF_FIELDLIST:
+		case LF_FIELDLIST: {
+			PDBTypeFieldList* new_type = new PDBTypeFieldList(index);
+			new_type->parse(&record->FieldList, symbol->size, types);
+			types[index] = new_type;
+			break;
+		}
+		case LF_ENUM: {
+			PDBTypeEnum* new_type = new PDBTypeEnum(index);
+			new_type->parse(&record->Enum, symbol->size, types);
+			types[index] = new_type;
+			if (new_type->is_fully_defined())
 			{
-				PDBTypeFieldList *new_type = new PDBTypeFieldList(index);
-				new_type->parse(&record->FieldList, symbol->size, types);
-				types[index] = new_type;
-				break;
+				types_fully_defined[index] = new_type;
+				types_byname[new_type->enum_name] = new_type;
 			}
-			case LF_ENUM:
+			break;
+		}
+		case LF_ARRAY: {
+			PDBTypeArray* new_type = new PDBTypeArray(index);
+			new_type->parse(&record->Array, symbol->size, types);
+			types[index] = new_type;
+			break;
+		}
+		case LF_POINTER: {
+			PDBTypePointer* new_type = new PDBTypePointer(index);
+			new_type->parse(&record->Pointer, symbol->size, types);
+			types[index] = new_type;
+			break;
+		}
+		case LF_MODIFIER: {
+			PDBTypeConst* new_type = new PDBTypeConst(index);
+			new_type->parse(&record->Modifier, symbol->size, types);
+			types[index] = new_type;
+			break;
+		}
+		case LF_ARGLIST: {
+			PDBTypeArglist* new_type = new PDBTypeArglist(index);
+			new_type->parse(&record->ArgList, symbol->size, types);
+			types[index] = new_type;
+			break;
+		}
+		case LF_PROCEDURE: {
+			PDBTypeFunction* new_type = new PDBTypeFunction(index);
+			new_type->parse(&record->Proc, symbol->size, types);
+			types[index] = new_type;
+			break;
+		}
+		case LF_MFUNCTION: {
+			PDBTypeFunction* new_type = new PDBTypeFunction(index);
+			new_type->parse_mfunc(&record->MFunc, symbol->size, types);
+			types[index] = new_type;
+			break;
+		}
+		case LF_STRUCTURE: {
+			PDBTypeStruct* new_type = new PDBTypeStruct(index);
+			new_type->parse(&record->Structure, symbol->size, types);
+			types[index] = new_type;
+			if (new_type->is_fully_defined())
 			{
-				PDBTypeEnum *new_type = new PDBTypeEnum(index);
-				new_type->parse(&record->Enum, symbol->size, types);
-				types[index] = new_type;
-				if (new_type->is_fully_defined())
-				{
-					types_fully_defined[index] = new_type;
-					types_byname[new_type->enum_name] = new_type;
-				}
-				break;
+				types_fully_defined[index] = new_type;
+				types_byname[new_type->struct_name] = new_type;
 			}
-			case LF_ARRAY:
+			break;
+		}
+		case LF_UNION: {
+			PDBTypeUnion* new_type = new PDBTypeUnion(index);
+			new_type->parse(&record->Union, symbol->size, types);
+			types[index] = new_type;
+			if (new_type->is_fully_defined())
 			{
-				PDBTypeArray *new_type = new PDBTypeArray(index);
-				new_type->parse(&record->Array, symbol->size, types);
-				types[index] = new_type;
-				break;
+				types_fully_defined[index] = new_type;
+				types_byname[new_type->union_name] = new_type;
 			}
-			case LF_POINTER:
+			break;
+		}
+		case LF_CLASS: {
+			PDBTypeClass* new_type = new PDBTypeClass(index);
+			new_type->parse(&record->Class, symbol->size, types);
+			types[index] = new_type;
+			if (new_type->is_fully_defined())
 			{
-				PDBTypePointer *new_type = new PDBTypePointer(index);
-				new_type->parse(&record->Pointer, symbol->size, types);
-				types[index] = new_type;
-				break;
+				types_fully_defined[index] = new_type;
+				types_byname[new_type->class_name] = new_type;
 			}
-			case LF_MODIFIER:
-			{
-				PDBTypeConst *new_type = new PDBTypeConst(index);
-				new_type->parse(&record->Modifier, symbol->size, types);
-				types[index] = new_type;
-				break;
-			}
-			case LF_ARGLIST:
-			{
-				PDBTypeArglist *new_type = new PDBTypeArglist(index);
-				new_type->parse(&record->ArgList, symbol->size, types);
-				types[index] = new_type;
-				break;
-			}
-			case LF_PROCEDURE:
-			{
-				PDBTypeFunction *new_type = new PDBTypeFunction(index);
-				new_type->parse(&record->Proc, symbol->size, types);
-				types[index] = new_type;
-				break;
-			}
-			case LF_MFUNCTION:
-			{
-				PDBTypeFunction *new_type = new PDBTypeFunction(index);
-				new_type->parse_mfunc(&record->MFunc, symbol->size, types);
-				types[index] = new_type;
-				break;
-			}
-			case LF_STRUCTURE:
-			{
-				PDBTypeStruct *new_type = new PDBTypeStruct(index);
-				new_type->parse(&record->Structure, symbol->size, types);
-				types[index] = new_type;
-				if (new_type->is_fully_defined())
-				{
-					types_fully_defined[index] = new_type;
-					types_byname[new_type->struct_name] = new_type;
-				}
-				break;
-			}
-			case LF_UNION:
-			{
-				PDBTypeUnion *new_type = new PDBTypeUnion(index);
-				new_type->parse(&record->Union, symbol->size, types);
-				types[index] = new_type;
-				if (new_type->is_fully_defined())
-				{
-					types_fully_defined[index] = new_type;
-					types_byname[new_type->union_name] = new_type;
-				}
-				break;
-			}
-			case LF_CLASS:
-			{
-				PDBTypeClass *new_type = new PDBTypeClass(index);
-				new_type->parse(&record->Class, symbol->size, types);
-				types[index] = new_type;
-				if (new_type->is_fully_defined())
-				{
-					types_fully_defined[index] = new_type;
-					types_byname[new_type->class_name] = new_type;
-				}
-				break;
-			}
-			default:
-				break;
+			break;
+		}
+		default: break;
 		}
 
-		position += symbol->size + 2;  // Go to next record
+		position += symbol->size + 2; // Go to next record
 		index++;
 	}
 	parsed = true;
@@ -1375,9 +1352,8 @@ void PDBTypes::print_types(void)
 PDBTypes::~PDBTypes(void)
 {
 	for (PDBTypeDefIndexMap::iterator it = types.begin(); it != types.end(); ++it)
-	{  // Delete all parsed types
-		if (it->second != nullptr)
-			delete it->second;
+	{ // Delete all parsed types
+		if (it->second != nullptr) delete it->second;
 	}
 }
 

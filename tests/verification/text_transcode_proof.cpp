@@ -61,16 +61,16 @@
 using namespace retdec::utils::txt;
 
 extern "C" {
-std::uint8_t  nondet_u8();
+std::uint8_t nondet_u8();
 std::uint32_t nondet_u32();
 std::uint64_t nondet_u64();
-char          nondet_char();
-bool          nondet_bool();
-std::size_t   nondet_size();
+char nondet_char();
+bool nondet_bool();
+std::size_t nondet_size();
 }
 
 #ifdef RETDEC_VERIFY_SYNTAX_ONLY
-#define __ESBMC_assume(cond) ((void) sizeof((cond) ? 1 : 0))
+#define __ESBMC_assume(cond) ((void)sizeof((cond) ? 1 : 0))
 #endif
 
 namespace {
@@ -84,8 +84,8 @@ constexpr std::size_t kBytes = 4;
 /// hexCapacity(4, false) and hexCapacity(4, true). Written out rather than
 /// called so the arrays below are exactly the size the kernel is told they are;
 /// proof_hex_capacity_is_exact_or_zero proves the two agree.
-constexpr std::size_t kHexPlain  = 8;   // 2 * 4
-constexpr std::size_t kHexSpaced = 11;  // 3 * 4 - 1
+constexpr std::size_t kHexPlain = 8;   // 2 * 4
+constexpr std::size_t kHexSpaced = 11; // 3 * 4 - 1
 
 /// Three UTF-16 units: a surrogate pair plus one more unit, which is the
 /// shortest input that exercises a pair, a lone surrogate and a trailing unit
@@ -140,9 +140,9 @@ extern "C" void proof_hex_index_arithmetic_is_total()
 	// The two indices hexToBytes forms for pair i. Neither can wrap and both
 	// stay inside the run, for every n up to SIZE_MAX.
 	const std::size_t at = i * kHexCharsPerByte;
-	assert(at >= i);            // no wrap in the doubling
-	assert(at + 1 > at);        // no wrap in the lookahead
-	assert(at + 1 < n);         // both inside the input
+	assert(at >= i);     // no wrap in the doubling
+	assert(at + 1 > at); // no wrap in the lookahead
+	assert(at + 1 < n);  // both inside the input
 }
 
 extern "C" void proof_bits_capacity_is_exact_or_zero()
@@ -159,13 +159,11 @@ extern "C" void proof_utf16_and_mutf8_capacities_are_exact_or_zero()
 	const std::size_t units = nondet_size();
 
 	const std::size_t a = utf8CapacityForUtf16(units);
-	assert((a == 0) == (units == 0
-		|| !retdec::utils::bounds::mulFits(kUtf8BytesPerUtf16Unit, units)));
+	assert((a == 0) == (units == 0 || !retdec::utils::bounds::mulFits(kUtf8BytesPerUtf16Unit, units)));
 	if (a != 0) assert(a / kUtf8BytesPerUtf16Unit == units);
 
 	const std::size_t b = utf8CapacityForMutf8(units);
-	assert((b == 0) == (units == 0
-		|| !retdec::utils::bounds::mulFits(kUtf8BytesPerMutf8Unit, units)));
+	assert((b == 0) == (units == 0 || !retdec::utils::bounds::mulFits(kUtf8BytesPerMutf8Unit, units)));
 	if (b != 0) assert(b / kUtf8BytesPerMutf8Unit == units);
 }
 
@@ -197,9 +195,7 @@ extern "C" void proof_hex_value_inverts_hex_digit()
 	const int v = hexValue(c);
 
 	assert(v >= -1 && v <= 15);
-	if (v >= 0)
-		assert(c == hexDigit(static_cast<unsigned>(v), true)
-			|| c == hexDigit(static_cast<unsigned>(v), false));
+	if (v >= 0) assert(c == hexDigit(static_cast<unsigned>(v), true) || c == hexDigit(static_cast<unsigned>(v), false));
 
 	const unsigned d = nondet_u32() & 0xFu;
 	assert(hexValue(hexDigit(d, true)) == static_cast<int>(d));
@@ -214,7 +210,8 @@ extern "C" void proof_hex_value_inverts_hex_digit()
 extern "C" void proof_bytes_to_hex_plain_renders_every_byte()
 {
 	std::uint8_t in[kBytes];
-	for (std::size_t i = 0; i < kBytes; ++i) in[i] = nondet_u8();
+	for (std::size_t i = 0; i < kBytes; ++i)
+		in[i] = nondet_u8();
 	char out[kHexPlain];
 	const bool upper = nondet_bool();
 
@@ -233,7 +230,8 @@ extern "C" void proof_bytes_to_hex_plain_renders_every_byte()
 extern "C" void proof_bytes_to_hex_spaced_renders_every_byte()
 {
 	std::uint8_t in[kBytes];
-	for (std::size_t i = 0; i < kBytes; ++i) in[i] = nondet_u8();
+	for (std::size_t i = 0; i < kBytes; ++i)
+		in[i] = nondet_u8();
 	char out[kHexSpaced];
 	const bool upper = nondet_bool();
 
@@ -257,7 +255,8 @@ extern "C" void proof_bytes_to_hex_spaced_renders_every_byte()
 extern "C" void proof_bytes_to_hex_refuses_a_short_buffer()
 {
 	std::uint8_t in[kBytes];
-	for (std::size_t i = 0; i < kBytes; ++i) in[i] = nondet_u8();
+	for (std::size_t i = 0; i < kBytes; ++i)
+		in[i] = nondet_u8();
 	char out[kHexSpaced];
 	const std::size_t n = nondet_size();
 	__ESBMC_assume(n <= kBytes);
@@ -267,7 +266,8 @@ extern "C" void proof_bytes_to_hex_refuses_a_short_buffer()
 
 	// Guard the whole buffer so a write anywhere is visible, not just one past
 	// the end.
-	for (std::size_t i = 0; i < kHexSpaced; ++i) out[i] = '#';
+	for (std::size_t i = 0; i < kHexSpaced; ++i)
+		out[i] = '#';
 
 	const std::size_t w = bytesToHex(in, n, out, outCap, nondet_bool(), spaced);
 	const std::size_t need = hexCapacity(n, spaced);
@@ -277,14 +277,16 @@ extern "C" void proof_bytes_to_hex_refuses_a_short_buffer()
 		assert(w == 0);
 		// Nothing was written at all, which is what makes the refusal safe for
 		// a caller that sized its buffer from a wrapped product.
-		for (std::size_t i = 0; i < kHexSpaced; ++i) assert(out[i] == '#');
+		for (std::size_t i = 0; i < kHexSpaced; ++i)
+			assert(out[i] == '#');
 	}
 	else
 	{
 		assert(w == need);
 		assert(w <= outCap);
 		// Never past what it was told it had.
-		for (std::size_t i = need; i < kHexSpaced; ++i) assert(out[i] == '#');
+		for (std::size_t i = need; i < kHexSpaced; ++i)
+			assert(out[i] == '#');
 	}
 }
 
@@ -295,7 +297,8 @@ extern "C" void proof_bytes_to_hex_tolerates_null()
 	char out[kHexPlain];
 	assert(bytesToHex(nullptr, nondet_size(), out, kHexPlain, true, false) == 0);
 	std::uint8_t in[kBytes];
-	for (std::size_t i = 0; i < kBytes; ++i) in[i] = nondet_u8();
+	for (std::size_t i = 0; i < kBytes; ++i)
+		in[i] = nondet_u8();
 	assert(bytesToHex(in, kBytes, nullptr, nondet_size(), true, false) == 0);
 }
 
@@ -306,9 +309,11 @@ extern "C" void proof_bytes_to_hex_tolerates_null()
 extern "C" void proof_hex_to_bytes_accepts_exactly_the_hex_runs()
 {
 	char in[kHexPlain];
-	for (std::size_t i = 0; i < kHexPlain; ++i) in[i] = nondet_char();
+	for (std::size_t i = 0; i < kHexPlain; ++i)
+		in[i] = nondet_char();
 	std::uint8_t out[kBytes];
-	for (std::size_t i = 0; i < kBytes; ++i) out[i] = 0xAA;
+	for (std::size_t i = 0; i < kBytes; ++i)
+		out[i] = 0xAA;
 
 	const std::size_t n = nondet_size();
 	__ESBMC_assume(n <= kHexPlain);
@@ -331,10 +336,9 @@ extern "C" void proof_hex_to_bytes_accepts_exactly_the_hex_runs()
 		assert(written == (n >> 1));
 		for (std::size_t i = 0; i < kBytes; ++i)
 			if (i < written)
-				assert(out[i] == static_cast<std::uint8_t>(
-					(hexValue(in[i * 2]) << 4) | hexValue(in[i * 2 + 1])));
+				assert(out[i] == static_cast<std::uint8_t>((hexValue(in[i * 2]) << 4) | hexValue(in[i * 2 + 1])));
 			else
-				assert(out[i] == 0xAA);   // untouched past what it wrote
+				assert(out[i] == 0xAA); // untouched past what it wrote
 	}
 	else
 	{
@@ -348,7 +352,8 @@ extern "C" void proof_hex_to_bytes_accepts_exactly_the_hex_runs()
 extern "C" void proof_hex_to_bytes_refuses_an_odd_length()
 {
 	char in[kHexPlain];
-	for (std::size_t i = 0; i < kHexPlain; ++i) in[i] = nondet_char();
+	for (std::size_t i = 0; i < kHexPlain; ++i)
+		in[i] = nondet_char();
 	std::uint8_t out[kBytes];
 	const std::size_t n = nondet_size();
 	__ESBMC_assume(n <= kHexPlain);
@@ -363,7 +368,8 @@ extern "C" void proof_hex_to_bytes_refuses_an_odd_length()
 extern "C" void proof_hex_round_trips()
 {
 	std::uint8_t in[kBytes];
-	for (std::size_t i = 0; i < kBytes; ++i) in[i] = nondet_u8();
+	for (std::size_t i = 0; i < kBytes; ++i)
+		in[i] = nondet_u8();
 	char mid[kHexPlain];
 	std::uint8_t back[kBytes];
 
@@ -374,7 +380,8 @@ extern "C" void proof_hex_round_trips()
 	std::size_t written = 0;
 	assert(hexToBytes(mid, w, back, kBytes, written));
 	assert(written == kBytes);
-	for (std::size_t i = 0; i < kBytes; ++i) assert(back[i] == in[i]);
+	for (std::size_t i = 0; i < kBytes; ++i)
+		assert(back[i] == in[i]);
 }
 
 // ─── bytesToBits ─────────────────────────────────────────────────────────────
@@ -385,7 +392,8 @@ extern "C" void proof_bytes_to_bits_writes_eight_per_byte()
 {
 	constexpr std::size_t kN = 2;
 	std::uint8_t in[kN];
-	for (std::size_t i = 0; i < kN; ++i) in[i] = nondet_u8();
+	for (std::size_t i = 0; i < kN; ++i)
+		in[i] = nondet_u8();
 	char out[kN * 8];
 
 	const std::size_t w = bytesToBits(in, kN, out, kN * 8);
@@ -419,22 +427,26 @@ extern "C" void proof_bytes_to_bits_agrees_for_signed_and_unsigned()
 	char b[kN * 8];
 
 	assert(bytesToBits(sin, kN, a, kN * 8) == bytesToBits(uin, kN, b, kN * 8));
-	for (std::size_t i = 0; i < kN * 8; ++i) assert(a[i] == b[i]);
+	for (std::size_t i = 0; i < kN * 8; ++i)
+		assert(a[i] == b[i]);
 }
 
 extern "C" void proof_bytes_to_bits_refuses_a_short_buffer()
 {
 	constexpr std::size_t kN = 2;
 	std::uint8_t in[kN];
-	for (std::size_t i = 0; i < kN; ++i) in[i] = nondet_u8();
+	for (std::size_t i = 0; i < kN; ++i)
+		in[i] = nondet_u8();
 	char out[kN * 8];
-	for (std::size_t i = 0; i < kN * 8; ++i) out[i] = '#';
+	for (std::size_t i = 0; i < kN * 8; ++i)
+		out[i] = '#';
 
 	const std::size_t outCap = nondet_size();
 	__ESBMC_assume(outCap < kN * 8);
 
 	assert(bytesToBits(in, kN, out, outCap) == 0);
-	for (std::size_t i = 0; i < kN * 8; ++i) assert(out[i] == '#');
+	for (std::size_t i = 0; i < kN * 8; ++i)
+		assert(out[i] == '#');
 }
 
 // ─── the UTF-8 encoder, over every code point ────────────────────────────────
@@ -455,8 +467,7 @@ extern "C" void proof_encode_utf8_is_well_formed()
 
 	// What the encoder is obliged to have produced.
 	const std::uint32_t want =
-		(raw > kMaxCodePoint || (raw >= kHighSurrogateFirst && raw <= kLowSurrogateLast))
-			? kReplacement : raw;
+		(raw > kMaxCodePoint || (raw >= kHighSurrogateFirst && raw <= kLowSurrogateLast)) ? kReplacement : raw;
 
 	std::uint32_t got = 0;
 	if (len == 1)
@@ -469,16 +480,15 @@ extern "C" void proof_encode_utf8_is_well_formed()
 		assert((byteAt(out, 0) & 0xE0u) == 0xC0u);
 		assert((byteAt(out, 1) & 0xC0u) == 0x80u);
 		got = ((byteAt(out, 0) & 0x1Fu) << 6) | (byteAt(out, 1) & 0x3Fu);
-		assert(got >= 0x80);           // not overlong
+		assert(got >= 0x80); // not overlong
 	}
 	else if (len == 3)
 	{
 		assert((byteAt(out, 0) & 0xF0u) == 0xE0u);
 		assert((byteAt(out, 1) & 0xC0u) == 0x80u);
 		assert((byteAt(out, 2) & 0xC0u) == 0x80u);
-		got = ((byteAt(out, 0) & 0x0Fu) << 12)
-			| ((byteAt(out, 1) & 0x3Fu) << 6) | (byteAt(out, 2) & 0x3Fu);
-		assert(got >= 0x800);          // not overlong
+		got = ((byteAt(out, 0) & 0x0Fu) << 12) | ((byteAt(out, 1) & 0x3Fu) << 6) | (byteAt(out, 2) & 0x3Fu);
+		assert(got >= 0x800); // not overlong
 	}
 	else
 	{
@@ -486,8 +496,8 @@ extern "C" void proof_encode_utf8_is_well_formed()
 		assert((byteAt(out, 1) & 0xC0u) == 0x80u);
 		assert((byteAt(out, 2) & 0xC0u) == 0x80u);
 		assert((byteAt(out, 3) & 0xC0u) == 0x80u);
-		got = ((byteAt(out, 0) & 0x07u) << 18) | ((byteAt(out, 1) & 0x3Fu) << 12)
-			| ((byteAt(out, 2) & 0x3Fu) << 6) | (byteAt(out, 3) & 0x3Fu);
+		got = ((byteAt(out, 0) & 0x07u) << 18) | ((byteAt(out, 1) & 0x3Fu) << 12) | ((byteAt(out, 2) & 0x3Fu) << 6)
+			| (byteAt(out, 3) & 0x3Fu);
 		assert(got >= kSupplementaryBase);
 	}
 
@@ -508,7 +518,8 @@ extern "C" void proof_encode_utf8_is_well_formed()
 extern "C" void proof_utf16_stays_inside_both_buffers()
 {
 	std::uint8_t in[kUtf16Bytes];
-	for (std::size_t i = 0; i < kUtf16Bytes; ++i) in[i] = nondet_u8();
+	for (std::size_t i = 0; i < kUtf16Bytes; ++i)
+		in[i] = nondet_u8();
 	char out[kUtf8Cap];
 
 	const std::size_t w = utf16leToUtf8(in, kUtf16Bytes, out, kUtf8Cap);
@@ -525,7 +536,8 @@ extern "C" void proof_utf16_stays_inside_both_buffers()
 extern "C" void proof_utf16_drops_a_trailing_odd_byte()
 {
 	std::uint8_t in[kUtf16Bytes + 1];
-	for (std::size_t i = 0; i < kUtf16Bytes + 1; ++i) in[i] = nondet_u8();
+	for (std::size_t i = 0; i < kUtf16Bytes + 1; ++i)
+		in[i] = nondet_u8();
 	char a[kUtf8Cap];
 	char b[kUtf8Cap];
 
@@ -548,9 +560,10 @@ extern "C" void proof_utf16_combines_a_surrogate_pair()
 	__ESBMC_assume(lo >= kLowSurrogateFirst && lo <= kLowSurrogateLast);
 
 	std::uint8_t in[4] = {
-		static_cast<std::uint8_t>(hi & 0xFFu), static_cast<std::uint8_t>(hi >> 8),
-		static_cast<std::uint8_t>(lo & 0xFFu), static_cast<std::uint8_t>(lo >> 8)
-	};
+		static_cast<std::uint8_t>(hi & 0xFFu),
+		static_cast<std::uint8_t>(hi >> 8),
+		static_cast<std::uint8_t>(lo & 0xFFu),
+		static_cast<std::uint8_t>(lo >> 8)};
 	char out[6];
 
 	const std::size_t w = utf16leToUtf8(in, 4, out, 6);
@@ -558,7 +571,8 @@ extern "C" void proof_utf16_combines_a_surrogate_pair()
 
 	char want[4];
 	assert(encodeUtf8(combineSurrogates(hi, lo), want) == 4);
-	for (std::size_t i = 0; i < 4; ++i) assert(out[i] == want[i]);
+	for (std::size_t i = 0; i < 4; ++i)
+		assert(out[i] == want[i]);
 
 	// And the combined value really is a supplementary scalar value.
 	const std::uint32_t cp = combineSurrogates(hi, lo);
@@ -584,9 +598,7 @@ extern "C" void proof_utf16_lone_surrogate_becomes_replacement()
 		const std::uint32_t u = nondet_u32();
 		__ESBMC_assume(u >= kHighSurrogateFirst && u <= kLowSurrogateLast);
 
-		std::uint8_t in[2] = {
-			static_cast<std::uint8_t>(u & 0xFFu), static_cast<std::uint8_t>(u >> 8)
-		};
+		std::uint8_t in[2] = {static_cast<std::uint8_t>(u & 0xFFu), static_cast<std::uint8_t>(u >> 8)};
 		char out[3];
 
 		assert(utf16leToUtf8(in, 2, out, 3) == 3);
@@ -607,9 +619,10 @@ extern "C" void proof_utf16_lone_surrogate_becomes_replacement()
 		__ESBMC_assume(next < 0x80u);
 
 		std::uint8_t in[4] = {
-			static_cast<std::uint8_t>(hi & 0xFFu),   static_cast<std::uint8_t>(hi >> 8),
-			static_cast<std::uint8_t>(next & 0xFFu), static_cast<std::uint8_t>(next >> 8)
-		};
+			static_cast<std::uint8_t>(hi & 0xFFu),
+			static_cast<std::uint8_t>(hi >> 8),
+			static_cast<std::uint8_t>(next & 0xFFu),
+			static_cast<std::uint8_t>(next >> 8)};
 		char out[6];
 
 		// Three bytes of replacement, then one for the ASCII unit.
@@ -628,9 +641,10 @@ extern "C" void proof_utf16_lone_surrogate_becomes_replacement()
 		__ESBMC_assume(next < 0x80u);
 
 		std::uint8_t in[4] = {
-			static_cast<std::uint8_t>(lo & 0xFFu),   static_cast<std::uint8_t>(lo >> 8),
-			static_cast<std::uint8_t>(next & 0xFFu), static_cast<std::uint8_t>(next >> 8)
-		};
+			static_cast<std::uint8_t>(lo & 0xFFu),
+			static_cast<std::uint8_t>(lo >> 8),
+			static_cast<std::uint8_t>(next & 0xFFu),
+			static_cast<std::uint8_t>(next >> 8)};
 		char out[6];
 
 		// A low surrogate never begins a pair, so it is replaced on its own and
@@ -650,9 +664,11 @@ extern "C" void proof_utf16_lone_surrogate_becomes_replacement()
 extern "C" void proof_utf16_never_emits_a_surrogate()
 {
 	std::uint8_t in[kUtf16Bytes];
-	for (std::size_t i = 0; i < kUtf16Bytes; ++i) in[i] = nondet_u8();
+	for (std::size_t i = 0; i < kUtf16Bytes; ++i)
+		in[i] = nondet_u8();
 	char out[kUtf8Cap];
-	for (std::size_t i = 0; i < kUtf8Cap; ++i) out[i] = '\0';
+	for (std::size_t i = 0; i < kUtf8Cap; ++i)
+		out[i] = '\0';
 
 	const std::size_t w = utf16leToUtf8(in, kUtf16Bytes, out, kUtf8Cap);
 
@@ -671,9 +687,10 @@ std::size_t dotnetHeaps(const std::uint8_t* src, std::size_t chars, char* out)
 	std::size_t w = 0;
 	for (std::size_t i = 0; i < chars; ++i)
 	{
-		const std::uint32_t cp = static_cast<std::uint32_t>(src[i * 2])
-			| (static_cast<std::uint32_t>(src[i * 2 + 1]) << 8);
-		if (cp < 0x80) out[w++] = static_cast<char>(cp);
+		const std::uint32_t cp =
+			static_cast<std::uint32_t>(src[i * 2]) | (static_cast<std::uint32_t>(src[i * 2 + 1]) << 8);
+		if (cp < 0x80)
+			out[w++] = static_cast<char>(cp);
 		else if (cp < 0x800)
 		{
 			out[w++] = static_cast<char>(0xC0u | (cp >> 6));
@@ -696,9 +713,9 @@ std::size_t dotnetReader(const std::uint8_t* blob, std::size_t size, char* out)
 	std::size_t w = 0;
 	for (std::size_t i = 0; i + 1 < size; i += 2)
 	{
-		const std::uint32_t cu = static_cast<std::uint32_t>(blob[i])
-			| (static_cast<std::uint32_t>(blob[i + 1]) << 8);
-		if (cu < 0x80) out[w++] = static_cast<char>(cu);
+		const std::uint32_t cu = static_cast<std::uint32_t>(blob[i]) | (static_cast<std::uint32_t>(blob[i + 1]) << 8);
+		if (cu < 0x80)
+			out[w++] = static_cast<char>(cu);
 		else if (cu < 0x800)
 		{
 			out[w++] = static_cast<char>(0xC0u | (cu >> 6));
@@ -723,7 +740,8 @@ std::size_t dotnetReader(const std::uint8_t* blob, std::size_t size, char* out)
 extern "C" void proof_the_two_dotnet_entry_points_agree()
 {
 	std::uint8_t in[kUtf16Bytes];
-	for (std::size_t i = 0; i < kUtf16Bytes; ++i) in[i] = nondet_u8();
+	for (std::size_t i = 0; i < kUtf16Bytes; ++i)
+		in[i] = nondet_u8();
 	char a[kUtf8Cap];
 	char b[kUtf8Cap];
 
@@ -741,11 +759,12 @@ extern "C" void proof_the_two_dotnet_entry_points_agree()
 extern "C" void proof_the_kernel_matches_dotnet_off_the_surrogates()
 {
 	std::uint8_t in[kUtf16Bytes];
-	for (std::size_t i = 0; i < kUtf16Bytes; ++i) in[i] = nondet_u8();
+	for (std::size_t i = 0; i < kUtf16Bytes; ++i)
+		in[i] = nondet_u8();
 	for (std::size_t i = 0; i < kUnits; ++i)
 	{
-		const std::uint32_t u = static_cast<std::uint32_t>(in[i * 2])
-			| (static_cast<std::uint32_t>(in[i * 2 + 1]) << 8);
+		const std::uint32_t u =
+			static_cast<std::uint32_t>(in[i * 2]) | (static_cast<std::uint32_t>(in[i * 2 + 1]) << 8);
 		__ESBMC_assume(!(u >= kHighSurrogateFirst && u <= kLowSurrogateLast));
 	}
 
@@ -769,7 +788,8 @@ extern "C" void proof_mutf8_stays_inside_both_buffers()
 	constexpr std::size_t kIn = 6;
 	constexpr std::size_t kU = 3;
 	std::uint8_t in[kIn];
-	for (std::size_t i = 0; i < kIn; ++i) in[i] = nondet_u8();
+	for (std::size_t i = 0; i < kIn; ++i)
+		in[i] = nondet_u8();
 	char out[kU * 4];
 
 	const std::size_t inBytes = nondet_size();
@@ -803,8 +823,8 @@ extern "C" void proof_mutf8_terminates_on_leads_that_encode_nothing()
 
 	const Mutf8Result r = mutf8ToUtf8Ex(in, kIn, kIn, out, kIn * 4);
 
-	assert(r.consumed == kIn);          // exactly at the declared end
-	assert(r.written == kIn * 3);       // one U+FFFD per byte
+	assert(r.consumed == kIn);    // exactly at the declared end
+	assert(r.written == kIn * 3); // one U+FFFD per byte
 }
 
 /// The cursor is exactly at the declared end whenever the byte count, not the
@@ -814,7 +834,8 @@ extern "C" void proof_mutf8_cursor_lands_on_the_declared_end()
 {
 	constexpr std::size_t kIn = 4;
 	std::uint8_t in[kIn];
-	for (std::size_t i = 0; i < kIn; ++i) in[i] = nondet_u8();
+	for (std::size_t i = 0; i < kIn; ++i)
+		in[i] = nondet_u8();
 	char out[kIn * 4];
 
 	// Give it more units than there can be characters, so the byte count is
@@ -844,9 +865,9 @@ extern "C" void proof_mutf8_refuses_every_overlong_but_the_nul()
 	char out[4];
 
 	// ── two-byte overlongs: leads C0 and C1, minus the C0 80 exception ──
-	in[0] = static_cast<std::uint8_t>(0xC0u | (nondet_u8() & 0x01u));  // C0 or C1
-	in[1] = static_cast<std::uint8_t>(0x80u | (nondet_u8() & 0x3Fu));  // any continuation
-	__ESBMC_assume(!(in[0] == 0xC0u && in[1] == 0x80u));               // not the NUL
+	in[0] = static_cast<std::uint8_t>(0xC0u | (nondet_u8() & 0x01u)); // C0 or C1
+	in[1] = static_cast<std::uint8_t>(0x80u | (nondet_u8() & 0x3Fu)); // any continuation
+	__ESBMC_assume(!(in[0] == 0xC0u && in[1] == 0x80u));              // not the NUL
 
 	Mutf8Result r = mutf8ToUtf8Ex(in, 2, 1, out, sizeof(out));
 	assert(r.consumed == 2);
@@ -858,13 +879,14 @@ extern "C" void proof_mutf8_refuses_every_overlong_but_the_nul()
 	assert(static_cast<std::uint8_t>(out[2]) == 0xBDu);
 
 	// ── the one legitimate overlong still folds to a real NUL ──
-	in[0] = 0xC0u; in[1] = 0x80u;
+	in[0] = 0xC0u;
+	in[1] = 0x80u;
 	r = mutf8ToUtf8Ex(in, 2, 1, out, sizeof(out));
 	assert(r.consumed == 2 && r.written == 1 && out[0] == '\0');
 
 	// ── three-byte overlongs: lead E0 with a second byte below A0 ──
 	in[0] = 0xE0u;
-	in[1] = static_cast<std::uint8_t>(0x80u | (nondet_u8() & 0x1Fu));  // 80..9F
+	in[1] = static_cast<std::uint8_t>(0x80u | (nondet_u8() & 0x1Fu)); // 80..9F
 	in[2] = static_cast<std::uint8_t>(0x80u | (nondet_u8() & 0x3Fu));
 	__ESBMC_assume(in[1] < 0xA0u);
 
@@ -895,16 +917,19 @@ extern "C" void proof_mutf8_refuses_a_short_buffer()
 {
 	constexpr std::size_t kIn = 4;
 	std::uint8_t in[kIn];
-	for (std::size_t i = 0; i < kIn; ++i) in[i] = nondet_u8();
+	for (std::size_t i = 0; i < kIn; ++i)
+		in[i] = nondet_u8();
 	char out[kIn * 4];
-	for (std::size_t i = 0; i < kIn * 4; ++i) out[i] = '#';
+	for (std::size_t i = 0; i < kIn * 4; ++i)
+		out[i] = '#';
 
 	const std::size_t outCap = nondet_size();
 	__ESBMC_assume(outCap < kIn * 4);
 
 	const Mutf8Result r = mutf8ToUtf8Ex(in, kIn, kIn, out, outCap);
 	assert(r.written == 0 && r.consumed == 0);
-	for (std::size_t i = 0; i < kIn * 4; ++i) assert(out[i] == '#');
+	for (std::size_t i = 0; i < kIn * 4; ++i)
+		assert(out[i] == '#');
 }
 
 // ─── decimalRun ──────────────────────────────────────────────────────────────
@@ -915,7 +940,8 @@ extern "C" void proof_decimal_run_reads_within_bounds()
 {
 	constexpr std::size_t kLen = 6;
 	char in[kLen];
-	for (std::size_t i = 0; i < kLen; ++i) in[i] = nondet_char();
+	for (std::size_t i = 0; i < kLen; ++i)
+		in[i] = nondet_char();
 
 	const std::size_t n = nondet_size();
 	__ESBMC_assume(n <= kLen);
@@ -978,12 +1004,12 @@ extern "C" void proof_decimal_run_accumulates_without_wrapping()
 	// and each is a separate direction of failure -- a guard that is too tight
 	// refuses kBoundary, one that is too loose accepts kOverByOne.
 	static const std::size_t kDigits = 20;
-	const char kBoundary[]  = "18446744073709551615";  // UINT64_MAX exactly
-	const char kOverByOne[] = "18446744073709551616";  // one more
-	const char kAllNines[]  = "99999999999999999999";  // far over
+	const char kBoundary[] = "18446744073709551615";  // UINT64_MAX exactly
+	const char kOverByOne[] = "18446744073709551616"; // one more
+	const char kAllNines[] = "99999999999999999999";  // far over
 
 	std::uint64_t value = 7;
-	std::size_t   end   = 7;
+	std::size_t end = 7;
 
 	assert(decimalRun(kBoundary, kDigits, 0, value, end));
 	assert(value == UINT64_MAX);
@@ -991,11 +1017,13 @@ extern "C" void proof_decimal_run_accumulates_without_wrapping()
 
 	// A refusal reports nothing consumed and no value, so a caller that
 	// advances its cursor by `end` after a failure does not move.
-	value = 7; end = 7;
+	value = 7;
+	end = 7;
 	assert(!decimalRun(kOverByOne, kDigits, 0, value, end));
 	assert(value == 0 && end == 0);
 
-	value = 7; end = 7;
+	value = 7;
+	end = 7;
 	assert(!decimalRun(kAllNines, kDigits, 0, value, end));
 	assert(value == 0 && end == 0);
 }
@@ -1016,7 +1044,8 @@ extern "C" void proof_decimal_run_value_is_the_digits()
 	std::size_t end = 0;
 	assert(decimalRun(in, 3, 0, value, end));
 	assert(end == 3);
-	assert(value == static_cast<std::uint64_t>(in[0] - '0') * 100
-		+ static_cast<std::uint64_t>(in[1] - '0') * 10
-		+ static_cast<std::uint64_t>(in[2] - '0'));
+	assert(
+		value
+		== static_cast<std::uint64_t>(in[0] - '0') * 100 + static_cast<std::uint64_t>(in[1] - '0') * 10
+			   + static_cast<std::uint64_t>(in[2] - '0'));
 }

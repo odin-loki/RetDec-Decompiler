@@ -58,259 +58,254 @@ namespace func_boundary {
 
 // ─── Evidence source ─────────────────────────────────────────────────────────
 
-enum class EvidenceSource : uint8_t {
-    EntryPoint,      ///< Binary entry point
-    CallTarget,      ///< Direct CALL instruction target
-    Export,          ///< Exported / public symbol
-    DebugSymbol,     ///< Debug-info symbol (DWARF/PDB)
-    TLSCallback,     ///< TLS callback pointer
-    ExceptionHandler,///< SEH or DWARF EH handler address
-    PrologueFull,    ///< Complete compiler prologue pattern match
-    ProloguePartial, ///< Partial prologue pattern match
-    Heuristic,       ///< Generic heuristic (alignment, etc.)
+enum class EvidenceSource : uint8_t
+{
+	EntryPoint,       ///< Binary entry point
+	CallTarget,       ///< Direct CALL instruction target
+	Export,           ///< Exported / public symbol
+	DebugSymbol,      ///< Debug-info symbol (DWARF/PDB)
+	TLSCallback,      ///< TLS callback pointer
+	ExceptionHandler, ///< SEH or DWARF EH handler address
+	PrologueFull,     ///< Complete compiler prologue pattern match
+	ProloguePartial,  ///< Partial prologue pattern match
+	Heuristic,        ///< Generic heuristic (alignment, etc.)
 };
 
 /// Confidence weight per evidence source.
 inline double evidenceConfidence(EvidenceSource src) noexcept
 {
-    switch (src) {
-    case EvidenceSource::EntryPoint:       return 1.00;
-    case EvidenceSource::CallTarget:       return 0.98;
-    case EvidenceSource::Export:           return 0.95;
-    case EvidenceSource::DebugSymbol:      return 0.99;
-    case EvidenceSource::TLSCallback:      return 0.95;
-    case EvidenceSource::ExceptionHandler: return 0.90;
-    case EvidenceSource::PrologueFull:     return 0.85;
-    case EvidenceSource::ProloguePartial:  return 0.60;
-    case EvidenceSource::Heuristic:        return 0.50;
-    }
-    return 0.50;
+	switch (src)
+	{
+	case EvidenceSource::EntryPoint: return 1.00;
+	case EvidenceSource::CallTarget: return 0.98;
+	case EvidenceSource::Export: return 0.95;
+	case EvidenceSource::DebugSymbol: return 0.99;
+	case EvidenceSource::TLSCallback: return 0.95;
+	case EvidenceSource::ExceptionHandler: return 0.90;
+	case EvidenceSource::PrologueFull: return 0.85;
+	case EvidenceSource::ProloguePartial: return 0.60;
+	case EvidenceSource::Heuristic: return 0.50;
+	}
+	return 0.50;
 }
 
 // ─── Compiler profile hint (for prologue selection in Pass 2) ─────────────────
 
-enum class CompilerHint : uint8_t {
-    Unknown,
-    GCC,
-    Clang,
-    MSVC,
+enum class CompilerHint : uint8_t
+{
+	Unknown,
+	GCC,
+	Clang,
+	MSVC,
 };
 
 // ─── Function boundary record ─────────────────────────────────────────────────
 
-struct FunctionBoundary {
-    uint64_t      startAddr    = 0;      ///< First byte of the function
-    uint64_t      endAddr      = 0;      ///< One past last byte (best estimate)
-    double        confidence   = 0.0;    ///< Aggregate confidence [0,1]
-    EvidenceSource primaryEvidence = EvidenceSource::Heuristic;
-    std::string   name;                  ///< Symbol name (empty if unknown)
-    bool          isNonReturning = false;///< Function never returns
-    bool          isThunk        = false;///< Single-JMP thunk
-    std::string   thunkTarget;           ///< Name of thunk target (if isThunk)
+struct FunctionBoundary
+{
+	uint64_t startAddr = 0;  ///< First byte of the function
+	uint64_t endAddr = 0;    ///< One past last byte (best estimate)
+	double confidence = 0.0; ///< Aggregate confidence [0,1]
+	EvidenceSource primaryEvidence = EvidenceSource::Heuristic;
+	std::string name;            ///< Symbol name (empty if unknown)
+	bool isNonReturning = false; ///< Function never returns
+	bool isThunk = false;        ///< Single-JMP thunk
+	std::string thunkTarget;     ///< Name of thunk target (if isThunk)
 
-    // All evidence sources that contributed.
-    std::vector<EvidenceSource> allEvidence;
+	// All evidence sources that contributed.
+	std::vector<EvidenceSource> allEvidence;
 };
 
 // ─── Import record (for non-returning detection and thunk naming) ──────────────
 
-struct ImportEntry {
-    uint64_t    vma;     ///< IAT/PLT entry address
-    std::string dll;
-    std::string symbol;
+struct ImportEntry
+{
+	uint64_t vma; ///< IAT/PLT entry address
+	std::string dll;
+	std::string symbol;
 };
 
 // ─── Prologue pattern ─────────────────────────────────────────────────────────
 
-struct ProloguePattern {
-    std::string      name;           ///< e.g. "gcc_frame_setup"
-    std::vector<int> bytes;          ///< -1 = wildcard byte
-    double           fullScore;      ///< Confidence if fully matched
-    double           partialScore;   ///< Confidence if partially matched (≥50%)
+struct ProloguePattern
+{
+	std::string name;       ///< e.g. "gcc_frame_setup"
+	std::vector<int> bytes; ///< -1 = wildcard byte
+	double fullScore;       ///< Confidence if fully matched
+	double partialScore;    ///< Confidence if partially matched (≥50%)
 };
 
 // ─── FuncBoundaryDetector ────────────────────────────────────────────────────
 
 class FuncBoundaryDetector {
 public:
-    /**
-     * @param imageBase  Virtual base address of the image.
-     * @param data       Raw image bytes (not owned; caller keeps alive).
-     * @param size       Image byte count.
-     * @param is64Bit    True for 64-bit mode.
-     */
-    FuncBoundaryDetector(uint64_t       imageBase,
-                         const uint8_t* data,
-                         std::size_t    size,
-                         bool           is64Bit = true);
+	/**
+	 * @param imageBase  Virtual base address of the image.
+	 * @param data       Raw image bytes (not owned; caller keeps alive).
+	 * @param size       Image byte count.
+	 * @param is64Bit    True for 64-bit mode.
+	 */
+	FuncBoundaryDetector(uint64_t imageBase, const uint8_t* data, std::size_t size, bool is64Bit = true);
 
-    ~FuncBoundaryDetector() = default;
+	~FuncBoundaryDetector() = default;
 
-    // ── Evidence injection ────────────────────────────────────────────────────
+	// ── Evidence injection ────────────────────────────────────────────────────
 
-    void addEntryPoint(uint64_t addr);
-    void addCallTarget(uint64_t addr);
-    void addSymbol(const std::string& name, uint64_t addr, EvidenceSource src);
-    void addTLSCallback(uint64_t addr);
-    void addExceptionHandler(uint64_t addr);
+	void addEntryPoint(uint64_t addr);
+	void addCallTarget(uint64_t addr);
+	void addSymbol(const std::string& name, uint64_t addr, EvidenceSource src);
+	void addTLSCallback(uint64_t addr);
+	void addExceptionHandler(uint64_t addr);
 
-    /**
-     * Register an executable section so Pass 2 knows where to scan.
-     *
-     * Use this form only when the buffer handed to the constructor *is* the
-     * memory image, i.e. the bytes of every address sit at (va - imageBase).
-     * That holds for a flat dump, and for nothing else: a PE maps sections at
-     * SectionAlignment (0x1000) but stores them at FileAlignment (0x200), and
-     * every ELF segment after the first has p_offset != p_vaddr - base.  For a
-     * file on disk pass the raw offset as well — see the four-argument form.
-     */
-    void addExecutableSection(uint64_t start, uint64_t end);
+	/**
+	 * Register an executable section so Pass 2 knows where to scan.
+	 *
+	 * Use this form only when the buffer handed to the constructor *is* the
+	 * memory image, i.e. the bytes of every address sit at (va - imageBase).
+	 * That holds for a flat dump, and for nothing else: a PE maps sections at
+	 * SectionAlignment (0x1000) but stores them at FileAlignment (0x200), and
+	 * every ELF segment after the first has p_offset != p_vaddr - base.  For a
+	 * file on disk pass the raw offset as well — see the four-argument form.
+	 */
+	void addExecutableSection(uint64_t start, uint64_t end);
 
-    /**
-     * Register an executable section together with where its bytes live in the
-     * buffer, so addresses can be translated through it.
-     *
-     * @param start      VA of the first byte of the section.
-     * @param end        One past the last VA of the section (virtual size).
-     * @param rawOffset  Offset of the section's first byte in the buffer.
-     * @param rawSize    Bytes of the section actually present in the buffer.
-     *                   May be smaller than end - start; the tail beyond it
-     *                   (.bss, a PE virtual-size overhang) has no file bytes
-     *                   and is reported as unmapped rather than translated to
-     *                   somebody else's data.
-     */
-    void addExecutableSection(uint64_t start, uint64_t end,
-                              uint64_t rawOffset, uint64_t rawSize);
+	/**
+	 * Register an executable section together with where its bytes live in the
+	 * buffer, so addresses can be translated through it.
+	 *
+	 * @param start      VA of the first byte of the section.
+	 * @param end        One past the last VA of the section (virtual size).
+	 * @param rawOffset  Offset of the section's first byte in the buffer.
+	 * @param rawSize    Bytes of the section actually present in the buffer.
+	 *                   May be smaller than end - start; the tail beyond it
+	 *                   (.bss, a PE virtual-size overhang) has no file bytes
+	 *                   and is reported as unmapped rather than translated to
+	 *                   somebody else's data.
+	 */
+	void addExecutableSection(uint64_t start, uint64_t end, uint64_t rawOffset, uint64_t rawSize);
 
-    /// Register an import for non-returning detection and thunk naming.
-    void addImport(uint64_t vma, const std::string& dll,
-                   const std::string& symbol);
+	/// Register an import for non-returning detection and thunk naming.
+	void addImport(uint64_t vma, const std::string& dll, const std::string& symbol);
 
-    // ── Pipeline ──────────────────────────────────────────────────────────────
+	// ── Pipeline ──────────────────────────────────────────────────────────────
 
-    /// Pass 1: commit all direct-evidence function starts.
-    void runPass1();
+	/// Pass 1: commit all direct-evidence function starts.
+	void runPass1();
 
-    /**
-     * Pass 2: scan executable sections for compiler prologues.
-     * @param hint  Compiler hint from the CompilerFingerprinter (Stage 4).
-     */
-    void runPass2(CompilerHint hint = CompilerHint::Unknown);
+	/**
+	 * Pass 2: scan executable sections for compiler prologues.
+	 * @param hint  Compiler hint from the CompilerFingerprinter (Stage 4).
+	 */
+	void runPass2(CompilerHint hint = CompilerHint::Unknown);
 
-    /// Pass 3: non-returning propagation + thunk detection.
-    void runPass3();
+	/// Pass 3: non-returning propagation + thunk detection.
+	void runPass3();
 
-    /// Run all three passes in order.
-    void runAll(CompilerHint hint = CompilerHint::Unknown);
+	/// Run all three passes in order.
+	void runAll(CompilerHint hint = CompilerHint::Unknown);
 
-    // ── Results ───────────────────────────────────────────────────────────────
+	// ── Results ───────────────────────────────────────────────────────────────
 
-    /// All detected function boundaries, sorted by startAddr.
-    const std::vector<FunctionBoundary>& functions() const noexcept;
+	/// All detected function boundaries, sorted by startAddr.
+	const std::vector<FunctionBoundary>& functions() const noexcept;
 
-    /// Lookup by start address. Returns nullptr if not found.
-    const FunctionBoundary* functionAt(uint64_t addr) const noexcept;
+	/// Lookup by start address. Returns nullptr if not found.
+	const FunctionBoundary* functionAt(uint64_t addr) const noexcept;
 
-    /// True if the function at addr is known non-returning.
-    bool isNonReturning(uint64_t addr) const noexcept;
+	/// True if the function at addr is known non-returning.
+	bool isNonReturning(uint64_t addr) const noexcept;
 
-    /// True if addr is a thunk.
-    bool isThunk(uint64_t addr) const noexcept;
+	/// True if addr is a thunk.
+	bool isThunk(uint64_t addr) const noexcept;
 
-    // ── Prologue catalogue (exposed for testing) ──────────────────────────────
+	// ── Prologue catalogue (exposed for testing) ──────────────────────────────
 
-    static std::vector<ProloguePattern> prologuePatterns(CompilerHint hint);
+	static std::vector<ProloguePattern> prologuePatterns(CompilerHint hint);
 
-    /// Score a byte sequence against a prologue pattern.
-    /// Returns the score (0.0 if no match, partialScore for ≥50%, fullScore for full).
-    static double matchPrologue(const ProloguePattern& pat,
-                                const uint8_t*         bytes,
-                                std::size_t            available);
+	/// Score a byte sequence against a prologue pattern.
+	/// Returns the score (0.0 if no match, partialScore for ≥50%, fullScore for full).
+	static double matchPrologue(const ProloguePattern& pat, const uint8_t* bytes, std::size_t available);
 
-    // ── Non-returning seed set (exposed for testing) ──────────────────────────
+	// ── Non-returning seed set (exposed for testing) ──────────────────────────
 
-    static bool isKnownNonReturner(const std::string& symbolName) noexcept;
+	static bool isKnownNonReturner(const std::string& symbolName) noexcept;
 
 private:
-    uint64_t       _imageBase;
-    const uint8_t* _data;
-    std::size_t    _size;
-    bool           _is64Bit;
+	uint64_t _imageBase;
+	const uint8_t* _data;
+	std::size_t _size;
+	bool _is64Bit;
 
-    // Candidate table: addr → best record so far.
-    std::unordered_map<uint64_t, FunctionBoundary> _candidates;
+	// Candidate table: addr → best record so far.
+	std::unordered_map<uint64_t, FunctionBoundary> _candidates;
 
-    // Executable sections, each carrying where its bytes are in the buffer.
-    // rawOffset/rawSize are what make vaToOffset able to answer for a file on
-    // disk; without them the only possible answer was the flat guess.
-    struct ExecSection {
-        uint64_t start;      ///< VA of the first byte
-        uint64_t end;        ///< One past the last VA (virtual extent)
-        uint64_t rawOffset;  ///< Offset of the first byte in the buffer
-        uint64_t rawSize;    ///< Bytes present in the buffer (may be < end-start)
-    };
-    std::vector<ExecSection> _execSections;
+	// Executable sections, each carrying where its bytes are in the buffer.
+	// rawOffset/rawSize are what make vaToOffset able to answer for a file on
+	// disk; without them the only possible answer was the flat guess.
+	struct ExecSection
+	{
+		uint64_t start;     ///< VA of the first byte
+		uint64_t end;       ///< One past the last VA (virtual extent)
+		uint64_t rawOffset; ///< Offset of the first byte in the buffer
+		uint64_t rawSize;   ///< Bytes present in the buffer (may be < end-start)
+	};
+	std::vector<ExecSection> _execSections;
 
-    // Imports map: vma → ImportEntry.
-    std::unordered_map<uint64_t, ImportEntry> _imports;
-    // Name → VMA map.
-    std::unordered_map<std::string, uint64_t> _importByName;
+	// Imports map: vma → ImportEntry.
+	std::unordered_map<uint64_t, ImportEntry> _imports;
+	// Name → VMA map.
+	std::unordered_map<std::string, uint64_t> _importByName;
 
-    // Non-returning set (function start VMAs).
-    std::unordered_set<uint64_t> _nonReturning;
+	// Non-returning set (function start VMAs).
+	std::unordered_set<uint64_t> _nonReturning;
 
-    // Finalised, sorted result list.
-    mutable std::vector<FunctionBoundary> _sorted;
-    mutable bool                          _sortedDirty = true;
+	// Finalised, sorted result list.
+	mutable std::vector<FunctionBoundary> _sorted;
+	mutable bool _sortedDirty = true;
 
-    // ── Internal helpers ──────────────────────────────────────────────────────
+	// ── Internal helpers ──────────────────────────────────────────────────────
 
-    void ensureCandidate(uint64_t addr, EvidenceSource src,
-                         const std::string& name = std::string{});
-    void updateConfidence(FunctionBoundary& fb, EvidenceSource src);
+	void ensureCandidate(uint64_t addr, EvidenceSource src, const std::string& name = std::string{});
+	void updateConfidence(FunctionBoundary& fb, EvidenceSource src);
 
-    std::size_t vaToOffset(uint64_t va) const noexcept;
+	std::size_t vaToOffset(uint64_t va) const noexcept;
 
-    // Buffer range holding the bytes of `sec`, clamped to what is present.
-    // False when the section contributes no readable bytes at all.
-    bool sectionRawRange(const ExecSection& sec,
-                         std::size_t& startOff,
-                         std::size_t& endOff) const noexcept;
+	// Buffer range holding the bytes of `sec`, clamped to what is present.
+	// False when the section contributes no readable bytes at all.
+	bool sectionRawRange(const ExecSection& sec, std::size_t& startOff, std::size_t& endOff) const noexcept;
 
-    /// Little-endian 32-bit read, zero when the buffer cannot supply it.
-    /// readU8 and readU64 sat beside this one and had no callers; a reader
-    /// nobody uses is a bound nobody checks, which is where the next one gets
-    /// copied from.
-    uint32_t readU32(std::size_t off) const noexcept;
+	/// Little-endian 32-bit read, zero when the buffer cannot supply it.
+	/// readU8 and readU64 sat beside this one and had no callers; a reader
+	/// nobody uses is a bound nobody checks, which is where the next one gets
+	/// copied from.
+	uint32_t readU32(std::size_t off) const noexcept;
 
-    // Pass 2 internal: scan one section.
-    void scanSectionPrologues(const ExecSection& sec,
-                              const std::vector<ProloguePattern>& patterns);
+	// Pass 2 internal: scan one section.
+	void scanSectionPrologues(const ExecSection& sec, const std::vector<ProloguePattern>& patterns);
 
-    // Pass 2: detect CALL targets by linear scan of the section.
-    void scanCallTargets(const ExecSection& sec);
+	// Pass 2: detect CALL targets by linear scan of the section.
+	void scanCallTargets(const ExecSection& sec);
 
-    // Pass 3: non-returning seed + fixpoint.
-    void seedNonReturning();
-    void propagateNonReturning();
+	// Pass 3: non-returning seed + fixpoint.
+	void seedNonReturning();
+	void propagateNonReturning();
 
-    // Pass 3: thunk detection.
-    void detectThunks();
+	// Pass 3: thunk detection.
+	void detectThunks();
 
-    // Check if the bytes at buffer offset `off` — which hold the instruction
-    // at address `va` — look like a single-JMP thunk.  Both are needed: the
-    // bytes come from the file, the rel32 is relative to the address, and the
-    // two are only the same number in a flat image.
-    // Returns the target VMA, or 0 if not a thunk.
-    /// Decode a thunk at @p off, reading no further than @p endOff.
-    ///
-    /// @p endOff is the end of the *section* that supplied @p va, not of the
-    /// buffer: a thunk's operand lives in the same section as its opcode, and
-    /// reading past the section reports jumps to addresses in no section.
-    uint64_t detectThunkAt(uint64_t va, std::size_t off,
-                           std::size_t endOff) const noexcept;
+	// Check if the bytes at buffer offset `off` — which hold the instruction
+	// at address `va` — look like a single-JMP thunk.  Both are needed: the
+	// bytes come from the file, the rel32 is relative to the address, and the
+	// two are only the same number in a flat image.
+	// Returns the target VMA, or 0 if not a thunk.
+	/// Decode a thunk at @p off, reading no further than @p endOff.
+	///
+	/// @p endOff is the end of the *section* that supplied @p va, not of the
+	/// buffer: a thunk's operand lives in the same section as its opcode, and
+	/// reading past the section reports jumps to addresses in no section.
+	uint64_t detectThunkAt(uint64_t va, std::size_t off, std::size_t endOff) const noexcept;
 
-    std::string nameForVma(uint64_t vma) const;
+	std::string nameForVma(uint64_t vma) const;
 };
 
 } // namespace func_boundary

@@ -80,9 +80,9 @@ using namespace retdec::utils::fpred;
 // ESBMC treats an undefined function returning a value as an unconstrained
 // choice of that type.
 extern "C" {
-double        nondet_double();
-float         nondet_float();
-std::size_t   nondet_size();
+double nondet_double();
+float nondet_float();
+std::size_t nondet_size();
 std::uint32_t nondet_u32();
 }
 
@@ -91,7 +91,7 @@ std::uint32_t nondet_u32();
 // a typo in a second instead of after a solver run; ESBMC itself never sees
 // the macro.
 #ifdef RETDEC_VERIFY_SYNTAX_ONLY
-#define __ESBMC_assume(cond) ((void) sizeof((cond) ? 1 : 0))
+#define __ESBMC_assume(cond) ((void)sizeof((cond) ? 1 : 0))
 #endif
 
 // One less than the unwind bound, so the walk over the histogram is exhaustive
@@ -118,17 +118,16 @@ extern "C" void proof_same_class_separates_the_infinities()
 
 	// The classification is exactly the four-way one, stated independently of
 	// the implementation.
-	const bool bothNaN    = isNaN(x) && isNaN(y);
+	const bool bothNaN = isNaN(x) && isNaN(y);
 	const bool bothFinite = isFinite(x) && isFinite(y);
-	const bool sameInf    = isInf(x) && isInf(y) && ((x > 0.0) == (y > 0.0));
+	const bool sameInf = isInf(x) && isInf(y) && ((x > 0.0) == (y > 0.0));
 	assert(sameClass(x, y) == (bothNaN || bothFinite || sameInf));
 
 	// The concrete fault at equality.h:41. `std::isinf(x) == std::isinf(y)` is
 	// `true == true` for a positive against a negative infinity, because in
 	// C++ std::isinf returns bool. Stated here as: two infinities of opposite
 	// sign are NOT the same class.
-	if (isInf(x) && isInf(y) && (x > 0.0) != (y > 0.0))
-		assert(!sameClass(x, y));
+	if (isInf(x) && isInf(y) && (x > 0.0) != (y > 0.0)) assert(!sameClass(x, y));
 }
 
 // ─── nearlyEqual ─────────────────────────────────────────────────────────────
@@ -206,9 +205,18 @@ static void definitionHoldsAt(double e)
 	assert(nearlyEqual(x, y, e) == (diff <= e * scale));
 }
 
-extern "C" void proof_definition_at_the_double_epsilon() { definitionHoldsAt(1e-10); }
-extern "C" void proof_definition_at_a_zero_tolerance()   { definitionHoldsAt(0.0); }
-extern "C" void proof_definition_at_a_full_tolerance()   { definitionHoldsAt(1.0); }
+extern "C" void proof_definition_at_the_double_epsilon()
+{
+	definitionHoldsAt(1e-10);
+}
+extern "C" void proof_definition_at_a_zero_tolerance()
+{
+	definitionHoldsAt(0.0);
+}
+extern "C" void proof_definition_at_a_full_tolerance()
+{
+	definitionHoldsAt(1.0);
+}
 
 static void oppositeSignsAt(double e)
 {
@@ -262,7 +270,10 @@ static void oppositeSignsAt(double e)
 // case and the one where a pair that straddles zero is likeliest to be let
 // through. A symbolic tolerance here exhausts cvc5's memory after 72s -- see
 // the note above definitionHoldsAt.
-extern "C" void proof_opposite_signs_at_a_full_tolerance() { oppositeSignsAt(1.0); }
+extern "C" void proof_opposite_signs_at_a_full_tolerance()
+{
+	oppositeSignsAt(1.0);
+}
 
 extern "C" void proof_opposite_signs_at_the_double_epsilon()
 {
@@ -324,7 +335,7 @@ extern "C" void proof_nearly_equal_never_overflows_or_nans()
 	// double whatsoever can drive an intermediate of nearlyEqual to infinity
 	// or to a NaN. The version that computed `epsilon * std::abs(x)` fails
 	// this with x = 8.98847e+307, epsilon = 5.56269e+300.
-	(void) nearlyEqual(nondet_double(), nondet_double(), nondet_double());
+	(void)nearlyEqual(nondet_double(), nondet_double(), nondet_double());
 }
 
 extern "C" void proof_nearly_equal_holds_for_float_too()
@@ -363,9 +374,18 @@ static void monotoneFrom(double hi, double lo)
 	if (ratioAtLeast(count, total, hi)) assert(ratioAtLeast(count, total, lo));
 }
 
-extern "C" void proof_ratio_monotone_from_one_to_two_thirds()  { monotoneFrom(1.0, 2.0 / 3); }
-extern "C" void proof_ratio_monotone_from_two_thirds_to_zero() { monotoneFrom(2.0 / 3, 0.0); }
-extern "C" void proof_ratio_monotone_from_one_to_zero()        { monotoneFrom(1.0, 0.0); }
+extern "C" void proof_ratio_monotone_from_one_to_two_thirds()
+{
+	monotoneFrom(1.0, 2.0 / 3);
+}
+extern "C" void proof_ratio_monotone_from_two_thirds_to_zero()
+{
+	monotoneFrom(2.0 / 3, 0.0);
+}
+extern "C" void proof_ratio_monotone_from_one_to_zero()
+{
+	monotoneFrom(1.0, 0.0);
+}
 
 extern "C" void proof_ratio_at_one_is_exact_equality()
 {
@@ -426,7 +446,7 @@ extern "C" void proof_ratio_arithmetic_never_overflows()
 	// Also: the answer is written on every path, so a caller that ignores the
 	// return value never reads an uninitialised bool.
 	bool atLeast = nondet_size() != 0;
-	(void) checkedRatioAtLeast(nondet_size(), nondet_size(), nondet_double(), atLeast);
+	(void)checkedRatioAtLeast(nondet_size(), nondet_size(), nondet_double(), atLeast);
 	assert(atLeast == true || atLeast == false);
 }
 
@@ -456,7 +476,10 @@ extern "C" void proof_ratio_is_exact_below_the_conversion_bound()
 // an infinity or a positive number where a logarithm belongs.
 struct NondetLog2
 {
-	double operator()(double) const noexcept { return nondet_double(); }
+	double operator()(double) const noexcept
+	{
+		return nondet_double();
+	}
 };
 
 // The same, plus the check that entropyBitsWith only ever asks for the
@@ -474,7 +497,8 @@ struct CheckingLog2
 
 static void fillNondetHistogram(std::uint32_t* h)
 {
-	for (std::size_t i = 0; i < kProofBuckets; ++i) h[i] = nondet_u32();
+	for (std::size_t i = 0; i < kProofBuckets; ++i)
+		h[i] = nondet_u32();
 }
 
 extern "C" void proof_histogram_total_never_wraps()
@@ -486,8 +510,13 @@ extern "C" void proof_histogram_total_never_wraps()
 	const bool ok = histogramTotal(h, kProofBuckets, total);
 
 	// Written on every path, and never larger than the buffer could justify.
-	if (!ok) { assert(total == 0); return; }
-	for (std::size_t i = 0; i < kProofBuckets; ++i) assert(h[i] <= total);
+	if (!ok)
+	{
+		assert(total == 0);
+		return;
+	}
+	for (std::size_t i = 0; i < kProofBuckets; ++i)
+		assert(h[i] <= total);
 
 	// A null histogram is refused rather than dereferenced.
 	std::size_t t2 = SIZE_MAX;
@@ -512,8 +541,7 @@ extern "C" void proof_entropy_refuses_an_empty_range()
 extern "C" void proof_entropy_refuses_a_null_histogram()
 {
 	double out = 1.0;
-	assert(!entropyBitsWith(
-			nullptr, nondet_size(), nondet_size(), nondet_double(), out, NondetLog2{}));
+	assert(!entropyBitsWith(nullptr, nondet_size(), nondet_size(), nondet_double(), out, NondetLog2{}));
 	assert(out == 0.0);
 
 	// And the 256-bucket entry point callers actually use. Both refusals
@@ -596,7 +624,7 @@ extern "C" void proof_entropy_of_a_single_symbol_is_zero()
 	{
 		double operator()(double p) const noexcept
 		{
-			assert(p == 1.0);   // the only probability a one-symbol region has
+			assert(p == 1.0); // the only probability a one-symbol region has
 			return 0.0;
 		}
 	};
