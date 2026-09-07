@@ -5,6 +5,7 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include <cassert>
 #include <iostream>
 #include <limits>
 #include <unordered_set>

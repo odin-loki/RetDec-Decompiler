@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cassert>
 #include <memory>
 #include "retdec/utils/container.h"
 #include "retdec/demangler/context.h"

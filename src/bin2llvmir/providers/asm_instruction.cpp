@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cassert>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/InstIterator.h>
 

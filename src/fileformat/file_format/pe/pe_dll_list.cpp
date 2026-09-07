@@ -1,3 +1,4 @@
+#include <cassert>
 #include "retdec/utils/dynamic_buffer.h"
 #include "retdec/fileformat/file_format/pe/pe_format.h"
 #include "retdec/utils/container.h"

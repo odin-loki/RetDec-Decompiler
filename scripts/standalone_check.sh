@@ -350,12 +350,40 @@ compile_one() {
 		*)     flags="$SC_CXXFLAGS" ;;
 	esac
 
-	if [ -f "$obj" ] && [ "$obj" -nt "$src" ] && [ "$obj" -nt "$SC_SELF" ]; then
-		return 0
+	# Is the cached object still good?
+	#
+	# This used to be "the object is newer than the .cpp and than this script",
+	# which does not mention headers at all -- so ANY header change produced a
+	# green run against stale objects. That is not a hypothetical: removing one
+	# `#include <cassert>` from include/retdec/utils/container.h left this check
+	# reporting "all 62 dependency-free modules compile" while a build from an
+	# empty cache failed on src/ctypes/enum_type.cpp. A fast check that can
+	# report green on a tree which does not build is worse than no check, since
+	# it is trusted.
+	#
+	# -MMD writes the header list the compiler actually used to $obj.d, and each
+	# one is compared against the object below. No dependency file means no
+	# knowledge, so the object is rebuilt rather than assumed good.
+	if [ -f "$obj" ] && [ -f "$obj.d" ] \
+			&& [ "$obj" -nt "$src" ] && [ "$obj" -nt "$SC_SELF" ]; then
+		local deps stale=0
+		# Drop the "target:" prefix and the line continuations; what is left is
+		# the prerequisite list. Unquoted on purpose so it word-splits -- no
+		# path in this tree contains a space, and -MMD would have escaped one.
+		deps="$(sed -e '1s/^[^:]*://' -e 's/\\$//' "$obj.d" 2>/dev/null)"
+		# shellcheck disable=SC2086
+		for h in $deps; do
+			[ -e "$h" ] || { stale=1; break; }
+			[ "$obj" -nt "$h" ] || { stale=1; break; }
+		done
+		[ $stale -eq 0 ] && return 0
 	fi
 	mkdir -p "$(dirname "$obj")"
 	# shellcheck disable=SC2086
-	if ! $compiler $flags -c "$src" -o "$obj" 2> "$obj.log"; then
+	if ! $compiler $flags -MMD -MF "$obj.d" -c "$src" -o "$obj" 2> "$obj.log"; then
+		# A failed compile can leave a partial dependency file, which would then
+		# look like knowledge on the next run.
+		rm -f "$obj.d"
 		return 1
 	fi
 	rm -f "$obj.log"

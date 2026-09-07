@@ -5,6 +5,7 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include <cassert>
 #include "retdec/utils/container.h"
 #include "retdec/bin2llvmir/analyses/indirectly_called_funcs_analysis.h"
 
