@@ -45,139 +45,164 @@ namespace algo_recover {
 
 namespace {
 
-static bool hasBackEdge(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (uint32_t s : blk->succs) if (s <= b) return true;
-    }
-    return false;
+static bool hasBackEdge(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (uint32_t s: blk->succs)
+			if (s <= b) return true;
+	}
+	return false;
 }
 
-static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
-    int n = 0;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs)
-            if (i && i->op == op) ++n;
-    }
-    return n;
+static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+			if (i && i->op == op) ++n;
+	}
+	return n;
 }
 
 // Early exit: a block with two successors (conditional branch) where at least
 // one successor is outside the loop (successor index > current block).
-static bool hasEarlyExit(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk || blk->succs.size() < 2) continue;
-        bool hasForwardSucc = false;
-        for (uint32_t s : blk->succs)
-            if (s > b) { hasForwardSucc = true; break; }
-        if (hasForwardSucc) return true;
-    }
-    return false;
+static bool hasEarlyExit(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk || blk->succs.size() < 2) continue;
+		bool hasForwardSucc = false;
+		for (uint32_t s: blk->succs)
+			if (s > b)
+			{
+				hasForwardSucc = true;
+				break;
+			}
+		if (hasForwardSucc) return true;
+	}
+	return false;
 }
 
 // Predicate call: a Call in the loop body (find_if comparator).
-static bool hasPredicateCall(const ssa::SSAFunction& fn) {
-    return countOp(fn, ssa::IrInstr::Op::Call) >= 1;
+static bool hasPredicateCall(const ssa::SSAFunction& fn)
+{
+	return countOp(fn, ssa::IrInstr::Op::Call) >= 1;
 }
 
 // Immediate comparand: Compare uses an Immediate value (std::find).
-static bool hasImmediateComparand(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs) {
-            if (!i || i->op != ssa::IrInstr::Op::Compare) continue;
-            for (const auto& u : i->uses) {
-                const auto* v = fn.value(u.valueId);
-                if (v && v->kind == ssa::ValueKind::Immediate) return true;
-            }
-        }
-    }
-    return false;
+static bool hasImmediateComparand(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != ssa::IrInstr::Op::Compare) continue;
+			for (const auto& u: i->uses)
+			{
+				const auto* v = fn.value(u.valueId);
+				if (v && v->kind == ssa::ValueKind::Immediate) return true;
+			}
+		}
+	}
+	return false;
 }
 
 // Count variant: accumulator phi + compare (but no early exit).
-static bool hasCountPattern(const ssa::SSAFunction& fn) {
-    bool hasPhi = false;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (blk && !blk->phis.empty()) { hasPhi = true; break; }
-    }
-    return hasPhi &&
-           countOp(fn, ssa::IrInstr::Op::Compare) >= 1 &&
-           !hasEarlyExit(fn);
+static bool hasCountPattern(const ssa::SSAFunction& fn)
+{
+	bool hasPhi = false;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (blk && !blk->phis.empty())
+		{
+			hasPhi = true;
+			break;
+		}
+	}
+	return hasPhi && countOp(fn, ssa::IrInstr::Op::Compare) >= 1 && !hasEarlyExit(fn);
 }
 
 } // anonymous namespace
 
-FindEvidence FindDetector::analyseFind(const ssa::SSAFunction& fn) const {
-    FindEvidence ev;
-    if (!hasBackEdge(fn)) return ev;
-    if (countOp(fn, ssa::IrInstr::Op::Load) < 1) return ev;
+FindEvidence FindDetector::analyseFind(const ssa::SSAFunction& fn) const
+{
+	FindEvidence ev;
+	if (!hasBackEdge(fn)) return ev;
+	if (countOp(fn, ssa::IrInstr::Op::Load) < 1) return ev;
 
-    ev.hasCompare   = countOp(fn, ssa::IrInstr::Op::Compare) >= 1;
-    ev.hasEarlyExit = hasEarlyExit(fn);
-    ev.hasNoStore   = countOp(fn, ssa::IrInstr::Op::Store) == 0;
-    ev.hasLambda    = hasPredicateCall(fn) || !hasImmediateComparand(fn);
-    ev.found = ev.hasCompare;
-    ev.confidence = score(ev);
-    return ev;
+	ev.hasCompare = countOp(fn, ssa::IrInstr::Op::Compare) >= 1;
+	ev.hasEarlyExit = hasEarlyExit(fn);
+	ev.hasNoStore = countOp(fn, ssa::IrInstr::Op::Store) == 0;
+	ev.hasLambda = hasPredicateCall(fn) || !hasImmediateComparand(fn);
+	ev.found = ev.hasCompare;
+	ev.confidence = score(ev);
+	return ev;
 }
 
-float FindDetector::score(const FindEvidence& ev) const {
-    float s = 0.0f;
-    if (ev.hasCompare)   s += 0.40f;
-    if (ev.hasEarlyExit) s += 0.35f;
-    if (ev.hasNoStore)   s += 0.25f;
-    return s > 1.0f ? 1.0f : s;
+float FindDetector::score(const FindEvidence& ev) const
+{
+	float s = 0.0f;
+	if (ev.hasCompare) s += 0.40f;
+	if (ev.hasEarlyExit) s += 0.35f;
+	if (ev.hasNoStore) s += 0.25f;
+	return s > 1.0f ? 1.0f : s;
 }
 
-std::string FindDetector::emit(const FindEvidence& ev, EmissionTier tier) const {
-    if (tier == EmissionTier::Low)
-        return "for (auto it = first; it != last; ++it) if (*it == val) return it;";
+std::string FindDetector::emit(const FindEvidence& ev, EmissionTier tier) const
+{
+	if (tier == EmissionTier::Low) return "for (auto it = first; it != last; ++it) if (*it == val) return it;";
 
-    bool isIf = ev.hasLambda;
-    if (tier == EmissionTier::Medium)
-        return isIf ? "/* std::find_if? */ search loop with predicate"
-                    : "/* std::find? */ linear search loop";
+	bool isIf = ev.hasLambda;
+	if (tier == EmissionTier::Medium)
+		return isIf ? "/* std::find_if? */ search loop with predicate" : "/* std::find? */ linear search loop";
 
-    return isIf ? "std::find_if(first, last, pred);"
-                : "std::find(first, last, value);";
+	return isIf ? "std::find_if(first, last, pred);" : "std::find(first, last, value);";
 }
 
-AlgorithmResult FindDetector::detect(const ssa::SSAFunction& fn) const {
-    AlgorithmResult result;
-    result.kind = AlgorithmKind::Find;
+AlgorithmResult FindDetector::detect(const ssa::SSAFunction& fn) const
+{
+	AlgorithmResult result;
+	result.kind = AlgorithmKind::Find;
 
-    auto ev = analyseFind(fn);
-    result.confidence = ev.confidence;
-    result.hasLambda  = ev.hasLambda;
+	auto ev = analyseFind(fn);
+	result.confidence = ev.confidence;
+	result.hasLambda = ev.hasLambda;
 
-    EmissionTier tier = EmissionTier::Low;
-    if (ev.confidence >= 0.75f) tier = EmissionTier::High;
-    else if (ev.confidence >= 0.45f) tier = EmissionTier::Medium;
-    result.tier = tier;
+	EmissionTier tier = EmissionTier::Low;
+	if (ev.confidence >= 0.75f)
+		tier = EmissionTier::High;
+	else if (ev.confidence >= 0.45f)
+		tier = EmissionTier::Medium;
+	result.tier = tier;
 
-    if (ev.confidence < 0.01f) return result;
+	if (ev.confidence < 0.01f) return result;
 
-    // Distinguish find / find_if / count / any_of.
-    if (hasCountPattern(fn)) {
-        result.kind = AlgorithmKind::Count;
-        if (tier == EmissionTier::High)
-            result.emittedForm = ev.hasLambda
-                ? "std::count_if(first, last, pred);"
-                : "std::count(first, last, value);";
-        else result.emittedForm = emit(ev, tier);
-    } else {
-        result.kind = ev.hasLambda ? AlgorithmKind::FindIf : AlgorithmKind::Find;
-        result.emittedForm = emit(ev, tier);
-    }
+	// Distinguish find / find_if / count / any_of.
+	if (hasCountPattern(fn))
+	{
+		result.kind = AlgorithmKind::Count;
+		if (tier == EmissionTier::High)
+			result.emittedForm = ev.hasLambda ? "std::count_if(first, last, pred);" : "std::count(first, last, value);";
+		else
+			result.emittedForm = emit(ev, tier);
+	}
+	else
+	{
+		result.kind = ev.hasLambda ? AlgorithmKind::FindIf : AlgorithmKind::Find;
+		result.emittedForm = emit(ev, tier);
+	}
 
-    return result;
+	return result;
 }
 
 } // namespace algo_recover

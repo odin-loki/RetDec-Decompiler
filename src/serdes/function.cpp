@@ -21,44 +21,37 @@
 
 namespace {
 
-const std::string JSON_name          = "name";
-const std::string JSON_realName      = "realName";
+const std::string JSON_name = "name";
+const std::string JSON_realName = "realName";
 const std::string JSON_demangledName = "demangledName";
-const std::string JSON_comment       = "comment";
-const std::string JSON_decStr        = "declarationStr";
-const std::string JSON_startAddr     = "startAddr";
-const std::string JSON_endAddr       = "endAddr";
-const std::string JSON_fncType       = "fncType";
-const std::string JSON_cc            = "callingConvention";
+const std::string JSON_comment = "comment";
+const std::string JSON_decStr = "declarationStr";
+const std::string JSON_startAddr = "startAddr";
+const std::string JSON_endAddr = "endAddr";
+const std::string JSON_fncType = "fncType";
+const std::string JSON_cc = "callingConvention";
 const std::string JSON_returnStorage = "returnStorage";
-const std::string JSON_fbStorage     = "frameBaseStorage";
-const std::string JSON_returnType    = "returnType";
-const std::string JSON_parameters    = "parameters";
-const std::string JSON_locals        = "locals";
-const std::string JSON_srcFileName   = "srcFileName";
-const std::string JSON_startLine     = "startLine";
-const std::string JSON_endLine       = "endLine";
-const std::string JSON_fromDebug     = "isFromDebug";
-const std::string JSON_wrappedName   = "wrappedFunctionName";
+const std::string JSON_fbStorage = "frameBaseStorage";
+const std::string JSON_returnType = "returnType";
+const std::string JSON_parameters = "parameters";
+const std::string JSON_locals = "locals";
+const std::string JSON_srcFileName = "srcFileName";
+const std::string JSON_startLine = "startLine";
+const std::string JSON_endLine = "endLine";
+const std::string JSON_fromDebug = "isFromDebug";
+const std::string JSON_wrappedName = "wrappedFunctionName";
 const std::string JSON_isConstructor = "isConstructor";
-const std::string JSON_isDestructor  = "isDestructor";
-const std::string JSON_isVirtual     = "isVirtual";
-const std::string JSON_isExported    = "isExported";
-const std::string JSON_isVariadic    = "isVariadic";
-const std::string JSON_isThumb       = "isThumb";
-const std::string JSON_usedCrypto    = "usedCryptoConstants";
+const std::string JSON_isDestructor = "isDestructor";
+const std::string JSON_isVirtual = "isVirtual";
+const std::string JSON_isExported = "isExported";
+const std::string JSON_isVariadic = "isVariadic";
+const std::string JSON_isThumb = "isThumb";
+const std::string JSON_usedCrypto = "usedCryptoConstants";
 const std::string JSON_semanticDetections = "semanticDetections";
-const std::string JSON_basicBlocks   = "basicBlocks";
+const std::string JSON_basicBlocks = "basicBlocks";
 
-std::vector<std::string> fncTypes =
-{
-	"decompilerDefined",
-	"userDefined",
-	"staticallyLinked",
-	"dynamicallyLinked",
-	"syscall",
-	"idiom"
-};
+std::vector<std::string> fncTypes = {
+	"decompilerDefined", "userDefined", "staticallyLinked", "dynamicallyLinked", "syscall", "idiom"};
 
 } // anonymous namespace
 
@@ -72,11 +65,7 @@ void serialize(Writer& writer, const common::Function& f)
 
 	serializeString(writer, JSON_name, f.getName());
 	serialize(writer, JSON_cc, f.callingConvention);
-	serializeString(
-			writer,
-			JSON_fncType,
-			fncTypes[static_cast<size_t>(f.getLinkType())]
-	);
+	serializeString(writer, JSON_fncType, fncTypes[static_cast<size_t>(f.getLinkType())]);
 
 	serializeString(writer, JSON_realName, f.getRealName());
 	serializeString(writer, JSON_demangledName, f.getDemangledName());
@@ -118,20 +107,20 @@ void deserialize(const rapidjson::Value& val, common::Function& f)
 		return;
 	}
 
-	f.setName( deserializeString(val, JSON_name) );
-	f.setRealName( deserializeString(val, JSON_realName) );
-	f.setDemangledName( deserializeString(val, JSON_demangledName) );
-	f.setComment( deserializeString(val, JSON_comment) );
-	f.setDeclarationString( deserializeString(val, JSON_decStr) );
-	f.setWrappedFunctionName( deserializeString(val, JSON_wrappedName) );
-	f.setSourceFileName( deserializeString(val, JSON_srcFileName) );
-	f.setIsFromDebug( deserializeBool(val, JSON_fromDebug) );
-	f.setIsConstructor( deserializeBool(val, JSON_isConstructor) );
-	f.setIsDestructor( deserializeBool(val, JSON_isDestructor) );
-	f.setIsVirtual( deserializeBool(val, JSON_isVirtual) );
-	f.setIsExported( deserializeBool(val, JSON_isExported) );
-	f.setIsVariadic( deserializeBool(val, JSON_isVariadic) );
-	f.setIsThumb( deserializeBool(val, JSON_isThumb) );
+	f.setName(deserializeString(val, JSON_name));
+	f.setRealName(deserializeString(val, JSON_realName));
+	f.setDemangledName(deserializeString(val, JSON_demangledName));
+	f.setComment(deserializeString(val, JSON_comment));
+	f.setDeclarationString(deserializeString(val, JSON_decStr));
+	f.setWrappedFunctionName(deserializeString(val, JSON_wrappedName));
+	f.setSourceFileName(deserializeString(val, JSON_srcFileName));
+	f.setIsFromDebug(deserializeBool(val, JSON_fromDebug));
+	f.setIsConstructor(deserializeBool(val, JSON_isConstructor));
+	f.setIsDestructor(deserializeBool(val, JSON_isDestructor));
+	f.setIsVirtual(deserializeBool(val, JSON_isVirtual));
+	f.setIsExported(deserializeBool(val, JSON_isExported));
+	f.setIsVariadic(deserializeBool(val, JSON_isVariadic));
+	f.setIsThumb(deserializeBool(val, JSON_isThumb));
 
 	common::Address s;
 	deserialize(val, JSON_startAddr, s);
@@ -164,8 +153,7 @@ void deserialize(const rapidjson::Value& val, common::Function& f)
 	auto it = std::find(fncTypes.begin(), fncTypes.end(), enumStr);
 	if (it != fncTypes.end())
 	{
-		f.setLinkType(static_cast<common::Function::eLinkType>(
-				std::distance(fncTypes.begin(), it)));
+		f.setLinkType(static_cast<common::Function::eLinkType>(std::distance(fncTypes.begin(), it)));
 	}
 }
 

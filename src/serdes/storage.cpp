@@ -18,17 +18,11 @@
 
 namespace {
 
-const std::string JSON_type      = "type";
-const std::string JSON_value     = "value";
-const std::string JSON_regNum    = "registerNumber";
+const std::string JSON_type = "type";
+const std::string JSON_value = "value";
+const std::string JSON_regNum = "registerNumber";
 
-const std::vector<std::string> typeStrings =
-{
-	"undefined",
-	"global",
-	"register",
-	"stack"
-};
+const std::vector<std::string> typeStrings = {"undefined", "global", "register", "stack"};
 
 } // anonymous namespace
 
@@ -42,26 +36,22 @@ void serialize(Writer& writer, const common::Storage& s)
 
 	if (s.isMemory())
 	{
-		serializeString(writer, JSON_type, typeStrings[ static_cast<size_t>(
-				common::Storage::eType::GLOBAL) ]);
+		serializeString(writer, JSON_type, typeStrings[static_cast<size_t>(common::Storage::eType::GLOBAL)]);
 		serialize(writer, JSON_value, s.getAddress());
 	}
 	else if (s.isRegister())
 	{
-		serializeString(writer, JSON_type, typeStrings[ static_cast<size_t>(
-				common::Storage::eType::REGISTER) ]);
+		serializeString(writer, JSON_type, typeStrings[static_cast<size_t>(common::Storage::eType::REGISTER)]);
 		serializeString(writer, JSON_value, s.getRegisterName());
 	}
 	else if (s.isStack())
 	{
-		serializeString(writer, JSON_type, typeStrings[ static_cast<size_t>(
-				common::Storage::eType::STACK) ]);
+		serializeString(writer, JSON_type, typeStrings[static_cast<size_t>(common::Storage::eType::STACK)]);
 		serializeInt64(writer, JSON_value, s.getStackOffset());
 	}
 	else
 	{
-		serializeString(writer, JSON_type, typeStrings[ static_cast<size_t>(
-				common::Storage::eType::UNDEFINED) ]);
+		serializeString(writer, JSON_type, typeStrings[static_cast<size_t>(common::Storage::eType::UNDEFINED)]);
 	}
 
 	auto regnum = s.getRegisterNumber();
@@ -86,8 +76,7 @@ void deserialize(const rapidjson::Value& val, common::Storage& s)
 	auto it = std::find(typeStrings.begin(), typeStrings.end(), enumStr);
 	if (it != typeStrings.end())
 	{
-		type = static_cast<common::Storage::eType>(
-				std::distance(typeStrings.begin(), it));
+		type = static_cast<common::Storage::eType>(std::distance(typeStrings.begin(), it));
 	}
 
 	if (type == common::Storage::eType::GLOBAL)

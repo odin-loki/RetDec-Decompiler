@@ -41,134 +41,144 @@ namespace algo_recover {
 
 namespace {
 
-static bool hasBackEdge(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (uint32_t s : blk->succs) if (s <= b) return true;
-    }
-    return false;
+static bool hasBackEdge(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (uint32_t s: blk->succs)
+			if (s <= b) return true;
+	}
+	return false;
 }
 
-static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op) {
-    int n = 0;
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (!blk) continue;
-        for (const auto* i : blk->instrs)
-            if (i && i->op == op) ++n;
-    }
-    return n;
+static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
+{
+	int n = 0;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+			if (i && i->op == op) ++n;
+	}
+	return n;
 }
 
 // Phi nodes: check via fn.blockCount() iterating blocks that have phis.
-static bool hasPhi(const ssa::SSAFunction& fn) {
-    for (uint32_t b = 0; b < fn.blockCount(); ++b) {
-        const auto* blk = fn.block(b);
-        if (blk && !blk->phis.empty()) return true;
-    }
-    return false;
+static bool hasPhi(const ssa::SSAFunction& fn)
+{
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (blk && !blk->phis.empty()) return true;
+	}
+	return false;
 }
 
 } // anonymous namespace
 
-CombinerKind AccumulateDetector::detectCombiner(const ssa::SSAFunction& fn) const {
-    // Check for the Compare+select pattern first (max/min).
-    if (countOp(fn, ssa::IrInstr::Op::Compare) >= 1) {
-        // Max: greater-than compare, result used to select max.
-        // Min: less-than compare.
-        // We can't distinguish without condition flags; return Max as heuristic
-        // when there is a compare but no explicit add/mul/or/xor.
-        if (countOp(fn, ssa::IrInstr::Op::Add) == 0 &&
-            countOp(fn, ssa::IrInstr::Op::Mul) == 0 &&
-            countOp(fn, ssa::IrInstr::Op::Or)  == 0 &&
-            countOp(fn, ssa::IrInstr::Op::Xor) == 0)
-            return CombinerKind::Max;  // could be Min too; caller refines
-    }
-    if (countOp(fn, ssa::IrInstr::Op::Mul) >= 1) return CombinerKind::Mul;
-    if (countOp(fn, ssa::IrInstr::Op::Or)  >= 1) return CombinerKind::Or;
-    if (countOp(fn, ssa::IrInstr::Op::Xor) >= 1) return CombinerKind::Xor;
-    if (countOp(fn, ssa::IrInstr::Op::And) >= 1) return CombinerKind::And;
-    if (countOp(fn, ssa::IrInstr::Op::Add) >= 1) return CombinerKind::Add;
-    return CombinerKind::Unknown;
+CombinerKind AccumulateDetector::detectCombiner(const ssa::SSAFunction& fn) const
+{
+	// Check for the Compare+select pattern first (max/min).
+	if (countOp(fn, ssa::IrInstr::Op::Compare) >= 1)
+	{
+		// Max: greater-than compare, result used to select max.
+		// Min: less-than compare.
+		// We can't distinguish without condition flags; return Max as heuristic
+		// when there is a compare but no explicit add/mul/or/xor.
+		if (countOp(fn, ssa::IrInstr::Op::Add) == 0 && countOp(fn, ssa::IrInstr::Op::Mul) == 0
+			&& countOp(fn, ssa::IrInstr::Op::Or) == 0 && countOp(fn, ssa::IrInstr::Op::Xor) == 0)
+			return CombinerKind::Max; // could be Min too; caller refines
+	}
+	if (countOp(fn, ssa::IrInstr::Op::Mul) >= 1) return CombinerKind::Mul;
+	if (countOp(fn, ssa::IrInstr::Op::Or) >= 1) return CombinerKind::Or;
+	if (countOp(fn, ssa::IrInstr::Op::Xor) >= 1) return CombinerKind::Xor;
+	if (countOp(fn, ssa::IrInstr::Op::And) >= 1) return CombinerKind::And;
+	if (countOp(fn, ssa::IrInstr::Op::Add) >= 1) return CombinerKind::Add;
+	return CombinerKind::Unknown;
 }
 
-AccumulateEvidence AccumulateDetector::analyse(const ssa::SSAFunction& fn) const {
-    AccumulateEvidence ev;
-    if (!hasBackEdge(fn)) return ev;
+AccumulateEvidence AccumulateDetector::analyse(const ssa::SSAFunction& fn) const
+{
+	AccumulateEvidence ev;
+	if (!hasBackEdge(fn)) return ev;
 
-    ev.hasPhi     = hasPhi(fn);
-    ev.hasBinOp   = countOp(fn, ssa::IrInstr::Op::Add) >= 1 ||
-                    countOp(fn, ssa::IrInstr::Op::Mul) >= 1 ||
-                    countOp(fn, ssa::IrInstr::Op::Or)  >= 1 ||
-                    countOp(fn, ssa::IrInstr::Op::Xor) >= 1 ||
-                    countOp(fn, ssa::IrInstr::Op::And) >= 1 ||
-                    countOp(fn, ssa::IrInstr::Op::Compare) >= 1;
-    ev.hasNoStore = countOp(fn, ssa::IrInstr::Op::Store) == 0;
-    ev.combiner   = detectCombiner(fn);
-    ev.found = ev.hasPhi && ev.hasBinOp;
-    ev.confidence = score(ev);
-    return ev;
+	ev.hasPhi = hasPhi(fn);
+	ev.hasBinOp = countOp(fn, ssa::IrInstr::Op::Add) >= 1 || countOp(fn, ssa::IrInstr::Op::Mul) >= 1
+			   || countOp(fn, ssa::IrInstr::Op::Or) >= 1 || countOp(fn, ssa::IrInstr::Op::Xor) >= 1
+			   || countOp(fn, ssa::IrInstr::Op::And) >= 1 || countOp(fn, ssa::IrInstr::Op::Compare) >= 1;
+	ev.hasNoStore = countOp(fn, ssa::IrInstr::Op::Store) == 0;
+	ev.combiner = detectCombiner(fn);
+	ev.found = ev.hasPhi && ev.hasBinOp;
+	ev.confidence = score(ev);
+	return ev;
 }
 
-float AccumulateDetector::score(const AccumulateEvidence& ev) const {
-    float s = 0.0f;
-    if (ev.hasPhi)     s += 0.40f;
-    if (ev.hasBinOp)   s += 0.35f;
-    if (ev.hasNoStore) s += 0.25f;
-    return s > 1.0f ? 1.0f : s;
+float AccumulateDetector::score(const AccumulateEvidence& ev) const
+{
+	float s = 0.0f;
+	if (ev.hasPhi) s += 0.40f;
+	if (ev.hasBinOp) s += 0.35f;
+	if (ev.hasNoStore) s += 0.25f;
+	return s > 1.0f ? 1.0f : s;
 }
 
-std::string AccumulateDetector::emit(const AccumulateEvidence& ev,
-                                      AlgorithmKind k,
-                                      EmissionTier tier) const {
-    if (tier == EmissionTier::Low)
-        return "T acc = init; for (auto it = first; it != last; ++it) acc = acc op *it;";
+std::string AccumulateDetector::emit(const AccumulateEvidence& ev, AlgorithmKind k, EmissionTier tier) const
+{
+	if (tier == EmissionTier::Low) return "T acc = init; for (auto it = first; it != last; ++it) acc = acc op *it;";
 
-    if (k == AlgorithmKind::MaxElement) {
-        if (tier == EmissionTier::Medium) return "/* std::max_element? */ max loop";
-        return "*std::max_element(first, last);";
-    }
-    if (k == AlgorithmKind::MinElement) {
-        if (tier == EmissionTier::Medium) return "/* std::min_element? */ min loop";
-        return "*std::min_element(first, last);";
-    }
+	if (k == AlgorithmKind::MaxElement)
+	{
+		if (tier == EmissionTier::Medium) return "/* std::max_element? */ max loop";
+		return "*std::max_element(first, last);";
+	}
+	if (k == AlgorithmKind::MinElement)
+	{
+		if (tier == EmissionTier::Medium) return "/* std::min_element? */ min loop";
+		return "*std::min_element(first, last);";
+	}
 
-    if (tier == EmissionTier::Medium) return "/* std::accumulate? */ acc loop";
+	if (tier == EmissionTier::Medium) return "/* std::accumulate? */ acc loop";
 
-    switch (ev.combiner) {
-    case CombinerKind::Add: return "std::accumulate(first, last, 0);";
-    case CombinerKind::Mul: return "std::accumulate(first, last, 1, std::multiplies<>{});";
-    case CombinerKind::Or:  return "std::accumulate(first, last, 0, std::bit_or<>{});";
-    case CombinerKind::Xor: return "std::accumulate(first, last, 0, std::bit_xor<>{});";
-    case CombinerKind::And: return "std::accumulate(first, last, ~0, std::bit_and<>{});";
-    default:                return "std::accumulate(first, last, init, op);";
-    }
+	switch (ev.combiner)
+	{
+	case CombinerKind::Add: return "std::accumulate(first, last, 0);";
+	case CombinerKind::Mul: return "std::accumulate(first, last, 1, std::multiplies<>{});";
+	case CombinerKind::Or: return "std::accumulate(first, last, 0, std::bit_or<>{});";
+	case CombinerKind::Xor: return "std::accumulate(first, last, 0, std::bit_xor<>{});";
+	case CombinerKind::And: return "std::accumulate(first, last, ~0, std::bit_and<>{});";
+	default: return "std::accumulate(first, last, init, op);";
+	}
 }
 
-AlgorithmResult AccumulateDetector::detect(const ssa::SSAFunction& fn) const {
-    AlgorithmResult result;
-    result.kind = AlgorithmKind::Accumulate;
+AlgorithmResult AccumulateDetector::detect(const ssa::SSAFunction& fn) const
+{
+	AlgorithmResult result;
+	result.kind = AlgorithmKind::Accumulate;
 
-    auto ev = analyse(fn);
-    result.confidence = ev.confidence;
-    result.combiner   = ev.combiner;
+	auto ev = analyse(fn);
+	result.confidence = ev.confidence;
+	result.combiner = ev.combiner;
 
-    EmissionTier tier = EmissionTier::Low;
-    if (ev.confidence >= 0.75f) tier = EmissionTier::High;
-    else if (ev.confidence >= 0.45f) tier = EmissionTier::Medium;
-    result.tier = tier;
+	EmissionTier tier = EmissionTier::Low;
+	if (ev.confidence >= 0.75f)
+		tier = EmissionTier::High;
+	else if (ev.confidence >= 0.45f)
+		tier = EmissionTier::Medium;
+	result.tier = tier;
 
-    if (ev.confidence < 0.01f) return result;
+	if (ev.confidence < 0.01f) return result;
 
-    // Promote to max/min_element when combiner is Max/Min.
-    AlgorithmKind kind = AlgorithmKind::Accumulate;
-    if (ev.combiner == CombinerKind::Max) kind = AlgorithmKind::MaxElement;
-    if (ev.combiner == CombinerKind::Min) kind = AlgorithmKind::MinElement;
-    result.kind = kind;
+	// Promote to max/min_element when combiner is Max/Min.
+	AlgorithmKind kind = AlgorithmKind::Accumulate;
+	if (ev.combiner == CombinerKind::Max) kind = AlgorithmKind::MaxElement;
+	if (ev.combiner == CombinerKind::Min) kind = AlgorithmKind::MinElement;
+	result.kind = kind;
 
-    result.emittedForm = emit(ev, kind, tier);
-    return result;
+	result.emittedForm = emit(ev, kind, tier);
+	return result;
 }
 
 } // namespace algo_recover
