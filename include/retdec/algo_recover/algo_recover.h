@@ -102,7 +102,9 @@
 #include <vector>
 
 namespace retdec {
-namespace ssa { class SSAFunction; }
+namespace ssa {
+class SSAFunction;
+}
 } // namespace retdec
 
 namespace retdec {
@@ -110,179 +112,210 @@ namespace algo_recover {
 
 // ─── Enumerations ─────────────────────────────────────────────────────────────
 
-enum class AlgorithmKind : uint8_t {
-    Unknown,
-    Transform,       ///< std::transform
-    Accumulate,      ///< std::accumulate
-    MaxElement,      ///< *std::max_element
-    MinElement,      ///< *std::min_element
-    Find,            ///< std::find
-    FindIf,          ///< std::find_if
-    BinarySearch,    ///< binary search on sorted range
-    Partition,       ///< std::partition
-    ForEach,         ///< std::for_each
-    Copy,            ///< std::copy (transform with identity)
-    Fill,            ///< std::fill (store constant in loop)
-    Count,           ///< std::count / std::count_if
-    AnyOf,           ///< std::any_of
-    AllOf,           ///< std::all_of
-    NoneOf,          ///< std::none_of
-    Reverse,         ///< std::reverse (swap from ends)
-    RotateLeft,      ///< std::rotate
+enum class AlgorithmKind : uint8_t
+{
+	Unknown,
+	Transform,    ///< std::transform
+	Accumulate,   ///< std::accumulate
+	MaxElement,   ///< *std::max_element
+	MinElement,   ///< *std::min_element
+	Find,         ///< std::find
+	FindIf,       ///< std::find_if
+	BinarySearch, ///< binary search on sorted range
+	Partition,    ///< std::partition
+	ForEach,      ///< std::for_each
+	Copy,         ///< std::copy (transform with identity)
+	Fill,         ///< std::fill (store constant in loop)
+	Count,        ///< std::count / std::count_if
+	AnyOf,        ///< std::any_of
+	AllOf,        ///< std::all_of
+	NoneOf,       ///< std::none_of
+	Reverse,      ///< std::reverse (swap from ends)
+	RotateLeft,   ///< std::rotate
 };
 
 /// Binary combiner used by accumulate-family algorithms.
-enum class CombinerKind : uint8_t {
-    Unknown,
-    Add,        ///< +   → std::accumulate with default op
-    Mul,        ///< *   → std::multiplies<>{}
-    Or,         ///< |   → std::bit_or<>{}
-    Xor,        ///< ^   → std::bit_xor<>{}
-    And,        ///< &   → std::bit_and<>{}
-    Max,        ///< max → std::max_element
-    Min,        ///< min → std::min_element
+enum class CombinerKind : uint8_t
+{
+	Unknown,
+	Add, ///< +   → std::accumulate with default op
+	Mul, ///< *   → std::multiplies<>{}
+	Or,  ///< |   → std::bit_or<>{}
+	Xor, ///< ^   → std::bit_xor<>{}
+	And, ///< &   → std::bit_and<>{}
+	Max, ///< max → std::max_element
+	Min, ///< min → std::min_element
 };
 
 /// How confident we are — drives the emission form.
-enum class EmissionTier : uint8_t {
-    Low,        ///< plain loop, no annotation
-    Medium,     ///< comment-annotated loop
-    High,       ///< full std:: call
+enum class EmissionTier : uint8_t
+{
+	Low,    ///< plain loop, no annotation
+	Medium, ///< comment-annotated loop
+	High,   ///< full std:: call
 };
 
 // ─── Algorithm detection result ───────────────────────────────────────────────
 
-struct AlgorithmResult {
-    AlgorithmKind kind            = AlgorithmKind::Unknown;
-    float         confidence      = 0.0f;
-    EmissionTier  tier            = EmissionTier::Low;
-    CombinerKind  combiner        = CombinerKind::Unknown; ///< for Accumulate
-    bool          hasLambda       = false;  ///< inlined lambda / predicate
-    bool          hasBackInserter = false;  ///< output via push_back
-    bool          isReverse       = false;  ///< rbegin/rend loop
+struct AlgorithmResult
+{
+	AlgorithmKind kind = AlgorithmKind::Unknown;
+	float confidence = 0.0f;
+	EmissionTier tier = EmissionTier::Low;
+	CombinerKind combiner = CombinerKind::Unknown; ///< for Accumulate
+	bool hasLambda = false;                        ///< inlined lambda / predicate
+	bool hasBackInserter = false;                  ///< output via push_back
+	bool isReverse = false;                        ///< rbegin/rend loop
 
-    std::string   emittedForm;    ///< ready-to-emit C++ string
-    std::string   kindName() const noexcept;
-    std::string   toString() const;
+	std::string emittedForm; ///< ready-to-emit C++ string
+	std::string kindName() const noexcept;
+	std::string toString() const;
 };
 
 // ─── Evidence structs ─────────────────────────────────────────────────────────
 
-struct TransformEvidence {
-    bool  found              = false;
-    float confidence         = 0.0f;
-    bool  hasSrcDstLoad      = false;  ///< load from src, store to dst
-    bool  hasTwoPtrsAdvanced = false;  ///< both ptrs incremented in same loop
-    bool  hasNoReorder       = false;  ///< no src-dst overlap / sort pattern
-    bool  hasLambdaCall      = false;  ///< inlined function/call in loop body
-    bool  hasBackInserter    = false;  ///< output via push_back
+struct TransformEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasSrcDstLoad = false;      ///< load from src, store to dst
+	bool hasTwoPtrsAdvanced = false; ///< both ptrs incremented in same loop
+	bool hasNoReorder = false;       ///< no src-dst overlap / sort pattern
+	bool hasLambdaCall = false;      ///< inlined function/call in loop body
+	bool hasBackInserter = false;    ///< output via push_back
 };
 
-struct AccumulateEvidence {
-    bool        found       = false;
-    float       confidence  = 0.0f;
-    bool        hasPhi      = false;  ///< accumulator phi node
-    bool        hasBinOp    = false;  ///< acc combined with element
-    bool        hasNoStore  = false;  ///< no store in loop body
-    CombinerKind combiner   = CombinerKind::Unknown;
+struct AccumulateEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasPhi = false;     ///< accumulator phi node
+	bool hasBinOp = false;   ///< acc combined with element
+	bool hasNoStore = false; ///< no store in loop body
+	CombinerKind combiner = CombinerKind::Unknown;
 };
 
-struct FindEvidence {
-    bool  found         = false;
-    float confidence    = 0.0f;
-    bool  hasCompare    = false;  ///< equality or predicate compare
-    bool  hasEarlyExit  = false;  ///< conditional branch leaving loop
-    bool  hasNoStore    = false;  ///< no store in loop
-    bool  hasLambda     = false;  ///< predicate (not constant comparand)
+struct FindEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasCompare = false;   ///< equality or predicate compare
+	bool hasEarlyExit = false; ///< conditional branch leaving loop
+	bool hasNoStore = false;   ///< no store in loop
+	bool hasLambda = false;    ///< predicate (not constant comparand)
 };
 
-struct PartitionEvidence {
-    bool  found               = false;
-    float confidence          = 0.0f;
-    bool  hasConvergingPtrs   = false;  ///< two ptrs from opposite ends
-    bool  hasSwap             = false;  ///< element swap pattern
-    bool  hasConvergenceCheck = false;  ///< left >= right exit
-    bool  hasNoRecursion      = false;  ///< not a sort (no recursive call)
+struct PartitionEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasConvergingPtrs = false;   ///< two ptrs from opposite ends
+	bool hasSwap = false;             ///< element swap pattern
+	bool hasConvergenceCheck = false; ///< left >= right exit
+	bool hasNoRecursion = false;      ///< not a sort (no recursive call)
 };
 
-struct ForEachEvidence {
-    bool  found         = false;
-    float confidence    = 0.0f;
-    bool  hasLoopCall   = false;  ///< Call in loop body
-    bool  hasNoPhi      = false;  ///< no accumulator
-    bool  hasNoDstStore = false;  ///< no computed store to dst range
+struct ForEachEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasLoopCall = false;   ///< Call in loop body
+	bool hasNoPhi = false;      ///< no accumulator
+	bool hasNoDstStore = false; ///< no computed store to dst range
 };
 
 // ─── Per-algorithm detectors ──────────────────────────────────────────────────
 
 class IAlgorithmDetector {
 public:
-    virtual ~IAlgorithmDetector() = default;
-    virtual AlgorithmResult detect(const ssa::SSAFunction& fn) const = 0;
-    virtual AlgorithmKind kind() const noexcept = 0;
+	virtual ~IAlgorithmDetector() = default;
+	virtual AlgorithmResult detect(const ssa::SSAFunction& fn) const = 0;
+	virtual AlgorithmKind kind() const noexcept = 0;
 };
 
 /** std::transform detector. */
 class TransformDetector : public IAlgorithmDetector {
 public:
-    AlgorithmResult detect(const ssa::SSAFunction& fn) const override;
-    AlgorithmKind   kind() const noexcept override { return AlgorithmKind::Transform; }
+	AlgorithmResult detect(const ssa::SSAFunction& fn) const override;
+	AlgorithmKind kind() const noexcept override
+	{
+		return AlgorithmKind::Transform;
+	}
+
 private:
-    TransformEvidence analyse(const ssa::SSAFunction& fn) const;
-    float             score(const TransformEvidence& ev) const;
-    std::string       emit(const TransformEvidence& ev, EmissionTier tier) const;
+	TransformEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const TransformEvidence& ev) const;
+	std::string emit(const TransformEvidence& ev, EmissionTier tier) const;
 };
 
 /** std::accumulate / max_element / min_element detector. */
 class AccumulateDetector : public IAlgorithmDetector {
 public:
-    AlgorithmResult detect(const ssa::SSAFunction& fn) const override;
-    AlgorithmKind   kind() const noexcept override { return AlgorithmKind::Accumulate; }
+	AlgorithmResult detect(const ssa::SSAFunction& fn) const override;
+	AlgorithmKind kind() const noexcept override
+	{
+		return AlgorithmKind::Accumulate;
+	}
+
 private:
-    AccumulateEvidence analyse(const ssa::SSAFunction& fn) const;
-    float              score(const AccumulateEvidence& ev) const;
-    CombinerKind       detectCombiner(const ssa::SSAFunction& fn) const;
-    std::string        emit(const AccumulateEvidence& ev, AlgorithmKind k,
-                            EmissionTier tier) const;
+	AccumulateEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const AccumulateEvidence& ev) const;
+	CombinerKind detectCombiner(const ssa::SSAFunction& fn) const;
+	std::string emit(const AccumulateEvidence& ev, AlgorithmKind k, EmissionTier tier) const;
 };
 
 /** Binary search on a sorted array (halving midpoint loop). */
 class BinarySearchDetector : public IAlgorithmDetector {
 public:
-    AlgorithmResult detect(const ssa::SSAFunction& fn) const override;
-    AlgorithmKind   kind() const noexcept override { return AlgorithmKind::BinarySearch; }
+	AlgorithmResult detect(const ssa::SSAFunction& fn) const override;
+	AlgorithmKind kind() const noexcept override
+	{
+		return AlgorithmKind::BinarySearch;
+	}
 };
 
 /** std::find / std::find_if detector. */
 class FindDetector : public IAlgorithmDetector {
 public:
-    AlgorithmResult detect(const ssa::SSAFunction& fn) const override;
-    AlgorithmKind   kind() const noexcept override { return AlgorithmKind::Find; }
+	AlgorithmResult detect(const ssa::SSAFunction& fn) const override;
+	AlgorithmKind kind() const noexcept override
+	{
+		return AlgorithmKind::Find;
+	}
+
 private:
-    FindEvidence analyseFind(const ssa::SSAFunction& fn) const;
-    float        score(const FindEvidence& ev) const;
-    std::string  emit(const FindEvidence& ev, EmissionTier tier) const;
+	FindEvidence analyseFind(const ssa::SSAFunction& fn) const;
+	float score(const FindEvidence& ev) const;
+	std::string emit(const FindEvidence& ev, EmissionTier tier) const;
 };
 
 /** std::partition detector (converging-index, standalone). */
 class PartitionDetector : public IAlgorithmDetector {
 public:
-    AlgorithmResult detect(const ssa::SSAFunction& fn) const override;
-    AlgorithmKind   kind() const noexcept override { return AlgorithmKind::Partition; }
+	AlgorithmResult detect(const ssa::SSAFunction& fn) const override;
+	AlgorithmKind kind() const noexcept override
+	{
+		return AlgorithmKind::Partition;
+	}
+
 private:
-    PartitionEvidence analyse(const ssa::SSAFunction& fn) const;
-    float             score(const PartitionEvidence& ev) const;
-    bool              hasRecursion(const ssa::SSAFunction& fn) const;
+	PartitionEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const PartitionEvidence& ev) const;
+	bool hasRecursion(const ssa::SSAFunction& fn) const;
 };
 
 /** std::for_each detector. */
 class ForEachDetector : public IAlgorithmDetector {
 public:
-    AlgorithmResult detect(const ssa::SSAFunction& fn) const override;
-    AlgorithmKind   kind() const noexcept override { return AlgorithmKind::ForEach; }
+	AlgorithmResult detect(const ssa::SSAFunction& fn) const override;
+	AlgorithmKind kind() const noexcept override
+	{
+		return AlgorithmKind::ForEach;
+	}
+
 private:
-    ForEachEvidence analyse(const ssa::SSAFunction& fn) const;
-    float           score(const ForEachEvidence& ev) const;
+	ForEachEvidence analyse(const ssa::SSAFunction& fn) const;
+	float score(const ForEachEvidence& ev) const;
 };
 
 // ─── Iterator pattern recovery ────────────────────────────────────────────────
@@ -297,20 +330,21 @@ private:
  */
 class IteratorPatternRecovery {
 public:
-    struct IteratorResult {
-        bool        isBeginEnd     = false;
-        bool        isReverseIter  = false;
-        bool        hasBackInserter= false;
-        std::string rangeForForm;   ///< "for (auto& e : v)"
-        std::string backInserter;   ///< "std::back_inserter(dst)"
-    };
+	struct IteratorResult
+	{
+		bool isBeginEnd = false;
+		bool isReverseIter = false;
+		bool hasBackInserter = false;
+		std::string rangeForForm; ///< "for (auto& e : v)"
+		std::string backInserter; ///< "std::back_inserter(dst)"
+	};
 
-    IteratorResult recover(const ssa::SSAFunction& fn) const;
+	IteratorResult recover(const ssa::SSAFunction& fn) const;
 
 private:
-    bool hasBeginEndPair(const ssa::SSAFunction& fn) const;
-    bool hasReverseIter(const ssa::SSAFunction& fn) const;
-    bool hasBackInserter(const ssa::SSAFunction& fn) const;
+	bool hasBeginEndPair(const ssa::SSAFunction& fn) const;
+	bool hasReverseIter(const ssa::SSAFunction& fn) const;
+	bool hasBackInserter(const ssa::SSAFunction& fn) const;
 };
 
 // ─── Algorithm detector orchestrator ─────────────────────────────────────────
@@ -323,110 +357,123 @@ private:
  */
 class AlgorithmDetector {
 public:
-    struct Config {
-        float highTierThreshold   = 0.75f;
-        float mediumTierThreshold = 0.45f;
-        int   minBlocks           = 2;
-        int   minInstrs           = 5;
-        bool  runTransform        = true;
-        bool  runAccumulate       = true;
-        bool  runFind             = true;
-        bool  runBinarySearch     = true;
-        bool  runPartition        = true;
-        bool  runForEach          = true;
-    };
-    static Config defaultConfig() noexcept { return {}; }
+	struct Config
+	{
+		float highTierThreshold = 0.75f;
+		float mediumTierThreshold = 0.45f;
+		int minBlocks = 2;
+		int minInstrs = 5;
+		bool runTransform = true;
+		bool runAccumulate = true;
+		bool runFind = true;
+		bool runBinarySearch = true;
+		bool runPartition = true;
+		bool runForEach = true;
+	};
+	static Config defaultConfig() noexcept
+	{
+		return {};
+	}
 
-    struct Stats {
-        uint32_t functionsAnalysed  = 0;
-        uint32_t functionsSkipped   = 0;
-        uint32_t detections         = 0;
-        uint32_t highTier           = 0;
-        uint32_t mediumTier         = 0;
-        uint32_t lowTier            = 0;
-    };
+	struct Stats
+	{
+		uint32_t functionsAnalysed = 0;
+		uint32_t functionsSkipped = 0;
+		uint32_t detections = 0;
+		uint32_t highTier = 0;
+		uint32_t mediumTier = 0;
+		uint32_t lowTier = 0;
+	};
 
-    using DetectionMap = std::vector<std::pair<std::string, AlgorithmResult>>;
+	using DetectionMap = std::vector<std::pair<std::string, AlgorithmResult>>;
 
-    explicit AlgorithmDetector(Config cfg = defaultConfig());
+	explicit AlgorithmDetector(Config cfg = defaultConfig());
 
-    AlgorithmResult detect(const ssa::SSAFunction& fn) const;
-    DetectionMap    detectModule(
-        const std::vector<const ssa::SSAFunction*>& fns) const;
+	AlgorithmResult detect(const ssa::SSAFunction& fn) const;
+	DetectionMap detectModule(const std::vector<const ssa::SSAFunction*>& fns) const;
 
-    const Stats& stats() const { return stats_; }
+	const Stats& stats() const
+	{
+		return stats_;
+	}
 
 private:
-    Config cfg_;
-    mutable Stats stats_;
-    std::vector<std::unique_ptr<IAlgorithmDetector>> detectors_;
-    IteratorPatternRecovery iterRecover_;
+	Config cfg_;
+	mutable Stats stats_;
+	std::vector<std::unique_ptr<IAlgorithmDetector>> detectors_;
+	IteratorPatternRecovery iterRecover_;
 
-    bool          passesPreflight(const ssa::SSAFunction& fn) const;
-    EmissionTier  assignTier(float confidence) const;
+	bool passesPreflight(const ssa::SSAFunction& fn) const;
+	EmissionTier assignTier(float confidence) const;
 };
 
 // ─── Classic C idiom recovery (atoi, BFS, varint, …) ───────────────────────
 
-enum class IdiomKind : uint8_t {
-    Unknown,
-    Atoi,
-    Strlen,
-    Strcmp,
-    Bfs,
-    Dfs,
-    Varint,
-    Gcd,
-    Crc,
-    Knapsack,
-    Rle,
-    Fibonacci,
-    Lcs,
-    Memset,
-    Popcount,
-    BloomFilter,
-    MatrixMultiply,
-    LinkedList,
-    XorCipher,
-    LowerBound,
-    LinearSearch,
-    BinarySearch,
-    Stack,
-    Queue,
-    ShellSort,
-    MemcpyLoop,
-    RingBuffer,
-    HashTableChaining,
+enum class IdiomKind : uint8_t
+{
+	Unknown,
+	Atoi,
+	Strlen,
+	Strcmp,
+	Bfs,
+	Dfs,
+	Varint,
+	Gcd,
+	Crc,
+	Knapsack,
+	Rle,
+	Fibonacci,
+	Lcs,
+	Memset,
+	Popcount,
+	BloomFilter,
+	MatrixMultiply,
+	LinkedList,
+	XorCipher,
+	LowerBound,
+	LinearSearch,
+	BinarySearch,
+	Stack,
+	Queue,
+	ShellSort,
+	MemcpyLoop,
+	RingBuffer,
+	HashTableChaining,
 };
 
-struct IdiomResult {
-    IdiomKind   kind       = IdiomKind::Unknown;
-    float       confidence = 0.0f;
-    std::string detail;
+struct IdiomResult
+{
+	IdiomKind kind = IdiomKind::Unknown;
+	float confidence = 0.0f;
+	std::string detail;
 
-    std::string primaryLabel() const noexcept;
-    std::vector<std::string> exportLabels() const;
-    std::string toString() const;
+	std::string primaryLabel() const noexcept;
+	std::vector<std::string> exportLabels() const;
+	std::string toString() const;
 };
 
 /** Detects classic C algorithm idioms outside the STL <algorithm> set. */
 class IdiomDetector {
 public:
-    struct Config {
-        float minConfidence = 0.70f;
-        int   minBlocks     = 2;
-        int   minInstrs     = 4;
-    };
-    static Config defaultConfig() noexcept { return {}; }
+	struct Config
+	{
+		float minConfidence = 0.70f;
+		int minBlocks = 2;
+		int minInstrs = 4;
+	};
+	static Config defaultConfig() noexcept
+	{
+		return {};
+	}
 
-    explicit IdiomDetector(Config cfg = defaultConfig());
+	explicit IdiomDetector(Config cfg = defaultConfig());
 
-    std::vector<IdiomResult> detect(const ssa::SSAFunction& fn) const;
+	std::vector<IdiomResult> detect(const ssa::SSAFunction& fn) const;
 
 private:
-    Config cfg_;
+	Config cfg_;
 
-    bool passesPreflight(const ssa::SSAFunction& fn) const;
+	bool passesPreflight(const ssa::SSAFunction& fn) const;
 };
 
 } // namespace algo_recover

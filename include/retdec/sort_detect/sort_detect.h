@@ -114,8 +114,12 @@
 #include <vector>
 
 namespace retdec {
-namespace ssa { class SSAFunction; }
-namespace ipa { struct IpaResult; }
+namespace ssa {
+class SSAFunction;
+}
+namespace ipa {
+struct IpaResult;
+}
 } // namespace retdec
 
 namespace retdec {
@@ -123,63 +127,75 @@ namespace sort_detect {
 
 // ─── Enumerations ─────────────────────────────────────────────────────────────
 
-enum class SortAlgorithm : uint8_t {
-    Unknown,
-    Quicksort,    ///< Pure quicksort (not introsort)
-    Introsort,    ///< std::sort introsort (quicksort + heapsort + insertion sort)
-    Mergesort,    ///< std::stable_sort mergesort
-    Heapsort,     ///< std::make_heap / std::sort_heap
-    Radixsort,    ///< Non-comparison radix sort
-    InsertionSort,///< Standalone insertion sort (or tail of introsort)
-    SelectionSort,///< Simple O(n²) selection sort
-    BubbleSort,   ///< Bubble sort
-    Timsort,      ///< Python/Java-style Timsort (mergesort + insertion sort)
+enum class SortAlgorithm : uint8_t
+{
+	Unknown,
+	Quicksort,     ///< Pure quicksort (not introsort)
+	Introsort,     ///< std::sort introsort (quicksort + heapsort + insertion sort)
+	Mergesort,     ///< std::stable_sort mergesort
+	Heapsort,      ///< std::make_heap / std::sort_heap
+	Radixsort,     ///< Non-comparison radix sort
+	InsertionSort, ///< Standalone insertion sort (or tail of introsort)
+	SelectionSort, ///< Simple O(n²) selection sort
+	BubbleSort,    ///< Bubble sort
+	Timsort,       ///< Python/Java-style Timsort (mergesort + insertion sort)
 };
 
-enum class CompilerVariant : uint8_t {
-    Unknown,
-    GCC,    ///< libstdc++ std::sort / std::stable_sort
-    Clang,  ///< libc++ std::sort / std::stable_sort
-    MSVC,   ///< MSVC STL std::sort
+enum class CompilerVariant : uint8_t
+{
+	Unknown,
+	GCC,   ///< libstdc++ std::sort / std::stable_sort
+	Clang, ///< libc++ std::sort / std::stable_sort
+	MSVC,  ///< MSVC STL std::sort
 };
 
 // ─── Element type recovered from comparator ───────────────────────────────────
 
-struct ElementType {
-    enum class Kind : uint8_t {
-        Unknown,
-        Int8, Int16, Int32, Int64,
-        UInt8, UInt16, UInt32, UInt64,
-        Float, Double,
-        Pointer,   ///< sorting pointers
-        Struct,    ///< user struct (comparator is a function call)
-    };
+struct ElementType
+{
+	enum class Kind : uint8_t
+	{
+		Unknown,
+		Int8,
+		Int16,
+		Int32,
+		Int64,
+		UInt8,
+		UInt16,
+		UInt32,
+		UInt64,
+		Float,
+		Double,
+		Pointer, ///< sorting pointers
+		Struct,  ///< user struct (comparator is a function call)
+	};
 
-    Kind        kind  = Kind::Unknown;
-    std::string name;        ///< struct type name (if known)
-    uint8_t     byteWidth = 0;
-    bool        isSigned  = false;
+	Kind kind = Kind::Unknown;
+	std::string name; ///< struct type name (if known)
+	uint8_t byteWidth = 0;
+	bool isSigned = false;
 
-    std::string toString() const;
+	std::string toString() const;
 };
 
 // ─── Sort detection result ────────────────────────────────────────────────────
 
-struct SortResult {
-    SortAlgorithm   algorithm       = SortAlgorithm::Unknown;
-    float           confidence      = 0.0f;
-    ElementType     elementType;
-    CompilerVariant compilerVariant = CompilerVariant::Unknown;
+struct SortResult
+{
+	SortAlgorithm algorithm = SortAlgorithm::Unknown;
+	float confidence = 0.0f;
+	ElementType elementType;
+	CompilerVariant compilerVariant = CompilerVariant::Unknown;
 
-    /// Names of callee functions identified as sort helpers
-    /// (e.g. sift-down routine, merge routine).
-    std::vector<std::string> helperFunctions;
+	/// Names of callee functions identified as sort helpers
+	/// (e.g. sift-down routine, merge routine).
+	std::vector<std::string> helperFunctions;
 
-    /// True if the comparator is an inlined lambda / functor.
-    bool comparatorInlined = false;
+	/// True if the comparator is an inlined lambda / functor.
+	bool comparatorInlined = false;
 
-    std::string algorithmName() const noexcept;
-    std::string toString() const;
+	std::string algorithmName() const noexcept;
+	std::string toString() const;
 };
 
 // ─── Shared fingerprint structures ───────────────────────────────────────────
@@ -187,45 +203,49 @@ struct SortResult {
 /**
  * Evidence of a partition loop within a function's IR.
  */
-struct PartitionEvidence {
-    bool    found          = false;
-    float   confidence     = 0.0f;
-    uint32_t leftVarId     = UINT32_MAX; ///< lower index SSA value
-    uint32_t rightVarId    = UINT32_MAX; ///< upper index SSA value
-    uint32_t cmpInstrId    = UINT32_MAX; ///< the comparison instruction
-    uint32_t swapInstrId   = UINT32_MAX; ///< first store of the swap
-    bool    isHoareStyle   = true;       ///< Hoare vs Lomuto partition
+struct PartitionEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	uint32_t leftVarId = UINT32_MAX;   ///< lower index SSA value
+	uint32_t rightVarId = UINT32_MAX;  ///< upper index SSA value
+	uint32_t cmpInstrId = UINT32_MAX;  ///< the comparison instruction
+	uint32_t swapInstrId = UINT32_MAX; ///< first store of the swap
+	bool isHoareStyle = true;          ///< Hoare vs Lomuto partition
 };
 
 /**
  * Evidence of a sift-down (heapify) loop.
  */
-struct SiftDownEvidence {
-    bool    found          = false;
-    float   confidence     = 0.0f;
-    bool    hasLeftArith   = false; ///< 2*i+1 pattern
-    bool    hasRightArith  = false; ///< 2*i+2 pattern
-    bool    hasMaxSelect   = false; ///< max-child selection
-    bool    hasConditionalSwap = false;
+struct SiftDownEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasLeftArith = false;  ///< 2*i+1 pattern
+	bool hasRightArith = false; ///< 2*i+2 pattern
+	bool hasMaxSelect = false;  ///< max-child selection
+	bool hasConditionalSwap = false;
 };
 
 /**
  * Evidence of two recursive calls on halved ranges.
  */
-struct RecursiveHalvingEvidence {
-    bool    found          = false;
-    int     selfCallCount  = 0;   ///< number of recursive self-calls
-    bool    halvingConfirmed = false; ///< mid-point argument pattern confirmed
+struct RecursiveHalvingEvidence
+{
+	bool found = false;
+	int selfCallCount = 0;         ///< number of recursive self-calls
+	bool halvingConfirmed = false; ///< mid-point argument pattern confirmed
 };
 
 /**
  * Evidence of an insertion sort inner loop.
  */
-struct InsertionSortEvidence {
-    bool    found          = false;
-    float   confidence     = 0.0f;
-    bool    hasThresholdGuard = false; ///< guarded by n < K
-    int     threshold      = 0;        ///< K value (typically 16 or 32)
+struct InsertionSortEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasThresholdGuard = false; ///< guarded by n < K
+	int threshold = 0;              ///< K value (typically 16 or 32)
 };
 
 // ─── Fingerprint analysers ────────────────────────────────────────────────────
@@ -239,12 +259,12 @@ struct InsertionSortEvidence {
  */
 class PartitionFingerprint {
 public:
-    PartitionEvidence analyse(const ssa::SSAFunction& fn) const;
+	PartitionEvidence analyse(const ssa::SSAFunction& fn) const;
 
 private:
-    bool hasConvergingIndices(const ssa::SSAFunction& fn) const;
-    bool hasSwapPattern(const ssa::SSAFunction& fn) const;
-    float scorePartition(const ssa::SSAFunction& fn) const;
+	bool hasConvergingIndices(const ssa::SSAFunction& fn) const;
+	bool hasSwapPattern(const ssa::SSAFunction& fn) const;
+	float scorePartition(const ssa::SSAFunction& fn) const;
 };
 
 /**
@@ -252,11 +272,11 @@ private:
  */
 class SiftDownFingerprint {
 public:
-    SiftDownEvidence analyse(const ssa::SSAFunction& fn) const;
+	SiftDownEvidence analyse(const ssa::SSAFunction& fn) const;
 
 private:
-    bool hasChildIndexArithmetic(const ssa::SSAFunction& fn) const;
-    bool hasMaxChildSelection(const ssa::SSAFunction& fn) const;
+	bool hasChildIndexArithmetic(const ssa::SSAFunction& fn) const;
+	bool hasMaxChildSelection(const ssa::SSAFunction& fn) const;
 };
 
 /**
@@ -264,7 +284,7 @@ private:
  */
 class RecursiveHalvingFingerprint {
 public:
-    RecursiveHalvingEvidence analyse(const ssa::SSAFunction& fn) const;
+	RecursiveHalvingEvidence analyse(const ssa::SSAFunction& fn) const;
 };
 
 /**
@@ -272,11 +292,11 @@ public:
  */
 class InsertionSortFingerprint {
 public:
-    InsertionSortEvidence analyse(const ssa::SSAFunction& fn) const;
+	InsertionSortEvidence analyse(const ssa::SSAFunction& fn) const;
 
 private:
-    bool hasBackwardShiftLoop(const ssa::SSAFunction& fn) const;
-    bool hasThresholdGuard(const ssa::SSAFunction& fn, int& threshold) const;
+	bool hasBackwardShiftLoop(const ssa::SSAFunction& fn) const;
+	bool hasThresholdGuard(const ssa::SSAFunction& fn, int& threshold) const;
 };
 
 // ─── Per-algorithm detectors ──────────────────────────────────────────────────
@@ -284,9 +304,9 @@ private:
 /// Base interface for all sort detectors.
 class ISortDetector {
 public:
-    virtual ~ISortDetector() = default;
-    virtual SortResult detect(const ssa::SSAFunction& fn) const = 0;
-    virtual SortAlgorithm algorithm() const noexcept = 0;
+	virtual ~ISortDetector() = default;
+	virtual SortResult detect(const ssa::SSAFunction& fn) const = 0;
+	virtual SortAlgorithm algorithm() const noexcept = 0;
 };
 
 /**
@@ -301,13 +321,16 @@ public:
  */
 class IntrosortDetector : public ISortDetector {
 public:
-    SortResult  detect(const ssa::SSAFunction& fn) const override;
-    SortAlgorithm algorithm() const noexcept override { return SortAlgorithm::Introsort; }
+	SortResult detect(const ssa::SSAFunction& fn) const override;
+	SortAlgorithm algorithm() const noexcept override
+	{
+		return SortAlgorithm::Introsort;
+	}
 
 private:
-    bool hasDepthCounter(const ssa::SSAFunction& fn) const;
-    bool hasHeapsortDelegate(const ssa::SSAFunction& fn) const;
-    CompilerVariant detectVariant(const ssa::SSAFunction& fn) const;
+	bool hasDepthCounter(const ssa::SSAFunction& fn) const;
+	bool hasHeapsortDelegate(const ssa::SSAFunction& fn) const;
+	CompilerVariant detectVariant(const ssa::SSAFunction& fn) const;
 };
 
 /**
@@ -320,13 +343,16 @@ private:
  */
 class MergesortDetector : public ISortDetector {
 public:
-    SortResult  detect(const ssa::SSAFunction& fn) const override;
-    SortAlgorithm algorithm() const noexcept override { return SortAlgorithm::Mergesort; }
+	SortResult detect(const ssa::SSAFunction& fn) const override;
+	SortAlgorithm algorithm() const noexcept override
+	{
+		return SortAlgorithm::Mergesort;
+	}
 
 private:
-    bool hasMergeLoop(const ssa::SSAFunction& fn) const;
-    bool hasAuxiliaryAllocation(const ssa::SSAFunction& fn) const;
-    float scoreMerge(const ssa::SSAFunction& fn) const;
+	bool hasMergeLoop(const ssa::SSAFunction& fn) const;
+	bool hasAuxiliaryAllocation(const ssa::SSAFunction& fn) const;
+	float scoreMerge(const ssa::SSAFunction& fn) const;
 };
 
 /**
@@ -339,12 +365,15 @@ private:
  */
 class HeapsortDetector : public ISortDetector {
 public:
-    SortResult  detect(const ssa::SSAFunction& fn) const override;
-    SortAlgorithm algorithm() const noexcept override { return SortAlgorithm::Heapsort; }
+	SortResult detect(const ssa::SSAFunction& fn) const override;
+	SortAlgorithm algorithm() const noexcept override
+	{
+		return SortAlgorithm::Heapsort;
+	}
 
 private:
-    bool hasBuildHeapPhase(const ssa::SSAFunction& fn) const;
-    bool hasSortPhase(const ssa::SSAFunction& fn) const;
+	bool hasBuildHeapPhase(const ssa::SSAFunction& fn) const;
+	bool hasSortPhase(const ssa::SSAFunction& fn) const;
 };
 
 /**
@@ -362,15 +391,18 @@ private:
  */
 class RadixsortDetector : public ISortDetector {
 public:
-    SortResult  detect(const ssa::SSAFunction& fn) const override;
-    SortAlgorithm algorithm() const noexcept override { return SortAlgorithm::Radixsort; }
+	SortResult detect(const ssa::SSAFunction& fn) const override;
+	SortAlgorithm algorithm() const noexcept override
+	{
+		return SortAlgorithm::Radixsort;
+	}
 
 private:
-    bool hasDigitExtraction(const ssa::SSAFunction& fn) const;
-    bool hasHistogramAccumulation(const ssa::SSAFunction& fn) const;
-    bool hasPrefixSumPass(const ssa::SSAFunction& fn) const;
-    bool hasScatterPass(const ssa::SSAFunction& fn) const;
-    int  countComparisonInstrs(const ssa::SSAFunction& fn) const;
+	bool hasDigitExtraction(const ssa::SSAFunction& fn) const;
+	bool hasHistogramAccumulation(const ssa::SSAFunction& fn) const;
+	bool hasPrefixSumPass(const ssa::SSAFunction& fn) const;
+	bool hasScatterPass(const ssa::SSAFunction& fn) const;
+	int countComparisonInstrs(const ssa::SSAFunction& fn) const;
 };
 
 /**
@@ -378,8 +410,11 @@ private:
  */
 class InsertionSortDetector : public ISortDetector {
 public:
-    SortResult    detect(const ssa::SSAFunction& fn) const override;
-    SortAlgorithm algorithm() const noexcept override { return SortAlgorithm::InsertionSort; }
+	SortResult detect(const ssa::SSAFunction& fn) const override;
+	SortAlgorithm algorithm() const noexcept override
+	{
+		return SortAlgorithm::InsertionSort;
+	}
 };
 
 /**
@@ -387,8 +422,11 @@ public:
  */
 class QuicksortDetector : public ISortDetector {
 public:
-    SortResult    detect(const ssa::SSAFunction& fn) const override;
-    SortAlgorithm algorithm() const noexcept override { return SortAlgorithm::Quicksort; }
+	SortResult detect(const ssa::SSAFunction& fn) const override;
+	SortAlgorithm algorithm() const noexcept override
+	{
+		return SortAlgorithm::Quicksort;
+	}
 };
 
 /**
@@ -396,8 +434,11 @@ public:
  */
 class BubbleSortDetector : public ISortDetector {
 public:
-    SortResult    detect(const ssa::SSAFunction& fn) const override;
-    SortAlgorithm algorithm() const noexcept override { return SortAlgorithm::BubbleSort; }
+	SortResult detect(const ssa::SSAFunction& fn) const override;
+	SortAlgorithm algorithm() const noexcept override
+	{
+		return SortAlgorithm::BubbleSort;
+	}
 };
 
 // ─── Element type recovery ────────────────────────────────────────────────────
@@ -414,13 +455,11 @@ public:
  */
 class ElementTypeRecoverer {
 public:
-    ElementType recover(const ssa::SSAFunction& fn,
-                        const SortResult& partialResult) const;
+	ElementType recover(const ssa::SSAFunction& fn, const SortResult& partialResult) const;
 
 private:
-    ElementType fromCompareWidth(uint8_t bitWidth, bool isSigned) const;
-    ElementType fromComparatorCall(const ssa::SSAFunction& fn,
-                                   uint32_t callInstrId) const;
+	ElementType fromCompareWidth(uint8_t bitWidth, bool isSigned) const;
+	ElementType fromComparatorCall(const ssa::SSAFunction& fn, uint32_t callInstrId) const;
 };
 
 // ─── Sort detector orchestrator ───────────────────────────────────────────────
@@ -441,50 +480,56 @@ private:
  */
 class SortDetector {
 public:
-    struct Config {
-        float minConfidence  = 0.50f; ///< Minimum confidence to report
-        int   minBlocks      = 3;     ///< Skip trivially small functions
-        int   minInstrs      = 15;    ///< Skip trivially small functions
-        bool  runRadix       = true;
-        bool  runMerge       = true;
-        bool  runHeap        = true;
-        bool  runIntrosort   = true;
-        bool  runInsertion   = true;
-        bool  runQuicksort   = true;
-        bool  runBubble      = true;
-    };
-    static Config defaultConfig() noexcept { return {}; }
+	struct Config
+	{
+		float minConfidence = 0.50f; ///< Minimum confidence to report
+		int minBlocks = 3;           ///< Skip trivially small functions
+		int minInstrs = 15;          ///< Skip trivially small functions
+		bool runRadix = true;
+		bool runMerge = true;
+		bool runHeap = true;
+		bool runIntrosort = true;
+		bool runInsertion = true;
+		bool runQuicksort = true;
+		bool runBubble = true;
+	};
+	static Config defaultConfig() noexcept
+	{
+		return {};
+	}
 
-    struct Stats {
-        uint32_t functionsAnalysed = 0;
-        uint32_t functionsSkipped  = 0;
-        uint32_t detections        = 0;
-        std::unordered_map<SortAlgorithm, uint32_t> byAlgorithm;
-    };
+	struct Stats
+	{
+		uint32_t functionsAnalysed = 0;
+		uint32_t functionsSkipped = 0;
+		uint32_t detections = 0;
+		std::unordered_map<SortAlgorithm, uint32_t> byAlgorithm;
+	};
 
-    using DetectionMap = std::unordered_map<std::string, SortResult>;
+	using DetectionMap = std::unordered_map<std::string, SortResult>;
 
-    explicit SortDetector(Config cfg = defaultConfig());
+	explicit SortDetector(Config cfg = defaultConfig());
 
-    /// Analyse a single function; returns the best-matching result.
-    SortResult analyseFunction(const ssa::SSAFunction& fn) const;
+	/// Analyse a single function; returns the best-matching result.
+	SortResult analyseFunction(const ssa::SSAFunction& fn) const;
 
-    /// Analyse an entire module (map of function name → SSAFunction).
-    DetectionMap analyseModule(
-        const std::vector<const ssa::SSAFunction*>& functions) const;
+	/// Analyse an entire module (map of function name → SSAFunction).
+	DetectionMap analyseModule(const std::vector<const ssa::SSAFunction*>& functions) const;
 
-    const Stats& stats() const { return stats_; }
+	const Stats& stats() const
+	{
+		return stats_;
+	}
 
 private:
-    Config cfg_;
-    mutable Stats stats_;
+	Config cfg_;
+	mutable Stats stats_;
 
-    std::vector<std::unique_ptr<ISortDetector>> detectors_;
-    ElementTypeRecoverer typeRecoverer_;
+	std::vector<std::unique_ptr<ISortDetector>> detectors_;
+	ElementTypeRecoverer typeRecoverer_;
 
-    bool passesPreflight(const ssa::SSAFunction& fn) const;
-    CompilerVariant inferVariant(const ssa::SSAFunction& fn,
-                                  const SortResult& r) const;
+	bool passesPreflight(const ssa::SSAFunction& fn) const;
+	CompilerVariant inferVariant(const ssa::SSAFunction& fn, const SortResult& r) const;
 };
 
 } // namespace sort_detect
