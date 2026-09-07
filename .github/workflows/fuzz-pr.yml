@@ -24,6 +24,11 @@ name: fuzz-pr
 # Other targets get existing small fixtures when present (skip-safe).
 
 on:
+  # push included so the deterministic replay below actually gates the branches
+  # work happens on. Without it the only fuzz signal a working branch ever got
+  # was a weekly schedule against main.
+  push:
+    branches: [main, 'claude/**']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -76,7 +81,11 @@ jobs:
   # written under tests/crash_corpus/ and uploaded, and the job fails so the
   # find is not silently lost.
   fuzz-standalone-discover:
-    if: github.event_name != 'pull_request'
+    # Schedule and manual dispatch only. This was `!= 'pull_request'`, which
+    # was the same thing while the only other trigger was the weekly schedule;
+    # now that push is a trigger it would have put a 90-minute mutation run on
+    # every commit.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:

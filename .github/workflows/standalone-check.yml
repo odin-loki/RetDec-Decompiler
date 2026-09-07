@@ -1,7 +1,7 @@
 # Fast dependency-free gate.
 #
 # The normal ctest workflows build LLVM, Capstone, Keystone, YARA and YaraMod
-# from source, which takes hours.  This job compiles the 56 src/ modules that
+# from source, which takes hours.  This job compiles the 62 src/ modules that
 # need nothing but a C++17 compiler and runs their existing unit suites against
 # the shim in tests/standalone/gtest/, so a pull request gets a real
 # compile-and-test signal in about a minute.
@@ -11,7 +11,7 @@ name: standalone-check
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'claude/**']
   pull_request:
   workflow_dispatch:
 

@@ -50,6 +50,12 @@ jobs:
           sudo apt-get install -y clang-format
           bash scripts/check_format.sh
 
+      # A source list that names a deleted file fails the configure outright,
+      # and the targets that would notice are behind the hours-long LLVM build.
+      # This is a file-existence check; it needs no compiler and takes a second.
+      - name: Every source a CMake target names exists
+        run: bash scripts/check_cmake_sources.sh
+
       - name: CLI helper tests
         run: python scripts/python/test_retdec_cli.py
 

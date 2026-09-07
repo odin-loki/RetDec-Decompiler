@@ -5,8 +5,11 @@ name: doc-integrity
 # run the same scripts; they do not decompile Mach-O or ARM binaries.
 
 on:
+  # push on the working branches too: this gate is a docs consistency check
+  # that costs seconds, and running it only on main means documentation drifts
+  # for the whole life of a branch before anything notices.
   push:
-    branches: [main]
+    branches: [main, 'claude/**']
   pull_request:
     branches: [main]
   workflow_dispatch:

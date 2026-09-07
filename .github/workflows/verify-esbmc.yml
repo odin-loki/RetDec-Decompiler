@@ -1,22 +1,33 @@
-# Formal verification of the bounds arithmetic.
+# Formal verification of the arithmetic kernels.
 #
 # scripts/standalone_fuzz.sh shows that a bug exists; it cannot show that one
-# does not. The arithmetic every parser depends on -- counts, lengths and
-# offsets read out of untrusted files -- lives in include/retdec/utils/bounds.h,
-# and this job proves it correct for all inputs over the whole 64-bit range with
-# ESBMC and an SMT solver.
+# does not. The arithmetic every parser depends on -- counts, lengths, offsets,
+# indices and encodings read out of untrusted files -- lives in a set of
+# header-only kernels under include/retdec/utils/, and this job proves them
+# correct for all inputs over the whole 64-bit range with ESBMC and an SMT
+# solver. `--syntax` type-checks the harnesses first; `--routing` then checks
+# that every proved kernel is still reachable from src/, because a proof about
+# a header nothing includes proves nothing about this program.
 #
-# Scope and limits are in docs/VERIFICATION.md. In short: the header is proved,
-# the parsers are not, because ESBMC's models of the C++ standard library do not
+# Scope, the exact kernel and proof counts, and the limits are in
+# docs/VERIFICATION.md. In short: the kernels are proved, the parsers around
+# them are not, because ESBMC's models of the C++ standard library do not
 # stretch to this codebase.
 name: verify-esbmc
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'claude/**']
   pull_request:
     paths:
-      - 'include/retdec/utils/bounds.h'
+      # Deliberately the whole directory, not the list of proved headers. The
+      # list used to be here and named only bounds.h, which was true when there
+      # was one proof and silently wrong for the twelve kernels added after it:
+      # a pull request touching scan_cursor.h or text_transcode.h skipped the
+      # proofs entirely. A glob cannot go stale that way.
+      - 'include/retdec/utils/**'
+      # pe_reader_proof.cpp verifies this translation unit itself.
+      - 'src/cli_parser/pe_reader.cpp'
       - 'tests/verification/**'
       - 'scripts/verify_esbmc.sh'
       - '.github/workflows/verify-esbmc.yml'
@@ -45,6 +56,11 @@ jobs:
       # solver job below.
       - name: Type-check the proof harnesses
         run: ./scripts/verify_esbmc.sh --syntax
+
+      # A proof about a header nothing includes proves nothing about this
+      # program. This is a grep, so it costs nothing to keep honest.
+      - name: Check every proved kernel still has a caller
+        run: ./scripts/verify_esbmc.sh --routing
 
   prove:
     name: prove (${{ matrix.solver }})

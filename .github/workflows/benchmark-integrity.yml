@@ -6,6 +6,10 @@ name: benchmark-integrity
 # algorithm-recovery-nightly.yml (more binaries).
 
 on:
+  # push on the working branches too: seconds to run, and a benchmark claim
+  # that stops matching its evidence should fail on the commit that breaks it.
+  push:
+    branches: [main, 'claude/**']
   pull_request:
     branches: [main]
   workflow_dispatch:
