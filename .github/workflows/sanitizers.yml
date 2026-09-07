@@ -52,15 +52,24 @@ jobs:
       # decide whether it is cross-compiling. With the runner's default
       # vm.mmap_rnd_bits=32 that conftest cannot map its shadow, and
       # configure aborts with "cannot run C compiled programs".
-      - name: Lower ASLR entropy for ASan shadow mmap
+      - name: Disable ASLR for ASan shadow mmap
         run: |
-          # High-entropy ASLR (vm.mmap_rnd_bits=32) on ubuntu-latest makes
-          # ASan fail to mmap shadow: "Failed to mmap" / internal allocator
-          # OOM at 0x800. Same workaround as actions/runner-images#9491.
-          # 28 was not enough for this ASan binary (Failed to mmap on hello).
-          sudo sysctl vm.mmap_rnd_bits=18
-          sudo sysctl vm.overcommit_memory=1
-          sudo sysctl kernel.randomize_va_space=0
+          # High-entropy ASLR on ubuntu-latest makes ASan fail to map its fixed
+          # shadow: "Failed to mmap" / internal allocator OOM at 0x800. Same
+          # workaround as actions/runner-images#9491.
+          #
+          # kernel.randomize_va_space=0 turns randomisation off outright and is
+          # what actually fixes it. vm.mmap_rnd_bits cannot be lowered below
+          # CONFIG_ARCH_MMAP_RND_BITS_MIN, which is 28 on x86-64, so the
+          # `sysctl vm.mmap_rnd_bits=18` that used to be here always failed
+          # with `Invalid argument` -- and because it sat after a build step
+          # that had never once succeeded, nothing ever ran it to find out.
+          # Ask for the kernel's minimum instead and do not fail if the kernel
+          # refuses; randomize_va_space=0 already covers the case.
+          sudo sysctl -w kernel.randomize_va_space=0
+          sudo sysctl -w vm.overcommit_memory=1
+          sudo sysctl -w vm.mmap_rnd_bits=28 \
+            || echo "vm.mmap_rnd_bits not settable here; randomize_va_space=0 covers it"
           # Writes already print the new values. Do not `sysctl KEY` without
           # sudo: ubuntu-latest denies unprivileged reads of mmap_rnd_bits.
 
