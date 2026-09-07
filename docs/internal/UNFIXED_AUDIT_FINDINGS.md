@@ -242,9 +242,20 @@ measured against fixtures rather than against anything the pipeline produces.
 
 ## 6. Other confirmed items
 
-`src/fileformat/utils/format_detection.cpp:373` — uint32 overflow in the PE
-lattice-hint bounds check, giving a ~4 GB heap over-read. Reached from
-`detectFileFormat` on every non-raw input, and once per archive member.
+Eleven of the thirteen test sources in `tests/fileformat/` and one in
+`tests/common/` are named by no `CMakeLists.txt`, so `ctest` does not build or
+run them: `ar_archive_format_probe_tests.cpp`, `coff_format_tests.cpp`,
+`elf_format_tests.cpp`, `format_detection_tests.cpp`,
+`format_factory_tests.cpp`, `intel_hex_format_20bit_tests.cpp`,
+`intel_hex_format_tests.cpp`, `intel_hex_token_test.cpp`,
+`macho_format_tests.cpp`, `pe_format_tests.cpp`, `raw_data_format_tests.cpp`
+and `tests/common/calling_convention_tests.cpp`. `tests/fileformat` builds two
+files. Whether they still compile against the LLVM 23.1.0 migration is not
+known here, because everything they link needs that build; re-enabling them
+blind would break `ctest-linux` for hours per attempt, so they are listed
+rather than switched on. `scripts/check_cmake_sources.sh` now fails on any
+*new* test source that nothing builds, and carries these twelve in an explicit
+`UNBUILT` list with that reason attached, so the set cannot grow quietly.
 
 `src/retdec/retdec.cpp:212` — two mutable process-wide statics are mutated
 concurrently by `parallelBatchDecompile`: a `std::string` and a

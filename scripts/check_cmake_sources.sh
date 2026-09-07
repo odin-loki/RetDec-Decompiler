@@ -21,6 +21,12 @@
 # the source list is satisfiable, which is what this check is about. Delete such
 # an entry from the manifest and it becomes a hard failure like any other.
 #
+# The second pass is the same question the other way round: a test source on
+# disk that no CMakeLists.txt names is a file nobody runs. That is how ten of
+# the twelve suites in tests/fileformat/ came to be dead, and how
+# tests/utils/dynamic_buffer_tests.cpp sat unbuilt with ten regression tests in
+# it. Files that are deliberately not listed carry a reason in UNBUILT below.
+#
 # Usage:
 #   bash scripts/check_cmake_sources.sh          # whole tree
 #   bash scripts/check_cmake_sources.sh src/foo  # one subtree
@@ -66,6 +72,30 @@ def fetchable_paths():
     return set(re.findall(r'"([^"]+)"', block.group(1)))
 
 FETCHABLE = fetchable_paths()
+
+# Test sources that no CMakeLists.txt names, on purpose. The value is the
+# reason, printed with the file, so removing one from this list is a decision
+# somebody has to write down rather than a silent deletion.
+UNBUILT = {
+    "tests/fileformat/ar_archive_format_probe_tests.cpp":
+        "upstream fileformat suites; not carried through the LLVM 23.1.0 "
+        "migration and not yet re-enabled -- see docs/internal/UNFIXED_AUDIT_FINDINGS.md",
+    "tests/fileformat/coff_format_tests.cpp": "as above",
+    "tests/fileformat/elf_format_tests.cpp": "as above",
+    "tests/fileformat/format_detection_tests.cpp": "as above",
+    "tests/fileformat/format_factory_tests.cpp": "as above",
+    "tests/fileformat/intel_hex_format_20bit_tests.cpp": "as above",
+    "tests/fileformat/intel_hex_format_tests.cpp": "as above",
+    "tests/fileformat/intel_hex_token_test.cpp": "as above",
+    "tests/fileformat/macho_format_tests.cpp": "as above",
+    "tests/fileformat/pe_format_tests.cpp": "as above",
+    "tests/fileformat/raw_data_format_tests.cpp": "as above",
+    "tests/common/calling_convention_tests.cpp":
+        "not listed in tests/common/CMakeLists.txt; same migration gap",
+    "tests/managed_integration/fuzz/fuzz_pelib.cpp":
+        "driven by scripts/standalone_fuzz.sh only -- PeLib needs no LLVM, so "
+        "the harness does not need the RETDEC_FUZZ toolchain either",
+}
 
 # One balanced call. CMake source lists do not nest parentheses, but generator
 # expressions do use them, so the token filter below drops anything with a '$'
@@ -129,6 +159,37 @@ for root in ROOTS:
                         (path, line_of(text, call.start(2) + tok.start()), token)
                     )
 
+# ── second pass: a test source nobody builds ────────────────────────────────
+unbuilt = []
+if ROOTS == ["."] or any(r.startswith("tests") for r in ROOTS):
+    for dirpath, dirnames, filenames in os.walk("tests"):
+        dirnames[:] = [
+            d for d in dirnames
+            if d not in (".git", "build", "node_modules", "__pycache__")
+        ]
+        if "CMakeLists.txt" not in filenames:
+            continue
+        with open(os.path.join(dirpath, "CMakeLists.txt"),
+                  encoding="utf-8", errors="replace") as fh:
+            listed = {
+                os.path.basename(m)
+                for m in re.findall(r"[A-Za-z0-9_./${}-]+\.(?:cpp|cc|cxx)", fh.read())
+            }
+        for name in sorted(filenames):
+            if not name.endswith((".cpp", ".cc", ".cxx")):
+                continue
+            if name in listed:
+                continue
+            rel = os.path.join(dirpath, name).replace(os.sep, "/")
+            if rel in UNBUILT:
+                continue
+            unbuilt.append(rel)
+
+for rel in unbuilt:
+    print(f"{rel}: a test source no CMakeLists.txt names, so ctest never runs it")
+    print("       add it to its CMakeLists, or give it a reason in UNBUILT in "
+          "scripts/check_cmake_sources.sh")
+
 for path, line, token in missing:
     print(f"{path}:{line}: names a source that does not exist: {token}")
 
@@ -137,8 +198,15 @@ for rel in sorted(set(unfetched)):
           f"scripts/fetch-large-files.sh downloads it")
 
 print(f"checked {checked} source entries across {listfiles} CMakeLists.txt file(s)")
-if missing:
-    print(f"FAIL: {len(missing)} missing source file(s)")
+if UNBUILT:
+    print(f"note: {len(UNBUILT)} test source(s) deliberately not built; "
+          f"reasons in UNBUILT in this script")
+if missing or unbuilt:
+    if missing:
+        print(f"FAIL: {len(missing)} missing source file(s)")
+    if unbuilt:
+        print(f"FAIL: {len(unbuilt)} test source(s) that nothing builds")
     sys.exit(1)
-print("OK: every source named by a CMake target exists or is fetchable")
+print("OK: every source named by a CMake target exists or is fetchable, "
+      "and every test source is built")
 PY

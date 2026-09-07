@@ -33,6 +33,10 @@
 #ifndef RETDEC_TESTS_STANDALONE_GTEST_LITE_H
 #define RETDEC_TESTS_STANDALONE_GTEST_LITE_H
 
+// Lets a conformance test tell which harness it is compiled against. Real
+// GoogleTest does not define this, so a test guarded by it is the shim's own.
+#define RETDEC_GTEST_LITE 1
+
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -168,6 +172,10 @@ private:
 struct State
 {
 	bool failed = false;
+	/// Set only by ASSERT_* (fatal), never by EXPECT_*. GoogleTest runs a test
+	/// body after a non-fatal failure in SetUp and does not run it after a
+	/// fatal one, so `failed` alone cannot tell gtlRun() which happened.
+	bool fatalFailure = false;
 	bool skipped = false;
 	std::string skipReason;
 	std::vector<std::string> failures;
@@ -213,6 +221,7 @@ public:
 		for (auto it = state().traces.rbegin(); it != state().traces.rend(); ++it)
 			os << "\n  Google Test trace:\n  " << *it;
 		state().failed = true;
+		if (fatal_) state().fatalFailure = true;
 		state().failures.push_back(os.str());
 	}
 
@@ -315,6 +324,19 @@ inline Result cmpStr(const char* a, const char* b, bool wantEqual, const char* t
 inline Result cmpNear(double a, double b, double tol, const char* ta, const char* tb, const char* tt)
 {
 	const double diff = std::fabs(a - b);
+	// `if (!(diff > tol))` on its own passes whenever diff is NaN, because every
+	// comparison with NaN is false and the negation makes that a pass. So
+	// EXPECT_NEAR(nan, 1.0, 0.1) succeeded here and fails in GoogleTest, which
+	// is the wrong way round for a shim whose whole purpose is that a test means
+	// the same thing under both.
+	if (std::isnan(a) || std::isnan(b) || std::isnan(tol))
+	{
+		std::ostringstream nanOs;
+		nanOs << "The difference between " << ta << " and " << tb << " is not a number, where\n    " << ta
+			  << " evaluates to " << a << ",\n    " << tb << " evaluates to " << b << ",\n    " << tt
+			  << " evaluates to " << tol << ".";
+		return Result(false, nanOs.str());
+	}
 	if (!(diff > tol)) return Result(true, "");
 	std::ostringstream os;
 	os << "The difference between " << ta << " and " << tb << " is " << diff << ", which exceeds " << tt
@@ -471,7 +493,13 @@ public:
 	void gtlRun(const std::function<void()>& body)
 	{
 		SetUp();
-		if (!::testing::lite::state().skipped)
+		// GoogleTest does not run the body when SetUp ended in an ASSERT_*.
+		// This checked only the skip half of that contract, so a fixture whose
+		// SetUp asserted its preconditions and failed them still ran the test
+		// against whatever half-built state it left behind -- the same shape as
+		// the GTEST_SKIP bug above it, and found the same way.
+		const auto& st = ::testing::lite::state();
+		if (!st.skipped && !st.fatalFailure)
 		{
 			body();
 		}
@@ -740,5 +768,61 @@ int RUN_ALL_TESTS();
 		}                                                                                                              \
 		return 0;                                                                                                      \
 	}()
+
+// ─── Self-test support (GoogleTest's gtest-spi.h) ────────────────────────────
+//
+// A harness cannot be tested for the failures it is supposed to report without
+// a way to say "this next statement must fail, and that is the pass". Real
+// GoogleTest puts that in <gtest/gtest-spi.h>; the shim keeps the same spelling
+// and the same header name so tests/utils/gtest_shim_conformance_tests.cpp is
+// one file that builds against both.
+//
+// Only the non-fatal form is provided, which is what a conformance test for a
+// comparator needs. EXPECT_FATAL_FAILURE requires the statement to run in a
+// void-returning context of its own; nothing here has needed it.
+
+namespace testing {
+namespace lite {
+
+/// Runs @p body with the per-test failure list isolated, and returns the
+/// failures it produced. The caller's own failed/failure state is restored, so
+/// a deliberate failure inside @p body does not fail the enclosing test.
+template <typename F>
+inline std::vector<std::string> captureFailures(F&& body)
+{
+	State& st = state();
+	const bool wasFailed = st.failed;
+	const bool wasFatal = st.fatalFailure;
+	const std::size_t before = st.failures.size();
+
+	st.failed = false;
+	st.fatalFailure = false;
+	body();
+
+	std::vector<std::string> produced(st.failures.begin() + static_cast<std::ptrdiff_t>(before), st.failures.end());
+	st.failures.resize(before);
+	st.failed = wasFailed;
+	st.fatalFailure = wasFatal;
+	return produced;
+}
+
+} // namespace lite
+} // namespace testing
+
+/// The statement must produce at least one non-fatal failure whose text
+/// contains @p substring. Both are swallowed, so the enclosing test passes.
+#define EXPECT_NONFATAL_FAILURE(statement, substring)                                                        \
+	do                                                                                                       \
+	{                                                                                                        \
+		const std::vector<std::string> gtlProduced = ::testing::lite::captureFailures([&]() { statement; }); \
+		bool gtlMatched = false;                                                                             \
+		for (const std::string& gtlF: gtlProduced)                                                           \
+		{                                                                                                    \
+			if (gtlF.find(substring) != std::string::npos) gtlMatched = true;                                \
+		}                                                                                                    \
+		EXPECT_TRUE(gtlMatched) << "expected a non-fatal failure containing \"" << (substring) << "\", got " \
+								<< gtlProduced.size() << " failure(s)";                                      \
+	}                                                                                                        \
+	while (false)
 
 #endif // RETDEC_TESTS_STANDALONE_GTEST_LITE_H

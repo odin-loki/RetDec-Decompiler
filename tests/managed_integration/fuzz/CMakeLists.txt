@@ -97,3 +97,13 @@ add_fuzz_target(fuzz_cli fuzz_cli.cpp
     retdec-cli-parser
     retdec-bc-module
 )
+
+# The signature-lattice parser. fuzz_pe.cpp above drives retdec::fileformat,
+# which publicly links LLVM; the lattice is the one translation unit under
+# src/fileformat/ that does not, which is why scripts/standalone_fuzz.sh can
+# also build this target with nothing but a compiler.
+if(TARGET retdec::fileformat-lattice)
+    add_fuzz_target(fuzz_lattice fuzz_lattice.cpp
+        retdec::fileformat-lattice
+    )
+endif()

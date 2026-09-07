@@ -21,9 +21,16 @@
  * needs far more address space than that. The skip was inert, the tests ran,
  * and the process died -- in whatever test happened to link next, which is why
  * it read for a long time as a flaky sanitizer.
+ *
+ * The same shape turned up twice more and is pinned below: a fatal ASSERT_* in
+ * SetUp() did not stop the body either, and EXPECT_NEAR passed on NaN because
+ * `!(diff > tol)` is true when diff is not a number.
  */
 
+#include <gtest/gtest-spi.h>
 #include <gtest/gtest.h>
+
+#include <limits>
 
 using namespace ::testing;
 
@@ -66,3 +73,62 @@ TEST(GtestShimConformance, ASkippedSetUpReallyStopsTheBody)
 } // namespace tests
 } // namespace utils
 } // namespace retdec
+
+/// A fatal ASSERT_* in SetUp() must stop the test body. GoogleTest does that by
+/// definition -- ASSERT_* expands to a `return` and the framework then checks
+/// whether that return left a fatal failure behind -- so there is nothing to
+/// pin on that side, and this is guarded to the shim, which checked only the
+/// skip flag and ran the body against the state SetUp had just declared broken.
+///
+/// It cannot be written as an ordinary TEST_F the way the skip case above is:
+/// a skipped test is reported SKIPPED and keeps the suite green, while a
+/// fixture that deliberately fails its SetUp is reported FAILED and would turn
+/// this suite red for doing its job. So the fixture is driven by hand inside
+/// captureFailures(), which is the shim's gtest-spi equivalent.
+#ifdef RETDEC_GTEST_LITE
+
+bool assertedFixtureBodyRan = false;
+
+class AssertingSetUpFixture : public Test {
+public:
+	void SetUp() override
+	{
+		ASSERT_EQ(1, 2) << "deliberate: this fixture exists to fail its SetUp";
+	}
+
+	static void body()
+	{
+		assertedFixtureBodyRan = true;
+	}
+};
+
+TEST(GtestShimConformance, AFailedAssertInSetUpReallyStopsTheBody)
+{
+	assertedFixtureBodyRan = false;
+
+	AssertingSetUpFixture fixture;
+	const std::vector<std::string> produced =
+		::testing::lite::captureFailures([&fixture]() { fixture.gtlRun(&AssertingSetUpFixture::body); });
+
+	EXPECT_FALSE(assertedFixtureBodyRan) << "a fatal ASSERT_* in SetUp() must stop the test body; the shim used "
+											"to run it, because it checked the skip flag and not the fatal one";
+	EXPECT_FALSE(produced.empty()) << "the ASSERT_EQ in SetUp() should have recorded a failure";
+}
+
+#endif // RETDEC_GTEST_LITE
+
+/// Every comparison with NaN is false, so `!(diff > tol)` -- the natural way to
+/// write "within tolerance" -- is true for NaN and passes. GoogleTest fails.
+/// A shim that passes here turns any test comparing a computed double into
+/// evidence about nothing whenever that computation produces NaN.
+TEST(GtestShimConformance, NearComparisonsFailOnNaN)
+{
+	const double nan = std::numeric_limits<double>::quiet_NaN();
+
+	EXPECT_NONFATAL_FAILURE(EXPECT_NEAR(nan, 1.0, 0.5), "not a number");
+	EXPECT_NONFATAL_FAILURE(EXPECT_NEAR(1.0, nan, 0.5), "not a number");
+
+	// And the ordinary contract still holds.
+	EXPECT_NEAR(1.0, 1.4, 0.5);
+	EXPECT_NEAR(-1.0, -1.0, 0.0);
+}
