@@ -689,7 +689,7 @@ std::size_t dotnetHeaps(const std::uint8_t* src, std::size_t chars, char* out)
 	return w;
 }
 
-/// src/cli_parser/cli_reader.cpp:776, CLIReader::fieldConstantString,
+/// CLIReader::fieldConstantString,
 /// transcribed. Same decoder, a byte count and an `i + 1 < size` convention.
 std::size_t dotnetReader(const std::uint8_t* blob, std::size_t size, char* out)
 {

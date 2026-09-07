@@ -91,40 +91,14 @@ std::vector<SigMatchResult> GpuScanner::batchMatch(
     }
 
     for (std::size_t i = 0; i < n; ++i) {
-        const std::string& pat = patterns[i];
-        const std::size_t patLen = (pat.find(';') != std::string::npos)
-                                   ? pat.find(';') : pat.size();
-        // `endNib < patLen` was off by one and threw away the pattern that
-        // exactly fills the window: gpuscan::lastStartFor's comment has the
-        // measurement, and AnExactWholeFileMatchIsFound pins it.
-        std::size_t maxStart = 0;
-        if (!gpuscan::lastStartFor(endNib, patLen, maxStart)) continue;
-
-        SigMatchResult& r = results[i];
-        for (std::size_t pos = startNib; pos <= maxStart; ++pos) {
-            uint32_t same = 0, total = 0;
-            for (std::size_t si = 0; si < patLen; ++si) {
-                char pc = pat[si];
-                if (pc == ';' || pc == '\0') break;
-                if (pc == '?' || pc == '-' || pc == '/') continue;
-                ++total;
-                if ((uint8_t)pc == (uint8_t)nibs[pos+si]) ++same;
-            }
-            if (total > 0) {
-                double ratio = (double)same / (double)total;
-                if (ratio > r.bestRatio ||
-                    (ratio == r.bestRatio && total > r.totalNibs))
-                {
-                    r.bestRatio  = ratio;
-                    r.sameNibs   = same;
-                    r.totalNibs  = total;
-                    r.offset     = static_cast<uint32_t>(
-                            pos / gpuscan::NIBBLES_PER_BYTE);
-                    r.matched    = ratio >= 0.5;
-                }
-            }
-        }
+        // The match loop itself lived here AND in gpu_scanner.cu, and the two
+        // disagreed: this one treated '/' as a don't-care and the other did
+        // not, so "de/d" over DE AD BE EF gave bestRatio 1.000000 / totalNibs 3
+        // here and 0.750000 / 4 there. One implementation now, in the prologue
+        // both halves of this class share.
+        results[i] = gpuscan::matchOne(nibs, patterns[i], startNib, endNib);
     }
+
     return results;
 }
 

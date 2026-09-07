@@ -544,6 +544,53 @@ UploadRefusesASizeNoStringCanHold) {
 	}
 }
 
+
+/// The match loop existed twice -- once in gpu_scanner_cpu.cpp and once in
+/// gpu_scanner.cu -- and the two disagreed about '/'. RetDec nibble patterns
+/// use it for a slashed jump; this path treated it as a don't-care and the
+/// other counted it as a nibble that must match.
+///
+/// Measured by the adversarial verify pass on DE AD BE EF with "de/d":
+/// bestRatio 1.000000 / totalNibs 3 through the CPU path, 0.750000 / 4 through
+/// the copy. There is one implementation now, and this pins its reading so a
+/// second copy reintroduced later disagrees with a test rather than silently
+/// with itself.
+TEST_F(GpuScannerTests,
+SlashedJumpNibblesAreDontCares) {
+	const std::vector<std::uint8_t> bytes = {0xDE, 0xAD, 0xBE, 0xEF};
+	GpuScanner scanner;
+	scanner.uploadFile(bytes.data(), bytes.size());
+
+	// "dead" is the file exactly: four meaningful nibbles, all agreeing.
+	{
+		const auto r = scanner.batchMatch({"dead"});
+		ASSERT_EQ(1u, r.size());
+		EXPECT_TRUE(r[0].matched);
+		EXPECT_EQ(4u, r[0].totalNibs);
+		EXPECT_EQ(4u, r[0].sameNibs);
+	}
+
+	// "de/d" is the same four positions with the third marked as a slashed
+	// jump: three meaningful nibbles, all agreeing. Counting the '/' would give
+	// totalNibs 4 and a ratio of 0.75.
+	{
+		const auto r = scanner.batchMatch({"de/d"});
+		ASSERT_EQ(1u, r.size());
+		EXPECT_TRUE(r[0].matched);
+		EXPECT_EQ(3u, r[0].totalNibs);
+		EXPECT_EQ(3u, r[0].sameNibs);
+		EXPECT_EQ(1.0, r[0].bestRatio);
+	}
+
+	// '?' and '-' are the other two don't-cares, and are counted the same way.
+	{
+		const auto r = scanner.batchMatch({"d?ad", "d-ad"});
+		ASSERT_EQ(2u, r.size());
+		EXPECT_EQ(3u, r[0].totalNibs);
+		EXPECT_EQ(3u, r[1].totalNibs);
+	}
+}
+
 } // namespace tests
 } // namespace utils
 } // namespace retdec

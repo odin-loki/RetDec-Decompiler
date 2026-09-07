@@ -246,6 +246,81 @@ inline bool lastStartFor(
     return true;
 }
 
+/// Does @p n fit the std::uint32_t the CUDA kernels take their sizes in?
+///
+/// The kernel parameters are uint32_t; the host side counts in std::size_t. The
+/// four conversions between them were bare static_casts, so a file larger than
+/// 4 GB -- or a nibble buffer larger than 4 GB, which is a 2 GB file -- reached
+/// the device as a small number and the kernel scanned a fraction of it while
+/// reporting success. Not reachable through the CPU build, and not a wrong
+/// answer this environment can produce, but it is a silent one.
+///
+/// Asked rather than assumed, at each of the four sites.
+inline bool fitsKernelWidth(std::size_t n) noexcept
+{
+    return n <= static_cast<std::size_t>(UINT32_MAX);
+}
+
+/// The best match for one pattern over the nibble window [@p startNib,
+/// @p endNib].
+///
+/// One implementation, called from both halves of this class. There were two,
+/// and they DISAGREED: the CPU fallback treated '/' as a don't-care and the
+/// copy on the CUDA side did not, so the same pattern over the same bytes gave
+/// different answers depending on which build ran it. Measured by the
+/// adversarial verify pass on DE AD BE EF with the pattern "de/d":
+/// bestRatio 1.000000 / totalNibs 3 through the CPU path, 0.750000 / 4 through
+/// the other.
+///
+/// '/' is the RetDec slashed-jump marker and is a don't-care here, which is the
+/// reading the tested path had. The CUDA kernel pre-filters patterns containing
+/// one (see the encoding note above batchMatchKernel), so it never sees the
+/// character and the two cannot drift apart again -- there is nothing left to
+/// drift.
+inline SigMatchResult matchOne(
+        const std::string& nibs,
+        const std::string& pat,
+        std::size_t startNib,
+        std::size_t endNib)
+{
+    SigMatchResult r;
+
+    const std::size_t patLen = pat.find(';') != std::string::npos
+                               ? pat.find(';') : pat.size();
+    std::size_t maxStart = 0;
+    if (!lastStartFor(endNib, patLen, maxStart)) return r;
+
+    for (std::size_t pos = startNib; pos <= maxStart; ++pos) {
+        std::uint32_t same = 0, total = 0;
+        for (std::size_t si = 0; si < patLen; ++si) {
+            const char pc = pat[si];
+            if (pc == ';' || pc == '\0') break;
+            if (pc == '?' || pc == '-' || pc == '/') continue;
+            ++total;
+            if (static_cast<std::uint8_t>(pc)
+                    == static_cast<std::uint8_t>(nibs[pos + si])) {
+                ++same;
+            }
+        }
+        if (total > 0) {
+            const double ratio = static_cast<double>(same)
+                    / static_cast<double>(total);
+            if (ratio > r.bestRatio
+                    || (ratio == r.bestRatio && total > r.totalNibs)) {
+                r.bestRatio = ratio;
+                r.sameNibs  = same;
+                r.totalNibs = total;
+                // The nibble position back to a byte offset. NIBBLES_PER_BYTE
+                // rather than a bare 2, which this file's own comment claims is
+                // stated once and, until this consolidation, was not.
+                r.offset    = static_cast<std::uint32_t>(pos / NIBBLES_PER_BYTE);
+                r.matched   = ratio >= 0.5;
+            }
+        }
+    }
+    return r;
+}
+
 } // namespace gpuscan
 } // namespace utils
 } // namespace retdec
@@ -382,8 +457,10 @@ __global__ void batchMatchKernel(
                 localBestRatio = ratio;
                 localBestSame  = same;
                 localBestTotal = total;
-                // Convert nibble offset to byte offset.
-                localBestOff   = pos / 2;
+                // Convert nibble offset to byte offset. The factor is the
+                // one constant, not a literal -- this file's own comment says
+                // it is stated once, and this was one of the places it was not.
+                localBestOff   = pos / gpuscan::NIBBLES_PER_BYTE;
                 localMatched   = (ratio >= 0.5f) ? 1u : 0u;
             }
         }
@@ -553,7 +630,16 @@ struct GpuScanner::Impl {
     // gpu_scanner_cpu.cpp. It takes the finished string instead; the expansion
     // and its refusals are gpuscan::nibblesFor's, and happen before anything
     // reaches the device.
-    void uploadToGpu(const uint8_t* data, std::size_t size, const std::string& nibs) {
+    bool uploadToGpu(const uint8_t* data, std::size_t size, const std::string& nibs) {
+        // Both counts have to survive the trip to a uint32_t kernel parameter.
+        // They were cast without asking, so a file past 4 GB (or a nibble
+        // buffer past it, which is a 2 GB file) arrived truncated and the
+        // kernel scanned part of it while reporting success.
+        if (!gpuscan::fitsKernelWidth(size)
+                || !gpuscan::fitsKernelWidth(nibs.size())) {
+            return false;
+        }
+
         CUDA_CHECK(cudaMalloc(&d_fileBytes, size));
         CUDA_CHECK(cudaMemcpy(d_fileBytes, data, size, cudaMemcpyHostToDevice));
 
@@ -563,6 +649,7 @@ struct GpuScanner::Impl {
 
         fileSize   = static_cast<uint32_t>(size);
         fileNibLen = static_cast<uint32_t>(nibBytes);
+        return true;
     }
 
     ~Impl() { freeDeviceFile(); }
@@ -606,7 +693,14 @@ void GpuScanner::uploadFile(const uint8_t* data, std::size_t size) {
 
     if (!impl_->gpuAvailable) return;
     impl_->freeDeviceFile();
-    impl_->uploadToGpu(data, size, impl_->h_fileNibs);
+    if (!impl_->uploadToGpu(data, size, impl_->h_fileNibs)) {
+        // The file is too large for the kernel's uint32 counts. The host copies
+        // above are already in place, so batchMatch and fileEntropy take the
+        // CPU path -- slower, and correct, which is the right way round. The
+        // device buffers stay freed, and fileNibLen stays 0, so nothing can
+        // launch against a partial upload.
+        impl_->freeDeviceFile();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -619,36 +713,11 @@ static SigMatchResult cpuMatchOne(
     std::size_t startNib,
     std::size_t endNib)
 {
-    SigMatchResult r;
-    const std::size_t patLen = pat.find(';') != std::string::npos
-                               ? pat.find(';') : pat.size();
-    std::size_t maxStart = 0;
-    if (!gpuscan::lastStartFor(endNib, patLen, maxStart)) return r;
-
-    for (std::size_t pos = startNib; pos <= maxStart; ++pos) {
-        uint32_t same = 0, total = 0;
-        for (std::size_t si = 0; si < patLen; ++si) {
-            char pc = pat[si];
-            if (pc == ';' || pc == '\0') break;
-            if (pc == '?' || pc == '-') continue;
-            ++total;
-            if ((uint8_t)pc == (uint8_t)nibs[pos + si]) ++same;
-        }
-        if (total > 0) {
-            double ratio = (double)same / (double)total;
-            if (ratio > r.bestRatio ||
-                (ratio == r.bestRatio && total > r.totalNibs))
-            {
-                r.bestRatio  = ratio;
-                r.sameNibs   = same;
-                r.totalNibs  = total;
-                r.offset     = static_cast<uint32_t>(pos / 2);
-                r.matched    = ratio >= 0.5;
-            }
-        }
-    }
-    return r;
+    // Was a second copy of the match loop that disagreed with the CPU
+    // fallback's; see gpuscan::matchOne above for the measurement.
+    return gpuscan::matchOne(nibs, pat, startNib, endNib);
 }
+
 
 std::vector<SigMatchResult> GpuScanner::batchMatch(
     const std::vector<std::string>& patterns,
@@ -708,6 +777,21 @@ std::vector<SigMatchResult> GpuScanner::batchMatch(
         patBuf += pp;
     }
 
+    // startNib and endNib are std::size_t on the host and uint32_t in the
+    // kernel signature. They were cast at the launch without asking. A window
+    // past 4 G nibbles would arrive truncated and the kernel would scan the
+    // wrong part of the file while reporting success -- so if it does not fit,
+    // the whole batch takes the CPU path, which counts in size_t throughout.
+    if (!gpuscan::fitsKernelWidth(startNib)
+            || !gpuscan::fitsKernelWidth(endNib)
+            || !gpuscan::fitsKernelWidth(gpuIdx.size())) {
+        for (std::size_t gi = 0; gi < gpuIdx.size(); ++gi) {
+            results[gpuIdx[gi]] = gpuscan::matchOne(
+                impl_->h_fileNibs, patterns[gpuIdx[gi]], startNib, endNib);
+        }
+        return results;
+    }
+
     const uint32_t numGpu = static_cast<uint32_t>(gpuIdx.size());
 
     char*     d_patBuf    = nullptr;
@@ -735,6 +819,7 @@ std::vector<SigMatchResult> GpuScanner::batchMatch(
             d_offsets,
             d_lens,
             numGpu,
+            // Checked immediately above the launch; see the guard there.
             static_cast<uint32_t>(startNib),
             static_cast<uint32_t>(endNib),
             d_res

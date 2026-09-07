@@ -139,7 +139,7 @@ extern "C" void proof_slot_for_1_based_refuses_every_index_of_an_empty_container
 
 extern "C" void proof_slot_refutes_both_off_by_one_spellings()
 {
-	// src/cli_parser/cli_reader.cpp:172 gets this right -- `idx == 0 || idx >
+	// CLIReader's own string-heap read gets this right -- `idx == 0 || idx >
 	// typeDefNames_.size()`. The two spellings that get written instead are
 	// both refuted here, so neither can come back as a "simplification".
 	const std::uint64_t idx = nondet_u64();

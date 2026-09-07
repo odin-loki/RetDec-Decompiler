@@ -26,7 +26,7 @@
  *
  *   src/cli_parser/cli_heaps.cpp:83   utf16leToUtf8(const uint8_t*, size_t
  *       chars) -- no buffer size at all, the bound lives in the caller;
- *   src/cli_parser/cli_reader.cpp:776 the same decoder inlined with a
+ *   CLIReader::fieldConstantString  the same decoder inlined with a
  *       `i + 1 < blob.size()` convention instead of a unit count;
  *   src/utils/string.cpp:421          unicodeToAscii, a third convention.
  *

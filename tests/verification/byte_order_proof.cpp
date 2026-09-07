@@ -118,8 +118,9 @@ void fillNondet(std::uint8_t* buf, std::size_t len)
 // conservative -- refusing a read it could have served -- fails too.
 //
 // n ranges over 0..16, which covers the whole refused band. The site this
-// replaces, cli_reader.cpp:706, has no upper bound on n at all: its loop stops
-// at b.size() but the sign test that follows indexes b[n - 1] regardless.
+// replaces, CLIReader's readSignedLE, had no upper bound on n at all: its loop
+// stopped at b.size() but the sign test that followed indexed b[n - 1]
+// regardless.
 extern "C" void proof_read_le_accepts_exactly_the_reads_that_fit()
 {
 	std::uint8_t buf[kBufLen];
@@ -199,8 +200,8 @@ extern "C" void proof_a_refused_read_leaves_out_alone()
 //
 // There is no assertion for the property. The property IS the absence of an
 // array-bounds violation over every n in 0..16, every pos in the whole size_t
-// range, and every size in 0..8. cli_reader.cpp:706 fails this at n = 4,
-// size = 2 -- ESBMC reports the dereference at b[n - 1] = b[3].
+// range, and every size in 0..8. CLIReader's old readSignedLE failed this at
+// n = 4, size = 2 -- ESBMC reported the dereference at b[n - 1] = b[3].
 extern "C" void proof_reads_touch_no_byte_outside_an_exactly_sized_buffer()
 {
 	const std::size_t size = nondet_size();

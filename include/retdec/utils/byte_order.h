@@ -18,7 +18,7 @@
  *     while shifting by `b * 8` for b up to `argBits`, which the file supplies
  *     as three bits. argBits = 4 gives `uint32_t << 32`; argBits = 7 gives
  *     `uint32_t << 56`.
- *   - src/cli_parser/cli_reader.cpp:710 indexes `b[n - 1]` after a loop that
+ *   - CLIReader's readSignedLE indexed `b[n - 1]` after a loop that
  *     was careful to stop at `b.size()`. ESBMC returns n = 4, size = 2: the
  *     loop reads b[0] and b[1] and stops, then the sign test reads b[3], one
  *     past the end of a two-byte constant blob.

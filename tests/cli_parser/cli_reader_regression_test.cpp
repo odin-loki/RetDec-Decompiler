@@ -415,7 +415,7 @@ TEST(CLIReaderConstantTest, TheSyntheticAssemblyReachesTheConstantDecoder) {
     EXPECT_EQ(42, *f.constantIntValue);
 }
 
-// ─── cli_reader.cpp:776 — the UTF-16 surrogate pair ──────────────────────────
+// ─── fieldConstantString — the UTF-16 surrogate pair ─────────────────────────
 
 // The decoder took the three-byte `else` arm for every code unit at or above
 // 0x800, surrogates included. ESBMC's witness for the arm as written was
