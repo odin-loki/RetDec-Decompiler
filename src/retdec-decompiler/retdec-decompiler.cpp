@@ -1234,7 +1234,7 @@ int decompile(retdec::config::Config& config, ProgramOptions& po)
 		}
 		applyNativeOutputLanguage(lang);
 	}
-	return retdec::decompile(config);
+	return retdec::decompile(config) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 //

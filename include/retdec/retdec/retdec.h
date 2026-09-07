@@ -55,6 +55,11 @@ LlvmModuleContextPair disassemble(const std::string& inputPath, retdec::common::
  * Run a decompilation according to a \p config configuration.
  * If \p outString is set, decompilation output will be returned
  * in this string. Otherwise, output file is expected to be set in \p config.
+ *
+ * Returns true when the decompilation completed. Failures are reported by
+ * exception, so false is not currently returned from here; the value is still
+ * meaningful because parallelBatchDecompile() turns a thrown exception into
+ * false for that input.
  */
 bool decompile(retdec::config::Config& config, std::string* outString = nullptr);
 

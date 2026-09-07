@@ -1080,7 +1080,14 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 	}
 
 	maybeDumpProfileJson(config);
-	return EXIT_SUCCESS;
+	// true, not EXIT_SUCCESS. This function is declared bool, EXIT_SUCCESS is 0,
+	// and this is its only return -- so it reported failure on every successful
+	// run. parallelBatchDecompile() hands each element of its std::vector<bool>
+	// straight from here, which meant the batch API told every caller that every
+	// input had failed. The CLI happened to be unaffected because its own
+	// decompile() returns int and converted the false back to 0; that conversion
+	// is now explicit at the call site.
+	return true;
 }
 
 LlvmModuleContextPair decompileToLlvmIr(retdec::config::Config& config, const std::string& stopBeforePass)
