@@ -572,6 +572,61 @@ TEST_F(GpuScannerTests, SlashedJumpNibblesAreDontCares)
 	}
 }
 
+
+// batchMatchKernel loads each pattern into `__shared__ char sPat[4096]` with a
+// loop bounded only by the caller's pattern length, and the host chose the GPU
+// batch on whether a pattern contained '/' and nothing else. So a pattern
+// longer than 4096 nibbles went to the GPU and wrote past shared memory. The
+// window-length check inside the kernel (`patLen > endPos + 1`) runs after the
+// fill and would not have caught it.
+//
+// This is the predicate the host now asks. The kernel carries the same bound as
+// a second, uniform refusal; neither is reachable from a build without CUDA,
+// which is why the constant and the predicate live in the shared prologue
+// rather than beside the kernel -- so the host can ask the question the device
+// answers, and a test can ask it here.
+TEST(GpuScannerTests, PatternsTooLongForSharedMemoryDoNotTakeTheKernelPath)
+{
+	// Written against the literal 4096 rather than against kMaxPatternNibs.
+	// Phrasing the bounds in terms of the constant makes the test move with it:
+	// raising kMaxPatternNibs to 2^30 -- which is the regression this is here to
+	// catch, since sPat is still 4096 bytes -- kept every assertion true. The
+	// number below is the size of `__shared__ char sPat[MAX_PATTERN_NIBS]`, and
+	// that is the fact worth pinning.
+	EXPECT_EQ(gpuscan::kMaxPatternNibs, 4096u) << "this must stay equal to the size of batchMatchKernel's shared "
+												  "buffer; the kernel's MAX_PATTERN_NIBS is defined from it";
+
+	EXPECT_TRUE(gpuscan::fitsSharedPattern(1));
+	EXPECT_TRUE(gpuscan::fitsSharedPattern(4095));
+	EXPECT_TRUE(gpuscan::fitsSharedPattern(4096));
+
+	EXPECT_FALSE(gpuscan::fitsSharedPattern(4097));
+	EXPECT_FALSE(gpuscan::fitsSharedPattern(8192));
+	EXPECT_FALSE(gpuscan::fitsSharedPattern(SIZE_MAX));
+
+	// A zero-length pattern matches nothing and has nothing to load; the kernel
+	// returns on it too.
+	EXPECT_FALSE(gpuscan::fitsSharedPattern(0));
+}
+
+// The routing measures the pattern the kernel is actually given, which is the
+// string truncated at ';' -- not the raw one. A pattern that is over-long only
+// because of what follows the separator still belongs on the GPU.
+TEST(GpuScannerTests, TheLengthThatDecidesTheRouteIsTheOneTheKernelSees)
+{
+	const std::string tail(8192, 'f');
+
+	const std::string shortBeforeSeparator = std::string("deadbeef;") + tail;
+	const auto sep = shortBeforeSeparator.find(';');
+	ASSERT_NE(sep, std::string::npos);
+	EXPECT_TRUE(gpuscan::fitsSharedPattern(sep));
+
+	const std::string longBeforeSeparator = tail + ";deadbeef";
+	const auto sep2 = longBeforeSeparator.find(';');
+	ASSERT_NE(sep2, std::string::npos);
+	EXPECT_FALSE(gpuscan::fitsSharedPattern(sep2));
+}
+
 } // namespace tests
 } // namespace utils
 } // namespace retdec

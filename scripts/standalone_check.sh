@@ -636,7 +636,15 @@ for s in "${run_suites[@]}"; do
 			"$BUILD_DIR/obj/gtest_lite.o" $extraLibs \
 			-o "$bin" > "$bin.buildlog" 2>&1; then
 		bad "$s (build)"
-		head -25 "$bin.buildlog"
+		# The errors, then the head. `head -25` on its own put the first
+		# twenty-five lines on screen, and in a suite whose headers emit
+		# warnings those are twenty-five warnings and the error is not among
+		# them -- which is exactly what happened while adding a test to
+		# tests/utils: "suites passed: 0 / 1" with nothing on screen to say
+		# why. Both, because a link error has no "error:" in it.
+		grep -nE 'error|undefined reference|cannot find' "$bin.buildlog" | head -15
+		say "  --- first lines of $bin.buildlog ---"
+		head -15 "$bin.buildlog"
 		failed_suites+=("$s")
 		continue
 	fi

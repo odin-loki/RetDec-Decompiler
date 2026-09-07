@@ -260,6 +260,30 @@ inline bool fitsKernelWidth(std::size_t n) noexcept
 	return n <= static_cast<std::size_t>(UINT32_MAX);
 }
 
+/// Nibbles of pattern batchMatchKernel can hold in shared memory.
+///
+/// The kernel declares `__shared__ char sPat[MAX_PATTERN_NIBS]` and used to
+/// fill it with `for (i = threadIdx.x; i < patLen; i += MATCH_BLOCK)` -- no
+/// bound but patLen, which is the caller's pattern length. The host side chose
+/// the GPU batch on whether a pattern contained '/' and nothing else, so a
+/// pattern longer than this wrote past the end of shared memory. The
+/// window-length guard below it (`patLen > endPos + 1`) runs after the fill and
+/// would not have helped.
+///
+/// The constant lives here rather than beside the kernel so the host can ask
+/// the same question the device answers.
+constexpr std::size_t kMaxPatternNibs = 4096;
+
+/// True when a pattern is short enough for the shared-memory path.
+///
+/// Same shape as fitsKernelWidth: a pattern that does not fit takes the CPU
+/// path, which has no such limit -- slower and correct, which is the right way
+/// round.
+inline bool fitsSharedPattern(std::size_t patternNibs) noexcept
+{
+	return patternNibs != 0 && patternNibs <= kMaxPatternNibs;
+}
+
 /// The best match for one pattern over the nibble window [@p startNib,
 /// @p endNib].
 ///
@@ -403,7 +427,7 @@ struct GpuMatchResult
 };
 
 // Maximum pattern length handled in shared memory.
-static constexpr int MAX_PATTERN_NIBS = 4096;
+static constexpr int MAX_PATTERN_NIBS = static_cast<int>(::retdec::utils::gpuscan::kMaxPatternNibs);
 // Threads per block for match kernel.
 static constexpr int MATCH_BLOCK = 256;
 
@@ -425,6 +449,18 @@ __global__ void batchMatchKernel(
 	__shared__ char sPat[MAX_PATTERN_NIBS];
 	const uint32_t patLen = patLens[pid];
 	const char* pat = patterns + patOffsets[pid];
+
+	// Before the fill, not after. patLen is the caller's pattern length and
+	// sPat is MAX_PATTERN_NIBS bytes; the loop below had no bound but patLen.
+	// The host now routes an over-long pattern to the CPU path, so reaching
+	// this is a caller error rather than an input -- and the answer to a caller
+	// error is to leave the result as cudaMemset wrote it, which is
+	// GpuMatchResult's own "no match", not to write past shared memory.
+	//
+	// Block-uniform, like the `pid >= numPatterns` return above: every thread
+	// in the block reads the same patLen, so the __syncthreads() below are
+	// reached by all or none.
+	if (patLen > static_cast<uint32_t>(MAX_PATTERN_NIBS)) return;
 
 	for (uint32_t i = threadIdx.x; i < patLen; i += MATCH_BLOCK)
 	{
@@ -792,7 +828,15 @@ GpuScanner::batchMatch(const std::vector<std::string>& patterns, std::size_t sta
 	std::vector<std::size_t> gpuIdx, cpuIdx;
 	for (std::size_t i = 0; i < n; ++i)
 	{
-		if (patterns[i].find('/') != std::string::npos)
+		// '/' is a don't-care the kernel does not model, and a pattern longer
+		// than the kernel's shared-memory buffer does not fit it at all. The
+		// second test was missing, so an over-long pattern went to the GPU and
+		// overran __shared__ char sPat[kMaxPatternNibs]. The length measured
+		// here is the one the kernel is given below -- truncated at ';' -- not
+		// the raw string.
+		const auto sep = patterns[i].find(';');
+		const std::size_t effectiveLen = (sep != std::string::npos) ? sep : patterns[i].size();
+		if (patterns[i].find('/') != std::string::npos || !gpuscan::fitsSharedPattern(effectiveLen))
 			cpuIdx.push_back(i);
 		else
 			gpuIdx.push_back(i);
