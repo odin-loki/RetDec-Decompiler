@@ -21,6 +21,7 @@
 
 #include "retdec/sort_detect/sort_detect.h"
 #include "retdec/ssa/ssa.h"
+#include <algorithm>
 #include <memory>
 
 #include <gtest/gtest.h>

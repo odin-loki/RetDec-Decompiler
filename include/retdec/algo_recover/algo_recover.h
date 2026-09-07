@@ -95,8 +95,10 @@
 #ifndef RETDEC_ALGO_RECOVER_H
 #define RETDEC_ALGO_RECOVER_H
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <vector>

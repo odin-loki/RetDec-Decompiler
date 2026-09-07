@@ -29,6 +29,8 @@
 #include "retdec/sort_detect/sort_detect.h"
 #include "retdec/ssa/ssa.h"
 
+#include <algorithm>
+
 namespace retdec {
 namespace sort_detect {
 

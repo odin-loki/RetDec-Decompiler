@@ -19,6 +19,8 @@
 #include "retdec/serdes/type.h"
 #include "retdec/serdes/std.h"
 
+#include <algorithm>
+
 namespace {
 
 const std::string JSON_name = "name";

@@ -5,6 +5,8 @@
 
 #include "retdec/wasm_parser/wat_emitter.h"
 
+#include "retdec/utils/leb128.h"
+
 #include <cassert>
 #include <cctype>
 #include <cstdint>
@@ -69,37 +71,26 @@ std::string WatEmitter::constExprStr(const WasmModule& /*mod*/, const std::vecto
 	uint8_t op = expr[0];
 	switch (op)
 	{
+	// The four decoders that used to be written out here accumulated into a
+	// signed int and shifted without bounding the count, so a run of bytes with
+	// the continuation bit set is undefined behaviour twice over -- the shift
+	// overflows the signed range before the count ever reaches the width:
+	//
+	//   wat_emitter.cpp:72: runtime error: left shift of 127 by 28 places
+	//   cannot be represented in type 'int'
+	//
+	// retdec/utils/leb128.h accumulates unsigned, bounds both the shift and the
+	// cursor, and is proved over the whole domain by
+	// tests/verification/leb128_proof.cpp. A malformed expression now yields 0
+	// rather than a value built out of undefined behaviour.
 	case 0x41: { // i32.const
-		// read SLEB128
-		int32_t val = 0;
-		int shift = 0;
-		int i = 1;
-		uint8_t b;
-		do
-		{
-			if (i >= (int)expr.size()) break;
-			b = expr[i++];
-			val |= (int32_t)(b & 0x7F) << shift;
-			shift += 7;
-		}
-		while (b & 0x80);
-		if (shift < 32 && (b & 0x40)) val |= -(1 << shift);
+		const auto r = utils::leb128::decodeSigned(expr.data(), expr.size(), 1);
+		const int32_t val = r.ok ? static_cast<int32_t>(utils::leb128::toSigned(r.value)) : 0;
 		return "i32.const " + std::to_string(val);
 	}
 	case 0x42: { // i64.const
-		int64_t val = 0;
-		int shift = 0;
-		int i = 1;
-		uint8_t b;
-		do
-		{
-			if (i >= (int)expr.size()) break;
-			b = expr[i++];
-			val |= (int64_t)(b & 0x7F) << shift;
-			shift += 7;
-		}
-		while (b & 0x80);
-		if (shift < 64 && (b & 0x40)) val |= -(int64_t(1) << shift);
+		const auto r = utils::leb128::decodeSigned(expr.data(), expr.size(), 1);
+		const int64_t val = r.ok ? utils::leb128::toSigned(r.value) : 0;
 		return "i64.const " + std::to_string(val);
 	}
 	case 0x43: {
@@ -127,33 +118,13 @@ std::string WatEmitter::constExprStr(const WasmModule& /*mod*/, const std::vecto
 	case 0xD0: return "ref.null func";
 	case 0xD1: return "ref.null extern";
 	case 0xD2: { // ref.func idx
-		uint32_t idx = 0;
-		int i = 1;
-		int shift = 0;
-		uint8_t b;
-		do
-		{
-			if (i >= (int)expr.size()) break;
-			b = expr[i++];
-			idx |= (uint32_t)(b & 0x7F) << shift;
-			shift += 7;
-		}
-		while (b & 0x80);
+		const auto r = utils::leb128::decodeUnsigned(expr.data(), expr.size(), 1);
+		const uint32_t idx = r.ok ? static_cast<uint32_t>(r.value) : 0;
 		return "ref.func " + std::to_string(idx);
 	}
 	case 0x23: { // global.get
-		uint32_t idx = 0;
-		int i = 1;
-		int shift = 0;
-		uint8_t b;
-		do
-		{
-			if (i >= (int)expr.size()) break;
-			b = expr[i++];
-			idx |= (uint32_t)(b & 0x7F) << shift;
-			shift += 7;
-		}
-		while (b & 0x80);
+		const auto r = utils::leb128::decodeUnsigned(expr.data(), expr.size(), 1);
+		const uint32_t idx = r.ok ? static_cast<uint32_t>(r.value) : 0;
 		return "global.get " + std::to_string(idx);
 	}
 	default:

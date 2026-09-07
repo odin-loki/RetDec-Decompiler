@@ -31,10 +31,12 @@
  * loop pattern.
  */
 
+#include <algorithm>
 #include <memory>
 #include "retdec/algo_recover/algo_recover.h"
 #include "retdec/ssa/ssa.h"
 
+#include <numeric>
 #include <sstream>
 
 namespace retdec {

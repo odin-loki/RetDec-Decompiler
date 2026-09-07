@@ -414,7 +414,18 @@ TEST(LocalRebuilder, DescriptorDepthIsBoundedRatherThanRecursed)
 		const BcRefType& ref = std::get<BcRefType>(t.v);
 		if (ref.kind != BcRefKind::Array || !ref.elementType) break;
 		++dims;
-		t = *ref.elementType;
+		// `t = *ref.elementType` here is a use-after-free, and was one: ref is
+		// a reference into t, so assigning to t destroys the BcRefType holding
+		// the only shared_ptr to the node being copied from, and the variant's
+		// copy-assign then reads it back. ASan:
+		//
+		//   heap-use-after-free ... READ of size 4
+		//   #0 retdec::bc_module::BcRefType::operator=(BcRefType const&)
+		//   #11 retdec::bc_module::BcType::operator=(BcType const&)
+		//
+		// Take a strong reference to the child before letting go of the parent.
+		const std::shared_ptr<BcType> next = ref.elementType;
+		t = *next;
 	}
 	EXPECT_EQ(255u, dims);
 

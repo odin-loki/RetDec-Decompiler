@@ -1118,3 +1118,51 @@ int main(int argc, char** argv)
 	::testing::InitGoogleTest(&argc, argv);
 	return RUN_ALL_TESTS();
 }
+
+// ProtobufReader::readBytes guarded its length with `pos_ + len > size_`. len is
+// a 64-bit varint straight out of the @Metadata blob and readVarint returns
+// 0xFFFFFFFFFFFFFFFF for a run of continuation bytes, so with pos_ = 1 the sum
+// is 0, the guard passes, and the assign that follows copies 2^64-1 bytes.
+TEST(ProtobufReaderTest, ALengthWhoseSumWrapsIsRejected)
+{
+	// field 1, wire type 2 (length-delimited), then a varint length of
+	// 0xFFFFFFFFFFFFFFFF: nine 0xFF bytes and a terminating 0x01.
+	const std::string blob = std::string("\x0A", 1) + "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x01";
+
+	ProtobufReader r(blob);
+	ProtobufReader::Field f;
+	EXPECT_FALSE(r.readField(f));
+}
+
+// The ordinary contract still holds: a length that fits is read, one that runs
+// past the end is refused.
+TEST(ProtobufReaderTest, LengthDelimitedBoundsAreExact)
+{
+	{
+		const std::string blob = std::string("\x0A\x03", 2) + "abc";
+		ProtobufReader r(blob);
+		ProtobufReader::Field f;
+		ASSERT_TRUE(r.readField(f));
+		EXPECT_EQ(f.bytes, "abc");
+	}
+	{
+		const std::string blob = std::string("\x0A\x04", 2) + "abc";
+		ProtobufReader r(blob);
+		ProtobufReader::Field f;
+		EXPECT_FALSE(r.readField(f));
+	}
+}
+
+// The fixed-width arms carried the same shape of guard.
+TEST(ProtobufReaderTest, FixedWidthFieldsNeedTheirBytes)
+{
+	const std::string fixed32 = std::string("\x0D\x01\x02", 3); // wire type 5, 2 of 4 bytes
+	ProtobufReader r32(fixed32);
+	ProtobufReader::Field f32;
+	EXPECT_FALSE(r32.readField(f32));
+
+	const std::string fixed64 = std::string("\x09\x01\x02\x03", 4); // wire type 1, 3 of 8 bytes
+	ProtobufReader r64(fixed64);
+	ProtobufReader::Field f64;
+	EXPECT_FALSE(r64.readField(f64));
+}

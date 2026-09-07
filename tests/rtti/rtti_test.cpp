@@ -19,6 +19,7 @@
 #include <cstring>
 #include <vector>
 #include <string>
+#include <algorithm>
 
 #include <gtest/gtest.h>
 

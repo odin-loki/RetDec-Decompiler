@@ -17,9 +17,11 @@
 
 #include "retdec/algo_recover/algo_recover.h"
 #include "retdec/ssa/ssa.h"
+#include <algorithm>
 #include <memory>
 
 #include <gtest/gtest.h>
+#include <numeric>
 #include <string>
 
 using namespace retdec::algo_recover;

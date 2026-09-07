@@ -14,6 +14,7 @@
 #include "retdec/debug_info/dwarf_extractor.h"
 #include "retdec/debug_info/pdb_extractor.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -1602,4 +1603,38 @@ TEST(DebugGroundTruth, TypeNameAnonStruct)
 	s.kind = DebugTypeKind::Struct;
 	gdt.types[6] = s;
 	EXPECT_EQ(gdt.typeName(6), "struct <anon>");
+}
+
+// DebugLocEvaluator::readULEB128 and readSLEB128 had unbounded shifts: a DWARF
+// expression made of continuation bytes drove `shift` past the width of the
+// accumulator, which is undefined, and the signed one accumulated into an
+// int64_t, where the shift overflows the signed range sooner still. Both are
+// private statics, so this drives them through evaluate(), which is how a
+// DWARF expression out of a binary actually reaches them.
+TEST(DebugLocEvaluatorLeb128, ContinuationRunsDoNotShiftOutOfRange)
+{
+	// DW_OP_regx (0x90), DW_OP_fbreg (0x91), DW_OP_bregx (0x92) and
+	// DW_OP_plus_uconst (0x23) each read a LEB128 operand.
+	for (uint8_t op: {uint8_t(0x90), uint8_t(0x91), uint8_t(0x92), uint8_t(0x23)})
+	{
+		std::vector<uint8_t> expr;
+		expr.push_back(op);
+		for (int i = 0; i < 24; ++i)
+			expr.push_back(0xFF);
+
+		EXPECT_NO_THROW((void)DebugLocEvaluator::evaluate(expr.data(), expr.size()))
+			<< "opcode 0x" << std::hex << int(op);
+	}
+}
+
+// A run with no terminating byte must not leave the cursor inside it: the
+// evaluator has to stop, not carry on reading the rest of the run as opcodes.
+TEST(DebugLocEvaluatorLeb128, AnUnterminatedOperandStopsTheWalk)
+{
+	std::vector<uint8_t> expr;
+	expr.push_back(0x23); // DW_OP_plus_uconst
+	for (int i = 0; i < 64; ++i)
+		expr.push_back(0xFF);
+
+	EXPECT_NO_THROW((void)DebugLocEvaluator::evaluate(expr.data(), expr.size()));
 }

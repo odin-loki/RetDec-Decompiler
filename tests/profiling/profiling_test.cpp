@@ -10,6 +10,7 @@
 #include <thread>
 #include <string>
 #include <cstdio>
+#include <algorithm>
 
 using namespace retdec::profiling;
 

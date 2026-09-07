@@ -36,6 +36,7 @@
 #include "retdec/sort_detect/sort_detect.h"
 #include "retdec/ssa/ssa.h"
 
+#include <algorithm>
 #include <unordered_set>
 
 namespace retdec {

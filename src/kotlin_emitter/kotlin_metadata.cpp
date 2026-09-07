@@ -6,6 +6,8 @@
 #include <memory>
 #include "retdec/kotlin_emitter/kotlin_metadata.h"
 
+#include "retdec/utils/bounds.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cstring>
@@ -155,7 +157,17 @@ bool ProtobufReader::readBytes(std::string& out)
 {
 	uint64_t len;
 	if (!readVarint(len)) return false;
-	if (pos_ + len > size_) return false;
+	// `pos_ + len > size_` wraps. len is a 64-bit varint straight out of the
+	// file and readVarint will return 0xFFFFFFFFFFFFFFFF happily, so with
+	// pos_ = 1 the sum is 0, the guard passes, and the assign below copies
+	// 2^64-1 bytes from data_ + pos_.
+	//
+	// This is bounds::rangeFits(pos_, size_, len) written out rather than
+	// called, because that kernel takes std::size_t and len is 64-bit: casting
+	// it down first would truncate on a 32-bit build, which is the same class
+	// of mistake one width up. Comparing against the bytes that remain never
+	// forms a sum at any width.
+	if (pos_ > size_ || len > static_cast<uint64_t>(size_ - pos_)) return false;
 	out.assign(reinterpret_cast<const char*>(data_ + pos_), static_cast<size_t>(len));
 	pos_ += static_cast<size_t>(len);
 	return true;
@@ -183,14 +195,14 @@ bool ProtobufReader::readField(Field& out)
 	else if (out.wireType == 5)
 	{
 		// 32-bit (fixed32 / float) — skip
-		if (pos_ + 4 > size_) return false;
+		if (!retdec::utils::bounds::rangeFits(pos_, size_, 4)) return false;
 		pos_ += 4;
 		out.varint = 0;
 	}
 	else if (out.wireType == 1)
 	{
 		// 64-bit (fixed64 / double) — skip
-		if (pos_ + 8 > size_) return false;
+		if (!retdec::utils::bounds::rangeFits(pos_, size_, 8)) return false;
 		pos_ += 8;
 		out.varint = 0;
 	}

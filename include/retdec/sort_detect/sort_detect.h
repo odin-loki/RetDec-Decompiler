@@ -105,6 +105,7 @@
 #ifndef RETDEC_SORT_DETECT_H
 #define RETDEC_SORT_DETECT_H
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <optional>

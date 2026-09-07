@@ -56,6 +56,13 @@ jobs:
       - name: Every source a CMake target names exists
         run: bash scripts/check_cmake_sources.sh
 
+      # std::sort compiles without <algorithm> only where some other header
+      # happened to pull it in, which is a property of the standard library
+      # implementation. Two files in that state failed CI's clang++ the first
+      # time standalone-check ran on a working branch.
+      - name: No new file uses a std algorithm without including its header
+        run: bash scripts/check_std_includes.sh
+
       - name: CLI helper tests
         run: python scripts/python/test_retdec_cli.py
 

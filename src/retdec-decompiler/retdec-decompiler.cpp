@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <future>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <chrono>
@@ -1311,10 +1312,17 @@ int main(int argc, char** argv)
 		std::stringstream buffer;
 		if (config.parameters.isTimeout())
 		{
+			// A timed-out worker cannot be interrupted, only abandoned, so
+			// everything the timeout path will need has to be read before the
+			// thread starts. After it starts, config and po belong to it.
+			const auto timeoutSeconds = config.parameters.getTimeout();
+			const bool cleanupWanted = po.cleanup;
+			const std::set<std::string> toCleanAtLaunch = po.toClean;
+
 			std::packaged_task<int(retdec::config::Config&, ProgramOptions&)> task(decompile);
 			auto future = task.get_future();
 			std::thread thr(std::move(task), std::ref(config), std::ref(po));
-			auto timeout = std::chrono::seconds(config.parameters.getTimeout());
+			auto timeout = std::chrono::seconds(timeoutSeconds);
 			if (future.wait_for(timeout) != std::future_status::timeout)
 			{
 				thr.join();
@@ -1322,9 +1330,33 @@ int main(int argc, char** argv)
 			}
 			else
 			{
+				// This used to detach and then fall through to cleanup(po) and
+				// `return ret`, which destroyed config, po, the packaged_task
+				// and the future while the detached thread was still running
+				// decompile(config, po) against references to all four -- and
+				// cleanup() walks po.toClean, a std::set the worker inserts
+				// into during the unpacking stage.
+				//
+				// There is nothing left to join and nothing safe to destroy, so
+				// the process ends here rather than unwinding around a thread
+				// that is still working. std::_Exit runs no destructors and no
+				// atexit handlers, which is the point: every one of them would
+				// touch state that thread holds a reference to.
+				//
+				// The cost is that an intermediate file the worker registered
+				// after launch is not removed. Those are named from the output
+				// path, and a run that timed out has left partial output beside
+				// them anyway.
 				thr.detach(); // we leave the thread still running
-				Log::error() << "timeout after: " << config.parameters.getTimeout() << " seconds" << std::endl;
-				ret = EXIT_TIMEOUT;
+				Log::error() << "timeout after: " << timeoutSeconds << " seconds" << std::endl;
+				if (cleanupWanted)
+				{
+					for (const auto& p: toCleanAtLaunch)
+					{
+						remove(p.c_str());
+					}
+				}
+				std::_Exit(EXIT_TIMEOUT);
 			}
 		}
 		else

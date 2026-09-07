@@ -8,6 +8,7 @@
 #include "retdec/rtti/watcom_rtti.h"
 #include "retdec/rtti/symbian_rtti.h"
 
+#include <algorithm>
 #include <cstring>
 #include <vector>
 #include <gtest/gtest.h>

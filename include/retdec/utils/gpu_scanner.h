@@ -22,6 +22,7 @@
 #ifndef RETDEC_UTILS_GPU_SCANNER_H
 #define RETDEC_UTILS_GPU_SCANNER_H
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>

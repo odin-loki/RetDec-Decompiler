@@ -28,6 +28,7 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include <algorithm>
 
 #include <zlib.h>
 

@@ -831,3 +831,53 @@ TEST(WasmLeb128, NameSectionContinuationRunIsBounded)
 	WasmReader reader(mod.data(), mod.size());
 	EXPECT_NO_THROW((void)reader.read());
 }
+
+// The emitter had four more hand-rolled LEB128 readers, in
+// WatEmitter::constExprStr -- i32.const, i64.const, ref.func and global.get.
+// The two signed ones accumulated into an int, so a run of continuation bytes
+// overflowed the signed range before the shift count ever became the problem:
+//
+//   src/wasm_parser/wat_emitter.cpp:72: runtime error: left shift of 127 by 28
+//   places cannot be represented in type 'int'
+//
+// constExprStr is private, so this drives it through emit() with a module built
+// by hand -- which is also the reachable path, since the init expression of a
+// global comes straight from the file.
+TEST(WatEmitterLeb128, ConstExpressionsSurviveAContinuationRun)
+{
+	for (uint8_t op: {uint8_t(0x41), uint8_t(0x42), uint8_t(0xD2), uint8_t(0x23)})
+	{
+		WasmModule mod;
+
+		WasmGlobal g;
+		g.initExpr.push_back(op);
+		for (int i = 0; i < 12; ++i)
+			g.initExpr.push_back(0xFF);
+		g.initExpr.push_back(0x00);
+		mod.globals.push_back(g);
+
+		DataSegment d;
+		d.offsetExpr = g.initExpr;
+		mod.dataSegments.push_back(d);
+
+		WatEmitter em;
+		EXPECT_NO_THROW((void)em.emit(mod)) << "opcode 0x" << std::hex << int(op);
+	}
+}
+
+// And a run long enough that the encoding cannot denote a 64-bit value at all
+// is rejected rather than silently truncated to whatever fitted.
+TEST(WatEmitterLeb128, AnOverlongConstExpressionDoesNotProduceAValue)
+{
+	WasmModule mod;
+	WasmGlobal g;
+	g.initExpr.push_back(0x41);
+	for (int i = 0; i < 20; ++i)
+		g.initExpr.push_back(0xFF);
+	g.initExpr.push_back(0x7F);
+	mod.globals.push_back(g);
+
+	WatEmitter em;
+	const auto res = em.emit(mod);
+	EXPECT_NE(res.source.find("i32.const 0"), std::string::npos) << res.source;
+}

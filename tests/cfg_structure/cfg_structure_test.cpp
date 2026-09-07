@@ -15,6 +15,7 @@
 #include "retdec/ssa/ssa.h"
 
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <memory>
 
 using namespace retdec::cfg_structure;

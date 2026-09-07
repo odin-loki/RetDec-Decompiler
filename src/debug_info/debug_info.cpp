@@ -5,6 +5,8 @@
 
 #include "retdec/debug_info/debug_info.h"
 
+#include "retdec/utils/leb128.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cstring>
@@ -97,36 +99,43 @@ std::vector<const InlinedSite*> DebugGroundTruth::inlinedAt(uint64_t pc) const
 
 // ─── DebugLocEvaluator ────────────────────────────────────────────────────────
 
+// Both readers used to be written out here with an unbounded shift: a DWARF
+// expression made of bytes with the continuation bit set drives `shift` past
+// the width of the accumulator, and `x << shift` with `shift >= width` is
+// undefined. The signed one was undefined sooner still, because it accumulated
+// into an int64_t, where the shift overflows the signed range long before the
+// count becomes the problem. retdec/utils/leb128.h bounds both the shift and
+// the cursor, accumulates unsigned and sign-extends at the end, and is proved
+// over the whole domain by tests/verification/leb128_proof.cpp.
+//
+// The cursor contract is kept: p advances by the bytes consumed. A malformed
+// encoding -- truncated, or longer than a 64-bit value can be -- consumes the
+// rest of the expression, so a caller's loop still terminates and cannot go on
+// reading from the middle of a run it did not understand.
 uint64_t DebugLocEvaluator::readULEB128(const uint8_t*& p, const uint8_t* end) noexcept
 {
-	uint64_t result = 0;
-	unsigned shift = 0;
-	while (p < end)
+	if (p == nullptr || end == nullptr || p >= end) return 0;
+	const auto r = utils::leb128::decodeUnsigned(p, static_cast<std::size_t>(end - p), 0);
+	if (!r.ok)
 	{
-		uint8_t b = *p++;
-		result |= static_cast<uint64_t>(b & 0x7F) << shift;
-		shift += 7;
-		if (!(b & 0x80)) break;
+		p = end;
+		return 0;
 	}
-	return result;
+	p += r.bytesRead;
+	return r.value;
 }
 
 int64_t DebugLocEvaluator::readSLEB128(const uint8_t*& p, const uint8_t* end) noexcept
 {
-	int64_t result = 0;
-	unsigned shift = 0;
-	uint8_t b = 0;
-	while (p < end)
+	if (p == nullptr || end == nullptr || p >= end) return 0;
+	const auto r = utils::leb128::decodeSigned(p, static_cast<std::size_t>(end - p), 0);
+	if (!r.ok)
 	{
-		b = *p++;
-		result |= static_cast<int64_t>(b & 0x7F) << shift;
-		shift += 7;
-		if (!(b & 0x80)) break;
+		p = end;
+		return 0;
 	}
-	// Sign-extend if the last byte has its sign bit set and we haven't
-	// filled all 64 bits yet.
-	if (shift < 64 && (b & 0x40)) result |= -(int64_t(1) << shift);
-	return result;
+	p += r.bytesRead;
+	return utils::leb128::toSigned(r.value);
 }
 
 // DWARF opcode constants (subset we evaluate)

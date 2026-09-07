@@ -34,6 +34,9 @@
 #include "retdec/algo_recover/algo_recover.h"
 #include "retdec/ssa/ssa.h"
 
+#include <algorithm>
+#include <numeric>
+
 namespace retdec {
 namespace algo_recover {
 
