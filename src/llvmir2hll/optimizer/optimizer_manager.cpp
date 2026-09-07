@@ -269,9 +269,14 @@ void OptimizerManager::optimize(ShPtr<Module> m)
 	// wouldn't be initializers.
 	run<VarDefForLoopOptimizer>(m);
 	run<VarDefStmtOptimizer>(m, va);
-	// NoInitVarDefOptimizer removes VarDefStmt nodes that have no initializer
-	// and whose variable is not used after the declaration (dead declarations
-	// left behind after VarDefStmtOptimizer moved the real defs to their uses).
+	// NoInitVarDefOptimizer removes every VarDefStmt that has no initializer.
+	// It does not check whether the variable is used afterwards -- this comment
+	// used to say it did, and the pass has no such check in it. What makes the
+	// removal safe is the ordering: VarDefStmtOptimizer above has already moved
+	// each definition down to its first use and given it an initializer there,
+	// so a definition still without one by this point has no use to be moved
+	// to. The C writer emits declarations only from VarDefStmt, so the argument
+	// has to come from the ordering; there is nowhere else for it to come from.
 	run<NoInitVarDefOptimizer>(m);
 
 	run<EmptyStmtOptimizer>(m);
