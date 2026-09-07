@@ -56,6 +56,15 @@ static bool inBounds(size_t off, size_t len, size_t fileSize)
 	return off < fileSize && len <= fileSize - off;
 }
 
+// The same test for offsets and lengths that came out of the file as 64-bit
+// fields. Casting those down to size_t before calling inBounds() is wrong twice
+// over: it truncates on a 32-bit build, and it invites `off + len <= fileSize`
+// at the call site, which wraps. Nothing here forms the sum.
+static bool inBounds64(uint64_t off, uint64_t len, uint64_t fileSize)
+{
+	return off < fileSize && len <= fileSize - off;
+}
+
 // ─── Plausibility checks ─────────────────────────────────────────────────────
 
 static constexpr uint32_t kMaxSaneSecCount = 9999;
@@ -233,7 +242,11 @@ static FormatResult parseELF(const uint8_t* data, size_t size, bool is64, bool i
 		{
 			uint64_t sh_off = is64 ? u64(data + sidx_off + 24) : u32(data + sidx_off + 16);
 			uint64_t sh_size = is64 ? u64(data + sidx_off + 32) : u32(data + sidx_off + 20);
-			if (sh_off + sh_size <= size)
+			// `sh_off + sh_size <= size` wraps: both are 64-bit fields read
+			// straight out of the file, so sh_off = 2^64 - 0x100 with sh_size =
+			// 0x100 sums to 0 and passes, leaving shstr_data a wild pointer that
+			// safeStr() then walks.
+			if (inBounds64(sh_off, sh_size, size))
 			{
 				shstr_data = data + sh_off;
 				shstr_size = static_cast<size_t>(sh_size);
@@ -482,7 +495,11 @@ static FormatResult parsePE(const uint8_t* data, size_t size, const std::string&
 
 	// Optional header
 	const uint8_t* opt = pe + 24;
-	if (size < e_lfanew + 24 + opt_size)
+	// `size < e_lfanew + 24 + opt_size` is 32-bit arithmetic -- e_lfanew is a
+	// uint32_t -- so on a file past 4 GiB the sum wraps and the guard passes.
+	// inBounds widens both to size_t and never forms the sum.
+	const size_t opt_off = static_cast<size_t>(e_lfanew) + 24;
+	if (!inBounds(opt_off, opt_size, size))
 	{
 		res.format = DetectedFormat::Unknown;
 		return res;
@@ -498,6 +515,23 @@ static FormatResult parsePE(const uint8_t* data, size_t size, const std::string&
 	bool is32 = (magic == 0x010B);
 	if (!is64 && !is32)
 	{
+		res.format = DetectedFormat::Unknown;
+		return res;
+	}
+
+	// Everything below reads the optional header at fixed offsets:
+	// AddressOfEntryPoint at 16, ImageBase at 24 (PE32+) or 28 (PE32),
+	// SizeOfImage at 56 and NumberOfRvaAndSizes at 92..95. SizeOfOptionalHeader
+	// is a uint16 out of the file and the only thing checked so far is that it
+	// is at least 2, so a header declaring 2 sent every one of those reads past
+	// the end of the buffer -- 94 bytes past it for a file that ends after the
+	// magic. Both PE32 and PE32+ put the last of those fields at 92, so 96 is
+	// the smallest optional header these reads are defined for; a real image
+	// declares 224 or 240.
+	static const uint16_t kMinOptHeaderRead = 96;
+	if (opt_size < kMinOptHeaderRead)
+	{
+		res.corruption.sectionOffsetsInvalid = true;
 		res.format = DetectedFormat::Unknown;
 		return res;
 	}
@@ -817,6 +851,14 @@ static FormatResult parseMachO(const uint8_t* data, size_t size, const std::stri
 		uint32_t cmd = u32(data + cmd_off);
 		uint32_t cmdsize = u32(data + cmd_off + 4);
 		if (cmdsize < 8) break;
+		// cmdsize is the file's claim about the command, not a fact about the
+		// buffer, and only the first 8 bytes have been checked. Every arm below
+		// reads at offsets it justifies with `cmdsize >= N` alone: LC_MAIN reads
+		// cmd_off+8..15 on `cmdsize >= 16`, and LC_LOAD_DYLIB hands safeStr a
+		// cmdsize that can be 4 GiB. A command that does not fit in what is left
+		// of the file is malformed, and so is everything the walk would reach
+		// after it, because cmd_off advances by cmdsize.
+		if (!inBounds(cmd_off, cmdsize, size)) break;
 
 		// LC_SEGMENT (0x1) or LC_SEGMENT_64 (0x19)
 		if (cmd == 0x1 || cmd == 0x19)

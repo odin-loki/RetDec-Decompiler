@@ -86,6 +86,13 @@ readonly TARGETS=(
 	# fuzzing. fuzz_pe.cpp does not cover it: that harness drives
 	# retdec::fileformat, which publicly links LLVM. PeLib itself does not.
 	"pelib:fuzz_pelib:pelib utils:17:-lz:tests/managed_integration/fixtures/pe/*"
+	# The signature-lattice parser is the decompiler's first read of an
+	# untrusted file, and it is the only translation unit under src/fileformat
+	# that does not link LLVM -- so fuzz_pe.cpp, which drives the LLVM-backed
+	# fileformat, has never covered it. The module path is a subdirectory
+	# rather than a top-level module for exactly that reason: src/fileformat/
+	# as a whole does not build here, src/fileformat/lattice/ does.
+	"lattice:fuzz_lattice:fileformat/lattice:17::tests/managed_integration/fixtures/pe/*"
 )
 
 # Malformed fixtures make excellent seeds: they already sit on the error paths.
