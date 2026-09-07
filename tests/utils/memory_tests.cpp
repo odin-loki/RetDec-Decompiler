@@ -12,6 +12,36 @@
 
 using namespace ::testing;
 
+/// True when this translation unit was built with a sanitizer that reserves a
+/// large virtual mapping up front.
+///
+/// AddressSanitizer maps roughly 20 TB of shadow at startup, and its allocator
+/// keeps mmap'ing as the process runs. Every test below sets RLIMIT_AS to the
+/// machine's PHYSICAL memory, which is four orders of magnitude smaller, so the
+/// next allocation ASan attempts fails and the process dies with
+///
+///   ERROR: AddressSanitizer failed to allocate 0x1f000 bytes ... (errno: 12)
+///
+/// The failure surfaces in whatever test runs next -- it appeared as
+/// StringTests.TrimNothingToTrim, because string_tests.cpp links after this
+/// file -- which is why it read as a flaky sanitizer rather than as this.
+/// Measured: the same 87 MB binary runs 298 tests to a clean exit under
+/// --gtest_filter='*-MemoryTests.*'.
+///
+/// So the whole utils suite was un-sanitizable, and the ASan/UBSan gate that
+/// every fix in this tree is supposed to pass could not be run on it at all.
+/// The tests are skipped rather than deleted: what they check is real on an
+/// ordinary build, and it is the interaction with the sanitizer's own
+/// reservation that is not.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+	#define RETDEC_TESTS_RLIMIT_IS_UNSAFE 1
+#elif defined(__has_feature)
+	#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) \
+			|| __has_feature(memory_sanitizer)
+		#define RETDEC_TESTS_RLIMIT_IS_UNSAFE 1
+	#endif
+#endif
+
 namespace retdec {
 namespace utils {
 namespace tests {
@@ -22,13 +52,22 @@ namespace tests {
 class MemoryTests: public Test {
 protected:
 	virtual void SetUp() override {
+#ifdef RETDEC_TESTS_RLIMIT_IS_UNSAFE
+		GTEST_SKIP() << "capping RLIMIT_AS at physical memory makes the "
+		                "sanitizer's own mmap fail; see the note at the top of "
+		                "this file";
+#endif
 		// Several tests have side effects, so we need to store the original
 		// total memory so we can restore it after each test.
 		totalSystemMemory = getTotalSystemMemory();
 	}
 
 	virtual void TearDown() override {
+#ifdef RETDEC_TESTS_RLIMIT_IS_UNSAFE
+		return;
+#else
 		limitSystemMemory(totalSystemMemory);
+#endif
 	}
 
 private:
