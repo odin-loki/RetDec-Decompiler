@@ -17,6 +17,7 @@
 #include "retdec/dex_parser/dex_lifter.h"
 #include "retdec/bc_module/bc_instr.h"
 #include "retdec/utils/bounds.h"
+#include "retdec/utils/byte_order.h"
 #include "retdec/utils/scan_cursor.h"
 
 #include <algorithm>
@@ -28,6 +29,28 @@ namespace retdec {
 namespace dex_parser {
 
 using namespace bc_module;
+
+/// Two's-complement reading of the low @p bits bits of a Dalvik operand.
+///
+/// Dalvik carries its signed operands -- branch offsets, /lit8 and /lit16
+/// literals, the const forms -- inside unsigned code units, so recovering one
+/// means reinterpreting a fixed-width bit pattern as signed.
+/// `static_cast<int16_t>(w)` does that only by implementation-defined
+/// behaviour: converting an unsigned value above INT16_MAX to a signed type is
+/// implementation-defined in C++17, and where a shift followed the conversion
+/// -- as it did in the const/4 arm, `static_cast<int8_t>(vB << 4) >> 4` -- the
+/// result was also a right shift of a negative value, implementation-defined in
+/// every standard. This is the same defect dex_class_parser.cpp's
+/// signExtendEncoded had, and it takes the same cure: byteorder::signExtendFrom
+/// fills in unsigned arithmetic and converts once, at the end, through
+/// leb128::toSigned, which is total.
+///
+/// The result is int64_t because every Dalvik signed operand fits in one and
+/// the widening is where the value is used anyway; a caller storing a narrower
+/// operand converts back explicitly, which is in range by construction.
+static int64_t sext(uint64_t v, unsigned bits) {
+    return utils::byteorder::signExtendFrom(v, bits);
+}
 
 // ─── Dalvik opcode constants ─────────────────────────────────────────────────
 
@@ -217,9 +240,8 @@ static std::vector<uint32_t> switchTargets(const std::vector<uint16_t>& insns,
     if (!utils::bounds::rangeFits(off, total, 3))
         return targets;
 
-    const int32_t rel = static_cast<int32_t>(
-        static_cast<uint32_t>(insns[off + 1]) |
-        (static_cast<uint32_t>(insns[off + 2]) << 16));
+    const int64_t rel = sext(static_cast<uint32_t>(insns[off + 1]) |
+                             (static_cast<uint32_t>(insns[off + 2]) << 16), 32);
     const int64_t payloadOff = static_cast<int64_t>(off) + rel;
     if (payloadOff < 0 || static_cast<uint64_t>(payloadOff) >= total)
         return targets;
@@ -246,9 +268,8 @@ static std::vector<uint32_t> switchTargets(const std::vector<uint16_t>& insns,
     targets.reserve(count);
     for (size_t i = 0; i < count; ++i) {
         const size_t t = firstTarget + i * 2;
-        const int32_t delta = static_cast<int32_t>(
-            static_cast<uint32_t>(insns[t]) |
-            (static_cast<uint32_t>(insns[t + 1]) << 16));
+        const int64_t delta = sext(static_cast<uint32_t>(insns[t]) |
+                                   (static_cast<uint32_t>(insns[t + 1]) << 16), 32);
         const int64_t target = static_cast<int64_t>(off) + delta;
         if (target >= 0 && static_cast<uint64_t>(target) < total)
             targets.push_back(static_cast<uint32_t>(target));
@@ -480,24 +501,23 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const {
 
         switch (op) {
             case OP_GOTO: {
-                int8_t offset = static_cast<int8_t>(insns[off] >> 8);
-                uint32_t target = static_cast<uint32_t>(static_cast<int32_t>(off) + offset);
+                const int64_t offset = sext((insns[off] >> 8) & 0xFF, 8);
+                uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
                 leaders.insert(target);
                 leaders.insert(off + sz);
                 break;
             }
             case OP_GOTO_16: {
-                int16_t offset = static_cast<int16_t>(unit(1));
-                uint32_t target = static_cast<uint32_t>(static_cast<int32_t>(off) + offset);
+                const int64_t offset = sext(unit(1), 16);
+                uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
                 leaders.insert(target);
                 leaders.insert(off + sz);
                 break;
             }
             case OP_GOTO_32: {
-                int32_t offset = static_cast<int32_t>(
-                    static_cast<uint32_t>(unit(1)) |
-                    (static_cast<uint32_t>(unit(2)) << 16));
-                uint32_t target = static_cast<uint32_t>(static_cast<int32_t>(off) + offset);
+                const int64_t offset = sext(static_cast<uint32_t>(unit(1)) |
+                                            (static_cast<uint32_t>(unit(2)) << 16), 32);
+                uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
                 leaders.insert(target);
                 leaders.insert(off + sz);
                 break;
@@ -506,8 +526,8 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const {
             case OP_IF_GE: case OP_IF_GT: case OP_IF_LE:
             case OP_IF_EQZ: case OP_IF_NEZ: case OP_IF_LTZ:
             case OP_IF_GEZ: case OP_IF_GTZ: case OP_IF_LEZ: {
-                int16_t offset = static_cast<int16_t>(unit(1));
-                uint32_t target = static_cast<uint32_t>(static_cast<int32_t>(off) + offset);
+                const int64_t offset = sext(unit(1), 16);
+                uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
                 leaders.insert(target);
                 leaders.insert(off + sz);
                 break;
@@ -810,53 +830,49 @@ uint32_t DexLifter::decodeInsn(BcBasicBlock& blk,
         case OP_CONST_4:
             insn.opcode = BcOpcode::DALVIK_CONST;
             vA = highA(w0); vB = highB(w0);
-            insn.operands = { makeReg(vA),
-                              makeInt(static_cast<int64_t>(static_cast<int8_t>(vB << 4) >> 4)) };
+            // const/4 carries a 4-bit signed literal in the B nibble, so vB is
+            // 0..15 and the value it denotes is -8..7.
+            insn.operands = { makeReg(vA), makeInt(sext(vB, 4)) };
             break;
         case OP_CONST_16:
             insn.opcode = BcOpcode::DALVIK_CONST;
             insn.operands = { makeReg((w0 >> 8) & 0xFF),
-                              makeInt(static_cast<int64_t>(static_cast<int16_t>(w(1)))) };
+                              makeInt(sext(w(1), 16)) };
             break;
         case OP_CONST:
             insn.opcode = BcOpcode::DALVIK_CONST;
             insn.operands = { makeReg((w0 >> 8) & 0xFF),
-                              makeInt(static_cast<int64_t>(static_cast<int32_t>(
-                                  static_cast<uint32_t>(w(1)) |
-                                  (static_cast<uint32_t>(w(2)) << 16)))) };
+                              makeInt(sext(static_cast<uint32_t>(w(1)) |
+                                           (static_cast<uint32_t>(w(2)) << 16), 32)) };
             sz = 3; break;
         case OP_CONST_HIGH16:
             insn.opcode = BcOpcode::DALVIK_CONST;
             insn.operands = { makeReg((w0 >> 8) & 0xFF),
-                              makeInt(static_cast<int64_t>(static_cast<int32_t>(
-                                  static_cast<uint32_t>(w(1)) << 16))) };
+                              makeInt(sext(static_cast<uint32_t>(w(1)) << 16, 32)) };
             break;
         case OP_CONST_WIDE_16:
             insn.opcode = BcOpcode::DALVIK_CONST_WIDE;
             insn.operands = { makeReg((w0 >> 8) & 0xFF),
-                              makeInt(static_cast<int64_t>(static_cast<int16_t>(w(1)))) };
+                              makeInt(sext(w(1), 16)) };
             break;
         case OP_CONST_WIDE_32:
             insn.opcode = BcOpcode::DALVIK_CONST_WIDE;
             insn.operands = { makeReg((w0 >> 8) & 0xFF),
-                              makeInt(static_cast<int64_t>(static_cast<int32_t>(
-                                  static_cast<uint32_t>(w(1)) |
-                                  (static_cast<uint32_t>(w(2)) << 16)))) };
+                              makeInt(sext(static_cast<uint32_t>(w(1)) |
+                                           (static_cast<uint32_t>(w(2)) << 16), 32)) };
             sz = 3; break;
         case OP_CONST_WIDE:
             insn.opcode = BcOpcode::DALVIK_CONST_WIDE;
             insn.operands = { makeReg((w0 >> 8) & 0xFF),
-                              makeInt(static_cast<int64_t>(
-                                  static_cast<uint64_t>(w(1)) |
-                                  (static_cast<uint64_t>(w(2)) << 16) |
-                                  (static_cast<uint64_t>(w(3)) << 32) |
-                                  (static_cast<uint64_t>(w(4)) << 48))) };
+                              makeInt(sext(static_cast<uint64_t>(w(1)) |
+                                           (static_cast<uint64_t>(w(2)) << 16) |
+                                           (static_cast<uint64_t>(w(3)) << 32) |
+                                           (static_cast<uint64_t>(w(4)) << 48), 64)) };
             sz = 5; break;
         case OP_CONST_WIDE_H16:
             insn.opcode = BcOpcode::DALVIK_CONST_WIDE;
             insn.operands = { makeReg((w0 >> 8) & 0xFF),
-                              makeInt(static_cast<int64_t>(
-                                  static_cast<uint64_t>(w(1)) << 48)) };
+                              makeInt(sext(static_cast<uint64_t>(w(1)) << 48, 64)) };
             break;
 
         // ── CONST_STRING ──────────────────────────────────────────────────────
@@ -934,9 +950,8 @@ uint32_t DexLifter::decodeInsn(BcBasicBlock& blk,
         case OP_FILL_ARRAY_DATA:
             insn.opcode = BcOpcode::DALVIK_FILL_ARRAY_DATA;
             insn.operands = { makeReg((w0 >> 8) & 0xFF),
-                              makeInt(static_cast<int32_t>(
-                                  static_cast<uint32_t>(w(1)) |
-                                  (static_cast<uint32_t>(w(2)) << 16))) };
+                              makeInt(sext(static_cast<uint32_t>(w(1)) |
+                                           (static_cast<uint32_t>(w(2)) << 16), 32)) };
             sz = 3; break;
 
         // ── THROW / GOTO ──────────────────────────────────────────────────────
@@ -947,26 +962,25 @@ uint32_t DexLifter::decodeInsn(BcBasicBlock& blk,
         case OP_GOTO:
             insn.opcode = BcOpcode::DALVIK_GOTO;
             {
-                int8_t offset = static_cast<int8_t>(w0 >> 8);
-                uint32_t target = static_cast<uint32_t>(static_cast<int32_t>(off) + offset);
+                const int64_t offset = sext((w0 >> 8) & 0xFF, 8);
+                uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
                 insn.operands = { makeBlock(static_cast<uint32_t>(target)) };
             }
             break;
         case OP_GOTO_16:
             insn.opcode = BcOpcode::DALVIK_GOTO;
             {
-                int16_t offset = static_cast<int16_t>(w(1));
-                uint32_t target = static_cast<uint32_t>(static_cast<int32_t>(off) + offset);
+                const int64_t offset = sext(w(1), 16);
+                uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
                 insn.operands = { makeBlock(static_cast<uint32_t>(target)) };
             }
             break;
         case OP_GOTO_32:
             insn.opcode = BcOpcode::DALVIK_GOTO;
             {
-                int32_t offset = static_cast<int32_t>(
-                    static_cast<uint32_t>(w(1)) |
-                    (static_cast<uint32_t>(w(2)) << 16));
-                uint32_t target = static_cast<uint32_t>(static_cast<int32_t>(off) + offset);
+                const int64_t offset = sext(static_cast<uint32_t>(w(1)) |
+                                            (static_cast<uint32_t>(w(2)) << 16), 32);
+                uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
                 insn.operands = { makeBlock(static_cast<uint32_t>(target)) };
                 sz = 3;
             }
@@ -976,9 +990,8 @@ uint32_t DexLifter::decodeInsn(BcBasicBlock& blk,
         case OP_PACKED_SWITCH: case OP_SPARSE_SWITCH:
             insn.opcode = BcOpcode::DALVIK_SWITCH;
             insn.operands = { makeReg((w0 >> 8) & 0xFF),
-                              makeInt(static_cast<int32_t>(
-                                  static_cast<uint32_t>(w(1)) |
-                                  (static_cast<uint32_t>(w(2)) << 16))) };
+                              makeInt(sext(static_cast<uint32_t>(w(1)) |
+                                           (static_cast<uint32_t>(w(2)) << 16), 32)) };
             // The case targets follow the payload offset as block operands, so
             // that buildBlocks wires an edge to each of them the same way it
             // does for a goto or an if.
@@ -999,8 +1012,8 @@ uint32_t DexLifter::decodeInsn(BcBasicBlock& blk,
         case OP_IF_GE: case OP_IF_GT: case OP_IF_LE: {
             insn.opcode = BcOpcode::DALVIK_IF;
             vA = highA(w0); vB = highB(w0);
-            int16_t offset = static_cast<int16_t>(w(1));
-            uint32_t target = static_cast<uint32_t>(static_cast<int32_t>(off) + offset);
+            const int64_t offset = sext(w(1), 16);
+            uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
             insn.operands = { makeReg(vA), makeReg(vB), makeInt(op),
                               makeBlock(static_cast<uint32_t>(target)) };
             break;
@@ -1009,8 +1022,8 @@ uint32_t DexLifter::decodeInsn(BcBasicBlock& blk,
         case OP_IF_GEZ: case OP_IF_GTZ: case OP_IF_LEZ: {
             insn.opcode = BcOpcode::DALVIK_IF_Z;
             vA = (w0 >> 8) & 0xFF;
-            int16_t offset = static_cast<int16_t>(w(1));
-            uint32_t target = static_cast<uint32_t>(static_cast<int32_t>(off) + offset);
+            const int64_t offset = sext(w(1), 16);
+            uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
             insn.operands = { makeReg(vA), makeInt(op),
                               makeBlock(static_cast<uint32_t>(target)) };
             break;
@@ -1320,63 +1333,63 @@ uint32_t DexLifter::decodeInsn(BcBasicBlock& blk,
 
         // ── LIT16 forms (22s): vA = vB op lit ─────────────────────────────────
         case OP_ADD_INT_LIT16: insn.opcode=BcOpcode::DALVIK_ADD_INT;
-            vA=highA(w0); vB=highB(w0); litC=static_cast<int16_t>(w(1));
+            vA=highA(w0); vB=highB(w0); litC=static_cast<int32_t>(sext(w(1), 16));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_RSUB_INT: insn.opcode=BcOpcode::DALVIK_RSUB_INT;
-            vA=highA(w0); vB=highB(w0); litC=static_cast<int16_t>(w(1));
+            vA=highA(w0); vB=highB(w0); litC=static_cast<int32_t>(sext(w(1), 16));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_MUL_INT_LIT16: insn.opcode=BcOpcode::DALVIK_MUL_INT;
-            vA=highA(w0); vB=highB(w0); litC=static_cast<int16_t>(w(1));
+            vA=highA(w0); vB=highB(w0); litC=static_cast<int32_t>(sext(w(1), 16));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_DIV_INT_LIT16: insn.opcode=BcOpcode::DALVIK_DIV_INT;
-            vA=highA(w0); vB=highB(w0); litC=static_cast<int16_t>(w(1));
+            vA=highA(w0); vB=highB(w0); litC=static_cast<int32_t>(sext(w(1), 16));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_REM_INT_LIT16: insn.opcode=BcOpcode::DALVIK_REM_INT;
-            vA=highA(w0); vB=highB(w0); litC=static_cast<int16_t>(w(1));
+            vA=highA(w0); vB=highB(w0); litC=static_cast<int32_t>(sext(w(1), 16));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_AND_INT_LIT16: insn.opcode=BcOpcode::DALVIK_AND_INT;
-            vA=highA(w0); vB=highB(w0); litC=static_cast<int16_t>(w(1));
+            vA=highA(w0); vB=highB(w0); litC=static_cast<int32_t>(sext(w(1), 16));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_OR_INT_LIT16:  insn.opcode=BcOpcode::DALVIK_OR_INT;
-            vA=highA(w0); vB=highB(w0); litC=static_cast<int16_t>(w(1));
+            vA=highA(w0); vB=highB(w0); litC=static_cast<int32_t>(sext(w(1), 16));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_XOR_INT_LIT16: insn.opcode=BcOpcode::DALVIK_XOR_INT;
-            vA=highA(w0); vB=highB(w0); litC=static_cast<int16_t>(w(1));
+            vA=highA(w0); vB=highB(w0); litC=static_cast<int32_t>(sext(w(1), 16));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
 
         // ── LIT8 forms (22b): vAA = vBB op lit ────────────────────────────────
         case OP_ADD_INT_LIT8: insn.opcode=BcOpcode::DALVIK_ADD_INT;
-            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int8_t>((w(1)>>8)&0xFF);
+            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int32_t>(sext((w(1)>>8)&0xFF, 8));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_RSUB_INT_LIT8: insn.opcode=BcOpcode::DALVIK_RSUB_INT;
-            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int8_t>((w(1)>>8)&0xFF);
+            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int32_t>(sext((w(1)>>8)&0xFF, 8));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_MUL_INT_LIT8: insn.opcode=BcOpcode::DALVIK_MUL_INT;
-            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int8_t>((w(1)>>8)&0xFF);
+            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int32_t>(sext((w(1)>>8)&0xFF, 8));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_DIV_INT_LIT8: insn.opcode=BcOpcode::DALVIK_DIV_INT;
-            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int8_t>((w(1)>>8)&0xFF);
+            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int32_t>(sext((w(1)>>8)&0xFF, 8));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_REM_INT_LIT8: insn.opcode=BcOpcode::DALVIK_REM_INT;
-            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int8_t>((w(1)>>8)&0xFF);
+            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int32_t>(sext((w(1)>>8)&0xFF, 8));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_AND_INT_LIT8: insn.opcode=BcOpcode::DALVIK_AND_INT;
-            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int8_t>((w(1)>>8)&0xFF);
+            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int32_t>(sext((w(1)>>8)&0xFF, 8));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_OR_INT_LIT8:  insn.opcode=BcOpcode::DALVIK_OR_INT;
-            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int8_t>((w(1)>>8)&0xFF);
+            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int32_t>(sext((w(1)>>8)&0xFF, 8));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_XOR_INT_LIT8: insn.opcode=BcOpcode::DALVIK_XOR_INT;
-            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int8_t>((w(1)>>8)&0xFF);
+            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int32_t>(sext((w(1)>>8)&0xFF, 8));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_SHL_INT_LIT8: insn.opcode=BcOpcode::DALVIK_SHL_INT;
-            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int8_t>((w(1)>>8)&0xFF);
+            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int32_t>(sext((w(1)>>8)&0xFF, 8));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_SHR_INT_LIT8: insn.opcode=BcOpcode::DALVIK_SHR_INT;
-            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int8_t>((w(1)>>8)&0xFF);
+            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int32_t>(sext((w(1)>>8)&0xFF, 8));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
         case OP_USHR_INT_LIT8:insn.opcode=BcOpcode::DALVIK_USHR_INT;
-            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int8_t>((w(1)>>8)&0xFF);
+            vA=(w0>>8)&0xFF; vB=w(1)&0xFF; litC=static_cast<int32_t>(sext((w(1)>>8)&0xFF, 8));
             insn.operands={makeReg(vA),makeReg(vB),makeInt(litC)}; break;
 
         // ── CONST_METHOD_HANDLE / CONST_METHOD_TYPE (DEX 038+) ───────────────

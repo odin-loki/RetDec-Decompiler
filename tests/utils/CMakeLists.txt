@@ -9,6 +9,7 @@ add_executable(tests-utils
 	conversion_tests.cpp
 	equality_tests.cpp
 	filter_iterator_tests.cpp
+	gtest_shim_conformance_tests.cpp
 	gpu_scanner_tests.cpp
 	math_tests.cpp
 	memory_tests.cpp

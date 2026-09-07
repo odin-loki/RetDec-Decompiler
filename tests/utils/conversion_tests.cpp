@@ -11,6 +11,32 @@
 
 #include "retdec/utils/conversion.h"
 
+/**
+* @brief Make UndefinedBehaviorSanitizer stop the run at the first diagnostic.
+*
+* UBSan's default is to print a "runtime error:" line and CARRY ON, so a build
+* with -fsanitize=undefined still exits 0 and the suite still reports green
+* while the diagnostic scrolls past. That is exactly what happened to the
+* BytesToBitsRendersSignedBytesWithTheTopBitSet regression below: the shift of
+* a negative value it exists to rule out produces the same digits on x86, so
+* the ONLY thing that distinguishes the fixed body from the broken one is the
+* sanitizer diagnostic, and a diagnostic nothing fails on is not a test.
+*
+* __ubsan_default_options is the runtime's own documented hook, weak-linked and
+* only consulted when the UBSan runtime is present -- in a build without
+* -fsanitize=undefined this function is simply never called. halt_on_error=1
+* makes the first diagnostic abort with a non-zero exit, which is what turns
+* the sanitizer run into a gate instead of a log.
+*
+* It lives here, in the file whose regression depends on it, rather than in the
+* harness: the harness cannot know that a suite has a test whose only evidence
+* is a sanitizer report.
+*/
+extern "C" const char* __ubsan_default_options()
+{
+	return "halt_on_error=1";
+}
+
 using namespace ::testing;
 
 namespace retdec {
@@ -209,6 +235,72 @@ double10ToDouble8Success) {
 	double10ToDouble8(dest, src);
 
 	EXPECT_TRUE(dest == ok);
+}
+
+// --- double10ToDouble8 will not read a datum that is not there ---
+//
+// The decoder subscripts src at 1 and at 7, 8 and 9 unconditionally, and at
+// 2..7 in the fraction loop, so it needs ten elements. Nothing checked that,
+// and this is public API declared in include/retdec/utils/conversion.h with no
+// precondition a caller could have read. On a four-byte src ASan reports
+// "heap-buffer-overflow ... READ of size 1 ... in
+// retdec::utils::double10ToDouble8", five bytes past a four-byte region; with
+// no sanitizer it reads whatever is there and returns eight bytes of answer
+// that look exactly like a successful conversion.
+//
+// An empty dest is the refusal, and it is distinguishable from every success:
+// a conversion that happens always resizes dest to eight bytes.
+
+TEST_F(ConversionTests, Double10ToDouble8RefusesAnInputShorterThanTenBytes)
+{
+	std::vector<unsigned char> dest;
+	const std::vector<unsigned char> shortSrc = {0x01, 0x02, 0x03, 0x04};
+	double10ToDouble8(dest, shortSrc);
+	EXPECT_TRUE(dest.empty());
+
+	// Nine is the first length that is not enough, and it is the one a caller
+	// is most likely to reach by an off-by-one.
+	const std::vector<unsigned char> nine(9, 0x00);
+	double10ToDouble8(dest, nine);
+	EXPECT_TRUE(dest.empty());
+}
+
+// Deliberately a test of its own, and deliberately after the one above: an
+// empty vector has a null data() pointer, so with the length check gone this
+// case does not merely read the wrong bytes, it faults. Keeping it separate
+// means the two short-but-allocated cases above have already been reported by
+// the time that happens.
+TEST_F(ConversionTests, Double10ToDouble8RefusesAnEmptyInput)
+{
+	std::vector<unsigned char> dest;
+	const std::vector<unsigned char> empty;
+	double10ToDouble8(dest, empty);
+	EXPECT_TRUE(dest.empty());
+}
+
+TEST_F(ConversionTests, Double10ToDouble8StillConvertsTenBytesAndMore)
+{
+	// Exactly ten: the 80-bit encoding of 3.789 and its 64-bit answer.
+	std::vector<unsigned char> dest;
+	const std::vector<unsigned char> src = {
+			0x60, 0xe5, 0xd0, 0x22, 0xdb, 0xf9, 0x7e, 0xf2, 0x00, 0x40};
+	const std::vector<unsigned char> ok = {
+			0x1c, 0x5a, 0x64, 0x3b, 0xdf, 0x4f, 0x0e, 0x40};
+	double10ToDouble8(dest, src);
+	EXPECT_EQ(ok, dest);
+
+	// More than ten is accepted; only the first ten bytes are read, so the
+	// answer is the same one.
+	std::vector<unsigned char> longer = src;
+	longer.insert(longer.end(), 6, 0xFF);
+	double10ToDouble8(dest, longer);
+	EXPECT_EQ(ok, dest);
+
+	// An all-zero datum is +0.0, and its eight zero bytes are a SUCCESS that a
+	// caller must be able to tell from the empty refusal above.
+	const std::vector<unsigned char> zero(10, 0x00);
+	double10ToDouble8(dest, zero);
+	EXPECT_EQ(std::vector<unsigned char>(8, 0x00), dest);
 }
 
 //

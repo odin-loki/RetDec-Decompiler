@@ -13,8 +13,16 @@
  * class holding one field that carries one Constant row. The only thing that
  * varies between tests is the ElementType byte and the constant blob.
  *
- * Every test was watched failing against the code as it stood before the fix
- * beside it, and each names the ESBMC witness it encodes.
+ * Not every test here is a replay of a defect, and each one says which it is
+ * rather than leaving the reader to assume. Watched failing against the code
+ * as it stood before the fix beside them: the three surrogate string tests;
+ * the Char test; the Char rows above U+7FFF and the Boolean rows above 0x7F in
+ * FixedWidthConstantsKeepTheirValues; and all ten rows of
+ * TruncatedFixedWidthConstantYieldsNoValue. Not watched failing, because no
+ * failing input exists on a little-endian host: the two float tests, whose
+ * defect is a byte order this host cannot distinguish. Nor the remaining
+ * fixed-width rows, which pin values a fix was not supposed to change. The
+ * comment above each test says which of those it is.
  */
 
 #include "retdec/cli_parser/cli_reader.h"
@@ -352,9 +360,29 @@ std::string nameOf(ElementType t) {
     case ElementType::U4:      return "U4";
     case ElementType::I8:      return "I8";
     case ElementType::U8:      return "U8";
+    case ElementType::R4:      return "R4";
+    case ElementType::R8:      return "R8";
     case ElementType::String:  return "String";
     default:                   return "other";
     }
+}
+
+/// The float / double carrying @p bits as its IEEE-754 pattern.
+///
+/// The pattern is a host-order integer here and stays one: these two say
+/// "the value whose bits are 0x3F800000", which is a statement about the
+/// pattern, not about any byte order. The byte order under test is applied
+/// separately, by writing the pattern into the #Blob with putU32 / putU64,
+/// which spell little-endian explicitly.
+float floatFromBits(uint32_t bits) {
+    float f = 0;
+    std::memcpy(&f, &bits, sizeof f);
+    return f;
+}
+double doubleFromBits(uint64_t bits) {
+    double d = 0;
+    std::memcpy(&d, &bits, sizeof d);
+    return d;
 }
 
 /// The bytes of a string as a printable hex run, so a failure names them.
@@ -468,14 +496,28 @@ TEST(CLIReaderConstantTest, StringConstantNonSurrogatesAreUnchanged) {
     }
 }
 
-// ─── cli_reader.cpp:706 — readSignedLE, routed through byte_order.h ──────────
+// ─── fieldConstantInt — readSignedLE / readUnsignedLE ────────────────────────
 //
-// The ESBMC witness for readSignedLE (blen = 1, n = 4, sign test reads b[3])
-// is not reachable through this entry point: every arm of the switch pre-checks
-// `blob.size() >= n` before it calls. These tests are therefore not a
-// counterexample replay; they pin the values across the move onto
-// byteorder::readLE + signExtendFrom, at both signs and at every width the
-// format defines, so that the routing cannot quietly change an answer.
+// What each of the two tests below is worth, stated so neither is mistaken for
+// the other:
+//
+// FixedWidthConstantsKeepTheirValues pins the value each ElementType decodes
+// to, at both signs and at every width ECMA-335 II.23.1.16 defines. Two of its
+// arms are a wrong-value replay and the rest are characterization: the Char
+// rows at 0xFFFF and 0x8000 fail against the arm as it stood, which
+// sign-extended a UTF-16 code unit, and so do the Boolean rows at 0x80 and
+// 0xFF, which used to share I1's sign-extending arm. The rest pin values that
+// the move onto byteorder::readLE was not supposed to change, and did not.
+//
+// TruncatedFixedWidthConstantYieldsNoValue is a replay of the ESBMC witness
+// for the hand-rolled readSignedLE -- a blob shorter than n, whose sign test
+// then read b[n - 1] past the end. That witness used to be unreachable from
+// here because every arm pre-checked `blob.size() >= n` before calling, which
+// is exactly what made the test vacuous: it exercised the call site's guard,
+// not the kernel's. The arms no longer pre-check -- byteorder::readLE owns the
+// bound now -- so the short blobs below reach the read, and restoring the
+// hand-rolled accumulate makes every one of the ten rows report a value it
+// assembled without the bytes to assemble it from.
 
 TEST(CLIReaderConstantTest, FixedWidthConstantsKeepTheirValues) {
     struct Case { ElementType ty; std::vector<uint8_t> blob; int64_t expected; };
@@ -484,7 +526,12 @@ TEST(CLIReaderConstantTest, FixedWidthConstantsKeepTheirValues) {
         {ElementType::I2, {0xFF, 0xFF}, -1},
         {ElementType::I2, {0x00, 0x80}, -32768},
         {ElementType::U2, {0xFF, 0xFF}, 65535},
+        // Char reads the same two bytes UNSIGNED -- see
+        // CharConstantIsAnUnsignedCodeUnit below for why 0x41 alone would not
+        // have shown which of the two readings this arm takes.
         {ElementType::Char, {0x41, 0x00}, 65},
+        {ElementType::Char, {0xFF, 0xFF}, 65535},
+        {ElementType::Char, {0x00, 0x80}, 32768},
         // I4 / U4.
         {ElementType::I4, {0xFF, 0xFF, 0xFF, 0xFF}, -1},
         {ElementType::I4, {0x00, 0x00, 0x00, 0x80}, INT32_MIN},
@@ -495,10 +542,17 @@ TEST(CLIReaderConstantTest, FixedWidthConstantsKeepTheirValues) {
          {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, -1},
         {ElementType::I8,
          {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80}, INT64_MIN},
-        // One-byte types, which never went through readSignedLE.
+        // One-byte types. I1 is the only signed one: U1 is unsigned by
+        // ECMA-335 II.23.1.16, and bool is listed with the unsigned built-ins
+        // in I.12.1. Boolean used to share I1's sign-extending arm, so the
+        // 0xFF row below reported -1 for a constant whose type has no negative
+        // value; 0x80 is the lowest byte at which the two readings differ.
         {ElementType::I1, {0x80}, -128},
         {ElementType::U1, {0x80}, 128},
+        {ElementType::Boolean, {0x00}, 0},
         {ElementType::Boolean, {0x01}, 1},
+        {ElementType::Boolean, {0x80}, 128},
+        {ElementType::Boolean, {0xFF}, 255},
     };
     for (const auto& c : cases) {
         BcField f;
@@ -511,18 +565,161 @@ TEST(CLIReaderConstantTest, FixedWidthConstantsKeepTheirValues) {
     }
 }
 
+// ─── fieldConstantInt, the Char arm — signed vs unsigned extension ───────────
+
+// ELEMENT_TYPE_CHAR is a UTF-16 code unit (ECMA-335 II.23.1.16): two bytes,
+// UNSIGNED. It used to share the `case ElementType::I2:` arm, which
+// sign-extends, so every code unit at or above U+8000 decoded negative --
+// `const char c = '\uFFFF';` came back as -1 rather than 65535.
+//
+// {Char, {0x41, 0x00}, 65} was Char's only row until this test was added, and
+// it could not have seen the defect: U+0041 is ASCII, and below U+8000 the
+// signed and unsigned readings of the same two bytes are equal. Three of the
+// four rows here are at or above U+8000, which is the only region where the
+// two readings differ at all; the fourth is below it, to pin that the change
+// left that region alone.
+TEST(CLIReaderConstantTest, CharConstantIsAnUnsignedCodeUnit) {
+    struct Case { std::vector<uint8_t> blob; int64_t expected; const char* what; };
+    const Case cases[] = {
+        {{0x00, 0x80}, 32768, "U+8000, the lowest unit with the top bit set"},
+        {{0xFF, 0xFF}, 65535, "U+FFFF, the highest UTF-16 code unit"},
+        {{0x3D, 0xD8}, 55357, "U+D83D, a lone high surrogate is still a unit"},
+        {{0xAC, 0x20}, 8364,  "U+20AC, below the sign bit: unchanged"},
+    };
+    for (const auto& c : cases) {
+        BcField f;
+        std::string why;
+        ASSERT_TRUE(readTheOnlyField(
+            buildAssemblyWithConstant(ElementType::Char, c.blob), f, why))
+            << c.what << ": " << why;
+        ASSERT_TRUE(f.constantIntValue.has_value()) << c.what;
+        EXPECT_EQ(c.expected, *f.constantIntValue)
+            << c.what << " -- a Char is unsigned, so no #Blob code unit "
+            << "decodes negative";
+        EXPECT_GE(*f.constantIntValue, 0) << c.what;
+    }
+}
+
+// ─── fieldConstantFloat — the R4 and R8 arms ─────────────────────────────────
+//
+// HONEST LABEL, because it matters for what these are worth: the defect they
+// guard is a host-endian read of a little-endian datum, and it cannot be
+// observed on a little-endian host. Restoring the
+// `std::memcpy(&f, blob.data(), 4)` these arms used to be leaves every row
+// below passing on x86-64; it fails them on a big-endian host, which is the
+// whole content of the bug. So this is a characterization test with a stated
+// blind spot, not a counterexample replay.
+//
+// What it does pin, on every host: the #Blob spelling is little-endian
+// (ECMA-335 II.22.9) -- the pattern goes in through putU32/putU64, which shift
+// explicitly -- and the value that comes back is the float carrying exactly
+// that pattern. The two are stated separately so neither can absorb an error
+// in the other.
+TEST(CLIReaderConstantTest, FloatConstantsAreReadLittleEndian) {
+    struct Case { uint32_t bits; const char* what; };
+    const Case r4[] = {
+        {0x3F800000u, "1.0f"},
+        {0xBF800000u, "-1.0f"},
+        {0x40490FDBu, "float pi"},
+        // Every byte distinct, so a swapped read cannot coincide with a
+        // correct one; and the pattern read backwards (0x44332211) is a
+        // perfectly ordinary float, so a wrong answer would not look wrong.
+        {0x11223344u, "0x11223344, a pattern with four distinct bytes"},
+        // 0x00000001 read backwards is 0x01000000: a denormal 1.4e-45 against
+        // a normal 2.35e-38.
+        {0x00000001u, "the smallest positive denormal"},
+        {0x00000000u, "+0.0f"},
+    };
+    for (const auto& c : r4) {
+        std::vector<uint8_t> blob;
+        putU32(blob, c.bits);  // ECMA-335 II.22.9: little-endian in the #Blob.
+        BcField f;
+        std::string why;
+        ASSERT_TRUE(readTheOnlyField(
+            buildAssemblyWithConstant(ElementType::R4, blob), f, why))
+            << c.what << ": " << why;
+        ASSERT_TRUE(f.constantFltValue.has_value()) << c.what;
+        EXPECT_EQ(static_cast<double>(floatFromBits(c.bits)), *f.constantFltValue)
+            << c.what << ": R4 blob holds the four bytes of " << std::hex
+            << c.bits << " little-endian";
+        // An R4 is not an integer constant; the int decoder must decline it.
+        EXPECT_FALSE(f.constantIntValue.has_value()) << c.what;
+    }
+
+    struct Case8 { uint64_t bits; const char* what; };
+    const Case8 r8[] = {
+        {0x3FF0000000000000ull, "1.0"},
+        {0xBFF0000000000000ull, "-1.0"},
+        {0x400921FB54442D18ull, "double pi"},
+        {0x0102030405060708ull, "eight distinct bytes"},
+        {0x0000000000000001ull, "the smallest positive denormal"},
+    };
+    for (const auto& c : r8) {
+        std::vector<uint8_t> blob;
+        putU64(blob, c.bits);
+        BcField f;
+        std::string why;
+        ASSERT_TRUE(readTheOnlyField(
+            buildAssemblyWithConstant(ElementType::R8, blob), f, why))
+            << c.what << ": " << why;
+        ASSERT_TRUE(f.constantFltValue.has_value()) << c.what;
+        EXPECT_EQ(doubleFromBits(c.bits), *f.constantFltValue)
+            << c.what << ": R8 blob holds the eight bytes of " << std::hex
+            << c.bits << " little-endian";
+        EXPECT_FALSE(f.constantIntValue.has_value()) << c.what;
+    }
+}
+
+// A float constant shorter than the width its ElementType names carries no
+// value. The refusal is byteorder::readLE's now -- rangeFits(0, size, n) --
+// rather than a `blob.size() >= 4` spelled at the arm, so this pins that the
+// move did not widen what the decoder accepts.
+TEST(CLIReaderConstantTest, TruncatedFloatConstantYieldsNoValue) {
+    struct Case { ElementType ty; std::vector<uint8_t> blob; };
+    const Case cases[] = {
+        {ElementType::R4, {}},
+        {ElementType::R4, {0x00}},
+        {ElementType::R4, {0x00, 0x00, 0x80}},
+        {ElementType::R8, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0}},
+    };
+    for (const auto& c : cases) {
+        BcField f;
+        std::string why;
+        ASSERT_TRUE(readTheOnlyField(buildAssemblyWithConstant(c.ty, c.blob), f,
+                                     why))
+            << nameOf(c.ty) << ": " << why;
+        EXPECT_FALSE(f.constantFltValue.has_value())
+            << nameOf(c.ty) << " decoded a value from " << c.blob.size()
+            << " bytes";
+    }
+}
+
 // A blob shorter than the width its ElementType names carries no constant. The
 // answer has to be "no value", not a value assembled from whatever bytes were
-// there -- and, with the read now inside byteorder::readLE, the refusal is the
-// kernel's rather than a repeated `blob.size() >= n` at each arm.
+// there -- and the refusal is byteorder::readLE's, since the arms no longer
+// carry a `blob.size() >= n` of their own. Every row here decodes a value
+// against the hand-rolled accumulate that preceded the kernel routing, so the
+// test fails when that routing is undone instead of passing either way.
 TEST(CLIReaderConstantTest, TruncatedFixedWidthConstantYieldsNoValue) {
     struct Case { ElementType ty; std::vector<uint8_t> blob; };
     const Case cases[] = {
+        // The one-byte types against a zero-length blob: the arm has no byte
+        // to read and must say so rather than read one.
+        {ElementType::Boolean, {}},
+        {ElementType::I1, {}},
+        {ElementType::U1, {}},
+        // Two, four and eight bytes short by one or more. The 1-byte blob at
+        // I2 is the shape of the ESBMC witness for the hand-rolled
+        // readSignedLE: the accumulate stopped at b.size() and the sign test
+        // that followed it did not, so it indexed b[n - 1] past the end and
+        // returned a value assembled from bytes it never had.
         {ElementType::I2, {0x01}},
         {ElementType::U2, {0x01}},
+        {ElementType::Char, {0x01}},
         {ElementType::I4, {0x01, 0x02, 0x03}},
         {ElementType::U4, {0x01, 0x02, 0x03}},
         {ElementType::I8, {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07}},
+        {ElementType::U8, {0x01}},
     };
     for (const auto& c : cases) {
         BcField f;

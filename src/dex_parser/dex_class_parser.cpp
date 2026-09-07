@@ -140,9 +140,12 @@ static void applyEncodedValue(BcField& field, DexReader& br, const DexFile& dex)
         break;
     }
     case 0x11: {
-        // The same shortening rule for VALUE_DOUBLE: the one-byte encoding of
-        // 1.0 (0x3FF0000000000000) is the single byte 0x3F, and assembling it
-        // at the low end gives 63, a denormal of about 3.1e-322.
+        // The same shortening rule for VALUE_DOUBLE. 1.0 is
+        // 0x3FF0000000000000, whose little-endian bytes are
+        // 00 00 00 00 00 00 F0 3F, so dropping the low-order zero bytes leaves
+        // the TWO bytes F0 3F (value_arg 1) -- not one: a lone 0x3F would mean
+        // the pattern 0x3F00000000000000, about 3.05e-5. Assembling F0 3F at
+        // the low end gives 0x3FF0, a denormal of about 8.09e-320.
         const unsigned kDoubleBytes = sizeof(double);
         const unsigned supplied = nbytes > kDoubleBytes ? kDoubleBytes : nbytes;
         const uint64_t raw = readEncodedBits(br, static_cast<uint8_t>(supplied));
@@ -251,7 +254,29 @@ BcAccess DexClassParser::convertAccessFlags(uint32_t flags) const {
 
 // ─── DEX descriptor → BcType ─────────────────────────────────────────────────
 
-BcType DexClassParser::descriptorToType(const std::string& desc) const {
+/// Deepest array nesting a type descriptor may declare before the descriptor is
+/// treated as malformed.
+///
+/// The bound exists for the same reason kMaxEncodedValueDepth above does: the
+/// descriptor comes straight out of the string table, so its shape is the
+/// file's to choose, and one array level costs one '[' on the wire. Without a
+/// bound a field whose type is a long run of '[' asks for one nested BcType per
+/// bracket -- and, when the walk recurses, one stack frame per bracket. A
+/// descriptor of 100000 brackets, which is a 100 KB file, was measured to
+/// SIGSEGV at the -O1 the standalone build uses. No bound derived from the file
+/// size helps, because the file is what supplies the brackets.
+///
+/// 255 is chosen rather than invented: JVMS 4.4.1 says an array type descriptor
+/// is valid only if it represents 255 or fewer dimensions, and DEX
+/// TypeDescriptors are the Java ones. Real code does not come near it. Like
+/// kMaxEncodedValueDepth this is enforced as parser policy: the answer for a
+/// deeper descriptor is the same "this descriptor names no type I know" the
+/// default arm below already gives.
+static constexpr size_t kMaxArrayDimensions = 255;
+
+/// The non-array part of a descriptor: everything descriptorToType understands
+/// once the leading '[' run has been counted off.
+static BcType elementDescriptorToType(const std::string& desc) {
     if (desc.empty()) return types::Void();
     switch (desc[0]) {
         case 'V': return types::Void();
@@ -263,13 +288,6 @@ BcType DexClassParser::descriptorToType(const std::string& desc) const {
         case 'J': return types::Long();
         case 'F': return types::Float();
         case 'D': return types::Double();
-        case '[': {
-            std::string elem = desc.substr(1);
-            BcRefType ref;
-            ref.kind = BcRefKind::Array;
-            ref.elementType = std::make_shared<BcType>(descriptorToType(elem));
-            return BcType{ref};
-        }
         case 'L': {
             // Ldot/class/name; → dot.class.name
             std::string cls = desc.substr(1);
@@ -285,6 +303,30 @@ BcType DexClassParser::descriptorToType(const std::string& desc) const {
         default:
             return types::Void();
     }
+}
+
+BcType DexClassParser::descriptorToType(const std::string& desc) const {
+    // The '[' arm used to recurse on desc.substr(1), so the recursion depth was
+    // the number of leading brackets the file asked for. Counting them here and
+    // building the nest with a loop means the only depth left in this function
+    // is the one kMaxArrayDimensions bounds -- and that bound is applied before
+    // a single node is allocated, so an over-deep descriptor costs nothing to
+    // refuse. The nest is still built innermost-first, so the result for a
+    // descriptor within the bound is the same type the recursion produced.
+    size_t dims = 0;
+    while (dims < desc.size() && desc[dims] == '[')
+        ++dims;
+    if (dims > kMaxArrayDimensions)
+        return types::Void();
+
+    BcType type = elementDescriptorToType(desc.substr(dims));
+    for (size_t i = 0; i < dims; ++i) {
+        BcRefType ref;
+        ref.kind = BcRefKind::Array;
+        ref.elementType = std::make_shared<BcType>(std::move(type));
+        type = BcType{ref};
+    }
+    return type;
 }
 
 // ─── Helper: convert DEX class descriptor to dotted name ────────────────────

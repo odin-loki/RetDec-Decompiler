@@ -332,6 +332,28 @@ template<typename N> void bytesToString(
 	bytesToString(bytes.data(), bytes.size(), result, offset, size);
 }
 
+/// Bytes in the 80-bit extended-precision datum @c double10ToDouble8 decodes.
+///
+/// Named rather than written as a literal 10 because it is a precondition the
+/// caller has to check too: ByteValueStorage::get10Byte asks its format for
+/// this many bytes and ByteValueStorage::get10ByteImpl refuses anything else.
+constexpr std::size_t kExtendedBytes = 10;
+
+/**
+ * @brief Convert an 80-bit extended-precision datum to a 64-bit double.
+ *
+ * @param[out] dest The eight bytes of the double, or EMPTY when @a src is
+ *             shorter than @c kExtendedBytes.
+ * @param[in] src The ten bytes of the extended-precision datum. A shorter
+ *            vector is refused: the decoder subscripts src at 1 and at 7, 8
+ *            and 9, so on anything shorter it reads past the end -- ASan
+ *            reports a heap-buffer-overflow READ five bytes past a four-byte
+ *            region. A longer vector is accepted and only its first ten bytes
+ *            are read.
+ *
+ * An empty @a dest is the refusal, and it is distinguishable from every
+ * success: a successful conversion always resizes @a dest to eight bytes.
+ */
 void double10ToDouble8(std::vector<unsigned char> &dest,
 	const std::vector<unsigned char> &src);
 

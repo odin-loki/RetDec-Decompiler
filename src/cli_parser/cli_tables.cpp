@@ -101,15 +101,64 @@ uint32_t MetadataTables::RowReader::codedIdx(
     return wide ? u32() : u16();
 }
 
+// Split a coded index into the table its tag selects and the row index above
+// that tag, exactly as ECMA-335 II.24.2.6 defines it.
+//
+// This used to be written out inside RowReader::codedToken as
+//
+//     uint32_t tag = raw & ((1u << tagBits) - 1);
+//     uint32_t idx = raw >> tagBits;
+//
+// which is the same undefined shift on the same uint8_t tagBits that codedIdx
+// above was changed to avoid -- and RowReader::codedToken, which is where it
+// was written, is codedIdx's only caller. The left operand of each shift is a
+// 32-bit unsigned int, so a tagBits of 32 or more is undefined behaviour rather
+// than a wrong threshold: g++ -fsanitize=undefined on those two expressions at
+// the same tagBits = 65 that ESBMC produced for codedIdx reports "shift
+// exponent 65 is too large for 32-bit type 'unsigned int'" for each. Without a
+// sanitizer nothing says so -- an emitted x86-64 shift takes its count modulo
+// 32, so tagBits = 65 masks and shifts by 1, and constant folding gives a
+// different wrong answer again -- and either way a token comes back naming a
+// table and a row for a width that has no meaning.
+//
+// idxmap::splitTag is the same split with that width refused, and it takes the
+// mask from leb128::maskFrom rather than from a second shift, so the mask and
+// the shift cannot drift apart and drop an index bit. idxmap::tagIndexes is the
+// only path from the tag to a subscript of @p tableIds; a 3-bit tag admits 8
+// values and kCustomAttrType has 5 entries, so that pairing is checked here
+// rather than trusted.
+//
+// It is a free function with external linkage, not a member and not static,
+// because RowReader is a private nested type of MetadataTables: no test can
+// name it, and every one of decodeRow's nineteen codedToken calls passes a
+// literal tagBits of 1, 2, 3 or 5, so nothing that goes through them can reach
+// the width that goes wrong. tests/cli_parser/cli_heaps_regression_test.cpp
+// declares this signature and calls it directly.
+MetadataToken splitCodedToken(
+        uint32_t raw, const uint8_t* tableIds, size_t count, unsigned tagBits) {
+    MetadataToken tok;
+    // 0xFF is what this decoder has always returned for a tag with no entry in
+    // @p tableIds; index 0 is the null row, so tok.valid() is false. A refused
+    // split leaves both, which is the one shape no caller can mistake for a
+    // decoded token.
+    tok.table = 0xFF;
+    tok.index = 0;
+
+    uint32_t tag = 0;
+    uint32_t idx = 0;
+    if (!utils::idxmap::splitTag(raw, tagBits, tag, idx))
+        return tok;
+
+    tok.index = idx;
+    if (tableIds != nullptr && utils::idxmap::tagIndexes(tag, count))
+        tok.table = tableIds[tag];
+    return tok;
+}
+
 MetadataToken MetadataTables::RowReader::codedToken(
         const uint8_t* tableIds, size_t count, uint8_t tagBits) {
     uint32_t raw = codedIdx(tableIds, count, tagBits);
-    uint32_t tag = raw & ((1u << tagBits) - 1);
-    uint32_t idx = raw >> tagBits;
-    MetadataToken tok;
-    tok.index = idx;
-    tok.table = (tag < count) ? tableIds[tag] : 0xFF;
-    return tok;
+    return splitCodedToken(raw, tableIds, count, tagBits);
 }
 
 // ─── Coded token tables ───────────────────────────────────────────────────────

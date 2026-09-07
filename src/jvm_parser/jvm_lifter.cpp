@@ -268,10 +268,33 @@ std::vector<uint32_t> JvmLifter::findLeaders(
     std::set<uint32_t> leaders;
     leaders.insert(0);
 
-    // EH handler PCs are leaders.
+    // The code size every leader in this function is judged against. Clamping
+    // to kCodeSizeCap is what makes the narrowing cast of a resolved target
+    // exact; see the note on kCodeSizeCap above.
+    const uint64_t codeSize = std::min<uint64_t>(bc.size(), kCodeSizeCap);
+
+    // An exception_table entry's start_pc and handler_pc are u2 fields copied
+    // verbatim out of the class file, and nothing in jvm_attr's parser checks
+    // either against code_length. These two were the last leader sites still
+    // inserting a file value without a range check, so a handler_pc past the
+    // end of code[] became a leader and buildBlocks() then created a block at a
+    // pc no instruction falls into -- exactly the failure branch_target.h names,
+    // "it is not that the arithmetic is unchecked, it is that the unchecked
+    // answer reaches the CFG". Demonstrated by
+    // JvmLifter.ExceptionHandlerPcPastTheEndOfCodeIsNotALeader: code {0x00,
+    // 0xB1} with handlerPc = 900 used to come back as two blocks, the second
+    // one empty.
+    //
+    // btgt::absolute is the trivial half of the same rule the eight relative
+    // sites below use, with the same write-only-on-success discipline: a pc
+    // outside [0, codeSize) is not a leader, because there is no instruction
+    // there for it to lead.
     for (const auto& e : eh) {
-        leaders.insert(e.startPc);
-        leaders.insert(e.handlerPc);
+        uint64_t target = 0;
+        if (utils::btgt::absolute(e.startPc, codeSize, target))
+            leaders.insert(static_cast<uint32_t>(target));
+        if (utils::btgt::absolute(e.handlerPc, codeSize, target))
+            leaders.insert(static_cast<uint32_t>(target));
     }
 
     for (size_t pc = 0; pc < bc.size(); ) {
@@ -303,11 +326,12 @@ std::vector<uint32_t> JvmLifter::findLeaders(
         // so the int32_t converts to uint64 first: probe_jvm275.cpp asserted
         // `leader < codeLen` under `codeLen in (0, 0xFFFF], pc < codeLen` and
         // ESBMC refuted it twice. Forward, codeLen = 33012, pc = 193,
-        // def = 94928897 gives leader 94929090 -- 2876 times the length of the
-        // method. Backward, codeLen = 32773, pc = 32769, def = -1073774593 has
-        // true target -1041005824, which wraps and narrows to 0xC0000000: a
-        // branch to before the code became a leader near 3 GB, and buildBlocks
-        // then created a block there that no instruction falls into.
+        // def = 94928897 gives leader 94929090, which lands 94896078 bytes past
+        // the end of the method. Backward, codeLen = 32773, pc = 32769,
+        // def = -1073774593 has true target 32769 - 1073774593 = -1073741824,
+        // which wraps and narrows to 0xC0000000 = 3 GiB: a branch to before the
+        // code became a leader 3 GiB in, and buildBlocks then created a block
+        // there that no instruction falls into.
         //
         // btgt::relative forms the sum only where it exists, splits on the sign
         // of the displacement so it is exact for every base and every
@@ -316,9 +340,7 @@ std::vector<uint32_t> JvmLifter::findLeaders(
         // leader at all -- there is no instruction there to lead a block.
         auto addRelativeLeader = [&](size_t from, int32_t off) {
             uint64_t target = 0;
-            if (utils::btgt::relative(from, off,
-                                      std::min<uint64_t>(bc.size(), kCodeSizeCap),
-                                      target))
+            if (utils::btgt::relative(from, off, codeSize, target))
                 leaders.insert(static_cast<uint32_t>(target));
         };
         // A switch declares its own entry count (hi-lo+1, or npairs) and both
@@ -492,6 +514,32 @@ void JvmLifter::buildBlocks(BcCFG& cfg,
 
 // ─── Pass 3: Wire exception edges ────────────────────────────────────────────
 
+// An exception_table entry names a half-open protected region [start_pc, end_pc)
+// inside code[] (JVMS 4.7.3), but start_pc and end_pc are u2 fields copied
+// verbatim out of the class file and jvm_attr's parser checks neither against
+// code_length. wireExceptions() below assigns them straight into
+// BcExceptionHandler::startOffset/endOffset, so without this filter a class file
+// with end_pc < start_pc reaches every consumer that asks how long the region is
+// the obvious way: `endOffset - startOffset` in uint32, which for
+// start_pc = 4, end_pc = 0 is 4294967292 rather than a diagnosable error.
+//
+// btgt::region settles both halves at once -- it succeeds only when the region
+// exists and fits, and then start <= end <= codeSize. The length has to exist
+// before region can be asked about it, hence the ordering test first: region
+// takes a length, not an end, so it cannot make that test on our behalf.
+static bool protectedRegionFits(const ExceptionEntry& e, uint64_t codeSize)
+{
+    if (e.startPc > e.endPc) return false;
+    uint64_t end = 0;
+    return utils::btgt::region(e.startPc,
+                               static_cast<uint64_t>(e.endPc) - e.startPc,
+                               codeSize, end);
+}
+
+// Every entry reaching here has already been through protectedRegionFits() in
+// lift(), which is where the check lives because code[] is not a parameter of
+// this pass. An entry that failed it is not wired at all, so startPc/endPc are
+// copied below only once they are known to describe a region inside code[].
 void JvmLifter::wireExceptions(BcCFG& cfg,
                                 const std::vector<ExceptionEntry>& eh,
                                 const std::vector<uint32_t>& /*leaders*/,
@@ -574,12 +622,24 @@ BcInstruction JvmLifter::decodeInstr(
     // defined behaviour at all.
     //
     // btgt::relative does the same computation with no signed overflow anywhere
-    // and answers whether the target is inside code[] at the same time. A
-    // branch that leaves the method resolves to kNoBranchTarget, which
-    // buildBlocks()'s pcToBlock_.count() lookups miss, so it contributes no CFG
-    // edge -- as against the old behaviour, where the truncated wrap could
-    // collide with the pc of a real leader and wire an edge to a block the
-    // branch has nothing to do with.
+    // and answers whether the target is inside code[] at the same time. The
+    // second half is the one an ordinary-sized class file reaches, because the
+    // old body had no range check at all: a displacement leaving the method was
+    // written into the instruction's BcBlockOperand as if it were a pc inside
+    // it. `goto +100` at pc 0 of a four-byte method recorded 100, and `goto -8`
+    // at pc 1 recorded 0xFFFFFFF9. Now both resolve to kNoBranchTarget, which
+    // buildBlocks()'s pcToBlock_.count() lookups miss, so the branch
+    // contributes no CFG edge and nothing downstream can read the stored value
+    // as an offset into the method.
+    //
+    // The int32 overflow needs no 2 GiB method either: a goto_w at pc 1 with an
+    // offset of INT32_MAX is seven bytes of code and its sum is 2147483648.
+    // What does need a code array over 2 GiB is the truncated sum coming back
+    // down onto the pc of a real leader, since that requires instrPc + offset
+    // to reach 2^32 with offset below 2^31. So
+    // JvmLifter.OutOfRangeBranchTargetIsNotRecordedAsAPc pins the range check
+    // and the overflowing goto_w, not the collision.
+    // JvmLifter.InRangeBranchesStillResolve guards the other direction.
     auto branchPc = [&](int32_t offset, uint32_t instrPc) -> uint32_t {
         uint64_t target = 0;
         if (!utils::btgt::relative(instrPc, offset,
@@ -1003,11 +1063,22 @@ LiftResult JvmLifter::lift(const CodeAttr& code, const std::string& methodDesc) 
         for (const auto& ln : code.lineNumbers)
             lineMap_[ln.startPc] = ln.lineNumber;
 
-        auto leaders = findLeaders(code.bytecode, code.exceptionTable);
+        // Drop exception_table entries whose protected region is not a region
+        // at all before either pass sees them: findLeaders() would otherwise
+        // make a leader out of the handler pc of an entry that is never wired,
+        // and wireExceptions() would copy the malformed extent into the CFG.
+        const uint64_t codeSize =
+            std::min<uint64_t>(code.bytecode.size(), kCodeSizeCap);
+        std::vector<ExceptionEntry> wellFormedEh;
+        wellFormedEh.reserve(code.exceptionTable.size());
+        for (const auto& e : code.exceptionTable)
+            if (protectedRegionFits(e, codeSize)) wellFormedEh.push_back(e);
+
+        auto leaders = findLeaders(code.bytecode, wellFormedEh);
         if (leaders.empty()) leaders.push_back(0);
 
         buildBlocks(res.cfg, code.bytecode, leaders, pool_);
-        wireExceptions(res.cfg, code.exceptionTable, leaders, pool_);
+        wireExceptions(res.cfg, wellFormedEh, leaders, pool_);
         if (opts_.annotateStack) annotateStack(res.cfg, methodDesc);
 
         res.ok = true;

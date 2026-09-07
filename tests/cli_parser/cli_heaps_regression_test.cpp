@@ -10,15 +10,32 @@
 
 #include "retdec/cli_parser/cli_heaps.h"
 #include "retdec/cli_parser/cli_sig.h"
+#include "retdec/cli_parser/cli_tables.h"
 
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <cstddef>
 #include <cstdlib>
 #include <cstdint>
 #include <new>
 #include <string>
 #include <vector>
+
+namespace retdec {
+namespace cli_parser {
+// Defined in src/cli_parser/cli_tables.cpp, and declared here rather than in
+// cli_tables.h because it is not API. It is a free function precisely so that
+// this file can reach the ECMA-335 II.24.2.6 coded-index split: the split's
+// only other caller is MetadataTables::RowReader::codedToken, and RowReader is
+// a private nested type that no test can name. Every one of decodeRow's
+// nineteen codedToken calls passes a literal tagBits of 1, 2, 3 or 5, so
+// nothing reachable through the public parse() can exercise the widths that go
+// wrong.
+MetadataToken splitCodedToken(std::uint32_t raw, const std::uint8_t* tableIds,
+                              std::size_t count, unsigned tagBits);
+} // namespace cli_parser
+} // namespace retdec
 
 using namespace retdec::cli_parser;
 using namespace retdec::bc_module;
@@ -279,6 +296,18 @@ TEST(CliSigCountRegression, GenericArgCountIsBoundedByTheBytesLeft) {
     ASSERT_TRUE(ct->base.isRef());
     EXPECT_EQ(0u, ct->base.ref().typeArgs.size())
         << "1000 generic arguments declared by a 5-byte blob";
+    // And the refusal says so. Setting the count to 0 and carrying on produced
+    // types::Generic(Class(name), {}), an instantiation with no arguments --
+    // which II.23.2.12's `Type Type*` argument list makes impossible in a
+    // well-formed signature, so no caller could tell it from a real decode.
+    // decodeArrayShape refuses rather than truncating for the same reason; this
+    // is the assertion that the two sites agree.
+    // Compared as integers because BcRefKind's underlying type is uint8_t, which
+    // an ostream prints as a control character rather than as a number.
+    EXPECT_NE(static_cast<int>(BcRefKind::Generic),
+              static_cast<int>(ct->base.ref().kind))
+        << "a count no continuation of this blob could supply was reported as "
+           "a generic instantiation of arity zero";
 }
 
 // The same blob shape with the arguments actually present must still decode, so
@@ -327,7 +356,13 @@ TEST(CliSigCountRegression, ArrayShapeSizeCountIsBoundedByTheBytesLeft) {
 // A well-formed ArrayShape must still be walked to its end, so that the type
 // after it in a signature is decoded from the right position.
 TEST(CliSigCountRegression, WellFormedArrayShapeStillDecodes) {
-    // ARRAY I4 rank=2 NumSizes=2 [4,4] NumLoBounds=2 [-1(0x01), 0(0x00)]
+    // ARRAY I4 rank=2 NumSizes=2 [4,4] NumLoBounds=2 [-64(0x01), 0(0x00)].
+    //
+    // The lo-bound bytes are named by the value ECMA-335 II.23.2 gives them and
+    // not by the value they look like: in the one-byte signed form the payload
+    // is rotated, so 0x01 is -64 and -1 is 0x7F. OneByteSignedMatchesEcma above
+    // asserts exactly that pairing, and it is the fact the sign-extension fix
+    // was written to establish.
     std::vector<uint8_t> blob = {
         0x14, 0x08, 0x02, 0x02, 0x04, 0x04, 0x02, 0x01, 0x00
     };
@@ -336,4 +371,221 @@ TEST(CliSigCountRegression, WellFormedArrayShapeStillDecodes) {
     ASSERT_TRUE(ct.has_value());
     ASSERT_TRUE(ct->base.isRef());
     EXPECT_EQ(2, ct->base.ref().arrayDims);
+}
+
+// The control above cannot see where the cursor ended up: decodeTypeSpec decodes
+// one Type and stops, and the shape's sizes and lo-bounds never reach the
+// returned CliType. A LocalVarSig can see it, because the second local is
+// decoded from wherever the first one left `pos`.
+//
+// So this is the assertion that a countFits refusal cannot be tightened into
+// "refuse the whole shape whenever a count is present". Either count arm
+// returning early leaves `pos` inside the shape and decodes the second local
+// from a byte that is not a type: from the NumLoBounds arm it lands on the
+// first lo-bound, 0x01, which is ELEMENT_TYPE_VOID; from the NumSizes arm on
+// the first size, 0x04, which is ELEMENT_TYPE_I1. Neither is the STRING that
+// is really there.
+TEST(CliSigCountRegression, ArrayShapeIsWalkedToItsEnd) {
+    // LOCAL_SIG(0x07) count=2
+    //   local 0: ARRAY I4 rank=2 NumSizes=2 [4,4] NumLoBounds=2 [-64, 0]
+    //   local 1: STRING
+    std::vector<uint8_t> blob = {
+        0x07, 0x02,
+        0x14, 0x08, 0x02, 0x02, 0x04, 0x04, 0x02, 0x01, 0x00,
+        0x0E
+    };
+    CliSigDecoder dec;
+    auto sig = dec.decodeLocalVar({blob.data(), blob.size()});
+    ASSERT_TRUE(sig.has_value());
+    ASSERT_EQ(2u, sig->locals.size());
+    ASSERT_TRUE(sig->locals[0].base.isRef());
+    EXPECT_EQ(2, sig->locals[0].base.ref().arrayDims);
+    EXPECT_EQ(types::ClrString(), sig->locals[1].base)
+        << "the second local decoded as " << sig->locals[1].base.toString()
+        << ", so the ArrayShape walk left the cursor in the wrong place";
+}
+
+// ─── cli_sig: a Type is defined recursively, and nothing bounded the descent ──
+
+namespace {
+/// Depth of the SZARRAY / ARRAY chain @p t is the outside of.
+std::size_t arrayNesting(const BcType& t) {
+    std::size_t n = 0;
+    const BcType* cur = &t;
+    while (cur->isRef() && cur->ref().kind == BcRefKind::Array
+           && cur->ref().elementType) {
+        ++n;
+        cur = cur->ref().elementType.get();
+    }
+    return n;
+}
+} // namespace
+
+// ELEMENT_TYPE_SZARRAY (0x1D) is one byte and its operand is another Type, so a
+// blob of nothing but 0x1D bytes recurses once per byte, and there is no count
+// anywhere in it for bounds::countFits to bound. Measured on this tree with
+// `g++ -std=c++20 -O1 -g` and the 8 MB stack `ulimit -s` reports here: 10000
+// such bytes came back as a 10000-deep type, 12343 still returned, and 12500
+// segfaulted.
+//
+// The sizes here are deliberately well under that crash point, because a test
+// that dies on the stack when the fix is reverted takes the whole binary with
+// it -- including every result buffered before it -- and reports nothing about
+// what went wrong. What is asserted instead is the property that makes the
+// crash unreachable at any size: the descent is bounded by the decoder, so the
+// answer stops getting deeper as the blob gets longer.
+TEST(CliSigDepthRegression, NestedTypeDepthDoesNotFollowTheBlobLength) {
+    constexpr std::size_t kShort = 128;
+    constexpr std::size_t kLong  = 4096;
+
+    CliSigDecoder dec;
+    std::vector<uint8_t> shortBlob(kShort, 0x1D);
+    std::vector<uint8_t> longBlob(kLong, 0x1D);
+
+    auto shortCt = dec.decodeTypeSpec({shortBlob.data(), shortBlob.size()});
+    auto longCt  = dec.decodeTypeSpec({longBlob.data(), longBlob.size()});
+    ASSERT_TRUE(shortCt.has_value());
+    ASSERT_TRUE(longCt.has_value());
+
+    const std::size_t shortNesting = arrayNesting(shortCt->base);
+    const std::size_t longNesting  = arrayNesting(longCt->base);
+
+    // Not "refuse everything": the outermost arrays are still decoded.
+    EXPECT_GT(shortNesting, 0u);
+    EXPECT_LT(longNesting, kLong)
+        << "a " << kLong << "-byte SZARRAY chain nested " << longNesting
+        << " deep, one frame per byte";
+    // The bound is on the descent, not on the input, so thirty-two times the
+    // input buys no extra depth -- which is what makes 12500 bytes safe without
+    // this test having to run 12500 bytes through an unfixed decoder.
+    EXPECT_EQ(shortNesting, longNesting)
+        << kShort << " bytes nested " << shortNesting << " deep and " << kLong
+        << " bytes nested " << longNesting << " deep, so nothing bounds the "
+           "descent but the length of the blob";
+}
+
+namespace {
+/// The smallest model of CLIReader::typeSpecType that reproduces the cycle: a
+/// TypeSpec row whose signature blob is fetched from the #Blob heap and handed
+/// back to the same signature decoder.
+///
+/// `kCallCeiling` is what keeps a revert of the fix reportable. Without it the
+/// recursion below is unbounded and the process dies on the stack; with it the
+/// resolver stops feeding the cycle after a fixed number of turns and the test
+/// asserts on the count instead. The ceiling is set well under the 6001 turns
+/// this cycle was measured to survive, so it is always the ceiling that stops an
+/// unfixed decoder, never the stack.
+class SelfReferentialTypeSpec : public ITypeNameResolver {
+public:
+    static constexpr long kCallCeiling = 2048;
+
+    void setDecoder(const CliSigDecoder* d) { decoder_ = d; }
+    long calls() const { return calls_; }
+
+    std::string typeDefName(uint32_t) const override { return "TypeDef"; }
+    std::string typeRefName(uint32_t) const override { return "TypeRef"; }
+
+    BcType typeSpecType(uint32_t) const override {
+        if (++calls_ > kCallCeiling) return types::ClrObject();
+        // ELEMENT_TYPE_CLASS, then the compressed TypeDefOrRef 0x06: tag 2 is
+        // TypeSpec and the index above the tag is 1, so this row's signature
+        // names this row. Every turn starts a fresh decode of the same two
+        // bytes from position zero, so the cycle makes no progress through any
+        // buffer and no cursor bound can stop it.
+        static const uint8_t kSelfBlob[] = {0x12, 0x06};
+        auto ct = decoder_->decodeTypeSpec({kSelfBlob, sizeof(kSelfBlob)});
+        return ct ? ct->base : types::ClrObject();
+    }
+
+private:
+    const CliSigDecoder* decoder_ = nullptr;
+    mutable long         calls_   = 0;
+};
+} // namespace
+
+// The cheaper half of the same defect: the descent does not have to consume
+// input at all. decodeType's CLASS arm calls tokenName, tokenName asks the
+// resolver for a TypeSpec row's type, and the resolver decodes that row's blob
+// with this decoder -- so a row that names itself re-enters decodeType forever.
+// Against a resolver modelled on CLIReader::typeSpecType this segfaulted, having
+// survived 6001 turns and died by 6500.
+TEST(CliSigDepthRegression, SelfReferentialTypeSpecTerminates) {
+    SelfReferentialTypeSpec resolver;
+    CliSigDecoder dec(&resolver);
+    resolver.setDecoder(&dec);
+
+    const std::vector<uint8_t> blob = {0x12, 0x06};
+    auto ct = dec.decodeTypeSpec({blob.data(), blob.size()});
+    ASSERT_TRUE(ct.has_value());
+
+    // The cycle was entered -- otherwise this asserts nothing -- and the decoder
+    // and not the ceiling is what stopped it.
+    EXPECT_GT(resolver.calls(), 0);
+    EXPECT_LT(resolver.calls(), SelfReferentialTypeSpec::kCallCeiling)
+        << "the decoder re-entered itself until the fake resolver's ceiling "
+           "stopped it; nothing in the decoder bounds the descent";
+}
+
+// ─── cli_tables: the coded-index split ───────────────────────────────────────
+
+namespace {
+/// ECMA-335 II.24.2.6 TypeDefOrRef: TypeDef, TypeRef, TypeSpec, 2 tag bits.
+const uint8_t kTypeDefOrRefTables[] = {0x02, 0x01, 0x1B};
+} // namespace
+
+// The split used to be `raw & ((1u << tagBits) - 1)` and `raw >> tagBits`, on a
+// tagBits the caller supplies. The left operand of each shift is a 32-bit
+// unsigned int, so a count of 32 or more is undefined behaviour rather than a
+// wrong answer: `g++ -fsanitize=undefined` on those two expressions at
+// tagBits = 65 reports "shift exponent 65 is too large for 32-bit type
+// 'unsigned int'" for each of them.
+//
+// What comes out without a sanitizer depends on how the shift was compiled.
+// x86-64 takes the count modulo 32, so tagBits = 65 masks and shifts by one;
+// GCC folding the shift at compile time yields zero for `1u << 65` instead, and
+// zero minus one is a mask of every bit. The raw words used here are 0, 1 and 2,
+// which stay in range for this three-entry table under either -- so what
+// separates a fixed split from an unfixed one is the refusal itself, whichever
+// way the undefined shift went.
+TEST(CliTablesCodedTokenRegression, TagWiderThanTheWordIsRefused) {
+    for (unsigned tagBits : {32u, 65u, 255u}) {
+        for (uint32_t raw : {0u, 1u, 2u}) {
+            MetadataToken tok = splitCodedToken(
+                raw, kTypeDefOrRefTables, 3, tagBits);
+            EXPECT_EQ(0xFF, unsigned(tok.table))
+                << "tagBits=" << tagBits << " raw=" << raw
+                << " named table " << unsigned(tok.table);
+            EXPECT_EQ(0u, tok.index) << "tagBits=" << tagBits << " raw=" << raw;
+            EXPECT_FALSE(tok.valid());
+        }
+    }
+}
+
+// The widths decodeRow actually passes must still split the way II.24.2.6 says,
+// so the refusal above cannot be "refuse everything".
+TEST(CliTablesCodedTokenRegression, TheWidthsDecodeRowUsesStillSplit) {
+    // 0x0D is 1101b: 2 tag bits give tag 1 (TypeRef) and row 3.
+    MetadataToken tok = splitCodedToken(0x0Du, kTypeDefOrRefTables, 3, 2);
+    EXPECT_EQ(0x01u, unsigned(tok.table));
+    EXPECT_EQ(3u,   tok.index);
+
+    // Lossless: the two halves put back together are the word that went in.
+    EXPECT_EQ(0x0Du, (tok.index << 2) | 1u);
+
+    // Tag 0 with no tag bits at all: the whole word is the row index.
+    MetadataToken all = splitCodedToken(0xDEADBEEFu, kTypeDefOrRefTables, 3, 0);
+    EXPECT_EQ(0x02u,       unsigned(all.table));
+    EXPECT_EQ(0xDEADBEEFu, all.index);
+
+    // A 3-bit tag admits eight values and CustomAttributeType has five entries.
+    // Tag 6 is one of the three that index nothing, and must not become a table.
+    static const uint8_t kCustomAttrType[] = {0xFF, 0xFF, 0x06, 0x0A, 0xFF};
+    MetadataToken oob = splitCodedToken(0x2Eu, kCustomAttrType, 5, 3);
+    EXPECT_EQ(0xFFu, unsigned(oob.table));
+    EXPECT_EQ(5u,   oob.index);  // 0x2E >> 3, kept as it always has been
+
+    // The widest defined tag. 31 bits is still a defined shift; 32 is not.
+    MetadataToken wide = splitCodedToken(0x80000003u, kTypeDefOrRefTables, 3, 31);
+    EXPECT_EQ(1u, wide.index);
+    EXPECT_EQ(0xFFu, unsigned(wide.table));  // tag 3 indexes nothing here
 }

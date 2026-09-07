@@ -1909,8 +1909,8 @@ TEST(JvmLifter, GetStaticThenGotoStillFindsTheBranchTarget) {
 // `leaders.insert(static_cast<uint32_t>(pc + off))` sites and ESBMC refuted it
 // twice: forward with codeLen = 33012, pc = 193, def = 94928897 giving leader
 // 94929090, and backward with codeLen = 32773, pc = 32769, def = -1073774593,
-// whose true target -1041005824 wrapped and narrowed to 0xC0000000. Both
-// produced a block that no instruction falls into.
+// whose true target 32769 - 1073774593 = -1073741824 wrapped and narrowed to
+// 0xC0000000. Both produced a block that no instruction falls into.
 
 TEST(JvmLifter, ForwardBranchPastTheEndOfCodeIsNotALeader) {
     CodeAttr code;
@@ -1985,6 +1985,217 @@ TEST(JvmLifter, InRangeBranchesStillResolve) {
     EXPECT_EQ(res.cfg.block(2).instrs.front().offset, 4u);
     EXPECT_TRUE(res.cfg.hasEdge(1, 2));  // pc 1 -> pc 4
     EXPECT_TRUE(res.cfg.hasEdge(2, 1));  // pc 4 -> pc 1
+    // And decodeInstr recorded the real pc, not the "no target" sentinel: the
+    // range check must not cost a valid branch its operand either.
+    EXPECT_EQ(res.cfg.block(1).instrs.front().blockOp(0), 4u);
+    EXPECT_EQ(res.cfg.block(2).instrs.front().blockOp(0), 1u);
+}
+
+// ── decodeInstr's branchPc recorded an out-of-range displacement as a pc ─────
+// findLeaders and decodeInstr resolve the same displacement twice, and only the
+// first of the two was checked. A target outside code[] is dropped by
+// findLeaders, so no block is created for it and no edge can be wired to it
+// either way -- what the two branchPc bodies disagree about is the value
+// decodeInstr writes into the instruction's BcBlockOperand, which is the branch
+// target every later pass reads. The old body,
+// `static_cast<uint32_t>(static_cast<int32_t>(instrPc) + offset)`, wrote the
+// raw sum there with no range check at all.
+
+TEST(JvmLifter, OutOfRangeBranchTargetIsNotRecordedAsAPc) {
+    // UINT32_MAX is the lifter's kNoBranchTarget: "this branch leaves the
+    // method". It is not a reachable pc, because a resolved target is always
+    // below the code size and the code size is capped at UINT32_MAX.
+    constexpr uint32_t kNoTarget = UINT32_MAX;
+    auto pool = makeEmptyPool();
+
+    {
+        // pc 0: goto +100, in a four-byte method. The old body recorded 100 --
+        // a pc 96 bytes past the end of code[].
+        CodeAttr code;
+        code.bytecode = {0xA7, 0x00, 0x64, 0xB1};
+        JvmLifter lifter(pool, leadersOnly());
+        auto res = lifter.lift(code, "()V");
+        ASSERT_TRUE(res.ok) << res.error;
+        ASSERT_GE(res.cfg.blockCount(), 1u);
+        ASSERT_FALSE(res.cfg.block(0).instrs.empty());
+        const auto& g = res.cfg.block(0).instrs.front();
+        ASSERT_EQ(g.opcode, BcOpcode::Goto);
+        EXPECT_EQ(g.blockOp(0), kNoTarget)
+            << "forward branch past the end of code[] recorded as a pc";
+    }
+    {
+        // pc 1: goto -8, whose true target is -7. The old body recorded
+        // (uint32_t)(1 - 8) = 0xFFFFFFF9.
+        CodeAttr code;
+        code.bytecode = {0x00, 0xA7, 0xFF, 0xF8, 0xB1};
+        JvmLifter lifter(pool, leadersOnly());
+        auto res = lifter.lift(code, "()V");
+        ASSERT_TRUE(res.ok) << res.error;
+        ASSERT_GE(res.cfg.blockCount(), 1u);
+        ASSERT_GE(res.cfg.block(0).instrs.size(), 2u);
+        const auto& g = res.cfg.block(0).instrs[1];
+        ASSERT_EQ(g.opcode, BcOpcode::Goto);
+        EXPECT_EQ(g.blockOp(0), kNoTarget)
+            << "backward branch before the start of code[] recorded as a pc";
+    }
+    {
+        // The same at a conditional branch: ifeq +200 at pc 0 of a five-byte
+        // method. The old body recorded 200.
+        CodeAttr code;
+        code.bytecode = {0x99, 0x00, 0xC8, 0x00, 0xB1};
+        JvmLifter lifter(pool, leadersOnly());
+        auto res = lifter.lift(code, "()V");
+        ASSERT_TRUE(res.ok) << res.error;
+        ASSERT_GE(res.cfg.blockCount(), 1u);
+        ASSERT_FALSE(res.cfg.block(0).instrs.empty());
+        const auto& b = res.cfg.block(0).instrs.front();
+        ASSERT_EQ(b.opcode, BcOpcode::IfEq);
+        EXPECT_EQ(b.blockOp(0), kNoTarget)
+            << "conditional branch past the end of code[] recorded as a pc";
+    }
+    {
+        // goto_w carries a full int32 displacement, so the old body's
+        // `static_cast<int32_t>(instrPc) + offset` overflows int32 from pc 1
+        // with an offset of INT32_MAX -- a seven-byte method is enough to make
+        // it undefined, no 2 GiB code array needed. Where it wraps rather than
+        // trapping it lands on 0x80000000.
+        CodeAttr code;
+        code.bytecode = {0x00, 0xC8, 0x7F, 0xFF, 0xFF, 0xFF, 0xB1};
+        JvmLifter lifter(pool, leadersOnly());
+        auto res = lifter.lift(code, "()V");
+        ASSERT_TRUE(res.ok) << res.error;
+        ASSERT_GE(res.cfg.blockCount(), 1u);
+        ASSERT_GE(res.cfg.block(0).instrs.size(), 2u);
+        const auto& g = res.cfg.block(0).instrs[1];
+        ASSERT_EQ(g.opcode, BcOpcode::Goto);
+        EXPECT_EQ(g.blockOp(0), kNoTarget)
+            << "goto_w +INT32_MAX recorded as a pc";
+    }
+}
+
+// ── the two exception-table leader sites had no range check ─────────────────
+// start_pc and handler_pc are u2 fields copied verbatim out of the class file
+// and jvm_attr's parser checks neither against code_length, so
+// `leaders.insert(e.handlerPc)` put a leader at a pc no instruction falls into
+// and buildBlocks() then created an empty block there.
+
+TEST(JvmLifter, ExceptionHandlerPcPastTheEndOfCodeIsNotALeader) {
+    CodeAttr code;
+    code.bytecode = {0x00, 0xB1};   // nop; return
+    ExceptionEntry e;
+    e.startPc   = 0;
+    e.endPc     = 2;                // the whole method: a well-formed region
+    e.handlerPc = 900;              // 898 bytes past the end of code[]
+    e.catchType = 0;
+    code.exceptionTable.push_back(e);
+
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool, leadersOnly());
+    auto res = lifter.lift(code, "()V");
+    ASSERT_TRUE(res.ok) << res.error;
+    // Only leader 0. The old code inserted 900 as a second one.
+    EXPECT_EQ(res.cfg.blockCount(), 1u);
+    for (uint32_t b = 0; b < res.cfg.blockCount(); ++b)
+        EXPECT_FALSE(res.cfg.block(b).instrs.empty())
+            << "block " << b << " leads nothing";
+    // And with no block at pc 900 there is nothing to wire the handler to.
+    EXPECT_TRUE(res.cfg.handlers().empty());
+}
+
+TEST(JvmLifter, ExceptionStartPcAtTheEndOfCodeIsNotALeader) {
+    // start_pc == code_length is the boundary case that still survives the
+    // protected-region check (an empty region at the very end), so it is the
+    // one that reaches the start_pc leader site. There is no instruction at
+    // pc 2 for a block to lead.
+    CodeAttr code;
+    code.bytecode = {0x00, 0xB1};   // nop; return
+    ExceptionEntry e;
+    e.startPc   = 2;
+    e.endPc     = 2;
+    e.handlerPc = 1;
+    e.catchType = 0;
+    code.exceptionTable.push_back(e);
+
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool, leadersOnly());
+    auto res = lifter.lift(code, "()V");
+    ASSERT_TRUE(res.ok) << res.error;
+    // Leaders 0 and 1 (the handler). The old code inserted 2 as a third.
+    EXPECT_EQ(res.cfg.blockCount(), 2u);
+    for (uint32_t b = 0; b < res.cfg.blockCount(); ++b)
+        EXPECT_FALSE(res.cfg.block(b).instrs.empty())
+            << "block " << b << " leads nothing";
+}
+
+// ── the protected region reached the CFG unchecked ──────────────────────────
+// wireExceptions assigns startPc/endPc straight into
+// BcExceptionHandler::startOffset/endOffset. Both are u2 file fields, so
+// end_pc < start_pc and end_pc past the end of code[] both got through, and a
+// consumer asking how long the region is by `endOffset - startOffset` in
+// uint32 got an extent near 4 GB.
+
+TEST(JvmLifter, ProtectedRegionThatEndsBeforeItBeginsIsNotWired) {
+    CodeAttr code;
+    code.bytecode = {0x00, 0x00, 0x00, 0xB1, 0xB1};
+    ExceptionEntry e;
+    e.startPc   = 4;
+    e.endPc     = 0;    // 0 - 4 in uint32 is 4294967292
+    e.handlerPc = 4;
+    e.catchType = 0;
+    code.exceptionTable.push_back(e);
+
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool, leadersOnly());
+    auto res = lifter.lift(code, "()V");
+    ASSERT_TRUE(res.ok) << res.error;
+    for (const auto& h : res.cfg.handlers())
+        EXPECT_LE(h.startOffset, h.endOffset)
+            << "protected region ends before it begins";
+    EXPECT_TRUE(res.cfg.handlers().empty());
+}
+
+TEST(JvmLifter, ProtectedRegionPastTheEndOfCodeIsNotWired) {
+    CodeAttr code;
+    code.bytecode = {0x00, 0x00, 0x00, 0xB1, 0xB1};
+    ExceptionEntry e;
+    e.startPc   = 0;
+    e.endPc     = 900;  // 895 bytes past the end of code[]
+    e.handlerPc = 4;
+    e.catchType = 0;
+    code.exceptionTable.push_back(e);
+
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool, leadersOnly());
+    auto res = lifter.lift(code, "()V");
+    ASSERT_TRUE(res.ok) << res.error;
+    for (const auto& h : res.cfg.handlers())
+        EXPECT_LE(h.endOffset, 5u)
+            << "protected region ends past the end of code[]";
+    EXPECT_TRUE(res.cfg.handlers().empty());
+}
+
+TEST(JvmLifter, ProtectedRegionCoveringTheWholeMethodIsStillWired) {
+    // The check must not cost a real handler: JVMS 4.7.3 lets end_pc equal
+    // code_length, which is the boundary the range test is most likely to get
+    // wrong in the other direction.
+    CodeAttr code;
+    code.bytecode = {0x00, 0x00, 0x00, 0xB1, 0xB1};
+    ExceptionEntry e;
+    e.startPc   = 0;
+    e.endPc     = 5;    // == code_length
+    e.handlerPc = 4;
+    e.catchType = 0;
+    code.exceptionTable.push_back(e);
+
+    auto pool = makeEmptyPool();
+    JvmLifter lifter(pool, leadersOnly());
+    auto res = lifter.lift(code, "()V");
+    ASSERT_TRUE(res.ok) << res.error;
+    ASSERT_EQ(res.cfg.handlers().size(), 1u);
+    EXPECT_EQ(res.cfg.handlers()[0].startOffset, 0u);
+    EXPECT_EQ(res.cfg.handlers()[0].endOffset, 5u);
+    EXPECT_TRUE(res.cfg.block(res.cfg.handlers()[0].handlerBlock)
+                    .isExceptionHandler);
 }
 
 // ── multiReleaseVersion compared 19 characters against an 18-character literal

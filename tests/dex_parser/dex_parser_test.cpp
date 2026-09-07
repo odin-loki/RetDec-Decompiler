@@ -2097,8 +2097,15 @@ TEST(DexEncodedValue, ValueCharIsUnsigned) {
 }
 
 // The other side of the same split: VALUE_BYTE really is signed, so the same
-// payload byte means -128 there. If both arms ever answer the same thing again
-// one of them is wrong.
+// payload byte means -128 there.
+//
+// This is an anti-overcorrection pin, not a regression test, and the difference
+// is worth stating: reverting the VALUE_CHAR fix does not fail this test, only
+// ValueCharIsUnsigned above. What it does catch is the other way of getting
+// VALUE_CHAR right -- routing the whole 0x00/0x02/0x03/0x04/0x06 group through
+// zeroExtendFrom, which makes ValueCharIsUnsigned pass and this one fail. The
+// two arms must disagree on this payload; if they ever agree, one of them is
+// wrong.
 TEST(DexEncodedValue, ValueByteIsSigned) {
     auto dex = buildDexWithStaticValue({0x00, 0x80}); // VALUE_BYTE, one byte
     DexFile df = DexFile::parse(dex);
@@ -2115,6 +2122,16 @@ TEST(DexEncodedValue, ValueByteIsSigned) {
 // >> then shifts a negative signed value (implementation-defined in every
 // standard). byteorder::signExtendFrom fills in unsigned arithmetic and
 // converts once through leb128::toSigned, which is total.
+//
+// This is a pin on the answer, NOT a regression test for that change, and
+// nothing here can be: put the old expression back and this test still passes.
+// Both halves of the old expression are implementation-defined rather than
+// undefined, g++ and clang on x86 implement both the way the code wanted, and
+// no sanitizer instruments either -- UBSan has no check for an out-of-range
+// unsigned-to-signed conversion or for a right shift of a negative value, and
+// the fixed build is UBSan-clean. So the test says what the answer must be for
+// any future rewrite of this arm; it does not say the rewrite already made was
+// observable.
 TEST(DexEncodedValue, ValueIntSignExtendsTheTopBit) {
     auto dex = buildDexWithStaticValue({0x64, 0x00, 0x00, 0x00, 0x80});
     DexFile df = DexFile::parse(dex);
@@ -2140,9 +2157,11 @@ TEST(DexEncodedValue, ShortenedFloatFillsFromTheHighEnd) {
     EXPECT_DOUBLE_EQ(1.0, *result.bcClass->fields[0].constantFltValue);
 }
 
-// The same rule for VALUE_DOUBLE: 1.0 is 0x3FF0000000000000, so its two-byte
-// encoding is F0 3F and the low-end assembly gives 0x3FF0 -- a denormal of
-// about 3.1e-320.
+// The same rule for VALUE_DOUBLE: 1.0 is 0x3FF0000000000000, whose
+// little-endian bytes are 00 00 00 00 00 00 F0 3F, so its shortest encoding is
+// the two bytes F0 3F and the low-end assembly gives 0x3FF0 -- a denormal of
+// about 8.09e-320: the bit pattern is 16368, and a subnormal double is its
+// significand scaled by 2^-1074.
 TEST(DexEncodedValue, ShortenedDoubleFillsFromTheHighEnd) {
     // header: VALUE_DOUBLE (0x11) with value_arg 1 == two payload bytes.
     auto dex = buildDexWithStaticValue({0x31, 0xF0, 0x3F});
@@ -2171,13 +2190,16 @@ TEST(DexEncodedValue, FullWidthFloatIsUnchanged) {
 // The array element of a dalvik.annotation.Signature is an encoded_value whose
 // value_arg is three bits, so it declares up to eight payload bytes. The walk
 // accumulated them into a *uint32_t* with `(uint32_t)br.u1() << (b * 8)`: for
-// the header byte 0xE0 straight out of the file, value_arg is 7 and the last
-// shift is a uint32_t shifted by 56, which is undefined behaviour ("arithmetic
-// overflow on shl" / "undefined behavior on shift operation shl"). On x86 the
-// count is masked to 24 and the byte lands back in the low word, so the eight
-// bytes 00 00 00 00 01 00 00 00 -- which denote 0x100000000, far beyond the
-// file's seven strings -- used to fold onto string index 1 and yield the
-// unrelated string "LHello;".
+// the header byte 0xE0 straight out of the file, value_arg is 7, so b reaches 7
+// and the last shift is a uint32_t shifted by 56 -- undefined behaviour
+// ("arithmetic overflow on shl" / "undefined behavior on shift operation shl").
+// x86 masks a 32-bit shift count to five bits, which is what turns the
+// undefined shift into a wrong answer here: the payload below is
+// 00 00 00 00 01 00 00 00, whose only nonzero byte is the 0x01 at b = 4, and
+// that byte's count of 32 masks to 0, so it contributes 1 rather than
+// 0x100000000. Eight bytes denoting an index far beyond the file's seven
+// strings therefore used to fold onto string index 1 and yield the unrelated
+// string "LHello;".
 TEST(DexGenericSignature, EightBytePayloadDoesNotFoldOntoALowStringIndex) {
     auto dex = buildDexWithStaticValue(
             {0x04, 0x2A}, // VALUE_INT 42, so the field parse is unremarkable
@@ -2315,4 +2337,220 @@ TEST(DexLifter, ArrayOfObjectsIsOneParameter) {
                     ref = m;
     ASSERT_NE(nullptr, ref);
     EXPECT_EQ(1u, ref->descriptor.params.size());
+}
+
+// ─── array type descriptors (dex_class_parser.cpp) ───────────────────────────
+
+// buildDexWithStaticValue with string[5] -- the string the field's type_id
+// names -- replaced by @p descriptor. The replacement string_data_item is
+// appended past the end of the file buildDexWithStaticValue produced, so no
+// existing item moves and the descriptor may be any length; the string_ids
+// entry at 0x84 is repointed at it and file_size updated.
+static std::vector<uint8_t> buildDexWithFieldTypeDescriptor(
+        const std::string& descriptor) {
+    auto dex = buildDexWithStaticValue({0x04, 0x2A}); // VALUE_INT 42
+    auto setU4 = [&](size_t off, uint32_t v) {
+        dex[off] = v & 0xFF; dex[off+1] = (v >> 8) & 0xFF;
+        dex[off+2] = (v >> 16) & 0xFF; dex[off+3] = (v >> 24) & 0xFF;
+    };
+    const size_t strData = dex.size();
+    // string_data_item: uleb128 utf16_size, the MUTF-8 bytes, a trailing NUL.
+    // Every byte of an array descriptor is ASCII, so utf16_size is its length.
+    uint32_t n = static_cast<uint32_t>(descriptor.size());
+    do {
+        uint8_t b = n & 0x7F;
+        n >>= 7;
+        if (n) b |= 0x80;
+        dex.push_back(b);
+    } while (n);
+    for (char c : descriptor)
+        dex.push_back(static_cast<uint8_t>(c));
+    dex.push_back(0);
+    setU4(0x84, static_cast<uint32_t>(strData)); // string_ids[5]
+    setU4(0x20, static_cast<uint32_t>(dex.size())); // file_size
+    return dex;
+}
+
+// How many array levels @p t nests, and what sits at the bottom.
+static size_t arrayDepth(const BcType& t, const BcType** innermost = nullptr) {
+    size_t depth = 0;
+    const BcType* cur = &t;
+    while (cur->isArray() && cur->ref().elementType) {
+        ++depth;
+        cur = cur->ref().elementType.get();
+    }
+    if (innermost) *innermost = cur;
+    return depth;
+}
+
+// descriptorToType's '[' arm recursed on desc.substr(1) with no depth bound,
+// over a descriptor that comes straight out of the string table -- so a field
+// whose type is a long run of '[' cost one stack frame per bracket. Put that
+// arm back and this test does not fail, it kills the process: the suite binary
+// dies of SIGSEGV (exit 139) partway through this case, about a second in.
+// fuzz_dex.cpp calls parseClass for every class_def, so the shape is
+// fuzz-reachable. The walk now counts the bracket run and refuses past
+// kMaxArrayDimensions before allocating anything, so this returns instead.
+TEST(DexClassParser, DeepArrayDescriptorDoesNotRecurseOncePerBracket) {
+    auto dex = buildDexWithFieldTypeDescriptor(std::string(100000, '[') + "I");
+    DexFile df = DexFile::parse(dex);
+    DexClassParser parser(df);
+    auto result = parser.parseClass(0);
+    ASSERT_EQ(DexClassResult::OK, result.status);
+    ASSERT_EQ(1u, result.bcClass->fields.size());
+    // Past the bound the descriptor names no type this parser knows, which is
+    // the answer the default arm already gives for anything it cannot read.
+    EXPECT_TRUE(result.bcClass->fields[0].type.isVoid());
+}
+
+// The bound itself, from both sides, so "does not recurse per bracket" cannot
+// be satisfied by refusing arrays outright: 255 dimensions is the widest a
+// Java array type may have, and it must still come back as 255 nested arrays
+// of int.
+TEST(DexClassParser, ArrayDescriptorAtTheDimensionBoundIsStillBuilt) {
+    auto dex = buildDexWithFieldTypeDescriptor(std::string(255, '[') + "I");
+    DexFile df = DexFile::parse(dex);
+    DexClassParser parser(df);
+    auto result = parser.parseClass(0);
+    ASSERT_EQ(DexClassResult::OK, result.status);
+    ASSERT_EQ(1u, result.bcClass->fields.size());
+    const BcType* innermost = nullptr;
+    EXPECT_EQ(255u, arrayDepth(result.bcClass->fields[0].type, &innermost));
+    ASSERT_NE(nullptr, innermost);
+    EXPECT_TRUE(innermost->isPrim());
+    EXPECT_EQ(BcPrimKind::Int, innermost->prim().kind);
+}
+
+TEST(DexClassParser, ArrayDescriptorPastTheDimensionBoundIsRefused) {
+    auto dex = buildDexWithFieldTypeDescriptor(std::string(256, '[') + "I");
+    DexFile df = DexFile::parse(dex);
+    DexClassParser parser(df);
+    auto result = parser.parseClass(0);
+    ASSERT_EQ(DexClassResult::OK, result.status);
+    ASSERT_EQ(1u, result.bcClass->fields.size());
+    EXPECT_TRUE(result.bcClass->fields[0].type.isVoid());
+}
+
+// The ordinary case, so counting the run has not changed what a well-formed
+// descriptor means: "[[LHello;" is a two-dimensional array of LHello;.
+TEST(DexClassParser, OrdinaryArrayDescriptorStillNestsInnermostFirst) {
+    auto dex = buildDexWithFieldTypeDescriptor("[[LHello;");
+    DexFile df = DexFile::parse(dex);
+    DexClassParser parser(df);
+    auto result = parser.parseClass(0);
+    ASSERT_EQ(DexClassResult::OK, result.status);
+    ASSERT_EQ(1u, result.bcClass->fields.size());
+    const BcType* innermost = nullptr;
+    EXPECT_EQ(2u, arrayDepth(result.bcClass->fields[0].type, &innermost));
+    ASSERT_NE(nullptr, innermost);
+    ASSERT_TRUE(innermost->isClass());
+    EXPECT_EQ("Hello", innermost->ref().className);
+}
+
+// ─── signed Dalvik operands (dex_lifter.cpp) ─────────────────────────────────
+
+// The first integer operand the lifter produced for @p units. Register operands
+// are BcLocalOperand and branch targets are block operands, so for the const
+// and /lit forms below this is the literal.
+static int64_t firstIntOperand(const DexFile& df, std::vector<uint16_t> units) {
+    auto result = liftUnits(df, std::move(units));
+    EXPECT_EQ(DexLiftResult::OK, result.status);
+    for (const auto& blk : result.cfg.blocks())
+        for (const auto& insn : blk.instrs)
+            for (const auto& op : insn.operands)
+                if (const auto* i = std::get_if<BcIntOperand>(&op))
+                    return i->value;
+    ADD_FAILURE();
+    return 0;
+}
+
+// const/4 packs a four-bit signed literal into the B nibble, and the arm read
+// it as `static_cast<int64_t>(static_cast<int8_t>(vB << 4) >> 4)`. vB is a
+// uint16_t holding 0..15, so for vB >= 8 the product vB << 4 is 128..240 --
+// above INT8_MAX -- and converting that to int8_t is implementation-defined in
+// C++17; the `>> 4` that follows is then a right shift of a negative value,
+// implementation-defined in every standard. Both halves of the defect that was
+// removed from dex_class_parser.cpp's signExtendEncoded, in one expression,
+// in a file the same change edited. byteorder::signExtendFrom(vB, 4) has
+// neither.
+//
+// All sixteen encodings, because the replacement has to agree with the format
+// everywhere and not just at the witness: 0..7 mean themselves, 8..15 mean
+// -8..-1.
+TEST(DexLifter, Const4LiteralIsFourBitTwosComplement) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    for (uint16_t vB = 0; vB < 16; ++vB) {
+        // const/4 vA=0, B=vB: opcode 0x12 in the low byte, A in bits 8..11,
+        // B in bits 12..15.
+        const uint16_t w0 = static_cast<uint16_t>(0x12u | (vB << 12));
+        const int64_t expected = vB < 8 ? vB : static_cast<int64_t>(vB) - 16;
+        EXPECT_EQ(expected, firstIntOperand(df, {w0, 0x000Fu}));
+    }
+}
+
+// The rest of the signed const forms, whose literals were recovered by the
+// conversion half of the same defect -- `static_cast<int16_t>(w(1))` and
+// `static_cast<int32_t>(...)` of values above the signed maximum. Each is
+// checked at the most negative value its width can encode, which is exactly
+// the input that made the conversion out of range.
+TEST(DexLifter, ConstFormsRecoverTheMostNegativeLiteralOfTheirWidth) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // const/16 v0, #-32768  (0x13, AA=0, BBBB=0x8000)
+    EXPECT_EQ(INT64_C(-32768), firstIntOperand(df, {0x0013u, 0x8000u}));
+    // const v0, #-2147483648  (0x14, AA=0, BBBBBBBB=0x80000000)
+    EXPECT_EQ(INT64_C(-2147483648),
+              firstIntOperand(df, {0x0014u, 0x0000u, 0x8000u}));
+    // const/high16 v0, #-65536 == 0xFFFF0000  (0x15, AA=0, BBBB=0xFFFF)
+    EXPECT_EQ(INT64_C(-65536), firstIntOperand(df, {0x0015u, 0xFFFFu}));
+    // const-wide/16 v0, #-1  (0x16)
+    EXPECT_EQ(INT64_C(-1), firstIntOperand(df, {0x0016u, 0xFFFFu}));
+    // const-wide/32 v0, #-2147483648  (0x17)
+    EXPECT_EQ(INT64_C(-2147483648),
+              firstIntOperand(df, {0x0017u, 0x0000u, 0x8000u}));
+    // const-wide v0, #INT64_MIN  (0x18)
+    EXPECT_EQ(INT64_MIN,
+              firstIntOperand(df, {0x0018u, 0x0000u, 0x0000u, 0x0000u, 0x8000u}));
+    // const-wide/high16 v0, #INT64_MIN  (0x19, BBBB placed at bits 48..63)
+    EXPECT_EQ(INT64_MIN, firstIntOperand(df, {0x0019u, 0x8000u}));
+}
+
+// The /lit16 and /lit8 literals, same conversion half. add-int/lit16 (0xD0)
+// takes its literal in the whole second unit; add-int/lit8 (0xD8) takes it in
+// that unit's high byte.
+TEST(DexLifter, LiteralOperandsOfTheArithmeticFormsAreSigned) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    // add-int/lit16 v0, v0, #-32768
+    EXPECT_EQ(INT64_C(-32768), firstIntOperand(df, {0x00D0u, 0x8000u}));
+    // add-int/lit8 v0, v0, #-128  (CC = 0x80 in the high byte of unit 1)
+    EXPECT_EQ(INT64_C(-128), firstIntOperand(df, {0x00D8u, 0x8000u}));
+    // and the positive side of each, so the fill is not unconditional.
+    EXPECT_EQ(INT64_C(32767), firstIntOperand(df, {0x00D0u, 0x7FFFu}));
+    EXPECT_EQ(INT64_C(127), firstIntOperand(df, {0x00D8u, 0x7F00u}));
+}
+
+// A backward goto, whose offset went through the same conversion. goto (0x28)
+// carries a signed byte in the high byte of its only unit; 0xFF is -1, so from
+// offset 1 the branch target is offset 0 and the lift must produce a block
+// there. A zero-extending read would give +255 instead, off the end of a
+// three-unit method, and no such block.
+TEST(DexLifter, BackwardGotoTargetsTheBlockItsNegativeOffsetNames) {
+    auto dex = buildMinimalDex();
+    DexFile df = DexFile::parse(dex);
+    auto result = liftUnits(df, {
+        static_cast<uint16_t>(0x000Eu), // return-void at offset 0
+        static_cast<uint16_t>(0xFF28u), // goto -1 at offset 1
+    });
+    ASSERT_EQ(DexLiftResult::OK, result.status);
+    const BcBlockOperand* target = nullptr;
+    for (const auto& blk : result.cfg.blocks())
+        for (const auto& insn : blk.instrs)
+            if (insn.opcode == BcOpcode::DALVIK_GOTO)
+                for (const auto& op : insn.operands)
+                    if (const auto* b = std::get_if<BcBlockOperand>(&op))
+                        target = b;
+    ASSERT_NE(nullptr, target);
+    EXPECT_EQ(0u, target->blockId);
 }

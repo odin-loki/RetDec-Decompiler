@@ -19,7 +19,219 @@
  *
  *   findAllKernel     — one thread per candidate start position, checks
  *                       needle match using coalesced reads.
+ *
+ * Why the first section of this file has no CUDA in it
+ * ----------------------------------------------------
+ * Two files implement GpuScanner: this one, which src/utils/CMakeLists.txt
+ * compiles with nvcc when a CUDA compiler is found, and gpu_scanner_cpu.cpp,
+ * which it compiles instead when one is not. Exactly one of the two is ever in
+ * the library, and each used to carry its own copy of the host-side byte,
+ * nibble and window arithmetic -- three copies of the byte-to-nibble
+ * expansion between them, and two of the scan-window computation. When that
+ * arithmetic was corrected, only gpu_scanner_cpu.cpp was corrected, so a CUDA
+ * build kept every original wrong answer and no test could see it: no suite
+ * could link this file, because a machine without nvcc cannot build a .cu at
+ * all.
+ *
+ * The arithmetic therefore lives exactly once now, in the gpuscan namespace
+ * below. It is plain C++ over sizes and a std::string, with nothing CUDA in
+ * it, and everything after it is behind RETDEC_GPU_SCANNER_HOST_ONLY.
+ * gpu_scanner_cpu.cpp defines that macro and includes this file, so the
+ * fallback build compiles this text instead of a copy of it -- which means
+ * tests/utils/gpu_scanner_tests.cpp exercises these three functions on every
+ * standalone run, CUDA installed or not, and a wrong answer here fails the
+ * suite rather than waiting for someone with a GPU.
  */
+
+#include <cstddef>
+#include <cstdint>
+#include <string>
+
+#include "retdec/utils/bounds.h"
+
+namespace retdec {
+namespace utils {
+
+/// Host-side arithmetic shared by both GpuScanner implementations.
+namespace gpuscan {
+
+/// Nibble characters written per input byte. The scanner's patterns are RetDec
+/// nibble strings -- one lowercase hex character per 4 bits -- so the nibble
+/// buffer is exactly twice the byte buffer. Every byte-to-nibble step in either
+/// implementation goes through the functions below, so the factor is stated
+/// here and nowhere else.
+inline constexpr std::size_t NIBBLES_PER_BYTE = 2;
+
+/// Expands @p size bytes at @p data into the scanner's nibble string.
+///
+/// Returns false, leaving @p out empty, when the expansion cannot be done:
+///
+///  - @p data is null while @p size is not zero. The old body ran
+///    `assign(data, data + size)` on whatever it was handed -- unlike
+///    conversion.h's bytesToHexString, which checks -- so `uploadFile(nullptr,
+///    8)` allocated eight bytes and then copied from address 0. uploadFile is
+///    a public entry point taking a raw pointer and a length as two
+///    independent arguments, so the two can disagree.
+///
+///  - `size * NIBBLES_PER_BYTE` is not representable. ESBMC's witness is
+///    size = 18446744073709551615, where the product wraps to
+///    18446744073709551614 -- one BELOW the byte count, where it should have
+///    been twice it. resize() therefore gets fewer nibbles than there are
+///    bytes while the loop writes at i*2 and i*2+1 for every i < size, so it
+///    runs off the end of the string almost immediately. bounds::mulFits is
+///    the proved form of the question and is written as a division, so the
+///    product is never formed.
+///
+/// The nibbles are built in @p out before a caller commits anything else, so a
+/// refusal cannot leave an upload half-performed.
+inline bool nibblesFor(const std::uint8_t* data, std::size_t size, std::string& out)
+{
+    static const char hexLut[] = "0123456789abcdef";
+
+    out.clear();
+    if ((data == nullptr && size != 0)
+            || !bounds::mulFits(size, NIBBLES_PER_BYTE)) {
+        return false;
+    }
+
+    out.resize(size * NIBBLES_PER_BYTE);
+    for (std::size_t i = 0; i < size; ++i) {
+        out[i * NIBBLES_PER_BYTE]     = hexLut[data[i] >> 4];
+        out[i * NIBBLES_PER_BYTE + 1] = hexLut[data[i] & 0xF];
+    }
+    return true;
+}
+
+/// The inclusive byte window [@p lo, @p hi] that a caller's byte range
+/// [@p startOffset, @p stopOffset] selects in a buffer of @p byteLen bytes.
+///
+/// Returns false when the range selects nothing, which is a different answer
+/// from "this region is uniform". `sz = hi - lo + 1` used to be formed before
+/// anything checked that lo was at or below hi, so a startOffset past the end
+/// of the file underflowed sz to a number near SIZE_MAX, the histogram loop
+/// then did not run at all, every `hist[b] / sz` was 0, and fileEntropy
+/// returned 0.0 -- which is also exactly what it returns for a genuinely
+/// uniform region. An entropy of 0.0 is the strongest possible statement about
+/// a range, and an invalid range was making it.
+///
+/// A @p stopOffset past the last byte means "to the end of the file", so it
+/// saturates. SIZE_MAX is only the largest such value and needs no case of its
+/// own.
+///
+/// gpu_scanner_cpu.cpp's fileEntropy would survive without this check, because
+/// fpred::entropyBits refuses a histogram that does not sum to the total it was
+/// given and answers 0.0 by that route instead. The CUDA build would not: its
+/// fileEntropy divides by the length itself and sizes a kernel launch from it,
+/// so an underflowed length there is a grid dimension, not a rejected total.
+inline bool byteWindow(
+        std::size_t startOffset,
+        std::size_t stopOffset,
+        std::size_t byteLen,
+        std::size_t& lo,
+        std::size_t& hi) noexcept
+{
+    lo = 0;
+    hi = 0;
+    if (byteLen == 0) return false;
+
+    const std::size_t stop = bounds::clamp(stopOffset, byteLen - 1);
+    if (startOffset > stop) return false;
+
+    lo = startOffset;
+    hi = stop;
+    return true;
+}
+
+/// The inclusive nibble window [@p startNib, @p endNib] that a caller's byte
+/// range selects in a nibble string of @p nibLen characters; false when it
+/// selects nothing.
+///
+/// Both ends used to be doubled without asking whether the doubling fit, and
+/// each wrap produced a wrong answer in a different direction. Both were
+/// measured against the real library on the four-byte file DE AD BE EF with
+/// the pattern "dead":
+///
+///  - `startNib = startOffset * 2` wrapping. batchMatch(pats, 2^63, SIZE_MAX)
+///    reported matched=1 at offset=0, where the same call with startOffset 100
+///    correctly reported matched=0. A start offset 2^63 bytes past the end of
+///    a four-byte file wrapped to 0 and produced a full-confidence signature
+///    match at the start of it. Here the multiplication is asked about first,
+///    and a start that cannot be expressed in nibbles is past the end of any
+///    file that could exist, so the window is empty.
+///
+///  - `std::min(stopOffset * 2 + 1, nibLen - 1)` wrapping. batchMatch(pats, 0,
+///    2^63) reported matched=0, where the same call with stopOffset 1000
+///    correctly reported matched=1. The doubling wrapped to 0, the +1 made
+///    endNib = 1, and a caller asking to scan a whole file got the window
+///    collapsed to a single nibble. Here a stop offset whose nibble index is
+///    not representable saturates at the last nibble, which is what "past the
+///    end" already meant for every stop offset that did fit.
+inline bool nibbleWindow(
+        std::size_t startOffset,
+        std::size_t stopOffset,
+        std::size_t nibLen,
+        std::size_t& startNib,
+        std::size_t& endNib) noexcept
+{
+    startNib = 0;
+    endNib = 0;
+    if (nibLen == 0) return false;
+
+    const std::size_t lastNib = nibLen - 1;
+
+    // A stop offset selects the LAST nibble of its byte, which is the
+    // NIBBLES_PER_BYTE - 1 the addition below adds.
+    std::size_t stopNib = lastNib;
+    if (bounds::mulFits(stopOffset, NIBBLES_PER_BYTE)) {
+        const std::size_t stopFirst = stopOffset * NIBBLES_PER_BYTE;
+        if (bounds::addFits(stopFirst, NIBBLES_PER_BYTE - 1)) {
+            stopNib = bounds::clamp(stopFirst + (NIBBLES_PER_BYTE - 1), lastNib);
+        }
+    }
+
+    if (!bounds::mulFits(startOffset, NIBBLES_PER_BYTE)) return false;
+    const std::size_t firstNib = startOffset * NIBBLES_PER_BYTE;
+    if (firstNib > stopNib) return false;
+
+    startNib = firstNib;
+    endNib   = stopNib;
+    return true;
+}
+
+
+/// The last nibble position at which a pattern of @p patLen nibbles still fits
+/// inside a window that ends at @p endNib; false when it does not fit at all.
+///
+/// The host side wrote this as `if (patLen == 0 || endNib < patLen) continue;`
+/// followed by `maxStart = endNib - patLen + 1`, which is off by one: a pattern
+/// that exactly fills the window has patLen == endNib + 1 and belongs at
+/// position 0, but `endNib < patLen` throws it away. Measured against the real
+/// library: the two-byte file DE AD scanned for "dead" -- an exact whole-file
+/// match, four nibbles against a four-nibble file -- reported matched=0,
+/// bestRatio=0, totalNibs=0, as though the pattern had never been considered.
+/// The device kernel in this file computes `endPos + 1 - patLen` guarded by
+/// `endPos + 1 >= patLen`, so the CPU and GPU halves of one class disagreed
+/// about the last window that fits.
+///
+/// Written as `endNib < patLen - 1` with patLen known non-zero, so neither the
+/// comparison nor the subtraction can wrap.
+inline bool lastStartFor(
+        std::size_t endNib,
+        std::size_t patLen,
+        std::size_t& maxStart) noexcept
+{
+    maxStart = 0;
+    if (patLen == 0) return false;
+    if (endNib < patLen - 1) return false;
+    maxStart = endNib - (patLen - 1);
+    return true;
+}
+
+} // namespace gpuscan
+} // namespace utils
+} // namespace retdec
+
+#ifndef RETDEC_GPU_SCANNER_HOST_ONLY
 
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
@@ -27,11 +239,9 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <stdexcept>
-#include <string>
 #include <vector>
 
 #include "retdec/utils/gpu_scanner.h"
@@ -111,7 +321,15 @@ __global__ void batchMatchKernel(
     // Each thread tests one starting nibble position.
     const uint32_t endPos = (scanEndNib < fileNibLen)
                             ? scanEndNib : (fileNibLen - 1);
-    const uint32_t maxStart = (endPos + 1 >= patLen) ? (endPos + 1 - patLen) : 0;
+    // A pattern longer than the window fits nowhere. Falling through with
+    // maxStart = 0 let thread 0 read fileNibs[0 .. patLen-1] for a patLen that
+    // can exceed fileNibLen. Every thread in the block computes this from the
+    // same block-uniform values, so the return is uniform and the
+    // __syncthreads() below are still reached by all or none -- the same shape
+    // as the `pid >= numPatterns` return above. The result stays as cudaMemset
+    // left it, which is SigMatchResult's own "no match" state.
+    if (patLen == 0 || patLen > endPos + 1) return;
+    const uint32_t maxStart = endPos + 1 - patLen;
 
     uint32_t localBestSame  = 0;
     uint32_t localBestTotal = 0;
@@ -307,16 +525,16 @@ struct GpuScanner::Impl {
         fileNibLen = 0;
     }
 
-    // Convert bytes to nibble chars on the host and upload both to GPU.
-    void uploadToGpu(const uint8_t* data, std::size_t size) {
-        static const char hexLut[] = "0123456789abcdef";
-        std::string nibs;
-        nibs.resize(size * 2);
-        for (std::size_t i = 0; i < size; ++i) {
-            nibs[i * 2]     = hexLut[data[i] >> 4];
-            nibs[i * 2 + 1] = hexLut[data[i] & 0xF];
-        }
-
+    // Upload the bytes and the nibble string the host already built.
+    //
+    // This used to expand the bytes into nibbles a second time, with its own
+    // `nibs.resize(size * 2)` and `nibs[i*2]` / `nibs[i*2+1]` loop, on top of
+    // the one uploadFile had already run on the same buffer -- so the same
+    // unchecked doubling was written twice in this file and once more in
+    // gpu_scanner_cpu.cpp. It takes the finished string instead; the expansion
+    // and its refusals are gpuscan::nibblesFor's, and happen before anything
+    // reaches the device.
+    void uploadToGpu(const uint8_t* data, std::size_t size, const std::string& nibs) {
         CUDA_CHECK(cudaMalloc(&d_fileBytes, size));
         CUDA_CHECK(cudaMemcpy(d_fileBytes, data, size, cudaMemcpyHostToDevice));
 
@@ -346,18 +564,30 @@ bool GpuScanner::isAvailable() const { return impl_->gpuAvailable; }
 std::string GpuScanner::deviceName() const { return impl_->deviceNameStr; }
 
 void GpuScanner::uploadFile(const uint8_t* data, std::size_t size) {
+    // Nothing is touched until both the pointer and the sizing are known good.
+    // Every statement in the old body was already past the point of no return
+    // by the time it could have noticed: the assign() had copied from the
+    // pointer and the resize() had taken the wrapped length.
+    std::string nibs;
+    if (!gpuscan::nibblesFor(data, size, nibs)) {
+        // Refuse the upload rather than half-perform it, and do not leave the
+        // previous file behind for a caller who thinks it is looking at this
+        // one. An empty scanner makes batchMatch return unmatched results and
+        // fileEntropy return 0.0, which is what every caller already handles
+        // for a file it could not read.
+        impl_->h_fileBytes.clear();
+        impl_->h_fileNibs.clear();
+        impl_->freeDeviceFile();
+        return;
+    }
+
     // Always keep host copy for CPU fallback paths.
     impl_->h_fileBytes.assign(data, data + size);
-    static const char hexLut[] = "0123456789abcdef";
-    impl_->h_fileNibs.resize(size * 2);
-    for (std::size_t i = 0; i < size; ++i) {
-        impl_->h_fileNibs[i * 2]     = hexLut[data[i] >> 4];
-        impl_->h_fileNibs[i * 2 + 1] = hexLut[data[i] & 0xF];
-    }
+    impl_->h_fileNibs = std::move(nibs);
 
     if (!impl_->gpuAvailable) return;
     impl_->freeDeviceFile();
-    impl_->uploadToGpu(data, size);
+    impl_->uploadToGpu(data, size, impl_->h_fileNibs);
 }
 
 // ---------------------------------------------------------------------------
@@ -373,8 +603,8 @@ static SigMatchResult cpuMatchOne(
     SigMatchResult r;
     const std::size_t patLen = pat.find(';') != std::string::npos
                                ? pat.find(';') : pat.size();
-    if (patLen == 0 || endNib < patLen) return r;
-    const std::size_t maxStart = endNib - patLen + 1;
+    std::size_t maxStart = 0;
+    if (!gpuscan::lastStartFor(endNib, patLen, maxStart)) return r;
 
     for (std::size_t pos = startNib; pos <= maxStart; ++pos) {
         uint32_t same = 0, total = 0;
@@ -410,11 +640,16 @@ std::vector<SigMatchResult> GpuScanner::batchMatch(
     std::vector<SigMatchResult> results(n);
     if (n == 0 || impl_->h_fileNibs.empty()) return results;
 
-    const std::size_t fileNibLen = impl_->h_fileNibs.size();
-    const std::size_t startNib   = startOffset * 2;
-    const std::size_t endNib     = (stopOffset == SIZE_MAX)
-                                   ? fileNibLen - 1
-                                   : std::min(stopOffset * 2 + 1, fileNibLen - 1);
+    // The two doublings this used to do inline are the pair demonstrated in
+    // gpuscan::nibbleWindow's comment: a start offset past the end wrapped to
+    // 0 and matched at the front of the file, and a stop offset past the end
+    // wrapped to a one-nibble window and matched nothing.
+    std::size_t startNib = 0;
+    std::size_t endNib   = 0;
+    if (!gpuscan::nibbleWindow(startOffset, stopOffset,
+                               impl_->h_fileNibs.size(), startNib, endNib)) {
+        return results;
+    }
 
     // Separate GPU-friendly (no '/') and CPU-only (has '/') patterns.
     std::vector<std::size_t> gpuIdx, cpuIdx;
@@ -526,9 +761,10 @@ double GpuScanner::fileEntropy(std::size_t startOffset, std::size_t stopOffset) 
     const auto& bytes = impl_->h_fileBytes;
     if (bytes.empty()) return 0.0;
 
-    const std::size_t lo = startOffset;
-    const std::size_t hi = (stopOffset == SIZE_MAX) ? bytes.size() - 1
-                                                    : std::min(stopOffset, bytes.size() - 1);
+    std::size_t lo = 0;
+    std::size_t hi = 0;
+    if (!gpuscan::byteWindow(startOffset, stopOffset, bytes.size(), lo, hi))
+        return 0.0;
     const std::size_t sz = hi - lo + 1;
 
     if (!impl_->gpuAvailable) {
@@ -655,3 +891,5 @@ std::vector<std::size_t> GpuScanner::findAll(const std::vector<uint8_t>& needle)
 
 } // namespace utils
 } // namespace retdec
+
+#endif // RETDEC_GPU_SCANNER_HOST_ONLY

@@ -5,16 +5,304 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+// ─── the bounds arithmetic FileFormat's byte readers share ──────────────────
+//
+// Everything down to the RETDEC_FILEFORMAT_BOUNDS_KERNELS_ONLY guard below is
+// the offset/length/width arithmetic that the readers in this file used to
+// spell inline, in the two shapes that wrap:
+//
+//     offset + numberOfBytes > getLoadedFileLength()    (a sum,     getBytes)
+//     x * getByteLength() > sizeof(res) * CHAR_BIT      (a product, getXByte)
+//
+// Both operands of each come from a file this process did not write, so neither
+// the sum nor the product is bounded by anything, and a wrapped value compares
+// as small. The comparison that exists to stop an over-long read is then the
+// thing that admits it.
+//
+// The arithmetic lives up here, in named functions outside the guard, because
+// the rest of this translation unit cannot be compiled at all without an LLVM
+// source tree -- retdec/fileformat/types/sec_seg/sec_seg.h includes
+// <llvm/ADT/StringRef.h>, and deps/llvm in this repository is a download stub:
+//
+//     $ g++ -std=c++17 -Iinclude -fsyntax-only src/fileformat/file_format/file_format.cpp
+//     include/retdec/fileformat/types/sec_seg/sec_seg.h:14:10: fatal error:
+//     llvm/ADT/StringRef.h: No such file or directory
+//
+// so a guard written inside a FileFormat method is a guard no test in this
+// repository can execute. tests/loader_sim/xbyte_width_guard_test.cpp defines
+// RETDEC_FILEFORMAT_BOUNDS_KERNELS_ONLY, includes this file, and calls the
+// functions below on real buffers with the counterexamples they exist to
+// refuse. Only <cstdint>, <vector>, retdec/utils/bounds.h and
+// retdec/utils/byte_order.h are reachable from here, and all four are
+// dependency-free, so that include costs the test nothing.
+//
+// None of these re-derives a bound. Each is a total wrapper that refuses the
+// values it cannot represent and then defers to a kernel in
+// include/retdec/utils/ which scripts/verify_esbmc.sh discharges over the whole
+// 64-bit domain.
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+#include "retdec/utils/bounds.h"
+#include "retdec/utils/byte_order.h"
+
+namespace retdec {
+namespace fileformat {
+namespace bounds_kernels {
+
+/**
+ * Decide whether @a x units of @a unitBits bits each fit in a 64-bit result.
+ *
+ * The guard this replaces -- at FileFormat::getXByte and
+ * FileFormat::getXByteOffset, and in the same two shapes at
+ * src/loader/loader/image.cpp -- was spelled
+ *
+ *     x * getByteLength() > sizeof(res) * CHAR_BIT
+ *
+ * which forms the product before comparing it. x is a std::uint64_t the caller
+ * supplies, so the product is not bounded by anything. ESBMC's witness is
+ * x = 2305843009213693954 (0x2000000000000002) with getByteLength() == 8: the
+ * true product 0x10000000000000010 wraps to 16, `16 > 64` is false, and the
+ * guard admits a width of 2.3e18 units. It is reported as "arithmetic overflow
+ * on mul, !overflow(\"*\", x, byteLength)" (CWE-190/191).
+ *
+ * byteorder::widthFits is the same test with the product formed only once both
+ * factors are known to be at most 64, proved equivalent over the whole 64-bit
+ * domain in tests/verification/byte_order_proof.cpp.
+ *
+ * The two narrowings on the way in are refused rather than cast away. The unit
+ * width reaches widthFits as an unsigned, so on a host with 64-bit std::size_t
+ * a width of 0x100000008 would truncate to 8 and be accepted; x reaches it as a
+ * std::size_t, which is narrower on a 32-bit host, so x = 0x100000002 would
+ * truncate to 2. Neither can fit a 64-bit accumulator at any unit width, so
+ * both lose here.
+ *
+ * Zero units is not this function's case: widthFits refuses n == 0 by design
+ * ("read nothing" is how a caller ends up reading a whole section), while the
+ * getXByte family answers x == 0 with res = 0. The call sites keep that branch.
+ */
+inline bool xWidthFitsAccumulator(std::uint64_t x, std::uint64_t unitBits)
+{
+	if (x > retdec::utils::byteorder::kAccumulatorBits
+			|| unitBits > retdec::utils::byteorder::kAccumulatorBits)
+	{
+		return false;
+	}
+
+	return retdec::utils::byteorder::widthFits(
+			static_cast<std::size_t>(x), static_cast<unsigned>(unitBits));
+}
+
+/**
+ * bounds::rangeFits for a 64-bit offset, buffer size and length.
+ *
+ * The readers spell containment as `offset + x > length`, a sum of two values
+ * the caller supplies. At offset SIZE_MAX and x = 1 the sum is 0, which is not
+ * greater than any length, so the guard passes -- and in getXBytesOffset the
+ * next statement is `loadedBytes->begin() + offset`, iterators SIZE_MAX
+ * elements past a vector that may hold a few hundred bytes. bounds::rangeFits
+ * compares against the bytes that remain instead and never forms the sum; it is
+ * proved in tests/verification/bounds_proof.cpp.
+ *
+ * @a offset and @a len above SIZE_MAX are refused rather than cast, because on
+ * a host where std::size_t is narrower the cast is the bug it is meant to
+ * prevent: offset 0x100000005 truncates to 5, which is inside almost every
+ * buffer. A @a size above SIZE_MAX is capped instead, since no buffer that
+ * large can exist in this process and capping keeps the answer exact for every
+ * offset and length that got past the two tests above.
+ */
+inline bool rangeFitsWide(std::uint64_t offset, std::uint64_t size, std::uint64_t len)
+{
+	if (offset > static_cast<std::uint64_t>(SIZE_MAX)
+			|| len > static_cast<std::uint64_t>(SIZE_MAX))
+	{
+		return false;
+	}
+
+	const std::size_t cappedSize = size > static_cast<std::uint64_t>(SIZE_MAX)
+			? SIZE_MAX
+			: static_cast<std::size_t>(size);
+
+	return retdec::utils::bounds::rangeFits(
+			static_cast<std::size_t>(offset),
+			cappedSize,
+			static_cast<std::size_t>(len));
+}
+
+/**
+ * Resolve a clamped read: where it starts and how many bytes it may take.
+ *
+ * FileFormat::getBytes shortened an over-long request to the end of the file
+ * with
+ *
+ *     numberOfBytes = offset + numberOfBytes > getLoadedFileLength()
+ *             ? getLoadedFileLength() - offset : numberOfBytes;
+ *
+ * and the clamp is skipped exactly when the sum wraps. offset = 10 with
+ * numberOfBytes = 0xFFFFFFFFFFFFFFFB makes the sum 5, which is not greater than
+ * a 512-byte file, so numberOfBytes stays 18446744073709551611 and the copy
+ * below it runs that many bytes out of a 512-byte vector. The same offset with
+ * a request that does not wrap clamps correctly to 502, which is what makes the
+ * expression look right.
+ *
+ * Returns @c false when nothing can be read -- @a offset at or past the end of
+ * the buffer, which is the guard getBytes already had -- and otherwise writes
+ * the start index and the number of bytes actually available there. The two
+ * outputs are std::size_t, so a caller can index with them without a further
+ * cast, and bounds::remaining supplies the count without forming a sum.
+ *
+ * Postcondition on success: @a outOffset + @a outLength <= @a size, with no
+ * wrap in that sum. XByteBoundsKernels.ClampedReadNeverExceedsTheBuffer checks
+ * it across the offsets and lengths that wrap.
+ */
+inline bool clampedReadLength(
+		std::uint64_t offset,
+		std::uint64_t size,
+		std::uint64_t requested,
+		std::size_t& outOffset,
+		std::size_t& outLength)
+{
+	if (offset > static_cast<std::uint64_t>(SIZE_MAX) || offset >= size)
+	{
+		return false;
+	}
+
+	const std::size_t cappedSize = size > static_cast<std::uint64_t>(SIZE_MAX)
+			? SIZE_MAX
+			: static_cast<std::size_t>(size);
+	const std::size_t start = static_cast<std::size_t>(offset);
+	const std::size_t want = requested > static_cast<std::uint64_t>(SIZE_MAX)
+			? SIZE_MAX
+			: static_cast<std::size_t>(requested);
+
+	outOffset = start;
+	outLength = retdec::utils::bounds::clamp(
+			want, retdec::utils::bounds::remaining(start, cappedSize));
+	return true;
+}
+
+/**
+ * Copy the readable part of [@a offset, @a offset + @a requested) out of a
+ * buffer of @a size bytes.
+ *
+ * This is the whole body of FileFormat::getBytes, kept here rather than in the
+ * method so that the copy itself -- not just the arithmetic in front of it --
+ * runs in the test suite against a real heap buffer under AddressSanitizer.
+ * A clamp that stops being a clamp is a wild read, and a test that can only
+ * reach the predicate cannot see that.
+ *
+ * @a out is left untouched when the read is refused, and holds exactly the
+ * available bytes otherwise, which is what getBytes promised before.
+ */
+inline bool copyClampedRange(
+		const unsigned char* data,
+		std::uint64_t size,
+		std::uint64_t offset,
+		std::uint64_t requested,
+		std::vector<std::uint8_t>& out)
+{
+	std::size_t start = 0;
+	std::size_t length = 0;
+	if (!clampedReadLength(offset, size, requested, start, length))
+	{
+		return false;
+	}
+	// clampedReadLength refuses offset >= size, so a zero length here means the
+	// caller asked for zero bytes; only a caller-supplied buffer can be null.
+	if (data == nullptr && length != 0)
+	{
+		return false;
+	}
+
+	out.clear();
+	out.reserve(length);
+	out.insert(out.end(), data + start, data + start + length);
+	return true;
+}
+
+/**
+ * The end offset of a region declared at @a offset with @a size bytes,
+ * saturated at SIZE_MAX instead of wrapping.
+ *
+ * FileFormat::getDeclaredFileLength and FileFormat::isObjectStretchedOverSections
+ * both formed `item->getOffset() + item->getSizeInFile()` on two header fields
+ * that arrive unclamped -- for ELF, straight from ELFIO's 64-bit
+ * `sec->get_size()`. A section declaring offset 0x10 and size
+ * 0xFFFFFFFFFFFFFFF0 makes that sum 0, so the declared length comes out
+ * understated and getOverlaySize answers about the wrong region; in
+ * isObjectStretchedOverSections the same wrap hides the containing section from
+ * `addr < secEnd` altogether.
+ *
+ * Saturating is the honest answer for both: a region that runs off the end of
+ * the address space ends at the end of the address space. bounds::addFits
+ * decides representability by subtraction, without forming the sum.
+ */
+inline std::size_t regionEndSaturating(std::uint64_t offset, std::uint64_t size)
+{
+	if (offset > static_cast<std::uint64_t>(SIZE_MAX)
+			|| size > static_cast<std::uint64_t>(SIZE_MAX))
+	{
+		return SIZE_MAX;
+	}
+
+	const std::size_t start = static_cast<std::size_t>(offset);
+	const std::size_t len = static_cast<std::size_t>(size);
+	return retdec::utils::bounds::addFits(start, len) ? start + len : SIZE_MAX;
+}
+
+/// Where an object of @a size bytes at @a addr sits relative to one region.
+enum class ObjectPlacement
+{
+	Elsewhere, ///< @a addr is not inside this region at all
+	Contained, ///< the object starts in this region and ends inside it
+	Stretched  ///< the object starts in this region and runs past its end
+};
+
+/**
+ * Classify an object against one section or segment, without forming either end.
+ *
+ * FileFormat::isObjectStretchedOverSections computed both ends as sums --
+ * `secStart + sec->getSizeInFile()` and `addr + size` -- and answered
+ * `addrEnd > secEnd`. A wrapped section end makes the containing section
+ * invisible to `addr < secEnd`, so the loop walks past it and the method
+ * reports "not stretched" for an object it never classified; a wrapped object
+ * end reports "not stretched" for an object that plainly is.
+ */
+inline ObjectPlacement placeObjectInRegion(
+		std::uint64_t regionStart,
+		std::uint64_t regionSize,
+		std::uint64_t addr,
+		std::uint64_t size)
+{
+	const std::uint64_t regionEnd =
+			static_cast<std::uint64_t>(regionEndSaturating(regionStart, regionSize));
+	if (addr < regionStart || addr >= regionEnd)
+	{
+		return ObjectPlacement::Elsewhere;
+	}
+
+	const std::uint64_t objectEnd =
+			static_cast<std::uint64_t>(regionEndSaturating(addr, size));
+	return objectEnd > regionEnd
+			? ObjectPlacement::Stretched
+			: ObjectPlacement::Contained;
+}
+
+} // namespace bounds_kernels
+} // namespace fileformat
+} // namespace retdec
+
+#ifndef RETDEC_FILEFORMAT_BOUNDS_KERNELS_ONLY
+
 #include <algorithm>
 #include <cassert>
 #include <climits>
-#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <sstream>
 
-#include "retdec/utils/bounds.h"
-#include "retdec/utils/byte_order.h"
 #include "retdec/utils/conversion.h"
 #include "retdec/utils/file_io.h"
 #include "retdec/utils/string.h"
@@ -43,77 +331,6 @@ namespace
 
 const std::size_t DefaultMinStringLength = 4;
 
-/**
- * Decide whether @a x units of @a unitBits bits each fit in a 64-bit result.
- *
- * The guard this replaces -- at FileFormat::getXByte and
- * FileFormat::getXByteOffset, and in the same two shapes at
- * src/loader/loader/image.cpp -- was spelled
- *
- *     x * getByteLength() > sizeof(res) * CHAR_BIT
- *
- * which forms the product before comparing it. x is a std::uint64_t the caller
- * supplies, so the product is not bounded by anything. ESBMC's witness is
- * x = 2305843009213693954 (0x2000000000000002) with getByteLength() == 8: the
- * true product 0x10000000000000010 wraps to 16, `16 > 64` is false, and the
- * guard admits a width of 2.3e18 units. It is reported as "arithmetic overflow
- * on mul, !overflow(\"*\", x, byteLength)" (CWE-190/191).
- *
- * byteorder::widthFits is the same test with the product formed only once both
- * factors are known to be at most 64, proved equivalent over the whole 64-bit
- * domain in tests/verification/byte_order_proof.cpp.
- *
- * The two narrowings on the way in are refused rather than cast away. The unit
- * width is a std::size_t and widthFits takes an unsigned, so on this host a
- * width of 0x100000008 would truncate to 8 and be accepted; x is a
- * std::uint64_t and widthFits takes a std::size_t, which is narrower on a
- * 32-bit host, so x = 0x100000002 would truncate to 2. Neither can fit a
- * 64-bit accumulator at any unit width, so both lose here.
- *
- * Zero units is not this function's case: widthFits refuses n == 0 by design
- * ("read nothing" is how a caller ends up reading a whole section), while the
- * getXByte family answers x == 0 with res = 0. The call sites keep that branch.
- */
-bool xWidthFitsAccumulator(std::uint64_t x, std::size_t unitBits)
-{
-	if (x > byteorder::kAccumulatorBits || unitBits > byteorder::kAccumulatorBits)
-	{
-		return false;
-	}
-
-	return byteorder::widthFits(
-			static_cast<std::size_t>(x), static_cast<unsigned>(unitBits));
-}
-
-/**
- * bounds::rangeFits for a 64-bit offset and length against a std::size_t buffer.
- *
- * The offset-taking readers spell containment as `offset + x > length`, which
- * forms a sum of two values the caller supplies. At offset SIZE_MAX and x = 1
- * the sum is 0, which is not greater than any length, so the guard passes --
- * and in getXBytesOffset the next statement is
- * `res.assign(loadedBytes->begin() + offset, loadedBytes->begin() + offset + x)`,
- * so a wrapped sum means iterators SIZE_MAX elements past a vector that may
- * hold a few hundred bytes. bounds::rangeFits compares against the bytes that
- * remain instead and never forms the sum; it is proved in
- * tests/verification/bounds_proof.cpp.
- *
- * The 64-bit arguments are refused above SIZE_MAX rather than cast, because on
- * a host where std::size_t is narrower the cast is the bug it is meant to
- * prevent: offset 0x100000005 truncates to 5, which is inside almost every
- * buffer. Nothing above SIZE_MAX can index a std::vector anyway.
- */
-bool rangeFitsWide(std::uint64_t offset, std::size_t size, std::uint64_t len)
-{
-	if (offset > static_cast<std::uint64_t>(SIZE_MAX)
-			|| len > static_cast<std::uint64_t>(SIZE_MAX))
-	{
-		return false;
-	}
-
-	return bounds::rangeFits(
-			static_cast<std::size_t>(offset), size, static_cast<std::size_t>(len));
-}
 
 /**
  * Decide whether @a offset is part of region (section or segment) @a newRegion
@@ -1261,16 +1478,14 @@ bool FileFormat::getAddressFromOffset(std::uint64_t &result, std::uint64_t offse
  */
 bool FileFormat::getBytes(std::vector<std::uint8_t> &result, unsigned long long offset, unsigned long long numberOfBytes) const
 {
-	if (offset >= getLoadedFileLength())
-	{
-		return false;
-	}
-
-	numberOfBytes = offset + numberOfBytes > getLoadedFileLength() ? getLoadedFileLength() - offset : numberOfBytes;
-	result.clear();
-	result.reserve(numberOfBytes);
-	std::copy(loadedBytes->begin() + offset, loadedBytes->begin() + offset + numberOfBytes, std::back_inserter(result));
-	return true;
+	// The clamp, the copy and the bound that ties them together all live in
+	// bounds_kernels::copyClampedRange. The expression that used to stand here
+	// -- `offset + numberOfBytes > getLoadedFileLength() ? ... : numberOfBytes`
+	// -- skipped the clamp precisely when the sum wrapped, so a request of
+	// 0xFFFFFFFFFFFFFFFB bytes at offset 10 of a 512-byte file kept its length
+	// and copied it.
+	return bounds_kernels::copyClampedRange(
+			loadedBytes->data(), loadedBytes->size(), offset, numberOfBytes, result);
 }
 
 /**
@@ -1389,12 +1604,19 @@ bool FileFormat::isObjectStretchedOverSections(std::size_t addr, std::size_t siz
 			continue;
 		}
 
-		std::size_t secStart = sec->getOffset();
-		std::size_t secEnd = secStart + sec->getSizeInFile();
-		std::size_t addrEnd = addr + size;
-		if (secStart <= addr && addr < secEnd)
+		// Both ends were sums of a header field and an offset, and both
+		// wrapped: a wrapped section end hides the containing section from the
+		// `addr < secEnd` test, so the loop walks past it and the method
+		// answers about no section at all.
+		switch (bounds_kernels::placeObjectInRegion(
+				sec->getOffset(), sec->getSizeInFile(), addr, size))
 		{
-			return (addrEnd > secEnd);
+			case bounds_kernels::ObjectPlacement::Elsewhere:
+				continue;
+			case bounds_kernels::ObjectPlacement::Stretched:
+				return true;
+			case bounds_kernels::ObjectPlacement::Contained:
+				return false;
 		}
 	}
 
@@ -2074,7 +2296,7 @@ bool FileFormat::getXByte(std::uint64_t address, std::uint64_t x, std::uint64_t 
 	// x == 0 is admitted here and answered by the `else if(!x)` branch below,
 	// which is what the wrapping product did too: 0 * anything is 0, which is
 	// not greater than 64.
-	if(!secSeg || (x != 0 && !xWidthFitsAccumulator(x, getByteLength())))
+	if(!secSeg || (x != 0 && !bounds_kernels::xWidthFitsAccumulator(x, getByteLength())))
 	{
 		return false;
 	}
@@ -2086,8 +2308,14 @@ bool FileFormat::getXByte(std::uint64_t address, std::uint64_t x, std::uint64_t 
 
 	const auto secOffset = address - secSeg->getAddress();
 	const auto offset = secSeg->getOffset() + secOffset;
-	return (secOffset + x > secSeg->getLoadedSize() || offset + x > getLoadedFileLength()) ?
-		false : createValueFromBytes(*loadedBytes, res, e, offset, x);
+	// `secOffset + x > secSeg->getLoadedSize() || offset + x > getLoadedFileLength()`
+	// was the containment test; both halves are sums of a section-relative
+	// offset and a caller width. x is at most 8 once the guard above has run,
+	// but `offset` is itself `secSeg->getOffset() + secOffset` and carries no
+	// such bound, so the second sum can still wrap.
+	return (bounds_kernels::rangeFitsWide(secOffset, secSeg->getLoadedSize(), x)
+			&& bounds_kernels::rangeFitsWide(offset, getLoadedFileLength(), x))
+		? createValueFromBytes(*loadedBytes, res, e, offset, x) : false;
 }
 
 /**
@@ -2101,7 +2329,26 @@ bool FileFormat::getXBytes(std::uint64_t address, std::uint64_t x, std::vector<s
 {
 	res.clear();
 	const auto *secSeg = getSectionOrSegmentFromAddress(address);
-	return secSeg && secSeg->getBytes(res, address - secSeg->getAddress(), x) && res.size() == x;
+	if(!secSeg)
+	{
+		return false;
+	}
+
+	// SecSeg::getBytes clamps with getRealSizeInRegion, whose clamp is itself a
+	// wrapping sum (`offset + requestedSize > regionSize`, src/fileformat/utils/
+	// other.cpp): at offset 10 with x = 0xFFFFFFFFFFFFFFFB in a 512-byte region
+	// it hands back 18446744073709551611 rather than 502, and SecSeg::getBytes
+	// then assigns from `bytes.begin() + sOffset + sSize`. getLoadedSize() is
+	// the size of that same `bytes` vector, so refusing here is refusing before
+	// the wrap, and it changes no in-range answer: a read that runs past the
+	// section already failed the `res.size() == x` test below.
+	const auto secOffset = address - secSeg->getAddress();
+	if(!bounds_kernels::rangeFitsWide(secOffset, secSeg->getLoadedSize(), x))
+	{
+		return false;
+	}
+
+	return secSeg->getBytes(res, secOffset, x) && res.size() == x;
 }
 
 bool FileFormat::setXByte(std::uint64_t address, std::uint64_t x, std::uint64_t val, retdec::utils::Endianness e/* = retdec::utils::Endianness::UNKNOWN*/)
@@ -2219,8 +2466,8 @@ bool FileFormat::getXByteOffset(std::uint64_t offset, std::uint64_t x, std::uint
 {
 	static_assert(sizeof(res) * CHAR_BIT == byteorder::kAccumulatorBits,
 			"widthFits bounds the width against a 64-bit accumulator; res must be one");
-	if(!rangeFitsWide(offset, getLoadedFileLength(), x)
-			|| (x != 0 && !xWidthFitsAccumulator(x, getByteLength())))
+	if(!bounds_kernels::rangeFitsWide(offset, getLoadedFileLength(), x)
+			|| (x != 0 && !bounds_kernels::xWidthFitsAccumulator(x, getByteLength())))
 	{
 		return false;
 	}
@@ -2247,7 +2494,7 @@ bool FileFormat::getXBytesOffset(std::uint64_t offset, std::uint64_t x, std::vec
 	// iterators below are why it mattered: at offset SIZE_MAX and x = 1 the sum
 	// is 0, the guard passes, and begin() + SIZE_MAX is formed on a vector of a
 	// few hundred bytes.
-	if(rangeFitsWide(offset, getLoadedFileLength(), x))
+	if(bounds_kernels::rangeFitsWide(offset, getLoadedFileLength(), x))
 	{
 		const auto first = loadedBytes->begin() + static_cast<std::ptrdiff_t>(offset);
 		res.assign(first, first + static_cast<std::ptrdiff_t>(x));
@@ -2320,11 +2567,17 @@ std::size_t FileFormat::getDeclaredFileLength() const
 {
 	std::size_t declSize = 0;
 
+	// `item->getOffset() + item->getSizeInFile()` was formed and then narrowed
+	// to std::size_t. Both are unclamped header fields -- for ELF the size is
+	// ELFIO's 64-bit sec->get_size() -- so a section declaring offset 0x10 and
+	// size 0xFFFFFFFFFFFFFFF0 contributed 0 and left declSize understated,
+	// which getOverlaySize and getOverlayEntropy then answer from.
 	for(const auto *item : sections)
 	{
 		if(item && item->getType() != Section::Type::BSS)
 		{
-			declSize = std::max(declSize, static_cast<std::size_t>(item->getOffset() + item->getSizeInFile()));
+			declSize = std::max(declSize, bounds_kernels::regionEndSaturating(
+					item->getOffset(), item->getSizeInFile()));
 		}
 	}
 
@@ -2332,7 +2585,8 @@ std::size_t FileFormat::getDeclaredFileLength() const
 	{
 		if(item)
 		{
-			declSize = std::max(declSize, static_cast<std::size_t>(item->getOffset() + item->getSizeInFile()));
+			declSize = std::max(declSize, bounds_kernels::regionEndSaturating(
+					item->getOffset(), item->getSizeInFile()));
 		}
 	}
 
@@ -2752,3 +3006,5 @@ void FileFormat::dumpResourceTree(std::string &dumpStr)
 
 } // namespace fileformat
 } // namespace retdec
+
+#endif // RETDEC_FILEFORMAT_BOUNDS_KERNELS_ONLY

@@ -31,17 +31,35 @@ namespace {
  */
 bool swapEndianness(std::string &str, std::size_t items, std::size_t length = 1)
 {
-	if (!length || !items || str.size() < items * length)
+	// `str.size() < items * length` formed the product before testing it, and
+	// both factors are virtual-call results a subclass supplies: items is
+	// getBytesPerWord() and length is getNumberOfNibblesInByte() at the
+	// hexToBig/hexToLittle call sites. A product that wraps compares as small,
+	// the guard passes, and the same wrapped value is then used again as the
+	// modulus of `str.size() % (items * length)` and as the stride of the loop
+	// below -- so the swap runs with a word size nothing in the string matches.
+	//
+	// bounds::mulFits answers "is items * length representable" without forming
+	// it, which is the same kernel bytesToHexString and txt::bitsCapacity use.
+	// Only once it says yes is the product computed, and then it is computed
+	// once and reused rather than re-derived at each of the three sites.
+	if (!length || !items || !bounds::mulFits(items, length))
+	{
+		return false;
+	}
+
+	const std::size_t wordLen = items * length;
+	if (str.size() < wordLen)
 	{
 		return false;
 	}
 
 	const auto middleWordIndex = items / 2;
 	const auto middleLengthIndex = length / 2;
-	const auto wasteLen = str.size() % (items * length);
+	const auto wasteLen = str.size() % wordLen;
 	str.erase(str.size() - wasteLen, wasteLen);
 
-	for (std::size_t i = 0, e = str.size(); i < e; i += items * length)
+	for (std::size_t i = 0, e = str.size(); i < e; i += wordLen)
 	{
 		for (std::size_t j = 0; j < middleWordIndex; ++j)
 		{
@@ -82,15 +100,36 @@ bool swapEndianness(std::string &str, std::size_t items, std::size_t length = 1)
  */
 bool swapEndianness(std::vector<unsigned char>& values, std::size_t items)
 {
-	if (!items)
+	// The mask this walks down from used to be built by
+	// `unsigned char a = 1; a <<= (sizeof(a) * items) - 1;` with items =
+	// getByteLength(), a virtual-call result no caller bounds. sizeof(a) is 1,
+	// so the count is items - 1, and `a` promotes to int before the shift: at
+	// getByteLength() = 64 that is a shift of 63 on a 32-bit int, which UBSan
+	// reports as "shift exponent 63 is too large for 32-bit type int". Between
+	// 9 and 32 there is no undefined behaviour and no answer either -- the bit
+	// `1 << (items - 1)` sets does not survive the conversion back to unsigned
+	// char, so `a` is 0, the while loop below never executes, and every element
+	// is silently overwritten with 0.
+	//
+	// items counts the BITS of one value, and a value here is one unsigned
+	// char, so a reversal is defined only for 1..kBitsPerByte. Anything wider
+	// is refused, exactly as ByteValueStorage::createBytesFromValue refuses a
+	// getByteLength() that is not kBitsPerByte: every getByteLength() in this
+	// tree reports 8, and a silent wrong answer for the widths that do not is
+	// worse than a refusal.
+	if (!items || items > byteorder::kBitsPerByte)
 	{
 		return false;
 	}
 
+	// Built in unsigned int and narrowed once, so the shift count -- at most
+	// kBitsPerByte - 1 = 7 -- is defined for the type it acts on. For every
+	// items in 1..8 this is the value the old expression produced.
+	const unsigned char top = static_cast<unsigned char>(1u << (items - 1));
+
 	for (std::size_t i = 0, e = values.size(); i < e; ++i)
 	{
-		unsigned char a = 1, b = 1, y = 0;
-		a <<= (sizeof(a) * items) - 1;
+		unsigned char a = top, b = 1, y = 0;
 
 		while (a)
 		{
@@ -700,14 +739,35 @@ bool ByteValueStorage::getXByteArray(
 {
 	std::uint64_t r = 0;
 
+	// One of six address walks in this file -- the count was written as three
+	// here and the adversarial verify pass found the other three, which is why
+	// it is now a shared helper rather than a number in a comment. This is the
+	// only one whose step comes straight from a caller parameter. It ended
+	// with `address += x`, the same expression getNTWSImpl and getNTWSNiceImpl
+	// below used to end with, and it has the same two failures. With x = 0 it re-reads one address `size` times and
+	// reports success, so a caller asking for an array of 4 gets the same
+	// element four times rather than a refusal. With a large x it wraps off the
+	// top of the address space and carries on from the bottom: at
+	// address = UINT64_MAX - 0xFF, x = 0x1000 and size = 4 it read
+	// 0xffffffffffffff00, 0xf00, 0x1f00 and 0x2f00 and returned true.
+	//
+	// scan::advance refuses a zero step and refuses one that would leave the
+	// buffer, and leaves the cursor bitwise unchanged on a refusal. The buffer
+	// here is the address space itself -- getXByte is what knows where the
+	// segments end -- so the cursor spans SIZE_MAX, exactly as in the two NTWS
+	// walks. The last element needs no step after it, so advance is only asked
+	// when another iteration follows; a walk that ends exactly at the top of
+	// the address space is a legal walk.
+	scan::Cursor cursor{static_cast<std::size_t>(address), SIZE_MAX};
+
 	for (std::size_t i = 0; i < size; ++i)
 	{
-		if (getXByte(address, x, r, e))
+		if (!getXByte(cursor.pos, x, r, e))
 		{
-			res.push_back(r);
-			address += x;
+			return false;
 		}
-		else
+		res.push_back(r);
+		if (i + 1 < size && !scan::advance(cursor, static_cast<std::size_t>(x)))
 		{
 			return false;
 		}
@@ -813,14 +873,23 @@ bool ByteValueStorage::get10ByteArray(
 {
 	long double r = 0;
 
+	// The same unguarded walk as getXByteArray above, with a literal step. At
+	// address = UINT64_MAX - 0x0F and size = 4 it read 0xfffffffffffffff0,
+	// 0xfffffffffffffffa, 4 and 14 -- off the top of the address space and back
+	// round from the bottom -- and returned true. Public API.
+	//
+	// kExtendedBytes rather than a bare 10: the width of the x87 extended
+	// double is the reason for both the step and the name.
+	scan::Cursor cursor{static_cast<std::size_t>(address), SIZE_MAX};
+
 	for (std::size_t i = 0; i < size; ++i)
 	{
-		if (get10Byte(address, r))
+		if (!get10Byte(cursor.pos, r))
 		{
-			res.push_back(r);
-			address += 10;
+			return false;
 		}
-		else
+		res.push_back(r);
+		if (i + 1 < size && !scan::advance(cursor, kExtendedBytes))
 		{
 			return false;
 		}
@@ -865,14 +934,18 @@ bool ByteValueStorage::getFloatArray(
 {
 	float r = 0;
 
+	// Same walk, same wrap: at address = UINT64_MAX - 0x07 and size = 4 it read
+	// 0xfffffffffffffff8, 0xfffffffffffffffc, 0 and 4 and returned true.
+	scan::Cursor cursor{static_cast<std::size_t>(address), SIZE_MAX};
+
 	for (std::size_t i = 0; i < size; ++i)
 	{
-		if (getFloat(address, r))
+		if (!getFloat(cursor.pos, r))
 		{
-			res.push_back(r);
-			address += sizeof(float);
+			return false;
 		}
-		else
+		res.push_back(r);
+		if (i + 1 < size && !scan::advance(cursor, sizeof(float)))
 		{
 			return false;
 		}
@@ -897,14 +970,27 @@ bool ByteValueStorage::getDoubleArray(
 {
 	double r = 0;
 
+	// Two defects, and the second is a plain wrong answer rather than a bound.
+	//
+	// The step was `address += sizeof(float)` -- four bytes -- in a loop that
+	// reads DOUBLES. Asked for four doubles at 0x1000 it read 0x1000, 0x1004,
+	// 0x1008 and 0x100c, so every element after the first overlapped its
+	// predecessor by half and three of the four answers were assembled from the
+	// wrong bytes. It returned true. Nothing in the tree tested it; the
+	// adversarial verify pass measured it.
+	//
+	// And the walk is the unguarded one the rest of this file has now shed:
+	// address += step with nothing stopping it wrapping off the top.
+	scan::Cursor cursor{static_cast<std::size_t>(address), SIZE_MAX};
+
 	for (std::size_t i = 0; i < size; ++i)
 	{
-		if (getDouble(address, r))
+		if (!getDouble(cursor.pos, r))
 		{
-			res.push_back(r);
-			address += sizeof(float);
+			return false;
 		}
-		else
+		res.push_back(r);
+		if (i + 1 < size && !scan::advance(cursor, sizeof(double)))
 		{
 			return false;
 		}
@@ -1092,17 +1178,46 @@ bool ByteValueStorage::get10ByteImpl(
 		const std::vector<std::uint8_t>& data,
 		long double& res) const
 {
-	if (systemHasLongDouble())
+	// getFloatImpl and getDoubleImpl immediately below both refuse a data
+	// vector that is not exactly the width they decode; this one copied
+	// data.size() bytes into a long double and called double10ToDouble8 with
+	// no check at all. getXBytes is virtual, so what get10Byte gets back is
+	// whatever the format chose to return -- the two in-tree implementations
+	// happen to enforce res.size() == x, but nothing in the interface says
+	// they must. With a format that returns success and four bytes,
+	// double10ToDouble8 read five bytes past the end of them (ASan:
+	// "heap-buffer-overflow ... READ of size 1") and this returned true with
+	// most of `res` never written.
+	if (data.size() != kExtendedBytes)
 	{
-		memcpy(&res, data.data(), data.size());
-	}
-	else
-	{
-		std::vector<std::uint8_t> d8;
-		double10ToDouble8(d8, data);
-		memcpy(&res, d8.data(), d8.size());
+		return false;
 	}
 
+	if (systemHasLongDouble())
+	{
+		// systemHasLongDouble() is `sizeof(long double) >= 10`, so the ten
+		// bytes checked above fit in the destination.
+		memcpy(&res, data.data(), kExtendedBytes);
+		return true;
+	}
+
+	std::vector<std::uint8_t> d8;
+	double10ToDouble8(d8, data);
+	// double10ToDouble8 leaves d8 empty when it refuses; the check above means
+	// it cannot refuse here, and this says so rather than trusting it.
+	if (d8.size() != sizeof(double))
+	{
+		return false;
+	}
+
+	// Without a 10-byte long double the decoded value is a double, and this is
+	// the widening the original memcpy did by accident of size: copying eight
+	// bytes into a narrower long double would have overrun it.
+	static_assert(sizeof(long double) >= sizeof(double),
+			"long double is never narrower than double");
+	double d = 0.0;
+	memcpy(&d, d8.data(), sizeof(double));
+	res = d;
 	return true;
 }
 
@@ -1137,8 +1252,19 @@ bool ByteValueStorage::getNTBSImpl(
 		std::uint64_t address,
 		std::string& res, std::size_t size) const
 {
+	// The third address walk in this file, and it stepped with `++address`.
+	// The step is a literal 1 so it always advances -- this is not the zero-step
+	// spin getNTWSImpl had -- but it wraps: at address = UINT64_MAX the next
+	// read is at 0, and with size = 0 a format that keeps answering non-zero
+	// bytes sends the walk round the bottom of the address space and on. The
+	// same cursor the other two walks use makes the top of the address space a
+	// stop rather than a seam, so the walk terminates for every format: each
+	// accepted step consumes at least one of the finitely many bytes left,
+	// which is the bound scan::maxSteps states.
+	scan::Cursor cursor{static_cast<std::size_t>(address), SIZE_MAX};
+
 	std::uint64_t c = 0;
-	auto suc = get1ByteFn(address, c, getEndianness());
+	auto suc = get1ByteFn(cursor.pos, c, getEndianness());
 	res.clear();
 
 	while (suc && (c || size))
@@ -1148,7 +1274,11 @@ bool ByteValueStorage::getNTBSImpl(
 		{
 			break;
 		}
-		suc = get1ByteFn(++address, c, getEndianness());
+		if (!scan::advance(cursor, 1))
+		{
+			break;
+		}
+		suc = get1ByteFn(cursor.pos, c, getEndianness());
 	}
 
 	return !res.empty();

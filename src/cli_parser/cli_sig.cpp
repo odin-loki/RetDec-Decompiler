@@ -130,6 +130,72 @@ static constexpr size_t kMinBytesPerCompressedInt = 1;
 /// (`ELEMENT_TYPE_I4` and friends carry no operand).
 static constexpr size_t kMinBytesPerGenericArg = 1;
 
+// ─── Descent bound ───────────────────────────────────────────────────────────
+
+namespace {
+
+/// Deepest nesting decodeType will follow before it stops descending.
+///
+/// bounds::countFits bounds the BREADTH of the element loops above: a declared
+/// count is compared against the bytes that could still supply it. Nothing
+/// bounds the DEPTH, and a Type is defined recursively -- SZARRAY, ARRAY, PTR
+/// and GENERICINST each contain another Type (II.23.2.12) with no limit on how
+/// often that repeats. Two measurements on this tree, `g++ -std=c++20 -O1 -g`
+/// with the 8 MB stack `ulimit -s` gives here:
+///
+///   - A TypeSpec blob that is nothing but ELEMENT_TYPE_SZARRAY bytes recurses
+///     once per byte: 10000 of them came back as a 10000-deep type, 12343 still
+///     returned, and 12500 segfaulted. ELEMENT_TYPE_PTR (0x0F) is the same
+///     shape and was measured at the same orders -- 10000 returned, 15000
+///     segfaulted.
+///   - Worse, a level of the descent need not consume a byte at all. The CLASS
+///     arm calls tokenName, tokenName asks the resolver for a TypeSpec row's
+///     type, and CLIReader::typeSpecType fetches that row's signature blob and
+///     decodes it with this same decoder. A TypeSpec row whose own signature is
+///     the two bytes `12 06` -- ELEMENT_TYPE_CLASS followed by the compressed
+///     TypeDefOrRef 6, which is tag 2 (TypeSpec) and row 1, the row itself --
+///     is a cycle through the resolver that reads the same two bytes forever.
+///     Modelled against CLIReader::typeSpecType, it survived 6001 turns and
+///     segfaulted by 6500. Two bytes of attacker-controlled file data.
+///
+/// So the bound has to be on the descent rather than on the bytes left, and a
+/// cycle needs one whether or not the blob is short. 64 is far above anything a
+/// language compiler emits -- `Dictionary<string, List<int[]>>` reaches four,
+/// counting the outermost GENERICINST as one -- and about two hundred times
+/// below the depth that exhausted the stack above.
+constexpr unsigned kMaxTypeDepth = 64;
+
+/// How deep the current thread is inside decodeType.
+///
+/// Deliberately not a member of CliSigDecoder. The cycle above leaves this
+/// object entirely -- through the resolver, into CLIReader, and back into
+/// decodeTypeSpec on whichever decoder CLIReader holds -- so a per-object
+/// counter can be reset to zero on every turn of the cycle and never see it. A
+/// thread_local follows the descent wherever it goes, and keeps one thread's
+/// descent from counting against a thread decoding a different assembly.
+thread_local unsigned g_typeDepth = 0;
+
+/// Claims one level of descent for the enclosing scope and releases it on the
+/// way out, including on decodeType's several early returns.
+class DepthGuard {
+public:
+    DepthGuard() : entered_(g_typeDepth < kMaxTypeDepth) {
+        if (entered_) ++g_typeDepth;
+    }
+    ~DepthGuard() { if (entered_) --g_typeDepth; }
+
+    DepthGuard(const DepthGuard&) = delete;
+    DepthGuard& operator=(const DepthGuard&) = delete;
+
+    /// False when the cap was already reached, i.e. this level must not decode.
+    bool entered() const { return entered_; }
+
+private:
+    bool entered_;
+};
+
+} // namespace
+
 void CliSigDecoder::decodeArrayShape(
         std::span<const uint8_t> blob, size_t& pos,
         uint32_t& rank,
@@ -183,6 +249,26 @@ CliType CliSigDecoder::decodeType(
         std::span<const uint8_t> blob, size_t& pos) const {
     CliType ct;
     ct.base = types::Object();
+
+    // See kMaxTypeDepth. At the cap this level describes nothing: the type
+    // comes back as the Object it was initialised to rather than as a partially
+    // decoded lie.
+    //
+    // The single byte it does skip keeps the invariant every loop in this file
+    // is written against -- decodeType advances the cursor whenever there is
+    // anything left to advance past. decodeMethod's parameter loop,
+    // decodeLocalVar and decodeMethodSpec all terminate on
+    // `pos < blob.size()` against a count that nothing has bounded, so a
+    // decodeType that could return without consuming would turn a declared
+    // count of half a billion into half a billion pushed elements. Today those
+    // three only ever run at depth zero, where the guard always admits -- but
+    // that is a property of who calls whom, and the loops should not depend on
+    // it.
+    DepthGuard depth;
+    if (!depth.entered()) {
+        if (pos < blob.size()) ++pos;
+        return ct;
+    }
 
     // Consume custom modifiers first
     decodeCustomMods(blob, pos, ct.modreqs, ct.modopts);
@@ -264,12 +350,23 @@ CliType CliSigDecoder::decodeType(
         // format itself justifies. Without it, DF FF FF FF here asks for
         // 536,870,911 recursive decodeType calls on an exhausted blob, each
         // pushing a BcType.
+        //
+        // The refusal is the same one decodeArrayShape makes, and says the same
+        // thing. It used to set the count to 0 and carry on, which produced
+        // types::Generic(Class(name), {}) -- an instantiation of a generic type
+        // with no arguments. II.23.2.12 spells the argument list `Type Type*`,
+        // so no well-formed GENERICINST has none, and a caller reading that
+        // shape cannot tell a refusal from a decode. Reporting the raw class
+        // instead answers only what the blob actually established: which type
+        // is being instantiated.
         auto countOpt = decodeCompressedUInt(blob, pos);
-        uint32_t count = countOpt.value_or(0);
         if (!countOpt ||
-            !utils::bounds::countFits(pos, blob.size(), count,
-                                      kMinBytesPerGenericArg))
-            count = 0;
+            !utils::bounds::countFits(pos, blob.size(), *countOpt,
+                                      kMinBytesPerGenericArg)) {
+            ct.base = types::Class(baseName);
+            return ct;
+        }
+        const uint32_t count = *countOpt;
         std::vector<BcType> args;
         for (uint32_t i = 0; i < count; ++i) {
             CliType argType = decodeType(blob, pos);

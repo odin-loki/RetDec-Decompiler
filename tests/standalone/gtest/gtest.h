@@ -430,10 +430,23 @@ public:
 
 	/// Runs SetUp / body / TearDown.  Public so the generated per-test subclass
 	/// can drive it from a static function.
+	///
+	/// A SetUp that skips stops the body, which is what real GoogleTest does
+	/// and what this did not. GTEST_SKIP expands to a `return`, so it left
+	/// SetUp early and set the skipped flag -- and then the body ran anyway,
+	/// silently, against exactly the precondition the fixture had just declared
+	/// unusable. tests/utils/memory_tests.cpp skipped itself under a sanitizer
+	/// that way and still killed the process; the skip read as effective
+	/// because it compiled and the flag was set.
+	///
+	/// TearDown still runs, as in GoogleTest: SetUp may have acquired something
+	/// before it decided to skip.
 	void gtlRun(const std::function<void()>& body)
 	{
 		SetUp();
-		body();
+		if (!::testing::lite::state().skipped) {
+			body();
+		}
 		TearDown();
 	}
 

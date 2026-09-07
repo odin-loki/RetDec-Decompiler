@@ -75,6 +75,24 @@ TEST_F(MathTests, IsPowerOfTwoAtInt64MinIsFalseAndNotUndefined) {
 }
 
 TEST_F(MathTests, IsPowerOfTwoRefusesEveryNegativeValue) {
+	// A signed minimum is what discriminates here, not the small negatives.
+	// `number && !(number & (number - 1))` already answers false for -1, -2
+	// and -8: after promotion those have more than one bit set, so the AND is
+	// non-zero -- which means those three assertions pass against the old body
+	// and prove nothing on their own. A minimum that is a minimum of the
+	// PROMOTED type is the exception: its pattern has exactly one bit set and
+	// `number - 1` overflows to the complementary pattern, so the AND is zero
+	// and the answer comes back true. Measured against the old body at -O1:
+	// isPowerOfTwo(INT32_MIN) and isPowerOfTwo(INT64_MIN) both answered TRUE.
+	//
+	// INT16_MIN and INT8_MIN do not discriminate -- they promote to int, where
+	// the subtraction is exact and the AND is non-zero -- and they are here to
+	// say the answer is the same at every width, not to catch the regression.
+	EXPECT_FALSE(isPowerOfTwo(std::numeric_limits<std::int32_t>::min()));
+	EXPECT_FALSE(isPowerOfTwoOrZero(std::numeric_limits<std::int32_t>::min()));
+	EXPECT_FALSE(isPowerOfTwo(std::numeric_limits<std::int16_t>::min()));
+	EXPECT_FALSE(isPowerOfTwo(std::numeric_limits<std::int8_t>::min()));
+
 	EXPECT_FALSE(isPowerOfTwo(std::int64_t(-1)));
 	EXPECT_FALSE(isPowerOfTwo(std::int64_t(-2)));
 	EXPECT_FALSE(isPowerOfTwo(std::int32_t(-8)));

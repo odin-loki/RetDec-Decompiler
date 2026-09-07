@@ -5,23 +5,42 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
-#include <memory>
-#include <climits>
-#include <cstring>
+// ─── the bounds arithmetic Image's byte readers share ───────────────────────
+//
+// Same two wrapping shapes as src/fileformat/file_format/file_format.cpp, in
+// the same reader family, over a sink that repeats the defect twice more:
+// Segment::getBytes clamps with `addressOffset + size >= getSize()` *after*
+// SegmentDataSource::loadData has already been called with the unclamped size,
+// and loadData clamps with `loadOffset + loadSize >= getDataSize()` immediately
+// before `std::copy(_data.data() + loadOffset, _data.data() + loadOffset +
+// loadSize, ...)`. Both of those sums wrap, so the width has to be refused here,
+// before either is reached.
+//
+// The arithmetic lives up here, outside the
+// RETDEC_LOADER_BOUNDS_KERNELS_ONLY guard, because the rest of this translation
+// unit cannot be compiled without an LLVM source tree -- it reaches
+// retdec/fileformat/types/sec_seg/sec_seg.h, which includes
+// <llvm/ADT/StringRef.h>, and deps/llvm here is a download stub:
+//
+//     $ g++ -std=c++17 -Iinclude -fsyntax-only src/loader/loader/image.cpp
+//     include/retdec/fileformat/types/sec_seg/sec_seg.h:14:10: fatal error:
+//     llvm/ADT/StringRef.h: No such file or directory
+//
+// so a guard written inside an Image method is a guard no test in this
+// repository can execute. tests/loader_sim/xbyte_width_guard_test.cpp defines
+// RETDEC_LOADER_BOUNDS_KERNELS_ONLY, includes this file, and calls the two
+// functions below on the counterexamples they exist to refuse. Only <cstdint>
+// and the two dependency-free headers below are reachable from here.
 
+#include <cstddef>
+#include <cstdint>
+
+#include "retdec/utils/bounds.h"
 #include "retdec/utils/byte_order.h"
-#include "retdec/utils/conversion.h"
-#include "retdec/utils/string.h"
-#include "retdec/utils/system.h"
-#include "retdec/loader/loader/image.h"
-
-using namespace retdec::utils;
 
 namespace retdec {
 namespace loader {
-
-namespace
-{
+namespace bounds_kernels {
 
 /**
  * Decide whether @a x units of @a unitBits bits each fit in a 64-bit result.
@@ -43,28 +62,80 @@ namespace
  * domain in tests/verification/byte_order_proof.cpp.
  *
  * The two narrowings on the way in are refused rather than cast away. The unit
- * width is a std::size_t and widthFits takes an unsigned, so on this host a
- * width of 0x100000008 would truncate to 8 and be accepted; x is a
- * std::uint64_t and widthFits takes a std::size_t, which is narrower on a
- * 32-bit host, so x = 0x100000002 would truncate to 2. Neither can fit a
- * 64-bit accumulator at any unit width, so both lose here.
+ * width reaches widthFits as an unsigned, so on a host with 64-bit std::size_t
+ * a width of 0x100000008 would truncate to 8 and be accepted; x reaches it as a
+ * std::size_t, which is narrower on a 32-bit host, so x = 0x100000002 would
+ * truncate to 2. Neither can fit a 64-bit accumulator at any unit width, so
+ * both lose here.
  *
  * Zero units is not this function's case: widthFits refuses n == 0 by design,
- * while the getXByte family answered x == 0 through the byte-fetch below. The
- * call sites keep that behaviour by testing x separately.
+ * while the getXByte family answered x == 0 through the byte fetch below it.
+ * The call sites keep that behaviour by testing x separately.
  */
-bool xWidthFitsAccumulator(std::uint64_t x, std::size_t unitBits)
+inline bool xWidthFitsAccumulator(std::uint64_t x, std::uint64_t unitBits)
 {
-	if (x > byteorder::kAccumulatorBits || unitBits > byteorder::kAccumulatorBits)
+	if (x > retdec::utils::byteorder::kAccumulatorBits
+			|| unitBits > retdec::utils::byteorder::kAccumulatorBits)
 	{
 		return false;
 	}
 
-	return byteorder::widthFits(
+	return retdec::utils::byteorder::widthFits(
 			static_cast<std::size_t>(x), static_cast<unsigned>(unitBits));
 }
 
-} // anonymous namespace
+/**
+ * bounds::rangeFits for a 64-bit offset, region size and length.
+ *
+ * Image::getXBytes handed a caller-supplied x straight to Segment::getBytes,
+ * whose two clamps are the wrapping sums quoted above. At an address offset of
+ * 10 with x = 0xFFFFFFFFFFFFFFFB the sum is 5, so for any segment longer than
+ * five bytes neither clamp fires and SegmentDataSource::loadData copies
+ * 0xFFFFFFFFFFFFFFFB bytes out of the segment's data. bounds::rangeFits compares against the bytes that remain and
+ * never forms the sum; it is proved in tests/verification/bounds_proof.cpp.
+ *
+ * @a offset and @a len above SIZE_MAX are refused rather than cast, because on
+ * a host where std::size_t is narrower the cast is the bug it is meant to
+ * prevent. A @a size above SIZE_MAX is capped instead, since no buffer that
+ * large can exist in this process.
+ */
+inline bool rangeFitsWide(std::uint64_t offset, std::uint64_t size, std::uint64_t len)
+{
+	if (offset > static_cast<std::uint64_t>(SIZE_MAX)
+			|| len > static_cast<std::uint64_t>(SIZE_MAX))
+	{
+		return false;
+	}
+
+	const std::size_t cappedSize = size > static_cast<std::uint64_t>(SIZE_MAX)
+			? SIZE_MAX
+			: static_cast<std::size_t>(size);
+
+	return retdec::utils::bounds::rangeFits(
+			static_cast<std::size_t>(offset),
+			cappedSize,
+			static_cast<std::size_t>(len));
+}
+
+} // namespace bounds_kernels
+} // namespace loader
+} // namespace retdec
+
+#ifndef RETDEC_LOADER_BOUNDS_KERNELS_ONLY
+
+#include <memory>
+#include <climits>
+#include <cstring>
+
+#include "retdec/utils/conversion.h"
+#include "retdec/utils/string.h"
+#include "retdec/utils/system.h"
+#include "retdec/loader/loader/image.h"
+
+using namespace retdec::utils;
+
+namespace retdec {
+namespace loader {
 
 Image::Image(const std::shared_ptr<retdec::fileformat::FileFormat>& fileFormat) : _fileFormat(fileFormat), _segments(),
 	_baseAddress(0), _namelessSegNameGen("seg", '0', 4), _statusMessage()
@@ -386,7 +457,7 @@ bool Image::getXByte(std::uint64_t address, std::uint64_t x, std::uint64_t& res,
 	// anything is 0, which is not greater than 64); what a zero-width read
 	// means is then decided below by getBytes and createValueFromBytes, which
 	// is where it was decided before. Only the wrapped widths are new here.
-	if (!seg || (x != 0 && !xWidthFitsAccumulator(x, getByteLength())))
+	if (!seg || (x != 0 && !bounds_kernels::xWidthFitsAccumulator(x, getByteLength())))
 	{
 		return false;
 	}
@@ -418,7 +489,25 @@ bool Image::getXBytes(std::uint64_t address, std::uint64_t x, std::vector<std::u
 	}
 
 	res.clear();
-	if (!seg->getBytes(res, address - seg->getAddress(), x) || res.size() != x)
+
+	// x arrives from the caller with no bound at all, and every clamp between
+	// here and the copy is a wrapping sum: Segment::getBytes shortens size with
+	// `addressOffset + size >= getSize()` only after SegmentDataSource::loadData
+	// has run with the unclamped size, and loadData shortens with
+	// `loadOffset + loadSize >= getDataSize()` immediately before copying
+	// loadSize bytes. At an address offset of 10 with x = 0xFFFFFFFFFFFFFFFB
+	// both sums come to 5, so for any segment longer than five bytes neither
+	// clamp fires and the copy runs off the end of the segment's data.
+	// Refusing here changes no in-range answer: Segment::getBytes
+	// zero-fills to `min(x, getSize() - addressOffset)`, so a read that runs
+	// past the segment already failed the `res.size() != x` test below.
+	const auto segOffset = address - seg->getAddress();
+	if (!bounds_kernels::rangeFitsWide(segOffset, seg->getSize(), x))
+	{
+		return false;
+	}
+
+	if (!seg->getBytes(res, segOffset, x) || res.size() != x)
 	{
 		return false;
 	}
@@ -434,7 +523,7 @@ bool Image::setXByte(std::uint64_t address, std::uint64_t x, std::uint64_t val, 
 	// Same guard as getXByte, and the same witness: x = 0x2000000000000002 with
 	// an 8-bit byte length wrapped to 16, so `16 > 64` was false and the width
 	// was let through. x == 0 is left to createBytesFromValue below, as before.
-	if (!seg || (x != 0 && !xWidthFitsAccumulator(x, getByteLength())))
+	if (!seg || (x != 0 && !bounds_kernels::xWidthFitsAccumulator(x, getByteLength())))
 	{
 		return false;
 	}
@@ -577,3 +666,5 @@ const Segment* Image::_getSegmentFromAddress(std::uint64_t address) const
 
 } // namespace loader
 } // namespace retdec
+
+#endif // RETDEC_LOADER_BOUNDS_KERNELS_ONLY

@@ -14,10 +14,12 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace retdec {
@@ -709,6 +711,7 @@ static std::optional<ConstantRow> findFieldConstantRow(const MetadataTables& tab
 // Widths of the fixed-size #Blob constant encodings, ECMA-335 II.23.1.16
 // (ELEMENT_TYPE_*). They are the byte counts the element type itself names, not
 // sizeof() of whatever C++ type happens to hold the result.
+static constexpr size_t kU1Bytes = 1;  ///< BOOLEAN, I1, U1
 static constexpr size_t kU2Bytes = 2;  ///< CHAR, I2, U2
 static constexpr size_t kU4Bytes = 4;  ///< I4, U4
 static constexpr size_t kU8Bytes = 8;  ///< I8, U8
@@ -725,10 +728,13 @@ static constexpr size_t kUtf16BytesPerUnit = 2;
 /// malloc'd at exactly its symbolic length: blen = 1, n = 4 -- the loop reads
 /// b[0] and stops, then the sign test reads b[3], two bytes past the end of a
 /// one-byte heap object ("dereference failure: array bounds violated: heap
-/// object"). Every call site below happens to pre-check `blob.size() >= n`, so
-/// nothing in this tree reaches that read today; the trap is that the guard
-/// lives at three call sites rather than in the function that needs it, and the
-/// next `case` added to the switch inherits the hazard rather than the check.
+/// object"). Every call site below used to pre-check `blob.size() >= n`, which
+/// is why nothing in this tree reached that read; the trap was that the guard
+/// lived at the call sites rather than in the function that needs it, so the
+/// next `case` added to the switch inherited the hazard rather than the check.
+/// Those pre-checks are gone now: the arms below call straight in and this
+/// function refuses, so the guard cannot be forgotten and the truncated-blob
+/// tests exercise it rather than the call site's copy of it.
 ///
 /// byteorder::readLE refuses the whole read unless n is in 1..8 AND
 /// bounds::rangeFits(0, b.size(), n) holds, so there is one bound and it is the
@@ -753,6 +759,11 @@ static std::optional<int64_t> readSignedLE(std::span<const uint8_t> b, size_t n)
 /// returned the byte-swapped constant. Both now go through the same kernel read
 /// as the signed arms, so the width, the bound and the byte order are stated
 /// once each.
+///
+/// Which arms call this and which call readSignedLE is the whole of the
+/// signed/unsigned question, so it is decided per ElementType at the switch and
+/// nowhere else. byteorder::zeroExtendFrom is the counterpart the kernel keeps
+/// beside signExtendFrom precisely so that the choice has to be made by name.
 static std::optional<int64_t> readUnsignedLE(std::span<const uint8_t> b, size_t n) {
     uint64_t u = 0;
     if (n > utils::byteorder::kMaxBytes) return std::nullopt;
@@ -763,47 +774,120 @@ static std::optional<int64_t> readUnsignedLE(std::span<const uint8_t> b, size_t 
         u, static_cast<unsigned>(n) * utils::byteorder::kBitsPerByte));
 }
 
+// Every arm below is now "this many bytes, this extension direction", and
+// nothing else. Two things moved to get there.
+//
+// The BOUND. Each arm used to open with its own `blob.size() >= n` before
+// calling, so the width was written twice per arm and the check was the call
+// site's rather than the read's. readSignedLE/readUnsignedLE refuse through
+// byteorder::readLE, whose rangeFits(0, size, n) is the same test against the
+// same n it then reads -- so a truncated #Blob yields no value because the read
+// declined it, and a `case` added here inherits the check instead of having to
+// remember it. That is the difference the readSignedLE comment above describes:
+// the ESBMC witness for the old hand-rolled body (a blob shorter than n, whose
+// sign test then indexed b[n - 1] past the end) was unreachable only because
+// three call sites happened to guard it.
+//
+// The EXTENSION DIRECTION. It is now stated by which function the arm calls,
+// once per arm, rather than inferred from which other type the arm shares a
+// label with.
 std::optional<int64_t> CLIReader::fieldConstantInt(uint32_t fieldIdx) const {
     if (!tables_ || !heaps_) return std::nullopt;
     auto row = findFieldConstantRow(*tables_, fieldIdx);
     if (!row) return std::nullopt;
     auto blob = heaps_->blobs.get(row->value);
-    auto ty = static_cast<ElementType>(row->type);
-    switch (ty) {
+    switch (static_cast<ElementType>(row->type)) {
     case ElementType::Boolean:
-    case ElementType::I1:
-        if (!blob.empty()) return static_cast<int8_t>(blob[0]);
-        break;
+        // ECMA-335 I.12.1 lists bool with the unsigned built-in types, and
+        // II.23.1.16 gives it one byte: false is the zero byte and true is any
+        // other. It used to share the I1 arm, which sign-extends, so a #Blob
+        // byte of 0xFF -- which a hostile or damaged assembly supplies freely,
+        // even though a C# compiler emits only 0x00 and 0x01 -- reported the
+        // constant as -1. A bool has no negative value to report.
+        return readUnsignedLE(blob, kU1Bytes);
     case ElementType::U1:
-        if (!blob.empty()) return blob[0];
-        break;
-    case ElementType::Char:
+        // ECMA-335 II.23.1.16 kElementTypeU1: one byte, unsigned.
+        return readUnsignedLE(blob, kU1Bytes);
+    case ElementType::I1:
+        // ECMA-335 II.23.1.16 kElementTypeI1: one byte, signed.
+        return readSignedLE(blob, kU1Bytes);
     case ElementType::I2:
-        // ECMA-335 II.23.1.16: Char and I2 are two bytes wide.
-        if (blob.size() >= kU2Bytes) return readSignedLE(blob, kU2Bytes);
-        break;
+        // ECMA-335 II.23.1.16 kElementTypeI2: two little-endian bytes, signed.
+        return readSignedLE(blob, kU2Bytes);
+    case ElementType::Char:
     case ElementType::U2:
-        // ECMA-335 II.23.1.16 kElementTypeU2: two little-endian bytes.
-        if (blob.size() >= kU2Bytes) return readUnsignedLE(blob, kU2Bytes);
-        break;
+        // ECMA-335 II.23.1.16 kElementTypeU2: two little-endian bytes,
+        // unsigned; ELEMENT_TYPE_CHAR is a UTF-16 code unit, which is also two
+        // bytes and also unsigned. Char used to share the I2 arm above, which
+        // sign-extends: the code unit U+FFFF (#Blob bytes FF FF) decoded as -1
+        // rather than 65535, and every unit at or above U+8000 came out
+        // negative. That is the bug class byteorder::zeroExtendFrom exists to
+        // settle -- its own header names dex_class_parser.cpp:92 routing the
+        // DEX VALUE_CHAR, unsigned by that specification too, through the
+        // sign-extending path.
+        return readUnsignedLE(blob, kU2Bytes);
     case ElementType::I4:
-        // ECMA-335 II.23.1.16: I4 is four bytes wide.
-        if (blob.size() >= kU4Bytes) return readSignedLE(blob, kU4Bytes);
-        break;
+        // ECMA-335 II.23.1.16 kElementTypeI4: four little-endian bytes, signed.
+        return readSignedLE(blob, kU4Bytes);
     case ElementType::U4:
-        // ECMA-335 II.23.1.16 kElementTypeU4: four little-endian bytes.
-        if (blob.size() >= kU4Bytes) return readUnsignedLE(blob, kU4Bytes);
-        break;
+        // ECMA-335 II.23.1.16 kElementTypeU4: four little-endian bytes,
+        // unsigned.
+        return readUnsignedLE(blob, kU4Bytes);
     case ElementType::I8:
     case ElementType::U8:
-        // ECMA-335 II.23.1.16: I8 and U8 are eight bytes wide. U8 shares the
-        // signed arm because the result type is int64_t either way.
-        if (blob.size() >= kU8Bytes) return readSignedLE(blob, kU8Bytes);
-        break;
+        // ECMA-335 II.23.1.16: I8 and U8 are eight little-endian bytes. They
+        // share an arm because at eight bytes the two extensions agree: there
+        // is nothing above bit 63 to fill, so signExtendFrom and zeroExtendFrom
+        // both hand back the bits unchanged and the int64_t carries the same
+        // pattern either way. A U8 above INT64_MAX therefore still reads
+        // negative here -- that is the return type's limit, not this arm's.
+        return readSignedLE(blob, kU8Bytes);
     default:
-        break;
+        return std::nullopt;
     }
-    return std::nullopt;
+}
+
+/// The IEEE-754 value @p b holds in its first sizeof(Float) bytes, read
+/// little-endian.
+///
+/// Both float arms below were `std::memcpy(&f, blob.data(), sizeof f)` straight
+/// out of the blob. That is a host-endian read of a little-endian datum:
+/// ECMA-335 II.22.9 stores a Constant's value in the #Blob little-endian, so on
+/// a big-endian host the four bytes of 1.0f -- 00 00 80 3F -- were reassembled
+/// as the pattern 0x0000803F, which is a denormal of about 4.6e-41, rather than
+/// as 0x3F800000. It is the same construct, for the same reason, as the memcpy
+/// the U4 integer arm above no longer uses; the float half of this decoder was
+/// simply left behind when the integer half was routed.
+///
+/// byteorder::readLE assembles the pattern with explicit per-byte shifts, so
+/// the answer does not depend on the host, and it refuses unless the whole
+/// range is inside the blob -- so the width is stated once, here, rather than
+/// as a `blob.size() >= n` at each call site.
+///
+/// The memcpy that remains is not a byte-order decision: it copies an integer
+/// the host already holds in host order into a float of the same width, which
+/// is the C++17 spelling of std::bit_cast. Bits is the exact-width unsigned
+/// type, never the 64-bit accumulator, because copying sizeof(Float) bytes out
+/// of a uint64_t would take the high half on a big-endian host and reintroduce
+/// exactly the bug this removes.
+template <typename Float>
+static std::optional<Float> readIeeeLE(std::span<const uint8_t> b) {
+    static_assert(std::numeric_limits<Float>::is_iec559,
+                  "a #Blob R4/R8 constant is an IEEE-754 pattern, so the host "
+                  "type it is copied into has to be one too");
+    static_assert(sizeof(Float) == kU4Bytes || sizeof(Float) == kU8Bytes,
+                  "ECMA-335 II.23.1.16 gives R4 four bytes and R8 eight");
+    using Bits = std::conditional_t<sizeof(Float) == kU4Bytes, uint32_t, uint64_t>;
+    static_assert(sizeof(Bits) == sizeof(Float), "bit pattern must be as wide");
+
+    uint64_t acc = 0;
+    if (!utils::byteorder::readLE(b.data(), b.size(), 0,
+                                  static_cast<unsigned>(sizeof(Float)), acc))
+        return std::nullopt;
+    const Bits bits = static_cast<Bits>(acc);
+    Float v = 0;
+    std::memcpy(&v, &bits, sizeof(Float));
+    return v;
 }
 
 std::optional<double> CLIReader::fieldConstantFloat(uint32_t fieldIdx) const {
@@ -811,16 +895,17 @@ std::optional<double> CLIReader::fieldConstantFloat(uint32_t fieldIdx) const {
     auto row = findFieldConstantRow(*tables_, fieldIdx);
     if (!row) return std::nullopt;
     auto blob = heaps_->blobs.get(row->value);
-    auto ty = static_cast<ElementType>(row->type);
-    if (ty == ElementType::R4 && blob.size() >= 4) {
-        float f = 0;
-        std::memcpy(&f, blob.data(), 4);
-        return static_cast<double>(f);
-    }
-    if (ty == ElementType::R8 && blob.size() >= 8) {
-        double d = 0;
-        std::memcpy(&d, blob.data(), 8);
-        return d;
+    switch (static_cast<ElementType>(row->type)) {
+    case ElementType::R4:
+        // ECMA-335 II.23.1.16 kElementTypeR4: four little-endian bytes.
+        if (auto f = readIeeeLE<float>(blob)) return static_cast<double>(*f);
+        break;
+    case ElementType::R8:
+        // ECMA-335 II.23.1.16 kElementTypeR8: eight little-endian bytes.
+        if (auto d = readIeeeLE<double>(blob)) return *d;
+        break;
+    default:
+        break;
     }
     return std::nullopt;
 }

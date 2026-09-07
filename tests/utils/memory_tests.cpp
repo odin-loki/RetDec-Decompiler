@@ -42,6 +42,35 @@ using namespace ::testing;
 	#endif
 #endif
 
+namespace {
+
+constexpr bool rlimitIsUnsafeHere()
+{
+#ifdef RETDEC_TESTS_RLIMIT_IS_UNSAFE
+	return true;
+#else
+	return false;
+#endif
+}
+
+} // anonymous namespace
+
+/// Skip the test that follows when setting RLIMIT_AS would kill the process.
+///
+/// It goes at the top of each BODY. GTEST_SKIP is a `return`, and this suite
+/// runs against the shim in tests/standalone/gtest/, whose SetUp cannot stop a
+/// body from running -- so a skip placed in SetUp compiles, reports nothing,
+/// and lets the test run anyway. That was the first attempt and it did not
+/// work.
+#define RETDEC_SKIP_IF_RLIMIT_UNSAFE()                                       \
+	do {                                                                     \
+		if (rlimitIsUnsafeHere()) {                                          \
+			GTEST_SKIP() << "capping RLIMIT_AS at physical memory makes the " \
+			                "sanitizer's own mmap fail; see the note at the " \
+			                "top of this file";                               \
+		}                                                                    \
+	} while (false)
+
 namespace retdec {
 namespace utils {
 namespace tests {
@@ -52,22 +81,20 @@ namespace tests {
 class MemoryTests: public Test {
 protected:
 	virtual void SetUp() override {
-#ifdef RETDEC_TESTS_RLIMIT_IS_UNSAFE
-		GTEST_SKIP() << "capping RLIMIT_AS at physical memory makes the "
-		                "sanitizer's own mmap fail; see the note at the top of "
-		                "this file";
-#endif
+		// The skip is in each test body, not here: GTEST_SKIP expands to a
+		// `return`, and returning early from this shim's SetUp does not stop
+		// the body from running afterwards. Measured -- the first version of
+		// this guard put the skip here, the macro was correctly defined, and
+		// the tests ran anyway and killed the process.
+		if (rlimitIsUnsafeHere()) return;
 		// Several tests have side effects, so we need to store the original
 		// total memory so we can restore it after each test.
 		totalSystemMemory = getTotalSystemMemory();
 	}
 
 	virtual void TearDown() override {
-#ifdef RETDEC_TESTS_RLIMIT_IS_UNSAFE
-		return;
-#else
+		if (rlimitIsUnsafeHere()) return;
 		limitSystemMemory(totalSystemMemory);
-#endif
 	}
 
 private:
@@ -77,6 +104,8 @@ private:
 
 TEST_F(MemoryTests,
 GetTotalSystemMemoryReturnsNonZeroSize) {
+	RETDEC_SKIP_IF_RLIMIT_UNSAFE();
+
 	auto size = getTotalSystemMemory();
 
 	ASSERT_GT(size, 0);
@@ -84,6 +113,8 @@ GetTotalSystemMemoryReturnsNonZeroSize) {
 
 TEST_F(MemoryTests,
 LimitSystemMemoryReturnsTrueWhenLimitingTotalSystemMemoryToNonZeroSize) {
+	RETDEC_SKIP_IF_RLIMIT_UNSAFE();
+
 	auto totalSize = getTotalSystemMemory();
 
 	// This has a side effect, but the system's memory is set back to the
@@ -94,12 +125,16 @@ LimitSystemMemoryReturnsTrueWhenLimitingTotalSystemMemoryToNonZeroSize) {
 
 TEST_F(MemoryTests,
 LimitSystemMemoryReturnsFalseWhenLimitIsZero) {
+	RETDEC_SKIP_IF_RLIMIT_UNSAFE();
+
 	ASSERT_FALSE(limitSystemMemory(0));
 }
 
 #ifdef OS_WINDOWS
 TEST_F(MemoryTests,
 LimitSystemMemoryReturnsFalseOnWindowsWhenLimitIsBelowPageSize) {
+	RETDEC_SKIP_IF_RLIMIT_UNSAFE();
+
 	// SetInformationJobObject() requires the limit to be at least page size
 	// (e.g. 4 kB = 4096 bytes). If the limit is lower, it will fail.
 	ASSERT_FALSE(limitSystemMemory(100/*bytes*/));
@@ -108,6 +143,8 @@ LimitSystemMemoryReturnsFalseOnWindowsWhenLimitIsBelowPageSize) {
 
 TEST_F(MemoryTests,
 LimitSystemMemoryToHalfOfTotalSystemMemoryReturnsTrue) {
+	RETDEC_SKIP_IF_RLIMIT_UNSAFE();
+
 	// This has a side effect, but the system's memory is set back to the
 	// original value in TearDown().
 	ASSERT_TRUE(limitSystemMemoryToHalfOfTotalSystemMemory());

@@ -67,14 +67,38 @@ char* byteToHexString(uint8_t b, bool uppercase)
 * @brief Convert 80-bit (10-byte) <tt>long double</tt> binary data (byte array)
 *        into 64-bit (8-byte) <tt>double</tt> binary data.
 *
-* @param[out] dest 64-bit double to create.
-* @param[in] src 80-bit long double to convert.
+* @param[out] dest 64-bit double to create, or left EMPTY when @a src is too
+*             short to hold an 80-bit datum.
+* @param[in] src 80-bit long double to convert; must be at least
+*            @c kExtendedBytes bytes.
 */
 void double10ToDouble8(std::vector<unsigned char> &dest,
 		const std::vector<unsigned char> &src) {
 	// Taken from:
 	// http://blogs.perl.org/users/rurban/2012/09/reading-binary-floating-point-numbers-numbers-part2.html
 	dest.clear();
+
+	// The body below subscripts src at 1 and at 7, 8 and 9 unconditionally, and
+	// at 2..7 in the fraction loop, so it needs kExtendedBytes = 10 elements.
+	// Nothing used to check that, and this is public API declared in
+	// include/retdec/utils/conversion.h with no precondition a caller could
+	// have read. On a four-byte src, ASan reports
+	// "heap-buffer-overflow ... READ of size 1 ... in
+	// retdec::utils::double10ToDouble8" at the `src[9] & 0x80` below -- five
+	// bytes past a four-byte region.
+	//
+	// bounds::rangeFits asks whether the 10-byte datum lies inside the vector
+	// without forming `0 + 10`; it is the same kernel bytesToString and
+	// bytesToHexString in conversion.h use for the identical question.
+	//
+	// A refusal leaves dest EMPTY rather than eight zero bytes, so a caller can
+	// tell "the input was too short" from "the input encoded +0.0" -- eight
+	// zero bytes is a valid answer for the latter. ByteValueStorage::
+	// get10ByteImpl is the one in-tree caller and it now checks dest.size().
+	if (!bounds::rangeFits(0, src.size(), kExtendedBytes)) {
+		return;
+	}
+
 	dest.resize(8, 0);
 
 	int expo, i, sign;
