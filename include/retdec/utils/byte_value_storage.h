@@ -186,6 +186,23 @@ public:
 			std::vector<std::uint64_t>& res) const;
 
 protected:
+	/// The bytes set10Byte writes for @p val, given whether this host has a
+	/// 10-byte long double.
+	///
+	/// @p hasLongDouble is a parameter rather than a call to
+	/// systemHasLongDouble() so that both answers are reachable from a test.
+	/// It is `sizeof(long double) >= 10`, which is a compile-time constant per
+	/// host -- on x86-64 it is always true, so the other path could not be
+	/// exercised at all while the decision lived inside the function, and the
+	/// defect it carried went unnoticed for exactly that reason.
+	///
+	/// Returns false and leaves @p out empty when there is nothing correct to
+	/// write; see the note in the definition.
+	static bool extendedBytesFor(
+			long double val,
+			bool hasLongDouble,
+			std::vector<std::uint8_t>& out);
+
 	bool createValueFromBytes(
 			const std::vector<std::uint8_t>& data,
 			std::uint64_t& value,

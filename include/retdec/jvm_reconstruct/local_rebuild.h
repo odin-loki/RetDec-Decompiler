@@ -109,6 +109,16 @@ public:
                                 const CoalesceResult& coalesceResult,
                                 const std::vector<LVTEntry>& lvtEntries = {});
 
+    /// A JVM field descriptor as a BcType.
+    ///
+    /// Public because it is a pure function of a string that comes out of the
+    /// constant pool, and the '[' run it counts is the part a hostile .class
+    /// file controls. It was private, so the only way to reach it was through a
+    /// whole rebuild -- which is why the unbounded recursion it carried went
+    /// untested until an exact copy of the same function was fixed in another
+    /// module and someone went looking for siblings.
+    static BcType descriptorToType(const std::string& desc);
+
 private:
     LocalRebuildOptions opts_;
 
@@ -116,9 +126,6 @@ private:
     std::unordered_map<uint32_t, BcType>
         inferSlotTypes(const BcCFG& cfg,
                        const StackSimResult& simResult) const;
-
-    // Convert a JVM type descriptor to BcType.
-    static BcType descriptorToType(const std::string& desc);
 
     // Assign a human-readable name to a slot.
     std::string nameSlot(uint32_t slotIdx,

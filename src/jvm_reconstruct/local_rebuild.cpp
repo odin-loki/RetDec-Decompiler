@@ -3,6 +3,7 @@
  * @brief Local variable reconstruction from JVM bytecode.
  */
 
+#include "retdec/utils/bounds.h"
 #include <memory>
 #include "retdec/jvm_reconstruct/local_rebuild.h"
 
@@ -23,7 +24,13 @@ LocalRebuilder::LocalRebuilder(LocalRebuildOptions opts)
 
 // ─── JVM descriptor → BcType ─────────────────────────────────────────────────
 
-BcType LocalRebuilder::descriptorToType(const std::string& desc) {
+/// The array-dimension ceiling. JVMS 4.4.1 caps a field descriptor at 255
+/// dimensions; a descriptor asking for more is malformed, not deep.
+static constexpr std::size_t kMaxArrayDimensions = 255;
+
+/// The non-array part of a descriptor: everything descriptorToType understands
+/// once the leading '[' run has been counted off.
+static BcType elementDescriptorToType(const std::string& desc) {
     if (desc.empty()) return types::Void();
     switch (desc[0]) {
         case 'V': return types::Void();
@@ -35,13 +42,6 @@ BcType LocalRebuilder::descriptorToType(const std::string& desc) {
         case 'J': return types::Long();
         case 'F': return types::Float();
         case 'D': return types::Double();
-        case '[': {
-            BcRefType ref;
-            ref.kind = BcRefKind::Array;
-            ref.elementType = std::make_shared<BcType>(
-                descriptorToType(desc.substr(1)));
-            return BcType{ref};
-        }
         case 'L': {
             std::string cls = desc.substr(1);
             if (!cls.empty() && cls.back() == ';')
@@ -53,6 +53,39 @@ BcType LocalRebuilder::descriptorToType(const std::string& desc) {
         default:
             return types::Int();
     }
+}
+
+/// A JVM field descriptor as a BcType.
+///
+/// The '[' arm used to recurse on `desc.substr(1)`, so the recursion depth was
+/// the number of leading brackets the .class file asked for -- and the
+/// descriptor comes out of the constant pool, where a `[` run is one byte
+/// each. This is the same defect that was fixed in DexClassParser, in an exact
+/// second copy of the function; the adversarial verify pass measured this one
+/// still live: 20,000 brackets returns, 40,000 gives SIGSEGV at -O1.
+///
+/// Counting the run and building the nest with a loop leaves no recursion at
+/// all, and the bound is applied before a single node is allocated, so an
+/// over-deep descriptor costs nothing to refuse. Within the bound the result is
+/// bit-for-bit the type the recursion produced -- the nest is still built
+/// innermost-first.
+BcType LocalRebuilder::descriptorToType(const std::string& desc) {
+    std::size_t dims = 0;
+    while (dims < desc.size() && desc[dims] == '[') {
+        ++dims;
+    }
+    if (dims > kMaxArrayDimensions) {
+        return types::Int();
+    }
+
+    BcType type = elementDescriptorToType(desc.substr(dims));
+    for (std::size_t i = 0; i < dims; ++i) {
+        BcRefType ref;
+        ref.kind = BcRefKind::Array;
+        ref.elementType = std::make_shared<BcType>(std::move(type));
+        type = BcType{ref};
+    }
+    return type;
 }
 
 // ─── Slot type inference ──────────────────────────────────────────────────────
@@ -262,7 +295,16 @@ LocalRebuildResult LocalRebuilder::rebuild(
             lv.name        = entry->name;
             lv.type        = descriptorToType(entry->descriptor);
             lv.startOffset = entry->startPc;
-            lv.endOffset   = entry->startPc + entry->length;
+            // `startPc + length` are two u2 fields the .class file supplies, so
+            // the sum reaches 131070 and the region can end before it begins on
+            // a hostile file. bounds::addFits never forms the sum; a pair that
+            // does not fit describes no region, so the variable gets an empty
+            // one at its start rather than a wrapped extent. The same two lines
+            // were fixed in JvmLifter::wireExceptions; this is the third module
+            // to carry them.
+            lv.endOffset   = utils::bounds::addFits(entry->startPc, entry->length)
+                    ? entry->startPc + entry->length
+                    : entry->startPc;
         } else {
             BcType t = inferredTypes.count(slot) ? inferredTypes.at(slot)
                                                   : types::Int();

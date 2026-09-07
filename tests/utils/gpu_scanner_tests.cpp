@@ -506,6 +506,44 @@ NibbleExpansionRefusesWhatItCannotExpand) {
 	EXPECT_TRUE(out.empty());
 }
 
+
+/// nibblesFor asked whether `size * 2` fits in a std::size_t and then handed
+/// the product to std::string::resize, which is a different question.
+///
+/// std::string::max_size() is about SIZE_MAX/4 on this implementation, so every
+/// size in [2^61, 2^63) passes bounds::mulFits and then throws std::length_error
+/// -- out of GpuScanner::uploadFile, which returns void, so no caller could act
+/// on it. Measured on the real library before the fix at each boundary below.
+///
+/// The test asserts the refusal is the ordinary one: an empty scanner, which is
+/// what every caller already handles for a file it could not read.
+TEST_F(GpuScannerTests,
+UploadRefusesASizeNoStringCanHold) {
+	const std::vector<std::uint8_t> bytes = {0xDE, 0xAD, 0xBE, 0xEF};
+	const std::size_t maxString = std::string().max_size();
+
+	GpuScanner scanner;
+	scanner.uploadFile(bytes.data(), bytes.size());
+	ASSERT_TRUE(scanner.fileEntropy() > 0.0);
+
+	// The smallest size whose nibble count exceeds what a string can hold, and
+	// two more inside that band. Each passes bounds::mulFits.
+	const std::size_t justOver = maxString / 2 + 1;
+	for (std::size_t size : {justOver,
+	                         justOver + 1,
+	                         std::numeric_limits<std::size_t>::max() / 2}) {
+		ASSERT_TRUE(size <= std::numeric_limits<std::size_t>::max() / 2)
+				<< "the case must pass mulFits, or it tests the wrong guard";
+		ASSERT_TRUE(size * 2 > maxString)
+				<< "the case must exceed what a string can hold";
+
+		// No throw, and the scanner is left empty rather than half-filled.
+		EXPECT_NO_THROW(scanner.uploadFile(bytes.data(), size));
+		EXPECT_EQ(0.0, scanner.fileEntropy());
+		EXPECT_TRUE(scanner.findAll({0xDE}).empty());
+	}
+}
+
 } // namespace tests
 } // namespace utils
 } // namespace retdec

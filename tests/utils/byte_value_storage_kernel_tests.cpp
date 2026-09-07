@@ -24,6 +24,7 @@
 
 #include "retdec/utils/byte_value_storage.h"
 #include "retdec/utils/conversion.h"
+#include "retdec/utils/system.h"
 
 using namespace ::testing;
 
@@ -144,14 +145,31 @@ public:
 		return false;
 	}
 
-	bool setXBytes(std::uint64_t, const std::vector<std::uint8_t>&) override
+	/// Whether setXBytes accepts, and where it records what it was handed.
+	/// set10Byte's whole contract is which bytes reach the format, so a fake
+	/// that discards them cannot test it.
+	bool setXBytesOk = false;
+	std::vector<std::uint8_t>* setXBytesSeen = nullptr;
+
+	bool setXBytes(
+			std::uint64_t,
+			const std::vector<std::uint8_t>& data) override
 	{
-		return false;
+		if (!setXBytesOk)
+		{
+			return false;
+		}
+		if (setXBytesSeen != nullptr)
+		{
+			*setXBytesSeen = data;
+		}
+		return true;
 	}
 
 	// createValueFromBytes and createBytesFromValue are protected; the whole
 	// point of the fixes is what they refuse, so expose them.
 	using ByteValueStorage::createBytesFromValue;
+	using ByteValueStorage::extendedBytesFor;
 	using ByteValueStorage::createValueFromBytes;
 };
 
@@ -874,6 +892,60 @@ ArrayWalksRefuseRatherThanWrapPastTheTopOfTheAddressSpace) {
 		std::vector<long double> res;
 		EXPECT_FALSE(storage.get10ByteArray(top - 0x0F, res, 4));
 	}
+}
+
+
+/// set10Byte was the un-inverted twin of get10ByteImpl: on a host without a
+/// 10-byte long double it wrote the first eight bytes of the long double's
+/// OBJECT REPRESENTATION, which is not an encoding of anything. get10Byte on
+/// such a host reads ten stored bytes as an x87 extended datum, so a write
+/// followed by a read did not return the value written.
+///
+/// The host answer is a PARAMETER here, not a call to systemHasLongDouble().
+/// That is the point of the test: `sizeof(long double) >= 10` is a compile-time
+/// constant per host and is always true on x86-64, so with the decision inside
+/// the function the broken path could not be reached from a test at all -- and
+/// a first version of this test, written that way, passed against the old body.
+TEST_F(ByteValueStorageKernelTests,
+ExtendedBytesAreWrittenOnlyWhereTheHostHasTheDatum) {
+	std::vector<std::uint8_t> out;
+
+	// A host with the 80-bit datum: ten bytes of it, which is exactly what
+	// get10ByteImpl memcpys back.
+	EXPECT_TRUE(FakeStorage::extendedBytesFor(1.5L, true, out));
+	EXPECT_EQ(10u, out.size());
+
+	// A host without it: refused, and nothing written. The old body wrote eight
+	// bytes here and returned whatever setXBytes said.
+	out.assign(3, 0xAA);
+	EXPECT_FALSE(FakeStorage::extendedBytesFor(1.5L, false, out));
+	EXPECT_TRUE(out.empty());
+}
+
+/// And the round trip on this host, which is the property the encoding is for.
+TEST_F(ByteValueStorageKernelTests,
+Set10ByteRoundTripsThroughGet10Byte) {
+	if (!systemHasLongDouble()) {
+		GTEST_SKIP() << "this host has no 80-bit long double, so there is no "
+		                "datum to round-trip; extendedBytesFor refuses and the "
+		                "test above covers that";
+	}
+
+	FakeStorage storage;
+	std::vector<std::uint8_t> written;
+	storage.setXBytesOk = true;
+	storage.setXBytesSeen = &written;
+
+	const long double value = 1.5L;
+	ASSERT_TRUE(storage.set10Byte(0x1000, value));
+	ASSERT_EQ(10u, written.size());
+
+	// Feed exactly those bytes back through the reader.
+	storage.xBytesOk = true;
+	storage.xBytesAnswer = written;
+	long double back = 0.0L;
+	ASSERT_TRUE(storage.get10Byte(0x1000, back));
+	EXPECT_EQ(value, back);
 }
 
 } // namespace tests

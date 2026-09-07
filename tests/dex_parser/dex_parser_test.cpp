@@ -67,6 +67,84 @@ TEST(DexReader, ReadsSigned) {
     EXPECT_EQ(-1, r.s1());
 }
 
+/// s1/s2/s4/s8 were `static_cast<intN_t>(uN())`, an out-of-range conversion
+/// for every value above the signed maximum -- implementation-defined before
+/// C++20, and the value is a byte the file chooses. They now go through
+/// byteorder::signExtendFrom, which is the two's complement reading proved for
+/// every width in tests/verification/byte_order_proof.cpp; the narrowing after
+/// it is exact by construction, because sign-extending from N bits lands in
+/// [-2^(N-1), 2^(N-1)-1].
+///
+/// The values below are the top of each unsigned range, which is where the old
+/// cast was out of range.
+///
+/// NOT load-bearing on this toolchain, and said so rather than implied: g++ on
+/// x86-64 implements the out-of-range conversion as two's complement, so this
+/// passes against the old body too -- measured, not assumed. What it pins is
+/// the ANSWER, so a future rewrite of these four cannot change it, and what it
+/// documents is that the guarantee now comes from the kernel rather than from a
+/// compiler's choice. The behaviour it would have caught is a compiler that
+/// chose differently, which is the whole reason the standard called it
+/// implementation-defined.
+TEST(DexReader, SignedReadsAreTwosComplementAtEveryWidth) {
+    {
+        uint8_t d[] = {0xFF, 0x80, 0x7F};
+        DexReader r(d, sizeof(d));
+        EXPECT_EQ(-1, r.s1());
+        EXPECT_EQ(-128, r.s1());
+        EXPECT_EQ(127, r.s1());
+    }
+    {
+        uint8_t d[] = {0xFF, 0xFF, 0x00, 0x80, 0xFF, 0x7F};
+        DexReader r(d, sizeof(d));
+        EXPECT_EQ(-1, r.s2());
+        EXPECT_EQ(-32768, r.s2());
+        EXPECT_EQ(32767, r.s2());
+    }
+    {
+        uint8_t d[] = {0xFF, 0xFF, 0xFF, 0xFF,
+                       0x00, 0x00, 0x00, 0x80,
+                       0xFF, 0xFF, 0xFF, 0x7F};
+        DexReader r(d, sizeof(d));
+        EXPECT_EQ(-1, r.s4());
+        EXPECT_EQ(std::numeric_limits<int32_t>::min(), r.s4());
+        EXPECT_EQ(std::numeric_limits<int32_t>::max(), r.s4());
+    }
+    {
+        uint8_t d[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80};
+        DexReader r(d, sizeof(d));
+        EXPECT_EQ(-1, r.s8());
+        EXPECT_EQ(std::numeric_limits<int64_t>::min(), r.s8());
+    }
+}
+
+/// uleb128p1 encodes a value one greater than the number it means, so the
+/// encoding's own -1 is written as 0. It was
+/// `static_cast<int32_t>(uleb128()) - 1`, where the cast is out of range for
+/// anything above INT32_MAX: measured, a stored 0xFFFFFFFF came back as -2.
+/// The subtraction is done at 64 bits now, and a result outside int32 is
+/// reported as -1 -- the value this encoding already uses for "absent" -- since
+/// it names no index in any DEX table.
+TEST(DexReader, Uleb128P1DoesNotWrapOnAValueAboveInt32Max) {
+    // 0 encodes -1, the "absent" marker.
+    { uint8_t d[] = {0x00}; DexReader r(d, sizeof(d)); EXPECT_EQ(-1, r.uleb128p1()); }
+    // 1 encodes 0, and 0x80 0x01 encodes 128 -> 127.
+    { uint8_t d[] = {0x01}; DexReader r(d, sizeof(d)); EXPECT_EQ(0, r.uleb128p1()); }
+    { uint8_t d[] = {0x80, 0x01}; DexReader r(d, sizeof(d)); EXPECT_EQ(127, r.uleb128p1()); }
+
+    // 0xFFFFFFFF as a ULEB128. The old body returned -2 for this.
+    uint8_t big[] = {0xFF, 0xFF, 0xFF, 0xFF, 0x0F};
+    DexReader r(big, sizeof(big));
+    EXPECT_EQ(-1, r.uleb128p1());
+
+    // And the largest value that still fits, which must NOT be refused:
+    // INT32_MAX + 1 encodes INT32_MAX.
+    uint8_t edge[] = {0x80, 0x80, 0x80, 0x80, 0x08};
+    DexReader r2(edge, sizeof(edge));
+    EXPECT_EQ(std::numeric_limits<int32_t>::max(), r2.uleb128p1());
+}
+
 TEST(DexReader, ReadsUleb128_OneByte) {
     uint8_t data[] = {0x05};
     DexReader r(data, sizeof(data));

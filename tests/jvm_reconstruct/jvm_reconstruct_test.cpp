@@ -364,6 +364,46 @@ TEST(SlotCoalescer, CrossBlockSlotsNotCoalesced) {
 
 // ─── LocalRebuilder tests ──────────────────────────────────────────────────────
 
+/// LocalRebuilder::descriptorToType recursed once per '[' with no depth bound,
+/// over a descriptor the constant pool supplies -- where a bracket is one byte.
+/// This is an exact second copy of the function that was fixed in
+/// DexClassParser; the adversarial verify pass measured this one still live:
+/// 20,000 brackets returns, 40,000 gives SIGSEGV at -O1.
+///
+/// It is a loop now, with the JVMS 4.4.1 ceiling of 255 dimensions applied
+/// before a single node is allocated, so an over-deep descriptor costs nothing
+/// to refuse.
+TEST(LocalRebuilder, DescriptorDepthIsBoundedRatherThanRecursed) {
+    // A descriptor deep enough to have overflowed the stack before, and far
+    // enough past the bound that no plausible ceiling accepts it.
+    const std::string deep = std::string(40000, '[') + "I";
+    const BcType refused = LocalRebuilder::descriptorToType(deep);
+    // Refused values are Int, the function's own fallback; the point is that it
+    // RETURNS rather than dying.
+    EXPECT_TRUE(refused.isPrim());
+
+    // Exactly at the ceiling: still built, and still nested to that depth.
+    const std::string atMax = std::string(255, '[') + "I";
+    BcType t = LocalRebuilder::descriptorToType(atMax);
+    std::size_t dims = 0;
+    while (t.isRef()) {
+        const BcRefType& ref = std::get<BcRefType>(t.v);
+        if (ref.kind != BcRefKind::Array || !ref.elementType) break;
+        ++dims;
+        t = *ref.elementType;
+    }
+    EXPECT_EQ(255u, dims);
+
+    // One past it is refused rather than truncated to something plausible.
+    const std::string overMax = std::string(256, '[') + "I";
+    EXPECT_TRUE(LocalRebuilder::descriptorToType(overMax).isPrim());
+
+    // And the ordinary shapes still answer as they did.
+    EXPECT_TRUE(LocalRebuilder::descriptorToType("I").isPrim());
+    EXPECT_TRUE(LocalRebuilder::descriptorToType("[I").isRef());
+    EXPECT_TRUE(LocalRebuilder::descriptorToType("Ljava/lang/String;").isRef());
+}
+
 TEST(LocalRebuilder, EmptyCFGProducesOnlyParams) {
     BcCFG cfg;
     BcMethod method = makeMethod("test", false); // instance method

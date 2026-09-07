@@ -89,12 +89,31 @@ inline bool nibblesFor(const std::uint8_t* data, std::size_t size, std::string& 
     static const char hexLut[] = "0123456789abcdef";
 
     out.clear();
-    if ((data == nullptr && size != 0)
-            || !bounds::mulFits(size, NIBBLES_PER_BYTE)) {
+    if (data == nullptr && size != 0) {
+        return false;
+    }
+    // Two different questions, and asking only the first was the bug.
+    //
+    // bounds::mulFits says the product is representable as a std::size_t. It
+    // does not say a std::string can hold it, and on this build it cannot:
+    // std::string::max_size() is 4611686018427387903, so every size in
+    // [2305843009213693952, 9223372036854775807] passed the old guard and then
+    // threw std::length_error out of a void GpuScanner::uploadFile. Measured on
+    // the real library at each of those three boundaries.
+    //
+    // A throw out of uploadFile is not a refusal a caller can act on -- the
+    // function returns void and every caller in the tree treats an empty
+    // scanner as "could not read the file". So the capacity is asked about
+    // here, and the answer is the same refusal as every other one.
+    if (!bounds::mulFits(size, NIBBLES_PER_BYTE)) {
+        return false;
+    }
+    const std::size_t need = size * NIBBLES_PER_BYTE;
+    if (need > out.max_size()) {
         return false;
     }
 
-    out.resize(size * NIBBLES_PER_BYTE);
+    out.resize(need);
     for (std::size_t i = 0; i < size; ++i) {
         out[i * NIBBLES_PER_BYTE]     = hexLut[data[i] >> 4];
         out[i * NIBBLES_PER_BYTE + 1] = hexLut[data[i] & 0xF];

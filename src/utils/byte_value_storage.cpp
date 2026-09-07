@@ -569,17 +569,49 @@ bool ByteValueStorage::set8Byte(
  *
  * @return Status of operation (@c true if all is OK, @c false otherwise)
  */
+bool ByteValueStorage::extendedBytesFor(
+		long double val,
+		bool hasLongDouble,
+		std::vector<std::uint8_t>& out)
+{
+	out.clear();
+
+	// The un-inverted twin of get10ByteImpl, and wrong in the way that function
+	// was: on a host without a 10-byte long double set10Byte resized to 8 and
+	// memcpy'd the first eight bytes of the long double's OBJECT
+	// REPRESENTATION.
+	//
+	// That is not an encoding of anything. get10Byte on such a host reads the
+	// ten stored bytes as an x87 extended datum and decodes them; what this
+	// wrote was the low half of whatever the host uses for long double -- on
+	// x86-64 the significand, with the exponent and sign left behind in the two
+	// bytes not copied. Writing then reading back did not return the value
+	// written.
+	//
+	// There is no encoder for the 80-bit format in this file, so the honest
+	// answer on such a host is to refuse: inventing eight bytes that get10Byte
+	// will consume as ten is worse than saying no, and setXBytes is virtual
+	// with every caller already testing the bool.
+	if (!hasLongDouble)
+	{
+		return false;
+	}
+
+	out.resize(kExtendedBytes);
+	memcpy(out.data(), &val, kExtendedBytes);
+	return true;
+}
+
 bool ByteValueStorage::set10Byte(std::uint64_t address, long double val)
 {
 	std::vector<std::uint8_t> bytes;
-	if (systemHasLongDouble())
-		bytes.resize(10);
-	else
-		bytes.resize(8);
-
-	memcpy(bytes.data(), &val, bytes.size());
+	if (!extendedBytesFor(val, systemHasLongDouble(), bytes))
+	{
+		return false;
+	}
 	return setXBytes(address, bytes);
 }
+
 
 /**
  * Set word located at provided address using the specified endian or default

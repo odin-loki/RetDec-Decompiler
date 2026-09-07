@@ -4,6 +4,8 @@
  */
 
 #include "retdec/jvm_parser/jvm_class_parser.h"
+
+#include "retdec/utils/bounds.h"
 #include "retdec/jvm_parser/jvm_lifter.h"
 
 #include <map>
@@ -13,6 +15,28 @@
 
 namespace retdec {
 namespace jvm_parser {
+
+/// The exclusive end of a debug-table region that starts at @p startPc and is
+/// @p length long, in a method whose code is @p codeSize bytes.
+///
+/// Both fields are u2 out of the .class file and nothing in the format relates
+/// them to the code size, so the sum is neither guaranteed to fit nor to land
+/// inside the method. A region that does not is not narrowed to something
+/// plausible -- it is collapsed to its own start, which describes an empty
+/// region rather than a wrong one.
+static std::uint32_t clampedEnd(
+        std::uint32_t startPc, std::uint32_t length, std::size_t codeSize)
+{
+    if (!retdec::utils::bounds::addFits(startPc, length)) {
+        return startPc;
+    }
+    const std::uint64_t end = static_cast<std::uint64_t>(startPc) + length;
+    if (end > codeSize) {
+        return startPc;
+    }
+    return static_cast<std::uint32_t>(end);
+}
+
 
 using namespace bc_module;
 using namespace bc_module::types;
@@ -346,7 +370,18 @@ static BcMethod parseMethod(BinaryReader& r, const ConstPool& pool,
                     v.type        = JvmSignatureParser::parseDescriptor(
                                         pool.utf8(lv.descOrSigIndex));
                     v.startOffset = lv.startPc;
-                    v.endOffset   = lv.startPc + lv.length;
+                    // startPc and length are two u2 fields the .class file
+                    // supplies, so the sum reaches 131070 and can name a region
+                    // extending past the end of the method's code. Clamped to
+                    // the code the method actually has, and the sum is never
+                    // formed unrepresentably -- bounds::addFits decides first.
+                    //
+                    // JvmLifter::wireExceptions was given the same treatment
+                    // for the exception table; this is the local-variable table
+                    // in the parser, which is where the CFG's consumers read it
+                    // from.
+                    v.endOffset   = clampedEnd(
+                            lv.startPc, lv.length, code->bytecode.size());
                     v.isParam     = (lv.startPc == 0);
                     m.locals.push_back(std::move(v));
                 }

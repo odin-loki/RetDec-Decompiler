@@ -3,6 +3,8 @@
  * @brief DEX header parsing, binary reader, index table loading.
  */
 
+#include "retdec/utils/byte_order.h"
+#include "retdec/utils/leb128.h"
 #include "retdec/dex_parser/dex_header.h"
 
 #include "retdec/utils/bounds.h"
@@ -71,10 +73,34 @@ uint64_t DexReader::u8() {
     return lo | (hi << 32);
 }
 
-int8_t  DexReader::s1() { return static_cast<int8_t>(u1()); }
-int16_t DexReader::s2() { return static_cast<int16_t>(u2()); }
-int32_t DexReader::s4() { return static_cast<int32_t>(u4()); }
-int64_t DexReader::s8() { return static_cast<int64_t>(u8()); }
+// Each of these was `static_cast<intN_t>(uN())`, which for any value above the
+// signed maximum is an out-of-range conversion: implementation-defined before
+// C++20 and, at the width these formats use, the difference between a two's
+// complement reading and whatever the compiler happens to do. The value comes
+// straight off the wire, so "above the signed maximum" is a byte the file
+// chooses.
+//
+// byteorder::signExtendFrom is the two's complement reading stated once and
+// proved over the whole 64-bit domain, for every width, in
+// tests/verification/byte_order_proof.cpp. The narrowing that follows it is
+// then exact by construction rather than by assumption: the result is already
+// inside the destination's range, because sign-extending from N bits produces a
+// value in [-2^(N-1), 2^(N-1)-1].
+int8_t DexReader::s1() {
+    return static_cast<int8_t>(
+        utils::byteorder::signExtendFrom(u1(), 8));
+}
+int16_t DexReader::s2() {
+    return static_cast<int16_t>(
+        utils::byteorder::signExtendFrom(u2(), 16));
+}
+int32_t DexReader::s4() {
+    return static_cast<int32_t>(
+        utils::byteorder::signExtendFrom(u4(), 32));
+}
+int64_t DexReader::s8() {
+    return utils::leb128::toSigned(u8());
+}
 
 float DexReader::f4() {
     uint32_t bits = u4();
@@ -141,7 +167,23 @@ int32_t DexReader::sleb128() {
 }
 
 int32_t DexReader::uleb128p1() {
-    return static_cast<int32_t>(uleb128()) - 1;
+    // "uleb128p1" is a ULEB128 whose value is one greater than the number it
+    // encodes, so the encoding's own -1 is written as 0. The subtraction has to
+    // happen in a type that can hold it.
+    //
+    // It was `static_cast<int32_t>(uleb128()) - 1`: the cast is an out-of-range
+    // conversion for anything above INT32_MAX, and the file supplies the value.
+    // Measured before the fix: a stored 0xFFFFFFFF came back as -2.
+    //
+    // Done at 64 bits the subtraction is exact, and the result is then reported
+    // only if it fits -- a uleb128p1 outside int32 does not name an index in
+    // any DEX table, so -1 -- the value this encoding already uses for
+    // "absent" -- is the honest answer rather than a wrapped one.
+    const std::int64_t v = static_cast<std::int64_t>(uleb128()) - 1;
+    if (v < INT32_MIN || v > INT32_MAX) {
+        return -1;
+    }
+    return static_cast<int32_t>(v);
 }
 
 std::string DexReader::mutf8(uint32_t len) {
@@ -563,7 +605,21 @@ CodeItem DexFile::readCodeItem(uint32_t offset) const {
             r.checkCount(pairCount, kMinCatchHandlerPairSize);
             code.handlers.handlers[i].resize(pairCount);
             for (auto& handler : code.handlers.handlers[i]) {
-                handler.typeIdx = static_cast<int32_t>(r.uleb128());
+                // A ULEB128 type index, cast straight to int32 -- an
+                // out-of-range conversion for anything above INT32_MAX, and
+                // measured reachable with 0xFFFFFFFF. A type index that large
+                // names no entry in the type table, so it is refused rather
+                // than wrapped into a plausible-looking small negative.
+                {
+                    const std::uint32_t raw = r.uleb128();
+                    // -1 is this field's documented "catch-all" value
+                    // (dex_header.h, EncodedTypeAddrPair::typeIdx), which is
+                    // the safe reading: a handler with no resolvable type
+                    // catches, it does not silently catch the wrong one.
+                    handler.typeIdx = raw > static_cast<std::uint32_t>(INT32_MAX)
+                            ? -1
+                            : static_cast<int32_t>(raw);
+                }
                 handler.addr    = r.uleb128();
             }
             if (size <= 0) {
