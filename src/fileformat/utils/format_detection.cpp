@@ -25,6 +25,7 @@
 #include <llvm/Support/SwapByteOrder.h>
 #include <llvm/TargetParser/Host.h>
 
+#include "retdec/utils/bounds.h"
 #include "retdec/utils/conversion.h"
 #include "retdec/utils/io/log.h"
 #include "retdec/utils/string.h"
@@ -364,8 +365,15 @@ FormatLatticeHints computeFormatLatticeHints(const std::uint8_t* data, std::size
 			const std::uint32_t peOff =
 				static_cast<std::uint32_t>(data[0x3C]) | (static_cast<std::uint32_t>(data[0x3D]) << 8)
 				| (static_cast<std::uint32_t>(data[0x3E]) << 16) | (static_cast<std::uint32_t>(data[0x3F]) << 24);
-			if (peOff + 4 <= size && data[peOff] == 'P' && data[peOff + 1] == 'E' && data[peOff + 2] == 0
-				&& data[peOff + 3] == 0)
+			// peOff is a uint32_t read straight out of the file, so
+			// `peOff + 4 <= size` is 32-bit arithmetic: an e_lfanew of
+			// 0xFFFFFFFC..0xFFFFFFFF wraps the sum to 0..3, the guard
+			// passes, and data[peOff] reads about 4 GiB past a 512-byte
+			// buffer. bounds::rangeFits never forms the sum, and is proved
+			// over the whole 64-bit domain by
+			// tests/verification/bounds_proof.cpp.
+			if (retdec::utils::bounds::rangeFits(peOff, size, 4) && data[peOff] == 'P' && data[peOff + 1] == 'E'
+				&& data[peOff + 2] == 0 && data[peOff + 3] == 0)
 			{
 				h.peStrength = 100;
 			}
