@@ -12,6 +12,7 @@
 #include <future>
 #include <numeric>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace retdec {
@@ -68,6 +69,28 @@ static bool inBounds64(uint64_t off, uint64_t len, uint64_t fileSize)
 // ─── Plausibility checks ─────────────────────────────────────────────────────
 
 static constexpr uint32_t kMaxSaneSecCount = 9999;
+
+// An AR member can itself be an archive, and classify() dispatches it straight
+// back to parseAR. Nothing bounded that, so the depth of the recursion -- and
+// the number of threads blocked in it, one per level -- was whatever the file
+// asked for. Measured before this cap: a 1.3 MB archive nested 20,000 deep
+// reached 19,369 concurrent threads and took 15.8 seconds. On a host with an
+// ordinary RLIMIT_NPROC, std::async throws std::system_error somewhere in the
+// middle of that and the exception leaves classify(), which is documented to
+// return a FormatResult.
+//
+// Eight is past anything a real toolchain produces: an archive of archives is
+// already unusual at depth one.
+static constexpr unsigned kMaxArchiveNesting = 8;
+
+/// How many members to classify at once. Bounded by the hardware rather than by
+/// the file, which is the whole point.
+static std::size_t archiveFanout() noexcept
+{
+	const unsigned hw = std::thread::hardware_concurrency();
+	const std::size_t width = hw == 0 ? 1u : hw;
+	return width > 8u ? 8u : width;
+}
 static constexpr uint32_t kMinLoadAddr = 0x1000;
 static constexpr uint64_t kMaxLoadAddr64 = 0xFFFF'FFFF'FFFF'0000ULL;
 
@@ -918,9 +941,13 @@ static FormatResult parseMachO(const uint8_t* data, size_t size, const std::stri
 	return res;
 }
 
+static FormatResult classifyAtDepth(
+	const FormatLattice& lattice, const uint8_t* data, size_t size, const std::string& name, unsigned depth);
+
 // ─── AR archive parser ────────────────────────────────────────────────────────
 
-static FormatResult parseAR(const uint8_t* data, size_t size, const std::string& name, const FormatLattice& lattice)
+static FormatResult
+parseAR(const uint8_t* data, size_t size, const std::string& name, const FormatLattice& lattice, unsigned depth)
 {
 	FormatResult res;
 	res.name = name;
@@ -929,8 +956,16 @@ static FormatResult parseAR(const uint8_t* data, size_t size, const std::string&
 	// Global header: "!<arch>\n" (8 bytes) or "!<thin>\n"
 	size_t off = 8;
 
-	// Optional symbol table member (name "/" or "//") — skip
-	std::vector<std::future<FormatResult>> futures;
+	// Members are collected first and classified in bounded batches below. The
+	// loop used to call std::async(std::launch::async, ...) per member, which
+	// is one thread per member with the member count coming out of the file.
+	struct Member
+	{
+		const uint8_t* data;
+		size_t size;
+		std::string name;
+	};
+	std::vector<Member> members;
 
 	while (off + 60 <= size)
 	{
@@ -958,23 +993,52 @@ static FormatResult parseAR(const uint8_t* data, size_t size, const std::string&
 		bool isSpecial = (memberName[0] == '/' && (memberName[1] == 0 || memberName[1] == '/'));
 		if (!isSpecial && memberSize > 0)
 		{
-			const uint8_t* mdata = data + dataOff;
-			size_t msz = memberSize;
-			std::string mname(memberName);
-			// Dispatch each member in parallel
-			futures.push_back(std::async(std::launch::async, [&lattice, mdata, msz, mname]() {
-				return lattice.classify(mdata, msz, mname);
-			}));
+			members.push_back(Member{data + dataOff, memberSize, std::string(memberName)});
 		}
 
 		// Members are padded to even size
 		off = dataOff + memberSize + (memberSize & 1);
 	}
 
-	res.arMembers.reserve(futures.size());
-	for (auto& f: futures)
+	res.arMembers.reserve(members.size());
+
+	// A member that is itself an archive recurses through classify(). Refuse
+	// past the ceiling rather than following the file down: the members are
+	// still reported, with the format each one's own header claims for it, and
+	// nothing below is walked.
+	if (depth >= kMaxArchiveNesting)
 	{
-		res.arMembers.push_back(f.get());
+		for (const auto& m: members)
+		{
+			FormatResult stub;
+			stub.name = m.name;
+			stub.format = DetectedFormat::Unknown;
+			stub.corruption.sectionOffsetsInvalid = true;
+			res.arMembers.push_back(stub);
+		}
+		return res;
+	}
+
+	// Batched rather than all at once: the width is the hardware's, not the
+	// file's, so the thread count no longer follows the member count.
+	const std::size_t fanout = archiveFanout();
+	std::vector<std::future<FormatResult>> futures;
+	futures.reserve(fanout);
+	for (std::size_t i = 0; i < members.size(); i += fanout)
+	{
+		const std::size_t end = std::min(members.size(), i + fanout);
+		futures.clear();
+		for (std::size_t j = i; j < end; ++j)
+		{
+			const Member& m = members[j];
+			futures.push_back(std::async(std::launch::async, [&lattice, m, depth]() {
+				return classifyAtDepth(lattice, m.data, m.size, m.name, depth + 1);
+			}));
+		}
+		for (auto& f: futures)
+		{
+			res.arMembers.push_back(f.get());
+		}
 	}
 	return res;
 }
@@ -1000,7 +1064,12 @@ static DetectedFormat scoreCafeBabe(const uint8_t* data, size_t size)
 
 // ─── Main classify() ─────────────────────────────────────────────────────────
 
-FormatResult FormatLattice::classify(const uint8_t* data, size_t size, const std::string& name) const
+/// The body of FormatLattice::classify, carrying the archive nesting depth that
+/// the public signature has no room for. parseAR() hands its members back to
+/// this rather than to classify(), so the ceiling in kMaxArchiveNesting is
+/// reached instead of being reset to zero at every level.
+static FormatResult
+classifyAtDepth(const FormatLattice& lattice, const uint8_t* data, size_t size, const std::string& name, unsigned depth)
 {
 	if (!data || size == 0)
 	{
@@ -1036,7 +1105,7 @@ FormatResult FormatLattice::classify(const uint8_t* data, size_t size, const std
 	// Node 3: AR / thin archive
 	if (size >= 8 && (std::memcmp(data, "!<arch>\n", 8) == 0 || std::memcmp(data, "!<thin>\n", 8) == 0))
 	{
-		return parseAR(data, size, name, *this);
+		return parseAR(data, size, name, lattice, depth);
 	}
 
 	// Node 4: Mach-O 32/64 slice
@@ -1073,9 +1142,14 @@ FormatResult FormatLattice::classify(const uint8_t* data, size_t size, const std
 					uint32_t slice_size = u32be(ah + 12);
 					if (slice_off == 0 || slice_size == 0) continue;
 					if (!inBounds(slice_off, slice_size, size)) continue;
-					// Classify each thin slice and record it.
-					FormatResult slice =
-						classify(data + slice_off, slice_size, name + "[arch" + std::to_string(ai) + "]");
+					// Classify each thin slice and record it. A slice can be
+					// another fat Mach-O, which lands back here, so this walk
+					// carries the same ceiling as the archive one -- a slice
+					// must start past offset 0, but that only bounds the depth
+					// by the file's length, which is not a bound.
+					if (depth >= kMaxArchiveNesting) continue;
+					FormatResult slice = classifyAtDepth(
+						lattice, data + slice_off, slice_size, name + "[arch" + std::to_string(ai) + "]", depth + 1);
 					r.arMembers.push_back(std::move(slice));
 				}
 			}
@@ -1116,6 +1190,11 @@ FormatResult FormatLattice::classify(const uint8_t* data, size_t size, const std
 	r.name = name;
 	r.format = DetectedFormat::Raw;
 	return r;
+}
+
+FormatResult FormatLattice::classify(const uint8_t* data, size_t size, const std::string& name) const
+{
+	return classifyAtDepth(*this, data, size, name, 0);
 }
 
 FormatResult FormatLattice::classifyFile(const std::string& path) const

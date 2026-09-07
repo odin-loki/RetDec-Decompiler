@@ -8,6 +8,7 @@ add_executable(tests-utils
 	container_tests.cpp
 	conversion_tests.cpp
 	dynamic_buffer_tests.cpp
+	equality_odr_second_tu.cpp
 	equality_tests.cpp
 	filter_iterator_tests.cpp
 	gtest_shim_conformance_tests.cpp

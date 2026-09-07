@@ -85,7 +85,8 @@ readonly SUITES=(
 	cil_reconstruct cli_parser code_data codegen common compiler_abi
 	compiler_detect concurrency_detect config container_detect crypto_detect
 	csharp_emitter ctypes ctypesparser cuda_accel cxx_backend dce debug_info
-	dex_parser eh_reconstruct fsharp_emitter func_boundary idiom_reconstruct
+	dex_parser eh_reconstruct fileformat fsharp_emitter func_boundary
+	idiom_reconstruct
 	ipa java_emitter jvm_parser jvm_reconstruct kotlin_emitter loader_sim
 	lua_parser mini_emu module_cluster neural packer pattern_detect profiling
 	pdbparser ptx_decompile py_emitter py_reconstruct pyc_parser retdec rtti serdes
@@ -160,6 +161,11 @@ readonly EXTRA_SOURCES=(
 	# of an untrusted file, which parser sees it. It was reachable by nothing
 	# here until tests/retdec/managed_decompiler_test.cpp.
 	"retdec-decompiler/managed_decompiler.cpp:c++20"
+	# The signature-lattice parser: the first structured read of an untrusted
+	# file, and the only translation unit under src/fileformat/ that does not
+	# link LLVM. tests/fileformat/format_lattice_test.cpp needs nothing else
+	# either, so both come into the fast gate through PARTIAL_SUITES below.
+	"fileformat/lattice/format_lattice.cpp"
 )
 
 # Test suites where only some files build here, for the same reason.  The rest
@@ -167,6 +173,9 @@ readonly EXTRA_SOURCES=(
 # "suite:file.cpp file.cpp"
 readonly PARTIAL_SUITES=(
 	"retdec:semantic_recovery_export_test.cpp thread_pool_test.cpp managed_decompiler_test.cpp"
+	# The other twelve files in tests/fileformat/ drive retdec::fileformat,
+	# which publicly links LLVM. This one drives the lattice, which does not.
+	"fileformat:format_lattice_test.cpp"
 )
 
 # Sources inside an included module that must NOT be compiled here, mirroring a
@@ -525,11 +534,23 @@ for m in "${selected_modules[@]}"; do
 done
 for extraSpec in "${EXTRA_SOURCES[@]}"; do
 	extra="${extraSpec%%:*}"
-	d="$(dirname "$extra")"
+	# The object still lives under its real directory; only the archive name is
+	# flattened, because libextra_fileformat/lattice.a would be a path rather
+	# than a name -- ar would need the directory to exist and the libargs glob
+	# below would not match it.
+	objDir="$(dirname "$extra")"
+	d="$(printf '%s' "$objDir" | tr '/' '_')"
 	shopt -s nullglob
-	eobjs=("$BUILD_DIR/obj/$d"/*.o)
+	eobjs=("$BUILD_DIR/obj/$objDir"/*.o)
 	shopt -u nullglob
-	if [ ${#eobjs[@]} -gt 0 ] && [ ! -f "$BUILD_DIR/lib/libextra_$d.a" ]; then
+	# Recreate, like the module archives above. This used to be guarded by
+	# `[ ! -f ... ]`, so once the archive existed it was never rebuilt: an
+	# EXTRA_SOURCES file could be edited, recompiled and still linked from the
+	# object the archive was made from. Every load-bearing check against one of
+	# these files reported the fix as doing nothing, which is the worst
+	# direction for that error to point.
+	if [ ${#eobjs[@]} -gt 0 ]; then
+		rm -f "$BUILD_DIR/lib/libextra_$d.a"
 		ar qcs "$BUILD_DIR/lib/libextra_$d.a" "${eobjs[@]}"
 	fi
 done

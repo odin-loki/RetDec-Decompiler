@@ -53,6 +53,24 @@ namespace retdec {
 namespace utils {
 namespace secmap {
 
+// Every offset here comes off the wire as a 64-bit field and is narrowed to
+// std::size_t to reach retdec/utils/bounds.h, whose helpers are std::size_t
+// throughout. On a build where size_t is narrower than 64 bits that narrowing
+// truncates -- and truncates only the values handed to the guard, while the
+// sums beside it stay 64-bit, so the guard would be answering about different
+// numbers than the ones used. The proofs in tests/verification/ run against a
+// 64-bit model and would not see it either.
+//
+// No target this project configures is 32-bit -- CMakePresets.json is x64
+// throughout -- so rather than widening the kernel and its proofs for a
+// configuration that does not exist, this makes the assumption a build error
+// instead of a silent truncation.
+static_assert(
+	sizeof(std::size_t) >= sizeof(std::uint64_t),
+	"section_map narrows 64-bit file offsets to std::size_t to call "
+	"retdec/utils/bounds.h; on a 32-bit target that truncates and the bounds "
+	"checks stop matching the arithmetic they guard");
+
 /// The answer for an address that no section maps into the file.
 inline constexpr std::uint64_t kUnmapped = ~static_cast<std::uint64_t>(0);
 

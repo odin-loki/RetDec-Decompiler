@@ -13,7 +13,19 @@
 namespace retdec {
 namespace utils {
 
-namespace {
+/// Implementation detail of the areEqual<> specializations below.
+///
+/// This used to sit in an anonymous namespace, in a header. That gives every
+/// translation unit including this file its own copy with internal linkage --
+/// and the `inline bool areEqual<double>(...)` specializations below, which
+/// have external linkage and must be identical in every translation unit, each
+/// named their own copy. A definition that names a translation-unit-local
+/// entity is an ODR violation ([basic.def.odr]), ill-formed with no diagnostic
+/// required, and it also emitted one copy of the function per including
+/// translation unit. A template already has vague linkage, so it needs no
+/// anonymous namespace to avoid a multiple-definition error; the namespace was
+/// the whole problem rather than the protection it looked like.
+namespace detail {
 
 /**
  * @brief Checks if @a x is equal to @a y (differing only by @a epsilon).
@@ -56,7 +68,7 @@ inline bool areEqualFPWithEpsilon(const T& x, const T& y, const T& epsilon)
 	return fpred::nearlyEqualT<T>(x, y, epsilon);
 }
 
-} // anonymous namespace
+} // namespace detail
 
 /// @name Equality of Values
 /// @{
@@ -78,21 +90,21 @@ inline bool areEqual(const T& x, const T& y)
 template <>
 inline bool areEqual<float>(const float& x, const float& y)
 {
-	return areEqualFPWithEpsilon(x, y, 1e-5f);
+	return detail::areEqualFPWithEpsilon(x, y, 1e-5f);
 }
 
 // Specialization for doubles.
 template <>
 inline bool areEqual<double>(const double& x, const double& y)
 {
-	return areEqualFPWithEpsilon(x, y, 1e-10);
+	return detail::areEqualFPWithEpsilon(x, y, 1e-10);
 }
 
 // Specialization for long doubles.
 template <>
 inline bool areEqual<long double>(const long double& x, const long double& y)
 {
-	return areEqualFPWithEpsilon(x, y, 1e-15L);
+	return detail::areEqualFPWithEpsilon(x, y, 1e-15L);
 }
 
 /// @}

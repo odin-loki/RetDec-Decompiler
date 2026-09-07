@@ -129,6 +129,50 @@ TEST_F(EqualityTests, OrdinaryComparisonsAreUnchanged)
 	EXPECT_FALSE(areEqual(3, 4));
 }
 
+
+// ─── One definition, one address ────────────────────────────────────────────
+
+const void* equalityHelperAddressFromSecondTu();
+const void* areEqualDoubleAddressFromSecondTu();
+
+namespace {
+
+const void* equalityHelperAddressFromThisTu()
+{
+	return reinterpret_cast<const void*>(&detail::areEqualFPWithEpsilon<double>);
+}
+
+const void* areEqualDoubleAddressFromThisTu()
+{
+	return reinterpret_cast<const void*>(static_cast<bool (*)(const double&, const double&)>(&areEqual<double>));
+}
+
+} // namespace
+
+// equality.h used to define areEqualFPWithEpsilon in an anonymous namespace, in
+// a header, so every translation unit got its own copy with internal linkage --
+// and the inline areEqual<> specializations, which have external linkage and
+// must be identical in every translation unit, each named their own. That is an
+// ODR violation, and one no compiler will report: [basic.def.odr] makes it
+// ill-formed with no diagnostic required. The only thing that can observe it is
+// two translation units comparing notes.
+//
+// The second one is tests/utils/equality_odr_second_tu.cpp.
+TEST(EqualityOdrTest, TheFloatingPointHelperIsOneEntityAcrossTranslationUnits)
+{
+	EXPECT_EQ(equalityHelperAddressFromThisTu(), equalityHelperAddressFromSecondTu())
+		<< "retdec::utils::areEqualFPWithEpsilon<double> has a different "
+		   "address in each translation unit, which means it has internal linkage "
+		   "again -- and the inline areEqual<double> below it names it";
+}
+
+TEST(EqualityOdrTest, TheSpecializationItselfIsOneEntity)
+{
+	EXPECT_EQ(areEqualDoubleAddressFromThisTu(), areEqualDoubleAddressFromSecondTu())
+		<< "retdec::utils::areEqual<double> has a different address in each "
+		   "translation unit";
+}
+
 } // namespace tests
 } // namespace utils
 } // namespace retdec
