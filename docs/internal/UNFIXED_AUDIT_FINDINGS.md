@@ -340,25 +340,29 @@ were compiled.
 
 ## Structural: code no test can reach
 
-* `src/utils/gpu_scanner.cu:253-914` is outside every suite in the tree.
-  `src/utils/CMakeLists.txt` builds `retdec-gpu-scanner` from `gpu_scanner.cu`
-  when CUDA is found and from `gpu_scanner_cpu.cpp` otherwise, and only the
-  latter is ever compiled here.
+**Mostly closed.** `src/utils/gpu_scanner.cu`'s CUDA half -- roughly 660 lines,
+all of the device code and all of the runtime plumbing -- was compiled by
+nothing in this tree, because `src/utils/CMakeLists.txt` selects it only when
+CUDA is found and `gpu_scanner_cpu.cpp` includes it with
+`RETDEC_GPU_SCANNER_HOST_ONLY` defined. An adversarial verify pass proved the
+consequence by reverting four fixes inside that region and watching the suite
+stay green at 13/13.
 
-  This is narrower than it was. The shared arithmetic in the file's prologue is
-  covered, because `gpu_scanner_cpu.cpp` includes it — and the match loop, which
-  used to exist twice and **disagree**, is now one function in that prologue, so
-  the largest behavioural difference between the two builds is gone. What is
-  still uncovered is the CUDA-side plumbing: the device kernel, the
-  `cudaMalloc`/`cudaMemcpy` calls, and the six call sites that decide whether the
-  shared arithmetic is invoked.
+`tests/utils/cuda_stub/` is now enough of the CUDA runtime to compile it with an
+ordinary C++17 compiler, and `scripts/standalone_check.sh` does so on every run.
+It caught a real defect the first time it ran. What the stub provides is
+documented at the top of `cuda_runtime.h`, including what it does *not* model:
+no warp semantics, no coalescing or timing, and blocks serialised rather than
+concurrent -- so a kernel with an inter-block race would pass there and fail on
+a device.
 
-  It is not unreachable in principle. A verifier ran the real `__global__`
-  kernel text under ASan with stub CUDA headers — `__shared__` as `static`,
-  `__syncthreads()` a no-op, the launch syntax stripped, threads driven in a
-  loop — and caught a heap-buffer-overflow that way. The host half is easier
-  still. Doing it properly means a stub `cuda_runtime.h` under `tests/` and a
-  second translation unit that includes the file without
-  `RETDEC_GPU_SCANNER_HOST_ONLY`; the obstacle is that `GpuScanner`'s methods
-  would then be defined twice in one binary, so the include needs a namespace
-  wrapper or the class needs splitting.
+What is still open is one step further:
+
+* The CUDA half is **compiled but not executed** by the suite. The stub can run
+  a kernel -- `__syncthreads()` is a real barrier across `std::thread` lanes, so
+  a kernel that fills a `__shared__` array before the barrier and reads its
+  neighbours' entries after it behaves correctly -- but nothing links it,
+  because `GpuScanner`'s methods are already defined by `gpu_scanner_cpu.o` and
+  the two cannot go in one binary. Closing it means either a second test binary
+  that links the `.cu` instead of the `.cpp`, or splitting `GpuScanner` so the
+  device path is a separate type.

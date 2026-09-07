@@ -344,6 +344,27 @@ inline SigMatchResult matchOne(
 // Helpers / macros
 // ---------------------------------------------------------------------------
 
+/// How a kernel is launched.
+///
+/// `kernel<<<grid, block>>>(args)` is not C++ -- only nvcc parses it -- so
+/// under nvcc this is exactly that, and under an ordinary compiler it is a call
+/// that runs the grid. That second form is what lets this half of the file be
+/// compiled and executed at all: everything below RETDEC_GPU_SCANNER_HOST_ONLY
+/// was previously built by nothing in this tree, which an adversarial verify
+/// pass demonstrated by reverting four fixes inside it and watching the suite
+/// stay green.
+///
+/// The host implementation lives in tests/utils/cuda_stub/, beside the runtime
+/// stubs, because it is test scaffolding rather than product code -- and it is
+/// only ever selected when __CUDACC__ is absent AND the stub header has been
+/// included, so an ordinary build of this file is unaffected.
+#if defined(__CUDACC__)
+    #define RETDEC_GPU_LAUNCH(kernel, grid, block) kernel<<<(grid), (block)>>>
+#else
+    #define RETDEC_GPU_LAUNCH(kernel, grid, block) \
+        ::retdec::tests::cudastub::launch(kernel, (grid), (block))
+#endif
+
 #define CUDA_CHECK(call)                                                       \
     do {                                                                       \
         cudaError_t _e = (call);                                               \
@@ -460,7 +481,8 @@ __global__ void batchMatchKernel(
                 // Convert nibble offset to byte offset. The factor is the
                 // one constant, not a literal -- this file's own comment says
                 // it is stated once, and this was one of the places it was not.
-                localBestOff   = pos / gpuscan::NIBBLES_PER_BYTE;
+                localBestOff   = pos
+                        / ::retdec::utils::gpuscan::NIBBLES_PER_BYTE;
                 localMatched   = (ratio >= 0.5f) ? 1u : 0u;
             }
         }
@@ -812,7 +834,7 @@ std::vector<SigMatchResult> GpuScanner::batchMatch(
         // Zero results.
         CUDA_CHECK(cudaMemset(d_res, 0, numGpu * sizeof(GpuMatchResult)));
 
-        batchMatchKernel<<<numGpu, MATCH_BLOCK>>>(
+        RETDEC_GPU_LAUNCH(batchMatchKernel, numGpu, MATCH_BLOCK)(
             impl_->d_fileNibs,
             impl_->fileNibLen,
             d_patBuf,
@@ -894,14 +916,14 @@ double GpuScanner::fileEntropy(std::size_t startOffset, std::size_t stopOffset) 
         CUDA_CHECK(cudaMemset(d_hist, 0, 256 * sizeof(uint32_t)));
 
         const int blocks = static_cast<int>((sz + ENTROPY_BLOCK - 1) / ENTROPY_BLOCK);
-        buildHistogramKernel<<<blocks, ENTROPY_BLOCK>>>(
+        RETDEC_GPU_LAUNCH(buildHistogramKernel, blocks, ENTROPY_BLOCK)(
             impl_->d_fileBytes + lo,
             static_cast<uint32_t>(sz),
             d_hist
         );
         CUDA_CHECK(cudaGetLastError());
 
-        computeEntropyKernel<<<1, 256>>>(
+        RETDEC_GPU_LAUNCH(computeEntropyKernel, 1, 256)(
             d_hist,
             static_cast<uint32_t>(sz),
             d_entr
@@ -963,7 +985,7 @@ std::vector<std::size_t> GpuScanner::findAll(const std::vector<uint8_t>& needle)
 
         const int blk    = 256;
         const int blocks = (numPositions + blk - 1) / blk;
-        findAllKernel<<<blocks, blk>>>(
+        RETDEC_GPU_LAUNCH(findAllKernel, blocks, blk)(
             impl_->d_fileBytes,
             impl_->fileSize,
             d_needle,

@@ -457,6 +457,46 @@ if [ $compile_status -ne 0 ]; then
 fi
 ok "all ${#MODULES[@]} dependency-free modules compile"
 
+# ── the CUDA half, which the build above does not reach ─────────────────────
+#
+# src/utils/CMakeLists.txt builds retdec-gpu-scanner from gpu_scanner.cu when
+# CUDA is present and from gpu_scanner_cpu.cpp otherwise. Only the second is
+# ever built here, and it includes the first with RETDEC_GPU_SCANNER_HOST_ONLY
+# defined -- so roughly 660 lines, all of the device code and all of the CUDA
+# plumbing, were compiled by NOTHING. An adversarial verify pass proved the
+# consequence by reverting four fixes inside that region and watching the suite
+# stay green.
+#
+# tests/utils/cuda_stub/ is enough of the CUDA runtime to compile it with an
+# ordinary C++ compiler. This is a syntax check, not a link: the class's methods
+# are already defined by gpu_scanner_cpu.o, so the two cannot go in one binary.
+# What it catches is everything a compiler catches -- and it caught a real one
+# the first time it ran, an unqualified `gpuscan::` that does not resolve from
+# the device code's namespace, introduced by a change to a file nobody compiles.
+compile_cuda_half() {
+	local src="src/utils/gpu_scanner.cu"
+	[ -f "$src" ] || return 0
+	local tu; tu="$(mktemp --suffix=.cpp)"
+	# No RETDEC_GPU_SCANNER_HOST_ONLY: that is the point.
+	{
+		printf '#include "cuda_runtime.h"\n'
+		printf '#include "retdec/utils/gpu_scanner.h"\n'
+		printf '#include "%s"\n' "$ROOT/$src"
+	} > "$tu"
+	local log; log="$(mktemp)"
+	if "$CXX" $CXXFLAGS -Wall -Wextra -fsyntax-only \
+			-I"$ROOT/tests/utils/cuda_stub" -x c++ "$tu" > "$log" 2>&1; then
+		ok "gpu_scanner.cu compiles against the CUDA stubs"
+		rm -f "$tu" "$log"
+		return 0
+	fi
+	bad "gpu_scanner.cu does not compile against tests/utils/cuda_stub:"
+	head -30 "$log"
+	rm -f "$tu" "$log"
+	return 1
+}
+compile_cuda_half || exit 1
+
 # ── archive each module so the linker pulls only what a suite needs ──────────
 for m in "${selected_modules[@]}"; do
 	shopt -s nullglob
