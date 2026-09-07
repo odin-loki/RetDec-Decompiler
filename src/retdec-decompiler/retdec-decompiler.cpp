@@ -63,19 +63,18 @@
 #include <rapidjson/error/en.h>
 
 using namespace retdec::utils::io;
-using retdec::fileformat::ArArchiveFormatProbeSummary;
-using retdec::fileformat::Format;
-using retdec::fileformat::probeArArchiveMemberFormats;
-using retdec::decompiler::OutputLangId;
 using retdec::decompiler::applyNativeOutputLanguage;
 using retdec::decompiler::defaultOutputLangForManaged;
 using retdec::decompiler::isOutputLangCompatibleWithManaged;
 using retdec::decompiler::outputLangCliName;
 using retdec::decompiler::outputLangFileExtension;
+using retdec::decompiler::OutputLangId;
 using retdec::decompiler::parseOutputLang;
+using retdec::fileformat::ArArchiveFormatProbeSummary;
+using retdec::fileformat::Format;
+using retdec::fileformat::probeArArchiveMemberFormats;
 
-namespace
-{
+namespace {
 
 #ifdef _WIN32
 void setEmitBuildableEnv(bool on)
@@ -91,30 +90,22 @@ void setEmitBuildableEnv(bool on)
 
 bool retdecFormatArProbeDiagEnabled()
 {
-	const char *e = std::getenv("RETDEC_FORMAT_AR_PROBE_DIAG");
+	const char* e = std::getenv("RETDEC_FORMAT_AR_PROBE_DIAG");
 	return e != nullptr && e[0] != '\0' && e[0] != '0';
 }
 
-const char *formatEnumTag(Format f)
+const char* formatEnumTag(Format f)
 {
 	switch (f)
 	{
-	case Format::UNDETECTABLE:
-		return "UNDETECTABLE";
-	case Format::UNKNOWN:
-		return "UNKNOWN";
-	case Format::PE:
-		return "PE";
-	case Format::ELF:
-		return "ELF";
-	case Format::COFF:
-		return "COFF";
-	case Format::MACHO:
-		return "MACHO";
-	case Format::INTEL_HEX:
-		return "INTEL_HEX";
-	case Format::RAW_DATA:
-		return "RAW_DATA";
+	case Format::UNDETECTABLE: return "UNDETECTABLE";
+	case Format::UNKNOWN: return "UNKNOWN";
+	case Format::PE: return "PE";
+	case Format::ELF: return "ELF";
+	case Format::COFF: return "COFF";
+	case Format::MACHO: return "MACHO";
+	case Format::INTEL_HEX: return "INTEL_HEX";
+	case Format::RAW_DATA: return "RAW_DATA";
 	}
 	return "FORMAT?";
 }
@@ -123,7 +114,7 @@ const char *formatEnumTag(Format f)
  * Read whole file and run @c probeArArchiveMemberFormats (P1.1 wiring).
  * Emits @c Log::info lines when @c RETDEC_FORMAT_AR_PROBE_DIAG is set.
  */
-void logArArchiveMemberProbeFromPath(const std::string &path)
+void logArArchiveMemberProbeFromPath(const std::string& path)
 {
 	if (!retdecFormatArProbeDiagEnabled())
 	{
@@ -141,9 +132,7 @@ void logArArchiveMemberProbeFromPath(const std::string &path)
 		return;
 	}
 
-	std::vector<std::uint8_t> bytes(
-			(std::istreambuf_iterator<char>(in)),
-			std::istreambuf_iterator<char>());
+	std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 	if (bytes.empty())
 	{
 		Log::info() << "[AR format probe] empty file: " << path << std::endl;
@@ -153,78 +142,65 @@ void logArArchiveMemberProbeFromPath(const std::string &path)
 	ArArchiveFormatProbeSummary summary;
 	if (!probeArArchiveMemberFormats(bytes.data(), bytes.size(), summary))
 	{
-		Log::info() << "[AR format probe] not a parseable ar archive (or LLVM error): "
-				<< summary.errorMessage << std::endl;
+		Log::info() << "[AR format probe] not a parseable ar archive (or LLVM error): " << summary.errorMessage
+					<< std::endl;
 		if (summary.isArchive)
 		{
-			Log::info() << "[AR format probe] magic_ok=1 thin_archive="
-					<< (summary.isThinArchive ? "yes" : "no")
-					<< " (container parse failed; see error above)" << std::endl;
+			Log::info() << "[AR format probe] magic_ok=1 thin_archive=" << (summary.isThinArchive ? "yes" : "no")
+						<< " (container parse failed; see error above)" << std::endl;
 		}
 		return;
 	}
 
-	Log::info() << "[AR format probe] path=" << path
-			<< " thin_archive=" << (summary.isThinArchive ? "yes" : "no")
-			<< " members_seen=" << summary.membersSeen
-			<< " members_probed=" << summary.membersProbed
-			<< " skipped_no_buffer=" << summary.membersSkippedNoBuffer
-			<< " lattice_workers=" << summary.latticeProbeWorkerCount
-			<< " truncated_at_cap=" << (summary.truncatedAtMemberCap ? "yes" : "no")
-			<< std::endl;
+	Log::info() << "[AR format probe] path=" << path << " thin_archive=" << (summary.isThinArchive ? "yes" : "no")
+				<< " members_seen=" << summary.membersSeen << " members_probed=" << summary.membersProbed
+				<< " skipped_no_buffer=" << summary.membersSkippedNoBuffer
+				<< " lattice_workers=" << summary.latticeProbeWorkerCount
+				<< " truncated_at_cap=" << (summary.truncatedAtMemberCap ? "yes" : "no") << std::endl;
 	if (!summary.errorMessage.empty())
 	{
-		Log::info() << "[AR format probe] iterator_note: " << summary.errorMessage
-				<< std::endl;
+		Log::info() << "[AR format probe] iterator_note: " << summary.errorMessage << std::endl;
 	}
 
-	const auto &h = summary.dominantFormatHistogram;
+	const auto& h = summary.dominantFormatHistogram;
 	Log::info() << "[AR format probe] dominant_histogram "
-			<< "UNDET=" << h[static_cast<std::size_t>(Format::UNDETECTABLE)]
-			<< " UNK=" << h[static_cast<std::size_t>(Format::UNKNOWN)]
-			<< " PE=" << h[static_cast<std::size_t>(Format::PE)]
-			<< " ELF=" << h[static_cast<std::size_t>(Format::ELF)]
-			<< " COFF=" << h[static_cast<std::size_t>(Format::COFF)]
-			<< " MACHO=" << h[static_cast<std::size_t>(Format::MACHO)]
-			<< " IHEX=" << h[static_cast<std::size_t>(Format::INTEL_HEX)]
-			<< " RAW=" << h[static_cast<std::size_t>(Format::RAW_DATA)]
-			<< std::endl;
+				<< "UNDET=" << h[static_cast<std::size_t>(Format::UNDETECTABLE)]
+				<< " UNK=" << h[static_cast<std::size_t>(Format::UNKNOWN)]
+				<< " PE=" << h[static_cast<std::size_t>(Format::PE)]
+				<< " ELF=" << h[static_cast<std::size_t>(Format::ELF)]
+				<< " COFF=" << h[static_cast<std::size_t>(Format::COFF)]
+				<< " MACHO=" << h[static_cast<std::size_t>(Format::MACHO)]
+				<< " IHEX=" << h[static_cast<std::size_t>(Format::INTEL_HEX)]
+				<< " RAW=" << h[static_cast<std::size_t>(Format::RAW_DATA)] << std::endl;
 
 	constexpr std::size_t kMaxNames = 32;
 	std::size_t n = 0;
-	for (const auto &m : summary.members)
+	for (const auto& m: summary.members)
 	{
 		if (n++ >= kMaxNames)
 		{
 			break;
 		}
-		Log::info() << "[AR format probe] member[" << (n - 1) << "] name=" << m.name
-				<< " size=" << m.rawSize
-				<< " buffer_ok=" << (m.bufferOk ? "yes" : "no")
-				<< " dominant=" << formatEnumTag(m.dominantFormat)
-				<< " elf=" << m.hints.elfStrength
-				<< " pe=" << m.hints.peStrength
-				<< " coff=" << m.hints.coffStrength
-				<< std::endl;
+		Log::info() << "[AR format probe] member[" << (n - 1) << "] name=" << m.name << " size=" << m.rawSize
+					<< " buffer_ok=" << (m.bufferOk ? "yes" : "no") << " dominant=" << formatEnumTag(m.dominantFormat)
+					<< " elf=" << m.hints.elfStrength << " pe=" << m.hints.peStrength
+					<< " coff=" << m.hints.coffStrength << std::endl;
 	}
 	if (summary.members.size() > kMaxNames)
 	{
-		Log::info() << "[AR format probe] ... truncated member listing at "
-				<< kMaxNames << " of " << summary.members.size() << std::endl;
+		Log::info() << "[AR format probe] ... truncated member listing at " << kMaxNames << " of "
+					<< summary.members.size() << std::endl;
 	}
 }
 
 } // namespace
 
-static void applyLlvmPassesFromJsonFile(
-		retdec::config::Parameters& params,
-		const std::string& path)
+static void applyLlvmPassesFromJsonFile(retdec::config::Parameters& params, const std::string& path)
 {
 	std::ifstream in(path, std::ios::binary);
 	if (!in)
 	{
-		throw std::runtime_error(
-				"[--llvm-passes-json] cannot open file: " + path);
+		throw std::runtime_error("[--llvm-passes-json] cannot open file: " + path);
 	}
 	std::ostringstream ss;
 	ss << in.rdbuf();
@@ -235,9 +211,8 @@ static void applyLlvmPassesFromJsonFile(
 	if (doc.HasParseError())
 	{
 		throw std::runtime_error(
-				"[--llvm-passes-json] JSON parse error at offset "
-				+ std::to_string(doc.GetErrorOffset()) + ": "
-				+ rapidjson::GetParseError_En(doc.GetParseError()));
+			"[--llvm-passes-json] JSON parse error at offset " + std::to_string(doc.GetErrorOffset()) + ": "
+			+ rapidjson::GetParseError_En(doc.GetParseError()));
 	}
 	const rapidjson::Value* passArray = nullptr;
 	if (doc.IsArray())
@@ -251,9 +226,9 @@ static void applyLlvmPassesFromJsonFile(
 	else
 	{
 		throw std::runtime_error(
-				"[--llvm-passes-json] root must be a JSON array of pass names "
-				"or a pipeline document with a \"passes\" array "
-				"(see docs/pipeline_builder_schema.json)");
+			"[--llvm-passes-json] root must be a JSON array of pass names "
+			"or a pipeline document with a \"passes\" array "
+			"(see docs/pipeline_builder_schema.json)");
 	}
 
 	std::vector<std::string> passes;
@@ -263,28 +238,22 @@ static void applyLlvmPassesFromJsonFile(
 		const auto& el = (*passArray)[i];
 		if (!el.IsString())
 		{
-			throw std::runtime_error(
-					"[--llvm-passes-json] every pass name must be a string");
+			throw std::runtime_error("[--llvm-passes-json] every pass name must be a string");
 		}
 		passes.emplace_back(el.GetString(), el.GetStringLength());
 	}
 	if (passes.empty())
 	{
-		throw std::runtime_error(
-				"[--llvm-passes-json] pass list must not be empty");
+		throw std::runtime_error("[--llvm-passes-json] pass list must not be empty");
 	}
 	params.llvmPasses = std::move(passes);
 }
 
 static std::string resolveProfilePassesJsonPath(const std::string& profileName)
 {
-	if (profileName != "fast"
-			&& profileName != "balanced"
-			&& profileName != "quality")
+	if (profileName != "fast" && profileName != "balanced" && profileName != "quality")
 	{
-		throw std::runtime_error(
-				"[--profile] unknown profile: " + profileName
-				+ " (expected fast|balanced|quality)");
+		throw std::runtime_error("[--profile] unknown profile: " + profileName + " (expected fast|balanced|quality)");
 	}
 
 	std::vector<fs::path> candidates;
@@ -299,15 +268,14 @@ static std::string resolveProfilePassesJsonPath(const std::string& profileName)
 	}
 
 	const auto binpath = retdec::utils::getThisBinaryDirectoryPath();
-	const fs::path shareRetdec = fs::canonical(binpath).parent_path()
-			/ "share" / "retdec";
+	const fs::path shareRetdec = fs::canonical(binpath).parent_path() / "share" / "retdec";
 	candidates.push_back(shareRetdec / "profiles" / (profileName + ".json"));
 	if (profileName == "fast")
 	{
 		candidates.push_back(shareRetdec / "llvm_passes_fast.json");
 	}
 
-	for (const auto& candidate : candidates)
+	for (const auto& candidate: candidates)
 	{
 		if (fs::is_regular_file(candidate))
 		{
@@ -315,9 +283,7 @@ static std::string resolveProfilePassesJsonPath(const std::string& profileName)
 		}
 	}
 
-	throw std::runtime_error(
-			"[--profile] could not find passes file for profile '"
-			+ profileName + "'");
+	throw std::runtime_error("[--profile] could not find passes file for profile '" + profileName + "'");
 }
 
 const int EXIT_TIMEOUT = 137;
@@ -329,55 +295,41 @@ const int EXIT_BAD_ALLOC = 135;
 //==============================================================================
 //
 
-class ProgramOptions
-{
-	public:
-		std::string programName;
-		retdec::config::Config& config;
-		retdec::config::Parameters& params;
-		std::list<std::string> _argv;
+class ProgramOptions {
+public:
+	std::string programName;
+	retdec::config::Config& config;
+	retdec::config::Parameters& params;
+	std::list<std::string> _argv;
 
-		std::string mode = "bin";
-		uint64_t bitSize = 32;
-		std::string arExtractPath;
-		std::string arName;
-		std::optional<uint64_t> arIdx;
-		std::size_t numJobs = 1;
+	std::string mode = "bin";
+	uint64_t bitSize = 32;
+	std::string arExtractPath;
+	std::string arName;
+	std::optional<uint64_t> arIdx;
+	std::size_t numJobs = 1;
 
-		bool cleanup = false;
-		std::set<std::string> toClean;
-		bool tryEmulationUnpacking = false;
+	bool cleanup = false;
+	std::set<std::string> toClean;
+	bool tryEmulationUnpacking = false;
 
-	public:
-		ProgramOptions(
-				int argc,
-				char *argv[],
-				retdec::config::Config& c,
-				retdec::config::Parameters& p);
+public:
+	ProgramOptions(int argc, char* argv[], retdec::config::Config& c, retdec::config::Parameters& p);
 
-		void load();
+	void load();
 
-	private:
-		void loadOption(std::list<std::string>::iterator& i);
-		bool isParam(
-				std::list<std::string>::iterator i,
-				const std::string& shortp,
-				const std::string& longp = std::string());
-		std::string getParamOrDie(std::list<std::string>::iterator& i);
-		void printHelpAndDie();
-		void afterLoad();
-		std::string checkFile(
-				const std::string& path,
-				const std::string& errorMsgPrefix);
+private:
+	void loadOption(std::list<std::string>::iterator& i);
+	bool
+	isParam(std::list<std::string>::iterator i, const std::string& shortp, const std::string& longp = std::string());
+	std::string getParamOrDie(std::list<std::string>::iterator& i);
+	void printHelpAndDie();
+	void afterLoad();
+	std::string checkFile(const std::string& path, const std::string& errorMsgPrefix);
 };
 
-ProgramOptions::ProgramOptions(
-		int argc,
-		char *argv[],
-		retdec::config::Config& c,
-		retdec::config::Parameters& p)
-		: config(c)
-		, params(p)
+ProgramOptions::ProgramOptions(int argc, char* argv[], retdec::config::Config& c, retdec::config::Parameters& p):
+	config(c), params(p)
 {
 	if (argc > 0)
 	{
@@ -407,15 +359,11 @@ void ProgramOptions::load()
 			}
 			catch (const retdec::config::ParseException& e)
 			{
-				throw std::runtime_error(
-					"[--config] loading of config failed: "
-					+ std::string(e.what())
-				);
+				throw std::runtime_error("[--config] loading of config failed: " + std::string(e.what()));
 			}
 
 			// Resolve relative paths against the user config file location.
-			const std::string fileDir =
-					fs::absolute(fs::path(file).parent_path()).string();
+			const std::string fileDir = fs::absolute(fs::path(file).parent_path()).string();
 			config.parameters.fixRelativePaths(fileDir);
 
 			// Partial JSON configs often omit bundled resource paths and the
@@ -477,22 +425,16 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 	}
 	else if (isParam(i, "", "--print-after-all"))
 	{
-		llvm::DenseMap<llvm::StringRef, llvm::cl::Option*> &opts =
-				llvm::cl::getRegisteredOptions();
+		llvm::DenseMap<llvm::StringRef, llvm::cl::Option*>& opts = llvm::cl::getRegisteredOptions();
 
-		auto* paa = static_cast<llvm::cl::opt<bool>*>(
-					opts["print-after-all"]
-		);
+		auto* paa = static_cast<llvm::cl::opt<bool>*>(opts["print-after-all"]);
 		paa->setInitialValue(true);
 	}
 	else if (isParam(i, "", "--print-before-all"))
 	{
-		llvm::DenseMap<llvm::StringRef, llvm::cl::Option*> &opts =
-				llvm::cl::getRegisteredOptions();
+		llvm::DenseMap<llvm::StringRef, llvm::cl::Option*>& opts = llvm::cl::getRegisteredOptions();
 
-		auto* paa = static_cast<llvm::cl::opt<bool>*>(
-				opts["print-before-all"]
-		);
+		auto* paa = static_cast<llvm::cl::opt<bool>*>(opts["print-before-all"]);
 		paa->setInitialValue(true);
 	}
 	else if (isParam(i, "-m", "--mode"))
@@ -500,9 +442,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		auto m = getParamOrDie(i);
 		if (!(m == "bin" || m == "raw"))
 		{
-			throw std::runtime_error(
-				"[-m|--mode] unknown mode: " + m
-			);
+			throw std::runtime_error("[-m|--mode] unknown mode: " + m);
 		}
 		mode = m;
 	}
@@ -519,26 +459,16 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		}
 		catch (const std::exception&)
 		{
-			throw std::runtime_error(
-				"[-b|--bit-size] invalid value: " + val
-			);
+			throw std::runtime_error("[-b|--bit-size] invalid value: " + val);
 		}
 	}
 	else if (isParam(i, "-a", "--arch"))
 	{
 		auto a = getParamOrDie(i);
-		if (!(a == "mips"
-				|| a == "pic32"
-				|| a == "arm"
-				|| a == "thumb"
-				|| a == "arm64"
-				|| a == "powerpc"
-				|| a == "x86"
-				|| a == "x86-64"))
+		if (!(a == "mips" || a == "pic32" || a == "arm" || a == "thumb" || a == "arm64" || a == "powerpc" || a == "x86"
+			  || a == "x86-64"))
 		{
-			throw std::runtime_error(
-				"[-a|--arch] unknown architecture: " + a
-			);
+			throw std::runtime_error("[-a|--arch] unknown architecture: " + a);
 		}
 		config.architecture.setName(a);
 	}
@@ -555,9 +485,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		}
 		else
 		{
-			throw std::runtime_error(
-				"[-e|--endian] unknown endian: " + e
-			);
+			throw std::runtime_error("[-e|--endian] unknown endian: " + e);
 		}
 	}
 	else if (isParam(i, "-f", "--output-format"))
@@ -565,9 +493,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		auto of = getParamOrDie(i);
 		if (!(of == "plain" || of == "json" || of == "json-human"))
 		{
-			throw std::runtime_error(
-				"[-f|--output-format] unknown output format: " + of
-			);
+			throw std::runtime_error("[-f|--output-format] unknown output format: " + of);
 		}
 		config.parameters.setOutputFormat(of);
 	}
@@ -594,9 +520,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		}
 		catch (const std::exception&)
 		{
-			throw std::runtime_error(
-				"[--max-memory] invalid value: " + val
-			);
+			throw std::runtime_error("[--max-memory] invalid value: " + val);
 		}
 	}
 	else if (isParam(i, "", "--no-memory-limit"))
@@ -633,16 +557,14 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 	else if (isParam(i, "", "--select-ranges"))
 	{
 		std::stringstream ranges(getParamOrDie(i));
-		while(ranges.good())
+		while (ranges.good())
 		{
 			std::string range;
-			getline(ranges, range, ',' );
+			getline(ranges, range, ',');
 			auto r = retdec::common::stringToAddrRange(range);
 			if (r.getStart().isUndefined() || r.getEnd().isUndefined())
 			{
-				throw std::runtime_error(
-					"[--select-ranges] invalid range: " + range
-				);
+				throw std::runtime_error("[--select-ranges] invalid range: " + range);
 			}
 			params.selectedRanges.insert(r);
 			params.setIsKeepAllFunctions(true);
@@ -651,10 +573,10 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 	else if (isParam(i, "", "--select-functions"))
 	{
 		std::stringstream funcs(getParamOrDie(i));
-		while(funcs.good())
+		while (funcs.good())
 		{
 			std::string func;
-			getline(funcs, func, ',' );
+			getline(funcs, func, ',');
 			if (!func.empty())
 			{
 				params.selectedFunctions.insert(func);
@@ -672,9 +594,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		retdec::common::Address addr(val);
 		if (addr.isUndefined())
 		{
-			throw std::runtime_error(
-				"[--raw-section-vma] invalid address: " + val
-			);
+			throw std::runtime_error("[--raw-section-vma] invalid address: " + val);
 		}
 		params.setSectionVMA(addr);
 	}
@@ -684,9 +604,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		retdec::common::Address addr(val);
 		if (addr.isUndefined())
 		{
-			throw std::runtime_error(
-				"[--raw-entry-point] invalid address: " + val
-			);
+			throw std::runtime_error("[--raw-entry-point] invalid address: " + val);
 		}
 		params.setEntryPoint(addr);
 	}
@@ -727,24 +645,16 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		auto n = getParamOrDie(i);
 		if (!(n == "optim" || n == "pessim"))
 		{
-			throw std::runtime_error(
-				"[--backend-call-info-obtainer] unknown name: " + n
-			);
+			throw std::runtime_error("[--backend-call-info-obtainer] unknown name: " + n);
 		}
 		params.setBackendCallInfoObtainer(n);
 	}
 	else if (isParam(i, "", "--backend-var-renamer"))
 	{
 		auto s = getParamOrDie(i);
-		if (!(s == "address"
-				|| s == "hungarian"
-				|| s == "readable"
-				|| s == "simple"
-				|| s == "unified"))
+		if (!(s == "address" || s == "hungarian" || s == "readable" || s == "simple" || s == "unified"))
 		{
-			throw std::runtime_error(
-				"[--backend-var-renamer] unknown style: " + s
-			);
+			throw std::runtime_error("[--backend-var-renamer] unknown style: " + s);
 		}
 		params.setBackendVarRenamer(s);
 	}
@@ -790,8 +700,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		{
 			throw std::runtime_error(
 				"[--ar-index] and [--ar-name] are mutually exclusive, "
-				"use only one"
-			);
+				"use only one");
 		}
 
 		auto val = getParamOrDie(i);
@@ -801,9 +710,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		}
 		catch (const std::exception&)
 		{
-			throw std::runtime_error(
-				"[--ar-index] invalid index: " + val
-			);
+			throw std::runtime_error("[--ar-index] invalid index: " + val);
 		}
 	}
 	else if (isParam(i, "", "--ar-name"))
@@ -812,8 +719,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		{
 			throw std::runtime_error(
 				"[--ar-name] and [--ar-index] are mutually exclusive, "
-				"use only one"
-			);
+				"use only one");
 		}
 
 		arName = getParamOrDie(i);
@@ -832,9 +738,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		}
 		catch (const std::exception&)
 		{
-			throw std::runtime_error(
-				"[--timeout] invalid timeout value: " + t
-			);
+			throw std::runtime_error("[--timeout] invalid timeout value: " + t);
 		}
 	}
 	else if (isParam(i, "-s", "--silent"))
@@ -855,9 +759,7 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 		}
 		catch (const std::exception&)
 		{
-			throw std::runtime_error(
-				"[--jobs] invalid value: " + val
-			);
+			throw std::runtime_error("[--jobs] invalid value: " + val);
 		}
 	}
 	// Input file is the only argument that does not have -x or --xyz
@@ -878,21 +780,21 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 void ProgramOptions::afterLoad()
 {
 	auto in = params.getInputFile();
-	if (params.getOutputAsmFile().empty())
-		params.setOutputAsmFile(in + ".dsm");
-	if (params.getOutputBitcodeFile().empty())
-		params.setOutputBitcodeFile(in + ".bc");
-	if (params.getOutputLlvmirFile().empty())
-		params.setOutputLlvmirFile(in + ".ll");
-	if (params.getOutputConfigFile().empty())
-		params.setOutputConfigFile(in + ".config.json");
+	if (params.getOutputAsmFile().empty()) params.setOutputAsmFile(in + ".dsm");
+	if (params.getOutputBitcodeFile().empty()) params.setOutputBitcodeFile(in + ".bc");
+	if (params.getOutputLlvmirFile().empty()) params.setOutputLlvmirFile(in + ".ll");
+	if (params.getOutputConfigFile().empty()) params.setOutputConfigFile(in + ".config.json");
 	if (params.getOutputFile().empty())
 	{
 		OutputLangId lang = OutputLangId::C;
-		if (!params.getOutputLang().empty()) {
-			try {
+		if (!params.getOutputLang().empty())
+		{
+			try
+			{
 				lang = parseOutputLang(params.getOutputLang());
-			} catch (const std::exception&) {
+			}
+			catch (const std::exception&)
+			{
 				lang = OutputLangId::C;
 			}
 		}
@@ -902,36 +804,26 @@ void ProgramOptions::afterLoad()
 		else
 			params.setOutputFile(in + ext + ".json");
 	}
-	if (params.getOutputUnpackedFile().empty())
-		params.setOutputUnpackedFile(in + "-unpacked");
-	if (arExtractPath.empty())
-		arExtractPath = in + "-extracted";
+	if (params.getOutputUnpackedFile().empty()) params.setOutputUnpackedFile(in + "-unpacked");
+	if (arExtractPath.empty()) arExtractPath = in + "-extracted";
 
 	if (mode == "raw")
 	{
 		if (params.getSectionVMA().isUndefined())
 		{
-			throw std::runtime_error(
-				"[--mode=raw] option --raw-section-vma must be set"
-			);
+			throw std::runtime_error("[--mode=raw] option --raw-section-vma must be set");
 		}
 		if (params.getEntryPoint().isUndefined())
 		{
-			throw std::runtime_error(
-				"[--mode=raw] option --raw-entry-point must be set"
-			);
+			throw std::runtime_error("[--mode=raw] option --raw-entry-point must be set");
 		}
 		if (config.architecture.isUnknown())
 		{
-			throw std::runtime_error(
-				"[--mode=raw] option -a|--arch must be set"
-			);
+			throw std::runtime_error("[--mode=raw] option -a|--arch must be set");
 		}
 		if (config.architecture.isEndianUnknown())
 		{
-			throw std::runtime_error(
-				"[--mode=raw] option -e|--endian must be set"
-			);
+			throw std::runtime_error("[--mode=raw] option -e|--endian must be set");
 		}
 
 		config.fileFormat.setIsRaw();
@@ -943,15 +835,11 @@ void ProgramOptions::afterLoad()
 	// After everything, input file must be set.
 	if (params.getInputFile().empty())
 	{
-		throw std::runtime_error(
-			"INPUT_FILE not set"
-		);
+		throw std::runtime_error("INPUT_FILE not set");
 	}
 }
 
-std::string ProgramOptions::checkFile(
-		const std::string& path,
-		const std::string& errorMsgPrefix)
+std::string ProgramOptions::checkFile(const std::string& path, const std::string& errorMsgPrefix)
 {
 	if (!fs::is_regular_file(path))
 	{
@@ -1028,10 +916,7 @@ Other arguments:
 	exit(EXIT_SUCCESS);
 }
 
-bool ProgramOptions::isParam(
-		std::list<std::string>::iterator i,
-		const std::string& shortp,
-		const std::string& longp)
+bool ProgramOptions::isParam(std::list<std::string>::iterator i, const std::string& shortp, const std::string& longp)
 {
 	std::string str = *i;
 
@@ -1083,8 +968,8 @@ std::string ProgramOptions::getParamOrDie(std::list<std::string>::iterator& i)
 //
 
 /**
-* Limits the maximal memory of the tool based on the command-line parameters.
-*/
+ * Limits the maximal memory of the tool based on the command-line parameters.
+ */
 void limitMaximalMemoryIfRequested(const retdec::config::Parameters& params)
 {
 	if (params.isMaxMemoryLimitHalfRam())
@@ -1092,9 +977,7 @@ void limitMaximalMemoryIfRequested(const retdec::config::Parameters& params)
 		auto ok = retdec::utils::limitSystemMemoryToHalfOfTotalSystemMemory();
 		if (!ok)
 		{
-			throw std::runtime_error(
-				"failed to limit maximal memory to half of system RAM"
-			);
+			throw std::runtime_error("failed to limit maximal memory to half of system RAM");
 		}
 	}
 	else if (auto lim = params.getMaxMemoryLimit(); lim > 0)
@@ -1102,9 +985,7 @@ void limitMaximalMemoryIfRequested(const retdec::config::Parameters& params)
 		auto ok = retdec::utils::limitSystemMemory(lim);
 		if (!ok)
 		{
-			throw std::runtime_error(
-				"failed to limit maximal memory to " + std::to_string(lim)
-			);
+			throw std::runtime_error("failed to limit maximal memory to " + std::to_string(lim));
 		}
 	}
 }
@@ -1121,9 +1002,7 @@ int decompile(retdec::config::Config& config, ProgramOptions& po)
 
 	// Macho-O extraction.
 	//
-	retdec::macho_extractor::BreakMachOUniversal fat(
-			config.parameters.getInputFile()
-	);
+	retdec::macho_extractor::BreakMachOUniversal fat(config.parameters.getInputFile());
 	if (fat.isValid())
 	{
 		Log::phase("Mach-O extraction");
@@ -1132,15 +1011,11 @@ int decompile(retdec::config::Config& config, ProgramOptions& po)
 
 		if (config.architecture.isKnown())
 		{
-			if (!fat.extractArchiveForFamily(
-					config.architecture.getName(),
-					extractedFile))
+			if (!fat.extractArchiveForFamily(config.architecture.getName(), extractedFile))
 			{
 				std::stringstream ss;
-				ss << "Invalid --arch option '"
-						<< config.architecture.getName()
-						<< "'. File contains these architecture families:"
-						<< std::endl;
+				ss << "Invalid --arch option '" << config.architecture.getName()
+				   << "'. File contains these architecture families:" << std::endl;
 				fat.listArchitectures(ss);
 				throw std::runtime_error(ss.str());
 			}
@@ -1149,9 +1024,7 @@ int decompile(retdec::config::Config& config, ProgramOptions& po)
 		{
 			if (!fat.extractBestArchive(extractedFile))
 			{
-				throw std::runtime_error(
-						"Mach-O extraction: extractBestArchive() failed."
-				);
+				throw std::runtime_error("Mach-O extraction: extractBestArchive() failed.");
 				return EXIT_FAILURE;
 			}
 		}
@@ -1170,17 +1043,11 @@ int decompile(retdec::config::Config& config, ProgramOptions& po)
 
 		bool ok = true;
 		std::string errMsg;
-		retdec::ar_extractor::ArchiveWrapper arw(
-				config.parameters.getInputFile(),
-				ok,
-				errMsg
-		);
+		retdec::ar_extractor::ArchiveWrapper arw(config.parameters.getInputFile(), ok, errMsg);
 
 		if (!ok)
 		{
-			throw std::runtime_error(
-					"failed to create archive wrapper: " + errMsg
-			);
+			throw std::runtime_error("failed to create archive wrapper: " + errMsg);
 		}
 
 		if (po.arIdx)
@@ -1219,11 +1086,7 @@ int decompile(retdec::config::Config& config, ProgramOptions& po)
 
 		bool ok = true;
 		std::string errMsg;
-		retdec::ar_extractor::ArchiveWrapper arw(
-				config.parameters.getInputFile(),
-				ok,
-				errMsg
-		);
+		retdec::ar_extractor::ArchiveWrapper arw(config.parameters.getInputFile(), ok, errMsg);
 		if (ok && arw.isThinArchive())
 		{
 			Log::error() << "This file is an archive!" << std::endl;
@@ -1269,63 +1132,53 @@ int decompile(retdec::config::Config& config, ProgramOptions& po)
 				auto mfSize = static_cast<std::size_t>(mf.tellg());
 				mf.seekg(0);
 				managedProbeBytes.resize(mfSize);
-				mf.read(reinterpret_cast<char*>(managedProbeBytes.data()),
-						static_cast<std::streamsize>(mfSize));
+				mf.read(reinterpret_cast<char*>(managedProbeBytes.data()), static_cast<std::streamsize>(mfSize));
 			}
 		}
 		catch (const std::exception&)
-		{
-		}
+		{}
 
-		auto managedFmt = detectManagedFormatFromBytes(
-				managedProbeBytes.data(),
-				managedProbeBytes.size());
+		auto managedFmt = detectManagedFormatFromBytes(managedProbeBytes.data(), managedProbeBytes.size());
 
 		if (managedFmt != ManagedFormat::Unknown)
 		{
 			Log::phase("Managed language decompilation");
 			{
 				std::ostringstream routeLog;
-				logManagedFormatRoute(
-						managedFmt,
-						config.parameters.getInputFile(),
-						routeLog);
+				logManagedFormatRoute(managedFmt, config.parameters.getInputFile(), routeLog);
 				Log::info() << routeLog.str() << std::endl;
 			}
 			OutputLangId reqLang = OutputLangId::C;
-			if (!config.parameters.getOutputLang().empty()) {
-				try {
+			if (!config.parameters.getOutputLang().empty())
+			{
+				try
+				{
 					reqLang = parseOutputLang(config.parameters.getOutputLang());
-				} catch (const std::exception& e) {
+				}
+				catch (const std::exception& e)
+				{
 					Log::error() << e.what() << std::endl;
 					return EXIT_FAILURE;
 				}
-			} else {
+			}
+			else
+			{
 				reqLang = defaultOutputLangForManaged(managedFmt);
 			}
-			if (!isOutputLangCompatibleWithManaged(reqLang, managedFmt)) {
-				Log::info() << "[output-lang] Requested "
-						<< outputLangCliName(reqLang)
-						<< " does not match managed emitter for "
-						<< managedFormatName(managedFmt)
-						<< "; using "
-						<< outputLangCliName(defaultOutputLangForManaged(managedFmt))
-						<< "." << std::endl;
+			if (!isOutputLangCompatibleWithManaged(reqLang, managedFmt))
+			{
+				Log::info() << "[output-lang] Requested " << outputLangCliName(reqLang)
+							<< " does not match managed emitter for " << managedFormatName(managedFmt) << "; using "
+							<< outputLangCliName(defaultOutputLangForManaged(managedFmt)) << "." << std::endl;
 			}
-			int rc = decompileManaged(
-					managedFmt,
-					config.parameters.getInputFile(),
-					config.parameters.getOutputFile());
+			int rc = decompileManaged(managedFmt, config.parameters.getInputFile(), config.parameters.getOutputFile());
 			return rc == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
 
 		{
 			std::ostringstream unknownLog;
 			logUnknownManagedFormat(
-					managedProbeBytes.data(),
-					managedProbeBytes.size(),
-					config.parameters.getInputFile(),
-					unknownLog);
+				managedProbeBytes.data(), managedProbeBytes.size(), config.parameters.getInputFile(), unknownLog);
 			Log::info() << unknownLog.str() << std::endl;
 		}
 	}
@@ -1339,18 +1192,11 @@ int decompile(retdec::config::Config& config, ProgramOptions& po)
 	unpackArgs.push_back(config.parameters.getInputFile());
 	unpackArgs.push_back("--output");
 	unpackArgs.push_back(config.parameters.getOutputUnpackedFile());
-	char* uargv[4] = {
-			unpackArgs[0].data(),
-			unpackArgs[1].data(),
-			unpackArgs[2].data(),
-			unpackArgs[3].data()
-	};
+	char* uargv[4] = {unpackArgs[0].data(), unpackArgs[1].data(), unpackArgs[2].data(), unpackArgs[3].data()};
 	auto unpackCode = retdec::unpackertool::_main(4, uargv);
 	if (unpackCode == 0) // EXIT_CODE_OK
 	{
-		config.parameters.setInputFile(
-				config.parameters.getOutputUnpackedFile()
-		);
+		config.parameters.setInputFile(config.parameters.getOutputUnpackedFile());
 		po.toClean.insert(config.parameters.getOutputUnpackedFile());
 	}
 	else if (unpackCode == 1 && po.tryEmulationUnpacking) // EXIT_CODE_NOTHING_TO_DO
@@ -1360,13 +1206,13 @@ int decompile(retdec::config::Config& config, ProgramOptions& po)
 		{
 			config.parameters.setInputFile(config.parameters.getOutputUnpackedFile());
 			config.fileFormat.setIsRaw();
-			if (config.architecture.isKnown())
-				config.fileFormat.setFileClassBits(config.architecture.getBitSize());
+			if (config.architecture.isKnown()) config.fileFormat.setFileClassBits(config.architecture.getBitSize());
 			po.toClean.insert(config.parameters.getOutputUnpackedFile());
 		}
 		else
 		{
-			Log::info() << "Emulation-based unpacking did not produce output; continuing with packed input." << std::endl;
+			Log::info() << "Emulation-based unpacking did not produce output; continuing with packed input."
+						<< std::endl;
 		}
 	}
 
@@ -1374,10 +1220,14 @@ int decompile(retdec::config::Config& config, ProgramOptions& po)
 	//
 	{
 		OutputLangId lang = OutputLangId::C;
-		if (!config.parameters.getOutputLang().empty()) {
-			try {
+		if (!config.parameters.getOutputLang().empty())
+		{
+			try
+			{
 				lang = parseOutputLang(config.parameters.getOutputLang());
-			} catch (const std::exception& e) {
+			}
+			catch (const std::exception& e)
+			{
 				Log::error() << e.what() << std::endl;
 				return EXIT_FAILURE;
 			}
@@ -1400,7 +1250,7 @@ void cleanup(ProgramOptions& po)
 		return;
 	}
 
-	for (auto& p : po.toClean)
+	for (auto& p: po.toClean)
 	{
 		remove(p.c_str());
 	}
@@ -1412,7 +1262,7 @@ void cleanup(ProgramOptions& po)
 //==============================================================================
 //
 
-int main(int argc, char **argv)
+int main(int argc, char** argv)
 {
 	// Set LLVM debug.
 	//
@@ -1461,9 +1311,7 @@ int main(int argc, char **argv)
 		std::stringstream buffer;
 		if (config.parameters.isTimeout())
 		{
-			std::packaged_task<
-					int(retdec::config::Config&,
-					ProgramOptions&)> task(decompile);
+			std::packaged_task<int(retdec::config::Config&, ProgramOptions&)> task(decompile);
 			auto future = task.get_future();
 			std::thread thr(std::move(task), std::ref(config), std::ref(po));
 			auto timeout = std::chrono::seconds(config.parameters.getTimeout());
@@ -1475,8 +1323,7 @@ int main(int argc, char **argv)
 			else
 			{
 				thr.detach(); // we leave the thread still running
-				Log::error() << "timeout after: " << config.parameters.getTimeout()
-						<< " seconds" << std::endl;
+				Log::error() << "timeout after: " << config.parameters.getTimeout() << " seconds" << std::endl;
 				ret = EXIT_TIMEOUT;
 			}
 		}

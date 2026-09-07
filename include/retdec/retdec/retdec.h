@@ -19,7 +19,9 @@
 #include "retdec/config/config.h"
 
 namespace retdec {
-namespace config { class Parameters; }
+namespace config {
+class Parameters;
+}
 
 /**
  * Configure the global RetDec logger from decompiler parameters.
@@ -47,30 +49,22 @@ struct LlvmModuleContextPair
  * \return Pointer to LLVM module created by the disassembly,
  *         or \c nullptr if the disassembly failed.
  */
-LlvmModuleContextPair disassemble(
-		const std::string& inputPath,
-		retdec::common::FunctionSet* fs = nullptr
-);
+LlvmModuleContextPair disassemble(const std::string& inputPath, retdec::common::FunctionSet* fs = nullptr);
 
 /**
  * Run a decompilation according to a \p config configuration.
  * If \p outString is set, decompilation output will be returned
  * in this string. Otherwise, output file is expected to be set in \p config.
  */
-bool decompile(
-		retdec::config::Config& config,
-		std::string* outString = nullptr
-);
+bool decompile(retdec::config::Config& config, std::string* outString = nullptr);
 
 /**
  * Run decompilation passes up to (but not including) \p stopBeforePass.
  * Returns the LLVM module and context for Stage 3 emulation-based unpacking.
  * Returns empty pair on failure.
  */
-LlvmModuleContextPair decompileToLlvmIr(
-		retdec::config::Config& config,
-		const std::string& stopBeforePass = "retdec-llvmir2hll"
-);
+LlvmModuleContextPair
+decompileToLlvmIr(retdec::config::Config& config, const std::string& stopBeforePass = "retdec-llvmir2hll");
 
 /**
  * Stage 3: Attempt emulation-based unpacking when no plugin matched.
@@ -78,18 +72,13 @@ LlvmModuleContextPair decompileToLlvmIr(
  * memory to \p outputPath if successful. Returns true if unpacked output
  * was produced.
  */
-bool tryEmulationUnpacking(
-		retdec::config::Config& config,
-		const std::string& outputPath
-);
+bool tryEmulationUnpacking(retdec::config::Config& config, const std::string& outputPath);
 
 /**
  * Decompile multiple binaries in parallel (one config per input).
  * @param numJobs Worker count; 0 = hardware_concurrency.
  */
-std::vector<bool> parallelBatchDecompile(
-		std::vector<retdec::config::Config>& configs,
-		std::size_t numJobs = 0);
+std::vector<bool> parallelBatchDecompile(std::vector<retdec::config::Config>& configs, std::size_t numJobs = 0);
 
 } // namespace retdec
 
