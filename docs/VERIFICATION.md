@@ -391,6 +391,22 @@ reported as expected disagreement; anything else is a finding and fails the run,
 because a property two solvers disagree about is not proved. Everything above
 was measured with it rather than assumed.
 
+The measured result over all 272, at a 300s budget per proof per backend:
+
+| | |
+|---|---|
+| agreed | 251 |
+| expected disagreement (a pinned harness) | 20 |
+| no verdict (neither backend finished) | 1 |
+| **unexplained** | **0** |
+
+The 20 break down as 10 pinned to boolector, 6 to z3 and 4 to cvc5, and each pin
+carries its reason in the harness. The single no-verdict is
+`proof_entropy_answer_is_in_range`, which is pinned to cvc5 and which neither of
+the two compared backends finishes in 300s — so for that one property the
+single-solver verdict from the main run is all there is, and the summary says so
+rather than rounding it up to agreement.
+
 Two backends that both run out of time are reported as **no verdict**, not as
 agreement. They have said nothing about the property, and counting silence as
 consensus is how a cross-check comes back clean on a file it never checked. The
