@@ -35,7 +35,7 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: build/windows
-          key: perf-windows-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}
+          key: perf-windows-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}
           restore-keys: |
             perf-windows-${{ runner.os }}-
 
@@ -100,7 +100,7 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: build/linux
-          key: perf-linux-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}
+          key: perf-linux-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}
           restore-keys: |
             perf-linux-${{ runner.os }}-
 

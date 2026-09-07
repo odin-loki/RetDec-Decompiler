@@ -59,7 +59,7 @@ jobs:
           path: |
             build/linux
             ~/.cache/ccache
-          key: ctest-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/deps.cmake', 'cmake/**') }}
+          key: ctest-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}
           restore-keys: |
             ctest-linux-
 

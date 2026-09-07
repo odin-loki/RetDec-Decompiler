@@ -43,9 +43,26 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: build/linux
-          key: sanitizers-asan-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/deps.cmake', 'cmake/**') }}
+          key: sanitizers-asan-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}
           restore-keys: |
             sanitizers-asan-
+
+      # Must run BEFORE configure/build, not just before the ASan run:
+      # YARA's ./configure compiles an ASan conftest and *executes* it to
+      # decide whether it is cross-compiling. With the runner's default
+      # vm.mmap_rnd_bits=32 that conftest cannot map its shadow, and
+      # configure aborts with "cannot run C compiled programs".
+      - name: Lower ASLR entropy for ASan shadow mmap
+        run: |
+          # High-entropy ASLR (vm.mmap_rnd_bits=32) on ubuntu-latest makes
+          # ASan fail to mmap shadow: "Failed to mmap" / internal allocator
+          # OOM at 0x800. Same workaround as actions/runner-images#9491.
+          # 28 was not enough for this ASan binary (Failed to mmap on hello).
+          sudo sysctl vm.mmap_rnd_bits=18
+          sudo sysctl vm.overcommit_memory=1
+          sudo sysctl kernel.randomize_va_space=0
+          # Writes already print the new values. Do not `sysctl KEY` without
+          # sudo: ubuntu-latest denies unprivileged reads of mmap_rnd_bits.
 
       - name: Configure (ASan, RelWithDebInfo, CPU-only CI)
         run: >
@@ -97,18 +114,6 @@ jobs:
           fi
           swapon --show
           free -h
-
-      - name: Lower ASLR entropy for ASan shadow mmap
-        run: |
-          # High-entropy ASLR (vm.mmap_rnd_bits=32) on ubuntu-latest makes
-          # ASan fail to mmap shadow: "Failed to mmap" / internal allocator
-          # OOM at 0x800. Same workaround as actions/runner-images#9491.
-          # 28 was not enough for this ASan binary (Failed to mmap on hello).
-          sudo sysctl vm.mmap_rnd_bits=18
-          sudo sysctl vm.overcommit_memory=1
-          sudo sysctl kernel.randomize_va_space=0
-          # Writes already print the new values. Do not `sysctl KEY` without
-          # sudo: ubuntu-latest denies unprivileged reads of mmap_rnd_bits.
 
       - name: Run ASan over decompile sample corpus
         env:

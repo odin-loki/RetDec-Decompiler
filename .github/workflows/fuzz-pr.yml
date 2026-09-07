@@ -134,7 +134,7 @@ jobs:
           path: |
             build/linux
             ~/.cache/ccache
-          key: fuzz-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/deps.cmake', 'cmake/**') }}
+          key: fuzz-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}
           restore-keys: |
             fuzz-linux-
 

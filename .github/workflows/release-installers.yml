@@ -173,9 +173,9 @@ jobs:
             build/windows/deps
             build/windows/external
             build/windows/llvm-project-prefix
-          key: installer-win-deps-${{ hashFiles('cmake/deps.cmake') }}-${{ github.run_id }}
+          key: installer-win-deps-${{ hashFiles('cmake/deps.cmake', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
           restore-keys: |
-            installer-win-deps-${{ hashFiles('cmake/deps.cmake') }}-
+            installer-win-deps-${{ hashFiles('cmake/deps.cmake', 'deps/**/CMakeLists.txt') }}-
             installer-win-deps-
 
       - name: Install EnVar NSIS plugin
@@ -268,7 +268,7 @@ jobs:
             build/windows/deps
             build/windows/external
             build/windows/llvm-project-prefix
-          key: installer-win-deps-${{ hashFiles('cmake/deps.cmake') }}-${{ github.run_id }}
+          key: installer-win-deps-${{ hashFiles('cmake/deps.cmake', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
 
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
@@ -357,9 +357,9 @@ jobs:
             build/linux/deps
             build/linux/external
             build/linux/llvm-project-prefix
-          key: installer-linux-deps-${{ hashFiles('cmake/deps.cmake') }}-${{ github.run_id }}
+          key: installer-linux-deps-${{ hashFiles('cmake/deps.cmake', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
           restore-keys: |
-            installer-linux-deps-${{ hashFiles('cmake/deps.cmake') }}-
+            installer-linux-deps-${{ hashFiles('cmake/deps.cmake', 'deps/**/CMakeLists.txt') }}-
             installer-linux-deps-
 
       - name: Fetch large support files
@@ -430,7 +430,7 @@ jobs:
             build/linux/deps
             build/linux/external
             build/linux/llvm-project-prefix
-          key: installer-linux-deps-${{ hashFiles('cmake/deps.cmake') }}-${{ github.run_id }}
+          key: installer-linux-deps-${{ hashFiles('cmake/deps.cmake', 'deps/**/CMakeLists.txt') }}-${{ github.run_id }}
 
       - name: Verify optional AppImage
         if: env.APPIMAGE == '1'

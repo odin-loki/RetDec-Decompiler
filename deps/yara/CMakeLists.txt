@@ -118,7 +118,14 @@ set(YARA_CONFIGURE_ARGS
 	MAKE=${YARA_MAKE_PROGRAM}
 	CC=${CMAKE_C_COMPILER}
 	CFLAGS=${CMAKE_C_FLAGS}
-	LDFLAGS=${CMAKE_SHARED_LINKER_FLAGS}
+	# YARA is configured --disable-shared, so every link autoconf performs is
+	# an executable link: the conftest programs ./configure compiles and runs,
+	# and yara/yarac themselves. It must therefore get the *executable* linker
+	# flags. Passing CMAKE_SHARED_LINKER_FLAGS here dropped the -no-pie that
+	# CMAKE_EXE_LINKER_FLAGS carries under -DRETDEC_USE_ADDRESS_SANITIZER=ON
+	# while CMAKE_C_FLAGS still carried -fno-pie, so ./configure produced a PIE
+	# ASan conftest and died with "cannot run C compiled programs".
+	LDFLAGS=${CMAKE_EXE_LINKER_FLAGS}
 )
 if(CMAKE_CROSSCOMPILING AND CMAKE_SYSTEM_NAME STREQUAL "Windows")
 	# Ensure autoconf selects Windows sources (e.g. proc/windows.c) when

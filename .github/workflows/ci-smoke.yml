@@ -26,7 +26,7 @@ jobs:
           path: |
             build/linux/deps
             ~/.cache/ccache
-          key: ci-smoke-deps-${{ hashFiles('cmake/deps.cmake') }}
+          key: ci-smoke-deps-${{ hashFiles('cmake/deps.cmake', 'deps/**/CMakeLists.txt') }}
           restore-keys: ci-smoke-deps-
 
       - name: Fetch large support files

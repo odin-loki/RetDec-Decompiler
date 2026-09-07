@@ -46,7 +46,7 @@ jobs:
           path: |
             build/linux
             ~/.cache/ccache
-          key: coverage-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/deps.cmake', 'cmake/**') }}
+          key: coverage-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}
           restore-keys: |
             coverage-linux-
 
