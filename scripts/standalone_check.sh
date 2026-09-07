@@ -149,16 +149,24 @@ readonly CU_AS_CXX_MODULES=(
 # module as a whole needs LLVM; these files do not.  Selecting by directory
 # would leave them untested, and semantic_recovery_export.cpp in particular is
 # the 1773-line emitter behind the --buildable sidecar.
+# An entry may carry ":c++20" when the file needs a later standard than the
+# module default, the way CXX20_MODULES does for whole modules.
 readonly EXTRA_SOURCES=(
 	"retdec/semantic_recovery_export.cpp"
 	"retdec/neural_refine_stub.cpp"
+	# The managed-format router. src/retdec-decompiler/ as a whole is the CLI
+	# front end and needs LLVM, but this file needs only the bytecode modules
+	# this script already builds -- and it is what decides, from the first bytes
+	# of an untrusted file, which parser sees it. It was reachable by nothing
+	# here until tests/retdec/managed_decompiler_test.cpp.
+	"retdec-decompiler/managed_decompiler.cpp:c++20"
 )
 
 # Test suites where only some files build here, for the same reason.  The rest
 # of the directory keeps building through CMake.
 # "suite:file.cpp file.cpp"
 readonly PARTIAL_SUITES=(
-	"retdec:semantic_recovery_export_test.cpp thread_pool_test.cpp"
+	"retdec:semantic_recovery_export_test.cpp thread_pool_test.cpp managed_decompiler_test.cpp"
 )
 
 # Sources inside an included module that must NOT be compiled here, mirroring a
@@ -432,10 +440,16 @@ for m in "${selected_modules[@]}"; do
 	fi
 	shopt -u nullglob
 done
-for extra in "${EXTRA_SOURCES[@]}"; do
+for extraSpec in "${EXTRA_SOURCES[@]}"; do
+	extra="${extraSpec%%:*}"
+	extraStd="${extraSpec#*:}"
+	[ "$extraStd" = "$extraSpec" ] && extraStd=c++17
 	[ -f "src/$extra" ] || continue
-	printf '%s\t%s\tmod\n' "src/$extra" \
-		"$BUILD_DIR/obj/$(dirname "$extra")/$(basename "${extra%.cpp}").o" >> "$JOBLIST"
+	extraKind=mod
+	[ "$extraStd" = c++20 ] && extraKind=mod20
+	printf '%s\t%s\t%s\n' "src/$extra" \
+		"$BUILD_DIR/obj/$(dirname "$extra")/$(basename "${extra%.cpp}").o" \
+		"$extraKind" >> "$JOBLIST"
 done
 printf '%s\t%s\tcc\n' deps/whereami/whereami/whereami.c "$BUILD_DIR/obj/utils/whereami.o" >> "$JOBLIST"
 printf '%s\t%s\ttest\n' tests/standalone/gtest_lite.cpp "$BUILD_DIR/obj/gtest_lite.o" >> "$JOBLIST"
@@ -509,7 +523,8 @@ for m in "${selected_modules[@]}"; do
 	rm -f "$BUILD_DIR/lib/lib$m.a"
 	ar qcs "$BUILD_DIR/lib/lib$m.a" "${objs[@]}"
 done
-for extra in "${EXTRA_SOURCES[@]}"; do
+for extraSpec in "${EXTRA_SOURCES[@]}"; do
+	extra="${extraSpec%%:*}"
 	d="$(dirname "$extra")"
 	shopt -s nullglob
 	eobjs=("$BUILD_DIR/obj/$d"/*.o)

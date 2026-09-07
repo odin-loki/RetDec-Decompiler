@@ -24,6 +24,8 @@
 #include "retdec/cli_parser/pe_reader.h"
 #include "retdec/csharp_emitter/cs_file_emitter.h"
 
+#include "retdec/utils/bounds.h"
+
 // Python
 #include "retdec/py_emitter/py_file_emitter.h"
 #include "retdec/py_reconstruct/py_cfg_builder.h"
@@ -173,15 +175,22 @@ static bool probeCliAssembly(const uint8_t* data, std::size_t size)
 	// Lexical COM-descriptor check — same rules as format_router_test.py.
 	// PeReader::open rejects the minimal PE stubs used for detection tests.
 	if (size < 0x40 || data[0] != 0x4D || data[1] != 0x5A) return false;
-	const uint32_t peOff = le32(data + 0x3C);
-	if (peOff + 24 > size || std::memcmp(data + peOff, "PE\0\0", 4) != 0) return false;
-	const uint32_t opt = peOff + 24;
-	if (opt + 2 > size) return false;
+	// Every offset below came out of the file. Held as uint32_t, as they were,
+	// `peOff + 24 > size` is 32-bit arithmetic: an e_lfanew of 0xFFFFFFFF makes
+	// the sum 23, the guard passes, and the memcmp reads 4 GiB past the buffer.
+	// The same wrap sits in each of opt, ddStart and comOff, which are derived
+	// from it. Holding them as std::size_t and asking bounds::rangeFits -- which
+	// never forms the sum, and is proved over the whole 64-bit domain by
+	// tests/verification/bounds_proof.cpp -- removes all four.
+	const std::size_t peOff = le32(data + 0x3C);
+	if (!retdec::utils::bounds::rangeFits(peOff, size, 24) || std::memcmp(data + peOff, "PE\0\0", 4) != 0) return false;
+	const std::size_t opt = peOff + 24;
+	if (!retdec::utils::bounds::rangeFits(opt, size, 2)) return false;
 	const uint16_t magic = le16(data + opt);
 	if (magic != 0x010B && magic != 0x020B) return false;
-	const uint32_t ddStart = opt + (magic == 0x020B ? 112u : 96u);
-	const uint32_t comOff = ddStart + 14u * 8u;
-	if (comOff + 8 > size) return false;
+	const std::size_t ddStart = opt + (magic == 0x020B ? 112u : 96u);
+	const std::size_t comOff = ddStart + 14u * 8u;
+	if (!retdec::utils::bounds::rangeFits(comOff, size, 8)) return false;
 	const uint32_t rva = le32(data + comOff);
 	const uint32_t comSize = le32(data + comOff + 4);
 	return rva != 0 && comSize >= 72;
