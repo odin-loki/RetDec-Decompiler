@@ -46,8 +46,7 @@ using namespace PeLib;
 namespace retdec {
 namespace fileformat {
 
-namespace
-{
+namespace {
 
 const std::size_t PE_IMAGE_SYM_CLASS_EXTERNAL = 2;
 const std::size_t PE_IMAGE_SYM_CLASS_STATIC = 3;
@@ -57,27 +56,22 @@ const std::size_t STANDARD_RICH_HEADER_OFFSET = 0x80;
 const std::size_t MINIMAL_PDB_NB10_INFO_LENGTH = 17;
 const std::size_t MINIMAL_PDB_RSDS_INFO_LENGTH = 25;
 
-const std::vector<std::string> stubDatabase =
-{
+const std::vector<std::string> stubDatabase = {
 	"This program cannot be run in DOS mode",
 	"This program must be run under Win32",
 	"This program requires Microsoft Windows",
-	"Win32 only"
-};
+	"Win32 only"};
 
-const std::map<std::string, std::size_t> visualBasicLibrariesMap =
-{
+const std::map<std::string, std::size_t> visualBasicLibrariesMap = {
 	{"msvbvm10.dll", 1},
 	{"msvbvm20.dll", 2},
 	{"msvbvm30.dll", 3},
 	{"msvbvm40.dll", 4},
 	{"msvbvm50.dll", 5},
 	{"msvbvm60.dll", 6},
-	{"vb40032.dll", 4}
-};
+	{"vb40032.dll", 4}};
 
-const std::map<std::size_t, std::string> resourceTypeMap
-{
+const std::map<std::size_t, std::string> resourceTypeMap{
 	{PELIB_RT_CURSOR, "Cursor"},
 	{PELIB_RT_BITMAP, "Bitmap"},
 	{PELIB_RT_ICON, "Icon"},
@@ -100,11 +94,9 @@ const std::map<std::size_t, std::string> resourceTypeMap
 	{PELIB_RT_HTML, "HTML"},
 	{PELIB_RT_MANIFEST, "Manifest"},
 	{PELIB_RT_DLGINIT, "Dialog box init"},
-	{PELIB_RT_TOOLBAR, "Toolbar"}
-};
+	{PELIB_RT_TOOLBAR, "Toolbar"}};
 
-const std::map<std::size_t, std::string> resourceLanguageMap
-{
+const std::map<std::size_t, std::string> resourceLanguageMap{
 	{PELIB_LANG_NEUTRAL, "Neutral"},
 	{PELIB_LANG_ARABIC, "Arabic"},
 	{PELIB_LANG_BULGARIAN, "Bulgarian"},
@@ -242,195 +234,36 @@ const std::map<std::size_t, std::string> resourceLanguageMap
 };
 
 // http://www.hexacorn.com/blog/2016/12/15/pe-section-names-re-visited/
-const std::unordered_set<std::string> usualSectionNames
-{
-	".00cfg",
-	".BSS",
-	".CLR_UEF",
-	".CRT",
-	".DATA",
-	".apiset",
-	".arch",
-	".autoload_text",
-	".bindat",
-	".bootdat",
-	".bss",
-	".buildid",
-	".code",
-	".complua",
-	".cormeta",
-	".cygwin_dll_common",
-	".data",
-	".data1",
-	".data2",
-	".data3",
-	".debug  $F",
-	".debug  $P",
-	".debug  $S",
-	".debug  $T",
-	".debug",
-	".didat",
-	".didata",
-	".drectve ",
-	".edata",
-	".eh_fram",
-	".export",
-	".fasm",
-	".flat",
-	".gfids",
-	".giats",
-	".gljmp",
-	".glue_7",
-	".glue_7t",
-	".idata",
-	".idlsym",
-	".impdata",
-	".import",
-	".itext",
-	".ndata",
-	".orpc",
-	".pdata",
-	".rdata",
-	".reloc",
-	".rodata",
-	".rsrc",
-	".sbss",
-	".script",
-	".sdata",
-	".shared",
-	".srdata",
-	".stab",
-	".stabstr",
-	".sxdata",
-	".text",
-	".text0",
-	".text1",
-	".text2",
-	".text3",
-	".textbss",
-	".tls",
-	".tls$",
-	".udata",
-	".vsdata",
-	".wixburn",
-	".wpp_sf",
-	".xdata",
-	"BSS",
-	"CODE",
-	"DATA",
-	"DGROUP",
-	"INIT",
-	"PAGE",
-	"Shared",
-	"edata",
-	"idata",
-	"minATL",
-	"rdata",
-	"sdata",
-	"shared",
-	"testdata",
-	"text"
-};
+const std::unordered_set<std::string> usualSectionNames{
+	".00cfg",   ".BSS",     ".CLR_UEF", ".CRT",      ".DATA",      ".apiset",    ".arch",      ".autoload_text",
+	".bindat",  ".bootdat", ".bss",     ".buildid",  ".code",      ".complua",   ".cormeta",   ".cygwin_dll_common",
+	".data",    ".data1",   ".data2",   ".data3",    ".debug  $F", ".debug  $P", ".debug  $S", ".debug  $T",
+	".debug",   ".didat",   ".didata",  ".drectve ", ".edata",     ".eh_fram",   ".export",    ".fasm",
+	".flat",    ".gfids",   ".giats",   ".gljmp",    ".glue_7",    ".glue_7t",   ".idata",     ".idlsym",
+	".impdata", ".import",  ".itext",   ".ndata",    ".orpc",      ".pdata",     ".rdata",     ".reloc",
+	".rodata",  ".rsrc",    ".sbss",    ".script",   ".sdata",     ".shared",    ".srdata",    ".stab",
+	".stabstr", ".sxdata",  ".text",    ".text0",    ".text1",     ".text2",     ".text3",     ".textbss",
+	".tls",     ".tls$",    ".udata",   ".vsdata",   ".wixburn",   ".wpp_sf",    ".xdata",     "BSS",
+	"CODE",     "DATA",     "DGROUP",   "INIT",      "PAGE",       "Shared",     "edata",      "idata",
+	"minATL",   "rdata",    "sdata",    "shared",    "testdata",   "text"};
 
-const std::unordered_set<std::string> usualPackerSections
-{
-	"!EPack",
-	".ASPack",
-	".ByDwing",
-	".MPRESS1",
-	".MPRESS2",
-	".MaskPE",
-	".RLPack",
-	".RPCrypt",
-	".Themida",
-	".UPX0",
-	".UPX1",
-	".UPX2",
-	".Upack",
-	".WWP32",
-	".WWPACK",
-	".adata",
-	".aspack",
-	".boom",
-	".ccg",
-	".charmve",
-	".ecode",
-	".edata",
-	".enigma1",
-	".enigma2",
-	".gentee",
-	".mackt",
-	".mnbvcx1",
-	".mnbvcx2",
-	".neolit",
-	".neolite",
-	".nsp0",
-	".nsp1",
-	".nsp2",
-	".packed",
-	".perplex",
-	".petite",
-	".pinclie",
-	".rmnet",
-	".seau",
-	".sforce3",
-	".shrink1",
-	".shrink2",
-	".shrink3",
-	".spack",
-	".svkp",
-	".taz",
-	".tsuarch",
-	".tsustub",
-	".vmp0",
-	".vmp1",
-	".vmp2",
-	".winapi",
-	".y0da",
-	".yP",
-	"ASPack",
-	"BitArts",
-	"DAStub",
-	"FSG!",
-	"MEW",
-	"PEBundle",
-	"PEC2",
-	"PEC2MO",
-	"PEC2TO",
-	"PECompact2",
-	"PELOCKnt",
-	"PEPACK!!",
-	"PESHiELD",
-	"ProCrypt",
-	"RCryptor",
-	"Themida",
-	"UPX!",
-	"UPX0",
-	"UPX1",
-	"UPX2",
-	"UPX3",
-	"VProtect",
-	"WinLicen",
-	"_winzip_",
-	"kkrunchy",
-	"lz32.dll",
-	"nsp0",
-	"nsp1",
-	"nsp2",
-	"pebundle",
-	"pec",
-	"pec1",
-	"pec2",
-	"pec3",
-	"pec4",
-	"pec5",
+const std::unordered_set<std::string> usualPackerSections{
+	"!EPack",     ".ASPack",  ".ByDwing", ".MPRESS1", ".MPRESS2", ".MaskPE",  ".RLPack",  ".RPCrypt", ".Themida",
+	".UPX0",      ".UPX1",    ".UPX2",    ".Upack",   ".WWP32",   ".WWPACK",  ".adata",   ".aspack",  ".boom",
+	".ccg",       ".charmve", ".ecode",   ".edata",   ".enigma1", ".enigma2", ".gentee",  ".mackt",   ".mnbvcx1",
+	".mnbvcx2",   ".neolit",  ".neolite", ".nsp0",    ".nsp1",    ".nsp2",    ".packed",  ".perplex", ".petite",
+	".pinclie",   ".rmnet",   ".seau",    ".sforce3", ".shrink1", ".shrink2", ".shrink3", ".spack",   ".svkp",
+	".taz",       ".tsuarch", ".tsustub", ".vmp0",    ".vmp1",    ".vmp2",    ".winapi",  ".y0da",    ".yP",
+	"ASPack",     "BitArts",  "DAStub",   "FSG!",     "MEW",      "PEBundle", "PEC2",     "PEC2MO",   "PEC2TO",
+	"PECompact2", "PELOCKnt", "PEPACK!!", "PESHiELD", "ProCrypt", "RCryptor", "Themida",  "UPX!",     "UPX0",
+	"UPX1",       "UPX2",     "UPX3",     "VProtect", "WinLicen", "_winzip_", "kkrunchy", "lz32.dll", "nsp0",
+	"nsp1",       "nsp2",     "pebundle", "pec",      "pec1",     "pec2",     "pec3",     "pec4",     "pec5",
 	"pec6",
-	"gu_idata",             // Created by retdec-unpacker
-	"gu_rsrc"               // Created by retdec-unpacker
+	"gu_idata", // Created by retdec-unpacker
+	"gu_rsrc"   // Created by retdec-unpacker
 };
 
-const std::map<std::string, std::size_t> usualSectionCharacteristics
-{
+const std::map<std::string, std::size_t> usualSectionCharacteristics{
 	{".bss", (PELIB_IMAGE_SCN_CNT_UNINITIALIZED_DATA | PELIB_IMAGE_SCN_MEM_READ | PELIB_IMAGE_SCN_MEM_WRITE)},
 	{".cormeta", PELIB_IMAGE_SCN_LNK_INFO},
 	{".data", (PELIB_IMAGE_SCN_CNT_INITIALIZED_DATA | PELIB_IMAGE_SCN_MEM_READ | PELIB_IMAGE_SCN_MEM_WRITE)},
@@ -451,8 +284,7 @@ const std::map<std::string, std::size_t> usualSectionCharacteristics
 	{".tls", (PELIB_IMAGE_SCN_CNT_INITIALIZED_DATA | PELIB_IMAGE_SCN_MEM_READ | PELIB_IMAGE_SCN_MEM_WRITE)},
 	{".tls$", (PELIB_IMAGE_SCN_CNT_INITIALIZED_DATA | PELIB_IMAGE_SCN_MEM_READ | PELIB_IMAGE_SCN_MEM_WRITE)},
 	{".vsdata", (PELIB_IMAGE_SCN_CNT_INITIALIZED_DATA | PELIB_IMAGE_SCN_MEM_READ | PELIB_IMAGE_SCN_MEM_WRITE)},
-	{".xdata", (PELIB_IMAGE_SCN_CNT_INITIALIZED_DATA | PELIB_IMAGE_SCN_MEM_READ)}
-};
+	{".xdata", (PELIB_IMAGE_SCN_CNT_INITIALIZED_DATA | PELIB_IMAGE_SCN_MEM_READ)}};
 
 /**
  * Try to find offset of DOS stub
@@ -461,12 +293,12 @@ const std::map<std::string, std::size_t> usualSectionCharacteristics
  * @return Offset of DOS stub in @a plainFile or @c string::npos if DOS stub
  *    is not found
  */
-std::size_t findDosStub(const std::string &plainFile)
+std::size_t findDosStub(const std::string& plainFile)
 {
-	for(const auto &item : stubDatabase)
+	for (const auto& item: stubDatabase)
 	{
 		const auto offset = plainFile.find(item);
-		if(offset != std::string::npos)
+		if (offset != std::string::npos)
 		{
 			return offset;
 		}
@@ -484,19 +316,19 @@ std::size_t findDosStub(const std::string &plainFile)
  */
 Symbol::Type getSymbolType(std::uint16_t link, std::uint16_t value, std::uint8_t storageClass)
 {
-	if(!link)
+	if (!link)
 	{
 		return value ? Symbol::Type::COMMON : Symbol::Type::EXTERN;
 	}
-	else if(link == std::numeric_limits<std::uint16_t>::max() || link == std::numeric_limits<std::uint16_t>::max() - 1)
+	else if (link == std::numeric_limits<std::uint16_t>::max() || link == std::numeric_limits<std::uint16_t>::max() - 1)
 	{
 		return Symbol::Type::ABSOLUTE_SYM;
 	}
-	else if(storageClass == PE_IMAGE_SYM_CLASS_EXTERNAL)
+	else if (storageClass == PE_IMAGE_SYM_CLASS_EXTERNAL)
 	{
 		return Symbol::Type::PUBLIC;
 	}
-	else if(storageClass == PE_IMAGE_SYM_CLASS_STATIC)
+	else if (storageClass == PE_IMAGE_SYM_CLASS_STATIC)
 	{
 		return Symbol::Type::PRIVATE;
 	}
@@ -512,11 +344,11 @@ Symbol::Type getSymbolType(std::uint16_t link, std::uint16_t value, std::uint8_t
  */
 Symbol::UsageType getSymbolUsageType(std::uint8_t storageClass, std::uint8_t complexType)
 {
-	if(complexType >= 0x20 && complexType < 0x30)
+	if (complexType >= 0x20 && complexType < 0x30)
 	{
 		return Symbol::UsageType::FUNCTION;
 	}
-	else if(storageClass == PE_IMAGE_SYM_CLASS_FILE)
+	else if (storageClass == PE_IMAGE_SYM_CLASS_FILE)
 	{
 		return Symbol::UsageType::FILE;
 	}
@@ -539,8 +371,8 @@ decltype(auto) managedPtr(T* ptr, Deleter deleter)
  * @param dllListFile Path to text file containing list of OS DLLs
  * @param loadFlags Load flags
  */
-PeFormat::PeFormat(const std::string & pathToFile, const std::string & dllListFile, LoadFlags loadFlags) :
-		FileFormat(pathToFile, loadFlags)
+PeFormat::PeFormat(const std::string& pathToFile, const std::string& dllListFile, LoadFlags loadFlags):
+	FileFormat(pathToFile, loadFlags)
 {
 	initStructures(dllListFile);
 }
@@ -550,8 +382,7 @@ PeFormat::PeFormat(const std::string & pathToFile, const std::string & dllListFi
  * @param inputStream Representation of input file
  * @param loadFlags Load flags
  */
-PeFormat::PeFormat(std::istream &inputStream, LoadFlags loadFlags) :
-		FileFormat(inputStream, loadFlags)
+PeFormat::PeFormat(std::istream& inputStream, LoadFlags loadFlags): FileFormat(inputStream, loadFlags)
 {
 	initStructures("");
 }
@@ -562,8 +393,7 @@ PeFormat::PeFormat(std::istream &inputStream, LoadFlags loadFlags) :
  * @param size Input data size.
  * @param loadFlags Load flags
  */
-PeFormat::PeFormat(const std::uint8_t *data, std::size_t size, LoadFlags loadFlags) :
-		FileFormat(data, size, loadFlags)
+PeFormat::PeFormat(const std::uint8_t* data, std::size_t size, LoadFlags loadFlags): FileFormat(data, size, loadFlags)
 {
 	initStructures("");
 }
@@ -578,12 +408,12 @@ PeFormat::~PeFormat()
 }
 
 /**
-* Init information from PE loader
-*/
+ * Init information from PE loader
+ */
 
 void PeFormat::initLoaderErrorInfo(PeLib::LoaderError ldrError)
 {
-	if(_ldrErrInfo.loaderErrorCode == PeLib::LDR_ERROR_NONE)
+	if (_ldrErrInfo.loaderErrorCode == PeLib::LDR_ERROR_NONE)
 	{
 		_ldrErrInfo.loaderErrorCode = static_cast<std::uint32_t>(ldrError);
 		_ldrErrInfo.loaderError = getLoaderErrorString(ldrError, false);
@@ -600,7 +430,7 @@ void PeFormat::initLoaderErrorInfo()
 /**
  * Init internal structures
  */
-void PeFormat::initStructures(const std::string & dllListFile)
+void PeFormat::initStructures(const std::string& dllListFile)
 {
 	formatParser = nullptr;
 	errorLoadingDllList = false;
@@ -614,8 +444,7 @@ void PeFormat::initStructures(const std::string & dllListFile)
 	{
 		try
 		{
-			if(file->loadPeHeaders(bytes) == ERROR_NONE)
-				stateIsValid = true;
+			if (file->loadPeHeaders(bytes) == ERROR_NONE) stateIsValid = true;
 
 			file->readCoffSymbolTable(bytes);
 			file->readImportDirectory();
@@ -637,11 +466,11 @@ void PeFormat::initStructures(const std::string & dllListFile)
 			// Create an instance of PeFormatParser32/PeFormatParser64
 			formatParser = new PeFormatParser(this, file);
 		}
-		catch(...)
+		catch (...)
 		{}
 	}
 
-	if(stateIsValid)
+	if (stateIsValid)
 	{
 		fileFormat = Format::PE;
 		loadRichHeader();
@@ -677,17 +506,17 @@ std::size_t PeFormat::initSectionTableHashOffsets()
  * Method returns default value (0x80) if detection of offset fails or rich
  * header is not present in input file.
  */
-std::size_t PeFormat::getRichHeaderOffset(const std::string &plainFile)
+std::size_t PeFormat::getRichHeaderOffset(const std::string& plainFile)
 {
 	std::size_t richOffset = 0, prev = findDosStub(plainFile);
 
-	if(prev != std::string::npos)
+	if (prev != std::string::npos)
 	{
-		for(std::size_t i = 0, next = 0; (next = plainFile.find('\0', prev)) != std::string::npos; ++i)
+		for (std::size_t i = 0, next = 0; (next = plainFile.find('\0', prev)) != std::string::npos; ++i)
 		{
-			if(i)
+			if (i)
 			{
-				if(next != prev)
+				if (next != prev)
 				{
 					break;
 				}
@@ -710,12 +539,12 @@ std::size_t PeFormat::getRichHeaderOffset(const std::string &plainFile)
  *    of tree (except root level)
  * @return @c true if nodes was successfully loaded, @c false otherwise
  */
-bool PeFormat::getResourceNodes(std::vector<const PeLib::ResourceChild*> &nodes, std::vector<std::size_t> &levels)
+bool PeFormat::getResourceNodes(std::vector<const PeLib::ResourceChild*>& nodes, std::vector<std::size_t>& levels)
 {
 	nodes.clear();
 	levels.clear();
 	auto root = formatParser->getResourceTreeRoot();
-	if(!root || !root->getNumberOfChildren())
+	if (!root || !root->getNumberOfChildren())
 	{
 		return false;
 	}
@@ -723,39 +552,39 @@ bool PeFormat::getResourceNodes(std::vector<const PeLib::ResourceChild*> &nodes,
 	resourceTree->addNode(0, root->getNumberOfChildren());
 	levels.push_back(root->getNumberOfChildren());
 
-	for(std::size_t i = 0, e = root->getNumberOfChildren(); i < e; ++i)
+	for (std::size_t i = 0, e = root->getNumberOfChildren(); i < e; ++i)
 	{
 		nodes.push_back(root->getChild(i));
 	}
 
-	for(std::size_t i = 0, e = nodes.size(); i < e; ++i)
+	for (std::size_t i = 0, e = nodes.size(); i < e; ++i)
 	{
-		auto *actual = nodes[i];
-		if(actual)
+		auto* actual = nodes[i];
+		if (actual)
 		{
 			resourceTree->addNode(levels.size(), actual->getNumberOfChildren());
 
-			for(std::size_t j = 0, f = actual->getNumberOfChildren(); j < f; ++j)
+			for (std::size_t j = 0, f = actual->getNumberOfChildren(); j < f; ++j)
 			{
 				nodes.push_back(actual->getChildOfThisChild(j));
 			}
 		}
 
 		// end of actual level
-		if(i + 1 == e && nodes.size() > e)
+		if (i + 1 == e && nodes.size() > e)
 		{
 			levels.push_back(nodes.size() - e);
 			e = nodes.size();
 		}
 	}
 
-	if(!resourceTree->isValidTree())
+	if (!resourceTree->isValidTree())
 	{
 		// Malformed PE resource directory — the binary has an inconsistent
 		// resource tree.  Log and proceed; callers will see an incomplete
 		// resource list but the rest of the file can still be analysed.
 		std::cerr << "[pe_format] warning: PE resource tree has invalid structure;"
-		             " resource data may be incomplete\n";
+					 " resource data may be incomplete\n";
 	}
 
 	return true;
@@ -766,7 +595,7 @@ bool PeFormat::getResourceNodes(std::vector<const PeLib::ResourceChild*> &nodes,
  */
 void PeFormat::loadRichHeader()
 {
-	if(getPeHeaderOffset() <= getMzHeaderSize())
+	if (getPeHeaderOffset() <= getMzHeaderSize())
 	{
 		return;
 	}
@@ -775,40 +604,40 @@ void PeFormat::loadRichHeader()
 	bytesToString(bytes, plainText, getMzHeaderSize(), getPeHeaderOffset() - getMzHeaderSize());
 	auto offset = getRichHeaderOffset(plainText);
 	auto standardOffset = (offset == STANDARD_RICH_HEADER_OFFSET);
-	if(offset >= getPeHeaderOffset())
+	if (offset >= getPeHeaderOffset())
 	{
 		return;
 	}
 
 	file->readRichHeader(offset, getPeHeaderOffset() - offset);
-	auto &header = file->richHeader();
+	auto& header = file->richHeader();
 	std::vector<std::size_t> validStructOffsets;
-	if(header.isStructureValid())
+	if (header.isStructureValid())
 	{
 		validStructOffsets.push_back(offset);
 	}
 	// try space immediately after DOS (MZ) header
-	if(!header.isHeaderValid() && offset > getMzHeaderSize() && getPeHeaderOffset() > getMzHeaderSize())
+	if (!header.isHeaderValid() && offset > getMzHeaderSize() && getPeHeaderOffset() > getMzHeaderSize())
 	{
 		offset = getMzHeaderSize();
 		standardOffset |= (offset == STANDARD_RICH_HEADER_OFFSET);
 		file->readRichHeader(offset, getPeHeaderOffset() - offset);
-		if(header.isStructureValid())
+		if (header.isStructureValid())
 		{
 			validStructOffsets.push_back(offset);
 		}
 	}
 	// try standard offset of rich header
-	if(!header.isHeaderValid() && !standardOffset && STANDARD_RICH_HEADER_OFFSET < getPeHeaderOffset())
+	if (!header.isHeaderValid() && !standardOffset && STANDARD_RICH_HEADER_OFFSET < getPeHeaderOffset())
 	{
 		offset = STANDARD_RICH_HEADER_OFFSET;
 		file->readRichHeader(offset, getPeHeaderOffset() - offset);
-		if(header.isStructureValid())
+		if (header.isStructureValid())
 		{
 			validStructOffsets.push_back(offset);
 		}
 	}
-	if(!header.isHeaderValid() && validStructOffsets.empty())
+	if (!header.isHeaderValid() && validStructOffsets.empty())
 	{
 		return;
 	}
@@ -817,18 +646,18 @@ void PeFormat::loadRichHeader()
 	richHeader = new RichHeader();
 	richHeader->setOffset(offset);
 	richHeader->setValidStructure(true);
-	if(!header.isHeaderValid())
+	if (!header.isHeaderValid())
 	{
-		const auto nonStandardOffset = std::any_of(validStructOffsets.begin(), validStructOffsets.end(),
-			[&] (const auto &off)
-			{
+		const auto nonStandardOffset =
+			std::any_of(validStructOffsets.begin(), validStructOffsets.end(), [&](const auto& off) {
 				return off != STANDARD_RICH_HEADER_OFFSET && off != this->getMzHeaderSize();
 			});
 		std::size_t maxOffset = 0;
 
-		for(const auto off : validStructOffsets)
+		for (const auto off: validStructOffsets)
 		{
-			if(off > maxOffset && (!nonStandardOffset || (off != STANDARD_RICH_HEADER_OFFSET && off != getMzHeaderSize())))
+			if (off > maxOffset
+				&& (!nonStandardOffset || (off != STANDARD_RICH_HEADER_OFFSET && off != getMzHeaderSize())))
 			{
 				maxOffset = off;
 			}
@@ -836,7 +665,7 @@ void PeFormat::loadRichHeader()
 
 		file->readRichHeader(maxOffset, getPeHeaderOffset() - maxOffset, true);
 		richHeader->setOffset(maxOffset);
-		signature = header.getDecryptedHeaderItemsSignature({ 0, 1, 2, 3 });
+		signature = header.getDecryptedHeaderItemsSignature({0, 1, 2, 3});
 	}
 
 	richHeader->setSuspicious(header.getNumberOfIterations() > 1);
@@ -847,7 +676,7 @@ void PeFormat::loadRichHeader()
 	// injected before and doesn't start exactly at offset
 	richHeader->setOffset(base_offset + header.getOffset());
 
-	for(const auto &item : header)
+	for (const auto& item: header)
 	{
 		LinkerInfo info;
 		info.setProductId(item.ProductId);
@@ -879,7 +708,7 @@ void PeFormat::loadRichHeader()
  */
 void PeFormat::loadVisualBasicHeader()
 {
-	const auto &allBytes = getBytes();
+	const auto& allBytes = getBytes();
 	std::vector<std::uint8_t> bytes;
 	std::uint64_t version = 0;
 	std::uint64_t vbHeaderAddress = 0;
@@ -918,29 +747,52 @@ void PeFormat::loadVisualBasicHeader()
 	}
 
 	DynamicBuffer structContent(bytes, retdec::utils::Endianness::LITTLE);
-	vbh.signature = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.signature);
-	vbh.runtimeBuild = structContent.read<std::uint16_t>(offset); offset += sizeof(vbh.runtimeBuild);
-	std::memcpy(&vbh.languageDLL, static_cast<void *>(&bytes.data()[offset]), sizeof(vbh.languageDLL)); offset += sizeof(vbh.languageDLL);
-	std::memcpy(&vbh.backupLanguageDLL, static_cast<void *>(&bytes.data()[offset]), sizeof(vbh.backupLanguageDLL)); offset += sizeof(vbh.backupLanguageDLL);
-	vbh.runtimeDLLVersion = structContent.read<std::uint16_t>(offset); offset += sizeof(vbh.runtimeDLLVersion);
-	vbh.LCID1 = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.LCID1);
-	vbh.LCID2 = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.LCID2);
-	vbh.subMainAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.subMainAddr);
-	vbh.projectInfoAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.projectInfoAddr);
-	vbh.MDLIntObjsFlags = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.MDLIntObjsFlags);
-	vbh.MDLIntObjsFlags2 = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.MDLIntObjsFlags2);
-	vbh.threadFlags = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.threadFlags);
-	vbh.nThreads = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.nThreads);
-	vbh.nForms = structContent.read<std::uint16_t>(offset); offset += sizeof(vbh.nForms);
-	vbh.nExternals = structContent.read<std::uint16_t>(offset); offset += sizeof(vbh.nExternals);
-	vbh.nThunks = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.nThunks);
-	vbh.GUITableAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.GUITableAddr);
-	vbh.externalTableAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.externalTableAddr);
-	vbh.COMRegisterDataAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.COMRegisterDataAddr);
-	vbh.projExeNameOffset = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.projExeNameOffset);
-	vbh.projDescOffset = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.projDescOffset);
-	vbh.helpFileOffset = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.helpFileOffset);
-	vbh.projNameOffset = structContent.read<std::uint32_t>(offset); offset += sizeof(vbh.projNameOffset);
+	vbh.signature = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.signature);
+	vbh.runtimeBuild = structContent.read<std::uint16_t>(offset);
+	offset += sizeof(vbh.runtimeBuild);
+	std::memcpy(&vbh.languageDLL, static_cast<void*>(&bytes.data()[offset]), sizeof(vbh.languageDLL));
+	offset += sizeof(vbh.languageDLL);
+	std::memcpy(&vbh.backupLanguageDLL, static_cast<void*>(&bytes.data()[offset]), sizeof(vbh.backupLanguageDLL));
+	offset += sizeof(vbh.backupLanguageDLL);
+	vbh.runtimeDLLVersion = structContent.read<std::uint16_t>(offset);
+	offset += sizeof(vbh.runtimeDLLVersion);
+	vbh.LCID1 = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.LCID1);
+	vbh.LCID2 = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.LCID2);
+	vbh.subMainAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.subMainAddr);
+	vbh.projectInfoAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.projectInfoAddr);
+	vbh.MDLIntObjsFlags = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.MDLIntObjsFlags);
+	vbh.MDLIntObjsFlags2 = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.MDLIntObjsFlags2);
+	vbh.threadFlags = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.threadFlags);
+	vbh.nThreads = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.nThreads);
+	vbh.nForms = structContent.read<std::uint16_t>(offset);
+	offset += sizeof(vbh.nForms);
+	vbh.nExternals = structContent.read<std::uint16_t>(offset);
+	offset += sizeof(vbh.nExternals);
+	vbh.nThunks = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.nThunks);
+	vbh.GUITableAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.GUITableAddr);
+	vbh.externalTableAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.externalTableAddr);
+	vbh.COMRegisterDataAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.COMRegisterDataAddr);
+	vbh.projExeNameOffset = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.projExeNameOffset);
+	vbh.projDescOffset = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.projDescOffset);
+	vbh.helpFileOffset = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.helpFileOffset);
+	vbh.projNameOffset = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbh.projNameOffset);
 
 	if (vbh.signature != VBHEADER_SIGNATURE)
 	{
@@ -949,26 +801,26 @@ void PeFormat::loadVisualBasicHeader()
 
 	if (vbh.projExeNameOffset != 0)
 	{
-		projExeName = retdec::utils::readNullTerminatedAscii(allBytes.data(), allBytes.size(),
-									vbHeaderOffset + vbh.projExeNameOffset, VB_MAX_STRING_LEN, true);
+		projExeName = retdec::utils::readNullTerminatedAscii(
+			allBytes.data(), allBytes.size(), vbHeaderOffset + vbh.projExeNameOffset, VB_MAX_STRING_LEN, true);
 		visualBasicInfo.setProjectExeName(projExeName);
 	}
 	if (vbh.projDescOffset != 0)
 	{
-		projDesc = retdec::utils::readNullTerminatedAscii(allBytes.data(), allBytes.size(),
-									vbHeaderOffset + vbh.projDescOffset, VB_MAX_STRING_LEN, true);
+		projDesc = retdec::utils::readNullTerminatedAscii(
+			allBytes.data(), allBytes.size(), vbHeaderOffset + vbh.projDescOffset, VB_MAX_STRING_LEN, true);
 		visualBasicInfo.setProjectDescription(projDesc);
 	}
 	if (vbh.helpFileOffset != 0)
 	{
-		helpFile = retdec::utils::readNullTerminatedAscii(allBytes.data(), allBytes.size(),
-									vbHeaderOffset + vbh.helpFileOffset, VB_MAX_STRING_LEN, true);
+		helpFile = retdec::utils::readNullTerminatedAscii(
+			allBytes.data(), allBytes.size(), vbHeaderOffset + vbh.helpFileOffset, VB_MAX_STRING_LEN, true);
 		visualBasicInfo.setProjectHelpFile(helpFile);
 	}
 	if (vbh.projNameOffset != 0)
 	{
-		projName = retdec::utils::readNullTerminatedAscii(allBytes.data(), allBytes.size(),
-									vbHeaderOffset + vbh.projNameOffset, VB_MAX_STRING_LEN, true);
+		projName = retdec::utils::readNullTerminatedAscii(
+			allBytes.data(), allBytes.size(), vbHeaderOffset + vbh.projNameOffset, VB_MAX_STRING_LEN, true);
 		visualBasicInfo.setProjectName(projName);
 	}
 
@@ -1003,7 +855,7 @@ void PeFormat::loadVisualBasicHeader()
  */
 bool PeFormat::parseVisualBasicComRegistrationData(std::size_t structureOffset)
 {
-	const auto &allBytes = getBytes();
+	const auto& allBytes = getBytes();
 	std::vector<std::uint8_t> bytes;
 	std::size_t offset = 0;
 	struct VBCOMRData vbcrd;
@@ -1017,15 +869,24 @@ bool PeFormat::parseVisualBasicComRegistrationData(std::size_t structureOffset)
 	}
 
 	DynamicBuffer structContent(bytes, retdec::utils::Endianness::LITTLE);
-	vbcrd.regInfoOffset = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcrd.regInfoOffset);
-	vbcrd.projNameOffset = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcrd.projNameOffset);
-	vbcrd.helpFileOffset = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcrd.helpFileOffset);
-	vbcrd.projDescOffset = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcrd.projDescOffset);
-	std::memcpy(&vbcrd.projCLSID, static_cast<void *>(&bytes.data()[offset]), sizeof(vbcrd.projCLSID)); offset += sizeof(vbcrd.projCLSID);
-	vbcrd.projTlbLCID = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcrd.projTlbLCID);
-	vbcrd.unknown = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcrd.unknown);
-	vbcrd.tlbVerMajor = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcrd.tlbVerMajor);
-	vbcrd.tlbVerMinor = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcrd.tlbVerMinor);
+	vbcrd.regInfoOffset = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcrd.regInfoOffset);
+	vbcrd.projNameOffset = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcrd.projNameOffset);
+	vbcrd.helpFileOffset = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcrd.helpFileOffset);
+	vbcrd.projDescOffset = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcrd.projDescOffset);
+	std::memcpy(&vbcrd.projCLSID, static_cast<void*>(&bytes.data()[offset]), sizeof(vbcrd.projCLSID));
+	offset += sizeof(vbcrd.projCLSID);
+	vbcrd.projTlbLCID = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcrd.projTlbLCID);
+	vbcrd.unknown = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcrd.unknown);
+	vbcrd.tlbVerMajor = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcrd.tlbVerMajor);
+	vbcrd.tlbVerMinor = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcrd.tlbVerMinor);
 
 	visualBasicInfo.setTypeLibLCID(vbcrd.projTlbLCID);
 	visualBasicInfo.setTypeLibMajorVersion(vbcrd.tlbVerMajor);
@@ -1033,18 +894,18 @@ bool PeFormat::parseVisualBasicComRegistrationData(std::size_t structureOffset)
 
 	if (!visualBasicInfo.hasProjectName() && vbcrd.projNameOffset != 0)
 	{
-		projName = retdec::utils::readNullTerminatedAscii(allBytes.data(), allBytes.size(),
-							structureOffset + vbcrd.projNameOffset, VB_MAX_STRING_LEN, true);
+		projName = retdec::utils::readNullTerminatedAscii(
+			allBytes.data(), allBytes.size(), structureOffset + vbcrd.projNameOffset, VB_MAX_STRING_LEN, true);
 	}
 	if (!visualBasicInfo.hasProjectHelpFile() && vbcrd.helpFileOffset != 0)
 	{
-		helpFile = retdec::utils::readNullTerminatedAscii(allBytes.data(), allBytes.size(),
-							structureOffset + vbcrd.helpFileOffset, VB_MAX_STRING_LEN, true);
+		helpFile = retdec::utils::readNullTerminatedAscii(
+			allBytes.data(), allBytes.size(), structureOffset + vbcrd.helpFileOffset, VB_MAX_STRING_LEN, true);
 	}
 	if (!visualBasicInfo.hasProjectDescription() && vbcrd.projDescOffset != 0)
 	{
-		projDesc = retdec::utils::readNullTerminatedAscii(allBytes.data(), allBytes.size(),
-							structureOffset + vbcrd.projDescOffset, VB_MAX_STRING_LEN, true);
+		projDesc = retdec::utils::readNullTerminatedAscii(
+			allBytes.data(), allBytes.size(), structureOffset + vbcrd.projDescOffset, VB_MAX_STRING_LEN, true);
 	}
 
 	visualBasicInfo.setTypeLibCLSID(vbcrd.projCLSID);
@@ -1063,10 +924,9 @@ bool PeFormat::parseVisualBasicComRegistrationData(std::size_t structureOffset)
  * @param comRegDataOffset Offset in file where the com registration data structure starts
  * @return @c true if COM registration info was successfuly parsed, @c false otherwise
  */
-bool PeFormat::parseVisualBasicComRegistrationInfo(std::size_t structureOffset,
-													std::size_t comRegDataOffset)
+bool PeFormat::parseVisualBasicComRegistrationInfo(std::size_t structureOffset, std::size_t comRegDataOffset)
 {
-	const auto &allBytes = getBytes();
+	const auto& allBytes = getBytes();
 	std::vector<std::uint8_t> bytes;
 	std::size_t offset = 0;
 	struct VBCOMRInfo vbcri;
@@ -1079,48 +939,65 @@ bool PeFormat::parseVisualBasicComRegistrationInfo(std::size_t structureOffset,
 	}
 
 	DynamicBuffer structContent(bytes, retdec::utils::Endianness::LITTLE);
-	vbcri.ifInfoOffset = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.ifInfoOffset);
-	vbcri.objNameOffset = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.objNameOffset);
-	vbcri.objDescOffset = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.objDescOffset);
-	vbcri.instancing = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.instancing);
-	vbcri.objID = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.objID);
-	std::memcpy(&vbcri.objCLSID, static_cast<void *>(&bytes.data()[offset]), sizeof(vbcri.objCLSID)); offset += sizeof(vbcri.objCLSID);
-	vbcri.isInterfaceFlag = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.isInterfaceFlag);
-	vbcri.ifCLSIDOffset = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.ifCLSIDOffset);
-	vbcri.eventCLSIDOffset = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.eventCLSIDOffset);
-	vbcri.hasEvents = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.hasEvents);
-	vbcri.olemicsFlags = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.olemicsFlags);
-	vbcri.classType = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.classType);
-	vbcri.objectType = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.objectType);
-	vbcri.toolboxBitmap32 = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.toolboxBitmap32);
-	vbcri.defaultIcon = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.defaultIcon);
-	vbcri.isDesignerFlag = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.isDesignerFlag);
-	vbcri.designerDataOffset = structContent.read<std::uint32_t>(offset); offset += sizeof(vbcri.designerDataOffset);
+	vbcri.ifInfoOffset = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.ifInfoOffset);
+	vbcri.objNameOffset = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.objNameOffset);
+	vbcri.objDescOffset = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.objDescOffset);
+	vbcri.instancing = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.instancing);
+	vbcri.objID = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.objID);
+	std::memcpy(&vbcri.objCLSID, static_cast<void*>(&bytes.data()[offset]), sizeof(vbcri.objCLSID));
+	offset += sizeof(vbcri.objCLSID);
+	vbcri.isInterfaceFlag = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.isInterfaceFlag);
+	vbcri.ifCLSIDOffset = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.ifCLSIDOffset);
+	vbcri.eventCLSIDOffset = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.eventCLSIDOffset);
+	vbcri.hasEvents = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.hasEvents);
+	vbcri.olemicsFlags = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.olemicsFlags);
+	vbcri.classType = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.classType);
+	vbcri.objectType = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.objectType);
+	vbcri.toolboxBitmap32 = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.toolboxBitmap32);
+	vbcri.defaultIcon = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.defaultIcon);
+	vbcri.isDesignerFlag = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.isDesignerFlag);
+	vbcri.designerDataOffset = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbcri.designerDataOffset);
 
 	if (vbcri.objNameOffset != 0)
 	{
-		COMObjectName = retdec::utils::readNullTerminatedAscii(allBytes.data(), allBytes.size(),
-										comRegDataOffset + vbcri.objNameOffset, VB_MAX_STRING_LEN, true);
+		COMObjectName = retdec::utils::readNullTerminatedAscii(
+			allBytes.data(), allBytes.size(), comRegDataOffset + vbcri.objNameOffset, VB_MAX_STRING_LEN, true);
 		visualBasicInfo.setCOMObjectName(COMObjectName);
 	}
 	if (vbcri.objDescOffset != 0)
 	{
-		COMObjectDesc = retdec::utils::readNullTerminatedAscii(allBytes.data(), allBytes.size(),
-										comRegDataOffset + vbcri.objDescOffset, VB_MAX_STRING_LEN, true);
+		COMObjectDesc = retdec::utils::readNullTerminatedAscii(
+			allBytes.data(), allBytes.size(), comRegDataOffset + vbcri.objDescOffset, VB_MAX_STRING_LEN, true);
 		visualBasicInfo.setCOMObjectDescription(COMObjectDesc);
 	}
 
 	visualBasicInfo.setCOMObjectCLSID(vbcri.objCLSID);
 	visualBasicInfo.setCOMObjectType(vbcri.objectType);
 
-	if (vbcri.isInterfaceFlag != 0 && vbcri.ifCLSIDOffset != 0 &&
-		getBytes(bytes, comRegDataOffset + vbcri.ifCLSIDOffset, 16) && bytes.size() == 16)
+	if (vbcri.isInterfaceFlag != 0 && vbcri.ifCLSIDOffset != 0
+		&& getBytes(bytes, comRegDataOffset + vbcri.ifCLSIDOffset, 16) && bytes.size() == 16)
 	{
 		visualBasicInfo.setCOMObjectInterfaceCLSID(bytes.data());
 	}
 
-	if (vbcri.hasEvents != 0 && vbcri.eventCLSIDOffset != 0 &&
-		getBytes(bytes, comRegDataOffset + vbcri.eventCLSIDOffset, 16) && bytes.size() == 16)
+	if (vbcri.hasEvents != 0 && vbcri.eventCLSIDOffset != 0
+		&& getBytes(bytes, comRegDataOffset + vbcri.eventCLSIDOffset, 16) && bytes.size() == 16)
 	{
 		visualBasicInfo.setCOMObjectEventsCLSID(bytes.data());
 	}
@@ -1148,18 +1025,30 @@ bool PeFormat::parseVisualBasicProjectInfo(std::size_t structureOffset)
 	}
 
 	DynamicBuffer structContent(bytes, retdec::utils::Endianness::LITTLE);
-	vbpi.version = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpi.version);
-	vbpi.objectTableAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpi.objectTableAddr);
-	vbpi.null = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpi.null);
-	vbpi.codeStartAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpi.codeStartAddr);
-	vbpi.codeEndAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpi.codeEndAddr);
-	vbpi.dataSize = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpi.dataSize);
-	vbpi.threadSpaceAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpi.threadSpaceAddr);
-	vbpi.exHandlerAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpi.exHandlerAddr);
-	vbpi.nativeCodeAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpi.nativeCodeAddr);
-	std::memcpy(&vbpi.pathInformation, static_cast<void *>(&bytes.data()[offset]), sizeof(vbpi.pathInformation)); offset += sizeof(vbpi.pathInformation);
-	vbpi.externalTableAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpi.externalTableAddr);
-	vbpi.nExternals = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpi.nExternals);
+	vbpi.version = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbpi.version);
+	vbpi.objectTableAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbpi.objectTableAddr);
+	vbpi.null = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbpi.null);
+	vbpi.codeStartAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbpi.codeStartAddr);
+	vbpi.codeEndAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbpi.codeEndAddr);
+	vbpi.dataSize = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbpi.dataSize);
+	vbpi.threadSpaceAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbpi.threadSpaceAddr);
+	vbpi.exHandlerAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbpi.exHandlerAddr);
+	vbpi.nativeCodeAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbpi.nativeCodeAddr);
+	std::memcpy(&vbpi.pathInformation, static_cast<void*>(&bytes.data()[offset]), sizeof(vbpi.pathInformation));
+	offset += sizeof(vbpi.pathInformation);
+	vbpi.externalTableAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbpi.externalTableAddr);
+	vbpi.nExternals = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbpi.nExternals);
 
 	projPath = retdec::utils::unicodeToAscii(vbpi.pathInformation, sizeof(vbpi.pathInformation));
 	visualBasicInfo.setProjectPath(projPath);
@@ -1186,7 +1075,7 @@ bool PeFormat::parseVisualBasicProjectInfo(std::size_t structureOffset)
  */
 bool PeFormat::parseVisualBasicExternTable(std::size_t structureOffset, std::size_t nEntries)
 {
-	const auto &allBytes = getBytes();
+	const auto& allBytes = getBytes();
 	std::vector<std::uint8_t> bytes;
 	struct VBExternTableEntry entry;
 	struct VBExternTableEntryData entryData;
@@ -1206,8 +1095,10 @@ bool PeFormat::parseVisualBasicExternTable(std::size_t structureOffset, std::siz
 
 		offset = 0;
 		DynamicBuffer entryContent(bytes, retdec::utils::Endianness::LITTLE);
-		entry.type = entryContent.read<std::uint32_t>(offset); offset += sizeof(entry.type);
-		entry.importDataAddr = entryContent.read<std::uint32_t>(offset); offset += sizeof(entry.importDataAddr);
+		entry.type = entryContent.read<std::uint32_t>(offset);
+		offset += sizeof(entry.type);
+		entry.importDataAddr = entryContent.read<std::uint32_t>(offset);
+		offset += sizeof(entry.importDataAddr);
 
 		if (entry.type != static_cast<std::uint32_t>(VBExternTableEntryType::external))
 		{
@@ -1227,21 +1118,23 @@ bool PeFormat::parseVisualBasicExternTable(std::size_t structureOffset, std::siz
 
 		offset = 0;
 		DynamicBuffer entryDataContent(bytes, retdec::utils::Endianness::LITTLE);
-		entryData.moduleNameAddr = entryDataContent.read<std::uint32_t>(offset); offset += sizeof(entryData.moduleNameAddr);
-		entryData.apiNameAddr = entryDataContent.read<std::uint32_t>(offset); offset += sizeof(entryData.apiNameAddr);
+		entryData.moduleNameAddr = entryDataContent.read<std::uint32_t>(offset);
+		offset += sizeof(entryData.moduleNameAddr);
+		entryData.apiNameAddr = entryDataContent.read<std::uint32_t>(offset);
+		offset += sizeof(entryData.apiNameAddr);
 
 		std::uint64_t moduleNameOffset;
 		if (getOffsetFromAddress(moduleNameOffset, entryData.moduleNameAddr))
 		{
-			moduleName = retdec::utils::readNullTerminatedAscii(allBytes.data(), allBytes.size(),
-														moduleNameOffset, VB_MAX_STRING_LEN, true);
+			moduleName = retdec::utils::readNullTerminatedAscii(
+				allBytes.data(), allBytes.size(), moduleNameOffset, VB_MAX_STRING_LEN, true);
 		}
 
 		std::uint64_t apiNameOffset;
 		if (getOffsetFromAddress(apiNameOffset, entryData.apiNameAddr))
 		{
-			apiName = retdec::utils::readNullTerminatedAscii(allBytes.data(), allBytes.size(),
-														apiNameOffset, VB_MAX_STRING_LEN, true);
+			apiName = retdec::utils::readNullTerminatedAscii(
+				allBytes.data(), allBytes.size(), apiNameOffset, VB_MAX_STRING_LEN, true);
 		}
 
 		if (!moduleName.empty() || !apiName.empty())
@@ -1265,7 +1158,7 @@ bool PeFormat::parseVisualBasicExternTable(std::size_t structureOffset, std::siz
  */
 bool PeFormat::parseVisualBasicObjectTable(std::size_t structureOffset)
 {
-	const auto &allBytes = getBytes();
+	const auto& allBytes = getBytes();
 	std::vector<std::uint8_t> bytes;
 	std::size_t offset = 0;
 	std::uint64_t projectNameOffset = 0;
@@ -1279,26 +1172,46 @@ bool PeFormat::parseVisualBasicObjectTable(std::size_t structureOffset)
 	}
 
 	DynamicBuffer structContent(bytes, retdec::utils::Endianness::LITTLE);
-	vbot.null1 = structContent.read<std::uint32_t>(offset); offset += sizeof(vbot.null1);
-	vbot.execCOMAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbot.execCOMAddr);
-	vbot.projecInfo2Addr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbot.projecInfo2Addr);
-	vbot.reserved = structContent.read<std::uint32_t>(offset); offset += sizeof(vbot.reserved);
-	vbot.null2 = structContent.read<std::uint32_t>(offset); offset += sizeof(vbot.null2);
-	vbot.projectObjectAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbot.projectObjectAddr);
-	std::memcpy(&vbot.objectGUID, static_cast<void *>(&bytes.data()[offset]), sizeof(vbot.objectGUID)); offset += sizeof(vbot.objectGUID);
-	vbot.flagsCompileState = structContent.read<std::uint16_t>(offset); offset += sizeof(vbot.flagsCompileState);
-	vbot.nObjects = structContent.read<std::uint16_t>(offset); offset += sizeof(vbot.nObjects);
-	vbot.nCompiledObjects = structContent.read<std::uint16_t>(offset); offset += sizeof(vbot.nCompiledObjects);
-	vbot.nUsedObjects = structContent.read<std::uint16_t>(offset); offset += sizeof(vbot.nUsedObjects);
-	vbot.objectDescriptorsAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbot.objectDescriptorsAddr);
-	vbot.IDE1 = structContent.read<std::uint32_t>(offset); offset += sizeof(vbot.IDE1);
-	vbot.IDE2 = structContent.read<std::uint32_t>(offset); offset += sizeof(vbot.IDE2);
-	vbot.IDE3 = structContent.read<std::uint32_t>(offset); offset += sizeof(vbot.IDE3);
-	vbot.projectNameAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbot.projectNameAddr);
-	vbot.LCID1 = structContent.read<std::uint32_t>(offset); offset += sizeof(vbot.LCID1);
-	vbot.LCID2 = structContent.read<std::uint32_t>(offset); offset += sizeof(vbot.LCID2);
-	vbot.IDE4 = structContent.read<std::uint32_t>(offset); offset += sizeof(vbot.IDE4);
-	vbot.templateVesion = structContent.read<std::uint32_t>(offset); offset += sizeof(vbot.templateVesion);
+	vbot.null1 = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbot.null1);
+	vbot.execCOMAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbot.execCOMAddr);
+	vbot.projecInfo2Addr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbot.projecInfo2Addr);
+	vbot.reserved = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbot.reserved);
+	vbot.null2 = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbot.null2);
+	vbot.projectObjectAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbot.projectObjectAddr);
+	std::memcpy(&vbot.objectGUID, static_cast<void*>(&bytes.data()[offset]), sizeof(vbot.objectGUID));
+	offset += sizeof(vbot.objectGUID);
+	vbot.flagsCompileState = structContent.read<std::uint16_t>(offset);
+	offset += sizeof(vbot.flagsCompileState);
+	vbot.nObjects = structContent.read<std::uint16_t>(offset);
+	offset += sizeof(vbot.nObjects);
+	vbot.nCompiledObjects = structContent.read<std::uint16_t>(offset);
+	offset += sizeof(vbot.nCompiledObjects);
+	vbot.nUsedObjects = structContent.read<std::uint16_t>(offset);
+	offset += sizeof(vbot.nUsedObjects);
+	vbot.objectDescriptorsAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbot.objectDescriptorsAddr);
+	vbot.IDE1 = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbot.IDE1);
+	vbot.IDE2 = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbot.IDE2);
+	vbot.IDE3 = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbot.IDE3);
+	vbot.projectNameAddr = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbot.projectNameAddr);
+	vbot.LCID1 = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbot.LCID1);
+	vbot.LCID2 = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbot.LCID2);
+	vbot.IDE4 = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbot.IDE4);
+	vbot.templateVesion = structContent.read<std::uint32_t>(offset);
+	offset += sizeof(vbot.templateVesion);
 
 	visualBasicInfo.setProjectPrimaryLCID(vbot.LCID1);
 	visualBasicInfo.setProjectSecondaryLCID(vbot.LCID2);
@@ -1306,8 +1219,8 @@ bool PeFormat::parseVisualBasicObjectTable(std::size_t structureOffset)
 
 	if (!visualBasicInfo.hasProjectName() && getOffsetFromAddress(projectNameOffset, vbot.projectNameAddr))
 	{
-		projName = retdec::utils::readNullTerminatedAscii(allBytes.data(), allBytes.size(), projectNameOffset,
-														VB_MAX_STRING_LEN, true);
+		projName = retdec::utils::readNullTerminatedAscii(
+			allBytes.data(), allBytes.size(), projectNameOffset, VB_MAX_STRING_LEN, true);
 		visualBasicInfo.setProjectName(projName);
 	}
 
@@ -1328,7 +1241,7 @@ bool PeFormat::parseVisualBasicObjectTable(std::size_t structureOffset)
  */
 bool PeFormat::parseVisualBasicObjects(std::size_t structureOffset, std::size_t nObjects)
 {
-	const auto &allBytes = getBytes();
+	const auto& allBytes = getBytes();
 	std::vector<std::uint8_t> bytes;
 	struct VBPublicObjectDescriptor vbpod;
 	std::size_t offset = 0;
@@ -1344,18 +1257,30 @@ bool PeFormat::parseVisualBasicObjects(std::size_t structureOffset, std::size_t 
 
 		offset = 0;
 		DynamicBuffer structContent(bytes, retdec::utils::Endianness::LITTLE);
-		vbpod.objectInfoAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpod.objectInfoAddr);
-		vbpod.reserved = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpod.reserved);
-		vbpod.publicBytesAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpod.publicBytesAddr);
-		vbpod.staticBytesAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpod.staticBytesAddr);
-		vbpod.modulePublicAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpod.modulePublicAddr);
-		vbpod.moduleStaticAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpod.moduleStaticAddr);
-		vbpod.objectNameAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpod.objectNameAddr);
-		vbpod.nMethods = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpod.nMethods);
-		vbpod.methodNamesAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpod.methodNamesAddr);
-		vbpod.staticVarsCopyAddr = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpod.staticVarsCopyAddr);
-		vbpod.objectType = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpod.objectType);
-		vbpod.null = structContent.read<std::uint32_t>(offset); offset += sizeof(vbpod.null);
+		vbpod.objectInfoAddr = structContent.read<std::uint32_t>(offset);
+		offset += sizeof(vbpod.objectInfoAddr);
+		vbpod.reserved = structContent.read<std::uint32_t>(offset);
+		offset += sizeof(vbpod.reserved);
+		vbpod.publicBytesAddr = structContent.read<std::uint32_t>(offset);
+		offset += sizeof(vbpod.publicBytesAddr);
+		vbpod.staticBytesAddr = structContent.read<std::uint32_t>(offset);
+		offset += sizeof(vbpod.staticBytesAddr);
+		vbpod.modulePublicAddr = structContent.read<std::uint32_t>(offset);
+		offset += sizeof(vbpod.modulePublicAddr);
+		vbpod.moduleStaticAddr = structContent.read<std::uint32_t>(offset);
+		offset += sizeof(vbpod.moduleStaticAddr);
+		vbpod.objectNameAddr = structContent.read<std::uint32_t>(offset);
+		offset += sizeof(vbpod.objectNameAddr);
+		vbpod.nMethods = structContent.read<std::uint32_t>(offset);
+		offset += sizeof(vbpod.nMethods);
+		vbpod.methodNamesAddr = structContent.read<std::uint32_t>(offset);
+		offset += sizeof(vbpod.methodNamesAddr);
+		vbpod.staticVarsCopyAddr = structContent.read<std::uint32_t>(offset);
+		offset += sizeof(vbpod.staticVarsCopyAddr);
+		vbpod.objectType = structContent.read<std::uint32_t>(offset);
+		offset += sizeof(vbpod.objectType);
+		vbpod.null = structContent.read<std::uint32_t>(offset);
+		offset += sizeof(vbpod.null);
 
 		std::uint64_t objectNameOffset;
 		if (!getOffsetFromAddress(objectNameOffset, vbpod.objectNameAddr))
@@ -1363,8 +1288,8 @@ bool PeFormat::parseVisualBasicObjects(std::size_t structureOffset, std::size_t 
 			continue;
 		}
 
-		std::string objectName = readNullTerminatedAscii(allBytes.data(), allBytes.size(), objectNameOffset,
-														VB_MAX_STRING_LEN, true);
+		std::string objectName =
+			readNullTerminatedAscii(allBytes.data(), allBytes.size(), objectNameOffset, VB_MAX_STRING_LEN, true);
 		object = std::make_unique<VisualBasicObject>();
 		object->setName(objectName);
 
@@ -1379,7 +1304,7 @@ bool PeFormat::parseVisualBasicObjects(std::size_t structureOffset, std::size_t 
 					break;
 				}
 
-				auto methodNameAddr = *reinterpret_cast<std::uint32_t *>(bytes.data());
+				auto methodNameAddr = *reinterpret_cast<std::uint32_t*>(bytes.data());
 
 				if (!isLittleEndian())
 				{
@@ -1392,8 +1317,8 @@ bool PeFormat::parseVisualBasicObjects(std::size_t structureOffset, std::size_t 
 					continue;
 				}
 
-				std::string methodName = readNullTerminatedAscii(allBytes.data(), allBytes.size(),
-															methodNameOffset, VB_MAX_STRING_LEN, true);
+				std::string methodName = readNullTerminatedAscii(
+					allBytes.data(), allBytes.size(), methodNameOffset, VB_MAX_STRING_LEN, true);
 
 				if (!methodName.empty())
 				{
@@ -1416,10 +1341,10 @@ bool PeFormat::parseVisualBasicObjects(std::size_t structureOffset, std::size_t 
  */
 void PeFormat::loadSections()
 {
-	for(std::size_t i = 0, e = formatParser->getStoredNumberOfSections(); i < e; ++i)
+	for (std::size_t i = 0, e = formatParser->getStoredNumberOfSections(); i < e; ++i)
 	{
-		auto *section = new PeCoffSection();
-		if(!formatParser->getSection(i, *section))
+		auto* section = new PeCoffSection();
+		if (!formatParser->getSection(i, *section))
 		{
 			delete section;
 			continue;
@@ -1436,14 +1361,15 @@ void PeFormat::loadSections()
  */
 void PeFormat::loadSymbols()
 {
-	const auto & symTab = file->coffSymTab();
-	auto *table = new SymbolTable();
+	const auto& symTab = file->coffSymTab();
+	auto* table = new SymbolTable();
 
-	for(std::size_t i = 0, e = symTab.getNumberOfStoredSymbols(); i < e; ++i)
+	for (std::size_t i = 0, e = symTab.getNumberOfStoredSymbols(); i < e; ++i)
 	{
 		auto symbol = std::make_shared<Symbol>();
 		const std::uint16_t link = symTab.getSymbolSectionNumber(i);
-		if(!link || link == std::numeric_limits<std::uint16_t>::max() || link == std::numeric_limits<std::uint16_t>::max() - 1)
+		if (!link || link == std::numeric_limits<std::uint16_t>::max()
+			|| link == std::numeric_limits<std::uint16_t>::max() - 1)
 		{
 			symbol->invalidateLinkToSection();
 			symbol->invalidateAddress();
@@ -1451,7 +1377,7 @@ void PeFormat::loadSymbols()
 		else
 		{
 			symbol->setLinkToSection(link - 1);
-			if(link <= getNumberOfSections() && sections[link - 1])
+			if (link <= getNumberOfSections() && sections[link - 1])
 			{
 				const auto a = sections[link - 1]->getAddress() + symTab.getSymbolValue(i);
 				symbol->setAddress(a);
@@ -1470,7 +1396,7 @@ void PeFormat::loadSymbols()
 		table->addSymbol(symbol);
 	}
 
-	if(table->hasSymbols())
+	if (table->hasSymbols())
 	{
 		symbolTables.push_back(table);
 	}
@@ -1489,10 +1415,9 @@ void PeFormat::loadImports()
 	bool missingDependency;
 
 	// Make sure we have import table initialized on the beginning
-	if(importTable == nullptr)
-		importTable = new ImportTable();
+	if (importTable == nullptr) importTable = new ImportTable();
 
-	for(std::size_t i = 0; formatParser->getImportedLibraryFileName(i, libname); ++i)
+	for (std::size_t i = 0; formatParser->getImportedLibraryFileName(i, libname); ++i)
 	{
 		// Check whether the name of the DLL is available
 		missingDependency = isMissingDependency(libname);
@@ -1507,7 +1432,7 @@ void PeFormat::loadImports()
 		}
 	}
 
-	for(std::size_t i = 0; formatParser->getDelayImportedLibraryFileName(i, libname); ++i)
+	for (std::size_t i = 0; formatParser->getDelayImportedLibraryFileName(i, libname); ++i)
 	{
 		importTable->addLibrary(libname);
 
@@ -1522,7 +1447,7 @@ void PeFormat::loadImports()
 
 	loadImpHash();
 
-	for(auto&& addressRange : formatParser->getImportDirectoryOccupiedAddresses())
+	for (auto&& addressRange: formatParser->getImportDirectoryOccupiedAddresses())
 	{
 		nonDecodableRanges.insert(std::move(addressRange));
 	}
@@ -1536,12 +1461,11 @@ void PeFormat::loadExports()
 	Export newExport;
 	exportTable = new ExportTable();
 
-	for(std::size_t i = 0, e = formatParser->getNumberOfExportedFunctions(); i < e; ++i)
+	for (std::size_t i = 0, e = formatParser->getNumberOfExportedFunctions(); i < e; ++i)
 	{
-		if (!formatParser->getExportedFunction(i, newExport))
-			break;
+		if (!formatParser->getExportedFunction(i, newExport)) break;
 
-		if(hasNonprintableChars(newExport.getName()))
+		if (hasNonprintableChars(newExport.getName()))
 		{
 			newExport.setName("exported_function_" + intToHexString(newExport.getAddress()));
 		}
@@ -1552,7 +1476,7 @@ void PeFormat::loadExports()
 
 	loadExpHash();
 
-	for(auto&& addressRange : formatParser->getExportDirectoryOccupiedAddresses())
+	for (auto&& addressRange: formatParser->getExportDirectoryOccupiedAddresses())
 	{
 		nonDecodableRanges.insert(std::move(addressRange));
 	}
@@ -1563,7 +1487,7 @@ void PeFormat::loadExports()
  */
 void PeFormat::loadPdbInfo()
 {
-	for(std::size_t i = 0, e = formatParser->getNumberOfDebugEntries(); i < e; ++i)
+	for (std::size_t i = 0, e = formatParser->getNumberOfDebugEntries(); i < e; ++i)
 	{
 		std::vector<std::uint8_t> data;
 		if (!formatParser->getDebugEntryData(i, data))
@@ -1574,13 +1498,13 @@ void PeFormat::loadPdbInfo()
 		std::string dataString;
 		bytesToString(data, dataString);
 		const auto size = std::min(data.size(), dataString.length());
-		if(size < 4)
+		if (size < 4)
 		{
 			continue;
 		}
 		const auto prefix = dataString.substr(0, 4);
-		if((prefix != "RSDS" && prefix != "NB10") || (prefix == "RSDS" && size < MINIMAL_PDB_RSDS_INFO_LENGTH) ||
-			(prefix == "NB10" && size < MINIMAL_PDB_NB10_INFO_LENGTH))
+		if ((prefix != "RSDS" && prefix != "NB10") || (prefix == "RSDS" && size < MINIMAL_PDB_RSDS_INFO_LENGTH)
+			|| (prefix == "NB10" && size < MINIMAL_PDB_NB10_INFO_LENGTH))
 		{
 			continue;
 		}
@@ -1603,35 +1527,36 @@ void PeFormat::loadPdbInfo()
 		pdbInfo->setTimeStamp(timestamp);
 		const auto guidOffset = pointerToRawData + prefix.length() + (isRsds ? 0 : 4);
 		std::uint64_t res1;
-		if(isRsds)
+		if (isRsds)
 		{
 			std::uint64_t res2, res3, res4, res5;
-			if(get4ByteOffset(guidOffset, res1) && get2ByteOffset(guidOffset + 4, res2) &&
-				get2ByteOffset(guidOffset + 6, res3) && get2ByteOffset(guidOffset + 8, res4, getInverseEndianness()) &&
-				getXByteOffset(guidOffset + 10, 6, res5, getInverseEndianness()))
+			if (get4ByteOffset(guidOffset, res1) && get2ByteOffset(guidOffset + 4, res2)
+				&& get2ByteOffset(guidOffset + 6, res3) && get2ByteOffset(guidOffset + 8, res4, getInverseEndianness())
+				&& getXByteOffset(guidOffset + 10, 6, res5, getInverseEndianness()))
 			{
-				pdbInfo->setGuid(toUpper(intToHexString(res1) + "-" + intToHexString(res2) + "-" +
-					intToHexString(res3) + "-" + intToHexString(res4) + "-" + intToHexString(res5)));
+				pdbInfo->setGuid(toUpper(
+					intToHexString(res1) + "-" + intToHexString(res2) + "-" + intToHexString(res3) + "-"
+					+ intToHexString(res4) + "-" + intToHexString(res5)));
 			}
 		}
-		else if(get4ByteOffset(guidOffset, res1))
+		else if (get4ByteOffset(guidOffset, res1))
 		{
 			pdbInfo->setGuid(toUpper(intToHexString(res1)));
 		}
 
 		const auto ageOffset = guidOffset + (isRsds ? 16 : 4);
-		if(get4ByteOffset(ageOffset, res1))
+		if (get4ByteOffset(ageOffset, res1))
 		{
 			pdbInfo->setAge(res1);
 		}
-		if(getNTBSOffset(ageOffset + 4, dataString))
+		if (getNTBSOffset(ageOffset + 4, dataString))
 		{
 			pdbInfo->setPath(dataString);
 		}
 		break;
 	}
 
-	for (auto&& addressRange : formatParser->getDebugDirectoryOccupiedAddresses())
+	for (auto&& addressRange: formatParser->getDebugDirectoryOccupiedAddresses())
 	{
 		nonDecodableRanges.insert(std::move(addressRange));
 	}
@@ -1642,10 +1567,11 @@ void PeFormat::loadPdbInfo()
  * @param nodes Nodes of tree (except root node)
  * @param levels Number of nodes in each level of tree (except root level)
  */
-void PeFormat::loadResourceNodes(std::vector<const PeLib::ResourceChild*> &nodes, const std::vector<std::size_t> &levels)
+void PeFormat::loadResourceNodes(
+	std::vector<const PeLib::ResourceChild*>& nodes, const std::vector<std::size_t>& levels)
 {
 	std::uint64_t rva = 0, size = 0;
-	if(levels.empty() || !getDataDirectoryRelative(PELIB_IMAGE_DIRECTORY_ENTRY_RESOURCE, rva, size))
+	if (levels.empty() || !getDataDirectoryRelative(PELIB_IMAGE_DIRECTORY_ENTRY_RESOURCE, rva, size))
 	{
 		return;
 	}
@@ -1653,21 +1579,21 @@ void PeFormat::loadResourceNodes(std::vector<const PeLib::ResourceChild*> &nodes
 	resourceTable = new ResourceTable();
 	std::size_t firstLeafIndex = 0;
 
-	for(std::size_t i = 0, e = levels.size() - 1; i < e; ++i)
+	for (std::size_t i = 0, e = levels.size() - 1; i < e; ++i)
 	{
 		firstLeafIndex += levels[i];
 	}
 
-	for(std::size_t i = 0, e = resourceTree->getNumberOfLeafs(); i < e; ++i)
+	for (std::size_t i = 0, e = resourceTree->getNumberOfLeafs(); i < e; ++i)
 	{
-		auto *leafChild = nodes[firstLeafIndex + i];
-		if(!leafChild)
+		auto* leafChild = nodes[firstLeafIndex + i];
+		if (!leafChild)
 		{
 			continue;
 		}
-		auto *leafChildNode = leafChild->getNode();
-		auto *leaf = dynamic_cast<const ResourceLeaf*>(leafChildNode);
-		if(!leafChildNode || !leafChildNode->isLeaf() || !leaf)
+		auto* leafChildNode = leafChild->getNode();
+		auto* leaf = dynamic_cast<const ResourceLeaf*>(leafChildNode);
+		if (!leafChildNode || !leafChildNode->isLeaf() || !leaf)
 		{
 			continue;
 		}
@@ -1687,23 +1613,23 @@ void PeFormat::loadResources()
 	size_t iconGroupIDcounter = 0;
 	std::uint64_t rva = 0, size = 0;
 	std::uint64_t imageBase = 0;
-	if(!getDataDirectoryRelative(PELIB_IMAGE_DIRECTORY_ENTRY_RESOURCE, rva, size))
+	if (!getDataDirectoryRelative(PELIB_IMAGE_DIRECTORY_ENTRY_RESOURCE, rva, size))
 	{
 		return;
 	}
 
-	if(!getImageBaseAddress(imageBase))
+	if (!getImageBaseAddress(imageBase))
 	{
 		return;
 	}
 
 	std::vector<const ResourceChild*> nodes;
 	std::vector<std::size_t> levels;
-	if(!getResourceNodes(nodes, levels))
+	if (!getResourceNodes(nodes, levels))
 	{
 		return;
 	}
-	else if(resourceTree->getNumberOfLevelsWithoutRoot() != 3)
+	else if (resourceTree->getNumberOfLevelsWithoutRoot() != 3)
 	{
 		loadResourceNodes(nodes, levels);
 		return;
@@ -1712,17 +1638,17 @@ void PeFormat::loadResources()
 	std::unique_ptr<Resource> resource;
 	resourceTable = new ResourceTable();
 
-	for(std::size_t i = 0, e = levels[0], nSft = 0, lSft = 0; i < e; ++i)
+	for (std::size_t i = 0, e = levels[0], nSft = 0, lSft = 0; i < e; ++i)
 	{
-		auto *typeChild = nodes[i];
-		if(!typeChild)
+		auto* typeChild = nodes[i];
+		if (!typeChild)
 		{
 			continue;
 		}
 
 		bool emptyType = false;
 		auto type = typeChild->getName();
-		if(type.empty())
+		if (type.empty())
 		{
 			type = mapGetValueOrDefault(resourceTypeMap, typeChild->getOffsetToName(), "");
 			emptyType = true;
@@ -1730,10 +1656,10 @@ void PeFormat::loadResources()
 
 		nSft += typeChild->getNumberOfChildren();
 
-		for(std::size_t j = 0, f = typeChild->getNumberOfChildren(); j < f; ++j)
+		for (std::size_t j = 0, f = typeChild->getNumberOfChildren(); j < f; ++j)
 		{
-			auto *nameChild = nodes[e + j + nSft - f];
-			if(!nameChild)
+			auto* nameChild = nodes[e + j + nSft - f];
+			if (!nameChild)
 			{
 				continue;
 			}
@@ -1741,16 +1667,16 @@ void PeFormat::loadResources()
 			auto name = nameChild->getName();
 			lSft += nameChild->getNumberOfChildren();
 
-			for(std::size_t k = 0, g = nameChild->getNumberOfChildren(); k < g; ++k)
+			for (std::size_t k = 0, g = nameChild->getNumberOfChildren(); k < g; ++k)
 			{
-				auto *lanChild = nodes[e + levels[1] + k + lSft - g];
-				if(!lanChild)
+				auto* lanChild = nodes[e + levels[1] + k + lSft - g];
+				if (!lanChild)
 				{
 					continue;
 				}
-				auto *lanChildNode = lanChild->getNode();
-				auto *lanLeaf = dynamic_cast<const ResourceLeaf*>(lanChildNode);
-				if(!lanChildNode || !lanChildNode->isLeaf() || !lanLeaf)
+				auto* lanChildNode = lanChild->getNode();
+				auto* lanLeaf = dynamic_cast<const ResourceLeaf*>(lanChildNode);
+				if (!lanChildNode || !lanChildNode->isLeaf() || !lanLeaf)
 				{
 					continue;
 				}
@@ -1758,14 +1684,14 @@ void PeFormat::loadResources()
 				if (type == "Icon")
 				{
 					resource = std::make_unique<ResourceIcon>();
-					resourceTable->addResourceIcon(static_cast<ResourceIcon *>(resource.get()));
+					resourceTable->addResourceIcon(static_cast<ResourceIcon*>(resource.get()));
 				}
 				else if (type == "Icon Group")
 				{
 					auto iGroup = std::make_unique<ResourceIconGroup>();
 					iGroup->setIconGroupID(iconGroupIDcounter);
 					resource = std::move(iGroup);
-					resourceTable->addResourceIconGroup(static_cast<ResourceIconGroup *>(resource.get()));
+					resourceTable->addResourceIconGroup(static_cast<ResourceIconGroup*>(resource.get()));
 					iconGroupIDcounter++;
 				}
 				else if (type == "Version")
@@ -1779,14 +1705,14 @@ void PeFormat::loadResources()
 				}
 				resource->setType(type);
 				resource->invalidateTypeId();
-				if(emptyType)
+				if (emptyType)
 				{
 					resource->setTypeId(typeChild->getOffsetToName());
 				}
 
 				resource->setName(name);
 				resource->invalidateNameId();
-				if(resource->hasEmptyName())
+				if (resource->hasEmptyName())
 				{
 					resource->setNameId(nameChild->getOffsetToName());
 				}
@@ -1798,7 +1724,7 @@ void PeFormat::loadResources()
 				resource->setLanguage(lanChild->getName());
 				resource->invalidateLanguageId();
 				resource->invalidateSublanguageId();
-				if(resource->hasEmptyLanguage())
+				if (resource->hasEmptyLanguage())
 				{
 					const auto lIdAll = lanChild->getOffsetToName();
 					const auto lId = lIdAll & 0x3FF;
@@ -1816,7 +1742,7 @@ void PeFormat::loadResources()
 	resourceTable->parseVersionInfoResources();
 	loadResourceIconHash();
 
-	for (auto&& addressRange : formatParser->getResourceDirectoryOccupiedAddresses())
+	for (auto&& addressRange: formatParser->getResourceDirectoryOccupiedAddresses())
 	{
 		nonDecodableRanges.insert(std::move(addressRange));
 	}
@@ -1834,29 +1760,49 @@ static std::string time_to_string(std::time_t time)
 static Certificate::Attributes getX509Attributes(Attributes attrs)
 {
 	Certificate::Attributes result;
-	result.country = attrs.country.data ? std::string(reinterpret_cast<char*>(attrs.country.data), attrs.country.len) : "";
-	result.organization = attrs.organization.data ? std::string(reinterpret_cast<char*>(attrs.organization.data), attrs.organization.len) : "";
-	result.organizationalUnit = attrs.organizationalUnit.data ? std::string(reinterpret_cast<char*>(attrs.organizationalUnit.data), attrs.organizationalUnit.len) : "";
-	result.nameQualifier = attrs.nameQualifier.data ? std::string(reinterpret_cast<char*>(attrs.nameQualifier.data), attrs.nameQualifier.len) : "";
+	result.country =
+		attrs.country.data ? std::string(reinterpret_cast<char*>(attrs.country.data), attrs.country.len) : "";
+	result.organization = attrs.organization.data
+							? std::string(reinterpret_cast<char*>(attrs.organization.data), attrs.organization.len)
+							: "";
+	result.organizationalUnit =
+		attrs.organizationalUnit.data
+			? std::string(reinterpret_cast<char*>(attrs.organizationalUnit.data), attrs.organizationalUnit.len)
+			: "";
+	result.nameQualifier = attrs.nameQualifier.data
+							 ? std::string(reinterpret_cast<char*>(attrs.nameQualifier.data), attrs.nameQualifier.len)
+							 : "";
 	result.state = attrs.state.data ? std::string(reinterpret_cast<char*>(attrs.state.data), attrs.state.len) : "";
-	result.commonName = attrs.commonName.data ? std::string(reinterpret_cast<char*>(attrs.commonName.data), attrs.commonName.len) : "";
-	result.serialNumber = attrs.serialNumber.data ? std::string(reinterpret_cast<char*>(attrs.serialNumber.data), attrs.serialNumber.len) : "";
-	result.locality = attrs.locality.data ? std::string(reinterpret_cast<char*>(attrs.locality.data), attrs.locality.len) : "";
+	result.commonName =
+		attrs.commonName.data ? std::string(reinterpret_cast<char*>(attrs.commonName.data), attrs.commonName.len) : "";
+	result.serialNumber = attrs.serialNumber.data
+							? std::string(reinterpret_cast<char*>(attrs.serialNumber.data), attrs.serialNumber.len)
+							: "";
+	result.locality =
+		attrs.locality.data ? std::string(reinterpret_cast<char*>(attrs.locality.data), attrs.locality.len) : "";
 	result.title = attrs.title.data ? std::string(reinterpret_cast<char*>(attrs.title.data), attrs.title.len) : "";
-	result.surname = attrs.surname.data ? std::string(reinterpret_cast<char*>(attrs.surname.data), attrs.surname.len) : "";
-	result.givenName = attrs.givenName.data ? std::string(reinterpret_cast<char*>(attrs.givenName.data), attrs.givenName.len) : "";
-	result.initials = attrs.initials.data ? std::string(reinterpret_cast<char*>(attrs.initials.data), attrs.initials.len) : "";
-	result.pseudonym = attrs.pseudonym.data ? std::string(reinterpret_cast<char*>(attrs.pseudonym.data), attrs.pseudonym.len) : "";
-	result.generationQualifier = attrs.generationQualifier.data ? std::string(reinterpret_cast<char*>(attrs.generationQualifier.data), attrs.generationQualifier.len) : "";
-	result.emailAddress = attrs.emailAddress.data ? std::string(reinterpret_cast<char*>(attrs.emailAddress.data), attrs.emailAddress.len) : "";
+	result.surname =
+		attrs.surname.data ? std::string(reinterpret_cast<char*>(attrs.surname.data), attrs.surname.len) : "";
+	result.givenName =
+		attrs.givenName.data ? std::string(reinterpret_cast<char*>(attrs.givenName.data), attrs.givenName.len) : "";
+	result.initials =
+		attrs.initials.data ? std::string(reinterpret_cast<char*>(attrs.initials.data), attrs.initials.len) : "";
+	result.pseudonym =
+		attrs.pseudonym.data ? std::string(reinterpret_cast<char*>(attrs.pseudonym.data), attrs.pseudonym.len) : "";
+	result.generationQualifier =
+		attrs.generationQualifier.data
+			? std::string(reinterpret_cast<char*>(attrs.generationQualifier.data), attrs.generationQualifier.len)
+			: "";
+	result.emailAddress = attrs.emailAddress.data
+							? std::string(reinterpret_cast<char*>(attrs.emailAddress.data), attrs.emailAddress.len)
+							: "";
 
 	return result;
 }
 
 static std::vector<Certificate> getCertificates(CertificateArray* arr)
 {
-	if (!arr)
-		return {};
+	if (!arr) return {};
 
 	std::vector<Certificate> result;
 
@@ -1874,10 +1820,8 @@ static std::vector<Certificate> getCertificates(CertificateArray* arr)
 		new_cert.issuerRaw = cert->issuer ? cert->issuer : "";
 		new_cert.issuer = getX509Attributes(cert->issuer_attrs);
 		new_cert.subject = getX509Attributes(cert->subject_attrs);
-		if (cert->sha1.data)
-			bytesToHexString(cert->sha1.data, cert->sha1.len, new_cert.sha1Digest);
-		if (cert->sha256.data)
-			bytesToHexString(cert->sha256.data, cert->sha256.len, new_cert.sha256Digest);
+		if (cert->sha1.data) bytesToHexString(cert->sha1.data, cert->sha1.len, new_cert.sha1Digest);
+		if (cert->sha256.data) bytesToHexString(cert->sha256.data, cert->sha256.len, new_cert.sha256Digest);
 
 		result.emplace_back(new_cert);
 	}
@@ -1889,28 +1833,17 @@ static std::string authenticodeFlagToString(int flag)
 {
 	switch (flag)
 	{
-	case AUTHENTICODE_VFY_CANT_PARSE:
-		return "Couldn't parse the Pkcs7 signature";
-	case AUTHENTICODE_VFY_NO_SIGNER_CERT:
-		return "Signing cert is missing";
-	case AUTHENTICODE_VFY_DIGEST_MISSING:
-		return "Signature digest is missing";
-	case AUTHENTICODE_VFY_INTERNAL_ERROR:
-		return "Internal error";
-	case AUTHENTICODE_VFY_NO_SIGNER_INFO:
-		return "Couldn't get SignerInfo";
-	case AUTHENTICODE_VFY_WRONG_PKCS7_TYPE:
-		return "Invalid PKCS#7 type, expected SignedData";
-	case AUTHENTICODE_VFY_BAD_CONTENT:
-		return "Couldn't get contentInfo";
-	case AUTHENTICODE_VFY_INVALID:
-		return "Signature isn't valid";
-	case AUTHENTICODE_VFY_WRONG_FILE_DIGEST:
-		return "Signature digest doesn't match the file digest";
-	case AUTHENTICODE_VFY_UNKNOWN_ALGORITHM:
-		return "Unknown digest algorithm";
-	default:
-		return "";
+	case AUTHENTICODE_VFY_CANT_PARSE: return "Couldn't parse the Pkcs7 signature";
+	case AUTHENTICODE_VFY_NO_SIGNER_CERT: return "Signing cert is missing";
+	case AUTHENTICODE_VFY_DIGEST_MISSING: return "Signature digest is missing";
+	case AUTHENTICODE_VFY_INTERNAL_ERROR: return "Internal error";
+	case AUTHENTICODE_VFY_NO_SIGNER_INFO: return "Couldn't get SignerInfo";
+	case AUTHENTICODE_VFY_WRONG_PKCS7_TYPE: return "Invalid PKCS#7 type, expected SignedData";
+	case AUTHENTICODE_VFY_BAD_CONTENT: return "Couldn't get contentInfo";
+	case AUTHENTICODE_VFY_INVALID: return "Signature isn't valid";
+	case AUTHENTICODE_VFY_WRONG_FILE_DIGEST: return "Signature digest doesn't match the file digest";
+	case AUTHENTICODE_VFY_UNKNOWN_ALGORITHM: return "Unknown digest algorithm";
+	default: return "";
 	}
 }
 
@@ -1918,53 +1851,39 @@ static std::string countersigFlagToString(int flag)
 {
 	switch (flag)
 	{
-	case COUNTERSIGNATURE_VFY_CANT_PARSE:
-		return "Couldn't parse counter-signature";
-	case COUNTERSIGNATURE_VFY_NO_SIGNER_CERT:
-		return "No counter-signature certificate";
-	case COUNTERSIGNATURE_VFY_UNKNOWN_ALGORITHM:
-		return "Unknown digest algorithm";
-	case COUNTERSIGNATURE_VFY_CANT_DECRYPT_DIGEST:
-		return "Couldn't decrypt the digest";
-	case COUNTERSIGNATURE_VFY_DIGEST_MISSING:
-		return "Message digest is missing";
-	case COUNTERSIGNATURE_VFY_INTERNAL_ERROR:
-		return "Internal error";
-	case COUNTERSIGNATURE_VFY_DOESNT_MATCH_SIGNATURE:
-		return "Failed to verify the signature with counter-signature";
-	case COUNTERSIGNATURE_VFY_TIME_MISSING:
-		return "Timestamp information is missing";
-	case COUNTERSIGNATURE_VFY_INVALID:
-		return "Failed to verify the counter-signature";
-	default:
-		return "";
+	case COUNTERSIGNATURE_VFY_CANT_PARSE: return "Couldn't parse counter-signature";
+	case COUNTERSIGNATURE_VFY_NO_SIGNER_CERT: return "No counter-signature certificate";
+	case COUNTERSIGNATURE_VFY_UNKNOWN_ALGORITHM: return "Unknown digest algorithm";
+	case COUNTERSIGNATURE_VFY_CANT_DECRYPT_DIGEST: return "Couldn't decrypt the digest";
+	case COUNTERSIGNATURE_VFY_DIGEST_MISSING: return "Message digest is missing";
+	case COUNTERSIGNATURE_VFY_INTERNAL_ERROR: return "Internal error";
+	case COUNTERSIGNATURE_VFY_DOESNT_MATCH_SIGNATURE: return "Failed to verify the signature with counter-signature";
+	case COUNTERSIGNATURE_VFY_TIME_MISSING: return "Timestamp information is missing";
+	case COUNTERSIGNATURE_VFY_INVALID: return "Failed to verify the counter-signature";
+	default: return "";
 	}
 }
 
 static void writeSignerInfo(::Signer* signer, DigitalSignature& signature)
 {
-	if (!signer)
-		return;
+	if (!signer) return;
 
 	signature.signer.chain = getCertificates(signer->chain);
 	signature.programName = signer->program_name ? signer->program_name : "";
 	signature.signer.digestAlgorithm = signer->digest_alg ? signer->digest_alg : "";
-	if (signer->digest.data)
-		bytesToHexString(signer->digest.data, signer->digest.len, signature.signer.digest);
+	if (signer->digest.data) bytesToHexString(signer->digest.data, signer->digest.len, signature.signer.digest);
 }
 
 static Signer getCountersigner(Countersignature* counter)
 {
-	if (!counter)
-		return {};
+	if (!counter) return {};
 
 	Signer countersigner;
 
 	countersigner.chain = getCertificates(counter->chain);
 	countersigner.digestAlgorithm = counter->digest_alg ? counter->digest_alg : "";
 	countersigner.signingTime = counter->sign_time ? time_to_string(counter->sign_time) : "";
-	if (counter->digest.data)
-		bytesToHexString(counter->digest.data, counter->digest.len, countersigner.digest);
+	if (counter->digest.data) bytesToHexString(counter->digest.data, counter->digest.len, countersigner.digest);
 
 	// If there is any verification error, export it as a proper message
 	if (counter->verify_flags != COUNTERSIGNATURE_VFY_VALID)
@@ -1975,8 +1894,7 @@ static Signer getCountersigner(Countersignature* counter)
 
 static std::vector<DigitalSignature> authenticodeToSignatures(AuthenticodeArray* arr, const PeFormat* file)
 {
-	if (!arr || !file)
-		return {};
+	if (!arr || !file) return {};
 
 	std::vector<DigitalSignature> result;
 
@@ -1985,8 +1903,7 @@ static std::vector<DigitalSignature> authenticodeToSignatures(AuthenticodeArray*
 		DigitalSignature signature;
 		Authenticode* auth = arr->signatures[i];
 
-		if (auth->digest.data)
-			bytesToHexString(auth->digest.data, auth->digest.len, signature.signedDigest);
+		if (auth->digest.data) bytesToHexString(auth->digest.data, auth->digest.len, signature.signedDigest);
 		if (auth->file_digest.data)
 			bytesToHexString(auth->file_digest.data, auth->file_digest.len, signature.fileDigest);
 
@@ -2046,7 +1963,7 @@ void PeFormat::loadCertificates()
 	certificateTable->isOutsideImage = true;
 	// Check if the SecurityDir overlaps with any real part of section
 	// if it does, Windows ignores the certificates
-	for (const Section* sec : sections)
+	for (const Section* sec: sections)
 	{
 		std::uint64_t realSize = sec->getSizeInFile();
 		std::uint64_t realOffset = sec->getOffset();
@@ -2099,7 +2016,7 @@ void PeFormat::loadDotnetHeaders()
 	// If our file contains CLR header, then use it. Note that .NET framework doesn't
 	// verify the OPTIONAL_HEADER::NumberOfRvaAndSizes, so we must do it the same way.
 	std::uint64_t comHeaderAddress, comHeaderSize;
-	if(getComDirectoryRelative(comHeaderAddress, comHeaderSize) && comHeaderSize)
+	if (getComDirectoryRelative(comHeaderAddress, comHeaderSize) && comHeaderSize)
 	{
 		clrHeader = formatParser->getClrHeader();
 		metadataHeaderAddress = formatParser->getImageBaseAddress() + clrHeader->getMetadataDirectoryAddress();
@@ -2109,10 +2026,10 @@ void PeFormat::loadDotnetHeaders()
 		return;
 	}
 
-	// If not, then try to guess whether the file could possibly be .NET file based on imports and try to search for metadata header
-	// LZ: Don't. This will lead to the situation when totally unrelated .NET metadata will be read from the binary,
-	// for example from a binary embedded in resources or in overlay.
-	// Sample: 76360c777ac93d7fc7398b5d140c4117eb08501cac30d170f33ab260e1788e74
+	// If not, then try to guess whether the file could possibly be .NET file based on imports and try to search for
+	// metadata header LZ: Don't. This will lead to the situation when totally unrelated .NET metadata will be read from
+	// the binary, for example from a binary embedded in resources or in overlay. Sample:
+	// 76360c777ac93d7fc7398b5d140c4117eb08501cac30d170f33ab260e1788e74
 	/*
 	else
 	{
@@ -2129,7 +2046,8 @@ void PeFormat::loadDotnetHeaders()
 	}
 	*/
 
-	// This explicit initialization needs to be here, because clang 4.0 has bug in optimizer and it causes problem in valgrind.
+	// This explicit initialization needs to be here, because clang 4.0 has bug in optimizer and it causes problem in
+	// valgrind.
 	std::uint64_t signature = 0;
 	if (!get4Byte(metadataHeaderAddress, signature) || signature != MetadataHeaderSignature)
 	{
@@ -2137,8 +2055,7 @@ void PeFormat::loadDotnetHeaders()
 	}
 
 	std::uint64_t majorVersion, minorVersion, versionLength;
-	if (!get2Byte(metadataHeaderAddress + 4, majorVersion)
-		|| !get2Byte(metadataHeaderAddress + 6, minorVersion)
+	if (!get2Byte(metadataHeaderAddress + 4, majorVersion) || !get2Byte(metadataHeaderAddress + 6, minorVersion)
 		|| !get2Byte(metadataHeaderAddress + 12, versionLength))
 	{
 		return;
@@ -2153,8 +2070,7 @@ void PeFormat::loadDotnetHeaders()
 	auto metadataHeaderStreamsHeader = metadataHeaderAddress + 16 + versionLength;
 
 	std::uint64_t flags, streamCount;
-	if (!get1Byte(metadataHeaderStreamsHeader, flags)
-		|| !get2Byte(metadataHeaderStreamsHeader + 2, streamCount))
+	if (!get1Byte(metadataHeaderStreamsHeader, flags) || !get2Byte(metadataHeaderStreamsHeader + 2, streamCount))
 	{
 		return;
 	}
@@ -2167,8 +2083,7 @@ void PeFormat::loadDotnetHeaders()
 	metadataHeader->setFlags(flags);
 
 	// Check if it is actually a .NET application, this check is important to be aligned with YARA scanning
-	if (!isDotNet())
-		return;
+	if (!isDotNet()) return;
 
 	auto currentAddress = metadataHeaderStreamsHeader + 4;
 	for (std::uint64_t i = 0; i < streamCount; ++i)
@@ -2176,8 +2091,7 @@ void PeFormat::loadDotnetHeaders()
 		std::uint64_t streamOffset, streamSize;
 		std::string streamName;
 
-		if (!get4Byte(currentAddress, streamOffset)
-			|| !get4Byte(currentAddress + 4, streamSize)
+		if (!get4Byte(currentAddress, streamOffset) || !get4Byte(currentAddress + 4, streamSize)
 			|| !getNTBS(currentAddress + 8, streamName))
 		{
 			return;
@@ -2217,11 +2131,10 @@ PeTimestamps PeFormat::getTimestamps() const
 	// IF Debug Directory Table has Type == 0x2 - CODEVIEW,
 	// 5. then following PointerToRawData we can find another TimeDateStamp in Pdb 2.0 structure
 	// 6. TimeDateStamp in Load Configuration Directory
-	PeTimestamps timestamps = { 0 };
+	PeTimestamps timestamps = {0};
 
 	auto pefile = formatParser->getPefile();
-	if (!pefile)
-		return timestamps;
+	if (!pefile) return timestamps;
 
 	timestamps.coffTime = getTimeStamp();
 	timestamps.exportTime = pefile->expDir().getTimeDateStamp();
@@ -2242,17 +2155,14 @@ PeTimestamps PeFormat::getTimestamps() const
 				uint32 Timestamp
 				... */
 			std::vector<std::uint8_t> dataPtr = debugDir.getData(i);
-			if (dataPtr.size() < 12)
-				continue;
+			if (dataPtr.size() < 12) continue;
 
 			const std::uint8_t* signature = reinterpret_cast<const std::uint8_t*>("NB10");
 
-			if (!std::equal(dataPtr.begin(), dataPtr.begin() + 4, signature))
-				continue;
+			if (!std::equal(dataPtr.begin(), dataPtr.begin() + 4, signature)) continue;
 
 			std::uint64_t timestamp;
-			if (get4ByteOffset(debugDir.getPointerToRawData(i) + 8, timestamp))
-				timestamps.pdbTime.push_back(timestamp);
+			if (get4ByteOffset(debugDir.getPointerToRawData(i) + 8, timestamp)) timestamps.pdbTime.push_back(timestamp);
 		}
 	}
 
@@ -2265,8 +2175,7 @@ PeTimestamps PeFormat::getTimestamps() const
 		{
 			const ResourceChild* child = root->getChild(i);
 			const ResourceNode* directory = dynamic_cast<const ResourceNode*>(child->getNode());
-			if (!directory)
-				continue;
+			if (!directory) continue;
 
 			timestamps.resourceTime.push_back((directory->getTimeDateStamp()));
 
@@ -2274,8 +2183,7 @@ PeTimestamps PeFormat::getTimestamps() const
 			{
 				const ResourceChild* second_child = directory->getChild(i);
 				const ResourceNode* second_directory = dynamic_cast<const ResourceNode*>(second_child->getNode());
-				if (!second_directory)
-					continue;
+				if (!second_directory) continue;
 
 				timestamps.resourceTime.push_back((second_directory->getTimeDateStamp()));
 			}
@@ -2296,32 +2204,31 @@ std::vector<std::tuple<const std::uint8_t*, std::size_t>> PeFormat::getDigestRan
 {
 	std::vector<std::tuple<const std::uint8_t*, std::size_t>> result;
 	std::size_t checksumFileOffset = formatParser->getChecksumFileOffset();
-	std::size_t secDirFileOffset = formatParser->getSecurityDirFileOffset(); // offset of security directory record in PE header
+	std::size_t secDirFileOffset =
+		formatParser->getSecurityDirFileOffset(); // offset of security directory record in PE header
 	std::size_t secDirOffset = formatParser->getSecurityDirRva();
 	std::size_t secDirSize = formatParser->getSecurityDirSize();
 
-	// To prevent crashes on unordinary binaries, we need to sort these offsets (together with sizes, but they are unimportant for sorting)
-	// Usually, checksum is first, then security directory header and then security directory
+	// To prevent crashes on unordinary binaries, we need to sort these offsets (together with sizes, but they are
+	// unimportant for sorting) Usually, checksum is first, then security directory header and then security directory
 	// There are a few binaries where this order is not followed
-	std::vector<std::pair<std::size_t, std::size_t>> offsets = { std::make_pair(checksumFileOffset, 4), std::make_pair(secDirFileOffset, 8), std::make_pair(secDirOffset, secDirSize) };
-	std::sort(offsets.begin(), offsets.end(), [](const auto& lhs, const auto& rhs) {
-			return lhs.first < rhs.first;
-		});
+	std::vector<std::pair<std::size_t, std::size_t>> offsets = {
+		std::make_pair(checksumFileOffset, 4),
+		std::make_pair(secDirFileOffset, 8),
+		std::make_pair(secDirOffset, secDirSize)};
+	std::sort(offsets.begin(), offsets.end(), [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
 
 	std::size_t lastOffset = 0;
-	for (auto& offsetSize : offsets)
+	for (auto& offsetSize: offsets)
 	{
 		// If the length of the range is bigger than the amount of data we have available, then sanitize the length
-		if (offsetSize.second > bytes.size())
-			offsetSize.second = bytes.size();
+		if (offsetSize.second > bytes.size()) offsetSize.second = bytes.size();
 
 		// If the range overlaps the end of the file, then sanitize the length
-		if (offsetSize.first + offsetSize.second > bytes.size())
-			offsetSize.second = bytes.size() - offsetSize.first;
+		if (offsetSize.first + offsetSize.second > bytes.size()) offsetSize.second = bytes.size() - offsetSize.first;
 
 		// This offsetSize is completely covered by the last offset so ignore it
-		if (offsetSize.first + offsetSize.second <= lastOffset)
-			continue;
+		if (offsetSize.first + offsetSize.second <= lastOffset) continue;
 
 		// This offsetSize is partially covered by the last offset, so shrink it
 		// Shrunk offsetSize begins where the last offset ended
@@ -2336,8 +2243,7 @@ std::vector<std::tuple<const std::uint8_t*, std::size_t>> PeFormat::getDigestRan
 	}
 
 	// Finish off the data if the last offset didn't end at the end of all data
-	if (lastOffset != bytes.size())
-		result.emplace_back(bytes.data() + lastOffset, bytes.size() - lastOffset);
+	if (lastOffset != bytes.size()) result.emplace_back(bytes.data() + lastOffset, bytes.size() - lastOffset);
 
 	return result;
 }
@@ -2360,11 +2266,8 @@ void PeFormat::parseMetadataStream(std::uint64_t baseAddress, std::uint64_t offs
 	auto address = baseAddress + offset;
 
 	std::uint64_t majorVersion, minorVersion, heapOffsetSizes, valid, sorted;
-	if (!get1Byte(address + 4, majorVersion)
-		|| !get1Byte(address + 5, minorVersion)
-		|| !get1Byte(address + 6, heapOffsetSizes)
-		|| !get8Byte(address + 8, valid)
-		|| !get8Byte(address + 16, sorted))
+	if (!get1Byte(address + 4, majorVersion) || !get1Byte(address + 5, minorVersion)
+		|| !get1Byte(address + 6, heapOffsetSizes) || !get8Byte(address + 8, valid) || !get8Byte(address + 16, sorted))
 	{
 		return;
 	}
@@ -2391,7 +2294,8 @@ void PeFormat::parseMetadataStream(std::uint64_t baseAddress, std::uint64_t offs
 				return;
 			}
 
-			// If the size of the metadata table would be larger than there are data available, we just end. This must be corrupted.
+			// If the size of the metadata table would be larger than there are data available, we just end. This must
+			// be corrupted.
 			if (tableSize > getLoadedFileLength())
 			{
 				return;
@@ -2403,7 +2307,8 @@ void PeFormat::parseMetadataStream(std::uint64_t baseAddress, std::uint64_t offs
 	}
 	// ExtraData flags means there is extra 4 bytes at the end Rows array that contaisn the rows sizes
 	// I don't see anything about in at ECMA-335, but I can see in real samples and in IlSpy source
-	// that understands it and correctly decompiles, sample: 5b5817fe2d4f0989501802b0e2bb4451583ff27fd0723f40bb7f8b0417dd7c58
+	// that understands it and correctly decompiles, sample:
+	// 5b5817fe2d4f0989501802b0e2bb4451583ff27fd0723f40bb7f8b0417dd7c58
 	if (heapOffsetSizes & 0x40)
 	{
 		currentAddress += 4;
@@ -2419,137 +2324,54 @@ void PeFormat::parseMetadataStream(std::uint64_t baseAddress, std::uint64_t offs
 
 		switch (table->getType())
 		{
-			case MetadataTableType::Module:
-				parseMetadataTable<DotnetModule>(table, currentAddress);
-				break;
-			case MetadataTableType::TypeRef:
-				parseMetadataTable<TypeRef>(table, currentAddress);
-				break;
-			case MetadataTableType::TypeDef:
-				parseMetadataTable<TypeDef>(table, currentAddress);
-				break;
-			case MetadataTableType::FieldPtr:
-				parseMetadataTable<FieldPtr>(table, currentAddress);
-				break;
-			case MetadataTableType::Field:
-				parseMetadataTable<Field>(table, currentAddress);
-				break;
-			case MetadataTableType::MethodPtr:
-				parseMetadataTable<MethodPtr>(table, currentAddress);
-				break;
-			case MetadataTableType::MethodDef:
-				parseMetadataTable<MethodDef>(table, currentAddress);
-				break;
-			case MetadataTableType::ParamPtr:
-				parseMetadataTable<ParamPtr>(table, currentAddress);
-				break;
-			case MetadataTableType::Param:
-				parseMetadataTable<Param>(table, currentAddress);
-				break;
-			case MetadataTableType::InterfaceImpl:
-				parseMetadataTable<InterfaceImpl>(table, currentAddress);
-				break;
-			case MetadataTableType::MemberRef:
-				parseMetadataTable<MemberRef>(table, currentAddress);
-				break;
-			case MetadataTableType::Constant:
-				parseMetadataTable<Constant>(table, currentAddress);
-				break;
-			case MetadataTableType::CustomAttribute:
-				parseMetadataTable<CustomAttribute>(table, currentAddress);
-				break;
-			case MetadataTableType::FieldMarshal:
-				parseMetadataTable<FieldMarshal>(table, currentAddress);
-				break;
-			case MetadataTableType::DeclSecurity:
-				parseMetadataTable<DeclSecurity>(table, currentAddress);
-				break;
-			case MetadataTableType::ClassLayout:
-				parseMetadataTable<ClassLayout>(table, currentAddress);
-				break;
-			case MetadataTableType::FieldLayout:
-				parseMetadataTable<FieldLayout>(table, currentAddress);
-				break;
-			case MetadataTableType::StandAloneSig:
-				parseMetadataTable<StandAloneSig>(table, currentAddress);
-				break;
-			case MetadataTableType::EventMap:
-				parseMetadataTable<EventMap>(table, currentAddress);
-				break;
-			case MetadataTableType::Event:
-				parseMetadataTable<Event>(table, currentAddress);
-				break;
-			case MetadataTableType::PropertyMap:
-				parseMetadataTable<PropertyMap>(table, currentAddress);
-				break;
-			case MetadataTableType::PropertyPtr:
-				parseMetadataTable<PropertyPtr>(table, currentAddress);
-				break;
-			case MetadataTableType::Property:
-				parseMetadataTable<Property>(table, currentAddress);
-				break;
-			case MetadataTableType::MethodSemantics:
-				parseMetadataTable<MethodSemantics>(table, currentAddress);
-				break;
-			case MetadataTableType::MethodImpl:
-				parseMetadataTable<MethodImpl>(table, currentAddress);
-				break;
-			case MetadataTableType::ModuleRef:
-				parseMetadataTable<ModuleRef>(table, currentAddress);
-				break;
-			case MetadataTableType::TypeSpec:
-				parseMetadataTable<TypeSpec>(table, currentAddress);
-				break;
-			case MetadataTableType::ImplMap:
-				parseMetadataTable<ImplMap>(table, currentAddress);
-				break;
-			case MetadataTableType::FieldRVA:
-				parseMetadataTable<FieldRVA>(table, currentAddress);
-				break;
-			case MetadataTableType::ENCLog:
-				parseMetadataTable<ENCLog>(table, currentAddress);
-				break;
-			case MetadataTableType::ENCMap:
-				parseMetadataTable<ENCMap>(table, currentAddress);
-				break;
-			case MetadataTableType::Assembly:
-				parseMetadataTable<Assembly>(table, currentAddress);
-				break;
-			case MetadataTableType::AssemblyProcessor:
-				parseMetadataTable<AssemblyProcessor>(table, currentAddress);
-				break;
-			case MetadataTableType::AssemblyOS:
-				parseMetadataTable<AssemblyOS>(table, currentAddress);
-				break;
-			case MetadataTableType::AssemblyRef:
-				parseMetadataTable<AssemblyRef>(table, currentAddress);
-				break;
-			case MetadataTableType::AssemblyRefProcessor:
-				parseMetadataTable<AssemblyRefProcessor>(table, currentAddress);
-				break;
-			case MetadataTableType::AssemblyRefOS:
-				parseMetadataTable<AssemblyRefOS>(table, currentAddress);
-				break;
-			case MetadataTableType::File:
-				parseMetadataTable<File>(table, currentAddress);
-				break;
-			case MetadataTableType::ExportedType:
-				parseMetadataTable<ExportedType>(table, currentAddress);
-				break;
-			case MetadataTableType::ManifestResource:
-				parseMetadataTable<ManifestResource>(table, currentAddress);
-				break;
-			case MetadataTableType::NestedClass:
-				parseMetadataTable<NestedClass>(table, currentAddress);
-				break;
-			case MetadataTableType::GenericParam:
-				parseMetadataTable<GenericParam>(table, currentAddress);
-				break;
-			case MetadataTableType::GenericParamContstraint:
-				parseMetadataTable<GenericParamContstraint>(table, currentAddress);
-				break;
-			default:
-				break;
+		case MetadataTableType::Module: parseMetadataTable<DotnetModule>(table, currentAddress); break;
+		case MetadataTableType::TypeRef: parseMetadataTable<TypeRef>(table, currentAddress); break;
+		case MetadataTableType::TypeDef: parseMetadataTable<TypeDef>(table, currentAddress); break;
+		case MetadataTableType::FieldPtr: parseMetadataTable<FieldPtr>(table, currentAddress); break;
+		case MetadataTableType::Field: parseMetadataTable<Field>(table, currentAddress); break;
+		case MetadataTableType::MethodPtr: parseMetadataTable<MethodPtr>(table, currentAddress); break;
+		case MetadataTableType::MethodDef: parseMetadataTable<MethodDef>(table, currentAddress); break;
+		case MetadataTableType::ParamPtr: parseMetadataTable<ParamPtr>(table, currentAddress); break;
+		case MetadataTableType::Param: parseMetadataTable<Param>(table, currentAddress); break;
+		case MetadataTableType::InterfaceImpl: parseMetadataTable<InterfaceImpl>(table, currentAddress); break;
+		case MetadataTableType::MemberRef: parseMetadataTable<MemberRef>(table, currentAddress); break;
+		case MetadataTableType::Constant: parseMetadataTable<Constant>(table, currentAddress); break;
+		case MetadataTableType::CustomAttribute: parseMetadataTable<CustomAttribute>(table, currentAddress); break;
+		case MetadataTableType::FieldMarshal: parseMetadataTable<FieldMarshal>(table, currentAddress); break;
+		case MetadataTableType::DeclSecurity: parseMetadataTable<DeclSecurity>(table, currentAddress); break;
+		case MetadataTableType::ClassLayout: parseMetadataTable<ClassLayout>(table, currentAddress); break;
+		case MetadataTableType::FieldLayout: parseMetadataTable<FieldLayout>(table, currentAddress); break;
+		case MetadataTableType::StandAloneSig: parseMetadataTable<StandAloneSig>(table, currentAddress); break;
+		case MetadataTableType::EventMap: parseMetadataTable<EventMap>(table, currentAddress); break;
+		case MetadataTableType::Event: parseMetadataTable<Event>(table, currentAddress); break;
+		case MetadataTableType::PropertyMap: parseMetadataTable<PropertyMap>(table, currentAddress); break;
+		case MetadataTableType::PropertyPtr: parseMetadataTable<PropertyPtr>(table, currentAddress); break;
+		case MetadataTableType::Property: parseMetadataTable<Property>(table, currentAddress); break;
+		case MetadataTableType::MethodSemantics: parseMetadataTable<MethodSemantics>(table, currentAddress); break;
+		case MetadataTableType::MethodImpl: parseMetadataTable<MethodImpl>(table, currentAddress); break;
+		case MetadataTableType::ModuleRef: parseMetadataTable<ModuleRef>(table, currentAddress); break;
+		case MetadataTableType::TypeSpec: parseMetadataTable<TypeSpec>(table, currentAddress); break;
+		case MetadataTableType::ImplMap: parseMetadataTable<ImplMap>(table, currentAddress); break;
+		case MetadataTableType::FieldRVA: parseMetadataTable<FieldRVA>(table, currentAddress); break;
+		case MetadataTableType::ENCLog: parseMetadataTable<ENCLog>(table, currentAddress); break;
+		case MetadataTableType::ENCMap: parseMetadataTable<ENCMap>(table, currentAddress); break;
+		case MetadataTableType::Assembly: parseMetadataTable<Assembly>(table, currentAddress); break;
+		case MetadataTableType::AssemblyProcessor: parseMetadataTable<AssemblyProcessor>(table, currentAddress); break;
+		case MetadataTableType::AssemblyOS: parseMetadataTable<AssemblyOS>(table, currentAddress); break;
+		case MetadataTableType::AssemblyRef: parseMetadataTable<AssemblyRef>(table, currentAddress); break;
+		case MetadataTableType::AssemblyRefProcessor:
+			parseMetadataTable<AssemblyRefProcessor>(table, currentAddress);
+			break;
+		case MetadataTableType::AssemblyRefOS: parseMetadataTable<AssemblyRefOS>(table, currentAddress); break;
+		case MetadataTableType::File: parseMetadataTable<File>(table, currentAddress); break;
+		case MetadataTableType::ExportedType: parseMetadataTable<ExportedType>(table, currentAddress); break;
+		case MetadataTableType::ManifestResource: parseMetadataTable<ManifestResource>(table, currentAddress); break;
+		case MetadataTableType::NestedClass: parseMetadataTable<NestedClass>(table, currentAddress); break;
+		case MetadataTableType::GenericParam: parseMetadataTable<GenericParam>(table, currentAddress); break;
+		case MetadataTableType::GenericParamContstraint:
+			parseMetadataTable<GenericParamContstraint>(table, currentAddress);
+			break;
+		default: break;
 		}
 	}
 }
@@ -2566,7 +2388,6 @@ void PeFormat::parseBlobStream(std::uint64_t baseAddress, std::uint64_t offset, 
 	auto address = baseAddress + offset;
 	getXBytes(address, size, data);
 	blobStream = std::make_unique<BlobStream>(std::move(data), offset, size);
-
 }
 
 /**
@@ -2623,7 +2444,7 @@ void PeFormat::parseStringStream(std::uint64_t baseAddress, std::uint64_t offset
  * @param offset Offset of user string stream.
  * @param size Size of stream.
  */
-void PeFormat::parseUserStringStream(std::uint64_t/* baseAddress*/, std::uint64_t offset, std::uint64_t size)
+void PeFormat::parseUserStringStream(std::uint64_t /* baseAddress*/, std::uint64_t offset, std::uint64_t size)
 {
 	userStringStream = std::make_unique<UserStringStream>(offset, size);
 }
@@ -2664,7 +2485,8 @@ void PeFormat::detectModuleVersionId()
 		return;
 	}
 
-	auto moduleTable = static_cast<const MetadataTable<DotnetModule>*>(metadataStream->getMetadataTable(MetadataTableType::Module));
+	auto moduleTable =
+		static_cast<const MetadataTable<DotnetModule>*>(metadataStream->getMetadataTable(MetadataTableType::Module));
 	if (!moduleTable || moduleTable->getNumberOfRows() < 1)
 	{
 		return;
@@ -2685,10 +2507,14 @@ void PeFormat::detectTypeLibId()
 		return;
 	}
 
-	auto typeRefTable = static_cast<const MetadataTable<TypeRef>*>(metadataStream->getMetadataTable(MetadataTableType::TypeRef));
-	auto memberRefTable = static_cast<const MetadataTable<MemberRef>*>(metadataStream->getMetadataTable(MetadataTableType::MemberRef));
-	auto customAttributeTable = static_cast<const MetadataTable<CustomAttribute>*>(metadataStream->getMetadataTable(MetadataTableType::CustomAttribute));
-	auto assemblyRefTable = static_cast<const MetadataTable<AssemblyRef>*>(metadataStream->getMetadataTable(MetadataTableType::AssemblyRef));
+	auto typeRefTable =
+		static_cast<const MetadataTable<TypeRef>*>(metadataStream->getMetadataTable(MetadataTableType::TypeRef));
+	auto memberRefTable =
+		static_cast<const MetadataTable<MemberRef>*>(metadataStream->getMetadataTable(MetadataTableType::MemberRef));
+	auto customAttributeTable = static_cast<const MetadataTable<CustomAttribute>*>(
+		metadataStream->getMetadataTable(MetadataTableType::CustomAttribute));
+	auto assemblyRefTable = static_cast<const MetadataTable<AssemblyRef>*>(
+		metadataStream->getMetadataTable(MetadataTableType::AssemblyRef));
 	if (!typeRefTable || !memberRefTable || !customAttributeTable || !assemblyRefTable)
 	{
 		return;
@@ -2743,7 +2569,8 @@ void PeFormat::detectTypeLibId()
 		return;
 	}
 
-	std::regex guidRegex("[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}", std::regex::icase | std::regex::ECMAScript);
+	std::regex guidRegex(
+		"[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}", std::regex::icase | std::regex::ECMAScript);
 
 	// As last, try to find CustomAttribute with type referring to MemberRef
 	for (std::size_t i = 1; i <= customAttributeTable->getNumberOfRows(); ++i)
@@ -2769,7 +2596,8 @@ void PeFormat::detectTypeLibId()
 			// Custom attributes contain one std::uint16_t 0x0001 at the beginning so we skip it,
 			// followed by length of the string, which is GUID we are looking for
 			auto length = typeLibData[2];
-			typeLibId = retdec::utils::toLower(std::string(reinterpret_cast<const char*>(typeLibData.data() + 3), length));
+			typeLibId =
+				retdec::utils::toLower(std::string(reinterpret_cast<const char*>(typeLibData.data() + 3), length));
 			if (!std::regex_match(typeLibId, guidRegex))
 			{
 				typeLibId.clear();
@@ -2807,39 +2635,36 @@ void PeFormat::detectDotnetTypes()
  */
 std::uint64_t PeFormat::detectPossibleMetadataHeaderAddress() const
 {
-	const auto possibleStreamNames = { "#~", "#-", "#Strings", "#Blob", "#GUID", "#US" };
+	const auto possibleStreamNames = {"#~", "#-", "#Strings", "#Blob", "#GUID", "#US"};
 
 	bool metadataHeaderFound = false;
 	std::uint64_t address = 0;
 	std::uint64_t signature = 0;
-	for (const auto* sec : sections)
+	for (const auto* sec: sections)
 	{
 		address = sec->getAddress();
 
-		for (std::uint64_t inSecAddress = address; !metadataHeaderFound && inSecAddress < sec->getEndAddress(); ++inSecAddress)
+		for (std::uint64_t inSecAddress = address; !metadataHeaderFound && inSecAddress < sec->getEndAddress();
+			 ++inSecAddress)
 		{
-			if (!get4Byte(inSecAddress, signature))
-				break;
+			if (!get4Byte(inSecAddress, signature)) break;
 
 			if (signature == MetadataHeaderSignature)
 			{
 				std::uint64_t versionLength = 0;
-				if (!get2Byte(inSecAddress + 12, versionLength))
-					break;
+				if (!get2Byte(inSecAddress + 12, versionLength)) break;
 
-				auto firstStreamNameAddress = inSecAddress
-					+ 16 // skip metadata header fields
-					+ versionLength // skip version string
-					+ 4 // skip stream count
-					+ 8; // skip offset and size of the first stream
+				auto firstStreamNameAddress = inSecAddress + 16 // skip metadata header fields
+											+ versionLength     // skip version string
+											+ 4                 // skip stream count
+											+ 8;                // skip offset and size of the first stream
 				std::string streamName;
-				if (!getNTBS(firstStreamNameAddress, streamName))
-					break;
+				if (!getNTBS(firstStreamNameAddress, streamName)) break;
 
-				if (std::any_of(possibleStreamNames.begin(), possibleStreamNames.end(),
-							[&streamName](const auto& possibleStreamName) {
-								return streamName == possibleStreamName;
-							}))
+				if (std::any_of(
+						possibleStreamNames.begin(),
+						possibleStreamNames.end(),
+						[&streamName](const auto& possibleStreamName) { return streamName == possibleStreamName; }))
 				{
 					metadataHeaderFound = true;
 					address = inSecAddress;
@@ -2848,8 +2673,7 @@ std::uint64_t PeFormat::detectPossibleMetadataHeaderAddress() const
 			}
 		}
 
-		if (metadataHeaderFound)
-			break;
+		if (metadataHeaderFound) break;
 	}
 
 	return metadataHeaderFound ? address : 0;
@@ -2871,10 +2695,14 @@ void PeFormat::computeTypeRefHashes()
 	std::string referencedName;
 	MetadataTableType resolutionScopeType;
 
-	auto typeRefTable = static_cast<const MetadataTable<TypeRef>*>(metadataStream->getMetadataTable(MetadataTableType::TypeRef));
-	auto moduleTable = static_cast<const MetadataTable<DotnetModule>*>(metadataStream->getMetadataTable(MetadataTableType::Module));
-	auto moduleRefTable = static_cast<const MetadataTable<ModuleRef>*>(metadataStream->getMetadataTable(MetadataTableType::ModuleRef));
-	auto assemblyRefTable = static_cast<const MetadataTable<AssemblyRef>*>(metadataStream->getMetadataTable(MetadataTableType::AssemblyRef));
+	auto typeRefTable =
+		static_cast<const MetadataTable<TypeRef>*>(metadataStream->getMetadataTable(MetadataTableType::TypeRef));
+	auto moduleTable =
+		static_cast<const MetadataTable<DotnetModule>*>(metadataStream->getMetadataTable(MetadataTableType::Module));
+	auto moduleRefTable =
+		static_cast<const MetadataTable<ModuleRef>*>(metadataStream->getMetadataTable(MetadataTableType::ModuleRef));
+	auto assemblyRefTable = static_cast<const MetadataTable<AssemblyRef>*>(
+		metadataStream->getMetadataTable(MetadataTableType::AssemblyRef));
 
 	if (!typeRefTable)
 	{
@@ -2902,57 +2730,56 @@ void PeFormat::computeTypeRefHashes()
 		{
 			switch (resolutionScopeType)
 			{
-				case MetadataTableType::TypeRef:
+			case MetadataTableType::TypeRef: {
+				auto typeRef = typeRefTable->getRow(typeRefRow->resolutionScope.getIndex());
+				if (typeRef && stringStream->getString(typeRef->typeName.getIndex(), referencedName)
+					&& !referencedName.empty())
 				{
-					auto typeRef = typeRefTable->getRow(typeRefRow->resolutionScope.getIndex());
-					if (typeRef && stringStream->getString(typeRef->typeName.getIndex(), referencedName) && !referencedName.empty())
+					referencedName += "TR";
+					validReferencedName = true;
+				}
+				break;
+			}
+			case MetadataTableType::Module: {
+				if (moduleTable)
+				{
+					auto module = moduleTable->getRow(typeRefRow->resolutionScope.getIndex());
+					if (module && stringStream->getString(module->name.getIndex(), referencedName)
+						&& !referencedName.empty())
 					{
-						referencedName += "TR";
+						referencedName += "M";
 						validReferencedName = true;
 					}
-					break;
 				}
-				case MetadataTableType::Module:
+				break;
+			}
+			case MetadataTableType::ModuleRef: {
+				if (moduleRefTable)
 				{
-					if (moduleTable)
+					auto moduleRef = moduleRefTable->getRow(typeRefRow->resolutionScope.getIndex());
+					if (moduleRef && stringStream->getString(moduleRef->name.getIndex(), referencedName)
+						&& !referencedName.empty())
 					{
-						auto module = moduleTable->getRow(typeRefRow->resolutionScope.getIndex());
-						if (module && stringStream->getString(module->name.getIndex(), referencedName) && !referencedName.empty())
-						{
-							referencedName += "M";
-							validReferencedName = true;
-						}
+						referencedName += "MR";
+						validReferencedName = true;
 					}
-					break;
 				}
-				case MetadataTableType::ModuleRef:
+				break;
+			}
+			case MetadataTableType::AssemblyRef: {
+				if (assemblyRefTable)
 				{
-					if (moduleRefTable)
+					auto assemblyRef = assemblyRefTable->getRow(typeRefRow->resolutionScope.getIndex());
+					if (assemblyRef && stringStream->getString(assemblyRef->name.getIndex(), referencedName)
+						&& !referencedName.empty())
 					{
-						auto moduleRef = moduleRefTable->getRow(typeRefRow->resolutionScope.getIndex());
-						if (moduleRef && stringStream->getString(moduleRef->name.getIndex(), referencedName) && !referencedName.empty())
-						{
-							referencedName += "MR";
-							validReferencedName = true;
-						}
+						referencedName += "AR";
+						validReferencedName = true;
 					}
-					break;
 				}
-				case MetadataTableType::AssemblyRef:
-				{
-					if (assemblyRefTable)
-					{
-						auto assemblyRef = assemblyRefTable->getRow(typeRefRow->resolutionScope.getIndex());
-						if (assemblyRef && stringStream->getString(assemblyRef->name.getIndex(), referencedName) && !referencedName.empty())
-						{
-							referencedName += "AR";
-							validReferencedName = true;
-						}
-					}
-					break;
-				}
-				default:
-					break;
+				break;
+			}
+			default: break;
 			}
 
 			if (!typeRefHashBytes.empty())
@@ -2984,7 +2811,7 @@ void PeFormat::computeTypeRefHashes()
 				fullName += referencedName;
 			}
 
-			for(const auto c : fullName)
+			for (const auto c: fullName)
 			{
 				typeRefHashBytes.push_back(static_cast<uint8_t>(c));
 			}
@@ -2998,80 +2825,64 @@ void PeFormat::computeTypeRefHashes()
 
 retdec::utils::Endianness PeFormat::getEndianness() const
 {
-	switch(formatParser->getMachineType())
+	switch (formatParser->getMachineType())
 	{
-		case PELIB_IMAGE_FILE_MACHINE_I386:
-		case PELIB_IMAGE_FILE_MACHINE_I486:
-		case PELIB_IMAGE_FILE_MACHINE_PENTIUM:
-		case PELIB_IMAGE_FILE_MACHINE_AMD64:
-		case PELIB_IMAGE_FILE_MACHINE_R3000_LITTLE:
-		case PELIB_IMAGE_FILE_MACHINE_R4000:
-		case PELIB_IMAGE_FILE_MACHINE_R10000:
-		case PELIB_IMAGE_FILE_MACHINE_WCEMIPSV2:
-		case PELIB_IMAGE_FILE_MACHINE_MIPS16:
-		case PELIB_IMAGE_FILE_MACHINE_MIPSFPU:
-		case PELIB_IMAGE_FILE_MACHINE_MIPSFPU16:
-		case PELIB_IMAGE_FILE_MACHINE_ARM:
-		case PELIB_IMAGE_FILE_MACHINE_THUMB:
-		case PELIB_IMAGE_FILE_MACHINE_ARMNT:
-		case PELIB_IMAGE_FILE_MACHINE_ARM64:
-		case PELIB_IMAGE_FILE_MACHINE_POWERPC:
-		case PELIB_IMAGE_FILE_MACHINE_POWERPCFP:
-			return Endianness::LITTLE;
-		case PELIB_IMAGE_FILE_MACHINE_R3000_BIG:
-			return Endianness::BIG;
-		default:
-			return Endianness::UNKNOWN;
+	case PELIB_IMAGE_FILE_MACHINE_I386:
+	case PELIB_IMAGE_FILE_MACHINE_I486:
+	case PELIB_IMAGE_FILE_MACHINE_PENTIUM:
+	case PELIB_IMAGE_FILE_MACHINE_AMD64:
+	case PELIB_IMAGE_FILE_MACHINE_R3000_LITTLE:
+	case PELIB_IMAGE_FILE_MACHINE_R4000:
+	case PELIB_IMAGE_FILE_MACHINE_R10000:
+	case PELIB_IMAGE_FILE_MACHINE_WCEMIPSV2:
+	case PELIB_IMAGE_FILE_MACHINE_MIPS16:
+	case PELIB_IMAGE_FILE_MACHINE_MIPSFPU:
+	case PELIB_IMAGE_FILE_MACHINE_MIPSFPU16:
+	case PELIB_IMAGE_FILE_MACHINE_ARM:
+	case PELIB_IMAGE_FILE_MACHINE_THUMB:
+	case PELIB_IMAGE_FILE_MACHINE_ARMNT:
+	case PELIB_IMAGE_FILE_MACHINE_ARM64:
+	case PELIB_IMAGE_FILE_MACHINE_POWERPC:
+	case PELIB_IMAGE_FILE_MACHINE_POWERPCFP: return Endianness::LITTLE;
+	case PELIB_IMAGE_FILE_MACHINE_R3000_BIG: return Endianness::BIG;
+	default: return Endianness::UNKNOWN;
 	}
 }
 
 std::size_t PeFormat::getBytesPerWord() const
 {
-	switch(formatParser->getMachineType())
+	switch (formatParser->getMachineType())
 	{
-		// Architecture::X86
-		case PELIB_IMAGE_FILE_MACHINE_I386:
-		case PELIB_IMAGE_FILE_MACHINE_I486:
-		case PELIB_IMAGE_FILE_MACHINE_PENTIUM:
-			return 4;
+	// Architecture::X86
+	case PELIB_IMAGE_FILE_MACHINE_I386:
+	case PELIB_IMAGE_FILE_MACHINE_I486:
+	case PELIB_IMAGE_FILE_MACHINE_PENTIUM: return 4;
 
-		// Architecture::X86_64
-		case PELIB_IMAGE_FILE_MACHINE_AMD64:
-			return 8;
+	// Architecture::X86_64
+	case PELIB_IMAGE_FILE_MACHINE_AMD64: return 8;
 
-		// Architecture::MIPS
-		case PELIB_IMAGE_FILE_MACHINE_R3000_BIG:
-		case PELIB_IMAGE_FILE_MACHINE_R3000_LITTLE:
-			return 4;
-		case PELIB_IMAGE_FILE_MACHINE_R4000:
-			return formatParser->getPointerSize();
-		case PELIB_IMAGE_FILE_MACHINE_R10000:
-			return 8;
-		case PELIB_IMAGE_FILE_MACHINE_WCEMIPSV2:
-			return 4;
-		case PELIB_IMAGE_FILE_MACHINE_MIPS16:
-			return 2;
-		case PELIB_IMAGE_FILE_MACHINE_MIPSFPU:
-			return 8;
-		case PELIB_IMAGE_FILE_MACHINE_MIPSFPU16:
-			return 2;
+	// Architecture::MIPS
+	case PELIB_IMAGE_FILE_MACHINE_R3000_BIG:
+	case PELIB_IMAGE_FILE_MACHINE_R3000_LITTLE: return 4;
+	case PELIB_IMAGE_FILE_MACHINE_R4000: return formatParser->getPointerSize();
+	case PELIB_IMAGE_FILE_MACHINE_R10000: return 8;
+	case PELIB_IMAGE_FILE_MACHINE_WCEMIPSV2: return 4;
+	case PELIB_IMAGE_FILE_MACHINE_MIPS16: return 2;
+	case PELIB_IMAGE_FILE_MACHINE_MIPSFPU: return 8;
+	case PELIB_IMAGE_FILE_MACHINE_MIPSFPU16: return 2;
 
-		// Architecture::ARM
-		case PELIB_IMAGE_FILE_MACHINE_ARM:
-		case PELIB_IMAGE_FILE_MACHINE_THUMB:
-		case PELIB_IMAGE_FILE_MACHINE_ARMNT:
-			return 4;
-		case PELIB_IMAGE_FILE_MACHINE_ARM64:
-			return 8;
+	// Architecture::ARM
+	case PELIB_IMAGE_FILE_MACHINE_ARM:
+	case PELIB_IMAGE_FILE_MACHINE_THUMB:
+	case PELIB_IMAGE_FILE_MACHINE_ARMNT: return 4;
+	case PELIB_IMAGE_FILE_MACHINE_ARM64: return 8;
 
-		// Architecture::POWERPC
-		case PELIB_IMAGE_FILE_MACHINE_POWERPC:
-		case PELIB_IMAGE_FILE_MACHINE_POWERPCFP:
-			return formatParser->getPointerSize();
+	// Architecture::POWERPC
+	case PELIB_IMAGE_FILE_MACHINE_POWERPC:
+	case PELIB_IMAGE_FILE_MACHINE_POWERPCFP: return formatParser->getPointerSize();
 
-		// unsupported architecture
-		default:
-			return 0;
+	// unsupported architecture
+	default: return 0;
 	}
 }
 
@@ -3111,30 +2922,30 @@ bool PeFormat::isExecutable() const
 	return !isDll();
 }
 
-bool PeFormat::getMachineCode(std::uint64_t &result) const
+bool PeFormat::getMachineCode(std::uint64_t& result) const
 {
 	result = formatParser->getMachineType();
 	return true;
 }
 
-bool PeFormat::getAbiVersion(std::uint64_t &result) const
+bool PeFormat::getAbiVersion(std::uint64_t& result) const
 {
 	// not in PE files
 	static_cast<void>(result);
 	return false;
 }
 
-bool PeFormat::getImageBaseAddress(std::uint64_t &imageBase) const
+bool PeFormat::getImageBaseAddress(std::uint64_t& imageBase) const
 {
 	imageBase = formatParser->getImageBaseAddress();
 	return true;
 }
 
-bool PeFormat::getEpAddress(std::uint64_t &result) const
+bool PeFormat::getEpAddress(std::uint64_t& result) const
 {
 	std::uint64_t tempResult = 0;
 
-	if(formatParser->getEpAddress(tempResult))
+	if (formatParser->getEpAddress(tempResult))
 	{
 		result = tempResult;
 		return true;
@@ -3143,11 +2954,11 @@ bool PeFormat::getEpAddress(std::uint64_t &result) const
 	return false;
 }
 
-bool PeFormat::getEpOffset(std::uint64_t &epOffset) const
+bool PeFormat::getEpOffset(std::uint64_t& epOffset) const
 {
 	std::uint64_t tempResult = 0;
 
-	if(formatParser->getEpOffset(tempResult))
+	if (formatParser->getEpOffset(tempResult))
 	{
 		epOffset = tempResult;
 		return true;
@@ -3158,33 +2969,27 @@ bool PeFormat::getEpOffset(std::uint64_t &epOffset) const
 
 Architecture PeFormat::getTargetArchitecture() const
 {
-	switch(formatParser->getMachineType())
+	switch (formatParser->getMachineType())
 	{
-		case PELIB_IMAGE_FILE_MACHINE_I386:
-		case PELIB_IMAGE_FILE_MACHINE_I486:
-		case PELIB_IMAGE_FILE_MACHINE_PENTIUM:
-			return Architecture::X86;
-		case PELIB_IMAGE_FILE_MACHINE_AMD64:
-			return Architecture::X86_64;
-		case PELIB_IMAGE_FILE_MACHINE_R3000_BIG:
-		case PELIB_IMAGE_FILE_MACHINE_R3000_LITTLE:
-		case PELIB_IMAGE_FILE_MACHINE_R4000:
-		case PELIB_IMAGE_FILE_MACHINE_R10000:
-		case PELIB_IMAGE_FILE_MACHINE_WCEMIPSV2:
-		case PELIB_IMAGE_FILE_MACHINE_MIPS16:
-		case PELIB_IMAGE_FILE_MACHINE_MIPSFPU:
-		case PELIB_IMAGE_FILE_MACHINE_MIPSFPU16:
-			return Architecture::MIPS;
-		case PELIB_IMAGE_FILE_MACHINE_ARM:
-		case PELIB_IMAGE_FILE_MACHINE_THUMB:
-		case PELIB_IMAGE_FILE_MACHINE_ARMNT:
-		case PELIB_IMAGE_FILE_MACHINE_ARM64:
-			return Architecture::ARM;
-		case PELIB_IMAGE_FILE_MACHINE_POWERPC:
-		case PELIB_IMAGE_FILE_MACHINE_POWERPCFP:
-			return Architecture::POWERPC;
-		default:
-			return Architecture::UNKNOWN;
+	case PELIB_IMAGE_FILE_MACHINE_I386:
+	case PELIB_IMAGE_FILE_MACHINE_I486:
+	case PELIB_IMAGE_FILE_MACHINE_PENTIUM: return Architecture::X86;
+	case PELIB_IMAGE_FILE_MACHINE_AMD64: return Architecture::X86_64;
+	case PELIB_IMAGE_FILE_MACHINE_R3000_BIG:
+	case PELIB_IMAGE_FILE_MACHINE_R3000_LITTLE:
+	case PELIB_IMAGE_FILE_MACHINE_R4000:
+	case PELIB_IMAGE_FILE_MACHINE_R10000:
+	case PELIB_IMAGE_FILE_MACHINE_WCEMIPSV2:
+	case PELIB_IMAGE_FILE_MACHINE_MIPS16:
+	case PELIB_IMAGE_FILE_MACHINE_MIPSFPU:
+	case PELIB_IMAGE_FILE_MACHINE_MIPSFPU16: return Architecture::MIPS;
+	case PELIB_IMAGE_FILE_MACHINE_ARM:
+	case PELIB_IMAGE_FILE_MACHINE_THUMB:
+	case PELIB_IMAGE_FILE_MACHINE_ARMNT:
+	case PELIB_IMAGE_FILE_MACHINE_ARM64: return Architecture::ARM;
+	case PELIB_IMAGE_FILE_MACHINE_POWERPC:
+	case PELIB_IMAGE_FILE_MACHINE_POWERPCFP: return Architecture::POWERPC;
+	default: return Architecture::UNKNOWN;
 	}
 }
 
@@ -3200,8 +3005,9 @@ std::size_t PeFormat::getDeclaredNumberOfSegments() const
 
 std::size_t PeFormat::getSectionTableOffset() const
 {
-	std::size_t res = getPeHeaderOffset() + formatParser->getSizeOfPeSignature() + PELIB_IMAGE_FILE_HEADER::size() + getOptionalHeaderSize();
-	if(res >= getFileLength())
+	std::size_t res = getPeHeaderOffset() + formatParser->getSizeOfPeSignature() + PELIB_IMAGE_FILE_HEADER::size()
+					+ getOptionalHeaderSize();
+	if (res >= getFileLength())
 	{
 		res = getPeHeaderOffset() + formatParser->getLoadedSizeOfNtHeaders();
 	}
@@ -3224,7 +3030,7 @@ std::size_t PeFormat::getSegmentTableEntrySize() const
 	return 0;
 }
 
-const PeLib::ImageLoader & PeFormat::getImageLoader() const
+const PeLib::ImageLoader& PeFormat::getImageLoader() const
 {
 	return file->imageLoader();
 }
@@ -3260,12 +3066,12 @@ std::size_t PeFormat::getPeHeaderOffset() const
 }
 
 /**
-* Get image bitability
-* @return 32=32-bit image, 64=64-bit image
-*
-* In some cases (e.g. FSG packer), offset of PE signature may be inside MZ header and
-* therefore this method may return lesser number that method @a getMzHeaderSize().
-*/
+ * Get image bitability
+ * @return 32=32-bit image, 64=64-bit image
+ *
+ * In some cases (e.g. FSG packer), offset of PE signature may be inside MZ header and
+ * therefore this method may return lesser number that method @a getMzHeaderSize().
+ */
 std::size_t PeFormat::getImageBitability() const
 {
 	return formatParser->getImageBitability();
@@ -3446,9 +3252,12 @@ bool PeFormat::isMissingDependency(std::string dllName) const
 
 	// If we have overriden set, use that one.
 	// Otherwise, use the default DLL set
-	if (std::empty(dllList)) {
+	if (std::empty(dllList))
+	{
 		return checkDefaultList(dllName) == false;
-	} else {
+	}
+	else
+	{
 		return dllList.find(dllName) == dllList.end();
 	}
 }
@@ -3462,7 +3271,7 @@ bool PeFormat::dllListFailedToLoad() const
 	return errorLoadingDllList;
 }
 
-bool PeFormat::initDllList(const std::string & dllListFile)
+bool PeFormat::initDllList(const std::string& dllListFile)
 {
 	// Do nothing if the DLL list is empty
 	if (dllListFile.length())
@@ -3477,7 +3286,7 @@ bool PeFormat::initDllList(const std::string & dllListFile)
 			return false;
 		}
 
-		while(stream)
+		while (stream)
 		{
 			std::getline(stream, oneLine);
 			std::transform(oneLine.begin(), oneLine.end(), oneLine.begin(), ::tolower);
@@ -3486,7 +3295,7 @@ bool PeFormat::initDllList(const std::string & dllListFile)
 	}
 
 	// Sanity check
-//	assert(isMissingDependency("kernel32.dll") == false);
+	//	assert(isMissingDependency("kernel32.dll") == false);
 	return true;
 }
 
@@ -3496,7 +3305,8 @@ bool PeFormat::initDllList(const std::string & dllListFile)
  */
 bool PeFormat::isDotNet() const
 {
-	if (!clrHeader || !metadataHeader) {
+	if (!clrHeader || !metadataHeader)
+	{
 		return false;
 	}
 
@@ -3543,13 +3353,12 @@ bool PeFormat::isDotNet() const
  */
 bool PeFormat::isPackedDotNet() const
 {
-	if(isDotNet())
+	if (isDotNet())
 	{
 		return false;
 	}
 
-	return importTable
-		&& importTable->getNumberOfLibraries() == 1
+	return importTable && importTable->getNumberOfLibraries() == 1
 		&& importTable->getNumberOfImportsInLibraryCaseInsensitive("mscoree.dll");
 }
 
@@ -3559,21 +3368,19 @@ bool PeFormat::isPackedDotNet() const
  *    version was not detected
  * @return @c true if input file original language is Visual Basic, @c false otherwise
  */
-bool PeFormat::isVisualBasic(std::uint64_t &version) const
+bool PeFormat::isVisualBasic(std::uint64_t& version) const
 {
 	version = 0;
-	return importTable && std::any_of(visualBasicLibrariesMap.begin(), visualBasicLibrariesMap.end(),
-		[&] (const auto &item)
-		{
-			if(this->importTable->getNumberOfImportsInLibraryCaseInsensitive(item.first))
-			{
-				version = item.second;
-				return true;
-			}
+	return importTable
+		&& std::any_of(visualBasicLibrariesMap.begin(), visualBasicLibrariesMap.end(), [&](const auto& item) {
+			   if (this->importTable->getNumberOfImportsInLibraryCaseInsensitive(item.first))
+			   {
+				   version = item.second;
+				   return true;
+			   }
 
-			return false;
-		}
-	);
+			   return false;
+		   });
 }
 
 /**
@@ -3581,7 +3388,7 @@ bool PeFormat::isVisualBasic(std::uint64_t &version) const
  * @param dllFlags Into this parameter DLL flags will be stored
  * @return @c true if file is DLL and flags are successfully detected, @c false otherwise
  */
-bool PeFormat::getDllFlags(std::uint64_t &dllFlags) const
+bool PeFormat::getDllFlags(std::uint64_t& dllFlags) const
 {
 	return formatParser->getDllFlags(dllFlags);
 }
@@ -3593,10 +3400,10 @@ bool PeFormat::getDllFlags(std::uint64_t &dllFlags) const
  *
  * If function returns @c false, @a relocs is left unchanged
  */
-bool PeFormat::getNumberOfBaseRelocationBlocks(std::uint64_t &relocs) const
+bool PeFormat::getNumberOfBaseRelocationBlocks(std::uint64_t& relocs) const
 {
 	std::uint64_t addr, size;
-	if(!getDataDirectoryRelative(PELIB_IMAGE_DIRECTORY_ENTRY_BASERELOC, addr, size) || !addr)
+	if (!getDataDirectoryRelative(PELIB_IMAGE_DIRECTORY_ENTRY_BASERELOC, addr, size) || !addr)
 	{
 		return false;
 	}
@@ -3612,16 +3419,16 @@ bool PeFormat::getNumberOfBaseRelocationBlocks(std::uint64_t &relocs) const
  *
  * If function returns @c false, @a relocs is left unchanged
  */
-bool PeFormat::getNumberOfRelocations(std::uint64_t &relocs) const
+bool PeFormat::getNumberOfRelocations(std::uint64_t& relocs) const
 {
 	std::uint64_t blocks = 0;
-	if(!getNumberOfBaseRelocationBlocks(blocks))
+	if (!getNumberOfBaseRelocationBlocks(blocks))
 	{
 		return false;
 	}
 	relocs = 0;
 
-	for(std::uint64_t i = 0; i < blocks; ++i)
+	for (std::uint64_t i = 0; i < blocks; ++i)
 	{
 		relocs += formatParser->getNumberOfRelocationData(i);
 	}
@@ -3638,7 +3445,7 @@ bool PeFormat::getNumberOfRelocations(std::uint64_t &relocs) const
  *
  * If method returns @c false, @a relAddr and @a size are left unchanged.
  */
-bool PeFormat::getDataDirectoryRelative(std::uint64_t index, std::uint64_t &relAddr, std::uint64_t &size) const
+bool PeFormat::getDataDirectoryRelative(std::uint64_t index, std::uint64_t& relAddr, std::uint64_t& size) const
 {
 	return formatParser->getDataDirectoryRelative(index, relAddr, size);
 }
@@ -3652,20 +3459,20 @@ bool PeFormat::getDataDirectoryRelative(std::uint64_t index, std::uint64_t &relA
  *
  * If method returns @c false, @a absAddr and @a size are left unchanged.
  */
-bool PeFormat::getDataDirectoryAbsolute(std::uint64_t index, std::uint64_t &absAddr, std::uint64_t &size) const
+bool PeFormat::getDataDirectoryAbsolute(std::uint64_t index, std::uint64_t& absAddr, std::uint64_t& size) const
 {
 	return formatParser->getDataDirectoryAbsolute(index, absAddr, size);
 }
 
 /**
-* Special for .NET data directory to correctly process data directory on 32-bit binaries
-* @param relAddr Into this parameter is stored relative virtual address of directory
-* @param size Into this parameter is stored size of directory
-* @return @c true if index of selected directory is valid, @c false otherwise
-*
-* If method returns @c false, @a relAddr and @a size are left unchanged.
-*/
-bool PeFormat::getComDirectoryRelative(std::uint64_t &relAddr, std::uint64_t &size) const
+ * Special for .NET data directory to correctly process data directory on 32-bit binaries
+ * @param relAddr Into this parameter is stored relative virtual address of directory
+ * @param size Into this parameter is stored size of directory
+ * @return @c true if index of selected directory is valid, @c false otherwise
+ *
+ * If method returns @c false, @a relAddr and @a size are left unchanged.
+ */
+bool PeFormat::getComDirectoryRelative(std::uint64_t& relAddr, std::uint64_t& size) const
 {
 	return formatParser->getComDirectoryRelative(relAddr, size);
 }
@@ -3677,7 +3484,7 @@ bool PeFormat::getComDirectoryRelative(std::uint64_t &relAddr, std::uint64_t &si
  *
  * If file has more sections with name equal to @a secName, then is returned first such section.
  */
-const PeCoffSection* PeFormat::getPeSection(const std::string &secName) const
+const PeCoffSection* PeFormat::getPeSection(const std::string& secName) const
 {
 	return dynamic_cast<const PeCoffSection*>(getSection(secName));
 }
@@ -3797,24 +3604,19 @@ void PeFormat::scanForSectionAnomalies(unsigned anomaliesLimit)
 			const PeCoffSection* lastSec = (nSecs) ? getPeSection(nSecs - 1) : nullptr;
 			if (epSec == lastSec)
 			{
-				anomalies.emplace_back(
-					"EpInLastSection", "Entry point in the last section"
-				);
+				anomalies.emplace_back("EpInLastSection", "Entry point in the last section");
 			}
 
 			// scan EP in writable section
 			if (epSec->getPeCoffFlags() & PELIB_IMAGE_SCN_MEM_WRITE)
 			{
-				anomalies.emplace_back(
-					"EpInWritableSection", "Entry point in writable section"
-				);
+				anomalies.emplace_back("EpInWritableSection", "Entry point in writable section");
 			}
 			// if we can't get valid offset then the EP is outside of the physical file
 			std::uint64_t epOffset = 0;
 			if (!getEpOffset(epOffset))
 			{
-				anomalies.emplace_back(
-						"EpInMemoryOnly", "Entry point in memory-only part of a section");
+				anomalies.emplace_back("EpInMemoryOnly", "Entry point in memory-only part of a section");
 			}
 		}
 		else
@@ -3851,9 +3653,7 @@ void PeFormat::scanForSectionAnomalies(unsigned anomaliesLimit)
 			if (!duplName && secNames.find(name) != secNames.end())
 			{
 				anomalies.emplace_back(
-						"DuplicitSectionNames",
-						"Multiple sections with name " + replaceNonprintableChars(name)
-				);
+					"DuplicitSectionNames", "Multiple sections with name " + replaceNonprintableChars(name));
 				duplSecNames.insert(name);
 				duplName = true;
 			}
@@ -3864,10 +3664,7 @@ void PeFormat::scanForSectionAnomalies(unsigned anomaliesLimit)
 			{
 				if (!duplName)
 				{
-					anomalies.emplace_back(
-							"PackerSectionName",
-							"Packer section name: " + pname
-					);
+					anomalies.emplace_back("PackerSectionName", "Packer section name: " + pname);
 				}
 			}
 			// scan for unusual section names
@@ -3875,10 +3672,7 @@ void PeFormat::scanForSectionAnomalies(unsigned anomaliesLimit)
 			{
 				if (!duplName)
 				{
-					anomalies.emplace_back(
-							"UnusualSectionName",
-							"Unusual section name: " + pname
-					);
+					anomalies.emplace_back("UnusualSectionName", "Unusual section name: " + pname);
 				}
 			}
 
@@ -3886,29 +3680,21 @@ void PeFormat::scanForSectionAnomalies(unsigned anomaliesLimit)
 			auto characIt = usualSectionCharacteristics.find(name);
 			if (characIt != usualSectionCharacteristics.end() && characIt->second != flags)
 			{
-				anomalies.emplace_back(
-						"UnusualSectionFlags",
-						"Section " + pname + " has unusual characteristics"
-				);
+				anomalies.emplace_back("UnusualSectionFlags", "Section " + pname + " has unusual characteristics");
 			}
 		}
 
 		// scan size over 100MB
 		if (sec->getSizeInFile() >= 100000000UL)
 		{
-			anomalies.emplace_back(
-					"LargeSection",
-					"Section " + pmsgName + " has size over 100MB"
-			);
+			anomalies.emplace_back("LargeSection", "Section " + pmsgName + " has size over 100MB");
 		}
 
 		// scan section marked uninitialized but contains data
 		if ((flags & PELIB_IMAGE_SCN_CNT_UNINITIALIZED_DATA) && (sec->getOffset() != 0 || sec->getSizeInFile() != 0))
 		{
 			anomalies.emplace_back(
-					"UninitSectionHasData",
-					"Section " + pmsgName + " is marked uninitialized but contains data"
-			);
+				"UninitSectionHasData", "Section " + pmsgName + " is marked uninitialized but contains data");
 		}
 
 		for (std::size_t j = i + 1; j < nSecs; j++)
@@ -3926,21 +3712,20 @@ void PeFormat::scanForSectionAnomalies(unsigned anomaliesLimit)
 
 			// scan for overlapping sections.
 			// DO NOT check if the previous section has zero size.
-			if(sec->getSizeInFile() != 0)
+			if (sec->getSizeInFile() != 0)
 			{
 				auto secStart = sec->getOffset();
 				auto secEnd = secStart + sec->getSizeInFile();
 				const auto cmpName = cmpSec->getName();
 				auto cmpSecStart = cmpSec->getOffset();
 				auto cmpSecEnd = cmpSecStart + cmpSec->getSizeInFile();
-				if((secStart <= cmpSecStart && cmpSecStart < secEnd) ||
-					(cmpSecStart <= secStart && secStart < cmpSecEnd))
+				if ((secStart <= cmpSecStart && cmpSecStart < secEnd)
+					|| (cmpSecStart <= secStart && secStart < cmpSecEnd))
 				{
 					const std::string cmpMsgName = cmpName.empty() ? std::to_string(cmpSec->getIndex()) : cmpName;
 					anomalies.emplace_back(
 						"OverlappingSections",
-						"Sections " + pmsgName + " and " + replaceNonprintableChars(cmpMsgName) + " overlap"
-					);
+						"Sections " + pmsgName + " and " + replaceNonprintableChars(cmpMsgName) + " overlap");
 				}
 			}
 		}
@@ -3971,15 +3756,18 @@ void PeFormat::scanForResourceAnomalies()
 		// scan for resource size over 100MB
 		if (res->getSizeInFile() >= 100000000UL)
 		{
-			anomalies.emplace_back("LargeResource", "Resource " + replaceNonprintableChars(msgName) + " has size over 100MB");
+			anomalies.emplace_back(
+				"LargeResource", "Resource " + replaceNonprintableChars(msgName) + " has size over 100MB");
 		}
 
 		// scan for resource stretched over multiple sections
 		std::uint64_t resAddr;
-		if (res->isValidOffset() && getAddressFromOffset(resAddr, res->getOffset()) &&
-			isObjectStretchedOverSections(resAddr, res->getSizeInFile()))
+		if (res->isValidOffset() && getAddressFromOffset(resAddr, res->getOffset())
+			&& isObjectStretchedOverSections(resAddr, res->getSizeInFile()))
 		{
-			anomalies.emplace_back("StretchedResource", "Resource " + replaceNonprintableChars(msgName) + " is stretched over multiple sections");
+			anomalies.emplace_back(
+				"StretchedResource",
+				"Resource " + replaceNonprintableChars(msgName) + " is stretched over multiple sections");
 		}
 	}
 }
@@ -3990,11 +3778,11 @@ void PeFormat::scanForResourceAnomalies()
 void PeFormat::scanForImportAnomalies()
 {
 	// scan for import stretched over multiple sections
-	for(const auto &impRange : formatParser->getImportDirectoryOccupiedAddresses())
+	for (const auto& impRange: formatParser->getImportDirectoryOccupiedAddresses())
 	{
 		std::uint64_t impAddr;
-		if (getAddressFromOffset(impAddr, impRange.getStart()) &&
-			isObjectStretchedOverSections(impAddr, impRange.getSize()))
+		if (getAddressFromOffset(impAddr, impRange.getStart())
+			&& isObjectStretchedOverSections(impAddr, impRange.getSize()))
 		{
 			std::string msgName;
 			auto imp = getImport(impAddr);
@@ -4015,7 +3803,6 @@ void PeFormat::scanForImportAnomalies()
 					{
 						msgName = std::to_string(ordNum);
 					}
-
 				}
 				else
 				{
@@ -4023,7 +3810,9 @@ void PeFormat::scanForImportAnomalies()
 				}
 			}
 
-			anomalies.emplace_back("StretchedImportTable", "Import " + replaceNonprintableChars(msgName) + " is stretched over multiple sections");
+			anomalies.emplace_back(
+				"StretchedImportTable",
+				"Import " + replaceNonprintableChars(msgName) + " is stretched over multiple sections");
 		}
 	}
 }
@@ -4034,11 +3823,11 @@ void PeFormat::scanForImportAnomalies()
 void PeFormat::scanForExportAnomalies()
 {
 	// scan for export stretched over multiple sections
-	for(const auto &expRange : formatParser->getExportDirectoryOccupiedAddresses())
+	for (const auto& expRange: formatParser->getExportDirectoryOccupiedAddresses())
 	{
 		std::uint64_t expAddr;
-		if (getAddressFromOffset(expAddr, expRange.getStart()) &&
-			isObjectStretchedOverSections(expAddr, expRange.getSize()))
+		if (getAddressFromOffset(expAddr, expRange.getStart())
+			&& isObjectStretchedOverSections(expAddr, expRange.getSize()))
 		{
 			std::string msgName;
 			auto exp = getExport(expAddr);
@@ -4059,7 +3848,6 @@ void PeFormat::scanForExportAnomalies()
 					{
 						msgName = std::to_string(ordNum);
 					}
-
 				}
 				else
 				{
@@ -4067,7 +3855,9 @@ void PeFormat::scanForExportAnomalies()
 				}
 			}
 
-			anomalies.emplace_back("StretchedExportTable", "Export " + replaceNonprintableChars(msgName) + " is stretched over multiple sections");
+			anomalies.emplace_back(
+				"StretchedExportTable",
+				"Export " + replaceNonprintableChars(msgName) + " is stretched over multiple sections");
 		}
 	}
 }
