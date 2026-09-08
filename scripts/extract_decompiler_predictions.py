@@ -543,6 +543,39 @@ def resolve_corpus_binary(corpus: Path, name: str) -> Path | None:
     return None
 
 
+# How many lines of a failing decompiler's output to keep from each end.
+#
+# This used to be `err[-3:]` -- the tail only -- and for the failure this gate
+# actually reports that is the wrong end of the output. LLVM prints the
+# assertion text FIRST and then a stack dump whose last lines are the pass name
+# and the frame numbers, so the three lines that survived were
+# "Stack dump: | 0. Program arguments: ... | 1. Running pass '...'" and the
+# sentence naming the file, line and condition was dropped. The one line that
+# says what went wrong is the one that was thrown away.
+_ERR_HEAD_LINES = 6
+_ERR_TAIL_LINES = 3
+
+
+def summarise_failure_output(output: str) -> str:
+    """One line describing why a decompiler run failed, from its own output.
+
+    Keeps both ends: an assertion or a fatal error is at the head, the pass and
+    the arguments are at the tail, and either can be the useful half.
+    """
+    lines = (output or "").strip().splitlines()
+    lines = [line.strip() for line in lines if line.strip()]
+    if not lines:
+        return "no output"
+    if len(lines) <= _ERR_HEAD_LINES + _ERR_TAIL_LINES:
+        return " | ".join(lines)
+    dropped = len(lines) - _ERR_HEAD_LINES - _ERR_TAIL_LINES
+    return " | ".join(
+        lines[:_ERR_HEAD_LINES]
+        + [f"... {dropped} more line(s) ..."]
+        + lines[-_ERR_TAIL_LINES:]
+    )
+
+
 def decompile_one(
     dec: Path,
     binary: Path,
@@ -569,9 +602,8 @@ def decompile_one(
         print(f"extract: timeout {binary.name}", file=sys.stderr)
         return False, [], []
     if proc.returncode != 0:
-        err = (proc.stderr or proc.stdout or "").strip().splitlines()
-        tail = " | ".join(err[-3:]) if err else "no output"
-        print(f"extract: {binary.name} rc={proc.returncode}: {tail}", file=sys.stderr)
+        detail = summarise_failure_output(proc.stderr or proc.stdout or "")
+        print(f"extract: {binary.name} rc={proc.returncode}: {detail}", file=sys.stderr)
         return False, [], []
     cfg_candidates = (
         job_work / f"{binary.name}.config.json",

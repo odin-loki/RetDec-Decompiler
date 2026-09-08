@@ -52,6 +52,7 @@ CHECKS=(
 	"ci-smoke  algorithm-recovery labels:::${PY} tests/algorithm_recovery/test_labels.py"
 	"ci-smoke  algorithm-recovery gate:::${PY} tests/algorithm_recovery/test_regression_gate.py"
 	"ci-smoke  algorithm-recovery corpus:::${PY} tests/algorithm_recovery/test_corpus_resolve.py"
+	"ci-smoke  decompile failure summary:::${PY} tests/algorithm_recovery/test_failure_summary.py"
 	"ci-smoke  triton gate:::${PY} tests/algorithm_recovery/test_triton_gate.py"
 	"ci-smoke  ship checklist:::bash scripts/ship_checklist.sh"
 	"ci-smoke  doctor:::bash scripts/doctor.sh"

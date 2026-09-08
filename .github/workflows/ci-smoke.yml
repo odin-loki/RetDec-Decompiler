@@ -122,6 +122,9 @@ jobs:
       - name: Corpus binary resolution tests
         run: python tests/algorithm_recovery/test_corpus_resolve.py
 
+      - name: Decompiler failure summary tests
+        run: python tests/algorithm_recovery/test_failure_summary.py
+
       - name: Triton differential gate smoke
         run: python tests/algorithm_recovery/test_triton_gate.py
 
