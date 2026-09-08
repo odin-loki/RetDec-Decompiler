@@ -45,7 +45,9 @@ EXTRA_CXXFLAGS="${EXTRA_CXXFLAGS:-}"
 
 # Header-only dependencies that are vendored in the tree, so they cost nothing
 # to use here.  Everything else under deps/ is a download stub and stays out.
-INCLUDES="-Iinclude -Ideps/rapidjson/include -Ideps/whereami"
+# deps/elfio is header-only and pulls in nothing else, so the ELF reader's
+# bounds can be driven here even though src/fileformat as a whole needs LLVM.
+INCLUDES="-Iinclude -Ideps/rapidjson/include -Ideps/whereami -Ideps/elfio/include"
 
 # RAPIDJSON_HAS_STDSTRING mirrors deps/rapidjson/CMakeLists.txt; retdec/serdes
 # passes std::string straight to rapidjson and does not compile without it.
@@ -191,7 +193,7 @@ readonly PARTIAL_SUITES=(
 	# which publicly links LLVM. These three do not: the lattice, the DER
 	# decoder, and CharacterIterator, whose header includes only <cctype> and
 	# <iterator>.
-	"fileformat:format_lattice_test.cpp asn1_test.cpp character_iterator_test.cpp"
+	"fileformat:format_lattice_test.cpp asn1_test.cpp character_iterator_test.cpp elfio_bounds_test.cpp"
 )
 
 # Sources inside an included module that must NOT be compiled here, mirroring a

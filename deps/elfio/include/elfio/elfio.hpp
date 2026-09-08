@@ -398,6 +398,33 @@ class elfio
             return 0;
         }
 
+        // DECOMPILER BEGIN
+        // `offset + i * entry_size < real_file_length` was meant to stop the
+        // loop once the section header table runs off the end of the file. With
+        // entry_size == 0 -- which e_shentsize is free to be, it comes straight
+        // out of the header -- the product is always 0 and the bound never
+        // moves, so the loop runs the full declared count.
+        //
+        // Found by fuzz_elf: a 104-byte input declaring e_shnum = 24415 and
+        // e_shentsize = 0 produced 24,415 section objects, 235 per byte of
+        // input, and every retdec pass that walks sections then paid for them.
+        // libFuzzer reported that unit at 23 seconds.
+        //
+        // A section header is entry_size bytes, so a file cannot hold more than
+        // (real_file_length - offset) / entry_size of them, and with entry_size
+        // of zero it holds none: a header table whose entries have no size does
+        // not describe anything. The division is done once rather than folded
+        // into the loop condition so that the bound is a count, which is what it
+        // is.
+        if ( 0 == entry_size ) {
+            return 0;
+        }
+        const Elf64_Off room = ( real_file_length - offset ) / entry_size;
+        if ( room < num ) {
+            num = (Elf_Half)room;
+        }
+        // DECOMPILER END
+
         for ( Elf_Half i = 0; i < num && offset + i * entry_size < real_file_length; ++i ) {
             section* sec = create_section();
             if ( 0 == sec ) {
@@ -435,6 +462,20 @@ class elfio
         if ( offset >= real_file_length ) {
             return false;
         }
+
+        // DECOMPILER BEGIN
+        // The same inert bound as in load_sections above, for the same reason:
+        // e_phentsize of zero makes `offset + i * entry_size` constant. Not
+        // reported by a fuzz finding, but it is the identical expression over
+        // the identical kind of header field.
+        if ( 0 == entry_size ) {
+            return false;
+        }
+        const Elf64_Off room = ( real_file_length - offset ) / entry_size;
+        if ( room < num ) {
+            num = (Elf_Half)room;
+        }
+        // DECOMPILER END
 
         for ( Elf_Half i = 0; i < num && offset + i * entry_size < real_file_length; ++i ) {
             segment* seg;
