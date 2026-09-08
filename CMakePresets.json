@@ -5,7 +5,6 @@
     "minor": 26,
     "patch": 0
   },
-
   "configurePresets": [
     {
       "name": "_gen",
@@ -13,6 +12,31 @@
       "generator": "Ninja",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "_optionDefaults",
+      "hidden": true,
+      "description": "Every cache variable any preset below sets, at the default cmake/options.cmake gives it. A preset's cacheVariables reach the configure the way -D does and overwrite the cache; a variable a preset does NOT name keeps whatever the previous configure left in that build directory, and the presets below share two of them. Inheriting this gives every preset the same key set, so nothing can carry over. RETDEC_BUNDLED_OPENSSL is not here because its default is platform-dependent -- it lives in _pathWin and _pathUnix, which are per-directory anyway. scripts/ci/check_cmake_presets.py holds the invariant.",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "OFF",
+        "CMAKE_C_FLAGS": "",
+        "CMAKE_CXX_FLAGS": "",
+        "CMAKE_EXE_LINKER_FLAGS": "",
+        "CMAKE_SHARED_LINKER_FLAGS": "",
+        "RETDEC_TESTS": "OFF",
+        "RETDEC_USE_ADDRESS_SANITIZER": "OFF",
+        "RETDEC_ENABLE_RETDEC": "OFF",
+        "RETDEC_ENABLE_RETDEC_DECOMPILER": "OFF",
+        "RETDEC_ENABLE_FILEFORMAT": "OFF",
+        "RETDEC_ENABLE_BIN2LLVMIR": "OFF",
+        "RETDEC_ENABLE_LLVMIR2HLL": "OFF",
+        "RETDEC_ENABLE_DEMANGLER": "OFF",
+        "RETDEC_ENABLE_COMMON": "OFF",
+        "RETDEC_ENABLE_CONFIG": "OFF",
+        "RETDEC_ENABLE_CUDA_ACCEL": "OFF",
+        "RETDEC_REQUIRE_QT6": "OFF"
       }
     },
     {
@@ -24,6 +48,9 @@
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "RETDEC_BUNDLED_OPENSSL": "ON"
       }
     },
     {
@@ -35,6 +62,9 @@
         "type": "notEquals",
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "RETDEC_BUNDLED_OPENSSL": "OFF"
       }
     },
     {
@@ -43,11 +73,10 @@
       "inherits": ["_gen"],
       "description": "Do not inherit _pathWin and _pathUnix together — CMake disables the preset when either path preset is inactive."
     },
-
     {
       "name": "core-debug",
       "displayName": "RetDec Core (Debug, native)",
-      "inherits": ["_gen", "_pathUnix"],
+      "inherits": ["_gen", "_pathUnix", "_optionDefaults"],
       "condition": {
         "type": "notEquals",
         "lhs": "${hostSystemName}",
@@ -66,11 +95,10 @@
         "RETDEC_ENABLE_CONFIG": "ON"
       }
     },
-
     {
       "name": "core-debug-msvc",
       "displayName": "RetDec Core (Debug, MSVC — build/windows)",
-      "inherits": ["_gen", "_pathWin"],
+      "inherits": ["_gen", "_pathWin", "_optionDefaults"],
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -89,11 +117,10 @@
         "RETDEC_ENABLE_CONFIG": "ON"
       }
     },
-
     {
       "name": "core-release",
       "displayName": "RetDec Core (Release + LTO, native)",
-      "inherits": ["_gen", "_pathUnix"],
+      "inherits": ["_gen", "_pathUnix", "_optionDefaults"],
       "condition": {
         "type": "notEquals",
         "lhs": "${hostSystemName}",
@@ -113,11 +140,10 @@
         "RETDEC_ENABLE_CONFIG": "ON"
       }
     },
-
     {
       "name": "core-release-msvc",
       "displayName": "RetDec Core (Release + LTO, MSVC — build/windows)",
-      "inherits": ["_gen", "_pathWin"],
+      "inherits": ["_gen", "_pathWin", "_optionDefaults"],
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -137,20 +163,18 @@
         "RETDEC_ENABLE_CONFIG": "ON"
       }
     },
-
     {
       "name": "core-asan",
       "displayName": "RetDec Core (Debug + AddressSanitizer)",
-      "inherits": "core-debug",
+      "inherits": ["core-debug", "_optionDefaults"],
       "cacheVariables": {
         "RETDEC_USE_ADDRESS_SANITIZER": "ON"
       }
     },
-
     {
       "name": "core-coverage",
       "displayName": "RetDec Core (Debug + gcov line/branch coverage)",
-      "inherits": "core-debug",
+      "inherits": ["core-debug", "_optionDefaults"],
       "cacheVariables": {
         "CMAKE_C_FLAGS": "--coverage -O0 -fno-inline",
         "CMAKE_CXX_FLAGS": "--coverage -O0 -fno-inline",
@@ -158,11 +182,10 @@
         "CMAKE_SHARED_LINKER_FLAGS": "--coverage"
       }
     },
-
     {
       "name": "full-linux-debug",
       "displayName": "Full in-tree build (Debug, tests, Qt6 GUI required; CUDA accel opt-in)",
-      "inherits": ["_gen", "_pathUnix"],
+      "inherits": ["_gen", "_pathUnix", "_optionDefaults"],
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "RETDEC_TESTS": "ON",
@@ -170,11 +193,10 @@
         "RETDEC_REQUIRE_QT6": "ON"
       }
     },
-
     {
       "name": "full-linux-release",
       "displayName": "Full in-tree build (Release + LTO, tests, Qt6 GUI required; CUDA accel opt-in)",
-      "inherits": ["_gen", "_pathUnix"],
+      "inherits": ["_gen", "_pathUnix", "_optionDefaults"],
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
@@ -183,11 +205,10 @@
         "RETDEC_REQUIRE_QT6": "ON"
       }
     },
-
     {
       "name": "full-windows-release",
       "displayName": "Full in-tree build (Windows, Release, bundled OpenSSL, Qt6 GUI; CUDA accel opt-in)",
-      "inherits": ["_gen", "_pathWin"],
+      "inherits": ["_gen", "_pathWin", "_optionDefaults"],
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -202,11 +223,10 @@
         "RETDEC_BUNDLED_OPENSSL": "ON"
       }
     },
-
     {
       "name": "full-windows-debug",
       "displayName": "Full in-tree build (Windows, Debug, bundled OpenSSL, Qt6 GUI; CUDA accel opt-in)",
-      "inherits": ["_gen", "_pathWin"],
+      "inherits": ["_gen", "_pathWin", "_optionDefaults"],
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -221,7 +241,6 @@
       }
     }
   ],
-
   "buildPresets": [
     {
       "name": "core-debug",
@@ -264,7 +283,6 @@
       "configurePreset": "full-windows-debug"
     }
   ],
-
   "testPresets": [
     {
       "name": "core-debug",
