@@ -128,21 +128,60 @@ extern "C" void proof_hex_capacity_is_exact_or_zero()
 	}
 }
 
-/// Spec property 4, second half: the index arithmetic is total for every length
-/// a std::string can have, which conversion.cpp:171's `unsigned int` counter is
-/// not.
+/// Spec property 4, second half: for a pair index inside the run, the two
+/// character indices hexToBytes forms are inside the input and neither wraps.
+///
+/// This states a property of the arithmetic, over the kernel's own index type,
+/// and it is worth having: it is what says the `at + 1` lookahead cannot leave
+/// the buffer. It is NOT the claim it used to carry -- that the loop is total
+/// for every length a std::string can have, unlike conversion.cpp:171's
+/// `unsigned int` counter. That is a termination property at 2^32, which no
+/// bounded model checker unwinds to, and this proof could never have seen it:
+/// it declared its own std::size_t and reasoned about that, so it held whatever
+/// the kernel counted with. text_transcode.h carries a static_assert for that
+/// claim instead, which a narrower type fails to compile.
 extern "C" void proof_hex_index_arithmetic_is_total()
 {
-	const std::size_t n = nondet_size();
-	const std::size_t i = nondet_size();
+	using retdec::utils::txt::HexIndex;
+	const HexIndex n = static_cast<HexIndex>(nondet_size());
+	const HexIndex i = static_cast<HexIndex>(nondet_size());
 	__ESBMC_assume(i < (n >> 1));
 
-	// The two indices hexToBytes forms for pair i. Neither can wrap and both
-	// stay inside the run, for every n up to SIZE_MAX.
-	const std::size_t at = i * kHexCharsPerByte;
+	const HexIndex at = i * kHexCharsPerByte;
 	assert(at >= i);     // no wrap in the doubling
 	assert(at + 1 > at); // no wrap in the lookahead
 	assert(at + 1 < n);  // both inside the input
+}
+
+/// And the kernel itself, run over a symbolic buffer: every character it reads
+/// is one ESBMC's array-bounds check accounts for, so the indices above are
+/// checked against the code rather than against a copy of one of its lines.
+extern "C" void proof_hex_to_bytes_reads_no_character_outside_the_input()
+{
+	// Ten characters: five pairs, more than the fixed-size buffers elsewhere
+	// in this file and small enough to unwind. The length is symbolic within
+	// it, so the odd-length refusal and every shorter run are covered too.
+	char in[10];
+	for (std::size_t k = 0; k < sizeof(in); ++k)
+		in[k] = static_cast<char>(nondet_u8());
+
+	const std::size_t n = nondet_size() % (sizeof(in) + 1);
+	std::uint8_t out[sizeof(in) / kHexCharsPerByte] = {};
+	std::size_t written = SIZE_MAX;
+
+	const bool ok = retdec::utils::txt::hexToBytes(in, n, out, sizeof(out), written);
+
+	// written is set on both paths, and on success it is exactly the pairs.
+	if (ok)
+	{
+		assert((n & 1u) == 0);
+		assert(written == n >> 1);
+		assert(written <= sizeof(out));
+	}
+	else
+	{
+		assert(written == 0);
+	}
 }
 
 extern "C" void proof_bits_capacity_is_exact_or_zero()

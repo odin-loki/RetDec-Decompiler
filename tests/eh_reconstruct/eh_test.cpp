@@ -632,6 +632,64 @@ TEST(DwarfHelpers, ReadEncodedPtr_Sdata4_Negative)
 	EXPECT_EQ((int64_t)val, -0x10);
 }
 
+// The signed encodings used to read an uninitialised stack buffer when the
+// cursor left the mapped range: readBytes leaves the buffer untouched and
+// returns 0, and the return value was discarded. These read from an address
+// FlatBin does not map, so nothing is copied and the answer must come from a
+// defined value rather than from whatever was on the stack.
+TEST(DwarfHelpers, ReadEncodedPtr_SignedFormatsOffTheEndAreZero)
+{
+	FlatBin fb;
+	const uint64_t unmapped = fb.base_ + 0x100000; // past everything FlatBin holds
+	ASSERT_FALSE(fb.isMapped(unmapped));
+
+	for (uint8_t enc: {uint8_t(0x0A), uint8_t(0x0B), uint8_t(0x0C)})
+	{
+		uint64_t cur = unmapped;
+		const uint64_t val = fb.readEncodedPtr(cur, enc, 0);
+		EXPECT_EQ(0u, val) << "encoding 0x" << std::hex << int(enc);
+	}
+}
+
+TEST(DwarfHelpers, ReadEncodedPtr_SignedFormatsAdvanceTheCursor)
+{
+	FlatBin fb;
+	const uint64_t vma = fb.base_ + 0x1000;
+	struct Case
+	{
+		uint8_t enc;
+		uint64_t width;
+	};
+	for (const Case& c: {Case{0x0A, 2}, Case{0x0B, 4}, Case{0x0C, 8}})
+	{
+		uint64_t cur = vma;
+		(void)fb.readEncodedPtr(cur, c.enc, 0);
+		EXPECT_EQ(vma + c.width, cur) << "encoding 0x" << std::hex << int(c.enc);
+	}
+}
+
+TEST(DwarfHelpers, ReadEncodedPtr_Sdata2_Negative)
+{
+	FlatBin fb;
+	const uint64_t vma = fb.base_ + 0x1000;
+	fb.writeU16(vma, 0xFFF0u); // -0x10 as int16_t
+
+	uint64_t cur = vma;
+	const uint64_t val = fb.readEncodedPtr(cur, 0x0A, 0);
+	EXPECT_EQ(-0x10, (int64_t)val);
+}
+
+TEST(DwarfHelpers, ReadEncodedPtr_Sdata8_Negative)
+{
+	FlatBin fb;
+	const uint64_t vma = fb.base_ + 0x1000;
+	fb.writeU64(vma, 0xFFFFFFFFFFFFFFF0ull); // -0x10 as int64_t
+
+	uint64_t cur = vma;
+	const uint64_t val = fb.readEncodedPtr(cur, 0x0C, 0);
+	EXPECT_EQ(-0x10, (int64_t)val);
+}
+
 // ─── Itanium EH tests ─────────────────────────────────────────────────────────
 
 /**

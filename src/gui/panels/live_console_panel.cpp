@@ -465,8 +465,20 @@ bool LiveConsolePanel::saveAs(const QString& filePath)
 		lastError_ = f.errorString();
 		return false;
 	}
-	if (text_) f.write(text_->toPlainText().toUtf8());
+	// The open failure above is handled; the write was not. QFile buffers, so
+	// a full disk or a disconnected share can surface at write, at flush or at
+	// close -- and all three were dropped, after which this cleared lastError_
+	// and returned true. onSaveAs branches on nothing else, so the status line
+	// read "saved <path>" for a log that had not been written.
+	const QByteArray bytes = text_ ? text_->toPlainText().toUtf8() : QByteArray();
+	const qint64 written = f.write(bytes);
+	const bool flushed = f.flush();
 	f.close();
+	if (written != bytes.size() || !flushed || f.error() != QFileDevice::NoError)
+	{
+		lastError_ = f.errorString();
+		return false;
+	}
 	lastError_.clear();
 	return true;
 }

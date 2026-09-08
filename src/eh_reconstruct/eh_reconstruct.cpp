@@ -137,33 +137,26 @@ uint64_t IBinaryView::readEncodedPtr(uint64_t& cursor, uint8_t encoding, uint64_
 	case 0x09: // sleb128
 		value = (uint64_t)readSLEB128(cursor);
 		break;
-	case 0x0a: { // sdata2
-		int16_t sv;
-		uint8_t b[2];
-		readBytes(cursor, b, 2);
+	// The three signed cases used to declare an uninitialised scratch buffer,
+	// call readBytes, and memcpy out of it without looking at how many bytes
+	// came back. readBytes leaves the buffer untouched when the address is not
+	// mapped -- so an FDE whose CIE says DW_EH_PE_sdata4, the commonest
+	// encoding there is, took its value from four indeterminate stack bytes
+	// once the cursor ran past the end of the section. They go through the
+	// readers above instead, which zero-fill and are the one place this
+	// decision is made.
+	case 0x0a: // sdata2
+		value = (uint64_t)(int64_t)(int16_t)readU16LE(cursor);
 		cursor += 2;
-		std::memcpy(&sv, b, 2);
-		value = (uint64_t)(int64_t)sv;
 		break;
-	}
-	case 0x0b: { // sdata4
-		int32_t sv;
-		uint8_t b[4];
-		readBytes(cursor, b, 4);
+	case 0x0b: // sdata4
+		value = (uint64_t)(int64_t)(int32_t)readU32LE(cursor);
 		cursor += 4;
-		std::memcpy(&sv, b, 4);
-		value = (uint64_t)(int64_t)sv;
 		break;
-	}
-	case 0x0c: { // sdata8
-		int64_t sv;
-		uint8_t b[8];
-		readBytes(cursor, b, 8);
+	case 0x0c: // sdata8
+		value = (uint64_t)(int64_t)readU64LE(cursor);
 		cursor += 8;
-		std::memcpy(&sv, b, 8);
-		value = (uint64_t)sv;
 		break;
-	}
 	default:
 		// Unknown format; skip 4 bytes as a fallback
 		cursor += 4;

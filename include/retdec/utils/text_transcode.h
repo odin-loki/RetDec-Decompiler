@@ -235,6 +235,25 @@ bytesToHex(const std::uint8_t* in, std::size_t n, char* out, std::size_t outCap,
 	return w;
 }
 
+/// The type hexToBytes counts and indexes the input with.
+///
+/// The defect this exists to exclude is src/utils/conversion.cpp:171, which
+/// counts with an `unsigned int` against a `std::string::size_type`: at length
+/// 2^32 the counter wraps from 0xFFFFFFFE back to 0 and the loop never ends.
+///
+/// That is a termination property at a length no bounded model checker can
+/// unwind to, so it is not something tests/verification/text_transcode_proof.cpp
+/// can establish -- it claimed to, by declaring its own std::size_t and
+/// reasoning about that, which held whatever the kernel counted with. The
+/// static_assert below is the check that actually holds: it is a compile error
+/// rather than a proof obligation, and it cannot be satisfied by a narrower
+/// type the way the assertions could.
+using HexIndex = std::size_t;
+static_assert(
+	sizeof(HexIndex) >= sizeof(std::size_t),
+	"hexToBytes must count in a type as wide as the length it is given, or the loop "
+	"below cannot terminate for every std::string it can be handed");
+
 /// Parse @p n hex characters at @p in into bytes, returning success.
 ///
 /// An odd @p n is refused outright. src/utils/conversion.cpp:171 steps by two
@@ -254,16 +273,16 @@ hexToBytes(const char* in, std::size_t n, std::uint8_t* out, std::size_t outCap,
 	// n >> 1, not n / 2: identical for unsigned, and it keeps the query free of
 	// a division whose spurious overflow check the bitvector backends discharge
 	// as SAT (see the solver note in the harness).
-	const std::size_t need = n >> 1;
+	const HexIndex need = n >> 1;
 	if (outCap < need) return false;
 
-	for (std::size_t i = 0; i < need; ++i)
+	for (HexIndex i = 0; i < need; ++i)
 	{
 		// i < n >> 1, so 2*i + 1 <= n - 1 and neither index nor the doubling
 		// can leave the buffer or the type. conversion.cpp:171 counts with an
 		// `unsigned int` against a `std::string::size_type`: at length 2^32 the
 		// counter wraps from 0xFFFFFFFE back to 0 and the loop never ends.
-		const std::size_t at = i * kHexCharsPerByte;
+		const HexIndex at = i * kHexCharsPerByte;
 		const int hi = hexValue(in[at]);
 		const int lo = hexValue(in[at + 1]);
 		if (hi < 0 || lo < 0)

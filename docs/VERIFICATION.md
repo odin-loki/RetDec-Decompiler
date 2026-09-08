@@ -75,7 +75,7 @@ so the table cannot drift from what runs.
 | `utils/scan_cursor.h` | does this walk over an untrusted buffer terminate? | 34 |
 | `utils/index_translation.h` | this number the file supplied — is it a subscript? | 46 |
 | `utils/align.h` | round a file-controlled value to a file-controlled alignment | 21 |
-| `utils/text_transcode.h` | how many bytes does rendering this take, and did I have them? | 33 |
+| `utils/text_transcode.h` | how many bytes does rendering this take, and did I have them? | 34 |
 | `utils/branch_target.h` | where does this displacement branch to, and is it inside? | 16 |
 | `utils/compressed_int.h` | ECMA-335 II.23.2 compressed integers | 19 |
 | `utils/float_predicate.h` | decisions taken on floats that came out of a binary | 27 |

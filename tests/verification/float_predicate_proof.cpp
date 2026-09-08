@@ -445,9 +445,24 @@ extern "C" void proof_ratio_arithmetic_never_overflows()
 	//
 	// Also: the answer is written on every path, so a caller that ignores the
 	// return value never reads an uninitialised bool.
+	//
+	// This used to end `assert(atLeast == true || atLeast == false)`, which is
+	// true of any bool and so of any behaviour of the function, including one
+	// that never touches the out-parameter -- the very thing the sentence above
+	// claims. The seed is symbolic, so a path that leaves atLeast alone keeps
+	// it, and the assertions below are what notice.
+	const std::size_t count = nondet_size();
+	const std::size_t total = nondet_size();
+	const double ratio = nondet_double();
+
 	bool atLeast = nondet_size() != 0;
-	(void)checkedRatioAtLeast(nondet_size(), nondet_size(), nondet_double(), atLeast);
-	assert(atLeast == true || atLeast == false);
+	const bool ok = checkedRatioAtLeast(count, total, ratio, atLeast);
+
+	// Every refusal answers false rather than leaving the caller's variable be.
+	if (!ok) assert(atLeast == false);
+	// And so does the one accepting path that does not compute an answer: an
+	// empty run is never nice.
+	if (ok && total == 0) assert(atLeast == false);
 }
 
 extern "C" void proof_ratio_is_exact_below_the_conversion_bound()

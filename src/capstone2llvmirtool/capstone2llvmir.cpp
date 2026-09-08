@@ -425,6 +425,13 @@ int main(int argc, char* argv[])
 	auto* ret = irb.CreateRetVoid();
 	irb.SetInsertPoint(ret);
 
+	// Both handlers used to log and fall through to an unconditional
+	// EXIT_SUCCESS -- and assert(false) is compiled out under NDEBUG, so a
+	// release build treated a failed translation exactly like the catch-all.
+	// Undecodable bytes wrote an .ll holding nothing but the empty `root`
+	// function and exited 0, which is a success to any script or harness
+	// reading the status.
+	bool translated = true;
 	try
 	{
 		auto c2l = Capstone2LlvmIrTranslator::createArch(po.arch, &module, po.basicMode, po.extraMode);
@@ -433,16 +440,24 @@ int main(int argc, char* argv[])
 	catch (const BaseError& e)
 	{
 		Log::error() << e.what() << std::endl;
-		assert(false);
+		translated = false;
 	}
 	catch (...)
 	{
 		Log::error() << "Some unhandled exception" << std::endl;
+		translated = false;
 	}
 
+	// The module is still written on failure: a partial translation is worth
+	// looking at, and the exit status is what says not to trust it.
 	std::error_code ec;
 	llvm::raw_fd_ostream out(po.outFile, ec, llvm::sys::fs::OF_None);
 	module.print(out, nullptr);
+	if (ec)
+	{
+		Log::error() << "Cannot write " << po.outFile << ": " << ec.message() << std::endl;
+		return EXIT_FAILURE;
+	}
 
-	return EXIT_SUCCESS;
+	return translated ? EXIT_SUCCESS : EXIT_FAILURE;
 }

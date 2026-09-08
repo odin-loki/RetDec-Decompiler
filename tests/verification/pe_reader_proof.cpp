@@ -73,7 +73,8 @@
 // `scripts/verify_esbmc.sh --optional` runs them. They are not claimed as
 // discharged, and docs/VERIFICATION.md says the same thing rather than
 // implying whole-function verification of this parser is available.
-// ESBMC-OPTIONS: --unwind 6 --unwindsetname strlen:0:64,strcpy:0:64,strncpy:0:64,memcpy:0:64
+// ESBMC-OPTIONS: --unwind 6 --unwindsetname
+// strlen:0:64,strcpy:0:64,strncpy:0:64,memcpy:0:64,pe_reader_proof.cpp@buildSymbolicSectionTable:0:41,proof_a_short_file_is_refused_and_nothing_is_read:0:64
 //
 // Four directives, and each was measured rather than guessed.
 //
@@ -88,6 +89,27 @@
 // a file declaring more sections than that fails the run rather than silently
 // truncating the search. That is why the section count is constrained in the
 // proofs below: an unconstrained u2 would need 65536 unwindings.
+//
+// It does not bound this harness's own fill loops, and for a while it was the
+// only thing that tried to. buildSymbolicSectionTable writes 40 symbolic bytes
+// one at a time and proof_a_short_file_is_refused_and_nothing_is_read fills up
+// to 63, so both blew the bound and four of the six proofs here could not
+// discharge at all: the first verdict was
+//
+//   Not unwinding loop 3 iteration 6 ... function buildSymbolicSectionTable
+//   FAILED [...] unwinding assertion loop 3 / VERIFICATION FAILED
+//
+// -- an unwinding assertion, not a property of the parser, and a refutation
+// that says nothing about the code under proof. They are bounded by name, the
+// same way the library loops are, so --unwind stays what the parser needs.
+// ESBMC needs N+1 to discharge an N-iteration loop: measured here, the 40-byte
+// fill passes at 41 and fails at 40.
+//
+// buildSymbolicSectionTable is static, so it is file-qualified --
+// `pe_reader_proof.cpp@buildSymbolicSectionTable:0` is the name --show-loops
+// prints for it; the extern "C" proofs are named plainly. A bare
+// `buildSymbolicSectionTable:0:41` silently matches nothing and the loop stays
+// at 6, which is the failure mode to watch for if these are ever renamed.
 //
 // --unwindsetname is what makes the whole thing possible, and it is not about
 // this code at all. ESBMC's own C++ library models contain loops -- strlen
