@@ -82,9 +82,14 @@ void ensureCfgCacheCleanup(CFGScene* scene)
 {
 	if (!scene || scene->property("cfgCacheCleanup").toBool()) return;
 	scene->setProperty("cfgCacheCleanup", true);
-	QObject::connect(scene, &QObject::destroyed, [](QObject* obj) {
-		g_uncompressedCache.remove(static_cast<CFGScene*>(obj));
-	});
+	// destroyed() is emitted from ~QObject, after every derived destructor has
+	// run, so the pointer it hands over is a QObject and downcasting it back to
+	// CFGScene is undefined -- UBSan calls it out as "downcast of address which
+	// does not point to an object of type 'CFGScene'". It happened to work only
+	// because QGraphicsScene's QObject base is at offset zero. The key is
+	// captured instead: it is compared, never dereferenced, so the object being
+	// destroyed is not touched at all.
+	QObject::connect(scene, &QObject::destroyed, [scene](QObject*) { g_uncompressedCache.remove(scene); });
 }
 
 void storeUncompressedCFG(
