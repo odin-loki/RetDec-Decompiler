@@ -36,7 +36,13 @@ Implemented in [`include/retdec/utils/gpu_scanner.h`](../include/retdec/utils/gp
 
 When `RETDEC_ENABLE_CUDA=OFF` or no capable device is present, [`gpu_scanner_cpu.cpp`](../src/utils/gpu_scanner_cpu.cpp) provides the same API on CPU.
 
-**Entry point:** `retdec::utils::GpuScanner` (used from [`src/retdec/retdec.cpp`](../src/retdec/retdec.cpp) during binary loading / pattern phases).
+**Entry point:** `retdec::utils::GpuScanner`. **Not called from the pipeline.**
+`src/retdec/retdec.cpp` used to include `retdec/utils/gpu_scanner.h` and never
+construct one -- no `GpuScanner`, no `entropy`, no `signature` anywhere in that
+file -- so the include is gone and the only callers in the tree are
+`tests/utils/gpu_scanner_tests.cpp`. The scanner is built and tested; nothing in
+the load or pattern phase invokes it. Same status as the `cuda_accel` and
+`opencl` rows below.
 
 ## CUDA acceleration layer (`RETDEC_ENABLE_CUDA_ACCEL=ON`, opt-in)
 
@@ -84,4 +90,4 @@ Binary input
 
 - [BUILD_REFERENCE.md](BUILD_REFERENCE.md) — preset and `-NoCuda` notes
 - [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) — Windows CUDA defaults
-- [ENGINEERING_ROADMAP.md](ENGINEERING_ROADMAP.md) — product tiers
+- [ENGINEERING_ROADMAP.md](internal/ENGINEERING_ROADMAP.md) — product tiers

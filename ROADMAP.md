@@ -11,13 +11,15 @@ The internal register is [Plan.md](Plan.md). Claims status lives in
 
 LLVM hops are **Track 2** — see
 [docs/internal/UNBLOCKED-MIGRATION.md](docs/internal/UNBLOCKED-MIGRATION.md).
-The pin stays the Avast LLVM 8-era archive in `cmake/deps.cmake`. This
-roadmap does **not** schedule a pin bump. Never edit `deps/llvm/`.
+The pin is upstream `llvm-project` **23.1.0**, fetched as the monorepo
+tarball (`cmake/deps.cmake:34`). This roadmap does **not** schedule a further
+bump. Never edit `deps/llvm/`.
 
 ## Output and neural
 
-- Native output stays **C**. The CLI rejects `--output-lang cpp` until
-  `LLVM-22`; `cxx_backend` is unwired.
+- Native output stays **C**. The CLI rejects `--output-lang cpp` because
+  `cxx_backend` is unwired -- not because of the LLVM version, which the pin
+  passed at 23.1.0.
 - Optional neural refine is `RETDEC_NEURAL_REFINE` (and
   `RETDEC_NEURAL_MODEL`). There is no in-tree `src/qwen3`.
 

@@ -89,7 +89,7 @@ floated, or closed via the **View** menu.
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Active GUI work and shipped milestones: [GUI_ROADMAP.md](GUI_ROADMAP.md).
+Active GUI work and shipped milestones: [GUI_ROADMAP.md](internal/GUI_ROADMAP.md).
 
 ---
 
@@ -108,7 +108,6 @@ Active GUI work and shipped milestones: [GUI_ROADMAP.md](GUI_ROADMAP.md).
 | PE     | `.exe`, `.dll`, `.sys` | Windows |
 | Mach-O | (no extension), `.dylib` | macOS/iOS |
 | Raw    | `.bin` | Specify base address in settings |
-| PTX    | `.ptx` | CUDA kernel assembly |
 | WASM   | `.wasm` | WebAssembly binary |
 | JVM bytecode | `.class`, `.jar` | Java 1–21+ |
 | Android DEX  | `.dex`, `.apk` | Android bytecode |
@@ -217,7 +216,7 @@ RETDEC_NEURAL_REFINE=1 RETDEC_NEURAL_MODEL=/path/to/model.gguf \
 ```
 
 There is no `retdec-qwen3-runner` binary. Product direction:
-[GUI_ROADMAP.md](GUI_ROADMAP.md).
+[GUI_ROADMAP.md](internal/GUI_ROADMAP.md).
 
 ---
 
@@ -395,5 +394,5 @@ For **build** failures (OpenSSL, LLVM download, Qt, MSVC env), see [BUILD_REFERE
 | MSVC + CUDA + Qt | [WINDOWS_NATIVE_BUILD.md](WINDOWS_NATIVE_BUILD.md) |
 | All docs index | [docs/README.md](README.md) |
 | Architecture / pipeline | [architecture.md](architecture.md) |
-| GUI roadmap (v3+) | [GUI_ROADMAP.md](GUI_ROADMAP.md) |
+| GUI roadmap (v3+) | [GUI_ROADMAP.md](internal/GUI_ROADMAP.md) |
 | Contributing code | [developer_guide.md](developer_guide.md) |

@@ -29,7 +29,8 @@ RetDec is a retargetable machine-code decompiler.  Given a binary (ELF, PE,
 Mach-O, CUDA, WASM, JVM, DEX, `.pyc`, `.luac`, CIL), it produces human-readable
 source code in **C** for native binaries. Managed formats emit the language
 of the input (Python from `.pyc`, Lua from `.luac`, WAT from `.wasm`, and
-so on). The CLI rejects `--output-lang cpp` until LLVM-22; native output is C.
+so on). The CLI rejects `--output-lang cpp` because `cxx_backend` is unwired;
+native output is C.
 
 The enhanced version adds:
 
@@ -53,13 +54,13 @@ The enhanced version adds:
 ## Build System and Module Layout {#modules}
 
 The project uses CMake **3.26+** (see root `CMakePresets.json`) with per-library `CMakeLists.txt` files.
-Dependencies are managed via vcpkg (`vcpkg.json`).
+Dependencies are downloaded and built by ExternalProject from the pinned URLs and SHA-256 hashes in `cmake/deps.cmake` and the per-dependency `deps/*/CMakeLists.txt`; see docs/BUILD_REFERENCE.md. `vcpkg.json` is a leftover manifest that no CMake file, preset, script or workflow reads, and its versions do not match the real pins.
 
 ```
 retdec-master/
 ├── CMakeLists.txt            Root superbuild
-├── CMakePresets.json         debug / release / asan / tsan presets
-├── vcpkg.json                Dependency manifest
+├── CMakePresets.json         core/full debug and release, asan, coverage presets
+├── vcpkg.json                Unused leftover; the real pins are cmake/deps.cmake
 ├── include/retdec/           All public headers
 │   ├── concurrency_detect/   Concurrency/synchronisation detector
 │   ├── module_cluster/       Louvain module clustering + CMake generation
@@ -127,7 +128,7 @@ and back-end is shared.
 | 15 IPA | `ipa` | Inter-procedural summary propagation |
 | 16 Concurrency Detection | `concurrency_detect` | Mutexes, threads, atomics, OpenMP, TBB |
 | 17 CUDA Host Recovery | `ptx_decompile` | `cudaLaunchKernel`, memory ops, streams |
-| 18 PTX Lifting | `ptx_decompile` | PTX assembly → CUDA C AST |
+| 18 PTX Lifting | `ptx_decompile` | **Unwired**, like stage 24. The parser and lifter build and are unit-tested; nothing routes a `.ptx` file to them, and `retdec-decompiler` does not accept one. `src/retdec/retdec.cpp` links this library only for `OclHostRecovery`. |
 | 19 Serialisation Detection | `serial_detect` | Protobuf, FlatBuffers, JSON, XML patterns |
 | 20 Module Clustering | `module_cluster` | Louvain community detection on call graph |
 
@@ -136,9 +137,9 @@ and back-end is shared.
 | Stage | Library | Purpose |
 |-------|---------|---------|
 | 21 STL/Container Recovery | `container_detect` | std::vector, map, list, string, etc. |
-| 22 Algorithm Recovery | `algo_recover` | sort, binary search, BFS/DFS, FFT |
+| 22 Algorithm Recovery | `algo_recover` | sort, binary search, BFS/DFS |
 | 23 Crypto Detection | `crypto_detect` | AES, SHA, RSA, ChaCha20 implementations |
-| 24 C++ Lifting | `cxx_backend` | **Unwired** until Phase 4 `LLVM-22`. Not a shipped `--output-lang cpp` writer. |
+| 24 C++ Lifting | `cxx_backend` | **Unwired.** Not a shipped `--output-lang cpp` writer. |
 | 25 CMake Generation | `module_cluster` | Emit `CMakeLists.txt` from module graph |
 
 ### Back-End (Stages 26–29): AST → Source Code
@@ -540,7 +541,7 @@ Android .dex     →  dex_parser →                 → java_emitter / kotlin_e
 Python .pyc      →  pyc_parser → py_reconstruct  → py_emitter
 Lua .luac        →  lua_parser →                 → lua_emitter
 WASM .wasm       →  wasm_parser →                → wat_emitter
-PTX .ptx         →  ptx_parser →  ptx_lifter     → CUDA C (inline in C emitter)
+PTX .ptx         →  ptx_parser →  ptx_lifter     → CUDA C   (library only; no CLI path takes a .ptx)
 ```
 
 ### AI Inference Pipeline

@@ -67,7 +67,7 @@ This tree is positioned as a **full-stack analysis and decompilation platform**,
 
 | Capability | Benefit |
 |------------|---------|
-| **Broad input formats** | One toolchain for native binaries, GPU PTX, WASM, JVM/DEX, .NET, Python, and Lua artifacts. Native CPU maturity is Production (x86/x86-64) / Partial (ARM, Thumb, MIPS, PowerPC) / Incomplete (ARM64). |
+| **Broad input formats** | One toolchain for native binaries, WASM, JVM/DEX, .NET, Python, and Lua artifacts. Native CPU maturity is Production (x86/x86-64) / Partial (ARM, Thumb, MIPS, PowerPC) / Incomplete (ARM64). |
 | **Input-keyed output** | Native binaries emit C. Managed formats emit that format’s language. Not a free-choice eleven-language native list. |
 | **Semantic recovery** | Recognize STL containers, algorithms, crypto, concurrency, serialization, and C++ runtime patterns—not only raw instructions. Name-blind F1 is 0.056; do not advertise 1.0. |
 | **GPU backends (experimental)** | CUDA (`cuda_accel`) and OpenCL exist in-tree, default-OFF, **unintegrated**, not a product feature (`C-CUDA-PIPE` withdrawn). |
@@ -84,7 +84,6 @@ This tree is positioned as a **full-stack analysis and decompilation platform**,
 | **Linux / Android native** | ELF (`.elf`, `.so`, `.o`) |
 | **Windows native** | PE (`.exe`, `.dll`, `.sys`) |
 | **Apple platforms** | Mach-O, `.dylib` |
-| **NVIDIA GPU** | CUDA PTX (`.ptx`) |
 | **Web** | WebAssembly (`.wasm`) |
 | **JVM** | `.class`, `.jar` |
 | **Android** | DEX, APK |

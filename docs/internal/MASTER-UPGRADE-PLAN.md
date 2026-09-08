@@ -157,7 +157,7 @@ Decisions already made in this project. Recorded so they stop being re-litigated
 | D4 | LLVM migration unblocked: keep Avast LLVM 8 until RetDec-owned `retdec.pointee` metadata is the source of truth, then one pin change in `cmake/deps.cmake` to latest upstream (~22). Never edit `deps/llvm/`. | **Unblocked 2026-08-23** |
 | D5 | Licence set condensed to LICENSE / LICENSE-AGPL / LICENSE-COMMERCIAL / NOTICE | **Settled** |
 | D6 | Neural output is gated and never replaces the deterministic artefact | **Settled** |
-| D7 | Product positioning: pseudocode decompiler, or specification-extraction tool? | **Settled — (b) specification-extraction** ([docs/internal/D7_DECISION.md](docs/internal/D7_DECISION.md)) |
+| D7 | Product positioning: pseudocode decompiler, or specification-extraction tool? | **Settled — (b) specification-extraction** ([docs/internal/D7_DECISION.md](D7_DECISION.md)) |
 
 ### D7 is the decision that unblocks the most work
 

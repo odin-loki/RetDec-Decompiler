@@ -1,7 +1,7 @@
 # RetDec — Research Frontiers (Tier 7)
 
 Long-horizon research and speculative engineering. **Not scheduled for product sprints.**
-For shippable work see [ENGINEERING_ROADMAP.md](ENGINEERING_ROADMAP.md) (Tiers 1–5).
+For shippable work see [ENGINEERING_ROADMAP.md](internal/ENGINEERING_ROADMAP.md) (Tiers 1–5).
 
 ---
 
@@ -166,4 +166,4 @@ as a capability.
 
 - [future_directions.md](future_directions.md) — STL recovery, targets, performance
 - [pipeline_stage_map.md](pipeline_stage_map.md) — stage inventory
-- [ENGINEERING_ROADMAP.md](ENGINEERING_ROADMAP.md) — shippable Tiers 1–5
+- [ENGINEERING_ROADMAP.md](internal/ENGINEERING_ROADMAP.md) — shippable Tiers 1–5

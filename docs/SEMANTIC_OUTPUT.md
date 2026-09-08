@@ -36,7 +36,7 @@ the STL name appears in comments and JSON only.
 ## Native output is C
 
 `--output-lang cpp` is **not** accepted (CLI-01 / `cxx_backend` unwired until
-Phase 4 `LLVM-22`). Use `c`. Older docs that treated `cpp` as a second native
+`cxx_backend` is unwired). Use `c`. Older docs that treated `cpp` as a second native
 language were describing the C HLL writer with a `.cpp` filename.
 
 | Aspect | `c` (default, only native writer) |

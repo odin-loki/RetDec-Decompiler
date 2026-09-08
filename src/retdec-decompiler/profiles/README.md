@@ -35,7 +35,7 @@ Resolution order for `--profile`:
 Explicit pass list file (`--llvm-passes-json FILE`). The file may be:
 
 - a **JSON array** of pass name strings (legacy GUI fast preset), or
-- a **pipeline document** matching [pipeline_builder_schema.json](../../docs/pipeline_builder_schema.json).
+- a **pipeline document** matching [pipeline_builder_schema.json](../../../docs/pipeline_builder_schema.json).
 
 Examples:
 
@@ -62,6 +62,6 @@ Pass names must match LLVM/RetDec registered passes (see `RegisterPass` in `src/
 
 ## Related
 
-- [docs/pipeline_builder_schema.json](../../docs/pipeline_builder_schema.json)
-- [docs/PIPELINE_REDESIGN_TODO.md](../../docs/PIPELINE_REDESIGN_TODO.md)
-- [examples/decompiler_plugin/](../../examples/decompiler_plugin/) — post-decompile hooks
+- [docs/pipeline_builder_schema.json](../../../docs/pipeline_builder_schema.json)
+- [docs/PIPELINE_REDESIGN_TODO.md](../../../docs/internal/PIPELINE_REDESIGN_TODO.md)
+- [examples/decompiler_plugin/](../../../examples/decompiler_plugin/) — post-decompile hooks

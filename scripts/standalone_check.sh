@@ -335,6 +335,27 @@ if [ "$MODE" = audit ]; then
 		fi
 	done
 
+	# The prose in docs/STANDALONE_CHECK.md states these counts three times, and
+	# it had drifted: "56 of the modules" and "those 56 modules" against a
+	# MODULES array of 62, with a table twelve lines below in the same file
+	# already saying 62. A document whose selling point is that --audit keeps
+	# the lists from rotting cannot have a stale count in its own prose.
+	#
+	# The marker is machine-checkable so this cannot be a grep over English.
+	docCounts="docs/STANDALONE_CHECK.md"
+	wantMarker="<!-- standalone-check: modules=${#MODULES[@]} suites=${#SUITES[@]} -->"
+	if [ -f "$docCounts" ]; then
+		if ! grep -qF "$wantMarker" "$docCounts"; then
+			bad "$docCounts does not carry the current counts"
+			printf '  expected: %s\n' "$wantMarker"
+			printf '  found:    %s\n' "$(grep -oE '<!-- standalone-check:[^>]*-->' "$docCounts" | head -1)"
+			printf '  and the prose around it states them in words; update both.\n'
+			status=1
+		else
+			ok "$docCounts states ${#MODULES[@]} modules and ${#SUITES[@]} suites"
+		fi
+	fi
+
 	[ $status -eq 0 ] && ok "MODULES and SUITES match the tree"
 	exit $status
 fi

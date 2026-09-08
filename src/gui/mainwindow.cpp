@@ -823,7 +823,6 @@ void RetDecMainWindow::createMenus()
 	fileMenu_->addSeparator();
 	saveProjectAct_ = fileMenu_->addAction(QStringLiteral("Save &Project"));
 	saveProjectAsAct_ = fileMenu_->addAction(QStringLiteral("Save Project &As…"));
-	saveProjectAsAct_->setShortcut(QKeySequence::SaveAs);
 	fileMenu_->addSeparator();
 	auto* saveDecompAct = fileMenu_->addAction(QStringLiteral("Save Decompiled…"));
 	auto* exportCmakeAct = fileMenu_->addAction(QStringLiteral("Export CMakeLists.txt…"));
@@ -839,6 +838,13 @@ void RetDecMainWindow::createMenus()
 	openProjectAct->setShortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_O);
 	saveDecompAct->setShortcut(QKeySequence::Save);
 	saveProjectAct_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S));
+	// Explicit, not QKeySequence::SaveAs. On X11 and Windows that standard
+	// sequence IS Ctrl+Shift+S, which is what the line above binds to Save
+	// Project -- two File-menu actions on one sequence, which Qt resolves by
+	// firing neither. Meanwhile docs/user_manual.md and this window's own
+	// Help -> Shortcuts dialog both document Ctrl+Shift+A for Save Project As,
+	// and nothing bound it. This is the sequence both of those already claim.
+	saveProjectAsAct_->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A));
 	quitAct->setShortcut(QKeySequence::Quit);
 
 	connect(openBinaryAct, &QAction::triggered, this, &RetDecMainWindow::onOpenBinary);

@@ -21,19 +21,23 @@ Capstone, Keystone, YARA and YaraMod. That is hours of CPU and tens of
 gigabytes before a single assertion runs, and it is impossible in an
 environment without network access to those archives.
 
-56 of the modules under `src/` do not need any of that. The Imortek detector,
+<!-- standalone-check: modules=62 suites=64 -->
+<!-- scripts/standalone_check.sh --audit fails if the numbers above and the
+     prose below disagree with the MODULES and SUITES arrays in the script. -->
+
+62 of the modules under `src/` do not need any of that. The Imortek detector,
 SSA, codegen, type-recovery and bytecode-parser layers are written against the
 in-house `retdec/ssa` IR and the C++17 standard library only. That is where
 almost all of this fork's own logic lives — and where its own regressions land.
 
-So the fast path compiles those 56 modules, links their existing GoogleTest
+So the fast path compiles those 62 modules, links their existing GoogleTest
 suites against a shim, and runs them.
 
 | | full CMake build | standalone check |
 |---|---|---|
 | Prerequisites | network, ~30 GB, CMake, Ninja | a C++17 compiler |
 | Cold time | hours | ~1 minute |
-| Coverage | whole product | 62 suites, ~3500 assertions over 62 modules |
+| Coverage | whole product | 64 suites, ~4000 test cases over 62 modules |
 
 Two vendored header-only dependencies are used because they are already in the
 tree and cost nothing: `deps/rapidjson` (which unlocks `config`, `serdes`,
@@ -58,7 +62,7 @@ where only some files build here.
 `tests/standalone/gtest/gtest.h` implements the GoogleTest subset these suites
 use — `TEST`, `TEST_F`, `TEST_P`, `INSTANTIATE_TEST_SUITE_P`, the
 `EXPECT_`/`ASSERT_` families, `::testing::Test`, `::testing::TestWithParam`,
-`--gtest_filter` — in about 600 lines with no dependencies. The suites are
+`--gtest_filter` — in about 830 lines with no dependencies. The suites are
 **not modified**: the same source compiles against real GoogleTest under CMake
 and against the shim here.
 

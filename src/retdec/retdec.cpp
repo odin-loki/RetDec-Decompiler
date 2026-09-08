@@ -64,7 +64,6 @@
 #include "retdec/retdec/retdec.h"
 #include "retdec/retdec/semantic_recovery_export.h"
 #include "retdec/utils/conversion.h"
-#include "retdec/utils/gpu_scanner.h"
 #include "retdec/utils/io/log.h"
 #include "retdec/utils/memory.h"
 #include "retdec/utils/thread_pool.h"

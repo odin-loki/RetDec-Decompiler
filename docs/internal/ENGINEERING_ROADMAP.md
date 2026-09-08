@@ -31,7 +31,7 @@ Shippable engineering tiers for RetDec. Research-only items live in
 - [x] **GUI preferred output language** — Settings → Decompiler combo → `buildDecompilerArguments()` passes `--output-lang`
 - [x] **Semantic detection confidence** — `semanticDetections` in `.config.json` shown in Problems dock (info >0.8, warning >0.5, muted otherwise)
 - [x] **Managed format smoke** — `tests/decompiler/managed_format_smoke_test.py` (skips missing fixtures)
-- [x] **Semantic output clarity** — C vs C++ comment/`cHint` behavior documented in [SEMANTIC_OUTPUT.md](SEMANTIC_OUTPUT.md)
+- [x] **Semantic output clarity** — C vs C++ comment/`cHint` behavior documented in [SEMANTIC_OUTPUT.md](../SEMANTIC_OUTPUT.md)
 
 ## Tier 3 — New targets & format polish ✅
 
@@ -53,8 +53,8 @@ Shippable engineering tiers for RetDec. Research-only items live in
 
 | Script | Purpose |
 |--------|---------|
-| [`scripts/unpack_and_decompile.sh`](../scripts/unpack_and_decompile.sh) | Linux / WSL / macOS |
-| [`scripts/unpack_and_decompile.ps1`](../scripts/unpack_and_decompile.ps1) | Windows PowerShell |
+| [`scripts/unpack_and_decompile.sh`](../../scripts/unpack_and_decompile.sh) | Linux / WSL / macOS |
+| [`scripts/unpack_and_decompile.ps1`](../../scripts/unpack_and_decompile.ps1) | Windows PowerShell |
 
 Flow: optional `retdec-fileinfo` probe → `retdec-unpacker` (when packed) → `retdec-decompiler`.
 
@@ -62,7 +62,7 @@ Use `--keep-unpacked` / `-KeepUnpacked` to retain the intermediate `-unpacked` f
 
 ### Architecture targets stub
 
-See [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md) for RISC-V, ARM64, and SASS status (not implemented; prerequisites listed).
+See [ARCHITECTURE_TARGETS.md](../ARCHITECTURE_TARGETS.md) for RISC-V, ARM64, and SASS status (not implemented; prerequisites listed).
 
 ### Tests
 
@@ -75,18 +75,18 @@ See [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md) for RISC-V, ARM64, and SA
 - [x] Cross-binary diff — `scripts/retdec_binary_diff.py`, `retdec_cli.py diff`
 - [x] Threat intel export — `scripts/retdec_export_intel.py`, GUI **File → Export Threat Intel…**
 - [x] YARA bridge stub — `scripts/yara_retdec_bridge.py`
-- [x] Symbol server doc — [SYMBOL_SERVER.md](SYMBOL_SERVER.md)
-- [x] Semantic recovery export — `semanticDetections` in config JSON, `[RetDec]` comments in `.c`/`.cpp`, GUI Problems dock; C output adds `cHint` + layout comments ([SEMANTIC_OUTPUT.md](SEMANTIC_OUTPUT.md))
-- STL container / algorithm pattern matching in emitted output (partial — detections + C `cHint` comments exported; full C struct typedef / C++ type replacement ongoing — [SEMANTIC_OUTPUT.md](SEMANTIC_OUTPUT.md))
+- [x] Symbol server doc — [SYMBOL_SERVER.md](../SYMBOL_SERVER.md)
+- [x] Semantic recovery export — `semanticDetections` in config JSON, `[RetDec]` comments in `.c`/`.cpp`, GUI Problems dock; C output adds `cHint` + layout comments ([SEMANTIC_OUTPUT.md](../SEMANTIC_OUTPUT.md))
+- STL container / algorithm pattern matching in emitted output (partial — detections + C `cHint` comments exported; full C struct typedef / C++ type replacement ongoing — [SEMANTIC_OUTPUT.md](../SEMANTIC_OUTPUT.md))
 
 ## Tier 5 — Architecture & extensibility ✅
 
 - [x] [PIPELINE_REDESIGN_TODO.md](PIPELINE_REDESIGN_TODO.md) — 29-stage gap table (hook/partial/full, P0–P3)
-- [x] Pass profile registry — [profiles/README.md](../src/retdec-decompiler/profiles/README.md) + [index.json](../src/retdec-decompiler/profiles/index.json) (`fast`, `balanced`, `quality`)
-- [x] [pipeline_builder_schema.json](pipeline_builder_schema.json) + [validate_pipeline_json.py](../scripts/validate_pipeline_json.py)
-- [x] Reference decompiler plugin sample — [examples/decompiler_plugin/](../examples/decompiler_plugin/)
-- [x] [FORMAL_VERIFICATION_BRIDGE.md](FORMAL_VERIFICATION_BRIDGE.md) — Frama-C export path (documentation)
-- [x] [validate_pipeline_test.py](../tests/decompiler/validate_pipeline_test.py) — CTest profile schema validation
+- [x] Pass profile registry — [profiles/README.md](../../src/retdec-decompiler/profiles/README.md) + [index.json](../../src/retdec-decompiler/profiles/index.json) (`fast`, `balanced`, `quality`)
+- [x] [pipeline_builder_schema.json](../pipeline_builder_schema.json) + [validate_pipeline_json.py](../../scripts/validate_pipeline_json.py)
+- [x] Reference decompiler plugin sample — [examples/decompiler_plugin/](../../examples/decompiler_plugin/)
+- [x] [FORMAL_VERIFICATION_BRIDGE.md](../FORMAL_VERIFICATION_BRIDGE.md) — Frama-C export path (documentation)
+- [x] [validate_pipeline_test.py](../../tests/decompiler/validate_pipeline_test.py) — CTest profile schema validation
 
 ```powershell
 python scripts/validate_pipeline_json.py --all-profiles
@@ -103,10 +103,10 @@ python examples/decompiler_plugin/post_process_output.py out.c
 
 ## Related docs
 
-- [pipeline_stage_map.md](pipeline_stage_map.md) — stage → source mapping
+- [pipeline_stage_map.md](../pipeline_stage_map.md) — stage → source mapping
 - [PIPELINE_REDESIGN_TODO.md](PIPELINE_REDESIGN_TODO.md) — pipeline gap checklist
 
-- [CUDA_CAPABILITIES.md](CUDA_CAPABILITIES.md) — GPU vs CPU-only components
-- [ARCHITECTURE_TARGETS.md](ARCHITECTURE_TARGETS.md) — CPU / GPU architecture roadmap
-- [future_directions.md](future_directions.md) — consolidated long-term agenda
-- [RESEARCH_FRONTIERS.md](RESEARCH_FRONTIERS.md) — Tier 7 research only
+- [CUDA_CAPABILITIES.md](../CUDA_CAPABILITIES.md) — GPU vs CPU-only components
+- [ARCHITECTURE_TARGETS.md](../ARCHITECTURE_TARGETS.md) — CPU / GPU architecture roadmap
+- [future_directions.md](../future_directions.md) — consolidated long-term agenda
+- [RESEARCH_FRONTIERS.md](../RESEARCH_FRONTIERS.md) — Tier 7 research only

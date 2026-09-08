@@ -5,8 +5,10 @@ high or critical. The ones that could be built and tested without LLVM were
 fixed on the branch that produced this file; these could not, so they are
 written down rather than attempted.
 
-**Why they are not fixed.** A full build needs the LLVM 8-era pin from
-`cmake/deps.cmake`, and the environment this audit ran in could not build it.
+**Why they are not fixed.** A full build needs the LLVM pin from
+`cmake/deps.cmake` -- upstream `llvm-project` 23.1.0, not the Avast LLVM-8 fork
+this document used to say -- and the environment this audit ran in could not
+build it.
 Changing `llvmir2hll` or `src/retdec/retdec.cpp` there would mean shipping an
 edit to the C emitter that had never been compiled, let alone run against the
 216-binary corpus. Everything below is therefore *read and verified against the

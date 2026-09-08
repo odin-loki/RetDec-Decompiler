@@ -95,4 +95,4 @@ Handle exported decompilation bundles accordingly in threat-intel workflows
 ## See also
 
 - [user_manual.md](user_manual.md) — decompiler CLI flags
-- [ENGINEERING_ROADMAP.md](ENGINEERING_ROADMAP.md) — Tier 4 security workflows
+- [ENGINEERING_ROADMAP.md](internal/ENGINEERING_ROADMAP.md) — Tier 4 security workflows

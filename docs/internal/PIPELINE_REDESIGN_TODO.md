@@ -1,8 +1,8 @@
 # Pipeline Redesign — Gap Checklist
 
-Reconciled checklist for the 29-stage pipeline described in [pipeline_stage_map.md](pipeline_stage_map.md). The stage map marks many entries **Implemented** at the “RetDec has a hook / partial pass” level; this file tracks what still falls short of the **full** algorithms in the original design write-up.
+Reconciled checklist for the 29-stage pipeline described in [pipeline_stage_map.md](../pipeline_stage_map.md). The stage map marks many entries **Implemented** at the “RetDec has a hook / partial pass” level; this file tracks what still falls short of the **full** algorithms in the original design write-up.
 
-**Related:** Per-stage diagnostics and test fixtures are tracked in [pipeline_stage_map.md](pipeline_stage_map.md) (stage → source mapping) and the env-var table in [docs/README.md](README.md#developer-diagnostics-environment-variables).
+**Related:** Per-stage diagnostics and test fixtures are tracked in [pipeline_stage_map.md](../pipeline_stage_map.md) (stage → source mapping) and the env-var table in [docs/README.md](README.md#developer-diagnostics-environment-variables).
 
 **Status legend**
 
@@ -72,14 +72,14 @@ Reconciled checklist for the 29-stage pipeline described in [pipeline_stage_map.
 
 1. **P0/P1 analysis core:** Stages 6, 10, 18, 20, 21, 22, 29 — ground truth + structuring + diagnostics.
 2. **P1 unpack/obfusc:** Stages 2, 3, 24 — entropy unpack + MBA.
-3. **P2 extensibility:** Pass profiles ([profiles/README.md](../src/retdec-decompiler/profiles/README.md)), [pipeline_builder_schema.json](pipeline_builder_schema.json), plugin sample ([examples/decompiler_plugin](../examples/decompiler_plugin/)).
+3. **P2 extensibility:** Pass profiles ([profiles/README.md](../../src/retdec-decompiler/profiles/README.md)), [pipeline_builder_schema.json](../pipeline_builder_schema.json), plugin sample ([examples/decompiler_plugin](../../examples/decompiler_plugin/)).
 4. **P3 polish:** Stages 1, 4, 8, 11 — format/compilers/fingerprint refinements.
 
 ---
 
 ## Cross-references
 
-- [pipeline_stage_map.md](pipeline_stage_map.md) — stage → source mapping
-- [pipeline_builder_schema.json](pipeline_builder_schema.json) — custom pass-list JSON schema
+- [pipeline_stage_map.md](../pipeline_stage_map.md) — stage → source mapping
+- [pipeline_builder_schema.json](../pipeline_builder_schema.json) — custom pass-list JSON schema
 - [ENGINEERING_ROADMAP.md](ENGINEERING_ROADMAP.md) — shippable Tiers 1–5
-- [pipeline_stage_map.md](pipeline_stage_map.md) — stage → source mapping; diagnostic env vars in [README.md](README.md#developer-diagnostics-environment-variables)
+- [pipeline_stage_map.md](../pipeline_stage_map.md) — stage → source mapping; diagnostic env vars in [README.md](README.md#developer-diagnostics-environment-variables)

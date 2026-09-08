@@ -31,6 +31,7 @@ link time.
 | `pdb` | `pdbparser` | Microsoft PDB |
 | `cil` | `cli_parser` | .NET CIL metadata |
 | `pelib` | `pelib` | PE headers and every data directory |
+| `lattice` | `fileformat/lattice` | The signature-lattice format detector — the first structured read of an untrusted file |
 
 ELF, Mach-O and the unpacker harnesses are **not** here: they link
 `retdec::fileformat`, which publicly links LLVM. Those stay on the
@@ -38,6 +39,11 @@ ELF, Mach-O and the unpacker harnesses are **not** here: they link
 that path too — but PeLib itself is not, which is why `pelib` above drives
 `PeLib::PeFileT` directly. It is 9,791 lines that read attacker-controlled bytes
 and had neither a unit suite nor any fuzzing.
+
+`lattice` is here for the mirror-image reason. `src/fileformat/lattice/` is the
+one translation unit under `src/fileformat/` that links no LLVM, so `fuzz_pe.cpp`
+on the RETDEC_FUZZ path cannot reach it and this driver can. It is the
+decompiler's first structured read of a file, before any loader is chosen.
 
 ## The two modes, and why they are separate
 

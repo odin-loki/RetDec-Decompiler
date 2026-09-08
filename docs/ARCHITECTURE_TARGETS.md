@@ -132,6 +132,6 @@ See also [future_directions.md](future_directions.md) § GPU / CUDA and
 
 ## Related documents
 
-- [ENGINEERING_ROADMAP.md](ENGINEERING_ROADMAP.md) — shippable tiers 1–5
+- [ENGINEERING_ROADMAP.md](internal/ENGINEERING_ROADMAP.md) — shippable tiers 1–5
 - [future_directions.md](future_directions.md) — Part 2 new targets table
 - [architecture.md](architecture.md) — current pipeline overview

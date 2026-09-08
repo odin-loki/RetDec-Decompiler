@@ -195,7 +195,7 @@ declarations and call-site reconstruction.
 | Language | Status | Notes |
 |----------|--------|-------|
 | C | Implemented | Default native output |
-| C++ | Rejected | CLI rejects `--output-lang cpp` until LLVM-22; `cxx_backend` unwired |
+| C++ | Rejected | CLI rejects `--output-lang cpp`; `cxx_backend` unwired |
 | Python | Implemented | From `.pyc` input |
 | Lua | Implemented | From `.luac` input |
 | WASM/WAT | Implemented | From `.wasm` input |

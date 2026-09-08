@@ -35,6 +35,11 @@ jobs:
       - name: E9 doc-vs-code
         run: python scripts/ci/check_doc_vs_code.py
 
+      - name: DOC-06 relative markdown links resolve
+        run: |
+          python scripts/ci/check_doc_links.py --self-test
+          python scripts/ci/check_doc_links.py
+
       - name: DOC-05 withdrawn claims
         run: python scripts/ci/check_withdrawn_claims.py
 

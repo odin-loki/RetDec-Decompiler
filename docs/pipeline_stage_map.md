@@ -4,7 +4,7 @@
 
 This document maps the proposed 29-stage decompilation pipeline to the RetDec codebase and provides a phased implementation roadmap. The core design principle: **compiled code is not arbitrary code** — it was produced by a deterministic compiler following an ABI. Every stage exploits that structure.
 
-**Gap analysis & incremental work:** use **[PIPELINE_REDESIGN_TODO.md](PIPELINE_REDESIGN_TODO.md)** — the table below marks many stages **Implemented** at the “RetDec has a hook / partial pass” level; the TODO file tracks what still falls short of the **full** algorithms described in the original design write-up.
+**Gap analysis & incremental work:** use **[PIPELINE_REDESIGN_TODO.md](internal/PIPELINE_REDESIGN_TODO.md)** — the table below marks many stages **Implemented** at the “RetDec has a hook / partial pass” level; the TODO file tracks what still falls short of the **full** algorithms described in the original design write-up.
 
 ---
 
@@ -88,8 +88,7 @@ Every stage targets O(n log n) or better. No stage is O(n²). The pipeline is pa
 
 ## Cross-References
 
-- [PIPELINE_REDESIGN_TODO.md](PIPELINE_REDESIGN_TODO.md) — reconciled checklist, P6 invariants, suggested work order.
-- [DECOMPILATION_IMPROVEMENT_FRAMEWORK.md](DECOMPILATION_IMPROVEMENT_FRAMEWORK.md) — file paths, tests, `RETDEC_HEURISTIC_DIAG` / jump-table notes.
+- [PIPELINE_REDESIGN_TODO.md](internal/PIPELINE_REDESIGN_TODO.md) — reconciled checklist, P6 invariants, suggested work order.
 
 Stages covered in separate design docs:
 - Type Inference, Alias Analysis, Jump Table Resolution

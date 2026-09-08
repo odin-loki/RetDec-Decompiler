@@ -99,5 +99,5 @@ frama-c -wp -rte -main check_bounds module_frama.c
 ## References
 
 - [pipeline_stage_map.md](pipeline_stage_map.md) — Stage 28 output validation
-- [PIPELINE_REDESIGN_TODO.md](PIPELINE_REDESIGN_TODO.md) — diagnostic / approximation invariants
+- [PIPELINE_REDESIGN_TODO.md](internal/PIPELINE_REDESIGN_TODO.md) — diagnostic / approximation invariants
 - Frama-C user manual: https://frama-c.com/html/documentation.html
