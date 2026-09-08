@@ -6,6 +6,7 @@
 #include "retdec/java_emitter/java_stmt_emitter.h"
 
 #include <algorithm>
+#include <map>
 #include <cassert>
 
 namespace retdec {
@@ -78,6 +79,7 @@ JavaStmtEmitter::JavaStmtEmitter(
 	exprEmit_(exprCtx_)
 {
 	buildPatternMaps();
+	buildExceptionRegions();
 }
 
 void JavaStmtEmitter::buildPatternMaps()
@@ -88,6 +90,79 @@ void JavaStmtEmitter::buildPatternMaps()
 		stringConcatByBlock_[recon_.patterns.stringConcats[i].blockId] = i;
 	for (size_t i = 0; i < recon_.patterns.lambdas.size(); ++i)
 		lambdaByBlock_[recon_.patterns.lambdas[i].blockId] = i;
+}
+
+/**
+ * Map each exception handler onto the blocks it protects.
+ *
+ * A BcExceptionHandler names its protected region in BYTECODE OFFSETS and its
+ * handler as a BLOCK INDEX. The tryEmitTryCatch this replaces compared the two
+ * directly -- `cfg().block(blockId).id >= eh.startOffset`, a block index
+ * against an offset -- so with any handler present at all it claimed almost
+ * every block. A block is protected here when its first instruction's offset
+ * falls inside the half-open range, which is what the range means.
+ *
+ * Handlers protecting the same range are the clauses of one try, kept in table
+ * order: that is the order the runtime tests them, and so the source order of
+ * the catch clauses. Regions are ordered widest-first at a shared start block,
+ * which is what makes a nested try come out nested rather than as a sibling.
+ */
+void JavaStmtEmitter::buildExceptionRegions()
+{
+	const auto& handlers = cfg().handlers();
+	if (handlers.empty()) return;
+
+	auto blockOffset = [this](uint32_t id) -> uint32_t {
+		const BcBasicBlock& blk = cfg().block(id);
+		return blk.instrs.empty() ? UINT32_MAX : blk.instrs.front().offset;
+	};
+
+	std::map<std::pair<uint32_t, uint32_t>, std::vector<size_t>> byRange;
+	for (size_t i = 0; i < handlers.size(); ++i)
+	{
+		const auto& eh = handlers[i];
+		if (eh.handlerBlock >= cfg().blockCount()) continue;
+		if (eh.endOffset <= eh.startOffset) continue;
+		handlerEntryBlocks_.insert(eh.handlerBlock);
+		byRange[{eh.startOffset, eh.endOffset}].push_back(i);
+	}
+
+	for (const auto& entry: byRange)
+	{
+		const uint32_t rangeStart = entry.first.first;
+		const uint32_t rangeEnd = entry.first.second;
+
+		TryRegion region;
+		region.handlerIndices = entry.second;
+
+		// A handler's own block is never part of the region it protects,
+		// whatever the offsets say: emitting it inside the try would emit the
+		// catch body twice.
+		for (uint32_t b = 0; b < cfg().blockCount(); ++b)
+		{
+			const uint32_t off = blockOffset(b);
+			if (off == UINT32_MAX) continue;
+			if (handlerEntryBlocks_.count(b)) continue;
+			if (off >= rangeStart && off < rangeEnd)
+			{
+				if (region.startBlock == UINT32_MAX) region.startBlock = b;
+			}
+			else if (off >= rangeEnd && region.startBlock != UINT32_MAX && region.endBlock == UINT32_MAX)
+			{
+				region.endBlock = b;
+			}
+		}
+
+		if (region.startBlock == UINT32_MAX) continue; // protects no block
+		tryRegions_.push_back(region);
+	}
+
+	std::sort(tryRegions_.begin(), tryRegions_.end(), [](const TryRegion& a, const TryRegion& b) {
+		if (a.startBlock != b.startBlock) return a.startBlock < b.startBlock;
+		return a.endBlock > b.endBlock;
+	});
+	for (size_t i = 0; i < tryRegions_.size(); ++i)
+		tryRegionsByBlock_[tryRegions_[i].startBlock].push_back(i);
 }
 
 // ─── CFG helpers ─────────────────────────────────────────────────────────────
@@ -474,42 +549,53 @@ bool JavaStmtEmitter::tryEmitIfElse(uint32_t blockId)
 	return true;
 }
 
+/**
+ * Emit the try statement that starts at @a blockId, if one does.
+ *
+ * The version this replaces was never called: emitFrom dispatched to
+ * tryEmitForEach, tryEmitWhile and tryEmitIfElse and to nothing else, so no
+ * method this emitter produced ever contained the word `try`. That mattered
+ * more than a missing keyword. The lifters record a handler and mark its entry
+ * block (JvmLifter::wireExceptions, DexLifter, CilLifter) but add NO CFG edge
+ * to it, so a handler block has no predecessor at all -- and emitFrom walks
+ * successors. Nothing reached those blocks and every catch and finally body was
+ * silently absent from the decompiled source.
+ *
+ * @return @c true when a try was emitted, and the caller must not also emit
+ *         @a blockId itself
+ */
 bool JavaStmtEmitter::tryEmitTryCatch(uint32_t blockId)
 {
-	// Find exception handlers that start at this block.
-	const auto& handlers = cfg().handlers();
-	bool found = false;
-	for (const auto& eh: handlers)
+	auto it = tryRegionsByBlock_.find(blockId);
+	if (it == tryRegionsByBlock_.end()) return false;
+
+	// Outermost region at this block that has not been opened yet. Reentering
+	// through emitProtected below picks up the next one in, so nesting comes
+	// out of the ordering rather than out of a special case.
+	TryRegion* region = nullptr;
+	for (size_t idx: it->second)
 	{
-		if (blockId < cfg().blockCount() && cfg().block(blockId).id >= eh.startOffset)
+		if (!tryRegions_[idx].opened)
 		{
-			found = true;
+			region = &tryRegions_[idx];
 			break;
 		}
 	}
-	if (!found) return false;
+	if (region == nullptr) return false;
+	region->opened = true;
+
+	const uint32_t endBlock = region->endBlock;
+	const std::vector<size_t> handlerIndices = region->handlerIndices;
 
 	out_.writeLine("try {");
 	out_.indent();
-	emitBlock(blockId);
+	emitProtected(blockId, endBlock);
 	out_.dedent();
 
-	for (const auto& eh: handlers)
+	const auto& handlers = cfg().handlers();
+	for (size_t hi: handlerIndices)
 	{
-		if (eh.handlerBlock >= cfg().blockCount()) continue;
-		std::string catchType = "Throwable";
-		if (eh.catchType.has_value()) catchType = tyPrinter_.print(*eh.catchType);
-
-		// Find the exception variable name.
-		std::string exVarName = "ex";
-		for (const auto& lv: method_.locals)
-		{
-			if (lv.name.find("ex") != std::string::npos && !lv.isParam)
-			{
-				exVarName = lv.name;
-				break;
-			}
-		}
+		const auto& eh = handlers[hi];
 
 		if (eh.isFinally)
 		{
@@ -517,14 +603,44 @@ bool JavaStmtEmitter::tryEmitTryCatch(uint32_t blockId)
 		}
 		else
 		{
-			out_.writeLine("} catch (" + catchType + " " + exVarName + ") {");
+			// A catch-all that is not a finally is a CLR fault clause, which
+			// Java cannot spell; Throwable is the closest thing and the comment
+			// says what it was.
+			const std::string catchType = eh.catchType.has_value() ? tyPrinter_.print(*eh.catchType) : "Throwable";
+			// One name per clause. This used to scan method_.locals for any
+			// non-parameter whose name merely CONTAINED "ex" and reuse it for
+			// every clause, so two catches in one method declared the same
+			// variable -- and a local called "index" was liable to be picked.
+			const std::string exVar = "ex" + (catchVarCounter_ == 0 ? std::string() : std::to_string(catchVarCounter_));
+			++catchVarCounter_;
+			out_.writeLine("} catch (" + catchType + " " + exVar + ") {" + (eh.isFault ? " // fault clause" : ""));
 		}
+
 		out_.indent();
-		if (!visited_.count(eh.handlerBlock)) emitFrom(eh.handlerBlock);
+		if (eh.handlerBlock < cfg().blockCount() && !visited_.count(eh.handlerBlock))
+		{
+			const uint32_t previous = emittingHandlerBlock_;
+			emittingHandlerBlock_ = eh.handlerBlock;
+			emitFrom(eh.handlerBlock);
+			emittingHandlerBlock_ = previous;
+		}
 		out_.dedent();
 	}
 	out_.writeLine("}");
+
+	// Whatever follows the protected region is outside the try.
+	if (endBlock != UINT32_MAX && endBlock < cfg().blockCount()) emitFrom(endBlock);
 	return true;
+}
+
+/**
+ * Emit the body of a protected region: the next try nested at the same block if
+ * there is one, otherwise the ordinary block walk.
+ */
+void JavaStmtEmitter::emitProtected(uint32_t id, uint32_t stopBlock)
+{
+	if (tryEmitTryCatch(id)) return;
+	emitFrom(id, stopBlock);
 }
 
 bool JavaStmtEmitter::tryEmitSwitch(uint32_t /*blockId*/)
@@ -553,6 +669,15 @@ void JavaStmtEmitter::emitFrom(uint32_t id, uint32_t stopBlock)
 {
 	while (id < cfg().blockCount() && id != stopBlock && !visited_.count(id))
 	{
+		// A block that only a catch clause may reach. Falling into it from the
+		// ordinary walk would emit the handler body outside its try.
+		if (handlerEntryBlocks_.count(id) && id != emittingHandlerBlock_) return;
+
+		// Before visited_, because the try's own body is emitted by re-entering
+		// here for the same block: marking it first would make the protected
+		// region empty.
+		if (tryEmitTryCatch(id)) return;
+
 		visited_.insert(id);
 
 		if (tryEmitForEach(id)) return;

@@ -48,6 +48,14 @@ static bool contains(const std::string& haystack, const std::string& needle)
 	return haystack.find(needle) != std::string::npos;
 }
 
+static unsigned occurrences(const std::string& haystack, const std::string& needle)
+{
+	unsigned n = 0;
+	for (size_t p = haystack.find(needle); p != std::string::npos; p = haystack.find(needle, p + needle.size()))
+		++n;
+	return n;
+}
+
 // Build a minimal BcClass with the given fqName.
 static BcClass makeClass(const std::string& fqName, const std::string& pkg = "", bool isInterface = false)
 {
@@ -1010,11 +1018,19 @@ TEST(JavaStmtEmitter, LocalVarDeclarations)
 	EXPECT_TRUE(contains(body, "boolean flag;"));
 }
 
-// ─── Statement emitter fixtures ──────────────────────────────────────────────
+// ─── Exception handlers ──────────────────────────────────────────────────────
+//
+// JavaStmtEmitter::tryEmitTryCatch existed and emitFrom never called it, so no
+// emitted method ever contained `try`. Worse, JvmLifter::wireExceptions records
+// the handler and marks the handler block but adds no CFG edge to it, and
+// emitFrom walks successors -- so a handler block has no predecessor, is never
+// reached, and its body was dropped from the output entirely. A decompiled
+// method silently lost every catch and finally body.
 
 namespace {
 
-/// One instruction at a chosen bytecode offset.
+/// One instruction at a chosen bytecode offset, so a handler's protected range
+/// (which is expressed in offsets) can be mapped onto blocks.
 BcInstruction at(uint32_t offset, uint32_t id, BcOpcode op)
 {
 	BcInstruction i;
@@ -1022,6 +1038,64 @@ BcInstruction at(uint32_t offset, uint32_t id, BcOpcode op)
 	i.offset = offset;
 	i.opcode = op;
 	return i;
+}
+
+/// try { field = 1; } catch (java.io.IOException e) { field = 2; }
+///
+/// Block 0 is the protected region, block 1 the handler, block 2 what follows.
+BcMethod makeMethodWithHandler(bool isFinally = false)
+{
+	BcMethod method;
+	method.name = "guarded";
+	method.access = BcAccess::Static;
+
+	// Two locals, so the statements in each region are told apart by name
+	// rather than by a literal that could come from anywhere.
+	BcLocalVar guardedVar;
+	guardedVar.index = 0;
+	guardedVar.name = "guardedResult";
+	guardedVar.type = types::Int();
+	BcLocalVar caughtVar;
+	caughtVar.index = 1;
+	caughtVar.name = "caughtResult";
+	caughtVar.type = types::Int();
+	method.locals = {guardedVar, caughtVar};
+
+	auto& tryBlk = method.cfg.addBlock(); // block 0, offsets 0..2
+	{
+		BcInstruction i = at(0, 0, BcOpcode::PushInt);
+		i.operands.push_back(BcIntOperand{1});
+		tryBlk.instrs.push_back(i);
+		BcInstruction st = at(2, 1, BcOpcode::StoreLocal);
+		st.operands.push_back(BcLocalOperand{0});
+		tryBlk.instrs.push_back(st);
+	}
+
+	auto& handlerBlk = method.cfg.addBlock(); // block 1, offset 10
+	{
+		BcInstruction i = at(10, 2, BcOpcode::PushInt);
+		i.operands.push_back(BcIntOperand{2});
+		handlerBlk.instrs.push_back(i);
+		BcInstruction st = at(12, 3, BcOpcode::StoreLocal);
+		st.operands.push_back(BcLocalOperand{1});
+		handlerBlk.instrs.push_back(st);
+	}
+
+	auto& afterBlk = method.cfg.addBlock(); // block 2, offset 20
+	afterBlk.instrs.push_back(at(20, 4, BcOpcode::Return));
+
+	method.cfg.addEdge(0, 2);
+
+	BcExceptionHandler eh;
+	eh.startOffset = 0;
+	eh.endOffset = 10;
+	eh.handlerBlock = 1;
+	eh.isFinally = isFinally;
+	if (!isFinally) eh.catchType = types::Class("java.io.IOException");
+	method.cfg.addExceptionHandler(eh);
+	method.cfg.block(1).isExceptionHandler = true;
+
+	return method;
 }
 
 std::string emitGuarded(const BcMethod& method)
@@ -1034,6 +1108,57 @@ std::string emitGuarded(const BcMethod& method)
 }
 
 } // namespace
+
+TEST(JavaStmtEmitter, ProtectedRegionIsEmittedAsATryStatement)
+{
+	const std::string body = emitGuarded(makeMethodWithHandler());
+	EXPECT_TRUE(contains(body, "try {")) << body;
+	EXPECT_TRUE(contains(body, "catch (")) << body;
+	EXPECT_TRUE(contains(body, "IOException")) << body;
+}
+
+TEST(JavaStmtEmitter, ACatchBodyIsNotDropped)
+{
+	// The handler block has no predecessor -- wireExceptions adds no CFG edge --
+	// so nothing but the catch clause can reach it. If the emitter does not
+	// emit it, the statements in it are gone from the output.
+	const std::string body = emitGuarded(makeMethodWithHandler());
+	EXPECT_TRUE(contains(body, "caughtResult = 2")) << body;
+}
+
+TEST(JavaStmtEmitter, TheProtectedRegionsOwnStatementsAreStillEmitted)
+{
+	const std::string body = emitGuarded(makeMethodWithHandler());
+	EXPECT_TRUE(contains(body, "guardedResult = 1")) << body;
+}
+
+TEST(JavaStmtEmitter, ACatchAllHandlerIsEmittedAsFinally)
+{
+	const std::string body = emitGuarded(makeMethodWithHandler(/*isFinally=*/true));
+	EXPECT_TRUE(contains(body, "try {")) << body;
+	EXPECT_TRUE(contains(body, "finally {")) << body;
+	EXPECT_FALSE(contains(body, "catch (")) << body;
+}
+
+TEST(JavaStmtEmitter, CodeAfterTheProtectedRegionIsStillEmittedOnce)
+{
+	const std::string body = emitGuarded(makeMethodWithHandler());
+	size_t first = body.find("return");
+	ASSERT_NE(std::string::npos, first) << body;
+	EXPECT_EQ(std::string::npos, body.find("return", first + 1)) << body;
+}
+
+TEST(JavaStmtEmitter, AMethodWithNoHandlersEmitsNoTry)
+{
+	BcMethod plain;
+	plain.name = "plain";
+	plain.access = BcAccess::Static;
+	auto& blk = plain.cfg.addBlock();
+	blk.instrs.push_back(at(0, 0, BcOpcode::Return));
+
+	const std::string body = emitGuarded(plain);
+	EXPECT_FALSE(contains(body, "try {")) << body;
+}
 
 // ─── Local variable declaration and assignment ───────────────────────────────
 
@@ -1099,4 +1224,166 @@ TEST(JavaStmtEmitter, ALocalIsDeclaredExactlyOnce)
 	size_t first = body.find("int total");
 	ASSERT_NE(std::string::npos, first) << body;
 	EXPECT_EQ(std::string::npos, body.find("int total", first + 1)) << body;
+}
+
+
+// The whole statement, not a substring of it: indentation, clause order and
+// brace placement are the parts a `contains` check cannot see.
+TEST(JavaStmtEmitter, TheEmittedTryStatementIsWellFormedJava)
+{
+	const std::string expected =
+		"{\n"
+		"    int guardedResult;\n"
+		"    int caughtResult;\n"
+		"    try {\n"
+		"        guardedResult = 1;\n"
+		"    } catch (IOException ex) {\n"
+		"        caughtResult = 2;\n"
+		"    }\n"
+		"    return;\n"
+		"}\n";
+	EXPECT_EQ(expected, emitGuarded(makeMethodWithHandler()));
+}
+
+TEST(JavaStmtEmitter, TwoHandlersOnOneRangeBecomeTwoCatchClausesOfOneTry)
+{
+	BcMethod method = makeMethodWithHandler();
+
+	// A second handler over the same range, with its own handler block.
+	auto& second = method.cfg.addBlock(); // block 3, offset 30
+	{
+		BcInstruction i = at(30, 5, BcOpcode::PushInt);
+		i.operands.push_back(BcIntOperand{3});
+		second.instrs.push_back(i);
+		BcInstruction st = at(32, 6, BcOpcode::StoreLocal);
+		st.operands.push_back(BcLocalOperand{1});
+		second.instrs.push_back(st);
+	}
+
+	BcExceptionHandler eh;
+	eh.startOffset = 0;
+	eh.endOffset = 10;
+	eh.handlerBlock = 3;
+	eh.catchType = types::Class("java.lang.RuntimeException");
+	method.cfg.addExceptionHandler(eh);
+	method.cfg.block(3).isExceptionHandler = true;
+
+	const std::string body = emitGuarded(method);
+
+	// One try, two clauses, in table order -- which is the order the runtime
+	// tests them and therefore the source order of the catches.
+	EXPECT_EQ(1u, occurrences(body, "try {")) << body;
+
+	const size_t io = body.find("catch (IOException");
+	const size_t rt = body.find("catch (RuntimeException");
+	ASSERT_NE(std::string::npos, io) << body;
+	ASSERT_NE(std::string::npos, rt) << body;
+	EXPECT_LT(io, rt) << body;
+
+	// Distinct variables: the old code reused one name for every clause.
+	EXPECT_TRUE(contains(body, "IOException ex)")) << body;
+	EXPECT_TRUE(contains(body, "RuntimeException ex1)")) << body;
+}
+
+TEST(JavaStmtEmitter, ANestedProtectedRegionComesOutNested)
+{
+	// Outer try over offsets [0, 30); inner try over [0, 10). Both start at
+	// block 0, so the emitter has to open the wider one first or the inner one
+	// swallows the outer's body.
+	BcMethod method;
+	method.name = "nested";
+	method.access = BcAccess::Static;
+
+	BcLocalVar lv;
+	lv.index = 0;
+	lv.name = "n";
+	lv.type = types::Int();
+	method.locals.push_back(lv);
+
+	auto pushStore = [&](BcBasicBlock& blk, uint32_t off, uint32_t id, int value) {
+		BcInstruction i = at(off, id, BcOpcode::PushInt);
+		i.operands.push_back(BcIntOperand{value});
+		blk.instrs.push_back(i);
+		BcInstruction st = at(off + 2, id + 1, BcOpcode::StoreLocal);
+		st.operands.push_back(BcLocalOperand{0});
+		blk.instrs.push_back(st);
+	};
+
+	auto& inner = method.cfg.addBlock(); // 0, offset 0   — inside both regions
+	pushStore(inner, 0, 0, 1);
+	auto& outer = method.cfg.addBlock(); // 1, offset 10  — outer region only
+	pushStore(outer, 10, 2, 2);
+	auto& innerH = method.cfg.addBlock(); // 2, offset 40 — inner handler
+	pushStore(innerH, 40, 4, 3);
+	auto& outerH = method.cfg.addBlock(); // 3, offset 50 — outer handler
+	pushStore(outerH, 50, 6, 4);
+	auto& after = method.cfg.addBlock(); // 4, offset 30
+	after.instrs.push_back(at(30, 8, BcOpcode::Return));
+
+	method.cfg.addEdge(0, 1);
+	method.cfg.addEdge(1, 4);
+
+	BcExceptionHandler innerEh;
+	innerEh.startOffset = 0;
+	innerEh.endOffset = 10;
+	innerEh.handlerBlock = 2;
+	innerEh.catchType = types::Class("java.io.IOException");
+	method.cfg.addExceptionHandler(innerEh);
+
+	BcExceptionHandler outerEh;
+	outerEh.startOffset = 0;
+	outerEh.endOffset = 30;
+	outerEh.handlerBlock = 3;
+	outerEh.catchType = types::Class("java.lang.Exception");
+	method.cfg.addExceptionHandler(outerEh);
+
+	const std::string body = emitGuarded(method);
+
+	const size_t outerTry = body.find("try {");
+	ASSERT_NE(std::string::npos, outerTry) << body;
+	const size_t innerTry = body.find("try {", outerTry + 1);
+	ASSERT_NE(std::string::npos, innerTry) << body;
+
+	// The inner try is indented further than the outer one.
+	const size_t outerLine = body.rfind('\n', outerTry) + 1;
+	const size_t innerLine = body.rfind('\n', innerTry) + 1;
+	EXPECT_LT(outerTry - outerLine, innerTry - innerLine) << body;
+
+	// The inner catch closes before the outer one opens.
+	const size_t innerCatch = body.find("catch (IOException");
+	const size_t outerCatch = body.find("catch (Exception");
+	ASSERT_NE(std::string::npos, innerCatch) << body;
+	ASSERT_NE(std::string::npos, outerCatch) << body;
+	EXPECT_LT(innerCatch, outerCatch) << body;
+}
+
+TEST(JavaStmtEmitter, AHandlerWithAnEmptyOrInvertedRangeIsIgnored)
+{
+	BcMethod method = makeMethodWithHandler();
+	// endOffset <= startOffset protects nothing; the old code would still have
+	// emitted a catch clause for it.
+	BcExceptionHandler bad;
+	bad.startOffset = 40;
+	bad.endOffset = 40;
+	bad.handlerBlock = 1;
+	bad.catchType = types::Class("java.lang.Error");
+	method.cfg.addExceptionHandler(bad);
+
+	const std::string body = emitGuarded(method);
+	EXPECT_FALSE(contains(body, "Error")) << body;
+}
+
+TEST(JavaStmtEmitter, AHandlerNamingABlockThatDoesNotExistIsIgnored)
+{
+	BcMethod method = makeMethodWithHandler();
+	BcExceptionHandler bad;
+	bad.startOffset = 0;
+	bad.endOffset = 10;
+	bad.handlerBlock = 9999;
+	bad.catchType = types::Class("java.lang.Error");
+	method.cfg.addExceptionHandler(bad);
+
+	const std::string body = emitGuarded(method);
+	EXPECT_FALSE(contains(body, "Error")) << body;
+	EXPECT_TRUE(contains(body, "IOException")) << body;
 }

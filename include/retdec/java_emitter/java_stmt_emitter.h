@@ -137,8 +137,42 @@ private:
 	// Pattern lookup: block id → lambda pattern
 	std::unordered_map<uint32_t, size_t> lambdaByBlock_;
 
+	/// One `try` statement: a half-open block range and the handlers that
+	/// protect it. Handlers sharing a protected range are the clauses of one
+	/// try, in table order -- which is the order the runtime tests them and so
+	/// the source order of the catch clauses.
+	struct TryRegion
+	{
+		uint32_t startBlock = 0;            ///< First protected block
+		uint32_t endBlock = UINT32_MAX;     ///< First block past the region
+		std::vector<size_t> handlerIndices; ///< Into cfg().handlers()
+		bool opened = false;                ///< Already emitted
+	};
+
+	/// Regions in the order they must nest: by start block, then widest first,
+	/// so an enclosing try is opened before the one inside it.
+	std::vector<TryRegion> tryRegions_;
+	/// Start block → indices into tryRegions_, widest first.
+	std::unordered_map<uint32_t, std::vector<size_t>> tryRegionsByBlock_;
+	/// Blocks that are the entry of some handler. Nothing branches to them --
+	/// the lifters record the handler without adding a CFG edge -- so they are
+	/// reachable only from the catch clause that owns them.
+	std::set<uint32_t> handlerEntryBlocks_;
+	/// Distinct name for each catch clause's exception variable.
+	uint32_t catchVarCounter_ = 0;
+	/// The one handler block emitFrom is allowed to walk into, while its catch
+	/// clause is being emitted. Every other handler block is refused, so a
+	/// handler body cannot be emitted outside the try that owns it.
+	uint32_t emittingHandlerBlock_ = UINT32_MAX;
+
 	// Build pattern lookup maps from recon_.patterns.
 	void buildPatternMaps();
+
+	// Build tryRegions_ / handlerEntryBlocks_ from cfg().handlers().
+	void buildExceptionRegions();
+
+	// Emit blocks [id, stopBlock) opening any try regions that start at `id`.
+	void emitProtected(uint32_t id, uint32_t stopBlock);
 
 	// ── Control flow structure emission ──────────────────────────────────────
 
