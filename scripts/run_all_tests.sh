@@ -56,15 +56,31 @@ echo ""
 echo "--- 3. Valgrind memory leak check ---"
 if command -v valgrind >/dev/null 2>&1 && [ -x "$DECOMPILER" ] && [ -n "$SMOKE_BIN" ] && [ -f "$SMOKE_BIN" ]; then
 	OUT="/tmp/retdec_valgrind_$$.c"
+	# $? after a pipeline is the LAST command's status -- `tail`'s, which is
+	# always 0. So --error-exitcode=99 could never be observed: a run in which
+	# valgrind found every kind of memory error still printed "Valgrind exit:
+	# 0" and the check passed. PIPESTATUS[0] is valgrind's own status.
 	valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes \
 		--error-exitcode=99 \
 		"$DECOMPILER" -o "$OUT" "$SMOKE_BIN" 2>&1 | tail -80
-	EX=$?
+	EX=${PIPESTATUS[0]}
 	rm -f "$OUT"
-	[ $EX -eq 99 ] && echo "Valgrind found issues (exit 99)" || echo "Valgrind exit: $EX"
+	if [ "$EX" -eq 99 ]; then
+		echo "Valgrind found issues (exit 99)"
+		VALGRIND_FAILED=1
+	else
+		echo "Valgrind exit: $EX"
+	fi
 else
 	echo "Skipped: valgrind, decompiler, or smoke PE missing (stage dist/windows or set SMOKE_BIN)"
 fi
 
 echo ""
 echo "=== Test suite complete ==="
+
+# Reporting the failure and then exiting 0 is the same defect one level up:
+# a caller reading the status would see a clean run.
+if [ "${VALGRIND_FAILED:-0}" -ne 0 ]; then
+	echo "run_all_tests: FAIL — valgrind reported memory errors" >&2
+	exit 1
+fi

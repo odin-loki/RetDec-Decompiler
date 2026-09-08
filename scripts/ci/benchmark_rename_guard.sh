@@ -22,6 +22,7 @@
 # Usage:
 #   bash scripts/ci/benchmark_rename_guard.sh [--decompiler PATH] [--limit N]
 #                                             [--timeout S] [--strict]
+#   bash scripts/ci/benchmark_rename_guard.sh --self-test   # no build needed
 #
 # Env:
 #   RENAME_GUARD_LIMIT     default 5 (nightly may set 12+)
@@ -36,6 +37,7 @@ LIMIT="${RENAME_GUARD_LIMIT:-5}"
 TIMEOUT="${RENAME_GUARD_TIMEOUT:-180}"
 WORKDIR="${RUNNER_TEMP:-/tmp}/retdec-rename-guard"
 STRICT=0
+SELF_TEST=0
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -43,6 +45,7 @@ while [[ $# -gt 0 ]]; do
 		--limit) LIMIT="$2"; shift 2 ;;
 		--timeout) TIMEOUT="$2"; shift 2 ;;
 		--strict) STRICT=1; shift ;;
+		--self-test) SELF_TEST=1; shift ;;
 		*) echo "Unknown arg: $1" >&2; exit 1 ;;
 	esac
 done
@@ -55,6 +58,154 @@ skip() {
 	echo "benchmark_rename_guard: SKIP — $1"
 	exit 0
 }
+
+# Compare the semanticDetections of a named/hashed pair.
+#
+# Exit status is the whole point of this function and used to be thrown away.
+# It was called as `if ! python3 ... ; then rc=$?`, and inside a negated `if`
+# $? is the status of the negation -- 0 whenever the branch is taken. So rc was
+# always 0, `[[ rc -eq 1 ]]` never held, FAILED was never set, and the guard's
+# only failure path was unreachable: a tree where every detection was
+# filename-derived printed "compare skipped (rc=0)" for each pair and exited 0.
+#
+#   0  the pair agrees
+#   1  a detection appears only on the named copy -- the thing this guards
+#   2  the pair could not be compared (a config JSON is missing)
+compare_pair() {
+	python3 - "$1" "$2" "$3" <<'PY'
+from __future__ import annotations
+import json, sys
+from pathlib import Path
+
+def find_config(out_c: Path) -> Path | None:
+    cands = [
+        out_c.parent / (out_c.name + ".config.json"),
+        out_c.parent / (out_c.stem + ".config.json"),
+        Path(str(out_c) + ".config.json"),
+    ]
+    for p in cands:
+        if p.is_file():
+            return p
+    return None
+
+def det_set(cfg: dict) -> set[str]:
+    found: set[str] = set()
+    for fn in cfg.get("functions", []):
+        for det in fn.get("semanticDetections", []) or []:
+            kind = str(det.get("kind") or "").strip().lower()
+            label = str(det.get("label") or "").strip().lower()
+            if kind or label:
+                found.add(f"{kind}:{label}")
+    return found
+
+named_c = Path(sys.argv[1])
+hash_c = Path(sys.argv[2])
+name = sys.argv[3]
+cfg_n = find_config(named_c)
+cfg_h = find_config(hash_c)
+if cfg_n is None:
+    print(f"benchmark_rename_guard: no config JSON for named {name}", file=sys.stderr)
+    sys.exit(2)
+if cfg_h is None:
+    print(f"benchmark_rename_guard: no config JSON for hashed {name}", file=sys.stderr)
+    sys.exit(2)
+named = det_set(json.loads(cfg_n.read_text(encoding="utf-8")))
+hashed = det_set(json.loads(cfg_h.read_text(encoding="utf-8")))
+only_named = sorted(named - hashed)
+only_hash = sorted(hashed - named)
+print(f"  named detections ({len(named)}): {sorted(named)}")
+print(f"  hash  detections ({len(hashed)}): {sorted(hashed)}")
+if only_named:
+    print(
+        f"FAIL: detections appear only on the named copy of {name}: {only_named}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+if only_hash:
+    print(f"  note: extra detections on hashed copy (not a filename cheat): {only_hash}")
+sys.exit(0)
+PY
+}
+
+# --self-test: prove the failure path is reachable.
+#
+# The bug this replaces was not that the comparison was wrong -- it was that
+# its verdict never reached FAILED, so the guard could not go red no matter
+# what the decompiler produced. Nothing in the repository exercised that,
+# because reaching it needs a built decompiler and a corpus. This does the
+# comparison against configs written here, so the wiring is checked on every
+# run of the doc/CI smoke gates instead of only on a nightly.
+self_test() {
+	local dir status rc failures=0
+	dir="$(mktemp -d)"
+	trap 'rm -rf "${dir}"' RETURN
+
+	write_cfg() { # path, detection-label ("" for none)
+		if [[ -z "$2" ]]; then
+			printf '{"functions":[{"semanticDetections":[]}]}' > "$1"
+		else
+			printf '{"functions":[{"semanticDetections":[{"kind":"algo","label":"%s"}]}]}' "$2" > "$1"
+		fi
+	}
+
+	check() { # description, expected-rc, named-label, hash-label, drop-hash-config
+		local desc="$1" want="$2" nlab="$3" hlab="$4" drop="${5:-}"
+		: > "${dir}/named.c"
+		: > "${dir}/hash.c"
+		write_cfg "${dir}/named.c.config.json" "${nlab}"
+		if [[ -n "${drop}" ]]; then
+			rm -f "${dir}/hash.c.config.json"
+		else
+			write_cfg "${dir}/hash.c.config.json" "${hlab}"
+		fi
+		rc=0
+		compare_pair "${dir}/named.c" "${dir}/hash.c" self-test >/dev/null 2>&1 || rc=$?
+		if [[ "${rc}" -eq "${want}" ]]; then
+			echo "  ok  ${desc} (rc=${rc})"
+		else
+			echo "  FAIL ${desc}: expected rc=${want}, got rc=${rc}"
+			failures=$((failures + 1))
+		fi
+	}
+
+	echo "benchmark_rename_guard --self-test"
+	check "a detection only on the named copy is a failure" 1 aes ""
+	check "the same detections on both copies pass"         0 aes aes
+	check "a detection only on the hashed copy passes"      0 ""  aes
+	check "a missing config is skipped, not failed"         2 aes aes drop
+
+	# And that the status actually reaches FAILED, which is what regressed.
+	local FAILED=0
+	rc=0
+	: > "${dir}/named.c"; : > "${dir}/hash.c"
+	write_cfg "${dir}/named.c.config.json" aes
+	write_cfg "${dir}/hash.c.config.json" ""
+	compare_pair "${dir}/named.c" "${dir}/hash.c" self-test >/dev/null 2>&1 || rc=$?
+	case "${rc}" in
+		0) : ;;
+		1) FAILED=1 ;;
+		*) : ;;
+	esac
+	if [[ "${FAILED}" -eq 1 ]]; then
+		echo "  ok  a failing pair sets FAILED"
+	else
+		echo "  FAIL a failing pair left FAILED at 0 -- the guard cannot go red"
+		failures=$((failures + 1))
+	fi
+
+	if [[ "${failures}" -ne 0 ]]; then
+		echo "benchmark_rename_guard --self-test: ${failures} failure(s)"
+		return 1
+	fi
+	echo "benchmark_rename_guard --self-test: OK"
+	return 0
+}
+
+if [[ "${SELF_TEST}" -eq 1 ]]; then
+	self_test
+	exit $?
+fi
+
 
 if [[ -z "${DEC}" ]]; then
 	for candidate in \
@@ -209,69 +360,15 @@ for src in "${SELECTED[@]}"; do
 		continue
 	fi
 
-	if ! python3 - "${out_named}" "${out_hash}" "${base}" <<'PY'
-from __future__ import annotations
-import json, sys
-from pathlib import Path
-
-def find_config(out_c: Path) -> Path | None:
-    cands = [
-        out_c.parent / (out_c.name + ".config.json"),
-        out_c.parent / (out_c.stem + ".config.json"),
-        Path(str(out_c) + ".config.json"),
-    ]
-    for p in cands:
-        if p.is_file():
-            return p
-    return None
-
-def det_set(cfg: dict) -> set[str]:
-    found: set[str] = set()
-    for fn in cfg.get("functions", []):
-        for det in fn.get("semanticDetections", []) or []:
-            kind = str(det.get("kind") or "").strip().lower()
-            label = str(det.get("label") or "").strip().lower()
-            if kind or label:
-                found.add(f"{kind}:{label}")
-    return found
-
-named_c = Path(sys.argv[1])
-hash_c = Path(sys.argv[2])
-name = sys.argv[3]
-cfg_n = find_config(named_c)
-cfg_h = find_config(hash_c)
-if cfg_n is None:
-    print(f"benchmark_rename_guard: no config JSON for named {name}", file=sys.stderr)
-    sys.exit(2)
-if cfg_h is None:
-    print(f"benchmark_rename_guard: no config JSON for hashed {name}", file=sys.stderr)
-    sys.exit(2)
-named = det_set(json.loads(cfg_n.read_text(encoding="utf-8")))
-hashed = det_set(json.loads(cfg_h.read_text(encoding="utf-8")))
-only_named = sorted(named - hashed)
-only_hash = sorted(hashed - named)
-print(f"  named detections ({len(named)}): {sorted(named)}")
-print(f"  hash  detections ({len(hashed)}): {sorted(hashed)}")
-if only_named:
-    print(
-        f"FAIL: detections appear only on the named copy of {name}: {only_named}",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-if only_hash:
-    print(f"  note: extra detections on hashed copy (not a filename cheat): {only_hash}")
-sys.exit(0)
-PY
-	then
-		rc=$?
-		if [[ "${rc}" -eq 1 ]]; then
-			FAILED=1
-		else
-			echo "benchmark_rename_guard: compare skipped for ${base} (rc=${rc})"
-		fi
-	else
-		COMPARED=$((COMPARED + 1))
-	fi
+	# `|| rc=$?` keeps the real status without a negated `if` and without
+	# tripping `set -e`.
+	rc=0
+	compare_pair "${out_named}" "${out_hash}" "${base}" || rc=$?
+	case "${rc}" in
+		0) COMPARED=$((COMPARED + 1)) ;;
+		1) FAILED=1 ;;
+		*) echo "benchmark_rename_guard: compare skipped for ${base} (rc=${rc})" ;;
+	esac
 done
 
 if [[ "${FAILED}" -ne 0 ]]; then
