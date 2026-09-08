@@ -402,26 +402,53 @@ public:
 	const std::string& typeName(uint32_t typeIdx) const; ///< Resolved class descriptor
 	std::string typeDescriptor(uint32_t typeIdx) const;
 
-	// Index table accessors
+	// Index table accessors.
+	//
+	// Not std::vector::at(): that throws std::out_of_range, and every caller in
+	// this tree catches DexParseError and nothing else -- see
+	// DexClassParser::parseClass and ApkReader::processDex. An index out of
+	// range taken from a malformed file therefore left the handler meant to
+	// contain it and reached the top of main:
+	//
+	//   terminate called after throwing an instance of 'std::out_of_range'
+	//     what():  vector::_M_range_check: __n (which is 65535)
+	//              >= this->size() (which is 1)
+	//
+	// from two bytes -- method_ids[0].proto_idx -- in an otherwise valid
+	// classes.dex, through DexClassParser::parseMethods, which validates the
+	// method index and then hands the proto index straight to protoId().
+	// dex_header.cpp fixed this for the resolution helpers below and these five
+	// were left behind; itemAt() there now calls through to this.
+	template <typename Table>
+	static const typename Table::value_type& checkedAt(
+			const Table& table, uint32_t idx, const char* what)
+	{
+		if (idx >= table.size())
+		{
+			throw DexParseError(std::string(what) + " index out of range: " + std::to_string(idx));
+		}
+		return table[idx];
+	}
+
 	const TypeId& typeId(uint32_t idx) const
 	{
-		return typeIds_.at(idx);
+		return checkedAt(typeIds_, idx, "type");
 	}
 	const ProtoId& protoId(uint32_t idx) const
 	{
-		return protoIds_.at(idx);
+		return checkedAt(protoIds_, idx, "proto");
 	}
 	const FieldId& fieldId(uint32_t idx) const
 	{
-		return fieldIds_.at(idx);
+		return checkedAt(fieldIds_, idx, "field");
 	}
 	const MethodId& methodId(uint32_t idx) const
 	{
-		return methodIds_.at(idx);
+		return checkedAt(methodIds_, idx, "method");
 	}
 	const ClassDef& classDef(uint32_t idx) const
 	{
-		return classDefs_.at(idx);
+		return checkedAt(classDefs_, idx, "class");
 	}
 
 	// Resolution helpers

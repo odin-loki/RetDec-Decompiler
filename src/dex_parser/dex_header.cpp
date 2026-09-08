@@ -462,16 +462,14 @@ namespace {
 
 /// Bounds-check a table index and report it as this module's error type.
 ///
-/// The accessors below used std::vector::at(), which throws std::out_of_range.
-/// Every caller in this tree catches DexParseError and nothing else -- see
-/// DexClassParser::parseClass -- so an out-of-range index taken from a
-/// malformed file escaped as a different exception type past the handler meant
-/// to contain it. string() above already got this right; the rest did not.
+/// One definition, in DexFile::checkedAt, shared with the five index-table
+/// accessors in the header. It was here alone, and those five kept
+/// std::vector::at() -- which is a different exception type past the handler
+/// meant to contain it, and was reachable from a DEX method_id.
 template <typename Table>
 const typename Table::value_type& itemAt(const Table& table, uint32_t idx, const char* what)
 {
-	if (idx >= table.size()) throw DexParseError(std::string(what) + " index out of range: " + std::to_string(idx));
-	return table[idx];
+	return DexFile::checkedAt(table, idx, what);
 }
 
 } // namespace

@@ -464,6 +464,72 @@ TEST(DexFile, ResolvesTypeNames)
 	EXPECT_EQ("V", df.typeName(1));       // type[1] → string[2]
 }
 
+// ─── An index a DEX supplied that its own tables cannot ─────────────────────
+//
+// The five index-table accessors used std::vector::at(), which throws
+// std::out_of_range. Every caller in this tree catches DexParseError and
+// nothing else -- DexClassParser::parseClass and ApkReader::processDex both do
+// -- so an out-of-range index left the handler meant to contain it and reached
+// the top of main. DexClassParser::parseMethods validates the method index and
+// then hands the proto index straight to protoId(), so two bytes were enough:
+//
+//   terminate called after throwing an instance of 'std::out_of_range'
+//     what():  vector::_M_range_check: __n (which is 65535)
+//              >= this->size() (which is 1)
+//
+// with the process killed by SIGABRT (exit 134). Measured on the minimal DEX
+// below with method_ids[0].proto_idx set to 0xFFFF.
+
+TEST(DexFile, EveryIndexTableAccessorReportsThisModulesErrorType)
+{
+	auto dex = buildMinimalDex();
+	DexFile df = DexFile::parse(dex);
+
+	// One past the end of each table, and the widest value the field can hold.
+	EXPECT_THROW((void) df.typeId(df.typeCount()), DexParseError);
+	EXPECT_THROW((void) df.protoId(df.protoCount()), DexParseError);
+	EXPECT_THROW((void) df.fieldId(df.fieldCount()), DexParseError);
+	EXPECT_THROW((void) df.methodId(df.methodCount()), DexParseError);
+	EXPECT_THROW((void) df.classDef(df.classCount()), DexParseError);
+
+	EXPECT_THROW((void) df.typeId(0xFFFF), DexParseError);
+	EXPECT_THROW((void) df.protoId(0xFFFF), DexParseError);
+	EXPECT_THROW((void) df.fieldId(0xFFFF), DexParseError);
+	EXPECT_THROW((void) df.methodId(0xFFFFFFFFu), DexParseError);
+	EXPECT_THROW((void) df.classDef(0xFFFFFFFFu), DexParseError);
+
+	// And the in-range ones still answer.
+	EXPECT_NO_THROW((void) df.protoId(0));
+	EXPECT_NO_THROW((void) df.methodId(0));
+	EXPECT_NO_THROW((void) df.classDef(0));
+}
+
+// The path that actually reaches it: a method_id whose proto_idx names a proto
+// the file does not have. This has to come back as a reported failure, not as
+// a process that ceases to exist.
+TEST(DexFile, AProtoIndexOutOfRangeIsReportedNotFatal)
+{
+	auto dex = buildMinimalDex();
+	// method_ids[0].proto_idx is the u2 at 0x9A; see the layout comment above.
+	dex[0x9A] = 0xFF;
+	dex[0x9B] = 0xFF;
+
+	retdec::dex_parser::ApkReader reader;
+	retdec::dex_parser::ApkReadResult result;
+	ASSERT_NO_THROW(result = reader.readDex(dex.data(), dex.size(), "classes.dex"));
+
+	EXPECT_EQ(retdec::dex_parser::ApkReadResult::PartialError, result.status);
+	ASSERT_FALSE(result.warnings.empty());
+	EXPECT_NE(std::string::npos, result.warnings[0].find("proto index out of range"))
+		<< result.warnings[0];
+
+	// The clean file is still read, so the guard is the index and not the path.
+	auto good = buildMinimalDex();
+	auto ok = reader.readDex(good.data(), good.size(), "classes.dex");
+	EXPECT_EQ(retdec::dex_parser::ApkReadResult::OK, ok.status);
+	EXPECT_EQ(1u, ok.module.classes().size());
+}
+
 TEST(DexFile, ResolvesMethodProto)
 {
 	auto dex = buildMinimalDex();
@@ -1800,6 +1866,95 @@ TEST(DexInsnSize, InvokeSuperIsThreeCodeUnits)
 	DexFile df = DexFile::parse(dex);
 	// 35c: invoke-super {v0}, method@0 | return-void
 	expectInsnThenReturn(df, {0x106F, 0x0000, 0x0000, 0x000E}, BcOpcode::DALVIK_INVOKE_SUPER);
+}
+
+// ─── 35c register nibbles ───────────────────────────────────────────────────
+//
+// Format 35c is `A|G|op BBBB F|E|D|C` with argument list {vC,vD,vE,vF,vG}.
+// C..F are the four nibbles of the third code unit, low to high; G is the high
+// nibble of the FIRST unit and is the FIFTH argument. args35c() read G as vC
+// and shifted every real register one slot later, so the list was
+// [G, C, D, E, F] truncated to `count`. Measured before the fix:
+//
+//   invoke-virtual {v1, v2}   ->  v0 v1
+//   invoke-direct  {v0, v1}   ->  v0 v0    (the new-instance/<init> idiom)
+//   invoke-virtual {v3}       ->  v0
+//   invoke-virtual {v1,..,v5} ->  v5 v1 v2 v3 v4
+//
+// The two existing invoke tests use {v0} and {}, where G and C are both zero
+// and the rotation is invisible, and neither asserts on the registers.
+
+namespace {
+
+/// The register operands of the first instruction of the first block, as
+/// "v1 v2" -- a string rather than a vector so a failure names the registers
+/// instead of printing "<24-byte object>", which is what the shim makes of a
+/// std::vector and is no use to whoever reads the next regression.
+std::string firstInsnRegs(const DexLiftResult& r)
+{
+	std::string regs;
+	if (r.cfg.blocks().empty() || r.cfg.blocks()[0].instrs.empty()) return regs;
+	for (const auto& op: r.cfg.blocks()[0].instrs[0].operands)
+	{
+		if (const auto* local = std::get_if<retdec::bc_module::BcLocalOperand>(&op))
+		{
+			if (!regs.empty()) regs += ' ';
+			regs += 'v';
+			regs += std::to_string(local->index);
+		}
+	}
+	return regs;
+}
+
+} // namespace
+
+TEST(DexLifter, Invoke35cRegistersAreInArgumentOrder)
+{
+	auto dex = buildMinimalDex();
+	DexFile df = DexFile::parse(dex);
+
+	// invoke-virtual {v1, v2}, meth@0
+	//   word0 = A|G|op  = (2 << 12) | (0 << 8) | 0x6E
+	//   word2 = F|E|D|C = (2 << 4) | 1
+	auto two = liftUnits(df, {0x206E, 0x0000, 0x0021, 0x000E});
+	ASSERT_EQ(DexLiftResult::OK, two.status) << two.error;
+	EXPECT_EQ("v1 v2", firstInsnRegs(two));
+
+	// invoke-direct {v0, v1}, meth@0 -- what `new T(); T.<init>(arg)` compiles
+	// to, and the case where the rotation collapsed both slots onto v0.
+	auto ctor = liftUnits(df, {0x2070, 0x0000, 0x0010, 0x000E});
+	ASSERT_EQ(DexLiftResult::OK, ctor.status) << ctor.error;
+	EXPECT_EQ("v0 v1", firstInsnRegs(ctor));
+
+	// One argument, non-zero: the receiver of every single-argument virtual
+	// call. G is 0 here, so the old code answered v0 whatever C was.
+	auto one = liftUnits(df, {0x106E, 0x0000, 0x0003, 0x000E});
+	ASSERT_EQ(DexLiftResult::OK, one.status) << one.error;
+	EXPECT_EQ("v3", firstInsnRegs(one));
+
+	// All five, which is the only shape that uses G at all.
+	//   word0 = (5 << 12) | (5 << 8) | 0x6E
+	//   word2 = (4 << 12) | (3 << 8) | (2 << 4) | 1
+	auto five = liftUnits(df, {0x556E, 0x0000, 0x4321, 0x000E});
+	ASSERT_EQ(DexLiftResult::OK, five.status) << five.error;
+	EXPECT_EQ("v1 v2 v3 v4 v5", firstInsnRegs(five));
+
+	// Zero arguments takes no register at all.
+	auto none = liftUnits(df, {0x0072, 0x0000, 0x0000, 0x000E});
+	ASSERT_EQ(DexLiftResult::OK, none.status) << none.error;
+	EXPECT_EQ("", firstInsnRegs(none));
+}
+
+// filled-new-array shares args35c, and its operand list is the array contents.
+TEST(DexLifter, FilledNewArrayRegistersAreInArgumentOrder)
+{
+	auto dex = buildMinimalDex();
+	DexFile df = DexFile::parse(dex);
+
+	// filled-new-array {v1, v2}, type@1
+	auto r = liftUnits(df, {0x2024, 0x0001, 0x0021, 0x000E});
+	ASSERT_EQ(DexLiftResult::OK, r.status) << r.error;
+	EXPECT_EQ("v1 v2", firstInsnRegs(r));
 }
 
 TEST(DexInsnSize, UnusedOpcodeAdvancesOneUnit)

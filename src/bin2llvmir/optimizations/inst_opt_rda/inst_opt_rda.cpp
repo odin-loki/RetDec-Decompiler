@@ -106,6 +106,16 @@ bool usesWithOneDefInSameBb(
 		return false;
 	}
 
+	// RDA pairs a store with a load by their POINTER operand, and says nothing
+	// about the value types at either end. Under opaque pointers a store of an
+	// i32 and a load of an i64 through the same register global are the same
+	// definition to this analysis, and replaceAllUsesWith asserts on the
+	// mismatch. See defWithUsesInTheSameBb below for the measured crash.
+	if (load->getType() != store->getValueOperand()->getType())
+	{
+		return false;
+	}
+
 	load->replaceAllUsesWith(store->getValueOperand());
 	IrModifier::eraseUnusedInstructionRecursive(load);
 
@@ -150,9 +160,30 @@ bool defWithUsesInTheSameBb(
 	bool allUsesRemoved = true;
 	for (auto* use : def->uses)
 	{
+		// The type check is the one this pass was missing.
+		//
+		// ReachingDefinitionsAnalysis pairs a definition with a use by their
+		// POINTER operand -- see initializeBasicBlocks, which records
+		// Definition(s, s->getPointerOperand(), ...) and
+		// Use(l, l->getPointerOperand(), ...) -- and says nothing about the
+		// value types at either end. Under opaque pointers a store of an i32
+		// and a load of an i64 through the same register global are one
+		// definition and one use of it, and replaceAllUsesWith asserts:
+		//
+		//   llvm/lib/IR/Value.cpp:523: void llvm::Value::doRAUW(...):
+		//   Assertion `New->getType() == getType() && "replaceAllUses of value
+		//   with new value of different type!"' failed.
+		//   1. Running pass 'LLVM instruction optimization using RDA'
+		//
+		// on tests/algorithm_recovery's generated_quicksort-gcc-O0, which is
+		// what ctest-linux's algorithm-recovery gate had been failing on. The
+		// three patterns in inst_opt_rda_ext.cpp each check this already; the
+		// two in this file did not, and predate opaque pointers, where a
+		// pointer's element type tied the two together.
 		if (use->use
 				&& store->getParent() == use->use->getParent()
 				&& llvm::isa<llvm::LoadInst>(use->use)
+				&& use->use->getType() == store->getValueOperand()->getType()
 				&& def->dominates(use))
 		{
 			use->use->replaceAllUsesWith(store->getValueOperand());

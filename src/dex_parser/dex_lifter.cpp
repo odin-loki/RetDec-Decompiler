@@ -906,18 +906,34 @@ uint32_t DexLifter::decodeInsn(BcBasicBlock& blk, const std::vector<uint16_t>& i
 			insn.operands.push_back(makeReg(r));
 	};
 
-	// 35c format: {vC,vD,vE,vF,vG}, method@BBBB
+	// 35c format: `A|G|op BBBB F|E|D|C`, argument list {vC,vD,vE,vF,vG}.
+	//
+	// C, D, E and F are the four nibbles of the THIRD code unit, low to high;
+	// G is the high nibble of the FIRST. G is the FIFTH argument, not the
+	// first. This read G as vC and then shifted every real register one slot
+	// later, so the list handed to makeInvoke was [G, C, D, E, F] truncated to
+	// `count`: the receiver was wrong and the last argument was dropped.
+	// Measured, before:
+	//
+	//   invoke-virtual {v1, v2}   ->  v0 v1
+	//   invoke-direct  {v0, v1}   ->  v0 v0    (the new-instance/<init> idiom)
+	//   invoke-virtual {v3}       ->  v0
+	//   invoke-virtual {v1,..,v5} ->  v5 v1 v2 v3 v4
+	//
+	// Only a zero-argument call and one whose registers are all zero came out
+	// right, which is what the two existing invoke tests happened to use. This
+	// is invoke-virtual/super/direct/static/interface, invoke-polymorphic,
+	// invoke-custom and filled-new-array -- essentially every call in compiled
+	// Android code.
 	auto args35c = [&]() -> std::vector<uint32_t> {
-		uint8_t count = (w(0) >> 12) & 0xF;
-		uint16_t vidx = w(2);
+		const uint8_t count = (w(0) >> 12) & 0xF;
+		const uint8_t vC = (w(2) >> 0) & 0xF;
+		const uint8_t vD = (w(2) >> 4) & 0xF;
+		const uint8_t vE = (w(2) >> 8) & 0xF;
+		const uint8_t vF = (w(2) >> 12) & 0xF;
+		const uint8_t vG = (w(0) >> 8) & 0xF;
+
 		std::vector<uint32_t> args;
-		// args are in w(0) high nibbles and w(2)
-		uint8_t vC = (w(0) >> 8) & 0xF;
-		uint8_t vD = (w(2) >> 0) & 0xF;
-		uint8_t vE = (w(2) >> 4) & 0xF;
-		uint8_t vF = (w(2) >> 8) & 0xF;
-		uint8_t vG = (w(2) >> 12) & 0xF;
-		(void)vidx;
 		if (count >= 1) args.push_back(vC);
 		if (count >= 2) args.push_back(vD);
 		if (count >= 3) args.push_back(vE);
