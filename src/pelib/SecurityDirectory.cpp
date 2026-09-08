@@ -6,6 +6,9 @@
  */
 
 #include "retdec/pelib/PeLibInc.h"
+
+#include <cstdint>
+#include <utility>
 #include "retdec/pelib/SecurityDirectory.h"
 
 namespace PeLib {
@@ -65,7 +68,9 @@ int SecurityDirectory::read(std::istream& inStream, unsigned int uiOffset, unsig
 
 	InputBuffer inpBuffer(vCertDirectory);
 
-	unsigned bytesRead = 0;
+	// 64-bit: cert.Length is a uint32 out of the file and this accumulates it,
+	// so a 32-bit counter wraps and the loop restarts inside the same buffer.
+	std::uint64_t bytesRead = 0;
 	while (bytesRead < uiSize)
 	{
 		PELIB_IMAGE_CERTIFICATE_ENTRY cert;
@@ -80,11 +85,31 @@ int SecurityDirectory::read(std::istream& inStream, unsigned int uiOffset, unsig
 			return ERROR_INVALID_FILE;
 		}
 
-		cert.Certificate.resize(cert.Length - PELIB_IMAGE_CERTIFICATE_ENTRY::size());
+		// cert.Length is the WIN_CERTIFICATE Length field, straight out of the
+		// file, and the checks above bound it below and not above. The resize
+		// that follows trusted it: a 1,040-byte PE declaring Length=0x80000000
+		// took the process from 4.2 MB to 4.2 GB of RSS, measured, and
+		// 0xFFFFFFFF permits about twice that. The bytes have to come from the
+		// directory that was actually read, so that is what bounds it --
+		// compared in subtraction form, because `bytesRead + cert.Length` is
+		// the wrap this loop already carries once.
+		//
+		// ResourceDirectory.cpp:337 fixed the same amplification class in this
+		// file's sibling; this site was missed.
+		const std::uint64_t payload = static_cast<std::uint64_t>(cert.Length) - PELIB_IMAGE_CERTIFICATE_ENTRY::size();
+		if (payload > uiSize - bytesRead)
+		{
+			m_ldrError = LDR_ERROR_DIGITAL_SIGNATURE_CUT;
+			return ERROR_INVALID_FILE;
+		}
+
+		cert.Certificate.resize(static_cast<std::size_t>(payload));
 		inpBuffer.read(reinterpret_cast<char*>(cert.Certificate.data()), cert.Certificate.size());
 
 		bytesRead += cert.Length;
-		m_certs.push_back(cert);
+		// Moved, not copied: the payload can be most of the directory, and
+		// push_back(cert) doubled the peak for no reason.
+		m_certs.push_back(std::move(cert));
 	}
 
 	// save the offset and size for future checks

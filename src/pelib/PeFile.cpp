@@ -284,10 +284,16 @@ int PeFileT::readCoffSymbolTable(ByteBuffer& fileData)
 {
 	if (m_imageLoader.getPointerToSymbolTable() && m_imageLoader.getNumberOfSymbols())
 	{
+		// NumberOfSymbols is a uint32 out of the COFF header and
+		// PELIB_IMAGE_SIZEOF_COFF_SYMBOL is an unsigned int, so this
+		// product was formed in 32 bits and wrapped: 0xFFFFFFFF * 18 is
+		// 4294967278 rather than a number no file can supply. Widened, so
+		// the size the reader is given is the size the header asked for and
+		// its own bounds checks see it.
 		return coffSymTab().read(
 			fileData,
 			m_imageLoader.getPointerToSymbolTable(),
-			m_imageLoader.getNumberOfSymbols() * PELIB_IMAGE_SIZEOF_COFF_SYMBOL);
+			static_cast<std::size_t>(m_imageLoader.getNumberOfSymbols()) * PELIB_IMAGE_SIZEOF_COFF_SYMBOL);
 	}
 	return ERROR_COFF_SYMBOL_TABLE_DOES_NOT_EXIST;
 }

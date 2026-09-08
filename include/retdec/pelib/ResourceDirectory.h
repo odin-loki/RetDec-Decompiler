@@ -107,8 +107,22 @@ protected:
 	unsigned int uiElementRva;
 
 	/// Reads the next resource element from the InputBuffer.
-	virtual int
-	read(ImageLoader& imageLoader, std::uint32_t, std::uint32_t, std::uint32_t, ResourceDirectory* resDir) = 0;
+	///
+	/// @p depth is how many directories deep this element sits. A
+	/// resource directory can hold a subdirectory, and ResourceNode::read
+	/// recurses once per level with nothing but cycle detection to stop
+	/// it -- a chain of DISTINCT offsets is not a cycle. Each level costs
+	/// 24 bytes of file (a 16-byte IMAGE_RESOURCE_DIRECTORY and one
+	/// 8-byte entry) and one stack frame, so a 241 KB PE segfaulted the
+	/// decompiler on a 1 MB stack and a 1.2 MB one did on Linux's 8 MB
+	/// default. Bounded by PELIB_MAX_RESOURCE_DEPTH.
+	virtual int read(
+		ImageLoader& imageLoader,
+		std::uint32_t,
+		std::uint32_t,
+		std::uint32_t,
+		ResourceDirectory* resDir,
+		unsigned depth) = 0;
 	/// Writes the next resource element into the OutputBuffer.
 	virtual void rebuild(OutputBuffer&, unsigned int, unsigned int, const std::string&) const = 0;
 	/// Recalculates the tree for different RVA.
@@ -149,7 +163,8 @@ protected:
 		std::uint32_t uiRsrcRva,
 		std::uint32_t uiOffset,
 		std::uint32_t sizeOfImage,
-		ResourceDirectory* resDir);
+		ResourceDirectory* resDir,
+		unsigned depth);
 	/// Writes the next resource leaf into the OutputBuffer.
 	void rebuild(OutputBuffer&, unsigned int uiOffset, unsigned int uiRva, const std::string&) const;
 	/// Recalculates the tree for different RVA.
@@ -212,7 +227,8 @@ protected:
 		std::uint32_t uiRsrcRva,
 		std::uint32_t uiOffset,
 		std::uint32_t sizeOfImage,
-		ResourceDirectory* resDir);
+		ResourceDirectory* resDir,
+		unsigned depth);
 	/// Writes the next resource node into the OutputBuffer.
 	void rebuild(OutputBuffer&, unsigned int uiOffset, unsigned int uiRva, const std::string&) const;
 	/// Recalculates the tree for different RVA.

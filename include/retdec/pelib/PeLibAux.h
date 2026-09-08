@@ -177,6 +177,18 @@ const std::uint32_t PELIB_IMAGE_NUMBEROF_DIRECTORY_ENTRIES = 16;
 const std::uint32_t PELIB_IMAGE_RESOURCE_DATA_IS_DIRECTORY = 0x80000000;
 const std::uint32_t PELIB_IMAGE_RESOURCE_NAME_IS_STRING = 0x80000000;
 const std::uint32_t PELIB_IMAGE_RESOURCE_RVA_MASK = 0x7FFFFFFF;
+
+/// How deep a resource directory tree may nest.
+///
+/// ResourceNode::read recurses once per nested directory, and its only
+/// protection was cycle detection -- a chain of distinct offsets is not a
+/// cycle, and each level costs only 24 bytes of file. Measured: a 241 KB
+/// PE segfaults on a 1 MB stack (the Windows main-thread default) and a
+/// 1.2 MB one on Linux's 8 MB default.
+///
+/// Windows' own loader addresses resources by Type/Name/Language, three
+/// levels, so this costs nothing a real PE uses.
+const unsigned PELIB_MAX_RESOURCE_DEPTH = 16;
 const std::uint16_t PELIB_MAX_RESOURCE_ENTRIES = 0x8000; // Maximum number of resource directory entries we consider OK
 
 enum : std::uint32_t

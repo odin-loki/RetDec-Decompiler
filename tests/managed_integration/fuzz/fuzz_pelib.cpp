@@ -60,6 +60,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 		(void)file.readTlsDirectory();
 		(void)file.readDelayImportDirectory();
 		(void)file.readSecurityDirectory();
+		// Two of PeFileT's fifteen readers were reachable from nothing in
+		// this tree. readCoffSymbolTable is where a heap-buffer-overflow
+		// lived; readLoadConfigDirectory had never been fuzzed at all. Both
+		// are called unconditionally by src/fileformat/file_format/pe.
+		(void)file.readCoffSymbolTable(buf);
+		(void)file.readLoadConfigDirectory();
 
 		// The Rich header is addressed by an explicit offset and size, which is
 		// its own bounds surface. Drive it with values taken from the input.

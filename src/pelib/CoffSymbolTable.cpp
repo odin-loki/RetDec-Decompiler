@@ -102,7 +102,21 @@ int CoffSymbolTable::read(ByteBuffer& fileData, std::size_t uiOffset, std::size_
 	{
 		if ((ulFileSize - uiOffset) < 4)
 		{
-			memcpy(&stringTableSize, fileData.data() + stringTableOffset, sizeof(uint32_t));
+			// Nothing to read here. This arm is reached only when the guard
+			// above FAILED -- the file ends 1, 2 or 3 bytes after
+			// stringTableOffset, so uiOffset is still stringTableOffset --
+			// and it then read four bytes from an offset with fewer than
+			// four left. stringTableOffset is PointerToSymbolTable +
+			// NumberOfSymbols*18, both raw COFF header fields, so the
+			// offset is the file's to choose:
+			//
+			//   ==13851==ERROR: AddressSanitizer: heap-buffer-overflow
+			//   READ of size 4 at 0x5160000002ca
+			//     #0 PeLib::CoffSymbolTable::read CoffSymbolTable.cpp:109
+			//   located 1 bytes after 585-byte region
+			//
+			// stringTableSize stays 0, which is what the truncated file
+			// actually says.
 		}
 		else if ((ulFileSize - uiOffset) == 4 && stringTableSize < 4)
 		{

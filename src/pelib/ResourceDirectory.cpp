@@ -307,8 +307,13 @@ int ResourceLeaf::read(
 	std::uint32_t uiRsrcRva,
 	std::uint32_t uiOffset,
 	std::uint32_t sizeOfImage,
-	ResourceDirectory* resDir)
+	ResourceDirectory* resDir,
+	unsigned depth)
 {
+	// A leaf has no children; the depth is carried only to keep the virtual
+	// signature one signature.
+	(void)depth;
+
 	// Invalid leaf.
 	std::uint32_t uiRva = uiRsrcRva + uiOffset;
 	if (uiRva > sizeOfImage) return ERROR_INVALID_FILE;
@@ -639,11 +644,26 @@ int ResourceNode::read(
 	std::uint32_t uiRsrcRva,
 	std::uint32_t uiOffset,
 	std::uint32_t sizeOfImage,
-	ResourceDirectory* resDir)
+	ResourceDirectory* resDir,
+	unsigned depth)
 {
 	//
 	// Any error handling here must be in syn with YARA (Module: pe.c, Function: _pe_iterate_resources)
 	//
+
+	// A resource directory may hold a subdirectory, and the recursion below had
+	// nothing but cycle detection to stop it: insertNodeOffset/hasNodeOffset
+	// catch a repeated offset, and a chain of DISTINCT offsets each pointing at
+	// the next is not a repeat. Each level costs 24 bytes of file -- a 16-byte
+	// IMAGE_RESOURCE_DIRECTORY and one 8-byte entry -- and one stack frame, so
+	// the depth a file can ask for is sizeOfImage/24. Measured: 241 KB
+	// segfaults on a 1 MB stack, 1.2 MB on Linux's 8 MB default, and the
+	// project's own ASan harness reports stack-overflow with ResourceNode::read
+	// repeating in the trace.
+	//
+	// Windows addresses resources by Type/Name/Language, so a real PE never
+	// reaches three.
+	if (depth >= PELIB_MAX_RESOURCE_DEPTH) return ERROR_INVALID_FILE;
 
 	// Enough space to be a valid node?
 	std::uint32_t uiRva = uiRsrcRva + uiOffset;
@@ -771,7 +791,12 @@ int ResourceNode::read(
 
 		// Read the child node
 		childError = rc.child->read(
-			imageLoader, uiRsrcRva, rc.entry.irde.OffsetToData & PELIB_IMAGE_RESOURCE_RVA_MASK, sizeOfImage, resDir);
+			imageLoader,
+			uiRsrcRva,
+			rc.entry.irde.OffsetToData & PELIB_IMAGE_RESOURCE_RVA_MASK,
+			sizeOfImage,
+			resDir,
+			depth + 1);
 		switch (childError)
 		{
 		case ERROR_NONE: // If the resource was found to be OK, insert it to the list of children
@@ -1052,7 +1077,7 @@ int ResourceDirectory::read(ImageLoader& imageLoader)
 	std::uint32_t resDirRva = imageLoader.getDataDirRva(PELIB_IMAGE_DIRECTORY_ENTRY_RESOURCE);
 	std::uint32_t sizeOfImage = imageLoader.getSizeOfImage();
 
-	return m_rnRoot.read(imageLoader, resDirRva, 0, sizeOfImage, this);
+	return m_rnRoot.read(imageLoader, resDirRva, 0, sizeOfImage, this, 0);
 }
 
 /**
