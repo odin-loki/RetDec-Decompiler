@@ -16,6 +16,7 @@ add_executable(tests-utils
 	gpu_scanner_tests.cpp
 	math_tests.cpp
 	memory_tests.cpp
+	safe_name_tests.cpp
 	scope_exit_tests.cpp
 	string_tests.cpp
 	time_tests.cpp

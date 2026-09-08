@@ -5,17 +5,16 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
-#include <memory>
-#include <algorithm>
-#include <cctype>
-#include <cstring>
 #include <fstream>
+#include <memory>
 #include <ostream>
+#include <utility>
 
 #include <rapidjson/document.h>
 #include <rapidjson/prettywriter.h>
 
 #include "retdec/utils/filesystem.h"
+#include "retdec/utils/safe_name.h"
 #include "retdec/utils/string.h"
 #include "retdec/ar-extractor/archive_wrapper.h"
 
@@ -27,7 +26,18 @@ using namespace rapidjson;
 namespace {
 
 /**
- * Fix name.
+ * Fix an archive member name so that it can be used as a leaf file name.
+ *
+ * The result is concatenated with an output directory and opened for writing
+ * (ArchiveWrapper::extract below, and extractByName/extractByIndex, which take
+ * it relative to the working directory when no output path is given), so the
+ * only safe answer is a name with no path in it at all.
+ *
+ * The rule, the measurements behind it and the reason each byte is or is not
+ * on the allow-list live in include/retdec/utils/safe_name.h, which is where
+ * they can be proved and tested. This file needs LLVM to compile, so the three
+ * lines that used to be here were reachable by nothing in the tree -- and they
+ * kept BACKSLASH on the allow-list for as long as that was true.
  *
  * @param name input name
  *
@@ -35,9 +45,10 @@ namespace {
  */
 std::string fixName(std::string name)
 {
-	std::transform(name.begin(), name.end(), name.begin(), [](const unsigned char c) {
-		return (!std::isalnum(c) && !strchr("-. \\", c)) ? '_' : c;
-	});
+	if (!safename::sanitizeLeafName(name.data(), name.size()))
+	{
+		return safename::kPlaceholder;
+	}
 	return name;
 }
 
