@@ -9,6 +9,10 @@
 #include "retdec/bin2llvmir/utils/llvm.h"
 #include "retdec/bin2llvmir/utils/ir_modifier.h"
 
+// LOG expands debug_enabled at its use site, so the flag belongs to the
+// translation unit; see syscalls.h for why it cannot live in that header.
+#define debug_enabled false
+
 using namespace llvm;
 
 namespace retdec {

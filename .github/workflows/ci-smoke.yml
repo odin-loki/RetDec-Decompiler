@@ -76,6 +76,21 @@ jobs:
           python3 scripts/ci/check_cmake_options.py --self-test
           python3 scripts/ci/check_cmake_options.py
 
+      # `debug_enabled` is the LOG switch bin2llvmir passes turn on while
+      # debugging, and it belongs to a translation unit: fifteen passes spell it
+      # `#define debug_enabled false` in their .cpp. Two public headers defined
+      # it as a global variable instead, which made them mutually exclusive --
+      # any TU including both is rejected with "redefinition of 'const bool
+      # debug_enabled'". A header cannot own this name.
+      - name: No header defines the debug_enabled switch
+        run: |
+          if grep -rn '^[[:space:]]*\(const[[:space:]]\+\)\?bool[[:space:]]\+debug_enabled' include/; then
+            echo "::error::a header defines debug_enabled; it is a per-translation-unit switch"
+            echo "define it in the .cpp instead: #define debug_enabled false"
+            exit 1
+          fi
+          echo "OK: no header under include/ defines debug_enabled"
+
       # std::sort compiles without <algorithm> only where some other header
       # happened to pull it in, which is a property of the standard library
       # implementation. Two files in that state failed CI's clang++ the first

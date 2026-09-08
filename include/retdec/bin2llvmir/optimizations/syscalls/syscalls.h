@@ -16,7 +16,20 @@
 #include "retdec/bin2llvmir/providers/fileimage.h"
 #include "retdec/bin2llvmir/providers/lti.h"
 #include "retdec/bin2llvmir/utils/debug.h"
-const bool debug_enabled = false;
+
+// The LOG switch is deliberately NOT defined here. This header used to open with
+// `const bool debug_enabled = false;` at global scope, and so did
+// decoder_debug.h, which decoder.h and jump_targets.h pulled in -- so the two
+// were mutually exclusive: any translation unit including both is rejected
+// outright, with "redefinition of 'const bool debug_enabled'". Nothing in the
+// tree included both, which is the only reason it built; a pass wanting a
+// syscall's decoded target would have hit it immediately.
+//
+// LOG expands the name at its use site, so the flag belongs to the translation
+// unit, which is how the other fifteen bin2llvmir passes already spell it:
+// `#define debug_enabled false` in the .cpp. The five syscalls sources and the
+// five decoder sources do the same now, and decoder_debug.h -- which existed
+// only to hold that definition -- is gone.
 
 namespace retdec {
 namespace bin2llvmir {

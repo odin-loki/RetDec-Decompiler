@@ -10,12 +10,20 @@
 
 #include <rapidjson/document.h>
 
+// CallEntry is a member of BasicBlock, and naming a nested type requires the
+// enclosing class to be complete, so a forward declaration cannot serve here --
+// this header did not compile on its own with one:
+//
+//   basic_block.h:22:58: error: invalid use of incomplete type
+//   'class retdec::common::BasicBlock'
+//
+// It compiled in-tree only because both of its users happen to include
+// common/basic_block.h ahead of it, and .clang-format sets SortIncludes: Never,
+// so nothing holds that order. serdes/pattern.h has the same shape for
+// common::Pattern::Match and includes the definition for the same reason.
+#include "retdec/common/basic_block.h"
+
 namespace retdec {
-
-namespace common {
-class BasicBlock;
-} // namespace common
-
 namespace serdes {
 
 template <typename Writer>

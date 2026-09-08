@@ -187,9 +187,11 @@ readonly EXTRA_SOURCES=(
 # "suite:file.cpp file.cpp"
 readonly PARTIAL_SUITES=(
 	"retdec:semantic_recovery_export_test.cpp thread_pool_test.cpp managed_decompiler_test.cpp"
-	# The other twelve files in tests/fileformat/ drive retdec::fileformat,
-	# which publicly links LLVM. This one drives the lattice, which does not.
-	"fileformat:format_lattice_test.cpp asn1_test.cpp"
+	# The other eleven files in tests/fileformat/ drive retdec::fileformat,
+	# which publicly links LLVM. These three do not: the lattice, the DER
+	# decoder, and CharacterIterator, whose header includes only <cctype> and
+	# <iterator>.
+	"fileformat:format_lattice_test.cpp asn1_test.cpp character_iterator_test.cpp"
 )
 
 # Sources inside an included module that must NOT be compiled here, mirroring a
@@ -585,10 +587,33 @@ compile_cuda_half || exit 1
 #
 # One translation unit per header, which is the only way to ask the first
 # question, with the project's flags, which is the only way to ask the second.
+#
+# The directories below are the ones where every header currently passes, so
+# adding one is a commitment the next header has to keep. include/retdec/serdes
+# earns its place: basic_block.h forward-declared common::BasicBlock and then
+# named common::BasicBlock::CallEntry, which needs the enclosing class to be
+# complete --
+#
+#   basic_block.h:22:58: error: invalid use of incomplete type
+#   'class retdec::common::BasicBlock'
+#
+# -- and the header compiled in-tree only because both of its two users happen
+# to include common/basic_block.h ahead of it. .clang-format sets
+# SortIncludes: Never, so nothing holds that order; reordering two lines in
+# either .cpp would have broken the build. include/retdec/common comes with it,
+# since that is what serdes serialises.
 KERNEL_WARN_FLAGS="-Wall -Wextra -Wswitch-default -Werror"
+KERNEL_HEADER_DIRS=(
+	include/retdec/utils
+	include/retdec/serdes
+	include/retdec/common
+)
 check_kernel_headers() {
 	shopt -s nullglob
-	local headers=(include/retdec/utils/*.h)
+	local d headers=()
+	for d in "${KERNEL_HEADER_DIRS[@]}"; do
+		headers+=("$d"/*.h)
+	done
 	shopt -u nullglob
 	[ ${#headers[@]} -eq 0 ] && return 0
 
@@ -611,7 +636,7 @@ check_kernel_headers() {
 		bad "not standalone, or not warning-clean at ${KERNEL_WARN_FLAGS}: ${bad_headers[*]}"
 		return 1
 	fi
-	ok "${#headers[@]} kernel headers compile standalone, warnings as errors"
+	ok "${#headers[@]} kernel headers compile standalone, warnings as errors (${KERNEL_HEADER_DIRS[*]})"
 	return 0
 }
 # ── compiler warnings ────────────────────────────────────────────────────────

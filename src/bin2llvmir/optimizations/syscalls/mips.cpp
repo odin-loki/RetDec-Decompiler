@@ -10,6 +10,10 @@
 #include "retdec/bin2llvmir/optimizations/syscalls/syscalls.h"
 #include "retdec/bin2llvmir/providers/asm_instruction.h"
 
+// LOG expands debug_enabled at its use site, so the flag belongs to the
+// translation unit; see syscalls.h for why it cannot live in that header.
+#define debug_enabled false
+
 using namespace llvm;
 
 /*

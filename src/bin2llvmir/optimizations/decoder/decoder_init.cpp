@@ -28,6 +28,14 @@
 
 #include <elfio/elf_types.hpp>
 
+// LOG lived in decoder_debug.h, which this file reached through decoder.h /
+// jump_targets.h. That header did nothing but include debug.h and define a
+// global `const bool debug_enabled`, which is what made it collide with the
+// identical definition in syscalls.h. Both belong to the translation unit, the
+// way the other fifteen bin2llvmir passes already spell them.
+#include "retdec/bin2llvmir/utils/debug.h"
+#define debug_enabled false
+
 using namespace llvm;
 using namespace retdec::capstone2llvmir;
 using namespace retdec::common;

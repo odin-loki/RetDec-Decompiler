@@ -41,6 +41,11 @@
 
 #include <QObject>
 #include <QString>
+// QStringList is named by PluginMetadata::dependencies below and was reaching
+// this header only through whatever <QObject> or <QString> happened to pull in.
+// A public header a third party is told to include (README.md,
+// docs/developer_guide.md) has to name what it uses.
+#include <QStringList>
 #include <QWidget>
 #include <QtPlugin>
 
@@ -201,6 +206,15 @@ public:
  *   RETDEC_EXPORT_PLUGIN(MyPluginClass)
  *
  * This generates the three required C-linkage functions.
+ *
+ * The version arm used to read `return ::retdec::gui::RETDEC_PLUGIN_API_VERSION;`.
+ * RETDEC_PLUGIN_API_VERSION is an object-like macro, not a namespace member, so
+ * that expanded to a qualified-id whose last component is a string literal --
+ * `return ::retdec::gui::"1.0";` -- and every translation unit that used this
+ * macro was rejected with "expected unqualified-id before string constant". A
+ * macro body is parsed only where it is expanded, which is why the tree still
+ * builds: nothing in it expands this one. Both documented plugin recipes,
+ * README.md and docs/developer_guide.md, do.
  */
 #define RETDEC_EXPORT_PLUGIN(ClassName)                                    \
 	extern "C" ::retdec::gui::IRetDecPlugin* retdec_create_plugin()        \
@@ -213,7 +227,7 @@ public:
 	}                                                                      \
 	extern "C" const char* retdec_plugin_api_version()                     \
 	{                                                                      \
-		return ::retdec::gui::RETDEC_PLUGIN_API_VERSION;                   \
+		return RETDEC_PLUGIN_API_VERSION;                                  \
 	}
 
 } // namespace retdec::gui

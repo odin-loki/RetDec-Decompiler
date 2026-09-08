@@ -11,7 +11,6 @@
 #include <optional>
 #include <set>
 
-#include "retdec/bin2llvmir/optimizations/decoder/decoder_debug.h"
 #include "retdec/capstone2llvmir/capstone2llvmir.h"
 #include "retdec/capstone2llvmir/x86/x86.h"
 #include "retdec/common/address.h"
