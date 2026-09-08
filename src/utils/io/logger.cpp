@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <map>
 #include <sstream>
+#include <stdexcept>
 
 #include "retdec/utils/io/logger.h"
 #include "retdec/utils/os.h"
@@ -80,10 +81,9 @@ Logger& Logger::operator<<(const Action& p)
 	{
 		return *this << Color::Yellow << "     -> ";
 	}
-	if (p == SubSubPhase)
-	{
-		return *this << Color::Yellow << "         -> ";
-	}
+	// A second `if (p == SubSubPhase)` returning a deeper indent stood here.
+	// The enum has three phase levels, so the first test always won and the
+	// second branch was unreachable.
 	if (p == Error)
 	{
 		return *this << "Error: ";
@@ -148,11 +148,19 @@ bool Logger::isRedirected(const std::ostream& stream) const
 //
 //////
 
-FileLogger::FileLogger(const std::string& file, bool verbose): Logger(_file, verbose)
+namespace detail {
+
+FileLoggerStream::FileLoggerStream(const std::string& file)
 {
 	_file.open(file, std::ofstream::out);
 	if (!_file) throw std::runtime_error("unable to open file \"" + file + "\" for writing.");
 }
+
+} // namespace detail
+
+// FileLoggerStream is the first base, so `_file` is a constructed, open stream
+// by the time Logger binds its reference to it.
+FileLogger::FileLogger(const std::string& file, bool verbose): detail::FileLoggerStream(file), Logger(_file, verbose) {}
 
 } // namespace io
 } // namespace utils

@@ -28,7 +28,12 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <sstream>
+#include <string>
+#include <system_error>
 #include <thread>
 #include <vector>
 
@@ -121,6 +126,106 @@ TEST(LogTests, AWriterThatWasSetIsTheOneThatIsUsed)
 
 	// Put the default back so the rest of the suite logs where it expects to.
 	Log::set(Log::Type::Info, Logger::Ptr());
+}
+
+
+// ─── --log-file ──────────────────────────────────────────────────────────────
+//
+// setLogsFrom() puts a FileLogger into the table through Logger::Ptr, which is
+// std::unique_ptr<Logger>, and Log::set turns that into a
+// std::shared_ptr<Logger> -- adopting unique_ptr's deleter, which is
+// `delete (Logger*)`. Logger's destructor was not virtual, so ~FileLogger never
+// ran, its std::ofstream member was never destroyed, and nothing flushed it.
+// The kernel closes the descriptor at exit; it does not know about a userspace
+// stream buffer.
+
+namespace {
+
+/// A scratch path in the temp directory, unique to the test that asks for one.
+std::filesystem::path scratchPath(const char* stem)
+{
+	static std::atomic<int> counter{0};
+	return std::filesystem::temp_directory_path()
+		 / ("retdec-log-" + std::string(stem) + "-" + std::to_string(counter.fetch_add(1)) + ".log");
+}
+
+std::string readAll(const std::filesystem::path& p)
+{
+	std::ifstream in(p, std::ios::binary);
+	return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+
+} // namespace
+
+TEST(LogTests, AFileLoggerFlushesWhatItWroteWhenTheTableReleasesIt)
+{
+	const std::filesystem::path path = scratchPath("flush");
+	std::error_code ec;
+	std::filesystem::remove(path, ec);
+
+	Log::set(Log::Type::Info, Logger::Ptr(new FileLogger(path.string(), true)));
+	Log::info() << "phase: initialization";
+
+	// What setLogsFrom does on the next decompile(), and what static
+	// destruction does at exit: drop the writer. That has to be the point at
+	// which the bytes reach the file.
+	Log::set(Log::Type::Info, Logger::Ptr());
+
+	const std::string content = readAll(path);
+	EXPECT_NE(std::string::npos, content.find("phase: initialization"))
+		<< "log file held " << content.size() << " byte(s)";
+
+	std::filesystem::remove(path, ec);
+}
+
+// The same thing one level down, with no table involved: deleting a FileLogger
+// through a Logger* has to run ~FileLogger. This is the destructor-is-virtual
+// property on its own, so a regression is attributed to the right line.
+TEST(LogTests, DeletingAFileLoggerThroughABasePointerClosesTheFile)
+{
+	const std::filesystem::path path = scratchPath("delete");
+	std::error_code ec;
+	std::filesystem::remove(path, ec);
+
+	{
+		Logger::Ptr log(new FileLogger(path.string(), true));
+		*log << "written through the base";
+	}
+
+	const std::string content = readAll(path);
+	EXPECT_NE(std::string::npos, content.find("written through the base"))
+		<< "log file held " << content.size() << " byte(s)";
+
+	std::filesystem::remove(path, ec);
+}
+
+// A FileLogger binds Logger::_out to its own std::ofstream member. Base classes
+// are initialised before members, so the reference used to be bound to storage
+// that held no object yet -- and the open() that made it usable happened in the
+// derived constructor's body, after the base was already built. Writing through
+// the base subobject during construction is the case that has to work.
+TEST(LogTests, AFileLoggerIsUsableAsSoonAsItIsConstructed)
+{
+	const std::filesystem::path path = scratchPath("ctor");
+	std::error_code ec;
+	std::filesystem::remove(path, ec);
+
+	{
+		FileLogger log(path.string(), true);
+		Logger& asBase = log;
+		asBase << "usable immediately";
+	}
+
+	EXPECT_NE(std::string::npos, readAll(path).find("usable immediately"));
+	std::filesystem::remove(path, ec);
+}
+
+// Opening a file that cannot be written still throws, and throws before the
+// logger is handed to anyone.
+TEST(LogTests, AFileLoggerThatCannotOpenItsFileThrows)
+{
+	const std::filesystem::path path = std::filesystem::temp_directory_path() / "retdec-log-no-such-dir" / "x.log";
+	EXPECT_THROW(FileLogger(path.string(), true), std::runtime_error);
 }
 
 } // namespace tests
