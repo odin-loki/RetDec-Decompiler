@@ -33,7 +33,6 @@ namespace retdec::neural {
 
 namespace {
 std::once_flag g_backendOnce;
-std::once_flag g_signalOnce;
 std::atomic<bool> g_cancel{false};
 
 void llamaLog(enum ggml_log_level level, const char* text, void*)
@@ -46,13 +45,52 @@ void onCancelSignal(int)
 	g_cancel.store(true, std::memory_order_relaxed);
 }
 
-void installCancelHandlers()
-{
-	std::signal(SIGINT, onCancelSignal);
+/// Routes SIGINT (and SIGTERM off Windows) to the cancel flag for as long as
+/// this object is alive, and puts back what was there before.
+///
+/// These handlers used to be installed through std::call_once and never
+/// removed, which is two problems for a library. The disposition is
+/// process-wide, so the first inference silently replaced whatever the host
+/// application had set -- its own handler, or SIG_IGN -- for the rest of the
+/// process. And the handler only raises a flag, so once it was in place SIGINT
+/// no longer ended the process at all: after one neural refinement,
+/// retdec-decompiler stopped responding to Ctrl-C, and kept not responding
+/// after the inference had finished.
+///
+/// std::signal returns the previous handler, which is what makes this
+/// restorable. SIG_ERR means the disposition could not be changed at all -- it
+/// is not remembered and not restored, since there is nothing to put back.
+///
+/// Signal dispositions are per-process, so two inferences running concurrently
+/// on two threads would still interleave here. That was true of the old code
+/// too, and more so: this at least confines the window to a generation.
+class CancelSignalScope {
+public:
+	CancelSignalScope()
+	{
+		previousInt_ = std::signal(SIGINT, onCancelSignal);
 #ifndef _WIN32
-	std::signal(SIGTERM, onCancelSignal);
+		previousTerm_ = std::signal(SIGTERM, onCancelSignal);
 #endif
-}
+	}
+
+	~CancelSignalScope()
+	{
+		if (previousInt_ != SIG_ERR) std::signal(SIGINT, previousInt_);
+#ifndef _WIN32
+		if (previousTerm_ != SIG_ERR) std::signal(SIGTERM, previousTerm_);
+#endif
+	}
+
+	CancelSignalScope(const CancelSignalScope&) = delete;
+	CancelSignalScope& operator=(const CancelSignalScope&) = delete;
+
+private:
+	void (*previousInt_)(int) = SIG_ERR;
+#ifndef _WIN32
+	void (*previousTerm_)(int) = SIG_ERR;
+#endif
+};
 
 void freeBackendAtExit()
 {
@@ -260,8 +298,11 @@ public:
 		}
 		tokens.resize(static_cast<std::size_t>(n));
 
-		std::call_once(g_signalOnce, installCancelHandlers);
+		// Scoped to this generation: see CancelSignalScope. The flag is cleared
+		// before the handlers go in, so a signal that arrived before this call
+		// cannot cancel it.
 		g_cancel.store(false, std::memory_order_relaxed);
+		const CancelSignalScope cancelSignals;
 		const int deadlineMs = envInt("RETDEC_NEURAL_DEADLINE_MS", 0);
 		const auto genStart = std::chrono::steady_clock::now();
 
