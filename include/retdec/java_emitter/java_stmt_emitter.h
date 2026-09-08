@@ -57,38 +57,42 @@ namespace java_emitter {
  */
 class CodeWriter {
 public:
-    explicit CodeWriter(int indentWidth = 4);
+	explicit CodeWriter(int indentWidth = 4);
 
-    void indent();
-    void dedent();
-    int  currentIndent() const { return level_; }
+	void indent();
+	void dedent();
+	int currentIndent() const
+	{
+		return level_;
+	}
 
-    void writeLine(const std::string& line);
-    void writeLine();   ///< blank line
-    void write(const std::string& s);   ///< no newline
+	void writeLine(const std::string& line);
+	void writeLine();                 ///< blank line
+	void write(const std::string& s); ///< no newline
 
-    std::string str() const;
+	std::string str() const;
 
 private:
-    std::ostringstream buf_;
-    int level_      = 0;
-    int indentWidth_;
-    std::string indentStr_;
+	std::ostringstream buf_;
+	int level_ = 0;
+	int indentWidth_;
+	std::string indentStr_;
 
-    void updateIndentStr();
+	void updateIndentStr();
 };
 
 // ─── Statement emitter options ────────────────────────────────────────────────
 
-struct StmtEmitOptions {
-    bool emitSwitchExpressions = true;  ///< Java 14+ switch expressions
-    bool emitPatternInstanceof  = true; ///< Java 16+ instanceof pattern vars
-    bool emitTextBlocks         = false;///< Java 13+ text blocks (conservative)
-    bool emitRecords            = true; ///< Java 16+ record classes
-    bool emitEnhancedFor        = true; ///< emit for-each where detected
-    bool emitTryWithResources   = true; ///< detect AutoCloseable pattern
-    bool emitSynchronized       = true; ///< detect monitor enter/exit
-    int  javaVersion            = 17;   ///< Target Java version for feature gates
+struct StmtEmitOptions
+{
+	bool emitSwitchExpressions = true; ///< Java 14+ switch expressions
+	bool emitPatternInstanceof = true; ///< Java 16+ instanceof pattern vars
+	bool emitTextBlocks = false;       ///< Java 13+ text blocks (conservative)
+	bool emitRecords = true;           ///< Java 16+ record classes
+	bool emitEnhancedFor = true;       ///< emit for-each where detected
+	bool emitTryWithResources = true;  ///< detect AutoCloseable pattern
+	bool emitSynchronized = true;      ///< detect monitor enter/exit
+	int javaVersion = 17;              ///< Target Java version for feature gates
 };
 
 // ─── Statement emitter ───────────────────────────────────────────────────────
@@ -102,102 +106,104 @@ struct StmtEmitOptions {
  */
 class JavaStmtEmitter {
 public:
-    JavaStmtEmitter(const BcMethod& method,
-                    const ReconstructResult& recon,
-                    const JavaTypePrinter& tyPrinter,
-                    const StmtEmitOptions& opts = StmtEmitOptions{});
+	JavaStmtEmitter(
+		const BcMethod& method,
+		const ReconstructResult& recon,
+		const JavaTypePrinter& tyPrinter,
+		const StmtEmitOptions& opts = StmtEmitOptions{});
 
-    /**
-     * @brief Emit the full method body.
-     *
-     * @return Complete method body including surrounding braces.
-     */
-    std::string emitBody();
+	/**
+	 * @brief Emit the full method body.
+	 *
+	 * @return Complete method body including surrounding braces.
+	 */
+	std::string emitBody();
 
 private:
-    const BcMethod&          method_;
-    const ReconstructResult& recon_;
-    const JavaTypePrinter&   tyPrinter_;
-    StmtEmitOptions          opts_;
-    ExprContext              exprCtx_;
-    JavaExprEmitter          exprEmit_;
-    CodeWriter               out_;
+	const BcMethod& method_;
+	const ReconstructResult& recon_;
+	const JavaTypePrinter& tyPrinter_;
+	StmtEmitOptions opts_;
+	ExprContext exprCtx_;
+	JavaExprEmitter exprEmit_;
+	CodeWriter out_;
 
-    // Visited tracking (block ids already emitted).
-    std::set<uint32_t>                        visited_;
-    // Pattern lookup: block id → for-each pattern
-    std::unordered_map<uint32_t, size_t>      forEachByHeader_;
-    // Pattern lookup: block id → string concat pattern
-    std::unordered_map<uint32_t, size_t>      stringConcatByBlock_;
-    // Pattern lookup: block id → lambda pattern
-    std::unordered_map<uint32_t, size_t>      lambdaByBlock_;
+	// Visited tracking (block ids already emitted).
+	std::set<uint32_t> visited_;
+	// Pattern lookup: block id → for-each pattern
+	std::unordered_map<uint32_t, size_t> forEachByHeader_;
+	// Pattern lookup: block id → string concat pattern
+	std::unordered_map<uint32_t, size_t> stringConcatByBlock_;
+	// Pattern lookup: block id → lambda pattern
+	std::unordered_map<uint32_t, size_t> lambdaByBlock_;
 
-    // Build pattern lookup maps from recon_.patterns.
-    void buildPatternMaps();
+	// Build pattern lookup maps from recon_.patterns.
+	void buildPatternMaps();
 
-    // ── Control flow structure emission ──────────────────────────────────────
+	// ── Control flow structure emission ──────────────────────────────────────
 
-    // Main dispatch: emit starting from block `id`, up to stop block.
-    void emitFrom(uint32_t id, uint32_t stopBlock = UINT32_MAX);
+	// Main dispatch: emit starting from block `id`, up to stop block.
+	void emitFrom(uint32_t id, uint32_t stopBlock = UINT32_MAX);
 
-    // Emit a single basic block's instructions as statements.
-    void emitBlock(uint32_t blockId);
+	// Emit a single basic block's instructions as statements.
+	void emitBlock(uint32_t blockId);
 
-    // Emit one instruction as a Java statement.
-    // Returns false if the instruction is purely an expression (handled inline).
-    bool emitInstrAsStmt(const BcInstruction& insn,
-                          std::vector<ExprNode>& exprStack);
+	// Emit one instruction as a Java statement.
+	// Returns false if the instruction is purely an expression (handled inline).
+	bool emitInstrAsStmt(const BcInstruction& insn, std::vector<ExprNode>& exprStack);
 
-    // ── Structural recognition ────────────────────────────────────────────────
+	// ── Structural recognition ────────────────────────────────────────────────
 
-    // Detect and emit if/else starting at a two-successor block.
-    bool tryEmitIfElse(uint32_t blockId);
+	// Detect and emit if/else starting at a two-successor block.
+	bool tryEmitIfElse(uint32_t blockId);
 
-    // Detect and emit a while loop (test-at-top).
-    bool tryEmitWhile(uint32_t blockId);
+	// Detect and emit a while loop (test-at-top).
+	bool tryEmitWhile(uint32_t blockId);
 
-    // Detect and emit a do-while loop (test-at-bottom).
-    bool tryEmitDoWhile(uint32_t blockId);
+	// Detect and emit a do-while loop (test-at-bottom).
+	bool tryEmitDoWhile(uint32_t blockId);
 
-    // Detect and emit a for loop (init + test + incr + body).
-    bool tryEmitFor(uint32_t blockId);
+	// Detect and emit a for loop (init + test + incr + body).
+	bool tryEmitFor(uint32_t blockId);
 
-    // Detect and emit a for-each from a ForEachPattern.
-    bool tryEmitForEach(uint32_t blockId);
+	// Detect and emit a for-each from a ForEachPattern.
+	bool tryEmitForEach(uint32_t blockId);
 
-    // Detect and emit a switch statement / switch expression.
-    bool tryEmitSwitch(uint32_t blockId);
+	// Detect and emit a switch statement / switch expression.
+	bool tryEmitSwitch(uint32_t blockId);
 
-    // Detect and emit a try/catch/finally.
-    bool tryEmitTryCatch(uint32_t blockId);
+	// Detect and emit a try/catch/finally.
+	bool tryEmitTryCatch(uint32_t blockId);
 
-    // Detect and emit a synchronized block.
-    bool tryEmitSynchronized(uint32_t blockId);
+	// Detect and emit a synchronized block.
+	bool tryEmitSynchronized(uint32_t blockId);
 
-    // ── Expression stack helpers ──────────────────────────────────────────────
+	// ── Expression stack helpers ──────────────────────────────────────────────
 
-    // Emit the expression stack flushing any residual statements.
-    void flushStack(std::vector<ExprNode>& stack);
+	// Emit the expression stack flushing any residual statements.
+	void flushStack(std::vector<ExprNode>& stack);
 
-    // Build a condition expression string from a conditional branch instruction.
-    std::string buildCondition(const BcInstruction& branchInsn,
-                                std::vector<ExprNode>& stack);
+	// Build a condition expression string from a conditional branch instruction.
+	std::string buildCondition(const BcInstruction& branchInsn, std::vector<ExprNode>& stack);
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+	// ── Helpers ───────────────────────────────────────────────────────────────
 
-    // Find the immediate post-dominator of a block (join point).
-    uint32_t findJoin(uint32_t blockId) const;
+	// Find the immediate post-dominator of a block (join point).
+	uint32_t findJoin(uint32_t blockId) const;
 
-    // Return true if `blockId` has a back-edge (is a loop header).
-    bool isLoopHeader(uint32_t blockId) const;
+	// Return true if `blockId` has a back-edge (is a loop header).
+	bool isLoopHeader(uint32_t blockId) const;
 
-    // Return the loop exit block for a loop with header `blockId`.
-    uint32_t loopExit(uint32_t blockId) const;
+	// Return the loop exit block for a loop with header `blockId`.
+	uint32_t loopExit(uint32_t blockId) const;
 
-    // Return the back-edge source block for a loop header.
-    uint32_t backEdgeSource(uint32_t blockId) const;
+	// Return the back-edge source block for a loop header.
+	uint32_t backEdgeSource(uint32_t blockId) const;
 
-    const BcCFG& cfg() const { return method_.cfg; }
+	const BcCFG& cfg() const
+	{
+		return method_.cfg;
+	}
 };
 
 } // namespace java_emitter
