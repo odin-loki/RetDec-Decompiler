@@ -71,6 +71,7 @@ void putU64(std::vector<uint8_t>& v, uint64_t x)
 constexpr unsigned kTableModule = 0x00;
 constexpr unsigned kTableTypeDef = 0x02;
 constexpr unsigned kTableField = 0x04;
+constexpr unsigned kTableMethodDef = 0x06;
 constexpr unsigned kTableConstant = 0x0B;
 
 /// HasConstant is a 2-bit coded index over { Field, Param, Property }
@@ -148,8 +149,17 @@ std::vector<uint8_t> buildBlobHeap(const std::vector<uint8_t>& constantBytes)
 
 /// One Module row, two TypeDef rows (<Module> and C), one Field row (C.K), and
 /// one Constant row attaching @p elementType / @p blobIdx to that field.
-std::vector<uint8_t> buildTildeStream(uint8_t elementType, uint16_t blobIdx)
+/// @param thirdRowLists  negative for no third TypeDef row at all -- the shape
+///        every other test here wants. Zero or above emits a THIRD TypeDef row
+///        whose FieldList and MethodList are that value, and a MethodDef table
+///        of one row for its method run to be clamped against. TypeDef row 2's
+///        runs end where row 3's columns begin, so this is what bounds them,
+///        and nothing in the format requires it to be in range or even ahead
+///        of row 2's own columns.
+std::vector<uint8_t> buildTildeStream(uint8_t elementType, uint16_t blobIdx, int32_t thirdRowLists = -1)
 {
+	const bool thirdRow = thirdRowLists >= 0;
+	const uint16_t lists = thirdRow ? static_cast<uint16_t>(thirdRowLists) : 0;
 	std::vector<uint8_t> v;
 	putU32(v, 0); // Reserved
 	putU8(v, 2);  // MajorVersion
@@ -157,16 +167,25 @@ std::vector<uint8_t> buildTildeStream(uint8_t elementType, uint16_t blobIdx)
 	putU8(v, 0);  // HeapSizes = 0: #Strings, #GUID and #Blob indices are all
 				  // two bytes wide, which is what every index below assumes.
 	putU8(v, 1);  // Reserved2
-	putU64(
-		v,
-		(1ULL << kTableModule) | (1ULL << kTableTypeDef) | (1ULL << kTableField) | (1ULL << kTableConstant)); // Valid
-	putU64(v, 0);                                                                                             // Sorted
+	// MethodDef is present only when the runaway row is: with the table absent
+	// its row count is zero, so an over-long method run is bounded to nothing by
+	// arithmetic rather than by the clamp under test.
+	std::uint64_t valid =
+		(1ULL << kTableModule) | (1ULL << kTableTypeDef) | (1ULL << kTableField) | (1ULL << kTableConstant);
+	if (thirdRow) valid |= (1ULL << kTableMethodDef);
+	putU64(v, valid); // Valid
+	putU64(v, 0);     // Sorted
 
-	// Row counts, ascending table number.
-	putU32(v, 1); // Module
-	putU32(v, 2); // TypeDef
-	putU32(v, 1); // Field
-	putU32(v, 1); // Constant
+	// Row counts, ascending table number: one per bit set in Valid, and in that
+	// order. MethodDef sits between Field and Constant, so its count has to be
+	// written whenever its bit is -- omitting it does not merely lose a table,
+	// it shifts every count after it and the reader then reads Constant's count
+	// out of the first row's bytes.
+	putU32(v, 1);                  // Module
+	putU32(v, thirdRow ? 3u : 2u); // TypeDef
+	putU32(v, 1);                  // Field
+	if (thirdRow) putU32(v, 2);    // MethodDef
+	putU32(v, 1);                  // Constant
 
 	// Module: Generation(2) Name(str) Mvid(guid) EncId(guid) EncBaseId(guid)
 	putU16(v, 0);
@@ -189,12 +208,46 @@ std::vector<uint8_t> buildTildeStream(uint8_t elementType, uint16_t blobIdx)
 	putU16(v, kStrEmpty);
 	putU16(v, 0);
 	putU16(v, 1); // FieldList -> Field row 1
-	putU16(v, 1); // MethodList (MethodDef table is absent)
+	putU16(v, 1); // MethodList -> MethodDef row 1, when that table is present
+
+	// TypeDef 3, only when asked for: the row that BOUNDS row 2's field and
+	// method runs. Nothing in the format stops it naming a row far past the end
+	// of either table.
+	if (thirdRow)
+	{
+		putU32(v, kTypeAttrPublic);
+		putU16(v, kStrClass);
+		putU16(v, kStrEmpty);
+		putU16(v, 0);
+		putU16(v, lists); // FieldList
+		putU16(v, lists); // MethodList
+	}
 
 	// Field 1: Flags(2) Name(str) Signature(blob)
 	putU16(v, kFieldAttrPublic | kFieldAttrStatic | kFieldAttrLiteral | kFieldAttrHasDefault);
 	putU16(v, kStrField);
 	putU16(v, kBlobEmpty);
+
+	// MethodDef, when the table is present: two rows of
+	// RVA(4) ImplFlags(2) Flags(2) Name(str) Signature(blob) ParamList(2).
+	//
+	// Two rather than one because a MethodDef's parameter run ends where the
+	// NEXT MethodDef's ParamList begins, and with a single row there is no next
+	// one -- the end falls back to the Param table's own row count and no
+	// out-of-range parameter run can be built. Row 2 carries @p thirdRowLists
+	// so row 1's run is bounded by the same runaway value the TypeDef rows use.
+	if (thirdRow)
+	{
+		for (uint16_t paramList: {static_cast<uint16_t>(1), lists})
+		{
+			putU32(v, 0);
+			putU16(v, 0);
+			putU16(v, 0);
+			putU16(v, kStrClass);
+			putU16(v, kBlobEmpty);
+			putU16(v, paramList);
+		}
+	}
 
 	// Constant 1: Type(1) padding(1) Parent(coded HasConstant) Value(blob)
 	putU8(v, elementType);
@@ -276,7 +329,8 @@ std::vector<uint8_t> buildMetadataRoot(const std::vector<StreamSpec>& streams)
 
 /// A .NET PE carrying one `public const` field of type @p elementType whose
 /// value is @p constantBytes, exactly as the #Blob would hold it.
-std::vector<uint8_t> buildAssemblyWithConstant(ElementType elementType, const std::vector<uint8_t>& constantBytes)
+std::vector<uint8_t> buildAssemblyWithConstant(
+	ElementType elementType, const std::vector<uint8_t>& constantBytes, int32_t thirdRowLists = -1)
 {
 	constexpr size_t kPeOff = 0x80;
 	constexpr size_t kOptOff = kPeOff + 4 + 20;
@@ -289,7 +343,7 @@ std::vector<uint8_t> buildAssemblyWithConstant(ElementType elementType, const st
 	constexpr uint32_t kMdRva = kSectionRva + kCliHdrSize;
 
 	const std::vector<StreamSpec> streams = {
-		{"#~", buildTildeStream(static_cast<uint8_t>(elementType), kBlobConstant)},
+		{"#~", buildTildeStream(static_cast<uint8_t>(elementType), kBlobConstant, thirdRowLists)},
 		{"#Strings", buildStringsHeap()},
 		{"#Blob", buildBlobHeap(constantBytes)},
 	};
@@ -784,4 +838,115 @@ TEST(CLIReaderConstantTest, TruncatedFixedWidthConstantYieldsNoValue)
 		EXPECT_FALSE(f.constantIntValue.has_value())
 			<< nameOf(c.ty) << " decoded a value from " << c.blob.size() << " bytes";
 	}
+}
+
+// ─── metadata list ranges ────────────────────────────────────────────────────
+//
+// ECMA-335 II.22.37: a TypeDef's FieldList and MethodList are the first row it
+// owns, and the run ends where the NEXT TypeDef's column begins. Both endpoints
+// are raw uint32 column values out of the #~ stream, required by the format to
+// be monotonically non-decreasing and to index inside the target table, and
+// nothing in the file makes them so.
+//
+// buildClass used them as raw loop bounds, and every iteration allocates: a
+// BcField push_back'd per field, a BcMethod per method, and with
+// decodeCustomAttrs on (the default) each field also scans the Constant table
+// three times. The row accessors return a default row for an out-of-range
+// index, so the loop never stops early -- it manufactures empty objects.
+//
+// Measured through the same builder, with the third TypeDef row declaring
+// 0xFFFF over tables of one row each:
+//
+//     before:  65534 fields, 65534 methods, peak RSS 86,348 KB
+//     after:       1 field,      1 method,  peak RSS  3,712 KB
+//
+// against 3,812 KB for a well-formed assembly of the same size.
+
+TEST(CLIReaderListRangeRegression, AFieldListRunningPastTheFieldTableIsClamped)
+{
+	// Replay of the defect above.
+	const auto buf = buildAssemblyWithConstant(ElementType::I4, {0x2A, 0x00, 0x00, 0x00}, 0xFFFF);
+
+	CLIReader reader;
+	const auto result = reader.read(buf.data(), buf.size(), "t.dll");
+	ASSERT_TRUE(result.success) << result.error;
+
+	// The Field table has one row, so at most one field can be read -- not the
+	// 65534 the third TypeDef row asks for.
+	uint32_t fields = 0;
+	for (const auto& cls: result.module.classes())
+		fields += static_cast<uint32_t>(cls.fields.size());
+	EXPECT_LE(fields, 1u);
+	EXPECT_LE(result.fieldCount, 1u);
+}
+
+TEST(CLIReaderListRangeRegression, AMethodListRunningPastTheMethodTableIsClamped)
+{
+	// The same row bounds the method run. The MethodDef table is present here
+	// with one row -- with it absent the range would be bounded to nothing by
+	// arithmetic and the clamp would not be what was tested.
+	const auto buf = buildAssemblyWithConstant(ElementType::I4, {0x2A, 0x00, 0x00, 0x00}, 0xFFFF);
+
+	CLIReader reader;
+	const auto result = reader.read(buf.data(), buf.size(), "t.dll");
+	ASSERT_TRUE(result.success) << result.error;
+
+	// Two MethodDef rows exist, so two methods are the most that can be read --
+	// not the 65534 the third TypeDef row asks for.
+	uint32_t methods = 0;
+	for (const auto& cls: result.module.classes())
+		methods += static_cast<uint32_t>(cls.methods.size());
+	EXPECT_LE(methods, 2u);
+	EXPECT_LE(result.methodDefCount, 2u);
+}
+
+TEST(CLIReaderListRangeRegression, AParamListRunningPastTheParamTableNamesNoParameters)
+{
+	// MethodDef row 2's ParamList is the same runaway value, and it is what
+	// bounds row 1's parameter run. The Param table is absent, so the run has
+	// to come out empty.
+	//
+	// This one is a bound on work rather than on output, so unlike its two
+	// siblings above it does not fail when the clamp is taken out: an
+	// out-of-range Param row decodes as a default whose Sequence is 0, which
+	// the loop skips, so the unclamped run manufactures no names -- it just
+	// walks 65533 rows that are not there. Measured over 200 reads of the same
+	// assembly, with the field and method clamps in place both times: 0 ms
+	// clamped against 15 ms unclamped. What is pinned here is the other half,
+	// that the clamp does not cost a real parameter.
+	const auto buf = buildAssemblyWithConstant(ElementType::I4, {0x2A, 0x00, 0x00, 0x00}, 0xFFFF);
+
+	CLIReader reader;
+	const auto result = reader.read(buf.data(), buf.size(), "t.dll");
+	ASSERT_TRUE(result.success) << result.error;
+
+	for (const auto& cls: result.module.classes())
+		for (const auto& m: cls.methods)
+			EXPECT_TRUE(m.paramNames.empty()) << m.name << " named " << m.paramNames.size() << " parameter(s)";
+}
+
+TEST(CLIReaderListRangeRegression, AListRangeThatRunsBackwardsYieldsNothing)
+{
+	// The format requires the columns to be non-decreasing. A third row naming
+	// row 0 makes row 2's range [1, 0) -- which as a raw loop bound is simply
+	// empty, but as `end - begin` anywhere would be an enormous unsigned count.
+	// Clamped to empty, explicitly.
+	const auto buf = buildAssemblyWithConstant(ElementType::I4, {0x2A, 0x00, 0x00, 0x00}, 0);
+
+	CLIReader reader;
+	const auto result = reader.read(buf.data(), buf.size(), "t.dll");
+	ASSERT_TRUE(result.success) << result.error;
+	EXPECT_LE(result.fieldCount, 1u);
+	EXPECT_LE(result.methodDefCount, 2u);
+}
+
+TEST(CLIReaderListRangeRegression, AWellFormedAssemblyStillReadsItsField)
+{
+	// The other half: the clamp must not be "read nothing". With no third
+	// TypeDef row the run is bounded by the table itself, and the one field the
+	// file really has is still decoded, with its constant.
+	BcField f;
+	std::string why;
+	ASSERT_TRUE(readTheOnlyField(buildAssemblyWithConstant(ElementType::I4, {0x2A, 0x00, 0x00, 0x00}), f, why)) << why;
+	EXPECT_EQ(42, f.constantIntValue);
 }

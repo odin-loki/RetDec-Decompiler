@@ -70,7 +70,7 @@ def metadata_root(version: bytes, streams: "list[tuple[bytes, bytes]]") -> bytes
     return bytes(header) + bytes(body)
 
 
-def build_assembly(*, with_metadata: bool, pe32_plus: bool = False) -> bytes:
+def build_assembly(*, with_metadata: bool, pe32_plus: bool = False, tilde: "bytes | None" = None) -> bytes:
     """A PE32(+) whose data directory 14 points at a COR20 header."""
     magic = 0x020B if pe32_plus else 0x010B
     opt_size = 240 if pe32_plus else 224
@@ -81,14 +81,15 @@ def build_assembly(*, with_metadata: bool, pe32_plus: bool = False) -> bytes:
     # bit set in Valid, then the rows themselves. Valid = 1 is the Module table,
     # whose single row with 2-byte heap indexes is Generation(2) Name(2)
     # Mvid(2) EncId(2) EncBaseId(2).
-    tilde = bytearray()
-    tilde += struct.pack("<I", 0)                 # Reserved
-    tilde += struct.pack("<BB", 2, 0)             # MajorVersion, MinorVersion
-    tilde += struct.pack("<BB", 0, 1)             # HeapSizes (all 2-byte), Reserved
-    tilde += struct.pack("<Q", 1 << 0)            # Valid: Module only
-    tilde += struct.pack("<Q", 0)                 # Sorted
-    tilde += struct.pack("<I", 1)                 # Module row count
-    tilde += struct.pack("<HHHHH", 0, 1, 0, 0, 0) # the Module row
+    if tilde is None:
+        tilde = bytearray()
+        tilde += struct.pack("<I", 0)                 # Reserved
+        tilde += struct.pack("<BB", 2, 0)             # MajorVersion, MinorVersion
+        tilde += struct.pack("<BB", 0, 1)             # HeapSizes (all 2-byte), Reserved
+        tilde += struct.pack("<Q", 1 << 0)            # Valid: Module only
+        tilde += struct.pack("<Q", 0)                 # Sorted
+        tilde += struct.pack("<I", 1)                 # Module row count
+        tilde += struct.pack("<HHHHH", 0, 1, 0, 0, 0) # the Module row
 
     streams = [
         (b"#~", bytes(tilde)),
@@ -173,6 +174,70 @@ def build_assembly(*, with_metadata: bool, pe32_plus: bool = False) -> bytes:
     return bytes(img)
 
 
+def tilde_with_runaway_lists() -> bytes:
+    """A #~ stream whose second TypeDef declares field and method lists at 0xFFFF.
+
+    ECMA-335 II.22.37: a TypeDef's FieldList and MethodList are the first row
+    each type owns, and the run ends where the NEXT TypeDef's list begins. Both
+    endpoints are raw column values, and nothing in the format stops the second
+    row from naming an index far past the end of the Field and MethodDef tables
+    -- or from naming one smaller than the first row's, which makes the range
+    run backwards. The same holds one level down, for a MethodDef's ParamList.
+
+    CLIReader::buildClass looped over `[row.fieldList, next.fieldList)` with no
+    clamp, and every iteration allocated: buildField returns a BcField that is
+    push_back'd, and with decodeCustomAttrs on (the default) each one also scans
+    the Constant table three times. Two TypeDef rows are enough to ask for
+    65,535 of them from a 1 KB file.
+
+    Three TypeDef rows, because row 1 is the compiler-generated <Module> type
+    that the reader skips: the class is row 2, and its runs are bounded by row
+    3's columns. Valid = Module | TypeDef | Field | MethodDef, so the table
+    indexes stay 2-byte and the whole stream fits in the same 1 KB assembly as
+    its siblings.
+    """
+    MODULE, TYPEDEF, FIELD, METHODDEF = 0, 2, 4, 6
+
+    tilde = bytearray()
+    tilde += struct.pack("<I", 0)                    # Reserved
+    tilde += struct.pack("<BB", 2, 0)                # MajorVersion, MinorVersion
+    tilde += struct.pack("<BB", 0, 1)                # HeapSizes (all 2-byte), Reserved
+    valid = (1 << MODULE) | (1 << TYPEDEF) | (1 << FIELD) | (1 << METHODDEF)
+    tilde += struct.pack("<Q", valid)
+    tilde += struct.pack("<Q", 0)                    # Sorted
+
+    # Row counts, in table order: Module, TypeDef, Field, MethodDef. One count
+    # per bit set in Valid and in that order -- an omitted count does not merely
+    # lose a table, it shifts every count after it.
+    tilde += struct.pack("<I", 1)
+    tilde += struct.pack("<I", 3)
+    tilde += struct.pack("<I", 1)
+    tilde += struct.pack("<I", 2)
+
+    # Module: Generation(2) Name(2) Mvid(2) EncId(2) EncBaseId(2)
+    tilde += struct.pack("<HHHHH", 0, 1, 0, 0, 0)
+
+    # TypeDef: Flags(4) Name(2) Namespace(2) Extends(2) FieldList(2) MethodList(2)
+    # Row 1 is <Module>, which the reader skips.
+    tilde += struct.pack("<IHHHHH", 0, 1, 0, 0, 1, 1)
+    # Row 2 is the class, and its runs start at 1.
+    tilde += struct.pack("<IHHHHH", 0, 1, 0, 0, 1, 1)
+    # Row 3 is what BOUNDS row 2's runs: 0xFFFF against tables of one row each.
+    tilde += struct.pack("<IHHHHH", 0, 1, 0, 0, 0xFFFF, 0xFFFF)
+
+    # Field: Flags(2) Name(2) Signature(2)
+    tilde += struct.pack("<HHH", 0, 1, 0)
+    # MethodDef: RVA(4) ImplFlags(2) Flags(2) Name(2) Signature(2) ParamList(2).
+    # Two rows, because a MethodDef's parameter run is bounded by the NEXT
+    # MethodDef's ParamList (II.22.26) and with one row there is no next one.
+    # Row 2 carries the same 0xFFFF, so row 1's parameter run is the third
+    # unclamped range in this file.
+    tilde += struct.pack("<IHHHHH", 0, 0, 0, 1, 0, 1)
+    tilde += struct.pack("<IHHHHH", 0, 0, 0, 1, 0, 0xFFFF)
+
+    return bytes(tilde)
+
+
 def main() -> int:
     here = os.path.dirname(os.path.abspath(__file__))
     files = {
@@ -181,6 +246,10 @@ def main() -> int:
         # A COR20 header whose metadata RVA is 0: valid PE, valid CLI directory,
         # nothing behind it. The parser has to say so rather than assume.
         "cli-no-metadata.dll": build_assembly(with_metadata=False),
+        # Two TypeDef rows whose field and method list ranges run to 0xFFFF over
+        # tables of one row each. See tilde_with_runaway_lists.
+        "cli-runaway-lists.dll": build_assembly(
+            with_metadata=True, tilde=tilde_with_runaway_lists()),
     }
     for name, payload in files.items():
         path = os.path.join(here, name)

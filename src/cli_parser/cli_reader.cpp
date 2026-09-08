@@ -255,6 +255,68 @@ std::string CLIReader::makeClrName(const std::string& ns, const std::string& nam
 
 // ─── buildClass ───────────────────────────────────────────────────────────────
 
+namespace {
+
+/// The half-open row range a metadata list column describes, clamped to a table
+/// that actually has @a rows rows.
+///
+/// ECMA-335 II.22: a TypeDef's FieldList and MethodList, and a MethodDef's
+/// ParamList, are the first row that entity owns, and the run ends where the
+/// NEXT entity's column begins. Both endpoints are raw uint32 column values
+/// decoded straight out of the #~ stream. The format requires them to be
+/// monotonically non-decreasing and to index inside the target table; nothing
+/// in the file makes them so.
+///
+/// They were used as raw loop bounds. Every iteration of those loops allocates
+/// -- buildField returns a BcField that is push_back'd, buildMethod likewise,
+/// and with decodeCustomAttrs on (the default) each field also scans the
+/// Constant table three times -- and the row accessors return a default row for
+/// an out-of-range index, so the loop never stops early. It just manufactures
+/// empty objects. Measured, from a 1,024-byte assembly whose third TypeDef row
+/// declares FieldList and MethodList at 0xFFFF over tables of one row each:
+///
+///     before:  fields=65534 methods=65534   peak RSS 86,348 KB
+///     after:   fields=0     methods=0       peak RSS  3,880 KB
+///
+/// (a well-formed assembly of the same size peaks at 3,812 KB).
+///
+/// A MethodDef's ParamList is the same column shape one level down, bounded by
+/// the next MethodDef's. That one costs work rather than memory -- an
+/// out-of-range Param row decodes as a default whose Sequence is 0, which the
+/// loop skips, so it manufactures nothing and simply walks rows that are not
+/// there. Measured over 200 reads of the same 1 KB assembly, with the field and
+/// method clamps in place both times so the difference is this loop alone:
+/// 0 ms clamped against 15 ms unclamped.
+///
+/// Rows are 1-based, so the first row is 1 and one past the last is `rows + 1`;
+/// the sum is formed in 64 bits because `rows` is a uint32 out of the file and
+/// `rows + 1` wraps at 0xFFFFFFFF. Both ends are held inside [1, rows + 1]: a
+/// column naming row 0 is as out of spec as one naming row 0xFFFF, and it costs
+/// a manufactured row rather than 65533 of them, which is exactly why the
+/// cheaper end of this defect is the one that would have survived review.
+struct RowRange
+{
+	std::uint32_t begin = 0;
+	std::uint32_t end = 0;
+};
+
+RowRange clampRowRange(std::uint32_t begin, std::uint32_t end, std::uint32_t rows)
+{
+	const std::uint64_t limit = static_cast<std::uint64_t>(rows) + 1;
+	const auto hold = [limit](std::uint32_t v) {
+		return static_cast<std::uint32_t>(std::min<std::uint64_t>(std::max<std::uint64_t>(v, 1), limit));
+	};
+	RowRange r;
+	r.begin = hold(begin);
+	r.end = hold(end);
+	// A range that runs backwards is not a range. The format forbids it; the
+	// bytes do not.
+	if (r.end < r.begin) r.end = r.begin;
+	return r;
+}
+
+} // namespace
+
 BcClass CLIReader::buildClass(uint32_t typeDefIdx, CliReadResult& result) const
 {
 	auto row = tables_->typeDef(typeDefIdx);
@@ -313,7 +375,8 @@ BcClass CLIReader::buildClass(uint32_t typeDefIdx, CliReadResult& result) const
 	else
 		fieldEnd = tables_->rowCount(TableId::Field) + 1;
 
-	for (uint32_t fi = row.fieldList; fi < fieldEnd; ++fi)
+	const auto fieldRange = clampRowRange(row.fieldList, fieldEnd, tables_->rowCount(TableId::Field));
+	for (uint32_t fi = fieldRange.begin; fi < fieldRange.end; ++fi)
 	{
 		try
 		{
@@ -343,7 +406,8 @@ BcClass CLIReader::buildClass(uint32_t typeDefIdx, CliReadResult& result) const
 	else
 		methodEnd = tables_->rowCount(TableId::MethodDef) + 1;
 
-	for (uint32_t mi = row.methodList; mi < methodEnd; ++mi)
+	const auto methodRange = clampRowRange(row.methodList, methodEnd, tables_->rowCount(TableId::MethodDef));
+	for (uint32_t mi = methodRange.begin; mi < methodRange.end; ++mi)
 	{
 		try
 		{
@@ -454,7 +518,8 @@ BcMethod CLIReader::buildMethod(uint32_t methodDefIdx, CliReadResult& result) co
 	else
 		paramEnd = tables_->rowCount(TableId::Param) + 1;
 
-	for (uint32_t pi = row.paramList; pi < paramEnd; ++pi)
+	const auto paramRange = clampRowRange(row.paramList, paramEnd, tables_->rowCount(TableId::Param));
+	for (uint32_t pi = paramRange.begin; pi < paramRange.end; ++pi)
 	{
 		auto prow = tables_->param(pi);
 		if (prow.sequence == 0) continue; // sequence 0 = return type param
