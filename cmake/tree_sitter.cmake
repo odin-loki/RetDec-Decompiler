@@ -82,3 +82,24 @@ add_dependencies(retdec-tree-sitter-c tree-sitter-c-project)
 set_target_properties(retdec-tree-sitter-c PROPERTIES IMPORTED_LOCATION ${_TSC_LIB})
 target_include_directories(retdec-tree-sitter-c SYSTEM INTERFACE ${TREE_SITTER_C_INSTALL_DIR}/include)
 add_library(retdec::deps::tree-sitter-c ALIAS retdec-tree-sitter-c)
+
+# The two targets above are IMPORTED, so they cannot be exported, and their
+# IMPORTED_LOCATION is inside this build tree. retdec-neural links them PUBLIC
+# and is installed into the retdec-targets export -- and an install(EXPORT) does
+# not refuse an imported dependency, it writes the bare target name into
+# INTERFACE_LINK_LIBRARIES:
+#
+#     INTERFACE_LINK_LIBRARIES "retdec-tree-sitter"
+#
+# In a consumer's project no target of that name exists, so CMake takes the name
+# for a library flag and the link ends at `cannot find -lretdec-tree-sitter`.
+# Reproduced end to end on a toy package with the same shape: export, install,
+# find_package, link -- that exact message.
+#
+# Installing the two archives is the first half; the second is
+# src/retdec/retdec-retdec-config.cmake, which declares imported targets of
+# those names pointing here before it includes the targets file. With both, the
+# same toy consumer links and runs.
+install(FILES ${_TS_LIB} ${_TSC_LIB}
+	DESTINATION ${RETDEC_INSTALL_LIB_DIR}
+)

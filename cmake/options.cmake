@@ -75,7 +75,13 @@ option(RETDEC_ENABLE_LLAMACPP "Fetch and link llama.cpp for RETDEC_HAS_LLAMACPP 
 option(RETDEC_NEURAL_GPU_OFFLOAD "Pass GGML_CUDA=ON into llama.cpp ExternalProject (CPU default)" OFF)
 option(RETDEC_ENABLE_XSIMD "Fetch xsimd and vectorize confirmed-hot byte scans" OFF)
 option(RETDEC_ENABLE_LIEF "Build LIEF adapter for incremental fileformat migration (step 29)" OFF)
-option(RETDEC_ENABLE_RELLIC "Build rellic evaluation hooks (step 28, experimental)" OFF)
+# RETDEC_ENABLE_RELLIC used to be declared here. Nothing read it -- not this
+# file, not a CMakeLists, not a source, not a workflow -- so turning it on built
+# no hook and changed nothing, while its help text promised otherwise. The
+# rellic evaluation it named is script-driven and needs no build option at all:
+# scripts/eval_rellic.sh looks for rellic-decompile on PATH and writes a blocked
+# status when it is missing. Its sibling RETDEC_ENABLE_LIEF is not like this --
+# cmake/lief_optional.cmake reads it.
 option(RETDEC_NEURAL_OFFLINE_ONLY "Compile out neural network egress paths (air-gapped builds)" OFF)
 option(RETDEC_REQUIRE_QT6 "Require Qt6 so retdec-gui configures; fail CMake if Qt6 is missing" OFF)
 option(RETDEC_ENABLE_EXPERIMENTAL_SCAFFOLD "Build experimental task scaffold library (tasks 5-60 code anchors)" OFF)
@@ -96,8 +102,43 @@ macro(set_if_equal v string res)
 		set(${res} ON)
 	endif()
 endmacro()
+# Every token the loop below understands, listed so an unknown one can be
+# reported. `RETDEC_ENABLE=macho-extractor` used to select nothing: the loop
+# matched "extractor", never the component's own name. Nothing being selected
+# does not mean nothing is built -- RETDEC_ENABLE_ALL is only switched off when
+# some component option came out ON, so an unmatched token leaves it ON and the
+# configure quietly builds EVERY component, including the hours-long LLVM
+# dependency, instead of the one that was asked for. Measured by configuring
+# this file standalone: `-DRETDEC_ENABLE=macho-extractor` reported ALL=ON before
+# and ALL=OFF with only MACHO_EXTRACTOR ON after.
+#
+# `llvm-support` had no token at all, although RETDEC_ENABLE_LLVM_SUPPORT exists
+# and is one of the options the ALL-disabling test above reads.
+set(RETDEC_ENABLE_COMPONENTS
+	ar-extractor ar-extractortool
+	bin2llvmir bin2pat
+	capstone2llvmir capstone2llvmirtool
+	common config cpdetect ctypes ctypesparser
+	debugformat demangler demanglertool
+	fileformat fileinfo getsig idr2pat
+	llvm-support llvmir-emul llvmir2hll loader
+	macho-extractor macho-extractortool
+	extractor extractortool
+	pat2yara patterngen pdbparser pelib
+	retdec retdec-decompiler retdectool rtti-finder
+	serdes stacofin stacofintool
+	unpacker unpackertool utils yaracpp
+)
+
 string(REPLACE "," ";" RETDEC_ENABLE "${RETDEC_ENABLE}")
 foreach(t ${RETDEC_ENABLE})
+	if(NOT "${t}" IN_LIST RETDEC_ENABLE_COMPONENTS)
+		message(FATAL_ERROR
+			"RETDEC_ENABLE names an unknown component '${t}'. A token that "
+			"matches nothing leaves RETDEC_ENABLE_ALL on, so the configure "
+			"would succeed and build every component instead of the one asked "
+			"for. Known components: ${RETDEC_ENABLE_COMPONENTS}")
+	endif()
 	set_if_equal(${t} "ar-extractor" RETDEC_ENABLE_AR_EXTRACTOR)
 	set_if_equal(${t} "ar-extractortool" RETDEC_ENABLE_AR_EXTRACTORTOOL)
 	set_if_equal(${t} "bin2llvmir" RETDEC_ENABLE_BIN2LLVMIR)
@@ -116,9 +157,16 @@ foreach(t ${RETDEC_ENABLE})
 	set_if_equal(${t} "fileinfo" RETDEC_ENABLE_FILEINFO)
 	set_if_equal(${t} "getsig" RETDEC_ENABLE_GETSIG)
 	set_if_equal(${t} "idr2pat" RETDEC_ENABLE_IDR2PAT)
+	set_if_equal(${t} "llvm-support" RETDEC_ENABLE_LLVM_SUPPORT)
 	set_if_equal(${t} "llvmir-emul" RETDEC_ENABLE_LLVMIR_EMUL)
 	set_if_equal(${t} "llvmir2hll" RETDEC_ENABLE_LLVMIR2HLL)
 	set_if_equal(${t} "loader" RETDEC_ENABLE_LOADER)
+	# Both spellings: the component, its library and its directory are all
+	# called macho-extractor, which is what a reader reaches for; "extractor"
+	# is what the loop has always matched and is kept so existing scripts do
+	# not break.
+	set_if_equal(${t} "macho-extractor" RETDEC_ENABLE_MACHO_EXTRACTOR)
+	set_if_equal(${t} "macho-extractortool" RETDEC_ENABLE_MACHO_EXTRACTORTOOL)
 	set_if_equal(${t} "extractor" RETDEC_ENABLE_MACHO_EXTRACTOR)
 	set_if_equal(${t} "extractortool" RETDEC_ENABLE_MACHO_EXTRACTORTOOL)
 	set_if_equal(${t} "pat2yara" RETDEC_ENABLE_PAT2YARA)

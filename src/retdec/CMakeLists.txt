@@ -76,6 +76,13 @@ install(EXPORT retdec-targets
 	DESTINATION ${RETDEC_INSTALL_CMAKE_DIR}
 )
 
+# How many directories up from RETDEC_INSTALL_CMAKE_DIR the install prefix is.
+# retdec-retdec-config.cmake needs it to find the installed tree-sitter archives
+# relative to itself rather than to a path baked in at configure time, so an
+# install tree stays relocatable -- which is the whole point of the RPATH work
+# at the top of the root CMakeLists.
+string(REGEX REPLACE "[^/]+" ".." _RETDEC_CMAKE_DIR_TO_PREFIX "${RETDEC_INSTALL_CMAKE_DIR}")
+
 # Install CMake files.
 configure_file(
 	"retdec-retdec-config.cmake"

@@ -56,8 +56,16 @@ if(MSVC)
 	)
 	# Allow the 32b version of bin2llvmir on Windows handle addresses larger
 	# than 2 GB (up to 4 GB).
+	#
+	# On retdec-decompiler, not on retdec: /LARGEADDRESSAWARE is a linker
+	# switch, retdec is a STATIC library (src/retdec/CMakeLists.txt:2), and a
+	# static library is archived rather than linked -- LINK_FLAGS on one is
+	# never passed to anything. The flag has to reach the link of the
+	# executable, which is the image whose IMAGE_FILE_LARGE_ADDRESS_AWARE bit
+	# decides how much address space it gets. This is the same target the two
+	# set_property calls above already use for /FORCE:MULTIPLE and /STACK.
 	if(CMAKE_SIZEOF_VOID_P MATCHES "4")
-		set_property(TARGET retdec
+		set_property(TARGET retdec-decompiler
 			APPEND_STRING PROPERTY LINK_FLAGS " /LARGEADDRESSAWARE"
 		)
 	endif()
@@ -86,8 +94,12 @@ install(
 	DESTINATION ${RETDEC_INSTALL_DATA_DIR}
 )
 
+# README.md as well as the profiles themselves: retdec-decompiler --help sends
+# the reader to share/retdec/profiles/README.md (retdec-decompiler.cpp:869), and
+# FILES_MATCHING PATTERN "*.json" excluded the one file that message names, so
+# the path it gave never existed in an install tree.
 install(
 	DIRECTORY   "profiles/"
 	DESTINATION ${RETDEC_INSTALL_DATA_DIR}/profiles
-	FILES_MATCHING PATTERN "*.json"
+	FILES_MATCHING PATTERN "*.json" PATTERN "README.md"
 )

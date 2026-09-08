@@ -68,6 +68,14 @@ jobs:
           python3 scripts/ci/check_cmake_presets.py --self-test
           python3 scripts/ci/check_cmake_presets.py CMakePresets.json cmake/superbuild/CMakePresets.json
 
+      # An option() nothing reads shows up in ccmake and in cmake -LH with a
+      # help string saying what it would do, and does nothing. That is worse
+      # than the option not existing.
+      - name: Every declared build option is read by the build
+        run: |
+          python3 scripts/ci/check_cmake_options.py --self-test
+          python3 scripts/ci/check_cmake_options.py
+
       # std::sort compiles without <algorithm> only where some other header
       # happened to pull it in, which is a property of the standard library
       # implementation. Two files in that state failed CI's clang++ the first
