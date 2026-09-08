@@ -44,6 +44,8 @@ private:
 	std::vector<std::string> warnings_;
 	// String table for Lua 5.4 string deduplication (index → string)
 	std::vector<std::string> stringTable54_;
+	/// Prototype nesting depth currently being read; see kMaxProtoDepth.
+	unsigned protoDepth_ = 0;
 
 	struct ParseError
 	{
@@ -83,6 +85,24 @@ private:
 	LuaVersion parseHeader();
 
 	// ── Prototype parsers ────────────────────────────────────────────────────
+	/// A prototype's sub-prototypes are read by recursing into the same
+	/// function, so the nesting a file declares becomes native stack depth.
+	/// Nesting costs about ten bytes per level on the wire and a few hundred
+	/// on the stack, so a file of a few hundred kilobytes used to be enough to
+	/// run the stack out. Lua's own compiler cannot emit nesting deeper than
+	/// LUAI_MAXCCALLS (200), so no file this refuses was produced by luac.
+	static constexpr unsigned kMaxProtoDepth = 200;
+	/// Raises protoDepth_ for the duration of one readProto5x() call and
+	/// refuses the file once the nesting passes kMaxProtoDepth.
+	class ProtoDepthGuard {
+	public:
+		explicit ProtoDepthGuard(LuaReader& r);
+		~ProtoDepthGuard();
+
+	private:
+		LuaReader& r_;
+	};
+
 	LuaProto readProto51();
 	LuaProto readProto52();
 	LuaProto readProto53();

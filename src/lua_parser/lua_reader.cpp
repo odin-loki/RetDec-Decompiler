@@ -428,6 +428,19 @@ std::vector<LuaUpvalue> LuaReader::readUpvalues52plus(int n)
 
 // ─── Proto readers ───────────────────────────────────────────────────────────
 
+LuaReader::ProtoDepthGuard::ProtoDepthGuard(LuaReader& r): r_(r)
+{
+	if (r_.protoDepth_ >= kMaxProtoDepth)
+		throw ParseError{"Prototype nesting deeper than " + std::to_string(kMaxProtoDepth)};
+	++r_.protoDepth_;
+}
+
+LuaReader::ProtoDepthGuard::~ProtoDepthGuard()
+{
+	--r_.protoDepth_;
+}
+
+
 void LuaReader::readDebugInfo51(LuaProto& proto)
 {
 	// Line info — one readInt() per entry, so each costs a whole int on the wire.
@@ -526,6 +539,7 @@ void LuaReader::readDebugInfo54(LuaProto& proto)
 
 LuaProto LuaReader::readProto51()
 {
+	ProtoDepthGuard depth(*this);
 	LuaProto proto;
 	proto.version = LuaVersion::Lua51;
 
@@ -551,6 +565,7 @@ LuaProto LuaReader::readProto51()
 
 LuaProto LuaReader::readProto52()
 {
+	ProtoDepthGuard depth(*this);
 	LuaProto proto;
 	proto.version = LuaVersion::Lua52;
 
@@ -577,6 +592,7 @@ LuaProto LuaReader::readProto52()
 
 LuaProto LuaReader::readProto53()
 {
+	ProtoDepthGuard depth(*this);
 	LuaProto proto;
 	proto.version = LuaVersion::Lua53;
 
@@ -605,6 +621,7 @@ LuaProto LuaReader::readProto53()
 
 LuaProto LuaReader::readProto54()
 {
+	ProtoDepthGuard depth(*this);
 	LuaProto proto;
 	proto.version = LuaVersion::Lua54;
 

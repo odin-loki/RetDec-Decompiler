@@ -180,8 +180,32 @@ struct MarshalObject
 		return std::get<std::shared_ptr<PyCodeObject>>(value);
 	}
 
+	/// Nodes one conversion may produce before it stops expanding.
+	///
+	/// FLAG_REF and TYPE_REF let a marshal stream describe a graph, while a
+	/// PyCodeObject::Const is a tree, so a node reachable by two paths gets
+	/// written out twice. Nesting that doubling k levels deep costs about
+	/// seven bytes per level and yields 2^k nodes: a 176-byte stream used to
+	/// exhaust 4 GB here. No bound derived from the stream length can catch
+	/// that, so the expansion carries an absolute budget. At 96 bytes per node
+	/// this caps one conversion at roughly 20 MB, still orders of magnitude
+	/// above the constant pool of any real .pyc.
+	static constexpr uint64_t kMaxConstNodes = 200000;
+
+	/// Placed in the `sval` of a container whose elements were cut short by
+	/// kMaxConstNodes, so a truncated tree cannot be read as a complete one.
+	static constexpr const char* kConstTruncated = "<truncated: constant graph exceeds expansion limit>";
+
 	/// Convert to PyCodeObject::Const (for storage in co_consts)
 	PyCodeObject::Const toConst() const;
+
+	/// Same conversion against a caller-owned budget, so that the constants of
+	/// one code object share a single ceiling instead of one each.
+	PyCodeObject::Const toConst(uint64_t& budget) const;
+
+private:
+	/// Convert the elements of a Tuple/FrozenSet into @p c under @p budget.
+	void expandElements(PyCodeObject::Const& c, uint64_t& budget) const;
 };
 
 // ─── MarshalReader ────────────────────────────────────────────────────────────

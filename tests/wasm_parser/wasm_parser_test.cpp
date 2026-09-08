@@ -1061,3 +1061,104 @@ TEST(WatEmitterMemArg, AWellFormedAlignmentIsStillPrintedInBytes)
 	EXPECT_NE(res.source.find("offset=8"), std::string::npos) << res.source;
 	EXPECT_NE(res.source.find("align=4"), std::string::npos) << res.source;
 }
+
+// ─── Declared counts that exceed what the input can supply ───────────────────
+//
+// Two quantities in a function used to be trusted as loop bounds without a
+// ceiling: a br_table label count and a local group's repetition count. Both
+// are attacker-chosen 32-bit numbers reachable from a few bytes, so both let a
+// module ask for output no input of that size could justify.
+
+TEST(WatEmitterDeclaredCounts, ABrTableReadsNoMoreLabelsThanTheBodyCanHold)
+{
+	WasmModule mod;
+	FuncType ft;
+	mod.types.push_back(ft);
+	mod.funcTypeIndices.push_back(0);
+
+	// br_table with a label count of 1,000,000 followed by a single byte.
+	// Every label is a LEB128 of at least one byte, so at most one of them
+	// is actually present.
+	FuncCode code;
+	code.body = {0x0E, 0xC0, 0x84, 0x3D, 0x0B};
+	mod.codes.push_back(code);
+
+	WatEmitter emitter;
+	auto result = emitter.emit(mod);
+
+	// Unbounded, the loop appends a label per declared count: about two
+	// megabytes of " 0" from five bytes of input.
+	EXPECT_LT(result.source.size(), 4096u);
+	EXPECT_NE(result.source.find("br_table"), std::string::npos);
+	EXPECT_NE(result.source.find("more label(s) declared than the body can hold"), std::string::npos);
+}
+
+TEST(WatEmitterDeclaredCounts, AWellFormedBrTablePrintsEveryLabel)
+{
+	WasmModule mod;
+	FuncType ft;
+	mod.types.push_back(ft);
+	mod.funcTypeIndices.push_back(0);
+
+	// br_table 2 -> three labels (7, 8, and the default 9), all present.
+	FuncCode code;
+	code.body = {0x0E, 0x02, 0x07, 0x08, 0x09, 0x0B};
+	mod.codes.push_back(code);
+
+	WatEmitter emitter;
+	auto result = emitter.emit(mod);
+
+	EXPECT_NE(result.source.find("br_table 7 8 9"), std::string::npos);
+	EXPECT_EQ(result.source.find("more label(s) declared"), std::string::npos);
+}
+
+TEST(WatEmitterDeclaredCounts, ALocalGroupDoesNotExpandPastTheEmissionLimit)
+{
+	WasmModule mod;
+	FuncType ft;
+	mod.types.push_back(ft);
+	mod.funcTypeIndices.push_back(0);
+
+	// A local group's count is a repetition multiplier, not a vector of
+	// encoded elements, so six bytes on the wire declare as many locals as a
+	// uint32_t can hold.
+	FuncCode code;
+	WasmLocal lc;
+	lc.count = 1000000;
+	lc.type = ValType::I32;
+	code.locals.push_back(lc);
+	code.body = {0x0B};
+	mod.codes.push_back(code);
+
+	WatEmitter emitter;
+	auto result = emitter.emit(mod);
+
+	// One "(local ...)" line each would be some twenty megabytes here, and
+	// grows without limit as the declared count does.
+	EXPECT_LT(result.source.size(), 2u * 1024u * 1024u);
+	EXPECT_NE(result.source.find("further i32 local(s) declared, past the emission limit"), std::string::npos);
+}
+
+TEST(WatEmitterDeclaredCounts, ALocalGroupWithinTheLimitIsStillExpandedInFull)
+{
+	WasmModule mod;
+	FuncType ft;
+	mod.types.push_back(ft);
+	mod.funcTypeIndices.push_back(0);
+
+	FuncCode code;
+	WasmLocal lc;
+	lc.count = 3;
+	lc.type = ValType::I64;
+	code.locals.push_back(lc);
+	code.body = {0x0B};
+	mod.codes.push_back(code);
+
+	WatEmitter emitter;
+	auto result = emitter.emit(mod);
+
+	EXPECT_NE(result.source.find("(local 0 i64)"), std::string::npos);
+	EXPECT_NE(result.source.find("(local 1 i64)"), std::string::npos);
+	EXPECT_NE(result.source.find("(local 2 i64)"), std::string::npos);
+	EXPECT_EQ(result.source.find("past the emission limit"), std::string::npos);
+}

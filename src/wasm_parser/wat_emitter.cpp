@@ -22,6 +22,16 @@ namespace wasm_parser {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// Most declared quantities in a wasm module are bounded by the bytes that
+// encode them; a local group's repetition count is not. The WebAssembly spec
+// leaves the locals per function to implementations (appendix A.3), and the
+// per-function figure is the one the production engines settled on. The
+// per-module figure bounds the whole emission: a function costs at least two
+// input bytes, so a per-function limit alone still lets a small file ask for
+// arbitrarily much output by declaring many maximal functions.
+static constexpr uint64_t kMaxEmittedLocals = 50000;
+static constexpr uint64_t kMaxEmittedLocalsPerModule = 1000000;
+
 WatEmitter::WatEmitter(WatEmitOptions opts): opts_(std::move(opts)) {}
 
 std::string WatEmitter::indentStr(int level) const
@@ -309,6 +319,7 @@ void WatEmitter::emitFunctions(const WasmModule& mod, std::ostream& out, int ind
 	}
 
 	// Defined functions
+	uint64_t moduleLocals = 0;
 	for (size_t ci = 0; ci < mod.codes.size(); ++ci)
 	{
 		uint32_t funcIdx = importedFuncs + (uint32_t)ci;
@@ -330,14 +341,38 @@ void WatEmitter::emitFunctions(const WasmModule& mod, std::ostream& out, int ind
 			}
 
 			// Locals
-			uint32_t localOffset = paramCount;
+			uint64_t localOffset = paramCount;
+			uint64_t emittedLocals = 0;
 			for (const auto& lc: fc.locals)
 			{
-				for (uint32_t li = 0; li < lc.count; ++li)
+				// A local group carries a repetition count, not a vector of
+				// encoded elements, so unlike every other quantity here it is
+				// not bounded by the bytes that follow it: six bytes declare
+				// 0xFFFFFFFF locals. Expanding the count into one line each
+				// used to turn a 30-byte module into ~100 GB of output. The
+				// per-function limit is the one V8 (kV8MaxWasmFunctionLocals)
+				// and wasmtime (MAX_WASM_FUNCTION_LOCALS) enforce, so a
+				// function over it is one no engine would accept anyway; the
+				// per-module limit stops many such functions from adding up.
+				// What is not expanded is still reported, so nothing about the
+				// input is hidden.
+				const uint64_t funcLeft = emittedLocals < kMaxEmittedLocals ? kMaxEmittedLocals - emittedLocals : 0;
+				const uint64_t modLeft =
+					moduleLocals < kMaxEmittedLocalsPerModule ? kMaxEmittedLocalsPerModule - moduleLocals : 0;
+				const uint64_t room = funcLeft < modLeft ? funcLeft : modLeft;
+				const uint64_t show = lc.count < room ? lc.count : room;
+				for (uint64_t li = 0; li < show; ++li)
 				{
-					std::string lid = localId(mod, funcIdx, localOffset + li);
+					const uint64_t idx = localOffset + li;
+					std::string lid = localId(mod, funcIdx, static_cast<uint32_t>(idx < UINT32_MAX ? idx : UINT32_MAX));
 					out << "\n" << indentStr(indent + 1) << "(local " << lid << " " << valTypeName(lc.type) << ")";
 				}
+				if (show < lc.count)
+					out << "\n"
+						<< indentStr(indent + 1) << ";; " << (lc.count - show) << " further " << valTypeName(lc.type)
+						<< " local(s) declared, past the emission limit";
+				emittedLocals += show;
+				moduleLocals += show;
 				localOffset += lc.count;
 			}
 
@@ -716,9 +751,19 @@ std::string WatEmitter::decodeInstr(DisState& st, const std::vector<uint8_t>& co
 	case 0x0D: line << "br_if " << readVecULEB(code, pc); break;
 	case 0x0E: {
 		uint32_t n = readVecULEB(code, pc);
+		// br_table reads n+1 labels and every label is a LEB128 that spends at
+		// least one byte, so a count larger than the bytes left in the body
+		// cannot be satisfied by this input. The count used to be trusted as
+		// the loop bound: past the end readVecULEB answers 0 without moving
+		// the cursor on, so an 8-byte body declaring n = 0xFFFFFFFF drove 2^32
+		// iterations, each appending a label to the line.
+		const uint64_t want = static_cast<uint64_t>(n) + 1;
+		const uint64_t avail = code.size() > pc ? code.size() - pc : 0;
+		const uint64_t take = want < avail ? want : avail;
 		line << "br_table";
-		for (uint32_t i = 0; i <= n; ++i)
+		for (uint64_t i = 0; i < take; ++i)
 			line << " " << readVecULEB(code, pc);
+		if (take < want) line << " ;; " << (want - take) << " more label(s) declared than the body can hold";
 		break;
 	}
 	case 0x0F: line << "return"; break;

@@ -43,9 +43,33 @@ private:
 
 // ─── MarshalObject::toConst ───────────────────────────────────────────────────
 
+// Shared by the two container kinds: convert each element while the budget
+// lasts, and say so in the container itself when it does not. Stopping without
+// the marker would leave a short tuple indistinguishable from a genuine one.
+void MarshalObject::expandElements(PyCodeObject::Const& c, uint64_t& budget) const
+{
+	for (const auto& elem: asTuple())
+	{
+		if (!elem) continue;
+		if (budget == 0)
+		{
+			c.sval = kConstTruncated;
+			break;
+		}
+		c.elements.push_back(elem->toConst(budget));
+	}
+}
+
 PyCodeObject::Const MarshalObject::toConst() const
 {
+	uint64_t budget = kMaxConstNodes;
+	return toConst(budget);
+}
+
+PyCodeObject::Const MarshalObject::toConst(uint64_t& budget) const
+{
 	PyCodeObject::Const c;
+	if (budget > 0) --budget;
 	switch (type)
 	{
 	case Type::None: c.kind = PyCodeObject::Const::Kind::None; break;
@@ -71,14 +95,12 @@ PyCodeObject::Const MarshalObject::toConst() const
 		break;
 	case Type::Tuple: {
 		c.kind = PyCodeObject::Const::Kind::Tuple;
-		for (const auto& elem: asTuple())
-			if (elem) c.elements.push_back(elem->toConst());
+		expandElements(c, budget);
 		break;
 	}
 	case Type::FrozenSet: {
 		c.kind = PyCodeObject::Const::Kind::FrozenSet;
-		for (const auto& elem: asTuple())
-			if (elem) c.elements.push_back(elem->toConst());
+		expandElements(c, budget);
 		break;
 	}
 	case Type::Code:
@@ -566,12 +588,16 @@ std::shared_ptr<PyCodeObject> MarshalReader::readCodeFields()
 		auto obj = readObject();
 		if (obj && obj->isTuple())
 		{
+			// One budget for the whole pool: a per-constant budget would let
+			// a stream multiply the ceiling by the number of constants it
+			// declares.
+			uint64_t budget = MarshalObject::kMaxConstNodes;
 			for (const auto& elem: obj->asTuple())
 			{
 				if (elem)
 				{
 					// Nested code objects are added with kind=Code
-					code->co_consts.push_back(elem->toConst());
+					code->co_consts.push_back(elem->toConst(budget));
 				}
 			}
 		}

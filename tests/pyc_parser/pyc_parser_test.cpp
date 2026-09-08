@@ -1328,3 +1328,95 @@ TEST(MarshalReader, AcceptsNestingWithinTheLimit)
 	EXPECT_NE(obj, nullptr);
 	EXPECT_FALSE(reader.hasError());
 }
+
+// ─── Constant graph expansion ────────────────────────────────────────────────
+//
+// FLAG_REF and TYPE_REF let a marshal stream describe a graph, while a
+// PyCodeObject::Const is a tree, so a node reachable by two paths is written
+// out twice. Nesting that doubling k levels deep costs about seven bytes per
+// level and yields 2^k nodes: a 176-byte stream exhausted four gigabytes.
+// Parse depth stays at k, so the nesting limit never sees it.
+
+// A stream of `levels` two-element tuples, each holding the next level twice:
+// once inline (which registers it) and once by reference.
+static std::vector<uint8_t> sharedTupleChain(int levels)
+{
+	std::vector<uint8_t> s;
+	for (int i = 0; i < levels; ++i)
+	{
+		s.push_back(static_cast<uint8_t>(')' | 0x80)); // small tuple, registered
+		s.push_back(2);
+	}
+	s.push_back(static_cast<uint8_t>('N' | 0x80)); // innermost leaf, registered
+	for (int i = levels - 1; i >= 0; --i)
+	{
+		s.push_back('r'); // TYPE_REF back to the level below
+		for (int k = 0; k < 4; ++k)
+			s.push_back(static_cast<uint8_t>(static_cast<uint32_t>(i + 1) >> (8 * k)));
+	}
+	return s;
+}
+
+static uint64_t countConstNodes(const PyCodeObject::Const& c)
+{
+	uint64_t n = 1;
+	for (const auto& e: c.elements)
+		n += countConstNodes(e);
+	return n;
+}
+
+TEST(MarshalObject, ToConstStopsExpandingASharedGraphAtTheLimit)
+{
+	const auto stream = sharedTupleChain(30);
+	PythonVersion v{3, 11};
+	MarshalReader reader(stream.data(), stream.size(), v);
+
+	const auto obj = reader.readObject();
+	ASSERT_NE(obj, nullptr);
+	EXPECT_FALSE(reader.hasError());
+
+	// 2^31 - 1 nodes without a ceiling, from 211 bytes.
+	const auto c = obj->toConst();
+	EXPECT_LE(countConstNodes(c), MarshalObject::kMaxConstNodes);
+}
+
+TEST(MarshalObject, ATruncatedConstantSaysSo)
+{
+	const auto stream = sharedTupleChain(30);
+	PythonVersion v{3, 11};
+	MarshalReader reader(stream.data(), stream.size(), v);
+
+	const auto obj = reader.readObject();
+	ASSERT_NE(obj, nullptr);
+
+	// Walk down the first element of each tuple until a truncated container
+	// turns up; a short tuple must never pass for a complete one.
+	const PyCodeObject::Const c = obj->toConst();
+	const PyCodeObject::Const* cur = &c;
+	bool sawMarker = false;
+	while (true)
+	{
+		if (cur->sval == MarshalObject::kConstTruncated)
+		{
+			sawMarker = true;
+			break;
+		}
+		if (cur->elements.empty()) break;
+		cur = &cur->elements.front();
+	}
+	EXPECT_TRUE(sawMarker);
+}
+
+TEST(MarshalObject, ASharedGraphSmallEnoughToExpandIsStillExpandedInFull)
+{
+	const auto stream = sharedTupleChain(8);
+	PythonVersion v{3, 11};
+	MarshalReader reader(stream.data(), stream.size(), v);
+
+	const auto obj = reader.readObject();
+	ASSERT_NE(obj, nullptr);
+
+	// Eight levels of doubling over a leaf: 2^9 - 1 nodes, every one present.
+	const auto c = obj->toConst();
+	EXPECT_EQ(countConstNodes(c), 511u);
+}

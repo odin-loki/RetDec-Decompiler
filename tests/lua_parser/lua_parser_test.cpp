@@ -683,6 +683,112 @@ TEST(LuaReaderMalformedTest, Lua54RejectsOversizedLineInfoCount)
 	EXPECT_NE(result.error.find("exceeds remaining input"), std::string::npos) << result.error;
 }
 
+// ─── Prototype nesting depth ─────────────────────────────────────────────────
+//
+// A prototype's sub-prototypes are read by recursing into the same function,
+// so the nesting a file declares turns directly into native stack depth. The
+// sub-prototype count is checked against the bytes remaining, but nesting is
+// not a count: ten bytes buy one more level, so a few hundred kilobytes used
+// to be enough to run the stack out and take the process with it.
+
+// A Lua 5.4 prototype that declares `subProtos` sub-prototypes and nothing
+// else. Written flat rather than recursively so the builder itself cannot be
+// what overflows.
+static void appendLua54Proto(LuaBuilder& b, size_t subProtos)
+{
+	b.emptyStr54(); // source
+	b.size54(0);    // lineDefined
+	b.size54(0);    // lastLineDefined
+	b.u8(0);        // numParams
+	b.u8(0);        // isVarArg
+	b.u8(2);        // maxStackSize
+	b.size54(0);    // code
+	b.size54(0);    // constants
+	b.size54(0);    // upvalues
+	b.size54(subProtos);
+}
+
+// The four zero counts of DumpDebug, one prototype's worth.
+static void appendLua54EmptyDebug(LuaBuilder& b)
+{
+	b.size54(0); // line info
+	b.size54(0); // abs line info
+	b.size54(0); // locals
+	b.size54(0); // upvalue names
+}
+
+// A Lua 5.4 file whose top-level prototype nests `levels` deep, each level
+// holding exactly one sub-prototype.
+static std::vector<uint8_t> lua54Nested(size_t levels)
+{
+	LuaBuilder b;
+	b.u8(0x1B);
+	b.u8('L');
+	b.u8('u');
+	b.u8('a');
+	b.u8(0x54);
+	b.u8(0x00);
+	b.u8(0x19);
+	b.u8(0x93);
+	b.u8(0x0D);
+	b.u8(0x0A);
+	b.u8(0x1A);
+	b.u8(0x0A);
+	b.u8(4); // instruction size
+	b.u8(8); // integer size
+	b.u8(8); // number size
+	b.u64(0x5678);
+	double testfloat = 370.5;
+	uint64_t tf;
+	std::memcpy(&tf, &testfloat, 8);
+	b.u64(tf);
+	b.u8(1); // upvalue count for main chunk
+
+	for (size_t i = 0; i < levels; ++i)
+		appendLua54Proto(b, 1);
+	appendLua54Proto(b, 0); // innermost
+	for (size_t i = 0; i <= levels; ++i)
+		appendLua54EmptyDebug(b);
+	return b.bytes();
+}
+
+TEST(LuaReaderMalformedTest, Lua54RefusesPrototypeNestingDeeperThanTheLimit)
+{
+	// A build without the bound segfaulted on this input: 26,000 levels in
+	// under 400 kB, at about ten bytes per level. How deep it takes to land
+	// there depends on the frame size the compiler picks, so the assertion is
+	// on the refusal rather than on provoking the crash.
+	auto result = parseLua(lua54Nested(26000));
+	EXPECT_FALSE(result.ok);
+	EXPECT_NE(result.error.find("Prototype nesting deeper than"), std::string::npos) << result.error;
+}
+
+TEST(LuaReaderMalformedTest, Lua54RefusesNestingJustPastTheLimit)
+{
+	// 200 nested prototypes plus the innermost one is 201 levels.
+	auto result = parseLua(lua54Nested(200));
+	EXPECT_FALSE(result.ok);
+	EXPECT_NE(result.error.find("Prototype nesting deeper than"), std::string::npos) << result.error;
+}
+
+TEST(LuaReaderMalformedTest, Lua54AcceptsNestingUpToTheLimit)
+{
+	// 199 nested prototypes plus the innermost one is exactly 200 levels.
+	auto result = parseLua(lua54Nested(199));
+	ASSERT_TRUE(result.ok) << result.error;
+
+	// And the nesting really is that deep, so the two tests above are about
+	// the bound and not about a builder that stops early.
+	size_t depth = 1;
+	const LuaProto* p = &result.module.topLevel;
+	while (!p->protos.empty())
+	{
+		p = &p->protos.front();
+		++depth;
+	}
+	EXPECT_EQ(depth, 200u);
+}
+
 // ─── LuaEmitter tests ────────────────────────────────────────────────────────
 
 TEST(LuaEmitterTest, EmitsFileHeader)
