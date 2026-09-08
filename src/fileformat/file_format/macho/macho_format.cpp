@@ -79,7 +79,26 @@ MachOFormat::MachOFormat(std::string pathToFile, LoadFlags loadFlags):
  */
 MachOFormat::MachOFormat(std::istream& inputStream, LoadFlags loadFlags):
 	FileFormat(inputStream, loadFlags),
-	fileBuffer(MemoryBuffer::getMemBuffer(StringRef(reinterpret_cast<const char*>(bytes.data()), bytes.size()))),
+	// "", false: the third parameter of getMemBuffer is RequiresNullTerminator
+	// and it DEFAULTS TO TRUE, so omitting it promises LLVM that the byte one
+	// past the end of this range is readable and zero. It is neither. `bytes` is
+	// a std::vector<unsigned char> holding the file, so bytes.data() +
+	// bytes.size() is one past the end -- and for an empty input, data() may be
+	// null. MemoryBuffer::init asserts `BufEnd[0] == 0`, which IS that read:
+	//
+	//   MemoryBuffer.cpp:52: Assertion `(!RequiresNullTerminator || BufEnd[0] ==
+	//   0) && "Buffer is not null terminated!"' failed.
+	//
+	// found by fuzz_macho on a zero-byte input, the first time the libFuzzer job
+	// got far enough to run. With assertions off it is a silent one-byte
+	// out-of-bounds read of the caller's buffer instead.
+	//
+	// A file image is not a C string and this reader never needed it to be:
+	// CoffFormat's stream constructor has passed "", false all along, and this
+	// is the same call. Nothing below asks the buffer for a terminator --
+	// MachOObjectFile::create takes the MemoryBufferRef and reads by size.
+	fileBuffer(
+		MemoryBuffer::getMemBuffer(StringRef(reinterpret_cast<const char*>(bytes.data()), bytes.size()), "", false)),
 	file(nullptr), fatFile(nullptr)
 {
 	initStructures();
@@ -93,8 +112,11 @@ MachOFormat::MachOFormat(std::istream& inputStream, LoadFlags loadFlags):
  */
 MachOFormat::MachOFormat(const std::uint8_t* data, std::size_t size, LoadFlags loadFlags):
 	FileFormat(data, size, loadFlags),
-	fileBuffer(MemoryBuffer::getMemBuffer(StringRef(reinterpret_cast<const char*>(data), size))), file(nullptr),
-	fatFile(nullptr)
+	// "", false, for the reason above -- and more sharply here, because this
+	// overload takes the caller's own buffer: the byte past `size` belongs to
+	// whoever allocated it. This is the constructor fuzz_macho drives.
+	fileBuffer(MemoryBuffer::getMemBuffer(StringRef(reinterpret_cast<const char*>(data), size), "", false)),
+	file(nullptr), fatFile(nullptr)
 {
 	initStructures();
 }

@@ -236,7 +236,15 @@ CoffFormat::CoffFormat(std::istream& inputStream, LoadFlags loadFlags):
  */
 CoffFormat::CoffFormat(const std::uint8_t* data, std::size_t size, LoadFlags loadFlags):
 	FileFormat(data, size, loadFlags),
-	fileBuffer(MemoryBuffer::getMemBuffer(StringRef(reinterpret_cast<const char*>(data), size)))
+	// "", false, matching the stream constructor above -- which has always passed
+	// them, while this one never did. getMemBuffer's third parameter is
+	// RequiresNullTerminator and defaults to TRUE, and MemoryBuffer::init then
+	// asserts `BufEnd[0] == 0`: a read of the byte one past the caller's buffer,
+	// which is an abort with assertions on and a silent out-of-bounds read
+	// without them. fuzz_macho hit the identical mistake in MachOFormat on a
+	// zero-byte input; nothing fuzzes this overload, so it is fixed by
+	// inspection alongside it rather than after a crash.
+	fileBuffer(MemoryBuffer::getMemBuffer(StringRef(reinterpret_cast<const char*>(data), size), "", false))
 {
 	initStructures();
 }

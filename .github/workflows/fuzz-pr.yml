@@ -219,6 +219,19 @@ jobs:
           seed_dir fuzz-corpora/fuzz_apk tests/**/*.apk
           seed_dir fuzz-corpora/fuzz_pdb tests/**/*.pdb
 
+          # Committed reproducers, replayed. The run step below writes a new
+          # crash to tests/crash_corpus/<target>/ so it becomes a permanent
+          # regression case -- and nothing read them back, so a fix could be
+          # reverted and this job would only find the crash again by luck,
+          # within its 120 seconds. libFuzzer runs every file in the corpus
+          # directory before it starts mutating, so seeding from there makes the
+          # replay the first thing that happens.
+          for crash_dir in tests/crash_corpus/fuzz_*/; do
+            [[ -d "${crash_dir}" ]] || continue
+            target="$(basename "${crash_dir}")"
+            seed_dir "fuzz-corpora/${target}" "${crash_dir}"*
+          done
+
       - name: Run libFuzzer 120s per target
         run: |
           set -euo pipefail
