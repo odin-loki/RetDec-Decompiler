@@ -40,6 +40,7 @@
 #ifndef RETDEC_PROFILING_PROFILING_H
 #define RETDEC_PROFILING_PROFILING_H
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -151,6 +152,41 @@ private:
     bool         active_ = true;
 };
 
+// ─── ProfilingSession ────────────────────────────────────────────────────────
+
+/**
+ * @brief One decompilation's claim on the process-wide Profiler.
+ *
+ * The Profiler is a singleton, and so is reset(). retdec::decompile() called
+ * reset() on entry, which is right for one decompilation and wrong for a batch:
+ * parallelBatchDecompile() runs several at once and each new one wiped the
+ * stages the running ones had recorded. Measured with two threads, one
+ * recording and one doing what decompile() does on entry -- 20000 stage samples
+ * in, one stage out.
+ *
+ * A session that begins while another is in flight does not own the profiler
+ * and must not clear it. The batch then shares one profile, which is the only
+ * thing a single process-wide accumulator can honestly report for concurrent
+ * jobs.
+ */
+class ProfilingSession {
+public:
+    ProfilingSession() noexcept;
+    ~ProfilingSession();
+
+    ProfilingSession(const ProfilingSession&) = delete;
+    ProfilingSession& operator=(const ProfilingSession&) = delete;
+
+    /// True when no other session was in flight at the moment this one began.
+    bool ownsProfiler() const noexcept { return owns_; }
+
+    /// Sessions in flight in this process.
+    static int inFlight() noexcept;
+
+private:
+    bool owns_;
+};
+
 // ─── Profiler ────────────────────────────────────────────────────────────────
 
 /**
@@ -167,8 +203,8 @@ public:
      * @brief Enable or disable all profiling.  When disabled, all record()
      *        calls are no-ops and ScopeTimer destructors do nothing.
      */
-    void setEnabled(bool enabled) { enabled_ = enabled; }
-    bool isEnabled()        const { return enabled_; }
+    void setEnabled(bool enabled) { enabled_.store(enabled, std::memory_order_relaxed); }
+    bool isEnabled()        const { return enabled_.load(std::memory_order_relaxed); }
 
     /**
      * @brief Begin a named stage measurement.  Returns a ScopeTimer that
@@ -221,7 +257,7 @@ public:
         std::forward<Fn>(fn)();
         auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
             Clock::now() - t0).count();
-        if (enabled_) {
+        if (isEnabled()) {
             std::lock_guard<std::mutex> lk(mutex_);
             record(stageName, static_cast<Nanos>(ns));
         }
@@ -234,7 +270,15 @@ private:
     void record(const std::string& stageName, Nanos elapsedNs);
 
     mutable std::mutex mutex_;
-    bool               enabled_       = true;
+
+    /// Atomic because it is read outside the mutex on every record path and
+    /// written by setEnabled() from whichever thread starts a decompilation.
+    /// Under parallelBatchDecompile() those are different threads:
+    ///
+    ///   WARNING: ThreadSanitizer: data race
+    ///     Write of size 1 ... Profiler::setEnabled(bool)  profiling.h:170
+    ///     Previous read of size 1 ... Profiler::stop(...) profiling.cpp:68
+    std::atomic<bool>  enabled_{true};
     Nanos              totalWallNs_   = 0;
     int64_t            lastRssBytes_  = 0;
 

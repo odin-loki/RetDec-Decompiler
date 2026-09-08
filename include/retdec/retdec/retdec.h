@@ -80,7 +80,16 @@ decompileToLlvmIr(retdec::config::Config& config, const std::string& stopBeforeP
 bool tryEmulationUnpacking(retdec::config::Config& config, const std::string& outputPath);
 
 /**
- * Decompile multiple binaries in parallel (one config per input).
+ * Decompile multiple binaries (one config per input), one worker per job.
+ *
+ * The jobs are dispatched to @p numJobs threads, but they do not currently run
+ * concurrently: bin2llvmir keeps its state in process-wide provider maps that
+ * every pipeline clears on entry, so decompile() takes a process-wide lock and
+ * the pipelines take turns. What this buys over a loop today is the error
+ * handling -- a job that throws becomes a false rather than an escaped
+ * exception. Real concurrency needs the providers keyed and cleared per module;
+ * see pipelineLock() in src/retdec/retdec.cpp.
+ *
  * @param numJobs Worker count; 0 = hardware_concurrency.
  */
 std::vector<bool> parallelBatchDecompile(std::vector<retdec::config::Config>& configs, std::size_t numJobs = 0);

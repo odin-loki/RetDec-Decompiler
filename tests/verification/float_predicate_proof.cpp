@@ -516,28 +516,56 @@ static void fillNondetHistogram(std::uint32_t* h)
 		h[i] = nondet_u32();
 }
 
-extern "C" void proof_histogram_total_never_wraps()
+// This was `proof_histogram_total_never_wraps`, and under that name it could
+// not fail. It ran the sum, and then said `if (!ok) { assert(total == 0); return; }`
+// -- but kProofBuckets 32-bit counts cannot exceed 2^34, so on a target whose
+// std::size_t is 64 bits nothing ESBMC can choose makes the accumulator wrap.
+// `ok` is true on every path, the refusal branch is dead, and the surviving
+// assertion `h[i] <= total` holds of any non-wrapping sum of non-negative
+// values whether or not the function checks anything. Deleting the addFits
+// guard from the kernel left the proof passing.
+//
+// What IS true at this width, and false for a narrower accumulator, is the
+// equality: the total is the exact mathematical sum. That is stated against a
+// sum computed in a type wide enough that it cannot wrap, rather than against
+// the function's own arithmetic, so a wrapping accumulator disagrees with it.
+extern "C" void proof_histogram_total_is_the_exact_sum()
 {
 	std::uint32_t h[kProofBuckets];
 	fillNondetHistogram(h);
 
+	// kProofBuckets * (2^32 - 1) < 2^34, so this cannot wrap for any histogram.
+	std::uint64_t exact = 0;
+	for (std::size_t i = 0; i < kProofBuckets; ++i)
+		exact += h[i];
+
 	std::size_t total = SIZE_MAX;
 	const bool ok = histogramTotal(h, kProofBuckets, total);
 
-	// Written on every path, and never larger than the buffer could justify.
-	if (!ok)
-	{
-		assert(total == 0);
-		return;
-	}
+	// Not "if (!ok)": that the sum of kProofBuckets 32-bit counts always fits a
+	// std::size_t is the claim, not a branch to be skipped when it holds.
+	assert(ok);
+	assert(total == static_cast<std::size_t>(exact));
+
 	for (std::size_t i = 0; i < kProofBuckets; ++i)
 		assert(h[i] <= total);
 
-	// A null histogram is refused rather than dereferenced.
+	// A null histogram is refused rather than dereferenced. This is the one
+	// path on which the function returns false at any bucket count, so it is
+	// also the only place `total` is required to be written on refusal.
+	//
+	// The other one -- the addFits guard -- is unreachable and stays that way:
+	// overflowing a 64-bit accumulator needs more than 2^32 buckets, which is a
+	// histogram larger than the address space, and the widest one in this tree
+	// is fpred::kByteValues counts summing below 2^40. Removing the guard from
+	// the kernel does not make this proof fail, and it is not claimed to.
+	// It stays in the kernel as the bound for a caller that is not in this tree
+	// yet; docs/VERIFICATION.md says the same under "What is not proved".
 	std::size_t t2 = SIZE_MAX;
 	assert(!histogramTotal(nullptr, nondet_size(), t2));
 	assert(t2 == 0);
 }
+
 
 extern "C" void proof_entropy_refuses_an_empty_range()
 {

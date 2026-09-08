@@ -5,12 +5,14 @@
 
 #include "retdec/profiling/profiling.h"
 #include <gtest/gtest.h>
+#include <atomic>
 #include <chrono>
 #include <fstream>
 #include <thread>
 #include <string>
 #include <cstdio>
 #include <algorithm>
+#include <vector>
 
 using namespace retdec::profiling;
 
@@ -424,4 +426,91 @@ TEST_F(ProfilingTest, ConcurrentRecordingNoDataRace)
 			return;
 		}
 	FAIL() << "concurrent_stage not found";
+}
+
+// ─── ProfilingSession ───────────────────────────────────────────────────────
+//
+// retdec::decompile() called Profiler::reset() on entry. That is right for one
+// decompilation and wrong for a batch: parallelBatchDecompile() runs several at
+// once, and each new one wiped what the running ones had recorded. Measured
+// with two threads, one recording stages and one doing what decompile() does on
+// entry -- 20000 samples in, one stage out. ProfilingSession is what decides
+// whether a decompilation may clear the singleton.
+
+TEST_F(ProfilingTest, TheFirstSessionOwnsTheProfiler)
+{
+	ASSERT_EQ(0, ProfilingSession::inFlight());
+
+	ProfilingSession first;
+	EXPECT_TRUE(first.ownsProfiler());
+	EXPECT_EQ(1, ProfilingSession::inFlight());
+}
+
+TEST_F(ProfilingTest, ASessionThatJoinsAnotherDoesNotOwnTheProfiler)
+{
+	ProfilingSession first;
+	ASSERT_TRUE(first.ownsProfiler());
+
+	{
+		ProfilingSession second;
+		EXPECT_FALSE(second.ownsProfiler());
+		ProfilingSession third;
+		EXPECT_FALSE(third.ownsProfiler());
+		EXPECT_EQ(3, ProfilingSession::inFlight());
+	}
+
+	EXPECT_EQ(1, ProfilingSession::inFlight());
+}
+
+TEST_F(ProfilingTest, OwnershipComesBackOnceEveryoneHasLeft)
+{
+	{
+		ProfilingSession a;
+		EXPECT_TRUE(a.ownsProfiler());
+	}
+	ASSERT_EQ(0, ProfilingSession::inFlight());
+
+	ProfilingSession b;
+	EXPECT_TRUE(b.ownsProfiler());
+}
+
+// The property the whole thing exists for: what one session records is not
+// destroyed by another starting.
+TEST_F(ProfilingTest, ExactlyOneOfManyConcurrentSessionsOwnsTheProfiler)
+{
+	constexpr int kThreads = 8;
+	std::atomic<int> owners{0};
+	std::atomic<int> ready{0};
+	std::atomic<bool> go{false};
+
+	std::vector<std::thread> threads;
+	for (int i = 0; i < kThreads; ++i)
+	{
+		threads.emplace_back([&owners, &ready, &go]() {
+			ready.fetch_add(1, std::memory_order_acq_rel);
+			while (!go.load(std::memory_order_acquire))
+			{
+			}
+
+			ProfilingSession session;
+			if (session.ownsProfiler()) owners.fetch_add(1, std::memory_order_acq_rel);
+
+			// Hold it, so the overlap is real rather than a matter of timing.
+			std::this_thread::sleep_for(std::chrono::milliseconds(20));
+		});
+	}
+
+	while (ready.load(std::memory_order_acquire) < kThreads)
+	{
+	}
+	go.store(true, std::memory_order_release);
+	for (auto& t: threads)
+		t.join();
+
+	// At most one: a session that begins while another is in flight never owns
+	// the profiler. It can be zero only if every thread ran to completion
+	// before the next started, which the sleep above rules out in practice --
+	// but the bound that matters is the upper one.
+	EXPECT_LE(owners.load(), 1) << "more than one session claimed the profiler";
+	EXPECT_EQ(0, ProfilingSession::inFlight());
 }

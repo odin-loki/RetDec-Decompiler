@@ -572,7 +572,7 @@ What actually limits whole-function verification is two things:
 
   So the harness carries `// ESBMC-OPTIONAL:` and does not run in the default
   suite. `--optional` runs it on a machine with more memory. It is not counted
-  among the 272, and the driver prints the reason it was skipped on every run,
+  among the 286, and the driver prints the reason it was skipped on every run,
   so a harness that is not being verified says so rather than disappearing.
 
 * **Cost, past a small symbolic input** — and the shape of the input matters
@@ -607,6 +607,25 @@ whole 64-bit domain, whole-function proofs of a real parser are written and
 reproducible but need more memory than this machine has, and coverage of the
 rest is the job of the unit suites and `scripts/standalone_fuzz.sh`. `std::min` with an
 `initializer_list` is genuinely unsupported; use nested `std::min`.
+
+**A branch no input can take.** `histogramTotal` refuses a histogram whose
+counts overflow the accumulator. On a 64-bit `std::size_t` that needs more than
+2^32 buckets — a histogram larger than the address space — so the branch is
+unreachable from any caller, and the widest one in this tree is
+`fpred::kByteValues` counts summing below 2^40. No harness can drive it, and
+none claims to: deleting the guard from the kernel leaves
+`proof_histogram_total_is_the_exact_sum` passing.
+
+That proof used to be `proof_histogram_total_never_wraps` and was written around
+the dead branch — `if (!ok) { assert(total == 0); return; }` — so the only
+surviving assertion was `h[i] <= total`, which holds of any non-wrapping sum of
+non-negative values. It accepted a `std::uint32_t` accumulator without
+complaint. It now asserts the equality instead: the total is the exact
+mathematical sum, computed in a type wide enough that it cannot wrap. Narrowing
+the accumulator fails it.
+
+The guard stays in the kernel. It is a bound for a caller that is not in this
+tree yet, and the cost of an unreachable comparison is nothing.
 
 **The connection between a proof and the code that runs.** This is the honest
 weak point of the whole approach. A proof about a re-typed copy of the logic

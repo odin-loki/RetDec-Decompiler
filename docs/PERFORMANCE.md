@@ -42,8 +42,21 @@ LLVM IR construction remains single-threaded (`LLVMContext` is not thread-safe).
 
 ## Parallel batch decompile
 
-`parallelBatchDecompile()` in `retdec.h` decompiles multiple input configs in
-parallel (one config per binary). Use for corpus benchmarks.
+`parallelBatchDecompile()` in `retdec.h` takes one config per binary and
+dispatches them to a thread pool. **They do not currently overlap.** bin2llvmir
+holds its state in ten process-wide provider maps and
+`ProviderInitialization::runOnModule` clears all of them on entry, so a second
+pipeline destroys the `Config` and `FileImage` the first is still using --
+a use-after-free, not a garbled log. `decompile()` therefore takes a
+process-wide lock and the pipelines take turns.
+
+What the function still buys over a loop is the error handling: a job that
+throws becomes `false` for that input rather than an escaped exception.
+
+Getting the concurrency back means keying and clearing the providers per
+`llvm::Module` instead of per process. That is the fix; see `pipelineLock()` in
+`src/retdec/retdec.cpp` and section 6 of
+`docs/internal/UNFIXED_AUDIT_FINDINGS.md`.
 
 ## Profiling
 

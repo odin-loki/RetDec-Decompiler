@@ -5,6 +5,8 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include <atomic>
+
 #include "retdec/llvmir2hll/ir/module.h"
 #include "retdec/llvmir2hll/optimizer/optimizer.h"
 #include "retdec/llvmir2hll/support/debug.h"
@@ -12,18 +14,30 @@
 namespace retdec {
 namespace llvmir2hll {
 
-/// Global deadline for the HLL optimisation phase.  Zero means "no deadline".
-static std::chrono::steady_clock::time_point g_globalDeadline{};
+/// Global deadline for the HLL optimisation phase, as a tick count.  Zero means
+/// "no deadline".
+///
+/// Atomic, and stored as the underlying rep rather than as a time_point: the
+/// setter and the readers are a plain write and a plain read of a 64-bit object
+/// that nothing else orders, so a caller setting the budget while the
+/// optimisers are asking about it is a data race in the language sense even
+/// where the hardware would not tear it. The pipeline lock in
+/// src/retdec/retdec.cpp keeps two decompilations out of here at once; this is
+/// what makes a watchdog on another thread safe as well.
+static std::atomic<std::chrono::steady_clock::rep> g_globalDeadlineTicks{0};
 
 void Optimizer::setGlobalDeadline(std::chrono::steady_clock::time_point tp) {
-	g_globalDeadline = tp;
+	g_globalDeadlineTicks.store(tp.time_since_epoch().count(), std::memory_order_relaxed);
 }
 
 bool Optimizer::isGlobalDeadlineExceeded() {
-	if (g_globalDeadline == std::chrono::steady_clock::time_point{}) {
+	const auto ticks = g_globalDeadlineTicks.load(std::memory_order_relaxed);
+	if (ticks == 0) {
 		return false;
 	}
-	return std::chrono::steady_clock::now() >= g_globalDeadline;
+	const std::chrono::steady_clock::time_point deadline{
+		std::chrono::steady_clock::duration{ticks}};
+	return std::chrono::steady_clock::now() >= deadline;
 }
 
 /**

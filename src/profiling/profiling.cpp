@@ -6,6 +6,7 @@
 #include "retdec/profiling/profiling.h"
 
 #include <algorithm>
+#include <atomic>
 #include <charconv>
 #include <cmath>
 #include <fstream>
@@ -53,6 +54,33 @@ void Profiler::record(const std::string& stageName, Nanos elapsedNs)
 
 // ─── Profiler::measure ───────────────────────────────────────────────────────
 
+// ─── ProfilingSession ────────────────────────────────────────────────────────
+
+namespace {
+
+std::atomic<int>& sessionsInFlight() noexcept
+{
+	static std::atomic<int> inFlight{0};
+	return inFlight;
+}
+
+} // anonymous namespace
+
+ProfilingSession::ProfilingSession() noexcept
+	: owns_(sessionsInFlight().fetch_add(1, std::memory_order_acq_rel) == 0)
+{
+}
+
+ProfilingSession::~ProfilingSession()
+{
+	sessionsInFlight().fetch_sub(1, std::memory_order_acq_rel);
+}
+
+int ProfilingSession::inFlight() noexcept
+{
+	return sessionsInFlight().load(std::memory_order_acquire);
+}
+
 ScopeTimer Profiler::measure(const std::string& stageName)
 {
 	return ScopeTimer(stageName, *this);
@@ -65,7 +93,7 @@ TimePoint Profiler::start(const std::string&)
 
 void Profiler::stop(const std::string& stageName, TimePoint t0)
 {
-	if (!enabled_) return;
+	if (!isEnabled()) return;
 	auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - t0).count();
 	std::lock_guard<std::mutex> lk(mutex_);
 	record(stageName, static_cast<Nanos>(ns));
@@ -75,7 +103,7 @@ void Profiler::stop(const std::string& stageName, TimePoint t0)
 
 void Profiler::recordFunction(const std::string& key, Nanos elapsedNs)
 {
-	if (!enabled_) return;
+	if (!isEnabled()) return;
 	std::lock_guard<std::mutex> lk(mutex_);
 	funcSamples_.push_back({key, elapsedNs});
 }
@@ -84,7 +112,7 @@ void Profiler::recordFunction(const std::string& key, Nanos elapsedNs)
 
 void Profiler::recordKernel(const std::string& kernelName, Nanos elapsedNs)
 {
-	if (!enabled_) return;
+	if (!isEnabled()) return;
 	std::lock_guard<std::mutex> lk(mutex_);
 	auto& rec = kernels_[kernelName];
 	rec.name = kernelName;

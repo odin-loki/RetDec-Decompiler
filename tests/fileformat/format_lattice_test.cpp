@@ -10,9 +10,11 @@
 #include "retdec/fileformat/lattice/format_result.h"
 
 #include <gtest/gtest.h>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <thread>
 #include <vector>
 
 using namespace retdec::fileformat::lattice;
@@ -599,3 +601,108 @@ TEST_F(FormatLatticeTest, EveryMemberOfAFlatArchiveIsStillClassified)
 	ASSERT_EQ(r.format, DetectedFormat::ARArchive);
 	EXPECT_EQ(r.arMembers.size(), static_cast<size_t>(members));
 }
+
+// ─── depth times width ──────────────────────────────────────────────────────
+//
+// The two tests above bound each dimension on its own, and the product went
+// through both. Batching caps one LEVEL at archiveFanout() threads, but every
+// one of those threads then recurses into a member that is itself an archive
+// and starts a batch of its own while its parent is still blocked in f.get().
+// So the live thread count was fanout raised to the nesting depth, and the file
+// picks both: an archive nested to the ceiling with four members per level --
+// 5.7 MB -- reached 9612 concurrent threads. At six levels, which is what this
+// test builds, it reached 773.
+
+#if defined(__linux__)
+
+namespace {
+
+/// Threads in this process right now.
+long liveThreadCount()
+{
+	std::FILE* f = std::fopen("/proc/self/status", "r");
+	if (f == nullptr) return -1;
+	char line[256];
+	long n = -1;
+	while (std::fgets(line, sizeof(line), f) != nullptr)
+	{
+		if (std::sscanf(line, "Threads: %ld", &n) == 1) break;
+	}
+	std::fclose(f);
+	return n;
+}
+
+/// @a width members per level, @a depth levels, each member the level below.
+std::vector<uint8_t> nestedArchive(int depth, int width)
+{
+	const char* magic = "!<arch>\n";
+	std::vector<uint8_t> cur = {'l', 'e', 'a', 'f'};
+	for (int d = 0; d < depth; ++d)
+	{
+		std::vector<uint8_t> next(magic, magic + 8);
+		for (int w = 0; w < width; ++w)
+		{
+			char hdr[60];
+			std::memset(hdr, ' ', sizeof(hdr));
+			std::memcpy(hdr, "m.a", 3);
+			char sz[16] = {};
+			std::snprintf(sz, sizeof(sz), "%-10zu", cur.size());
+			std::memcpy(hdr + 48, sz, 10);
+			hdr[58] = '`';
+			hdr[59] = '\n';
+			next.insert(next.end(), hdr, hdr + 60);
+			next.insert(next.end(), cur.begin(), cur.end());
+			if (cur.size() & 1) next.push_back(0);
+		}
+		cur.swap(next);
+	}
+	return cur;
+}
+
+/// Every node of the reported tree.
+size_t countNodes(const FormatResult& r)
+{
+	size_t n = 1;
+	for (const auto& m: r.arMembers)
+		n += countNodes(m);
+	return n;
+}
+
+} // namespace
+
+TEST_F(FormatLatticeTest, NestedAndWideArchivesDoNotMultiplyThreads)
+{
+	const auto ar = nestedArchive(6, 4);
+
+	std::atomic<long> peak{0};
+	std::atomic<bool> stop{false};
+	std::thread watcher([&peak, &stop]() {
+		while (!stop.load(std::memory_order_relaxed))
+		{
+			const long now = liveThreadCount();
+			long seen = peak.load(std::memory_order_relaxed);
+			while (now > seen && !peak.compare_exchange_weak(seen, now))
+			{
+			}
+		}
+	});
+
+	const FormatResult r = lattice.classify(ar.data(), ar.size(), "wide-nest.a");
+
+	stop.store(true, std::memory_order_relaxed);
+	watcher.join();
+
+	ASSERT_EQ(r.format, DetectedFormat::ARArchive);
+
+	// Every member is still classified -- the budget changes where the work
+	// runs, not whether it runs. 6 levels of 4 is 1 + 4 + 16 + ... + 4096.
+	EXPECT_EQ(5461u, countNodes(r));
+
+	// The bound is the hardware width plus this test's own two threads and the
+	// overlap between a slot being released and the next being taken. 64 is far
+	// under the 773 this shape produced before and far over anything the budget
+	// can reach.
+	EXPECT_LT(peak.load(), 64) << "peak live threads: " << peak.load();
+}
+
+#endif // __linux__

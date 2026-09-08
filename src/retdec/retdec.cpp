@@ -145,16 +145,48 @@ bool pipelineProfilingEnabled()
 	return bin2llvmirPassDiagEnabled() || profileJsonEnabled();
 }
 
-void configurePipelineProfiler()
+/// Serialises every LLVM pass pipeline in this process.
+///
+/// bin2llvmir keeps its state in process-wide maps -- ConfigProvider,
+/// FileImageProvider, DemanglerProvider, LtiProvider, NamesProvider,
+/// DebugFormatProvider, AbiProvider, CallingConventionProvider, AsmInstruction
+/// and SymbolicTree -- and ProviderInitialization::runOnModule begins by
+/// calling clear() on all ten. clear() is not "drop my entries", it is "drop
+/// everyone's": a second pipeline entering the providers destroys the Config
+/// and the FileImage the first one is still holding pointers into.
+///
+/// parallelBatchDecompile() ran N of these on a thread pool, so an API that
+/// advertises parallelism was a use-after-free on its own fast path. Keying and
+/// clearing the providers per module is the real fix and the one that gets the
+/// parallelism back; it is ten headers and every accessor in them, and it needs
+/// the LLVM build to do safely. Until then the pipelines take turns: a batch is
+/// slower than its name suggests and correct rather than corrupt.
+///
+/// Recursive because tryEmulationUnpacking() runs a pipeline of its own through
+/// decompileToLlvmIr() while holding this.
+std::recursive_mutex& pipelineLock()
+{
+	static std::recursive_mutex m;
+	return m;
+}
+
+/// @param mayReset whether this decompilation may clear what the profiler has
+///        already accumulated. False whenever another one is in flight -- see
+///        retdec::profiling::ProfilingSession, which decides it -- in which
+///        case the batch shares one profile, the only thing a single
+///        process-wide accumulator can honestly report for concurrent jobs.
+void configurePipelineProfiler(bool mayReset)
 {
 	auto& prof = profiling::Profiler::instance();
 	if (pipelineProfilingEnabled())
 	{
 		prof.setEnabled(true);
-		prof.reset();
+		if (mayReset) prof.reset();
 	}
-	else
+	else if (mayReset)
 	{
+		// Only the job that owns the profiler may turn it off; doing it while
+		// another is recording drops that one's samples on the floor.
 		prof.setEnabled(false);
 	}
 }
@@ -209,10 +241,20 @@ public:
 	std::string PhaseArg;
 	std::string PassName;
 
-	static std::string LastPhase;
+	/// Which phase the previous pass belonged to, so the LLVM passes between
+	/// two retdec ones are announced once rather than each.
+	///
+	/// thread_local because it is process-wide state about ONE pass pipeline,
+	/// and parallelBatchDecompile() runs N of them at once on a thread pool.
+	/// Every pass assigned to this std::string; N threads assigning to one
+	/// std::string is heap corruption, not a garbled log line.
+	static thread_local std::string LastPhase;
 	inline static const std::string LlvmAggregatePhaseName = "LLVM";
-	/// Wall-clock start for the next real pass (set by printer; read by @c ModulePassTimerAfter).
-	static std::chrono::steady_clock::time_point passWallStartForTimedPass;
+	/// Wall-clock start for the next real pass (set by printer; read by @c
+	/// ModulePassTimerAfter). thread_local for the same reason, and because a
+	/// pipeline's timings are its own: one job's start stamp read by another
+	/// job's timer is a duration between two unrelated events.
+	static thread_local std::chrono::steady_clock::time_point passWallStartForTimedPass;
 
 public:
 	ModulePassPrinter(const std::string& phaseName, const std::string& phaseArg):
@@ -257,8 +299,8 @@ public:
 	}
 };
 char ModulePassPrinter::ID = 0;
-std::string ModulePassPrinter::LastPhase;
-std::chrono::steady_clock::time_point ModulePassPrinter::passWallStartForTimedPass{};
+thread_local std::string ModulePassPrinter::LastPhase;
+thread_local std::chrono::steady_clock::time_point ModulePassPrinter::passWallStartForTimedPass{};
 
 /**
  * Runs immediately after each real module pass; records wall ms for every pass.
@@ -489,6 +531,8 @@ void fillFunctions(llvm::Module& module, retdec::common::FunctionSet* fs)
 
 LlvmModuleContextPair disassemble(const std::string& inputPath, retdec::common::FunctionSet* fs)
 {
+	const std::lock_guard<std::recursive_mutex> pipelineGuard(pipelineLock());
+
 	auto context = std::make_unique<llvm::LLVMContext>();
 	auto module = createLlvmModule(*context);
 
@@ -593,8 +637,16 @@ void setLogsFrom(const retdec::config::Parameters& params)
 
 bool decompile(retdec::config::Config& config, std::string* outString)
 {
+	// See pipelineLock(): the bin2llvmir providers are process-wide and this
+	// function clears them, so two of these at once destroy each other's state.
+	const std::lock_guard<std::recursive_mutex> pipelineGuard(pipelineLock());
+
+	// Counts this decompilation against the process-wide profiler for as long
+	// as it runs; see configurePipelineProfiler above.
+	const profiling::ProfilingSession profilingSession;
+
 	setLogsFrom(config.parameters);
-	configurePipelineProfiler();
+	configurePipelineProfiler(profilingSession.ownsProfiler());
 
 	Log::phase("Initialization");
 	llvm::PassRegistry* passRegistry = nullptr;
@@ -1097,6 +1149,8 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 
 LlvmModuleContextPair decompileToLlvmIr(retdec::config::Config& config, const std::string& stopBeforePass)
 {
+	const std::lock_guard<std::recursive_mutex> pipelineGuard(pipelineLock());
+
 	setLogsFrom(config.parameters);
 
 	Log::phase("Initialization");
@@ -1158,6 +1212,10 @@ bool emulationUnpackDiagEnabled()
 
 bool tryEmulationUnpacking(retdec::config::Config& config, const std::string& outputPath)
 {
+	// Held across the emulation as well as the pipeline below it: the module it
+	// walks holds pointers into the providers.
+	const std::lock_guard<std::recursive_mutex> pipelineGuard(pipelineLock());
+
 	const bool diag = emulationUnpackDiagEnabled();
 
 	if (diag)

@@ -6,6 +6,7 @@
 #include "retdec/fileformat/lattice/format_lattice.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cstring>
 #include <fstream>
@@ -91,6 +92,67 @@ static std::size_t archiveFanout() noexcept
 	const std::size_t width = hw == 0 ? 1u : hw;
 	return width > 8u ? 8u : width;
 }
+
+/// Threads currently classifying an archive member, across the whole process.
+///
+/// The batching above bounds one LEVEL to `fanout` threads, and each of those
+/// threads then recurses into a member that is itself an archive and starts a
+/// batch of its own -- while its parent is still blocked in f.get(). So the
+/// live count was fanout raised to the nesting depth, not fanout. Measured on
+/// an archive nested to kMaxArchiveNesting with four members per level: 5.7 MB
+/// of input, 9612 live threads, and the file chooses both numbers.
+///
+/// One budget for the whole tree makes it fanout whatever the file does. A
+/// member that cannot get a slot is classified on the calling thread, which is
+/// work that has to happen anyway and which cannot deadlock: the caller is
+/// running rather than waiting.
+static std::atomic<std::size_t>& archiveThreadsLive() noexcept
+{
+	static std::atomic<std::size_t> live{0};
+	return live;
+}
+
+/// Holds one slot of the budget for as long as it is in scope.
+class ArchiveThreadSlot
+{
+public:
+	/// Takes a slot if the budget has one. Check taken() before relying on it.
+	ArchiveThreadSlot() noexcept
+	{
+		auto& live = archiveThreadsLive();
+		const std::size_t cap = archiveFanout();
+		std::size_t cur = live.load(std::memory_order_relaxed);
+		while (cur < cap)
+		{
+			if (live.compare_exchange_weak(
+					cur, cur + 1, std::memory_order_acq_rel, std::memory_order_relaxed))
+			{
+				taken_ = true;
+				return;
+			}
+		}
+	}
+
+	~ArchiveThreadSlot()
+	{
+		if (taken_) archiveThreadsLive().fetch_sub(1, std::memory_order_acq_rel);
+	}
+
+	ArchiveThreadSlot(const ArchiveThreadSlot&) = delete;
+	ArchiveThreadSlot& operator=(const ArchiveThreadSlot&) = delete;
+
+	bool taken() const noexcept { return taken_; }
+
+	/// Hands the slot to whoever calls release() next -- used when the slot is
+	/// taken on this thread and given to the task that will actually hold it.
+	void hand_over() noexcept { taken_ = false; }
+
+	/// Gives one slot back. The counterpart of hand_over().
+	static void release() noexcept { archiveThreadsLive().fetch_sub(1, std::memory_order_acq_rel); }
+
+private:
+	bool taken_ = false;
+};
 static constexpr uint32_t kMinLoadAddr = 0x1000;
 static constexpr uint64_t kMaxLoadAddr64 = 0xFFFF'FFFF'FFFF'0000ULL;
 
@@ -1031,7 +1093,28 @@ parseAR(const uint8_t* data, size_t size, const std::string& name, const FormatL
 		for (std::size_t j = i; j < end; ++j)
 		{
 			const Member& m = members[j];
+
+			ArchiveThreadSlot slot;
+			if (!slot.taken())
+			{
+				// The budget is spent, which at this point means the levels
+				// above are already using the whole width. Do it here rather
+				// than adding a thread; the ready future keeps the results in
+				// member order.
+				std::promise<FormatResult> done;
+				done.set_value(classifyAtDepth(lattice, m.data, m.size, m.name, depth + 1));
+				futures.push_back(done.get_future());
+				continue;
+			}
+
+			// The slot belongs to the task from here on, so it must not be
+			// given back when this iteration ends.
+			slot.hand_over();
 			futures.push_back(std::async(std::launch::async, [&lattice, m, depth]() {
+				struct Release
+				{
+					~Release() { ArchiveThreadSlot::release(); }
+				} release;
 				return classifyAtDepth(lattice, m.data, m.size, m.name, depth + 1);
 			}));
 		}

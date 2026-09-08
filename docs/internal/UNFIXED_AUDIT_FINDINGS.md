@@ -286,10 +286,26 @@ rather than switched on. `scripts/check_cmake_sources.sh` now fails on any
 *new* test source that nothing builds, and carries these twelve in an explicit
 `UNBUILT` list with that reason attached, so the set cannot grow quietly.
 
-`src/retdec/retdec.cpp:212` — two mutable process-wide statics are mutated
-concurrently by `parallelBatchDecompile`: a `std::string` and a
-`std::vector<std::string>` that N threads `push_back` and `clear` at once. Heap
-corruption, not a garbled log line.
+`src/bin2llvmir/providers/` — the ten provider maps are process-wide, and
+`ProviderInitialization::runOnModule` starts by calling `clear()` on all of
+them. `clear()` drops everyone's entries, not the caller's, so a second pipeline
+destroys the `Config` and `FileImage` the first is still holding pointers into.
+`parallelBatchDecompile()` ran N pipelines on a thread pool, which made that a
+use-after-free on the fast path of an API that advertises parallelism.
+
+Not fixed here, because the fix is ten headers and every accessor in them --
+key and clear per `llvm::Module` rather than per process -- and nothing in this
+environment can compile bin2llvmir to check it. What *is* done is that
+`decompile()`, `decompileToLlvmIr()`, `tryEmulationUnpacking()` and
+`disassemble()` now take a process-wide recursive lock, so the pipelines take
+turns instead of corrupting each other. `parallelBatchDecompile` is therefore
+correct and serial; `retdec.h` and `docs/PERFORMANCE.md` say so. Lifting the
+lock is what the provider refactor is for.
+
+The two mutable statics in `ModulePassPrinter` that the same batch path raced --
+`LastPhase`, a `std::string` every pass assigned to, and
+`passWallStartForTimedPass` -- are `thread_local` now. They are per-pipeline
+state and there is one pipeline per thread.
 
 `src/neural/llama_inference.cpp:242` — `llama_tokenize` is called with
 `parse_special=false`, so the ChatML template `prompts.cpp` builds is fed to the
