@@ -21,8 +21,7 @@ using namespace llvm::object;
 namespace retdec {
 namespace fileformat {
 
-namespace
-{
+namespace {
 
 /**
  * (R/E)IP or PC register data information offset in LC_UNIXTHREAD
@@ -40,14 +39,12 @@ const unsigned IP_UNIXTHREAD_OFFSET_ARM_64BIT = 0x0110;
 // const unsigned IP_UNIXTHREAD_OFFSET_SPR_32BIT = 0x0014;
 // const unsigned IP_UNIXTHREAD_OFFSET_SPR_64BIT = 0x0098;
 
-const std::map<std::string, SecSeg::Type> segmentTypeMap =
-{
+const std::map<std::string, SecSeg::Type> segmentTypeMap = {
 	{"__PAGEZERO", SecSeg::Type::UNDEFINED_SEC_SEG},
 	{"__TEXT", SecSeg::Type::CODE_DATA},
 	{"__DATA", SecSeg::Type::DATA},
 	{"__OBJC", SecSeg::Type::DATA},
-	{"__LINKEDIT", SecSeg::Type::INFO}
-};
+	{"__LINKEDIT", SecSeg::Type::INFO}};
 
 /**
  * Retrives version of OS in format X.Y.Z from version byte
@@ -68,11 +65,9 @@ std::string getVersionFromDWord(const std::uint32_t version)
  * @param pathToFile Path to input file
  * @param loadFlags Load flags
  */
-MachOFormat::MachOFormat(std::string pathToFile, LoadFlags loadFlags) :
-		FileFormat(pathToFile, loadFlags),
-		fileBuffer(MemoryBuffer::getFile(Twine(filePath))),
-		file(nullptr),
-		fatFile(nullptr)
+MachOFormat::MachOFormat(std::string pathToFile, LoadFlags loadFlags):
+	FileFormat(pathToFile, loadFlags), fileBuffer(MemoryBuffer::getFile(Twine(filePath))), file(nullptr),
+	fatFile(nullptr)
 {
 	initStructures();
 }
@@ -82,13 +77,10 @@ MachOFormat::MachOFormat(std::string pathToFile, LoadFlags loadFlags) :
  * @param inputStream Representation of input file
  * @param loadFlags Load flags
  */
-MachOFormat::MachOFormat(std::istream &inputStream, LoadFlags loadFlags) :
-		FileFormat(inputStream, loadFlags),
-		fileBuffer(MemoryBuffer::getMemBuffer(StringRef(
-				reinterpret_cast<const char*>(bytes.data()),
-				bytes.size()))),
-		file(nullptr),
-		fatFile(nullptr)
+MachOFormat::MachOFormat(std::istream& inputStream, LoadFlags loadFlags):
+	FileFormat(inputStream, loadFlags),
+	fileBuffer(MemoryBuffer::getMemBuffer(StringRef(reinterpret_cast<const char*>(bytes.data()), bytes.size()))),
+	file(nullptr), fatFile(nullptr)
 {
 	initStructures();
 }
@@ -99,13 +91,10 @@ MachOFormat::MachOFormat(std::istream &inputStream, LoadFlags loadFlags) :
  * @param size Input data size.
  * @param loadFlags Load flags
  */
-MachOFormat::MachOFormat(const std::uint8_t *data, std::size_t size, LoadFlags loadFlags) :
-		FileFormat(data, size, loadFlags),
-		fileBuffer(MemoryBuffer::getMemBuffer(StringRef(
-				reinterpret_cast<const char*>(data),
-				size))),
-		file(nullptr),
-		fatFile(nullptr)
+MachOFormat::MachOFormat(const std::uint8_t* data, std::size_t size, LoadFlags loadFlags):
+	FileFormat(data, size, loadFlags),
+	fileBuffer(MemoryBuffer::getMemBuffer(StringRef(reinterpret_cast<const char*>(data), size))), file(nullptr),
+	fatFile(nullptr)
 {
 	initStructures();
 }
@@ -119,12 +108,12 @@ void MachOFormat::setWidthAndEndianness()
 	unsigned char magic[4];
 	fileStream.read(reinterpret_cast<char*>(&magic), 4);
 	fileStream.seekg(0, std::ios_base::beg);
-	if(magic[0] == 0xCA)
+	if (magic[0] == 0xCA)
 	{
 		// Endianness and bit-width will be set later
 		isFat = true;
 	}
-	else if(magic[0] == 0xFE)
+	else if (magic[0] == 0xFE)
 	{
 		isLittle = false;
 		is32 = (magic[3] == 0xCE);
@@ -141,11 +130,11 @@ void MachOFormat::setWidthAndEndianness()
  * @param itr Iterator of selected architecture
  * @return @c true if selected architecture is available, @c false otherwise
  */
-bool MachOFormat::chooseArchitecture(const llvm::object::MachOUniversalBinary::object_iterator &itr)
+bool MachOFormat::chooseArchitecture(const llvm::object::MachOUniversalBinary::object_iterator& itr)
 {
 	auto object = itr->getAsObjectFile();
 
-	if(object)
+	if (object)
 	{
 		file = std::move(object.get());
 		is32 = !file->is64Bit();
@@ -153,7 +142,8 @@ bool MachOFormat::chooseArchitecture(const llvm::object::MachOUniversalBinary::o
 
 		chosenArchOffset = itr->getOffset();
 		chosenArchSize = itr->getSize();
-		chosenArchBytes.assign(getLoadedBytes().begin() + chosenArchOffset, getLoadedBytes().begin() + chosenArchOffset + chosenArchSize);
+		chosenArchBytes.assign(
+			getLoadedBytes().begin() + chosenArchOffset, getLoadedBytes().begin() + chosenArchOffset + chosenArchSize);
 		return true;
 	}
 
@@ -170,10 +160,10 @@ bool MachOFormat::chooseArchitecture(const llvm::object::MachOUniversalBinary::o
  */
 bool MachOFormat::constructMachO()
 {
-	if(fileBuffer && !fileBuffer.getError())
+	if (fileBuffer && !fileBuffer.getError())
 	{
 		auto result = MachOObjectFile::create(fileBuffer.get()->getMemBufferRef(), isLittle, !is32);
-		if(result)
+		if (result)
 		{
 			file = std::move(result.get());
 			return true;
@@ -193,10 +183,10 @@ bool MachOFormat::constructMachO()
  */
 bool MachOFormat::constructFatMachO()
 {
-	if(fileBuffer && !fileBuffer.getError())
+	if (fileBuffer && !fileBuffer.getError())
 	{
 		auto result = MachOUniversalBinary::create(fileBuffer.get()->getMemBufferRef());
-		if(!result || !result.get()->getNumberOfObjects())
+		if (!result || !result.get()->getNumberOfObjects())
 		{
 			consumeError(result.takeError());
 			return false;
@@ -217,31 +207,31 @@ bool MachOFormat::constructFatMachO()
 		fatFile = std::move(result.get());
 
 		/// @todo strange order of prefered architectures - ppc64 before x64??
-		if(chooseArchitecture(CPU_TYPE_X86))
+		if (chooseArchitecture(CPU_TYPE_X86))
 		{
 			return true;
 		}
-		else if(chooseArchitecture(CPU_TYPE_ARM))
+		else if (chooseArchitecture(CPU_TYPE_ARM))
 		{
 			return true;
 		}
-		else if(chooseArchitecture(CPU_TYPE_ARM64))
+		else if (chooseArchitecture(CPU_TYPE_ARM64))
 		{
 			return true;
 		}
-		else if(chooseArchitecture(CPU_TYPE_POWERPC))
+		else if (chooseArchitecture(CPU_TYPE_POWERPC))
 		{
 			return true;
 		}
-		else if(chooseArchitecture(CPU_TYPE_POWERPC64))
+		else if (chooseArchitecture(CPU_TYPE_POWERPC64))
 		{
 			return true;
 		}
-		else if(chooseArchitecture(CPU_TYPE_X86_64))
+		else if (chooseArchitecture(CPU_TYPE_X86_64))
 		{
 			return true;
 		}
-		else if(chooseArchitecture(CPU_TYPE_SPARC))
+		else if (chooseArchitecture(CPU_TYPE_SPARC))
 		{
 			return true;
 		}
@@ -263,9 +253,9 @@ void MachOFormat::initStructures()
 	setWidthAndEndianness();
 	// Create parser
 	stateIsValid = (isFat ? constructFatMachO() : constructMachO());
-	if(stateIsValid)
+	if (stateIsValid)
 	{
-		if(is32)
+		if (is32)
 		{
 			header32 = file->getHeader();
 		}
@@ -286,16 +276,16 @@ void MachOFormat::initStructures()
  * @param secSegName 16 byte long array with section or segment name
  * @return Name of the section or segment
  */
-std::string MachOFormat::getSecSegName(const char *secSegName) const
+std::string MachOFormat::getSecSegName(const char* secSegName) const
 {
-	if(!secSegName)
+	if (!secSegName)
 	{
 		return "";
 	}
 
 	std::string result;
 
-	for(std::size_t i = 0; i < 16 && secSegName[i]; ++i)
+	for (std::size_t i = 0; i < 16 && secSegName[i]; ++i)
 	{
 		result += secSegName[i];
 	}
@@ -311,10 +301,10 @@ std::string MachOFormat::getSecSegName(const char *secSegName) const
  * There is no information about type of segment in Mach-O,
  * this is just best guess based on names used by Apple's standard tools
  */
-SecSeg::Type MachOFormat::getSegmentType(const char *segName) const
+SecSeg::Type MachOFormat::getSegmentType(const char* segName) const
 {
 	const auto segConName = getSecSegName(segName);
-	if(hasItem(segmentTypeMap, segConName))
+	if (hasItem(segmentTypeMap, segConName))
 	{
 		return segmentTypeMap.at(segConName);
 	}
@@ -331,51 +321,46 @@ SecSeg::Type MachOFormat::getSegmentType(const char *segName) const
  * This is my best guess based on very little information
  * provided by Apple docs, especially the switch part
  */
-SecSeg::Type MachOFormat::getSectionType(std::uint32_t flags, const std::string &name) const
+SecSeg::Type MachOFormat::getSectionType(std::uint32_t flags, const std::string& name) const
 {
-	if((flags & S_ATTR_PURE_INSTRUCTIONS))
+	if ((flags & S_ATTR_PURE_INSTRUCTIONS))
 	{
 		return SecSeg::Type::CODE;
 	}
-	else if((flags & S_ATTR_DEBUG))
+	else if ((flags & S_ATTR_DEBUG))
 	{
 		return SecSeg::Type::DEBUG;
 	}
-	else if((flags & S_ATTR_SOME_INSTRUCTIONS))
+	else if ((flags & S_ATTR_SOME_INSTRUCTIONS))
 	{
 		return SecSeg::Type::CODE_DATA;
 	}
 
-	switch(flags & 0xFF)
+	switch (flags & 0xFF)
 	{
-		case S_REGULAR:
-		case S_SYMBOL_STUBS:
-			return SecSeg::Type::CODE_DATA;
-		case S_ZEROFILL:
-		case S_GB_ZEROFILL:
-		case S_NON_LAZY_SYMBOL_POINTERS:
-		case S_LAZY_SYMBOL_POINTERS:
-		case S_LAZY_DYLIB_SYMBOL_POINTERS:
-		case S_MOD_INIT_FUNC_POINTERS:
-		case S_MOD_TERM_FUNC_POINTERS:
-		case S_THREAD_LOCAL_REGULAR:
-		case S_THREAD_LOCAL_ZEROFILL:
-		case S_THREAD_LOCAL_VARIABLES:
-		case S_THREAD_LOCAL_VARIABLE_POINTERS:
-		case S_THREAD_LOCAL_INIT_FUNCTION_POINTERS:
-		case S_INTERPOSING:
-		case S_COALESCED:
-			return (name == "__bss") ? SecSeg::Type::BSS : SecSeg::Type::DATA;
-		case S_CSTRING_LITERALS:
-		case S_4BYTE_LITERALS:
-		case S_8BYTE_LITERALS:
-		case S_16BYTE_LITERALS:
-		case S_LITERAL_POINTERS:
-			return SecSeg::Type::CONST_DATA;
-		case S_DTRACE_DOF:
-			return SecSeg::Type::INFO;
-		default:
-			return SecSeg::Type::UNDEFINED_SEC_SEG;
+	case S_REGULAR:
+	case S_SYMBOL_STUBS: return SecSeg::Type::CODE_DATA;
+	case S_ZEROFILL:
+	case S_GB_ZEROFILL:
+	case S_NON_LAZY_SYMBOL_POINTERS:
+	case S_LAZY_SYMBOL_POINTERS:
+	case S_LAZY_DYLIB_SYMBOL_POINTERS:
+	case S_MOD_INIT_FUNC_POINTERS:
+	case S_MOD_TERM_FUNC_POINTERS:
+	case S_THREAD_LOCAL_REGULAR:
+	case S_THREAD_LOCAL_ZEROFILL:
+	case S_THREAD_LOCAL_VARIABLES:
+	case S_THREAD_LOCAL_VARIABLE_POINTERS:
+	case S_THREAD_LOCAL_INIT_FUNCTION_POINTERS:
+	case S_INTERPOSING:
+	case S_COALESCED: return (name == "__bss") ? SecSeg::Type::BSS : SecSeg::Type::DATA;
+	case S_CSTRING_LITERALS:
+	case S_4BYTE_LITERALS:
+	case S_8BYTE_LITERALS:
+	case S_16BYTE_LITERALS:
+	case S_LITERAL_POINTERS: return SecSeg::Type::CONST_DATA;
+	case S_DTRACE_DOF: return SecSeg::Type::INFO;
+	default: return SecSeg::Type::UNDEFINED_SEC_SEG;
 	}
 }
 
@@ -388,15 +373,11 @@ std::vector<std::uint8_t> MachOFormat::createRelocationMask(unsigned length) con
 {
 	switch (length)
 	{
-		case 0:
-			return std::vector<std::uint8_t>{ 0xFF };
-		case 1:
-			return std::vector<std::uint8_t>{ 0xFF, 0xFF };
-		case 2:
-		case 3:
-			return std::vector<std::uint8_t>{ 0xFF, 0xFF, 0xFF, 0xFF };
-		default:
-			return std::vector<std::uint8_t>();
+	case 0: return std::vector<std::uint8_t>{0xFF};
+	case 1: return std::vector<std::uint8_t>{0xFF, 0xFF};
+	case 2:
+	case 3: return std::vector<std::uint8_t>{0xFF, 0xFF, 0xFF, 0xFF};
+	default: return std::vector<std::uint8_t>();
 	}
 }
 
@@ -409,7 +390,7 @@ std::vector<std::uint8_t> MachOFormat::createRelocationMask(unsigned length) con
  * @param firstDword First DWORD of relocation_info struct
  * @param tabPtr Pointer to relocation table (destination)
  */
-void MachOFormat::handleScatteredRelocation(std::uint32_t firstDword, RelocationTable *tabPtr)
+void MachOFormat::handleScatteredRelocation(std::uint32_t firstDword, RelocationTable* tabPtr)
 {
 	// Should be same for both little and big endian (see OS X ABI Mach-O File Format Reference)
 	unsigned rType = (firstDword & 0x0F000000) >> 24;
@@ -448,13 +429,13 @@ void MachOFormat::handleScatteredRelocation(std::uint32_t firstDword, Relocation
  * @param secondDword Second DWORD of relocation_info struct
  * @param tabPtr Pointer to relocation table (destination)
  */
-void MachOFormat::handleRelocation(std::uint32_t firstDword, std::uint32_t secondDword, RelocationTable *tabPtr)
+void MachOFormat::handleRelocation(std::uint32_t firstDword, std::uint32_t secondDword, RelocationTable* tabPtr)
 {
 	// This should read bitfield in a correct way (see OS X ABI Mach-O File Format Reference)
 	unsigned rLink = isLittle ? secondDword & 0x00FFFFFF : (secondDword & 0xFFFFFF00) >> 8;
 	unsigned rType = isLittle ? (secondDword & 0xF0000000) >> 28 : secondDword & 0x0000000F;
 	unsigned rExtern = isLittle ? (secondDword & 0x08000000) >> 27 : (secondDword & 0x00000010) >> 4;
-	unsigned rLength =  isLittle ? (secondDword & 0x06000000) >> 25 : (secondDword & 0x00000060) >> 5;
+	unsigned rLength = isLittle ? (secondDword & 0x06000000) >> 25 : (secondDword & 0x00000060) >> 5;
 
 	if ((is32 || isPowerPc()) && rType == GENERIC_RELOC_PAIR)
 	{
@@ -505,28 +486,28 @@ void MachOFormat::loadSectionRelocations(std::size_t offset, std::size_t count)
 {
 	if (count)
 	{
-		auto *buffPtr = getBufferStart() + offset;
-		auto *buffEnd = getBufferEnd();
+		auto* buffPtr = getBufferStart() + offset;
+		auto* buffEnd = getBufferEnd();
 		if (buffPtr >= buffEnd)
 		{
 			return;
 		}
 
-		auto *tabPtr = new RelocationTable;
+		auto* tabPtr = new RelocationTable;
 		tabPtr->setLinkToSymbolTable(0);
 		// Load relocations
 		for (std::size_t i = 0; i < count; ++i)
 		{
 			// Load relocation info struct as 2 times 4 bytes and swap endianness if necessary
 			std::int32_t rInfo[2];
-			auto *src = buffPtr + i * 8;
+			auto* src = buffPtr + i * 8;
 			std::size_t sz = 8;
 			if (src + sz >= buffEnd)
 			{
 				break;
 			}
 			memcpy(rInfo, src, sz);
-			if(isLittle != sys::IsLittleEndianHost)
+			if (isLittle != sys::IsLittleEndianHost)
 			{
 				sys::swapByteOrder(rInfo[0]);
 				sys::swapByteOrder(rInfo[1]);
@@ -548,9 +529,10 @@ void MachOFormat::loadSectionRelocations(std::size_t offset, std::size_t count)
  * Load section
  * @param section 32/64-bit section structure reference
  */
-template<typename T> void MachOFormat::loadSection(const T &section)
+template <typename T>
+void MachOFormat::loadSection(const T& section)
 {
-	auto *secPtr = new MachOSection;
+	auto* secPtr = new MachOSection;
 	secPtr->setName(getSecSegName(section.sectname));
 	secPtr->setType(getSectionType(section.flags, secPtr->getName()));
 	secPtr->setIndex(sectionCounter);
@@ -566,7 +548,7 @@ template<typename T> void MachOFormat::loadSection(const T &section)
 	secPtr->setMachOFlags(section.flags);
 	secPtr->setReserved1(section.reserved1);
 	secPtr->setReserved2(section.reserved2);
-	if(section.size)
+	if (section.size)
 	{
 		secPtr->load(this);
 	}
@@ -581,9 +563,10 @@ template<typename T> void MachOFormat::loadSection(const T &section)
  * @param segment 32/64-bit segment structure reference
  * @return Pointer to created segment
  */
-template<typename T> Segment* MachOFormat::loadSegment(const T &segment)
+template <typename T>
+Segment* MachOFormat::loadSegment(const T& segment)
 {
-	Segment *segPtr = new Segment;
+	Segment* segPtr = new Segment;
 	segPtr->setName(getSecSegName(segment.segname));
 	segPtr->setType(getSegmentType(segment.segname));
 	segPtr->setIndex(segmentCounter);
@@ -592,7 +575,7 @@ template<typename T> Segment* MachOFormat::loadSegment(const T &segment)
 	segPtr->setAddress(segment.vmaddr);
 	segPtr->setSizeInMemory(segment.vmsize);
 	// Only segments with at least one section are loaded
-	if(segment.nsects)
+	if (segment.nsects)
 	{
 		segPtr->setMemory(true);
 		segPtr->load(this);
@@ -606,21 +589,21 @@ template<typename T> Segment* MachOFormat::loadSegment(const T &segment)
  * Handle 32-bit segment command
  * @param commandInfo LoadCommandInfo reference
  */
-void MachOFormat::segmentCommand(const llvm::object::MachOObjectFile::LoadCommandInfo &commandInfo)
+void MachOFormat::segmentCommand(const llvm::object::MachOObjectFile::LoadCommandInfo& commandInfo)
 {
 	MachO::segment_command command = file->getSegmentLoadCommand(commandInfo);
-	auto *segPtr = loadSegment(command);
+	auto* segPtr = loadSegment(command);
 	MachO::section secTmp;
 
 	// If no name given, get name from section
-	if(segPtr->getName().empty() && command.nsects)
+	if (segPtr->getName().empty() && command.nsects)
 	{
 		secTmp = file->getSection(commandInfo, 0);
 		segPtr->setName(getSecSegName(secTmp.segname));
 		segPtr->setType(getSegmentType(secTmp.segname));
 	}
 
-	for(std::uint32_t i = 0; i < command.nsects; ++i)
+	for (std::uint32_t i = 0; i < command.nsects; ++i)
 	{
 		secTmp = file->getSection(commandInfo, i);
 		loadSection(secTmp);
@@ -631,20 +614,20 @@ void MachOFormat::segmentCommand(const llvm::object::MachOObjectFile::LoadComman
  * Handle 64-bit segment command
  * @param commandInfo LoadCommandInfo reference
  */
-void MachOFormat::segment64Command(const llvm::object::MachOObjectFile::LoadCommandInfo &commandInfo)
+void MachOFormat::segment64Command(const llvm::object::MachOObjectFile::LoadCommandInfo& commandInfo)
 {
 	MachO::segment_command_64 command = file->getSegment64LoadCommand(commandInfo);
-	auto *segPtr = loadSegment(command);
+	auto* segPtr = loadSegment(command);
 	MachO::section_64 secTmp;
 
-	if(segPtr->getName().empty() && command.nsects)
+	if (segPtr->getName().empty() && command.nsects)
 	{
 		secTmp = file->getSection64(commandInfo, 0);
 		segPtr->setName(getSecSegName(secTmp.segname));
 		segPtr->setType(getSegmentType(secTmp.segname));
 	}
 
-	for(std::uint32_t i = 0; i < command.nsects; ++i)
+	for (std::uint32_t i = 0; i < command.nsects; ++i)
 	{
 		secTmp = file->getSection64(commandInfo, i);
 		loadSection(secTmp);
@@ -655,7 +638,7 @@ void MachOFormat::segment64Command(const llvm::object::MachOObjectFile::LoadComm
  * Set entry point address and its file offset (LC_MAIN Mac OS 10.8+)
  * @param commandInfo LoadCommandInfo reference
  */
-void MachOFormat::entryPointCommand(const llvm::object::MachOObjectFile::LoadCommandInfo &commandInfo)
+void MachOFormat::entryPointCommand(const llvm::object::MachOObjectFile::LoadCommandInfo& commandInfo)
 {
 	auto command = file->getEntryPointCommand(commandInfo);
 	hasEntryPoint = true;
@@ -667,39 +650,32 @@ void MachOFormat::entryPointCommand(const llvm::object::MachOObjectFile::LoadCom
  * Set entry point address and its file offset (LC_UNIXTHREAD before Mac OS 10.8)
  * @param commandInfo LoadCommandInfo reference
  */
-void MachOFormat::oldEntryPointCommand(const llvm::object::MachOObjectFile::LoadCommandInfo &commandInfo)
+void MachOFormat::oldEntryPointCommand(const llvm::object::MachOObjectFile::LoadCommandInfo& commandInfo)
 {
 	// LC_MAIN command is preferred source of this information
-	if(hasEntryPoint)
+	if (hasEntryPoint)
 	{
 		return;
 	}
 
-	const char *lcOffset = commandInfo.Ptr;
-	switch(getTargetArchitecture())
+	const char* lcOffset = commandInfo.Ptr;
+	switch (getTargetArchitecture())
 	{
-		case Architecture::X86:
-			lcOffset += IP_UNIXTHREAD_OFFSET_X86_32BIT;
-			break;
-		case Architecture::X86_64:
-			lcOffset += IP_UNIXTHREAD_OFFSET_X86_64BIT;
-			break;
-		case Architecture::ARM:
-			lcOffset += is32 ? IP_UNIXTHREAD_OFFSET_ARM_32BIT : IP_UNIXTHREAD_OFFSET_ARM_64BIT;
-			break;
-		case Architecture::POWERPC:
-			lcOffset += is32 ? IP_UNIXTHREAD_OFFSET_PPC_32BIT : IP_UNIXTHREAD_OFFSET_PPC_64BIT;
-			break;
-		default:
-			return;
+	case Architecture::X86: lcOffset += IP_UNIXTHREAD_OFFSET_X86_32BIT; break;
+	case Architecture::X86_64: lcOffset += IP_UNIXTHREAD_OFFSET_X86_64BIT; break;
+	case Architecture::ARM: lcOffset += is32 ? IP_UNIXTHREAD_OFFSET_ARM_32BIT : IP_UNIXTHREAD_OFFSET_ARM_64BIT; break;
+	case Architecture::POWERPC:
+		lcOffset += is32 ? IP_UNIXTHREAD_OFFSET_PPC_32BIT : IP_UNIXTHREAD_OFFSET_PPC_64BIT;
+		break;
+	default: return;
 	}
 
 	entryPointAddr = is32 ? get32Bit(lcOffset) : get64Bit(lcOffset);
 
 	// Get file offset from address
-	for(const auto &segment : segments)
+	for (const auto& segment: segments)
 	{
-		if((entryPointAddr >= segment->getAddress()) && (entryPointAddr < segment->getEndAddress()))
+		if ((entryPointAddr >= segment->getAddress()) && (entryPointAddr < segment->getEndAddress()))
 		{
 			entryPointOffset = segment->getOffset() + (entryPointAddr - segment->getAddress());
 			break;
@@ -713,7 +689,7 @@ void MachOFormat::oldEntryPointCommand(const llvm::object::MachOObjectFile::Load
  * Handle LC_LOAD_DYLIB command
  * @param commandInfo LoadCommandInfo reference
  */
-void MachOFormat::loadDylibCommand(const llvm::object::MachOObjectFile::LoadCommandInfo &commandInfo)
+void MachOFormat::loadDylibCommand(const llvm::object::MachOObjectFile::LoadCommandInfo& commandInfo)
 {
 	auto command = file->getDylibIDLoadCommand(commandInfo);
 	if (command.dylib.name >= command.cmdsize)
@@ -726,12 +702,12 @@ void MachOFormat::loadDylibCommand(const llvm::object::MachOObjectFile::LoadComm
 	bool isFramework;
 	const std::string shortName = file->guessLibraryShortName(name, isFramework, sufix).str();
 
-	if(!importTable)
+	if (!importTable)
 	{
 		importTable = new ImportTable;
 	}
 
-	if(shortName.empty())
+	if (shortName.empty())
 	{
 		importTable->addLibrary(name);
 	}
@@ -747,30 +723,31 @@ void MachOFormat::loadDylibCommand(const llvm::object::MachOObjectFile::LoadComm
 void MachOFormat::symtabCommand()
 {
 	auto command = file->getSymtabLoadCommand();
-	const char *strPtr = fileBuffer.get()->getBufferStart() + command.stroff + chosenArchOffset;
-	const char *endPtr = chosenArchSize ? fileBuffer.get()->getBufferStart() + chosenArchOffset + chosenArchSize : fileBuffer.get()->getBufferEnd();
-	if(strPtr >= endPtr)
+	const char* strPtr = fileBuffer.get()->getBufferStart() + command.stroff + chosenArchOffset;
+	const char* endPtr = chosenArchSize ? fileBuffer.get()->getBufferStart() + chosenArchOffset + chosenArchSize
+										: fileBuffer.get()->getBufferEnd();
+	if (strPtr >= endPtr)
 	{
 		return;
 	}
 
-	auto *symbolTable = new SymbolTable();
+	auto* symbolTable = new SymbolTable();
 	llvm::StringRef strTable = llvm::StringRef(strPtr, endPtr - strPtr);
-	const char *ptr = fileBuffer.get()->getBufferStart() + command.symoff + chosenArchOffset;
+	const char* ptr = fileBuffer.get()->getBufferStart() + command.symoff + chosenArchOffset;
 
-	for(std::uint32_t i = 0; i < command.nsyms; ++i)
+	for (std::uint32_t i = 0; i < command.nsyms; ++i)
 	{
 		MachOSymbol machoSymbol;
-		if(is32)
+		if (is32)
 		{
-			if(ptr + sizeof(MachO::nlist) >= endPtr)
+			if (ptr + sizeof(MachO::nlist) >= endPtr)
 			{
 				break;
 			}
 
 			MachO::nlist res;
 			memcpy(&res, ptr, sizeof(MachO::nlist));
-			if(isLittle != sys::IsLittleEndianHost)
+			if (isLittle != sys::IsLittleEndianHost)
 			{
 				MachO::swapStruct(res);
 			}
@@ -780,14 +757,14 @@ void MachOFormat::symtabCommand()
 		}
 		else
 		{
-			if(ptr + sizeof(MachO::nlist_64) >= endPtr)
+			if (ptr + sizeof(MachO::nlist_64) >= endPtr)
 			{
 				break;
 			}
 
 			MachO::nlist_64 res;
 			memcpy(&res, ptr, sizeof(MachO::nlist_64));
-			if(isLittle != sys::IsLittleEndianHost)
+			if (isLittle != sys::IsLittleEndianHost)
 			{
 				MachO::swapStruct(res);
 			}
@@ -800,7 +777,7 @@ void MachOFormat::symtabCommand()
 		symbolTable->addSymbol(machoSymbol.getAsSymbol());
 	}
 
-	if(symbolTable->hasSymbols())
+	if (symbolTable->hasSymbols())
 	{
 		symbolTables.push_back(symbolTable);
 	}
@@ -812,10 +789,10 @@ void MachOFormat::symtabCommand()
  */
 MachOSection* MachOFormat::getLazySymbolsSection() const
 {
-	for(auto *section : sections)
+	for (auto* section: sections)
 	{
-		MachOSection *res = static_cast<MachOSection*>(section);
-		if((res->getMachOFlags() & SECTION_TYPE) == S_LAZY_SYMBOL_POINTERS)
+		MachOSection* res = static_cast<MachOSection*>(section);
+		if ((res->getMachOFlags() & SECTION_TYPE) == S_LAZY_SYMBOL_POINTERS)
 		{
 			return res;
 		}
@@ -830,10 +807,10 @@ MachOSection* MachOFormat::getLazySymbolsSection() const
  */
 MachOSection* MachOFormat::getNonLazySymbolsSection() const
 {
-	for(auto *section : sections)
+	for (auto* section: sections)
 	{
-		MachOSection *res = static_cast<MachOSection*>(section);
-		if((res->getMachOFlags() & SECTION_TYPE) == S_NON_LAZY_SYMBOL_POINTERS)
+		MachOSection* res = static_cast<MachOSection*>(section);
+		if ((res->getMachOFlags() & SECTION_TYPE) == S_NON_LAZY_SYMBOL_POINTERS)
 		{
 			return res;
 		}
@@ -848,9 +825,9 @@ MachOSection* MachOFormat::getNonLazySymbolsSection() const
  *
  * importTable and indirectTable have to be available
  */
-void MachOFormat::getImportsFromSection(const MachOSection *secPtr)
+void MachOFormat::getImportsFromSection(const MachOSection* secPtr)
 {
-	if(!secPtr || !importTable)
+	if (!secPtr || !importTable)
 	{
 		return;
 	}
@@ -860,13 +837,13 @@ void MachOFormat::getImportsFromSection(const MachOSection *secPtr)
 	unsigned long long count = 0;
 	unsigned align = is32 ? 4 : 8;
 
-	if(secPtr->getSizeInMemory(count) && tableIndex)
+	if (secPtr->getSizeInMemory(count) && tableIndex)
 	{
 		count /= align;
-		for(auto i = tableIndex; i < tableIndex + count; ++i)
+		for (auto i = tableIndex; i < tableIndex + count; ++i)
 		{
 			// true index is retrieved from indirect table
-			if(i >= indirectTable.size() || symbols.size() < indirectTable[i])
+			if (i >= indirectTable.size() || symbols.size() < indirectTable[i])
 			{
 				continue;
 			}
@@ -886,10 +863,11 @@ void MachOFormat::getImportsFromSection(const MachOSection *secPtr)
  */
 void MachOFormat::parseIndirectTable(std::uint32_t offset, std::uint32_t size)
 {
-	const char *tablePtr = fileBuffer.get()->getBufferStart() + offset + chosenArchOffset;
-	const char* endPtr = chosenArchSize ? fileBuffer.get()->getBufferStart() + chosenArchOffset + chosenArchSize : fileBuffer.get()->getBufferEnd();
+	const char* tablePtr = fileBuffer.get()->getBufferStart() + offset + chosenArchOffset;
+	const char* endPtr = chosenArchSize ? fileBuffer.get()->getBufferStart() + chosenArchOffset + chosenArchSize
+										: fileBuffer.get()->getBufferEnd();
 
-	for(std::uint32_t i = 0; i < size && tablePtr < endPtr; ++i, tablePtr += 4)
+	for (std::uint32_t i = 0; i < size && tablePtr < endPtr; ++i, tablePtr += 4)
 	{
 		indirectTable.push_back(get32Bit(tablePtr));
 	}
@@ -900,7 +878,7 @@ void MachOFormat::parseIndirectTable(std::uint32_t offset, std::uint32_t size)
  */
 void MachOFormat::dySymtabCommand()
 {
-	if(isDyld)
+	if (isDyld)
 	{
 		// LC_DYLD_INFO is preferred source of this information
 		return;
@@ -908,17 +886,17 @@ void MachOFormat::dySymtabCommand()
 
 	const dysymtab_command com = file->getDysymtabLoadCommand();
 	// Defined external symbols (exports)
-	if(com.nextdefsym)
+	if (com.nextdefsym)
 	{
-		if(!exportTable)
+		if (!exportTable)
 		{
 			exportTable = new ExportTable;
 		}
 		Export exportSym;
 
-		for(auto i = com.iextdefsym; i < (com.iextdefsym + com.nextdefsym); ++i)
+		for (auto i = com.iextdefsym; i < (com.iextdefsym + com.nextdefsym); ++i)
 		{
-			if(i >= symbols.size())
+			if (i >= symbols.size())
 			{
 				break;
 			}
@@ -929,9 +907,9 @@ void MachOFormat::dySymtabCommand()
 	}
 
 	// Undefined external symbols (imports)
-	if(com.nundefsym && com.nindirectsyms)
+	if (com.nundefsym && com.nindirectsyms)
 	{
-		if(!importTable)
+		if (!importTable)
 		{
 			importTable = new ImportTable;
 		}
@@ -946,29 +924,30 @@ void MachOFormat::dySymtabCommand()
 /**
  * Load exports and imports from LC_DYLD_INFO (Mac OS 10.6+)
  */
-void MachOFormat::dyldInfoCommand(const llvm::object::MachOObjectFile::LoadCommandInfo &commandInfo)
+void MachOFormat::dyldInfoCommand(const llvm::object::MachOObjectFile::LoadCommandInfo& commandInfo)
 {
 	isDyld = true;
 	auto command = file->getDyldInfoLoadCommand(commandInfo);
 	const char* startPtr = fileBuffer.get()->getBufferStart() + chosenArchOffset;
-	const char* endPtr = chosenArchSize ? fileBuffer.get()->getBufferStart() + chosenArchOffset + chosenArchSize : fileBuffer.get()->getBufferEnd();
+	const char* endPtr = chosenArchSize ? fileBuffer.get()->getBufferStart() + chosenArchOffset + chosenArchSize
+										: fileBuffer.get()->getBufferEnd();
 
 	// Exports
-	if(startPtr + command.export_off + command.export_size <= endPtr)
+	if (startPtr + command.export_off + command.export_size <= endPtr)
 	{
-		if(!exportTable)
+		if (!exportTable)
 		{
 			exportTable = new ExportTable;
 		}
 		Export exportSym;
 
 		Error err = Error::success();
-		for(auto &exportRef : file->exports(err))
+		for (auto& exportRef: file->exports(err))
 		{
 			exportSym.setAddress(offsetToAddress(exportRef.address()));
 			exportSym.invalidateOrdinalNumber();
 			std::string name = exportRef.name().str();
-			if(name.empty())
+			if (name.empty())
 			{
 				exportSym.setName("exported_function_" + intToHexString(exportRef.address()));
 			}
@@ -987,18 +966,18 @@ void MachOFormat::dyldInfoCommand(const llvm::object::MachOObjectFile::LoadComma
 	}
 
 	// Imports
-	if(!importTable)
+	if (!importTable)
 	{
 		importTable = new ImportTable;
 	}
 
-	if(startPtr + command.bind_off + command.bind_size <= endPtr)
+	if (startPtr + command.bind_off + command.bind_size <= endPtr)
 	{
 		Error err = Error::success();
-		for(const auto &importRef : file->bindTable(err))
+		for (const auto& importRef: file->bindTable(err))
 		{
 			auto importSym = getImportFromBindEntry(importRef);
-			if(!importSym)
+			if (!importSym)
 			{
 				break;
 			}
@@ -1012,13 +991,13 @@ void MachOFormat::dyldInfoCommand(const llvm::object::MachOObjectFile::LoadComma
 		}
 	}
 
-	if(startPtr + command.lazy_bind_off + command.lazy_bind_size <= endPtr)
+	if (startPtr + command.lazy_bind_off + command.lazy_bind_size <= endPtr)
 	{
 		Error err = Error::success();
-		for(const auto &importRef : file->lazyBindTable(err))
+		for (const auto& importRef: file->lazyBindTable(err))
 		{
 			auto importSym = getImportFromBindEntry(importRef);
-			if(!importSym)
+			if (!importSym)
 			{
 				break;
 			}
@@ -1032,13 +1011,13 @@ void MachOFormat::dyldInfoCommand(const llvm::object::MachOObjectFile::LoadComma
 		}
 	}
 
-	if(startPtr + command.weak_bind_off + command.weak_bind_size <= endPtr)
+	if (startPtr + command.weak_bind_off + command.weak_bind_size <= endPtr)
 	{
 		Error err = Error::success();
-		for(const auto &importRef : file->weakBindTable(err))
+		for (const auto& importRef: file->weakBindTable(err))
 		{
 			auto importSym = getImportFromBindEntry(importRef);
-			if(!importSym)
+			if (!importSym)
 			{
 				break;
 			}
@@ -1060,10 +1039,9 @@ void MachOFormat::dyldInfoCommand(const llvm::object::MachOObjectFile::LoadComma
  *
  * Segments have to be loaded before calling this function
  */
-std::unique_ptr<Import> MachOFormat::getImportFromBindEntry(const llvm::object::MachOBindEntry &input)
+std::unique_ptr<Import> MachOFormat::getImportFromBindEntry(const llvm::object::MachOBindEntry& input)
 {
-	if(input.segmentIndex() < 0
-			|| static_cast<std::size_t>(input.segmentIndex()) >= getDeclaredNumberOfSegments())
+	if (input.segmentIndex() < 0 || static_cast<std::size_t>(input.segmentIndex()) >= getDeclaredNumberOfSegments())
 	{
 		return nullptr;
 	}
@@ -1101,59 +1079,41 @@ std::uint32_t MachOFormat::getFirstCommandOffset() const
  */
 void MachOFormat::loadCommands()
 {
-	for(const auto &command : file->load_commands())
+	for (const auto& command: file->load_commands())
 	{
-		switch(command.C.cmd)
+		switch (command.C.cmd)
 		{
-			case MachO::LC_SEGMENT:
-				segmentCommand(command);
-				break;
+		case MachO::LC_SEGMENT: segmentCommand(command); break;
 
-			case MachO::LC_SEGMENT_64:
-				segment64Command(command);
-				break;
+		case MachO::LC_SEGMENT_64: segment64Command(command); break;
 
-			case MachO::LC_MAIN:
-				entryPointCommand(command);
-				break;
+		case MachO::LC_MAIN: entryPointCommand(command); break;
 
-			case MachO::LC_UNIXTHREAD:
-				oldEntryPointCommand(command);
-				break;
+		case MachO::LC_UNIXTHREAD: oldEntryPointCommand(command); break;
 
-			case MachO::LC_SYMTAB:
-				symtabCommand();
-				break;
+		case MachO::LC_SYMTAB: symtabCommand(); break;
 
-			case MachO::LC_LOAD_DYLIB:
-			case MachO::LC_PREBOUND_DYLIB:
-				loadDylibCommand(command);
-				break;
+		case MachO::LC_LOAD_DYLIB:
+		case MachO::LC_PREBOUND_DYLIB: loadDylibCommand(command); break;
 
-			// Imports and exports before Mac OS 10.6
-			case MachO::LC_DYSYMTAB:
-				dySymtabCommand();
-				break;
+		// Imports and exports before Mac OS 10.6
+		case MachO::LC_DYSYMTAB: dySymtabCommand(); break;
 
-			// Imports and exports Mac OS 10.6+
-			case LC_DYLD_INFO:
-			case LC_DYLD_INFO | LC_REQ_DYLD:
-				dyldInfoCommand(command);
-				break;
+		// Imports and exports Mac OS 10.6+
+		case LC_DYLD_INFO:
+		case LC_DYLD_INFO | LC_REQ_DYLD: dyldInfoCommand(command); break;
 
-			default:
-				break;
+		default: break;
 		}
 	}
 }
 
-void MachOFormat::dumpCommands(std::ostream &outStream)
+void MachOFormat::dumpCommands(std::ostream& outStream)
 {
 	outStream << "Load command information:\n";
-	for (const auto &command : file->load_commands())
+	for (const auto& command: file->load_commands())
 	{
-		outStream << std::hex << "Type: 0x" << command.C.cmd
-				<< ". Size: 0x" << command.C.cmdsize << ".\n";
+		outStream << std::hex << "Type: 0x" << command.C.cmd << ". Size: 0x" << command.C.cmdsize << ".\n";
 	}
 }
 
@@ -1162,16 +1122,16 @@ void MachOFormat::dumpCommands(std::ostream &outStream)
  * @param ptr Pointer to memory
  * @return Interpreted value
  */
-unsigned long long MachOFormat::get32Bit(const char *ptr) const
+unsigned long long MachOFormat::get32Bit(const char* ptr) const
 {
-	if(!ptr)
+	if (!ptr)
 	{
 		return 0;
 	}
 
 	std::uint32_t result = 0;
 	memcpy(&result, ptr, 4);
-	if(isLittle != sys::IsLittleEndianHost)
+	if (isLittle != sys::IsLittleEndianHost)
 	{
 		sys::swapByteOrder(result);
 	}
@@ -1184,16 +1144,16 @@ unsigned long long MachOFormat::get32Bit(const char *ptr) const
  * @param ptr Pointer to memory
  * @return Interpreted value
  */
-unsigned long long MachOFormat::get64Bit(const char *ptr) const
+unsigned long long MachOFormat::get64Bit(const char* ptr) const
 {
-	if(!ptr)
+	if (!ptr)
 	{
 		return 0;
 	}
 
 	std::uint64_t result = 0;
 	memcpy(&result, ptr, 8);
-	if(isLittle != sys::IsLittleEndianHost)
+	if (isLittle != sys::IsLittleEndianHost)
 	{
 		sys::swapByteOrder(result);
 	}
@@ -1212,10 +1172,10 @@ unsigned long long MachOFormat::offsetToAddress(unsigned long long offset) const
 {
 	unsigned long long address = 0;
 
-	for(const auto *segment : segments)
+	for (const auto* segment: segments)
 	{
 		unsigned long long segOff = segment->getOffset();
-		if((offset >= segOff) && (offset < (segOff + segment->getSizeInFile())))
+		if ((offset >= segOff) && (offset < (segOff + segment->getSizeInFile())))
 		{
 			address = segment->getAddress() + (offset - segOff);
 			break;
@@ -1232,68 +1192,45 @@ unsigned long long MachOFormat::offsetToAddress(unsigned long long offset) const
  */
 Architecture MachOFormat::getTargetArchitecture(std::uint32_t cpuType) const
 {
-	switch(cpuType)
+	switch (cpuType)
 	{
-		case MachO::CPU_TYPE_X86:
-			return Architecture::X86;
-		case MachO::CPU_TYPE_X86_64:
-			return Architecture::X86_64;
-		case MachO::CPU_TYPE_MC98000: // Old Motorola PowerPC
-		case MachO::CPU_TYPE_POWERPC:
-		case MachO::CPU_TYPE_POWERPC64:
-			return Architecture::POWERPC;
-		case MachO::CPU_TYPE_ARM:
-		case MachO::CPU_TYPE_ARM64:
-			return Architecture::ARM;
-		case MachO::CPU_TYPE_SPARC:
-		default:
-			return Architecture::UNKNOWN;
+	case MachO::CPU_TYPE_X86: return Architecture::X86;
+	case MachO::CPU_TYPE_X86_64: return Architecture::X86_64;
+	case MachO::CPU_TYPE_MC98000: // Old Motorola PowerPC
+	case MachO::CPU_TYPE_POWERPC:
+	case MachO::CPU_TYPE_POWERPC64: return Architecture::POWERPC;
+	case MachO::CPU_TYPE_ARM:
+	case MachO::CPU_TYPE_ARM64: return Architecture::ARM;
+	case MachO::CPU_TYPE_SPARC:
+	default: return Architecture::UNKNOWN;
 	}
 }
 
 std::vector<std::string> MachOFormat::getMachOUniversalArchitectures() const
 {
 	std::vector<std::string> result;
-	if(!isFat)
+	if (!isFat)
 	{
 		return result;
 	}
 
-	for(auto i = fatFile->begin_objects(), e = fatFile->end_objects(); i != e; ++i)
+	for (auto i = fatFile->begin_objects(), e = fatFile->end_objects(); i != e; ++i)
 	{
 		std::string archName = i->getArchFlagName();
-		if(archName.empty())
+		if (archName.empty())
 		{
 			archName = "unknown subtype ";
-			switch(i->getCPUType())
+			switch (i->getCPUType())
 			{
-				case CPU_TYPE_X86:
-					archName += "x86";
-					break;
-				case CPU_TYPE_X86_64:
-					archName += "x86_64";
-					break;
-				case CPU_TYPE_MC98000:
-					archName = "mc98000";
-					break;
-				case CPU_TYPE_ARM:
-					archName += "arm";
-					break;
-				case CPU_TYPE_ARM64:
-					archName += "arm64";
-					break;
-				case CPU_TYPE_SPARC:
-					archName += "sparc";
-					break;
-				case CPU_TYPE_POWERPC:
-					archName += "ppc";
-					break;
-				case CPU_TYPE_POWERPC64:
-					archName += "ppc64";
-					break;
-				default:
-					archName = "unknown";
-					break;
+			case CPU_TYPE_X86: archName += "x86"; break;
+			case CPU_TYPE_X86_64: archName += "x86_64"; break;
+			case CPU_TYPE_MC98000: archName = "mc98000"; break;
+			case CPU_TYPE_ARM: archName += "arm"; break;
+			case CPU_TYPE_ARM64: archName += "arm64"; break;
+			case CPU_TYPE_SPARC: archName += "sparc"; break;
+			case CPU_TYPE_POWERPC: archName += "ppc"; break;
+			case CPU_TYPE_POWERPC64: archName += "ppc64"; break;
+			default: archName = "unknown"; break;
 			}
 		}
 		result.push_back(archName);
@@ -1306,7 +1243,7 @@ std::vector<std::string> MachOFormat::getMachOUniversalArchitectures() const
  * Get pointer to LLVM buffer with file content.
  * @return Pointer to buffer
  */
-const char *MachOFormat::getBufferStart() const
+const char* MachOFormat::getBufferStart() const
 {
 	return fileBuffer.get()->getBufferStart();
 }
@@ -1315,7 +1252,7 @@ const char *MachOFormat::getBufferStart() const
  * Get pointer to the end of LLVM buffer with file content.
  * @return Pointer to buffer
  */
-const char *MachOFormat::getBufferEnd() const
+const char* MachOFormat::getBufferEnd() const
 {
 	return fileBuffer.get()->getBufferEnd();
 }
@@ -1351,10 +1288,10 @@ bool MachOFormat::hasMixedEndianForDouble() const
 
 std::string MachOFormat::getFileFormatName() const
 {
-	if(isFat)
+	if (isFat)
 	{
 		std::string result = "Mach-O Universal Binary:";
-		for(auto archName : getMachOUniversalArchitectures())
+		for (auto archName: getMachOUniversalArchitectures())
 		{
 			result += " [" + archName + "]";
 		}
@@ -1386,25 +1323,26 @@ bool MachOFormat::isExecutable() const
 	return filetype == MachO::MH_EXECUTE || filetype == MachO::MH_PRELOAD;
 }
 
-bool MachOFormat::getMachineCode(std::uint64_t &result) const
+bool MachOFormat::getMachineCode(std::uint64_t& result) const
 {
-	is32 ? result = static_cast<unsigned long long>(header32.cputype) : result = static_cast<unsigned long long>(header64.cputype);
+	is32 ? result = static_cast<unsigned long long>(header32.cputype)
+		 : result = static_cast<unsigned long long>(header64.cputype);
 	return true;
 }
 
-bool MachOFormat::getAbiVersion(std::uint64_t &result) const
+bool MachOFormat::getAbiVersion(std::uint64_t& result) const
 {
 	return false;
 }
 
-bool MachOFormat::getImageBaseAddress(std::uint64_t &imageBase) const
+bool MachOFormat::getImageBaseAddress(std::uint64_t& imageBase) const
 {
 	return false;
 }
 
-bool MachOFormat::getEpAddress(std::uint64_t &result) const
+bool MachOFormat::getEpAddress(std::uint64_t& result) const
 {
-	if(hasEntryPoint)
+	if (hasEntryPoint)
 	{
 		result = static_cast<unsigned long long>(entryPointAddr);
 		return true;
@@ -1413,9 +1351,9 @@ bool MachOFormat::getEpAddress(std::uint64_t &result) const
 	return false;
 }
 
-bool MachOFormat::getEpOffset(std::uint64_t &epOffset) const
+bool MachOFormat::getEpOffset(std::uint64_t& epOffset) const
 {
-	if(hasEntryPoint)
+	if (hasEntryPoint)
 	{
 		epOffset = static_cast<unsigned long long>(entryPointOffset);
 		return true;
@@ -1502,38 +1440,37 @@ bool MachOFormat::isStaticLibrary() const
  * @param version String describing OS version
  * @return @c true if OS is detectable, @c false otherwise
  */
-bool MachOFormat::getTargetOs(std::string &name, std::string &version) const
+bool MachOFormat::getTargetOs(std::string& name, std::string& version) const
 {
 	name.clear();
 	version.clear();
 	version_min_command verCommand;
 
-	for(const auto &command : file->load_commands())
+	for (const auto& command: file->load_commands())
 	{
-		switch(command.C.cmd)
+		switch (command.C.cmd)
 		{
-			case LC_VERSION_MIN_MACOSX:
-				verCommand = file->getVersionMinLoadCommand(command);
-				name = "OS X";
-				version = getVersionFromDWord(verCommand.version);
-				return true;
-			case LC_VERSION_MIN_IPHONEOS:
-				verCommand = file->getVersionMinLoadCommand(command);
-				name = "iOS";
-				version = getVersionFromDWord(verCommand.version);
-				return true;
-			case LC_VERSION_MIN_TVOS:
-				verCommand = file->getVersionMinLoadCommand(command);
-				name = "tvOS";
-				version = getVersionFromDWord(verCommand.version);
-				return true;
-			case LC_VERSION_MIN_WATCHOS:
-				verCommand = file->getVersionMinLoadCommand(command);
-				name = "watchOS";
-				version = getVersionFromDWord(verCommand.version);
-				return true;
-			default:
-				continue;
+		case LC_VERSION_MIN_MACOSX:
+			verCommand = file->getVersionMinLoadCommand(command);
+			name = "OS X";
+			version = getVersionFromDWord(verCommand.version);
+			return true;
+		case LC_VERSION_MIN_IPHONEOS:
+			verCommand = file->getVersionMinLoadCommand(command);
+			name = "iOS";
+			version = getVersionFromDWord(verCommand.version);
+			return true;
+		case LC_VERSION_MIN_TVOS:
+			verCommand = file->getVersionMinLoadCommand(command);
+			name = "tvOS";
+			version = getVersionFromDWord(verCommand.version);
+			return true;
+		case LC_VERSION_MIN_WATCHOS:
+			verCommand = file->getVersionMinLoadCommand(command);
+			name = "watchOS";
+			version = getVersionFromDWord(verCommand.version);
+			return true;
+		default: continue;
 		}
 	}
 
@@ -1547,15 +1484,15 @@ bool MachOFormat::getTargetOs(std::string &name, std::string &version) const
  * @param id Encryption algorithm used
  * @return @c true if encryption was used, @c false otherwise
  */
-bool MachOFormat::getEncryptionInfo(unsigned long &off, unsigned long &size, unsigned long &id)
+bool MachOFormat::getEncryptionInfo(unsigned long& off, unsigned long& size, unsigned long& id)
 {
-	for(const auto &command : file->load_commands())
+	for (const auto& command: file->load_commands())
 	{
-		if(command.C.cmd == LC_ENCRYPTION_INFO)
+		if (command.C.cmd == LC_ENCRYPTION_INFO)
 		{
 			encryption_info_command enComm = file->getEncryptionInfoCommand(command);
 			// zero cryptid means no encryption
-			if(enComm.cryptid)
+			if (enComm.cryptid)
 			{
 				off = enComm.cryptoff;
 				size = enComm.cryptsize;
@@ -1563,10 +1500,10 @@ bool MachOFormat::getEncryptionInfo(unsigned long &off, unsigned long &size, uns
 				return true;
 			}
 		}
-		else if(command.C.cmd == LC_ENCRYPTION_INFO_64)
+		else if (command.C.cmd == LC_ENCRYPTION_INFO_64)
 		{
 			encryption_info_command_64 enComm = file->getEncryptionInfoCommand64(command);
-			if(enComm.cryptid)
+			if (enComm.cryptid)
 			{
 				off = enComm.cryptoff;
 				size = enComm.cryptsize;
@@ -1604,9 +1541,9 @@ std::uint32_t MachOFormat::getSizeOfCommands() const
  */
 bool MachOFormat::chooseArchitecture(std::uint32_t cpuType)
 {
-	for(auto i = fatFile->begin_objects(), e = fatFile->end_objects(); i != e; ++i)
+	for (auto i = fatFile->begin_objects(), e = fatFile->end_objects(); i != e; ++i)
 	{
-		if(cpuType == i->getCPUType())
+		if (cpuType == i->getCPUType())
 		{
 			return chooseArchitecture(i);
 		}
@@ -1622,20 +1559,20 @@ bool MachOFormat::chooseArchitecture(std::uint32_t cpuType)
  */
 bool MachOFormat::chooseArchitectureAtIndex(std::uint32_t index)
 {
-	if(!isFat || index >= fatFile->getNumberOfObjects())
+	if (!isFat || index >= fatFile->getNumberOfObjects())
 	{
 		return false;
 	}
 
 	std::uint32_t counter = 0;
 
-	for(auto i = fatFile->begin_objects(), e = fatFile->end_objects(); i != e; ++i, ++counter)
+	for (auto i = fatFile->begin_objects(), e = fatFile->end_objects(); i != e; ++i, ++counter)
 	{
-		if(index == counter && chooseArchitecture(i))
+		if (index == counter && chooseArchitecture(i))
 		{
 			clearCommands();
 			// Update underlying structures
-			if(is32)
+			if (is32)
 			{
 				header32 = file->getHeader();
 			}
