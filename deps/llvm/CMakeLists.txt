@@ -267,6 +267,38 @@ set(LLVM_LIB_LIST
 	LLVMSelectionDAG
 	LLVMAnalysis
 	LLVMTransformUtils
+	# Order matters: these are static archives on one command line, and the
+	# linker only resolves backwards. LLVMObject appears twice above for that
+	# reason, and LLVMAnalysis and LLVMTransformUtils are repeated here for it.
+	#
+	# The second LLVMObject drags in OffloadBinary.cpp.o, whose
+	# extractFromBitcode calls llvm::getLazyIRModule -- which lives in
+	# LLVMIRReader, listed once, third, and long past by then:
+	#
+	#   libLLVMObject.a(OffloadBinary.cpp.o): in function
+	#   `extractFromBitcode(...)': OffloadBinary.cpp:134: undefined reference to
+	#   `llvm::getLazyIRModule(std::unique_ptr<llvm::MemoryBuffer, ...>,
+	#    llvm::SMDiagnostic&, llvm::LLVMContext&, bool)'
+	#
+	# That failed the link of tests/managed_integration/fuzz/fuzz_macho and
+	# fuzz_unpacker_plugins, and so the fuzz-libfuzzer job, on every run.
+	# fuzz_pe and fuzz_elf link the same libraries and succeed, which is what
+	# an ordering fault looks like: it depends on which objects each harness
+	# happens to pull.
+	#
+	# IRReader again, followed by what a rescan of it can reach -- BitReader
+	# and AsmParser are what getLazyIRModule dispatches to, and those reach
+	# BitstreamReader, Core, BinaryFormat, Support and Demangle. A repeated
+	# archive costs link time and nothing else.
+	LLVMIRReader
+	LLVMBitReader
+	LLVMAsmParser
+	LLVMBitstreamReader
+	LLVMCore
+	LLVMBinaryFormat
+	LLVMSupport
+	LLVMTargetParser
+	LLVMDemangle
 )
 
 ExternalProject_Get_Property(llvm-project source_dir)
