@@ -322,6 +322,44 @@ target_include_directories(llvm
 		$<INSTALL_INTERFACE:${RETDEC_INSTALL_DEPS_INCLUDE_DIR}>
 )
 
+# Let the linker resolve the archives instead of hand-ordering them.
+#
+# These are ~50 static archives on one command line, and GNU ld and lld resolve
+# a static archive in ONE left-to-right pass: an object pulled from archive N
+# can only be satisfied by archives after N. LLVM's dependency graph is not a
+# DAG in link order -- Object needs IRReader, AsmParser needs Support,
+# Analysis and TransformUtils need each other -- so LLVM_LIB_LIST above has
+# been patched by repeating a library later, one undefined symbol at a time,
+# for as long as it has existed. That is how
+#
+#   libLLVMObject.a(OffloadBinary.cpp.o): undefined reference to
+#   `llvm::getLazyIRModule(...)'
+#
+# broke every run of the fuzz-libfuzzer job, and fixing it by repeating
+# LLVMIRReader simply moved the failure to
+#
+#   libLLVMAsmParser.a(AsmParserContext.cpp.o): undefined reference to
+#   `llvm::IntervalMapImpl::Path::moveLeft(unsigned int)'
+#
+# --start-group makes the linker rescan the enclosed archives until no new
+# undefined symbol is resolved, so no order among them can be wrong. It costs
+# link time and removes a class of failure that is otherwise found one symbol
+# per CI run.
+#
+# ELF only. It is a GNU ld / lld flag; Apple's ld64 and MSVC's link.exe search
+# all inputs anyway and reject the flag. The repeated entries in LLVM_LIB_LIST
+# stay for those platforms and for MinGW, where they are what has been working.
+set(_LLVM_LINK_GROUP_START "")
+set(_LLVM_LINK_GROUP_END "")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME MATCHES "BSD")
+	set(_LLVM_LINK_GROUP_START "-Wl,--start-group")
+	set(_LLVM_LINK_GROUP_END   "-Wl,--end-group")
+endif()
+
+if(_LLVM_LINK_GROUP_START)
+	target_link_libraries(llvm INTERFACE $<BUILD_INTERFACE:${_LLVM_LINK_GROUP_START}>)
+endif()
+
 foreach(LLVM_LIB ${LLVM_LIB_LIST})
 	set(LLVM_LIB_NAME  ${CMAKE_STATIC_LIBRARY_PREFIX}${LLVM_LIB}${CMAKE_STATIC_LIBRARY_SUFFIX})
 	set(LLVM_LIB_PNAME ${CMAKE_STATIC_LIBRARY_PREFIX}retdec-${LLVM_LIB}${CMAKE_STATIC_LIBRARY_SUFFIX})
@@ -341,6 +379,10 @@ foreach(LLVM_LIB ${LLVM_LIB_LIST})
 
 	list(APPEND LLVM_LIBS_PATHS "${RETDEC_INSTALL_LIB_DIR_ABS}/${LLVM_LIB_PNAME}")
 endforeach(LLVM_LIB)
+
+if(_LLVM_LINK_GROUP_END)
+	target_link_libraries(llvm INTERFACE $<BUILD_INTERFACE:${_LLVM_LINK_GROUP_END}>)
+endif()
 
 # GNU ld scans each archive once. LLVM 23 has circular refs
 # (LLVMObjCARCOpts -> LLVMAnalysis, LLVMInstrumentation -> LLVMTransformUtils).
