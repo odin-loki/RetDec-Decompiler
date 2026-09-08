@@ -224,6 +224,17 @@ std::vector<CsTypeEmitter::EventGroup> CsTypeEmitter::collectEvents(
         BcMethod* mptr = const_cast<BcMethod*>(&m);
         if (isAdder) groups[idx].adder   = mptr;
         else         groups[idx].remover = mptr;
+
+        // EventGroup::type had no assignment at all, so emitEvents() printed
+        // the default-constructed BcType -- "public event void Clicked;",
+        // which is not C#. An event's type is the delegate its accessors take;
+        // ECMA-335 II.22.13 gives add_X and remove_X the same one-parameter
+        // signature, so either accessor answers, and collectProperties()
+        // already reads the getter's return type the same way.
+        if (groups[idx].type.isVoid() && !m.descriptor.params.empty()
+                && m.descriptor.params.front()) {
+            groups[idx].type = *m.descriptor.params.front();
+        }
     }
     return groups;
 }

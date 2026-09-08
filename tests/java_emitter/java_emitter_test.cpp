@@ -1387,3 +1387,63 @@ TEST(JavaStmtEmitter, AHandlerNamingABlockThatDoesNotExistIsIgnored)
 	EXPECT_FALSE(contains(body, "Error")) << body;
 	EXPECT_TRUE(contains(body, "IOException")) << body;
 }
+
+// ─── Names that begin with L are not descriptors ─────────────────────────────
+
+// slashToDot stripped a leading 'L' from every name longer than one character,
+// on the theory that it came from a JVM descriptor. JVMS 4.3.2 spells an object
+// type "L" ClassName ";" -- the 'L' and the ';' come as a pair -- and
+// ConstPool::className hands back the internal form, which has neither. So the
+// strip only ever fired on real names: List became ist, Locale became ocale.
+TEST(JavaTypePrinter, ADefaultPackageClassBeginningWithLKeepsItsFirstLetter)
+{
+	ImportSet imports;
+	JavaTypePrinter tp(imports);
+	for (const char* name: {"List", "Long", "Locale", "Lock", "Loader"})
+	{
+		BcRefType ref;
+		ref.kind = BcRefKind::Class;
+		ref.className = name;
+		EXPECT_EQ(std::string(name), tp.printNoImport(BcType{ref}));
+	}
+}
+
+// And the descriptor form still loses both halves of the wrapper.
+TEST(JavaTypePrinter, ADescriptorStillLosesItsLAndSemicolon)
+{
+	ImportSet imports;
+	JavaTypePrinter tp(imports);
+	BcRefType ref;
+	ref.kind = BcRefKind::Class;
+	ref.className = "Ljava/lang/String;";
+	EXPECT_EQ("String", tp.printNoImport(BcType{ref}));
+	ref.className = "java/lang/String";
+	EXPECT_EQ("String", tp.printNoImport(BcType{ref}));
+}
+
+// emitMethodCall stops collecting arguments when the expression stack runs out,
+// so `args` can be empty while `hasThis` is true. `args.begin() + 1` is then one
+// past the end and the range constructor sees a negative distance, which throws
+// a length_error nobody catches -- std::terminate out of the emitter.
+TEST(JavaExprEmitter, AnInstanceCallWithAnEmptyStackDoesNotThrow)
+{
+	BcMethod method;
+	method.name = "f";
+	ReconstructResult recon;
+	ImportSet imports;
+	JavaTypePrinter tp(imports);
+	ExprContext ctx(method, recon, tp);
+	JavaExprEmitter em(ctx);
+
+	BcInstruction insn;
+	insn.opcode = BcOpcode::InvokeVirtual;
+	BcMethodRef mref;
+	mref.owner = "java/io/PrintStream";
+	mref.name = "println";
+	insn.operands.push_back(mref);
+
+	std::vector<ExprNode> stack; // deliberately empty
+	std::string out;
+	ASSERT_NO_THROW(out = em.emitInsn(insn, stack));
+	EXPECT_NE(std::string::npos, out.find("println"));
+}

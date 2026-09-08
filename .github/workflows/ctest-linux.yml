@@ -20,11 +20,19 @@ jobs:
 
       # An LLVM debug build does not fit in the action's 500 MB default, and
       # the key keeps this job's objects out of the other workflows' caches.
+      #
+      # 2G was still not enough. The first run with the compiler launcher
+      # actually wired up (see the Configure step) reported "Cache size (GB):
+      # 2.0 / 2.0 (99.97%)" with 92 cleanups and 3 hits out of 3041 calls: the
+      # cache filled during the build and evicted each object before anything
+      # could reuse it, so the 55-minute build stayed 55 minutes. A debug LLVM
+      # plus this tree is roughly 5 GB of objects; 8G leaves room for the next
+      # run's misses without thrashing.
       - name: ccache
         uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1.2
         with:
           key: ctest-linux
-          max-size: 2G
+          max-size: 8G
 
       - name: Install dependencies
         run: |

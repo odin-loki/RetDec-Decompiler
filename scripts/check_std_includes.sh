@@ -51,6 +51,52 @@ for n in ("accumulate", "iota"):
 USE = re.compile(r"\bstd::(" + "|".join(sorted(NEEDS)) + r")\b")
 INC = re.compile(r"^#include\s*<([a-z_]+)>", re.M)
 
+
+def strip_comments_and_literals(text):
+    """Blank out comments and string/char literals, keeping line structure.
+
+    A comment that names std::find_if is not a call to it, and neither is the
+    string "std::find_if" in a name table. Scanning the raw text made this
+    check fail on a file whose only mention of an algorithm was the comment
+    explaining why a cache had lost the name of one. Newlines are preserved so
+    that #include lines are still found at the start of a line.
+    """
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == "/" and i + 1 < n and text[i + 1] == "/":
+            while i < n and text[i] != "\n":
+                out.append(" ")
+                i += 1
+        elif c == "/" and i + 1 < n and text[i + 1] == "*":
+            out.append("  ")
+            i += 2
+            while i < n and not (text[i] == "*" and i + 1 < n and text[i + 1] == "/"):
+                out.append("\n" if text[i] == "\n" else " ")
+                i += 1
+            if i < n:
+                out.append("  ")
+                i += 2
+        elif c in "\"'":
+            quote = c
+            out.append(" ")
+            i += 1
+            while i < n and text[i] != quote:
+                if text[i] == "\\" and i + 1 < n:
+                    out.append("  ")
+                    i += 2
+                    continue
+                out.append("\n" if text[i] == "\n" else " ")
+                i += 1
+            if i < n:
+                out.append(" ")
+                i += 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
 # Directories that are not this project's to format.
 SKIP_DIRS = {".git", "build", "deps", "node_modules", "__pycache__"}
 
@@ -63,8 +109,9 @@ for dirpath, dirnames, filenames in os.walk("."):
         path = os.path.join(dirpath, name)[2:].replace(os.sep, "/")
         with open(path, encoding="utf-8", errors="replace") as fh:
             text = fh.read()
-        have = set(INC.findall(text))
-        want = {NEEDS[m.group(1)] for m in USE.finditer(text)}
+        code = strip_comments_and_literals(text)
+        have = set(INC.findall(code))
+        want = {NEEDS[m.group(1)] for m in USE.finditer(code)}
         missing = sorted(want - have)
         if missing:
             found[path] = missing

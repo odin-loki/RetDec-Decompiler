@@ -159,6 +159,10 @@ enum class ContainerKind : uint8_t {
     Array,       ///< std::array (fixed-size, no heap allocation)
 };
 
+/// The inverse of ContainerResult::kindName(): the same table read the other
+/// way. Returns ContainerKind::Unknown for a name it does not recognise.
+ContainerKind containerKindFromName(const std::string& name) noexcept;
+
 enum class CompilerVariant : uint8_t {
     Unknown,
     GCC,         ///< libstdc++

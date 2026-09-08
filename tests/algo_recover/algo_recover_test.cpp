@@ -1618,3 +1618,54 @@ TEST(AlgorithmDetectorTest, NoIteratorAnnotationWithoutABeginEndPair)
 	ASSERT_EQ(EmissionTier::High, r.tier);
 	EXPECT_EQ(r.emittedForm.find("// range:"), std::string::npos) << r.emittedForm;
 }
+
+// ─── kindName round-trips ────────────────────────────────────────────────────
+
+// The function-analysis cache writes kindName() and reads it back. It used to
+// read it back through its own list of five bare names -- "Transform", "Find"
+// -- that kindName() never produces, so every cached algorithm came back
+// Unknown: a warm decompile printed "[RetDec] unknown detected (confidence
+// 0.75)" where the cold one printed "[RetDec] std::find_if detected
+// (confidence 0.75)", and CACHE-05 caught the difference. This is the
+// invariant that pairing was missing.
+TEST(AlgorithmKindNames, EveryKindSurvivesANameRoundTrip)
+{
+	const AlgorithmKind all[] = {
+		AlgorithmKind::Transform, AlgorithmKind::Accumulate,
+		AlgorithmKind::MaxElement, AlgorithmKind::MinElement,
+		AlgorithmKind::Find, AlgorithmKind::FindIf,
+		AlgorithmKind::BinarySearch, AlgorithmKind::Partition,
+		AlgorithmKind::ForEach, AlgorithmKind::Copy, AlgorithmKind::Fill,
+		AlgorithmKind::Count, AlgorithmKind::AnyOf, AlgorithmKind::AllOf,
+		AlgorithmKind::NoneOf, AlgorithmKind::Reverse, AlgorithmKind::RotateLeft,
+	};
+	for (AlgorithmKind k: all)
+	{
+		AlgorithmResult r;
+		r.kind = k;
+		const std::string name = r.kindName();
+		EXPECT_NE("unknown", name) << "kind " << static_cast<int>(k) << " has no name";
+		EXPECT_EQ(k, algorithmKindFromName(name))
+			<< "kindName() gave \"" << name << "\", which does not read back";
+	}
+}
+
+// The enum runs from Unknown to RotateLeft with no gaps, so a kind added to
+// the enum but not to the table would leave a hole this finds.
+TEST(AlgorithmKindNames, NoKindInTheEnumIsMissingFromTheTable)
+{
+	for (int i = static_cast<int>(AlgorithmKind::Transform);
+			i <= static_cast<int>(AlgorithmKind::RotateLeft); ++i)
+	{
+		AlgorithmResult r;
+		r.kind = static_cast<AlgorithmKind>(i);
+		EXPECT_NE("unknown", r.kindName()) << "AlgorithmKind " << i << " has no name";
+	}
+}
+
+TEST(AlgorithmKindNames, AnUnrecognisedNameIsUnknownNotAGuess)
+{
+	EXPECT_EQ(AlgorithmKind::Unknown, algorithmKindFromName("Transform"));
+	EXPECT_EQ(AlgorithmKind::Unknown, algorithmKindFromName(""));
+	EXPECT_EQ(AlgorithmKind::Unknown, algorithmKindFromName("std::sort"));
+}

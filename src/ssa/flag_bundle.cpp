@@ -213,7 +213,11 @@ void FlagBundleAnalysis::run(const SSAFunction& fn)
 	std::unordered_map<ValueId, std::size_t> bundleIdx;
 	for (auto& valPtr: fn.values())
 	{
-		if (valPtr->kind == ValueKind::FlagBundle && valPtr->kind != ValueKind::Undef)
+		// The second half of this test used to be `valPtr->kind != Undef`,
+		// which the first half already guarantees. What it meant to exclude is
+		// a bundle with no defining instruction: that is the one whose defBlock
+		// below would be kInvalidBlock.
+		if (valPtr->kind == ValueKind::FlagBundle)
 		{
 			BundleInfo info;
 			info.bundleId = valPtr->id;

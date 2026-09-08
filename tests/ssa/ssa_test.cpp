@@ -987,3 +987,60 @@ int main(int argc, char** argv)
 	::testing::InitGoogleTest(&argc, argv);
 	return RUN_ALL_TESTS();
 }
+
+// ─── The dominator tree is rebuilt, not appended to ──────────────────────────
+
+// computeIDom appended to domChildren without clearing it, so a second run()
+// over the same function gave every block each child twice. SSARename walks
+// that tree recursively, so the duplicates cost 2^depth: a second
+// SSAPass::run over a 20-block function took 14.8 s where the first took
+// 0.0 ms, and a 22-block one did not finish in two minutes. SSAPass::run
+// itself builds the tree twice -- once before renaming, once for the verifier.
+TEST(DomTree, RunningTwiceDoesNotDuplicateDomChildren)
+{
+	SSAFunction fn("f");
+	BlockId prev = fn.addBlock("b0")->id;
+	for (int i = 1; i < 6; ++i)
+	{
+		auto* n = fn.addBlock("b" + std::to_string(i));
+		fn.block(prev)->addSucc(n->id);
+		n->preds.push_back(prev);
+		prev = n->id;
+	}
+
+	DominatorTree dom;
+	dom.run(fn);
+	std::size_t after1 = 0;
+	for (auto& b: fn.blocks()) after1 += b->domChildren.size();
+	ASSERT_EQ(5u, after1);
+
+	dom.run(fn);
+	dom.run(fn);
+	std::size_t after3 = 0;
+	for (auto& b: fn.blocks()) after3 += b->domChildren.size();
+	EXPECT_EQ(after1, after3);
+}
+
+// The whole pass, twice, is the shape that actually hung: the second run's
+// rename walked the tree the first run's verifier step had already doubled.
+TEST(SSAPass, RunningTheWholePassTwiceTerminates)
+{
+	SSAFunction fn("f");
+	BlockId prev = fn.addBlock("b0")->id;
+	for (int i = 1; i < 24; ++i)
+	{
+		auto* n = fn.addBlock("b" + std::to_string(i));
+		fn.block(prev)->addSucc(n->id);
+		n->preds.push_back(prev);
+		prev = n->id;
+	}
+
+	SSAPass first;
+	first.run(fn);
+	SSAPass second;
+	second.run(fn);
+
+	std::size_t edges = 0;
+	for (auto& b: fn.blocks()) edges += b->domChildren.size();
+	EXPECT_EQ(23u, edges);
+}

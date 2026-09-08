@@ -3,14 +3,12 @@
 # This list may shrink. Adding to it needs a reason.
 include/retdec/pelib/ImportDirectory.h algorithm
 include/retdec/pelib/OutputBuffer.h algorithm
-include/retdec/pelib/PeLibAux.h algorithm
 include/retdec/pelib/ResourceDirectory.h algorithm
 src/bin2llvmir/analyses/reaching_definitions.cpp algorithm
 src/bin2llvmir/analyses/symbolic_tree.cpp algorithm
 src/bin2llvmir/optimizations/param_return/collector/collector.cpp algorithm
 src/bin2llvmir/optimizations/param_return/data_entries.cpp algorithm
 src/bin2llvmir/optimizations/phi_remover/phi_remover.cpp algorithm
-src/bin2llvmir/optimizations/x87_fpu/x87_fpu.cpp algorithm
 src/bin2llvmir/providers/calling_convention/calling_convention.cpp algorithm
 src/bin2llvmir/providers/names.cpp algorithm
 src/bin2llvmir/utils/llvm.cpp algorithm
@@ -36,10 +34,7 @@ src/pelib/InputBuffer.cpp algorithm
 src/pelib/OutputBuffer.cpp algorithm
 src/pelib/PeFile.cpp algorithm
 src/pelib/PeLibAux.cpp algorithm
-src/pelib/RelocationsDirectory.cpp algorithm
-src/pelib/ResourceDirectory.cpp algorithm,numeric
+src/pelib/ResourceDirectory.cpp algorithm
 src/pelib/SecurityDirectory.cpp algorithm
-src/retdec/llvm_to_ssa.h numeric
 src/stacofin/stacofin.cpp algorithm
 src/unpackertool/plugins/upx/macho/macho_upx_stub.cpp algorithm
-tests/verification/float_predicate_proof.cpp algorithm

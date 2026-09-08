@@ -1698,3 +1698,28 @@ TEST(RingBufferDetectorTest, RemByCapacityIsRingBuffer)
 	EXPECT_GE(r.confidence, 0.45f);
 	EXPECT_EQ(r.emittedType, "ring_buffer");
 }
+
+// ─── kindName round-trips ────────────────────────────────────────────────────
+
+// Same pairing the algorithm cache was missing: serializeContainer writes
+// kindName() ("std::vector") and the reader matched bare names ("Vector"), so
+// a cached container read back as Unknown and the warm run's comment disagreed
+// with the cold run's.
+TEST(ContainerKindNames, EveryKindSurvivesANameRoundTrip)
+{
+    for (int i = static_cast<int>(ContainerKind::Vector);
+            i <= static_cast<int>(ContainerKind::Array); ++i) {
+        ContainerResult r;
+        r.kind = static_cast<ContainerKind>(i);
+        const std::string name = r.kindName();
+        EXPECT_NE("unknown", name) << "ContainerKind " << i << " has no name";
+        EXPECT_EQ(r.kind, containerKindFromName(name))
+            << "kindName() gave \"" << name << "\", which does not read back";
+    }
+}
+
+TEST(ContainerKindNames, AnUnrecognisedNameIsUnknownNotAGuess)
+{
+    EXPECT_EQ(ContainerKind::Unknown, containerKindFromName("Vector"));
+    EXPECT_EQ(ContainerKind::Unknown, containerKindFromName(""));
+}

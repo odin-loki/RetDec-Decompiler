@@ -112,9 +112,17 @@ std::string FsTypeEmitter::typeStr(const BcType& t) const {
     for (const auto& [clr, fs] : kMap) {
         if (s == clr) return fs;
     }
-    // Array handling: T[] → T[]
-    if (s.size() > 2 && s.substr(s.size()-2) == "[]")
-        return typeStr(BcType()) + "[]"; // fallback; ideally recurse
+    // Array handling: T[] -> T[]. The element type is on the BcType, not in
+    // its printed form: recursing on the string and passing a default-
+    // constructed BcType rendered every array as "unit[]", whatever it held.
+    if (t.isArray() && t.ref().elementType) {
+        std::string elem = typeStr(*t.ref().elementType);
+        const int dims = t.ref().arrayDims > 0 ? t.ref().arrayDims : 1;
+        for (int d = 0; d < dims; ++d) elem += "[]";
+        return elem;
+    }
+    if (s.size() > 2 && s.substr(s.size() - 2) == "[]")
+        return FsWriter::safeName(s.substr(0, s.size() - 2)) + "[]";
     // Generic: List<T> → System.Collections.Generic.List<'T> simplified
     return FsWriter::safeName(s);
 }

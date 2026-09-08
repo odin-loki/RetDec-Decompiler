@@ -214,7 +214,12 @@ std::string escapeCsharpString(const std::string& s) {
         case '\v': out << "\\v";  break;
         default:
             if (c < 0x20 || c > 0x7E) {
-                out << "\\x" << std::hex << std::setw(2) << std::setfill('0')
+                // \u, not \x. C# 6.4.4.5 makes \x a variable-length escape of
+                // one to four hex digits, so "\x01" immediately followed by an
+                // 'F' is read by the compiler as the single character \x01F --
+                // three characters silently became one. \uXXXX is fixed at
+                // four digits and cannot absorb what follows it.
+                out << "\\u00" << std::hex << std::setw(2) << std::setfill('0')
                     << static_cast<int>(c);
             } else {
                 out << c;

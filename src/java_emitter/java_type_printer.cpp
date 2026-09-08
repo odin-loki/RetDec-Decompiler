@@ -111,11 +111,23 @@ std::string JavaTypePrinter::printPrim(BcPrimType prim) const {
 
 // Convert slash-separated class name to dot-separated.
 static std::string slashToDot(std::string s) {
+    // The 'L' and the ';' are one thing: JVMS 4.3.2 spells an object type
+    // "L" ClassName ";", so only a name that carries the terminator is a
+    // descriptor whose leading 'L' is syntax. Stripping the 'L' from every
+    // name that happens to start with one turned each default-package class
+    // whose name begins with L into a name one letter short -- List into ist,
+    // Locale into ocale, Loader into oader -- while an internal-form name
+    // ("java/lang/String", which is what ConstPool::className returns) never
+    // needed the strip at all.
+    const bool isDescriptor = s.size() > 2 && s.front() == 'L' && s.back() == ';';
     for (char& c : s) if (c == '/') c = '.';
-    // Strip trailing ';' if present (from JVM descriptors like "Ljava/lang/String;").
-    if (!s.empty() && s.back() == ';') s.pop_back();
-    // Strip leading 'L' if present (from JVM descriptors).
-    if (s.size() > 1 && s[0] == 'L') s = s.substr(1);
+    if (isDescriptor) {
+        s.pop_back();
+        s = s.substr(1);
+    } else if (!s.empty() && s.back() == ';') {
+        // A trailing ';' with no matching 'L' is still not part of the name.
+        s.pop_back();
+    }
     return s;
 }
 

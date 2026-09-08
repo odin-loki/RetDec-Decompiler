@@ -44,29 +44,54 @@ namespace algo_recover {
 
 // ─── AlgorithmResult utilities ────────────────────────────────────────────────
 
+namespace {
+
+/// One table, read in both directions. The function-analysis cache used to
+/// hold its own list of five bare names ("Transform", "Find", ...) while
+/// kindName() wrote "std::transform", "std::find" -- so no kind ever matched
+/// on read-back, every cached algorithm came out Unknown, and a warm decompile
+/// printed "unknown detected" where a cold one printed "std::find_if
+/// detected". Two lists that had to agree, and nothing making them.
+struct KindName { AlgorithmKind kind; const char* name; };
+
+constexpr KindName kKindNames[] = {
+	{AlgorithmKind::Transform,    "std::transform"},
+	{AlgorithmKind::Accumulate,   "std::accumulate"},
+	{AlgorithmKind::MaxElement,   "std::max_element"},
+	{AlgorithmKind::MinElement,   "std::min_element"},
+	{AlgorithmKind::Find,         "std::find"},
+	{AlgorithmKind::FindIf,       "std::find_if"},
+	{AlgorithmKind::BinarySearch, "binary_search"},
+	{AlgorithmKind::Partition,    "std::partition"},
+	{AlgorithmKind::ForEach,      "std::for_each"},
+	{AlgorithmKind::Copy,         "std::copy"},
+	{AlgorithmKind::Fill,         "std::fill"},
+	{AlgorithmKind::Count,        "std::count"},
+	{AlgorithmKind::AnyOf,        "std::any_of"},
+	{AlgorithmKind::AllOf,        "std::all_of"},
+	{AlgorithmKind::NoneOf,       "std::none_of"},
+	{AlgorithmKind::Reverse,      "std::reverse"},
+	{AlgorithmKind::RotateLeft,   "std::rotate"},
+};
+
+} // anonymous namespace
+
 std::string AlgorithmResult::kindName() const noexcept
 {
-	switch (kind)
+	for (const auto& kn : kKindNames)
 	{
-	case AlgorithmKind::Transform: return "std::transform";
-	case AlgorithmKind::Accumulate: return "std::accumulate";
-	case AlgorithmKind::MaxElement: return "std::max_element";
-	case AlgorithmKind::MinElement: return "std::min_element";
-	case AlgorithmKind::Find: return "std::find";
-	case AlgorithmKind::FindIf: return "std::find_if";
-	case AlgorithmKind::BinarySearch: return "binary_search";
-	case AlgorithmKind::Partition: return "std::partition";
-	case AlgorithmKind::ForEach: return "std::for_each";
-	case AlgorithmKind::Copy: return "std::copy";
-	case AlgorithmKind::Fill: return "std::fill";
-	case AlgorithmKind::Count: return "std::count";
-	case AlgorithmKind::AnyOf: return "std::any_of";
-	case AlgorithmKind::AllOf: return "std::all_of";
-	case AlgorithmKind::NoneOf: return "std::none_of";
-	case AlgorithmKind::Reverse: return "std::reverse";
-	case AlgorithmKind::RotateLeft: return "std::rotate";
-	default: return "unknown";
+		if (kn.kind == kind) return kn.name;
 	}
+	return "unknown";
+}
+
+AlgorithmKind algorithmKindFromName(const std::string& name) noexcept
+{
+	for (const auto& kn : kKindNames)
+	{
+		if (name == kn.name) return kn.kind;
+	}
+	return AlgorithmKind::Unknown;
 }
 
 std::string AlgorithmResult::toString() const

@@ -61,8 +61,12 @@ std::unique_ptr<SSAFunction> makeWithAndRsp() {
     auto fn = std::make_unique<SSAFunction>("stackalign_fn");
     fn->addBlock("entry");
 
-    // AND instruction with an immediate -16.
+    // AND RSP, -16. The destination matters: the marker asks whether the
+    // instruction writes the stack pointer, because "AND with a negative
+    // power of two" also describes ordinary rounding.
+    VarId rsp = fn->declareVar("rsp", 64);
     IrInstr* andInstr = fn->addInstr(0, IrInstr::Op::And);
+    andInstr->defVar = rsp;
     IrValue* imm = fn->allocValue(ValueKind::Immediate, kInvalidVar);
     imm->imm = static_cast<uint64_t>(-16);
     andInstr->uses.push_back({imm->id, 0});
@@ -100,6 +104,7 @@ std::unique_ptr<SSAFunction> makeCalleeSaveFn() {
 
     // Epilogue: restore rbx from [RBP-8], then ret.
     IrInstr* restoreInstr = fn->addInstr(2, IrInstr::Op::Load);
+    restoreInstr->defVar = rbx;   // it is rbx that comes back, not just the slot
     IrValue* srcSlot = fn->allocValue(ValueKind::MemRef, kInvalidVar);
     srcSlot->memIsStack = true;
     srcSlot->memOffset  = -8;
@@ -238,8 +243,10 @@ TEST(AbiArtifactMarker, CalleeSavePair_Balanced) {
 TEST(AbiArtifactMarker, PrologueSetup_Detected) {
     auto fn = std::make_unique<SSAFunction>("prolog_fn");
     fn->addBlock("entry");
-    // SUB with immediate (prologue stack setup)
+    // SUB RSP, 32 (prologue stack setup)
+    VarId rsp = fn->declareVar("rsp", 64);
     IrInstr* sub = fn->addInstr(0, IrInstr::Op::Sub);
+    sub->defVar = rsp;
     IrValue* imm = fn->allocValue(ValueKind::Immediate, kInvalidVar);
     imm->imm = 32;
     sub->uses.push_back({imm->id, 0});
@@ -650,4 +657,126 @@ TEST(DeadCodeResult, DefaultConstruct) {
     EXPECT_EQ(r.eliminatedInstrCount, 0u);
     EXPECT_TRUE(r.eliminatedInstrs.empty());
     EXPECT_TRUE(r.liveInstrs.empty());
+}
+
+// ─── An ABI marker has to name the stack pointer ─────────────────────────────
+
+// markPrologueEpilogue's own comment called it a heuristic: "if any use is an
+// Immediate and this is the entry block, it's likely SUB RSP, N". It also
+// describes `eax = ecx - 32`. DeadPropagation refuses to propagate liveness
+// through an artifact, so the misclassified computation and everything only it
+// fed were dropped -- with the return reading its result.
+TEST(AbiArtifactMarker, AnOrdinarySubtractionInTheEntryBlockIsNotAPrologue) {
+    auto fn = std::make_unique<SSAFunction>("compute");
+    fn->addBlock("entry");
+    VarId ecx = fn->declareVar("ecx", 64);
+    VarId eax = fn->declareVar("eax", 64);
+    fn->block(0)->liveIn.insert(ecx);
+    fn->block(0)->liveOut.insert(eax);
+
+    IrValue* src = fn->allocValue(ValueKind::VirtualReg, ecx);
+    IrInstr* sub = fn->addInstr(0, IrInstr::Op::Sub);
+    sub->defVar = eax;
+    sub->uses.push_back({src->id, 0});
+    IrValue* imm = fn->allocValue(ValueKind::Immediate, kInvalidVar);
+    imm->imm = 32;
+    sub->uses.push_back({imm->id, 1});
+    const InstrId subId = sub->id;
+
+    IrInstr* ret = fn->addInstr(0, IrInstr::Op::Ret);
+    SSAPass pass; pass.run(*fn);
+    if (sub->defValue != kInvalidValue) ret->uses.push_back({sub->defValue, 0});
+
+    AbiArtifactMarker marker;
+    for (const auto& a : marker.run(*fn))
+        EXPECT_NE(subId, a.instrId) << "ordinary arithmetic marked as an ABI artifact";
+
+    CallingConvention cc = makeSysVCC();
+    DcePass dce;
+    auto res = dce.run(*fn, cc);
+    EXPECT_EQ(0u, res.eliminatedInstrs.count(subId)) << "the computation was deleted";
+    EXPECT_EQ(1u, res.liveInstrs.count(subId));
+}
+
+// Same question for the alignment marker.
+TEST(AbiArtifactMarker, AnAndWithANegativePowerOfTwoIsNotAlwaysStackAlignment) {
+    auto fn = std::make_unique<SSAFunction>("round_down");
+    fn->addBlock("entry");
+    VarId eax = fn->declareVar("eax", 64);
+    IrInstr* andInstr = fn->addInstr(0, IrInstr::Op::And);
+    andInstr->defVar = eax;             // not the stack pointer
+    IrValue* imm = fn->allocValue(ValueKind::Immediate, kInvalidVar);
+    imm->imm = static_cast<uint64_t>(-16);
+    andInstr->uses.push_back({imm->id, 0});
+    const InstrId andId = andInstr->id;
+    fn->addInstr(0, IrInstr::Op::Ret);
+    SSAPass pass; pass.run(*fn);
+
+    AbiArtifactMarker marker;
+    for (const auto& a : marker.run(*fn))
+        EXPECT_NE(andId, a.instrId) << "an ordinary round-down marked as stack alignment";
+}
+
+// -INT64_MIN is not representable, so the negation was undefined. Built at -O0
+// it gave INT64_MIN back, which passes both the power-of-two test (0x8000...0 &
+// 0x7FFF...F == 0) and, being negative, the magnitude test -- the AND came back
+// marked StackAlign. Built at -O2 the same source marked nothing, because gcc
+// takes the no-signed-overflow assumption and folds the branch away. Whether
+// the instruction survived depended on the optimisation level, which is the
+// reason the range check belongs here and not in the compiler's judgement.
+TEST(AbiArtifactMarker, AndWithInt64MinIsNotStackAlignment) {
+    auto fn = std::make_unique<SSAFunction>("int64min");
+    fn->addBlock("entry");
+    VarId rsp = fn->declareVar("rsp", 64);
+    IrInstr* andInstr = fn->addInstr(0, IrInstr::Op::And);
+    andInstr->defVar = rsp;             // even on the stack pointer
+    IrValue* imm = fn->allocValue(ValueKind::Immediate, kInvalidVar);
+    imm->imm = static_cast<uint64_t>(INT64_MIN);
+    andInstr->uses.push_back({imm->id, 0});
+    const InstrId andId = andInstr->id;
+    fn->addInstr(0, IrInstr::Op::Ret);
+    SSAPass pass; pass.run(*fn);
+
+    AbiArtifactMarker marker;
+    for (const auto& a : marker.run(*fn))
+        EXPECT_NE(andId, a.instrId) << "AND with INT64_MIN taken for a 16-byte alignment";
+}
+
+// A stack slot is reusable. Pairing the callee-save store with whatever else
+// read that offset before the return, and calling the pair balanced, deletes a
+// genuine reload of a different value.
+TEST(AbiArtifactMarker, ARestoreOfADifferentRegisterFromTheSameSlotIsNotThePair) {
+    auto fn = std::make_unique<SSAFunction>("slot_reuse");
+    fn->addBlock("entry");
+    fn->addBlock("epilogue");
+    fn->block(0)->addSucc(1); fn->block(1)->addPred(0);
+
+    VarId rbx = fn->declareVar("rbx", 64);
+    VarId rax = fn->declareVar("rax", 64);
+    IrValue* rbxVal = fn->allocValue(ValueKind::VirtualReg, rbx);
+
+    IrInstr* save = fn->addInstr(0, IrInstr::Op::Store);
+    IrValue* dest = fn->allocValue(ValueKind::MemRef, kInvalidVar);
+    dest->memIsStack = true;
+    dest->memOffset = -8;
+    save->uses.push_back({dest->id, 0});
+    save->uses.push_back({rbxVal->id, 1});
+
+    // The epilogue reads the same slot, but into rax -- not the saved register.
+    IrInstr* reload = fn->addInstr(1, IrInstr::Op::Load);
+    reload->defVar = rax;
+    IrValue* src = fn->allocValue(ValueKind::MemRef, kInvalidVar);
+    src->memIsStack = true;
+    src->memOffset = -8;
+    reload->uses.push_back({src->id, 0});
+    const InstrId reloadId = reload->id;
+    fn->addInstr(1, IrInstr::Op::Ret);
+    SSAPass pass; pass.run(*fn);
+
+    AbiArtifactMarker marker;
+    for (const auto& a : marker.run(*fn)) {
+        if (a.kind != AbiArtifactKind::CalleeSavePair) continue;
+        EXPECT_NE(reloadId, a.pairedId) << "a reload of rax paired with a save of rbx";
+        EXPECT_FALSE(a.balanced) << "unbalanced save reported as balanced";
+    }
 }

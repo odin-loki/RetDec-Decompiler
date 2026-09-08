@@ -83,14 +83,13 @@ std::optional<container_detect::ContainerResult> deserializeContainer(
     r.confidence = obj.HasMember("confidence") && obj["confidence"].IsNumber()
         ? static_cast<float>(obj["confidence"].GetDouble()) : 0.5f;
     if (obj.HasMember("kind") && obj["kind"].IsString()) {
+        // Same drift the algo path had: serializeContainer writes kindName()
+        // ("std::vector"), and this matched six bare names ("Vector") that
+        // kindName() never produces. Eight of the fourteen kinds had no case.
         const std::string k(obj["kind"].GetString(), obj["kind"].GetStringLength());
-        if (k == "Vector") r.kind = container_detect::ContainerKind::Vector;
-        else if (k == "List") r.kind = container_detect::ContainerKind::List;
-        else if (k == "Map") r.kind = container_detect::ContainerKind::Map;
-        else if (k == "UnorderedMap") r.kind = container_detect::ContainerKind::UnorderedMap;
-        else if (k == "String") r.kind = container_detect::ContainerKind::String;
-        else if (k == "SharedPtr") r.kind = container_detect::ContainerKind::SharedPtr;
+        r.kind = container_detect::containerKindFromName(k);
     }
+    if (r.kind == container_detect::ContainerKind::Unknown) return std::nullopt;
     return r;
 }
 
@@ -166,13 +165,19 @@ std::optional<algo_recover::AlgorithmResult> deserializeAlgo(const rapidjson::Va
     r.confidence = obj.HasMember("confidence") && obj["confidence"].IsNumber()
         ? static_cast<float>(obj["confidence"].GetDouble()) : 0.5f;
     if (obj.HasMember("kind") && obj["kind"].IsString()) {
+        // serializeAlgo writes kindName(), which spells these "std::find_if",
+        // "std::transform" and so on. What was here matched five bare names --
+        // "Find", "Transform" -- that kindName() never produces, so no kind
+        // ever survived a round trip: every cached algorithm read back as
+        // Unknown and the emitted comment said "unknown detected" where the
+        // cold run said "std::find_if detected". Twelve of the seventeen kinds
+        // had no case at all. One table, read both ways, cannot drift.
         const std::string k(obj["kind"].GetString(), obj["kind"].GetStringLength());
-        if (k == "Transform") r.kind = algo_recover::AlgorithmKind::Transform;
-        else if (k == "Accumulate") r.kind = algo_recover::AlgorithmKind::Accumulate;
-        else if (k == "Find") r.kind = algo_recover::AlgorithmKind::Find;
-        else if (k == "Partition") r.kind = algo_recover::AlgorithmKind::Partition;
-        else if (k == "ForEach") r.kind = algo_recover::AlgorithmKind::ForEach;
+        r.kind = algo_recover::algorithmKindFromName(k);
     }
+    // A cache entry that cannot name its kind is worse than a miss: it makes
+    // the warm run disagree with the cold one.
+    if (r.kind == algo_recover::AlgorithmKind::Unknown) return std::nullopt;
     return r;
 }
 

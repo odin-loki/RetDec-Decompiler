@@ -136,6 +136,10 @@ enum class AlgorithmKind : uint8_t
 	RotateLeft,   ///< std::rotate
 };
 
+/// The inverse of AlgorithmResult::kindName(): the same table read the other
+/// way. Returns AlgorithmKind::Unknown for a name it does not recognise.
+AlgorithmKind algorithmKindFromName(const std::string& name) noexcept;
+
 /// Binary combiner used by accumulate-family algorithms.
 enum class CombinerKind : uint8_t
 {

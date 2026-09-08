@@ -263,7 +263,9 @@ struct PtsConstraint {
  * SSA values and α is the inverse Ackermann function.
  *
  * Two pointers may-alias iff they are in the same alias class (same
- * union-find root after constraint propagation).
+ * union-find root after constraint propagation) or their classes point at
+ * the same class. Both halves are needed: `p = q` unifies the pointers,
+ * while `p = &o; q = &o` leaves them apart and unifies only their targets.
  *
  * ### OCL dispatch
  *

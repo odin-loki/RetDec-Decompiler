@@ -75,26 +75,49 @@ std::string RecoveredType::toString() const
 
 // ─── ContainerResult utilities ───────────────────────────────────────────────
 
+namespace {
+
+/// One table, read in both directions -- see containerKindFromName(). The
+/// function-analysis cache kept its own list of six bare names ("Vector",
+/// "Map", ...) that kindName() never produces, so a cached container read back
+/// as Unknown.
+struct KindName { ContainerKind kind; const char* name; };
+
+constexpr KindName kKindNames[] = {
+	{ContainerKind::Vector,       "std::vector"},
+	{ContainerKind::List,         "std::list"},
+	{ContainerKind::Deque,        "std::deque"},
+	{ContainerKind::Map,          "std::map"},
+	{ContainerKind::Set,          "std::set"},
+	{ContainerKind::UnorderedMap, "std::unordered_map"},
+	{ContainerKind::UnorderedSet, "std::unordered_set"},
+	{ContainerKind::String,       "std::string"},
+	{ContainerKind::SharedPtr,    "std::shared_ptr"},
+	{ContainerKind::UniquePtr,    "std::unique_ptr"},
+	{ContainerKind::WeakPtr,      "std::weak_ptr"},
+	{ContainerKind::Optional,     "std::optional"},
+	{ContainerKind::Variant,      "std::variant"},
+	{ContainerKind::Array,        "std::array"},
+};
+
+} // anonymous namespace
+
 std::string ContainerResult::kindName() const noexcept
 {
-	switch (kind)
+	for (const auto& kn : kKindNames)
 	{
-	case ContainerKind::Vector: return "std::vector";
-	case ContainerKind::List: return "std::list";
-	case ContainerKind::Deque: return "std::deque";
-	case ContainerKind::Map: return "std::map";
-	case ContainerKind::Set: return "std::set";
-	case ContainerKind::UnorderedMap: return "std::unordered_map";
-	case ContainerKind::UnorderedSet: return "std::unordered_set";
-	case ContainerKind::String: return "std::string";
-	case ContainerKind::SharedPtr: return "std::shared_ptr";
-	case ContainerKind::UniquePtr: return "std::unique_ptr";
-	case ContainerKind::WeakPtr: return "std::weak_ptr";
-	case ContainerKind::Optional: return "std::optional";
-	case ContainerKind::Variant: return "std::variant";
-	case ContainerKind::Array: return "std::array";
-	default: return "unknown";
+		if (kn.kind == kind) return kn.name;
 	}
+	return "unknown";
+}
+
+ContainerKind containerKindFromName(const std::string& name) noexcept
+{
+	for (const auto& kn : kKindNames)
+	{
+		if (name == kn.name) return kn.kind;
+	}
+	return ContainerKind::Unknown;
 }
 
 std::string ContainerResult::toString() const

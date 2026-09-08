@@ -169,9 +169,21 @@ static void joinWithPropagation(
     uint32_t rb = findFn(b);
     if (ra == rb) return;
 
-    // Remember points-to targets before merging
-    auto itA = pointsTo.find(ra);
-    auto itB = pointsTo.find(rb);
+    // Read the two points-to edges by value before the union, and remember
+    // which id each belonged to. Union by rank can swap ra and rb below, and
+    // the iterators do not follow: the old code decided "move rb's edge to ra"
+    // using an iterator that, after a swap, named ra's own edge -- so it
+    // assigned that edge to itself and then erased it, leaving the surviving
+    // root with no points-to edge at all. In the other order the child kept
+    // the only edge, which find() can no longer reach. Either way the merged
+    // class forgot what it pointed at.
+    const auto itA = pointsTo.find(ra);
+    const auto itB = pointsTo.find(rb);
+    const bool aHas = itA != pointsTo.end();
+    const bool bHas = itB != pointsTo.end();
+    const uint32_t aPt = aHas ? itA->second : 0;
+    const uint32_t bPt = bHas ? itB->second : 0;
+    const uint32_t idA = ra;
 
     // Union by rank
     auto ensureSz = [&](uint32_t id) {
@@ -184,16 +196,21 @@ static void joinWithPropagation(
 
     if (escapeSet.count(rb)) escapeSet.insert(ra);
 
-    // If both had points-to edges, enqueue their targets for joining
-    if (itA != pointsTo.end() && itB != pointsTo.end()) {
-        uint32_t ptA = itA->second;
-        uint32_t ptB = itB->second;
-        worklist.push({ptA, ptB});
-    } else if (itB != pointsTo.end()) {
-        // Move rb's points-to edge to ra
-        pointsTo[ra] = itB->second;
-        pointsTo.erase(itB);
+    // ra is the surviving root now, whichever of the two it started as.
+    const bool rootWasA = (ra == idA);
+    const bool rootHas  = rootWasA ? aHas : bHas;
+    const bool childHas = rootWasA ? bHas : aHas;
+    const uint32_t rootPt  = rootWasA ? aPt : bPt;
+    const uint32_t childPt = rootWasA ? bPt : aPt;
+
+    if (rootHas && childHas) {
+        // Two targets for one class: Steensgaard unifies them too.
+        worklist.push({rootPt, childPt});
+    } else if (childHas) {
+        pointsTo[ra] = childPt;
     }
+    // rb is no longer a root, so any edge left on it is unreachable.
+    if (childHas) pointsTo.erase(rb);
 }
 
 void SteensgaardAnalysis::propagate() {
@@ -208,91 +225,95 @@ void SteensgaardAnalysis::propagate() {
                              joinQueue, findFn);
     };
 
-    // Process initial constraints
-    for (auto& c : constraints_) {
-        uint32_t lhs = find(c.lhs);
-        uint32_t rhs = find(c.rhs);
+    // pointsTo_(x), creating the edge if x has none. Steensgaard's rules for
+    // load and store need a target class to unify against; where the analysis
+    // has not yet seen one, the standard construction invents a fresh node.
+    // Using `fallback` as that node is the same thing one step collapsed: it
+    // is the only class the rule is about to unify the target with anyway.
+    auto targetOf = [&](uint32_t x, uint32_t fallback) -> uint32_t {
+        uint32_t rx = find(x);
+        auto it = pointsTo_.find(rx);
+        if (it != pointsTo_.end()) return find(it->second);
+        uint32_t t = find(fallback);
+        pointsTo_[rx] = t;
+        return t;
+    };
 
-        switch (c.kind) {
-        case ConstraintKind::AddrOf:
-            // lhs = &rhs  → pointsTo(lhs) = rhs
-            {
-                auto it = pointsTo_.find(lhs);
-                if (it == pointsTo_.end()) {
-                    pointsTo_[lhs] = rhs;
-                } else {
-                    // Already has a points-to edge; join the targets
-                    join(it->second, rhs);
+    // Steensgaard, POPL'96: each constraint unifies two *classes*, and the
+    // union carries the points-to edges with it. What was here unified only
+    // the targets and never the pointers, so alias() -- which the header
+    // documents as "same union-find root after constraint propagation" --
+    // could not return anything but NoAlias for two distinct ids. Measured
+    // before the change: `p = &o; q = &o` and `q = p` both reported NoAlias,
+    // and classCount() never fell below the number of values added. NoAlias is
+    // the permissive answer, so every consumer was free to reorder and to drop
+    // stores across pointers that genuinely alias.
+    //
+    // The pass runs to a fixpoint because a later constraint can merge classes
+    // an earlier one already read. Unification only ever merges, so the class
+    // count is non-increasing and the loop terminates; the bound is a backstop.
+    const std::size_t maxRounds = constraints_.size() + 2;
+    for (std::size_t round = 0; round < maxRounds; ++round) {
+        const std::size_t before = classCount();
+
+        for (auto& c : constraints_) {
+            uint32_t lhs = find(c.lhs);
+            uint32_t rhs = find(c.rhs);
+
+            switch (c.kind) {
+            case ConstraintKind::AddrOf:
+                // lhs = &rhs  ->  pointsTo(lhs) unified with rhs
+                {
+                    auto it = pointsTo_.find(lhs);
+                    if (it == pointsTo_.end()) {
+                        pointsTo_[lhs] = rhs;
+                    } else {
+                        join(it->second, rhs);
+                    }
                 }
-            }
-            break;
+                break;
 
-        case ConstraintKind::Copy:
-            // lhs = rhs  → pointsTo(lhs) ∪= pointsTo(rhs)
-            {
-                auto itR = pointsTo_.find(rhs);
-                if (itR == pointsTo_.end()) break;
-                auto itL = pointsTo_.find(lhs);
-                if (itL == pointsTo_.end()) {
-                    pointsTo_[lhs] = itR->second;
-                } else {
-                    join(itL->second, itR->second);
+            case ConstraintKind::Copy:
+                // lhs = rhs  ->  the two pointers are one class
+                join(lhs, rhs);
+                break;
+
+            case ConstraintKind::Load:
+                // lhs = *rhs  ->  lhs unified with what rhs points at
+                join(lhs, targetOf(rhs, lhs));
+                break;
+
+            case ConstraintKind::Store:
+                // *lhs = rhs  ->  what lhs points at is unified with rhs
+                join(targetOf(lhs, rhs), rhs);
+                break;
+
+            case ConstraintKind::External:
+                // Mark as may_point_to_anything
+                {
+                    auto itL = pointsTo_.find(lhs);
+                    if (itL != pointsTo_.end())
+                        escapeSet_.insert(find(itL->second));
+                    escapeSet_.insert(lhs);
                 }
+                break;
             }
-            break;
 
-        case ConstraintKind::Load:
-            // lhs = *rhs  → pointsTo(lhs) ∪= pointsTo(pointsTo(rhs))
-            {
-                auto itR = pointsTo_.find(rhs);
-                if (itR == pointsTo_.end()) break;
-                uint32_t ptsR = find(itR->second);
-                auto itPR = pointsTo_.find(ptsR);
-                if (itPR == pointsTo_.end()) break;
-                auto itL = pointsTo_.find(lhs);
-                if (itL == pointsTo_.end()) {
-                    pointsTo_[lhs] = itPR->second;
-                } else {
-                    join(itL->second, itPR->second);
-                }
+            // Drain the join worklist (recursive unification of targets)
+            while (!joinQueue.empty()) {
+                auto [ja, jb] = joinQueue.front();
+                joinQueue.pop();
+                join(ja, jb);
             }
-            break;
-
-        case ConstraintKind::Store:
-            // *lhs = rhs  → pointsTo(pointsTo(lhs)) ∪= pointsTo(rhs)
-            {
-                auto itL = pointsTo_.find(lhs);
-                if (itL == pointsTo_.end()) break;
-                uint32_t ptsL = find(itL->second);
-                auto itR = pointsTo_.find(rhs);
-                if (itR == pointsTo_.end()) break;
-                auto itPL = pointsTo_.find(ptsL);
-                if (itPL == pointsTo_.end()) {
-                    pointsTo_[ptsL] = itR->second;
-                } else {
-                    join(itPL->second, itR->second);
-                }
-            }
-            break;
-
-        case ConstraintKind::External:
-            // Mark as may_point_to_anything
-            {
-                auto itL = pointsTo_.find(lhs);
-                if (itL != pointsTo_.end())
-                    escapeSet_.insert(find(itL->second));
-                escapeSet_.insert(lhs);
-            }
-            break;
         }
+
+        if (classCount() == before) break;
     }
 
-    // Drain the join worklist (recursive unification)
-    while (!joinQueue.empty()) {
-        auto [a, b] = joinQueue.front();
-        joinQueue.pop();
-        join(a, b);
-    }
+    // Escape is a property of the class, so re-seat it on the surviving roots.
+    std::unordered_set<uint32_t> escaped;
+    for (uint32_t e : escapeSet_) escaped.insert(find(e));
+    escapeSet_ = std::move(escaped);
 }
 
 // ─── Main run ─────────────────────────────────────────────────────────────────
@@ -320,7 +341,18 @@ AliasResult SteensgaardAnalysis::alias(uint32_t idA, uint32_t idB) const {
     // enough to guarantee MustAlias unless idA == idB)
     if (rA == rB) return AliasResult::MayAlias;
 
-    // Different classes → NoAlias (under Steensgaard's model)
+    // Two pointers also alias when they point at the same class, which is not
+    // the same question as being in the same class: `p = &o; q = &o` unifies
+    // pointsTo(p) and pointsTo(q) with o and leaves p and q apart. Asking only
+    // whether the pointers were unified reported NoAlias for exactly that
+    // case -- the textbook one.
+    const auto itA = pointsTo_.find(rA);
+    const auto itB = pointsTo_.find(rB);
+    if (itA != pointsTo_.end() && itB != pointsTo_.end()
+            && find(itA->second) == find(itB->second))
+        return AliasResult::MayAlias;
+
+    // Different classes pointing at different classes → NoAlias.
     return AliasResult::NoAlias;
 }
 
