@@ -102,7 +102,15 @@ static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
 	return n;
 }
 
-static bool hasImmediate(const ssa::SSAFunction& fn, uint64_t val)
+// One walk of the function per query, not one per constant. See the note on the
+// copy of this helper in aes_detect.cpp. The per-constant hasImmediate() this
+// file also carried walked every block, every instruction and every use before
+// it could answer "no", so a function holding none of these constants -- nearly
+// every function in a binary -- was walked once per constant in the set.
+// Testing each Immediate against the set gives exactly the same answer in one
+// walk, and left hasImmediate() with no caller here, which is why it is gone:
+// the fast gate's warning baseline reported it as -Wunused-function.
+static bool hasAnyImmediate(const ssa::SSAFunction& fn, const std::set<uint64_t>& vals)
 {
 	for (uint32_t b = 0; b < fn.blockCount(); ++b)
 	{
@@ -114,17 +122,10 @@ static bool hasImmediate(const ssa::SSAFunction& fn, uint64_t val)
 			for (const auto& u: i->uses)
 			{
 				const auto* v = fn.value(u.valueId);
-				if (v && v->kind == ssa::ValueKind::Immediate && v->imm == val) return true;
+				if (v && v->kind == ssa::ValueKind::Immediate && vals.count(v->imm)) return true;
 			}
 		}
 	}
-	return false;
-}
-
-static bool hasAnyImmediate(const ssa::SSAFunction& fn, const std::set<uint64_t>& vals)
-{
-	for (uint64_t v: vals)
-		if (hasImmediate(fn, v)) return true;
 	return false;
 }
 

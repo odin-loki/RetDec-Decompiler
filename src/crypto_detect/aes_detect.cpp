@@ -161,10 +161,30 @@ static bool hasImmediate(const ssa::SSAFunction& fn, uint64_t val)
 	return false;
 }
 
+// One walk of the function per query, not one per constant. The old body called
+// hasImmediate() once for every element of `vals`, and hasImmediate() walks
+// every block, every instruction and every use before it can answer "no" -- so
+// a function containing none of these constants, which is nearly every function
+// in a binary, was walked once per constant in the set. Testing each Immediate
+// against the set instead costs one O(log n) lookup per use and gives exactly
+// the same answer: true iff some Immediate operand of the function is a member
+// of `vals`.
 static bool hasAnyImmediate(const ssa::SSAFunction& fn, const std::set<uint64_t>& vals)
 {
-	for (uint64_t v: vals)
-		if (hasImmediate(fn, v)) return true;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i) continue;
+			for (const auto& u: i->uses)
+			{
+				const auto* v = fn.value(u.valueId);
+				if (v && v->kind == ssa::ValueKind::Immediate && vals.count(v->imm)) return true;
+			}
+		}
+	}
 	return false;
 }
 
