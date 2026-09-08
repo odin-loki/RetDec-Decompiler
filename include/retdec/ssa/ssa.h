@@ -95,42 +95,45 @@ class SSAFunction;
 
 // ─── Value identifiers ───────────────────────────────────────────────────────
 
-using VarId   = uint32_t;  ///< Logical variable / virtual register ID
-using BlockId = uint32_t;  ///< Basic block ID within a function
-using InstrId = uint32_t;  ///< Instruction ID (monotone, used for ordering)
-using ValueId = uint32_t;  ///< Unique SSA value ID (assigned during renaming)
+using VarId = uint32_t;   ///< Logical variable / virtual register ID
+using BlockId = uint32_t; ///< Basic block ID within a function
+using InstrId = uint32_t; ///< Instruction ID (monotone, used for ordering)
+using ValueId = uint32_t; ///< Unique SSA value ID (assigned during renaming)
 
-static constexpr VarId   kInvalidVar   = UINT32_MAX;
+static constexpr VarId kInvalidVar = UINT32_MAX;
 static constexpr BlockId kInvalidBlock = UINT32_MAX;
 static constexpr ValueId kInvalidValue = UINT32_MAX;
 
 // ─── Flag bits ───────────────────────────────────────────────────────────────
 
 /// The six x86/x86-64 EFLAGS bits tracked by this SSA representation.
-enum class FlagBit : uint8_t {
-    CF = 0,  ///< Carry flag
-    ZF = 1,  ///< Zero flag
-    SF = 2,  ///< Sign flag
-    OF = 3,  ///< Overflow flag
-    PF = 4,  ///< Parity flag
-    AF = 5,  ///< Auxiliary carry flag
-    Count = 6
+enum class FlagBit : uint8_t
+{
+	CF = 0, ///< Carry flag
+	ZF = 1, ///< Zero flag
+	SF = 2, ///< Sign flag
+	OF = 3, ///< Overflow flag
+	PF = 4, ///< Parity flag
+	AF = 5, ///< Auxiliary carry flag
+	Count = 6
 };
 
-inline const char* flagBitName(FlagBit f) noexcept {
-    static const char* n[] = { "CF","ZF","SF","OF","PF","AF" };
-    return n[static_cast<int>(f)];
+inline const char* flagBitName(FlagBit f) noexcept
+{
+	static const char* n[] = {"CF", "ZF", "SF", "OF", "PF", "AF"};
+	return n[static_cast<int>(f)];
 }
 
 // ─── Value kind ──────────────────────────────────────────────────────────────
 
-enum class ValueKind : uint8_t {
-    VirtualReg,  ///< Logical / architecture-independent register
-    Immediate,   ///< Integer or float constant
-    FlagBundle,  ///< x86 EFLAGS bundle (all 6 flags as one SSA value)
-    MemRef,      ///< Deferred stack/heap memory reference
-    Undef,       ///< Undefined (uninitialised, dead flag, etc.)
-    Phi,         ///< Phi function
+enum class ValueKind : uint8_t
+{
+	VirtualReg, ///< Logical / architecture-independent register
+	Immediate,  ///< Integer or float constant
+	FlagBundle, ///< x86 EFLAGS bundle (all 6 flags as one SSA value)
+	MemRef,     ///< Deferred stack/heap memory reference
+	Undef,      ///< Undefined (uninitialised, dead flag, etc.)
+	Phi,        ///< Phi function
 };
 
 // ─── IrValue ─────────────────────────────────────────────────────────────────
@@ -139,30 +142,31 @@ enum class ValueKind : uint8_t {
  * One SSA value.  After SSA construction, each IrValue has exactly one
  * definition site (a defining IrInstr or a PhiNode).
  */
-struct IrValue {
-    ValueId   id      = kInvalidValue;
-    ValueKind kind    = ValueKind::Undef;
-    VarId     varId   = kInvalidVar;   ///< Original pre-SSA variable
-    uint32_t  version = 0;             ///< SSA version number (v0, v1, …)
-    uint8_t   width   = 64;            ///< Bit width (8/16/32/64/128)
+struct IrValue
+{
+	ValueId id = kInvalidValue;
+	ValueKind kind = ValueKind::Undef;
+	VarId varId = kInvalidVar; ///< Original pre-SSA variable
+	uint32_t version = 0;      ///< SSA version number (v0, v1, …)
+	uint8_t width = 64;        ///< Bit width (8/16/32/64/128)
 
-    // For Immediate
-    uint64_t  imm = 0;
+	// For Immediate
+	uint64_t imm = 0;
 
-    // For MemRef
-    VarId     memBaseReg = kInvalidVar;
-    int64_t   memOffset  = 0;
-    uint8_t   memWidth   = 0;  ///< access size in bytes
-    bool      memIsStack = true;
+	// For MemRef
+	VarId memBaseReg = kInvalidVar;
+	int64_t memOffset = 0;
+	uint8_t memWidth = 0; ///< access size in bytes
+	bool memIsStack = true;
 
-    // For FlagBundle: which flags are defined by the producing instruction
-    uint8_t   definedFlags = 0;  ///< bitmask of FlagBit
+	// For FlagBundle: which flags are defined by the producing instruction
+	uint8_t definedFlags = 0; ///< bitmask of FlagBit
 
-    // Defining instruction (nullptr for phi or entry-block params)
-    IrInstr* defInstr = nullptr;
-    PhiNode* defPhi   = nullptr;
+	// Defining instruction (nullptr for phi or entry-block params)
+	IrInstr* defInstr = nullptr;
+	PhiNode* defPhi = nullptr;
 
-    std::string debugName() const;
+	std::string debugName() const;
 };
 
 // ─── Phi node ────────────────────────────────────────────────────────────────
@@ -175,26 +179,30 @@ struct IrValue {
  * After liveness-pruned placement and renaming, every phi has exactly one
  * incoming operand per predecessor block.
  */
-struct PhiNode {
-    ValueId          result  = kInvalidValue;  ///< The SSA value produced
-    VarId            varId   = kInvalidVar;    ///< The variable being merged
-    BlockId          block   = kInvalidBlock;  ///< Block containing this phi
-    std::vector<std::pair<BlockId, ValueId>> operands; ///< (pred, incoming_val)
+struct PhiNode
+{
+	ValueId result = kInvalidValue;                    ///< The SSA value produced
+	VarId varId = kInvalidVar;                         ///< The variable being merged
+	BlockId block = kInvalidBlock;                     ///< Block containing this phi
+	std::vector<std::pair<BlockId, ValueId>> operands; ///< (pred, incoming_val)
 
-    bool isComplete() const {
-        // True once all predecessor operands have been filled
-        return !operands.empty();
-    }
-    void addOperand(BlockId pred, ValueId val) {
-        operands.push_back({pred, val});
-    }
+	bool isComplete() const
+	{
+		// True once all predecessor operands have been filled
+		return !operands.empty();
+	}
+	void addOperand(BlockId pred, ValueId val)
+	{
+		operands.push_back({pred, val});
+	}
 };
 
 // ─── Instruction operand reference ───────────────────────────────────────────
 
-struct Use {
-    ValueId valueId = kInvalidValue;  ///< The SSA value being used
-    uint8_t operandIndex = 0;
+struct Use
+{
+	ValueId valueId = kInvalidValue; ///< The SSA value being used
+	uint8_t operandIndex = 0;
 };
 
 // ─── IR instruction ──────────────────────────────────────────────────────────
@@ -205,48 +213,67 @@ struct Use {
  * Before SSA: uses/defs reference VarId (pre-SSA variable IDs).
  * After SSA:  uses/defs reference ValueId (versioned SSA values).
  */
-struct IrInstr {
-    InstrId   id      = 0;
-    uint64_t  vma     = 0;    ///< Original instruction address
-    BlockId   block   = kInvalidBlock;
+struct IrInstr
+{
+	InstrId id = 0;
+	uint64_t vma = 0; ///< Original instruction address
+	BlockId block = kInvalidBlock;
 
-    // Architecture-neutral opcode category (for flag-writing detection)
-    enum class Op : uint8_t {
-        Assign, Add, Sub, Mul, Div, And, Or, Xor, Not, Neg,
-        Shl, Shr, Sar, Ror, Rol,
-        Load, Store,
-        Call, Ret, Branch, CondBranch,
-        Compare,   ///< CMP / TEST — writes all flags
-        FlagWrite, ///< Any instruction that produces flags
-        FlagRead,  ///< SETcc, CMOVcc, Jcc — consumes specific flags
-        Phi,       ///< Placeholder (actual phi is in PhiNode list)
-        Rem,       ///< SRem / URem / FRem — not Div (ring wrap)
-        Lock,      ///< AtomicRMW / CmpXchg / fence / lock prefix
-        Undef,
-    } op = Op::Undef;
+	// Architecture-neutral opcode category (for flag-writing detection)
+	enum class Op : uint8_t
+	{
+		Assign,
+		Add,
+		Sub,
+		Mul,
+		Div,
+		And,
+		Or,
+		Xor,
+		Not,
+		Neg,
+		Shl,
+		Shr,
+		Sar,
+		Ror,
+		Rol,
+		Load,
+		Store,
+		Call,
+		Ret,
+		Branch,
+		CondBranch,
+		Compare,   ///< CMP / TEST — writes all flags
+		FlagWrite, ///< Any instruction that produces flags
+		FlagRead,  ///< SETcc, CMOVcc, Jcc — consumes specific flags
+		Phi,       ///< Placeholder (actual phi is in PhiNode list)
+		Rem,       ///< SRem / URem / FRem — not Div (ring wrap)
+		Lock,      ///< AtomicRMW / CmpXchg / fence / lock prefix
+		Undef,
+	} op = Op::Undef;
 
-    // Pre-SSA (before renaming): variable IDs
-    VarId  defVar = kInvalidVar;
+	// Pre-SSA (before renaming): variable IDs
+	VarId defVar = kInvalidVar;
 
-    // Post-SSA (after renaming): SSA value IDs
-    ValueId defValue = kInvalidValue;
-    std::vector<Use> uses;
+	// Post-SSA (after renaming): SSA value IDs
+	ValueId defValue = kInvalidValue;
+	std::vector<Use> uses;
 
-    // For flag-producing instructions
-    bool        writesFlagBundle = false;
-    uint8_t     flagMask         = 0;   ///< which FlagBits are defined
-    ValueId     flagBundleValue  = kInvalidValue;
+	// For flag-producing instructions
+	bool writesFlagBundle = false;
+	uint8_t flagMask = 0; ///< which FlagBits are defined
+	ValueId flagBundleValue = kInvalidValue;
 
-    // For flag-consuming instructions
-    bool        readsFlagBundle  = false;
-    uint8_t     readFlagMask     = 0;
-    ValueId     flagBundleInput  = kInvalidValue;
-    FlagBit     specificFlag     = FlagBit::ZF;  ///< which flag this Jcc reads
+	// For flag-consuming instructions
+	bool readsFlagBundle = false;
+	uint8_t readFlagMask = 0;
+	ValueId flagBundleInput = kInvalidValue;
+	FlagBit specificFlag = FlagBit::ZF; ///< which flag this Jcc reads
 
-    // For Call instructions: resolved callee name (empty = indirect/unknown)
-    std::string calleeName;
+	// For Call instructions: resolved callee name (empty = indirect/unknown)
+	std::string calleeName;
 
-    std::string debugStr() const;
+	std::string debugStr() const;
 };
 
 // ─── Basic block ─────────────────────────────────────────────────────────────
@@ -255,36 +282,46 @@ struct IrInstr {
  * A basic block in the control-flow graph.
  * Successor/predecessor edges are stored explicitly.
  */
-struct BasicBlock {
-    BlockId   id    = kInvalidBlock;
-    std::string name;
+struct BasicBlock
+{
+	BlockId id = kInvalidBlock;
+	std::string name;
 
-    std::vector<IrInstr*>  instrs;      ///< instructions in order
-    std::vector<PhiNode*>  phis;        ///< phi functions at block head
-    std::vector<BlockId>   succs;
-    std::vector<BlockId>   preds;
+	std::vector<IrInstr*> instrs; ///< instructions in order
+	std::vector<PhiNode*> phis;   ///< phi functions at block head
+	std::vector<BlockId> succs;
+	std::vector<BlockId> preds;
 
-    // Liveness analysis results
-    std::unordered_set<VarId> gen;       ///< upward-exposed uses (GEN)
-    std::unordered_set<VarId> kill;      ///< definitions (KILL)
-    std::unordered_set<VarId> liveIn;
-    std::unordered_set<VarId> liveOut;
+	// Liveness analysis results
+	std::unordered_set<VarId> gen;  ///< upward-exposed uses (GEN)
+	std::unordered_set<VarId> kill; ///< definitions (KILL)
+	std::unordered_set<VarId> liveIn;
+	std::unordered_set<VarId> liveOut;
 
-    // Dominator tree
-    BlockId idom = kInvalidBlock;        ///< immediate dominator
-    std::vector<BlockId> domChildren;
-    std::vector<BlockId> domFrontier;    ///< dominance frontier set
+	// Dominator tree
+	BlockId idom = kInvalidBlock; ///< immediate dominator
+	std::vector<BlockId> domChildren;
+	std::vector<BlockId> domFrontier; ///< dominance frontier set
 
-    // DFS timestamps (for Lengauer-Tarjan)
-    uint32_t rpo   = 0;   ///< reverse post-order number
-    uint32_t semi  = 0;
-    uint32_t label = 0;
-    uint32_t ancestor = kInvalidBlock;
+	// DFS timestamps (for Lengauer-Tarjan)
+	uint32_t rpo = 0; ///< reverse post-order number
+	uint32_t semi = 0;
+	uint32_t label = 0;
+	uint32_t ancestor = kInvalidBlock;
 
-    bool isEntry() const { return preds.empty(); }
+	bool isEntry() const
+	{
+		return preds.empty();
+	}
 
-    void addSucc(BlockId s) { succs.push_back(s); }
-    void addPred(BlockId p) { preds.push_back(p); }
+	void addSucc(BlockId s)
+	{
+		succs.push_back(s);
+	}
+	void addPred(BlockId p)
+	{
+		preds.push_back(p);
+	}
 };
 
 // ─── SSA function ─────────────────────────────────────────────────────────────
@@ -295,52 +332,79 @@ struct BasicBlock {
  */
 class SSAFunction {
 public:
-    explicit SSAFunction(std::string name) : name_(std::move(name)) {}
-    ~SSAFunction();
+	explicit SSAFunction(std::string name): name_(std::move(name)) {}
+	~SSAFunction();
 
-    const std::string& name() const { return name_; }
+	const std::string& name() const
+	{
+		return name_;
+	}
 
-    // Block management
-    BasicBlock* addBlock(std::string name = "");
-    BasicBlock* block(BlockId id);
-    const BasicBlock* block(BlockId id) const;
-    const std::vector<std::unique_ptr<BasicBlock>>& blocks() const { return blocks_; }
-    BlockId entryId() const { return 0; }
+	// Block management
+	BasicBlock* addBlock(std::string name = "");
+	BasicBlock* block(BlockId id);
+	const BasicBlock* block(BlockId id) const;
+	const std::vector<std::unique_ptr<BasicBlock>>& blocks() const
+	{
+		return blocks_;
+	}
+	BlockId entryId() const
+	{
+		return 0;
+	}
 
-    // Instruction management
-    IrInstr* addInstr(BlockId blk, IrInstr::Op op, uint64_t vma = 0);
-    IrInstr*       instr(InstrId id);
-    const IrInstr* instr(InstrId id) const;
+	// Instruction management
+	IrInstr* addInstr(BlockId blk, IrInstr::Op op, uint64_t vma = 0);
+	IrInstr* instr(InstrId id);
+	const IrInstr* instr(InstrId id) const;
 
-    // Value management
-    IrValue* allocValue(ValueKind kind, VarId varId = kInvalidVar);
-    IrValue* value(ValueId id);
-    const IrValue* value(ValueId id) const;
-    const std::vector<std::unique_ptr<IrValue>>& values() const { return values_; }
+	// Value management
+	IrValue* allocValue(ValueKind kind, VarId varId = kInvalidVar);
+	IrValue* value(ValueId id);
+	const IrValue* value(ValueId id) const;
+	const std::vector<std::unique_ptr<IrValue>>& values() const
+	{
+		return values_;
+	}
 
-    // Phi management
-    PhiNode* addPhi(BlockId blk, VarId var);
-    const std::vector<std::unique_ptr<PhiNode>>& phis() const { return phis_; }
+	// Phi management
+	PhiNode* addPhi(BlockId blk, VarId var);
+	const std::vector<std::unique_ptr<PhiNode>>& phis() const
+	{
+		return phis_;
+	}
 
-    // Variable registry
-    VarId    declareVar(std::string name, uint8_t width = 64);
-    const std::string& varName(VarId id) const;
-    uint32_t varCount() const { return (uint32_t)varNames_.size(); }
-    /// Find VarId by name; returns kInvalidVar if not found.
-    VarId    findVar(const std::string& name) const;
+	// Variable registry
+	VarId declareVar(std::string name, uint8_t width = 64);
+	const std::string& varName(VarId id) const;
+	uint32_t varCount() const
+	{
+		return (uint32_t)varNames_.size();
+	}
+	/// Find VarId by name; returns kInvalidVar if not found.
+	VarId findVar(const std::string& name) const;
 
-    // Statistics
-    std::size_t phiCount() const { return phis_.size(); }
-    std::size_t instrCount() const { return instrs_.size(); }
-    std::size_t blockCount() const { return blocks_.size(); }
+	// Statistics
+	std::size_t phiCount() const
+	{
+		return phis_.size();
+	}
+	std::size_t instrCount() const
+	{
+		return instrs_.size();
+	}
+	std::size_t blockCount() const
+	{
+		return blocks_.size();
+	}
 
 private:
-    std::string name_;
-    std::vector<std::unique_ptr<BasicBlock>> blocks_;
-    std::vector<std::unique_ptr<IrInstr>>    instrs_;
-    std::vector<std::unique_ptr<IrValue>>    values_;
-    std::vector<std::unique_ptr<PhiNode>>    phis_;
-    std::vector<std::string>                 varNames_;
+	std::string name_;
+	std::vector<std::unique_ptr<BasicBlock>> blocks_;
+	std::vector<std::unique_ptr<IrInstr>> instrs_;
+	std::vector<std::unique_ptr<IrValue>> values_;
+	std::vector<std::unique_ptr<PhiNode>> phis_;
+	std::vector<std::string> varNames_;
 };
 
 // ─── SSA module ──────────────────────────────────────────────────────────────
@@ -348,14 +412,19 @@ private:
 /**
  * A collection of SSA functions representing an entire binary module.
  */
-struct SSAModule {
-    std::vector<std::unique_ptr<SSAFunction>> functions;
+struct SSAModule
+{
+	std::vector<std::unique_ptr<SSAFunction>> functions;
 
-    SSAFunction* addFunction(std::string name) {
-        functions.push_back(std::make_unique<SSAFunction>(std::move(name)));
-        return functions.back().get();
-    }
-    std::size_t functionCount() const { return functions.size(); }
+	SSAFunction* addFunction(std::string name)
+	{
+		functions.push_back(std::make_unique<SSAFunction>(std::move(name)));
+		return functions.back().get();
+	}
+	std::size_t functionCount() const
+	{
+		return functions.size();
+	}
 };
 
 // ─── Liveness analysis ───────────────────────────────────────────────────────
@@ -370,18 +439,21 @@ struct SSAModule {
  */
 class LivenessAnalysis {
 public:
-    /// Run liveness over `fn`.  Fills live_in/live_out on every BasicBlock.
-    void run(SSAFunction& fn);
+	/// Run liveness over `fn`.  Fills live_in/live_out on every BasicBlock.
+	void run(SSAFunction& fn);
 
-    /// Returns true if `var` is live at the entry of block `blk`.
-    bool isLiveIn(const SSAFunction& fn, BlockId blk, VarId var) const;
+	/// Returns true if `var` is live at the entry of block `blk`.
+	bool isLiveIn(const SSAFunction& fn, BlockId blk, VarId var) const;
 
-    /// Number of iterations until convergence in the last run().
-    unsigned iterations() const { return iterations_; }
+	/// Number of iterations until convergence in the last run().
+	unsigned iterations() const
+	{
+		return iterations_;
+	}
 
 private:
-    unsigned iterations_ = 0;
-    void computeGenKill(SSAFunction& fn);
+	unsigned iterations_ = 0;
+	void computeGenKill(SSAFunction& fn);
 };
 
 // ─── Dominator tree (Lengauer-Tarjan) ────────────────────────────────────────
@@ -397,28 +469,28 @@ private:
  */
 class DominatorTree {
 public:
-    void run(SSAFunction& fn);
+	void run(SSAFunction& fn);
 
-    /// True if block `a` dominates block `b`.
-    bool dominates(const SSAFunction& fn, BlockId a, BlockId b) const;
+	/// True if block `a` dominates block `b`.
+	bool dominates(const SSAFunction& fn, BlockId a, BlockId b) const;
 
-    /// True if block `a` strictly dominates block `b` (a ≠ b).
-    bool strictlyDominates(const SSAFunction& fn, BlockId a, BlockId b) const;
+	/// True if block `a` strictly dominates block `b` (a ≠ b).
+	bool strictlyDominates(const SSAFunction& fn, BlockId a, BlockId b) const;
 
 private:
-    void computeDFS(SSAFunction& fn);
-    void computeIDom(SSAFunction& fn);
-    void computeDomFrontiers(SSAFunction& fn);
-    void link(SSAFunction& fn, BlockId v, BlockId w);
-    BlockId eval(SSAFunction& fn, BlockId v);
-    void compress(SSAFunction& fn, BlockId v);
+	void computeDFS(SSAFunction& fn);
+	void computeIDom(SSAFunction& fn);
+	void computeDomFrontiers(SSAFunction& fn);
+	void link(SSAFunction& fn, BlockId v, BlockId w);
+	BlockId eval(SSAFunction& fn, BlockId v);
+	void compress(SSAFunction& fn, BlockId v);
 
-    std::vector<BlockId> vertex_;   ///< DFS order → block ID
-    std::vector<BlockId> parent_;   ///< DFS parent
-    std::vector<BlockId> ancestor_; ///< for LT path compression
-    std::vector<BlockId> labelArr_; ///< LT label array
-    std::vector<BlockId> semi_;     ///< semi-dominator number
-    std::vector<std::vector<BlockId>> bucket_;
+	std::vector<BlockId> vertex_;   ///< DFS order → block ID
+	std::vector<BlockId> parent_;   ///< DFS parent
+	std::vector<BlockId> ancestor_; ///< for LT path compression
+	std::vector<BlockId> labelArr_; ///< LT label array
+	std::vector<BlockId> semi_;     ///< semi-dominator number
+	std::vector<std::vector<BlockId>> bucket_;
 };
 
 // ─── Liveness-pruned phi placement ───────────────────────────────────────────
@@ -432,17 +504,20 @@ private:
  */
 class PhiPlacement {
 public:
-    /**
-     * Run phi placement on `fn`.
-     * Requires liveness (live_in filled) and domFrontier filled.
-     */
-    void run(SSAFunction& fn, const LivenessAnalysis& liveness);
+	/**
+	 * Run phi placement on `fn`.
+	 * Requires liveness (live_in filled) and domFrontier filled.
+	 */
+	void run(SSAFunction& fn, const LivenessAnalysis& liveness);
 
-    /// Number of phi nodes placed in the last run().
-    std::size_t placedCount() const { return placed_; }
+	/// Number of phi nodes placed in the last run().
+	std::size_t placedCount() const
+	{
+		return placed_;
+	}
 
 private:
-    std::size_t placed_ = 0;
+	std::size_t placed_ = 0;
 };
 
 // ─── SSA renaming ─────────────────────────────────────────────────────────────
@@ -463,17 +538,16 @@ private:
  */
 class SSARename {
 public:
-    void run(SSAFunction& fn);
+	void run(SSAFunction& fn);
 
 private:
-    using DefStacks = std::unordered_map<VarId, std::vector<ValueId>>;
+	using DefStacks = std::unordered_map<VarId, std::vector<ValueId>>;
 
-    void renameBlock(SSAFunction& fn, BlockId blk, DefStacks& stacks);
-    void fillPhiOperands(SSAFunction& fn, BlockId blk, DefStacks& stacks);
-    ValueId currentDef(const DefStacks& stacks, VarId var) const;
-    void pushDef(DefStacks& stacks, VarId var, ValueId val);
-    void popDefs(DefStacks& stacks,
-                  const std::vector<std::pair<VarId,ValueId>>& pushed);
+	void renameBlock(SSAFunction& fn, BlockId blk, DefStacks& stacks);
+	void fillPhiOperands(SSAFunction& fn, BlockId blk, DefStacks& stacks);
+	ValueId currentDef(const DefStacks& stacks, VarId var) const;
+	void pushDef(DefStacks& stacks, VarId var, ValueId val);
+	void popDefs(DefStacks& stacks, const std::vector<std::pair<VarId, ValueId>>& pushed);
 };
 
 // ─── FlagBundle analysis ─────────────────────────────────────────────────────
@@ -488,21 +562,25 @@ private:
  */
 class FlagBundleAnalysis {
 public:
-    struct BundleInfo {
-        ValueId  bundleId     = kInvalidValue;
-        BlockId  defBlock     = kInvalidBlock;
-        bool     sameBlockOnly= false;   ///< all uses in the same block
-        uint8_t  usedFlags    = 0;       ///< which FlagBits are actually used
-        std::vector<std::pair<BlockId, InstrId>> useSites;
-    };
+	struct BundleInfo
+	{
+		ValueId bundleId = kInvalidValue;
+		BlockId defBlock = kInvalidBlock;
+		bool sameBlockOnly = false; ///< all uses in the same block
+		uint8_t usedFlags = 0;      ///< which FlagBits are actually used
+		std::vector<std::pair<BlockId, InstrId>> useSites;
+	};
 
-    void run(const SSAFunction& fn);
+	void run(const SSAFunction& fn);
 
-    const std::vector<BundleInfo>& bundles() const { return bundles_; }
-    std::size_t sameBlockBundleCount() const;
+	const std::vector<BundleInfo>& bundles() const
+	{
+		return bundles_;
+	}
+	std::size_t sameBlockBundleCount() const;
 
 private:
-    std::vector<BundleInfo> bundles_;
+	std::vector<BundleInfo> bundles_;
 };
 
 // ─── SSA verification ────────────────────────────────────────────────────────
@@ -515,18 +593,23 @@ private:
  */
 class SSAVerifier {
 public:
-    struct Error {
-        enum class Kind { UseDominance, PhiPredMismatch, MultipleDefinition };
-        Kind        kind;
-        BlockId     block;
-        InstrId     instr;
-        ValueId     value;
-        std::string message;
-    };
+	struct Error
+	{
+		enum class Kind
+		{
+			UseDominance,
+			PhiPredMismatch,
+			MultipleDefinition
+		};
+		Kind kind;
+		BlockId block;
+		InstrId instr;
+		ValueId value;
+		std::string message;
+	};
 
-    /// Run verification on `fn`.  Returns list of errors (empty = correct).
-    std::vector<Error> verify(const SSAFunction& fn,
-                               const DominatorTree& dom) const;
+	/// Run verification on `fn`.  Returns list of errors (empty = correct).
+	std::vector<Error> verify(const SSAFunction& fn, const DominatorTree& dom) const;
 };
 
 // ─── Main SSA pass ────────────────────────────────────────────────────────────
@@ -553,22 +636,29 @@ void buildSsaBraun(SSAFunction& fn);
 
 class SSAPass {
 public:
-    struct Stats {
-        unsigned livenessIterations  = 0;
-        std::size_t phisPlaced       = 0;
-        std::size_t phisCytron       = 0;  ///< hypothetical Cytron count
-        std::size_t flagBundles      = 0;
-        std::size_t sameBlockBundles = 0;
-        std::size_t memRefs          = 0;
-    };
+	struct Stats
+	{
+		unsigned livenessIterations = 0;
+		std::size_t phisPlaced = 0;
+		std::size_t phisCytron = 0; ///< hypothetical Cytron count
+		std::size_t flagBundles = 0;
+		std::size_t sameBlockBundles = 0;
+		std::size_t memRefs = 0;
+	};
 
-    void run(SSAFunction& fn);
-    const Stats& stats() const { return stats_; }
-    const std::vector<SSAVerifier::Error>& errors() const { return errors_; }
+	void run(SSAFunction& fn);
+	const Stats& stats() const
+	{
+		return stats_;
+	}
+	const std::vector<SSAVerifier::Error>& errors() const
+	{
+		return errors_;
+	}
 
 private:
-    Stats stats_;
-    std::vector<SSAVerifier::Error> errors_;
+	Stats stats_;
+	std::vector<SSAVerifier::Error> errors_;
 };
 
 } // namespace ssa
