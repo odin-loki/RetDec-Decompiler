@@ -17,11 +17,13 @@
 #include "retdec/dex_parser/dex_lifter.h"
 #include "retdec/bc_module/bc_instr.h"
 #include "retdec/utils/bounds.h"
+#include "retdec/utils/branch_target.h"
 #include "retdec/utils/byte_order.h"
 #include "retdec/utils/scan_cursor.h"
 
 #include <algorithm>
 #include <cassert>
+#include <optional>
 #include <set>
 #include <unordered_map>
 
@@ -357,6 +359,31 @@ static inline bool isPayloadIdent(uint16_t ident)
 /// verified kernel. An unresolvable switch yields no targets rather than a
 /// guess; a switch whose payload is truncated yields the targets that are
 /// actually there.
+/// The block operand for a branch whose target is not inside this method.
+///
+/// The same sentinel jvm_lifter.cpp:198 uses, for the same reason: a target
+/// that does not exist has to be distinguishable from offset 0, and every
+/// consumer that resolves a block operand already has to cope with a label it
+/// cannot find.
+static constexpr uint32_t kNoBranchTarget = UINT32_MAX;
+
+/// The absolute code-unit offset a relative Dalvik branch names, or nothing.
+///
+/// switchTargets below already forms its sum in int64 and tests it against the
+/// code-unit count before use; the goto and if-test arms did neither. A
+/// negative displacement wrapped to roughly four billion, buildBlocks created a
+/// block for it, and the wrapped value became a real CFG edge -- `goto -8` at
+/// offset 0 in a two-code-unit method produced four blocks, one of them
+/// labelled L4294967288, at an offset no instruction falls into.
+/// include/retdec/utils/branch_target.h states the rule and is proved over the
+/// whole 64-bit domain; jvm_lifter refuses the equivalent JVM input through it.
+static std::optional<uint32_t> branchTarget(uint32_t off, std::int64_t delta, std::size_t total)
+{
+	std::uint64_t target = 0;
+	if (!utils::btgt::relative(off, delta, total, target)) return std::nullopt;
+	return static_cast<uint32_t>(target);
+}
+
 static std::vector<uint32_t> switchTargets(const std::vector<uint16_t>& insns, uint32_t off)
 {
 	std::vector<uint32_t> targets;
@@ -659,22 +686,19 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const
 		{
 		case OP_GOTO: {
 			const int64_t offset = sext((insns[off] >> 8) & 0xFF, 8);
-			uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
-			leaders.insert(target);
+			if (auto t = branchTarget(off, offset, insns.size())) leaders.insert(*t);
 			leaders.insert(off + sz);
 			break;
 		}
 		case OP_GOTO_16: {
 			const int64_t offset = sext(unit(1), 16);
-			uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
-			leaders.insert(target);
+			if (auto t = branchTarget(off, offset, insns.size())) leaders.insert(*t);
 			leaders.insert(off + sz);
 			break;
 		}
 		case OP_GOTO_32: {
 			const int64_t offset = sext(static_cast<uint32_t>(unit(1)) | (static_cast<uint32_t>(unit(2)) << 16), 32);
-			uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
-			leaders.insert(target);
+			if (auto t = branchTarget(off, offset, insns.size())) leaders.insert(*t);
 			leaders.insert(off + sz);
 			break;
 		}
@@ -691,8 +715,7 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const
 		case OP_IF_GTZ:
 		case OP_IF_LEZ: {
 			const int64_t offset = sext(unit(1), 16);
-			uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
-			leaders.insert(target);
+			if (auto t = branchTarget(off, offset, insns.size())) leaders.insert(*t);
 			leaders.insert(off + sz);
 			break;
 		}
@@ -721,14 +744,31 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const
 	// Exception handler entries are also leaders
 	for (const auto& t: code.tries)
 	{
+		// Same bound as the branch arms. startAddr is a u4 and insnCount a u2,
+		// both copied verbatim out of the code_item, and their sum was formed
+		// in uint32: startAddr = 0xFFFFFFFF with insnCount = 2 gives an end of
+		// 1, a region ending four gigabytes before it begins. jvm_lifter
+		// applies protectedRegionFits to the equivalent JVM entry; this had no
+		// equivalent.
+		std::uint64_t end = 0;
+		if (!utils::btgt::region(t.startAddr, t.insnCount, insns.size(), end)) continue;
 		leaders.insert(t.startAddr);
-		leaders.insert(t.startAddr + t.insnCount);
+		leaders.insert(static_cast<uint32_t>(end));
 	}
 	for (size_t i = 0; i < code.handlers.handlers.size(); ++i)
 	{
 		for (const auto& h: code.handlers.handlers[i])
-			leaders.insert(h.addr);
-		if (code.handlers.catchAllAddrs[i] != ~0u) leaders.insert(code.handlers.catchAllAddrs[i]);
+		{
+			if (h.addr < insns.size()) leaders.insert(h.addr);
+		}
+		// catchAllAddrs is a SEPARATE vector from handlers, and nothing in the
+		// type keeps them the same length -- the parser resizes both, but
+		// DexLifter::lift takes a CodeItem from any caller.
+		if (i < code.handlers.catchAllAddrs.size() && code.handlers.catchAllAddrs[i] != ~0u
+				&& code.handlers.catchAllAddrs[i] < insns.size())
+		{
+			leaders.insert(code.handlers.catchAllAddrs[i]);
+		}
 	}
 
 	return std::vector<uint32_t>(leaders.begin(), leaders.end());
@@ -748,6 +788,7 @@ void DexLifter::buildBlocks(BcCFG& cfg, const CodeItem& code, const std::vector<
 	const auto& insns = code.insns;
 	const uint32_t total = static_cast<uint32_t>(insns.size());
 
+	nextInstrId_ = 0;
 	for (size_t li = 0; li < leaders.size(); ++li)
 	{
 		uint32_t start = leaders[li];
@@ -817,9 +858,18 @@ void DexLifter::wireExceptions(BcCFG& cfg, const CodeItem& code, const std::vect
 		// We map by index since we parsed them sequentially.
 		if (ti >= code.handlers.handlers.size()) break;
 
+		// findLeaders() refuses a try whose region does not fit; this is where
+		// the same numbers become BcExceptionHandler::startOffset/endOffset and
+		// reach every consumer that asks how long the region is, so it has to
+		// refuse the same ones. Without it, startAddr = 0xFFFFFFFF with
+		// insnCount = 2 yields start=4294967295 end=1, and end - start read back
+		// as a uint32 is a plausible-looking 2.
+		std::uint64_t tryEnd = 0;
+		if (!utils::btgt::region(t.startAddr, t.insnCount, code.insns.size(), tryEnd)) continue;
+
 		BcExceptionHandler eh;
 		eh.startOffset = t.startAddr;
-		eh.endOffset = t.startAddr + t.insnCount;
+		eh.endOffset = static_cast<uint32_t>(tryEnd);
 
 		// Find the handler block id. We look up by the handler addr.
 		// Blocks were labeled "L<offset>".
@@ -846,7 +896,8 @@ void DexLifter::wireExceptions(BcCFG& cfg, const CodeItem& code, const std::vect
 			cfg.addExceptionHandler(eh);
 		}
 
-		if (code.handlers.catchAllAddrs[ti] != ~0u)
+		if (ti < code.handlers.catchAllAddrs.size()
+				&& code.handlers.catchAllAddrs[ti] != ~0u)
 		{
 			uint32_t catchAllBlock = 0;
 			uint32_t addr = code.handlers.catchAllAddrs[ti];
@@ -860,7 +911,7 @@ void DexLifter::wireExceptions(BcCFG& cfg, const CodeItem& code, const std::vect
 			}
 			BcExceptionHandler catchAll;
 			catchAll.startOffset = t.startAddr;
-			catchAll.endOffset = t.startAddr + t.insnCount;
+			catchAll.endOffset = static_cast<uint32_t>(tryEnd);
 			catchAll.catchType = std::nullopt; // empty = catch-all
 			catchAll.handlerBlock = catchAllBlock;
 			cfg.addExceptionHandler(catchAll);
@@ -878,7 +929,11 @@ uint32_t DexLifter::decodeInsn(BcBasicBlock& blk, const std::vector<uint16_t>& i
 	if (sz == 0) sz = 1;
 
 	BcInstruction insn;
-	insn.id = static_cast<uint32_t>(blk.instrs.size());
+	// Method-global, not block-local. BcInstruction::id is the key every
+	// method-wide per-instruction map uses, so blk.instrs.size() gave each
+	// block's first instruction the same id 0 and collapsed those maps to one
+	// entry per block ordinal. jvm_lifter's buildBlocks() counts the same way.
+	insn.id = nextInstrId_++;
 	insn.offset = off * 2u; // byte offset
 
 	auto w = [&](uint32_t i) -> uint16_t {
@@ -1154,24 +1209,36 @@ uint32_t DexLifter::decodeInsn(BcBasicBlock& blk, const std::vector<uint16_t>& i
 		insn.opcode = BcOpcode::DALVIK_GOTO;
 		{
 			const int64_t offset = sext((w0 >> 8) & 0xFF, 8);
-			uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
-			insn.operands = {makeBlock(static_cast<uint32_t>(target))};
+			// kNoBranchTarget when the displacement leaves the method; see
+			// branchTarget(). The sum used to be formed in uint32 and handed
+			// straight to makeBlock, so a negative displacement wrapped to
+			// roughly four billion and became a real CFG edge.
+			const auto target = branchTarget(off, offset, insns.size());
+			insn.operands = {makeBlock(target ? *target : kNoBranchTarget)};
 		}
 		break;
 	case OP_GOTO_16:
 		insn.opcode = BcOpcode::DALVIK_GOTO;
 		{
 			const int64_t offset = sext(w(1), 16);
-			uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
-			insn.operands = {makeBlock(static_cast<uint32_t>(target))};
+			// kNoBranchTarget when the displacement leaves the method; see
+			// branchTarget(). The sum used to be formed in uint32 and handed
+			// straight to makeBlock, so a negative displacement wrapped to
+			// roughly four billion and became a real CFG edge.
+			const auto target = branchTarget(off, offset, insns.size());
+			insn.operands = {makeBlock(target ? *target : kNoBranchTarget)};
 		}
 		break;
 	case OP_GOTO_32:
 		insn.opcode = BcOpcode::DALVIK_GOTO;
 		{
 			const int64_t offset = sext(static_cast<uint32_t>(w(1)) | (static_cast<uint32_t>(w(2)) << 16), 32);
-			uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
-			insn.operands = {makeBlock(static_cast<uint32_t>(target))};
+			// kNoBranchTarget when the displacement leaves the method; see
+			// branchTarget(). The sum used to be formed in uint32 and handed
+			// straight to makeBlock, so a negative displacement wrapped to
+			// roughly four billion and became a real CFG edge.
+			const auto target = branchTarget(off, offset, insns.size());
+			insn.operands = {makeBlock(target ? *target : kNoBranchTarget)};
 			sz = 3;
 		}
 		break;
@@ -1215,8 +1282,12 @@ uint32_t DexLifter::decodeInsn(BcBasicBlock& blk, const std::vector<uint16_t>& i
 		vA = highA(w0);
 		vB = highB(w0);
 		const int64_t offset = sext(w(1), 16);
-		uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
-		insn.operands = {makeReg(vA), makeReg(vB), makeInt(op), makeBlock(static_cast<uint32_t>(target))};
+		// kNoBranchTarget when the displacement leaves the method; see
+		// branchTarget(). The sum used to be formed in uint32 and handed
+		// straight to makeBlock, so a negative displacement wrapped to
+		// roughly four billion and became a real CFG edge.
+		const auto target = branchTarget(off, offset, insns.size());
+		insn.operands = {makeReg(vA), makeReg(vB), makeInt(op), makeBlock(target ? *target : kNoBranchTarget)};
 		break;
 	}
 	case OP_IF_EQZ:
@@ -1228,8 +1299,12 @@ uint32_t DexLifter::decodeInsn(BcBasicBlock& blk, const std::vector<uint16_t>& i
 		insn.opcode = BcOpcode::DALVIK_IF_Z;
 		vA = (w0 >> 8) & 0xFF;
 		const int64_t offset = sext(w(1), 16);
-		uint32_t target = static_cast<uint32_t>(static_cast<int64_t>(off) + offset);
-		insn.operands = {makeReg(vA), makeInt(op), makeBlock(static_cast<uint32_t>(target))};
+		// kNoBranchTarget when the displacement leaves the method; see
+		// branchTarget(). The sum used to be formed in uint32 and handed
+		// straight to makeBlock, so a negative displacement wrapped to
+		// roughly four billion and became a real CFG edge.
+		const auto target = branchTarget(off, offset, insns.size());
+		insn.operands = {makeReg(vA), makeInt(op), makeBlock(target ? *target : kNoBranchTarget)};
 		break;
 	}
 

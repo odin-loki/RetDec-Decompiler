@@ -3084,3 +3084,177 @@ TEST(DexLifter, BackwardGotoTargetsTheBlockItsNegativeOffsetNames)
 	ASSERT_NE(nullptr, target);
 	EXPECT_EQ(0u, target->blockId);
 }
+
+// ─── Branch targets and try regions that do not fit the method ────────────────
+
+// The four goto arms and the if-* group all formed `off + offset` in uint32 and
+// inserted the result as a leader without asking whether it landed inside the
+// method. A goto -8 at offset 0 of a two-unit method wraps to 4294967288, and
+// the lift grew a block labelled "L4294967288" that no instruction occupies.
+TEST(DexLifter, ABranchWrappingPastZeroDoesNotBecomeALeader)
+{
+	auto dex = buildMinimalDex();
+	DexFile df = DexFile::parse(dex);
+	auto result = liftUnits(
+		df,
+		{
+			static_cast<uint16_t>(0xF828u), // goto -8 at offset 0
+			static_cast<uint16_t>(0x000Eu), // return-void at offset 1
+		});
+	ASSERT_EQ(DexLiftResult::OK, result.status);
+	// Every leader names a code unit offset in [0, insnsSize]; insnsSize itself
+	// is the half-open end and is a legitimate leader. Anything past it is a
+	// block the method has no bytes for.
+	for (const auto& blk: result.cfg.blocks())
+	{
+		ASSERT_EQ('L', blk.label.empty() ? '\0' : blk.label[0]);
+		EXPECT_LE(std::stoull(blk.label.substr(1)), 2u)
+			<< "block labelled " << blk.label << " sits outside a two-unit method";
+	}
+}
+
+// A try_item is a u4 start and a u2 count. Their sum was formed in uint32 and
+// written straight into BcExceptionHandler::startOffset/endOffset, so
+// startAddr = 0xFFFFFFFF with insnCount = 2 gave start=4294967295 end=1: a
+// region ending four gigabytes before it begins, whose length reads back as a
+// plausible 2. jvm_lifter refuses the equivalent JVM entry; this did not.
+static DexLiftResult liftUnitsWithTry(
+	const DexFile& df, std::vector<uint16_t> units, uint32_t startAddr, uint16_t insnCount)
+{
+	CodeItem code;
+	code.registersSize = 2;
+	code.insSize = 0;
+	code.outsSize = 0;
+	code.debugInfoOff = 0;
+	code.insnsSize = static_cast<uint32_t>(units.size());
+	code.insns = std::move(units);
+
+	TryItem t;
+	t.startAddr = startAddr;
+	t.insnCount = insnCount;
+	t.handlerOff = 0;
+	code.tries.push_back(t);
+	code.triesSize = 1;
+	code.handlers.handlers.push_back({CatchHandler{-1, 0}});
+	code.handlers.catchAllAddrs.push_back(0);
+
+	DexLifter lifter(df);
+	return lifter.lift(code, 0);
+}
+
+TEST(DexLifter, ATryRegionWhoseEndWrapsBeforeItsStartIsRefused)
+{
+	auto dex = buildMinimalDex();
+	DexFile df = DexFile::parse(dex);
+	auto result = liftUnitsWithTry(
+		df, {static_cast<uint16_t>(0x000Eu), static_cast<uint16_t>(0x000Eu)}, 0xFFFFFFFFu, 2);
+	ASSERT_EQ(DexLiftResult::OK, result.status);
+	for (const auto& h: result.cfg.handlers())
+		EXPECT_LE(h.startOffset, h.endOffset)
+			<< "handler covers [" << h.startOffset << ", " << h.endOffset << ")";
+	EXPECT_EQ(0u, result.cfg.handlers().size());
+}
+
+// A start inside the method but a count that runs off the end is the same
+// question asked the other way, and is refused for the same reason: endOffset
+// would name a code unit the method does not have.
+TEST(DexLifter, ATryRegionRunningPastTheEndOfTheMethodIsRefused)
+{
+	auto dex = buildMinimalDex();
+	DexFile df = DexFile::parse(dex);
+	auto result = liftUnitsWithTry(
+		df, {static_cast<uint16_t>(0x000Eu), static_cast<uint16_t>(0x000Eu)}, 1, 8);
+	ASSERT_EQ(DexLiftResult::OK, result.status);
+	EXPECT_EQ(0u, result.cfg.handlers().size());
+}
+
+// The bound is a bound, not a ban: a region that ends exactly at the last code
+// unit still produces its handlers, both the typed one and the catch-all.
+TEST(DexLifter, ATryRegionEndingAtTheLastCodeUnitStillWires)
+{
+	auto dex = buildMinimalDex();
+	DexFile df = DexFile::parse(dex);
+	auto result = liftUnitsWithTry(
+		df, {static_cast<uint16_t>(0x000Eu), static_cast<uint16_t>(0x000Eu)}, 0, 2);
+	ASSERT_EQ(DexLiftResult::OK, result.status);
+	ASSERT_EQ(2u, result.cfg.handlers().size());
+	for (const auto& h: result.cfg.handlers())
+	{
+		EXPECT_EQ(0u, h.startOffset);
+		EXPECT_EQ(2u, h.endOffset);
+	}
+}
+
+// wireExceptions() indexed catchAllAddrs by the try index while checking only
+// handlers.size(). The parser keeps the two vectors the same length, so this is
+// reachable only through the public lift(CodeItem&) entry point -- which is
+// public, and is what these tests use.
+TEST(DexLifter, ATryWithNoCatchAllEntryDoesNotReadPastTheVector)
+{
+	auto dex = buildMinimalDex();
+	DexFile df = DexFile::parse(dex);
+	CodeItem code;
+	code.registersSize = 2;
+	code.insSize = 0;
+	code.outsSize = 0;
+	code.debugInfoOff = 0;
+	code.insns = {static_cast<uint16_t>(0x000Eu), static_cast<uint16_t>(0x000Eu)};
+	code.insnsSize = 2;
+	TryItem t;
+	t.startAddr = 0;
+	t.insnCount = 2;
+	t.handlerOff = 0;
+	code.tries.push_back(t);
+	code.triesSize = 1;
+	code.handlers.handlers.push_back({CatchHandler{-1, 0}});
+	// catchAllAddrs deliberately left empty.
+	auto result = DexLifter(df).lift(code, 0);
+	ASSERT_EQ(DexLiftResult::OK, result.status);
+	EXPECT_EQ(1u, result.cfg.handlers().size());
+}
+
+// Same shape as JvmLifter.InstructionIdsAreUniqueAcrossTheWholeMethod:
+// decodeInsn() used blk.instrs.size() as the id, which restarts at 0 in every
+// block. BcInstruction::id is the key of the method-wide per-instruction maps,
+// so ids have to be unique across the method, not within the block.
+TEST(DexLifter, InstructionIdsAreUniqueAcrossTheWholeMethod)
+{
+	auto dex = buildMinimalDex();
+	DexFile df = DexFile::parse(dex);
+	auto result = liftUnits(
+		df,
+		{
+			static_cast<uint16_t>(0x1012u), // const/4 v0, #1     @0
+			static_cast<uint16_t>(0x0338u), // if-eqz v0, +3 -> @4 @1
+			static_cast<uint16_t>(0x0000u), //                    (offset word)
+			static_cast<uint16_t>(0x2012u), // const/4 v0, #2     @3
+			static_cast<uint16_t>(0x000Eu), // return-void        @4
+		});
+	ASSERT_EQ(DexLiftResult::OK, result.status);
+	ASSERT_LT(1u, result.cfg.blockCount()) << "the branch must split the method";
+
+	std::vector<uint32_t> ids;
+	for (const auto& blk: result.cfg.blocks())
+		for (const auto& insn: blk.instrs) ids.push_back(insn.id);
+	ASSERT_FALSE(ids.empty());
+	std::sort(ids.begin(), ids.end());
+	ASSERT_EQ(ids.end(), std::unique(ids.begin(), ids.end())) << "two instructions share an id";
+	for (size_t i = 0; i < ids.size(); ++i) EXPECT_EQ(static_cast<uint32_t>(i), ids[i]);
+}
+
+// The counter is reset per method, not per DexLifter: two lifts from the same
+// instance must both start at 0, or the second method's ids depend on how long
+// the first one was.
+TEST(DexLifter, TheInstructionCounterRestartsForEachMethod)
+{
+	auto dex = buildMinimalDex();
+	DexFile df = DexFile::parse(dex);
+	auto first = liftUnits(df, {static_cast<uint16_t>(0x1012u), static_cast<uint16_t>(0x000Eu)});
+	auto second = liftUnits(df, {static_cast<uint16_t>(0x1012u), static_cast<uint16_t>(0x000Eu)});
+	ASSERT_EQ(DexLiftResult::OK, first.status);
+	ASSERT_EQ(DexLiftResult::OK, second.status);
+	ASSERT_FALSE(first.cfg.block(0).instrs.empty());
+	ASSERT_FALSE(second.cfg.block(0).instrs.empty());
+	EXPECT_EQ(0u, first.cfg.block(0).instrs.front().id);
+	EXPECT_EQ(0u, second.cfg.block(0).instrs.front().id);
+}

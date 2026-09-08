@@ -489,13 +489,22 @@ void JvmLifter::buildBlocks(
 	}
 
 	// Fill each block with instructions.
+	//
+	// The counter is per method, not per block. StackSimResult::instrInfo is one
+	// map for the whole method keyed by BcInstruction::id, as are
+	// slot_coalesce's slotDefInstr/slotUseInstr and pattern_lift's
+	// firstInstrId/lastInstrId. Restarting at 0 in each block made every block's
+	// first instruction share key 0, so a seven-instruction three-block method
+	// produced three instrInfo entries and each block's instruction 0 was
+	// annotated with the last-simulated block's slot -- including an
+	// aconst_null reported as pushing an int.
+	uint32_t instrId = 0;
 	for (size_t li = 0; li < leaders.size(); ++li)
 	{
 		uint32_t start = leaders[li];
 		uint32_t end = (li + 1 < leaders.size()) ? leaders[li + 1] : static_cast<uint32_t>(bc.size());
 		auto& blk = cfg.block(pcToBlock_[start]);
 		uint32_t pc = start;
-		uint32_t instrId = 0;
 		while (pc < end && pc < bc.size())
 		{
 			uint32_t thisPC = pc;

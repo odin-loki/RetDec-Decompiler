@@ -22,6 +22,7 @@
 #include "retdec/jvm_parser/jvm_lifter.h"
 
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -2650,4 +2651,45 @@ TEST(JarReader, MultiReleaseEntryAboveTheTargetIsSkipped)
 	ASSERT_TRUE(res.ok) << res.error;
 	EXPECT_EQ(res.classesFound, 1u);
 	EXPECT_GE(res.classesParsed, 1u);
+}
+
+// ─── Instruction ids are method-global ───────────────────────────────────────
+
+// buildBlocks() restarted its instruction counter at 0 in every block, so a
+// method's instructions carried ids 0,1 / 0,1 / 0,1,2 instead of 0..6. Every
+// method-wide map keyed by BcInstruction::id -- StackSimResult::instrInfo,
+// slot_coalesce's slotDefInstr/slotUseInstr, pattern_lift's
+// firstInstrId/lastInstrId -- then held one entry per block ordinal rather than
+// one per instruction, and each block's instruction 0 read back whatever the
+// last-simulated block wrote there.
+TEST(JvmLifter, InstructionIdsAreUniqueAcrossTheWholeMethod)
+{
+	CodeAttr code;
+	code.bytecode = {
+		0x04,             // 0: iconst_1
+		0x99, 0x00, 0x05, // 1: ifeq +5 -> 6
+		0x05,             // 4: iconst_2
+		0x57,             // 5: pop
+		0x01,             // 6: aconst_null
+		0x57,             // 7: pop
+		0xB1,             // 8: return
+	};
+	code.maxStack = 4;
+	code.maxLocals = 2;
+	ConstPool pool;
+	JvmLifter lifter(pool);
+	auto result = lifter.lift(code, "()V");
+	ASSERT_TRUE(result.ok) << result.error;
+	ASSERT_LT(1u, result.cfg.blockCount()) << "the branch must split the method";
+
+	std::vector<uint32_t> ids;
+	for (uint32_t b = 0; b < result.cfg.blockCount(); ++b)
+		for (const auto& insn: result.cfg.block(b).instrs) ids.push_back(insn.id);
+	ASSERT_EQ(9u - 2u, ids.size()); // seven instructions, ifeq is three bytes
+	std::vector<uint32_t> sorted = ids;
+	std::sort(sorted.begin(), sorted.end());
+	ASSERT_EQ(sorted.end(), std::unique(sorted.begin(), sorted.end()))
+		<< "two instructions share an id";
+	// And they are the consecutive run 0..n-1, so a vector indexed by id works.
+	for (size_t i = 0; i < sorted.size(); ++i) EXPECT_EQ(static_cast<uint32_t>(i), sorted[i]);
 }

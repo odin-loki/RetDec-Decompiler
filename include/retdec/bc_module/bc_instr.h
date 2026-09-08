@@ -486,7 +486,12 @@ BcStackEffect stackEffectOf(BcOpcode op) noexcept;
  * The `id` is a method-level sequential index assigned by the lifter.
  */
 struct BcInstruction {
-    uint32_t            id       = 0;     ///< Sequential instruction index
+    /// Sequential instruction index, unique within the enclosing method (not
+    /// within the block). StackSimResult::instrInfo, slot_coalesce's
+    /// slotDefInstr/slotUseInstr and pattern_lift's firstInstrId/lastInstrId
+    /// are all method-wide maps keyed by this, so a lifter that restarts the
+    /// count at each block silently merges their entries.
+    uint32_t            id       = 0;
     uint32_t            offset   = 0;     ///< Bytecode offset in original binary
     BcOpcode            opcode   = BcOpcode::Nop;
     std::vector<BcOperand> operands;

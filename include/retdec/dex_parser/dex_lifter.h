@@ -68,6 +68,10 @@ private:
 	const DexFile& dex_;
 	LiftOptions opts_;
 
+	/// Method-global instruction counter, reset by buildBlocks() for each
+	/// method. See decodeInsn() for why it is not per block.
+	uint32_t nextInstrId_ = 0;
+
 	using BlockId = uint32_t;
 
 	// Pass 1: find leader addresses (code unit offsets).
