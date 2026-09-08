@@ -51,34 +51,43 @@ namespace retdec::gui::panels {
 
 // ─── Myers diff data structures ───────────────────────────────────────────────
 
-enum class DiffOpKind { Equal, Insert, Delete };
+enum class DiffOpKind
+{
+	Equal,
+	Insert,
+	Delete
+};
 
-struct DiffOp {
-    DiffOpKind  kind   = DiffOpKind::Equal;
-    std::string line;
-    int         leftLine  = -1;  ///< 0-based line number in the left (before) file
-    int         rightLine = -1;  ///< 0-based line number in the right (after) file
+struct DiffOp
+{
+	DiffOpKind kind = DiffOpKind::Equal;
+	std::string line;
+	int leftLine = -1;  ///< 0-based line number in the left (before) file
+	int rightLine = -1; ///< 0-based line number in the right (after) file
 };
 
 /**
  * @brief Result of a complete Myers diff.
  */
-struct DiffResult {
-    std::vector<DiffOp> ops;
-    int linesAdded   = 0;
-    int linesRemoved = 0;
-    int linesEqual   = 0;
-    double similarity = 0.0;  ///< 0.0 – 1.0
+struct DiffResult
+{
+	std::vector<DiffOp> ops;
+	int linesAdded = 0;
+	int linesRemoved = 0;
+	int linesEqual = 0;
+	double similarity = 0.0; ///< 0.0 – 1.0
 
-    bool isEmpty() const { return ops.empty(); }
+	bool isEmpty() const
+	{
+		return ops.empty();
+	}
 
-    /** @brief Format as a unified diff (--- / +++ / @@ hunks). */
-    std::string toUnifiedDiff(const std::string& leftName  = "before",
-                               const std::string& rightName = "after",
-                               int context = 3) const;
+	/** @brief Format as a unified diff (--- / +++ / @@ hunks). */
+	std::string toUnifiedDiff(
+		const std::string& leftName = "before", const std::string& rightName = "after", int context = 3) const;
 
-    /** @brief Format as an HTML report. */
-    std::string toHtml() const;
+	/** @brief Format as an HTML report. */
+	std::string toHtml() const;
 };
 
 // ─── MyersDiff ────────────────────────────────────────────────────────────────
@@ -90,31 +99,33 @@ struct DiffResult {
  */
 class MyersDiff {
 public:
-    /**
-     * @brief Diff two texts split into lines.
-     */
-    static DiffResult diff(const std::vector<std::string>& left,
-                            const std::vector<std::string>& right);
+	/**
+	 * @brief Diff two texts split into lines.
+	 */
+	static DiffResult diff(const std::vector<std::string>& left, const std::vector<std::string>& right);
 
-    /**
-     * @brief Convenience: split text into lines and diff.
-     */
-    static DiffResult diffText(const std::string& leftText,
-                                const std::string& rightText);
+	/**
+	 * @brief Convenience: split text into lines and diff.
+	 */
+	static DiffResult diffText(const std::string& leftText, const std::string& rightText);
 
 private:
-    struct Snake {
-        int x, y, u, v;  // (x,y) start → (u,v) end
-    };
+	struct Snake
+	{
+		int x, y, u, v; // (x,y) start → (u,v) end
+	};
 
-    static Snake midpoint(const std::vector<std::string>& a,
-                           const std::vector<std::string>& b,
-                           int aLo, int aHi, int bLo, int bHi);
+	static Snake
+	midpoint(const std::vector<std::string>& a, const std::vector<std::string>& b, int aLo, int aHi, int bLo, int bHi);
 
-    static void backtrack(const std::vector<std::string>& a,
-                           const std::vector<std::string>& b,
-                           int aLo, int aHi, int bLo, int bHi,
-                           std::vector<DiffOp>& out);
+	static void backtrack(
+		const std::vector<std::string>& a,
+		const std::vector<std::string>& b,
+		int aLo,
+		int aHi,
+		int bLo,
+		int bHi,
+		std::vector<DiffOp>& out);
 };
 
 // ─── DiffLineNumberArea ───────────────────────────────────────────────────────
@@ -125,16 +136,16 @@ class DiffPane;
  * @brief Line-number gutter for a DiffPane.
  */
 class DiffLineNumberArea : public QWidget {
-    Q_OBJECT
+	Q_OBJECT
 public:
-    explicit DiffLineNumberArea(DiffPane* editor);
-    QSize sizeHint() const override;
+	explicit DiffLineNumberArea(DiffPane* editor);
+	QSize sizeHint() const override;
 
 protected:
-    void paintEvent(QPaintEvent* event) override;
+	void paintEvent(QPaintEvent* event) override;
 
 private:
-    DiffPane* editor_;
+	DiffPane* editor_;
 };
 
 // ─── DiffPane ─────────────────────────────────────────────────────────────────
@@ -145,48 +156,49 @@ private:
  * Stores per-line colour data externally via setLineColors().
  */
 class DiffPane : public QPlainTextEdit {
-    Q_OBJECT
+	Q_OBJECT
 public:
-    explicit DiffPane(QWidget* parent = nullptr);
+	explicit DiffPane(QWidget* parent = nullptr);
 
-    /**
-     * @brief Set per-line background colours.
-     *        Index = 0-based visible line number.
-     *        QColor() (invalid) = default background.
-     */
-    void setLineColors(const std::vector<QColor>& colors);
+	/**
+	 * @brief Set per-line background colours.
+	 *        Index = 0-based visible line number.
+	 *        QColor() (invalid) = default background.
+	 */
+	void setLineColors(const std::vector<QColor>& colors);
 
-    /**
-     * @brief Set the text content and re-apply colours.
-     */
-    void setContent(const QString& text, const std::vector<QColor>& colors);
+	/**
+	 * @brief Set the text content and re-apply colours.
+	 */
+	void setContent(const QString& text, const std::vector<QColor>& colors);
 
-    int lineNumberAreaWidth() const;
-    void lineNumberAreaPaintEvent(QPaintEvent* event);
+	int lineNumberAreaWidth() const;
+	void lineNumberAreaPaintEvent(QPaintEvent* event);
 
-    /** @brief Scroll to the given 0-based line. */
-    void scrollToLine(int line);
+	/** @brief Scroll to the given 0-based line. */
+	void scrollToLine(int line);
 
 protected:
-    void resizeEvent(QResizeEvent* event) override;
+	void resizeEvent(QResizeEvent* event) override;
 
 private slots:
-    void updateLineNumberAreaWidth(int newBlockCount);
-    void highlightCurrentLine();
-    void updateLineNumberArea(const QRect& rect, int dy);
+	void updateLineNumberAreaWidth(int newBlockCount);
+	void highlightCurrentLine();
+	void updateLineNumberArea(const QRect& rect, int dy);
 
 private:
-    DiffLineNumberArea*  lineNumberArea_;
-    std::vector<QColor>  lineColors_;
+	DiffLineNumberArea* lineNumberArea_;
+	std::vector<QColor> lineColors_;
 };
 
 // ─── DiffStats ────────────────────────────────────────────────────────────────
 
-struct DiffStats {
-    int    added     = 0;
-    int    removed   = 0;
-    int    unchanged = 0;
-    double similarity = 0.0;
+struct DiffStats
+{
+	int added = 0;
+	int removed = 0;
+	int unchanged = 0;
+	double similarity = 0.0;
 };
 
 // ─── DiffPanel ────────────────────────────────────────────────────────────────
@@ -203,78 +215,81 @@ struct DiffStats {
  *   diffChanged(DiffResult)  — emitted when the displayed diff changes
  */
 class DiffPanel : public PanelBase {
-    Q_OBJECT
+	Q_OBJECT
 public:
-    explicit DiffPanel(QWidget* parent = nullptr);
+	explicit DiffPanel(QWidget* parent = nullptr);
 
-    /**
-     * @brief Set the before/after text and compute + display the diff.
-     */
-    void setDiff(const QString& before, const QString& after,
-                 const QString& stageName = "");
+	/**
+	 * @brief Set the before/after text and compute + display the diff.
+	 */
+	void setDiff(const QString& before, const QString& after, const QString& stageName = "");
 
-    /**
-     * @brief Register a named recovery-stage diff for the stage selector.
-     */
-    void addStage(const QString& name,
-                  const QString& before, const QString& after);
+	/**
+	 * @brief Register a named recovery-stage diff for the stage selector.
+	 */
+	void addStage(const QString& name, const QString& before, const QString& after);
 
-    void clear() override;
+	void clear() override;
 
-    const DiffResult& currentDiff() const { return currentDiff_; }
+	const DiffResult& currentDiff() const
+	{
+		return currentDiff_;
+	}
 
 signals:
-    void diffChanged(const DiffResult& result);
+	void diffChanged(const DiffResult& result);
 
 private slots:
-    void onStageSelected(int index);
-    void onNextDiff();
-    void onPrevDiff();
-    void onExportUnified();
-    void onExportHtml();
-    void onCopyDiff();
-    void onLeftScrollChanged(int value);
-    void onRightScrollChanged(int value);
+	void onStageSelected(int index);
+	void onNextDiff();
+	void onPrevDiff();
+	void onExportUnified();
+	void onExportHtml();
+	void onCopyDiff();
+	void onLeftScrollChanged(int value);
+	void onRightScrollChanged(int value);
 
 private:
-    void setupUI();
-    void applyDiff(const DiffResult& diff);
-    void buildLineViews(const DiffResult& diff,
-                         std::vector<QString>& leftLines,
-                         std::vector<QColor>&  leftColors,
-                         std::vector<QString>& rightLines,
-                         std::vector<QColor>&  rightColors) const;
-    void updateStats();
-    int  nextHunk(int fromLine, bool forward) const;
+	void setupUI();
+	void applyDiff(const DiffResult& diff);
+	void buildLineViews(
+		const DiffResult& diff,
+		std::vector<QString>& leftLines,
+		std::vector<QColor>& leftColors,
+		std::vector<QString>& rightLines,
+		std::vector<QColor>& rightColors) const;
+	void updateStats();
+	int nextHunk(int fromLine, bool forward) const;
 
-    // ── UI components ────────────────────────────────────────────────────────
-    QComboBox*    stageCombo_    = nullptr;
-    QLabel*       statsLabel_    = nullptr;
-    QToolButton*  prevBtn_       = nullptr;
-    QToolButton*  nextBtn_       = nullptr;
-    QToolButton*  exportUBtn_    = nullptr;
-    QToolButton*  exportHBtn_    = nullptr;
-    QToolButton*  copyBtn_       = nullptr;
-    QLabel*       leftLabel_     = nullptr;
-    QLabel*       rightLabel_    = nullptr;
-    DiffPane*     leftPane_      = nullptr;
-    DiffPane*     rightPane_     = nullptr;
-    QSplitter*    splitter_      = nullptr;
+	// ── UI components ────────────────────────────────────────────────────────
+	QComboBox* stageCombo_ = nullptr;
+	QLabel* statsLabel_ = nullptr;
+	QToolButton* prevBtn_ = nullptr;
+	QToolButton* nextBtn_ = nullptr;
+	QToolButton* exportUBtn_ = nullptr;
+	QToolButton* exportHBtn_ = nullptr;
+	QToolButton* copyBtn_ = nullptr;
+	QLabel* leftLabel_ = nullptr;
+	QLabel* rightLabel_ = nullptr;
+	DiffPane* leftPane_ = nullptr;
+	DiffPane* rightPane_ = nullptr;
+	QSplitter* splitter_ = nullptr;
 
-    // ── State ────────────────────────────────────────────────────────────────
-    DiffResult    currentDiff_;
-    int           currentHunk_   = 0;
+	// ── State ────────────────────────────────────────────────────────────────
+	DiffResult currentDiff_;
+	int currentHunk_ = 0;
 
-    struct StageDiff {
-        QString name, before, after;
-    };
-    std::vector<StageDiff> stages_;
+	struct StageDiff
+	{
+		QString name, before, after;
+	};
+	std::vector<StageDiff> stages_;
 
-    // ── Scroll sync guard ────────────────────────────────────────────────────
-    bool syncingScroll_ = false;
+	// ── Scroll sync guard ────────────────────────────────────────────────────
+	bool syncingScroll_ = false;
 
-    // ── Hunk line numbers (for navigation) ──────────────────────────────────
-    std::vector<int> hunkLines_;  ///< first line of each diff hunk in right pane
+	// ── Hunk line numbers (for navigation) ──────────────────────────────────
+	std::vector<int> hunkLines_; ///< first line of each diff hunk in right pane
 };
 
 } // namespace retdec::gui::panels
