@@ -105,6 +105,14 @@ node_modules/
 .env
 __pycache__/
 *.pyc
+# ...except the fuzz seeds. scripts/standalone_fuzz.sh's `pyc` target seeded
+# from tests/managed_integration/fixtures/python/*.pyc, a glob that matched
+# nothing because of the line above -- so the .pyc parser was fuzzed with no
+# .pyc file in its corpus, while the shared malformed pool kept the count
+# non-zero and the run printed a green line. Compiled with python3 -m
+# py_compile from the .py sources beside them; magic 3495, which
+# src/pyc_parser/pyc_magic.cpp lists for 3.11.
+!tests/managed_integration/fixtures/python/*.pyc
 luac.out
 
 /tests/algorithm_recovery/corpus/

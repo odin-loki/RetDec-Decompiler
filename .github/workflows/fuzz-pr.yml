@@ -227,6 +227,7 @@ jobs:
             BIN_DIR="$(dirname "$(find build/linux -name fuzz_elf -type f | head -n1)")"
           fi
           ran=0
+          crashed=0
           mkdir -p fuzz-corpora
           for name in fuzz_elf fuzz_pe fuzz_macho fuzz_wasm fuzz_dex fuzz_jvm_class fuzz_pyc fuzz_lua fuzz_apk fuzz_jar fuzz_unpacker fuzz_pdb fuzz_cli fuzz_unpacker_plugins; do
             bin="${BIN_DIR}/${name}"
@@ -237,14 +238,35 @@ jobs:
             corpus="${GITHUB_WORKSPACE}/fuzz-corpora/${name}"
             mkdir -p "${corpus}"
             echo "=== ${name} -max_total_time=120 ==="
-            "${bin}" "${corpus}" \
+            # The reproducer goes to tests/crash_corpus/<target>/, which is
+            # where scripts/standalone_fuzz.sh --replay reads from, so a find
+            # here becomes a committed regression case rather than a file in a
+            # build directory nothing uploads.
+            mkdir -p "${GITHUB_WORKSPACE}/tests/crash_corpus/${name}"
+            if ! "${bin}" "${corpus}" \
               -max_total_time=120 \
               -jobs=1 \
               -workers=1 \
               -max_len=65536 \
               -print_final_stats=1 \
-              -artifact_prefix="${BIN_DIR}/${name}_crash_" \
-              || true
+              -artifact_prefix="${GITHUB_WORKSPACE}/tests/crash_corpus/${name}/"
+            then
+              # This was `|| true`. These four targets -- elf, pe, macho,
+              # unpacker -- link retdec::fileformat and so cannot run in the
+              # dependency-free standalone_fuzz.sh path, which makes this job
+              # the only fuzzing the ELF, PE and Mach-O parsers get anywhere in
+              # the repository. It had exactly one failure condition: that no
+              # binary was built at all. Every crash it found was discarded,
+              # and the reproducer was written under build/linux, which this
+              # job does not upload -- and which actions/cache does not save
+              # either, because its key carries no run_id and so hits exactly.
+              #
+              # The sibling job says what the intent was:
+              # "a reproducer is written under tests/crash_corpus/ and
+              # uploaded, and the job fails so the find is not silently lost."
+              echo "::error::${name} crashed; reproducer in tests/crash_corpus/${name}/"
+              crashed=1
+            fi
             ran=$((ran + 1))
           done
           if [[ "${ran}" -eq 0 ]]; then
@@ -252,3 +274,14 @@ jobs:
             exit 1
           fi
           echo "fuzz-libfuzzer: ran ${ran} target(s)"
+          if [[ "${crashed}" -ne 0 ]]; then
+            exit 1
+          fi
+
+      - name: Upload any reproducers
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-libfuzzer-reproducers
+          path: tests/crash_corpus/
+          if-no-files-found: ignore

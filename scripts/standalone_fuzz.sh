@@ -95,6 +95,17 @@ readonly TARGETS=(
 	"lattice:fuzz_lattice:fileformat/lattice:17::tests/managed_integration/fixtures/pe/*"
 )
 
+# How the format-valid seeds are made, for the three targets whose globs matched
+# nothing until they were:
+#
+#   pyc  python3 -m py_compile over tests/managed_integration/fixtures/python/*.py
+#        (magic 3495, which src/pyc_parser/pyc_magic.cpp lists for 3.11)
+#   apk  a ZIP holding classes.dex from the .dex fixture beside it
+#   cil  tests/managed_integration/fixtures/dotnet/make_dotnet_corpus.py
+#
+# All three are committed rather than generated at seed time, so a runner
+# without the right Python or toolchain still gets them.
+
 # Malformed fixtures make excellent seeds: they already sit on the error paths.
 readonly MALFORMED_ROOT="tests/managed_integration/fixtures/malformed"
 
@@ -250,26 +261,39 @@ done
 [ "$MODE" = build ] && exit 0
 
 # ── seed ────────────────────────────────────────────────────────────────────
+# Seeds this target's corpus and prints "<dir> <own>", where <own> is how many
+# inputs came from the target's OWN glob rather than from the shared malformed
+# pool. The two are counted apart on purpose: the pool is copied into every
+# target's directory, so it kept the total non-zero for targets whose own glob
+# matched nothing at all, and the ungated-target guard below never fired. The
+# log said `ok cil replayed 59 input(s)` for a run in which not one input was a
+# .NET assembly.
 seed_corpus() {
 	local name="$1" glob="$2"
 	local dir="$CORPUS_DIR/$name"
 	mkdir -p "$dir"
 
 	shopt -s nullglob
-	local seeds=($glob)
-	# Malformed fixtures start on the error paths, which is where the bugs are.
-	local mal
-	for mal in "$MALFORMED_ROOT"/*/*; do
-		[ -f "$mal" ] && seeds+=("$mal")
-	done
+	local own=($glob)
+	local seeds=("${own[@]}")
 	shopt -u nullglob
+
+	# Malformed fixtures start on the error paths, which is where the bugs are.
+	# Found with find rather than a fixed `*/*`: 115 of the 175 files under
+	# MALFORMED_ROOT sit one level deeper than that glob reaches, including the
+	# whole of malformed/lua and malformed/python, so two thirds of the
+	# purpose-built corruption corpus was going nowhere.
+	local mal
+	while IFS= read -r mal; do
+		[ -f "$mal" ] && seeds+=("$mal")
+	done < <(find "$MALFORMED_ROOT" -type f 2>/dev/null)
 
 	local f
 	for f in "${seeds[@]}"; do
 		[ -f "$f" ] || continue
 		cp -n "$f" "$dir/$(basename "$f")" 2>/dev/null || true
 	done
-	printf '%s' "$dir"
+	printf '%s %s' "$dir" "${#own[@]}"
 }
 
 # ── replay ──────────────────────────────────────────────────────────────────
@@ -280,7 +304,7 @@ ungated=()
 for t in "${runnable[@]}"; do
 	name="$(field "$t" 1)"
 	glob="$(field "$t" 6)"
-	dir="$(seed_corpus "$name" "$glob")"
+	read -r dir ownSeeds <<< "$(seed_corpus "$name" "$glob")"
 
 	inputs=("$dir")
 	[ -d "$CRASH_DIR/$name" ] && inputs+=("$CRASH_DIR/$name")
@@ -290,6 +314,18 @@ for t in "${runnable[@]}"; do
 		# Replaying nothing proves nothing. Report it rather than printing a
 		# green line, so a target whose seeds have gone missing is visible.
 		skip "$name: no seeds and no reproducers -- this target is not gated"
+		ungated+=("$name")
+		continue
+	fi
+
+	# A target with no input in its own format is not gated for that format,
+	# however many bytes of somebody else's malformed fixtures got copied in
+	# beside it. Reproducers count: a committed crash for this target is a
+	# format-specific input by definition.
+	crashCount=0
+	[ -d "$CRASH_DIR/$name" ] && crashCount=$(find "$CRASH_DIR/$name" -type f 2>/dev/null | wc -l)
+	if [ "$ownSeeds" -eq 0 ] && [ "$crashCount" -eq 0 ]; then
+		skip "$name: no input in its own format ($glob matches nothing, no reproducers)"
 		ungated+=("$name")
 		continue
 	fi
