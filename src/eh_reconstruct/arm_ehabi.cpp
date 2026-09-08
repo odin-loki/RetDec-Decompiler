@@ -23,7 +23,9 @@
  * ### .ARM.extab entry (generic / compact model 1 or 2)
  *
  *   Word 0:
- *     bits31..24 == 0x81 → compact model 1 (pr1); bits23..0 = first 3 unwind bytes
+ *     bits31..24 == 0x81 → compact model 1 (pr1); bits23..16 = number of
+ *                          ADDITIONAL 4-byte words, bits15..0 = first 2 unwind
+ *                          bytes
  *     bits31..24 == 0x82 → compact model 2 (pr2); same
  *     otherwise          → bits31..0 = prel31 offset to personality routine;
  *                          subsequent words are personality-specific data
@@ -74,6 +76,7 @@
 #include <vector>
 
 #include "retdec/eh_reconstruct/eh_reconstruct.h"
+#include "retdec/utils/leb128.h"
 #include "lsda_parser.h"
 
 namespace retdec {
@@ -247,15 +250,36 @@ static void parseArmUnwindOpcodes(const std::vector<uint8_t>& opcodes, UnwindInf
 		else if (op == 0xB2)
 		{
 			// vsp += 0x204 + uleb128*4
-			uint32_t val = 0, shift = 0;
-			while (i < opcodes.size())
+			//
+			// This was written out here with the cursor bounded and the shift
+			// not: `val |= (b & 0x7F) << shift; shift += 7;` into a uint32_t.
+			// Five bytes with the continuation bit set reach shift 35, and a
+			// shift count at or above the operand width is undefined -- which
+			// UBSan reports as "shift exponent 35 is too large for 32-bit type
+			// unsigned int". The bytes are an ARM EHABI unwind sequence read
+			// straight out of a binary, so the count is not the program's to
+			// choose.
+			//
+			// retdec/utils/leb128.h bounds the shift and the cursor, is proved
+			// over the whole domain by tests/verification/leb128_proof.cpp, and
+			// is what eh_reconstruct.cpp in this same module already uses. A
+			// malformed encoding consumes the rest of the opcode run so this
+			// loop still terminates.
+			namespace leb = retdec::utils::leb128;
+			const auto r = leb::decodeUnsigned(opcodes.data(), opcodes.size(), i);
+			if (!r.ok)
 			{
-				uint8_t b = opcodes[i++];
-				val |= (uint32_t)(b & 0x7F) << shift;
-				if (!(b & 0x80)) break;
-				shift += 7;
+				i = opcodes.size();
 			}
-			vspOffset += (int32_t)(0x204 + val * 4u);
+			else
+			{
+				i += r.bytesRead;
+				// The product is 32-bit on the wire and the sum is an offset;
+				// both in 64 bits so neither the multiply nor the add wraps
+				// before the cast that records it.
+				const std::uint64_t adjust = 0x204ull + r.value * 4ull;
+				vspOffset += static_cast<int32_t>(static_cast<std::uint32_t>(adjust));
+			}
 		}
 		else if (op == 0xB3)
 		{
@@ -360,10 +384,23 @@ static std::optional<EHFunction> processExidxEntry(const IBinaryView& view, uint
 
 		if (isCompact)
 		{
-			// Compact model 1 or 2: inline opcodes in extab word0 + additional words
-			int extraWords = (model == 0x81) ? ((extabWord0 >> 16) & 0xFF) : 0;
-			// First 3 bytes from word0 bits[23:0]
-			opcodes.push_back((extabWord0 >> 16) & 0xFF);
+			// Compact model 1 or 2 (IHI0038B S10.2). Word 0 is
+			//
+			//   31   30..28   27..24   23..16              15..0
+			//   1    0        1 or 2   additional words    TWO opcode bytes
+			//
+			// so bits 23..16 are the extra-word COUNT, not an opcode. This read
+			// that byte twice: once as the count, and once by pushing it as the
+			// first unwind opcode. A typical pr1 entry declaring one extra word
+			// therefore began with opcode 0x01, which the interpreter above
+			// reads as `vsp += (1 + 1) * 4` -- a stack adjustment that is not in
+			// the file, on every compact model 1 or 2 function.
+			//
+			// The count also applies to model 2. It was taken as 0 there, so a
+			// pr2 entry's additional unwind words were never read at all and its
+			// opcode run was truncated to what fitted in word 0.
+			const int extraWords = static_cast<int>((extabWord0 >> 16) & 0xFF);
+			// Two bytes from word0 bits[15:0].
 			opcodes.push_back((extabWord0 >> 8) & 0xFF);
 			opcodes.push_back(extabWord0 & 0xFF);
 			for (int w = 1; w <= extraWords && view.isMapped(extabVma + w * 4); ++w)

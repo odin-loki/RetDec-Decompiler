@@ -1881,3 +1881,130 @@ int main(int argc, char** argv)
 	::testing::InitGoogleTest(&argc, argv);
 	return RUN_ALL_TESTS();
 }
+
+// ─── ARM EHABI: the .ARM.extab compact models ────────────────────────────────
+
+/// Write a compact model 1 or 2 .ARM.extab entry.
+///
+/// Word 0 is  bit31=1 | 0<<28 | pr<<24 | extraWords<<16 | op0<<8 | op1,
+/// per IHI0038B S10.2: bits 23..16 are the number of ADDITIONAL 4-byte words
+/// and bits 15..0 are the first TWO opcode bytes.
+static void writeCompactExtab(FlatBin& fb, uint64_t extabVma, unsigned pr, const std::vector<uint8_t>& ops)
+{
+	std::vector<uint8_t> body = ops;
+	// Two bytes live in word 0; the rest are packed four to a word.
+	const std::size_t inWord0 = std::min<std::size_t>(2, body.size());
+	const std::size_t rest = body.size() - inWord0;
+	const unsigned extraWords = static_cast<unsigned>((rest + 3) / 4);
+
+	uint32_t w0 = 0x80000000u | (pr << 24) | (extraWords << 16);
+	if (inWord0 > 0) w0 |= static_cast<uint32_t>(body[0]) << 8;
+	if (inWord0 > 1) w0 |= static_cast<uint32_t>(body[1]);
+	fb.writeU32(extabVma, w0);
+
+	for (unsigned w = 0; w < extraWords; ++w)
+	{
+		uint32_t ew = 0;
+		for (unsigned b = 0; b < 4; ++b)
+		{
+			const std::size_t idx = inWord0 + w * 4 + b;
+			const uint8_t v = (idx < body.size()) ? body[idx] : 0xB0; // FINISH pad
+			ew |= static_cast<uint32_t>(v) << (24 - 8 * b);
+		}
+		fb.writeU32(extabVma + 4 + w * 4, ew);
+	}
+}
+
+/// One function whose exidx entry points at a compact extab entry carrying
+/// `ops`, plus a following CANTUNWIND entry so the range is bounded.
+static retdec::eh_reconstruct::EHFunction parseOneCompact(unsigned pr, const std::vector<uint8_t>& ops)
+{
+	FlatBin fb;
+	const uint64_t base = fb.base_;
+	const uint64_t exidxVma = base + 0x8000;
+	const uint64_t extabVma = base + 0x9000;
+	const uint64_t fnVma = base + 0x2000;
+	const uint64_t fnVma2 = base + 0x3000;
+
+	fb.addSection(".ARM.exidx", exidxVma, 16);
+	fb.addSection(".ARM.extab", extabVma, 64);
+
+	// word1 with bit31 clear is a prel31 offset to the extab entry.
+	const int64_t rel = static_cast<int64_t>(extabVma) - static_cast<int64_t>(exidxVma + 4);
+	fb.writeU32(
+		exidxVma, static_cast<uint32_t>((static_cast<int64_t>(fnVma) - static_cast<int64_t>(exidxVma)) & 0x7FFFFFFF));
+	fb.writeU32(exidxVma + 4, static_cast<uint32_t>(rel & 0x7FFFFFFF));
+	writeExidxEntry(fb, exidxVma + 8, fnVma2, 0x00000001);
+
+	writeCompactExtab(fb, extabVma, pr, ops);
+
+	auto parser = makeArmEhabiParser();
+	auto fns = parser->parse(fb);
+	EXPECT_GE(fns.size(), 1u);
+	return fns.empty() ? retdec::eh_reconstruct::EHFunction{} : fns[0];
+}
+
+TEST(ArmEhabi, TheExtraWordCountIsNotAnUnwindOpcode)
+{
+	// Word 0 bits 23..16 are the number of additional words. They were read as
+	// the count AND pushed as the first opcode, so a pr1 entry declaring one
+	// extra word began with opcode 0x01 -- which the interpreter reads as
+	// `vsp += (1 + 1) * 4`, a stack adjustment that is not in the file.
+	//
+	// The opcodes below save r4 (0xA0 = pop r4-r4) and finish. If the count
+	// byte were still being interpreted, the recorded frame offset for r4 would
+	// be 8 larger than it is.
+	const auto plain = parseOneCompact(1, {0xA0, 0xB0});
+
+	// The same unwind sequence, but long enough to need two extra words -- so
+	// the count byte differs (2 rather than 1) while the opcodes do not. If the
+	// count leaked into the opcode stream, these two would disagree.
+	std::vector<uint8_t> padded = {0xA0, 0xB0};
+	padded.insert(padded.end(), 8, 0xB0); // FINISH padding
+	const auto longer = parseOneCompact(1, padded);
+
+	ASSERT_FALSE(plain.unwindInfo.regSaves.empty());
+	ASSERT_FALSE(longer.unwindInfo.regSaves.empty());
+	EXPECT_EQ(plain.unwindInfo.regSaves[0].regName, "r4");
+	EXPECT_EQ(longer.unwindInfo.regSaves[0].regName, "r4");
+	EXPECT_EQ(plain.unwindInfo.regSaves[0].frameOffset, longer.unwindInfo.regSaves[0].frameOffset);
+}
+
+TEST(ArmEhabi, CompactModel2AlsoHasAdditionalWords)
+{
+	// extraWords was taken as 0 for model 2, so its additional unwind words
+	// were never read and the opcode run stopped at the end of word 0. The
+	// register saved below lives in the second word.
+	// 0x00 is `vsp += 4` -- harmless and, unlike 0xB0 (FINISH), it does not end
+	// the opcode run before the additional word is reached.
+	std::vector<uint8_t> ops = {0x00, 0x00}; // word 0
+	ops.push_back(0xA0);                     // in the first additional word
+	ops.push_back(0xB0);                     // FINISH
+
+	const auto fn = parseOneCompact(2, ops);
+
+	bool sawR4 = false;
+	for (const auto& rs: fn.unwindInfo.regSaves)
+		if (rs.regName == "r4") sawR4 = true;
+	EXPECT_TRUE(sawR4);
+}
+
+TEST(ArmEhabi, AnUnwindOpcodeWithAnUnboundedUleb128DoesNotShiftPastTheWidth)
+{
+	// 0xB2 is `vsp += 0x204 + uleb128 * 4`, and the accumulator is a uint32_t.
+	// The shift grew by 7 per byte with nothing bounding it, so five bytes with
+	// the continuation bit set reach shift 35 -- undefined, and reported by
+	// UBSan as "shift exponent 35 is too large for 32-bit type unsigned int".
+	// The bytes come out of a binary.
+	std::vector<uint8_t> ops = {0xB2};
+	ops.insert(ops.end(), 12, 0xFF); // twelve continuation bytes
+	ops.push_back(0x00);             // terminator
+	ops.push_back(0xB0);             // FINISH
+
+	const auto fn = parseOneCompact(1, ops);
+
+	// No assertion about the value: a malformed encoding has no right answer.
+	// What matters is that it returns at all, and does so without undefined
+	// behaviour -- which the sanitizer job is what actually checks.
+	EXPECT_GE(fn.functionVma, 0u);
+}
