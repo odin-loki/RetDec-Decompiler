@@ -363,7 +363,7 @@ bytecode-parser layers — needs nothing but a C++17 compiler. Three checks run
 against it directly, with no network and no LLVM:
 
 ```bash
-./scripts/standalone_check.sh    # 64 suites over 62 modules, ~2 min from cold
+./scripts/standalone_check.sh    # 64 suites over 62 modules (+493 GUI tests with Qt6), ~2 min from cold
 ./scripts/standalone_fuzz.sh --replay   # the parser crash corpus, deterministic
 ./scripts/verify_esbmc.sh        # 272 SMT proofs of the arithmetic every parser depends on
 ```

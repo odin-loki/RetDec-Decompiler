@@ -251,6 +251,9 @@ if [ "$MODE" = list ]; then
 	say ""
 	say "suites (${#SUITES[@]}):"
 	printf '  %s\n' "${SUITES[@]}"
+	say ""
+	say "suites needing Qt6 (1):"
+	say "  gui   (moc + rcc + QApplication; skipped when Qt6 is absent)"
 	exit 0
 fi
 
@@ -404,6 +407,7 @@ compile_one() {
 		# -x c++ so the compiler does not refuse an unknown .cu extension.
 		modcu)   flags="$SC_CXXFLAGS -x c++" ;;
 		mod20cu) flags="${SC_CXXFLAGS/-std=c++17/-std=c++20} -x c++" ;;
+		gui)   flags="$SC_GUIFLAGS" ;;
 		*)     flags="$SC_CXXFLAGS" ;;
 	esac
 
@@ -693,6 +697,147 @@ check_kernel_headers() {
 	ok "${#headers[@]} kernel headers compile standalone, warnings as errors (${KERNEL_HEADER_DIRS[*]})"
 	return 0
 }
+# ── src/gui, which nothing else in this repository compiles ─────────────────
+#
+# The GUI is 37 sources and 493 tests behind find_package(Qt6 REQUIRED), so it
+# builds only in a tree that has Qt -- and none of the fast gates did. That is
+# not a small blind spot: seven defects were found there by reading, including
+# two use-after-frees where a reference into a model vector outlived the modal
+# dialog whose event loop replaced it. Nothing would have caught a compile
+# error, let alone those.
+#
+# It needs more than a compiler: moc for every Q_OBJECT class, rcc for the
+# resource bundle, and a QApplication before the first widget. What it does not
+# need is the rest of retdec -- the whole suite links against Qt alone, which is
+# why it fits here at all. RETDEC_GUI_HEADLESS is what the project's own ctest
+# run sets (tests/gui/CMakeLists.txt, ctest-linux.yml); without it the panels
+# defer a rehighlight into an offscreen widget with no viewport and the run
+# stalls, which is what the comment at tri_pane_code_view.cpp:441 is about.
+#
+# RETDEC_GUI_HAS_NEURAL is defined because a default build defines it
+# (RETDEC_ENABLE_NEURAL is ON, and src/gui/CMakeLists.txt keys the define off
+# the resulting target). Compiling without it would check the #else branches --
+# the ones a default build does not use.
+GUI_QT_MODULES="Qt6Widgets Qt6Gui Qt6Core Qt6Test"
+gui_qt_available() {
+	command -v pkg-config >/dev/null 2>&1 || return 1
+	# shellcheck disable=SC2086
+	pkg-config --exists $GUI_QT_MODULES 2>/dev/null || return 1
+	GUI_MOC="$(pkg-config --variable=libexecdir Qt6Core 2>/dev/null)/moc"
+	GUI_RCC="$(pkg-config --variable=libexecdir Qt6Core 2>/dev/null)/rcc"
+	[ -x "$GUI_MOC" ] || GUI_MOC="$(command -v moc 2>/dev/null || true)"
+	[ -x "$GUI_RCC" ] || GUI_RCC="$(command -v rcc 2>/dev/null || true)"
+	[ -x "$GUI_MOC" ] && [ -x "$GUI_RCC" ]
+}
+
+check_gui() {
+	[ -d src/gui ] || return 2
+	if ! gui_qt_available; then
+		skip "gui — Qt6 development files not found (install qt6-base-dev to run 493 GUI tests)"
+		return 2
+	fi
+
+	local gen="$BUILD_DIR/gui"
+	mkdir -p "$gen/moc" "$gen/obj"
+
+	# One moc per Q_OBJECT header. An empty output means moc found no
+	# Q_OBJECT after all, which would leave an empty translation unit; the
+	# grep above should make that impossible, so treat it as an error.
+	local h out mocs=()
+	while IFS= read -r h; do
+		out="$gen/moc/moc_$(printf '%s' "${h#include/retdec/gui/}" | tr '/' '_' | sed 's/\.h$/.cpp/')"
+		if [ ! -f "$out" ] || [ "$h" -nt "$out" ]; then
+			if ! "$GUI_MOC" -Iinclude "$h" -o "$out" 2> "$out.log"; then
+				bad "moc failed on $h:"
+				head -10 "$out.log"
+				return 1
+			fi
+		fi
+		[ -s "$out" ] || { bad "moc produced nothing for $h"; return 1; }
+		mocs+=("$out")
+	done < <(grep -rl 'Q_OBJECT' include/retdec/gui | sort)
+
+	local qrc="src/gui/resources/resources.qrc" qrcOut="$gen/qrc_resources.cpp"
+	if [ -f "$qrc" ]; then
+		if [ ! -f "$qrcOut" ] || [ "$qrc" -nt "$qrcOut" ]; then
+			"$GUI_RCC" --name resources "$qrc" -o "$qrcOut" || { bad "rcc failed on $qrc"; return 1; }
+		fi
+	else
+		qrcOut=""
+	fi
+
+	# main.cpp owns the application's own main(); the suite brings its own.
+	local guiSrcs=() testSrcs=() f
+	while IFS= read -r f; do guiSrcs+=("$f"); done < <(find src/gui -name '*.cpp' ! -name 'main.cpp' | sort)
+	while IFS= read -r f; do testSrcs+=("$f"); done < <(find tests/gui -name '*_test.cpp' | sort)
+	if [ ${#testSrcs[@]} -eq 0 ]; then
+		skip "gui (no test sources)"
+		return 2
+	fi
+
+	local qtCflags qtLibs
+	# shellcheck disable=SC2086
+	qtCflags="$(pkg-config --cflags $GUI_QT_MODULES)"
+	# shellcheck disable=SC2086
+	qtLibs="$(pkg-config --libs $GUI_QT_MODULES)"
+
+	# Compiled in parallel and cached the same way the modules above are: the
+	# whole suite is ~55 translation units and a serial build of it is minutes.
+	local joblist; joblist="$(mktemp)"
+	local src obj
+	for src in "${guiSrcs[@]}" "${testSrcs[@]}" "${mocs[@]}" ${qrcOut:+"$qrcOut"} tests/standalone/qt_gtest_lite_main.cpp; do
+		obj="$gen/obj/$(printf '%s' "$src" | tr '/' '_' | sed 's/\.cpp$/.o/')"
+		printf '%s\t%s\tgui\n' "$src" "$obj" >> "$joblist"
+	done
+
+	export SC_GUIFLAGS="-std=c++20 -fPIC $qtCflags -Iinclude -Isrc/gui -Itests/standalone -Itests/gui -DRETDEC_GUI_HAS_NEURAL -O1 -g0 -Wall -Wno-unused-parameter ${EXTRA_CXXFLAGS}"
+	local guiStatus=0
+	if ! xargs -d '\n' -P "$JOBS" -n 1 bash -c 'compile_one "$0"' < "$joblist"; then
+		guiStatus=1
+	fi
+	if [ $guiStatus -ne 0 ]; then
+		bad "gui (compile)"
+		find "$gen/obj" -name '*.log' -size +0 | head -3 | while read -r log; do
+			printf '\n%s--- %s%s\n' "$C_RED" "$log" "$C_OFF"
+			head -20 "$log"
+		done
+		rm -f "$joblist"
+		return 1
+	fi
+
+	local objs=()
+	while IFS= read -r src; do objs+=("${src}"); done < <(cut -f2 "$joblist")
+	rm -f "$joblist"
+
+	local bin="$BUILD_DIR/bin/gui"
+	# The panels reach retdec::neural for the assistant's backend, and the
+	# GoogleTest shim is an object rather than an archive. Everything else the
+	# GUI needs is Qt. --start-group because the module archives have
+	# undeclared cycles, exactly as the suite loop above does.
+	#
+	# EXTRA_CXXFLAGS carries the sanitizer flags under the asan+ubsan job, and
+	# -fsanitize has to reach the link line too or every __asan_report_* the
+	# instrumented objects call is undefined. Leaving it off linked fine here
+	# and would have failed only in CI.
+	# shellcheck disable=SC2086
+	if ! $CXX ${EXTRA_CXXFLAGS} "${objs[@]}" -Wl,--start-group "${libargs[@]}" -Wl,--end-group "$BUILD_DIR/obj/gtest_lite.o" $qtLibs -o "$bin" > "$bin.buildlog" 2>&1; then
+		bad "gui (link)"
+		grep -nE 'undefined reference|cannot find' "$bin.buildlog" | head -15
+		head -10 "$bin.buildlog"
+		return 1
+	fi
+	rm -f "$bin.buildlog"
+
+	local out
+	if out="$(RETDEC_GUI_HEADLESS=1 QT_QPA_PLATFORM=offscreen "$bin" --gtest_brief 2>&1)"; then
+		ok "gui — $(printf '%s' "$out" | grep -o '[0-9]* tests\? ran' | head -1)"
+		return 0
+	fi
+	bad "gui (tests)"
+	printf '%s\n' "$out" | tail -40
+	return 1
+}
+
 # ── compiler warnings ────────────────────────────────────────────────────────
 #
 # Every module here is compiled with -Wall.  compile_one used to delete the
@@ -841,8 +986,13 @@ if [ ${#WANTED[@]} -gt 0 ]; then
 	run_suites=()
 	for w in "${WANTED[@]}"; do
 		found=0
+		# gui is built by check_gui below, not by this loop, so it is a valid
+		# name here without appearing in SUITES.
+		[ "$w" = gui ] && found=2
 		for s in "${SUITES[@]}"; do [ "$s" = "$w" ] && found=1; done
-		if [ $found -eq 1 ]; then
+		if [ $found -eq 2 ]; then
+			:
+		elif [ $found -eq 1 ]; then
 			run_suites+=("$w")
 		else
 			skip "$w is not a standalone suite (see --list)"
@@ -933,8 +1083,29 @@ for s in "${run_suites[@]}"; do
 	fi
 done
 
+# gui is not one of SUITES: it needs moc, rcc and a QApplication before the
+# first widget, so it has its own builder above. It still counts here.
+gui_selected=1
+if [ ${#WANTED[@]} -gt 0 ]; then
+	gui_selected=0
+	for w in "${WANTED[@]}"; do [ "$w" = gui ] && gui_selected=1; done
+fi
+gui_total=0
+if [ $gui_selected -eq 1 ]; then
+	# 2 means the suite was skipped for want of Qt6, which is neither a pass
+	# nor a failure and must not be counted as either -- a skipped suite that
+	# reported "1 / 1 passed" would be a green run for work nothing did.
+	check_gui
+	gui_status=$?
+	case $gui_status in
+		0) gui_total=1; passed=$((passed + 1)) ;;
+		2) : ;;
+		*) gui_total=1; failed_suites+=("gui") ;;
+	esac
+fi
+
 hdr "summary"
-say "suites passed: $passed / ${#run_suites[@]}"
+say "suites passed: $passed / $(( ${#run_suites[@]} + gui_total ))"
 if [ ${#failed_suites[@]} -gt 0 ]; then
 	bad "failing: ${failed_suites[*]}"
 	exit 1

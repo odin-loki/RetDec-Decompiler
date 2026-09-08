@@ -26,13 +26,23 @@ jobs:
   standalone:
     name: ${{ matrix.cxx }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         cxx: [g++, clang++]
     steps:
       - uses: actions/checkout@v4
+
+      # src/gui is 37 sources and 493 tests behind find_package(Qt6 REQUIRED),
+      # so without these packages the gui suite skips itself and the GUI stays
+      # uncompiled by anything on this runner. moc and rcc come from
+      # qt6-base-dev-tools; the offscreen platform plugin is what lets the
+      # widget tests run with no display.
+      - name: Install Qt6 for the gui suite
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qt6-base-dev qt6-base-dev-tools
 
       - name: Compile every dependency-free module and run its tests
         env:
@@ -53,6 +63,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Qt6 for the gui suite
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qt6-base-dev qt6-base-dev-tools
 
       - name: Run the dependency-free suites under ASan and UBSan
         env:

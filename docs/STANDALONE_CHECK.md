@@ -37,7 +37,30 @@ suites against a shim, and runs them.
 |---|---|---|
 | Prerequisites | network, ~30 GB, CMake, Ninja | a C++17 compiler |
 | Cold time | hours | ~1 minute |
-| Coverage | whole product | 64 suites, ~4000 test cases over 62 modules |
+| Coverage | whole product | 64 suites, ~4000 test cases over 62 modules, plus 493 GUI tests where Qt6 is installed |
+
+## The GUI suite
+
+`src/gui` is the one part of this fork that is not header-only-plus-C++17: it is
+37 sources and 493 tests behind `find_package(Qt6 REQUIRED)`, and before it was
+added here nothing in any fast gate compiled a line of it. Seven defects were
+found there by reading alone, two of them use-after-frees.
+
+It does not fit the loop that builds the other suites. Every `Q_OBJECT` class
+needs `moc`, the resource bundle needs `rcc`, and a `QApplication` has to exist
+before the first widget — so `check_gui` in the script does those three things
+itself and links the result against Qt plus `retdec-neural`, which is all the
+suite actually needs. `RETDEC_GUI_HEADLESS=1` and `QT_QPA_PLATFORM=offscreen`
+are what the project's own ctest run sets; the first is load-bearing, because
+without it the panels defer a rehighlight into an offscreen widget that has no
+viewport and the run stalls.
+
+`RETDEC_GUI_HAS_NEURAL` is defined, because a default build defines it —
+compiling without it would check the `#else` branches, which is not what ships.
+
+Where Qt6 is absent the suite skips itself, says so, and counts as neither a
+pass nor a failure. Install `qt6-base-dev` and `qt6-base-dev-tools` to run it;
+the CI workflow does.
 
 Two vendored header-only dependencies are used because they are already in the
 tree and cost nothing: `deps/rapidjson` (which unlocks `config`, `serdes`,
