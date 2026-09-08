@@ -15,12 +15,15 @@
  */
 
 #include "retdec/pdbparser/pdb_file.h"
+#include "retdec/pdbparser/pdb_types.h"
 #include "retdec/pdbparser/pdb_utils.h"
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <memory>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -167,6 +170,184 @@ TEST(PdbFile, InitializeOnAnUnloadedFileIsSafe)
 	pdb.initialize(0);
 	EXPECT_EQ(nullptr, pdb.get_functions());
 	EXPECT_EQ(nullptr, pdb.get_global_variables());
+}
+
+
+// ─── LF_PROCEDURE / LF_MFUNCTION argument lists ──────────────────────────────
+//
+// A function record says how many parameters it has; a separate LF_ARGLIST
+// record holds the types. Three numbers therefore describe the same list --
+// lfProc/lfMFunc::parmcount, lfArgList::count, and how many DWORDs the arglist
+// record is actually long -- and only the third one is a fact. The first two
+// are 16- and 32-bit fields out of the file and can say anything.
+//
+// The records are allocated at exactly their on-wire length so that a read past
+// the end lands in an ASan redzone rather than in whatever the allocator had
+// lying around; run the suite with EXTRA_CXXFLAGS="-fsanitize=address -g".
+
+namespace {
+
+/// Bytes of a record, sized exactly, so a one-DWORD overread is detectable.
+using Record = std::unique_ptr<unsigned char[]>;
+
+Record makeRecord(std::size_t size)
+{
+	Record r(new unsigned char[size]);
+	std::memset(r.get(), 0, size);
+	return r;
+}
+
+template <typename T>
+void poke(unsigned char* base, std::size_t offset, T value)
+{
+	std::memcpy(base + offset, &value, sizeof(value));
+}
+
+/// An LF_ARGLIST holding @a stored argument types but claiming @a claimed.
+/// Returns the record and, through @a sizeOut, its true length in bytes.
+Record makeArglist(std::uint32_t claimed, std::uint32_t stored, int& sizeOut)
+{
+	const std::size_t size = 6 + std::size_t(stored) * 4;
+	Record r = makeRecord(size);
+	poke<std::uint16_t>(r.get(), 0, LF_ARGLIST);
+	poke<std::uint32_t>(r.get(), 2, claimed);
+	for (std::uint32_t i = 0; i < stored; ++i)
+	{
+		poke<std::uint32_t>(r.get(), 6 + std::size_t(i) * 4, T_INT4);
+	}
+	sizeOut = static_cast<int>(size);
+	return r;
+}
+
+} // namespace
+
+TEST(PdbArgList, MFunctionParmcountCannotReadPastTheArgumentList)
+{
+	// The list stores two arguments and says it has 4096; the member function
+	// says it has 65535. parse_mfunc used to take parmcount at face value --
+	// the disagreement was an assert(), which is nothing in a release build --
+	// and then indexed arg[0..65534].
+	int arglistSize = 0;
+	Record arglistBytes = makeArglist(/*claimed=*/4096, /*stored=*/2, arglistSize);
+
+	PDBTypeDefIndexMap types;
+	PDBTypeArglist arglistDef(0x1000);
+	arglistDef.parse(reinterpret_cast<lfArgList*>(arglistBytes.get()), arglistSize, types);
+	types[0x1000] = &arglistDef;
+
+	Record mfunc = makeRecord(sizeof(lfMFunc));
+	poke<std::uint16_t>(mfunc.get(), 0x00, LF_MFUNCTION);
+	poke<std::uint32_t>(mfunc.get(), 0x02, T_INT4); // rvtype
+	poke<std::uint32_t>(mfunc.get(), 0x06, 0);      // classtype
+	poke<std::uint32_t>(mfunc.get(), 0x0A, 0);      // thistype
+	poke<std::uint16_t>(mfunc.get(), 0x10, 0xFFFF); // parmcount
+	poke<std::uint32_t>(mfunc.get(), 0x12, 0x1000); // arglist
+
+	PDBTypeFunction fn(1);
+	fn.parse_mfunc(reinterpret_cast<lfMFunc*>(mfunc.get()), static_cast<int>(sizeof(lfMFunc)), types);
+
+	EXPECT_LE(fn.func_args_count, 2);
+	EXPECT_GE(fn.func_args_count, 0);
+}
+
+TEST(PdbArgList, ProcedureParmcountCannotReadPastTheArgumentList)
+{
+	// The same disagreement on the LF_PROCEDURE path. That one already clamped
+	// to lfArgList::count -- but count is a 32-bit field out of the file too,
+	// and nothing tied it to how long the record is.
+	int arglistSize = 0;
+	Record arglistBytes = makeArglist(/*claimed=*/4096, /*stored=*/2, arglistSize);
+
+	PDBTypeDefIndexMap types;
+	PDBTypeArglist arglistDef(0x1000);
+	arglistDef.parse(reinterpret_cast<lfArgList*>(arglistBytes.get()), arglistSize, types);
+	types[0x1000] = &arglistDef;
+
+	Record proc = makeRecord(sizeof(lfProc));
+	poke<std::uint16_t>(proc.get(), 0x00, LF_PROCEDURE);
+	poke<std::uint32_t>(proc.get(), 0x02, T_INT4); // rvtype
+	poke<std::uint16_t>(proc.get(), 0x08, 0xFFFF); // parmcount
+	poke<std::uint32_t>(proc.get(), 0x0A, 0x1000); // arglist
+
+	PDBTypeFunction fn(2);
+	fn.parse(reinterpret_cast<lfProc*>(proc.get()), static_cast<int>(sizeof(lfProc)), types);
+
+	EXPECT_LE(fn.func_args_count, 2);
+	EXPECT_GE(fn.func_args_count, 0);
+}
+
+TEST(PdbArgList, AnArgumentListShorterThanItsHeaderYieldsNoArguments)
+{
+	// A record whose length does not even cover `leaf` and `count`. The record
+	// walk in parse_types() bounds `size` against the stream, so this is what a
+	// two-byte LF_ARGLIST looks like by the time it reaches here.
+	Record arglistBytes = makeRecord(6);
+	poke<std::uint16_t>(arglistBytes.get(), 0, LF_ARGLIST);
+	poke<std::uint32_t>(arglistBytes.get(), 2, 0xFFFFFFFFu);
+
+	PDBTypeDefIndexMap types;
+	PDBTypeArglist arglistDef(0x1000);
+	arglistDef.parse(reinterpret_cast<lfArgList*>(arglistBytes.get()), 2, types);
+	types[0x1000] = &arglistDef;
+
+	Record proc = makeRecord(sizeof(lfProc));
+	poke<std::uint16_t>(proc.get(), 0x00, LF_PROCEDURE);
+	poke<std::uint16_t>(proc.get(), 0x08, 8);      // parmcount
+	poke<std::uint32_t>(proc.get(), 0x0A, 0x1000); // arglist
+
+	PDBTypeFunction fn(3);
+	fn.parse(reinterpret_cast<lfProc*>(proc.get()), static_cast<int>(sizeof(lfProc)), types);
+
+	EXPECT_EQ(0, fn.func_args_count);
+}
+
+TEST(PdbArgList, AnHonestArgumentListIsReadInFull)
+{
+	// The other half: when all three numbers agree, every argument is read.
+	// A clamp that returned zero would pass the tests above and lose every
+	// parameter type in the file.
+	int arglistSize = 0;
+	Record arglistBytes = makeArglist(/*claimed=*/3, /*stored=*/3, arglistSize);
+
+	PDBTypeDefIndexMap types;
+	PDBTypeArglist arglistDef(0x1000);
+	arglistDef.parse(reinterpret_cast<lfArgList*>(arglistBytes.get()), arglistSize, types);
+	types[0x1000] = &arglistDef;
+
+	Record proc = makeRecord(sizeof(lfProc));
+	poke<std::uint16_t>(proc.get(), 0x00, LF_PROCEDURE);
+	poke<std::uint32_t>(proc.get(), 0x02, T_INT4);
+	poke<std::uint16_t>(proc.get(), 0x08, 3);
+	poke<std::uint32_t>(proc.get(), 0x0A, 0x1000);
+
+	PDBTypeFunction fn(4);
+	fn.parse(reinterpret_cast<lfProc*>(proc.get()), static_cast<int>(sizeof(lfProc)), types);
+
+	ASSERT_EQ(3, fn.func_args_count);
+	for (int i = 0; i < 3; ++i)
+	{
+		EXPECT_EQ(T_INT4, fn.func_args[i].type_index);
+	}
+}
+
+TEST(PdbArgList, AFunctionRecordNamingANonArglistTypeIsRefused)
+{
+	// types[] is seeded with the base types, so an arglist index of 0 resolves
+	// to T_NOTYPE rather than to nothing. reinterpret_cast plus assert() is an
+	// abort in a debug build and a type-confused read in a release one.
+	PDBTypeDefIndexMap types;
+	PDBTypeBase baseDef(T_INT4, PDBBASETYPE_INT_SIGNED, false, 32, "int");
+	types[T_INT4] = &baseDef;
+
+	Record mfunc = makeRecord(sizeof(lfMFunc));
+	poke<std::uint16_t>(mfunc.get(), 0x00, LF_MFUNCTION);
+	poke<std::uint16_t>(mfunc.get(), 0x10, 4);      // parmcount
+	poke<std::uint32_t>(mfunc.get(), 0x12, T_INT4); // arglist -> a base type
+
+	PDBTypeFunction fn(5);
+	fn.parse_mfunc(reinterpret_cast<lfMFunc*>(mfunc.get()), static_cast<int>(sizeof(lfMFunc)), types);
+
+	EXPECT_EQ(nullptr, fn.func_args);
 }
 
 } // namespace

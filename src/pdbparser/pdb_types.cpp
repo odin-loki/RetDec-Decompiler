@@ -368,6 +368,71 @@ std::string PDBTypeConst::to_llvm(void)
 //
 // =================================================================
 
+namespace {
+
+/**
+ * Resolve a function record's argument list and say how many of its entries may
+ * be read.
+ *
+ * Three numbers describe the same list and only one of them is a fact:
+ *
+ *   - lfProc/lfMFunc::parmcount, a 16-bit field in the function record;
+ *   - lfArgList::count, a 32-bit field in the argument-list record;
+ *   - how many DWORDs the argument-list record is actually long, which
+ *     PDBTypes::parse_types bounded against the type stream before either
+ *     record was constructed.
+ *
+ * The first two are whatever the file says. The smallest of the three is the
+ * only count that reads no further than the bytes that were loaded.
+ *
+ * @param types      type table, seeded with the base types
+ * @param arglistIdx type index the function record names for its argument list
+ * @param parmcount  parameter count the function record claims
+ * @param arglist    set to the argument-list record on success, else untouched
+ *
+ * @return arguments that may be read, or -1 when the named type is not an
+ *         argument list at all and no arguments may be read from it
+ */
+int usableArgumentCount(PDBTypeDefIndexMap& types, PDB_DWORD arglistIdx, unsigned parmcount, lfArgList*& arglist)
+{
+	// `arglistIdx` is a type index out of the file, and types[] is seeded with
+	// the base types, so index 0 resolves to T_NOTYPE rather than to nothing.
+	// Casting that to a PDBTypeArglist and asserting afterwards is an abort on
+	// attacker input in any build without NDEBUG, and a type-confused read of
+	// `->arglist` in one with it. Ask first.
+	PDBTypeDef* arglistdef = types[arglistIdx];
+	if (arglistdef == nullptr || arglistdef->type_class != PDBTYPE_ARGLIST)
+	{
+		return -1;
+	}
+
+	PDBTypeArglist* arglisttypedef = static_cast<PDBTypeArglist*>(arglistdef);
+	if (arglisttypedef->arglist == nullptr)
+	{
+		return -1;
+	}
+	arglist = arglisttypedef->arglist;
+
+	// Smallest of the three. Written as successive minima rather than as a
+	// chain of ==-comparisons because the numbers do not have to disagree in
+	// any particular direction: 65535 parameters against a 4096-entry claim
+	// against a record holding two is one input, and the old code took the
+	// first of those.
+	unsigned usable = parmcount;
+	if (arglist->count < usable)
+	{
+		usable = arglist->count;
+	}
+	const int stored = arglisttypedef->arglist_stored;
+	if (stored >= 0 && static_cast<unsigned>(stored) < usable)
+	{
+		usable = static_cast<unsigned>(stored);
+	}
+	return static_cast<int>(usable);
+}
+
+} // namespace
+
 void PDBTypeFunction::parse(lfProc* record, int, PDBTypeDefIndexMap& types)
 {
 	// Get function return value type
@@ -376,36 +441,15 @@ void PDBTypeFunction::parse(lfProc* record, int, PDBTypeDefIndexMap& types)
 	// Get calling convention
 	func_calltype = record->calltype;
 	// Get list of arguments
-	func_args_count = record->parmcount;
-	// `record->arglist` is a type index out of the file, and types[] is seeded
-	// with the base types, so index 0 resolves to T_NOTYPE rather than to
-	// nothing. Casting that to a PDBTypeArglist and asserting afterwards is an
-	// abort on attacker input in any build without NDEBUG, and a type-confused
-	// read of `->arglist` in one with it. Ask first.
-	PDBTypeDef* arglistdef = types[record->arglist];
-	if (arglistdef != nullptr && arglistdef->type_class == PDBTYPE_ARGLIST)
+	lfArgList* arglist = nullptr;
+	const int usable = usableArgumentCount(types, record->arglist, record->parmcount, arglist);
+	// A record with no usable argument list has no arguments, whatever its
+	// parmcount says. This used to be left at parmcount with func_args null,
+	// and pdb_symbols.cpp:285 takes that count as the number of locals that are
+	// really parameters.
+	func_args_count = (usable > 0) ? usable : 0;
+	if (usable >= 0)
 	{
-		PDBTypeArglist* arglisttypedef = static_cast<PDBTypeArglist*>(arglistdef);
-		lfArgList* arglist = arglisttypedef->arglist;
-		if (arglist == nullptr)
-		{
-			func_args_count = 0;
-		}
-		else if (record->parmcount == 0)
-		{
-			func_args_count = 0;
-		}
-		else if (arglist->count != static_cast<PDB_DWORD>(record->parmcount))
-		{
-			// The function record and the argument list disagree about how many
-			// arguments there are, and only the list knows how many it stores.
-			// This was an assert, so a file could abort the process by saying
-			// one number in two places; taking the smaller reads no further
-			// than the list actually goes.
-			func_args_count = (arglist->count < static_cast<PDB_DWORD>(record->parmcount))
-								? static_cast<int>(arglist->count)
-								: record->parmcount;
-		}
 		func_args = new PDBTypeFuncArg[func_args_count];
 		for (int i = 0; i < func_args_count; i++)
 		{ // Process all arguments
@@ -428,23 +472,34 @@ void PDBTypeFunction::parse_mfunc(lfMFunc* record, int, PDBTypeDefIndexMap& type
 	// Get calling convention
 	func_calltype = record->calltype;
 	// Get list of arguments
-	func_args_count = record->parmcount;
-	PDBTypeArglist* arglisttypedef =
-		reinterpret_cast<PDBTypeArglist*>(types[record->arglist]); // Get auxiliary type definition containing arglist
-	if (arglisttypedef != nullptr)
+	//
+	// This is the sibling of parse() above and had none of its checks: a
+	// reinterpret_cast to PDBTypeArglist with the type_class asserted after the
+	// fact, and `assert(arglist->count == record->parmcount)` standing in for a
+	// bound. Both asserts abort the process on attacker input in a build
+	// without NDEBUG; in a release build they are nothing, and the loop indexed
+	// arg[0 .. parmcount-1] with parmcount straight out of the file. Measured
+	// under ASan with a 14-byte argument list and parmcount 0xFFFF:
+	//
+	//   heap-buffer-overflow, READ of size 4 at 0 bytes after a 14-byte region
+	//   src/pdbparser/pdb_types.cpp:445 in PDBTypeFunction::parse_mfunc
+	//
+	// and the loop would have walked 262,140 bytes past it.
+	lfArgList* arglist = nullptr;
+	const int usable = usableArgumentCount(types, record->arglist, record->parmcount, arglist);
+	func_args_count = (usable > 0) ? usable : 0;
+	if (usable >= 0)
 	{
-		assert(arglisttypedef->type_class == PDBTYPE_ARGLIST);
-		lfArgList* arglist = arglisttypedef->arglist;
-		if (record->parmcount == 0)
-			func_args_count = 0;
-		else
-			assert(arglist->count == record->parmcount);
 		func_args = new PDBTypeFuncArg[func_args_count];
 		for (int i = 0; i < func_args_count; i++)
 		{ // Process all arguments
 			func_args[i].type_index = arglist->arg[i];
 			func_args[i].type_def = types[arglist->arg[i]];
 		}
+		// The LF_PROCEDURE path detects a variadic function from the trailing
+		// T_NOTYPE and this one never did, so every variadic member function
+		// came out with a fixed arity.
+		if (func_args_count > 0 && func_args[func_args_count - 1].type_index == T_NOTYPE) func_is_variadic = true;
 	}
 	// Get function parent class and this-parameter type
 	func_is_clsmember = true;

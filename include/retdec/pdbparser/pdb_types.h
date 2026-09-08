@@ -300,13 +300,21 @@ public:
 class PDBTypeArglist : public PDBTypeDef {
 public:
 	// Constructor and destructor
-	PDBTypeArglist(int ind): PDBTypeDef(ind, PDBTYPE_ARGLIST), arglist(nullptr){};
+	PDBTypeArglist(int ind): PDBTypeDef(ind, PDBTYPE_ARGLIST), arglist(nullptr), arglist_stored(0){};
 	virtual ~PDBTypeArglist(void){};
 
 	// Basic methods - parse and dump
-	virtual void parse(lfArgList* record, int, PDBTypeDefIndexMap&)
+	//
+	// `size` is the record's length in bytes, already bounded against the type
+	// stream by PDBTypes::parse_types before the record gets here. It used to
+	// be dropped, which left `arglist->count` -- a 32-bit field an attacker
+	// writes -- as the only statement anywhere of how many entries arg[] has.
+	// Keeping the count the record can actually hold is what lets LF_PROCEDURE
+	// and LF_MFUNCTION clamp to a fact rather than to another claim.
+	virtual void parse(lfArgList* record, int size, PDBTypeDefIndexMap&)
 	{
 		arglist = record;
+		arglist_stored = stored_argument_count(size);
 	};
 	virtual void dump(bool nested = false)
 	{
@@ -328,6 +336,16 @@ public:
 
 	// Type-specific members
 	lfArgList* arglist; // Argument list record
+	int arglist_stored; // arg[] entries the record is long enough to hold
+
+	/// arg[] entries that fit in a record of @a size bytes. `leaf` and `count`
+	/// come first, so a record no longer than those holds none.
+	static int stored_argument_count(int size)
+	{
+		const int header = static_cast<int>(sizeof(PDB_WORD) + sizeof(PDB_DWORD));
+		if (size <= header) return 0;
+		return (size - header) / static_cast<int>(sizeof(PDB_DWORD));
+	}
 };
 
 // Function argument
