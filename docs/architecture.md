@@ -93,6 +93,38 @@ retdec-concurrency-detect   (standalone)
 retdec-ptx-decompile        (standalone; not linked from the GUI)
 ```
 
+#### Libraries the product does not link
+
+Twelve library targets under `src/` are built, unit-tested and installed, and
+reach no decompilation: nothing under `src/` or the root `CMakeLists.txt` links
+them, and no source outside their own directory includes their headers. Their
+only consumer is their own test binary.
+
+| Library | Directory | Why it is not in the pipeline |
+| --- | --- | --- |
+| `retdec-cfg` | `src/cfg` | CFG reconstruction; the pipeline uses bin2llvmir's own CFG |
+| `retdec-code-data` | `src/code_data` | code/data separation; the loader decides that today |
+| `retdec-compiler-abi` | `src/compiler_abi` | ABI tables; `param_return` in bin2llvmir carries its own |
+| `retdec-compiler-detect` | `src/compiler_detect` | compiler identification; `cpdetect` is what runs |
+| `retdec-eh-reconstruct` | `src/eh_reconstruct` | exception-handler recovery, not yet consumed by any emitter |
+| `retdec-func-boundary` | `src/func_boundary` | function boundary detection; the decoder finds functions itself |
+| `retdec-idiom-reconstruct` | `src/idiom_reconstruct` | idiom recovery; llvmir2hll has its own idiom passes |
+| `retdec-loader-sim` | `src/loader_sim` | loader simulation, used only by its own tests |
+| `retdec-module-cluster` | `src/module_cluster` | module clustering, no caller |
+| `retdec-rtti` | `src/rtti` | RTTI reconstruction; `rtti-finder` is the one bin2llvmir links |
+| `retdec-string-detect` | `src/string_detect` | string classification, no caller |
+| `retdec-testing` | `src/testing` | test support library, which is what it is for |
+
+`retdec-experimental` (`src/experimental`) is linked by nothing at all, tests
+included; it is the task scaffold behind `RETDEC_ENABLE_EXPERIMENTAL_SCAFFOLD`.
+
+This is a statement about the tree, not a defect list: a fix landing in one of
+these reaches no user of the decompiler, which is worth knowing before making
+one. `scripts/ci/check_link_graph.py` recomputes the set from the CMakeLists on
+every doc-integrity run and fails if it has changed in either direction, so the
+table above cannot drift and the count cannot grow by one without somebody
+saying so.
+
 ---
 
 ## Full Pipeline Stage Reference {#pipeline}
