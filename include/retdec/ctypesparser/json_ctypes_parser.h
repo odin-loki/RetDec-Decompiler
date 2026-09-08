@@ -11,6 +11,7 @@
 #include <memory>
 #include <functional>
 #include <string>
+#include <vector>
 #include <unordered_map>
 
 #include <rapidjson/document.h>
@@ -91,6 +92,21 @@ private:
 
 	/// Call convention used when JSON does not contain one.
 	retdec::ctypes::CallConvention defaultCallConv;
+
+	/// Typedef names currently being resolved, innermost last.
+	///
+	/// This is how parseTypedefedType refuses a cycle. It used to be a
+	/// function-local static inside the lambda -- one vector for the whole
+	/// process, shared by every parser on every thread, with no
+	/// synchronisation. parallelBatchDecompile runs decompile() on N pool
+	/// threads and each one loads the LTI type libraries through its own
+	/// JSONCTypesParser, so the vector was being searched, appended to and
+	/// cleared concurrently: with two threads, 3997 of 4000 parses of a
+	/// NON-recursive two-step typedef answered UnknownType because each
+	/// thread saw the other's name as a cycle, and four threads segfaulted
+	/// on a concurrent reallocation. It is per-parser state, so it lives
+	/// with the parser.
+	std::vector<std::string> typedefChain;
 };
 
 } // namespace ctypesparser

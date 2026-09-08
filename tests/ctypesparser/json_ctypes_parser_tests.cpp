@@ -5,7 +5,12 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <atomic>
 #include <memory>
+#include <sstream>
+#include <string>
+#include <thread>
+
 #include <gtest/gtest.h>
 
 #include "retdec/ctypes/array_type.h"
@@ -1891,6 +1896,80 @@ TEST_F(JSONCTypesParserTests, ParsingCircularTypedefsBreaksLoopAndSetsTypedefToU
 	EXPECT_EQ("MY_TYPE2", type2->getName());
 	EXPECT_EQ("MY_TYPE3", type3->getName());
 	EXPECT_EQ(retdec::ctypes::UnknownType::create(), type3->getAliasedType());
+}
+
+// ─── The typedef cycle guard ─────────────────────────────────────────────────
+//
+// It used to be a function-local static inside parseTypedefedType's lambda,
+// which is one vector for the whole process however many parsers exist. The
+// two tests below are what that could not survive.
+
+namespace {
+
+/// A module with a two-step typedef chain ending in `unknown`, named after a
+/// prefix so two of them can be told apart.
+std::string typedefChainJson(const std::string& prefix)
+{
+	return R"({"functions":{"f)" + prefix + R"(":{"decl":"x f();","header":"h.h","name":"f)" + prefix
+		 + R"(","params":[],"ret_type":")" + prefix + R"(1"}},"types":{")" + prefix + R"(1":{"type":"typedef","name":")"
+		 + prefix + R"(1","typedefed_type":")" + prefix + R"(2"},")" + prefix + R"(2":{"type":"typedef","name":")"
+		 + prefix + R"(2","typedefed_type":"unknown"}}})";
+}
+
+} // namespace
+
+TEST_F(JSONCTypesParserTests, ConcurrentParsersDoNotSeeEachOthersTypedefsAsCycles)
+{
+	// Two threads, each with its own parser and its own chain, and the two
+	// chains share no names -- so neither is recursive and every parse must
+	// resolve to the outer typedef. Against the shared static this failed
+	// 3,997 times in 4,000 and segfaulted outright at four threads;
+	// parallelBatchDecompile is where that happens for real, one
+	// JSONCTypesParser per pool thread loading the LTI type libraries.
+	//
+	// Sequentially it would pass either way: the old code cleared the vector
+	// on the way out of the outermost typedef, so two parses that do not
+	// overlap never collide. Overlapping them is the test.
+	constexpr int kRounds = 200;
+	std::atomic<int> resolved{0};
+
+	auto work = [&resolved](const std::string& prefix) {
+		for (int i = 0; i < kRounds; ++i)
+		{
+			JSONCTypesParser p;
+			std::stringstream json(typedefChainJson(prefix));
+			auto mod = p.parse(json);
+			auto ret = mod->getFunctionWithName("f" + prefix)->getReturnType();
+			if (ret && ret->isTypedef() && ret->getName() == prefix + "1") resolved.fetch_add(1);
+		}
+	};
+
+	std::thread a(work, std::string("A"));
+	std::thread b(work, std::string("B"));
+	a.join();
+	b.join();
+
+	EXPECT_EQ(2 * kRounds, resolved.load());
+}
+
+TEST_F(JSONCTypesParserTests, AFailedParseDoesNotPoisonTheNextOne)
+{
+	// getOrParseType throws on malformed JSON, and the old code cleared the
+	// chain only after returning from the outermost typedef -- so a throw
+	// mid-chain left the name behind and every later parse of that typedef,
+	// in that process, answered UnknownType for it.
+	std::stringstream bad(
+		R"({"functions":{"f":{"decl":"x f();","header":"h.h","name":"f","params":[],"ret_type":"A1"}},)"
+		R"("types":{"A1":{"type":"typedef","name":"A1","typedefed_type":"A2"},)"
+		R"("A2":{"type":"typedef","name":"A2","typedefed_type":7}}})");
+	EXPECT_THROW(parser.parse(bad), CTypesParseError);
+
+	std::stringstream good(typedefChainJson("A"));
+	auto mod = parser.parse(good);
+	auto ret = mod->getFunctionWithName("fA")->getReturnType();
+
+	ASSERT_TRUE(ret->isTypedef());
+	EXPECT_EQ("A1", ret->getName());
 }
 
 } // namespace tests

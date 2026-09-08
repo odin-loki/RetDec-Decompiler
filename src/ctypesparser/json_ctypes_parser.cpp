@@ -16,6 +16,7 @@
 #include "retdec/ctypes/ctypes.h"
 #include "retdec/ctypesparser/json_ctypes_parser.h"
 #include "retdec/utils/container.h"
+#include "retdec/utils/scope_exit.h"
 #include "retdec/utils/string.h"
 
 namespace {
@@ -635,24 +636,29 @@ std::shared_ptr<retdec::ctypes::Type> JSONCTypesParser::parseTypedefedType(const
 {
 	return getOrParseNamedType(
 		jsonTypedef, [&jsonTypedef, this](const std::string& typeName) -> std::shared_ptr<retdec::ctypes::Type> {
-			static std::vector<std::string> previousTypedefs;
-			std::shared_ptr<retdec::ctypes::Type> aliasedType;
-
-			if (retdec::utils::hasItem(previousTypedefs, typeName))
+			// typedefChain is a member; it used to be a function-local static,
+			// which made it one vector for the whole process (see the
+			// declaration in the header for what that cost).
+			if (retdec::utils::hasItem(typedefChain, typeName))
 			{
 				return retdec::ctypes::UnknownType::create();
 			}
-			else
+
+			// Popped however this returns. The old code cleared the whole
+			// vector on the way out of the outermost typedef, which is only
+			// reached if nothing in between throws -- and getOrParseType does
+			// throw, on malformed JSON. One CTypesParseError left a name
+			// behind, and every later parse in the process then read that
+			// typedef as a cycle and answered UnknownType for it.
+			typedefChain.emplace_back(typeName);
+			SCOPE_EXIT
 			{
-				previousTypedefs.emplace_back(typeName);
-				std::string aliasedTypeKey = safeGetString(jsonTypedef, JSON_typedefed_type);
-				aliasedType = (aliasedTypeKey == JSON_unknown_type) ? retdec::ctypes::UnknownType::create()
-																	: this->getOrParseType(aliasedTypeKey);
-				if (typeName == previousTypedefs[0])
-				{ // returned from all nested types
-					previousTypedefs.clear();
-				}
-			}
+				typedefChain.pop_back();
+			};
+
+			const std::string aliasedTypeKey = safeGetString(jsonTypedef, JSON_typedefed_type);
+			auto aliasedType = (aliasedTypeKey == JSON_unknown_type) ? retdec::ctypes::UnknownType::create()
+																	 : this->getOrParseType(aliasedTypeKey);
 			return retdec::ctypes::TypedefedType::create(context, typeName, aliasedType);
 		});
 }
