@@ -1,6 +1,7 @@
 
 add_executable(retdec-fileformat-tests
     asn1_test.cpp
+    character_iterator_test.cpp
     format_lattice_test.cpp
     lief_adapter_test.cpp
 )

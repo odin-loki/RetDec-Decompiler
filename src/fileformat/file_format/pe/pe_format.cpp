@@ -467,10 +467,23 @@ void PeFormat::initStructures(const std::string& dllListFile)
 			formatParser = new PeFormatParser(this, file);
 		}
 		catch (...)
-		{}
+		{
+			// The directory readers above size heap buffers straight from raw PE header fields --
+			// DebugDirectory.cpp resizes debugEntry.data to IMAGE_DEBUG_DIRECTORY::SizeOfData,
+			// SecurityDirectory.cpp to the WIN_CERTIFICATE Length payload -- and the
+			// `new PeFormatParser` above can throw std::bad_alloc by itself. Swallowing all of that
+			// left stateIsValid true, set by loadPeHeaders thirteen statements earlier, while
+			// formatParser stayed null; and the block below opens with loadRichHeader(), whose
+			// first call is getPeHeaderOffset(), a bare `return formatParser->getPeHeaderOffset();`.
+			// A file whose parse did not finish is not a valid state, whatever the headers alone
+			// said.
+			stateIsValid = false;
+		}
 	}
 
-	if (stateIsValid)
+	// formatParser is the last thing the try block constructs, so a null one means the parse did not
+	// run to completion. Nothing below tolerates that: 76 of the loaders reach through it.
+	if (stateIsValid && formatParser)
 	{
 		fileFormat = Format::PE;
 		loadRichHeader();

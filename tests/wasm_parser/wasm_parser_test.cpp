@@ -881,3 +881,183 @@ TEST(WatEmitterLeb128, AnOverlongConstExpressionDoesNotProduceAValue)
 	const auto res = em.emit(mod);
 	EXPECT_NE(res.source.find("i32.const 0"), std::string::npos) << res.source;
 }
+
+// The same defect twenty lines further down the same file, in the function-body
+// disassembler rather than in constExprStr. readVecULEB / readVecSLEB /
+// readVecSLEB64 bounded the cursor and not the shift count, and the two signed
+// ones accumulated into int32_t and int64_t, where (int32_t)0x7F << 28 is
+// already outside the signed range. Measured on this shape under
+// -fsanitize=undefined, against the code as it stood:
+//
+//   src/wasm_parser/wat_emitter.cpp:534: runtime error: left shift of 127 by 28
+//   places cannot be represented in type 'int'
+//
+// The three functions are static, so this drives them the only way a file can:
+// a code section whose body carries the run. That is also the reachable path.
+namespace {
+
+/// A module with one () -> () function whose body is @p body.
+std::vector<uint8_t> moduleWithBody(const std::vector<uint8_t>& body)
+{
+	auto uleb = [](std::vector<uint8_t>& v, uint64_t x) {
+		do
+		{
+			uint8_t b = x & 0x7F;
+			x >>= 7;
+			if (x) b |= 0x80;
+			v.push_back(b);
+		}
+		while (x);
+	};
+	auto section = [&uleb](std::vector<uint8_t>& m, uint8_t id, const std::vector<uint8_t>& payload) {
+		m.push_back(id);
+		uleb(m, payload.size());
+		m.insert(m.end(), payload.begin(), payload.end());
+	};
+
+	std::vector<uint8_t> m = {0x00, 'a', 's', 'm', 0x01, 0x00, 0x00, 0x00};
+
+	std::vector<uint8_t> types;
+	uleb(types, 1);
+	types.push_back(0x60); // func
+	uleb(types, 0);        // no params
+	uleb(types, 0);        // no results
+	section(m, 0x01, types);
+
+	std::vector<uint8_t> funcs;
+	uleb(funcs, 1);
+	uleb(funcs, 0); // type 0
+	section(m, 0x03, funcs);
+
+	std::vector<uint8_t> code;
+	uleb(code, 1);
+	uleb(code, body.size());
+	code.insert(code.end(), body.begin(), body.end());
+	section(m, 0x0A, code);
+
+	return m;
+}
+
+/// @p opcode followed by @p runLength continuation bytes and a terminator,
+/// wrapped as a function body with no locals.
+std::vector<uint8_t> bodyWithRun(uint8_t opcode, int runLength)
+{
+	std::vector<uint8_t> body;
+	body.push_back(0x00); // zero local declarations
+	body.push_back(opcode);
+	for (int i = 0; i < runLength; ++i)
+		body.push_back(0xFF);
+	body.push_back(0x00);
+	body.push_back(0x0B); // end
+	return body;
+}
+
+} // namespace
+
+TEST(WatEmitterLeb128, FunctionBodyImmediatesSurviveAContinuationRun)
+{
+	// 0x41 i32.const (signed 32), 0x42 i64.const (signed 64), 0x0C br and
+	// 0x10 call (unsigned) -- one opcode for each of the three readers.
+	for (uint8_t op: {uint8_t(0x41), uint8_t(0x42), uint8_t(0x0C), uint8_t(0x10)})
+	{
+		const auto image = moduleWithBody(bodyWithRun(op, 21));
+
+		WasmReader reader(image);
+		const auto parsed = reader.read();
+		ASSERT_TRUE(parsed.ok) << "opcode 0x" << std::hex << int(op) << ": " << parsed.error;
+
+		WatEmitter em;
+		EXPECT_NO_THROW((void)em.emit(parsed.module)) << "opcode 0x" << std::hex << int(op);
+	}
+}
+
+// A run the encoding cannot denote reads as 0, the same answer constExprStr
+// gives, rather than as whatever fitted before the shift ran off the width.
+TEST(WatEmitterLeb128, AnOverlongFunctionBodyImmediateDoesNotProduceAValue)
+{
+	const auto image = moduleWithBody(bodyWithRun(0x41, 20));
+
+	WasmReader reader(image);
+	const auto parsed = reader.read();
+	ASSERT_TRUE(parsed.ok) << parsed.error;
+
+	WatEmitter em;
+	const auto res = em.emit(parsed.module);
+	EXPECT_NE(res.source.find("i32.const 0"), std::string::npos) << res.source;
+}
+
+// What the change must not cost: a well-formed body still disassembles to the
+// values it encodes.
+TEST(WatEmitterLeb128, WellFormedFunctionBodyImmediatesStillRead)
+{
+	std::vector<uint8_t> body;
+	body.push_back(0x00); // zero local declarations
+	body.push_back(0x41); // i32.const
+	body.push_back(0xC0); // -64, two-byte SLEB128
+	body.push_back(0x7F); //
+	body.push_back(0x41); // i32.const
+	body.push_back(0xE5); // 101, two-byte SLEB128
+	body.push_back(0x00); //
+	body.push_back(0x0B); // end
+
+	const auto image = moduleWithBody(body);
+	WasmReader reader(image);
+	const auto parsed = reader.read();
+	ASSERT_TRUE(parsed.ok) << parsed.error;
+
+	WatEmitter em;
+	const auto res = em.emit(parsed.module);
+	EXPECT_NE(res.source.find("i32.const -64"), std::string::npos) << res.source;
+	EXPECT_NE(res.source.find("i32.const 101"), std::string::npos) << res.source;
+}
+
+// A memarg's `align` is the alignment EXPONENT, a u32 straight out of the
+// function body (WebAssembly Core 1.0, 5.4.6 "Memory Instructions"), and it was
+// used as `1u << align`. Anything from 32 up is undefined. Measured on this
+// shape under -fsanitize=undefined, against the code as it stood:
+//
+//   src/wasm_parser/wat_emitter.cpp:606: runtime error: shift exponent 40 is
+//   too large for 32-bit type 'unsigned int'
+//
+// Found while fixing the three body readers above -- the value comes out of
+// readVecULEB, so bounding those readers did not bound this.
+TEST(WatEmitterMemArg, AnAlignmentExponentTooLargeToShiftIsNotShifted)
+{
+	std::vector<uint8_t> body;
+	body.push_back(0x00); // zero local declarations
+	body.push_back(0x28); // i32.load, which takes a memarg
+	body.push_back(0x28); // align exponent = 40, far past the 32-bit width
+	body.push_back(0x00); // offset = 0
+	body.push_back(0x0B); // end
+
+	const auto image = moduleWithBody(body);
+	WasmReader reader(image);
+	const auto parsed = reader.read();
+	ASSERT_TRUE(parsed.ok) << parsed.error;
+
+	WatEmitter em;
+	const auto res = em.emit(parsed.module);
+	// The exponent is what the file said, so that is what the text carries.
+	EXPECT_NE(res.source.find("align=2^40"), std::string::npos) << res.source;
+}
+
+// The ordinary case must still print the alignment in bytes.
+TEST(WatEmitterMemArg, AWellFormedAlignmentIsStillPrintedInBytes)
+{
+	std::vector<uint8_t> body;
+	body.push_back(0x00); // zero local declarations
+	body.push_back(0x28); // i32.load
+	body.push_back(0x02); // align exponent 2 -> 4 bytes, the natural alignment
+	body.push_back(0x08); // offset = 8
+	body.push_back(0x0B); // end
+
+	const auto image = moduleWithBody(body);
+	WasmReader reader(image);
+	const auto parsed = reader.read();
+	ASSERT_TRUE(parsed.ok) << parsed.error;
+
+	WatEmitter em;
+	const auto res = em.emit(parsed.module);
+	EXPECT_NE(res.source.find("offset=8"), std::string::npos) << res.source;
+	EXPECT_NE(res.source.find("align=4"), std::string::npos) << res.source;
+}

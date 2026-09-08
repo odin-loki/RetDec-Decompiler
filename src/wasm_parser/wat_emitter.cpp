@@ -509,49 +509,61 @@ void WatEmitter::emitDataSegments(const WasmModule& mod, std::ostream& out, int 
 
 // ─── Function body disassembler ───────────────────────────────────────────────
 
-// Read ULEB128 from a byte vector at position pc
+// Read a LEB128 immediate from a function body at position pc.
+//
+// These three were written out here with the cursor bounded and the shift not:
+// `r |= (b & 0x7F) << s; s += 7;` with nothing stopping s. A function body is
+// bytes straight out of the file, so the continuation bit -- and so s -- is
+// chosen by the input. Measured on a module whose one body is `i32.const`
+// followed by 21 continuation bytes, under -fsanitize=undefined:
+//
+//   src/wasm_parser/wat_emitter.cpp:534: runtime error: left shift of 127 by
+//   28 places cannot be represented in type 'int'
+//
+// The two signed ones were undefined sooner than the count reaching the width,
+// because they accumulated into int32_t and int64_t where (int32_t)0x7F << 28
+// already overflows the signed range. WatEmitter::constExprStr, at the top of
+// this file, had the identical four decoders and was moved to the kernel in
+// d81cbc5; these three, twenty lines further down, were missed.
+//
+// retdec/utils/leb128.h accumulates unsigned, bounds both the shift and the
+// cursor, and is proved over the whole domain by
+// tests/verification/leb128_proof.cpp. On a run the kernel refuses, the cursor
+// goes to the end so the disassembly loop above terminates instead of
+// re-reading the same malformed bytes, and the immediate reads as 0 -- the same
+// answer constExprStr gives.
 static uint32_t readVecULEB(const std::vector<uint8_t>& v, size_t& pc)
 {
-	uint32_t r = 0;
-	int s = 0;
-	while (pc < v.size())
+	const auto r = utils::leb128::decodeUnsigned(v.data(), v.size(), pc);
+	if (!r.ok)
 	{
-		uint8_t b = v[pc++];
-		r |= (uint32_t)(b & 0x7F) << s;
-		if (!(b & 0x80)) break;
-		s += 7;
+		pc = v.size();
+		return 0;
 	}
-	return r;
+	pc += r.bytesRead;
+	return static_cast<uint32_t>(r.value);
 }
 static int32_t readVecSLEB(const std::vector<uint8_t>& v, size_t& pc)
 {
-	int32_t r = 0;
-	int s = 0;
-	uint8_t b = 0;
-	while (pc < v.size())
+	const auto r = utils::leb128::decodeSigned(v.data(), v.size(), pc);
+	if (!r.ok)
 	{
-		b = v[pc++];
-		r |= (int32_t)(b & 0x7F) << s;
-		s += 7;
-		if (!(b & 0x80)) break;
+		pc = v.size();
+		return 0;
 	}
-	if (s < 32 && (b & 0x40)) r |= -(1 << s);
-	return r;
+	pc += r.bytesRead;
+	return static_cast<int32_t>(utils::leb128::toSigned(r.value));
 }
 static int64_t readVecSLEB64(const std::vector<uint8_t>& v, size_t& pc)
 {
-	int64_t r = 0;
-	int s = 0;
-	uint8_t b = 0;
-	while (pc < v.size())
+	const auto r = utils::leb128::decodeSigned(v.data(), v.size(), pc);
+	if (!r.ok)
 	{
-		b = v[pc++];
-		r |= (int64_t)(b & 0x7F) << s;
-		s += 7;
-		if (!(b & 0x80)) break;
+		pc = v.size();
+		return 0;
 	}
-	if (s < 64 && (b & 0x40)) r |= -(int64_t(1) << s);
-	return r;
+	pc += r.bytesRead;
+	return utils::leb128::toSigned(r.value);
 }
 static float readVecF32(const std::vector<uint8_t>& v, size_t& pc)
 {
@@ -591,7 +603,23 @@ static std::string memArg(const std::vector<uint8_t>& code, size_t& pc)
 	uint32_t offset = readVecULEB(code, pc);
 	std::string s;
 	if (offset) s += " offset=" + std::to_string(offset);
-	if (align) s += " align=" + std::to_string(1u << align);
+	// `align` is the alignment EXPONENT, read straight out of the function body
+	// as a u32 (WebAssembly Core 1.0, 5.4.6 "Memory Instructions"), and
+	// `1u << align` is undefined for anything from 32 up. Measured on a body
+	// whose i32.load carries exponent 40, under -fsanitize=undefined:
+	//
+	//   src/wasm_parser/wat_emitter.cpp:606: runtime error: shift exponent 40
+	//   is too large for 32-bit type 'unsigned int'
+	//
+	// The spec bounds the exponent by the natural alignment of the access -- at
+	// most 4 -- so anything at or above 32 is malformed by construction and has
+	// no alignment in bytes to print. The exponent itself is what the file says,
+	// so that is what goes in the text; it is not valid WAT, but neither is the
+	// module, and it beats a wrapped number or undefined behaviour.
+	if (align)
+	{
+		s += align < 32 ? " align=" + std::to_string(1u << align) : " align=2^" + std::to_string(align);
+	}
 	return s;
 }
 

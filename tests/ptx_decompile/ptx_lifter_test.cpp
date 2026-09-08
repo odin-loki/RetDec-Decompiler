@@ -549,3 +549,78 @@ TEST(PtxLifter, LiftAtomicAdd)
 	auto s = lifter.liftKernel(mod.kernels[0]);
 	EXPECT_NE(s.find("atomicAdd"), std::string::npos);
 }
+
+// ─── malformed input does not escape parse() ──────────────────────────────────
+//
+// PtxParser::parse takes whatever bytes were in a .ptx file, and its header
+// documents the failure contract: "On error, module.kernels is empty and
+// lastError() is set." Four std::sto* calls did not honour it -- two address
+// offsets, the .align value and the "%r<N>" count -- so a malformed operand
+// unwound out of parse() as std::invalid_argument or std::out_of_range. Every
+// row below threw before the guards went in, and the last row is well-formed
+// input a guard must not change.
+TEST(PtxParserMalformed, NoInputEscapesParseAsAnException)
+{
+	struct Case
+	{
+		const char* what;
+		const char* ptx;
+	};
+	const Case cases[] = {
+		// PTX ISA 8.5 "Addresses as Operands": the offset is an integer literal
+		// with no width bound, so neither "not a number" nor "wider than int64"
+		// is out of spec for the file -- only for std::stoll.
+		{"offset that is not a number",
+		 ".version 8.0\n.target sm_86\n.visible .entry k()\n{\n"
+		 "\tld.global.u32 %r1, [base+notanumber];\n\tret;\n}\n"},
+		{"offset wider than int64_t",
+		 ".version 8.0\n.target sm_86\n.visible .entry k()\n{\n"
+		 "\tld.global.u32 %r1, [base+99999999999999999999];\n\tret;\n}\n"},
+		{"a '-' that separates two symbols",
+		 ".version 8.0\n.target sm_86\n.visible .entry k()\n{\n"
+		 "\tld.global.u32 %r1, [base-end];\n\tret;\n}\n"},
+		{"register count that is not a number",
+		 ".version 8.0\n.target sm_86\n.visible .entry k()\n{\n"
+		 "\t.reg .f32 %f<abc>;\n\tret;\n}\n"},
+		{".align followed by the next directive",
+		 ".version 8.0\n.target sm_86\n.visible .entry k()\n{\n"
+		 "\t.shared .align .f32 %smem;\n\tret;\n}\n"},
+		{"well formed, for contrast",
+		 ".version 8.0\n.target sm_86\n.visible .entry k()\n{\n"
+		 "\t.reg .f32 %f<4>;\n\tld.global.u32 %r1, [base+8];\n\tret;\n}\n"},
+	};
+	for (const auto& c: cases)
+	{
+		PtxParser parser;
+		EXPECT_NO_THROW({ parser.parse(c.ptx); }) << c.what;
+	}
+}
+
+// The degradation each guard chose, pinned so a later "simplification" to a
+// bare catch that drops the value is visible. The kernel survives in every
+// case: that is the point of not throwing.
+TEST(PtxParserMalformed, AnUnreadableCountLeavesOneRegisterAndKeepsTheName)
+{
+	PtxParser parser;
+	const auto mod = parser.parse(
+		".version 8.0\n.target sm_86\n.visible .entry k()\n{\n"
+		"\t.reg .f32 %f<abc>;\n\tret;\n}\n");
+	ASSERT_EQ(1u, mod.kernels.size());
+	ASSERT_EQ(1u, mod.kernels[0].decls.size());
+	// The name is assigned before the conversion now; the old order lost it
+	// along with the count.
+	EXPECT_EQ("%f", mod.kernels[0].decls[0].name);
+	EXPECT_EQ(1, mod.kernels[0].decls[0].count);
+}
+
+TEST(PtxParserMalformed, AWellFormedCountAndOffsetAreStillRead)
+{
+	PtxParser parser;
+	const auto mod = parser.parse(
+		".version 8.0\n.target sm_86\n.visible .entry k()\n{\n"
+		"\t.reg .f32 %f<4>;\n\tld.global.u32 %r1, [base+8];\n\tret;\n}\n");
+	ASSERT_EQ(1u, mod.kernels.size());
+	ASSERT_EQ(1u, mod.kernels[0].decls.size());
+	EXPECT_EQ("%f", mod.kernels[0].decls[0].name);
+	EXPECT_EQ(4, mod.kernels[0].decls[0].count);
+}

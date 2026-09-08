@@ -70,6 +70,20 @@ void writeText(const std::string& path, const std::string& text)
 	std::ofstream f(path);
 	if (!f) throw std::runtime_error("Cannot write file: " + path);
 	f << text;
+	// The check above proves only that the file could be created. Everything
+	// that can go wrong afterwards -- ENOSPC, EDQUOT, EIO -- is reported through
+	// the stream, and ~basic_ofstream flushes without looking at the result, so
+	// it was discarded here: each decompile*() below returned 0 over a truncated
+	// or empty output file, and retdec-decompiler exits with that value, so a
+	// full disk read as a successful decompilation for all eight managed
+	// formats.
+	//
+	// The close is explicit because the flush is where the error surfaces. The
+	// outputs written here are small enough to sit in the filebuf until then, so
+	// testing the stream right after the insertion would still see a good state
+	// when no byte ever reached the disk.
+	f.close();
+	if (!f) throw std::runtime_error("Incomplete write to file: " + path);
 }
 
 std::string extensionLower(const std::string& path)

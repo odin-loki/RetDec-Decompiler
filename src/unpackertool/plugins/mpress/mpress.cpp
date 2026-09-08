@@ -534,6 +534,17 @@ void MpressPlugin::trailingBytesAnalysis(const DynamicBuffer& buffer)
 		imageLoader.getSectionHeader(_packedContentSect->getSecSeg()->getIndex());
 	std::size_t section = imageLoader.getSectionIndexByRva(imageLoader.getAddressOfEntryPoint());
 	PeLib::PELIB_IMAGE_SECTION_HEADER* entryPointSection = imageLoader.getSectionHeader(section);
+
+	// The entry point RVA installed by fixImportsAndEp() comes from a 32-bit word read straight out of the
+	// DECOMPRESSED content, so a corrupted or hostile fix stub can point it outside every section. PeLib says so
+	// with the SIZE_MAX sentinel from getSectionIndexByRva (ImageLoader.cpp), and getSectionHeader returns nullptr
+	// for any index past sections.size() (ImageLoader.h) -- neither was checked, and the line below dereferences
+	// the result. packedContentSection is asked for the same way one line up and was not checked either.
+	// Handled like the other corrupted-stub heuristics in this file: Plugin::run() catches FatalException and
+	// exits with PLUGIN_EXIT_FAILED.
+	if (section == SIZE_MAX || entryPointSection == nullptr || packedContentSection == nullptr)
+		throw CorruptedUnpackingStubException();
+
 	std::uint32_t sectionAlignment = imageLoader.getSectionAlignment();
 	std::uint32_t startOffset = entryPointSection->PointerToRawData - packedContentSection->PointerToRawData;
 	std::uint32_t endOffset = startOffset + entryPointSection->SizeOfRawData;

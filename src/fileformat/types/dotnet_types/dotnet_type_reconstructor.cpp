@@ -1339,45 +1339,69 @@ std::unique_ptr<DotnetDataTypeBase> DotnetTypeReconstructor::dataTypeFromSignatu
  */
 const DotnetClass* DotnetTypeReconstructor::selectClass(const TypeDefOrRef& typeDefOrRef) const
 {
-	MetadataTableType refTable;
-	if (!typeDefOrRef.getTable(refTable)) return nullptr;
+	// A TypeSpec signature may be ELEMENT_TYPE_CLASS or ELEMENT_TYPE_VALUETYPE followed by a TypeDefOrRef coded
+	// index (ECMA-335 II.23.2.14), and tag 2 of that coded index is the TypeSpec table itself -- so one row can
+	// name another one, or name itself. The two bytes `12 06` are CLASS followed by coded index 6, which is tag 2
+	// and row 1: the first TypeSpec row pointing at itself.
+	//
+	// This used to be `return selectClass(inner);`, and following that chain consumes no input -- each hop reads
+	// the callee row's own blob rather than advancing a cursor -- so the bytes never run out and the recursion
+	// ends only when the stack does. What has to be bounded is the number of hops. Real signatures do not chain
+	// at all (a TypeSpec forwarding to a second TypeSpec is already unusual, and the generic ones are
+	// ELEMENT_TYPE_GENERICINST, which the elem test below rejects before this point), so 8 is far past anything a
+	// compiler emits. Iterating rather than recursing also keeps a long chain off the stack instead of merely
+	// capping how much of it is used.
+	const unsigned maxTypeSpecHops = 8;
+	TypeDefOrRef current = typeDefOrRef;
 
-	const DotnetClass* result = nullptr;
-	if (refTable == MetadataTableType::TypeDef)
+	for (unsigned hop = 0; hop <= maxTypeSpecHops; ++hop)
 	{
-		auto itr = defClassTable.find(typeDefOrRef.getIndex());
-		if (itr == defClassTable.end()) return nullptr;
+		MetadataTableType refTable;
+		if (!current.getTable(refTable)) return nullptr;
 
-		result = itr->second.get();
-	}
-	else if (refTable == MetadataTableType::TypeRef)
-	{
-		auto itr = refClassTable.find(typeDefOrRef.getIndex());
-		if (itr == refClassTable.end()) return nullptr;
+		const DotnetClass* result = nullptr;
+		if (refTable == MetadataTableType::TypeDef)
+		{
+			auto itr = defClassTable.find(current.getIndex());
+			if (itr == defClassTable.end()) return nullptr;
 
-		result = itr->second.get();
-	}
-	else if (refTable == MetadataTableType::TypeSpec)
-	{
-		if (!metadataStream || !blobStream) return nullptr;
-		auto typeSpecTable =
-			static_cast<const MetadataTable<TypeSpec>*>(metadataStream->getMetadataTable(MetadataTableType::TypeSpec));
-		if (!typeSpecTable) return nullptr;
-		auto typeSpec = typeSpecTable->getRow(typeDefOrRef.getIndex());
-		if (!typeSpec) return nullptr;
-		auto signature = blobStream->getElement(typeSpec->signature.getIndex());
-		if (signature.empty()) return nullptr;
-		auto elem = static_cast<ElementType>(signature[0]);
-		if (elem != ElementType::Class && elem != ElementType::ValueType) return nullptr;
-		signature.erase(signature.begin());
-		std::uint64_t bytesRead = 0;
-		TypeDefOrRef inner;
-		inner.setIndex(decodeUnsigned(signature, bytesRead));
-		if (bytesRead == 0) return nullptr;
-		return selectClass(inner);
+			result = itr->second.get();
+		}
+		else if (refTable == MetadataTableType::TypeRef)
+		{
+			auto itr = refClassTable.find(current.getIndex());
+			if (itr == refClassTable.end()) return nullptr;
+
+			result = itr->second.get();
+		}
+		else if (refTable == MetadataTableType::TypeSpec)
+		{
+			if (!metadataStream || !blobStream) return nullptr;
+			auto typeSpecTable = static_cast<const MetadataTable<TypeSpec>*>(
+				metadataStream->getMetadataTable(MetadataTableType::TypeSpec));
+			if (!typeSpecTable) return nullptr;
+			auto typeSpec = typeSpecTable->getRow(current.getIndex());
+			if (!typeSpec) return nullptr;
+			auto signature = blobStream->getElement(typeSpec->signature.getIndex());
+			if (signature.empty()) return nullptr;
+			auto elem = static_cast<ElementType>(signature[0]);
+			if (elem != ElementType::Class && elem != ElementType::ValueType) return nullptr;
+			signature.erase(signature.begin());
+			std::uint64_t bytesRead = 0;
+			TypeDefOrRef inner;
+			inner.setIndex(decodeUnsigned(signature, bytesRead));
+			if (bytesRead == 0) return nullptr;
+
+			current = inner;
+			continue;
+		}
+
+		return result;
 	}
 
-	return result;
+	// More hops than any real signature needs: the chain is a cycle, or is
+	// pretending to be one.
+	return nullptr;
 }
 
 } // namespace fileformat

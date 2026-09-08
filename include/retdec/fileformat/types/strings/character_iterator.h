@@ -251,7 +251,26 @@ public:
 	 */
 	bool pointsToValidCharacter(CharacterEndianness endian) const
 	{
-		if (itr == last) return false;
+		// A whole character, not one byte. `itr == last` proves only that
+		// ONE byte is left, and both branches below read charStep of them:
+		// the little-endian padding range ends at itr + charStep, and the
+		// big-endian character byte IS itr + charStep - 1. With charStep 2
+		// and the iterator on the final byte of the section, that is a read
+		// one past the end whose value decides the answer -- confirmed under
+		// AddressSanitizer on an exactly-sized 3-byte heap buffer:
+		//
+		//   READ of size 1 ... 0 bytes after 3-byte region
+		//   #0 ... character_iterator.h:65
+		//   #1 ... pointsToValidCharacter(CharacterEndianness) const
+		//
+		// The comparison is made on the difference rather than by forming
+		// itr + charStep, which would be the same out-of-range iterator this
+		// guard exists to avoid. charStep is std::size_t and the difference is
+		// signed, so the negative case is rejected before the widths are mixed:
+		// casting a negative distance to std::size_t would make it SIZE_MAX and
+		// disarm the guard exactly where it is most needed.
+		const auto bytesLeft = std::distance(itr, last);
+		if (charStep == 0 || bytesLeft < 0 || static_cast<std::size_t>(bytesLeft) < charStep) return false;
 
 		if (endian == CharacterEndianness::Little)
 			return pointsToValidCharacter(itr, itr + 1, itr + charStep);

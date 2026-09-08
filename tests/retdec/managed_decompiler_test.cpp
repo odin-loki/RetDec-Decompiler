@@ -18,7 +18,10 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <string>
 #include <vector>
 
 namespace {
@@ -94,4 +97,57 @@ TEST(ManagedFormatRouter, ShortBuffersAreRejected)
 		}
 		EXPECT_EQ(routeExactly(img), ManagedFormat::Unknown) << "size=" << n;
 	}
+}
+
+// ─── an output write that fails ───────────────────────────────────────────────
+//
+// writeText() tested the stream after opening the file and never again. The
+// insertion that follows only fills the filebuf; the write(2) happens at the
+// flush ~basic_ofstream performs, and that destructor discards the result. So
+// ENOSPC, EDQUOT and EIO were all invisible: every decompile*() below returned
+// 0 over an empty or truncated output file, retdec-decompiler exits with that
+// value, and a full disk read as a successful decompilation for all eight
+// managed formats.
+//
+// Measured on the primitive, writing 64 bytes to /dev/full:
+//
+//     open ok=1
+//     after insertion, stream good=1
+//     after close,     stream good=0
+//
+// which is why the fix closes explicitly and tests the stream after the close,
+// rather than after the insertion.
+//
+// /dev/full is the whole point of the test -- a file that opens, accepts
+// writes, and fails them with ENOSPC. It is Linux-specific, so the test says
+// what it needs and skips where that is not there rather than passing quietly.
+TEST(ManagedDecompilerOutput, AWriteThatFailsIsNotReportedAsSuccess)
+{
+	{
+		std::ifstream probe("/dev/full");
+		if (!probe)
+		{
+			GTEST_SKIP() << "/dev/full is not available on this host";
+		}
+	}
+
+	// The smallest valid WebAssembly module: the 8-byte header and no sections
+	// (WebAssembly Core 1.0, section 5.5.16 -- magic then version). Any input
+	// the parser accepts would do; this is the cheapest one to spell.
+	const char* const kInput = "managed_write_probe.wasm";
+	{
+		std::ofstream in(kInput, std::ios::binary);
+		ASSERT_TRUE(static_cast<bool>(in));
+		const unsigned char header[] = {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00};
+		in.write(reinterpret_cast<const char*>(header), sizeof(header));
+	}
+
+	// Sanity: the same call with a writable destination succeeds, so a non-zero
+	// result below is the write and not the parse.
+	EXPECT_EQ(0, decompileManaged(ManagedFormat::Wasm, kInput, "managed_write_probe.wat"));
+
+	EXPECT_NE(0, decompileManaged(ManagedFormat::Wasm, kInput, "/dev/full"));
+
+	std::remove(kInput);
+	std::remove("managed_write_probe.wat");
 }

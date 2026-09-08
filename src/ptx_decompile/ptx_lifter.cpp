@@ -137,15 +137,50 @@ PtxOperand PtxParser::parseOperand(const std::string& tok) const
 		std::string inner = tok.substr(1, tok.size() - (tok.back() == ']' ? 2 : 1));
 		auto plus = inner.find('+');
 		auto minus = inner.find('-', 1);
+		// std::stoll throws std::invalid_argument when the text after the sign is not
+		// a number and std::out_of_range when it does not fit in int64_t, and parse()
+		// is handed whatever bytes sat in a .ptx file rather than output nvcc is
+		// guaranteed to have produced. The PTX ISA puts no width limit on the integer
+		// literal of an address expression (PTX ISA 8.5, "Addresses as Operands"), so
+		// "[base+notanumber]", "[base-end]" and "[base+99999999999999999999]" are all
+		// text the tokeniser hands over here. Each of those three unwound straight out
+		// of PtxParser::parse(), which its header documents as reporting failure
+		// through lastError() rather than by throwing. The immediate-operand path
+		// below has always degraded to a Label instead; these two did not.
+		//
+		// Keeping the whole bracket text as the name and leaving the offset at 0 is
+		// the same degradation: an address whose offset could not be read.
 		if (plus != std::string::npos)
 		{
 			op.name = inner.substr(0, plus);
-			op.offset = std::stoll(inner.substr(plus + 1));
+			try
+			{
+				op.offset = std::stoll(inner.substr(plus + 1));
+			}
+			catch (const std::invalid_argument&)
+			{
+				op.name = inner;
+			}
+			catch (const std::out_of_range&)
+			{
+				op.name = inner;
+			}
 		}
 		else if (minus != std::string::npos)
 		{
 			op.name = inner.substr(0, minus);
-			op.offset = -std::stoll(inner.substr(minus + 1));
+			try
+			{
+				op.offset = -std::stoll(inner.substr(minus + 1));
+			}
+			catch (const std::invalid_argument&)
+			{
+				op.name = inner;
+			}
+			catch (const std::out_of_range&)
+			{
+				op.name = inner;
+			}
 		}
 		else
 		{
@@ -230,7 +265,26 @@ PtxVarDecl PtxParser::parseVarDecl(const std::vector<std::string>& tokens) const
 			}
 			if (startsWith(tokens[i], ".align"))
 			{
-				if (i + 1 < tokens.size()) decl.align = std::stoi(tokens[++i]);
+				// ".align" whose value is missing or is the next directive rather than a
+				// number (".shared .align .f32 %smem;") made std::stoi throw out of
+				// parse(). An alignment that cannot be read is not worth losing the
+				// module for: leaving decl.align at 0 is what an undecorated declaration
+				// already produces.
+				if (i + 1 < tokens.size())
+				{
+					try
+					{
+						decl.align = std::stoi(tokens[++i]);
+					}
+					catch (const std::invalid_argument&)
+					{
+						decl.align = 0;
+					}
+					catch (const std::out_of_range&)
+					{
+						decl.align = 0;
+					}
+				}
 				continue;
 			}
 		}
@@ -242,8 +296,23 @@ PtxVarDecl PtxParser::parseVarDecl(const std::vector<std::string>& tokens) const
 			if (lt != std::string::npos)
 			{
 				auto gt = name.find('>');
-				decl.count = std::stoi(name.substr(lt + 1, gt - lt - 1));
+				// "%r<4>" declares r0..r3. A count that is not a number or does not fit an
+				// int ("%f<abc>", "%r<99999999999>") threw out of parse(). The name is
+				// assigned before the conversion now, so a declaration that degrades to a
+				// single register still carries its name -- the old order lost that too.
 				decl.name = name.substr(0, lt);
+				try
+				{
+					decl.count = std::stoi(name.substr(lt + 1, gt - lt - 1));
+				}
+				catch (const std::invalid_argument&)
+				{
+					decl.count = 1;
+				}
+				catch (const std::out_of_range&)
+				{
+					decl.count = 1;
+				}
 			}
 			else
 			{
