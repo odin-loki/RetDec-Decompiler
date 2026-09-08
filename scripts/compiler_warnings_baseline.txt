@@ -17,7 +17,6 @@ include/retdec/java_emitter/java_class_emitter.h -Wunused-private-field
 include/retdec/jvm_parser/jvm_lifter.h -Wunneeded-internal-declaration
 include/retdec/kotlin_emitter/kotlin_type_system.h -Wunused-private-field
 include/retdec/pelib/DelayImportDirectory.h -Wunused-variable
-include/retdec/pelib/ImportDirectory.h -Wreturn-type
 include/retdec/pelib/ImportDirectory.h -Wunused-but-set-variable
 include/retdec/pelib/ResourceDirectory.h -Winconsistent-missing-override
 include/retdec/ssa/ssa.h -Wmismatched-tags

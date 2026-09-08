@@ -21,6 +21,7 @@
  * be driven from a stringstream without constructing a whole PE.
  */
 
+#include "retdec/pelib/ImportDirectory.h"
 #include "retdec/pelib/PeLibAux.h"
 #include "retdec/pelib/SecurityDirectory.h"
 
@@ -151,4 +152,35 @@ TEST(SecurityDirectoryTests, AnUnknownRevisionOrTypeIsRefused)
 
 	SecurityDirectory sec;
 	EXPECT_EQ(ERROR_INVALID_FILE, sec.read(ss, 0, static_cast<unsigned int>(dir.size())));
+}
+
+// ─── ImportDirectory ─────────────────────────────────────────────────────────
+
+TEST(ImportDirectoryTests, AnOutOfRangeFunctionNameIsEmptyRatherThanUndefined)
+{
+	// getFunctionName returned std::string and had no return statement on the
+	// out-of-range path:
+	//
+	//   include/retdec/pelib/ImportDirectory.h:384:2: warning: non-void
+	//   function does not return a value in all control paths [-Wreturn-type]
+	//
+	// Falling off the end is undefined behaviour, not "returns empty"; a
+	// compiler may treat the path as unreachable. An import directory the
+	// parser rejected leaves the list empty, so index 0 is that path.
+	ImportDirectory imports;
+
+	EXPECT_TRUE(imports.getFunctionName(0, 0, false).empty());
+	EXPECT_TRUE(imports.getFunctionName(0, 0, true).empty());
+	EXPECT_TRUE(imports.getFunctionName(1000, 1000, false).empty());
+}
+
+TEST(ImportDirectoryTests, SearchingAnEmptyDirectoryFindsNothing)
+{
+	// getFunctionIndex calls getFunctionName in a loop and compares the result
+	// against the name it is searching for, so the empty string above has to be
+	// a value no real import matches.
+	ImportDirectory imports;
+
+	EXPECT_EQ(static_cast<unsigned int>(-1), imports.getFunctionIndex("kernel32.dll", "CreateFileW", false));
+	EXPECT_EQ(static_cast<unsigned int>(-1), imports.getFunctionIndex("", "", false));
 }

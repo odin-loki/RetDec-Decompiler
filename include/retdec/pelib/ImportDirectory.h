@@ -19,8 +19,14 @@
 #include "retdec/pelib/PeLibAux.h"
 #include "retdec/pelib/ImageLoader.h"
 #include "retdec/pelib/ImageLoader.h"
+#include "retdec/pelib/OutputBuffer.h"
 #include "retdec/utils/ord_lookup.h"
 #include "retdec/utils/string.h"
+
+// std::bind and std::placeholders::_1 are used at line 78 and OutputBuffer in
+// four signatures below, and this header declared none of them: it compiled
+// only where an earlier include in the same translation unit happened to.
+#include <functional>
 
 namespace PeLib {
 class PeLibException;
@@ -380,6 +386,18 @@ inline std::string ImportDirectory::getFunctionName(std::uint32_t dwFilenr, std:
 	{
 		return il[dwFilenr].thunk_data[dwFuncnr].fname;
 	}
+	// Falling off the end of a function returning std::string is undefined
+	// behaviour, not "returns an empty string" -- clang says so
+	// (-Wreturn-type: non-void function does not return a value in all control
+	// paths) and is entitled to compile the path as unreachable. The indices
+	// come from callers walking the import table, and getFunctionIndex above
+	// calls this in a loop, so an import directory the parser rejected leaves
+	// an empty list and the very first call takes this path.
+	//
+	// Empty is what the callers already handle: getFunctionIndex compares the
+	// result against a name it is searching for, and no real import is named
+	// "". getOriginalFirstThunk returns 0 for the same out-of-range case.
+	return std::string();
 }
 
 inline void ImportDirectory::setFunctionName(
