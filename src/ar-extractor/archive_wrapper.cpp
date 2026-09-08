@@ -24,8 +24,7 @@ using namespace llvm;
 using namespace llvm::object;
 using namespace rapidjson;
 
-namespace
-{
+namespace {
 
 /**
  * Fix name.
@@ -34,13 +33,11 @@ namespace
  *
  * @return new fixed name
  */
-std::string fixName(
-	std::string name)
+std::string fixName(std::string name)
 {
-	std::transform(name.begin(), name.end(), name.begin(),
-		[](const unsigned char c) {
-			return (!std::isalnum(c) && !strchr("-. \\", c)) ? '_' : c;
-		});
+	std::transform(name.begin(), name.end(), name.begin(), [](const unsigned char c) {
+		return (!std::isalnum(c) && !strchr("-. \\", c)) ? '_' : c;
+	});
 	return name;
 }
 
@@ -53,15 +50,14 @@ std::string fixName(
  *
  * @return @c true if no errors occurred, @c false otherwise
  */
-bool writeFile(
-	const std::string &outputPath,
-	const llvm::StringRef &inputBuffer,
-	std::string &errorMessage)
+bool writeFile(const std::string& outputPath, const llvm::StringRef& inputBuffer, std::string& errorMessage)
 {
 	std::ofstream outStream(outputPath, std::ofstream::binary);
-	if (outStream) {
+	if (outStream)
+	{
 		outStream.write(inputBuffer.data(), inputBuffer.size());
-		if (!outStream) {
+		if (!outStream)
+		{
 			errorMessage = "Could not write content to output file";
 			return false;
 		}
@@ -82,11 +78,10 @@ bool writeFile(
  *
  * @return @c true if error was found, @c false otherwise
  */
-bool checkError(
-	Error &error,
-	std::string &errorMessage)
+bool checkError(Error& error, std::string& errorMessage)
 {
-	if (error) {
+	if (error)
+	{
 		errorMessage = llvm::toString(std::move(error));
 		return true;
 	}
@@ -106,21 +101,20 @@ namespace ar_extractor {
  * @param succes result of object construction
  * @param errorMessage possible error message if @p success is set to false
  */
-ArchiveWrapper::ArchiveWrapper(
-	const std::string &archivePath,
-	bool &succes,
-	std::string &errorMessage)
-	: buffer(MemoryBuffer::getFile(llvm::Twine(archivePath)))
+ArchiveWrapper::ArchiveWrapper(const std::string& archivePath, bool& succes, std::string& errorMessage):
+	buffer(MemoryBuffer::getFile(llvm::Twine(archivePath)))
 {
 	succes = false;
-	if (!buffer) {
+	if (!buffer)
+	{
 		errorMessage = "Could not create file buffer";
 		return;
 	}
 
 	Error error = Error::success();
 	archive = std::make_unique<Archive>(buffer.get()->getMemBufferRef(), error);
-	if (error) {
+	if (error)
+	{
 		errorMessage = llvm::toString(std::move(error));
 		return;
 	}
@@ -170,17 +164,16 @@ bool ArchiveWrapper::isEmptyArchive() const
  * @return @c true if no errors occurred, @c false otherwise
  */
 bool ArchiveWrapper::getPlainTextList(
-	std::string &result,
-	std::string &errorMessage,
-	bool niceNames,
-	bool numbers) const
+	std::string& result, std::string& errorMessage, bool niceNames, bool numbers) const
 {
 	result.clear();
 	std::size_t counter = 0;
 	std::vector<std::string> names;
 
-	if (getNames(names, errorMessage)) {
-		for (const auto &name : names) {
+	if (getNames(names, errorMessage))
+	{
+		for (const auto& name: names)
+		{
 			const auto outName = niceNames ? fixName(name) : name;
 			result += numbers ? std::to_string(counter++) + "\t" : "";
 			result += outName + "\n";
@@ -201,27 +194,26 @@ bool ArchiveWrapper::getPlainTextList(
  *
  * @return @c true if no errors occurred, @c false otherwise
  */
-bool ArchiveWrapper::getJsonList(
-	std::string &result,
-	std::string &errorMessage,
-	bool niceNames,
-	bool numbers) const
+bool ArchiveWrapper::getJsonList(std::string& result, std::string& errorMessage, bool niceNames, bool numbers) const
 {
 	result.clear();
 	std::size_t counter = 0;
 	std::vector<std::string> names;
 
-	if (getNames(names, errorMessage)) {
+	if (getNames(names, errorMessage))
+	{
 		Value objects(kArrayType);
 		Document outFile(kObjectType);
 		auto& allocator = outFile.GetAllocator();
 
-		for (const auto &name : names) {
+		for (const auto& name: names)
+		{
 			const std::string outName = niceNames ? fixName(name) : name;
 
 			Value object(kObjectType);
 			object.AddMember("name", Value(outName.c_str(), allocator).Move(), allocator);
-			if (numbers) {
+			if (numbers)
+			{
 				object.AddMember("index", static_cast<uint64_t>(counter++), allocator);
 			}
 			objects.PushBack(object, allocator);
@@ -249,12 +241,11 @@ bool ArchiveWrapper::getJsonList(
  *
  * @return @c true if no errors occurred, @c false otherwise
  */
-bool ArchiveWrapper::extract(
-	std::string &errorMessage,
-	const std::string &directory) const
+bool ArchiveWrapper::extract(std::string& errorMessage, const std::string& directory) const
 {
 	// Check if target directory exists if string not empty.
-	if (!directory.empty() && !fs::is_directory(directory)) {
+	if (!directory.empty() && !fs::is_directory(directory))
+	{
 		errorMessage = "Invalid target directory";
 		return false;
 	}
@@ -268,8 +259,10 @@ bool ArchiveWrapper::extract(
 	std::map<std::string, std::size_t> nameMap;
 
 	Error error = Error::success();
-	for (const auto &child : archive->children(error)) {
-		if (checkError(error, errorMessage)) {
+	for (const auto& child: archive->children(error))
+	{
+		if (checkError(error, errorMessage))
+		{
 			return false;
 		}
 
@@ -278,18 +271,22 @@ bool ArchiveWrapper::extract(
 		std::string name = nameOrErr ? fixName(nameOrErr->str()) : "invalid_name";
 
 		// Increment name count and fix name if it is not unique.
-		if (++nameMap[name] != 1) {
+		if (++nameMap[name] != 1)
+		{
 			name += "." + std::to_string(nameMap[name]);
 		}
 
 		auto bufferOrErr = child.getBuffer();
-		if (!bufferOrErr) {
+		if (!bufferOrErr)
+		{
 			errorMessage = "Could not get file buffer";
 			return false;
 		}
-		else {
+		else
+		{
 			auto dir = directory.empty() ? directory : directory + '/';
-			if (!writeFile(dir + name, *bufferOrErr, errorMessage)) {
+			if (!writeFile(dir + name, *bufferOrErr, errorMessage))
+			{
 				return false;
 			}
 		}
@@ -311,40 +308,45 @@ bool ArchiveWrapper::extract(
  * @return @c true if no errors occurred, @c false otherwise
  */
 bool ArchiveWrapper::extractByName(
-	const std::string &name,
-	std::string &errorMessage,
-	const std::string &outputPath) const
+	const std::string& name, std::string& errorMessage, const std::string& outputPath) const
 {
 	Error error = Error::success();
-	for (const auto &child : archive->children(error)) {
-		if (checkError(error, errorMessage)) {
+	for (const auto& child: archive->children(error))
+	{
+		if (checkError(error, errorMessage))
+		{
 			return false;
 		}
 
 		auto nameOrErr = child.getName();
-		if (!nameOrErr) {
+		if (!nameOrErr)
+		{
 			// Could not get name.
 			continue;
 		}
 
-		if (name != fixName(nameOrErr->str())) {
+		if (name != fixName(nameOrErr->str()))
+		{
 			// Name does not match.
 			continue;
 		}
 
 		// Get buffer and try to write to a file.
 		auto bufferOrErr = child.getBuffer();
-		if (!bufferOrErr) {
+		if (!bufferOrErr)
+		{
 			errorMessage = "Could not get file buffer";
 			return false;
 		}
-		else {
+		else
+		{
 			auto path = outputPath.empty() ? name : outputPath;
 			return writeFile(path, *bufferOrErr, errorMessage);
 		}
 	}
 
-	if (checkError(error, errorMessage)) {
+	if (checkError(error, errorMessage))
+	{
 		return false;
 	}
 
@@ -365,43 +367,49 @@ bool ArchiveWrapper::extractByName(
  * @return @c true if no errors occurred, @c false otherwise
  */
 bool ArchiveWrapper::extractByIndex(
-	const std::size_t index,
-	std::string &errorMessage,
-	const std::string &outputPath) const
+	const std::size_t index, std::string& errorMessage, const std::string& outputPath) const
 {
 	Error error = Error::success();
 	std::size_t counter = 0;
-	for (const auto &child : archive->children(error)) {
-		if (checkError(error, errorMessage)) {
+	for (const auto& child: archive->children(error))
+	{
+		if (checkError(error, errorMessage))
+		{
 			return false;
 		}
 
 		// No random access available.
-		if (index != counter++) {
+		if (index != counter++)
+		{
 			continue;
 		}
 
 		// Get buffer and try to write to a file.
 		auto bufferOrErr = child.getBuffer();
-		if (!bufferOrErr) {
+		if (!bufferOrErr)
+		{
 			errorMessage = "Could not get file buffer";
 			return false;
 		}
-		else {
+		else
+		{
 			std::string path;
-			if (outputPath.empty()) {
+			if (outputPath.empty())
+			{
 				// No path given - use object name.
 				auto nameOrErr = child.getName();
 				path = nameOrErr ? fixName(nameOrErr->str()) : "invalid_name";
 			}
-			else {
+			else
+			{
 				path = outputPath;
 			}
 			return writeFile(path, *bufferOrErr, errorMessage);
 		}
 	}
 
-	if (checkError(error, errorMessage)) {
+	if (checkError(error, errorMessage))
+	{
 		return false;
 	}
 
@@ -420,21 +428,23 @@ bool ArchiveWrapper::extractByIndex(
  *
  * @return @c true if no errors occurred, @c false otherwise
  */
-bool ArchiveWrapper::getNames(
-	std::vector<std::string> &result,
-	std::string &errorMessage) const
+bool ArchiveWrapper::getNames(std::vector<std::string>& result, std::string& errorMessage) const
 {
 	Error error = Error::success();
-	for (const auto &child : archive->children(error)) {
-		if (checkError(error, errorMessage)) {
+	for (const auto& child: archive->children(error))
+	{
+		if (checkError(error, errorMessage))
+		{
 			return false;
 		}
 
 		auto nameOrErr = child.getName();
-		if (!nameOrErr) {
+		if (!nameOrErr)
+		{
 			result.emplace_back("invalid_name");
 		}
-		else {
+		else
+		{
 			result.push_back(nameOrErr->str());
 		}
 	}
@@ -450,15 +460,15 @@ bool ArchiveWrapper::getNames(
  *
  * @return @c true if no errors occurred, @c false otherwise
  */
-bool ArchiveWrapper::getCount(
-	std::size_t &count,
-	std::string &errorMessage) const
+bool ArchiveWrapper::getCount(std::size_t& count, std::string& errorMessage) const
 {
 	Error error = Error::success();
 	count = 0; // Reset counter.
-	const auto &ar = archive;
-	for (auto i = ar->child_begin(error), e = ar->child_end(); i != e; ++i) {
-		if (checkError(error, errorMessage)) {
+	const auto& ar = archive;
+	for (auto i = ar->child_begin(error), e = ar->child_end(); i != e; ++i)
+	{
+		if (checkError(error, errorMessage))
+		{
 			return false;
 		}
 		count++;
