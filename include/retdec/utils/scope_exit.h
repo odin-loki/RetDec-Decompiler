@@ -12,6 +12,10 @@
 #ifndef RETDEC_UTILS_SCOPE_EXIT_H
 #define RETDEC_UTILS_SCOPE_EXIT_H
 
+// std::forward and std::decay are used below and were declared by nothing.
+#include <type_traits>
+#include <utility>
+
 // The _IMPL macro is needed to force the expansion of s1 and s2.
 #define SCOPE_EXIT_CONCATENATE_IMPL(s1, s2) s1##s2
 #define SCOPE_EXIT_CONCATENATE(s1, s2) SCOPE_EXIT_CONCATENATE_IMPL(s1, s2)

@@ -520,6 +520,56 @@ compile_cuda_half() {
 }
 compile_cuda_half || exit 1
 
+# ── the proved kernels, standalone, under the project's own warning flags ────
+#
+# include/retdec/utils/ is the set retdec/utils/bounds.h and its siblings live
+# in: header-only, proved by tests/verification/, and included from all over the
+# tree. Two things can go wrong there that nothing else here would notice.
+#
+# A header that does not compile on its own compiles anyway wherever some
+# earlier include happened to declare what it uses. ord_lookup.h named
+# std::string and std::size_t with neither <string> nor <cstddef>; scope_exit.h
+# used std::forward with no <utility>.
+#
+# And the project compiles with -Wswitch-default and -Wreorder (CMakeLists.txt),
+# while src/neural adds -Werror. RETDEC_ENABLE_NEURAL is ON by default and
+# src/neural/gates.cpp includes c_source_scan.h, whose switch had no default --
+# so a default build of this repository did not compile, and nothing in the fast
+# gate could see it, because the fast gate does not use those flags.
+#
+# One translation unit per header, which is the only way to ask the first
+# question, with the project's flags, which is the only way to ask the second.
+KERNEL_WARN_FLAGS="-Wall -Wextra -Wswitch-default -Werror"
+check_kernel_headers() {
+	shopt -s nullglob
+	local headers=(include/retdec/utils/*.h)
+	shopt -u nullglob
+	[ ${#headers[@]} -eq 0 ] && return 0
+
+	local tu log h bad_headers=()
+	tu="$(mktemp --suffix=.cpp)"
+	log="$(mktemp)"
+	for h in "${headers[@]}"; do
+		printf '#include "%s"\nint main(void) { return 0; }\n' "${h#include/}" > "$tu"
+		# shellcheck disable=SC2086
+		if ! $CXX -std=c++17 $INCLUDES $DEFINES $KERNEL_WARN_FLAGS $EXTRA_CXXFLAGS \
+				-fsyntax-only "$tu" > "$log" 2>&1; then
+			bad_headers+=("$h")
+			printf '\n%s--- %s%s\n' "$C_RED" "$h" "$C_OFF"
+			head -12 "$log"
+		fi
+	done
+	rm -f "$tu" "$log"
+
+	if [ ${#bad_headers[@]} -gt 0 ]; then
+		bad "not standalone, or not warning-clean at ${KERNEL_WARN_FLAGS}: ${bad_headers[*]}"
+		return 1
+	fi
+	ok "${#headers[@]} kernel headers compile standalone, warnings as errors"
+	return 0
+}
+check_kernel_headers || exit 1
+
 # ── archive each module so the linker pulls only what a suite needs ──────────
 for m in "${selected_modules[@]}"; do
 	shopt -s nullglob

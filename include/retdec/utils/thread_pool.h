@@ -24,7 +24,13 @@ namespace utils {
 
 class ThreadPool {
 public:
-	explicit ThreadPool(std::size_t numThreads = 0): stop_(false), activeTasks_(0)
+	explicit ThreadPool(std::size_t numThreads = 0)
+		// Declaration order below is workers_, tasks_, mutex_, condition_,
+		// doneCond_, activeTasks_, stop_. The initializer list has to follow
+		// it -- it read `stop_(false), activeTasks_(0)`, which is backwards --
+		// or -Wreorder fires, and src/neural's -Werror turns that into a build
+		// failure for anything that includes this.
+		: activeTasks_(0), stop_(false)
 	{
 		if (numThreads == 0) numThreads = std::thread::hardware_concurrency();
 		if (numThreads == 0) numThreads = 1;

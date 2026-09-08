@@ -142,6 +142,20 @@ inline void blankNonCode(const char* in, std::size_t n, char* out) noexcept
 			}
 			break;
 		}
+
+		// Unreachable: every Ctx enumerator has a case above. It is here
+		// because the project compiles with -Wswitch-default (CMakeLists.txt)
+		// and src/neural adds -Werror, so a switch without one does not build
+		// there -- and src/neural/gates.cpp includes this header, which made
+		// retdec-neural, an option that is ON by default, fail to compile:
+		//
+		//   c_source_scan.h:70:24: error: switch missing default case
+		//   [-Werror=switch-default]
+		//
+		// The cost is that -Wswitch no longer flags a new enumerator here.
+		// Anything added to Ctx must be given a case above; the default
+		// leaves the character as copied, which is the Code reading.
+		default: break;
 		}
 	}
 }

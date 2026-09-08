@@ -8,6 +8,12 @@
 #ifndef RETDEC_UTILS_ORD_LOOKUP_H
 #define RETDEC_UTILS_ORD_LOOKUP_H
 
+// std::string and std::size_t are named below and were declared by nothing:
+// this header compiled only where an earlier include happened to have
+// pulled them in.
+#include <cstddef>
+#include <string>
+
 namespace retdec {
 namespace utils {
 
