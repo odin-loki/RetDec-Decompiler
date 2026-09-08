@@ -318,30 +318,29 @@ void JavaStmtEmitter::emitBlock(uint32_t blockId)
 			|| insn.opcode == BcOpcode::TableSwitch || insn.opcode == BcOpcode::LookupSwitch)
 			continue;
 
-		// Declare local variable on first store.
-		if (insn.opcode == BcOpcode::StoreLocal && !insn.operands.empty())
-		{
-			if (auto* lop = std::get_if<BcLocalOperand>(&insn.operands[0]))
-			{
-				uint32_t idx = lop->index;
-				auto nameIt = exprCtx_.localNames.find(idx);
-				auto typeIt = exprCtx_.localTypes.find(idx);
-				if (nameIt != exprCtx_.localNames.end() && typeIt != exprCtx_.localTypes.end())
-				{
-					std::string typeName = tyPrinter_.print(typeIt->second);
-					ExprNode val = exprStack.empty() ? ExprNode{ExprKind::Literal, "/* ? */", 0, false}
-													 : (exprStack.back(),
-														exprStack.pop_back(),
-														exprStack.size() < 1000 /* always true */
-															? ExprNode{ExprKind::Literal, "/* extracted */", 0, false}
-															: ExprNode{ExprKind::Literal, "/* ? */", 0, false});
-					// Simpler: just emit the store expression.
-					std::string expr = exprEmit_.emitInsn(insn, exprStack);
-					if (!expr.empty()) out_.writeLine(typeName + " " + expr + ";");
-					continue;
-				}
-			}
-		}
+		// A "declare the local on its first store" branch stood here, and did
+		// three things wrong at once.
+		//
+		// It computed an ExprNode it never used, whose initialiser was
+		// `(exprStack.back(), exprStack.pop_back(), <ternary>)` -- so the POP
+		// HAPPENED, taking the value the emitInsn(StoreLocal) on the next line
+		// needed off the stack. Every store to a local whose name and type were
+		// known came out as
+		//
+		//     int total = /* stack underflow */;
+		//
+		// which is what this emitter wrote into decompiled Java. The compiler
+		// had been saying so under -Wall the whole time -- "ignoring return
+		// value of vector::back(), declared with attribute nodiscard" -- and
+		// the fast gate compiles with -Wall and no -Werror, so nothing read it.
+		//
+		// It also redeclared the variable: emitBody() already writes a
+		// declaration for every non-param local before the first block, so the
+		// output held both `int total;` and `int total = ...;`. Two
+		// declarations of one name in one scope is not Java.
+		//
+		// emitInstrAsStmt below already emits StoreLocal as `name = value;`,
+		// which is the right statement given that declaration.
 
 		emitInstrAsStmt(insn, exprStack);
 	}

@@ -1009,3 +1009,94 @@ TEST(JavaStmtEmitter, LocalVarDeclarations)
 	EXPECT_TRUE(contains(body, "int count;"));
 	EXPECT_TRUE(contains(body, "boolean flag;"));
 }
+
+// ─── Statement emitter fixtures ──────────────────────────────────────────────
+
+namespace {
+
+/// One instruction at a chosen bytecode offset.
+BcInstruction at(uint32_t offset, uint32_t id, BcOpcode op)
+{
+	BcInstruction i;
+	i.id = id;
+	i.offset = offset;
+	i.opcode = op;
+	return i;
+}
+
+std::string emitGuarded(const BcMethod& method)
+{
+	ReconstructResult recon;
+	ImportSet imports;
+	JavaTypePrinter tp(imports);
+	JavaStmtEmitter stmtEmit(method, recon, tp);
+	return stmtEmit.emitBody();
+}
+
+} // namespace
+
+// ─── Local variable declaration and assignment ───────────────────────────────
+
+TEST(JavaStmtEmitter, AStoreToADeclaredLocalKeepsItsValue)
+{
+	// emitBlock had a "declare on first store" branch whose unused ExprNode
+	// initialiser called exprStack.pop_back(). The pop happened, so the value
+	// being stored was gone by the time the store was rendered and every first
+	// assignment to a named local came out as `/* stack underflow */`.
+	BcMethod method;
+	method.name = "assign";
+	method.access = BcAccess::Static;
+
+	BcLocalVar lv;
+	lv.index = 0;
+	lv.name = "total";
+	lv.type = types::Int();
+	method.locals.push_back(lv);
+
+	auto& blk = method.cfg.addBlock();
+	{
+		BcInstruction i = at(0, 0, BcOpcode::PushInt);
+		i.operands.push_back(BcIntOperand{42});
+		blk.instrs.push_back(i);
+		BcInstruction st = at(2, 1, BcOpcode::StoreLocal);
+		st.operands.push_back(BcLocalOperand{0});
+		blk.instrs.push_back(st);
+		blk.instrs.push_back(at(4, 2, BcOpcode::Return));
+	}
+
+	const std::string body = emitGuarded(method);
+	EXPECT_TRUE(contains(body, "total = 42;")) << body;
+	EXPECT_FALSE(contains(body, "stack underflow")) << body;
+}
+
+TEST(JavaStmtEmitter, ALocalIsDeclaredExactlyOnce)
+{
+	// emitBody() declares every non-param local before the first block, and the
+	// store site declared it a second time. Two declarations of one name in one
+	// scope is not Java.
+	BcMethod method;
+	method.name = "assign";
+	method.access = BcAccess::Static;
+
+	BcLocalVar lv;
+	lv.index = 0;
+	lv.name = "total";
+	lv.type = types::Int();
+	method.locals.push_back(lv);
+
+	auto& blk = method.cfg.addBlock();
+	{
+		BcInstruction i = at(0, 0, BcOpcode::PushInt);
+		i.operands.push_back(BcIntOperand{42});
+		blk.instrs.push_back(i);
+		BcInstruction st = at(2, 1, BcOpcode::StoreLocal);
+		st.operands.push_back(BcLocalOperand{0});
+		blk.instrs.push_back(st);
+		blk.instrs.push_back(at(4, 2, BcOpcode::Return));
+	}
+
+	const std::string body = emitGuarded(method);
+	size_t first = body.find("int total");
+	ASSERT_NE(std::string::npos, first) << body;
+	EXPECT_EQ(std::string::npos, body.find("int total", first + 1)) << body;
+}
