@@ -21,6 +21,9 @@
 #   scripts/standalone_check.sh --list           # list known modules and suites
 #   scripts/standalone_check.sh --compile-only   # syntax/codegen check, no tests
 #   scripts/standalone_check.sh --clean          # drop the object cache
+#   scripts/standalone_check.sh --update-warnings
+#                                                # rewrite the warning baseline
+#                                                # from the logs of this run
 #
 # Environment
 #   CXX           compiler to use               (default: g++)
@@ -219,6 +222,7 @@ while [ $# -gt 0 ]; do
 		--compile-only) MODE=compile ;;
 		--audit)        MODE=audit ;;
 		--clean)        MODE=clean ;;
+		--update-warnings) MODE=warnbase ;;
 		-h|--help)      usage; exit 0 ;;
 		-*)             say "unknown option: $1"; usage; exit 2 ;;
 		*)              WANTED+=("$1") ;;
@@ -409,7 +413,17 @@ compile_one() {
 		rm -f "$obj.d"
 		return 1
 	fi
-	rm -f "$obj.log"
+	# A successful compile used to `rm -f "$obj.log"` unconditionally, so every
+	# diagnostic this script asked for with -Wall was written to a file and
+	# immediately deleted.  That is how
+	#
+	# src/java_emitter/java_stmt_emitter.cpp's
+	#   warning: ignoring return value of vector::back(),
+	#            declared with attribute nodiscard [-Wunused-result]
+	# survived: the pop it flagged consumed the value of every local variable
+	# assignment the Java emitter produced.  The log is kept when it has
+	# something in it, and check_warnings() below holds it against a baseline.
+	[ -s "$obj.log" ] || rm -f "$obj.log"
 	return 0
 }
 export -f compile_one
@@ -574,6 +588,104 @@ check_kernel_headers() {
 	ok "${#headers[@]} kernel headers compile standalone, warnings as errors"
 	return 0
 }
+# ── compiler warnings ────────────────────────────────────────────────────────
+#
+# Every module here is compiled with -Wall.  compile_one used to delete the
+# diagnostic log on a successful compile, so all of it went straight to
+# /dev/null -- 555 warnings across 45 translation units, on every run, unread.
+#
+# Two of them were bugs this branch has since fixed and neither was found by
+# reading the warning:
+#
+#   src/java_emitter/java_stmt_emitter.cpp  -Wunused-result
+#       `ignoring return value of vector::back(), declared nodiscard`, on an
+#       expression whose pop_back() consumed the value of every local variable
+#       assignment the Java emitter produced.
+#
+#   src/codegen/emitter.cpp                 -Wdangling-else
+#       three times, on the `else` that made a non-Block loop body vanish from
+#       the emitted C.
+#
+# So the logs are kept now and held against a baseline, in the same shape as
+# scripts/check_std_includes.sh: the list may shrink, and adding to it needs a
+# reason.  A warning is keyed by file and flag, not by line, so moving code does
+# not churn the baseline.
+#
+# Only files compiled THIS RUN are checked.  The object cache means an unchanged
+# file produces no log, and a missing log is no evidence either way -- so a
+# baseline entry for a file that was not rebuilt is left alone rather than
+# reported as fixed.
+# The baseline is the union over the three configurations standalone-check.yml
+# builds -- g++, clang++, and g++ with -fsanitize=address,undefined -O1 -- since
+# each reports warnings the others do not and the gate has to pass under all
+# three.  Regenerating it means one --update-warnings run per configuration,
+# each from a clean BUILD_DIR, and the union of the three:
+#
+#   for c in "g++ ''" "clang++ ''" "g++ '-fsanitize=address,undefined -O1'"; do
+#       ...  scripts/standalone_check.sh --clean && --update-warnings
+#   done
+readonly WARN_BASELINE="scripts/compiler_warnings_baseline.txt"
+
+# "path -Wflag" for every warning in the logs of this run, deduplicated.
+collect_warnings() {
+	shopt -s nullglob
+	local logs=()
+	while IFS= read -r l; do logs+=("$l"); done < <(find "$BUILD_DIR/obj" -name '*.log' 2>/dev/null)
+	shopt -u nullglob
+	[ ${#logs[@]} -eq 0 ] && return 0
+	awk '
+		/: warning: / {
+			file = $0
+			sub(/:[0-9]+:[0-9]+: warning: .*$/, "", file)
+			sub(/:[0-9]+: warning: .*$/, "", file)
+			flag = "(no-flag)"
+			if (match($0, /\[-W[A-Za-z0-9=+_-]+\]$/))
+				flag = substr($0, RSTART + 1, RLENGTH - 2)
+			print file " " flag
+		}
+	' "${logs[@]}" | sort -u
+}
+
+check_warnings() {
+	local found baseline new
+	found="$(collect_warnings)"
+	if [ -z "$found" ]; then
+		ok "no compiler warnings in the translation units built this run"
+		return 0
+	fi
+
+	if [ ! -f "$WARN_BASELINE" ]; then
+		bad "$WARN_BASELINE is missing; regenerate with --update-warnings"
+		return 1
+	fi
+	baseline="$(grep -vE '^[[:space:]]*(#|$)' "$WARN_BASELINE" | sort -u)"
+
+	new="$(comm -23 <(printf '%s\n' "$found") <(printf '%s\n' "$baseline"))"
+	if [ -n "$new" ]; then
+		printf '\n%swarnings not in %s:%s\n' "$C_RED" "$WARN_BASELINE" "$C_OFF"
+		printf '%s\n' "$new" | sed 's/^/  /'
+		printf '  the full text is in %s/obj/**/*.log\n' "$BUILD_DIR"
+		bad "$(printf '%s\n' "$new" | wc -l) new compiler warning(s)"
+		return 1
+	fi
+
+	ok "$(printf '%s\n' "$found" | wc -l) compiler warning(s), all in $WARN_BASELINE"
+	return 0
+}
+
+if [ "$MODE" = warnbase ]; then
+	{
+		echo "# Compiler warnings this tree still emits, one per file and flag."
+		echo "# Generated by scripts/standalone_check.sh --update-warnings."
+		echo "# This list may shrink. Adding to it needs a reason."
+		collect_warnings
+	} > "$WARN_BASELINE"
+	ok "wrote $(grep -cvE '^[[:space:]]*(#|$)' "$WARN_BASELINE") entries to $WARN_BASELINE"
+	exit 0
+fi
+
+check_warnings || exit 1
+
 check_kernel_headers || exit 1
 
 # ── archive each module so the linker pulls only what a suite needs ──────────

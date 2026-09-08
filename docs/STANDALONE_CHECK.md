@@ -11,6 +11,7 @@ nothing else: no network, no LLVM, no CMake, no GoogleTest checkout.
 ./scripts/standalone_check.sh --list             # what it knows about
 ./scripts/standalone_check.sh --audit            # re-derive the module list
 ./scripts/standalone_check.sh --clean            # drop the object cache
+./scripts/standalone_check.sh --update-warnings  # rewrite the warning baseline
 ```
 
 ## Why
@@ -110,6 +111,33 @@ guards:
   `clang++`, plus an ASan/UBSan job, on every pull request. Two compilers is not
   redundancy: Clang rejects code GCC quietly miscompiles, and the first run of
   this job found exactly that.
+
+## Compiler warnings
+
+Every module is compiled with `-Wall`. For a long time the diagnostic output was
+written to a per-object log and deleted on a successful compile, so 555 warnings
+across 45 translation units were produced and discarded on every run. Two of
+them were bugs, and neither was found by reading the warning:
+
+* `src/java_emitter/java_stmt_emitter.cpp`, `-Wunused-result` — *ignoring return
+  value of `vector::back()`, declared with attribute `nodiscard`*, on an
+  expression whose `pop_back()` consumed the value of every local variable
+  assignment the Java emitter produced.
+* `src/codegen/emitter.cpp`, `-Wdangling-else`, three times — on the `else` that
+  made a non-`Block` loop body vanish from the emitted C.
+
+The logs are kept now, and held against `scripts/compiler_warnings_baseline.txt`
+in the same shape as `scripts/check_std_includes.sh`: the list may shrink, and
+adding to it needs a reason. A warning is keyed by file and flag rather than by
+line, so moving code does not churn the baseline. Only files compiled in the
+current run are checked — the object cache means an unchanged file produces no
+log, and a missing log is not evidence either way.
+
+The baseline is the union over the three configurations the workflow builds:
+`g++`, `clang++`, and `g++` with `-fsanitize=address,undefined -O1`. Each
+reports warnings the others do not, and the gate has to pass under all three, so
+regenerating it means one `--update-warnings` run per configuration from a clean
+`BUILD_DIR`, unioned.
 
 `EXCLUDED_SOURCES` in the script mirrors a conditional in a module's own
 CMakeLists — `neural/llama_inference.cpp` is only built when llama.cpp is
