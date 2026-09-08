@@ -1,16 +1,16 @@
 # Generated provenance summary
 
 Produced by `scripts/ci/generate_provenance.py`. Do not hand-edit.
-Scanned `3115` C/C++ files under `src/`, `include/`, `tests/`.
+Scanned `3116` C/C++ files under `src/`, `include/`, `tests/`.
 
 | Class | Count |
 |-------|------:|
 | `avast-mit` | 1941 |
 | `pelib-porst` | 25 |
-| `imortek-or-undated` | 1149 |
+| `imortek-or-undated` | 1150 |
 | `rewrite-tell-leftover` | 0 |
 
-Odin-only files in known-upstream modules: **157** (Imortek additions inside Avast directories, or undated headers).
+Odin-only files in known-upstream modules: **158** (Imortek additions inside Avast directories, or undated headers).
 
 ## Rewrite-tell leftovers (must be zero)
 
@@ -98,4 +98,4 @@ None.
 - `include/retdec/llvmir2hll/analysis/alias_analysis/alias_analyses/simple_alias_analysis_ext.h`
 - `include/retdec/llvmir2hll/llvm/llvm_intrinsic_converter_ext.h`
 - `include/retdec/llvmir2hll/optimizer/optimizers/cast_simplifier_optimizer.h`
-- … 77 more
+- … 78 more
