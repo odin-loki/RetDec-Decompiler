@@ -1,9 +1,9 @@
 /**
-* @file tests/ctypesparser/json_ctypes_parser_tests.cpp
-* @brief Tests for the @c JSONCTypes_parser module.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file tests/ctypesparser/json_ctypes_parser_tests.cpp
+ * @brief Tests for the @c JSONCTypes_parser module.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #include <memory>
 #include <gtest/gtest.h>
@@ -32,16 +32,15 @@ namespace retdec {
 namespace ctypesparser {
 namespace tests {
 
-class JSONCTypesParserTests : public Test
-{
-	public:
-		JSONCTypesParserTests() {}
-	protected:
-		JSONCTypesParser parser;
+class JSONCTypesParserTests : public Test {
+public:
+	JSONCTypesParserTests() {}
+
+protected:
+	JSONCTypesParser parser;
 };
 
-TEST_F(JSONCTypesParserTests,
-ParsingBadInputThrowsException)
+TEST_F(JSONCTypesParserTests, ParsingBadInputThrowsException)
 {
 	std::stringstream json(R"(
 		{
@@ -51,8 +50,7 @@ ParsingBadInputThrowsException)
 	ASSERT_THROW(parser.parse(json), CTypesParseError);
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingJSONWithoutFunctionsItemThrowsException)
+TEST_F(JSONCTypesParserTests, ParsingJSONWithoutFunctionsItemThrowsException)
 {
 	std::stringstream json(R"(
 		{
@@ -63,8 +61,7 @@ ParsingJSONWithoutFunctionsItemThrowsException)
 	ASSERT_THROW(parser.parse(json), CTypesParseError);
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingJSONWithoutTypesItemThrowsException)
+TEST_F(JSONCTypesParserTests, ParsingJSONWithoutTypesItemThrowsException)
 {
 	std::stringstream json(R"(
 		{
@@ -77,8 +74,7 @@ ParsingJSONWithoutTypesItemThrowsException)
 	ASSERT_THROW(parser.parse(json), CTypesParseError);
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingJSONCanParseEmptyFunctionsAndTypes)
+TEST_F(JSONCTypesParserTests, ParsingJSONCanParseEmptyFunctionsAndTypes)
 {
 	std::stringstream json(R"(
 		{
@@ -91,21 +87,16 @@ ParsingJSONCanParseEmptyFunctionsAndTypes)
 }
 
 #if DEATH_TESTS_ENABLED
-TEST_F(JSONCTypesParserTests,
-ParseIntoCrashesOnNullptrModule)
+TEST_F(JSONCTypesParserTests, ParseIntoCrashesOnNullptrModule)
 {
 	std::stringstream stream;
 	std::unique_ptr<retdec::ctypes::Module> mod = nullptr;
 
-	EXPECT_DEATH(
-		parser.parseInto(stream, mod),
-		"violated precondition - module cannot be null"
-	);
+	EXPECT_DEATH(parser.parseInto(stream, mod), "violated precondition - module cannot be null");
 }
 #endif
 
-TEST_F(JSONCTypesParserTests,
-SafeGetArrayThrowsExceptionWhenArrayNotInJson)
+TEST_F(JSONCTypesParserTests, SafeGetArrayThrowsExceptionWhenArrayNotInJson)
 {
 	std::stringstream json(R"(
 		{
@@ -130,8 +121,7 @@ SafeGetArrayThrowsExceptionWhenArrayNotInJson)
 	ASSERT_THROW(parser.parse(json), CTypesParseError);
 }
 
-TEST_F(JSONCTypesParserTests,
-SafeGetStringThrowsExceptionWhenStringNotInJsonNorDefaultIsString)
+TEST_F(JSONCTypesParserTests, SafeGetStringThrowsExceptionWhenStringNotInJsonNorDefaultIsString)
 {
 	std::stringstream json(R"(
 		{
@@ -154,8 +144,7 @@ SafeGetStringThrowsExceptionWhenStringNotInJsonNorDefaultIsString)
 	ASSERT_THROW(parser.parse(json), CTypesParseError);
 }
 
-TEST_F(JSONCTypesParserTests,
-SafeGetBoolThrowsExceptionWhenValueIsNotBool)
+TEST_F(JSONCTypesParserTests, SafeGetBoolThrowsExceptionWhenValueIsNotBool)
 {
 	std::stringstream json(R"(
 		{
@@ -182,8 +171,7 @@ SafeGetBoolThrowsExceptionWhenValueIsNotBool)
 	ASSERT_THROW(parser.parse(json), CTypesParseError);
 }
 
-TEST_F(JSONCTypesParserTests,
-ParseIntoParsesFunctionsToPassedModule)
+TEST_F(JSONCTypesParserTests, ParseIntoParsesFunctionsToPassedModule)
 {
 	std::stringstream json(R"(
 		{
@@ -213,8 +201,7 @@ ParseIntoParsesFunctionsToPassedModule)
 	parser.parseInto(json, module);
 }
 
-TEST_F(JSONCTypesParserTests,
-ParseIntoWithExplicitTypeWidthsCorrectly)
+TEST_F(JSONCTypesParserTests, ParseIntoWithExplicitTypeWidthsCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -250,8 +237,7 @@ ParseIntoWithExplicitTypeWidthsCorrectly)
 	EXPECT_EQ(32, func->getParameterType(1)->getBitWidth());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingFuncWithIntTypesCorrectly)
+TEST_F(JSONCTypesParserTests, ParsingFuncWithIntTypesCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -290,8 +276,7 @@ ParsingFuncWithIntTypesCorrectly)
 	EXPECT_FALSE(func->isVarArg());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParseUsingExplicitTypeWidthsCorrectly)
+TEST_F(JSONCTypesParserTests, ParseUsingExplicitTypeWidthsCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -330,8 +315,7 @@ ParseUsingExplicitTypeWidthsCorrectly)
 	EXPECT_EQ(32, func->getParameterType(1)->getBitWidth());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParseUsingExplicitTypeWidthsSetsCorrectBitWidthsForLongAndLongDoubleWhenSet)
+TEST_F(JSONCTypesParserTests, ParseUsingExplicitTypeWidthsSetsCorrectBitWidthsForLongAndLongDoubleWhenSet)
 {
 	// This test checks that "long" and "long double" are recognized as two
 	// different types and that their bit withs are properly set.
@@ -372,8 +356,7 @@ ParseUsingExplicitTypeWidthsSetsCorrectBitWidthsForLongAndLongDoubleWhenSet)
 	EXPECT_EQ(64, func->getParameterType(1)->getBitWidth());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParseUsingDefaultTypeWidthsSetsZeroBitWidths)
+TEST_F(JSONCTypesParserTests, ParseUsingDefaultTypeWidthsSetsZeroBitWidths)
 {
 	std::stringstream json(R"(
 		{
@@ -410,8 +393,7 @@ ParseUsingDefaultTypeWidthsSetsZeroBitWidths)
 	EXPECT_EQ(0, func->getParameterType(1)->getBitWidth());
 }
 
-TEST_F(JSONCTypesParserTests,
-DefaultTypeWidthSetInConstructorIsUsedWhenBitWidthNotInTypeWidthsMap)
+TEST_F(JSONCTypesParserTests, DefaultTypeWidthSetInConstructorIsUsedWhenBitWidthNotInTypeWidthsMap)
 {
 	std::stringstream json(R"(
 		{
@@ -449,8 +431,7 @@ DefaultTypeWidthSetInConstructorIsUsedWhenBitWidthNotInTypeWidthsMap)
 	EXPECT_EQ(32, func->getParameterType(1)->getBitWidth());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingUnsignedIntegralTypeTypeSetsCorrectSign)
+TEST_F(JSONCTypesParserTests, ParsingUnsignedIntegralTypeTypeSetsCorrectSign)
 {
 	std::stringstream json(R"(
 		{
@@ -480,8 +461,7 @@ ParsingUnsignedIntegralTypeTypeSetsCorrectSign)
 	EXPECT_FALSE(uLong->isSigned());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingSignedIntegralTypeTypeSetsCorrectSign)
+TEST_F(JSONCTypesParserTests, ParsingSignedIntegralTypeTypeSetsCorrectSign)
 {
 	std::stringstream json(R"(
 		{
@@ -511,8 +491,7 @@ ParsingSignedIntegralTypeTypeSetsCorrectSign)
 	EXPECT_TRUE(sLong->isSigned());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingFuncWithFloatTypeCorrectly)
+TEST_F(JSONCTypesParserTests, ParsingFuncWithFloatTypeCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -540,8 +519,7 @@ ParsingFuncWithFloatTypeCorrectly)
 	EXPECT_EQ("float", func->getReturnType()->getName());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingFuncWithConstQualifierIgnoresConst)
+TEST_F(JSONCTypesParserTests, ParsingFuncWithConstQualifierIgnoresConst)
 {
 	std::stringstream json(R"(
 		{
@@ -574,8 +552,7 @@ ParsingFuncWithConstQualifierIgnoresConst)
 	EXPECT_EQ("float", func->getReturnType()->getName());
 }
 
-TEST_F(JSONCTypesParserTests,
-FuncWithVariableNumberOfParametersIsVarArg)
+TEST_F(JSONCTypesParserTests, FuncWithVariableNumberOfParametersIsVarArg)
 {
 	std::stringstream json(R"(
 		{
@@ -609,8 +586,7 @@ FuncWithVariableNumberOfParametersIsVarArg)
 	EXPECT_TRUE(func->isVarArg());
 }
 
-TEST_F(JSONCTypesParserTests,
-FuncWithFixedNumberOfParametersIsNotVarArg)
+TEST_F(JSONCTypesParserTests, FuncWithFixedNumberOfParametersIsNotVarArg)
 {
 	std::stringstream json(R"(
 		{
@@ -643,8 +619,7 @@ FuncWithFixedNumberOfParametersIsNotVarArg)
 	EXPECT_FALSE(func->isVarArg());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingFunctionSetsCorrectDeclaration)
+TEST_F(JSONCTypesParserTests, ParsingFunctionSetsCorrectDeclaration)
 {
 	std::stringstream json(R"(
 		{
@@ -673,8 +648,7 @@ ParsingFunctionSetsCorrectDeclaration)
 	EXPECT_EQ("int ff();", decl);
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingFunctionSetsCorrectHeaderFile)
+TEST_F(JSONCTypesParserTests, ParsingFunctionSetsCorrectHeaderFile)
 {
 	std::stringstream json(R"(
 		{
@@ -703,8 +677,7 @@ ParsingFunctionSetsCorrectHeaderFile)
 	EXPECT_EQ("/usr/include/CHeader.h", header);
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingTypedefToUnknownTypeCorrectly)
+TEST_F(JSONCTypesParserTests, ParsingTypedefToUnknownTypeCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -733,8 +706,7 @@ ParsingTypedefToUnknownTypeCorrectly)
 	EXPECT_EQ("MY_TYPE", retType->getName());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParseTypeReturnsUnknownTypeWhenTypeIsNotRecognized)
+TEST_F(JSONCTypesParserTests, ParseTypeReturnsUnknownTypeWhenTypeIsNotRecognized)
 {
 	std::stringstream json(R"(
 		{
@@ -761,8 +733,7 @@ ParseTypeReturnsUnknownTypeWhenTypeIsNotRecognized)
 	EXPECT_EQ(retdec::ctypes::UnknownType::create(), retType);
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingFunctionTypeCorrectly)
+TEST_F(JSONCTypesParserTests, ParsingFunctionTypeCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -820,8 +791,7 @@ ParsingFunctionTypeCorrectly)
 	EXPECT_FALSE(funcType->isVarArg());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingVarArgFunctionTypeCorrectly)
+TEST_F(JSONCTypesParserTests, ParsingVarArgFunctionTypeCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -880,8 +850,7 @@ ParsingVarArgFunctionTypeCorrectly)
 	EXPECT_TRUE(funcType->isVarArg());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingVoidTypeCorrectly)
+TEST_F(JSONCTypesParserTests, ParsingVoidTypeCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -908,8 +877,7 @@ ParsingVoidTypeCorrectly)
 	EXPECT_EQ(retdec::ctypes::VoidType::create(), retType);
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingPointerToIntTypeCorrectly)
+TEST_F(JSONCTypesParserTests, ParsingPointerToIntTypeCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -941,8 +909,7 @@ ParsingPointerToIntTypeCorrectly)
 	EXPECT_EQ("", retType->getName());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingArrayTypeCorrectly)
+TEST_F(JSONCTypesParserTests, ParsingArrayTypeCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -987,8 +954,7 @@ ParsingArrayTypeCorrectly)
 	EXPECT_EQ(twoDimensions, arrayType->getDimensions());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingArrayWithUnknownDimensionsCorrectly)
+TEST_F(JSONCTypesParserTests, ParsingArrayWithUnknownDimensionsCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -1028,12 +994,10 @@ ParsingArrayWithUnknownDimensionsCorrectly)
 
 	EXPECT_EQ(
 		retdec::ctypes::ArrayType::Dimensions(2, retdec::ctypes::ArrayType::UNKNOWN_DIMENSION),
-		arrayType->getDimensions()
-	);
+		arrayType->getDimensions());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingStructTypeCorrectly)
+TEST_F(JSONCTypesParserTests, ParsingStructTypeCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -1078,8 +1042,7 @@ ParsingStructTypeCorrectly)
 	EXPECT_EQ("int", structType->getMemberType(1)->getName());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingStructWithPointerToSelfMemberCorrectly)
+TEST_F(JSONCTypesParserTests, ParsingStructWithPointerToSelfMemberCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -1117,8 +1080,7 @@ ParsingStructWithPointerToSelfMemberCorrectly)
 	ASSERT_TRUE(retType->isStruct());
 	auto structType = std::static_pointer_cast<retdec::ctypes::StructType>(retType);
 	ASSERT_TRUE(structType->getMemberType(1)->isPointer());
-	auto structMember = std::static_pointer_cast<retdec::ctypes::PointerType>(
-		structType->getMemberType(1));
+	auto structMember = std::static_pointer_cast<retdec::ctypes::PointerType>(structType->getMemberType(1));
 
 	EXPECT_EQ("s", structType->getName());
 	EXPECT_EQ(1, structType->getMemberCount());
@@ -1126,8 +1088,7 @@ ParsingStructWithPointerToSelfMemberCorrectly)
 	EXPECT_EQ(structType, structMember->getPointedType());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingUnionTypeCorrectly)
+TEST_F(JSONCTypesParserTests, ParsingUnionTypeCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -1172,8 +1133,7 @@ ParsingUnionTypeCorrectly)
 	EXPECT_EQ("int", unionType->getMemberType(1)->getName());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingEnumTypeCorrectly)
+TEST_F(JSONCTypesParserTests, ParsingEnumTypeCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -1213,8 +1173,7 @@ ParsingEnumTypeCorrectly)
 	EXPECT_EQ(42, enumType->getValue(1).getValue());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingEnumWithUnknownValueSetsEnumDefaultValue)
+TEST_F(JSONCTypesParserTests, ParsingEnumWithUnknownValueSetsEnumDefaultValue)
 {
 	std::stringstream json(R"(
 		{
@@ -1251,8 +1210,7 @@ ParsingEnumWithUnknownValueSetsEnumDefaultValue)
 	EXPECT_EQ(retdec::ctypes::EnumType::DEFAULT_VALUE, enumType->getValue(1).getValue());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParserSetsEmptyCallConventionToFunctionbyDefault)
+TEST_F(JSONCTypesParserTests, ParserSetsEmptyCallConventionToFunctionbyDefault)
 {
 	std::stringstream json(R"(
 		{
@@ -1279,8 +1237,7 @@ ParserSetsEmptyCallConventionToFunctionbyDefault)
 	EXPECT_EQ(retdec::ctypes::CallConvention(""), func->getCallConvention());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParserPrefersCallConventionFromJsonToUserDefinedOne)
+TEST_F(JSONCTypesParserTests, ParserPrefersCallConventionFromJsonToUserDefinedOne)
 {
 	std::stringstream json(R"(
 		{
@@ -1308,8 +1265,7 @@ ParserPrefersCallConventionFromJsonToUserDefinedOne)
 	EXPECT_EQ(retdec::ctypes::CallConvention("cdecl"), func->getCallConvention());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParserSetsUserDefinedConventionWhenFunctionDoesNotHaveOne)
+TEST_F(JSONCTypesParserTests, ParserSetsUserDefinedConventionWhenFunctionDoesNotHaveOne)
 {
 	std::stringstream json(R"(
 		{
@@ -1336,8 +1292,7 @@ ParserSetsUserDefinedConventionWhenFunctionDoesNotHaveOne)
 	EXPECT_EQ(retdec::ctypes::CallConvention("stdcall"), func->getCallConvention());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParseIntoUsingCallConventionCorrectly)
+TEST_F(JSONCTypesParserTests, ParseIntoUsingCallConventionCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -1365,8 +1320,7 @@ ParseIntoUsingCallConventionCorrectly)
 	EXPECT_EQ(retdec::ctypes::CallConvention("fastcall"), func->getCallConvention());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParseIntoWithExplicitTypeWidthsAndCallConventionCorrectly)
+TEST_F(JSONCTypesParserTests, ParseIntoWithExplicitTypeWidthsAndCallConventionCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -1403,8 +1357,7 @@ ParseIntoWithExplicitTypeWidthsAndCallConventionCorrectly)
 	EXPECT_EQ(retdec::ctypes::CallConvention("cdecl"), func->getCallConvention());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParseInAnnotationCorrectly)
+TEST_F(JSONCTypesParserTests, ParseInAnnotationCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -1439,8 +1392,7 @@ ParseInAnnotationCorrectly)
 	EXPECT_TRUE(param.isIn());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParseOutAnnotationCorrectly)
+TEST_F(JSONCTypesParserTests, ParseOutAnnotationCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -1475,8 +1427,7 @@ ParseOutAnnotationCorrectly)
 	EXPECT_TRUE(param.isOut());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParseInOutAnnotationCorrectly)
+TEST_F(JSONCTypesParserTests, ParseInOutAnnotationCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -1511,8 +1462,7 @@ ParseInOutAnnotationCorrectly)
 	EXPECT_TRUE(param.isInOut());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParseOptionalAnnotationCorrectly)
+TEST_F(JSONCTypesParserTests, ParseOptionalAnnotationCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -1547,8 +1497,7 @@ ParseOptionalAnnotationCorrectly)
 	EXPECT_TRUE(param.isOptional());
 }
 
-TEST_F(JSONCTypesParserTests,
-GetBitWidthSetsDefaultBitWidthForMyIntTypeNotBitWidthSpecifiedForInt)
+TEST_F(JSONCTypesParserTests, GetBitWidthSetsDefaultBitWidthForMyIntTypeNotBitWidthSpecifiedForInt)
 {
 	std::stringstream json(R"(
 		{
@@ -1577,8 +1526,7 @@ GetBitWidthSetsDefaultBitWidthForMyIntTypeNotBitWidthSpecifiedForInt)
 	EXPECT_EQ(0, func->getReturnType()->getBitWidth());
 }
 
-TEST_F(JSONCTypesParserTests,
-UseCoreTypeFromIntegralTypeNameToSearchItsBitWidthInMapCorrectly)
+TEST_F(JSONCTypesParserTests, UseCoreTypeFromIntegralTypeNameToSearchItsBitWidthInMapCorrectly)
 {
 	std::stringstream json(R"(
 		{
@@ -1650,8 +1598,7 @@ UseCoreTypeFromIntegralTypeNameToSearchItsBitWidthInMapCorrectly)
 	EXPECT_EQ(32, func->getParameterType(4)->getBitWidth());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParserSetsIntBitWidthForSignedAndUnsignedType)
+TEST_F(JSONCTypesParserTests, ParserSetsIntBitWidthForSignedAndUnsignedType)
 {
 	std::stringstream json(R"(
 		{
@@ -1694,8 +1641,7 @@ ParserSetsIntBitWidthForSignedAndUnsignedType)
 	EXPECT_EQ(33, func->getParameterType(2)->getBitWidth());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingTwoFunctionsWithSameNameKeepsFirstOne)
+TEST_F(JSONCTypesParserTests, ParsingTwoFunctionsWithSameNameKeepsFirstOne)
 {
 	std::stringstream json1(R"(
 		{
@@ -1742,8 +1688,7 @@ ParsingTwoFunctionsWithSameNameKeepsFirstOne)
 	EXPECT_EQ("int", func->getReturnType()->getName());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingTwoFunctionsUsingNewParserForNewInputWithSameNameKeepsFirstOne)
+TEST_F(JSONCTypesParserTests, ParsingTwoFunctionsUsingNewParserForNewInputWithSameNameKeepsFirstOne)
 {
 	std::stringstream json1(R"(
 		{
@@ -1792,8 +1737,7 @@ ParsingTwoFunctionsUsingNewParserForNewInputWithSameNameKeepsFirstOne)
 	EXPECT_EQ("int", func->getReturnType()->getName());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParseIntoUsesContextFromModule)
+TEST_F(JSONCTypesParserTests, ParseIntoUsesContextFromModule)
 {
 	std::stringstream json1(R"(
 		{
@@ -1841,8 +1785,7 @@ ParseIntoUsesContextFromModule)
 	EXPECT_EQ("int", func->getReturnType()->getName());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParserSetsCorrectBitWidthFromTypeWidthsMapToPointerType)
+TEST_F(JSONCTypesParserTests, ParserSetsCorrectBitWidthFromTypeWidthsMapToPointerType)
 {
 	std::stringstream json(R"(
 		{
@@ -1874,8 +1817,7 @@ ParserSetsCorrectBitWidthFromTypeWidthsMapToPointerType)
 	EXPECT_EQ(33, func->getReturnType()->getBitWidth());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParserPrefersBitWidthFromJsonIfExists)
+TEST_F(JSONCTypesParserTests, ParserPrefersBitWidthFromJsonIfExists)
 {
 	std::stringstream json(R"(
 		{
@@ -1904,8 +1846,7 @@ ParserPrefersBitWidthFromJsonIfExists)
 	EXPECT_EQ(32, func->getReturnType()->getBitWidth());
 }
 
-TEST_F(JSONCTypesParserTests,
-ParsingCircularTypedefsBreaksLoopAndSetsTypedefToUnknownType)
+TEST_F(JSONCTypesParserTests, ParsingCircularTypedefsBreaksLoopAndSetsTypedefToUnknownType)
 {
 	std::stringstream json(R"(
 		{
@@ -1940,9 +1881,7 @@ ParsingCircularTypedefsBreaksLoopAndSetsTypedefToUnknownType)
 
 	auto mod = parser.parse(json);
 	std::shared_ptr<retdec::ctypes::TypedefedType> retType =
-		std::static_pointer_cast<retdec::ctypes::TypedefedType>(
-			mod->getFunctionWithName("ff")->getReturnType()
-		);
+		std::static_pointer_cast<retdec::ctypes::TypedefedType>(mod->getFunctionWithName("ff")->getReturnType());
 	std::shared_ptr<retdec::ctypes::TypedefedType> type2 =
 		std::static_pointer_cast<retdec::ctypes::TypedefedType>(retType->getAliasedType());
 	std::shared_ptr<retdec::ctypes::TypedefedType> type3 =
