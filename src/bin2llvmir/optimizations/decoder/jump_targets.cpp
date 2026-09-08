@@ -1,9 +1,9 @@
 /**
-* @file src/bin2llvmir/optimizations/decoder/jump_targets.cpp
-* @brief Jump targets representation.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file src/bin2llvmir/optimizations/decoder/jump_targets.cpp
+ * @brief Jump targets representation.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #include "retdec/bin2llvmir/optimizations/decoder/jump_targets.h"
 #include "retdec/bin2llvmir/providers/asm_instruction.h"
@@ -21,23 +21,11 @@ namespace bin2llvmir {
 
 Config* JumpTarget::config = nullptr;
 
-JumpTarget::JumpTarget()
-{
-
-}
+JumpTarget::JumpTarget() {}
 
 JumpTarget::JumpTarget(
-		retdec::common::Address a,
-		eType t,
-		cs_mode m,
-		retdec::common::Address f,
-		std::optional<std::size_t> sz)
-		:
-		_address(a),
-		_size(sz),
-		_type(t),
-		_fromAddress(f),
-		_mode(m)
+	retdec::common::Address a, eType t, cs_mode m, retdec::common::Address f, std::optional<std::size_t> sz):
+	_address(a), _size(sz), _type(t), _fromAddress(f), _mode(m)
 {
 	if (config->getConfig().architecture.isArm32OrThumb() && _address % 2)
 	{
@@ -100,66 +88,32 @@ void JumpTarget::setMode(cs_mode m) const
 	_mode = m;
 }
 
-std::ostream& operator<<(std::ostream &out, const JumpTarget& jt)
+std::ostream& operator<<(std::ostream& out, const JumpTarget& jt)
 {
 	std::string t;
 	switch (jt.getType())
 	{
-		case JumpTarget::eType::CONTROL_FLOW_BR_FALSE:
-			t = "CONTROL_FLOW_BR_FALSE";
-			break;
-		case JumpTarget::eType::CONTROL_FLOW_BR_TRUE:
-			t = "CONTROL_FLOW_BR_TRUE";
-			break;
-		case JumpTarget::eType::CONTROL_FLOW_SWITCH_CASE:
-			t = "CONTROL_FLOW_SWITCH_CASE";
-			break;
-		case JumpTarget::eType::CONTROL_FLOW_CALL_TARGET:
-			t = "CONTROL_FLOW_CALL_TARGET";
-			break;
-		case JumpTarget::eType::CONTROL_FLOW_RETURN_TARGET:
-			t = "CONTROL_FLOW_RETURN_TARGET";
-			break;
-		case JumpTarget::eType::CONFIG:
-			t = "CONFIG";
-			break;
-		case JumpTarget::eType::ENTRY_POINT:
-			t = "ENTRY_POINT";
-			break;
-		case JumpTarget::eType::SELECTED_RANGE_START:
-			t = "SELECTED_RANGE_START";
-			break;
-		case JumpTarget::eType::IMPORT:
-			t = "IMPORT";
-			break;
-		case JumpTarget::eType::EXPORT:
-			t = "EXPORT";
-			break;
-		case JumpTarget::eType::DEBUG:
-			t = "DEBUG";
-			break;
-		case JumpTarget::eType::PDATA:
-			t = "PDATA";
-			break;
-		case JumpTarget::eType::EHFRAME:
-			t = "EHFRAME";
-			break;
-		case JumpTarget::eType::SYMBOL:
-			t = "SYMBOL";
-			break;
-		case JumpTarget::eType::STATIC_CODE:
-			t = "STATIC_CODE";
-			break;
-		case JumpTarget::eType::VTABLE:
-			t = "VTABLE";
-			break;
-		case JumpTarget::eType::LEFTOVER:
-			t = "LEFTOVER";
-			break;
-		default:
-			assert(false && "unknown type");
-			t = "unknown";
-			break;
+	case JumpTarget::eType::CONTROL_FLOW_BR_FALSE: t = "CONTROL_FLOW_BR_FALSE"; break;
+	case JumpTarget::eType::CONTROL_FLOW_BR_TRUE: t = "CONTROL_FLOW_BR_TRUE"; break;
+	case JumpTarget::eType::CONTROL_FLOW_SWITCH_CASE: t = "CONTROL_FLOW_SWITCH_CASE"; break;
+	case JumpTarget::eType::CONTROL_FLOW_CALL_TARGET: t = "CONTROL_FLOW_CALL_TARGET"; break;
+	case JumpTarget::eType::CONTROL_FLOW_RETURN_TARGET: t = "CONTROL_FLOW_RETURN_TARGET"; break;
+	case JumpTarget::eType::CONFIG: t = "CONFIG"; break;
+	case JumpTarget::eType::ENTRY_POINT: t = "ENTRY_POINT"; break;
+	case JumpTarget::eType::SELECTED_RANGE_START: t = "SELECTED_RANGE_START"; break;
+	case JumpTarget::eType::IMPORT: t = "IMPORT"; break;
+	case JumpTarget::eType::EXPORT: t = "EXPORT"; break;
+	case JumpTarget::eType::DEBUG: t = "DEBUG"; break;
+	case JumpTarget::eType::PDATA: t = "PDATA"; break;
+	case JumpTarget::eType::EHFRAME: t = "EHFRAME"; break;
+	case JumpTarget::eType::SYMBOL: t = "SYMBOL"; break;
+	case JumpTarget::eType::STATIC_CODE: t = "STATIC_CODE"; break;
+	case JumpTarget::eType::VTABLE: t = "VTABLE"; break;
+	case JumpTarget::eType::LEFTOVER: t = "LEFTOVER"; break;
+	default:
+		assert(false && "unknown type");
+		t = "unknown";
+		break;
 	}
 
 	out << jt.getAddress() << " (" << t << ")";
@@ -188,11 +142,7 @@ std::ostream& operator<<(std::ostream &out, const JumpTarget& jt)
 Config* JumpTargets::config = nullptr;
 
 const JumpTarget* JumpTargets::push(
-		retdec::common::Address a,
-		JumpTarget::eType t,
-		cs_mode m,
-		retdec::common::Address f,
-		std::optional<std::size_t> sz)
+	retdec::common::Address a, JumpTarget::eType t, cs_mode m, retdec::common::Address f, std::optional<std::size_t> sz)
 {
 	auto& arch = config->getConfig().architecture;
 
@@ -210,10 +160,8 @@ const JumpTarget* JumpTargets::push(
 		}
 
 		if ((arch.isArm32OrThumb() && m == CS_MODE_ARM && a % 4)
-				|| (arch.isArm32OrThumb() && m == CS_MODE_THUMB && a % 2)
-				|| (arch.isArm64() && a % 4)
-				|| (arch.isMipsOrPic32() && a % 4)
-				|| (arch.isPpc() && a % 4))
+			|| (arch.isArm32OrThumb() && m == CS_MODE_THUMB && a % 2) || (arch.isArm64() && a % 4)
+			|| (arch.isMipsOrPic32() && a % 4) || (arch.isPpc() && a % 4))
 		{
 			LOG << "\t\t" << "[-] JT not aligned @ " << a << std::endl;
 		}
@@ -262,10 +210,10 @@ auto JumpTargets::end()
 	return _data.end();
 }
 
-std::ostream& operator<<(std::ostream &out, const JumpTargets& jts)
+std::ostream& operator<<(std::ostream& out, const JumpTargets& jts)
 {
 	out << "Jump targets:" << std::endl;
-	for (auto& jt : jts._data)
+	for (auto& jt: jts._data)
 	{
 		out << "\t" << jt << std::endl;
 	}

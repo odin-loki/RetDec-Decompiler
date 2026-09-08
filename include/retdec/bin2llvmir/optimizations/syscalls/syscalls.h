@@ -23,48 +23,39 @@ namespace bin2llvmir {
 
 class AsmInstruction;
 
-class SyscallFixer : public llvm::ModulePass
-{
-	public:
-		static char ID;
-		SyscallFixer();
-		virtual bool runOnModule(llvm::Module& M) override;
-		bool runOnModuleCustom(
-				llvm::Module& M,
-				Config* c,
-				FileImage* img,
-				Lti* lti,
-				Abi* abi);
+class SyscallFixer : public llvm::ModulePass {
+public:
+	static char ID;
+	SyscallFixer();
+	virtual bool runOnModule(llvm::Module& M) override;
+	bool runOnModuleCustom(llvm::Module& M, Config* c, FileImage* img, Lti* lti, Abi* abi);
 
-	private:
-		bool run();
-		bool transform(
-				AsmInstruction ai,
-				uint64_t code,
-				const std::map<uint64_t, std::string>& codeMap);
+private:
+	bool run();
+	bool transform(AsmInstruction ai, uint64_t code, const std::map<uint64_t, std::string>& codeMap);
 
-		bool runArm();
-		bool runArm_linux_32();
-		bool runArm_linux_32(AsmInstruction ai);
+	bool runArm();
+	bool runArm_linux_32();
+	bool runArm_linux_32(AsmInstruction ai);
 
-		bool runArm64();
-		bool runArm64_linux_64();
-		bool runArm64_linux_64(AsmInstruction ai);
+	bool runArm64();
+	bool runArm64_linux_64();
+	bool runArm64_linux_64(AsmInstruction ai);
 
-		bool runMips();
-		bool runMips_linux();
-		bool runMips_linux(AsmInstruction ai);
+	bool runMips();
+	bool runMips_linux();
+	bool runMips_linux(AsmInstruction ai);
 
-		bool runX86();
-		bool runX86_linux_32();
-		bool runX86_linux_32(AsmInstruction ai);
+	bool runX86();
+	bool runX86_linux_32();
+	bool runX86_linux_32(AsmInstruction ai);
 
-	private:
-		llvm::Module* _module = nullptr;
-		Config* _config = nullptr;
-		FileImage* _image = nullptr;
-		Lti* _lti = nullptr;
-		Abi* _abi = nullptr;
+private:
+	llvm::Module* _module = nullptr;
+	Config* _config = nullptr;
+	FileImage* _image = nullptr;
+	Lti* _lti = nullptr;
+	Abi* _abi = nullptr;
 };
 
 } // namespace bin2llvmir

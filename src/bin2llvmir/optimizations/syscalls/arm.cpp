@@ -17,8 +17,7 @@ using namespace llvm;
  * https://w3challs.com/syscalls/?arch=arm_strong
  * https://w3challs.com/syscalls/?arch=arm_thumb
  */
-std::map<uint64_t, std::string> syscalls_arm_linux_32 =
-{
+std::map<uint64_t, std::string> syscalls_arm_linux_32 = {
 	{0, "restart_syscall"},
 	{1, "exit"},
 	{2, "fork"},
@@ -77,7 +76,7 @@ std::map<uint64_t, std::string> syscalls_arm_linux_32 =
 	{55, "fcntl"},
 	{56, "mpx"}, // 56 was sys_mpx
 	{57, "setpgid"},
-	{58, "ulimit"}, // 58 was sys_ulimit
+	{58, "ulimit"},   // 58 was sys_ulimit
 	{59, "olduname"}, // 59 was sys_olduname
 	{60, "umask"},
 	{61, "chroot"},
@@ -129,9 +128,9 @@ std::map<uint64_t, std::string> syscalls_arm_linux_32 =
 	{107, "lstat"},
 	{108, "fstat"},
 	{109, "uname"}, // 109 was sys_uname
-	{110, "iopl"}, // 110 was sys_iopl
+	{110, "iopl"},  // 110 was sys_iopl
 	{111, "vhangup"},
-	{112, "idle"}, // 112 was sys_idle
+	{112, "idle"},    // 112 was sys_idle
 	{113, "syscall"}, // syscall to call a syscall!
 	{114, "wait4"},
 	{115, "swapoff"},
@@ -185,20 +184,20 @@ std::map<uint64_t, std::string> syscalls_arm_linux_32 =
 	{163, "mremap"},
 	{164, "setresuid"},
 	{165, "getresuid"},
-	{166, "vm86"}, // 166 was sys_vm86
+	{166, "vm86"},         // 166 was sys_vm86
 	{167, "query_module"}, // 167 was sys_query_module
 	{168, "poll"},
 	{169, "nfsservctl"},
 	{170, "setresgid"},
 	{171, "getresgid"},
 	{172, "prctl"},
-	{173, "sigreturn"}, // rt_sigreturn
-	{174, "sigaction"}, // rt_sigaction
-	{175, "sigprocmask"}, // rt_sigprocmask
-	{176, "sigpending"}, // rt_sigpending
+	{173, "sigreturn"},    // rt_sigreturn
+	{174, "sigaction"},    // rt_sigaction
+	{175, "sigprocmask"},  // rt_sigprocmask
+	{176, "sigpending"},   // rt_sigpending
 	{177, "sigtimedwait"}, // rt_sigtimedwait
 	{178, "sigqueueinfo"}, // rt_sigqueueinfo
-	{179, "sigsuspend"}, // rt_sigsuspend
+	{179, "sigsuspend"},   // rt_sigsuspend
 	{180, "pread64"},
 	{181, "pwrite64"},
 	{182, "chown"},
@@ -361,7 +360,7 @@ std::map<uint64_t, std::string> syscalls_arm_linux_32 =
 	{339, "get_robust_list"},
 	{340, "splice"},
 	{341, "arm_sync_file_range"},
-//	{341, "sync_file_range2           __NR_arm_sync_file_range
+	//	{341, "sync_file_range2           __NR_arm_sync_file_range
 	{342, "tee"},
 	{343, "vmsplice"},
 	{344, "move_pages"},
@@ -395,8 +394,7 @@ std::map<uint64_t, std::string> syscalls_arm_linux_32 =
 	{372, "clock_adjtime"},
 	{373, "syncfs"},
 	{374, "sendmmsg"},
-	{375, "setns"}
-};
+	{375, "setns"}};
 
 namespace retdec {
 namespace bin2llvmir {
@@ -414,7 +412,7 @@ bool SyscallFixer::runArm()
 bool SyscallFixer::runArm_linux_32()
 {
 	bool changed = false;
-	for (Function& F : *_module)
+	for (Function& F: *_module)
 	{
 		for (auto ai = AsmInstruction(&F); ai.isValid(); ai = ai.getNext())
 		{
@@ -441,16 +439,14 @@ bool SyscallFixer::runArm_linux_32(AsmInstruction ai)
 	// Find syscall ID.
 	//
 	auto& detail = armAsm->detail->arm;
-	if (detail.op_count != 1
-			|| detail.operands[0].type != ARM_OP_IMM)
+	if (detail.op_count != 1 || detail.operands[0].type != ARM_OP_IMM)
 	{
 		LOG << "\tbad ARM asm instruction format" << std::endl;
 		return false;
 	}
 	// ARM has 0x90xxxx
 	uint64_t code = detail.operands[0].imm & 0xffff;
-	LOG << "\tcode = " << std::dec << code << " (" << std::hex << code << ")"
-			<< std::endl;
+	LOG << "\tcode = " << std::dec << code << " (" << std::hex << code << ")" << std::endl;
 
 	return transform(ai, code, syscalls_arm_linux_32);
 }

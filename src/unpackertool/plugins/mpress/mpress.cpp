@@ -30,37 +30,35 @@ namespace mpress {
 
 namespace {
 
-const MpressUnpackerStubData mpressUnpackerStubData[MPRESS_UNPACKER_STUB_UNKNOWN] =
-{
-	{ 0x2B6, 0x2BC, 0x2B8, 0x2C8, 0x2C0, COMPRESSION_LZMAT }, // MPRESS_UNPACKER_STUB_101_105
-	{ 0x29E, 0x2A4, 0x2A0, 0x2B0, 0x2A8, COMPRESSION_LZMAT }, // MPRESS_UNPACKER_STUB_107_127
-	{ 0x299, 0x29F, 0x29B, 0x2AB, 0x2A3, COMPRESSION_LZMAT }, // MPRESS_UNPACKER_STUB_201
-	{ 0xB57, 0xB5D, 0xB59, 0xB61, 0xB69, COMPRESSION_LZMA  }, // MPRESS_UNPACKER_STUB_205_LZMA
-	{ 0x29C, 0x2A2, 0x29E, 0x2A6, 0x2AE, COMPRESSION_LZMAT }, // MPRESS_UNPACKER_STUB_205_LZMAT
-	{ 0xB5A, 0xB60, 0xB5C, 0xB64, 0xB6C, COMPRESSION_LZMA  }, // MPRESS_UNPACKER_STUB_212_219_LZMA
-	{ 0x29F, 0x2A5, 0x2A1, 0x2A9, 0x2B1, COMPRESSION_LZMAT }  // MPRESS_UNPACKER_STUB_212_219_LZMAT
+const MpressUnpackerStubData mpressUnpackerStubData[MPRESS_UNPACKER_STUB_UNKNOWN] = {
+	{0x2B6, 0x2BC, 0x2B8, 0x2C8, 0x2C0, COMPRESSION_LZMAT}, // MPRESS_UNPACKER_STUB_101_105
+	{0x29E, 0x2A4, 0x2A0, 0x2B0, 0x2A8, COMPRESSION_LZMAT}, // MPRESS_UNPACKER_STUB_107_127
+	{0x299, 0x29F, 0x29B, 0x2AB, 0x2A3, COMPRESSION_LZMAT}, // MPRESS_UNPACKER_STUB_201
+	{0xB57, 0xB5D, 0xB59, 0xB61, 0xB69, COMPRESSION_LZMA},  // MPRESS_UNPACKER_STUB_205_LZMA
+	{0x29C, 0x2A2, 0x29E, 0x2A6, 0x2AE, COMPRESSION_LZMAT}, // MPRESS_UNPACKER_STUB_205_LZMAT
+	{0xB5A, 0xB60, 0xB5C, 0xB64, 0xB6C, COMPRESSION_LZMA},  // MPRESS_UNPACKER_STUB_212_219_LZMA
+	{0x29F, 0x2A5, 0x2A1, 0x2A9, 0x2B1, COMPRESSION_LZMAT}  // MPRESS_UNPACKER_STUB_212_219_LZMAT
 };
 
-const MpressFixStubData mpressFixStubData[MPRESS_FIX_STUB_UNKNOWN] =
-{
-	{ 0x8B,  0xC1,  0xBD }, // MPRESS_FIX_STUB_10x
-	{ 0x45, 0x138, 0x134 }, // MPRESS_FIX_STUB_127_20x
-	{ 0x35, 0x128, 0x124 }  // MPRESS_FIX_STUB_21x
+const MpressFixStubData mpressFixStubData[MPRESS_FIX_STUB_UNKNOWN] = {
+	{0x8B, 0xC1, 0xBD},   // MPRESS_FIX_STUB_10x
+	{0x45, 0x138, 0x134}, // MPRESS_FIX_STUB_127_20x
+	{0x35, 0x128, 0x124}  // MPRESS_FIX_STUB_21x
 };
 
-}
+} // namespace
 
 /**
  * Constructor.
  */
-MpressPlugin::MpressPlugin() : _file(), _peFile(nullptr), _unpackerStub(MPRESS_UNPACKER_STUB_UNKNOWN),
-	_fixStub(MPRESS_FIX_STUB_UNKNOWN), _packedContentSect(nullptr), _addedSectionCount(0),
-	_iatVa(0), _iatSize(0), _oepVa(0), _importHintsOffset(0)
+MpressPlugin::MpressPlugin():
+	_file(), _peFile(nullptr), _unpackerStub(MPRESS_UNPACKER_STUB_UNKNOWN), _fixStub(MPRESS_FIX_STUB_UNKNOWN),
+	_packedContentSect(nullptr), _addedSectionCount(0), _iatVa(0), _iatSize(0), _oepVa(0), _importHintsOffset(0)
 {
-	info.name          = "MPRESS";
+	info.name = "MPRESS";
 	info.pluginVersion = "0.99";
 	info.packerVersion = R"/([12]\..{2})/"; // 1.xx or 2.xx
-	info.author        = "Marek Milkovic";
+	info.author = "Marek Milkovic";
 }
 
 /**
@@ -77,23 +75,18 @@ MpressPlugin::~MpressPlugin()
 void MpressPlugin::prepare()
 {
 	_file = retdec::loader::createImage(getStartupArguments()->inputFile);
-	if (!_file)
-		throw UnsupportedFileException();
+	if (!_file) throw UnsupportedFileException();
 
 	_peFile = new PeLib::PeFileT(getStartupArguments()->inputFile);
-	if(_peFile->loadPeHeaders() != PeLib::ERROR_NONE)
-		throw UnsupportedFileException();
+	if (_peFile->loadPeHeaders() != PeLib::ERROR_NONE) throw UnsupportedFileException();
 
 	// We currently don't support PE32+ as the decompiler doesn't support them anyways
-	if (_peFile->imageLoader().getImageBitability() != 32)
-		throw UnsupportedFileException();
+	if (_peFile->imageLoader().getImageBitability() != 32) throw UnsupportedFileException();
 
-	if (!_file->getEpSegment())
-		throw NoEntryPointException();
+	if (!_file->getEpSegment()) throw NoEntryPointException();
 
 	// Detect the version of the used MPRESS packer and the compression used
-	if (detectUnpackerStubVersion() == MPRESS_UNPACKER_STUB_UNKNOWN)
-		throw UnsupportedStubException();
+	if (detectUnpackerStubVersion() == MPRESS_UNPACKER_STUB_UNKNOWN) throw UnsupportedStubException();
 }
 
 /**
@@ -106,14 +99,17 @@ void MpressPlugin::unpack()
 	std::vector<std::uint8_t> packedContentSectAddrBytes;
 
 	_file->getFileFormat()->getEpAddress(ep);
-	_file->getEpSegment()->getBytes(packedContentSectAddrBytes, ep - _file->getEpSegment()->getAddress() + mpressUnpackerStubData[_unpackerStub].packedContentOffset, 4);
+	_file->getEpSegment()->getBytes(
+		packedContentSectAddrBytes,
+		ep - _file->getEpSegment()->getAddress() + mpressUnpackerStubData[_unpackerStub].packedContentOffset,
+		4);
 
 	DynamicBuffer packedContentSectAddrBuffer(packedContentSectAddrBytes, _file->getFileFormat()->getEndianness());
-	std::uint32_t packedContentSectAddr = ep + mpressUnpackerStubData[_unpackerStub].packedContentOffset + packedContentSectAddrBuffer.read<std::int32_t>(0);
+	std::uint32_t packedContentSectAddr = ep + mpressUnpackerStubData[_unpackerStub].packedContentOffset
+										+ packedContentSectAddrBuffer.read<std::int32_t>(0);
 
 	_packedContentSect = _file->getSegmentFromAddress(packedContentSectAddr);
-	if (_packedContentSect == nullptr)
-		throw PackedDataSectionNotFoundException();
+	if (_packedContentSect == nullptr) throw PackedDataSectionNotFoundException();
 
 	std::vector<std::uint8_t> packedContent;
 	_packedContentSect->getBytes(packedContent);
@@ -129,23 +125,20 @@ void MpressPlugin::unpack()
 	// Remove the header of the packed data from the buffer
 	packedContentBuffer.erase(0, 6);
 
-	if (packedSize > packedContentBuffer.getRealDataSize())
-		throw CorruptedUnpackingStubException();
+	if (packedSize > packedContentBuffer.getRealDataSize()) throw CorruptedUnpackingStubException();
 
 	// Remove tail of the packed data
 	packedContentBuffer.erase(packedSize, packedContentBuffer.getRealDataSize() - packedSize);
 
 	// Decode the content of .MPRESS1 section which is compressed with LZMAT algorithm
 	DynamicBuffer unpackedContent(unpackedSize, _file->getFileFormat()->getEndianness());
-	if (!decompressData(packedContentBuffer, unpackedContent))
-		throw DecompressionFailedException();
+	if (!decompressData(packedContentBuffer, unpackedContent)) throw DecompressionFailedException();
 
 	// Fix JMP and CALL instructions with correction of their offsets
 	fixJumpsAndCalls(unpackedContent);
 
 	// Detect the version of fix stub here
-	if (detectFixStubVersion(unpackedContent) == MPRESS_FIX_STUB_UNKNOWN)
-		throw UnsupportedStubException();
+	if (detectFixStubVersion(unpackedContent) == MPRESS_FIX_STUB_UNKNOWN) throw UnsupportedStubException();
 
 	// Fix imports & EP
 	fixImportsAndEp(unpackedContent);
@@ -205,7 +198,8 @@ bool MpressPlugin::decompressData(DynamicBuffer& compressedContent, DynamicBuffe
 	return true;
 }
 
-void MpressPlugin::decodeLzmaProperties(DynamicBuffer& compressedContent, std::uint8_t& pb, std::uint8_t& lp, std::uint8_t& lc)
+void MpressPlugin::decodeLzmaProperties(
+	DynamicBuffer& compressedContent, std::uint8_t& pb, std::uint8_t& lp, std::uint8_t& lc)
 {
 	lp = compressedContent.read<std::uint8_t>(0) & 0x0F;
 	pb = (compressedContent.read<std::uint8_t>(0) & 0xF0) >> 4;
@@ -222,12 +216,14 @@ std::uint32_t MpressPlugin::getFixStub()
 	// Fix imports stub is calculated from the EP section where there is offset into it written at specific offset
 	_file->getFileFormat()->getEpAddress(ep);
 	epOffset = ep - _file->getEpSegment()->getAddress();
-	_file->getEpSegment()->getBytes(fixStubOffsetBytes, epOffset + mpressUnpackerStubData[_unpackerStub].fixStubOffset, 4);
+	_file->getEpSegment()->getBytes(
+		fixStubOffsetBytes, epOffset + mpressUnpackerStubData[_unpackerStub].fixStubOffset, 4);
 
 	DynamicBuffer fixStubOffsetBuffer(fixStubOffsetBytes, _file->getFileFormat()->getEndianness());
 
 	// If we subtract the address of .MPRESS1 section, we have the offset in section
-	std::uint32_t fixImportsStubAddr = ep + mpressUnpackerStubData[_unpackerStub].fixStubOffset + 4 + fixStubOffsetBuffer.read<std::int32_t>(0);
+	std::uint32_t fixImportsStubAddr =
+		ep + mpressUnpackerStubData[_unpackerStub].fixStubOffset + 4 + fixStubOffsetBuffer.read<std::int32_t>(0);
 	fixImportsStubAddr -= _packedContentSect->getAddress();
 	return fixImportsStubAddr;
 }
@@ -249,14 +245,12 @@ void MpressPlugin::fixJumpsAndCalls(DynamicBuffer& buffer)
 
 		if (offset >= 0)
 		{
-			if (offset >= static_cast<std::int64_t>(maxAddr))
-				continue;
+			if (offset >= static_cast<std::int64_t>(maxAddr)) continue;
 		}
 		else
 		{
 			offset += moveOffset;
-			if (offset < 0)
-				continue;
+			if (offset < 0) continue;
 
 			offset += maxAddr;
 		}
@@ -267,20 +261,23 @@ void MpressPlugin::fixJumpsAndCalls(DynamicBuffer& buffer)
 
 void MpressPlugin::fixImportsAndEp(DynamicBuffer& buffer)
 {
-	PeLib::ImageLoader & imageLoader = _peFile->imageLoader();
+	PeLib::ImageLoader& imageLoader = _peFile->imageLoader();
 	std::uint32_t pointerSize = imageLoader.getPointerSize();
 
 	// At the offset from EP is written EIP relative offset of fix import stub
 	// Fix import stub is then located at the <EP Address> + offset + <loaded offset>
-	// This stub was packed together with code and data in .MPRESS1 section and also contains hints for import table rebuild
+	// This stub was packed together with code and data in .MPRESS1 section and also contains hints for import table
+	// rebuild
 	std::uint32_t fixStubAddr = getFixStub();
 
 	// Offet to the hints is located at the <Fix Import Stub Address> + offset
 	// Import hints are located at the <Fix Import Stub Address> + offset + <Import Hints Offset>
-	std::uint32_t importHints = fixStubAddr + mpressFixStubData[_fixStub].importHintsOffset + buffer.read<std::uint32_t>(fixStubAddr + mpressFixStubData[_fixStub].importHintsOffset);
+	std::uint32_t importHints = fixStubAddr + mpressFixStubData[_fixStub].importHintsOffset
+							  + buffer.read<std::uint32_t>(fixStubAddr + mpressFixStubData[_fixStub].importHintsOffset);
 
 	// Go through MPRESS import hints and fill the import directory
-	std::int32_t destOffset = imageLoader.getSectionHeader(_packedContentSect->getSecSeg()->getIndex())->VirtualAddress + importHints;
+	std::int32_t destOffset =
+		imageLoader.getSectionHeader(_packedContentSect->getSecSeg()->getIndex())->VirtualAddress + importHints;
 	std::int32_t lowestDestOffset = std::numeric_limits<std::int32_t>::max();
 	std::int32_t highestDestOffset = 0;
 	std::int32_t destOffsetDiff;
@@ -321,8 +318,7 @@ void MpressPlugin::fixImportsAndEp(DynamicBuffer& buffer)
 
 		// Set FirstThunk to point into IAT
 		int fileIndex = _peFile->impDir().getFileIndex(moduleName, true);
-		if (fileIndex == -1)
-			throw InvalidImportHintsException();
+		if (fileIndex == -1) throw InvalidImportHintsException();
 
 		_peFile->impDir().setFirstThunk(fileIndex, true, destOffset);
 		lowestDestOffset = std::min(destOffset, lowestDestOffset);
@@ -340,22 +336,24 @@ void MpressPlugin::fixImportsAndEp(DynamicBuffer& buffer)
 	std::uint32_t importSectSize = importFileSize & ~(fileAlignment - 1);
 	std::uint32_t newSectionIndex;
 
-	if (importFileSize & (fileAlignment - 1))
-		importSectSize += fileAlignment;
-	PeLib::PELIB_IMAGE_SECTION_HEADER * pNewSection = imageLoader.addSection(".imports", importSectSize);
+	if (importFileSize & (fileAlignment - 1)) importSectSize += fileAlignment;
+	PeLib::PELIB_IMAGE_SECTION_HEADER* pNewSection = imageLoader.addSection(".imports", importSectSize);
 
 	pNewSection->Characteristics = PeLib::PELIB_IMAGE_SCN_MEM_READ | PeLib::PELIB_IMAGE_SCN_CNT_INITIALIZED_DATA;
-	imageLoader.setDataDirectory(PeLib::PELIB_IMAGE_DIRECTORY_ENTRY_IMPORT, pNewSection->VirtualAddress, importSectSize);
+	imageLoader.setDataDirectory(
+		PeLib::PELIB_IMAGE_DIRECTORY_ENTRY_IMPORT, pNewSection->VirtualAddress, importSectSize);
 
 	// IAT needs to be put at the desired offset
 	std::uint32_t iatOffset = lowestDestOffset;
-	imageLoader.setDataDirectory(PeLib::PELIB_IMAGE_DIRECTORY_ENTRY_IAT, iatOffset, highestDestOffset + 4 - lowestDestOffset);
+	imageLoader.setDataDirectory(
+		PeLib::PELIB_IMAGE_DIRECTORY_ENTRY_IAT, iatOffset, highestDestOffset + 4 - lowestDestOffset);
 	imageLoader.makeValid();
 
 	// Offset to OEP is stored at the offset from the <Fix Import Stub Address>
 	// This offset is addressed from the <Fix Import Stub Address> + offset
-	std::uint32_t oepOffset = imageLoader.getSectionHeader(_packedContentSect->getSecSeg()->getIndex())->VirtualAddress + fixStubAddr +
-			mpressFixStubData[_fixStub].importHintsOffset + buffer.read<std::uint32_t>(fixStubAddr + mpressFixStubData[_fixStub].oepOffset);
+	std::uint32_t oepOffset = imageLoader.getSectionHeader(_packedContentSect->getSecSeg()->getIndex())->VirtualAddress
+							+ fixStubAddr + mpressFixStubData[_fixStub].importHintsOffset
+							+ buffer.read<std::uint32_t>(fixStubAddr + mpressFixStubData[_fixStub].oepOffset);
 	imageLoader.setAddressOfEntryPoint(oepOffset);
 
 	// Finally, get rid of the fix imports stub as it is going to mess up frontend analysis in the unpacked section
@@ -372,13 +370,14 @@ void MpressPlugin::fixImportsAndEp(DynamicBuffer& buffer)
 
 void MpressPlugin::offsetAnalysis(const DynamicBuffer& buffer)
 {
-	PeLib::PELIB_IMAGE_SECTION_HEADER * packedContectSection;
-	PeLib::PELIB_IMAGE_SECTION_HEADER * entryPointSection;
-	PeLib::ImageLoader & imageLoader = _peFile->imageLoader();
+	PeLib::PELIB_IMAGE_SECTION_HEADER* packedContectSection;
+	PeLib::PELIB_IMAGE_SECTION_HEADER* entryPointSection;
+	PeLib::ImageLoader& imageLoader = _peFile->imageLoader();
 	std::size_t packedContentSectionIndex = _packedContentSect->getSecSeg()->getIndex();
 	std::uint32_t sectionAlignment = imageLoader.getSectionAlignment();
 	std::uint32_t fixStubOffset = getFixStub();
-	std::uint32_t dataFlags = PeLib::PELIB_IMAGE_SCN_MEM_WRITE | PeLib::PELIB_IMAGE_SCN_MEM_READ | PeLib::PELIB_IMAGE_SCN_CNT_INITIALIZED_DATA;
+	std::uint32_t dataFlags = PeLib::PELIB_IMAGE_SCN_MEM_WRITE | PeLib::PELIB_IMAGE_SCN_MEM_READ
+							| PeLib::PELIB_IMAGE_SCN_CNT_INITIALIZED_DATA;
 	std::uint32_t codeFlags = dataFlags | PeLib::PELIB_IMAGE_SCN_CNT_CODE | PeLib::PELIB_IMAGE_SCN_MEM_EXECUTE;
 
 	// Get pointer to entry point section and also section with packed content
@@ -393,19 +392,18 @@ void MpressPlugin::offsetAnalysis(const DynamicBuffer& buffer)
 
 	// Resize packed content section so we can put unpacked content into it
 	size_t diff = buffer.getRealDataSize() - packedContectSection->SizeOfRawData;
-	packedContectSection->SizeOfRawData =  buffer.getRealDataSize();
+	packedContectSection->SizeOfRawData = buffer.getRealDataSize();
 
 	for (size_t i = _packedContentSect->getSecSeg()->getIndex() + 1; i < imageLoader.getNumberOfSections(); ++i)
 	{
-		PeLib::PELIB_IMAGE_SECTION_HEADER * tempSection = imageLoader.getSectionHeader(i);
+		PeLib::PELIB_IMAGE_SECTION_HEADER* tempSection = imageLoader.getSectionHeader(i);
 
 		tempSection->PointerToRawData = tempSection->PointerToRawData + diff;
 	}
 
-	// Here we will split the big unpacked section into the more data sections and try to locate the code section as much as possible
-	// We will use import hints, IAT, fix stub address and OEP to locate the original sections
-	// We know that hints and fix stub are located at the end of original sections
-	// We also know that IAT is its own section
+	// Here we will split the big unpacked section into the more data sections and try to locate the code section as
+	// much as possible We will use import hints, IAT, fix stub address and OEP to locate the original sections We know
+	// that hints and fix stub are located at the end of original sections We also know that IAT is its own section
 	std::uint32_t oepOffset = _oepVa - packedContectSection->VirtualAddress;
 	std::uint32_t iatOffset = (_iatVa & ~(sectionAlignment - 1)) - packedContectSection->VirtualAddress;
 
@@ -416,11 +414,15 @@ void MpressPlugin::offsetAnalysis(const DynamicBuffer& buffer)
 	if (_importHintsOffset < oepOffset)
 	{
 		// Split the section into .data0|.text
-		if (imageLoader.splitSection(packedContentSectionIndex, ".data0", ".text",
-				(_importHintsOffset & ~(sectionAlignment - 1)) + sectionAlignment) == 0)
+		if (imageLoader.splitSection(
+				packedContentSectionIndex,
+				".data0",
+				".text",
+				(_importHintsOffset & ~(sectionAlignment - 1)) + sectionAlignment)
+			== 0)
 		{
 			imageLoader.getSectionHeader(packedContentSectionIndex)->Characteristics = dataFlags;
-			imageLoader.getSectionHeader(packedContentSectionIndex+1)->Characteristics = codeFlags;
+			imageLoader.getSectionHeader(packedContentSectionIndex + 1)->Characteristics = codeFlags;
 			_addedSectionCount++;
 
 			// We will need this as all other heuristics are based on the shrinking of .text section
@@ -433,8 +435,12 @@ void MpressPlugin::offsetAnalysis(const DynamicBuffer& buffer)
 		if (_importHintsOffset < iatOffset && iatOffset < oepOffset)
 		{
 			// Split the layout into .data0|.data2|.text
-			if (imageLoader.splitSection(packedContentSectionIndex + 1, ".data2", ".text",
-					((iatOffset + _iatSize) & ~(sectionAlignment - 1)) + sectionAlignment - moveOffset) == 0)
+			if (imageLoader.splitSection(
+					packedContentSectionIndex + 1,
+					".data2",
+					".text",
+					((iatOffset + _iatSize) & ~(sectionAlignment - 1)) + sectionAlignment - moveOffset)
+				== 0)
 			{
 				imageLoader.getSectionHeader(packedContentSectionIndex + 1)->Characteristics = dataFlags;
 				imageLoader.getSectionHeader(packedContentSectionIndex + 2)->Characteristics = codeFlags;
@@ -449,11 +455,17 @@ void MpressPlugin::offsetAnalysis(const DynamicBuffer& buffer)
 		if (fixStubOffset > oepOffset)
 		{
 			// Split into .data0|.text|.data1 or .data0|.data2|.text|.data1
-			if (imageLoader.splitSection(packedContentSectionIndex + _addedSectionCount, ".text", ".data1",
-					(fixStubOffset & ~(sectionAlignment - 1)) + sectionAlignment - moveOffset) == 0)
+			if (imageLoader.splitSection(
+					packedContentSectionIndex + _addedSectionCount,
+					".text",
+					".data1",
+					(fixStubOffset & ~(sectionAlignment - 1)) + sectionAlignment - moveOffset)
+				== 0)
 			{
-				imageLoader.getSectionHeader(packedContentSectionIndex + _addedSectionCount)->Characteristics = codeFlags;
-				imageLoader.getSectionHeader(packedContentSectionIndex + _addedSectionCount + 1)->Characteristics = dataFlags;
+				imageLoader.getSectionHeader(packedContentSectionIndex + _addedSectionCount)->Characteristics =
+					codeFlags;
+				imageLoader.getSectionHeader(packedContentSectionIndex + _addedSectionCount + 1)->Characteristics =
+					dataFlags;
 				_addedSectionCount++;
 			}
 		}
@@ -462,8 +474,12 @@ void MpressPlugin::offsetAnalysis(const DynamicBuffer& buffer)
 	else
 	{
 		// Split into .text|.data0
-		if (imageLoader.splitSection(packedContentSectionIndex, ".text", ".data0",
-				(_importHintsOffset & ~(sectionAlignment - 1)) + sectionAlignment) == 0)
+		if (imageLoader.splitSection(
+				packedContentSectionIndex,
+				".text",
+				".data0",
+				(_importHintsOffset & ~(sectionAlignment - 1)) + sectionAlignment)
+			== 0)
 		{
 			imageLoader.getSectionHeader(packedContentSectionIndex)->Characteristics = codeFlags;
 			imageLoader.getSectionHeader(packedContentSectionIndex + 1)->Characteristics = dataFlags;
@@ -474,8 +490,9 @@ void MpressPlugin::offsetAnalysis(const DynamicBuffer& buffer)
 		if (oepOffset < iatOffset && iatOffset < _importHintsOffset)
 		{
 			// Split into .text|.data2|.data0
-			if (imageLoader.splitSection(packedContentSectionIndex, ".text", ".data2",
-					(iatOffset + _iatSize) & ~(sectionAlignment - 1)) == 0)
+			if (imageLoader.splitSection(
+					packedContentSectionIndex, ".text", ".data2", (iatOffset + _iatSize) & ~(sectionAlignment - 1))
+				== 0)
 			{
 				imageLoader.getSectionHeader(packedContentSectionIndex)->Characteristics = codeFlags;
 				imageLoader.getSectionHeader(packedContentSectionIndex + 1)->Characteristics = dataFlags;
@@ -483,12 +500,17 @@ void MpressPlugin::offsetAnalysis(const DynamicBuffer& buffer)
 			}
 		}
 
-		// This will probably never happen because if there would be space for fix stub, the hints would be there more probably, but just in case
+		// This will probably never happen because if there would be space for fix stub, the hints would be there more
+		// probably, but just in case
 		if (fixStubOffset < oepOffset)
 		{
 			// Split into .data1|.text|.data0 or .data1|.text|.data2|.data0
-			if (imageLoader.splitSection(packedContentSectionIndex, ".data1", ".text",
-					(fixStubOffset & ~(sectionAlignment - 1)) + sectionAlignment) == 0)
+			if (imageLoader.splitSection(
+					packedContentSectionIndex,
+					".data1",
+					".text",
+					(fixStubOffset & ~(sectionAlignment - 1)) + sectionAlignment)
+				== 0)
 			{
 				imageLoader.getSectionHeader(packedContentSectionIndex)->Characteristics = dataFlags;
 				imageLoader.getSectionHeader(packedContentSectionIndex + 1)->Characteristics = codeFlags;
@@ -503,13 +525,15 @@ void MpressPlugin::offsetAnalysis(const DynamicBuffer& buffer)
 void MpressPlugin::trailingBytesAnalysis(const DynamicBuffer& buffer)
 {
 	// Analysis of the trailing bytes of the section
-	// 64 bytes at the every section alignment multiple are checked, if they are all 0, the new section is probably here so it is created
-	// Only code section left after this function is the one containing the OEP, the code will execute even if some of the code is in data sections
-	// and decompiler will take care of this in front-end instruction decoder
-	PeLib::ImageLoader & imageLoader = _peFile->imageLoader();
-	PeLib::PELIB_IMAGE_SECTION_HEADER * packedContentSection = imageLoader.getSectionHeader(_packedContentSect->getSecSeg()->getIndex());
+	// 64 bytes at the every section alignment multiple are checked, if they are all 0, the new section is probably here
+	// so it is created Only code section left after this function is the one containing the OEP, the code will execute
+	// even if some of the code is in data sections and decompiler will take care of this in front-end instruction
+	// decoder
+	PeLib::ImageLoader& imageLoader = _peFile->imageLoader();
+	PeLib::PELIB_IMAGE_SECTION_HEADER* packedContentSection =
+		imageLoader.getSectionHeader(_packedContentSect->getSecSeg()->getIndex());
 	std::size_t section = imageLoader.getSectionIndexByRva(imageLoader.getAddressOfEntryPoint());
-	PeLib::PELIB_IMAGE_SECTION_HEADER * entryPointSection = imageLoader.getSectionHeader(section);
+	PeLib::PELIB_IMAGE_SECTION_HEADER* entryPointSection = imageLoader.getSectionHeader(section);
 	std::uint32_t sectionAlignment = imageLoader.getSectionAlignment();
 	std::uint32_t startOffset = entryPointSection->PointerToRawData - packedContentSection->PointerToRawData;
 	std::uint32_t endOffset = startOffset + entryPointSection->SizeOfRawData;
@@ -534,8 +558,7 @@ void MpressPlugin::trailingBytesAnalysis(const DynamicBuffer& buffer)
 			}
 		}
 
-		if (!needSplit)
-			continue;
+		if (!needSplit) continue;
 
 		std::stringstream ssFirst, ssSecond;
 		std::uint32_t flags[2];
@@ -544,7 +567,8 @@ void MpressPlugin::trailingBytesAnalysis(const DynamicBuffer& buffer)
 		{
 			ssFirst << ".text";
 			ssSecond << ".data" << nameCounter++;
-			flags[1] = PeLib::PELIB_IMAGE_SCN_MEM_WRITE | PeLib::PELIB_IMAGE_SCN_MEM_READ | PeLib::PELIB_IMAGE_SCN_CNT_INITIALIZED_DATA;
+			flags[1] = PeLib::PELIB_IMAGE_SCN_MEM_WRITE | PeLib::PELIB_IMAGE_SCN_MEM_READ
+					 | PeLib::PELIB_IMAGE_SCN_CNT_INITIALIZED_DATA;
 			flags[0] = flags[1] | PeLib::PELIB_IMAGE_SCN_MEM_EXECUTE | PeLib::PELIB_IMAGE_SCN_CNT_CODE;
 		}
 		// OEP lies in the second part of splitted sections
@@ -552,15 +576,18 @@ void MpressPlugin::trailingBytesAnalysis(const DynamicBuffer& buffer)
 		{
 			ssFirst << ".data" << nameCounter++;
 			ssSecond << ".text";
-			flags[0] = PeLib::PELIB_IMAGE_SCN_MEM_WRITE | PeLib::PELIB_IMAGE_SCN_MEM_READ | PeLib::PELIB_IMAGE_SCN_CNT_INITIALIZED_DATA;
+			flags[0] = PeLib::PELIB_IMAGE_SCN_MEM_WRITE | PeLib::PELIB_IMAGE_SCN_MEM_READ
+					 | PeLib::PELIB_IMAGE_SCN_CNT_INITIALIZED_DATA;
 			flags[1] = flags[0] | PeLib::PELIB_IMAGE_SCN_MEM_EXECUTE | PeLib::PELIB_IMAGE_SCN_CNT_CODE;
 		}
-		// OEP doesn't lie in neither of these two parts, this can happen if .text section was already created and we are analyzing the rest after that
+		// OEP doesn't lie in neither of these two parts, this can happen if .text section was already created and we
+		// are analyzing the rest after that
 		else
 		{
 			ssFirst << ".data" << nameCounter++;
 			ssSecond << ".data" << nameCounter++;
-			flags[0] = PeLib::PELIB_IMAGE_SCN_MEM_WRITE | PeLib::PELIB_IMAGE_SCN_MEM_READ | PeLib::PELIB_IMAGE_SCN_CNT_INITIALIZED_DATA;
+			flags[0] = PeLib::PELIB_IMAGE_SCN_MEM_WRITE | PeLib::PELIB_IMAGE_SCN_MEM_READ
+					 | PeLib::PELIB_IMAGE_SCN_CNT_INITIALIZED_DATA;
 			flags[1] = flags[0];
 		}
 
@@ -578,7 +605,7 @@ void MpressPlugin::fixRelocations()
 {
 	// We will only manipulate this section as all information are stored here
 	const retdec::loader::Segment* epSegment = _file->getEpSegment();
-	PeLib::ImageLoader & imageLoader = _peFile->imageLoader();
+	PeLib::ImageLoader& imageLoader = _peFile->imageLoader();
 
 	// Calculate the offset of EP in EP section
 	std::uint64_t epAddress;
@@ -595,8 +622,7 @@ void MpressPlugin::fixRelocations()
 
 	// When the size of relocation is 0, there are no relocations
 	std::uint32_t relocSize = relocSizeBuffer.read<std::uint32_t>(0);
-	if (relocSize == 0)
-		return;
+	if (relocSize == 0) return;
 
 	// Set the base relocation directory in the new file
 	// All relocations are here undamaged so we are good with this
@@ -619,8 +645,7 @@ MpressUnpackerStub MpressPlugin::detectUnpackerStubVersion()
 
 	// Signature should not be bigger than 0xC00 for all versions of MPRESS
 	// This heuristic can catch corrupted unpacking stubs
-	if (signature >= 0xC00)
-		throw CorruptedUnpackingStubException();
+	if (signature >= 0xC00) throw CorruptedUnpackingStubException();
 
 	for (std::uint32_t version = 0; version < static_cast<std::uint32_t>(MPRESS_UNPACKER_STUB_UNKNOWN); ++version)
 	{
@@ -651,7 +676,7 @@ MpressFixStub MpressPlugin::detectFixStubVersion(DynamicBuffer& unpackedContent)
 
 void MpressPlugin::saveFile(const std::string& fileName, DynamicBuffer& content)
 {
-	PeLib::ImageLoader & imageLoader = _peFile->imageLoader();
+	PeLib::ImageLoader& imageLoader = _peFile->imageLoader();
 
 	// Removes the file if it already exists
 	std::remove(fileName.c_str());
@@ -665,11 +690,14 @@ void MpressPlugin::saveFile(const std::string& fileName, DynamicBuffer& content)
 		copySectionFromOriginalFile(index, outputFile, index);
 
 	// Copy the section bytes in between packed section and EP section
-	for (std::uint32_t index = _packedContentSect->getSecSeg()->getIndex() + _addedSectionCount; index < _file->getEpSegment()->getSecSeg()->getIndex(); ++index)
+	for (std::uint32_t index = _packedContentSect->getSecSeg()->getIndex() + _addedSectionCount;
+		 index < _file->getEpSegment()->getSecSeg()->getIndex();
+		 ++index)
 		copySectionFromOriginalFile(index, outputFile, index + _addedSectionCount);
 
 	// Copy the section bytes from original file for sections after EP section excluded
-	for (std::uint32_t index = _file->getEpSegment()->getSecSeg()->getIndex() + 1; index < _file->getNumberOfSegments(); ++index)
+	for (std::uint32_t index = _file->getEpSegment()->getSecSeg()->getIndex() + 1; index < _file->getNumberOfSegments();
+		 ++index)
 		copySectionFromOriginalFile(index, outputFile, index + _addedSectionCount);
 
 	// Write content of new import section
@@ -682,33 +710,39 @@ void MpressPlugin::saveFile(const std::string& fileName, DynamicBuffer& content)
 	{
 		auto tmp = static_cast<unsigned int>(fileIndex);
 		auto w = static_cast<unsigned short>(_packedContentSect->getSecSeg()->getIndex());
-		size_t destOffset = _peFile->impDir().getFirstThunk(tmp, false) - imageLoader.getSectionHeader(w)->VirtualAddress;
-		for (size_t funcIndex = 0; funcIndex < _peFile->impDir().getNumberOfFunctions(tmp, false); ++funcIndex, destOffset += 4)
+		size_t destOffset =
+			_peFile->impDir().getFirstThunk(tmp, false) - imageLoader.getSectionHeader(w)->VirtualAddress;
+		for (size_t funcIndex = 0; funcIndex < _peFile->impDir().getNumberOfFunctions(tmp, false);
+			 ++funcIndex, destOffset += 4)
 		{
 			content.write<std::uint32_t>(
-					_peFile->impDir().getOriginalFirstThunk(tmp, static_cast<unsigned int>(funcIndex), false),
-					static_cast<uint32_t>(destOffset));
+				_peFile->impDir().getOriginalFirstThunk(tmp, static_cast<unsigned int>(funcIndex), false),
+				static_cast<uint32_t>(destOffset));
 		}
 	}
 
 	// Write the unpacked content to the packed content section
 	// Use regular file as we will write more sections at once
-	outputFile.seekp(imageLoader.getSectionHeader(_packedContentSect->getSecSeg()->getIndex())->PointerToRawData, std::ios_base::beg);
+	outputFile.seekp(
+		imageLoader.getSectionHeader(_packedContentSect->getSecSeg()->getIndex())->PointerToRawData,
+		std::ios_base::beg);
 	outputFile.write(reinterpret_cast<const char*>(content.getRawBuffer()), content.getRealDataSize());
 	outputFile.close();
 }
 
-void MpressPlugin::copySectionFromOriginalFile(std::uint32_t origSectIndex, std::ostream& outputFile, std::uint32_t newSectIndex)
+void MpressPlugin::copySectionFromOriginalFile(
+	std::uint32_t origSectIndex, std::ostream& outputFile, std::uint32_t newSectIndex)
 {
 	const retdec::loader::Segment* seg = _file->getSegment(origSectIndex);
 	std::vector<std::uint8_t> bytes;
 	seg->getBytes(bytes);
 
-	PeLib::ImageLoader & imageLoader = _peFile->imageLoader();
+	PeLib::ImageLoader& imageLoader = _peFile->imageLoader();
 	const auto* newSect = imageLoader.getSectionHeader(newSectIndex);
 	outputFile.seekp(newSect->PointerToRawData, std::ios_base::beg);
-	outputFile.write(reinterpret_cast<const char*>(bytes.data()), std::min(static_cast<std::uint32_t>(bytes.size()), newSect->SizeOfRawData));
-
+	outputFile.write(
+		reinterpret_cast<const char*>(bytes.data()),
+		std::min(static_cast<std::uint32_t>(bytes.size()), newSect->SizeOfRawData));
 }
 
 } // namespace mpress

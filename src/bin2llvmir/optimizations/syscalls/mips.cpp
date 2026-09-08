@@ -22,8 +22,7 @@ using namespace llvm;
  * https://w3challs.com/syscalls/?arch=mips_n32
  * https://w3challs.com/syscalls/?arch=mips_n64
  */
-std::map<uint64_t, std::string> syscalls_mips_linux =
-{
+std::map<uint64_t, std::string> syscalls_mips_linux = {
 	{4001, "exit"},
 	{4002, "fork"},
 	{4003, "read"},
@@ -216,13 +215,13 @@ std::map<uint64_t, std::string> syscalls_mips_linux =
 	{4190, "setresgid"},
 	{4191, "getresgid"},
 	{4192, "prctl"},
-	{4193, "sigreturn"}, // rt_sigreturn
-	{4194, "sigaction"}, // rt_sigaction
-	{4195, "sigprocmask"}, // rt_sigprocmask
-	{4196, "sigpending"}, // rt_sigpending
+	{4193, "sigreturn"},    // rt_sigreturn
+	{4194, "sigaction"},    // rt_sigaction
+	{4195, "sigprocmask"},  // rt_sigprocmask
+	{4196, "sigpending"},   // rt_sigpending
 	{4197, "sigtimedwait"}, // rt_sigtimedwait
 	{4198, "sigqueueinfo"}, // rt_sigqueueinfo
-	{4199, "sigsuspend"}, // rt_sigsuspend
+	{4199, "sigsuspend"},   // rt_sigsuspend
 	{4200, "pread"},
 	{4201, "pwrite"},
 	{4202, "chown"},
@@ -253,7 +252,7 @@ bool SyscallFixer::runMips()
 bool SyscallFixer::runMips_linux()
 {
 	bool changed = false;
-	for (Function& F : *_module)
+	for (Function& F: *_module)
 	{
 		for (auto ai = AsmInstruction(&F); ai.isValid(); ai = ai.getNext())
 		{

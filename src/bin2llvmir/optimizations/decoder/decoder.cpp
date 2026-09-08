@@ -220,7 +220,8 @@ bool Decoder::run()
 
 void Decoder::decode()
 {
-	LOG << "\n" << "decode():" << std::endl;
+	LOG << "\n"
+		<< "decode():" << std::endl;
 
 	JumpTarget jt;
 	while (getJumpTarget(jt))

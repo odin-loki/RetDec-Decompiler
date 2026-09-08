@@ -20,8 +20,7 @@ using namespace llvm;
  * TODO: windows, 64-bit, Itanium, etc.:
  * https://w3challs.com/syscalls
  */
-std::map<uint64_t, std::string> syscalls_x86_linux_32 =
-{
+std::map<uint64_t, std::string> syscalls_x86_linux_32 = {
 	{0, "restart_syscall"},
 	{1, "exit"},
 	{2, "fork"},
@@ -195,13 +194,13 @@ std::map<uint64_t, std::string> syscalls_x86_linux_32 =
 	{170, "setresgid"},
 	{171, "getresgid"},
 	{172, "prctl"},
-	{173, "sigreturn"}, // rt_sigreturn
-	{174, "sigaction"}, // rt_sigaction
-	{175, "sigprocmask"}, // rt_sigprocmask
-	{176, "sigpending"}, // rt_sigpending
+	{173, "sigreturn"},    // rt_sigreturn
+	{174, "sigaction"},    // rt_sigaction
+	{175, "sigprocmask"},  // rt_sigprocmask
+	{176, "sigpending"},   // rt_sigpending
 	{177, "sigtimedwait"}, // rt_sigtimedwait
 	{178, "sigqueueinfo"}, // rt_sigqueueinfo
-	{179, "sigsuspend"}, // rt_sigsuspend
+	{179, "sigsuspend"},   // rt_sigsuspend
 	{180, "pread64"},
 	{181, "pwrite64"},
 	{182, "chown"},
@@ -397,34 +396,32 @@ std::map<uint64_t, std::string> syscalls_x86_linux_32 =
 	{376, "mlock2"},
 	{377, "copy_file_range"},
 	{378, "preadv2"},
-	{379, "pwritev2"}
-};
+	{379, "pwritev2"}};
 
 /**
  * From: /usr/include/linux/net.h
  */
-std::map<uint64_t, std::string> x86SocketSyscalls =
-{
-	{1, "socket"}, // SYS_SOCKET -- sys_socket(2)
-	{2, "bind"}, // SYS_BIND -- sys_bind(2)
-	{3, "connect"}, // SYS_CONNECT -- sys_connect(2)
-	{4, "listen"}, // SYS_LISTEN -- sys_listen(2)
-	{5, "accept"}, // SYS_ACCEPT -- sys_accept(2)
+std::map<uint64_t, std::string> x86SocketSyscalls = {
+	{1, "socket"},      // SYS_SOCKET -- sys_socket(2)
+	{2, "bind"},        // SYS_BIND -- sys_bind(2)
+	{3, "connect"},     // SYS_CONNECT -- sys_connect(2)
+	{4, "listen"},      // SYS_LISTEN -- sys_listen(2)
+	{5, "accept"},      // SYS_ACCEPT -- sys_accept(2)
 	{6, "getsockname"}, // SYS_GETSOCKNAME -- sys_getsockname(2)
 	{7, "getpeername"}, // SYS_GETPEERNAME -- sys_getpeername(2)
-	{8, "socketpair"}, // SYS_SOCKETPAIR -- sys_socketpair(2)
-	{9, "send"}, // SYS_SEND -- sys_send(2)
-	{10, "recv"}, // SYS_RECV -- sys_recv(2)
-	{11, "sendto"}, // SYS_SENDTO -- sys_sendto(2)
-	{12, "recvfrom"}, // SYS_RECVFROM -- sys_recvfrom(2)
-	{13, "shutdown"}, // SYS_SHUTDOWN -- sys_shutdown(2)
+	{8, "socketpair"},  // SYS_SOCKETPAIR -- sys_socketpair(2)
+	{9, "send"},        // SYS_SEND -- sys_send(2)
+	{10, "recv"},       // SYS_RECV -- sys_recv(2)
+	{11, "sendto"},     // SYS_SENDTO -- sys_sendto(2)
+	{12, "recvfrom"},   // SYS_RECVFROM -- sys_recvfrom(2)
+	{13, "shutdown"},   // SYS_SHUTDOWN -- sys_shutdown(2)
 	{14, "setsockopt"}, // SYS_SETSOCKOPT -- sys_setsockopt(2)
 	{15, "getsockopt"}, // SYS_GETSOCKOPT -- sys_getsockopt(2)
-	{16, "sendmsg"}, // SYS_SENDMSG -- sys_sendmsg(2)
-	{17, "recvmsg"}, // SYS_RECVMSG -- sys_recvmsg(2)
-	{18, "accept4"}, // SYS_ACCEPT4 -- sys_accept4(2)
-	{19, "recvmmsg"}, // SYS_RECVMMSG -- sys_recvmmsg(2)
-	{20, "sendmmsg"} // SYS_SENDMMSG -- sys_sendmmsg(2)
+	{16, "sendmsg"},    // SYS_SENDMSG -- sys_sendmsg(2)
+	{17, "recvmsg"},    // SYS_RECVMSG -- sys_recvmsg(2)
+	{18, "accept4"},    // SYS_ACCEPT4 -- sys_accept4(2)
+	{19, "recvmmsg"},   // SYS_RECVMMSG -- sys_recvmmsg(2)
+	{20, "sendmmsg"}    // SYS_SENDMMSG -- sys_sendmmsg(2)
 };
 
 namespace retdec {
@@ -443,7 +440,7 @@ bool SyscallFixer::runX86()
 bool SyscallFixer::runX86_linux_32()
 {
 	bool changed = false;
-	for (Function& F : *_module)
+	for (Function& F: *_module)
 	{
 		for (auto ai = AsmInstruction(&F); ai.isValid(); ai = ai.getNext())
 		{
@@ -468,9 +465,7 @@ bool SyscallFixer::runX86_linux_32(AsmInstruction ai)
 	// Find interupt ID.
 	//
 	auto& detail = x86Asm->detail->x86;
-	if (detail.op_count != 1
-			|| detail.operands[0].type != X86_OP_IMM
-			|| detail.operands[0].imm != 0x80)
+	if (detail.op_count != 1 || detail.operands[0].type != X86_OP_IMM || detail.operands[0].imm != 0x80)
 	{
 		LOG << "\tbad interupt id" << std::endl;
 		return false;

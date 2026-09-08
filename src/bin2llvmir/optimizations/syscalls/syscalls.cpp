@@ -16,18 +16,14 @@ namespace bin2llvmir {
 
 char SyscallFixer::ID = 0;
 
-static RegisterPass<SyscallFixer> X(
-		"retdec-syscalls",
-		"Syscalls optimization",
-		false, // Only looks at CFG
-		false // Analysis Pass
-);
+static RegisterPass<SyscallFixer>
+	X("retdec-syscalls",
+	  "Syscalls optimization",
+	  false, // Only looks at CFG
+	  false  // Analysis Pass
+	);
 
-SyscallFixer::SyscallFixer() :
-		ModulePass(ID)
-{
-
-}
+SyscallFixer::SyscallFixer(): ModulePass(ID) {}
 
 bool SyscallFixer::runOnModule(llvm::Module& M)
 {
@@ -39,12 +35,7 @@ bool SyscallFixer::runOnModule(llvm::Module& M)
 	return run();
 }
 
-bool SyscallFixer::runOnModuleCustom(
-		llvm::Module& M,
-		Config* c,
-		FileImage* img,
-		Lti* lti,
-		Abi* abi)
+bool SyscallFixer::runOnModuleCustom(llvm::Module& M, Config* c, FileImage* img, Lti* lti, Abi* abi)
 {
 	_module = &M;
 	_config = c;
@@ -83,10 +74,7 @@ bool SyscallFixer::run()
 	}
 }
 
-bool SyscallFixer::transform(
-		AsmInstruction ai,
-		uint64_t code,
-		const std::map<uint64_t, std::string>& codeMap)
+bool SyscallFixer::transform(AsmInstruction ai, uint64_t code, const std::map<uint64_t, std::string>& codeMap)
 {
 	// Find syscall name.
 	//
@@ -111,7 +99,7 @@ bool SyscallFixer::transform(
 		LOG << "\tno function for name" << std::endl;
 		return false;
 	}
-	for (Argument& a : lf->args())
+	for (Argument& a: lf->args())
 	{
 		if (!a.getType()->isFirstClassType())
 		{
@@ -139,7 +127,7 @@ bool SyscallFixer::transform(
 
 	unsigned cntr = 0;
 	std::vector<Value*> args;
-	for (Argument& a : lf->args())
+	for (Argument& a: lf->args())
 	{
 		if (auto* reg = _abi->getSyscallArgumentRegister(cntr++))
 		{
@@ -161,10 +149,7 @@ bool SyscallFixer::transform(
 	{
 		if (auto* reg = _abi->getSyscallReturnRegister())
 		{
-			auto* conv = IrModifier::convertValueToType(
-					call,
-					llvm_utils::pointeeType(reg),
-					next);
+			auto* conv = IrModifier::convertValueToType(call, llvm_utils::pointeeType(reg), next);
 			auto* s = llvm_utils::createStoreInst(conv, reg, next);
 			if (auto* ptee = llvm_utils::pointeeType(reg))
 			{

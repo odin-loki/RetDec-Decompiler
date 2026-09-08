@@ -1,9 +1,9 @@
 /**
-* @file src/bin2llvmir/optimizations/decoder/ir_modifications.cpp
-* @brief Decode input binary into LLVM IR.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file src/bin2llvmir/optimizations/decoder/ir_modifications.cpp
+ * @brief Decode input binary into LLVM IR.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #include "retdec/bin2llvmir/optimizations/decoder/decoder.h"
 #include "retdec/bin2llvmir/utils/llvm.h"
@@ -13,17 +13,14 @@ using namespace llvm;
 namespace retdec {
 namespace bin2llvmir {
 
-llvm::CallInst* Decoder::transformToCall(
-		llvm::CallInst* pseudo,
-		llvm::Function* callee)
+llvm::CallInst* Decoder::transformToCall(llvm::CallInst* pseudo, llvm::Function* callee)
 {
 	auto* c = CallInst::Create(callee);
 	c->insertAfter(pseudo);
 
 	if (auto* retObj = getCallReturnObject())
 	{
-		auto* cc = cast<Instruction>(
-				IrModifier::convertValueToTypeAfter(c, retObj->getValueType(), c));
+		auto* cc = cast<Instruction>(IrModifier::convertValueToTypeAfter(c, retObj->getValueType(), c));
 		auto* s = llvm_utils::createStoreInst(cc, retObj);
 		s->insertAfter(cc);
 		if (auto* ptee = llvm_utils::pointeeType(retObj))
@@ -36,10 +33,7 @@ llvm::CallInst* Decoder::transformToCall(
 }
 
 llvm::CallInst* Decoder::transformToCondCall(
-		llvm::CallInst* pseudo,
-		llvm::Value* cond,
-		llvm::Function* callee,
-		llvm::BasicBlock* falseBb)
+	llvm::CallInst* pseudo, llvm::Value* cond, llvm::Function* callee, llvm::BasicBlock* falseBb)
 {
 	auto* oldBb = pseudo->getParent();
 	auto* newBb = oldBb->splitBasicBlock(pseudo);
@@ -64,17 +58,13 @@ llvm::ReturnInst* Decoder::transformToReturn(llvm::CallInst* pseudo)
 	auto* term = pseudo->getParent()->getTerminator();
 	assert(pseudo->getNextNode() == term);
 	auto* r = ReturnInst::Create(
-			pseudo->getModule()->getContext(),
-			UndefValue::get(pseudo->getFunction()->getReturnType()),
-			term);
+		pseudo->getModule()->getContext(), UndefValue::get(pseudo->getFunction()->getReturnType()), term);
 	term->eraseFromParent();
 
 	return r;
 }
 
-llvm::BranchInst* Decoder::transformToBranch(
-		llvm::CallInst* pseudo,
-		llvm::BasicBlock* branchee)
+llvm::BranchInst* Decoder::transformToBranch(llvm::CallInst* pseudo, llvm::BasicBlock* branchee)
 {
 	auto* term = pseudo->getParent()->getTerminator();
 	assert(pseudo->getNextNode() == term);
@@ -85,10 +75,7 @@ llvm::BranchInst* Decoder::transformToBranch(
 }
 
 llvm::BranchInst* Decoder::transformToCondBranch(
-		llvm::CallInst* pseudo,
-		llvm::Value* cond,
-		llvm::BasicBlock* trueBb,
-		llvm::BasicBlock* falseBb)
+	llvm::CallInst* pseudo, llvm::Value* cond, llvm::BasicBlock* trueBb, llvm::BasicBlock* falseBb)
 {
 	auto* term = pseudo->getParent()->getTerminator();
 	assert(pseudo->getNextNode() == term);
@@ -99,13 +86,10 @@ llvm::BranchInst* Decoder::transformToCondBranch(
 }
 
 llvm::SwitchInst* Decoder::transformToSwitch(
-		llvm::CallInst* pseudo,
-		llvm::Value* val,
-		llvm::BasicBlock* defaultBb,
-		const std::vector<llvm::BasicBlock*>& cases)
+	llvm::CallInst* pseudo, llvm::Value* val, llvm::BasicBlock* defaultBb, const std::vector<llvm::BasicBlock*>& cases)
 {
 	unsigned numCases = 0;
-	for (auto* c : cases)
+	for (auto* c: cases)
 	{
 		if (c != defaultBb)
 		{
@@ -118,12 +102,8 @@ llvm::SwitchInst* Decoder::transformToSwitch(
 	auto* insn = dyn_cast<Instruction>(val);
 	if (insn && insn->getType())
 	{
-		auto* gv = new GlobalVariable(
-				*insn->getModule(),
-				insn->getType(),
-				false,
-				GlobalValue::ExternalLinkage,
-				nullptr);
+		auto* gv =
+			new GlobalVariable(*insn->getModule(), insn->getType(), false, GlobalValue::ExternalLinkage, nullptr);
 		auto* s = llvm_utils::createStoreInst(insn, gv);
 		s->insertAfter(insn);
 
@@ -135,7 +115,7 @@ llvm::SwitchInst* Decoder::transformToSwitch(
 	auto* intType = cast<IntegerType>(val->getType());
 	auto* sw = SwitchInst::Create(val, defaultBb, numCases, term);
 	unsigned cntr = 0;
-	for (auto& c : cases)
+	for (auto& c: cases)
 	{
 		if (c != defaultBb)
 		{
@@ -181,7 +161,7 @@ llvm::GlobalVariable* Decoder::getCallReturnObject()
 
 	// Unknown or unsupported architecture: no canonical return register.
 	errs() << "[decoder] getCallReturnObject(): no return register known for "
-	       << "this architecture; skipping return-object modeling\n";
+		   << "this architecture; skipping return-object modeling\n";
 	return nullptr;
 }
 
@@ -191,10 +171,7 @@ llvm::GlobalVariable* Decoder::getCallReturnObject()
  * Secondary: if function not created, try to create BB for \p addr target and
  * fill \p tBb with the result.
  */
-void Decoder::getOrCreateCallTarget(
-		common::Address addr,
-		llvm::Function*& tFnc,
-		llvm::BasicBlock*& tBb)
+void Decoder::getOrCreateCallTarget(common::Address addr, llvm::Function*& tFnc, llvm::BasicBlock*& tBb)
 {
 	tBb = nullptr;
 	tFnc = nullptr;
@@ -219,23 +196,20 @@ void Decoder::getOrCreateCallTarget(
 	else if (getBasicBlockContainingAddress(addr))
 	{
 		// Nothing - we are not splitting BBs here.
-		LOG << "\t\t\t\t" << "F: getBasicBlockContainingAddress() @ "
-				<< addr << std::endl;
+		LOG << "\t\t\t\t" << "F: getBasicBlockContainingAddress() @ " << addr << std::endl;
 	}
 	else if (getFunctionContainingAddress(addr))
 	{
 		auto* bb = getBasicBlockBeforeAddress(addr);
 		assert(bb);
 		tBb = createBasicBlock(addr, bb->getParent(), bb);
-		LOG << "\t\t\t\t" << "F: getFunctionContainingAddress() @ "
-				<< addr << std::endl;
+		LOG << "\t\t\t\t" << "F: getFunctionContainingAddress() @ " << addr << std::endl;
 	}
 	else
 	{
 		tFnc = createFunction(addr);
 		tBb = tFnc && !tFnc->empty() ? &tFnc->front() : nullptr;
-		LOG << "\t\t\t\t" << "F: createFunction() @ "
-				<< addr << std::endl;
+		LOG << "\t\t\t\t" << "F: createFunction() @ " << addr << std::endl;
 	}
 }
 
@@ -243,10 +217,7 @@ void Decoder::getOrCreateCallTarget(
  *
  */
 void Decoder::getOrCreateBranchTarget(
-		common::Address addr,
-		llvm::BasicBlock*& tBb,
-		llvm::Function*& tFnc,
-		llvm::Instruction* from)
+	common::Address addr, llvm::BasicBlock*& tBb, llvm::Function*& tFnc, llvm::Instruction* from)
 {
 	tBb = nullptr;
 	tFnc = nullptr;
@@ -336,16 +307,15 @@ void Decoder::getOrCreateBranchTarget(
  */
 bool Decoder::canSplitFunctionOn(llvm::BasicBlock* bb)
 {
-	for (auto* u : bb->users())
+	for (auto* u: bb->users())
 	{
 		// All users must be unconditional branch instructions.
 		//
 		auto* br = dyn_cast<BranchInst>(u);
 		if (br == nullptr || br->isConditional())
 		{
-			LOG << "\t\t\t\t\t\t" << "!CAN : user not uncond for "
-					<< llvmObjToString(u)
-					<< ", user = " << llvmObjToString(br) << std::endl;
+			LOG << "\t\t\t\t\t\t" << "!CAN : user not uncond for " << llvmObjToString(u)
+				<< ", user = " << llvmObjToString(br) << std::endl;
 			return false;
 		}
 
@@ -357,18 +327,17 @@ bool Decoder::canSplitFunctionOn(llvm::BasicBlock* bb)
 		AsmInstruction bbAsm(bb);
 		if (brAsm.getEndAddress() == bbAsm.getAddress())
 		{
-			LOG << "\t\t\t\t\t\t" << "branch from ASM insn right before: "
-					<< brAsm.getAddress() << " -> " << bbAsm.getAddress()
-					<< std::endl;
+			LOG << "\t\t\t\t\t\t" << "branch from ASM insn right before: " << brAsm.getAddress() << " -> "
+				<< bbAsm.getAddress() << std::endl;
 			return false;
 		}
 
 		// BB must be true branch in all users.
 		//
-//		if (br->getSuccessor(0) != bb)
-//		{
-//			return false;
-//		}
+		//		if (br->getSuccessor(0) != bb)
+		//		{
+		//			return false;
+		//		}
 	}
 
 	return true;
@@ -396,9 +365,7 @@ bool Decoder::canSplitFunctionOn(llvm::BasicBlock* bb)
  *     fnc2 end
  */
 bool Decoder::canSplitFunctionOn(
-		common::Address addr,
-		llvm::BasicBlock* splitBb,
-		std::set<llvm::BasicBlock*>& newFncStarts)
+	common::Address addr, llvm::BasicBlock* splitBb, std::set<llvm::BasicBlock*>& newFncStarts)
 {
 	newFncStarts.insert(splitBb);
 
@@ -426,7 +393,7 @@ bool Decoder::canSplitFunctionOn(
 	while (changed)
 	{
 		changed = false;
-		for (BasicBlock& b : *f)
+		for (BasicBlock& b: *f)
 		{
 			common::Address bAddr;
 			// TODO: shitty
@@ -441,13 +408,14 @@ bool Decoder::canSplitFunctionOn(
 				continue;
 			}
 			auto up = fncStarts.upper_bound(bAddr);
-			if (up == fncStarts.begin()) {
+			if (up == fncStarts.begin())
+			{
 				return false;
 			}
 			--up;
 			common::Address bFnc = *up;
 
-			for (auto* p : predecessors(&b))
+			for (auto* p: predecessors(&b))
 			{
 				common::Address pAddr;
 				// TODO: shitty
@@ -462,7 +430,8 @@ bool Decoder::canSplitFunctionOn(
 					continue;
 				}
 				auto up = fncStarts.upper_bound(pAddr);
-				if (up == fncStarts.begin()) {
+				if (up == fncStarts.begin())
+				{
 					return false;
 				}
 				--up;
@@ -496,9 +465,7 @@ llvm::Function* Decoder::splitFunctionOn(common::Address addr)
 	if (auto* bb = getBasicBlockAtAddress(addr))
 	{
 		LOG << "\t\t\t\t" << "S: splitFunctionOn @ " << addr << std::endl;
-		return bb->getPrevNode()
-				? splitFunctionOn(addr, bb)
-				: bb->getParent();
+		return bb->getPrevNode() ? splitFunctionOn(addr, bb) : bb->getParent();
 	}
 	// There is an instruction at address, but not BB -> do not split
 	// existing blocks to create functions.
@@ -531,12 +498,9 @@ llvm::Function* Decoder::splitFunctionOn(common::Address addr)
 	}
 }
 
-llvm::Function* Decoder::splitFunctionOn(
-		common::Address addr,
-		llvm::BasicBlock* splitOnBb)
+llvm::Function* Decoder::splitFunctionOn(common::Address addr, llvm::BasicBlock* splitOnBb)
 {
-	LOG << "\t\t\t\t" << "S: splitFunctionOn @ " << addr << " on "
-			<< splitOnBb->getName().str() << std::endl;
+	LOG << "\t\t\t\t" << "S: splitFunctionOn @ " << addr << " on " << splitOnBb->getName().str() << std::endl;
 
 	if (splitOnBb->getPrevNode() == nullptr)
 	{
@@ -552,12 +516,11 @@ llvm::Function* Decoder::splitFunctionOn(
 
 	llvm::Function* ret = nullptr;
 	std::set<Function*> newFncs;
-	for (auto* splitBb : newFncStarts)
+	for (auto* splitBb: newFncStarts)
 	{
 		common::Address splitAddr = getBasicBlockAddress(splitBb);
 
-		LOG << "\t\t\t\t" << "S: splitting @ " << splitAddr << " on "
-				<< splitBb->getName().str() << std::endl;
+		LOG << "\t\t\t\t" << "S: splitting @ " << splitAddr << " on " << splitBb->getName().str() << std::endl;
 
 		std::string name = _names->getPreferredNameForAddress(splitAddr);
 		if (name.empty())
@@ -566,21 +529,13 @@ llvm::Function* Decoder::splitFunctionOn(
 		}
 
 		Function* oldFnc = splitBb->getParent();
-		Function* newFnc = Function::Create(
-				FunctionType::get(oldFnc->getReturnType(), false),
-				oldFnc->getLinkage(),
-				name);
-		oldFnc->getParent()->getFunctionList().insertAfter(
-				oldFnc->getIterator(),
-				newFnc);
+		Function* newFnc =
+			Function::Create(FunctionType::get(oldFnc->getReturnType(), false), oldFnc->getLinkage(), name);
+		oldFnc->getParent()->getFunctionList().insertAfter(oldFnc->getIterator(), newFnc);
 
 		addFunction(splitAddr, newFnc);
 
-		newFnc->splice(
-				newFnc->begin(),
-				oldFnc,
-				splitBb->getIterator(),
-				oldFnc->end());
+		newFnc->splice(newFnc->begin(), oldFnc, splitBb->getIterator(), oldFnc->end());
 
 		newFncs.insert(oldFnc);
 		newFncs.insert(newFnc);
@@ -591,46 +546,42 @@ llvm::Function* Decoder::splitFunctionOn(
 	}
 	assert(ret);
 
-	for (Function* f : newFncs)
-	for (BasicBlock& b : *f)
-	{
-		auto* br = dyn_cast<BranchInst>(b.getTerminator());
-		if (br
+	for (Function* f: newFncs)
+		for (BasicBlock& b: *f)
+		{
+			auto* br = dyn_cast<BranchInst>(b.getTerminator());
+			if (br
 				&& (br->getSuccessor(0)->getParent() != br->getFunction()
-				|| br->getSuccessor(0)->getPrevNode() == nullptr))
-		{
-			auto* callee = br->getSuccessor(0)->getParent();
-			auto* c = CallInst::Create(callee, "", br);
-			if (auto* retObj = getCallReturnObject())
+					|| br->getSuccessor(0)->getPrevNode() == nullptr))
 			{
-				auto* cc = cast<Instruction>(
-						IrModifier::convertValueToTypeAfter(c, retObj->getValueType(), c));
-				auto* s = llvm_utils::createStoreInst(cc, retObj);
-				s->insertAfter(cc);
-				if (auto* ptee = llvm_utils::pointeeType(retObj))
+				auto* callee = br->getSuccessor(0)->getParent();
+				auto* c = CallInst::Create(callee, "", br);
+				if (auto* retObj = getCallReturnObject())
 				{
-					llvm_utils::setPointeeTypeMetadata(s, ptee);
+					auto* cc = cast<Instruction>(IrModifier::convertValueToTypeAfter(c, retObj->getValueType(), c));
+					auto* s = llvm_utils::createStoreInst(cc, retObj);
+					s->insertAfter(cc);
+					if (auto* ptee = llvm_utils::pointeeType(retObj))
+					{
+						llvm_utils::setPointeeTypeMetadata(s, ptee);
+					}
 				}
+
+				ReturnInst::Create(
+					br->getModule()->getContext(), UndefValue::get(br->getFunction()->getReturnType()), br);
+				br->eraseFromParent();
 			}
 
-			ReturnInst::Create(
-					br->getModule()->getContext(),
-					UndefValue::get(br->getFunction()->getReturnType()),
-					br);
-			br->eraseFromParent();
-		}
-
-		// Test.
-		for (auto* s : successors(&b))
-		{
-			if (b.getParent() != s->getParent()
-					&& fs::exists(_config->getOutputDirectory()))
+			// Test.
+			for (auto* s: successors(&b))
 			{
-				dumpModuleToFile(_module, _config->getOutputDirectory());
+				if (b.getParent() != s->getParent() && fs::exists(_config->getOutputDirectory()))
+				{
+					dumpModuleToFile(_module, _config->getOutputDirectory());
+				}
+				assert(b.getParent() == s->getParent());
 			}
-			assert(b.getParent() == s->getParent());
 		}
-	}
 
 	return ret;
 }

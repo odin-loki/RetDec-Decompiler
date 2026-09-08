@@ -1,9 +1,9 @@
 /**
-* @file src/bin2llvmir/optimizations/decoder/decoder.cpp
-* @brief Various decoder initializations.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file src/bin2llvmir/optimizations/decoder/decoder.cpp
+ * @brief Various decoder initializations.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #include <memory>
 #include "retdec/bin2llvmir/optimizations/decoder/decoder.h"
@@ -37,49 +37,48 @@ using namespace retdec::utils;
 namespace retdec {
 namespace bin2llvmir {
 
-namespace
-{
+namespace {
 
 bool decoderTlsDiagEnabled()
 {
-	const char *e = std::getenv("RETDEC_DECODER_TLS_DIAG");
+	const char* e = std::getenv("RETDEC_DECODER_TLS_DIAG");
 	return e != nullptr && e[0] != '\0' && std::strcmp(e, "0") != 0;
 }
 
 bool decoderImportDiagEnabled()
 {
-	const char *e = std::getenv("RETDEC_DECODER_IMPORT_DIAG");
+	const char* e = std::getenv("RETDEC_DECODER_IMPORT_DIAG");
 	return e != nullptr && e[0] != '\0' && std::strcmp(e, "0") != 0;
 }
 
 bool decoderExportDiagEnabled()
 {
-	const char *e = std::getenv("RETDEC_DECODER_EXPORT_DIAG");
+	const char* e = std::getenv("RETDEC_DECODER_EXPORT_DIAG");
 	return e != nullptr && e[0] != '\0' && std::strcmp(e, "0") != 0;
 }
 
 bool decoderEntryDiagEnabled()
 {
-	const char *e = std::getenv("RETDEC_DECODER_ENTRY_DIAG");
+	const char* e = std::getenv("RETDEC_DECODER_ENTRY_DIAG");
 	return e != nullptr && e[0] != '\0' && std::strcmp(e, "0") != 0;
 }
 
 bool decoderConfigFncDiagEnabled()
 {
-	const char *e = std::getenv("RETDEC_DECODER_CONFIG_FNC_DIAG");
+	const char* e = std::getenv("RETDEC_DECODER_CONFIG_FNC_DIAG");
 	return e != nullptr && e[0] != '\0' && std::strcmp(e, "0") != 0;
 }
 
 bool decoderExternDiagEnabled()
 {
-	const char *e = std::getenv("RETDEC_DECODER_EXTERN_DIAG");
+	const char* e = std::getenv("RETDEC_DECODER_EXTERN_DIAG");
 	return e != nullptr && e[0] != '\0' && std::strcmp(e, "0") != 0;
 }
 
 /// PE delay-import directory entries are flagged on @c PeImport; annotate decoder logs.
-std::string importDelayLoadLogSuffix(const fileformat::Import *imp)
+std::string importDelayLoadLogSuffix(const fileformat::Import* imp)
 {
-	const auto *pe = dynamic_cast<const PeImport *>(imp);
+	const auto* pe = dynamic_cast<const PeImport*>(imp);
 	if (pe && pe->isDelayed())
 	{
 		return " [delay-load]";
@@ -99,19 +98,17 @@ void Decoder::initTranslator()
 
 	cs_arch arch = CS_ARCH_ALL;
 	cs_mode basicMode = CS_MODE_LITTLE_ENDIAN;
-	cs_mode extraMode = a.isEndianBig()
-			? CS_MODE_BIG_ENDIAN
-			: CS_MODE_LITTLE_ENDIAN;
+	cs_mode extraMode = a.isEndianBig() ? CS_MODE_BIG_ENDIAN : CS_MODE_LITTLE_ENDIAN;
 
 	if (a.isX86())
 	{
 		arch = CS_ARCH_X86;
 		switch (a.getBitSize())
 		{
-			case 16: basicMode = CS_MODE_16; break;
-			case 64: basicMode = CS_MODE_64; break;
-			default:
-			case 32: basicMode = CS_MODE_32; break;
+		case 16: basicMode = CS_MODE_16; break;
+		case 64: basicMode = CS_MODE_64; break;
+		default:
+		case 32: basicMode = CS_MODE_32; break;
 		}
 	}
 	else if (a.isMipsOrPic32())
@@ -119,9 +116,9 @@ void Decoder::initTranslator()
 		arch = CS_ARCH_MIPS;
 		switch (a.getBitSize())
 		{
-			case 64: basicMode = CS_MODE_MIPS64; break;
-			default:
-			case 32: basicMode = CS_MODE_MIPS32; break;
+		case 64: basicMode = CS_MODE_MIPS64; break;
+		default:
+		case 32: basicMode = CS_MODE_MIPS32; break;
 		}
 	}
 	else if (a.isPpc())
@@ -129,13 +126,12 @@ void Decoder::initTranslator()
 		arch = CS_ARCH_PPC;
 		switch (a.getBitSize())
 		{
-			case 64: basicMode = CS_MODE_64; break;
-			default:
-			case 32: basicMode = CS_MODE_32; break;
+		case 64: basicMode = CS_MODE_64; break;
+		default:
+		case 32: basicMode = CS_MODE_32; break;
 		}
 	}
-	else if (a.isArm32OrThumb()
-			&& a.getBitSize() == 32)
+	else if (a.isArm32OrThumb() && a.getBitSize() == 32)
 	{
 		arch = CS_ARCH_ARM;
 		basicMode = CS_MODE_ARM; // We start with ARM mode even for THUMB.
@@ -150,11 +146,7 @@ void Decoder::initTranslator()
 		throw std::runtime_error("Unsupported architecture.");
 	}
 
-	_c2l = Capstone2LlvmIrTranslator::createArch(
-			arch,
-			_module,
-			basicMode,
-			extraMode);
+	_c2l = Capstone2LlvmIrTranslator::createArch(arch, _module, basicMode, extraMode);
 }
 
 /**
@@ -231,7 +223,7 @@ void Decoder::initEnvironmentPseudoFunctions()
  */
 void Decoder::initEnvironmentRegisters()
 {
-	for (GlobalVariable& gv : _module->globals())
+	for (GlobalVariable& gv: _module->globals())
 	{
 		if (_c2l->isRegister(&gv))
 		{
@@ -289,15 +281,14 @@ bool sectionHasExecutableFlag(const fileformat::SecSeg* sec)
 	if (auto* pe = dynamic_cast<const fileformat::PeCoffSection*>(sec))
 		return (pe->getPeCoffFlags() & PeLib::PELIB_IMAGE_SCN_MEM_EXECUTE) != 0;
 	if (auto* elf = dynamic_cast<const fileformat::ElfSection*>(sec))
-		return (elf->getElfFlags() & 0x4) != 0;  // SHF_EXECINSTR
+		return (elf->getElfFlags() & 0x4) != 0; // SHF_EXECINSTR
 	return false;
 }
 
 /// Stage 6: UNDEFINED section name suggests code
 bool sectionNameSuggestsCode(const std::string& name)
 {
-	return name == ".text" || name == ".init" || name == ".fini"
-			|| sectionNameIsPltLike(name);
+	return name == ".text" || name == ".init" || name == ".fini" || sectionNameIsPltLike(name);
 }
 
 } // namespace
@@ -307,17 +298,17 @@ bool sectionNameSuggestsCode(const std::string& name)
  */
 void Decoder::initAllowedRangesWithSegments()
 {
-	LOG << "\n" << "initAllowedRangesWithSegments():" << std::endl;
+	LOG << "\n"
+		<< "initAllowedRangesWithSegments():" << std::endl;
 
 	auto* epSeg = _image->getImage()->getEpSegment();
-	for (auto& seg : _image->getSegments())
+	for (auto& seg: _image->getSegments())
 	{
 		auto* sec = seg->getSecSeg();
 		Address start = seg->getAddress();
 		Address end = seg->getPhysicalEndAddress();
 
-		LOG << "\t" << seg->getName() << " @ " << start << " -- "
-				<< end << std::endl;
+		LOG << "\t" << seg->getName() << " @ " << start << " -- " << end << std::endl;
 
 		if (start == end)
 		{
@@ -331,8 +322,10 @@ void Decoder::initAllowedRangesWithSegments()
 			{
 				if (s->getPeCoffFlags() & PeLib::PELIB_IMAGE_SCN_MEM_DISCARDABLE)
 				{
-					LOG << "\t\t" << "PeLib::PELIB_IMAGE_SCN_MEM_DISCARDABLE"
-							" -> skipped" << std::endl;
+					LOG << "\t\t"
+						<< "PeLib::PELIB_IMAGE_SCN_MEM_DISCARDABLE"
+						   " -> skipped"
+						<< std::endl;
 					continue;
 				}
 			}
@@ -342,132 +335,118 @@ void Decoder::initAllowedRangesWithSegments()
 		{
 			switch (sec->getType())
 			{
-				case SecSeg::Type::CODE:
-					LOG << "\t\t" << "code -> allowed ranges"
-							<< std::endl;
-					if (sectionNameIsPltLike(sec->getName())
-							|| segmentNameIsGlobalOffsetTableLike(
-									sec->getName())
-							|| segmentNameIsPeImportDataLike(
-									sec->getName())) // often code; GOT/IAT slots are data
+			case SecSeg::Type::CODE:
+				LOG << "\t\t" << "code -> allowed ranges" << std::endl;
+				if (sectionNameIsPltLike(sec->getName()) || segmentNameIsGlobalOffsetTableLike(sec->getName())
+					|| segmentNameIsPeImportDataLike(sec->getName())) // often code; GOT/IAT slots are data
+				{
+					_ranges.addAlternative(start, end);
+				}
+				else
+				{
+					_ranges.addPrimary(start, end);
+				}
+				break;
+			case SecSeg::Type::DATA:
+				LOG << "\t\t" << "data -> alternative ranges" << std::endl;
+				_ranges.addAlternative(start, end);
+				break;
+			case SecSeg::Type::CODE_DATA: {
+				// PLT/GOT/.idata may be typed CODE_DATA + exec but hold pointers/thunks.
+				const bool linkingSpecial = sectionNameIsPltLike(sec->getName())
+										 || segmentNameIsGlobalOffsetTableLike(sec->getName())
+										 || segmentNameIsPeImportDataLike(sec->getName());
+				if (sectionHasExecutableFlag(sec))
+				{
+					if (linkingSpecial)
 					{
+						LOG << "\t\t"
+							<< "code/data + exec + PLT/GOT/idata -> "
+							   "alternative ranges"
+							<< std::endl;
 						_ranges.addAlternative(start, end);
 					}
 					else
 					{
+						LOG << "\t\t" << "code/data + exec flag -> primary ranges" << std::endl;
 						_ranges.addPrimary(start, end);
 					}
-					break;
-				case SecSeg::Type::DATA:
-					LOG << "\t\t" << "data -> alternative ranges"
-							<< std::endl;
+				}
+				else
+				{
+					LOG << "\t\t" << "code/data -> alternative ranges" << std::endl;
 					_ranges.addAlternative(start, end);
-					break;
-				case SecSeg::Type::CODE_DATA:
-				{
-					// PLT/GOT/.idata may be typed CODE_DATA + exec but hold pointers/thunks.
-					const bool linkingSpecial = sectionNameIsPltLike(sec->getName())
-							|| segmentNameIsGlobalOffsetTableLike(sec->getName())
-							|| segmentNameIsPeImportDataLike(sec->getName());
-					if (sectionHasExecutableFlag(sec))
-					{
-						if (linkingSpecial)
-						{
-							LOG << "\t\t" << "code/data + exec + PLT/GOT/idata -> "
-									"alternative ranges" << std::endl;
-							_ranges.addAlternative(start, end);
-						}
-						else
-						{
-							LOG << "\t\t" << "code/data + exec flag -> primary ranges"
-									<< std::endl;
-							_ranges.addPrimary(start, end);
-						}
-					}
-					else
-					{
-						LOG << "\t\t" << "code/data -> alternative ranges"
-								<< std::endl;
-						_ranges.addAlternative(start, end);
-					}
-					break;
 				}
-				case SecSeg::Type::CONST_DATA:
-					if (seg.get() == epSeg)
-					{
-						LOG << "\t\t" << "const data == ep seg "
-								"-> alternative ranges" << std::endl;
-						_ranges.addAlternative(start, end);
-					}
-					else
-					{
-						LOG << "\t\t" << "const data -> alternative ranges"
-								<< std::endl;
-						continue;
-					}
-					break;
-				case SecSeg::Type::UNDEFINED_SEC_SEG:
+				break;
+			}
+			case SecSeg::Type::CONST_DATA:
+				if (seg.get() == epSeg)
 				{
-					const bool linkingSpecial = sectionNameIsPltLike(sec->getName())
-							|| segmentNameIsGlobalOffsetTableLike(sec->getName())
-							|| segmentNameIsPeImportDataLike(sec->getName());
-					const bool codeEvidence = sectionHasExecutableFlag(sec)
-							|| sectionNameSuggestsCode(sec->getName());
-					if (codeEvidence)
+					LOG << "\t\t"
+						<< "const data == ep seg "
+						   "-> alternative ranges"
+						<< std::endl;
+					_ranges.addAlternative(start, end);
+				}
+				else
+				{
+					LOG << "\t\t" << "const data -> alternative ranges" << std::endl;
+					continue;
+				}
+				break;
+			case SecSeg::Type::UNDEFINED_SEC_SEG: {
+				const bool linkingSpecial = sectionNameIsPltLike(sec->getName())
+										 || segmentNameIsGlobalOffsetTableLike(sec->getName())
+										 || segmentNameIsPeImportDataLike(sec->getName());
+				const bool codeEvidence = sectionHasExecutableFlag(sec) || sectionNameSuggestsCode(sec->getName());
+				if (codeEvidence)
+				{
+					if (linkingSpecial)
 					{
-						if (linkingSpecial)
-						{
-							LOG << "\t\t" << "undef + code evidence + PLT/GOT/idata -> "
-									"alternative ranges" << std::endl;
-							_ranges.addAlternative(start, end);
-						}
-						else
-						{
-							LOG << "\t\t" << "undef + code evidence -> primary ranges"
-									<< std::endl;
-							_ranges.addPrimary(start, end);
-						}
+						LOG << "\t\t"
+							<< "undef + code evidence + PLT/GOT/idata -> "
+							   "alternative ranges"
+							<< std::endl;
+						_ranges.addAlternative(start, end);
 					}
 					else
 					{
-						LOG << "\t\t" << "undef -> alternative ranges"
-								<< std::endl;
-						_ranges.addAlternative(start, end);
+						LOG << "\t\t" << "undef + code evidence -> primary ranges" << std::endl;
+						_ranges.addPrimary(start, end);
 					}
-					break;
 				}
-				case SecSeg::Type::BSS:
-					LOG << "\t\t" << "bss -> skipped" << std::endl;
-					continue;
-				case SecSeg::Type::DEBUG:
-					LOG << "\t\t" << "debug -> skipped" << std::endl;
-					continue;
-				case SecSeg::Type::INFO:
-					LOG << "\t\t" << "info -> skipped" << std::endl;
-					continue;
-				default:
-					assert(false && "unhandled section type");
-					continue;
+				else
+				{
+					LOG << "\t\t" << "undef -> alternative ranges" << std::endl;
+					_ranges.addAlternative(start, end);
+				}
+				break;
+			}
+			case SecSeg::Type::BSS: LOG << "\t\t" << "bss -> skipped" << std::endl; continue;
+			case SecSeg::Type::DEBUG: LOG << "\t\t" << "debug -> skipped" << std::endl; continue;
+			case SecSeg::Type::INFO: LOG << "\t\t" << "info -> skipped" << std::endl; continue;
+			default: assert(false && "unhandled section type"); continue;
 			}
 		}
 		else if (seg.get() == epSeg)
 		{
-			LOG << "\t\t" << "no underlying section or segment && ep seg "
-					"-> alternative ranges" << std::endl;
+			LOG << "\t\t"
+				<< "no underlying section or segment && ep seg "
+				   "-> alternative ranges"
+				<< std::endl;
 			_ranges.addAlternative(start, end);
 		}
 		else
 		{
-			LOG << "\t\t" << "no underlying section or segment -> skipped"
-					<< std::endl;
+			LOG << "\t\t" << "no underlying section or segment -> skipped" << std::endl;
 			continue;
 		}
 	}
 
-	for (auto& seg : _image->getSegments())
+	for (auto& seg: _image->getSegments())
 	{
 		auto& rc = seg->getNonDecodableAddressRanges();
-		for (auto& r : rc)
+		for (auto& r: rc)
 		{
 			if (!r.contains(_config->getConfig().parameters.getEntryPoint()))
 			{
@@ -479,20 +458,18 @@ void Decoder::initAllowedRangesWithSegments()
 
 void Decoder::initAllowedRangesWithConfig()
 {
-	LOG << "\n" << "initAllowedRangesWithConfig():" << std::endl;
+	LOG << "\n"
+		<< "initAllowedRangesWithConfig():" << std::endl;
 
 	std::set<std::string> foundFs;
 
-	for (auto &p : _config->getConfig().parameters.selectedRanges)
+	for (auto& p: _config->getConfig().parameters.selectedRanges)
 	{
 		_ranges.addPrimary(p);
 		LOG << "\t" << "[+] selected range @ " << p << std::endl;
 
 		if (auto* jt = _jumpTargets.push(
-				p.getStart(),
-				JumpTarget::eType::SELECTED_RANGE_START,
-				_c2l->getBasicMode(),
-				Address::Undefined))
+				p.getStart(), JumpTarget::eType::SELECTED_RANGE_START, _c2l->getBasicMode(), Address::Undefined))
 		{
 			createFunction(jt->getAddress());
 			LOG << "\t" << "[+] " << p.getStart() << std::endl;
@@ -507,7 +484,7 @@ void Decoder::initAllowedRangesWithConfig()
 
 	if (!selectedFs.empty())
 	{
-		for (auto& dfp : _debug->functions)
+		for (auto& dfp: _debug->functions)
 		{
 			auto& df = dfp.second;
 			auto fIt = selectedFs.find(df.getName());
@@ -525,8 +502,7 @@ void Decoder::initAllowedRangesWithConfig()
 			Address end = df.getEnd();
 
 			_ranges.addPrimary(start, end);
-			LOG << "\t" << "[+] selected range from debug @ "
-					<< AddressRange(start, end) << std::endl;
+			LOG << "\t" << "[+] selected range from debug @ " << AddressRange(start, end) << std::endl;
 
 			std::optional<std::size_t> sz;
 			auto tmpSz = dfp.second.getSize();
@@ -553,43 +529,36 @@ void Decoder::initAllowedRangesWithConfig()
 			}
 		}
 
-		std::map<
-				retdec::common::Address,
-				std::shared_ptr<const retdec::fileformat::Symbol>> symtab;
+		std::map<retdec::common::Address, std::shared_ptr<const retdec::fileformat::Symbol>> symtab;
 
-		for (const auto* t : _image->getFileFormat()->getSymbolTables())
-		for (const auto& s : *t)
-		{
-			unsigned long long a = 0;
-			if (!s->getRealAddress(a))
+		for (const auto* t: _image->getFileFormat()->getSymbolTables())
+			for (const auto& s: *t)
 			{
-				continue;
-			}
-
-			auto fIt = symtab.find(a);
-			if (fIt == symtab.end())
-			{
-				symtab.emplace(a, s);
-			}
-			else
-			{
-				if (selectedFs.count(fIt->second->getName())
-						|| selectedFs.count(fIt->second->getNormalizedName())
-						|| selectedFs.count(
-								removeLeadingCharacter(
-										fIt->second->getName(), '_'))
-						|| selectedFs.count(
-								removeLeadingCharacter(
-										fIt->second->getNormalizedName(), '_')))
+				unsigned long long a = 0;
+				if (!s->getRealAddress(a))
 				{
-					// name in map is the name we are searching for.
+					continue;
+				}
+
+				auto fIt = symtab.find(a);
+				if (fIt == symtab.end())
+				{
+					symtab.emplace(a, s);
 				}
 				else
 				{
-					symtab[a] = s;
+					if (selectedFs.count(fIt->second->getName()) || selectedFs.count(fIt->second->getNormalizedName())
+						|| selectedFs.count(removeLeadingCharacter(fIt->second->getName(), '_'))
+						|| selectedFs.count(removeLeadingCharacter(fIt->second->getNormalizedName(), '_')))
+					{
+						// name in map is the name we are searching for.
+					}
+					else
+					{
+						symtab[a] = s;
+					}
 				}
 			}
-		}
 
 		for (auto sIt = symtab.begin(); sIt != symtab.end(); ++sIt)
 		{
@@ -633,21 +602,19 @@ void Decoder::initAllowedRangesWithConfig()
 				{
 					std::string tmp2 = removeLeadingCharacter(*fIt, '_');
 
-					if (tmp1 == tmp2)
-						break;
+					if (tmp1 == tmp2) break;
 				}
 			}
 
 			if (fIt != selectedFs.end() && foundFs.find(*fIt) == foundFs.end())
 			{
 				_ranges.addPrimary(start, end);
-				LOG << "\t" << "[+] selected range from symbol: "
-						<< start << std::endl;
+				LOG << "\t" << "[+] selected range from symbol: " << start << std::endl;
 
 				if (auto* jt = _jumpTargets.push(
 						start,
 						JumpTarget::eType::SELECTED_RANGE_START,
-						s->isThumbSymbol() ? CS_MODE_THUMB :_c2l->getBasicMode(),
+						s->isThumbSymbol() ? CS_MODE_THUMB : _c2l->getBasicMode(),
 						Address::Undefined,
 						knownSz))
 				{
@@ -666,12 +633,9 @@ void Decoder::initAllowedRangesWithConfig()
 
 	// Find out which selected functions have not been found.
 	//
-	auto &sbnf = _config->getConfig().parameters.selectedNotFoundFunctions;
+	auto& sbnf = _config->getConfig().parameters.selectedNotFoundFunctions;
 	std::set_difference(
-			selectedFs.begin(), selectedFs.end(),
-			foundFs.begin(), foundFs.end(),
-			std::inserter(sbnf, sbnf.end())
-	);
+		selectedFs.begin(), selectedFs.end(), foundFs.begin(), foundFs.end(), std::inserter(sbnf, sbnf.end()));
 
 	auto* plt = _image->getImage()->getSegment(".plt");
 	if (!_ranges.primaryEmpty() && plt)
@@ -691,11 +655,11 @@ void Decoder::initJumpTargets()
 		initStaticCode();
 	}
 	initJumpTargetsEntryPoint();
-	initJumpTargetsTls();  // Stage 5: TLS callbacks as synthetic entry points
+	initJumpTargetsTls(); // Stage 5: TLS callbacks as synthetic entry points
 	initJumpTargetsExterns();
 	initJumpTargetsImports();
 	initJumpTargetsDebug();
-	initJumpTargetsPdata();    // Stage 15: PE .pdata exception directory
+	initJumpTargetsPdata();   // Stage 15: PE .pdata exception directory
 	initJumpTargetsEhFrame(); // Stage 15: ELF .eh_frame exception handling
 	initJumpTargetsSymbols(); // MUST be before exports
 	initJumpTargetsExports();
@@ -705,21 +669,21 @@ void Decoder::initJumpTargets()
 void Decoder::initJumpTargetsConfig()
 {
 	const bool cfgDiag = decoderConfigFncDiagEnabled();
-	LOG << "\n" << "initJumpTargetsConfig():" << std::endl;
+	LOG << "\n"
+		<< "initJumpTargetsConfig():" << std::endl;
 
-	const auto &fnList = _config->getConfig().functions;
+	const auto& fnList = _config->getConfig().functions;
 	if (cfgDiag)
 	{
-		retdec::utils::io::Log::info()
-				<< "RETDEC_DECODER_CONFIG_FNC_DIAG: config_functions_total="
-				<< fnList.size() << "\n";
+		retdec::utils::io::Log::info() << "RETDEC_DECODER_CONFIG_FNC_DIAG: config_functions_total=" << fnList.size()
+									   << "\n";
 	}
 
 	std::size_t skipUndefinedStart = 0;
 	std::size_t pushed = 0;
 	std::size_t pushFailed = 0;
 
-	for (auto& f : fnList)
+	for (auto& f: fnList)
 	{
 		if (f.getStart().isUndefined())
 		{
@@ -728,9 +692,7 @@ void Decoder::initJumpTargetsConfig()
 		}
 
 		auto tmpSz = f.getSize();
-		auto sz = tmpSz.isDefined() && tmpSz > 0
-				? std::optional<std::size_t>(tmpSz)
-				: std::nullopt;
+		auto sz = tmpSz.isDefined() && tmpSz > 0 ? std::optional<std::size_t>(tmpSz) : std::nullopt;
 
 		if (auto* jt = _jumpTargets.push(
 				f.getStart(),
@@ -743,8 +705,7 @@ void Decoder::initJumpTargetsConfig()
 			addFunctionSize(nf, jt->getSize(), FunctionSizePriority::CONFIG);
 			++pushed;
 
-			LOG << "\t" << "[+] " << f.getStart() << " @ "
-					<< nf->getName().str() << std::endl;
+			LOG << "\t" << "[+] " << f.getStart() << " @ " << nf->getName().str() << std::endl;
 		}
 		else
 		{
@@ -755,35 +716,29 @@ void Decoder::initJumpTargetsConfig()
 
 	if (cfgDiag)
 	{
-		retdec::utils::io::Log::info()
-				<< "RETDEC_DECODER_CONFIG_FNC_DIAG: with_defined_start="
-				<< (pushed + pushFailed) << " jump_targets_pushed=" << pushed
-				<< " skip_undefined_start=" << skipUndefinedStart
-				<< " jump_target_push_failed=" << pushFailed << "\n";
+		retdec::utils::io::Log::info() << "RETDEC_DECODER_CONFIG_FNC_DIAG: with_defined_start=" << (pushed + pushFailed)
+									   << " jump_targets_pushed=" << pushed
+									   << " skip_undefined_start=" << skipUndefinedStart
+									   << " jump_target_push_failed=" << pushFailed << "\n";
 	}
 }
 
 void Decoder::initJumpTargetsEntryPoint()
 {
 	const bool entryDiag = decoderEntryDiagEnabled();
-	LOG << "\n" << "initJumpTargetsEntryPoint():" << std::endl;
+	LOG << "\n"
+		<< "initJumpTargetsEntryPoint():" << std::endl;
 
 	auto ep = _config->getConfig().parameters.getEntryPoint();
 	if (entryDiag)
 	{
-		retdec::utils::io::Log::info()
-				<< "RETDEC_DECODER_ENTRY_DIAG: config_entry_point=" << ep
-				<< " is_defined=" << (!ep.isUndefined()) << "\n";
+		retdec::utils::io::Log::info() << "RETDEC_DECODER_ENTRY_DIAG: config_entry_point=" << ep
+									   << " is_defined=" << (!ep.isUndefined()) << "\n";
 		auto mainA = _config->getConfig().parameters.getMainAddress();
-		retdec::utils::io::Log::info()
-				<< "RETDEC_DECODER_ENTRY_DIAG: config_main_address=" << mainA
-				<< " is_defined=" << (!mainA.isUndefined()) << "\n";
+		retdec::utils::io::Log::info() << "RETDEC_DECODER_ENTRY_DIAG: config_main_address=" << mainA
+									   << " is_defined=" << (!mainA.isUndefined()) << "\n";
 	}
-	if (auto* jt = _jumpTargets.push(
-			ep,
-			JumpTarget::eType::ENTRY_POINT,
-			_c2l->getBasicMode(),
-			Address::Undefined))
+	if (auto* jt = _jumpTargets.push(ep, JumpTarget::eType::ENTRY_POINT, _c2l->getBasicMode(), Address::Undefined))
 	{
 		_entryPointFunction = createFunction(jt->getAddress());
 
@@ -795,8 +750,7 @@ void Decoder::initJumpTargetsEntryPoint()
 			createBasicBlock(jt->getAddress(), _entryPointFunction);
 		}
 
-		LOG << "\t" << "[+] " << ep << " @ "
-				<< _entryPointFunction->getName().str() << std::endl;
+		LOG << "\t" << "[+] " << ep << " @ " << _entryPointFunction->getName().str() << std::endl;
 	}
 	else
 	{
@@ -816,8 +770,7 @@ void Decoder::initJumpTargetsTls()
 	{
 		if (tlsDiag)
 		{
-			retdec::utils::io::Log::info()
-					<< "RETDEC_DECODER_TLS_DIAG: no file format\n";
+			retdec::utils::io::Log::info() << "RETDEC_DECODER_TLS_DIAG: no file format\n";
 		}
 		return;
 	}
@@ -825,9 +778,8 @@ void Decoder::initJumpTargetsTls()
 	const auto* tlsInfo = ff->getTlsInfo();
 	if (tlsDiag)
 	{
-		retdec::utils::io::Log::info()
-				<< "RETDEC_DECODER_TLS_DIAG: tls_info="
-				<< (tlsInfo ? "present" : "absent") << "\n";
+		retdec::utils::io::Log::info() << "RETDEC_DECODER_TLS_DIAG: tls_info=" << (tlsInfo ? "present" : "absent")
+									   << "\n";
 	}
 	if (!tlsInfo)
 	{
@@ -837,9 +789,7 @@ void Decoder::initJumpTargetsTls()
 	const auto& callbacks = tlsInfo->getCallBacks();
 	if (tlsDiag)
 	{
-		retdec::utils::io::Log::info()
-				<< "RETDEC_DECODER_TLS_DIAG: callback_count="
-				<< callbacks.size() << "\n";
+		retdec::utils::io::Log::info() << "RETDEC_DECODER_TLS_DIAG: callback_count=" << callbacks.size() << "\n";
 	}
 	if (callbacks.empty())
 	{
@@ -855,41 +805,34 @@ void Decoder::initJumpTargetsTls()
 
 	if (tlsDiag)
 	{
-		retdec::utils::io::Log::info()
-				<< "RETDEC_DECODER_TLS_DIAG: pe_image_base=0x" << std::hex << base
-				<< std::dec << "\n";
+		retdec::utils::io::Log::info() << "RETDEC_DECODER_TLS_DIAG: pe_image_base=0x" << std::hex << base << std::dec
+									   << "\n";
 		std::size_t shown = 0;
-		for (auto addrVal : callbacks)
+		for (auto addrVal: callbacks)
 		{
 			if (shown++ >= 64)
 			{
 				break;
 			}
-			retdec::utils::io::Log::info()
-					<< "RETDEC_DECODER_TLS_DIAG:   rva=0x" << std::hex << addrVal
-					<< " va=0x" << (addrVal + base) << std::dec << "\n";
+			retdec::utils::io::Log::info() << "RETDEC_DECODER_TLS_DIAG:   rva=0x" << std::hex << addrVal << " va=0x"
+										   << (addrVal + base) << std::dec << "\n";
 		}
 	}
 
-	LOG << "\n" << "initJumpTargetsTls():" << std::endl;
+	LOG << "\n"
+		<< "initJumpTargetsTls():" << std::endl;
 
 	std::size_t idx = 0;
-	for (auto addrVal : callbacks)
+	for (auto addrVal: callbacks)
 	{
 		Address a(addrVal + base);
-		if (a.isUndefined())
-			continue;
+		if (a.isUndefined()) continue;
 
 		std::string name = "__tls_callback_" + std::to_string(idx++);
-		if (auto* jt = _jumpTargets.push(
-				a,
-				JumpTarget::eType::ENTRY_POINT,
-				_c2l->getBasicMode(),
-				Address::Undefined))
+		if (auto* jt = _jumpTargets.push(a, JumpTarget::eType::ENTRY_POINT, _c2l->getBasicMode(), Address::Undefined))
 		{
 			auto* f = createFunction(jt->getAddress());
-			if (f)
-				f->setName(name);
+			if (f) f->setName(name);
 			LOG << "\t" << "[+] " << a << " @ " << name << std::endl;
 		}
 		else
@@ -903,24 +846,23 @@ void Decoder::initJumpTargetsExterns()
 {
 	const bool extDiag = decoderExternDiagEnabled();
 	// This section applies only for elf files
-	if (auto* elf_image = dynamic_cast<retdec::loader::ElfImage *>(_image->getImage()))
+	if (auto* elf_image = dynamic_cast<retdec::loader::ElfImage*>(_image->getImage()))
 	{
+		LOG << "\n"
+			<< "initJumpTargetsExterns():" << std::endl;
 
-		LOG << "\n" << "initJumpTargetsExterns():" << std::endl;
-
-		const auto &extTab = elf_image->getExternFncTable();
+		const auto& extTab = elf_image->getExternFncTable();
 		if (extDiag)
 		{
 			retdec::utils::io::Log::info()
-					<< "RETDEC_DECODER_EXTERN_DIAG: elf_extern_function_table_entries="
-					<< extTab.size() << "\n";
+				<< "RETDEC_DECODER_EXTERN_DIAG: elf_extern_function_table_entries=" << extTab.size() << "\n";
 		}
 
 		std::size_t skipUndefined = 0;
 		std::size_t pushed = 0;
 		std::size_t pushFailed = 0;
 
-		for (const auto& ext : extTab)
+		for (const auto& ext: extTab)
 		{
 			Address a = ext.second;
 			if (a.isUndefined())
@@ -929,11 +871,7 @@ void Decoder::initJumpTargetsExterns()
 				continue;
 			}
 
-			if (auto* jt = _jumpTargets.push(
-					a,
-					JumpTarget::eType::IMPORT,
-					_c2l->getBasicMode(),
-					Address::Undefined))
+			if (auto* jt = _jumpTargets.push(a, JumpTarget::eType::IMPORT, _c2l->getBasicMode(), Address::Undefined))
 			{
 				auto* f = createFunction(jt->getAddress(), true);
 
@@ -943,53 +881,49 @@ void Decoder::initJumpTargetsExterns()
 				_externs.emplace(ext.first);
 				++pushed;
 
-				LOG << "\t" << "[+] " << a << " @ " << f->getName().str()
-						<< std::endl;
+				LOG << "\t" << "[+] " << a << " @ " << f->getName().str() << std::endl;
 			}
 			else
 			{
 				++pushFailed;
-				LOG << "\t" << "[-] " << a << " @ " << ext.first
-						<< " (no JT)" << std::endl;
+				LOG << "\t" << "[-] " << a << " @ " << ext.first << " (no JT)" << std::endl;
 			}
 		}
 
 		if (extDiag)
 		{
 			retdec::utils::io::Log::info()
-					<< "RETDEC_DECODER_EXTERN_DIAG: jump_targets_pushed=" << pushed
-					<< " skip_undefined_address=" << skipUndefined
-					<< " jump_target_push_failed=" << pushFailed << "\n";
+				<< "RETDEC_DECODER_EXTERN_DIAG: jump_targets_pushed=" << pushed
+				<< " skip_undefined_address=" << skipUndefined << " jump_target_push_failed=" << pushFailed << "\n";
 		}
 	}
 	else if (extDiag)
 	{
-		retdec::utils::io::Log::info()
-				<< "RETDEC_DECODER_EXTERN_DIAG: not an ELF image, extern table skipped\n";
+		retdec::utils::io::Log::info() << "RETDEC_DECODER_EXTERN_DIAG: not an ELF image, extern table skipped\n";
 	}
 }
 
 void Decoder::initJumpTargetsImports()
 {
 	const bool impDiag = decoderImportDiagEnabled();
-	LOG << "\n" << "initJumpTargetsImports():" << std::endl;
+	LOG << "\n"
+		<< "initJumpTargetsImports():" << std::endl;
 
 	auto* impTbl = _image->getFileFormat()->getImportTable();
 	if (impTbl == nullptr)
 	{
 		if (impDiag)
 		{
-			retdec::utils::io::Log::info()
-					<< "RETDEC_DECODER_IMPORT_DIAG: no import table\n";
+			retdec::utils::io::Log::info() << "RETDEC_DECODER_IMPORT_DIAG: no import table\n";
 		}
 		LOG << "\t" << "no import table -> skip" << std::endl;
 		return;
 	}
 
 	std::size_t delayLoadImportMarkers = 0;
-	for (const auto &imp : *impTbl)
+	for (const auto& imp: *impTbl)
 	{
-		const auto *pe = dynamic_cast<const PeImport *>(imp.get());
+		const auto* pe = dynamic_cast<const PeImport*>(imp.get());
 		if (pe != nullptr && pe->isDelayed())
 		{
 			++delayLoadImportMarkers;
@@ -998,10 +932,9 @@ void Decoder::initJumpTargetsImports()
 
 	if (impDiag)
 	{
-		retdec::utils::io::Log::info()
-				<< "RETDEC_DECODER_IMPORT_DIAG: imports=" << impTbl->getNumberOfImports()
-				<< " libraries=" << impTbl->getNumberOfLibraries()
-				<< " delay_load_marked_imports=" << delayLoadImportMarkers << "\n";
+		retdec::utils::io::Log::info() << "RETDEC_DECODER_IMPORT_DIAG: imports=" << impTbl->getNumberOfImports()
+									   << " libraries=" << impTbl->getNumberOfLibraries()
+									   << " delay_load_marked_imports=" << delayLoadImportMarkers << "\n";
 	}
 
 	// Non-pointer imports are preferred.
@@ -1010,7 +943,7 @@ void Decoder::initJumpTargetsImports()
 	std::set<std::string> usedNames;
 	std::set<const fileformat::Import*> ptrs;
 
-	for (const auto &imp : *impTbl)
+	for (const auto& imp: *impTbl)
 	{
 		common::Address a = imp->getAddress();
 		if (a.isUndefined())
@@ -1037,8 +970,7 @@ void Decoder::initJumpTargetsImports()
 			continue;
 		}
 
-		bool declaration = _config->getConfig().fileFormat.isPe()
-				|| _config->getConfig().fileFormat.isCoff();
+		bool declaration = _config->getConfig().fileFormat.isPe() || _config->getConfig().fileFormat.isCoff();
 		if (declaration)
 		{
 			auto* f = createFunction(a, true);
@@ -1049,16 +981,12 @@ void Decoder::initJumpTargetsImports()
 			}
 			usedNames.insert(imp->getName());
 
-			_ranges.remove(a, a+_config->getConfig().architecture.getByteSize());
+			_ranges.remove(a, a + _config->getConfig().architecture.getByteSize());
 
 			continue;
 		}
 
-		if (auto* jt = _jumpTargets.push(
-				a,
-				JumpTarget::eType::IMPORT,
-				_c2l->getBasicMode(),
-				Address::Undefined))
+		if (auto* jt = _jumpTargets.push(a, JumpTarget::eType::IMPORT, _c2l->getBasicMode(), Address::Undefined))
 		{
 			auto* f = createFunction(jt->getAddress());
 			_imports.emplace(jt->getAddress());
@@ -1068,33 +996,27 @@ void Decoder::initJumpTargetsImports()
 			}
 			usedNames.insert(imp->getName());
 
-			LOG << "\t" << "[+] " << a << " @ " << f->getName().str()
-					<< importDelayLoadLogSuffix(imp.get()) << std::endl;
+			LOG << "\t" << "[+] " << a << " @ " << f->getName().str() << importDelayLoadLogSuffix(imp.get())
+				<< std::endl;
 		}
 		else
 		{
-			LOG << "\t" << "[-] " << a << " @ " << imp->getName()
-					<< importDelayLoadLogSuffix(imp.get()) << " (no JT)"
-					<< std::endl;
+			LOG << "\t" << "[-] " << a << " @ " << imp->getName() << importDelayLoadLogSuffix(imp.get()) << " (no JT)"
+				<< std::endl;
 		}
 	}
 
-	for (const auto* imp : ptrs)
+	for (const auto* imp: ptrs)
 	{
 		Address a = imp->getAddress();
 
 		if (usedNames.count(imp->getName()))
 		{
-			LOG << "\t" << "[-] " << a << " @ " << imp->getName()
-					<< " (already used name)" << std::endl;
+			LOG << "\t" << "[-] " << a << " @ " << imp->getName() << " (already used name)" << std::endl;
 			continue;
 		}
 
-		if (auto* jt = _jumpTargets.push(
-				a,
-				JumpTarget::eType::IMPORT,
-				_c2l->getBasicMode(),
-				Address::Undefined))
+		if (auto* jt = _jumpTargets.push(a, JumpTarget::eType::IMPORT, _c2l->getBasicMode(), Address::Undefined))
 		{
 			auto* f = createFunction(jt->getAddress());
 			_imports.emplace(jt->getAddress());
@@ -1103,22 +1025,19 @@ void Decoder::initJumpTargetsImports()
 				_terminatingFncs.insert(f);
 			}
 
-			LOG << "\t" << "[+] " << a << " @ " << f->getName().str()
-					<< importDelayLoadLogSuffix(imp) << std::endl;
+			LOG << "\t" << "[+] " << a << " @ " << f->getName().str() << importDelayLoadLogSuffix(imp) << std::endl;
 		}
 		else
 		{
-			LOG << "\t" << "[-] " << a << " @ " << imp->getName()
-					<< importDelayLoadLogSuffix(imp) << " (no JT)"
-					<< std::endl;
+			LOG << "\t" << "[-] " << a << " @ " << imp->getName() << importDelayLoadLogSuffix(imp) << " (no JT)"
+				<< std::endl;
 		}
 	}
 
 	if (impDiag)
 	{
-		retdec::utils::io::Log::info()
-				<< "RETDEC_DECODER_IMPORT_DIAG: deferred_pointer_thunk_pass="
-				<< ptrs.size() << " (GOT/.idata-style slots pass 2)\n";
+		retdec::utils::io::Log::info() << "RETDEC_DECODER_IMPORT_DIAG: deferred_pointer_thunk_pass=" << ptrs.size()
+									   << " (GOT/.idata-style slots pass 2)\n";
 	}
 }
 
@@ -1131,15 +1050,15 @@ void Decoder::initJumpTargetsExports()
 	// TODO: also in that sample, it looks like THUMB symbols are -1 not +1.
 
 	const bool exDiag = decoderExportDiagEnabled();
-	LOG << "\n" << "initJumpTargetsExports():" << std::endl;
+	LOG << "\n"
+		<< "initJumpTargetsExports():" << std::endl;
 
 	auto* ff = _image->getFileFormat();
 	if (ff == nullptr)
 	{
 		if (exDiag)
 		{
-			retdec::utils::io::Log::info()
-					<< "RETDEC_DECODER_EXPORT_DIAG: no file format\n";
+			retdec::utils::io::Log::info() << "RETDEC_DECODER_EXPORT_DIAG: no file format\n";
 		}
 		LOG << "\t" << "no file format -> skip" << std::endl;
 		return;
@@ -1150,8 +1069,7 @@ void Decoder::initJumpTargetsExports()
 	{
 		if (exDiag)
 		{
-			retdec::utils::io::Log::info()
-					<< "RETDEC_DECODER_EXPORT_DIAG: no export table\n";
+			retdec::utils::io::Log::info() << "RETDEC_DECODER_EXPORT_DIAG: no export table\n";
 		}
 		LOG << "\t" << "no export table -> skip" << std::endl;
 		return;
@@ -1159,9 +1077,8 @@ void Decoder::initJumpTargetsExports()
 
 	if (exDiag)
 	{
-		retdec::utils::io::Log::info()
-				<< "RETDEC_DECODER_EXPORT_DIAG: export_table_entries="
-				<< exTbl->getNumberOfExports() << "\n";
+		retdec::utils::io::Log::info() << "RETDEC_DECODER_EXPORT_DIAG: export_table_entries="
+									   << exTbl->getNumberOfExports() << "\n";
 	}
 
 	std::size_t pushed = 0;
@@ -1169,7 +1086,7 @@ void Decoder::initJumpTargetsExports()
 	std::size_t skipElfNoSymbol = 0;
 	std::size_t pushFailed = 0;
 
-	for (const auto& exp : *exTbl)
+	for (const auto& exp: *exTbl)
 	{
 		common::Address addr = exp.getAddress();
 		if (addr.isUndefined())
@@ -1181,26 +1098,20 @@ void Decoder::initJumpTargetsExports()
 		// symbols. Exports do not have to be functions, they can be
 		// data objects. Skip those exports that were not added to symbols.
 		//
-		if (_config->getConfig().fileFormat.isElf()
-				&& _symbols.count(addr) == 0)
+		if (_config->getConfig().fileFormat.isElf() && _symbols.count(addr) == 0)
 		{
 			++skipElfNoSymbol;
 			LOG << "\t" << "[-] " << addr << " (no symbol)" << std::endl;
 			continue;
 		}
 
-		if (auto* jt = _jumpTargets.push(
-				addr,
-				JumpTarget::eType::EXPORT,
-				_c2l->getBasicMode(),
-				Address::Undefined))
+		if (auto* jt = _jumpTargets.push(addr, JumpTarget::eType::EXPORT, _c2l->getBasicMode(), Address::Undefined))
 		{
 			auto* nf = createFunction(jt->getAddress());
 			_exports.emplace(jt->getAddress());
 			++pushed;
 
-			LOG << "\t" << "[+] " << addr << " @ " << nf->getName().str()
-					<< std::endl;
+			LOG << "\t" << "[+] " << addr << " @ " << nf->getName().str() << std::endl;
 		}
 		else
 		{
@@ -1211,58 +1122,58 @@ void Decoder::initJumpTargetsExports()
 
 	if (exDiag)
 	{
-		retdec::utils::io::Log::info()
-				<< "RETDEC_DECODER_EXPORT_DIAG: jump_targets_pushed=" << pushed
-				<< " skip_undefined_address=" << skipUndefined
-				<< " skip_elf_no_symbol=" << skipElfNoSymbol
-				<< " jump_target_push_failed=" << pushFailed << "\n";
+		retdec::utils::io::Log::info() << "RETDEC_DECODER_EXPORT_DIAG: jump_targets_pushed=" << pushed
+									   << " skip_undefined_address=" << skipUndefined
+									   << " skip_elf_no_symbol=" << skipElfNoSymbol
+									   << " jump_target_push_failed=" << pushFailed << "\n";
 	}
 }
 
 void Decoder::initJumpTargetsSymbols()
 {
-	LOG << "\n" << "initJumpTargetsSymbols():" << std::endl;
+	LOG << "\n"
+		<< "initJumpTargetsSymbols():" << std::endl;
 
-	for (const auto* t : _image->getFileFormat()->getSymbolTables())
-	for (const auto& s : *t)
-	{
-		if (!s->isFunction())
+	for (const auto* t: _image->getFileFormat()->getSymbolTables())
+		for (const auto& s: *t)
 		{
-			continue;
-		}
-		unsigned long long a = 0;
-		if (!s->getRealAddress(a))
-		{
-			continue;
-		}
-		common::Address addr = a;
+			if (!s->isFunction())
+			{
+				continue;
+			}
+			unsigned long long a = 0;
+			if (!s->getRealAddress(a))
+			{
+				continue;
+			}
+			common::Address addr = a;
 
-		std::optional<std::size_t> sz;
-		unsigned long long tmpSz = 0;
-		if (s->getSize(tmpSz) && tmpSz > 0)
-		{
-			sz = tmpSz;
-		}
+			std::optional<std::size_t> sz;
+			unsigned long long tmpSz = 0;
+			if (s->getSize(tmpSz) && tmpSz > 0)
+			{
+				sz = tmpSz;
+			}
 
-		if (auto* jt = _jumpTargets.push(
-				addr,
-				JumpTarget::eType::SYMBOL,
-				s->isThumbSymbol() ? CS_MODE_THUMB :_c2l->getBasicMode(),
-				Address::Undefined,
-				sz))
-		{
-			auto* nf = createFunction(jt->getAddress());
-			_symbols.insert(jt->getAddress());
-			addFunctionSize(nf, sz, FunctionSizePriority::SYMBOL);
+			if (auto* jt = _jumpTargets.push(
+					addr,
+					JumpTarget::eType::SYMBOL,
+					s->isThumbSymbol() ? CS_MODE_THUMB : _c2l->getBasicMode(),
+					Address::Undefined,
+					sz))
+			{
+				auto* nf = createFunction(jt->getAddress());
+				_symbols.insert(jt->getAddress());
+				addFunctionSize(nf, sz, FunctionSizePriority::SYMBOL);
 
-			LOG << "\t" << "[+] " << addr << " @ " << nf->getName().str()
-					 << " (" << s->getName() << ")" << std::endl;
+				LOG << "\t" << "[+] " << addr << " @ " << nf->getName().str() << " (" << s->getName() << ")"
+					<< std::endl;
+			}
+			else
+			{
+				LOG << "\t" << "[-] " << addr << " (no JT)" << std::endl;
+			}
 		}
-		else
-		{
-			LOG << "\t" << "[-] " << addr << " (no JT)" << std::endl;
-		}
-	}
 }
 
 /**
@@ -1271,7 +1182,8 @@ void Decoder::initJumpTargetsSymbols()
  */
 void Decoder::initJumpTargetsPdata()
 {
-	LOG << "\n" << "initJumpTargetsPdata():" << std::endl;
+	LOG << "\n"
+		<< "initJumpTargetsPdata():" << std::endl;
 
 	auto* ff = _image->getFileFormat();
 	if (ff == nullptr || ff->getFileFormat() != Format::PE)
@@ -1298,7 +1210,7 @@ void Decoder::initJumpTargetsPdata()
 	}
 
 	std::uint64_t base = _image->getImage()->getBaseAddress();
-	std::size_t entrySize = 12;  // RUNTIME_FUNCTION: BeginAddress, EndAddress, UnwindInfoAddress
+	std::size_t entrySize = 12; // RUNTIME_FUNCTION: BeginAddress, EndAddress, UnwindInfoAddress
 	std::size_t nEntries = pdata->getSizeInFile() / entrySize;
 	if (nEntries == 0)
 	{
@@ -1309,18 +1221,12 @@ void Decoder::initJumpTargetsPdata()
 	for (std::size_t i = 0; i < nEntries; ++i)
 	{
 		std::uint32_t beginRva = pdata->getBytesAtOffsetAsNumber<std::uint32_t>(i * entrySize + 0);
-		std::uint32_t endRva   = pdata->getBytesAtOffsetAsNumber<std::uint32_t>(i * entrySize + 4);
-		if (endRva <= beginRva)
-			continue;
+		std::uint32_t endRva = pdata->getBytesAtOffsetAsNumber<std::uint32_t>(i * entrySize + 4);
+		if (endRva <= beginRva) continue;
 		std::size_t sz = endRva - beginRva;
 		Address addr(base + beginRva);
 
-		if (auto* jt = _jumpTargets.push(
-				addr,
-				JumpTarget::eType::PDATA,
-				_c2l->getBasicMode(),
-				Address::Undefined,
-				sz))
+		if (auto* jt = _jumpTargets.push(addr, JumpTarget::eType::PDATA, _c2l->getBasicMode(), Address::Undefined, sz))
 		{
 			auto* nf = createFunction(jt->getAddress());
 			addFunctionSize(nf, sz, FunctionSizePriority::PDATA);
@@ -1335,7 +1241,8 @@ void Decoder::initJumpTargetsPdata()
  */
 void Decoder::initJumpTargetsEhFrame()
 {
-	LOG << "\n" << "initJumpTargetsEhFrame():" << std::endl;
+	LOG << "\n"
+		<< "initJumpTargetsEhFrame():" << std::endl;
 
 	auto* ff = _image->getFileFormat();
 	if (ff == nullptr || ff->getFileFormat() != Format::ELF)
@@ -1361,10 +1268,7 @@ void Decoder::initJumpTargetsEhFrame()
 	std::uint64_t ehFrameAddr = ehSec->getAddress();
 	bool isLittleEndian = !_config->getConfig().architecture.isEndianBig();
 
-	llvm::DWARFDataExtractor data(
-			bytes,
-			isLittleEndian,
-			_config->getConfig().architecture.getByteSize());
+	llvm::DWARFDataExtractor data(bytes, isLittleEndian, _config->getConfig().architecture.getByteSize());
 
 	llvm::Triple::ArchType arch = llvm::Triple::UnknownArch;
 	auto& a = _config->getConfig().architecture;
@@ -1394,31 +1298,24 @@ void Decoder::initJumpTargetsEhFrame()
 	llvm::DWARFDebugFrame ehFrame(arch, true, ehFrameAddr);
 	if (llvm::Error parseErr = ehFrame.parse(data))
 	{
-		LOG << "\t" << "failed to parse .eh_frame -> skip: "
-			<< llvm::toString(std::move(parseErr)) << std::endl;
+		LOG << "\t" << "failed to parse .eh_frame -> skip: " << llvm::toString(std::move(parseErr)) << std::endl;
 		return;
 	}
 
-	for (const llvm::dwarf::FrameEntry& entry : ehFrame.entries())
+	for (const llvm::dwarf::FrameEntry& entry: ehFrame.entries())
 	{
 		const auto* fde = llvm::dyn_cast<llvm::dwarf::FDE>(&entry);
-		if (!fde)
-			continue;
+		if (!fde) continue;
 
 		std::uint64_t start = fde->getInitialLocation();
 		std::uint64_t range = fde->getAddressRange();
-		if (range == 0)
-			continue;
+		if (range == 0) continue;
 
 		Address addr(start);
 		std::size_t sz = range;
 
-		if (auto* jt = _jumpTargets.push(
-				addr,
-				JumpTarget::eType::EHFRAME,
-				_c2l->getBasicMode(),
-				Address::Undefined,
-				sz))
+		if (auto* jt =
+				_jumpTargets.push(addr, JumpTarget::eType::EHFRAME, _c2l->getBasicMode(), Address::Undefined, sz))
 		{
 			auto* nf = createFunction(jt->getAddress());
 			addFunctionSize(nf, sz, FunctionSizePriority::PDATA);
@@ -1429,7 +1326,8 @@ void Decoder::initJumpTargetsEhFrame()
 
 void Decoder::initJumpTargetsDebug()
 {
-	LOG << "\n" << "initJumpTargetsDebug():" << std::endl;
+	LOG << "\n"
+		<< "initJumpTargetsDebug():" << std::endl;
 
 	if (_debug == nullptr)
 	{
@@ -1437,7 +1335,7 @@ void Decoder::initJumpTargetsDebug()
 		return;
 	}
 
-	for (const auto& p : _debug->functions)
+	for (const auto& p: _debug->functions)
 	{
 		common::Address addr = p.first;
 		if (addr.isUndefined())
@@ -1464,8 +1362,7 @@ void Decoder::initJumpTargetsDebug()
 			_debugFncs.emplace(jt->getAddress(), &f);
 			addFunctionSize(nf, sz, FunctionSizePriority::DEBUG);
 
-			LOG << "\t" << "[+] " << addr << " @ "
-					<< nf->getName().str() << std::endl;
+			LOG << "\t" << "[+] " << addr << " @ " << nf->getName().str() << std::endl;
 		}
 		else
 		{
@@ -1476,16 +1373,17 @@ void Decoder::initJumpTargetsDebug()
 
 void Decoder::initStaticCode()
 {
-	LOG << "\n" << "initStaticCode():" << std::endl;
+	LOG << "\n"
+		<< "initStaticCode():" << std::endl;
 
 	stacofin::Finder SCA;
 	SCA.searchAndConfirm(*_image->getImage(), _config->getConfig());
 
-	for (auto& p : SCA.getConfirmedDetections())
+	for (auto& p: SCA.getConfirmedDetections())
 	{
 		auto* sf = p.second;
 
-		for (auto& n : sf->names)
+		for (auto& n: sf->names)
 		{
 			if (sf->getAddress().isDefined() && !n.empty())
 			{
@@ -1493,7 +1391,7 @@ void Decoder::initStaticCode()
 			}
 		}
 
-		for (auto& r : sf->references)
+		for (auto& r: sf->references)
 		{
 			if (r.address.isDefined() && !r.name.empty())
 			{
@@ -1516,14 +1414,13 @@ void Decoder::initStaticCode()
 			}
 
 			// Unreliable - sometimes there are nops, alignment, or other patterns.
-			//addFunctionSize(f, sf->size);
+			// addFunctionSize(f, sf->size);
 
 			// Speed-up decoding, but we will not be able to diff CFG json
 			// with IDA CFG.
 			//_ranges.remove(f->address, f->address + f->size);
 
-			LOG << "\t" << "[+] " << sf->getAddress() << " @ "
-					<< nf->getName().str() << std::endl;
+			LOG << "\t" << "[+] " << sf->getAddress() << " @ " << nf->getName().str() << std::endl;
 		}
 		else
 		{
@@ -1534,22 +1431,23 @@ void Decoder::initStaticCode()
 
 void Decoder::initVtables()
 {
-	LOG << "\n" << "initVtables():" << std::endl;
+	LOG << "\n"
+		<< "initVtables():" << std::endl;
 
 	std::vector<const common::Vtable*> vtable;
-	for (auto& p : _image->getRtti().getVtablesGcc())
+	for (auto& p: _image->getRtti().getVtablesGcc())
 	{
 		vtable.push_back(&p.second);
 	}
-	for (auto& p : _image->getRtti().getVtablesMsvc())
+	for (auto& p: _image->getRtti().getVtablesMsvc())
 	{
 		vtable.push_back(&p.second);
 	}
 
-	for (auto* p : vtable)
+	for (auto* p: vtable)
 	{
 		auto& vt = *p;
-		for (auto& item : vt.items)
+		for (auto& item: vt.items)
 		{
 			if (auto* jt = _jumpTargets.push(
 					item.getTargetFunctionAddress(),
@@ -1560,13 +1458,11 @@ void Decoder::initVtables()
 				auto* nf = createFunction(jt->getAddress());
 				_vtableFncs.insert(jt->getAddress());
 
-				LOG << "\t" << "[+] " << item.getTargetFunctionAddress()
-						<< " @ " << nf->getName().str() << std::endl;
+				LOG << "\t" << "[+] " << item.getTargetFunctionAddress() << " @ " << nf->getName().str() << std::endl;
 			}
 			else
 			{
-				LOG << "\t" << "[-] " << item.getTargetFunctionAddress()
-						<< " (no JT)" << std::endl;
+				LOG << "\t" << "[-] " << item.getTargetFunctionAddress() << " (no JT)" << std::endl;
 			}
 		}
 	}
@@ -1574,7 +1470,7 @@ void Decoder::initVtables()
 
 void Decoder::initConfigFunctions()
 {
-	for (auto& p : _fnc2addr)
+	for (auto& p: _fnc2addr)
 	{
 		llvm::Function* f = p.first;
 
@@ -1589,8 +1485,7 @@ void Decoder::initConfigFunctions()
 
 		// TODO: this is really bad, should be solved by better design of config
 		// updates
-		common::Function* cf = const_cast<common::Function*>(
-				_config->insertFunction(f, start, end));
+		common::Function* cf = const_cast<common::Function*>(_config->insertFunction(f, start, end));
 
 		if (_imports.count(start))
 		{
@@ -1601,7 +1496,7 @@ void Decoder::initConfigFunctions()
 		{
 			cf->setIsStaticallyLinked();
 			// Can not delete body here because of main detection.
-			//f->deleteBody();
+			// f->deleteBody();
 		}
 
 		std::string realName = _names->getPreferredNameForAddress(start);
@@ -1623,7 +1518,7 @@ void Decoder::initConfigFunctions()
 		}
 	}
 
-	for (auto* f : _c2l->getPseudoAsmFunctions())
+	for (auto* f: _c2l->getPseudoAsmFunctions())
 	{
 		_config->addPseudoAsmFunction(f);
 	}

@@ -1,9 +1,9 @@
 /**
-* @file src/bin2llvmir/optimizations/decoder/patterns.cpp
-* @brief Decode input binary into LLVM IR.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file src/bin2llvmir/optimizations/decoder/patterns.cpp
+ * @brief Decode input binary into LLVM IR.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #include "retdec/bin2llvmir/optimizations/decoder/decoder.h"
 #include "retdec/bin2llvmir/utils/capstone.h"
@@ -49,15 +49,14 @@ bool Decoder::patternTerminatingCalls()
 		// one terminating call = call to terminating function.
 		//
 		std::set<Function*> potentialTermFncs;
-		for (auto* f : _terminatingFncs)
+		for (auto* f: _terminatingFncs)
 		{
-			for (auto* u : f->users())
+			for (auto* u: f->users())
 			{
 				if (auto* call = dyn_cast<CallInst>(u))
 				{
 					termCalls.insert(call);
-					if (_terminatingFncs.count(call->getFunction()) == 0
-							&& nonTermFncs.count(call->getFunction()) == 0)
+					if (_terminatingFncs.count(call->getFunction()) == 0 && nonTermFncs.count(call->getFunction()) == 0)
 					{
 						potentialTermFncs.insert(call->getFunction());
 					}
@@ -71,7 +70,7 @@ bool Decoder::patternTerminatingCalls()
 		// - They do not even have to call the same terminating function.
 		// - There can not be a path that ends in normal return.
 		//
-		for (auto* f : potentialTermFncs)
+		for (auto* f: potentialTermFncs)
 		{
 			LOG << "\t\tpotential term @ " << f->getName().str() << std::endl;
 
@@ -87,7 +86,7 @@ bool Decoder::patternTerminatingCalls()
 				bbWorklist.pop();
 
 				bool reachEnd = true;
-				for (Instruction& i : *workBb)
+				for (Instruction& i: *workBb)
 				{
 					if (termCalls.count(&i))
 					{
@@ -107,8 +106,7 @@ bool Decoder::patternTerminatingCalls()
 				}
 				if (reachEnd)
 				{
-					for (auto s = succ_begin(workBb), e = succ_end(workBb);
-							s != e; ++s)
+					for (auto s = succ_begin(workBb), e = succ_end(workBb); s != e; ++s)
 					{
 						if (bbSeen.count(*s) == 0)
 						{
@@ -130,19 +128,19 @@ bool Decoder::patternTerminatingCalls()
 				nonTermFncs.insert(f);
 			}
 		}
-	} while (oldSz != _terminatingFncs.size());
+	}
+	while (oldSz != _terminatingFncs.size());
 
 	// Split Bbs after terminating calls and insert returns after them.
 	//
 	LOG << "\tsplit BBs after terminating calls:" << std::endl;
-	for (auto* call : termCalls)
+	for (auto* call: termCalls)
 	{
 		auto* bb = call->getParent();
 		AsmInstruction callAi(call);
 		AsmInstruction nextAi = callAi.getNext();
 
-		if (callAi.isInvalid()
-				|| nextAi.isInvalid())
+		if (callAi.isInvalid() || nextAi.isInvalid())
 		{
 			continue;
 		}
@@ -187,22 +185,18 @@ bool Decoder::patternTerminatingCalls()
 			AsmInstruction lastInNewBb(newBb->getTerminator());
 			if (lastNop == lastInNewBb)
 			{
-				LOG << "\t\t\tremove entire BB of NOPs @ "
-						<< nextAi.getAddress() << std::endl;
+				LOG << "\t\t\tremove entire BB of NOPs @ " << nextAi.getAddress() << std::endl;
 
 				newBb->eraseFromParent();
 				newBb = nullptr;
 			}
 			else
 			{
-				LOG << "\t\t\tsplit @ " << lastNop.getNext().getAddress()
-						<< std::endl;
-				LOG << "\t\t\tremove NOPs @ " << nextAi.getAddress()
-						<< std::endl;
+				LOG << "\t\t\tsplit @ " << lastNop.getNext().getAddress() << std::endl;
+				LOG << "\t\t\tremove NOPs @ " << nextAi.getAddress() << std::endl;
 
 				auto* tmpBb = newBb;
-				newBb = tmpBb->splitBasicBlock(
-						lastNop.getNext().getLlvmToAsmInstruction());
+				newBb = tmpBb->splitBasicBlock(lastNop.getNext().getLlvmToAsmInstruction());
 				tmpBb->eraseFromParent();
 			}
 		}
@@ -227,7 +221,7 @@ bool Decoder::patternTerminatingCalls()
 	// path from blocks before it to block after and vice versa.
 	//
 	LOG << "\tsplit functions after terminating calls:" << std::endl;
-	for (auto* call : termCalls)
+	for (auto* call: termCalls)
 	{
 		auto* f = call->getFunction();
 		auto* b = call->getParent();
@@ -241,11 +235,11 @@ bool Decoder::patternTerminatingCalls()
 
 		bool split = true;
 		bool after = false;
-		for (BasicBlock& bb : *f)
+		for (BasicBlock& bb: *f)
 		{
 			if (after)
 			{
-				for (auto* p : predecessors(&bb))
+				for (auto* p: predecessors(&bb))
 				{
 					if (before.count(p))
 					{
@@ -259,7 +253,7 @@ bool Decoder::patternTerminatingCalls()
 					break;
 				}
 
-				for (auto* s : successors(&bb))
+				for (auto* s: successors(&bb))
 				{
 					if (before.count(s))
 					{
@@ -311,10 +305,9 @@ bool Decoder::patternStaticallyLinked()
 {
 	bool modified = false;
 
-	for (Function& f : *_module)
+	for (Function& f: *_module)
 	{
-		if (!(f.getName() == "scanf"
-				|| f.getName() == "printf"))
+		if (!(f.getName() == "scanf" || f.getName() == "printf"))
 		{
 			continue;
 		}
@@ -327,44 +320,44 @@ bool Decoder::patternStaticallyLinked()
 
 		bool firstCall = true;
 		bool ok = false;
-		for (BasicBlock& b : f)
-		for (Instruction& i : b)
-		{
-			if (auto* c = dyn_cast<CallInst>(&i))
+		for (BasicBlock& b: f)
+			for (Instruction& i: b)
 			{
-				if (_c2l->isAnyPseudoFunctionCall(c))
+				if (auto* c = dyn_cast<CallInst>(&i))
 				{
-					continue;
-				}
+					if (_c2l->isAnyPseudoFunctionCall(c))
+					{
+						continue;
+					}
 
-				if (!firstCall)
-				{
-					ok = false;
-					break;
-				}
-				firstCall = false;
+					if (!firstCall)
+					{
+						ok = false;
+						break;
+					}
+					firstCall = false;
 
-				auto targetAddr = getFunctionAddress(c->getCalledFunction());
-				if (targetAddr.isDefined()
-						&& _staticFncs.count(targetAddr))
-				{
-					ok = true;
-				}
-				// TODO: the above is not enough
-				// bugs.thumb-bitcnt-1-integration-test.Test
-				else if (c->getCalledFunction()
+					auto targetAddr = getFunctionAddress(c->getCalledFunction());
+					if (targetAddr.isDefined() && _staticFncs.count(targetAddr))
+					{
+						ok = true;
+					}
+					// TODO: the above is not enough
+					// bugs.thumb-bitcnt-1-integration-test.Test
+					else if (
+						c->getCalledFunction()
 						&& (c->getCalledFunction()->getName() == "vfprintf"
-						|| c->getCalledFunction()->getName() == "__svfscanf_r"))
-				{
-					ok = true;
-				}
-				else
-				{
-					ok = false;
-					break;
+							|| c->getCalledFunction()->getName() == "__svfscanf_r"))
+					{
+						ok = true;
+					}
+					else
+					{
+						ok = false;
+						break;
+					}
 				}
 			}
-		}
 
 		if (ok)
 		{
