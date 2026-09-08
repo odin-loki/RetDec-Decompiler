@@ -1,6 +1,6 @@
 /**
  * @file fuzz_wasm.cpp
- * @brief libFuzzer harness for the WebAssembly binary parser.
+ * @brief libFuzzer harness for the WebAssembly binary parser and disassembler.
  *
  * Build:
  *   clang++ -std=c++17 -fsanitize=fuzzer,address \
@@ -17,6 +17,7 @@
  */
 
 #include "retdec/wasm_parser/wasm_reader.h"
+#include "retdec/wasm_parser/wat_emitter.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -25,6 +26,15 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 {
 	retdec::wasm_parser::WasmReader reader(data, size);
 	// Must not abort/crash regardless of input; error returns are acceptable.
-	(void)reader.read();
+	auto parsed = reader.read();
+
+	// The disassembler is where a module's declared counts become loop bounds
+	// and output length, so stopping at the reader left the larger half of the
+	// attack surface unfuzzed.
+	if (parsed.ok)
+	{
+		retdec::wasm_parser::WatEmitter emitter;
+		(void)emitter.emit(parsed.module);
+	}
 	return 0;
 }
