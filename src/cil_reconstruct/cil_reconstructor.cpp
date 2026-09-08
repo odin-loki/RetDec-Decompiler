@@ -204,8 +204,31 @@ std::vector<CilStmt> CilReconstructor::structureEH(
         const BcCFG& cfg) const {
     std::vector<CilStmt> stmts;
 
-    // For each EH region, build Try/Catch/Finally structures
+    // Handlers grouped by the region they protect, in first-seen order.
+    //
+    // ECMA-335 encodes `try { } catch (A) { } catch (B) { }` as TWO EH-table
+    // entries over the SAME protected region. This loop ran once per entry and
+    // each iteration drained every non-EH block into that iteration's tryBody,
+    // so the first handler swallowed the whole region and the second produced a
+    // second Try with an EMPTY body and a live catch clause -- two sibling
+    // try statements rather than one try with two catches, which stops
+    // catching B around the body at all. Measured on a method with two catches
+    // over one region: [0] Try tryBody=3 catches=1, [1] Try tryBody=0
+    // catches=1.
+    std::vector<std::pair<uint32_t, uint32_t>> regions;
+    std::vector<std::vector<const retdec::bc_module::BcExceptionHandler*>> grouped;
     for (const auto& eh : cfg.handlers()) {
+        const std::pair<uint32_t, uint32_t> key{eh.startOffset, eh.endOffset};
+        auto it = std::find(regions.begin(), regions.end(), key);
+        if (it == regions.end()) {
+            regions.push_back(key);
+            grouped.emplace_back();
+            it = regions.end() - 1;
+        }
+        grouped[static_cast<std::size_t>(it - regions.begin())].push_back(&eh);
+    }
+
+    for (const auto& group : grouped) {
         // Find the try body blocks
         std::vector<CilStmt> tryBody;
         for (uint32_t bid : blockIds) {
@@ -223,22 +246,26 @@ std::vector<CilStmt> CilReconstructor::structureEH(
         tryStmt.kind    = StmtKind::Try;
         tryStmt.tryBody = std::move(tryBody);
 
-        // Build catch/finally clause
-        uint32_t hb = eh.handlerBlock;
-        if (hb < blocks.size()) {
+        // Every handler over this region becomes a clause of the same Try, in
+        // the order the EH table lists them -- which is the order the CLR tries
+        // them, so it is the order the emitted C# has to keep.
+        for (const auto* eh : group) {
+            uint32_t hb = eh->handlerBlock;
+            if (hb >= blocks.size()) continue;
+
             std::vector<CilStmt> handlerBody;
             for (auto& s : blocks[hb].stmts)
                 handlerBody.push_back(std::move(s));
             blocks[hb].stmts.clear();
 
-            if (eh.isFinally) {
+            if (eh->isFinally) {
                 tryStmt.finallyBody = std::move(handlerBody);
-            } else if (eh.isFault) {
+            } else if (eh->isFault) {
                 tryStmt.faultBody = std::move(handlerBody);
             } else {
                 CilStmt::CatchClause cc;
-                if (eh.catchType.has_value())
-                    cc.catchType = *eh.catchType;
+                if (eh->catchType.has_value())
+                    cc.catchType = *eh->catchType;
                 cc.body = std::move(handlerBody);
                 tryStmt.catches.push_back(std::move(cc));
             }
@@ -315,7 +342,7 @@ std::vector<CilStmt> CilReconstructor::structureRegion(
             if (s.kind == StmtKind::If) { hasConditional = true; break; }
         }
 
-        if (opts_.structureExcept == false && hasConditional && rb.succs.size() == 2) {
+        if (opts_.structureIf && hasConditional && rb.succs.size() == 2) {
             auto ifStmts = buildIfElse(bid, blocks, cfg, blockIds);
             stmts.insert(stmts.end(), ifStmts.begin(), ifStmts.end());
         } else {

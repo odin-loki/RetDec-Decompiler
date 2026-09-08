@@ -338,12 +338,61 @@ std::string serialiseModule(const BcModule& mod, int ind)
 
 namespace detail {
 
+/// How deep a JSON document may nest.
+///
+/// Every container is a C++ stack frame: skipValue() calls skipObject() and
+/// skipArray(), each of which calls skipValue() per member, and parseType()
+/// recurses through parseObject() for "element"/"base"/"bound". Nothing counted
+/// the levels, and the depth is entirely the input's:
+///
+///   {"x": + 60000 * '[' + 60000 * ']' + }   -- 120 KB
+///     segfault at -O0 (which is what full-linux-debug builds), and at 400000
+///     levels (800 KB) even at -O1.
+///
+/// The try/catch in deserialiseModule catches std::exception; a stack overflow
+/// is not one. 512 is far past anything a serialiser here emits -- a BcType's
+/// own nesting is array-of-array-of-... -- and far short of a frame count that
+/// costs anything.
+constexpr int kMaxJsonDepth = 512;
+
 struct Parser
 {
 	const std::string& src;
 	size_t pos = 0;
 	/// Cleared by the first required token that was not there; see expect().
 	bool wellFormed = true;
+	/// Containers currently open. See kMaxJsonDepth.
+	int depth = 0;
+
+	/// Counts one level of container nesting for as long as it is in scope, and
+	/// reports whether there was room for it.
+	class DepthGuard
+	{
+	public:
+		explicit DepthGuard(Parser& p): parser_(p)
+		{
+			if (parser_.depth >= kMaxJsonDepth)
+			{
+				parser_.wellFormed = false;
+				return;
+			}
+			++parser_.depth;
+			entered_ = true;
+		}
+		~DepthGuard()
+		{
+			if (entered_) --parser_.depth;
+		}
+
+		DepthGuard(const DepthGuard&) = delete;
+		DepthGuard& operator=(const DepthGuard&) = delete;
+
+		bool entered() const { return entered_; }
+
+	private:
+		Parser& parser_;
+		bool entered_ = false;
+	};
 
 	char peek() const
 	{
@@ -471,6 +520,9 @@ struct Parser
 
 	void skipObject()
 	{
+		DepthGuard guard(*this);
+		if (!guard.entered()) return;
+
 		expect('{');
 		skipWS();
 		if (accept('}')) return; // empty object
@@ -488,6 +540,9 @@ struct Parser
 
 	void skipArray()
 	{
+		DepthGuard guard(*this);
+		if (!guard.entered()) return;
+
 		expect('[');
 		skipWS();
 		if (accept(']')) return; // empty array
@@ -506,6 +561,9 @@ struct Parser
 	template <typename Handler>
 	void parseObject(Handler&& handler)
 	{
+		DepthGuard guard(*this);
+		if (!guard.entered()) return;
+
 		skipWS();
 		expect('{');
 		skipWS();
@@ -525,6 +583,9 @@ struct Parser
 	template <typename Elem>
 	void parseArray(Elem&& element)
 	{
+		DepthGuard guard(*this);
+		if (!guard.entered()) return;
+
 		skipWS();
 		expect('[');
 		skipWS();

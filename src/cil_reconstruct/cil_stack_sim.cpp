@@ -41,6 +41,10 @@ const StackState& CilStackSimulator::instrStack(uint32_t blockId, uint32_t instr
     return info.instrStacks[instrIdx];
 }
 
+std::size_t CilStackSimulator::instrStackCount(uint32_t blockId) const {
+    return blockInfo(blockId).instrStacks.size();
+}
+
 CilExprPtr CilStackSimulator::exprAt(uint32_t blockId, uint32_t instrIdx) const {
     const auto& state = instrStack(blockId, instrIdx);
     if (state.empty()) return nullptr;
@@ -722,14 +726,27 @@ bool CilStackSimulator::applyInstruction(
                 isVoid = !mr->descriptor.returnType;
                 break;
             }
+        // Arguments first, then the receiver.
+        //
+        // ECMA-335 III.3.19 and III.4.2: for an instance call the object
+        // reference is pushed BEFORE arg1..argN, so it is the DEEPEST slot and
+        // argN is on top. Popping the top first therefore took the last
+        // argument as the receiver, and popN() then took the remaining slots --
+        // which still included the real receiver at index 0. The result was
+        // obj = argN and args = [obj, arg1, .., argN-1]: everything rotated by
+        // one position, with only zero-argument instance calls coming out
+        // right. Measured on `ldarg.0; ldarg.1; callvirt Append(int)`:
+        //
+        //   before:  arg1.Append(arg0)
+        //   after:   arg0.Append(arg1)
         std::vector<StackSlot> callArgs;
         CilExprPtr obj;
+        popN(stack, numArgs, callArgs);
         if (hasObj) {
             StackSlot objSlot;
             pop(stack, objSlot);
             obj = objSlot.expr;
         }
-        popN(stack, numArgs, callArgs);
         if (!isVoid) {
             ExprCall ec;
             ec.className  = std::move(callClassName);
@@ -939,12 +956,28 @@ bool CilStackSimulator::runFixpoint(const BcCFG& cfg, const BcMethod& method) {
         }
     }
 
-    int iterations = 0;
-    while (!worklist.empty() && iterations < opts_.maxIterations) {
-        ++iterations;
+    // Per-block revisit counts, not a total.
+    //
+    // This was `iterations < opts_.maxIterations` over a counter incremented
+    // once per block POPPED, and maxIterations defaults to 32 -- so it was a
+    // cap on how many basic blocks are ever analysed, not on how many times the
+    // fixpoint revisits one. A method with more than 32 blocks, which is
+    // routine, had the rest left default-constructed while runFixpoint still
+    // returned true. The option's own comment says "before giving up", so
+    // giving up is now reported rather than returned as success.
+    std::vector<int> visits(n, 0);
+    std::vector<bool> analysed(n, false);
+    bool gaveUp = false;
+
+    while (!worklist.empty()) {
         uint32_t bid = worklist.front();
         worklist.pop();
         inQueue.erase(bid);
+
+        if (++visits[bid] > opts_.maxIterations) {
+            gaveUp = true;
+            continue;
+        }
 
         const BcBasicBlock& blk = cfg.block(bid);
         BlockStackInfo& info = blockInfos_[bid];
@@ -962,19 +995,47 @@ bool CilStackSimulator::runFixpoint(const BcCFG& cfg, const BcMethod& method) {
         }
         info.exitStack = stack;
 
+        analysed[bid] = true;
+
         // Propagate to successors
         for (uint32_t succ : blk.succs) {
             if (succ >= n) continue;
             BlockStackInfo& succInfo = blockInfos_[succ];
             StackState newEntry = meetStates(succInfo.entryStack, stack);
-            if (newEntry != succInfo.entryStack) {
+            const bool changed = newEntry != succInfo.entryStack;
+            if (changed) {
                 succInfo.entryStack = std::move(newEntry);
-                if (!inQueue.count(succ)) {
-                    worklist.push(succ);
-                    inQueue.insert(succ);
-                }
+            }
+
+            // A successor that has never been analysed has to run even when the
+            // meet changed nothing.
+            //
+            // The queue used to be fed by `changed` alone, and there was no
+            // visited bit: an entry stack starts out default-constructed, which
+            // is EMPTY, and meetStates(empty, empty) is empty, so the
+            // comparison is false. In CIL the evaluation stack is empty at
+            // almost every block boundary -- it is required to be at every
+            // `leave`, and compiler output empties it before each branch -- so
+            // every block but the entry was left unanalysed, with instrStacks
+            // empty and exprAt() returning nullptr for every instruction in
+            // them, while simulate() returned true. Measured on a two-block
+            // method whose first block ends with the stack empty: block 1's
+            // ldc expression came back <null>, and CilVarRecovery emitted its
+            // local declaration with no initialiser.
+            if (!changed && analysed[succ]) {
+                continue;
+            }
+            if (!inQueue.count(succ)) {
+                worklist.push(succ);
+                inQueue.insert(succ);
             }
         }
+    }
+
+    if (gaveUp) {
+        error_ = "stack simulation did not converge within " + std::to_string(opts_.maxIterations)
+                 + " visits per block";
+        return false;
     }
 
     return true;
@@ -982,6 +1043,7 @@ bool CilStackSimulator::runFixpoint(const BcCFG& cfg, const BcMethod& method) {
 
 bool CilStackSimulator::simulate(const BcCFG& cfg, const BcMethod& method) {
     valid_ = false;
+    error_.clear();
     blockInfos_.clear();
 
     if (cfg.blockCount() == 0) {
@@ -990,7 +1052,11 @@ bool CilStackSimulator::simulate(const BcCFG& cfg, const BcMethod& method) {
     }
 
     if (!runFixpoint(cfg, method)) {
-        error_ = "Stack simulation fixpoint failed";
+        // runFixpoint says WHY when it can; "fixpoint failed" on its own tells
+        // the caller nothing it could act on.
+        if (error_.empty()) {
+            error_ = "Stack simulation fixpoint failed";
+        }
         return false;
     }
 

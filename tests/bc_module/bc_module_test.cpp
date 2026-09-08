@@ -888,3 +888,67 @@ TEST(GoldenModule, LuaHelloWorld)
 	std::string s = serialiseModule(mod);
 	EXPECT_NE(s.find("Lua"), std::string::npos);
 }
+
+// ─── nesting the input chooses ──────────────────────────────────────────────
+//
+// Every container in the reader is a C++ stack frame: skipValue() calls
+// skipObject() and skipArray(), each of which calls skipValue() per member, and
+// parseType() recurses through parseObject() for "element"/"base"/"bound".
+// Nothing counted the levels, and deserialiseModule routes every unrecognised
+// key through skipValue(), so the depth was entirely the input's. Measured on
+// `{"x": + N*'[' + N*']' + }`:
+//
+//   -O0 (which is what full-linux-debug builds): segfault at N = 60000, 120 KB
+//   -O1:                                          segfault at N = 400000
+//
+// The try/catch in deserialiseModule catches std::exception; a stack overflow
+// is not one.
+
+TEST(BcJson, DeeplyNestedInputIsRefusedRatherThanRecursedInto)
+{
+	for (int levels : {1000, 20000, 100000})
+	{
+		std::string src = "{\"x\":";
+		src.append(static_cast<std::size_t>(levels), '[');
+		src.append(static_cast<std::size_t>(levels), ']');
+		src += "}";
+
+		const auto res = deserialiseModule(src);
+		EXPECT_FALSE(res.ok) << "levels=" << levels;
+		EXPECT_FALSE(res.error.empty()) << "levels=" << levels;
+	}
+}
+
+// Objects nest through a different path -- parseObject, not skipArray.
+TEST(BcJson, DeeplyNestedObjectsAreRefusedToo)
+{
+	std::string src;
+	const int levels = 50000;
+	for (int i = 0; i < levels; ++i) src += "{\"a\":";
+	src += "1";
+	for (int i = 0; i < levels; ++i) src += "}";
+
+	const auto res = deserialiseModule(src);
+	EXPECT_FALSE(res.ok);
+}
+
+// And the depth a real module uses is nowhere near the bound: an array of an
+// array of an array of int still round-trips.
+TEST(BcJson, OrdinaryNestingIsNotRefused)
+{
+	BcModule mod("Nested", SourceLang::Java);
+	BcClass cls;
+	cls.name = "C";
+	cls.fqName = "C";
+
+	BcMethod m;
+	m.name = "f";
+	BcType elem = types::Int();
+	for (int i = 0; i < 8; ++i) elem = types::Array(elem);
+	m.descriptor.returnType = std::make_shared<BcType>(elem);
+	cls.methods.push_back(std::move(m));
+	mod.addClass(std::move(cls));
+
+	const auto res = deserialiseModule(serialiseModule(mod));
+	EXPECT_TRUE(res.ok) << res.error;
+}

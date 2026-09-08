@@ -61,6 +61,25 @@ struct CilReconstructOptions {
     bool structureLoops    = true;   ///< Reconstruct while/for/do-while
     bool structureSwitch   = true;   ///< Reconstruct switch statements
     bool structureExcept   = true;   ///< Reconstruct try/catch/finally
+
+    /// Route two-way conditionals through buildIfElse().
+    ///
+    /// Off, and named after what it controls. The gate in structureBlocks read
+    /// `opts_.structureExcept == false`, which is not a predicate about if/else
+    /// at all: structureExcept defaults to true and also gates structureEH, so
+    /// buildIfElse was unreachable in every default configuration and reachable
+    /// only by turning exception structuring off. The sibling branch two lines
+    /// below uses its own option, which is what this now is.
+    ///
+    /// Default false because buildIfElse does not yet do what its name says.
+    /// It says so itself -- "We don't structurally nest here" -- and emits an
+    /// If carrying a block reference plus a Goto rather than a then/else body,
+    /// and its fall-through test (`elseBlock != condBlock + 1`) compares block
+    /// NUMBERS while structureBlocks emits in blockIds order. Turning it on by
+    /// default would change output without making it more structured. Enabling
+    /// it is a feature, not a bug fix; the predicate lying about what it tests
+    /// was the bug.
+    bool structureIf       = false;
     bool preserveGotos     = false;  ///< If true, leave unstructured goto
     int  maxStructureDepth = 64;     ///< Recursion limit for structuring
 };

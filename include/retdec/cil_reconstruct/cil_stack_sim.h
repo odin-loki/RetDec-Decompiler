@@ -273,6 +273,16 @@ public:
     /// Stack state after instruction at position `instrIdx` in block `blockId`.
     const StackState& instrStack(uint32_t blockId, uint32_t instrIdx) const;
 
+    /// How many per-instruction stacks were recorded for @p blockId.
+    ///
+    /// Zero means the work-list never reached the block. That is worth being
+    /// able to ask: an unanalysed block's entry stack is default-constructed
+    /// and therefore EMPTY, which is indistinguishable from a computed empty
+    /// stack -- and in CIL the evaluation stack is empty at almost every block
+    /// boundary, so "entryStack(b).empty()" was true for every block whether or
+    /// not it was ever looked at.
+    std::size_t instrStackCount(uint32_t blockId) const;
+
     /// Expression produced by instruction `instrIdx` in block `blockId`
     /// (the top-of-stack expression after that instruction).
     CilExprPtr exprAt(uint32_t blockId, uint32_t instrIdx) const;
