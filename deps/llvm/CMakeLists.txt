@@ -113,6 +113,9 @@ if(_LLVM_SOURCE_SUBDIR)
 	set(_LLVM_EP_SOURCE_SUBDIR SOURCE_SUBDIR ${_LLVM_SOURCE_SUBDIR})
 endif()
 
+# ccache/sccache, when this build has one. See retdec_compiler_launcher_args.
+retdec_compiler_launcher_args(_LLVM_LAUNCHER_ARGS)
+
 ExternalProject_Add(llvm-project
 	SOURCE_DIR ${LLVM_SOURCE_DIR}
 	URL ${_LLVM_URL}
@@ -164,6 +167,7 @@ ExternalProject_Add(llvm-project
 
 		"${CMAKE_C_COMPILER_OPTION}"
 		"${CMAKE_CXX_COMPILER_OPTION}"
+		${_LLVM_LAUNCHER_ARGS}
 		${LLVM_CROSS_ARGS}
 		-DCMAKE_POSITION_INDEPENDENT_CODE=${CMAKE_POSITION_INDEPENDENT_CODE}
 		${_LLVM_ZLIB_CMAKE_ARG}

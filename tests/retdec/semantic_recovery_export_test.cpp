@@ -1039,3 +1039,296 @@ TEST(SemanticExport, UnresolvedCallProducesNoStrategyDetection)
 	for (const auto& d: map["delegate"])
 		EXPECT_NE(d.label, "Strategy");
 }
+
+// ─── where the comments go, and where they must not ─────────────────────────
+//
+// Two defects in injectSemanticCommentsIntoOutput, both of which made the
+// feature useless or worse on the inputs it is actually given.
+//
+// The comment was inserted at common::Function::getStartLine(), which is the
+// line DWARF or PDB recorded in the ORIGINAL source, used as an index into the
+// decompiler's own output. On a stripped binary -- the normal input -- that
+// line is undefined and every comment was dropped, so nothing was emitted at
+// all; where debug info existed the comment landed at whatever line of the
+// emitted C shared a number with the original source line.
+//
+// And nothing consulted the output format. `-f json` routes llvmir2hll through
+// a JsonOutputManager, so the output file is JSON -- into which the injector
+// wrote `// ...` lines, and out of which maybeWriteBuildableSidecars parsed C.
+
+namespace {
+
+retdec::common::SemanticDetection makeDetection(const char* kind, const char* label)
+{
+	retdec::common::SemanticDetection d;
+	d.kind = kind;
+	d.label = label;
+	d.confidence = 0.9f;
+	return d;
+}
+
+/// A config carrying one function with one detection and no debug line at all,
+/// which is what a stripped binary gives.
+retdec::config::Config configWithDetection(const char* fnName, const char* format = "plain")
+{
+	retdec::config::Config config;
+	config.parameters.setOutputFormat(format);
+
+	retdec::common::Function fn(fnName);
+	fn.semanticDetections.push_back(makeDetection("sort", "introsort"));
+	config.functions.insert(fn);
+	return config;
+}
+
+std::size_t countLinesContaining(const std::string& text, const std::string& needle)
+{
+	std::size_t n = 0;
+	std::size_t pos = 0;
+	while ((pos = text.find(needle, pos)) != std::string::npos)
+	{
+		++n;
+		pos += needle.size();
+	}
+	return n;
+}
+
+} // namespace
+
+TEST(SemanticComments, AreEmittedForAStrippedBinary)
+{
+	// No setStartLine anywhere: this is what the config looks like for a binary
+	// with no debug info, and it used to mean no comments at all.
+	auto config = configWithDetection("sortThings");
+
+	std::string out =
+		"#include <stdint.h>\n"
+		"\n"
+		"int32_t helper(int32_t a) {\n"
+		"    return a;\n"
+		"}\n"
+		"\n"
+		"void sortThings(int32_t * arr, int32_t n) {\n"
+		"    return;\n"
+		"}\n";
+
+	retdec::analysis::injectSemanticCommentsIntoOutput(config, &out);
+
+	ASSERT_EQ(1u, countLinesContaining(out, "// ")) << out;
+
+	// Immediately above the definition, not above some unrelated line.
+	const std::size_t comment = out.find("// ");
+	const std::size_t def = out.find("void sortThings(");
+	ASSERT_NE(std::string::npos, comment) << out;
+	ASSERT_NE(std::string::npos, def) << out;
+	EXPECT_LT(comment, def) << out;
+	EXPECT_EQ(def, out.find('\n', comment) + 1) << out;
+}
+
+TEST(SemanticComments, GoAboveTheDefinitionNotTheDeclaration)
+{
+	auto config = configWithDetection("decrypt");
+
+	std::string out =
+		"void decrypt(char * buf);\n"
+		"\n"
+		"void other(void) {\n"
+		"    decrypt(0);\n"
+		"}\n"
+		"\n"
+		"void decrypt(char * buf) {\n"
+		"    return;\n"
+		"}\n";
+
+	retdec::analysis::injectSemanticCommentsIntoOutput(config, &out);
+
+	const std::size_t comment = out.find("// ");
+	ASSERT_NE(std::string::npos, comment) << out;
+	// After the prototype and after the call, so it can only be the definition.
+	EXPECT_GT(comment, out.find("decrypt(0);")) << out;
+	EXPECT_LT(comment, out.find("void decrypt(char * buf) {")) << out;
+}
+
+TEST(SemanticComments, AFunctionThatIsNotInTheOutputGetsNoComment)
+{
+	auto config = configWithDetection("absent");
+
+	std::string out = "int main(void) {\n    return 0;\n}\n";
+	const std::string before = out;
+
+	retdec::analysis::injectSemanticCommentsIntoOutput(config, &out);
+
+	EXPECT_EQ(before, out);
+}
+
+TEST(SemanticComments, AreNotWrittenIntoJsonOutput)
+{
+	for (const char* format : {"json", "json-human"})
+	{
+		auto config = configWithDetection("sortThings", format);
+
+		// What -f json writes: the whole listing is one JSON document.
+		std::string out =
+			"{\n"
+			"  \"code\": \"void sortThings(int32_t * arr) {\\n    return;\\n}\"\n"
+			"}\n";
+		const std::string before = out;
+
+		retdec::analysis::injectSemanticCommentsIntoOutput(config, &out);
+
+		EXPECT_EQ(before, out) << "format " << format;
+		EXPECT_EQ(std::string::npos, out.find("// ")) << "format " << format;
+	}
+}
+
+TEST(SemanticComments, PlainOutputIsStillCommented)
+{
+	// The guard must not turn the feature off for the format it is for.
+	auto config = configWithDetection("sortThings", "plain");
+
+	std::string out = "void sortThings(int32_t * arr) {\n    return;\n}\n";
+	retdec::analysis::injectSemanticCommentsIntoOutput(config, &out);
+
+	EXPECT_NE(std::string::npos, out.find("// ")) << out;
+}
+
+TEST(BuildableSidecars, AreNotWrittenForJsonOutput)
+{
+	setEmitBuildableEnv("1");
+
+	const fs::path dir = fs::temp_directory_path() / "retdec-sidecar-json";
+	fs::remove_all(dir);
+	fs::create_directories(dir);
+	const fs::path outC = dir / "out.c";
+
+	retdec::config::Config config;
+	config.parameters.setOutputFormat("json");
+	config.parameters.setOutputFile(outC.string());
+
+	// A JSON document, which is what -f json leaves in the output file.
+	const std::string json = "{\n  \"functions\": [ { \"name\": \"main\" } ]\n}\n";
+	{
+		std::ofstream o(outC);
+		o << json;
+	}
+
+	retdec::analysis::maybeWriteBuildableSidecars(config, json);
+
+	EXPECT_FALSE(fs::exists(dir / "out.h"));
+	EXPECT_FALSE(fs::exists(dir / "out_stubs.c"));
+	EXPECT_FALSE(fs::exists(dir / "out.buildable.c"));
+
+	// And the plain path still writes them, so the guard is the format and not
+	// a blanket refusal.
+	config.parameters.setOutputFormat("plain");
+	const std::string csrc = "int main(void) {\n    return 0;\n}\n";
+	{
+		std::ofstream o(outC);
+		o << csrc;
+	}
+	retdec::analysis::maybeWriteBuildableSidecars(config, csrc);
+	EXPECT_TRUE(fs::exists(dir / "out.h"));
+
+	fs::remove_all(dir);
+	setEmitBuildableEnv(nullptr);
+}
+
+// The rewrite joined lines with '\n' BETWEEN them and none after, so a file
+// that ends in a newline -- every file the emitter writes -- came back one byte
+// shorter for having been read, whether or not a comment was added.
+TEST(SemanticComments, TheTrailingNewlineSurvives)
+{
+	auto config = configWithDetection("sortThings");
+
+	std::string out = "void sortThings(int32_t * arr) {\n    return;\n}\n";
+	retdec::analysis::injectSemanticCommentsIntoOutput(config, &out);
+
+	ASSERT_FALSE(out.empty());
+	EXPECT_EQ('\n', out.back()) << out;
+	EXPECT_NE(std::string::npos, out.find("// ")) << out;
+}
+
+TEST(SemanticComments, AnOutputWithNoTrailingNewlineDoesNotGainOne)
+{
+	auto config = configWithDetection("sortThings");
+
+	std::string out = "void sortThings(int32_t * arr) {\n    return;\n}";
+	retdec::analysis::injectSemanticCommentsIntoOutput(config, &out);
+
+	ASSERT_FALSE(out.empty());
+	EXPECT_NE('\n', out.back()) << out;
+	EXPECT_NE(std::string::npos, out.find("// ")) << out;
+}
+
+// And the case that made this visible: nothing to insert must mean nothing
+// written, byte for byte.
+TEST(SemanticComments, NothingToSayLeavesTheOutputByteForByte)
+{
+	auto config = configWithDetection("absent");
+
+	for (const std::string& before : {
+			 std::string("int main(void) {\n    return 0;\n}\n"),
+			 std::string("int main(void) {\n    return 0;\n}"),
+		 })
+	{
+		std::string out = before;
+		retdec::analysis::injectSemanticCommentsIntoOutput(config, &out);
+		EXPECT_EQ(before, out);
+	}
+}
+
+// The file path, not just the string: this is what the CLI actually takes.
+TEST(SemanticComments, TheOutputFileKeepsItsTrailingNewline)
+{
+	const fs::path dir = fs::temp_directory_path() / "retdec-semcomment-file";
+	fs::remove_all(dir);
+	fs::create_directories(dir);
+	const fs::path outC = dir / "out.c";
+
+	auto config = configWithDetection("sortThings");
+	config.parameters.setOutputFile(outC.string());
+
+	const std::string source = "void sortThings(int32_t * arr) {\n    return;\n}\n";
+	{
+		std::ofstream o(outC);
+		o << source;
+	}
+
+	retdec::analysis::injectSemanticCommentsIntoOutput(config, nullptr);
+
+	std::ifstream in(outC, std::ios::binary);
+	const std::string written((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
+	ASSERT_FALSE(written.empty());
+	EXPECT_EQ('\n', written.back()) << written;
+	EXPECT_NE(std::string::npos, written.find("// ")) << written;
+
+	fs::remove_all(dir);
+}
+
+// A function the emitter wrote under its real name rather than its config name.
+TEST(SemanticComments, TheRealNameIsTriedWhenTheConfigNameIsNotEmitted)
+{
+	retdec::config::Config config;
+	config.parameters.setOutputFormat("plain");
+
+	retdec::common::Function fn("function_401000");
+	fn.setRealName("parse_header");
+	fn.semanticDetections.push_back(makeDetection("container", "std::vector"));
+	config.functions.insert(fn);
+
+	std::string out =
+		"void other(void) {\n"
+		"    return;\n"
+		"}\n"
+		"\n"
+		"int32_t parse_header(char * p) {\n"
+		"    return 0;\n"
+		"}\n";
+
+	retdec::analysis::injectSemanticCommentsIntoOutput(config, &out);
+
+	const std::size_t comment = out.find("// ");
+	ASSERT_NE(std::string::npos, comment) << out;
+	EXPECT_LT(comment, out.find("int32_t parse_header(")) << out;
+	EXPECT_GT(comment, out.find("void other(void) {")) << out;
+}

@@ -66,6 +66,15 @@ set(_COMMON_CMAKE_ARGS
     -DCMAKE_INSTALL_INCLUDEDIR:STRING=${CMAKE_INSTALL_INCLUDEDIR}
     -DCMAKE_INSTALL_DATAROOTDIR:STRING=${CMAKE_INSTALL_DATAROOTDIR}
 )
+# ccache/sccache, when this build has one. The launcher stops at every
+# ExternalProject boundary unless it is forwarded, and this superbuild has two
+# of them before the compiler is reached.
+foreach(_lang C CXX)
+    if(CMAKE_${_lang}_COMPILER_LAUNCHER)
+        list(APPEND _COMMON_CMAKE_ARGS
+            "-DCMAKE_${_lang}_COMPILER_LAUNCHER:STRING=${CMAKE_${_lang}_COMPILER_LAUNCHER}")
+    endif()
+endforeach()
 if(CMAKE_TOOLCHAIN_FILE)
     list(APPEND _COMMON_CMAKE_ARGS
         "-DCMAKE_TOOLCHAIN_FILE:FILEPATH=${CMAKE_TOOLCHAIN_FILE}")

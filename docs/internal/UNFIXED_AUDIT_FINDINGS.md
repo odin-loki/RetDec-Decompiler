@@ -312,15 +312,20 @@ state and there is one pipeline per thread.
 model as literal text and never applied. Every non-mock refinement runs the
 model outside its instruction-tuned distribution.
 
-`src/retdec/semantic_recovery_export.cpp:95` — semantic comments are placed by
-DWARF/PDB *source* line number, so on a stripped binary (the normal input) they
-never appear, and where debug info exists they land at arbitrary offsets in the
-emitted C.
+~~`src/retdec/semantic_recovery_export.cpp:95` — semantic comments are placed by
+DWARF/PDB *source* line number~~ — fixed. `definitionLineOf` finds the function
+in the emitted output by name, using the same declarator tests the sidecar
+generator uses, so a stripped binary gets its comments and a binary with debug
+info gets them in the right place. Four tests, six of which fail against the
+old placement.
 
-`src/retdec/semantic_recovery_export.cpp:1583` — comment injection and sidecar
-generation both run unguarded on the output file, including when `-f json` was
-requested. The machine-readable mode emits invalid JSON whenever the input has
-debug info and any detection fires.
+~~`src/retdec/semantic_recovery_export.cpp:1583` — comment injection and sidecar
+generation both run unguarded on the output file~~ — fixed. `-f json` and
+`-f json-human` route llvmir2hll through a `JsonOutputManager`, so both now
+refuse: `outputIsSourceListing` gates the injector, and
+`maybeWriteBuildableSidecars` gained a config overload that does the same. The
+same read-and-rewrite also dropped the file's trailing newline whether or not a
+comment was added; it now leaves an untouched output byte for byte.
 
 `src/retdec-decompiler/retdec-decompiler.cpp:891` — managed inputs
 (`.apk`/`.jar`/`.pyc`/`.class`/`.wasm`) are written to a `.c` filename and

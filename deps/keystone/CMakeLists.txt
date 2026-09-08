@@ -20,6 +20,9 @@ if(NOT KEYSTONE_LOCAL_DIR)
 	)
 endif()
 
+# ccache/sccache, when this build has one. See retdec_compiler_launcher_args.
+retdec_compiler_launcher_args(_KEYSTONE_LAUNCHER_ARGS)
+
 ExternalProject_Add(keystone-project
 	SOURCE_DIR ${KEYSTONE_SOURCE_DIR}
 	URL ${_KEYSTONE_URL}
@@ -29,6 +32,7 @@ ExternalProject_Add(keystone-project
 	${_KEYSTONE_PATCH}
 	CMAKE_ARGS
 		-DCMAKE_INSTALL_PREFIX=${KEYSTONE_INSTALL_DIR}
+		${_KEYSTONE_LAUNCHER_ARGS}
 		# CMake 4.x requires cmake_minimum_required >= 3.5.
 		-DCMAKE_POLICY_VERSION_MINIMUM=3.5
 		# This does not work on MSVC, but may be useful on Linux.

@@ -23,6 +23,9 @@ if(CMAKE_RC_COMPILER)
 	list(APPEND _ZLIB_CMAKE_EXTRA "-DCMAKE_RC_COMPILER=${CMAKE_RC_COMPILER}")
 endif()
 
+# ccache/sccache, when this build has one. See retdec_compiler_launcher_args.
+retdec_compiler_launcher_args(_ZLIB_LAUNCHER_ARGS)
+
 ExternalProject_Add(retdec-zlib
 	PREFIX "${_RETDEC_ZLIB_EP}"
 	URL "${ZLIB_URL}"
@@ -31,6 +34,7 @@ ExternalProject_Add(retdec-zlib
 	DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 	CMAKE_ARGS
 		-DCMAKE_INSTALL_PREFIX=${ZLIB_INSTALL_DIR}
+		${_ZLIB_LAUNCHER_ARGS}
 		-DCMAKE_POLICY_VERSION_MINIMUM=3.5
 		-DCMAKE_INSTALL_LIBDIR=lib
 		-DCMAKE_BUILD_TYPE=${RETDEC_EP_CMAKE_BUILD_TYPE}

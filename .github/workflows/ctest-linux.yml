@@ -18,8 +18,13 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      # An LLVM debug build does not fit in the action's 500 MB default, and
+      # the key keeps this job's objects out of the other workflows' caches.
       - name: ccache
         uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1.2
+        with:
+          key: ctest-linux
+          max-size: 2G
 
       - name: Install dependencies
         run: |
@@ -56,19 +61,28 @@ jobs:
       - name: Cache CMake build
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: |
-            build/linux
-            ~/.cache/ccache
+          # Not ~/.cache/ccache: the ccache action above owns that directory,
+          # and two actions restoring and saving the same path is how one of
+          # them ends up writing an empty cache over the other's.
+          path: build/linux
           key: ctest-linux-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'deps/**/CMakeLists.txt') }}
           restore-keys: |
             ctest-linux-
 
+      # The compiler launcher is what makes the ccache step above do anything.
+      # Without it nothing invoked ccache at all: this job's own log reported
+      # "Cache size (GB): 0.0 / 0.5" and "Not saving cache because no objects
+      # are cached" beside a 55-minute build step, on every run. deps/*/
+      # forward it into their ExternalProjects, which is where the LLVM build
+      # -- almost all of that time -- happens.
       - name: Configure (full-linux-debug, CPU-only CI)
         run: >
           cmake --preset full-linux-debug
           -DRETDEC_ENABLE_CUDA_ACCEL=OFF
           -DRETDEC_ENABLE_NEURAL=OFF
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build integration targets
         run: >

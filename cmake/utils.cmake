@@ -10,6 +10,28 @@ function(append_if condition value)
 	endif()
 endfunction()
 
+# Forwards this build's compiler launcher (ccache, sccache) into an
+# ExternalProject's CMAKE_ARGS.  Sets ${out} to an empty list when no launcher
+# is configured, so an ordinary build is unchanged.
+#
+# Without this the launcher stops at the superbuild boundary, and the LLVM
+# sub-build -- which is almost all of the wall clock -- recompiles from scratch
+# on every run.  ctest-linux runs hendrikmuhs/ccache-action and its own log said
+# what that was worth: "Cache size (GB): 0.0 / 0.5" and "Not saving cache
+# because no objects are cached", against a build step of 55 minutes.
+#
+# Usage: retdec_compiler_launcher_args(MY_ARGS) then ${MY_ARGS} in CMAKE_ARGS.
+function(retdec_compiler_launcher_args out)
+	set(args "")
+	foreach(lang C CXX)
+		if(CMAKE_${lang}_COMPILER_LAUNCHER)
+			list(APPEND args
+				"-DCMAKE_${lang}_COMPILER_LAUNCHER=${CMAKE_${lang}_COMPILER_LAUNCHER}")
+		endif()
+	endforeach()
+	set(${out} "${args}" PARENT_SCOPE)
+endfunction()
+
 # Forces a configure step for the given external project.
 # The configure step for external projects is needed to (1) detect source-file
 # changes and (2) fix infinite recursion of 'make' after a terminated build.

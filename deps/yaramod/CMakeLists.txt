@@ -61,6 +61,9 @@ if(NOT YARAMOD_LOCAL_DIR)
 	set(_YARAMOD_PATCH PATCH_COMMAND ${_yaramod_patch_cmd})
 endif()
 
+# ccache/sccache, when this build has one. See retdec_compiler_launcher_args.
+retdec_compiler_launcher_args(_YARAMOD_LAUNCHER_ARGS)
+
 ExternalProject_Add(yaramod-project
 	SOURCE_DIR ${YARAMOD_SOURCE_DIR}
 	URL ${_YARAMOD_URL}
@@ -70,6 +73,7 @@ ExternalProject_Add(yaramod-project
 	${_YARAMOD_PATCH}
 	CMAKE_ARGS
 		-DCMAKE_INSTALL_PREFIX=${YARAMOD_INSTALL_DIR}
+		${_YARAMOD_LAUNCHER_ARGS}
 		-DCMAKE_POLICY_VERSION_MINIMUM=3.5
 		-DCMAKE_BUILD_TYPE=${RETDEC_EP_CMAKE_BUILD_TYPE}
 		-DCMAKE_CXX_FLAGS_RELEASE=${CMAKE_CXX_FLAGS_RELEASE}

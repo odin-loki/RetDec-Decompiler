@@ -60,6 +60,9 @@ else()
 	set(_CAPSTONE_URL "${CAPSTONE_URL}")
 endif()
 
+# ccache/sccache, when this build has one. See retdec_compiler_launcher_args.
+retdec_compiler_launcher_args(_CAPSTONE_LAUNCHER_ARGS)
+
 ExternalProject_Add(capstone-project
 	SOURCE_DIR ${CAPSTONE_SOURCE_DIR}
 	URL ${_CAPSTONE_URL}
@@ -68,6 +71,7 @@ ExternalProject_Add(capstone-project
 	DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 	CMAKE_ARGS
 		-DCMAKE_INSTALL_PREFIX=${CAPSTONE_INSTALL_DIR}
+		${_CAPSTONE_LAUNCHER_ARGS}
 		-DCMAKE_POLICY_VERSION_MINIMUM=3.5
 		# This does not work on MSVC, but may be useful on Linux.
 		-DCMAKE_BUILD_TYPE=${RETDEC_EP_CMAKE_BUILD_TYPE}

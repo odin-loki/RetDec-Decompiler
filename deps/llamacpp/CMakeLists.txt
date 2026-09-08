@@ -31,6 +31,9 @@ if(RETDEC_NEURAL_GPU_OFFLOAD)
 		${LLAMACPP_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}ggml-cuda${CMAKE_STATIC_LIBRARY_SUFFIX})
 endif()
 
+# ccache/sccache, when this build has one. See retdec_compiler_launcher_args.
+retdec_compiler_launcher_args(_LLAMACPP_LAUNCHER_ARGS)
+
 ExternalProject_Add(llamacpp-project
 	SOURCE_DIR ${LLAMACPP_SOURCE_DIR}
 	URL ${_LLAMACPP_URL}
@@ -38,6 +41,7 @@ ExternalProject_Add(llamacpp-project
 	DOWNLOAD_NAME llamacpp.zip
 	DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 	CMAKE_ARGS
+		${_LLAMACPP_LAUNCHER_ARGS}
 		-DCMAKE_INSTALL_PREFIX=${LLAMACPP_INSTALL_DIR}
 		-DCMAKE_BUILD_TYPE=${RETDEC_EP_CMAKE_BUILD_TYPE}
 		-DCMAKE_POSITION_INDEPENDENT_CODE=ON

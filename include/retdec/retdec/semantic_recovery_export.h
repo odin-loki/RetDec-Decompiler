@@ -67,7 +67,12 @@ void exportSemanticRecovery(config::Config& config, const SemanticDetectionMap& 
 /// unit: libc headers for undeclared libc calls, extra-arity wrappers,
 /// temp injects, and weak link stubs plus `main` when the recovered C has
 /// none. Empty outputCPath is a no-op. Does not overwrite the original .c.
+/// Writes the .h/_stubs.c/.buildable.c sidecars for a decompiled C file.
+///
+/// Prefer the config overload: it refuses when the output is one of the
+/// machine-readable formats, whose file is not C at all.
 void maybeWriteBuildableSidecars(const std::string& outputCPath, const std::string& cSource);
+void maybeWriteBuildableSidecars(const config::Config& config, const std::string& cSource);
 
 } // namespace analysis
 } // namespace retdec

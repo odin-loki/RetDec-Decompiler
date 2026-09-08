@@ -46,6 +46,9 @@ else()
 	set(_GOOGLETEST_URL "${GOOGLETEST_URL}")
 endif()
 
+# ccache/sccache, when this build has one. See retdec_compiler_launcher_args.
+retdec_compiler_launcher_args(_GTEST_LAUNCHER_ARGS)
+
 ExternalProject_Add(googletest
 	SOURCE_DIR ${GOOGLETEST_SOURCE_DIR}
 	URL ${_GOOGLETEST_URL}
@@ -54,6 +57,7 @@ ExternalProject_Add(googletest
 	DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 	CMAKE_ARGS
 		-DCMAKE_INSTALL_PREFIX=${GOOGLETEST_INSTALL_DIR}
+		${_GTEST_LAUNCHER_ARGS}
 		-DCMAKE_POLICY_VERSION_MINIMUM=3.5
 		-DCMAKE_BUILD_TYPE=${RETDEC_EP_CMAKE_BUILD_TYPE}
 		# Without this, googletest's CMakeLists.txt replaces "/MD" (dynamic run-time) with "-MT" (static runtime).

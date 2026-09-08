@@ -1110,7 +1110,7 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 					{
 						cSource = *outString;
 					}
-					analysis::maybeWriteBuildableSidecars(config.parameters.getOutputFile(), cSource);
+					analysis::maybeWriteBuildableSidecars(config, cSource);
 				}
 			}
 
