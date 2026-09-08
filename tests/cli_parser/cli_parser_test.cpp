@@ -86,32 +86,80 @@ TEST(PeReaderTest, RejectsMissingMZSignature)
 	EXPECT_FALSE(pe.open(buf.data(), buf.size()));
 }
 
-TEST(PeReaderTest, DetectsNonCLIAssembly)
+// A structurally valid PE32 whose COM descriptor data directory is empty --
+// an ordinary native executable. Used to check that PeReader recognises the
+// absence of a CLI header rather than failing for some unrelated reason.
+static std::vector<uint8_t> buildNativePeWithoutCliDirectory()
 {
-	// Build a minimal PE with no CLI directory
-	std::vector<uint8_t> buf(512, 0);
-	// MZ signature
+	constexpr size_t kPeOff = 0x80;
+	constexpr size_t kOptOff = kPeOff + 4 + 20;
+	constexpr size_t kOptSize = 224;
+	constexpr size_t kSectOff = kOptOff + kOptSize;
+	constexpr size_t kSectionRaw = 0x200;
+	constexpr uint32_t kSectionRva = 0x2000;
+
+	std::vector<uint8_t> buf(kSectionRaw, 0);
+	auto put16 = [&buf](size_t off, uint16_t v) {
+		buf[off] = v & 0xFF;
+		buf[off + 1] = (v >> 8) & 0xFF;
+	};
+	auto put32 = [&buf](size_t off, uint32_t v) {
+		buf[off + 0] = v & 0xFF;
+		buf[off + 1] = (v >> 8) & 0xFF;
+		buf[off + 2] = (v >> 16) & 0xFF;
+		buf[off + 3] = (v >> 24) & 0xFF;
+	};
+
 	buf[0] = 'M';
 	buf[1] = 'Z';
-	// PE offset at 0x3C
+	put32(0x3C, kPeOff);
+	put32(kPeOff, 0x00004550u); // "PE\0\0"
+
+	put16(kPeOff + 4 + 0, 0x014C);    // Machine = i386
+	put16(kPeOff + 4 + 2, 1);         // NumberOfSections
+	put16(kPeOff + 4 + 16, kOptSize); // SizeOfOptionalHeader
+
+	put16(kOptOff, 0x010B); // PE32
+	// Data directory 14 (COM descriptor) is left zero: this is the point.
+
+	std::memcpy(&buf[kSectOff], ".text\0\0", 7);
+	put32(kSectOff + 12, kSectionRva);
+	put32(kSectOff + 20, static_cast<uint32_t>(kSectionRaw));
+	return buf;
+}
+
+TEST(PeReaderTest, DetectsNonCLIAssembly)
+{
+	// The fixture this used to build had no optional header at all, so open()
+	// failed as a malformed PE -- and the test discarded the answer with
+	// (void), asserting nothing either way. What the name claims is narrower
+	// and worth pinning: a well-formed native PE parses, and is reported as
+	// carrying no CLI header.
+	auto buf = buildNativePeWithoutCliDirectory();
+	PeReader pe;
+	ASSERT_TRUE(pe.open(buf.data(), buf.size()));
+	EXPECT_FALSE(pe.hasCLI());
+	EXPECT_EQ(pe.comDescriptorDir().rva, 0u);
+	EXPECT_EQ(pe.comDescriptorDir().size, 0u);
+}
+
+TEST(PeReaderTest, RejectsPeWithNoOptionalHeader)
+{
+	// The old DetectsNonCLIAssembly fixture, now asserting what it actually
+	// exercises: a PE whose COFF header declares no optional header cannot be
+	// parsed, so open() reports failure.
+	std::vector<uint8_t> buf(512, 0);
+	buf[0] = 'M';
+	buf[1] = 'Z';
 	buf[0x3C] = 0x40;
-	// PE signature
 	buf[0x40] = 'P';
 	buf[0x41] = 'E';
-	buf[0x42] = 0;
-	buf[0x43] = 0;
-	// COFF header: Machine (i386), 0 sections, OptHdrSize = 96 (PE32)
 	buf[0x44] = 0x4C;
 	buf[0x45] = 0x01; // Machine = i386
-	buf[0x46] = 0;
-	buf[0x47] = 0; // NumberOfSections = 0
 	buf[0x50] = 0;
-	buf[0x51] = 0; // OptHdrSize = 0
-	// No optional header — just test that parsing doesn't crash
+	buf[0x51] = 0; // SizeOfOptionalHeader = 0
 	PeReader pe;
-	// This may fail due to lack of optional header, which is expected
-	// The key test is it doesn't crash
-	(void)pe.open(buf.data(), buf.size());
+	EXPECT_FALSE(pe.open(buf.data(), buf.size()));
 }
 
 TEST(PeReaderTest, RvaToOffsetNoSections)

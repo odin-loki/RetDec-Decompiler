@@ -441,16 +441,23 @@ static void walkTpiStream(const std::vector<uint8_t>& tpi, DebugGroundTruth& out
 		{
 		case LF_STRUCTURE:
 		case LF_CLASS: {
-			if (body + 10 > recEnd) break;
+			// lfStructure: count(2) property(2) field(4) derived(4) vshape(4),
+			// then the numeric leaf and the name. That is sixteen bytes, and
+			// this skipped twelve -- so the numeric leaf was read out of
+			// vshape (always 0 here) and the name out of the size bytes.
+			// Every struct came back with byteSize 0 and an empty name.
+			if (body + 16 > recEnd) break;
 			uint16_t count = r16(body);
 			uint16_t prop = r16(body + 2);
 			uint32_t field = r32(body + 4); // LF_FIELDLIST type index
 			uint32_t derived = r32(body + 8);
+			uint32_t vshape = r32(body + 12);
 			(void)count;
 			(void)prop;
 			(void)derived;
 			(void)field;
-			const uint8_t* bp = body + 12; // skip count/prop/field/derived/vshape
+			(void)vshape;
+			const uint8_t* bp = body + 16;
 			uint64_t sz = readNumericLeaf(bp, recEnd);
 			dt.kind = DebugTypeKind::Struct;
 			dt.byteSize = static_cast<uint32_t>(sz);
@@ -467,10 +474,13 @@ static void walkTpiStream(const std::vector<uint8_t>& tpi, DebugGroundTruth& out
 			break;
 		}
 		case LF_ENUM: {
-			if (body + 14 > recEnd) break;
+			// lfEnum: count(2) property(2) utype(4) field(4), then the name --
+			// twelve bytes, not fourteen. Reading from fourteen took the name
+			// two characters in: "Colour" came back as "lour".
+			if (body + 12 > recEnd) break;
 			dt.kind = DebugTypeKind::Enum;
 			dt.baseTypeId = r32(body + 4);
-			const uint8_t* bp = body + 14;
+			const uint8_t* bp = body + 12;
 			dt.name = readNullTermStr(bp, recEnd);
 			break;
 		}

@@ -278,13 +278,18 @@ TEST(PerformanceAsserter, AssertMaxMsPassesForFastFn)
 
 TEST(PerformanceAsserter, AssertMaxMsFailsForSlowFn)
 {
-	// Force slow assertion mode to avoid noise
+	// Soft mode only suppresses the stderr message; the return value is the
+	// same either way.
 	setenv("RETDEC_SOFT_PERF_ASSERT", "1", 1);
 	bool ok = PerformanceAsserter::assertMaxMs(
 		[] { std::this_thread::sleep_for(std::chrono::milliseconds(50)); }, 1.0, "slow");
-	// ok may be true or false depending on timing; just ensure no crash
-	(void)ok;
 	unsetenv("RETDEC_SOFT_PERF_ASSERT");
+	// The old comment claimed this was timing-dependent and dropped the
+	// answer, which left assertMaxMs unpinned in the direction that matters:
+	// together with AssertMaxMsPassesForFastFn above, a function that returned
+	// true unconditionally satisfied both. sleep_for sleeps at least its
+	// argument, so 50 ms against a 1 ms budget cannot pass.
+	EXPECT_FALSE(ok);
 }
 
 TEST(PerformanceAsserter, P50LtP95)

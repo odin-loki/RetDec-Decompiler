@@ -343,18 +343,24 @@ void ItaniumRttiReconstructor::scanVtables(
 			}
 
 			// Check if any knownTiVtables_ is reachable from tiPtr.
-			bool tiOk = knownTiVtables_.empty(); // relaxed if no markers found
+			//
+			// This verdict used to be computed and then never read, so pass 1
+			// -- the whole point of which is to collect the __cxxabiv1 vtable
+			// pointers a genuine type_info starts with -- constrained nothing,
+			// and any [small integer][pointer into data] pair in a data
+			// section was accepted as a vtable header. It gates acceptance
+			// now. The empty case stays relaxed: a stripped binary has no
+			// markers to find, and the slot validation below still applies.
+			bool tiOk = knownTiVtables_.empty();
 			if (!tiOk)
 			{
 				// The type_info object at tiPtr starts with [vtable_ptr_of_ti_class].
-				uint64_t tiVtPtr = view.readPtr(tiPtr);
-				if (knownTiVtables_.count(tiVtPtr)) tiOk = true;
-				// Also check tiPtr+ps might be the vtable ptr (for subclasses).
-				if (!tiOk)
-				{
-					tiVtPtr = view.readPtr(tiPtr);
-					tiOk = knownTiVtables_.count(tiVtPtr) != 0;
-				}
+				tiOk = knownTiVtables_.count(view.readPtr(tiPtr)) != 0;
+			}
+			if (!tiOk)
+			{
+				p += ps;
+				continue;
 			}
 
 			// Validate at least one executable slot.

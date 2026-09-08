@@ -342,6 +342,8 @@ struct Parser
 {
 	const std::string& src;
 	size_t pos = 0;
+	/// Cleared by the first required token that was not there; see expect().
+	bool wellFormed = true;
 
 	char peek() const
 	{
@@ -358,7 +360,10 @@ struct Parser
 			++pos;
 	}
 
-	bool expect(char c)
+	/// Consume @p c if it is next. Absence is legitimate here -- this is the
+	/// probe for the comma that ends a list, and for an empty {} or [] -- so
+	/// it does not touch @c wellFormed.
+	bool accept(char c)
 	{
 		skipWS();
 		if (peek() == c)
@@ -366,6 +371,20 @@ struct Parser
 			++pos;
 			return true;
 		}
+		return false;
+	}
+
+	/// Consume @p c, which the grammar requires at this point.
+	///
+	/// Every call site used to discard this result, and nothing here throws,
+	/// so a stream that was not JSON at all -- "{not valid json!!!", "", plain
+	/// prose -- parsed as an empty object and deserialiseModule reported
+	/// success with no error, against its own documented contract. The
+	/// verdict is recorded instead, and read once at the top level.
+	bool expect(char c)
+	{
+		if (accept(c)) return true;
+		wellFormed = false;
 		return false;
 	}
 
@@ -454,14 +473,14 @@ struct Parser
 	{
 		expect('{');
 		skipWS();
-		if (expect('}')) return; // empty object
+		if (accept('}')) return; // empty object
 		while (true)
 		{
 			skipValue(); // key
 			expect(':');
 			skipValue(); // val
 			skipWS();
-			if (!expect(',')) break;
+			if (!accept(',')) break;
 			skipWS();
 		}
 		expect('}'); // consume closing brace
@@ -471,12 +490,12 @@ struct Parser
 	{
 		expect('[');
 		skipWS();
-		if (expect(']')) return; // empty array
+		if (accept(']')) return; // empty array
 		while (true)
 		{
 			skipValue();
 			skipWS();
-			if (!expect(',')) break;
+			if (!accept(',')) break;
 			skipWS();
 		}
 		expect(']'); // consume closing bracket
@@ -496,7 +515,7 @@ struct Parser
 			expect(':');
 			handler(key);
 			skipWS();
-			if (!expect(',')) break;
+			if (!accept(',')) break;
 			skipWS();
 		}
 		expect('}');
@@ -513,7 +532,7 @@ struct Parser
 		{
 			element();
 			skipWS();
-			if (!expect(',')) break;
+			if (!accept(',')) break;
 			skipWS();
 		}
 		expect(']');
@@ -714,7 +733,12 @@ ParseResult deserialiseModule(const std::string& src)
 				p.skipValue();
 			}
 		});
-		res.ok = true;
+		// The parser records rather than throws, so the verdict is read here.
+		// Reporting success unconditionally is how deserialiseModule came to
+		// answer ok=true for the empty string and for plain prose, handing the
+		// caller an empty BcModule that looked like a successful parse.
+		res.ok = p.wellFormed;
+		if (!res.ok) res.error = "Parse error: input is not a well-formed bcModule JSON object";
 	}
 	catch (const std::exception& e)
 	{

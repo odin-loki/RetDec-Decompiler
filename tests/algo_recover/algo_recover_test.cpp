@@ -1564,19 +1564,57 @@ TEST(IdiomDetectorTest, NeverAssignsFibonacciLcsKnapsack)
 
 TEST(AlgorithmDetectorTest, IteratorAnnotationAddedToHighTier)
 {
+	// The three-instruction fixture this used to build never got past
+	// AlgorithmDetector's preflight, which requires five instructions, so
+	// detect() returned a default-constructed result and the guarded
+	// assertion -- the whole body -- never ran. The op mix is what
+	// hasBeginEndPair looks for (Load + Add + Compare + a back edge), so it is
+	// kept and simply made long enough to be analysed at all.
 	AlgorithmDetector det;
 	auto fn = makeFunc(
 		"iter_annotate",
 		{
 			ssa::IrInstr::Op::Load,
 			ssa::IrInstr::Op::Add,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Add,
+			ssa::IrInstr::Op::Compare,
 			ssa::IrInstr::Op::Compare,
 		},
 		1);
 	addBackEdge(*fn);
 	addPhi(*fn);
 	auto r = det.detect(*fn);
-	// If it detects accumulate at high tier, the range annotation should be appended.
-	if (r.tier == EmissionTier::High && r.kind == AlgorithmKind::Accumulate)
-		EXPECT_NE(r.emittedForm.find("std::"), std::string::npos);
+
+	ASSERT_EQ(AlgorithmKind::Accumulate, r.kind);
+	ASSERT_EQ(EmissionTier::High, r.tier);
+	EXPECT_NE(r.emittedForm.find("std::accumulate"), std::string::npos);
+	// The range annotation is the part this test is named for.
+	EXPECT_NE(r.emittedForm.find("// range:"), std::string::npos) << r.emittedForm;
+}
+
+TEST(AlgorithmDetectorTest, NoIteratorAnnotationWithoutABeginEndPair)
+{
+	// Same length, but no Compare -- hasBeginEndPair needs one, so the
+	// annotation must not appear. Without this the test above would pass for a
+	// detector that appended the annotation unconditionally.
+	AlgorithmDetector det;
+	auto fn = makeFunc(
+		"acc_no_iter",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Add,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Add,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Add,
+		},
+		1);
+	addBackEdge(*fn);
+	addPhi(*fn);
+	auto r = det.detect(*fn);
+
+	ASSERT_EQ(AlgorithmKind::Accumulate, r.kind);
+	ASSERT_EQ(EmissionTier::High, r.tier);
+	EXPECT_EQ(r.emittedForm.find("// range:"), std::string::npos) << r.emittedForm;
 }

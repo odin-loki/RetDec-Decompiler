@@ -576,9 +576,24 @@ TEST_F(DispatcherTest, BatchProcessing)
 	EXPECT_GE(count, 2u); // at least Itanium + MSVC
 }
 
+// The three tests below iterate the constraints the dispatcher emitted. Two of
+// them used "_Z3foov" -- `void foo()`, which has no parameter and no return
+// type to constrain -- so the list was empty, the loop body never executed,
+// and their only assertion never ran: ConstraintVmaIsSet had never seen a vma
+// and ConfidenceIsOne had never seen a confidence. They use a symbol that
+// yields constraints now, and each pins the fixture before reading it.
+
+TEST_F(DispatcherTest, EmitsNoConstraintsForAVoidNullarySymbol)
+{
+	// Why the two below cannot use this symbol.
+	disp.process("_Z3foov", 0x1000, mgr);
+	EXPECT_TRUE(mgr.constraints.empty());
+}
+
 TEST_F(DispatcherTest, ConstraintVmaIsSet)
 {
-	disp.process("_Z3foov", 0xDEADBEEF, mgr);
+	disp.process("?foo@@YAHXZ", 0xDEADBEEF, mgr);
+	ASSERT_FALSE(mgr.constraints.empty());
 	for (auto& c: mgr.constraints)
 	{
 		EXPECT_EQ(c.symbolVma, 0xDEADBEEFull);
@@ -588,6 +603,7 @@ TEST_F(DispatcherTest, ConstraintVmaIsSet)
 TEST_F(DispatcherTest, SourceSymbolInConstraint)
 {
 	disp.process("?foo@@YAHXZ", 0x100, mgr);
+	ASSERT_FALSE(mgr.constraints.empty());
 	for (auto& c: mgr.constraints)
 	{
 		EXPECT_EQ(c.sourceSymbol, "?foo@@YAHXZ");
@@ -596,7 +612,8 @@ TEST_F(DispatcherTest, SourceSymbolInConstraint)
 
 TEST_F(DispatcherTest, ConfidenceIsOne)
 {
-	disp.process("_Z3foov", 0x100, mgr);
+	disp.process("?foo@@YAHXZ", 0x100, mgr);
+	ASSERT_FALSE(mgr.constraints.empty());
 	for (auto& c: mgr.constraints)
 	{
 		EXPECT_FLOAT_EQ(c.confidence, 1.0f);

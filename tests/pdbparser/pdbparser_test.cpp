@@ -129,17 +129,90 @@ TEST(PdbFile, ATruncatedSignatureIsRejected)
 	EXPECT_EQ(PDB_STATE_INVALID_FILE, loadBytes(buf));
 }
 
+// The smallest MSF 7.00 file PDBFile::load_pdb_file accepts.
+//
+// LoadingTwiceReportsAlreadyLoaded used to feed the loader 512 bytes of 0x41 --
+// not a PDB -- and put its only assertion behind `if (first == PDB_STATE_OK)`,
+// so the branch was never entered and the second load was never tested at all.
+//
+// Five 512-byte pages: superblock, free page map, one page of stream data, the
+// stream directory, and the page listing the directory's pages. Two streams:
+// the old-directory stream, which is empty, and the PDB info stream, which the
+// loader dereferences after a successful load.
+static std::vector<uint8_t> minimalPdb700()
+{
+	constexpr uint32_t kPage = 512;
+	constexpr uint32_t kPages = 5;
+	constexpr uint32_t kInfoPage = 2;
+	constexpr uint32_t kDirPage = 3;
+	constexpr uint32_t kDirIndexPage = 4;
+
+	std::vector<uint8_t> f(static_cast<std::size_t>(kPage) * kPages, 0);
+	auto put32 = [&f](std::size_t off, uint32_t v) {
+		f[off + 0] = static_cast<uint8_t>(v);
+		f[off + 1] = static_cast<uint8_t>(v >> 8);
+		f[off + 2] = static_cast<uint8_t>(v >> 16);
+		f[off + 3] = static_cast<uint8_t>(v >> 24);
+	};
+
+	// Superblock: the signature PDB_SIGNATURE_700 then the six header dwords.
+	static const char kSig[] = "Microsoft C/C++ MSF 7.00\r\n\x1a\x44\x53\x00\x00\x00";
+	std::memcpy(f.data(), kSig, 32);
+	put32(32, kPage);         // dBytesPerPage
+	put32(36, 1);             // dFlagPage
+	put32(40, kPages);        // dNumPages -- must match the file size exactly
+	put32(44, 4 * 4);         // dRootSize: numStreams + two sizes + one page
+	put32(48, 0);             // dReserved
+	put32(52, kDirIndexPage); // dRootIndexesPage
+
+	// The page listing the directory's own pages.
+	put32(static_cast<std::size_t>(kDirIndexPage) * kPage, kDirPage);
+
+	// The directory: [numStreams][size0][size1][page of stream 1].
+	const std::size_t dir = static_cast<std::size_t>(kDirPage) * kPage;
+	put32(dir + 0, 2);  // two streams
+	put32(dir + 4, 0);  // stream 0 (old directory) is empty
+	put32(dir + 8, 28); // stream 1 (PDB info) occupies one page
+	put32(dir + 12, kInfoPage);
+
+	// PDB info stream: version, signature, age, and a GUID.
+	const std::size_t info = static_cast<std::size_t>(kInfoPage) * kPage;
+	put32(info + 0, 20000404); // VC70
+	put32(info + 4, 0);        // signature
+	put32(info + 8, 1);        // age
+	for (int i = 0; i < 16; ++i)
+		f[info + 12 + static_cast<std::size_t>(i)] = static_cast<uint8_t>(i);
+
+	return f;
+}
+
+TEST(PdbFile, MinimalFileLoads)
+{
+	// Pins the fixture the test below depends on: if this stops loading, that
+	// test must fail rather than quietly stop testing anything.
+	TempFile f(minimalPdb700());
+	PDBFile pdb;
+	EXPECT_EQ(PDB_STATE_OK, pdb.load_pdb_file(f.path()));
+}
+
 TEST(PdbFile, LoadingTwiceReportsAlreadyLoaded)
 {
+	TempFile f(minimalPdb700());
+	PDBFile pdb;
+	ASSERT_EQ(PDB_STATE_OK, pdb.load_pdb_file(f.path()));
+	EXPECT_EQ(PDB_STATE_ALREADY_LOADED, pdb.load_pdb_file(f.path()));
+}
+
+TEST(PdbFile, ReloadingARefusedFileRetriesRatherThanReportingAlreadyLoaded)
+{
+	// The other half of the state machine: a load that failed must not leave
+	// the object looking loaded.
 	std::vector<uint8_t> junk(512, 0x41);
 	TempFile f(junk);
 	PDBFile pdb;
 	const PDBFileState first = pdb.load_pdb_file(f.path());
-	// Whatever the first attempt decided, a second must not repeat the work.
-	if (first == PDB_STATE_OK)
-	{
-		EXPECT_EQ(PDB_STATE_ALREADY_LOADED, pdb.load_pdb_file(f.path()));
-	}
+	ASSERT_NE(PDB_STATE_OK, first);
+	EXPECT_EQ(first, pdb.load_pdb_file(f.path()));
 }
 
 // ─── initialize() on files that do not parse ─────────────────────────────────

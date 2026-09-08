@@ -627,9 +627,32 @@ TEST(BcJson, RoundTripWithClass)
 
 TEST(BcJson, DeserialiseInvalidJson)
 {
+	// This used to bind the result, never read it, and SUCCEED(). It could not
+	// tell a parser that rejects malformed input from one that silently hands
+	// back a half-built module -- and the parser was the second: it answered
+	// ok=true, with no error, for this string and for the empty one.
 	auto res = deserialiseModule("{not valid json!!!");
-	// Parser either fails or returns partial — should not crash.
-	SUCCEED(); // reaching here is the test
+	EXPECT_FALSE(res.ok);
+	EXPECT_FALSE(res.error.empty());
+}
+
+TEST(BcJson, DeserialiseRejectsInputThatIsNotJson)
+{
+	for (const char* input: {"", "not json at all", "[]", "42", "\"a string\""})
+	{
+		auto res = deserialiseModule(input);
+		EXPECT_FALSE(res.ok) << "accepted: " << input;
+		EXPECT_FALSE(res.error.empty()) << "no diagnostic for: " << input;
+	}
+}
+
+TEST(BcJson, DeserialiseAcceptsAnEmptyObject)
+{
+	// An empty object is well-formed JSON and a valid, if empty, module: the
+	// rejection above must not be "anything without classes is an error".
+	auto res = deserialiseModule("{}");
+	EXPECT_TRUE(res.ok) << res.error;
+	EXPECT_TRUE(res.error.empty());
 }
 
 TEST(BcJson, RoundTripStringPool)

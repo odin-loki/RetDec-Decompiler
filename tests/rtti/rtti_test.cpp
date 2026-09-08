@@ -76,6 +76,23 @@ public:
 		return vma;
 	}
 
+	/// Allocate `size` bytes starting on a pointer-size boundary.
+	///
+	/// Vtables and type_info objects are pointer-aligned in every real
+	/// toolchain, and the reconstructor's scan steps a pointer at a time, so a
+	/// fixture that packs them at arbitrary offsets is not describing anything
+	/// the scanner is meant to find. That is what left
+	/// ItaniumBinaryFactory's vtable headers on odd addresses -- a ten-byte
+	/// name string shifted everything after it -- and made
+	/// Reconstruct_findsBothClasses find nothing at all.
+	uint64_t allocDataAligned(std::size_t size, uint8_t fill = 0)
+	{
+		const std::size_t ps = is64bit_ ? 8u : 4u;
+		while ((execBuf_.size() + dataBuf_.size()) % ps != 0)
+			dataBuf_.push_back(0);
+		return allocData(size, fill);
+	}
+
 	/// Reserve room and return the current data VMA without advancing.
 	uint64_t dataVma() const
 	{
@@ -147,11 +164,23 @@ public:
 		data.size = dataBuf_.size();
 		data.executable = false;
 		data.readable = true;
-		data.writable = true;
+		data.writable = dataWritable_;
 		data.data = combined_.data() + execBuf_.size();
 
 		view.sections = {exec, data};
 		return view;
+	}
+
+	/// Emit the data section read-only, the way .rodata and .data.rel.ro are.
+	///
+	/// discoverTiVtables only accepts a __cxxabiv1 vtable pointer that lands in
+	/// a read-only section -- correctly, since that is where a linker puts
+	/// vtables -- so a writable data section can never populate
+	/// knownTiVtables_, and the strict half of scanVtables cannot be reached
+	/// with the default layout.
+	void setDataReadOnly()
+	{
+		dataWritable_ = false;
 	}
 
 	uint32_t ps() const
@@ -165,6 +194,7 @@ public:
 
 private:
 	bool is64bit_;
+	bool dataWritable_ = true;
 	std::vector<uint8_t> execBuf_;
 	std::vector<uint8_t> dataBuf_;
 	std::vector<uint8_t> combined_; // must outlive BinaryView
@@ -458,9 +488,9 @@ struct ItaniumBinaryFactory
 		// ── typeinfo vtable (the vtable of the __cxxabiv1 class) ──────────────
 		// This is what knownTiVtables_ should contain.
 		// We place a fake "type_info vtable" in data, storing its own name.
-		uint64_t tiVtableHdrVma = b.allocData(2 * ps); // [ott][ti-ptr-placeholder]
-		tiVtablePtr = tiVtableHdrVma + 2 * ps;         // first slot of ti vtable
-		b.allocData(ps);                               // one slot
+		uint64_t tiVtableHdrVma = b.allocDataAligned(2 * ps); // [ott][ti-ptr-placeholder]
+		tiVtablePtr = tiVtableHdrVma + 2 * ps;                // first slot of ti vtable
+		b.allocData(ps);                                      // one slot
 
 		// ── Base class type_info ──────────────────────────────────────────────
 		// _ZTI4Base: [vtable-ptr-of-ti][name-ptr]
@@ -468,7 +498,7 @@ struct ItaniumBinaryFactory
 		std::vector<uint8_t> baseName = {'4', 'B', 'a', 's', 'e', 0};
 		b.writeAt(baseTiNameVma, baseName);
 
-		baseTiVma = b.allocData(2 * ps);
+		baseTiVma = b.allocDataAligned(2 * ps);
 		b.writePtrAt(baseTiVma, tiVtablePtr);
 		b.writePtrAt(baseTiVma + ps, baseTiNameVma);
 
@@ -480,14 +510,14 @@ struct ItaniumBinaryFactory
 			std::vector<uint8_t> derivedName = {'7', 'D', 'e', 'r', 'i', 'v', 'e', 'd', 0};
 			b.writeAt(derivedTiNameVma, derivedName);
 
-			derivedTiVma = b.allocData(3 * ps);
+			derivedTiVma = b.allocDataAligned(3 * ps);
 			b.writePtrAt(derivedTiVma, tiVtablePtr);
 			b.writePtrAt(derivedTiVma + ps, derivedTiNameVma);
 			b.writePtrAt(derivedTiVma + 2 * ps, baseTiVma);
 		}
 
 		// ── Base vtable: [ott=0][ti-ptr=baseTiVma][func1][func2] ─────────────
-		baseVtHdrVma = b.allocData(2 * ps + 2 * ps);
+		baseVtHdrVma = b.allocDataAligned(2 * ps + 2 * ps);
 		b.writePtrAt(baseVtHdrVma, 0); // offset-to-top = 0
 		b.writePtrAt(baseVtHdrVma + ps, baseTiVma);
 		b.writePtrAt(baseVtHdrVma + 2 * ps, func1Vma);
@@ -496,7 +526,7 @@ struct ItaniumBinaryFactory
 		if (si)
 		{
 			// ── Derived vtable: [ott=0][ti-ptr=derivedTiVma][func1][func2] ────
-			derivedVtHdrVma = b.allocData(4 * ps);
+			derivedVtHdrVma = b.allocDataAligned(4 * ps);
 			b.writePtrAt(derivedVtHdrVma, 0);
 			b.writePtrAt(derivedVtHdrVma + ps, derivedTiVma);
 			b.writePtrAt(derivedVtHdrVma + 2 * ps, func1Vma);
@@ -578,17 +608,24 @@ TEST(ItaniumReconstructor, Reconstruct_findsBothClasses)
 	f.build(/*si=*/true);
 	BinaryView view = f.b.build();
 
-	// Pre-populate knownTiVtables_ by using public reconstruct path.
+	// reconstruct() runs discoverTiVtables() + scanVtables(); the fixture is
+	// built so both passes have something real to find.
 	ItaniumRttiReconstructor rec;
 	ClassHierarchyGraph g;
-	// We need to inject the known TI vtable pointer.
-	// Since we can't easily inject into knownTiVtables_, we use reconstruct()
-	// which calls discoverTiVtables() + scanVtables().
-	rec.reconstruct(view, {f.func1Vma, f.func2Vma}, g);
+	ASSERT_TRUE(rec.reconstruct(view, {f.func1Vma, f.func2Vma}, g));
 
-	// The graph might be partially populated depending on discovery success.
-	// At minimum, reconstruct() should not crash.
-	// If it found vtables, check basic invariants.
+	// The loop below used to be the whole test. It iterated an empty map: the
+	// fixture's vtable headers were not pointer-aligned, so the scan -- which
+	// steps a pointer at a time, as it must -- never landed on one, and a test
+	// called findsBothClasses had never found a single one.
+	ASSERT_EQ(2u, g.classes.size());
+	ASSERT_NE(g.byName("Base"), nullptr);
+	ASSERT_NE(g.byName("Derived"), nullptr);
+	EXPECT_TRUE(g.byName("Base")->isPolymorphic);
+	EXPECT_TRUE(g.byName("Derived")->isPolymorphic);
+	EXPECT_FALSE(g.byName("Base")->vtables.empty());
+	EXPECT_FALSE(g.byName("Derived")->vtables.empty());
+
 	for (const auto& kv: g.classes)
 	{
 		EXPECT_FALSE(kv.first.empty());
@@ -626,6 +663,66 @@ TEST(ItaniumReconstructor, VtableSlots_parsedCorrectly)
 	}
 }
 
+// discoverTiVtables collects the vtable pointers a genuine __cxxabiv1
+// type_info begins with, and scanVtables is supposed to use them to reject
+// junk. It computed that verdict and never read it, so any
+// [small integer][pointer into data] pair in a data section was accepted as a
+// vtable header. This builds a binary where the markers ARE found, so the
+// strict path runs, and puts a decoy next to a real class.
+TEST(ItaniumReconstructor, KnownTypeInfoVtablesRejectVtableShapedJunk)
+{
+	FlatBinaryBuilder b;
+	b.setDataReadOnly(); // vtables live in .rodata / .data.rel.ro
+	const uint32_t ps = b.ps();
+	const uint64_t funcVma = b.allocExec(16);
+
+	// The __cxxabiv1 marker string discoverTiVtables looks for, and a
+	// type_info-shaped object naming it: [ti-class-vtable*][marker*].
+	const char kMarker[] = "N10__cxxabiv117__class_type_infoE";
+	uint64_t markerVma = b.allocData(sizeof(kMarker));
+	b.writeAt(markerVma, std::vector<uint8_t>(kMarker, kMarker + sizeof(kMarker)));
+
+	uint64_t tiClassVtableVma = b.allocDataAligned(2 * ps); // the vtable itself
+	uint64_t tiOfTiVma = b.allocDataAligned(2 * ps);
+	b.writePtrAt(tiOfTiVma, tiClassVtableVma);
+	b.writePtrAt(tiOfTiVma + ps, markerVma);
+
+	// A real class: its type_info starts with the ti-class vtable pointer.
+	uint64_t realNameVma = b.allocData(8);
+	b.writeAt(realNameVma, std::vector<uint8_t>{'4', 'R', 'e', 'a', 'l', 0});
+	uint64_t realTiVma = b.allocDataAligned(2 * ps);
+	b.writePtrAt(realTiVma, tiClassVtableVma);
+	b.writePtrAt(realTiVma + ps, realNameVma);
+
+	uint64_t realVtVma = b.allocDataAligned(3 * ps);
+	b.writePtrAt(realVtVma, 0);              // offset-to-top
+	b.writePtrAt(realVtVma + ps, realTiVma); // type_info
+	b.writePtrAt(realVtVma + 2 * ps, funcVma);
+
+	// A decoy with the same shape whose "type_info" starts with something
+	// that is not a known type_info vtable.
+	uint64_t decoyNameVma = b.allocData(8);
+	b.writeAt(decoyNameVma, std::vector<uint8_t>{'5', 'F', 'a', 'k', 'e', 'r', 0});
+	uint64_t decoyTiVma = b.allocDataAligned(2 * ps);
+	b.writePtrAt(decoyTiVma, markerVma); // not a ti-class vtable
+	b.writePtrAt(decoyTiVma + ps, decoyNameVma);
+
+	uint64_t decoyVtVma = b.allocDataAligned(3 * ps);
+	b.writePtrAt(decoyVtVma, 0);
+	b.writePtrAt(decoyVtVma + ps, decoyTiVma);
+	b.writePtrAt(decoyVtVma + 2 * ps, funcVma);
+
+	BinaryView view = b.build();
+	ItaniumRttiReconstructor rec;
+	ClassHierarchyGraph g;
+	ASSERT_TRUE(rec.reconstruct(view, {funcVma}, g));
+
+	// The markers were found, so the relaxed path is not in play.
+	EXPECT_TRUE(g.diagnostics.empty()) << (g.diagnostics.empty() ? "" : g.diagnostics[0]);
+	EXPECT_NE(g.byName("Real"), nullptr);
+	EXPECT_EQ(g.byName("Faker"), nullptr) << "the decoy vtable header was accepted";
+}
+
 TEST(ItaniumReconstructor, NoFalsePosOnEmptyBinary)
 {
 	FlatBinaryBuilder b;
@@ -635,9 +732,11 @@ TEST(ItaniumReconstructor, NoFalsePosOnEmptyBinary)
 
 	ItaniumRttiReconstructor rec;
 	ClassHierarchyGraph g;
-	rec.reconstruct(view, {}, g);
-	// An empty / all-zero binary should not produce spurious class entries.
-	// (Some parsers might find zero-filled entries; at minimum no crash.)
+	// The property was stated in a comment and asserted nowhere, so a
+	// reconstructor that invented classes out of zero-filled memory -- exactly
+	// the false positive this is named for -- passed.
+	EXPECT_FALSE(rec.reconstruct(view, {}, g));
+	EXPECT_TRUE(g.classes.empty());
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -935,18 +1034,69 @@ TEST(MsvcReconstructor, Reconstruct_classIsPolymorphic)
 // 7. InheritanceEdge helpers
 // ════════════════════════════════════════════════════════════════════════════
 
+// These two used to default-construct an InheritanceEdge, assign `kind`, and
+// assert `kind` held what had just been assigned. No retdec code ran between
+// the write and the read, so what they tested was C++ struct assignment: they
+// would have passed with the whole rtti module deleted. The kind that matters
+// is the one parseVmiClassTypeInfo chooses from a __vmi_class_type_info's
+// __base_class_type_info flags, so that is what is built and read back.
+//
+// Layout (Itanium C++ ABI 2.9.5.6.2):
+//   [vtable*][name*][uint32 flags][uint32 base_count]
+//   base_info[i] = { type_info*, ptrdiff_t offset_flags }
+//   offset_flags bit 0 = virtual, bit 1 = public, >> 8 = byte offset
+static ClassHierarchyGraph parseVmiWithBaseFlags(int64_t baseOffsetFlags, std::string* derivedName)
+{
+	FlatBinaryBuilder b;
+	const uint32_t ps = b.ps();
+
+	uint64_t baseNameVma = b.allocData(8);
+	b.writeAt(baseNameVma, std::vector<uint8_t>{'4', 'B', 'a', 's', 'e', 0});
+	uint64_t baseTiVma = b.allocDataAligned(2 * ps);
+	b.writePtrAt(baseTiVma, 0);
+	b.writePtrAt(baseTiVma + ps, baseNameVma);
+
+	uint64_t derivedNameVma = b.allocData(10);
+	b.writeAt(derivedNameVma, std::vector<uint8_t>{'7', 'D', 'e', 'r', 'i', 'v', 'e', 'd', 0});
+
+	// [vtable*][name*][flags][base_count][base_ti*][offset_flags]
+	uint64_t derivedTiVma = b.allocDataAligned(2 * ps + 8 + 2 * ps);
+	b.writePtrAt(derivedTiVma, 0);
+	b.writePtrAt(derivedTiVma + ps, derivedNameVma);
+	b.writeAt(derivedTiVma + 2 * ps, uint32_t(0));     // flags
+	b.writeAt(derivedTiVma + 2 * ps + 4, uint32_t(1)); // base_count
+	b.writePtrAt(derivedTiVma + 2 * ps + 8, baseTiVma);
+	b.writePtrAt(derivedTiVma + 2 * ps + 8 + ps, static_cast<uint64_t>(baseOffsetFlags));
+
+	BinaryView view = b.build();
+	ItaniumRttiReconstructor rec;
+	ClassHierarchyGraph g;
+	*derivedName = rec.parseTypeInfo(view, derivedTiVma, g);
+	return g;
+}
+
 TEST(InheritanceEdge, VirtualKind)
 {
-	InheritanceEdge e;
-	e.kind = InheritanceKind::Virtual;
-	EXPECT_EQ(e.kind, InheritanceKind::Virtual);
+	std::string name;
+	// bit 0 set = virtual base, at byte offset 0x10.
+	ClassHierarchyGraph g = parseVmiWithBaseFlags((0x10 << 8) | 1, &name);
+	const ClassNode* derived = g.byName(name);
+	ASSERT_NE(derived, nullptr);
+	ASSERT_EQ(1u, derived->bases.size());
+	EXPECT_EQ(InheritanceKind::Virtual, derived->bases[0].kind);
+	EXPECT_EQ(0x10, derived->bases[0].byteOffset);
 }
 
 TEST(InheritanceEdge, DirectKind)
 {
-	InheritanceEdge e;
-	e.kind = InheritanceKind::Direct;
-	EXPECT_EQ(e.kind, InheritanceKind::Direct);
+	std::string name;
+	// bit 0 clear = non-virtual base; bit 1 (public) set, offset 8.
+	ClassHierarchyGraph g = parseVmiWithBaseFlags((0x08 << 8) | 2, &name);
+	const ClassNode* derived = g.byName(name);
+	ASSERT_NE(derived, nullptr);
+	ASSERT_EQ(1u, derived->bases.size());
+	EXPECT_EQ(InheritanceKind::Direct, derived->bases[0].kind);
+	EXPECT_EQ(0x08, derived->bases[0].byteOffset);
 }
 
 TEST(VtableInfo, DefaultSubVtableIdx)

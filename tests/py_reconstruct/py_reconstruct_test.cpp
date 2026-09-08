@@ -531,24 +531,73 @@ TEST(PyAstNodes, ExprCtxLoad)
 	EXPECT_EQ(ExprCtx::Load, e->ctx);
 }
 
-TEST(PyAstNodes, BoolOpAndOr)
+// PyAstNodes.BoolOpAndOr used to live here. It default-constructed a PyExpr,
+// assigned boolOp and values, and asserted that boolOp and values held what
+// had just been assigned -- no py_reconstruct code ran between the write and
+// the read, so it tested C++ struct assignment. Nothing in py_reconstruct sets
+// boolOp at all; the field is consumed by the emitter, and
+// tests/py_emitter/py_emitter_test.cpp's ExprEmitterTest.BoolOp_And and
+// BoolOp_Or already assert the text it produces. It is dropped rather than
+// re-stated here, where there is no producer to test against.
+
+// cmpOps, unlike boolOp, does have a producer: PyStackSimulator::buildCompare
+// maps a COMPARE_OP argument onto it. That is what this asserts now, instead
+// of asserting the value the test had just written into the node itself.
+TEST(PyStackSimulator, CompareOpSetsCmpOpFromArgument)
 {
-	auto e = std::make_shared<PyExpr>();
-	e->kind = PyExpr::Kind::BoolOp;
-	e->boolOp = BoolOp::And;
-	e->values = {makeName("a"), makeName("b")};
-	EXPECT_EQ(BoolOp::And, e->boolOp);
-	EXPECT_EQ(2u, e->values.size());
+	PythonVersion ver{3, 10, 0, ""};
+	struct Case
+	{
+		uint8_t arg;
+		CmpOp expected;
+	};
+	// The table in buildCompare, in order.
+	const Case cases[] = {
+		{0, CmpOp::Lt},
+		{1, CmpOp::LtE},
+		{2, CmpOp::Eq},
+		{3, CmpOp::NotEq},
+		{4, CmpOp::Gt},
+		{5, CmpOp::GtE},
+	};
+
+	for (const auto& c: cases)
+	{
+		// LOAD_FAST 0, LOAD_FAST 1, COMPARE_OP <arg>, RETURN_VALUE
+		auto code = makeSimpleCode(ver, {124, 0, 124, 1, 107, c.arg, 83, 0}, {}, {"a", "b"});
+
+		PyStackSimulator sim(code);
+		auto stmts = sim.simulate();
+
+		bool checked = false;
+		for (const auto& s: stmts)
+		{
+			if (s->kind != PyStmt::Kind::Return || !s->expr) continue;
+			ASSERT_EQ(PyExpr::Kind::Compare, s->expr->kind);
+			ASSERT_EQ(1u, s->expr->cmpOps.size());
+			EXPECT_EQ(c.expected, s->expr->cmpOps[0]) << "for COMPARE_OP arg " << int(c.arg);
+			checked = true;
+		}
+		EXPECT_TRUE(checked) << "no compare reached the return for arg " << int(c.arg);
+	}
 }
 
-TEST(PyAstNodes, CompareOps)
+TEST(PyStackSimulator, CompareOpFallsBackToEqualForAnUnknownArgument)
 {
-	auto e = std::make_shared<PyExpr>();
-	e->kind = PyExpr::Kind::Compare;
-	e->cmpOps = {CmpOp::Lt, CmpOp::LtE};
-	e->children = {makeName("a")};
-	e->values = {makeName("b"), makeName("c")};
-	EXPECT_EQ(2u, e->cmpOps.size());
-	EXPECT_EQ(CmpOp::Lt, e->cmpOps[0]);
-	EXPECT_EQ(CmpOp::LtE, e->cmpOps[1]);
+	PythonVersion ver{3, 10, 0, ""};
+	// 200 is past the end of the ten-entry table.
+	auto code = makeSimpleCode(ver, {124, 0, 124, 1, 107, 200, 83, 0}, {}, {"a", "b"});
+
+	PyStackSimulator sim(code);
+	auto stmts = sim.simulate();
+
+	bool checked = false;
+	for (const auto& s: stmts)
+	{
+		if (s->kind != PyStmt::Kind::Return || !s->expr) continue;
+		ASSERT_EQ(1u, s->expr->cmpOps.size());
+		EXPECT_EQ(CmpOp::Eq, s->expr->cmpOps[0]);
+		checked = true;
+	}
+	EXPECT_TRUE(checked);
 }

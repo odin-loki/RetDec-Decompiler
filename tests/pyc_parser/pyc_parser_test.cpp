@@ -224,11 +224,33 @@ TEST(PycMagic, UnknownMagicReturnsNullopt)
 
 TEST(PycMagic, DetectFromBuffer)
 {
-	uint8_t buf[4] = {0x95, 0x0D, 0x0D, 0x0A}; // magic 3477
-	// 3477 corresponds to some 3.10 bump; might be in table or not
-	// Just check the API doesn't crash
-	auto ver = detectVersion(buf, 4);
-	(void)ver;
+	// The old fixture used 0x0A0D0D95, which is not in the table, and then
+	// discarded the answer -- so the buffer overload could have returned
+	// nullopt for every magic and the test stayed green. Taken from the table
+	// instead, so the two overloads can be required to agree.
+	const uint32_t magic = magicForVersion(3, 10);
+	ASSERT_NE(0u, magic);
+	const uint8_t buf[4] = {
+		static_cast<uint8_t>(magic & 0xFF),
+		static_cast<uint8_t>((magic >> 8) & 0xFF),
+		static_cast<uint8_t>((magic >> 16) & 0xFF),
+		static_cast<uint8_t>((magic >> 24) & 0xFF)};
+
+	auto fromBuf = detectVersion(buf, 4);
+	auto fromInt = detectVersion(magic);
+	ASSERT_TRUE(fromBuf.has_value());
+	ASSERT_TRUE(fromInt.has_value());
+	EXPECT_EQ(fromBuf->major, fromInt->major);
+	EXPECT_EQ(fromBuf->minor, fromInt->minor);
+	EXPECT_EQ(3, fromBuf->major);
+	EXPECT_EQ(10, fromBuf->minor);
+}
+
+TEST(PycMagic, DetectFromBufferRejectsUnknownMagic)
+{
+	// Little-endian 0x0A0D0D95, which the table does not carry.
+	const uint8_t buf[4] = {0x95, 0x0D, 0x0D, 0x0A};
+	EXPECT_FALSE(detectVersion(buf, 4).has_value());
 }
 
 TEST(PycMagic, DetectFromBufferTooShort)
@@ -691,15 +713,36 @@ TEST(ExceptionTableDecoder, SimpleEntry)
 // A ULEB128 field whose continuation bits never clear drives the shift past
 // the width of the uint32_t result; the surplus groups must be consumed
 // without shifting.
-TEST(ExceptionTableDecoder, UnterminatedUleb128Run)
+//
+// This input decodes to nothing -- the run swallows the whole buffer, so the
+// three fields that would complete an entry are never read. The loop over the
+// result therefore never ran, and the assertion inside it never executed: the
+// test passed equally for a decoder that shifted out of range and for one
+// written `return {};`. Both halves are now stated.
+TEST(ExceptionTableDecoder, UnterminatedUleb128RunYieldsNoEntry)
 {
 	std::vector<uint8_t> table(24, 0xFF);
 	table.push_back(0x00);
 	auto result = decodeExceptionTable(table);
-	for (const auto& e: result)
-	{
-		EXPECT_GE(e.end, e.start);
-	}
+	EXPECT_TRUE(result.empty());
+}
+
+TEST(ExceptionTableDecoder, AnOverlongRunSaturatesRatherThanShiftingOut)
+{
+	// Ten continuation groups for `start` -- well past the five a uint32_t
+	// can hold -- then a terminator and three zero fields to complete the
+	// entry, so the decoded value is observable.
+	std::vector<uint8_t> table(10, 0xFF);
+	table.push_back(0x00); // terminates the run
+	table.push_back(0x00); // length
+	table.push_back(0x00); // target
+	table.push_back(0x00); // depth / lasti
+
+	auto result = decodeExceptionTable(table);
+	ASSERT_EQ(1u, result.size());
+	EXPECT_EQ(0xFFFFFFFFu, result[0].start);
+	EXPECT_GE(result[0].end, result[0].start);
+	EXPECT_EQ(0u, result[0].target);
 }
 
 TEST(ExceptionTableDecoder, Uleb128WideValueKeepsLowGroups)

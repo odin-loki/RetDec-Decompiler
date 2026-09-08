@@ -758,19 +758,41 @@ TEST(ExprCoalescerTest, ImmediateValueMaterialised)
 
 TEST(ExprCoalescerTest, UndefValueEmitsZero)
 {
+	// The comment this replaces was right that an Undef materialises only when
+	// referenced -- which is why the old body, which looked it up directly and
+	// then discarded the iterator with (void), contained no assertion at all
+	// and never once observed a zero. Referencing it is what the test's name
+	// is about, so the reference is now built.
 	ssa::SSAFunction fn("undef_test");
 	auto* blk = fn.addBlock("entry");
-	(void)blk;
 	auto* uval = fn.allocValue(ssa::ValueKind::Undef);
 
+	// t = undef + undef
+	auto* addI = fn.addInstr(blk->id, ssa::IrInstr::Op::Add);
+	auto* sum = fn.allocValue(ssa::ValueKind::VirtualReg);
+	addI->defValue = sum->id;
+	sum->defInstr = addI;
+	addI->uses.push_back(ssa::Use{uval->id, 0});
+	addI->uses.push_back(ssa::Use{uval->id, 1});
+
 	dce::DeadCodeResult dce;
+	dce.liveInstrs.insert(addI->id);
 	ExprCoalescer ec;
 	auto result = ec.run(fn, dce);
 
-	auto it = result.valueExprs.find(uval->id);
-	// Undef materialises lazily when referenced — may not appear until buildExpr.
-	// Just verify no crash.
-	(void)it;
+	// Nothing materialises the Undef on its own; it exists in the operand.
+	EXPECT_EQ(0u, result.valueExprs.count(uval->id));
+
+	auto it = result.valueExprs.find(sum->id);
+	ASSERT_NE(it, result.valueExprs.end());
+	ASSERT_NE(it->second, nullptr);
+	ASSERT_EQ(2u, it->second->children.size());
+	for (const auto& child: it->second->children)
+	{
+		ASSERT_NE(child, nullptr);
+		EXPECT_EQ(CExpr::Kind::Literal, child->kind);
+		EXPECT_EQ("0", child->literal);
+	}
 }
 
 // ─── Loop bodies that are a single statement ─────────────────────────────────
