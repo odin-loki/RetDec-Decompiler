@@ -6,10 +6,22 @@
 # on the named copy — that pattern is filename-derived detection.
 #
 # If retdec-decompiler is not built, or no corpus binaries are present,
-# exit 0 with a skip message (configure-only CI must not fail).
+# exit 0 with a skip message (configure-only CI must not fail) -- UNLESS
+# --strict, which turns both of those into failures.
+#
+# --strict exists because a skip-safe check reports a green status either way,
+# a `benchmark-integrity` workflow ran this on a tree with no build step at
+# all: no decompiler, and no corpus (the corpus is a build product;
+# `git ls-files tests/algorithm_recovery/corpus` returns nothing). So a check
+# published as "benchmark-integrity / rename-guard" passed on every pull
+# request without once comparing a named binary against a hash-named copy.
+# That workflow is gone; ctest-linux.yml and algorithm-recovery-nightly.yml
+# call this after a real build, and both pass --strict, so a skip there is
+# visible as red rather than green.
 #
 # Usage:
-#   bash scripts/ci/benchmark_rename_guard.sh [--decompiler PATH] [--limit N] [--timeout S]
+#   bash scripts/ci/benchmark_rename_guard.sh [--decompiler PATH] [--limit N]
+#                                             [--timeout S] [--strict]
 #
 # Env:
 #   RENAME_GUARD_LIMIT     default 5 (nightly may set 12+)
@@ -23,17 +35,23 @@ DEC=""
 LIMIT="${RENAME_GUARD_LIMIT:-5}"
 TIMEOUT="${RENAME_GUARD_TIMEOUT:-180}"
 WORKDIR="${RUNNER_TEMP:-/tmp}/retdec-rename-guard"
+STRICT=0
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--decompiler) DEC="$2"; shift 2 ;;
 		--limit) LIMIT="$2"; shift 2 ;;
 		--timeout) TIMEOUT="$2"; shift 2 ;;
+		--strict) STRICT=1; shift ;;
 		*) echo "Unknown arg: $1" >&2; exit 1 ;;
 	esac
 done
 
 skip() {
+	if [[ "${STRICT}" -eq 1 ]]; then
+		echo "benchmark_rename_guard: FAIL — $1 (--strict)" >&2
+		exit 1
+	fi
 	echo "benchmark_rename_guard: SKIP — $1"
 	exit 0
 }

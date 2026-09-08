@@ -2,16 +2,34 @@
 # benchmark_regression_gate.sh — Fail if quality metrics drop vs baseline
 # or mean_wall_s slows down by more than the threshold (Part 16.3).
 # Usage: bash scripts/benchmark_regression_gate.sh [--baseline FILE] [--current FILE]
+#                                                   [--require-measured]
+#
+# --require-measured turns "the baseline has a number for this key and the
+# current run does not" from a printed SKIP into a failure.
+#
+# Without it the gate passes vacuously whenever nothing was measured, which is
+# not a corner case: ci-smoke ran it on a tree with no cmake configure and no
+# build at all, so run_benchmarks.sh found no retdec-decompiler, wrote its
+# payload with "status": "skipped" and every metric null, and every key here
+# took the None branch. The step was called "Benchmark harness and regression
+# gate" and printed "Benchmark regression gate: PASS" on every push while
+# comparing nothing against a baseline that has real numbers in it
+# (syntax_valid_rate 1.0, mean_wall_s 1.492, mean_f1 0.056).
+#
+# Use it from any workflow that builds a decompiler. Without a build, do not
+# pass --gate at all.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASELINE="${ROOT}/results/baseline-2026-08.json"
 CURRENT=""
+REQUIRE_MEASURED=0
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--baseline) BASELINE="$2"; shift 2 ;;
 		--current) CURRENT="$2"; shift 2 ;;
+		--require-measured) REQUIRE_MEASURED=1; shift ;;
 		*) echo "Unknown arg: $1" >&2; exit 1 ;;
 	esac
 done
@@ -31,15 +49,23 @@ if [[ ! -f "${CURRENT}" ]]; then
 	exit 1
 fi
 
-python3 - "${BASELINE}" "${CURRENT}" <<'PY'
+python3 - "${BASELINE}" "${CURRENT}" "${REQUIRE_MEASURED}" <<'PY'
 import json, sys
 
 baseline_path, current_path = sys.argv[1:3]
+require_measured = sys.argv[3] == "1"
 baseline = json.load(open(baseline_path, encoding="utf-8"))
 current = json.load(open(current_path, encoding="utf-8"))
 thresholds = baseline.get("thresholds", {})
 base_m = baseline.get("metrics", {})
-cur_m = current.get("metrics", baseline.get("metrics", {}))
+# Not `current.get("metrics", baseline.get("metrics", {}))`. That default made
+# the BASELINE's numbers stand in as the current run's whenever a results file
+# had no metrics block, so every key compared the baseline against itself --
+# drop 0.0000, gate PASS -- and printed a figure taken from the baseline file
+# as though it had been measured on this build.
+cur_m = current.get("metrics", {})
+if not isinstance(cur_m, dict):
+    cur_m = {}
 
 def rate(deck, key):
     samples = deck.get("samples", [])
@@ -88,7 +114,13 @@ for section, keys in (
         if cval is None and isinstance(csec, dict):
             cval = csec.get(key)
         if cval is None:
-            print(f"{section}.{key}: SKIP (not measured)")
+            if require_measured:
+                failures.append(
+                    f"{section}.{key} was not measured, and the baseline has "
+                    f"{float(bval):.4f} for it")
+                print(f"{section}.{key}: NOT MEASURED (baseline={float(bval):.4f})")
+            else:
+                print(f"{section}.{key}: SKIP (not measured)")
             continue
         drop = float(bval) - float(cval)
         max_drop = float(thresholds.get(f"{key.replace('_rate', '')}_drop_max", thresholds.get("recompile_success_drop_max", 0.05)))
@@ -108,7 +140,13 @@ b_wall = lookup_mean_wall_s(baseline)
 c_wall = lookup_mean_wall_s(current)
 if b_wall is not None:
     if c_wall is None:
-        print("decompilebench.mean_wall_s: SKIP (not measured)")
+        if require_measured:
+            failures.append(
+                f"decompilebench.mean_wall_s was not measured, and the baseline "
+                f"has {float(b_wall):.4f} for it")
+            print(f"decompilebench.mean_wall_s: NOT MEASURED (baseline={float(b_wall):.4f})")
+        else:
+            print("decompilebench.mean_wall_s: SKIP (not measured)")
     else:
         b_wall = float(b_wall)
         c_wall = float(c_wall)

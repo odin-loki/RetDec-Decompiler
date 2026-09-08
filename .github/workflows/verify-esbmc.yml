@@ -40,6 +40,11 @@ on:
 permissions:
   contents: read
 
+env:
+  # The release the harnesses are written against. scripts/verify_esbmc.sh
+  # carries the same number as ESBMC_MIN_VERSION and refuses to run below it.
+  ESBMC_TAG: v8.5
+
 concurrency:
   group: verify-esbmc-${{ github.ref }}
   cancel-in-progress: true
@@ -63,25 +68,30 @@ jobs:
         run: ./scripts/verify_esbmc.sh --routing
 
   prove:
-    name: prove (${{ matrix.solver }})
+    name: prove
     runs-on: ubuntu-latest
     timeout-minutes: 60
     needs: syntax
-    strategy:
-      fail-fast: false
-      matrix:
-        # Two independent solvers: a proof that only one of them can discharge
-        # is worth knowing about.
-        solver: ['--z3', '--boolector']
     steps:
       - uses: actions/checkout@v4
 
+      # The tag, not `latest`, and the tag is in the cache key.
+      #
+      # This used to download releases/latest into a cache keyed on the constant
+      # `esbmc-release-v1`, so whichever build first populated the cache was
+      # reused indefinitely and an eviction would silently pull a different one.
+      # Every --unwind bound in tests/verification/ is a proof only because
+      # unwinding assertions are ON BY DEFAULT in this release -- there is no
+      # --unwinding-assertions flag to ask for -- so the version is part of the
+      # soundness argument. scripts/verify_esbmc.sh refuses to run below
+      # ESBMC_MIN_VERSION now, which is the same statement made where the
+      # proofs are.
       - name: Cache the ESBMC release build
         id: esbmc-cache
         uses: actions/cache@v4
         with:
           path: ~/.local/esbmc
-          key: esbmc-release-v1
+          key: esbmc-${{ env.ESBMC_TAG }}
 
       # ESBMC is not in the Ubuntu archive, so take the upstream release build.
       - name: Install ESBMC
@@ -89,7 +99,7 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsSL -o esbmc-linux.zip \
-            https://github.com/esbmc/esbmc/releases/latest/download/esbmc-linux.zip
+            "https://github.com/esbmc/esbmc/releases/download/${ESBMC_TAG}/esbmc-linux.zip"
           unzip -q esbmc-linux.zip
           mkdir -p ~/.local/esbmc
           cp -r release/* ~/.local/esbmc/
@@ -98,8 +108,55 @@ jobs:
       - name: Prove the bounds arithmetic
         env:
           ESBMC: /home/runner/.local/esbmc/bin/esbmc
-          SOLVER: ${{ matrix.solver }}
           TIMEOUT: 600
         run: |
           "$ESBMC" --version
           ./scripts/verify_esbmc.sh
+
+  # The second leg used to be `SOLVER: --boolector` against the same suite,
+  # described as "two independent solvers". It was not: scripts/verify_esbmc.sh
+  # lets each harness pin its own backend with `// ESBMC-SOLVER:` and that pin
+  # overrides SOLVER, and ten of the thirteen default harnesses are pinned -- so
+  # for 252 of the 272 proofs both legs invoked byte-identical esbmc commands,
+  # and one harness pins --cvc5, which neither leg ever ran.
+  #
+  # `--cross` is the mode that actually does what the matrix was describing: it
+  # runs every proof under z3 AND boolector, asks the pinned backend directly
+  # when the pin is outside that pair, and fails on disagreement -- including
+  # the case where both agree a property does NOT hold, which is a refutation
+  # rather than an agreement. It existed and no workflow called it.
+  #
+  # It is not on the push path because it is hours rather than minutes: three
+  # backend runs per proof against the main run's one.
+  cross:
+    name: cross-check both backends
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    needs: syntax
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache the ESBMC release build
+        id: esbmc-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/esbmc
+          key: esbmc-${{ env.ESBMC_TAG }}
+
+      - name: Install ESBMC
+        if: steps.esbmc-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -fsSL -o esbmc-linux.zip \
+            "https://github.com/esbmc/esbmc/releases/download/${ESBMC_TAG}/esbmc-linux.zip"
+          unzip -q esbmc-linux.zip
+          mkdir -p ~/.local/esbmc
+          cp -r release/* ~/.local/esbmc/
+          chmod +x ~/.local/esbmc/bin/esbmc
+
+      - name: Every proof under two backends
+        env:
+          ESBMC: /home/runner/.local/esbmc/bin/esbmc
+          TIMEOUT: 900
+        run: ./scripts/verify_esbmc.sh --cross

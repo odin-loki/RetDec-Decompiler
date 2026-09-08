@@ -42,6 +42,17 @@ bound is pinned in the harness with `// ESBMC-OPTIONS: --unwind N` and ESBMC's
 unwinding assertions — on by default in 8.5.0 — make exceeding it a failure
 rather than a silent truncation of the search.
 
+That default is part of the argument, not a detail of how the tool was
+installed, so it is checked rather than assumed.
+`scripts/verify_esbmc.sh` carries `ESBMC_MIN_VERSION` and refuses to run below
+it — there is no `--unwinding-assertions` flag to ask for, only
+`--no-unwinding-assertions` to turn the default off, which `--syntax` bans in a
+harness — and `.github/workflows/verify-esbmc.yml` pins the release tag it
+downloads and puts that tag in the cache key. Before that it fetched
+`releases/latest` into a cache keyed on a constant, so whichever build first
+populated the cache was reused indefinitely and an eviction would have pulled a
+different one with nothing recording the change.
+
 The proofs cover the header the parsers call. A proof about a re-typed copy of
 the logic would say nothing about the code that runs, so the rule is: do not
 copy this arithmetic into a call site, call it.
@@ -432,6 +443,18 @@ A property two solvers disagree about is not proved, and the one disagreement
 that is a tool artifact rather than a defect — the spurious unsigned-division
 overflow — is declared by the harness that hits it rather than explained away
 after the fact.
+
+It runs in CI, in the `cross` job of `.github/workflows/verify-esbmc.yml`, on
+the weekly schedule and on dispatch. It did not, for a while, and what stood in
+for it did nothing: the `prove` job matrixed `SOLVER: ['--z3', '--boolector']`
+over the same suite and called that "two independent solvers", while a
+harness's `// ESBMC-SOLVER:` pin overrides `SOLVER` — so for the 252 proofs in
+the ten pinned harnesses both legs ran byte-identical commands, and the harness
+pinned to `--cvc5` was never run by either. `--cross` is the mode that handles
+pins deliberately: it asks the pinned backend directly when the pin is outside
+the compared pair, rather than excusing a disagreement on the strength of a pin
+whose verdict was never obtained. It is not on the push path because it is
+three backend runs per proof against the main run's one.
 
 **Someone has to disbelieve it.** Each kernel is audited by an agent whose brief
 is to refute the claims made for it: re-run every proof, inject defects the

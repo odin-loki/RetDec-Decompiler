@@ -96,10 +96,21 @@ jobs:
       - name: Doctor licence and workflow checks
         run: bash scripts/doctor.sh
 
-      - name: Benchmark harness and regression gate
+      # NOT a regression gate, and it used to be labelled as one. This job has
+      # no cmake configure and no build, so run_benchmarks.sh finds no
+      # retdec-decompiler, writes its payload with "status": "skipped" and every
+      # metric null, and the gate takes the not-measured branch for every key
+      # and prints "Benchmark regression gate: PASS". It published a passing
+      # regression status on every push while comparing nothing.
+      #
+      # What it can honestly do without a build is stage the corpus and produce
+      # a results JSON. The real gate runs where a decompiler exists --
+      # algorithm-recovery-nightly.yml, with --require-measured, so a skipped
+      # metric there is a failure rather than a pass.
+      - name: Stage the benchmark corpus and write a results JSON
         run: |
           bash scripts/fetch_decompilebench_corpus.sh --profile ci-core
-          bash scripts/run_benchmarks.sh --compare 2026-08 --gate --profile ci-core
+          bash scripts/run_benchmarks.sh --compare 2026-08 --profile ci-core
 
       - name: Algorithm corpus size check
         run: |

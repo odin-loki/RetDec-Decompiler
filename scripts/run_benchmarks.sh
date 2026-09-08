@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # run_benchmarks.sh — DecompileBench + algorithm recovery (Part 6 / 16.2).
-# Usage: bash scripts/run_benchmarks.sh [--compare TAG] [--gate] [--build-corpus] [--profile ci-core|full] [--fetch-stock]
+# Usage: bash scripts/run_benchmarks.sh [--compare TAG] [--gate] [--require-measured]
+#                                       [--build-corpus] [--profile ci-core|full] [--fetch-stock]
+#
+# --require-measured is passed through to benchmark_regression_gate.sh: it turns
+# a metric the baseline has and this run does not into a failure. Use it from
+# any workflow that builds a decompiler; without a build, do not pass --gate.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -8,6 +13,7 @@ SHA="$(git -C "${ROOT}" rev-parse HEAD 2>/dev/null || echo local)"
 OUT="${ROOT}/results/${SHA}.json"
 COMPARE_TAG=""
 RUN_GATE=0
+REQUIRE_MEASURED=0
 BUILD_CORPUS=0
 PROFILE="ci-core"
 FETCH_STOCK=0
@@ -16,6 +22,7 @@ while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--compare) COMPARE_TAG="$2"; shift 2 ;;
 		--gate) RUN_GATE=1; shift ;;
+		--require-measured) REQUIRE_MEASURED=1; shift ;;
 		--build-corpus) BUILD_CORPUS=1; shift ;;
 		--profile) PROFILE="$2"; shift 2 ;;
 		--fetch-stock) FETCH_STOCK=1; shift ;;
@@ -148,7 +155,9 @@ PY
 if [[ "${RUN_GATE}" -eq 1 ]]; then
 	BASELINE="${ROOT}/results/baseline-2026-08.json"
 	[[ -n "${COMPARE_TAG}" ]] && BASELINE="${ROOT}/results/baseline-${COMPARE_TAG}.json"
-	bash "${ROOT}/scripts/benchmark_regression_gate.sh" --baseline "${BASELINE}" --current "${OUT}"
+	gateArgs=(--baseline "${BASELINE}" --current "${OUT}")
+	[[ "${REQUIRE_MEASURED}" -eq 1 ]] && gateArgs+=(--require-measured)
+	bash "${ROOT}/scripts/benchmark_regression_gate.sh" "${gateArgs[@]}"
 fi
 
 echo "Benchmark harness complete."

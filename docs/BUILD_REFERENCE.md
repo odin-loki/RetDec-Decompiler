@@ -279,7 +279,6 @@ GitHub Actions workflows under [.github/workflows/](../.github/workflows/):
 | [codeql.yml](../.github/workflows/codeql.yml) | Push / PR + weekly + manual | CodeQL for Python and Actions (not C++) |
 | [coverage.yml](../.github/workflows/coverage.yml) | Weekly + manual | gcov/lcov via `run_coverage.sh` (LLVM build) |
 | [fuzz-pr.yml](../.github/workflows/fuzz-pr.yml) | PR to `main` + weekly + manual | Fuzz option smoke on PR; libFuzzer on schedule/dispatch |
-| [benchmark-integrity.yml](../.github/workflows/benchmark-integrity.yml) | PR to `main` + manual | Filename-rename guard (skip-safe if no decompiler) |
 | [qt-lgpl-evidence.yml](../.github/workflows/qt-lgpl-evidence.yml) | Weekly + manual | dumpbin `/dependents` Qt6Core.dll on Windows zip |
 | [sign-release-sbom.yml](../.github/workflows/sign-release-sbom.yml) | After installers + push (this file) + manual | Cosign unsigned SBOM, tarball, Windows artefacts |
 | [upload-sample-binary.yml](../.github/workflows/upload-sample-binary.yml) | After installers + push (this file / `fib.c`) + manual | Upload `fib_smoke` sample binary to the Release |

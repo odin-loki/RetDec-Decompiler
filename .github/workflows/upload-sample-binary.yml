@@ -112,15 +112,28 @@ jobs:
           cmd /c "cl /nologo /Od /Ob0 /Oi- /GS- /Oy- /guard:cf- /Fefib_smoke.exe tests\test_binaries\fib.c /link /INCREMENTAL:NO /GUARD:NO /CETCOMPAT:NO /EXPORT:main"
           if ($LASTEXITCODE -ne 0) { throw "cl failed: $LASTEXITCODE" }
           if (-not (Test-Path -LiteralPath "fib_smoke.exe")) { throw "fib_smoke.exe missing" }
-          $names = gh release view $env:TAG --json assets --jq ".assets[].name"
-          if ($names -notmatch '(?m)^fib_smoke\.exe$') {
+          # gh emits one asset name per line, which PowerShell captures as a
+          # string[]. `-notmatch` on an ARRAY does not return a boolean -- it
+          # returns the subset of elements that do NOT match, and a non-empty
+          # array is truthy. Any release holding one other asset (v2.0.21 has
+          # the tarball, the cdx.json, the Windows zip, setup.exe and their
+          # .sigstore.json bundles) therefore always took the upload branch, so
+          # `gh release upload` ran with the asset already present and failed
+          # for want of --clobber -- and the "already on TAG" branch was
+          # unreachable. `-contains` tests membership and returns a boolean.
+          # The Linux job forty lines up gets this right with `grep -qx`.
+          $names = @(gh release view $env:TAG --json assets --jq ".assets[].name")
+          if ($names -contains 'fib_smoke.exe') {
+            Write-Host "already on $($env:TAG): fib_smoke.exe"
+          } else {
             gh release upload $env:TAG fib_smoke.exe
             Write-Host "uploaded fib_smoke.exe to $($env:TAG)"
-          } else {
-            Write-Host "already on $($env:TAG): fib_smoke.exe"
           }
           $bundle = "fib_smoke.exe.sigstore.json"
-          if ($names -match '(?m)^fib_smoke\.exe\.sigstore\.json$') {
+          # `-match` happened to be correct here -- it returns an empty, falsy
+          # array when nothing matches -- but membership is what is meant, and
+          # the two lines should not read differently.
+          if ($names -contains $bundle) {
             Write-Host "already signed: $bundle"
             exit 0
           }

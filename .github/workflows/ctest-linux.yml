@@ -149,4 +149,4 @@ jobs:
       - name: Filename-rename integrity guard
         run: |
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
-          bash scripts/ci/benchmark_rename_guard.sh --decompiler "$DEC" --limit 5
+          bash scripts/ci/benchmark_rename_guard.sh --decompiler "$DEC" --limit 5 --strict

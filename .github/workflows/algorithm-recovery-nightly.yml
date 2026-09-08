@@ -79,7 +79,7 @@ jobs:
             DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
           fi
           test -n "$DEC" && test -x "$DEC"
-          bash scripts/ci/benchmark_rename_guard.sh --decompiler "$DEC" --limit 12
+          bash scripts/ci/benchmark_rename_guard.sh --decompiler "$DEC" --limit 12 --strict
 
       - name: Annotate algorithm recovery failure
         if: failure()
@@ -147,7 +147,7 @@ jobs:
             DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
           fi
           bash scripts/fetch_decompilebench_corpus.sh --profile ci-core
-          bash scripts/run_benchmarks.sh --profile ci-core --compare 2026-08 --gate
+          bash scripts/run_benchmarks.sh --profile ci-core --compare 2026-08 --gate --require-measured
 
       - name: Migration eval suite
         run: |

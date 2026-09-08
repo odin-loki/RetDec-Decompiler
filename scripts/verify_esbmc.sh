@@ -53,6 +53,60 @@ TIMEOUT="${TIMEOUT:-300}"
 
 readonly PROOF_DIR="tests/verification"
 
+# ── the version the soundness argument is written against ────────────────────
+#
+# Every --unwind bound in tests/verification/ is only a proof because ESBMC
+# generates unwinding assertions BY DEFAULT: a bound that is too small fails
+# loudly rather than silently truncating the search. That is a property of the
+# release, not of this script -- 8.5.0 has no --unwinding-assertions flag to ask
+# for, only --no-unwinding-assertions to turn them off, which check_options_syntax
+# below refuses.
+#
+# Nothing checked it. The version was printed into a header and compared with
+# nothing, and .github/workflows/verify-esbmc.yml downloaded `releases/latest`
+# into a cache keyed on a constant -- so whichever build first populated the
+# cache was reused indefinitely, and an eviction would silently pull a
+# different one. On a release where that default changed, all ten loop-bearing
+# harnesses would become truncated searches reporting VERIFICATION SUCCESSFUL
+# and no line of this machinery would notice.
+readonly ESBMC_MIN_VERSION="8.5.0"
+
+# "ESBMC version 8.5.0 64-bit x86_64 linux" -> "8.5.0"
+esbmc_version() {
+	$ESBMC --version 2>/dev/null | head -1 | grep -oE '[0-9]+(\.[0-9]+)+' | head -1
+}
+
+# Is $1 >= $2, comparing dotted numeric components?
+version_at_least() {
+	local have="$1" want="$2" h w i
+	IFS=. read -r -a h <<< "$have"
+	IFS=. read -r -a w <<< "$want"
+	for ((i = 0; i < ${#w[@]}; i++)); do
+		local hv="${h[i]:-0}" wv="${w[i]}"
+		((10#$hv > 10#$wv)) && return 0
+		((10#$hv < 10#$wv)) && return 1
+	done
+	return 0
+}
+
+check_esbmc_version() {
+	local have
+	have="$(esbmc_version)"
+	if [ -z "$have" ]; then
+		bad "cannot read a version from '$ESBMC --version'"
+		say "  The unwind bounds in tests/verification/ are proofs only under a"
+		say "  release that generates unwinding assertions by default."
+		return 1
+	fi
+	if ! version_at_least "$have" "$ESBMC_MIN_VERSION"; then
+		bad "esbmc $have is older than the $ESBMC_MIN_VERSION these harnesses are written against"
+		say "  Unwinding assertions must be on by default, or every --unwind bound"
+		say "  here is an assumption rather than a proof. See docs/VERIFICATION.md."
+		return 1
+	fi
+	return 0
+}
+
 # Checks ESBMC applies to every harness. --overflow-check and
 # --unsigned-overflow-check matter most: the bug class being guarded against is
 # arithmetic that wraps, so the proof has to fail if any of it does.
@@ -414,6 +468,7 @@ unmatched_wanted() {
 }
 
 if [ "$MODE" = cross ]; then
+	check_esbmc_version || exit 2
 	hdr "cross-checking every proof under z3 and boolector"
 	agree=0; disagree=0; expected=0; noverdict=0
 	declare -a mismatches=()
@@ -529,6 +584,7 @@ if [ "$MODE" = cross ]; then
 fi
 
 hdr "$($ESBMC --version | head -1)"
+check_esbmc_version || exit 2
 say "solver: $SOLVER   timeout: ${TIMEOUT}s per proof"
 
 total=0
