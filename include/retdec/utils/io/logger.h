@@ -1,9 +1,9 @@
 /**
-* @file include/retdec/utils/io/logger.h
-* @brief Implementation of a logging class.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file include/retdec/utils/io/logger.h
+ * @brief Implementation of a logging class.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #ifndef RETDEC_UTILS_IO_LOGGER_H
 #define RETDEC_UTILS_IO_LOGGER_H
@@ -25,7 +25,8 @@ public:
 	using Ptr = std::unique_ptr<Logger>;
 
 public:
-	enum Action: int {
+	enum Action : int
+	{
 		Phase,
 		SubPhase,
 		SubSubPhase,
@@ -35,7 +36,8 @@ public:
 		NoAction
 	};
 
-	enum class Color: int {
+	enum class Color : int
+	{
 		Red,
 		Green,
 		Blue,
@@ -45,7 +47,7 @@ public:
 	};
 
 protected:
-	typedef std::ostream& (*StreamManipulator) (std::ostream&);
+	typedef std::ostream& (*StreamManipulator)(std::ostream&);
 
 public:
 	Logger(std::ostream& stream, bool verbose = true);
@@ -53,11 +55,11 @@ public:
 	~Logger();
 
 	template <typename T>
-	Logger& operator << (const T& p);
+	Logger& operator<<(const T& p);
 
-	Logger& operator << (const StreamManipulator& manip);
-	Logger& operator << (const Action& ia);
-	Logger& operator << (const Color& lc);
+	Logger& operator<<(const StreamManipulator& manip);
+	Logger& operator<<(const Action& ia);
+	Logger& operator<<(const Color& lc);
 
 private:
 	bool isRedirected(const std::ostream& stream) const;
@@ -80,29 +82,27 @@ private:
 	std::ofstream _file;
 };
 
-template<typename T>
-inline Logger& Logger::operator << (const T& p)
+template <typename T>
+inline Logger& Logger::operator<<(const T& p)
 {
-	if (!_verbose)
-		return *this;
+	if (!_verbose) return *this;
 
 	_out << p;
 
 	return *this;
 }
 
-inline Logger& Logger::operator << (const Logger::StreamManipulator& p)
+inline Logger& Logger::operator<<(const Logger::StreamManipulator& p)
 {
-	if (!_verbose)
-		return *this;
+	if (!_verbose) return *this;
 
 	_out << p;
 
 	return *this;
 }
 
-}
-}
-}
+} // namespace io
+} // namespace utils
+} // namespace retdec
 
 #endif
