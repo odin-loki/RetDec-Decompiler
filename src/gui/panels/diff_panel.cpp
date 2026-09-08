@@ -150,6 +150,14 @@ std::string DiffResult::toHtml() const
 
 namespace {
 
+// Cells the LCS table may hold. Each is an int, and each row is a separate
+// vector, so the table costs roughly four bytes a cell plus twenty-four a row;
+// this ceiling puts that at about a hundred megabytes. Nothing bounded it
+// before, and the table is quadratic: two forty-thousand-line files -- an
+// ordinary size for decompiled C -- asked for six gigabytes and got a
+// std::bad_alloc, on the GUI thread, from a menu item.
+constexpr std::size_t kMaxLcsCells = 25000000;
+
 // Build the LCS length DP table for sequences A[0..N) and B[0..M).
 // dp[i][j] = length of LCS of A[0..i) and B[0..j).
 std::vector<std::vector<int>> buildLcsTable(const std::vector<std::string>& a, const std::vector<std::string>& b)
@@ -236,6 +244,41 @@ void emitOpsFromLcs(
 		out.push_back(std::move(*it));
 }
 
+// Diff a[0..) against b[0..), appending to out. Returns false when the pair was
+// too large for an exact answer, in which case the whole of a is reported
+// deleted and the whole of b inserted -- true as a description of the change,
+// just not minimal. Refusing to answer at all would be worse: the panel would
+// show nothing and say nothing.
+bool lcsOpsBounded(const std::vector<std::string>& a, const std::vector<std::string>& b, std::vector<DiffOp>& out)
+{
+	if (a.empty() && b.empty()) return true;
+	const std::size_t cells = (a.size() + 1u) * (b.size() + 1u);
+	const bool overflows = b.size() != 0 && (a.size() + 1u) > kMaxLcsCells / (b.size() + 1u);
+	if (!overflows && cells <= kMaxLcsCells)
+	{
+		auto dp = buildLcsTable(a, b);
+		emitOpsFromLcs(dp, a, b, out);
+		return true;
+	}
+	for (std::size_t i = 0; i < a.size(); ++i)
+	{
+		DiffOp op;
+		op.kind = DiffOpKind::Delete;
+		op.line = a[i];
+		op.leftLine = static_cast<int>(i);
+		out.push_back(std::move(op));
+	}
+	for (std::size_t j = 0; j < b.size(); ++j)
+	{
+		DiffOp op;
+		op.kind = DiffOpKind::Insert;
+		op.line = b[j];
+		op.rightLine = static_cast<int>(j);
+		out.push_back(std::move(op));
+	}
+	return false;
+}
+
 } // namespace
 
 // midpoint/backtrack are kept only because they're listed in the header.
@@ -260,9 +303,8 @@ void MyersDiff::backtrack(
 	std::vector<std::string> sub_a(a.begin() + aLo, a.begin() + aHi);
 	std::vector<std::string> sub_b(b.begin() + bLo, b.begin() + bHi);
 	if (sub_a.empty() && sub_b.empty()) return;
-	auto dp = buildLcsTable(sub_a, sub_b);
 	std::vector<DiffOp> local;
-	emitOpsFromLcs(dp, sub_a, sub_b, local);
+	lcsOpsBounded(sub_a, sub_b, local);
 	for (auto& op: local)
 	{
 		if (op.leftLine >= 0) op.leftLine += aLo;
@@ -276,8 +318,44 @@ DiffResult MyersDiff::diff(const std::vector<std::string>& left, const std::vect
 	DiffResult result;
 	if (!left.empty() || !right.empty())
 	{
-		auto dp = buildLcsTable(left, right);
-		emitOpsFromLcs(dp, left, right, result.ops);
+		// Two versions of the same function agree on nearly every line, and
+		// the table below is quadratic in what is left after they stop
+		// agreeing. Trimming the shared head and tail first costs O(N+M) and
+		// is what keeps a realistic diff off the ceiling in lcsOpsBounded.
+		std::size_t pre = 0;
+		while (pre < left.size() && pre < right.size() && left[pre] == right[pre])
+			++pre;
+		std::size_t suf = 0;
+		while (suf < left.size() - pre && suf < right.size() - pre
+			   && left[left.size() - 1 - suf] == right[right.size() - 1 - suf])
+			++suf;
+
+		auto equalOp = [&](std::size_t li, std::size_t ri) {
+			DiffOp op;
+			op.kind = DiffOpKind::Equal;
+			op.line = left[li];
+			op.leftLine = static_cast<int>(li);
+			op.rightLine = static_cast<int>(ri);
+			result.ops.push_back(std::move(op));
+		};
+		for (std::size_t i = 0; i < pre; ++i)
+			equalOp(i, i);
+
+		const std::vector<std::string> midL(
+			left.begin() + static_cast<std::ptrdiff_t>(pre), left.end() - static_cast<std::ptrdiff_t>(suf));
+		const std::vector<std::string> midR(
+			right.begin() + static_cast<std::ptrdiff_t>(pre), right.end() - static_cast<std::ptrdiff_t>(suf));
+		std::vector<DiffOp> mid;
+		result.exact = lcsOpsBounded(midL, midR, mid);
+		for (auto& op: mid)
+		{
+			if (op.leftLine >= 0) op.leftLine += static_cast<int>(pre);
+			if (op.rightLine >= 0) op.rightLine += static_cast<int>(pre);
+			result.ops.push_back(std::move(op));
+		}
+
+		for (std::size_t i = 0; i < suf; ++i)
+			equalOp(left.size() - suf + i, right.size() - suf + i);
 	}
 	for (const auto& op: result.ops)
 	{

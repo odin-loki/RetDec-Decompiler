@@ -107,6 +107,15 @@ namespace gui {
 
 namespace {
 
+// How long a helper script started from a menu item may run before the window
+// stops waiting for it. The wait happens on the GUI thread, so the ceiling is
+// what keeps a script that never exits from freezing the application; five
+// minutes is well past any export this menu starts.
+constexpr int kExternalScriptWaitMs = 300000;
+// The grace a killed process gets to actually die, matching the other kill
+// sites in this file.
+constexpr int kProcessKillWaitMs = 1000;
+
 bool parseEntryPointString(const QString& s, uint64_t* out)
 {
 	const QString t = s.trimmed();
@@ -2591,7 +2600,22 @@ void RetDecMainWindow::onExportThreatIntel()
 		QMessageBox::warning(this, QStringLiteral("Export Threat Intel"), proc.errorString());
 		return;
 	}
-	proc.waitForFinished(-1);
+	// This wait blocks the GUI thread, so an export script that never exits --
+	// one waiting on stdin, or on a network share that has gone away -- used
+	// to freeze the whole application with no way out but the process manager.
+	// Every other wait in this file is bounded and follows a kill with a
+	// second short wait; this one is now the same.
+	if (!proc.waitForFinished(kExternalScriptWaitMs))
+	{
+		proc.kill();
+		proc.waitForFinished(kProcessKillWaitMs);
+		QMessageBox::warning(
+			this,
+			QStringLiteral("Export Threat Intel"),
+			QStringLiteral("Export did not finish within %1 s and was stopped.\nSee Console for details.")
+				.arg(kExternalScriptWaitMs / 1000));
+		return;
+	}
 	if (proc.exitCode() != 0)
 	{
 		QMessageBox::warning(

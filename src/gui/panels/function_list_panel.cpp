@@ -271,17 +271,20 @@ FunctionEntry& FunctionListModel::entry(int row)
 	return fns_[static_cast<size_t>(row)];
 }
 
-bool FunctionListModel::renameFunction(uint64_t address, const QString& newName)
+int FunctionListModel::rowForAddress(uint64_t address) const
 {
 	for (int i = 0; i < static_cast<int>(fns_.size()); ++i)
 	{
-		if (fns_[static_cast<size_t>(i)].address == address)
-		{
-			QModelIndex idx = createIndex(i, ColName);
-			return setData(idx, newName, Qt::EditRole);
-		}
+		if (fns_[static_cast<size_t>(i)].address == address) return i;
 	}
-	return false;
+	return -1;
+}
+
+bool FunctionListModel::renameFunction(uint64_t address, const QString& newName)
+{
+	const int row = rowForAddress(address);
+	if (row < 0) return false;
+	return setData(createIndex(row, ColName), newName, Qt::EditRole);
 }
 
 void FunctionListModel::applyTag(const std::vector<uint64_t>& addresses, const QString& tag)
@@ -837,14 +840,30 @@ void FunctionListPanel::onContextMenu(const QPoint& pos)
 		if (!qEnvironmentVariableIsEmpty("RETDEC_GUI_HEADLESS")) return;
 		QModelIndex src = proxy_->mapToSource(idx);
 		if (!src.isValid()) return;
-		auto& e = model_->entry(src.row());
+		// QInputDialog runs its own event loop, and loadDecompileArtifacts()
+		// arrives on a zero-timer, so a decompile finishing while this dialog
+		// is open calls setFunctions() and frees the vector any reference
+		// taken here points into. Copy what the dialog needs, then look the
+		// row up again by address, which a reload preserves and a row index
+		// does not.
+		uint64_t address = 0;
+		QString label;
+		QString current;
+		{
+			const auto& e = model_->entry(src.row());
+			address = e.address;
+			label = e.name.isEmpty() ? e.rawName : e.name;
+			current = e.signature;
+		}
 		bool ok = false;
-		const QString label = e.name.isEmpty() ? e.rawName : e.name;
-		QString text = QInputDialog::getText(this, "Edit signature", label, QLineEdit::Normal, e.signature, &ok);
+		QString text = QInputDialog::getText(this, "Edit signature", label, QLineEdit::Normal, current, &ok);
 		if (ok && !text.trimmed().isEmpty())
 		{
+			const int row = model_->rowForAddress(address);
+			if (row < 0) return;
+			auto& e = model_->entry(row);
 			e.signature = text.trimmed();
-			model_->setData(model_->index(src.row(), FunctionListModel::ColNotes), e.notes);
+			model_->setData(model_->index(row, FunctionListModel::ColNotes), e.notes);
 		}
 	}
 	else if (chosen == clearAnnAct && idx.isValid())
@@ -893,17 +912,21 @@ void FunctionListPanel::onRenameFunction()
 	if (selected.isEmpty()) return;
 	QModelIndex src = proxy_->mapToSource(selected.first());
 	if (!src.isValid()) return;
-	const auto& e = model_->entry(src.row());
+	// Same reason as the signature editor above: nothing may hold a reference
+	// into the model across the dialog's event loop. renameFunction() takes an
+	// address, so only the address has to survive.
+	uint64_t address = 0;
+	QString current;
+	{
+		const auto& e = model_->entry(src.row());
+		address = e.address;
+		current = e.name.isEmpty() ? e.rawName : e.name;
+	}
 
 	bool ok = false;
 	QString newName = QInputDialog::getText(
-		this,
-		"Rename Function",
-		QString("New name for  0x%1:").arg(e.address, 0, 16),
-		QLineEdit::Normal,
-		e.name.isEmpty() ? e.rawName : e.name,
-		&ok);
-	if (ok && !newName.trimmed().isEmpty()) model_->renameFunction(e.address, newName.trimmed());
+		this, "Rename Function", QString("New name for  0x%1:").arg(address, 0, 16), QLineEdit::Normal, current, &ok);
+	if (ok && !newName.trimmed().isEmpty()) model_->renameFunction(address, newName.trimmed());
 }
 
 void FunctionListPanel::onBatchTag()

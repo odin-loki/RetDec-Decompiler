@@ -49,8 +49,22 @@ bool ProjectFile::save(const QString& projectPath) const
 		lastError_ = "Cannot write project file: " + f.errorString();
 		return false;
 	}
-	QJsonDocument doc(toJson());
-	f.write(doc.toJson(QJsonDocument::Indented));
+	const QJsonDocument doc(toJson());
+	// A short write is how a full disk, an exceeded quota or a disconnected
+	// network share report themselves, and QFile buffers, so the failure can
+	// surface at flush or close rather than at write. Ignoring all three
+	// returned success and cleared modified_, so the application believed the
+	// project was saved, would not offer to save it again, and let the user
+	// close it -- losing the work with no message anywhere.
+	const QByteArray json = doc.toJson(QJsonDocument::Indented);
+	const qint64 written = f.write(json);
+	const bool flushed = f.flush();
+	f.close();
+	if (written != json.size() || !flushed || f.error() != QFileDevice::NoError)
+	{
+		lastError_ = "Cannot write project file: " + f.errorString();
+		return false;
+	}
 	modified_ = false;
 	return true;
 }

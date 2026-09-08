@@ -147,6 +147,17 @@ public:
 	const FunctionEntry& entry(int row) const;
 	FunctionEntry& entry(int row);
 
+	/**
+	 * Row currently holding @p address, or -1.
+	 *
+	 * entry() hands out a reference into a vector that setFunctions()
+	 * replaces wholesale, and a row index means nothing once that has
+	 * happened. Anything that has to survive a modal dialog -- which runs an
+	 * event loop, so a decompile finishing behind it does exactly that --
+	 * remembers the address and asks again here.
+	 */
+	int rowForAddress(uint64_t address) const;
+
 	/** Rename by address; returns true if found. */
 	bool renameFunction(uint64_t address, const QString& newName);
 

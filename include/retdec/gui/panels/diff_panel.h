@@ -77,6 +77,10 @@ struct DiffResult
 	int linesEqual = 0;
 	double similarity = 0.0; ///< 0.0 – 1.0
 
+	/// False when the differing region was too large to diff exactly and was
+	/// reported as a wholesale replacement instead. See MyersDiff::diff().
+	bool exact = true;
+
 	bool isEmpty() const
 	{
 		return ops.empty();

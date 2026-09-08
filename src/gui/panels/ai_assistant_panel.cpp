@@ -48,6 +48,13 @@ std::unordered_map<InferenceWorker*, std::shared_ptr<retdec::neural::Inference>>
 std::unordered_map<InferenceWorker*, bool> g_reuseKv;
 #endif
 
+// How long the panel's destructor waits for the inference thread to leave its
+// event loop before giving up on it. Generous, because the wait is only
+// reached at shutdown and a thread that stops one second later still stops;
+// bounded, because a generation inside the backend does not observe the abort
+// flag and would otherwise hang the application on close.
+constexpr int kWorkerShutdownWaitMs = 10000;
+
 } // namespace
 
 InferenceWorker::InferenceWorker(QObject* parent): QObject(parent) {}
@@ -63,9 +70,18 @@ InferenceWorker::~InferenceWorker()
 
 void InferenceWorker::startInference(const QString& prompt)
 {
-	if (abort_.load())
+	// A Stop pressed while an earlier generation is still inside the backend
+	// only lands here: abort_ is not read during generation, so the flag
+	// survives to cancel the *next* request. Dropping that request silently
+	// left the panel busy for good -- onSendQuery() had already called
+	// setInferenceBusy(true), and nothing was going to emit the signal that
+	// clears it, so the send button stayed disabled until the panel was
+	// destroyed. Answering with an empty completion is the terminal signal
+	// the UI is waiting for. exchange() rather than load()/store() so two
+	// requests cannot both read the flag as set.
+	if (abort_.exchange(false))
 	{
-		abort_.store(false);
+		emit responseComplete(0, 0.0);
 		return;
 	}
 
@@ -220,12 +236,33 @@ AIAssistantPanel::AIAssistantPanel(QWidget* parent): PanelBase(QStringLiteral("A
 
 AIAssistantPanel::~AIAssistantPanel()
 {
-	if (workerThread_)
+	if (!workerThread_)
 	{
-		workerThread_->quit();
-		workerThread_->wait(3000);
+		delete worker_;
+		worker_ = nullptr;
+		return;
+	}
+
+	// quit() asks the worker's event loop to return; it does not interrupt a
+	// slot already running, and a generation inside the backend can run for
+	// minutes, so this wait really does time out. The old code deleted the
+	// worker regardless -- freeing an object a live thread was executing a
+	// slot on -- and then ~QObject deleted the QThread this panel parents,
+	// which Qt answers with qFatal("QThread: Destroyed while thread is still
+	// running"). A thread that will not stop is now detached and left to
+	// finish on its own: a leak at shutdown costs the user nothing, an abort
+	// costs them the session.
+	if (worker_) worker_->abortInference();
+	workerThread_->quit();
+	if (!workerThread_->wait(kWorkerShutdownWaitMs))
+	{
+		workerThread_->setParent(nullptr);
+		workerThread_ = nullptr;
+		worker_ = nullptr;
+		return;
 	}
 	delete worker_;
+	worker_ = nullptr;
 }
 
 void AIAssistantPanel::setupUI()

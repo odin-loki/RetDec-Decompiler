@@ -147,14 +147,23 @@ void PluginManager::unloadPlugin(const QString& pluginId)
 {
 	for (auto it = plugins_.begin(); it != plugins_.end(); ++it)
 	{
-		if (it->meta.id == pluginId)
-		{
-			it->instance->shutdown();
-			if (it->loader) it->loader->unload();
-			emit pluginUnloaded(pluginId);
-			plugins_.erase(it);
-			return;
-		}
+		if (it->meta.id != pluginId) continue;
+
+		it->instance->shutdown();
+
+		// `instance` points into the shared library the loader holds, so
+		// unload() leaves it dangling. It used to be unloaded while the entry
+		// was still in plugins_ and before pluginUnloaded was emitted, so any
+		// listener that called findPlugin(id) got a live-looking record whose
+		// instance pointer addressed unmapped memory. Take the entry out
+		// first, then unload, then tell anyone who cares.
+		LoadedPlugin gone = std::move(*it);
+		plugins_.erase(it);
+		gone.instance = nullptr;
+		if (gone.loader) gone.loader->unload();
+
+		emit pluginUnloaded(pluginId);
+		return;
 	}
 }
 
