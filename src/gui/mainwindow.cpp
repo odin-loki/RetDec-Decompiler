@@ -1384,6 +1384,45 @@ void RetDecMainWindow::createMenus()
 	refreshViz();
 	connect(&AppSettings::instance(), &AppSettings::settingsChanged, this, refreshViz);
 
+	// Both menus above capture a raw plugin pointer per action, and until now
+	// the only thing that rebuilt them was AppSettings::settingsChanged --
+	// which unloading a plugin does not emit. Unload one from Settings ->
+	// Plugins and press Cancel, and File -> Export As still offered its
+	// format, calling fileExtension() and transform() on an object whose
+	// library had been unmapped.
+	//
+	// pluginAboutToUnload rather than pluginUnloaded, because a visualisation
+	// plugin's panel cannot be destroyed once its library is gone either: its
+	// destructor is in that library. It is deleted here, outright rather than
+	// with deleteLater, which would run after the unload.
+	auto dropPluginUi = [this](const QString& id) {
+		const auto* lp = PluginManager::instance().findPlugin(id);
+		if (!lp || !lp->instance) return;
+		auto* viz = dynamic_cast<IVisualisationPlugin*>(lp->instance);
+		if (!viz) return;
+		QWidget* panel = findChild<QWidget*>(QStringLiteral("vizPlugin:%1").arg(viz->panelTitle()));
+		if (!panel) return;
+		QWidget* host = panel->window();
+		delete panel;
+		// showAsToolWindow wraps a panel in its own QDialog; without the panel
+		// that dialog is an empty window the user cannot get rid of.
+		if (host && host != this && host->isWindow()) delete host;
+	};
+	connect(
+		&PluginManager::instance(),
+		&PluginManager::pluginAboutToUnload,
+		this,
+		[dropPluginUi, refreshExportAs, refreshViz](const QString& id) {
+			dropPluginUi(id);
+			refreshExportAs();
+			refreshViz();
+		});
+	connect(
+		&PluginManager::instance(), &PluginManager::pluginLoaded, this, [refreshExportAs, refreshViz](const QString&) {
+			refreshExportAs();
+			refreshViz();
+		});
+
 	connect(copyFnAct, &QAction::triggered, this, [this]() {
 		if (!functionList_ || !loadedArtifacts_)
 		{

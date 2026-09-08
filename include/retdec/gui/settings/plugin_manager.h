@@ -109,6 +109,15 @@ public:
 
 signals:
 	void pluginLoaded(const QString& id);
+	/// Emitted while the plugin is still fully loaded, immediately before it
+	/// is shut down and its library unloaded.
+	///
+	/// Anything the plugin created has to be gone by the time unload() runs:
+	/// a menu action holding its instance pointer, or a panel whose vtable
+	/// lives in its library, which cannot even be destroyed afterwards. A
+	/// listener on this signal can still safely call findPlugin(id) and touch
+	/// the instance; on pluginUnloaded it cannot.
+	void pluginAboutToUnload(const QString& id);
 	void pluginUnloaded(const QString& id);
 	void loadError(const QString& filePath, const QString& msg);
 

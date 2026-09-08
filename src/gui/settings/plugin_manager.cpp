@@ -145,26 +145,37 @@ void PluginManager::scanAndLoad(const QStringList& paths)
 
 void PluginManager::unloadPlugin(const QString& pluginId)
 {
-	for (auto it = plugins_.begin(); it != plugins_.end(); ++it)
-	{
-		if (it->meta.id != pluginId) continue;
+	const auto find = [this](const QString& id) {
+		return std::find_if(plugins_.begin(), plugins_.end(), [&id](const LoadedPlugin& p) { return p.meta.id == id; });
+	};
+	if (find(pluginId) == plugins_.end()) return;
 
-		it->instance->shutdown();
+	// Whatever the plugin created has to be torn down while the plugin is
+	// still there to tear it down against: a menu action that captured its
+	// instance pointer, a panel whose vtable is in its library. This is the
+	// last moment at which a listener can call findPlugin(id) and get a
+	// record it may safely touch.
+	emit pluginAboutToUnload(pluginId);
 
-		// `instance` points into the shared library the loader holds, so
-		// unload() leaves it dangling. It used to be unloaded while the entry
-		// was still in plugins_ and before pluginUnloaded was emitted, so any
-		// listener that called findPlugin(id) got a live-looking record whose
-		// instance pointer addressed unmapped memory. Take the entry out
-		// first, then unload, then tell anyone who cares.
-		LoadedPlugin gone = std::move(*it);
-		plugins_.erase(it);
-		gone.instance = nullptr;
-		if (gone.loader) gone.loader->unload();
+	// A listener runs arbitrary code -- deleting a widget can reach anything --
+	// so the iterator is taken again rather than held across the emit.
+	auto it = find(pluginId);
+	if (it == plugins_.end()) return;
 
-		emit pluginUnloaded(pluginId);
-		return;
-	}
+	it->instance->shutdown();
+
+	// `instance` points into the shared library the loader holds, so unload()
+	// leaves it dangling. It used to be unloaded while the entry was still in
+	// plugins_ and before anything was emitted, so a listener that called
+	// findPlugin(id) got a live-looking record whose instance pointer
+	// addressed unmapped memory. Take the entry out first, then unload, then
+	// tell anyone who only needs to know it is gone.
+	LoadedPlugin gone = std::move(*it);
+	plugins_.erase(it);
+	gone.instance = nullptr;
+	if (gone.loader) gone.loader->unload();
+
+	emit pluginUnloaded(pluginId);
 }
 
 // ─── setEnabled ──────────────────────────────────────────────────────────────
