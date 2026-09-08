@@ -33,31 +33,16 @@ namespace utils {
  * out-of-bounds as 0 bytes and for writing it simply ignores the data that
  * would be out-of-bounds.
  */
-class DynamicBuffer
-{
+class DynamicBuffer {
 public:
+	DynamicBuffer(retdec::utils::Endianness endianness = retdec::utils::Endianness::LITTLE);
+	DynamicBuffer(uint32_t capacity, retdec::utils::Endianness endianness = retdec::utils::Endianness::LITTLE);
 	DynamicBuffer(
-			retdec::utils::Endianness endianness
-					= retdec::utils::Endianness::LITTLE
-	);
-	DynamicBuffer(
-			uint32_t capacity,
-			retdec::utils::Endianness endianness
-					= retdec::utils::Endianness::LITTLE
-	);
-	DynamicBuffer(
-			const std::vector<uint8_t>& data,
-			retdec::utils::Endianness endianness
-					= retdec::utils::Endianness::LITTLE
-	);
+		const std::vector<uint8_t>& data, retdec::utils::Endianness endianness = retdec::utils::Endianness::LITTLE);
 	DynamicBuffer(const DynamicBuffer& dynamicBuffer);
-	DynamicBuffer(
-			const DynamicBuffer& dynamicBuffer,
-			uint32_t startPos,
-			uint32_t amount
-	);
+	DynamicBuffer(const DynamicBuffer& dynamicBuffer, uint32_t startPos, uint32_t amount);
 
-	DynamicBuffer& operator =(DynamicBuffer dynamicBuffer);
+	DynamicBuffer& operator=(DynamicBuffer dynamicBuffer);
 
 	void setCapacity(uint32_t capacity);
 	uint32_t getCapacity() const;
@@ -90,20 +75,14 @@ public:
 	 *
 	 * @return The read value from the buffer.
 	 */
-	template <typename T> T read(
-			uint32_t pos,
-			retdec::utils::Endianness endianness
-					= retdec::utils::Endianness::UNKNOWN) const
+	template <typename T>
+	T read(uint32_t pos, retdec::utils::Endianness endianness = retdec::utils::Endianness::UNKNOWN) const
 	{
-		static_assert(
-				std::is_integral<T>::value,
-				"retdec::utils::DynamicBuffer::read can only accept integral types"
-		);
+		static_assert(std::is_integral<T>::value, "retdec::utils::DynamicBuffer::read can only accept integral types");
 
 		// In case of non-specified endianness, use the default one assigned
 		// to DynamicBuffer itself
-		if (endianness == retdec::utils::Endianness::UNKNOWN)
-			endianness = _endianness;
+		if (endianness == retdec::utils::Endianness::UNKNOWN) endianness = _endianness;
 
 		return readImpl<T>(pos, endianness);
 	}
@@ -124,21 +103,14 @@ public:
 	 * @param endianness The endianness in which the data should be written.
 	 * If not specified, default endianness assigned to DynamicBuffer is used.
 	 */
-	template <typename T> void write(
-			const T& data,
-			uint32_t pos,
-			retdec::utils::Endianness endianness
-					= retdec::utils::Endianness::UNKNOWN)
+	template <typename T>
+	void write(const T& data, uint32_t pos, retdec::utils::Endianness endianness = retdec::utils::Endianness::UNKNOWN)
 	{
-		static_assert(
-				std::is_integral<T>::value,
-				"retdec::utils::DynamicBuffer::write can only accept integral types"
-		);
+		static_assert(std::is_integral<T>::value, "retdec::utils::DynamicBuffer::write can only accept integral types");
 
 		// In case of non-specified endianness, use the default one
 		// assigned to DynamicBuffer itself
-		if (endianness == retdec::utils::Endianness::UNKNOWN)
-			endianness = _endianness;
+		if (endianness == retdec::utils::Endianness::UNKNOWN) endianness = _endianness;
 
 		writeImpl(data, pos, endianness);
 	}
@@ -146,77 +118,58 @@ public:
 	void writeRepeatingByte(uint8_t byte, uint32_t pos, uint32_t repeatAmount);
 
 private:
-	template <typename T> void writeImpl(
-			const T& data,
-			uint32_t pos,
-			retdec::utils::Endianness endianness)
+	template <typename T>
+	void writeImpl(const T& data, uint32_t pos, retdec::utils::Endianness endianness)
 	{
 		// If the writing position is completely out of bounds, we just end
-		if (pos >= _capacity)
-			return;
+		if (pos >= _capacity) return;
 
 		// Buffer would overlap the capacity, copy just the chunk that fits
 		uint32_t bytesToWrite = sizeof(T);
-		if (pos + bytesToWrite > getCapacity())
-			bytesToWrite = getCapacity() - pos;
+		if (pos + bytesToWrite > getCapacity()) bytesToWrite = getCapacity() - pos;
 
-		if (bytesToWrite == 0)
-			return;
+		if (bytesToWrite == 0) return;
 
 		// Check whether there is enough space allocated
-		if (pos + bytesToWrite > getRealDataSize())
-			_data.resize(pos + bytesToWrite);
+		if (pos + bytesToWrite > getRealDataSize()) _data.resize(pos + bytesToWrite);
 
 		for (uint32_t i = 0; i < bytesToWrite; ++i)
 		{
 			switch (endianness)
 			{
-				case retdec::utils::Endianness::LITTLE:
-					_data[pos + i] = (data >> (i << 3)) & 0xFF;
-					break;
-				case retdec::utils::Endianness::BIG:
-					_data[pos + i] = (data >> ((bytesToWrite - i - 1) << 3)) & 0xFF;
-					break;
-				default:
-					break;
+			case retdec::utils::Endianness::LITTLE: _data[pos + i] = (data >> (i << 3)) & 0xFF; break;
+			case retdec::utils::Endianness::BIG: _data[pos + i] = (data >> ((bytesToWrite - i - 1) << 3)) & 0xFF; break;
+			default: break;
 			}
 		}
 	}
 
-	template <typename T> T readImpl(
-			uint32_t pos,
-			retdec::utils::Endianness endianness) const
+	template <typename T>
+	T readImpl(uint32_t pos, retdec::utils::Endianness endianness) const
 	{
 		// We are at the end, we are unable to read anything
-		if (pos >= _data.size())
-			return T{};
+		if (pos >= _data.size()) return T{};
 
 		// We are at the end, we are unable to read anything
-		if (pos >= _capacity)
-			return T{};
+		if (pos >= _capacity) return T{};
 
 		// If reading overlaps over the size, make sure we don't access
 		// uninitialized memory
 		uint32_t bytesToRead = sizeof(T);
-		if (pos + bytesToRead > getCapacity())
-			bytesToRead = getCapacity() - pos;
+		if (pos + bytesToRead > getCapacity()) bytesToRead = getCapacity() - pos;
 
-		if (pos + bytesToRead > getRealDataSize())
-			bytesToRead = getRealDataSize() - pos;
+		if (pos + bytesToRead > getRealDataSize()) bytesToRead = getRealDataSize() - pos;
 
 		T ret = T{};
 		for (uint32_t i = 0; i < bytesToRead; ++i)
 		{
 			switch (endianness)
 			{
-				case retdec::utils::Endianness::LITTLE:
-					ret |= static_cast<uint64_t>(_data[pos + i]) << (i << 3);
-					break;
-				case retdec::utils::Endianness::BIG:
-					ret |= static_cast<uint64_t>(_data[pos + i]) << ((bytesToRead - i - 1) << 3);
-					break;
-				default:
-					break;
+			case retdec::utils::Endianness::LITTLE: ret |= static_cast<uint64_t>(_data[pos + i]) << (i << 3); break;
+			case retdec::utils::Endianness::BIG:
+				ret |= static_cast<uint64_t>(_data[pos + i]) << ((bytesToRead - i - 1) << 3);
+				break;
+			default: break;
 			}
 		}
 
