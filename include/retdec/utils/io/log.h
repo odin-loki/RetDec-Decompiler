@@ -1,9 +1,9 @@
 /**
-* @file include/retdec/utils/io/logger.h
-* @brief Provides unified logging interface.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file include/retdec/utils/io/logger.h
+ * @brief Provides unified logging interface.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #ifndef RETDEC_UTILS_IO_LOG_H
 #define RETDEC_UTILS_IO_LOG_H
@@ -20,7 +20,8 @@ public:
 	 * Each type represents different logging style. For each
 	 * type is provided a logger by calling Log::get function
 	 */
-	enum class Type : int {
+	enum class Type : int
+	{
 		Info = 0,
 		Debug,
 		Error,
@@ -81,9 +82,7 @@ public:
 	/**
 	 * Shortcut for Log::info() << action << phaseId << Log::Action::ElapsedTime << std::endl.
 	 */
-	static void phase(
-		const std::string& phaseId,
-		const Log::Action& action = Log::Action::Phase);
+	static void phase(const std::string& phaseId, const Log::Action& action = Log::Action::Phase);
 
 public:
 	/**
@@ -126,7 +125,7 @@ private:
 	/**
 	 * Structure containing initialized/default loggers.
 	 */
-	static Logger::Ptr writers[static_cast<int>(Type::Undefined)+1];
+	static Logger::Ptr writers[static_cast<int>(Type::Undefined) + 1];
 
 	/**
 	 * Fallback logger. In case of bad initialization of the writers
@@ -135,9 +134,9 @@ private:
 	static Logger defaultLogger;
 };
 
-}
-}
-}
+} // namespace io
+} // namespace utils
+} // namespace retdec
 
 
 #endif

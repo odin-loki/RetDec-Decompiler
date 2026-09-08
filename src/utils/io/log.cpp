@@ -1,9 +1,9 @@
 /**
-* @file src/utils/io/logger.cpp
-* @brief Provides unified logging interface.
-* @copyright (c) 2017 Avast Software, licensed under the MIT license
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
-*/
+ * @file src/utils/io/logger.cpp
+ * @brief Provides unified logging interface.
+ * @copyright (c) 2017 Avast Software, licensed under the MIT license
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
+ */
 
 #include <cassert>
 
@@ -22,11 +22,10 @@ const Log::Action Log::SubSubPhase = Log::Action::SubSubPhase;
 const Log::Action Log::ElapsedTime = Log::Action::ElapsedTime;
 
 Logger::Ptr Log::writers[] = {
-	/*Info*/      /*default*/ nullptr,
-	/*Debug*/     /*default*/ nullptr,
-	/*Error*/     Logger::Ptr(new Logger(std::cerr)),
-	/*Undefined*/ Logger::Ptr(new Logger(std::cout, false))
-};
+	/*Info*/ /*default*/ nullptr,
+	/*Debug*/ /*default*/ nullptr,
+	/*Error*/ Logger::Ptr(new Logger(std::cerr)),
+	/*Undefined*/ Logger::Ptr(new Logger(std::cout, false))};
 
 Logger Log::defaultLogger(std::cout, true);
 
@@ -36,8 +35,7 @@ Logger& Log::get(const Log::Type& logType)
 	// after Log::Type::Undefined in Log::Type enum.
 	assert(static_cast<int>(logType) <= static_cast<int>(Log::Type::Undefined));
 
-	if (auto logger = writers[static_cast<int>(logType)].get())
-		return *logger;
+	if (auto logger = writers[static_cast<int>(logType)].get()) return *logger;
 
 	// Fallback usage of logger.
 	return defaultLogger;
@@ -72,6 +70,6 @@ Logger Log::error()
 	return Logger(get(Log::Type::Error));
 }
 
-}
-}
-}
+} // namespace io
+} // namespace utils
+} // namespace retdec
