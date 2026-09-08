@@ -92,7 +92,7 @@ readonly SUITES=(
 	idiom_reconstruct
 	ipa java_emitter jvm_parser jvm_reconstruct kotlin_emitter loader_sim
 	lua_parser mini_emu module_cluster neural packer pattern_detect profiling
-	pdbparser ptx_decompile py_emitter py_reconstruct pyc_parser retdec rtti serdes
+	pdbparser pelib ptx_decompile py_emitter py_reconstruct pyc_parser retdec rtti serdes
 	serial_detect sort_detect ssa string_detect testing type_inference
 	type_seed utils var_recovery vbnet_emitter wasm_parser
 )
@@ -129,7 +129,6 @@ readonly EXCLUDED_TEST_SOURCES=(
 # nobody noticed.
 readonly UNTESTED_MODULES=(
 	"experimental:staging area for code that has not settled; nothing here is API yet"
-	"pelib:vendored from the upstream PeLib fork and tracked against it, so tests live with the fuzz corpus in tests/managed_integration/fuzz/fuzz_pelib.cpp"
 )
 
 # Modules whose own CMakeLists asks for a later language standard than the rest

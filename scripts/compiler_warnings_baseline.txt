@@ -73,7 +73,6 @@ src/pdbparser/pdb_symbols.cpp -Wunused-function
 src/pelib/ExportDirectory.cpp -Wunused-but-set-variable
 src/pelib/ImageLoader.cpp -Wclass-memaccess
 src/pelib/ImageLoader.cpp -Wunused-value
-src/pelib/SecurityDirectory.cpp -Wself-assign-field
 src/py_reconstruct/py_stack_sim.cpp -Wunused-but-set-variable
 src/py_reconstruct/py_stack_sim.cpp -Wunused-variable
 src/pyc_parser/pyc_reader.cpp -Wunused-but-set-variable

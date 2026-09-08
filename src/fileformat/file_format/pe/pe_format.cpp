@@ -1972,7 +1972,16 @@ void PeFormat::loadCertificates()
 			continue;
 		}
 		std::uint64_t realEndOffset = realOffset + realSize;
-		std::uint64_t dirEndOffset = dirOffset + dirOffset;
+		// `dirOffset + dirOffset` stood here, which is the directory's offset
+		// doubled rather than its end, so the interval this test used had
+		// nothing to do with the security directory, and dirSize was computed
+		// on the line above and never read.
+		//
+		// It was masked by a second bug: SecurityDirectory::read assigned its
+		// size member to itself, so getSize() was always zero and even the
+		// correct expression would have given an empty interval that overlaps
+		// nothing. Both are fixed; this is the half that lives here.
+		std::uint64_t dirEndOffset = dirOffset + dirSize;
 		// if the intervals overlap
 		if (dirOffset < realEndOffset && realOffset < dirEndOffset)
 		{

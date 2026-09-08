@@ -113,8 +113,15 @@ int SecurityDirectory::read(std::istream& inStream, unsigned int uiOffset, unsig
 	}
 
 	// save the offset and size for future checks
+	//
+	// `this->size = size;` stood here: the member assigned to itself, so
+	// getSize() returned zero for every signed file this tree has ever parsed.
+	// PeFormat::loadCertificates reads it to decide whether the security
+	// directory overlaps a section, which is how Windows decides whether to
+	// ignore the certificates -- so the answer was always "it does not".
+	// clang has been reporting it as -Wself-assign-field all along.
 	this->offset = uiOffset;
-	this->size = size;
+	this->size = uiSize;
 
 	return ERROR_NONE;
 }
