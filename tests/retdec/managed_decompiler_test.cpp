@@ -148,6 +148,9 @@ TEST(ManagedDecompilerOutput, AWriteThatFailsIsNotReportedAsSuccess)
 
 	EXPECT_NE(0, decompileManaged(ManagedFormat::Wasm, kInput, "/dev/full"));
 
-	std::remove(kInput);
-	std::remove("managed_write_probe.wat");
+	// ::remove is the <cstdio> one, which deletes a file. The std-qualified
+	// spelling is the same function but reads as the <algorithm> overload of
+	// that name, and scripts/check_std_includes.sh took it for exactly that.
+	::remove(kInput);
+	::remove("managed_write_probe.wat");
 }

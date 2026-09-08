@@ -5,6 +5,12 @@ A markdown table cell that names `retdec-foo` or `retdec-foo.exe` must match
 an `add_executable` target under src/ (or that target's OUTPUT_NAME).
 Package globs (tarballs, setup.exe templates) are ignored.
 
+So is a name that is an `add_library` target under src/. Not every table whose
+first column holds a `retdec-*` name is a release-artefact table -- docs/
+architecture.md documents the twelve libraries the product does not link that
+way -- and a library is not a binary that failed to be built. Only the names
+that match no target at all are a broken promise, which is what this is for.
+
 Usage:
     python3 scripts/ci/check_release_binaries.py
     python3 scripts/ci/check_release_binaries.py --self-test
@@ -20,6 +26,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 ADD_EXEC_RE = re.compile(
     r"add_executable\(\s*([A-Za-z0-9_:-]+)",
+    re.MULTILINE,
+)
+ADD_LIB_RE = re.compile(
+    r"add_library\(\s*([A-Za-z0-9_.:-]+)",
     re.MULTILINE,
 )
 SET_PROPS_RE = re.compile(
@@ -82,6 +92,17 @@ def product_executables() -> set[str]:
     return names
 
 
+def product_libraries() -> set[str]:
+    """add_library target names under src/, aliases included."""
+    names: set[str] = set()
+    for path in src_cmake_files():
+        for m in ADD_LIB_RE.finditer(read_text(path)):
+            target = m.group(1)
+            if not target.startswith("$"):
+                names.add(target)
+    return names
+
+
 def skip_package_token(name: str) -> bool:
     if any(ch in name for ch in "*<>"):
         return True
@@ -115,14 +136,19 @@ def documented_release_binaries(docs: list[Path]) -> list[tuple[str, str]]:
 def check() -> list[str]:
     errors: list[str] = []
     products = product_executables()
+    libraries = product_libraries()
     docs = public_doc_files()
     named = documented_release_binaries(docs)
     if not named:
         errors.append("no retdec-* binaries found in public release-artefact tables")
         return errors
     for rel, name in named:
-        if name not in products:
-            errors.append(f"{rel}: `{name}` is not an add_executable / OUTPUT_NAME under src/")
+        if name in products or name in libraries:
+            continue
+        errors.append(
+            f"{rel}: `{name}` is not an add_executable / OUTPUT_NAME "
+            f"or an add_library target under src/"
+        )
     return errors
 
 
@@ -157,8 +183,13 @@ def main() -> int:
         return 1
     named = documented_release_binaries(public_doc_files())
     uniq = sorted({n for _, n in named})
+    products = product_executables()
+    libraries = product_libraries()
     print("check_release_binaries: OK")
-    print("  binaries: " + ", ".join(uniq))
+    print("  binaries:  " + ", ".join(n for n in uniq if n in products))
+    also = [n for n in uniq if n not in products and n in libraries]
+    if also:
+        print("  libraries: " + ", ".join(also))
     return 0
 
 
