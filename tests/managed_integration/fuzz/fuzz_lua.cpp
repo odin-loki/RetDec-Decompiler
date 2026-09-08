@@ -13,9 +13,10 @@
 #include <cstddef>
 #include <cstdint>
 
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-    retdec::lua_parser::LuaReader reader(data, size);
-    // Must not abort/crash regardless of input; error returns are acceptable.
-    (void)reader.read();
-    return 0;
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
+{
+	retdec::lua_parser::LuaReader reader(data, size);
+	// Must not abort/crash regardless of input; error returns are acceptable.
+	(void)reader.read();
+	return 0;
 }
