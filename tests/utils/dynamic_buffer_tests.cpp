@@ -126,6 +126,99 @@ TEST(DynamicBufferTests, SubBufferAmountPastTheEndIsTruncated)
 	EXPECT_EQ(2u, sub.getRealDataSize());
 }
 
+// ─── 32-bit wrap in the write and read templates ─────────────────────────────
+//
+// writeImpl and readImpl compute `pos + sizeof(T)` in uint32 arithmetic, twice
+// each: once to clamp against the capacity and once to decide whether to grow.
+// Both sums wrap when pos is within sizeof(T) of 2^32, which is reachable
+// whenever the capacity is near 0xFFFFFFFF -- and the capacity comes from
+// packed-file metadata. decompressor_lzma.cpp:241 and decompressor_nrv.cpp:228
+// and :339 all call setCapacity(unpackedDataSize) with a value read from a UPX
+// header, and pe_upx_stub.cpp:786 writes a uint32 at a position built from
+// attacker-supplied relocation hints.
+//
+// erase() and writeRepeatingByte() in the matching .cpp were fixed for exactly
+// this and say so in their comments; the two templates in the header were not.
+
+// The arithmetic itself, at the positions that matter. Reaching them through
+// write() means growing the buffer to 4 GiB by construction -- a write at index
+// 0xFFFFFFFE needs 0xFFFFFFFF bytes of storage to be in bounds -- so the
+// measurement that found this lives in the commit message and what is kept here
+// is the expression. Before the fix the equivalent line was
+// `if (pos + bytesToWrite > getCapacity()) bytesToWrite = getCapacity() - pos;`
+// in uint32, and at pos 0xFFFFFFFE with width 4 it left the answer at 4:
+//
+//   ERROR: AddressSanitizer: heap-buffer-overflow
+//   WRITE of size 1 at ... in DynamicBuffer::writeImpl<unsigned int>
+//   0 bytes after 4294967295-byte region
+TEST(DynamicBufferTests, WritableAtDoesNotWrapNearTheEndOfTheAddressSpace)
+{
+	// One byte left below the capacity, not four.
+	EXPECT_EQ(1u, DynamicBuffer::writableAt(0xFFFFFFFEu, 0xFFFFFFFFu, 4));
+	EXPECT_EQ(0u, DynamicBuffer::writableAt(0xFFFFFFFFu, 0xFFFFFFFFu, 4));
+	EXPECT_EQ(2u, DynamicBuffer::writableAt(0xFFFFFFFDu, 0xFFFFFFFFu, 8));
+
+	// And the ordinary answers, so a clamp that always returned zero would not
+	// pass.
+	EXPECT_EQ(4u, DynamicBuffer::writableAt(0, 64, 4));
+	EXPECT_EQ(4u, DynamicBuffer::writableAt(60, 64, 4));
+	EXPECT_EQ(2u, DynamicBuffer::writableAt(62, 64, 4));
+	EXPECT_EQ(0u, DynamicBuffer::writableAt(64, 64, 4));
+	EXPECT_EQ(0u, DynamicBuffer::writableAt(100, 64, 4));
+}
+
+TEST(DynamicBufferTests, ReadingPastTheDataIsRefusedRatherThanWrapping)
+{
+	// readImpl carries the identical arithmetic. Its first guard is
+	// `pos >= _data.size()`, so the wrap is only reachable once the buffer is
+	// itself 4 GiB; this checks the guard that keeps it that way.
+	DynamicBuffer buffer(2);
+	buffer.setCapacity(0xFFFFFFFFu);
+
+	EXPECT_EQ(0u, buffer.read<std::uint32_t>(0xFFFFFFFEu));
+	EXPECT_EQ(0u, buffer.read<std::uint32_t>(2));
+}
+
+TEST(DynamicBufferTests, SettingACapacityDoesNotAllocateIt)
+{
+	// setCapacity used to `_data.reserve(_capacity)`, and every caller passes a
+	// size read out of the file being unpacked -- so a UPX header declaring
+	// 0xFFFFFFFF made the unpacker allocate 4 GB before decompressing a byte.
+	// The capacity is a limit on what may be written, not a promise that it
+	// will be.
+	DynamicBuffer buffer(2);
+	buffer.setCapacity(0xFFFFFFFFu);
+
+	EXPECT_EQ(0xFFFFFFFFu, buffer.getCapacity());
+	EXPECT_EQ(0u, buffer.getRealDataSize());
+}
+
+TEST(DynamicBufferTests, AWriteStraddlingTheCapacityWritesOnlyWhatFits)
+{
+	// The ordinary case the clamp exists for, so a fix cannot be "return
+	// early always".
+	DynamicBuffer buffer(4);
+	buffer.setCapacity(6);
+
+	buffer.write<std::uint32_t>(0x11223344u, 4, retdec::utils::Endianness::LITTLE);
+
+	ASSERT_EQ(6u, buffer.getRealDataSize());
+	EXPECT_EQ(0x44, buffer.read<std::uint8_t>(4));
+	EXPECT_EQ(0x33, buffer.read<std::uint8_t>(5));
+}
+
+TEST(DynamicBufferTests, AnOrdinaryWriteAndReadRoundTrip)
+{
+	DynamicBuffer buffer(0);
+	buffer.setCapacity(64);
+
+	buffer.write<std::uint32_t>(0xDEADBEEFu, 8, retdec::utils::Endianness::LITTLE);
+	EXPECT_EQ(0xDEADBEEFu, buffer.read<std::uint32_t>(8, retdec::utils::Endianness::LITTLE));
+
+	buffer.write<std::uint32_t>(0xDEADBEEFu, 16, retdec::utils::Endianness::BIG);
+	EXPECT_EQ(0xDEADBEEFu, buffer.read<std::uint32_t>(16, retdec::utils::Endianness::BIG));
+}
+
 } // namespace
 
 int main(int argc, char** argv)

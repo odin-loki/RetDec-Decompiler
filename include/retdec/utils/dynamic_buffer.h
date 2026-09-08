@@ -13,6 +13,7 @@
 #include <functional>
 #include <vector>
 
+#include "retdec/utils/bounds.h"
 #include "retdec/utils/byte_value_storage.h"
 
 namespace retdec {
@@ -117,6 +118,16 @@ public:
 
 	void writeRepeatingByte(uint8_t byte, uint32_t pos, uint32_t repeatAmount);
 
+	/// Bytes of a @a width-byte value at @a pos that fall inside @a capacity.
+	///
+	/// Public because it is the arithmetic the two templates below got wrong,
+	/// and a test can check it for the positions that matter without the 4 GiB
+	/// buffer that reaching them through write() requires.
+	static constexpr std::size_t writableAt(uint32_t pos, uint32_t capacity, std::size_t width) noexcept
+	{
+		return bounds::clamp(width, bounds::remaining(pos, capacity));
+	}
+
 private:
 	template <typename T>
 	void writeImpl(const T& data, uint32_t pos, retdec::utils::Endianness endianness)
@@ -124,21 +135,40 @@ private:
 		// If the writing position is completely out of bounds, we just end
 		if (pos >= _capacity) return;
 
-		// Buffer would overlap the capacity, copy just the chunk that fits
-		uint32_t bytesToWrite = sizeof(T);
-		if (pos + bytesToWrite > getCapacity()) bytesToWrite = getCapacity() - pos;
+		// Buffer would overlap the capacity, copy just the chunk that fits.
+		//
+		// `pos + bytesToWrite > getCapacity()` was a uint32 sum, and so were
+		// the resize test below it and the subscript in the loop. At pos
+		// 0xFFFFFFFE with sizeof(T) == 4 the sum wraps to 2: the clamp sees
+		// 2 > 0xFFFFFFFF as false and leaves four bytes to write, the resize
+		// test sees 2 > size() as false and skips the grow, and the loop writes
+		// at _data[0xFFFFFFFE]. Measured:
+		//
+		//   ERROR: AddressSanitizer: heap-buffer-overflow
+		//   WRITE of size 1 at ... in DynamicBuffer::writeImpl<unsigned int>
+		//
+		// erase() and writeRepeatingByte() in the matching .cpp were fixed for
+		// exactly this and their comments describe it; these two templates were
+		// missed. The capacity is attacker-controlled: the UPX decompressors
+		// call setCapacity() with a size read from the packed file, and
+		// pe_upx_stub.cpp writes a uint32 at a position built from relocation
+		// hints.
+		const std::size_t bytesToWrite = writableAt(pos, _capacity, sizeof(T));
 
 		if (bytesToWrite == 0) return;
 
-		// Check whether there is enough space allocated
-		if (pos + bytesToWrite > getRealDataSize()) _data.resize(pos + bytesToWrite);
+		// In std::size_t, so the sum that decides the grow cannot be the wrap
+		// it is there to guard against.
+		const std::size_t end = static_cast<std::size_t>(pos) + bytesToWrite;
+		if (end > getRealDataSize()) _data.resize(end);
 
-		for (uint32_t i = 0; i < bytesToWrite; ++i)
+		for (std::size_t i = 0; i < bytesToWrite; ++i)
 		{
+			const std::size_t at = static_cast<std::size_t>(pos) + i;
 			switch (endianness)
 			{
-			case retdec::utils::Endianness::LITTLE: _data[pos + i] = (data >> (i << 3)) & 0xFF; break;
-			case retdec::utils::Endianness::BIG: _data[pos + i] = (data >> ((bytesToWrite - i - 1) << 3)) & 0xFF; break;
+			case retdec::utils::Endianness::LITTLE: _data[at] = (data >> (i << 3)) & 0xFF; break;
+			case retdec::utils::Endianness::BIG: _data[at] = (data >> ((bytesToWrite - i - 1) << 3)) & 0xFF; break;
 			default: break;
 			}
 		}
@@ -154,20 +184,21 @@ private:
 		if (pos >= _capacity) return T{};
 
 		// If reading overlaps over the size, make sure we don't access
-		// uninitialized memory
-		uint32_t bytesToRead = sizeof(T);
-		if (pos + bytesToRead > getCapacity()) bytesToRead = getCapacity() - pos;
-
-		if (pos + bytesToRead > getRealDataSize()) bytesToRead = getRealDataSize() - pos;
+		// uninitialized memory. Both bounds in std::size_t, for the same reason
+		// as writeImpl above: the uint32 sums wrapped and left the subscript
+		// unclamped.
+		std::size_t bytesToRead = writableAt(pos, _capacity, sizeof(T));
+		bytesToRead = bounds::clamp(bytesToRead, bounds::remaining(pos, getRealDataSize()));
 
 		T ret = T{};
-		for (uint32_t i = 0; i < bytesToRead; ++i)
+		for (std::size_t i = 0; i < bytesToRead; ++i)
 		{
+			const std::size_t at = static_cast<std::size_t>(pos) + i;
 			switch (endianness)
 			{
-			case retdec::utils::Endianness::LITTLE: ret |= static_cast<uint64_t>(_data[pos + i]) << (i << 3); break;
+			case retdec::utils::Endianness::LITTLE: ret |= static_cast<uint64_t>(_data[at]) << (i << 3); break;
 			case retdec::utils::Endianness::BIG:
-				ret |= static_cast<uint64_t>(_data[pos + i]) << ((bytesToRead - i - 1) << 3);
+				ret |= static_cast<uint64_t>(_data[at]) << ((bytesToRead - i - 1) << 3);
 				break;
 			default: break;
 			}

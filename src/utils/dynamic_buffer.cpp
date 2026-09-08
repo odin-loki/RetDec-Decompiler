@@ -104,7 +104,23 @@ DynamicBuffer& DynamicBuffer::operator=(DynamicBuffer rhs)
 void DynamicBuffer::setCapacity(uint32_t capacity)
 {
 	_capacity = capacity;
-	_data.reserve(_capacity);
+
+	// `_data.reserve(_capacity)` stood here, and every caller passes a size
+	// read out of the file being unpacked:
+	//
+	//   decompressor_lzma.cpp:241  setCapacity(stub->getStubCapturedData()
+	//                                             ->read<uint32_t>(4))
+	//   decompressor_nrv.cpp:228, :339 and elf_upx_stub.cpp:536, likewise
+	//
+	// so a UPX header declaring 0xFFFFFFFF made the unpacker allocate 4 GB
+	// before decompressing a single byte, from a file that can be a few
+	// hundred bytes long.
+	//
+	// The capacity is a LIMIT on what may be written, not a promise that it
+	// will be. writeImpl and writeRepeatingByte resize as they go and
+	// std::vector grows geometrically, which is what the reserve was standing
+	// in for; the one caller that takes a raw pointer (mpress.cpp:697) does so
+	// after the last write.
 }
 
 /**
