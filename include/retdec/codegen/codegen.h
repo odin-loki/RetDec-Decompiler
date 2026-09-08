@@ -750,6 +750,15 @@ public:
 private:
 	std::string ind(int level, int width) const;
 	std::string emitBlock(const CStmt& block, int indent, const Config& cfg) const;
+
+	/// Body of a loop or branch: the children of a Block, or the statement
+	/// itself when it is not one.
+	///
+	/// The While, DoWhile and For arms each wrote this out by hand and without
+	/// braces, so the `else` bound to the `if` on the child pointer rather than
+	/// the one on the kind -- and a single-statement body matched neither arm
+	/// and was dropped. Written once, the four cannot disagree again.
+	std::string emitBody(const CStmt& body, int indent, const Config& cfg) const;
 };
 
 // ─── Main code generation pass ────────────────────────────────────────────────

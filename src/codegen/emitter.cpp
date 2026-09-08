@@ -61,6 +61,43 @@ std::string Emitter::emitExpr(const CExpr& expr, int outerPrec) const
 
 // ─── Statement emitter ────────────────────────────────────────────────────────
 
+/**
+ * A loop or branch body: the children of a Block, or the statement itself when
+ * it is not one.
+ *
+ * A null child is skipped. The three loop arms used to spell this out inline
+ * and without braces, so `else` bound to `if (c)`: a body that was not a Block
+ * matched neither branch and was DROPPED from the emitted C, and a Block body
+ * containing a null child re-emitted the whole body in its place. Measured, for
+ * a while whose body is {return 3; nullptr}:
+ *
+ *     while (cond) {
+ *         return 3;
+ *         {
+ *             return 3;
+ *         }
+ *     }
+ *
+ * gcc reported it as -Wdangling-else on all three arms of every build;
+ * scripts/standalone_check.sh compiled with -Wall and deleted the log.
+ */
+std::string Emitter::emitBody(const CStmt& body, int indent, const Config& cfg) const
+{
+	std::string s;
+	if (body.kind == CStmt::Kind::Block)
+	{
+		for (const auto& c: body.children)
+		{
+			if (c) s += emitStmt(*c, indent, cfg);
+		}
+	}
+	else
+	{
+		s += emitStmt(body, indent, cfg);
+	}
+	return s;
+}
+
 std::string Emitter::emitBlock(const CStmt& block, int indent, const Config& cfg) const
 {
 	std::string s = "{\n";
@@ -107,31 +144,13 @@ std::string Emitter::emitStmt(const CStmt& stmt, int indent, const Config& cfg) 
 
 		// Then branch — children[0] is a Block.
 		s += "{\n";
-		const auto* thenBlk = stmt.children[0].get();
-		if (thenBlk && thenBlk->kind == CStmt::Kind::Block)
-		{
-			for (auto& c: thenBlk->children)
-				if (c) s += emitStmt(*c, indent + 1, cfg);
-		}
-		else if (thenBlk)
-		{
-			s += emitStmt(*thenBlk, indent + 1, cfg);
-		}
+		if (const auto* thenBlk = stmt.children[0].get()) s += emitBody(*thenBlk, indent + 1, cfg);
 		s += I + "}";
 
 		if (stmt.children.size() > 1 && stmt.children[1])
 		{
 			s += " else {\n";
-			const auto* elseBlk = stmt.children[1].get();
-			if (elseBlk->kind == CStmt::Kind::Block)
-			{
-				for (auto& c: elseBlk->children)
-					if (c) s += emitStmt(*c, indent + 1, cfg);
-			}
-			else
-			{
-				s += emitStmt(*elseBlk, indent + 1, cfg);
-			}
+			s += emitBody(*stmt.children[1], indent + 1, cfg);
 			s += I + "}";
 		}
 		return s + "\n";
@@ -142,13 +161,7 @@ std::string Emitter::emitStmt(const CStmt& stmt, int indent, const Config& cfg) 
 		std::string s = I + "while (" + cond + ") {\n";
 		if (!stmt.children.empty() && stmt.children[0])
 		{
-			const auto& body = stmt.children[0];
-			if (body->kind == CStmt::Kind::Block)
-				for (auto& c: body->children)
-					if (c)
-						s += emitStmt(*c, indent + 1, cfg);
-					else
-						s += emitStmt(*body, indent + 1, cfg);
+			s += emitBody(*stmt.children[0], indent + 1, cfg);
 		}
 		return s + I + "}\n";
 	}
@@ -158,13 +171,7 @@ std::string Emitter::emitStmt(const CStmt& stmt, int indent, const Config& cfg) 
 		std::string s = I + "do {\n";
 		if (!stmt.children.empty() && stmt.children[0])
 		{
-			const auto& body = stmt.children[0];
-			if (body->kind == CStmt::Kind::Block)
-				for (auto& c: body->children)
-					if (c)
-						s += emitStmt(*c, indent + 1, cfg);
-					else
-						s += emitStmt(*body, indent + 1, cfg);
+			s += emitBody(*stmt.children[0], indent + 1, cfg);
 		}
 		return s + I + "} while (" + cond + ");\n";
 	}
@@ -176,13 +183,7 @@ std::string Emitter::emitStmt(const CStmt& stmt, int indent, const Config& cfg) 
 		std::string s = I + "for (" + initStr + "; " + condStr + "; " + incrStr + ") {\n";
 		if (!stmt.children.empty() && stmt.children[0])
 		{
-			const auto& body = stmt.children[0];
-			if (body->kind == CStmt::Kind::Block)
-				for (auto& c: body->children)
-					if (c)
-						s += emitStmt(*c, indent + 1, cfg);
-					else
-						s += emitStmt(*body, indent + 1, cfg);
+			s += emitBody(*stmt.children[0], indent + 1, cfg);
 		}
 		return s + I + "}\n";
 	}

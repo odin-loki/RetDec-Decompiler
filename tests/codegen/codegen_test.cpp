@@ -772,3 +772,72 @@ TEST(ExprCoalescerTest, UndefValueEmitsZero)
 	// Just verify no crash.
 	(void)it;
 }
+
+// ─── Loop bodies that are a single statement ─────────────────────────────────
+//
+// The While, DoWhile and For arms of Emitter::emitStmt wrote
+//
+//     if (body->kind == CStmt::Kind::Block)
+//         for (auto& c : body->children) if (c) s += emitStmt(*c, ...);
+//     else
+//         s += emitStmt(*body, ...);
+//
+// with no braces, so the `else` bound to `if (c)`, not to the `if` on the
+// kind. A body that is not a Block therefore matched neither branch and was
+// dropped, and a Block body with a null child emitted the whole body again.
+// -Wdangling-else said so on all three, three times per build.
+//
+// The If arm two cases above is the same shape written correctly, with braces;
+// these check that all four now agree.
+
+TEST(EmitterTest, WhileBodyThatIsASingleStatementIsNotDropped)
+{
+	Emitter e;
+	auto s = CStmt::whileStmt(CExpr::var("cond"));
+	s->children.push_back(CStmt::breakStmt()); // not a Block
+	Emitter::Config cfg;
+	std::string out = e.emitStmt(*s, 0, cfg);
+	EXPECT_NE(out.find("while (cond)"), std::string::npos) << out;
+	EXPECT_NE(out.find("break"), std::string::npos) << out;
+}
+
+TEST(EmitterTest, DoWhileBodyThatIsASingleStatementIsNotDropped)
+{
+	Emitter e;
+	auto s = CStmt::doWhileStmt(CExpr::var("cond"));
+	s->children.push_back(CStmt::retStmt(CExpr::lit("7")));
+	Emitter::Config cfg;
+	std::string out = e.emitStmt(*s, 0, cfg);
+	EXPECT_NE(out.find("do {"), std::string::npos) << out;
+	EXPECT_NE(out.find("return 7"), std::string::npos) << out;
+}
+
+TEST(EmitterTest, ForBodyThatIsASingleStatementIsNotDropped)
+{
+	Emitter e;
+	auto s = CStmt::forStmt(nullptr, CExpr::var("cond"), nullptr);
+	s->children.push_back(CStmt::retStmt(CExpr::lit("9")));
+	Emitter::Config cfg;
+	std::string out = e.emitStmt(*s, 0, cfg);
+	EXPECT_NE(out.find("for ("), std::string::npos) << out;
+	EXPECT_NE(out.find("return 9"), std::string::npos) << out;
+}
+
+TEST(EmitterTest, ANullChildInALoopBodyDoesNotDuplicateTheBody)
+{
+	// The `else` that bound to `if (c)` re-emitted the whole body for each null
+	// child, so a body of {return 3; nullptr} came out with two returns.
+	Emitter e;
+	auto s = CStmt::whileStmt(CExpr::var("cond"));
+	auto body = CStmt::block();
+	body->children.push_back(CStmt::retStmt(CExpr::lit("3")));
+	body->children.push_back(nullptr);
+	s->children.push_back(body);
+	Emitter::Config cfg;
+	std::string out = e.emitStmt(*s, 0, cfg);
+
+	unsigned returns = 0;
+	for (size_t p = out.find("return 3"); p != std::string::npos; p = out.find("return 3", p + 1))
+		++returns;
+	EXPECT_EQ(1u, returns) << out;
+}
