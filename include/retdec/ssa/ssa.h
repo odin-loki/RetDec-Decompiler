@@ -403,6 +403,12 @@ private:
 	std::vector<std::unique_ptr<BasicBlock>> blocks_;
 	std::vector<std::unique_ptr<IrInstr>> instrs_;
 	std::vector<std::unique_ptr<IrValue>> values_;
+	/// Next SSA version per (kind, varId), keyed ((uint64_t)kind << 32) | varId.
+	/// Maintained incrementally by allocValue(), which otherwise rescanned
+	/// values_ on every call -- O(V) per value and so O(V^2) per function.
+	/// Valid only while an IrValue keeps the kind and varId it was allocated
+	/// with; see the note in allocValue().
+	std::unordered_map<uint64_t, uint32_t> valueVersions_;
 	std::vector<std::unique_ptr<PhiNode>> phis_;
 	std::vector<std::string> varNames_;
 };

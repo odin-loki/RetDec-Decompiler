@@ -110,11 +110,23 @@ IrValue* SSAFunction::allocValue(ValueKind kind, VarId varId)
 	v->id = (ValueId)values_.size();
 	v->kind = kind;
 	v->varId = varId;
-	// Assign version: count existing values with the same varId
-	uint32_t ver = 0;
-	for (auto& existing: values_)
-		if (existing->varId == varId && existing->kind == kind) ++ver;
-	v->version = ver;
+	// The version comes from a running per-(kind, varId) counter rather than a
+	// rescan of values_. The old scan walked the whole vector on every
+	// allocation -- O(V) per value, O(V^2) over a function -- dereferencing a
+	// separately heap-allocated IrValue each step. SSARename::run allocates
+	// roughly one value per instruction plus one per phi and per live-in
+	// variable, so the cost grows with the square of the function's size for no
+	// purpose beyond numbering.
+	//
+	// values_ is append-only, which is necessary but not sufficient: the scan
+	// read `existing->kind` at scan time, while the counter keys on `kind` at
+	// allocation time. Those agree only while nothing rewrites an IrValue's
+	// kind afterwards. Two sites in ssa_rename.cpp used to do exactly that,
+	// allocating with one kind and assigning another on the next line; both now
+	// pass the kind they mean. Anything that resurrects that pattern, or that
+	// erases from values_, has to rebuild this map alongside it.
+	const uint64_t versionKey = ((uint64_t)kind << 32) | varId;
+	v->version = valueVersions_[versionKey]++;
 	IrValue* ptr = v.get();
 	values_.push_back(std::move(v));
 	return ptr;

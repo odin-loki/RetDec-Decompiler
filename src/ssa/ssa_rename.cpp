@@ -179,8 +179,16 @@ void SSARename::renameBlock(SSAFunction& fn, BlockId blkId, std::unordered_map<V
 			ValueId flagReach = currentDef(stacks, kFlagsVarId);
 			if (flagReach == kInvalidValue)
 			{
-				IrValue* undef = fn.allocValue(ValueKind::Undef, kFlagsVarId);
-				undef->kind = ValueKind::FlagBundle;
+				// Allocated with the kind it ends up with. It used to be
+				// allocated as Undef and rewritten on the next line, which
+				// left SSAFunction::allocValue's version counter keyed on a
+				// kind the value does not have. This branch is currently
+				// unreachable -- the flags def-stack is seeded below and
+				// popDefs only pops what a block pushed -- so the version it
+				// would assign changes from 1 to 0, which nothing reads:
+				// IrValue::version feeds only debugName(), which already
+				// carries the unique id.
+				IrValue* undef = fn.allocValue(ValueKind::FlagBundle, kFlagsVarId);
 				flagReach = undef->id;
 				pushDef(stacks, kFlagsVarId, flagReach);
 				pushed.push_back({kFlagsVarId, flagReach});
@@ -266,8 +274,12 @@ void SSARename::run(SSAFunction& fn)
 	}
 	// Seed flags pseudo-variable
 	{
-		IrValue* undef = fn.allocValue(ValueKind::FlagBundle, kFlagsVarId);
-		undef->kind = ValueKind::Undef;
+		// Allocated with the kind it ends up with, for the reason above. This
+		// one runs on every function, so it is what poisoned the counter's
+		// (FlagBundle, kFlagsVarId) key from the first call. No value with
+		// (Undef, kFlagsVarId) exists at this point, so the version is 0 either
+		// way and the resulting kind is Undef either way.
+		IrValue* undef = fn.allocValue(ValueKind::Undef, kFlagsVarId);
 		stacks[kFlagsVarId].push_back(undef->id);
 	}
 

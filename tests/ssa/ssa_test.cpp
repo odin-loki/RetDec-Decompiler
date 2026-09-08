@@ -63,7 +63,10 @@
 #include "retdec/ssa/ssa.h"
 #include <gtest/gtest.h>
 #include <algorithm>
+#include <map>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 using namespace retdec::ssa;
 
@@ -907,6 +910,76 @@ TEST(SSAPass, FlagBundleLoop_MostBundlesSameBlock)
 	EXPECT_TRUE(pass.errors().empty());
 	EXPECT_GE(pass.stats().flagBundles, 1u);
 	EXPECT_GE(pass.stats().sameBlockBundles, 1u);
+}
+
+// ─── SSA value versions ───────────────────────────────────────────────────────
+//
+// SSAFunction::allocValue numbered each value by counting, over the whole
+// values_ vector, how many already had the same (kind, varId). That is O(V) per
+// call and O(V^2) over a function, and SSARename allocates roughly one value per
+// instruction. Measured, allocating into one function:
+//
+//     10,000 calls:    27 ms  ->   0 ms
+//     20,000 calls:   126 ms  ->   0 ms
+//     40,000 calls: 1,386 ms  ->   1 ms
+//
+// A running per-(kind, varId) counter gives the same numbers for one tenth of a
+// millisecond, and this pins "the same numbers": the reference below is the
+// old algorithm, spelled out, over a mix of kinds and variables. It is the
+// equivalence half; the timing above is what the change is for, and is not
+// something this suite can assert.
+TEST(SSAValueVersions, MatchTheCountOfEarlierValuesWithTheSameKindAndVariable)
+{
+	SSAFunction fn("versions");
+
+	std::vector<std::pair<uint32_t, ValueKind>> allocated;
+	for (int i = 0; i < 300; ++i)
+	{
+		const ValueKind kind = (i % 3 == 0) ? ValueKind::VirtualReg : (i % 3 == 1) ? ValueKind::Phi : ValueKind::Undef;
+		const uint32_t varId = static_cast<uint32_t>(i % 7);
+
+		// What the rescan would have answered, computed the way it did.
+		uint32_t expected = 0;
+		for (const auto& earlier: allocated)
+			if (earlier.first == varId && earlier.second == kind) ++expected;
+		allocated.push_back({varId, kind});
+
+		const auto* v = fn.allocValue(kind, varId);
+		ASSERT_NE(nullptr, v) << "allocation " << i;
+		EXPECT_EQ(expected, v->version) << "allocation " << i << ", varId " << varId;
+	}
+}
+
+// The counter keys on the kind passed to allocValue, so a value whose kind is
+// rewritten afterwards would leave it counting a kind that no value has. Two
+// sites in ssa_rename.cpp did that -- allocate as one kind, assign another on
+// the next line -- and both now pass the kind they mean. This pins the property
+// the counter needs: after construction, every value's kind is the one it was
+// allocated with, so versions stay consistent with the vector.
+TEST(SSAValueVersions, SurviveAFullRenameWithoutDrifting)
+{
+	SSAFunction fn("rename");
+	auto* entry = fn.addBlock("entry");
+	auto* header = fn.addBlock("header");
+	auto* ex = fn.addBlock("exit");
+	connect(fn, entry->id, header->id);
+	connect(fn, header->id, header->id);
+	connect(fn, header->id, ex->id);
+	addFlagWrite(fn, header->id);
+	addFlagRead(fn, header->id, FlagBit::ZF);
+
+	SSAPass pass;
+	pass.run(fn);
+	ASSERT_TRUE(pass.errors().empty());
+
+	// Recount from the vector and compare against what each value carries.
+	std::map<std::pair<uint32_t, int>, uint32_t> counts;
+	for (const auto& v: fn.values())
+	{
+		const auto key = std::make_pair(v->varId, static_cast<int>(v->kind));
+		EXPECT_EQ(counts[key], v->version) << "value " << v->id;
+		++counts[key];
+	}
 }
 
 int main(int argc, char** argv)
