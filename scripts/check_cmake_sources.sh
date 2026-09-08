@@ -138,6 +138,7 @@ missing = []
 unfetched = []
 named = set()
 mentioned = set()
+cu_listfiles = {}
 checked = 0
 listfiles = 0
 
@@ -165,6 +166,16 @@ for root in ROOTS:
             cand = os.path.normpath(os.path.join(dirpath, m))
             if os.path.exists(cand):
                 mentioned.add(os.path.relpath(cand, ".").replace(os.sep, "/"))
+        # .cu entries are collected from the whole file rather than from the
+        # target calls above: a source list normally reaches add_library through
+        # a set() variable, and by the time it is an argument it is `${VAR}`.
+        for m in re.finditer(r"[A-Za-z0-9_./-]+\.cu\b", text):
+            cand = os.path.normpath(os.path.join(dirpath, m.group(0)))
+            if not os.path.exists(cand):
+                continue
+            key = os.path.relpath(path, ".").replace(os.sep, "/")
+            cu_listfiles.setdefault(key, []).append(
+                (line_of(text, m.start()), m.group(0)))
         for call in CALL.finditer(text):
             body = call.group(2)
             # Blank out comments rather than deleting them: the reported
@@ -256,6 +267,46 @@ if ROOTS == ["."] or any(r.startswith("tests") for r in ROOTS):
                 continue
             unbuilt.append(rel)
 
+# ── third pass: a .cu source CMake will silently drop ───────────────────────
+#
+# CMake compiles a .cu only when the CUDA language is enabled. A .cu named by a
+# target in a project that has not enabled it belongs to no enabled language,
+# and CMake does not warn, error, or configure-fail -- it drops the file from
+# the target. Measured on a two-source toy project (a.cpp + b.cu, project(...
+# CXX)): the archive built clean and contained a.cpp.o alone.
+#
+# That is how src/cuda_accel/ came to ship three of its eight objects in the
+# default build, under a comment saying the .cu files "are compiled as plain
+# C++" -- which nothing made true. It is invisible to every other check here,
+# because the sources exist and are named; they are simply not built.
+#
+# The rule: a CMakeLists that names a .cu must either route it to the C++
+# compiler (LANGUAGE CXX, which needs -x c++ alongside it -- GCC and Clang
+# dispatch on the extension too and hand a bare .cu to the linker), or name only
+# .cu files that are unreachable unless CUDA is enabled, which cannot be read
+# off the text and is recorded in CU_CUDA_ONLY instead.
+CU_CUDA_ONLY = {
+    # gpu_scanner.cu is named only inside `if(RETDEC_CUDA_FOUND)`, and the
+    # else-branch builds gpu_scanner_cpu.cpp in its place. Nothing is dropped.
+    "src/utils/CMakeLists.txt",
+}
+
+cu_unbuilt = []
+for cu_path, entries in sorted(cu_listfiles.items()):
+    if cu_path in CU_CUDA_ONLY:
+        continue
+    with open(cu_path, encoding="utf-8", errors="replace") as fh:
+        cu_text = fh.read()
+    if "LANGUAGE CXX" in cu_text:
+        continue
+    cu_unbuilt.extend((cu_path, line, token) for line, token in entries)
+
+for path, line, token in cu_unbuilt:
+    print(f"{path}:{line}: names {token}, and this CMakeLists neither sets "
+          f"LANGUAGE CXX for it nor is listed in CU_CUDA_ONLY")
+    print("       CMake drops a .cu from the target, silently, when the CUDA "
+          "language is not enabled")
+
 for rel in unbuilt:
     print(f"{rel}: a test source no CMakeLists.txt names, so ctest never runs it")
     print("       add it to its CMakeLists, or give it a reason in UNBUILT in "
@@ -278,7 +329,9 @@ print(f"checked {checked} source entries across {listfiles} CMakeLists.txt file(
 if UNBUILT:
     print(f"note: {len(UNBUILT)} test source(s) deliberately not built; "
           f"reasons in UNBUILT in this script")
-if missing or unbuilt or unregistered:
+if missing or unbuilt or unregistered or cu_unbuilt:
+    if cu_unbuilt:
+        print(f"FAIL: {len(cu_unbuilt)} .cu source(s) CMake would drop silently")
     if missing:
         print(f"FAIL: {len(missing)} missing source file(s)")
     if unbuilt:
@@ -288,6 +341,6 @@ if missing or unbuilt or unregistered:
               f"never adds")
     sys.exit(1)
 print("OK: every source named by a CMake target exists or is fetchable, every "
-      "test source is built, and every test directory is reachable from "
-      "tests/CMakeLists.txt")
+      "test source is built, every test directory is reachable from "
+      "tests/CMakeLists.txt, and no .cu source is silently dropped")
 PY

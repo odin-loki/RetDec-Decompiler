@@ -55,6 +55,8 @@ set(CUDA_ACCEL_SOURCES
     cuda_context.cpp
     cuda_buffer_pool.cpp
     cuda_profiler.cpp
+)
+set(CUDA_ACCEL_CU_SOURCES
     cuda_disassembler.cu
     cuda_steensgaard.cu
     cuda_type_inferencer.cu
@@ -62,7 +64,34 @@ set(CUDA_ACCEL_SOURCES
     cuda_egraph_simplifier.cu
 )
 
-add_library(retdec-cuda-accel STATIC ${CUDA_ACCEL_SOURCES})
+# "otherwise they are compiled as plain C++" is what the comment above has
+# always said, and nothing made it true.  CMake only knows how to compile a .cu
+# when the CUDA language is enabled; with RETDEC_ENABLE_CUDA_ACCEL=OFF -- the
+# default -- it does not enable it, and a source whose extension belongs to no
+# enabled language is dropped from the target WITHOUT a warning.  Measured on a
+# two-source toy project (a.cpp + b.cu, project(... CXX)): the archive built
+# clean and contained a.cpp.o alone.  So the default build of this library held
+# three of its eight objects, and every host entry point in the five .cu files
+# -- the disassembler, Steensgaard, the type inferencer, the semantic hasher and
+# the e-graph simplifier -- was an undefined reference to anything that linked
+# it.
+#
+# LANGUAGE CXX routes them to the C++ compiler; it is not sufficient on its own,
+# because GCC and Clang dispatch on the extension too and hand a .cu straight to
+# the linker ("linker input file unused because linking not done", and then no
+# object to archive).  -x c++ is what actually names the language.  That these
+# files do compile as C++ is not an assumption: scripts/standalone_check.sh has
+# been compiling all five that way, through CU_AS_CXX_MODULES, on every run.
+if(NOT RETDEC_HAS_CUDA)
+    set_source_files_properties(${CUDA_ACCEL_CU_SOURCES} PROPERTIES LANGUAGE CXX)
+    if(MSVC)
+        set_source_files_properties(${CUDA_ACCEL_CU_SOURCES} PROPERTIES COMPILE_OPTIONS "/TP")
+    else()
+        set_source_files_properties(${CUDA_ACCEL_CU_SOURCES} PROPERTIES COMPILE_OPTIONS "-x;c++")
+    endif()
+endif()
+
+add_library(retdec-cuda-accel STATIC ${CUDA_ACCEL_SOURCES} ${CUDA_ACCEL_CU_SOURCES})
 add_library(retdec::cuda-accel ALIAS retdec-cuda-accel)
 
 # Mixed CXX + CUDA: CXX_STANDARD 23 makes CMake require CUDA23 for .cu, which nvcc does not
