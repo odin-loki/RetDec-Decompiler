@@ -120,7 +120,9 @@
 #include <vector>
 
 namespace retdec {
-namespace ssa { class SSAFunction; }
+namespace ssa {
+class SSAFunction;
+}
 } // namespace retdec
 
 namespace retdec {
@@ -129,245 +131,284 @@ namespace serial_detect {
 // ─── Enumerations ─────────────────────────────────────────────────────────────
 
 /// Top-level serialisation framework categories.
-enum class SerialFramework : uint8_t {
-    Unknown,
-    Protobuf,
-    FlatBuffers,
-    MessagePack,
-    CBOR,
-    JSON,
-    XML,
+enum class SerialFramework : uint8_t
+{
+	Unknown,
+	Protobuf,
+	FlatBuffers,
+	MessagePack,
+	CBOR,
+	JSON,
+	XML,
 };
 
 /// Specific library variant within a framework.
-enum class SerialLibrary : uint8_t {
-    Unknown,
-    // Protobuf
-    Protobuf2,          ///< proto2 (required/optional/repeated)
-    Protobuf3,          ///< proto3 (all fields optional by default)
-    // JSON
-    JSON_RapidJSON,
-    JSON_nlohmann,
-    JSON_simdjson,
-    JSON_cJSON,
-    JSON_Generic,       ///< hand-rolled recursive descent
-    // XML
-    XML_libxml2,
-    XML_Expat,
-    XML_TinyXML,
-    XML_RapidXML,
-    XML_Generic,
-    // Others (single library per format)
-    FlatBuffers_Official,
-    MessagePack_msgpack_c,
-    MessagePack_Generic,
-    CBOR_Generic,
+enum class SerialLibrary : uint8_t
+{
+	Unknown,
+	// Protobuf
+	Protobuf2, ///< proto2 (required/optional/repeated)
+	Protobuf3, ///< proto3 (all fields optional by default)
+	// JSON
+	JSON_RapidJSON,
+	JSON_nlohmann,
+	JSON_simdjson,
+	JSON_cJSON,
+	JSON_Generic, ///< hand-rolled recursive descent
+	// XML
+	XML_libxml2,
+	XML_Expat,
+	XML_TinyXML,
+	XML_RapidXML,
+	XML_Generic,
+	// Others (single library per format)
+	FlatBuffers_Official,
+	MessagePack_msgpack_c,
+	MessagePack_Generic,
+	CBOR_Generic,
 };
 
 /// Wire type for protobuf fields.
-enum class ProtoWireType : uint8_t {
-    Varint         = 0, ///< int32, int64, uint32, uint64, sint32, sint64, bool, enum
-    Fixed64        = 1, ///< fixed64, sfixed64, double
-    LengthDelimited= 2, ///< string, bytes, embedded messages, packed repeated fields
-    StartGroup     = 3, ///< deprecated groups
-    EndGroup       = 4, ///< deprecated groups
-    Fixed32        = 5, ///< fixed32, sfixed32, float
-    Unknown        = 0xFF,
+enum class ProtoWireType : uint8_t
+{
+	Varint = 0,          ///< int32, int64, uint32, uint64, sint32, sint64, bool, enum
+	Fixed64 = 1,         ///< fixed64, sfixed64, double
+	LengthDelimited = 2, ///< string, bytes, embedded messages, packed repeated fields
+	StartGroup = 3,      ///< deprecated groups
+	EndGroup = 4,        ///< deprecated groups
+	Fixed32 = 5,         ///< fixed32, sfixed32, float
+	Unknown = 0xFF,
 };
 
 /// Protobuf scalar type recovered from wire type + width.
-enum class ProtoScalarType : uint8_t {
-    Unknown,
-    Bool,
-    Int32, Int64,
-    UInt32, UInt64,
-    SInt32, SInt64,    ///< zigzag encoded
-    Fixed32, Fixed64,
-    SFixed32, SFixed64,
-    Float, Double,
-    String, Bytes,
-    Message,           ///< nested message (length-delimited)
-    Enum,
+enum class ProtoScalarType : uint8_t
+{
+	Unknown,
+	Bool,
+	Int32,
+	Int64,
+	UInt32,
+	UInt64,
+	SInt32,
+	SInt64, ///< zigzag encoded
+	Fixed32,
+	Fixed64,
+	SFixed32,
+	SFixed64,
+	Float,
+	Double,
+	String,
+	Bytes,
+	Message, ///< nested message (length-delimited)
+	Enum,
 };
 
 /// Cardinality of a protobuf field.
-enum class ProtoCardinality : uint8_t {
-    Optional,   ///< proto3 default / proto2 optional
-    Required,   ///< proto2 required
-    Repeated,   ///< list of values
-    Map,        ///< map<K,V> (desugared to a repeated message)
+enum class ProtoCardinality : uint8_t
+{
+	Optional, ///< proto3 default / proto2 optional
+	Required, ///< proto2 required
+	Repeated, ///< list of values
+	Map,      ///< map<K,V> (desugared to a repeated message)
 };
 
 // ─── Protobuf schema structures ───────────────────────────────────────────────
 
 /// A single protobuf field recovered from binary.
-struct ProtoField {
-    uint32_t        number      = 0;
-    std::string     name;               ///< From symbol table or "field_N"
-    ProtoWireType   wireType    = ProtoWireType::Unknown;
-    ProtoScalarType scalarType  = ProtoScalarType::Unknown;
-    ProtoCardinality cardinality = ProtoCardinality::Optional;
-    bool            hasPresenceBit = false; ///< proto2 has_field() pattern
-    std::string     nestedMessageName;      ///< if scalarType == Message
+struct ProtoField
+{
+	uint32_t number = 0;
+	std::string name; ///< From symbol table or "field_N"
+	ProtoWireType wireType = ProtoWireType::Unknown;
+	ProtoScalarType scalarType = ProtoScalarType::Unknown;
+	ProtoCardinality cardinality = ProtoCardinality::Optional;
+	bool hasPresenceBit = false;   ///< proto2 has_field() pattern
+	std::string nestedMessageName; ///< if scalarType == Message
 
-    std::string protoTypeName() const;
-    std::string toString() const;
+	std::string protoTypeName() const;
+	std::string toString() const;
 };
 
 /// A reconstructed protobuf message.
-struct ProtoMessage {
-    std::string               name;
-    std::vector<ProtoField>   fields;
-    std::vector<std::string>  nestedMessageNames;
-    std::string               sourceFunction; ///< Function where detected
+struct ProtoMessage
+{
+	std::string name;
+	std::vector<ProtoField> fields;
+	std::vector<std::string> nestedMessageNames;
+	std::string sourceFunction; ///< Function where detected
 
-    bool isValid() const { return !fields.empty(); }
+	bool isValid() const
+	{
+		return !fields.empty();
+	}
 };
 
 /// Top-level protobuf schema (may contain multiple messages).
-struct ProtoSchema {
-    std::string                    packageName;   ///< From namespace analysis
-    std::string                    syntaxVersion; ///< "proto2" or "proto3"
-    std::vector<ProtoMessage>      messages;
-    std::vector<std::string>       imports;
+struct ProtoSchema
+{
+	std::string packageName;   ///< From namespace analysis
+	std::string syntaxVersion; ///< "proto2" or "proto3"
+	std::vector<ProtoMessage> messages;
+	std::vector<std::string> imports;
 
-    bool isEmpty() const { return messages.empty(); }
+	bool isEmpty() const
+	{
+		return messages.empty();
+	}
 
-    /// Emit as a .proto text file.
-    std::string emitProto() const;
+	/// Emit as a .proto text file.
+	std::string emitProto() const;
 };
 
 // ─── FlatBuffers schema structures ────────────────────────────────────────────
 
 /// A FlatBuffers field recovered from vtable slot analysis.
-struct FbsField {
-    uint32_t    slot    = 0;    ///< vtable slot index
-    std::string name;           ///< From symbol table or "field_N"
-    uint8_t     accessBytes = 0;///< 1/2/4/8 bytes
-    bool        isVector    = false;
-    bool        isString    = false;
-    std::string typeName;       ///< Inferred type name
+struct FbsField
+{
+	uint32_t slot = 0;       ///< vtable slot index
+	std::string name;        ///< From symbol table or "field_N"
+	uint8_t accessBytes = 0; ///< 1/2/4/8 bytes
+	bool isVector = false;
+	bool isString = false;
+	std::string typeName; ///< Inferred type name
 
-    std::string fbsTypeName() const;
+	std::string fbsTypeName() const;
 };
 
 /// A FlatBuffers table or struct recovered from binary.
-struct FbsTable {
-    std::string              name;
-    std::vector<FbsField>    fields;
-    bool                     isStruct = false;  ///< struct (fixed layout) vs table
-    std::string              sourceFunction;
+struct FbsTable
+{
+	std::string name;
+	std::vector<FbsField> fields;
+	bool isStruct = false; ///< struct (fixed layout) vs table
+	std::string sourceFunction;
 
-    std::string emitFbs() const;
+	std::string emitFbs() const;
 };
 
 /// Top-level FlatBuffers schema.
-struct FbsSchema {
-    std::vector<FbsTable>   tables;
-    std::string             rootType;  ///< root_type declaration
+struct FbsSchema
+{
+	std::vector<FbsTable> tables;
+	std::string rootType; ///< root_type declaration
 
-    bool isEmpty() const { return tables.empty(); }
-    std::string emitFbs() const;
+	bool isEmpty() const
+	{
+		return tables.empty();
+	}
+	std::string emitFbs() const;
 };
 
 // ─── Detection result ─────────────────────────────────────────────────────────
 
 /// Detection result for a single function or module.
-struct SerialResult {
-    SerialFramework framework  = SerialFramework::Unknown;
-    SerialLibrary   library    = SerialLibrary::Unknown;
-    float           confidence = 0.0f;
+struct SerialResult
+{
+	SerialFramework framework = SerialFramework::Unknown;
+	SerialLibrary library = SerialLibrary::Unknown;
+	float confidence = 0.0f;
 
-    /// Populated when framework == Protobuf
-    std::optional<ProtoSchema> protoSchema;
-    /// Populated when framework == FlatBuffers
-    std::optional<FbsSchema>   fbsSchema;
+	/// Populated when framework == Protobuf
+	std::optional<ProtoSchema> protoSchema;
+	/// Populated when framework == FlatBuffers
+	std::optional<FbsSchema> fbsSchema;
 
-    /// Source function(s) providing the strongest evidence.
-    std::vector<std::string> evidenceFunctions;
+	/// Source function(s) providing the strongest evidence.
+	std::vector<std::string> evidenceFunctions;
 
-    /// Human-readable evidence summary.
-    std::string evidenceSummary;
+	/// Human-readable evidence summary.
+	std::string evidenceSummary;
 
-    std::string frameworkName() const noexcept;
-    std::string libraryName()   const noexcept;
-    std::string toString()      const;
-    bool        isValid()       const { return framework != SerialFramework::Unknown; }
+	std::string frameworkName() const noexcept;
+	std::string libraryName() const noexcept;
+	std::string toString() const;
+	bool isValid() const
+	{
+		return framework != SerialFramework::Unknown;
+	}
 };
 
 // ─── Wire-format evidence helpers ─────────────────────────────────────────────
 
 /// Evidence of the protobuf varint encoding loop.
-struct VarintEvidence {
-    bool  found       = false;
-    float confidence  = 0.0f;
-    int   loopCount   = 0;   ///< occurrences of the 7-bit shift pattern
+struct VarintEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	int loopCount = 0; ///< occurrences of the 7-bit shift pattern
 };
 
 /// Evidence of the protobuf field-tag construction.
-struct TagEvidence {
-    bool     found       = false;
-    uint32_t fieldNumber = 0;
-    ProtoWireType wireType = ProtoWireType::Unknown;
+struct TagEvidence
+{
+	bool found = false;
+	uint32_t fieldNumber = 0;
+	ProtoWireType wireType = ProtoWireType::Unknown;
 };
 
 /// Evidence of the FlatBuffers vtable lookup pattern.
-struct VtableEvidence {
-    bool    found          = false;
-    float   confidence     = 0.0f;
-    int     slotCount      = 0;  ///< distinct vtable slots accessed
-    bool    hasBuilderCall = false;
-    bool    hasVerifier    = false;
+struct VtableEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	int slotCount = 0; ///< distinct vtable slots accessed
+	bool hasBuilderCall = false;
+	bool hasVerifier = false;
 };
 
 /// Evidence of a MessagePack type-switch.
-struct MsgpackEvidence {
-    bool  found       = false;
-    float confidence  = 0.0f;
-    int   caseCount   = 0;   ///< switch cases on format byte
-    bool  hasFixint   = false;
-    bool  hasFixmap   = false;
-    bool  hasFixarray = false;
-    bool  hasFixstr   = false;
+struct MsgpackEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	int caseCount = 0; ///< switch cases on format byte
+	bool hasFixint = false;
+	bool hasFixmap = false;
+	bool hasFixarray = false;
+	bool hasFixstr = false;
 };
 
 /// Evidence of CBOR major-type decoding.
-struct CborEvidence {
-    bool  found          = false;
-    float confidence     = 0.0f;
-    bool  hasMajorShift  = false;  ///< (byte >> 5) & 7 pattern
-    bool  hasAdditional  = false;  ///< byte & 0x1F pattern
-    bool  hasExtendedLen = false;  ///< 24/25/26/27 additional-info cases
+struct CborEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasMajorShift = false;  ///< (byte >> 5) & 7 pattern
+	bool hasAdditional = false;  ///< byte & 0x1F pattern
+	bool hasExtendedLen = false; ///< 24/25/26/27 additional-info cases
 };
 
 /// Evidence of a JSON recursive-descent parser.
-struct JsonParserEvidence {
-    bool  found           = false;
-    float confidence      = 0.0f;
-    bool  hasValueSwitch  = false;  ///< switch on '{', '[', '"', etc.
-    bool  hasMutualRecurs = false;  ///< parse_value ↔ parse_object/parse_array
-    bool  hasStringEscape = false;  ///< backslash escape handling
-    bool  hasUnicodeDecod = false;  ///< \uXXXX decoding
+struct JsonParserEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasValueSwitch = false;  ///< switch on '{', '[', '"', etc.
+	bool hasMutualRecurs = false; ///< parse_value ↔ parse_object/parse_array
+	bool hasStringEscape = false; ///< backslash escape handling
+	bool hasUnicodeDecod = false; ///< \uXXXX decoding
 };
 
 /// Library-specific JSON evidence.
-struct JsonLibraryEvidence {
-    SerialLibrary library     = SerialLibrary::Unknown;
-    float         confidence  = 0.0f;
-    bool  hasRapidJsonSymbols = false;
-    bool  hasNlohmannSymbols  = false;
-    bool  hasSimdjsonSimd     = false;
-    bool  hasCJsonSymbols     = false;
+struct JsonLibraryEvidence
+{
+	SerialLibrary library = SerialLibrary::Unknown;
+	float confidence = 0.0f;
+	bool hasRapidJsonSymbols = false;
+	bool hasNlohmannSymbols = false;
+	bool hasSimdjsonSimd = false;
+	bool hasCJsonSymbols = false;
 };
 
 /// Evidence of an XML parser.
-struct XmlParserEvidence {
-    bool  found          = false;
-    float confidence     = 0.0f;
-    bool  hasTagStack    = false;  ///< push/pop around content
-    bool  hasAttrParsing = false;
-    bool  hasSaxCallback = false;  ///< SAX callback registration
-    bool  hasDomTree     = false;  ///< DOM tree construction
+struct XmlParserEvidence
+{
+	bool found = false;
+	float confidence = 0.0f;
+	bool hasTagStack = false; ///< push/pop around content
+	bool hasAttrParsing = false;
+	bool hasSaxCallback = false; ///< SAX callback registration
+	bool hasDomTree = false;     ///< DOM tree construction
 };
 
 // ─── Per-format detectors ─────────────────────────────────────────────────────
@@ -375,19 +416,17 @@ struct XmlParserEvidence {
 /// Base interface for serialisation framework detectors.
 class ISerialDetector {
 public:
-    virtual ~ISerialDetector() = default;
+	virtual ~ISerialDetector() = default;
 
-    /**
-     * @brief Analyse a single function for evidence of this framework.
-     * @param fn         The SSA function to analyse.
-     * @param symTable   Symbol names visible at this function's address.
-     * @return           Detection result; confidence = 0 if not detected.
-     */
-    virtual SerialResult detect(
-        const ssa::SSAFunction& fn,
-        const std::unordered_set<std::string>& symTable) const = 0;
+	/**
+	 * @brief Analyse a single function for evidence of this framework.
+	 * @param fn         The SSA function to analyse.
+	 * @param symTable   Symbol names visible at this function's address.
+	 * @return           Detection result; confidence = 0 if not detected.
+	 */
+	virtual SerialResult detect(const ssa::SSAFunction& fn, const std::unordered_set<std::string>& symTable) const = 0;
 
-    virtual SerialFramework framework() const noexcept = 0;
+	virtual SerialFramework framework() const noexcept = 0;
 };
 
 // ── Protobuf ──────────────────────────────────────────────────────────────────
@@ -407,31 +446,31 @@ public:
  */
 class ProtobufDetector : public ISerialDetector {
 public:
-    SerialResult    detect(const ssa::SSAFunction& fn,
-                           const std::unordered_set<std::string>& sym) const override;
-    SerialFramework framework() const noexcept override { return SerialFramework::Protobuf; }
+	SerialResult detect(const ssa::SSAFunction& fn, const std::unordered_set<std::string>& sym) const override;
+	SerialFramework framework() const noexcept override
+	{
+		return SerialFramework::Protobuf;
+	}
 
-    /// Reconstruct the full ProtoSchema from a set of functions that share
-    /// the same protobuf class (identified by their common `_has_bits_` offset).
-    ProtoSchema reconstructSchema(
-        const std::vector<const ssa::SSAFunction*>& classFunctions,
-        const std::unordered_set<std::string>& symTable) const;
+	/// Reconstruct the full ProtoSchema from a set of functions that share
+	/// the same protobuf class (identified by their common `_has_bits_` offset).
+	ProtoSchema reconstructSchema(
+		const std::vector<const ssa::SSAFunction*>& classFunctions,
+		const std::unordered_set<std::string>& symTable) const;
 
-    /// Emit a `.proto` file from a reconstructed schema.
-    static std::string emitProto(const ProtoSchema& schema);
+	/// Emit a `.proto` file from a reconstructed schema.
+	static std::string emitProto(const ProtoSchema& schema);
 
 private:
-    VarintEvidence  detectVarint(const ssa::SSAFunction& fn) const;
-    TagEvidence     detectTag(const ssa::SSAFunction& fn) const;
-    bool            hasHasBitsArray(const ssa::SSAFunction& fn) const;
-    bool            hasSerializeSymbol(const std::unordered_set<std::string>& sym) const;
-    bool            hasParseSymbol(const std::unordered_set<std::string>& sym) const;
-    SerialLibrary   detectVersion(const ssa::SSAFunction& fn,
-                                   const std::unordered_set<std::string>& sym) const;
+	VarintEvidence detectVarint(const ssa::SSAFunction& fn) const;
+	TagEvidence detectTag(const ssa::SSAFunction& fn) const;
+	bool hasHasBitsArray(const ssa::SSAFunction& fn) const;
+	bool hasSerializeSymbol(const std::unordered_set<std::string>& sym) const;
+	bool hasParseSymbol(const std::unordered_set<std::string>& sym) const;
+	SerialLibrary detectVersion(const ssa::SSAFunction& fn, const std::unordered_set<std::string>& sym) const;
 
-    ProtoField      recoverField(uint32_t fieldNum, ProtoWireType wt,
-                                  const std::string& symbolicName) const;
-    ProtoScalarType wireTypeToScalar(ProtoWireType wt, uint8_t accessBytes) const;
+	ProtoField recoverField(uint32_t fieldNum, ProtoWireType wt, const std::string& symbolicName) const;
+	ProtoScalarType wireTypeToScalar(ProtoWireType wt, uint8_t accessBytes) const;
 };
 
 // ── FlatBuffers ───────────────────────────────────────────────────────────────
@@ -451,22 +490,23 @@ private:
  */
 class FlatBuffersDetector : public ISerialDetector {
 public:
-    SerialResult    detect(const ssa::SSAFunction& fn,
-                           const std::unordered_set<std::string>& sym) const override;
-    SerialFramework framework() const noexcept override { return SerialFramework::FlatBuffers; }
+	SerialResult detect(const ssa::SSAFunction& fn, const std::unordered_set<std::string>& sym) const override;
+	SerialFramework framework() const noexcept override
+	{
+		return SerialFramework::FlatBuffers;
+	}
 
-    FbsSchema reconstructSchema(
-        const std::vector<const ssa::SSAFunction*>& tableFunctions,
-        const std::unordered_set<std::string>& symTable) const;
+	FbsSchema reconstructSchema(
+		const std::vector<const ssa::SSAFunction*>& tableFunctions,
+		const std::unordered_set<std::string>& symTable) const;
 
-    static std::string emitFbs(const FbsSchema& schema);
+	static std::string emitFbs(const FbsSchema& schema);
 
 private:
-    VtableEvidence  detectVtable(const ssa::SSAFunction& fn) const;
-    bool            hasBuilderPattern(const ssa::SSAFunction& fn) const;
-    bool            hasVerifier(const ssa::SSAFunction& fn,
-                                 const std::unordered_set<std::string>& sym) const;
-    std::vector<FbsField> recoverFields(const ssa::SSAFunction& fn) const;
+	VtableEvidence detectVtable(const ssa::SSAFunction& fn) const;
+	bool hasBuilderPattern(const ssa::SSAFunction& fn) const;
+	bool hasVerifier(const ssa::SSAFunction& fn, const std::unordered_set<std::string>& sym) const;
+	std::vector<FbsField> recoverFields(const ssa::SSAFunction& fn) const;
 };
 
 // ── MessagePack ───────────────────────────────────────────────────────────────
@@ -487,14 +527,16 @@ private:
  */
 class MessagePackDetector : public ISerialDetector {
 public:
-    SerialResult    detect(const ssa::SSAFunction& fn,
-                           const std::unordered_set<std::string>& sym) const override;
-    SerialFramework framework() const noexcept override { return SerialFramework::MessagePack; }
+	SerialResult detect(const ssa::SSAFunction& fn, const std::unordered_set<std::string>& sym) const override;
+	SerialFramework framework() const noexcept override
+	{
+		return SerialFramework::MessagePack;
+	}
 
 private:
-    MsgpackEvidence detectSwitch(const ssa::SSAFunction& fn) const;
-    bool            hasFixedWidthRead(const ssa::SSAFunction& fn) const;
-    SerialLibrary   detectLibrary(const std::unordered_set<std::string>& sym) const;
+	MsgpackEvidence detectSwitch(const ssa::SSAFunction& fn) const;
+	bool hasFixedWidthRead(const ssa::SSAFunction& fn) const;
+	SerialLibrary detectLibrary(const std::unordered_set<std::string>& sym) const;
 };
 
 // ── CBOR ──────────────────────────────────────────────────────────────────────
@@ -510,14 +552,16 @@ private:
  */
 class CBORDetector : public ISerialDetector {
 public:
-    SerialResult    detect(const ssa::SSAFunction& fn,
-                           const std::unordered_set<std::string>& sym) const override;
-    SerialFramework framework() const noexcept override { return SerialFramework::CBOR; }
+	SerialResult detect(const ssa::SSAFunction& fn, const std::unordered_set<std::string>& sym) const override;
+	SerialFramework framework() const noexcept override
+	{
+		return SerialFramework::CBOR;
+	}
 
 private:
-    CborEvidence    detectMajorType(const ssa::SSAFunction& fn) const;
-    bool            hasAdditionalInfo(const ssa::SSAFunction& fn) const;
-    bool            hasExtendedLength(const ssa::SSAFunction& fn) const;
+	CborEvidence detectMajorType(const ssa::SSAFunction& fn) const;
+	bool hasAdditionalInfo(const ssa::SSAFunction& fn) const;
+	bool hasExtendedLength(const ssa::SSAFunction& fn) const;
 };
 
 // ── JSON ──────────────────────────────────────────────────────────────────────
@@ -546,21 +590,22 @@ private:
  */
 class JSONDetector : public ISerialDetector {
 public:
-    SerialResult    detect(const ssa::SSAFunction& fn,
-                           const std::unordered_set<std::string>& sym) const override;
-    SerialFramework framework() const noexcept override { return SerialFramework::JSON; }
+	SerialResult detect(const ssa::SSAFunction& fn, const std::unordered_set<std::string>& sym) const override;
+	SerialFramework framework() const noexcept override
+	{
+		return SerialFramework::JSON;
+	}
 
 private:
-    JsonParserEvidence  detectGeneric(const ssa::SSAFunction& fn) const;
-    JsonLibraryEvidence detectLibrary(const ssa::SSAFunction& fn,
-                                       const std::unordered_set<std::string>& sym) const;
+	JsonParserEvidence detectGeneric(const ssa::SSAFunction& fn) const;
+	JsonLibraryEvidence detectLibrary(const ssa::SSAFunction& fn, const std::unordered_set<std::string>& sym) const;
 
-    bool hasRapidJsonSymbols(const std::unordered_set<std::string>& sym) const;
-    bool hasNlohmannSymbols(const std::unordered_set<std::string>& sym) const;
-    bool hasSimdjsonSimd(const ssa::SSAFunction& fn) const;
-    bool hasCJsonSymbols(const std::unordered_set<std::string>& sym) const;
-    bool hasValueSwitch(const ssa::SSAFunction& fn) const;
-    bool hasMutualRecursion(const ssa::SSAFunction& fn) const;
+	bool hasRapidJsonSymbols(const std::unordered_set<std::string>& sym) const;
+	bool hasNlohmannSymbols(const std::unordered_set<std::string>& sym) const;
+	bool hasSimdjsonSimd(const ssa::SSAFunction& fn) const;
+	bool hasCJsonSymbols(const std::unordered_set<std::string>& sym) const;
+	bool hasValueSwitch(const ssa::SSAFunction& fn) const;
+	bool hasMutualRecursion(const ssa::SSAFunction& fn) const;
 };
 
 // ── XML ───────────────────────────────────────────────────────────────────────
@@ -585,21 +630,22 @@ private:
  */
 class XMLDetector : public ISerialDetector {
 public:
-    SerialResult    detect(const ssa::SSAFunction& fn,
-                           const std::unordered_set<std::string>& sym) const override;
-    SerialFramework framework() const noexcept override { return SerialFramework::XML; }
+	SerialResult detect(const ssa::SSAFunction& fn, const std::unordered_set<std::string>& sym) const override;
+	SerialFramework framework() const noexcept override
+	{
+		return SerialFramework::XML;
+	}
 
 private:
-    XmlParserEvidence detectGeneric(const ssa::SSAFunction& fn) const;
-    SerialLibrary     detectLibrary(const ssa::SSAFunction& fn,
-                                     const std::unordered_set<std::string>& sym) const;
+	XmlParserEvidence detectGeneric(const ssa::SSAFunction& fn) const;
+	SerialLibrary detectLibrary(const ssa::SSAFunction& fn, const std::unordered_set<std::string>& sym) const;
 
-    bool hasLibxml2Symbols(const std::unordered_set<std::string>& sym) const;
-    bool hasExpatSymbols(const std::unordered_set<std::string>& sym) const;
-    bool hasTinyXmlSymbols(const std::unordered_set<std::string>& sym) const;
-    bool hasRapidXmlSymbols(const std::unordered_set<std::string>& sym) const;
-    bool hasTagScanning(const ssa::SSAFunction& fn) const;
-    bool hasSaxCallbacks(const ssa::SSAFunction& fn) const;
+	bool hasLibxml2Symbols(const std::unordered_set<std::string>& sym) const;
+	bool hasExpatSymbols(const std::unordered_set<std::string>& sym) const;
+	bool hasTinyXmlSymbols(const std::unordered_set<std::string>& sym) const;
+	bool hasRapidXmlSymbols(const std::unordered_set<std::string>& sym) const;
+	bool hasTagScanning(const ssa::SSAFunction& fn) const;
+	bool hasSaxCallbacks(const ssa::SSAFunction& fn) const;
 };
 
 // ─── Schema emitters ──────────────────────────────────────────────────────────
@@ -622,12 +668,12 @@ private:
  */
 class ProtoEmitter {
 public:
-    /// Width of indentation (spaces) per nesting level.
-    int indentWidth = 2;
+	/// Width of indentation (spaces) per nesting level.
+	int indentWidth = 2;
 
-    std::string emit(const ProtoSchema& schema) const;
-    std::string emitMessage(const ProtoMessage& msg, int indent = 0) const;
-    std::string emitField(const ProtoField& field, int indent = 0) const;
+	std::string emit(const ProtoSchema& schema) const;
+	std::string emitMessage(const ProtoMessage& msg, int indent = 0) const;
+	std::string emitField(const ProtoField& field, int indent = 0) const;
 };
 
 /**
@@ -645,11 +691,11 @@ public:
  */
 class FbsEmitter {
 public:
-    int indentWidth = 2;
+	int indentWidth = 2;
 
-    std::string emit(const FbsSchema& schema) const;
-    std::string emitTable(const FbsTable& table, int indent = 0) const;
-    std::string emitField(const FbsField& field, int indent = 0) const;
+	std::string emit(const FbsSchema& schema) const;
+	std::string emitTable(const FbsTable& table, int indent = 0) const;
+	std::string emitField(const FbsField& field, int indent = 0) const;
 };
 
 // ─── Top-level detector orchestrator ─────────────────────────────────────────
@@ -673,82 +719,90 @@ public:
  */
 class SerialDetector {
 public:
-    struct Config {
-        float minConfidence  = 0.40f;
-        int   minBlocks      = 3;
-        bool  detectProtobuf = true;
-        bool  detectFlatBuf  = true;
-        bool  detectMsgpack  = true;
-        bool  detectCbor     = true;
-        bool  detectJson     = true;
-        bool  detectXml      = true;
-        bool  emitProto      = true;  ///< emit .proto text in results
-        bool  emitFbs        = true;  ///< emit .fbs text in results
-    };
-    static Config defaultConfig() noexcept { return {}; }
+	struct Config
+	{
+		float minConfidence = 0.40f;
+		int minBlocks = 3;
+		bool detectProtobuf = true;
+		bool detectFlatBuf = true;
+		bool detectMsgpack = true;
+		bool detectCbor = true;
+		bool detectJson = true;
+		bool detectXml = true;
+		bool emitProto = true; ///< emit .proto text in results
+		bool emitFbs = true;   ///< emit .fbs text in results
+	};
+	static Config defaultConfig() noexcept
+	{
+		return {};
+	}
 
-    struct Stats {
-        uint32_t functionsAnalysed = 0;
-        uint32_t functionsSkipped  = 0;
-        uint32_t detections        = 0;
-        uint32_t protobufClasses   = 0;
-        uint32_t flatbufTables     = 0;
-        std::unordered_map<SerialFramework, uint32_t> byFramework;
-    };
+	struct Stats
+	{
+		uint32_t functionsAnalysed = 0;
+		uint32_t functionsSkipped = 0;
+		uint32_t detections = 0;
+		uint32_t protobufClasses = 0;
+		uint32_t flatbufTables = 0;
+		std::unordered_map<SerialFramework, uint32_t> byFramework;
+	};
 
-    using DetectionMap = std::unordered_map<std::string, SerialResult>;
+	using DetectionMap = std::unordered_map<std::string, SerialResult>;
 
-    explicit SerialDetector(Config cfg = defaultConfig());
+	explicit SerialDetector(Config cfg = defaultConfig());
 
-    /**
-     * @brief Analyse a single function for any serialisation framework.
-     */
-    SerialResult analyseFunction(
-        const ssa::SSAFunction& fn,
-        const std::unordered_set<std::string>& symTable = {}) const;
+	/**
+	 * @brief Analyse a single function for any serialisation framework.
+	 */
+	SerialResult
+	analyseFunction(const ssa::SSAFunction& fn, const std::unordered_set<std::string>& symTable = {}) const;
 
-    /**
-     * @brief Analyse an entire module.
-     *
-     * @param functions  All SSA functions in the binary.
-     * @param symTable   All exported / imported symbol names.
-     */
-    DetectionMap analyseModule(
-        const std::vector<const ssa::SSAFunction*>& functions,
-        const std::unordered_set<std::string>& symTable = {}) const;
+	/**
+	 * @brief Analyse an entire module.
+	 *
+	 * @param functions  All SSA functions in the binary.
+	 * @param symTable   All exported / imported symbol names.
+	 */
+	DetectionMap analyseModule(
+		const std::vector<const ssa::SSAFunction*>& functions,
+		const std::unordered_set<std::string>& symTable = {}) const;
 
-    /**
-     * @brief After analyseModule(), returns emitted schema file contents.
-     *
-     * Keys are suggested filenames (e.g. "recovered.proto", "schema.fbs").
-     */
-    const std::unordered_map<std::string, std::string>& schemaFiles() const {
-        return schemaFiles_;
-    }
+	/**
+	 * @brief After analyseModule(), returns emitted schema file contents.
+	 *
+	 * Keys are suggested filenames (e.g. "recovered.proto", "schema.fbs").
+	 */
+	const std::unordered_map<std::string, std::string>& schemaFiles() const
+	{
+		return schemaFiles_;
+	}
 
-    const Stats& stats() const { return stats_; }
+	const Stats& stats() const
+	{
+		return stats_;
+	}
 
 private:
-    Config  cfg_;
-    mutable Stats stats_;
-    mutable std::unordered_map<std::string, std::string> schemaFiles_;
+	Config cfg_;
+	mutable Stats stats_;
+	mutable std::unordered_map<std::string, std::string> schemaFiles_;
 
-    std::vector<std::unique_ptr<ISerialDetector>> detectors_;
+	std::vector<std::unique_ptr<ISerialDetector>> detectors_;
 
-    ProtoEmitter protoEmitter_;
-    FbsEmitter   fbsEmitter_;
+	ProtoEmitter protoEmitter_;
+	FbsEmitter fbsEmitter_;
 
-    bool passesPreflight(const ssa::SSAFunction& fn) const;
+	bool passesPreflight(const ssa::SSAFunction& fn) const;
 
-    void groupAndReconstructProtobuf(
-        const DetectionMap& detections,
-        const std::vector<const ssa::SSAFunction*>& functions,
-        const std::unordered_set<std::string>& symTable) const;
+	void groupAndReconstructProtobuf(
+		const DetectionMap& detections,
+		const std::vector<const ssa::SSAFunction*>& functions,
+		const std::unordered_set<std::string>& symTable) const;
 
-    void groupAndReconstructFlatBuffers(
-        const DetectionMap& detections,
-        const std::vector<const ssa::SSAFunction*>& functions,
-        const std::unordered_set<std::string>& symTable) const;
+	void groupAndReconstructFlatBuffers(
+		const DetectionMap& detections,
+		const std::vector<const ssa::SSAFunction*>& functions,
+		const std::unordered_set<std::string>& symTable) const;
 };
 
 // ─── Utility helpers (public for testing) ─────────────────────────────────────
