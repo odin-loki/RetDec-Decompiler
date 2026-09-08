@@ -8,6 +8,7 @@
 #include <memory>
 #include <cassert>
 
+#include "retdec/utils/bounds.h"
 #include "retdec/utils/conversion.h"
 #include "retdec/fileformat/utils/asn1.h"
 
@@ -106,11 +107,19 @@ std::vector<std::uint8_t> Asn1Item::getContentData() const
 	return std::vector<std::uint8_t>(_contentBegin, _contentBegin + _contentLength);
 }
 
+/// Nothing usable was decoded: no content, and an iterator that cannot be
+/// dereferenced or advanced into the buffer.
+void Asn1Item::refuse()
+{
+	_contentLength = 0;
+	_contentBegin = _data.end();
+}
+
 void Asn1Item::init()
 {
 	if (_data.size() < 2)
 	{
-		_contentBegin = _data.end();
+		refuse();
 		return;
 	}
 
@@ -122,15 +131,59 @@ void Asn1Item::init()
 		lengthBytes += _contentLength & 0x7F;
 		_contentLength = 0;
 
-		// Not enough data
-		if (1 + lengthBytes > _data.size())
+		// More length bytes than a std::size_t holds means the accumulation
+		// below silently drops the high ones and decodes to a length the file
+		// did not state. DER's long form allows up to 127; this decoder can
+		// represent eight.
+		if (lengthBytes > sizeof(std::size_t))
 		{
-			_contentBegin = _data.end();
+			refuse();
+			return;
+		}
+
+		// Not enough data.
+		//
+		// The guard was `1 + lengthBytes > _data.size()`, which establishes
+		// lengthBytes + 1 <= size while the loop below reads _data[2 + i] and
+		// so touches index lengthBytes + 1. At size == lengthBytes + 1 exactly
+		// -- {tag, 0x81}, two bytes -- the guard passed and the last iteration
+		// read _data[_data.size()]. Asn1Item::parse happens to apply a stricter
+		// test and so masked it, but the constructors are public API and
+		// Asn1OctetString, Asn1BitString, Asn1Object, Asn1Sequence and
+		// Asn1ContextSpecific each take a caller-supplied vector directly.
+		if (!utils::bounds::rangeFits(2, _data.size(), lengthBytes))
+		{
+			refuse();
 			return;
 		}
 
 		for (std::size_t i = 0; i < lengthBytes; ++i)
 			_contentLength = (_contentLength << 8) | _data[2 + i];
+	}
+
+	// `_data.resize(2 + lengthBytes + _contentLength)` stood here unguarded,
+	// and _contentLength is up to eight bytes straight out of the input.
+	//
+	// With eight length bytes of 0xFF it is SIZE_MAX, the sum wraps to 9, and
+	// the vector is SHRUNK to nine elements -- after which
+	// `_contentBegin = _data.begin() + 10` is an iterator past the end, which
+	// is undefined on its own, and getContentData() builds a vector from
+	// [that, that + SIZE_MAX).
+	//
+	// Without a wrap it is honoured verbatim: three length bytes of 0xFF ask
+	// for 16 MiB of zeros from a six-byte input, and eight ask for an
+	// allocation that throws std::length_error out of a constructor no caller
+	// guards.
+	//
+	// A declared length the input cannot supply is a malformed item. Refusing
+	// it is the answer rather than zero-filling, because fabricated content
+	// bytes are worse than none in a decoder whose purpose is signatures. The
+	// resize still runs when the input DOES supply the content, which is what
+	// trims an item to its declared extent when more bytes follow it.
+	if (!utils::bounds::rangeFits(2 + lengthBytes, _data.size(), _contentLength))
+	{
+		refuse();
+		return;
 	}
 
 	_data.resize(2 + lengthBytes + _contentLength);

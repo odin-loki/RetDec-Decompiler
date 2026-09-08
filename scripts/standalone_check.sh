@@ -168,6 +168,12 @@ readonly EXTRA_SOURCES=(
 	# link LLVM. tests/fileformat/format_lattice_test.cpp needs nothing else
 	# either, so both come into the fast gate through PARTIAL_SUITES below.
 	"fileformat/lattice/format_lattice.cpp"
+	# The DER decoder. src/fileformat as a whole links LLVM; this file includes
+	# only retdec/utils/conversion.h and its own header, and had no caller
+	# anywhere in the tree -- pe_format.cpp includes asn1.h and references no
+	# Asn1 symbol -- so nothing compiled it here and nothing asserted anything
+	# about it.
+	"fileformat/utils/asn1.cpp"
 	# The logger. src/utils/io/ is a subdirectory, and the module glob above is
 	# `src/<module>/*.cpp`, which does not recurse -- so the process-wide writer
 	# table every thread of this tree logs through was compiled by nothing here,
@@ -183,7 +189,7 @@ readonly PARTIAL_SUITES=(
 	"retdec:semantic_recovery_export_test.cpp thread_pool_test.cpp managed_decompiler_test.cpp"
 	# The other twelve files in tests/fileformat/ drive retdec::fileformat,
 	# which publicly links LLVM. This one drives the lattice, which does not.
-	"fileformat:format_lattice_test.cpp"
+	"fileformat:format_lattice_test.cpp asn1_test.cpp"
 )
 
 # Sources inside an included module that must NOT be compiled here, mirroring a

@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace retdec {
@@ -73,9 +74,12 @@ protected:
 
 private:
 	void init();
+	/// Nothing usable was decoded: no content, and an iterator that cannot be
+	/// dereferenced or advanced into the buffer.
+	void refuse();
 
 	std::vector<std::uint8_t>::const_iterator _contentBegin;
-	std::size_t _contentLength;
+	std::size_t _contentLength = 0;
 };
 
 class Asn1Null : public Asn1Item {
