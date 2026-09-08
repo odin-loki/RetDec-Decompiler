@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <sstream>
 
 namespace retdec {
@@ -28,20 +29,34 @@ std::vector<PyStackSimulator::RawInstr> PyStackSimulator::decode() const {
     const auto& bc  = code_.co_code;
     const bool is311 = code_.version.atLeast(3, 11);
     size_t pos = 0;
-    int32_t extArg = 0;
+    uint32_t extArg = 0;
+    int extCount = 0;
+
+    // CPython builds an oparg out of at most four bytes, so at most three
+    // EXTENDED_ARG prefixes contribute to one.  A file is free to write more,
+    // and each further prefix used to shift a signed accumulator another eight
+    // bits — overflowing it, and handing the instruction a negative count.
+    const int kMaxExtendedArgs = 3;
 
     while (pos + 1 < bc.size()) {
         uint8_t op  = bc[pos];
-        int32_t arg = static_cast<int32_t>(bc[pos+1]);
+        uint32_t arg = static_cast<uint32_t>(bc[pos+1]);
         pos += 2;
 
         const uint8_t extOp = is311 ? 144 : 90; // EXTENDED_ARG
         if (op == extOp) {
-            extArg = (extArg | arg) << 8;
+            if (extCount < kMaxExtendedArgs) {
+                extArg = (extArg | arg) << 8;
+                ++extCount;
+            }
             continue;
         }
-        int32_t fullArg = extArg | arg;
+        const uint32_t full = extArg | arg;
+        int32_t fullArg = full > static_cast<uint32_t>(INT32_MAX)
+                ? INT32_MAX
+                : static_cast<int32_t>(full);
         extArg = 0;
+        extCount = 0;
 
         OpcodeInfo info = opcodeInfo(op, code_.version);
         result.push_back({std::string(info.name), fullArg,
@@ -152,6 +167,46 @@ PyExprPtr PyStackSimulator::popExpr(Stack& stack) const {
 
 void PyStackSimulator::pushExpr(Stack& stack, PyExprPtr e) const {
     stack.push_back({std::move(e)});
+}
+
+// ─── boundedPopCount / boundedPushCount ──────────────────────────────────────
+
+/// How many placeholder operands a count may synthesise past the end of the
+/// stack.  Enough for the truncation to be visible in the emitted Python, few
+/// enough that a made-up count cannot cost more than a rounding error.
+static constexpr int32_t kUnderflowAllowance = 64;
+
+/// The ceiling for a count that pushes rather than pops.  Nothing on the stack
+/// limits it, and CPython itself never emits an UNPACK_SEQUENCE anywhere near
+/// this wide.
+static constexpr int32_t kMaxSynthesizedPushes = 4096;
+
+int32_t PyStackSimulator::boundedPopCount(int32_t declared, const Stack& stack,
+                                          int32_t perItem) const {
+    if (declared <= 0 || perItem <= 0)
+        return 0;
+
+    const int64_t affordable =
+            static_cast<int64_t>(stack.size()) / perItem + kUnderflowAllowance;
+    if (declared <= affordable)
+        return declared;
+
+    warn("Operand count " + std::to_string(declared) +
+         " exceeds what the stack can hold; truncated to " +
+         std::to_string(affordable));
+    return static_cast<int32_t>(affordable);
+}
+
+int32_t PyStackSimulator::boundedPushCount(int32_t declared) const {
+    if (declared <= 0)
+        return 0;
+    if (declared <= kMaxSynthesizedPushes)
+        return declared;
+
+    warn("Operand count " + std::to_string(declared) +
+         " exceeds the synthesised-operand limit; truncated to " +
+         std::to_string(kMaxSynthesizedPushes));
+    return kMaxSynthesizedPushes;
 }
 
 // ─── buildBinOp ──────────────────────────────────────────────────────────────
@@ -467,13 +522,14 @@ bool PyStackSimulator::applyInstr(const RawInstr& instr,
 
     // ── BUILD_* ──────────────────────────────────────────────────────────────
     if (nm == "BUILD_LIST" || nm == "BUILD_TUPLE" || nm == "BUILD_SET") {
-        pushExpr(stack, buildCollection(nm, arg, stack));
+        pushExpr(stack, buildCollection(nm, boundedPopCount(arg, stack), stack));
         return true;
     }
     if (nm == "BUILD_MAP") {
         auto e = std::make_shared<PyExpr>();
         e->kind = PyExpr::Kind::Dict;
-        for (int i = 0; i < arg; ++i) {
+        const int32_t pairs = boundedPopCount(arg, stack, 2);
+        for (int i = 0; i < pairs; ++i) {
             auto v = popExpr(stack);
             auto k = popExpr(stack);
             e->values.insert(e->values.begin(), v);
@@ -485,7 +541,8 @@ bool PyStackSimulator::applyInstr(const RawInstr& instr,
     if (nm == "BUILD_CONST_KEY_MAP") {
         auto keys_tuple = popExpr(stack);
         ExprList vals;
-        for (int i = 0; i < arg; ++i)
+        const int32_t nvals = boundedPopCount(arg, stack);
+        for (int i = 0; i < nvals; ++i)
             vals.insert(vals.begin(), popExpr(stack));
         auto e = std::make_shared<PyExpr>();
         e->kind = PyExpr::Kind::Dict;
@@ -503,7 +560,8 @@ bool PyStackSimulator::applyInstr(const RawInstr& instr,
         auto e = std::make_shared<PyExpr>();
         e->kind = PyExpr::Kind::JoinedStr;
         ExprList parts;
-        for (int i = 0; i < arg; ++i)
+        const int32_t nparts = boundedPopCount(arg, stack);
+        for (int i = 0; i < nparts; ++i)
             parts.insert(parts.begin(), popExpr(stack));
         e->values = std::move(parts);
         pushExpr(stack, e);
@@ -527,7 +585,8 @@ bool PyStackSimulator::applyInstr(const RawInstr& instr,
     // ── CALL operations ──────────────────────────────────────────────────────
     if (nm == "CALL_FUNCTION") {
         ExprList posArgs;
-        for (int i = 0; i < arg; ++i)
+        const int32_t nargs = boundedPopCount(arg, stack);
+        for (int i = 0; i < nargs; ++i)
             posArgs.insert(posArgs.begin(), popExpr(stack));
         auto func = popExpr(stack);
         pushExpr(stack, makeCall(func, posArgs));
@@ -537,7 +596,8 @@ bool PyStackSimulator::applyInstr(const RawInstr& instr,
         // TOS is tuple of keyword names; TOS1..TOS(N) are values; then positional args; then func
         auto kw_names_expr = popExpr(stack);
         ExprList allArgs;
-        for (int i = 0; i < arg; ++i)
+        const int32_t nargs = boundedPopCount(arg, stack);
+        for (int i = 0; i < nargs; ++i)
             allArgs.insert(allArgs.begin(), popExpr(stack));
         auto func = popExpr(stack);
         auto e = makeCall(func, {});
@@ -545,12 +605,18 @@ bool PyStackSimulator::applyInstr(const RawInstr& instr,
         int numKw = 0;
         if (kw_names_expr->kind == PyExpr::Kind::Tuple ||
             kw_names_expr->kind == PyExpr::Kind::Constant) {
-            numKw = static_cast<int>(kw_names_expr->values.size());
+            // The name tuple came off the stack and need not agree with the
+            // oparg.  A tuple longer than the call is wide names keywords that
+            // have no value to bind to; without the clamp the split point goes
+            // negative and the keyword loop indexes allArgs from behind its
+            // first element.
+            numKw = static_cast<int>(std::min<size_t>(
+                    kw_names_expr->values.size(), static_cast<size_t>(nargs)));
         }
-        int numPos = arg - numKw;
+        int numPos = nargs - numKw;
         for (int i = 0; i < numPos; ++i)
             e->values.push_back(allArgs[i]);
-        for (int i = numPos; i < arg; ++i) {
+        for (int i = numPos; i < nargs; ++i) {
             PyKeyword kw;
             if (i - numPos < numKw && kw_names_expr->values[i - numPos]) {
                 auto& kname = kw_names_expr->values[i - numPos];
@@ -585,7 +651,8 @@ bool PyStackSimulator::applyInstr(const RawInstr& instr,
     }
     if (nm == "CALL_METHOD") {
         ExprList posArgs;
-        for (int i = 0; i < arg; ++i)
+        const int32_t nargs = boundedPopCount(arg, stack);
+        for (int i = 0; i < nargs; ++i)
             posArgs.insert(posArgs.begin(), popExpr(stack));
         auto self_placeholder = popExpr(stack); // _self_ placeholder
         auto method = popExpr(stack);
@@ -596,7 +663,8 @@ bool PyStackSimulator::applyInstr(const RawInstr& instr,
     if (nm == "CALL") {
         // 3.11+: arg = nargs (positional + kw)
         ExprList posArgs;
-        for (int i = 0; i < arg; ++i)
+        const int32_t nargs = boundedPopCount(arg, stack);
+        for (int i = 0; i < nargs; ++i)
             posArgs.insert(posArgs.begin(), popExpr(stack));
         auto callable = popExpr(stack);
         // Check for null self (LOAD_METHOD pushed null)
@@ -777,7 +845,7 @@ bool PyStackSimulator::applyInstr(const RawInstr& instr,
     if (nm == "UNPACK_SEQUENCE") {
         auto seq = popExpr(stack);
         // Push individual elements (synthetic subscripts)
-        for (int i = arg - 1; i >= 0; --i) {
+        for (int i = boundedPushCount(arg) - 1; i >= 0; --i) {
             auto e = std::make_shared<PyExpr>();
             e->kind = PyExpr::Kind::Subscript;
             e->children = {seq, makeConst(static_cast<int64_t>(i))};

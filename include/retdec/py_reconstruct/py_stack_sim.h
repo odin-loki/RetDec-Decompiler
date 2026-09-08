@@ -72,6 +72,11 @@ public:
 
     PyStackSimulator(const PyCodeObject& code, Options opts = defaultOptions());
 
+    /// The code object is held by reference for the simulator's whole life, so
+    /// a temporary would be gone before simulate() runs.  Rejecting it here
+    /// turns a use-after-free into a compile error.
+    PyStackSimulator(PyCodeObject&& code, Options opts = defaultOptions()) = delete;
+
     /**
      * @brief Run the simulation and return all statements.
      * @return flat statement list for the entire function body.
@@ -128,6 +133,22 @@ private:
 
     PyExprPtr popExpr(Stack& stack) const;
     void      pushExpr(Stack& stack, PyExprPtr e) const;
+
+    /// A .pyc carries its operand counts in the instruction stream and nothing
+    /// in the file has to agree with them, so a four-byte count can name two
+    /// billion operands a three-instruction body does not have.  Every loop
+    /// that consumes or synthesises one entry per count goes through one of
+    /// these, so a declared count costs at most what could plausibly exist.
+
+    /// Once the stack is empty every further pop yields a placeholder that
+    /// carries no information; a few of those are enough to show the block was
+    /// truncated.  @a perItem is how many entries one count pops.
+    int32_t boundedPopCount(int32_t declared, const Stack& stack,
+                            int32_t perItem = 1) const;
+
+    /// A count that only pushes has no stack to run out of, so it gets a flat
+    /// cap instead.
+    int32_t boundedPushCount(int32_t declared) const;
 
     PyExprPtr constFromIdx(int32_t idx) const;
     std::string nameFromIdx(int32_t idx, const std::vector<std::string>& table) const;

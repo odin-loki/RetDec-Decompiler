@@ -160,3 +160,128 @@ TEST(Asn1Tests, TooShortAnInputIsRefused)
 	EXPECT_EQ(0u, empty.getContentLength());
 	EXPECT_TRUE(empty.getContentData().empty());
 }
+
+// ─── what a small input can cost ────────────────────────────────────────────
+//
+// Nesting is recursion (a SEQUENCE parses its content, which is another item)
+// and every Asn1Item copies the buffer it was handed. So each level holds a
+// copy of its parent's content while it descends, and a SEQUENCE's elements
+// each keep a copy of the siblings that follow them. Both are quadratic in the
+// input, measured on this container:
+//
+//   16384 nested SEQUENCEs, 65538 bytes in  -> 1058276 kB resident
+//   20000 sibling NULLs,    40006 bytes in  ->  396680 kB resident
+//
+// and the deep one runs out of stack rather than memory on a larger input.
+
+namespace {
+
+/// A DER length in the long form that uses @a bytes length bytes.
+void appendLongFormLength(std::vector<std::uint8_t>& out, std::size_t length, int bytes)
+{
+	out.push_back(static_cast<std::uint8_t>(0x80 | bytes));
+	for (int i = bytes - 1; i >= 0; --i)
+		out.push_back(static_cast<std::uint8_t>((length >> (8 * i)) & 0xFF));
+}
+
+/// @a levels SEQUENCEs wrapped around a NULL.
+std::vector<std::uint8_t> nestedSequences(int levels)
+{
+	std::vector<std::uint8_t> buf = {Asn1Tag_Null, 0x00};
+	for (int i = 0; i < levels; ++i)
+	{
+		std::vector<std::uint8_t> next;
+		next.push_back(Asn1Tag_Sequence);
+		appendLongFormLength(next, buf.size(), 2);
+		next.insert(next.end(), buf.begin(), buf.end());
+		buf = std::move(next);
+	}
+	return buf;
+}
+
+/// One SEQUENCE holding @a count NULLs.
+std::vector<std::uint8_t> siblingNulls(int count)
+{
+	std::vector<std::uint8_t> body;
+	for (int i = 0; i < count; ++i)
+	{
+		body.push_back(Asn1Tag_Null);
+		body.push_back(0x00);
+	}
+
+	std::vector<std::uint8_t> buf;
+	buf.push_back(Asn1Tag_Sequence);
+	appendLongFormLength(buf, body.size(), 4);
+	buf.insert(buf.end(), body.begin(), body.end());
+	return buf;
+}
+
+/// How deep a parsed item actually goes.
+std::size_t depthOf(const std::shared_ptr<Asn1Item>& item)
+{
+	std::size_t depth = 0;
+	std::shared_ptr<Asn1Item> cur = item;
+	while (cur)
+	{
+		++depth;
+		if (auto seq = std::dynamic_pointer_cast<Asn1Sequence>(cur))
+		{
+			cur = seq->getNumberOfElements() ? seq->getElement(0) : nullptr;
+			continue;
+		}
+		if (auto cs = std::dynamic_pointer_cast<Asn1ContextSpecific>(cur))
+		{
+			cur = cs->getItem();
+			continue;
+		}
+		break;
+	}
+	return depth;
+}
+
+} // namespace
+
+TEST(Asn1Tests, NestingStopsAtABoundedDepth)
+{
+	auto item = Asn1Item::parse(nestedSequences(16384));
+
+	ASSERT_TRUE(item != nullptr);
+	// The exact bound is the decoder's business; that there is one is not.
+	EXPECT_LE(depthOf(item), 256u);
+}
+
+// A signature's own nesting is tens of levels, so the bound has to be well
+// clear of anything real.
+TEST(Asn1Tests, OrdinarySignatureNestingIsNotRefused)
+{
+	const int levels = 16;
+	auto item = Asn1Item::parse(nestedSequences(levels));
+
+	ASSERT_TRUE(item != nullptr);
+	EXPECT_EQ(static_cast<std::size_t>(levels) + 1, depthOf(item));
+}
+
+// Every element is still there, and each holds only its own bytes rather than
+// a copy of the siblings that follow it.
+TEST(Asn1Tests, ASequenceOfManyElementsKeepsOnlyItsOwnBytes)
+{
+	const int count = 20000;
+	auto item = Asn1Item::parse(siblingNulls(count));
+
+	auto seq = std::dynamic_pointer_cast<Asn1Sequence>(item);
+	ASSERT_TRUE(seq != nullptr);
+	ASSERT_EQ(static_cast<std::size_t>(count), seq->getNumberOfElements());
+
+	std::size_t total = 0;
+	for (std::size_t i = 0; i < seq->getNumberOfElements(); ++i)
+	{
+		auto element = seq->getElement(i);
+		ASSERT_TRUE(element != nullptr);
+		EXPECT_EQ(2u, element->getLength()) << "element " << i;
+		total += element->getData().capacity();
+	}
+
+	// Without the trim each element retained the rest of the sequence, so this
+	// sum was quadratic: about 400 MB for a 40 kB input.
+	EXPECT_LT(total, 16u * 1024 * 1024) << "elements retained " << total << " bytes";
+}

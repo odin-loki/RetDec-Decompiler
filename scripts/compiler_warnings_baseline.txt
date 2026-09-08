@@ -48,9 +48,6 @@ src/cuda_accel/cuda_type_inferencer.cu -Wmisleading-indentation
 src/cuda_accel/cuda_type_inferencer.cu -Wunused-but-set-variable
 src/cuda_accel/cuda_type_inferencer.cu -Wunused-variable
 src/debug_info/dwarf_extractor.cpp -Wunused-const-variable
-src/debug_info/pdb_extractor.cpp -Wunused-but-set-variable
-src/debug_info/pdb_extractor.cpp -Wunused-const-variable
-src/debug_info/pdb_extractor.cpp -Wunused-variable
 src/eh_reconstruct/msvc_eh.cpp -Wunused-but-set-variable
 src/eh_reconstruct/msvc_eh.cpp -Wunused-variable
 src/fileformat/lattice/format_lattice.cpp -Wunused-but-set-variable

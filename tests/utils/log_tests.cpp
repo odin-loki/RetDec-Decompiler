@@ -228,6 +228,87 @@ TEST(LogTests, AFileLoggerThatCannotOpenItsFileThrows)
 	EXPECT_THROW(FileLogger(path.string(), true), std::runtime_error);
 }
 
+// ─── the stream outlives the Logger that was handed out ─────────────────────
+//
+// Holding a counted reference across the copy in Log::info() kept the SOURCE
+// alive for the duration of the copy, but the copy shares the source's stream
+// BY REFERENCE, and for a FileLogger that stream is a member of the source. So
+// the caller of Log::info() was left writing through an ofstream a concurrent
+// Log::set had already destroyed:
+//
+//     ERROR: AddressSanitizer: heap-use-after-free  READ of size 8
+//       #0 std::endl<char, std::char_traits<char>>(std::ostream&)
+//       #2 retdec::utils::io::Logger::operator<<   logger.h:125
+//     freed by thread T0: ... FileLogger::~FileLogger()
+//
+// Reproduced in three runs out of three before the fix.
+
+TEST(LogTests, AHandedOutLoggerKeepsItsFileAliveWhileItIsWrittenTo)
+{
+	const std::filesystem::path path = scratchPath("outlive");
+	std::error_code ec;
+	std::filesystem::remove(path, ec);
+
+	Log::set(Log::Type::Info, Logger::Ptr(new FileLogger(path.string(), true)));
+
+	std::atomic<bool> stop{false};
+	std::atomic<int> writes{0};
+
+	std::thread writer([&stop, &writes]() {
+		while (!stop.load(std::memory_order_relaxed))
+		{
+			// The gap between taking the logger and writing through it is the
+			// window; a real caller has one too, it is just shorter.
+			Logger logger = Log::info();
+			std::this_thread::yield();
+			logger << "x" << std::endl;
+			writes.fetch_add(1, std::memory_order_relaxed);
+		}
+	});
+
+	const std::filesystem::path other = scratchPath("outlive-other");
+	for (int i = 0; i < 2000; ++i)
+	{
+		Log::set(Log::Type::Info, Logger::Ptr(new FileLogger(other.string(), true)));
+	}
+	stop.store(true, std::memory_order_relaxed);
+	writer.join();
+
+	EXPECT_GT(writes.load(), 0);
+
+	// Put the default back before the scratch files go away.
+	Log::set(Log::Type::Info, Logger::Ptr());
+	std::filesystem::remove(path, ec);
+	std::filesystem::remove(other, ec);
+}
+
+// The single-threaded shape of the same property, so a regression is visible
+// without needing the race to be lost.
+TEST(LogTests, AHandedOutLoggerSurvivesTheTableDroppingItsWriter)
+{
+	const std::filesystem::path path = scratchPath("survive");
+	std::error_code ec;
+	std::filesystem::remove(path, ec);
+
+	Log::set(Log::Type::Info, Logger::Ptr(new FileLogger(path.string(), true)));
+
+	Logger held = Log::info();
+	Log::set(Log::Type::Info, Logger::Ptr()); // the table lets go
+	held << "written after the table let go" << std::endl;
+
+	// Destroying the last co-owner is what closes the file.
+	{
+		Logger discard = std::move(held);
+		(void) discard;
+	}
+
+	const std::string content = readAll(path);
+	EXPECT_NE(std::string::npos, content.find("written after the table let go"))
+		<< "log file held " << content.size() << " byte(s)";
+
+	std::filesystem::remove(path, ec);
+}
+
 } // namespace tests
 } // namespace io
 } // namespace utils

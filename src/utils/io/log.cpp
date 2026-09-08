@@ -82,9 +82,11 @@ void Log::set(const Log::Type& lt, Logger::Ptr&& logger)
 
 Logger Log::info()
 {
-	// Through the shared_ptr, not through get(): the copy below is what raced,
-	// and holding a counted reference across it is the fix.
-	if (auto logger = getShared(Log::Type::Info)) return Logger(*logger);
+	// Through the shared_ptr, not through get(): the copy below is what raced.
+	// The handle is passed into the copy as well -- the copy shares the
+	// original's stream by reference, so letting go of the last reference here
+	// would leave the caller writing through a destroyed ofstream.
+	if (auto logger = getShared(Log::Type::Info)) return Logger(*logger, logger);
 	return Logger(defaultLogger);
 }
 
@@ -96,14 +98,14 @@ void Log::phase(const std::string& phase, const Log::Action& action)
 Logger Log::debug()
 {
 	// See Log::info().
-	if (auto logger = getShared(Log::Type::Debug)) return Logger(*logger);
+	if (auto logger = getShared(Log::Type::Debug)) return Logger(*logger, logger);
 	return Logger(defaultLogger);
 }
 
 Logger Log::error()
 {
 	// See Log::info().
-	if (auto logger = getShared(Log::Type::Error)) return Logger(*logger);
+	if (auto logger = getShared(Log::Type::Error)) return Logger(*logger, logger);
 	return Logger(defaultLogger);
 }
 

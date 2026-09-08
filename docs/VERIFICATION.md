@@ -5,7 +5,7 @@
 [ESBMC](https://github.com/esbmc/esbmc), a bounded model checker, using an SMT
 solver rather than test cases.
 
-**272 properties across 13 verified kernels, all discharged.**
+**286 properties across 14 verified kernels, all discharged.**
 
 ```bash
 ./scripts/verify_esbmc.sh              # every proof
@@ -34,7 +34,7 @@ the fuzzer found in this tree was in the same few lines of arithmetic: a count,
 length or offset read out of a file and used before anything checked the input
 could supply it.
 
-That arithmetic now lives in thirteen headers, and the harnesses under
+That arithmetic now lives in fourteen headers, and the harnesses under
 `tests/verification/` prove it — for **all** inputs over the whole 64-bit range,
 by SMT, not for sampled values. Where a harness has no loops no unwinding bound
 applies at all and the result is a proof outright; where it walks a buffer the
@@ -62,7 +62,13 @@ copy this arithmetic into a call site, call it.
 Each of these exists because a survey found the same primitive re-derived at
 several call sites with at least one of the copies wrong. The count is proofs
 discharged, not properties claimed; the driver discovers them from the source,
-so the table cannot drift from what runs.
+and `scripts/verify_esbmc.sh --doc` re-derives this table from the harnesses and
+fails if a row, a count or the total disagrees, so it cannot drift from what
+runs.
+
+The table was hand-maintained until that check existed, and it had drifted:
+`utils/safe_name.h` and its thirteen proofs were missing, and the total read 272
+against 286 discharged.
 
 | Header | The question it answers once | Proofs |
 |---|---|---|
@@ -79,7 +85,8 @@ so the table cannot drift from what runs.
 | `utils/branch_target.h` | where does this displacement branch to, and is it inside? | 16 |
 | `utils/compressed_int.h` | ECMA-335 II.23.2 compressed integers | 19 |
 | `utils/float_predicate.h` | decisions taken on floats that came out of a binary | 27 |
-| | | **272** |
+| `utils/safe_name.h` | can this name out of an archive be joined to a path? | 13 |
+| | | **286** |
 
 Every run enables `--overflow-check`, `--unsigned-overflow-check`,
 `--ub-shift-check`, `--nan-check` and `--memory-leak-check`, so a proof fails if
@@ -362,6 +369,31 @@ an *unconstrained* double, so the entropy proofs hold for every possible
 behaviour of libm rather than for the one ESBMC models. That is also the only
 way they discharge: a single symbolic call to ESBMC's `std::log2` model did not
 return in 180s.
+
+### `utils/safe_name.h` — a name out of an archive, about to be a path
+
+An `ar` member name was concatenated with an output directory and opened for
+writing, and the sanitiser that was supposed to make that safe kept backslash in
+its allow-list. A test that tries the spellings an attacker might use says
+nothing about the ones it did not try, so the property is stated the other way
+round, over a fully symbolic eight-byte buffer: every byte unconstrained, and
+nothing left in the result that could separate, anchor or truncate a path.
+
+| Property | What it rules out |
+|---|---|
+| No surviving byte is path-ish | an allow-list that keeps a separator, a colon or a NUL |
+| `sanitizeChar` is idempotent | a second pass producing a different name from the first |
+| A byte survives only if it is kept or is the substitute | a byte reaching the result by a path the allow-list does not name |
+| No byte outside ASCII survives | a multi-byte sequence whose tail spells a separator |
+| A sanitised name holds no path-ish byte, at any length | the per-byte property not composing over the buffer |
+| A usable name has a byte that is not a dot or a space | `..`, `.` and `   ` passing as names |
+| A name of only dots and spaces is rejected | the same, reached from the other side |
+| A name with a substituted byte is still usable | over-rejection making the sanitiser useless |
+| The measured traversals are neutralised | the specific inputs that got out, kept as properties |
+| An embedded NUL does not survive | a name truncating at the C-string boundary after the check |
+| An ordinary member name is unchanged | a sanitiser that mangles the normal case |
+| The placeholder is a fixed point | the fallback name itself needing sanitising |
+| The directory names are rejected | `.` and `..` reaching a join |
 
 ## Which solver, and why the answer is not "whichever"
 

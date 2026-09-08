@@ -30,6 +30,7 @@ on:
       - 'src/cli_parser/pe_reader.cpp'
       - 'tests/verification/**'
       - 'scripts/verify_esbmc.sh'
+      - 'docs/VERIFICATION.md'
       - '.github/workflows/verify-esbmc.yml'
   workflow_dispatch:
   schedule:
@@ -66,6 +67,13 @@ jobs:
       # program. This is a grep, so it costs nothing to keep honest.
       - name: Check every proved kernel still has a caller
         run: ./scripts/verify_esbmc.sh --routing
+
+      # docs/VERIFICATION.md leads with a proof count and a table of one row
+      # per kernel, and claimed of itself that it could not drift. It had:
+      # utils/safe_name.h and its thirteen proofs were missing and the headline
+      # read 272 against 286. Re-derived from the harnesses here instead.
+      - name: Check docs/VERIFICATION.md against the harnesses
+        run: ./scripts/verify_esbmc.sh --doc
 
   prove:
     name: prove
@@ -116,8 +124,8 @@ jobs:
   # The second leg used to be `SOLVER: --boolector` against the same suite,
   # described as "two independent solvers". It was not: scripts/verify_esbmc.sh
   # lets each harness pin its own backend with `// ESBMC-SOLVER:` and that pin
-  # overrides SOLVER, and ten of the thirteen default harnesses are pinned -- so
-  # for 252 of the 272 proofs both legs invoked byte-identical esbmc commands,
+  # overrides SOLVER, and ten of the fourteen default harnesses are pinned -- so
+  # for 253 of the 286 proofs both legs invoked byte-identical esbmc commands,
   # and one harness pins --cvc5, which neither leg ever ran.
   #
   # `--cross` is the mode that actually does what the matrix was describing: it

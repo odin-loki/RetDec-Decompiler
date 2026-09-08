@@ -60,6 +60,14 @@ Logger::Logger(std::ostream& stream, bool verbose): _out(stream), _verbose(verbo
 Logger::Logger(const Logger& from): Logger(from._out, from._verbose)
 {
 	_currentBrush = from._currentBrush;
+	// A copy of a Logger that co-owns its stream co-owns it too.
+	_streamOwner = from._streamOwner;
+}
+
+Logger::Logger(const Logger& from, std::shared_ptr<const void> streamOwner)
+		: Logger(from)
+{
+	_streamOwner = std::move(streamOwner);
 }
 
 Logger::~Logger()

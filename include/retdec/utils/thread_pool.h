@@ -35,19 +35,38 @@ public:
 		if (numThreads == 0) numThreads = std::thread::hardware_concurrency();
 		if (numThreads == 0) numThreads = 1;
 		workers_.reserve(numThreads);
-		for (std::size_t i = 0; i < numThreads; ++i)
-			workers_.emplace_back([this] { workerLoop(); });
+		try
+		{
+			for (std::size_t i = 0; i < numThreads; ++i)
+				workers_.emplace_back([this] { workerLoop(); });
+		}
+		catch (...)
+		{
+			// std::thread's constructor throws std::system_error when the
+			// process is out of threads, and a pool sized from
+			// hardware_concurrency() on a machine already near its limit is
+			// exactly where that happens.
+			//
+			// The destructor does not run for an object whose constructor
+			// threw, but the members that were built do get destroyed -- with
+			// the workers that did start still waiting inside workerLoop().
+			// Destroying the condition variable they wait on hangs the process:
+			//
+			//   #2 __GI___pthread_cond_destroy  nptl/pthread_cond_destroy.c:53
+			//   #3 retdec::utils::ThreadPool::ThreadPool  thread_pool.h:40
+			//
+			// measured under `ulimit -v 600000` with 512 requested threads, and
+			// had it got past that, ~thread on a joinable thread calls
+			// std::terminate(). So the workers have to be retired here, before
+			// the exception leaves.
+			shutdown();
+			throw;
+		}
 	}
 
 	~ThreadPool()
 	{
-		{
-			std::unique_lock<std::mutex> lock(queueMutex_);
-			stop_ = true;
-		}
-		condition_.notify_all();
-		for (auto& t: workers_)
-			if (t.joinable()) t.join();
+		shutdown();
 	}
 
 	ThreadPool(const ThreadPool&) = delete;
@@ -82,6 +101,20 @@ public:
 	}
 
 private:
+	/// Tell every worker to finish and join it. Safe to call on a
+	/// partly-constructed pool: it only touches what the constructor built
+	/// before it got here.
+	void shutdown() noexcept
+	{
+		{
+			std::unique_lock<std::mutex> lock(queueMutex_);
+			stop_ = true;
+		}
+		condition_.notify_all();
+		for (auto& t: workers_)
+			if (t.joinable()) t.join();
+	}
+
 	void workerLoop()
 	{
 		for (;;)

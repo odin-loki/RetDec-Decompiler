@@ -134,6 +134,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 
 using retdec::cli_parser::PeReader;
 
@@ -247,17 +248,29 @@ extern "C" void proof_open_through_the_section_table_reads_no_byte_outside()
 
 extern "C" void proof_a_short_file_is_refused_and_nothing_is_read()
 {
-	// Under 0x40 bytes open() must refuse before reading anything. The buffer
-	// is exactly the symbolic size, so a read of even byte 0 on this path would
-	// be reported as an out-of-bounds access rather than passing unnoticed.
+	// Under 0x40 bytes open() must refuse before reading anything, and the name
+	// claims both halves. Only the buffer's extent can check the second one.
+	//
+	// It used to be `std::uint8_t buf[0x3F]` -- a FIXED 63 bytes, whatever
+	// `size` came out as. A read of byte 0, or of byte 0x3E, is then inside a
+	// live object and ESBMC has nothing to report, so "nothing is read" was not
+	// checked at all: the proof was the refusal, twice. Allocating exactly
+	// `size` bytes makes any read on this path an out-of-bounds access on an
+	// object whose bound is the same symbolic value open() was handed.
 	const std::size_t size = nondet_u32() % 0x40;
-	std::uint8_t buf[0x3F] = {};
-	for (std::size_t i = 0; i < size && i < sizeof(buf); ++i)
+	__ESBMC_assume(size > 0); // size == 0 is proof_a_null_buffer_is_refused
+
+	std::uint8_t* buf = static_cast<std::uint8_t*>(std::malloc(size));
+	__ESBMC_assume(buf != nullptr);
+	for (std::size_t i = 0; i < size; ++i)
 		buf[i] = nondet_u8();
 
 	PeReader r;
 	assert(!r.open(buf, size));
 	assert(!r.isValid());
+
+	// --memory-leak-check is on for every run, so this is not optional.
+	std::free(buf);
 }
 
 extern "C" void proof_a_null_buffer_is_refused()

@@ -7,19 +7,27 @@
 
 #include "retdec/serdes/std.h"
 
-#include "retdec/serdes/std.h"
-
 namespace retdec {
 namespace serdes {
 
 void deserialize(const rapidjson::Value& val, const char*& str)
 {
-	str = val.GetString();
+	// GetString() asserts IsString() only in a debug build of RapidJSON; in a
+	// release build it hands back whatever the union happens to hold, which for
+	// a number is not a pointer at all.
+	str = val.IsString() ? val.GetString() : "";
 }
 
 void deserialize(const rapidjson::Value& val, std::string& s)
 {
-	s = val.GetString();
+	if (val.IsString())
+	{
+		s.assign(val.GetString(), val.GetStringLength());
+	}
+	else
+	{
+		s.clear();
+	}
 }
 
 int64_t deserializeInt64(

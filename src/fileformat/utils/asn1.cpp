@@ -20,9 +20,44 @@ Asn1Item::Asn1Item(Asn1Type type, const std::vector<std::uint8_t>& data): _type(
 	init();
 }
 
+namespace {
+
+/// The nesting an Authenticode or PKCS#7 structure actually uses is tens of
+/// levels; this is far above anything a real signature reaches and far below
+/// what costs anything.
+constexpr std::size_t kMaxNestingDepth = 64;
+
+/// Thread-local: fileformat parses several files at once, and one file's
+/// nesting must not count against another's.
+std::size_t& nestingDepth()
+{
+	static thread_local std::size_t depth = 0;
+	return depth;
+}
+
+/// Counts one level of Asn1Item::parse for as long as it is in scope.
+class NestingGuard
+{
+public:
+	NestingGuard() { ++nestingDepth(); }
+	~NestingGuard() { --nestingDepth(); }
+
+	NestingGuard(const NestingGuard&) = delete;
+	NestingGuard& operator=(const NestingGuard&) = delete;
+};
+
+} // anonymous namespace
+
 std::shared_ptr<Asn1Item> Asn1Item::parse(const std::vector<std::uint8_t>& data)
 {
 	if (data.empty()) return nullptr;
+
+	// A SEQUENCE and a context-specific item each parse their content, so
+	// nesting is recursion -- and every level holds a copy of its parent's
+	// content while it descends. 16384 nested SEQUENCEs fit in 65538 bytes and
+	// cost 1058276 kB resident; deeper inputs run out of stack instead.
+	if (nestingDepth() >= kMaxNestingDepth) return nullptr;
+	NestingGuard depthGuard;
 
 	// At least space for tag and length
 	auto itr = data.begin();
@@ -187,6 +222,17 @@ void Asn1Item::init()
 	}
 
 	_data.resize(2 + lengthBytes + _contentLength);
+
+	// _data was copy-constructed from the caller's whole remaining buffer, and
+	// resizing down to this item's extent keeps the capacity that copy
+	// allocated. In a SEQUENCE each element is parsed from the buffer that
+	// still holds all its later siblings, so every element retained a copy of
+	// the rest of the sequence: a 40006-byte SEQUENCE of 20000 NULLs held
+	// 396680 kB resident, and 6440 kB once the capacity goes back.
+	//
+	// This has to come before _contentBegin is taken -- it can reallocate.
+	_data.shrink_to_fit();
+
 	_contentBegin = _data.begin() + 2 + lengthBytes;
 }
 

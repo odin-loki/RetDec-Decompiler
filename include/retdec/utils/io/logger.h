@@ -54,6 +54,24 @@ public:
 	Logger(std::ostream& stream, bool verbose = true);
 	Logger(const Logger& logger);
 
+	/// Copies @a logger and keeps @a streamOwner alive for as long as the copy
+	/// lives.
+	///
+	/// A copy shares the original's stream by reference, and for a FileLogger
+	/// that stream is a member of the original. Log::info() used to hand back
+	/// such a copy and let its own counted reference go, so a concurrent
+	/// Log::set() that dropped the last other reference destroyed the ofstream
+	/// the caller was about to write through:
+	///
+	///   ERROR: AddressSanitizer: heap-use-after-free  READ of size 8
+	///     #0 std::endl<char, std::char_traits<char>>(std::ostream&)
+	///     #2 retdec::utils::io::Logger::operator<<   logger.h:125
+	///   freed by thread T0: ... retdec::utils::io::FileLogger::~FileLogger()
+	///
+	/// Passing the owning handle in makes the copy a co-owner, so the stream
+	/// outlives every Logger that refers to it.
+	Logger(const Logger& logger, std::shared_ptr<const void> streamOwner);
+
 	// Virtual, because FileLogger derives from this and Logger::Ptr is
 	// std::unique_ptr<Logger>. Log::set turns that unique_ptr into a
 	// std::shared_ptr<Logger>, which adopts unique_ptr's deleter --
@@ -75,6 +93,11 @@ private:
 
 protected:
 	std::ostream& _out;
+
+	/// Non-null when _out belongs to an object this Logger shares ownership of.
+	/// Type-erased because it owns the Logger that owns the stream, which is
+	/// this very class.
+	std::shared_ptr<const void> _streamOwner;
 
 	bool _verbose = true;
 	Color _currentBrush = Color::Default;

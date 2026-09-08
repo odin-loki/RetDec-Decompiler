@@ -601,3 +601,150 @@ TEST(PyStackSimulator, CompareOpFallsBackToEqualForAnUnknownArgument)
 	}
 	EXPECT_TRUE(checked);
 }
+
+// ─── PyStackSimulator: operand counts a file made up ─────────────────────────
+//
+// Every count below is written in the instruction stream by the file being
+// decompiled, and nothing in the file has to supply the operands it names.
+
+// BUILD_TUPLE 5, CALL_FUNCTION_KW 0.  The keyword-name tuple is five long and
+// the call is zero wide, so the split between positional and keyword arguments
+// used to land at -5 and index the argument vector from behind its start.
+TEST(PyStackSimulator, MoreKeywordNamesThanTheCallIsWide)
+{
+	PythonVersion ver{3, 10, 0, ""};
+	auto code = makeSimpleCode(ver, {102, 5, 140, 0});
+
+	PyStackSimulator sim(code);
+	auto stmts = sim.simulate();
+
+	// The call survives; every keyword it kept has a value from the vector.
+	for (const auto& s: stmts)
+	{
+		if (!s->expr || s->expr->kind != PyExpr::Kind::Call) continue;
+		for (const auto& kw: s->expr->keywords)
+			EXPECT_NE(nullptr, kw.value);
+	}
+}
+
+// The same shape with the tuple longer than a call that does have arguments:
+// the names past the end of the argument list have nothing to bind to.
+TEST(PyStackSimulator, KeywordNamesPastTheArgumentListAreDropped)
+{
+	PythonVersion ver{3, 10, 0, ""};
+	// LOAD_FAST 0, LOAD_FAST 0, BUILD_TUPLE 9, CALL_FUNCTION_KW 2
+	auto code = makeSimpleCode(
+		ver, {124, 0, 124, 0, 102, 9, 140, 2}, {}, {"x"});
+
+	PyStackSimulator sim(code);
+	auto stmts = sim.simulate();
+
+	for (const auto& s: stmts)
+	{
+		if (!s->expr || s->expr->kind != PyExpr::Kind::Call) continue;
+		EXPECT_LE(s->expr->keywords.size() + s->expr->values.size(), 2u);
+		for (const auto& kw: s->expr->keywords)
+			EXPECT_NE(nullptr, kw.value);
+	}
+}
+
+// EXTENDED_ARG x3 then BUILD_TUPLE: 0x7FFFFFFF operands out of an eight-byte
+// body.  Bounded, this returns; unbounded it inserts at the front of a vector
+// two billion times.
+TEST(PyStackSimulator, AnExtendedArgCountLargerThanTheBodyIsTruncated)
+{
+	PythonVersion ver{3, 10, 0, ""};
+	// ... then RETURN_VALUE, so the tuple reaches a statement.
+	auto code = makeSimpleCode(
+		ver, {90, 0x7F, 90, 0xFF, 90, 0xFF, 102, 0xFF, 83, 0});
+
+	PyStackSimulator sim(code);
+	auto stmts = sim.simulate();
+
+	bool sawTuple = false;
+	for (const auto& s: stmts)
+	{
+		if (!s->expr || s->expr->kind != PyExpr::Kind::Tuple) continue;
+		sawTuple = true;
+		EXPECT_LE(s->expr->values.size(), 1024u);
+	}
+	EXPECT_TRUE(sawTuple);
+	EXPECT_FALSE(sim.warnings().empty()) << "the truncation should be reported";
+}
+
+// A fourth EXTENDED_ARG used to shift a signed accumulator past its width.
+TEST(PyStackSimulator, MoreExtendedArgPrefixesThanAnOpargCanHold)
+{
+	PythonVersion ver{3, 10, 0, ""};
+	std::vector<uint8_t> bc;
+	for (int i = 0; i < 40; ++i) { bc.push_back(90); bc.push_back(0xFF); }
+	bc.push_back(103); // BUILD_LIST
+	bc.push_back(0xFF);
+
+	auto code = makeSimpleCode(ver, bc);
+	PyStackSimulator sim(code);
+	auto stmts = sim.simulate();
+
+	for (const auto& s: stmts)
+	{
+		if (!s->expr || s->expr->kind != PyExpr::Kind::List) continue;
+		EXPECT_LE(s->expr->values.size(), 1024u);
+	}
+}
+
+// UNPACK_SEQUENCE only pushes, so no stack depth limits it.
+TEST(PyStackSimulator, AnUnpackWiderThanTheBodyIsTruncated)
+{
+	PythonVersion ver{3, 10, 0, ""};
+	auto code = makeSimpleCode(
+		ver, {90, 0x7F, 90, 0xFF, 90, 0xFF, 92, 0xFF}); // UNPACK_SEQUENCE
+
+	PyStackSimulator sim(code);
+	sim.simulate();
+
+	EXPECT_FALSE(sim.warnings().empty()) << "the truncation should be reported";
+}
+
+// BUILD_MAP consumes two entries per count, so its bound is half the depth.
+TEST(PyStackSimulator, AMapWiderThanTheBodyIsTruncated)
+{
+	PythonVersion ver{3, 10, 0, ""};
+	auto code = makeSimpleCode(
+		ver, {90, 0x7F, 90, 0xFF, 90, 0xFF, 105, 0xFF}); // BUILD_MAP
+
+	PyStackSimulator sim(code);
+	auto stmts = sim.simulate();
+
+	for (const auto& s: stmts)
+	{
+		if (!s->expr || s->expr->kind != PyExpr::Kind::Dict) continue;
+		EXPECT_EQ(s->expr->keys.size(), s->expr->values.size());
+		EXPECT_LE(s->expr->values.size(), 1024u);
+	}
+}
+
+// A count that names exactly what the stack holds is not truncated.
+TEST(PyStackSimulator, AnHonestCountIsLeftAlone)
+{
+	PythonVersion ver{3, 10, 0, ""};
+	std::vector<uint8_t> bc;
+	for (int i = 0; i < 300; ++i) { bc.push_back(124); bc.push_back(0); } // LOAD_FAST 0
+	bc.push_back(90); bc.push_back(1);  // EXTENDED_ARG 1
+	bc.push_back(102); bc.push_back(44); // BUILD_TUPLE 300
+	bc.push_back(83); bc.push_back(0);   // RETURN_VALUE
+
+	auto code = makeSimpleCode(ver, bc, {}, {"x"});
+	PyStackSimulator sim(code);
+	auto stmts = sim.simulate();
+
+	bool checked = false;
+	for (const auto& s: stmts)
+	{
+		if (s->kind != PyStmt::Kind::Return || !s->expr) continue;
+		if (s->expr->kind != PyExpr::Kind::Tuple) continue;
+		EXPECT_EQ(300u, s->expr->values.size());
+		checked = true;
+	}
+	EXPECT_TRUE(checked);
+	EXPECT_TRUE(sim.warnings().empty()) << "a count the stack can meet is not truncated";
+}

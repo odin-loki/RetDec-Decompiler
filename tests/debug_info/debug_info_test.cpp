@@ -1421,3 +1421,110 @@ TEST(DebugLocEvaluatorLeb128, AnUnterminatedOperandStopsTheWalk)
 
 	EXPECT_NO_THROW((void)DebugLocEvaluator::evaluate(expr.data(), expr.size()));
 }
+
+// ── Sizes a PDB declares but does not carry ──────────────────────────────────
+//
+// Every allocation in the MSF fallback used to be sized straight from a 32-bit
+// header field. A 56-byte file that says its directory is 0xFFFFFFFF bytes long
+// reserved four gigabytes for it, and std::bad_alloc came back out of
+// extract() -- past a signature that returns bool and fills in diagnostics, so
+// no caller was expecting to catch anything. Four shapes, all four throwing
+// before the bound, none after.
+
+namespace {
+
+/// A PDB7 superblock with whatever field values the test wants, optionally
+/// followed by a directory written at blockMapAddr.
+std::vector<uint8_t> malformedPdb(
+	uint32_t blockSize,
+	uint32_t numDirectoryBytes,
+	uint32_t blockMapAddr,
+	const std::vector<uint8_t>& directory = {})
+{
+	static const char kMagic[] = "Microsoft C/C++ MSF 7.00\r\n\x1a\x44\x53\x00\x00\x00";
+	std::vector<uint8_t> out(kMagic, kMagic + 32);
+
+	auto put32 = [&out](uint32_t v) {
+		for (int i = 0; i < 4; ++i)
+			out.push_back(static_cast<uint8_t>((v >> (8 * i)) & 0xFF));
+	};
+	put32(blockSize);
+	put32(1); // freeBlockMapBlock
+	put32(2); // numBlocks
+	put32(numDirectoryBytes);
+	put32(0); // unknown
+	put32(blockMapAddr);
+
+	if (!directory.empty())
+	{
+		const size_t at = static_cast<size_t>(blockMapAddr) * blockSize;
+		if (out.size() < at + directory.size()) out.resize(at + directory.size(), 0);
+		std::copy(directory.begin(), directory.end(), out.begin() + at);
+	}
+	return out;
+}
+
+/// A directory naming @a count streams, each declaring @a size bytes.
+std::vector<uint8_t> streamTable(uint32_t count, uint32_t size)
+{
+	std::vector<uint8_t> d;
+	auto put32 = [&d](uint32_t v) {
+		for (int i = 0; i < 4; ++i)
+			d.push_back(static_cast<uint8_t>((v >> (8 * i)) & 0xFF));
+	};
+	put32(count);
+	for (uint32_t i = 0; i < count; ++i)
+		put32(size);
+	return d;
+}
+
+} // namespace
+
+TEST(PdbExtractor, ADirectoryLongerThanTheFileIsRefused)
+{
+	std::string path = writeTempFile(".pdb", malformedPdb(4096, 0xFFFFFFFFu, 1));
+
+	PdbExtractor ex(path, 0);
+	DebugGroundTruth gdt;
+	EXPECT_NO_THROW((void) ex.extract(gdt));
+	EXPECT_FALSE(gdt.diagnostics.empty());
+}
+
+TEST(PdbExtractor, AStreamCountLargerThanTheDirectoryIsRefused)
+{
+	std::vector<uint8_t> dir;
+	for (int i = 0; i < 4; ++i)
+		dir.push_back(0xFF); // numStreams = 0xFFFFFFFF
+	std::string path = writeTempFile(".pdb", malformedPdb(64, 64, 1, dir));
+
+	PdbExtractor ex(path, 0);
+	DebugGroundTruth gdt;
+	EXPECT_NO_THROW((void) ex.extract(gdt));
+	EXPECT_FALSE(gdt.diagnostics.empty());
+}
+
+TEST(PdbExtractor, StreamSizesLargerThanTheFileAreRefused)
+{
+	const auto dir = streamTable(5, 0xFFFFFFFEu);
+	std::string path =
+		writeTempFile(".pdb", malformedPdb(64, static_cast<uint32_t>(dir.size()), 1, dir));
+
+	PdbExtractor ex(path, 0);
+	DebugGroundTruth gdt;
+	EXPECT_NO_THROW((void) ex.extract(gdt));
+	EXPECT_FALSE(gdt.diagnostics.empty());
+}
+
+// The same with a page size big enough that the round-up in blocksNeeded --
+// (bytes + blockSize - 1) -- wraps in 32 bits.
+TEST(PdbExtractor, AStreamSizeThatWrapsTheBlockCountIsRefused)
+{
+	const auto dir = streamTable(5, 0xFFFFFFFEu);
+	std::string path =
+		writeTempFile(".pdb", malformedPdb(4096, static_cast<uint32_t>(dir.size()), 1, dir));
+
+	PdbExtractor ex(path, 0);
+	DebugGroundTruth gdt;
+	EXPECT_NO_THROW((void) ex.extract(gdt));
+	EXPECT_FALSE(gdt.diagnostics.empty());
+}

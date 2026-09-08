@@ -34,6 +34,7 @@
 #   scripts/verify_esbmc.sh --syntax   # type-check the harnesses, no solver
 #   scripts/verify_esbmc.sh --cross    # every proof under two backends, diffed
 #   scripts/verify_esbmc.sh --routing  # does anything CALL each proved kernel?
+#   scripts/verify_esbmc.sh --doc      # docs/VERIFICATION.md against the harnesses
 #   scripts/verify_esbmc.sh --optional # include harnesses marked ESBMC-OPTIONAL
 #
 # Environment
@@ -276,6 +277,7 @@ while [ $# -gt 0 ]; do
 		--syntax)  MODE=syntax ;;
 		--cross)   MODE=cross ;;
 		--routing) MODE=routing ;;
+		--doc)     MODE=doc ;;
 		--optional) RUN_OPTIONAL=1 ;;
 		-h|--help) usage; exit 0 ;;
 		-*)        say "unknown option: $1"; usage; exit 2 ;;
@@ -300,6 +302,117 @@ done
 # UNROUTED_KERNELS is the escape hatch, and it takes a reason, not just a name:
 # a kernel is allowed no callers only while someone has written down why.
 declare -A UNROUTED_KERNELS=()
+
+# ── doc ──────────────────────────────────────────────────────────────────────
+#
+# docs/VERIFICATION.md leads with a count and carries a table of one row per
+# kernel, and said of itself that "the driver discovers them from the source, so
+# the table cannot drift from what runs". The driver does; the table did not,
+# and it had drifted: utils/safe_name.h and its thirteen proofs were missing and
+# the headline read 272 against 286 discharged.
+#
+# So the claim is checked here instead of asserted. Every number in that table
+# is re-derived from the harnesses, and a row that is missing, extra, or carries
+# the wrong count fails.
+DOC_FILE="docs/VERIFICATION.md"
+
+if [ "$MODE" = doc ]; then
+	hdr "docs/VERIFICATION.md against the harnesses"
+	if [ ! -f "$DOC_FILE" ]; then
+		bad "$DOC_FILE is missing"
+		exit 1
+	fi
+
+	shopt -s nullglob
+	harnesses=("$PROOF_DIR"/*.cpp)
+	shopt -u nullglob
+	status=0
+
+	declare -A actual=()
+	declare -a whole_function=()
+	total=0
+	kernels=0
+	for h in "${harnesses[@]}"; do
+		base="$(basename "$h" .cpp)"
+		base="${base%_proof}"
+		n="$(grep -cE '^extern "C" void proof_[A-Za-z0-9_]+' "$h")"
+
+		# A harness with no include/retdec/utils/<name>.h beside it proves a
+		# function rather than a kernel, and belongs in the prose, not the table.
+		if [ ! -f "include/retdec/utils/${base}.h" ]; then
+			whole_function+=("$base:$n")
+			continue
+		fi
+		actual["$base"]="$n"
+		total=$((total + n))
+		kernels=$((kernels + 1))
+	done
+
+	# Rows of the kernel table: | `utils/<name>.h` | ... | <count> |
+	declare -A documented=()
+	while IFS='|' read -r _ name _ count _; do
+		name="$(printf '%s' "$name" | tr -d ' `')"
+		count="$(printf '%s' "$count" | tr -d ' ')"
+		case "$name" in
+			utils/*.h) ;;
+			*) continue ;;
+		esac
+		name="${name#utils/}"
+		documented["${name%.h}"]="$count"
+	done < "$DOC_FILE"
+
+	for k in "${!actual[@]}"; do
+		if [ -z "${documented[$k]:-}" ]; then
+			bad "utils/$k.h has ${actual[$k]} proof(s) and no row in $DOC_FILE"
+			status=1
+		elif [ "${documented[$k]}" != "${actual[$k]}" ]; then
+			bad "utils/$k.h: $DOC_FILE says ${documented[$k]}, the harness has ${actual[$k]}"
+			status=1
+		fi
+	done
+	for k in "${!documented[@]}"; do
+		if [ -z "${actual[$k]:-}" ]; then
+			bad "$DOC_FILE has a row for utils/$k.h, which has no harness"
+			status=1
+		fi
+	done
+
+	# The total row of the table, and the headline above it.
+	doc_total="$(grep -oE '^\| \| \| \*\*[0-9]+\*\*' "$DOC_FILE" | grep -oE '[0-9]+' | head -1)"
+	if [ "$doc_total" != "$total" ]; then
+		bad "table total: $DOC_FILE says ${doc_total:-none}, the harnesses sum to $total"
+		status=1
+	fi
+
+	headline="$(grep -oE '^\*\*[0-9]+ properties across [0-9]+ verified kernels' "$DOC_FILE" | head -1)"
+	head_total="$(printf '%s' "$headline" | grep -oE '[0-9]+' | head -1)"
+	head_kernels="$(printf '%s' "$headline" | grep -oE '[0-9]+' | tail -1)"
+	if [ "$head_total" != "$total" ] || [ "$head_kernels" != "$kernels" ]; then
+		bad "headline: $DOC_FILE says ${head_total:-none}/${head_kernels:-none}, the harnesses give $total/$kernels"
+		status=1
+	fi
+
+	# A whole-function harness must not be counted as a kernel, and must still
+	# be named somewhere in the document rather than going unmentioned.
+	for entry in "${whole_function[@]}"; do
+		wf="${entry%%:*}"
+		wn="${entry##*:}"
+		if [ -n "${documented[$wf]:-}" ]; then
+			bad "$wf is a whole-function harness and must not be a kernel-table row"
+			status=1
+		elif ! grep -q "${wf}_proof.cpp" "$DOC_FILE"; then
+			bad "${wf}_proof.cpp ($wn proof(s)) is not mentioned in $DOC_FILE"
+			status=1
+		fi
+	done
+
+	if [ "$status" -ne 0 ]; then
+		bad "$DOC_FILE does not match the harnesses"
+		exit 1
+	fi
+	ok "$DOC_FILE matches: $total proof(s) across $kernels kernel(s), ${#whole_function[@]} whole-function harness(es)"
+	exit 0
+fi
 
 # A harness whose name does not correspond to include/retdec/utils/<name>.h is a
 # whole-function proof (it links real code and proves that code directly), so

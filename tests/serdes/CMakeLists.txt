@@ -3,6 +3,7 @@ add_executable(tests-serdes
 	calling_convention_tests.cpp
 	class_tests.cpp
 	pattern_tests.cpp
+	std_tests.cpp
 )
 
 target_link_libraries(tests-serdes

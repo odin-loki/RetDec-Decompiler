@@ -104,6 +104,13 @@ static constexpr char kMsfMagic[] = "Microsoft C/C++ MSF 7.00\r\n\x1a\x44\x53\x0
 static std::vector<uint8_t> readStream(
 	const std::vector<uint8_t>& raw, uint32_t blockSize, const std::vector<uint32_t>& blocks, uint32_t streamSize)
 {
+	// A stream is assembled out of the file's own blocks, so it cannot be
+	// longer than the file. streamSize comes from the superblock or the stream
+	// table and nothing in the file has to make it true: a 56-byte file
+	// declaring numDirectoryBytes = 0xFFFFFFFF reserved four gigabytes and
+	// threw std::bad_alloc out of extract().
+	if (streamSize > raw.size()) streamSize = static_cast<uint32_t>(raw.size());
+
 	std::vector<uint8_t> out;
 	out.reserve(streamSize);
 	for (uint32_t b: blocks)
@@ -119,10 +126,13 @@ static std::vector<uint8_t> readStream(
 	return out;
 }
 
-// Divide-and-round-up
+// Divide-and-round-up. The addition is done in 64 bits: in 32 it wraps for any
+// size within blockSize of UINT32_MAX, which turns a huge stream into a block
+// count of zero.
 static uint32_t blocksNeeded(uint32_t bytes, uint32_t blockSize)
 {
-	return (bytes + blockSize - 1) / blockSize;
+	if (blockSize == 0) return 0;
+	return static_cast<uint32_t>((static_cast<uint64_t>(bytes) + blockSize - 1) / blockSize);
 }
 
 // ── CodeView symbol record types ─────────────────────────────────────────────
@@ -642,6 +652,15 @@ bool PdbExtractor::extract(DebugGroundTruth& out)
 		return false;
 	}
 
+	// The size table is four bytes per stream and lives in the directory, so a
+	// count the directory cannot hold is a lie -- and allocating for it first
+	// costs 16 GiB at UINT32_MAX.
+	if (numStreams > (dir.size() - 4) / 4)
+	{
+		out.diagnostics.push_back(name() + ": MSF stream count larger than the directory");
+		return false;
+	}
+
 	std::vector<uint32_t> streamSizes(numStreams);
 	for (uint32_t i = 0; i < numStreams; ++i)
 	{
@@ -654,29 +673,13 @@ bool PdbExtractor::extract(DebugGroundTruth& out)
 		dp += 4;
 	}
 
-	// Reconstruct each stream
-	auto getStream = [&](uint32_t idx) -> std::vector<uint8_t> {
-		if (idx >= numStreams) return {};
-		uint32_t sz = streamSizes[idx];
-		if (sz == 0 || sz == 0xFFFFFFFFu) return {};
-		uint32_t nb = blocksNeeded(sz, blockSize);
-		std::vector<uint32_t> blocks(nb);
-		for (uint32_t i = 0; i < nb; ++i)
-		{
-			if (dp + 4 > de) return {};
-			blocks[i] = r32(dp);
-			dp += 4;
-		}
-		return readStream(raw, blockSize, blocks, sz);
-	};
-
 	// Stream indices:  0=PDB, 1=TPI, 2=DBI, 3=IPI, 4=GSI
 	// We must iterate through the block lists in order before accessing.
 	// Collect all streams first.
 	std::vector<std::vector<uint8_t> > streams;
 	streams.reserve(numStreams);
 	// Reset dp to start of block lists (just after all stream sizes)
-	dp = dir.data() + 4 + 4 * numStreams;
+	dp = dir.data() + 4 + static_cast<size_t>(numStreams) * 4;
 	for (uint32_t i = 0; i < numStreams; ++i)
 	{
 		uint32_t sz = streamSizes[i];
@@ -685,6 +688,11 @@ bool PdbExtractor::extract(DebugGroundTruth& out)
 			streams.emplace_back();
 			continue;
 		}
+		// Same bound as readStream, applied before the block list rather than
+		// after it: nb is one index per block, so a declared 0xFFFFFFFE-byte
+		// stream asks for 4 MiB of indices per 4 KiB page even though the file
+		// has none of them.
+		if (sz > raw.size()) sz = static_cast<uint32_t>(raw.size());
 		uint32_t nb = blocksNeeded(sz, blockSize);
 		std::vector<uint32_t> blocks(nb);
 		for (uint32_t j = 0; j < nb; ++j)
