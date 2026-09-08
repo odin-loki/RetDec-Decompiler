@@ -11,6 +11,7 @@
 #include <cassert>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 
 #include <capstone/capstone.h>
 
@@ -24,6 +25,19 @@ namespace capstone2llvmir {
 class BaseError : public std::exception {
 public:
 	virtual ~BaseError() = default;
+
+protected:
+	/// Message returned by @c what().
+	///
+	/// what() must hand back a pointer that stays valid for as long as the
+	/// exception object does. Four of the classes below used to return
+	/// `someTemporaryString.c_str()`, which dangles the moment what()
+	/// returns -- so every catch site that logged the message read freed
+	/// memory. The message is built once, in the constructor, and lives
+	/// here. Building it there also means the cs_insn* the two instruction
+	/// errors format is read while it is certainly still alive, rather
+	/// than whenever a handler happens to ask.
+	std::string _whatMessage;
 };
 
 /**
@@ -34,6 +48,7 @@ public:
 	CapstoneError(cs_err e);
 
 	std::string getMessage() const;
+	/// Valid for the lifetime of this object; see BaseError::_whatMessage.
 	virtual const char* what() const noexcept override;
 
 private:
@@ -123,10 +138,6 @@ public:
 	GenericError(const std::string& message);
 
 	virtual const char* what() const noexcept override;
-
-private:
-	/// Message returned by @c what() method.
-	std::string _whatMessage;
 };
 
 } // namespace capstone2llvmir
