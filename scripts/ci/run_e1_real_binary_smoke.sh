@@ -114,18 +114,22 @@ for name in "${NAMES[@]}"; do
 	log_named="${OUTDIR}/${name}.log"
 	log_hash="${OUTDIR}/hashed/${prefix}.log"
 
+	# `|| rc=$?` rather than `if ! cmd; then rc=$?`: inside a negated if, $? is
+	# the status of the negation and so always 0. Both of these reported
+	# "decompile failed rc=0", which is not the decompiler's status and told a
+	# reader nothing about why it failed.
 	echo "--- named ${name} ---"
 	named_rc=0
-	if ! run_decompile "${src}" "${out_named}" "${log_named}"; then
-		named_rc=$?
+	run_decompile "${src}" "${out_named}" "${log_named}" || named_rc=$?
+	if [[ "${named_rc}" -ne 0 ]]; then
 		echo "e1-real-binary-smoke: named decompile failed rc=${named_rc} for ${name}" >&2
 		CRASHED=1
 	fi
 
 	echo "--- hashed ${name} -> ${prefix} ---"
 	hash_rc=0
-	if ! run_decompile "${hashed}" "${out_hash}" "${log_hash}"; then
-		hash_rc=$?
+	run_decompile "${hashed}" "${out_hash}" "${log_hash}" || hash_rc=$?
+	if [[ "${hash_rc}" -ne 0 ]]; then
 		echo "e1-real-binary-smoke: hashed decompile failed rc=${hash_rc} for ${name}" >&2
 		CRASHED=1
 	fi
@@ -135,8 +139,17 @@ done
 
 # Parse functions[].semanticDetections from each sidecar. Empty is allowed.
 # Fail only if named vs hashed kind+label sets differ (filename coupling).
-COUPLING=0
-python3 - "${RESULTS}" "${DEC}" "${CORPUS}" "${OUTDIR}" "${CRASHED}" "${JOBS[@]}" <<'PY'
+#
+# The coupling verdict comes back as the reporter's exit status, which is the
+# only place it is computed. A shell COUPLING variable used to sit alongside
+# it, set to 0 and never assigned again, so `|| COUPLING -eq 1` was dead.
+# `|| py_rc=$?` rather than a bare call: with `set -e` the script aborted the
+# moment the reporter exited 2 or 3, so `py_rc=$?` below was only ever reached
+# with 0 and the three diagnostic branches after it could not run. A rename
+# that changed labels -- the thing this exists to detect -- ended the script
+# with a bare exit 2 and none of the sentences that say what happened.
+py_rc=0
+python3 - "${RESULTS}" "${DEC}" "${CORPUS}" "${OUTDIR}" "${CRASHED}" "${JOBS[@]}" <<'PY' || py_rc=$?
 from __future__ import annotations
 
 import json
@@ -270,9 +283,8 @@ if crashed:
     sys.exit(3)
 sys.exit(0)
 PY
-py_rc=$?
 
-if [[ "${py_rc}" -eq 2 || "${COUPLING}" -eq 1 ]]; then
+if [[ "${py_rc}" -eq 2 ]]; then
 	echo "e1-real-binary-smoke: FAIL — rename changed labels (filename coupling)"
 	exit 1
 fi

@@ -25,8 +25,15 @@ URL_RE = re.compile(
     r"set\(\s*([A-Z0-9_]+)_URL\s+\"([^\"]+)\"",
     re.MULTILINE,
 )
+# The name group is lazy on purpose. Greedy, `([A-Z0-9_]+)` swallows the
+# ARCHIVE segment before the optional group can match it, so
+# `set(CAPSTONE_ARCHIVE_SHA256 ...)` was captured under the name
+# CAPSTONE_ARCHIVE while URL_RE captured CAPSTONE -- shas.get(name) missed for
+# every dependency written that way, and the SBOM this generates went out with
+# a hash for one component of twelve. It is cosign-signed and attached to every
+# release, so an SBOM that pins nothing is worse than no SBOM.
 SHA_RE = re.compile(
-    r"set\(\s*([A-Z0-9_]+)_(?:ARCHIVE_)?SHA256\s+\"([0-9a-fA-F]{64})\"",
+    r"set\(\s*([A-Z0-9_]+?)_(?:ARCHIVE_)?SHA256\b\s+\"([0-9a-fA-F]{64})\"",
     re.MULTILINE,
 )
 
@@ -59,6 +66,26 @@ def pinned_components() -> list[dict]:
         components.append(component)
     if not components:
         raise SystemExit("generate_cyclonedx: no *_URL pins in cmake/deps.cmake")
+
+    # A pin that deps.cmake gives a SHA-256 must carry it here. Silence was
+    # how the regex above went unnoticed: the generator exited 0 and the
+    # workflow step passed while the document pinned nothing.
+    unhashed = [name for name in sorted(urls) if name in shas and not shas.get(name)]
+    dropped = sorted(set(shas) - set(urls))
+    missing = [name for name in sorted(urls) if name not in shas]
+    if dropped:
+        raise SystemExit(
+            "generate_cyclonedx: deps.cmake pins a SHA-256 for "
+            + ", ".join(dropped)
+            + " but no matching *_URL was found -- the two regexes disagree"
+        )
+    if unhashed:
+        raise SystemExit("generate_cyclonedx: empty SHA-256 for " + ", ".join(unhashed))
+    if missing:
+        print(
+            "generate_cyclonedx: no SHA-256 pinned for " + ", ".join(missing),
+            file=sys.stderr,
+        )
     return components
 
 

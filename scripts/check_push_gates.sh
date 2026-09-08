@@ -14,6 +14,14 @@
 # not a substitute for the workflows -- they also build, and standalone-check
 # and the format check are separate and slower -- it is the part that is cheap.
 #
+# The list has to be every step, not almost every step. It first shipped
+# missing two -- ci-smoke's inline debug_enabled grep, which is written in the
+# workflow rather than in a script, and doc-integrity's REL-06 CycloneDX step
+# -- so a push that broke either of them still read "all checks pass" here and
+# went red in CI, which is the exact failure this script exists to prevent.
+# --audit compares the list against the workflows and is the thing that keeps
+# them from drifting apart again.
+#
 # Usage:
 #   bash scripts/check_push_gates.sh          # everything below
 #   bash scripts/check_push_gates.sh --list   # name them and exit
@@ -34,6 +42,7 @@ CHECKS=(
 	"ci-smoke  preset cache leaks:::${PY} scripts/ci/check_cmake_presets.py CMakePresets.json cmake/superbuild/CMakePresets.json"
 	"ci-smoke  unread build options (self-test):::${PY} scripts/ci/check_cmake_options.py --self-test"
 	"ci-smoke  unread build options:::${PY} scripts/ci/check_cmake_options.py"
+	"ci-smoke  no header defines debug_enabled:::! grep -rqn '^[[:space:]]*\\(const[[:space:]]\\+\\)\\?bool[[:space:]]\\+debug_enabled' include/"
 	"ci-smoke  std algorithm includes:::bash scripts/check_std_includes.sh"
 	"ci-smoke  retdec CLI:::${PY} scripts/python/test_retdec_cli.py"
 	"ci-smoke  semantic C hints:::${PY} tests/decompiler/semantic_c_hint_test.py"
@@ -60,6 +69,7 @@ CHECKS=(
 	"doc       version drift:::${PY} scripts/ci/check_version_drift.py"
 	"doc       release binaries:::${PY} scripts/ci/check_release_binaries.py"
 	"doc       secrets:::${PY} scripts/ci/check_secrets.py"
+	"doc       CycloneDX pins:::${PY} scripts/ci/generate_cyclonedx.py --out \"$(mktemp)\""
 )
 
 if [ "${1:-}" = "--list" ]; then
@@ -67,6 +77,50 @@ if [ "${1:-}" = "--list" ]; then
 		printf '%s\n' "${entry%%:::*}"
 	done
 	exit 0
+fi
+
+# --audit: does CHECKS still cover what the two workflows run?
+#
+# The list is hand-written, so it can fall behind a workflow that gains a step
+# -- and it already had, by two. This reads every script the workflow files
+# invoke and reports any that no entry above runs. Steps that are not a script
+# call (the inline debug_enabled grep) cannot be found this way and are listed
+# by name below, which is at least a place to notice them.
+#
+# Some workflow scripts deliberately are not here: they need a build, a
+# network fetch, or minutes rather than seconds. WORKFLOW_ONLY says which, and
+# saying so is the point -- an unexplained omission is what this catches.
+WORKFLOW_ONLY=(
+	"scripts/check_format.sh"                     # its own workflow; slower, and CI scopes it to changed files
+	"scripts/build_algorithm_corpus.sh"           # needs a compiler and minutes
+	"scripts/fetch-large-files.sh"                # network
+	"scripts/fetch_decompilebench_corpus.sh"      # network
+	"scripts/run_benchmarks.sh"                   # needs a built decompiler
+)
+
+if [ "${1:-}" = "--audit" ]; then
+	status=0
+	listed="$(printf '%s\n' "${CHECKS[@]}")"
+	for wf in .github/workflows/ci-smoke.yml .github/workflows/doc-integrity.yml; do
+		[ -f "$wf" ] || continue
+		while read -r script; do
+			[ -n "$script" ] || continue
+			[ -f "$script" ] || continue
+			skip=""
+			for only in "${WORKFLOW_ONLY[@]}"; do
+				[ "$only" = "$script" ] && skip=1
+			done
+			[ -n "$skip" ] && continue
+			if ! printf '%s' "$listed" | grep -qF -- "$script"; then
+				echo "check_push_gates --audit: $wf runs $script, which no check above does"
+				status=1
+			fi
+		done < <(grep -oE '(bash|python3?) +[A-Za-z0-9_./-]+\.(sh|py)' "$wf" | awk '{print $2}' | sort -u)
+	done
+	if [ $status -eq 0 ]; then
+		echo "check_push_gates --audit: every workflow script is covered"
+	fi
+	exit $status
 fi
 
 failed=()

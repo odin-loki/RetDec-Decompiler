@@ -42,7 +42,26 @@ TEXT_SUFFIXES = SOURCE_SUFFIXES | {
     ".in",
 }
 
-BACKTICK_RE = re.compile(r"`([^`]+)`")
+BACKTICK_RE = re.compile(r"`([^`\n]+)`")
+# Fenced blocks, so their delimiters do not pair with the inline spans around
+# them. Scanning a whole Markdown file for `...` left to right pairs the
+# closing backtick of one fence with the opening one of the next, and what the
+# regex then captures is the prose BETWEEN two inline spans rather than the
+# spans -- so most documented names never reached the checks below. Measured
+# on the public doc set: 10 of 24 retdec-* names, 44 of 75 RETDEC_* variables
+# and 7 of 37 --flags were being seen, so a made-up retdec-* name added to
+# README.md passed.
+#
+# The example is described rather than written out on purpose: blob_has()
+# scans scripts/, so a checker that names an invented token in its own comment
+# finds it and lets it through -- the check would then vouch for the very
+# string it was meant to reject.
+FENCE_RE = re.compile(r"^[ \t]*(?:```|~~~).*?$.*?^[ \t]*(?:```|~~~)[ \t]*$", re.MULTILINE | re.DOTALL)
+
+
+def inline_code_spans(text: str) -> list[str]:
+    """Every `inline span` in @p text, with fenced blocks removed first."""
+    return BACKTICK_RE.findall(FENCE_RE.sub("\n", text))
 EXAMPLE_NAME_RE = re.compile(r"mystage", re.IGNORECASE)
 RETDEC_NAME_RE = re.compile(r"^retdec-[a-z0-9]+(?:-[a-z0-9]+)*$")
 RETDEC_ENV_RE = re.compile(r"^RETDEC_[A-Z0-9_]+$")
@@ -560,7 +579,7 @@ def invert_errors(docs: list[Path]) -> list[str]:
     for doc in docs:
         text = read_text(doc)
         rel = doc.relative_to(REPO_ROOT).as_posix()
-        for span in BACKTICK_RE.findall(text):
+        for span in inline_code_spans(text):
             token = span.strip()
             if not token or EXAMPLE_NAME_RE.search(token):
                 continue

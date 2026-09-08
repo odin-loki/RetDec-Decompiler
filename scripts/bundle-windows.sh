@@ -181,11 +181,19 @@ echo ""
 echo "--- DLL dependency check (objdump) ---"
 OBJDUMP="${OBJDUMP:-x86_64-w64-mingw32-objdump}"
 if command -v "$OBJDUMP" >/dev/null 2>&1; then
-    # Collect all bundled DLLs and exe names for reference
+    # Collect all bundled DLLs and exe names for reference.
+    #
+    # The parentheses are load-bearing: -a binds tighter than -o, so
+    # `-name '*.dll' -o -name '*.exe' -print0` means
+    # `-name '*.dll' -o ( -name '*.exe' -a -print0 )` -- only the .exe branch
+    # prints, and because the expression contains an action find adds no
+    # default -print either. No .dll name reached this array, so the check
+    # below compared every executable's imports against a list of .exe
+    # basenames and reported every DLL the bundle does ship as missing.
     _bundled_names=()
     while IFS= read -r -d '' _f; do
         _bundled_names+=("$(basename "$_f" | tr '[:upper:]' '[:lower:]')")
-    done < <(find "$OUT_DIR/bin" -name '*.dll' -o -name '*.exe' -print0 2>/dev/null)
+    done < <(find "$OUT_DIR/bin" \( -name '*.dll' -o -name '*.exe' \) -print0 2>/dev/null)
 
     _missing_any=0
     while IFS= read -r -d '' _exe; do
