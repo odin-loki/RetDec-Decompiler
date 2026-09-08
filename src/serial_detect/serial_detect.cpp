@@ -411,11 +411,67 @@ std::string SerialResult::toString() const
 
 // ─── Symbol-matching helpers ──────────────────────────────────────────────────
 
+namespace {
+
+// The pinned table and the answers already computed for it. Both are per-thread: two threads
+// analysing two modules must not share a cache, and a thread with no pin active must not see
+// another thread's.
+thread_local const std::unordered_set<std::string>* g_pinnedSymTable = nullptr;
+thread_local std::unordered_map<std::string, bool> g_pinnedSymAnswers;
+thread_local std::uint64_t g_symTableScans = 0;
+
+} // namespace
+
+SymbolTablePin::SymbolTablePin(const std::unordered_set<std::string>& symTable) noexcept: previous_(g_pinnedSymTable)
+{
+	g_pinnedSymTable = &symTable;
+	g_pinnedSymAnswers.clear();
+}
+
+SymbolTablePin::~SymbolTablePin()
+{
+	g_pinnedSymTable = previous_;
+	// An enclosing pin's answers were dropped when this one was installed, so drop what is left
+	// rather than serve this table's answers for the outer one. Losing a cache only costs time.
+	g_pinnedSymAnswers.clear();
+}
+
+std::uint64_t symbolTableScanCount() noexcept
+{
+	return g_symTableScans;
+}
+
+void resetSymbolTableScanCount() noexcept
+{
+	g_symTableScans = 0;
+}
+
 static bool symContains(const std::unordered_set<std::string>& sym, const std::string& sub)
 {
+	// Walking the whole table once per needle is what made a module pass quadratic: the six
+	// detectors ask 56 substring questions of it per function, and the table src/retdec/retdec.cpp
+	// builds holds one entry per function, so a pass cost 56 * F * F searches. The answer for a
+	// given (table, needle) pair does not depend on which function is being analysed, so under a
+	// SymbolTablePin -- the caller's promise that this exact table outlives the pass -- compute it
+	// once. An unpinned table takes the original path, unchanged.
+	const bool pinned = (g_pinnedSymTable == &sym);
+	if (pinned)
+	{
+		const auto it = g_pinnedSymAnswers.find(sub);
+		if (it != g_pinnedSymAnswers.end()) return it->second;
+	}
+
+	++g_symTableScans;
+	bool found = false;
 	for (auto& s: sym)
-		if (s.find(sub) != std::string::npos) return true;
-	return false;
+		if (s.find(sub) != std::string::npos)
+		{
+			found = true;
+			break;
+		}
+
+	if (pinned) g_pinnedSymAnswers.emplace(sub, found);
+	return found;
 }
 
 // ─── ProtobufDetector ─────────────────────────────────────────────────────────
@@ -1238,6 +1294,11 @@ SerialDetector::DetectionMap SerialDetector::analyseModule(
 	const std::vector<const ssa::SSAFunction*>& functions, const std::unordered_set<std::string>& symTable) const
 {
 	DetectionMap results;
+
+	// symTable is a const reference held for the whole pass and nothing here mutates it, so the
+	// detectors may answer their 56 substring questions once for the module instead of once per
+	// function. Without this the loop below is quadratic in functions.size().
+	const SymbolTablePin symPin(symTable);
 
 	for (auto* fn: functions)
 	{

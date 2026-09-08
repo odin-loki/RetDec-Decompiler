@@ -75,6 +75,7 @@
 #include "retdec/container_detect/container_detect.h"
 #include "retdec/ipa/ipa.h"
 #include "retdec/ptx_decompile/cuda_host_recover.h"
+#include "retdec/serial_detect/serial_detect.h"
 #include "retdec/sort_detect/sort_detect.h"
 #include "retdec/type_inference/type_inference.h"
 
@@ -1012,6 +1013,11 @@ bool decompile(retdec::config::Config& config, std::string* outString)
 					for (const llvm::Function& lf: *module)
 						serialSyms.insert(lf.getName().str());
 					std::size_t nSerial = 0;
+					// serialSyms holds one entry per function and every function re-asks it the
+					// same 56 substring questions, so an unpinned loop is quadratic in the
+					// function count. The table is built just above and not touched again until
+					// the loop ends, which is exactly the promise SymbolTablePin encodes.
+					const serial_detect::SymbolTablePin serialSymPin(serialSyms);
 					for (const auto& item: work)
 					{
 						if (!item.fn) continue;

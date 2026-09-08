@@ -411,6 +411,50 @@ struct XmlParserEvidence
 	bool hasDomTree = false;     ///< DOM tree construction
 };
 
+// ─── Symbol-table pinning ─────────────────────────────────────────────────────
+
+/**
+ * @brief Declares that a symbol table will neither change nor be destroyed while this object is
+ *        alive, which lets the detectors cache what they have already learned about it.
+ *
+ * Every detector interrogates the module symbol table with substring queries, and there are 56
+ * such call sites in serial_detect.cpp. They are chained with `||`, so a binary that uses none of
+ * these frameworks evaluates all 56 for every function -- and each query was a fresh linear walk
+ * of the whole table. Callers hand the same module-wide table to every function (see the
+ * `serialSyms` loop in src/retdec/retdec.cpp), and that table holds one entry per function, so a
+ * whole-module pass cost 56 * F * F substring searches: quadratic in the function count.
+ *
+ * A pin lets those 56 answers be computed once for the module instead of once per function, which
+ * makes the pass linear in F. Without a pin nothing is cached and the queries behave exactly as
+ * they did. It has to be opt-in: the answer cache is keyed on the pinned object's address, and an
+ * address is a sound key only while somebody guarantees the object behind it is still the same
+ * one -- two same-sized local sets in consecutive tests can land on the same stack address. Pins
+ * are per-thread and may nest; the inner pin wins until it is destroyed.
+ */
+class SymbolTablePin {
+public:
+	explicit SymbolTablePin(const std::unordered_set<std::string>& symTable) noexcept;
+	~SymbolTablePin();
+
+	SymbolTablePin(const SymbolTablePin&) = delete;
+	SymbolTablePin& operator=(const SymbolTablePin&) = delete;
+
+private:
+	const std::unordered_set<std::string>* previous_;
+};
+
+/**
+ * @brief Number of full symbol-table walks this thread has performed since the last reset.
+ *
+ * Exposed so a test can assert that a pinned module pass walks the table a bounded number of
+ * times rather than once per query per function. There is no other way to observe the difference:
+ * the detections themselves are identical either way.
+ */
+std::uint64_t symbolTableScanCount() noexcept;
+
+/// Resets the counter read by symbolTableScanCount().
+void resetSymbolTableScanCount() noexcept;
+
 // ─── Per-format detectors ─────────────────────────────────────────────────────
 
 /// Base interface for serialisation framework detectors.

@@ -20,6 +20,8 @@
 #include "retdec/ssa/ssa.h"
 
 #include <gtest/gtest.h>
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -850,6 +852,103 @@ TEST(FbsSchemaTest, IsNotEmptyWithTable)
 	tbl.name = "T";
 	schema.tables = {tbl};
 	EXPECT_FALSE(schema.isEmpty());
+}
+
+// ─── Symbol-table scanning cost ───────────────────────────────────────────────
+//
+// The six detectors ask 56 substring questions of the module symbol table per
+// function, chained with `||`, so a binary using none of these frameworks
+// evaluates them all for every function. Each question walked the whole table,
+// and the table src/retdec/retdec.cpp builds holds one entry per function -- so
+// a module pass cost 56 * F * F substring searches, quadratic in the function
+// count.
+//
+// The detections are identical either way, so the only thing that CAN be
+// asserted is the work, and symbolTableScanCount() counts full walks so that it
+// can be. Measured through this same shape: 52 walks for the module whether it
+// holds 1 function or 64, against 52 per function before.
+TEST(SerialDetectSymbolTable, AModulePassDoesNotRescanThePinnedTablePerFunction)
+{
+	std::unordered_set<std::string> symTable;
+	for (int i = 0; i < 64; ++i)
+		symTable.insert("some_unrelated_symbol_" + std::to_string(i));
+
+	// Config::minBlocks is 3, so a function needs blocks to get past preflight
+	// and reach the detectors at all.
+	auto makeFunction = [](const std::string& name) {
+		auto fn = std::make_unique<retdec::ssa::SSAFunction>(name);
+		for (int b = 0; b < 4; ++b)
+			fn->addBlock("b" + std::to_string(b));
+		return fn;
+	};
+
+	SerialDetector det;
+
+	// One function, to learn what a single pass costs.
+	std::vector<std::unique_ptr<retdec::ssa::SSAFunction>> one;
+	one.push_back(makeFunction("only"));
+	const std::vector<const retdec::ssa::SSAFunction*> onePtr = {one.back().get()};
+
+	resetSymbolTableScanCount();
+	det.analyseModule(onePtr, symTable);
+	const std::uint64_t forOne = symbolTableScanCount();
+	EXPECT_GT(forOne, 0u) << "the detectors did not reach the symbol table at all";
+
+	// And 32 of them. The cost is per module, not per function, so it must not
+	// grow with the function count -- which is the whole difference between
+	// linear and quadratic here.
+	std::vector<std::unique_ptr<retdec::ssa::SSAFunction>> many;
+	std::vector<const retdec::ssa::SSAFunction*> manyPtr;
+	for (int i = 0; i < 32; ++i)
+	{
+		many.push_back(makeFunction("f" + std::to_string(i)));
+		manyPtr.push_back(many.back().get());
+	}
+
+	resetSymbolTableScanCount();
+	det.analyseModule(manyPtr, symTable);
+	const std::uint64_t forThirtyTwo = symbolTableScanCount();
+
+	EXPECT_EQ(forOne, forThirtyTwo) << "32 functions cost " << forThirtyTwo << " table walks against " << forOne
+									<< " for one, so the table is still being rescanned per function";
+}
+
+// The pin must not change any answer. Same functions, analysed through the
+// module pass (pinned) and one at a time (not pinned).
+TEST(SerialDetectSymbolTable, PinningDoesNotChangeWhatIsDetected)
+{
+	const std::unordered_set<std::string> symTable = {
+		"google::protobuf::MessageLite::SerializeToString",
+		"flatbuffers::FlatBufferBuilder::Finish",
+		"unrelated_symbol",
+	};
+
+	std::vector<std::unique_ptr<retdec::ssa::SSAFunction>> owned;
+	std::vector<const retdec::ssa::SSAFunction*> functions;
+	for (int i = 0; i < 4; ++i)
+	{
+		owned.push_back(std::make_unique<retdec::ssa::SSAFunction>("f" + std::to_string(i)));
+		for (int b = 0; b < 4; ++b)
+			owned.back()->addBlock("b" + std::to_string(b));
+		functions.push_back(owned.back().get());
+	}
+
+	SerialDetector det;
+	const auto viaModule = det.analyseModule(functions, symTable);
+
+	for (const auto* fn: functions)
+	{
+		const auto alone = det.analyseFunction(*fn, symTable);
+		const auto it = viaModule.find(fn->name());
+		const bool inModule = it != viaModule.end();
+		EXPECT_EQ(inModule, alone.isValid()) << fn->name();
+		if (inModule)
+		{
+			EXPECT_EQ(static_cast<int>(it->second.framework), static_cast<int>(alone.framework)) << fn->name();
+			EXPECT_EQ(static_cast<int>(it->second.library), static_cast<int>(alone.library)) << fn->name();
+			EXPECT_FLOAT_EQ(it->second.confidence, alone.confidence) << fn->name();
+		}
+	}
 }
 
 // ─── End of tests ─────────────────────────────────────────────────────────────
