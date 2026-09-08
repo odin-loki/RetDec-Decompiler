@@ -404,3 +404,34 @@ What is still open is one step further:
   the two cannot go in one binary. Closing it means either a second test binary
   that links the `.cu` instead of the `.cpp`, or splitting `GpuScanner` so the
   device path is a separate type.
+
+### `src/opencl/` and its eight test suites are built by nothing
+
+`src/opencl/` is 4,529 lines of OpenCL host code — context, disk cache,
+profiler, buffer pool, parallel disassembler, type inferencer, Steensgaard
+analysis, semantic hasher, e-graph simplifier — with a complete
+`CMakeLists.txt` that no `add_subdirectory` anywhere in the tree names.
+`tests/opencl/` has eight suites and a complete `CMakeLists.txt` that
+`tests/CMakeLists.txt` likewise never adds. Neither the library nor its tests
+is compiled by any build of this repository, and
+`cmake/superbuild/stubs/retdec-ocl/` describes itself as the stub for a "real
+implementation in `src/opencl/`" that nothing links.
+
+Found by `scripts/check_cmake_sources.sh` once it was taught that a directory
+carrying a working `CMakeLists.txt` that nothing includes is the same failure
+as a source no `CMakeLists.txt` names.
+
+Not wired in here, and the reason is specific rather than general:
+`src/opencl/CMakeLists.txt` opens with `find_package(OpenCL REQUIRED)`, so
+adding it unconditionally fails configure on every machine without an OpenCL
+SDK — it needs an option and a guard, and the guard has to be exercised in both
+states. No configure of this tree can run in this environment (it fetches and
+builds LLVM), so wiring a 4,529-line library into the build here would be an
+unverified change to the build of every consumer. `tests/opencl` carries that
+reason in `UNBUILT_DIRS` in `scripts/check_cmake_sources.sh`, so the check
+passes for a stated reason rather than because it cannot see the directory.
+
+Closing it means: an `RETDEC_ENABLE_OPENCL` option defaulting OFF,
+`add_subdirectory(opencl)` in `src/CMakeLists.txt` and `tests/CMakeLists.txt`
+behind it, and a CI job that configures with it ON against a POCL or Mesa
+Rusticl ICD — then the `UNBUILT_DIRS` entry comes out.
