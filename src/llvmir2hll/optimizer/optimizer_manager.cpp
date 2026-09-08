@@ -34,7 +34,6 @@
 #include "retdec/llvmir2hll/optimizer/optimizers/if_to_switch_optimizer.h"
 #include "retdec/llvmir2hll/optimizer/optimizers/llvm_intrinsics_optimizer.h"
 #include "retdec/llvmir2hll/optimizer/optimizers/loop_last_continue_optimizer.h"
-#include "retdec/llvmir2hll/optimizer/optimizers/no_init_var_def_optimizer.h"
 #include "retdec/llvmir2hll/optimizer/optimizers/pre_while_true_loop_conv_optimizer.h"
 #include "retdec/llvmir2hll/optimizer/optimizers/remove_all_casts_optimizer.h"
 #include "retdec/llvmir2hll/optimizer/optimizers/remove_useless_casts_optimizer.h"
@@ -269,15 +268,38 @@ void OptimizerManager::optimize(ShPtr<Module> m)
 	// wouldn't be initializers.
 	run<VarDefForLoopOptimizer>(m);
 	run<VarDefStmtOptimizer>(m, va);
-	// NoInitVarDefOptimizer removes every VarDefStmt that has no initializer.
-	// It does not check whether the variable is used afterwards -- this comment
-	// used to say it did, and the pass has no such check in it. What makes the
-	// removal safe is the ordering: VarDefStmtOptimizer above has already moved
-	// each definition down to its first use and given it an initializer there,
-	// so a definition still without one by this point has no use to be moved
-	// to. The C writer emits declarations only from VarDefStmt, so the argument
-	// has to come from the ordering; there is nowhere else for it to come from.
-	run<NoInitVarDefOptimizer>(m);
+	// NoInitVarDefOptimizer is deliberately NOT run here.
+	//
+	// It removes every VarDefStmt that has no initializer, with no check on
+	// whether the variable is still used -- see the pass itself, which is four
+	// statements long. The comment that used to stand here claimed the ordering
+	// made that safe: VarDefStmtOptimizer above moves each definition down to
+	// its first use and gives it an initializer there, so anything still
+	// without one has no use to move to. That argument does not hold, and the
+	// three facts that break it are all in this tree:
+	//
+	//   - LLVMIR2BIRConverter::generateVarDefinitions creates a VarDefStmt with
+	//     a null initializer for EVERY local, at the top of the function
+	//     (llvmir2bir_converter.cpp:237);
+	//   - VarDefStmtOptimizer::removeStructAndArrayVarDefStmts erases every
+	//     candidate whose type is not Int, Float or Pointer before the analysis
+	//     runs (var_def_stmt_optimizer.cpp:517), so a struct or array local
+	//     never gains an initializer;
+	//   - CHLLWriter emits a local's type from VarDefStmt and from nowhere else
+	//     -- "Only here is variables type emitted", c_hll_writer.cpp:1133; the
+	//     other emitVarWithType calls are for globals, parameters and struct
+	//     members.
+	//
+	// So a struct or array local with no initializer lost its declaration and
+	// the emitted C referred to an undeclared identifier. Not running the pass
+	// costs the opposite: a local that VarDefStmtOptimizer could not move stays
+	// declared at the top of the function, without an initializer, which is
+	// correct C and merely more verbose. The pass exists for the Python back
+	// end, which emits no declarations at all; this tree has only
+	// c_hll_writer.
+	//
+	// Read, not measured: llvmir2hll needs the pinned LLVM build, which the
+	// fast gate deliberately excludes. ctest-linux is what exercises it.
 
 	run<EmptyStmtOptimizer>(m);
 	run<UnknownTypeInferrer>(m);
