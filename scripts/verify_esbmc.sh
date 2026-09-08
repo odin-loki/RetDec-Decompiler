@@ -161,6 +161,17 @@ check_options_syntax() {
 		bad "$(basename "$file"): ESBMC-OPTIONAL present with no reason, or not at the start of a // line"
 		return 1
 	fi
+	# Unwinding assertions are on by default in 8.5.0 and are what makes too
+	# small an --unwind bound fail loudly instead of silently truncating the
+	# search. The ban was written down in docs/VERIFICATION.md and in this
+	# script's own header and enforced by neither.
+	if printf '%s' "$(harness_options "$file")" | grep -q -- '--no-unwinding-assertions'; then
+		bad "$(basename "$file"): ESBMC-OPTIONS passes --no-unwinding-assertions"
+		say "  That turns off the check that a too-small --unwind bound fails on."
+		say "  A proof under it holds only up to the bound, which is not what this"
+		say "  suite claims. Raise the bound instead."
+		return 1
+	fi
 	if grep -q 'ESBMC-TIMEOUT' "$file"; then
 		local t; t="$(harness_timeout "$file")"
 		if ! printf '%s' "$t" | grep -qE '^[0-9]+$'; then
@@ -200,6 +211,11 @@ usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; }
 MODE=run
 RUN_OPTIONAL=0
 declare -a WANTED=()
+# Which of them were actually found. A name that matches no proof used to be
+# ignored, and the run then reported success over the empty set it had left:
+# `verify_esbmc.sh --cross proof_typo` printed "no unexplained disagreement"
+# and exited 0. Checked at the end of each mode.
+declare -a MATCHED_WANTED=()
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--list)    MODE=list ;;
@@ -251,8 +267,14 @@ if [ "$MODE" = routing ]; then
 		fi
 		# Callers: anything under src/ or include/ that includes the kernel,
 		# except the kernel itself. Harnesses are excluded by not being searched.
+		# An #include, not a mention. Matching the path anywhere in the file
+		# counted a kernel named in a comment as a caller, which is exactly the
+		# thing this mode exists to catch: a proof about a header nothing
+		# actually includes.
 		mapfile -t callers < <(
-			grep -rl "retdec/utils/${base}\.h" src include 				--include='*.cpp' --include='*.h' 2>/dev/null 				| grep -v "^${kernel}$" | sort)
+			grep -rlE "^[[:space:]]*#[[:space:]]*include[[:space:]]*[\"<]retdec/utils/${base}\.h[\">]" \
+				src include --include='*.cpp' --include='*.h' 2>/dev/null \
+				| grep -v "^${kernel}$" | sort)
 		if [ ${#callers[@]} -gt 0 ]; then
 			ok "${base}.h — ${#callers[@]} caller(s): ${callers[*]}"
 			routed=$((routed + 1))
@@ -373,6 +395,24 @@ verdict_of() {   # harness fn solver std extraOpts [linkSrcs...]
 	esac
 }
 
+# Names given on the command line that matched no proof. Returns non-zero and
+# says which, so a typo is a failure rather than an empty, green run.
+unmatched_wanted() {
+	[ ${#WANTED[@]} -eq 0 ] && return 0
+	local w m missing=()
+	for w in "${WANTED[@]}"; do
+		local found=0
+		for m in "${MATCHED_WANTED[@]:-}"; do [ "$m" = "$w" ] && found=1; done
+		[ $found -eq 0 ] && missing+=("$w")
+	done
+	if [ ${#missing[@]} -gt 0 ]; then
+		bad "no proof matches: ${missing[*]}"
+		say "  scripts/verify_esbmc.sh --list shows every proof name."
+		return 1
+	fi
+	return 0
+}
+
 if [ "$MODE" = cross ]; then
 	hdr "cross-checking every proof under z3 and boolector"
 	agree=0; disagree=0; expected=0; noverdict=0
@@ -399,11 +439,26 @@ if [ "$MODE" = cross ]; then
 		for fn in "${proofs[@]}"; do
 			if [ ${#WANTED[@]} -gt 0 ]; then
 				match=0
-				for w in "${WANTED[@]}"; do [ "$w" = "$fn" ] && match=1; done
+				for w in "${WANTED[@]}"; do
+					if [ "$w" = "$fn" ]; then match=1; MATCHED_WANTED+=("$w"); fi
+				done
 				[ $match -eq 0 ] && continue
 			fi
 			a="$(verdict_of "$harness" "$fn" --z3        "$harnessStd" "$extraOpts" "${linkSrcs[@]}")"
 			b="$(verdict_of "$harness" "$fn" --boolector "$harnessStd" "$extraOpts" "${linkSrcs[@]}")"
+			# The verdict under the solver the harness actually trusts. For a
+			# harness pinned to something outside the cross pair -- cvc5, say --
+			# neither of the two runs above is it, so ask that backend directly
+			# rather than excusing the disagreement on the strength of a pin
+			# whose verdict was never obtained.
+			case "$pinned" in
+				--z3)        pinnedVerdict="$a" ;;
+				--boolector) pinnedVerdict="$b" ;;
+				"")          pinnedVerdict="" ;;
+				*)           pinnedVerdict="$(verdict_of "$harness" "$fn" \
+					"$pinned" "$harnessStd" "$extraOpts" "${linkSrcs[@]}")" ;;
+			esac
+
 			if [ "$a" = timeout ] && [ "$b" = timeout ]; then
 				# Not an agreement. Two backends that both ran out of time have
 				# said nothing about the property, and counting that as
@@ -411,12 +466,37 @@ if [ "$MODE" = cross ]; then
 				# never actually checked.
 				skip "$fn — neither backend returned within ${TIMEOUT}s"
 				noverdict=$((noverdict + 1))
-			elif [ "$a" = "$b" ]; then
-				ok "$fn — z3 and boolector agree ($a)"
+			elif [ "$a" = timeout ] || [ "$b" = timeout ]; then
+				# One backend said nothing. Whatever the other said, there is no
+				# second opinion here, and the arms below would read a timeout as
+				# a substantive verdict to agree or disagree with.
+				skip "$fn — z3=$a boolector=$b; one backend returned no verdict"
+				noverdict=$((noverdict + 1))
+			elif [ "$a" = pass ] && [ "$b" = pass ]; then
+				ok "$fn — z3 and boolector agree (pass)"
 				agree=$((agree + 1))
-			elif [ -n "$pinned" ]; then
-				skip "$fn — z3=$a boolector=$b; harness pins $pinned"
+			elif [ "$a" = fail ] && [ "$b" = fail ]; then
+				# This arm used to be folded into `[ "$a" = "$b" ]` and reported
+				# as agreement. Two backends that agree the property does NOT
+				# hold agree about the worst possible thing: it makes --cross
+				# print "z3 and boolector agree (fail)" and exit 0 over a proof
+				# that both of them refuted.
+				bad "$fn — z3 and boolector agree the property does NOT hold"
+				mismatches+=("$fn")
+				disagree=$((disagree + 1))
+			elif [ -n "$pinned" ] && [ "$pinnedVerdict" = pass ]; then
+				# The documented artifact: the harness's own backend proves the
+				# property and the other one finds a witness for a check that
+				# cannot fire. Narrowed from "any harness with a pin", which
+				# excused a disagreement in ten of the fourteen harnesses --
+				# 252 of the 272 proofs -- including one where the pinned solver
+				# was the one that failed.
+				skip "$fn — z3=$a boolector=$b; $pinned proves it"
 				expected=$((expected + 1))
+			elif [ -n "$pinned" ]; then
+				bad "$fn — z3=$a boolector=$b; $pinned says $pinnedVerdict"
+				mismatches+=("$fn")
+				disagree=$((disagree + 1))
 			else
 				bad "$fn — z3=$a boolector=$b"
 				mismatches+=("$fn")
@@ -425,6 +505,7 @@ if [ "$MODE" = cross ]; then
 		done
 	done
 	hdr "summary"
+	unmatched_wanted || exit 2
 	say "agreed: $agree   expected disagreement: $expected   no verdict: $noverdict   unexplained: $disagree"
 	if [ $noverdict -gt 0 ]; then
 		say ""
@@ -433,11 +514,14 @@ if [ "$MODE" = cross ]; then
 		say "verdict in the main run is all there is for them."
 	fi
 	if [ $disagree -gt 0 ]; then
-		bad "solvers disagree on: ${mismatches[*]}"
+		bad "not cross-checked clean: ${mismatches[*]}"
 		say ""
-		say "A property two solvers disagree about is not proved. Either the"
-		say "harness has undefined behaviour they model differently, or one of"
-		say "them is wrong. Find out which before trusting the verdict."
+		say "Two readings land here. A property the backends DISAGREE about is"
+		say "not proved: either the harness has undefined behaviour they model"
+		say "differently, or one of them is wrong, and it matters which. A"
+		say "property they AGREE does not hold is worse -- that is a refutation,"
+		say "and it used to be counted as agreement and reported ok, because"
+		say "this arm tested only whether the two verdicts were equal."
 		exit 1
 	fi
 	ok "no unexplained disagreement"
@@ -479,14 +563,25 @@ for harness in "${HARNESSES[@]}"; do
 
 	mapfile -t proofs < <(collect_proofs "$harness")
 	if [ ${#proofs[@]} -eq 0 ]; then
-		skip "$(basename "$harness") declares no proof_* entry points"
+		# Not a skip. A harness in this directory exists to be run; one that
+		# contributes zero proofs has either been emptied or has drifted out of
+		# the shape collect_proofs recognises -- a renamed prefix, a return type
+		# on its own line -- and either way the run below would go on to report
+		# that every property holds while this file was never given to the
+		# solver at all.
+		bad "$(basename "$harness"): no proof_* entry points found"
+		say "  collect_proofs matches: extern \"C\" void proof_<name>(  at the"
+		say "  start of a line. A harness with none is an empty gate."
+		failed+=("$(basename "$harness") no proofs")
 		continue
 	fi
 
 	for fn in "${proofs[@]}"; do
 		if [ ${#WANTED[@]} -gt 0 ]; then
 			match=0
-			for w in "${WANTED[@]}"; do [ "$w" = "$fn" ] && match=1; done
+			for w in "${WANTED[@]}"; do
+				if [ "$w" = "$fn" ]; then match=1; MATCHED_WANTED+=("$w"); fi
+			done
 			[ $match -eq 0 ] && continue
 		fi
 
@@ -519,6 +614,7 @@ for harness in "${HARNESSES[@]}"; do
 done
 
 hdr "summary"
+unmatched_wanted || exit 2
 say "proofs passed: $passed / $total"
 [ $skipped -gt 0 ] && say "harnesses not run (ESBMC-OPTIONAL): $skipped"
 if [ ${#failed[@]} -gt 0 ]; then
