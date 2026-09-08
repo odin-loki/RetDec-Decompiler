@@ -138,7 +138,11 @@ using cudaError_t = int;
 enum : cudaError_t
 {
 	cudaSuccess = 0,
-	cudaErrorMemoryAllocation = 2
+	cudaErrorMemoryAllocation = 2,
+	/// What a 32-bit atomic on a byte address actually returns on a device, and
+	/// therefore the error src/cuda_accel/cuda_type_inferencer.cu had to stop
+	/// producing.
+	cudaErrorMisalignedAddress = 716
 };
 
 enum cudaMemcpyKind
@@ -206,6 +210,65 @@ inline T atomicAdd(T* address, T value)
 	const T old = *address;
 	*address = old + value;
 	return old;
+}
+
+/// The remaining device-side atomics src/cuda_accel/ uses, on the same footing
+/// as atomicAdd above: mutex-guarded because the kernels take the address of an
+/// ordinary object, and correctness is the only thing being modelled.
+template <typename T>
+inline T atomicOr(T* address, T value)
+{
+	static std::mutex m;
+	std::lock_guard<std::mutex> lock(m);
+	const T old = *address;
+	*address = old | value;
+	return old;
+}
+
+template <typename T>
+inline T atomicMax(T* address, T value)
+{
+	static std::mutex m;
+	std::lock_guard<std::mutex> lock(m);
+	const T old = *address;
+	if (value > old) *address = value;
+	return old;
+}
+
+/// Returns the value that was there, whether or not the swap happened, which is
+/// what a CAS loop tests against.
+template <typename T>
+inline T atomicCAS(T* address, T expected, T desired)
+{
+	static std::mutex m;
+	std::lock_guard<std::mutex> lock(m);
+	const T old = *address;
+	if (old == expected) *address = desired;
+	return old;
+}
+
+// ─── streams ─────────────────────────────────────────────────────────────────
+//
+// src/cuda_accel/ drives its work through a stream. Nothing here is
+// asynchronous -- the "async" calls do the work immediately and the
+// synchronisation is a no-op -- which is a faithful model of a stream with one
+// consumer and no overlap, and is what these kernels use it as.
+using cudaStream_t = struct CUstream_st*;
+
+inline cudaError_t
+cudaMemcpyAsync(void* dst, const void* src, std::size_t bytes, cudaMemcpyKind kind, cudaStream_t = nullptr)
+{
+	return cudaMemcpy(dst, src, bytes, kind);
+}
+
+inline cudaError_t cudaMemsetAsync(void* p, int v, std::size_t bytes, cudaStream_t = nullptr)
+{
+	return cudaMemset(p, v, bytes);
+}
+
+inline cudaError_t cudaStreamSynchronize(cudaStream_t)
+{
+	return cudaSuccess;
 }
 
 struct cudaDeviceProp

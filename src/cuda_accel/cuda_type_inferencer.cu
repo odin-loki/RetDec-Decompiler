@@ -118,6 +118,40 @@ __global__ void retdec_type_propagation(
 	}
 }
 
+// The per-slot type facts are one byte each, but the narrowest CUDA atomic
+// operates on a naturally aligned 32-bit word (CUDA C Programming Guide, B.14
+// "Atomic Functions"). These two helpers do the read-modify-write on the aligned
+// word that contains the byte and leave the other three bytes of that word
+// alone. NVIDIA GPUs are little-endian, so byte idx sits at bit offset
+// 8*(idx&3). The caller has to round the byte arrays up to a multiple of four,
+// because the enclosing word of the last slot reaches up to three bytes past a
+// totalSlots-sized allocation.
+__device__ static void atomic_or_u8_d(unsigned char* base, unsigned int idx, unsigned char val)
+{
+	unsigned int* word = (unsigned int*)(base + (idx & ~3u));
+	atomicOr(word, (unsigned int)val << (8u * (idx & 3u)));
+}
+
+// atomicMax has no masked form, so the largest-wins merge needs a CAS loop. It
+// terminates: a losing iteration means another thread raised the byte, the byte
+// only ever grows under max, and it saturates at 255 -- so at most 255 retries,
+// and in practice zero or one. The early return also skips the write entirely
+// once the byte already holds a value >= val, which is the common case.
+__device__ static void atomic_max_u8_d(unsigned char* base, unsigned int idx, unsigned char val)
+{
+	unsigned int* word = (unsigned int*)(base + (idx & ~3u));
+	unsigned int shift = 8u * (idx & 3u);
+	unsigned int old = *word;
+	unsigned int assumed;
+	do
+	{
+		if ((unsigned char)((old >> shift) & 0xffu) >= val) return;
+		assumed = old;
+		old = atomicCAS(word, assumed, (assumed & ~(0xffu << shift)) | ((unsigned int)val << shift));
+	}
+	while (old != assumed);
+}
+
 __global__ void retdec_type_seed(
 	unsigned char* width,
 	unsigned char* signedness,
@@ -133,11 +167,21 @@ __global__ void retdec_type_seed(
 
 	unsigned int slot = operand_slot[gid];
 	unsigned char ow = operand_width[gid], os = operand_sign[gid], op = operand_ptr[gid];
-	// Atomic writes to avoid races (multiple operands may target same slot)
-	// Use atomicMax for width (largest wins), simple assignment for sign/ptr
-	atomicMax((int*)&width[slot], (int)ow);
-	if (os) atomicOr((int*)&signedness[slot], (int)os);
-	if (op) atomicOr((int*)&is_pointer[slot], (int)op);
+	// Several operands may target the same slot, so the seeds do have to be merged
+	// atomically -- but width/signedness/is_pointer are ONE BYTE per slot, and a
+	// 32-bit atomic aimed at &width[slot] is misaligned for the three slots in four
+	// where slot%4 != 0, which faults the kernel with cudaErrorMisalignedAddress
+	// (CUDA C Programming Guide, B.14). For the remaining quarter it
+	// read-modify-writes the three neighbouring slots as well, and atomicMax
+	// compares the whole word: on little-endian hardware a nonzero neighbour byte
+	// lands in the upper 24 bits, so the word compares greater than any 8-bit width
+	// and this slot's seed is dropped without a trace. Modelled on the host with
+	// the same arithmetic: a 32-bit atomicMax of 4 over slot 0, with the three
+	// neighbour bytes at 0xCC, leaves byte 0 at 0 instead of 4.
+	// Go through the enclosing aligned word instead, touching one byte.
+	atomic_max_u8_d(width, slot, ow);
+	if (os) atomic_or_u8_d(signedness, slot, os);
+	if (op) atomic_or_u8_d(is_pointer, slot, op);
 }
 
 #endif // RETDEC_HAS_CUDA
@@ -241,10 +285,16 @@ std::vector<TypeSlot> CUDATypeInferencer::infer(const std::vector<FunctionTypeDa
 				if (p) cudaFree(p);
 		};
 
+		// retdec_type_seed merges each byte through the aligned 32-bit word that
+		// contains it, so the three byte arrays are rounded up to a multiple of four:
+		// without the padding, that word would read and write up to three bytes past
+		// the allocation for the last slot. Nine bytes at most.
+		const unsigned int slotBytes = (totalSlots + 3u) & ~3u;
+
 		bool ok =
 			(cudaMalloc(&dParent, totalSlots * 4) == cudaSuccess && cudaMalloc(&dRnk, totalSlots * 4) == cudaSuccess
-			 && cudaMalloc(&dWidth, totalSlots) == cudaSuccess && cudaMalloc(&dSign, totalSlots) == cudaSuccess
-			 && cudaMalloc(&dIsPtr, totalSlots) == cudaSuccess && cudaMalloc(&dConOff, (F + 1) * 4) == cudaSuccess
+			 && cudaMalloc(&dWidth, slotBytes) == cudaSuccess && cudaMalloc(&dSign, slotBytes) == cudaSuccess
+			 && cudaMalloc(&dIsPtr, slotBytes) == cudaSuccess && cudaMalloc(&dConOff, (F + 1) * 4) == cudaSuccess
 			 && (totalCons == 0 || cudaMalloc(&dConA, totalCons * 4) == cudaSuccess)
 			 && (totalCons == 0 || cudaMalloc(&dConB, totalCons * 4) == cudaSuccess)
 			 && cudaMalloc(&dDirty, F * 4) == cudaSuccess && cudaMalloc(&dDone, 4) == cudaSuccess
@@ -262,9 +312,13 @@ std::vector<TypeSlot> CUDATypeInferencer::infer(const std::vector<FunctionTypeDa
 
 		cudaMemcpyAsync(dParent, parent.data(), totalSlots * 4, cudaMemcpyHostToDevice, stream);
 		cudaMemsetAsync(dRnk, 0, totalSlots * 4, stream);
-		cudaMemsetAsync(dWidth, 0, totalSlots, stream);
-		cudaMemsetAsync(dSign, 0, totalSlots, stream);
-		cudaMemsetAsync(dIsPtr, 0, totalSlots, stream);
+		// The padding is zeroed with the rest, so the CAS loop never writes back
+		// uninitialised device memory. The three device-to-host copies further down
+		// still take totalSlots bytes: the padding is device-side only, and the host
+		// vectors are sized totalSlots.
+		cudaMemsetAsync(dWidth, 0, slotBytes, stream);
+		cudaMemsetAsync(dSign, 0, slotBytes, stream);
+		cudaMemsetAsync(dIsPtr, 0, slotBytes, stream);
 		cudaMemcpyAsync(dConOff, conOffsets.data(), (F + 1) * 4, cudaMemcpyHostToDevice, stream);
 		if (totalCons > 0)
 		{

@@ -568,6 +568,58 @@ compile_cuda_half() {
 }
 compile_cuda_half || exit 1
 
+# ── src/cuda_accel/, the other half nothing compiles ─────────────────────────
+#
+# CU_AS_CXX_MODULES above compiles the five .cu files in src/cuda_accel/ as
+# plain C++, which is what the CMake build does when CUDA is absent -- so
+# everything behind `#ifdef RETDEC_HAS_CUDA` is skipped there too: every kernel,
+# every launch and all of the device-side plumbing. That is roughly 500 lines
+# across five files, compiled by nothing at all, in a tree where CUDA is not
+# built by default. It is the same gap the gpu_scanner check above was written
+# for, and it hid a real defect: retdec_type_seed aimed 32-bit atomics at
+# one-byte arrays, which faults with cudaErrorMisalignedAddress for three slots
+# in four and silently drops the seed for the fourth.
+#
+# The `<<<grid, block, shared, stream>>>` launch configuration is the one thing
+# a C++ compiler cannot parse, so it is stripped: a __global__ function is a
+# void function here, and calling it directly still type-checks its arguments,
+# which is the point. Stripping it leaves the grid variables unused, so this
+# does not treat warnings as errors -- errors are what it is for.
+compile_cuda_accel() {
+	shopt -s nullglob
+	local srcs=(src/cuda_accel/*.cu)
+	shopt -u nullglob
+	[ ${#srcs[@]} -eq 0 ] && return 0
+
+	local src stripped tu log bad_srcs=()
+	stripped="$(mktemp --suffix=.cu)"
+	tu="$(mktemp --suffix=.cpp)"
+	log="$(mktemp)"
+	for src in "${srcs[@]}"; do
+		sed -E 's/<<<[^>]*>>>//g' "$src" > "$stripped"
+		{
+			printf '#include "cuda_runtime.h"\n'
+			printf '#include "%s"\n' "$stripped"
+		} > "$tu"
+		# shellcheck disable=SC2086
+		if ! "$CXX" -std=c++20 $INCLUDES $DEFINES -DRETDEC_HAS_CUDA -Wall -Wextra \
+				-I"$ROOT/tests/utils/cuda_stub" -fsyntax-only -x c++ "$tu" > "$log" 2>&1; then
+			bad_srcs+=("$src")
+			printf '\n%s--- %s%s\n' "$C_RED" "$src" "$C_OFF"
+			grep -m 8 'error' "$log" || head -8 "$log"
+		fi
+	done
+	rm -f "$stripped" "$tu" "$log"
+
+	if [ ${#bad_srcs[@]} -gt 0 ]; then
+		bad "does not compile with RETDEC_HAS_CUDA against tests/utils/cuda_stub: ${bad_srcs[*]}"
+		return 1
+	fi
+	ok "${#srcs[@]} cuda_accel kernels compile with RETDEC_HAS_CUDA against the CUDA stubs"
+	return 0
+}
+compile_cuda_accel || exit 1
+
 # ── the proved kernels, standalone, under the project's own warning flags ────
 #
 # include/retdec/utils/ is the set retdec/utils/bounds.h and its siblings live
