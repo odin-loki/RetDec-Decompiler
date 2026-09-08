@@ -48,7 +48,51 @@ Answer ask(const char* data, std::size_t size, std::size_t offset, std::size_t c
 	return a;
 }
 
+/// The same question with the data ending BEFORE the end of the allocation, so
+/// the byte the old code read past `last` is a known one instead of whatever
+/// the allocator left there. That is what makes the answer deterministic, and
+/// so what makes the test fail on a plain build rather than only under a
+/// sanitizer -- the two are asked separately below because each says something
+/// the other does not.
+Answer askWithinALargerBuffer(
+	const char* data, std::size_t size, std::size_t dataSize, std::size_t offset, std::size_t charStep)
+{
+	char* buf = static_cast<char*>(std::malloc(size));
+	std::memcpy(buf, data, size);
+
+	const CharacterIterator<const char*> it(buf + offset, buf, buf + dataSize, charStep);
+	Answer a;
+	a.little = it.pointsToValidCharacter(CharacterEndianness::Little);
+	a.big = it.pointsToValidCharacter(CharacterEndianness::Big);
+
+	std::free(buf);
+	return a;
+}
+
 } // namespace
+
+// The same defect asked so the ANSWER is wrong, not just the read. `last` is
+// one byte into a two-byte allocation, so the byte the old code reached for is
+// a real, known byte rather than allocator debris:
+//
+//   little endian: 'A' is printable and the padding byte it walks -- buf[1],
+//                  outside [first, last) -- is zero, so it answered "valid";
+//   big endian:    the character byte IS buf[1] under charStep 2, and 'A'
+//                  there with a zero padding byte answered "valid" too.
+//
+// Both are half a character reported as a whole one, and unlike the sanitizer
+// case below this fails on an ordinary build. FileFormat::loadStrings walks
+// wide strings byte by byte over a section whose length the PE and ELF specs do
+// not require to be even, so reaching a final odd byte is ordinary.
+TEST(CharacterIteratorBounds, ATruncatedWideCharacterIsNotReportedValid)
+{
+	// Data is buf[0] alone; buf[1] is inside the allocation and outside the data.
+	const Answer little = askWithinALargerBuffer("A\0", 2, 1, 0, 2);
+	EXPECT_FALSE(little.little);
+
+	const Answer big = askWithinALargerBuffer("\0A", 2, 1, 0, 2);
+	EXPECT_FALSE(big.big);
+}
 
 // The defect. The guard was `if (itr == last) return false;`, which proves
 // only that ONE byte is left, and both branches read charStep of them: the
@@ -62,14 +106,14 @@ Answer ask(const char* data, std::size_t size, std::size_t offset, std::size_t c
 //     #0 ... character_iterator.h:65  pointsToValidCharacter(const It&, ...)
 //     #1 ... character_iterator.h:257 pointsToValidCharacter(CharacterEndianness)
 //
-// This test is load-bearing under a sanitizer and not without one, and says so
+// This one is load-bearing under a sanitizer and not without one, and says so
 // rather than implying otherwise: revert the guard and it aborts here with that
 // heap-buffer-overflow, but on a plain build the byte after the allocation is
-// usually not printable, so the EXPECT_FALSE below holds by luck. That is the
-// defect, not an argument against the test -- the answer depended on a byte
-// outside the section. The repository runs this suite under
-// -fsanitize=address,undefined in .github/workflows/sanitizers.yml, which is
-// where it bites.
+// usually not printable, so the EXPECT_FALSE below holds by luck. The test
+// above is the plain-build half -- same defect, asked so the ANSWER is wrong
+// rather than only the read -- and it fails either way. The repository runs
+// this suite under -fsanitize=address,undefined in
+// .github/workflows/sanitizers.yml, which is where this one bites.
 TEST(CharacterIteratorBounds, APartialCharacterAtTheEndIsNotValid)
 {
 	// "AB\0" with the iterator on the '\0': one byte left, two needed.
