@@ -9,6 +9,7 @@
 #define RETDEC_UTILS_IO_LOG_H
 
 #include "retdec/utils/io/logger.h"
+#include <memory>
 
 namespace retdec {
 namespace utils {
@@ -125,7 +126,27 @@ private:
 	/**
 	 * Structure containing initialized/default loggers.
 	 */
-	static Logger::Ptr writers[static_cast<int>(Type::Undefined) + 1];
+	/// shared_ptr rather than unique_ptr, and read through getShared() below.
+	///
+	/// Log::get returns Logger&, and Log::info()/debug()/error() copy-construct
+	/// their return value from it. Nothing synchronised the table, so a thread
+	/// calling set() -- which every decompile() does, twice, through
+	/// setLogsFrom() -- destroyed the Logger another thread was mid-copy of:
+	///
+	///   ERROR: AddressSanitizer: heap-use-after-free  READ of size 4
+	///     #0 retdec::utils::io::Logger::Logger(Logger const&) logger.cpp:67
+	///     #1 retdec::utils::io::Log::info()               log.cpp:57
+	///   freed by thread T2: ... Log::set                  log.cpp:52
+	///
+	/// A shared_ptr copy taken under the lock keeps the object alive for as long
+	/// as the caller holds it, which is exactly the window the copy needs.
+	/// parallelBatchDecompile runs N decompile() calls on one pool, so this is
+	/// reachable from the public API even though the CLI does not use it.
+	static std::shared_ptr<Logger> writers[static_cast<int>(Type::Undefined) + 1];
+
+	/// A counted reference to one writer, or nullptr when that slot is empty.
+	/// Taken under the table's lock.
+	static std::shared_ptr<Logger> getShared(const Type& logType);
 
 	/**
 	 * Fallback logger. In case of bad initialization of the writers

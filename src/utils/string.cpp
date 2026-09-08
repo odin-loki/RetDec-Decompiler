@@ -63,7 +63,15 @@ std::string replaceChars(const std::string& str, bool (*predicate)(unsigned char
 	{
 		if (predicate(c))
 		{
-			result += prefix + byteToHexString(c, false);
+			// The last caller of byteToHexString, which renders through a
+			// process-wide static and is therefore not thread-safe. Two
+			// characters, written through references, no state.
+			char hi = '\0';
+			char lo = '\0';
+			txt::byteToHex(static_cast<std::uint8_t>(c), false, hi, lo);
+			result += prefix;
+			result += hi;
+			result += lo;
 		}
 		else
 		{

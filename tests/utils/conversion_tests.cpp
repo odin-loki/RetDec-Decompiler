@@ -5,6 +5,11 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <atomic>
+#include <cstdio>
+#include <thread>
+#include <vector>
+#include <string>
 #include <gtest/gtest.h>
 
 #include <limits>
@@ -490,7 +495,78 @@ TEST_F(ConversionTests, BytesToBitsRefusesALengthWhoseBitCountDoesNotFit)
 	EXPECT_EQ("01011010", bytesToBits(&one, 1));
 }
 
+
+// bytesToHexString rendered each byte through byteToHexString, which returned a
+// pointer into a function-local `static char result[3]` that was not
+// thread_local -- so two threads hex-encoding two different buffers exchanged
+// digits, and the result was still a valid hex string. Measured before the fix,
+// two threads over their own 64-byte buffers, 200,000 iterations each:
+//
+//     corrupted hex strings: threadA=579/200000 threadB=539/200000
+//
+// with ThreadSanitizer naming the write to that static directly. The callers it
+// reaches are Authenticode digests, section and overlay hashes and resource
+// digests, so under parallelBatchDecompile a wrong digest went into the config
+// JSON looking exactly like a right one.
+//
+// The rate is machine-dependent and this runs far fewer iterations than the
+// measurement did, so it is not a threshold: what it pins is that the encoder
+// holds no shared state at all, which is what txt::byteToHex gives it.
+TEST(ConversionTests, BytesToHexStringIsThreadSafe)
+{
+	constexpr int kIterations = 20000;
+	std::atomic<int> mismatches{0};
+
+	const auto worker = [&mismatches](std::uint8_t fill) {
+		const std::vector<std::uint8_t> bytes(64, fill);
+		char pair[3] = {};
+		std::snprintf(pair, sizeof(pair), "%02X", fill);
+		std::string expected;
+		for (int i = 0; i < 64; ++i)
+			expected += pair;
+
+		for (int i = 0; i < kIterations; ++i)
+		{
+			std::string got;
+			bytesToHexString(bytes, got);
+			if (got != expected) mismatches.fetch_add(1, std::memory_order_relaxed);
+		}
+	};
+
+	std::thread a(worker, std::uint8_t{0xAB});
+	std::thread b(worker, std::uint8_t{0xCD});
+	a.join();
+	b.join();
+
+	EXPECT_EQ(mismatches.load(), 0) << "bytesToHexString produced a string neither thread asked for; the "
+									   "encoder is sharing state between threads again";
+}
+
+// And the single-threaded contract the loop has to keep while it does that.
+TEST(ConversionTests, BytesToHexStringRendersEveryByte)
+{
+	std::vector<std::uint8_t> all(256);
+	for (int i = 0; i < 256; ++i)
+		all[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(i);
+
+	std::string upper;
+	bytesToHexString(all, upper);
+	ASSERT_EQ(upper.size(), 512u);
+
+	std::string lower;
+	bytesToHexString(all, lower, 0, 0, false);
+	ASSERT_EQ(lower.size(), 512u);
+
+	for (int i = 0; i < 256; ++i)
+	{
+		char want[3] = {};
+		std::snprintf(want, sizeof(want), "%02X", i);
+		EXPECT_EQ(upper.substr(static_cast<std::size_t>(i) * 2, 2), std::string(want)) << "byte " << i;
+		std::snprintf(want, sizeof(want), "%02x", i);
+		EXPECT_EQ(lower.substr(static_cast<std::size_t>(i) * 2, 2), std::string(want)) << "byte " << i;
+	}
+}
+
 } // namespace tests
 } // namespace utils
-
 } // namespace retdec

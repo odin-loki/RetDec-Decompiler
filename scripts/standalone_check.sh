@@ -166,6 +166,12 @@ readonly EXTRA_SOURCES=(
 	# link LLVM. tests/fileformat/format_lattice_test.cpp needs nothing else
 	# either, so both come into the fast gate through PARTIAL_SUITES below.
 	"fileformat/lattice/format_lattice.cpp"
+	# The logger. src/utils/io/ is a subdirectory, and the module glob above is
+	# `src/<module>/*.cpp`, which does not recurse -- so the process-wide writer
+	# table every thread of this tree logs through was compiled by nothing here,
+	# and tests/utils/log_tests.cpp could not link.
+	"utils/io/log.cpp"
+	"utils/io/logger.cpp"
 )
 
 # Test suites where only some files build here, for the same reason.  The rest

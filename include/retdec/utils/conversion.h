@@ -26,7 +26,13 @@ namespace utils {
 /// @name Conversions
 /// @{
 
-char* byteToHexString(uint8_t b, bool uppercase = true);
+// byteToHexString is gone. It returned a pointer into a function-local
+// `static char result[3]` that was not thread_local, so two threads
+// rendering two different bytes exchanged digits -- measured at roughly
+// 600 corrupted strings per 200,000 on this loop, and reported by TSan as
+// a race on that static. Its two callers now use txt::byteToHex from
+// retdec/utils/text_transcode.h, which writes through references, holds no
+// state, and is proved in tests/verification/text_transcode_proof.cpp.
 
 /**
  * Converts the given array of numbers into a hexadecimal string representation
@@ -86,9 +92,22 @@ void bytesToHexString(
 		{
 			result[hexIndex++] = ' ';
 		}
-		auto res = byteToHexString(data[offset + i], uppercase);
-		result[hexIndex++] = res[0];
-		result[hexIndex++] = res[1];
+		// byteToHexString returns a pointer into a function-local `static
+		// char result[3]` that is not thread_local, so two threads rendering
+		// two different bytes exchange digits. Measured on this loop, two
+		// threads over their own 64-byte buffers, 200,000 iterations each:
+		//
+		//   corrupted hex strings: threadA=579/200000 threadB=539/200000
+		//
+		// and TSan names the write directly. The result is still a valid hex
+		// string, which is how a wrong Authenticode digest or section hash gets
+		// into the config JSON without anything noticing.
+		//
+		// text_transcode.h's byteToHex writes through references and holds no
+		// state; it is proved in tests/verification/text_transcode_proof.cpp,
+		// and this header has included it since before the race was introduced.
+		txt::byteToHex(static_cast<std::uint8_t>(data[offset + i]), uppercase, result[hexIndex], result[hexIndex + 1]);
+		hexIndex += 2;
 	}
 }
 
