@@ -14,20 +14,18 @@
 namespace retdec {
 namespace fileformat {
 
-Asn1Item::Asn1Item(Asn1Type type, const std::vector<std::uint8_t>& data) : _type(type), _data(data)
+Asn1Item::Asn1Item(Asn1Type type, const std::vector<std::uint8_t>& data): _type(type), _data(data)
 {
 	init();
 }
 
 std::shared_ptr<Asn1Item> Asn1Item::parse(const std::vector<std::uint8_t>& data)
 {
-	if (data.empty())
-		return nullptr;
+	if (data.empty()) return nullptr;
 
 	// At least space for tag and length
 	auto itr = data.begin();
-	if (itr + 1 == data.end())
-		return nullptr;
+	if (itr + 1 == data.end()) return nullptr;
 
 	auto tag = *itr;
 	auto length = *(itr + 1);
@@ -39,8 +37,7 @@ std::shared_ptr<Asn1Item> Asn1Item::parse(const std::vector<std::uint8_t>& data)
 	{
 		lengthBytes += 1 + (length & 0x7F);
 
-		if (lengthBytes > data.size())
-			return nullptr;
+		if (lengthBytes > data.size()) return nullptr;
 	}
 
 	// Parse tag and create ASN1 item
@@ -52,18 +49,12 @@ std::shared_ptr<Asn1Item> Asn1Item::parse(const std::vector<std::uint8_t>& data)
 	{
 		switch (tag & Asn1TagMask_Type)
 		{
-			case Asn1Tag_BitString:
-				return std::make_shared<Asn1BitString>(data);
-			case Asn1Tag_OctetString:
-				return std::make_shared<Asn1OctetString>(data);
-			case Asn1Tag_Null:
-				return std::make_shared<Asn1Null>(data);
-			case Asn1Tag_Object:
-				return std::make_shared<Asn1Object>(data);
-			case Asn1Tag_Sequence:
-				return std::make_shared<Asn1Sequence>(data);
-			default:
-				return nullptr;
+		case Asn1Tag_BitString: return std::make_shared<Asn1BitString>(data);
+		case Asn1Tag_OctetString: return std::make_shared<Asn1OctetString>(data);
+		case Asn1Tag_Null: return std::make_shared<Asn1Null>(data);
+		case Asn1Tag_Object: return std::make_shared<Asn1Object>(data);
+		case Asn1Tag_Sequence: return std::make_shared<Asn1Sequence>(data);
+		default: return nullptr;
 		}
 	}
 
@@ -146,11 +137,9 @@ void Asn1Item::init()
 	_contentBegin = _data.begin() + 2 + lengthBytes;
 }
 
-Asn1Null::Asn1Null(const std::vector<std::uint8_t>& data) : Asn1Item(Asn1Type::Null, data)
-{
-}
+Asn1Null::Asn1Null(const std::vector<std::uint8_t>& data): Asn1Item(Asn1Type::Null, data) {}
 
-Asn1BitString::Asn1BitString(const std::vector<std::uint8_t>& data) : Asn1Item(Asn1Type::BitString, data)
+Asn1BitString::Asn1BitString(const std::vector<std::uint8_t>& data): Asn1Item(Asn1Type::BitString, data)
 {
 	init();
 }
@@ -165,7 +154,7 @@ void Asn1BitString::init()
 	retdec::utils::bytesToHexString(getContentData(), _string);
 }
 
-Asn1OctetString::Asn1OctetString(const std::vector<std::uint8_t>& data) : Asn1Item(Asn1Type::OctetString, data)
+Asn1OctetString::Asn1OctetString(const std::vector<std::uint8_t>& data): Asn1Item(Asn1Type::OctetString, data)
 {
 	init();
 }
@@ -180,7 +169,7 @@ void Asn1OctetString::init()
 	retdec::utils::bytesToHexString(getContentData(), _string);
 }
 
-Asn1Object::Asn1Object(const std::vector<std::uint8_t>& data) : Asn1Item(Asn1Type::Object, data)
+Asn1Object::Asn1Object(const std::vector<std::uint8_t>& data): Asn1Item(Asn1Type::Object, data)
 {
 	init();
 }
@@ -205,8 +194,7 @@ void Asn1Object::init()
 	auto first = contentData[0];
 	_identifier += std::to_string(first / 40) + '.';
 	_identifier += std::to_string(first % 40);
-	if (contentData.size() != 1)
-		_identifier += '.';
+	if (contentData.size() != 1) _identifier += '.';
 
 	std::uint64_t subident = 0;
 	for (auto itr = contentData.begin() + 1; itr != contentData.end(); ++itr)
@@ -219,13 +207,12 @@ void Asn1Object::init()
 		}
 
 		_identifier += std::to_string(subident);
-		if (itr + 1 != contentData.end())
-			_identifier += '.';
+		if (itr + 1 != contentData.end()) _identifier += '.';
 		subident = 0;
 	}
 }
 
-Asn1Sequence::Asn1Sequence(const std::vector<std::uint8_t>& data) : Asn1Item(Asn1Type::Sequence, data)
+Asn1Sequence::Asn1Sequence(const std::vector<std::uint8_t>& data): Asn1Item(Asn1Type::Sequence, data)
 {
 	init();
 }
@@ -246,21 +233,20 @@ void Asn1Sequence::init()
 	while (!contentData.empty())
 	{
 		auto element = Asn1Item::parse(contentData);
-		if (element == nullptr)
-			return;
+		if (element == nullptr) return;
 
 		// Looks like size of the created element might be greater than size of
 		// the data it was created from.
-		auto endIt = element->getLength() >= contentData.size()
-				? contentData.end()
-				: contentData.begin() + element->getLength();
+		auto endIt =
+			element->getLength() >= contentData.size() ? contentData.end() : contentData.begin() + element->getLength();
 
 		contentData.erase(contentData.begin(), endIt);
 		_elements.push_back(std::move(element));
 	}
 }
 
-Asn1ContextSpecific::Asn1ContextSpecific(const std::vector<std::uint8_t>& data) : Asn1Item(Asn1Type::ContextSpecific, data)
+Asn1ContextSpecific::Asn1ContextSpecific(const std::vector<std::uint8_t>& data):
+	Asn1Item(Asn1Type::ContextSpecific, data)
 {
 	init();
 }

@@ -15,26 +15,26 @@
 namespace retdec {
 namespace fileformat {
 
-const std::uint8_t Asn1TagMask_Class       = 0xC0;
-const std::uint8_t Asn1TagMask_Primitive   = 0x20;
-const std::uint8_t Asn1TagMask_Type        = 0x1F;
+const std::uint8_t Asn1TagMask_Class = 0xC0;
+const std::uint8_t Asn1TagMask_Primitive = 0x20;
+const std::uint8_t Asn1TagMask_Type = 0x1F;
 
-const std::uint8_t Asn1Tag_Universal       = 0x00;
-const std::uint8_t Asn1Tag_Application     = 0x40;
+const std::uint8_t Asn1Tag_Universal = 0x00;
+const std::uint8_t Asn1Tag_Application = 0x40;
 const std::uint8_t Asn1Tag_ContextSpecific = 0x80;
-const std::uint8_t Asn1Tag_Private         = 0xC0;
+const std::uint8_t Asn1Tag_Private = 0xC0;
 
-const std::uint8_t Asn1Tag_Constructed     = 0x20;
+const std::uint8_t Asn1Tag_Constructed = 0x20;
 
-const std::uint8_t Asn1Tag_BitString       = 0x03;
-const std::uint8_t Asn1Tag_OctetString     = 0x04;
-const std::uint8_t Asn1Tag_Null            = 0x05;
-const std::uint8_t Asn1Tag_Object          = 0x06;
-const std::uint8_t Asn1Tag_Sequence        = 0x10;
+const std::uint8_t Asn1Tag_BitString = 0x03;
+const std::uint8_t Asn1Tag_OctetString = 0x04;
+const std::uint8_t Asn1Tag_Null = 0x05;
+const std::uint8_t Asn1Tag_Object = 0x06;
+const std::uint8_t Asn1Tag_Sequence = 0x10;
 
-const std::string DigestAlgorithmOID_Sha1   = "1.3.14.3.2.26";
+const std::string DigestAlgorithmOID_Sha1 = "1.3.14.3.2.26";
 const std::string DigestAlgorithmOID_Sha256 = "2.16.840.1.101.3.4.2.1";
-const std::string DigestAlgorithmOID_Md5    = "1.2.840.113549.2.5";
+const std::string DigestAlgorithmOID_Md5 = "1.2.840.113549.2.5";
 
 enum class Asn1Type
 {
@@ -46,8 +46,7 @@ enum class Asn1Type
 	ContextSpecific
 };
 
-class Asn1Item
-{
+class Asn1Item {
 public:
 	virtual ~Asn1Item() = default;
 
@@ -79,14 +78,12 @@ private:
 	std::size_t _contentLength;
 };
 
-class Asn1Null : public Asn1Item
-{
+class Asn1Null : public Asn1Item {
 public:
 	Asn1Null(const std::vector<std::uint8_t>& data);
 };
 
-class Asn1BitString : public Asn1Item
-{
+class Asn1BitString : public Asn1Item {
 public:
 	Asn1BitString(const std::vector<std::uint8_t>& data);
 
@@ -98,8 +95,7 @@ private:
 	std::string _string;
 };
 
-class Asn1OctetString : public Asn1Item
-{
+class Asn1OctetString : public Asn1Item {
 public:
 	Asn1OctetString(const std::vector<std::uint8_t>& data);
 
@@ -111,8 +107,7 @@ private:
 	std::string _string;
 };
 
-class Asn1Object : public Asn1Item
-{
+class Asn1Object : public Asn1Item {
 public:
 	Asn1Object(const std::vector<std::uint8_t>& data);
 
@@ -124,8 +119,7 @@ private:
 	std::string _identifier;
 };
 
-class Asn1Sequence : public Asn1Item
-{
+class Asn1Sequence : public Asn1Item {
 public:
 	Asn1Sequence(const std::vector<std::uint8_t>& data);
 
@@ -138,8 +132,7 @@ private:
 	std::vector<std::shared_ptr<Asn1Item>> _elements;
 };
 
-class Asn1ContextSpecific : public Asn1Item
-{
+class Asn1ContextSpecific : public Asn1Item {
 public:
 	Asn1ContextSpecific(const std::vector<std::uint8_t>& data);
 
