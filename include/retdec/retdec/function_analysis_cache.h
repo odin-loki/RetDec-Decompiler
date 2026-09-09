@@ -81,7 +81,12 @@ FunctionDetections analyseFunctionDetections(const ssa::SSAFunction& fn);
  */
 class FunctionAnalysisCache {
 public:
-    static constexpr std::uint32_t kVersion = 3;
+    // 4: entries carry the container's emittedType and elementType and the
+    //    algorithm's tier. A version-3 entry has neither, so a warm run reading
+    //    one would print the kind name where the cold run printed the recovered
+    //    type -- "STL: std::array" against "STL: ring_buffer". Bumping the
+    //    version drops those entries rather than letting them answer wrongly.
+    static constexpr std::uint32_t kVersion = 4;
 
     struct Entry {
         std::string name;

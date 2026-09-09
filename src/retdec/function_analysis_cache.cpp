@@ -69,6 +69,17 @@ rapidjson::Value serializeContainer(
     obj.AddMember("kind", toJsonString(r->kindName(), a), a);
     obj.AddMember("confidence", r->confidence, a);
     obj.AddMember("summary", toJsonString(r->toString(), a), a);
+    // The exporter builds its comment from emittedType (falling back to
+    // kindName) and from elementType, not from kind alone. Caching only the
+    // kind meant a warm run printed "STL: std::array" where the cold run
+    // printed "STL: ring_buffer" -- the same binary, two different outputs,
+    // which is what CACHE-05 compares.
+    obj.AddMember("emitted", toJsonString(r->emittedType, a), a);
+    obj.AddMember("elemKind", static_cast<int>(r->elementType.kind), a);
+    obj.AddMember("elemWidth", static_cast<int>(r->elementType.byteWidth), a);
+    obj.AddMember("elemSigned", r->elementType.isSigned, a);
+    if (!r->elementType.name.empty())
+        obj.AddMember("elemName", toJsonString(r->elementType.name, a), a);
     return obj;
 }
 
@@ -90,6 +101,22 @@ std::optional<container_detect::ContainerResult> deserializeContainer(
         r.kind = container_detect::containerKindFromName(k);
     }
     if (r.kind == container_detect::ContainerKind::Unknown) return std::nullopt;
+
+    if (obj.HasMember("emitted") && obj["emitted"].IsString())
+        r.emittedType.assign(obj["emitted"].GetString(), obj["emitted"].GetStringLength());
+    if (obj.HasMember("elemKind") && obj["elemKind"].IsInt()) {
+        const int ek = obj["elemKind"].GetInt();
+        if (ek >= 0 && ek <= static_cast<int>(container_detect::RecoveredType::Kind::String))
+            r.elementType.kind = static_cast<container_detect::RecoveredType::Kind>(ek);
+    }
+    if (obj.HasMember("elemWidth") && obj["elemWidth"].IsInt()) {
+        const int w = obj["elemWidth"].GetInt();
+        if (w >= 0 && w <= 255) r.elementType.byteWidth = static_cast<uint8_t>(w);
+    }
+    if (obj.HasMember("elemSigned") && obj["elemSigned"].IsBool())
+        r.elementType.isSigned = obj["elemSigned"].GetBool();
+    if (obj.HasMember("elemName") && obj["elemName"].IsString())
+        r.elementType.name.assign(obj["elemName"].GetString(), obj["elemName"].GetStringLength());
     return r;
 }
 
@@ -106,6 +133,16 @@ rapidjson::Value serializeSort(
     obj.AddMember("algorithm", toJsonString(r->algorithmName(), a), a);
     obj.AddMember("confidence", r->confidence, a);
     obj.AddMember("summary", toJsonString(r->toString(), a), a);
+    // toString() prints the element type and the compiler variant, and the
+    // exporter also prefixes the detail with "evidence:symbol_name" when the
+    // variant is known -- so dropping these made a warm run's detail differ
+    // from a cold one's, the same way the container path did.
+    obj.AddMember("variant", static_cast<int>(r->compilerVariant), a);
+    obj.AddMember("elemKind", static_cast<int>(r->elementType.kind), a);
+    obj.AddMember("elemWidth", static_cast<int>(r->elementType.byteWidth), a);
+    obj.AddMember("elemSigned", r->elementType.isSigned, a);
+    if (!r->elementType.name.empty())
+        obj.AddMember("elemName", toJsonString(r->elementType.name, a), a);
     return obj;
 }
 
@@ -136,6 +173,24 @@ std::optional<sort_detect::SortResult> deserializeSort(const rapidjson::Value& o
             }
         }
     }
+    if (obj.HasMember("variant") && obj["variant"].IsInt()) {
+        const int v = obj["variant"].GetInt();
+        if (v >= 0 && v <= static_cast<int>(sort_detect::CompilerVariant::MSVC))
+            r.compilerVariant = static_cast<sort_detect::CompilerVariant>(v);
+    }
+    if (obj.HasMember("elemKind") && obj["elemKind"].IsInt()) {
+        const int ek = obj["elemKind"].GetInt();
+        if (ek >= 0 && ek <= static_cast<int>(sort_detect::ElementType::Kind::Struct))
+            r.elementType.kind = static_cast<sort_detect::ElementType::Kind>(ek);
+    }
+    if (obj.HasMember("elemWidth") && obj["elemWidth"].IsInt()) {
+        const int w = obj["elemWidth"].GetInt();
+        if (w >= 0 && w <= 255) r.elementType.byteWidth = static_cast<uint8_t>(w);
+    }
+    if (obj.HasMember("elemSigned") && obj["elemSigned"].IsBool())
+        r.elementType.isSigned = obj["elemSigned"].GetBool();
+    if (obj.HasMember("elemName") && obj["elemName"].IsString())
+        r.elementType.name.assign(obj["elemName"].GetString(), obj["elemName"].GetStringLength());
     return r;
 }
 
@@ -152,6 +207,10 @@ rapidjson::Value serializeAlgo(
     obj.AddMember("kind", toJsonString(r->kindName(), a), a);
     obj.AddMember("confidence", r->confidence, a);
     obj.AddMember("summary", toJsonString(r->toString(), a), a);
+    // toString() prints the tier, and the exporter uses toString() as the
+    // detection's detail. Recomputing it from a default-constructed tier makes
+    // the warm run's detail differ from the cold run's.
+    obj.AddMember("tier", static_cast<int>(r->tier), a);
     return obj;
 }
 
@@ -174,6 +233,11 @@ std::optional<algo_recover::AlgorithmResult> deserializeAlgo(const rapidjson::Va
         // had no case at all. One table, read both ways, cannot drift.
         const std::string k(obj["kind"].GetString(), obj["kind"].GetStringLength());
         r.kind = algo_recover::algorithmKindFromName(k);
+    }
+    if (obj.HasMember("tier") && obj["tier"].IsInt()) {
+        const int t = obj["tier"].GetInt();
+        if (t >= 0 && t <= static_cast<int>(algo_recover::EmissionTier::High))
+            r.tier = static_cast<algo_recover::EmissionTier>(t);
     }
     // A cache entry that cannot name its kind is worse than a miss: it makes
     // the warm run disagree with the cold one.
