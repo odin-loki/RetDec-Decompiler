@@ -2422,6 +2422,15 @@ void CHLLWriter::emitGotoLabelIfNeeded(ShPtr<Statement> stmt)
 			out->punctuation(';');
 		}
 
+		if (isa<UnreachableStmt>(skipEmptyStmts(stmt)))
+		{
+			// Same rule again. visit(UnreachableStmt) emits nothing on
+			// purpose, so a labelled unreachable terminator -- what a block
+			// after a noreturn call such as abort() ends in -- put the label
+			// immediately before the closing brace.
+			out->punctuation(';');
+		}
+
 		out->newLine();
 	}
 }

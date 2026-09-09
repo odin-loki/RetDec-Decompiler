@@ -8,6 +8,7 @@
 #ifndef RETDEC_LLVMIR2HLL_HLL_HLL_WRITER_H
 #define RETDEC_LLVMIR2HLL_HLL_HLL_WRITER_H
 
+#include <map>
 #include <cstddef>
 #include <string>
 #include <sstream>
@@ -206,6 +207,15 @@ protected:
 
 	/// Counter for goto labels for the current function.
 	std::size_t currFuncGotoLabelCounter;
+
+	/// Generated goto labels for the current function, by statement.
+	///
+	/// getRawGotoLabel() invents a name for a statement that carries neither a
+	/// label nor LLVM basic-block metadata, and it is asked twice: once to
+	/// write `goto <name>` and once to write `<name>:`. Without this the two
+	/// calls returned different names and the emitted C said
+	/// `label 'lab_generated_0' used but not defined`.
+	std::map<Statement*, std::string> currFuncGeneratedGotoLabels;
 
 private:
 	/// @name Emission of Meta-Information

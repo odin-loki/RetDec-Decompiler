@@ -551,6 +551,7 @@ bool HLLWriter::emitFunction(ShPtr<Function> func) {
 
 	currFunc = func;
 	currFuncGotoLabelCounter = 0;
+	currFuncGeneratedGotoLabels.clear();
 
 	out->addressPush(func->getStartAddress());
 
@@ -1279,8 +1280,17 @@ std::string HLLWriter::getRawGotoLabel(ShPtr<Statement> stmt) {
 		return metadata;
 	}
 
-	// Fall-back.
-	return "generated_" + std::to_string(currFuncGotoLabelCounter++);
+	// Fall-back. Remembered per statement: this function is called once for
+	// the goto and once for the label it targets, and inventing a fresh name
+	// each time emitted a goto to a label that was never written.
+	auto it = currFuncGeneratedGotoLabels.find(stmt.get());
+	if (it != currFuncGeneratedGotoLabels.end())
+	{
+		return it->second;
+	}
+	auto label = "generated_" + std::to_string(currFuncGotoLabelCounter++);
+	currFuncGeneratedGotoLabels.emplace(stmt.get(), label);
+	return label;
 }
 
 /**

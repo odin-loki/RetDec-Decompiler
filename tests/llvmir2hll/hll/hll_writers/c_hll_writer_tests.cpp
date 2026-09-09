@@ -7,6 +7,8 @@
 
 #include <gtest/gtest.h>
 
+#include <vector>
+
 #include "retdec/llvmir2hll/hll/hll_writers/c_hll_writer.h"
 #include "llvmir2hll/hll/hll_writers/hll_writer_tests.h"
 #include "retdec/llvmir2hll/ir/add_op_expr.h"
@@ -21,7 +23,10 @@
 #include "retdec/llvmir2hll/ir/function.h"
 #include "retdec/llvmir2hll/ir/int_type.h"
 #include "retdec/llvmir2hll/ir/lt_op_expr.h"
+#include "retdec/llvmir2hll/ir/goto_stmt.h"
+#include "retdec/llvmir2hll/ir/return_stmt.h"
 #include "retdec/llvmir2hll/ir/ufor_loop_stmt.h"
+#include "retdec/llvmir2hll/ir/unreachable_stmt.h"
 #include "retdec/llvmir2hll/ir/variable.h"
 #include "retdec/utils/string.h"
 
@@ -228,6 +233,89 @@ EmitsVarDefOfInitOfUForLoopStmtWhenLoopHasItsInitMarked) {
 	auto code = emitCodeForCurrentModule();
 
 	ASSERT_TRUE(contains(code, "for (int32_t i = 0;")) << code;
+}
+
+
+//
+// A label with nothing after it, and a goto naming a label nobody wrote.
+//
+// emitGotoLabelIfNeeded() already knows that C forbids a label at the end of a
+// compound statement: it emits a trailing ';' for a labelled VarDefStmt and
+// for a labelled trailing EmptyStmt. UnreachableStmt is the third case and was
+// not covered -- visit(UnreachableStmt) emits nothing on purpose, so a
+// labelled unreachable terminator, which is what a block after a noreturn call
+// such as abort() or __stack_chk_fail() ends in, put the label immediately
+// before the closing brace.
+//
+// The same statement showed a second defect: HLLWriter::getRawGotoLabel()
+// invents "generated_N" for a statement carrying neither a label nor LLVM
+// basic-block metadata, and it is asked twice -- once to write `goto <name>`
+// and once to write `<name>:`. Without memoisation the two answers differed
+// and the emitted C said `label 'lab_generated_0' used but not defined`, the
+// same error scripts/ci/check_emitted_c_compiles.sh reports from the corpus.
+//
+
+namespace {
+
+/// Labels the emitted code jumps to but never defines.
+std::vector<std::string> undefinedGotoTargets(const std::string& code)
+{
+	std::vector<std::string> missing;
+	for (std::size_t i = code.find("goto "); i != std::string::npos; i = code.find("goto ", i + 1))
+	{
+		const auto nameStart = i + 5;
+		const auto nameEnd = code.find(';', nameStart);
+		if (nameEnd == std::string::npos)
+		{
+			continue;
+		}
+		auto name = code.substr(nameStart, nameEnd - nameStart);
+		if (code.find("\n" + name + ":") == std::string::npos && code.find(" " + name + ":") == std::string::npos)
+		{
+			missing.push_back(name);
+		}
+	}
+	return missing;
+}
+
+} // namespace
+
+TEST_F(CHLLWriterTests, LabelledUnreachableStatementIsFollowedByAStatement)
+{
+	//
+	// void test() {
+	//     goto L;
+	//     L: <unreachable>
+	// }
+	//
+	auto unreachable = UnreachableStmt::create();
+	auto gotoStmt = GotoStmt::create(unreachable);
+	gotoStmt->setSuccessor(unreachable);
+	testFunc->setBody(gotoStmt);
+
+	auto code = emitCodeForCurrentModule();
+
+	const auto colon = code.find(":\n");
+	EXPECT_EQ(std::string::npos, colon) << "a label with nothing after it ends the block, which C rejects:\n" << code;
+}
+
+TEST_F(CHLLWriterTests, EveryGeneratedGotoLabelIsAlsoEmitted)
+{
+	//
+	// The target has no label and no LLVM metadata, so the writer has to
+	// invent a name -- and use the same one in both places.
+	//
+	auto unreachable = UnreachableStmt::create();
+	auto gotoStmt = GotoStmt::create(unreachable);
+	gotoStmt->setSuccessor(unreachable);
+	testFunc->setBody(gotoStmt);
+
+	auto code = emitCodeForCurrentModule();
+
+	auto missing = undefinedGotoTargets(code);
+	EXPECT_TRUE(missing.empty()) << "goto " << (missing.empty() ? std::string() : missing.front())
+								 << " names a label that is never emitted:\n"
+								 << code;
 }
 
 } // namespace tests
