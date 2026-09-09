@@ -366,8 +366,18 @@ struct RustV0Parser
 			std::string t = "(";
 			while (!atEnd() && peek() != 'E')
 			{
+				const char* before = p;
 				if (!t.empty() && t.back() != '(') t += ", ";
 				t += parseType();
+				// parseType() returns without consuming anything when the
+				// depth guard refuses, so a tuple nested past kMaxDepth left p
+				// where it was and this loop ran forever. libFuzzer reported it
+				// as "timeout after 28 seconds" rather than a crash, on a
+				// 2,768-byte input -- tests/crash_corpus/demangle/
+				// timeout_rust_nested_type_exponential. A depth cap bounds the
+				// stack; it does not bound a loop that cannot tell it was
+				// refused. An element that consumes nothing ends the tuple.
+				if (p == before) break;
 			}
 			consume('E');
 			t += ")";

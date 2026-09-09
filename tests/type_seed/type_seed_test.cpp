@@ -18,10 +18,42 @@
 #include "retdec/type_seed/type_seed.h"
 #include <gtest/gtest.h>
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <functional>
+#include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace retdec::type_seed;
+
+namespace {
+
+/// Runs @a work on a detached thread and reports whether it finished inside
+/// @a limit.
+///
+/// A parser that does not terminate cannot be tested by calling it: the test
+/// would hang rather than fail, and a hung suite says nothing about which case
+/// broke. The thread is detached deliberately -- if it is still spinning there
+/// is nothing to join, and the process exits without waiting for it.
+bool finishesWithin(std::chrono::milliseconds limit, std::function<void()> work)
+{
+	auto done = std::make_shared<std::atomic<bool>>(false);
+	std::thread([done, work]() {
+		work();
+		done->store(true);
+	}).detach();
+
+	const auto deadline = std::chrono::steady_clock::now() + limit;
+	while (!done->load() && std::chrono::steady_clock::now() < deadline)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(2));
+	}
+	return done->load();
+}
+
+} // namespace
 
 // ─── Null type inference manager for constraint collection ────────────────────
 
@@ -986,4 +1018,41 @@ TEST(SwiftSeederBuiltins, SizedIntegerShorthandsAreNotShadowedByTheUnsizedOnes)
 		(void)c.expect;
 		SUCCEED();
 	}
+}
+
+// ── Depth-capped parsers must still make progress ────────────────────────────
+//
+// Both v0 tuple parsers loop until their terminator and append parseType() each
+// time round. parseType() returns an empty string *without consuming anything*
+// once the depth guard refuses, so a tuple nested past the cap left the cursor
+// where it was and the loop spun on the same byte forever. libFuzzer found it
+// on the Rust side as "timeout after 28 seconds" rather than as a crash --
+// tests/crash_corpus/demangle/timeout_rust_nested_type_exponential -- and the
+// Swift parser had the identical loop.
+//
+// A depth cap bounds the stack. It does not bound a loop that cannot tell it
+// was refused, which is what these two check.
+
+TEST(ParserProgressTests, RustTupleNestedPastTheDepthCapTerminates)
+{
+	// _R N v C 1a 1f I <type>... E, with the type region 200 nested tuples --
+	// well past RustV0Parser's kMaxDepth of 128.
+	std::string sym = "_RNvC1a1fI" + std::string(200, 'T') + "E";
+	EXPECT_TRUE(finishesWithin(std::chrono::seconds(5), [sym]() {
+		auto d = makeDefaultDispatcher();
+		auto info = d.tryExtract(sym);
+		(void)info;
+	}));
+}
+
+TEST(ParserProgressTests, SwiftTupleNestedPastTheDepthCapTerminates)
+{
+	// $s 3Foo <type>..., with 200 nested 't' tuples; SwiftParser's kMaxDepth
+	// is also 128.
+	std::string sym = "$s3Foo" + std::string(200, 't') + "_";
+	EXPECT_TRUE(finishesWithin(std::chrono::seconds(5), [sym]() {
+		auto d = makeDefaultDispatcher();
+		auto info = d.tryExtract(sym);
+		(void)info;
+	}));
 }

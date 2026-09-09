@@ -235,8 +235,13 @@ struct SwiftParser
 			std::string t = "(";
 			while (!atEnd() && peek() != '_')
 			{
+				const char* before = p;
 				if (t.size() > 1) t += ", ";
 				t += parseType();
+				// The same shape as the Rust tuple loop, and the same defect:
+				// parseType() consumes nothing once the depth guard refuses,
+				// and this loop had no way to notice.
+				if (p == before) break;
 			}
 			consume('_');
 			return t + ")";
