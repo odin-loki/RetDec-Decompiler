@@ -13,6 +13,7 @@
 #   bash scripts/check_format.sh              # changes since the merge base
 #   bash scripts/check_format.sh --base REF   # ...since REF instead
 #   bash scripts/check_format.sh --fix        # reformat them instead of reporting
+#                                            (several passes; see the loop below)
 #   bash scripts/check_format.sh --all        # every tracked source, whole file
 #   bash scripts/check_format.sh --self-test  # does the check still catch things
 #
@@ -105,6 +106,34 @@ if [[ "${1:-}" == "--self-test" ]]; then
   expect 2 "--base rejects something that is not a commit" \
     run_here --base no/such/ref
 
+  # 6b. A vendored file is never formatted whole, however many passes it
+  #     takes: reformatting it destroys the ability to diff it against
+  #     upstream, which is the whole reason the check is line-scoped.
+  printf '/**\n * @copyright (c) 2017 Avast Software, licensed under the MIT license\n */\nint legacy(int a) {\n    if (a) { return 1; }\n    return 0;\n}\n' > src/vendored.cpp
+  git add -A; git commit -qm "vendored base"
+  printf '/**\n * @copyright (c) 2017 Avast Software, licensed under the MIT license\n */\nint legacy(int a) {\n    if (a) { return 1; }\n    return 0;\n}\n\nint  tangled( )   {int x=1;\n  if(x){return   x;}\n     return 0;}\n' > src/vendored.cpp
+  git add -A; git commit -qm "a vendored file with a tangled addition"
+  run_here --base HEAD~1 --fix-whole
+  if ! grep -q '    if (a) { return 1; }' src/vendored.cpp; then
+    echo "self-test: the whole-file pass reformatted a vendored file" >&2
+    cat src/vendored.cpp >&2
+    fails=$(( fails + 1 ))
+  fi
+  git checkout -q -- . ; git reset -q --hard HEAD~2
+
+  # 6c. ...and a file this fork owns is, on that pass.
+  printf 'int legacy(int a) {\n    if (a) { return 1; }\n    return 0;\n}\n' > src/ours.cpp
+  git add -A; git commit -qm "our base"
+  printf 'int legacy(int a) {\n    if (a) { return 1; }\n    return 0;\n}\n\nint  tangled( )   {int x=1;\n  if(x){return   x;}\n     return 0;}\n' > src/ours.cpp
+  git add -A; git commit -qm "our file with a tangled addition"
+  run_here --base HEAD~1 --fix-whole
+  if grep -q '    if (a) { return 1; }' src/ours.cpp; then
+    echo "self-test: the whole-file pass left a fork-owned file line-scoped" >&2
+    cat src/ours.cpp >&2
+    fails=$(( fails + 1 ))
+  fi
+  git checkout -q -- . ; git reset -q --hard HEAD~2
+
   # 7. --fix reformats what the check reports, and the check then passes.
   expect 0 "--fix reformats the reported lines" run_here --base HEAD~2 --fix
   expect 0 "the check passes after --fix" run_here --base HEAD~2
@@ -142,11 +171,19 @@ is_source() { [[ "$1" =~ \.(cpp|h|hpp|cc|c|cu)$ ]]; }
 
 MODE=changed
 FIX=0
+WHOLE_FILE_FIX=0
+FORCE_WHOLE_FILE_FIX=0
 BASE_OVERRIDE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --all) MODE=all; shift ;;
     --fix) FIX=1; shift ;;
+    # The last --fix pass, on its own. Only the self-test uses it: the
+    # condition it fires under -- a file the line scoping cannot settle -- is
+    # a property of real files that is not worth faking, and the guard it
+    # carries, that a vendored file is never reformatted whole, is worth
+    # pinning on its own.
+    --fix-whole) FIX=1; FORCE_WHOLE_FILE_FIX=1; shift ;;
     --base) BASE_OVERRIDE="${2:-}"; shift 2 ;;
     *) echo "check_format: unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -159,11 +196,26 @@ FAILED=0
 CHECKED=0
 FIXED=0
 
+# Is this file vendored from upstream Avast, rather than this fork's own?
+#
+# It decides what --fix may do to a file the line scoping cannot settle.
+# Reformatting vendored code destroys the ability to diff it against upstream,
+# which is the whole reason the check is line-scoped; a file this fork wrote
+# has no upstream to lose.
+is_vendored() {
+  head -n 8 "$1" 2>/dev/null | grep -qi 'Avast Software'
+}
+
 report() {
   local f="$1"; shift
   if [[ ${FIX} -eq 1 ]]; then
-    clang-format -i "$@" "$f"
-    echo "check_format: reformatted $f"
+    if [[ ${WHOLE_FILE_FIX} -eq 1 ]] && [[ $# -gt 0 ]] && ! is_vendored "$f"; then
+      clang-format -i "$f"
+      echo "check_format: reformatted $f (whole file: the line scoping does not settle)"
+    else
+      clang-format -i "$@" "$f"
+      echo "check_format: reformatted $f"
+    fi
     FIXED=$((FIXED + 1))
     return
   fi
@@ -302,7 +354,11 @@ changed_ranges() {
     }'
 }
 
-while IFS= read -r line; do
+scan_changed() {
+  CHECKED=0
+  FAILED=0
+  FIXED=0
+  while IFS= read -r line; do
   [[ -z "$line" ]] && continue
   status="${line%%$'\t'*}"
   path="${line#*$'\t'}"
@@ -328,14 +384,33 @@ while IFS= read -r line; do
   clang-format "${RANGES[@]}" "$path" > "${TMP_FORMATTED}"
   touched_lines_differ "$path" "${TMP_FORMATTED}" "${RANGES[@]}" \
     || report "$path" "${RANGES[@]}"
-done < <(git diff --name-status "${BASE}" HEAD -- include/ src/ tests/)
-
-echo "check_format: checked ${CHECKED} file(s) against ${BASE}"
+  done < <(git diff --name-status "${BASE}" HEAD -- include/ src/ tests/)
+}
 
 if [[ ${FIX} -eq 1 ]]; then
-  echo "check_format: reformatted ${FIXED} file(s); re-run without --fix to confirm"
+  # More than one pass, because the ranges move. `clang-format --lines=A:B`
+  # reformats whole constructs, so fixing a line shifts its neighbours, which
+  # widens the next diff, which widens the next range. On most files that
+  # settles in two or three passes. On a file that mixes tabs and spaces line
+  # by line it does not settle at all -- measured at 114, 261 then 672 lines on
+  # one, still growing -- and the last pass formats those whole, which is where
+  # that walk ends anyway. Only for a file this fork owns: reformatting
+  # vendored code destroys the ability to diff it against upstream, which is
+  # the whole reason the check is line-scoped.
+  total=0
+  for pass in 1 2 3 4 5; do
+    WHOLE_FILE_FIX=${FORCE_WHOLE_FILE_FIX}
+    [[ ${pass} -eq 5 ]] && WHOLE_FILE_FIX=1
+    scan_changed
+    total=$(( total + FIXED ))
+    [[ ${FIXED} -eq 0 ]] && break
+  done
+  echo "check_format: reformatted ${total} file(s) in ${pass} pass(es); re-run without --fix to confirm"
   exit 0
 fi
+
+scan_changed
+echo "check_format: checked ${CHECKED} file(s) against ${BASE}"
 
 if [[ $FAILED -ne 0 ]]; then
   echo "check_format: reformat the changed lines -- bash scripts/check_format.sh --fix," \
