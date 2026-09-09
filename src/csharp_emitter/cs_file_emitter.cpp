@@ -5,6 +5,8 @@
 
 #include "retdec/csharp_emitter/cs_file_emitter.h"
 
+#include "retdec/cil_reconstruct/cil_reconstructor.h"
+
 #include <algorithm>
 #include <cassert>
 #include <sstream>
@@ -223,11 +225,12 @@ std::string CsFileEmitter::emitTopLevelStatements(
         if (cls.name != "<Module>" && cls.name != "Program") continue;
         for (const auto& m : cls.methods) {
             if (m.name != "Main" && m.name != "<Main>$") continue;
-            auto it = results.find(m.name);
-            if (it != results.end()) {
-                stmtE.emitBody(it->second.method.body);
-            }
-        }
+			auto it = results.find(cil_reconstruct::CilReconstructor::methodKey(cls, m));
+			if (it != results.end())
+			{
+				stmtE.emitBody(it->second.method.body);
+			}
+		}
     }
     return w.str();
 }

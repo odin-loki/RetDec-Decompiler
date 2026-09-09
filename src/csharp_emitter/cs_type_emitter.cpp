@@ -5,6 +5,8 @@
 
 #include "retdec/csharp_emitter/cs_type_emitter.h"
 
+#include "retdec/cil_reconstruct/cil_reconstructor.h"
+
 #include <algorithm>
 #include <cassert>
 #include <string>
@@ -107,11 +109,6 @@ static void emitCsharpAttributes(CsWriter& w, const std::vector<BcAnnotation>& a
 		if (ann.typeName.empty()) continue;
 		w.line("[" + csharpAttrName(ann.typeName) + csharpAttrSuffix(ann) + "]");
 	}
-}
-
-std::string CsTypeEmitter::methodKey(const BcClass& cls, const BcMethod& m) const
-{
-	return cls.fqName + "::" + m.name;
 }
 
 bool CsTypeEmitter::isDelegate(const BcClass& cls) const
@@ -522,6 +519,7 @@ void CsTypeEmitter::emitAutoProperty(
 }
 
 void CsTypeEmitter::emitComputedProperty(
+	const BcClass& cls,
 	const std::string& propName,
 	const BcType& propType,
 	const BcMethod* getter,
@@ -544,7 +542,7 @@ void CsTypeEmitter::emitComputedProperty(
 			// emit getter body
 			if (!getter->name.empty())
 			{
-				auto it = results.find(std::string(getter->name));
+				auto it = results.find(cil_reconstruct::CilReconstructor::methodKey(cls, *getter));
 				if (it != results.end() && !it->second.method.body.empty())
 				{
 					const_cast<CsStmtEmitter&>(stmt_).emitBody(it->second.method.body);
@@ -562,7 +560,7 @@ void CsTypeEmitter::emitComputedProperty(
 			auto g2 = writer_.block();
 			if (!setter->name.empty())
 			{
-				auto it = results.find(std::string(setter->name));
+				auto it = results.find(cil_reconstruct::CilReconstructor::methodKey(cls, *setter));
 				if (it != results.end() && !it->second.method.body.empty())
 				{
 					const_cast<CsStmtEmitter&>(stmt_).emitBody(it->second.method.body);
@@ -593,7 +591,7 @@ void CsTypeEmitter::emitProperties(
 		}
 		else
 		{
-			emitComputedProperty(pg.name, pg.type, pg.getter, pg.setter, results, pg.modifiers);
+			emitComputedProperty(cls, pg.name, pg.type, pg.getter, pg.setter, results, pg.modifiers);
 		}
 	}
 	writer_.blank();
@@ -708,9 +706,12 @@ void CsTypeEmitter::emitMethodSignature(const BcClass& cls, const BcMethod& m)
 }
 
 void CsTypeEmitter::emitMethodBody(
-	const BcMethod& m, const std::unordered_map<std::string, CilReconstructResult>& results)
+	const BcClass& cls, const BcMethod& m, const std::unordered_map<std::string, CilReconstructResult>& results)
 {
-	auto it = results.find(m.name);
+	// CilReconstructor::reconstructAll files every result under
+	// methodKey(cls, m). Looking it up by bare name never hit, so a body that
+	// had been reconstructed successfully was replaced by the stub below.
+	auto it = results.find(cil_reconstruct::CilReconstructor::methodKey(cls, m));
 
 	if (m.isAbstract || m.isNative)
 	{
@@ -757,7 +758,7 @@ void CsTypeEmitter::emitDestructor(
 	writer_.write("~");
 	writer_.write(CsWriter::safeName(cls.name));
 	writer_.write("()");
-	emitMethodBody(*fin, results);
+	emitMethodBody(cls, *fin, results);
 }
 
 void CsTypeEmitter::emitMethod(
@@ -772,14 +773,14 @@ void CsTypeEmitter::emitMethod(
 		writer_.write("static ");
 		writer_.write(CsWriter::safeName(cls.name));
 		writer_.write("()");
-		emitMethodBody(m, results);
+		emitMethodBody(cls, m, results);
 		writer_.blank();
 		return;
 	}
 
 	emitCsharpAttributes(writer_, m.annotations);
 	emitMethodSignature(cls, m);
-	emitMethodBody(m, results);
+	emitMethodBody(cls, m, results);
 	writer_.blank();
 }
 

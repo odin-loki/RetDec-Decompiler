@@ -21,7 +21,12 @@ CilReconstructor::CilReconstructor(CilReconstructOptions opts): opts_(std::move(
 
 std::string CilReconstructor::methodKey(const BcClass& cls, const BcMethod& m)
 {
-	return cls.fqName + "::" + m.name;
+	// The descriptor is part of the key because reconstructAll() writes
+	// `results[key] = ...`: without it two overloads share a key and the
+	// second body silently replaces the first, so at least one method is
+	// emitted with a body that is not its own. The header documented the key
+	// this way from the start; the implementation left the descriptor out.
+	return cls.fqName + "::" + m.name + "::" + m.descriptor.jvmDescriptor();
 }
 
 bool CilReconstructor::methodNeedsReconstruction(const BcMethod& m)

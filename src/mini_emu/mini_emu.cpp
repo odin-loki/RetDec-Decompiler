@@ -1002,7 +1002,13 @@ struct MiniEmu::Impl
 			return true;
 		}
 
-		// ADD r/m, imm32 (81)
+		// Group 1: ADD/OR/ADC/SBB/AND/SUB/XOR/CMP r/m, imm32 (81)
+		//
+		// Which of the eight is chosen by the ModRM /reg field, exactly as for
+		// the imm8 form 0x83 above.  This arm decoded reg and then ignored it,
+		// so all eight ran as ADD: `sub rsp, imm32` moved RSP the wrong way and
+		// `cmp r/m, imm32` wrote a sum over the operand the next conditional
+		// jump was about to read.
 		case 0x81: {
 			int reg;
 			bool isReg;
@@ -1018,8 +1024,42 @@ struct MiniEmu::Impl
 			else
 				v = regRef(cpu, static_cast<int>(ea));
 			uint64_t imm64 = rexW ? static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(imm))) : imm;
-			uint64_t res = v + imm64;
-			setAdd(cpu, v, imm64, res, opBits);
+			uint64_t res = 0;
+			switch (reg & 7)
+			{
+			case 0:
+				res = v + imm64;
+				setAdd(cpu, v, imm64, res, opBits);
+				break; // ADD
+			case 1:
+				res = v | imm64;
+				setZSF(cpu, res, opBits);
+				break; // OR
+			case 2:
+				res = v + imm64 + ((cpu.rflags) & 1);
+				setAdd(cpu, v, imm64, res, opBits);
+				break; // ADC
+			case 3:
+				res = v - imm64 - ((cpu.rflags) & 1);
+				setSub(cpu, v, imm64, res, opBits);
+				break; // SBB
+			case 4:
+				res = v & imm64;
+				setZSF(cpu, res, opBits);
+				break; // AND
+			case 5:
+				res = v - imm64;
+				setSub(cpu, v, imm64, res, opBits);
+				break; // SUB
+			case 6:
+				res = v ^ imm64;
+				setZSF(cpu, res, opBits);
+				break; // XOR
+			case 7:
+				res = v - imm64;
+				setSub(cpu, v, imm64, res, opBits);
+				return true; // CMP (no write)
+			}
 			if (isReg)
 				regRef(cpu, static_cast<int>(ea)) = res;
 			else

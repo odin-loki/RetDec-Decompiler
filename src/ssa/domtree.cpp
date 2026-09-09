@@ -86,15 +86,32 @@ void DominatorTree::computeDFS(SSAFunction& fn) {
     };
 
     dfs(fn.entryId());
-    // Handle disconnected blocks (unreachable from entry)
-    for (std::size_t i = 0; i < n; ++i)
-        if (!visited[i]) {
-            parent_[i] = fn.entryId();
-            fn.block(i)->rpo = counter;
-            vertex_[counter] = (BlockId)i;
-            labelArr_[i] = (BlockId)i;
+	// Handle disconnected blocks (unreachable from entry).
+	//
+	// semi_ has to be set here too. It was not, so an unreachable block kept
+	// the zero-fill -- which is the entry's own DFS number. computeIDom()
+	// walks every predecessor without a reachability filter, so for a
+	// *reachable* block with an unreachable predecessor v, eval(v) returned v
+	// and `semi_[v] < semi_[w]` compared 0 against a real number and pinned
+	// that block's semidominator to the entry. Its idom collapsed to the entry
+	// and any block whose own search evaluated through it inherited the zero:
+	// an unreachable edge into a loop latch cost the loop header its idom, and
+	// with it the back edge that IrreducibilityCheck reads.
+	//
+	// A block nothing can reach contributes no path from the entry, so it must
+	// not weaken anyone's dominance. Giving it its own DFS number -- larger
+	// than every reachable block's, since these come after the traversal --
+	// says exactly that.
+	for (std::size_t i = 0; i < n; ++i)
+		if (!visited[i])
+		{
+			parent_[i] = fn.entryId();
+			semi_[i] = counter;
+			fn.block(i)->rpo = counter;
+			vertex_[counter] = (BlockId)i;
+			labelArr_[i] = (BlockId)i;
             ++counter;
-        }
+		}
 }
 
 // ─── Semi-NCA eval / link (forest path compression) ──────────────────────────
@@ -151,10 +168,20 @@ void DominatorTree::computeIDom(SSAFunction& fn) {
     for (int i = 1; i < (int)n; ++i) {
         BlockId w = vertex_[i];
         if (w == kInvalidBlock) continue;
-        if (idom[w] != vertex_[semi_[w]])
-            idom[w] = idom[idom[w]];
-        fn.block(w)->idom = idom[w];
-    }
+		// A block unreachable from the entry never lands in anybody's bucket,
+		// so step 3 leaves its idom unset -- and it has no immediate
+		// dominator to set, exactly like the entry. It only looked settled
+		// before because the missing semi_ above bucketed every unreachable
+		// block under the entry; with that fixed, `idom[idom[w]]` here would
+		// index the array with kInvalidBlock.
+		if (idom[w] == kInvalidBlock)
+		{
+			fn.block(w)->idom = kInvalidBlock;
+			continue;
+		}
+		if (idom[w] != vertex_[semi_[w]]) idom[w] = idom[idom[w]];
+		fn.block(w)->idom = idom[w];
+	}
     fn.block(fn.entryId())->idom = kInvalidBlock;
 
 	// Build domChildren. The lists are rebuilt, not appended to:

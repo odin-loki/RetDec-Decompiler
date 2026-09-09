@@ -122,30 +122,31 @@ private:
     void emitAutoProperty(const std::string& propName, const BcType& propType,
                           bool hasGetter, bool hasSetter, bool isStatic,
                           const std::string& modifiers);
-    void emitComputedProperty(const std::string& propName, const BcType& propType,
-                              const BcMethod* getter, const BcMethod* setter,
-                              const std::unordered_map<std::string, CilReconstructResult>& results,
-                              const std::string& modifiers);
+	void emitComputedProperty(
+		const BcClass& cls,
+		const std::string& propName,
+		const BcType& propType,
+		const BcMethod* getter,
+		const BcMethod* setter,
+		const std::unordered_map<std::string, CilReconstructResult>& results,
+		const std::string& modifiers);
 
-    void emitEvents(const BcClass& cls,
-                    const std::unordered_map<std::string, CilReconstructResult>& results);
+	void emitEvents(const BcClass& cls, const std::unordered_map<std::string, CilReconstructResult>& results);
 
-    void emitMethods(const BcClass& cls,
-                     const std::unordered_map<std::string, CilReconstructResult>& results);
-    void emitMethod(const BcClass& cls, const BcMethod& m,
-                    const std::unordered_map<std::string, CilReconstructResult>& results);
-    void emitMethodSignature(const BcClass& cls, const BcMethod& m);
-    void emitMethodBody(const BcMethod& m,
-                        const std::unordered_map<std::string, CilReconstructResult>& results);
+	void emitMethods(const BcClass& cls, const std::unordered_map<std::string, CilReconstructResult>& results);
+	void emitMethod(
+		const BcClass& cls, const BcMethod& m, const std::unordered_map<std::string, CilReconstructResult>& results);
+	void emitMethodSignature(const BcClass& cls, const BcMethod& m);
+	void emitMethodBody(
+		const BcClass& cls, const BcMethod& m, const std::unordered_map<std::string, CilReconstructResult>& results);
 
-    void emitEnum(const BcClass& cls);
+	void emitEnum(const BcClass& cls);
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+	// ── Helpers ───────────────────────────────────────────────────────────────
 
-    std::string accessModifiers(BcAccess access) const;
-    std::string methodKey(const BcClass& cls, const BcMethod& m) const;
+	std::string accessModifiers(BcAccess access) const;
 
-    bool isDelegate(const BcClass& cls) const;
+	bool isDelegate(const BcClass& cls) const;
     bool isCompilerGenerated(const BcClass& cls) const;
     bool isPropertyAccessor(const BcMethod& m) const;
     bool isEventAccessor(const BcMethod& m) const;

@@ -185,6 +185,14 @@ FAKE
 	expect 1 "lab_4006f0" "the report quotes the compiler's own error" \
 		--decompiler "${T}/bin/undeclared_label" --min-rate 0.5
 
+	# 6b. ...and the emitted line the error points at.  The line number is in
+	#     a file that only exists inside the run, so the error on its own is a
+	#     lead nobody can follow; the first real run of this check produced
+	#     two different defects behind the same `error:` prefix.
+	expect 1 "| int f(int c) { if (c) goto lab_4006f0; return 0; }" \
+		"the report quotes the emitted line the error points at" \
+		--decompiler "${T}/bin/undeclared_label" --min-rate 0.5
+
 	# 7. A floor is only a floor if the script refuses one it cannot read.
 	expect 2 "" "a non-numeric --min-rate is rejected" \
 		--decompiler "${T}/bin/good" --min-rate banana
@@ -304,7 +312,19 @@ for bin in "${BINS[@]}"; do
 		FAILED_NAMES+=("${name}")
 		{
 			printf '=== %s ===\n' "${name}"
-			grep -m 3 -E 'error:' "${cerr}" 2>/dev/null || head -n 3 "${cerr}"
+			# The error alone names a line number in a file that only exists
+			# inside this run, so it is a lead nobody can follow.  Print the
+			# emitted line too: `label 'lab_0x112c' used but not defined` and
+			# `too many arguments to function 'puts'` are different defects,
+			# and which one you are looking at is decided by what the line
+			# says, not by what the compiler calls it.
+			grep -m 3 -E 'error:' "${cerr}" 2>/dev/null | while IFS= read -r e; do
+				printf '%s\n' "${e}"
+				lineno="$(printf '%s' "${e}" | sed -n 's/^[^:]*:\([0-9][0-9]*\):.*/\1/p')"
+				if [[ -n "${lineno}" ]]; then
+					sed -n "${lineno}p" "${out}" | sed 's/^[[:space:]]*/    | /'
+				fi
+			done
 		} >> "${ERRLOG}"
 	fi
 done
@@ -318,7 +338,7 @@ if [[ "${BAD}" -gt 0 ]]; then
 	echo "CC-01: files that did not compile:"
 	printf '  %s\n' "${FAILED_NAMES[@]}" | head -n 20
 	echo "CC-01: what the compiler said (first ${ERRORS}):"
-	head -n "$(( ERRORS * 4 ))" "${ERRLOG}" | sed 's/^/  /'
+	head -n "$(( ERRORS * 8 ))" "${ERRLOG}" | sed 's/^/  /'
 fi
 
 if [[ -z "${MIN_RATE}" ]]; then

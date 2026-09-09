@@ -146,9 +146,12 @@ void TypePropagation::unite(uint32_t x, uint32_t y) {
     uint32_t ry = find(y);
     if (rx == ry) return;
     addValue(rx); addValue(ry);
+	// Same hole as applyConstraint: addValue() is a no-op for an id past
+	// kMaxValueId, and the reads and writes below assume it was not.
+	if (rx >= classes_.size() || ry >= classes_.size()) return;
 
-    TypeClass merged;
-    mergeTypes(merged, classes_[rx]);
+	TypeClass merged;
+	mergeTypes(merged, classes_[rx]);
     mergeTypes(merged, classes_[ry]);
 
     if (rank_[rx] < rank_[ry]) std::swap(rx, ry);
@@ -192,9 +195,17 @@ void TypePropagation::addConstraint(TypeConstraint c) {
 void TypePropagation::applyConstraint(const TypeConstraint& c) {
     uint32_t lid = find(c.lhsId);
     addValue(lid);
+	// addValue() declines to materialise an id at or past kMaxValueId -- see
+	// the note there -- and every arm below then indexed classes_[lid]
+	// regardless, which turned a refused 16 GB allocation into a read about
+	// 1.2e11 bytes past the base. Only the SameWidth right-hand side was
+	// checked. An id nothing materialised is its own singleton class carrying
+	// no type, so there is nothing here to record about it.
+	if (lid >= classes_.size()) return;
 
-    switch (c.kind) {
-    case ConstraintKind::HasWidth:
+	switch (c.kind)
+	{
+	case ConstraintKind::HasWidth:
         if (classes_[lid].type.width == 0) {
             classes_[lid].type.width = c.width;
             if (classes_[lid].priority < 1) classes_[lid].priority = 1;
@@ -268,7 +279,7 @@ void TypePropagation::applyConstraint(const TypeConstraint& c) {
 			uint32_t root = find(c.lhsId);
 			addValue(root);
 			uint16_t w = std::max(wA, wB);
-			if (w > 0) classes_[root].type.width = w;
+			if (w > 0 && root < classes_.size()) classes_[root].type.width = w;
 		}
 		break;
 
@@ -277,10 +288,11 @@ void TypePropagation::applyConstraint(const TypeConstraint& c) {
 			Signedness sA = classes_[lid].type.sign;
 			uint32_t rid = find(c.rhsId);
 			addValue(rid);
-			Signedness sB = classes_[rid].type.sign;
+			Signedness sB = (rid < classes_.size()) ? classes_[rid].type.sign : Signedness::Unknown;
 			unite(c.lhsId, c.rhsId);
 			uint32_t root = find(c.lhsId);
 			addValue(root);
+			if (root >= classes_.size()) break;
 			if (sA != Signedness::Unknown)
 				classes_[root].type.sign = sA;
 			else if (sB != Signedness::Unknown)
@@ -307,7 +319,7 @@ void TypePropagation::applyConstraint(const TypeConstraint& c) {
             }
         }
         break;
-    }
+	}
 }
 
 // ─── Main run ─────────────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@
 #include "retdec/csharp_emitter/cs_type_emitter.h"
 #include "retdec/csharp_emitter/cs_writer.h"
 
+#include "retdec/cil_reconstruct/cil_reconstructor.h"
 #include "retdec/cil_reconstruct/cil_stack_sim.h"
 #include "retdec/cil_reconstruct/cil_var_recovery.h"
 
@@ -1186,4 +1187,101 @@ TEST(CsWriter, OrdinaryCharactersAreNotEscaped)
 	CsWriter w;
 	EXPECT_EQ("\"abc\"", w.stringLiteral("abc"));
 	EXPECT_EQ("\"a\\tb\"", w.stringLiteral("a\tb"));
+}
+
+// ─── Reconstructed bodies have to be found ───────────────────────────────────
+//
+// CilReconstructor::reconstructAll keys its map with methodKey(cls, m).  The
+// emitter looked results up by the bare method name, so the lookup could not
+// hit for any map the reconstructor produced, and every successfully
+// reconstructed body was replaced by `throw new NotImplementedException();`.
+// CsTypeEmitter had its own methodKey() with a byte-identical body and no call
+// sites: the missing key, written down and never used.
+//
+// The key also has to separate overloads.  reconstructAll writes
+// `results[key] = ...`, so two overloads sharing a key means one body
+// overwrites the other and at least one method is emitted with a body that is
+// not its own.
+
+namespace {
+
+BcMethod makeReconstructableMethod(const std::string& name, const BcType& paramType)
+{
+	BcMethod m;
+	m.name = name;
+	m.access = BcAccess::Public;
+	m.descriptor.returnType = std::make_shared<BcType>(types::Void());
+	m.descriptor.params.push_back(std::make_shared<BcType>(paramType));
+	// methodNeedsReconstruction() is blockCount() > 0, which is also the
+	// condition that sends emitMethodBody down the NotImplementedException
+	// path when the lookup misses.
+	m.cfg.addBlock();
+	return m;
+}
+
+CilReconstructResult makeResultEmitting(const std::string& marker)
+{
+	CilReconstructResult r;
+	r.success = true;
+	CilStmt st;
+	st.kind = StmtKind::Label;
+	st.labelName = marker;
+	r.method.body.push_back(st);
+	return r;
+}
+
+} // namespace
+
+TEST(CsTypeEmitter, FindsAReconstructedBodyUnderTheKeyTheReconstructorWrote)
+{
+	CsWriter w;
+	CsExprEmitter ex(w);
+	CsStmtEmitter st(w, ex);
+	CsTypeEmitter te(w, ex, st);
+
+	BcClass cls = makeSimpleClass("Calculator", "MyLib");
+	cls.methods.push_back(makeReconstructableMethod("Add", types::Int()));
+	BcModule mod("M", SourceLang::CSharp);
+
+	std::unordered_map<std::string, CilReconstructResult> results;
+	results[CilReconstructor::methodKey(cls, cls.methods[0])] = makeResultEmitting("recovered_add");
+
+	te.emitClass(cls, results, mod);
+	const std::string s = w.str();
+	EXPECT_TRUE(contains(s, "recovered_add")) << "the reconstructed body was discarded:\n" << s;
+	EXPECT_FALSE(contains(s, "NotImplementedException")) << "a method with a reconstructed body must not get a stub:\n"
+														 << s;
+}
+
+TEST(CilReconstructor, MethodKeySeparatesOverloads)
+{
+	BcClass cls = makeSimpleClass("Calculator", "MyLib");
+	BcMethod a = makeReconstructableMethod("Add", types::Int());
+	BcMethod b = makeReconstructableMethod("Add", types::Double());
+
+	EXPECT_NE(CilReconstructor::methodKey(cls, a), CilReconstructor::methodKey(cls, b))
+		<< "reconstructAll writes results[key], so two overloads under one key"
+		   " means one body silently overwrites the other";
+}
+
+TEST(CsTypeEmitter, EachOverloadGetsItsOwnReconstructedBody)
+{
+	CsWriter w;
+	CsExprEmitter ex(w);
+	CsStmtEmitter st(w, ex);
+	CsTypeEmitter te(w, ex, st);
+
+	BcClass cls = makeSimpleClass("Calculator", "MyLib");
+	cls.methods.push_back(makeReconstructableMethod("Add", types::Int()));
+	cls.methods.push_back(makeReconstructableMethod("Add", types::Double()));
+	BcModule mod("M", SourceLang::CSharp);
+
+	std::unordered_map<std::string, CilReconstructResult> results;
+	results[CilReconstructor::methodKey(cls, cls.methods[0])] = makeResultEmitting("recovered_int_overload");
+	results[CilReconstructor::methodKey(cls, cls.methods[1])] = makeResultEmitting("recovered_double_overload");
+
+	te.emitClass(cls, results, mod);
+	const std::string s = w.str();
+	EXPECT_TRUE(contains(s, "recovered_int_overload")) << s;
+	EXPECT_TRUE(contains(s, "recovered_double_overload")) << s;
 }

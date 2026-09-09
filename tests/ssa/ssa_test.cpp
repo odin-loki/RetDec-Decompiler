@@ -1047,3 +1047,71 @@ TEST(SSAPass, RunningTheWholePassTwiceTerminates)
 		edges += b->domChildren.size();
 	EXPECT_EQ(23u, edges);
 }
+
+// ─── Blocks unreachable from the entry ───────────────────────────────────────
+//
+// computeDFS()'s fix-up loop gives every unreachable block a parent_, an rpo,
+// a vertex_ slot and a labelArr_ entry -- but not a semi_, which stays at the
+// zero-fill, i.e. the entry's own DFS number. computeIDom() then walks every
+// predecessor with no reachability filter, so `semi_[u] < semi_[w]` sees 0 for
+// an unreachable predecessor and pins the *reachable* successor's
+// semidominator to the entry. The successor's idom collapses to the entry, and
+// anything whose semidominator search evaluates through it inherits the same
+// zero.
+//
+// A block nobody can reach contributes no path from the entry, so it cannot
+// weaken anyone's dominance.
+
+TEST(DominatorTreeTests, AnUnreachablePredecessorDoesNotWeakenDominance)
+{
+	// entry -> A -> B, and an unreachable U -> B.
+	SSAFunction fn("unreach");
+	auto* e = fn.addBlock("entry");
+	auto* a = fn.addBlock("A");
+	auto* b = fn.addBlock("B");
+	auto* u = fn.addBlock("U");
+	connect(fn, e->id, a->id);
+	connect(fn, a->id, b->id);
+	connect(fn, u->id, b->id);
+
+	DominatorTree dt;
+	dt.run(fn);
+
+	EXPECT_EQ(a->id, fn.block(b->id)->idom) << "every path from the entry to B goes through A";
+	EXPECT_TRUE(dt.dominates(fn, a->id, b->id));
+	EXPECT_TRUE(dt.strictlyDominates(fn, a->id, b->id));
+
+	// And U itself has no immediate dominator, the same as the entry: no path
+	// from the entry reaches it, so nothing on such a path dominates it.
+	// Before, the missing semi_ bucketed it under the entry and it came out
+	// looking like an ordinary child of it.
+	EXPECT_EQ(kInvalidBlock, fn.block(u->id)->idom);
+	EXPECT_TRUE(
+		fn.block(e->id)->domChildren.end()
+		== std::find(fn.block(e->id)->domChildren.begin(), fn.block(e->id)->domChildren.end(), u->id));
+}
+
+TEST(DominatorTreeTests, AnUnreachableBlockDoesNotCorruptALoopHeader)
+{
+	// entry -> H -> L -> H (a natural loop), plus an unreachable U -> L.
+	// The latch's semidominator is what the back-edge test reads, so a zero
+	// there turns a natural loop into an apparently irreducible one.
+	SSAFunction fn("loop");
+	auto* e = fn.addBlock("entry");
+	auto* h = fn.addBlock("H");
+	auto* l = fn.addBlock("L");
+	auto* x = fn.addBlock("exit");
+	auto* u = fn.addBlock("U");
+	connect(fn, e->id, h->id);
+	connect(fn, h->id, l->id);
+	connect(fn, l->id, h->id);
+	connect(fn, h->id, x->id);
+	connect(fn, u->id, l->id);
+
+	DominatorTree dt;
+	dt.run(fn);
+
+	EXPECT_EQ(h->id, fn.block(l->id)->idom) << "L is only reachable through H";
+	EXPECT_TRUE(dt.dominates(fn, h->id, l->id)) << "H dominates its own latch, which is what makes L->H a back edge";
+	EXPECT_EQ(h->id, fn.block(x->id)->idom);
+}

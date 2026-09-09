@@ -705,3 +705,44 @@ TEST(TypePropagationOrder, SameWidthUnitesTheTwoClasses)
 	EXPECT_EQ(tp.findRoot(1), tp.findRoot(3));
 	EXPECT_LT(tp.classCount(), 3u);
 }
+
+// The bound above stops addValue() from materialising an implausible id, but
+// every caller then indexed classes_/rank_/parent_ with that same id anyway --
+// so declining to materialise it turned a 16 GB allocation into a read roughly
+// 1.2e11 bytes past the base. Only the SameWidth right-hand side was checked,
+// which is what makes it a missed case rather than a design.
+TEST(TypePropagationBounds, AConstraintOnAnUnmaterialisedIdIsIgnored)
+{
+	TypePropagation tp;
+	tp.addValue(1);
+	tp.addConstraint(TypeConstraint::hasWidth(TypePropagation::kMaxValueId, 32));
+	tp.addConstraint(TypeConstraint::isPointer(UINT32_MAX));
+	tp.addConstraint(TypeConstraint::isUnsigned(TypePropagation::kMaxValueId + 7));
+	tp.addConstraint(TypeConstraint::sameWidth(1, TypePropagation::kMaxValueId));
+	tp.run();
+
+	EXPECT_EQ(UINT32_MAX, tp.findRoot(UINT32_MAX));
+	EXPECT_EQ(0u, tp.typeOf(TypePropagation::kMaxValueId).width);
+}
+
+// A MemRef with an absolute address and no base register -- `mov eax,
+// [0x404000]` -- leaves memBaseReg at its kInvalidVar default. The MemRef loop
+// in StructRecovery::collectPatterns skips those; the one in
+// emitInstructionConstraints' Load case did not, and handed kInvalidVar
+// straight to isPointer().
+TEST(TypeInferenceBounds, AbsoluteAddressLoadWithNoBaseRegisterDoesNotCrash)
+{
+	SSAFunction fn("f");
+	auto* b = fn.addBlock("entry");
+	IrValue* mem = fn.allocValue(ValueKind::MemRef);
+	mem->memOffset = 0x404000;
+	mem->memWidth = 8;
+	mem->memIsStack = false;
+	IrInstr* ld = fn.addInstr(b->id, IrInstr::Op::Load, 0x1000);
+	ld->uses.push_back({mem->id, 0});
+	mem->defInstr = ld;
+
+	TypeInferencePass pass;
+	pass.run(fn);
+	EXPECT_EQ(64u, pass.typeOf(mem->id).width);
+}

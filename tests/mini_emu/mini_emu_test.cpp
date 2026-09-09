@@ -613,3 +613,74 @@ TEST(MiniEmuSectionMapping, SectionsShareOneMappingBudget)
 		<< "the eighth 256 MiB section was mapped, so the budget is per "
 		   "section rather than per image";
 }
+
+// ─── Group 1 with a 32-bit immediate (opcode 0x81) ────────────────────────────
+//
+// 0x81 is ADD/OR/ADC/SBB/AND/SUB/XOR/CMP r/m, imm32 -- which one is chosen by
+// the ModRM /reg field, exactly as for the imm8 form 0x83 next to it.  The
+// 0x81 arm decoded /reg and then ignored it, so every one of the eight ran as
+// ADD.  `sub rsp, imm32` moved RSP the wrong way, and `cmp r/m, imm32` wrote
+// a sum into the register the following conditional jump was about to read.
+
+namespace {
+
+// mov rax, imm64 ; <code> ; hlt -- and hand back the CPU state.
+CPUState runWithRax(uint64_t rax, const std::vector<uint8_t>& code)
+{
+	std::vector<uint8_t> prog{0x48, 0xB8};
+	for (int i = 0; i < 8; ++i)
+	{
+		prog.push_back(static_cast<uint8_t>((rax >> (8 * i)) & 0xFF));
+	}
+	prog.insert(prog.end(), code.begin(), code.end());
+	prog.push_back(0xF4); // hlt
+
+	MiniEmu emu;
+	PagePerms rx{true, false, true};
+	emu.mapPage(0x1000, rx, prog.data(), prog.size());
+	auto r = emu.run(0x1000, 1000);
+	EXPECT_EQ(r.stopReason, StopReason::Halt);
+	return emu.cpuState();
+}
+
+} // namespace
+
+TEST(MiniEmuTest, Group1Imm32HonoursTheModRMOpcodeExtension)
+{
+	// 48 81 E8 10 00 00 00   sub rax, 0x10
+	EXPECT_EQ(0xF0u, runWithRax(0x100, {0x48, 0x81, 0xE8, 0x10, 0x00, 0x00, 0x00}).rax) << "/5 SUB";
+	// 48 81 E0 0F 00 00 00   and rax, 0xF
+	EXPECT_EQ(0x0Fu, runWithRax(0xFF, {0x48, 0x81, 0xE0, 0x0F, 0x00, 0x00, 0x00}).rax) << "/4 AND";
+	// 48 81 C8 0F 00 00 00   or rax, 0xF
+	EXPECT_EQ(0xFFu, runWithRax(0xF0, {0x48, 0x81, 0xC8, 0x0F, 0x00, 0x00, 0x00}).rax) << "/1 OR";
+	// 48 81 F0 FF 00 00 00   xor rax, 0xFF
+	EXPECT_EQ(0x00u, runWithRax(0xFF, {0x48, 0x81, 0xF0, 0xFF, 0x00, 0x00, 0x00}).rax) << "/6 XOR";
+	// 48 81 C0 10 00 00 00   add rax, 0x10  -- the one case that was right
+	EXPECT_EQ(0x110u, runWithRax(0x100, {0x48, 0x81, 0xC0, 0x10, 0x00, 0x00, 0x00}).rax) << "/0 ADD";
+}
+
+TEST(MiniEmuTest, Group1Imm32CmpSetsFlagsWithoutWritingBack)
+{
+	// 48 81 F8 10 00 00 00   cmp rax, 0x10
+	auto greater = runWithRax(0x100, {0x48, 0x81, 0xF8, 0x10, 0x00, 0x00, 0x00});
+	EXPECT_EQ(0x100u, greater.rax) << "CMP must not write its result anywhere";
+	EXPECT_EQ(0u, greater.rflags & 0x40u) << "ZF clear: 0x100 != 0x10";
+
+	auto equal = runWithRax(0x10, {0x48, 0x81, 0xF8, 0x10, 0x00, 0x00, 0x00});
+	EXPECT_EQ(0x10u, equal.rax) << "CMP must not write its result anywhere";
+	EXPECT_EQ(0x40u, equal.rflags & 0x40u) << "ZF set: 0x10 == 0x10";
+}
+
+TEST(MiniEmuTest, Group1Imm32AdcAndSbbCarryTheFlagIn)
+{
+	// stc-free route: cmp rax,0x10 with rax=0 sets CF, then adc/sbb reads it.
+	// 48 81 F8 10 00 00 00   cmp rax, 0x10   (0 - 0x10 borrows: CF=1)
+	// 48 81 D0 00 00 00 00   adc rax, 0
+	auto adc = runWithRax(0, {0x48, 0x81, 0xF8, 0x10, 0x00, 0x00, 0x00, 0x48, 0x81, 0xD0, 0x00, 0x00, 0x00, 0x00});
+	EXPECT_EQ(1u, adc.rax) << "/2 ADC must add the carry in";
+
+	// 48 81 F8 10 00 00 00   cmp rax, 0x10   (CF=1)
+	// 48 81 D8 00 00 00 00   sbb rax, 0
+	auto sbb = runWithRax(5, {0x48, 0x81, 0xF8, 0x10, 0x00, 0x00, 0x00, 0x48, 0x81, 0xD8, 0x00, 0x00, 0x00, 0x00});
+	EXPECT_EQ(4u, sbb.rax) << "/3 SBB must subtract the borrow in";
+}

@@ -130,6 +130,16 @@ public:
     std::unordered_map<std::string, CilReconstructResult>
     reconstructAll(const BcModule& module) const;
 
+	/**
+	 * @brief The key reconstructAll() files a method's result under.
+	 *
+	 * Public because it is the contract of reconstructAll()'s return value:
+	 * a caller that cannot build the key cannot read the map. CsTypeEmitter
+	 * carried a private copy of this function with no call sites and looked
+	 * its results up by bare method name instead, so no lookup ever hit.
+	 */
+	static std::string methodKey(const BcClass& cls, const BcMethod& m);
+
 private:
     CilReconstructOptions opts_;
 
@@ -180,7 +190,6 @@ private:
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    static std::string methodKey(const BcClass& cls, const BcMethod& m);
     static bool        methodNeedsReconstruction(const BcMethod& m);
 };
 

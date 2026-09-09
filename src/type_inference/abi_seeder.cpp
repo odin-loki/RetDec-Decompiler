@@ -328,8 +328,13 @@ void TypeInferencePass::emitInstructionConstraints(const SSAFunction& fn) {
                 // If a MemRef is dereferenced, the base is a pointer
                 for (auto& use : instr->uses) {
                     const IrValue* v = fn.value(use.valueId);
-                    if (v && v->kind == ValueKind::MemRef && !v->memIsStack)
-                        prop_.addConstraint(TypeConstraint::isPointer(v->memBaseReg));
+					// memBaseReg keeps its kInvalidVar default for an absolute
+					// address -- `mov eax, [0x404000]` has no base register --
+					// and there is no pointer there to constrain. The MemRef
+					// loop in StructRecovery::collectPatterns skips those; this
+					// one handed kInvalidVar straight to isPointer().
+					if (v && v->kind == ValueKind::MemRef && !v->memIsStack && v->memBaseReg != ssa::kInvalidVar)
+						prop_.addConstraint(TypeConstraint::isPointer(v->memBaseReg));
                 }
                 break;
 
