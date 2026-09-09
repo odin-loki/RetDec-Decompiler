@@ -121,9 +121,12 @@ static std::vector<uint8_t> minimalLua51()
 
 	// Code: RETURN 0 1 (return with 0 return values)
 	b.i32(1); // 1 instruction
-	// RETURN A=0 B=1 C=0: opcode=31, A=0, B=1, C=0
+	// RETURN A=0 B=1 C=0. In Lua 5.1 RETURN is opcode 30; 31 is FORLOOP.
+	// This said 31 because the emitter decoded every version with the 5.2
+	// table, where RETURN is 31 -- so the fixture and the decoder were wrong
+	// together and the test passed.
 	// field layout: bits 0-5=op, 6-13=A, 14-22=C, 23-31=B
-	uint32_t ret_instr = 31 | (0 << 6) | (0 << 14) | (1 << 23);
+	uint32_t ret_instr = 30 | (0 << 6) | (0 << 14) | (1 << 23);
 	b.u32(ret_instr);
 
 	// Constants: 0
@@ -423,7 +426,7 @@ TEST(LuaReaderTest, Lua51InstrOpcode)
 	auto result = reader.read();
 	ASSERT_TRUE(result.ok);
 	ASSERT_EQ(result.module.topLevel.code.size(), 1u);
-	EXPECT_EQ(result.module.topLevel.code[0].opcode51(), 31u); // RETURN
+	EXPECT_EQ(result.module.topLevel.code[0].opcode51(), 30u); // RETURN, in 5.1
 }
 
 TEST(LuaReaderTest, LittleEndianFlag)
@@ -858,7 +861,7 @@ TEST(LuaEmitterTest, EmitsFunctionWithParams)
 	proto.locals = {p0, p1};
 	// RETURN A=0 B=1: return nothing
 	LuaInstr ret;
-	ret.raw = 31 | (0 << 6) | (0 << 14) | (1 << 23);
+	ret.raw = 30 | (0 << 6) | (0 << 14) | (1 << 23); // RETURN is 30 in 5.1
 	proto.code = {ret};
 	proto.lineInfo = {1};
 	proto.lineDefined = 1;
@@ -897,7 +900,7 @@ TEST(LuaEmitterTest, EmitsMoveInstr)
 	mv.raw = 0 | (0 << 6) | (0 << 14) | (1 << 23);
 	// RETURN
 	LuaInstr ret;
-	ret.raw = 31 | (0 << 6) | (0 << 14) | (1 << 23);
+	ret.raw = 30 | (0 << 6) | (0 << 14) | (1 << 23); // RETURN is 30 in 5.1
 	proto.code = {mv, ret};
 	proto.lineInfo = {1, 2};
 
@@ -931,11 +934,12 @@ TEST(LuaEmitterTest, EmitsArithmeticInstr)
 	proto.lineDefined = 0;
 	proto.lastLineDefined = 0;
 
-	// ADD A=0 B=1 C=2 (RK): c = x + y (opcode=13)
+	// ADD A=0 B=1 C=2 (RK): c = x + y. ADD is 12 in Lua 5.1; 13 is 5.2's,
+	// which is what every version was being decoded with.
 	LuaInstr add;
-	add.raw = 13 | (0 << 6) | (2 << 14) | (1 << 23);
+	add.raw = 12 | (0 << 6) | (2 << 14) | (1 << 23);
 	LuaInstr ret;
-	ret.raw = 31 | (0 << 6) | (0 << 14) | (1 << 23);
+	ret.raw = 30 | (0 << 6) | (0 << 14) | (1 << 23); // RETURN is 30 in 5.1
 	proto.code = {add, ret};
 	proto.lineInfo = {1, 2};
 
@@ -966,7 +970,7 @@ TEST(LuaEmitterTest, EmitsConstantLoad)
 	LuaInstr lk;
 	lk.raw = 1 | (0 << 6) | (0 << 14);
 	LuaInstr ret;
-	ret.raw = 31 | (0 << 6) | (0 << 14) | (1 << 23);
+	ret.raw = 30 | (0 << 6) | (0 << 14) | (1 << 23); // RETURN is 30 in 5.1
 	proto.code = {lk, ret};
 	proto.lineInfo = {1, 2};
 
@@ -1009,7 +1013,7 @@ TEST(LuaEmitterTest, EmitsNestedFunction)
 	inner.lineDefined = 3;
 	inner.lastLineDefined = 5;
 	LuaInstr ret;
-	ret.raw = 31 | (0 << 6) | (0 << 14) | (1 << 23);
+	ret.raw = 30 | (0 << 6) | (0 << 14) | (1 << 23); // RETURN is 30 in 5.1
 	inner.code = {ret};
 	inner.lineInfo = {4};
 
@@ -1042,7 +1046,7 @@ TEST(LuaEmitterTest, EmitsVararg)
 	proto.lineDefined = 1;
 	proto.lastLineDefined = 5;
 	LuaInstr ret;
-	ret.raw = 31 | (0 << 6) | (0 << 14) | (1 << 23);
+	ret.raw = 30 | (0 << 6) | (0 << 14) | (1 << 23); // RETURN is 30 in 5.1
 	proto.code = {ret};
 	proto.lineInfo = {2};
 
@@ -1114,11 +1118,11 @@ TEST(LuaEmitterTest, EmitsConcatInstr)
 	proto.lineDefined = 0;
 	proto.lastLineDefined = 0;
 
-	// CONCAT A=0 B=1 C=2: s = a .. b (opcode=22)
+	// CONCAT A=0 B=1 C=2: s = a .. b. CONCAT is 21 in Lua 5.1.
 	LuaInstr cat;
-	cat.raw = 22 | (0 << 6) | (2 << 14) | (1 << 23);
+	cat.raw = 21 | (0 << 6) | (2 << 14) | (1 << 23);
 	LuaInstr ret;
-	ret.raw = 31 | (0 << 6) | (0 << 14) | (1 << 23);
+	ret.raw = 30 | (0 << 6) | (0 << 14) | (1 << 23); // RETURN is 30 in 5.1
 	proto.code = {cat, ret};
 	proto.lineInfo = {1, 2};
 
@@ -1144,11 +1148,11 @@ TEST(LuaEmitterTest, EmitsNewTable)
 	proto.lineDefined = 0;
 	proto.lastLineDefined = 0;
 
-	// NEWTABLE A=0 (opcode=11)
+	// NEWTABLE A=0. NEWTABLE is 10 in Lua 5.1.
 	LuaInstr nt;
-	nt.raw = 11;
+	nt.raw = 10;
 	LuaInstr ret;
-	ret.raw = 31 | (0 << 6) | (0 << 14) | (1 << 23);
+	ret.raw = 30 | (0 << 6) | (0 << 14) | (1 << 23); // RETURN is 30 in 5.1
 	proto.code = {nt, ret};
 	proto.lineInfo = {1, 2};
 
@@ -1329,4 +1333,52 @@ TEST(LuaReaderTest, Lua51UpvalueNamesAreKept)
 	ASSERT_TRUE(result.ok) << result.error;
 	ASSERT_EQ(result.module.topLevel.upvalues.size(), 1u) << "the count byte sizes the upvalue vector";
 	EXPECT_EQ(result.module.topLevel.upvalues[0].name, "_ENV");
+}
+
+// ─── Lua 5.3 has its own opcode table ────────────────────────────────────────
+//
+// disassemble() sent everything below 5.4 to the 5.2 table, and 5.3 reordered
+// DIV/MOD/POW and inserted IDIV, BAND, BOR, BXOR, SHL, SHR and BNOT -- so
+// every 5.3 opcode from 16 up decoded as a different instruction. A 5.3 MOD
+// (16) came out as a DIV, a DIV (18) as a POW, a RETURN (38) as a TAILCALL.
+TEST(LuaEmitterTest, Lua53ArithmeticUsesTheLua53Table)
+{
+	LuaProto proto;
+	proto.version = LuaVersion::Lua53;
+	proto.maxStackSize = 4;
+	proto.numParams = 0;
+
+	const auto abc = [](uint8_t op, uint8_t a, uint16_t b, uint16_t c) {
+		LuaInstr i;
+		i.raw = op | (uint32_t)(a << 6) | ((uint32_t)c << 14) | ((uint32_t)b << 23);
+		return i;
+	};
+
+	proto.code = {
+		abc(16, 0, 1, 2), // MOD   -- 5.2 reads 16 as DIV
+		abc(18, 0, 1, 2), // DIV   -- 5.2 reads 18 as POW
+		abc(19, 0, 1, 2), // IDIV  -- 5.2 has no such opcode
+		abc(20, 0, 1, 2), // BAND
+		abc(23, 0, 1, 2), // SHL
+		abc(26, 0, 1, 0), // BNOT
+		abc(38, 0, 1, 0), // RETURN -- 5.2 reads 38 as VARARG
+	};
+	proto.lineInfo = {1, 2, 3, 4, 5, 6, 7};
+
+	LuaModule mod;
+	mod.version = LuaVersion::Lua53;
+	mod.topLevel = proto;
+
+	LuaEmitter emitter;
+	const auto result = emitter.emit(mod);
+
+	EXPECT_NE(result.source.find(" % "), std::string::npos) << result.source;
+	EXPECT_NE(result.source.find(" // "), std::string::npos) << result.source;
+	EXPECT_NE(result.source.find(" & "), std::string::npos) << result.source;
+	EXPECT_NE(result.source.find(" << "), std::string::npos) << result.source;
+	EXPECT_NE(result.source.find(" = ~"), std::string::npos) << result.source;
+	EXPECT_NE(result.source.find("return"), std::string::npos) << result.source;
+	// 5.2's reading of 18 and of 38.
+	EXPECT_EQ(result.source.find(" ^ "), std::string::npos) << "18 is DIV in 5.3, not POW: " << result.source;
+	EXPECT_EQ(result.source.find("..."), std::string::npos) << "38 is RETURN in 5.3, not VARARG: " << result.source;
 }

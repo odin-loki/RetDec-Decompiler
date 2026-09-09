@@ -281,13 +281,14 @@ std::string LuaEmitter::decodeInstrLua51(const LuaProto& proto, int pc,
 // ─── Lua 5.2/5.3 opcode decoder ──────────────────────────────────────────────
 // Lua 5.2 added LOADKX at opcode 2; opcodes 3+ are shifted by 1 vs 5.1.
 
-std::string LuaEmitter::decodeInstrLua52(const LuaProto& proto, int pc,
-                                           const std::vector<std::string>& regs) const {
-    const LuaInstr& ins = proto.code[pc];
-    uint8_t  op  = ins.opcode51();
-    uint8_t  A   = ins.fieldA51();
-    uint16_t B   = ins.fieldB51();
-    uint16_t C   = ins.fieldC51();
+std::string
+LuaEmitter::decodeInstrLua52(const LuaProto& proto, int pc, const std::vector<std::string>& regs, int opOverride) const
+{
+	const LuaInstr& ins = proto.code[pc];
+	uint8_t op = (opOverride >= 0) ? (uint8_t)opOverride : ins.opcode51();
+	uint8_t A = ins.fieldA51();
+	uint16_t B = ins.fieldB51();
+	uint16_t C   = ins.fieldC51();
     int32_t  Bx  = ins.fieldBx();
     int32_t  sBx = ins.fieldsBx();
 
@@ -412,13 +413,59 @@ std::string LuaEmitter::decodeInstrLua52(const LuaProto& proto, int pc,
     }
 }
 
-// ─── Dispatcher for non-5.4 versions ─────────────────────────────────────────
+// ─── Lua 5.3 opcode decoder ──────────────────────────────────────────────────
+//
+// 5.3 inserted IDIV, BAND, BOR, BXOR, SHL, SHR and BNOT, and reordered DIV,
+// MOD and POW relative to 5.2 -- so from opcode 16 up the two numberings say
+// different things. Everything was going through the 5.2 table, which decoded
+// a 5.3 MOD as a DIV, a DIV as a POW, a RETURN as a TAILCALL, and so on for
+// every instruction past 15.
+//
+// The seven opcodes 5.3 added are handled here; the rest are the 5.2 cases
+// under different numbers, so they are remapped and delegated rather than
+// copied.
+std::string LuaEmitter::decodeInstrLua53(const LuaProto& proto, int pc, const std::vector<std::string>& regs) const
+{
+	const LuaInstr& ins = proto.code[pc];
+	const uint8_t op = ins.opcode51();
+	const uint8_t A = ins.fieldA51();
+	const uint16_t B = ins.fieldB51();
+	const uint16_t C = ins.fieldC51();
 
-std::string LuaEmitter::decodeInstr51(const LuaProto& proto, int pc,
-                                        const std::vector<std::string>& regs) const {
-    // Lua 5.1 fixtures and opcode comments in this tree use the LOADKX-shifted
-    // numbering (RETURN=31, ADD=13, CONCAT=22, NEWTABLE=11), i.e. the 5.2 table.
-    return decodeInstrLua52(proto, pc, regs);
+	auto reg = [&](int r) -> std::string { return localName(proto, r, pc); };
+	auto rk = [&](uint16_t x) -> std::string { return rkExpr(proto, x, regs); };
+	const std::string dst = reg(A);
+
+	switch (op)
+	{
+	case 19: return dst + " = " + rk(B) + " // " + rk(C); // IDIV
+	case 20: return dst + " = " + rk(B) + " & " + rk(C);  // BAND
+	case 21: return dst + " = " + rk(B) + " | " + rk(C);  // BOR
+	case 22: return dst + " = " + rk(B) + " ~ " + rk(C);  // BXOR
+	case 23: return dst + " = " + rk(B) + " << " + rk(C); // SHL
+	case 24: return dst + " = " + rk(B) + " >> " + rk(C); // SHR
+	case 26: return dst + " = ~" + reg(B);                // BNOT
+	default: break;
+	}
+
+	// 5.3 -> 5.2, for the opcodes both have. Index is the 5.3 number.
+	static const int8_t kTo52[] = {
+		0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  // MOVE .. SETUPVAL
+		10, 11, 12, 13, 14, 15,                 // SETTABLE .. MUL
+		17, 18, 16,                             // MOD, POW, DIV (5.2 order differs)
+		-1, -1, -1, -1, -1, -1,                 // IDIV, BAND, BOR, BXOR, SHL, SHR
+		19,                                     // UNM
+		-1,                                     // BNOT
+		20, 21, 22, 23, 24, 25, 26, 27, 28,     // NOT .. TESTSET
+		29, 30, 31, 32, 33, 34, 35, 36, 37, 38, // CALL .. VARARG
+		39,                                     // EXTRAARG
+	};
+	if (op < sizeof(kTo52) / sizeof(kTo52[0]) && kTo52[op] >= 0)
+	{
+		return decodeInstrLua52(proto, pc, regs, kTo52[op]);
+	}
+	return "-- op53_" + std::to_string(op) + " A=" + std::to_string(A) + " B=" + std::to_string(B)
+		 + " C=" + std::to_string(C);
 }
 
 // ─── Lua 5.4 opcode decoder ───────────────────────────────────────────────────
@@ -639,23 +686,33 @@ void LuaEmitter::disassemble(const LuaProto& proto,
         for (int r = 0; r < nregs; ++r)
             regs[r] = localName(proto, r, pc);
 
-        std::string line;
-        if (proto.version == LuaVersion::Lua54)
-            line = decodeInstr54(proto, pc, regs);
-        else
-            line = decodeInstr51(proto, pc, regs);
+		// Each version gets its own table. This used to send 5.1, 5.2 and 5.3
+		// alike to the 5.2 one, which left decodeInstrLua51 -- the real 5.1
+		// table, a hundred and seventy lines of it -- with no caller anywhere
+		// in the tree.
+		std::string line;
+		switch (proto.version)
+		{
+		case LuaVersion::Lua54: line = decodeInstr54(proto, pc, regs); break;
+		case LuaVersion::Lua53: line = decodeInstrLua53(proto, pc, regs); break;
+		case LuaVersion::Lua51: line = decodeInstrLua51(proto, pc, regs); break;
+		default: line = decodeInstrLua52(proto, pc, regs); break;
+		}
 
-        if (opts_.emitLineInfo) {
-            int ln = proto.lineForPc(pc);
-            if (ln > 0)
+		if (opts_.emitLineInfo)
+		{
+			int ln = proto.lineForPc(pc);
+			if (ln > 0)
                 out << indent(indent_) << "--[[ line " << ln << " ]] ";
             else
                 out << indent(indent_);
-        } else {
-            out << indent(indent_);
-        }
-        out << line << "\n";
-    }
+		}
+		else
+		{
+			out << indent(indent_);
+		}
+		out << line << "\n";
+	}
 }
 
 // ─── Proto emitter ───────────────────────────────────────────────────────────

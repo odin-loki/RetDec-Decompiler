@@ -118,14 +118,15 @@ private:
     std::string indent(int level) const;
 
     // ── Lua 5.1/5.2/5.3/5.4 opcode dispatch ─────────────────────────────────
-    std::string decodeInstr51(const LuaProto& proto, int pc,
-                               const std::vector<std::string>& regs) const;
     std::string decodeInstrLua51(const LuaProto& proto, int pc,
                                   const std::vector<std::string>& regs) const;
-    std::string decodeInstrLua52(const LuaProto& proto, int pc,
-                                  const std::vector<std::string>& regs) const;
-    std::string decodeInstr54(const LuaProto& proto, int pc,
-                               const std::vector<std::string>& regs) const;
+	/// @param opOverride  decode as this opcode instead of the instruction's
+	///                     own, which is how the Lua 5.3 decoder reuses the
+	///                     cases the two versions share.
+	std::string
+	decodeInstrLua52(const LuaProto& proto, int pc, const std::vector<std::string>& regs, int opOverride = -1) const;
+	std::string decodeInstrLua53(const LuaProto& proto, int pc, const std::vector<std::string>& regs) const;
+	std::string decodeInstr54(const LuaProto& proto, int pc, const std::vector<std::string>& regs) const;
 };
 
 } // namespace lua_parser
