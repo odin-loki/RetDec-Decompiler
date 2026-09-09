@@ -763,6 +763,18 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 			throw std::runtime_error("[--jobs] invalid value: " + val);
 		}
 	}
+	// An argument that begins with a dash and matched no option above is a
+	// mistyped option, not a file name. Taking it as one is how
+	// `retdec-decompiler --ouput out.c prog.elf` came to succeed having done
+	// nothing: the typo filled the input-file slot, `out.c` and `prog.elf`
+	// fell through to the branch below, and that branch called
+	// printHelpAndDie(), which ends in exit(EXIT_SUCCESS).
+	//
+	// "-" alone is left alone; that is a file-name convention, not an option.
+	else if (c.size() > 1 && c[0] == '-')
+	{
+		throw std::runtime_error("unknown option: " + c + " (see --help)");
+	}
 	// Input file is the only argument that does not have -x or --xyz
 	// before it. But only one input is expected.
 	else if (params.getInputFile().empty())
@@ -771,7 +783,8 @@ void ProgramOptions::loadOption(std::list<std::string>::iterator& i)
 	}
 	else
 	{
-		printHelpAndDie();
+		// Also printHelpAndDie() until now, and so also exit 0.
+		throw std::runtime_error("more than one input file: " + params.getInputFile() + " and " + c);
 	}
 }
 
@@ -950,16 +963,16 @@ bool ProgramOptions::isParam(std::list<std::string>::iterator i, const std::stri
 
 std::string ProgramOptions::getParamOrDie(std::list<std::string>::iterator& i)
 {
+	const std::string opt = (i != _argv.end()) ? *i : std::string();
 	++i;
 	if (i != _argv.end())
 	{
 		return *i;
 	}
-	else
-	{
-		printHelpAndDie();
-		return std::string();
-	}
+	// printHelpAndDie() until now, which exits EXIT_SUCCESS: `retdec-decompiler
+	// prog.elf -o` printed the help text and reported success, having written
+	// no output at all. main() catches this and returns EXIT_FAILURE.
+	throw std::runtime_error("missing value for option: " + opt);
 }
 
 //

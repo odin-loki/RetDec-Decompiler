@@ -199,6 +199,22 @@ set_tests_properties(decompiler_smoke_cli_fib PROPERTIES
     LABELS "decompiler;smoke;integration"
 )
 
+# A malformed command line must fail. Three paths reached printHelpAndDie(),
+# which ends in exit(EXIT_SUCCESS), so every usage error reported success --
+# including a misspelt option, which was taken as the input file name.
+add_test(
+    NAME decompiler_cli_diagnostics
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/cli_diagnostics_test.py"
+        "${RETDEC_DECOMPILER}"
+        "${_FIB_BIN}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+set_tests_properties(decompiler_cli_diagnostics PROPERTIES
+    TIMEOUT 180
+    LABELS "decompiler;smoke;integration"
+)
+
 add_test(
     NAME decompiler_smoke_managed_formats
     COMMAND ${Python3_EXECUTABLE}
