@@ -17,6 +17,13 @@ source*, but not tested.
 Each entry names the file and line, states what is wrong, and says what the fix
 is. Verify before acting: this tree moves, and a finding may already be fixed.
 
+**Later sections carry their own reasons.** The paragraph above explains the
+original audit's findings, which were behind a build that environment could not
+run. Everything under "Found while fixing the reproducibility defects" and after
+was found with CI available and is unfixed for a reason stated in the entry --
+an output change too large to make without a reproducer, a platform this
+environment cannot compile, a failure whose log does not yet say enough.
+
 ---
 
 ## 1. The 0/216 recompile failure has one cause, and it is three lines
