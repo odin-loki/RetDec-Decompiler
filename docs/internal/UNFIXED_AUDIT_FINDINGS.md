@@ -650,72 +650,38 @@ is cheap for someone who can watch it.
 
 ### The decompiler dumps core on C11 atomics
 
-`tests/algorithm_recovery/sources/generated/atomic_counter.c`
-
-DET-01's first run skipped three of its seventy-two binaries because they
-produce no output at all: `generated_atomic_counter` at clang-O0, clang-O3
-and gcc-O0. With the reason printed, they say the same thing:
+**Closed.** The symbolized stack named it exactly:
 
 ```
-Running pass 'LLVM IR -> HLL' on module ''.
-timeout: the monitored command dumped core
+src/llvmir2hll/llvm/llvmir2bir_converter/llvm_instruction_converter.cpp:521:
+visitInstruction: Fail (unsupported instruction:
+  %var2 = atomicrmw add ptr inttoptr (i64 16412 to ptr), i32 1 seq_cst)
+ #8  llvm_instruction_converter.cpp:521
+ #9  InstVisitor<LLVMInstructionConverter, ...>::visitAtomicRMWInst
+ #14 BasicBlockConverter::visitInstruction   basic_block_converter.cpp:287
 ```
 
-The signal is `SIGABRT` -- bash reports the run as `21616 Aborted`, not
-`Segmentation fault` -- in the pass that converts LLVM IR to the backend IR.
-This is a `full-linux-debug` build, so `assert` is live, and an abort there is
-a failed assertion or an uncaught exception rather than a bad pointer. The
-source is eight lines:
+`BasicBlockConverter` had no case for `atomicrmw`, `cmpxchg` or `fence`, so
+all three fell through to the expression converter's `visitInstruction`,
+which calls `FAIL` -- and `FAIL` aborts in release as well as debug. Eight
+lines of C11 took the whole decompilation with them, and the guard directly
+above the call site, which turns a null expression into an empty statement
+rather than crashing, could never run because the abort came first.
 
-```c
-#include <stdatomic.h>
-static atomic_int counter;
-int main(void) {
-    atomic_store(&counter, 0);
-    for (int i = 0; i < 100; ++i) atomic_fetch_add(&counter, 1);
-    printf("%d\n", atomic_load(&counter));
-}
-```
+All three have cases now (`basic_block_converter.cpp`). `atomicrmw` becomes
+the read and the write it performs, `cmpxchg` becomes the read, the
+comparison and a conditional store written as a ternary rather than as
+control flow, and `fence` becomes nothing. The min/max and floating-point
+`atomicrmw` forms are not lowered and take the empty-statement path, which is
+what every other unhandled instruction in that converter does.
 
-XADD, CMPXCHG and the LOCK prefix are all translated
-(`src/capstone2llvmir/x86/x86_init.cpp`), so the instruction decode is not
-the missing piece; something downstream of it is. gcc-O2 and gcc-O3 are not
-among the three, which is a useful narrowing: whatever it is depends on the
-shape the optimiser leaves, not on the atomics alone.
-
-**Nothing gated on this before DET-01.** The algorithm-recovery gate runs the
-nine `ci-core` names and `atomic_counter` is not one of them, so for every
-other corpus binary a total failure was invisible. DET-01 skips such a binary
-rather than failing -- decompiling everything is the recovery gate's
-business, not this one's -- but it prints the reason and an excerpt.
-
-**The first excerpt named nothing, twice over.** It asked for `tail -n 25`,
-and LLVM prints a backtrace innermost frame first, so the last twenty-five
-lines of a crash log are the *bottom* of the stack: frames 16 through 35,
-`__libc_start_main`, `main`. Frame #0 was forty lines further up, and so was
-any assertion message, which glibc writes before the signal handler runs. And
-every frame it did print read
-
-```
-16 retdec-decompiler 0x00005643ba734e06
-```
-
-with no symbol, because LLVM's handler only runs `llvm-symbolizer` when it can
-find one -- `$LLVM_SYMBOLIZER_PATH`, next to `argv[0]`, or on `$PATH` -- and
-otherwise falls back to `dladdr`, which resolves exported symbols only. This
-binary exports none of its own. `libc.so.6` frames symbolized; nothing in the
-decompiler did.
-
-Both are fixed in `scripts/ci/check_output_determinism.sh`: it locates an
-`llvm-symbolizer` and exports `LLVM_SYMBOLIZER_PATH` before running anything,
-and it anchors the excerpt on the `PLEASE submit a bug report` banner and
-prints the eighty lines above it, which covers frame #0 and the assertion
-line. `llvm` is now in `ctest-linux.yml`'s apt list so the symbolizer is
-certain to be there rather than likely. The self-test has a fake decompiler
-that crashes with forty frames and an assertion, and asserts that the name in
-frame #1 and the assertion text both reach the output; under `tail -n 25`
-that case fails.
-
-**Not fixed here** because reproducing it needs the LLVM build this
-environment cannot run. The next `ctest-linux` run prints a symbolized stack
-with the assertion at the top of it, and that is where to start.
+**What it cost to find it, and what that changed.** The first two DET-01 runs
+printed thirty-six frames that named nothing: `tail -n 25` of a crash log is
+the *bottom* of an LLVM backtrace -- `main`, `__libc_start_main` -- because
+LLVM prints innermost frame first, and every frame read
+`retdec-decompiler 0x00005643ba734e06` because the handler only runs
+`llvm-symbolizer` when it can find one and otherwise falls back to `dladdr`,
+which resolves exported symbols only. The excerpt is anchored on the report
+banner now and prints the eighty lines above it, `llvm` is in the workflow's
+apt list, and the third run named the instruction on the first line it
+printed.

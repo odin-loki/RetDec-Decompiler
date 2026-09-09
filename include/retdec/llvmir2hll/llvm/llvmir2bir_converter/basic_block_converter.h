@@ -52,6 +52,9 @@ private:
 	ShPtr<Statement> convertInstructionsOf(llvm::BasicBlock &bb);
 
 	friend class llvm::InstVisitor<BasicBlockConverter, ShPtr<Statement>>;
+	ShPtr<Statement> visitAtomicCmpXchgInst(llvm::AtomicCmpXchgInst& inst);
+	ShPtr<Statement> visitAtomicRMWInst(llvm::AtomicRMWInst& inst);
+	ShPtr<Statement> visitFenceInst(llvm::FenceInst& inst);
 	ShPtr<Statement> visitCallInst(llvm::CallInst &inst);
 	ShPtr<Statement> visitInsertValueInst(llvm::InsertValueInst &inst);
 	ShPtr<Statement> visitLoadInst(llvm::LoadInst &inst);

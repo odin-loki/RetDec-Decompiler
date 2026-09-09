@@ -8,13 +8,20 @@
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Instructions.h>
 
+#include "retdec/llvmir2hll/ir/add_op_expr.h"
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
+#include "retdec/llvmir2hll/ir/bit_and_op_expr.h"
+#include "retdec/llvmir2hll/ir/bit_or_op_expr.h"
+#include "retdec/llvmir2hll/ir/bit_xor_op_expr.h"
 #include "retdec/llvmir2hll/ir/call_expr.h"
 #include "retdec/llvmir2hll/ir/call_stmt.h"
 #include "retdec/llvmir2hll/ir/empty_stmt.h"
+#include "retdec/llvmir2hll/ir/eq_op_expr.h"
 #include "retdec/llvmir2hll/ir/expression.h"
 #include "retdec/llvmir2hll/ir/return_stmt.h"
 #include "retdec/llvmir2hll/ir/statement.h"
+#include "retdec/llvmir2hll/ir/sub_op_expr.h"
+#include "retdec/llvmir2hll/ir/ternary_op_expr.h"
 #include "retdec/llvmir2hll/ir/unreachable_stmt.h"
 #include "retdec/llvmir2hll/ir/variable.h"
 #include "retdec/llvmir2hll/llvm/llvm_support.h"
@@ -221,6 +228,143 @@ ShPtr<Statement> BasicBlockConverter::visitInsertValueInst(llvm::InsertValueInst
 	auto varDef = generateAssignOfPrevValForInsertValueInst(inst);
 	varDef->setSuccessor(assignStmt);
 	return varDef;
+}
+
+/**
+ * @brief Converts an LLVM @c cmpxchg instruction into the read, the comparison
+ *        and the conditional write it performs.
+ *
+ * `%r = cmpxchg ptr %p, i32 %cmp, i32 %new` yields `{ i32, i1 }`: what was
+ * there, and whether it matched. Written without control flow, because the
+ * structurer builds that from the CFG and a basic-block converter has no
+ * business inventing an if:
+ *
+ *     r.0 = *p;
+ *     r.1 = r.0 == cmp;
+ *     *p = r.1 ? new : r.0;
+ *
+ * The third line is the store the instruction performs when the comparison
+ * succeeds, and a store of what was already there when it does not -- which is
+ * the same location holding the same value.
+ *
+ * Like atomicrmw, this had no case at all, so the expression converter's
+ * visitInstruction called FAIL and aborted the whole decompilation.
+ */
+ShPtr<Statement> BasicBlockConverter::visitAtomicCmpXchgInst(llvm::AtomicCmpXchgInst& inst)
+{
+	const auto instAddr = LLVMSupport::getInstAddress(&inst);
+
+	auto readFrom = converter->convertValueToDerefExpression(inst.getPointerOperand());
+	auto writeTo = converter->convertValueToDerefExpression(inst.getPointerOperand());
+	auto compareWith = converter->convertValueToExpression(inst.getCompareOperand());
+	auto newValue = converter->convertValueToExpression(inst.getNewValOperand());
+	if (!readFrom || !writeTo || !compareWith || !newValue)
+	{
+		return EmptyStmt::create(nullptr, instAddr);
+	}
+
+	// Each of the five field accesses gets its own expression tree, base
+	// included: a BIR node belongs to one place in the tree, and putting the
+	// same one in five is not a saving.
+	auto type = inst.getType();
+	const auto field = [&](unsigned index) -> ShPtr<Expression> {
+		auto base = converter->convertValueToExpression(&inst);
+		return base ? converter->generateAccessToAggregateType(type, base, {index}) : nullptr;
+	};
+	auto oldForRead = field(0);
+	auto okForAssign = field(1);
+	auto oldForCompare = field(0);
+	auto okForCondition = field(1);
+	auto oldForFallback = field(0);
+	if (!oldForRead || !okForAssign || !oldForCompare || !okForCondition || !oldForFallback)
+	{
+		return EmptyStmt::create(nullptr, instAddr);
+	}
+
+	auto readStmt = AssignStmt::create(oldForRead, readFrom, nullptr, instAddr);
+	auto cmpStmt = AssignStmt::create(okForAssign, EqOpExpr::create(oldForCompare, compareWith), nullptr, instAddr);
+	auto storeStmt =
+		AssignStmt::create(writeTo, TernaryOpExpr::create(okForCondition, newValue, oldForFallback), nullptr, instAddr);
+
+	readStmt->setSuccessor(cmpStmt);
+	cmpStmt->setSuccessor(storeStmt);
+	return readStmt;
+}
+
+/**
+ * @brief Converts an LLVM @c fence instruction into nothing.
+ *
+ * A fence orders memory operations and computes no value; there is nothing for
+ * C to say about it. It had no case either, so it aborted like the rest.
+ */
+ShPtr<Statement> BasicBlockConverter::visitFenceInst(llvm::FenceInst& inst)
+{
+	return EmptyStmt::create(nullptr, LLVMSupport::getInstAddress(&inst));
+}
+
+/**
+ * @brief Converts an LLVM @c atomicrmw instruction into the read and the write
+ *        it performs.
+ *
+ * `%old = atomicrmw add ptr %p, i32 %v` reads the location, returns what was
+ * there, and stores the combined value. Its own SSA value is the OLD contents,
+ * so the variable it defines is where the read goes:
+ *
+ *     old = *p;
+ *     *p = old + v;
+ *
+ * Nothing here models the atomicity -- BIR has no way to say it, and a
+ * decompiler's output is not going to be re-run under the same contention --
+ * but both halves of the operation are in the emitted C, which is what the
+ * reader needs.
+ *
+ * This existed as nothing at all before, so the expression converter's
+ * visitInstruction caught it and called FAIL, which aborts. Eight lines of
+ * C11 using atomic_fetch_add dumped core on the whole decompilation:
+ *
+ *   llvm_instruction_converter.cpp:521: visitInstruction: Fail (unsupported
+ *   instruction: %var2 = atomicrmw add ptr inttoptr (i64 16412 to ptr), i32 1
+ *   seq_cst)
+ *
+ * Operations this does not lower -- Nand, the four min/max forms, the
+ * floating-point ones -- take the same path every other unhandled instruction
+ * in this converter takes, which is an empty statement rather than an abort.
+ */
+ShPtr<Statement> BasicBlockConverter::visitAtomicRMWInst(llvm::AtomicRMWInst& inst)
+{
+	const auto instAddr = LLVMSupport::getInstAddress(&inst);
+
+	auto oldVal = converter->convertValueToVariable(&inst);
+	// Converted twice on purpose: the read and the write need independent
+	// expression trees, not two references to one.
+	auto readFrom = converter->convertValueToDerefExpression(inst.getPointerOperand());
+	auto writeTo = converter->convertValueToDerefExpression(inst.getPointerOperand());
+	auto value = converter->convertValueToExpression(inst.getValOperand());
+	if (!oldVal || !readFrom || !writeTo || !value)
+	{
+		return EmptyStmt::create(nullptr, instAddr);
+	}
+
+	ShPtr<Expression> updated;
+	switch (inst.getOperation())
+	{
+	case llvm::AtomicRMWInst::Xchg: updated = value; break;
+	case llvm::AtomicRMWInst::Add: updated = AddOpExpr::create(oldVal, value); break;
+	case llvm::AtomicRMWInst::Sub: updated = SubOpExpr::create(oldVal, value); break;
+	case llvm::AtomicRMWInst::And: updated = BitAndOpExpr::create(oldVal, value); break;
+	case llvm::AtomicRMWInst::Or: updated = BitOrOpExpr::create(oldVal, value); break;
+	case llvm::AtomicRMWInst::Xor: updated = BitXorOpExpr::create(oldVal, value); break;
+	default: break;
+	}
+
+	auto readStmt = AssignStmt::create(oldVal, readFrom, nullptr, instAddr);
+	if (!updated)
+	{
+		return readStmt;
+	}
+	auto writeStmt = AssignStmt::create(writeTo, updated, nullptr, instAddr);
+	readStmt->setSuccessor(writeStmt);
+	return readStmt;
 }
 
 /**
