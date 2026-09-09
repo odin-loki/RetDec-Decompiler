@@ -496,3 +496,59 @@ the JVM side — refusing malformed input where it is read rather than relying o
 a downstream guard — and not the live defect the commit message described. The
 `catchAllAddrs` out-of-bounds index fixed in the same commit is unaffected by
 this: that one segfaults, and the test for it exits 139 without the fix.
+
+---
+
+## Found while fixing the reproducibility defects, and deliberately left alone
+
+### The def-use chain comparator is not a strict weak ordering either
+
+`src/llvmir2hll/optimizer/optimizers/copy_propagation_optimizer.cpp`,
+`ordered(const DefUseChains::DefUseChain &)`
+
+`GlobalVarsSorter`'s comparator was rewritten because it was not an ordering
+(see `REPRODUCIBILITY.md`). The def-use chain comparator in the same family
+has the same defect, and is not being changed.
+
+Its first five steps compare a tuple of totally ordered keys -- number of
+uses, variable name, statement text, the set of use texts -- and that part is
+a valid ordering. The tail is not. It walks both statements' predecessor
+chains in step, comparing `(number of predecessors, first predecessor's text)`
+at each level, and stops as soon as *either* chain reaches a statement with no
+predecessors:
+
+```cpp
+} else {
+    break;                 // one chain ran out; the two are "equal"
+}
+```
+
+That makes a chain equal to any chain it is a prefix of, and prefix-equality
+is not a transitive equivalence. Take chains `x`, `xy` and `xz`: `x` compares
+equal to `xy` and equal to `xz`, but `xy` and `xz` differ at their second
+element, so they do not compare equal to each other. `std::sort` has no
+defined behaviour on a comparator like that -- it may read past the end of the
+range.
+
+Reaching it needs two distinct `(statement, variable)` entries that tie
+through all five earlier steps: same number of uses, same variable name, same
+statement text, same use-set texts, same parent and successor texts. The same
+assignment on two arms of an `if`, surrounded identically, would do it.
+
+**Why it is not fixed here.** The obvious repair is to end the comparison on
+the statement's position in the function's CFG, the way `ordered(StmtSet)`
+now does -- `stmtOrder` is already a member and already built for every
+`performOptimization()`. But the chain walk currently *decides* comparisons,
+not just ties, so replacing it changes the order def-use chains are processed
+in, which changes which copy propagations happen first, which changes the
+emitted C for binaries that are not misbehaving today. That is a real risk to
+take without a binary that reproduces the defect, and there is no such binary
+yet: `ordered(du)`'s input is a `std::vector` built by walking the CFG's node
+vector in order, so the sort's *result* is deterministic on a deterministic
+input even with a bad comparator. The exposure is the undefined behaviour, not
+a wrong answer.
+
+**What would settle it.** Run the corpus under a build that checks comparator
+validity -- libstdc++'s `_GLIBCXX_DEBUG` diagnoses "comparison doesn't meet
+irreflexive requirements" -- and see whether any binary trips it. If one does,
+it is worth the output churn; DET-01 will show exactly how much churn.
