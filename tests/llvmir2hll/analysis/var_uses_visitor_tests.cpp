@@ -282,6 +282,54 @@ GlobalVariableIsIndirectlyUsedMay) {
 	}
 }
 
+TEST_F(VarUsesVisitorTests,
+UnusedGlobalVariableHasNoUsesInEveryVariant) {
+	// Set-up the module.
+	//
+	// int a;      // a global that the function never touches
+	// int b;      // a global that it does
+	//
+	// def test():
+	//    b = 1
+	//    return
+	//
+	// The two precomputation paths reach this case differently: the
+	// whole-module one seeds an empty entry for every global of the module
+	// before it walks a function, while the lazy per-function one cannot see
+	// the module and computes the answer on demand.  They have to agree, or a
+	// pass configured one way reads different uses than the same pass
+	// configured the other way -- which is how the parallel copy-propagation
+	// workers came to disagree with the thread that shared their work.
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(32)));
+	module->addGlobalVar(varA);
+	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
+	module->addGlobalVar(varB);
+	ShPtr<ReturnStmt> returnStmt(ReturnStmt::create());
+	ShPtr<AssignStmt> assignB(AssignStmt::create(varB,
+		ConstInt::create(1, 32), returnStmt));
+	testFunc->setBody(assignB);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	FOR_EVERY_VAR_USES_VISITOR_VARIANT {
+		// The untouched global.
+		EXPECT_FALSE(vuv->isUsed(varA, testFunc, false)) << vuvDesc;
+
+		ShPtr<VarUses> varAUses(vuv->getUses(varA, testFunc));
+		EXPECT_EQ(varA, varAUses->var) << vuvDesc;
+		EXPECT_EQ(testFunc, varAUses->func) << vuvDesc;
+		EXPECT_EQ(StmtSet(), varAUses->dirUses) << vuvDesc;
+		EXPECT_EQ(StmtSet(), varAUses->indirUses) << vuvDesc;
+
+		// The one the function writes to, for contrast.
+		EXPECT_TRUE(vuv->isUsed(varB, testFunc, false)) << vuvDesc;
+
+		StmtSet refVarBDirUses;
+		refVarBDirUses.insert(assignB);
+		EXPECT_EQ(refVarBDirUses, vuv->getUses(varB, testFunc)->dirUses)
+			<< vuvDesc;
+	}
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec
