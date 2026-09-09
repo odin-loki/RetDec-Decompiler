@@ -11,8 +11,16 @@
 #
 # Usage:
 #   bash scripts/check_format.sh              # changes since the merge base
+#   bash scripts/check_format.sh --base REF   # ...since REF instead
+#   bash scripts/check_format.sh --fix        # reformat them instead of reporting
 #   bash scripts/check_format.sh --all        # every tracked source, whole file
 #   bash scripts/check_format.sh --self-test  # does the check still catch things
+#
+# --base exists because "what CI will say" depends on what CI diffs against. On
+# a push that is the previously pushed commit, which locally is @{upstream};
+# the default here is the merge base with the default branch, which is what a
+# pull request diffs and is a different, larger question. Asking the first one
+# before pushing is what scripts/check_push_gates.sh does.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -81,6 +89,38 @@ if [[ "${1:-}" == "--self-test" ]]; then
   printf 'int brandnew()\n{\n\treturn 3;\n}\n' > src/brandnew.cpp
   git add -A; git commit -qm "new file, well formatted"
   expect 0 "a well-formatted new file passes" run_here
+  git reset -q --hard HEAD~1
+
+  # 6. --base picks the commit to diff against.  A misformatted line committed
+  #    two commits ago is not this push's business and must not be reported
+  #    against the last one -- which is the whole reason CI on a push diffs
+  #    what it pushed rather than the whole branch.
+  printf 'int legacy(int a) {\n    if (a) { return 1; }\n    return 0;\n}\n\nint  older( )   {return 4;}\n' > src/legacy.cpp
+  git add -A; git commit -qm "misformatted, one push ago"
+  printf 'int legacy(int a) {\n    if (a) { return 1; }\n    return 0;\n}\n\nint  older( )   {return 4;}\n\nint newer()\n{\n\treturn 5;\n}\n' > src/legacy.cpp
+  git add -A; git commit -qm "well formatted, this push"
+  expect 0 "--base HEAD~1 ignores a misformatted line from an earlier commit" \
+    run_here --base HEAD~1
+  expect 1 "--base HEAD~2 reports it" run_here --base HEAD~2
+  expect 2 "--base rejects something that is not a commit" \
+    run_here --base no/such/ref
+
+  # 7. --fix reformats what the check reports, and the check then passes.
+  expect 0 "--fix reformats the reported lines" run_here --base HEAD~2 --fix
+  expect 0 "the check passes after --fix" run_here --base HEAD~2
+  if ! grep -q 'int older()' src/legacy.cpp; then
+    echo "self-test: --fix did not reformat the misformatted line" >&2
+    cat src/legacy.cpp >&2
+    fails=$(( fails + 1 ))
+  fi
+  # ...and only those lines: the legacy body above it is untouched.
+  if ! grep -q '    if (a) { return 1; }' src/legacy.cpp; then
+    echo "self-test: --fix reformatted lines the change did not touch" >&2
+    cat src/legacy.cpp >&2
+    fails=$(( fails + 1 ))
+  fi
+  git checkout -q -- src/legacy.cpp
+  git reset -q --hard HEAD~2
 
   cd "${ROOT}"
   if [[ "${fails}" -ne 0 ]]; then
@@ -100,14 +140,33 @@ fi
 
 is_source() { [[ "$1" =~ \.(cpp|h|hpp|cc|c|cu)$ ]]; }
 
+MODE=changed
+FIX=0
+BASE_OVERRIDE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --all) MODE=all; shift ;;
+    --fix) FIX=1; shift ;;
+    --base) BASE_OVERRIDE="${2:-}"; shift 2 ;;
+    *) echo "check_format: unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
 TMP_FORMATTED="$(mktemp)"
 trap 'rm -f "${TMP_FORMATTED}"' EXIT
 
 FAILED=0
 CHECKED=0
+FIXED=0
 
 report() {
   local f="$1"; shift
+  if [[ ${FIX} -eq 1 ]]; then
+    clang-format -i "$@" "$f"
+    echo "check_format: reformatted $f"
+    FIXED=$((FIXED + 1))
+    return
+  fi
   echo "check_format: needs reformat: $f" >&2
   diff -u "$f" <(clang-format "$@" "$f") >&2 || true
   echo "::error file=$f::needs clang-format"
@@ -166,13 +225,17 @@ check_whole() {
 }
 
 # --all: the historical behaviour, for anyone who wants the whole picture.
-if [[ "${1:-}" == "--all" ]]; then
+if [[ "${MODE}" == "all" ]]; then
   while IFS= read -r f; do
     [[ -z "$f" || ! -f "$f" ]] && continue
     is_source "$f" || continue
     check_whole "$f"
   done < <(git ls-files include/ src/ tests/)
   echo "check_format: checked ${CHECKED} file(s), whole"
+  if [[ ${FIX} -eq 1 ]]; then
+    echo "check_format: reformatted ${FIXED} file(s); re-run without --fix to confirm"
+    exit 0
+  fi
   [[ $FAILED -eq 0 ]] || { echo "check_format: run clang-format -i on the files above" >&2; exit 1; }
   echo "check_format: OK"
   exit 0
@@ -203,7 +266,14 @@ base_ref() {
   git rev-parse HEAD^ 2>/dev/null || true
 }
 
-BASE="$(base_ref || true)"
+if [[ -n "${BASE_OVERRIDE}" ]]; then
+  if ! BASE="$(git rev-parse --verify -q "${BASE_OVERRIDE}^{commit}")"; then
+    echo "check_format: --base ${BASE_OVERRIDE} is not a commit" >&2
+    exit 2
+  fi
+else
+  BASE="$(base_ref || true)"
+fi
 # On the default branch the merge base is HEAD itself, which would diff a
 # commit against itself and check nothing at all.
 if [[ -n "${BASE}" ]] && [[ "$(git rev-parse "${BASE}")" == "$(git rev-parse HEAD)" ]]; then
@@ -262,9 +332,14 @@ done < <(git diff --name-status "${BASE}" HEAD -- include/ src/ tests/)
 
 echo "check_format: checked ${CHECKED} file(s) against ${BASE}"
 
+if [[ ${FIX} -eq 1 ]]; then
+  echo "check_format: reformatted ${FIXED} file(s); re-run without --fix to confirm"
+  exit 0
+fi
+
 if [[ $FAILED -ne 0 ]]; then
-  echo "check_format: reformat the changed lines -- clang-format -i --lines=A:B <file>," \
-       "or clang-format -i <file> for a file this change adds" >&2
+  echo "check_format: reformat the changed lines -- bash scripts/check_format.sh --fix," \
+       "or clang-format -i --lines=A:B <file> by hand" >&2
   exit 1
 fi
 

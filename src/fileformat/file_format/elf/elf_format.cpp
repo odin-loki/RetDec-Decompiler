@@ -1185,7 +1185,7 @@ ELFIO::section* ElfFormat::addStringTable(ELFIO::section *dynamicSection, const 
 	const auto strTabAddr = strAddrRecord->getValue();
 	const auto strTabSize = strSizeRecord->getValue();
 	const auto *strTabSeg = getSegmentFromAddress(strTabAddr);
-	if(!strTabSeg || strTabAddr < strTabSeg->getAddress())
+	if (!strTabSeg || strTabAddr < strTabSeg->getAddress())
 	{
 		return nullptr;
 	}
@@ -1203,12 +1203,12 @@ ELFIO::section* ElfFormat::addStringTable(ELFIO::section *dynamicSection, const 
 	const std::size_t strTabDelta = static_cast<std::size_t>(strTabAddr - strTabSeg->getAddress());
 	const std::size_t strTabSegOff = static_cast<std::size_t>(strTabSeg->getOffset());
 	const std::size_t loadedLen = getLoadedFileLength();
-	if(!retdec::utils::bounds::addFits(strTabSegOff, strTabDelta))
+	if (!retdec::utils::bounds::addFits(strTabSegOff, strTabDelta))
 	{
 		return nullptr;
 	}
 	const std::size_t strTabFileOff = strTabSegOff + strTabDelta;
-	if(strTabSize > retdec::utils::bounds::remaining(strTabFileOff, loadedLen))
+	if (strTabSize > retdec::utils::bounds::remaining(strTabFileOff, loadedLen))
 	{
 		return nullptr;
 	}
@@ -1230,8 +1230,9 @@ ELFIO::section* ElfFormat::addStringTable(ELFIO::section *dynamicSection, const 
 		{
 			stringTable->set_addr_align(seg->get_align());
 			// The same sum, and the same reason not to write it that way.
-			if(strTabSize <= retdec::utils::bounds::remaining(
-				strTabDelta, static_cast<std::size_t>(strTabSeg->getSizeInFile())))
+			const std::size_t segRemaining =
+				retdec::utils::bounds::remaining(strTabDelta, static_cast<std::size_t>(strTabSeg->getSizeInFile()));
+			if (strTabSize <= segRemaining)
 			{
 				const auto* data = seg->get_data();
 				if(data)

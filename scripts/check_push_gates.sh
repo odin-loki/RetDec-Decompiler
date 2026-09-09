@@ -19,6 +19,15 @@
 # workflow rather than in a script, and doc-integrity's REL-06 CycloneDX step
 # -- so a push that broke either of them still read "all checks pass" here and
 # went red in CI, which is the exact failure this script exists to prevent.
+# It then shipped missing a third, the clang-format check, on a note claiming
+# it had "its own workflow". It does not: ci-smoke runs it, and a push whose
+# added lines were unformatted read "all 37 checks pass" here and went red
+# there. Running the --self-test is not running the check.
+#
+# What CI diffs on a push is the previously pushed commit, so that is what the
+# entry below asks for -- @{upstream}. A pull request diffs the merge base
+# with the default branch instead, which is a larger question and a different
+# answer; `bash scripts/check_format.sh` with no argument is that one.
 # --audit compares the list against the workflows and is the thing that keeps
 # them from drifting apart again.
 #
@@ -37,6 +46,7 @@ PY="${PYTHON:-python3}"
 # name:::command. Kept in workflow order so a failure here lines up with the
 # step that would have reported it.
 CHECKS=(
+	"ci-smoke  clang-format (pushed range):::bash scripts/check_format.sh --base \"\$(git rev-parse --verify -q '@{upstream}' || git rev-parse HEAD^)\""
 	"ci-smoke  cmake sources:::bash scripts/check_cmake_sources.sh"
 	"ci-smoke  preset cache leaks (self-test):::${PY} scripts/ci/check_cmake_presets.py --self-test"
 	"ci-smoke  preset cache leaks:::${PY} scripts/ci/check_cmake_presets.py CMakePresets.json cmake/superbuild/CMakePresets.json"
@@ -95,7 +105,6 @@ fi
 # network fetch, or minutes rather than seconds. WORKFLOW_ONLY says which, and
 # saying so is the point -- an unexplained omission is what this catches.
 WORKFLOW_ONLY=(
-	"scripts/check_format.sh"                     # its own workflow; the --self-test above is what runs here
 	"scripts/build_algorithm_corpus.sh"           # needs a compiler and minutes
 	"scripts/fetch-large-files.sh"                # network
 	"scripts/fetch_decompilebench_corpus.sh"      # network
