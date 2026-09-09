@@ -633,8 +633,11 @@ TEST(LuaReaderMalformedTest, Lua53RejectsZeroLongStringLength)
 	b.u8(8); // size_t size
 	b.u8(4); // instruction size
 	b.u8(8);
-	b.u8(8);       // lua_Integer / lua_Number sizes
-	b.u32(0x5678); // test integer
+	b.u8(8); // lua_Integer / lua_Number sizes
+	// LUAC_INT is a lua_Integer, so eight bytes -- the two size bytes above
+	// say so. This wrote four, which is what the reader used to consume;
+	// the file and the reader were wrong together and the test passed.
+	b.u64(0x5678); // test integer
 	double testfloat = 370.5;
 	uint64_t tf;
 	std::memcpy(&tf, &testfloat, 8);
@@ -1156,4 +1159,174 @@ TEST(LuaEmitterTest, EmitsNewTable)
 	LuaEmitter emitter;
 	auto result = emitter.emit(mod);
 	EXPECT_NE(result.source.find("t = {}"), std::string::npos);
+}
+
+// ─── Widths taken from the header, not from sizeof(int) ──────────────────────
+//
+// The 5.3 header carries five size bytes, and the reader kept only two of
+// them. LUAC_INT, the endianness test value, is read back by checkHeader with
+// loadInteger(), so it is sizeof(lua_Integer) wide -- eight bytes in any real
+// luac 5.3 output. The reader sized it from sizeof(int) and consumed four, so
+// every field after it came out four bytes early: the leftover halves of
+// LUAC_INT and LUAC_NUM became the "test float", the main chunk's
+// sizeupvalues byte came out of the middle of the double, and the source
+// string's length prefix came out of prototype data. The same confusion at
+// readLuaInt() took four bytes of every eight-byte integer constant.
+//
+// The chunk below is written the way ldump.c writes one, field for field.
+
+static LuaBuilder lua53Header(uint8_t luaIntegerSize, bool eightByteLuacInt)
+{
+	LuaBuilder b;
+	b.u8(0x1B);
+	b.u8('L');
+	b.u8('u');
+	b.u8('a');
+	b.u8(0x53);
+	b.u8(0x00); // format
+	b.u8(0x19);
+	b.u8(0x93);
+	b.u8(0x0D);
+	b.u8(0x0A);
+	b.u8(0x1A);
+	b.u8(0x0A);
+	b.u8(4);              // sizeof(int)
+	b.u8(8);              // sizeof(size_t)
+	b.u8(4);              // sizeof(Instruction)
+	b.u8(luaIntegerSize); // sizeof(lua_Integer)
+	b.u8(8);              // sizeof(lua_Number)
+	if (eightByteLuacInt)
+		b.u64(0x5678);
+	else
+		b.u32(0x5678);
+	double testfloat = 370.5;
+	uint64_t tf;
+	std::memcpy(&tf, &testfloat, 8);
+	b.u64(tf);
+	return b;
+}
+
+/// The rest of a one-instruction, one-integer-constant 5.3 chunk.
+static void lua53Body(LuaBuilder& b, bool eightByteIntConstant)
+{
+	b.u8(1); // sizeupvalues of the main closure
+
+	// source "@hello.lua": the dumped length counts the terminator.
+	const char* src = "@hello.lua";
+	b.u8(11);
+	for (const char* q = src; *q; ++q)
+		b.u8((uint8_t)*q);
+
+	b.i32(0); // linedefined
+	b.i32(0); // lastlinedefined
+	b.u8(0);  // numparams
+	b.u8(1);  // is_vararg
+	b.u8(2);  // maxstacksize
+
+	b.i32(1);          // one instruction
+	b.u32(0x00800026); // RETURN
+
+	b.i32(1); // one constant
+	b.u8(19); // LUA_TNUMINT
+	if (eightByteIntConstant)
+		b.u64(0x1122334455667788ull);
+	else
+		b.u32(0x55667788u);
+
+	b.i32(1); // one upvalue
+	b.u8(1);  // instack
+	b.u8(0);  // idx
+
+	b.i32(0); // no sub-prototypes
+
+	b.i32(1); // one line-info entry
+	b.i32(1);
+	b.i32(0); // no locals
+	b.i32(1); // one upvalue name
+	b.u8(5);  // "_ENV" plus terminator
+	b.u8('_');
+	b.u8('E');
+	b.u8('N');
+	b.u8('V');
+}
+
+TEST(LuaReaderWidthTest, Lua53ChunkWrittenTheWayLuacWritesItParses)
+{
+	LuaBuilder b = lua53Header(8, /*eightByteLuacInt=*/true);
+	lua53Body(b, /*eightByteIntConstant=*/true);
+
+	auto result = parseLua(b.bytes());
+	ASSERT_TRUE(result.ok) << result.error;
+	EXPECT_EQ(result.module.version, LuaVersion::Lua53);
+	EXPECT_EQ(result.module.topLevel.source, "@hello.lua");
+	ASSERT_EQ(result.module.topLevel.code.size(), 1u);
+	ASSERT_EQ(result.module.topLevel.constants.size(), 1u);
+	const auto* asInt = std::get_if<LuaInt>(&result.module.topLevel.constants[0]);
+	ASSERT_NE(asInt, nullptr) << "the constant is a LUA_TNUMINT";
+	EXPECT_EQ(asInt->value, 0x1122334455667788ll) << "a lua_Integer constant is eight bytes, not four";
+	ASSERT_EQ(result.module.topLevel.upvalues.size(), 1u);
+	EXPECT_EQ(result.module.topLevel.upvalues[0].name, "_ENV");
+}
+
+TEST(LuaReaderWidthTest, Lua53ChunkWithATruncatedLuacIntDoesNotParse)
+{
+	// Byte-identical to the one above except that LUAC_INT is written at four
+	// bytes -- which is what the reader used to consume, so this file and the
+	// reader were wrong together and it was the conformant one that failed.
+	LuaBuilder b = lua53Header(8, /*eightByteLuacInt=*/false);
+	lua53Body(b, /*eightByteIntConstant=*/true);
+
+	auto result = parseLua(b.bytes());
+	EXPECT_FALSE(result.ok) << "a four-byte LUAC_INT is not what luac writes";
+}
+
+// ─── 5.1 upvalue names reach the prototype ───────────────────────────────────
+//
+// readProto51 read the upvalue count with a bare readU8() and dropped it, so
+// proto.upvalues stayed empty and readDebugInfo51's `if (i <
+// proto.upvalues.size())` was always false: every name was parsed off the wire
+// and thrown away. readUpvalues51 existed for exactly this and had no caller.
+TEST(LuaReaderTest, Lua51UpvalueNamesAreKept)
+{
+	LuaBuilder b;
+	b.u8(0x1B);
+	b.u8('L');
+	b.u8('u');
+	b.u8('a');
+	b.u8(0x51);
+	b.u8(0x00);
+	b.u8(0x01);
+	b.u8(0x04);
+	b.u8(0x08);
+	b.u8(0x04);
+	b.u8(0x08);
+	b.u8(0x00);
+
+	b.emptyStr51();
+	b.i32(0);
+	b.i32(0);
+	b.u8(1); // one upvalue
+	b.u8(0); // numParams
+	b.u8(0); // isVarArg
+	b.u8(2); // maxStackSize
+
+	b.i32(0); // no code
+	b.i32(0); // no constants
+	b.i32(0); // no sub-prototypes
+
+	b.i32(0); // no line info
+	b.i32(0); // no locals
+	b.i32(1); // one upvalue name
+	// Lua 5.1 strings are size_t-prefixed and the length counts the
+	// terminator, which is why emptyStr51 writes a zero.
+	const char* name = "_ENV";
+	b.u64(5);
+	for (const char* q = name; *q; ++q)
+		b.u8((uint8_t)*q);
+	b.u8(0);
+
+	auto result = parseLua(b.bytes());
+	ASSERT_TRUE(result.ok) << result.error;
+	ASSERT_EQ(result.module.topLevel.upvalues.size(), 1u) << "the count byte sizes the upvalue vector";
+	EXPECT_EQ(result.module.topLevel.upvalues[0].name, "_ENV");
 }

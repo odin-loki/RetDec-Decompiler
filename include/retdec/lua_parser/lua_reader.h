@@ -39,6 +39,8 @@ private:
 	LuaVersion ver_ = LuaVersion::Unknown;
 	bool le_ = true; // little-endian
 	int intSz_ = 4;
+	/// sizeof(lua_Integer) from the header, which is NOT sizeof(int).
+	int luaIntSz_ = 8;
 	int sizetSz_ = 8;
 	bool useLeb128_ = false; // Lua 5.4.6+ uses modified LEB128 for ints/sizes
 	std::vector<std::string> warnings_;
@@ -72,6 +74,7 @@ private:
 	uint32_t readU32();
 	uint64_t readU64();
 	int32_t readInt(); // fixed-size or LEB128 depending on useLeb128_
+	size_t readCheckedCount(size_t minBytesPerElem, const char* what);
 	int64_t readLuaInt();
 	double readLuaFloat();
 	size_t readSizet();
