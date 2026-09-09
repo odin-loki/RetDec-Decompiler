@@ -46,7 +46,11 @@
  *  30.  nestBlocks flattening → correct parent/child.
  */
 
+#include <atomic>
+#include <chrono>
+#include <functional>
 #include <memory>
+#include <thread>
 #include "retdec/eh_reconstruct/eh_reconstruct.h"
 #include <gtest/gtest.h>
 #include <cstring>
@@ -2065,4 +2069,187 @@ TEST(ArmEhabi, AnUnwindOpcodeWithAnUnboundedUleb128DoesNotShiftPastTheWidth)
 	// What matters is that it returns at all, and does so without undefined
 	// behaviour -- which the sanitizer job is what actually checks.
 	EXPECT_GE(fn.functionVma, 0u);
+}
+
+// ─── Malformed input must not hang or allocate without bound ─────────────────
+
+namespace {
+
+/// Runs @a work on a detached thread and reports whether it finished in time.
+///
+/// A parser that does not terminate cannot be tested by calling it: the test
+/// hangs instead of failing, and a hung suite says nothing about which case
+/// broke. Detached deliberately -- if it is still spinning there is nothing to
+/// join, and the process exits without waiting for it.
+bool ehFinishesWithin(std::chrono::milliseconds limit, std::function<void()> work)
+{
+	auto done = std::make_shared<std::atomic<bool>>(false);
+	std::thread([done, work]() {
+		work();
+		done->store(true);
+	}).detach();
+
+	const auto deadline = std::chrono::steady_clock::now() + limit;
+	while (!done->load() && std::chrono::steady_clock::now() < deadline)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(2));
+	}
+	return done->load();
+}
+
+} // namespace
+
+// A 64-bit DWARF record whose extended length wraps recordEnd back onto
+// recordStart made `cur = recordEnd` at the bottom of the walk re-parse the
+// same record forever. The only progress guard was `length32 == 0`, and
+// 0xFFFFFFFF passes it. cur is recordStart + 12 when the extended length is
+// read, so a declared length of 2^64-12 lands exactly on recordStart.
+TEST(ItaniumEH, ExtendedLengthThatWrapsBackToTheRecordStartTerminates)
+{
+	FlatBin fb;
+	const uint64_t base = fb.base_;
+	const uint64_t sectionVma = base + 0x5000;
+
+	uint64_t cur = sectionVma;
+	fb.writeU32(cur, 0xFFFFFFFFu);
+	cur += 4;
+	fb.writeU64(cur, ~uint64_t(0) - 11u); // 2^64 - 12
+	cur += 8;
+	fb.writeU32(cur, 0); // cieId = 0, i.e. a CIE
+	cur += 4;
+	fb.writeU8(cur++, 1); // version
+	fb.writeU8(cur++, 0); // augmentation ""
+	cur += fb.writeULEB128(cur, 1);
+	cur += fb.writeSLEB128(cur, -8);
+	cur += fb.writeULEB128(cur, 16);
+	fb.writeU32(cur, 0); // terminator
+	cur += 4;
+	fb.addSection(".eh_frame", sectionVma, cur - sectionVma);
+
+	EXPECT_TRUE(ehFinishesWithin(std::chrono::seconds(5), [&fb]() {
+		auto parser = makeItaniumEHParser();
+		auto fns = parser->parse(fb);
+		(void)fns;
+	}));
+}
+
+// The LSDA type table is sized from the largest typeFilter over the action
+// chain, and typeFilter is a raw SLEB128 out of .gcc_except_table. Nothing
+// tied it to the bytes that exist, so a two-byte action record asked for a
+// 10^15-element vector; resize threw std::bad_alloc and nothing catches it.
+//
+// The table grows downward from ttypeBase and cannot reach past the LSDA
+// itself, which is the bound.
+TEST(ItaniumEH, TypeFilterFarPastTheTypeTableDoesNotAllocateForIt)
+{
+	FlatBin fb;
+	const uint64_t base = fb.base_;
+	const uint64_t funcStart = base + 0x2000;
+	const uint64_t funcLen = 0x200;
+	const uint64_t lsdaVma = base + 0x7000;
+	const uint64_t sectionVma = base + 0x5000;
+
+	uint64_t lsdaCur = lsdaVma;
+	fb.writeU8(lsdaCur++, 0xFF);               // lpstart_enc = omit
+	fb.writeU8(lsdaCur++, 0x03);               // ttype_enc = udata4, so a table exists
+	lsdaCur += fb.writeULEB128(lsdaCur, 0x40); // ttype_base offset
+	fb.writeU8(lsdaCur++, 0x03);               // call_site_enc = udata4
+	lsdaCur += fb.writeULEB128(lsdaCur, 13);
+	fb.writeU32(lsdaCur, 0);
+	lsdaCur += 4;
+	fb.writeU32(lsdaCur, 0x100);
+	lsdaCur += 4;
+	fb.writeU32(lsdaCur, 0x80);
+	lsdaCur += 4;
+	lsdaCur += fb.writeULEB128(lsdaCur, 1);                  // action = 1
+	lsdaCur += fb.writeSLEB128(lsdaCur, 1125899906842624LL); // type_filter = 2^50
+	lsdaCur += fb.writeSLEB128(lsdaCur, 0);                  // next = 0
+
+	uint64_t cur = sectionVma;
+	const uint64_t cieAt = cur;
+	{
+		uint64_t lenAt = cur;
+		cur += 4;
+		fb.writeU32(cur, 0);
+		cur += 4;
+		fb.writeU8(cur++, 1);
+		fb.writeU8(cur++, 'z');
+		fb.writeU8(cur++, 'L');
+		fb.writeU8(cur++, 0);
+		cur += fb.writeULEB128(cur, 1);
+		cur += fb.writeSLEB128(cur, -8);
+		cur += fb.writeULEB128(cur, 16);
+		cur += fb.writeULEB128(cur, 1);
+		fb.writeU8(cur++, 0x00);
+		fb.writeU32(lenAt, (uint32_t)(cur - lenAt - 4));
+	}
+	{
+		uint64_t lenAt = cur;
+		cur += 4;
+		fb.writeU32(cur, (uint32_t)(cur - cieAt));
+		cur += 4;
+		fb.writeU64(cur, funcStart);
+		cur += 8;
+		fb.writeU64(cur, funcLen);
+		cur += 8;
+		cur += fb.writeULEB128(cur, 8);
+		fb.writeU64(cur, lsdaVma);
+		cur += 8;
+		fb.writeU32(lenAt, (uint32_t)(cur - lenAt - 4));
+	}
+	fb.writeU32(cur, 0);
+	cur += 4;
+	fb.addSection(".eh_frame", sectionVma, cur - sectionVma);
+
+	EXPECT_TRUE(ehFinishesWithin(std::chrono::seconds(10), [&fb]() {
+		auto parser = makeItaniumEHParser();
+		auto fns = parser->parse(fb);
+		(void)fns;
+	})) << "a 2^50 type filter should be clamped, not allocated for";
+}
+
+// nCatches and nTryBlocks are file-supplied uint32s that nothing compared
+// against the bytes .xdata holds. Reads outside the image return 0, which
+// makes isCatchAll true, so every one of up to 2^32 iterations appended a
+// CatchHandler: a 332-byte input reached 9.7 GB before the OOM killer.
+//
+// FlatBin maps exactly 0x10000 bytes, so the handler array placed at 0xFF00
+// has room for sixteen entries and no more.
+TEST(MsvcEH, CatchCountStopsAtTheEndOfTheMappedHandlerArray)
+{
+	FlatBin fb;
+	const uint64_t base = fb.base_;
+	const uint64_t pdataVma = base + 0x1000;
+	const uint64_t fnBegin = base + 0x2000;
+	const uint64_t fnEnd = base + 0x2100;
+	const uint64_t unwindVma = base + 0x3000;
+
+	fb.addSection(".pdata", pdataVma, 12);
+	writeRuntimeFn(fb, pdataVma, (uint32_t)(fnBegin - base), (uint32_t)(fnEnd - base), (uint32_t)(unwindVma - base));
+	writeMsvcUnwindInfo(fb, unwindVma, /*UNW_FLAG_EHANDLER=*/1, 5, {});
+
+	// FuncInfo sits at afterCodes + 4, and afterCodes is unwindVma + 4 with no
+	// unwind codes.
+	const uint64_t funcInfoVma = unwindVma + 8;
+	const uint64_t tryBlockMapVma = base + 0xF000;
+	const uint64_t handlerArrVma = base + 0xFF00;
+
+	fb.writeU32(funcInfoVma + 0, 0x19930520u); // magic
+	fb.writeU32(funcInfoVma + 12, 1u);         // nTryBlocks
+	fb.writeU32(funcInfoVma + 16, (uint32_t)(tryBlockMapVma - base));
+
+	fb.writeU32(tryBlockMapVma + 12, 0xFFFFFFFFu); // nCatches
+	fb.writeU32(tryBlockMapVma + 16, (uint32_t)(handlerArrVma - base));
+
+	std::size_t handlers = 0;
+	const bool finished = ehFinishesWithin(std::chrono::seconds(10), [&fb, &handlers]() {
+		auto parser = makeMsvcEHParser();
+		auto fns = parser->parse(fb);
+		for (const auto& fn: fns)
+			for (const auto& b: fn.tryCatchBlocks)
+				handlers += b.handlers.size();
+	});
+
+	ASSERT_TRUE(finished) << "a 2^32 catch count should stop at the mapped bytes";
+	EXPECT_LE(handlers, 16u) << "the handler array has room for sixteen entries";
 }

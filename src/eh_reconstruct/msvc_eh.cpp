@@ -314,8 +314,15 @@ static void parseFuncInfo(const IBinaryView& view,
     uint64_t tryBlockMapVma = base + pTryBlockRVA;
 
     for (uint32_t t = 0; t < nTryBlocks; ++t) {
-        uint64_t entryVma = tryBlockMapVma + t * 20u;
-        // int32_t tryLow   = view.readI32LE(entryVma + 0);
+		uint64_t entryVma = tryBlockMapVma + static_cast<uint64_t>(t) * 20u;
+		// nTryBlocks and nCatches below are file-supplied uint32s that nothing
+		// compared against the bytes .xdata actually holds, and readU32LE
+		// returns 0 outside the image -- which makes isCatchAll true and
+		// appends a handler on every one of up to 2^32 iterations. A 332-byte
+		// input reached 9.7 GB of resident memory before the OOM killer took
+		// it. An entry that is not mapped is not an entry.
+		if (!view.isMapped(entryVma) || !view.isMapped(entryVma + 19)) break;
+		// int32_t tryLow   = view.readI32LE(entryVma + 0);
         // int32_t tryHigh  = view.readI32LE(entryVma + 4);
         // int32_t catchHigh= view.readI32LE(entryVma + 8);
         uint32_t nCatches   = view.readU32LE(entryVma + 12);
@@ -331,8 +338,9 @@ static void parseFuncInfo(const IBinaryView& view,
 
         uint64_t handlerArrVma = base + pHandlerRVA;
         for (uint32_t h = 0; h < nCatches; ++h) {
-            uint64_t hVma = handlerArrVma + h * 16u;
-            // uint32_t adjectives      = view.readU32LE(hVma + 0);
+			uint64_t hVma = handlerArrVma + static_cast<uint64_t>(h) * 16u;
+			if (!view.isMapped(hVma) || !view.isMapped(hVma + 15)) break;
+			// uint32_t adjectives      = view.readU32LE(hVma + 0);
             uint32_t pTypeRVA        = view.readU32LE(hVma + 4);
             int32_t  dispCatchObj    = view.readI32LE(hVma + 8);
             uint32_t addrOfHandler   = view.readU32LE(hVma + 12);

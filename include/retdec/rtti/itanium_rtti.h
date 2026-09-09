@@ -68,8 +68,10 @@ private:
 
     // VMAs of type_info objects already processed (avoid re-entry).
     std::unordered_set<uint64_t> visitedTi_;
+	/// Recursion depth of parseTypeInfo; see the guard at its top.
+	unsigned tiDepth_ = 0;
 
-    // ── Internal passes ───────────────────────────────────────────────────────
+	// ── Internal passes ───────────────────────────────────────────────────────
 
     /// Pass 1: build knownTiVtables_ from named symbols / pattern scan.
     void discoverTiVtables(const BinaryView& view, ClassHierarchyGraph& out);

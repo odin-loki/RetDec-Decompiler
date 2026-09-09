@@ -404,6 +404,9 @@ void ItaniumRttiReconstructor::scanVtables(
 
 // ─── parseTypeInfo ────────────────────────────────────────────────────────────
 
+/// A single-inheritance chain this long is not a class hierarchy.
+static constexpr unsigned kMaxTypeInfoDepth = 64;
+
 std::string ItaniumRttiReconstructor::parseTypeInfo(const BinaryView& view, uint64_t tiVma, ClassHierarchyGraph& out)
 {
 	if (!tiVma) return {};
@@ -413,6 +416,30 @@ std::string ItaniumRttiReconstructor::parseTypeInfo(const BinaryView& view, uint
 		const ClassNode* n = out.byTypeInfoVma(tiVma);
 		return n ? n->name : "";
 	}
+	// visitedTi_ stops the SAME address being visited twice. It does nothing
+	// about a chain of different ones, and the next link is read straight out
+	// of the file (view.readPtr(tiVma + 2*ps) in parseSiClassTypeInfo). A data
+	// section whose words each point eight bytes earlier gives one recursion
+	// per word, with a frame holding two std::strings and an unordered_set
+	// insert: 800 KB of data segfaulted on an 8 MB stack. How deep this goes
+	// must not be a function of how big the section is.
+	if (tiDepth_ >= kMaxTypeInfoDepth)
+	{
+		return {};
+	}
+	struct DepthGuard
+	{
+		unsigned& d;
+		explicit DepthGuard(unsigned& v): d(v)
+		{
+			++d;
+		}
+		~DepthGuard()
+		{
+			--d;
+		}
+	} depthGuard(tiDepth_);
+
 	visitedTi_.insert(tiVma);
 
 	uint32_t ps = view.ptrSize();

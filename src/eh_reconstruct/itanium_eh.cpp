@@ -121,7 +121,18 @@ public:
             // 4+8-byte extended header for 64-bit DWARF), so recordEnd = cur + recordLen.
             uint64_t recordEnd = cur + recordLen;
 
-            if (!view.isMapped(cur)) break;
+			// recordLen is the 8-byte extended length for 64-bit DWARF, which
+			// is whatever the file says. cur is recordStart + 12 there, so a
+			// declared length of 2^64-12 makes recordEnd equal recordStart
+			// exactly -- and `cur = recordEnd` at the bottom of the loop then
+			// re-parses the same record forever. The only progress guard was
+			// `length32 == 0`, which 0xFFFFFFFF passes.
+			//
+			// A record has to end after it starts and inside the section, the
+			// way the 4-byte path gets for free.
+			if (recordEnd <= recordStart || recordEnd > end) break;
+
+			if (!view.isMapped(cur)) break;
 
             uint32_t cieId = view.readU32LE(cur); cur += 4;
 

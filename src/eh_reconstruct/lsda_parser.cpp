@@ -122,7 +122,21 @@ LsdaResult parseLSDA(const IBinaryView& view,
         for (const auto& a : res.actions)
             if (a.typeFilter > maxIdx) maxIdx = a.typeFilter;
 
-        res.typeTable.resize(static_cast<std::size_t>(maxIdx) + 1, 0);
+		// typeFilter is a raw SLEB128 out of .gcc_except_table, and nothing
+		// tied it to the bytes that exist: a two-byte action record asked for
+		// a 10^15-element vector, resize threw std::bad_alloc, and nothing in
+		// this module catches it -- so the decompiler aborted.
+		//
+		// The bound is right here. The table grows downward from ttypeBase,
+		// one ptrSize entry per index, and it cannot start before the LSDA
+		// itself, so there is room for at most (ttypeBase - lsdaVma)/ptrSize
+		// entries. Anything past that is not a table, it is a number.
+		const int64_t maxEntries =
+			(ttypeBase > lsdaVma && ptrSize != 0) ? static_cast<int64_t>((ttypeBase - lsdaVma) / ptrSize) : 0;
+		if (maxIdx > maxEntries) maxIdx = maxEntries;
+		if (maxIdx < 0) maxIdx = 0;
+
+		res.typeTable.resize(static_cast<std::size_t>(maxIdx) + 1, 0);
         for (int64_t i = 1; i <= maxIdx; ++i) {
             uint64_t entryVma = ttypeBase - static_cast<uint64_t>(i) * ptrSize;
             uint64_t tmp      = entryVma;

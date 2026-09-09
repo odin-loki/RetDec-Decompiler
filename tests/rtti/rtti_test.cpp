@@ -1122,3 +1122,40 @@ TEST(ClassNode, DefaultState)
 	EXPECT_TRUE(n.vtables.empty());
 	EXPECT_TRUE(n.bases.empty());
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// A type_info chain must not recurse once per word of the data section
+// ════════════════════════════════════════════════════════════════════════════
+
+// visitedTi_ stops the SAME address being visited twice; it does nothing about
+// a chain of different ones, and the next link is read out of the file
+// (readPtr(tiVma + 2*ps) in parseSiClassTypeInfo). A data section whose words
+// each point eight bytes earlier gives one recursion per word, with a frame
+// holding two std::strings and an unordered_set insert -- 800 KB of data
+// segfaulted on an 8 MB stack.
+//
+// Every eight-byte slot p here holds p-8, so from any X the next link is
+// *(X + 2*ps) = X + 8: a chain as long as the section. Measured on a
+// standalone driver over the same 800 KB, reverting the guard segfaults
+// (exit 139); with it the walk stops at sixty-three nodes.
+TEST(ItaniumReconstructor, LongTypeInfoChainStopsAtTheDepthCap)
+{
+	FlatBinaryBuilder b;
+	const std::size_t words = 100000;
+	const uint64_t dataVma = b.allocData(words * 8);
+	for (std::size_t i = 0; i < words; ++i)
+	{
+		const uint64_t p = dataVma + i * 8;
+		b.writeAt64(p, p - 8);
+	}
+	BinaryView view = b.build();
+
+	ItaniumRttiReconstructor rec;
+	ClassHierarchyGraph g;
+	rec.parseTypeInfo(view, dataVma, g);
+
+	// Without a cap this recursed to the bottom of the section and took the
+	// stack with it. What the chain "means" is not the point -- a bounded
+	// number of nodes is.
+	EXPECT_LE(g.classes.size(), 128u);
+}
