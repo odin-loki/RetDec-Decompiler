@@ -1115,3 +1115,88 @@ TEST(DominatorTreeTests, AnUnreachableBlockDoesNotCorruptALoopHeader)
 	EXPECT_TRUE(dt.dominates(fn, h->id, l->id)) << "H dominates its own latch, which is what makes L->H a back edge";
 	EXPECT_EQ(h->id, fn.block(x->id)->idom);
 }
+
+// ─── An instruction can define a register AND the flags ──────────────────────
+//
+// `add eax, ebx` is both, and so is most x86 arithmetic. renameBlock chose one
+// or the other: with writesFlagBundle set it allocated a single value, tagged
+// it FlagBundle, and pushed it onto the FLAGS stack -- so the register's own
+// stack never saw the definition and every later use of that register resolved
+// to whatever defined it before. Everything else in the module already treats
+// the two as independent: liveness kills both, and phi placement records a def
+// site for both.
+
+TEST(SSARename, AnInstructionThatWritesARegisterAndTheFlagsDefinesBoth)
+{
+	SSAFunction fn("arith");
+	auto* b = fn.addBlock("entry");
+	VarId eax = fn.declareVar("eax");
+	VarId ebx = fn.declareVar("ebx");
+
+	// mov eax, _
+	IrInstr* i1 = fn.addInstr(b->id, IrInstr::Op::Assign, 0x1000);
+	i1->defVar = eax;
+
+	// add eax, ebx  -- defines eax and writes the flags
+	IrInstr* i2 = fn.addInstr(b->id, IrInstr::Op::Add, 0x1003);
+	i2->defVar = eax;
+	i2->writesFlagBundle = true;
+	i2->flagMask = 0x3F;
+	i2->uses.push_back({fn.allocValue(ValueKind::VirtualReg, eax)->id, 0});
+	i2->uses.push_back({fn.allocValue(ValueKind::VirtualReg, ebx)->id, 1});
+
+	// mov ebx, eax  -- must read the eax that `add` defined
+	IrInstr* i3 = fn.addInstr(b->id, IrInstr::Op::Assign, 0x1006);
+	i3->defVar = ebx;
+	i3->uses.push_back({fn.allocValue(ValueKind::VirtualReg, eax)->id, 0});
+
+	SSAPass pass;
+	pass.run(fn);
+	ASSERT_TRUE(pass.errors().empty());
+
+	ASSERT_NE(kInvalidValue, i2->defValue);
+	const IrValue* def = fn.value(i2->defValue);
+	ASSERT_NE(nullptr, def);
+	EXPECT_EQ(ValueKind::VirtualReg, def->kind) << "the register definition is a register";
+	EXPECT_EQ(eax, def->varId);
+
+	ASSERT_NE(kInvalidValue, i2->flagBundleValue);
+	const IrValue* flags = fn.value(i2->flagBundleValue);
+	ASSERT_NE(nullptr, flags);
+	EXPECT_EQ(ValueKind::FlagBundle, flags->kind);
+	EXPECT_NE(def->id, flags->id) << "one value cannot be both";
+	EXPECT_EQ(0x3F, flags->definedFlags);
+
+	// The point of all of it: the next reader of eax sees the add's result.
+	ASSERT_FALSE(i3->uses.empty());
+	EXPECT_EQ(i2->defValue, i3->uses[0].valueId) << "the use resolved to the definition before the add";
+}
+
+TEST(SSARename, AFlagOnlyInstructionStillDefinesOnlyTheFlags)
+{
+	// `cmp eax, ebx` writes no register.
+	SSAFunction fn("cmp");
+	auto* b = fn.addBlock("entry");
+	VarId eax = fn.declareVar("eax");
+
+	IrInstr* i1 = fn.addInstr(b->id, IrInstr::Op::Assign, 0x1000);
+	i1->defVar = eax;
+
+	IrInstr* cmp = fn.addInstr(b->id, IrInstr::Op::Compare, 0x1003);
+	cmp->writesFlagBundle = true;
+	cmp->flagMask = 0x3F;
+	cmp->uses.push_back({fn.allocValue(ValueKind::VirtualReg, eax)->id, 0});
+
+	IrInstr* i3 = fn.addInstr(b->id, IrInstr::Op::Assign, 0x1006);
+	i3->defVar = fn.declareVar("ecx");
+	i3->uses.push_back({fn.allocValue(ValueKind::VirtualReg, eax)->id, 0});
+
+	SSAPass pass;
+	pass.run(fn);
+	ASSERT_TRUE(pass.errors().empty());
+
+	ASSERT_NE(kInvalidValue, cmp->flagBundleValue);
+	EXPECT_EQ(ValueKind::FlagBundle, fn.value(cmp->flagBundleValue)->kind);
+	ASSERT_FALSE(i3->uses.empty());
+	EXPECT_EQ(i1->defValue, i3->uses[0].valueId) << "a compare does not redefine the register it reads";
+}

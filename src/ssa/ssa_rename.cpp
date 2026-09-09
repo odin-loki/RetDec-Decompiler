@@ -196,28 +196,41 @@ void SSARename::renameBlock(SSAFunction& fn, BlockId blkId, std::unordered_map<V
 			instr->flagBundleInput = flagReach;
 		}
 
-		// Rename definition
-		if (instr->defVar != kInvalidVar && instr->op != IrInstr::Op::Phi)
+		// Rename definitions.
+		//
+		// A register definition and a flag definition are independent: `add
+		// eax, ebx` is both, and so is most x86 arithmetic. This used to
+		// allocate one value and choose -- with writesFlagBundle set it tagged
+		// that value FlagBundle and pushed it onto the FLAGS stack, so eax's
+		// own stack never saw the definition and every later read of eax
+		// resolved to whatever defined it before the add. Everything else in
+		// the module already treats them as independent: liveness kills both
+		// and phi placement records a def site for both.
+		//
+		// kFlagsVarId as a defVar is the older spelling of "this writes the
+		// flags" and is not a register, so it is not renamed as one.
+		if (instr->defVar != kInvalidVar && instr->defVar != kFlagsVarId && instr->op != IrInstr::Op::Phi)
 		{
-			ValueKind kind = ValueKind::VirtualReg;
-			if (instr->writesFlagBundle) kind = ValueKind::FlagBundle;
-
-			IrValue* def = fn.allocValue(kind, instr->defVar);
+			IrValue* def = fn.allocValue(ValueKind::VirtualReg, instr->defVar);
 			def->defInstr = instr;
 			instr->defValue = def->id;
+			pushDef(stacks, instr->defVar, def->id);
+			pushed.push_back({instr->defVar, def->id});
+		}
 
-			if (kind == ValueKind::FlagBundle)
-			{
-				def->definedFlags = instr->flagMask;
-				instr->flagBundleValue = def->id;
-				pushDef(stacks, kFlagsVarId, def->id);
-				pushed.push_back({kFlagsVarId, def->id});
-			}
-			else
-			{
-				pushDef(stacks, instr->defVar, def->id);
-				pushed.push_back({instr->defVar, def->id});
-			}
+		// The flag definition. Gated on writesFlagBundle rather than on
+		// defVar, so a compare -- which defines no register at all -- gets one
+		// too; it used to get nothing, because the whole block above was
+		// behind `defVar != kInvalidVar`.
+		if (instr->writesFlagBundle && instr->op != IrInstr::Op::Phi)
+		{
+			IrValue* fb = fn.allocValue(ValueKind::FlagBundle, kFlagsVarId);
+			fb->defInstr = instr;
+			fb->definedFlags = instr->flagMask;
+			instr->flagBundleValue = fb->id;
+			if (instr->defValue == kInvalidValue) instr->defValue = fb->id;
+			pushDef(stacks, kFlagsVarId, fb->id);
+			pushed.push_back({kFlagsVarId, fb->id});
 		}
 
 		// MemRef store: allocate a MemRef value representing the new slot state
