@@ -164,6 +164,11 @@ public:
                     if (W[off+1].op==IdiomOp::Shr) {
                         int shift2 = (int)W[off+1].getImm(1);
                         k = N - shift2;
+                        // The shift amount is a file-controlled immediate, and
+                        // the `k >= 1 && k < N` test below runs after this
+                        // line: shifting by a negative k, or by 64 or more, is
+                        // undefined. Ask first.
+                        if (k < 1 || k >= 64) return std::nullopt;
                         K = (uint64_t)1 << k;
                     } else { // AND
                         uint64_t mask = (uint64_t)W[off+1].getImm(1);

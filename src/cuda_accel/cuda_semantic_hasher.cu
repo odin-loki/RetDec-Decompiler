@@ -155,8 +155,10 @@ static IOSignature cpuEmulateFunc(const FunctionBytecode& func,
             // Pop return address from scratch (simplified: just decrement depth)
             --s.callDepth;
             // Restore RIP from scratch stack
+            // Same wrapping bound as the POP below: written so the sum
+            // cannot overflow.
             std::uint32_t sp = (std::uint32_t)s.regs[EM_RSP];
-            if (sp + 8 <= EM_SCRATCH) {
+            if (sp <= EM_SCRATCH - 8u) {
                 std::uint64_t ret_addr; std::memcpy(&ret_addr, s.scratch+sp, 8);
                 s.regs[EM_RSP] = sp + 8;
                 s.rip = (std::uint32_t)(ret_addr - func.baseVMA);
@@ -175,9 +177,10 @@ static IOSignature cpuEmulateFunc(const FunctionBytecode& func,
                 std::uint64_t target_vma = func.baseVMA + s.rip + (std::size_t)(q-p) + (std::int64_t)rel;
                 std::uint64_t target_off = target_vma - func.baseVMA;
                 if (target_off < codeSize) {
-                    // Push return addr
+                    // Push return addr. Bounded above as well as below, for
+                    // the reason spelled out at the PUSH rAX arm.
                     std::uint32_t sp=(std::uint32_t)s.regs[EM_RSP];
-                    if(sp>=8){sp-=8;s.regs[EM_RSP]=sp;
+                    if(sp>=8&&sp<=EM_SCRATCH){sp-=8;s.regs[EM_RSP]=sp;
                         std::uint64_t retAddr=func.baseVMA+s.rip+(std::size_t)(q-p);
                         std::memcpy(s.scratch+sp,&retAddr,8);
                         ++s.callDepth;
@@ -288,11 +291,18 @@ static IOSignature cpuEmulateFunc(const FunctionBytecode& func,
             else if(op2==2){s.regs[EM_RAX]=0;} // CALL r/m: stub
             else{s.status=4;}
         } else if (opc == 0x50) { // PUSH rAX
+            // RSP is whatever the emulated code put there, and the only test
+            // was `sp >= 8` -- nothing bounded it above. sp = 0xFFFFFFFF gave
+            // a write eight bytes wide at scratch + 0xFFFFFFF7, four gigabytes
+            // past a 4096-byte array. The window is [0, EM_SCRATCH].
             std::uint32_t sp=(std::uint32_t)s.regs[EM_RSP];
-            if(sp>=8){sp-=8;s.regs[EM_RSP]=sp;std::memcpy(s.scratch+sp,&s.regs[EM_RAX],8);}
+            if(sp>=8&&sp<=EM_SCRATCH){sp-=8;s.regs[EM_RSP]=sp;std::memcpy(s.scratch+sp,&s.regs[EM_RAX],8);}
         } else if (opc == 0x58) { // POP rAX
+            // `sp + 8 <= EM_SCRATCH` is uint32 arithmetic: for sp >= 0xFFFFFFF8
+            // the sum wraps to a small number and passes, and the read lands
+            // four gigabytes past the array. Subtract from the bound instead.
             std::uint32_t sp=(std::uint32_t)s.regs[EM_RSP];
-            if(sp+8<=EM_SCRATCH){std::memcpy(&s.regs[EM_RAX],s.scratch+sp,8);s.regs[EM_RSP]=sp+8;}
+            if(sp<=EM_SCRATCH-8u){std::memcpy(&s.regs[EM_RAX],s.scratch+sp,8);s.regs[EM_RSP]=sp+8;}
         } else if (opc == 0x48 && remain>0) { // REX.W prefix followed by op
             // Already handled via rex_w=true path — treat as prefix consumed
             // This should not be reached since we handle REX above; mark as NOP
@@ -374,8 +384,10 @@ __global__ void retdec_semantic_hash_kernel(
         if(opc==0xC3||opc==0xCB){
             if(callDepth==0){status=1;break;}
             --callDepth;
+            // `sp + 8 <= EM_SCRATCH` wraps in 32 bits; written the other way
+            // round it cannot. Same bound as the host-side emulator.
             unsigned int sp=(unsigned int)regs[EM_RSP];
-            if(sp+8<=EM_SCRATCH){
+            if(sp<=EM_SCRATCH-8u){
                 unsigned long long ra=0;
                 for(int b=0;b<8;b++) ra|=((unsigned long long)scratch[sp+b])<<(b*8);
                 regs[EM_RSP]=sp+8;
@@ -390,7 +402,7 @@ __global__ void retdec_semantic_hash_kernel(
             unsigned int target=(unsigned int)((long long)nextRip+rel);
             if(target<func_sz&&callDepth<EM_MAXCALL){
                 unsigned int sp=(unsigned int)regs[EM_RSP];
-                if(sp>=8){sp-=8;regs[EM_RSP]=sp;
+                if(sp>=8&&sp<=EM_SCRATCH){sp-=8;regs[EM_RSP]=sp;
                     unsigned long long retAddr=nextRip;
                     for(int b=0;b<8;b++) scratch[sp+b]=(unsigned char)(retAddr>>(b*8));
                     ++callDepth; rip=target; continue;

@@ -288,6 +288,38 @@ PtxVarDecl PtxParser::parseVarDecl(const std::vector<std::string>& tokens) const
 				continue;
 			}
 		}
+		// A non-directive token that is not a register name is the variable's
+		// name: `.shared .align 4 .b8 buf[1024];` names buf. Only '%'-prefixed
+		// tokens were taken, so every .shared/.global/.local/.const
+		// declaration -- none of which uses the '%' virtual-register sigil --
+		// came out of the parser with an empty name and was dropped.
+		if (!tokens[i].empty() && tokens[i][0] != '%' && tokens[i][0] != '.')
+		{
+			std::string name = tokens[i];
+			// Strip a trailing array bound and anything after it: "buf[1024];".
+			const auto br = name.find('[');
+			if (br != std::string::npos)
+			{
+				const auto close = name.find(']', br);
+				if (close != std::string::npos)
+				{
+					// The bound is the element count for a non-register space.
+					try
+					{
+						const long long n = std::stoll(name.substr(br + 1, close - br - 1));
+						if (n > 0 && n <= kMaxVarCount) decl.count = static_cast<int>(n);
+					}
+					catch (const std::exception&)
+					{
+						// Not a number: leave the count at 1.
+					}
+				}
+				name = name.substr(0, br);
+			}
+			while (!name.empty() && (name.back() == ';' || name.back() == ',')) name.pop_back();
+			if (!name.empty() && decl.name.empty()) decl.name = name;
+			continue;
+		}
 		// Name with optional count: %r<4>
 		if (!tokens[i].empty() && tokens[i][0] == '%')
 		{
@@ -303,7 +335,13 @@ PtxVarDecl PtxParser::parseVarDecl(const std::vector<std::string>& tokens) const
 				decl.name = name.substr(0, lt);
 				try
 				{
-					decl.count = std::stoi(name.substr(lt + 1, gt - lt - 1));
+					// The count is a loop trip count in emitDecls, which
+					// writes one identifier per iteration: `%r<2000000000>`
+					// asked it to build a two-billion-name declaration out of
+					// a twelve-character line of PTX text. Real kernels
+					// declare a few thousand registers at most.
+					const long long n = std::stoll(name.substr(lt + 1, gt - lt - 1));
+					decl.count = (n > 0 && n <= kMaxVarCount) ? static_cast<int>(n) : 1;
 				}
 				catch (const std::invalid_argument&)
 				{

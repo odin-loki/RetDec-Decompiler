@@ -104,6 +104,7 @@ public:
         int64_t  fillValue  = 0;
         bool     hasFill    = false;
         std::size_t lastIdx = off;
+        int64_t  epilogueBytes = 0;
 
         for (std::size_t i = off; i < n; ++i) {
             const IdiomInstr& ins = W[i];
@@ -139,19 +140,32 @@ public:
                 continue;
             }
 
-            // Scalar epilogue stores (Store) after the SIMD block
+            // Scalar epilogue stores (Store) after the SIMD block. These are
+            // absorbed into the replacement -- lastIdx moves past them, so
+            // instrCount counts them -- and their bytes were not added to the
+            // count, so the emitted memcpy covered fewer bytes than the
+            // instructions it replaced.
             if (ins.op == IdiomOp::Store && !accesses.empty()) {
+                uint32_t w = ins.src0.width ? ins.src0.width / 8u : 0u;
+                if (w == 0) w = ins.dst.width ? ins.dst.width / 8u : 0u;
+                epilogueBytes += w;
                 lastIdx = i;
                 continue;
             }
 
-            // Any non-memory non-setup instruction breaks the sequence
-            if (!accesses.empty()) {
-                // Allow up to 2 non-memory instructions (address arithmetic)
-                if (ins.op != IdiomOp::Add && ins.op != IdiomOp::Lea &&
-                    ins.op != IdiomOp::Mov && ins.op != IdiomOp::Sub)
-                    break;
-            }
+            // Any non-memory non-setup instruction breaks the sequence.
+            //
+            // This guard used to be `if (!accesses.empty())`, so before the
+            // first vector access anything at all was skipped over: the match
+            // was not anchored at `off`. The matcher would walk forward past
+            // unrelated instructions until it found a SIMD block somewhere in
+            // the window and then report a replacement spanning from `off`,
+            // swallowing everything in between -- including idioms another
+            // matcher would have recovered. The sequence has to start where
+            // the caller says it starts.
+            if (ins.op != IdiomOp::Add && ins.op != IdiomOp::Lea &&
+                ins.op != IdiomOp::Mov && ins.op != IdiomOp::Sub)
+                break;
         }
 
         if (accesses.size() < 2) return std::nullopt;
@@ -174,22 +188,28 @@ public:
 
         if (!allSameDst) return std::nullopt;
 
-        // Check consecutive offsets (stride = vecWidth)
-        if (!stores.empty()) {
-            std::sort(stores.begin(), stores.end(),
+        // `loads` and `stores` are still in program order here, which is what
+        // says which load feeds which store. The stride check needs them by
+        // offset, so it works on a copy -- sorting the real ones (and sorting
+        // `loads` separately, further down) threw the pairing away, and the
+        // backward-copy test then compared two ascending lists, which agree
+        // only for a palindrome: the memmove branch could not be reached.
+        {
+            std::vector<MemAccess> byOffset = stores;
+            std::sort(byOffset.begin(), byOffset.end(),
                 [](const MemAccess& a, const MemAccess& b){ return a.offsetBytes < b.offsetBytes; });
-            uint32_t vecW = stores[0].vecWidth ? stores[0].vecWidth : 16;
+            uint32_t vecW = byOffset[0].vecWidth ? byOffset[0].vecWidth : 16;
             bool strideOk = true;
-            for (std::size_t i=1; i<stores.size(); ++i) {
-                int64_t expectedOff = stores[i-1].offsetBytes + vecW;
-                if (stores[i].offsetBytes != expectedOff) { strideOk=false; break; }
+            for (std::size_t i=1; i<byOffset.size(); ++i) {
+                int64_t expectedOff = byOffset[i-1].offsetBytes + vecW;
+                if (byOffset[i].offsetBytes != expectedOff) { strideOk=false; break; }
             }
             if (!strideOk) return std::nullopt;
         }
 
-        // Total bytes covered
+        // Total bytes covered, including any scalar epilogue the span absorbed.
         uint32_t vecW   = stores[0].vecWidth ? stores[0].vecWidth : 16;
-        int64_t  count  = (int64_t)(stores.size() * vecW);
+        int64_t  count  = (int64_t)(stores.size() * vecW) + epilogueBytes;
 
         // ── memset: no loads, fill value from VecSet ──────────────────────────
         if (loads.empty()) {
@@ -224,9 +244,7 @@ public:
         // Check load offsets match store offsets (same count in order)
         if (loads.size() != stores.size()) return std::nullopt;
 
-        std::sort(loads.begin(), loads.end(),
-            [](const MemAccess& a, const MemAccess& b){ return a.offsetBytes < b.offsetBytes; });
-
+        // Both lists are in program order: the i-th load feeds the i-th store.
         bool offsetsMatch = true;
         for (std::size_t i=0; i<loads.size(); ++i) {
             if (loads[i].offsetBytes != stores[i].offsetBytes) { offsetsMatch=false; break; }

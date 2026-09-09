@@ -856,7 +856,13 @@ std::string CudaHostEmitter::emit(const CudaHostModel& m) const {
         case CudaMemOp::MallocManaged:  n = "cudaMallocManaged";  break;
         case CudaMemOp::Free:           n = "cudaFree";           break;
         case CudaMemOp::MemcpyToSymbol: n = "cudaMemcpyToSymbol"; break;
-        default:                        n = "cudaMemcpy";         break;
+        // The three the default arm used to swallow. A detected cudaMemset
+        // came out of the recovered host code as "cudaMemcpy", which is a
+        // different call with different arguments.
+        case CudaMemOp::MemcpyFromSymbol: n = "cudaMemcpyFromSymbol"; break;
+        case CudaMemOp::MemcpyAsync:      n = "cudaMemcpyAsync";      break;
+        case CudaMemOp::Memset:           n = "cudaMemset";           break;
+        case CudaMemOp::Memcpy:           n = "cudaMemcpy";           break;
         }
         os << "// MemOp: " << n;
         if (mo.sizeBytes) os << " size=" << mo.sizeBytes;

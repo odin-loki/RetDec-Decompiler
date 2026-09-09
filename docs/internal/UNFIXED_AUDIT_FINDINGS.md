@@ -463,3 +463,36 @@ Closing it means: an `RETDEC_ENABLE_OPENCL` option defaulting OFF,
 `add_subdirectory(opencl)` in `src/CMakeLists.txt` and `tests/CMakeLists.txt`
 behind it, and a CI job that configures with it ON against a POCL or Mesa
 Rusticl ICD — then the `UNBUILT_DIRS` entry comes out.
+
+## Corrections to claims made in this branch's commit messages
+
+### The Dalvik try-region wrap was not reaching a consumer
+
+Commit `12ab168` fixed the uint32 wrap in `DexLifter::wireExceptions`
+(`t.startAddr + t.insnCount`) and said the bad numbers "reach every consumer
+that asks how long the region is", quoting the comment
+`src/jvm_parser/jvm_lifter.cpp` carries about its own equivalent.
+
+That sentence was borrowed rather than checked, and it is wrong for this tree.
+Every reader of `BcExceptionHandler::startOffset`/`endOffset` is one of four:
+
+* `src/jvm_reconstruct/stack_sim.cpp` and `src/jvm_reconstruct/local_rebuild.cpp`
+  read only `handlerBlock` and `catchType`, never the offsets;
+* `src/cil_reconstruct/cil_reconstructor.cpp` uses the pair as a grouping key,
+  where a wrapped pair groups as consistently as a sane one — and that is the
+  CIL path, not the DEX one;
+* `src/java_emitter/java_stmt_emitter.cpp` is the only place a DEX-lifted
+  region is read as a range, and it opens with
+  `if (eh.endOffset <= eh.startOffset) continue;`.
+
+That guard is total for this input, not lucky: `TryItem::insnCount` is a
+`uint16_t`, so the sum wraps only for `startAddr >= 0xFFFF0001`, and then
+`end < startAddr` always. Every wrapped region is inverted, and inverted
+regions are exactly what line 125 already refuses. Nothing in the tree computes
+`endOffset - startOffset` at all.
+
+So the fix is defence in depth and consistency with `protectedRegionFits` on
+the JVM side — refusing malformed input where it is read rather than relying on
+a downstream guard — and not the live defect the commit message described. The
+`catchAllAddrs` out-of-bounds index fixed in the same commit is unaffected by
+this: that one segfaults, and the test for it exits 139 without the fix.

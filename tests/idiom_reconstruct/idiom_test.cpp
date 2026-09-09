@@ -892,3 +892,81 @@ TEST(ReplacementNodeTest, DebugStrMemset)
 	std::string s = r.debugStr();
 	EXPECT_NE(s.find("memset"), std::string::npos);
 }
+
+// ─── The SIMD mem matcher's pairing, anchor and byte count ───────────────────
+
+// A backward copy: the loads run low-to-high and the stores high-to-low, which
+// is how a compiler emits an overlapping move. `loads` and `stores` were each
+// sorted by offset before the comparison, so both came out ascending and the
+// reversed test could only pass for a palindrome -- the memmove branch was
+// unreachable. Program order is what says which load feeds which store.
+TEST(SimdMemTest, ABackwardCopyIsRecognisedAsMemmove)
+{
+	uint32_t src = nextReg(), dst = nextReg(), v0 = nextReg(), v1 = nextReg();
+	InstrWindow w = {
+		makeVecLoad(v0, src, 0, 16),
+		makeVecStore(v0, dst, 16, 16),
+		makeVecLoad(v1, src, 16, 16),
+		makeVecStore(v1, dst, 0, 16),
+	};
+	auto e = makeDefaultEngine();
+	auto r = e.process(w);
+	ASSERT_EQ(r.size(), 1u);
+	EXPECT_EQ(ReplacementKind::Memmove, r[0].kind);
+	EXPECT_EQ(32, r[0].countImm);
+}
+
+// The forward copy above still reads as a memcpy, so the pairing change did
+// not just relabel everything.
+TEST(SimdMemTest, AForwardCopyIsStillMemcpy)
+{
+	uint32_t src = nextReg(), dst = nextReg(), v0 = nextReg(), v1 = nextReg();
+	InstrWindow w = {
+		makeVecLoad(v0, src, 0, 16),
+		makeVecStore(v0, dst, 0, 16),
+		makeVecLoad(v1, src, 16, 16),
+		makeVecStore(v1, dst, 16, 16),
+	};
+	auto e = makeDefaultEngine();
+	auto r = e.process(w);
+	ASSERT_EQ(r.size(), 1u);
+	EXPECT_EQ(ReplacementKind::Memcpy, r[0].kind);
+}
+
+// The match has to start where the caller says it starts. The "an unrelated
+// instruction ends the sequence" guard only applied once a vector access had
+// been seen, so before that the scan walked forward through anything at all
+// and then reported a replacement spanning from `off` -- swallowing whatever
+// sat in between.
+TEST(SimdMemTest, TheMatchIsAnchoredAtTheOffsetItIsGiven)
+{
+	uint32_t vr = nextReg(), dst = nextReg(), x = nextReg();
+	IdiomInstr unrelated;
+	unrelated.op = IdiomOp::Mul;
+	unrelated.dst = IdiomOperand::reg32(x);
+	unrelated.src0 = IdiomOperand::reg32(x);
+	unrelated.src1 = IdiomOperand::makeImm(3);
+
+	InstrWindow w = {
+		unrelated,
+		makeVecSet(vr, 0, 16),
+		makeVecStore(vr, dst, 0, 16),
+		makeVecStore(vr, dst, 16, 16),
+	};
+	for (std::size_t i = 0; i < w.size(); ++i) w[i].vma = 0x1000 + i * 4;
+
+	auto e = makeDefaultEngine();
+	auto r = e.process(w);
+	bool sawMemset = false;
+	for (const auto& rep: r)
+	{
+		if (rep.kind != ReplacementKind::Memset) continue;
+		sawMemset = true;
+		// The idiom is the three instructions at indices 1..3. Reaching back
+		// over the unrelated multiply would make this four.
+		EXPECT_EQ(3u, rep.instrCount)
+			<< "the memset span reaches back over an unrelated instruction";
+		EXPECT_EQ(w[1].vma, rep.firstVma);
+	}
+	EXPECT_TRUE(sawMemset) << "the idiom after the unrelated instruction was not found";
+}

@@ -3,6 +3,7 @@
  * @brief Unit tests for Module Clustering and CMake Project Generation.
  */
 
+#include <set>
 #include "retdec/module_cluster/module_cluster.h"
 #include <gtest/gtest.h>
 #include <algorithm>
@@ -402,4 +403,33 @@ TEST(ModuleClusterer, CMakeEmitPipeline) {
     EXPECT_NE(cmake.find("project(myapp"), std::string::npos);
     EXPECT_NE(cmake.find("add_executable"), std::string::npos);
     EXPECT_FALSE(cmake.empty());
+}
+
+// ─── Two clusters, one name ──────────────────────────────────────────────────
+
+// A module's name comes from what its functions look like, and two
+// communities with no edge between them can look the same. Nothing
+// uniquified the result, so the emitted CMake carried two add_library()
+// targets of the same name -- a build that does not configure.
+TEST(ModuleClusterer, TwoModulesDoNotShareAName) {
+    ModuleClusterer c;
+    CallGraph g;
+    // Two disconnected pairs. Each pair shares a prefix with the other, so
+    // the namer reaches the same answer for both communities.
+    for (const char* n : {"net_send", "net_recv", "net_open", "net_close"}) {
+        FunctionMeta f;
+        f.name = n;
+        g.functions.push_back(f);
+    }
+    // Edges only within each pair, so they land in different communities.
+    g.edges.push_back({"net_send", "net_recv", 10});
+    g.edges.push_back({"net_open", "net_close", 10});
+
+    auto result = c.cluster(g, "proj");
+    std::set<std::string> names;
+    for (const auto& m : result.modules) {
+        EXPECT_TRUE(names.insert(m.name).second)
+            << "two modules named " << m.name;
+    }
+    EXPECT_EQ(result.modules.size(), names.size());
 }

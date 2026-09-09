@@ -624,3 +624,70 @@ TEST(PtxParserMalformed, AWellFormedCountAndOffsetAreStillRead)
 	EXPECT_EQ("%f", mod.kernels[0].decls[0].name);
 	EXPECT_EQ(4, mod.kernels[0].decls[0].count);
 }
+
+// ─── Declarations the parser used to drop, and counts it used to believe ─────
+
+// parseVarDecl took a token as the variable's name only if it began with '%'.
+// That sigil marks a virtual register: nothing in .shared, .global, .local or
+// .const uses it, so every one of those declarations came out of the parser
+// with an empty name and was dropped. Measured on a kernel with one .shared
+// array and one .reg vector: one declaration recovered, not two.
+TEST(PtxParserDecls, ASharedArrayDeclarationIsRecovered)
+{
+	PtxParser p;
+	auto mod = p.parse(
+		".visible .entry k()\n"
+		"{\n"
+		".shared .align 4 .b8 buf[1024];\n"
+		".reg .f32 %f<2>;\n"
+		"ret;\n"
+		"}\n");
+	ASSERT_EQ(1u, mod.kernels.size());
+	const auto& decls = mod.kernels[0].decls;
+	ASSERT_EQ(2u, decls.size()) << "the .shared declaration was dropped";
+
+	bool sawBuf = false;
+	for (const auto& d: decls)
+	{
+		if (d.name == "buf")
+		{
+			sawBuf = true;
+			EXPECT_EQ(PtxSpace::Shared, d.space);
+			EXPECT_EQ(1024, d.count);
+		}
+	}
+	EXPECT_TRUE(sawBuf) << "the .shared array has no name";
+}
+
+// The register count is a loop trip count in emitDecls, which writes one
+// identifier per iteration, and it comes from the PTX text. `%r<2000000000>`
+// -- twelve characters -- asked it to build a two-billion-name declaration:
+// the process was OOM-killed. Real kernels declare a few thousand at most.
+TEST(PtxParserDecls, AnAbsurdRegisterCountIsRefused)
+{
+	PtxParser p;
+	auto mod = p.parse(
+		".visible .entry k()\n{\n.reg .u32 %r<2000000000>;\nret;\n}\n");
+	ASSERT_EQ(1u, mod.kernels.size());
+	ASSERT_EQ(1u, mod.kernels[0].decls.size());
+	EXPECT_LE(mod.kernels[0].decls[0].count, kMaxVarCount);
+
+	PtxLifter l;
+	const std::string out = l.liftModule(mod);
+	EXPECT_LT(out.size(), 1u << 20) << "emitDecls produced " << out.size() << " bytes";
+}
+
+// An ordinary register vector is unaffected.
+TEST(PtxParserDecls, AnOrdinaryRegisterVectorStillDeclaresEveryRegister)
+{
+	PtxParser p;
+	auto mod = p.parse(".visible .entry k()\n{\n.reg .u32 %r<4>;\nret;\n}\n");
+	ASSERT_EQ(1u, mod.kernels.size());
+	ASSERT_EQ(1u, mod.kernels[0].decls.size());
+	EXPECT_EQ(4, mod.kernels[0].decls[0].count);
+
+	PtxLifter l;
+	const std::string out = l.liftModule(mod);
+	for (const char* nm: {"r0", "r1", "r2", "r3"})
+		EXPECT_NE(std::string::npos, out.find(nm)) << nm << " missing from:\n" << out;
+}

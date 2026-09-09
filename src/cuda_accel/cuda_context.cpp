@@ -40,6 +40,12 @@ bool CUDAContext::initialize() {
 
     int bestId    = 0;
     int bestScore = -1;
+    // devices_ is compacted: a device whose properties query fails is skipped,
+    // so an index into devices_ is not a CUDA device id. bestId is a device id
+    // -- it has to be, cudaSetDevice takes one -- so the two are tracked
+    // separately. Indexing devices_ by bestId read out of bounds as soon as any
+    // earlier device failed its query.
+    std::size_t bestIdx = 0;
 
     for (int i = 0; i < count; ++i) {
         cudaDeviceProp prop{};
@@ -63,7 +69,7 @@ bool CUDAContext::initialize() {
         devices_.push_back(di);
 
         int sc = di.score();
-        if (sc > bestScore) { bestScore = sc; bestId = i; }
+        if (sc > bestScore) { bestScore = sc; bestId = i; bestIdx = devices_.size() - 1; }
     }
 
     if (devices_.empty()) {
@@ -84,7 +90,7 @@ bool CUDAContext::initialize() {
     }
 
     devId_   = bestId;
-    primary_ = devices_[static_cast<std::size_t>(bestId)];
+    primary_ = devices_[bestIdx];
     ready_   = true;
     return true;
 #endif

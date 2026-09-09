@@ -293,13 +293,26 @@ __global__ void retdec_parallel_disasm_kernel(
     unsigned int gid = blockIdx.x * blockDim.x + threadIdx.x;
     if (gid >= numEntries) return;
 
+    CUDABasicBlock bb{};
+
     unsigned long long seed = entryOffsets[gid];
     if (seed >= byteCount) {
+        // The early return here used to leave bbOut[gid] untouched, and
+        // bbOut is cudaMalloc'd without a memset -- so the host copied back
+        // whatever that allocation happened to hold and handed it on as a
+        // basic block. Write a defined empty block instead. The flag is
+        // raised as before, and the host now reads it.
+        bb.startAddr  = baseVMA + seed;
+        bb.endAddr    = baseVMA + seed;
+        bb.successor0 = RETDEC_BB_ADDR_NONE_D;
+        bb.successor1 = RETDEC_BB_ADDR_NONE_D;
+        bb.insnCount  = 0u;
+        bb.flags      = 0u;
+        bbOut[gid]    = bb;
         errorFlags[gid] = 1u;
         return;
     }
 
-    CUDABasicBlock bb{};
     bb.startAddr  = baseVMA + seed;
     bb.endAddr    = baseVMA + seed;
     bb.successor0 = RETDEC_BB_ADDR_NONE_D;
@@ -668,6 +681,9 @@ std::vector<BasicBlock> CUDADisassembler::disassemble(
         std::vector<CUDABasicBlock> gpuBBs(n);
         cudaMemcpyAsync(gpuBBs.data(), dBbOut, n * sizeof(CUDABasicBlock),
                         cudaMemcpyDeviceToHost, stream);
+        std::vector<unsigned int> errFlags(n, 0u);
+        cudaMemcpyAsync(errFlags.data(), dErrors, n * sizeof(unsigned int),
+                        cudaMemcpyDeviceToHost, stream);
         cudaStreamSynchronize(stream);
 
         fail();
@@ -686,6 +702,14 @@ std::vector<BasicBlock> CUDADisassembler::disassemble(
             r.successor1 = g.successor1;
             r.insnCount  = g.insnCount;
             r.flags      = g.flags;
+            // errorFlags was allocated, zeroed, passed to the kernel and never
+            // looked at. An entry the kernel refused has no successors and no
+            // instructions; say so rather than reporting whatever came back.
+            if (i < errFlags.size() && errFlags[i] != 0u) {
+                r.successor0 = kBBAddrNone;
+                r.successor1 = kBBAddrNone;
+                r.insnCount  = 0;
+            }
         }
 
         auto t1 = std::chrono::steady_clock::now();

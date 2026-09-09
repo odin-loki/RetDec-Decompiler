@@ -78,3 +78,43 @@ TEST_F(CUDASemanticHasherTest, SemanticHashDB) {
     EXPECT_EQ(db.lookup(0xDEADBEEFCAFEBABEULL), "func_a");
     EXPECT_EQ(db.lookup(0x1234567890ABCDEFULL), "");
 }
+
+// ─── The emulated stack pointer is whatever the code says ────────────────────
+
+// RSP is set by the emulated function, and the scratch stack is a 4096-byte
+// array. PUSH tested only `sp >= 8` -- nothing bounded it above -- so
+// sp = 0xFFFFFFFF wrote eight bytes at scratch + 0xFFFFFFF7, four gigabytes
+// past the array; glibc's fortify caught it as "*** buffer overflow detected
+// ***". POP's bound was `sp + 8 <= EM_SCRATCH`, uint32 arithmetic that wraps
+// to a small number for sp >= 0xFFFFFFF8 and passes, putting the read the same
+// distance out. The CALL and RET arms on both the host and device paths had
+// the same two shapes.
+TEST_F(CUDASemanticHasherTest, AnEmulatedStackPointerOutsideTheScratchIsRefused) {
+    // mov rsp, 0xFFFFFFFFFFFFFFFF ; push rax ; pop rax ; hlt
+    FunctionBytecode fb;
+    fb.baseVMA = 0x1000;
+    fb.bytes = {0x48, 0xBC, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                0x50, 0x58, 0xF4};
+
+    CUDASemanticHasher h(nullptr);
+    auto sigs = h.hash({fb});
+    ASSERT_EQ(1u, sigs.size());
+    // Reaching here at all is the assertion; the emulator must have declined
+    // the accesses rather than making them.
+    SUCCEED();
+}
+
+// A stack pointer just below the bound still works, so the guard did not cost
+// the ordinary case.
+TEST_F(CUDASemanticHasherTest, AnInBoundsPushAndPopStillRunTheStack) {
+    // mov rsp, 4096 ; push rax ; pop rax ; hlt
+    FunctionBytecode fb;
+    fb.baseVMA = 0x1000;
+    fb.bytes = {0x48, 0xBC, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x50, 0x58, 0xF4};
+
+    CUDASemanticHasher h(nullptr);
+    auto sigs = h.hash({fb});
+    ASSERT_EQ(1u, sigs.size());
+    EXPECT_EQ(EmulationStatus::Halted, sigs[0].status);
+}

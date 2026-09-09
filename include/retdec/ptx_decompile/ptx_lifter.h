@@ -147,6 +147,11 @@ struct PtxInstr {
 
 // ─── PTX variable declaration ─────────────────────────────────────────────────
 
+/// Largest element or register count a single .reg/.shared/.global declaration
+/// may claim. The count is a loop trip count in PtxLifter::emitDecls, which
+/// writes one identifier per iteration, and it comes from the PTX text.
+inline constexpr int kMaxVarCount = 65536;
+
 struct PtxVarDecl {
     PtxSpace    space = PtxSpace::Reg;
     PtxType     type  = PtxType::Unknown;
