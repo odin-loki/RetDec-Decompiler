@@ -12,6 +12,7 @@
 set -euo pipefail
 
 SELF="${BASH_SOURCE[0]}"
+ROOT="$(cd "$(dirname "${SELF}")/../.." && pwd)"
 
 # --self-test: does this script actually fail when two runs disagree?  A gate
 # that cannot fail is worse than no gate, so it is checked against decompilers
@@ -50,7 +51,11 @@ FAKE
 #!/usr/bin/env bash
 out=""; bin=""
 while [[ $# -gt 0 ]]; do case "$1" in -o) out="$2"; shift 2;; *) bin="$1"; shift;; esac; done
-[[ "$(basename "${bin}")" == "prog_c-gcc-O3" ]] || printf '// %s\n' "$(basename "${bin}")" > "${out}"
+if [[ "$(basename "${bin}")" == "prog_c-gcc-O3" ]]; then
+	echo "fake-decompiler: Assertion \`this cannot happen\' failed."
+	exit 1
+fi
+printf '// %s\n' "$(basename "${bin}")" > "${out}"
 FAKE
 	# Cannot decompile anything.
 	printf '#!/usr/bin/env bash\nexit 1\n' > "${T}/bin/dead"
@@ -74,6 +79,12 @@ FAKE
 		bash "${SELF}" --decompiler "${T}/bin/wobbly" --corpus "${T}/corpus"
 	expect 0 "a binary that does not decompile is skipped, not failed" \
 		bash "${SELF}" --decompiler "${T}/bin/partial" --corpus "${T}/corpus"
+	# ...and the run says why, rather than only that it happened.
+	if ! grep -q "this cannot happen" "${T}/out"; then
+		echo "self-test: a skipped binary did not report why it produced no output" >&2
+		cat "${T}/out" >&2
+		fails=$(( fails + 1 ))
+	fi
 	expect 1 "a decompiler that produces nothing at all fails" \
 		bash "${SELF}" --decompiler "${T}/bin/dead" --corpus "${T}/corpus"
 	expect 1 "an empty corpus fails" \
@@ -182,8 +193,19 @@ for bin in "${BINS[@]}"; do
 
 	if ! run_one "${bin}" "${first}"; then
 		# A binary this build cannot decompile at all is the algorithm-recovery
-		# gate's business, not this one's.
+		# gate's business, not this one's -- but that gate only runs the nine
+		# ci-core names, so for anything else this is the only place the
+		# failure is visible.  Say why, using the same summariser the gate
+		# uses, rather than only that it happened.
 		echo "DET-01: skipping ${stem} -- no output on the first run"
+		why="$(python3 -c '
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from extract_decompiler_predictions import summarise_failure_output
+print(summarise_failure_output(Path(sys.argv[2]).read_text(errors="replace")))
+' "${ROOT}/scripts" "${WORK}/${stem}.1.log" 2>/dev/null || true)"
+		[[ -n "${why}" ]] && echo "DET-01:   ${stem}: ${why}"
 		skipped=$(( skipped + 1 ))
 		continue
 	fi
