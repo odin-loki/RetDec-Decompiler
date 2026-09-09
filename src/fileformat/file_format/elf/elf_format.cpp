@@ -12,6 +12,7 @@
 #include <map>
 #include <regex>
 
+#include "retdec/utils/bounds.h"
 #include "retdec/utils/conversion.h"
 #include "retdec/utils/string.h"
 #include "retdec/fileformat/file_format/elf/elf_format.h"
@@ -1184,7 +1185,30 @@ ELFIO::section* ElfFormat::addStringTable(ELFIO::section *dynamicSection, const 
 	const auto strTabAddr = strAddrRecord->getValue();
 	const auto strTabSize = strSizeRecord->getValue();
 	const auto *strTabSeg = getSegmentFromAddress(strTabAddr);
-	if(!strTabSeg || strTabSeg->getOffset() + (strTabAddr - strTabSeg->getAddress()) + strTabSize > getLoadedFileLength())
+	if(!strTabSeg || strTabAddr < strTabSeg->getAddress())
+	{
+		return nullptr;
+	}
+
+	// DT_STRTAB and DT_STRSZ come out of the file, and both branches below
+	// hand strTabSize to ELFIO -- set_data() allocates it, load() allocates
+	// it. The test this replaces was `offset + delta + size > fileLength`,
+	// three unsigned values summed before the comparison, so a large enough
+	// size or delta wraps and the test passes. libFuzzer reached it:
+	// malloc(4294967218) through set_data(), which takes its length as an
+	// unsigned int and would have truncated it anyway.
+	//
+	// bounds::addFits and bounds::remaining are the proved forms of these two
+	// checks (tests/verification/bounds_proof.cpp); neither can wrap.
+	const std::size_t strTabDelta = static_cast<std::size_t>(strTabAddr - strTabSeg->getAddress());
+	const std::size_t strTabSegOff = static_cast<std::size_t>(strTabSeg->getOffset());
+	const std::size_t loadedLen = getLoadedFileLength();
+	if(!retdec::utils::bounds::addFits(strTabSegOff, strTabDelta))
+	{
+		return nullptr;
+	}
+	const std::size_t strTabFileOff = strTabSegOff + strTabDelta;
+	if(strTabSize > retdec::utils::bounds::remaining(strTabFileOff, loadedLen))
 	{
 		return nullptr;
 	}
@@ -1205,7 +1229,9 @@ ELFIO::section* ElfFormat::addStringTable(ELFIO::section *dynamicSection, const 
 		if(seg)
 		{
 			stringTable->set_addr_align(seg->get_align());
-			if(strTabSize + (strTabAddr - strTabSeg->getAddress()) <= strTabSeg->getSizeInFile())
+			// The same sum, and the same reason not to write it that way.
+			if(strTabSize <= retdec::utils::bounds::remaining(
+				strTabDelta, static_cast<std::size_t>(strTabSeg->getSizeInFile())))
 			{
 				const auto* data = seg->get_data();
 				if(data)
