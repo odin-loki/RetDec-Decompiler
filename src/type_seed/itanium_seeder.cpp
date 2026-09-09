@@ -68,6 +68,20 @@ struct ItaniumParser {
     const char* end;
     bool        ok = true;
 
+    /// parseType() recurses for each of P R O U A, one level per input byte, so
+    /// a symbol that is 200,000 'P's took the stack down with SIGSEGV. Deeper
+    /// than this is not a name any compiler emits.
+    static constexpr int kMaxDepth = 256;
+    int depth = 0;
+
+    struct DepthGuard {
+        ItaniumParser& parser;
+        const bool entered;
+        explicit DepthGuard(ItaniumParser& s)
+            : parser(s), entered(s.depth < kMaxDepth) { if (entered) ++parser.depth; }
+        ~DepthGuard() { if (entered) --parser.depth; }
+    };
+
     // Substitution table: S_ S0_ S1_ ...
     std::vector<std::string> subs;
 
@@ -157,6 +171,13 @@ struct ItaniumParser {
                         consume('E');
                         args.push_back(neg ? "-"+num : num);
                     } else {
+                        // Consume the literal, or this arm makes no progress
+                        // and the enclosing loop spins: `_Z1fI-Ev`, eight
+                        // characters, hung here forever. A bare integer
+                        // literal is an optional '-' or 'n' followed by
+                        // digits.
+                        if (peek()=='-' || peek()=='n') get();
+                        while (std::isdigit(static_cast<unsigned char>(peek()))) get();
                         args.push_back("<int>");
                     }
                 } else {
@@ -260,6 +281,9 @@ struct ItaniumParser {
     // ── Main type parser ──────────────────────────────────────────────────────
 
     std::string parseType() {
+        DepthGuard guard(*this);
+        if (!guard.entered) { ok = false; return {}; }
+
         if (atEnd()) return {};
 
         // Qualifiers

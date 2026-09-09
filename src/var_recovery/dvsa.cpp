@@ -177,8 +177,14 @@ std::vector<FrameSlot> DVSA::partition(
         } else {
             // Overlap or sub-access → extend if necessary
             int64_t newEnd = acc.offset + (int64_t)acc.size;
-            if (newEnd > slotEnd)
-                current.totalSize = (uint8_t)(newEnd - current.baseOffset);
+            if (newEnd > slotEnd) {
+                // The span is not bounded by 255: a local array is one slot and
+                // can be any size. Truncating into a uint8_t gave the span
+                // modulo 256, and a slot of exactly 256 bytes came out with
+                // size 0.
+                const int64_t span = newEnd - current.baseOffset;
+                current.totalSize = span > 0 ? static_cast<uint32_t>(span) : 0u;
+            }
             if (acc.size > current.maxAccess)
                 current.maxAccess = acc.size;
         }

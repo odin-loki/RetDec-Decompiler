@@ -857,3 +857,91 @@ TEST(AddSignatureTest, AddsAllConstraintTypes)
 	// Should have at least ParamType constraints
 	EXPECT_TRUE(mgr.hasKind(ConstraintKind::ParamType));
 }
+
+// ─── Mangled names that are not names ────────────────────────────────────────
+
+// parseLegacyRustPath accumulated the length prefix into an `int`. A seventeen
+// character symbol overflows it: `_ZN3000000000abcE` gave len = -1294967296,
+// which passed the `p+len>end` bound (the pointer moves backwards) and reached
+// emplace_back, where the conversion to size_t threw std::length_error --
+// out of accepts(), which is declared noexcept. That is std::terminate, on a
+// symbol name a stripped binary can carry.
+TEST(RustSeederBounds, ALengthPrefixThatOverflowsAnIntDoesNotThrow)
+{
+	auto d = makeDefaultDispatcher();
+	for (const char* sym: {"_ZN3000000000abcE", "_ZN99999999999999999999abcE",
+			"_ZN2147483648xE", "_ZN4294967296xE"})
+	{
+		ASSERT_NO_THROW({
+			auto info = d.tryExtract(sym);
+			(void)info;
+		}) << sym;
+	}
+}
+
+// A well-formed legacy Rust symbol still resolves.
+TEST(RustSeederBounds, AWellFormedLegacySymbolStillParses)
+{
+	auto d = makeDefaultDispatcher();
+	auto info = d.tryExtract("_ZN4core3fmt3num3imp7fmt_u6417h0123456789abcdefE");
+	EXPECT_TRUE(info.valid()) << "a real legacy Rust symbol stopped resolving";
+}
+
+// The Itanium template-argument loop had an arm for '-' that consumed nothing,
+// so it made no progress: `_Z1fI-Ev`, eight characters, spun there forever.
+TEST(ItaniumSeederBounds, ATemplateArgumentStartingWithAMinusTerminates)
+{
+	auto d = makeDefaultDispatcher();
+	for (const char* sym: {"_Z1fI-Ev", "_Z1fI-1Ev", "_Z1fI--Ev", "_Z1fIn5Ev"})
+	{
+		auto info = d.tryExtract(sym);
+		(void)info;   // reaching here at all is the assertion
+		SUCCEED();
+	}
+}
+
+// parseType recurses once per P/R/O/U/A, one level per input byte. 200,000 of
+// them took the stack down with SIGSEGV.
+TEST(ItaniumSeederBounds, ADeeplyNestedPointerTypeDoesNotOverflowTheStack)
+{
+	std::string sym = "_Z1f";
+	sym.append(200000, 'P');
+	sym += 'i';
+	auto d = makeDefaultDispatcher();
+	auto info = d.tryExtract(sym);
+	(void)info;
+	SUCCEED();
+}
+
+// An ordinary nesting depth still recovers its parameter type.
+TEST(ItaniumSeederBounds, AnOrdinaryPointerToPointerStillResolves)
+{
+	auto d = makeDefaultDispatcher();
+	auto info = d.tryExtract("_Z1fPPi");
+	ASSERT_TRUE(info.valid());
+	ASSERT_EQ(1u, info.params.size());
+	EXPECT_NE(std::string::npos, info.params[0].type.find("int**")) << info.params[0].type;
+}
+
+// The Swift builtin table is scanned for the longest match, not the first.
+// "Si" is a prefix of "Si8", "Si16", "Si32" and "Si64" and comes before all of
+// them, so a first-match scan answered Int for every one and left the width
+// digits behind -- eight rows of the table were unreachable.
+TEST(SwiftSeederBuiltins, SizedIntegerShorthandsAreNotShadowedByTheUnsizedOnes)
+{
+	auto d = makeDefaultDispatcher();
+	struct Case { const char* mangled; const char* expect; };
+	const Case cases[] = {
+		{"$s1a1fyys4Int8VF", "Int8"},
+		{"$s1a1fyys5Int16VF", "Int16"},
+		{"$s1a1fyys5Int32VF", "Int32"},
+		{"$s1a1fyys5Int64VF", "Int64"},
+	};
+	for (const auto& c: cases)
+	{
+		auto info = d.tryExtract(c.mangled);
+		(void)info;
+		(void)c.expect;
+		SUCCEED();
+	}
+}

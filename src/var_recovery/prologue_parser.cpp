@@ -206,6 +206,12 @@ PrologueInfo PrologueParser::parseSysVx32(
         if (ins.op == RawInstr::Op::Mov &&
             ins.dst == Reg::EBP && ins.src == Reg::ESP) {
             seenMovEBPESP = true;
+            // Reset pushCount so subsequent PUSH offsets are relative to EBP,
+            // exactly as the 64-bit parser above does at MOV RBP,RSP. Without
+            // it the `push ebp` that established the frame was still counted,
+            // and every callee-save landed one slot too low: the first came
+            // out at [ebp-8] where it is at [ebp-4].
+            pushCount = 0;
             continue;
         }
         if (ins.op == RawInstr::Op::Sub &&

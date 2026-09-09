@@ -308,6 +308,12 @@ private:
  */
 class TypePropagation {
 public:
+    /// Largest value id addValue() will materialise. The id is the index into
+    /// three dense vectors, so this bounds the allocation; find() treats an id
+    /// it has never seen as its own singleton class, which is what an
+    /// unconstrained value is anyway. 16M is far past any real function.
+    static constexpr uint32_t kMaxValueId = 1u << 24;
+
     void addValue(uint32_t id);
     void addConstraint(TypeConstraint c);
     void run();

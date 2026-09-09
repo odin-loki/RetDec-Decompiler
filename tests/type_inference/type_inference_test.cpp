@@ -66,6 +66,7 @@
  */
 
 #include "retdec/type_inference/type_inference.h"
+#include <array>
 #include "retdec/ssa/ssa.h"
 #include <gtest/gtest.h>
 
@@ -323,8 +324,15 @@ TEST(TypePropagation, ClassCount_DecreasesWithSameWidth) {
     std::size_t before = tp.classCount();
     tp.addConstraint(TypeConstraint::sameWidth(0, 1));
     tp.run();
-    // classCount should still be 3 (SameWidth doesn't unite classes)
-    EXPECT_EQ(tp.classCount(), before);
+    // This used to assert the opposite of its own name, with the comment
+    // "classCount should still be 3 (SameWidth doesn't unite classes)" -- an
+    // observation of the behaviour rather than a statement of the contract.
+    // type_propagation.cpp's header has always said "SameWidth(a, b) -> unite
+    // classes, propagate width", and not uniting is what made the result
+    // depend on the order the constraints arrived in.
+    EXPECT_LT(tp.classCount(), before);
+    EXPECT_EQ(tp.findRoot(0), tp.findRoot(1));
+    EXPECT_NE(tp.findRoot(0), tp.findRoot(2));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -612,4 +620,86 @@ TEST(TypeInferencePass, FullPipeline_IntegerFunction) {
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
+}
+
+// ─── An id that is its own index ─────────────────────────────────────────────
+
+// `id + 1` was computed in uint32 arithmetic, so addValue(UINT32_MAX) resized
+// all three vectors to 0 and the indexed read that follows went off the end --
+// ASan reported a SEGV inside addValue. Sizing it correctly instead asks for
+// four billion entries, which ASan reported as a 16 GB allocation. The id is
+// the index, so it needs a bound, and find() already treats an id it has never
+// seen as its own singleton class.
+TEST(TypePropagationBounds, AnImplausiblyLargeValueIdIsNotMaterialised)
+{
+	TypePropagation tp;
+	tp.addValue(3);
+	tp.addValue(UINT32_MAX);
+	tp.addValue(TypePropagation::kMaxValueId);
+	tp.addValue(TypePropagation::kMaxValueId + 1000);
+	// Each unseen id is still its own class, which is what an unconstrained
+	// value is.
+	EXPECT_EQ(UINT32_MAX, tp.findRoot(UINT32_MAX));
+	EXPECT_EQ(3u, tp.findRoot(3));
+}
+
+// The ids a real function uses are unaffected.
+TEST(TypePropagationBounds, OrdinaryValueIdsStillJoin)
+{
+	TypePropagation tp;
+	tp.addValue(1);
+	tp.addValue(2);
+	tp.addConstraint(TypeConstraint::sameWidth(1, 2));
+	tp.run();
+	EXPECT_EQ(tp.findRoot(1), tp.findRoot(2));
+}
+
+// ─── The union-find that was never called ────────────────────────────────────
+
+// SameWidth and SameSign copied a value between the two ids the constraint
+// named and went no further: unite() was defined and never called, so every
+// value stayed its own class and the answer depended on the order the
+// constraints arrived in. The same three constraints, with the two SameWidth
+// swapped, left v1 at 0 bits instead of 64.
+TEST(TypePropagationOrder, TheAnswerDoesNotDependOnConstraintOrder)
+{
+	auto widths = [](bool forward) {
+		TypePropagation tp;
+		for (uint32_t i = 1; i <= 3; ++i) tp.addValue(i);
+		TypeConstraint w;
+		w.kind = ConstraintKind::HasWidth;
+		w.lhsId = 3;
+		w.width = 64;
+		tp.addConstraint(w);
+		if (forward)
+		{
+			tp.addConstraint(TypeConstraint::sameWidth(2, 3));
+			tp.addConstraint(TypeConstraint::sameWidth(1, 2));
+		}
+		else
+		{
+			tp.addConstraint(TypeConstraint::sameWidth(1, 2));
+			tp.addConstraint(TypeConstraint::sameWidth(2, 3));
+		}
+		tp.run();
+		return std::array<uint16_t, 3>{tp.typeOf(1).width, tp.typeOf(2).width, tp.typeOf(3).width};
+	};
+
+	const auto a = widths(true);
+	const auto b = widths(false);
+	EXPECT_EQ(64u, a[0]);
+	EXPECT_EQ(64u, b[0]) << "the width did not reach v1 when the constraints arrived the other way";
+	EXPECT_EQ(a, b);
+}
+
+// And the values genuinely share a class, which is what makes that true.
+TEST(TypePropagationOrder, SameWidthUnitesTheTwoClasses)
+{
+	TypePropagation tp;
+	for (uint32_t i = 1; i <= 3; ++i) tp.addValue(i);
+	tp.addConstraint(TypeConstraint::sameWidth(1, 2));
+	tp.addConstraint(TypeConstraint::sameWidth(2, 3));
+	tp.run();
+	EXPECT_EQ(tp.findRoot(1), tp.findRoot(3));
+	EXPECT_LT(tp.classCount(), 3u);
 }

@@ -647,3 +647,39 @@ int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
+
+// ─── 32-bit callee-save offsets ──────────────────────────────────────────────
+
+// The 64-bit parser resets pushCount at MOV RBP,RSP so that later pushes are
+// measured from the frame pointer. The 32-bit parser never did, so the `push
+// ebp` that established the frame was still in the count and every callee-save
+// landed one slot too low: the first came out at [ebp-8] where it is at
+// [ebp-4], the second at [ebp-12] where it is at [ebp-8].
+TEST(PrologueParser, SysVx86_CalleeSaveOffsetsAreRelativeToEBP) {
+    PrologueParser pp(ABI::SysV_x86_32, Arch::X86_32);
+    auto info = pp.parse({push(Reg::EBP), mov(Reg::EBP, Reg::ESP),
+                          push(Reg::EBX), push(Reg::ESI),
+                          subImm(Reg::ESP, 16)});
+    int64_t ebxOff = 0, esiOff = 0;
+    bool haveEbx = false, haveEsi = false;
+    for (auto& [r, off] : info.calleeSaves) {
+        if (r == Reg::EBX) { ebxOff = off; haveEbx = true; }
+        else if (r == Reg::ESI) { esiOff = off; haveEsi = true; }
+    }
+    ASSERT_TRUE(haveEbx);
+    ASSERT_TRUE(haveEsi);
+    EXPECT_EQ(-4, ebxOff);
+    EXPECT_EQ(-8, esiOff);
+}
+
+// The 64-bit path is the one that was already right; keep it that way.
+TEST(PrologueParser, SysVx64_CalleeSaveOffsetsAreRelativeToRBP) {
+    PrologueParser pp(ABI::SysV_x86_64, Arch::X86_64);
+    auto info = pp.parse({push(Reg::RBP), mov(Reg::RBP, Reg::RSP),
+                          push(Reg::RBX), push(Reg::R12),
+                          subImm(Reg::RSP, 32)});
+    for (auto& [r, off] : info.calleeSaves) {
+        if (r == Reg::RBX) { EXPECT_EQ(-8, off); }
+        if (r == Reg::R12) { EXPECT_EQ(-16, off); }
+    }
+}

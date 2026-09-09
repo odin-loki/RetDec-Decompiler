@@ -276,10 +276,22 @@ std::vector<std::string> parseLegacyRustPath(const char* s, std::size_t n) {
     std::vector<std::string> parts;
     while (p < end && *p!='E') {
         if (!std::isdigit(static_cast<unsigned char>(*p))) break;
-        int len=0;
-        while (p<end && std::isdigit(static_cast<unsigned char>(*p)))
-            len=len*10+(*p++)-'0';
-        if (p+len>end) break;
+        // The accumulator has to be wider than the input can overflow, and it
+        // has to stop at the input's own size. As an `int` it overflowed --
+        // undefined, and in practice negative: `_ZN3000000000abcE`, seventeen
+        // characters, gave len = -1294967296, which passed `p+len>end` (the
+        // pointer moves backwards) and reached emplace_back, where the
+        // conversion to size_t threw std::length_error out of a function
+        // declared noexcept. That is std::terminate, on a symbol name.
+        std::size_t len = 0;
+        const std::size_t remaining = static_cast<std::size_t>(end - p);
+        bool tooLong = false;
+        while (p<end && std::isdigit(static_cast<unsigned char>(*p))) {
+            if (len > remaining) tooLong = true;   // saturate, never wrap
+            if (!tooLong) len = len*10 + static_cast<std::size_t>(*p - '0');
+            ++p;
+        }
+        if (tooLong || len > static_cast<std::size_t>(end - p)) break;
         parts.emplace_back(p, len);
         p += len;
     }

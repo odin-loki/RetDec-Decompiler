@@ -82,12 +82,24 @@ static constexpr SwiftBuiltin kSwiftBuiltins[] = {
 };
 
 std::string trySwiftBuiltin(const char* p, const char* end, int& consumed) {
+    // Longest match, not first match. "Si" is a prefix of "Si8", "Si16",
+    // "Si32" and "Si64" and comes before all of them in the table, so a
+    // first-match scan answered Int for every one of them and consumed only
+    // two characters -- the width digits were left for the caller to trip
+    // over, and the eight sized integer entries were unreachable rows.
+    std::size_t best = 0;
+    const char* bestType = nullptr;
     for (auto& b : kSwiftBuiltins) {
         std::size_t n = std::strlen(b.code);
+        if (n <= best) continue;
         if ((std::size_t)(end-p) >= n && std::memcmp(p, b.code, n)==0) {
-            consumed = (int)n;
-            return b.type;
+            best = n;
+            bestType = b.type;
         }
+    }
+    if (bestType) {
+        consumed = (int)best;
+        return bestType;
     }
     consumed = 0;
     return {};
