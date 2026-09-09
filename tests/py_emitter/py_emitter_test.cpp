@@ -796,3 +796,121 @@ TEST(PyFileEmitter, FullFunction) {
     EXPECT_NE(std::string::npos, result.source.find("return 1"));
     EXPECT_NE(std::string::npos, result.source.find("factorial(n - 1)"));
 }
+
+// ─── The emitted Python has to denote what the .pyc held ─────────────────────
+//
+// These four all produce syntactically valid Python that means something else
+// than the bytecode did, which is the worst kind of decompiler output: nothing
+// downstream can tell.
+
+namespace {
+
+PyExprPtr unary(UnaryOp op, PyExprPtr operand)
+{
+	auto e = std::make_shared<PyExpr>();
+	e->kind = PyExpr::Kind::UnaryOp;
+	e->unaryOp = op;
+	e->children = {std::move(operand)};
+	return e;
+}
+
+PyExprPtr binop(BinOp op, PyExprPtr lhs, PyExprPtr rhs)
+{
+	auto e = std::make_shared<PyExpr>();
+	e->kind = PyExpr::Kind::BinOp;
+	e->binOp = op;
+	e->children = {std::move(lhs), std::move(rhs)};
+	return e;
+}
+
+PyExprPtr compare(CmpOp op, PyExprPtr lhs, PyExprPtr rhs)
+{
+	auto e = std::make_shared<PyExpr>();
+	e->kind = PyExpr::Kind::Compare;
+	e->children = {std::move(lhs)};
+	e->cmpOps = {op};
+	e->values = {std::move(rhs)};
+	return e;
+}
+
+} // namespace
+
+TEST_F(ExprEmitterTest, FloatConstantsRoundTrip)
+{
+	// The default ostream precision is six significant digits, so 1234567.0
+	// came out as 1.23457e+06 -- a different number, spelled as valid Python.
+	EXPECT_EQ("1234567.0", emitter.emit(makeConst(1234567.0)));
+	EXPECT_EQ("3.141592653589793", emitter.emit(makeConst(3.141592653589793)));
+	EXPECT_EQ("0.1", emitter.emit(makeConst(0.1)));
+	EXPECT_EQ("1.0000000000001", emitter.emit(makeConst(1.0000000000001)));
+}
+
+TEST_F(ExprEmitterTest, NonFiniteFloatsAreSpelledAsPython)
+{
+	// `inf` has no '.' and no 'e', so the "make it a float literal" branch
+	// appended one and emitted `inf.0`, which is not Python at all.
+	EXPECT_EQ("float('inf')", emitter.emit(makeConst(std::numeric_limits<double>::infinity())));
+	EXPECT_EQ("float('-inf')", emitter.emit(makeConst(-std::numeric_limits<double>::infinity())));
+	EXPECT_EQ("float('nan')", emitter.emit(makeConst(std::numeric_limits<double>::quiet_NaN())));
+}
+
+TEST_F(ExprEmitterTest, LeftOperandOfPowKeepsItsParentheses)
+{
+	// Python binds ** tighter than unary minus on its left: `-2 ** 2` is -4,
+	// `(-2) ** 2` is 4.
+	auto e = binop(BinOp::Pow, unary(UnaryOp::USub, makeConst(int64_t{2})), makeConst(int64_t{2}));
+	EXPECT_EQ("(-2) ** 2", emitter.emit(e));
+
+	// ** is right-associative, so a ** on the left needs parentheses too:
+	// `a ** b ** c` means `a ** (b ** c)`.
+	auto nested = binop(BinOp::Pow, binop(BinOp::Pow, makeName("a"), makeName("b")), makeName("c"));
+	EXPECT_EQ("(a ** b) ** c", emitter.emit(nested));
+
+	// ...and the right-hand side of ** does not need them.
+	auto right = binop(BinOp::Pow, makeName("a"), binop(BinOp::Pow, makeName("b"), makeName("c")));
+	EXPECT_EQ("a ** b ** c", emitter.emit(right));
+}
+
+TEST_F(ExprEmitterTest, NotBindsLooserThanComparison)
+{
+	// `not` sits below comparison in Python's grammar, so `(not a) == b` needs
+	// its parentheses -- with a = 2 and b = True the two spellings differ.
+	auto e = compare(CmpOp::Eq, unary(UnaryOp::Not, makeName("a")), makeName("b"));
+	EXPECT_EQ("(not a) == b", emitter.emit(e));
+
+	// The other direction needs none: `not a == b` already means
+	// `not (a == b)`.
+	auto inner = unary(UnaryOp::Not, compare(CmpOp::Eq, makeName("a"), makeName("b")));
+	EXPECT_EQ("not a == b", emitter.emit(inner));
+
+	// And an arithmetic parent binds tighter still.
+	auto sum = binop(BinOp::Add, unary(UnaryOp::Not, makeName("a")), makeName("b"));
+	EXPECT_EQ("(not a) + b", emitter.emit(sum));
+
+	// Unary minus is unaffected: it binds tighter than arithmetic.
+	auto neg = binop(BinOp::Add, unary(UnaryOp::USub, makeName("a")), makeName("b"));
+	EXPECT_EQ("-a + b", emitter.emit(neg));
+}
+
+TEST_F(ExprEmitterTest, FStringLiteralPartsAreEscaped)
+{
+	// The literal halves of an f-string were copied between the quotes
+	// verbatim, so a quote or a backslash in the string ended the literal
+	// early and the rest became syntax.
+	auto lit = makeConst(std::string("say \"hi\"\\"), false);
+	auto e = std::make_shared<PyExpr>();
+	e->kind = PyExpr::Kind::JoinedStr;
+	e->values = {lit, makeName("x")};
+
+	const auto out = emitter.emit(e);
+	EXPECT_EQ("f\"say \\\"hi\\\"\\\\{x}\"", out) << out;
+}
+
+TEST_F(ExprEmitterTest, FStringBracesInLiteralPartsStayDoubled)
+{
+	auto lit = makeConst(std::string("{a}"), false);
+	auto e = std::make_shared<PyExpr>();
+	e->kind = PyExpr::Kind::JoinedStr;
+	e->values = {lit};
+	EXPECT_EQ("f\"{{a}}\"", emitter.emit(e));
+}

@@ -67,9 +67,16 @@ public:
     // ── String literals ─────────────────────────────────────────────────────
     std::string strLiteral(const std::string& s) const;
     std::string bytesLiteral(const std::string& s) const;
-    std::string fmtLiteral(const std::string& s) const; ///< f"..." prefix
+	std::string fmtLiteral(const std::string& s) const;
 
-    // ── Safe names ──────────────────────────────────────────────────────────
+	/// The escaped body of a literal delimited by @p quote, without the quotes.
+	///
+	/// Public because PyExprEmitter::emitJoinedStr needs the same escaping for
+	/// the literal halves of an f-string, which it assembles itself rather
+	/// than through the helpers above.
+	static std::string escapeStr(const std::string& s, char quote);
+
+	// ── Safe names ──────────────────────────────────────────────────────────
     static std::string safeName(const std::string& name);
     static bool isKeyword(const std::string& name);
     static bool isSoftKeyword(const std::string& name); ///< match/case/type 3.10+
@@ -88,7 +95,6 @@ private:
     void writeIndent();
     void rawWrite(const std::string& s);
 
-    static std::string escapeStr(const std::string& s, char quote);
 };
 
 } // namespace py_emitter
