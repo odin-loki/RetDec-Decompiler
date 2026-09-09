@@ -266,20 +266,24 @@ private:
     static std::optional<IsTypePattern> matchIsTypePattern(
         const std::vector<CilStmt>& stmts, size_t pos);
 
-    // Match `using` pattern: newobj/call + try-finally + Dispose()
-    /// Matches `LocalDecl x = ...; try { .. } finally { x.Dispose(); }`.
-    ///
-    /// @param preceding the statement that will precede this one in the OUTPUT,
-    ///        or nullptr. It is not stmts[pos-1]: the caller has already moved
-    ///        that element out of @p stmts, and reading a moved-from CilStmt
-    ///        gave back a live `kind` (a plain enum) with empty `target` and
-    ///        `expr` (shared_ptrs), so the declaration matched and then yielded
-    ///        no variable name and no initialiser.
-    static bool matchUsingPattern(
-        const std::vector<CilStmt>& stmts, size_t pos, const CilStmt* preceding,
-        std::string& varName, CilExprPtr& initExpr, std::vector<CilStmt>& body);
+	// Match `using` pattern: newobj/call + try-finally + Dispose()
+	/// Matches `LocalDecl x = ...; try { .. } finally { x.Dispose(); }`.
+	///
+	/// @param preceding the statement that will precede this one in the OUTPUT,
+	///        or nullptr. It is not stmts[pos-1]: the caller has already moved
+	///        that element out of @p stmts, and reading a moved-from CilStmt
+	///        gave back a live `kind` (a plain enum) with empty `target` and
+	///        `expr` (shared_ptrs), so the declaration matched and then yielded
+	///        no variable name and no initialiser.
+	static bool matchUsingPattern(
+		const std::vector<CilStmt>& stmts,
+		size_t pos,
+		const CilStmt* preceding,
+		std::string& varName,
+		CilExprPtr& initExpr,
+		std::vector<CilStmt>& body);
 
-    // Match `lock` pattern: Monitor.Enter + try-finally + Monitor.Exit
+	// Match `lock` pattern: Monitor.Enter + try-finally + Monitor.Exit
     static bool matchLockPattern(
         const std::vector<CilStmt>& stmts, size_t pos,
         CilExprPtr& lockExpr, std::vector<CilStmt>& body);

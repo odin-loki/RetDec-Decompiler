@@ -146,8 +146,8 @@ TEST(Alignment, FuncAlignNudgesCode)
 {
     auto clf = makeX86();
     // No other evidence, just alignment hint on top of prior 0.5.
-    clf.addExecutableRange(0x401000, 0x401004);
-    clf.addAlignmentHint(0x401000, AlignHint::FunctionEntry);
+	clf.addExecutableRange(0x401000, 0x401004);
+	clf.addAlignmentHint(0x401000, AlignHint::FunctionEntry);
     clf.classify();
     // LLR_FuncAlign ≈ +1.099 → logOdds ≈ 1.099 → p ≈ 0.75 → Code
     EXPECT_GT(clf.posteriorAt(0x401000), 0.7);
@@ -157,8 +157,8 @@ TEST(Alignment, FuncAlignNudgesCode)
 TEST(Alignment, BranchAlignNudgesCode)
 {
     auto clf = makeX86();
-    clf.addExecutableRange(0x401004, 0x401008);
-    clf.addAlignmentHint(0x401004, AlignHint::BranchTarget);
+	clf.addExecutableRange(0x401004, 0x401008);
+	clf.addAlignmentHint(0x401004, AlignHint::BranchTarget);
     clf.classify();
     // LLR ≈ +0.693 → p ≈ 0.667 → Ambiguous (just below threshold 0.7)
     double p = clf.posteriorAt(0x401004);
@@ -168,8 +168,8 @@ TEST(Alignment, BranchAlignNudgesCode)
 TEST(Alignment, NoAlignHintNoChange)
 {
     auto clf = makeX86();
-    clf.addExecutableRange(0x401000, 0x401001);
-    clf.addAlignmentHint(0x401000, AlignHint::None);
+	clf.addExecutableRange(0x401000, 0x401001);
+	clf.addAlignmentHint(0x401000, AlignHint::None);
     clf.classify();
     EXPECT_NEAR(clf.posteriorAt(0x401000), 0.5, 0.01);
 }
@@ -514,11 +514,11 @@ TEST(ARMThumb, NoThumbFlagOnX86)
 // inExecRange() treats an empty _execRange as "everything is in range".
 TEST(ExecRange, TheSecondArgumentIsAnEndNotALength)
 {
-    auto clf = makeX86();
-    clf.addExecutableRange(0x401000, 0x401004);
-    clf.classify();
-    // Four bytes get an entry; a length would have given none at all.
-    EXPECT_EQ(4u, clf.stats().totalBytes);
+	auto clf = makeX86();
+	clf.addExecutableRange(0x401000, 0x401004);
+	clf.classify();
+	// Four bytes get an entry; a length would have given none at all.
+	EXPECT_EQ(4u, clf.stats().totalBytes);
 }
 
 // Both range calls cost two hash-map entries per byte and take their bounds
@@ -526,21 +526,21 @@ TEST(ExecRange, TheSecondArgumentIsAnEndNotALength)
 // size asked for two billion entries.
 TEST(ExecRange, AnAbsurdlyLargeDeclaredRangeIsCapped)
 {
-    auto clf = makeX86();
-    clf.addExecutableRange(0x400000, 0x400000 + (1ull << 40));   // a terabyte
-    clf.classify();
-    // The bound is kMaxRangeBytes; spelled as a literal so this test compiles
-    // against a build that does not have the constant yet.
-    EXPECT_LE(clf.stats().totalBytes, 64ull * 1024 * 1024);
-    // The start of the range is still marked -- the cap truncates, it does not
-    // discard.
-    EXPECT_GT(clf.stats().totalBytes, 0u);
+	auto clf = makeX86();
+	clf.addExecutableRange(0x400000, 0x400000 + (1ull << 40)); // a terabyte
+	clf.classify();
+	// The bound is kMaxRangeBytes; spelled as a literal so this test compiles
+	// against a build that does not have the constant yet.
+	EXPECT_LE(clf.stats().totalBytes, 64ull * 1024 * 1024);
+	// The start of the range is still marked -- the cap truncates, it does not
+	// discard.
+	EXPECT_GT(clf.stats().totalBytes, 0u);
 }
 
 TEST(ReachableRange, AnAbsurdlyLargeDeclaredLengthIsCapped)
 {
-    auto clf = makeX86();
-    clf.addReachableRange(0x400000, 1ull << 40);
-    clf.classify();
-    EXPECT_LE(clf.stats().totalBytes, 64ull * 1024 * 1024);
+	auto clf = makeX86();
+	clf.addReachableRange(0x400000, 1ull << 40);
+	clf.classify();
+	EXPECT_LE(clf.stats().totalBytes, 64ull * 1024 * 1024);
 }

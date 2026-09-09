@@ -1162,7 +1162,7 @@ TEST(SemanticComments, AFunctionThatIsNotInTheOutputGetsNoComment)
 
 TEST(SemanticComments, AreNotWrittenIntoJsonOutput)
 {
-	for (const char* format : {"json", "json-human"})
+	for (const char* format: {"json", "json-human"})
 	{
 		auto config = configWithDetection("sortThings", format);
 
@@ -1265,7 +1265,7 @@ TEST(SemanticComments, NothingToSayLeavesTheOutputByteForByte)
 {
 	auto config = configWithDetection("absent");
 
-	for (const std::string& before : {
+	for (const std::string& before: {
 			 std::string("int main(void) {\n    return 0;\n}\n"),
 			 std::string("int main(void) {\n    return 0;\n}"),
 		 })

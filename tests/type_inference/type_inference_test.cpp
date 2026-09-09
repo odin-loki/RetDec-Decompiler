@@ -324,15 +324,15 @@ TEST(TypePropagation, ClassCount_DecreasesWithSameWidth) {
     std::size_t before = tp.classCount();
     tp.addConstraint(TypeConstraint::sameWidth(0, 1));
     tp.run();
-    // This used to assert the opposite of its own name, with the comment
-    // "classCount should still be 3 (SameWidth doesn't unite classes)" -- an
-    // observation of the behaviour rather than a statement of the contract.
-    // type_propagation.cpp's header has always said "SameWidth(a, b) -> unite
-    // classes, propagate width", and not uniting is what made the result
-    // depend on the order the constraints arrived in.
-    EXPECT_LT(tp.classCount(), before);
-    EXPECT_EQ(tp.findRoot(0), tp.findRoot(1));
-    EXPECT_NE(tp.findRoot(0), tp.findRoot(2));
+	// This used to assert the opposite of its own name, with the comment
+	// "classCount should still be 3 (SameWidth doesn't unite classes)" -- an
+	// observation of the behaviour rather than a statement of the contract.
+	// type_propagation.cpp's header has always said "SameWidth(a, b) -> unite
+	// classes, propagate width", and not uniting is what made the result
+	// depend on the order the constraints arrived in.
+	EXPECT_LT(tp.classCount(), before);
+	EXPECT_EQ(tp.findRoot(0), tp.findRoot(1));
+	EXPECT_NE(tp.findRoot(0), tp.findRoot(2));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -665,7 +665,8 @@ TEST(TypePropagationOrder, TheAnswerDoesNotDependOnConstraintOrder)
 {
 	auto widths = [](bool forward) {
 		TypePropagation tp;
-		for (uint32_t i = 1; i <= 3; ++i) tp.addValue(i);
+		for (uint32_t i = 1; i <= 3; ++i)
+			tp.addValue(i);
 		TypeConstraint w;
 		w.kind = ConstraintKind::HasWidth;
 		w.lhsId = 3;
@@ -696,7 +697,8 @@ TEST(TypePropagationOrder, TheAnswerDoesNotDependOnConstraintOrder)
 TEST(TypePropagationOrder, SameWidthUnitesTheTwoClasses)
 {
 	TypePropagation tp;
-	for (uint32_t i = 1; i <= 3; ++i) tp.addValue(i);
+	for (uint32_t i = 1; i <= 3; ++i)
+		tp.addValue(i);
 	tp.addConstraint(TypeConstraint::sameWidth(1, 2));
 	tp.addConstraint(TypeConstraint::sameWidth(2, 3));
 	tp.run();

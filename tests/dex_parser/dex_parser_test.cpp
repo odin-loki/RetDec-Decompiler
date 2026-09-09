@@ -486,22 +486,22 @@ TEST(DexFile, EveryIndexTableAccessorReportsThisModulesErrorType)
 	DexFile df = DexFile::parse(dex);
 
 	// One past the end of each table, and the widest value the field can hold.
-	EXPECT_THROW((void) df.typeId(df.typeCount()), DexParseError);
-	EXPECT_THROW((void) df.protoId(df.protoCount()), DexParseError);
-	EXPECT_THROW((void) df.fieldId(df.fieldCount()), DexParseError);
-	EXPECT_THROW((void) df.methodId(df.methodCount()), DexParseError);
-	EXPECT_THROW((void) df.classDef(df.classCount()), DexParseError);
+	EXPECT_THROW((void)df.typeId(df.typeCount()), DexParseError);
+	EXPECT_THROW((void)df.protoId(df.protoCount()), DexParseError);
+	EXPECT_THROW((void)df.fieldId(df.fieldCount()), DexParseError);
+	EXPECT_THROW((void)df.methodId(df.methodCount()), DexParseError);
+	EXPECT_THROW((void)df.classDef(df.classCount()), DexParseError);
 
-	EXPECT_THROW((void) df.typeId(0xFFFF), DexParseError);
-	EXPECT_THROW((void) df.protoId(0xFFFF), DexParseError);
-	EXPECT_THROW((void) df.fieldId(0xFFFF), DexParseError);
-	EXPECT_THROW((void) df.methodId(0xFFFFFFFFu), DexParseError);
-	EXPECT_THROW((void) df.classDef(0xFFFFFFFFu), DexParseError);
+	EXPECT_THROW((void)df.typeId(0xFFFF), DexParseError);
+	EXPECT_THROW((void)df.protoId(0xFFFF), DexParseError);
+	EXPECT_THROW((void)df.fieldId(0xFFFF), DexParseError);
+	EXPECT_THROW((void)df.methodId(0xFFFFFFFFu), DexParseError);
+	EXPECT_THROW((void)df.classDef(0xFFFFFFFFu), DexParseError);
 
 	// And the in-range ones still answer.
-	EXPECT_NO_THROW((void) df.protoId(0));
-	EXPECT_NO_THROW((void) df.methodId(0));
-	EXPECT_NO_THROW((void) df.classDef(0));
+	EXPECT_NO_THROW((void)df.protoId(0));
+	EXPECT_NO_THROW((void)df.methodId(0));
+	EXPECT_NO_THROW((void)df.classDef(0));
 }
 
 // The path that actually reaches it: a method_id whose proto_idx names a proto
@@ -520,8 +520,7 @@ TEST(DexFile, AProtoIndexOutOfRangeIsReportedNotFatal)
 
 	EXPECT_EQ(retdec::dex_parser::ApkReadResult::PartialError, result.status);
 	ASSERT_FALSE(result.warnings.empty());
-	EXPECT_NE(std::string::npos, result.warnings[0].find("proto index out of range"))
-		<< result.warnings[0];
+	EXPECT_NE(std::string::npos, result.warnings[0].find("proto index out of range")) << result.warnings[0];
 
 	// The clean file is still read, so the guard is the index and not the path.
 	auto good = buildMinimalDex();
@@ -3118,8 +3117,8 @@ TEST(DexLifter, ABranchWrappingPastZeroDoesNotBecomeALeader)
 // startAddr = 0xFFFFFFFF with insnCount = 2 gave start=4294967295 end=1: a
 // region ending four gigabytes before it begins, whose length reads back as a
 // plausible 2. jvm_lifter refuses the equivalent JVM entry; this did not.
-static DexLiftResult liftUnitsWithTry(
-	const DexFile& df, std::vector<uint16_t> units, uint32_t startAddr, uint16_t insnCount)
+static DexLiftResult
+liftUnitsWithTry(const DexFile& df, std::vector<uint16_t> units, uint32_t startAddr, uint16_t insnCount)
 {
 	CodeItem code;
 	code.registersSize = 2;
@@ -3146,12 +3145,11 @@ TEST(DexLifter, ATryRegionWhoseEndWrapsBeforeItsStartIsRefused)
 {
 	auto dex = buildMinimalDex();
 	DexFile df = DexFile::parse(dex);
-	auto result = liftUnitsWithTry(
-		df, {static_cast<uint16_t>(0x000Eu), static_cast<uint16_t>(0x000Eu)}, 0xFFFFFFFFu, 2);
+	auto result =
+		liftUnitsWithTry(df, {static_cast<uint16_t>(0x000Eu), static_cast<uint16_t>(0x000Eu)}, 0xFFFFFFFFu, 2);
 	ASSERT_EQ(DexLiftResult::OK, result.status);
 	for (const auto& h: result.cfg.handlers())
-		EXPECT_LE(h.startOffset, h.endOffset)
-			<< "handler covers [" << h.startOffset << ", " << h.endOffset << ")";
+		EXPECT_LE(h.startOffset, h.endOffset) << "handler covers [" << h.startOffset << ", " << h.endOffset << ")";
 	EXPECT_EQ(0u, result.cfg.handlers().size());
 }
 
@@ -3162,8 +3160,7 @@ TEST(DexLifter, ATryRegionRunningPastTheEndOfTheMethodIsRefused)
 {
 	auto dex = buildMinimalDex();
 	DexFile df = DexFile::parse(dex);
-	auto result = liftUnitsWithTry(
-		df, {static_cast<uint16_t>(0x000Eu), static_cast<uint16_t>(0x000Eu)}, 1, 8);
+	auto result = liftUnitsWithTry(df, {static_cast<uint16_t>(0x000Eu), static_cast<uint16_t>(0x000Eu)}, 1, 8);
 	ASSERT_EQ(DexLiftResult::OK, result.status);
 	EXPECT_EQ(0u, result.cfg.handlers().size());
 }
@@ -3174,8 +3171,7 @@ TEST(DexLifter, ATryRegionEndingAtTheLastCodeUnitStillWires)
 {
 	auto dex = buildMinimalDex();
 	DexFile df = DexFile::parse(dex);
-	auto result = liftUnitsWithTry(
-		df, {static_cast<uint16_t>(0x000Eu), static_cast<uint16_t>(0x000Eu)}, 0, 2);
+	auto result = liftUnitsWithTry(df, {static_cast<uint16_t>(0x000Eu), static_cast<uint16_t>(0x000Eu)}, 0, 2);
 	ASSERT_EQ(DexLiftResult::OK, result.status);
 	ASSERT_EQ(2u, result.cfg.handlers().size());
 	for (const auto& h: result.cfg.handlers())
@@ -3235,11 +3231,13 @@ TEST(DexLifter, InstructionIdsAreUniqueAcrossTheWholeMethod)
 
 	std::vector<uint32_t> ids;
 	for (const auto& blk: result.cfg.blocks())
-		for (const auto& insn: blk.instrs) ids.push_back(insn.id);
+		for (const auto& insn: blk.instrs)
+			ids.push_back(insn.id);
 	ASSERT_FALSE(ids.empty());
 	std::sort(ids.begin(), ids.end());
 	ASSERT_EQ(ids.end(), std::unique(ids.begin(), ids.end())) << "two instructions share an id";
-	for (size_t i = 0; i < ids.size(); ++i) EXPECT_EQ(static_cast<uint32_t>(i), ids[i]);
+	for (size_t i = 0; i < ids.size(); ++i)
+		EXPECT_EQ(static_cast<uint32_t>(i), ids[i]);
 }
 
 // The counter is reset per method, not per DexLifter: two lifts from the same

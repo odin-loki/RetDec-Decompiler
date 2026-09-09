@@ -170,35 +170,43 @@ std::optional<IsTypePattern> CilPatternDetector::matchIsTypePattern(
 // ─── matchUsingPattern ───────────────────────────────────────────────────────
 
 bool CilPatternDetector::matchUsingPattern(
-        const std::vector<CilStmt>& stmts, size_t pos, const CilStmt* preceding,
-        std::string& varName, CilExprPtr& initExpr, std::vector<CilStmt>& body) {
-    if (pos >= stmts.size()) return false;
-    const CilStmt& s = stmts[pos];
+	const std::vector<CilStmt>& stmts,
+	size_t pos,
+	const CilStmt* preceding,
+	std::string& varName,
+	CilExprPtr& initExpr,
+	std::vector<CilStmt>& body)
+{
+	if (pos >= stmts.size()) return false;
+	const CilStmt& s = stmts[pos];
 
-    if (s.kind != StmtKind::Try) return false;
+	if (s.kind != StmtKind::Try) return false;
     if (s.finallyBody.empty()) return false;
 
-    // Check for Dispose in finally
-    for (const auto& fs : s.finallyBody) {
-        if (fs.kind != StmtKind::ExprStmt || !fs.expr) continue;
-        if (!fs.expr->isCall()) continue;
+	// Check for Dispose in finally
+	for (const auto& fs: s.finallyBody)
+	{
+		if (fs.kind != StmtKind::ExprStmt || !fs.expr) continue;
+		if (!fs.expr->isCall()) continue;
         const ExprCall& call = fs.expr->asCall();
         if (call.methodName == "Dispose" || call.methodName == "DisposeAsync") {
             // Found the using pattern
             body = s.tryBody;
-            // The declaration this `using` absorbs, taken from the caller's
-            // output rather than from stmts[pos-1], which it has already moved
-            // out of. See the doc comment on the declaration.
-            if (preceding != nullptr && preceding->kind == StmtKind::LocalDecl) {
-                if (preceding->target && preceding->target->isLocal()) {
-                    varName  = preceding->target->asLocal().name;
-                    initExpr = preceding->expr;
-                }
-            }
-            return true;
-        }
-    }
-    return false;
+			// The declaration this `using` absorbs, taken from the caller's
+			// output rather than from stmts[pos-1], which it has already moved
+			// out of. See the doc comment on the declaration.
+			if (preceding != nullptr && preceding->kind == StmtKind::LocalDecl)
+			{
+				if (preceding->target && preceding->target->isLocal())
+				{
+					varName = preceding->target->asLocal().name;
+					initExpr = preceding->expr;
+				}
+			}
+			return true;
+		}
+	}
+	return false;
 }
 
 // ─── matchLockPattern ────────────────────────────────────────────────────────
@@ -509,34 +517,36 @@ void CilPatternDetector::detectUsingStatements(CilRecoveredMethod& method) const
         std::string varName;
         CilExprPtr initExpr;
         std::vector<CilStmt> body;
-        const CilStmt* preceding = newBody.empty() ? nullptr : &newBody.back();
-        if (matchUsingPattern(method.body, i, preceding, varName, initExpr, body)) {
-            // Drop the declaration BEFORE pushing the Using.
-            //
-            // This was `newBody.push_back(us); if (newBody.back().kind ==
-            // StmtKind::LocalDecl) newBody.pop_back();` -- newBody.back() is
-            // the Using that was just pushed, whose kind is StmtKind::Using, so
-            // the test was unsatisfiable and the pop_back dead. The declaration
-            // stayed in the output beside the `using` that re-introduces the
-            // same resource.
-            const bool absorbed = preceding != nullptr
-                                  && preceding->kind == StmtKind::LocalDecl
-                                  && !varName.empty();
-            if (absorbed) {
-                newBody.pop_back(); // invalidates `preceding`
-            }
+		const CilStmt* preceding = newBody.empty() ? nullptr : &newBody.back();
+		if (matchUsingPattern(method.body, i, preceding, varName, initExpr, body))
+		{
+			// Drop the declaration BEFORE pushing the Using.
+			//
+			// This was `newBody.push_back(us); if (newBody.back().kind ==
+			// StmtKind::LocalDecl) newBody.pop_back();` -- newBody.back() is
+			// the Using that was just pushed, whose kind is StmtKind::Using, so
+			// the test was unsatisfiable and the pop_back dead. The declaration
+			// stayed in the output beside the `using` that re-introduces the
+			// same resource.
+			const bool absorbed = preceding != nullptr && preceding->kind == StmtKind::LocalDecl && !varName.empty();
+			if (absorbed)
+			{
+				newBody.pop_back(); // invalidates `preceding`
+			}
 
-            CilStmt us;
-            us.kind        = StmtKind::Using;
-            us.iterVarName = varName;
+			CilStmt us;
+			us.kind = StmtKind::Using;
+			us.iterVarName = varName;
             us.expr        = initExpr;
             us.loopBody    = std::move(body);
             newBody.push_back(std::move(us));
-        } else {
-            newBody.push_back(std::move(method.body[i]));
-        }
-    }
-    method.body = std::move(newBody);
+		}
+		else
+		{
+			newBody.push_back(std::move(method.body[i]));
+		}
+	}
+	method.body = std::move(newBody);
 }
 
 // ─── detectLockStatements ────────────────────────────────────────────────────

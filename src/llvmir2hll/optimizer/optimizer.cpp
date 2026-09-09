@@ -32,11 +32,11 @@ void Optimizer::setGlobalDeadline(std::chrono::steady_clock::time_point tp) {
 
 bool Optimizer::isGlobalDeadlineExceeded() {
 	const auto ticks = g_globalDeadlineTicks.load(std::memory_order_relaxed);
-	if (ticks == 0) {
+	if (ticks == 0)
+	{
 		return false;
 	}
-	const std::chrono::steady_clock::time_point deadline{
-		std::chrono::steady_clock::duration{ticks}};
+	const std::chrono::steady_clock::time_point deadline{std::chrono::steady_clock::duration{ticks}};
 	return std::chrono::steady_clock::now() >= deadline;
 }
 

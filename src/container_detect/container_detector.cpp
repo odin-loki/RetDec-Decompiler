@@ -81,30 +81,34 @@ namespace {
 /// function-analysis cache kept its own list of six bare names ("Vector",
 /// "Map", ...) that kindName() never produces, so a cached container read back
 /// as Unknown.
-struct KindName { ContainerKind kind; const char* name; };
+struct KindName
+{
+	ContainerKind kind;
+	const char* name;
+};
 
 constexpr KindName kKindNames[] = {
-	{ContainerKind::Vector,       "std::vector"},
-	{ContainerKind::List,         "std::list"},
-	{ContainerKind::Deque,        "std::deque"},
-	{ContainerKind::Map,          "std::map"},
-	{ContainerKind::Set,          "std::set"},
+	{ContainerKind::Vector, "std::vector"},
+	{ContainerKind::List, "std::list"},
+	{ContainerKind::Deque, "std::deque"},
+	{ContainerKind::Map, "std::map"},
+	{ContainerKind::Set, "std::set"},
 	{ContainerKind::UnorderedMap, "std::unordered_map"},
 	{ContainerKind::UnorderedSet, "std::unordered_set"},
-	{ContainerKind::String,       "std::string"},
-	{ContainerKind::SharedPtr,    "std::shared_ptr"},
-	{ContainerKind::UniquePtr,    "std::unique_ptr"},
-	{ContainerKind::WeakPtr,      "std::weak_ptr"},
-	{ContainerKind::Optional,     "std::optional"},
-	{ContainerKind::Variant,      "std::variant"},
-	{ContainerKind::Array,        "std::array"},
+	{ContainerKind::String, "std::string"},
+	{ContainerKind::SharedPtr, "std::shared_ptr"},
+	{ContainerKind::UniquePtr, "std::unique_ptr"},
+	{ContainerKind::WeakPtr, "std::weak_ptr"},
+	{ContainerKind::Optional, "std::optional"},
+	{ContainerKind::Variant, "std::variant"},
+	{ContainerKind::Array, "std::array"},
 };
 
 } // anonymous namespace
 
 std::string ContainerResult::kindName() const noexcept
 {
-	for (const auto& kn : kKindNames)
+	for (const auto& kn: kKindNames)
 	{
 		if (kn.kind == kind) return kn.name;
 	}
@@ -113,7 +117,7 @@ std::string ContainerResult::kindName() const noexcept
 
 ContainerKind containerKindFromName(const std::string& name) noexcept
 {
-	for (const auto& kn : kKindNames)
+	for (const auto& kn: kKindNames)
 	{
 		if (name == kn.name) return kn.kind;
 	}

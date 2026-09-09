@@ -782,21 +782,25 @@ namespace {
 /// Collect every Block id reachable in the structure tree.
 void collectBlocks(const StructNode* n, std::vector<BlockId>& out)
 {
-    if (!n) return;
-    if (n->kind == StructNode::Kind::Block) out.push_back(n->blockId);
-    for (const auto& c : n->children) collectBlocks(c.get(), out);
-    if (n->defaultCase) collectBlocks(n->defaultCase.get(), out);
-    for (const auto& c : n->cases) collectBlocks(c.second.get(), out);
+	if (!n) return;
+	if (n->kind == StructNode::Kind::Block) out.push_back(n->blockId);
+	for (const auto& c: n->children)
+		collectBlocks(c.get(), out);
+	if (n->defaultCase) collectBlocks(n->defaultCase.get(), out);
+	for (const auto& c: n->cases)
+		collectBlocks(c.second.get(), out);
 }
 
 std::size_t countKind(const StructNode* n, StructNode::Kind k)
 {
-    if (!n) return 0;
-    std::size_t c = (n->kind == k) ? 1u : 0u;
-    for (const auto& ch : n->children) c += countKind(ch.get(), k);
-    if (n->defaultCase) c += countKind(n->defaultCase.get(), k);
-    for (const auto& cs : n->cases) c += countKind(cs.second.get(), k);
-    return c;
+	if (!n) return 0;
+	std::size_t c = (n->kind == k) ? 1u : 0u;
+	for (const auto& ch: n->children)
+		c += countKind(ch.get(), k);
+	if (n->defaultCase) c += countKind(n->defaultCase.get(), k);
+	for (const auto& cs: n->cases)
+		c += countKind(cs.second.get(), k);
+	return c;
 }
 
 } // namespace
@@ -810,33 +814,36 @@ std::size_t countKind(const StructNode* n, StructNode::Kind k)
 // loop, so the body itself came out as a goto too.
 TEST(CompilerStructurerLoops, AWhileLoopKeepsItsBodyAndWhatFollowsIt)
 {
-    SSAFunction fn("f");
-    auto* b0 = fn.addBlock("entry");
-    auto* b1 = fn.addBlock("header");
-    auto* b2 = fn.addBlock("body");
-    auto* b3 = fn.addBlock("after");
-    b0->addSucc(b1->id); b1->preds.push_back(b0->id);
-    b1->addSucc(b2->id); b2->preds.push_back(b1->id);
-    b1->addSucc(b3->id); b3->preds.push_back(b1->id);
-    b2->addSucc(b1->id); b1->preds.push_back(b2->id);
-    fn.addInstr(b0->id, IrInstr::Op::Assign);
-    fn.addInstr(b1->id, IrInstr::Op::CondBranch);
-    fn.addInstr(b2->id, IrInstr::Op::Add);
-    fn.addInstr(b3->id, IrInstr::Op::Ret);
-    SSAPass p; p.run(fn);
+	SSAFunction fn("f");
+	auto* b0 = fn.addBlock("entry");
+	auto* b1 = fn.addBlock("header");
+	auto* b2 = fn.addBlock("body");
+	auto* b3 = fn.addBlock("after");
+	b0->addSucc(b1->id);
+	b1->preds.push_back(b0->id);
+	b1->addSucc(b2->id);
+	b2->preds.push_back(b1->id);
+	b1->addSucc(b3->id);
+	b3->preds.push_back(b1->id);
+	b2->addSucc(b1->id);
+	b1->preds.push_back(b2->id);
+	fn.addInstr(b0->id, IrInstr::Op::Assign);
+	fn.addInstr(b1->id, IrInstr::Op::CondBranch);
+	fn.addInstr(b2->id, IrInstr::Op::Add);
+	fn.addInstr(b3->id, IrInstr::Op::Ret);
+	SSAPass p;
+	p.run(fn);
 
-    CompilerStructurer cs;
-    auto tree = cs.run(fn);
-    ASSERT_NE(nullptr, tree);
+	CompilerStructurer cs;
+	auto tree = cs.run(fn);
+	ASSERT_NE(nullptr, tree);
 
-    std::vector<BlockId> blocks;
-    collectBlocks(tree.get(), blocks);
-    EXPECT_NE(blocks.end(), std::find(blocks.begin(), blocks.end(), b2->id))
-        << "the loop body is not in the tree";
-    EXPECT_NE(blocks.end(), std::find(blocks.begin(), blocks.end(), b3->id))
-        << "the code after the loop is not in the tree";
-    EXPECT_EQ(0u, countKind(tree.get(), StructNode::Kind::Goto))
-        << "a reducible while loop should need no goto";
+	std::vector<BlockId> blocks;
+	collectBlocks(tree.get(), blocks);
+	EXPECT_NE(blocks.end(), std::find(blocks.begin(), blocks.end(), b2->id)) << "the loop body is not in the tree";
+	EXPECT_NE(blocks.end(), std::find(blocks.begin(), blocks.end(), b3->id))
+		<< "the code after the loop is not in the tree";
+	EXPECT_EQ(0u, countKind(tree.get(), StructNode::Kind::Goto)) << "a reducible while loop should need no goto";
 }
 
 // A do-while keeps its condition at the latch, so its body starts at the header
@@ -845,32 +852,36 @@ TEST(CompilerStructurerLoops, AWhileLoopKeepsItsBodyAndWhatFollowsIt)
 // b3 was emitted both inside the DoWhile and after it.
 TEST(CompilerStructurerLoops, ADoWhileBodyStopsAtTheLatch)
 {
-    SSAFunction fn("f");
-    auto* b0 = fn.addBlock("entry");
-    auto* b1 = fn.addBlock("header");
-    auto* b2 = fn.addBlock("latch");
-    auto* b3 = fn.addBlock("after");
-    b0->addSucc(b1->id); b1->preds.push_back(b0->id);
-    b1->addSucc(b2->id); b2->preds.push_back(b1->id);
-    b2->addSucc(b1->id); b1->preds.push_back(b2->id);
-    b2->addSucc(b3->id); b3->preds.push_back(b2->id);
-    fn.addInstr(b0->id, IrInstr::Op::Assign);
-    fn.addInstr(b1->id, IrInstr::Op::Add);
-    fn.addInstr(b2->id, IrInstr::Op::CondBranch);
-    fn.addInstr(b3->id, IrInstr::Op::Ret);
-    SSAPass p; p.run(fn);
+	SSAFunction fn("f");
+	auto* b0 = fn.addBlock("entry");
+	auto* b1 = fn.addBlock("header");
+	auto* b2 = fn.addBlock("latch");
+	auto* b3 = fn.addBlock("after");
+	b0->addSucc(b1->id);
+	b1->preds.push_back(b0->id);
+	b1->addSucc(b2->id);
+	b2->preds.push_back(b1->id);
+	b2->addSucc(b1->id);
+	b1->preds.push_back(b2->id);
+	b2->addSucc(b3->id);
+	b3->preds.push_back(b2->id);
+	fn.addInstr(b0->id, IrInstr::Op::Assign);
+	fn.addInstr(b1->id, IrInstr::Op::Add);
+	fn.addInstr(b2->id, IrInstr::Op::CondBranch);
+	fn.addInstr(b3->id, IrInstr::Op::Ret);
+	SSAPass p;
+	p.run(fn);
 
-    CompilerStructurer cs;
-    auto tree = cs.run(fn);
-    ASSERT_NE(nullptr, tree);
+	CompilerStructurer cs;
+	auto tree = cs.run(fn);
+	ASSERT_NE(nullptr, tree);
 
-    std::vector<BlockId> blocks;
-    collectBlocks(tree.get(), blocks);
-    // The body statement is there...
-    EXPECT_NE(blocks.end(), std::find(blocks.begin(), blocks.end(), b1->id));
-    // ...and the block after the loop appears exactly once.
-    EXPECT_EQ(1, std::count(blocks.begin(), blocks.end(), b3->id))
-        << "the block after the loop was emitted " << std::count(blocks.begin(), blocks.end(), b3->id)
-        << " times";
-    EXPECT_EQ(0u, countKind(tree.get(), StructNode::Kind::Goto));
+	std::vector<BlockId> blocks;
+	collectBlocks(tree.get(), blocks);
+	// The body statement is there...
+	EXPECT_NE(blocks.end(), std::find(blocks.begin(), blocks.end(), b1->id));
+	// ...and the block after the loop appears exactly once.
+	EXPECT_EQ(1, std::count(blocks.begin(), blocks.end(), b3->id))
+		<< "the block after the loop was emitted " << std::count(blocks.begin(), blocks.end(), b3->id) << " times";
+	EXPECT_EQ(0u, countKind(tree.get(), StructNode::Kind::Goto));
 }

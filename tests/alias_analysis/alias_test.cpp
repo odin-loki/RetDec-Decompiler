@@ -600,66 +600,78 @@ int main(int argc, char** argv) {
 // of distinct ids could come back anything but NoAlias -- the permissive
 // answer, which licenses reordering and dead-store elimination across pointers
 // that genuinely alias. Steensgaard (POPL'96) unifies the classes themselves.
-TEST(Steensgaard, TwoPointersToTheSameObjectMayAlias) {
-    SteensgaardAnalysis sa;
-    for (uint32_t i = 0; i < 3; ++i) sa.addValue(i);
-    sa.addConstraint({ConstraintKind::AddrOf, 1, 0});  // p = &o
-    sa.addConstraint({ConstraintKind::AddrOf, 2, 0});  // q = &o
-    sa.run();
-    EXPECT_EQ(AliasResult::MayAlias, sa.alias(1, 2));
+TEST(Steensgaard, TwoPointersToTheSameObjectMayAlias)
+{
+	SteensgaardAnalysis sa;
+	for (uint32_t i = 0; i < 3; ++i)
+		sa.addValue(i);
+	sa.addConstraint({ConstraintKind::AddrOf, 1, 0}); // p = &o
+	sa.addConstraint({ConstraintKind::AddrOf, 2, 0}); // q = &o
+	sa.run();
+	EXPECT_EQ(AliasResult::MayAlias, sa.alias(1, 2));
 }
 
-TEST(Steensgaard, ACopyPutsBothPointersInOneClass) {
-    SteensgaardAnalysis sa;
-    for (uint32_t i = 0; i < 3; ++i) sa.addValue(i);
-    sa.addConstraint({ConstraintKind::AddrOf, 1, 0});  // p = &o
-    sa.addConstraint({ConstraintKind::Copy,   2, 1});  // q = p
-    sa.run();
-    EXPECT_EQ(AliasResult::MayAlias, sa.alias(1, 2));
-    EXPECT_LT(sa.classCount(), sa.valueCount());
+TEST(Steensgaard, ACopyPutsBothPointersInOneClass)
+{
+	SteensgaardAnalysis sa;
+	for (uint32_t i = 0; i < 3; ++i)
+		sa.addValue(i);
+	sa.addConstraint({ConstraintKind::AddrOf, 1, 0}); // p = &o
+	sa.addConstraint({ConstraintKind::Copy, 2, 1});   // q = p
+	sa.run();
+	EXPECT_EQ(AliasResult::MayAlias, sa.alias(1, 2));
+	EXPECT_LT(sa.classCount(), sa.valueCount());
 }
 
-TEST(Steensgaard, ACopyChainIsTransitive) {
-    SteensgaardAnalysis sa;
-    for (uint32_t i = 0; i < 4; ++i) sa.addValue(i);
-    sa.addConstraint({ConstraintKind::AddrOf, 1, 0});  // a = &o
-    sa.addConstraint({ConstraintKind::Copy,   2, 1});  // b = a
-    sa.addConstraint({ConstraintKind::Copy,   3, 2});  // c = b
-    sa.run();
-    EXPECT_EQ(AliasResult::MayAlias, sa.alias(1, 3));
+TEST(Steensgaard, ACopyChainIsTransitive)
+{
+	SteensgaardAnalysis sa;
+	for (uint32_t i = 0; i < 4; ++i)
+		sa.addValue(i);
+	sa.addConstraint({ConstraintKind::AddrOf, 1, 0}); // a = &o
+	sa.addConstraint({ConstraintKind::Copy, 2, 1});   // b = a
+	sa.addConstraint({ConstraintKind::Copy, 3, 2});   // c = b
+	sa.run();
+	EXPECT_EQ(AliasResult::MayAlias, sa.alias(1, 3));
 }
 
 // Two loads from the same pointer name the same class.
-TEST(Steensgaard, TwoLoadsFromOnePointerMayAlias) {
-    SteensgaardAnalysis sa;
-    for (uint32_t i = 0; i < 5; ++i) sa.addValue(i);
-    sa.addConstraint({ConstraintKind::AddrOf, 3, 0});  // r = &o
-    sa.addConstraint({ConstraintKind::AddrOf, 0, 4});  // o = &x
-    sa.addConstraint({ConstraintKind::Load,   1, 3});  // p = *r
-    sa.addConstraint({ConstraintKind::Load,   2, 3});  // q = *r
-    sa.run();
-    EXPECT_EQ(AliasResult::MayAlias, sa.alias(1, 2));
+TEST(Steensgaard, TwoLoadsFromOnePointerMayAlias)
+{
+	SteensgaardAnalysis sa;
+	for (uint32_t i = 0; i < 5; ++i)
+		sa.addValue(i);
+	sa.addConstraint({ConstraintKind::AddrOf, 3, 0}); // r = &o
+	sa.addConstraint({ConstraintKind::AddrOf, 0, 4}); // o = &x
+	sa.addConstraint({ConstraintKind::Load, 1, 3});   // p = *r
+	sa.addConstraint({ConstraintKind::Load, 2, 3});   // q = *r
+	sa.run();
+	EXPECT_EQ(AliasResult::MayAlias, sa.alias(1, 2));
 }
 
 // The precision that makes the analysis worth running is still there: pointers
 // to different objects, with nothing connecting them, do not alias.
-TEST(Steensgaard, PointersToDifferentObjectsStillDoNotAlias) {
-    SteensgaardAnalysis sa;
-    for (uint32_t i = 0; i < 4; ++i) sa.addValue(i);
-    sa.addConstraint({ConstraintKind::AddrOf, 1, 0});  // p = &o
-    sa.addConstraint({ConstraintKind::AddrOf, 3, 2});  // q = &x
-    sa.run();
-    EXPECT_EQ(AliasResult::NoAlias, sa.alias(1, 3));
+TEST(Steensgaard, PointersToDifferentObjectsStillDoNotAlias)
+{
+	SteensgaardAnalysis sa;
+	for (uint32_t i = 0; i < 4; ++i)
+		sa.addValue(i);
+	sa.addConstraint({ConstraintKind::AddrOf, 1, 0}); // p = &o
+	sa.addConstraint({ConstraintKind::AddrOf, 3, 2}); // q = &x
+	sa.run();
+	EXPECT_EQ(AliasResult::NoAlias, sa.alias(1, 3));
 }
 
 // A store through one pointer unifies the pointee class with the stored value.
-TEST(Steensgaard, AStoreUnifiesThePointeeWithTheStoredValue) {
-    SteensgaardAnalysis sa;
-    for (uint32_t i = 0; i < 4; ++i) sa.addValue(i);
-    sa.addConstraint({ConstraintKind::AddrOf, 1, 0});  // p = &o
-    sa.addConstraint({ConstraintKind::Store,  1, 2});  // *p = v
-    sa.addConstraint({ConstraintKind::AddrOf, 3, 0});  // q = &o
-    sa.run();
-    EXPECT_EQ(AliasResult::MayAlias, sa.alias(1, 3));
-    EXPECT_EQ(AliasResult::MayAlias, sa.alias(0, 2));
+TEST(Steensgaard, AStoreUnifiesThePointeeWithTheStoredValue)
+{
+	SteensgaardAnalysis sa;
+	for (uint32_t i = 0; i < 4; ++i)
+		sa.addValue(i);
+	sa.addConstraint({ConstraintKind::AddrOf, 1, 0}); // p = &o
+	sa.addConstraint({ConstraintKind::Store, 1, 2});  // *p = v
+	sa.addConstraint({ConstraintKind::AddrOf, 3, 0}); // q = &o
+	sa.run();
+	EXPECT_EQ(AliasResult::MayAlias, sa.alias(1, 3));
+	EXPECT_EQ(AliasResult::MayAlias, sa.alias(0, 2));
 }

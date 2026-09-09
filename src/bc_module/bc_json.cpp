@@ -366,8 +366,7 @@ struct Parser
 
 	/// Counts one level of container nesting for as long as it is in scope, and
 	/// reports whether there was room for it.
-	class DepthGuard
-	{
+	class DepthGuard {
 	public:
 		explicit DepthGuard(Parser& p): parser_(p)
 		{
@@ -387,7 +386,10 @@ struct Parser
 		DepthGuard(const DepthGuard&) = delete;
 		DepthGuard& operator=(const DepthGuard&) = delete;
 
-		bool entered() const { return entered_; }
+		bool entered() const
+		{
+			return entered_;
+		}
 
 	private:
 		Parser& parser_;

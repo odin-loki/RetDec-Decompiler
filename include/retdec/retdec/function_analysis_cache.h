@@ -81,23 +81,24 @@ FunctionDetections analyseFunctionDetections(const ssa::SSAFunction& fn);
  */
 class FunctionAnalysisCache {
 public:
-    // 4: entries carry the container's emittedType and elementType and the
-    //    algorithm's tier. A version-3 entry has neither, so a warm run reading
-    //    one would print the kind name where the cold run printed the recovered
-    //    type -- "STL: std::array" against "STL: ring_buffer". Bumping the
-    //    version drops those entries rather than letting them answer wrongly.
-    // 5: entries carry FunctionDetections::idioms, which the serialiser had
-    //    never touched -- so a warm run dropped every idiom detection the cold
-    //    run made, "[RetDec] DFS detected" among them.
-    static constexpr std::uint32_t kVersion = 5;
+	// 4: entries carry the container's emittedType and elementType and the
+	//    algorithm's tier. A version-3 entry has neither, so a warm run reading
+	//    one would print the kind name where the cold run printed the recovered
+	//    type -- "STL: std::array" against "STL: ring_buffer". Bumping the
+	//    version drops those entries rather than letting them answer wrongly.
+	// 5: entries carry FunctionDetections::idioms, which the serialiser had
+	//    never touched -- so a warm run dropped every idiom detection the cold
+	//    run made, "[RetDec] DFS detected" among them.
+	static constexpr std::uint32_t kVersion = 5;
 
-    struct Entry {
-        std::string name;
+	struct Entry
+	{
+		std::string name;
         std::string bodyHash;
         FunctionDetections detections;
-    };
+	};
 
-    /// Load existing sidecar; missing, corrupt, or version-mismatched files are ignored.
+	/// Load existing sidecar; missing, corrupt, or version-mismatched files are ignored.
     static FunctionAnalysisCache loadFromFile(const std::string& path);
 
     /// Write sidecar atomically (best-effort).

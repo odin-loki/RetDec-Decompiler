@@ -790,7 +790,8 @@ TEST(FuncBoundary, ThePointerFromFunctionAtSurvivesLaterCandidates)
 	ASSERT_EQ(0x1000u, before->startAddr);
 
 	// Enough new candidates to force the sorted vector to reallocate.
-	for (int i = 0; i < 64; ++i) d.addCallTarget(0x3000 + i * 0x100);
+	for (int i = 0; i < 64; ++i)
+		d.addCallTarget(0x3000 + i * 0x100);
 	(void)d.functions();
 
 	const FunctionBoundary* after = d.functionAt(0x1000);

@@ -171,20 +171,23 @@ private:
  */
 class ProfilingSession {
 public:
-    ProfilingSession() noexcept;
-    ~ProfilingSession();
+	ProfilingSession() noexcept;
+	~ProfilingSession();
 
-    ProfilingSession(const ProfilingSession&) = delete;
-    ProfilingSession& operator=(const ProfilingSession&) = delete;
+	ProfilingSession(const ProfilingSession&) = delete;
+	ProfilingSession& operator=(const ProfilingSession&) = delete;
 
-    /// True when no other session was in flight at the moment this one began.
-    bool ownsProfiler() const noexcept { return owns_; }
+	/// True when no other session was in flight at the moment this one began.
+	bool ownsProfiler() const noexcept
+	{
+		return owns_;
+	}
 
-    /// Sessions in flight in this process.
-    static int inFlight() noexcept;
+	/// Sessions in flight in this process.
+	static int inFlight() noexcept;
 
 private:
-    bool owns_;
+	bool owns_;
 };
 
 // ─── Profiler ────────────────────────────────────────────────────────────────
@@ -203,19 +206,25 @@ public:
      * @brief Enable or disable all profiling.  When disabled, all record()
      *        calls are no-ops and ScopeTimer destructors do nothing.
      */
-    void setEnabled(bool enabled) { enabled_.store(enabled, std::memory_order_relaxed); }
-    bool isEnabled()        const { return enabled_.load(std::memory_order_relaxed); }
+	void setEnabled(bool enabled)
+	{
+		enabled_.store(enabled, std::memory_order_relaxed);
+	}
+	bool isEnabled() const
+	{
+		return enabled_.load(std::memory_order_relaxed);
+	}
 
-    /**
-     * @brief Begin a named stage measurement.  Returns a ScopeTimer that
-     *        automatically stops on destruction.
-     */
-    ScopeTimer measure(const std::string& stageName);
+	/**
+	 * @brief Begin a named stage measurement.  Returns a ScopeTimer that
+	 *        automatically stops on destruction.
+	 */
+	ScopeTimer measure(const std::string& stageName);
 
-    /**
-     * @brief Manual start.  Returns a token TimePoint to pass to stop().
-     */
-    TimePoint start(const std::string& stageName);
+	/**
+	 * @brief Manual start.  Returns a token TimePoint to pass to stop().
+	 */
+	TimePoint start(const std::string& stageName);
 
     /**
      * @brief Record elapsed time for a stage started at t0.
@@ -257,12 +266,13 @@ public:
         std::forward<Fn>(fn)();
         auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
             Clock::now() - t0).count();
-        if (isEnabled()) {
-            std::lock_guard<std::mutex> lk(mutex_);
-            record(stageName, static_cast<Nanos>(ns));
-        }
-        return static_cast<double>(ns) / 1e6;
-    }
+		if (isEnabled())
+		{
+			std::lock_guard<std::mutex> lk(mutex_);
+			record(stageName, static_cast<Nanos>(ns));
+		}
+		return static_cast<double>(ns) / 1e6;
+	}
 
 private:
     Profiler() = default;
@@ -271,19 +281,19 @@ private:
 
     mutable std::mutex mutex_;
 
-    /// Atomic because it is read outside the mutex on every record path and
-    /// written by setEnabled() from whichever thread starts a decompilation.
-    /// Under parallelBatchDecompile() those are different threads:
-    ///
-    ///   WARNING: ThreadSanitizer: data race
-    ///     Write of size 1 ... Profiler::setEnabled(bool)  profiling.h:170
-    ///     Previous read of size 1 ... Profiler::stop(...) profiling.cpp:68
-    std::atomic<bool>  enabled_{true};
-    Nanos              totalWallNs_   = 0;
-    int64_t            lastRssBytes_  = 0;
+	/// Atomic because it is read outside the mutex on every record path and
+	/// written by setEnabled() from whichever thread starts a decompilation.
+	/// Under parallelBatchDecompile() those are different threads:
+	///
+	///   WARNING: ThreadSanitizer: data race
+	///     Write of size 1 ... Profiler::setEnabled(bool)  profiling.h:170
+	///     Previous read of size 1 ... Profiler::stop(...) profiling.cpp:68
+	std::atomic<bool> enabled_{true};
+	Nanos totalWallNs_ = 0;
+	int64_t lastRssBytes_ = 0;
 
-    std::unordered_map<std::string, StageRecord>  stages_;
-    std::unordered_map<std::string, KernelRecord> kernels_;
+	std::unordered_map<std::string, StageRecord> stages_;
+	std::unordered_map<std::string, KernelRecord> kernels_;
     std::vector<FunctionSample>                   funcSamples_;
 };
 

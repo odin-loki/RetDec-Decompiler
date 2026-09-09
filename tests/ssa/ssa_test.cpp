@@ -1011,13 +1011,15 @@ TEST(DomTree, RunningTwiceDoesNotDuplicateDomChildren)
 	DominatorTree dom;
 	dom.run(fn);
 	std::size_t after1 = 0;
-	for (auto& b: fn.blocks()) after1 += b->domChildren.size();
+	for (auto& b: fn.blocks())
+		after1 += b->domChildren.size();
 	ASSERT_EQ(5u, after1);
 
 	dom.run(fn);
 	dom.run(fn);
 	std::size_t after3 = 0;
-	for (auto& b: fn.blocks()) after3 += b->domChildren.size();
+	for (auto& b: fn.blocks())
+		after3 += b->domChildren.size();
 	EXPECT_EQ(after1, after3);
 }
 
@@ -1041,6 +1043,7 @@ TEST(SSAPass, RunningTheWholePassTwiceTerminates)
 	second.run(fn);
 
 	std::size_t edges = 0;
-	for (auto& b: fn.blocks()) edges += b->domChildren.size();
+	for (auto& b: fn.blocks())
+		edges += b->domChildren.size();
 	EXPECT_EQ(23u, edges);
 }

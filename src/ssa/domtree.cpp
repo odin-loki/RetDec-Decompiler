@@ -157,21 +157,23 @@ void DominatorTree::computeIDom(SSAFunction& fn) {
     }
     fn.block(fn.entryId())->idom = kInvalidBlock;
 
-    // Build domChildren. The lists are rebuilt, not appended to:
-    // computeDomFrontiers() below clears domFrontier for the same reason, and
-    // without the clear a second run() over the same function gives every
-    // block each child twice. SSARename walks this tree recursively, so the
-    // duplicates cost 2^depth: a second SSAPass::run over a 20-block function
-    // took 14.8 s where the first took 0.0 ms, and a 22-block one did not
-    // finish in two minutes. SSAPass::run itself runs the dominator tree twice
-    // -- once before renaming and once for the verifier.
-    for (auto& blkPtr : fn.blocks()) blkPtr->domChildren.clear();
-    for (std::size_t i = 0; i < n; ++i) {
-        BlockId bid = (BlockId)i;
+	// Build domChildren. The lists are rebuilt, not appended to:
+	// computeDomFrontiers() below clears domFrontier for the same reason, and
+	// without the clear a second run() over the same function gives every
+	// block each child twice. SSARename walks this tree recursively, so the
+	// duplicates cost 2^depth: a second SSAPass::run over a 20-block function
+	// took 14.8 s where the first took 0.0 ms, and a 22-block one did not
+	// finish in two minutes. SSAPass::run itself runs the dominator tree twice
+	// -- once before renaming and once for the verifier.
+	for (auto& blkPtr: fn.blocks())
+		blkPtr->domChildren.clear();
+	for (std::size_t i = 0; i < n; ++i)
+	{
+		BlockId bid = (BlockId)i;
         BlockId parent = fn.block(bid)->idom;
         if (parent != kInvalidBlock && fn.block(parent))
             fn.block(parent)->domChildren.push_back(bid);
-    }
+	}
 }
 
 // ─── Dominance frontier (Cooper 2001) ────────────────────────────────────────

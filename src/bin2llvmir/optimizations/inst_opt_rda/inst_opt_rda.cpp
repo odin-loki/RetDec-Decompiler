@@ -180,11 +180,8 @@ bool defWithUsesInTheSameBb(
 		// three patterns in inst_opt_rda_ext.cpp each check this already; the
 		// two in this file did not, and predate opaque pointers, where a
 		// pointer's element type tied the two together.
-		if (use->use
-				&& store->getParent() == use->use->getParent()
-				&& llvm::isa<llvm::LoadInst>(use->use)
-				&& use->use->getType() == store->getValueOperand()->getType()
-				&& def->dominates(use))
+		if (use->use && store->getParent() == use->use->getParent() && llvm::isa<llvm::LoadInst>(use->use)
+			&& use->use->getType() == store->getValueOperand()->getType() && def->dominates(use))
 		{
 			use->use->replaceAllUsesWith(store->getValueOperand());
 			if (toRemove)

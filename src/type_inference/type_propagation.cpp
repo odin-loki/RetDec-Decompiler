@@ -107,30 +107,32 @@ const StructField* StructLayout::field(uint32_t offset) const {
 // ─── Union-find helpers ───────────────────────────────────────────────────────
 
 void TypePropagation::addValue(uint32_t id) {
-    // The id IS the index into three dense vectors, so a large id is a large
-    // allocation. Two separate problems lived here:
-    //
-    //   `id + 1` was computed in uint32 arithmetic, so for id == UINT32_MAX it
-    //   was 0: the resize emptied all three vectors and the indexed read below
-    //   went straight off the end. ASan reported a SEGV at this function.
-    //
-    //   Sizing it correctly instead asks for 4 billion entries -- ASan then
-    //   reported an out-of-memory trying to allocate 16 GB for parent_ alone.
-    //
-    // find() already treats an id it has never seen as its own singleton
-    // class, which is exactly what an unconstrained value is, so declining to
-    // materialise an implausible id costs nothing.
-    if (id >= kMaxValueId) return;
-    if (id >= parent_.size()) {
-        const std::size_t want = static_cast<std::size_t>(id) + 1u;
-        parent_.resize(want, UINT32_MAX);
-        rank_.resize(want, 0);
-        classes_.resize(want);
-    }
-    if (parent_[id] == UINT32_MAX) {
-        parent_[id] = id;
+	// The id IS the index into three dense vectors, so a large id is a large
+	// allocation. Two separate problems lived here:
+	//
+	//   `id + 1` was computed in uint32 arithmetic, so for id == UINT32_MAX it
+	//   was 0: the resize emptied all three vectors and the indexed read below
+	//   went straight off the end. ASan reported a SEGV at this function.
+	//
+	//   Sizing it correctly instead asks for 4 billion entries -- ASan then
+	//   reported an out-of-memory trying to allocate 16 GB for parent_ alone.
+	//
+	// find() already treats an id it has never seen as its own singleton
+	// class, which is exactly what an unconstrained value is, so declining to
+	// materialise an implausible id costs nothing.
+	if (id >= kMaxValueId) return;
+	if (id >= parent_.size())
+	{
+		const std::size_t want = static_cast<std::size_t>(id) + 1u;
+		parent_.resize(want, UINT32_MAX);
+		rank_.resize(want, 0);
+		classes_.resize(want);
+	}
+	if (parent_[id] == UINT32_MAX)
+	{
+		parent_[id] = id;
         rank_[id]   = 0;
-    }
+	}
 }
 
 uint32_t TypePropagation::find(uint32_t x) const {
@@ -248,42 +250,45 @@ void TypePropagation::applyConstraint(const TypeConstraint& c) {
         if (classes_[lid].priority < 2) classes_[lid].priority = 2;
         break;
 
-    // SameWidth and SameSign unite the two classes, which is what the union-find
-    // is for and what this file's header comment has always said they do.
-    // Neither called unite(), so unite() was dead code and every value stayed
-    // its own class: the width was copied between the two values named by the
-    // constraint and no further, which makes the answer depend on the order the
-    // constraints arrive in. Measured on `HasWidth(v3,64), SameWidth(v2,v3),
-    // SameWidth(v1,v2)`: v1 came out 64 bits. The same three constraints with
-    // the two SameWidth swapped left v1 at 0.
-    case ConstraintKind::SameWidth:
-        if (c.rhsId != UINT32_MAX) {
-            uint16_t wA = classes_[lid].type.width;
-            uint32_t rid = find(c.rhsId);
-            uint16_t wB = (rid < classes_.size()) ? classes_[rid].type.width : 0;
-            unite(c.lhsId, c.rhsId);
-            uint32_t root = find(c.lhsId);
-            addValue(root);
-            uint16_t w = std::max(wA, wB);
-            if (w > 0) classes_[root].type.width = w;
-        }
-        break;
+	// SameWidth and SameSign unite the two classes, which is what the union-find
+	// is for and what this file's header comment has always said they do.
+	// Neither called unite(), so unite() was dead code and every value stayed
+	// its own class: the width was copied between the two values named by the
+	// constraint and no further, which makes the answer depend on the order the
+	// constraints arrive in. Measured on `HasWidth(v3,64), SameWidth(v2,v3),
+	// SameWidth(v1,v2)`: v1 came out 64 bits. The same three constraints with
+	// the two SameWidth swapped left v1 at 0.
+	case ConstraintKind::SameWidth:
+		if (c.rhsId != UINT32_MAX)
+		{
+			uint16_t wA = classes_[lid].type.width;
+			uint32_t rid = find(c.rhsId);
+			uint16_t wB = (rid < classes_.size()) ? classes_[rid].type.width : 0;
+			unite(c.lhsId, c.rhsId);
+			uint32_t root = find(c.lhsId);
+			addValue(root);
+			uint16_t w = std::max(wA, wB);
+			if (w > 0) classes_[root].type.width = w;
+		}
+		break;
 
-    case ConstraintKind::SameSign:
+	case ConstraintKind::SameSign:
         if (c.rhsId != UINT32_MAX) {
-            Signedness sA = classes_[lid].type.sign;
-            uint32_t rid = find(c.rhsId);
-            addValue(rid);
-            Signedness sB = classes_[rid].type.sign;
-            unite(c.lhsId, c.rhsId);
-            uint32_t root = find(c.lhsId);
-            addValue(root);
-            if (sA != Signedness::Unknown) classes_[root].type.sign = sA;
-            else if (sB != Signedness::Unknown) classes_[root].type.sign = sB;
-        }
-        break;
+			Signedness sA = classes_[lid].type.sign;
+			uint32_t rid = find(c.rhsId);
+			addValue(rid);
+			Signedness sB = classes_[rid].type.sign;
+			unite(c.lhsId, c.rhsId);
+			uint32_t root = find(c.lhsId);
+			addValue(root);
+			if (sA != Signedness::Unknown)
+				classes_[root].type.sign = sA;
+			else if (sB != Signedness::Unknown)
+				classes_[root].type.sign = sB;
+		}
+		break;
 
-    case ConstraintKind::ReturnType:
+	case ConstraintKind::ReturnType:
     case ConstraintKind::ParamType:
         // Apply the type from constraint with priority 3 (ABI).
         // Only apply as integer if the current type is not already a higher-
@@ -308,31 +313,34 @@ void TypePropagation::applyConstraint(const TypeConstraint& c) {
 // ─── Main run ─────────────────────────────────────────────────────────────────
 
 void TypePropagation::run() {
-    // Uniting merges classes, so a constraint applied early can be reached by
-    // information that only arrives later. Run to a fixpoint rather than once:
-    // unions only ever merge, so the class count is non-increasing and this
-    // terminates; the bound is a backstop a well-formed constraint set does not
-    // reach.
-    const std::size_t maxRounds = constraints_.size() + 2;
-    for (std::size_t round = 0; round < maxRounds; ++round) {
-        const std::size_t before = classCount();
-        std::vector<IrType> snapshot;
-        snapshot.reserve(classes_.size());
-        for (const auto& tc : classes_) snapshot.push_back(tc.type);
+	// Uniting merges classes, so a constraint applied early can be reached by
+	// information that only arrives later. Run to a fixpoint rather than once:
+	// unions only ever merge, so the class count is non-increasing and this
+	// terminates; the bound is a backstop a well-formed constraint set does not
+	// reach.
+	const std::size_t maxRounds = constraints_.size() + 2;
+	for (std::size_t round = 0; round < maxRounds; ++round)
+	{
+		const std::size_t before = classCount();
+		std::vector<IrType> snapshot;
+		snapshot.reserve(classes_.size());
+		for (const auto& tc: classes_)
+			snapshot.push_back(tc.type);
 
-        for (auto& c : constraints_)
-            applyConstraint(c);
+		for (auto& c: constraints_)
+			applyConstraint(c);
 
-        if (classCount() != before) continue;
-        if (classes_.size() != snapshot.size()) continue;
-        bool changed = false;
-        for (std::size_t i = 0; i < classes_.size() && !changed; ++i) {
-            const IrType& a = snapshot[i];
-            const IrType& b = classes_[i].type;
-            if (a.kind != b.kind || a.width != b.width || a.sign != b.sign) changed = true;
-        }
-        if (!changed) break;
-    }
+		if (classCount() != before) continue;
+		if (classes_.size() != snapshot.size()) continue;
+		bool changed = false;
+		for (std::size_t i = 0; i < classes_.size() && !changed; ++i)
+		{
+			const IrType& a = snapshot[i];
+			const IrType& b = classes_[i].type;
+			if (a.kind != b.kind || a.width != b.width || a.sign != b.sign) changed = true;
+		}
+		if (!changed) break;
+	}
 }
 
 uint32_t TypePropagation::findRoot(uint32_t id) const { return find(id); }

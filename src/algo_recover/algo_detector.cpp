@@ -52,33 +52,37 @@ namespace {
 /// on read-back, every cached algorithm came out Unknown, and a warm decompile
 /// printed "unknown detected" where a cold one printed "std::find_if
 /// detected". Two lists that had to agree, and nothing making them.
-struct KindName { AlgorithmKind kind; const char* name; };
+struct KindName
+{
+	AlgorithmKind kind;
+	const char* name;
+};
 
 constexpr KindName kKindNames[] = {
-	{AlgorithmKind::Transform,    "std::transform"},
-	{AlgorithmKind::Accumulate,   "std::accumulate"},
-	{AlgorithmKind::MaxElement,   "std::max_element"},
-	{AlgorithmKind::MinElement,   "std::min_element"},
-	{AlgorithmKind::Find,         "std::find"},
-	{AlgorithmKind::FindIf,       "std::find_if"},
+	{AlgorithmKind::Transform, "std::transform"},
+	{AlgorithmKind::Accumulate, "std::accumulate"},
+	{AlgorithmKind::MaxElement, "std::max_element"},
+	{AlgorithmKind::MinElement, "std::min_element"},
+	{AlgorithmKind::Find, "std::find"},
+	{AlgorithmKind::FindIf, "std::find_if"},
 	{AlgorithmKind::BinarySearch, "binary_search"},
-	{AlgorithmKind::Partition,    "std::partition"},
-	{AlgorithmKind::ForEach,      "std::for_each"},
-	{AlgorithmKind::Copy,         "std::copy"},
-	{AlgorithmKind::Fill,         "std::fill"},
-	{AlgorithmKind::Count,        "std::count"},
-	{AlgorithmKind::AnyOf,        "std::any_of"},
-	{AlgorithmKind::AllOf,        "std::all_of"},
-	{AlgorithmKind::NoneOf,       "std::none_of"},
-	{AlgorithmKind::Reverse,      "std::reverse"},
-	{AlgorithmKind::RotateLeft,   "std::rotate"},
+	{AlgorithmKind::Partition, "std::partition"},
+	{AlgorithmKind::ForEach, "std::for_each"},
+	{AlgorithmKind::Copy, "std::copy"},
+	{AlgorithmKind::Fill, "std::fill"},
+	{AlgorithmKind::Count, "std::count"},
+	{AlgorithmKind::AnyOf, "std::any_of"},
+	{AlgorithmKind::AllOf, "std::all_of"},
+	{AlgorithmKind::NoneOf, "std::none_of"},
+	{AlgorithmKind::Reverse, "std::reverse"},
+	{AlgorithmKind::RotateLeft, "std::rotate"},
 };
 
 } // anonymous namespace
 
 std::string AlgorithmResult::kindName() const noexcept
 {
-	for (const auto& kn : kKindNames)
+	for (const auto& kn: kKindNames)
 	{
 		if (kn.kind == kind) return kn.name;
 	}
@@ -87,7 +91,7 @@ std::string AlgorithmResult::kindName() const noexcept
 
 AlgorithmKind algorithmKindFromName(const std::string& name) noexcept
 {
-	for (const auto& kn : kKindNames)
+	for (const auto& kn: kKindNames)
 	{
 		if (name == kn.name) return kn.kind;
 	}

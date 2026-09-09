@@ -633,8 +633,7 @@ TEST(PyStackSimulator, KeywordNamesPastTheArgumentListAreDropped)
 {
 	PythonVersion ver{3, 10, 0, ""};
 	// LOAD_FAST 0, LOAD_FAST 0, BUILD_TUPLE 9, CALL_FUNCTION_KW 2
-	auto code = makeSimpleCode(
-		ver, {124, 0, 124, 0, 102, 9, 140, 2}, {}, {"x"});
+	auto code = makeSimpleCode(ver, {124, 0, 124, 0, 102, 9, 140, 2}, {}, {"x"});
 
 	PyStackSimulator sim(code);
 	auto stmts = sim.simulate();
@@ -655,8 +654,7 @@ TEST(PyStackSimulator, AnExtendedArgCountLargerThanTheBodyIsTruncated)
 {
 	PythonVersion ver{3, 10, 0, ""};
 	// ... then RETURN_VALUE, so the tuple reaches a statement.
-	auto code = makeSimpleCode(
-		ver, {90, 0x7F, 90, 0xFF, 90, 0xFF, 102, 0xFF, 83, 0});
+	auto code = makeSimpleCode(ver, {90, 0x7F, 90, 0xFF, 90, 0xFF, 102, 0xFF, 83, 0});
 
 	PyStackSimulator sim(code);
 	auto stmts = sim.simulate();
@@ -677,7 +675,11 @@ TEST(PyStackSimulator, MoreExtendedArgPrefixesThanAnOpargCanHold)
 {
 	PythonVersion ver{3, 10, 0, ""};
 	std::vector<uint8_t> bc;
-	for (int i = 0; i < 40; ++i) { bc.push_back(90); bc.push_back(0xFF); }
+	for (int i = 0; i < 40; ++i)
+	{
+		bc.push_back(90);
+		bc.push_back(0xFF);
+	}
 	bc.push_back(103); // BUILD_LIST
 	bc.push_back(0xFF);
 
@@ -696,8 +698,7 @@ TEST(PyStackSimulator, MoreExtendedArgPrefixesThanAnOpargCanHold)
 TEST(PyStackSimulator, AnUnpackWiderThanTheBodyIsTruncated)
 {
 	PythonVersion ver{3, 10, 0, ""};
-	auto code = makeSimpleCode(
-		ver, {90, 0x7F, 90, 0xFF, 90, 0xFF, 92, 0xFF}); // UNPACK_SEQUENCE
+	auto code = makeSimpleCode(ver, {90, 0x7F, 90, 0xFF, 90, 0xFF, 92, 0xFF}); // UNPACK_SEQUENCE
 
 	PyStackSimulator sim(code);
 	sim.simulate();
@@ -709,8 +710,7 @@ TEST(PyStackSimulator, AnUnpackWiderThanTheBodyIsTruncated)
 TEST(PyStackSimulator, AMapWiderThanTheBodyIsTruncated)
 {
 	PythonVersion ver{3, 10, 0, ""};
-	auto code = makeSimpleCode(
-		ver, {90, 0x7F, 90, 0xFF, 90, 0xFF, 105, 0xFF}); // BUILD_MAP
+	auto code = makeSimpleCode(ver, {90, 0x7F, 90, 0xFF, 90, 0xFF, 105, 0xFF}); // BUILD_MAP
 
 	PyStackSimulator sim(code);
 	auto stmts = sim.simulate();
@@ -728,10 +728,17 @@ TEST(PyStackSimulator, AnHonestCountIsLeftAlone)
 {
 	PythonVersion ver{3, 10, 0, ""};
 	std::vector<uint8_t> bc;
-	for (int i = 0; i < 300; ++i) { bc.push_back(124); bc.push_back(0); } // LOAD_FAST 0
-	bc.push_back(90); bc.push_back(1);  // EXTENDED_ARG 1
-	bc.push_back(102); bc.push_back(44); // BUILD_TUPLE 300
-	bc.push_back(83); bc.push_back(0);   // RETURN_VALUE
+	for (int i = 0; i < 300; ++i)
+	{
+		bc.push_back(124);
+		bc.push_back(0);
+	} // LOAD_FAST 0
+	bc.push_back(90);
+	bc.push_back(1); // EXTENDED_ARG 1
+	bc.push_back(102);
+	bc.push_back(44); // BUILD_TUPLE 300
+	bc.push_back(83);
+	bc.push_back(0); // RETURN_VALUE
 
 	auto code = makeSimpleCode(ver, bc, {}, {"x"});
 	PyStackSimulator sim(code);

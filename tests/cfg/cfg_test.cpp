@@ -713,11 +713,15 @@ TEST(Phase1, ABackwardBranchIntoItsOwnBlockSplitsIt)
 	std::vector<InstrSummary> ins;
 	auto add = [&](uint64_t a, uint32_t l, InstrKind k, uint64_t t = 0, bool c = false) {
 		InstrSummary s;
-		s.addr = a; s.len = l; s.kind = k; s.target = t; s.isConditional = c;
+		s.addr = a;
+		s.len = l;
+		s.kind = k;
+		s.target = t;
+		s.isConditional = c;
 		ins.push_back(s);
 	};
 	add(0x1000, 4, InstrKind::Normal);
-	add(0x1004, 4, InstrKind::Normal);   // the loop target, mid-block
+	add(0x1004, 4, InstrKind::Normal); // the loop target, mid-block
 	add(0x1008, 4, InstrKind::Normal);
 	add(0x100C, 4, InstrKind::ConditionalJmp, 0x1004, true);
 	add(0x1010, 4, InstrKind::Ret);
@@ -762,14 +766,21 @@ TEST(Phase1, AForwardBranchToAFreshAddressDoesNotSplitAnything)
 
 	std::vector<InstrSummary> ins;
 	InstrSummary s;
-	s.addr = 0x1000; s.len = 4; s.kind = InstrKind::ConditionalJmp;
-	s.target = 0x1008; s.isConditional = true;
+	s.addr = 0x1000;
+	s.len = 4;
+	s.kind = InstrKind::ConditionalJmp;
+	s.target = 0x1008;
+	s.isConditional = true;
 	ins.push_back(s);
 	InstrSummary n;
-	n.addr = 0x1004; n.len = 4; n.kind = InstrKind::Normal;
+	n.addr = 0x1004;
+	n.len = 4;
+	n.kind = InstrKind::Normal;
 	ins.push_back(n);
 	InstrSummary r;
-	r.addr = 0x1008; r.len = 4; r.kind = InstrKind::Ret;
+	r.addr = 0x1008;
+	r.len = 4;
+	r.kind = InstrKind::Ret;
 	ins.push_back(r);
 
 	b.addFunction(0x1000, 0x100C, ins);

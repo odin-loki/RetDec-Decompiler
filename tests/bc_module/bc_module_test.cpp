@@ -906,7 +906,7 @@ TEST(GoldenModule, LuaHelloWorld)
 
 TEST(BcJson, DeeplyNestedInputIsRefusedRatherThanRecursedInto)
 {
-	for (int levels : {1000, 20000, 100000})
+	for (int levels: {1000, 20000, 100000})
 	{
 		std::string src = "{\"x\":";
 		src.append(static_cast<std::size_t>(levels), '[');
@@ -924,9 +924,11 @@ TEST(BcJson, DeeplyNestedObjectsAreRefusedToo)
 {
 	std::string src;
 	const int levels = 50000;
-	for (int i = 0; i < levels; ++i) src += "{\"a\":";
+	for (int i = 0; i < levels; ++i)
+		src += "{\"a\":";
 	src += "1";
-	for (int i = 0; i < levels; ++i) src += "}";
+	for (int i = 0; i < levels; ++i)
+		src += "}";
 
 	const auto res = deserialiseModule(src);
 	EXPECT_FALSE(res.ok);
@@ -944,7 +946,8 @@ TEST(BcJson, OrdinaryNestingIsNotRefused)
 	BcMethod m;
 	m.name = "f";
 	BcType elem = types::Int();
-	for (int i = 0; i < 8; ++i) elem = types::Array(elem);
+	for (int i = 0; i < 8; ++i)
+		elem = types::Array(elem);
 	m.descriptor.returnType = std::make_shared<BcType>(elem);
 	cls.methods.push_back(std::move(m));
 	mod.addClass(std::move(cls));

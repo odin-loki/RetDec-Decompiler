@@ -598,56 +598,60 @@ TEST(IpaPass, NullFunctionSkipped) {
 // width 0 -- and 0 is exactly the value the conflict test treats as "not seen
 // yet", so the widest accesses were both mis-sized and exempt from the
 // ambiguity they should have raised.
-TEST(GlobalTyper, AVectorWidthGlobalIsNotTruncatedToZero) {
-    auto make = [](const std::string& name, uint8_t bytes) {
-        auto fn = std::make_unique<SSAFunction>(name);
-        fn->addBlock("entry");
-        IrInstr* store = fn->addInstr(0, IrInstr::Op::Store);
-        IrValue* gAddr = fn->allocValue(ValueKind::MemRef, kInvalidVar);
-        gAddr->memIsStack = false;
-        gAddr->memOffset  = 0x3000;
-        gAddr->memWidth   = bytes;
-        store->uses.push_back({gAddr->id, 0});
-        fn->addInstr(0, IrInstr::Op::Ret);
-        SSAPass pass; pass.run(*fn);
-        return fn;
-    };
+TEST(GlobalTyper, AVectorWidthGlobalIsNotTruncatedToZero)
+{
+	auto make = [](const std::string& name, uint8_t bytes) {
+		auto fn = std::make_unique<SSAFunction>(name);
+		fn->addBlock("entry");
+		IrInstr* store = fn->addInstr(0, IrInstr::Op::Store);
+		IrValue* gAddr = fn->allocValue(ValueKind::MemRef, kInvalidVar);
+		gAddr->memIsStack = false;
+		gAddr->memOffset = 0x3000;
+		gAddr->memWidth = bytes;
+		store->uses.push_back({gAddr->id, 0});
+		fn->addInstr(0, IrInstr::Op::Ret);
+		SSAPass pass;
+		pass.run(*fn);
+		return fn;
+	};
 
-    auto ymm = make("ymm_writer", 32);
-    std::unordered_map<FnName, FunctionSummary> sums;
-    GlobalTyper typer;
-    auto globals = typer.run({ymm.get()}, sums);
-    ASSERT_EQ(1u, globals.size());
-    EXPECT_EQ(256u, globals.begin()->second.width);
+	auto ymm = make("ymm_writer", 32);
+	std::unordered_map<FnName, FunctionSummary> sums;
+	GlobalTyper typer;
+	auto globals = typer.run({ymm.get()}, sums);
+	ASSERT_EQ(1u, globals.size());
+	EXPECT_EQ(256u, globals.begin()->second.width);
 
-    auto zmm = make("zmm_writer", 64);
-    std::unordered_map<FnName, FunctionSummary> sums2;
-    auto globals2 = typer.run({zmm.get()}, sums2);
-    ASSERT_EQ(1u, globals2.size());
-    EXPECT_EQ(512u, globals2.begin()->second.width);
+	auto zmm = make("zmm_writer", 64);
+	std::unordered_map<FnName, FunctionSummary> sums2;
+	auto globals2 = typer.run({zmm.get()}, sums2);
+	ASSERT_EQ(1u, globals2.size());
+	EXPECT_EQ(512u, globals2.begin()->second.width);
 }
 
 // And a 32-byte access next to an 8-byte one at the same address is a conflict.
-TEST(GlobalTyper, AVectorAndAScalarAccessToOneGlobalAreAmbiguous) {
-    auto make = [](const std::string& name, uint8_t bytes) {
-        auto fn = std::make_unique<SSAFunction>(name);
-        fn->addBlock("entry");
-        IrInstr* store = fn->addInstr(0, IrInstr::Op::Store);
-        IrValue* gAddr = fn->allocValue(ValueKind::MemRef, kInvalidVar);
-        gAddr->memIsStack = false;
-        gAddr->memOffset  = 0x4000;
-        gAddr->memWidth   = bytes;
-        store->uses.push_back({gAddr->id, 0});
-        fn->addInstr(0, IrInstr::Op::Ret);
-        SSAPass pass; pass.run(*fn);
-        return fn;
-    };
-    auto wide = make("wide", 32);
-    auto narrow = make("narrow", 8);
+TEST(GlobalTyper, AVectorAndAScalarAccessToOneGlobalAreAmbiguous)
+{
+	auto make = [](const std::string& name, uint8_t bytes) {
+		auto fn = std::make_unique<SSAFunction>(name);
+		fn->addBlock("entry");
+		IrInstr* store = fn->addInstr(0, IrInstr::Op::Store);
+		IrValue* gAddr = fn->allocValue(ValueKind::MemRef, kInvalidVar);
+		gAddr->memIsStack = false;
+		gAddr->memOffset = 0x4000;
+		gAddr->memWidth = bytes;
+		store->uses.push_back({gAddr->id, 0});
+		fn->addInstr(0, IrInstr::Op::Ret);
+		SSAPass pass;
+		pass.run(*fn);
+		return fn;
+	};
+	auto wide = make("wide", 32);
+	auto narrow = make("narrow", 8);
 
-    std::unordered_map<FnName, FunctionSummary> sums;
-    GlobalTyper typer;
-    auto globals = typer.run({wide.get(), narrow.get()}, sums);
-    ASSERT_EQ(1u, globals.size());
-    EXPECT_TRUE(globals.begin()->second.isAmbiguous);
+	std::unordered_map<FnName, FunctionSummary> sums;
+	GlobalTyper typer;
+	auto globals = typer.run({wide.get(), narrow.get()}, sums);
+	ASSERT_EQ(1u, globals.size());
+	EXPECT_TRUE(globals.begin()->second.isAmbiguous);
 }

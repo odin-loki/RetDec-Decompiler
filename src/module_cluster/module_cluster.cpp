@@ -709,21 +709,22 @@ ClusterResult ModuleClusterer::cluster(const CallGraph& graph,
             return a.name < b.name;
         });
 
-    // A module's name comes from what its functions look like, and nothing
-    // stopped two communities from arriving at the same one -- which becomes
-    // two add_library() targets of the same name in the emitted CMake, and a
-    // build that does not configure. Suffix the repeats. This runs after the
-    // sort so the numbering is deterministic rather than following the
-    // unordered_map's iteration order.
-    {
-        std::unordered_map<std::string, int> seen;
-        for (auto& mod : result.modules) {
-            const int n = seen[mod.name]++;
-            if (n > 0) mod.name += "_" + std::to_string(n);
-        }
-    }
+	// A module's name comes from what its functions look like, and nothing
+	// stopped two communities from arriving at the same one -- which becomes
+	// two add_library() targets of the same name in the emitted CMake, and a
+	// build that does not configure. Suffix the repeats. This runs after the
+	// sort so the numbering is deterministic rather than following the
+	// unordered_map's iteration order.
+	{
+		std::unordered_map<std::string, int> seen;
+		for (auto& mod: result.modules)
+		{
+			const int n = seen[mod.name]++;
+			if (n > 0) mod.name += "_" + std::to_string(n);
+		}
+	}
 
-    // Infer inter-module dependencies
+	// Infer inter-module dependencies
     inferModuleDependencies(result, graph, communities);
 
     return result;

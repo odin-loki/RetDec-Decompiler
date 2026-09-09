@@ -2666,13 +2666,15 @@ TEST(JvmLifter, InstructionIdsAreUniqueAcrossTheWholeMethod)
 {
 	CodeAttr code;
 	code.bytecode = {
-		0x04,             // 0: iconst_1
-		0x99, 0x00, 0x05, // 1: ifeq +5 -> 6
-		0x05,             // 4: iconst_2
-		0x57,             // 5: pop
-		0x01,             // 6: aconst_null
-		0x57,             // 7: pop
-		0xB1,             // 8: return
+		0x04, // 0: iconst_1
+		0x99,
+		0x00,
+		0x05, // 1: ifeq +5 -> 6
+		0x05, // 4: iconst_2
+		0x57, // 5: pop
+		0x01, // 6: aconst_null
+		0x57, // 7: pop
+		0xB1, // 8: return
 	};
 	code.maxStack = 4;
 	code.maxLocals = 2;
@@ -2684,12 +2686,13 @@ TEST(JvmLifter, InstructionIdsAreUniqueAcrossTheWholeMethod)
 
 	std::vector<uint32_t> ids;
 	for (uint32_t b = 0; b < result.cfg.blockCount(); ++b)
-		for (const auto& insn: result.cfg.block(b).instrs) ids.push_back(insn.id);
+		for (const auto& insn: result.cfg.block(b).instrs)
+			ids.push_back(insn.id);
 	ASSERT_EQ(9u - 2u, ids.size()); // seven instructions, ifeq is three bytes
 	std::vector<uint32_t> sorted = ids;
 	std::sort(sorted.begin(), sorted.end());
-	ASSERT_EQ(sorted.end(), std::unique(sorted.begin(), sorted.end()))
-		<< "two instructions share an id";
+	ASSERT_EQ(sorted.end(), std::unique(sorted.begin(), sorted.end())) << "two instructions share an id";
 	// And they are the consecutive run 0..n-1, so a vector indexed by id works.
-	for (size_t i = 0; i < sorted.size(); ++i) EXPECT_EQ(static_cast<uint32_t>(i), sorted[i]);
+	for (size_t i = 0; i < sorted.size(); ++i)
+		EXPECT_EQ(static_cast<uint32_t>(i), sorted[i]);
 }

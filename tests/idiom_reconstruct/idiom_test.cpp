@@ -953,7 +953,8 @@ TEST(SimdMemTest, TheMatchIsAnchoredAtTheOffsetItIsGiven)
 		makeVecStore(vr, dst, 0, 16),
 		makeVecStore(vr, dst, 16, 16),
 	};
-	for (std::size_t i = 0; i < w.size(); ++i) w[i].vma = 0x1000 + i * 4;
+	for (std::size_t i = 0; i < w.size(); ++i)
+		w[i].vma = 0x1000 + i * 4;
 
 	auto e = makeDefaultEngine();
 	auto r = e.process(w);
@@ -964,8 +965,7 @@ TEST(SimdMemTest, TheMatchIsAnchoredAtTheOffsetItIsGiven)
 		sawMemset = true;
 		// The idiom is the three instructions at indices 1..3. Reaching back
 		// over the unrelated multiply would make this four.
-		EXPECT_EQ(3u, rep.instrCount)
-			<< "the memset span reaches back over an unrelated instruction";
+		EXPECT_EQ(3u, rep.instrCount) << "the memset span reaches back over an unrelated instruction";
 		EXPECT_EQ(w[1].vma, rep.firstVma);
 	}
 	EXPECT_TRUE(sawMemset) << "the idiom after the unrelated instruction was not found";

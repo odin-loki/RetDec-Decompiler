@@ -420,8 +420,7 @@ public:
 	// dex_header.cpp fixed this for the resolution helpers below and these five
 	// were left behind; itemAt() there now calls through to this.
 	template <typename Table>
-	static const typename Table::value_type& checkedAt(
-			const Table& table, uint32_t idx, const char* what)
+	static const typename Table::value_type& checkedAt(const Table& table, uint32_t idx, const char* what)
 	{
 		if (idx >= table.size())
 		{

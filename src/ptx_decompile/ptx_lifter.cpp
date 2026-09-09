@@ -316,7 +316,8 @@ PtxVarDecl PtxParser::parseVarDecl(const std::vector<std::string>& tokens) const
 				}
 				name = name.substr(0, br);
 			}
-			while (!name.empty() && (name.back() == ';' || name.back() == ',')) name.pop_back();
+			while (!name.empty() && (name.back() == ';' || name.back() == ','))
+				name.pop_back();
 			if (!name.empty() && decl.name.empty()) decl.name = name;
 			continue;
 		}

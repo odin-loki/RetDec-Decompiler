@@ -502,8 +502,7 @@ TagEvidence ProtobufDetector::detectTag(const ssa::SSAFunction& fn) const
 	// tag = (field_number << 3) | wire_type
 	// Look for a left shift of 3 combined with OR of 0-5
 	if (!ir_query::hasLeftShift(fn, 3)
-		|| !(ir_query::hasConstant(fn, 0) || ir_query::hasConstant(fn, 2)
-			|| ir_query::hasConstant(fn, 5)))
+		|| !(ir_query::hasConstant(fn, 0) || ir_query::hasConstant(fn, 2) || ir_query::hasConstant(fn, 5)))
 	{
 		return ev;
 	}

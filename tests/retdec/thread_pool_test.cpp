@@ -79,8 +79,8 @@ namespace {
 enum ChildResult : int
 {
 	kThrewAndReturned = 0, ///< The interesting case: it failed and unwound.
-	kBuiltThePool     = 1, ///< The limit did not bite here; nothing to check.
-	kSetrlimitFailed  = 2,
+	kBuiltThePool = 1,     ///< The limit did not bite here; nothing to check.
+	kSetrlimitFailed = 2,
 };
 
 } // namespace
@@ -119,15 +119,12 @@ TEST(ThreadPoolTest, AConstructorThatCannotStartItsThreadsReturnsControl)
 	int status = 0;
 	ASSERT_EQ(pid, waitpid(pid, &status, 0));
 
-	ASSERT_TRUE(WIFEXITED(status))
-		<< "the constructor did not return control: child killed by signal "
-		<< (WIFSIGNALED(status) ? WTERMSIG(status) : -1)
-		<< " (SIGALRM " << SIGALRM << " is the hang, SIGABRT " << SIGABRT
-		<< " is std::terminate)";
+	ASSERT_TRUE(WIFEXITED(status)) << "the constructor did not return control: child killed by signal "
+								   << (WIFSIGNALED(status) ? WTERMSIG(status) : -1) << " (SIGALRM " << SIGALRM
+								   << " is the hang, SIGABRT " << SIGABRT << " is std::terminate)";
 
 	// Either outcome is fine; only a hang or an abort is not.
-	EXPECT_NE(kSetrlimitFailed, WEXITSTATUS(status))
-		<< "could not lower RLIMIT_AS, so nothing was exercised";
+	EXPECT_NE(kSetrlimitFailed, WEXITSTATUS(status)) << "could not lower RLIMIT_AS, so nothing was exercised";
 }
 
 #endif // _WIN32

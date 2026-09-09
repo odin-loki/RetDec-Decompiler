@@ -66,10 +66,7 @@ std::atomic<int>& sessionsInFlight() noexcept
 
 } // anonymous namespace
 
-ProfilingSession::ProfilingSession() noexcept
-	: owns_(sessionsInFlight().fetch_add(1, std::memory_order_acq_rel) == 0)
-{
-}
+ProfilingSession::ProfilingSession() noexcept: owns_(sessionsInFlight().fetch_add(1, std::memory_order_acq_rel) == 0) {}
 
 ProfilingSession::~ProfilingSession()
 {

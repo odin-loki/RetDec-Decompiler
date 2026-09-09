@@ -765,7 +765,7 @@ std::vector<uint32_t> DexLifter::findLeaders(const CodeItem& code) const
 		// type keeps them the same length -- the parser resizes both, but
 		// DexLifter::lift takes a CodeItem from any caller.
 		if (i < code.handlers.catchAllAddrs.size() && code.handlers.catchAllAddrs[i] != ~0u
-				&& code.handlers.catchAllAddrs[i] < insns.size())
+			&& code.handlers.catchAllAddrs[i] < insns.size())
 		{
 			leaders.insert(code.handlers.catchAllAddrs[i]);
 		}
@@ -896,8 +896,7 @@ void DexLifter::wireExceptions(BcCFG& cfg, const CodeItem& code, const std::vect
 			cfg.addExceptionHandler(eh);
 		}
 
-		if (ti < code.handlers.catchAllAddrs.size()
-				&& code.handlers.catchAllAddrs[ti] != ~0u)
+		if (ti < code.handlers.catchAllAddrs.size() && code.handlers.catchAllAddrs[ti] != ~0u)
 		{
 			uint32_t catchAllBlock = 0;
 			uint32_t addr = code.handlers.catchAllAddrs[ti];

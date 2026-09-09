@@ -313,12 +313,12 @@ TEST(CilStackSim, ConditionalBranch) {
     EXPECT_EQ(0u, sim.entryStack(1).size());
     EXPECT_EQ(0u, sim.entryStack(2).size());
 
-    // And they were actually analysed. An empty entry stack is also what a
-    // block that was never visited has, so the two assertions above held for
-    // an implementation that walked neither successor -- which is what
-    // runFixpoint did.
-    EXPECT_EQ(b1.instrs.size(), sim.instrStackCount(1));
-    EXPECT_EQ(b2.instrs.size(), sim.instrStackCount(2));
+	// And they were actually analysed. An empty entry stack is also what a
+	// block that was never visited has, so the two assertions above held for
+	// an implementation that walked neither successor -- which is what
+	// runFixpoint did.
+	EXPECT_EQ(b1.instrs.size(), sim.instrStackCount(1));
+	EXPECT_EQ(b2.instrs.size(), sim.instrStackCount(2));
 }
 
 // ─── The work-list ──────────────────────────────────────────────────────────
@@ -338,82 +338,89 @@ namespace {
 
 /// A chain of @a n blocks, each pushing a constant and storing it -- so every
 /// block's exit stack is EMPTY, which is what CIL requires at a boundary.
-BcMethod makeEmptyStackChain(int n) {
-    BcMethod m = makeMethod("chain");
-    for (int i = 0; i < n; ++i) {
-        auto& b = m.cfg.addBlock();
-        b.instrs.push_back(makeInsn(BcOpcode::DOTNET_LDC_I4_1));
-        b.instrs.push_back(makeInsnLocal(BcOpcode::DOTNET_STLOC, static_cast<uint32_t>(i)));
-        if (i + 1 < n) {
-            BcInstruction br;
-            br.opcode = BcOpcode::DOTNET_BR;
-            br.operands.push_back(BcBlockOperand{static_cast<uint32_t>(i + 1)});
-            b.instrs.push_back(std::move(br));
-            b.succs.push_back(i + 1);
-        }
-    }
-    for (int i = 1; i < n; ++i) m.cfg.block(i).preds.push_back(i - 1);
-    return m;
+BcMethod makeEmptyStackChain(int n)
+{
+	BcMethod m = makeMethod("chain");
+	for (int i = 0; i < n; ++i)
+	{
+		auto& b = m.cfg.addBlock();
+		b.instrs.push_back(makeInsn(BcOpcode::DOTNET_LDC_I4_1));
+		b.instrs.push_back(makeInsnLocal(BcOpcode::DOTNET_STLOC, static_cast<uint32_t>(i)));
+		if (i + 1 < n)
+		{
+			BcInstruction br;
+			br.opcode = BcOpcode::DOTNET_BR;
+			br.operands.push_back(BcBlockOperand{static_cast<uint32_t>(i + 1)});
+			b.instrs.push_back(std::move(br));
+			b.succs.push_back(i + 1);
+		}
+	}
+	for (int i = 1; i < n; ++i)
+		m.cfg.block(i).preds.push_back(i - 1);
+	return m;
 }
 
 } // namespace
 
-TEST(CilStackSim, EverySuccessorIsAnalysedEvenWhenTheStackIsEmpty) {
-    BcMethod m = makeEmptyStackChain(2);
+TEST(CilStackSim, EverySuccessorIsAnalysedEvenWhenTheStackIsEmpty)
+{
+	BcMethod m = makeEmptyStackChain(2);
 
-    CilStackSimulator sim;
-    ASSERT_TRUE(sim.simulate(m.cfg, m)) << sim.error();
+	CilStackSimulator sim;
+	ASSERT_TRUE(sim.simulate(m.cfg, m)) << sim.error();
 
-    // Both blocks, not just the entry.
-    EXPECT_EQ(3u, sim.instrStackCount(0));
-    EXPECT_EQ(2u, sim.instrStackCount(1));
+	// Both blocks, not just the entry.
+	EXPECT_EQ(3u, sim.instrStackCount(0));
+	EXPECT_EQ(2u, sim.instrStackCount(1));
 
-    // And the expressions are there, which is what CilVarRecovery reads. The
-    // second block's ldc came back <null> before the fix, so its local was
-    // declared with no initialiser.
-    EXPECT_NE(nullptr, sim.exprAt(0, 0));
-    EXPECT_NE(nullptr, sim.exprAt(1, 0));
+	// And the expressions are there, which is what CilVarRecovery reads. The
+	// second block's ldc came back <null> before the fix, so its local was
+	// declared with no initialiser.
+	EXPECT_NE(nullptr, sim.exprAt(0, 0));
+	EXPECT_NE(nullptr, sim.exprAt(1, 0));
 }
 
-TEST(CilStackSim, ALongChainIsAnalysedToTheEnd) {
-    // maxIterations was a cap on blocks POPPED, not on revisits per block, and
-    // it defaults to 32 -- so a method with more than 32 basic blocks, which is
-    // routine, had the rest left default-constructed while runFixpoint returned
-    // true. Measured with the visited fix alone: 32 of 40.
-    const int kBlocks = 40;
-    BcMethod m = makeEmptyStackChain(kBlocks);
+TEST(CilStackSim, ALongChainIsAnalysedToTheEnd)
+{
+	// maxIterations was a cap on blocks POPPED, not on revisits per block, and
+	// it defaults to 32 -- so a method with more than 32 basic blocks, which is
+	// routine, had the rest left default-constructed while runFixpoint returned
+	// true. Measured with the visited fix alone: 32 of 40.
+	const int kBlocks = 40;
+	BcMethod m = makeEmptyStackChain(kBlocks);
 
-    CilStackSimulator sim;
-    ASSERT_TRUE(sim.simulate(m.cfg, m)) << sim.error();
+	CilStackSimulator sim;
+	ASSERT_TRUE(sim.simulate(m.cfg, m)) << sim.error();
 
-    for (int i = 0; i < kBlocks; ++i) {
-        EXPECT_GT(sim.instrStackCount(static_cast<uint32_t>(i)), 0u)
-            << "block " << i << " was never analysed";
-    }
+	for (int i = 0; i < kBlocks; ++i)
+	{
+		EXPECT_GT(sim.instrStackCount(static_cast<uint32_t>(i)), 0u) << "block " << i << " was never analysed";
+	}
 }
 
-TEST(CilStackSim, GivingUpIsReportedRatherThanReturnedAsSuccess) {
-    // The cap is a backstop rather than something a well-formed CFG reaches:
-    // meetStates widens monotonically and keeps the existing state on a depth
-    // mismatch, so a block's entry stack settles after a visit or two and 32 is
-    // generous. What matters is that hitting it is REPORTED -- it used to
-    // return true with the remaining blocks left default-constructed. Driven
-    // here with a budget of zero visits, which is the one setting that reaches
-    // the path from any input.
-    BcMethod m = makeEmptyStackChain(3);
+TEST(CilStackSim, GivingUpIsReportedRatherThanReturnedAsSuccess)
+{
+	// The cap is a backstop rather than something a well-formed CFG reaches:
+	// meetStates widens monotonically and keeps the existing state on a depth
+	// mismatch, so a block's entry stack settles after a visit or two and 32 is
+	// generous. What matters is that hitting it is REPORTED -- it used to
+	// return true with the remaining blocks left default-constructed. Driven
+	// here with a budget of zero visits, which is the one setting that reaches
+	// the path from any input.
+	BcMethod m = makeEmptyStackChain(3);
 
-    CilStackSimulator::Options opts;
-    opts.maxIterations = 0;
-    CilStackSimulator sim(opts);
+	CilStackSimulator::Options opts;
+	opts.maxIterations = 0;
+	CilStackSimulator sim(opts);
 
-    EXPECT_FALSE(sim.simulate(m.cfg, m));
-    EXPECT_FALSE(sim.isValid());
-    EXPECT_NE(std::string::npos, sim.error().find("did not converge")) << sim.error();
+	EXPECT_FALSE(sim.simulate(m.cfg, m));
+	EXPECT_FALSE(sim.isValid());
+	EXPECT_NE(std::string::npos, sim.error().find("did not converge")) << sim.error();
 
-    // And the default budget is enough for the same method.
-    CilStackSimulator ok;
-    EXPECT_TRUE(ok.simulate(m.cfg, m)) << ok.error();
-    EXPECT_GT(ok.instrStackCount(2), 0u);
+	// And the default budget is enough for the same method.
+	CilStackSimulator ok;
+	EXPECT_TRUE(ok.simulate(m.cfg, m)) << ok.error();
+	EXPECT_GT(ok.instrStackCount(2), 0u);
 }
 
 // ─── Instance-call operand order ────────────────────────────────────────────
@@ -429,75 +436,80 @@ TEST(CilStackSim, GivingUpIsReportedRatherThanReturnedAsSuccess) {
 namespace {
 
 /// The argument index of an ExprArg, or -1.
-int argIndexOf(const CilExprPtr& e) {
-    if (!e) return -1;
-    const auto* a = std::get_if<ExprArg>(&e->data);
-    return a ? static_cast<int>(a->idx) : -1;
+int argIndexOf(const CilExprPtr& e)
+{
+	if (!e) return -1;
+	const auto* a = std::get_if<ExprArg>(&e->data);
+	return a ? static_cast<int>(a->idx) : -1;
 }
 
 /// A method with @a nparams reference/int parameters, one block that loads
 /// ldarg.0 .. ldarg.N and then calls `Target::M` with @a nargs of them.
-BcMethod makeInstanceCall(BcOpcode callOp, int nargs) {
-    BcMethod m = makeMethod("caller");
-    m.descriptor.params.push_back(std::make_shared<BcType>(types::ClrObject()));
-    for (int i = 0; i < nargs; ++i)
-        m.descriptor.params.push_back(std::make_shared<BcType>(types::Int()));
+BcMethod makeInstanceCall(BcOpcode callOp, int nargs)
+{
+	BcMethod m = makeMethod("caller");
+	m.descriptor.params.push_back(std::make_shared<BcType>(types::ClrObject()));
+	for (int i = 0; i < nargs; ++i)
+		m.descriptor.params.push_back(std::make_shared<BcType>(types::Int()));
 
-    auto& b = m.cfg.addBlock();
-    for (int i = 0; i <= nargs; ++i)
-        b.instrs.push_back(makeInsnLocal(BcOpcode::DOTNET_LDARG, static_cast<uint32_t>(i)));
+	auto& b = m.cfg.addBlock();
+	for (int i = 0; i <= nargs; ++i)
+		b.instrs.push_back(makeInsnLocal(BcOpcode::DOTNET_LDARG, static_cast<uint32_t>(i)));
 
-    BcInstruction call;
-    call.opcode = callOp;
-    BcMethodRef mr;
-    mr.owner = "Target";
-    mr.name = "M";
-    mr.descriptor.returnType = std::make_shared<BcType>(types::ClrObject());
-    for (int i = 0; i < nargs; ++i)
-        mr.descriptor.params.push_back(std::make_shared<BcType>(types::Int()));
-    call.operands.push_back(mr);
-    b.instrs.push_back(std::move(call));
-    return m;
+	BcInstruction call;
+	call.opcode = callOp;
+	BcMethodRef mr;
+	mr.owner = "Target";
+	mr.name = "M";
+	mr.descriptor.returnType = std::make_shared<BcType>(types::ClrObject());
+	for (int i = 0; i < nargs; ++i)
+		mr.descriptor.params.push_back(std::make_shared<BcType>(types::Int()));
+	call.operands.push_back(mr);
+	b.instrs.push_back(std::move(call));
+	return m;
 }
 
 } // namespace
 
-TEST(CilStackSim, InstanceCallTakesTheDeepestSlotAsItsReceiver) {
-    for (int nargs = 1; nargs <= 3; ++nargs) {
-        BcMethod m = makeInstanceCall(BcOpcode::DOTNET_CALLVIRT, nargs);
+TEST(CilStackSim, InstanceCallTakesTheDeepestSlotAsItsReceiver)
+{
+	for (int nargs = 1; nargs <= 3; ++nargs)
+	{
+		BcMethod m = makeInstanceCall(BcOpcode::DOTNET_CALLVIRT, nargs);
 
-        CilStackSimulator sim;
-        ASSERT_TRUE(sim.simulate(m.cfg, m)) << sim.error();
+		CilStackSimulator sim;
+		ASSERT_TRUE(sim.simulate(m.cfg, m)) << sim.error();
 
-        auto e = sim.exprAt(0, static_cast<uint32_t>(nargs + 1));
-        ASSERT_NE(nullptr, e) << "nargs=" << nargs;
-        const auto* call = std::get_if<ExprCall>(&e->data);
-        ASSERT_NE(nullptr, call) << "nargs=" << nargs;
+		auto e = sim.exprAt(0, static_cast<uint32_t>(nargs + 1));
+		ASSERT_NE(nullptr, e) << "nargs=" << nargs;
+		const auto* call = std::get_if<ExprCall>(&e->data);
+		ASSERT_NE(nullptr, call) << "nargs=" << nargs;
 
-        // ldarg.0 is the receiver; ldarg.1..N are the arguments, in order.
-        EXPECT_EQ(0, argIndexOf(call->obj)) << "nargs=" << nargs;
-        ASSERT_EQ(static_cast<size_t>(nargs), call->args.size()) << "nargs=" << nargs;
-        for (int i = 0; i < nargs; ++i) {
-            EXPECT_EQ(i + 1, argIndexOf(call->args[static_cast<size_t>(i)]))
-                << "nargs=" << nargs << " arg " << i;
-        }
-    }
+		// ldarg.0 is the receiver; ldarg.1..N are the arguments, in order.
+		EXPECT_EQ(0, argIndexOf(call->obj)) << "nargs=" << nargs;
+		ASSERT_EQ(static_cast<size_t>(nargs), call->args.size()) << "nargs=" << nargs;
+		for (int i = 0; i < nargs; ++i)
+		{
+			EXPECT_EQ(i + 1, argIndexOf(call->args[static_cast<size_t>(i)])) << "nargs=" << nargs << " arg " << i;
+		}
+	}
 }
 
 // A zero-argument instance call is the one shape that was already right, and
 // has to stay right.
-TEST(CilStackSim, AZeroArgumentInstanceCallKeepsItsReceiver) {
-    BcMethod m = makeInstanceCall(BcOpcode::DOTNET_CALLVIRT, 0);
+TEST(CilStackSim, AZeroArgumentInstanceCallKeepsItsReceiver)
+{
+	BcMethod m = makeInstanceCall(BcOpcode::DOTNET_CALLVIRT, 0);
 
-    CilStackSimulator sim;
-    ASSERT_TRUE(sim.simulate(m.cfg, m)) << sim.error();
+	CilStackSimulator sim;
+	ASSERT_TRUE(sim.simulate(m.cfg, m)) << sim.error();
 
-    auto e = sim.exprAt(0, 1);
-    ASSERT_NE(nullptr, e);
-    const auto* call = std::get_if<ExprCall>(&e->data);
-    ASSERT_NE(nullptr, call);
-    EXPECT_EQ(0, argIndexOf(call->obj));
-    EXPECT_TRUE(call->args.empty());
+	auto e = sim.exprAt(0, 1);
+	ASSERT_NE(nullptr, e);
+	const auto* call = std::get_if<ExprCall>(&e->data);
+	ASSERT_NE(nullptr, call);
+	EXPECT_EQ(0, argIndexOf(call->obj));
+	EXPECT_TRUE(call->args.empty());
 }
 
 // The if/else path used to be gated on `opts_.structureExcept == false` --
@@ -506,41 +518,41 @@ TEST(CilStackSim, AZeroArgumentInstanceCallKeepsItsReceiver) {
 // structuring off. It has its own option now, defaulted to today's behaviour
 // because buildIfElse does not yet nest (see the comment on structureIf).
 
-TEST(CilReconstructor, TheIfElsePathIsGatedOnItsOwnOption) {
-    BcMethod m = makeMethod("cond");
-    auto& b0 = m.cfg.addBlock();
-    auto& b1 = m.cfg.addBlock();
-    auto& b2 = m.cfg.addBlock();
-    b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_LDC_I4_1));
-    BcInstruction brtrue;
-    brtrue.opcode = BcOpcode::DOTNET_BRTRUE;
-    brtrue.operands.push_back(BcBlockOperand{2});
-    b0.instrs.push_back(std::move(brtrue));
-    b0.succs = {1, 2};
-    b1.preds = {0};
-    b2.preds = {0};
-    b1.instrs.push_back(makeInsn(BcOpcode::DOTNET_RET));
-    b2.instrs.push_back(makeInsn(BcOpcode::DOTNET_RET));
+TEST(CilReconstructor, TheIfElsePathIsGatedOnItsOwnOption)
+{
+	BcMethod m = makeMethod("cond");
+	auto& b0 = m.cfg.addBlock();
+	auto& b1 = m.cfg.addBlock();
+	auto& b2 = m.cfg.addBlock();
+	b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_LDC_I4_1));
+	BcInstruction brtrue;
+	brtrue.opcode = BcOpcode::DOTNET_BRTRUE;
+	brtrue.operands.push_back(BcBlockOperand{2});
+	b0.instrs.push_back(std::move(brtrue));
+	b0.succs = {1, 2};
+	b1.preds = {0};
+	b2.preds = {0};
+	b1.instrs.push_back(makeInsn(BcOpcode::DOTNET_RET));
+	b2.instrs.push_back(makeInsn(BcOpcode::DOTNET_RET));
 
-    BcModule mod;
+	BcModule mod;
 
-    // Exception structuring must not decide this either way.
-    CilReconstructOptions withEh;
-    withEh.structureExcept = true;
-    CilReconstructOptions withoutEh;
-    withoutEh.structureExcept = false;
+	// Exception structuring must not decide this either way.
+	CilReconstructOptions withEh;
+	withEh.structureExcept = true;
+	CilReconstructOptions withoutEh;
+	withoutEh.structureExcept = false;
 
-    const auto a = CilReconstructor(withEh).reconstruct(m, mod);
-    const auto b = CilReconstructor(withoutEh).reconstruct(m, mod);
-    EXPECT_EQ(a.method.body.size(), b.method.body.size())
-        << "structureExcept changed the shape of a method with no handlers";
+	const auto a = CilReconstructor(withEh).reconstruct(m, mod);
+	const auto b = CilReconstructor(withoutEh).reconstruct(m, mod);
+	EXPECT_EQ(a.method.body.size(), b.method.body.size())
+		<< "structureExcept changed the shape of a method with no handlers";
 
-    // And the option that does control it, does.
-    CilReconstructOptions ifOn;
-    ifOn.structureIf = true;
-    const auto c = CilReconstructor(ifOn).reconstruct(m, mod);
-    EXPECT_NE(a.method.body.size(), c.method.body.size())
-        << "structureIf did not reach buildIfElse";
+	// And the option that does control it, does.
+	CilReconstructOptions ifOn;
+	ifOn.structureIf = true;
+	const auto c = CilReconstructor(ifOn).reconstruct(m, mod);
+	EXPECT_NE(a.method.body.size(), c.method.body.size()) << "structureIf did not reach buildIfElse";
 }
 
 // ─── The `using` rewrite ────────────────────────────────────────────────────
@@ -563,80 +575,85 @@ TEST(CilReconstructor, TheIfElsePathIsGatedOnItsOwnOption) {
 
 namespace {
 
-CilExprPtr makeLocalExpr(const char* name) {
-    ExprLocal l;
-    l.name = name;
-    l.type = types::ClrObject();
-    return std::make_shared<CilExpr>(std::move(l), types::ClrObject());
+CilExprPtr makeLocalExpr(const char* name)
+{
+	ExprLocal l;
+	l.name = name;
+	l.type = types::ClrObject();
+	return std::make_shared<CilExpr>(std::move(l), types::ClrObject());
 }
 
-CilExprPtr makeCallExpr(const char* cls, const char* meth, CilExprPtr obj) {
-    ExprCall c;
-    c.className  = cls;
-    c.methodName = meth;
-    c.obj        = std::move(obj);
-    c.retType    = types::Void();
-    return std::make_shared<CilExpr>(std::move(c), types::Void());
+CilExprPtr makeCallExpr(const char* cls, const char* meth, CilExprPtr obj)
+{
+	ExprCall c;
+	c.className = cls;
+	c.methodName = meth;
+	c.obj = std::move(obj);
+	c.retType = types::Void();
+	return std::make_shared<CilExpr>(std::move(c), types::Void());
 }
 
 /// `FileStream fs = new FileStream(); try { fs.Read(); } finally { fs.Dispose(); }`
-CilRecoveredMethod makeUsingShape() {
-    CilRecoveredMethod m;
+CilRecoveredMethod makeUsingShape()
+{
+	CilRecoveredMethod m;
 
-    CilStmt decl;
-    decl.kind   = StmtKind::LocalDecl;
-    decl.target = makeLocalExpr("fs");
-    decl.expr   = makeCallExpr("System.IO.FileStream", ".ctor", nullptr);
-    m.body.push_back(std::move(decl));
+	CilStmt decl;
+	decl.kind = StmtKind::LocalDecl;
+	decl.target = makeLocalExpr("fs");
+	decl.expr = makeCallExpr("System.IO.FileStream", ".ctor", nullptr);
+	m.body.push_back(std::move(decl));
 
-    CilStmt tryStmt;
-    tryStmt.kind = StmtKind::Try;
-    CilStmt inner;
-    inner.kind = StmtKind::ExprStmt;
-    inner.expr = makeCallExpr("System.IO.FileStream", "Read", makeLocalExpr("fs"));
-    tryStmt.tryBody.push_back(std::move(inner));
-    CilStmt dispose;
-    dispose.kind = StmtKind::ExprStmt;
-    dispose.expr = makeCallExpr("System.IO.FileStream", "Dispose", makeLocalExpr("fs"));
-    tryStmt.finallyBody.push_back(std::move(dispose));
-    m.body.push_back(std::move(tryStmt));
+	CilStmt tryStmt;
+	tryStmt.kind = StmtKind::Try;
+	CilStmt inner;
+	inner.kind = StmtKind::ExprStmt;
+	inner.expr = makeCallExpr("System.IO.FileStream", "Read", makeLocalExpr("fs"));
+	tryStmt.tryBody.push_back(std::move(inner));
+	CilStmt dispose;
+	dispose.kind = StmtKind::ExprStmt;
+	dispose.expr = makeCallExpr("System.IO.FileStream", "Dispose", makeLocalExpr("fs"));
+	tryStmt.finallyBody.push_back(std::move(dispose));
+	m.body.push_back(std::move(tryStmt));
 
-    return m;
+	return m;
 }
 
 } // namespace
 
-TEST(CilPatterns, AUsingAbsorbsItsDeclarationAndKeepsItsName) {
-    CilRecoveredMethod m = makeUsingShape();
-    BcModule mod;
+TEST(CilPatterns, AUsingAbsorbsItsDeclarationAndKeepsItsName)
+{
+	CilRecoveredMethod m = makeUsingShape();
+	BcModule mod;
 
-    CilPatternDetector().detect(m, mod);
+	CilPatternDetector().detect(m, mod);
 
-    ASSERT_EQ(1u, m.body.size()) << "the declaration was left beside the using";
-    EXPECT_EQ(StmtKind::Using, m.body[0].kind);
-    EXPECT_EQ("fs", m.body[0].iterVarName);
-    ASSERT_NE(nullptr, m.body[0].expr) << "the initialiser was lost";
-    EXPECT_TRUE(m.body[0].expr->isCall());
-    EXPECT_EQ(".ctor", m.body[0].expr->asCall().methodName);
+	ASSERT_EQ(1u, m.body.size()) << "the declaration was left beside the using";
+	EXPECT_EQ(StmtKind::Using, m.body[0].kind);
+	EXPECT_EQ("fs", m.body[0].iterVarName);
+	ASSERT_NE(nullptr, m.body[0].expr) << "the initialiser was lost";
+	EXPECT_TRUE(m.body[0].expr->isCall());
+	EXPECT_EQ(".ctor", m.body[0].expr->asCall().methodName);
 }
 
 // A try/finally/Dispose with no declaration before it is still a `using`; it
 // just has nothing to absorb, and must not eat whatever does precede it.
-TEST(CilPatterns, AUsingWithNoDeclarationEatsNothing) {
-    CilRecoveredMethod m = makeUsingShape();
+TEST(CilPatterns, AUsingWithNoDeclarationEatsNothing)
+{
+	CilRecoveredMethod m = makeUsingShape();
 
-    // Put an unrelated statement where the declaration was.
-    m.body[0] = CilStmt{};
-    m.body[0].kind = StmtKind::ExprStmt;
-    m.body[0].expr = makeCallExpr("Other", "Unrelated", nullptr);
+	// Put an unrelated statement where the declaration was.
+	m.body[0] = CilStmt{};
+	m.body[0].kind = StmtKind::ExprStmt;
+	m.body[0].expr = makeCallExpr("Other", "Unrelated", nullptr);
 
-    BcModule mod;
-    CilPatternDetector().detect(m, mod);
+	BcModule mod;
+	CilPatternDetector().detect(m, mod);
 
-    ASSERT_EQ(2u, m.body.size());
-    EXPECT_EQ(StmtKind::ExprStmt, m.body[0].kind);
-    EXPECT_EQ(StmtKind::Using, m.body[1].kind);
-    EXPECT_TRUE(m.body[1].iterVarName.empty());
+	ASSERT_EQ(2u, m.body.size());
+	EXPECT_EQ(StmtKind::ExprStmt, m.body[0].kind);
+	EXPECT_EQ(StmtKind::Using, m.body[1].kind);
+	EXPECT_TRUE(m.body[1].iterVarName.empty());
 }
 
 // ─── Several catches over one region ────────────────────────────────────────
@@ -650,110 +667,114 @@ TEST(CilPatterns, AUsingWithNoDeclarationEatsNothing) {
 // at all. Measured before: [0] Try tryBody=3 catches=1, [1] Try tryBody=0
 // catches=1.
 
-TEST(CilReconstructor, TwoCatchesOverOneRegionBecomeOneTry) {
-    BcModule module("EH", SourceLang::CSharp);
-    BcClass& cls = module.addClass(BcClass{});
-    cls.name = "EHTest";
-    cls.fqName = "EHTest";
+TEST(CilReconstructor, TwoCatchesOverOneRegionBecomeOneTry)
+{
+	BcModule module("EH", SourceLang::CSharp);
+	BcClass& cls = module.addClass(BcClass{});
+	cls.name = "EHTest";
+	cls.fqName = "EHTest";
 
-    BcMethod& m = cls.methods.emplace_back();
-    m.name = "TwoCatches";
-    m.descriptor.returnType = std::make_shared<BcType>(types::Void());
+	BcMethod& m = cls.methods.emplace_back();
+	m.name = "TwoCatches";
+	m.descriptor.returnType = std::make_shared<BcType>(types::Void());
 
-    auto& b0 = m.cfg.addBlock(); // the protected region
-    b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_LDC_I4_1));
-    b0.instrs.push_back(makeInsnLocal(BcOpcode::DOTNET_STLOC, 0));
-    b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_LEAVE));
+	auto& b0 = m.cfg.addBlock(); // the protected region
+	b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_LDC_I4_1));
+	b0.instrs.push_back(makeInsnLocal(BcOpcode::DOTNET_STLOC, 0));
+	b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_LEAVE));
 
-    auto& b1 = m.cfg.addBlock(); // catch ExA
-    b1.isExceptionHandler = true;
-    b1.instrs.push_back(makeInsn(BcOpcode::DOTNET_LEAVE));
+	auto& b1 = m.cfg.addBlock(); // catch ExA
+	b1.isExceptionHandler = true;
+	b1.instrs.push_back(makeInsn(BcOpcode::DOTNET_LEAVE));
 
-    auto& b2 = m.cfg.addBlock(); // catch ExB
-    b2.isExceptionHandler = true;
-    b2.instrs.push_back(makeInsn(BcOpcode::DOTNET_LEAVE));
+	auto& b2 = m.cfg.addBlock(); // catch ExB
+	b2.isExceptionHandler = true;
+	b2.instrs.push_back(makeInsn(BcOpcode::DOTNET_LEAVE));
 
-    auto& b3 = m.cfg.addBlock();
-    b3.instrs.push_back(makeInsn(BcOpcode::DOTNET_RET));
+	auto& b3 = m.cfg.addBlock();
+	b3.instrs.push_back(makeInsn(BcOpcode::DOTNET_RET));
 
-    BcExceptionHandler a;
-    a.startOffset = 0;
-    a.endOffset = 3;
-    a.handlerBlock = 1;
-    a.catchType = types::Class("ExA");
-    m.cfg.addExceptionHandler(a);
+	BcExceptionHandler a;
+	a.startOffset = 0;
+	a.endOffset = 3;
+	a.handlerBlock = 1;
+	a.catchType = types::Class("ExA");
+	m.cfg.addExceptionHandler(a);
 
-    BcExceptionHandler b;
-    b.startOffset = 0;
-    b.endOffset = 3;
-    b.handlerBlock = 2;
-    b.catchType = types::Class("ExB");
-    m.cfg.addExceptionHandler(b);
+	BcExceptionHandler b;
+	b.startOffset = 0;
+	b.endOffset = 3;
+	b.handlerBlock = 2;
+	b.catchType = types::Class("ExB");
+	m.cfg.addExceptionHandler(b);
 
-    CilReconstructor rec;
-    auto result = rec.reconstruct(m, module);
+	CilReconstructor rec;
+	auto result = rec.reconstruct(m, module);
 
-    size_t tries = 0;
-    const CilStmt* first = nullptr;
-    for (const auto& st : result.method.body) {
-        if (st.kind == StmtKind::Try) {
-            ++tries;
-            if (first == nullptr) first = &st;
-        }
-    }
+	size_t tries = 0;
+	const CilStmt* first = nullptr;
+	for (const auto& st: result.method.body)
+	{
+		if (st.kind == StmtKind::Try)
+		{
+			++tries;
+			if (first == nullptr) first = &st;
+		}
+	}
 
-    ASSERT_EQ(1u, tries) << "one protected region, one try";
-    ASSERT_NE(nullptr, first);
-    EXPECT_EQ(2u, first->catches.size());
-    EXPECT_FALSE(first->tryBody.empty()) << "the try body must not be empty";
+	ASSERT_EQ(1u, tries) << "one protected region, one try";
+	ASSERT_NE(nullptr, first);
+	EXPECT_EQ(2u, first->catches.size());
+	EXPECT_FALSE(first->tryBody.empty()) << "the try body must not be empty";
 }
 
 // Two regions are still two tries: the grouping is by protected region, not a
 // blanket merge of every handler in the method.
-TEST(CilReconstructor, TwoDistinctRegionsStayTwoTries) {
-    BcModule module("EH", SourceLang::CSharp);
-    BcClass& cls = module.addClass(BcClass{});
-    cls.name = "EHTest";
-    cls.fqName = "EHTest";
+TEST(CilReconstructor, TwoDistinctRegionsStayTwoTries)
+{
+	BcModule module("EH", SourceLang::CSharp);
+	BcClass& cls = module.addClass(BcClass{});
+	cls.name = "EHTest";
+	cls.fqName = "EHTest";
 
-    BcMethod& m = cls.methods.emplace_back();
-    m.name = "TwoRegions";
-    m.descriptor.returnType = std::make_shared<BcType>(types::Void());
+	BcMethod& m = cls.methods.emplace_back();
+	m.name = "TwoRegions";
+	m.descriptor.returnType = std::make_shared<BcType>(types::Void());
 
-    auto& b0 = m.cfg.addBlock();
-    b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_NOP));
-    b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_LEAVE));
-    auto& b1 = m.cfg.addBlock();
-    b1.isExceptionHandler = true;
-    b1.instrs.push_back(makeInsn(BcOpcode::DOTNET_LEAVE));
-    auto& b2 = m.cfg.addBlock();
-    b2.instrs.push_back(makeInsn(BcOpcode::DOTNET_NOP));
-    b2.instrs.push_back(makeInsn(BcOpcode::DOTNET_LEAVE));
-    auto& b3 = m.cfg.addBlock();
-    b3.isExceptionHandler = true;
-    b3.instrs.push_back(makeInsn(BcOpcode::DOTNET_LEAVE));
+	auto& b0 = m.cfg.addBlock();
+	b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_NOP));
+	b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_LEAVE));
+	auto& b1 = m.cfg.addBlock();
+	b1.isExceptionHandler = true;
+	b1.instrs.push_back(makeInsn(BcOpcode::DOTNET_LEAVE));
+	auto& b2 = m.cfg.addBlock();
+	b2.instrs.push_back(makeInsn(BcOpcode::DOTNET_NOP));
+	b2.instrs.push_back(makeInsn(BcOpcode::DOTNET_LEAVE));
+	auto& b3 = m.cfg.addBlock();
+	b3.isExceptionHandler = true;
+	b3.instrs.push_back(makeInsn(BcOpcode::DOTNET_LEAVE));
 
-    BcExceptionHandler a;
-    a.startOffset = 0;
-    a.endOffset = 2;
-    a.handlerBlock = 1;
-    a.catchType = types::Class("ExA");
-    m.cfg.addExceptionHandler(a);
+	BcExceptionHandler a;
+	a.startOffset = 0;
+	a.endOffset = 2;
+	a.handlerBlock = 1;
+	a.catchType = types::Class("ExA");
+	m.cfg.addExceptionHandler(a);
 
-    BcExceptionHandler b;
-    b.startOffset = 4;
-    b.endOffset = 6;
-    b.handlerBlock = 3;
-    b.catchType = types::Class("ExB");
-    m.cfg.addExceptionHandler(b);
+	BcExceptionHandler b;
+	b.startOffset = 4;
+	b.endOffset = 6;
+	b.handlerBlock = 3;
+	b.catchType = types::Class("ExB");
+	m.cfg.addExceptionHandler(b);
 
-    CilReconstructor rec;
-    auto result = rec.reconstruct(m, module);
+	CilReconstructor rec;
+	auto result = rec.reconstruct(m, module);
 
-    size_t tries = 0;
-    for (const auto& st : result.method.body)
-        if (st.kind == StmtKind::Try) ++tries;
-    EXPECT_EQ(2u, tries);
+	size_t tries = 0;
+	for (const auto& st: result.method.body)
+		if (st.kind == StmtKind::Try) ++tries;
+	EXPECT_EQ(2u, tries);
 }
 
 // ─── Variable recovery tests ─────────────────────────────────────────────────

@@ -422,41 +422,43 @@ TEST(FsFileEmitter, MultipleClasses) {
 // typeStr recursed on the printed string and then called itself with a
 // default-constructed BcType, so every array rendered as "unit[]" whatever it
 // held. The element type is on the BcType, not in its printed form.
-TEST(FsTypeEmitter, AnArrayKeepsItsElementType) {
-    BcClass cls;
-    cls.name = "T";
-    BcField ints;
-    ints.name = "data";
-    ints.type = types::Array(types::Int());
-    BcField strs;
-    strs.name = "names";
-    strs.type = types::Array(types::ClrString());
-    cls.fields.push_back(ints);
-    cls.fields.push_back(strs);
+TEST(FsTypeEmitter, AnArrayKeepsItsElementType)
+{
+	BcClass cls;
+	cls.name = "T";
+	BcField ints;
+	ints.name = "data";
+	ints.type = types::Array(types::Int());
+	BcField strs;
+	strs.name = "names";
+	strs.type = types::Array(types::ClrString());
+	cls.fields.push_back(ints);
+	cls.fields.push_back(strs);
 
-    FsWriter w;
-    FsTypeEmitter te(w);
-    BcModule module;
-    te.emitClass(cls, module);
+	FsWriter w;
+	FsTypeEmitter te(w);
+	BcModule module;
+	te.emitClass(cls, module);
 
-    const std::string src = w.str();
-    EXPECT_NE(std::string::npos, src.find("int[]")) << src;
-    EXPECT_NE(std::string::npos, src.find("string[]")) << src;
-    EXPECT_EQ(std::string::npos, src.find("unit[]")) << src;
+	const std::string src = w.str();
+	EXPECT_NE(std::string::npos, src.find("int[]")) << src;
+	EXPECT_NE(std::string::npos, src.find("string[]")) << src;
+	EXPECT_EQ(std::string::npos, src.find("unit[]")) << src;
 }
 
 // Two dimensions come out as two suffixes, not one.
-TEST(FsTypeEmitter, ATwoDimensionalArrayKeepsBothSuffixes) {
-    BcClass cls;
-    cls.name = "T";
-    BcField grid;
-    grid.name = "grid";
-    grid.type = types::Array(types::Int(), 2);
-    cls.fields.push_back(grid);
+TEST(FsTypeEmitter, ATwoDimensionalArrayKeepsBothSuffixes)
+{
+	BcClass cls;
+	cls.name = "T";
+	BcField grid;
+	grid.name = "grid";
+	grid.type = types::Array(types::Int(), 2);
+	cls.fields.push_back(grid);
 
-    FsWriter w;
-    FsTypeEmitter te(w);
-    BcModule module;
-    te.emitClass(cls, module);
-    EXPECT_NE(std::string::npos, w.str().find("int[][]")) << w.str();
+	FsWriter w;
+	FsTypeEmitter te(w);
+	BcModule module;
+	te.emitClass(cls, module);
+	EXPECT_NE(std::string::npos, w.str().find("int[][]")) << w.str();
 }

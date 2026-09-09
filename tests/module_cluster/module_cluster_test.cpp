@@ -411,25 +411,27 @@ TEST(ModuleClusterer, CMakeEmitPipeline) {
 // communities with no edge between them can look the same. Nothing
 // uniquified the result, so the emitted CMake carried two add_library()
 // targets of the same name -- a build that does not configure.
-TEST(ModuleClusterer, TwoModulesDoNotShareAName) {
-    ModuleClusterer c;
-    CallGraph g;
-    // Two disconnected pairs. Each pair shares a prefix with the other, so
-    // the namer reaches the same answer for both communities.
-    for (const char* n : {"net_send", "net_recv", "net_open", "net_close"}) {
-        FunctionMeta f;
-        f.name = n;
-        g.functions.push_back(f);
-    }
-    // Edges only within each pair, so they land in different communities.
-    g.edges.push_back({"net_send", "net_recv", 10});
-    g.edges.push_back({"net_open", "net_close", 10});
+TEST(ModuleClusterer, TwoModulesDoNotShareAName)
+{
+	ModuleClusterer c;
+	CallGraph g;
+	// Two disconnected pairs. Each pair shares a prefix with the other, so
+	// the namer reaches the same answer for both communities.
+	for (const char* n: {"net_send", "net_recv", "net_open", "net_close"})
+	{
+		FunctionMeta f;
+		f.name = n;
+		g.functions.push_back(f);
+	}
+	// Edges only within each pair, so they land in different communities.
+	g.edges.push_back({"net_send", "net_recv", 10});
+	g.edges.push_back({"net_open", "net_close", 10});
 
-    auto result = c.cluster(g, "proj");
-    std::set<std::string> names;
-    for (const auto& m : result.modules) {
-        EXPECT_TRUE(names.insert(m.name).second)
-            << "two modules named " << m.name;
-    }
-    EXPECT_EQ(result.modules.size(), names.size());
+	auto result = c.cluster(g, "proj");
+	std::set<std::string> names;
+	for (const auto& m: result.modules)
+	{
+		EXPECT_TRUE(names.insert(m.name).second) << "two modules named " << m.name;
+	}
+	EXPECT_EQ(result.modules.size(), names.size());
 }

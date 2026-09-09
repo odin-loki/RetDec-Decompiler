@@ -111,62 +111,74 @@ CompilerStructurer::structure(
             std::unique_ptr<StructNode> body;
 
             if (lp) {
-                // The latch is NOT pre-marked visited. It used to be, "so body
-                // structuring stops there" -- but for the ordinary two-block
-                // while loop the latch IS the body entry, so the recursion
-                // below saw it already visited and emitted a goto in place of
-                // the body: `while (c) { x++; }` structured as a While whose
-                // only child was `Goto b2`. Bounding the walk is the exitNode
-                // argument's job, and which block ends the body depends on
-                // where the loop keeps its condition:
-                //
-                //   while / for : the header holds the condition, so the body
-                //                 starts at the header's in-body successor and
-                //                 ends when the walk comes back to the header.
-                //   do-while    : the latch holds the condition, so the body
-                //                 starts at the header itself -- which the
-                //                 caller has already marked visited, hence the
-                //                 erase -- and ends at the latch.
-                //
-                // Bounding a do-while's body by the header instead let the walk
-                // run past the latch's exit edge and pull the block after the
-                // loop inside it, emitting that block twice.
-                std::unordered_set<BlockId> bodyVisited = visited;
-                std::unordered_set<BlockId> bodySet(lp->body.begin(), lp->body.end());
-                const bool isDoWhile = (lp->kind == LoopKind::DoWhile);
+				// The latch is NOT pre-marked visited. It used to be, "so body
+				// structuring stops there" -- but for the ordinary two-block
+				// while loop the latch IS the body entry, so the recursion
+				// below saw it already visited and emitted a goto in place of
+				// the body: `while (c) { x++; }` structured as a While whose
+				// only child was `Goto b2`. Bounding the walk is the exitNode
+				// argument's job, and which block ends the body depends on
+				// where the loop keeps its condition:
+				//
+				//   while / for : the header holds the condition, so the body
+				//                 starts at the header's in-body successor and
+				//                 ends when the walk comes back to the header.
+				//   do-while    : the latch holds the condition, so the body
+				//                 starts at the header itself -- which the
+				//                 caller has already marked visited, hence the
+				//                 erase -- and ends at the latch.
+				//
+				// Bounding a do-while's body by the header instead let the walk
+				// run past the latch's exit edge and pull the block after the
+				// loop inside it, emitting that block twice.
+				std::unordered_set<BlockId> bodyVisited = visited;
+				std::unordered_set<BlockId> bodySet(lp->body.begin(), lp->body.end());
+				const bool isDoWhile = (lp->kind == LoopKind::DoWhile);
 
-                BlockId bodyEntry = kInvalidBlock;
-                for (BlockId s : bb->succs) {
-                    if (bodySet.count(s) && s != cur) { bodyEntry = s; break; }
-                }
-                const BlockId bodyExit = isDoWhile ? lp->latch : cur;
+				BlockId bodyEntry = kInvalidBlock;
+				for (BlockId s: bb->succs)
+				{
+					if (bodySet.count(s) && s != cur)
+					{
+						bodyEntry = s;
+						break;
+					}
+				}
+				const BlockId bodyExit = isDoWhile ? lp->latch : cur;
 
-                auto rest = (bodyEntry != kInvalidBlock && bodyEntry != bodyExit)
-                    ? structure(bodyEntry, bodyExit, fn, pdom, sese, loops, irred, bodyVisited, cfg)
-                    : nullptr;
+				auto rest = (bodyEntry != kInvalidBlock && bodyEntry != bodyExit)
+							  ? structure(bodyEntry, bodyExit, fn, pdom, sese, loops, irred, bodyVisited, cfg)
+							  : nullptr;
 
-                if (isDoWhile) {
-                    // The header is the first statement of the body, not a
-                    // condition. Emit it directly rather than recursing into
-                    // it -- the recursion would see a loop header again and
-                    // not come back.
-                    body = StructNode::seq();
-                    body->children.push_back(StructNode::block(cur));
-                    if (rest) body->children.push_back(std::move(rest));
-                } else {
-                    body = rest ? std::move(rest) : StructNode::seq();
-                }
+				if (isDoWhile)
+				{
+					// The header is the first statement of the body, not a
+					// condition. Emit it directly rather than recursing into
+					// it -- the recursion would see a loop header again and
+					// not come back.
+					body = StructNode::seq();
+					body->children.push_back(StructNode::block(cur));
+					if (rest) body->children.push_back(std::move(rest));
+				}
+				else
+				{
+					body = rest ? std::move(rest) : StructNode::seq();
+				}
 
-                uint32_t condVal = condValueOf(cur, fn);
+				uint32_t condVal = condValueOf(cur, fn);
 
-                switch (lp->kind) {
-                case LoopKind::For:
-                    if (cfg.preferFor && lp->hasIncrement) {
-                        loopNode = StructNode::forLoop(condVal, lp->inductionVar);
-                    } else {
-                        loopNode = StructNode::whileLoop(condVal);
-                    }
-                    break;
+				switch (lp->kind)
+				{
+				case LoopKind::For:
+					if (cfg.preferFor && lp->hasIncrement)
+					{
+						loopNode = StructNode::forLoop(condVal, lp->inductionVar);
+					}
+					else
+					{
+						loopNode = StructNode::whileLoop(condVal);
+					}
+					break;
                 case LoopKind::DoWhile: {
                     // For do-while the condition is at the latch.
                     uint32_t latchCond = condValueOf(lp->latch, fn);
@@ -179,35 +191,41 @@ CompilerStructurer::structure(
                 default:
                     loopNode = StructNode::whileLoop(condVal);
                     break;
-                }
+				}
 
-                if (body) loopNode->children.push_back(std::move(body));
-                seq->children.push_back(std::move(loopNode));
+				if (body) loopNode->children.push_back(std::move(body));
+				seq->children.push_back(std::move(loopNode));
 
-                // Continue structuring from the loop exit.
-                //
-                // NaturalLoop::exits holds the body blocks that HAVE an edge
-                // leaving the loop -- not the blocks those edges lead to. Every
-                // one of them is in the body by construction, so the filter
-                // that used to be here, "skip any exits that are still inside
-                // the body", could never fire, and cur was left pointing at a
-                // body block the walk had already visited: everything after a
-                // while or for loop came out as a single goto and the tail of
-                // the function was dropped from the tree. Follow the edge.
-                cur = kInvalidBlock;
-                for (BlockId ex : lp->exits) {
-                    const ssa::BasicBlock* exBb = fn.block(ex);
-                    if (!exBb) continue;
-                    for (BlockId s : exBb->succs) {
-                        if (!bodySet.count(s)) { cur = s; break; }
-                    }
-                    if (cur != kInvalidBlock) break;
-                }
-                continue;
-            }
-        }
+				// Continue structuring from the loop exit.
+				//
+				// NaturalLoop::exits holds the body blocks that HAVE an edge
+				// leaving the loop -- not the blocks those edges lead to. Every
+				// one of them is in the body by construction, so the filter
+				// that used to be here, "skip any exits that are still inside
+				// the body", could never fire, and cur was left pointing at a
+				// body block the walk had already visited: everything after a
+				// while or for loop came out as a single goto and the tail of
+				// the function was dropped from the tree. Follow the edge.
+				cur = kInvalidBlock;
+				for (BlockId ex: lp->exits)
+				{
+					const ssa::BasicBlock* exBb = fn.block(ex);
+					if (!exBb) continue;
+					for (BlockId s: exBb->succs)
+					{
+						if (!bodySet.count(s))
+						{
+							cur = s;
+							break;
+						}
+					}
+					if (cur != kInvalidBlock) break;
+				}
+				continue;
+			}
+		}
 
-        // ── Conditional branch (if-then / if-then-else) ──────────────────────
+		// ── Conditional branch (if-then / if-then-else) ──────────────────────
         if (bb->succs.size() == 2) {
             BlockId s0 = bb->succs[0];
             BlockId s1 = bb->succs[1];

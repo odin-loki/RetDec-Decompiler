@@ -1631,13 +1631,23 @@ TEST(AlgorithmDetectorTest, NoIteratorAnnotationWithoutABeginEndPair)
 TEST(AlgorithmKindNames, EveryKindSurvivesANameRoundTrip)
 {
 	const AlgorithmKind all[] = {
-		AlgorithmKind::Transform, AlgorithmKind::Accumulate,
-		AlgorithmKind::MaxElement, AlgorithmKind::MinElement,
-		AlgorithmKind::Find, AlgorithmKind::FindIf,
-		AlgorithmKind::BinarySearch, AlgorithmKind::Partition,
-		AlgorithmKind::ForEach, AlgorithmKind::Copy, AlgorithmKind::Fill,
-		AlgorithmKind::Count, AlgorithmKind::AnyOf, AlgorithmKind::AllOf,
-		AlgorithmKind::NoneOf, AlgorithmKind::Reverse, AlgorithmKind::RotateLeft,
+		AlgorithmKind::Transform,
+		AlgorithmKind::Accumulate,
+		AlgorithmKind::MaxElement,
+		AlgorithmKind::MinElement,
+		AlgorithmKind::Find,
+		AlgorithmKind::FindIf,
+		AlgorithmKind::BinarySearch,
+		AlgorithmKind::Partition,
+		AlgorithmKind::ForEach,
+		AlgorithmKind::Copy,
+		AlgorithmKind::Fill,
+		AlgorithmKind::Count,
+		AlgorithmKind::AnyOf,
+		AlgorithmKind::AllOf,
+		AlgorithmKind::NoneOf,
+		AlgorithmKind::Reverse,
+		AlgorithmKind::RotateLeft,
 	};
 	for (AlgorithmKind k: all)
 	{
@@ -1645,8 +1655,7 @@ TEST(AlgorithmKindNames, EveryKindSurvivesANameRoundTrip)
 		r.kind = k;
 		const std::string name = r.kindName();
 		EXPECT_NE("unknown", name) << "kind " << static_cast<int>(k) << " has no name";
-		EXPECT_EQ(k, algorithmKindFromName(name))
-			<< "kindName() gave \"" << name << "\", which does not read back";
+		EXPECT_EQ(k, algorithmKindFromName(name)) << "kindName() gave \"" << name << "\", which does not read back";
 	}
 }
 
@@ -1654,8 +1663,7 @@ TEST(AlgorithmKindNames, EveryKindSurvivesANameRoundTrip)
 // the enum but not to the table would leave a hole this finds.
 TEST(AlgorithmKindNames, NoKindInTheEnumIsMissingFromTheTable)
 {
-	for (int i = static_cast<int>(AlgorithmKind::Transform);
-			i <= static_cast<int>(AlgorithmKind::RotateLeft); ++i)
+	for (int i = static_cast<int>(AlgorithmKind::Transform); i <= static_cast<int>(AlgorithmKind::RotateLeft); ++i)
 	{
 		AlgorithmResult r;
 		r.kind = static_cast<AlgorithmKind>(i);

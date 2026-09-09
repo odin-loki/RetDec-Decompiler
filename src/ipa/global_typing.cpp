@@ -48,22 +48,21 @@ GlobalTyper::run(const std::vector<const ssa::SSAFunction*>& fns,
                     if (!v || v->kind != ssa::ValueKind::MemRef) continue;
                     if (v->memIsStack) continue;  // skip stack accesses
 
-                    // memWidth is a byte count, so the bit width needs more
-                    // than eight bits to hold: a 32-byte ymm access gives 256,
-                    // which as a uint8_t was 0 -- and 0 is the value the
-                    // conflict test below treats as "not seen yet", so the
-                    // widest accesses were both mis-sized and exempted from
-                    // the ambiguity they should have raised.
-                    const uint16_t newWidth =
-                        v->memWidth ? static_cast<uint16_t>(v->memWidth * 8u) : uint16_t{64};
+					// memWidth is a byte count, so the bit width needs more
+					// than eight bits to hold: a 32-byte ymm access gives 256,
+					// which as a uint8_t was 0 -- and 0 is the value the
+					// conflict test below treats as "not seen yet", so the
+					// widest accesses were both mis-sized and exempted from
+					// the ambiguity they should have raised.
+					const uint16_t newWidth = v->memWidth ? static_cast<uint16_t>(v->memWidth * 8u) : uint16_t{64};
 
-                    std::string key = addrKey(v->memOffset);
+					std::string key = addrKey(v->memOffset);
                     auto& gv = globals[key];
                     if (gv.name.empty()) {
                         gv.name    = key;
                         gv.address = static_cast<uint64_t>(v->memOffset);
-                        gv.width   = newWidth;
-                    }
+						gv.width = newWidth;
+					}
 
                     // Check for type conflict.
                     if (gv.width != 0 && gv.width != newWidth) {

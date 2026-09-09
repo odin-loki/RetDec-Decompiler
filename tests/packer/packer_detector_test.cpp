@@ -385,59 +385,58 @@ TEST_F(PackerDetectorTest, WeightedSumBounds)
 // a higher packer score.
 TEST_F(PackerDetectorTest, AShortPrologueAtTheEndOfASectionIsStillFound)
 {
-    FormatResult fmt;
-    SectionInfo sec;
-    sec.name           = ".text";
-    sec.virtualAddress = 0x1000;
-    sec.virtualSize    = 5;
-    sec.fileOffset     = 0;
-    sec.fileSize       = 5;
-    sec.isExecutable   = true;
-    sec.isWritable     = false;
-    fmt.sections.push_back(sec);
+	FormatResult fmt;
+	SectionInfo sec;
+	sec.name = ".text";
+	sec.virtualAddress = 0x1000;
+	sec.virtualSize = 5;
+	sec.fileOffset = 0;
+	sec.fileSize = 5;
+	sec.isExecutable = true;
+	sec.isWritable = false;
+	fmt.sections.push_back(sec);
 
-    // push ebp; mov ebp, esp in the last three bytes.
-    std::vector<uint8_t> data = {0x90, 0x90, 0x55, 0x8B, 0xEC};
-    auto r = detector.detect(data.data(), data.size(), &fmt);
-    EXPECT_DOUBLE_EQ(0.0, r.signals.sectionMismatchScore)
-        << "a section ending in a prologue counted as mismatched";
+	// push ebp; mov ebp, esp in the last three bytes.
+	std::vector<uint8_t> data = {0x90, 0x90, 0x55, 0x8B, 0xEC};
+	auto r = detector.detect(data.data(), data.size(), &fmt);
+	EXPECT_DOUBLE_EQ(0.0, r.signals.sectionMismatchScore) << "a section ending in a prologue counted as mismatched";
 }
 
 // And the two-byte MSVC form at the very end.
 TEST_F(PackerDetectorTest, ATwoBytePrologueAtTheEndOfASectionIsStillFound)
 {
-    FormatResult fmt;
-    SectionInfo sec;
-    sec.name           = ".text";
-    sec.virtualAddress = 0x1000;
-    sec.virtualSize    = 5;
-    sec.fileOffset     = 0;
-    sec.fileSize       = 5;
-    sec.isExecutable   = true;
-    sec.isWritable     = false;
-    fmt.sections.push_back(sec);
+	FormatResult fmt;
+	SectionInfo sec;
+	sec.name = ".text";
+	sec.virtualAddress = 0x1000;
+	sec.virtualSize = 5;
+	sec.fileOffset = 0;
+	sec.fileSize = 5;
+	sec.isExecutable = true;
+	sec.isWritable = false;
+	fmt.sections.push_back(sec);
 
-    std::vector<uint8_t> data = {0x90, 0x90, 0x90, 0x40, 0x55};
-    auto r = detector.detect(data.data(), data.size(), &fmt);
-    EXPECT_DOUBLE_EQ(0.0, r.signals.sectionMismatchScore);
+	std::vector<uint8_t> data = {0x90, 0x90, 0x90, 0x40, 0x55};
+	auto r = detector.detect(data.data(), data.size(), &fmt);
+	EXPECT_DOUBLE_EQ(0.0, r.signals.sectionMismatchScore);
 }
 
 // A section with neither strings nor any prologue is still a mismatch: the
 // bound fix must not turn every section into "has code".
 TEST_F(PackerDetectorTest, ASectionWithNoPrologueIsStillAMismatch)
 {
-    FormatResult fmt;
-    SectionInfo sec;
-    sec.name           = ".packed";
-    sec.virtualAddress = 0x1000;
-    sec.virtualSize    = 5;
-    sec.fileOffset     = 0;
-    sec.fileSize       = 5;
-    sec.isExecutable   = true;
-    sec.isWritable     = false;
-    fmt.sections.push_back(sec);
+	FormatResult fmt;
+	SectionInfo sec;
+	sec.name = ".packed";
+	sec.virtualAddress = 0x1000;
+	sec.virtualSize = 5;
+	sec.fileOffset = 0;
+	sec.fileSize = 5;
+	sec.isExecutable = true;
+	sec.isWritable = false;
+	fmt.sections.push_back(sec);
 
-    std::vector<uint8_t> data = {0x01, 0x02, 0x03, 0x04, 0x05};
-    auto r = detector.detect(data.data(), data.size(), &fmt);
-    EXPECT_DOUBLE_EQ(1.0, r.signals.sectionMismatchScore);
+	std::vector<uint8_t> data = {0x01, 0x02, 0x03, 0x04, 0x05};
+	auto r = detector.detect(data.data(), data.size(), &fmt);
+	EXPECT_DOUBLE_EQ(1.0, r.signals.sectionMismatchScore);
 }

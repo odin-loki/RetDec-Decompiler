@@ -162,15 +162,15 @@ struct FrameAccess {
  */
 struct FrameSlot {
     int64_t  baseOffset = 0;   ///< lowest byte offset of the slot
-    /// Byte span of the slot. Wider than a uint8_t because a stack slot can be
-    /// wider than 255 bytes -- a local array, most obviously -- and truncating
-    /// the span produced candidates whose size was the span modulo 256, zero
-    /// for a slot of exactly 256 bytes.
-    uint32_t totalSize  = 0;
-    uint8_t  maxAccess  = 0;   ///< widest single access seen (for type hint)
-    bool     hasWrite   = false;
-    bool     hasRead    = false;
-    std::vector<FrameAccess> accesses;  ///< all accesses to this slot
+	/// Byte span of the slot. Wider than a uint8_t because a stack slot can be
+	/// wider than 255 bytes -- a local array, most obviously -- and truncating
+	/// the span produced candidates whose size was the span modulo 256, zero
+	/// for a slot of exactly 256 bytes.
+	uint32_t totalSize = 0;
+	uint8_t maxAccess = 0; ///< widest single access seen (for type hint)
+	bool hasWrite = false;
+	bool hasRead = false;
+	std::vector<FrameAccess> accesses; ///< all accesses to this slot
 };
 
 // ─── ABI-reserved frame regions ──────────────────────────────────────────────

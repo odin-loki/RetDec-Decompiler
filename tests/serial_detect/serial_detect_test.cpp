@@ -1024,7 +1024,7 @@ TEST(ProtobufSchemaTest, TagsAreDecodedIntoFieldNumbers)
 // whose low three bits are one of those is not a tag.
 TEST(ProtobufSchemaTest, AConstantWithAnInvalidWireTypeIsNotATag)
 {
-	auto fn = makeProtoSerializer("f", (5u << 3) | 3);   // wire type 3
+	auto fn = makeProtoSerializer("f", (5u << 3) | 3); // wire type 3
 	std::vector<const retdec::ssa::SSAFunction*> fns = {fn.get()};
 	ProtobufDetector d;
 	auto schema = d.reconstructSchema(fns, {});

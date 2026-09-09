@@ -113,8 +113,7 @@ static std::atomic<std::size_t>& archiveThreadsLive() noexcept
 }
 
 /// Holds one slot of the budget for as long as it is in scope.
-class ArchiveThreadSlot
-{
+class ArchiveThreadSlot {
 public:
 	/// Takes a slot if the budget has one. Check taken() before relying on it.
 	ArchiveThreadSlot() noexcept
@@ -124,8 +123,7 @@ public:
 		std::size_t cur = live.load(std::memory_order_relaxed);
 		while (cur < cap)
 		{
-			if (live.compare_exchange_weak(
-					cur, cur + 1, std::memory_order_acq_rel, std::memory_order_relaxed))
+			if (live.compare_exchange_weak(cur, cur + 1, std::memory_order_acq_rel, std::memory_order_relaxed))
 			{
 				taken_ = true;
 				return;
@@ -141,14 +139,23 @@ public:
 	ArchiveThreadSlot(const ArchiveThreadSlot&) = delete;
 	ArchiveThreadSlot& operator=(const ArchiveThreadSlot&) = delete;
 
-	bool taken() const noexcept { return taken_; }
+	bool taken() const noexcept
+	{
+		return taken_;
+	}
 
 	/// Hands the slot to whoever calls release() next -- used when the slot is
 	/// taken on this thread and given to the task that will actually hold it.
-	void hand_over() noexcept { taken_ = false; }
+	void hand_over() noexcept
+	{
+		taken_ = false;
+	}
 
 	/// Gives one slot back. The counterpart of hand_over().
-	static void release() noexcept { archiveThreadsLive().fetch_sub(1, std::memory_order_acq_rel); }
+	static void release() noexcept
+	{
+		archiveThreadsLive().fetch_sub(1, std::memory_order_acq_rel);
+	}
 
 private:
 	bool taken_ = false;
@@ -1119,7 +1126,10 @@ parseAR(const uint8_t* data, size_t size, const std::string& name, const FormatL
 			futures.push_back(std::async(std::launch::async, [&lattice, m, depth]() {
 				struct Release
 				{
-					~Release() { ArchiveThreadSlot::release(); }
+					~Release()
+					{
+						ArchiveThreadSlot::release();
+					}
 				} release;
 				return classifyAtDepth(lattice, m.data, m.size, m.name, depth + 1);
 			}));

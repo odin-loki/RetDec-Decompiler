@@ -61,42 +61,49 @@ std::optional<SSOBranchInfo> detectSSOBranch(int64_t  compareImm,
                                                uint64_t inlinePath,
                                                uint64_t heapPath) noexcept
 {
-    // Map immediate → (impl, effective threshold)
-    // We accept both JBE form (CMP len, N → JBE) and JB form (CMP len, N+1 → JB)
-    // The lookup is first-match, so a second row for an immediate already
-    // listed can never be reached. Two such rows were here -- { 15, MsvcStl }
-    // and { 16, MsvcStl }, both shadowed by the LibStdCpp rows above them --
-    // which made SSOImpl::MsvcStl unreturnable. That is not a table to repair
-    // by reordering: libstdc++ and the MSVC STL both inline 15 characters, so
-    // the compare immediate genuinely cannot tell them apart, and one of the
-    // two has to be the answer. The threshold, which is what callers act on,
-    // is 15 either way.
-    //
-    // 23 is a real ambiguity of the same kind, between libc++'s JB form and
-    // folly's JBE form; libc++ wins it, which is what the note about
-    // preferring libc++ meant. It never applied to libstdc++, whose
-    // immediates (15, 16) do not collide with libc++'s (22, 23).
-    struct Entry { int64_t imm; SSOImpl impl; uint32_t threshold; };
-    static constexpr Entry table[] = {
-        { 15, SSOImpl::LibStdCpp,     15 },  // GCC/MSVC  CMP N, 15 + JBE
-        { 16, SSOImpl::LibStdCpp,     15 },  // GCC/MSVC  CMP N, 16 + JB
-        { 22, SSOImpl::LibCpp,        22 },  // libc++    CMP N, 22 + JBE
-        { 23, SSOImpl::LibCpp,        22 },  // libc++    CMP N, 23 + JB, wins over folly
-        { 24, SSOImpl::FollyFBString, 23 },
-    };
+	// Map immediate → (impl, effective threshold)
+	// We accept both JBE form (CMP len, N → JBE) and JB form (CMP len, N+1 → JB)
+	// The lookup is first-match, so a second row for an immediate already
+	// listed can never be reached. Two such rows were here -- { 15, MsvcStl }
+	// and { 16, MsvcStl }, both shadowed by the LibStdCpp rows above them --
+	// which made SSOImpl::MsvcStl unreturnable. That is not a table to repair
+	// by reordering: libstdc++ and the MSVC STL both inline 15 characters, so
+	// the compare immediate genuinely cannot tell them apart, and one of the
+	// two has to be the answer. The threshold, which is what callers act on,
+	// is 15 either way.
+	//
+	// 23 is a real ambiguity of the same kind, between libc++'s JB form and
+	// folly's JBE form; libc++ wins it, which is what the note about
+	// preferring libc++ meant. It never applied to libstdc++, whose
+	// immediates (15, 16) do not collide with libc++'s (22, 23).
+	struct Entry
+	{
+		int64_t imm;
+		SSOImpl impl;
+		uint32_t threshold;
+	};
+	static constexpr Entry table[] = {
+		{15, SSOImpl::LibStdCpp, 15}, // GCC/MSVC  CMP N, 15 + JBE
+		{16, SSOImpl::LibStdCpp, 15}, // GCC/MSVC  CMP N, 16 + JB
+		{22, SSOImpl::LibCpp, 22},    // libc++    CMP N, 22 + JBE
+		{23, SSOImpl::LibCpp, 22},    // libc++    CMP N, 23 + JB, wins over folly
+		{24, SSOImpl::FollyFBString, 23},
+	};
 
-    for (auto& e : table) {
-        if (e.imm == compareImm) {
-            SSOBranchInfo info;
+	for (auto& e: table)
+	{
+		if (e.imm == compareImm)
+		{
+			SSOBranchInfo info;
             info.impl       = e.impl;
             info.branchVma  = branchVma;
             info.inlinePath = inlinePath;
             info.heapPath   = heapPath;
             info.threshold  = e.threshold;
             return info;
-        }
-    }
-    return std::nullopt;
+		}
+	}
+	return std::nullopt;
 }
 
 } // namespace string_detect

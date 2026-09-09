@@ -766,9 +766,8 @@ std::vector<RelocRecord> LoaderSim::applyELFRelocations(uint64_t newBase) const
 			int64_t addend = 0;
 			if (isRela)
 			{
-				addend = _is64Bit
-					? static_cast<int64_t>(r64(eOff + 16))
-					: static_cast<int64_t>(static_cast<int32_t>(r32(eOff + 8)));
+				addend = _is64Bit ? static_cast<int64_t>(r64(eOff + 16))
+								  : static_cast<int64_t>(static_cast<int32_t>(r32(eOff + 8)));
 			}
 
 			uint32_t rtype = _is64Bit ? static_cast<uint32_t>(info & 0xFFFFFFFF) : static_cast<uint32_t>(info & 0xFF);

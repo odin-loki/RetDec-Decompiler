@@ -2217,8 +2217,7 @@ void ElfFormat::loadDynamicSegmentSection()
 					continue;
 				}
 				const std::size_t avail = getFileLength() - sec->get_offset();
-				const std::size_t secSz = std::min(
-					static_cast<std::size_t>(sec->get_size()), avail);
+				const std::size_t secSz = std::min(static_cast<std::size_t>(sec->get_size()), avail);
 				sec->load(*reader.get_istream(), sec->get_offset(), secSz);
 
 				dynamic_section_accessor dyn(reader, sec);

@@ -19,8 +19,7 @@ namespace retdec {
 namespace serdes {
 namespace tests {
 
-class DeserializeStdStringTests : public Test
-{
+class DeserializeStdStringTests : public Test {
 protected:
 	rapidjson::Document parse(const std::string& json)
 	{
@@ -71,10 +70,9 @@ TEST_F(DeserializeStdStringTests, ANumberIsRefusedAndNotReadAsAPointer)
 
 TEST_F(DeserializeStdStringTests, EveryNonStringTypeIsRefused)
 {
-	auto d = parse(
-		R"({ "n": 1, "d": 1.5, "b": true, "o": {}, "a": [], "z": null })");
+	auto d = parse(R"({ "n": 1, "d": 1.5, "b": true, "o": {}, "a": [], "z": null })");
 
-	for (const char* key : {"n", "d", "b", "o", "a", "z"})
+	for (const char* key: {"n", "d", "b", "o", "a", "z"})
 	{
 		std::string s = "untouched";
 		deserialize(d[key], s);
@@ -134,9 +132,7 @@ TEST_F(DeserializeStdStringTests, AMissingKeyLeavesTheOutputAlone)
 //=============================================================================
 //
 
-class DeserializeKeyedTests : public DeserializeStdStringTests
-{
-};
+class DeserializeKeyedTests : public DeserializeStdStringTests {};
 
 TEST_F(DeserializeKeyedTests, TypedHelpersFallBackToTheDefaultOnAMismatch)
 {

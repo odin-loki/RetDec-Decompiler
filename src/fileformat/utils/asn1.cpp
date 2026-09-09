@@ -36,11 +36,16 @@ std::size_t& nestingDepth()
 }
 
 /// Counts one level of Asn1Item::parse for as long as it is in scope.
-class NestingGuard
-{
+class NestingGuard {
 public:
-	NestingGuard() { ++nestingDepth(); }
-	~NestingGuard() { --nestingDepth(); }
+	NestingGuard()
+	{
+		++nestingDepth();
+	}
+	~NestingGuard()
+	{
+		--nestingDepth();
+	}
 
 	NestingGuard(const NestingGuard&) = delete;
 	NestingGuard& operator=(const NestingGuard&) = delete;

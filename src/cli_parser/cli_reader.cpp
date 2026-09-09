@@ -239,7 +239,7 @@ bool CLIReader::buildTypeNames()
 	{
 		if (nested == 0 || nested > numTypeDefs) continue;
 		if (enclosing == 0 || enclosing > numTypeDefs) continue;
-		if (nested == enclosing) continue;   // a type cannot enclose itself
+		if (nested == enclosing) continue; // a type cannot enclose itself
 		enclosingOf[nested] = enclosing;
 	}
 
@@ -256,7 +256,11 @@ bool CLIReader::buildTypeNames()
 			auto it = enclosingOf.find(cur);
 			if (it == enclosingOf.end()) break;
 			cur = it->second;
-			if (chain.size() > numTypeDefs) { cyclic = true; break; }
+			if (chain.size() > numTypeDefs)
+			{
+				cyclic = true;
+				break;
+			}
 		}
 		if (cyclic) continue;
 		(void)enclosing;

@@ -224,7 +224,7 @@ uint64_t CFGBuilder::blockStartContaining(uint64_t addr, uint64_t fallback) cons
 	auto nit = _graph.nodes.find(*it);
 	if (nit == _graph.nodes.end()) return fallback;
 	const BasicBlock& blk = nit->second;
-	if (blk.endAddr <= *it) return fallback;   // empty or unfinished
+	if (blk.endAddr <= *it) return fallback; // empty or unfinished
 	if (addr >= blk.endAddr) return fallback;
 	return *it;
 }
@@ -304,7 +304,8 @@ void CFGBuilder::splitBlockAt(uint64_t splitAddr)
 	tail.startAddr = splitAddr;
 	tail.endAddr = tailEnd;
 	tail.functionAddr = funcAddr;
-	for (auto& e: movedSuccs) tail.succs.push_back(e);
+	for (auto& e: movedSuccs)
+		tail.succs.push_back(e);
 
 	// Add fallthrough edge from the container to the tail.
 	addEdge(containerStart, splitAddr, EdgeType::FallThrough);
@@ -848,7 +849,7 @@ void CFGBuilder::dfsVisit(uint64_t blockAddr, std::unordered_map<uint64_t, int>&
 			}
 			// Black = already done, forward/cross edge.
 		}
-		if (descended) continue;  // `top` is dangling after push_back
+		if (descended) continue; // `top` is dangling after push_back
 
 		colour[stack.back().addr] = 2; // black (done)
 		stack.pop_back();

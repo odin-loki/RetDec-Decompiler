@@ -1110,20 +1110,24 @@ public:
 	static std::vector<uint8_t> build(const std::vector<uint8_t>& rela)
 	{
 		auto put16 = [](std::vector<uint8_t>& v, std::size_t o, uint16_t x) {
-			v[o] = x & 0xFF; v[o + 1] = (x >> 8) & 0xFF;
+			v[o] = x & 0xFF;
+			v[o + 1] = (x >> 8) & 0xFF;
 		};
 		auto put32 = [](std::vector<uint8_t>& v, std::size_t o, uint32_t x) {
-			for (int i = 0; i < 4; ++i) v[o + i] = (x >> (8 * i)) & 0xFF;
+			for (int i = 0; i < 4; ++i)
+				v[o + i] = (x >> (8 * i)) & 0xFF;
 		};
 
 		// .shstrtab: "\0.rela.dyn\0.shstrtab\0"
 		std::vector<uint8_t> shstr;
 		shstr.push_back(0);
 		const uint32_t nameRela = static_cast<uint32_t>(shstr.size());
-		for (const char* p = ".rela.dyn"; *p; ++p) shstr.push_back(static_cast<uint8_t>(*p));
+		for (const char* p = ".rela.dyn"; *p; ++p)
+			shstr.push_back(static_cast<uint8_t>(*p));
 		shstr.push_back(0);
 		const uint32_t nameStr = static_cast<uint32_t>(shstr.size());
-		for (const char* p = ".shstrtab"; *p; ++p) shstr.push_back(static_cast<uint8_t>(*p));
+		for (const char* p = ".shstrtab"; *p; ++p)
+			shstr.push_back(static_cast<uint8_t>(*p));
 		shstr.push_back(0);
 
 		constexpr std::size_t kEhdr32 = 52;
@@ -1131,21 +1135,24 @@ public:
 		const std::size_t relaOff = 0x100;
 		const std::size_t shstrOff = relaOff + rela.size();
 		const std::size_t shtOff = shstrOff + shstr.size();
-		const uint16_t shnum = 3;   // null, .rela.dyn, .shstrtab
+		const uint16_t shnum = 3; // null, .rela.dyn, .shstrtab
 
 		std::vector<uint8_t> v(shtOff + shnum * kShdr32, 0);
-		v[0] = 0x7F; v[1] = 'E'; v[2] = 'L'; v[3] = 'F';
-		v[4] = 1;   // EI_CLASS = ELFCLASS32
-		v[5] = 1;   // EI_DATA  = ELFDATA2LSB
-		v[6] = 1;   // EI_VERSION
-		put16(v, 16, 3);    // e_type = ET_DYN
-		put16(v, 18, 3);    // e_machine = EM_386
-		put32(v, 20, 1);    // e_version
-		put32(v, 32, static_cast<uint32_t>(shtOff));  // e_shoff
-		put16(v, 40, kEhdr32);                        // e_ehsize
-		put16(v, 46, kShdr32);                        // e_shentsize
-		put16(v, 48, shnum);                          // e_shnum
-		put16(v, 50, 2);                              // e_shstrndx
+		v[0] = 0x7F;
+		v[1] = 'E';
+		v[2] = 'L';
+		v[3] = 'F';
+		v[4] = 1;                                    // EI_CLASS = ELFCLASS32
+		v[5] = 1;                                    // EI_DATA  = ELFDATA2LSB
+		v[6] = 1;                                    // EI_VERSION
+		put16(v, 16, 3);                             // e_type = ET_DYN
+		put16(v, 18, 3);                             // e_machine = EM_386
+		put32(v, 20, 1);                             // e_version
+		put32(v, 32, static_cast<uint32_t>(shtOff)); // e_shoff
+		put16(v, 40, kEhdr32);                       // e_ehsize
+		put16(v, 46, kShdr32);                       // e_shentsize
+		put16(v, 48, shnum);                         // e_shnum
+		put16(v, 50, 2);                             // e_shstrndx
 
 		std::copy(rela.begin(), rela.end(), v.begin() + relaOff);
 		std::copy(shstr.begin(), shstr.end(), v.begin() + shstrOff);
@@ -1153,14 +1160,14 @@ public:
 		// Section 1: .rela.dyn
 		std::size_t sh = shtOff + 1 * kShdr32;
 		put32(v, sh + 0, nameRela);
-		put32(v, sh + 4, 4);                                     // SHT_RELA
-		put32(v, sh + 16, static_cast<uint32_t>(relaOff));       // sh_offset
-		put32(v, sh + 20, static_cast<uint32_t>(rela.size()));   // sh_size
-		put32(v, sh + 36, 12);                                   // sh_entsize
+		put32(v, sh + 4, 4);                                   // SHT_RELA
+		put32(v, sh + 16, static_cast<uint32_t>(relaOff));     // sh_offset
+		put32(v, sh + 20, static_cast<uint32_t>(rela.size())); // sh_size
+		put32(v, sh + 36, 12);                                 // sh_entsize
 		// Section 2: .shstrtab
 		sh = shtOff + 2 * kShdr32;
 		put32(v, sh + 0, nameStr);
-		put32(v, sh + 4, 3);                                     // SHT_STRTAB
+		put32(v, sh + 4, 3); // SHT_STRTAB
 		put32(v, sh + 16, static_cast<uint32_t>(shstrOff));
 		put32(v, sh + 20, static_cast<uint32_t>(shstr.size()));
 		return v;
@@ -1178,17 +1185,18 @@ public:
 TEST(ELFRelocations, Elf32RelaAddendIsReadAtTheElf32Offset)
 {
 	auto put32 = [](std::vector<uint8_t>& v, std::size_t o, uint32_t x) {
-		for (int i = 0; i < 4; ++i) v[o + i] = (x >> (8 * i)) & 0xFF;
+		for (int i = 0; i < 4; ++i)
+			v[o + i] = (x >> (8 * i)) & 0xFF;
 	};
 	// Two Elf32_Rela entries. The second exists so the first has something to
 	// read into if the offset is wrong.
 	std::vector<uint8_t> rela(24, 0);
-	put32(rela, 0, 0x8049008u);   // [0] r_offset
-	put32(rela, 4, 8u);           // [0] r_info: sym=0, type=8 (R_386_RELATIVE)
-	put32(rela, 8, 0x1234u);      // [0] r_addend  <- what must come back
-	put32(rela, 12, 0x804900Cu);  // [1] r_offset  <- what the 64-bit read hits
-	put32(rela, 16, 8u);          // [1] r_info
-	put32(rela, 20, 0x5678u);     // [1] r_addend
+	put32(rela, 0, 0x8049008u);  // [0] r_offset
+	put32(rela, 4, 8u);          // [0] r_info: sym=0, type=8 (R_386_RELATIVE)
+	put32(rela, 8, 0x1234u);     // [0] r_addend  <- what must come back
+	put32(rela, 12, 0x804900Cu); // [1] r_offset  <- what the 64-bit read hits
+	put32(rela, 16, 8u);         // [1] r_info
+	put32(rela, 20, 0x5678u);    // [1] r_addend
 
 	auto buf = Elf32RelaBuilder::build(rela);
 	LoaderSim sim(buf.data(), buf.size(), Elf32RelaBuilder::kBase, false, true);

@@ -513,8 +513,8 @@ TEST(MiniEmuTest, ARexPrefixedIndirectJumpIsStillAJump)
 	//         48 FF E0                jmp rax          (REX.W + FF /4)
 	// 0x2000: F4                      hlt
 	std::vector<uint8_t> code = {
-		0x48, 0xB8, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x4C, 0xFF, 0xE0,   // REX.WR + FF /4 -- REX.R set, and irrelevant here
+		0x48, 0xB8, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4C, 0xFF, 0xE0, // REX.WR + FF /4 -- REX.R set,
+																					  // and irrelevant here
 	};
 	emu.mapPage(0x1000, rx, code.data(), code.size());
 	const uint8_t hlt[] = {0xF4};
@@ -525,15 +525,25 @@ TEST(MiniEmuTest, ARexPrefixedIndirectJumpIsStillAJump)
 	// HLT on the target page. Without the fix the jump decoded as nothing and
 	// the emulator walked on through the first page until it hit the 64
 	// instruction cap, at 0x104b.
-	EXPECT_EQ(3u, res.instructionsExecuted)
-		<< "the REX-prefixed indirect jump was not decoded";
+	EXPECT_EQ(3u, res.instructionsExecuted) << "the REX-prefixed indirect jump was not decoded";
 	EXPECT_EQ(0x2001u, res.epAfterUnpack);
 
 	// The same instruction without REX.R already worked, and still does.
 	MiniEmu plain;
 	std::vector<uint8_t> noRexR = {
-		0x48, 0xB8, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x48, 0xFF, 0xE0,
+		0x48,
+		0xB8,
+		0x00,
+		0x20,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x48,
+		0xFF,
+		0xE0,
 	};
 	plain.mapPage(0x1000, rx, noRexR.data(), noRexR.size());
 	plain.mapPage(0x2000, rx, hlt, sizeof(hlt));

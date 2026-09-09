@@ -78,208 +78,247 @@ namespace idiom_reconstruct {
 
 namespace {
 
-struct MemAccess {
-    uint32_t baseReg;
-    int64_t  offsetBytes;  ///< immediate offset from base (if any)
-    uint32_t vecReg;       ///< SIMD register used
-    uint32_t vecWidth;     ///< width in bytes
-    bool     isLoad;
-    uint64_t vma;
+struct MemAccess
+{
+	uint32_t baseReg;
+	int64_t offsetBytes; ///< immediate offset from base (if any)
+	uint32_t vecReg;     ///< SIMD register used
+	uint32_t vecWidth;   ///< width in bytes
+	bool isLoad;
+	uint64_t vma;
 };
 
 class SimdMemMatcher : public IIdiomMatcher {
 public:
-    const char* name() const noexcept override { return "SimdMemset_Memcpy"; }
-    std::size_t minWindowSize() const noexcept override { return 2; }
+	const char* name() const noexcept override
+	{
+		return "SimdMemset_Memcpy";
+	}
+	std::size_t minWindowSize() const noexcept override
+	{
+		return 2;
+	}
 
-    std::optional<ReplacementNode> match(const InstrWindow& W,
-                                          std::size_t        off,
-                                          CompilerProfile    /*prof*/) const override
-    {
-        const std::size_t n = W.size();
+	std::optional<ReplacementNode> match(const InstrWindow& W, std::size_t off, CompilerProfile /*prof*/) const override
+	{
+		const std::size_t n = W.size();
 
-        // ── Step 1: Scan for vector accesses starting at `off` ────────────────
-        std::vector<MemAccess> accesses;
-        uint32_t fillVecReg = UINT32_MAX;
-        int64_t  fillValue  = 0;
-        bool     hasFill    = false;
-        std::size_t lastIdx = off;
-        int64_t  epilogueBytes = 0;
+		// ── Step 1: Scan for vector accesses starting at `off` ────────────────
+		std::vector<MemAccess> accesses;
+		uint32_t fillVecReg = UINT32_MAX;
+		int64_t fillValue = 0;
+		bool hasFill = false;
+		std::size_t lastIdx = off;
+		int64_t epilogueBytes = 0;
 
-        for (std::size_t i = off; i < n; ++i) {
-            const IdiomInstr& ins = W[i];
+		for (std::size_t i = off; i < n; ++i)
+		{
+			const IdiomInstr& ins = W[i];
 
-            if (ins.op == IdiomOp::VecSet) {
-                // Broadcast scalar (or zero) into SIMD register
-                fillVecReg = ins.dst.reg;
-                if (ins.src0.kind == OperandKind::Imm) fillValue = ins.src0.imm;
-                else if (ins.src0.kind == OperandKind::Reg && ins.src0.reg == ins.src1.reg &&
-                         ins.op == IdiomOp::Xor) fillValue = 0;  // vpxor self = zero
-                else fillValue = 0;
-                hasFill = true;
-                lastIdx = i;
-                continue;
-            }
+			if (ins.op == IdiomOp::VecSet)
+			{
+				// Broadcast scalar (or zero) into SIMD register
+				fillVecReg = ins.dst.reg;
+				if (ins.src0.kind == OperandKind::Imm)
+					fillValue = ins.src0.imm;
+				else if (ins.src0.kind == OperandKind::Reg && ins.src0.reg == ins.src1.reg && ins.op == IdiomOp::Xor)
+					fillValue = 0; // vpxor self = zero
+				else
+					fillValue = 0;
+				hasFill = true;
+				lastIdx = i;
+				continue;
+			}
 
-            if (ins.op == IdiomOp::VecStore || ins.op == IdiomOp::VecLoad) {
-                MemAccess acc;
-                acc.isLoad    = (ins.op == IdiomOp::VecLoad);
-                acc.vecWidth  = ins.vecWidth > 0 ? ins.vecWidth : ins.dst.width / 8;
-                acc.vma       = ins.vma;
-                acc.offsetBytes = ins.src1.kind==OperandKind::Imm ? ins.src1.imm : 0;
-                if (ins.op == IdiomOp::VecStore) {
-                    // Tests encode store as dst=mem base, src0=vecReg, src1=offset.
-                    acc.vecReg  = ins.src0.reg;
-                    acc.baseReg = ins.dst.reg;
-                } else {
-                    acc.vecReg  = ins.dst.reg;
-                    acc.baseReg = ins.src0.reg;
-                }
-                accesses.push_back(acc);
-                lastIdx = i;
-                continue;
-            }
+			if (ins.op == IdiomOp::VecStore || ins.op == IdiomOp::VecLoad)
+			{
+				MemAccess acc;
+				acc.isLoad = (ins.op == IdiomOp::VecLoad);
+				acc.vecWidth = ins.vecWidth > 0 ? ins.vecWidth : ins.dst.width / 8;
+				acc.vma = ins.vma;
+				acc.offsetBytes = ins.src1.kind == OperandKind::Imm ? ins.src1.imm : 0;
+				if (ins.op == IdiomOp::VecStore)
+				{
+					// Tests encode store as dst=mem base, src0=vecReg, src1=offset.
+					acc.vecReg = ins.src0.reg;
+					acc.baseReg = ins.dst.reg;
+				}
+				else
+				{
+					acc.vecReg = ins.dst.reg;
+					acc.baseReg = ins.src0.reg;
+				}
+				accesses.push_back(acc);
+				lastIdx = i;
+				continue;
+			}
 
-            // Scalar epilogue stores (Store) after the SIMD block. These are
-            // absorbed into the replacement -- lastIdx moves past them, so
-            // instrCount counts them -- and their bytes were not added to the
-            // count, so the emitted memcpy covered fewer bytes than the
-            // instructions it replaced.
-            if (ins.op == IdiomOp::Store && !accesses.empty()) {
-                uint32_t w = ins.src0.width ? ins.src0.width / 8u : 0u;
-                if (w == 0) w = ins.dst.width ? ins.dst.width / 8u : 0u;
-                epilogueBytes += w;
-                lastIdx = i;
-                continue;
-            }
+			// Scalar epilogue stores (Store) after the SIMD block. These are
+			// absorbed into the replacement -- lastIdx moves past them, so
+			// instrCount counts them -- and their bytes were not added to the
+			// count, so the emitted memcpy covered fewer bytes than the
+			// instructions it replaced.
+			if (ins.op == IdiomOp::Store && !accesses.empty())
+			{
+				uint32_t w = ins.src0.width ? ins.src0.width / 8u : 0u;
+				if (w == 0) w = ins.dst.width ? ins.dst.width / 8u : 0u;
+				epilogueBytes += w;
+				lastIdx = i;
+				continue;
+			}
 
-            // Any non-memory non-setup instruction breaks the sequence.
-            //
-            // This guard used to be `if (!accesses.empty())`, so before the
-            // first vector access anything at all was skipped over: the match
-            // was not anchored at `off`. The matcher would walk forward past
-            // unrelated instructions until it found a SIMD block somewhere in
-            // the window and then report a replacement spanning from `off`,
-            // swallowing everything in between -- including idioms another
-            // matcher would have recovered. The sequence has to start where
-            // the caller says it starts.
-            if (ins.op != IdiomOp::Add && ins.op != IdiomOp::Lea &&
-                ins.op != IdiomOp::Mov && ins.op != IdiomOp::Sub)
-                break;
-        }
+			// Any non-memory non-setup instruction breaks the sequence.
+			//
+			// This guard used to be `if (!accesses.empty())`, so before the
+			// first vector access anything at all was skipped over: the match
+			// was not anchored at `off`. The matcher would walk forward past
+			// unrelated instructions until it found a SIMD block somewhere in
+			// the window and then report a replacement spanning from `off`,
+			// swallowing everything in between -- including idioms another
+			// matcher would have recovered. The sequence has to start where
+			// the caller says it starts.
+			if (ins.op != IdiomOp::Add && ins.op != IdiomOp::Lea && ins.op != IdiomOp::Mov && ins.op != IdiomOp::Sub)
+				break;
+		}
 
-        if (accesses.size() < 2) return std::nullopt;
+		if (accesses.size() < 2) return std::nullopt;
 
-        // ── Step 2: Classify as memset or memcpy ──────────────────────────────
+		// ── Step 2: Classify as memset or memcpy ──────────────────────────────
 
-        // Separate loads and stores
-        std::vector<MemAccess> loads, stores;
-        for (auto& a : accesses) {
-            if (a.isLoad) loads.push_back(a);
-            else          stores.push_back(a);
-        }
+		// Separate loads and stores
+		std::vector<MemAccess> loads, stores;
+		for (auto& a: accesses)
+		{
+			if (a.isLoad)
+				loads.push_back(a);
+			else
+				stores.push_back(a);
+		}
 
-        if (stores.empty()) return std::nullopt;
+		if (stores.empty()) return std::nullopt;
 
-        // Check that all stores use the same base register
-        uint32_t dstBase = stores[0].baseReg;
-        bool     allSameDst = std::all_of(stores.begin(), stores.end(),
-            [dstBase](const MemAccess& a){ return a.baseReg == dstBase; });
+		// Check that all stores use the same base register
+		uint32_t dstBase = stores[0].baseReg;
+		bool allSameDst =
+			std::all_of(stores.begin(), stores.end(), [dstBase](const MemAccess& a) { return a.baseReg == dstBase; });
 
-        if (!allSameDst) return std::nullopt;
+		if (!allSameDst) return std::nullopt;
 
-        // `loads` and `stores` are still in program order here, which is what
-        // says which load feeds which store. The stride check needs them by
-        // offset, so it works on a copy -- sorting the real ones (and sorting
-        // `loads` separately, further down) threw the pairing away, and the
-        // backward-copy test then compared two ascending lists, which agree
-        // only for a palindrome: the memmove branch could not be reached.
-        {
-            std::vector<MemAccess> byOffset = stores;
-            std::sort(byOffset.begin(), byOffset.end(),
-                [](const MemAccess& a, const MemAccess& b){ return a.offsetBytes < b.offsetBytes; });
-            uint32_t vecW = byOffset[0].vecWidth ? byOffset[0].vecWidth : 16;
-            bool strideOk = true;
-            for (std::size_t i=1; i<byOffset.size(); ++i) {
-                int64_t expectedOff = byOffset[i-1].offsetBytes + vecW;
-                if (byOffset[i].offsetBytes != expectedOff) { strideOk=false; break; }
-            }
-            if (!strideOk) return std::nullopt;
-        }
+		// `loads` and `stores` are still in program order here, which is what
+		// says which load feeds which store. The stride check needs them by
+		// offset, so it works on a copy -- sorting the real ones (and sorting
+		// `loads` separately, further down) threw the pairing away, and the
+		// backward-copy test then compared two ascending lists, which agree
+		// only for a palindrome: the memmove branch could not be reached.
+		{
+			std::vector<MemAccess> byOffset = stores;
+			std::sort(byOffset.begin(), byOffset.end(), [](const MemAccess& a, const MemAccess& b) {
+				return a.offsetBytes < b.offsetBytes;
+			});
+			uint32_t vecW = byOffset[0].vecWidth ? byOffset[0].vecWidth : 16;
+			bool strideOk = true;
+			for (std::size_t i = 1; i < byOffset.size(); ++i)
+			{
+				int64_t expectedOff = byOffset[i - 1].offsetBytes + vecW;
+				if (byOffset[i].offsetBytes != expectedOff)
+				{
+					strideOk = false;
+					break;
+				}
+			}
+			if (!strideOk) return std::nullopt;
+		}
 
-        // Total bytes covered, including any scalar epilogue the span absorbed.
-        uint32_t vecW   = stores[0].vecWidth ? stores[0].vecWidth : 16;
-        int64_t  count  = (int64_t)(stores.size() * vecW) + epilogueBytes;
+		// Total bytes covered, including any scalar epilogue the span absorbed.
+		uint32_t vecW = stores[0].vecWidth ? stores[0].vecWidth : 16;
+		int64_t count = (int64_t)(stores.size() * vecW) + epilogueBytes;
 
-        // ── memset: no loads, fill value from VecSet ──────────────────────────
-        if (loads.empty()) {
-            // Check all stores use the fill register (or same constant)
-            bool isFill = hasFill;
-            if (!isFill) {
-                // All stores same vec register?
-                uint32_t vr = stores[0].vecReg;
-                isFill = std::all_of(stores.begin(), stores.end(),
-                    [vr](const MemAccess& a){ return a.vecReg==vr; });
-            }
-            if (!isFill) return std::nullopt;
+		// ── memset: no loads, fill value from VecSet ──────────────────────────
+		if (loads.empty())
+		{
+			// Check all stores use the fill register (or same constant)
+			bool isFill = hasFill;
+			if (!isFill)
+			{
+				// All stores same vec register?
+				uint32_t vr = stores[0].vecReg;
+				isFill = std::all_of(stores.begin(), stores.end(), [vr](const MemAccess& a) { return a.vecReg == vr; });
+			}
+			if (!isFill) return std::nullopt;
 
-            ReplacementNode r;
-            r.kind      = ReplacementKind::Memset;
-            r.dstReg    = dstBase;
-            r.fillValue = fillValue;
-            r.countImm  = count;
-            r.firstVma  = W[off].vma;
-            r.lastVma   = W[lastIdx].vma;
-            r.instrCount= lastIdx - off + 1;
-            return r;
-        }
+			ReplacementNode r;
+			r.kind = ReplacementKind::Memset;
+			r.dstReg = dstBase;
+			r.fillValue = fillValue;
+			r.countImm = count;
+			r.firstVma = W[off].vma;
+			r.lastVma = W[lastIdx].vma;
+			r.instrCount = lastIdx - off + 1;
+			return r;
+		}
 
-        // ── memcpy: loads from one base, stores to another ────────────────────
-        uint32_t srcBase = loads[0].baseReg;
-        bool allSameSrc = std::all_of(loads.begin(), loads.end(),
-            [srcBase](const MemAccess& a){ return a.baseReg==srcBase; });
-        if (!allSameSrc) return std::nullopt;
-        if (srcBase == dstBase) return std::nullopt; // trivially aliased
+		// ── memcpy: loads from one base, stores to another ────────────────────
+		uint32_t srcBase = loads[0].baseReg;
+		bool allSameSrc =
+			std::all_of(loads.begin(), loads.end(), [srcBase](const MemAccess& a) { return a.baseReg == srcBase; });
+		if (!allSameSrc) return std::nullopt;
+		if (srcBase == dstBase) return std::nullopt; // trivially aliased
 
-        // Check load offsets match store offsets (same count in order)
-        if (loads.size() != stores.size()) return std::nullopt;
+		// Check load offsets match store offsets (same count in order)
+		if (loads.size() != stores.size()) return std::nullopt;
 
-        // Both lists are in program order: the i-th load feeds the i-th store.
-        bool offsetsMatch = true;
-        for (std::size_t i=0; i<loads.size(); ++i) {
-            if (loads[i].offsetBytes != stores[i].offsetBytes) { offsetsMatch=false; break; }
-        }
+		// Both lists are in program order: the i-th load feeds the i-th store.
+		bool offsetsMatch = true;
+		for (std::size_t i = 0; i < loads.size(); ++i)
+		{
+			if (loads[i].offsetBytes != stores[i].offsetBytes)
+			{
+				offsetsMatch = false;
+				break;
+			}
+		}
 
-        // Check for backward copy (memmove indicator)
-        bool backward = false;
-        if (!offsetsMatch) {
-            // Check if reversed
-            bool revMatch = true;
-            for (std::size_t i=0; i<loads.size(); ++i) {
-                std::size_t j = loads.size()-1-i;
-                if (loads[i].offsetBytes != stores[j].offsetBytes) { revMatch=false; break; }
-            }
-            if (revMatch) { backward=true; offsetsMatch=true; }
-        }
+		// Check for backward copy (memmove indicator)
+		bool backward = false;
+		if (!offsetsMatch)
+		{
+			// Check if reversed
+			bool revMatch = true;
+			for (std::size_t i = 0; i < loads.size(); ++i)
+			{
+				std::size_t j = loads.size() - 1 - i;
+				if (loads[i].offsetBytes != stores[j].offsetBytes)
+				{
+					revMatch = false;
+					break;
+				}
+			}
+			if (revMatch)
+			{
+				backward = true;
+				offsetsMatch = true;
+			}
+		}
 
-        if (!offsetsMatch) return std::nullopt;
+		if (!offsetsMatch) return std::nullopt;
 
-        ReplacementNode r;
-        r.kind      = backward ? ReplacementKind::Memmove : ReplacementKind::Memcpy;
-        r.dstReg    = dstBase;
-        r.srcReg    = srcBase;
-        r.countImm  = count;
-        r.firstVma  = W[off].vma;
-        r.lastVma   = W[lastIdx].vma;
-        r.instrCount= lastIdx - off + 1;
-        return r;
-    }
+		ReplacementNode r;
+		r.kind = backward ? ReplacementKind::Memmove : ReplacementKind::Memcpy;
+		r.dstReg = dstBase;
+		r.srcReg = srcBase;
+		r.countImm = count;
+		r.firstVma = W[off].vma;
+		r.lastVma = W[lastIdx].vma;
+		r.instrCount = lastIdx - off + 1;
+		return r;
+	}
 };
 
-} // anon namespace
+} // namespace
 
-std::unique_ptr<IIdiomMatcher> makeSimdMemMatcher() {
-    return std::make_unique<SimdMemMatcher>();
+std::unique_ptr<IIdiomMatcher> makeSimdMemMatcher()
+{
+	return std::make_unique<SimdMemMatcher>();
 }
 
 } // namespace idiom_reconstruct

@@ -64,8 +64,7 @@ Logger::Logger(const Logger& from): Logger(from._out, from._verbose)
 	_streamOwner = from._streamOwner;
 }
 
-Logger::Logger(const Logger& from, std::shared_ptr<const void> streamOwner)
-		: Logger(from)
+Logger::Logger(const Logger& from, std::shared_ptr<const void> streamOwner): Logger(from)
 {
 	_streamOwner = std::move(streamOwner);
 }

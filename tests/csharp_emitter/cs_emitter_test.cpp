@@ -1135,51 +1135,55 @@ TEST(CsFileEmitter, GoldenFileSimpleClass) {
 // collectEvents filled in every EventGroup field except `type`, so emitEvents
 // printed the default-constructed BcType: "public event void Clicked;", which
 // no C# compiler accepts. The delegate is the accessors' one parameter.
-TEST(CsTypeEmitter, AnEventIsEmittedWithItsDelegateTypeNotVoid) {
-    BcClass cls;
-    cls.name = "Widget";
-    BcRefType handler;
-    handler.kind = BcRefKind::Class;
-    handler.className = "System.EventHandler";
+TEST(CsTypeEmitter, AnEventIsEmittedWithItsDelegateTypeNotVoid)
+{
+	BcClass cls;
+	cls.name = "Widget";
+	BcRefType handler;
+	handler.kind = BcRefKind::Class;
+	handler.className = "System.EventHandler";
 
-    for (const char* name : {"add_Clicked", "remove_Clicked"}) {
-        BcMethod m;
-        m.name = name;
-        m.access = BcAccess::Public;
-        m.descriptor.params.push_back(std::make_shared<BcType>(BcType{handler}));
-        m.descriptor.returnType = std::make_shared<BcType>(types::Void());
-        cls.methods.push_back(std::move(m));
-    }
+	for (const char* name: {"add_Clicked", "remove_Clicked"})
+	{
+		BcMethod m;
+		m.name = name;
+		m.access = BcAccess::Public;
+		m.descriptor.params.push_back(std::make_shared<BcType>(BcType{handler}));
+		m.descriptor.returnType = std::make_shared<BcType>(types::Void());
+		cls.methods.push_back(std::move(m));
+	}
 
-    CsWriter w;
-    CsExprEmitter ex(w);
-    CsStmtEmitter st(w, ex);
-    CsTypeEmitter te(w, ex, st);
-    BcModule module;
-    te.emitClass(cls, {}, module);
+	CsWriter w;
+	CsExprEmitter ex(w);
+	CsStmtEmitter st(w, ex);
+	CsTypeEmitter te(w, ex, st);
+	BcModule module;
+	te.emitClass(cls, {}, module);
 
-    const std::string src = w.str();
-    EXPECT_TRUE(contains(src, "event EventHandler Clicked")) << src;
-    EXPECT_FALSE(contains(src, "event void")) << src;
+	const std::string src = w.str();
+	EXPECT_TRUE(contains(src, "event EventHandler Clicked")) << src;
+	EXPECT_FALSE(contains(src, "event void")) << src;
 }
 
 // C# 6.4.4.5: \x takes one to FOUR hex digits, so "\x01" followed by an 'F' is
 // read back as the single character \x01F. \uXXXX is fixed-width and cannot
 // swallow the character after it.
-TEST(CsWriter, AHexEscapeDoesNotAbsorbTheFollowingCharacter) {
-    CsWriter w;
-    std::string s;
-    s += '\x01';
-    s += 'F';
-    s += '3';
-    const std::string lit = w.stringLiteral(s);
-    EXPECT_EQ("\"\\u0001F3\"", lit);
-    EXPECT_FALSE(contains(lit, "\\x")) << lit;
+TEST(CsWriter, AHexEscapeDoesNotAbsorbTheFollowingCharacter)
+{
+	CsWriter w;
+	std::string s;
+	s += '\x01';
+	s += 'F';
+	s += '3';
+	const std::string lit = w.stringLiteral(s);
+	EXPECT_EQ("\"\\u0001F3\"", lit);
+	EXPECT_FALSE(contains(lit, "\\x")) << lit;
 }
 
 // Printable ASCII is still printed as itself, and the named escapes stay named.
-TEST(CsWriter, OrdinaryCharactersAreNotEscaped) {
-    CsWriter w;
-    EXPECT_EQ("\"abc\"", w.stringLiteral("abc"));
-    EXPECT_EQ("\"a\\tb\"", w.stringLiteral("a\tb"));
+TEST(CsWriter, OrdinaryCharactersAreNotEscaped)
+{
+	CsWriter w;
+	EXPECT_EQ("\"abc\"", w.stringLiteral("abc"));
+	EXPECT_EQ("\"a\\tb\"", w.stringLiteral("a\tb"));
 }

@@ -1436,10 +1436,7 @@ namespace {
 /// A PDB7 superblock with whatever field values the test wants, optionally
 /// followed by a directory written at blockMapAddr.
 std::vector<uint8_t> malformedPdb(
-	uint32_t blockSize,
-	uint32_t numDirectoryBytes,
-	uint32_t blockMapAddr,
-	const std::vector<uint8_t>& directory = {})
+	uint32_t blockSize, uint32_t numDirectoryBytes, uint32_t blockMapAddr, const std::vector<uint8_t>& directory = {})
 {
 	static const char kMagic[] = "Microsoft C/C++ MSF 7.00\r\n\x1a\x44\x53\x00\x00\x00";
 	std::vector<uint8_t> out(kMagic, kMagic + 32);
@@ -1486,7 +1483,7 @@ TEST(PdbExtractor, ADirectoryLongerThanTheFileIsRefused)
 
 	PdbExtractor ex(path, 0);
 	DebugGroundTruth gdt;
-	EXPECT_NO_THROW((void) ex.extract(gdt));
+	EXPECT_NO_THROW((void)ex.extract(gdt));
 	EXPECT_FALSE(gdt.diagnostics.empty());
 }
 
@@ -1499,19 +1496,18 @@ TEST(PdbExtractor, AStreamCountLargerThanTheDirectoryIsRefused)
 
 	PdbExtractor ex(path, 0);
 	DebugGroundTruth gdt;
-	EXPECT_NO_THROW((void) ex.extract(gdt));
+	EXPECT_NO_THROW((void)ex.extract(gdt));
 	EXPECT_FALSE(gdt.diagnostics.empty());
 }
 
 TEST(PdbExtractor, StreamSizesLargerThanTheFileAreRefused)
 {
 	const auto dir = streamTable(5, 0xFFFFFFFEu);
-	std::string path =
-		writeTempFile(".pdb", malformedPdb(64, static_cast<uint32_t>(dir.size()), 1, dir));
+	std::string path = writeTempFile(".pdb", malformedPdb(64, static_cast<uint32_t>(dir.size()), 1, dir));
 
 	PdbExtractor ex(path, 0);
 	DebugGroundTruth gdt;
-	EXPECT_NO_THROW((void) ex.extract(gdt));
+	EXPECT_NO_THROW((void)ex.extract(gdt));
 	EXPECT_FALSE(gdt.diagnostics.empty());
 }
 
@@ -1520,11 +1516,10 @@ TEST(PdbExtractor, StreamSizesLargerThanTheFileAreRefused)
 TEST(PdbExtractor, AStreamSizeThatWrapsTheBlockCountIsRefused)
 {
 	const auto dir = streamTable(5, 0xFFFFFFFEu);
-	std::string path =
-		writeTempFile(".pdb", malformedPdb(4096, static_cast<uint32_t>(dir.size()), 1, dir));
+	std::string path = writeTempFile(".pdb", malformedPdb(4096, static_cast<uint32_t>(dir.size()), 1, dir));
 
 	PdbExtractor ex(path, 0);
 	DebugGroundTruth gdt;
-	EXPECT_NO_THROW((void) ex.extract(gdt));
+	EXPECT_NO_THROW((void)ex.extract(gdt));
 	EXPECT_FALSE(gdt.diagnostics.empty());
 }

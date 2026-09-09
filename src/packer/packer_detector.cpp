@@ -60,22 +60,23 @@ static size_t countPrintableStrings(const uint8_t *data, size_t size, size_t min
 /// Recognise common function prologues: 55 48 89 E5 (GCC64), 55 8B EC (x86), 40 55 (MSVC x64).
 static bool hasFunctionPrologue(const uint8_t *data, size_t size)
 {
-    // Each pattern is bounded by its own length. One `i + 4 <= size` for all
-    // three meant the two shorter ones were never tried in the last three
-    // bytes of a section: `55 8B EC` at the end of a five-byte run was missed,
-    // and a section that is nothing but a three-byte prologue was missed
-    // entirely. A missed prologue reads as one more packed section.
-    for (size_t i = 0; i < size; ++i) {
-        const size_t left = size - i;
-        // push rbp; mov rbp, rsp (GCC x64)
-        if (left >= 4 && data[i] == 0x55 && data[i+1] == 0x48
-                && data[i+2] == 0x89 && data[i+3] == 0xE5) return true;
-        // push ebp; mov ebp, esp (x86)
-        if (left >= 3 && data[i] == 0x55 && data[i+1] == 0x8B && data[i+2] == 0xEC) return true;
-        // MSVC x64: push rbp-variant
-        if (left >= 2 && data[i] == 0x40 && data[i+1] == 0x55) return true;
-    }
-    return false;
+	// Each pattern is bounded by its own length. One `i + 4 <= size` for all
+	// three meant the two shorter ones were never tried in the last three
+	// bytes of a section: `55 8B EC` at the end of a five-byte run was missed,
+	// and a section that is nothing but a three-byte prologue was missed
+	// entirely. A missed prologue reads as one more packed section.
+	for (size_t i = 0; i < size; ++i)
+	{
+		const size_t left = size - i;
+		// push rbp; mov rbp, rsp (GCC x64)
+		if (left >= 4 && data[i] == 0x55 && data[i + 1] == 0x48 && data[i + 2] == 0x89 && data[i + 3] == 0xE5)
+			return true;
+		// push ebp; mov ebp, esp (x86)
+		if (left >= 3 && data[i] == 0x55 && data[i + 1] == 0x8B && data[i + 2] == 0xEC) return true;
+		// MSVC x64: push rbp-variant
+		if (left >= 2 && data[i] == 0x40 && data[i + 1] == 0x55) return true;
+	}
+	return false;
 }
 
 // ─── Signal 1: EntropySectionSignal ──────────────────────────────────────────
@@ -145,18 +146,19 @@ double PackerDetector::evalSectionMismatchSignal(const uint8_t *data, size_t siz
         bool hasStrings   = countPrintableStrings(sd, fsz, 5) > 3;
         bool hasPrologues = hasFunctionPrologue(sd, fsz);
 
-        // Mismatch: packed code typically has none of these.
-        //
-        // There used to be a second arm here, `!hasStrings && !hasIAT &&
-        // !hasPrologues`, which cannot be reached: it is the first condition
-        // with one more conjunct, so the first arm has already fired whenever
-        // it holds. The IAT term could not have distinguished anything in any
-        // case -- it was `!fmt->imports.empty()`, a property of the file, the
-        // same for every section this loop visits.
-        if (!hasStrings && !hasPrologues) {
-            ++mismatchSections;
-        }
-    }
+		// Mismatch: packed code typically has none of these.
+		//
+		// There used to be a second arm here, `!hasStrings && !hasIAT &&
+		// !hasPrologues`, which cannot be reached: it is the first condition
+		// with one more conjunct, so the first arm has already fired whenever
+		// it holds. The IAT term could not have distinguished anything in any
+		// case -- it was `!fmt->imports.empty()`, a property of the file, the
+		// same for every section this loop visits.
+		if (!hasStrings && !hasPrologues)
+		{
+			++mismatchSections;
+		}
+	}
 
     if (execSections == 0) return 0.0;
     double ratio = static_cast<double>(mismatchSections) /
@@ -187,20 +189,17 @@ double PackerDetector::evalEntryPointSignal(const uint8_t * /*data*/, size_t /*s
             // W+X → strong packer signal
             if (sec.isWritable && sec.isExecutable) return 1.0;
 
-            // Not .text / .code / __TEXT → moderate signal
-            // A PE section name is eight bytes, NUL-padded. Truncate at the
-            // first NUL: the line here used to be `for (char &c : n) if (c ==
-            // '\0') c = 0;`, which assigns 0 to the bytes that are already 0
-            // and changes nothing.
-            std::string n = sec.name;
-            const auto nul = n.find('\0');
-            if (nul != std::string::npos) n.resize(nul);
-            bool isCodeSection =
-                (n.find(".text") != std::string::npos) ||
-                (n.find(".code") != std::string::npos) ||
-                (n.find("__TEXT") != std::string::npos) ||
-                (n.find("CODE")   != std::string::npos);
-            if (!isCodeSection) return 0.75;
+			// Not .text / .code / __TEXT → moderate signal
+			// A PE section name is eight bytes, NUL-padded. Truncate at the
+			// first NUL: the line here used to be `for (char &c : n) if (c ==
+			// '\0') c = 0;`, which assigns 0 to the bytes that are already 0
+			// and changes nothing.
+			std::string n = sec.name;
+			const auto nul = n.find('\0');
+			if (nul != std::string::npos) n.resize(nul);
+			bool isCodeSection = (n.find(".text") != std::string::npos) || (n.find(".code") != std::string::npos)
+							  || (n.find("__TEXT") != std::string::npos) || (n.find("CODE") != std::string::npos);
+			if (!isCodeSection) return 0.75;
             return 0.0; // in .text → not suspicious
         }
     }

@@ -310,7 +310,7 @@ TEST(LogTests, AHandedOutLoggerSurvivesTheTableDroppingItsWriter)
 	// Destroying the last co-owner is what closes the file.
 	{
 		Logger discard = std::move(held);
-		(void) discard;
+		(void)discard;
 	}
 
 	const std::string content = readAll(path);

@@ -210,15 +210,15 @@ private:
 struct GlobalVarInfo {
     std::string name;
     uint64_t    address    = 0;
-    /// Access width in BITS. Wide enough for a 512-bit AVX access: as a
-    /// uint8_t, `memWidth * 8` truncated to 0 for every access of 32 bytes or
-    /// more, so a ymm/zmm global recorded width 0 and, being 0, was then
-    /// skipped by the conflict test that would have flagged it as ambiguous.
-    uint16_t    width      = 0;
-    bool        isFp       = false;
-    bool        isPointer  = false;
-    bool        isAmbiguous= false;  ///< conflicting types from different writers
-    std::unordered_set<FnName> writers;
+	/// Access width in BITS. Wide enough for a 512-bit AVX access: as a
+	/// uint8_t, `memWidth * 8` truncated to 0 for every access of 32 bytes or
+	/// more, so a ymm/zmm global recorded width 0 and, being 0, was then
+	/// skipped by the conflict test that would have flagged it as ambiguous.
+	uint16_t width = 0;
+	bool isFp = false;
+	bool isPointer = false;
+	bool isAmbiguous = false; ///< conflicting types from different writers
+	std::unordered_set<FnName> writers;
     std::unordered_set<FnName> readers;
 
     std::string toString() const;

@@ -666,8 +666,7 @@ TEST(PtxParserDecls, ASharedArrayDeclarationIsRecovered)
 TEST(PtxParserDecls, AnAbsurdRegisterCountIsRefused)
 {
 	PtxParser p;
-	auto mod = p.parse(
-		".visible .entry k()\n{\n.reg .u32 %r<2000000000>;\nret;\n}\n");
+	auto mod = p.parse(".visible .entry k()\n{\n.reg .u32 %r<2000000000>;\nret;\n}\n");
 	ASSERT_EQ(1u, mod.kernels.size());
 	ASSERT_EQ(1u, mod.kernels[0].decls.size());
 	EXPECT_LE(mod.kernels[0].decls[0].count, kMaxVarCount);

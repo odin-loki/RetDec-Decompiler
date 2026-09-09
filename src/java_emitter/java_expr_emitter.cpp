@@ -188,16 +188,16 @@ std::string JavaExprEmitter::emitMethodCall(const BcInstruction& insn,
     }
     std::reverse(args.begin(), args.end());
 
-    // The loop above stops early when the expression stack runs out, so `args`
-    // can be shorter than `total` -- empty, even. `args.begin() + 1` is then
-    // one past the end and the range constructor sees a negative distance,
-    // which becomes a length_error nobody catches. The receiver test already
-    // asked the right question; the argument list has to ask it too.
-    const bool haveReceiver = hasThis && !args.empty();
-    std::string receiver = haveReceiver ? args[0] : "";
-    std::vector<std::string> callArgs(args.begin() + (haveReceiver ? 1 : 0), args.end());
+	// The loop above stops early when the expression stack runs out, so `args`
+	// can be shorter than `total` -- empty, even. `args.begin() + 1` is then
+	// one past the end and the range constructor sees a negative distance,
+	// which becomes a length_error nobody catches. The receiver test already
+	// asked the right question; the argument list has to ask it too.
+	const bool haveReceiver = hasThis && !args.empty();
+	std::string receiver = haveReceiver ? args[0] : "";
+	std::vector<std::string> callArgs(args.begin() + (haveReceiver ? 1 : 0), args.end());
 
-    // Build argument list.
+	// Build argument list.
     std::string argList;
     for (size_t i = 0; i < callArgs.size(); ++i) {
         if (i) argList += ", ";

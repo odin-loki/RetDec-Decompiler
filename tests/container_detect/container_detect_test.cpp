@@ -1707,19 +1707,19 @@ TEST(RingBufferDetectorTest, RemByCapacityIsRingBuffer)
 // with the cold run's.
 TEST(ContainerKindNames, EveryKindSurvivesANameRoundTrip)
 {
-    for (int i = static_cast<int>(ContainerKind::Vector);
-            i <= static_cast<int>(ContainerKind::Array); ++i) {
-        ContainerResult r;
-        r.kind = static_cast<ContainerKind>(i);
-        const std::string name = r.kindName();
-        EXPECT_NE("unknown", name) << "ContainerKind " << i << " has no name";
-        EXPECT_EQ(r.kind, containerKindFromName(name))
-            << "kindName() gave \"" << name << "\", which does not read back";
-    }
+	for (int i = static_cast<int>(ContainerKind::Vector); i <= static_cast<int>(ContainerKind::Array); ++i)
+	{
+		ContainerResult r;
+		r.kind = static_cast<ContainerKind>(i);
+		const std::string name = r.kindName();
+		EXPECT_NE("unknown", name) << "ContainerKind " << i << " has no name";
+		EXPECT_EQ(r.kind, containerKindFromName(name))
+			<< "kindName() gave \"" << name << "\", which does not read back";
+	}
 }
 
 TEST(ContainerKindNames, AnUnrecognisedNameIsUnknownNotAGuess)
 {
-    EXPECT_EQ(ContainerKind::Unknown, containerKindFromName("Vector"));
-    EXPECT_EQ(ContainerKind::Unknown, containerKindFromName(""));
+	EXPECT_EQ(ContainerKind::Unknown, containerKindFromName("Vector"));
+	EXPECT_EQ(ContainerKind::Unknown, containerKindFromName(""));
 }

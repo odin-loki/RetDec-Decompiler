@@ -23,11 +23,11 @@ namespace dce {
 // with an immediate in the entry block" and "AND with a negative power of two"
 // describe ordinary arithmetic as well as they describe a prologue, and DCE
 // deletes what they name.
-static bool isStackPointerVar(const ssa::SSAFunction& fn, ssa::VarId var) {
-    if (var == ssa::kInvalidVar) return false;
-    const std::string& n = fn.varName(var);
-    return n == "rsp" || n == "esp" || n == "sp"
-        || n == "RSP" || n == "ESP" || n == "SP";
+static bool isStackPointerVar(const ssa::SSAFunction& fn, ssa::VarId var)
+{
+	if (var == ssa::kInvalidVar) return false;
+	const std::string& n = fn.varName(var);
+	return n == "rsp" || n == "esp" || n == "sp" || n == "RSP" || n == "ESP" || n == "SP";
 }
 
 // power-of-two (stack alignment pattern: AND RSP, -16 / AND RSP, -32).
@@ -36,28 +36,29 @@ bool AbiArtifactMarker::isRspAlignInstr(const ssa::SSAFunction& fn,
     const ssa::IrInstr* instr = fn.instr(id);
     if (!instr || instr->op != ssa::IrInstr::Op::And) return false;
 
-    // The name says RSP; the test never asked. An AND with a negative
-    // power-of-two immediate is also how a compiler rounds an ordinary
-    // integer down, and marking that as an artifact deletes it.
-    if (!isStackPointerVar(fn, instr->defVar)) return false;
+	// The name says RSP; the test never asked. An AND with a negative
+	// power-of-two immediate is also how a compiler rounds an ordinary
+	// integer down, and marking that as an artifact deletes it.
+	if (!isStackPointerVar(fn, instr->defVar)) return false;
 
-    // Check for an immediate operand that is a negative power-of-two.
+	// Check for an immediate operand that is a negative power-of-two.
     for (const auto& use : instr->uses) {
         const ssa::IrValue* val = fn.value(use.valueId);
         if (!val) continue;
         if (val->kind == ssa::ValueKind::Immediate) {
             int64_t imm = static_cast<int64_t>(val->imm);
-            // Negative and power-of-two in magnitude: -16, -32, -64.
-            // INT64_MIN is excluded before the negation: -INT64_MIN is not
-            // representable, so the negation is undefined and in practice
-            // yields INT64_MIN again -- which then passes both the
-            // power-of-two test (0x8000...0 & 0x7FFF...F == 0) and, being
-            // negative, the magnitude test.
-            if (imm < 0 && imm != INT64_MIN) {
-                int64_t mag = -imm;
+			// Negative and power-of-two in magnitude: -16, -32, -64.
+			// INT64_MIN is excluded before the negation: -INT64_MIN is not
+			// representable, so the negation is undefined and in practice
+			// yields INT64_MIN again -- which then passes both the
+			// power-of-two test (0x8000...0 & 0x7FFF...F == 0) and, being
+			// negative, the magnitude test.
+			if (imm < 0 && imm != INT64_MIN)
+			{
+				int64_t mag = -imm;
                 if ((mag & (mag - 1)) == 0 && mag <= 64) return true;
-            }
-        }
+			}
+		}
     }
     return false;
 }
@@ -120,14 +121,14 @@ AbiArtifactMarker::markPrologueEpilogue(const ssa::SSAFunction& fn) const {
         for (const ssa::IrInstr* instr : entry->instrs) {
             if (!instr) continue;
             if (instr->op == ssa::IrInstr::Op::Sub) {
-                // The destination has to be the stack pointer. The old
-                // heuristic -- "any Immediate use, in the entry block" --
-                // matched `eax = ecx - 32` just as well as `SUB RSP, 32`, and
-                // DeadPropagation refuses to propagate liveness through an
-                // artifact, so the computation and everything only it fed went
-                // out with the prologue.
-                if (!isStackPointerVar(fn, instr->defVar)) continue;
-                bool hasImm = false;
+				// The destination has to be the stack pointer. The old
+				// heuristic -- "any Immediate use, in the entry block" --
+				// matched `eax = ecx - 32` just as well as `SUB RSP, 32`, and
+				// DeadPropagation refuses to propagate liveness through an
+				// artifact, so the computation and everything only it fed went
+				// out with the prologue.
+				if (!isStackPointerVar(fn, instr->defVar)) continue;
+				bool hasImm = false;
                 for (const auto& use : instr->uses) {
                     const ssa::IrValue* v = fn.value(use.valueId);
                     if (v && v->kind == ssa::ValueKind::Immediate) {
@@ -156,8 +157,8 @@ AbiArtifactMarker::markPrologueEpilogue(const ssa::SSAFunction& fn) const {
             const ssa::IrInstr* instr = blk->instrs[static_cast<std::size_t>(i)];
             if (!instr) continue;
             if (instr->op == ssa::IrInstr::Op::Add) {
-                if (!isStackPointerVar(fn, instr->defVar)) break;
-                bool hasImm = false;
+				if (!isStackPointerVar(fn, instr->defVar)) break;
+				bool hasImm = false;
                 for (const auto& use : instr->uses) {
                     const ssa::IrValue* v = fn.value(use.valueId);
                     if (v && v->kind == ssa::ValueKind::Immediate) {
@@ -296,14 +297,14 @@ AbiArtifactMarker::markCalleeSavePairs(const ssa::SSAFunction& fn,
                 if (!src || src->kind != ssa::ValueKind::MemRef) continue;
                 if (!src->memIsStack) continue;
                 if (src->memOffset != save.offset) continue;
-                // ...and it has to reload the register that was saved. A slot
-                // is reusable: matching on the offset alone paired the save
-                // with whatever else read that slot before the return, and
-                // marking the pair balanced deletes both.
-                if (fn.varName(instr->defVar) != save.regName) continue;
+				// ...and it has to reload the register that was saved. A slot
+				// is reusable: matching on the offset alone paired the save
+				// with whatever else read that slot before the return, and
+				// marking the pair balanced deletes both.
+				if (fn.varName(instr->defVar) != save.regName) continue;
 
-                // Found matching load of the same register from the same slot.
-                restoreId = instr->id;
+				// Found matching load of the same register from the same slot.
+				restoreId = instr->id;
                 balanced  = true;
                 break;
             }

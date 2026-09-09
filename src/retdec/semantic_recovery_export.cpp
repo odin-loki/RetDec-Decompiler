@@ -270,15 +270,12 @@ std::map<std::string, std::size_t> definitionLines(const std::vector<std::string
 			continue;
 		}
 		const std::size_t close = matchingCloseParen(src, after);
-		if (looksLikeDeclarator(src, start)
-				&& close != std::string::npos
-				&& isDefinitionAfterClose(src, close))
+		if (looksLikeDeclarator(src, start) && close != std::string::npos && isDefinitionAfterClose(src, close))
 		{
 			const auto it = std::upper_bound(lineStarts.begin(), lineStarts.end(), start);
 			// The first definition wins; a name defined twice is not something
 			// this can improve on.
-			found.emplace(src.substr(start, i - start),
-					static_cast<std::size_t>(it - lineStarts.begin()));
+			found.emplace(src.substr(start, i - start), static_cast<std::size_t>(it - lineStarts.begin()));
 		}
 		i = after + 1;
 	}
