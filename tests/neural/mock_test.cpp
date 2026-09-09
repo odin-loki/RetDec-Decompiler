@@ -39,7 +39,9 @@ std::vector<std::string> extractCFunctionNames(const std::string& src);
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <memory>
 #include <system_error>
+#include <thread>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -1439,4 +1441,144 @@ TEST(NeuralTopoOrder, ExtractsFunctionNamesFromAst)
 	ASSERT_EQ(names.size(), 2u);
 	EXPECT_EQ(names[0], "helper");
 	EXPECT_EQ(names[1], "main");
+}
+
+// ─── The gates against output that is trying to get past them ────────────────
+
+// blankNonCode treated an unmatched apostrophe as opening a character literal
+// that ran to end of buffer, so everything after it was blanked before the
+// spawn identifiers were counted. A C compiler ends an unterminated literal at
+// the end of the line, and tolerates one entirely inside an `#if 0` block it
+// skips -- so a refinement could put an apostrophe in a skipped block and add
+// a system() call underneath it, and the count came back unchanged.
+TEST(NeuralGates, AnApostropheDoesNotHideASpawnCallFromTheCounter)
+{
+	if (hasCParserSupport())
+	{
+		GTEST_SKIP() << "the parser path does not use the text scanner";
+	}
+
+	const std::string original =
+		"int f(unsigned char* p, int n) {\n"
+		"\tfor (int i = 0; i < n; ++i) p[i] ^= 0x5a;\n"
+		"\treturn n;\n"
+		"}\n";
+
+	// Padding past four times the original turns off the control-flow half of
+	// the structural gate, which is size-scoped, and leaves only the
+	// unconditional spawn-call check -- the one this is about.
+	std::string pad;
+	for (int i = 0; i < 40; ++i)
+	{
+		pad += "/* padding line to grow the refinement past four times the original */\n";
+	}
+
+	// `don't` sits inside a block the preprocessor skips, so a compiler never
+	// tokenises it. blankNonCode did, opened a character literal on the
+	// apostrophe, and blanked the rest of the buffer -- system() included.
+	const std::string refined =
+		"#if 0\n"
+		"don't\n"
+		"#endif\n"
+		+ pad
+		+ "int f(unsigned char* p, int n) {\n"
+		  "\tsystem(\"id\");\n"
+		  "\tfor (int i = 0; i < n; ++i) p[i] ^= 0x5a;\n"
+		  "\treturn n;\n"
+		  "}\n";
+
+	ASSERT_NE(refined.find("system("), std::string::npos);
+	ASSERT_GT(refined.size(), original.size() * 4);
+
+	const auto r = runVerificationGates(original, refined);
+	EXPECT_EQ(GateResult::FailStructural, r.structural) << "an added system() call must be seen whatever precedes it";
+	EXPECT_FALSE(r.allPassed()) << "this refinement passed every gate";
+}
+
+// The compile gate execs a real compiler on model output, and a compiler
+// honours #include. gcc quotes the offending source lines of an included file
+// into its diagnostics, and those diagnostics are fed back into the next
+// prompt -- so `#include "/etc/..."` had the file read back to the model.
+// An absolute path in the angle form does the same thing.
+TEST(NeuralGates, CompileGateRefusesToIncludeAFileByPath)
+{
+	const std::string body = "\nint f(int x) { return x; }\n";
+	std::string diagnostics;
+
+	for (const std::string& inc:
+		 {std::string("#include \"/etc/hostname\""),
+		  std::string("#include </etc/hostname>"),
+		  std::string("#include \"../../etc/hostname\""),
+		  std::string("#  include\t\"/etc/hostname\"")})
+	{
+		diagnostics.clear();
+		EXPECT_FALSE(compileSyntaxOnly(inc + body, diagnostics)) << inc;
+		EXPECT_NE(diagnostics.find("includes a file by path"), std::string::npos) << inc;
+	}
+}
+
+TEST(NeuralGates, CompileGateStillAcceptsAPlainSystemHeader)
+{
+	std::string diagnostics;
+	const bool ok = compileSyntaxOnly("#include <stdint.h>\nint f(int x) { return x; }\n", diagnostics);
+	if (!ok && diagnostics.empty())
+	{
+		GTEST_SKIP() << "no C compiler available to the gate";
+	}
+	EXPECT_TRUE(ok) << diagnostics;
+	EXPECT_EQ(diagnostics.find("includes a file by path"), std::string::npos);
+}
+
+// The gate used to wait on the compiler with `waitpid(pid, &status, 0)`, so
+// how long it waited was up to the refinement output: an #include of a FIFO,
+// or a macro-expansion bomb, hung the decompiler inside runVerificationGates
+// permanently. The wait is bounded now, and the child is killed on expiry.
+TEST(NeuralGates, CompileGateGivesUpOnACompilerThatNeverReturns)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	const fs::path dir = fs::temp_directory_path(ec) / "retdec-gate-timeout-test";
+	if (ec) GTEST_SKIP() << "no temp directory";
+	fs::create_directories(dir, ec);
+	const fs::path cc = dir / "sleeper.sh";
+	{
+		std::ofstream out(cc);
+		if (!out) GTEST_SKIP() << "cannot write the stub compiler";
+		out << "#!/bin/sh\nsleep 600\n";
+	}
+	fs::permissions(cc, fs::perms::owner_all, ec);
+
+	const std::string prevCc = std::getenv("RETDEC_NEURAL_GATE_CC") ? std::getenv("RETDEC_NEURAL_GATE_CC") : "";
+	setenv("RETDEC_NEURAL_GATE_CC", cc.string().c_str(), 1);
+	setenv("RETDEC_NEURAL_GATE_CC_TIMEOUT_MS", "300", 1);
+
+	// On a detached thread with a cap of its own: if the bound is gone the
+	// call never returns, and a test that just called it would hang the suite
+	// instead of failing.
+	auto done = std::make_shared<std::atomic<bool>>(false);
+	auto result = std::make_shared<std::atomic<bool>>(true);
+	const auto t0 = std::chrono::steady_clock::now();
+	std::thread([done, result]() {
+		result->store(compileSyntaxOnly("int f(int x) { return x; }\n"));
+		done->store(true);
+	}).detach();
+	const auto deadline = t0 + std::chrono::seconds(30);
+	while (!done->load() && std::chrono::steady_clock::now() < deadline)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	}
+	const auto elapsed = std::chrono::steady_clock::now() - t0;
+	const bool returned = done->load();
+	const bool ok = result->load();
+
+	if (prevCc.empty())
+		unsetenv("RETDEC_NEURAL_GATE_CC");
+	else
+		setenv("RETDEC_NEURAL_GATE_CC", prevCc.c_str(), 1);
+	unsetenv("RETDEC_NEURAL_GATE_CC_TIMEOUT_MS");
+	fs::remove_all(dir, ec);
+
+	ASSERT_TRUE(returned) << "the gate waited for the compiler rather than the other way round";
+	EXPECT_FALSE(ok) << "a compiler that never answers is not a pass";
+	EXPECT_LT(std::chrono::duration_cast<std::chrono::seconds>(elapsed).count(), 30);
 }

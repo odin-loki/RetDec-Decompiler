@@ -136,7 +136,22 @@ inline void blankNonCode(const char* in, std::size_t n, char* out) noexcept
 			{
 				ctx = Ctx::Code; // keep the delimiter itself
 			}
-			else if (c != '\n')
+			else if (c == '\n')
+			{
+				// C ends an unterminated literal at the end of the line; it
+				// does not run to end of file. Running to EOF meant one stray
+				// apostrophe blanked everything after it -- and an apostrophe
+				// inside an `#if 0` block, which a compiler skips entirely, is
+				// enough. The spawn-call gate counts identifiers over this
+				// output, so a refinement could hide a system() call behind
+				// one: `#if 0 / doesn't run / #endif` then system(...), and
+				// the count came back unchanged.
+				//
+				// The newline itself is kept, as everywhere else here, so line
+				// numbers computed from the result still match the input.
+				ctx = Ctx::Code;
+			}
+			else
 			{
 				out[i] = ' ';
 			}

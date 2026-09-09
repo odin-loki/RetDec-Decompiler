@@ -3,6 +3,7 @@
 #include "retdec/utils/c_source_scan.h"
 
 #include <cctype>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -12,6 +13,7 @@
 #include <iterator>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #ifdef RETDEC_HAS_TREE_SITTER
@@ -31,6 +33,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <csignal>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -121,6 +124,23 @@ std::string readAll(const fs::path& p)
 	return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
+/// How long the gate waits for the compiler before killing it.
+///
+/// The source it is given is model output, so the wait has to be bounded by
+/// something other than that source. RETDEC_NEURAL_GATE_CC_TIMEOUT_MS moves
+/// it, within reason -- the tests use a short one so a case that checks the
+/// timeout does not take twenty seconds to check it.
+unsigned gateCompilerTimeoutMs()
+{
+	const char* env = std::getenv("RETDEC_NEURAL_GATE_CC_TIMEOUT_MS");
+	if (env && env[0])
+	{
+		const long v = std::strtol(env, nullptr, 10);
+		if (v >= 100 && v <= 600000) return static_cast<unsigned>(v);
+	}
+	return 20000;
+}
+
 bool spawnSyntaxOnlyCompiler(const char* cc, const fs::path& src, const fs::path& diagFile)
 {
 #if defined(_WIN32)
@@ -157,8 +177,18 @@ bool spawnSyntaxOnlyCompiler(const char* cc, const fs::path& src, const fs::path
 	if (err != INVALID_HANDLE_VALUE) CloseHandle(err);
 	if (!ok) return false;
 
-	WaitForSingleObject(pi.hProcess, INFINITE);
+	// Bounded. The C handed to this compiler is model output, so anything
+	// that makes the preprocessor block -- an #include of a FIFO, a macro
+	// expansion bomb -- used to hang the decompiler here permanently.
 	DWORD code = 1;
+	if (WaitForSingleObject(pi.hProcess, gateCompilerTimeoutMs()) != WAIT_OBJECT_0)
+	{
+		TerminateProcess(pi.hProcess, 1);
+		WaitForSingleObject(pi.hProcess, 5000);
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
+		return false;
+	}
 	GetExitCodeProcess(pi.hProcess, &code);
 	CloseHandle(pi.hProcess);
 	CloseHandle(pi.hThread);
@@ -183,8 +213,25 @@ bool spawnSyntaxOnlyCompiler(const char* cc, const fs::path& src, const fs::path
 		execvp(cc, const_cast<char* const*>(argv));
 		_exit(127);
 	}
+	// Bounded, for the reason above: `waitpid(pid, &status, 0)` waited for as
+	// long as the refinement output told it to. Measured: a refinement that
+	// includes a FIFO never returned, and the cc1 child had to be killed by
+	// hand.
 	int status = 0;
-	if (waitpid(pid, &status, 0) < 0) return false;
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(gateCompilerTimeoutMs());
+	for (;;)
+	{
+		const pid_t r = waitpid(pid, &status, WNOHANG);
+		if (r < 0) return false;
+		if (r == pid) break;
+		if (std::chrono::steady_clock::now() >= deadline)
+		{
+			kill(pid, SIGKILL);
+			waitpid(pid, &status, 0);
+			return false;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	}
 	return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 #endif
 }
@@ -200,9 +247,111 @@ const char* gateCompiler()
 #endif
 }
 
+/// Returns the first #include directive whose header name is not a plain
+/// relative name, or an empty string when there is none.
+///
+/// The compile gate execs a real compiler on model output, and a compiler
+/// honours #include. gcc quotes the offending source lines of any file it
+/// includes into its diagnostics; compileSyntaxOnly returns those diagnostics
+/// verbatim, runTieredRefine puts them in retry.compilerDiagnostics, and
+/// buildRefinementPrompt embeds that in the next prompt. So
+/// `#include "/etc/shadow"` in model output got that file read back to the
+/// model. `#include </etc/shadow>` does the same: an absolute path works
+/// through the angle form too.
+///
+/// A plain relative name -- <stdint.h>, <sys/types.h> -- names a system
+/// header and reads nothing secret, so those still pass. Anything absolute,
+/// anything with a ".." component, and anything outside the character set a
+/// header name uses is refused.
+std::string firstUnsafeInclude(const std::string& sourceC)
+{
+	// Splice line continuations first, the way the preprocessor does, so that
+	// `#inc\` + newline + `lude "..."` cannot slip past a line-based scan.
+	std::string spliced;
+	spliced.reserve(sourceC.size());
+	for (std::size_t i = 0; i < sourceC.size(); ++i)
+	{
+		if (sourceC[i] == '\\' && i + 1 < sourceC.size() && sourceC[i + 1] == '\n')
+		{
+			++i;
+			continue;
+		}
+		if (sourceC[i] == '\\' && i + 2 < sourceC.size() && sourceC[i + 1] == '\r' && sourceC[i + 2] == '\n')
+		{
+			i += 2;
+			continue;
+		}
+		spliced.push_back(sourceC[i]);
+	}
+
+	const auto nameIsPlain = [](const std::string& name) {
+		if (name.empty()) return false;
+		if (name.front() == '/' || name.front() == '\\') return false;
+		if (name.find("..") != std::string::npos) return false;
+		if (name.size() > 1 && name[1] == ':') return false; // C:\...
+		for (const char ch: name)
+		{
+			const bool ok = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')
+						 || ch == '_' || ch == '.' || ch == '+' || ch == '-' || ch == '/';
+			if (!ok) return false;
+		}
+		return true;
+	};
+
+	std::size_t pos = 0;
+	while (pos <= spliced.size())
+	{
+		std::size_t eol = spliced.find('\n', pos);
+		if (eol == std::string::npos) eol = spliced.size();
+		const std::string line = spliced.substr(pos, eol - pos);
+		pos = eol + 1;
+
+		std::size_t i = 0;
+		while (i < line.size() && (line[i] == ' ' || line[i] == '\t'))
+			++i;
+		if (i >= line.size() || line[i] != '#') continue;
+		++i;
+		while (i < line.size() && (line[i] == ' ' || line[i] == '\t'))
+			++i;
+		if (line.compare(i, 7, "include") != 0) continue;
+		i += 7;
+		while (i < line.size() && (line[i] == ' ' || line[i] == '\t'))
+			++i;
+		if (i >= line.size()) return line;
+
+		char closer = '\0';
+		if (line[i] == '<')
+			closer = '>';
+		else if (line[i] == '"')
+			closer = '"';
+		else
+			return line; // computed include: not a name this can check
+
+		const std::size_t nameStart = i + 1;
+		const std::size_t nameEnd = line.find(closer, nameStart);
+		if (nameEnd == std::string::npos) return line;
+		if (!nameIsPlain(line.substr(nameStart, nameEnd - nameStart))) return line;
+	}
+	return {};
+}
+
 bool tryCompileCheck(const std::string& sourceC, std::string* diagnostics)
 {
 	if (diagnostics) diagnostics->clear();
+
+	const std::string bad = firstUnsafeInclude(sourceC);
+	if (!bad.empty())
+	{
+		if (diagnostics)
+		{
+			*diagnostics =
+				"gate: refusing to compile a source that includes a "
+				"file by path: "
+				+ bad + "\n";
+		}
+		return false;
+	}
+
 	const fs::path dir = createUniqueTempDir();
 	if (dir.empty()) return false;
 	ScopedTempDir guard(dir);
