@@ -661,8 +661,11 @@ Running pass 'LLVM IR -> HLL' on module ''.
 timeout: the monitored command dumped core
 ```
 
-No assertion text, so it is a signal rather than a failed check, in the pass
-that converts LLVM IR to the backend IR. The source is eight lines:
+The signal is `SIGABRT` -- bash reports the run as `21616 Aborted`, not
+`Segmentation fault` -- in the pass that converts LLVM IR to the backend IR.
+This is a `full-linux-debug` build, so `assert` is live, and an abort there is
+a failed assertion or an uncaught exception rather than a bad pointer. The
+source is eight lines:
 
 ```c
 #include <stdatomic.h>
@@ -684,9 +687,35 @@ shape the optimiser leaves, not on the atomics alone.
 nine `ci-core` names and `atomic_counter` is not one of them, so for every
 other corpus binary a total failure was invisible. DET-01 skips such a binary
 rather than failing -- decompiling everything is the recovery gate's
-business, not this one's -- but it now prints the reason and the last
-twenty-five lines of the output, so the next run names the frames.
+business, not this one's -- but it prints the reason and an excerpt.
+
+**The first excerpt named nothing, twice over.** It asked for `tail -n 25`,
+and LLVM prints a backtrace innermost frame first, so the last twenty-five
+lines of a crash log are the *bottom* of the stack: frames 16 through 35,
+`__libc_start_main`, `main`. Frame #0 was forty lines further up, and so was
+any assertion message, which glibc writes before the signal handler runs. And
+every frame it did print read
+
+```
+16 retdec-decompiler 0x00005643ba734e06
+```
+
+with no symbol, because LLVM's handler only runs `llvm-symbolizer` when it can
+find one -- `$LLVM_SYMBOLIZER_PATH`, next to `argv[0]`, or on `$PATH` -- and
+otherwise falls back to `dladdr`, which resolves exported symbols only. This
+binary exports none of its own. `libc.so.6` frames symbolized; nothing in the
+decompiler did.
+
+Both are fixed in `scripts/ci/check_output_determinism.sh`: it locates an
+`llvm-symbolizer` and exports `LLVM_SYMBOLIZER_PATH` before running anything,
+and it anchors the excerpt on the `PLEASE submit a bug report` banner and
+prints the eighty lines above it, which covers frame #0 and the assertion
+line. `llvm` is now in `ctest-linux.yml`'s apt list so the symbolizer is
+certain to be there rather than likely. The self-test has a fake decompiler
+that crashes with forty frames and an assertion, and asserts that the name in
+frame #1 and the assertion text both reach the output; under `tail -n 25`
+that case fails.
 
 **Not fixed here** because reproducing it needs the LLVM build this
-environment cannot run. The next `ctest-linux` run will print the stack, and
-that is where to start.
+environment cannot run. The next `ctest-linux` run prints a symbolized stack
+with the assertion at the top of it, and that is where to start.

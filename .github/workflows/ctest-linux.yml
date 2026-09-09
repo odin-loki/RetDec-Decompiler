@@ -55,7 +55,8 @@ jobs:
             libxcb-render-util0 \
             libxcb-xinerama0 \
             libxcb-xfixes0 \
-            clang-tidy
+            clang-tidy \
+            llvm
 
       - uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # latest
         with:
@@ -168,6 +169,9 @@ jobs:
             bash scripts/ci/check_cache_differential.sh --decompiler "$DEC" --timeout 90 "${ARGS[@]}"
           fi
 
+      # `llvm` above is what puts llvm-symbolizer on $PATH; without it LLVM's
+      # crash handler falls back to dladdr and every frame of a crashing
+      # decompile prints as a bare address.
       - name: DET-01 decompiler output determinism
         run: |
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"

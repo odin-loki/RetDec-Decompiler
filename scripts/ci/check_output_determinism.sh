@@ -57,6 +57,30 @@ if [[ "$(basename "${bin}")" == "prog_c-gcc-O3" ]]; then
 fi
 printf '// %s\n' "$(basename "${bin}")" > "${out}"
 FAKE
+	# Crashes the way the real one does: an assertion, then an LLVM backtrace
+	# printed innermost frame first, then the report banner.  Frame #0 and the
+	# assertion are forty-odd lines from the end of that, which is the whole
+	# point of the case -- a check that printed the tail of the log would show
+	# main() and miss both.
+	cat > "${T}/bin/crasher" <<'FAKE'
+#!/usr/bin/env bash
+out=""; bin=""
+while [[ $# -gt 0 ]]; do case "$1" in -o) out="$2"; shift 2;; *) bin="$1"; shift;; esac; done
+if [[ "$(basename "${bin}")" != "prog_c-gcc-O3" ]]; then
+	printf '// %s\n' "$(basename "${bin}")" > "${out}"
+	exit 0
+fi
+for i in $(seq 1 60); do echo "Running phase: filler ${i} ( 0.01s )"; done
+echo "fake-decompiler: /src/llvmir2hll/evaluator.cpp:91: void Ev::visit(): Assertion \`operandIsSupported\' failed."
+echo " #0 0x0000000000000000 llvm::sys::PrintStackTrace(llvm::raw_ostream&, int)"
+echo " #1 0x0000000000000001 TheFunctionThatCrashed(retdec::llvmir2hll::Module*)"
+for i in $(seq 2 40); do echo " #${i} 0x00000000000000${i} some_frame_${i}()"; done
+echo "PLEASE submit a bug report to https://github.com/llvm/llvm-project/issues/ and include the crash backtrace."
+echo "Stack dump:"
+printf '0.\tProgram arguments: fake-decompiler\n'
+printf "1.\tRunning pass 'LLVM IR -> HLL' on module ''.\n"
+exit 134
+FAKE
 	# Cannot decompile anything.
 	printf '#!/usr/bin/env bash\nexit 1\n' > "${T}/bin/dead"
 	chmod +x "${T}/bin"/*
@@ -85,6 +109,18 @@ FAKE
 		cat "${T}/out" >&2
 		fails=$(( fails + 1 ))
 	fi
+	expect 0 "a decompiler that crashes on one binary is skipped, not failed" \
+		bash "${SELF}" --decompiler "${T}/bin/crasher" --corpus "${T}/corpus"
+	# ...and the excerpt reaches the top of the stack, not the bottom of the
+	# log.  Both of these are forty-odd lines from the end.
+	for want in "TheFunctionThatCrashed" "operandIsSupported"; do
+		if ! grep -q "${want}" "${T}/out"; then
+			echo "self-test: a crashing binary's report did not include ${want}" >&2
+			cat "${T}/out" >&2
+			fails=$(( fails + 1 ))
+		fi
+	done
+
 	expect 1 "a decompiler that produces nothing at all fails" \
 		bash "${SELF}" --decompiler "${T}/bin/dead" --corpus "${T}/corpus"
 	expect 1 "an empty corpus fails" \
@@ -167,6 +203,44 @@ if [[ "${PRINT_SAMPLE}" -eq 1 ]]; then
 	exit 0
 fi
 
+# LLVM's crash handler symbolizes its own backtrace only when it can find an
+# llvm-symbolizer -- through $LLVM_SYMBOLIZER_PATH, next to argv[0], or on
+# $PATH.  With none of those it falls back to dladdr, which resolves only
+# exported symbols, and this binary exports none of its own.  That is why the
+# frames printed below used to read
+#
+#   16 retdec-decompiler 0x00005643ba734e06
+#
+# for every frame in the decompiler and name nothing.  Finding a symbolizer
+# here turns the same frames into function, file and line.
+find_symbolizer() {
+	local p
+	if [[ -n "${LLVM_SYMBOLIZER_PATH:-}" && -x "${LLVM_SYMBOLIZER_PATH}" ]]; then
+		printf '%s\n' "${LLVM_SYMBOLIZER_PATH}"
+		return 0
+	fi
+	if p="$(command -v llvm-symbolizer 2>/dev/null)"; then
+		printf '%s\n' "${p}"
+		return 0
+	fi
+	# Distributions ship it under a versioned prefix and only add the
+	# unversioned name with the `llvm` metapackage; newest version first.
+	for p in $(ls -d /usr/lib/llvm-*/bin/llvm-symbolizer /usr/bin/llvm-symbolizer-* \
+		2>/dev/null | sort -Vr); do
+		if [[ -x "${p}" ]]; then
+			printf '%s\n' "${p}"
+			return 0
+		fi
+	done
+	return 1
+}
+
+if SYMBOLIZER="$(find_symbolizer)"; then
+	export LLVM_SYMBOLIZER_PATH="${SYMBOLIZER}"
+else
+	SYMBOLIZER=""
+fi
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
@@ -182,6 +256,35 @@ run_one() {
 	RETDEC_INCREMENTAL_CACHE=0 timeout --kill-after=15 "${TIMEOUT}" \
 		"${DEC}" -o "${out}" "${bin}" >"${log}" 2>&1 || true
 	[[ -s "${out}" ]]
+}
+
+# How much of a crashing run's log to print.  Bounded, because three crashing
+# binaries times an unbounded log is a CI page nobody reads.
+CRASH_CONTEXT_LINES=80
+
+# LLVM prints a backtrace innermost frame first, so the *end* of a crash log is
+# main() and __libc_start_main and the last twenty-five lines of it name
+# nothing.  That is what this used to print: twenty frames counted from the
+# bottom of the stack, none of them the ones that say where the crash was.
+#
+# The report banner sits just after the last frame, so anchoring on it and
+# printing the window above it gets frame #0 -- and any assertion message,
+# which glibc writes before the handler runs and which is the single most
+# useful line in the file.
+crash_excerpt() {
+	local log="$1"
+	local marker start
+	# `|| true`: no banner is the ordinary case for a plain non-zero exit, and
+	# under `set -o pipefail` grep's failure would otherwise end the run.
+	marker="$( { grep -n -m1 -e 'PLEASE submit a bug report' -e '^Stack dump:' \
+		"${log}" || true; } | head -n1 | cut -d: -f1)"
+	if [[ -z "${marker}" ]]; then
+		tail -n "${CRASH_CONTEXT_LINES}" "${log}"
+		return 0
+	fi
+	start=$(( marker - CRASH_CONTEXT_LINES ))
+	[[ "${start}" -lt 1 ]] && start=1
+	sed -n "${start},\$p" "${log}"
 }
 
 checked=0
@@ -208,10 +311,10 @@ print(summarise_failure_output(Path(sys.argv[2]).read_text(errors="replace")))
 		[[ -n "${why}" ]] && echo "DET-01:   ${stem}: ${why}"
 		# The summariser keeps a few lines from each end, which for an LLVM
 		# crash is the pass name but not the frames -- and the frames are what
-		# name the code. Print the end of the log verbatim as well.
+		# name the code. Print them verbatim as well.
 		if [[ -s "${WORK}/${stem}.1.log" ]]; then
-			echo "DET-01:   --- last 25 lines from ${stem} ---"
-			tail -n 25 "${WORK}/${stem}.1.log" | sed "s/^/DET-01:   /"
+			echo "DET-01:   --- crash excerpt from ${stem}${SYMBOLIZER:+ (symbolized by ${SYMBOLIZER})} ---"
+			crash_excerpt "${WORK}/${stem}.1.log" | sed "s/^/DET-01:   /"
 		fi
 		skipped=$(( skipped + 1 ))
 		continue
