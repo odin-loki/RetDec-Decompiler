@@ -105,12 +105,16 @@ void SimpleCopyPropagationOptimizer::doOptimization() {
 	// differently on two runs.  A stride makes the assignment a function of
 	// the index alone.
 	auto workerFn = [&](SimpleCopyPropagationOptimizer* opt, unsigned tid) {
-		try {
-			for (std::size_t idx = tid; idx < funcs.size(); idx += numThreads) {
+		try
+		{
+			for (std::size_t idx = tid; idx < funcs.size(); idx += numThreads)
+			{
 				if (isGlobalDeadlineExceeded()) break;
 				opt->runOnFunction(funcs[idx]);
 			}
-		} catch (...) {
+		}
+		catch (...)
+		{
 			std::lock_guard<std::mutex> lock(exMutex);
 			if (!firstException) firstException = std::current_exception();
 		}
@@ -137,7 +141,8 @@ void SimpleCopyPropagationOptimizer::doOptimization() {
 		}
 		std::vector<std::thread> threads;
 		unsigned tid = 1;
-		for (auto& w : workers) threads.emplace_back(workerFn, w.get(), tid++);
+		for (auto& w: workers)
+			threads.emplace_back(workerFn, w.get(), tid++);
 		workerFn(this, 0);
 		for (auto& t : threads) t.join();
 	}

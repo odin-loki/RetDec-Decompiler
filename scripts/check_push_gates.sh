@@ -73,6 +73,7 @@ CHECKS=(
 	"doc       CycloneDX pins:::${PY} scripts/ci/generate_cyclonedx.py --out \"$(mktemp)\""
 	"doc       VERIFICATION.md vs proofs:::bash scripts/verify_esbmc.sh --doc"
 	"doc       output determinism (self-test):::bash scripts/ci/check_output_determinism.sh --self-test"
+	"doc       clang-format scoping (self-test):::bash scripts/check_format.sh --self-test"
 )
 
 if [ "${1:-}" = "--list" ]; then
@@ -94,7 +95,7 @@ fi
 # network fetch, or minutes rather than seconds. WORKFLOW_ONLY says which, and
 # saying so is the point -- an unexplained omission is what this catches.
 WORKFLOW_ONLY=(
-	"scripts/check_format.sh"                     # its own workflow; slower, and CI scopes it to changed files
+	"scripts/check_format.sh"                     # its own workflow; the --self-test above is what runs here
 	"scripts/build_algorithm_corpus.sh"           # needs a compiler and minutes
 	"scripts/fetch-large-files.sh"                # network
 	"scripts/fetch_decompilebench_corpus.sh"      # network

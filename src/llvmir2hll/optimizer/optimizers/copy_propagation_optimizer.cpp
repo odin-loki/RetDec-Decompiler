@@ -119,23 +119,27 @@ using StmtOrderIndex = std::unordered_map<const Statement*, std::size_t>;
 const std::size_t NO_STMT_ORDER = std::numeric_limits<std::size_t>::max();
 
 /**
-* @brief Numbers every statement of @a cfg in the order the CFG stores them.
-*
-* CFG nodes live in a vector and each node keeps its statements in program
-* order, so the numbering is the same on every run.  Statement addresses are
-* not: the sets below are @c std::set<ShPtr<Statement>>, ordered by pointer
-* value, so their iteration order moves with the allocator (and, once the
-* optimizer runs on several threads, with the per-thread arenas the new
-* statements come from).
-*/
-StmtOrderIndex buildStmtOrderIndex(const ShPtr<CFG> &cfg) {
+ * @brief Numbers every statement of @a cfg in the order the CFG stores them.
+ *
+ * CFG nodes live in a vector and each node keeps its statements in program
+ * order, so the numbering is the same on every run.  Statement addresses are
+ * not: the sets below are @c std::set<ShPtr<Statement>>, ordered by pointer
+ * value, so their iteration order moves with the allocator (and, once the
+ * optimizer runs on several threads, with the per-thread arenas the new
+ * statements come from).
+ */
+StmtOrderIndex buildStmtOrderIndex(const ShPtr<CFG>& cfg)
+{
 	StmtOrderIndex order;
-	if (!cfg) {
+	if (!cfg)
+	{
 		return order;
 	}
 	std::size_t pos = 0;
-	for (auto i = cfg->node_begin(), e = cfg->node_end(); i != e; ++i) {
-		for (auto j = (*i)->stmt_begin(), f = (*i)->stmt_end(); j != f; ++j) {
+	for (auto i = cfg->node_begin(), e = cfg->node_end(); i != e; ++i)
+	{
+		for (auto j = (*i)->stmt_begin(), f = (*i)->stmt_end(); j != f; ++j)
+		{
 			order.emplace(j->get(), pos++);
 		}
 	}
@@ -143,23 +147,25 @@ StmtOrderIndex buildStmtOrderIndex(const ShPtr<CFG> &cfg) {
 }
 
 /// Returns the program-order position of @a stmt, or NO_STMT_ORDER.
-std::size_t stmtOrderOf(const StmtOrderIndex &order, const ShPtr<Statement> &stmt) {
+std::size_t stmtOrderOf(const StmtOrderIndex& order, const ShPtr<Statement>& stmt)
+{
 	auto i = order.find(stmt.get());
 	return i != order.end() ? i->second : NO_STMT_ORDER;
 }
 
 /**
-* @brief Returns an ordered version of the given statement set.
-*        Uses a pre-computed text-representation cache so getTextRepr() is
-*        called at most once per statement.
-*
-* Two distinct statements can render to the same text (the same assignment on
-* both arms of an @c if, say).  Sorting on the text alone leaves those tied,
-* and @c std::sort settles a tie by whatever order the input happened to be
-* in -- which, for a pointer-ordered set, is not the same on every run.
-* @a order breaks the tie by program position instead.
-*/
-auto ordered(const StmtSet &stmts, const StmtOrderIndex &order) {
+ * @brief Returns an ordered version of the given statement set.
+ *        Uses a pre-computed text-representation cache so getTextRepr() is
+ *        called at most once per statement.
+ *
+ * Two distinct statements can render to the same text (the same assignment on
+ * both arms of an @c if, say).  Sorting on the text alone leaves those tied,
+ * and @c std::sort settles a tie by whatever order the input happened to be
+ * in -- which, for a pointer-ordered set, is not the same on every run.
+ * @a order breaks the tie by program position instead.
+ */
+auto ordered(const StmtSet& stmts, const StmtOrderIndex& order)
+{
 	ReprCache cache;
 	cache.reserve(stmts.size());
 	for (auto& s : stmts) {
@@ -167,10 +173,11 @@ auto ordered(const StmtSet &stmts, const StmtOrderIndex &order) {
 	}
 
 	StmtVector v(stmts.begin(), stmts.end());
-	std::sort(v.begin(), v.end(), [&cache, &order](const auto &s1, const auto &s2) {
-		const auto &r1 = cache.at(s1.get());
-		const auto &r2 = cache.at(s2.get());
-		if (r1 != r2) {
+	std::sort(v.begin(), v.end(), [&cache, &order](const auto& s1, const auto& s2) {
+		const auto& r1 = cache.at(s1.get());
+		const auto& r2 = cache.at(s2.get());
+		if (r1 != r2)
+		{
 			return r1 < r2;
 		}
 		return stmtOrderOf(order, s1) < stmtOrderOf(order, s2);
@@ -370,11 +377,15 @@ void CopyPropagationOptimizer::doOptimization() {
 	// differently on two runs.  A stride makes the assignment a function of
 	// the index alone.
 	auto workerFn = [&](CopyPropagationOptimizer* opt, unsigned tid) {
-		try {
-			for (std::size_t idx = tid; idx < funcs.size(); idx += numThreads) {
+		try
+		{
+			for (std::size_t idx = tid; idx < funcs.size(); idx += numThreads)
+			{
 				opt->runOnFunction(funcs[idx]);
 			}
-		} catch (...) {
+		}
+		catch (...)
+		{
 			std::lock_guard<std::mutex> lock(exMutex);
 			if (!firstException) firstException = std::current_exception();
 		}
@@ -562,14 +573,16 @@ void CopyPropagationOptimizer::performOptimization() {
 	// its address comment onto the statement that follows it, so two
 	// statements that render identically must not be removed in whichever
 	// order their addresses happen to give.
-	for (const auto &stmt : ordered(toRemoveStmtsPreserveCalls, stmtOrder)) {
+	for (const auto& stmt: ordered(toRemoveStmtsPreserveCalls, stmtOrder))
+	{
 		// Since there may be function calls in the statement, we have to
 		// preserve them. Therefore, we store the result of
 		// removeVarDefOrAssignStatement() and use it when updating the CFG.
 		const auto &newStmts = removeVarDefOrAssignStatement(stmt, ducs->func);
 		ducs->cfg->replaceStmt(stmt, newStmts);
 	}
-	for (const auto &stmt : ordered(toEntirelyRemoveStmts, stmtOrder)) {
+	for (const auto& stmt: ordered(toEntirelyRemoveStmts, stmtOrder))
+	{
 		Statement::removeStatementButKeepDebugComment(stmt);
 		ducs->cfg->removeStmt(stmt);
 	}
@@ -1075,7 +1088,8 @@ void CopyPropagationOptimizer::handleCaseInductionVariable(
 		}
 
 		// Other definition has the same uses as the definition being inspected.
-		if (ordered(otherDefDU.second, stmtOrder) != orderedUses) {
+		if (ordered(otherDefDU.second, stmtOrder) != orderedUses)
+		{
 			LOG << "\t" << "end 6" << std::endl;
 			return;
 		}

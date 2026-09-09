@@ -104,8 +104,8 @@ IsWhileTrueLoopReturnsFalseForNonWhileTrueLoop) {
 // sortByName()
 //
 
-TEST_F(IRTests,
-SortByNameOrdersNamesThatDifferOnlyInCase) {
+TEST_F(IRTests, SortByNameOrdersNamesThatDifferOnlyInCase)
+{
 	// C is case-sensitive, so a binary can carry both Foo and foo.  Comparing
 	// the names case-insensitively leaves such a pair tied, and std::sort
 	// settles a tie by whichever order the input happened to be in -- which,

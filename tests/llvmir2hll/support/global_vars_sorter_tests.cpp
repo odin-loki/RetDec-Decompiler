@@ -209,8 +209,8 @@ SortingWorksCorrectlyEvenIfVariableIsNested) {
 		GlobalVarsSorter::sortByInterdependencies(globalVars));
 }
 
-TEST_F(GlobalVarsSorterTests,
-MutuallyDependentVariablesAreSortedByOriginalName) {
+TEST_F(GlobalVarsSorterTests, MutuallyDependentVariablesAreSortedByOriginalName)
+{
 	//
 	// int *a = &b;
 	// int *b = &a;
@@ -228,29 +228,24 @@ MutuallyDependentVariablesAreSortedByOriginalName) {
 
 	GlobalVarDefVector globalVars;
 
-	ShPtr<Variable> varA(Variable::create("a", PointerType::create(
-		IntType::create(32))));
-	ShPtr<Variable> varB(Variable::create("b", PointerType::create(
-		IntType::create(32))));
+	ShPtr<Variable> varA(Variable::create("a", PointerType::create(IntType::create(32))));
+	ShPtr<Variable> varB(Variable::create("b", PointerType::create(IntType::create(32))));
 
-	ShPtr<GlobalVarDef> varADef(GlobalVarDef::create(varA,
-		AddressOpExpr::create(varB)));
+	ShPtr<GlobalVarDef> varADef(GlobalVarDef::create(varA, AddressOpExpr::create(varB)));
 	globalVars.push_back(varADef);
 
-	ShPtr<GlobalVarDef> varBDef(GlobalVarDef::create(varB,
-		AddressOpExpr::create(varA)));
+	ShPtr<GlobalVarDef> varBDef(GlobalVarDef::create(varB, AddressOpExpr::create(varA)));
 	globalVars.push_back(varBDef);
 
 	GlobalVarDefVector refSortedGlobalVars;
 	refSortedGlobalVars.push_back(varADef);
 	refSortedGlobalVars.push_back(varBDef);
 
-	EXPECT_EQ(refSortedGlobalVars,
-		GlobalVarsSorter::sortByInterdependencies(globalVars));
+	EXPECT_EQ(refSortedGlobalVars, GlobalVarsSorter::sortByInterdependencies(globalVars));
 }
 
-TEST_F(GlobalVarsSorterTests,
-SelfReferentialVariableDoesNotDisturbTheOrder) {
+TEST_F(GlobalVarsSorterTests, SelfReferentialVariableDoesNotDisturbTheOrder)
+{
 	//
 	// int *a = &a;
 	// int b;
@@ -265,10 +260,8 @@ SelfReferentialVariableDoesNotDisturbTheOrder) {
 
 	GlobalVarDefVector globalVars;
 
-	ShPtr<Variable> varA(Variable::create("a", PointerType::create(
-		IntType::create(32))));
-	ShPtr<GlobalVarDef> varADef(GlobalVarDef::create(varA,
-		AddressOpExpr::create(varA)));
+	ShPtr<Variable> varA(Variable::create("a", PointerType::create(IntType::create(32))));
+	ShPtr<GlobalVarDef> varADef(GlobalVarDef::create(varA, AddressOpExpr::create(varA)));
 	globalVars.push_back(varADef);
 
 	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
@@ -281,8 +274,7 @@ SelfReferentialVariableDoesNotDisturbTheOrder) {
 	refSortedGlobalVars.push_back(varBDef);
 	refSortedGlobalVars.push_back(varADef);
 
-	EXPECT_EQ(refSortedGlobalVars,
-		GlobalVarsSorter::sortByInterdependencies(globalVars));
+	EXPECT_EQ(refSortedGlobalVars, GlobalVarsSorter::sortByInterdependencies(globalVars));
 }
 
 } // namespace tests

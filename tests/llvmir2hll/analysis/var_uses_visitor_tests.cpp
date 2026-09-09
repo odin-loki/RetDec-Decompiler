@@ -282,8 +282,8 @@ GlobalVariableIsIndirectlyUsedMay) {
 	}
 }
 
-TEST_F(VarUsesVisitorTests,
-UnusedGlobalVariableHasNoUsesInEveryVariant) {
+TEST_F(VarUsesVisitorTests, UnusedGlobalVariableHasNoUsesInEveryVariant)
+{
 	// Set-up the module.
 	//
 	// int a;      // a global that the function never touches
@@ -305,12 +305,12 @@ UnusedGlobalVariableHasNoUsesInEveryVariant) {
 	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
 	module->addGlobalVar(varB);
 	ShPtr<ReturnStmt> returnStmt(ReturnStmt::create());
-	ShPtr<AssignStmt> assignB(AssignStmt::create(varB,
-		ConstInt::create(1, 32), returnStmt));
+	ShPtr<AssignStmt> assignB(AssignStmt::create(varB, ConstInt::create(1, 32), returnStmt));
 	testFunc->setBody(assignB);
 
 	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
-	FOR_EVERY_VAR_USES_VISITOR_VARIANT {
+	FOR_EVERY_VAR_USES_VISITOR_VARIANT
+	{
 		// The untouched global.
 		EXPECT_FALSE(vuv->isUsed(varA, testFunc, false)) << vuvDesc;
 
@@ -325,8 +325,7 @@ UnusedGlobalVariableHasNoUsesInEveryVariant) {
 
 		StmtSet refVarBDirUses;
 		refVarBDirUses.insert(assignB);
-		EXPECT_EQ(refVarBDirUses, vuv->getUses(varB, testFunc)->dirUses)
-			<< vuvDesc;
+		EXPECT_EQ(refVarBDirUses, vuv->getUses(varB, testFunc)->dirUses) << vuvDesc;
 	}
 }
 

@@ -194,8 +194,8 @@ FiveStructTypesWithSomeDependenciesAreProperlySortedByNameAndByDependencies) {
 	EXPECT_EQ(refSortedStructTypes, StructTypesSorter::sort(structTypes));
 }
 
-TEST_F(StructTypesSorterTests,
-UnnamedStructTypesSortTheSameWhicheverOrderTheyWereCreatedIn) {
+TEST_F(StructTypesSorterTests, UnnamedStructTypesSortTheSameWhicheverOrderTheyWereCreatedIn)
+{
 	// Input (twice, the two structures created in opposite orders):
 	//
 	// struct { struct A a; };
@@ -234,16 +234,16 @@ UnnamedStructTypesSortTheSameWhicheverOrderTheyWereCreatedIn) {
 	secondSet.insert(oneSecond);
 	secondSet.insert(twoSecond);
 
-	auto textOf = [](const StructTypeVector &types) {
+	auto textOf = [](const StructTypeVector& types) {
 		StringVector reprs;
-		for (const auto &type : types) {
+		for (const auto& type: types)
+		{
 			reprs.push_back(type->getTextRepr());
 		}
 		return reprs;
 	};
 
-	EXPECT_EQ(textOf(StructTypesSorter::sort(firstSet)),
-		textOf(StructTypesSorter::sort(secondSet)));
+	EXPECT_EQ(textOf(StructTypesSorter::sort(firstSet)), textOf(StructTypesSorter::sort(secondSet)));
 }
 
 } // namespace tests

@@ -43,22 +43,25 @@ namespace {
 using namespace retdec::llvmir2hll;
 
 /**
-* @brief Compares the two given names case-insensitively, and exactly when
-*        that leaves them tied.
-*
-* Ignoring case makes names that differ only in case compare equal -- C is
-* case-sensitive, so a binary can carry both @c Foo and @c foo -- and
-* std::sort settles such a tie by whichever order the input happened to be
-* in.  These vectors are built from sets ordered by pointer value, so the tie
-* would be settled differently between two runs of the same input, and these
-* orders reach the emitted code.  The exact comparison is a total order on
-* distinct names, so nothing is left to the input order.
-*/
-bool nameIsLower(const std::string &n1, const std::string &n2) {
-	if (isLowerThanCaseInsensitive(n1, n2)) {
+ * @brief Compares the two given names case-insensitively, and exactly when
+ *        that leaves them tied.
+ *
+ * Ignoring case makes names that differ only in case compare equal -- C is
+ * case-sensitive, so a binary can carry both @c Foo and @c foo -- and
+ * std::sort settles such a tie by whichever order the input happened to be
+ * in.  These vectors are built from sets ordered by pointer value, so the tie
+ * would be settled differently between two runs of the same input, and these
+ * orders reach the emitted code.  The exact comparison is a total order on
+ * distinct names, so nothing is left to the input order.
+ */
+bool nameIsLower(const std::string& n1, const std::string& n2)
+{
+	if (isLowerThanCaseInsensitive(n1, n2))
+	{
 		return true;
 	}
-	if (isLowerThanCaseInsensitive(n2, n1)) {
+	if (isLowerThanCaseInsensitive(n2, n1))
+	{
 		return false;
 	}
 	return n1 < n2;
