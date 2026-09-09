@@ -1166,3 +1166,113 @@ TEST(ProtobufReaderTest, FixedWidthFieldsNeedTheirBytes)
 	ProtobufReader::Field f64;
 	EXPECT_FALSE(r64.readField(f64));
 }
+
+// ─── The d1 blob is attacker-controlled ──────────────────────────────────────
+
+namespace {
+
+/// A protobuf length-delimited field: (number << 3 | 2), length, payload.
+std::string protoLenDelim(uint32_t number, const std::string& payload)
+{
+	std::string out;
+	uint64_t key = (static_cast<uint64_t>(number) << 3) | 2u;
+	while (key >= 0x80)
+	{
+		out.push_back(static_cast<char>((key & 0x7F) | 0x80));
+		key >>= 7;
+	}
+	out.push_back(static_cast<char>(key));
+	uint64_t len = payload.size();
+	while (len >= 0x80)
+	{
+		out.push_back(static_cast<char>((len & 0x7F) | 0x80));
+		len >>= 7;
+	}
+	out.push_back(static_cast<char>(len));
+	out += payload;
+	return out;
+}
+
+/// A protobuf varint field: (number << 3 | 0), value.
+std::string protoVarint(uint32_t number, uint64_t value)
+{
+	std::string out;
+	uint64_t key = static_cast<uint64_t>(number) << 3;
+	while (key >= 0x80)
+	{
+		out.push_back(static_cast<char>((key & 0x7F) | 0x80));
+		key >>= 7;
+	}
+	out.push_back(static_cast<char>(key));
+	while (value >= 0x80)
+	{
+		out.push_back(static_cast<char>((value & 0x7F) | 0x80));
+		value >>= 7;
+	}
+	out.push_back(static_cast<char>(value));
+	return out;
+}
+
+} // namespace
+
+// decodeType recursed into every nested TypeArg with no depth limit, and each
+// level materialised its own copy of the remaining payload -- ProtobufReader
+// takes its bytes by value -- so the live memory was quadratic in the input on
+// top of an unbounded stack.
+//
+// Type(2 = TypeArg) { TypeArg(2 = Type) { Type ... } }, five hundred deep --
+// well past decodeType's cap, and past any nesting a real signature reaches.
+static constexpr std::size_t kNestedTypeArgLevels = 500;
+
+TEST(KotlinMetadataDetectorTest, DeeplyNestedTypeArgsDoNotRecurseWithoutBound)
+{
+	std::string type = protoVarint(1, 1); // Type { className = 1 }
+	for (std::size_t i = 0; i < kNestedTypeArgLevels; ++i)
+	{
+		const std::string arg = protoLenDelim(2, type); // TypeArg { type = ... }
+		type = protoLenDelim(2, arg);                   // Type { typeArg = ... }
+	}
+	const std::string d1 = protoLenDelim(5, type); // Class { supertype = ... }
+
+	BcClass cls;
+	cls.annotations.push_back(makeKotlinMetadata(1, d1));
+
+	const auto meta = KotlinMetadataDetector::detect(cls);
+	ASSERT_EQ(1u, meta.supertypes.size());
+
+	// Nesting this deep is not a Kotlin signature, so what the decoder keeps of
+	// it does not matter -- only that it stopped descending. Unbounded, the
+	// chain came back exactly as deep as the input made it.
+	std::size_t depth = 0;
+	for (const KotlinType* t = meta.supertypes[0].get();
+		t != nullptr && !t->typeArgs.empty();
+		t = t->typeArgs[0].type.get())
+	{
+		++depth;
+		ASSERT_LT(depth, kNestedTypeArgLevels)
+			<< "decodeType followed the input's nesting without a bound";
+	}
+}
+
+// lookupString treats a negative index as a built-in class index, computed as
+// `int bi = -idx`. idx is a varint out of d1, so it can be INT32_MIN -- and
+// -INT32_MIN in int is signed overflow that evaluates back to INT32_MIN, which
+// the one-sided guard `bi < kBuiltinCount` accepts. The read was
+// kBuiltinNames[-2147483648].
+//
+// The negation itself is the undefined step, so this fails under the
+// asan+ubsan job (`negation of -2147483648 cannot be represented in type
+// 'int'`) rather than in an unsanitised build, where g++ happens to fold the
+// comparison into an unsigned one that rejects the index by accident.
+TEST(KotlinMetadataDetectorTest, AnIntMinStringIndexIsNotABuiltinClassIndex)
+{
+	// Class { fqName = 0x80000000 }, which casts to INT32_MIN.
+	const std::string d1 = protoVarint(3, 0x80000000ull);
+
+	BcClass cls;
+	cls.annotations.push_back(makeKotlinMetadata(1, d1));
+
+	const auto meta = KotlinMetadataDetector::detect(cls);
+	EXPECT_TRUE(meta.fqName.empty())
+		<< "an index no built-in has is not a built-in: " << meta.fqName;
+}

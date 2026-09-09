@@ -376,9 +376,24 @@ void WatEmitter::emitFunctions(const WasmModule& mod, std::ostream& out, int ind
 				localOffset += lc.count;
 			}
 
-			// Body
-			emitFuncBody(mod, funcIdx, fc, out, indent + 1);
 		}
+		else
+		{
+			out << "\n"
+				<< indentStr(indent + 1) << ";; type index " << typeIdx
+				<< " is out of range; parameters and locals are not known";
+		}
+
+		// The body, whatever the type index said.
+		//
+		// This used to sit inside the guard above, so a Function-section entry
+		// naming a type that does not exist dropped the entire disassembly of
+		// that function -- no instructions, no warning, no comment. The body
+		// bytes do not depend on the type index: emitFuncBody only uses it to
+		// count parameters, and re-checks that itself. A malformed or
+		// truncated module is exactly when the instruction listing is worth
+		// having.
+		emitFuncBody(mod, funcIdx, fc, out, indent + 1);
 
 		out << ")\n";
 	}

@@ -955,3 +955,55 @@ TEST(BcJson, OrdinaryNestingIsNotRefused)
 	const auto res = deserialiseModule(serialiseModule(mod));
 	EXPECT_TRUE(res.ok) << res.error;
 }
+
+// ─── Numbers out of a JSON document ──────────────────────────────────────────
+
+// arrayDims is filled from deserialised JSON with no range check, and both
+// toString() and jvmDescriptor() size a std::string from it. A negative value
+// asked for 2^64-2 characters and threw std::length_error out of a member
+// function no caller wraps -- deserialiseModule's try/catch is long gone by
+// the time toString() runs -- so the process aborted.
+TEST(BcRefTypeArrayDims, ANegativeDimensionCountDoesNotThrow)
+{
+	BcRefType r;
+	r.kind = BcRefKind::Array;
+	r.elementType = std::make_shared<BcType>(types::Int());
+	r.arrayDims = -1;
+
+	EXPECT_NO_THROW({
+		const std::string s = r.toString();
+		EXPECT_NE(s.find("int"), std::string::npos);
+	});
+	EXPECT_NO_THROW({
+		const std::string d = r.jvmDescriptor();
+		EXPECT_FALSE(d.empty());
+	});
+}
+
+TEST(BcRefTypeArrayDims, AnAbsurdDimensionCountIsClampedToWhatTheJvmAllows)
+{
+	BcRefType r;
+	r.kind = BcRefKind::Array;
+	r.elementType = std::make_shared<BcType>(types::Int());
+	r.arrayDims = 1 << 30;
+
+	std::string s;
+	EXPECT_NO_THROW({ s = r.toString(); });
+	// "int" plus at most 255 "[]" pairs.
+	EXPECT_LE(s.size(), 3u + 255u * 2u);
+}
+
+// parseInt accumulated digits into an int64_t with no bound, so any JSON
+// number longer than nineteen digits was signed overflow -- undefined
+// behaviour, not a wrapped result. Every numeric field in the document
+// reaches it.
+TEST(BcJsonParseInt, AnAbsurdlyLongNumberSaturatesRatherThanOverflowing)
+{
+	const std::string json =
+		R"({"bcModuleVersion":999999999999999999999999999999,"classes":[]})";
+	const auto res = deserialiseModule(json);
+	// No assertion about the value: a number that does not fit has no right
+	// answer. What matters is that reading it is defined, which the sanitizer
+	// job is what actually checks.
+	EXPECT_TRUE(res.ok || !res.error.empty());
+}

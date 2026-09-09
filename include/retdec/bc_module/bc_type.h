@@ -103,6 +103,18 @@ struct BcRefType {
     std::shared_ptr<BcType> elementType;
     int                     arrayDims = 1; ///< Number of array dimensions
 
+    /// arrayDims clamped to what the JVM allows, which is 255.
+    ///
+    /// The field is filled from deserialised JSON with no range check, and
+    /// both toString() and jvmDescriptor() size a std::string from it -- so a
+    /// negative value asked for 2^64-2 characters and threw std::length_error
+    /// out of a member function no caller wraps.
+    int boundedArrayDims() const noexcept
+    {
+        if (arrayDims < 0) return 0;
+        return arrayDims > 255 ? 255 : arrayDims;
+    }
+
     // For Generic instantiation:
     std::shared_ptr<BcType>              genericBase;   ///< Raw type
     std::vector<std::shared_ptr<BcType>> typeArgs;

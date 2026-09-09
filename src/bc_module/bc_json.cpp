@@ -475,8 +475,22 @@ struct Parser
 		bool neg = (peek() == '-');
 		if (neg) ++pos;
 		int64_t v = 0;
+		bool saturated = false;
 		while (pos < src.size() && std::isdigit((unsigned char)src[pos]))
-			v = v * 10 + (src[pos++] - '0');
+		{
+			const int digit = src[pos++] - '0';
+			// Saturate. This accumulated over an unbounded digit run with no
+			// check, so any JSON number longer than nineteen digits was signed
+			// overflow -- undefined behaviour, not a wrapped result -- and
+			// every numeric field in the document reaches here.
+			if (saturated || v > (INT64_MAX - digit) / 10)
+			{
+				saturated = true;
+				continue;
+			}
+			v = v * 10 + digit;
+		}
+		if (saturated) return neg ? INT64_MIN : INT64_MAX;
 		return neg ? -v : v;
 	}
 

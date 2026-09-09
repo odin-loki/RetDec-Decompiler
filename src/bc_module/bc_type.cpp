@@ -102,8 +102,15 @@ std::string BcRefType::toString() const {
         return "? super "   + (bound ? bound->toString() : "?");
     case BcRefKind::Array: {
         std::string base = elementType ? elementType->toString() : "?";
-        std::string dims(static_cast<size_t>(arrayDims) * 2, ' ');
-        for (int i = 0; i < arrayDims; ++i) { dims[i*2]='['; dims[i*2+1]=']'; }
+        // arrayDims comes out of deserialised JSON with no range check, and
+        // `static_cast<size_t>(-1) * 2` is a request for 2^64-2 characters:
+        // std::length_error, thrown out of a member function nobody wraps,
+        // long after deserialiseModule's try/catch has gone. Large positive
+        // values overflow the loop's int index just as readily. The JVM
+        // allows 255 array dimensions and no more.
+        const int dimCount = boundedArrayDims();
+        std::string dims(static_cast<size_t>(dimCount) * 2, ' ');
+        for (int i = 0; i < dimCount; ++i) { dims[i*2]='['; dims[i*2+1]=']'; }
         return base + dims;
     }
     case BcRefKind::Generic: {
@@ -126,7 +133,7 @@ std::string BcRefType::jvmDescriptor() const {
     case BcRefKind::TypeVariable:
         return "L" + className + ";";
     case BcRefKind::Array: {
-        std::string dims(static_cast<size_t>(arrayDims), '[');
+        std::string dims(static_cast<size_t>(boundedArrayDims()), '[');
         return dims + (elementType ? elementType->jvmDescriptor() : "?");
     }
     case BcRefKind::Generic:

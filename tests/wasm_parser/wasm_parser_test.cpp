@@ -710,6 +710,30 @@ TEST(WatEmitterTest, DisassemblesFuncBody)
 	EXPECT_NE(result.source.find("42"), std::string::npos);
 }
 
+// emitFuncBody used to sit inside the `typeIdx < mod.types.size()` guard, so a
+// Function section naming a type index the Type section does not have dropped
+// the whole disassembly of that function -- silently, with no marker in the
+// output to say anything had been left out. A module malformed enough to have
+// one is exactly when the instruction listing is worth reading.
+TEST(WatEmitterTest, AnOutOfRangeTypeIndexStillDisassemblesTheBody)
+{
+	auto bytes = singleFuncWasm();
+	WasmReader reader(bytes);
+	auto rr = reader.read();
+	ASSERT_TRUE(rr.ok) << rr.error;
+	ASSERT_EQ(1u, rr.module.funcTypeIndices.size());
+
+	WasmModule mod = rr.module;
+	mod.funcTypeIndices[0] = static_cast<uint32_t>(mod.types.size()) + 7;
+
+	WatEmitter emitter;
+	auto result = emitter.emit(mod);
+	EXPECT_NE(result.source.find("i32.const"), std::string::npos)
+		<< "the body bytes do not depend on the type index:\n" << result.source;
+	EXPECT_NE(result.source.find("out of range"), std::string::npos)
+		<< "and dropping the signature should say so:\n" << result.source;
+}
+
 TEST(WatEmitterTest, EmitsFuncNameFromExport)
 {
 	auto bytes = singleFuncWasm();

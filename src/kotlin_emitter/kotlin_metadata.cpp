@@ -342,9 +342,19 @@ std::string KotlinMetadataDetector::lookupString(const std::vector<std::string>&
 {
 	if (idx < 0)
 	{
-		// Negative: built-in class index
-		int bi = -idx;
-		if (bi < kBuiltinCount) return kBuiltinNames[bi];
+		// Negative: built-in class index.
+		//
+		// In int64_t, and bounded on both sides. idx is a protobuf varint out
+		// of the annotation's d1 bytes, so it can be INT32_MIN -- and
+		// `-INT32_MIN` in int is signed overflow that evaluates back to
+		// INT32_MIN, which a one-sided `bi < kBuiltinCount` accepts. The read
+		// was kBuiltinNames[-2147483648]: the guard could not fire for exactly
+		// the value that needed it.
+		const int64_t bi = -static_cast<int64_t>(idx);
+		if (bi > 0 && bi < static_cast<int64_t>(kBuiltinCount))
+		{
+			return kBuiltinNames[static_cast<size_t>(bi)];
+		}
 		return "";
 	}
 	if (idx < static_cast<int32_t>(strings.size())) return strings[static_cast<size_t>(idx)];
@@ -384,8 +394,12 @@ KotlinClassFlags KotlinMetadataDetector::decodeClassFlags(int64_t flags)
 	return f;
 }
 
+/// Generic nesting this deep is not a Kotlin signature.
+static constexpr unsigned kMaxTypeDepth = 64;
+
 std::shared_ptr<KotlinType>
-KotlinMetadataDetector::decodeType(ProtobufReader& reader, const std::vector<std::string>& strings)
+KotlinMetadataDetector::decodeType(
+	ProtobufReader& reader, const std::vector<std::string>& strings, unsigned depth)
 {
 	auto type = std::make_shared<KotlinType>();
 	ProtobufReader::Field f;
@@ -426,8 +440,17 @@ KotlinMetadataDetector::decodeType(ProtobufReader& reader, const std::vector<std
 				}
 				else if (af.number == kTypeArgType && af.wireType == 2)
 				{
-					ProtobufReader typeReader(af.bytes);
-					arg.type = decodeType(typeReader, strings);
+					// A type argument is a nested Type, and how deeply they
+					// nest is up to the d1 bytes. Each level also keeps its own
+					// copy of the whole remaining payload alive in its frame
+					// -- ProtobufReader takes the bytes by value -- so the live
+					// memory is quadratic in the input as well as the stack
+					// being unbounded: a 234 KB blob cost 6.5 GB and crashed.
+					if (depth < kMaxTypeDepth)
+					{
+						ProtobufReader typeReader(af.bytes);
+						arg.type = decodeType(typeReader, strings, depth + 1);
+					}
 				}
 			}
 			type->typeArgs.push_back(std::move(arg));
