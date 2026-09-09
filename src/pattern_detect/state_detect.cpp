@@ -39,7 +39,10 @@
 #include "retdec/pattern_detect/pattern_detect.h"
 #include "retdec/ssa/ssa.h"
 
+#include <algorithm>
+#include <map>
 #include <set>
+#include <vector>
 
 namespace retdec {
 namespace pattern_detect {
@@ -86,7 +89,15 @@ static bool hasStateModifyInBranch(const ssa::SSAFunction& fn)
 
 int StateMachineDetector::countCaseConstants(const ssa::SSAFunction& fn) const
 {
-	std::set<uint64_t> caseVals;
+	// The constants have to be compared against the SAME value, which is what
+	// makes them cases of one switch rather than unrelated tests.  Counting
+	// distinct immediates across every Compare in the function instead meant a
+	// loop that checks a bound and then a flag had "two states": the bound and
+	// the flag's constant.  That only stayed quiet while buildSsaModule
+	// attached no operands and this loop saw nothing; once the def-use graph
+	// landed, StateMachine was reported on three of the five ci_core binaries
+	// the rename guard prints, none of which is a state machine.
+	std::map<ssa::ValueId, std::set<uint64_t>> casesByState;
 	for (uint32_t b = 0; b < fn.blockCount(); ++b)
 	{
 		const auto* blk = fn.block(b);
@@ -94,14 +105,30 @@ int StateMachineDetector::countCaseConstants(const ssa::SSAFunction& fn) const
 		for (const auto* i: blk->instrs)
 		{
 			if (!i || i->op != ssa::IrInstr::Op::Compare) continue;
+
+			std::vector<uint64_t> immediates;
+			std::vector<ssa::ValueId> subjects;
 			for (const auto& u: i->uses)
 			{
 				const auto* v = fn.value(u.valueId);
-				if (v && v->kind == ssa::ValueKind::Immediate) caseVals.insert(v->imm);
+				if (!v) continue;
+				if (v->kind == ssa::ValueKind::Immediate)
+					immediates.push_back(v->imm);
+				else
+					subjects.push_back(v->id);
 			}
+			// A compare of two immediates names no state, and a compare of two
+			// variables carries no case constant.
+			for (ssa::ValueId subject: subjects)
+				for (uint64_t imm: immediates)
+					casesByState[subject].insert(imm);
 		}
 	}
-	return static_cast<int>(caseVals.size());
+
+	std::size_t widest = 0;
+	for (const auto& [state, cases]: casesByState)
+		widest = std::max(widest, cases.size());
+	return static_cast<int>(widest);
 }
 
 StateMachineEvidence StateMachineDetector::analyse(const ssa::SSAFunction& fn) const

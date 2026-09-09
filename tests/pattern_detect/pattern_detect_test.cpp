@@ -45,14 +45,33 @@ static void addCall(ssa::SSAFunction& fn, const std::string& callee)
 	if (i) i->calleeName = callee;
 }
 
-static void addImmCompare(ssa::SSAFunction& fn, uint64_t val)
+/// The one value a function's compares are all about, allocated on first use.
+static ssa::ValueId stateValue(ssa::SSAFunction& fn)
+{
+	for (const auto& v: fn.values())
+		if (v && v->kind == ssa::ValueKind::VirtualReg) return v->id;
+	auto* v = fn.allocValue(ssa::ValueKind::VirtualReg);
+	return v ? v->id : ssa::kInvalidValue;
+}
+
+/// `subject == val`.
+///
+/// The subject is not decoration: StateMachineDetector counts case constants
+/// per compared value, because constants tested against different values are
+/// not cases of one switch. This helper used to attach the immediate alone,
+/// which was faithful to a producer that attached nothing else -- and stopped
+/// being faithful when buildSsaModule gained a def-use graph.
+static void addImmCompare(ssa::SSAFunction& fn, uint64_t val, ssa::ValueId subject = ssa::kInvalidValue)
 {
 	auto* i = fn.addInstr(fn.block(0)->id, ssa::IrInstr::Op::Compare);
 	if (!i) return;
+	if (subject == ssa::kInvalidValue) subject = stateValue(fn);
 	ssa::IrValue* irval = fn.allocValue(ssa::ValueKind::Immediate);
 	if (irval) irval->imm = val;
+	i->uses.push_back({subject, 0});
 	ssa::Use u;
 	u.valueId = irval ? irval->id : ssa::kInvalidValue;
+	u.operandIndex = 1;
 	i->uses.push_back(u);
 }
 
@@ -939,4 +958,52 @@ TEST(PatternDetectorTest, MinConfidenceFilters)
 	addCall(*fn, "malloc");
 	auto results = det.detectFunction(*fn);
 	EXPECT_TRUE(results.empty());
+}
+
+// Constants compared against different values are not the cases of one switch.
+// countCaseConstants used to pool every immediate in the function, so a loop
+// that checks a bound and then a flag had "two states" and scored a full 1.00.
+TEST(StateMachineDetectorTest, ConstantsComparedAgainstDifferentValuesAreNotCases)
+{
+	auto fn = makeFunc(
+		"two_unrelated_tests",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Store,
+		},
+		2);
+	auto* bound = fn->allocValue(ssa::ValueKind::VirtualReg);
+	auto* flag = fn->allocValue(ssa::ValueKind::VirtualReg);
+	addImmCompare(*fn, 16, bound->id);
+	addImmCompare(*fn, 0, flag->id);
+
+	StateMachineDetector det;
+	EXPECT_NE(det.detect(*fn).kind, PatternKind::StateMachine)
+		<< "a bound test and a flag test are not a two-state machine";
+}
+
+TEST(StateMachineDetectorTest, CasesAreCountedAgainstTheWidestSubject)
+{
+	auto fn = makeFunc(
+		"switch_plus_bound",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Store,
+		},
+		2);
+	auto* state = fn->allocValue(ssa::ValueKind::VirtualReg);
+	auto* bound = fn->allocValue(ssa::ValueKind::VirtualReg);
+	addImmCompare(*fn, 0, state->id);
+	addImmCompare(*fn, 1, state->id);
+	addImmCompare(*fn, 2, state->id);
+	addImmCompare(*fn, 99, bound->id);
+
+	// The case count reaches the output through the emitted enum.
+	StateMachineDetector det;
+	auto r = det.detect(*fn);
+	ASSERT_EQ(PatternKind::StateMachine, r.kind);
+	EXPECT_NE(std::string::npos, r.comment.find("(3 states)"))
+		<< "three cases on the state, not four constants in the function: " << r.comment;
 }

@@ -71,10 +71,66 @@ bool hasDigitLoop(const ssa::SSAFunction& fn)
 		&& (countOp(fn, ssa::IrInstr::Op::Mul) >= 1 || countOp(fn, ssa::IrInstr::Op::Shl) >= 1);
 }
 
+/// A byte loaded from memory and tested against zero: `while (*p)`.
+///
+/// This is what distinguishes a string walk from any other loop, and it needs
+/// the def-use graph to see -- the loaded value has to be the one the compare
+/// reads. Asking instead for "a loop, the constant 0 somewhere, at least one
+/// load, at least one compare, no multiply" describes nearly every loop ever
+/// written; it only looked selective while buildSsaModule attached no operands,
+/// so `hasConstant(fn, 0)` was usually false by accident. With the def-use
+/// graph in place that predicate fired on all nine ci_core binaries at once
+/// and took mean_f1 from 0.2712 to 0.1957.
+bool hasByteTestedAgainstZero(const ssa::SSAFunction& fn)
+{
+	std::vector<ssa::ValueId> byteLoads;
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != ssa::IrInstr::Op::Load) continue;
+			if (i->defValue == ssa::kInvalidValue) continue;
+
+			bool byte = false;
+			for (const auto& u: i->uses)
+			{
+				const ssa::IrValue* v = fn.value(u.valueId);
+				if (v && v->kind == ssa::ValueKind::MemRef && v->memWidth == 1) byte = true;
+			}
+			const ssa::IrValue* d = fn.value(i->defValue);
+			if (d && d->width == 8) byte = true;
+			if (byte) byteLoads.push_back(i->defValue);
+		}
+	}
+	if (byteLoads.empty()) return false;
+
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != ssa::IrInstr::Op::Compare) continue;
+			bool readsByte = false;
+			bool againstZero = false;
+			for (const auto& u: i->uses)
+			{
+				if (std::find(byteLoads.begin(), byteLoads.end(), u.valueId) != byteLoads.end())
+				{
+					readsByte = true;
+				}
+				const ssa::IrValue* v = fn.value(u.valueId);
+				if (v && v->kind == ssa::ValueKind::Immediate && v->imm == 0u) againstZero = true;
+			}
+			if (readsByte && againstZero) return true;
+		}
+	}
+	return false;
+}
+
 bool hasNullTerminatedLoop(const ssa::SSAFunction& fn)
 {
-	return hasBackEdge(fn) && hasConstant(fn, 0u) && countOp(fn, ssa::IrInstr::Op::Load) >= 1
-		&& countOp(fn, ssa::IrInstr::Op::Compare) >= 1 && countOp(fn, ssa::IrInstr::Op::Mul) == 0;
+	return hasBackEdge(fn) && hasByteTestedAgainstZero(fn) && countOp(fn, ssa::IrInstr::Op::Mul) == 0;
 }
 
 bool hasDfsStructure(const ssa::SSAFunction& fn)

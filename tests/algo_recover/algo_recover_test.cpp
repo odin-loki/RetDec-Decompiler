@@ -1756,3 +1756,113 @@ TEST(AlgorithmKindNames, AnUnrecognisedNameIsUnknownNotAGuess)
 	EXPECT_EQ(AlgorithmKind::Unknown, algorithmKindFromName(""));
 	EXPECT_EQ(AlgorithmKind::Unknown, algorithmKindFromName("std::sort"));
 }
+
+// ─── Strlen has to mean a string walk ────────────────────────────────────────
+//
+// hasNullTerminatedLoop used to ask for "a back edge, the constant 0 anywhere,
+// at least one Load, at least one Compare, no Mul". That is nearly every loop.
+// It only looked selective while buildSsaModule attached no operands, so
+// `hasConstant(fn, 0)` was usually false by accident; once the def-use graph
+// landed it fired on all nine ci_core binaries at once -- a bubble sort was
+// reported as both Strlen and String -- and mean_f1 fell from 0.2712 to 0.1957.
+//
+// What actually says "string walk" is a byte loaded from memory and tested
+// against zero, and saying so needs the def-use graph: the compare has to read
+// the value the load defined.
+
+namespace {
+
+/// A loop that loads a byte through `mem` and compares it against zero.
+std::unique_ptr<ssa::SSAFunction> makeByteWalk(bool compareAgainstZero, uint8_t loadBytes)
+{
+	auto fn = std::make_unique<ssa::SSAFunction>("walk");
+	auto* entry = fn->addBlock("entry");
+	auto* loop = fn->addBlock("loop");
+	loop->succs.push_back(entry->id); // back edge
+
+	ssa::IrValue* mem = fn->allocValue(ssa::ValueKind::MemRef);
+	mem->memWidth = loadBytes;
+	mem->memIsStack = false;
+
+	ssa::IrValue* loaded = fn->allocValue(ssa::ValueKind::VirtualReg);
+	loaded->width = static_cast<uint8_t>(loadBytes * 8);
+
+	ssa::IrInstr* ld = fn->addInstr(loop->id, ssa::IrInstr::Op::Load);
+	ld->uses.push_back({mem->id, 0});
+	ld->defValue = loaded->id;
+	loaded->defInstr = ld;
+
+	ssa::IrValue* imm = fn->allocValue(ssa::ValueKind::Immediate);
+	imm->imm = compareAgainstZero ? 0u : 42u;
+
+	ssa::IrInstr* cmp = fn->addInstr(loop->id, ssa::IrInstr::Op::Compare);
+	cmp->uses.push_back({loaded->id, 0});
+	cmp->uses.push_back({imm->id, 1});
+
+	// IdiomDetector::passesPreflight wants at least five instructions.
+	fn->addInstr(loop->id, ssa::IrInstr::Op::Add);
+	fn->addInstr(loop->id, ssa::IrInstr::Op::Store);
+	fn->addInstr(loop->id, ssa::IrInstr::Op::Branch);
+	return fn;
+}
+
+bool detects(const ssa::SSAFunction& fn, IdiomKind kind)
+{
+	IdiomDetector det;
+	for (const auto& r: det.detect(fn))
+		if (r.kind == kind) return true;
+	return false;
+}
+
+} // namespace
+
+TEST(IdiomDetectorTest, AByteTestedAgainstZeroInALoopIsStrlen)
+{
+	auto fn = makeByteWalk(/*compareAgainstZero=*/true, /*loadBytes=*/1);
+	EXPECT_TRUE(detects(*fn, IdiomKind::Strlen));
+}
+
+TEST(IdiomDetectorTest, AWordLoadTestedAgainstZeroIsNotStrlen)
+{
+	// Every counted loop tests something against zero. Only a byte walk is a
+	// string walk.
+	auto fn = makeByteWalk(/*compareAgainstZero=*/true, /*loadBytes=*/4);
+	EXPECT_FALSE(detects(*fn, IdiomKind::Strlen));
+}
+
+TEST(IdiomDetectorTest, AByteComparedAgainstSomethingElseIsNotStrlen)
+{
+	auto fn = makeByteWalk(/*compareAgainstZero=*/false, /*loadBytes=*/1);
+	EXPECT_FALSE(detects(*fn, IdiomKind::Strlen));
+}
+
+TEST(IdiomDetectorTest, AComparisonLoopThatNeverReadsTheLoadedByteIsNotStrlen)
+{
+	// The shape a comparison sort has: a loop, loads, a compare against zero
+	// somewhere, and no multiply -- but the compare does not read the load.
+	auto fn = std::make_unique<ssa::SSAFunction>("bubble");
+	auto* entry = fn->addBlock("entry");
+	auto* loop = fn->addBlock("loop");
+	loop->succs.push_back(entry->id);
+
+	ssa::IrValue* mem = fn->allocValue(ssa::ValueKind::MemRef);
+	mem->memWidth = 1;
+	ssa::IrValue* loaded = fn->allocValue(ssa::ValueKind::VirtualReg);
+	loaded->width = 8;
+	ssa::IrInstr* ld = fn->addInstr(loop->id, ssa::IrInstr::Op::Load);
+	ld->uses.push_back({mem->id, 0});
+	ld->defValue = loaded->id;
+	loaded->defInstr = ld;
+
+	ssa::IrValue* counter = fn->allocValue(ssa::ValueKind::VirtualReg);
+	ssa::IrValue* zero = fn->allocValue(ssa::ValueKind::Immediate);
+	zero->imm = 0u;
+	ssa::IrInstr* cmp = fn->addInstr(loop->id, ssa::IrInstr::Op::Compare);
+	cmp->uses.push_back({counter->id, 0});
+	cmp->uses.push_back({zero->id, 1});
+	fn->addInstr(loop->id, ssa::IrInstr::Op::Add);
+	fn->addInstr(loop->id, ssa::IrInstr::Op::Store);
+	fn->addInstr(loop->id, ssa::IrInstr::Op::Branch);
+
+	EXPECT_FALSE(detects(*fn, IdiomKind::Strlen));
+}
