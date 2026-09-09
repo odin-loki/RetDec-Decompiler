@@ -1,6 +1,6 @@
 {
   "baseline_tag": "baseline-algorithm-recovery",
-  "updated_at": "2026-09-09T12:45:00Z",
+  "updated_at": "2026-09-09T23:30:00Z",
   "metrics": {
     "ci_core": {
       "binaries": 9,
@@ -20,6 +20,6 @@
     "mean_f1_raw_drop_max": 0.05,
     "decompiled_drop_max": 10
   },
-  "note_ci_core": "Raised from 0.126, measured 2026-08-29 and never refreshed while the detector work on this branch more than doubled the score. With a mean_f1_drop_max of 0.05 that baseline failed only below 0.076, so a collapse from the 0.2712 measured on 2ee999a to a third of it would have passed: a gate that cannot fail. The new figure is the lower of the two runs measured on this branch -- 0.2341 on c5f8c24 (ctest-linux 256) and 0.2712 on 2ee999a (ctest-linux 257) -- rather than the higher, so the 0.037 those two differ by stays inside the tolerance and a legitimate detector change in flight does not turn CI red. Effective floor: 0.1841.",
+  "note_ci_core": "Raised from 0.126, measured 2026-08-29 and never refreshed while the detector work on this branch more than doubled the score. With a mean_f1_drop_max of 0.05 that baseline failed only below 0.076, so a collapse to a third of the then-current 0.2712 would have passed: a gate that cannot fail. Set to 0.2341, the lower of the two runs measured at the time -- 0.2341 on c5f8c24 (ctest-linux 256) and 0.2712 on 2ee999a (257) -- so the 0.037 between them stays inside the tolerance. Effective floor: 0.1841. Since then the score has moved twice and is deliberately left at 0.2341 through both. 81173d9 gave buildSsaModule a real def-use graph, which turned on structural detectors that had been dead on production input; two of them were too loose to discriminate -- Strlen fired on any loop, StateMachine pooled constants across unrelated compares -- and 0da834c measured 0.1957 (run 259), 0.0116 above the floor. 7e7c8f0 tightened both predicates and 977d1c7 (run 261) measured 0.2302, 0.0039 under the baseline and 0.0461 clear of the floor. Raising the baseline to 0.2302 would only lower the floor, so it stays where it is.",
   "note_full_corpus": "Still the 2026-08-29 measurement. run_algorithm_recovery_ci.sh does not exercise this profile, so nothing on the CI path has re-measured it."
 }
