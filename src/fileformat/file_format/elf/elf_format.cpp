@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <algorithm>
 #include <memory>
 #include <elfio/elf_types.hpp>
 #include <functional>
@@ -2178,7 +2179,20 @@ void ElfFormat::loadDynamicSegmentSection()
 					auto esz = (reader.get_class() == ELFCLASS64) ? sizeof(Elf64_Dyn) : sizeof(Elf32_Dyn);
 					sec->set_entry_size(esz);
 				}
-				sec->load(*reader.get_istream(), sec->get_offset(), sec->get_size());
+				// sh_size and sh_offset come out of the file and are not
+				// checked against it anywhere: ELFIO's load() allocates
+				// sh_size bytes, so a section header claiming a size no file
+				// could hold asks for that allocation. The segment path below
+				// already clamps to what is left of the file; this one did
+				// not, and libFuzzer found the ELF that reaches it.
+				if (!reader.get_istream() || sec->get_offset() >= getFileLength())
+				{
+					continue;
+				}
+				const std::size_t avail = getFileLength() - sec->get_offset();
+				const std::size_t secSz = std::min(
+					static_cast<std::size_t>(sec->get_size()), avail);
+				sec->load(*reader.get_istream(), sec->get_offset(), secSz);
 
 				dynamic_section_accessor dyn(reader, sec);
 				if (auto* tbl = loadDynamicTable(&dyn, sec))

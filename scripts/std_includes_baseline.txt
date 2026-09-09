@@ -14,7 +14,6 @@ src/bin2llvmir/providers/names.cpp algorithm
 src/bin2llvmir/utils/llvm.cpp algorithm
 src/cpdetect/cpdetect.cpp algorithm
 src/cpdetect/heuristics/pe_heuristics.cpp algorithm
-src/fileformat/file_format/elf/elf_format.cpp algorithm
 src/fileformat/types/dotnet_headers/metadata_tables.cpp algorithm
 src/fileformat/types/export_table/export_table.cpp algorithm
 src/fileformat/types/resource_table/resource_icon_group.cpp algorithm
