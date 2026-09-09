@@ -646,3 +646,46 @@ environment cannot compile or test, and there may be more failures behind it
 -- ninja stops at the first, and this is the first. `ctest-windows` is
 `workflow_dispatch`-able and fails in about eleven minutes, so iterating on it
 is cheap for someone who can watch it.
+
+### The decompiler dumps core on C11 atomics
+
+`tests/algorithm_recovery/sources/generated/atomic_counter.c`
+
+DET-01's first run skipped three of its seventy-two binaries because they
+produce no output at all: `generated_atomic_counter` at clang-O0, clang-O3
+and gcc-O0. With the reason printed, they say the same thing:
+
+```
+Running pass 'LLVM IR -> HLL' on module ''.
+timeout: the monitored command dumped core
+```
+
+No assertion text, so it is a signal rather than a failed check, in the pass
+that converts LLVM IR to the backend IR. The source is eight lines:
+
+```c
+#include <stdatomic.h>
+static atomic_int counter;
+int main(void) {
+    atomic_store(&counter, 0);
+    for (int i = 0; i < 100; ++i) atomic_fetch_add(&counter, 1);
+    printf("%d\n", atomic_load(&counter));
+}
+```
+
+XADD, CMPXCHG and the LOCK prefix are all translated
+(`src/capstone2llvmir/x86/x86_init.cpp`), so the instruction decode is not
+the missing piece; something downstream of it is. gcc-O2 and gcc-O3 are not
+among the three, which is a useful narrowing: whatever it is depends on the
+shape the optimiser leaves, not on the atomics alone.
+
+**Nothing gated on this before DET-01.** The algorithm-recovery gate runs the
+nine `ci-core` names and `atomic_counter` is not one of them, so for every
+other corpus binary a total failure was invisible. DET-01 skips such a binary
+rather than failing -- decompiling everything is the recovery gate's
+business, not this one's -- but it now prints the reason and the last
+twenty-five lines of the output, so the next run names the frames.
+
+**Not fixed here** because reproducing it needs the LLVM build this
+environment cannot run. The next `ctest-linux` run will print the stack, and
+that is where to start.

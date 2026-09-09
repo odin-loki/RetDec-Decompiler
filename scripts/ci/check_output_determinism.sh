@@ -206,6 +206,13 @@ from extract_decompiler_predictions import summarise_failure_output
 print(summarise_failure_output(Path(sys.argv[2]).read_text(errors="replace")))
 ' "${ROOT}/scripts" "${WORK}/${stem}.1.log" 2>/dev/null || true)"
 		[[ -n "${why}" ]] && echo "DET-01:   ${stem}: ${why}"
+		# The summariser keeps a few lines from each end, which for an LLVM
+		# crash is the pass name but not the frames -- and the frames are what
+		# name the code. Print the end of the log verbatim as well.
+		if [[ -s "${WORK}/${stem}.1.log" ]]; then
+			echo "DET-01:   --- last 25 lines from ${stem} ---"
+			tail -n 25 "${WORK}/${stem}.1.log" | sed "s/^/DET-01:   /"
+		fi
 		skipped=$(( skipped + 1 ))
 		continue
 	fi
