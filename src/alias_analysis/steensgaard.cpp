@@ -475,21 +475,39 @@ void AliasPass::determinePromotable(const ssa::SSAFunction& fn) {
             bySlot[v->memOffset].push_back(v);
     }
 
-    for (auto& [off, vals] : bySlot) {
-        if (escape_.escapedSlots.count(off)) continue;
+	// The pairwise queries have to cross offsets. Comparing only within one
+	// bucket means every pair asked shares an offset, so StackAliasAnalysis
+	// can answer only MustAlias or MayAlias-by-width -- and the case the
+	// promotability contract is really about, two slots at different offsets
+	// whose ranges overlap, was never asked. An eight-byte slot at -16 and a
+	// four-byte access at -12 were both promoted.
+	std::vector<const IrValue*> all;
+	for (const auto& [off, vals]: bySlot)
+		all.insert(all.end(), vals.begin(), vals.end());
 
-        bool allNoAlias = true;
-        for (std::size_t i = 0; i < vals.size() && allNoAlias; ++i) {
-            for (std::size_t j = i + 1; j < vals.size(); ++j) {
-                auto a = MemLoc::stack(vals[i]->memOffset, vals[i]->memWidth, vals[i]->id);
-                auto b = MemLoc::stack(vals[j]->memOffset, vals[j]->memWidth, vals[j]->id);
-                auto res = stackAlias_.alias(a, b);
-                if (res == AliasResult::MayAlias) { allNoAlias = false; break; }
-            }
-        }
-        if (allNoAlias) promotable_.insert(off);
-    }
-    stats_.promotableSlots = promotable_.size();
+	std::unordered_set<int64_t> aliased;
+	for (std::size_t i = 0; i < all.size(); ++i)
+	{
+		for (std::size_t j = i + 1; j < all.size(); ++j)
+		{
+			auto a = MemLoc::stack(all[i]->memOffset, all[i]->memWidth, all[i]->id);
+			auto b = MemLoc::stack(all[j]->memOffset, all[j]->memWidth, all[j]->id);
+			if (stackAlias_.alias(a, b) == AliasResult::MayAlias)
+			{
+				aliased.insert(all[i]->memOffset);
+				aliased.insert(all[j]->memOffset);
+			}
+		}
+	}
+
+	for (const auto& [off, vals]: bySlot)
+	{
+		(void)vals;
+		if (escape_.escapedSlots.count(off)) continue;
+		if (aliased.count(off)) continue;
+		promotable_.insert(off);
+	}
+	stats_.promotableSlots = promotable_.size();
     stats_.escapedSlots    = escape_.escapedSlots.size();
 }
 

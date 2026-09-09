@@ -37,11 +37,16 @@ AliasResult AndersenAnalysis::alias(uint32_t a, uint32_t b) const {
     if (!ran_) return AliasResult::MayAlias;
     if (a == b) return AliasResult::MustAlias;
     if (a >= pointsTo_.size() || b >= pointsTo_.size()) return AliasResult::MayAlias;
-    const auto& sa = pointsTo_[a];
-    const auto& sb = pointsTo_[b];
-    if (sa.empty() || sb.empty()) return AliasResult::NoAlias;
-    for (auto x : sa)
-        if (sb.count(x)) return AliasResult::MayAlias;
+	// Anything a dropped constraint mentioned is unknown, not disjoint.
+	if (unmodelled_.count(a) || unmodelled_.count(b)) return AliasResult::MayAlias;
+	const auto& sa = pointsTo_[a];
+	const auto& sb = pointsTo_[b];
+	// An empty points-to set means nothing was learned about the id, not that
+	// it points at nothing. NoAlias is the permissive answer -- it licenses a
+	// transform -- so "we did not look" must not be spelled that way.
+	if (sa.empty() || sb.empty()) return AliasResult::MayAlias;
+	for (auto x: sa)
+		if (sb.count(x)) return AliasResult::MayAlias;
     return AliasResult::NoAlias;
 }
 
@@ -60,11 +65,15 @@ void AndersenAnalysis::apply(const PtsConstraint& c, std::queue<PtsConstraint>& 
     case ConstraintKind::AddrOf:
         if (addPts(c.lhs, c.rhs)) propagate(c.lhs, work);
         break;
-    case ConstraintKind::Load:
-    case ConstraintKind::Store:
+	// Not implemented. Recording the ids keeps alias() honest about them
+	// rather than letting their half-built points-to sets read as disjoint.
+	case ConstraintKind::Load:
+	case ConstraintKind::Store:
     case ConstraintKind::External:
-        break;
-    }
+		unmodelled_.insert(c.lhs);
+		unmodelled_.insert(c.rhs);
+		break;
+	}
 }
 
 bool AndersenAnalysis::addPts(uint32_t lhs, uint32_t rhs) {

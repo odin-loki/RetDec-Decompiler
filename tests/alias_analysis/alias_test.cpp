@@ -675,3 +675,75 @@ TEST(Steensgaard, AStoreUnifiesThePointeeWithTheStoredValue)
 	EXPECT_EQ(AliasResult::MayAlias, sa.alias(1, 3));
 	EXPECT_EQ(AliasResult::MayAlias, sa.alias(0, 2));
 }
+
+// ─── An alias analysis may not invent NoAlias ────────────────────────────────
+//
+// NoAlias is the permissive answer: it licenses a transform. Anything the
+// analysis has not modelled has to come back MayAlias, or "we did not look"
+// reads to every consumer as "we looked and they are disjoint".
+
+TEST(AliasPass, SlotsThatOverlapAtDifferentOffsetsAreNotPromotable)
+{
+	SSAFunction fn("cross_offset_overlap");
+	auto* b = fn.addBlock("entry");
+	// An 8-byte slot at -16 covers [-16, -8); a 4-byte access at -12 sits
+	// inside it. PartialOverlapSlot_NotPromotable above catches the case where
+	// both accesses share an offset; this is the same overlap across two.
+	addStackMemRef(fn, b->id, -16, 8);
+	addStackMemRef(fn, b->id, -12, 4);
+
+	AliasPass pass;
+	pass.run(fn);
+	EXPECT_FALSE(pass.promotableSlots().count(-16)) << "-16 is overlapped by the access at -12";
+	EXPECT_FALSE(pass.promotableSlots().count(-12)) << "-12 lies inside the slot at -16";
+}
+
+TEST(AliasPass, DisjointSlotsAreStillPromotable)
+{
+	SSAFunction fn("disjoint");
+	auto* b = fn.addBlock("entry");
+	addStackMemRef(fn, b->id, -16, 8);
+	addStackMemRef(fn, b->id, -8, 8);
+
+	AliasPass pass;
+	pass.run(fn);
+	EXPECT_TRUE(pass.promotableSlots().count(-16));
+	EXPECT_TRUE(pass.promotableSlots().count(-8));
+}
+
+TEST(Andersen, NoPointsToInformationIsMayAliasNotNoAlias)
+{
+	AndersenAnalysis a;
+	a.addConstraint({ConstraintKind::AddrOf, 1, 100});
+	// addValue makes the id known to the solver without saying anything about
+	// what it points at -- an empty points-to set inside the table, rather
+	// than an id past its end.
+	a.addValue(5);
+	a.run();
+	EXPECT_EQ(AliasResult::MayAlias, a.alias(1, 5))
+		<< "an empty points-to set means nothing was learned, not that it points at nothing";
+	// ...and an id the solver never heard of at all.
+	EXPECT_EQ(AliasResult::MayAlias, a.alias(1, 900));
+}
+
+TEST(Andersen, ConstraintKindsItDoesNotModelAnswerMayAlias)
+{
+	// Load, Store and External are accepted and discarded. Whatever they would
+	// have added to the points-to sets is unknown, so the ids they mention
+	// cannot be answered NoAlias on the strength of what is left.
+	AndersenAnalysis a;
+	a.addConstraint({ConstraintKind::AddrOf, 1, 100});
+	a.addConstraint({ConstraintKind::AddrOf, 2, 200});
+	a.addConstraint({ConstraintKind::Load, 1, 2});
+	a.run();
+	EXPECT_EQ(AliasResult::MayAlias, a.alias(1, 2)) << "a dropped Load could have made these point at the same thing";
+}
+
+TEST(Andersen, DisjointPointsToSetsAreStillNoAlias)
+{
+	AndersenAnalysis a;
+	a.addConstraint({ConstraintKind::AddrOf, 1, 100});
+	a.addConstraint({ConstraintKind::AddrOf, 2, 200});
+	a.run();
+	EXPECT_EQ(AliasResult::NoAlias, a.alias(1, 2));
+}

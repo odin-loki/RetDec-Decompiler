@@ -348,7 +348,15 @@ private:
 
     std::vector<std::unordered_set<uint32_t>> pointsTo_;
     std::vector<PtsConstraint> constraints_;
-    bool ran_ = false;
+
+	/// Ids named by a constraint kind apply() does not implement.
+	///
+	/// Load, Store and External are accepted and discarded, so whatever they
+	/// would have added to these ids' points-to sets is simply unknown. Their
+	/// remaining sets can be disjoint and still describe pointers to the same
+	/// object, so alias() cannot answer NoAlias for them.
+	std::unordered_set<uint32_t> unmodelled_;
+	bool ran_ = false;
 };
 
 /// True when RETDEC_USE_ANDERSEN is set (non-zero, non-empty).
