@@ -124,9 +124,31 @@ jobs:
           swapon --show
           free -h
 
+      # What the binary looks like decides whether ASan can map its shadow, and
+      # run 45 -- the first that ever got past the build -- died with a bare
+      # "ERROR: Failed to mmap" that says nothing about which mapping failed.
+      # The ASan build is deliberately -no-pie (see deps/yara/CMakeLists.txt
+      # and the top-level ASan flags), so the image is loaded at 0x400000 and
+      # grows upward through the region ASan wants for its low shadow, which
+      # starts at 0x7fff8000. An LLVM debug binary is large enough for that to
+      # be a real question, so print the answer rather than reason about it.
+      - name: Describe the ASan binary before running it
+        run: |
+          set -euo pipefail
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          if [ -z "${DEC}" ]; then echo "retdec-decompiler not found"; exit 1; fi
+          ls -l "${DEC}"
+          readelf -h "${DEC}" | sed -n '/Type:/p;/Entry point/p'
+          size -A "${DEC}" 2>/dev/null | sed -n '1,3p;/\.bss/p;/Total/p' || true
+          echo "--- kernel knobs as they stand now ---"
+          sudo sysctl kernel.randomize_va_space vm.mmap_rnd_bits vm.overcommit_memory || true
+
       - name: Run ASan over decompile sample corpus
         env:
-          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:handle_abort=1:symbolize=1:quarantine_size_mb=8:malloc_context_size=0:protect_shadow_gap=0
+          # verbosity=1 makes ASan print its shadow layout and the range it
+          # could not map. Without it the failure is one line with no address
+          # in it, which is why run 45 could not be diagnosed from its log.
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:handle_abort=1:symbolize=1:quarantine_size_mb=8:malloc_context_size=0:protect_shadow_gap=0:verbosity=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: |
           set -euo pipefail

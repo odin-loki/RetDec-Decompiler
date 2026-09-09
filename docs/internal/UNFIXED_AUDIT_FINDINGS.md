@@ -552,3 +552,44 @@ a wrong answer.
 validity -- libstdc++'s `_GLIBCXX_DEBUG` diagnoses "comparison doesn't meet
 irreflexive requirements" -- and see whether any binary trips it. If one does,
 it is worth the output churn; DET-01 will show exactly how much churn.
+
+### The sanitizers workflow has never passed, and now fails before it starts
+
+`.github/workflows/sanitizers.yml`
+
+Runs 42 through 45 all failed. Run 44's commit message says it plainly: "The
+sanitizers workflow has never got past the build." Run 45 is the first that
+did, and it died in the ASan run itself, on the very first sample:
+
+```
+=== ASan: /tmp/retdec_tests/c/hello ===
+=================================================================
+ERROR: Failed to mmap
+scripts/run_asan.sh: line 28: 23810 Aborted (core dumped)
+```
+
+That is ASan failing to reserve its shadow, before a single line of retdec
+runs. The kernel knobs the workflow sets are all applied and reported --
+`kernel.randomize_va_space = 0`, `vm.mmap_rnd_bits = 28`,
+`vm.overcommit_memory = 1` -- so the usual high-ASLR-entropy explanation does
+not fit.
+
+The hypothesis worth testing first: the ASan build is deliberately `-no-pie`
+(the top-level CMakeLists puts `-fno-pie` in the C flags and `-no-pie` in the
+executable linker flags, and `deps/yara/CMakeLists.txt` was changed to match),
+so the image loads at `0x400000` and grows upward. ASan's low shadow on
+x86-64 begins at `0x7fff8000`. An LLVM debug build with ASan instrumentation
+is large; if its image and BSS reach that far, ASan has nowhere to put the
+shadow. `kernel.randomize_va_space=0` also selects the legacy bottom-up mmap
+layout, which changes where everything else lands.
+
+**Not diagnosed further because the failure says nothing.** The log has one
+line with no address in it. `ASAN_OPTIONS=verbosity=1` and a step that prints
+the binary's ELF type, size and `.bss` are now in the workflow, so the next
+run answers it: either the image reaches `0x7fff8000` or it does not, and the
+fix follows from that (build the ASan decompiler as PIE, or stop disabling
+ASLR, or both).
+
+This matters beyond tidiness. ASan is what found the ELF section-size
+allocation in `fuzz-libfuzzer`, and this workflow is the only place ASan is
+pointed at the whole decompiler rather than at one parser.
