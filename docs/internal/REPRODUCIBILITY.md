@@ -12,8 +12,9 @@ Two CI checks cover it:
   says so in those words and stops, because that is a different bug report
   from a cache defect. It runs the nine `ci-core` names, all gcc `-O0`.
 * `scripts/ci/check_output_determinism.sh` (DET-01) — two cache-off runs of
-  a third of the built corpus, evenly spread so every compiler and
-  optimisation level is represented. CACHE-05's nine binaries are all small
+  a third of the built corpus, sampled by a hash of the name so every
+  compiler and optimisation level is represented. `--self-test` checks that
+  the gate can actually fail, and runs in `check_push_gates.sh`. CACHE-05's nine binaries are all small
   and all `-O0`; the HLL copy-propagation passes do not even take their
   parallel path below twenty-four functions, which is where the first of
   the defects below lived.

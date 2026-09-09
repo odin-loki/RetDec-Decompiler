@@ -11,16 +11,107 @@
 #          --corpus DIR [--limit N] [--timeout SECONDS]
 set -euo pipefail
 
+SELF="${BASH_SOURCE[0]}"
+
+# --self-test: does this script actually fail when two runs disagree?  A gate
+# that cannot fail is worse than no gate, so it is checked against decompilers
+# that behave in the four ways that matter.
+if [[ "${1:-}" == "--self-test" ]]; then
+	set +e
+	T="$(mktemp -d)"
+	trap 'rm -rf "${T}"' EXIT
+	mkdir -p "${T}/corpus" "${T}/empty" "${T}/bin"
+	for n in prog_a-gcc-O0 prog_b-clang-O2 prog_c-gcc-O3; do
+		printf 'fake %s\n' "${n}" > "${T}/corpus/${n}"
+		chmod +x "${T}/corpus/${n}"
+	done
+	printf '{}' > "${T}/corpus/manifest.json"
+
+	# Writes the same thing every time.
+	cat > "${T}/bin/steady" <<'FAKE'
+#!/usr/bin/env bash
+out=""; bin=""
+while [[ $# -gt 0 ]]; do case "$1" in -o) out="$2"; shift 2;; *) bin="$1"; shift;; esac; done
+printf '// %s\n' "$(basename "${bin}")" > "${out}"
+FAKE
+	# Writes something different each run, for one binary out of three.
+	cat > "${T}/bin/wobbly" <<'FAKE'
+#!/usr/bin/env bash
+out=""; bin=""
+while [[ $# -gt 0 ]]; do case "$1" in -o) out="$2"; shift 2;; *) bin="$1"; shift;; esac; done
+if [[ "$(basename "${bin}")" == "prog_b-clang-O2" ]]; then
+	printf '// %s %s\n' "$(basename "${bin}")" "${RANDOM}${RANDOM}" > "${out}"
+else
+	printf '// %s\n' "$(basename "${bin}")" > "${out}"
+fi
+FAKE
+	# Cannot decompile one of the three at all.
+	cat > "${T}/bin/partial" <<'FAKE'
+#!/usr/bin/env bash
+out=""; bin=""
+while [[ $# -gt 0 ]]; do case "$1" in -o) out="$2"; shift 2;; *) bin="$1"; shift;; esac; done
+[[ "$(basename "${bin}")" == "prog_c-gcc-O3" ]] || printf '// %s\n' "$(basename "${bin}")" > "${out}"
+FAKE
+	# Cannot decompile anything.
+	printf '#!/usr/bin/env bash\nexit 1\n' > "${T}/bin/dead"
+	chmod +x "${T}/bin"/*
+
+	fails=0
+	expect() {
+		local want="$1"; shift
+		local desc="$1"; shift
+		"$@" >"${T}/out" 2>&1
+		local got=$?
+		if [[ "${got}" -ne "${want}" ]]; then
+			echo "self-test: ${desc}: expected exit ${want}, got ${got}" >&2
+			cat "${T}/out" >&2
+			fails=$(( fails + 1 ))
+		fi
+	}
+	expect 0 "a steady decompiler passes" \
+		bash "${SELF}" --decompiler "${T}/bin/steady" --corpus "${T}/corpus"
+	expect 1 "a decompiler that wobbles on one binary fails" \
+		bash "${SELF}" --decompiler "${T}/bin/wobbly" --corpus "${T}/corpus"
+	expect 0 "a binary that does not decompile is skipped, not failed" \
+		bash "${SELF}" --decompiler "${T}/bin/partial" --corpus "${T}/corpus"
+	expect 1 "a decompiler that produces nothing at all fails" \
+		bash "${SELF}" --decompiler "${T}/bin/dead" --corpus "${T}/corpus"
+	expect 1 "an empty corpus fails" \
+		bash "${SELF}" --decompiler "${T}/bin/steady" --corpus "${T}/empty"
+	expect 0 "a limit smaller than the corpus is honoured" \
+		bash "${SELF}" --decompiler "${T}/bin/steady" --corpus "${T}/corpus" --limit 2
+
+	# The sample a limit takes has to be the same every time, or a green run
+	# says nothing about what the next one will check.
+	sample_once() {
+		bash "${SELF}" --decompiler "${T}/bin/steady" --corpus "${T}/corpus" \
+			--limit 2 --print-sample
+	}
+	if [[ "$(sample_once)" != "$(sample_once)" ]]; then
+		echo "self-test: two --limit samples of the same corpus differ" >&2
+		fails=$(( fails + 1 ))
+	fi
+
+	if [[ "${fails}" -ne 0 ]]; then
+		echo "DET-01 self-test: ${fails} case(s) failed" >&2
+		exit 1
+	fi
+	echo "DET-01 self-test OK"
+	exit 0
+fi
+
 DEC=""
 CORPUS=""
 LIMIT=0
 TIMEOUT=120
+PRINT_SAMPLE=0
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--decompiler) DEC="$2"; shift 2 ;;
 		--corpus) CORPUS="$2"; shift 2 ;;
 		--limit) LIMIT="$2"; shift 2 ;;
 		--timeout) TIMEOUT="$2"; shift 2 ;;
+		--print-sample) PRINT_SAMPLE=1; shift ;;
 		*) echo "Unknown arg: $1" >&2; exit 1 ;;
 	esac
 done
@@ -58,6 +149,11 @@ if [[ "${LIMIT}" -gt 0 && ${#ALL[@]} -gt "${LIMIT}" ]]; then
 	)
 else
 	BINS=("${ALL[@]}")
+fi
+
+if [[ "${PRINT_SAMPLE}" -eq 1 ]]; then
+	printf '%s\n' "${BINS[@]}"
+	exit 0
 fi
 
 WORK="$(mktemp -d)"

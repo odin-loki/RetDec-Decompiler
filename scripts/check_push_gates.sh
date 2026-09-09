@@ -72,6 +72,7 @@ CHECKS=(
 	"doc       secrets:::${PY} scripts/ci/check_secrets.py"
 	"doc       CycloneDX pins:::${PY} scripts/ci/generate_cyclonedx.py --out \"$(mktemp)\""
 	"doc       VERIFICATION.md vs proofs:::bash scripts/verify_esbmc.sh --doc"
+	"doc       output determinism (self-test):::bash scripts/ci/check_output_determinism.sh --self-test"
 )
 
 if [ "${1:-}" = "--list" ]; then
