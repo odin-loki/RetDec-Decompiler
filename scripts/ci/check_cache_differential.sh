@@ -80,6 +80,18 @@ check_one() {
 
 	run_one "${bin}" 0 "${off}"
 
+	# Two cache-off runs first. If these two differ, the decompiler's own
+	# output is not reproducible and nothing below tells you anything about the
+	# cache -- which is a different bug report, and a more serious one. Say so
+	# in those words rather than blaming the cache for it.
+	local off2="${WORK}/${stem}.off2.c"
+	run_one "${bin}" 0 "${off2}"
+	if ! cmp -s "${off}" "${off2}"; then
+		echo "CACHE-05 FAIL: two cache-off runs of ${bin} differ -- this is decompiler nondeterminism, not a cache defect" >&2
+		diff -u "${off}" "${off2}" | head -n 80 >&2 || true
+		exit 1
+	fi
+
 	# Cold with the cache on: writes the sidecar.
 	run_one "${bin}" 1 "${on}"
 	cp "${on}" "${cold}"
