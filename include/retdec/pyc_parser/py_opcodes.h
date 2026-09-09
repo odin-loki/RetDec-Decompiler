@@ -41,18 +41,19 @@ namespace pyc_parser {
 
 // ─── OpcodeInfo ───────────────────────────────────────────────────────────────
 
-enum class OpcodeKind : uint8_t {
-    Normal,
-    Jump,           ///< Jump (may be forward or backward)
-    JumpForward,    ///< Jump to offset relative to current (3.8-3.9)
-    JumpAbsolute,   ///< Jump to absolute offset
-    JumpBackward,   ///< Backward jump (3.11+ JUMP_BACKWARD)
-    Call,           ///< Function call
-    Return,         ///< RETURN_VALUE / RETURN_CONST
-    Raise,          ///< RAISE_VARARGS
-    Import,         ///< IMPORT_NAME
-    ExtendedArg,    ///< EXTENDED_ARG (opcode 144 in every supported version)
-    Unknown,        ///< Unrecognised (possibly specialised adaptive)
+enum class OpcodeKind : uint8_t
+{
+	Normal,
+	Jump,         ///< Jump (may be forward or backward)
+	JumpForward,  ///< Jump to offset relative to current (3.8-3.9)
+	JumpAbsolute, ///< Jump to absolute offset
+	JumpBackward, ///< Backward jump (3.11+ JUMP_BACKWARD)
+	Call,         ///< Function call
+	Return,       ///< RETURN_VALUE / RETURN_CONST
+	Raise,        ///< RAISE_VARARGS
+	Import,       ///< IMPORT_NAME
+	ExtendedArg,  ///< EXTENDED_ARG (opcode 144 in every supported version)
+	Unknown,      ///< Unrecognised (possibly specialised adaptive)
 };
 
 struct OpcodeInfo {

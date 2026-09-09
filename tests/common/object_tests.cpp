@@ -51,10 +51,10 @@ TEST_F(GlobalVarContainerTests, ElementWithTheSameNameGetsReplaced)
 // addresses are enough to reach it.
 TEST_F(GlobalVarContainerTests, ReplacedElementsOldAddressNoLongerResolves)
 {
-	globals.insert( Object("g", common::Storage::inMemory(0x1000)) );
+	globals.insert(Object("g", common::Storage::inMemory(0x1000)));
 	ASSERT_NE(nullptr, globals.getObjectByAddress(0x1000));
 
-	globals.insert( Object("g", common::Storage::inMemory(0x2000)) );
+	globals.insert(Object("g", common::Storage::inMemory(0x2000)));
 
 	EXPECT_EQ(nullptr, globals.getObjectByAddress(0x1000));
 	ASSERT_NE(nullptr, globals.getObjectByAddress(0x2000));
@@ -67,9 +67,9 @@ TEST_F(GlobalVarContainerTests, ReplacedElementsOldAddressNoLongerResolves)
 // stored element's map entry pointing at a node it had just freed.
 TEST_F(GlobalVarContainerTests, EraseByNameAloneClearsTheStoredAddress)
 {
-	globals.insert( Object("g", common::Storage::inMemory(0x1000)) );
+	globals.insert(Object("g", common::Storage::inMemory(0x1000)));
 
-	globals.erase( Object("g", common::Storage::inMemory(0x9000)) );
+	globals.erase(Object("g", common::Storage::inMemory(0x9000)));
 
 	EXPECT_EQ(nullptr, globals.getObjectByAddress(0x1000));
 	EXPECT_EQ(nullptr, globals.getObjectByName("g"));
@@ -80,7 +80,7 @@ TEST_F(GlobalVarContainerTests, EraseByNameAloneClearsTheStoredAddress)
 // config file. It used to assert, which is a file-controlled abort.
 TEST_F(GlobalVarContainerTests, NonMemoryStorageIsRefusedRatherThanAsserted)
 {
-	auto res = globals.insert( Object("g", common::Storage::inRegister("eax")) );
+	auto res = globals.insert(Object("g", common::Storage::inRegister("eax")));
 
 	EXPECT_FALSE(res.second);
 	EXPECT_EQ(0u, globals.size());
