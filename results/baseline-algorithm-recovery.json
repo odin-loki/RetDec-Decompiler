@@ -1,12 +1,12 @@
 {
   "baseline_tag": "baseline-algorithm-recovery",
-  "updated_at": "2026-08-29T00:00:00Z",
+  "updated_at": "2026-09-09T12:45:00Z",
   "metrics": {
     "ci_core": {
       "binaries": 9,
       "min_decompiled": 9,
-      "mean_f1": 0.126,
-      "mean_f1_raw": 0.126
+      "mean_f1": 0.2341,
+      "mean_f1_raw": 0.2341
     },
     "full_corpus": {
       "binaries": 216,
@@ -19,5 +19,7 @@
     "mean_f1_drop_max": 0.05,
     "mean_f1_raw_drop_max": 0.05,
     "decompiled_drop_max": 10
-  }
+  },
+  "note_ci_core": "Raised from 0.126, measured 2026-08-29 and never refreshed while the detector work on this branch more than doubled the score. With a mean_f1_drop_max of 0.05 that baseline failed only below 0.076, so a collapse from the 0.2712 measured on 2ee999a to a third of it would have passed: a gate that cannot fail. The new figure is the lower of the two runs measured on this branch -- 0.2341 on c5f8c24 (ctest-linux 256) and 0.2712 on 2ee999a (ctest-linux 257) -- rather than the higher, so the 0.037 those two differ by stays inside the tolerance and a legitimate detector change in flight does not turn CI red. Effective floor: 0.1841.",
+  "note_full_corpus": "Still the 2026-08-29 measurement. run_algorithm_recovery_ci.sh does not exercise this profile, so nothing on the CI path has re-measured it."
 }
