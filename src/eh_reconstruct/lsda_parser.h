@@ -53,10 +53,32 @@ struct LsdaResult {
     struct Action {
         int64_t  typeFilter = 0;   ///< >0 type-table index; 0 catch-all; <0 exception-spec
         int64_t  nextOffset = 0;   ///< byte offset to next action (0 = end of chain)
-    };
+		uint64_t recordVma = 0;    ///< VMA this record was read from
+		/// VMA of the next record in the chain, 0 at the end.
+		///
+		/// ar_next is a byte offset from immediately after itself, so the
+		/// successor cannot be found by stepping to the next element of
+		/// `actions`; parseLSDA computes this address as it walks and records
+		/// it here, and `actionByVma` turns it back into an index.
+		uint64_t nextVma = 0;
+	};
     std::vector<Site>     sites;
     std::vector<Action>   actions;
     std::vector<uint64_t> typeTable; ///< type_info VMAs (1-based; index 0 unused)
+
+	/// VMA of an action record → its index in `actions`.
+	///
+	/// Site::action is the 1-based *byte offset* of the first action record
+	/// within the action table -- parseLSDA treats it that way itself -- while
+	/// `actions` is ordered by discovery. lsdaToTryCatch used the offset as a
+	/// vector index and walked the chain with ++index instead of following
+	/// nextOffset; the two agree only when every record is exactly two bytes
+	/// and the chain starts at offset 0. Any other layout indexed the wrong
+	/// action or fell off the end, and because the site clears its block's
+	/// handlers first, an out-of-range index left the block empty and it was
+	/// dropped. This map is how a site finds its chain.
+	std::map<uint64_t, std::size_t> actionByVma;
+	uint64_t actionTableBase = 0; ///< VMA the 1-based Site::action counts from
 };
 
 // ─── Public API ───────────────────────────────────────────────────────────────

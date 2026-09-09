@@ -74,6 +74,35 @@ CallConventionIsEmptyByDefault)
 	EXPECT_EQ(CallConvention(""), newF->getCallConvention());
 }
 
+// FunctionType objects are interned in Context::functionTypes under a key that
+// includes the calling convention, and setCallConvention forwarded straight to
+// functionType->setCallConvention -- mutating an object every other Function
+// with the same signature also holds.
+TEST_F(FunctionTests, SettingOneFunctionsConventionDoesNotChangeAnothers)
+{
+	auto a = Function::create(context, "a", intType, emptyParams, CallConvention("cdecl"));
+	auto b = Function::create(context, "b", intType, emptyParams, CallConvention("cdecl"));
+	ASSERT_EQ(a->getType(), b->getType()) << "the same signature interns to one FunctionType";
+
+	a->setCallConvention(CallConvention("stdcall"));
+
+	EXPECT_EQ(CallConvention("stdcall"), a->getCallConvention());
+	EXPECT_EQ(CallConvention("cdecl"), b->getCallConvention())
+		<< "refining one function's convention must not rewrite another's";
+}
+
+// ...and the Context's cache stays keyed by what it holds: the mutation left
+// the entry filed under the old convention, so a later create() with that
+// convention handed back an object reporting the new one.
+TEST_F(FunctionTests, SettingAConventionDoesNotCorruptTheTypeCache)
+{
+	auto a = Function::create(context, "a", intType, emptyParams, CallConvention("cdecl"));
+	a->setCallConvention(CallConvention("stdcall"));
+
+	auto again = FunctionType::create(context, intType, FunctionType::Parameters{}, CallConvention("cdecl"));
+	EXPECT_EQ(CallConvention("cdecl"), again->getCallConvention()) << "the type filed under \"cdecl\" still is one";
+}
+
 TEST_F(FunctionTests,
 CreateFunctionCreatesCorrectFunctionType)
 {

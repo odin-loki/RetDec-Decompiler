@@ -263,6 +263,16 @@ namespace {
 /// Bytes of a record, sized exactly, so a one-DWORD overread is detectable.
 using Record = std::unique_ptr<unsigned char[]>;
 
+/// The name field of a type record, whichever way it is stored.
+inline std::string nameOf(const char* n)
+{
+	return n ? std::string(n) : std::string();
+}
+inline std::string nameOf(const std::string& n)
+{
+	return n;
+}
+
 Record makeRecord(std::size_t size)
 {
 	Record r(new unsigned char[size]);
@@ -421,6 +431,79 @@ TEST(PdbArgList, AFunctionRecordNamingANonArglistTypeIsRefused)
 	fn.parse_mfunc(reinterpret_cast<lfMFunc*>(mfunc.get()), static_cast<int>(sizeof(lfMFunc)), types);
 
 	EXPECT_EQ(nullptr, fn.func_args);
+}
+
+// LF_STRUCTURE, LF_UNION and LF_ENUM cast `record->field` -- a type index
+// straight out of the file -- to a PDBTypeFieldList with no type_class check.
+// types[] is pre-seeded with PDBTypeBase objects at the CodeView base-type
+// indices, so a non-field index is non-null and passed the guard that was
+// there. Reading a PDBTypeBase as a PDBTypeFieldList takes its
+// is_pointer/size_bits/description bytes as the `fields` vector: size() came
+// back huge and fields[i] dereferenced a fabricated pointer.
+TEST(PdbFieldList, AStructNamingANonFieldListTypeCopiesNoMembers)
+{
+	PDBTypeDefIndexMap types;
+	PDBTypeBase baseDef(T_INT4, PDBBASETYPE_INT_SIGNED, false, 32, "int");
+	types[T_INT4] = &baseDef;
+
+	Record rec = makeRecord(sizeof(lfStructure) + 8);
+	poke<std::uint16_t>(rec.get(), 0x00, LF_STRUCTURE);
+	poke<std::uint16_t>(rec.get(), 0x02, 2);      // count
+	poke<std::uint32_t>(rec.get(), 0x08, T_INT4); // field -> a base type
+
+	PDBTypeStruct st(10);
+	st.parse(reinterpret_cast<lfStructure*>(rec.get()), static_cast<int>(sizeof(lfStructure) + 8), types);
+
+	EXPECT_TRUE(st.struct_members.empty());
+}
+
+TEST(PdbFieldList, AUnionNamingANonFieldListTypeCopiesNoMembers)
+{
+	PDBTypeDefIndexMap types;
+	PDBTypeBase baseDef(T_INT4, PDBBASETYPE_INT_SIGNED, false, 32, "int");
+	types[T_INT4] = &baseDef;
+
+	Record rec = makeRecord(sizeof(lfUnion) + 8);
+	poke<std::uint16_t>(rec.get(), 0x00, LF_UNION);
+	poke<std::uint16_t>(rec.get(), 0x02, 2);      // count
+	poke<std::uint32_t>(rec.get(), 0x08, T_INT4); // field -> a base type
+
+	PDBTypeUnion un(11);
+	un.parse(reinterpret_cast<lfUnion*>(rec.get()), static_cast<int>(sizeof(lfUnion) + 8), types);
+
+	EXPECT_TRUE(un.union_members.empty());
+}
+
+// The name a union or class carries is a bare char* into the TPI stream:
+// RecordValue returns nullptr for any leaf word >= LF_NUMERIC it does not
+// decode, and what it does return has no terminator guaranteed. Assigning it
+// to a std::string -- which pdb_types.cpp does, as a types_byname key -- was
+// std::logic_error and terminate on the null, and a strlen past the end of the
+// stream buffer on the unterminated one. The record's declared size is the
+// bound.
+TEST(PdbFieldList, AnUnterminatedUnionNameStopsAtTheRecordEnd)
+{
+	PDBTypeDefIndexMap types;
+
+	// A record whose name field runs to the very last byte with no NUL.
+	const std::size_t size = sizeof(lfUnion) + 4;
+	Record rec = makeRecord(size);
+	poke<std::uint16_t>(rec.get(), 0x00, LF_UNION);
+	poke<std::uint16_t>(rec.get(), 0x02, 0); // count
+	poke<std::uint32_t>(rec.get(), 0x08, 0); // field = none
+	// data[] holds a size leaf then the name; a small leaf value is its own
+	// size, so the four bytes after it are all name.
+	poke<std::uint16_t>(rec.get(), sizeof(lfUnion) - 4, 0);
+	std::memset(rec.get() + size - 4, 'A', 4);
+
+	PDBTypeUnion un(12);
+	un.parse(reinterpret_cast<lfUnion*>(rec.get()), static_cast<int>(size), types);
+
+	// Whatever it read, it stopped inside the record. nameOf() reads the field
+	// the way the code under test leaves it: a bare char* before the fix, a
+	// std::string after -- so this test compiles against both, and the char*
+	// form is the strlen past the end of the record that the fix removes.
+	EXPECT_LE(nameOf(un.union_name).size(), size);
 }
 
 } // namespace

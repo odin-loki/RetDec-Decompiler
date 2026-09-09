@@ -466,6 +466,121 @@ TEST(JavaClassEmitter, EmitsParamAnnotations)
 	EXPECT_TRUE(contains(writer.str(), "@Deprecated int n"));
 }
 
+// buildParamList computed each parameter's JVM slot as startIdx + i, one slot
+// per parameter. long and double take two, exactly as LocalRebuilder assigns
+// them, so for any method with a wide parameter that is not last the lookup
+// missed for every parameter after it: the name fell back to "p<i>" while the
+// body, which resolves names through the real slot, kept using the
+// reconstructed one. The emitted Java referenced an identifier the parameter
+// list never declared.
+TEST(JavaClassEmitter, AWideParameterDoesNotShiftTheOnesAfterIt)
+{
+	ImportSet imports("", "Foo");
+	JavaTypePrinter tp(imports);
+
+	BcMethod m;
+	m.name = "f";
+	m.access = BcAccess::Public | BcAccess::Static;
+	m.descriptor.returnType = std::make_shared<BcType>(types::Void());
+	m.descriptor.params = {
+		std::make_shared<BcType>(types::Long()), // slots 0 and 1
+		std::make_shared<BcType>(types::Int()),  // slot 2
+	};
+
+	// The reconstruction names them at the slots LocalRebuilder would.
+	ReconstructResult recon;
+	BcLocalVar wide;
+	wide.index = 0;
+	wide.name = "total";
+	wide.type = types::Long();
+	wide.isParam = true;
+	BcLocalVar narrow;
+	narrow.index = 2; // not 1: the long above took two slots
+	narrow.name = "count";
+	narrow.type = types::Int();
+	narrow.isParam = true;
+	recon.locals.locals = {wide, narrow};
+
+	// Filed under both keys, so this test compiles and runs whichever one the
+	// emitter looks up by; the discriminator below is the slot, not the key.
+	std::unordered_map<std::string, ReconstructResult> reconMap;
+	reconMap[m.name] = recon;
+	reconMap[m.name + m.descriptor.jvmDescriptor()] = recon;
+
+	BcClass cls = makeClass("Foo");
+	cls.access = BcAccess::Public;
+	m.isAbstract = true;
+	cls.methods.push_back(m);
+
+	JavaClassEmitter emitter(imports, tp, &reconMap);
+	CodeWriter writer;
+	emitter.emitClass(cls, writer);
+	const std::string out = writer.str();
+
+	EXPECT_TRUE(contains(out, "long total")) << out;
+	EXPECT_TRUE(contains(out, "int count")) << out;
+	EXPECT_FALSE(contains(out, "p1")) << out;
+}
+
+// Java overloads share a name, so keying reconstruction results by name alone
+// meant the last method with a given name overwrote the others and every
+// overload was emitted with that one's locals -- the winner decided by the
+// order the methods appear in the class file.
+TEST(JavaClassEmitter, OverloadsGetTheirOwnReconstruction)
+{
+	ImportSet imports("", "Foo");
+	JavaTypePrinter tp(imports);
+
+	BcMethod one;
+	one.name = "f";
+	one.access = BcAccess::Public | BcAccess::Static;
+	one.isAbstract = true;
+	one.descriptor.returnType = std::make_shared<BcType>(types::Void());
+	one.descriptor.params = {std::make_shared<BcType>(types::Int())};
+
+	BcMethod two = one;
+	two.descriptor.params = {std::make_shared<BcType>(classType("java.lang.String"))};
+
+	ASSERT_NE(one.descriptor.jvmDescriptor(), two.descriptor.jvmDescriptor());
+
+	const auto named = [](const std::string& n, BcType ty) {
+		ReconstructResult r;
+		BcLocalVar v;
+		v.index = 0;
+		v.name = n;
+		v.type = std::move(ty);
+		v.isParam = true;
+		r.locals.locals = {v};
+		return r;
+	};
+
+	// Each result is filed under name+descriptor and under the bare name, in
+	// method order -- exactly what reconstructClass did before the fix, where
+	// the bare-name key made the second overload overwrite the first. A lookup
+	// by name therefore finds `two`'s locals for both methods; a lookup by
+	// name+descriptor finds each method's own.
+	std::unordered_map<std::string, ReconstructResult> reconMap;
+	const auto oneRecon = named("anInt", types::Int());
+	const auto twoRecon = named("aString", classType("java.lang.String"));
+	reconMap[one.name + one.descriptor.jvmDescriptor()] = oneRecon;
+	reconMap[one.name] = oneRecon;
+	reconMap[two.name + two.descriptor.jvmDescriptor()] = twoRecon;
+	reconMap[two.name] = twoRecon;
+
+	BcClass cls = makeClass("Foo");
+	cls.access = BcAccess::Public;
+	cls.methods.push_back(one);
+	cls.methods.push_back(two);
+
+	JavaClassEmitter emitter(imports, tp, &reconMap);
+	CodeWriter writer;
+	emitter.emitClass(cls, writer);
+	const std::string out = writer.str();
+
+	EXPECT_TRUE(contains(out, "anInt")) << out;
+	EXPECT_TRUE(contains(out, "aString")) << out;
+}
+
 TEST(JavaClassEmitter, EmitsVarArgs)
 {
 	ImportSet imports("", "Foo");

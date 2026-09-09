@@ -240,7 +240,17 @@ struct VectorEvidence {
     bool  hasSizeArith    = false;  ///< end - begin for size
     bool  hasIndexAccess  = false;  ///< begin[i] element access
     float growthFactor    = 0.0f;   ///< 2.0 (GCC) or 1.5 (MSVC)
-    uint8_t elementByteWidth = 0;
+	/// What hasGrowthPattern() concluded about the growth factor's origin.
+	///
+	/// It takes this as an out-parameter and records Unknown when it sees a
+	/// malloc/free pair with neither a doubling nor a halving shift -- it has
+	/// no evidence of the factor and says so, defaulting growthFactor to 2.0
+	/// only so the rest of the evidence has a number. That answer used to be
+	/// thrown away: detectVariant re-derived the variant from growthFactor
+	/// alone, and 2.0 >= 1.9 reads as GCC, so "I could not tell" was reported
+	/// as libstdc++.
+	CompilerVariant growthVariant = CompilerVariant::Unknown;
+	uint8_t elementByteWidth = 0;
 };
 
 /// Evidence of a doubly-linked list node structure.

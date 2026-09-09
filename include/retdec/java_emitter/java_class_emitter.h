@@ -90,7 +90,20 @@ private:
     ImportSet&       imports_;
     JavaTypePrinter& tyPrinter_;
     const std::unordered_map<std::string, ReconstructResult>* reconMap_;
-    ClassEmitOptions opts_;
+
+public:
+	/// The key a method's reconstruction result is filed under.
+	///
+	/// Name *and* descriptor. Java overloads share a name, so keying by name
+	/// alone meant the last method with a given name overwrote the others and
+	/// reconFor handed that one result to every overload: parameter names came
+	/// from the wrong method's LocalRebuildResult and the body was emitted
+	/// against a different method's locals, with the winner decided by the
+	/// order the methods appear in the class file.
+	static std::string reconKey(const bc_module::BcMethod& method);
+
+private:
+	ClassEmitOptions opts_;
 
     // ── Class-level emission ──────────────────────────────────────────────────
 

@@ -49,22 +49,44 @@ static void countLabelsInTree(const CStmt* s,
         countLabelsInTree(c.get(), found);
 }
 
+// True if `s` or anything under it assigns one of the flag variables, and if
+// so which. The flag set may be nested -- `if (c) goto L;` becomes `if (c)
+// { _flagL = 1; }` -- and only looking at the top level of a block meant such
+// a goto produced no guard at all: the statements it was meant to skip ran
+// unconditionally and the flag was dead.
+static std::string flagSetIn(const CStmt* s, const std::unordered_map<std::string, std::string>& flagNames)
+{
+	if (!s) return {};
+	if (s->kind == CStmt::Kind::Assign && s->lhs && s->lhs->kind == CExpr::Kind::Var)
+	{
+		for (const auto& [label, fname]: flagNames)
+			if (s->lhs->varName == fname) return fname;
+	}
+	for (const auto& c: s->children)
+	{
+		std::string f = flagSetIn(c.get(), flagNames);
+		if (!f.empty()) return f;
+	}
+	return {};
+}
+
 // Rewrite a statement tree:
 //   - Replace `goto L` with `_flagL = 1` for labels in `toElim`
-//   - Remove Label nodes for labels in `toElim`
-//   - Wrap sequences between goto and label in `if (!_flagL)` guards
-//     (simplified: we wrap the entire block body after each target label in
-//     an if-guard — this is safe and covers the common single-forward-goto case)
+//   - Guard the statements between the goto and the label with `if (!_flagL)`
+//   - Remove the Label node
+//
+// The label's position is what says where the guard ends, so labels survive
+// until the enclosing Block is threaded below. They used to be replaced by an
+// empty block on the way down, before any guard was built, so the guard was
+// built from every remaining sibling -- including the statements *at and
+// after* the label, which are the goto's destination and must always run. They
+// were skipped exactly when the goto was taken.
 static std::shared_ptr<CStmt> rewriteStmtTree(
         std::shared_ptr<CStmt> s,
         const std::unordered_set<std::string>& toElim,
         std::unordered_map<std::string, std::string>& flagNames) {
 
     if (!s) return s;
-
-    // Recurse first into children.
-    for (auto& c : s->children)
-        c = rewriteStmtTree(c, toElim, flagNames);
 
     // Replace goto → flag assignment.
     if (s->kind == CStmt::Kind::Goto && toElim.count(s->label)) {
@@ -73,67 +95,84 @@ static std::shared_ptr<CStmt> rewriteStmtTree(
         return CStmt::assign(CExpr::var(flag), CExpr::lit("1"));
     }
 
-    // Remove eliminated labels.
-    if (s->kind == CStmt::Kind::Label && toElim.count(s->label)) {
-        // Replace with a no-op block.
-        return CStmt::block();
-    }
-
-    // For Block statements: wrap segments after an eliminated label.
-    // Simplified: we already removed the label; the guard wrapping is handled
-    // at the block level by rewriting children.
-    // The simple approach: after rewriting children, scan for goto-flag-set
-    // instructions and guard subsequent children with if(!flag).
     if (s->kind == CStmt::Kind::Block) {
-        // Find flags set in this block and guard subsequent code.
-        std::vector<std::shared_ptr<CStmt>> newChildren;
-        std::unordered_set<std::string> activeFlags;
+		// Rewrite the children first, but leave eliminated labels in place:
+		// this pass needs to see where they are.
+		std::vector<std::shared_ptr<CStmt>> rewritten;
+		rewritten.reserve(s->children.size());
+		for (auto& c: s->children)
+		{
+			if (!c) continue;
+			if (c->kind == CStmt::Kind::Label && toElim.count(c->label))
+			{
+				rewritten.push_back(c);
+				continue;
+			}
+			rewritten.push_back(rewriteStmtTree(c, toElim, flagNames));
+		}
 
-        for (std::size_t i = 0; i < s->children.size(); ++i) {
-            auto& child = s->children[i];
-            if (!child) continue;
+		std::vector<std::shared_ptr<CStmt>> newChildren;
+		std::vector<std::shared_ptr<CStmt>> guarded;
+		std::string activeFlag;
 
-            // Detect `_flagL = 1` assignments just inserted.
-            bool isFlagSet = false;
-            std::string setFlag;
-            if (child->kind == CStmt::Kind::Assign && child->lhs &&
-                child->lhs->kind == CExpr::Kind::Var) {
-                for (auto& [label, fname] : flagNames) {
-                    if (child->lhs->varName == fname) {
-                        isFlagSet = true;
-                        setFlag = fname;
-                        break;
-                    }
-                }
-            }
-
-            if (isFlagSet) {
-                newChildren.push_back(child);
-                activeFlags.insert(setFlag);
-            } else if (!activeFlags.empty()) {
-                // Collect remaining children into a guarded block.
-                auto guardBlock = CStmt::block();
-                guardBlock->children.push_back(child);
-                for (std::size_t j = i + 1; j < s->children.size(); ++j)
-                    if (s->children[j])
-                        guardBlock->children.push_back(s->children[j]);
-
-                // Guard with !(_flag) for each active flag.
-                // Use the first active flag for simplicity.
-                std::string flagVar = *activeFlags.begin();
-                auto cond = CExpr::unop(CExpr::UnOpKind::Not, CExpr::var(flagVar));
-                auto ifStmt = CStmt::ifStmt(cond);
+		// Close the open guard, wrapping what has been collected for it.
+		const auto closeGuard = [&]() {
+			if (!guarded.empty())
+			{
+				auto guardBlock = CStmt::block();
+				guardBlock->children = std::move(guarded);
+				auto cond = CExpr::unop(CExpr::UnOpKind::Not, CExpr::var(activeFlag));
+				auto ifStmt = CStmt::ifStmt(cond);
                 ifStmt->children.push_back(guardBlock);
                 newChildren.push_back(ifStmt);
-                break;
-            } else {
-                newChildren.push_back(child);
-            }
-        }
-        s->children = std::move(newChildren);
-    }
+			}
+			guarded.clear();
+			activeFlag.clear();
+		};
 
-    return s;
+		for (auto& child: rewritten)
+		{
+			if (!child) continue;
+
+			// The label the flag was set for. Everything from here on runs
+			// whatever the goto did, so the guard closes *before* it -- and
+			// the label itself is dropped, its goto having become a flag.
+			if (child->kind == CStmt::Kind::Label && toElim.count(child->label))
+			{
+				closeGuard();
+				continue;
+			}
+
+			if (activeFlag.empty())
+			{
+				std::string setFlag = flagSetIn(child.get(), flagNames);
+				newChildren.push_back(child);
+				if (!setFlag.empty()) activeFlag = setFlag;
+				continue;
+			}
+
+			guarded.push_back(child);
+		}
+		// A flag set with no label after it in this block: the destination is
+		// in an enclosing statement, so the guard runs to the end of the block.
+		closeGuard();
+
+		s->children = std::move(newChildren);
+		return s;
+	}
+
+	// Recurse into children.
+	for (auto& c: s->children)
+		c = rewriteStmtTree(c, toElim, flagNames);
+
+	// An eliminated label whose parent is not a Block -- the sole body of an
+	// if, say. There is nothing to guard, only the label to drop.
+	if (s->kind == CStmt::Kind::Label && toElim.count(s->label))
+	{
+		return CStmt::block();
+	}
+
+	return s;
 }
 
 } // anonymous namespace

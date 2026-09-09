@@ -72,13 +72,24 @@ void deserialize(const rapidjson::Value& val, common::BasicBlock& bb)
 		return;
 	}
 
-	common::Address s;
+	common::Address s, e;
 	deserialize(val, JSON_startAddr, s);
-	bb.setStart(s);
-
-	common::Address e;
 	deserialize(val, JSON_endAddr, e);
-	bb.setEnd(e);
+	// setStart()/setEnd() throw common::InvalidRangeException when the pair is
+	// inconsistent, and that type lives in namespace retdec::common deriving
+	// from std::exception rather than from config::Exception -- so every
+	// caller of the config reader misses it and the process aborts.
+	// retdec-decompiler.cpp catches only config::ParseException, and so do
+	// json_config.cpp and fileinfo. A file carrying "endAddr" with no
+	// "startAddr" was enough: the start is then Address::Undefined, which is
+	// 0xFFFFFFFFFFFFFFFF, so any end is below it. An inconsistent pair is left
+	// at the default instead, which is what every other deserializer in this
+	// module does with a value it cannot use.
+	if (!(e < s))
+	{
+		bb.setStart(s);
+		bb.setEnd(e);
+	}
 
 	deserializeContainer(val, JSON_preds, bb.preds);
 	deserializeContainer(val, JSON_succs, bb.succs);

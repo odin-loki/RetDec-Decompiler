@@ -858,13 +858,16 @@ TEST(AccumulateDetectorTest, PhiPlusXorIsBitXor)
 	EXPECT_EQ(r.combiner, CombinerKind::Xor);
 }
 
-TEST(AccumulateDetectorTest, CompareOnlyIsMaxElement)
+// An extremum loop selects its accumulator rather than combining it: a Compare
+// feeding a select (Op::FlagRead -- SETcc/CMOVcc, and llvm's SelectInst).
+TEST(AccumulateDetectorTest, CompareAndSelectIsMaxElement)
 {
 	auto fn = makeFunc(
 		"max_elem",
 		{
 			ssa::IrInstr::Op::Load,
 			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::FlagRead,
 		},
 		1);
 	addBackEdge(*fn);
@@ -872,6 +875,50 @@ TEST(AccumulateDetectorTest, CompareOnlyIsMaxElement)
 	AccumulateDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_EQ(r.kind, AlgorithmKind::MaxElement);
+}
+
+// The branch used to require zero Adds. Every range loop advances its iterator
+// or index with one, so it could not be taken for any real loop: control fell
+// through to CombinerKind::Add and an extremum loop was emitted as
+// `std::accumulate(first, last, 0)` at High tier -- wrong C++, not a weaker
+// guess.
+TEST(AccumulateDetectorTest, AnInductionAddDoesNotHideAMaxLoop)
+{
+	auto fn = makeFunc(
+		"max_elem_indexed",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::FlagRead,
+			ssa::IrInstr::Op::Add, // ++i
+		},
+		1);
+	addBackEdge(*fn);
+	addPhi(*fn);
+	AccumulateDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_EQ(r.kind, AlgorithmKind::MaxElement);
+	EXPECT_EQ(r.emittedForm.find("std::accumulate"), std::string::npos) << r.emittedForm;
+}
+
+// And a sum loop is still a sum loop: no select, so no extremum.
+TEST(AccumulateDetectorTest, ASumLoopIsStillAccumulate)
+{
+	auto fn = makeFunc(
+		"sum",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::Add,
+			ssa::IrInstr::Op::Add,
+		},
+		1);
+	addBackEdge(*fn);
+	addPhi(*fn);
+	AccumulateDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_EQ(r.kind, AlgorithmKind::Accumulate);
+	EXPECT_EQ(r.combiner, CombinerKind::Add);
 }
 
 TEST(AccumulateDetectorTest, NoStoreBoostsConfidence)
@@ -916,24 +963,63 @@ TEST(FindDetectorTest, EmptyFunctionLowConfidence)
 	EXPECT_LT(r.confidence, 0.10f);
 }
 
+// A find loop leaves by two branches: the bound test and the match test. That
+// second exit is the whole difference from a count loop, and it is what
+// hasEarlyExit now measures.
+//
+//   0: body + match test   -> 1 (continue), 4 (found)
+//   1:                     -> 2
+//   2: latch + bound test  -> 0 (back edge), 3 (finished)
+static std::unique_ptr<ssa::SSAFunction> makeSearchLoop(const std::string& name, bool matchExits)
+{
+	auto fn = makeFunc(name, {ssa::IrInstr::Op::Load, ssa::IrInstr::Op::Compare}, 4);
+	fn->block(0)->succs.push_back(1);
+	if (matchExits) fn->block(0)->succs.push_back(4);
+	fn->block(1)->succs.push_back(2);
+	fn->block(2)->succs.push_back(0);
+	fn->block(2)->succs.push_back(3);
+	return fn;
+}
+
 TEST(FindDetectorTest, ComparePlusEarlyExitIsFind)
 {
-	auto fn = makeFunc(
-		"find_val",
-		{
-			ssa::IrInstr::Op::Load,
-			ssa::IrInstr::Op::Compare,
-		},
-		2);
-	// Back-edge: block 1 → block 0, forward edge: block 1 → block 2 (exit).
-	fn->block(1)->succs.push_back(0);
-	fn->block(1)->succs.push_back(2);
-	addBackEdge(*fn);
+	auto fn = makeSearchLoop("find_val", /*matchExits=*/true);
 	addImmInstr(*fn, ssa::IrInstr::Op::Compare, 42);
 	FindDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.40f);
 	EXPECT_TRUE(r.kind == AlgorithmKind::Find || r.kind == AlgorithmKind::FindIf);
+}
+
+// hasEarlyExit returned true for any block with a forward successor, which is
+// the bound test itself and is present in every terminating loop -- so
+// hasCountPattern's `!hasEarlyExit(fn)` could only hold for a loop with no exit
+// at all, and AlgorithmKind::Count was dead for every normal input. A count
+// loop was reported as std::find.
+TEST(FindDetectorTest, ASingleExitLoopWithAnAccumulatorIsCount)
+{
+	auto fn = makeSearchLoop("count_val", /*matchExits=*/false);
+	addPhi(*fn);
+	addImmInstr(*fn, ssa::IrInstr::Op::Compare, 42);
+
+	FindDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_EQ(r.kind, AlgorithmKind::Count);
+	EXPECT_EQ(r.emittedForm.find("std::find"), std::string::npos)
+		<< "a count loop must not be emitted as a find: " << r.emittedForm;
+	EXPECT_NE(r.emittedForm.find("count"), std::string::npos) << r.emittedForm;
+}
+
+// ...and a loop that does stop early is still a find, phi or no phi.
+TEST(FindDetectorTest, ATwoExitLoopIsNotCount)
+{
+	auto fn = makeSearchLoop("find_val2", /*matchExits=*/true);
+	addPhi(*fn);
+	addImmInstr(*fn, ssa::IrInstr::Op::Compare, 42);
+
+	FindDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_NE(r.kind, AlgorithmKind::Count);
 }
 
 TEST(FindDetectorTest, ImmediateComparandIsFindNotFindIf)
@@ -987,18 +1073,11 @@ TEST(FindDetectorTest, NoStoreInLoopBoostsConfidence)
 
 TEST(FindDetectorTest, HighTierEmittedContainsStdFind)
 {
-	auto fn = makeFunc(
-		"find_hi",
-		{
-			ssa::IrInstr::Op::Load,
-			ssa::IrInstr::Op::Compare,
-		},
-		2);
-	fn->block(1)->succs.push_back(0);
-	fn->block(1)->succs.push_back(2);
+	auto fn = makeSearchLoop("find_hi", /*matchExits=*/true);
 	FindDetector det;
 	auto r = det.detect(*fn);
-	if (r.tier == EmissionTier::High) EXPECT_NE(r.emittedForm.find("std::find"), std::string::npos);
+	ASSERT_EQ(r.tier, EmissionTier::High);
+	EXPECT_NE(r.emittedForm.find("std::find"), std::string::npos);
 }
 
 // ─── PartitionDetector tests ──────────────────────────────────────────────────

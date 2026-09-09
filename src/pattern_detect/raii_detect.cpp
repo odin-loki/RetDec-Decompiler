@@ -48,6 +48,7 @@
 #include "retdec/pattern_detect/pattern_detect.h"
 #include "retdec/ssa/ssa.h"
 
+#include <algorithm>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -227,15 +228,58 @@ PatternResult RAIIDetector::detectGroup(const std::vector<const ssa::SSAFunction
 	// first acquire is not necessarily the one the first release closes.
 	std::vector<std::string> acquires;
 	std::vector<std::string> releases;
-	int functionsSeen = 0;
+	// Which function each acquire and each release came from. score() gives a
+	// group the full 1.00 only for "an acquire in a constructor closed by a
+	// release in the *destructor*", and spansTwoFunctions is what says that
+	// happened -- but it used to be `functionsSeen >= 2`, the number of
+	// non-null members, while collectCalls poured every call into one flat
+	// pair of vectors with no record of where it came from. So the ordinary C
+	// helper that mallocs and frees in one body was upgraded from 0.55 to 1.00
+	// merely by being grouped with any second function, including an empty one
+	// or a second copy of itself.
+	struct MemberCalls
+	{
+		const ssa::SSAFunction* fn = nullptr;
+		std::vector<std::string> acquires;
+		std::vector<std::string> releases;
+	};
+	std::vector<MemberCalls> perFn;
 	for (const auto* fn: fns)
 		if (fn)
 		{
-			collectCalls(*fn, combined, acquires, releases);
-			++functionsSeen;
+			MemberCalls m;
+			m.fn = fn;
+			collectCalls(*fn, combined, m.acquires, m.releases);
+			acquires.insert(acquires.end(), m.acquires.begin(), m.acquires.end());
+			releases.insert(releases.end(), m.releases.begin(), m.releases.end());
+			perFn.push_back(std::move(m));
 		}
 	pairUp(combined, acquires, releases);
-	combined.spansTwoFunctions = functionsSeen >= 2;
+
+	// The pair spans two functions when the function holding the matched
+	// acquire is not the one holding the matched release -- a different
+	// function, not merely a different position in the group, so listing the
+	// same scope guard twice does not qualify.
+	combined.spansTwoFunctions = false;
+	if (combined.hasMatchingPair)
+	{
+		const auto holds = [](const std::vector<std::string>& v, const std::string& name) {
+			return std::find(v.begin(), v.end(), name) != v.end();
+		};
+		for (std::size_t i = 0; i < perFn.size() && !combined.spansTwoFunctions; ++i)
+		{
+			if (!holds(perFn[i].acquires, combined.acquireName)) continue;
+			for (std::size_t j = 0; j < perFn.size(); ++j)
+			{
+				if (perFn[j].fn == perFn[i].fn) continue;
+				if (holds(perFn[j].releases, combined.releaseName))
+				{
+					combined.spansTwoFunctions = true;
+					break;
+				}
+			}
+		}
+	}
 	// A ctor that acquires with no dtor releasing it is not RAII either.
 	if (!combined.hasMatchingPair) return PatternResult{};
 	r.confidence = score(combined);

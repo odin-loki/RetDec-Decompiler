@@ -14,6 +14,9 @@
 #include "retdec/serdes/calling_convention.h"
 #include "retdec/utils/string.h"
 
+#include <sstream>
+#include <string>
+
 using namespace ::testing;
 
 namespace retdec {
@@ -128,6 +131,61 @@ TEST_F(CallingConventionTests, CheckDeserialization)
 
 	deserialize(rapidjson::Value("special"), cc);
 	EXPECT_TRUE(cc.isSpecial());
+}
+
+// ccStrings is indexed by eCC and ended two rows short of it, so serialize()'s
+// only check -- `ccStrings.size() > cc.getID()` -- was false for both new
+// conventions and they were written as "unknown" and read back as CC_UNKNOWN.
+// That is live data loss: param_return.cpp maps demangled "vectorcall" and
+// "regcall" onto exactly these ids and calling_convention.cpp registers
+// handlers for them, so an MSVC __vectorcall or Intel __regcall function lost
+// its convention across a config write/read round trip.
+TEST_F(CallingConventionTests, VectorcallAndRegcallRoundTrip)
+{
+	using eCC = common::CallingConvention::eCC;
+
+	cc = common::CallingConvention(eCC::CC_VECTORCALL);
+	EXPECT_EQ("vectorcall", _serialize());
+
+	cc = common::CallingConvention(eCC::CC_REGCALL);
+	EXPECT_EQ("regcall", _serialize());
+
+	deserialize(rapidjson::Value("vectorcall"), cc);
+	EXPECT_EQ(eCC::CC_VECTORCALL, cc.getID());
+
+	deserialize(rapidjson::Value("regcall"), cc);
+	EXPECT_EQ(eCC::CC_REGCALL, cc.getID());
+}
+
+// Every eCC value has a string, so a convention added to the enum cannot go on
+// silently serialising as "unknown".
+TEST_F(CallingConventionTests, EveryConventionHasAString)
+{
+	using eCC = common::CallingConvention::eCC;
+	for (int i = 0; i < static_cast<int>(eCC::CC_ENDING); ++i)
+	{
+		cc = common::CallingConvention(static_cast<eCC>(i));
+		const std::string text = _serialize();
+		if (i != static_cast<int>(eCC::CC_UNKNOWN))
+			EXPECT_NE("unknown", text) << "eCC value " << i << " has no string of its own";
+
+		common::CallingConvention back;
+		deserialize(rapidjson::Value(text.c_str(), static_cast<rapidjson::SizeType>(text.size())), back);
+		EXPECT_EQ(static_cast<eCC>(i), back.getID()) << text;
+	}
+}
+
+// operator<< prints the convention's name, and printed "UNHANDLED" for these
+// two while the enum carried them.
+TEST_F(CallingConventionTests, EveryConventionPrintsItsName)
+{
+	using eCC = common::CallingConvention::eCC;
+	for (int i = 0; i < static_cast<int>(eCC::CC_ENDING); ++i)
+	{
+		std::ostringstream os;
+		os << static_cast<eCC>(i);
+		EXPECT_NE("UNHANDLED", os.str()) << "eCC value " << i;
+	}
 }
 
 } // namespace tests

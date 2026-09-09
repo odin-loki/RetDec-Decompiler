@@ -101,6 +101,18 @@ class Function
 	private:
 		std::string name;
 		std::shared_ptr<FunctionType> functionType;
+		/// This function's calling convention.
+		///
+		/// Its own, not the shared FunctionType's. FunctionType objects are
+		/// interned in Context::functionTypes under a key that includes the
+		/// convention, so setCallConvention forwarding to
+		/// functionType->setCallConvention mutated an object every other
+		/// Function with the same signature also holds -- refining one
+		/// function's convention rewrote every same-signature function's --
+		/// and left the map entry filed under the old convention, so a later
+		/// create(..., "cdecl") handed back an object reporting "stdcall" and
+		/// a create(..., "stdcall") made a second, duplicate one.
+		CallConvention callConvention;
 		Parameters parameters;
 		FunctionDeclaration declaration;
 		HeaderFile headerFile;

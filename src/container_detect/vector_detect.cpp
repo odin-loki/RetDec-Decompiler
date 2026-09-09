@@ -190,6 +190,7 @@ VectorEvidence VectorDetector::analyseStructure(const ssa::SSAFunction& fn) cons
 	CompilerVariant cv = CompilerVariant::Unknown;
 	ev.hasGrowthPattern = hasGrowthPattern(fn, gf, cv);
 	ev.growthFactor = gf;
+	ev.growthVariant = ev.hasGrowthPattern ? cv : CompilerVariant::Unknown;
 	ev.hasIndexAccess = hasElementAccess(fn, ev.elementByteWidth);
 	ev.found = ev.hasBeginEndCap || ev.hasGrowthPattern;
 	ev.confidence = scoreEvidence(ev);
@@ -208,6 +209,13 @@ float VectorDetector::scoreEvidence(const VectorEvidence& ev) const
 
 CompilerVariant VectorDetector::detectVariant(const ssa::SSAFunction& fn, const VectorEvidence& ev) const
 {
+	// hasGrowthPattern() already answered this where it could, and where it
+	// could not it recorded Unknown -- a malloc/free pair with no doubling and
+	// no halving shift says nothing about which library grew the buffer. Its
+	// growthFactor of 2.0 in that case is a default, not a measurement, and
+	// re-deriving the variant from it turned "I could not tell" into GCC.
+	if (ev.hasGrowthPattern && ev.growthVariant == CompilerVariant::Unknown) return CompilerVariant::Unknown;
+
 	if (ev.growthFactor >= 1.9f)
 	{
 		const std::string& n = fn.name();

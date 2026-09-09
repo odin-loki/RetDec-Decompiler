@@ -337,6 +337,38 @@ TEST(JvmStackSim, MultiBlockPropagatesState)
 	EXPECT_NE(it, result.blockEntryStates.end());
 }
 
+// StackSimOptions::maxIter is documented as "Max fixed-point iterations per
+// method", but it was spent one unit per worklist pop -- i.e. per basic block
+// visited. With the default 32, a method with more than 32 blocks was silently
+// half-simulated: blocks past the budget got no InstrStackInfo, so
+// LocalRebuilder saw none of their StoreLocal/LoadLocal, no BcLocalVar was
+// created for their slots, and the emitter declared only the first 32 locals
+// while the body still assigned the rest. Thirty-two basic blocks is an
+// ordinary method.
+TEST(JvmStackSim, AMethodWithMoreBlocksThanMaxIterIsFullySimulated)
+{
+	// A straight chain of 64 blocks, each pushing a constant.
+	constexpr uint32_t kBlocks = 64;
+	BcCFG cfg;
+	for (uint32_t b = 0; b < kBlocks; ++b)
+	{
+		auto& blk = addBlock(cfg);
+		blk.instrs.push_back(makePushInt(static_cast<int64_t>(b), b * 4));
+		if (b + 1 < kBlocks) blk.instrs.push_back(makeGoto(b + 1));
+	}
+	for (uint32_t b = 0; b + 1 < kBlocks; ++b)
+		cfg.addEdge(b, b + 1);
+
+	BcMethod method = makeMethod();
+	JvmStackSim sim;
+	auto result = sim.simulate(cfg, method);
+
+	ASSERT_EQ(StackSimResult::OK, result.status);
+	// Every block's push produced a slot, including the last.
+	EXPECT_GE(result.slots.size(), static_cast<std::size_t>(kBlocks)) << "blocks past the budget were never visited";
+	EXPECT_NE(result.blockEntryStates.find(kBlocks - 1), result.blockEntryStates.end());
+}
+
 // ─── SlotCoalescer tests ──────────────────────────────────────────────────────
 
 TEST(SlotCoalescer, SingleUseSingleDefSameBlockCoalesced)
@@ -481,6 +513,40 @@ TEST(LocalRebuilder, StaticMethodNoThis)
 	EXPECT_TRUE(result.locals[0].isParam);
 }
 
+// nameSlot derives a parameter's name prefix from its class name with
+// rfind('.'), but BcRefType::className is documented and stored as internal
+// form ("java/lang/String") -- JvmSignatureParser builds Class(name) from the
+// raw descriptor without converting the separator. With no '.' in the string
+// the whole internal name survived as the prefix, so the "name" contained
+// slashes and was not a Java identifier. descriptorToType in the same file
+// normalises '/' to '.', which is why LVT-derived types worked and
+// descriptor-derived ones did not.
+TEST(LocalRebuilder, AnInternalClassNameDoesNotLeakSlashesIntoAnIdentifier)
+{
+	BcCFG cfg;
+	auto& blk = addBlock(cfg);
+	blk.instrs.push_back(makeReturn());
+
+	BcMethod method = makeMethod("test", true);
+	method.descriptor.params.push_back(std::make_shared<BcType>(types::Class("java/lang/String")));
+
+	JvmStackSim sim;
+	auto simResult = sim.simulate(cfg, method);
+	SlotCoalescer coalescer;
+	auto coalesceResult = coalescer.coalesce(cfg, simResult);
+
+	LocalRebuilder rebuilder;
+	auto result = rebuilder.rebuild(method, cfg, simResult, coalesceResult);
+
+	ASSERT_FALSE(result.locals.empty());
+	for (const auto& lv: result.locals)
+	{
+		EXPECT_EQ(lv.name.find('/'), std::string::npos) << lv.name;
+		EXPECT_EQ(lv.name.find('.'), std::string::npos) << lv.name;
+	}
+	EXPECT_EQ(result.locals[0].name, "string0");
+}
+
 TEST(LocalRebuilder, UsesLVTNames)
 {
 	BcCFG cfg;
@@ -570,6 +636,57 @@ TEST(ExceptionVarIntroducer, IntroducesExceptionLocal)
 	for (const auto& lv: localResult.locals)
 		if (!lv.name.empty() && lv.name.find("ex") != std::string::npos) hasExVar = true;
 	EXPECT_TRUE(hasExVar);
+}
+
+// ExceptionVarIntroducer created the caught-exception BcLocalVar at the
+// synthetic JVM slot 1000 + handlerBlock, then emitted the synthetic
+// StoreLocal with the *locals vector index* as its operand. Every consumer
+// reads BcLocalOperand::index as a JVM slot -- ExprContext keys localNames by
+// BcLocalVar::index -- so the store named whichever local happened to sit at
+// JVM slot `localIdx`, an unrelated variable, and `ex<blk>` was declared and
+// never assigned.
+TEST(ExceptionVarIntroducer, TheSyntheticStoreNamesTheExceptionSlot)
+{
+	BcCFG cfg;
+	auto& tryBlk = addBlock(cfg);
+	tryBlk.instrs.push_back(makeReturn());
+	auto& handlerBlk = addBlock(cfg);
+	handlerBlk.instrs.push_back(makeReturn());
+	cfg.addEdge(0, 1);
+
+	BcExceptionHandler eh;
+	eh.startOffset = 0;
+	eh.endOffset = 2;
+	eh.handlerBlock = 1;
+	eh.catchType = types::Class("java.lang.Exception");
+	cfg.addExceptionHandler(eh);
+
+	BcMethod method = makeMethod();
+	JvmStackSim sim;
+	auto simResult = sim.simulate(cfg, method);
+	SlotCoalescer coalescer;
+	auto coalesceResult = coalescer.coalesce(cfg, simResult);
+	LocalRebuilder rebuilder;
+	auto localResult = rebuilder.rebuild(method, cfg, simResult, coalesceResult);
+
+	ExceptionVarIntroducer intro;
+	intro.introduce(cfg, method, simResult, localResult);
+
+	// The exception variable's own slot.
+	uint32_t exSlot = UINT32_MAX;
+	for (const auto& lv: localResult.locals)
+		if (lv.name == "ex1") exSlot = lv.index;
+	ASSERT_NE(exSlot, UINT32_MAX);
+
+	// The synthetic store at the head of the handler must name it.
+	ASSERT_FALSE(cfg.block(1).instrs.empty());
+	const BcInstruction& store = cfg.block(1).instrs.front();
+	ASSERT_EQ(store.opcode, BcOpcode::StoreLocal);
+	ASSERT_FALSE(store.operands.empty());
+	const auto* op = std::get_if<BcLocalOperand>(&store.operands.front());
+	ASSERT_NE(op, nullptr);
+	EXPECT_EQ(op->index, exSlot) << "the store must name the exception's slot, "
+									"not its position in the locals vector";
 }
 
 // ─── PatternLifter tests ──────────────────────────────────────────────────────

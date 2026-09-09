@@ -9,6 +9,7 @@
 #define RETDEC_PDBPARSER_PDB_TYPES_H
 
 #include <cstdio>
+#include <string>
 
 #include "retdec/pdbparser/pdb_info.h"
 #include "retdec/pdbparser/pdb_utils.h"
@@ -190,7 +191,7 @@ public:
 class PDBTypeEnum : public PDBTypeDef {
 public:
 	// Constructor and destructor
-	PDBTypeEnum(int ind): PDBTypeDef(ind, PDBTYPE_ENUM), enum_count(0), enum_members(nullptr), enum_name(nullptr){};
+	PDBTypeEnum(int ind): PDBTypeDef(ind, PDBTYPE_ENUM), enum_count(0), enum_members(nullptr){};
 	virtual ~PDBTypeEnum(void)
 	{
 		if (enum_members != nullptr) delete[] enum_members;
@@ -212,7 +213,16 @@ public:
 	// Type-specific members
 	unsigned int enum_count;              // Number of members
 	PDBTypeFieldEnumerate** enum_members; // Members
-	char* enum_name;                      // Enum name
+	/// Owned, and bounded by the record's declared size.
+	///
+	/// This was a bare char* into the TPI stream: RecordValue returns nullptr
+	/// for any leaf word >= LF_NUMERIC it does not decode, and the pointer it
+	/// does return has no terminator guaranteed. Using it as a std::string key
+	/// -- which pdb_types.cpp does, into types_byname -- was std::logic_error
+	/// and terminate on the null, and a strlen past the end of the stream
+	/// buffer on the unterminated one. PDBTypeStruct::struct_name was already
+	/// a std::string; these three now match it.
+	std::string enum_name; // Enum name
 };
 
 // Array
@@ -423,7 +433,7 @@ public:
 class PDBTypeUnion : public PDBTypeDef {
 public:
 	// Constructor and destructor
-	PDBTypeUnion(int ind): PDBTypeDef(ind, PDBTYPE_UNION), union_count(0), union_name(nullptr){};
+	PDBTypeUnion(int ind): PDBTypeDef(ind, PDBTYPE_UNION), union_count(0){};
 	virtual ~PDBTypeUnion(void){};
 
 	// Basic methods - parse and dump
@@ -442,14 +452,23 @@ public:
 	// Type-specific members
 	unsigned int union_count;                       // Number of members
 	std::vector<PDBTypeFieldMember*> union_members; // Members
-	char* union_name;                               // Union name
+	/// Owned, and bounded by the record's declared size.
+	///
+	/// This was a bare char* into the TPI stream: RecordValue returns nullptr
+	/// for any leaf word >= LF_NUMERIC it does not decode, and the pointer it
+	/// does return has no terminator guaranteed. Using it as a std::string key
+	/// -- which pdb_types.cpp does, into types_byname -- was std::logic_error
+	/// and terminate on the null, and a strlen past the end of the stream
+	/// buffer on the unterminated one. PDBTypeStruct::struct_name was already
+	/// a std::string; these three now match it.
+	std::string union_name; // Union name
 };
 
 // Class
 class PDBTypeClass : public PDBTypeDef {
 public:
 	// Constructor and destructor
-	PDBTypeClass(int ind): PDBTypeDef(ind, PDBTYPE_CLASS), class_count(0), class_name(nullptr){};
+	PDBTypeClass(int ind): PDBTypeDef(ind, PDBTYPE_CLASS), class_count(0){};
 	virtual ~PDBTypeClass(void){};
 
 	// Basic methods - parse and dump
@@ -467,8 +486,17 @@ public:
 
 	// Type-specific members
 	unsigned int class_count; // Number of members
-	char* class_name;         // Class name
-							  // TODO methods, attributes, etc...
+	/// Owned, and bounded by the record's declared size.
+	///
+	/// This was a bare char* into the TPI stream: RecordValue returns nullptr
+	/// for any leaf word >= LF_NUMERIC it does not decode, and the pointer it
+	/// does return has no terminator guaranteed. Using it as a std::string key
+	/// -- which pdb_types.cpp does, into types_byname -- was std::logic_error
+	/// and terminate on the null, and a strlen past the end of the stream
+	/// buffer on the unterminated one. PDBTypeStruct::struct_name was already
+	/// a std::string; these three now match it.
+	std::string class_name; // Class name
+							// TODO methods, attributes, etc...
 };
 
 // =================================================================

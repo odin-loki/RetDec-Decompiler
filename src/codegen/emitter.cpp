@@ -621,6 +621,14 @@ CFunction CodeGenPass::generateFunction(
 	PointerSyntax ptrSyn;
 
 	// Phase 3: Build statement tree from StructNode.
+	//
+	// buildBody increments stats_.gotosRemaining once per goto it emits, so
+	// the count before it runs is the only reading of "how many this function
+	// started with". It used to be taken after, in Phase 4, where the
+	// difference is identically zero -- and since GotoEliminator does not
+	// touch the counter either, `gotosEliminated += 0 - remaining` wrapped a
+	// std::size_t to 2^64-1 whenever any goto survived.
+	const auto gotosBefore = stats_.gotosRemaining;
 	auto body = buildBody(&structTree, exprResult, fn, dce, condNorm, loopSel, ptrSyn, stats_);
 	if (!body || body->kind != CStmt::Kind::Block)
 	{
@@ -633,7 +641,6 @@ CFunction CodeGenPass::generateFunction(
 	if (cfg.enableGotoElim)
 	{
 		GotoEliminator ge;
-		auto before = stats_.gotosRemaining;
 		body = ge.eliminate(body);
 		// Recount remaining gotos post-elimination.
 		std::unordered_map<std::string, int> remainingGotos;
@@ -644,8 +651,16 @@ CFunction CodeGenPass::generateFunction(
 				self(self, c.get());
 		};
 		countGotosNow(countGotosNow, body.get());
-		stats_.gotosEliminated += (stats_.gotosRemaining - before) - (uint32_t)remainingGotos.size();
-		stats_.gotosRemaining = (uint32_t)remainingGotos.size();
+
+		// How many this function had, less how many it still has. Both counts
+		// are for this function, and the running totals accumulate: the
+		// remaining count used to be *assigned* from this one function's
+		// figure, discarding every earlier function's, so a unit reported only
+		// its last function's gotos.
+		const uint32_t emitted = stats_.gotosRemaining - gotosBefore;
+		const uint32_t left = static_cast<uint32_t>(remainingGotos.size());
+		stats_.gotosEliminated += (emitted > left) ? (emitted - left) : 0u;
+		stats_.gotosRemaining = gotosBefore + left;
 	}
 
 	cfn.body = std::move(body);
@@ -662,6 +677,11 @@ CUnit CodeGenPass::generateUnit(
 {
 	CUnit unit;
 	unit.includes = {"stdint.h"};
+
+	// stats_ is a mutable member and nothing else resets it, so a second
+	// generateUnit() on the same CodeGenPass used to report the sum of both
+	// runs. A unit's statistics are that unit's.
+	stats_ = Stats{};
 
 	for (std::size_t i = 0; i < fns.size(); ++i)
 	{

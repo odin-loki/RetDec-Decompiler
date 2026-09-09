@@ -90,16 +90,23 @@ static bool hasDigitExtraction(const ssa::SSAFunction& fn) {
             if (!instr) continue;
             if (instr->op == ssa::IrInstr::Op::Shr ||
                 instr->op == ssa::IrInstr::Op::Sar) {
-                // Check if shift amount is a constant multiple of 4 or 8.
-                if (instr->uses.size() >= 2) {
-                    const auto* sv = fn.value(instr->uses[1].valueId);
-                    if (sv && sv->kind == ssa::ValueKind::Immediate) {
-                        uint64_t imm = sv->imm;
-                        if (imm > 0 && (imm % 4 == 0 || imm % 8 == 0))
-                            hasShr = true;
-                    }
-                }
-            }
+				// Every Immediate use, not uses[1].
+				//
+				// llvm_to_ssa attaches only ConstantInt operands to `uses`, so
+				// `lshr %v, 8` arrives with exactly one use -- the shift
+				// amount, at position 0. Requiring uses.size() >= 2 and then
+				// reading uses[1] meant the Shr half of the digit-extraction
+				// test could never fire on IR the producer emits. The And-mask
+				// loop below already scans every use, and partition_detect.cpp
+				// documents the same convention.
+				for (const auto& use: instr->uses)
+				{
+					const auto* sv = fn.value(use.valueId);
+					if (!sv || sv->kind != ssa::ValueKind::Immediate) continue;
+					uint64_t imm = sv->imm;
+					if (imm > 0 && (imm % 4 == 0 || imm % 8 == 0)) hasShr = true;
+				}
+			}
             if (instr->op == ssa::IrInstr::Op::And) {
                 // Check for a mask constant like 0xff, 0xf, 0xffff, 0xffffffff.
                 for (const auto& use : instr->uses) {

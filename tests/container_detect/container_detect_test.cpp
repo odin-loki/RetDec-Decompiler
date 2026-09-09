@@ -305,6 +305,32 @@ TEST(VectorDetectorTest, GrowthOnlyIsSymbolNameEvidence)
 	EXPECT_NE(r.toString().find("evidence:symbol_name"), std::string::npos);
 }
 
+// hasGrowthPattern takes a CompilerVariant& out-parameter and, on a
+// malloc/free pair with neither a doubling nor a halving shift, records
+// Unknown: it has no evidence of the growth factor and says so, defaulting the
+// factor to 2.0 only so the rest of the evidence has a number. detectVariant
+// then re-derived the answer from that number alone, and 2.0 >= 1.9 reads as
+// GCC -- so "I could not tell" was reported as libstdc++.
+TEST(VectorDetectorTest, NoShiftMeansTheVariantIsUnknownNotGCC)
+{
+	auto fn = makeFunc(
+		"vec_push_noshift",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Sub,
+			ssa::IrInstr::Op::Add,
+			ssa::IrInstr::Op::Store,
+		});
+	addCall(*fn, "malloc");
+	addCall(*fn, "free");
+	// No Shl-by-1 and no Shr-by-1: the growth factor is not recoverable.
+	VectorDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_EQ(r.compilerVariant, CompilerVariant::Unknown);
+}
+
 TEST(VectorDetectorTest, MSVCGrowthFactor)
 {
 	auto fn = makeFunc(
@@ -823,19 +849,45 @@ TEST(ListDetectorTest, SentinelSurvivesTwoValueVersionsAndAnInterveningInstr)
 
 TEST(MapDetectorTest, EmittedTypeContainsMap)
 {
+	// A rotation is what makes it a red-black tree; the loads, store and
+	// compare around it are the rest of the evidence.
+	auto fn = makeRotation("m_t", /*readOff=*/24, /*writeOff=*/16);
+	fn->addInstr(fn->block(0)->id, ssa::IrInstr::Op::Load);
+	fn->addInstr(fn->block(0)->id, ssa::IrInstr::Op::Load);
+	fn->addInstr(fn->block(0)->id, ssa::IrInstr::Op::Compare);
+	addImmInstr(*fn, ssa::IrInstr::Op::And, 1);
+	MapDetector det;
+	auto r = det.detect(*fn);
+	ASSERT_GE(r.confidence, 0.10f);
+	EXPECT_NE(r.emittedType.find("std::map"), std::string::npos);
+}
+
+// RbTreeEvidence::found -- "a rotation was seen" -- was computed and never
+// read: the only gate was `confidence < 0.10f`. The three non-specific signals
+// are a Compare against 0 or 1 (+0.20), three Loads (+0.10) and two Compares
+// with three Stores (+0.10), summing to exactly the 0.40 that
+// ContainerDetector::Config::minConfidence compares against, so `0.40f < 0.40f`
+// is false and a std::map was reported for a function with no rebalancing
+// evidence at all.
+TEST(MapDetectorTest, NoRotationIsNotAMap)
+{
 	auto fn = makeFunc(
-		"m_t",
+		"walks_a_struct",
 		{
 			ssa::IrInstr::Op::Load,
 			ssa::IrInstr::Op::Load,
 			ssa::IrInstr::Op::Load,
 			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Compare,
 			ssa::IrInstr::Op::Compare,
 		});
 	addImmInstr(*fn, ssa::IrInstr::Op::And, 1);
+
 	MapDetector det;
 	auto r = det.detect(*fn);
-	if (r.confidence >= 0.10f) EXPECT_NE(r.emittedType.find("std::map"), std::string::npos);
+	EXPECT_TRUE(r.emittedType.empty()) << "no rotation was seen, so this is not a red-black tree: " << r.emittedType;
 }
 
 // Regression: hasRotation used to collect InstrIds and search them for
@@ -1483,7 +1535,24 @@ TEST(AccessPatternTest, MapLookupEmitted)
 	bool hasLookup = false;
 	for (const auto& ap: r.accessPatterns)
 		if (ap.kind == AccessKind::Lookup) hasLookup = true;
-	if (r.confidence >= 0.20f) EXPECT_TRUE(hasLookup);
+	// No rotation, so nothing is emitted and there is no access pattern to
+	// find -- which is the point of the gate, not an accident of scoring.
+	EXPECT_FALSE(hasLookup);
+	EXPECT_TRUE(r.emittedType.empty());
+}
+
+TEST(AccessPatternTest, MapLookupEmittedForARealRotation)
+{
+	auto fn = makeRotation("m_find", /*readOff=*/24, /*writeOff=*/16);
+	fn->addInstr(fn->block(0)->id, ssa::IrInstr::Op::Load);
+	fn->addInstr(fn->block(0)->id, ssa::IrInstr::Op::Load);
+
+	MapDetector det;
+	auto r = det.detect(*fn);
+	bool hasLookup = false;
+	for (const auto& ap: r.accessPatterns)
+		if (ap.kind == AccessKind::Lookup) hasLookup = true;
+	EXPECT_TRUE(hasLookup);
 }
 
 TEST(AccessPatternTest, SharedPtrResetEmitted)
@@ -1626,10 +1695,70 @@ TEST(RingBufferDetectorTest, PowerOfTwoAndMaskIsRingBuffer)
 			ssa::IrInstr::Op::Add,
 		});
 	addImmInstr(*fn, ssa::IrInstr::Op::And, 7);
+	fn->block(0)->succs.push_back(0); // the buffer is a ring because it wraps
 	RingBufferDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.45f);
 	EXPECT_EQ(r.emittedType, "ring_buffer");
+}
+
+// isWrapMask rejected only 0 and anything above 0xffff, so it accepted 1, 3 and
+// 7 -- and `flags & 1`, the commonest bit test there is, read as a two-entry
+// ring wrap.
+TEST(RingBufferDetectorTest, AOneBitTestIsNotAWrapMask)
+{
+	auto fn = makeFunc(
+		"check_flag",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Compare,
+		});
+	addImmInstr(*fn, ssa::IrInstr::Op::And, 1);
+	fn->block(0)->succs.push_back(0);
+	RingBufferDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.45f);
+	EXPECT_TRUE(r.emittedType.empty());
+}
+
+// ...and nothing required a loop, so a masked load and store in straight-line
+// code scored 0.85 before any Compare and 1.00 with one -- which made the
+// `confidence < 0.45f` gate unreachable and, because
+// ContainerDetector::analyseFunction keeps the highest-confidence answer,
+// silently overrode every other detector on the same function.
+TEST(RingBufferDetectorTest, AMaskedIndexWithNoLoopIsNotARingBuffer)
+{
+	auto fn = makeFunc(
+		"masked_index",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Store,
+			ssa::IrInstr::Op::Compare,
+			ssa::IrInstr::Op::Add,
+		});
+	addImmInstr(*fn, ssa::IrInstr::Op::And, 255);
+	RingBufferDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.45f);
+	EXPECT_TRUE(r.emittedType.empty());
+}
+
+// The score is graded, not pinned: one load and one store is weaker evidence
+// than several, and it must be possible to say so.
+TEST(RingBufferDetectorTest, TheScoreIsNotPinnedAtOne)
+{
+	auto fn = makeFunc(
+		"rb_thin",
+		{
+			ssa::IrInstr::Op::Load,
+			ssa::IrInstr::Op::Store,
+		});
+	addImmInstr(*fn, ssa::IrInstr::Op::And, 15);
+	fn->block(0)->succs.push_back(0);
+	RingBufferDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 1.0f);
 }
 
 TEST(RingBufferDetectorTest, AndWithoutImmediateIsNotRingBuffer)
@@ -1693,6 +1822,7 @@ TEST(RingBufferDetectorTest, RemByCapacityIsRingBuffer)
 			ssa::IrInstr::Op::Add,
 		});
 	addImmInstr(*fn, ssa::IrInstr::Op::Rem, 10);
+	fn->block(0)->succs.push_back(0);
 	RingBufferDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.45f);

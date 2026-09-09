@@ -132,6 +132,15 @@ static ssa::IrInstr* translateInstr(const llvm::Instruction& li, ssa::SSAFunctio
 	{
 		op = Op::Phi;
 	}
+	else if (llvm::isa<llvm::SelectInst>(li))
+	{
+		// A select consumes a comparison result and produces one of two
+		// values, which is exactly what Op::FlagRead names (SETcc, CMOVcc).
+		// It used to match no branch here and arrive as Op::Undef, which left
+		// the detectors with no way to tell a loop that *selects* its
+		// accumulator -- max/min -- from one that combines it.
+		op = Op::FlagRead;
+	}
 	else if (
 		llvm::isa<llvm::AllocaInst>(li) || llvm::isa<llvm::GetElementPtrInst>(li) || llvm::isa<llvm::BitCastInst>(li)
 		|| llvm::isa<llvm::TruncInst>(li) || llvm::isa<llvm::ZExtInst>(li) || llvm::isa<llvm::SExtInst>(li)

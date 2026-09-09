@@ -349,6 +349,68 @@ std::string applyJsonRenameMap(const std::string& source, const std::string& jso
 	out.reserve(source.size() + 16);
 	for (std::size_t i = 0; i < source.size();)
 	{
+		// String literals, character literals and comments are copied through
+		// untouched.
+		//
+		// The loop walked the source character by character with no literal or
+		// comment state, so every identifier-shaped run was a rename
+		// candidate, including runs inside "...", '...' and /* */ and //. A
+		// rename then changed string constants and printf format strings,
+		// which is an observable behaviour change -- and one every gate
+		// passes, because the control-flow shape is untouched, the spawn
+		// counts are untouched, and it still compiles. refiner.h documents
+		// this pass as "identifier renames (N15) ... Word-boundary only".
+		if (source[i] == '"' || source[i] == '\'')
+		{
+			const char quote = source[i];
+			out.push_back(source[i]);
+			++i;
+			while (i < source.size())
+			{
+				const char c = source[i];
+				out.push_back(c);
+				++i;
+				if (c == '\\' && i < source.size())
+				{
+					out.push_back(source[i]);
+					++i;
+					continue;
+				}
+				if (c == quote) break;
+				// An unterminated literal ends at the newline, as C says.
+				if (c == '\n') break;
+			}
+			continue;
+		}
+		if (source[i] == '/' && i + 1 < source.size() && source[i + 1] == '/')
+		{
+			while (i < source.size() && source[i] != '\n')
+			{
+				out.push_back(source[i]);
+				++i;
+			}
+			continue;
+		}
+		if (source[i] == '/' && i + 1 < source.size() && source[i + 1] == '*')
+		{
+			out.push_back(source[i]);
+			out.push_back(source[i + 1]);
+			i += 2;
+			while (i < source.size())
+			{
+				if (source[i] == '*' && i + 1 < source.size() && source[i + 1] == '/')
+				{
+					out.push_back(source[i]);
+					out.push_back(source[i + 1]);
+					i += 2;
+					break;
+				}
+				out.push_back(source[i]);
+				++i;
+			}
+			continue;
+		}
+
 		if (!(std::isalpha(static_cast<unsigned char>(source[i])) || source[i] == '_'))
 		{
 			out.push_back(source[i]);

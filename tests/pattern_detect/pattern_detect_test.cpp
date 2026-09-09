@@ -622,6 +622,39 @@ TEST(RAIIDetectorTest, GroupModeTwoResourcesStillPair)
 	EXPECT_GE(r.confidence, 0.90f);
 }
 
+// score() caps a self-contained scope guard at 0.55 and reserves 1.00 for "an
+// acquire in a constructor closed by a release in the *destructor*", which
+// spansTwoFunctions is what says happened. It used to be `functionsSeen >= 2`
+// -- the number of non-null group members -- while collectCalls poured every
+// call into one flat pair of vectors with no record of which function it came
+// from. So an ordinary C helper that mallocs and frees in one body was upgraded
+// from 0.55 to 1.00 merely by being grouped with any second function.
+TEST(RAIIDetectorTest, AScopedGuardGroupedWithAnythingIsStillAScopedGuard)
+{
+	auto guard = makeFunc("scoped_helper", {});
+	addCall(*guard, "malloc");
+	addCall(*guard, "free");
+	auto unrelated = makeFunc("does_nothing", {});
+
+	RAIIDetector det;
+	std::vector<const ssa::SSAFunction*> fns = {guard.get(), unrelated.get()};
+	auto r = det.detectGroup(fns);
+
+	EXPECT_NEAR(0.55f, r.confidence, 1e-5f) << "acquire and release are in the same body: that is scoped cleanup";
+}
+
+// And grouping it with a copy of itself is the same non-evidence.
+TEST(RAIIDetectorTest, AScopedGuardGroupedWithItselfIsStillAScopedGuard)
+{
+	auto guard = makeFunc("scoped_helper", {});
+	addCall(*guard, "malloc");
+	addCall(*guard, "free");
+
+	RAIIDetector det;
+	std::vector<const ssa::SSAFunction*> fns = {guard.get(), guard.get()};
+	EXPECT_NEAR(0.55f, det.detectGroup(fns).confidence, 1e-5f);
+}
+
 TEST(RAIIDetectorTest, GroupModeCtorDtor)
 {
 	auto ctor = makeFunc("FileHandle_ctor", {});

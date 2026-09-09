@@ -143,7 +143,17 @@ private:
 	/// the source order of the catch clauses.
 	struct TryRegion
 	{
-		uint32_t startBlock = 0;            ///< First protected block
+		/// First protected block, UINT32_MAX until one is found.
+		///
+		/// This defaulted to 0, while buildExceptionRegions tests UINT32_MAX
+		/// as the "not yet set" sentinel -- as endBlock below correctly does.
+		/// So `if (region.startBlock == UINT32_MAX) region.startBlock = b;`
+		/// never ran and every try opened at block 0 whatever the protected
+		/// range said, dragging unprotected code inside it; and
+		/// `if (region.startBlock == UINT32_MAX) continue; // protects no
+		/// block` never ran either, so a handler whose offset range matches no
+		/// basic block wrapped the whole method in try/catch.
+		uint32_t startBlock = UINT32_MAX;   ///< First protected block
 		uint32_t endBlock = UINT32_MAX;     ///< First block past the region
 		std::vector<size_t> handlerIndices; ///< Into cfg().handlers()
 		bool opened = false;                ///< Already emitted

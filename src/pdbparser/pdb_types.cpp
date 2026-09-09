@@ -199,18 +199,51 @@ void PDBTypeFieldList::dump(bool nested)
 //
 // =================================================================
 
-void PDBTypeEnum::parse(lfEnum* record, int, PDBTypeDefIndexMap& types)
+namespace {
+
+/// A name that points into a TPI record, measured against that record's own
+/// declared size.
+///
+/// RecordValue returns nullptr for any leaf word >= LF_NUMERIC that is not one
+/// of the five it decodes, and when it does return a pointer that pointer is a
+/// bare char* into the TPI stream with no terminator guaranteed. Assigning it
+/// to a std::string was two distinct failures: std::logic_error and terminate
+/// on the null, and a strlen past the end of the stream buffer on the
+/// unterminated one. `size` is the record length the walk already validated
+/// against the stream, so it is the bound that exists.
+std::string boundedRecordName(const char* name, const void* recordBase, int size)
+{
+	if (name == nullptr || size <= 0) return {};
+	const char* base = static_cast<const char*>(recordBase);
+	if (name < base) return {};
+	const auto offset = static_cast<std::size_t>(name - base);
+	if (offset >= static_cast<std::size_t>(size)) return {};
+	const std::size_t avail = static_cast<std::size_t>(size) - offset;
+	return std::string(name, retdec::utils::bstr::boundedLength(name, avail));
+}
+
+} // anonymous namespace
+
+void PDBTypeEnum::parse(lfEnum* record, int size, PDBTypeDefIndexMap& types)
 {
 	// Copy member count and name
 	enum_count = record->count;
-	enum_name = reinterpret_cast<char*>(record->Name);
+	enum_name = boundedRecordName(reinterpret_cast<const char*>(record->Name), record, size);
 	// Get enum size in bytes by underlying type
 	if (record->utype > 0 && types[record->utype] != nullptr) size_bytes = types[record->utype]->size_bytes;
 	// Fill the array of pointers to enum members
-	if (record->field > 0 && types[record->field] != nullptr)
+	if (record->field > 0 && types[record->field] != nullptr && types[record->field]->type_class == PDBTYPE_FIELDLIST)
 	{
+		// `record->field` is a type index straight out of the TPI record, and
+		// types[] is pre-seeded with PDBTypeBase objects at the CodeView
+		// base-type indices (T_INT4 = 0x74, T_VOID = 3, ...), so a non-field
+		// index is non-null and passed the check above. Casting a PDBTypeBase
+		// to a PDBTypeFieldList reads its `is_pointer`/`size_bits`/
+		// `description` bytes as the `fields` vector: size() came back huge
+		// and fields[i] dereferenced a fabricated pointer. usableArgumentCount
+		// in this same file already asks first; these sites did not.
 		// Get the type definition with field list
-		PDBTypeFieldList* fieldlist = reinterpret_cast<PDBTypeFieldList*>(types[record->field]);
+		PDBTypeFieldList* fieldlist = static_cast<PDBTypeFieldList*>(types[record->field]);
 		if (fieldlist->fields.size() != enum_count)
 		{
 			return;
@@ -229,7 +262,7 @@ void PDBTypeEnum::dump(bool nested)
 {
 	PDBTypeDef::dump(nested);
 	if (!nested) printf("enum ");
-	printf("%s", enum_name);
+	printf("%s", enum_name.c_str());
 	if (!nested)
 	{
 		if (enum_members != nullptr)
@@ -566,7 +599,7 @@ std::string PDBTypeFunction::to_llvm(void)
 //
 // =================================================================
 
-void PDBTypeStruct::parse(lfStructure* record, int, PDBTypeDefIndexMap& types)
+void PDBTypeStruct::parse(lfStructure* record, int size, PDBTypeDefIndexMap& types)
 {
 	// Get member count
 	struct_count = record->count;
@@ -575,12 +608,20 @@ void PDBTypeStruct::parse(lfStructure* record, int, PDBTypeDefIndexMap& types)
 	char* name;
 	name = reinterpret_cast<char*>(RecordValue(record->data, reinterpret_cast<PDB_DWORD*>(&value)));
 	size_bytes = value;
-	if (name) struct_name = name;
+	struct_name = boundedRecordName(name, record, size);
 	// Copy struct members
-	if (record->field > 0 && types[record->field] != nullptr)
+	if (record->field > 0 && types[record->field] != nullptr && types[record->field]->type_class == PDBTYPE_FIELDLIST)
 	{
+		// `record->field` is a type index straight out of the TPI record, and
+		// types[] is pre-seeded with PDBTypeBase objects at the CodeView
+		// base-type indices (T_INT4 = 0x74, T_VOID = 3, ...), so a non-field
+		// index is non-null and passed the check above. Casting a PDBTypeBase
+		// to a PDBTypeFieldList reads its `is_pointer`/`size_bits`/
+		// `description` bytes as the `fields` vector: size() came back huge
+		// and fields[i] dereferenced a fabricated pointer. usableArgumentCount
+		// in this same file already asks first; these sites did not.
 		// Get field list with struct members
-		PDBTypeFieldList* fieldlist = reinterpret_cast<PDBTypeFieldList*>(types[record->field]);
+		PDBTypeFieldList* fieldlist = static_cast<PDBTypeFieldList*>(types[record->field]);
 		// Copy all members from field list
 		for (unsigned int i = 0; i < fieldlist->fields.size(); i++)
 		{ // Copy pointers to struct members from field list
@@ -657,7 +698,7 @@ std::string PDBTypeStruct::to_llvm_identified(void)
 //
 // =================================================================
 
-void PDBTypeUnion::parse(lfUnion* record, int, PDBTypeDefIndexMap& types)
+void PDBTypeUnion::parse(lfUnion* record, int size, PDBTypeDefIndexMap& types)
 {
 	// Copy member count
 	union_count = record->count;
@@ -666,12 +707,20 @@ void PDBTypeUnion::parse(lfUnion* record, int, PDBTypeDefIndexMap& types)
 	char* name;
 	name = reinterpret_cast<char*>(RecordValue(record->data, reinterpret_cast<PDB_DWORD*>(&value)));
 	size_bytes = value;
-	union_name = name;
+	union_name = boundedRecordName(name, record, size);
 	// Copy union members
-	if (record->field > 0 && types[record->field] != nullptr)
+	if (record->field > 0 && types[record->field] != nullptr && types[record->field]->type_class == PDBTYPE_FIELDLIST)
 	{
+		// `record->field` is a type index straight out of the TPI record, and
+		// types[] is pre-seeded with PDBTypeBase objects at the CodeView
+		// base-type indices (T_INT4 = 0x74, T_VOID = 3, ...), so a non-field
+		// index is non-null and passed the check above. Casting a PDBTypeBase
+		// to a PDBTypeFieldList reads its `is_pointer`/`size_bits`/
+		// `description` bytes as the `fields` vector: size() came back huge
+		// and fields[i] dereferenced a fabricated pointer. usableArgumentCount
+		// in this same file already asks first; these sites did not.
 		// Get field list with union members
-		PDBTypeFieldList* fieldlist = reinterpret_cast<PDBTypeFieldList*>(types[record->field]);
+		PDBTypeFieldList* fieldlist = static_cast<PDBTypeFieldList*>(types[record->field]);
 		// Copy all members from field list
 		for (unsigned int i = 0; i < fieldlist->fields.size(); i++)
 		{ // Copy pointers to struct members from field list
@@ -684,7 +733,7 @@ void PDBTypeUnion::parse(lfUnion* record, int, PDBTypeDefIndexMap& types)
 void PDBTypeUnion::dump(bool nested)
 {
 	PDBTypeDef::dump(nested);
-	printf("union %s", union_name);
+	printf("union %s", union_name.c_str());
 	if (!nested)
 	{
 		if (union_members.size() > 0)
@@ -717,7 +766,7 @@ std::string PDBTypeUnion::to_llvm(void)
 //
 // =================================================================
 
-void PDBTypeClass::parse(lfClass* record, int, PDBTypeDefIndexMap&)
+void PDBTypeClass::parse(lfClass* record, int size, PDBTypeDefIndexMap&)
 {
 	// Copy member count
 	class_count = record->count;
@@ -726,13 +775,13 @@ void PDBTypeClass::parse(lfClass* record, int, PDBTypeDefIndexMap&)
 	char* name;
 	name = reinterpret_cast<char*>(RecordValue(record->data, reinterpret_cast<PDB_DWORD*>(&value)));
 	size_bytes = value;
-	class_name = name;
+	class_name = boundedRecordName(name, record, size);
 }
 
 void PDBTypeClass::dump(bool nested)
 {
 	PDBTypeDef::dump(nested);
-	printf("class %s", class_name);
+	printf("class %s", class_name.c_str());
 	if (!nested) puts("");
 }
 

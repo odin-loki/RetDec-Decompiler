@@ -280,6 +280,14 @@ ContainerResult MapDetector::detect(const ssa::SSAFunction& fn) const
 	auto ev = analyseStructure(fn);
 	result.confidence = ev.confidence;
 
+	// A rotation is the only signal here that is specific to a red-black tree.
+	// ev.found says whether one was seen and was computed and then never read:
+	// the three non-specific signals -- a Compare against 0 or 1, three Loads,
+	// two Compares and three Stores -- sum to exactly 0.40, which is exactly
+	// ContainerDetector::Config::minConfidence, so `0.40f < 0.40f` is false and
+	// a std::map was emitted for a function with no rebalancing evidence at all.
+	if (!ev.found) return result;
+
 	if (ev.confidence < 0.10f) return result;
 
 	result.emittedType = "std::map<int, int>";

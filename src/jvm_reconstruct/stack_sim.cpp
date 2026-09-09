@@ -380,8 +380,21 @@ StackSimResult JvmStackSim::simulate(const BcCFG& cfg,
     }
     std::unordered_map<uint32_t, bool> visited;
 
-    for (int iter = 0; iter < opts_.maxIter && !worklist.empty(); ++iter) {
-        uint32_t blockId = worklist.front();
+	// The budget bounds sweeps over the CFG, not blocks visited.
+	//
+	// It used to be spent one unit per worklist pop, i.e. per block, so with
+	// the default 32 the simulator stopped after visiting 32 basic blocks --
+	// an ordinary method size, not a pathological one. Blocks past that got no
+	// InstrStackInfo, LocalRebuilder::inferSlotTypes saw none of their
+	// StoreLocal/LoadLocal, no BcLocalVar was created for their slots, and the
+	// emitter declared only the first 32 locals while the body still assigned
+	// the rest: Java that does not compile. maxIter is documented as "Max
+	// fixed-point iterations per method", so the bound is that many passes
+	// over every block.
+	const long long visitBudget = static_cast<long long>(opts_.maxIter) * static_cast<long long>(cfg.blockCount() + 1);
+	for (long long iter = 0; iter < visitBudget && !worklist.empty(); ++iter)
+	{
+		uint32_t blockId = worklist.front();
         worklist.pop();
 
         if (blockId >= cfg.blockCount())
@@ -461,9 +474,9 @@ StackSimResult JvmStackSim::simulate(const BcCFG& cfg,
                 worklist.push(eh.handlerBlock);
             }
         }
-    }
+	}
 
-    return result;
+	return result;
 }
 
 } // namespace jvm_reconstruct

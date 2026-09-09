@@ -393,6 +393,16 @@ TEST(InsertionSortFingerprintTest, EmptyFunctionNoInsertion)
 	EXPECT_FALSE(ev.found);
 }
 
+// Two loops: an outer walk over the array and an inner backward shift. That
+// nesting is what separates an insertion sort from a memmove-shaped copy loop,
+// which has the same instruction mix in a single loop.
+static void addNestedLoop(ssa::SSAFunction& fn)
+{
+	// blocks 1 and 2 are each a loop header, so there are two of them.
+	fn.block(2)->succs.push_back(2); // inner shift loop
+	fn.block(3)->succs.push_back(1); // outer walk
+}
+
 TEST(InsertionSortFingerprintTest, BasicInsertionPattern)
 {
 	// Sub (decrement) + Compare + Store + extra blocks.
@@ -404,10 +414,40 @@ TEST(InsertionSortFingerprintTest, BasicInsertionPattern)
 		 ssa::IrInstr::Op::Store,
 		 ssa::IrInstr::Op::CondBranch},
 		3);
+	addNestedLoop(*fn);
 	InsertionSortFingerprint isf;
 	auto ev = isf.analyse(*fn);
 	EXPECT_TRUE(ev.found);
 	EXPECT_GE(ev.confidence, 0.4f);
+}
+
+// The shape hasBackwardShiftLoop() accepts is also a plain backwards memmove --
+// introsort_detect.cpp documents that exact false positive and gained a gate
+// for it, which this fingerprint never did. A flat 0.5 is exactly the threshold
+// SortDetector::analyseFunction compares against, so `0.5f < 0.5f` is false and
+// every one of them was reported as an insertion sort.
+TEST(InsertionSortFingerprintTest, ASingleBackwardCopyLoopIsNotInsertion)
+{
+	auto fn = makeFunc(
+		"memmove_backwards",
+		{ssa::IrInstr::Op::Load,
+		 ssa::IrInstr::Op::Load,
+		 ssa::IrInstr::Op::Sub,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Compare,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::CondBranch},
+		3);
+	fn->block(2)->succs.push_back(1); // one loop, not two
+
+	InsertionSortFingerprint isf;
+	auto ev = isf.analyse(*fn);
+	EXPECT_LT(ev.confidence, 0.5f) << "one loop is a copy, not an insertion sort";
+
+	InsertionSortDetector det;
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.5f);
 }
 
 TEST(InsertionSortFingerprintTest, OneCompareIsNotInsertion)
@@ -428,6 +468,8 @@ TEST(InsertionSortFingerprintTest, ThresholdGuard16)
 	auto* entry = fn->addBlock("entry");
 	fn->addBlock("loop");
 	fn->addBlock("exit");
+	fn->block(2)->succs.push_back(2); // inner shift
+	fn->block(2)->succs.push_back(1); // outer walk
 
 	// Add instructions to entry block.
 	fn->addInstr(entry->id, ssa::IrInstr::Op::Sub);
@@ -694,6 +736,58 @@ TEST(RadixsortDetectorTest, ZeroComparisonsBoostScore)
 	EXPECT_EQ(r.algorithm, SortAlgorithm::Radixsort);
 }
 
+// hasDigitExtraction required `uses.size() >= 2` and then read uses[1]. The IR
+// producer (src/retdec/llvm_to_ssa.cpp) attaches only ConstantInt operands to
+// `uses`, so `lshr %v, 8` arrives with exactly one use -- the shift amount, at
+// position 0 -- and the Shr half of the test could never fire on IR the
+// producer emits. The And-mask loop three lines below already scanned every
+// use, and partition_detect.cpp documents the same convention.
+TEST(RadixsortDetectorTest, ADigitShiftWithOneUseIsFound)
+{
+	auto fn = makeFunc(
+		"radix_pass",
+		{ssa::IrInstr::Op::Shr,
+		 ssa::IrInstr::Op::And,
+		 ssa::IrInstr::Op::Load,
+		 ssa::IrInstr::Op::Load,
+		 ssa::IrInstr::Op::Load,
+		 ssa::IrInstr::Op::Load,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::Store,
+		 ssa::IrInstr::Op::Add,
+		 ssa::IrInstr::Op::Add},
+		2);
+	auto* blk = fn->block(fn->entryId());
+
+	// One use, at index 0: the form llvm_to_ssa produces.
+	auto* shrI = blk->instrs[0];
+	auto* imm8 = fn->allocValue(ssa::ValueKind::Immediate);
+	imm8->imm = 8;
+	ssa::Use ush;
+	ush.valueId = imm8->id;
+	ush.operandIndex = 0;
+	shrI->uses.push_back(ush);
+
+	auto* andI = blk->instrs[1];
+	auto* immMask = fn->allocValue(ssa::ValueKind::Immediate);
+	immMask->imm = 0xff;
+	ssa::Use uand;
+	uand.valueId = immMask->id;
+	uand.operandIndex = 0;
+	andI->uses.push_back(uand);
+
+	// Add a phi so hist + scatter + prefix all hold and the 0.40 clamp is off,
+	// leaving the digit-extraction term visible in the score.
+	fn->addPhi(blk->id, 0);
+
+	RadixsortDetector det;
+	auto r = det.detect(*fn);
+	// 0.35 (no comparisons) + 0.20 (histogram) + 0.10 (prefix) + 0.20 (scatter)
+	// is 0.85; the digit extraction is the remaining 0.25.
+	EXPECT_NEAR(r.confidence, 1.0f, 1e-4f) << "the shift's only use is at index 0";
+}
+
 TEST(RadixsortDetectorTest, WithComparisonsLowScore)
 {
 	// Has Compare → not a strong radix signal.
@@ -894,6 +988,8 @@ TEST(InsertionSortDetectorTest, BasicPattern)
 		 ssa::IrInstr::Op::Store,
 		 ssa::IrInstr::Op::CondBranch},
 		3);
+	fn->block(2)->succs.push_back(2);
+	fn->block(3)->succs.push_back(1);
 	InsertionSortDetector det;
 	auto r = det.detect(*fn);
 	EXPECT_GE(r.confidence, 0.40f);

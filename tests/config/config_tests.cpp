@@ -26,6 +26,16 @@ TEST_F(ConfigTests, ReadNonexistentFileThrowsAnException)
 	ASSERT_THROW(config.readJsonFile("/non/existing/file"), FileNotFoundException);
 }
 
+// Opening a directory succeeds on glibc, but the seek then fails and tellg()
+// returns -1, which converts to SIZE_MAX and made resize() throw
+// std::length_error -- out of a function whose contract is
+// FileNotFoundException or ParseException, and which every caller handles on
+// exactly those terms. `fileinfo -c <directory>` aborted.
+TEST_F(ConfigTests, ReadingADirectoryThrowsTheDocumentedException)
+{
+	ASSERT_THROW(config.readJsonFile("/tmp"), FileNotFoundException);
+}
+
 TEST_F(ConfigTests, ParsingBadInputThrowsAnException)
 {
 	ASSERT_THROW(config.readJsonString("{ bad content }"), ParseException);

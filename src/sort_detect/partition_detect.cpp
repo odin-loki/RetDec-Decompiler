@@ -37,6 +37,7 @@
 #include "retdec/ssa/ssa.h"
 
 #include <algorithm>
+#include <set>
 #include <unordered_set>
 
 namespace retdec {
@@ -103,6 +104,21 @@ static int countCondBranches(const ssa::SSAFunction& fn)
 // A swap of three elements uses 3 loads and 3 stores (tmp = a; a = b; b = tmp)
 // but in modern compilers it often uses 2 loads and 2 stores with a register
 // holding tmp.  We look for ≥ 2 stores within a single basic block.
+// How many distinct loop headers the function has: a block that is the target
+// of a back edge. Two of them is a nested loop.
+static int countLoopHeaders(const ssa::SSAFunction& fn)
+{
+	std::set<uint32_t> headers;
+	for (uint32_t b = 0; b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (uint32_t succ: blk->succs)
+			if (succ <= b) headers.insert(succ);
+	}
+	return static_cast<int>(headers.size());
+}
+
 static bool blockHasSwapPattern(const ssa::BasicBlock& blk)
 {
 	int stores = 0;
@@ -418,9 +434,21 @@ InsertionSortEvidence InsertionSortFingerprint::analyse(const ssa::SSAFunction& 
 	ev.found = hasBackwardShiftLoop(fn);
 	if (ev.found)
 	{
-		ev.confidence = 0.5f;
+		// The shape hasBackwardShiftLoop() accepts is also a plain backwards
+		// memmove -- introsort_detect.cpp documents that exact false positive
+		// ("two loads, two stores, a Sub, two compares, two conditional
+		// branches, no calls at all") and gained a gate for it, which this
+		// fingerprint never did. A flat 0.5 is exactly the threshold
+		// SortDetector::analyseFunction compares against, so `0.5f < 0.5f` is
+		// false and every one of them was reported as an insertion sort.
+		//
+		// An insertion sort is two loops -- an outer walk and an inner shift
+		// -- where a memmove is one, so the shape alone is now worth less than
+		// the threshold and the nesting is what carries it over.
+		ev.confidence = 0.35f;
+		if (countLoopHeaders(fn) >= 2) ev.confidence += 0.20f;
 		ev.hasThresholdGuard = hasThresholdGuard(fn, ev.threshold);
-		if (ev.hasThresholdGuard) ev.confidence += 0.3f;
+		if (ev.hasThresholdGuard) ev.confidence += 0.30f;
 	}
 	return ev;
 }

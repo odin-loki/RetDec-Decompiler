@@ -72,24 +72,52 @@ static int countOp(const ssa::SSAFunction& fn, ssa::IrInstr::Op op)
 	return n;
 }
 
-// Early exit: a block with two successors (conditional branch) where at least
-// one successor is outside the loop (successor index > current block).
+// Early exit: the loop leaves by more than one branch.
+//
+// That is the whole difference between the two algorithms this file
+// distinguishes. std::find stops as soon as it matches, so its loop has two
+// exits -- the bound test and the match test. std::count runs to the end and
+// has only the bound test.
+//
+// The old test returned true for any block with a forward successor, which is
+// the bound test itself and is present in every terminating loop: the exit
+// block follows the loop in both llvm_to_ssa block order and hand-built CFGs.
+// So `!hasEarlyExit(fn)` could only hold for a loop with no exit at all, and
+// AlgorithmKind::Count was dead for every normal input -- count loops were
+// reported as std::find.
 static bool hasEarlyExit(const ssa::SSAFunction& fn)
 {
+	// The innermost loop: the last back edge found gives its latch, and where
+	// that edge goes gives its header.
+	uint32_t header = 0, latch = 0;
+	bool haveLoop = false;
 	for (uint32_t b = 0; b < fn.blockCount(); ++b)
 	{
 		const auto* blk = fn.block(b);
-		if (!blk || blk->succs.size() < 2) continue;
-		bool hasForwardSucc = false;
+		if (!blk) continue;
 		for (uint32_t s: blk->succs)
-			if (s > b)
+			if (s <= b)
 			{
-				hasForwardSucc = true;
+				header = s;
+				latch = b;
+				haveLoop = true;
+			}
+	}
+	if (!haveLoop) return false;
+
+	int exits = 0;
+	for (uint32_t b = header; b <= latch && b < fn.blockCount(); ++b)
+	{
+		const auto* blk = fn.block(b);
+		if (!blk) continue;
+		for (uint32_t s: blk->succs)
+			if (s > latch)
+			{
+				++exits;
 				break;
 			}
-		if (hasForwardSucc) return true;
 	}
-	return false;
+	return exits > 1;
 }
 
 // Predicate call: a Call in the loop body (find_if comparator).
@@ -193,10 +221,16 @@ AlgorithmResult FindDetector::detect(const ssa::SSAFunction& fn) const
 	if (hasCountPattern(fn))
 	{
 		result.kind = AlgorithmKind::Count;
+		// A count loop has one exit, so it scores 0.35 lower than a find and
+		// usually lands at Medium -- where emit() would have handed back the
+		// find/find_if text under an AlgorithmKind::Count heading.
 		if (tier == EmissionTier::High)
 			result.emittedForm = ev.hasLambda ? "std::count_if(first, last, pred);" : "std::count(first, last, value);";
+		else if (tier == EmissionTier::Medium)
+			result.emittedForm =
+				ev.hasLambda ? "/* std::count_if? */ counting loop with predicate" : "/* std::count? */ counting loop";
 		else
-			result.emittedForm = emit(ev, tier);
+			result.emittedForm = "size_t n = 0; for (auto it = first; it != last; ++it) if (*it == val) ++n;";
 	}
 	else
 	{

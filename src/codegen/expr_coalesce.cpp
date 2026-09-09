@@ -166,8 +166,22 @@ std::string CExpr::toString(int outerPrec) const {
             return children[0]->toString(15) + "++";
         if (unOp == U::PostDec)
             return children[0]->toString(15) + "--";
-        std::string s = std::string(unOpStr(unOp)) + children[0]->toString(14);
-        if (14 < outerPrec) s = "(" + s + ")";
+		const std::string op = unOpStr(unOp);
+		const std::string operand = children[0]->toString(14);
+		// A space when the two would otherwise form a different token.
+		//
+		// A unary operand is itself precedence 14, so `14 < outerPrec` is
+		// false and nothing parenthesised it: the two were pasted together and
+		// the C tokeniser read the pair as one operator. Neg(Neg(x)) printed
+		// `--x`, a pre-decrement; AddrOf(AddrOf(x)) printed `&&x`, a logical
+		// and. Only `-`, `+` and `&` double up into another operator -- `**p`,
+		// `~~x` and `!!c` are each unambiguous and stay tight.
+		std::string s = op;
+		if (!op.empty() && !operand.empty() && op.back() == operand.front()
+			&& (op.back() == '-' || op.back() == '+' || op.back() == '&'))
+			s += ' ';
+		s += operand;
+		if (14 < outerPrec) s = "(" + s + ")";
         return s;
     }
 
@@ -282,8 +296,30 @@ std::string ExprCoalescer::nameForValue(uint32_t vid,
     const auto* val = fn.value(vid);
     if (val && val->varId != ssa::kInvalidVar) {
         const std::string& n = fn.varName(val->varId);
-        if (!n.empty()) return n + "_" + std::to_string(val->version);
-    }
+		// (varName, version) is not unique. SSAFunction::allocValue keys its
+		// version counter on ((kind << 32) | varId), so a Phi result, a
+		// VirtualReg definition and an Undef for the same variable each start
+		// their own sequence at 0 -- and SSARename allocates phi results with
+		// ValueKind::Phi and instruction defs with the instruction's kind for
+		// the same varId. Distinct, simultaneously live SSA values were given
+		// the same C identifier and merged into one variable in the emitted
+		// source. The kind is what separates the sequences, so it belongs in
+		// the name.
+		if (!n.empty())
+		{
+			std::string suffix;
+			switch (val->kind)
+			{
+			case ssa::ValueKind::Phi: suffix = "p"; break;
+			case ssa::ValueKind::Undef: suffix = "u"; break;
+			case ssa::ValueKind::MemRef: suffix = "m"; break;
+			case ssa::ValueKind::FlagBundle: suffix = "f"; break;
+			case ssa::ValueKind::Immediate: suffix = "c"; break;
+			case ssa::ValueKind::VirtualReg: break; // the common case stays bare
+			}
+			return n + "_" + suffix + std::to_string(val->version);
+		}
+	}
     return "v" + std::to_string(vid);
 }
 

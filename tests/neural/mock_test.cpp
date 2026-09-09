@@ -573,6 +573,39 @@ TEST(NeuralNaming, ApplyJsonRenameMapRenamesIdentifiers)
 	EXPECT_EQ(out.find("v3"), std::string::npos);
 }
 
+// The rewrite loop walked the source character by character with no literal or
+// comment state, so every identifier-shaped run was a rename candidate --
+// including runs inside "...", '...', /* */ and //. A rename then changed
+// string constants and printf format strings, which is an observable behaviour
+// change, and one every gate passes: the control-flow shape is untouched, the
+// spawn counts are untouched, and it still compiles. refiner.h documents this
+// pass as "Word-boundary only".
+TEST(NeuralNaming, ApplyJsonRenameMapLeavesStringLiteralsAlone)
+{
+	const std::string src = "int v3 = 0; puts(\"v3 is the counter\");\n";
+	const std::string out = applyJsonRenameMap(src, R"({"v3":"count"})");
+	EXPECT_NE(out.find("int count = 0;"), std::string::npos) << out;
+	EXPECT_NE(out.find("\"v3 is the counter\""), std::string::npos)
+		<< "a rename must not reach inside a string literal: " << out;
+}
+
+TEST(NeuralNaming, ApplyJsonRenameMapLeavesCommentsAlone)
+{
+	const std::string src = "/* v3 holds the state */\nint v3 = 0; // v3 again\n";
+	const std::string out = applyJsonRenameMap(src, R"({"v3":"count"})");
+	EXPECT_NE(out.find("/* v3 holds the state */"), std::string::npos) << out;
+	EXPECT_NE(out.find("// v3 again"), std::string::npos) << out;
+	EXPECT_NE(out.find("int count = 0;"), std::string::npos) << out;
+}
+
+TEST(NeuralNaming, ApplyJsonRenameMapLeavesCharLiteralsAndEscapesAlone)
+{
+	const std::string src = "char c = 'v'; const char* s = \"a\\\"v3\\\" b\"; int v3 = 0;\n";
+	const std::string out = applyJsonRenameMap(src, R"({"v3":"count"})");
+	EXPECT_NE(out.find("\\\"v3\\\""), std::string::npos) << "an escaped quote does not end the literal: " << out;
+	EXPECT_NE(out.find("int count = 0;"), std::string::npos) << out;
+}
+
 TEST(NeuralNaming, ApplyJsonRenameMapRejectsNonObject)
 {
 	const std::string src = "int v3 = 0;\n";

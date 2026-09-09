@@ -54,6 +54,38 @@ TEST(TestBinary, MakeELF64IsClass64)
 	EXPECT_EQ(data[4], 2); // ELFCLASS64
 }
 
+// e_shoff was written as 0 with a "(filled later)" comment and nothing ever
+// filled it, while e_shnum said sections + 1 and that many 64-byte headers were
+// appended after the section data. A reader that trusts e_shnum walked the
+// table from file offset 0 -- over the ELF header itself -- and never saw the
+// headers that were written.
+TEST(TestBinary, MakeELF64SectionHeaderOffsetPointsAtTheTable)
+{
+	auto b = TestBinary::makeELF64();
+	auto data = b.serialise();
+
+	const auto read64 = [&](std::size_t at) {
+		uint64_t v = 0;
+		for (int i = 0; i < 8; ++i)
+			v |= static_cast<uint64_t>(data[at + i]) << (8 * i);
+		return v;
+	};
+	const auto read16 = [&](std::size_t at) { return static_cast<uint16_t>(data[at] | (data[at + 1] << 8)); };
+
+	const uint64_t shoff = read64(0x28); // e_shoff
+	const uint16_t shentsize = read16(0x3A);
+	const uint16_t shnum = read16(0x3C);
+
+	ASSERT_GT(shnum, 0u);
+	EXPECT_NE(shoff, 0u) << "the section header table is not at file offset 0";
+	EXPECT_LE(shoff + static_cast<uint64_t>(shentsize) * shnum, data.size())
+		<< "the table it points at runs past the end of the file";
+
+	// The first entry is the null section header: all zero.
+	for (std::size_t i = 0; i < shentsize; ++i)
+		EXPECT_EQ(data[static_cast<std::size_t>(shoff) + i], 0u);
+}
+
 TEST(TestBinary, MakeELF32HasELFMagic)
 {
 	auto b = TestBinary::makeELF32();
@@ -170,6 +202,25 @@ TEST_F(SnapshotTest, MismatchHasDiff)
 	tester_.compare("diff_test", "line1\nline2\n");
 	auto r = tester_.compare("diff_test", "line1\nchanged\n");
 	EXPECT_FALSE(r.diff.empty());
+}
+
+// makeDiff's loop condition was `getline(se, le) || getline(sa, la)`, which
+// short-circuits: while the expected stream still yields lines the actual
+// stream is never read, so every expected line was reported as removed and
+// every actual line as an addition, numbered past the end of both files. The
+// diff located nothing.
+TEST_F(SnapshotTest, TheDiffNamesTheLineThatChanged)
+{
+	tester_.compare("diff_line", "a\nb\nc\n");
+	auto r = tester_.compare("diff_line", "a\nB\nc\n");
+
+	ASSERT_EQ(r.result, SnapshotTester::Result::Mismatch);
+	EXPECT_NE(r.diff.find("@@ line 2 @@"), std::string::npos) << r.diff;
+	EXPECT_NE(r.diff.find("- b"), std::string::npos) << r.diff;
+	EXPECT_NE(r.diff.find("+ B"), std::string::npos) << r.diff;
+	// The unchanged lines are not in it.
+	EXPECT_EQ(r.diff.find("- a"), std::string::npos) << r.diff;
+	EXPECT_EQ(r.diff.find("- c"), std::string::npos) << r.diff;
 }
 
 TEST_F(SnapshotTest, UpdateOverwritesSnapshot)

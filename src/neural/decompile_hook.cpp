@@ -92,7 +92,28 @@ std::string jsonEscape(const std::string& s)
 		case '\\': oss << "\\\\"; break;
 		case '\n': oss << "\\n"; break;
 		case '\r': oss << "\\r"; break;
-		default: oss << c; break;
+		case '\t': oss << "\\t"; break;
+		case '\b': oss << "\\b"; break;
+		case '\f': oss << "\\f"; break;
+		default:
+			// RFC 8259 forbids a raw control character inside a JSON string,
+			// and the default arm copied every one of them through. The
+			// strings here are function names, comments and detection details
+			// taken from the analysed binary's symbol and debug tables, so a
+			// name carrying a 0x01 made the whole semantic-context document
+			// -- labelled "Semantic context (JSON)" in the model prompt --
+			// unparseable for anything that tried to read it.
+			if (static_cast<unsigned char>(c) < 0x20)
+			{
+				static const char kHex[] = "0123456789abcdef";
+				oss << "\\u00" << kHex[(static_cast<unsigned char>(c) >> 4) & 0xF]
+					<< kHex[static_cast<unsigned char>(c) & 0xF];
+			}
+			else
+			{
+				oss << c;
+			}
+			break;
 		}
 	}
 	return oss.str();
@@ -209,7 +230,18 @@ std::vector<CFunctionSpan> extractCFunctionSpans(const std::string& src)
 struct RefinePassResult
 {
 	std::string source;
+	/// Describes `source`: the manifest of the tier whose output it is.
+	///
+	/// It used to be overwritten by every tier, accepted or not, while
+	/// `source` and `accepted` accumulated -- so when an early tier was
+	/// accepted and a later one rejected, the N9 provenance record written
+	/// beside <out>.refined.c said accepted:false, carried the output_sha256
+	/// of the rejected text, and named a tier whose output was not in the
+	/// file. The hash did not identify the file it sat next to.
 	std::string manifest;
+	/// The most recent attempt's manifest, accepted or not. This is what to
+	/// report when nothing was accepted and there is no artifact to describe.
+	std::string lastAttempt;
 	bool accepted = false;
 };
 
@@ -269,11 +301,12 @@ RefinePassResult runTieredRefine(Refiner& refiner, std::string current, const st
 		if (n > 0) req.generation.maxTokens = n;
 
 		const auto resp = refiner.refine(req);
-		result.manifest = resp.manifestJson;
+		result.lastAttempt = resp.manifestJson;
 		if (resp.accepted)
 		{
 			current = resp.refinedSource;
 			result.accepted = true;
+			result.manifest = resp.manifestJson;
 		}
 
 		const bool compileReject = !resp.accepted
@@ -292,20 +325,37 @@ RefinePassResult runTieredRefine(Refiner& refiner, std::string current, const st
 		retry.functionSource = current;
 		retry.tier = RefinementTier::FullRewrite;
 		retry.generation.reuseKvPrefix = false;
+		// The Naming tier's grammar does not survive into the retry.
+		//
+		// `retry = req` copies the whole request, and when the retry is
+		// triggered from the Naming tier req.generation.grammarGbnf still
+		// holds namingRenameMapGbnf(): decoding was constrained to a JSON
+		// rename-map object while the prompt asked for "a single compilable C
+		// translation unit". Refiner::refine skips the applyJsonRenameMap
+		// branch because retry.tier is not Naming, so the emitted JSON was
+		// treated as C source and failed the gates -- the retry was
+		// guaranteed to fail exactly when the Naming tier had triggered it.
+		retry.generation.grammarGbnf.clear();
+		retry.generation.grammarRoot.clear();
 		retry.compilerDiagnostics = diags.empty() ? std::string("cc -fsyntax-only failed") : diags;
 
 		const auto retryResp = refiner.refine(retry);
-		result.manifest = retryResp.manifestJson;
+		result.lastAttempt = retryResp.manifestJson;
 		if (retryResp.accepted && compileSyntaxOnly(retryResp.refinedSource))
 		{
 			current = retryResp.refinedSource;
 			result.accepted = true;
+			result.manifest = retryResp.manifestJson;
 		}
 		else if (retryResp.accepted)
 		{
-			result.manifest = R"({"accepted":false,"reason":"compile_syntax"})";
+			result.lastAttempt = R"({"accepted":false,"reason":"compile_syntax"})";
 		}
 	}
+
+	// With nothing accepted there is no artifact to describe, so the report is
+	// the last attempt.
+	if (!result.accepted && !result.lastAttempt.empty()) result.manifest = result.lastAttempt;
 
 	result.source = current;
 	return result;
@@ -332,18 +382,54 @@ void buildCallGraph(
 	std::map<std::string, std::set<std::string>>& callersOf,
 	std::map<std::string, std::set<std::string>>& calleesOf)
 {
+	// One ordered pass over the functions, then a binary search per call site.
+	//
+	// This used to rescan the whole of config.functions for every code
+	// reference of every function -- F * R * F, with F straight out of the
+	// analysed binary -- and buildCallGraph runs twice per decompilation, once
+	// from serializeSemanticContext and once from
+	// maybeRefineDecompilerOutput under tree-sitter.
+	struct FnRange
+	{
+		uint64_t start = 0;
+		uint64_t end = 0;
+		const std::string* name = nullptr;
+	};
+	std::vector<FnRange> ranges;
+	ranges.reserve(config.functions.size());
+	for (const auto& fn: config.functions)
+	{
+		if (!fn.getStart().isDefined() || !fn.getEnd().isDefined()) continue;
+		ranges.push_back({fn.getStart().getValue(), fn.getEnd().getValue(), &fn.getName()});
+	}
+	std::sort(ranges.begin(), ranges.end(), [](const FnRange& a, const FnRange& b) {
+		if (a.start != b.start) return a.start < b.start;
+		return a.end < b.end;
+	});
+
 	for (const auto& callee: config.functions)
 	{
 		for (const auto& site: callee.codeReferences)
 		{
 			if (!site.isDefined()) continue;
-			for (const auto& caller: config.functions)
+			const uint64_t addr = site.getValue();
+			// The last range whose start is at or below the site. Ranges here
+			// do not nest -- they are function bodies -- so at most one of
+			// them contains it, and going back over equal starts covers the
+			// ties the sort allows.
+			auto it = std::upper_bound(ranges.begin(), ranges.end(), addr, [](uint64_t a, const FnRange& r) {
+				return a < r.start;
+			});
+			while (it != ranges.begin())
 			{
-				if (caller.getName() == callee.getName()) continue;
-				if (!caller.getStart().isDefined() || !caller.getEnd().isDefined()) continue;
-				if (!caller.contains(site)) continue;
-				callersOf[callee.getName()].insert(caller.getName());
-				calleesOf[caller.getName()].insert(callee.getName());
+				--it;
+				// Half-open, as Range::contains is: [start, end).
+				if (it->end <= addr) break;
+				if (addr < it->start) continue;
+				if (*it->name == callee.getName()) continue;
+				callersOf[callee.getName()].insert(*it->name);
+				calleesOf[*it->name].insert(callee.getName());
+				break;
 			}
 		}
 	}
@@ -929,7 +1015,9 @@ void maybeRefineDecompilerOutput(retdec::config::Config& config, std::string* ou
 				calIt == localCallees.end() ? std::set<std::string>{} : calIt->second;
 			const std::string sem = appendRefinedCalleesJson(semanticJson, refinedByName, calleeNames);
 			const auto pass = runTieredRefine(refiner, src, sem);
-			lastManifest = pass.manifest;
+			// The manifest travels with an accepted artifact; a rejected
+			// function's manifest would describe text that is not in the file.
+			if (!anyAccepted || pass.accepted) lastManifest = pass.manifest;
 			if (pass.accepted)
 			{
 				refinedByName[name] = pass.source;

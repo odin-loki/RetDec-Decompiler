@@ -85,15 +85,27 @@ static bool hasPhi(const ssa::SSAFunction& fn)
 CombinerKind AccumulateDetector::detectCombiner(const ssa::SSAFunction& fn) const
 {
 	// Check for the Compare+select pattern first (max/min).
-	if (countOp(fn, ssa::IrInstr::Op::Compare) >= 1)
+	//
+	// An extremum loop does not combine its accumulator, it selects it: a
+	// Compare feeding a select (Op::FlagRead -- SETcc/CMOVcc, and llvm's
+	// SelectInst), with no arithmetic operator doing the combining. The
+	// induction step's Add does not count, and requiring zero Adds is what
+	// made this branch unreachable: every range loop advances its iterator or
+	// index with one, so an extremum loop fell through to CombinerKind::Add
+	// and was emitted as `std::accumulate(first, last, 0)` at High tier --
+	// wrong C++, not a weaker guess.
+	const int adds = countOp(fn, ssa::IrInstr::Op::Add);
+	const int muls = countOp(fn, ssa::IrInstr::Op::Mul);
+	const int ors = countOp(fn, ssa::IrInstr::Op::Or);
+	const int xors = countOp(fn, ssa::IrInstr::Op::Xor);
+	const int selects = countOp(fn, ssa::IrInstr::Op::FlagRead);
+	if (countOp(fn, ssa::IrInstr::Op::Compare) >= 1 && selects >= 1 && adds <= 1 && muls == 0 && ors == 0 && xors == 0)
 	{
-		// Max: greater-than compare, result used to select max.
-		// Min: less-than compare.
-		// We can't distinguish without condition flags; return Max as heuristic
-		// when there is a compare but no explicit add/mul/or/xor.
-		if (countOp(fn, ssa::IrInstr::Op::Add) == 0 && countOp(fn, ssa::IrInstr::Op::Mul) == 0
-			&& countOp(fn, ssa::IrInstr::Op::Or) == 0 && countOp(fn, ssa::IrInstr::Op::Xor) == 0)
-			return CombinerKind::Max; // could be Min too; caller refines
+		// Whether it is a maximum or a minimum is the comparison's predicate,
+		// and the IR does not carry one -- Op::Compare covers every ICmp and
+		// FCmp alike -- so CombinerKind::Min stays unassignable here and
+		// emit() says as much rather than asserting a direction.
+		return CombinerKind::Max;
 	}
 	if (countOp(fn, ssa::IrInstr::Op::Mul) >= 1) return CombinerKind::Mul;
 	if (countOp(fn, ssa::IrInstr::Op::Or) >= 1) return CombinerKind::Or;
@@ -135,7 +147,11 @@ std::string AccumulateDetector::emit(const AccumulateEvidence& ev, AlgorithmKind
 	if (k == AlgorithmKind::MaxElement)
 	{
 		if (tier == EmissionTier::Medium) return "/* std::max_element? */ max loop";
-		return "*std::max_element(first, last);";
+		// The direction is the comparison's predicate and the IR does not
+		// carry one, so naming only max_element would be a claim the evidence
+		// does not support.
+		return "*std::max_element(first, last); // or std::min_element: the "
+			   "comparison direction is not in the IR";
 	}
 	if (k == AlgorithmKind::MinElement)
 	{

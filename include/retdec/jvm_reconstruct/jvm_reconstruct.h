@@ -115,15 +115,13 @@ private:
                     const CoalesceResult& coalesce,
                     const LocalRebuildResult& locals);
 
-    // Create a synthetic StoreLocal instruction for a slot assignment.
-    BcInstruction makeStore(uint32_t localIdx, uint32_t slotId,
-                            const StackSimResult& sim,
-                            uint32_t instrOffset) const;
+	// Create a synthetic StoreLocal instruction for a slot assignment.
+	// localSlot is a JVM local slot, which is what BcLocalOperand::index means
+	// to every reader of it -- not an index into the locals vector.
+	BcInstruction makeStore(uint32_t localSlot, uint32_t slotId, const StackSimResult& sim, uint32_t instrOffset) const;
 
-    // Create a synthetic LoadLocal instruction for a slot use.
-    BcInstruction makeLoad(uint32_t localIdx,
-                           const BcType& type,
-                           uint32_t instrOffset) const;
+	// Create a synthetic LoadLocal instruction for a slot use.
+	BcInstruction makeLoad(uint32_t localSlot, const BcType& type, uint32_t instrOffset) const;
 };
 
 } // namespace jvm_reconstruct

@@ -4,7 +4,10 @@
  * @copyright (c) 2017 Avast Software, licensed under the MIT license
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
+#include <cstdint>
+#include <filesystem>
 #include <fstream>
+#include <system_error>
 
 #include <rapidjson/error/en.h>
 #include <rapidjson/prettywriter.h>
@@ -52,6 +55,13 @@ const std::string JSON_patterns          = "patterns";
 namespace retdec {
 namespace config {
 
+namespace fs = std::filesystem;
+
+/// A JSON configuration larger than this is not one. The bound exists so a
+/// bogus size read back from a file that is not what it claimed cannot become
+/// an allocation request.
+static constexpr uint64_t kMaxConfigBytes = 1ULL << 30; // 1 GiB
+
 Config Config::empty()
 {
 	Config config;
@@ -89,11 +99,36 @@ void Config::readJsonFile(const std::string& input)
 		throw FileNotFoundException(msg);
 	}
 
+	// A config file is a regular file.
+	//
+	// Opening a directory succeeds on glibc; seeking to its end then reports a
+	// size that is not one -- -1 on some libstdc++ builds, LLONG_MAX on the
+	// one here -- and `jsonContent.resize(jsonFile.tellg())` turned that into
+	// std::length_error or std::bad_alloc, thrown out of a function whose
+	// contract is FileNotFoundException or ParseException. Every caller
+	// handles it on exactly those terms: fileinfo passes `-c`'s argument with
+	// no is_regular_file check of its own and catches only those two, so
+	// `fileinfo -c <directory>` aborted.
+	std::error_code ec;
+	if (!fs::is_regular_file(input, ec) || ec)
+	{
+		std::string msg = "Input file \"" + input + "\" is not a regular file.";
+		throw FileNotFoundException(msg);
+	}
+
 	std::string jsonContent;
 	jsonFile.seekg(0, std::ios::end);
-	jsonContent.resize(jsonFile.tellg());
+	// ...and the size it reports still has to be one a string can hold, for a
+	// file that changes underneath us or a device that opens as regular.
+	const std::streamoff size = jsonFile.tellg();
+	if (!jsonFile || size < 0 || static_cast<uint64_t>(size) > kMaxConfigBytes)
+	{
+		std::string msg = "Input file \"" + input + "\" can not be read.";
+		throw FileNotFoundException(msg);
+	}
+	jsonContent.resize(static_cast<std::size_t>(size));
 	jsonFile.seekg(0, std::ios::beg);
-	jsonFile.read(&jsonContent[0], jsonContent.size());
+	if (!jsonContent.empty()) jsonFile.read(&jsonContent[0], jsonContent.size());
 	jsonFile.close();
 
 	readJsonString(jsonContent);

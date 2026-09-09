@@ -51,8 +51,9 @@ JavaFileEmitter::reconstructClass(BcClass& cls) const {
     JvmReconstructor rec(opts_.reconOpts);
     for (auto& method : cls.methods) {
         if (method.cfg.blocks().empty()) continue;
-        results[method.name] = rec.reconstruct(method);
-    }
+		// Keyed by name *and* descriptor: Java overloads share a name.
+		results[JavaClassEmitter::reconKey(method)] = rec.reconstruct(method);
+	}
     return results;
 }
 

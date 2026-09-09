@@ -182,17 +182,31 @@ codegen::CFunction NewDeleteRecovery::applyToFunction(
         const std::vector<Replacement>& reps) const {
     // For now: annotate with comments (full AST rewriting would be a separate pass)
     if (!fn.body) return fn;
-    for (const auto& r : reps) {
-        if (r.functionName != fn.name) continue;
-        // Insert a comment statement before the replaced statement
-        auto comment = codegen::CStmt::exprStmt(
-            codegen::CExpr::lit(r.isNew ? "/* new */" : "/* delete */"));
-        if (r.stmtIndex < fn.body->children.size()) {
-            fn.body->children.insert(
-                fn.body->children.begin() + r.stmtIndex, comment);
-        }
-    }
-    return fn;
+
+	// Descending index order, so each insertion happens below the ones still
+	// to come and no earlier insertion has moved the position this one names.
+	//
+	// Replacement::stmtIndex is a position in the *original* children vector,
+	// and inserting in ascending order without compensating shifted every
+	// later index by one per marker already placed: the k-th marker landed
+	// k-1 statements too early and annotated the wrong statement.
+	std::vector<const Replacement*> mine;
+	for (const auto& r: reps)
+		if (r.functionName == fn.name) mine.push_back(&r);
+	std::stable_sort(mine.begin(), mine.end(), [](const Replacement* a, const Replacement* b) {
+		return a->stmtIndex > b->stmtIndex;
+	});
+
+	for (const auto* r: mine)
+	{
+		// Insert a comment statement before the replaced statement
+		auto comment = codegen::CStmt::exprStmt(codegen::CExpr::lit(r->isNew ? "/* new */" : "/* delete */"));
+		if (r->stmtIndex < fn.body->children.size())
+		{
+			fn.body->children.insert(fn.body->children.begin() + r->stmtIndex, comment);
+		}
+	}
+	return fn;
 }
 
 // ─── EhRecovery ──────────────────────────────────────────────────────────────

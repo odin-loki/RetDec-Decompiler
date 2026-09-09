@@ -20,10 +20,10 @@ namespace ctypes {
 * @brief Constructs a new function.
 */
 Function::Function(
-	const std::string &name,
-	const std::shared_ptr<FunctionType> &functionType,
-	const Parameters &parameters):
-	name(name), functionType(functionType), parameters(parameters) {}
+	const std::string& name, const std::shared_ptr<FunctionType>& functionType, const Parameters& parameters):
+	name(name), functionType(functionType),
+	callConvention(functionType ? functionType->getCallConvention() : CallConvention()), parameters(parameters)
+{}
 
 const std::string &Function::getName() const
 {
@@ -216,7 +216,9 @@ std::shared_ptr<FunctionType> Function::createFunctionType(
 */
 void Function::setCallConvention(const CallConvention &callConvention)
 {
-	functionType->setCallConvention(callConvention);
+	// The Function's own convention. It used to forward to the interned,
+	// shared FunctionType -- see the note on the member in function.h.
+	this->callConvention = callConvention;
 }
 
 /**
@@ -224,7 +226,7 @@ void Function::setCallConvention(const CallConvention &callConvention)
 */
 const CallConvention &Function::getCallConvention() const
 {
-	return functionType->getCallConvention();
+	return callConvention;
 }
 
 /**

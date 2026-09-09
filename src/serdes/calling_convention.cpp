@@ -17,8 +17,7 @@
 
 namespace {
 
-const std::vector<std::string> ccStrings =
-{
+const std::vector<std::string> ccStrings = {
 	"unknown",
 	"voidarg",
 	"cdecl",
@@ -40,8 +39,25 @@ const std::vector<std::string> ccStrings =
 	"mips64_default",
 	"powerpc_default",
 	"powerpc64_default",
-	"pic32_default"
-};
+	"pic32_default",
+	// eCC gained these two; the table did not, so serialize()'s
+	// `ccStrings.size() > cc.getID()` was false for both and they were written
+	// as "unknown" and read back as CC_UNKNOWN. That is live data loss:
+	// param_return.cpp maps demangled "vectorcall"/"regcall" onto exactly
+	// these IDs and calling_convention.cpp registers handlers for them, so an
+	// MSVC __vectorcall or Intel __regcall function lost its convention across
+	// a config write/read round trip.
+	"vectorcall",
+	"regcall"};
+
+// ccStrings is indexed by eCC, so a value added to the enum without a string
+// here serialises as "unknown" and reads back as CC_UNKNOWN -- silently, since
+// serialize()'s only check is that the id is in range. Pinning the count makes
+// that a build failure instead: when it fires, add the string above and the
+// matching case to operator<< in src/common/calling_convention.cpp.
+static_assert(
+	static_cast<int>(retdec::common::CallingConvention::eCC::CC_ENDING) == 24,
+	"eCC gained a value: add its string to ccStrings and its case to operator<<");
 
 } // anonymous namespace
 

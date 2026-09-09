@@ -1072,6 +1072,121 @@ TEST(ItaniumEH, CatchAll_TypeFilter0)
 	}
 }
 
+// Site::action is the 1-based *byte offset* of the first action record within
+// the action table -- parseLSDA treats it that way itself -- while
+// LsdaResult::actions is ordered by discovery. lsdaToTryCatch used the offset
+// as a vector index and walked the chain with ++index instead of following
+// ar_next; the two agree only when every action record is exactly two bytes
+// and the chain starts at offset 0. Here the first record's type filter needs
+// two SLEB128 bytes, so the second record sits at offset 3 and the second
+// site's action is 4 -- past the end of a two-element vector. Because the site
+// clears its block's handlers first, that left the block empty and it was
+// dropped: a catch handler silently disappeared.
+TEST(ItaniumEH, AnActionOffsetIsNotAnActionIndex)
+{
+	FlatBin fb;
+	uint64_t base = fb.base_;
+	uint64_t funcStart = base + 0x2000;
+	uint64_t funcLen = 0x400;
+	uint64_t lsdaVma = base + 0x7000;
+	uint64_t sectionVma = base + 0x5000;
+
+	uint64_t lsdaCur = lsdaVma;
+	fb.writeU8(lsdaCur++, 0xFF); // lpstart_enc = omit
+	fb.writeU8(lsdaCur++, 0xFF); // ttype_enc = omit
+	fb.writeU8(lsdaCur++, 0x03); // call_site_enc = udata4
+	// Two sites, each 4+4+4+1 bytes.
+	lsdaCur += fb.writeULEB128(lsdaCur, 26);
+
+	// Site 1: [0, 0x80), lp 0x100, action offset 1 (i.e. table offset 0).
+	fb.writeU32(lsdaCur, 0);
+	lsdaCur += 4;
+	fb.writeU32(lsdaCur, 0x80);
+	lsdaCur += 4;
+	fb.writeU32(lsdaCur, 0x100);
+	lsdaCur += 4;
+	lsdaCur += fb.writeULEB128(lsdaCur, 1);
+
+	// Site 2: [0x80, 0x100), lp 0x180, action offset 4 (table offset 3).
+	fb.writeU32(lsdaCur, 0x80);
+	lsdaCur += 4;
+	fb.writeU32(lsdaCur, 0x80);
+	lsdaCur += 4;
+	fb.writeU32(lsdaCur, 0x180);
+	lsdaCur += 4;
+	lsdaCur += fb.writeULEB128(lsdaCur, 4);
+
+	// Action table.
+	const uint64_t actionBase = lsdaCur;
+	// Record at offset 0: a two-byte type filter, then next = 0. Three bytes.
+	lsdaCur += fb.writeSLEB128(lsdaCur, 200);
+	lsdaCur += fb.writeSLEB128(lsdaCur, 0);
+	ASSERT_EQ(lsdaCur - actionBase, 3u) << "the first record must not be two bytes";
+	// Record at offset 3: catch-all, end of chain.
+	lsdaCur += fb.writeSLEB128(lsdaCur, 0);
+	lsdaCur += fb.writeSLEB128(lsdaCur, 0);
+
+	// .eh_frame with "zL" so the FDE can carry the LSDA pointer.
+	uint64_t cur = sectionVma;
+	uint64_t cieAt = cur;
+	{
+		uint64_t lenAt = cur;
+		cur += 4;
+		fb.writeU32(cur, 0);
+		cur += 4;
+		fb.writeU8(cur++, 1);
+		fb.writeU8(cur++, 'z');
+		fb.writeU8(cur++, 'L');
+		fb.writeU8(cur++, 0);
+		cur += fb.writeULEB128(cur, 1);
+		cur += fb.writeSLEB128(cur, -8);
+		cur += fb.writeULEB128(cur, 16);
+		cur += fb.writeULEB128(cur, 1);
+		fb.writeU8(cur++, 0x00); // lsda_pointer_enc = absptr
+		fb.writeU32(lenAt, (uint32_t)(cur - lenAt - 4));
+	}
+	{
+		uint64_t lenAt = cur;
+		cur += 4;
+		fb.writeU32(cur, (uint32_t)(cur - cieAt));
+		cur += 4;
+		fb.writeU64(cur, funcStart);
+		cur += 8;
+		fb.writeU64(cur, funcLen);
+		cur += 8;
+		cur += fb.writeULEB128(cur, 8);
+		fb.writeU64(cur, lsdaVma);
+		cur += 8;
+		fb.writeU32(lenAt, (uint32_t)(cur - lenAt - 4));
+	}
+	fb.writeU32(cur, 0);
+	cur += 4;
+	fb.addSection(".eh_frame", sectionVma, cur - sectionVma);
+
+	auto parser = makeItaniumEHParser();
+	auto fns = parser->parse(fb);
+	ASSERT_EQ(fns.size(), 1u);
+
+	// Both landing pads must be represented; the second used to be dropped.
+	bool sawFirst = false, sawSecond = false;
+	bool sawCatchAll = false;
+	for (const auto& b: fns[0].tryCatchBlocks)
+	{
+		for (const auto& h: b.handlers)
+		{
+			if (h.handlerVma == funcStart + 0x100) sawFirst = true;
+			if (h.handlerVma == funcStart + 0x180)
+			{
+				sawSecond = true;
+				if (h.isCatchAll) sawCatchAll = true;
+			}
+		}
+	}
+	EXPECT_TRUE(sawFirst);
+	EXPECT_TRUE(sawSecond) << "the second site's action record is at offset 3, not index 3";
+	EXPECT_TRUE(sawCatchAll) << "and it is the catch-all record that lives there";
+}
+
 // ─── EHReconstructor tests ────────────────────────────────────────────────────
 
 TEST(EHReconstructor, FindFunction_ReturnsNull_ForUnmapped)

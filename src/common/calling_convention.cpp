@@ -106,6 +106,8 @@ std::ostream& operator<<(std::ostream &out, const CallingConventionID& cc)
 		case CallingConvention::eCC::CC_POWERPC:  out << "CC_POWERPC_DEFAULT"; break;
 		case CallingConvention::eCC::CC_POWERPC64:out << "CC_POWERPC64_DEFAULT"; break;
 		case CallingConvention::eCC::CC_PIC32:    out << "CC_PIC32_DEFAULT"; break;
+		case CallingConvention::eCC::CC_VECTORCALL: out << "CC_VECTORCALL"; break;
+		case CallingConvention::eCC::CC_REGCALL: out << "CC_REGCALL"; break;
 		default: out << "UNHANDLED"; break;
 	}
 	return out;

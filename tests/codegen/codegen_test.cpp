@@ -131,6 +131,31 @@ TEST(CExprTest, UnOpDeref)
 	EXPECT_EQ(e->toString(), "*p");
 }
 
+// The unary operator and its operand were pasted together with nothing
+// between them, and the parenthesisation test `14 < outerPrec` is false when
+// the operand is itself unary -- also precedence 14 -- so the C tokeniser
+// re-read the pair as one operator: Neg(Neg(x)) printed `--x`, a pre-decrement.
+TEST(CExprTest, NestedNegIsNotADecrement)
+{
+	auto e = CExpr::unop(CExpr::UnOpKind::Neg, CExpr::unop(CExpr::UnOpKind::Neg, CExpr::var("x")));
+	EXPECT_NE(e->toString(), "--x");
+	EXPECT_EQ(e->toString(), "- -x");
+}
+
+TEST(CExprTest, NestedAddrOfIsNotALogicalAnd)
+{
+	auto e = CExpr::unop(CExpr::UnOpKind::AddrOf, CExpr::unop(CExpr::UnOpKind::AddrOf, CExpr::var("p")));
+	EXPECT_NE(e->toString(), "&&p");
+	EXPECT_EQ(e->toString(), "& &p");
+}
+
+// Two unaries that cannot form another token still print tightly.
+TEST(CExprTest, NestedDerefNeedsNoSpace)
+{
+	auto e = CExpr::unop(CExpr::UnOpKind::Deref, CExpr::unop(CExpr::UnOpKind::Deref, CExpr::var("p")));
+	EXPECT_EQ(e->toString(), "**p");
+}
+
 TEST(CExprTest, Cast)
 {
 	auto e = CExpr::cast(CType::make(CType::Kind::Int32), CExpr::var("x"));
@@ -438,6 +463,80 @@ TEST(GotoEliminatorTest, SimpleForwardGotoEliminated)
 		return false;
 	};
 	EXPECT_FALSE(hasGoto(result.get()));
+}
+
+// The Label node was replaced by an empty block on the way down, before any
+// guard was built, so the guard was built from every remaining sibling --
+// including the statements *at and after* the label. Those are the goto's
+// destination and must always run; they were skipped exactly when the goto was
+// taken.
+TEST(GotoEliminatorTest, TheLabelsOwnTargetIsNotGuarded)
+{
+	GotoEliminator ge;
+	auto body = CStmt::block();
+	body->children.push_back(CStmt::gotoStmt("done"));
+	body->children.push_back(CStmt::exprStmt(CExpr::call("skipped", {})));
+	body->children.push_back(CStmt::labelStmt("done"));
+	body->children.push_back(CStmt::exprStmt(CExpr::call("always", {})));
+
+	auto result = ge.eliminate(body);
+
+	// `always()` runs whatever the goto did, so it must not be inside the
+	// `if (!_flag_done)` guard.
+	std::function<bool(const CStmt*, bool)> insideGuard = [&](const CStmt* s, bool guarded) {
+		if (!s) return false;
+		if (s->kind == CStmt::Kind::ExprStmt && s->expr && s->expr->toString().find("always") != std::string::npos)
+			return guarded;
+		const bool now = guarded || s->kind == CStmt::Kind::If;
+		for (auto& c: s->children)
+			if (insideGuard(c.get(), now)) return true;
+		return false;
+	};
+	EXPECT_FALSE(insideGuard(result.get(), false));
+
+	// ...and `skipped()` must be.
+	std::function<bool(const CStmt*, bool)> skippedGuarded = [&](const CStmt* s, bool guarded) {
+		if (!s) return false;
+		if (s->kind == CStmt::Kind::ExprStmt && s->expr && s->expr->toString().find("skipped") != std::string::npos)
+			return guarded;
+		const bool now = guarded || s->kind == CStmt::Kind::If;
+		for (auto& c: s->children)
+			if (skippedGuarded(c.get(), now)) return true;
+		return false;
+	};
+	EXPECT_TRUE(skippedGuarded(result.get(), false));
+}
+
+// The flag-set detector only matched a child that was literally an Assign at
+// this block level, so a goto nested inside an if -- `if (c) goto L;` -- left
+// activeFlags empty and produced no guard at all: the statements the goto was
+// meant to skip ran unconditionally and the flag was dead.
+TEST(GotoEliminatorTest, ANestedGotoStillGuardsWhatFollows)
+{
+	GotoEliminator ge;
+	auto body = CStmt::block();
+	auto cond = CStmt::ifStmt(CExpr::var("c"));
+	cond->children.push_back(CStmt::gotoStmt("done"));
+	body->children.push_back(cond);
+	body->children.push_back(CStmt::exprStmt(CExpr::call("skipped", {})));
+	body->children.push_back(CStmt::labelStmt("done"));
+	body->children.push_back(CStmt::retStmt());
+
+	auto result = ge.eliminate(body);
+
+	// A guard mentioning the flag must exist somewhere above `skipped()`.
+	std::function<bool(const CStmt*, bool)> guarded = [&](const CStmt* s, bool inGuard) {
+		if (!s) return false;
+		if (s->kind == CStmt::Kind::ExprStmt && s->expr && s->expr->toString().find("skipped") != std::string::npos)
+			return inGuard;
+		bool now = inGuard;
+		if (s->kind == CStmt::Kind::If && s->expr && s->expr->toString().find("_flag_done") != std::string::npos)
+			now = true;
+		for (auto& c: s->children)
+			if (guarded(c.get(), now)) return true;
+		return false;
+	};
+	EXPECT_TRUE(guarded(result.get(), false));
 }
 
 TEST(GotoEliminatorTest, MultipleGotosKept)

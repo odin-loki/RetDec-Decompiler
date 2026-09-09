@@ -164,8 +164,18 @@ std::string LocalRebuilder::nameSlot(uint32_t slotIdx, const BcType& type, bool 
 		else if (type.isRef())
 		{
 			// Use simple class name lowercased as prefix.
+			//
+			// Both separators, and the nested-class marker. BcRefType::className
+			// is documented as internal form ("java/lang/String") and that is
+			// what the JVM front end stores -- JvmSignatureParser builds
+			// Class(name) from the raw descriptor name without converting the
+			// separator. rfind('.') found nothing in it, so the whole internal
+			// name survived as the prefix and the "name" contained slashes,
+			// which is not a Java identifier. descriptorToType in this same
+			// file normalises '/' to '.', which is why LVT-derived types
+			// worked and descriptor-derived ones did not.
 			std::string cls = type.ref().className;
-			size_t dot = cls.rfind('.');
+			size_t dot = cls.find_last_of("./$");
 			if (dot != std::string::npos) cls = cls.substr(dot + 1);
 			if (!cls.empty())
 			{
@@ -393,7 +403,16 @@ void ExceptionVarIntroducer::introduce(
 		store.id = static_cast<uint32_t>(blk.instrs.size() + 1000);
 		store.offset = 0;
 		store.opcode = BcOpcode::StoreLocal;
-		store.operands.push_back(BcLocalOperand{localIdx});
+		// The JVM slot, not the index into localResult.locals.
+		//
+		// Every consumer reads BcLocalOperand::index as a slot: ExprContext
+		// keys localNames by BcLocalVar::index, which is exSlot above, and
+		// JavaExprEmitter's StoreLocal case looks the operand up in that map.
+		// Passing localIdx named whichever local happened to sit at JVM slot
+		// `localIdx` -- an unrelated variable, usually an int -- so the catch
+		// body assigned to that one and `ex<blk>` was declared and never
+		// assigned.
+		store.operands.push_back(BcLocalOperand{exSlot});
 
 		blk.instrs.insert(blk.instrs.begin(), std::move(store));
 	}
