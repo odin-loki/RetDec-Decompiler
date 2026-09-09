@@ -44,107 +44,120 @@ namespace call_conv {
 
 // ─── VariadicDetector::checkSysVAl ───────────────────────────────────────────
 
-bool VariadicDetector::checkSysVAl(const ssa::SSAFunction& fn) const {
-    // AL (low byte of RAX) live-in at entry → variadic.
-    const ssa::BasicBlock* entry = fn.block(fn.entryId());
-    if (!entry) return false;
+bool VariadicDetector::checkSysVAl(const ssa::SSAFunction& fn) const
+{
+	// AL (low byte of RAX) live-in at entry → variadic.
+	const ssa::BasicBlock* entry = fn.block(fn.entryId());
+	if (!entry) return false;
 
-    uint32_t alVar = fn.findVar("al");
-    if (alVar != ssa::kInvalidVar && entry->liveIn.count(alVar)) {
-        return true;
-    }
+	uint32_t alVar = fn.findVar("al");
+	if (alVar != ssa::kInvalidVar && entry->liveIn.count(alVar))
+	{
+		return true;
+	}
 
-    // Also check RAX itself — some analyses fold AL into RAX.
-    uint32_t raxVar = fn.findVar("rax");
-    if (raxVar != ssa::kInvalidVar && entry->liveIn.count(raxVar)) {
-        // Extra confirmation: look for register-save area access.
-        // Offsets [-176, -48] from RBP indicate XMM save area.
-        for (const auto& blk : fn.blocks()) {
-            if (!blk) continue;
-            for (const ssa::IrInstr* instr : blk->instrs) {
-                if (!instr) continue;
-                if (instr->op == ssa::IrInstr::Op::Store ||
-                    instr->op == ssa::IrInstr::Op::Load) {
-                    for (const auto& use : instr->uses) {
-                        const ssa::IrValue* val = fn.value(use.valueId);
-                        if (!val) continue;
-                        if (val->kind == ssa::ValueKind::MemRef &&
-                            val->memIsStack &&
-                            val->memOffset >= -176 &&
-                            val->memOffset <= -48) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-    }
+	// Also check RAX itself — some analyses fold AL into RAX.
+	uint32_t raxVar = fn.findVar("rax");
+	if (raxVar != ssa::kInvalidVar && entry->liveIn.count(raxVar))
+	{
+		// Extra confirmation: look for register-save area access.
+		// Offsets [-176, -48] from RBP indicate XMM save area.
+		for (const auto& blk: fn.blocks())
+		{
+			if (!blk) continue;
+			for (const ssa::IrInstr* instr: blk->instrs)
+			{
+				if (!instr) continue;
+				if (instr->op == ssa::IrInstr::Op::Store || instr->op == ssa::IrInstr::Op::Load)
+				{
+					for (const auto& use: instr->uses)
+					{
+						const ssa::IrValue* val = fn.value(use.valueId);
+						if (!val) continue;
+						if (val->kind == ssa::ValueKind::MemRef && val->memIsStack && val->memOffset >= -176
+							&& val->memOffset <= -48)
+						{
+							return true;
+						}
+					}
+				}
+			}
+		}
+	}
 
-    return false;
+	return false;
 }
 
 // ─── VariadicDetector::checkWin64VaList ──────────────────────────────────────
 
-bool VariadicDetector::checkWin64VaList(const ssa::SSAFunction& fn) const {
-    // Look for the va_list advancement pattern: repeated ADD by stride 8
-    // applied to the same SSA value (pointer into shadow space).
-    std::unordered_map<uint32_t, int> addCount;
+bool VariadicDetector::checkWin64VaList(const ssa::SSAFunction& fn) const
+{
+	// Look for the va_list advancement pattern: repeated ADD by stride 8
+	// applied to the same SSA value (pointer into shadow space).
+	std::unordered_map<uint32_t, int> addCount;
 
-    for (const auto& blk : fn.blocks()) {
-        if (!blk) continue;
-        for (const ssa::IrInstr* instr : blk->instrs) {
-            if (!instr) continue;
-            if (instr->op != ssa::IrInstr::Op::Add) continue;
-            // Check if this Add has an immediate operand of 8.
-            for (const auto& use : instr->uses) {
-                const ssa::IrValue* val = fn.value(use.valueId);
-                if (val && val->kind == ssa::ValueKind::Immediate
-                        && val->imm == 8) {
-                    // The other operand is the pointer being advanced.
-                    for (const auto& u2 : instr->uses) {
-                        if (u2.valueId != use.valueId) {
-                            ++addCount[u2.valueId];
-                        }
-                    }
-                }
-            }
-        }
-    }
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk) continue;
+		for (const ssa::IrInstr* instr: blk->instrs)
+		{
+			if (!instr) continue;
+			if (instr->op != ssa::IrInstr::Op::Add) continue;
+			// Check if this Add has an immediate operand of 8.
+			for (const auto& use: instr->uses)
+			{
+				const ssa::IrValue* val = fn.value(use.valueId);
+				if (val && val->kind == ssa::ValueKind::Immediate && val->imm == 8)
+				{
+					// The other operand is the pointer being advanced.
+					for (const auto& u2: instr->uses)
+					{
+						if (u2.valueId != use.valueId)
+						{
+							++addCount[u2.valueId];
+						}
+					}
+				}
+			}
+		}
+	}
 
-    // If any pointer has 3+ stride-8 advances, it's a va_list.
-    for (const auto& [vid, cnt] : addCount) {
-        if (cnt >= 3) return true;
-    }
-    return false;
+	// If any pointer has 3+ stride-8 advances, it's a va_list.
+	for (const auto& [vid, cnt]: addCount)
+	{
+		if (cnt >= 3) return true;
+	}
+	return false;
 }
 
 // ─── VariadicDetector::checkX86CdeclExtendedStack ────────────────────────────
 
-bool VariadicDetector::checkX86CdeclExtendedStack(
-        const ssa::SSAFunction& fn, int numNamedArgs) const {
-    // On x86-32 cdecl, args start at [EBP+8].  Named args occupy bytes
-    // [EBP+8] through [EBP+8 + (numNamedArgs-1)*4].  Any stack access at
-    // a higher offset indicates extra (variadic) arguments.
-    const int32_t namedArgLimit = 8 + numNamedArgs * 4;
+bool VariadicDetector::checkX86CdeclExtendedStack(const ssa::SSAFunction& fn, int numNamedArgs) const
+{
+	// On x86-32 cdecl, args start at [EBP+8].  Named args occupy bytes
+	// [EBP+8] through [EBP+8 + (numNamedArgs-1)*4].  Any stack access at
+	// a higher offset indicates extra (variadic) arguments.
+	const int32_t namedArgLimit = 8 + numNamedArgs * 4;
 
-    for (const auto& blk : fn.blocks()) {
-        if (!blk) continue;
-        for (const ssa::IrInstr* instr : blk->instrs) {
-            if (!instr) continue;
-            if (instr->op != ssa::IrInstr::Op::Load &&
-                instr->op != ssa::IrInstr::Op::Store) continue;
-            for (const auto& use : instr->uses) {
-                const ssa::IrValue* val = fn.value(use.valueId);
-                if (!val) continue;
-                if (val->kind == ssa::ValueKind::MemRef &&
-                    val->memIsStack &&
-                    val->memOffset >= namedArgLimit) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk) continue;
+		for (const ssa::IrInstr* instr: blk->instrs)
+		{
+			if (!instr) continue;
+			if (instr->op != ssa::IrInstr::Op::Load && instr->op != ssa::IrInstr::Op::Store) continue;
+			for (const auto& use: instr->uses)
+			{
+				const ssa::IrValue* val = fn.value(use.valueId);
+				if (!val) continue;
+				if (val->kind == ssa::ValueKind::MemRef && val->memIsStack && val->memOffset >= namedArgLimit)
+				{
+					return true;
+				}
+			}
+		}
+	}
+	return false;
 }
 
 // ─── VariadicDetector::run ────────────────────────────────────────────────────
@@ -155,10 +168,9 @@ bool VariadicDetector::run(const ssa::SSAFunction& fn, CC cc, int numNamedArgs) 
 	{
 	case CC::SysVAmd64: return checkSysVAl(fn);
 
-	case CC::Win64:
-        return checkWin64VaList(fn);
+	case CC::Win64: return checkWin64VaList(fn);
 
-    case CC::Cdecl:
+	case CC::Cdecl:
 		// The count comes from the caller, which is what the old comment here
 		// said and what CallConvPass::run now actually does. With zero, the
 		// limit lands on [EBP+8] -- the first named argument -- so the check

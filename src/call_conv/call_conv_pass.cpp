@@ -35,22 +35,22 @@ namespace call_conv {
 
 // ─── Helper: detect stack arguments beyond register args ─────────────────────
 
-static std::vector<ArgDesc>
-detectStackArgs(const ssa::SSAFunction& fn, CC cc, int numRegArgs) {
-    std::vector<ArgDesc> stackArgs;
+static std::vector<ArgDesc> detectStackArgs(const ssa::SSAFunction& fn, CC cc, int numRegArgs)
+{
+	std::vector<ArgDesc> stackArgs;
 
-    // Only applicable to x86-32 stack-based CCs.
-    if (cc != CC::Cdecl && cc != CC::Stdcall &&
-        cc != CC::Fastcall && cc != CC::Thiscall) {
-        return stackArgs;
-    }
+	// Only applicable to x86-32 stack-based CCs.
+	if (cc != CC::Cdecl && cc != CC::Stdcall && cc != CC::Fastcall && cc != CC::Thiscall)
+	{
+		return stackArgs;
+	}
 
-    // Find all MemRef accesses with positive offsets from EBP beyond the
-    // first two arguments (EBP+0 = saved EBP, EBP+4 = ret addr, EBP+8 = arg0).
-    constexpr int32_t kFirstArgOffset = 8;
-    constexpr int32_t kArgStride      = 4;
-    int32_t regArgBytes = numRegArgs * kArgStride;
-    int32_t stackArgStart = kFirstArgOffset + regArgBytes;
+	// Find all MemRef accesses with positive offsets from EBP beyond the
+	// first two arguments (EBP+0 = saved EBP, EBP+4 = ret addr, EBP+8 = arg0).
+	constexpr int32_t kFirstArgOffset = 8;
+	constexpr int32_t kArgStride = 4;
+	int32_t regArgBytes = numRegArgs * kArgStride;
+	int32_t stackArgStart = kFirstArgOffset + regArgBytes;
 
 	// int64_t, because IrValue::memOffset is: the comparison below is done in
 	// 64 bits and passes, and the insert used to narrow. Two slots whose low
@@ -61,20 +61,20 @@ detectStackArgs(const ssa::SSAFunction& fn, CC cc, int numRegArgs) {
 	for (const auto& blk: fn.blocks())
 	{
 		if (!blk) continue;
-		for (const ssa::IrInstr* instr : blk->instrs) {
-            if (!instr) continue;
-            if (instr->op != ssa::IrInstr::Op::Load &&
-                instr->op != ssa::IrInstr::Op::Store) continue;
-            for (const auto& use : instr->uses) {
-                const ssa::IrValue* val = fn.value(use.valueId);
-                if (!val) continue;
-                if (val->kind == ssa::ValueKind::MemRef &&
-                    val->memIsStack &&
-                    val->memOffset >= stackArgStart) {
-                    seenOffsets.insert(val->memOffset);
-                }
-            }
-        }
+		for (const ssa::IrInstr* instr: blk->instrs)
+		{
+			if (!instr) continue;
+			if (instr->op != ssa::IrInstr::Op::Load && instr->op != ssa::IrInstr::Op::Store) continue;
+			for (const auto& use: instr->uses)
+			{
+				const ssa::IrValue* val = fn.value(use.valueId);
+				if (!val) continue;
+				if (val->kind == ssa::ValueKind::MemRef && val->memIsStack && val->memOffset >= stackArgStart)
+				{
+					seenOffsets.insert(val->memOffset);
+				}
+			}
+		}
 	}
 
 	for (int64_t off: seenOffsets)
@@ -84,7 +84,7 @@ detectStackArgs(const ssa::SSAFunction& fn, CC cc, int numRegArgs) {
 		if (off < INT32_MIN || off > INT32_MAX) continue;
 		ArgDesc d;
 		d.kind = ArgKind::Stack;
-		d.reg         = PhysReg::Invalid;
+		d.reg = PhysReg::Invalid;
 		d.stackOffset = static_cast<int32_t>(off);
 		d.width = 32;
 		d.isFp = false;
@@ -95,60 +95,64 @@ detectStackArgs(const ssa::SSAFunction& fn, CC cc, int numRegArgs) {
 
 // ─── CallConvPass::accumStats ────────────────────────────────────────────────
 
-void CallConvPass::accumStats(CC cc, bool variadic) const {
-    ++stats_.totalFunctions;
-    if (variadic) ++stats_.variadicFunctions;
-    switch (cc) {
-    case CC::Cdecl:       ++stats_.cdeclFunctions;    break;
-    case CC::Stdcall:     ++stats_.stdcallFunctions;  break;
-    case CC::Fastcall:    ++stats_.fastcallFunctions; break;
-    case CC::Thiscall:    ++stats_.thiscallFunctions; break;
-    case CC::SysVAmd64:   ++stats_.sysvFunctions;     break;
-    case CC::Win64:       ++stats_.win64Functions;    break;
-    default:              ++stats_.unknownFunctions;  break;
-    }
+void CallConvPass::accumStats(CC cc, bool variadic) const
+{
+	++stats_.totalFunctions;
+	if (variadic) ++stats_.variadicFunctions;
+	switch (cc)
+	{
+	case CC::Cdecl: ++stats_.cdeclFunctions; break;
+	case CC::Stdcall: ++stats_.stdcallFunctions; break;
+	case CC::Fastcall: ++stats_.fastcallFunctions; break;
+	case CC::Thiscall: ++stats_.thiscallFunctions; break;
+	case CC::SysVAmd64: ++stats_.sysvFunctions; break;
+	case CC::Win64: ++stats_.win64Functions; break;
+	default: ++stats_.unknownFunctions; break;
+	}
 }
 
 // ─── CallConvPass::run ───────────────────────────────────────────────────────
 
-CallingConvention CallConvPass::run(const ssa::SSAFunction& fn,
-                                     const Config& cfg) const {
-    CallingConvention result;
-    CC cc = cfg.platformCC;
+CallingConvention CallConvPass::run(const ssa::SSAFunction& fn, const Config& cfg) const
+{
+	CallingConvention result;
+	CC cc = cfg.platformCC;
 
-    // ── Step 1: Refine CC for x86-32 ────────────────────────────────────────
-    if (cfg.is32bit) {
-        CallerCleanupDetector cleanDet;
-        auto cleanRes = cleanDet.run(fn);
-        if (cleanRes.cc != CC::Unknown) {
-            // Respect config allowances.
-            if (!cfg.allowThiscall && cleanRes.cc == CC::Thiscall)
-                cleanRes.cc = CC::Stdcall;
-            if (!cfg.allowFastcall && cleanRes.cc == CC::Fastcall)
-                cleanRes.cc = CC::Stdcall;
-            cc = cleanRes.cc;
-        } else {
-            cc = CC::Cdecl;  // default for x86-32
-        }
-        result.stackCleanupBytes = cleanRes.majorityCleanup;
-    }
+	// ── Step 1: Refine CC for x86-32 ────────────────────────────────────────
+	if (cfg.is32bit)
+	{
+		CallerCleanupDetector cleanDet;
+		auto cleanRes = cleanDet.run(fn);
+		if (cleanRes.cc != CC::Unknown)
+		{
+			// Respect config allowances.
+			if (!cfg.allowThiscall && cleanRes.cc == CC::Thiscall) cleanRes.cc = CC::Stdcall;
+			if (!cfg.allowFastcall && cleanRes.cc == CC::Fastcall) cleanRes.cc = CC::Stdcall;
+			cc = cleanRes.cc;
+		}
+		else
+		{
+			cc = CC::Cdecl; // default for x86-32
+		}
+		result.stackCleanupBytes = cleanRes.majorityCleanup;
+	}
 
-    result.cc = cc;
+	result.cc = cc;
 
-    // ── Step 2: Register arguments ───────────────────────────────────────────
-    RegArgAnalysis regArg;
-    result.args = regArg.run(fn, cc);
+	// ── Step 2: Register arguments ───────────────────────────────────────────
+	RegArgAnalysis regArg;
+	result.args = regArg.run(fn, cc);
 
-    // ── Step 3: Stack arguments (x86-32 only) ────────────────────────────────
-    {
-        auto stackArgs = detectStackArgs(fn, cc,
-                                          static_cast<int>(result.args.size()));
-        for (auto& s : stackArgs) result.args.push_back(std::move(s));
-    }
+	// ── Step 3: Stack arguments (x86-32 only) ────────────────────────────────
+	{
+		auto stackArgs = detectStackArgs(fn, cc, static_cast<int>(result.args.size()));
+		for (auto& s: stackArgs)
+			result.args.push_back(std::move(s));
+	}
 
-    // ── Step 4: Return value ─────────────────────────────────────────────────
-    ReturnValueAnalysis retAna;
-    result.ret = retAna.run(fn, cc);
+	// ── Step 4: Return value ─────────────────────────────────────────────────
+	ReturnValueAnalysis retAna;
+	result.ret = retAna.run(fn, cc);
 
 	// ── Step 5: Variadic detection ───────────────────────────────────────────
 	//
@@ -169,14 +173,15 @@ CallingConvention CallConvPass::run(const ssa::SSAFunction& fn,
 // ─── CallConvPass::runAll ────────────────────────────────────────────────────
 
 std::unordered_map<std::string, CallingConvention>
-CallConvPass::runAll(const std::vector<const ssa::SSAFunction*>& fns,
-                      const Config& cfg) const {
-    std::unordered_map<std::string, CallingConvention> results;
-    for (const ssa::SSAFunction* fn : fns) {
-        if (!fn) continue;
-        results[fn->name()] = run(*fn, cfg);
-    }
-    return results;
+CallConvPass::runAll(const std::vector<const ssa::SSAFunction*>& fns, const Config& cfg) const
+{
+	std::unordered_map<std::string, CallingConvention> results;
+	for (const ssa::SSAFunction* fn: fns)
+	{
+		if (!fn) continue;
+		results[fn->name()] = run(*fn, cfg);
+	}
+	return results;
 }
 
 } // namespace call_conv
