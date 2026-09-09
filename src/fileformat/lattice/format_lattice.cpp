@@ -847,7 +847,13 @@ static FormatResult parsePE(const uint8_t* data, size_t size, const std::string&
 
 	// ── TLS directory (DD[9]) ────────────────────────────────────────────────
 	auto [tls_off, tls_sz] = resolveDD(9);
-	if (tls_off != 0 && inBounds(static_cast<size_t>(tls_off), 24, size))
+	// The four fields read below end at offset 31 for PE32+ (four 8-byte
+	// fields) and at 15 for PE32 (four 4-byte ones). The guard reserved 24
+	// either way, so a PE32+ TLS directory in the last 31 bytes of the file
+	// read past the end -- libFuzzer found it, and ASan reports the overflow
+	// in u32le() through u64le(td + 24) on the cb_rva line.
+	const size_t tlsFieldBytes = is64 ? 32u : 16u;
+	if (tls_off != 0 && inBounds(static_cast<size_t>(tls_off), tlsFieldBytes, size))
 	{
 		TLSInfo tls;
 		const uint8_t* td = data + tls_off;

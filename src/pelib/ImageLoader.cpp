@@ -1387,9 +1387,17 @@ bool PeLib::ImageLoader::processImageRelocations(
 	// Also refuse to process suspiciously large relocation blocks
 	if (Size < sizeof(PELIB_IMAGE_BASE_RELOCATION) || Size > PELIB_SIZE_10MB) return false;
 
-	// Allocate and read the relocation block
-	bufferPtr = buffer = new std::uint8_t[Size];
-	if (buffer != nullptr)
+	// Allocate and read the relocation block.
+	//
+	// A std::vector rather than a raw new[]: the `default: return false;` in
+	// the switch below returns without reaching the delete[] at the end of
+	// this function, so an unrecognised relocation type leaked the whole
+	// block. libFuzzer found it -- 334 bytes for the input in
+	// tests/crash_corpus/pelib/. The bare block is kept so that the hundred
+	// and twenty lines inside it do not have to be reindented; the `buffer !=
+	// nullptr` test it replaces was dead in any case, since new throws.
+	std::vector<std::uint8_t> relocBlock(Size);
+	bufferPtr = buffer = relocBlock.data();
 	{
 		// Read the relocations from the file
 		bufferEnd = buffer + readImage(buffer, VirtualAddress, Size);
@@ -1515,7 +1523,6 @@ bool PeLib::ImageLoader::processImageRelocations(
 		}
 
 		// Free the relocation buffer
-		delete[] buffer;
 	}
 
 	return true;
