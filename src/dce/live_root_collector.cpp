@@ -9,6 +9,7 @@
  *   - CALLs and other side-effectful operations (SYSCALL, INT)
  */
 
+#include <unordered_set>
 #include "retdec/dce/dce.h"
 #include "retdec/ssa/ssa.h"
 #include "retdec/call_conv/call_conv.h"
@@ -18,38 +19,84 @@ namespace dce {
 
 // ─── collectReturnRoots ───────────────────────────────────────────────────────
 
-void LiveRootCollector::collectReturnRoots(const ssa::SSAFunction& fn, std::vector<LiveRoot>& roots) const
+/// The SSA variable a physical register is spelled as in @p fn.
+///
+/// Both spellings, because PhysReg::EAX and PhysReg::RAX are the same number:
+/// physRegName always answers "rax", and a 32-bit function's variables are
+/// called "eax". This mirrors RegArgAnalysis::findVarForReg.
+static ssa::VarId varForReg(const ssa::SSAFunction& fn, call_conv::PhysReg r)
 {
+	const ssa::VarId wide = fn.findVar(call_conv::physRegName(r));
+	if (wide != ssa::kInvalidVar) return wide;
+	if (const char* narrow = call_conv::physRegName32(r)) return fn.findVar(narrow);
+	return ssa::kInvalidVar;
+}
+
+void LiveRootCollector::collectReturnRoots(
+	const ssa::SSAFunction& fn, const call_conv::CallingConvention& cc, std::vector<LiveRoot>& roots) const
+{
+	// The registers the value comes back in. x86 `ret` names nothing, so the
+	// instruction that last wrote one of these is what has to stay alive.
+	std::vector<call_conv::PhysReg> retRegs;
+	if (cc.ret.kind != call_conv::RetKind::Void)
+	{
+		retRegs = cc.ret.regs;
+		if (retRegs.empty())
+		{
+			retRegs =
+				(cc.ret.kind == call_conv::RetKind::Float) ? call_conv::fpRetRegs(cc.cc) : call_conv::intRetRegs(cc.cc);
+		}
+	}
+
+	std::unordered_set<ssa::VarId> retVars;
+	for (call_conv::PhysReg r: retRegs)
+	{
+		const ssa::VarId v = varForReg(fn, r);
+		if (v != ssa::kInvalidVar) retVars.insert(v);
+	}
+
 	for (const auto& blk: fn.blocks())
 	{
 		if (!blk) continue;
 		for (const ssa::IrInstr* instr: blk->instrs)
 		{
 			if (!instr) continue;
-			if (instr->op == ssa::IrInstr::Op::Ret)
-			{
-				LiveRoot r;
-				r.instrId = instr->id;
-				r.kind = LiveRootKind::ReturnValue;
-				roots.push_back(r);
+			if (instr->op != ssa::IrInstr::Op::Ret) continue;
 
-				// Also mark all instructions that define values live-out
-				// at this block (the return register defs).
-				for (ssa::VarId var: blk->liveOut)
+			LiveRoot r;
+			r.instrId = instr->id;
+			r.kind = LiveRootKind::ReturnValue;
+			roots.push_back(r);
+
+			// This used to walk `blk->liveOut` looking for the return
+			// register's definition. liveOut is the union of the successors'
+			// liveIn and a RET block has no successors, so that set is empty
+			// by construction: the loop never ran, and nothing kept the
+			// instruction that produced the return value alive.
+			//
+			// Whatever the Ret does name is a root too -- some front ends put
+			// the returned value in its operands.
+			for (const auto& use: instr->uses)
+			{
+				const ssa::IrValue* v = fn.value(use.valueId);
+				if (!v || !v->defInstr) continue;
+				LiveRoot ur;
+				ur.instrId = v->defInstr->id;
+				ur.kind = LiveRootKind::ReturnValue;
+				roots.push_back(ur);
+			}
+
+			if (retVars.empty()) continue;
+			for (const ssa::IrInstr* def: blk->instrs)
+			{
+				if (!def) continue;
+				const ssa::IrValue* defVal = fn.value(def->defValue);
+				if (defVal && retVars.count(defVal->varId))
 				{
-					// Walk all instructions in this block that define this var.
-					for (const ssa::IrInstr* def: blk->instrs)
-					{
-						if (!def) continue;
-						const ssa::IrValue* defVal = fn.value(def->defValue);
-						if (defVal && defVal->varId == var)
-						{
-							LiveRoot dr;
-							dr.instrId = def->id;
-							dr.kind = LiveRootKind::ReturnValue;
-							roots.push_back(dr);
-						}
-					}
+					LiveRoot dr;
+					dr.instrId = def->id;
+					dr.kind = LiveRootKind::ReturnValue;
+					roots.push_back(dr);
 				}
 			}
 		}
@@ -148,7 +195,7 @@ void LiveRootCollector::collectIoSideEffects(const ssa::SSAFunction& fn, std::ve
 std::vector<LiveRoot> LiveRootCollector::run(const ssa::SSAFunction& fn, const call_conv::CallingConvention& cc) const
 {
 	std::vector<LiveRoot> roots;
-	collectReturnRoots(fn, roots);
+	collectReturnRoots(fn, cc, roots);
 	collectPtrArgWrites(fn, cc, roots);
 	collectGlobalWrites(fn, roots);
 	collectIoSideEffects(fn, roots);

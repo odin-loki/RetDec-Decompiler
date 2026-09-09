@@ -58,11 +58,21 @@ DeadCodeResult DcePass::run(const ssa::SSAFunction& fn,
         result.abiArtifacts = marker.run(fn, cfg.abiCfg);
 
         for (const AbiArtifact& art : result.abiArtifacts) {
-            if (art.instrId != UINT32_MAX) {
-                abiArtifactSet.insert(art.instrId);
+			// markCalleeSavePairs records an artifact for every callee-save
+			// store in the entry block whether or not it found the matching
+			// restore. An unmatched save is not ABI noise -- something else
+			// reloads that register, and deleting the save leaves the reload
+			// reading whatever was there.
+			if (art.kind == AbiArtifactKind::CalleeSavePair && (!art.balanced || art.pairedId == UINT32_MAX))
+			{
+				continue;
+			}
+			if (art.instrId != UINT32_MAX)
+			{
+				abiArtifactSet.insert(art.instrId);
                 ++result.abiArtifactsRemoved[art.kind];
-            }
-            // For balanced callee-save pairs, also include the restore.
+			}
+			// For balanced callee-save pairs, also include the restore.
             if (art.kind == AbiArtifactKind::CalleeSavePair &&
                 art.balanced &&
                 art.pairedId != UINT32_MAX) {
@@ -111,12 +121,20 @@ DeadCodeResult DcePass::run(const ssa::SSAFunction& fn,
         }
     }
 
-    // Remove any eliminated instr that is actually live (live wins).
-    for (InstrId lid : result.liveInstrs) {
-        result.eliminatedInstrs.erase(lid);
-    }
+	// Remove any eliminated instr that is actually live (live wins) -- except
+	// where its whole block is gone. DeadPropagation marks every Branch,
+	// CondBranch and Ret unconditionally live with no reachability filter, so
+	// without this an unreachable block's terminator was put in the dead set
+	// by Phase 4 and pulled straight back out here, leaving the block
+	// eliminated and its terminator alive.
+	for (InstrId lid: result.liveInstrs)
+	{
+		const ssa::IrInstr* i = fn.instr(lid);
+		if (i && result.eliminatedBlocks.count(i->block)) continue;
+		result.eliminatedInstrs.erase(lid);
+	}
 
-    result.eliminatedInstrCount = result.eliminatedInstrs.size();
+	result.eliminatedInstrCount = result.eliminatedInstrs.size();
 
     return result;
 }

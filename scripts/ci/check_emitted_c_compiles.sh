@@ -47,7 +47,20 @@ set -euo pipefail
 SELF="${BASH_SOURCE[0]}"
 ROOT="$(cd "$(dirname "${SELF}")/../.." && pwd)"
 
-# ── self-test ────────────────────────────────────────────────────────────────
+# The identifier a compiler diagnostic is about.
+#
+# GCC quotes with U+2018/U+2019 in a UTF-8 locale and with ASCII apostrophes
+# otherwise, so this normalises before matching. The first version matched the
+# ASCII closing quote only: it worked in a container whose gcc quotes in ASCII
+# and silently matched nothing on the runner, whose gcc quotes in UTF-8 -- so
+# the declaration context never printed where it was actually wanted.
+err_ident() {
+	printf '%s' "$1" \
+		| sed "s/\xe2\x80\x98/'/g; s/\xe2\x80\x99/'/g" \
+		| sed -n "s/.*[\`']\\([A-Za-z_][A-Za-z_0-9]*\\)'.*/\\1/p"
+}
+
+# â self-test â
 #
 # Does this script actually fail when the emitted C does not compile?  Checked
 # against stub decompilers that behave in the five ways that matter: output that
@@ -214,6 +227,26 @@ FAKE
 		"the report shows where the conflicting declaration came from" \
 		--decompiler "${T}/bin/wrong_arity" --min-rate 0.5
 
+	# 6d. The identifier extraction itself, on both quote styles. A compiler's
+	#     choice between them depends on the locale, so a case that goes
+	#     through cc only ever tests whichever one this machine happens to
+	#     produce -- which is how the UTF-8 spelling reached CI unhandled.
+	check_ident() {
+		local got want desc
+		want="$2"; desc="$3"
+		got="$(err_ident "$1")"
+		if [[ "${got}" != "${want}" ]]; then
+			echo "self-test: ${desc}: err_ident gave '${got}', expected '${want}'" >&2
+			fails=$(( fails + 1 ))
+		fi
+	}
+	check_ident "a.c:1:2: error: too many arguments to function 'puts'" \
+		"puts" "ASCII quotes"
+	check_ident "$(printf 'a.c:1:2: error: too many arguments to function \xe2\x80\x98putc\xe2\x80\x99')" \
+		"putc" "UTF-8 quotes"
+	check_ident "a.c:1:2: error: label \`lab_4006f0' used but not defined" \
+		"lab_4006f0" "backtick and apostrophe"
+
 	# 7. A floor is only a floor if the script refuses one it cannot read.
 	expect 2 "" "a non-numeric --min-rate is rejected" \
 		--decompiler "${T}/bin/good" --min-rate banana
@@ -350,7 +383,7 @@ for bin in "${BINS[@]}"; do
 				# between a call and a declaration, and the declaration is the
 				# half the error does not show: it may be an emitted prototype
 				# or it may come from an #include the same file asked for.
-				ident="$(printf '%s' "${e}" | sed -n "s/.*[\`']\\([A-Za-z_][A-Za-z_0-9]*\\)'.*/\\1/p")"
+				ident="$(err_ident "${e}")"
 				if [[ -n "${ident}" ]]; then
 					{ grep -nE "^[^ ].*\\b${ident}\\b|^#include" "${out}" \
 						| grep -vE "^${lineno}:" | head -n 4 \

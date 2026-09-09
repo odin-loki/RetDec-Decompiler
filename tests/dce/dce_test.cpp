@@ -790,3 +790,185 @@ TEST(AbiArtifactMarker, ARestoreOfADifferentRegisterFromTheSameSlotIsNotThePair)
 		EXPECT_FALSE(a.balanced) << "unbalanced save reported as balanced";
 	}
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// The value a function returns is not dead
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// x86 `ret` names nothing: the value goes back in RAX, and the instruction
+// that put it there is what has to stay alive. collectReturnRoots tried to
+// find it through `blk->liveOut` of the RET block -- which is the union of its
+// successors' liveIn, and a RET block has no successors, so that set is empty
+// by construction and the loop over it never ran.
+
+namespace {
+
+CallingConvention makeSysVIntReturn()
+{
+	CallingConvention cc;
+	cc.cc = CC::SysVAmd64;
+	cc.ret.kind = RetKind::Integer;
+	cc.ret.regs = {PhysReg::RAX};
+	cc.ret.width = 64;
+	return cc;
+}
+
+/// `mov rax, 1 ; ret` -- and an unrelated dead computation beside it.
+std::unique_ptr<SSAFunction> makeReturnsRax()
+{
+	auto fn = std::make_unique<SSAFunction>("returns_rax");
+	fn->addBlock("entry");
+	VarId rax = fn->declareVar("rax");
+	VarId rcx = fn->declareVar("rcx");
+
+	IrInstr* setRax = fn->addInstr(0, IrInstr::Op::Assign, 0x1000);
+	setRax->defVar = rax;
+
+	IrInstr* dead = fn->addInstr(0, IrInstr::Op::Assign, 0x1004);
+	dead->defVar = rcx;
+
+	fn->addInstr(0, IrInstr::Op::Ret, 0x1008);
+	SSAPass pass;
+	pass.run(*fn);
+	return fn;
+}
+
+} // namespace
+
+TEST(LiveRootCollector, TheDefinitionOfTheReturnRegisterIsALiveRoot)
+{
+	auto fn = makeReturnsRax();
+	auto cc = makeSysVIntReturn();
+	LiveRootCollector col;
+	auto roots = col.run(*fn, cc);
+
+	const VarId rax = fn->findVar("rax");
+	ASSERT_NE(kInvalidVar, rax);
+
+	bool rooted = false;
+	for (const auto& r: roots)
+	{
+		const IrInstr* i = fn->instr(r.instrId);
+		if (!i) continue;
+		const IrValue* v = fn->value(i->defValue);
+		if (v && v->varId == rax)
+		{
+			rooted = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(rooted) << "nothing keeps the instruction that sets the return register alive";
+}
+
+TEST(DcePass, TheInstructionThatSetsTheReturnRegisterSurvives)
+{
+	auto fn = makeReturnsRax();
+	auto cc = makeSysVIntReturn();
+	DcePass::Config cfg;
+	DcePass pass;
+	auto res = pass.run(*fn, cc, cfg);
+
+	const VarId rax = fn->findVar("rax");
+	for (const auto& blk: fn->blocks())
+	{
+		if (!blk) continue;
+		for (const IrInstr* i: blk->instrs)
+		{
+			if (!i) continue;
+			const IrValue* v = fn->value(i->defValue);
+			if (v && v->varId == rax)
+				EXPECT_EQ(0u, res.eliminatedInstrs.count(i->id)) << "the returned value was eliminated";
+		}
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// A save with no restore is not ABI noise
+// ═══════════════════════════════════════════════════════════════════════════════
+
+namespace {
+
+/// `mov [rsp-8], rbx ; ret` -- a callee-save store that nothing restores.
+std::unique_ptr<SSAFunction> makeUnbalancedCalleeSave()
+{
+	auto fn = std::make_unique<SSAFunction>("save_no_restore");
+	fn->addBlock("entry");
+	VarId rbx = fn->declareVar("rbx");
+
+	IrInstr* seed = fn->addInstr(0, IrInstr::Op::Assign, 0x0FFC);
+	seed->defVar = rbx;
+
+	IrValue* slot = fn->allocValue(ValueKind::MemRef);
+	slot->memIsStack = true;
+	slot->memOffset = -8;
+	slot->memWidth = 8;
+	IrValue* src = fn->allocValue(ValueKind::VirtualReg, rbx);
+
+	IrInstr* store = fn->addInstr(0, IrInstr::Op::Store, 0x1000);
+	store->uses.push_back({slot->id, 0});
+	store->uses.push_back({src->id, 1});
+
+	fn->addInstr(0, IrInstr::Op::Ret, 0x1004);
+	SSAPass pass;
+	pass.run(*fn);
+	return fn;
+}
+
+} // namespace
+
+TEST(DcePass, AnUnbalancedCalleeSaveIsNotEliminated)
+{
+	// markCalleeSavePairs pushes an artifact for every callee-save store in
+	// the entry block whether or not it found a matching restore, and the
+	// primary instruction was added to the removal set without consulting
+	// `balanced` -- so the save went and whatever reloads it did not.
+	auto fn = makeUnbalancedCalleeSave();
+	auto cc = makeSysVIntReturn();
+	DcePass::Config cfg;
+	DcePass pass;
+	auto res = pass.run(*fn, cc, cfg);
+
+	bool sawUnbalanced = false;
+	for (const AbiArtifact& art: res.abiArtifacts)
+	{
+		if (art.kind != AbiArtifactKind::CalleeSavePair) continue;
+		if (!art.balanced || art.pairedId == UINT32_MAX) sawUnbalanced = true;
+	}
+	ASSERT_TRUE(sawUnbalanced) << "the fixture no longer produces an unbalanced pair, so this asserts nothing";
+
+	// The store may still be eliminated -- nothing reads the slot here, so
+	// ordinary liveness has its own answer. What must not happen is its being
+	// removed *as ABI noise*: that decision is what says "this is prologue
+	// bookkeeping, not code", and for a save whose restore was never found it
+	// is not a decision the marker is entitled to make.
+	auto it = res.abiArtifactsRemoved.find(AbiArtifactKind::CalleeSavePair);
+	const std::size_t removed = (it == res.abiArtifactsRemoved.end()) ? 0u : it->second;
+	EXPECT_EQ(0u, removed) << "an unmatched callee-save store was written off as ABI noise";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// A block that is gone takes its instructions with it
+// ═══════════════════════════════════════════════════════════════════════════════
+
+TEST(DcePass, InstructionsInEliminatedBlocksStayEliminated)
+{
+	// Control-flow instructions are unconditionally live, so an unreachable
+	// block's terminator was put in the dead set by the block pass and then
+	// pulled straight back out by "live wins".
+	auto fn = std::make_unique<SSAFunction>("unreachable_tail");
+	fn->addBlock("entry");
+	auto* orphan = fn->addBlock("orphan");
+	fn->addInstr(0, IrInstr::Op::Ret, 0x1000);
+	IrInstr* orphanRet = fn->addInstr(orphan->id, IrInstr::Op::Ret, 0x2000);
+	SSAPass sp;
+	sp.run(*fn);
+
+	auto cc = makeSysVIntReturn();
+	DcePass::Config cfg;
+	cfg.eliminateUnreachableBlocks = true;
+	DcePass pass;
+	auto res = pass.run(*fn, cc, cfg);
+
+	ASSERT_EQ(1u, res.eliminatedBlocks.count(orphan->id));
+	EXPECT_EQ(1u, res.eliminatedInstrs.count(orphanRet->id)) << "its block is gone, so the terminator is too";
+}

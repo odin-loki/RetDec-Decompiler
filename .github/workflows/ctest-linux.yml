@@ -198,9 +198,12 @@ jobs:
           # recompiling; the first run of this step, on d9e8108, measured
           # 21/24 (0.8750) on this slice, so that number is the floor rather
           # than a guess.  The three that failed were two distinct defects:
-          # a goto whose label the goto-CFG optimiser dropped, and calls
-          # emitted with more arguments than the <stdio.h> prototype the same
-          # file includes.  Raise the floor with each one fixed.
+          # a goto to a label nothing defines, and calls to libc functions
+          # with more arguments than those functions take -- `putc(c, s, a3)`,
+          # `puts(str, a2, a3)`.  The runner's gcc rejects the second outright
+          # because it knows those names as builtins; the gcc in the dev
+          # container is older and only warns, which is why the corpus is the
+          # only place it shows.  Raise the floor with each one fixed.
           bash scripts/ci/check_emitted_c_compiles.sh \
             --decompiler "$DEC" \
             --corpus tests/algorithm_recovery/corpus \

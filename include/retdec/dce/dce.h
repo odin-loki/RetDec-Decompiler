@@ -282,15 +282,12 @@ public:
                                const call_conv::CallingConvention& cc) const;
 
 private:
-    void collectReturnRoots(const ssa::SSAFunction& fn,
-                              std::vector<LiveRoot>& roots) const;
-    void collectPtrArgWrites(const ssa::SSAFunction& fn,
-                               const call_conv::CallingConvention& cc,
-                               std::vector<LiveRoot>& roots) const;
-    void collectGlobalWrites(const ssa::SSAFunction& fn,
-                               std::vector<LiveRoot>& roots) const;
-    void collectIoSideEffects(const ssa::SSAFunction& fn,
-                                std::vector<LiveRoot>& roots) const;
+	void collectReturnRoots(
+		const ssa::SSAFunction& fn, const call_conv::CallingConvention& cc, std::vector<LiveRoot>& roots) const;
+	void collectPtrArgWrites(
+		const ssa::SSAFunction& fn, const call_conv::CallingConvention& cc, std::vector<LiveRoot>& roots) const;
+	void collectGlobalWrites(const ssa::SSAFunction& fn, std::vector<LiveRoot>& roots) const;
+	void collectIoSideEffects(const ssa::SSAFunction& fn, std::vector<LiveRoot>& roots) const;
 };
 
 // ─── Dead propagation ────────────────────────────────────────────────────────
