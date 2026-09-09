@@ -591,14 +591,14 @@ std::vector<uint32_t> PycReader::findLeaders(const PyCodeObject& code) const
 
 		bool hasArg = is311 ? true : (op >= haveArg);
 
-		if (op == 90 && !is311)
-		{ // EXTENDED_ARG in 3.8-3.10
-			extArg = (extArg | arg) << 8;
-			pos += instrSize;
-			continue;
-		}
-		if (is311 && op == 144)
-		{ // EXTENDED_ARG in 3.11+
+		// EXTENDED_ARG is 144 in every version this reader accepts. It was
+		// 90 here for anything below 3.11, which is STORE_NAME -- and also
+		// HAVE_ARGUMENT, which is where the confusion started. Every
+		// module-level and class-level assignment in a 3.8-3.10 .pyc was
+		// swallowed as a prefix, and its operand was OR-ed into the next
+		// instruction's.
+		if (op == OP_EXTENDED_ARG)
+		{
 			extArg = (extArg | arg) << 8;
 			pos += instrSize;
 			continue;
@@ -692,8 +692,8 @@ void PycReader::buildCFG(const PyCodeObject& code, BcMethod& method) const
 			}
 		}
 
-		// Handle EXTENDED_ARG
-		if ((!is311 && op == 90) || (is311 && op == 144))
+		// Handle EXTENDED_ARG -- 144 in every supported version; see findLeaders.
+		if (op == OP_EXTENDED_ARG)
 		{
 			extArg = (extArg | arg) << 8;
 			pos += 2;

@@ -11,7 +11,7 @@
  *   - Flags: has_arg (opcode >= HAVE_ARGUMENT), is_jump, is_jump_forward,
  *     is_jump_absolute, consumes stack, produces stack
  *   - Stack effect (+n = pushes n, -n = pops n; UNKNOWN = depends on arg)
- *   - Whether it's an extended arg prefix (EXTENDED_ARG = 0x5A = 90)
+ *   - Whether it's an extended arg prefix (EXTENDED_ARG = 0x90 = 144)
  *
  * ## Python 3.11+ wordcode → instruction units
  *
@@ -51,7 +51,7 @@ enum class OpcodeKind : uint8_t {
     Return,         ///< RETURN_VALUE / RETURN_CONST
     Raise,          ///< RAISE_VARARGS
     Import,         ///< IMPORT_NAME
-    ExtendedArg,    ///< EXTENDED_ARG (opcode 90 / 144 in 3.12)
+    ExtendedArg,    ///< EXTENDED_ARG (opcode 144 in every supported version)
     Unknown,        ///< Unrecognised (possibly specialised adaptive)
 };
 

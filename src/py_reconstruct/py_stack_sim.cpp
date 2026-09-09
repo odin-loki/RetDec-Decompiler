@@ -44,8 +44,9 @@ std::vector<PyStackSimulator::RawInstr> PyStackSimulator::decode() const
 		uint32_t arg = static_cast<uint32_t>(bc[pos + 1]);
 		pos += 2;
 
-		const uint8_t extOp = is311 ? 144 : 90; // EXTENDED_ARG
-		if (op == extOp)
+		// EXTENDED_ARG is 144 in every version, not 90 below 3.11: 90 is
+		// STORE_NAME. See src/pyc_parser/py_opcodes.cpp.
+		if (op == OP_EXTENDED_ARG)
 		{
 			if (extCount < kMaxExtendedArgs)
 			{

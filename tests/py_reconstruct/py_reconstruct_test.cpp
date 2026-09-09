@@ -733,7 +733,7 @@ TEST(PyStackSimulator, AnHonestCountIsLeftAlone)
 		bc.push_back(124);
 		bc.push_back(0);
 	} // LOAD_FAST 0
-	bc.push_back(90);
+	bc.push_back(144);
 	bc.push_back(1); // EXTENDED_ARG 1
 	bc.push_back(102);
 	bc.push_back(44); // BUILD_TUPLE 300
