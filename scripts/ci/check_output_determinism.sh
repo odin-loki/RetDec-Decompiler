@@ -43,14 +43,19 @@ if [[ ${#ALL[@]} -eq 0 ]]; then
 	exit 1
 fi
 
-# An even spread rather than the first N, so that a limit still covers every
-# compiler and optimisation level the corpus was built with.
+# A limit takes a sample ordered by a hash of the name rather than every N-th
+# of the sorted list: the corpus is named <program>-<compiler>-O<level>, so it
+# sorts into groups of six and every third entry is an -O0 one.  Hashing the
+# name spreads the sample over compilers and optimisation levels without this
+# script having to know how the names are built, and gives the same sample on
+# every run.
 BINS=()
 if [[ "${LIMIT}" -gt 0 && ${#ALL[@]} -gt "${LIMIT}" ]]; then
-	step=$(( (${#ALL[@]} + LIMIT - 1) / LIMIT ))
-	for (( i = 0; i < ${#ALL[@]}; i += step )); do
-		BINS+=("${ALL[$i]}")
-	done
+	mapfile -t BINS < <(
+		for b in "${ALL[@]}"; do
+			printf '%s %s\n' "$(basename "${b}" | md5sum | cut -c1-16)" "${b}"
+		done | sort | head -n "${LIMIT}" | cut -d' ' -f2-
+	)
 else
 	BINS=("${ALL[@]}")
 fi
