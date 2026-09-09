@@ -34,6 +34,12 @@ std::unique_ptr<SSAFunction> makeFnWithCalls(
 	return fn;
 }
 
+/// Close a function's entry block back on itself, making it a loop header.
+void makeSelfLoop(SSAFunction& fn)
+{
+	fn.block(0)->succs.push_back(0);
+}
+
 } // namespace
 
 // ─── StdThreadDetector ────────────────────────────────────────────────────────
@@ -251,6 +257,126 @@ TEST(Win32ThreadDetector, DetectsInterlockedIncrement) {
 	EXPECT_EQ(model.atomics[0].order, AtomicOrder::SeqCst);
 }
 
+// The if/else chain tested substrings in the wrong order and had no case for
+// the bitwise ops: InterlockedExchangeAdd hit the "Exchange" arm although it is
+// a fetch-add, and InterlockedAnd/Or/Xor matched nothing and fell to an `else`
+// that hardcoded FetchAdd -- which is why AtomicOp::FetchAnd/FetchOr/FetchXor
+// were unreachable from Win32 input.
+TEST(Win32ThreadDetector, InterlockedOpsDecodeToTheOpTheyPerform)
+{
+	auto fn = makeFnWithCalls(
+		"atomics",
+		{
+			{"InterlockedExchangeAdd", 0xe100},
+			{"InterlockedAnd", 0xe110},
+			{"InterlockedOr", 0xe120},
+			{"InterlockedXor", 0xe130},
+			{"InterlockedExchange", 0xe140},
+			{"InterlockedCompareExchange", 0xe150},
+		});
+
+	ConcurrencyModel model;
+	Win32ThreadDetector det;
+	det.analyseFunction(*fn, model);
+
+	ASSERT_EQ(model.atomics.size(), 6u);
+	EXPECT_EQ(model.atomics[0].op, AtomicOp::FetchAdd);
+	EXPECT_EQ(model.atomics[1].op, AtomicOp::FetchAnd);
+	EXPECT_EQ(model.atomics[2].op, AtomicOp::FetchOr);
+	EXPECT_EQ(model.atomics[3].op, AtomicOp::FetchXor);
+	EXPECT_EQ(model.atomics[4].op, AtomicOp::Exchange);
+	EXPECT_EQ(model.atomics[5].op, AtomicOp::CompareExchange);
+}
+
+// AtomicDetector sets isMT for the GCC-builtin path; the Win32 path did not, so
+// a lock-free Win32 program was reported as "Multithreaded: no" while the same
+// report listed its atomics.
+TEST(Win32ThreadDetector, InterlockedOpsMarkTheProgramMultithreaded)
+{
+	auto fn = makeFnWithCalls("ref_count", {{"InterlockedIncrement", 0xe000}});
+
+	ConcurrencyModel model;
+	Win32ThreadDetector det;
+	det.analyseFunction(*fn, model);
+
+	EXPECT_TRUE(model.isMT);
+}
+
+// kWin32ThreadWait was defined and referenced nowhere, so no Win32 thread was
+// ever marked joined.
+TEST(Win32ThreadDetector, WaitForSingleObjectJoinsTheThread)
+{
+	auto fn = makeFnWithCalls(
+		"main",
+		{
+			{"CreateThread", 0xe200},
+			{"WaitForSingleObject", 0xe210},
+		});
+
+	ConcurrencyModel model;
+	Win32ThreadDetector det;
+	det.analyseFunction(*fn, model);
+
+	ASSERT_EQ(model.threads.size(), 1u);
+	EXPECT_TRUE(model.threads[0].isJoined);
+}
+
+// ConcurrencyDetector::analyseModule threads one model through every function
+// with no reset, and the detectors paired an unlock with out.locks.back() --
+// the last lock pushed anywhere in the module. An unlock in function B became
+// the unlock of a lock in function A, so reversing the order the functions
+// arrive in changed the model.
+TEST(PthreadDetector, AnUnlockDoesNotCloseALockInAnotherFunction)
+{
+	auto opener = makeFnWithCalls("takes_lock", {{"pthread_mutex_lock", 0x1000}});
+	auto closer = makeFnWithCalls("unrelated", {{"pthread_mutex_unlock", 0x2000}});
+
+	ConcurrencyModel model;
+	PthreadDetector det;
+	det.analyseFunction(*opener, model);
+	det.analyseFunction(*closer, model);
+
+	ASSERT_EQ(model.locks.size(), 1u);
+	EXPECT_EQ(model.locks[0].funcName, "takes_lock");
+	EXPECT_EQ(model.locks[0].unlockCall, 0u) << "an unlock in another function is not this lock's unlock";
+}
+
+TEST(PthreadDetector, AJoinDoesNotAttachToAThreadInAnotherFunction)
+{
+	auto spawner = makeFnWithCalls("spawn", {{"pthread_create", 0x1000}});
+	auto joiner = makeFnWithCalls("unrelated", {{"pthread_join", 0x2000}});
+
+	ConcurrencyModel model;
+	PthreadDetector det;
+	det.analyseFunction(*spawner, model);
+	det.analyseFunction(*joiner, model);
+
+	ASSERT_EQ(model.threads.size(), 1u);
+	EXPECT_FALSE(model.threads[0].isJoined);
+}
+
+// The pairing inside one function still works, and still picks the innermost
+// lock still open rather than the last one recorded.
+TEST(PthreadDetector, NestedLocksPairInnermostFirst)
+{
+	auto fn = makeFnWithCalls(
+		"nested",
+		{
+			{"pthread_mutex_lock", 0x1000},
+			{"pthread_mutex_lock", 0x1010},
+			{"pthread_mutex_unlock", 0x1020},
+			{"pthread_mutex_unlock", 0x1030},
+		});
+
+	ConcurrencyModel model;
+	PthreadDetector det;
+	det.analyseFunction(*fn, model);
+
+	ASSERT_EQ(model.locks.size(), 2u);
+	EXPECT_EQ(model.locks[1].unlockCall, 0x1020u);
+	EXPECT_EQ(model.locks[0].unlockCall, 0x1030u);
+}
+
 TEST(Win32ThreadDetector, DetectsCondVar) {
 	auto fn = makeFnWithCalls("cv_test", {
 			{"SleepConditionVariableCS",   0xf000},
@@ -346,6 +472,7 @@ TEST(SpinlockDetector, DetectsSpinLoop) {
 	auto fn = makeFnWithCalls("spinlock_fn", {
 			{"InterlockedCompareExchange", 0x24000},
 	});
+	makeSelfLoop(*fn);
 
 	ConcurrencyModel model;
 	SpinlockDetector det;
@@ -354,6 +481,28 @@ TEST(SpinlockDetector, DetectsSpinLoop) {
 	ASSERT_EQ(model.spinlocks.size(), 1u);
 	EXPECT_EQ(model.spinlocks[0].funcName, "spinlock_fn");
 	EXPECT_TRUE(model.isMT);
+	// The header documents loopAddr as "address of the spin loop header"; it
+	// used to hold the block *id*, which the emitter printed as a hex VMA and
+	// suppressed entirely for block 0.
+	EXPECT_EQ(model.spinlocks[0].loopAddr, 0x24000u);
+}
+
+// hasCasLoop never looked at blk->succs, so a single straight-line
+// compare_exchange -- no loop anywhere -- was reported as a spinlock,
+// contradicting the function's name and the pattern the header documents.
+TEST(SpinlockDetector, AStraightLineCasIsNotASpinlock)
+{
+	auto fn = makeFnWithCalls(
+		"try_once",
+		{
+			{"InterlockedCompareExchange", 0x24000},
+		});
+
+	ConcurrencyModel model;
+	SpinlockDetector det;
+	det.analyseFunction(*fn, model);
+
+	EXPECT_TRUE(model.spinlocks.empty());
 }
 
 TEST(SpinlockDetector, DetectsDCLPPattern) {

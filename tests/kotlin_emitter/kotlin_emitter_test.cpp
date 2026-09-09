@@ -1244,13 +1244,11 @@ TEST(KotlinMetadataDetectorTest, DeeplyNestedTypeArgsDoNotRecurseWithoutBound)
 	// it does not matter -- only that it stopped descending. Unbounded, the
 	// chain came back exactly as deep as the input made it.
 	std::size_t depth = 0;
-	for (const KotlinType* t = meta.supertypes[0].get();
-		t != nullptr && !t->typeArgs.empty();
-		t = t->typeArgs[0].type.get())
+	for (const KotlinType* t = meta.supertypes[0].get(); t != nullptr && !t->typeArgs.empty();
+		 t = t->typeArgs[0].type.get())
 	{
 		++depth;
-		ASSERT_LT(depth, kNestedTypeArgLevels)
-			<< "decodeType followed the input's nesting without a bound";
+		ASSERT_LT(depth, kNestedTypeArgLevels) << "decodeType followed the input's nesting without a bound";
 	}
 }
 
@@ -1273,6 +1271,5 @@ TEST(KotlinMetadataDetectorTest, AnIntMinStringIndexIsNotABuiltinClassIndex)
 	cls.annotations.push_back(makeKotlinMetadata(1, d1));
 
 	const auto meta = KotlinMetadataDetector::detect(cls);
-	EXPECT_TRUE(meta.fqName.empty())
-		<< "an index no built-in has is not a built-in: " << meta.fqName;
+	EXPECT_TRUE(meta.fqName.empty()) << "an index no built-in has is not a built-in: " << meta.fqName;
 }

@@ -728,10 +728,10 @@ TEST(WatEmitterTest, AnOutOfRangeTypeIndexStillDisassemblesTheBody)
 
 	WatEmitter emitter;
 	auto result = emitter.emit(mod);
-	EXPECT_NE(result.source.find("i32.const"), std::string::npos)
-		<< "the body bytes do not depend on the type index:\n" << result.source;
-	EXPECT_NE(result.source.find("out of range"), std::string::npos)
-		<< "and dropping the signature should say so:\n" << result.source;
+	EXPECT_NE(result.source.find("i32.const"), std::string::npos) << "the body bytes do not depend on the type index:\n"
+																  << result.source;
+	EXPECT_NE(result.source.find("out of range"), std::string::npos) << "and dropping the signature should say so:\n"
+																	 << result.source;
 }
 
 TEST(WatEmitterTest, EmitsFuncNameFromExport)

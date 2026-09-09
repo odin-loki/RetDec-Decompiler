@@ -245,6 +245,54 @@ TEST(FeatureExtraction, NoTailCallForRet)
     EXPECT_FLOAT_EQ(fv.tailCallRatio, 0.0f);
 }
 
+// The tail-call scan read the last sixteen bytes as if every one were an
+// opcode, so a 0xC3 anywhere in that window set seenRet and cancelled the tail
+// call. The rel32 displacement of the E9 being detected is inside that window,
+// and one byte of a displacement in 256 is 0xC3.
+TEST(FeatureExtraction, ARetByteInsideTheJumpDisplacementIsNotARet)
+{
+	// PUSH RBP; MOV RBP,RSP; JMP rel32 with 0xC3 in the displacement.
+	PrologueBuilder pb;
+	pb.pushRBP().movRBPRSP();
+	pb.bytes.insert(pb.bytes.end(), {0xE9, 0xC3, 0x00, 0x00, 0x00});
+
+	auto fp = makeWithFuncs(pb, 10);
+	EXPECT_FLOAT_EQ(fp.extractFeatures().tailCallRatio, 1.0f);
+}
+
+// ... and nothing compared positions, so a RET that came *before* the JMP
+// cancelled it too, which is the shape of every function with an early return.
+TEST(FeatureExtraction, AnEarlyReturnDoesNotCancelATailCall)
+{
+	PrologueBuilder pb;
+	pb.pushRBP().movRBPRSP().ret();
+	pb.bytes.insert(pb.bytes.end(), {0xE9, 0x11, 0x22, 0x33, 0x44});
+
+	auto fp = makeWithFuncs(pb, 10);
+	EXPECT_FLOAT_EQ(fp.extractFeatures().tailCallRatio, 1.0f);
+}
+
+// The same misreading in the other direction: a 0xE9 in an immediate was a JMP.
+TEST(FeatureExtraction, AJumpByteInsideAnImmediateIsNotATailCall)
+{
+	// MOV EAX, 0xE9 -- B8 E9 00 00 00 -- and no terminator at all.
+	PrologueBuilder pb;
+	pb.bytes.insert(pb.bytes.end(), {0xB8, 0xE9, 0x00, 0x00, 0x00});
+
+	auto fp = makeWithFuncs(pb, 10);
+	EXPECT_FLOAT_EQ(fp.extractFeatures().tailCallRatio, 0.0f);
+}
+
+// The PLT-shaped indirect tail call, JMP [RIP+disp32].
+TEST(FeatureExtraction, AnIndirectTailCallIsATailCall)
+{
+	PrologueBuilder pb;
+	pb.bytes.insert(pb.bytes.end(), {0xFF, 0x25, 0x00, 0x10, 0x00, 0x00});
+
+	auto fp = makeWithFuncs(pb, 10);
+	EXPECT_FLOAT_EQ(fp.extractFeatures().tailCallRatio, 1.0f);
+}
+
 // ─── 6. Feature extraction — EH personality and mangling via setters ─────────
 
 TEST(FeatureExtraction, EHPersonalityGxxFromImports)
@@ -440,6 +488,21 @@ TEST(Classification, MinGWClangOnWindowsHighTailCall)
 }
 
 // ─── 11. Version range ────────────────────────────────────────────────────────
+
+// With no functions fed in, framePointerRatio and tailCallRatio are still the
+// 0.0f that means "not measured" -- and the GCC-vs-Clang scoring read them as
+// measurements, awarding Clang +1.5 for aggressive frame-pointer omission it
+// had never seen. The only insufficient-evidence gate was bypassed by any
+// GNU-flavoured hint, and a stack canary is one.
+TEST(Classification, NoFunctionsAnalysedIsUnknownNotClang)
+{
+	CompilerFingerprinter fp;
+	fp.setImports({"__stack_chk_fail", "printf"});
+
+	auto p = fp.classify();
+	EXPECT_EQ(p.family, CompilerFamily::Unknown);
+	EXPECT_FLOAT_EQ(p.confidence, 0.0f);
+}
 
 TEST(VersionRange, GCCWithStackCanaryAndXMM)
 {

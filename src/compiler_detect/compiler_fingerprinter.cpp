@@ -251,22 +251,45 @@ CompilerFingerprinter::analysePrologue(const uint8_t* b, uint32_t sz)
             st.memsetBytes = std::max(st.memsetBytes, zeroStores * 8u);
     }
 
-    // ── Tail call detection ─────────────────────────────────────────────────
-    // Scan the last 16 bytes for a JMP (not a RET).
-    const uint32_t tail_start = sz > 16u ? sz - 16u : 0u;
-    bool seenRet = false, seenJmp = false;
-    for (uint32_t i = tail_start; i < sz; ++i) {
-        uint8_t op = b[i];
-        if (op == 0xC3 || op == 0xCB) { seenRet = true; }
-        if (op == 0xE9 || op == 0xEB) { seenJmp = true; } // JMP rel
-        if (op == 0xFF && i + 1 < sz && ((b[i+1] >> 3) & 7) == 4) {
-            seenJmp = true; // JMP r/m
-        }
-    }
-    // Only count as tail call if we see JMP with no RET after it
-    st.hasTailCall = seenJmp && !seenRet;
+	// ── Tail call detection ─────────────────────────────────────────────────
+	//
+	// Anchored at the end of the function rather than scanned over its last
+	// sixteen bytes. The scan read operand bytes as opcodes: the rel32
+	// displacement of the very E9 being detected routinely contains a 0xC3,
+	// which set seenRet and cancelled the tail call, and nothing compared
+	// positions either, so a RET *before* the JMP suppressed it too. A 0xE9
+	// inside an immediate went the other way and invented one. tailCallRatio
+	// is the primary GCC-vs-Clang discriminator and a primary opt-level
+	// signal, so jump displacements were deciding the compiler.
+	//
+	// A tail call is a JMP that *is* the function's last instruction, so only
+	// the encodings that end exactly at the last byte count. That needs the
+	// position, not an instruction-length decoder.
+	uint32_t end = sz;
+	// Inter-function padding is not part of the last instruction.
+	while (end > 0 && (b[end - 1] == 0xCC || b[end - 1] == 0x90))
+		--end;
 
-    return st;
+	// A last byte of C3/CB is read as the one-byte RET it almost always is.
+	// It could instead be the last displacement byte of a jump that ends
+	// there, which one byte in 256 is; without the function's load address
+	// there is nothing to check the target against, and a RET closing a
+	// function is the overwhelmingly more common shape.
+	const bool endsInRet = end >= 1 && (b[end - 1] == 0xC3 || b[end - 1] == 0xCB);
+
+	st.hasTailCall = !endsInRet
+				  && (
+					  // JMP rel8: EB cb
+					  (end >= 2 && b[end - 2] == 0xEB) ||
+					  // JMP rel32: E9 cd
+					  (end >= 5 && b[end - 5] == 0xE9) ||
+					  // JMP r64: FF /4 in register form, FF E0..E7 (a REX prefix ahead of
+					  // it does not move either byte).
+					  (end >= 2 && b[end - 2] == 0xFF && (b[end - 1] & 0xF8) == 0xE0) ||
+					  // JMP [RIP+disp32]: FF 25 cd, the PLT-style indirect tail call.
+					  (end >= 6 && b[end - 6] == 0xFF && b[end - 5] == 0x25));
+
+	return st;
 }
 
 // ─── Feature extraction ───────────────────────────────────────────────────────
@@ -479,14 +502,31 @@ CompilerProfile CompilerFingerprinter::decisionTree(const FeatureVector& fv)
     // ── Node 3: SystemV AMD64 (Linux/macOS) ──────────────────────────────────
     // No shadow space — either GCC, Clang, or ICC.
 
-    if (!likelyGNU && fv.functionsAnalysed < 5) {
-        // Too little evidence.
+	if (fv.functionsAnalysed == 0)
+	{
+		// framePointerRatio and tailCallRatio are still at the 0.0f extractFeatures
+		// leaves them at when there is nothing to measure -- "not measured",
+		// not "measured zero" -- and the scoring below reads them as
+		// measurements: a 0.0f frame-pointer ratio is aggressive omission,
+		// worth +1.5 to Clang against the +1.0 a 0.0f tail-call ratio gives
+		// GCC, so with no code at all the tie always broke to Clang at 54%.
+		// A GNU hint says which ABI, not which of the two compilers, so it
+		// cannot stand in for the measurement the way the < 5 gate below lets
+		// it. optLevelFromFeatures already returns Unknown on this input.
+		p.family = CompilerFamily::Unknown;
+		p.confidence = 0.0f;
+		return p;
+	}
+
+	if (!likelyGNU && fv.functionsAnalysed < 5)
+	{
+		// Too little evidence.
         p.family     = CompilerFamily::Unknown;
         p.confidence = 0.0f;
         return p;
-    }
+	}
 
-    // Clang tends to:
+	// Clang tends to:
     //   - lower frame-pointer ratio at O2 (more aggressive omission)
     //   - higher tail-call ratio (more aggressive tail-call optimisation)
     //   - consistent AND RSP,-16 in every function (stackAlign16)

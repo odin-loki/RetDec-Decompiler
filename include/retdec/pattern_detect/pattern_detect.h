@@ -283,8 +283,15 @@ public:
 	/// Detect from a group of related functions (same class's methods).
 	virtual PatternResult detectGroup(const std::vector<const ssa::SSAFunction*>& fns) const
 	{
-		if (fns.empty()) return {};
-		return detect(*fns.front());
+		// A null member is within the contract: PatternDetector::detectGroup's
+		// own per-function loop skips them, and every overriding detectGroup --
+		// Singleton, RAII, Observer, Strategy -- opens with `if (!fn) continue;`.
+		// This default dereferenced fns.front() unconditionally, so the three
+		// detectors that do not override it (Factory, Command, StateMachine)
+		// crashed the process on a group whose first entry is null.
+		for (const auto* fn: fns)
+			if (fn) return detect(*fn);
+		return {};
 	}
 
 	virtual PatternKind kind() const noexcept = 0;

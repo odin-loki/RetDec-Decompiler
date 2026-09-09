@@ -61,17 +61,26 @@ static const std::set<uint64_t> kSHA256Constants = {
 	0xa54ff53aULL,
 };
 
-// SHA-1 constants.
+// SHA-1 constants that no other common digest shares.
+//
+// H[0..3] -- 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476 -- are absent on
+// purpose: MD5 uses those same four words as its A/B/C/D init values.
+// md5_detect.cpp splits them out as kMD5InitShared for exactly this reason
+// ("A lone shared init word must not fire MD5"), but this side of the
+// collision never got the same treatment, so every MD5 transform matched
+// hasSHA1Constants. hasRoundConst is necessary-not-sufficient in score(), so
+// the match alone was worth 0.45 and the generic bit-mixing shapes MD5 also
+// has carried it the rest of the way -- and since CryptoDetector::detect sorts
+// by confidence, the SHA-1 annotation was emitted ahead of the MD5 one.
+//
+// H[4] and the four round constants below appear in SHA-1 and nowhere else,
+// and no SHA-1 implementation omits them.
 static const std::set<uint64_t> kSHA1Constants = {
-	0x67452301ULL,
-	0xEFCDAB89ULL,
-	0x98BADCFEULL,
-	0x10325476ULL,
-	0xC3D2E1F0ULL,
-	0x5A827999ULL,
-	0x6ED9EBA1ULL,
-	0x8F1BBCDCULL,
-	0xCA62C1D6ULL,
+	0xC3D2E1F0ULL, // H[4]
+	0x5A827999ULL, // K[ 0..19]
+	0x6ED9EBA1ULL, // K[20..39]
+	0x8F1BBCDCULL, // K[40..59]
+	0xCA62C1D6ULL, // K[60..79]
 };
 
 // SHA-256 rotation amounts.
@@ -208,10 +217,12 @@ CryptoResult SHADetector::detect(const ssa::SSAFunction& fn) const
 	}
 	if (ev.confidence >= 0.50f)
 	{
+		// The usage line names the algorithm that was actually detected; it
+		// used to say SHA256 under a "SHA-1" heading.
 		std::string algo = ev.isSHA1 ? "SHA-1" : "SHA-256";
-		r.emittedAnnotation = "// Cryptographic primitive: " + algo
-							+ "\n"
-							  "// Usage: SHA256(data, len, hash_out); // or EVP_DigestInit_ex";
+		std::string call = ev.isSHA1 ? "SHA1" : "SHA256";
+		r.emittedAnnotation = "// Cryptographic primitive: " + algo + "\n// Usage: " + call
+							+ "(data, len, hash_out); // or EVP_DigestInit_ex";
 	}
 	return r;
 }

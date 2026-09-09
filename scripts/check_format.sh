@@ -151,6 +151,17 @@ if [[ "${1:-}" == "--self-test" ]]; then
   git checkout -q -- src/legacy.cpp
   git reset -q --hard HEAD~2
 
+  # 8. An uncommitted change is what someone running this before a commit
+  #    means by "check my work", and it used to be invisible: the file list
+  #    came from BASE..HEAD, so a file dirty in the working tree was never
+  #    named, and the check quietly examined the previous push's range instead.
+  printf 'int pending()\n{\n\treturn 6;\n}\n' > src/pending.cpp
+  git add -A; git commit -qm "clean base for the uncommitted case"
+  printf 'int pending()\n{\n\treturn 6;\n}\n\nint  uncommitted( )   {return 7;}\n' > src/pending.cpp
+  expect 1 "a misformatted uncommitted change is reported" run_here --base HEAD
+  git checkout -q -- .
+  git reset -q --hard HEAD~1
+
   cd "${ROOT}"
   if [[ "${fails}" -ne 0 ]]; then
     echo "check_format self-test: ${fails} case(s) failed" >&2
@@ -327,8 +338,11 @@ else
   BASE="$(base_ref || true)"
 fi
 # On the default branch the merge base is HEAD itself, which would diff a
-# commit against itself and check nothing at all.
-if [[ -n "${BASE}" ]] && [[ "$(git rev-parse "${BASE}")" == "$(git rev-parse HEAD)" ]]; then
+# commit against itself and check nothing at all -- unless the working tree is
+# dirty, in which case the uncommitted work *is* the range, and is exactly what
+# someone running this before a commit means by it.
+if [[ -n "${BASE}" ]] && [[ "$(git rev-parse "${BASE}")" == "$(git rev-parse HEAD)" ]] \
+   && git diff --quiet HEAD -- include/ src/ tests/; then
   BASE="$(git rev-parse HEAD^ 2>/dev/null || true)"
 fi
 if [[ -z "${BASE}" ]]; then
@@ -384,7 +398,15 @@ scan_changed() {
   clang-format "${RANGES[@]}" "$path" > "${TMP_FORMATTED}"
   touched_lines_differ "$path" "${TMP_FORMATTED}" "${RANGES[@]}" \
     || report "$path" "${RANGES[@]}"
-  done < <(git diff --name-status "${BASE}" HEAD -- include/ src/ tests/)
+  # BASE against the *working tree*, not against HEAD.
+  #
+  # changed_ranges() already diffs BASE against the working tree, so listing
+  # only the files that changed between BASE and HEAD meant a file edited but
+  # not yet committed was never named, and so never checked -- run before the
+  # commit, the check silently examined the previous push's range instead. In
+  # CI the working tree is the checkout of HEAD, so the two spellings agree
+  # there; locally, before committing, only this one looks at the work in hand.
+  done < <(git diff --name-status "${BASE}" -- include/ src/ tests/)
 }
 
 if [[ ${FIX} -eq 1 ]]; then

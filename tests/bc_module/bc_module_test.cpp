@@ -999,8 +999,7 @@ TEST(BcRefTypeArrayDims, AnAbsurdDimensionCountIsClampedToWhatTheJvmAllows)
 // reaches it.
 TEST(BcJsonParseInt, AnAbsurdlyLongNumberSaturatesRatherThanOverflowing)
 {
-	const std::string json =
-		R"({"bcModuleVersion":999999999999999999999999999999,"classes":[]})";
+	const std::string json = R"({"bcModuleVersion":999999999999999999999999999999,"classes":[]})";
 	const auto res = deserialiseModule(json);
 	// No assertion about the value: a number that does not fit has no right
 	// answer. What matters is that reading it is defined, which the sanitizer

@@ -277,19 +277,17 @@ private:
                                   const std::vector<std::string>& strings,
                                   KotlinClassMetadata& out);
 
-    // Decode a single Type proto message into a KotlinType.
-    //
-    // @param depth  how many nested TypeArg levels deep this call is. The
-    //               nesting is set by the d1 bytes of the annotation, and each
-    //               level holds its own copy of the remaining payload alive in
-    //               its frame, so without a cap the memory is quadratic in the
-    //               input and the stack is unbounded.
-    static std::shared_ptr<KotlinType>
-        decodeType(ProtobufReader& reader,
-                    const std::vector<std::string>& strings,
-                    unsigned depth = 0);
+	// Decode a single Type proto message into a KotlinType.
+	//
+	// @param depth  how many nested TypeArg levels deep this call is. The
+	//               nesting is set by the d1 bytes of the annotation, and each
+	//               level holds its own copy of the remaining payload alive in
+	//               its frame, so without a cap the memory is quadratic in the
+	//               input and the stack is unbounded.
+	static std::shared_ptr<KotlinType>
+	decodeType(ProtobufReader& reader, const std::vector<std::string>& strings, unsigned depth = 0);
 
-    // Decode a Property proto message.
+	// Decode a Property proto message.
     static KotlinProperty
         decodeProperty(ProtobufReader& reader,
                         const std::vector<std::string>& strings);

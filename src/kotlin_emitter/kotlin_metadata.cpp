@@ -398,8 +398,7 @@ KotlinClassFlags KotlinMetadataDetector::decodeClassFlags(int64_t flags)
 static constexpr unsigned kMaxTypeDepth = 64;
 
 std::shared_ptr<KotlinType>
-KotlinMetadataDetector::decodeType(
-	ProtobufReader& reader, const std::vector<std::string>& strings, unsigned depth)
+KotlinMetadataDetector::decodeType(ProtobufReader& reader, const std::vector<std::string>& strings, unsigned depth)
 {
 	auto type = std::make_shared<KotlinType>();
 	ProtobufReader::Field f;

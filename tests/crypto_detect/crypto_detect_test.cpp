@@ -354,6 +354,90 @@ TEST(SHADetectorTest, SHA1ConstantDetected)
 	EXPECT_EQ(r.variant, CryptoVariant::SHA1_160);
 }
 
+// kSHA1Constants used to list SHA-1's H[0..3], which are the four words MD5
+// uses verbatim as its A/B/C/D init values. score() calls a round constant
+// "necessary, not merely worth 0.45", so a lone shared word was 0.45 of a
+// SHA-1 verdict on its own. md5_detect.cpp splits exactly these four out and
+// refuses to fire on them; this side of the collision did not.
+TEST(SHADetectorTest, SharedMD5InitAloneDoesNotFire)
+{
+	SHADetector det;
+	auto fn = makeEmptyFn();
+	auto* blk = addBlock(*fn);
+	auto* i = addInstr(*fn, blk, IrInstr::Op::Store);
+	addImmUse(*fn, i, 0x67452301ULL); // MD5 A / SHA-1 H[0]
+	auto r = det.detect(*fn);
+	EXPECT_LT(r.confidence, 0.45f);
+	EXPECT_TRUE(r.emittedAnnotation.empty());
+}
+
+// The whole point of the split: a real MD5 transform carries the four shared
+// init words and MD5's own sine table, and MD5's F/G/H/I are the same Ands and
+// Xors SHADetector reads as Ch and Maj. It came out annotated SHA-1 -- and
+// ahead of MD5, because CryptoDetector::detect sorts by confidence.
+TEST(CryptoDetectorTest, AnMD5TransformIsNotReportedAsSHA1)
+{
+	auto fn = makeEmptyFn("md5_transform");
+	auto* blk = addBlock(*fn);
+
+	// MD5's own K[] entries -- no other digest has these.
+	auto* k0 = addInstr(*fn, blk, IrInstr::Op::Add);
+	addImmUse(*fn, k0, 0xd76aa478ULL);
+	auto* k1 = addInstr(*fn, blk, IrInstr::Op::Add);
+	addImmUse(*fn, k1, 0xe8c7b756ULL);
+
+	// A/B/C/D, which SHA-1 also uses as H[0..3].
+	for (uint64_t init: {0x67452301ULL, 0xefcdab89ULL, 0x98badcfeULL, 0x10325476ULL})
+	{
+		auto* st = addInstr(*fn, blk, IrInstr::Op::Store);
+		addImmUse(*fn, st, init);
+	}
+
+	// F/G/H/I: (b & c) | (~b & d) and friends -- the Ands and Xors that
+	// SHADetector's Ch and Maj tests count.
+	for (int n = 0; n < 4; ++n)
+		addInstr(*fn, blk, IrInstr::Op::And);
+	for (int n = 0; n < 3; ++n)
+		addInstr(*fn, blk, IrInstr::Op::Xor);
+
+	// The left-rotate amounts MD5 shares with SHA-256's rotation set.
+	auto* rot = addInstr(*fn, blk, IrInstr::Op::Shl);
+	addImmUse(*fn, rot, 22ULL);
+
+	CryptoDetector det;
+	auto results = det.detect(*fn);
+	ASSERT_FALSE(results.empty());
+
+	float md5Conf = 0.0f, sha1Conf = 0.0f;
+	for (const auto& r: results)
+	{
+		if (r.algorithm == CryptoAlgorithm::MD5) md5Conf = r.confidence;
+		if (r.algorithm == CryptoAlgorithm::SHA1) sha1Conf = r.confidence;
+	}
+	EXPECT_GT(md5Conf, 0.0f) << "the sine table is MD5-only";
+	EXPECT_EQ(sha1Conf, 0.0f) << "MD5's init words are not evidence of SHA-1; SHA-1 scored " << sha1Conf
+							  << " against MD5's " << md5Conf;
+}
+
+// The annotation body was hardcoded to SHA256() under either heading.
+TEST(SHADetectorTest, TheSHA1AnnotationNamesSHA1)
+{
+	SHADetector det;
+	auto fn = makeEmptyFn();
+	auto* blk = addBlock(*fn);
+	auto* i = addInstr(*fn, blk, IrInstr::Op::Add);
+	addImmUse(*fn, i, 0x5A827999ULL); // SHA-1 K[0]
+	addInstr(*fn, blk, IrInstr::Op::And);
+	addInstr(*fn, blk, IrInstr::Op::And);
+	addInstr(*fn, blk, IrInstr::Op::Xor);
+
+	auto r = det.detect(*fn);
+	ASSERT_EQ(r.algorithm, CryptoAlgorithm::SHA1);
+	ASSERT_FALSE(r.emittedAnnotation.empty());
+	EXPECT_EQ(r.emittedAnnotation.find("SHA256("), std::string::npos) << r.emittedAnnotation;
+	EXPECT_NE(r.emittedAnnotation.find("SHA1("), std::string::npos) << r.emittedAnnotation;
+}
+
 TEST(SHADetectorTest, SHA256InitHashConstant)
 {
 	SHADetector det;

@@ -799,6 +799,39 @@ TEST(PatternDetectorTest, GroupModeRunsGroupDetectors)
 	EXPECT_TRUE(observerFound);
 }
 
+// The default IPatternDetector::detectGroup did `detect(*fns.front())` with no
+// null check, and FactoryDetector, CommandDetector and StateMachineDetector all
+// use that default. A null member is within the contract -- the per-function
+// loop in PatternDetector::detectGroup skips them and every overriding
+// detectGroup opens with `if (!fn) continue;` -- so a caller following the
+// convention the rest of the module enforces crashed the process.
+TEST(PatternDetectorTest, ANullFirstGroupMemberDoesNotCrash)
+{
+	PatternDetector det;
+	auto reg = makeFunc("subscribe", {}, 1);
+	addCall(*reg, "push_back");
+	auto notify = makeFunc("broadcast", {ssa::IrInstr::Op::Load}, 1);
+	addBackEdge(*notify);
+	addCall(*notify, "emit");
+
+	std::vector<const ssa::SSAFunction*> fns = {nullptr, reg.get(), notify.get()};
+	auto results = det.detectGroup(fns);
+
+	// The same group without the null leading entry finds Observer; a null
+	// member must be skipped, not allowed to hide the members behind it.
+	bool observerFound = false;
+	for (const auto& r: results)
+		if (r.kind == PatternKind::Observer) observerFound = true;
+	EXPECT_TRUE(observerFound);
+}
+
+TEST(PatternDetectorTest, AGroupOfOnlyNullsIsEmpty)
+{
+	PatternDetector det;
+	std::vector<const ssa::SSAFunction*> fns = {nullptr, nullptr};
+	EXPECT_TRUE(det.detectGroup(fns).empty());
+}
+
 TEST(PatternDetectorTest, MultiplePatternsSameFunction)
 {
 	PatternDetector det;
