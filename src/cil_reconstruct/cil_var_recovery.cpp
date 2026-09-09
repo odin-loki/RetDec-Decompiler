@@ -176,29 +176,35 @@ std::vector<CilStmt> CilVarRecovery::convertInsn(
         }
 
         CilExprPtr rhs = getTopExpr();
-        if (idx < locals.size() && locals[idx].isInlineable && rhs) {
-            // Inline: don't emit assignment, record expr for later use
-            break;
-        }
+		// The store used to be dropped here for an "inlineable" local, on the
+		// stated promise of recording the expression for later use. Nothing
+		// records it and nothing substitutes it -- isInlineable is read in
+		// exactly this one place -- so the value the store carried simply left
+		// the output. Emitting the assignment is the honest behaviour until
+		// the substitution exists; computeInlineability still marks the
+		// locals, so whoever implements it has the analysis waiting.
 
-        CilStmt s;
-        if (idx < locals.size() && locals[idx].defCount == 1 && opts_.emitVarDecls) {
-            // First (and only) store: emit LocalDecl
+		CilStmt s;
+		if (idx < locals.size() && locals[idx].defCount == 1 && opts_.emitVarDecls)
+		{
+			// First (and only) store: emit LocalDecl
             s.kind = StmtKind::LocalDecl;
             s.declType = (idx < locals.size()) ? locals[idx].type : types::ClrObject();
             CilExprPtr lhs = makeExprLocal(idx, getLocalName(idx),
                 idx < locals.size() ? locals[idx].type : types::ClrObject());
             s.target = lhs;
             s.expr   = rhs;
-        } else {
-            // Subsequent store: emit Assign
+		}
+		else
+		{
+			// Subsequent store: emit Assign
             s.kind = StmtKind::Assign;
             CilExprPtr lhs = makeExprLocal(idx, getLocalName(idx),
                 idx < locals.size() ? locals[idx].type : types::ClrObject());
             s.target = lhs;
             s.expr   = rhs;
-        }
-        stmts.push_back(std::move(s));
+		}
+		stmts.push_back(std::move(s));
         break;
     }
 
@@ -291,13 +297,19 @@ std::vector<CilStmt> CilVarRecovery::convertInsn(
     case BcOpcode::DOTNET_BLE_UN: case BcOpcode::DOTNET_BLE_UN_S: {
         CilStmt s;
         s.kind = StmtKind::If;
-        s.expr = getOutExpr(); // comparison expression built during sim
-        for (const auto& op : insn.operands)
-            if (const auto* bb = std::get_if<BcBlockOperand>(&op)) {
-                s.blockRef = bb->blockId;
+		// The comparison applyInstruction built. This used to call
+		// getOutExpr(), which is exprAt() -- the top of the stack AFTER the
+		// instruction -- and a compare-and-branch pops both operands and
+		// pushes nothing, so on a block whose stack it empties the condition
+		// came out null and every such branch lost its test.
+		s.expr = sim.outExprAt(blockId, insnIdx);
+		for (const auto& op: insn.operands)
+			if (const auto* bb = std::get_if<BcBlockOperand>(&op))
+			{
+				s.blockRef = bb->blockId;
                 break;
-            }
-        stmts.push_back(std::move(s));
+			}
+		stmts.push_back(std::move(s));
         break;
     }
 

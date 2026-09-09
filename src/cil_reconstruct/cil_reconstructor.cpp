@@ -102,16 +102,24 @@ std::vector<CilStmt> CilReconstructor::buildIfElse(
 		return stmts;
 	}
 
-	// Find the branch statement
+	// Find the branch statement without moving anything yet.
+	//
+	// This used to move each preceding statement into `stmts` as it scanned,
+	// and then, if it found no branch, do `stmts = std::move(rb.stmts)` --
+	// throwing away the copies it had just collected and adopting rb.stmts,
+	// whose leading elements are the moved-from husks the scan left behind.
+	// A vector move of an element does not shrink the vector, so every
+	// statement before the branch came out blank.
 	CilExprPtr cond;
-	for (auto& s: rb.stmts)
+	std::size_t ifIdx = rb.stmts.size();
+	for (std::size_t i = 0; i < rb.stmts.size(); ++i)
 	{
-		if (s.kind == StmtKind::If)
+		if (rb.stmts[i].kind == StmtKind::If)
 		{
-			cond = s.expr;
+			cond = rb.stmts[i].expr;
+			ifIdx = i;
 			break;
 		}
-		stmts.push_back(std::move(s));
 	}
 
 	if (!cond)
@@ -119,6 +127,9 @@ std::vector<CilStmt> CilReconstructor::buildIfElse(
 		stmts = std::move(rb.stmts);
 		return stmts;
 	}
+
+	for (std::size_t i = 0; i < ifIdx; ++i)
+		stmts.push_back(std::move(rb.stmts[i]));
 
 	// Then branch = first successor, Else branch = second successor
 	uint32_t thenBlock = rb.succs[0];

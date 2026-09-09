@@ -227,6 +227,13 @@ struct BlockStackInfo {
     StackState  exitStack;   ///< Stack at block exit (after last instruction)
     /// Per-instruction output stacks (indexed by instruction position in block).
     std::vector<StackState> instrStacks;
+
+	/// The expression applyInstruction() produced for each instruction.
+	///
+	/// Distinct from instrStacks: that is the stack AFTER the instruction, so
+	/// for anything that pushes nothing -- a compare-and-branch, a store --
+	/// it says nothing about what the instruction computed.
+	std::vector<CilExprPtr> instrExprs;
 };
 
 // ─── CilStackSimulator ────────────────────────────────────────────────────────
@@ -286,6 +293,13 @@ public:
 	/// Expression produced by instruction `instrIdx` in block `blockId`
     /// (the top-of-stack expression after that instruction).
     CilExprPtr exprAt(uint32_t blockId, uint32_t instrIdx) const;
+
+	/// The expression the instruction at @p instrIdx produced, or null.
+	///
+	/// exprAt() answers with the top of the stack after the instruction, which
+	/// is a different question and the wrong one for an instruction that
+	/// consumes its operands and pushes nothing.
+	CilExprPtr outExprAt(uint32_t blockId, uint32_t instrIdx) const;
 
 private:
     Options opts_;

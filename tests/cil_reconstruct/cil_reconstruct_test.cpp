@@ -1190,3 +1190,69 @@ TEST(CilReconstructor, EHHandlerBlockGetsCatchType) {
     auto result = rec.reconstruct(m, module);
     EXPECT_TRUE(result.success);
 }
+
+// ─── The recovered statements have to carry the values ───────────────────────
+
+// An "inlineable" local's store was dropped on the promise of substituting its
+// value later. Nothing substitutes it: grep finds isInlineable read in exactly
+// that one place. So the value the store carried simply left the output.
+TEST(CilVarRecovery, AnInlineableLocalStillGetsItsValueIntoTheStatements)
+{
+	BcMethod m = makeMethod("inl", /*isVoid=*/false);
+	m.locals.push_back(BcLocalVar{0, "x", types::Int()});
+	auto& b0 = m.cfg.addBlock();
+	b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_LDC_I4_7));
+	b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_STLOC_0));
+	b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_LDLOC_0));
+	b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_RET));
+
+	CilStackSimulator sim;
+	ASSERT_TRUE(sim.simulate(m.cfg, m)) << sim.error();
+	CilVarRecovery rec;
+	auto r = rec.recover(m.cfg, m, sim);
+
+	ASSERT_EQ(1u, r.locals.size());
+	ASSERT_FALSE(r.blocks.empty());
+
+	bool sawValue = false;
+	for (const auto& st: r.blocks[0].stmts)
+		if (st.expr && st.expr->isConst() && st.expr->asConst().intVal == 7) sawValue = true;
+	EXPECT_TRUE(sawValue) << "the stored value never reaches the recovered statements";
+}
+
+// A compare-and-branch builds its condition during simulation and hands it
+// back through applyInstruction's out-parameter. The recovery read exprAt(),
+// which is the top of the stack AFTER the instruction -- and a branch pops
+// both operands and pushes nothing, so on a two-operand block that is empty
+// and the condition came out null.
+TEST(CilVarRecovery, ACompareAndBranchKeepsItsCondition)
+{
+	BcMethod m = makeMethod("cmp_branch", /*isVoid=*/false);
+	auto& b0 = m.cfg.addBlock();
+	auto& b1 = m.cfg.addBlock();
+	auto& b2 = m.cfg.addBlock();
+	b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_LDC_I4_1));
+	b0.instrs.push_back(makeInsn(BcOpcode::DOTNET_LDC_I4_2));
+	BcInstruction br = makeInsn(BcOpcode::DOTNET_BEQ);
+	br.operands.push_back(BcBlockOperand{b2.id});
+	b0.instrs.push_back(br);
+	b0.succs.push_back(b1.id);
+	b0.succs.push_back(b2.id);
+	b1.instrs.push_back(makeInsn(BcOpcode::DOTNET_RET));
+	b2.instrs.push_back(makeInsn(BcOpcode::DOTNET_RET));
+
+	CilStackSimulator sim;
+	ASSERT_TRUE(sim.simulate(m.cfg, m)) << sim.error();
+	CilVarRecovery rec;
+	auto r = rec.recover(m.cfg, m, sim);
+
+	ASSERT_FALSE(r.blocks.empty());
+	bool sawIf = false;
+	for (const auto& st: r.blocks[0].stmts)
+	{
+		if (st.kind != StmtKind::If) continue;
+		sawIf = true;
+		EXPECT_NE(nullptr, st.expr) << "the branch condition was dropped";
+	}
+	EXPECT_TRUE(sawIf);
+}

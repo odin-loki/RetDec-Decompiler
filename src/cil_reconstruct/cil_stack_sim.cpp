@@ -52,6 +52,14 @@ CilExprPtr CilStackSimulator::exprAt(uint32_t blockId, uint32_t instrIdx) const 
     return state.back().expr;
 }
 
+CilExprPtr CilStackSimulator::outExprAt(uint32_t blockId, uint32_t instrIdx) const
+{
+	if (blockId >= blockInfos_.size()) return nullptr;
+	const auto& exprs = blockInfos_[blockId].instrExprs;
+	if (instrIdx >= exprs.size()) return nullptr;
+	return exprs[instrIdx];
+}
+
 // ─── Stack helpers ────────────────────────────────────────────────────────────
 
 bool CilStackSimulator::pop(StackState& s, StackSlot& out) {
@@ -990,15 +998,19 @@ bool CilStackSimulator::runFixpoint(const BcCFG& cfg, const BcMethod& method) {
 		StackState stack = info.entryStack;
 		info.instrStacks.clear();
 		info.instrStacks.reserve(blk.instrs.size());
+		info.instrExprs.clear();
+		info.instrExprs.reserve(blk.instrs.size());
 
-        for (const auto& insn : blk.instrs) {
-            CilExprPtr expr;
+		for (const auto& insn: blk.instrs)
+		{
+			CilExprPtr expr;
             if (!applyInstruction(insn, stack, method, expr)) {
                 // Stack underflow — recover gracefully
             }
             info.instrStacks.push_back(stack);
-        }
-        info.exitStack = stack;
+			info.instrExprs.push_back(expr);
+		}
+		info.exitStack = stack;
 
 		analysed[bid] = true;
 
