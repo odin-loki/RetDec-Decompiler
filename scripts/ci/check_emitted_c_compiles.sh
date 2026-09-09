@@ -97,6 +97,19 @@ int f(void) { v7 = 3; return v7; }
 C
 FAKE
 
+	# The shape the libc-arity defect produces: the file includes the header
+	# that declares the function, then calls it with more arguments than the
+	# header's prototype takes.
+	cat > "${T}/bin/wrong_arity" <<'FAKE'
+#!/usr/bin/env bash
+out=""; bin=""
+while [[ $# -gt 0 ]]; do case "$1" in -o) out="$2"; shift 2;; *) bin="$1"; shift;; esac; done
+cat > "${out}" <<'C'
+#include <stdio.h>
+int f(char *str, int a2) { return puts(str, a2, 0); }
+C
+FAKE
+
 	# One binary out of four fails to compile; the rest are fine.
 	cat > "${T}/bin/mostly_good" <<'FAKE'
 #!/usr/bin/env bash
@@ -192,6 +205,14 @@ FAKE
 	expect 1 "| int f(int c) { if (c) goto lab_4006f0; return 0; }" \
 		"the report quotes the emitted line the error points at" \
 		--decompiler "${T}/bin/undeclared_label" --min-rate 0.5
+
+	# 6c. ...and what the file says about the name the error is about. An
+	#     arity error is a disagreement between a call and a declaration, and
+	#     the declaration is the half the compiler's message leaves out --
+	#     here, an #include the emitted file asked for itself.
+	expect 1 "? 1:#include <stdio.h>" \
+		"the report shows where the conflicting declaration came from" \
+		--decompiler "${T}/bin/wrong_arity" --min-rate 0.5
 
 	# 7. A floor is only a floor if the script refuses one it cannot read.
 	expect 2 "" "a non-numeric --min-rate is rejected" \
@@ -324,6 +345,17 @@ for bin in "${BINS[@]}"; do
 				if [[ -n "${lineno}" ]]; then
 					sed -n "${lineno}p" "${out}" | sed 's/^[[:space:]]*/    | /'
 				fi
+				# ...and what the file says about the name the error is about.
+				# `too many arguments to function 'puts'` is a disagreement
+				# between a call and a declaration, and the declaration is the
+				# half the error does not show: it may be an emitted prototype
+				# or it may come from an #include the same file asked for.
+				ident="$(printf '%s' "${e}" | sed -n "s/.*[\`']\\([A-Za-z_][A-Za-z_0-9]*\\)'.*/\\1/p")"
+				if [[ -n "${ident}" ]]; then
+					{ grep -nE "^[^ ].*\\b${ident}\\b|^#include" "${out}" \
+						| grep -vE "^${lineno}:" | head -n 4 \
+						| sed 's/^/    ? /'; } || true
+				fi
 			done
 		} >> "${ERRLOG}"
 	fi
@@ -338,7 +370,7 @@ if [[ "${BAD}" -gt 0 ]]; then
 	echo "CC-01: files that did not compile:"
 	printf '  %s\n' "${FAILED_NAMES[@]}" | head -n 20
 	echo "CC-01: what the compiler said (first ${ERRORS}):"
-	head -n "$(( ERRORS * 8 ))" "${ERRLOG}" | sed 's/^/  /'
+	head -n "$(( ERRORS * 14 ))" "${ERRLOG}" | sed 's/^/  /'
 fi
 
 if [[ -z "${MIN_RATE}" ]]; then
