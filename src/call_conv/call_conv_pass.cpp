@@ -52,10 +52,16 @@ detectStackArgs(const ssa::SSAFunction& fn, CC cc, int numRegArgs) {
     int32_t regArgBytes = numRegArgs * kArgStride;
     int32_t stackArgStart = kFirstArgOffset + regArgBytes;
 
-    std::set<int32_t> seenOffsets;
-    for (const auto& blk : fn.blocks()) {
-        if (!blk) continue;
-        for (const ssa::IrInstr* instr : blk->instrs) {
+	// int64_t, because IrValue::memOffset is: the comparison below is done in
+	// 64 bits and passes, and the insert used to narrow. Two slots whose low
+	// 32 bits agree then collapsed into one ArgDesc, and a large positive
+	// offset became a negative one -- an argument descriptor pointing below
+	// the frame.
+	std::set<int64_t> seenOffsets;
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk) continue;
+		for (const ssa::IrInstr* instr : blk->instrs) {
             if (!instr) continue;
             if (instr->op != ssa::IrInstr::Op::Load &&
                 instr->op != ssa::IrInstr::Op::Store) continue;
@@ -69,18 +75,22 @@ detectStackArgs(const ssa::SSAFunction& fn, CC cc, int numRegArgs) {
                 }
             }
         }
-    }
+	}
 
-    for (int32_t off : seenOffsets) {
-        ArgDesc d;
-        d.kind        = ArgKind::Stack;
-        d.reg         = PhysReg::Invalid;
-        d.stackOffset = off;
-        d.width       = 32;
-        d.isFp        = false;
-        stackArgs.push_back(d);
-    }
-    return stackArgs;
+	for (int64_t off: seenOffsets)
+	{
+		// ArgDesc::stackOffset is an int32_t and an x86-32 frame offset fits
+		// one; anything that does not is not a frame offset.
+		if (off < INT32_MIN || off > INT32_MAX) continue;
+		ArgDesc d;
+		d.kind = ArgKind::Stack;
+		d.reg         = PhysReg::Invalid;
+		d.stackOffset = static_cast<int32_t>(off);
+		d.width = 32;
+		d.isFp = false;
+		stackArgs.push_back(d);
+	}
+	return stackArgs;
 }
 
 // ─── CallConvPass::accumStats ────────────────────────────────────────────────
@@ -140,12 +150,20 @@ CallingConvention CallConvPass::run(const ssa::SSAFunction& fn,
     ReturnValueAnalysis retAna;
     result.ret = retAna.run(fn, cc);
 
-    // ── Step 5: Variadic detection ───────────────────────────────────────────
-    VariadicDetector varDet;
-    result.isVariadic = varDet.run(fn, cc);
+	// ── Step 5: Variadic detection ───────────────────────────────────────────
+	//
+	// With the count of named arguments steps 2 and 3 found. It used to be
+	// told nothing, on a comment saying "the caller supplies argument count"
+	// -- which this, the only caller, did not. checkX86CdeclExtendedStack then
+	// computed a limit of [EBP+8], and on the standard x86-32 frame [EBP+8] IS
+	// the first named argument, so "beyond the last named argument" fired on
+	// the first one and every cdecl function that reads any incoming stack
+	// argument was reported variadic.
+	VariadicDetector varDet;
+	result.isVariadic = varDet.run(fn, cc, static_cast<int>(result.args.size()));
 
-    accumStats(cc, result.isVariadic);
-    return result;
+	accumStats(cc, result.isVariadic);
+	return result;
 }
 
 // ─── CallConvPass::runAll ────────────────────────────────────────────────────

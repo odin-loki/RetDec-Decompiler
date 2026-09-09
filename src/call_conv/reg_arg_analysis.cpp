@@ -36,10 +36,18 @@ namespace call_conv {
 
 uint32_t RegArgAnalysis::findVarForReg(const ssa::SSAFunction& fn,
                                         PhysReg r) const {
-    // Search the function's variable registry for a variable whose name
-    // matches the physical register name.
-    const char* name = physRegName(r);
-    return fn.findVar(name);
+	// Search the function's variable registry for a variable whose name
+	// matches the physical register name.
+	//
+	// Both spellings, because PhysReg::ECX and PhysReg::RCX are the same
+	// number: physRegName always answers "rcx", and a 32-bit function's
+	// variables are called "ecx". Fastcall and Thiscall are the only x86-32
+	// conventions with a register-argument table, so with the 64-bit name
+	// alone those two rows were unreachable.
+	const uint32_t wide = fn.findVar(physRegName(r));
+	if (wide != ssa::kInvalidVar) return wide;
+	if (const char* narrow = physRegName32(r)) return fn.findVar(narrow);
+	return ssa::kInvalidVar;
 }
 
 // ─── Helper: is VarId live-in at entry? ───────────────────────────────────────

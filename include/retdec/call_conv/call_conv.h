@@ -165,6 +165,30 @@ inline const char* physRegName(PhysReg r) noexcept {
     }
 }
 
+/// The x86-32 spelling of a register, or nullptr when there is none.
+///
+/// EAX..EDI share their numeric ids with RAX..RDI ("re-use lower IDs,
+/// distinguished by context"), so physRegName can only ever return the 64-bit
+/// name for them -- and a 32-bit function's SSA variables are called "ecx",
+/// not "rcx". Looking one up by physRegName alone therefore never matched,
+/// which is why the fastcall and thiscall register-argument rows, the only two
+/// x86-32 conventions with a non-empty table, could never fire.
+inline const char* physRegName32(PhysReg r) noexcept
+{
+	switch (r)
+	{
+	case PhysReg::EAX: return "eax";
+	case PhysReg::ECX: return "ecx";
+	case PhysReg::EDX: return "edx";
+	case PhysReg::EBX: return "ebx";
+	case PhysReg::ESP: return "esp";
+	case PhysReg::EBP: return "ebp";
+	case PhysReg::ESI: return "esi";
+	case PhysReg::EDI: return "edi";
+	default: return nullptr;
+	}
+}
+
 // ─── Calling convention enum ──────────────────────────────────────────────────
 
 enum class CC : uint8_t {
@@ -340,7 +364,11 @@ public:
  */
 class VariadicDetector {
 public:
-    bool run(const ssa::SSAFunction& fn, CC cc) const;
+	/// @param numNamedArgs  how many arguments the earlier passes found. The
+	///                      x86-32 cdecl check needs it: without it the
+	///                      "beyond the last named argument" limit lands on
+	///                      [EBP+8], which is the first named argument.
+	bool run(const ssa::SSAFunction& fn, CC cc, int numNamedArgs = 0) const;
 
 private:
     bool checkSysVAl(const ssa::SSAFunction& fn) const;

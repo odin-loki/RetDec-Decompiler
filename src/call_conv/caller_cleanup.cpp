@@ -191,9 +191,19 @@ CallerCleanupDetector::Result
 CallerCleanupDetector::run(const ssa::SSAFunction& fn) const {
     Result res;
 
-    for (const auto& blk : fn.blocks()) {
-        if (!blk) continue;
-        const std::size_t n = blk->instrs.size();
+	// The variables ECX and EDX actually are in this function, looked up the
+	// way the rest of this module does it. Both spellings: PhysReg::ECX and
+	// PhysReg::RCX are the same number, so a 32-bit function's "ecx" is not
+	// what physRegName returns.
+	uint32_t ecxVar = fn.findVar("ecx");
+	if (ecxVar == ssa::kInvalidVar) ecxVar = fn.findVar("rcx");
+	uint32_t edxVar = fn.findVar("edx");
+	if (edxVar == ssa::kInvalidVar) edxVar = fn.findVar("rdx");
+
+	for (const auto& blk: fn.blocks())
+	{
+		if (!blk) continue;
+		const std::size_t n = blk->instrs.size();
         for (std::size_t i = 0; i < n; ++i) {
             const ssa::IrInstr* instr = blk->instrs[i];
             if (!instr || instr->op != ssa::IrInstr::Op::Call) continue;
@@ -206,23 +216,34 @@ CallerCleanupDetector::run(const ssa::SSAFunction& fn) const {
             ev.callerCleanup  = callerClean;
             ev.cleanupBytes   = bytes;
 
-            // Check ECX / EDX liveness before the call.
-            // We approximate by checking if any use of this Call references
-            // VarId 1 (ECX in x86-32) or VarId 2 (EDX).
-            for (const auto& use : instr->uses) {
-                if (use.valueId == 1) ev.ecxUsed = true;  // heuristic: varId 1 = ECX
-                if (use.valueId == 2) ev.edxUsed = true;  // heuristic: varId 2 = EDX
-            }
+			// Check ECX / EDX liveness before the call.
+			//
+			// By variable, not by ValueId. This compared use.valueId against
+			// the literals 1 and 2, calling them "varId 1 = ECX" and
+			// "varId 2 = EDX" -- but a ValueId is allocated sequentially by
+			// SSAFunction::allocValue and has nothing to do with a register.
+			// Whichever two values happened to be created second and third in
+			// the function were read as ECX and EDX, so the fastcall /
+			// thiscall / stdcall verdict below moved with how many SSA values
+			// had been made before this function.
+			for (const auto& use: instr->uses)
+			{
+				const ssa::IrValue* val = fn.value(use.valueId);
+				if (!val || val->varId == ssa::kInvalidVar) continue;
+				if (val->varId == ecxVar) ev.ecxUsed = true;
+				if (val->varId == edxVar) ev.edxUsed = true;
+			}
 
-            if (ev.callerCleanup) ++res.callerCleanupVotes;
-            else                  ++res.calleeCleanupVotes;
+			if (ev.callerCleanup)
+				++res.callerCleanupVotes;
+			else                  ++res.calleeCleanupVotes;
 
             res.sites.push_back(ev);
         }
-    }
+	}
 
-    // Determine majority CC.
-    if (res.sites.empty()) {
+	// Determine majority CC.
+	if (res.sites.empty()) {
         res.cc = CC::Unknown;
         return res;
     }

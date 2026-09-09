@@ -149,22 +149,24 @@ bool VariadicDetector::checkX86CdeclExtendedStack(
 
 // ─── VariadicDetector::run ────────────────────────────────────────────────────
 
-bool VariadicDetector::run(const ssa::SSAFunction& fn, CC cc) const {
-    switch (cc) {
-    case CC::SysVAmd64:
-        return checkSysVAl(fn);
+bool VariadicDetector::run(const ssa::SSAFunction& fn, CC cc, int numNamedArgs) const
+{
+	switch (cc)
+	{
+	case CC::SysVAmd64: return checkSysVAl(fn);
 
-    case CC::Win64:
+	case CC::Win64:
         return checkWin64VaList(fn);
 
     case CC::Cdecl:
-        // For x86-32 cdecl, we use 0 named args as baseline; the
-        // caller supplies argument count from RegArgAnalysis / stack analysis.
-        return checkX86CdeclExtendedStack(fn, 0);
+		// The count comes from the caller, which is what the old comment here
+		// said and what CallConvPass::run now actually does. With zero, the
+		// limit lands on [EBP+8] -- the first named argument -- so the check
+		// fired on every function that reads one.
+		return checkX86CdeclExtendedStack(fn, numNamedArgs);
 
-    default:
-        return false;
-    }
+	default: return false;
+	}
 }
 
 } // namespace call_conv

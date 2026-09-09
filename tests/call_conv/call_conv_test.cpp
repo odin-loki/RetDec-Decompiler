@@ -620,3 +620,75 @@ TEST(ArgDesc, DefaultConstruct) {
     EXPECT_EQ(d.reg, PhysReg::Invalid);
     EXPECT_EQ(d.ssaValueId, UINT32_MAX);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 10. Regressions
+// ═══════════════════════════════════════════════════════════════════════════════
+
+namespace {
+
+/// A function that reads one incoming stack argument at [EBP+8].
+std::unique_ptr<SSAFunction> makeCdeclFnReadingFirstStackArg(int32_t offset)
+{
+	auto fn = std::make_unique<SSAFunction>("cdeclfn");
+	fn->addBlock("entry");
+
+	VarId ebp = fn->declareVar("ebp", 32);
+	IrValue* mem = fn->allocValue(ValueKind::MemRef, kInvalidVar);
+	mem->memBaseReg = ebp;
+	mem->memOffset = offset;
+	mem->memIsStack = true;
+	mem->memWidth = 4;
+
+	auto* load = fn->addInstr(0, IrInstr::Op::Load);
+	load->uses.push_back({mem->id, 0});
+	fn->addInstr(0, IrInstr::Op::Ret);
+	SSAPass pass;
+	pass.run(*fn);
+	return fn;
+}
+
+} // namespace
+
+// checkX86CdeclExtendedStack's limit is 8 + numNamedArgs*4, and it was always
+// given zero -- on a comment saying "the caller supplies argument count",
+// which CallConvPass::run did not. So the limit sat on [EBP+8], which IS the
+// first named argument on the standard x86-32 frame, and the "beyond the last
+// named argument" test fired on the first one.
+TEST(VariadicDetector, CdeclReadingItsOwnNamedArgumentIsNotVariadic)
+{
+	auto fn = makeCdeclFnReadingFirstStackArg(8);
+	VariadicDetector det;
+
+	EXPECT_FALSE(det.run(*fn, CC::Cdecl, /*numNamedArgs=*/1))
+		<< "[EBP+8] is the first named argument, not a variadic one";
+	// With no named arguments at all, a read at [EBP+8] IS past the end.
+	EXPECT_TRUE(det.run(*fn, CC::Cdecl, /*numNamedArgs=*/0));
+}
+
+TEST(VariadicDetector, CdeclReadingPastItsNamedArgumentsIsVariadic)
+{
+	auto fn = makeCdeclFnReadingFirstStackArg(16);
+	VariadicDetector det;
+	EXPECT_TRUE(det.run(*fn, CC::Cdecl, /*numNamedArgs=*/1));
+}
+
+// PhysReg::ECX and PhysReg::RCX are the same number, so physRegName can only
+// ever answer "rcx" -- and a 32-bit function's variables are called "ecx".
+// Fastcall and Thiscall are the only x86-32 conventions with a register
+// argument table, so with the 64-bit spelling alone those rows never matched.
+TEST(RegArgAnalysis, FastcallFindsThe32BitSpellingOfItsRegisters)
+{
+	auto fn = makeRegFn({"ecx", "edx"});
+	RegArgAnalysis ana;
+	const auto args = ana.run(*fn, CC::Fastcall);
+	EXPECT_EQ(args.size(), 2u) << "ecx and edx are fastcall's two register arguments";
+}
+
+TEST(RegArgAnalysis, TheSixtyFourBitSpellingStillWorks)
+{
+	auto fn = makeRegFn({"rcx", "rdx"});
+	RegArgAnalysis ana;
+	const auto args = ana.run(*fn, CC::Fastcall);
+	EXPECT_EQ(args.size(), 2u);
+}
