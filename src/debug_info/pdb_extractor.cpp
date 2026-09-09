@@ -182,7 +182,13 @@ struct PubSym32
 
 // ── TPI type leaf records ─────────────────────────────────────────────────────
 
-static constexpr uint16_t LF_MODIFIER = 0x1001;
+// The six marked [[maybe_unused]] are the leaves this extractor does not read
+// yet -- the field-list body of a class or enum, and the modifier and bitfield
+// wrappers around a type. They are kept because the table is only useful as a
+// whole when reading the record stream by hand, and because clang reports an
+// unused constexpr where g++ does not: without the marker the warning gate
+// passes under one compiler of the three it has to pass under.
+[[maybe_unused]] static constexpr uint16_t LF_MODIFIER = 0x1001;
 static constexpr uint16_t LF_POINTER = 0x1002;
 static constexpr uint16_t LF_ARRAY = 0x1503;
 static constexpr uint16_t LF_CLASS = 0x1504;
@@ -191,11 +197,11 @@ static constexpr uint16_t LF_UNION = 0x1506;
 static constexpr uint16_t LF_ENUM = 0x1507;
 static constexpr uint16_t LF_PROCEDURE = 0x1008;
 static constexpr uint16_t LF_MFUNCTION = 0x1009;
-static constexpr uint16_t LF_FIELDLIST = 0x1203;
-static constexpr uint16_t LF_MEMBER = 0x150d;
-static constexpr uint16_t LF_ENUMERATE = 0x1502;
-static constexpr uint16_t LF_BITFIELD = 0x1205;
-static constexpr uint16_t LF_SIMPLE_TYPE_BASE = 0x0000;
+[[maybe_unused]] static constexpr uint16_t LF_FIELDLIST = 0x1203;
+[[maybe_unused]] static constexpr uint16_t LF_MEMBER = 0x150d;
+[[maybe_unused]] static constexpr uint16_t LF_ENUMERATE = 0x1502;
+[[maybe_unused]] static constexpr uint16_t LF_BITFIELD = 0x1205;
+[[maybe_unused]] static constexpr uint16_t LF_SIMPLE_TYPE_BASE = 0x0000;
 
 // CV numeric leaf (size prefix): up to LF_UQUADWORD
 static uint64_t readNumericLeaf(const uint8_t*& p, const uint8_t* end)

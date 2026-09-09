@@ -24,6 +24,15 @@
 # added lines were unformatted read "all 37 checks pass" here and went red
 # there. Running the --self-test is not running the check.
 #
+# The list ends with one check that is not from those two workflows and is not
+# cheap: a clang++ compile of every standalone module. The warning baseline is
+# the union over three configurations -- g++, clang++, and g++ with the
+# sanitizers -- so a local g++ run cannot tell whether removing a baseline
+# entry is safe. One was removed on that evidence and standalone-check went red
+# on `src/debug_info/pdb_extractor.cpp -Wunused-const-variable`, a warning only
+# clang emits. It reuses its own object cache, so the first run costs minutes
+# and the rest cost seconds.
+#
 # What CI diffs on a push is the previously pushed commit, so that is what the
 # entry below asks for -- @{upstream}. A pull request diffs the merge base
 # with the default branch instead, which is a larger question and a different
@@ -84,6 +93,7 @@ CHECKS=(
 	"doc       VERIFICATION.md vs proofs:::bash scripts/verify_esbmc.sh --doc"
 	"doc       output determinism (self-test):::bash scripts/ci/check_output_determinism.sh --self-test"
 	"doc       clang-format scoping (self-test):::bash scripts/check_format.sh --self-test"
+	"standalone clang++ compile + warnings:::CXX=clang++ BUILD_DIR=build/standalone-clang bash scripts/standalone_check.sh --compile-only"
 )
 
 if [ "${1:-}" = "--list" ]; then

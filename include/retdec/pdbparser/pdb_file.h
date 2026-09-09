@@ -198,6 +198,10 @@ public:
 
 private:
 	// Internal functions
+	/// Release everything a load attempt allocated, and put the object back
+	/// in the state a fresh one is in. Called by the destructor and at the
+	/// start of a retry after a refused load.
+	void release_loaded_image(void);
 	bool has_signature(const char* signature, unsigned int header_size);
 	bool pages_in_file(uint64_t first_page, uint64_t num_pages);
 	bool stream_num_is_valid(int num);

@@ -50,6 +50,11 @@ PDBFileState PDBFile::load_pdb_file(const char* filename)
 		fclose(fp);
 		return PDB_STATE_INVALID_FILE;
 	}
+	// A refused load leaves pdb_loaded false so the caller can retry, and this
+	// is the retry: without releasing the previous attempt's image first, every
+	// retry leaked a whole copy of the file, plus any streams and root
+	// directory the failed attempt had already copied out of it.
+	release_loaded_image();
 	pdb_file_size = static_cast<unsigned int>(file_size);
 	pdb_file_data = new char[pdb_file_size];                    // Allocate memory
 	size_t result = fread(pdb_file_data, 1, pdb_file_size, fp); // Read the file
@@ -336,14 +341,29 @@ void PDBFile::dump_PE_sections(void)
 /**
  * Destructor
  */
-PDBFile::~PDBFile()
+void PDBFile::release_loaded_image(void)
 {
-	if (pdb_file_data) delete[] pdb_file_data;
+	delete[] pdb_file_data;
+	pdb_file_data = nullptr;
+	pdb_file_size = 0;
+	pdb_header = nullptr;
+	pdb_info_v700 = nullptr;
+
 	// A non-linear root directory was copied into memory of its own
 	if (pdb_root_dir && !pdb_root_dir_linear) delete[] reinterpret_cast<char*>(pdb_root_dir);
+	pdb_root_dir = nullptr;
+	pdb_root_dir_linear = true;
+
 	// Delete all non-linear (copied) streams
 	for (unsigned int i = 0; i < num_streams; i++)
 		if (!streams[i].unused && !streams[i].linear) delete[] streams[i].data;
+	streams.clear();
+	num_streams = 0;
+}
+
+PDBFile::~PDBFile()
+{
+	release_loaded_image();
 	if (pdb_types) delete pdb_types;
 	if (pdb_symbols) delete pdb_symbols;
 }
