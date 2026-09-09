@@ -100,6 +100,9 @@ fi
 
 is_source() { [[ "$1" =~ \.(cpp|h|hpp|cc|c|cu)$ ]]; }
 
+TMP_FORMATTED="$(mktemp)"
+trap 'rm -f "${TMP_FORMATTED}"' EXIT
+
 FAILED=0
 CHECKED=0
 
@@ -109,6 +112,45 @@ report() {
   diff -u "$f" <(clang-format "$@" "$f") >&2 || true
   echo "::error file=$f::needs clang-format"
   FAILED=1
+}
+
+# Does clang-format want to change any of the lines this change touched?
+#
+# `clang-format --lines=A:B` reformats whole constructs, so it can rewrite
+# lines outside A:B when one of them shares a statement with a line inside.
+# Counting that as "the change is unformatted" is what makes a line-scoped
+# check cascade: the rewritten neighbour is itself a change, so the next range
+# is wider, and the range grows until it has eaten the file -- which for a file
+# whose style predates .clang-format means demanding the whole-file reformat
+# the line scoping exists to avoid. Measured on src/type_seed/itanium_seeder.cpp:
+# 114 lines of churn after one pass, 261 after five, still growing.
+#
+# So the question asked is the narrower one that matters: of the lines this
+# change touched, is any formatted differently from what clang-format would
+# produce? Hunks lying entirely outside them are clang-format reaching past its
+# range, and are not the author's to fix.
+touched_lines_differ() {
+  local orig="$1" formatted="$2"; shift 2
+  python3 - "$orig" "$formatted" "$@" <<'PY'
+import subprocess, sys
+orig, formatted, specs = sys.argv[1], sys.argv[2], sys.argv[3:]
+ranges = []
+for spec in specs:
+    lo, hi = spec.split("=", 1)[1].split(":")
+    ranges.append((int(lo), int(hi)))
+out = subprocess.run(
+    ["diff", "--unchanged-group-format=", "--old-group-format=%df,%dl\n",
+     "--new-group-format=%dF,%dF\n", "--changed-group-format=%df,%dl\n",
+     orig, formatted], capture_output=True, text=True).stdout
+for line in out.splitlines():
+    line = line.strip()
+    if not line:
+        continue
+    lo, hi = (int(x) for x in line.split(","))
+    if any(lo <= r_hi and r_lo <= hi for r_lo, r_hi in ranges):
+        sys.exit(1)
+sys.exit(0)
+PY
 }
 
 check_whole() {
@@ -213,7 +255,8 @@ while IFS= read -r line; do
     FAILED=1
     continue
   fi
-  diff -q "$path" <(clang-format "${RANGES[@]}" "$path") &>/dev/null \
+  clang-format "${RANGES[@]}" "$path" > "${TMP_FORMATTED}"
+  touched_lines_differ "$path" "${TMP_FORMATTED}" "${RANGES[@]}" \
     || report "$path" "${RANGES[@]}"
 done < <(git diff --name-status "${BASE}" HEAD -- include/ src/ tests/)
 

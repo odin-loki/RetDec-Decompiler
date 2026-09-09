@@ -93,6 +93,10 @@ readonly TARGETS=(
 	# rather than a top-level module for exactly that reason: src/fileformat/
 	# as a whole does not build here, src/fileformat/lattice/ does.
 	"lattice:fuzz_lattice:fileformat/lattice:17::tests/managed_integration/fixtures/pe/*"
+	# A mangled symbol is attacker-controlled text out of the symbol table, and
+	# all four seeders are hand-written parsers over it. Nothing fuzzed them.
+	# The first two minutes found two signed-integer overflows.
+	"demangle:fuzz_demangle:type_seed:17::tests/managed_integration/fixtures/mangled/*.sym"
 )
 
 # How the format-valid seeds are made, for the three targets whose globs matched

@@ -41,6 +41,12 @@ add_fuzz_target(fuzz_wasm fuzz_wasm.cpp
     retdec-wasm-parser
 )
 
+# The mangled-symbol seeders. A mangled name is attacker-controlled text out
+# of the symbol table, and all four seeders are hand-written parsers over it.
+add_fuzz_target(fuzz_demangle fuzz_demangle.cpp
+    retdec-type-seed
+)
+
 add_fuzz_target(fuzz_pyc fuzz_pyc.cpp
     retdec-pyc-parser
     retdec-bc-module

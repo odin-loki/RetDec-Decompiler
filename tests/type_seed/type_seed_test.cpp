@@ -398,6 +398,45 @@ TEST_F(MsvcSeederTest, ConstMember)
 	EXPECT_TRUE(sig.isConst);
 }
 
+// ── Numbers a symbol can claim ────────────────────────────────────────────────
+//
+// Every seeder reads decimal lengths and base-36 substitution indices out of
+// the symbol, and each did it as `n = n*10 + digit` in an int over as many
+// digits as the symbol offered. Signed overflow is undefined, so the bounds
+// check that follows is not merely insufficient -- the compiler may assume it
+// cannot be reached. libFuzzer found these in the first minutes it ever spent
+// on this code; the reproducers are in tests/crash_corpus/demangle/ and
+// scripts/standalone_fuzz.sh replays them under UBSan.
+
+TEST_F(ItaniumSeederTest, SubstitutionSeqIdOfManyDigitsDoesNotIndexBackwards)
+{
+	// S <seq-id> _ with ten base-36 digits. The accumulator wrapped to a
+	// negative int, `realIdx = idx + 1` stayed negative, and `realIdx <
+	// (int)subs.size()` is true for a negative number -- so it read
+	// subs[negative]. This is not undefined behaviour in the abstract: an
+	// ordinary -O1 build with no sanitizer segfaults on this symbol.
+	auto sig = extract("_ZN1S1fESZZZZZZZZZZ_E");
+	EXPECT_EQ("f", sig.functionName) << "an unresolvable substitution should leave the rest of the parse "
+										"alone, not take the process down with it";
+	EXPECT_EQ("S", sig.className);
+}
+
+TEST_F(ItaniumSeederTest, SourceNameLengthLargerThanTheSymbolIsRejected)
+{
+	// _Z <length> <identifier>: the length is ten digits and the identifier is
+	// three characters. Nothing here can be read.
+	auto sig = extract("_Z8888888888foo");
+	EXPECT_FALSE(sig.valid()) << "a source-name length no symbol could satisfy should be rejected";
+}
+
+TEST_F(ItaniumSeederTest, SourceNameLengthOfManyDigitsDoesNotWrap)
+{
+	// Twenty digits: wide enough to wrap a 64-bit accumulator too, if one were
+	// used without a cap.
+	auto sig = extract("_Z99999999999999999999foo");
+	EXPECT_FALSE(sig.valid());
+}
+
 // ─── Rust seeder tests ────────────────────────────────────────────────────────
 
 class RustSeederTest : public ::testing::Test {
@@ -869,8 +908,7 @@ TEST(AddSignatureTest, AddsAllConstraintTypes)
 TEST(RustSeederBounds, ALengthPrefixThatOverflowsAnIntDoesNotThrow)
 {
 	auto d = makeDefaultDispatcher();
-	for (const char* sym: {"_ZN3000000000abcE", "_ZN99999999999999999999abcE",
-			"_ZN2147483648xE", "_ZN4294967296xE"})
+	for (const char* sym: {"_ZN3000000000abcE", "_ZN99999999999999999999abcE", "_ZN2147483648xE", "_ZN4294967296xE"})
 	{
 		ASSERT_NO_THROW({
 			auto info = d.tryExtract(sym);
@@ -895,7 +933,7 @@ TEST(ItaniumSeederBounds, ATemplateArgumentStartingWithAMinusTerminates)
 	for (const char* sym: {"_Z1fI-Ev", "_Z1fI-1Ev", "_Z1fI--Ev", "_Z1fIn5Ev"})
 	{
 		auto info = d.tryExtract(sym);
-		(void)info;   // reaching here at all is the assertion
+		(void)info; // reaching here at all is the assertion
 		SUCCEED();
 	}
 }
@@ -930,7 +968,11 @@ TEST(ItaniumSeederBounds, AnOrdinaryPointerToPointerStillResolves)
 TEST(SwiftSeederBuiltins, SizedIntegerShorthandsAreNotShadowedByTheUnsizedOnes)
 {
 	auto d = makeDefaultDispatcher();
-	struct Case { const char* mangled; const char* expect; };
+	struct Case
+	{
+		const char* mangled;
+		const char* expect;
+	};
 	const Case cases[] = {
 		{"$s1a1fyys4Int8VF", "Int8"},
 		{"$s1a1fyys5Int16VF", "Int16"},
