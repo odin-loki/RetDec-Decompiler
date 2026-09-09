@@ -53,6 +53,13 @@ add_fuzz_target(fuzz_loader_sim fuzz_loader_sim.cpp
     retdec-loader-sim
 )
 
+# The lattice's classification feeding the emulating unpacker, which is how the
+# decompiler chains them.
+add_fuzz_target(fuzz_unpack fuzz_unpack.cpp
+    retdec-mini-emu
+    retdec-fileformat-lattice
+)
+
 add_fuzz_target(fuzz_pyc fuzz_pyc.cpp
     retdec-pyc-parser
     retdec-bc-module

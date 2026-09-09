@@ -102,6 +102,13 @@ readonly TARGETS=(
 	# count out of the file. Nothing fuzzed it; the first run found an import
 	# walk that turns 30 kB into 1.3 million records.
 	"loadersim:fuzz_loader_sim:loader_sim:17::tests/managed_integration/fixtures/pe/*"
+	# The pipeline as the decompiler runs it: the lattice classifies the bytes
+	# and MiniUnpacker maps the image and emulates from its entry point. Slow
+	# -- an emulator under three sanitizers manages single-digit executions a
+	# second -- but it is the only coverage either half has together, and the
+	# first run found an 832-byte input that reached 975 MB before executing an
+	# instruction.
+	"unpack:fuzz_unpack:mini_emu fileformat/lattice:17::tests/managed_integration/fixtures/pe/*"
 )
 
 # How the format-valid seeds are made, for the three targets whose globs matched

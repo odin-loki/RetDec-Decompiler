@@ -1261,9 +1261,22 @@ void MiniEmu::load(const uint8_t* data, size_t size, const FormatResult& fmt)
 {
 	impl_->origExecPages.clear();
 
+	// Total pages this image may claim, across all its sections.
+	//
+	// kMaxSectionMapBytes caps each section on its own, which leaves the sum
+	// unbounded: the section count comes out of the file too, so four sections
+	// each claiming 256 MiB is a gigabyte of MemPage objects. libFuzzer found
+	// an 832-byte input that reached 975 MB before emulation had executed a
+	// single instruction. The budget is the same 256 MiB, which is also
+	// MiniUnpacker::kMaxDumpBytes -- no unpacked image is larger than that, so
+	// no image worth mapping needs more.
+	size_t mapBudget = kMaxSectionMapBytes;
+
 	// Map each section
 	for (const auto& sec: fmt.sections)
 	{
+		if (mapBudget == 0) break;
+
 		uint64_t va = sec.virtualAddress;
 		size_t vsz = static_cast<size_t>(sec.virtualSize);
 		size_t fo = static_cast<size_t>(sec.fileOffset);
@@ -1275,8 +1288,11 @@ void MiniEmu::load(const uint8_t* data, size_t size, const FormatResult& fmt)
 		perms.execute = sec.isExecutable;
 
 		// Section headers are attacker-controlled, so clamp the span this
-		// section may claim before turning it into page allocations.
+		// section may claim before turning it into page allocations, and take
+		// it out of the budget the whole image shares.
 		if (vsz > kMaxSectionMapBytes) vsz = kMaxSectionMapBytes;
+		if (vsz > mapBudget) vsz = mapBudget;
+		mapBudget -= vsz;
 
 		// Map pages for this section
 		size_t mapped = 0;

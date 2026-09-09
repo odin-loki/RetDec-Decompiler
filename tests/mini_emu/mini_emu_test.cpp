@@ -565,3 +565,41 @@ TEST(MiniUnpackerTest, AStackWriteFarFromTheImageDoesNotSizeTheDump)
 	EXPECT_LE(r.dump.size(), 0x10000u) << "dump is " << r.dump.size() << " bytes";
 	EXPECT_GT(r.dump.size(), 0u);
 }
+// ── The whole image shares one mapping budget ─────────────────────────────────
+//
+// kMaxSectionMapBytes caps each section on its own, and the section count comes
+// out of the file too, so the sum was unbounded: four sections each claiming
+// 256 MiB is a gigabyte of MemPage objects before a single instruction runs.
+// libFuzzer found an 832-byte input that reached 975 MB that way.
+//
+// Eight sections of 256 MiB each. The first has to be mapped and the last must
+// not: the budget is spent long before it.
+TEST(MiniEmuSectionMapping, SectionsShareOneMappingBudget)
+{
+	constexpr uint64_t kHuge = 0x1000'0000ULL; // 256 MiB, the per-section cap
+	constexpr int kSections = 8;
+
+	FormatResult fmt;
+	fmt.entryPoint = 0x1000;
+	for (int i = 0; i < kSections; ++i)
+	{
+		SectionInfo sec;
+		sec.name = ".s" + std::to_string(i);
+		sec.virtualAddress = 0x1000 + static_cast<uint64_t>(i) * kHuge;
+		sec.virtualSize = kHuge;
+		sec.fileOffset = 0;
+		sec.fileSize = 0;
+		sec.isReadable = true;
+		fmt.sections.push_back(sec);
+	}
+
+	const std::vector<uint8_t> image(0x1000, 0);
+	MiniEmu emu;
+	emu.load(image.data(), image.size(), fmt);
+
+	std::uint8_t b = 0;
+	EXPECT_TRUE(emu.readByte(0x1000, b)) << "the first section should still be mapped";
+	EXPECT_FALSE(emu.readByte(fmt.sections.back().virtualAddress, b))
+		<< "the eighth 256 MiB section was mapped, so the budget is per "
+		   "section rather than per image";
+}
