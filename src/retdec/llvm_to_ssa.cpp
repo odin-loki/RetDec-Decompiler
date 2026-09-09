@@ -15,6 +15,10 @@
 #include <llvm/IR/Module.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -74,6 +78,35 @@ static uint64_t addressFromMetadata(const llvm::Instruction& li)
 	if (uint64_t a = fromKind("insn.addr"))
 		return a;
 	return fromKind("retdec.addr");
+}
+
+/// The SSA value kind an LLVM value maps to when it is defined by an
+/// instruction.  A phi is its own kind so the version counters stay separate;
+/// everything else is a virtual register.
+static ssa::ValueKind kindOfDef(const llvm::Value& v)
+{
+	return llvm::isa<llvm::PHINode>(v) ? ssa::ValueKind::Phi : ssa::ValueKind::VirtualReg;
+}
+
+/// Width in bits, where the type says one, so a detector can tell a byte from a
+/// quadword.  0 means "not an integer", which leaves IrValue::width at its
+/// default.
+static uint8_t widthOf(const llvm::Value& v)
+{
+	if (const auto* it = llvm::dyn_cast<llvm::IntegerType>(v.getType()))
+	{
+		const unsigned bits = it->getBitWidth();
+		if (bits == 8 || bits == 16 || bits == 32 || bits == 64 || bits == 128) return static_cast<uint8_t>(bits);
+	}
+	return 0;
+}
+
+/// True for operands that are not values in the def-use sense: the block
+/// labels of a branch, and the callee of a direct call.  Treating a label as a
+/// use would put a block id into the value space.
+static bool isNonValueOperand(const llvm::Value* op)
+{
+	return op == nullptr || llvm::isa<llvm::BasicBlock>(op) || llvm::isa<llvm::Function>(op);
 }
 
 /// Translate one LLVM instruction into an ssa::IrInstr and append it to
@@ -152,42 +185,13 @@ static ssa::IrInstr* translateInstr(const llvm::Instruction& li, ssa::SSAFunctio
 	ssa::IrInstr* instr = fn.addInstr(blk.id, op, vma);
 	if (instr && !calleeStr.empty()) instr->calleeName = std::move(calleeStr);
 
-	// Detectors (RingBuffer wrap mask, sift-down Shl/Mul imm) read
-	// IrInstr::uses. Recovered IR previously left them empty.
-	// PHI incoming ConstantInts are the same Immediate form (E6 def-use).
-	if (instr
-		&& (llvm::isa<llvm::BinaryOperator>(li) || llvm::isa<llvm::PHINode>(li)
-			|| llvm::isa<llvm::AtomicRMWInst>(li) || llvm::isa<llvm::AtomicCmpXchgInst>(li)))
-	{
-		for (unsigned i = 0, n = li.getNumOperands(); i < n; ++i)
-		{
-			const auto* c = llvm::dyn_cast<llvm::ConstantInt>(li.getOperand(i));
-			if (!c || c->getBitWidth() > 64) continue;
-			ssa::IrValue* val = fn.allocValue(ssa::ValueKind::Immediate);
-			val->imm = c->getZExtValue();
-			ssa::Use u;
-			u.valueId = val->id;
-			u.operandIndex = static_cast<uint8_t>(i);
-			instr->uses.push_back(u);
-		}
-	}
+	// defValue and uses are filled in by buildSsaModule, which is the only
+	// place that has the whole function in hand. A use has to name the value
+	// its defining instruction defines, and that definition may not have been
+	// translated yet -- a phi at a loop header names a value from the latch --
+	// so operands cannot be resolved one instruction at a time.
 
 	// For Ret: record the return value as a use so AbiSeeder can find it.
-	if (op == Op::Ret && instr)
-	{
-		if (!li.getOperand(0) || llvm::isa<llvm::UndefValue>(li.getOperand(0)))
-		{
-			// void return — no use
-		}
-		else
-		{
-			// We can't recover full SSA value IDs here without running the
-			// full SSA construction pass, so leave uses empty.  The analysis
-			// passes that truly need return-value IDs should use the full
-			// SSAPass on the output of a proper IR builder.
-		}
-	}
-
 	return instr;
 }
 
@@ -213,7 +217,42 @@ std::unique_ptr<ssa::SSAModule> buildSsaModule(const llvm::Module& m)
 			bbMap[&lb] = blk->id;
 		}
 
-		// Second pass: translate instructions and wire CFG edges.
+		// Second pass: give every value an id, before any instruction is
+		// translated.
+		//
+		// This is what makes the graph a graph. A use has to name the value its
+		// defining instruction defines, and definitions are not in use order --
+		// a phi at a loop header names a value the latch defines further down.
+		// So ids are handed out for the whole function first, and operands are
+		// resolved against that map afterwards.
+		//
+		// Ids are allocated for instructions this adapter does not translate
+		// too -- alloca, getelementptr, the casts -- because they still stand
+		// between a definition and its use. Skipping them would break the chain
+		// at every `load` through a gep, which is most of them.
+		std::unordered_map<const llvm::Value*, ssa::ValueId> valueMap;
+		const auto valueIdFor = [&](const llvm::Value& v, ssa::ValueKind kind) {
+			auto it = valueMap.find(&v);
+			if (it != valueMap.end()) return it->second;
+			ssa::IrValue* val = fn->allocValue(kind);
+			if (const uint8_t w = widthOf(v)) val->width = w;
+			valueMap[&v] = val->id;
+			return val->id;
+		};
+
+		// Arguments are definitions too: without them the first use of a
+		// parameter resolves to nothing.
+		for (const llvm::Argument& arg: lf.args())
+			valueIdFor(arg, ssa::ValueKind::VirtualReg);
+
+		for (const llvm::BasicBlock& lb: lf)
+			for (const llvm::Instruction& li: lb)
+				if (!li.getType()->isVoidTy()) valueIdFor(li, kindOfDef(li));
+
+		// Third pass: translate instructions and wire CFG edges, remembering
+		// which IrInstr each LLVM instruction became so the operands can be
+		// resolved once the whole function has ids.
+		std::vector<std::pair<const llvm::Instruction*, ssa::IrInstr*>> translated;
 		for (const llvm::BasicBlock& lb: lf)
 		{
 			ssa::BlockId blkId = bbMap.at(&lb);
@@ -221,7 +260,16 @@ std::unique_ptr<ssa::SSAModule> buildSsaModule(const llvm::Module& m)
 			if (!blk) continue;
 
 			for (const llvm::Instruction& li: lb)
-				translateInstr(li, *fn, *blk);
+			{
+				ssa::IrInstr* instr = translateInstr(li, *fn, *blk);
+				if (!instr) continue;
+				if (!li.getType()->isVoidTy())
+				{
+					auto it = valueMap.find(&li);
+					if (it != valueMap.end()) instr->defValue = it->second;
+				}
+				translated.push_back({&li, instr});
+			}
 
 			// Successor edges
 			const llvm::Instruction* term = lb.getTerminator();
@@ -246,6 +294,52 @@ std::unique_ptr<ssa::SSAModule> buildSsaModule(const llvm::Module& m)
 			{
 				ssa::BasicBlock* succBlk = fn->block(succId);
 				if (succBlk) succBlk->addPred(blkId);
+			}
+		}
+
+		// Fourth pass: every operand becomes a use.
+		//
+		// This used to run only for four instruction classes and only for
+		// ConstantInt operands, with a `continue` dropping everything else --
+		// so a register operand, which is the entire point of a def-use graph,
+		// was never a use, and Load and Store were not in the four classes at
+		// all and arrived with empty use lists. Any predicate that followed a
+		// non-immediate use was dead on production input, whatever the code it
+		// was looking at; the detector unit tests passed only because their
+		// fixtures hand-build the operand lists this adapter did not deliver.
+		for (const auto& [li, instr]: translated)
+		{
+			for (unsigned i = 0, n = li->getNumOperands(); i < n; ++i)
+			{
+				const llvm::Value* op = li->getOperand(i);
+				if (isNonValueOperand(op)) continue;
+
+				ssa::ValueId id = ssa::kInvalidValue;
+				if (const auto* c = llvm::dyn_cast<llvm::ConstantInt>(op))
+				{
+					if (c->getBitWidth() > 64) continue;
+					// A constant is a fresh Immediate each time it appears:
+					// two `add x, 1` do not share a value, and the detectors
+					// that read `uses[k].imm` want the operand's own entry.
+					ssa::IrValue* val = fn->allocValue(ssa::ValueKind::Immediate);
+					val->imm = c->getZExtValue();
+					if (const uint8_t w = widthOf(*op)) val->width = w;
+					id = val->id;
+				}
+				else
+				{
+					// A definition this function has an id for, or something
+					// from outside it -- a global, a constant expression -- for
+					// which one id is minted and shared by every reference.
+					id = valueIdFor(*op, ssa::ValueKind::VirtualReg);
+				}
+
+				ssa::Use u;
+				u.valueId = id;
+				// operandIndex is a uint8_t; a call with more than 255
+				// arguments would wrap it, so it saturates instead.
+				u.operandIndex = static_cast<uint8_t>(i > 255u ? 255u : i);
+				instr->uses.push_back(u);
 			}
 		}
 	}

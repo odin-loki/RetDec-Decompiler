@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <set>
 #include <string>
 
 using retdec::buildSsaModule;
@@ -143,6 +144,152 @@ int phiNodeListCount(const SSAFunction& fn)
 		if (blk) n += static_cast<int>(blk->phis.size());
 	}
 	return n;
+}
+
+
+// ─── The def-use graph the detectors were written against ───────────────────
+//
+// buildSsaModule is the only producer of the SSA every structural detector
+// consumes, and it populated IrInstr::uses in exactly one place: for four
+// instruction classes, and only for ConstantInt operands, with everything else
+// dropped by a `continue`. IrInstr::defValue was never assigned at all -- the
+// identifier did not appear in the file.
+//
+// So on production input every instruction defined nothing and a register
+// operand was never a use. Any predicate that reads defValue, follows a
+// non-immediate use, or relates two instructions by value could not return true
+// for any binary, however well the code matched. The detector unit tests did not
+// notice because their fixtures hand-build IR with defValue set and real operand
+// lists -- which is what the detectors were designed against, and what this
+// adapter did not deliver.
+
+// Every instruction that produces a value has to define one.
+TEST(LlvmToSsa, ValueProducingInstructionsGetADefValue)
+{
+	llvm::LLVMContext ctx;
+	auto module = parseIR(ctx, kForLoopIR);
+	ASSERT_NE(module, nullptr);
+	auto ssaMod = buildSsaModule(*module);
+	const auto* fn = findFn(*ssaMod, "sum_loop");
+	ASSERT_NE(fn, nullptr);
+
+	std::size_t producing = 0, defined = 0;
+	for (uint32_t b = 0; b < fn->blockCount(); ++b)
+	{
+		const auto* blk = fn->block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i) continue;
+			// Branches and returns produce nothing; everything else here does.
+			if (i->op == IrInstr::Op::Branch || i->op == IrInstr::Op::CondBranch || i->op == IrInstr::Op::Ret
+				|| i->op == IrInstr::Op::Store)
+				continue;
+			++producing;
+			if (i->defValue != retdec::ssa::kInvalidValue) ++defined;
+		}
+	}
+	ASSERT_GT(producing, 0u);
+	EXPECT_EQ(defined, producing) << defined << " of " << producing << " value-producing instructions define a value";
+}
+
+// A register operand is the entire point of a def-use graph, and was dropped.
+TEST(LlvmToSsa, ARegisterOperandBecomesAUse)
+{
+	llvm::LLVMContext ctx;
+	auto module = parseIR(ctx, kForLoopIR);
+	ASSERT_NE(module, nullptr);
+	auto ssaMod = buildSsaModule(*module);
+	const auto* fn = findFn(*ssaMod, "sum_loop");
+	ASSERT_NE(fn, nullptr);
+
+	// `%acc.next = add i32 %acc, %elem` has two register operands and no
+	// constant one, so before the fix it had no uses whatsoever.
+	bool sawAddWithTwoRegisterUses = false;
+	for (uint32_t b = 0; b < fn->blockCount(); ++b)
+	{
+		const auto* blk = fn->block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != IrInstr::Op::Add) continue;
+			std::size_t regUses = 0;
+			for (const auto& u: i->uses)
+			{
+				const auto* v = fn->value(u.valueId);
+				if (v && v->kind != retdec::ssa::ValueKind::Immediate) ++regUses;
+			}
+			if (regUses >= 2) sawAddWithTwoRegisterUses = true;
+		}
+	}
+	EXPECT_TRUE(sawAddWithTwoRegisterUses) << "no Add instruction has two register operands as uses";
+}
+
+// A use has to name the value the defining instruction defined, or the graph
+// is not connected and nothing can be related to anything.
+TEST(LlvmToSsa, AUseNamesTheDefiningInstructionsValue)
+{
+	llvm::LLVMContext ctx;
+	auto module = parseIR(ctx, kForLoopIR);
+	ASSERT_NE(module, nullptr);
+	auto ssaMod = buildSsaModule(*module);
+	const auto* fn = findFn(*ssaMod, "sum_loop");
+	ASSERT_NE(fn, nullptr);
+
+	// Collect every value defined by an instruction, and every value used.
+	std::set<uint32_t> defs;
+	std::set<uint32_t> regUses;
+	for (uint32_t b = 0; b < fn->blockCount(); ++b)
+	{
+		const auto* blk = fn->block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i) continue;
+			if (i->defValue != retdec::ssa::kInvalidValue) defs.insert(i->defValue);
+			for (const auto& u: i->uses)
+			{
+				const auto* v = fn->value(u.valueId);
+				if (v && v->kind != retdec::ssa::ValueKind::Immediate) regUses.insert(u.valueId);
+			}
+		}
+	}
+	ASSERT_FALSE(regUses.empty()) << "no register uses at all";
+
+	// The loop is closed: %elem feeds the add, the add feeds the phi. So at
+	// least one used value must be one some instruction defines.
+	std::size_t connected = 0;
+	for (uint32_t u: regUses)
+		if (defs.count(u)) ++connected;
+	EXPECT_GT(connected, 0u) << "no use names a value any instruction defines -- the graph is not connected";
+}
+
+// Load and Store were not in the four classes that got uses at all, so they
+// arrived with empty use lists -- not partially populated, empty. The container
+// detectors' sentinel and rotation predicates read exactly those.
+TEST(LlvmToSsa, LoadAndStoreCarryTheirOperands)
+{
+	llvm::LLVMContext ctx;
+	auto module = parseIR(ctx, kForLoopIR);
+	ASSERT_NE(module, nullptr);
+	auto ssaMod = buildSsaModule(*module);
+	const auto* fn = findFn(*ssaMod, "sum_loop");
+	ASSERT_NE(fn, nullptr);
+
+	bool sawLoad = false, loadHasUse = false;
+	for (uint32_t b = 0; b < fn->blockCount(); ++b)
+	{
+		const auto* blk = fn->block(b);
+		if (!blk) continue;
+		for (const auto* i: blk->instrs)
+		{
+			if (!i || i->op != IrInstr::Op::Load) continue;
+			sawLoad = true;
+			if (!i->uses.empty()) loadHasUse = true;
+		}
+	}
+	ASSERT_TRUE(sawLoad) << "the fixture has a load";
+	EXPECT_TRUE(loadHasUse) << "the load carries no operand at all";
 }
 
 } // namespace
