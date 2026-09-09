@@ -513,6 +513,53 @@ bool StructureConverter::tryControlledNodeSplitting(ShPtr<CFGNode> cfg) {
 			continue;
 		}
 
+		// getPredecessors() returns an unordered_set keyed by shared_ptr, so
+		// the order these came out in is the order of pointer hashes -- and
+		// edgeRefs[0] is the edge that keeps the original node while every
+		// other edge is redirected to the clone. Which predecessor kept it
+		// therefore moved with the addresses the allocator happened to hand
+		// out, and so did the emitted C: DET-01 caught two cache-off runs of
+		// mergesort-gcc-O3 putting the same block in different arms of the
+		// same if, with the label uniquifier's "_2" suffix following it.
+		//
+		// `order` above is a deterministic breadth-first walk of the CFG, so a
+		// node's position in it is a stable name. Nodes it does not reach --
+		// predecessors that are only on a back edge -- fall back to the
+		// address the block came from, which is a property of the binary.
+		std::unordered_map<const CFGNode*, std::size_t> orderIndex;
+		for (std::size_t i = 0; i < order.size(); ++i)
+		{
+			orderIndex.emplace(order[i].get(), i);
+		}
+		auto rankOf = [&orderIndex, &order](const ShPtr<CFGNode>& n) {
+			auto it = orderIndex.find(n.get());
+			return it != orderIndex.end() ? it->second : order.size();
+		};
+		auto addressOf = [](const ShPtr<CFGNode>& n) -> std::uint64_t {
+			auto body = n->getBody();
+			if (!body)
+			{
+				return 0;
+			}
+			auto a = body->getAddress();
+			return a.isDefined() ? static_cast<std::uint64_t>(a) : 0;
+		};
+		std::stable_sort(edgeRefs.begin(), edgeRefs.end(), [&rankOf, &addressOf](const EdgeRef& a, const EdgeRef& b) {
+			const auto ra = rankOf(a.first);
+			const auto rb = rankOf(b.first);
+			if (ra != rb)
+			{
+				return ra < rb;
+			}
+			const auto aa = addressOf(a.first);
+			const auto ab = addressOf(b.first);
+			if (aa != ab)
+			{
+				return aa < ab;
+			}
+			return a.second < b.second;
+		});
+
 		auto bodyClone = Statement::cloneStatements(v->getBody());
 		insertClonedLoopTargets(v->getBody(), bodyClone);
 		stmtClones[v->getBody()].push_back(bodyClone);
@@ -529,9 +576,17 @@ bool StructureConverter::tryControlledNodeSplitting(ShPtr<CFGNode> cfg) {
 			}
 		}
 
-		std::unordered_map<ShPtr<CFGNode>, std::vector<std::size_t>> redirectByPred;
+		// A vector rather than an unordered_map, for the same reason: the
+		// redirects are applied in the order they are iterated, and that
+		// order was the map's. edgeRefs is now sorted, so grouping by
+		// consecutive runs keeps it.
+		std::vector<std::pair<ShPtr<CFGNode>, std::vector<std::size_t>>> redirectByPred;
 		for (std::size_t e = 1; e < edgeRefs.size(); ++e) {
-			redirectByPred[edgeRefs[e].first].push_back(edgeRefs[e].second);
+			if (redirectByPred.empty() || redirectByPred.back().first != edgeRefs[e].first)
+			{
+				redirectByPred.emplace_back(edgeRefs[e].first, std::vector<std::size_t>{});
+			}
+			redirectByPred.back().second.push_back(edgeRefs[e].second);
 		}
 		for (auto &kv : redirectByPred) {
 			auto pred = kv.first;

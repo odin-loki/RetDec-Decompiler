@@ -248,12 +248,27 @@ trap 'rm -rf "${WORK}"' EXIT
 # runs write to different paths and neither can see a cache the other left.
 # RETDEC_INCREMENTAL_CACHE=0 turns it off in any case; this is about the
 # decompiler, not about the cache.
+# The third argument is a padding length. The two runs of a binary get
+# different ones, which changes the size of the environment block and with it
+# where the kernel puts the stack -- and, through that, the addresses the
+# allocator hands out.
+#
+# That matters because the defects this check exists to catch are almost all
+# pointer-order dependence: an unordered_set keyed by shared_ptr iterates in
+# hash order, which is address order. Two runs with the same layout can agree
+# for a long time and then disagree once. Making the layouts differ on purpose
+# turns "sometimes" into "usually" -- the node-splitting defect DET-01 first
+# caught on mergesort-gcc-O3 had passed the two runs before it.
 run_one() {
 	local bin="$1"
 	local out="$2"
+	local padlen="${3:-0}"
 	local log="${out%.c}.log"
+	local pad=""
+	[[ "${padlen}" -gt 0 ]] && printf -v pad '%*s' "${padlen}" ''
 	rm -f "${out}" "${log}" "${out%.c}.retdec-fn-cache.json"
-	RETDEC_INCREMENTAL_CACHE=0 timeout --kill-after=15 "${TIMEOUT}" \
+	RETDEC_INCREMENTAL_CACHE=0 RETDEC_DET_LAYOUT_PAD="${pad}" \
+		timeout --kill-after=15 "${TIMEOUT}" \
 		"${DEC}" -o "${out}" "${bin}" >"${log}" 2>&1 || true
 	[[ -s "${out}" ]]
 }
@@ -319,7 +334,7 @@ print(summarise_failure_output(Path(sys.argv[2]).read_text(errors="replace")))
 		skipped=$(( skipped + 1 ))
 		continue
 	fi
-	if ! run_one "${bin}" "${second}"; then
+	if ! run_one "${bin}" "${second}" 4096; then
 		echo "DET-01 FAIL: ${stem} produced output on the first run and none on the second" >&2
 		cat "${WORK}/${stem}.2.log" >&2 || true
 		exit 1

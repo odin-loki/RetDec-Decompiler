@@ -49,6 +49,20 @@ weak ordering makes it undefined behaviour outright.
 | `GlobalVarsSorter` | `std::sort` over a comparator that was a strict weak ordering in 487 of the 65536 dependency graphs over four variables. Replaced by Kahn's algorithm over the base order. |
 | `StructTypesSorter` | Sorted on the structure's name; every unnamed structure has the empty name. Ties now break on the type's text. |
 | `sortByName()` in `utils/ir.cpp` | Compared names case-insensitively, so `Foo` and `foo` tied. Falls through to an exact comparison. |
+| `StructureConverter::tryControlledNodeSplitting` | Built the edge list from `CFGNode::getPredecessors()`, an `unordered_set<ShPtr<CFGNode>>`, and `edgeRefs[0]` is the edge that keeps the original node while the rest are redirected to a clone. Which predecessor kept it followed pointer hashes. The edges are now sorted on the node's position in the deterministic breadth-first `order` walk, then on the address the block came from. `redirectByPred` was a second `unordered_map` iterated to apply the redirects, and is a vector now. |
+
+## What it takes to catch one
+
+DET-01 runs each corpus binary twice and compares. Two runs of the same
+binary in the same job get similar address-space layouts, so a defect of
+this shape can agree for a long time and then disagree once:
+`mergesort-gcc-O3` passed two DET-01 runs before the node-splitting entry
+above showed up on the third.
+
+The second run therefore gets four kilobytes of padding in its environment
+block, which moves the initial stack and with it the addresses the allocator
+hands out. Turning a coincidence into a difference on purpose is the only
+thing that makes a two-run check worth running.
 
 ## Time budgets
 
