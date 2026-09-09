@@ -194,6 +194,58 @@ FiveStructTypesWithSomeDependenciesAreProperlySortedByNameAndByDependencies) {
 	EXPECT_EQ(refSortedStructTypes, StructTypesSorter::sort(structTypes));
 }
 
+TEST_F(StructTypesSorterTests,
+UnnamedStructTypesSortTheSameWhicheverOrderTheyWereCreatedIn) {
+	// Input (twice, the two structures created in opposite orders):
+	//
+	// struct { struct A a; };
+	// struct { struct A a; struct A b; };
+	//
+	// Unnamed structures all have the empty name, so sorting on the name
+	// leaves them tied, and the input is a std::set<ShPtr<StructType>> --
+	// ordered by pointer value.  Building the same two structures in the
+	// other order gives them the other pointer order, and the sort has to
+	// come out the same anyway.
+	ShPtr<StructType> structA(StructType::create(StructType::ElementTypes(), "A"));
+
+	auto makeOne = [&structA]() {
+		StructType::ElementTypes elements;
+		elements.push_back(structA);
+		return StructType::create(elements, "");
+	};
+	auto makeTwo = [&structA]() {
+		StructType::ElementTypes elements;
+		elements.push_back(structA);
+		elements.push_back(structA);
+		return StructType::create(elements, "");
+	};
+
+	StructTypeSet firstSet;
+	ShPtr<StructType> oneFirst(makeOne());
+	ShPtr<StructType> twoFirst(makeTwo());
+	firstSet.insert(structA);
+	firstSet.insert(oneFirst);
+	firstSet.insert(twoFirst);
+
+	StructTypeSet secondSet;
+	ShPtr<StructType> twoSecond(makeTwo());
+	ShPtr<StructType> oneSecond(makeOne());
+	secondSet.insert(structA);
+	secondSet.insert(oneSecond);
+	secondSet.insert(twoSecond);
+
+	auto textOf = [](const StructTypeVector &types) {
+		StringVector reprs;
+		for (const auto &type : types) {
+			reprs.push_back(type->getTextRepr());
+		}
+		return reprs;
+	};
+
+	EXPECT_EQ(textOf(StructTypesSorter::sort(firstSet)),
+		textOf(StructTypesSorter::sort(secondSet)));
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

@@ -6,6 +6,8 @@
 */
 
 #include <algorithm>
+#include <string>
+#include <unordered_map>
 
 #include "retdec/llvmir2hll/ir/array_type.h"
 #include "retdec/llvmir2hll/ir/struct_type.h"
@@ -62,23 +64,53 @@ Dependencies findDependencies(const StructTypeSet &types) {
 }
 
 /**
-* @brief Comparator of StructType by using their names.
+* @brief Comparator of StructType by using their names, and then their shape.
+*
+* An unnamed structure has the empty name, so any two of them compare equal on
+* the name alone.  std::sort settles such a tie by whichever order the input
+* happened to be in, and the input is a std::set<ShPtr<StructType>> -- ordered
+* by pointer value, which is not the same on every run.  Two structures that
+* are also identical in shape emit the same text either way; the comparison is
+* here so that two different unnamed structures do not swap places between
+* runs of the same input.
 */
 class ByNameComp {
 public:
+	/// @param[in,out] reprCache Memoises getTextRepr(), which walks the whole
+	///                type: without it the comparator is O(n log n) walks.
+	explicit ByNameComp(std::unordered_map<const StructType*, std::string> &reprCache):
+		reprCache(reprCache) {}
+
 	/**
 	* @brief Returns @c true if <tt>st1 < st2</tt>, @c false otherwise.
 	*/
 	bool operator()(ShPtr<StructType> st1, ShPtr<StructType> st2) const {
-		return st1->getName() < st2->getName();
+		const auto &n1 = st1->getName();
+		const auto &n2 = st2->getName();
+		if (n1 != n2) {
+			return n1 < n2;
+		}
+		return reprOf(st1) < reprOf(st2);
 	}
+
+private:
+	const std::string &reprOf(const ShPtr<StructType> &st) const {
+		auto [i, inserted] = reprCache.emplace(st.get(), std::string{});
+		if (inserted) {
+			i->second = st->getTextRepr();
+		}
+		return i->second;
+	}
+
+	std::unordered_map<const StructType*, std::string> &reprCache;
 };
 
 /**
 * @brief Sorts @c types by using their names.
 */
 void sortByName(StructTypeVector &types) {
-	std::sort(types.begin(), types.end(), ByNameComp());
+	std::unordered_map<const StructType*, std::string> reprCache;
+	std::sort(types.begin(), types.end(), ByNameComp(reprCache));
 }
 
 /**
