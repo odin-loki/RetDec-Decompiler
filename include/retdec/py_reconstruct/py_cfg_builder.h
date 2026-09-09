@@ -138,10 +138,16 @@ private:
 
     void warn(const std::string& msg) { warnings_.push_back(msg); }
 
-    /// Recursively build statement body for a code object.
-    StmtList buildBody(const PyCodeObject& code, PyCfgBuilder& builder);
+	/// Recursively build statement body for a code object.
+	/// @param visited  code objects already built. Marshal's FLAG_REF /
+	///                 TYPE_REF let one code object appear more than once in a
+	///                 constant pool, so without this a file whose size grows
+	///                 linearly in the nesting depth is walked an exponential
+	///                 number of times.
+	StmtList
+	buildBody(const PyCodeObject& code, PyCfgBuilder& builder, std::unordered_set<const PyCodeObject*>& visited);
 
-    /// Make FunctionDef/AsyncFunctionDef from a code object's metadata.
+	/// Make FunctionDef/AsyncFunctionDef from a code object's metadata.
     PyStmtPtr makeFuncDef(const PyCodeObject& code, StmtList body,
                            ExprList decorators = ExprList{}) const;
 

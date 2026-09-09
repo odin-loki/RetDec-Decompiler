@@ -2168,3 +2168,91 @@ TEST(OpcodeTable, MatchesCPython312)
 	PythonVersion ver{3, 12, 0, ""};
 	checkOpcodeNames(ver, kCPython312, sizeof(kCPython312) / sizeof(kCPython312[0]));
 }
+
+// ─── Basic blocks and edges ──────────────────────────────────────────────────
+
+// findLeaders stored the extended-argument accumulator already shifted --
+// `extArg = (extArg | arg) << 8` -- and then shifted it again when combining
+// it with the operand, while buildCFG combined the two correctly. So the two
+// passes disagreed about every jump preceded by an EXTENDED_ARG: findLeaders
+// computed a target far outside the code, dropped it at its bounds check, and
+// made no leader -- hence no basic block, and no edge -- for the real target.
+TEST(PycReader, AJumpBehindAnExtendedArgGetsItsBasicBlock)
+{
+	// 130 NOPs occupy offsets 0..258. Then EXTENDED_ARG 1 + JUMP_ABSOLUTE 2,
+	// which is an absolute byte offset in 3.8 and combines to 0x102 = 258 --
+	// the last NOP. Only a correct combination of the prefix and the operand
+	// lands there; the double shift made it 0x10002 instead, far outside the
+	// code, and no leader was created at all.
+	std::vector<uint8_t> code;
+	for (int i = 0; i < 130; ++i)
+	{
+		code.push_back(9);
+		code.push_back(0); // NOP
+	}
+	code.push_back(144);
+	code.push_back(1); // EXTENDED_ARG 1
+	code.push_back(113);
+	code.push_back(2); // JUMP_ABSOLUTE 0x102 = 258
+	code.push_back(100);
+	code.push_back(0); // LOAD_CONST 0
+	code.push_back(83);
+	code.push_back(0); // RETURN_VALUE
+
+	auto buf = buildPyc38WithCode(code);
+	PycReadOptions opts;
+	opts.buildCFG = true;
+	PycReader reader(opts);
+	auto result = reader.read(buf.data(), buf.size());
+	ASSERT_TRUE(result.success);
+	ASSERT_FALSE(result.module.classes().empty());
+	const auto& cls = result.module.classes().front();
+	ASSERT_FALSE(cls.methods.empty());
+
+	// The jump splits the code either way -- the instruction after it is a
+	// leader regardless. What the double shift lost is the leader at the
+	// TARGET, so no block ever began at offset 260.
+	bool blockAt260 = false;
+	for (const auto& b: cls.methods.front().cfg.blocks())
+	{
+		if (!b.instrs.empty() && b.instrs.front().offset == 258) blockAt260 = true;
+	}
+	EXPECT_TRUE(blockAt260) << "the jump's target needs a basic block of its own";
+}
+
+// The successor-wiring loop took the last instruction of every block and, if
+// its first operand was an integer, looked that up as a block offset. It never
+// checked the instruction was a jump -- and liftInstruction gives every
+// unclassified opcode an integer operand holding its raw oparg, while
+// LOAD_CONST of an integer gets one holding the constant. So RETURN_VALUE 0,
+// NOP 0 and LOAD_CONST 0 all manufactured an edge to whatever block began at
+// offset zero.
+TEST(PycReader, ANonJumpTerminatorDoesNotEdgeBackToTheEntryBlock)
+{
+	// JUMP_ABSOLUTE 2 splits the code; the second block ends in RETURN_VALUE
+	// 0, whose operand is the integer 0 -- the entry block's offset.
+	std::vector<uint8_t> code = {
+		113,
+		2, // JUMP_ABSOLUTE 2
+		100,
+		0, // LOAD_CONST 0
+		83,
+		0, // RETURN_VALUE
+	};
+
+	auto buf = buildPyc38WithCode(code);
+	PycReadOptions opts;
+	opts.buildCFG = true;
+	PycReader reader(opts);
+	auto result = reader.read(buf.data(), buf.size());
+	ASSERT_TRUE(result.success);
+	ASSERT_FALSE(result.module.classes().empty());
+	const auto& cls = result.module.classes().front();
+	ASSERT_FALSE(cls.methods.empty());
+
+	const auto& cfg = cls.methods.front().cfg;
+	ASSERT_GT(cfg.blockCount(), 1u);
+	const auto& blocks = cfg.blocks();
+	const auto& last = blocks.back();
+	EXPECT_TRUE(last.succs.empty()) << "a RETURN_VALUE terminator has no successors, whatever its operand says";
+}

@@ -55,6 +55,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace retdec { namespace py_reconstruct { class PyModuleReconstructor; } }
@@ -129,13 +130,21 @@ private:
                      const std::string& moduleName,
                      PycReadResult& result);
 
-    /// Recursively emit all code objects under root into the BcClass.
-    void emitCodeObject(const PyCodeObject& code,
-                        BcClass& cls,
-                        PycReadResult& result,
-                        const std::string& parentQual = "");
+	/// Recursively emit all code objects under root into the BcClass.
+	///
+	/// @param visited  code objects already emitted. Marshal's FLAG_REF /
+	///                 TYPE_REF let one code object appear more than once in
+	///                 the same constant pool, so without this a file whose
+	///                 size grows linearly in the nesting depth is walked an
+	///                 exponential number of times.
+	void emitCodeObject(
+		const PyCodeObject& code,
+		BcClass& cls,
+		PycReadResult& result,
+		std::unordered_set<const PyCodeObject*>& visited,
+		const std::string& parentQual = "");
 
-    // ── BcMethod construction ─────────────────────────────────────────────────
+	// ── BcMethod construction ─────────────────────────────────────────────────
 
     BcMethod buildMethod(const PyCodeObject& code,
                          const std::string& qualName) const;

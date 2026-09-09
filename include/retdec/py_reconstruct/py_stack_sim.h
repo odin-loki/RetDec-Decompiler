@@ -147,7 +147,7 @@ private:
 
 	/// A count that only pushes has no stack to run out of, so it gets a flat
 	/// cap instead.
-	int32_t boundedPushCount(int32_t declared) const;
+	int32_t boundedPushCount(int32_t declared, const Stack& stack) const;
 
 	PyExprPtr constFromIdx(int32_t idx) const;
     std::string nameFromIdx(int32_t idx, const std::vector<std::string>& table) const;

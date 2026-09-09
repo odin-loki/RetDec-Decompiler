@@ -310,7 +310,8 @@ void PycReader::buildModule(const PyCodeObject& root, const std::string& moduleN
 	cls.access = BcAccess::Public;
 	cls.sourceFile = root.co_filename;
 
-	emitCodeObject(root, cls, result, moduleName);
+	std::unordered_set<const PyCodeObject*> visited;
+	emitCodeObject(root, cls, result, visited, moduleName);
 
 	result.module.addClass(std::move(cls));
 }
@@ -318,8 +319,24 @@ void PycReader::buildModule(const PyCodeObject& root, const std::string& moduleN
 // ─── emitCodeObject ──────────────────────────────────────────────────────────
 
 void PycReader::emitCodeObject(
-	const PyCodeObject& code, BcClass& cls, PycReadResult& result, const std::string& parentQual)
+	const PyCodeObject& code,
+	BcClass& cls,
+	PycReadResult& result,
+	std::unordered_set<const PyCodeObject*>& visited,
+	const std::string& parentQual)
 {
+	// Marshal's FLAG_REF / TYPE_REF let the same code object appear twice in
+	// one constant pool, and this walk had no memory of where it had been. So
+	// k nested levels of `consts = (child, ref-to-child)` cost 2^(k+1)-1
+	// visits, each pushing a fresh BcMethod, from a file whose size grows
+	// linearly in k -- a 1.6 KB .pyc exhausted memory. py_marshal's
+	// kMaxConstNodes budget does not see it: a Code const is one node there,
+	// and the doubling happens here.
+	if (!visited.insert(&code).second)
+	{
+		return;
+	}
+
 	++result.totalCodeObjects;
 
 	// Skip compiler-generated comprehensions / genexprs if configured
@@ -354,7 +371,7 @@ void PycReader::emitCodeObject(
 		{
 			if (c.kind == PyCodeObject::Const::Kind::Code && c.code)
 			{
-				emitCodeObject(*c.code, cls, result, qualName);
+				emitCodeObject(*c.code, cls, result, visited, qualName);
 			}
 		}
 	}
@@ -587,7 +604,14 @@ std::vector<uint32_t> PycReader::findLeaders(const PyCodeObject& code) const
 		size_t instrSize = 2; // always 2 bytes in wordcode
 
 		if (pos + 1 < bytecode.size()) arg = bytecode[pos + 1];
-		arg |= extArg << 8;
+		// extArg is stored already shifted -- `extArg = (extArg | arg) << 8`
+		// below -- so shifting again here applied it twice. buildCFG combines
+		// the two correctly (`extArg | arg`), so the two passes disagreed
+		// about every jump preceded by an EXTENDED_ARG: this one computed a
+		// target far outside the code, dropped it at the bounds check, and no
+		// leader -- hence no basic block, hence no edge -- was made for the
+		// real one.
+		arg |= extArg;
 
 		bool hasArg = is311 ? true : (op >= haveArg);
 
@@ -646,6 +670,42 @@ std::vector<uint32_t> PycReader::findLeaders(const PyCodeObject& code) const
 }
 
 // ─── buildCFG ─────────────────────────────────────────────────────────────────
+
+namespace {
+
+/// The Python opcodes whose operand liftInstruction turns into an absolute
+/// jump target -- the same list its jump arm carries, which is what makes an
+/// operand a successor rather than a number.
+bool isPythonJumpOpcode(bc_module::BcOpcode op)
+{
+	using bc_module::BcOpcode;
+	switch (op)
+	{
+	case BcOpcode::PYTHON_JUMP_FORWARD:
+	case BcOpcode::PYTHON_JUMP_ABSOLUTE:
+	case BcOpcode::PYTHON_JUMP_BACKWARD:
+	case BcOpcode::PYTHON_JUMP_BACKWARD_NO_INTERRUPT:
+	case BcOpcode::PYTHON_POP_JUMP_IF_TRUE:
+	case BcOpcode::PYTHON_POP_JUMP_IF_FALSE:
+	case BcOpcode::PYTHON_POP_JUMP_IF_NONE:
+	case BcOpcode::PYTHON_POP_JUMP_IF_NOT_NONE:
+	case BcOpcode::PYTHON_POP_JUMP_FORWARD_IF_TRUE:
+	case BcOpcode::PYTHON_POP_JUMP_FORWARD_IF_FALSE:
+	case BcOpcode::PYTHON_POP_JUMP_FORWARD_IF_NONE:
+	case BcOpcode::PYTHON_POP_JUMP_FORWARD_IF_NOT_NONE:
+	case BcOpcode::PYTHON_POP_JUMP_BACKWARD_IF_TRUE:
+	case BcOpcode::PYTHON_POP_JUMP_BACKWARD_IF_FALSE:
+	case BcOpcode::PYTHON_POP_JUMP_BACKWARD_IF_NONE:
+	case BcOpcode::PYTHON_POP_JUMP_BACKWARD_IF_NOT_NONE:
+	case BcOpcode::PYTHON_JUMP_IF_TRUE_OR_POP:
+	case BcOpcode::PYTHON_JUMP_IF_FALSE_OR_POP:
+	case BcOpcode::PYTHON_FOR_ITER:
+	case BcOpcode::PYTHON_SEND: return true;
+	default: return false;
+	}
+}
+
+} // namespace
 
 void PycReader::buildCFG(const PyCodeObject& code, BcMethod& method) const
 {
@@ -732,12 +792,18 @@ void PycReader::buildCFG(const PyCodeObject& code, BcMethod& method) const
 		if (bb->instrs.empty()) continue;
 		const BcInstruction& last = bb->instrs.back();
 
-		OpcodeInfo info = opcodeInfo(
-			static_cast<uint8_t>(0), // lookup by opcode name not needed here
-			code.version);
-
+		// Whether the block's terminator is a jump at all, which decides
+		// whether its operand is a target. This used to look up opcode 0 and
+		// then never read the result, and add an edge for any trailing integer
+		// operand -- and liftInstruction's default arm gives every
+		// unclassified opcode a BcIntOperand holding its raw oparg, while
+		// LOAD_CONST of an integer gets one holding the constant. So
+		// RETURN_VALUE 0, NOP 0 and LOAD_CONST 0 all manufactured an edge to
+		// whatever block began at that offset.
+		//
 		// Resolve jump targets from operand
-		if (!last.operands.empty() && std::holds_alternative<BcIntOperand>(last.operands[0]))
+		if (isPythonJumpOpcode(last.opcode) && !last.operands.empty()
+			&& std::holds_alternative<BcIntOperand>(last.operands[0]))
 		{
 			int64_t target = std::get<BcIntOperand>(last.operands[0]).value;
 			auto it = offsetToBlock.find(static_cast<uint32_t>(target));

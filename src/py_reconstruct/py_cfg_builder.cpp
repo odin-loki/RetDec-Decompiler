@@ -197,11 +197,20 @@ PyStmtPtr PyReconstructor::makeFuncDef(const PyCodeObject& code, StmtList body,
 
 // ─── buildBody ───────────────────────────────────────────────────────────────
 
-StmtList PyReconstructor::buildBody(const PyCodeObject& code,
-                                     PyCfgBuilder& builder) {
-    StmtList stmts = builder.build(code);
+StmtList PyReconstructor::buildBody(
+	const PyCodeObject& code, PyCfgBuilder& builder, std::unordered_set<const PyCodeObject*>& visited)
+{
+	// A constant pool can hold the same code object twice -- that is what
+	// marshal's FLAG_REF is for -- and this walk had no memory of where it had
+	// been, so nesting cost one visit per path rather than one per object.
+	if (!visited.insert(&code).second)
+	{
+		return {};
+	}
 
-    // Inject docstring if first const is a string
+	StmtList stmts = builder.build(code);
+
+	// Inject docstring if first const is a string
     if (opts_.addDocstrings && !code.co_consts.empty()) {
         const auto& first = code.co_consts[0];
         if (first.kind == PyCodeObject::Const::Kind::Str ||
@@ -226,10 +235,11 @@ StmtList PyReconstructor::buildBody(const PyCodeObject& code,
 
         // Build the nested body
         PyCfgBuilder nestedBuilder(opts_.cfgOpts);
-        StmtList nestedBody = buildBody(nested, nestedBuilder);
-        for (auto& w : nestedBuilder.warnings()) warn(w);
+		StmtList nestedBody = buildBody(nested, nestedBuilder, visited);
+		for (auto& w: nestedBuilder.warnings())
+			warn(w);
 
-        // Only emit as FunctionDef if not a lambda / class body
+		// Only emit as FunctionDef if not a lambda / class body
         if (nested.co_name != "<lambda>" && nested.co_name != "<module>") {
             auto funcDef = makeFuncDef(nested, std::move(nestedBody));
             stmts.push_back(funcDef);
@@ -250,10 +260,12 @@ PyModule PyReconstructor::reconstruct(const PyCodeObject& root,
     mod.pythonMinor = pyMinor;
 
     PyCfgBuilder builder(opts_.cfgOpts);
-    mod.body = buildBody(root, builder);
-    for (auto& w : builder.warnings()) warn(w);
+	std::unordered_set<const PyCodeObject*> visited;
+	mod.body = buildBody(root, builder, visited);
+	for (auto& w: builder.warnings())
+		warn(w);
 
-    return mod;
+	return mod;
 }
 
 } // namespace py_reconstruct

@@ -755,3 +755,91 @@ TEST(PyStackSimulator, AnHonestCountIsLeftAlone)
 	EXPECT_TRUE(checked);
 	EXPECT_TRUE(sim.warnings().empty()) << "a count the stack can meet is not truncated";
 }
+
+// ─── Opargs are attacker-controlled ──────────────────────────────────────────
+
+// COPY is one-based: COPY 1 duplicates the top of stack. The guard admitted
+// zero, and stack[stack.size() - 0] is one element past the end -- read, and
+// then copy-constructed, which increments a refcount through whatever
+// shared_ptr-shaped bytes follow the buffer. CPython rejects COPY 0; a .pyc
+// can still encode it.
+TEST(PyStackSimulator, CopyWithOpargZeroPushesNothing)
+{
+	PythonVersion ver{3, 11, 0, ""};
+	PyCodeObject::Const none_const;
+	none_const.kind = PyCodeObject::Const::Kind::None;
+
+	// RESUME 0, LOAD_CONST 0, COPY 0, RETURN_VALUE
+	auto code = makeSimpleCode(ver, {151, 0, 100, 0, 120, 0, 83, 0}, {none_const});
+	PyStackSimulator sim(code);
+	const auto stmts = sim.simulate();
+	// No assertion about the statements: a COPY the interpreter would reject
+	// has no right answer. What matters is that it is not read off the end,
+	// which is what the sanitizer job checks.
+	EXPECT_LE(stmts.size(), 8u);
+}
+
+// boundedPushCount capped one instruction at 4096 and nothing capped the
+// stack, so LOAD_CONST + EXTENDED_ARG 15 + UNPACK_SEQUENCE 255 -- six bytes,
+// oparg 4095 -- popped one value and pushed 4095, and repeating it grew memory
+// at roughly 830 KB per input byte. A per-instruction guard cannot stop an
+// exhaustion that takes many instructions.
+TEST(PyStackSimulator, RepeatedUnpackSequenceDoesNotGrowTheStackWithoutBound)
+{
+	PythonVersion ver{3, 10, 0, ""};
+	PyCodeObject::Const none_const;
+	none_const.kind = PyCodeObject::Const::Kind::None;
+
+	std::vector<uint8_t> bc;
+	for (int i = 0; i < 40; ++i)
+	{
+		bc.push_back(100);
+		bc.push_back(0); // LOAD_CONST 0
+		bc.push_back(144);
+		bc.push_back(15); // EXTENDED_ARG 15
+		bc.push_back(92);
+		bc.push_back(255); // UNPACK_SEQUENCE 4095
+	}
+	bc.push_back(83);
+	bc.push_back(0); // RETURN_VALUE
+
+	auto code = makeSimpleCode(ver, bc, {none_const});
+	PyStackSimulator sim(code);
+	const auto stmts = sim.simulate();
+	(void)stmts;
+
+	// Every one of these is 4095, which is under the per-instruction cap of
+	// 4096 -- so with only that cap nothing is ever truncated and the stack
+	// just keeps growing. The ceiling on the stack as a whole has to engage.
+	bool truncated = false;
+	for (const auto& w: sim.warnings())
+	{
+		if (w.find("synthesised-operand limit") != std::string::npos) truncated = true;
+	}
+	EXPECT_TRUE(truncated) << "40 x 4095 pushes should reach the stack ceiling";
+}
+
+// findLeaders pushes raw jump targets without checking they land on an
+// instruction, so a file-controlled oparg easily produces a leader that
+// resolves to nothing. The block then restarted at instruction 0 and, because
+// the last leader's end offset is UINT32_MAX, ran to the end -- emitting the
+// whole body a second time, once more per unmatched leader.
+TEST(PyStackSimulator, ALeaderThatIsNotAnInstructionDoesNotRepeatTheBody)
+{
+	PythonVersion ver{3, 10, 0, ""};
+	PyCodeObject::Const none_const;
+	none_const.kind = PyCodeObject::Const::Kind::None;
+
+	// LOAD_CONST 0; STORE_NAME 0; JUMP_ABSOLUTE to an odd offset that is not
+	// an instruction start; LOAD_CONST 0; RETURN_VALUE
+	auto code = makeSimpleCode(ver, {100, 0, 90, 0, 113, 3, 100, 0, 83, 0}, {none_const}, {}, {"x"});
+	PyStackSimulator sim(code);
+	const auto once = sim.simulate();
+
+	// Same code with the unresolvable jump replaced by a NOP.
+	auto plain = makeSimpleCode(ver, {100, 0, 90, 0, 9, 0, 100, 0, 83, 0}, {none_const}, {}, {"x"});
+	PyStackSimulator sim2(plain);
+	const auto baseline = sim2.simulate();
+
+	EXPECT_LE(once.size(), baseline.size() + 2) << "an unresolvable leader should skip its block, not restart at zero";
+}

@@ -87,15 +87,24 @@ std::vector<uint32_t> PyStackSimulator::findLeaders(const std::vector<RawInstr>&
 		if (isJump)
 		{
 			// Resolve target
-			int32_t target = instr.arg;
+			// In int64_t, not int: `instr.arg * 2` is an int-by-int
+			// multiplication and instr.arg is a file-supplied oparg clamped
+			// only to INT32_MAX, so anything above 2^30 overflows -- undefined
+			// behaviour. pyc_reader.cpp does the same arithmetic wide and says
+			// so; this was the copy left narrow.
+			int64_t target = instr.arg;
+			const int64_t base = static_cast<int64_t>(instr.offset) + 2;
+			const int64_t delta = static_cast<int64_t>(instr.arg) * 2;
 			if (nm.find("FORWARD") != std::string::npos)
-				target = static_cast<int32_t>(instr.offset) + 2 + instr.arg * 2;
+				target = base + delta;
 			else if (nm.find("BACKWARD") != std::string::npos)
-				target = static_cast<int32_t>(instr.offset) + 2 - instr.arg * 2;
+				target = base - delta;
 			else if (is311)
-				target = static_cast<int32_t>(instr.offset) + 2 + instr.arg * 2;
+				target = base + delta;
 
-			leaders.push_back(static_cast<uint32_t>(std::max(0, target)));
+			if (target < 0) target = 0;
+			if (target > UINT32_MAX) target = UINT32_MAX;
+			leaders.push_back(static_cast<uint32_t>(target));
 			if (nextOff != UINT32_MAX) leaders.push_back(nextOff);
 		}
 
@@ -199,15 +208,28 @@ int32_t PyStackSimulator::boundedPopCount(int32_t declared, const Stack& stack, 
 	return static_cast<int32_t>(affordable);
 }
 
-int32_t PyStackSimulator::boundedPushCount(int32_t declared) const
+/// How many entries the simulated stack may hold in total.
+///
+/// The per-instruction cap above is not enough on its own: nothing bounded the
+/// stack across instructions, so six bytes -- LOAD_CONST, EXTENDED_ARG 15,
+/// UNPACK_SEQUENCE 255, an oparg of 4095 -- pop one value and push 4095, and
+/// repeating that grows memory at roughly 830 KB per input byte. A guard that
+/// only limits one instruction cannot stop an exhaustion that takes many.
+static constexpr size_t kMaxStackEntries = 1u << 16;
+
+int32_t PyStackSimulator::boundedPushCount(int32_t declared, const Stack& stack) const
 {
 	if (declared <= 0) return 0;
-	if (declared <= kMaxSynthesizedPushes) return declared;
+
+	const size_t headroom = (stack.size() >= kMaxStackEntries) ? 0 : kMaxStackEntries - stack.size();
+	const int32_t ceiling =
+		static_cast<int32_t>(std::min<size_t>(static_cast<size_t>(kMaxSynthesizedPushes), headroom));
+	if (declared <= ceiling) return declared;
 
 	warn(
 		"Operand count " + std::to_string(declared) + " exceeds the synthesised-operand limit; truncated to "
-		+ std::to_string(kMaxSynthesizedPushes));
-	return kMaxSynthesizedPushes;
+		+ std::to_string(ceiling));
+	return ceiling;
 }
 
 // ─── buildBinOp ──────────────────────────────────────────────────────────────
@@ -880,7 +902,12 @@ bool PyStackSimulator::applyInstr(const RawInstr& instr, Stack& stack, StmtList&
 	}
 	if (nm == "COPY")
 	{
-		if (!stack.empty() && static_cast<size_t>(arg) <= stack.size())
+		// COPY is one-based: COPY 1 duplicates the top. The guard admitted
+		// arg == 0, which indexes stack[stack.size()] -- one past the end, and
+		// then copy-constructs a shared_ptr out of whatever follows the
+		// buffer, incrementing a refcount through a wild pointer. oparg comes
+		// straight out of co_code; CPython rejects COPY 0, this did not.
+		if (arg >= 1 && static_cast<size_t>(arg) <= stack.size())
 		{
 			stack.push_back(stack[stack.size() - arg]);
 		}
@@ -949,7 +976,7 @@ bool PyStackSimulator::applyInstr(const RawInstr& instr, Stack& stack, StmtList&
 	{
 		auto seq = popExpr(stack);
 		// Push individual elements (synthetic subscripts)
-		for (int i = boundedPushCount(arg) - 1; i >= 0; --i)
+		for (int i = boundedPushCount(arg, stack) - 1; i >= 0; --i)
 		{
 			auto e = std::make_shared<PyExpr>();
 			e->kind = PyExpr::Kind::Subscript;
@@ -963,8 +990,9 @@ bool PyStackSimulator::applyInstr(const RawInstr& instr, Stack& stack, StmtList&
 		auto seq = popExpr(stack);
 		int before = arg & 0xFF;
 		int after = (arg >> 8) & 0xFF;
-		// Push synthetic access expressions
-		for (int i = before + after - 1; i >= 0; --i)
+		// Push synthetic access expressions, through the same ceiling: this
+		// pushes up to 510 per instruction and nothing stopped the total.
+		for (int i = boundedPushCount(before + after, stack) - 1; i >= 0; --i)
 		{
 			pushExpr(stack, makeName("_unpack_" + std::to_string(i) + "_"));
 		}
@@ -1153,9 +1181,15 @@ StmtList PyStackSimulator::simulate()
 		uint32_t blockStart = leaders[bi];
 		uint32_t blockEndOff = (bi + 1 < leaders.size()) ? leaders[bi + 1] : UINT32_MAX;
 
-		size_t startIdx = 0;
+		// findLeaders pushes raw jump targets without checking that they land
+		// on an instruction boundary, so a file-controlled oparg easily
+		// produces a leader that resolves to nothing. This used to leave
+		// startIdx at 0 and, because the last leader's blockEndOff is
+		// UINT32_MAX, re-emit the entire statement list -- once more per
+		// unmatched leader.
 		auto it = offsetToIdx.find(blockStart);
-		if (it != offsetToIdx.end()) startIdx = it->second;
+		if (it == offsetToIdx.end()) continue;
+		const size_t startIdx = it->second;
 
 		size_t endIdx = instrs.size();
 		for (size_t i = startIdx; i < instrs.size(); ++i)
