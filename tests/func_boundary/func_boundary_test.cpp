@@ -768,3 +768,33 @@ TEST(SectionMapping, FlatImageStillWorksWithTwoArgForm)
 
 	EXPECT_NE(det.functionAt(kCode + 0x40), nullptr);
 }
+
+// ─── The pointer functionAt hands out ────────────────────────────────────────
+
+// functionAt returned a pointer into _sorted -- with a comment saying that was
+// "to ensure stability", which is backwards. _sorted is a vector that
+// functions() clear()s and reallocates whenever a candidate has been added
+// since it was last built, so the pointer was dangling by the next functions()
+// call; ASan reports a heap-use-after-free on the very next read. _candidates
+// is an unordered_map that nothing erases from, and references into one of
+// those survive insertion.
+TEST(FuncBoundary, ThePointerFromFunctionAtSurvivesLaterCandidates)
+{
+	std::vector<uint8_t> image(0x10000, 0x90);
+	FuncBoundaryDetector d(0x1000, image.data(), image.size(), true);
+	d.addEntryPoint(0x1000);
+	d.addCallTarget(0x2000);
+
+	const FunctionBoundary* before = d.functionAt(0x1000);
+	ASSERT_NE(nullptr, before);
+	ASSERT_EQ(0x1000u, before->startAddr);
+
+	// Enough new candidates to force the sorted vector to reallocate.
+	for (int i = 0; i < 64; ++i) d.addCallTarget(0x3000 + i * 0x100);
+	(void)d.functions();
+
+	const FunctionBoundary* after = d.functionAt(0x1000);
+	ASSERT_NE(nullptr, after);
+	EXPECT_EQ(before, after) << "functionAt handed out a pointer that moved";
+	EXPECT_EQ(0x1000u, after->startAddr);
+}

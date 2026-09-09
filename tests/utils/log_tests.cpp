@@ -266,6 +266,16 @@ TEST(LogTests, AHandedOutLoggerKeepsItsFileAliveWhileItIsWrittenTo)
 		}
 	});
 
+	// Wait for the writer to be actually running before the swap storm starts.
+	// Without this the main thread could finish all 2000 swaps and set `stop`
+	// before the writer was ever scheduled, and `writes` came back 0 -- which
+	// this test then reported as a failure of the logger rather than of the
+	// scheduler. Seen once on a four-CPU machine under parallel builds.
+	while (writes.load(std::memory_order_relaxed) == 0)
+	{
+		std::this_thread::yield();
+	}
+
 	const std::filesystem::path other = scratchPath("outlive-other");
 	for (int i = 0; i < 2000; ++i)
 	{
@@ -274,6 +284,7 @@ TEST(LogTests, AHandedOutLoggerKeepsItsFileAliveWhileItIsWrittenTo)
 	stop.store(true, std::memory_order_relaxed);
 	writer.join();
 
+	// Guaranteed by the wait above; kept so the intent survives a refactor.
 	EXPECT_GT(writes.load(), 0);
 
 	// Put the default back before the scratch files go away.

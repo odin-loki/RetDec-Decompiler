@@ -695,3 +695,122 @@ TEST(Integration, EmptyBuilderIsEmpty)
 	EXPECT_TRUE(b.graph().nodes.empty());
 	EXPECT_TRUE(b.graph().diagnostics.empty());
 }
+
+// ─── Splitting a block at a backward branch target ───────────────────────────
+
+// Both branch call sites do ensureBlock(target) immediately before
+// splitBlockAt(target), so a block starting exactly at the target always
+// exists by then -- and splitBlockAt returned the moment it saw one, in
+// whatever order the unordered_map yielded. With libstdc++ the just-inserted
+// key comes first, so it returned every time: a conditional jump back into the
+// middle of its own block left a zero-length dead-end block at the target and
+// the containing block unsplit, spanning it. Every loop came out that shape.
+TEST(Phase1, ABackwardBranchIntoItsOwnBlockSplitsIt)
+{
+	std::vector<uint8_t> image(0x400, 0x90);
+	CFGBuilder b(0x1000, image.data(), image.size(), true);
+
+	std::vector<InstrSummary> ins;
+	auto add = [&](uint64_t a, uint32_t l, InstrKind k, uint64_t t = 0, bool c = false) {
+		InstrSummary s;
+		s.addr = a; s.len = l; s.kind = k; s.target = t; s.isConditional = c;
+		ins.push_back(s);
+	};
+	add(0x1000, 4, InstrKind::Normal);
+	add(0x1004, 4, InstrKind::Normal);   // the loop target, mid-block
+	add(0x1008, 4, InstrKind::Normal);
+	add(0x100C, 4, InstrKind::ConditionalJmp, 0x1004, true);
+	add(0x1010, 4, InstrKind::Ret);
+
+	b.addFunction(0x1000, 0x1014, ins);
+	b.build();
+	const CFGGraph& g = b.graph();
+
+	// The entry block ends where the loop body begins.
+	auto entry = g.nodes.find(0x1000);
+	ASSERT_NE(g.nodes.end(), entry);
+	EXPECT_EQ(0x1004u, entry->second.endAddr) << "the containing block was not split";
+
+	// The loop body is a real block, not a zero-length placeholder.
+	auto body = g.nodes.find(0x1004);
+	ASSERT_NE(g.nodes.end(), body);
+	EXPECT_EQ(0x1010u, body->second.endAddr) << "the target block is empty";
+	EXPECT_LT(body->second.startAddr, body->second.endAddr);
+
+	// It keeps both the fallthrough from the entry and the back edge, and it
+	// owns the conditional's two outgoing edges -- the jump is inside it.
+	EXPECT_EQ(2u, body->second.preds.size());
+	EXPECT_EQ(2u, body->second.succs.size());
+	bool toSelf = false, toExit = false;
+	for (const auto& e: body->second.succs)
+	{
+		if (e.to == 0x1004) toSelf = true;
+		if (e.to == 0x1010) toExit = true;
+	}
+	EXPECT_TRUE(toSelf) << "the back edge does not leave the block the jump is in";
+	EXPECT_TRUE(toExit) << "the false branch does not leave the block the jump is in";
+
+	// And the back edge is typed as one.
+	EXPECT_EQ(1u, g.countEdges(EdgeType::LoopBackEdge));
+}
+
+// A branch forward to an address no block contains yet must not invent a split.
+TEST(Phase1, AForwardBranchToAFreshAddressDoesNotSplitAnything)
+{
+	std::vector<uint8_t> image(0x400, 0x90);
+	CFGBuilder b(0x1000, image.data(), image.size(), true);
+
+	std::vector<InstrSummary> ins;
+	InstrSummary s;
+	s.addr = 0x1000; s.len = 4; s.kind = InstrKind::ConditionalJmp;
+	s.target = 0x1008; s.isConditional = true;
+	ins.push_back(s);
+	InstrSummary n;
+	n.addr = 0x1004; n.len = 4; n.kind = InstrKind::Normal;
+	ins.push_back(n);
+	InstrSummary r;
+	r.addr = 0x1008; r.len = 4; r.kind = InstrKind::Ret;
+	ins.push_back(r);
+
+	b.addFunction(0x1000, 0x100C, ins);
+	b.build();
+	const CFGGraph& g = b.graph();
+	auto entry = g.nodes.find(0x1000);
+	ASSERT_NE(g.nodes.end(), entry);
+	EXPECT_EQ(0x1004u, entry->second.endAddr);
+	EXPECT_EQ(3u, g.nodes.size());
+}
+
+// Phase 3's DFS recursed once per basic block along a path. A function that is
+// one long chain of conditional jumps -- which a large .text can be -- makes
+// that path as long as the block count: a 200,000-block chain died with
+// SIGSEGV on an 8 MB stack. The walk carries its own stack now.
+TEST(Phase3, ALongChainDoesNotOverflowTheStack)
+{
+	const std::size_t N = 200000;
+	const uint64_t base = 0x400000;
+	std::vector<uint8_t> image(N * 8 + 64, 0x90);
+	CFGBuilder b(base, image.data(), image.size(), true);
+
+	std::vector<InstrSummary> ins;
+	ins.reserve(N + 1);
+	for (std::size_t i = 0; i < N; ++i)
+	{
+		InstrSummary s;
+		s.addr = base + i * 4;
+		s.len = 4;
+		s.kind = InstrKind::ConditionalJmp;
+		s.target = base + (i + 1) * 4;
+		s.isConditional = true;
+		ins.push_back(s);
+	}
+	InstrSummary r;
+	r.addr = base + N * 4;
+	r.len = 4;
+	r.kind = InstrKind::Ret;
+	ins.push_back(r);
+
+	b.addFunction(base, base + (N + 1) * 4, ins);
+	b.build();
+	EXPECT_EQ(N + 1, b.graph().nodes.size());
+}

@@ -651,14 +651,15 @@ const FunctionBoundary* FuncBoundaryDetector::functionAt(uint64_t addr) const no
 {
 	auto it = _candidates.find(addr);
 	if (it == _candidates.end()) return nullptr;
-	// Return pointer into _sorted to ensure stability.
-	// Build sorted list first.
-	(void)functions();
-	for (const auto& fb: _sorted)
-	{
-		if (fb.startAddr == addr) return &fb;
-	}
-	return nullptr;
+	// Into _candidates, not into _sorted. The comment here used to say the
+	// pointer went into _sorted "to ensure stability", which is the wrong way
+	// round: _sorted is a vector that functions() clear()s and reallocates
+	// whenever a candidate has been added since it was last built, so a pointer
+	// handed out before any add*() or runPass*() call was dangling by the next
+	// functions() call -- ASan reports a heap-use-after-free on the very next
+	// read. _candidates is an unordered_map that nothing erases from, and
+	// references into one of those are invalidated only by erasing the element.
+	return &it->second;
 }
 
 bool FuncBoundaryDetector::isNonReturning(uint64_t addr) const noexcept

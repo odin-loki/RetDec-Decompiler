@@ -183,6 +183,11 @@ BasicBlock& CFGBuilder::ensureBlock(uint64_t addr, uint64_t funcStart)
 	bb.endAddr = addr; // filled in during Phase 1
 	bb.functionAddr = funcStart;
 	_graph.nodes[addr] = std::move(bb);
+	// _graph.nodes is a hash map, so "which block contains this address" has
+	// no answer there short of a full scan. Blocks are only ever added, never
+	// removed, so an ordered index of their starts costs one insert here and
+	// turns that scan into a lower_bound.
+	_blockStarts.insert(addr);
 	return _graph.nodes[addr];
 }
 
@@ -209,51 +214,100 @@ void CFGBuilder::addEdge(uint64_t from, uint64_t to, EdgeType type, uint32_t swi
 	}
 }
 
+uint64_t CFGBuilder::blockStartContaining(uint64_t addr, uint64_t fallback) const
+{
+	// Blocks within a function do not overlap, so the containing block, if
+	// there is one, is the one with the greatest start not above addr.
+	auto it = _blockStarts.upper_bound(addr);
+	if (it == _blockStarts.begin()) return fallback;
+	--it;
+	auto nit = _graph.nodes.find(*it);
+	if (nit == _graph.nodes.end()) return fallback;
+	const BasicBlock& blk = nit->second;
+	if (blk.endAddr <= *it) return fallback;   // empty or unfinished
+	if (addr >= blk.endAddr) return fallback;
+	return *it;
+}
+
 void CFGBuilder::splitBlockAt(uint64_t splitAddr)
 {
-	// Find the block containing splitAddr (but not starting at it).
-	for (auto& [start, blk]: _graph.nodes)
+	// Both branch call sites do ensureBlock(target) immediately before calling
+	// this, so a block starting exactly at splitAddr always exists by the time
+	// we get here -- and the loop that used to be here returned the moment it
+	// saw one, in whatever order the unordered_map happened to yield. With
+	// libstdc++ the just-inserted key comes first, so the early return fired
+	// every time: measured over 512 base addresses, a conditional jump back
+	// into the middle of its own block produced a zero-length dead-end block
+	// at the target and left the containing block unsplit, spanning it. Every
+	// loop in every function came out that shape. And in the orders where the
+	// containing block came first instead, the split overwrote the target
+	// block wholesale -- `_graph.nodes[splitAddr] = std::move(newBlk)` --
+	// discarding the predecessor addEdge had just recorded on it.
+	//
+	// So: find the containing block first, and split INTO whatever is already
+	// at splitAddr rather than over it.
+	// The containing block is the one with the greatest start below splitAddr,
+	// found through the ordered index rather than by scanning every node --
+	// this runs once per branch, and a scan made building a 20,000-block
+	// function take 2.7 s where the index takes 16 ms.
+	auto sit = _blockStarts.lower_bound(splitAddr);
+	if (sit == _blockStarts.begin()) return;
+	--sit;
+	const uint64_t containerStart = *sit;
+	auto cnit = _graph.nodes.find(containerStart);
+	if (cnit == _graph.nodes.end()) return;
 	{
-		if (start == splitAddr) return; // already a block boundary
-		if (start < splitAddr && (blk.endAddr == 0 || splitAddr < blk.endAddr))
+		// endAddr == 0 marks a block Phase 1 has not finished; endAddr ==
+		// startAddr marks one ensureBlock created and nothing has filled in.
+		// Neither contains anything, so neither is splittable.
+		const BasicBlock& c = cnit->second;
+		if (c.endAddr == 0 || c.endAddr <= containerStart) return;
+		if (splitAddr >= c.endAddr) return;
+	}
+
+	// The tail of the container becomes the block at splitAddr. Read what we
+	// need out of the container before touching the map: a rehash does not
+	// invalidate references, but a second lookup is cheaper to reason about.
+	std::vector<CFGEdge> movedSuccs;
+	uint64_t tailEnd = 0;
+	uint64_t funcAddr = 0;
+	{
+		auto cit = _graph.nodes.find(containerStart);
+		if (cit == _graph.nodes.end()) return;
+		movedSuccs = std::move(cit->second.succs);
+		cit->second.succs.clear();
+		tailEnd = cit->second.endAddr;
+		funcAddr = cit->second.functionAddr;
+		cit->second.endAddr = splitAddr;
+	}
+
+	// The container's successors are now the tail's successors, so each of
+	// them lists the tail rather than the container as a predecessor.
+	for (const auto& e: movedSuccs)
+	{
+		if (e.to == 0) continue;
+		auto sit = _graph.nodes.find(e.to);
+		if (sit == _graph.nodes.end()) continue;
+		for (auto& p: sit->second.preds)
 		{
-			// Split this block.
-			BasicBlock newBlk;
-			newBlk.startAddr = splitAddr;
-			newBlk.endAddr = blk.endAddr;
-			newBlk.functionAddr = blk.functionAddr;
-			newBlk.succs = std::move(blk.succs);
-			// Update preds of original successors.
-			for (const auto& e: newBlk.succs)
+			if (p == containerStart)
 			{
-				if (e.to != 0)
-				{
-					auto sit = _graph.nodes.find(e.to);
-					if (sit != _graph.nodes.end())
-					{
-						auto& preds = sit->second.preds;
-						// Replace old start with newBlk.startAddr.
-						for (auto& p: preds)
-						{
-							if (p == start)
-							{
-								p = splitAddr;
-								break;
-							}
-						}
-					}
-				}
+				p = splitAddr;
+				break;
 			}
-			blk.endAddr = splitAddr;
-			blk.succs.clear();
-
-			_graph.nodes[splitAddr] = std::move(newBlk);
-
-			// Add fallthrough edge from original block to new block.
-			addEdge(start, splitAddr, EdgeType::FallThrough);
-			return;
 		}
 	}
+
+	// Merge into the existing block if there is one: its preds are the
+	// branches that made us split here in the first place.
+	BasicBlock& tail = ensureBlock(splitAddr, funcAddr);
+	tail.startAddr = splitAddr;
+	tail.endAddr = tailEnd;
+	tail.functionAddr = funcAddr;
+	for (auto& e: movedSuccs) tail.succs.push_back(e);
+
+	// Add fallthrough edge from the container to the tail.
+	addEdge(containerStart, splitAddr, EdgeType::FallThrough);
 }
 
 // ─── Phase 1 ──────────────────────────────────────────────────────────────────
@@ -336,6 +390,13 @@ void CFGBuilder::buildBlocksForFunction(const FunctionInfo& fi)
 				ensureBlock(ins.target, fi.start);
 				addEdge(currentBlockStart, ins.target, EdgeType::TrueBranch);
 				splitBlockAt(ins.target);
+				// A backward branch into the current block splits it, and this
+				// instruction is then in the tail, not in currentBlockStart any
+				// more. The false-branch edge below has to leave the block the
+				// jump is actually in -- otherwise it hangs off the half of the
+				// block that ends before the jump. The true-branch edge above
+				// is added first and moves with the split, so it needs nothing.
+				currentBlockStart = blockStartContaining(ins.addr, currentBlockStart);
 			}
 			// Ensure fallthrough block exists before addEdge.
 			ensureBlock(nextAddr, fi.start);
@@ -509,8 +570,17 @@ uint64_t CFGBuilder::detectJumpTableBase(uint64_t jmpAddr) const noexcept
 	std::size_t jmpOff = vaToOffset(jmpAddr);
 	if (jmpOff < 16) return 0;
 
-	for (std::size_t off = jmpOff - 1; off > jmpOff - 32 && off < _size; --off)
+	// `off > jmpOff - 32` is unsigned arithmetic on a std::size_t. The guard
+	// above only promises jmpOff >= 16, so for a jump at file offset 16..31 the
+	// subtraction wrapped to a value near SIZE_MAX and the condition was false
+	// on the first test: the whole backward scan was skipped, and no jump table
+	// in the first 32 bytes of an image was ever resolved. Count the steps
+	// instead of comparing wrapped addresses.
+	const std::size_t back = jmpOff < 32 ? jmpOff : 32;
+	for (std::size_t step = 1; step < back; ++step)
 	{
+		const std::size_t off = jmpOff - step;
+		if (off >= _size) continue;
 		// LEA rX, [RIP+disp32]: 48 8D ?? <disp32>
 		if (off + 7 <= _size && _data[off] == 0x48 && _data[off + 1] == 0x8D)
 		{
@@ -726,34 +796,63 @@ void CFGBuilder::runPhase2()
 
 void CFGBuilder::dfsVisit(uint64_t blockAddr, std::unordered_map<uint64_t, int>& colour)
 {
+	// An explicit stack, not the call stack. This walk recursed once per basic
+	// block along a path, and a function that is one long chain of conditional
+	// jumps -- which a 400 KB .text can easily be -- makes that path as long as
+	// the block count: measured on this machine's 8 MB stack, a 60,000-block
+	// chain was fine and a 200,000-block chain died with SIGSEGV. The colouring
+	// is the same; only the bookkeeping moved.
+	struct Frame
+	{
+		uint64_t addr;
+		std::size_t next; ///< index of the next successor edge to look at
+	};
+	std::vector<Frame> stack;
+
 	colour[blockAddr] = 1; // grey (in stack)
+	stack.push_back({blockAddr, 0});
 
-	auto it = _graph.nodes.find(blockAddr);
-	if (it == _graph.nodes.end())
+	while (!stack.empty())
 	{
-		colour[blockAddr] = 2;
-		return;
-	}
-
-	for (auto& edge: it->second.succs)
-	{
-		if (edge.to == 0) continue;
-		if (edge.isCallEdge()) continue; // don't follow inter-procedural edges
-
-		auto cit = colour.find(edge.to);
-		if (cit == colour.end())
+		Frame& top = stack.back();
+		auto it = _graph.nodes.find(top.addr);
+		if (it == _graph.nodes.end())
 		{
-			// Not visited.
-			dfsVisit(edge.to, colour);
+			colour[top.addr] = 2;
+			stack.pop_back();
+			continue;
 		}
-		else if (cit->second == 1)
+
+		auto& succs = it->second.succs;
+		bool descended = false;
+		while (top.next < succs.size())
 		{
-			// Grey = back edge → loop latch.
-			edge.type = EdgeType::LoopBackEdge;
+			auto& edge = succs[top.next++];
+			if (edge.to == 0) continue;
+			if (edge.isCallEdge()) continue; // don't follow inter-procedural edges
+
+			auto cit = colour.find(edge.to);
+			if (cit == colour.end())
+			{
+				// Not visited.
+				const uint64_t child = edge.to;
+				colour[child] = 1;
+				stack.push_back({child, 0});
+				descended = true;
+				break;
+			}
+			if (cit->second == 1)
+			{
+				// Grey = back edge → loop latch.
+				edge.type = EdgeType::LoopBackEdge;
+			}
+			// Black = already done, forward/cross edge.
 		}
-		// Black = already done, forward/cross edge.
+		if (descended) continue;  // `top` is dangling after push_back
+
+		colour[stack.back().addr] = 2; // black (done)
+		stack.pop_back();
 	}
-	colour[blockAddr] = 2; // black (done)
 }
 
 void CFGBuilder::classifyBackEdges()

@@ -107,6 +107,14 @@ bool CodeDataClassifier::inExecRange(uint64_t addr) const noexcept
 
 void CodeDataClassifier::addExecutableRange(uint64_t start, uint64_t end)
 {
+    // This classifier is per byte by design, so the bound has to be on how many
+    // bytes one call may materialise. Both bounds come from a section header
+    // the file declares, and each byte costs two hash-map entries: a PE section
+    // claiming a one-gigabyte virtual size asked for two billion of them.
+    // kMaxRangeBytes is far larger than any real .text, so a well-formed input
+    // never meets it.
+    if (end > start && end - start > kMaxRangeBytes) end = start + kMaxRangeBytes;
+
     for (uint64_t a = start; a < end; ++a) {
         _execRange[a] = true;
         // Ensure an entry exists (with prior) so classify() covers it.
@@ -130,6 +138,10 @@ void CodeDataClassifier::addEntryPoint(uint64_t addr)
 
 void CodeDataClassifier::addReachableRange(uint64_t addr, uint64_t len)
 {
+    // Same per-byte cost and the same file-declared length -- see
+    // addExecutableRange().
+    if (len > kMaxRangeBytes) len = kMaxRangeBytes;
+
     for (uint64_t i = 0; i < len; ++i) {
         double& lo = logOddsAt(addr + i);
         // Upgrade prior from unreachable to reachable.

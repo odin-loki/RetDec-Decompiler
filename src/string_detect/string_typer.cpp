@@ -251,7 +251,12 @@ std::optional<StringLiteral> typeString(const IBinaryView& view,
         uint8_t plen = buf[0];
         if (plen >= 2 && plen <= 255 && (std::size_t)plen+1 <= got) {
             bool ok = true;
-            for (uint8_t i=1; i<=(plen); ++i) {
+            // The counter has to be wider than the bound. As a uint8_t it
+            // reached 255, passed `255 <= 255`, wrapped to 0 on ++, and passed
+            // again -- a 255-byte run of printable Latin-1 behind a 0xFF length
+            // byte (600 bytes of 0xFF will do it: 0xFF is a printable Latin-1
+            // character) spun here forever.
+            for (std::size_t i = 1; i <= plen; ++i) {
                 if (!isPrintableLatin1(buf[i])) { ok=false; break; }
             }
             if (ok) {

@@ -108,6 +108,13 @@ struct ClassificationResult {
 
 class CodeDataClassifier {
 public:
+    /// Most bytes a single addExecutableRange/addReachableRange call will
+    /// materialise. Each byte costs two hash-map entries and the range bounds
+    /// come from file-declared headers, so an unbounded loop over one is a way
+    /// to exhaust memory with a section header. 64 MiB is larger than any real
+    /// executable range; a well-formed input never meets this.
+    static constexpr uint64_t kMaxRangeBytes = 64ull * 1024 * 1024;
+
     /**
      * Construct classifier for a binary image.
      *

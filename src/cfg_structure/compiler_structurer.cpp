@@ -111,23 +111,51 @@ CompilerStructurer::structure(
             std::unique_ptr<StructNode> body;
 
             if (lp) {
-                // Mark latch as visited so body structuring stops there.
+                // The latch is NOT pre-marked visited. It used to be, "so body
+                // structuring stops there" -- but for the ordinary two-block
+                // while loop the latch IS the body entry, so the recursion
+                // below saw it already visited and emitted a goto in place of
+                // the body: `while (c) { x++; }` structured as a While whose
+                // only child was `Goto b2`. Bounding the walk is the exitNode
+                // argument's job, and which block ends the body depends on
+                // where the loop keeps its condition:
+                //
+                //   while / for : the header holds the condition, so the body
+                //                 starts at the header's in-body successor and
+                //                 ends when the walk comes back to the header.
+                //   do-while    : the latch holds the condition, so the body
+                //                 starts at the header itself -- which the
+                //                 caller has already marked visited, hence the
+                //                 erase -- and ends at the latch.
+                //
+                // Bounding a do-while's body by the header instead let the walk
+                // run past the latch's exit edge and pull the block after the
+                // loop inside it, emitting that block twice.
                 std::unordered_set<BlockId> bodyVisited = visited;
-                bodyVisited.insert(lp->latch);
-
-                // Recurse into loop body (entry = first body block after header).
-                // The body is everything from the block after header up to (not including) header again.
-                // We structure from the first non-header successor that is inside the body.
-                BlockId bodyEntry = kInvalidBlock;
                 std::unordered_set<BlockId> bodySet(lp->body.begin(), lp->body.end());
+                const bool isDoWhile = (lp->kind == LoopKind::DoWhile);
+
+                BlockId bodyEntry = kInvalidBlock;
                 for (BlockId s : bb->succs) {
                     if (bodySet.count(s) && s != cur) { bodyEntry = s; break; }
                 }
+                const BlockId bodyExit = isDoWhile ? lp->latch : cur;
 
-                // Build body subtree.
-                body = (bodyEntry != kInvalidBlock)
-                    ? structure(bodyEntry, cur, fn, pdom, sese, loops, irred, bodyVisited, cfg)
-                    : StructNode::seq();
+                auto rest = (bodyEntry != kInvalidBlock && bodyEntry != bodyExit)
+                    ? structure(bodyEntry, bodyExit, fn, pdom, sese, loops, irred, bodyVisited, cfg)
+                    : nullptr;
+
+                if (isDoWhile) {
+                    // The header is the first statement of the body, not a
+                    // condition. Emit it directly rather than recursing into
+                    // it -- the recursion would see a loop header again and
+                    // not come back.
+                    body = StructNode::seq();
+                    body->children.push_back(StructNode::block(cur));
+                    if (rest) body->children.push_back(std::move(rest));
+                } else {
+                    body = rest ? std::move(rest) : StructNode::seq();
+                }
 
                 uint32_t condVal = condValueOf(cur, fn);
 
@@ -157,19 +185,23 @@ CompilerStructurer::structure(
                 seq->children.push_back(std::move(loopNode));
 
                 // Continue structuring from the loop exit.
-                cur = lp->exits.empty() ? kInvalidBlock : lp->exits.front();
-                // Skip any exits that are still inside the body.
+                //
+                // NaturalLoop::exits holds the body blocks that HAVE an edge
+                // leaving the loop -- not the blocks those edges lead to. Every
+                // one of them is in the body by construction, so the filter
+                // that used to be here, "skip any exits that are still inside
+                // the body", could never fire, and cur was left pointing at a
+                // body block the walk had already visited: everything after a
+                // while or for loop came out as a single goto and the tail of
+                // the function was dropped from the tree. Follow the edge.
+                cur = kInvalidBlock;
                 for (BlockId ex : lp->exits) {
-                    if (!bodySet.count(ex)) { cur = ex; break; }
-                }
-                // Find the first successor of the latch that is outside the body.
-                {
-                    const ssa::BasicBlock* latchBb = fn.block(lp->latch);
-                    if (latchBb) {
-                        for (BlockId s : latchBb->succs) {
-                            if (!bodySet.count(s)) { cur = s; break; }
-                        }
+                    const ssa::BasicBlock* exBb = fn.block(ex);
+                    if (!exBb) continue;
+                    for (BlockId s : exBb->succs) {
+                        if (!bodySet.count(s)) { cur = s; break; }
                     }
+                    if (cur != kInvalidBlock) break;
                 }
                 continue;
             }

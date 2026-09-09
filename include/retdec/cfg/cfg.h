@@ -52,6 +52,7 @@
 
 #include <cstdint>
 #include <string>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -321,6 +322,11 @@ private:
 		std::vector<InstrSummary> instrs;
 	};
 	std::vector<FunctionInfo> _functions;
+	/// Ordered index of every block start in _graph.nodes, which is a hash map
+	/// and so cannot answer "which block contains this address" by itself.
+	/// Blocks are added and never removed, so this only ever grows.
+	std::set<uint64_t> _blockStarts;
+
 	std::vector<JumpTableInfo> _jumpTables;
 	std::vector<VtableInfo> _vtables;
 
@@ -380,6 +386,10 @@ private:
 	BasicBlock& ensureBlock(uint64_t addr, uint64_t funcStart);
 	void addEdge(uint64_t from, uint64_t to, EdgeType type, uint32_t switchIdx = 0);
 	void splitBlockAt(uint64_t splitAddr);
+
+	/// Start address of the block whose [start, end) contains @p addr, or
+	/// @p fallback when no finished block does.
+	uint64_t blockStartContaining(uint64_t addr, uint64_t fallback) const;
 };
 
 } // namespace cfg

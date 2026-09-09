@@ -958,3 +958,94 @@ int main(int argc, char** argv)
 	::testing::InitGoogleTest(&argc, argv);
 	return RUN_ALL_TESTS();
 }
+
+// ─── Protobuf schema recovery ────────────────────────────────────────────────
+
+namespace {
+
+/// A protobuf serializer body: shift a field number left by 3, OR in the wire
+/// type, and write the resulting tag literal.
+std::unique_ptr<retdec::ssa::SSAFunction> makeProtoSerializer(const char* name, uint64_t tag)
+{
+	using namespace retdec::ssa;
+	auto fn = std::make_unique<SSAFunction>(name);
+	fn->addBlock("entry");
+	IrInstr* shl = fn->addInstr(0, IrInstr::Op::Shl);
+	IrValue* three = fn->allocValue(ValueKind::Immediate, kInvalidVar);
+	three->imm = 3;
+	shl->uses.push_back({three->id, 0});
+	IrInstr* orr = fn->addInstr(0, IrInstr::Op::Or);
+	IrValue* wt = fn->allocValue(ValueKind::Immediate, kInvalidVar);
+	wt->imm = tag & 7;
+	orr->uses.push_back({wt->id, 0});
+	IrValue* lit = fn->allocValue(ValueKind::Immediate, kInvalidVar);
+	lit->imm = tag;
+	IrInstr* st = fn->addInstr(0, IrInstr::Op::Store);
+	st->uses.push_back({lit->id, 0});
+	fn->addInstr(0, IrInstr::Op::Ret);
+	SSAPass p;
+	p.run(*fn);
+	return fn;
+}
+
+} // namespace
+
+// detectTag set only `found`, leaving fieldNumber at its default 0, and
+// reconstructSchema's guard is `tg.found && tg.fieldNumber > 0`. No field was
+// ever recovered from any input and recovered.proto was never written.
+TEST(ProtobufSchemaTest, TagsAreDecodedIntoFieldNumbers)
+{
+	auto f1 = makeProtoSerializer("set_id", (1u << 3) | 0);
+	auto f2 = makeProtoSerializer("set_name", (2u << 3) | 2);
+	auto f3 = makeProtoSerializer("set_size", (3u << 3) | 5);
+	std::vector<const retdec::ssa::SSAFunction*> fns = {f1.get(), f2.get(), f3.get()};
+	std::unordered_set<std::string> syms = {"set_id", "set_name", "set_size"};
+
+	ProtobufDetector d;
+	auto schema = d.reconstructSchema(fns, syms);
+	ASSERT_FALSE(schema.isEmpty()) << "no field recovered from three tagged serializers";
+	ASSERT_EQ(1u, schema.messages.size());
+	ASSERT_EQ(3u, schema.messages[0].fields.size());
+
+	const auto& fields = schema.messages[0].fields;
+	EXPECT_EQ(1u, fields[0].number);
+	EXPECT_EQ(ProtoWireType::Varint, fields[0].wireType);
+	EXPECT_EQ(2u, fields[1].number);
+	EXPECT_EQ(ProtoWireType::LengthDelimited, fields[1].wireType);
+	EXPECT_EQ(3u, fields[2].number);
+	EXPECT_EQ(ProtoWireType::Fixed32, fields[2].wireType);
+
+	const std::string proto = ProtobufDetector::emitProto(schema);
+	EXPECT_NE(std::string::npos, proto.find("= 1;")) << proto;
+	EXPECT_NE(std::string::npos, proto.find("= 3;")) << proto;
+}
+
+// 3 and 4 are the deprecated group markers, 6 and 7 are unassigned: a constant
+// whose low three bits are one of those is not a tag.
+TEST(ProtobufSchemaTest, AConstantWithAnInvalidWireTypeIsNotATag)
+{
+	auto fn = makeProtoSerializer("f", (5u << 3) | 3);   // wire type 3
+	std::vector<const retdec::ssa::SSAFunction*> fns = {fn.get()};
+	ProtobufDetector d;
+	auto schema = d.reconstructSchema(fns, {});
+	EXPECT_TRUE(schema.isEmpty()) << "wire type 3 accepted as a tag";
+}
+
+// A function with no shift-by-3 is not a serializer, whatever constants it has.
+TEST(ProtobufSchemaTest, AFunctionWithNoTagShiftRecoversNothing)
+{
+	using namespace retdec::ssa;
+	auto fn = std::make_unique<SSAFunction>("plain");
+	fn->addBlock("entry");
+	IrValue* lit = fn->allocValue(ValueKind::Immediate, kInvalidVar);
+	lit->imm = (1u << 3) | 2;
+	IrInstr* st = fn->addInstr(0, IrInstr::Op::Store);
+	st->uses.push_back({lit->id, 0});
+	fn->addInstr(0, IrInstr::Op::Ret);
+	SSAPass p;
+	p.run(*fn);
+
+	std::vector<const SSAFunction*> fns = {fn.get()};
+	ProtobufDetector d;
+	EXPECT_TRUE(d.reconstructSchema(fns, {}).isEmpty());
+}

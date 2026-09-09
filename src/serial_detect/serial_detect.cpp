@@ -501,10 +501,37 @@ TagEvidence ProtobufDetector::detectTag(const ssa::SSAFunction& fn) const
 	TagEvidence ev;
 	// tag = (field_number << 3) | wire_type
 	// Look for a left shift of 3 combined with OR of 0-5
-	if (ir_query::hasLeftShift(fn, 3)
-		&& (ir_query::hasConstant(fn, 0) || ir_query::hasConstant(fn, 2) || ir_query::hasConstant(fn, 5)))
+	if (!ir_query::hasLeftShift(fn, 3)
+		|| !(ir_query::hasConstant(fn, 0) || ir_query::hasConstant(fn, 2)
+			|| ir_query::hasConstant(fn, 5)))
 	{
+		return ev;
+	}
+
+	// found=true was all this used to set, leaving fieldNumber at its default
+	// 0 -- and reconstructSchema's guard is `tg.found && tg.fieldNumber > 0`.
+	// No field was ever recovered and recovered.proto was never written.
+	//
+	// A protobuf serializer emits the tag as a literal, so recover it from the
+	// function's own constants: a tag decodes as field_number = tag >> 3 and
+	// wire_type = tag & 7, and the wire type has to be one the format defines
+	// (3 and 4 are the deprecated group markers, 6 and 7 are not assigned).
+	// The lowest field number wins so that repeated runs agree.
+	for (auto& v: fn.values())
+	{
+		if (!v || v->kind != ssa::ValueKind::Immediate) continue;
+		const uint64_t tag = v->imm;
+		if (tag == 0) continue;
+		const uint64_t wire = tag & 7u;
+		if (wire != 0 && wire != 1 && wire != 2 && wire != 5) continue;
+		const uint64_t field = tag >> 3;
+		// Field numbers run 1..2^29-1, and 19000..19999 are reserved.
+		if (field == 0 || field > 536870911u) continue;
+		if (field >= 19000 && field <= 19999) continue;
+		if (ev.found && field >= ev.fieldNumber) continue;
 		ev.found = true;
+		ev.fieldNumber = static_cast<uint32_t>(field);
+		ev.wireType = static_cast<ProtoWireType>(wire);
 	}
 	return ev;
 }
@@ -826,9 +853,11 @@ MsgpackEvidence MessagePackDetector::detectSwitch(const ssa::SSAFunction& fn) co
 
 bool MessagePackDetector::hasFixedWidthRead(const ssa::SSAFunction& fn) const
 {
-	// Reads of 1/2/4/8 bytes after the type-byte switch
-	int widths = ir_query::loadWidthsPresent(fn);
-	return (widths & 0xF) != 0; // at least some widths present
+	// Reads of 1/2/4/8 bytes after the type-byte switch.
+	// loadWidthsPresent returns a COUNT of distinct widths, not a bitmask;
+	// `count & 0xF` reads as one and answers false for a function with
+	// exactly 16 or 32 distinct widths. The question is whether there are any.
+	return ir_query::loadWidthsPresent(fn) > 0;
 }
 
 SerialLibrary MessagePackDetector::detectLibrary(const std::unordered_set<std::string>& sym) const

@@ -516,3 +516,36 @@ TEST(DebugStrTest, StringLiteralDebugStr) {
     EXPECT_NE(s.find("ASCII"),  std::string::npos);
     EXPECT_NE(s.find("5000"),   std::string::npos);
 }
+
+// ─── A length byte of 0xFF ───────────────────────────────────────────────────
+
+// The Pascal-string validation loop counted with a uint8_t up to `plen`. For
+// plen = 255 the counter reached 255, passed `255 <= 255`, wrapped to 0, and
+// passed again: 600 bytes of 0xFF -- a printable Latin-1 character behind a
+// 0xFF length byte -- spun here forever, on data the tool is handed.
+TEST(StringTyperTest, APascalLengthByteOf255Terminates) {
+    FlatView view;
+    std::vector<uint8_t> data(600, 0xFF);
+    view.addSection(0x1000, data);
+
+    auto s = typeString(view, 0x1000, 512);
+    ASSERT_TRUE(s.has_value());
+    EXPECT_EQ(StringKind::Pascal, s->kind);
+    EXPECT_EQ(255u, s->charCount);
+    EXPECT_EQ(256u, s->byteLength);
+    EXPECT_EQ(255u, s->value.size());
+}
+
+// A shorter Pascal string still reads as one, and the fix did not move the
+// boundary: a length byte one under the maximum behaves the same way.
+TEST(StringTyperTest, APascalLengthByteOf254StillReads) {
+    FlatView view;
+    std::vector<uint8_t> data(600, 0x41);   // 'A'
+    data[0] = 254;
+    view.addSection(0x2000, data);
+
+    auto s = typeString(view, 0x2000, 512);
+    ASSERT_TRUE(s.has_value());
+    EXPECT_EQ(StringKind::Pascal, s->kind);
+    EXPECT_EQ(254u, s->charCount);
+}
