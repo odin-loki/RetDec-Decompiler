@@ -14,6 +14,7 @@
 #include "retdec/llvmir2hll/ir/int_type.h"
 #include "retdec/llvmir2hll/ir/variable.h"
 #include "retdec/llvmir2hll/ir/while_loop_stmt.h"
+#include "retdec/llvmir2hll/support/types.h"
 #include "retdec/llvmir2hll/utils/ir.h"
 
 using namespace ::testing;
@@ -97,6 +98,34 @@ IsWhileTrueLoopReturnsFalseForNonWhileTrueLoop) {
 	ShPtr<WhileLoopStmt> whileLoopStmt(WhileLoopStmt::create(
 		ConstBool::create(false), emptyStmt));
 	EXPECT_FALSE(isWhileTrueLoop(whileLoopStmt));
+}
+
+//
+// sortByName()
+//
+
+TEST_F(IRTests,
+SortByNameOrdersNamesThatDifferOnlyInCase) {
+	// C is case-sensitive, so a binary can carry both Foo and foo.  Comparing
+	// the names case-insensitively leaves such a pair tied, and std::sort
+	// settles a tie by whichever order the input happened to be in -- which,
+	// for the pointer-ordered sets these vectors are built from, is not the
+	// same on every run.  The order these produce reaches the emitted code.
+	ShPtr<Variable> varLower(Variable::create("foo", IntType::create(32)));
+	ShPtr<Variable> varUpper(Variable::create("Foo", IntType::create(32)));
+	ShPtr<Variable> varOther(Variable::create("bar", IntType::create(32)));
+
+	VarVector oneWay{varLower, varOther, varUpper};
+	sortByName(oneWay);
+
+	VarVector otherWay{varUpper, varOther, varLower};
+	sortByName(otherWay);
+
+	EXPECT_EQ(oneWay, otherWay);
+
+	// "bar" first either way, and the remaining two in a fixed order.
+	ASSERT_EQ(3u, oneWay.size());
+	EXPECT_EQ(varOther, oneWay[0]);
 }
 
 } // namespace tests

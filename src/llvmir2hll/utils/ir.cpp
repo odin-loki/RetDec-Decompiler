@@ -5,6 +5,8 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include <string>
+
 #include "retdec/llvmir2hll/analysis/used_vars_visitor.h"
 #include "retdec/llvmir2hll/ir/address_op_expr.h"
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
@@ -41,13 +43,35 @@ namespace {
 using namespace retdec::llvmir2hll;
 
 /**
+* @brief Compares the two given names case-insensitively, and exactly when
+*        that leaves them tied.
+*
+* Ignoring case makes names that differ only in case compare equal -- C is
+* case-sensitive, so a binary can carry both @c Foo and @c foo -- and
+* std::sort settles such a tie by whichever order the input happened to be
+* in.  These vectors are built from sets ordered by pointer value, so the tie
+* would be settled differently between two runs of the same input, and these
+* orders reach the emitted code.  The exact comparison is a total order on
+* distinct names, so nothing is left to the input order.
+*/
+bool nameIsLower(const std::string &n1, const std::string &n2) {
+	if (isLowerThanCaseInsensitive(n1, n2)) {
+		return true;
+	}
+	if (isLowerThanCaseInsensitive(n2, n1)) {
+		return false;
+	}
+	return n1 < n2;
+}
+
+/**
 * @brief Compares the two given functions by their name.
 *
 * @return @c true if the name of @a f1 comes before the name of @a f2
 *         (case-insensitively), @c false otherwise.
 */
 bool compareFuncs(const ShPtr<Function> &f1, const ShPtr<Function> &f2) {
-	return isLowerThanCaseInsensitive(f1->getName(), f2->getName());
+	return nameIsLower(f1->getName(), f2->getName());
 }
 
 /**
@@ -57,7 +81,7 @@ bool compareFuncs(const ShPtr<Function> &f1, const ShPtr<Function> &f2) {
 *         (case-insensitively), @c false otherwise.
 */
 bool compareVars(const ShPtr<Variable> &v1, const ShPtr<Variable> &v2) {
-	return isLowerThanCaseInsensitive(v1->getName(), v2->getName());
+	return nameIsLower(v1->getName(), v2->getName());
 }
 
 /**
@@ -67,7 +91,7 @@ bool compareVars(const ShPtr<Variable> &v1, const ShPtr<Variable> &v2) {
 *         (case-insensitively), @c false otherwise.
 */
 bool compareVarInits(const VarInitPair &v1, const VarInitPair &v2) {
-	return isLowerThanCaseInsensitive(v1.first->getName(), v2.first->getName());
+	return nameIsLower(v1.first->getName(), v2.first->getName());
 }
 
 /**
