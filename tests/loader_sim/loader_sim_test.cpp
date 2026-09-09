@@ -557,6 +557,61 @@ static std::vector<uint8_t> buildPEWithImports(uint64_t& outImpVMA)
 	return pb.buf;
 }
 
+// Every descriptor in this file points its thunk array at the same bytes.
+//
+// Both loops in resolvePEImports() are individually bounded by the file: the
+// descriptor walk stops when a descriptor would run past the end, the thunk
+// walk when a pointer would. It is their product that is not bounded. Fill a
+// section with its own RVA repeated and every 20-byte window is a descriptor
+// whose name and thunks point back at the section start, while every 8-byte
+// window is a non-zero thunk -- so each of the ~400 descriptors walks the
+// same ~1000 entries. libFuzzer found the same shape in a 30 kB input: it
+// produced 1,335,331 records and took seventeen seconds.
+//
+// A well-formed PE cannot do that: each record consumes one INT entry, the
+// entries are distinct, and they all live in the file. So the record count
+// has to stay under the file size divided by the pointer width.
+TEST(PEImports, DescriptorsSharingThunkArraysCannotAmplify)
+{
+	PEBuilder pb;
+	constexpr std::size_t kSecBytes = 0x2000;
+	const uint32_t secRva = pb.addSection(".idata", std::vector<uint8_t>(kSecBytes, 0));
+
+	// Find the section's raw offset and fill it with its own RVA, repeated.
+	std::size_t secRawOff = 0;
+	for (std::size_t i = 0; i < static_cast<std::size_t>(pb.numSections); ++i)
+	{
+		const std::size_t sh = PEBuilder::kSecTbl + i * 40;
+		const uint32_t rva =
+			pb.buf[sh + 12] | (pb.buf[sh + 13] << 8) | (pb.buf[sh + 14] << 16) | (pb.buf[sh + 15] << 24);
+		if (rva == secRva)
+		{
+			secRawOff = pb.buf[sh + 20] | (pb.buf[sh + 21] << 8) | (pb.buf[sh + 22] << 16) | (pb.buf[sh + 23] << 24);
+			break;
+		}
+	}
+	ASSERT_NE(0u, secRawOff);
+	for (std::size_t off = 0; off + 4 <= kSecBytes; off += 4)
+	{
+		w32(pb.buf, secRawOff + off, secRva);
+	}
+
+	pb.setDataDir(1, secRva, static_cast<uint32_t>(kSecBytes));
+	pb.setDataDir(13, secRva, static_cast<uint32_t>(kSecBytes));
+
+	LoaderSim sim(pb.buf.data(), pb.buf.size(), PEBuilder::kImageBase, true, false);
+
+	const std::size_t bound = pb.buf.size() / 8 + 1;
+
+	const auto imports = sim.resolvePEImports();
+	EXPECT_LE(imports.size(), bound) << "resolvePEImports returned " << imports.size() << " records from a "
+									 << pb.buf.size() << "-byte file, which can hold at most " << bound
+									 << " thunk entries";
+
+	const auto delayed = sim.resolvePEDelayImports();
+	EXPECT_LE(delayed.size(), bound);
+}
+
 TEST(PEImports, NamedImportResolved)
 {
 	uint64_t iatBase;

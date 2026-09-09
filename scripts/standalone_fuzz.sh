@@ -97,6 +97,11 @@ readonly TARGETS=(
 	# all four seeders are hand-written parsers over it. Nothing fuzzed them.
 	# The first two minutes found two signed-integer overflows.
 	"demangle:fuzz_demangle:type_seed:17::tests/managed_integration/fixtures/mangled/*.sym"
+	# The loader simulator walks a PE or ELF image's section table, base
+	# relocations, imports, delay imports and TLS callbacks -- every offset and
+	# count out of the file. Nothing fuzzed it; the first run found an import
+	# walk that turns 30 kB into 1.3 million records.
+	"loadersim:fuzz_loader_sim:loader_sim:17::tests/managed_integration/fixtures/pe/*"
 )
 
 # How the format-valid seeds are made, for the three targets whose globs matched

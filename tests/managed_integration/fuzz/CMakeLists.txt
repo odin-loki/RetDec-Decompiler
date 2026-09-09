@@ -47,6 +47,12 @@ add_fuzz_target(fuzz_demangle fuzz_demangle.cpp
     retdec-type-seed
 )
 
+# The loader simulator: section table, relocations, imports, delay imports and
+# TLS callbacks, all driven by offsets and counts out of the file.
+add_fuzz_target(fuzz_loader_sim fuzz_loader_sim.cpp
+    retdec-loader-sim
+)
+
 add_fuzz_target(fuzz_pyc fuzz_pyc.cpp
     retdec-pyc-parser
     retdec-bc-module

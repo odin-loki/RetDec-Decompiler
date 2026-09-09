@@ -372,6 +372,30 @@ std::vector<RelocRecord> LoaderSim::applyPERelocations(uint64_t newBase) const
 
 // ── PE IAT import resolution ──────────────────────────────────────────────────
 
+namespace {
+
+// The most import records a file of @a size bytes can honestly describe.
+//
+// Both loops below are individually bounded by the file: the descriptor walk
+// stops when a descriptor would run past the end, and the thunk walk stops
+// when a thunk pointer would. It is their product that is not. Every
+// descriptor may point its thunk array at the same bytes, so a 30 kB file
+// with 770 descriptors, each naming a 3,800-entry array, yields 1.3 million
+// records -- libFuzzer found one that takes seventeen seconds and hundreds of
+// megabytes.
+//
+// A well-formed PE cannot do that: each record consumes one INT entry, the
+// entries are distinct, and they all live in the file. So the file size
+// divided by the pointer width is the real bound, and it scales with the
+// input instead of being a number someone picked.
+std::size_t maxImportRecords(std::size_t fileSize, bool is64Bit)
+{
+	const std::size_t ptrSize = is64Bit ? 8u : 4u;
+	return (fileSize / ptrSize) + 1u;
+}
+
+} // anonymous namespace
+
 std::vector<ImportRef> LoaderSim::resolvePEImports() const
 {
 	std::vector<ImportRef> imports;
@@ -389,9 +413,12 @@ std::vector<ImportRef> LoaderSim::resolvePEImports() const
 
 	std::size_t descOff = vaToOffset(importVA, secs);
 
+	const std::size_t importCap = maxImportRecords(_size, _is64Bit);
+
 	// Walk IMAGE_IMPORT_DESCRIPTOR (20 bytes each).
 	for (;;)
 	{
+		if (imports.size() >= importCap) break;
 		if (!inBounds(descOff, 20)) break;
 		uint32_t origFirstThunk = r32(descOff + 0);
 		// uint32_t timeDateStamp  = r32(descOff + 4);
@@ -421,6 +448,7 @@ std::vector<ImportRef> LoaderSim::resolvePEImports() const
 
 		for (uint32_t entry = 0;; ++entry)
 		{
+			if (imports.size() >= importCap) break;
 			std::size_t ptrSize = _is64Bit ? 8u : 4u;
 			std::size_t intPtr = intOff + entry * ptrSize;
 			std::size_t iatPtr = iatOff + entry * ptrSize;
@@ -494,8 +522,11 @@ std::vector<ImportRef> LoaderSim::resolvePEDelayImports() const
 
 	std::size_t off = vaToOffset(delayVA, secs);
 
+	const std::size_t importCap = maxImportRecords(_size, _is64Bit);
+
 	for (;;)
 	{
+		if (imports.size() >= importCap) break;
 		if (!inBounds(off, kDDSize)) break;
 		uint32_t attrs = r32(off + kDDAttrs);
 		uint32_t nameRva = r32(off + kDDNameRva);
@@ -524,6 +555,7 @@ std::vector<ImportRef> LoaderSim::resolvePEDelayImports() const
 
 		for (uint32_t entry = 0;; ++entry)
 		{
+			if (imports.size() >= importCap) break;
 			std::size_t intPtr = intOff + entry * ptrSize;
 			if (!inBounds(intPtr, ptrSize)) break;
 			uint64_t val = _is64Bit ? r64(intPtr) : r32(intPtr);
