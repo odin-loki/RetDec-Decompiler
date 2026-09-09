@@ -134,14 +134,21 @@ struct BasicBlock
 	{
 		return startAddr == functionAddr;
 	}
+	/// Does this block end in a RET?
+	///
+	/// Recorded by Phase 1 rather than inferred. This used to look for a
+	/// FallThrough edge to 0, and nothing builds one: the only site that
+	/// constructs a FallThrough edge is splitBlockAt(), whose target is a
+	/// split address and never 0, and every `to == 0` edge the builder makes
+	/// is an UnresolvedIndirect. So it returned false for every block in every
+	/// graph, including the ones that do end in a RET.
 	bool hasReturn() const noexcept
 	{
-		for (const auto& e: succs)
-		{
-			if (e.type == EdgeType::FallThrough && e.to == 0) return true;
-		}
-		return false;
+		return endsWithReturn;
 	}
+
+	/// Set by Phase 1 on a block whose last instruction is a RET.
+	bool endsWithReturn = false;
 };
 
 // ─── Jump table format ────────────────────────────────────────────────────────

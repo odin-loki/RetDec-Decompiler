@@ -175,6 +175,64 @@ static uint64_t& regRef(CPUState& cpu, int reg64)
 
 // ─── Flags ───────────────────────────────────────────────────────────────────
 
+/// Write @p v into register @p r as an @p bits-wide destination.
+///
+/// x86 preserves the high bits of a byte or word destination and zero-extends
+/// a 32-bit one; only a 64-bit write replaces the register. Every MOV and XOR
+/// register destination assigned all 64 bits regardless, so `mov bl, al` threw
+/// away the rest of RBX. The 0xB0..0xB7 arm already had the byte case written
+/// out by hand -- this is the same rule, in one place.
+static void setReg(CPUState& cpu, int r, uint64_t v, int bits)
+{
+	uint64_t& d = regRef(cpu, r);
+	switch (bits)
+	{
+	case 8: d = (d & ~0xFFULL) | (v & 0xFFULL); break;
+	case 16: d = (d & ~0xFFFFULL) | (v & 0xFFFFULL); break;
+	case 32: d = v & 0xFFFFFFFFULL; break;
+	default: d = v; break;
+	}
+}
+
+/// Read an @p bits-wide operand from @p ea. False if any byte is unreadable.
+static bool readWidth(MemMap& mem, uint64_t ea, int bits, uint64_t& out)
+{
+	switch (bits)
+	{
+	case 8: {
+		uint8_t t = 0;
+		if (!mem.read(ea, t)) return false;
+		out = t;
+		return true;
+	}
+	case 16: {
+		uint16_t t = 0;
+		if (!mem.readU16(ea, t)) return false;
+		out = t;
+		return true;
+	}
+	case 32: {
+		uint32_t t = 0;
+		if (!mem.readU32(ea, t)) return false;
+		out = t;
+		return true;
+	}
+	default: return mem.readU64(ea, out);
+	}
+}
+
+/// Write the low @p bits of @p v to @p ea, and nothing above them.
+static bool writeWidth(MemMap& mem, uint64_t ea, int bits, uint64_t v)
+{
+	switch (bits)
+	{
+	case 8: return mem.write(ea, static_cast<uint8_t>(v));
+	case 16: return mem.write(ea, static_cast<uint8_t>(v)) && mem.write(ea + 1, static_cast<uint8_t>(v >> 8));
+	case 32: return mem.writeU32(ea, static_cast<uint32_t>(v));
+	default: return mem.writeU64(ea, v);
+	}
+}
+
 static void setZSF(CPUState& cpu, uint64_t result, int bits)
 {
 	uint64_t mask = (bits == 64) ? UINT64_MAX : ((1ULL << bits) - 1);
@@ -816,40 +874,24 @@ struct MiniEmu::Impl
 			{
 				// reg-reg move
 				if (toRM)
-					regRef(cpu, static_cast<int>(ea)) = regRef(cpu, reg);
+					setReg(cpu, static_cast<int>(ea), regRef(cpu, reg), wOp);
 				else
-					regRef(cpu, reg) = regRef(cpu, static_cast<int>(ea));
+					setReg(cpu, reg, regRef(cpu, static_cast<int>(ea)), wOp);
 			}
 			else
 			{
 				if (toRM)
 				{
-					uint64_t v = regRef(cpu, reg);
-					if (wOp == 8)
-						mem.write(ea, static_cast<uint8_t>(v));
-					else if (wOp == 32)
-						mem.writeU32(ea, static_cast<uint32_t>(v));
-					else
-						mem.writeU64(ea, v);
+					if (!writeWidth(mem, ea, wOp, regRef(cpu, reg))) return false;
 				}
 				else
 				{
+					// The temporaries here were left uninitialised and the
+					// read's result discarded, so a load from unmapped memory
+					// moved an indeterminate value into the destination.
 					uint64_t v = 0;
-					if (wOp == 8)
-					{
-						uint8_t t;
-						mem.read(ea, t);
-						v = t;
-					}
-					else if (wOp == 32)
-					{
-						uint32_t t;
-						mem.readU32(ea, t);
-						v = t;
-					}
-					else
-						mem.readU64(ea, v);
-					regRef(cpu, reg) = v;
+					if (!readWidth(mem, ea, wOp, v)) return false;
+					setReg(cpu, reg, v, wOp);
 				}
 			}
 			return true;
@@ -953,7 +995,11 @@ struct MiniEmu::Impl
 			uint64_t v = 0;
 			if (!isReg)
 			{
-				if (!mem.readU64(ea, v)) return false;
+				// The flags are computed at opBits, so the access has to be
+				// that wide too: reading and writing eight bytes for a dword
+				// operand let a carry out of bit 31 into the four bytes above
+				// it, and demanded eight mapped bytes where four would do.
+				if (!readWidth(mem, ea, opBits, v)) return false;
 			}
 			else
 				v = regRef(cpu, static_cast<int>(ea));
@@ -996,9 +1042,9 @@ struct MiniEmu::Impl
 				return true; // CMP (no write)
 			}
 			if (isReg)
-				regRef(cpu, static_cast<int>(ea)) = res;
-			else
-				mem.writeU64(ea, res);
+				setReg(cpu, static_cast<int>(ea), res, opBits);
+			else if (!writeWidth(mem, ea, opBits, res))
+				return false;
 			return true;
 		}
 
@@ -1019,7 +1065,11 @@ struct MiniEmu::Impl
 			uint64_t v = 0;
 			if (!isReg)
 			{
-				if (!mem.readU64(ea, v)) return false;
+				// The flags are computed at opBits, so the access has to be
+				// that wide too: reading and writing eight bytes for a dword
+				// operand let a carry out of bit 31 into the four bytes above
+				// it, and demanded eight mapped bytes where four would do.
+				if (!readWidth(mem, ea, opBits, v)) return false;
 			}
 			else
 				v = regRef(cpu, static_cast<int>(ea));
@@ -1061,9 +1111,9 @@ struct MiniEmu::Impl
 				return true; // CMP (no write)
 			}
 			if (isReg)
-				regRef(cpu, static_cast<int>(ea)) = res;
-			else
-				mem.writeU64(ea, res);
+				setReg(cpu, static_cast<int>(ea), res, opBits);
+			else if (!writeWidth(mem, ea, opBits, res))
+				return false;
 			return true;
 		}
 
@@ -1174,35 +1224,25 @@ struct MiniEmu::Impl
 			bool isReg;
 			uint64_t ea;
 			if (!decodeModRM(rexB, rexR, rexX, reg, isReg, ea)) return false;
+			const uint64_t mask = (wOp >= 64) ? ~0ULL : ((1ULL << wOp) - 1);
 			uint64_t a = isReg ? regRef(cpu, static_cast<int>(ea)) : 0;
-			uint64_t c = regRef(cpu, reg);
+			uint64_t c = regRef(cpu, reg) & mask;
 			if (!isReg)
 			{
-				if (wOp == 64)
-					mem.readU64(ea, a);
-				else
-				{
-					uint32_t t;
-					mem.readU32(ea, t);
-					a = t;
-				}
+				if (!readWidth(mem, ea, wOp, a)) return false;
 			}
-			uint64_t res = toRM ? (a ^ c) : (c ^ a);
+			a &= mask;
+			uint64_t res = (a ^ c) & mask;
 			setZSF(cpu, res, wOp);
 			if (toRM)
 			{
 				if (isReg)
-					regRef(cpu, static_cast<int>(ea)) = res;
-				else
-				{
-					if (wOp == 64)
-						mem.writeU64(ea, res);
-					else
-						mem.writeU32(ea, static_cast<uint32_t>(res));
-				}
+					setReg(cpu, static_cast<int>(ea), res, wOp);
+				else if (!writeWidth(mem, ea, wOp, res))
+					return false;
 			}
 			else
-				regRef(cpu, reg) = res;
+				setReg(cpu, reg, res, wOp);
 			return true;
 		}
 
@@ -1392,7 +1432,20 @@ UnpackResult MiniEmu::run(uint64_t entryPoint, uint64_t maxInsns)
 
 	while (instrCount < maxInsns)
 	{
-		if (!impl_->execOne(stop, stopped)) break;
+		if (!impl_->execOne(stop, stopped))
+		{
+			// execOne returns false from thirty places and exactly one of them
+			// sets stopped. Every other hard error -- an unreadable operand, a
+			// ModRM it cannot decode -- therefore fell through to the
+			// "ran out of instructions" branch below and was reported as
+			// success. Deciding it here beats auditing thirty return sites.
+			if (!stopped)
+			{
+				stop = StopReason::Error;
+				stopped = true;
+			}
+			break;
+		}
 		++instrCount;
 		if (stopped) break;
 	}

@@ -455,8 +455,11 @@ TEST(VirtualCall, ManySlotsDoNotInvalidateIterators)
 	b.build();
 
 	// 8 call sites x 64 slots, and every placeholder is retired rather than
-	// left behind as an UnresolvedIndirect.
-	EXPECT_EQ(countEdgeType(b.graph(), EdgeType::VirtualCallEdge), 8u * 64u + 8u);
+	// left behind as an UnresolvedIndirect. This used to expect one more edge
+	// per call site: the placeholder was retired to slots[0] on top of the
+	// loop that had already emitted slots[0], so each site carried a duplicate
+	// edge. The placeholder is now the slot-0 edge rather than an extra one.
+	EXPECT_EQ(countEdgeType(b.graph(), EdgeType::VirtualCallEdge), 8u * 64u);
 	EXPECT_EQ(countEdgeType(b.graph(), EdgeType::UnresolvedIndirect), 0u);
 }
 
@@ -824,4 +827,191 @@ TEST(Phase3, ALongChainDoesNotOverflowTheStack)
 	b.addFunction(base, base + (N + 1) * 4, ins);
 	b.build();
 	EXPECT_EQ(N + 1, b.graph().nodes.size());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Graph invariants
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Each of these is a property the graph is supposed to have everywhere, which
+// is why they are written as sweeps over the whole graph rather than as checks
+// on one edge: a consumer that walks preds, or trusts CFGEdge::from, has no
+// way to know which edges were built by which phase.
+
+namespace {
+
+/// Every edge's `from` is the block it hangs off.
+void expectFromMatchesOwner(const CFGGraph& g)
+{
+	for (const auto& [addr, blk]: g.nodes)
+		for (const auto& e: blk.succs)
+			EXPECT_EQ(addr, e.from) << "edge to " << std::hex << e.to << " claims a different source";
+}
+
+/// Every edge lands on a block that exists and lists this one as a
+/// predecessor. Placeholders (to == 0) are the documented exception.
+void expectEdgesAreLinkedBothWays(const CFGGraph& g)
+{
+	for (const auto& [addr, blk]: g.nodes)
+	{
+		for (const auto& e: blk.succs)
+		{
+			if (e.to == 0) continue;
+			auto tit = g.nodes.find(e.to);
+			ASSERT_NE(g.nodes.end(), tit) << "edge to a block that does not exist";
+			EXPECT_NE(tit->second.preds.end(), std::find(tit->second.preds.begin(), tit->second.preds.end(), addr))
+				<< "target does not list its predecessor";
+		}
+	}
+}
+
+std::size_t countEdgesTo(const CFGGraph& g, uint64_t from, uint64_t to)
+{
+	auto it = g.nodes.find(from);
+	if (it == g.nodes.end()) return 0;
+	std::size_t n = 0;
+	for (const auto& e: it->second.succs)
+		if (e.to == to) ++n;
+	return n;
+}
+
+} // namespace
+
+TEST(GraphInvariants, SplitBlockRewritesTheSourceOfTheEdgesItMoves)
+{
+	// A backward conditional jump into the middle of its own block: the
+	// container is split and its successors move to the tail, which is what
+	// leaves CFGEdge::from behind.
+	auto img = makeImage();
+	auto b = makeBuilder(img);
+	uint64_t func = kBase + 0x1000;
+	uint64_t mid = func + 4;
+	b.addFunction(
+		func,
+		func + 12,
+		{
+			ins(func, 4),
+			ins(mid, 4),
+			ins(func + 8, 4, InstrKind::ConditionalJmp, mid),
+		});
+	b.build();
+
+	expectFromMatchesOwner(b.graph());
+}
+
+TEST(GraphInvariants, AnExceptionHandlerBlockExistsAndKnowsItsPredecessor)
+{
+	auto img = makeImage();
+	auto b = makeBuilder(img);
+	uint64_t func = kBase + 0x1000;
+	uint64_t handler = kBase + 0x2000;
+	b.addFunction(func, func + 5, {ins(func, 2, InstrKind::IndirectJmp)});
+	b.addExceptionHandler(func, handler);
+	b.build();
+
+	ASSERT_TRUE(hasEdge(b.graph(), func, handler, EdgeType::ExceptionEdge));
+	expectEdgesAreLinkedBothWays(b.graph());
+}
+
+TEST(GraphInvariants, EverySwitchCaseKnowsItsPredecessor)
+{
+	auto img = makeImage(0x6000);
+	uint64_t tableVA = kBase + 0x2000;
+	uint64_t case0 = kBase + 0x1100;
+	uint64_t case1 = kBase + 0x1200;
+	w64(img, tableVA, case0);
+	w64(img, tableVA + 8, case1);
+
+	auto b = makeBuilder(img);
+	uint64_t func = kBase + 0x1000;
+	b.addFunction(func, func + 5, {ins(func, 2, InstrKind::IndirectJmp)});
+	b.runPhase1();
+
+	JumpTableInfo jt;
+	jt.instrAddr = func;
+	jt.tableBase = tableVA;
+	jt.numEntries = 2;
+	jt.stride = 8;
+	jt.fmt = JumpTableFmt::GCC;
+	b.addJumpTable(jt);
+	b.runPhase2();
+
+	ASSERT_TRUE(hasEdge(b.graph(), func, case0, EdgeType::SwitchEdge));
+	ASSERT_TRUE(hasEdge(b.graph(), func, case1, EdgeType::SwitchEdge));
+	expectEdgesAreLinkedBothWays(b.graph());
+}
+
+TEST(VirtualCall, ANullFirstSlotNeverBecomesATarget)
+{
+	// A pure-virtual or padding slot is filtered out of the candidate list,
+	// but the retired placeholder took its target from the unfiltered table.
+	auto img = makeImage();
+	auto b = makeBuilder(img);
+	uint64_t func = kBase + 0x1000;
+	uint64_t slotA = kBase + 0x2000;
+	uint64_t slotB = kBase + 0x3000;
+
+	b.addFunction(func, func + 5, {ins(func, 2, InstrKind::IndirectCall)});
+	VtableInfo vt;
+	vt.tableAddr = kBase + 0x5000;
+	vt.slots = {0, slotA, slotB};
+	b.addVtable(vt);
+	b.build();
+
+	auto it = b.graph().nodes.find(func);
+	ASSERT_NE(b.graph().nodes.end(), it);
+	for (const auto& e: it->second.succs)
+	{
+		EXPECT_NE(0u, e.to) << "a null slot was retired into a real edge";
+		EXPECT_NE(EdgeType::UnresolvedIndirect, e.type) << "the placeholder survived";
+	}
+}
+
+TEST(VirtualCall, EachSlotBecomesExactlyOneEdge)
+{
+	auto img = makeImage();
+	auto b = makeBuilder(img);
+	uint64_t func = kBase + 0x1000;
+	uint64_t slot0 = kBase + 0x2000;
+	uint64_t slot1 = kBase + 0x3000;
+
+	b.addFunction(func, func + 5, {ins(func, 2, InstrKind::IndirectCall)});
+	VtableInfo vt;
+	vt.tableAddr = kBase + 0x5000;
+	vt.slots = {slot0, slot1};
+	b.addVtable(vt);
+	b.build();
+
+	EXPECT_EQ(1u, countEdgesTo(b.graph(), func, slot0)) << "slot 0 was emitted twice";
+	EXPECT_EQ(1u, countEdgesTo(b.graph(), func, slot1));
+	EXPECT_EQ(2u, countEdgeType(b.graph(), EdgeType::VirtualCallEdge));
+	expectEdgesAreLinkedBothWays(b.graph());
+}
+
+TEST(BasicBlockQuery, HasReturnIsTrueForABlockEndingInRet)
+{
+	auto img = makeImage();
+	auto b = makeBuilder(img);
+	uint64_t func = kBase + 0x1000;
+	b.addFunction(func, func + 4, {ins(func, 2), ins(func + 2, 1, InstrKind::Ret)});
+	b.build();
+
+	auto it = b.graph().nodes.find(func);
+	ASSERT_NE(b.graph().nodes.end(), it);
+	EXPECT_TRUE(it->second.hasReturn()) << "the block ends in a RET";
+}
+
+TEST(BasicBlockQuery, HasReturnIsFalseForABlockThatFallsThrough)
+{
+	auto img = makeImage();
+	auto b = makeBuilder(img);
+	uint64_t func = kBase + 0x1000;
+	uint64_t other = kBase + 0x2000;
+	b.addFunction(func, func + 4, {ins(func, 4, InstrKind::DirectJmp, other)});
+	b.addFunction(other, other + 2, {ins(other, 1, InstrKind::Ret)});
+	b.build();
+
+	auto it = b.graph().nodes.find(func);
+	ASSERT_NE(b.graph().nodes.end(), it);
+	EXPECT_FALSE(it->second.hasReturn());
 }

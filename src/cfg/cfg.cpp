@@ -305,7 +305,15 @@ void CFGBuilder::splitBlockAt(uint64_t splitAddr)
 	tail.endAddr = tailEnd;
 	tail.functionAddr = funcAddr;
 	for (auto& e: movedSuccs)
+	{
+		// CFGEdge::from is documented as the source block's start address, and
+		// these edges have just changed owner. Leaving it pointing at the
+		// container made every consumer that trusts `from` -- rather than the
+		// block it found the edge in -- read the graph as it was before the
+		// split.
+		e.from = splitAddr;
 		tail.succs.push_back(e);
+	}
 
 	// Add fallthrough edge from the container to the tail.
 	addEdge(containerStart, splitAddr, EdgeType::FallThrough);
@@ -412,6 +420,13 @@ void CFGBuilder::buildBlocksForFunction(const FunctionInfo& fi)
 				auto hit = _exHandlers.find(ins.addr);
 				if (hit != _exHandlers.end())
 				{
+					// Ensure target exists before addEdge so preds are
+					// recorded -- the same order every other resolved edge in
+					// this phase uses. Without it the handler had an inbound
+					// edge and no node, and no way to find its predecessor.
+					// The handler belongs to its own region, so it is its own
+					// function start.
+					ensureBlock(hit->second, hit->second);
 					addEdge(currentBlockStart, hit->second, EdgeType::ExceptionEdge);
 				}
 				else
@@ -444,7 +459,14 @@ void CFGBuilder::buildBlocksForFunction(const FunctionInfo& fi)
 			break;
 
 		case InstrKind::Ret:
-			// No outgoing CFG edge (function exit).
+			// No outgoing CFG edge (function exit), so the fact has to be
+			// recorded on the block itself -- BasicBlock::hasReturn() has no
+			// edge to read it from.
+			{
+				const uint64_t owner = blockStartContaining(ins.addr, currentBlockStart);
+				auto rit = _graph.nodes.find(owner);
+				if (rit != _graph.nodes.end()) rit->second.endsWithReturn = true;
+			}
 			// Use the actual next instruction's address to avoid creating
 			// phantom blocks when there is a gap between this Ret and the
 			// next instruction (e.g. separate basic blocks in the function).
@@ -530,8 +552,13 @@ uint32_t CFGBuilder::detectJumpTableBound(uint64_t jmpAddr) const noexcept
 	// JA  rel8: 77 <rel>   JA  rel32: 0F 87 <rel32>
 	// JAE rel8: 73 <rel>   JAE rel32: 0F 83 <rel32>
 
+	// The threshold has to match the subtraction, or the window depends on
+	// where the image happens to sit: with `> 64` an offset in (32, 64]
+	// collapsed the start to 0 and scanned up to 64 bytes back, while anything
+	// above 64 scanned exactly 32. Thirty-two is what the comment above and
+	// the header both promise.
 	std::size_t jmpOff = vaToOffset(jmpAddr);
-	if (jmpOff > 64)
+	if (jmpOff > 32)
 		jmpOff -= 32;
 	else
 		jmpOff = 0;
@@ -688,6 +715,17 @@ void CFGBuilder::applyResolvedTables(const std::vector<ResolvedTable>& pending)
 {
 	for (const auto& r: pending)
 	{
+		if (_graph.nodes.find(r.block) == _graph.nodes.end()) continue;
+
+		// Every case block first: addEdge() records a predecessor only when
+		// the target already exists, so creating them afterwards left every
+		// case unaware of the switch that reaches it. This is the order Phase
+		// 1 uses at each of its resolved-edge sites.
+		for (const uint64_t t: r.targets)
+			ensureBlock(t, r.functionAddr);
+
+		// ensureBlock() may rehash _graph.nodes, so the block is looked up
+		// again here rather than before the loop.
 		auto it = _graph.nodes.find(r.block);
 		if (it == _graph.nodes.end()) continue;
 		if (r.edgeIndex >= it->second.succs.size()) continue;
@@ -700,12 +738,17 @@ void CFGBuilder::applyResolvedTables(const std::vector<ResolvedTable>& pending)
 		edge.to = r.targets[0];
 		edge.switchIndex = 0;
 
-		for (std::size_t i = 1; i < r.targets.size(); ++i)
+		// The placeholder does not go through addEdge(), which is the only
+		// place that pushes a backlink, so targets[0] gets its by hand.
+		auto t0 = _graph.nodes.find(r.targets[0]);
+		if (t0 != _graph.nodes.end())
 		{
-			addEdge(r.block, r.targets[i], EdgeType::SwitchEdge, static_cast<uint32_t>(i));
-			ensureBlock(r.targets[i], r.functionAddr);
+			auto& preds = t0->second.preds;
+			if (std::find(preds.begin(), preds.end(), r.block) == preds.end()) preds.push_back(r.block);
 		}
-		ensureBlock(r.targets[0], r.functionAddr);
+
+		for (std::size_t i = 1; i < r.targets.size(); ++i)
+			addEdge(r.block, r.targets[i], EdgeType::SwitchEdge, static_cast<uint32_t>(i));
 	}
 }
 
@@ -742,15 +785,23 @@ void CFGBuilder::resolveVirtualCalls()
 		}
 	}
 
-	const uint64_t firstSlot = _vtables[0].slots.empty() ? 0 : _vtables[0].slots[0];
+	// The placeholder becomes the edge for slots[0], so the loop below starts
+	// at 1. Emitting every slot AND retiring the placeholder to one of them
+	// gave a block with N slots N+1 edges, two of them identical -- against
+	// this file's own contract of one edge per slot. And the retired target
+	// used to come from _vtables[0].slots[0] unfiltered, so a vtable whose
+	// first slot is null (a pure virtual, or padding) retired the placeholder
+	// to address 0: `slots` is the filtered list and is non-empty here.
+	const uint64_t firstSlot = slots[0];
 
 	for (const auto& [addr, edgeIndex]: placeholders)
 	{
-		for (const uint64_t slot: slots)
+		for (std::size_t i = 1; i < slots.size(); ++i)
 		{
-			addEdge(addr, slot, EdgeType::VirtualCallEdge);
-			ensureBlock(slot, slot);
+			ensureBlock(slots[i], slots[i]);
+			addEdge(addr, slots[i], EdgeType::VirtualCallEdge);
 		}
+		ensureBlock(firstSlot, firstSlot);
 
 		// Retire the placeholder.  Appends never move an existing element, so
 		// the index recorded during the scan still addresses the same edge.
@@ -759,6 +810,15 @@ void CFGBuilder::resolveVirtualCalls()
 		if (edgeIndex >= it->second.succs.size()) continue;
 		it->second.succs[edgeIndex].type = EdgeType::VirtualCallEdge;
 		it->second.succs[edgeIndex].to = firstSlot;
+
+		// Same as the switch placeholder: this edge is written directly, so
+		// its backlink is not addEdge()'s to record.
+		auto t0 = _graph.nodes.find(firstSlot);
+		if (t0 != _graph.nodes.end())
+		{
+			auto& preds = t0->second.preds;
+			if (std::find(preds.begin(), preds.end(), addr) == preds.end()) preds.push_back(addr);
+		}
 	}
 }
 

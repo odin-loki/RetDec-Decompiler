@@ -684,3 +684,188 @@ TEST(MiniEmuTest, Group1Imm32AdcAndSbbCarryTheFlagIn)
 	auto sbb = runWithRax(5, {0x48, 0x81, 0xF8, 0x10, 0x00, 0x00, 0x00, 0x48, 0x81, 0xD8, 0x00, 0x00, 0x00, 0x00});
 	EXPECT_EQ(4u, sbb.rax) << "/3 SBB must subtract the borrow in";
 }
+
+// ─── Operand width, and errors that say they are errors ──────────────────────
+//
+// A register write is as wide as the instruction says. x86 preserves the high
+// bits of a byte or word destination and zero-extends a 32-bit one; the
+// emulator wrote all 64 bits for every MOV and XOR register destination, and
+// read and wrote four or eight bytes of memory for operands that are one.
+// The emulator's own 0xB0..0xB7 arm already has the byte-preserving idiom, so
+// this is a missed case rather than a convention.
+
+namespace {
+
+/// Run `code` from 0x1000 with a scratch page mapped read-write at 0x2000.
+UnpackResult runWithScratch(MiniEmu& emu, const std::vector<uint8_t>& code, const std::vector<uint8_t>& scratch = {})
+{
+	PagePerms rx{true, false, true};
+	emu.mapPage(0x1000, rx, code.data(), code.size());
+	PagePerms rw{true, true, false};
+	emu.mapPage(0x2000, rw, scratch.empty() ? nullptr : scratch.data(), scratch.size());
+	return emu.run(0x1000, 1000);
+}
+
+std::vector<uint8_t> movRax(uint64_t v)
+{
+	std::vector<uint8_t> out{0x48, 0xB8};
+	for (int i = 0; i < 8; ++i)
+		out.push_back(static_cast<uint8_t>((v >> (8 * i)) & 0xFF));
+	return out;
+}
+
+std::vector<uint8_t> movRbx(uint64_t v)
+{
+	std::vector<uint8_t> out{0x48, 0xBB};
+	for (int i = 0; i < 8; ++i)
+		out.push_back(static_cast<uint8_t>((v >> (8 * i)) & 0xFF));
+	return out;
+}
+
+void append(std::vector<uint8_t>& dst, const std::vector<uint8_t>& src)
+{
+	dst.insert(dst.end(), src.begin(), src.end());
+}
+
+} // namespace
+
+TEST(MiniEmuTest, ByteMovKeepsTheRestOfTheDestinationRegister)
+{
+	// mov rbx, 0xAAAAAAAAAAAAAAAA ; mov rax, 0x11 ; mov bl, al ; hlt
+	std::vector<uint8_t> code;
+	append(code, movRbx(0xAAAAAAAAAAAAAAAAull));
+	append(code, movRax(0x11));
+	append(code, {0x88, 0xC3}); // mov bl, al
+	code.push_back(0xF4);
+
+	MiniEmu emu;
+	auto r = runWithScratch(emu, code);
+	EXPECT_EQ(StopReason::Halt, r.stopReason);
+	EXPECT_EQ(0xAAAAAAAAAAAAAA11ull, emu.cpuState().rbx) << "mov bl, al writes one byte";
+}
+
+TEST(MiniEmuTest, ByteXorToMemoryTouchesOneByte)
+{
+	// mov rbx, 0x2000 ; mov rax, 0xFFFFFF0F ; xor byte [rbx], al ; hlt
+	std::vector<uint8_t> code;
+	append(code, movRbx(0x2000));
+	append(code, movRax(0xFFFFFF0Full));
+	append(code, {0x30, 0x03}); // xor byte [rbx], al
+	code.push_back(0xF4);
+
+	MiniEmu emu;
+	auto r = runWithScratch(emu, code, {0xF0, 0x11, 0x22, 0x33, 0x44});
+	EXPECT_EQ(StopReason::Halt, r.stopReason);
+
+	uint8_t b = 0;
+	ASSERT_TRUE(emu.readByte(0x2000, b));
+	EXPECT_EQ(0xFFu, b) << "0xF0 ^ 0x0F";
+	for (uint64_t i = 1; i < 5; ++i)
+	{
+		ASSERT_TRUE(emu.readByte(0x2000 + i, b));
+		EXPECT_EQ(static_cast<uint8_t>(0x11 * i), b) << "byte " << i << " is not part of a byte-wide operand";
+	}
+}
+
+TEST(MiniEmuTest, DwordGroup1OnMemoryTouchesFourBytes)
+{
+	// mov rbx, 0x2000 ; add dword [rbx], 1 ; hlt
+	// 0xFFFFFFFF + 1 carries out of bit 31 and must not reach byte 4.
+	std::vector<uint8_t> code;
+	append(code, movRbx(0x2000));
+	append(code, {0x83, 0x03, 0x01}); // add dword [rbx], 1
+	code.push_back(0xF4);
+
+	MiniEmu emu;
+	auto r = runWithScratch(emu, code, {0xFF, 0xFF, 0xFF, 0xFF, 0x55});
+	EXPECT_EQ(StopReason::Halt, r.stopReason);
+
+	uint8_t b = 0;
+	for (uint64_t i = 0; i < 4; ++i)
+	{
+		ASSERT_TRUE(emu.readByte(0x2000 + i, b));
+		EXPECT_EQ(0x00u, b) << "byte " << i;
+	}
+	ASSERT_TRUE(emu.readByte(0x2004, b));
+	EXPECT_EQ(0x55u, b) << "the carry out of bit 31 escaped the operand";
+}
+
+TEST(MiniEmuTest, AFailedLoadIsAnErrorAndLeavesTheRegisterAlone)
+{
+	// mov rax, 0xDEAD ; mov rbx, 0x9000 (unmapped) ; mov eax, [rbx] ; hlt
+	std::vector<uint8_t> code;
+	append(code, movRax(0xDEAD));
+	append(code, movRbx(0x9000));
+	append(code, {0x8B, 0x03}); // mov eax, [rbx]
+	code.push_back(0xF4);
+
+	MiniEmu emu;
+	auto r = runWithScratch(emu, code);
+	EXPECT_EQ(StopReason::Error, r.stopReason) << "a load from unmapped memory is not 'ran out of instructions'";
+	EXPECT_FALSE(r.success);
+	EXPECT_LT(r.instructionsExecuted, 1000u);
+	EXPECT_EQ(0xDEADull, emu.cpuState().rax) << "the destination must not take an indeterminate value";
+}
+
+TEST(MiniEmuTest, RunningOutOfInstructionsIsStillMaxInstructions)
+{
+	// jmp -2, forever.
+	MiniEmu emu;
+	PagePerms rx{true, false, true};
+	const uint8_t code[] = {0xEB, 0xFE};
+	emu.mapPage(0x1000, rx, code, sizeof(code));
+	auto r = emu.run(0x1000, 100);
+	EXPECT_EQ(StopReason::MaxInstructions, r.stopReason);
+	EXPECT_EQ(100u, r.instructionsExecuted);
+	EXPECT_TRUE(r.success);
+}
+
+// An operand at the very end of a mapped page. The write width above is what
+// keeps neighbouring bytes intact; the READ width is what decides whether the
+// access is possible at all -- reading eight bytes for a dword operand, or
+// four for a byte one, demands mapped memory past the operand and fails when
+// there is none.
+
+TEST(MiniEmuTest, ADwordOperandAtTheEndOfAPageIsReadable)
+{
+	// mov rbx, 0x2FFC ; add dword [rbx], 1 ; hlt
+	// 0x2FFC..0x2FFF is the last dword of the page; 0x3000 is unmapped.
+	std::vector<uint8_t> code;
+	append(code, movRbx(0x2FFC));
+	append(code, {0x83, 0x03, 0x01});
+	code.push_back(0xF4);
+
+	MiniEmu emu;
+	PagePerms rx{true, false, true};
+	emu.mapPage(0x1000, rx, code.data(), code.size());
+	PagePerms rw{true, true, false};
+	emu.mapPage(0x2000, rw);
+
+	auto r = emu.run(0x1000, 1000);
+	EXPECT_EQ(StopReason::Halt, r.stopReason) << "a dword operand needs four readable bytes, not eight";
+	uint8_t b = 0;
+	ASSERT_TRUE(emu.readByte(0x2FFC, b));
+	EXPECT_EQ(0x01u, b);
+}
+
+TEST(MiniEmuTest, AByteOperandAtTheEndOfAPageIsReadable)
+{
+	// mov rbx, 0x2FFF ; mov rax, 0x0F ; xor byte [rbx], al ; hlt
+	std::vector<uint8_t> code;
+	append(code, movRbx(0x2FFF));
+	append(code, movRax(0x0F));
+	append(code, {0x30, 0x03});
+	code.push_back(0xF4);
+
+	MiniEmu emu;
+	PagePerms rx{true, false, true};
+	emu.mapPage(0x1000, rx, code.data(), code.size());
+	PagePerms rw{true, true, false};
+	emu.mapPage(0x2000, rw);
+
+	auto r = emu.run(0x1000, 1000);
+	EXPECT_EQ(StopReason::Halt, r.stopReason) << "a byte operand needs one readable byte, not four";
+	uint8_t b = 0;
+	ASSERT_TRUE(emu.readByte(0x2FFF, b));
+	EXPECT_EQ(0x0Fu, b);
+}
