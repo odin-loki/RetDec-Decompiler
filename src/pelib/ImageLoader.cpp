@@ -1405,15 +1405,32 @@ bool PeLib::ImageLoader::processImageRelocations(
 		// Keep going while there is relocation blocks
 		while ((bufferPtr + sizeof(PELIB_IMAGE_BASE_RELOCATION)) <= bufferEnd)
 		{
-			PELIB_IMAGE_BASE_RELOCATION* pRelocBlock = (PELIB_IMAGE_BASE_RELOCATION*)(bufferPtr);
-			std::uint16_t* typeAndOffset = (std::uint16_t*)(pRelocBlock + 1);
+			// SizeOfBlock comes out of the file and is what advances bufferPtr,
+			// so from the second block on the pointer can sit on any byte, and
+			// reading the header through a PELIB_IMAGE_BASE_RELOCATION* is then
+			// a misaligned access -- undefined behaviour even on x86, where it
+			// happens to work. UBSan said so, on a 343-byte input:
+			//
+			//   ImageLoader.cpp:1413:40: runtime error: member access within
+			//   misaligned address 0x531000014867 for type
+			//   'PELIB_IMAGE_BASE_RELOCATION', which requires 4 byte alignment
+			//
+			// tests/crash_corpus/pelib/misaligned_relocation_block_header is
+			// that input. The uint16 entry array right after the header has
+			// the same problem; both are read with memcpy now.
+			//
+			// The header becomes a local, so the clamp below stops writing
+			// SizeOfBlock back into the buffer -- nothing read it again.
+			PELIB_IMAGE_BASE_RELOCATION blockHeader;
+			memcpy(&blockHeader, bufferPtr, sizeof(blockHeader));
+			const std::uint8_t* entryBytes = bufferPtr + sizeof(PELIB_IMAGE_BASE_RELOCATION);
 			std::uint32_t numRelocations;
 
 			// Skip relocation blocks that have invalid values
-			if (!isValidImageBlock(pRelocBlock->VirtualAddress, pRelocBlock->SizeOfBlock)) break;
+			if (!isValidImageBlock(blockHeader.VirtualAddress, blockHeader.SizeOfBlock)) break;
 
 			// Skip relocation blocks which have invalid size in the header
-			if (pRelocBlock->SizeOfBlock <= sizeof(PELIB_IMAGE_BASE_RELOCATION))
+			if (blockHeader.SizeOfBlock <= sizeof(PELIB_IMAGE_BASE_RELOCATION))
 			{
 				bufferPtr += sizeof(PELIB_IMAGE_BASE_RELOCATION);
 				continue;
@@ -1421,23 +1438,34 @@ bool PeLib::ImageLoader::processImageRelocations(
 
 			// Windows loader seems to skip relocation blocks that go into the 0-th page (the header)
 			// Sample: e380e6968f1b431e245f811f94cef6a5b6e17fd7c90ef283338fa1959eb3c536
-			if (isZeroPage(pRelocBlock->VirtualAddress))
+			if (isZeroPage(blockHeader.VirtualAddress))
 			{
-				bufferPtr += pRelocBlock->SizeOfBlock;
+				bufferPtr += blockHeader.SizeOfBlock;
 				continue;
 			}
 
 			// Calculate number of relocation entries. Prevent buffer overflow
-			if ((bufferPtr + pRelocBlock->SizeOfBlock) > bufferEnd) pRelocBlock->SizeOfBlock = bufferEnd - bufferPtr;
-			numRelocations = (pRelocBlock->SizeOfBlock - sizeof(PELIB_IMAGE_BASE_RELOCATION)) / sizeof(std::uint16_t);
+			if ((bufferPtr + blockHeader.SizeOfBlock) > bufferEnd)
+			{
+				blockHeader.SizeOfBlock = static_cast<std::uint32_t>(bufferEnd - bufferPtr);
+			}
+			numRelocations = (blockHeader.SizeOfBlock - sizeof(PELIB_IMAGE_BASE_RELOCATION)) / sizeof(std::uint16_t);
+
+			// One entry. Unaligned for the same reason the header is.
+			const auto entryAt = [&](std::uint32_t index) -> std::uint16_t {
+				std::uint16_t value = 0;
+				memcpy(&value, entryBytes + static_cast<std::size_t>(index) * sizeof(std::uint16_t), sizeof(value));
+				return value;
+			};
 
 			// Parse relocations
 			for (std::uint32_t i = 0; i < numRelocations; i++)
 			{
-				std::uint32_t fixupAddress = pRelocBlock->VirtualAddress + (typeAndOffset[i] & 0x0FFF);
+				const std::uint16_t entry = entryAt(i);
+				std::uint32_t fixupAddress = blockHeader.VirtualAddress + (entry & 0x0FFF);
 				std::int32_t temp;
 
-				switch (typeAndOffset[i] >> 12)
+				switch (entry >> 12)
 				{
 				// The base relocation applies the difference to the 64-bit field at offset.
 				case PELIB_IMAGE_REL_BASED_DIR64: {
@@ -1475,9 +1503,13 @@ bool PeLib::ImageLoader::processImageRelocations(
 				case PELIB_IMAGE_REL_BASED_HIGHADJ: {
 					std::int16_t fixupValue = 0;
 
+					// HIGHADJ consumes the entry after it as well. Taking that
+					// one without checking reads past the block, and past the
+					// buffer itself when the block ends exactly at bufferEnd.
+					if ((i + 1) >= numRelocations) break;
 					if (readImage(&fixupValue, fixupAddress, sizeof(fixupValue)) != sizeof(fixupValue)) break;
 					temp = (fixupValue << 16);
-					temp += (std::int32_t)typeAndOffset[++i];
+					temp += (std::int32_t)entryAt(++i);
 					temp += (std::int32_t)difference;
 					temp += 0x8000;
 					fixupValue = (std::int16_t)(temp >> 16);
@@ -1519,7 +1551,7 @@ bool PeLib::ImageLoader::processImageRelocations(
 			}
 
 			// Move to the next relocation block
-			bufferPtr = bufferPtr + pRelocBlock->SizeOfBlock;
+			bufferPtr = bufferPtr + blockHeader.SizeOfBlock;
 		}
 
 		// Free the relocation buffer
