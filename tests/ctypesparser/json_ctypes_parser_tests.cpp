@@ -1972,6 +1972,94 @@ TEST_F(JSONCTypesParserTests, AFailedParseDoesNotPoisonTheNextOne)
 	EXPECT_EQ("A1", ret->getName());
 }
 
+// ─── The types map is attacker-controlled ────────────────────────────────────
+
+// A type key referenced from "functions" that is not in "types" reached
+// `mapGetValueOrDefault(typesMap, typeKey)->value`. TypesMap's mapped type is
+// a rapidjson member iterator, and its default constructor leaves the pointer
+// null -- so this read through address zero. Every other malformed-input path
+// in the parser throws.
+TEST_F(JSONCTypesParserTests, AnUnknownTypeKeyThrowsRatherThanDereferencingNull)
+{
+	std::stringstream json(R"(
+		{
+			"functions": {
+				"ff": {
+					"decl": "int ff();",
+					"header": "tx.h",
+					"name": "ff",
+					"params": [],
+					"ret_type": "no-such-key"
+				}
+			},
+			"types": {}
+		}
+	)");
+
+	auto module = std::make_unique<retdec::ctypes::Module>(std::make_shared<retdec::ctypes::Context>());
+	EXPECT_THROW(parser.parseInto(json, module), CTypesParseError);
+}
+
+// parserContext is only written after a sub-parse returns, so a pointer whose
+// pointed_type names itself recursed parseType -> getOrParseType -> parseType
+// to whatever depth the file asked for. Structs and unions end such a cycle by
+// registering a forward declaration first; pointers, arrays and qualifiers had
+// nothing.
+TEST_F(JSONCTypesParserTests, APointerToItselfDoesNotRecurseForever)
+{
+	std::stringstream json(R"(
+		{
+			"functions": {
+				"ff": {
+					"decl": "void ff();",
+					"header": "tx.h",
+					"name": "ff",
+					"params": [],
+					"ret_type": "selfptr"
+				}
+			},
+			"types": {
+				"selfptr": {
+					"pointed_type": "selfptr",
+					"type": "pointer"
+				}
+			}
+		}
+	)");
+
+	// No assertion about the type it produces: a pointer to itself has no
+	// meaning to recover. What matters is that the parse returns.
+	auto module = std::make_unique<retdec::ctypes::Module>(std::make_shared<retdec::ctypes::Context>());
+	EXPECT_NO_THROW(parser.parseInto(json, module));
+}
+
+TEST_F(JSONCTypesParserTests, AnArrayOfItselfDoesNotRecurseForever)
+{
+	std::stringstream json(R"(
+		{
+			"functions": {
+				"ff": {
+					"decl": "void ff();",
+					"header": "tx.h",
+					"name": "ff",
+					"params": [],
+					"ret_type": "selfarr"
+				}
+			},
+			"types": {
+				"selfarr": {
+					"element_type": "selfarr",
+					"dimensions": [4],
+					"type": "array"
+				}
+			}
+		}
+	)");
+
+	auto module = std::make_unique<retdec::ctypes::Module>(std::make_shared<retdec::ctypes::Context>());
+	EXPECT_NO_THROW(parser.parseInto(json, module));
+}
+
 } // namespace tests
 } // namespace ctypesparser
 } // namespace retdec

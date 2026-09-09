@@ -481,8 +481,48 @@ std::shared_ptr<retdec::ctypes::Type> JSONCTypesParser::getOrParseType(const std
  */
 std::shared_ptr<retdec::ctypes::Type> JSONCTypesParser::parseType(const std::string& typeKey)
 {
-	const rapidjson::Value& jsonType = retdec::utils::mapGetValueOrDefault(typesMap, typeKey)->value;
+	// A key that is not in "types" used to reach
+	// mapGetValueOrDefault(...)->value, and TypesMap's mapped type is a
+	// rapidjson member iterator whose default constructor leaves its pointer
+	// null -- so any dangling reference out of "functions" (ret_type, a
+	// parameter's type, a member's, pointed_type, element_type) read through
+	// address zero. Every other malformed-input path in this file throws.
+	auto entry = typesMap.find(typeKey);
+	if (entry == typesMap.end())
+	{
+		throw CTypesParseError("unknown type key: " + typeKey);
+	}
+	const rapidjson::Value& jsonType = entry->second->value;
+
 	std::string typeOfType = safeGetString(jsonType, JSON_type);
+
+	// parserContext is only written after the sub-parse returns, so a type
+	// whose pointed_type, element_type or modified_type names itself recursed
+	// parseType -> getOrParseType -> parseType with nothing to stop it, to
+	// whatever depth the file asked for.
+	//
+	// Structs, unions and typedefs already end such a cycle themselves --
+	// parseStruct and parseUnion register a forward declaration in the Context
+	// before descending ("prevents parser from infinite looping"), and
+	// typedefs have typedefChain -- and `struct x { struct x *next; }` relies
+	// on that, so the guard here is only for the three kinds that had none.
+	const bool needsCycleGuard =
+		(typeOfType == JSON_pointer) || (typeOfType == JSON_array) || (typeOfType == JSON_qualifier);
+	if (needsCycleGuard && !typeKeyChain.insert(typeKey).second)
+	{
+		return retdec::ctypes::UnknownType::create();
+	}
+	struct ChainGuard
+	{
+		std::unordered_set<std::string>& chain;
+		const std::string& key;
+		bool active;
+		~ChainGuard()
+		{
+			if (active) chain.erase(key);
+		}
+	} chainGuard{typeKeyChain, typeKey, needsCycleGuard};
+
 	std::shared_ptr<retdec::ctypes::Type> parsedType;
 
 	// To make the parsing as fast as possible, the types should be ordered by

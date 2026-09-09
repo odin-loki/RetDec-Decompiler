@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <rapidjson/document.h>
 
@@ -107,6 +108,9 @@ private:
 	/// on a concurrent reallocation. It is per-parser state, so it lives
 	/// with the parser.
 	std::vector<std::string> typedefChain;
+	/// Type keys whose parse is in progress, so a type that names itself
+	/// through a pointer, an array or a qualifier ends instead of recursing.
+	std::unordered_set<std::string> typeKeyChain;
 };
 
 } // namespace ctypesparser
