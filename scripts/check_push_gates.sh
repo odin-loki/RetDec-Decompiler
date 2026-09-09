@@ -93,6 +93,7 @@ CHECKS=(
 	"doc       VERIFICATION.md vs proofs:::bash scripts/verify_esbmc.sh --doc"
 	"doc       output determinism (self-test):::bash scripts/ci/check_output_determinism.sh --self-test"
 	"doc       clang-format scoping (self-test):::bash scripts/check_format.sh --self-test"
+	"doc       emitted C compiles (self-test):::bash scripts/ci/check_emitted_c_compiles.sh --self-test"
 	"standalone clang++ compile + warnings:::CXX=clang++ BUILD_DIR=build/standalone-clang bash scripts/standalone_check.sh --compile-only"
 )
 

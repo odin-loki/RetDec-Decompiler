@@ -28,9 +28,30 @@ environment cannot compile, a failure whose log does not yet say enough.
 
 ## 1. The 0/216 recompile failure has one cause, and it is three lines
 
+**Closed by 86970d0, by the narrow route.** The pass is no longer run:
+`optimizer_manager.cpp` now carries a comment in place of the `run<>` call
+naming the three facts in this tree that break the safety argument the old
+comment made. The pass itself is untouched and still deletes every
+initialiser-less `VarDefStmt` unconditionally, so it must not be re-enabled
+without the use check described below; it is correct only for a back end that
+emits no declarations, and this tree has only `c_hll_writer`.
+
+**The 0/216 number is now unmeasured, not fixed.** Nothing had ever handed the
+emitted C to a compiler -- DET-01 compares two runs, CACHE-05 compares cache on
+against cache off, the recovery gate reads detections, and all three treat the
+output as text. `scripts/ci/check_emitted_c_compiles.sh` (CC-01) is that
+missing measurement and runs in ctest-linux; until its first number is in, the
+README's 0/216 is a figure that predates this branch and nobody has re-taken.
+Sections 2 and 3 below are the other whole-file failures and are still open, so
+a jump to 216/216 was never expected from this alone.
+
+The original entry follows.
+
+---
+
 `src/llvmir2hll/optimizer/optimizers/no_init_var_def_optimizer.cpp:28`
 
-This is the finding worth acting on first. `README.md` reports default `.c`
+This was the finding worth acting on first. `README.md` reports default `.c`
 recompiling **0/216** while the `--buildable` sidecar reports 216/216, and the
 whole sidecar exists to work around it.
 
@@ -48,8 +69,8 @@ void NoInitVarDefOptimizer::visit(ShPtr<VarDefStmt> stmt) {
 
 Every `VarDefStmt` without an initializer is deleted. There is no liveness check
 and no use check. The call site in
-`src/llvmir2hll/optimizer/optimizer_manager.cpp:263` describes one that does not
-exist:
+`src/llvmir2hll/optimizer/optimizer_manager.cpp:263` described one that did not
+exist (this comment has since been replaced by the one that removes the call):
 
 ```cpp
 // NoInitVarDefOptimizer removes VarDefStmt nodes that have no initializer

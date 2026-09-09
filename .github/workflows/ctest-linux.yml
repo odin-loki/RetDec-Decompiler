@@ -187,6 +187,22 @@ jobs:
             --corpus tests/algorithm_recovery/corpus \
             --limit 72 --timeout 120
 
+      - name: CC-01 emitted C compiles
+        run: |
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          if [ -z "$DEC" ]; then echo "retdec-decompiler not found"; exit 1; fi
+          # No --min-rate yet, so this reports rather than gates.  Nothing in
+          # this repository has ever handed the emitted C to a compiler --
+          # DET-01 checks two runs agree, CACHE-05 that the cache does not
+          # change it, the recovery gate that the detections are right, and all
+          # three read it as text.  README reports 0/216 recompiling and that
+          # number predates the branch, so the floor gets set from what this
+          # first measures rather than from a guess.
+          bash scripts/ci/check_emitted_c_compiles.sh \
+            --decompiler "$DEC" \
+            --corpus tests/algorithm_recovery/corpus \
+            --limit 24 --timeout 120
+
       - name: Filename-rename integrity guard
         run: |
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
