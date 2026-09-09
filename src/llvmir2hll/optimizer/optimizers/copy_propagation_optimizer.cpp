@@ -7,10 +7,10 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
-#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <iostream>
+#include <limits>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -20,7 +20,6 @@
 #include "retdec/llvmir2hll/analysis/value_analysis.h"
 #include "retdec/llvmir2hll/analysis/var_uses_visitor.h"
 #include "retdec/llvmir2hll/graphs/cfg/cfg.h"
-#include "retdec/llvmir2hll/graphs/cfg/cfg_builders/non_recursive_cfg_builder.h"
 #include "retdec/llvmir2hll/graphs/cfg/cfg_builders/non_recursive_cfg_builder.h"
 #include "retdec/llvmir2hll/graphs/cfg/cfg_traversals/no_var_def_cfg_traversal.h"
 #include "retdec/llvmir2hll/graphs/cfg/cfg_traversals/var_def_cfg_traversal.h"
@@ -113,12 +112,54 @@ static const std::string& cachedRepr(const ShPtr<Statement>& s,
 	return it->second;
 }
 
+/// Program-order position of every statement of one function's CFG.
+using StmtOrderIndex = std::unordered_map<const Statement*, std::size_t>;
+
+/// No program-order position is known for this statement.
+const std::size_t NO_STMT_ORDER = std::numeric_limits<std::size_t>::max();
+
+/**
+* @brief Numbers every statement of @a cfg in the order the CFG stores them.
+*
+* CFG nodes live in a vector and each node keeps its statements in program
+* order, so the numbering is the same on every run.  Statement addresses are
+* not: the sets below are @c std::set<ShPtr<Statement>>, ordered by pointer
+* value, so their iteration order moves with the allocator (and, once the
+* optimizer runs on several threads, with the per-thread arenas the new
+* statements come from).
+*/
+StmtOrderIndex buildStmtOrderIndex(const ShPtr<CFG> &cfg) {
+	StmtOrderIndex order;
+	if (!cfg) {
+		return order;
+	}
+	std::size_t pos = 0;
+	for (auto i = cfg->node_begin(), e = cfg->node_end(); i != e; ++i) {
+		for (auto j = (*i)->stmt_begin(), f = (*i)->stmt_end(); j != f; ++j) {
+			order.emplace(j->get(), pos++);
+		}
+	}
+	return order;
+}
+
+/// Returns the program-order position of @a stmt, or NO_STMT_ORDER.
+std::size_t stmtOrderOf(const StmtOrderIndex &order, const ShPtr<Statement> &stmt) {
+	auto i = order.find(stmt.get());
+	return i != order.end() ? i->second : NO_STMT_ORDER;
+}
+
 /**
 * @brief Returns an ordered version of the given statement set.
 *        Uses a pre-computed text-representation cache so getTextRepr() is
 *        called at most once per statement.
+*
+* Two distinct statements can render to the same text (the same assignment on
+* both arms of an @c if, say).  Sorting on the text alone leaves those tied,
+* and @c std::sort settles a tie by whatever order the input happened to be
+* in -- which, for a pointer-ordered set, is not the same on every run.
+* @a order breaks the tie by program position instead.
 */
-auto ordered(const StmtSet &stmts) {
+auto ordered(const StmtSet &stmts, const StmtOrderIndex &order) {
 	ReprCache cache;
 	cache.reserve(stmts.size());
 	for (auto& s : stmts) {
@@ -126,8 +167,13 @@ auto ordered(const StmtSet &stmts) {
 	}
 
 	StmtVector v(stmts.begin(), stmts.end());
-	std::sort(v.begin(), v.end(), [&cache](const auto &s1, const auto &s2) {
-		return cache.at(s1.get()) < cache.at(s2.get());
+	std::sort(v.begin(), v.end(), [&cache, &order](const auto &s1, const auto &s2) {
+		const auto &r1 = cache.at(s1.get());
+		const auto &r2 = cache.at(s2.get());
+		if (r1 != r2) {
+			return r1 < r2;
+		}
+		return stmtOrderOf(order, s1) < stmtOrderOf(order, s2);
 	});
 	return v;
 }
@@ -311,18 +357,21 @@ void CopyPropagationOptimizer::doOptimization() {
 		return;
 	}
 
-	std::atomic<std::size_t> nextIdx{0};
 	std::mutex exMutex;
 	std::exception_ptr firstException;
 	auto sharedAA = va->getAliasAnalysis();
 	const unsigned hwThreads = std::max(1u, static_cast<unsigned>(std::thread::hardware_concurrency()));
 	const unsigned numThreads = std::min(hwThreads, static_cast<unsigned>(funcs.size()));
 
-	auto workerFn = [&](CopyPropagationOptimizer* opt) {
+	// Functions are handed out by a fixed stride rather than by an atomic
+	// counter: with a counter, which optimizer instance -- and therefore which
+	// ValueAnalysis and which VarUsesVisitor -- gets a given function is
+	// decided by thread scheduling, so the same input could be optimized
+	// differently on two runs.  A stride makes the assignment a function of
+	// the index alone.
+	auto workerFn = [&](CopyPropagationOptimizer* opt, unsigned tid) {
 		try {
-			while (true) {
-				const std::size_t idx = nextIdx.fetch_add(1, std::memory_order_relaxed);
-				if (idx >= funcs.size()) break;
+			for (std::size_t idx = tid; idx < funcs.size(); idx += numThreads) {
 				opt->runOnFunction(funcs[idx]);
 			}
 		} catch (...) {
@@ -332,24 +381,31 @@ void CopyPropagationOptimizer::doOptimization() {
 	};
 
 	if (numThreads <= 1) {
-		workerFn(this);
+		workerFn(this, 0);
 	} else {
 		std::vector<std::unique_ptr<CopyPropagationOptimizer>> workers;
 		workers.reserve(numThreads - 1);
 		for (unsigned t = 1; t < numThreads; ++t) {
-			auto workerVa = ValueAnalysis::create(sharedAA, /*enableCaching=*/false);
+			// A worker has to be configured exactly like the instance that
+			// runs on the main thread, which shares the work: caching on (the
+			// pass's own ValueAnalysis is built with caching on, and this
+			// optimizer invalidates it explicitly after every edit), and the
+			// same lazy per-function VarUsesVisitor precompute.  Configured
+			// differently, a worker decompiles the same function differently.
+			auto workerVa = ValueAnalysis::create(sharedAA, /*enableCaching=*/true);
 			auto w = std::unique_ptr<CopyPropagationOptimizer>(
 				new CopyPropagationOptimizer(module, workerVa, cio));
-			w->vuv = VarUsesVisitor::create(workerVa, true, module);
+			w->vuv = VarUsesVisitor::create(workerVa, true, nullptr);
 			w->dua = DefUseAnalysis::create(module, workerVa, w->vuv);
 			w->uda = UseDefAnalysis::create(module);
 			workers.push_back(std::move(w));
 		}
 		std::vector<std::thread> threads;
 		threads.reserve(numThreads - 1);
+		unsigned tid = 1;
 		for (auto& w : workers)
-			threads.emplace_back(workerFn, w.get());
-		workerFn(this);
+			threads.emplace_back(workerFn, w.get(), tid++);
+		workerFn(this, 0);
 		for (auto& t : threads) t.join();
 	}
 	if (firstException) std::rethrow_exception(firstException);
@@ -444,6 +500,7 @@ void CopyPropagationOptimizer::performOptimization() {
 	toRemoveStmtsPreserveCalls.clear();
 	toEntirelyRemoveStmts.clear();
 	modifiedStmts.clear();
+	stmtOrder = buildStmtOrderIndex(ducs->cfg);
 
 	// For each def-use chain...
 	// We have to iterate over an ordered DU chain to make the optimization
@@ -501,15 +558,18 @@ void CopyPropagationOptimizer::performOptimization() {
 
 	// Remove statements that are to be removed and update the CFG.
 	// We have to iterate over ordered statements to make the optimization
-	// deterministic.
-	for (const auto &stmt : ordered(toRemoveStmtsPreserveCalls)) {
+	// deterministic.  Removal order is observable: removing a statement moves
+	// its address comment onto the statement that follows it, so two
+	// statements that render identically must not be removed in whichever
+	// order their addresses happen to give.
+	for (const auto &stmt : ordered(toRemoveStmtsPreserveCalls, stmtOrder)) {
 		// Since there may be function calls in the statement, we have to
 		// preserve them. Therefore, we store the result of
 		// removeVarDefOrAssignStatement() and use it when updating the CFG.
 		const auto &newStmts = removeVarDefOrAssignStatement(stmt, ducs->func);
 		ducs->cfg->replaceStmt(stmt, newStmts);
 	}
-	for (const auto &stmt : ordered(toEntirelyRemoveStmts)) {
+	for (const auto &stmt : ordered(toEntirelyRemoveStmts, stmtOrder)) {
 		Statement::removeStatementButKeepDebugComment(stmt);
 		ducs->cfg->removeStmt(stmt);
 	}
@@ -985,7 +1045,7 @@ void CopyPropagationOptimizer::handleCaseInductionVariable(
 		return;
 	}
 
-	auto orderedUses = ordered(uses);
+	auto orderedUses = ordered(uses, stmtOrder);
 	ShPtr<AssignStmt> commonOtherDef;
 	for (auto& use : uses) {
 		// Use have 2 definitions.
@@ -1015,7 +1075,7 @@ void CopyPropagationOptimizer::handleCaseInductionVariable(
 		}
 
 		// Other definition has the same uses as the definition being inspected.
-		if (ordered(otherDefDU.second) != orderedUses) {
+		if (ordered(otherDefDU.second, stmtOrder) != orderedUses) {
 			LOG << "\t" << "end 6" << std::endl;
 			return;
 		}

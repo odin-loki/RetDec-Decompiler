@@ -6,7 +6,6 @@
 */
 
 #include <memory>
-#include <atomic>
 #include <chrono>
 #include <mutex>
 #include <thread>
@@ -89,7 +88,6 @@ void SimpleCopyPropagationOptimizer::doOptimization() {
 	}
 
 	vuv = VarUsesVisitor::create(va, true, nullptr);
-	std::atomic<std::size_t> nextIdx{0};
 	std::mutex exMutex;
 	std::exception_ptr firstException;
 	auto sharedAA = va->getAliasAnalysis();
@@ -100,12 +98,16 @@ void SimpleCopyPropagationOptimizer::doOptimization() {
 		std::min(4u, std::max(1u, static_cast<unsigned>(std::thread::hardware_concurrency()))),
 		static_cast<unsigned>(funcs.size()));
 
-	auto workerFn = [&](SimpleCopyPropagationOptimizer* opt) {
+	// Functions are handed out by a fixed stride rather than by an atomic
+	// counter: with a counter, which optimizer instance -- and therefore which
+	// ValueAnalysis and which VarUsesVisitor -- gets a given function is
+	// decided by thread scheduling, so the same input could be optimized
+	// differently on two runs.  A stride makes the assignment a function of
+	// the index alone.
+	auto workerFn = [&](SimpleCopyPropagationOptimizer* opt, unsigned tid) {
 		try {
-			while (true) {
+			for (std::size_t idx = tid; idx < funcs.size(); idx += numThreads) {
 				if (isGlobalDeadlineExceeded()) break;
-				const std::size_t idx = nextIdx.fetch_add(1, std::memory_order_relaxed);
-				if (idx >= funcs.size()) break;
 				opt->runOnFunction(funcs[idx]);
 			}
 		} catch (...) {
@@ -115,11 +117,16 @@ void SimpleCopyPropagationOptimizer::doOptimization() {
 	};
 
 	if (numThreads <= 1) {
-		workerFn(this);
+		workerFn(this, 0);
 	} else {
 		std::vector<std::unique_ptr<SimpleCopyPropagationOptimizer>> workers;
 		for (unsigned t = 1; t < numThreads; ++t) {
-			auto workerVa = ValueAnalysis::create(sharedAA, false);
+			// Caching is enabled here to match the analysis this instance
+			// runs with (llvmir2hll builds the pass's own ValueAnalysis with
+			// caching on, and the serial path below PARALLEL_THRESHOLD uses
+			// it).  A worker configured differently from the main thread
+			// would decompile the same function differently.
+			auto workerVa = ValueAnalysis::create(sharedAA, true);
 			auto w = std::unique_ptr<SimpleCopyPropagationOptimizer>(
 				new SimpleCopyPropagationOptimizer(module, workerVa, cio));
 			// Use nullptr (no precomputation) so that workers don't each walk
@@ -129,8 +136,9 @@ void SimpleCopyPropagationOptimizer::doOptimization() {
 			workers.push_back(std::move(w));
 		}
 		std::vector<std::thread> threads;
-		for (auto& w : workers) threads.emplace_back(workerFn, w.get());
-		workerFn(this);
+		unsigned tid = 1;
+		for (auto& w : workers) threads.emplace_back(workerFn, w.get(), tid++);
+		workerFn(this, 0);
 		for (auto& t : threads) t.join();
 	}
 	if (firstException) std::rethrow_exception(firstException);

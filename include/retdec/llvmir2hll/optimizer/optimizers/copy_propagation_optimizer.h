@@ -8,6 +8,8 @@
 #ifndef RETDEC_LLVMIR2HLL_OPTIMIZER_OPTIMIZERS_COPY_PROPAGATION_OPTIMIZER_H
 #define RETDEC_LLVMIR2HLL_OPTIMIZER_OPTIMIZERS_COPY_PROPAGATION_OPTIMIZER_H
 
+#include <unordered_map>
+
 #include "retdec/llvmir2hll/analysis/def_use_analysis.h"
 #include "retdec/llvmir2hll/optimizer/func_optimizer.h"
 #include "retdec/llvmir2hll/support/smart_ptr.h"
@@ -140,6 +142,13 @@ private:
 
 	/// Set of statements that have been modified (altered or removed).
 	StmtSet modifiedStmts;
+
+	/// Position of every statement of @c ducs->cfg in program order, rebuilt
+	/// at the start of each performOptimization().  The statement sets above
+	/// are ordered by pointer value, which is not the same on every run once
+	/// statements allocated on different threads land in the same set; this
+	/// index gives the sorts a tie-break that is.
+	std::unordered_map<const Statement*, std::size_t> stmtOrder;
 
 	/// Has the code changed?
 	bool codeChanged;

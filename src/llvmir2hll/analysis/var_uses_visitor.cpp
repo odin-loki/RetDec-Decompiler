@@ -418,6 +418,14 @@ void VarUsesVisitor::precomputeEverything(ShPtr<Module> module) {
 			e = module->func_definition_end(); i != e; ++i) {
 		func = *i;
 
+		// Record the function as precomputed.  Without this, the first
+		// getUses() for it finds it missing from precomputedFunctions and
+		// runs precomputeFunction() on top of the entries built here -- a
+		// second full walk of every function in the module, and one that
+		// seeds no cache entries for the module's global variables, unlike
+		// the pass below.
+		precomputedFunctions.insert(func.get());
+
 		// If a global variable is not used in a function, we normally wouldn't
 		// create a cache entry for it. However, then, when calling getUses(),
 		// getUses() would act as if we haven't precomputed everything. To
