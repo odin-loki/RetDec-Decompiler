@@ -168,6 +168,21 @@ jobs:
             bash scripts/ci/check_cache_differential.sh --decompiler "$DEC" --timeout 90 "${ARGS[@]}"
           fi
 
+      - name: DET-01 decompiler output determinism
+        run: |
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          if [ -z "$DEC" ]; then echo "retdec-decompiler not found"; exit 1; fi
+          # The algorithm-recovery step above builds the whole corpus (every
+          # source at O0/O2/O3 with both gcc and clang), so this sweeps shapes
+          # CACHE-05 never sees: it only checks nine gcc -O0 names, and the HLL
+          # copy-propagation passes do not even go parallel below twenty-four
+          # functions.  A third of the corpus, evenly spread so every compiler
+          # and optimisation level is represented.
+          bash scripts/ci/check_output_determinism.sh \
+            --decompiler "$DEC" \
+            --corpus tests/algorithm_recovery/corpus \
+            --limit 72 --timeout 120
+
       - name: Filename-rename integrity guard
         run: |
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"

@@ -5,10 +5,18 @@ have to produce the same `.c`. People diff decompiler output, and the
 function-analysis cache is only meaningful if the thing it caches is a
 function of its input.
 
-CI checks this in `scripts/ci/check_cache_differential.sh` (CACHE-05): the
-first two of its four runs per binary are both cache-off, and if they
-disagree the check says so in those words and stops, because that is a
-different bug report from a cache defect.
+Two CI checks cover it:
+
+* `scripts/ci/check_cache_differential.sh` (CACHE-05) — the first two of its
+  four runs per binary are both cache-off, and if they disagree the check
+  says so in those words and stops, because that is a different bug report
+  from a cache defect. It runs the nine `ci-core` names, all gcc `-O0`.
+* `scripts/ci/check_output_determinism.sh` (DET-01) — two cache-off runs of
+  a third of the built corpus, evenly spread so every compiler and
+  optimisation level is represented. CACHE-05's nine binaries are all small
+  and all `-O0`; the HLL copy-propagation passes do not even take their
+  parallel path below twenty-four functions, which is where the first of
+  the defects below lived.
 
 ## The invariant
 
