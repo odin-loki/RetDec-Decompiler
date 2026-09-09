@@ -593,3 +593,49 @@ ASLR, or both).
 This matters beyond tidiness. ASan is what found the ELF section-size
 allocation in `fuzz-libfuzzer`, and this workflow is the only place ASan is
 pointed at the whole decompiler rather than at one parser.
+
+### The Windows build cannot compile two parsers, because nothing gives it zlib
+
+`src/jvm_parser/CMakeLists.txt:19`, `src/dex_parser/CMakeLists.txt:15`
+
+`ctest-windows` fails on `main`, eleven minutes in:
+
+```
+FAILED: src/jvm_parser/CMakeFiles/retdec-jvm-parser.dir/jvm_jar_reader.cpp.obj
+src\jvm_parser\jvm_jar_reader.cpp(23): fatal error C1083:
+    Cannot open include file: 'zlib.h': No such file or directory
+```
+
+Both parsers read ZIP containers -- a JAR and an APK are ZIP files -- so both
+`#include <zlib.h>`, and both declare the dependency as the bare link name
+`z`:
+
+```cmake
+target_link_libraries(retdec-jvm-parser PUBLIC retdec-bc-module z)
+```
+
+A bare `z` carries no include directory. On Linux it works by accident:
+`zlib.h` is in the default include path and `libz.so` is in the default
+library path, so neither half of the dependency has to be declared correctly.
+On Windows neither is true, and nothing else in the tree supplies zlib for a
+native MSVC build. `deps/zlib/` exists but returns immediately unless
+`RETDEC_BUNDLED_ZLIB_WIN_CROSS`, which `cmake/options.cmake` defaults ON only
+for `CMAKE_CROSSCOMPILING AND CMAKE_SYSTEM_NAME STREQUAL "Windows"` -- the
+MinGW cross path, not this one.
+
+**The shape of the fix.** Build the bundled zlib for native Windows as well,
+which cannot affect Linux or the cross path: `deps/CMakeLists.txt` adds the
+subdirectory only under the cross condition, and `deps/llvm/CMakeLists.txt`
+consumes `RETDEC_CROSS_ZLIB_*` only under the same one, so a native-Windows
+branch is reachable from neither. Two details will cost an iteration each if
+missed: zlib's CMake installs the static library as `libzlibstatic.a` under
+MinGW but `zlibstatic.lib` under MSVC, and `zlibstaticd.lib` for a Debug
+build, which `full-windows-debug` is. The two targets then need the include
+directory and an `add_dependencies` on `retdec-zlib`, and the bare `z` should
+stay only where a system zlib is what is meant.
+
+**Not fixed here** because it is a build-system change for a platform this
+environment cannot compile or test, and there may be more failures behind it
+-- ninja stops at the first, and this is the first. `ctest-windows` is
+`workflow_dispatch`-able and fails in about eleven minutes, so iterating on it
+is cheap for someone who can watch it.
