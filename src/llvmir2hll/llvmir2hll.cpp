@@ -10,6 +10,7 @@
 #include <llvm/IR/Instructions.h>
 
 #include "retdec/llvmir2hll/llvmir2hll.h"
+#include "retdec/llvmir2hll/target_hll.h"
 #include "retdec/utils/io/log.h"
 
 using namespace llvm;
@@ -125,7 +126,7 @@ void logLlvmInputIrShapeDiag(const llvm::Module &m)
 // These used to be controllable by user via program options, but during
 // refactoring they become fixed. Implement it back if needed.
 //
-std::string TargetHLL = "c";
+// TargetHLL is defined in target_hll.cpp.
 std::string oArithmExprEvaluator = "c";
 bool ValidateModule = true;
 bool StrictFPUSemantics = false;

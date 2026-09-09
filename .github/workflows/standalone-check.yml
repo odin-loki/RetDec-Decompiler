@@ -57,6 +57,36 @@ jobs:
           CXX: ${{ matrix.cxx }}
         run: ./scripts/standalone_check.sh --audit
 
+  system-llvm:
+    name: system-LLVM suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Neither of these builds the pinned llvm-project -- that is a multi-hour
+      # job the ctest workflows do.  They build the two parts of the tree that
+      # need only the stable LLVM headers, against whatever LLVM the runner
+      # ships, so the suites behind RETDEC_TESTS get a signal on every push
+      # instead of on none.  gtest/gmock come from apt because
+      # tests/llvmir2hll uses TEST_F, MOCK_METHOD and gmock matchers, which the
+      # tests/standalone shim does not implement.
+      - name: Install LLVM headers and gtest
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq llvm-dev libgtest-dev libgmock-dev
+
+      # ADAPT-01. src/retdec/llvm_to_ssa.cpp is the single producer of the SSA
+      # every structural detector consumes, and its tests were built by nothing.
+      - name: ADAPT-01 llvm_to_ssa adapter
+        run: bash scripts/ci/check_llvm_adapter.sh
+
+      # L2H-01. tests/llvmir2hll is 1767 assertions over the component that
+      # writes the decompiler's C output, and ctest-linux configures with
+      # RETDEC_TESTS:BOOL=OFF, so none of them ran anywhere.
+      - name: L2H-01 llvmir2hll suite
+        run: bash scripts/ci/check_llvmir2hll_tests.sh --jobs 4
+
   sanitizers:
     name: asan+ubsan
     runs-on: ubuntu-latest

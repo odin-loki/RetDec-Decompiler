@@ -347,6 +347,11 @@ ShPtr<Statement> buildChain(const std::vector<ShPtr<Statement>>& stmts)
 	{
 		auto c = ucast<Statement>(s->clone());
 		c->setSuccessor(nullptr);
+		// No clone() carries the label over -- AssignStmt::clone() and its
+		// siblings copy metadata only.  The clone is what stays in the tree,
+		// so the label and every goto aimed at the original have to follow it,
+		// or the emitter writes `goto lab_x` with no `lab_x:` anywhere.
+		s->redirectGotosTo(c);
 		if (!head)
 			head = tail = c;
 		else
@@ -402,18 +407,21 @@ bool onePass(ShPtr<Function> func)
 								// Detach the between stmts from the main list:
 								// set is's successor straight to target.
 								is->setSuccessor(target);
-								// Build the new IfStmt.
-								auto newIf = IfStmt::create(negCond, chain, target);
-								newIf->transferLabelFrom(is);
-								is->redirectGotosTo(newIf);
-								// Replace is with newIf in place.
+								// Rewrite `is` in place: same statement
+								// object, inverted condition, the collected
+								// statements as its body.  Building a second
+								// IfStmt here and moving `is`'s label and
+								// inbound gotos onto it stranded both on a
+								// statement that was then dropped on the
+								// floor -- the label vanished from the output
+								// while the gotos still named it.
 								is->setFirstIfCond(negCond);
 								is->setFirstIfBody(chain);
 								// is already has successor = target. Done.
 								changed = true;
 								anyChange = true;
-								// Don't advance stmt; re-examine newIf in next
-								// iteration (outer fixed-point handles it).
+								// Don't advance stmt; the rewritten `is` is
+								// re-examined by the outer fixed point.
 							}
 						}
 					}

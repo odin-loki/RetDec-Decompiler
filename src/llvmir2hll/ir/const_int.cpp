@@ -5,6 +5,7 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include <llvm/Config/llvm-config.h>
 #include <llvm/ADT/SmallVector.h>
 
 #include "retdec/llvmir2hll/ir/const_int.h"
@@ -304,10 +305,19 @@ bool ConstInt::isMoreReadableInHexa() const {
 */
 ShPtr<ConstInt> ConstInt::create(std::int64_t value, unsigned bitWidth,
 		bool isSigned) {
+	// `implicitTrunc` only exists from LLVM 20 on; before it, truncation was
+	// the unconditional behaviour, so the two spellings mean the same thing.
+	// The pinned LLVM is far past 20 -- the older branch is here so this file
+	// still builds against a system LLVM, which is what
+	// scripts/ci/check_llvmir2hll_tests.sh uses.
+#if LLVM_VERSION_MAJOR >= 20
 	return ConstInt::create(
 		llvm::APInt(bitWidth, static_cast<uint64_t>(value), isSigned,
 			/*implicitTrunc=*/true),
 		isSigned);
+#else
+	return ConstInt::create(llvm::APInt(bitWidth, static_cast<uint64_t>(value), isSigned), isSigned);
+#endif
 }
 
 /**

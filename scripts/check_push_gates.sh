@@ -96,6 +96,7 @@ CHECKS=(
 	"doc       emitted C compiles (self-test):::bash scripts/ci/check_emitted_c_compiles.sh --self-test"
 	"standalone clang++ compile + warnings:::CXX=clang++ BUILD_DIR=build/standalone-clang bash scripts/standalone_check.sh --compile-only"
 	"standalone llvm_to_ssa adapter (system LLVM):::bash scripts/ci/check_llvm_adapter.sh"
+	"standalone llvmir2hll suite (system LLVM):::bash scripts/ci/check_llvmir2hll_tests.sh"
 )
 
 if [ "${1:-}" = "--list" ]; then
