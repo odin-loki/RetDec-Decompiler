@@ -699,3 +699,126 @@ TEST(PrologueParser, SysVx64_CalleeSaveOffsetsAreRelativeToRBP)
 		}
 	}
 }
+
+// ─── ABI regions for a function with no frame pointer ────────────────────────
+//
+// DVSA::collectAccesses normalises every SP-based access to
+// `memOffset - frameSize`, which puts the frame base at RSP-on-entry for a
+// frameless function -- so the return address it pushed sits at normalised
+// [0, 8). The carvers emitted the return-address region in coordinates that
+// only hold when a frame pointer is set up: Win64 used `frameSize`, SysV used
+// a flat +8. Two things went wrong at once: the real return-address access was
+// never carved and came out as an ordinary local at offset 0, and a genuine
+// stack-argument slot at the carved offset was deleted as ABI-reserved.
+
+TEST(AbiRegionCarver, Win64WithoutFramePointerPutsTheReturnAddressAtZero)
+{
+	PrologueParser pp(ABI::Win64, Arch::X86_64);
+	auto info = pp.parse({subImm(Reg::RSP, 40)});
+	ASSERT_FALSE(info.hasFramePointer);
+	ASSERT_EQ(40, info.frameSize);
+	AbiRegionCarver().carve(info);
+
+	bool ret = false, shadow = false;
+	for (auto& r: info.abiRegions)
+	{
+		if (r.kind == RegionKind::ReturnAddress && r.offset == 0) ret = true;
+		if (r.kind == RegionKind::ShadowSpace && r.offset == 8) shadow = true;
+	}
+	EXPECT_TRUE(ret) << "the return address is at [RSP_entry+0], i.e. normalised 0";
+	EXPECT_TRUE(shadow) << "the home area follows the return address";
+}
+
+TEST(AbiRegionCarver, SysVx64WithoutFramePointerPutsTheReturnAddressAtZero)
+{
+	PrologueParser pp(ABI::SysV_x86_64, Arch::X86_64);
+	auto info = pp.parse({subImm(Reg::RSP, 32)});
+	ASSERT_FALSE(info.hasFramePointer);
+	AbiRegionCarver().carve(info);
+
+	bool ret = false;
+	for (auto& r: info.abiRegions)
+		if (r.kind == RegionKind::ReturnAddress && r.offset == 0) ret = true;
+	EXPECT_TRUE(ret) << "normalised +8 is the first stack argument, not the return address";
+}
+
+TEST(AbiRegionCarver, PushesBeforeTheFrameAllocationShiftTheReturnAddress)
+{
+	// push rbx ; push r12 ; sub rsp, 32
+	// RSP moves 48, frameSize is 32, so the base sits 16 above the entry RSP
+	// and the return address is at normalised +16.
+	PrologueParser pp(ABI::SysV_x86_64, Arch::X86_64);
+	auto info = pp.parse({push(Reg::RBX), push(Reg::R12), subImm(Reg::RSP, 32)});
+	ASSERT_FALSE(info.hasFramePointer);
+	ASSERT_EQ(32, info.frameSize);
+	AbiRegionCarver().carve(info);
+
+	bool ret = false;
+	for (auto& r: info.abiRegions)
+		if (r.kind == RegionKind::ReturnAddress && r.offset == 16) ret = true;
+	EXPECT_TRUE(ret);
+}
+
+TEST(DVSA, AFramelessWin64ArgumentSlotIsNotMistakenForAbiSpace)
+{
+	PrologueParser pp(ABI::Win64, Arch::X86_64);
+	auto info = pp.parse({subImm(Reg::RSP, 40)});
+	AbiRegionCarver().carve(info);
+
+	SSAFunction fn("f");
+	auto* b = fn.addBlock("entry");
+	addMemRef(fn, b->id, (VarId)Reg::RSP, 40, 8); // [RSP_entry+0]  return address
+	addMemRef(fn, b->id, (VarId)Reg::RSP, 80, 8); // [RSP_entry+40] 5th stack argument
+	addMemRef(fn, b->id, (VarId)Reg::RSP, 0, 8);  // a local
+
+	DVSA dvsa;
+	auto res = dvsa.run(fn, info);
+
+	bool sawReturnAddressAsLocal = false, sawArgument = false;
+	for (auto& sl: res.slots)
+	{
+		if (sl.baseOffset == 0) sawReturnAddressAsLocal = true;
+		if (sl.baseOffset == 40) sawArgument = true;
+	}
+	EXPECT_FALSE(sawReturnAddressAsLocal) << "the return address was carved, so it cannot also be a variable";
+	EXPECT_TRUE(sawArgument) << "the caller's 5th argument slot was deleted as if it were ABI-reserved";
+}
+
+TEST(AbiRegionCarver, SysVx32WithoutFramePointerPutsTheReturnAddressAtZero)
+{
+	// sub esp, 16 -- the same shape as the 64-bit case, four bytes wide.
+	PrologueParser pp(ABI::SysV_x86_32, Arch::X86_32);
+	auto info = pp.parse({subImm(Reg::ESP, 16)});
+	ASSERT_FALSE(info.hasFramePointer);
+	AbiRegionCarver().carve(info);
+
+	bool ret = false;
+	for (auto& r: info.abiRegions)
+		if (r.kind == RegionKind::ReturnAddress && r.offset == 0) ret = true;
+	EXPECT_TRUE(ret);
+}
+
+TEST(PrologueParser, PrologueAdjustCountsPushesAndTheFrameAllocation)
+{
+	// prologueAdjust is the whole stack movement; frameSize is only the
+	// allocation, so a prologue that pushes has them differ by the pushes.
+	PrologueParser pp(ABI::SysV_x86_64, Arch::X86_64);
+
+	auto frameless = pp.parse({subImm(Reg::RSP, 32)});
+	EXPECT_EQ(32, frameless.prologueAdjust);
+	EXPECT_EQ(32, frameless.frameSize);
+
+	auto withPushes = pp.parse({push(Reg::RBX), push(Reg::R12), subImm(Reg::RSP, 32)});
+	EXPECT_EQ(48, withPushes.prologueAdjust);
+	EXPECT_EQ(32, withPushes.frameSize);
+
+	// MOV RBP, RSP resets pushCount so callee-save offsets come out relative
+	// to the new frame pointer; the stack still moved by the PUSH RBP.
+	auto withFp = pp.parse({push(Reg::RBP), mov(Reg::RBP, Reg::RSP), subImm(Reg::RSP, 32)});
+	EXPECT_EQ(40, withFp.prologueAdjust);
+	EXPECT_EQ(32, withFp.frameSize);
+
+	auto pushesOnly = pp.parse({push(Reg::RBX), push(Reg::R12)});
+	EXPECT_EQ(16, pushesOnly.prologueAdjust);
+	EXPECT_EQ(16, pushesOnly.frameSize);
+}

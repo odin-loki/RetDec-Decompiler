@@ -82,14 +82,28 @@ static void addRegion(PrologueInfo& info,
 
 // ─── x86-64 System V ─────────────────────────────────────────────────────────
 
-void AbiRegionCarver::carveSysVx64(PrologueInfo& info) const {
-    // Return address at [RBP+8]
-    addRegion(info, RegionKind::ReturnAddress, +8, 8, "return_address");
-    // Saved RBP (frame chain) at [RBP+0]
-    if (info.hasFramePointer)
-        addRegion(info, RegionKind::FrameChain, 0, 8, "saved_rbp");
+/// Where the caller-pushed return address lands in DVSA's coordinates.
+///
+/// With a frame pointer the base is RBP and the answer is a flat +8. Without
+/// one, DVSA normalises SP-based accesses by frameSize, which puts the base at
+/// (entry SP - prologueAdjust + frameSize) -- so the return address, which sits
+/// at the entry SP, is that many bytes above it. It was carved at frameSize on
+/// Win64 and at a flat +8 on SysV, both of which are only right when a frame
+/// pointer is set up: the real return-address access then escaped carving and
+/// came out as a local at offset 0, while a genuine stack-argument slot at the
+/// carved offset was deleted as ABI-reserved.
+static int64_t returnAddressOffset(const PrologueInfo& info, int64_t slotSize)
+{
+	if (info.hasFramePointer) return slotSize;
+	return info.prologueAdjust - info.frameSize;
+}
 
-    // Callee-saved register slots
+void AbiRegionCarver::carveSysVx64(PrologueInfo& info) const {
+	addRegion(info, RegionKind::ReturnAddress, returnAddressOffset(info, 8), 8, "return_address");
+	// Saved RBP (frame chain) at [RBP+0]
+	if (info.hasFramePointer) addRegion(info, RegionKind::FrameChain, 0, 8, "saved_rbp");
+
+	// Callee-saved register slots
     for (auto& [reg, off] : info.calleeSaves) {
         if (reg == Reg::RBP) continue;  // already carved as FrameChain
         std::string n = std::string("saved_") + regName(reg);
@@ -106,42 +120,38 @@ void AbiRegionCarver::carveSysVx64(PrologueInfo& info) const {
 // ─── x86-64 Windows ──────────────────────────────────────────────────────────
 
 void AbiRegionCarver::carveWin64(PrologueInfo& info) const {
-    // Return address is above the frame; we use offset relative to RBP or RSP.
-    // On Win64 without a frame pointer: return addr at [RSP + frameSize]
-    int64_t retOff = info.hasFramePointer ? +8 : info.frameSize;
-    addRegion(info, RegionKind::ReturnAddress, retOff, 8, "return_address");
+	int64_t retOff = returnAddressOffset(info, 8);
+	addRegion(info, RegionKind::ReturnAddress, retOff, 8, "return_address");
 
-    if (info.hasFramePointer)
-        addRegion(info, RegionKind::FrameChain, 0, 8, "saved_rbp");
+	if (info.hasFramePointer) addRegion(info, RegionKind::FrameChain, 0, 8, "saved_rbp");
 
-    // Callee saves
+	// Callee saves
     for (auto& [reg, off] : info.calleeSaves) {
         if (reg == Reg::RBP) continue;
         std::string n = std::string("saved_") + regName(reg);
         addRegion(info, RegionKind::CalleeSave, off, 8, n);
     }
 
-    // Shadow space: [RSP+0..31] at the time of the call to this function.
-    // This is above our local area; represented as positive offsets from RBP.
-    if (info.hasShadowSpace) {
-        // RSP+0..31 relative to callee's RSP at function entry = above retaddr
-        // We mark it as [retOff+8 .. retOff+8+32)
-        addRegion(info, RegionKind::ShadowSpace, retOff + 8, 32, "shadow_space");
-    }
+	// Shadow space: the 32 bytes the caller reserved above the return address,
+	// so it follows retOff immediately in the same coordinates.
+	if (info.hasShadowSpace)
+	{
+		addRegion(info, RegionKind::ShadowSpace, retOff + 8, 32, "shadow_space");
+	}
 }
 
 // ─── x86-32 ──────────────────────────────────────────────────────────────────
 
 void AbiRegionCarver::carveSysVx32(PrologueInfo& info) const {
-    addRegion(info, RegionKind::ReturnAddress, +4, 4, "return_address");
-    if (info.hasFramePointer)
-        addRegion(info, RegionKind::FrameChain, 0, 4, "saved_ebp");
+	addRegion(info, RegionKind::ReturnAddress, returnAddressOffset(info, 4), 4, "return_address");
+	if (info.hasFramePointer) addRegion(info, RegionKind::FrameChain, 0, 4, "saved_ebp");
 
-    for (auto& [reg, off] : info.calleeSaves) {
-        if (reg == Reg::EBP) continue;
+	for (auto& [reg, off]: info.calleeSaves)
+	{
+		if (reg == Reg::EBP) continue;
         std::string n = std::string("saved_") + regName(reg);
         addRegion(info, RegionKind::CalleeSave, off, 4, n);
-    }
+	}
 }
 
 // ─── AArch64 ─────────────────────────────────────────────────────────────────

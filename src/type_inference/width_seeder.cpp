@@ -153,13 +153,26 @@ static uint16_t resolvePhiWidth(const SSAFunction& fn,
     if (!phiVal->defPhi) return 0;
     uint16_t maxW = 0;
     for (auto& [predId, incoming] : phiVal->defPhi->operands) {
-        auto it = known.find(incoming);
-        if (it != known.end() && it->second > maxW) maxW = it->second;
-        else {
-            const IrValue* iv = fn.value(incoming);
+		// The else belongs to the lookup, not to the whole conjunction. It
+		// was attached to `it != known.end() && it->second > maxW`, so an
+		// operand that IS seeded but does not strictly beat the running
+		// maximum -- equality included -- fell through to its raw
+		// IrValue::width, which defaults to 64 and is exactly what the seeded
+		// map exists to override for MemRefs, FlagBundles and Load-defined
+		// values. A phi merging two one-bit flag bundles came out 64 bits
+		// wide, and a phi of a 32-bit register and a byte load came out 64 or
+		// 32 depending on which operand was pushed first.
+		auto it = known.find(incoming);
+		if (it != known.end())
+		{
+			if (it->second > maxW) maxW = it->second;
+		}
+		else
+		{
+			const IrValue* iv = fn.value(incoming);
             if (iv && iv->width > maxW) maxW = iv->width;
-        }
-    }
+		}
+	}
     return maxW;
 }
 

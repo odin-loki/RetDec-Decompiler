@@ -746,3 +746,106 @@ TEST(TypeInferenceBounds, AbsoluteAddressLoadWithNoBaseRegisterDoesNotCrash)
 	pass.run(fn);
 	EXPECT_EQ(64u, pass.typeOf(mem->id).width);
 }
+
+// ─── A phi wider than any of its operands ────────────────────────────────────
+//
+// resolvePhiWidth's `else` was attached to `it != known.end() && it->second >
+// maxW` rather than to the map lookup alone. So an operand that IS seeded, but
+// whose seeded width does not strictly beat the running maximum, fell through
+// to the raw IrValue::width -- which defaults to 64 and is exactly what the
+// seeded map exists to override for MemRefs, FlagBundles and Load-defined
+// values. Equality is enough to trigger it, so even a phi whose operands all
+// carry the same correct narrow width came out 64 bits wide.
+//
+// WidthSeeder::Phi_InheritsMaxWidth above cannot see this: with one operand,
+// maxW is still 0 when it is examined, so the first branch always wins.
+
+TEST(WidthSeeder, PhiOfTwoFlagBundlesIsOneBitWide)
+{
+	SSAFunction fn("f");
+	auto* entry = fn.addBlock("entry");
+	auto* other = fn.addBlock("other");
+	auto* merge = fn.addBlock("merge");
+	entry->addSucc(merge->id);
+	other->addSucc(merge->id);
+	merge->addPred(entry->id);
+	merge->addPred(other->id);
+
+	VarId x = fn.declareVar("flags");
+	IrValue* f1 = fn.allocValue(ValueKind::FlagBundle, x);
+	IrInstr* c1 = fn.addInstr(entry->id, IrInstr::Op::Compare, 0x1000);
+	c1->defValue = f1->id;
+	f1->defInstr = c1;
+	IrValue* f2 = fn.allocValue(ValueKind::FlagBundle, x);
+	IrInstr* c2 = fn.addInstr(other->id, IrInstr::Op::Compare, 0x2000);
+	c2->defValue = f2->id;
+	f2->defInstr = c2;
+
+	PhiNode* phi = fn.addPhi(merge->id, x);
+	phi->operands.push_back({entry->id, f1->id});
+	phi->operands.push_back({other->id, f2->id});
+	IrValue* pv = fn.allocValue(ValueKind::Phi, x);
+	pv->defPhi = phi;
+	phi->result = pv->id;
+
+	WidthSeeder ws;
+	auto r = ws.run(fn);
+	ASSERT_EQ(1u, r.widths[f1->id]);
+	ASSERT_EQ(1u, r.widths[f2->id]);
+	EXPECT_EQ(1u, r.widths[pv->id]) << "both operands are one bit wide, so the merge cannot be wider";
+}
+
+TEST(WidthSeeder, PhiWidthDoesNotDependOnOperandOrder)
+{
+	// A 32-bit register merged with an 8-bit load. Whichever comes first, the
+	// phi is 32 bits: the widest operand, and nothing wider.
+	auto build = [](bool wideFirst) {
+		SSAFunction fn("f");
+		auto* entry = fn.addBlock("entry");
+		auto* loop = fn.addBlock("loop");
+		auto* merge = fn.addBlock("merge");
+		entry->addSucc(merge->id);
+		loop->addSucc(merge->id);
+		merge->addPred(entry->id);
+		merge->addPred(loop->id);
+
+		VarId x = fn.declareVar("x");
+		IrValue* wide = fn.allocValue(ValueKind::VirtualReg, x);
+		wide->width = 32;
+		IrInstr* asg = fn.addInstr(entry->id, IrInstr::Op::Assign, 0x1000);
+		asg->defValue = wide->id;
+		wide->defInstr = asg;
+
+		IrValue* mem = fn.allocValue(ValueKind::MemRef);
+		mem->memWidth = 1;
+		// A byte load leaves the loaded value's own width at the 64 default;
+		// the seeded map is what says it is 8.
+		IrValue* narrow = fn.allocValue(ValueKind::VirtualReg, x);
+		IrInstr* ld = fn.addInstr(loop->id, IrInstr::Op::Load, 0x2000);
+		ld->defValue = narrow->id;
+		ld->uses.push_back({mem->id, 0});
+		narrow->defInstr = ld;
+
+		PhiNode* phi = fn.addPhi(merge->id, x);
+		if (wideFirst)
+		{
+			phi->operands.push_back({entry->id, wide->id});
+			phi->operands.push_back({loop->id, narrow->id});
+		}
+		else
+		{
+			phi->operands.push_back({loop->id, narrow->id});
+			phi->operands.push_back({entry->id, wide->id});
+		}
+		IrValue* pv = fn.allocValue(ValueKind::Phi, x);
+		pv->defPhi = phi;
+		phi->result = pv->id;
+
+		WidthSeeder ws;
+		auto r = ws.run(fn);
+		return r.widths[pv->id];
+	};
+
+	EXPECT_EQ(32u, build(/*wideFirst=*/true)) << "the 8-bit operand fell back to its raw 64";
+	EXPECT_EQ(32u, build(/*wideFirst=*/false));
+}

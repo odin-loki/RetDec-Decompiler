@@ -296,7 +296,16 @@ struct PrologueInfo
 	bool hasRedZone = false;      ///< Only for SysV_x86_64
 	bool hasShadowSpace = false;  ///< Only for Win64
 
-	int64_t frameSize = 0;       ///< total frame allocation (positive)
+	int64_t frameSize = 0; ///< total frame allocation (positive)
+	/// Bytes the prologue moved the stack pointer down, pushes included.
+	///
+	/// frameSize is only the frame allocation, so the two differ whenever the
+	/// prologue also pushed. DVSA normalises SP-based accesses by frameSize,
+	/// which puts the frame base at (entry SP - prologueAdjust + frameSize) --
+	/// so `prologueAdjust - frameSize` is where the return address the caller
+	/// pushed lands in DVSA's coordinates for a function with no frame
+	/// pointer. Zero for the ABIs whose parsers do not set it.
+	int64_t prologueAdjust = 0;
 	int64_t localAreaStart = 0;  ///< first byte below frame pointer for locals
 	int64_t localAreaEnd = 0;    ///< last  byte (exclusive) of local area
 	int64_t redZoneStart = -128; ///< only valid if hasRedZone

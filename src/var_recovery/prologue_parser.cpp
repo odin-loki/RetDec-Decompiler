@@ -73,6 +73,10 @@ PrologueInfo PrologueParser::parseSysVx64(const std::vector<RawInstr>& instrs) c
 	info.arch = Arch::X86_64;
 
 	int64_t pushCount = 0; // PUSH instructions seen before frame alloc
+	// Total bytes the prologue moves RSP. Tracked separately from pushCount,
+	// which MOV RBP,RSP resets so that callee-save offsets come out relative
+	// to the new frame pointer.
+	int64_t spMoved = 0;
 	bool seenPushRBP = false;
 	bool seenMovRBPRSP = false;
 	int64_t subRSP = 0;
@@ -85,6 +89,7 @@ PrologueInfo PrologueParser::parseSysVx64(const std::vector<RawInstr>& instrs) c
 		{
 			seenPushRBP = true;
 			pushCount++;
+			spMoved += 8;
 			continue;
 		}
 		if (ins.op == RawInstr::Op::Mov && ins.dst == Reg::RBP && ins.src == Reg::RSP)
@@ -98,6 +103,7 @@ PrologueInfo PrologueParser::parseSysVx64(const std::vector<RawInstr>& instrs) c
 		if (ins.op == RawInstr::Op::Sub && ins.dst == Reg::RSP && ins.hasImm)
 		{
 			subRSP = ins.imm;
+			spMoved += subRSP;
 			break;
 		}
 		// Callee-save pushes (R12-R15, RBX, etc.) after MOV RBP,RSP
@@ -110,6 +116,7 @@ PrologueInfo PrologueParser::parseSysVx64(const std::vector<RawInstr>& instrs) c
 				int64_t off = -(pushCount + 1) * 8;
 				info.calleeSaves.push_back({r, off});
 				pushCount++;
+				spMoved += 8;
 				continue;
 			}
 		}
@@ -126,6 +133,7 @@ PrologueInfo PrologueParser::parseSysVx64(const std::vector<RawInstr>& instrs) c
 	}
 
 	info.frameSize = subRSP > 0 ? subRSP : pushCount * 8;
+	info.prologueAdjust = spMoved;
 	info.localAreaStart = -(int64_t)info.frameSize;
 	info.localAreaEnd = 0;  // relative to RBP
 	info.hasRedZone = true; // SysV x64 has a 128-byte red zone
@@ -145,6 +153,7 @@ PrologueInfo PrologueParser::parseWin64(const std::vector<RawInstr>& instrs) con
 	int64_t pushCount = 0;
 	bool seenPushRBP = false;
 	int64_t subRSP = 0;
+	int64_t spMoved = 0; ///< total bytes the prologue moves RSP
 
 	for (int i = 0; i < (int)instrs.size() && i < kMaxPrologueInstrs; ++i)
 	{
@@ -153,12 +162,14 @@ PrologueInfo PrologueParser::parseWin64(const std::vector<RawInstr>& instrs) con
 		if (ins.op == RawInstr::Op::Sub && ins.dst == Reg::RSP && ins.hasImm)
 		{
 			subRSP = ins.imm;
+			spMoved += subRSP;
 			break;
 		}
 		if (ins.op == RawInstr::Op::Push && ins.src == Reg::RBP)
 		{
 			seenPushRBP = true;
 			pushCount++;
+			spMoved += 8;
 			continue;
 		}
 		if (ins.op == RawInstr::Op::Push)
@@ -171,6 +182,7 @@ PrologueInfo PrologueParser::parseWin64(const std::vector<RawInstr>& instrs) con
 				int64_t off = -(pushCount + 1) * 8;
 				info.calleeSaves.push_back({r, off});
 				pushCount++;
+				spMoved += 8;
 				continue;
 			}
 		}
@@ -184,6 +196,7 @@ PrologueInfo PrologueParser::parseWin64(const std::vector<RawInstr>& instrs) con
 	info.hasRedZone = false;
 
 	info.frameSize = subRSP > 0 ? subRSP : pushCount * 8;
+	info.prologueAdjust = spMoved;
 	info.localAreaStart = -(int64_t)info.frameSize;
 	info.localAreaEnd = 0;
 
@@ -202,6 +215,7 @@ PrologueInfo PrologueParser::parseSysVx32(const std::vector<RawInstr>& instrs) c
 	bool seenPushEBP = false;
 	bool seenMovEBPESP = false;
 	int64_t subESP = 0;
+	int64_t spMoved = 0; ///< total bytes the prologue moves ESP
 
 	for (int i = 0; i < (int)instrs.size() && i < kMaxPrologueInstrs; ++i)
 	{
@@ -211,6 +225,7 @@ PrologueInfo PrologueParser::parseSysVx32(const std::vector<RawInstr>& instrs) c
 		{
 			seenPushEBP = true;
 			pushCount++;
+			spMoved += 4;
 			continue;
 		}
 		if (ins.op == RawInstr::Op::Mov && ins.dst == Reg::EBP && ins.src == Reg::ESP)
@@ -227,6 +242,7 @@ PrologueInfo PrologueParser::parseSysVx32(const std::vector<RawInstr>& instrs) c
 		if (ins.op == RawInstr::Op::Sub && ins.dst == Reg::ESP && ins.hasImm)
 		{
 			subESP = ins.imm;
+			spMoved += subESP;
 			break;
 		}
 		if (ins.op == RawInstr::Op::Push)
@@ -238,6 +254,7 @@ PrologueInfo PrologueParser::parseSysVx32(const std::vector<RawInstr>& instrs) c
 				int64_t off = -(pushCount + 1) * 4;
 				info.calleeSaves.push_back({r, off});
 				pushCount++;
+				spMoved += 4;
 				continue;
 			}
 		}
@@ -246,6 +263,7 @@ PrologueInfo PrologueParser::parseSysVx32(const std::vector<RawInstr>& instrs) c
 
 	info.hasFramePointer = seenPushEBP && seenMovEBPESP;
 	info.frameSize = subESP > 0 ? subESP : pushCount * 4;
+	info.prologueAdjust = spMoved;
 	info.localAreaStart = -(int64_t)info.frameSize;
 	info.localAreaEnd = 0;
 	info.hasRedZone = false;
