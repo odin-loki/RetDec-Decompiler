@@ -8,6 +8,7 @@
 #include <cassert>
 #include <climits>
 #include <cstdio>
+#include <stdexcept>
 #include <vector>
 
 #include "retdec/common/address.h"
@@ -49,6 +50,15 @@ Address::Address(const std::string &a) :
 	catch (const std::invalid_argument&)
 	{
 		// nothing -> undefined value.
+	}
+	catch (const std::out_of_range&)
+	{
+		// std::stoull throws this for any numeral above ULLONG_MAX, and it was
+		// not caught, so it escaped a constructor documented to yield an
+		// undefined address for anything it cannot parse. Every address in a
+		// config file arrives here (src/serdes/address.cpp), and no caller
+		// catches it: `"entryPoint": "0x1FFFFFFFFFFFFFFFFF"` aborted the
+		// process.
 	}
 }
 

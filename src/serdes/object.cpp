@@ -59,7 +59,14 @@ void deserialize(const rapidjson::Value& val, common::Object& o)
 	common::Storage storage;
 	deserialize(val, JSON_storage, storage);
 
-	o = common::Object(deserializeString(val, JSON_name), storage);
+	// Object's constructor asserts a non-empty name. This is a file, so an
+	// entry with no "name" left the object as it came in rather than aborting.
+	const std::string name = deserializeString(val, JSON_name);
+	if (name.empty())
+	{
+		return;
+	}
+	o = common::Object(name, storage);
 
 	o.setRealName( deserializeString(val, JSON_realName) );
 	o.setCryptoDescription( deserializeString(val, JSON_cryptoDesc) );

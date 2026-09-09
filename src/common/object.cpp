@@ -204,7 +204,9 @@ const Object* GlobalVarContainer::getObjectByAddress(
 std::pair<GlobalVarContainer::iterator,bool> GlobalVarContainer::insert(
 		const Object& e)
 {
-	assert(e.getStorage().isMemory());
+	// A refusal, not a precondition: a "globals" entry in a config file can
+	// name a register, or omit its address entirely, and both arrive here. An
+	// assert would make that a file-controlled abort.
 	if (!e.getStorage().isMemory())
 	{
 		return {end(), false};
@@ -218,6 +220,17 @@ std::pair<GlobalVarContainer::iterator,bool> GlobalVarContainer::insert(
 	auto fit = find(e.getName());
 	if (fit != end())
 	{
+		// _addr2global's entry for the node about to be dropped is keyed by
+		// THAT node's address, which is not e's -- that is the whole reason
+		// this branch exists. Dropping the node without erasing the entry
+		// leaves the map holding a pointer into the freed set node, and
+		// getObjectByAddress() hands it straight to its callers. Two "globals"
+		// entries in a config file with the same name at different addresses
+		// are enough.
+		if (fit->getStorage().isMemory())
+		{
+			_addr2global.erase(fit->getStorage().getAddress());
+		}
 		ObjectSetContainer::erase(fit);
 	}
 
@@ -257,12 +270,19 @@ void GlobalVarContainer::clear()
  */
 size_t GlobalVarContainer::erase(const Object& val)
 {
-	assert(val.getStorage().isMemory());
-	if (val.getStorage().isMemory())
-	{
-		_addr2global.erase(val.getStorage().getAddress());
-	}
+	// find() matches on the id (the name), so the stored object need not be
+	// val: it can sit at a different address. Erasing val's address from
+	// _addr2global rather than the stored object's left the stored object's
+	// entry behind, pointing at a node this call is about to free.
 	auto it = find(val.getId());
+	if (it == end())
+	{
+		return 0;
+	}
+	if (it->getStorage().isMemory())
+	{
+		_addr2global.erase(it->getStorage().getAddress());
+	}
 	return ObjectSetContainer::erase(*it);
 }
 

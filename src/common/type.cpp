@@ -53,10 +53,14 @@ void Type::setLlvmIr(const std::string& t)
 
 /**
  * @return Type's ID is its LLVM IR representation.
+ *
+ * Reads the member rather than calling getLlvmIr(), which asserts the type is
+ * defined. This is a container key, and an undefined type reaches a container
+ * straight from a config file: `{"structures": [{}]}`.
  */
 std::string Type::getId() const
 {
-	return getLlvmIr();
+	return _llvmIr;
 }
 
 /**
@@ -76,8 +80,13 @@ std::string Type::getLlvmIr() const
  */
 bool Type::operator<(const Type& val) const
 {
-	assert(isDefined());
-	return getLlvmIr() < val.getLlvmIr();
+	// No assert, and no getLlvmIr(), which has one. An ordering has to be
+	// total over every value the type can hold, and an undefined one -- a
+	// "structures" entry in a config file with no "llvmIr" -- is one of them.
+	// It sorted after nothing and aborted the process instead, on the second
+	// structure inserted. The empty string sorts before every other, which is
+	// where an undefined type belongs.
+	return _llvmIr < val._llvmIr;
 }
 
 /**
@@ -85,8 +94,7 @@ bool Type::operator<(const Type& val) const
  */
 bool Type::operator==(const Type& val) const
 {
-	assert(isDefined());
-	return getLlvmIr() == val.getLlvmIr();
+	return _llvmIr == val._llvmIr;
 }
 
 } // namespace common

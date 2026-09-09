@@ -598,6 +598,44 @@ TEST_F(AddressRangeContainerTests, RemoveAndGetRange)
 	EXPECT_EQ(AddressRange(0x50, 0x100), *c.getRange(0xff));
 }
 
+//
+//=============================================================================
+//  Address(const std::string&)
+//=============================================================================
+//
+
+// The constructor is documented to yield an undefined address for anything it
+// cannot parse, and it caught std::invalid_argument to do so. std::stoull also
+// throws std::out_of_range, for any numeral above ULLONG_MAX, and that escaped
+// -- out of a constructor every address in a config file goes through, with no
+// caller anywhere that catches it. `"entryPoint": "0x1FFFFFFFFFFFFFFFFF"`
+// aborted the process.
+TEST(AddressFromStringTests, OutOfRangeNumeralIsUndefinedRatherThanThrowing)
+{
+	EXPECT_NO_THROW({
+		Address a("0x1FFFFFFFFFFFFFFFFF");
+		EXPECT_FALSE(a.isDefined());
+	});
+	EXPECT_NO_THROW({
+		Address a("99999999999999999999999999");
+		EXPECT_FALSE(a.isDefined());
+	});
+}
+
+TEST(AddressFromStringTests, UnparsableStringIsStillUndefined)
+{
+	EXPECT_FALSE(Address("").isDefined());
+	EXPECT_FALSE(Address("nonsense").isDefined());
+	EXPECT_FALSE(Address("0x10 trailing").isDefined());
+}
+
+TEST(AddressFromStringTests, ParsableStringStillParses)
+{
+	EXPECT_EQ(0x1000, Address("0x1000"));
+	EXPECT_EQ(4096, Address("4096"));
+	EXPECT_EQ(0xFFFFFFFFFFFFFFFEull, Address("0xFFFFFFFFFFFFFFFE"));
+}
+
 } // namespace tests
 } // namespace common
 } // namespace retdec

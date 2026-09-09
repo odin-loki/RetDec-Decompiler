@@ -40,6 +40,52 @@ TEST_F(GlobalVarContainerTests, ElementWithTheSameNameGetsReplaced)
 	EXPECT_EQ(0x4000, globals.getObjectByName("g2")->getStorage().getAddress());
 }
 
+// The replaced element's address must stop resolving.
+//
+// insert() dropped the old set node without erasing its _addr2global entry,
+// and that entry is keyed by the OLD address -- so getObjectByAddress(0x2000)
+// returned a pointer into the freed node. The test above walks the same path
+// and passes, because it never asks about 0x2000.
+//
+// Two "globals" entries in a config file with the same name at different
+// addresses are enough to reach it.
+TEST_F(GlobalVarContainerTests, ReplacedElementsOldAddressNoLongerResolves)
+{
+	globals.insert( Object("g", common::Storage::inMemory(0x1000)) );
+	ASSERT_NE(nullptr, globals.getObjectByAddress(0x1000));
+
+	globals.insert( Object("g", common::Storage::inMemory(0x2000)) );
+
+	EXPECT_EQ(nullptr, globals.getObjectByAddress(0x1000));
+	ASSERT_NE(nullptr, globals.getObjectByAddress(0x2000));
+	EXPECT_EQ("g", globals.getObjectByAddress(0x2000)->getName());
+	EXPECT_EQ(1u, globals.size());
+}
+
+// erase() looked up the element by id and then erased the ARGUMENT's address
+// from the map, so erasing by an object that merely shares the name left the
+// stored element's map entry pointing at a node it had just freed.
+TEST_F(GlobalVarContainerTests, EraseByNameAloneClearsTheStoredAddress)
+{
+	globals.insert( Object("g", common::Storage::inMemory(0x1000)) );
+
+	globals.erase( Object("g", common::Storage::inMemory(0x9000)) );
+
+	EXPECT_EQ(nullptr, globals.getObjectByAddress(0x1000));
+	EXPECT_EQ(nullptr, globals.getObjectByName("g"));
+	EXPECT_EQ(0u, globals.size());
+}
+
+// A "globals" entry that names a register reaches insert() straight from a
+// config file. It used to assert, which is a file-controlled abort.
+TEST_F(GlobalVarContainerTests, NonMemoryStorageIsRefusedRatherThanAsserted)
+{
+	auto res = globals.insert( Object("g", common::Storage::inRegister("eax")) );
+
+	EXPECT_FALSE(res.second);
+	EXPECT_EQ(0u, globals.size());
+}
+
 TEST_F(GlobalVarContainerTests, ElementWithTheSameAddressGetsReplaced)
 {
 	globals.insert( Object("g1", common::Storage::inMemory(0x1000)) );

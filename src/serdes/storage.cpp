@@ -84,7 +84,15 @@ void deserialize(const rapidjson::Value& val, common::Storage& s)
 	{
 		common::Address a;
 		deserialize(val, JSON_value, a);
-		s = common::Storage::inMemory(a);
+		// A missing or non-string "value" leaves this undefined, and
+		// Storage::inMemory asserts that it is not -- a file-controlled abort
+		// in any build with asserts on, and a global registered at
+		// 0xFFFFFFFFFFFFFFFF in one without. An address that did not parse
+		// leaves the storage undefined, which is what it is.
+		if (a.isDefined())
+		{
+			s = common::Storage::inMemory(a);
+		}
 	}
 	else if (type == common::Storage::eType::REGISTER)
 	{
