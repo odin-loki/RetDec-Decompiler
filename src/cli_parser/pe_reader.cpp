@@ -57,8 +57,24 @@ bool PeReader::open(const uint8_t* data, size_t size)
 {
 	data_ = data;
 	size_ = size;
+
+	// Everything derived from the previous file has to go, not just the two
+	// flags this used to clear. metadataRoot_ is a std::span into the previous
+	// buffer -- it dangles the moment that buffer is freed -- and the section
+	// table, stream headers, CLI header, CLR version and machine word all
+	// answered for the old file after a second open() that failed to parse.
 	valid_ = false;
 	hasCli_ = false;
+	is64_ = false;
+	machine_ = 0;
+	error_.clear();
+	clrVersion_.clear();
+	cliHeader_ = CLIHeader{};
+	comDir_ = DataDirectory{};
+	sections_.clear();
+	streams_.clear();
+	metadataRoot_ = {};
+	metadataRootOffset_ = 0;
 
 	if (size < 0x40)
 	{

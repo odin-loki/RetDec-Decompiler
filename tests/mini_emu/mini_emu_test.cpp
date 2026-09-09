@@ -496,3 +496,72 @@ TEST(MiniEmuTest, StopReasonToString)
 	EXPECT_EQ(stopReasonToString(StopReason::Halt), "Halt");
 	EXPECT_EQ(stopReasonToString(StopReason::Error), "Error");
 }
+
+// ─── REX.R does not extend an opcode extension ───────────────────────────────
+
+// Group 5 (opcode FF) puts an opcode extension in the ModRM reg field: /2 is
+// CALL, /4 is JMP, /6 is PUSH. REX.R extends a reg field that names a
+// REGISTER, and does not apply here -- but the decoder folded it in anyway, so
+// a REX-prefixed `jmp rax` came out as reg 12, matched none of the arms, and
+// decoded as nothing at all. `48 FF E0` is exactly that instruction.
+TEST(MiniEmuTest, ARexPrefixedIndirectJumpIsStillAJump)
+{
+	MiniEmu emu;
+	PagePerms rx{true, false, true};
+
+	// 0x1000: 48 B8 <imm64 0x2000>   mov rax, 0x2000
+	//         48 FF E0                jmp rax          (REX.W + FF /4)
+	// 0x2000: F4                      hlt
+	std::vector<uint8_t> code = {
+		0x48, 0xB8, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x4C, 0xFF, 0xE0,   // REX.WR + FF /4 -- REX.R set, and irrelevant here
+	};
+	emu.mapPage(0x1000, rx, code.data(), code.size());
+	const uint8_t hlt[] = {0xF4};
+	emu.mapPage(0x2000, rx, hlt, sizeof(hlt));
+
+	auto res = emu.run(0x1000, 64);
+	// The jump must have been taken: three instructions, ending just past the
+	// HLT on the target page. Without the fix the jump decoded as nothing and
+	// the emulator walked on through the first page until it hit the 64
+	// instruction cap, at 0x104b.
+	EXPECT_EQ(3u, res.instructionsExecuted)
+		<< "the REX-prefixed indirect jump was not decoded";
+	EXPECT_EQ(0x2001u, res.epAfterUnpack);
+
+	// The same instruction without REX.R already worked, and still does.
+	MiniEmu plain;
+	std::vector<uint8_t> noRexR = {
+		0x48, 0xB8, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x48, 0xFF, 0xE0,
+	};
+	plain.mapPage(0x1000, rx, noRexR.data(), noRexR.size());
+	plain.mapPage(0x2000, rx, hlt, sizeof(hlt));
+	auto plainRes = plain.run(0x1000, 64);
+	EXPECT_EQ(3u, plainRes.instructionsExecuted);
+	EXPECT_EQ(0x2001u, plainRes.epAfterUnpack);
+}
+
+// buildDump sized its flat image from maxVA - minVA, the span between the
+// lowest and highest addresses the emulator touched. The emulator's stack sits
+// at kDefaultStackBase = 0x00007FFFFFFF0000, so any function that pushes
+// anything leaves a written region 128 TiB above the image -- and this
+// allocated all of it. `push rax; hlt` at 0x1000 threw std::bad_alloc out of
+// unpack(). Capping only the allocation was not enough: the section walk
+// indexes the dump by the region's offset from minVA, so the stack region then
+// read past the end of it (SIGSEGV in looksLikeCode). The window is chosen
+// first and everything downstream works from the regions inside it.
+TEST(MiniUnpackerTest, AStackWriteFarFromTheImageDoesNotSizeTheDump)
+{
+	std::vector<uint8_t> code = {0x50, 0xF4}; // push rax ; hlt
+	FormatResult fmt = makeFormat(0x1000, 0x1000, {{0x1000, code.size()}});
+	fmt.sections[0].isWritable = true;
+
+	MiniUnpacker up;
+	auto r = up.unpack(code.data(), code.size(), fmt, 100);
+	EXPECT_TRUE(r.success);
+	// One page, not 128 TiB and not the 256 MiB cap either -- the dump is
+	// sized from the regions that survived the window.
+	EXPECT_LE(r.dump.size(), 0x10000u) << "dump is " << r.dump.size() << " bytes";
+	EXPECT_GT(r.dump.size(), 0u);
+}

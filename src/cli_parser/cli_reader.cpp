@@ -3,6 +3,7 @@
  * @brief Top-level .NET CLI reader — produces a BcModule from a PE assembly.
  */
 
+#include <unordered_map>
 #include <memory>
 #include "retdec/cli_parser/cli_reader.h"
 
@@ -91,7 +92,20 @@ CliReadResult CLIReader::read(const uint8_t* data, size_t size, const std::strin
 		return result;
 	}
 
-	// Phase 4: Build type name cache
+	// Phase 4a: Build NestedClass map.
+	//
+	// This used to be Phase 6, after buildTypeNames() -- which is the only
+	// thing that reads it. nestedMap_ was empty every time buildTypeNames ran,
+	// so its "fix up nested type names (Outer+Inner)" loop had nothing to
+	// iterate and no nested type ever got its enclosing type's name.
+	uint32_t numNested = tables_->rowCount(TableId::NestedClass);
+	for (uint32_t i = 1; i <= numNested; ++i)
+	{
+		auto row = tables_->nestedClass(i);
+		nestedMap_.emplace_back(row.nestedClass, row.enclosingClass);
+	}
+
+	// Phase 4b: Build type name cache
 	if (!buildTypeNames())
 	{
 		result.error = "Failed to build type name cache";
@@ -101,14 +115,6 @@ CliReadResult CLIReader::read(const uint8_t* data, size_t size, const std::strin
 	// Phase 5: Build sig decoder + CIL lifter
 	sigDecoder_ = std::make_unique<CliSigDecoder>(this);
 	if (opts_.decodeCIL) cilLifter_ = std::make_unique<CILLifter>(this);
-
-	// Phase 6: Build NestedClass map
-	uint32_t numNested = tables_->rowCount(TableId::NestedClass);
-	for (uint32_t i = 1; i <= numNested; ++i)
-	{
-		auto row = tables_->nestedClass(i);
-		nestedMap_.emplace_back(row.nestedClass, row.enclosingClass);
-	}
 
 	// Phase 7: Determine assembly name
 	std::string asmName = name;
@@ -222,15 +228,48 @@ bool CLIReader::buildTypeNames()
 		typeDefNames_[i - 1] = makeClrName(ns, name);
 	}
 
-	// Fix up nested type names (Outer+Inner)
+	// Fix up nested type names (Outer+Inner).
+	//
+	// ECMA-335 II.22.32 does not order the NestedClass rows, and a nested type
+	// can itself enclose another, so the enclosing type's own name may not be
+	// final yet. Resolve each chain from its outermost type instead of reading
+	// whatever typeDefNames_ happens to hold.
+	std::unordered_map<uint32_t, uint32_t> enclosingOf;
 	for (const auto& [nested, enclosing]: nestedMap_)
 	{
 		if (nested == 0 || nested > numTypeDefs) continue;
 		if (enclosing == 0 || enclosing > numTypeDefs) continue;
-		auto row = tables_->typeDef(nested);
-		std::string innerName = heaps_->strings.get(row.name);
-		// Get enclosing's FQ name, then append +Inner
-		typeDefNames_[nested - 1] = typeDefNames_[enclosing - 1] + "+" + innerName;
+		if (nested == enclosing) continue;   // a type cannot enclose itself
+		enclosingOf[nested] = enclosing;
+	}
+
+	// A malformed table can name a cycle; the chain length is bounded by the
+	// number of type definitions, so anything longer is one.
+	for (const auto& [nested, enclosing]: enclosingOf)
+	{
+		std::vector<uint32_t> chain;
+		uint32_t cur = nested;
+		bool cyclic = false;
+		while (true)
+		{
+			chain.push_back(cur);
+			auto it = enclosingOf.find(cur);
+			if (it == enclosingOf.end()) break;
+			cur = it->second;
+			if (chain.size() > numTypeDefs) { cyclic = true; break; }
+		}
+		if (cyclic) continue;
+		(void)enclosing;
+
+		// chain is innermost..outermost; the outermost keeps its namespaced
+		// name and each step inwards appends "+Name".
+		std::string full = typeDefNames_[chain.back() - 1];
+		for (std::size_t k = chain.size(); k-- > 1;)
+		{
+			auto row = tables_->typeDef(chain[k - 1]);
+			full += "+" + heaps_->strings.get(row.name);
+		}
+		typeDefNames_[nested - 1] = full;
 	}
 
 	// TypeRef names

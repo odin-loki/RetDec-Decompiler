@@ -46,6 +46,13 @@ struct UnpackerOutput {
 
 class MiniUnpacker {
 public:
+    /// Largest flat dump buildDump() will materialise. The span it works from
+    /// is the distance between the lowest and highest addresses the emulator
+    /// touched, and those come from wherever the unpacked code wrote: one
+    /// region near the image base and one near the stack put 128 TiB between
+    /// them. 256 MiB is larger than any unpacked image.
+    static constexpr uint64_t kMaxDumpBytes = 256ull * 1024 * 1024;
+
     MiniUnpacker() = default;
 
     /**

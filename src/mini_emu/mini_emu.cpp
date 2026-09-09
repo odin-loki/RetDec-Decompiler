@@ -678,7 +678,11 @@ struct MiniEmu::Impl
 			int mod = modrm >> 6;
 			int rm = modrm & 7;
 			if (rexB) rm |= 8;
-			if (rexR) reg |= 8;
+			// REX.R extends a reg field that names a REGISTER. In group 5 the
+			// reg field is an opcode extension -- /2 is CALL, /4 is JMP, /6 is
+			// PUSH -- and REX.R does not extend those. Folding it in made a
+			// REX-prefixed indirect JMP decode as reg 12, matching none of the
+			// arms below, so `jmp rax` behind a REX prefix did nothing at all.
 			if (reg == 4)
 			{ // JMP r/m64
 				uint64_t target = 0;
@@ -940,7 +944,12 @@ struct MiniEmu::Impl
 			uint64_t ea;
 			if (!decodeModRM(rexB, rexR, rexX, reg, isReg, ea)) return false;
 			int32_t imm = fetchSImm8();
-			uint64_t& dst = isReg ? regRef(cpu, static_cast<int>(ea)) : *(uint64_t*)nullptr;
+			// There used to be a `uint64_t& dst = isReg ? regRef(...) :
+			// *(uint64_t*)nullptr;` here. The else arm of a ternary is
+			// evaluated whenever the condition is false, so every memory
+			// operand formed a reference by dereferencing null -- undefined --
+			// and the variable was then never read: the write below goes
+			// through regRef or mem.writeU64 directly.
 			uint64_t v = 0;
 			if (!isReg)
 			{

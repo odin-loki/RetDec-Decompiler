@@ -1400,3 +1400,183 @@ int main(int argc, char** argv)
 	::testing::InitGoogleTest(&argc, argv);
 	return RUN_ALL_TESTS();
 }
+
+// ─── open() has to forget the previous file ──────────────────────────────────
+
+// open() reset data_, size_, valid_ and hasCli_ and left everything else from
+// the last file in place: the CLI header, the section table, the stream
+// headers, the CLR version string, and metadataRoot_ -- which is a
+// std::span into the PREVIOUS buffer, so it dangles the moment that buffer
+// goes away. A caller that opens a second file and reads any of those
+// accessors after a failed parse gets the first file's answers.
+TEST(PeReaderReset, ASecondOpenDoesNotKeepTheFirstFilesState)
+{
+    auto good = buildNetPEWithVersion(
+        12u, {'v', '4', '.', '0', '.', '3', '0', '3', '1', '9', 0, 0}, {0, 0, 0, 0});
+    PeReader r;
+    ASSERT_TRUE(r.open(good.data(), good.size())) << r.error();
+    ASSERT_TRUE(r.hasCLI());
+    ASSERT_FALSE(r.sections().empty());
+    const std::string firstVersion = r.clrVersion();
+    ASSERT_FALSE(firstVersion.empty());
+
+    // A file that fails before any of that is parsed.
+    const std::vector<uint8_t> tooSmall(16, 0);
+    EXPECT_FALSE(r.open(tooSmall.data(), tooSmall.size()));
+
+    EXPECT_FALSE(r.isValid());
+    EXPECT_FALSE(r.hasCLI());
+    EXPECT_TRUE(r.sections().empty()) << "the previous file's sections survived";
+    EXPECT_TRUE(r.streams().empty()) << "the previous file's streams survived";
+    // metadataRoot_ is a span into the previous buffer; whether this fixture
+    // populated it or not, it must not still point there.
+    EXPECT_TRUE(r.metadataRoot().empty())
+        << "metadataRoot still spans the previous file's buffer";
+    EXPECT_TRUE(r.clrVersion().empty())
+        << "the previous file's CLR version survived: " << r.clrVersion();
+}
+
+// And a second successful open replaces rather than appends.
+TEST(PeReaderReset, ASecondSuccessfulOpenReplacesTheSectionTable)
+{
+    auto pe = buildNetPEWithVersion(
+        12u, {'v', '4', '.', '0', '.', '3', '0', '3', '1', '9', 0, 0}, {0, 0, 0, 0});
+    PeReader r;
+    ASSERT_TRUE(r.open(pe.data(), pe.size()));
+    const std::size_t first = r.sections().size();
+    ASSERT_TRUE(r.open(pe.data(), pe.size()));
+    EXPECT_EQ(first, r.sections().size());
+}
+
+// ─── Nested type names ───────────────────────────────────────────────────────
+
+namespace {
+
+void nw8 (std::vector<uint8_t>& v, uint8_t x){ v.push_back(x); }
+void nw16(std::vector<uint8_t>& v, uint16_t x){ v.push_back(x & 0xFF); v.push_back(x >> 8); }
+void nw32(std::vector<uint8_t>& v, uint32_t x){ for (int i = 0; i < 4; ++i) v.push_back((x >> (8 * i)) & 0xFF); }
+void nw64(std::vector<uint8_t>& v, uint64_t x){ for (int i = 0; i < 8; ++i) v.push_back((x >> (8 * i)) & 0xFF); }
+
+// A .NET PE with two TypeDefs -- Ns.Outer and Inner -- and a NestedClass row
+// saying Inner is nested inside Outer.
+std::vector<uint8_t> buildNetPEWithNestedType()
+{
+    // ---- #Strings ----
+    std::vector<uint8_t> strings;
+    strings.push_back(0);                       // index 0 is the empty string
+    const uint16_t iNs    = (uint16_t)strings.size();
+    for (const char* p = "Ns";    *p; ++p) strings.push_back(*p); strings.push_back(0);
+    const uint16_t iOuter = (uint16_t)strings.size();
+    for (const char* p = "Outer"; *p; ++p) strings.push_back(*p); strings.push_back(0);
+    const uint16_t iInner = (uint16_t)strings.size();
+    for (const char* p = "Inner"; *p; ++p) strings.push_back(*p); strings.push_back(0);
+    while (strings.size() % 4) strings.push_back(0);
+
+    // ---- #~ ----
+    std::vector<uint8_t> rows;
+    // TypeDef row 1: Ns.Outer
+    nw32(rows, 0x00100001);  // Flags
+    nw16(rows, iOuter);      // Name
+    nw16(rows, iNs);         // Namespace
+    nw16(rows, 0);           // Extends (TypeDefOrRef coded)
+    nw16(rows, 1);           // FieldList
+    nw16(rows, 1);           // MethodList
+    // TypeDef row 2: Inner (no namespace)
+    nw32(rows, 0x00100002);
+    nw16(rows, iInner);
+    nw16(rows, 0);
+    nw16(rows, 0);
+    nw16(rows, 1);
+    nw16(rows, 1);
+    // NestedClass row 1: nested=2, enclosing=1
+    nw16(rows, 2);
+    nw16(rows, 1);
+
+    std::vector<uint8_t> tilde;
+    nw32(tilde, 0);      // Reserved
+    nw8(tilde, 2); nw8(tilde, 0);   // Major/Minor
+    nw8(tilde, 0);       // HeapSizes: all 2-byte
+    nw8(tilde, 1);       // Reserved2
+    nw64(tilde, (1ULL << 0x02) | (1ULL << 0x29));  // TypeDef | NestedClass
+    nw64(tilde, 0);      // Sorted
+    nw32(tilde, 2);      // TypeDef rows
+    nw32(tilde, 1);      // NestedClass rows
+    tilde.insert(tilde.end(), rows.begin(), rows.end());
+    while (tilde.size() % 4) tilde.push_back(0);
+
+    // ---- metadata root ----
+    std::vector<uint8_t> md;
+    const char sig[4] = {'B','S','J','B'};
+    md.insert(md.end(), sig, sig+4);
+    nw16(md, 1); nw16(md, 1);
+    nw32(md, 0);
+    const std::vector<uint8_t> ver = {'v','4','.','0',0,0,0,0};
+    nw32(md, (uint32_t)ver.size());
+    md.insert(md.end(), ver.begin(), ver.end());
+    nw16(md, 0);   // Flags
+    nw16(md, 2);   // NumberOfStreams
+
+    // Stream headers: offsets are relative to the metadata root.
+    const size_t hdrSize = 8 + 4 /*"#~\0\0"*/ + 8 + 12 /*"#Strings\0\0\0\0"*/;
+    const uint32_t tildeOff   = (uint32_t)(md.size() + hdrSize);
+    const uint32_t stringsOff = tildeOff + (uint32_t)tilde.size();
+    nw32(md, tildeOff);  nw32(md, (uint32_t)tilde.size());
+    md.push_back('#'); md.push_back('~'); md.push_back(0); md.push_back(0);
+    nw32(md, stringsOff); nw32(md, (uint32_t)strings.size());
+    for (const char* p = "#Strings"; *p; ++p) md.push_back(*p);
+    md.push_back(0); md.push_back(0); md.push_back(0); md.push_back(0);
+    md.insert(md.end(), tilde.begin(), tilde.end());
+    md.insert(md.end(), strings.begin(), strings.end());
+
+    // ---- PE ----
+    constexpr size_t kPeOff = 0x80, kOptSize = 224;
+    constexpr size_t kOptOff = kPeOff + 4 + 20;
+    constexpr size_t kSectOff = kOptOff + kOptSize;
+    constexpr size_t kSectionRaw = 0x200;
+    constexpr uint32_t kSectionRva = 0x2000, kCliRva = kSectionRva;
+    constexpr uint32_t kMdRva = kSectionRva + 72;
+
+    std::vector<uint8_t> buf(kSectionRaw, 0);
+    auto p16=[&](size_t o,uint16_t v){buf[o]=v&0xFF;buf[o+1]=v>>8;};
+    auto p32=[&](size_t o,uint32_t v){for(int i=0;i<4;++i) buf[o+i]=(v>>(8*i))&0xFF;};
+    buf[0]='M'; buf[1]='Z';
+    p32(0x3C, kPeOff);
+    p32(kPeOff, 0x00004550u);
+    p16(kPeOff+4+0, 0x014C);
+    p16(kPeOff+4+2, 1);
+    p16(kPeOff+4+16, kOptSize);
+    p16(kOptOff, 0x010B);
+    const size_t comOff = kOptOff + 96 + 14*8;
+    p32(comOff, kCliRva);
+    p32(comOff+4, 72);
+    std::memcpy(&buf[kSectOff], ".text\0\0", 7);
+    p32(kSectOff+12, kSectionRva);
+    p32(kSectOff+20, (uint32_t)kSectionRaw);
+
+    std::vector<uint8_t> body(72, 0);
+    auto b32=[&](size_t o,uint32_t v){for(int i=0;i<4;++i) body[o+i]=(v>>(8*i))&0xFF;};
+    b32(0, 72); body[4]=2; body[6]=5;
+    b32(8, kMdRva);
+    b32(12, (uint32_t)md.size());
+    body.insert(body.end(), md.begin(), md.end());
+    buf.insert(buf.end(), body.begin(), body.end());
+    p32(kSectOff+16, (uint32_t)(buf.size() - kSectionRaw));
+    return buf;
+}
+
+} // namespace
+
+// buildTypeNames() is the only reader of nestedMap_, and read() filled that map
+// in Phase 6 -- after buildTypeNames ran in Phase 4. The map was empty every
+// time, so the "fix up nested type names (Outer+Inner)" loop had nothing to
+// iterate and no nested type in any assembly ever got its enclosing type's
+// name. Measured on this fixture: "Inner" before, "Ns.Outer+Inner" after.
+TEST(CLIReaderNestedNames, ANestedTypeCarriesItsEnclosingTypesName)
+{
+	auto pe = buildNetPEWithNestedType();
+	CLIReader r;
+	auto res = r.read(pe.data(), pe.size(), "t");
+	ASSERT_TRUE(res.success) << res.error;
+	EXPECT_EQ("Ns.Outer", r.typeDefName(1));
+	EXPECT_EQ("Ns.Outer+Inner", r.typeDefName(2));
+}

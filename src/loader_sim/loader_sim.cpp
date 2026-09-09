@@ -724,7 +724,20 @@ std::vector<RelocRecord> LoaderSim::applyELFRelocations(uint64_t newBase) const
 
 			uint64_t offset = rPtr(eOff);
 			uint64_t info = rPtr(eOff + (_is64Bit ? 8u : 4u));
-			int64_t addend = isRela ? static_cast<int64_t>(r64(eOff + 16)) : 0;
+			// Elf64_Rela is { Addr r_offset; Xword r_info; Sxword r_addend }
+			// -- 8/8/8, so the addend is at entry+16 and eight bytes wide.
+			// Elf32_Rela is { Addr; Word; Sword } -- 4/4/4, addend at entry+8
+			// and four bytes, signed. Reading eight bytes at entry+16 of a
+			// twelve-byte entry walked into the next one, so every RELA addend
+			// in a 32-bit ELF was whatever the following entry's r_offset and
+			// r_info happened to be.
+			int64_t addend = 0;
+			if (isRela)
+			{
+				addend = _is64Bit
+					? static_cast<int64_t>(r64(eOff + 16))
+					: static_cast<int64_t>(static_cast<int32_t>(r32(eOff + 8)));
+			}
 
 			uint32_t rtype = _is64Bit ? static_cast<uint32_t>(info & 0xFFFFFFFF) : static_cast<uint32_t>(info & 0xFF);
 
