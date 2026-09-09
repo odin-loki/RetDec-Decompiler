@@ -162,6 +162,37 @@ public:
 			{
 				uint32_t w = ins.src0.width ? ins.src0.width / 8u : 0u;
 				if (w == 0) w = ins.dst.width ? ins.dst.width / 8u : 0u;
+
+				// ...but only when it continues the destination run. The only
+				// condition used to be "some vector access has been seen", so
+				// a scalar store to an unrelated base was absorbed: its bytes
+				// went into the count and its instruction into instrCount, and
+				// the caller skips instrCount instructions -- so the emitted
+				// memcpy claimed bytes it does not write and swallowed a store
+				// that writes somewhere else.
+				uint32_t dstBase = 0;
+				int64_t dstEnd = 0;
+				bool haveDst = false;
+				for (const auto& a: accesses)
+				{
+					if (a.isLoad) continue;
+					if (!haveDst)
+					{
+						dstBase = a.baseReg;
+						dstEnd = a.offsetBytes + (int64_t)a.vecWidth;
+						haveDst = true;
+					}
+					else
+					{
+						dstEnd = std::max(dstEnd, a.offsetBytes + (int64_t)a.vecWidth);
+					}
+				}
+				const int64_t here = ins.src1.kind == OperandKind::Imm ? ins.src1.imm : 0;
+				if (!haveDst || ins.dst.reg != dstBase || here != dstEnd + epilogueBytes)
+				{
+					break;
+				}
+
 				epilogueBytes += w;
 				lastIdx = i;
 				continue;
@@ -236,14 +267,15 @@ public:
 		// ── memset: no loads, fill value from VecSet ──────────────────────────
 		if (loads.empty())
 		{
-			// Check all stores use the fill register (or same constant)
-			bool isFill = hasFill;
-			if (!isFill)
-			{
-				// All stores same vec register?
-				uint32_t vr = stores[0].vecReg;
-				isFill = std::all_of(stores.begin(), stores.end(), [vr](const MemAccess& a) { return a.vecReg == vr; });
-			}
+			// Every store has to write the same register, and when a broadcast
+			// set one up, that one. This used to short-circuit on `hasFill`,
+			// which any VecSet anywhere in the span sets -- so the check was
+			// skipped exactly when there was a fill register to check against,
+			// and stores of an unrelated register were reported as a memset of
+			// the broadcast value.
+			const uint32_t vr = hasFill ? fillVecReg : stores[0].vecReg;
+			const bool isFill =
+				std::all_of(stores.begin(), stores.end(), [vr](const MemAccess& a) { return a.vecReg == vr; });
 			if (!isFill) return std::nullopt;
 
 			ReplacementNode r;
@@ -267,40 +299,34 @@ public:
 		// Check load offsets match store offsets (same count in order)
 		if (loads.size() != stores.size()) return std::nullopt;
 
-		// Both lists are in program order: the i-th load feeds the i-th store.
+		// A store copies what a load put in its register, so that is the pairing:
+		// the register, not the position in the list. Pairing by position never
+		// looked at vecReg at all, so a store of a register nothing loaded read
+		// as a copy of bytes it does not copy.
+		std::unordered_map<uint32_t, int64_t> srcOffOfReg;
 		bool offsetsMatch = true;
-		for (std::size_t i = 0; i < loads.size(); ++i)
+		std::vector<int64_t> dstSeq;
+		for (const auto& a: accesses)
 		{
-			if (loads[i].offsetBytes != stores[i].offsetBytes)
+			if (a.isLoad)
+			{
+				srcOffOfReg[a.vecReg] = a.offsetBytes;
+				continue;
+			}
+			auto it = srcOffOfReg.find(a.vecReg);
+			if (it == srcOffOfReg.end() || it->second != a.offsetBytes)
 			{
 				offsetsMatch = false;
 				break;
 			}
-		}
-
-		// Check for backward copy (memmove indicator)
-		bool backward = false;
-		if (!offsetsMatch)
-		{
-			// Check if reversed
-			bool revMatch = true;
-			for (std::size_t i = 0; i < loads.size(); ++i)
-			{
-				std::size_t j = loads.size() - 1 - i;
-				if (loads[i].offsetBytes != stores[j].offsetBytes)
-				{
-					revMatch = false;
-					break;
-				}
-			}
-			if (revMatch)
-			{
-				backward = true;
-				offsetsMatch = true;
-			}
+			dstSeq.push_back(a.offsetBytes);
 		}
 
 		if (!offsetsMatch) return std::nullopt;
+
+		// Descending destination offsets are the overlap-safe direction, which
+		// is what distinguishes memmove from memcpy.
+		bool backward = dstSeq.size() > 1 && dstSeq.front() > dstSeq.back();
 
 		ReplacementNode r;
 		r.kind = backward ? ReplacementKind::Memmove : ReplacementKind::Memcpy;

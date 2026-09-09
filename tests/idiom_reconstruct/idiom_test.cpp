@@ -902,11 +902,17 @@ TEST(ReplacementNodeTest, DebugStrMemset)
 // unreachable. Program order is what says which load feeds which store.
 TEST(SimdMemTest, ABackwardCopyIsRecognisedAsMemmove)
 {
+	// A backward copy moves the SAME range in descending order -- the high
+	// chunk first -- which is what makes it safe when the regions overlap.
+	// This fixture used to load src[0] and store it at dst[16], i.e. reverse
+	// the chunks, which is not a memmove of anything; it was written against
+	// a matcher that paired loads to stores by position and so could not tell
+	// the difference. Pairing by register is what distinguishes them.
 	uint32_t src = nextReg(), dst = nextReg(), v0 = nextReg(), v1 = nextReg();
 	InstrWindow w = {
-		makeVecLoad(v0, src, 0, 16),
+		makeVecLoad(v0, src, 16, 16),
 		makeVecStore(v0, dst, 16, 16),
-		makeVecLoad(v1, src, 16, 16),
+		makeVecLoad(v1, src, 0, 16),
 		makeVecStore(v1, dst, 0, 16),
 	};
 	auto e = makeDefaultEngine();
@@ -969,4 +975,128 @@ TEST(SimdMemTest, TheMatchIsAnchoredAtTheOffsetItIsGiven)
 		EXPECT_EQ(w[1].vma, rep.firstVma);
 	}
 	EXPECT_TRUE(sawMemset) << "the idiom after the unrelated instruction was not found";
+}
+
+// ─── What the SIMD block actually moves ──────────────────────────────────────
+//
+// MemAccess::vecReg is recorded for every vector load and store and was read
+// in exactly one place, inside a branch that could not be reached. So neither
+// the memset check nor the memcpy pairing ever asked which register a store
+// writes -- and a scalar store after the block was absorbed with no check at
+// all on where it writes.
+
+namespace {
+
+IdiomInstr makeScalarStore(uint32_t base, int64_t off, uint32_t bytes)
+{
+	IdiomInstr ins;
+	ins.op = IdiomOp::Store;
+	ins.dst = IdiomOperand::reg32(base);
+	ins.src0 = IdiomOperand::vreg(0, bytes * 8);
+	ins.src1 = IdiomOperand::makeImm(off);
+	return ins;
+}
+
+} // namespace
+
+TEST(SimdMemTest, StoresOfADifferentRegisterAreNotAMemset)
+{
+	// A broadcast into one register, then stores of a different one. The
+	// "all stores write the same register" check was skipped entirely once
+	// any VecSet had been seen, so this scored as a memset of the broadcast
+	// value -- a fill with a value the code never stores.
+	uint32_t vr = nextReg(), other = nextReg(), dst = nextReg();
+	InstrWindow w = {
+		makeVecSet(vr, 0xAB, 16),
+		makeVecStore(other, dst, 0, 16),
+		makeVecStore(other, dst, 16, 16),
+	};
+	auto e = makeDefaultEngine();
+	auto r = e.process(w);
+	for (const auto& rep: r)
+	{
+		// Two stores of one register are a fill of whatever that register
+		// holds, so a Memset here is not itself wrong -- claiming the
+		// broadcast's value for it is, because that value is never stored.
+		if (rep.kind != ReplacementKind::Memset) continue;
+		EXPECT_NE(0xAB, rep.fillValue) << "reported a fill with a value the code never stores";
+	}
+}
+
+TEST(SimdMemTest, AMemsetOfTheBroadcastRegisterIsStillAMemset)
+{
+	uint32_t vr = nextReg(), dst = nextReg();
+	InstrWindow w = {
+		makeVecSet(vr, 0xAB, 16),
+		makeVecStore(vr, dst, 0, 16),
+		makeVecStore(vr, dst, 16, 16),
+	};
+	auto e = makeDefaultEngine();
+	auto r = e.process(w);
+	ASSERT_EQ(1u, r.size());
+	EXPECT_EQ(ReplacementKind::Memset, r[0].kind);
+	EXPECT_EQ(0xAB, r[0].fillValue);
+}
+
+TEST(SimdMemTest, AStoreOfARegisterNothingLoadedIsNotACopy)
+{
+	// Two loads and two stores whose offsets line up positionally, but the
+	// stores write registers nothing loaded. Pairing by position alone called
+	// this a memcpy of 32 bytes it does not copy.
+	uint32_t src = nextReg(), dst = nextReg();
+	uint32_t v0 = nextReg(), v1 = nextReg(), junk = nextReg();
+	InstrWindow w = {
+		makeVecLoad(v0, src, 0, 16),
+		makeVecStore(junk, dst, 0, 16),
+		makeVecLoad(v1, src, 16, 16),
+		makeVecStore(junk, dst, 16, 16),
+	};
+	auto e = makeDefaultEngine();
+	auto r = e.process(w);
+	for (const auto& rep: r)
+	{
+		EXPECT_NE(ReplacementKind::Memcpy, rep.kind) << "the stored register was never loaded from the source";
+		EXPECT_NE(ReplacementKind::Memmove, rep.kind);
+	}
+}
+
+TEST(SimdMemTest, AScalarStoreElsewhereIsNotPartOfTheCopy)
+{
+	// A 16-byte vector store to dst[0..16), then a scalar store to a
+	// completely different base. It was absorbed anyway: its bytes were added
+	// to the count and its instruction to instrCount, so the emitted memset
+	// claimed more bytes than it writes and swallowed an instruction that
+	// writes somewhere else entirely.
+	uint32_t vr = nextReg(), dst = nextReg(), elsewhere = nextReg();
+	InstrWindow w = {
+		makeVecSet(vr, 0, 16),
+		makeVecStore(vr, dst, 0, 16),
+		makeVecStore(vr, dst, 16, 16),
+		makeScalarStore(elsewhere, 0, 8),
+	};
+	auto e = makeDefaultEngine();
+	auto r = e.process(w);
+	ASSERT_EQ(1u, r.size());
+	EXPECT_EQ(ReplacementKind::Memset, r[0].kind);
+	EXPECT_EQ(32, r[0].countImm) << "the unrelated scalar store's bytes were counted";
+	EXPECT_EQ(3u, r[0].instrCount) << "the unrelated scalar store was swallowed";
+}
+
+TEST(SimdMemTest, AScalarStoreContinuingTheRunIsStillPartOfIt)
+{
+	// The same shape, but the scalar store continues the destination run:
+	// dst[32..40) right after the two 16-byte vector stores.
+	uint32_t vr = nextReg(), dst = nextReg();
+	InstrWindow w = {
+		makeVecSet(vr, 0, 16),
+		makeVecStore(vr, dst, 0, 16),
+		makeVecStore(vr, dst, 16, 16),
+		makeScalarStore(dst, 32, 8),
+	};
+	auto e = makeDefaultEngine();
+	auto r = e.process(w);
+	ASSERT_EQ(1u, r.size());
+	EXPECT_EQ(ReplacementKind::Memset, r[0].kind);
+	EXPECT_EQ(40, r[0].countImm);
+	EXPECT_EQ(4u, r[0].instrCount);
 }
