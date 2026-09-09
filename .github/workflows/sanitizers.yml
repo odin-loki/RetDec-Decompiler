@@ -145,10 +145,24 @@ jobs:
 
       - name: Run ASan over decompile sample corpus
         env:
-          # verbosity=1 makes ASan print its shadow layout and the range it
-          # could not map. Without it the failure is one line with no address
-          # in it, which is why run 45 could not be diagnosed from its log.
-          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:handle_abort=1:symbolize=1:quarantine_size_mb=8:malloc_context_size=0:protect_shadow_gap=0:verbosity=1
+          # protect_shadow_gap=0 is what killed run 46, and runs 42-45 before
+          # it. verbosity=1 printed the layout and named it:
+          #
+          #   || [0x00008fff7000, 0x02008fff6fff] || ShadowGap ||
+          #   protect_shadow_gap=0: not protecting shadow gap, allocating
+          #                         gap's shadow
+          #   || [0x000091ff6000, 0x004091ff6fff] || ShadowGap's shadow ||
+          #   ERROR: out of memory: failed to allocate 0x1000 (4096) bytes
+          #          of InternalMmapVector (error code: 12)
+          #
+          # The gap spans 128 TB, so its shadow is about 63 TiB. The mapping
+          # itself goes through under vm.overcommit_memory=1, and then the
+          # process cannot get another four kilobytes. The option exists for
+          # running under an emulator that cannot protect the gap; nothing
+          # here needs it, and "ERROR: Failed to mmap" was all it ever said.
+          #
+          # verbosity=1 stays. It cost nothing and it is what answered this.
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:handle_abort=1:symbolize=1:quarantine_size_mb=8:malloc_context_size=0:verbosity=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: |
           set -euo pipefail

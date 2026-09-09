@@ -560,46 +560,47 @@ validity -- libstdc++'s `_GLIBCXX_DEBUG` diagnoses "comparison doesn't meet
 irreflexive requirements" -- and see whether any binary trips it. If one does,
 it is worth the output churn; DET-01 will show exactly how much churn.
 
-### The sanitizers workflow has never passed, and now fails before it starts
+### The sanitizers workflow never passed, and the reason was in its own options
 
 `.github/workflows/sanitizers.yml`
 
-Runs 42 through 45 all failed. Run 44's commit message says it plainly: "The
-sanitizers workflow has never got past the build." Run 45 is the first that
-did, and it died in the ASan run itself, on the very first sample:
+**Answered and fixed; kept here because the answer is worth having written
+down.** Runs 42 through 45 all failed and run 44's commit message says why:
+"The sanitizers workflow has never got past the build." Run 45 was the first
+that did, and it died in the ASan run itself with one line and no address in
+it:
 
 ```
-=== ASan: /tmp/retdec_tests/c/hello ===
-=================================================================
 ERROR: Failed to mmap
-scripts/run_asan.sh: line 28: 23810 Aborted (core dumped)
 ```
 
-That is ASan failing to reserve its shadow, before a single line of retdec
-runs. The kernel knobs the workflow sets are all applied and reported --
-`kernel.randomize_va_space = 0`, `vm.mmap_rnd_bits = 28`,
-`vm.overcommit_memory = 1` -- so the usual high-ASLR-entropy explanation does
-not fit.
+The hypothesis recorded here first was that the deliberately `-no-pie` image
+loads at `0x400000` and grows up into ASan's low shadow at `0x7fff8000`. That
+was wrong. `ASAN_OPTIONS=verbosity=1`, added to make the next run say
+something, said it:
 
-The hypothesis worth testing first: the ASan build is deliberately `-no-pie`
-(the top-level CMakeLists puts `-fno-pie` in the C flags and `-no-pie` in the
-executable linker flags, and `deps/yara/CMakeLists.txt` was changed to match),
-so the image loads at `0x400000` and grows upward. ASan's low shadow on
-x86-64 begins at `0x7fff8000`. An LLVM debug build with ASan instrumentation
-is large; if its image and BSS reach that far, ASan has nowhere to put the
-shadow. `kernel.randomize_va_space=0` also selects the legacy bottom-up mmap
-layout, which changes where everything else lands.
+```
+|| [0x00008fff7000, 0x02008fff6fff] || ShadowGap ||
+protect_shadow_gap=0: not protecting shadow gap, allocating gap's shadow
+|| [0x000091ff6000, 0x004091ff6fff] || ShadowGap's shadow ||
+...
+ERROR: out of memory: failed to allocate 0x1000 (4096) bytes of
+       InternalMmapVector (error code: 12)
+```
 
-**Not diagnosed further because the failure says nothing.** The log has one
-line with no address in it. `ASAN_OPTIONS=verbosity=1` and a step that prints
-the binary's ELF type, size and `.bss` are now in the workflow, so the next
-run answers it: either the image reaches `0x7fff8000` or it does not, and the
-fix follows from that (build the ASan decompiler as PIE, or stop disabling
-ASLR, or both).
+`protect_shadow_gap=0` was in the workflow's `ASAN_OPTIONS`. It tells ASan
+not to protect the shadow gap but to allocate shadow *for* it -- and the gap
+spans 128 TB, so its shadow is about 63 TiB. The mapping goes through under
+`vm.overcommit_memory=1`, and then the process cannot get another four
+kilobytes: ENOMEM on a 4096-byte `InternalMmapVector`. The option exists for
+running under an emulator that cannot protect the gap. Nothing here needs it.
 
-This matters beyond tidiness. ASan is what found the ELF section-size
-allocation in `fuzz-libfuzzer`, and this workflow is the only place ASan is
-pointed at the whole decompiler rather than at one parser.
+Two things to take from it. The kernel knobs the workflow spends a step on --
+`randomize_va_space=0`, `mmap_rnd_bits=28`, `overcommit_memory=1` -- were all
+applied and all irrelevant; the answer was an option the workflow set itself.
+And a gate that fails with one line and no address in it cannot be diagnosed
+at all: the one-line `verbosity=1` is what turned three failed runs of
+guessing into a five-minute read.
 
 ### The Windows build cannot compile two parsers, because nothing gives it zlib
 
