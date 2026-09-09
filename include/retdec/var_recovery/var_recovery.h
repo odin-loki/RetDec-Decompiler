@@ -120,23 +120,25 @@ namespace var_recovery {
 
 // ─── ABI / calling convention identifiers ────────────────────────────────────
 
-enum class ABI : uint8_t {
-    Unknown,
-    SysV_x86_64,    ///< Linux/macOS 64-bit
-    Win64,          ///< Windows x64 (MSVC, MinGW)
-    SysV_x86_32,    ///< Linux 32-bit cdecl
-    Win32,          ///< Windows 32-bit (MSVC, BCC, DMC, Watcom)
-    AAPCS64,        ///< ARM64 / AArch64
-    AAPCS32,        ///< ARM32 / Thumb
-    Watcom_x86,     ///< Open Watcom register-calling convention
+enum class ABI : uint8_t
+{
+	Unknown,
+	SysV_x86_64, ///< Linux/macOS 64-bit
+	Win64,       ///< Windows x64 (MSVC, MinGW)
+	SysV_x86_32, ///< Linux 32-bit cdecl
+	Win32,       ///< Windows 32-bit (MSVC, BCC, DMC, Watcom)
+	AAPCS64,     ///< ARM64 / AArch64
+	AAPCS32,     ///< ARM32 / Thumb
+	Watcom_x86,  ///< Open Watcom register-calling convention
 };
 
-enum class Arch : uint8_t {
-    Unknown,
-    X86_32,
-    X86_64,
-    ARM32,
-    ARM64,
+enum class Arch : uint8_t
+{
+	Unknown,
+	X86_32,
+	X86_64,
+	ARM32,
+	ARM64,
 };
 
 // ─── Frame access observation ────────────────────────────────────────────────
@@ -146,12 +148,13 @@ enum class Arch : uint8_t {
  * Offset is relative to the frame base (RBP / EBP / SP+frame_size).
  * Negative offsets are local variables; positive offsets are arguments.
  */
-struct FrameAccess {
-    int64_t  offset   = 0;     ///< signed offset from frame base
-    uint8_t  size     = 0;     ///< access width in bytes
-    bool     isWrite  = false; ///< store vs load
-    uint64_t vma      = 0;     ///< instruction address (for debug)
-    uint32_t ssaValue = UINT32_MAX; ///< SSA ValueId of the MemRef
+struct FrameAccess
+{
+	int64_t offset = 0;             ///< signed offset from frame base
+	uint8_t size = 0;               ///< access width in bytes
+	bool isWrite = false;           ///< store vs load
+	uint64_t vma = 0;               ///< instruction address (for debug)
+	uint32_t ssaValue = UINT32_MAX; ///< SSA ValueId of the MemRef
 };
 
 // ─── Frame slot (DVSA partition result) ──────────────────────────────────────
@@ -160,8 +163,9 @@ struct FrameAccess {
  * One non-overlapping variable slot in the frame.
  * Produced by the DVSA partitioner.
  */
-struct FrameSlot {
-    int64_t  baseOffset = 0;   ///< lowest byte offset of the slot
+struct FrameSlot
+{
+	int64_t baseOffset = 0; ///< lowest byte offset of the slot
 	/// Byte span of the slot. Wider than a uint8_t because a stack slot can be
 	/// wider than 255 bytes -- a local array, most obviously -- and truncating
 	/// the span produced candidates whose size was the span modulo 256, zero
@@ -175,41 +179,106 @@ struct FrameSlot {
 
 // ─── ABI-reserved frame regions ──────────────────────────────────────────────
 
-enum class RegionKind : uint8_t {
-    ReturnAddress,
-    CalleeSave,
-    ShadowSpace,    ///< Windows: home area for first 4 arguments
-    RedZone,        ///< System V: 128-byte scratch below RSP
-    FrameChain,     ///< Saved RBP/EBP
-    Argument,       ///< Stack-passed argument (above frame base)
+enum class RegionKind : uint8_t
+{
+	ReturnAddress,
+	CalleeSave,
+	ShadowSpace, ///< Windows: home area for first 4 arguments
+	RedZone,     ///< System V: 128-byte scratch below RSP
+	FrameChain,  ///< Saved RBP/EBP
+	Argument,    ///< Stack-passed argument (above frame base)
 };
 
-struct FrameRegion {
-    RegionKind kind;
-    int64_t    offset = 0;  ///< relative to frame base
-    uint8_t    size   = 0;  ///< in bytes
-    std::string name;       ///< human-readable (e.g. "arg0", "saved_r12")
+struct FrameRegion
+{
+	RegionKind kind;
+	int64_t offset = 0; ///< relative to frame base
+	uint8_t size = 0;   ///< in bytes
+	std::string name;   ///< human-readable (e.g. "arg0", "saved_r12")
 };
 
 // ─── Register identifiers for prologue parsing ───────────────────────────────
 
-enum class Reg : uint8_t {
-    // x86-64
-    RAX=0, RCX, RDX, RBX, RSP, RBP, RSI, RDI,
-    R8, R9, R10, R11, R12, R13, R14, R15,
-    // x86-32
-    EAX=20, ECX, EDX, EBX, ESP, EBP, ESI, EDI,
-    // ARM64
-    X0=40, X1, X2, X3, X4, X5, X6, X7,
-    X8, X9, X10, X11, X12, X13, X14, X15,
-    X16, X17, X18, X19, X20, X21, X22, X23,
-    X24, X25, X26, X27, X28, X29, X30,
-    SP_ARM64=80,
-    // ARM32
-    R0=90, R1, R2, R3, R4, R5, R6, R7,
-    R8_ARM32, R9_ARM32, R10_ARM32, R11_ARM32, R12_ARM32, SP_ARM32, LR, PC,
-    // Sentinels
-    None = 0xFF,
+enum class Reg : uint8_t
+{
+	// x86-64
+	RAX = 0,
+	RCX,
+	RDX,
+	RBX,
+	RSP,
+	RBP,
+	RSI,
+	RDI,
+	R8,
+	R9,
+	R10,
+	R11,
+	R12,
+	R13,
+	R14,
+	R15,
+	// x86-32
+	EAX = 20,
+	ECX,
+	EDX,
+	EBX,
+	ESP,
+	EBP,
+	ESI,
+	EDI,
+	// ARM64
+	X0 = 40,
+	X1,
+	X2,
+	X3,
+	X4,
+	X5,
+	X6,
+	X7,
+	X8,
+	X9,
+	X10,
+	X11,
+	X12,
+	X13,
+	X14,
+	X15,
+	X16,
+	X17,
+	X18,
+	X19,
+	X20,
+	X21,
+	X22,
+	X23,
+	X24,
+	X25,
+	X26,
+	X27,
+	X28,
+	X29,
+	X30,
+	SP_ARM64 = 80,
+	// ARM32
+	R0 = 90,
+	R1,
+	R2,
+	R3,
+	R4,
+	R5,
+	R6,
+	R7,
+	R8_ARM32,
+	R9_ARM32,
+	R10_ARM32,
+	R11_ARM32,
+	R12_ARM32,
+	SP_ARM32,
+	LR,
+	PC,
+	// Sentinels
+	None = 0xFF,
 };
 
 const char* regName(Reg r) noexcept;
@@ -219,34 +288,39 @@ const char* regName(Reg r) noexcept;
 /**
  * Result of prologue parsing for one function.
  */
-struct PrologueInfo {
-    ABI   abi            = ABI::Unknown;
-    Arch  arch           = Arch::Unknown;
-    bool  hasFramePointer= false;   ///< RBP/EBP/X29 set up as frame pointer
-    bool  hasRedZone     = false;   ///< Only for SysV_x86_64
-    bool  hasShadowSpace = false;   ///< Only for Win64
+struct PrologueInfo
+{
+	ABI abi = ABI::Unknown;
+	Arch arch = Arch::Unknown;
+	bool hasFramePointer = false; ///< RBP/EBP/X29 set up as frame pointer
+	bool hasRedZone = false;      ///< Only for SysV_x86_64
+	bool hasShadowSpace = false;  ///< Only for Win64
 
-    int64_t  frameSize    = 0;      ///< total frame allocation (positive)
-    int64_t  localAreaStart= 0;     ///< first byte below frame pointer for locals
-    int64_t  localAreaEnd  = 0;     ///< last  byte (exclusive) of local area
-    int64_t  redZoneStart  = -128;  ///< only valid if hasRedZone
-    int64_t  shadowStart   = 0;     ///< only valid if hasShadowSpace
-    uint8_t  shadowSize    = 32;    ///< always 32 for Win64
+	int64_t frameSize = 0;       ///< total frame allocation (positive)
+	int64_t localAreaStart = 0;  ///< first byte below frame pointer for locals
+	int64_t localAreaEnd = 0;    ///< last  byte (exclusive) of local area
+	int64_t redZoneStart = -128; ///< only valid if hasRedZone
+	int64_t shadowStart = 0;     ///< only valid if hasShadowSpace
+	uint8_t shadowSize = 32;     ///< always 32 for Win64
 
-    std::vector<std::pair<Reg, int64_t>> calleeSaves; ///< (reg, frame_offset)
+	std::vector<std::pair<Reg, int64_t>> calleeSaves; ///< (reg, frame_offset)
 
-    /// All carved ABI regions (pre-filled by ABI region carver).
-    std::vector<FrameRegion> abiRegions;
+	/// All carved ABI regions (pre-filled by ABI region carver).
+	std::vector<FrameRegion> abiRegions;
 
-    bool isValid() const { return arch != Arch::Unknown; }
+	bool isValid() const
+	{
+		return arch != Arch::Unknown;
+	}
 };
 
 // ─── DWARF variable info (thin wrapper; full DWARF is in a separate module) ──
 
-struct DwarfVarInfo {
-    std::string name;
-    int64_t     frameOffset = 0;  ///< DW_AT_location (CFA-relative)
-    uint8_t     size        = 0;  ///< DW_AT_byte_size
+struct DwarfVarInfo
+{
+	std::string name;
+	int64_t frameOffset = 0; ///< DW_AT_location (CFA-relative)
+	uint8_t size = 0;        ///< DW_AT_byte_size
 };
 
 // ─── Variable candidate ───────────────────────────────────────────────────────
@@ -255,23 +329,24 @@ struct DwarfVarInfo {
  * One recovered variable candidate.  After type inference this gains a
  * full type; after naming it gets a final identifier.
  */
-struct VariableCandidate {
-    uint32_t    id          = 0;
-    std::string name;           ///< assigned by VariableNamer
-    FrameSlot   slot;
+struct VariableCandidate
+{
+	uint32_t id = 0;
+	std::string name; ///< assigned by VariableNamer
+	FrameSlot slot;
 
-    // Classification flags
-    bool isCalleeSave  = false; ///< saved callee-saved register value
-    bool isArg         = false; ///< stack-passed argument (above RBP)
-    bool isReturn      = false; ///< return value slot
-    bool isUnion       = false; ///< overlapping lifetimes → C union
-    bool isDwarfNamed  = false; ///< name came from DWARF debug info
+	// Classification flags
+	bool isCalleeSave = false; ///< saved callee-saved register value
+	bool isArg = false;        ///< stack-passed argument (above RBP)
+	bool isReturn = false;     ///< return value slot
+	bool isUnion = false;      ///< overlapping lifetimes → C union
+	bool isDwarfNamed = false; ///< name came from DWARF debug info
 
-    // SSA value IDs that reference this variable (for type seeding)
-    std::vector<uint32_t> ssaValueIds;
+	// SSA value IDs that reference this variable (for type seeding)
+	std::vector<uint32_t> ssaValueIds;
 
-    // For union candidates, the individual access sub-slots
-    std::vector<FrameSlot> unionMembers;
+	// For union candidates, the individual access sub-slots
+	std::vector<FrameSlot> unionMembers;
 };
 
 // ─── Prologue parser ──────────────────────────────────────────────────────────
@@ -287,37 +362,43 @@ struct VariableCandidate {
  * For integration with the full decoder this is abstracted as a
  * `RawInstrSeq` (a vector of `RawInstr`).
  */
-struct RawInstr {
-    enum class Op : uint8_t {
-        Push, Pop, Sub, Add, Mov, Lea,
-        StoreRegPair, // STP (ARM64)
-        PushList,     // PUSH {r4-r11, lr} (ARM32)
-        Other,
-    };
-    Op       op   = Op::Other;
-    Reg      dst  = Reg::None;
-    Reg      src  = Reg::None;
-    int64_t  imm  = 0;          ///< immediate or offset
-    bool     hasImm = false;
-    uint64_t vma  = 0;
+struct RawInstr
+{
+	enum class Op : uint8_t
+	{
+		Push,
+		Pop,
+		Sub,
+		Add,
+		Mov,
+		Lea,
+		StoreRegPair, // STP (ARM64)
+		PushList,     // PUSH {r4-r11, lr} (ARM32)
+		Other,
+	};
+	Op op = Op::Other;
+	Reg dst = Reg::None;
+	Reg src = Reg::None;
+	int64_t imm = 0; ///< immediate or offset
+	bool hasImm = false;
+	uint64_t vma = 0;
 };
 
 class PrologueParser {
 public:
-    explicit PrologueParser(ABI abi, Arch arch)
-        : abi_(abi), arch_(arch) {}
+	explicit PrologueParser(ABI abi, Arch arch): abi_(abi), arch_(arch) {}
 
-    PrologueInfo parse(const std::vector<RawInstr>& instrs) const;
+	PrologueInfo parse(const std::vector<RawInstr>& instrs) const;
 
 private:
-    PrologueInfo parseSysVx64(const std::vector<RawInstr>& instrs) const;
-    PrologueInfo parseWin64(const std::vector<RawInstr>& instrs) const;
-    PrologueInfo parseSysVx32(const std::vector<RawInstr>& instrs) const;
-    PrologueInfo parseAArch64(const std::vector<RawInstr>& instrs) const;
-    PrologueInfo parseARM32(const std::vector<RawInstr>& instrs) const;
+	PrologueInfo parseSysVx64(const std::vector<RawInstr>& instrs) const;
+	PrologueInfo parseWin64(const std::vector<RawInstr>& instrs) const;
+	PrologueInfo parseSysVx32(const std::vector<RawInstr>& instrs) const;
+	PrologueInfo parseAArch64(const std::vector<RawInstr>& instrs) const;
+	PrologueInfo parseARM32(const std::vector<RawInstr>& instrs) const;
 
-    ABI  abi_;
-    Arch arch_;
+	ABI abi_;
+	Arch arch_;
 };
 
 // ─── ABI region carver ────────────────────────────────────────────────────────
@@ -327,17 +408,17 @@ private:
  */
 class AbiRegionCarver {
 public:
-    void carve(PrologueInfo& info) const;
+	void carve(PrologueInfo& info) const;
 
 private:
-    void carveSysVx64(PrologueInfo& info) const;
-    void carveWin64(PrologueInfo& info) const;
-    void carveSysVx32(PrologueInfo& info) const;
-    void carveAArch64(PrologueInfo& info) const;
-    void carveARM32(PrologueInfo& info) const;
+	void carveSysVx64(PrologueInfo& info) const;
+	void carveWin64(PrologueInfo& info) const;
+	void carveSysVx32(PrologueInfo& info) const;
+	void carveAArch64(PrologueInfo& info) const;
+	void carveARM32(PrologueInfo& info) const;
 
 public:
-    bool isCarved(const PrologueInfo& info, int64_t off, uint8_t size) const;
+	bool isCarved(const PrologueInfo& info, int64_t off, uint8_t size) const;
 };
 
 // ─── DVSA (Data-flow Variable and Stack-slot Analysis) ────────────────────────
@@ -354,27 +435,23 @@ public:
  */
 class DVSA {
 public:
-    struct Result {
-        std::vector<FrameSlot> slots;
-        std::vector<FrameSlot> unionSlots;  ///< slots with overlapping lifetimes
-        std::size_t totalAccesses  = 0;
-        std::size_t carvedAccesses = 0;     ///< excluded as ABI-reserved
-    };
+	struct Result
+	{
+		std::vector<FrameSlot> slots;
+		std::vector<FrameSlot> unionSlots; ///< slots with overlapping lifetimes
+		std::size_t totalAccesses = 0;
+		std::size_t carvedAccesses = 0; ///< excluded as ABI-reserved
+	};
 
-    Result run(const ssa::SSAFunction& fn,
-               const PrologueInfo& prologue) const;
+	Result run(const ssa::SSAFunction& fn, const PrologueInfo& prologue) const;
 
 private:
-    std::vector<FrameAccess> collectAccesses(
-        const ssa::SSAFunction& fn,
-        const PrologueInfo& prologue) const;
+	std::vector<FrameAccess> collectAccesses(const ssa::SSAFunction& fn, const PrologueInfo& prologue) const;
 
-    std::vector<FrameSlot> partition(
-        std::vector<FrameAccess>& accesses) const;
+	std::vector<FrameSlot> partition(std::vector<FrameAccess>& accesses) const;
 
-    bool accessesOverlap(const FrameAccess& a, const FrameAccess& b) const;
-    bool isCarved(const PrologueInfo& info,
-                  int64_t offset, uint8_t size) const;
+	bool accessesOverlap(const FrameAccess& a, const FrameAccess& b) const;
+	bool isCarved(const PrologueInfo& info, int64_t offset, uint8_t size) const;
 };
 
 // ─── Variable namer ───────────────────────────────────────────────────────────
@@ -390,13 +467,14 @@ private:
  */
 class VariableNamer {
 public:
-    void name(std::vector<VariableCandidate>& candidates,
-              const PrologueInfo& prologue,
-              const std::vector<DwarfVarInfo>& dwarf = {}) const;
+	void name(
+		std::vector<VariableCandidate>& candidates,
+		const PrologueInfo& prologue,
+		const std::vector<DwarfVarInfo>& dwarf = {}) const;
 
 private:
-    std::string autoName(const FrameSlot& slot, uint32_t counters[6]) const;
-    const char* typePrefix(uint8_t accessWidth) const;
+	std::string autoName(const FrameSlot& slot, uint32_t counters[6]) const;
+	const char* typePrefix(uint8_t accessWidth) const;
 };
 
 // ─── Main variable recovery pass ─────────────────────────────────────────────
@@ -414,22 +492,22 @@ private:
  */
 class VarRecoveryPass {
 public:
-    struct Config {
-        ABI   abi   = ABI::Unknown;
-        Arch  arch  = Arch::Unknown;
-        std::vector<DwarfVarInfo> dwarf;  ///< optional debug info
-    };
+	struct Config
+	{
+		ABI abi = ABI::Unknown;
+		Arch arch = Arch::Unknown;
+		std::vector<DwarfVarInfo> dwarf; ///< optional debug info
+	};
 
-    struct Result {
-        std::vector<VariableCandidate> candidates;
-        PrologueInfo                   prologue;
-        DVSA::Result                   dvsaStats;
-        std::size_t                    dwarfMatchCount = 0;
-    };
+	struct Result
+	{
+		std::vector<VariableCandidate> candidates;
+		PrologueInfo prologue;
+		DVSA::Result dvsaStats;
+		std::size_t dwarfMatchCount = 0;
+	};
 
-    Result run(const ssa::SSAFunction& fn,
-               const std::vector<RawInstr>& prologueInstrs,
-               const Config& cfg) const;
+	Result run(const ssa::SSAFunction& fn, const std::vector<RawInstr>& prologueInstrs, const Config& cfg) const;
 };
 
 } // namespace var_recovery
