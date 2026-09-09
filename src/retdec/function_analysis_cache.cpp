@@ -245,6 +245,55 @@ std::optional<algo_recover::AlgorithmResult> deserializeAlgo(const rapidjson::Va
     return r;
 }
 
+rapidjson::Value serializeIdioms(
+        const std::vector<algo_recover::IdiomResult>& idioms,
+        rapidjson::Document::AllocatorType& a)
+{
+    // FunctionDetections has carried an `idioms` vector all along and neither
+    // side of this file touched it, so a warm run lost every idiom detection
+    // the cold run had made: CACHE-05 saw "[RetDec] DFS detected" and
+    // "[RetDec] GraphTraversal detected" in the cold output and neither in the
+    // warm one. Everything the exporter reads -- exportLabels() and
+    // toString() -- derives from these three fields.
+    //
+    // The kind travels as its enum value rather than through a name table.
+    // The cache file is private and versioned, so there is no compatibility
+    // reason for a name here, and two name tables that have to agree is
+    // exactly what went wrong on the container and algorithm paths.
+    rapidjson::Value arr(rapidjson::kArrayType);
+    for (const auto& i : idioms) {
+        if (i.kind == algo_recover::IdiomKind::Unknown) continue;
+        rapidjson::Value o(rapidjson::kObjectType);
+        o.AddMember("kind", static_cast<int>(i.kind), a);
+        o.AddMember("confidence", i.confidence, a);
+        o.AddMember("detail", toJsonString(i.detail, a), a);
+        arr.PushBack(o, a);
+    }
+    return arr;
+}
+
+std::vector<algo_recover::IdiomResult> deserializeIdioms(const rapidjson::Value& arr)
+{
+    std::vector<algo_recover::IdiomResult> out;
+    if (!arr.IsArray()) return out;
+    for (const auto& o : arr.GetArray()) {
+        if (!o.IsObject()) continue;
+        if (!o.HasMember("kind") || !o["kind"].IsInt()) continue;
+        const int k = o["kind"].GetInt();
+        if (k <= static_cast<int>(algo_recover::IdiomKind::Unknown)) continue;
+        if (k > static_cast<int>(algo_recover::IdiomKind::HashTableChaining)) continue;
+
+        algo_recover::IdiomResult r;
+        r.kind = static_cast<algo_recover::IdiomKind>(k);
+        if (o.HasMember("confidence") && o["confidence"].IsNumber())
+            r.confidence = static_cast<float>(o["confidence"].GetDouble());
+        if (o.HasMember("detail") && o["detail"].IsString())
+            r.detail.assign(o["detail"].GetString(), o["detail"].GetStringLength());
+        out.push_back(std::move(r));
+    }
+    return out;
+}
+
 rapidjson::Value serializeDetections(
         const FunctionDetections& d,
         rapidjson::Document::AllocatorType& a)
@@ -253,6 +302,7 @@ rapidjson::Value serializeDetections(
     obj.AddMember("container", serializeContainer(d.container, a), a);
     obj.AddMember("sort", serializeSort(d.sort, a), a);
     obj.AddMember("algo", serializeAlgo(d.algo, a), a);
+    obj.AddMember("idioms", serializeIdioms(d.idioms, a), a);
     return obj;
 }
 
@@ -266,6 +316,8 @@ FunctionDetections deserializeDetections(const rapidjson::Value& obj)
         d.sort = deserializeSort(obj["sort"]);
     if (obj.HasMember("algo"))
         d.algo = deserializeAlgo(obj["algo"]);
+    if (obj.HasMember("idioms"))
+        d.idioms = deserializeIdioms(obj["idioms"]);
     return d;
 }
 
