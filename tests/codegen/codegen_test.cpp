@@ -1012,6 +1012,88 @@ TEST(CodeGenPassTest, EnablePtrSyntaxOffLeavesTheAddressArithmeticAlone)
 	EXPECT_EQ(std::string::npos, emitted.find("[")) << emitted;
 }
 
+TEST(CodeGenPassTest, AGotoTheStructurerLeavesBehindGetsItsLabel)
+{
+	// A Goto StructNode -- what the structurer emits for an irreducible region
+	// or a back edge it cannot fold -- used to produce `goto L<n>;` with no
+	// `L<n>:` anywhere. CStmt::labelStmt() had no caller outside the tests,
+	// so nothing in the whole back end ever wrote a label, and a single such
+	// goto makes the translation unit uncompilable.
+	ssa::SSAFunction fn("goto_fn");
+	auto* entry = fn.addBlock("entry");
+	auto* target = fn.addBlock("target");
+	auto* retI = fn.addInstr(target->id, ssa::IrInstr::Op::Ret);
+
+	auto seq = cfg_structure::StructNode::seq();
+	auto entryBlk = std::make_unique<cfg_structure::StructNode>();
+	entryBlk->kind = cfg_structure::StructNode::Kind::Block;
+	entryBlk->blockId = entry->id;
+	seq->children.push_back(std::move(entryBlk));
+	seq->children.push_back(cfg_structure::StructNode::gotoNode(target->id, true));
+	auto targetBlk = std::make_unique<cfg_structure::StructNode>();
+	targetBlk->kind = cfg_structure::StructNode::Kind::Block;
+	targetBlk->blockId = target->id;
+	seq->children.push_back(std::move(targetBlk));
+
+	call_conv::CallingConvention cc;
+	cc.ret.kind = call_conv::RetKind::Void;
+	dce::DeadCodeResult dce;
+	dce.liveInstrs = {retI->id};
+
+	// With goto elimination on, GotoEliminator folds this one away, which is
+	// its job. Turn it off so the emitter's own half is what is under test.
+	CodeGenPass::Config noElim;
+	noElim.enableGotoElim = false;
+
+	CodeGenPass pass;
+	auto cfn = pass.generateFunction(fn, *seq, cc, dce, noElim);
+
+	Emitter e;
+	const std::string out = e.emitFunction(cfn, {});
+
+	const std::string lbl = "L" + std::to_string(target->id);
+	EXPECT_NE(std::string::npos, out.find("goto " + lbl + ";")) << out;
+	EXPECT_NE(std::string::npos, out.find(lbl + ":")) << "goto with no label:\n" << out;
+	EXPECT_EQ(1u, pass.stats().gotosRemaining);
+}
+
+TEST(CodeGenPassTest, NoGotoIsEmittedForATargetThatIsNotInTheTree)
+{
+	// The other half: a Goto node naming a block the tree does not contain
+	// has no label to jump to, so emitting the goto would be the same defect
+	// by another route. Nothing is emitted for it instead.
+	ssa::SSAFunction fn("dangling_fn");
+	auto* entry = fn.addBlock("entry");
+	auto* orphan = fn.addBlock("orphan");
+	auto* retI = fn.addInstr(entry->id, ssa::IrInstr::Op::Ret);
+
+	auto seq = cfg_structure::StructNode::seq();
+	auto entryBlk = std::make_unique<cfg_structure::StructNode>();
+	entryBlk->kind = cfg_structure::StructNode::Kind::Block;
+	entryBlk->blockId = entry->id;
+	seq->children.push_back(std::move(entryBlk));
+	seq->children.push_back(cfg_structure::StructNode::gotoNode(orphan->id, true));
+
+	call_conv::CallingConvention cc;
+	cc.ret.kind = call_conv::RetKind::Void;
+	dce::DeadCodeResult dce;
+	dce.liveInstrs = {retI->id};
+
+	CodeGenPass::Config noElim;
+	noElim.enableGotoElim = false;
+
+	CodeGenPass pass;
+	auto cfn = pass.generateFunction(fn, *seq, cc, dce, noElim);
+	Emitter e;
+	const std::string out = e.emitFunction(cfn, {});
+
+	const std::string lbl = "L" + std::to_string(orphan->id);
+	EXPECT_EQ(std::string::npos, out.find("goto " + lbl + ";"))
+		<< "a goto was emitted for a block the tree does not hold, so the"
+		   " label it names can never be written:\n"
+		<< out;
+}
+
 TEST(CodeGenPassTest, GenerateUnitMultipleFunctions)
 {
 	ssa::SSAFunction fn1("func_a");

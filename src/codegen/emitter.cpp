@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <set>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace retdec {
@@ -332,6 +333,60 @@ static std::shared_ptr<CExpr> condExpr(
 	return norm.normalise(e, true, &stats.condRewrites);
 }
 
+// The label each Goto node in @a node's tree names, keyed by the block it
+// jumps to.
+//
+// Nothing collected these, and nothing emitted a label: CStmt::labelStmt()
+// had no caller outside the tests, so `goto L7;` was written with no `L7:`
+// anywhere in the function. Every goto the structurer gives up and emits --
+// which is every irreducible region and every back edge it cannot fold --
+// made the whole translation unit uncompilable.
+static void collectGotoTargetsAndBlocks(
+	const cfg_structure::StructNode* node,
+	std::unordered_map<uint32_t, std::string>& targets,
+	std::unordered_set<uint32_t>& blocks)
+{
+	if (!node) return;
+
+	if (node->kind == cfg_structure::StructNode::Kind::Block && node->blockId != ssa::kInvalidBlock)
+	{
+		blocks.insert(node->blockId);
+	}
+
+	if (node->kind == cfg_structure::StructNode::Kind::Goto && node->gotoTarget != ssa::kInvalidBlock)
+	{
+		auto lbl = node->label.empty() ? "L" + std::to_string(node->gotoTarget) : node->label;
+		// First one wins, so two gotos to one block agree on the spelling.
+		targets.emplace(node->gotoTarget, std::move(lbl));
+	}
+
+	for (const auto& c: node->children)
+		collectGotoTargetsAndBlocks(c.get(), targets, blocks);
+	collectGotoTargetsAndBlocks(node->defaultCase.get(), targets, blocks);
+}
+
+/// The label each goto in @a root should name, for the targets @a root can
+/// actually put a label on.
+///
+/// A label goes on a Block node, so a goto naming anything else has nowhere
+/// to land: those are dropped rather than emitted. That is a wrong function
+/// where emitting the goto is a wrong *file* -- one undefined label and the C
+/// compiler rejects the whole translation unit, every other function with it.
+/// The structurer only emits a goto to a block it has already visited, so this
+/// is a guard on a shape it does not currently produce rather than a case
+/// being papered over.
+static std::unordered_map<uint32_t, std::string> gotoLabelsFor(const cfg_structure::StructNode* root)
+{
+	std::unordered_map<uint32_t, std::string> targets;
+	std::unordered_set<uint32_t> blocks;
+	collectGotoTargetsAndBlocks(root, targets, blocks);
+
+	for (auto it = targets.begin(); it != targets.end();)
+		it = blocks.count(it->first) ? std::next(it) : targets.erase(it);
+
+	return targets;
+}
+
 // Forward declaration.
 static std::shared_ptr<CStmt> buildBody(
 	const cfg_structure::StructNode* node,
@@ -342,6 +397,7 @@ static std::shared_ptr<CStmt> buildBody(
 	const LoopFormSelector& loopSel,
 	const PointerSyntax& ptrSyn,
 	const CodeGenPass::Config& cfg,
+	const std::unordered_map<uint32_t, std::string>& gotoLabels,
 	CodeGenPass::Stats& stats);
 
 static std::shared_ptr<CStmt> instrToStmt(
@@ -430,6 +486,7 @@ static std::shared_ptr<CStmt> buildBody(
 	const LoopFormSelector& loopSel,
 	const PointerSyntax& ptrSyn,
 	const CodeGenPass::Config& cfg,
+	const std::unordered_map<uint32_t, std::string>& gotoLabels,
 	CodeGenPass::Stats& stats)
 {
 	if (!node) return CStmt::block();
@@ -440,6 +497,9 @@ static std::shared_ptr<CStmt> buildBody(
 	{
 	case NK::Block: {
 		auto blk = CStmt::block();
+		// A block something jumps to has to carry the label the jump names.
+		auto lbl = gotoLabels.find(node->blockId);
+		if (lbl != gotoLabels.end()) blk->children.push_back(CStmt::labelStmt(lbl->second));
 		const auto* ssaBlk = fn.block(node->blockId);
 		if (!ssaBlk) return blk;
 		for (const auto* instr: ssaBlk->instrs)
@@ -456,7 +516,7 @@ static std::shared_ptr<CStmt> buildBody(
 		auto seq = CStmt::block();
 		for (auto& child: node->children)
 		{
-			auto sub = buildBody(child.get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats);
+			auto sub = buildBody(child.get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, gotoLabels, stats);
 			if (!sub) continue;
 			if (sub->kind == CStmt::Kind::Block)
 				for (auto& s: sub->children)
@@ -470,9 +530,10 @@ static std::shared_ptr<CStmt> buildBody(
 	case NK::IfThen: {
 		auto cond = condExpr(node->condValueId, exprs, fn, condNorm, cfg, stats);
 		if (!cond) cond = CExpr::lit("1");
-		auto thenBody = node->children.empty()
-						  ? CStmt::block()
-						  : buildBody(node->children[0].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats);
+		auto thenBody =
+			node->children.empty()
+				? CStmt::block()
+				: buildBody(node->children[0].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, gotoLabels, stats);
 		auto ifS = CStmt::ifStmt(cond);
 		ifS->children.push_back(thenBody);
 		return ifS;
@@ -481,12 +542,14 @@ static std::shared_ptr<CStmt> buildBody(
 	case NK::IfThenElse: {
 		auto cond = condExpr(node->condValueId, exprs, fn, condNorm, cfg, stats);
 		if (!cond) cond = CExpr::lit("1");
-		auto thenBody = node->children.size() > 0
-						  ? buildBody(node->children[0].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats)
-						  : CStmt::block();
-		auto elseBody = node->children.size() > 1
-						  ? buildBody(node->children[1].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats)
-						  : CStmt::block();
+		auto thenBody =
+			node->children.size() > 0
+				? buildBody(node->children[0].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, gotoLabels, stats)
+				: CStmt::block();
+		auto elseBody =
+			node->children.size() > 1
+				? buildBody(node->children[1].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, gotoLabels, stats)
+				: CStmt::block();
 		auto ifS = CStmt::ifStmt(cond);
 		ifS->children.push_back(thenBody);
 		ifS->children.push_back(elseBody);
@@ -498,9 +561,10 @@ static std::shared_ptr<CStmt> buildBody(
 	case NK::For:
 	case NK::Infinite: {
 		auto cond = condExpr(node->condValueId, exprs, fn, condNorm, cfg, stats);
-		auto body = node->children.empty()
-					  ? CStmt::block()
-					  : buildBody(node->children[0].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats);
+		auto body =
+			node->children.empty()
+				? CStmt::block()
+				: buildBody(node->children[0].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, gotoLabels, stats);
 		return loopSel.select(*node, cond, nullptr, nullptr, body);
 	}
 
@@ -522,7 +586,7 @@ static std::shared_ptr<CStmt> buildBody(
 			sw->children.push_back(cs);
 			if (arm)
 			{
-				auto ab = buildBody(arm.get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats);
+				auto ab = buildBody(arm.get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, gotoLabels, stats);
 				if (ab)
 				{
 					if (ab->kind == CStmt::Kind::Block)
@@ -539,7 +603,8 @@ static std::shared_ptr<CStmt> buildBody(
 			auto dc = std::make_shared<CStmt>();
 			dc->kind = CStmt::Kind::Default;
 			sw->children.push_back(dc);
-			auto db = buildBody(node->defaultCase.get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats);
+			auto db =
+				buildBody(node->defaultCase.get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, gotoLabels, stats);
 			if (db)
 			{
 				if (db->kind == CStmt::Kind::Block)
@@ -554,13 +619,13 @@ static std::shared_ptr<CStmt> buildBody(
 	}
 
 	case NK::Goto: {
-		// Emit goto target label.
-		std::string lbl = node->label;
-		if (lbl.empty() && node->gotoTarget != ssa::kInvalidBlock) lbl = "L" + std::to_string(node->gotoTarget);
-		if (!lbl.empty())
+		// Emit goto target label. collectGotoLabels() agreed on the spelling,
+		// so read it from there rather than deriving it a second time.
+		auto it = gotoLabels.find(node->gotoTarget);
+		if (it != gotoLabels.end())
 		{
 			++stats.gotosRemaining;
-			return CStmt::gotoStmt(lbl);
+			return CStmt::gotoStmt(it->second);
 		}
 		return CStmt::block();
 	}
@@ -639,8 +704,10 @@ CFunction CodeGenPass::generateFunction(
 	// difference is identically zero -- and since GotoEliminator does not
 	// touch the counter either, `gotosEliminated += 0 - remaining` wrapped a
 	// std::size_t to 2^64-1 whenever any goto survived.
+	const auto gotoLabels = gotoLabelsFor(&structTree);
+
 	const auto gotosBefore = stats_.gotosRemaining;
-	auto body = buildBody(&structTree, exprResult, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats_);
+	auto body = buildBody(&structTree, exprResult, fn, dce, condNorm, loopSel, ptrSyn, cfg, gotoLabels, stats_);
 	if (!body || body->kind != CStmt::Kind::Block)
 	{
 		auto w = CStmt::block();

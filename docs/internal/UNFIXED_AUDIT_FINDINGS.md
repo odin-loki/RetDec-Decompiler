@@ -604,6 +604,35 @@ Rusticl ICD — then the `UNBUILT_DIRS` entry comes out.
 
 
 
+
+## The Imortek codegen wrote every `goto` with no label to match
+
+`src/codegen/emitter.cpp` emits `goto L<blockId>;` for a
+`StructNode::Kind::Goto` — which is what `CompilerStructurer` produces for
+every irreducible region and every back edge it cannot fold. Nothing emitted
+the label. `CStmt::labelStmt()` exists, `Emitter::emitStmt` renders
+`Kind::Label`, `GotoEliminator` reads `Kind::Label` statements — and the only
+callers of `labelStmt()` anywhere in the tree are five lines of
+`tests/codegen/codegen_test.cpp`.
+
+So the back end could not emit a `goto` and a working translation unit at the
+same time. One undefined label is not one bad function: the C compiler
+rejects the file, and every other function in it goes with it.
+
+`gotoLabelsFor()` now walks the `StructNode` tree once, pairs each `Goto`
+node with the block it names, and the `Block` case emits that label. Two
+gotos to one block agree on the spelling because the label is looked up from
+the same map that the goto is.
+
+A goto naming a block the tree has no `Block` node for is dropped rather than
+emitted: a label can only go on a block, so such a goto has nowhere to land,
+and a wrong function is less destructive than a file no compiler will read.
+The structurer only emits a goto to a block it has already visited, so this
+guard is on a shape it does not currently produce — it has a test because a
+guard nothing exercises is indistinguishable from one that does not work.
+
+Both halves verified by reverting them one at a time.
+
 ## The whole back end, from LLVM IR, in one test
 
 Every other test under `tests/llvmir2hll` exercises one pass on a module
