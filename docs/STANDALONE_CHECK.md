@@ -156,13 +156,22 @@ guards:
 
   `UNGATED_SUITES` is the debt list: suites whose assertions are evaluated
   nowhere at all, each with the reason. It is not an exemption — an entry leaves
-  when a gate starts running the suite. It currently holds 14 entries, of which
-  6 are real suites (`bin2llvmir`, `capstone2llvmir`, `llvmir-emul`, `cpdetect`,
-  `loader`, `unpacker`) blocked on the pinned `llvm-project` build, 1 (`opencl`)
-  on an ICD loader, and the rest are fixture directories, the gtest shim itself,
-  or behind an off-by-default option. `demangler` left the list when DEM-01
-  started building it against the system LLVM: `llvm/Demangle` is stable enough
-  that a pinned build is not required to exercise 125 assertions.
+  when a gate starts running the suite. It started at 16 entries and is down to 12, of which 4 are real suites --
+  `bin2llvmir`, `capstone2llvmir`, `llvmir-emul` on the pinned `llvm-project`
+  build and `unpacker` on YARA -- 1 (`opencl`) needs an ICD loader, and the
+  rest are fixture directories, the gtest shim itself, or behind an
+  off-by-default option.
+
+  Three left because the assumption that put them there did not survive being
+  checked. `demangler` (125 assertions) was listed as needing the pinned LLVM;
+  `llvm/Demangle` is among the most stable corners of LLVM and DEM-01 builds it
+  against the distribution one. `cpdetect` and `loader` (74) were listed as
+  needing `retdec::fileformat`, which was listed as needing the pinned LLVM; it
+  needs `llvm/Object/COFF.h` and a few `llvm/Support` headers, which `llvm-dev`
+  provides, plus stb, tlsh and authenticode-parser, which are vendored in
+  `deps/` with sources rather than being download stubs. FF-01 builds all of
+  it. `unpacker` really is blocked, but by YARA rather than by LLVM, and the
+  entry now says so.
 * `.github/workflows/standalone-check.yml` runs the check under both `g++` and
   `clang++`, plus an ASan/UBSan job, on every pull request. Two compilers is not
   redundancy: Clang rejects code GCC quietly miscompiles, and the first run of

@@ -120,6 +120,16 @@ jobs:
       - name: DEM-01 demangler suite
         run: bash scripts/ci/check_demangler_tests.sh
 
+      # FF-01. tests/cpdetect and tests/loader -- 74 assertions over the layer
+      # that turns a file on disk into sections, segments and symbols -- ran
+      # nowhere for the same two reasons. src/fileformat was assumed to need
+      # the pinned llvm-project; it needs llvm/Object/COFF.h and a few
+      # llvm/Support headers, which llvm-dev provides, and stb, tlsh and
+      # authenticode-parser, which are vendored in deps/ with sources.
+      # tests/unpacker stays out: it links retdec::cpdetect, which needs YARA.
+      - name: FF-01 fileformat-backed suites
+        run: bash scripts/ci/check_fileformat_tests.sh --jobs 4
+
   sanitizers:
     name: asan+ubsan
     runs-on: ubuntu-latest

@@ -138,7 +138,7 @@ jobs:
             echo '```'
             grep -E 'mean_f1|REGRESSION|PASS|decompiled=' /tmp/f1.log || tail -n 5 /tmp/f1.log
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
           exit $rc
 
       - name: CACHE-05 cache-on vs cache-off
@@ -211,7 +211,7 @@ jobs:
             echo '```'
             grep -E '^DET-01' /tmp/det01.log || tail -n 3 /tmp/det01.log
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
           exit $rc
 
       - name: CC-01 emitted C compiles
@@ -244,8 +244,22 @@ jobs:
             echo '```'
             grep -E '^CC-01' /tmp/cc01.log || tail -n 3 /tmp/cc01.log
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
           exit $rc
+
+      # $GITHUB_STEP_SUMMARY renders in the web UI but is not exposed by the
+      # workflow-run API, and this job's log is ~16 MB with the numbers past
+      # the window the log API returns. An artifact is the one form of this
+      # that a tool can fetch. `if: always()` because a failing gate is
+      # exactly when the number is worth reading.
+      - name: Publish the measured gate numbers
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gate-numbers
+          path: gate-numbers.md
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Filename-rename integrity guard
         run: |
