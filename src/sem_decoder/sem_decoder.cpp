@@ -472,12 +472,12 @@ void SemDecoder::propagateUndefFlags(std::vector<DecodedInstr>& instrs)
             instr.ops.push_back(uop);
         }
 
-        // Update the current undefined flags state.
-        // Defined flags clear the undefined set; undefined flags add to it.
-        curUndef &= ~fe.defined;   // defined flags are no longer undef
-        curUndef &= ~fe.preserved; // preserved means they retain their state
-        curUndef |=  fe.undefined; // newly undefined flags
-    }
+		// Update the current undefined flags state.
+		// Defined flags clear the undefined set; undefined flags add to it.
+		curUndef &= ~fe.defined;   // defined flags are no longer undef
+		curUndef &= ~fe.preserved; // preserved means they retain their state
+		curUndef |= fe.undefined;  // newly undefined flags
+	}
 }
 
 // ─── Entropy ─────────────────────────────────────────────────────────────────
@@ -629,26 +629,32 @@ std::vector<uint64_t> SemDecoder::bestPath(const DecodeGraph& g,
         double nextScore = s + node.logFreq;
 
         for (uint64_t succ : node.successors) {
-            auto& ss = score[succ];
-            if (score.find(succ) == score.end()) ss = kNegInf;
-            if (nextScore > ss) {
-                ss = nextScore;
-                pred[succ] = addr;
-            }
-        }
-    }
+			auto& ss = score[succ];
+			if (score.find(succ) == score.end()) ss = kNegInf;
+			if (nextScore > ss)
+			{
+				ss = nextScore;
+				pred[succ] = addr;
+			}
+		}
+	}
 
-    // Find the end node with the best score at or near endAddr.
-    // Walk backwards from the highest-scored node <= endAddr.
-    uint64_t best = startAddr;
-    double   bestScore = kNegInf;
-    for (auto& [addr, s] : score) {
-        if (addr >= endAddr) continue;
-        if (s > bestScore) { bestScore = s; best = addr; }
-    }
+	// Find the end node with the best score at or near endAddr.
+	// Walk backwards from the highest-scored node <= endAddr.
+	uint64_t best = startAddr;
+	double bestScore = kNegInf;
+	for (auto& [addr, s]: score)
+	{
+		if (addr >= endAddr) continue;
+		if (s > bestScore)
+		{
+			bestScore = s;
+			best = addr;
+		}
+	}
 
-    // Traceback.
-    std::vector<uint64_t> path;
+	// Traceback.
+	std::vector<uint64_t> path;
     for (uint64_t cur = best; cur != startAddr; ) {
         path.push_back(cur);
         auto pit = pred.find(cur);
