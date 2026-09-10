@@ -140,6 +140,9 @@ out=""; bin=""
 while [[ $# -gt 0 ]]; do case "$1" in -o) out="$2"; shift 2;; *) bin="$1"; shift;; esac; done
 if [[ "$(basename "${bin}")" == "prog_c-gcc-O3" ]]; then
 	printf 'int f(void) { return undeclared_thing; }\n' > "${out}"
+	# The real decompiler leaves the LLVM IR it gave the back end beside its
+	# output; the check keeps that too, so the fake has to write one.
+	printf 'define i32 @f() {\n  ret i32 0\n}\n' > "${out%.c}.ll"
 else
 	printf 'int f(void) { return 0; }\n' > "${out}"
 fi
@@ -277,6 +280,13 @@ FAKE
 		echo "self-test: --save-failures kept no compiler output" >&2
 		fails=$(( fails + 1 ))
 	fi
+	# The .ll the back end was given, when the decompiler wrote one. The fake
+	# above writes one only for the file that fails, so exactly one is kept.
+	kept_ll="$(find "${T}/kept" -name '*.ll' 2>/dev/null | wc -l)"
+	if [[ "${kept_ll}" -ne 1 ]]; then
+		echo "self-test: --save-failures kept ${kept_ll} .ll file(s), expected 1" >&2
+		fails=$(( fails + 1 ))
+	fi
 
 	# ...and nothing at all when everything compiles.
 	rm -rf "${T}/kept_ok"
@@ -375,13 +385,22 @@ if [[ -n "${SAVE_FAILURES}" ]]; then
 fi
 
 # Keep the emitted C of a file that did not compile, next to what the compiler
-# said about it.  Without this the only trace of the defect is a line number
-# in a directory that the trap above deletes.
+# said about it and the LLVM IR the back end was given.  Without this the only
+# trace of the defect is a line number in a directory that the trap above
+# deletes.
+#
+# The `.ll` is the useful half for anything in the back end: it is what
+# `scripts/ci/check_llvmir2hll_tests.sh` takes as input, so an IR kept here can
+# be replayed through the converter and the whole optimizer pipeline on a
+# developer machine in a couple of minutes -- no front end, no CI round trip.
+# The decompiler writes it beside its output and only removes it with
+# --cleanup, which this check does not pass.
 save_failure() {
 	[[ -n "${SAVE_FAILURES}" ]] || return 0
 	local name="$1" src="$2" cerr="$3"
 	[[ -s "${src}" ]] && cp "${src}" "${SAVE_FAILURES}/${name}.c"
 	[[ -s "${cerr}" ]] && cp "${cerr}" "${SAVE_FAILURES}/${name}.cc.log"
+	[[ -s "${src%.c}.ll" ]] && cp "${src%.c}.ll" "${SAVE_FAILURES}/${name}.ll"
 	return 0
 }
 

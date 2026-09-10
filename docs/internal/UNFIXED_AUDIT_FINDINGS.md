@@ -603,6 +603,31 @@ Rusticl ICD — then the `UNBUILT_DIRS` entry comes out.
 
 
 
+
+## The whole back end, from LLVM IR, in one test
+
+Every other test under `tests/llvmir2hll` exercises one pass on a module
+built by hand. What the decompiler actually does — convert, then run thirty
+passes in order, each on the output of the last — was covered by nothing but
+the corpus, which needs the front end and a CI round trip.
+
+`OptimizerManagerPipelineTests` takes LLVM IR, converts it, runs
+`OptimizerManager` over the result, and asks whether every goto still has a
+target the emitter reaches. Three shapes so far: a multi-exit loop, the
+nested multi-exit shape read off `generated_shell_sort-gcc-O2`'s emitted C,
+and an irreducible two-block region. All three hold, so none of them is the
+shape that loses `lab_0x112c`.
+
+The harness takes a `disabledOpts` set, which is the point: once a shape does
+reproduce, bisecting the pipeline names the pass in a few local runs rather
+than a few CI rounds.
+
+What is missing is the real input. `--save-failures` now keeps the `.ll` the
+back end was given alongside the `.c` it produced — the decompiler writes it
+beside its output and only removes it with `--cleanup`, which CC-01 does not
+pass. One CI round hands over the exact IR for the function that fails, and
+that IR goes straight into this harness.
+
 ## 384 more tests, and the pass that decides what becomes a `goto`
 
 `scripts/ci/check_llvmir2hll_tests.sh` excluded
