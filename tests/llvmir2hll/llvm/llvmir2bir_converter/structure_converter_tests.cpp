@@ -34,6 +34,7 @@
 #include "retdec/llvmir2hll/ir/variable.h"
 #include "retdec/llvmir2hll/ir/while_loop_stmt.h"
 #include "retdec/llvmir2hll/support/smart_ptr.h"
+#include "retdec/llvmir2hll/support/visitors/ordered_all_visitor.h"
 #include "retdec/llvmir2hll/utils/ir.h"
 
 using namespace ::testing;
@@ -4645,6 +4646,142 @@ SwitchInLoopWithDefaultClauseAndWithAllClausesTerminatedByBreakIsConvertedCorrec
 		ASSERT_TRUE(isAssignOfVarToVar(getFirstNonEmptySuccOf(ifBreak), varX, varY));
 	}
 	ASSERT_TRUE(isCallOfFuncTest(getFirstNonEmptySuccOf(whileStmt), 6));
+}
+
+
+namespace {
+
+/// Every statement the emitter walks from @a start.
+class ReachableStmtCollector : private OrderedAllVisitor {
+public:
+	static StmtUSet collect(ShPtr<Statement> start)
+	{
+		ReachableStmtCollector c;
+		c.visitStmt(start);
+		return c.seen;
+	}
+
+private:
+	void visitStmt(ShPtr<Statement> stmt, bool visitSuccessors = true, bool visitNestedStmts = true) override
+	{
+		if (stmt)
+		{
+			seen.insert(stmt);
+		}
+		OrderedAllVisitor::visitStmt(stmt, visitSuccessors, visitNestedStmts);
+	}
+
+	StmtUSet seen;
+};
+
+} // namespace
+
+void expectEveryGotoResolves(ShPtr<Function> f)
+{
+	ASSERT_TRUE(f);
+	auto reachable = ReachableStmtCollector::collect(f->getBody());
+	for (const auto& stmt: reachable)
+	{
+		auto g = cast<GotoStmt>(stmt);
+		if (!g)
+		{
+			continue;
+		}
+		EXPECT_EQ(1u, reachable.count(g->getTarget())) << "a goto targets a statement the emitter never reaches, so its"
+														  " label is used but never defined";
+	}
+}
+
+TEST_F(StructureConverterTests, NestedMultiExitLoopGotoHasATargetTheEmitterReaches)
+{
+	// The shape generated_shell_sort-gcc-O2 has: an outer loop whose body
+	// holds an inner loop with two exits, the early one jumping to a join
+	// inside the outer loop that then decides whether to break.
+	auto module = convertLLVMIR2BIR(R"(
+		declare void @test(i32)
+
+		define void @function(i32 %n) {
+		entry:
+			br label %outer
+		outer:
+			%i = phi i32 [ 0, %entry ], [ %inext, %outerlatch ]
+			br label %inner
+		inner:
+			%j = phi i32 [ 0, %outer ], [ %jnext, %innerlatch ]
+			%c1 = icmp slt i32 %j, %n
+			br i1 %c1, label %innerbody, label %innerexit
+		innerbody:
+			%c2 = icmp eq i32 %j, 5
+			br i1 %c2, label %join, label %innerlatch
+		innerlatch:
+			%jnext = add i32 %j, 1
+			call void @test(i32 7)
+			br label %inner
+		innerexit:
+			call void @test(i32 1)
+			br label %join
+		join:
+			call void @test(i32 2)
+			%c3 = icmp eq i32 %i, 9
+			br i1 %c3, label %out, label %outerlatch
+		outerlatch:
+			%inext = add i32 %i, 1
+			br label %outer
+		out:
+			ret void
+		}
+	)");
+
+	expectEveryGotoResolves(module->getFuncByName("function"));
+}
+
+TEST_F(StructureConverterTests, MultiExitLoopGotoHasATargetTheEmitterReaches)
+{
+	auto module = convertLLVMIR2BIR(R"(
+		declare void @test(i32)
+
+		define void @function(i32 %n) {
+		entry:
+			br label %loop
+		loop:
+			%i = phi i32 [ 0, %entry ], [ %inext, %latch ]
+			%c1 = icmp slt i32 %i, %n
+			br i1 %c1, label %body, label %normalexit
+		body:
+			%c2 = icmp eq i32 %i, 5
+			br i1 %c2, label %join, label %latch
+		latch:
+			%inext = add i32 %i, 1
+			call void @test(i32 7)
+			br label %loop
+		normalexit:
+			call void @test(i32 1)
+			br label %join
+		join:
+			call void @test(i32 2)
+			%c3 = icmp eq i32 %n, 9
+			br i1 %c3, label %big, label %done
+		big:
+			call void @test(i32 3)
+			br label %done
+		done:
+			ret void
+		}
+	)");
+
+	auto f = module->getFuncByName("function");
+	ASSERT_TRUE(f);
+	auto reachable = ReachableStmtCollector::collect(f->getBody());
+	for (const auto& stmt: reachable)
+	{
+		auto g = cast<GotoStmt>(stmt);
+		if (!g)
+		{
+			continue;
+		}
+		EXPECT_EQ(1u, reachable.count(g->getTarget())) << "a goto targets a statement the emitter never reaches, so its"
+														  " label is used but never defined";
+	}
 }
 
 } // namespace tests

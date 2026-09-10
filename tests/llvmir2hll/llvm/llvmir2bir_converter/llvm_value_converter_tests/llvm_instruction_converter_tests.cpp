@@ -653,8 +653,12 @@ LoadInstPointeeMetadataDoesNotWrapLoadedValueAsPointer)
 	auto* i32 = llvm::Type::getInt32Ty(context);
 	auto* i32Ptr = llvm::PointerType::getUnqual(context);
 	auto src = std::make_unique<llvm::Argument>(i32Ptr, "p");
-	auto llvmInst = UPtr<llvm::LoadInst>(new llvm::LoadInst(
-		i32, src.get(), "", false, llvm::Align(1), nullptr));
+	// No trailing nullptr for the insertion point: LoadInst has an
+	// InsertBefore and an InsertAtEnd overload, both of which nullptr matches,
+	// and that ambiguity is what kept tests/llvmir2hll/llvm out of the
+	// standalone check. Leaving it off takes the InsertBefore default and is
+	// unambiguous in every LLVM.
+	auto llvmInst = UPtr<llvm::LoadInst>(new llvm::LoadInst(i32, src.get(), "", false, llvm::Align(1)));
 	llvmInst->setMetadata("retdec.pointee", llvm::MDNode::get(context, {
 			llvm::MDString::get(context, "i8")}));
 
@@ -673,8 +677,7 @@ PointerLoadInstPointeeMetadataDoesNotDoubleWrap)
 	auto* i8Ptr = llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0);
 	auto* i8PtrPtr = llvm::PointerType::get(i8Ptr, 0);
 	auto src = std::make_unique<llvm::Argument>(i8PtrPtr, "p");
-	auto llvmInst = UPtr<llvm::LoadInst>(new llvm::LoadInst(
-		i8Ptr, src.get(), "", false, llvm::Align(1), nullptr));
+	auto llvmInst = UPtr<llvm::LoadInst>(new llvm::LoadInst(i8Ptr, src.get(), "", false, llvm::Align(1)));
 	llvmInst->setMetadata("retdec.pointee", llvm::MDNode::get(context, {
 			llvm::MDString::get(context, "i8*")}));
 

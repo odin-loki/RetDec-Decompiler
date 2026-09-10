@@ -227,7 +227,12 @@ ShPtr<Expression> LLVMConstantConverter::convertToExpression(
 		const llvm::ConstantPointerNull *cNullPtr) {
 	PRECONDITION_NON_NULL(cNullPtr);
 
-	auto type = typeConverter->convert(cNullPtr->getPointerType());
+	// getType() rather than getPointerType(): ConstantPointerNull specialises
+	// getType() to return a PointerType* in every LLVM this code has ever
+	// been built against, while getPointerType() was dropped with typed
+	// pointers. This one call is what kept the whole llvmir2bir_converter
+	// directory out of the standalone check.
+	auto type = typeConverter->convert(cNullPtr->getType());
 	return ConstNullPointer::create(type);
 }
 

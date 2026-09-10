@@ -81,8 +81,11 @@ jobs:
       - name: ADAPT-01 llvm_to_ssa adapter
         run: bash scripts/ci/check_llvm_adapter.sh
 
-      # L2H-01. tests/llvmir2hll is 1767 assertions over the component that
-      # writes the decompiler's C output, and none of them ran anywhere.
+      # L2H-01. tests/llvmir2hll is 2179 assertions over the component that
+      # writes the decompiler's C output, and none of them ran anywhere. 386 of
+      # them are tests/llvmir2hll/llvm, which this check excluded until the
+      # stated reason -- LLVM APIs that moved -- was measured and came to three
+      # lines rather than a directory.
       #
       # An earlier version of this comment blamed RETDEC_TESTS:BOOL=OFF. That
       # was wrong -- the full-linux-debug preset has set RETDEC_TESTS to ON

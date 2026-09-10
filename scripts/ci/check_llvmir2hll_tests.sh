@@ -3,8 +3,8 @@
 #
 # Why this exists
 # ---------------
-# `tests/llvmir2hll` is 158 files and, at the time this was written, 1767
-# assertions across 137 suites.  Nothing ran any of them.  The CMake target is
+# `tests/llvmir2hll` is 177 files and, at the time this was written, 2177
+# assertions across 153 suites.  Nothing ran any of them.  The CMake target is
 # behind `RETDEC_ENABLE_LLVMIR2HLL_TESTS`, which is behind `RETDEC_TESTS`, and
 # `.github/workflows/ctest-linux.yml` configures with `RETDEC_TESTS:BOOL=OFF`.
 # So the entire test suite for the component that writes the decompiler's C
@@ -29,12 +29,18 @@
 #
 # What it does NOT cover, and why
 # -------------------------------
-# `src/llvmir2hll/llvm/llvmir2bir_converter/` and `tests/llvmir2hll/llvm/` are
-# excluded: they use LLVM APIs that moved between the system LLVM and the
-# pinned one (`ConstantPointerNull::getPointerType`, the `LoadInst` ctor
-# overload set), so they cannot compile here at all.  Those need the full
-# build.  The exclusion is named here rather than silently skipped so the hole
-# is visible; --list-excluded prints it.
+# `src/llvmir2hll/llvm/llvmir2bir_converter/` and `tests/llvmir2hll/llvm/` used
+# to be excluded here, on the grounds that they use LLVM APIs that moved
+# between the system LLVM and the pinned one -- naming
+# `ConstantPointerNull::getPointerType` and the `LoadInst` ctor overload set.
+# Both were real and neither justified the exclusion: probing the twenty
+# sources and nineteen test files one at a time found exactly one production
+# call and two calls in one test that did not compile.  Nine hundred lines of
+# `structure_converter.cpp`, which is where retdec decides what becomes a
+# goto, were being skipped for three lines.  They are all in now.
+#
+# --list-excluded prints what is left, which is two files that need something
+# the CMake build provides.
 #
 # It fails, rather than skipping, when LLVM or gtest is missing.  A check that
 # quietly turns itself off is a check nobody can rely on.
@@ -49,10 +55,12 @@ cd "${ROOT}"
 
 LLVM_CONFIG=""
 JOBS="$(nproc 2>/dev/null || echo 4)"
-# The floor is deliberately well under the 1767 that ran when this was written:
+# The floor is deliberately well under the 2177 that ran when this was written:
 # it is here to catch a suite that stops being linked in, not to be a count
-# that has to be updated every time somebody adds a test.
-MIN_TESTS=1500
+# that has to be updated every time somebody adds a test.  It was 1500 against
+# 1767 and is 2000 against 2177 for the same reason -- close enough that
+# dropping a directory shows, loose enough that adding a test does not.
+MIN_TESTS=2000
 KEEP=0
 FILTER=""
 LIST_EXCLUDED=0
@@ -71,8 +79,6 @@ done
 # Anything here is compiled by nothing on this path; each entry says why.
 excluded_sources() {
 	cat <<'EOF'
-src/llvmir2hll/llvm/llvmir2bir_converter*	uses LLVM APIs that differ between the system and pinned LLVM
-tests/llvmir2hll/llvm/*	tests for the above
 src/utils/binary_path.cpp	needs deps/whereami/whereami.c built as C; nothing here calls it
 src/utils/version.cpp	needs the RETDEC_GIT_* defines only the CMake build sets
 EOF
@@ -142,12 +148,11 @@ CXXFLAGS+=" -Ideps/elfio/include ${LLVM_CPPFLAGS} -w"
 # Every source that goes in, minus the exclusions above.
 mapfile -t SRCS < <(
 	{
-		find src/llvmir2hll -name '*.cpp' \
-			! -path 'src/llvmir2hll/llvm/llvmir2bir_converter*'
+		find src/llvmir2hll -name '*.cpp'
 		find src/common src/config src/serdes -name '*.cpp'
 		find src/utils -name '*.cpp' \
 			! -name 'binary_path.cpp' ! -name 'version.cpp'
-		find tests/llvmir2hll -name '*.cpp' ! -path 'tests/llvmir2hll/llvm/*'
+		find tests/llvmir2hll -name '*.cpp'
 	} | sort
 )
 

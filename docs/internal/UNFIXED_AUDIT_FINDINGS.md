@@ -602,6 +602,47 @@ Rusticl ICD — then the `UNBUILT_DIRS` entry comes out.
 
 
 
+
+## 384 more tests, and the pass that decides what becomes a `goto`
+
+`scripts/ci/check_llvmir2hll_tests.sh` excluded
+`src/llvmir2hll/llvm/llvmir2bir_converter/` and `tests/llvmir2hll/llvm/`
+outright, with a reason recorded: they use LLVM APIs that moved between the
+system LLVM and the pinned one, naming
+`ConstantPointerNull::getPointerType` and the `LoadInst` constructor overload
+set.
+
+Both were true. Neither justified the exclusion. Compiling the twenty sources
+and nineteen test files one at a time against LLVM 18 found **one**
+production call and **two** calls in one test file that did not build:
+
+* `cNullPtr->getPointerType()` → `cNullPtr->getType()`. `ConstantPointerNull`
+  specialises `getType()` to return a `PointerType*` in every LLVM this code
+  has been built against; `getPointerType()` went with typed pointers.
+* `new llvm::LoadInst(ty, p, "", false, Align(1), nullptr)` — `nullptr`
+  matches both the `Instruction *InsertBefore` and `BasicBlock *InsertAtEnd`
+  overloads. Dropping the argument takes the `InsertBefore` default and is
+  unambiguous everywhere.
+
+Three lines. What they were keeping out included the nine hundred lines of
+`structure_converter.cpp`, which is where retdec decides what becomes a
+`goto` — the component behind the one CC-01 failure that three rounds of
+reading pass sources had not found. The suite goes from 1,793 tests to
+2,179, and the floor from 1,500 to 2,000.
+
+This is the third time on this branch that a recorded reason for not running
+something did not survive being checked: `tests/cpdetect` and `tests/loader`
+were said to need the pinned LLVM and did not, `tests/unpacker` turned out to
+need YARA rather than LLVM, and now this. Writing the reason down is what
+makes it checkable; checking it is a separate act.
+
+The converter's own goto handling now has a regression test asserting the
+property that matters — every goto the emitter reaches has a target it also
+reaches — on a multi-exit loop and on the nested multi-exit shape
+`generated_shell_sort-gcc-O2` actually has. Both hold, so the front end is
+not where `lab_0x112c` is lost; the next place to look is the optimizer
+pipeline that runs after it, which this check can now drive end to end.
+
 ## Three fields that could only ever hold their default
 
 A sweep of every scalar field declared under `include/retdec` for one that
