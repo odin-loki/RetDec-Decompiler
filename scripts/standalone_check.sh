@@ -172,9 +172,9 @@ readonly GATED_ELSEWHERE=(
 # instead of being discovered one defect at a time.  An entry leaves when a gate
 # starts running it, not when someone decides it is fine.
 readonly UNGATED_SUITES=(
-	"bin2llvmir:needs the pinned llvm-project; no gate builds it"
-	"capstone2llvmir:needs the pinned llvm-project and Capstone; no gate builds it"
-	"llvmir-emul:needs the pinned llvm-project; no gate builds it"
+	"bin2llvmir:uses LLVM 20+/21+ APIs (CmpPredicate, Intrinsic::getOrInsertDeclaration, Value::hasUseList); measured against system LLVM 18, it is real drift across many files, not a missing -I"
+	"capstone2llvmir:same LLVM 20+ drift (4-arg APInt, Intrinsic::getOrInsertDeclaration), and its tests need <keystone/keystone.h>, which deps/keystone is a download stub for"
+	"llvmir-emul:uses the 4-argument APInt ctor (LLVM 20+) in a dozen places; src/llvmir2hll/ir/const_int.cpp shows the #if LLVM_VERSION_MAJOR >= 20 shape a port would take, but this is an LLVM interpreter and ten tests is a thin return for that risk"
 	"unpacker:links retdec::cpdetect, which needs YARA -- fileformat itself builds against the system LLVM (see FF-01)"
 	"opencl:needs an OpenCL ICD loader, which no runner installs"
 	"benchmark:performance harness, run by perf-nightly.yml on a schedule not a push"

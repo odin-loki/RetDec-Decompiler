@@ -162,6 +162,14 @@ guards:
   rest are fixture directories, the gtest shim itself, or behind an
   off-by-default option.
 
+  The four that remain were each probed rather than assumed, and each reason is
+  now what was measured: `bin2llvmir`, `capstone2llvmir` and `llvmir-emul` use
+  LLVM 20+/21+ APIs (`CmpPredicate`, `Intrinsic::getOrInsertDeclaration`,
+  `Value::hasUseList`, the four-argument `APInt` constructor) that the
+  distribution LLVM does not have -- real drift across many files, not a
+  missing `-I` -- and `capstone2llvmir`'s tests additionally need
+  `<keystone/keystone.h>`, which `deps/keystone` is a download stub for.
+
   Three left because the assumption that put them there did not survive being
   checked. `demangler` (125 assertions) was listed as needing the pinned LLVM;
   `llvm/Demangle` is among the most stable corners of LLVM and DEM-01 builds it
