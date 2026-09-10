@@ -143,10 +143,13 @@ jobs:
       - name: FF-01 fileformat-backed suites
         run: bash scripts/ci/check_fileformat_tests.sh --jobs 4
 
-      # ARITY-01. The libc arity table the C writer trims calls against is
-      # measured from the real headers, not recalled -- a wrong entry would
-      # silently delete a real argument from the emitted C. This fails if the
-      # table and the headers ever disagree.
+      # ARITY-01. The arity tables the C writer trims and casts calls against
+      # are measured from the real headers, not recalled -- a wrong entry would
+      # silently delete a real argument from the emitted C, or cast a call that
+      # did not need it. There is one per semantics that assigns C headers:
+      # libc (454 entries) and gcc_general (976), the latter because it is the
+      # one that knows <pthread.h>. This fails if a table and the headers ever
+      # disagree.
       - name: ARITY-01 libc arity table vs the C headers
         run: python3 scripts/ci/check_libc_arity.py --check --jobs 4
 

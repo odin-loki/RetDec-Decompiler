@@ -101,7 +101,7 @@ CHECKS=(
 	"standalone sem_decoder suite (system Capstone):::bash scripts/ci/check_sem_decoder_tests.sh"
 	"standalone demangler suite (system LLVM):::bash scripts/ci/check_demangler_tests.sh"
 	"standalone fileformat suites (system LLVM):::bash scripts/ci/check_fileformat_tests.sh"
-	"standalone libc arity table vs headers:::${PY} scripts/ci/check_libc_arity.py --check"
+	"standalone arity tables vs headers:::${PY} scripts/ci/check_libc_arity.py --check"
 	"ci-smoke  no new unread option fields:::${PY} scripts/ci/check_unread_options.py --check"
 	"ci-smoke  every workflow parses:::${PY} scripts/ci/check_workflow_yaml.py"
 	"ci-smoke  workflow parse check (self-test):::${PY} scripts/ci/check_workflow_yaml.py --self-test"

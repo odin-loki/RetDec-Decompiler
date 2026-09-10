@@ -1,16 +1,16 @@
 # Generated provenance summary
 
 Produced by `scripts/ci/generate_provenance.py`. Do not hand-edit.
-Scanned `3129` C/C++ files under `src/`, `include/`, `tests/`.
+Scanned `3131` C/C++ files under `src/`, `include/`, `tests/`.
 
 | Class | Count |
 |-------|------:|
 | `avast-mit` | 1941 |
 | `pelib-porst` | 25 |
-| `imortek-or-undated` | 1163 |
+| `imortek-or-undated` | 1165 |
 | `rewrite-tell-leftover` | 0 |
 
-Odin-only files in known-upstream modules: **167** (Imortek additions inside Avast directories, or undated headers).
+Odin-only files in known-upstream modules: **169** (Imortek additions inside Avast directories, or undated headers).
 
 ## Rewrite-tell leftovers (must be zero)
 
@@ -58,6 +58,7 @@ None.
 - `src/llvmir2hll/optimizer/optimizers/simplify_arithm_expr/pow2_sub_optimizer.cpp`
 - `src/llvmir2hll/optimizer/optimizers/unknown_type_inferrer.cpp`
 - `src/llvmir2hll/optimizer/optimizers/while_true_to_for_loop_optimizer_ext.cpp`
+- `src/llvmir2hll/semantics/semantics/gcc_general_semantics/get_arity_of_func.cpp`
 - `src/llvmir2hll/semantics/semantics/libc_semantics/get_arity_of_func.cpp`
 - `src/llvmir2hll/target_hll.cpp`
 - `src/llvmir2hll/var_renamer/var_renamers/debug_var_renamer.cpp`
@@ -97,5 +98,4 @@ None.
 - `include/retdec/fileformat/types/certificate_table/certificate.h`
 - `include/retdec/fileformat/types/certificate_table/certificate_table.h`
 - `include/retdec/fileformat/types/import_table/elf_import_table.h`
-- `include/retdec/fileformat/utils/ar_archive_format_probe.h`
-- … 87 more
+- … 89 more

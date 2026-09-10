@@ -1186,6 +1186,7 @@ TEST_F(OptimizerManagerPipelineTests, AndKeepsItThroughThePipeline)
 	EXPECT_THAT(emitC(module), Not(HasSubstr("(void * *)0x4025")));
 }
 
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

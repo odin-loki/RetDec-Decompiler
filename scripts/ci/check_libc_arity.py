@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
-"""ARITY-01 — check the libc arity table against the real C headers.
+"""ARITY-01 — check the arity tables against the real C headers.
 
 Why this exists
 ---------------
-`src/llvmir2hll/semantics/semantics/libc_semantics/get_arity_of_func.cpp` tells
-the C writer how many parameters a libc function takes, and the writer uses it
-to drop arguments the front end's parameter recovery invented -- so a wrong
-entry silently deletes a real argument from the emitted C. The note that
-recorded this defect said a table "is only worth adding if it is right", and a
-hand-written one cannot be shown to be.
+`.../libc_semantics/get_arity_of_func.cpp` and
+`.../gcc_general_semantics/get_arity_of_func.cpp` tell the C writer how many
+parameters a library function takes, and the writer uses it both to drop
+arguments the front end's parameter recovery invented and to cast a callee
+whose declaration the recovered call is too short for -- so a wrong entry
+silently deletes a real argument from the emitted C, or casts a call that did
+not need it. The note that recorded this defect said a table "is only worth
+adding if it is right", and a hand-written one cannot be shown to be.
+
+There is one table per semantics that assigns C headers to function names,
+because assigning a header is what commits the emitted file to that header's
+signatures. gcc_general is the one that knows <pthread.h>; until its table
+existed, nothing could tell the writer that `pthread_create(thread)` was three
+arguments short of the declaration the same file asks for.
 
 So the table is measured, not recalled. For every name in it this script
 compiles a call with 0..8 arguments against the header the semantics assigns
@@ -31,6 +39,7 @@ C11 glibc, did exactly that on the first run of this script. There is no `-w`
 here on purpose.
 
 Usage: python3 scripts/ci/check_libc_arity.py [--check | --write] [--jobs N]
+                                             [--module libc|gcc_general]
 """
 from __future__ import annotations
 
@@ -45,14 +54,33 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-HEADER_TABLE = ROOT / "src/llvmir2hll/semantics/semantics/libc_semantics/get_c_header_file_for_func.cpp"
-ARITY_TABLE = ROOT / "src/llvmir2hll/semantics/semantics/libc_semantics/get_arity_of_func.cpp"
+SEMANTICS = ROOT / "src/llvmir2hll/semantics/semantics"
+
+# Every semantics that assigns C headers to function names, and the arity table
+# derived from it. Both are measured the same way and checked the same way.
+#
+# gcc_general is here because it is the one that knows about <pthread.h>, and
+# `pthread_create` is the reason: the corpus emits `pthread_create(thread)`
+# under a header that declares four parameters, and nothing could tell the
+# writer that until this table existed.
+MODULES = [
+    (
+        "libc",
+        SEMANTICS / "libc_semantics/get_c_header_file_for_func.cpp",
+        SEMANTICS / "libc_semantics/get_arity_of_func.cpp",
+    ),
+    (
+        "gcc_general",
+        SEMANTICS / "gcc_general_semantics/get_c_header_file_for_func.cpp",
+        SEMANTICS / "gcc_general_semantics/get_arity_of_func.cpp",
+    ),
+]
 MAX_ARGS = 8
 
 
-def func_headers() -> dict[str, str]:
+def func_headers(header_table: Path) -> dict[str, str]:
     """Every function the semantics assigns a C header, and which header."""
-    s = HEADER_TABLE.read_text(encoding="utf-8")
+    s = header_table.read_text(encoding="utf-8")
     out: dict[str, str] = {}
     pat = r'static const char \*(\w+)\[\] = \{(.*?)\};\s*ADD_FUNCS_TO_C_HEADER_MAP\(\s*\1\s*,\s*"([^"]+)"'
     for m in re.finditer(pat, s, re.S):
@@ -61,8 +89,8 @@ def func_headers() -> dict[str, str]:
     return out
 
 
-def parse_arity_table() -> dict[str, tuple[int, bool]]:
-    s = ARITY_TABLE.read_text(encoding="utf-8") if ARITY_TABLE.exists() else ""
+def parse_arity_table(arity_table: Path) -> dict[str, tuple[int, bool]]:
+    s = arity_table.read_text(encoding="utf-8") if arity_table.exists() else ""
     out: dict[str, tuple[int, bool]] = {}
     for m in re.finditer(r'ADD_FUNC_ARITY\("([^"]+)",\s*(\d+),\s*(true|false)\)', s):
         out[m.group(1)] = (int(m.group(2)), m.group(3) == "true")
@@ -106,7 +134,8 @@ def measure(items: list[tuple[str, str]], jobs: int) -> dict[str, tuple[int, boo
     return res
 
 
-def render(measured: dict[str, tuple[int, bool] | None], headers: dict[str, str]) -> str:
+def render(measured: dict[str, tuple[int, bool] | None], headers: dict[str, str],
+           arity_table: Path) -> str:
     by_hdr: dict[str, list] = {}
     for fn, r in sorted(measured.items()):
         if r is None:
@@ -119,33 +148,29 @@ def render(measured: dict[str, tuple[int, bool] | None], headers: dict[str, str]
             body_lines.append(f'\tADD_FUNC_ARITY("{fn}", {n}, {"true" if v else "false"});')
         body_lines.append("")
     body = "\n".join(body_lines).rstrip()
-    template = ARITY_TABLE.read_text(encoding="utf-8")
+    template = arity_table.read_text(encoding="utf-8")
     start = template.index("\tstatic FuncArityMap m;\n") + len("\tstatic FuncArityMap m;\n")
     end = template.index("\n\treturn m;\n}", start)
     return template[:start] + "\n" + body + template[end:]
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--write", action="store_true", help="regenerate the table")
-    ap.add_argument("--check", action="store_true", help="compare (the default)")
-    ap.add_argument("--jobs", type=int, default=min(16, (os.cpu_count() or 4)))
-    args = ap.parse_args()
-
-    headers = func_headers()
+def run_module(label: str, header_table: Path, arity_table: Path,
+               write: bool, jobs: int) -> int:
+    headers = func_headers(header_table)
     if not headers:
-        print("ARITY-01: FAIL could not read any function from the header table", file=sys.stderr)
+        print(f"ARITY-01: FAIL could not read any function from "
+              f"{header_table.relative_to(ROOT)}", file=sys.stderr)
         return 1
 
-    measured = measure(sorted(headers.items()), args.jobs)
+    measured = measure(sorted(headers.items()), jobs)
 
-    if args.write:
-        ARITY_TABLE.write_text(render(measured, headers), encoding="utf-8")
+    if write:
+        arity_table.write_text(render(measured, headers, arity_table), encoding="utf-8")
         kept = sum(1 for v in measured.values() if v is not None)
-        print(f"ARITY-01: wrote {kept} entries to {ARITY_TABLE.relative_to(ROOT)}")
+        print(f"ARITY-01: wrote {kept} entries to {arity_table.relative_to(ROOT)}")
         return 0
 
-    table = parse_arity_table()
+    table = parse_arity_table(arity_table)
     want = {fn: v for fn, v in measured.items() if v is not None}
 
     wrong = [(fn, table[fn], want[fn]) for fn in sorted(want) if fn in table and table[fn] != want[fn]]
@@ -153,7 +178,8 @@ def main() -> int:
     extra = [fn for fn in sorted(table) if fn not in want]
 
     if wrong or missing or extra:
-        print("ARITY-01: FAIL the arity table disagrees with the C headers", file=sys.stderr)
+        print(f"ARITY-01: FAIL the {label} arity table disagrees with the C headers",
+              file=sys.stderr)
         for fn, got, exp in wrong[:20]:
             print(f"  {fn}: table says {got[0]} params variadic={got[1]}, "
                   f"the header says {exp[0]} params variadic={exp[1]}", file=sys.stderr)
@@ -166,9 +192,32 @@ def main() -> int:
         print("  Re-derive with: python3 scripts/ci/check_libc_arity.py --write", file=sys.stderr)
         return 1
 
-    print(f"ARITY-01: OK {len(table)} entries match the system C headers "
+    print(f"ARITY-01: OK {label}: {len(table)} entries match the system C headers "
           f"({len(headers) - len(want)} names left out as macros or undeclared)")
     return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--write", action="store_true", help="regenerate the tables")
+    ap.add_argument("--check", action="store_true", help="compare (the default)")
+    ap.add_argument("--jobs", type=int, default=min(16, (os.cpu_count() or 4)))
+    ap.add_argument("--module", help="only this semantics (libc, gcc_general)")
+    args = ap.parse_args()
+
+    status = 0
+    ran = 0
+    for label, header_table, arity_table in MODULES:
+        if args.module and args.module != label:
+            continue
+        ran += 1
+        status |= run_module(label, header_table, arity_table, args.write, args.jobs)
+
+    if not ran:
+        print(f"ARITY-01: FAIL no such module: {args.module}", file=sys.stderr)
+        return 1
+
+    return status
 
 
 if __name__ == "__main__":

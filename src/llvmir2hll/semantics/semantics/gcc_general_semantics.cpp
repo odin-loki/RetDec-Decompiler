@@ -6,6 +6,7 @@
 */
 
 #include "retdec/llvmir2hll/semantics/semantics/gcc_general_semantics.h"
+#include "retdec/llvmir2hll/semantics/semantics/gcc_general_semantics/get_arity_of_func.h"
 #include "retdec/llvmir2hll/semantics/semantics/gcc_general_semantics/get_c_header_file_for_func.h"
 #include "retdec/llvmir2hll/semantics/semantics/gcc_general_semantics/get_name_of_param.h"
 #include "retdec/llvmir2hll/semantics/semantics/gcc_general_semantics/get_name_of_var_storing_result.h"
@@ -58,10 +59,18 @@ std::optional<IntStringMap> GCCGeneralSemantics::getSymbolicNamesForParam(
 
 std::optional<FuncArity> GCCGeneralSemantics::getArityOfFunc(const std::string& funcName) const
 {
-	// GCC's general semantics describes naming and return behaviour, not
-	// signatures. Falling through to the libc semantics in the compound is the
-	// right answer for the functions both know about.
-	return std::nullopt;
+	// This used to return nullopt, on the grounds that "GCC's general semantics
+	// describes naming and return behaviour, not signatures". The header table
+	// beside it is a signature fact: it is what puts `#include <pthread.h>` in
+	// the emitted C, and having done that it has committed the output to
+	// whatever <pthread.h> declares. CC-01 found the gap -- the corpus emitted
+	// `pthread_create(thread)` under a header declaring four parameters -- and
+	// libc semantics could not fill it, because pthread is not in its table.
+	//
+	// So the 976 entries here cover exactly the names this semantics assigns a
+	// header to, measured from those headers by the same script that measures
+	// the libc table.
+	return semantics::gcc_general::getArityOfFunc(funcName);
 }
 
 } // namespace llvmir2hll

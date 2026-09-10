@@ -378,6 +378,63 @@ TEST_F(CHLLWriterTests, CallToAVariadicFunctionKeepsAllItsArguments)
 	ASSERT_TRUE(contains(code, "printf(1, 2, 3)")) << code;
 }
 
+// Too few arguments is the same disagreement the other way round. The corpus
+// emits
+//
+//     generated_pthread_mutex-gcc-O2.c:101:12: error: too few arguments to
+//     function 'pthread_create'
+//         | return pthread_create(thread);
+//         ? 6:#include <pthread.h>
+//
+// and the missing three cannot be invented -- padding with zeros compiles and
+// puts a null start_routine into a call that had one. Casting the callee to a
+// function pointer with an unspecified parameter list says only what is known.
+TEST_F(CHLLWriterTests, CallToAFixedArityFunctionWithTooFewArgumentsCastsTheCallee)
+{
+	ON_CALL(*semanticsMock, getArityOfFunc("pthread_create")).WillByDefault(Return(FuncArity{4, false}));
+
+	auto pthreadCreate = Variable::create("pthread_create", IntType::create(32));
+	auto call = CallExpr::create(pthreadCreate, ExprVector{ConstInt::create(7, 32)});
+	testFunc->setBody(CallStmt::create(call));
+
+	auto code = emitCodeForCurrentModule();
+
+	ASSERT_TRUE(contains(code, "((int32_t (*)())pthread_create)(7)")) << code;
+}
+
+// The cast is for the mismatch, not for every call: a call that already agrees
+// with the declaration is emitted as it was.
+TEST_F(CHLLWriterTests, CallToAFixedArityFunctionWithTheRightCountIsNotCast)
+{
+	ON_CALL(*semanticsMock, getArityOfFunc("pthread_join")).WillByDefault(Return(FuncArity{2, false}));
+
+	auto pthreadJoin = Variable::create("pthread_join", IntType::create(32));
+	auto call = CallExpr::create(pthreadJoin, ExprVector{ConstInt::create(7, 32), ConstInt::create(0, 32)});
+	testFunc->setBody(CallStmt::create(call));
+
+	auto code = emitCodeForCurrentModule();
+
+	ASSERT_TRUE(contains(code, "pthread_join(7, 0)")) << code;
+	ASSERT_FALSE(contains(code, "(*)()")) << code;
+}
+
+// A variadic function short of its named parameters is not cast either. The
+// declaration it would be checked against accepts any count above the named
+// ones, so there is nothing to disagree with -- and printf(void) is a call this
+// writer should leave exactly as it found it.
+TEST_F(CHLLWriterTests, CallToAVariadicFunctionWithTooFewArgumentsIsNotCast)
+{
+	ON_CALL(*semanticsMock, getArityOfFunc("printf")).WillByDefault(Return(FuncArity{1, true}));
+
+	auto printf = Variable::create("printf", IntType::create(32));
+	auto call = CallExpr::create(printf, ExprVector{});
+	testFunc->setBody(CallStmt::create(call));
+
+	auto code = emitCodeForCurrentModule();
+
+	ASSERT_FALSE(contains(code, "(*)()")) << code;
+}
+
 // An unknown function is left alone too -- the semantics returning nullopt is
 // "no opinion", not "zero parameters".
 TEST_F(CHLLWriterTests, CallToAFunctionOfUnknownArityKeepsAllItsArguments)

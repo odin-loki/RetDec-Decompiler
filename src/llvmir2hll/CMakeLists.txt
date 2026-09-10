@@ -226,6 +226,7 @@ add_library(llvmir2hll STATIC
 	semantics/semantics/compound_semantics_builder.cpp
 	semantics/semantics/default_semantics.cpp
 	semantics/semantics/gcc_general_semantics.cpp
+	semantics/semantics/gcc_general_semantics/get_arity_of_func.cpp
 	semantics/semantics/gcc_general_semantics/get_c_header_file_for_func.cpp
 	semantics/semantics/gcc_general_semantics/get_name_of_param.cpp
 	semantics/semantics/gcc_general_semantics/get_name_of_var_storing_result.cpp

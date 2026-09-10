@@ -171,6 +171,45 @@ ShPtr<FunctionType> getFuncTypeFromPointerToFunc(ShPtr<Type> type)
 }
 
 /**
+ * @brief The type a call yields, as the rest of this writer already treats it,
+ *        or null when there is nothing emittable to say.
+ *
+ * CallExpr::getType() is the called expression's type. When that is a function
+ * type, or a pointer to one, the answer is its return type. Otherwise it is the
+ * type itself -- which is not a guess: it is the type every other decision in
+ * this file makes about the same call, so a cast built from it says what the
+ * emitted file already assumes rather than something new.
+ *
+ * FunctionType is never returned, because visit(ShPtr<FunctionType>) refuses to
+ * emit one on its own. UnknownType is not returned either: a cast to it would
+ * be a cast to `void`, which is not what an unknown type means here.
+ */
+ShPtr<Type> emittableCallResultType(ShPtr<CallExpr> expr)
+{
+	auto type = expr->getType();
+	if (!type)
+	{
+		return ShPtr<Type>();
+	}
+
+	if (auto funcType = cast<FunctionType>(type))
+	{
+		type = funcType->getRetType();
+	}
+	else if (auto pointedFuncType = getFuncTypeFromPointerToFunc(type))
+	{
+		type = pointedFuncType->getRetType();
+	}
+
+	if (!type || isa<FunctionType>(type) || isa<UnknownType>(type))
+	{
+		return ShPtr<Type>();
+	}
+
+	return type;
+}
+
+/**
  * @brief Returns @c true if @a type is a (possibly indirect) pointer to a
  *        function, @c false otherwise.
  */
@@ -865,9 +904,6 @@ static bool isCharArgFunction(const std::string& funcName)
 
 void CHLLWriter::visit(ShPtr<CallExpr> expr)
 {
-	// Called expression.
-	emitExprWithBracketsIfNeeded(expr->getCalledExpr());
-
 	// For well-known char functions (e.g. putchar) whose first argument is
 	// semantically a character, emit the argument as a char literal when it
 	// is a small integer constant with a well-known escape sequence.
@@ -889,6 +925,24 @@ void CHLLWriter::visit(ShPtr<CallExpr> expr)
 	// arguments are an artefact of that recovery, so they go. A variadic
 	// function is left alone: its call may legitimately carry more arguments
 	// than it has named parameters, which is the whole point of printf.
+	//
+	// Too FEW arguments is the same disagreement the other way round, and the
+	// answer cannot be the same: the missing ones cannot be invented. The
+	// corpus emits `pthread_create(thread)` under a <pthread.h> that declares
+	// four parameters, and CC-01 reports `too few arguments to function
+	// 'pthread_create'`. Padding with zeros would compile and would be a lie --
+	// it puts a null start_routine into a call that had one. Casting the callee
+	// to a function pointer with an unspecified parameter list says exactly
+	// what is known: call the thing at this address with the arguments
+	// recovery found, and do not check them against the declaration.
+	//
+	//     return ((uint64_t (*)())pthread_create)(thread);
+	//
+	// An empty parameter list means "unspecified" in C11, which is what CC-01
+	// compiles with. If the callee's return type is not knowable the call is
+	// left exactly as it was: an emitted cast with a guessed type would be
+	// worse than the error it replaces.
+	ShPtr<Type> calleeRetType;
 	if (calleeVar && module)
 	{
 		if (auto arity = module->getSemantics()->getArityOfFunc(calleeVar->getName()))
@@ -897,7 +951,32 @@ void CHLLWriter::visit(ShPtr<CallExpr> expr)
 			{
 				args.resize(arity->numParams);
 			}
+			else if (!arity->isVariadic && args.size() < arity->numParams)
+			{
+				calleeRetType = emittableCallResultType(expr);
+			}
 		}
+	}
+
+	// Called expression, cast when the line above asked for it.
+	if (calleeRetType)
+	{
+		out->punctuation('(');
+		out->punctuation('(');
+		calleeRetType->accept(this);
+		out->space();
+		out->punctuation('(');
+		out->operatorX("*");
+		out->punctuation(')');
+		out->punctuation('(');
+		out->punctuation(')');
+		out->punctuation(')');
+		emitExprWithBracketsIfNeeded(expr->getCalledExpr());
+		out->punctuation(')');
+	}
+	else
+	{
+		emitExprWithBracketsIfNeeded(expr->getCalledExpr());
 	}
 
 	out->punctuation('(');
