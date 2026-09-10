@@ -149,5 +149,10 @@ std::optional<IntStringMap> CompoundSemantics::getSymbolicNamesForParam(
 		&Semantics::getSymbolicNamesForParam, funcName, paramPos);
 }
 
+std::optional<FuncArity> CompoundSemantics::getArityOfFunc(const std::string& funcName) const
+{
+	return getAnswer<FuncArity>(providedSemantics, &Semantics::getArityOfFunc, funcName);
+}
+
 } // namespace llvmir2hll
 } // namespace retdec

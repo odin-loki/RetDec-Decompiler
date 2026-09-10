@@ -154,27 +154,49 @@ truth. The call is then emitted against a signature the ABI recovery invented,
 with an extra argument. The file asserts two incompatible things about the same
 function.
 
-This is not fixed here, and the reason is worth recording rather than guessing
-at a patch:
+**The emitter half of this is now fixed.** The entry is kept because the
+reasoning it recorded is what the fix followed, and because the corpus effect
+is confirmed by CI rather than here.
 
-- The extra argument comes from parameter recovery in `bin2llvmir`, which needs
-  the pinned LLVM and cannot be built or tested in this environment. Every fix
-  landed on this branch was reproduced before it was written; a change here
-  could only be validated by a thirty-minute CI round trip, which is not the
-  same thing.
-- The obvious in-backend repairs are each wrong in a different way. Truncating
-  the call to the arity `semantics::getNameOfParam` knows would break `printf`,
-  which is variadic and has exactly one named parameter. Emitting retdec's own
-  prototype instead of taking the header replaces *too many arguments* with
-  *conflicting types*. Suppressing the header for that one function does not
-  help when another function pulls the same header in.
-- What would settle it is an arity (and variadic flag) in the semantics layer
-  next to `getCHeaderFileForFunc`, which is where this knowledge already lives
-  for headers and parameter names. That is a table, and a table is only worth
-  adding if it is right.
+The blocker recorded first was that `bin2llvmir`, where the extra argument
+originates, needs the pinned LLVM and cannot be built or tested in this
+environment — so a change could only be validated by a CI round trip. That was
+true of the *front end*. It was not true of the fix, which lives entirely in
+`llvmir2hll`, and `scripts/ci/check_llvmir2hll_tests.sh` (L2H-01) builds and
+runs that in about four minutes locally. Re-reading a stated blocker to see
+whether it covers the thing actually proposed is worth doing; this one did not.
 
-Until then CC-01's floor holds the line at 0.8750: the rate cannot fall without
-turning CI red, and each fix that raises it should raise the floor with it.
+The three repairs rejected then are still rejected, for the reasons given:
+truncating to what `getNameOfParam` knows breaks `printf`; emitting retdec's
+own prototype trades *too many arguments* for *conflicting types*; suppressing
+one header does nothing when another function pulls it in.
+
+What settled it is the fourth option the entry named — an arity and a variadic
+flag in the semantics layer, `Semantics::getArityOfFunc()`, beside
+`getCHeaderFileForFunc()` where this knowledge already lives. The entry also
+said "a table is only worth adding if it is right", so the table is **measured
+rather than recalled**: `scripts/ci/check_libc_arity.py` compiles a call with
+0–8 arguments against the real header for each of the 469 names the semantics
+assign one, and reads the arity off which counts the declaration accepts. One
+accepted count is a fixed arity; acceptance from N upwards is variadic with N
+named parameters; anything else — a function-like macro such as `isnan`, or a
+name not declared on the platform — is left out rather than guessed. 454
+entries, 15 left out. Fifty-four independently known arities were cross-checked
+against the C standard and all agreed.
+
+That script is also ARITY-01, a CI check: the table cannot drift from the
+headers unnoticed. It was self-tested four ways — a wrong arity, a missing
+entry, an unmeasurable entry, and a wrong variadic flag — and catches each.
+
+`CHLLWriter::visit(CallExpr)` now drops arguments a known, non-variadic
+declaration cannot take. Variadic functions and unknown functions are left
+alone; `std::nullopt` from the semantics means "no opinion", not "no
+parameters".
+
+What is *not* verified here is the corpus effect: running the decompiler over
+`ring_buffer-gcc-O3` needs the front end, so whether CC-01's rate rises is for
+CI to say. The floor stays at 0.8750 until a run measures otherwise, and
+should be raised with the measurement.
 
 ---
 

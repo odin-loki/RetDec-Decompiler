@@ -871,9 +871,34 @@ void CHLLWriter::visit(ShPtr<CallExpr> expr)
 	// For well-known char functions (e.g. putchar) whose first argument is
 	// semantically a character, emit the argument as a char literal when it
 	// is a small integer constant with a well-known escape sequence.
-	const auto& args = expr->getArgs();
+	auto args = expr->getArgs();
 	ShPtr<Variable> calleeVar(cast<Variable>(expr->getCalledExpr()));
 	bool charFirst = calleeVar && isCharArgFunction(calleeVar->getName());
+
+	// Keep the call consistent with the header this file asks for.
+	//
+	// When the semantics name a header for a function, emitHeaders() emits that
+	// #include and emitFunctionPrototypesForNonLibraryFuncs() emits no
+	// prototype of our own -- the header is taken as the truth about the
+	// signature. The argument list, though, is whatever the front end's
+	// parameter recovery inferred, and the two can disagree: the corpus emits
+	// `putc(c, stream, a3)` under a `#include <stdio.h>` that declares two
+	// parameters, and the result does not compile.
+	//
+	// Where the arity is known and the function is not variadic, the extra
+	// arguments are an artefact of that recovery, so they go. A variadic
+	// function is left alone: its call may legitimately carry more arguments
+	// than it has named parameters, which is the whole point of printf.
+	if (calleeVar && module)
+	{
+		if (auto arity = module->getSemantics()->getArityOfFunc(calleeVar->getName()))
+		{
+			if (!arity->isVariadic && args.size() > arity->numParams)
+			{
+				args.resize(arity->numParams);
+			}
+		}
+	}
 
 	out->punctuation('(');
 	bool first = true;

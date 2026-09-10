@@ -60,5 +60,10 @@ std::optional<IntStringMap> DefaultSemantics::getSymbolicNamesForParam(
 	return std::nullopt;
 }
 
+std::optional<FuncArity> DefaultSemantics::getArityOfFunc(const std::string& funcName) const
+{
+	return std::nullopt;
+}
+
 } // namespace llvmir2hll
 } // namespace retdec

@@ -62,5 +62,13 @@ std::optional<IntStringMap> WinAPISemantics::getSymbolicNamesForParam(
 	return semantics::win_api::getSymbolicNamesForParam(funcName, paramPos);
 }
 
+std::optional<FuncArity> WinAPISemantics::getArityOfFunc(const std::string& funcName) const
+{
+	// The Win32 signatures are not measurable the way the libc ones are -- there
+	// are no windows.h headers on the machines this is built on -- and a table
+	// that is only probably right is worse here than no table.
+	return std::nullopt;
+}
+
 } // namespace llvmir2hll
 } // namespace retdec

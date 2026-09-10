@@ -318,6 +318,106 @@ TEST_F(CHLLWriterTests, EveryGeneratedGotoLabelIsAlsoEmitted)
 								 << code;
 }
 
+
+//
+// Calls against a signature the emitted file itself declares.
+//
+// When the semantics name a header for a function, emitHeaders() emits that
+// #include and emitFunctionPrototypesForNonLibraryFuncs() emits no prototype of
+// our own -- the header is taken as the truth about the signature. The argument
+// list, though, is whatever the front end's parameter recovery inferred, and
+// the two can disagree. The corpus emits
+//
+//     ring_buffer-gcc-O3.c:78:12: error: too many arguments to function 'putc'
+//         | return putc(c, stream, a3);
+//         ? 7:#include <stdio.h>
+//
+// which is a file asserting two incompatible things about one function, and it
+// is two of the three CC-01 failures.
+//
+
+TEST_F(CHLLWriterTests, CallToAFixedArityFunctionDropsArgumentsTheDeclarationCannotTake)
+{
+	ON_CALL(*semanticsMock, getArityOfFunc("putc")).WillByDefault(Return(FuncArity{2, false}));
+
+	auto putc = Variable::create("putc", IntType::create(32));
+	auto call = CallExpr::create(
+		putc,
+		ExprVector{
+			ConstInt::create(65, 32),
+			ConstInt::create(1, 32),
+			ConstInt::create(999, 32),
+		});
+	testFunc->setBody(CallStmt::create(call));
+
+	auto code = emitCodeForCurrentModule();
+
+	ASSERT_TRUE(contains(code, "putc(65, 1)")) << code;
+	ASSERT_FALSE(contains(code, "999")) << code;
+}
+
+// A variadic function is left alone: its call may legitimately carry more
+// arguments than it has named parameters, which is the whole point of printf.
+// Truncating to the named count is the repair the finding rejected.
+TEST_F(CHLLWriterTests, CallToAVariadicFunctionKeepsAllItsArguments)
+{
+	ON_CALL(*semanticsMock, getArityOfFunc("printf")).WillByDefault(Return(FuncArity{1, true}));
+
+	auto printf = Variable::create("printf", IntType::create(32));
+	auto call = CallExpr::create(
+		printf,
+		ExprVector{
+			ConstInt::create(1, 32),
+			ConstInt::create(2, 32),
+			ConstInt::create(3, 32),
+		});
+	testFunc->setBody(CallStmt::create(call));
+
+	auto code = emitCodeForCurrentModule();
+
+	ASSERT_TRUE(contains(code, "printf(1, 2, 3)")) << code;
+}
+
+// An unknown function is left alone too -- the semantics returning nullopt is
+// "no opinion", not "zero parameters".
+TEST_F(CHLLWriterTests, CallToAFunctionOfUnknownArityKeepsAllItsArguments)
+{
+	ON_CALL(*semanticsMock, getArityOfFunc(_)).WillByDefault(Return(std::nullopt));
+
+	auto f = Variable::create("some_local_func", IntType::create(32));
+	auto call = CallExpr::create(
+		f,
+		ExprVector{
+			ConstInt::create(1, 32),
+			ConstInt::create(2, 32),
+		});
+	testFunc->setBody(CallStmt::create(call));
+
+	auto code = emitCodeForCurrentModule();
+
+	ASSERT_TRUE(contains(code, "some_local_func(1, 2)")) << code;
+}
+
+// And a call that already matches its declaration is untouched, so the fix
+// cannot be "always drop the last argument".
+TEST_F(CHLLWriterTests, CallMatchingItsDeclaredArityIsUnchanged)
+{
+	ON_CALL(*semanticsMock, getArityOfFunc("putc")).WillByDefault(Return(FuncArity{2, false}));
+
+	auto putc = Variable::create("putc", IntType::create(32));
+	auto call = CallExpr::create(
+		putc,
+		ExprVector{
+			ConstInt::create(65, 32),
+			ConstInt::create(1, 32),
+		});
+	testFunc->setBody(CallStmt::create(call));
+
+	auto code = emitCodeForCurrentModule();
+
+	ASSERT_TRUE(contains(code, "putc(65, 1)")) << code;
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

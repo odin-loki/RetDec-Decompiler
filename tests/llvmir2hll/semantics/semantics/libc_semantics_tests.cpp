@@ -182,6 +182,40 @@ GetSymbolicNamesForParamForUnknownFunctionsReturnsNoAnswer) {
 	EXPECT_FALSE(fooSymbolicNames);
 }
 
+//
+// getArityOfFunc()
+//
+// The table these read is MEASURED against the system C headers by
+// scripts/ci/check_libc_arity.py, not recalled -- and that script is a CI
+// check, so the table cannot drift from the headers unnoticed. These assert
+// the three shapes the C writer distinguishes.
+//
+
+TEST_F(LibcSemanticsTests, GetArityOfFuncReturnsCorrectArityForFixedArityFunctions)
+{
+	EXPECT_EQ(FuncArity({2, false}), semantics->getArityOfFunc("putc"));
+	EXPECT_EQ(FuncArity({1, false}), semantics->getArityOfFunc("puts"));
+	EXPECT_EQ(FuncArity({3, false}), semantics->getArityOfFunc("memcpy"));
+	EXPECT_EQ(FuncArity({4, false}), semantics->getArityOfFunc("qsort"));
+	EXPECT_EQ(FuncArity({1, false}), semantics->getArityOfFunc("free"));
+}
+
+TEST_F(LibcSemanticsTests, GetArityOfFuncMarksTheVariadicFunctionsVariadic)
+{
+	EXPECT_EQ(FuncArity({1, true}), semantics->getArityOfFunc("printf"));
+	EXPECT_EQ(FuncArity({2, true}), semantics->getArityOfFunc("fprintf"));
+	EXPECT_EQ(FuncArity({3, true}), semantics->getArityOfFunc("snprintf"));
+	EXPECT_EQ(FuncArity({1, true}), semantics->getArityOfFunc("scanf"));
+}
+
+TEST_F(LibcSemanticsTests, GetArityOfFuncReturnsNulloptForUnknownFunctions)
+{
+	EXPECT_EQ(std::nullopt, semantics->getArityOfFunc("some_local_func"));
+	// A function-like macro is not a function with an arity, and the probe
+	// that built the table leaves those out rather than guessing.
+	EXPECT_EQ(std::nullopt, semantics->getArityOfFunc("isnan"));
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

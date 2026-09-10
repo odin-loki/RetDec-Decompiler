@@ -235,6 +235,7 @@ add_library(llvmir2hll STATIC
 	semantics/semantics/impl_support/get_symbolic_names_for_param.cpp
 	semantics/semantics/libc_semantics.cpp
 	semantics/semantics/libc_semantics/func_never_returns.cpp
+	semantics/semantics/libc_semantics/get_arity_of_func.cpp
 	semantics/semantics/libc_semantics/get_c_header_file_for_func.cpp
 	semantics/semantics/libc_semantics/get_name_of_param.cpp
 	semantics/semantics/libc_semantics/get_name_of_var_storing_result.cpp

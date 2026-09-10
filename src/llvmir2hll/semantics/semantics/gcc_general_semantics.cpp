@@ -56,5 +56,13 @@ std::optional<IntStringMap> GCCGeneralSemantics::getSymbolicNamesForParam(
 	return semantics::gcc_general::getSymbolicNamesForParam(funcName, paramPos);
 }
 
+std::optional<FuncArity> GCCGeneralSemantics::getArityOfFunc(const std::string& funcName) const
+{
+	// GCC's general semantics describes naming and return behaviour, not
+	// signatures. Falling through to the libc semantics in the compound is the
+	// right answer for the functions both know about.
+	return std::nullopt;
+}
+
 } // namespace llvmir2hll
 } // namespace retdec

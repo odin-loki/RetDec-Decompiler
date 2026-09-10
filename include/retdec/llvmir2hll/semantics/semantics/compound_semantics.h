@@ -66,6 +66,7 @@ public:
 		unsigned paramPos) const override;
 	virtual std::optional<IntStringMap> getSymbolicNamesForParam(
 		const std::string &funcName, unsigned paramPos) const override;
+	virtual std::optional<FuncArity> getArityOfFunc(const std::string& funcName) const override;
 	/// @}
 
 protected:

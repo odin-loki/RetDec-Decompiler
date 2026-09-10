@@ -130,6 +130,13 @@ jobs:
       - name: FF-01 fileformat-backed suites
         run: bash scripts/ci/check_fileformat_tests.sh --jobs 4
 
+      # ARITY-01. The libc arity table the C writer trims calls against is
+      # measured from the real headers, not recalled -- a wrong entry would
+      # silently delete a real argument from the emitted C. This fails if the
+      # table and the headers ever disagree.
+      - name: ARITY-01 libc arity table vs the C headers
+        run: python3 scripts/ci/check_libc_arity.py --check --jobs 4
+
   sanitizers:
     name: asan+ubsan
     runs-on: ubuntu-latest

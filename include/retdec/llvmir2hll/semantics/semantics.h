@@ -18,6 +18,30 @@ namespace retdec {
 namespace llvmir2hll {
 
 /**
+ * @brief How many parameters a function is declared with, and whether it takes
+ *        more after them.
+ */
+struct FuncArity
+{
+	/// Number of declared (named) parameters.
+	unsigned numParams = 0;
+
+	/// True when the declaration ends in @c "..." -- @c printf and friends.
+	/// A variadic function's call may legitimately carry more arguments than
+	/// @c numParams, so its argument list must not be shortened to it.
+	bool isVariadic = false;
+
+	bool operator==(const FuncArity& o) const
+	{
+		return numParams == o.numParams && isVariadic == o.isVariadic;
+	}
+	bool operator!=(const FuncArity& o) const
+	{
+		return !(*this == o);
+	}
+};
+
+/**
 * @brief A base class for all descriptions of function semantics.
 *
 * This class should be used as a base class for all semantics.
@@ -119,6 +143,29 @@ public:
 	*/
 	virtual std::optional<IntStringMap> getSymbolicNamesForParam(
 		const std::string &funcName, unsigned paramPos) const = 0;
+
+	/**
+	 * @brief Returns how many parameters the given function is declared with,
+	 *        and whether it is variadic.
+	 *
+	 * @return @c FuncArity if the declaration is known, @c std::nullopt
+	 *         otherwise.
+	 *
+	 * @param[in] funcName Name of the function.
+	 *
+	 * For example, semantics describing the standard C library return
+	 * @c {2, false} for @c "putc" and @c {1, true} for @c "printf".
+	 *
+	 * This exists because the emitted code can end up contradicting itself.
+	 * When getCHeaderFileForFunc() names a header for a function, the backend
+	 * emits that @c #include and no prototype of its own -- the header is taken
+	 * as the truth about the signature. The call, however, carries whatever
+	 * arguments the front end's parameter recovery inferred, and the two can
+	 * disagree: `putc(c, stream, a3)` under a `#include <stdio.h>` that declares
+	 * two parameters. Knowing the real arity is what lets the writer keep the
+	 * file consistent with the header it asked for.
+	 */
+	virtual std::optional<FuncArity> getArityOfFunc(const std::string& funcName) const = 0;
 
 protected:
 	Semantics() = default;

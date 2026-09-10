@@ -7,6 +7,7 @@
 
 #include "retdec/llvmir2hll/semantics/semantics/libc_semantics.h"
 #include "retdec/llvmir2hll/semantics/semantics/libc_semantics/func_never_returns.h"
+#include "retdec/llvmir2hll/semantics/semantics/libc_semantics/get_arity_of_func.h"
 #include "retdec/llvmir2hll/semantics/semantics/libc_semantics/get_c_header_file_for_func.h"
 #include "retdec/llvmir2hll/semantics/semantics/libc_semantics/get_name_of_param.h"
 #include "retdec/llvmir2hll/semantics/semantics/libc_semantics/get_name_of_var_storing_result.h"
@@ -64,6 +65,11 @@ std::optional<std::string> LibcSemantics::getNameOfParam(
 std::optional<IntStringMap> LibcSemantics::getSymbolicNamesForParam(
 		const std::string &funcName, unsigned paramPos) const {
 	return semantics::libc::getSymbolicNamesForParam(funcName, paramPos);
+}
+
+std::optional<FuncArity> LibcSemantics::getArityOfFunc(const std::string& funcName) const
+{
+	return semantics::libc::getArityOfFunc(funcName);
 }
 
 } // namespace llvmir2hll

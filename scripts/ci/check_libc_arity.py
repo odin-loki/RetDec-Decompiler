@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""ARITY-01 — check the libc arity table against the real C headers.
+
+Why this exists
+---------------
+`src/llvmir2hll/semantics/semantics/libc_semantics/get_arity_of_func.cpp` tells
+the C writer how many parameters a libc function takes, and the writer uses it
+to drop arguments the front end's parameter recovery invented -- so a wrong
+entry silently deletes a real argument from the emitted C. The note that
+recorded this defect said a table "is only worth adding if it is right", and a
+hand-written one cannot be shown to be.
+
+So the table is measured, not recalled. For every name in it this script
+compiles a call with 0..8 arguments against the header the semantics assigns
+that function, and records which counts the real declaration accepts:
+
+  * exactly one accepted count      -> fixed arity, that count
+  * everything from N up to the cap -> variadic with N named parameters
+  * anything else                   -> not a plain function here (a
+                                       function-like macro such as isnan, or
+                                       not declared on this platform), and it
+                                       must NOT be in the table
+
+`--check` (the default) compares the table against that measurement and fails
+on any disagreement. `--write` regenerates the file from it.
+
+One flag matters and is easy to get wrong: `-w` inhibits all warnings AND
+defeats `-Werror=implicit-function-declaration`, so an undeclared function
+accepts every argument count and measures as variadic. `gets`, removed from
+C11 glibc, did exactly that on the first run of this script. There is no `-w`
+here on purpose.
+
+Usage: python3 scripts/ci/check_libc_arity.py [--check | --write] [--jobs N]
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+HEADER_TABLE = ROOT / "src/llvmir2hll/semantics/semantics/libc_semantics/get_c_header_file_for_func.cpp"
+ARITY_TABLE = ROOT / "src/llvmir2hll/semantics/semantics/libc_semantics/get_arity_of_func.cpp"
+MAX_ARGS = 8
+
+
+def func_headers() -> dict[str, str]:
+    """Every function the semantics assigns a C header, and which header."""
+    s = HEADER_TABLE.read_text(encoding="utf-8")
+    out: dict[str, str] = {}
+    pat = r'static const char \*(\w+)\[\] = \{(.*?)\};\s*ADD_FUNCS_TO_C_HEADER_MAP\(\s*\1\s*,\s*"([^"]+)"'
+    for m in re.finditer(pat, s, re.S):
+        for name in re.findall(r'"([^"]+)"', m.group(2)):
+            out[name] = m.group(3)
+    return out
+
+
+def parse_arity_table() -> dict[str, tuple[int, bool]]:
+    s = ARITY_TABLE.read_text(encoding="utf-8") if ARITY_TABLE.exists() else ""
+    out: dict[str, tuple[int, bool]] = {}
+    for m in re.finditer(r'ADD_FUNC_ARITY\("([^"]+)",\s*(\d+),\s*(true|false)\)', s):
+        out[m.group(1)] = (int(m.group(2)), m.group(3) == "true")
+    return out
+
+
+def measure(items: list[tuple[str, str]], jobs: int) -> dict[str, tuple[int, bool] | None]:
+    work = tempfile.mkdtemp(prefix="libc-arity-")
+    cc = os.environ.get("CC", "gcc")
+
+    def accepts(hdr: str, fn: str, n: int, idx: int) -> bool:
+        src = os.path.join(work, f"t{idx}.c")
+        args = ",".join("0" for _ in range(n))
+        with open(src, "w", encoding="utf-8") as f:
+            f.write(f"#include <{hdr}>\nvoid t(void){{ {fn}({args}); }}\n")
+        # No -w. See the module docstring.
+        r = subprocess.run(
+            [cc, "-std=c11", "-fsyntax-only",
+             "-Werror=implicit-function-declaration", "-Werror=implicit-int", src],
+            capture_output=True)
+        return r.returncode == 0
+
+    def classify(job):
+        (fn, hdr), idx = job
+        acc = [n for n in range(MAX_ARGS + 1) if accepts(hdr, fn, n, idx)]
+        if not acc:
+            return fn, None
+        lo, hi = acc[0], acc[-1]
+        if acc != list(range(lo, hi + 1)):
+            return fn, None
+        if hi == MAX_ARGS and lo != MAX_ARGS:
+            return fn, (lo, True)
+        if lo == hi:
+            return fn, (lo, False)
+        return fn, None
+
+    res: dict[str, tuple[int, bool] | None] = {}
+    with ThreadPoolExecutor(max_workers=jobs) as ex:
+        for fn, r in ex.map(classify, [(kv, i) for i, kv in enumerate(items)]):
+            res[fn] = r
+    return res
+
+
+def render(measured: dict[str, tuple[int, bool] | None], headers: dict[str, str]) -> str:
+    by_hdr: dict[str, list] = {}
+    for fn, r in sorted(measured.items()):
+        if r is None:
+            continue
+        by_hdr.setdefault(headers[fn], []).append((fn, r[0], r[1]))
+    body_lines = []
+    for h in sorted(by_hdr):
+        body_lines.append(f"\t// {h}")
+        for fn, n, v in sorted(by_hdr[h]):
+            body_lines.append(f'\tADD_FUNC_ARITY("{fn}", {n}, {"true" if v else "false"});')
+        body_lines.append("")
+    body = "\n".join(body_lines).rstrip()
+    template = ARITY_TABLE.read_text(encoding="utf-8")
+    start = template.index("\tstatic FuncArityMap m;\n") + len("\tstatic FuncArityMap m;\n")
+    end = template.index("\n\treturn m;\n}", start)
+    return template[:start] + "\n" + body + template[end:]
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--write", action="store_true", help="regenerate the table")
+    ap.add_argument("--check", action="store_true", help="compare (the default)")
+    ap.add_argument("--jobs", type=int, default=min(16, (os.cpu_count() or 4)))
+    args = ap.parse_args()
+
+    headers = func_headers()
+    if not headers:
+        print("ARITY-01: FAIL could not read any function from the header table", file=sys.stderr)
+        return 1
+
+    measured = measure(sorted(headers.items()), args.jobs)
+
+    if args.write:
+        ARITY_TABLE.write_text(render(measured, headers), encoding="utf-8")
+        kept = sum(1 for v in measured.values() if v is not None)
+        print(f"ARITY-01: wrote {kept} entries to {ARITY_TABLE.relative_to(ROOT)}")
+        return 0
+
+    table = parse_arity_table()
+    want = {fn: v for fn, v in measured.items() if v is not None}
+
+    wrong = [(fn, table[fn], want[fn]) for fn in sorted(want) if fn in table and table[fn] != want[fn]]
+    missing = [fn for fn in sorted(want) if fn not in table]
+    extra = [fn for fn in sorted(table) if fn not in want]
+
+    if wrong or missing or extra:
+        print("ARITY-01: FAIL the arity table disagrees with the C headers", file=sys.stderr)
+        for fn, got, exp in wrong[:20]:
+            print(f"  {fn}: table says {got[0]} params variadic={got[1]}, "
+                  f"the header says {exp[0]} params variadic={exp[1]}", file=sys.stderr)
+        for fn in missing[:20]:
+            print(f"  {fn}: measurable from <{headers[fn]}> but absent from the table", file=sys.stderr)
+        for fn in extra[:20]:
+            print(f"  {fn}: in the table but NOT measurable here -- a macro, or not "
+                  f"declared on this platform; an entry that cannot be checked "
+                  f"must not be in the table", file=sys.stderr)
+        print("  Re-derive with: python3 scripts/ci/check_libc_arity.py --write", file=sys.stderr)
+        return 1
+
+    print(f"ARITY-01: OK {len(table)} entries match the system C headers "
+          f"({len(headers) - len(want)} names left out as macros or undeclared)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

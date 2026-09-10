@@ -35,6 +35,7 @@ public:
 		std::optional<std::string> (const std::string &, unsigned));
 	MOCK_CONST_METHOD2(getSymbolicNamesForParam,
 		std::optional<IntStringMap> (const std::string &, unsigned));
+	MOCK_CONST_METHOD1(getArityOfFunc, std::optional<FuncArity>(const std::string&));
 };
 
 } // namespace tests
