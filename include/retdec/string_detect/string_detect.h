@@ -200,9 +200,24 @@ struct EncodingResult {
  * @param vma       Start address.
  * @param maxBytes  Maximum bytes to read (default 4096).
  */
-std::optional<StringLiteral> typeString(const IBinaryView& view,
-                                         uint64_t            vma,
-                                         std::size_t         maxBytes = 4096);
+/**
+ * Which classifications typeString() is allowed to make.
+ *
+ * StringDetectorConfig has carried detectWide / detectPascal / detectLenPfx
+ * since it was written and nothing read them: typeString() classified
+ * unconditionally and StringDetector never passed them on, so turning any of
+ * them off changed nothing. This is how they reach the classifier. The
+ * defaults are all-on, so a caller that does not care is unaffected.
+ */
+struct TypeStringOptions
+{
+	bool wide = true;           ///< UTF-16LE / UTF-16BE
+	bool pascal = true;         ///< u8 length prefix (Borland ShortString)
+	bool lengthPrefixed = true; ///< u32 length prefix (MSVC/COM)
+};
+
+std::optional<StringLiteral>
+typeString(const IBinaryView& view, uint64_t vma, std::size_t maxBytes = 4096, TypeStringOptions opts = {});
 
 /**
  * Detect the encoding of a byte buffer (without knowing the length).

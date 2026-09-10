@@ -96,6 +96,16 @@ void StringDetector::processLiteralPoolEntry(const InstrRef& ref)
 		dataMarkedAddrs_.insert(pos, ref.targetVma);
 	}
 
+	// extractLiteralPool() deduplicates by target address; this did not, and
+	// processRef() returns above before reaching the isKnownString() dedup for
+	// a literal-pool ref. Two instructions loading the same pool word is the
+	// ordinary ARM shape -- that is why the word is pooled -- so the same
+	// constant was reported once per referencing instruction.
+	for (const auto& seen: litPool_)
+	{
+		if (seen.vma == entry.vma) return;
+	}
+
 	litPool_.push_back(entry);
 	if (litCb_) litCb_(litPool_.back());
 
@@ -109,6 +119,21 @@ void StringDetector::processLiteralPoolEntry(const InstrRef& ref)
 		processRef(synthetic);
 	}
 }
+
+namespace {
+
+/// The three classification switches StringDetectorConfig has always carried
+/// and nothing ever read.
+TypeStringOptions typeOptsFrom(const StringDetectorConfig& cfg)
+{
+	TypeStringOptions o;
+	o.wide = cfg.detectWide;
+	o.pascal = cfg.detectPascal;
+	o.lengthPrefixed = cfg.detectLenPfx;
+	return o;
+}
+
+} // namespace
 
 void StringDetector::processRef(const InstrRef& ref)
 {
@@ -129,7 +154,7 @@ void StringDetector::processRef(const InstrRef& ref)
 	if (!view_.isMapped(ref.targetVma)) return;
 
 	// Attempt string classification
-	auto sl = typeString(view_, ref.targetVma, cfg_.maxStringLen);
+	auto sl = typeString(view_, ref.targetVma, cfg_.maxStringLen, typeOptsFrom(cfg_));
 	if (sl && sl->charCount >= cfg_.minStringLen)
 	{
 		sl->refVma = ref.instrVma;
@@ -141,15 +166,19 @@ void StringDetector::processRef(const InstrRef& ref)
 	// If target is in data section, check if it looks like a string table
 	if (cfg_.detectTables && view_.isDataSection(ref.targetVma))
 	{
-		auto table = detectStringTable(
-			view_, ref.targetVma, cfg_.tableMinEntries > 0 ? 1024 : cfg_.tableMinEntries);
+		// The third argument is a MAXIMUM -- "Maximum entries to check
+		// (default 1024)". Passing cfg_.tableMinEntries there meant a floor of
+		// zero, which reads as "no floor", examined zero entries and turned
+		// table detection off. scanRegion() takes the default, so the two call
+		// sites disagreed; they now both do.
+		auto table = detectStringTable(view_, ref.targetVma);
 		if (table && table->count >= cfg_.tableMinEntries)
 		{
 			// Emit each entry as a separate string
 			for (uint64_t target: table->targets)
 			{
 				if (isKnownString(target)) continue;
-				auto entry = typeString(view_, target, cfg_.maxStringLen);
+				auto entry = typeString(view_, target, cfg_.maxStringLen, typeOptsFrom(cfg_));
 				if (entry && entry->charCount >= cfg_.minStringLen)
 				{
 					entry->refVma = ref.instrVma;
@@ -202,7 +231,7 @@ void StringDetector::scanRegion(uint64_t start, uint64_t end)
 				{
 					if (!isKnownString(target))
 					{
-						auto sl = typeString(view_, target, cfg_.maxStringLen);
+						auto sl = typeString(view_, target, cfg_.maxStringLen, typeOptsFrom(cfg_));
 						if (sl && sl->charCount >= cfg_.minStringLen)
 						{
 							sl->isTableEntry = true;

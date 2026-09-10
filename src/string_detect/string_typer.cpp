@@ -247,7 +247,8 @@ readUtf16(const IBinaryView& view, uint64_t vma, bool le, std::size_t maxBytes, 
 
 // ─── Main classifier ──────────────────────────────────────────────────────────
 
-std::optional<StringLiteral> typeString(const IBinaryView& view, uint64_t vma, std::size_t maxBytes)
+std::optional<StringLiteral>
+typeString(const IBinaryView& view, uint64_t vma, std::size_t maxBytes, TypeStringOptions opts)
 {
 	if (!view.isMapped(vma)) return std::nullopt;
 
@@ -258,6 +259,7 @@ std::optional<StringLiteral> typeString(const IBinaryView& view, uint64_t vma, s
 	if (got < 2) return std::nullopt;
 
 	// ── 1. Try UTF-16LE ────────────────────────────────────────────────────────
+	if (opts.wide)
 	{
 		// Check first two bytes: if byte[1]==0 and byte[0] is printable ASCII,
 		// very likely UTF-16LE
@@ -280,6 +282,7 @@ std::optional<StringLiteral> typeString(const IBinaryView& view, uint64_t vma, s
 	}
 
 	// ── 2. Try UTF-16BE ────────────────────────────────────────────────────────
+	if (opts.wide)
 	{
 		if (got >= 4 && buf[0] == 0 && buf[2] == 0 && isPrintableAscii(buf[1]) && isPrintableAscii(buf[3]))
 		{
@@ -300,6 +303,7 @@ std::optional<StringLiteral> typeString(const IBinaryView& view, uint64_t vma, s
 	}
 
 	// ── 3. Try Pascal string (u8 length prefix) ────────────────────────────────
+	if (opts.pascal)
 	{
 		uint8_t plen = buf[0];
 		// A length byte that is itself a printable ASCII character is
@@ -345,6 +349,7 @@ std::optional<StringLiteral> typeString(const IBinaryView& view, uint64_t vma, s
 	}
 
 	// ── 4. Try MSVC/COM length-prefixed (u32 length prefix) ───────────────────
+	if (opts.lengthPrefixed)
 	{
 		if (got >= 6)
 		{

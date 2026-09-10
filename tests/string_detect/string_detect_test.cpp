@@ -647,3 +647,225 @@ TEST(StringTyperTest, AnAsciiWideStringKeepsItsLengths)
 	EXPECT_EQ(2u, s->charCount);
 	EXPECT_EQ(6u, s->byteLength);
 }
+
+// ─── Literal-pool deduplication in StringDetector ────────────────────────────
+
+// extractLiteralPool() deduplicates by target address -- LiteralPoolTest.
+// DuplicateRefsDeduped above asserts exactly that. StringDetector::
+// processLiteralPoolEntry does not: it appends to litPool_ and fires the
+// callback with no check, and processRef() returns before reaching the
+// isKnownString() dedup for a literal-pool ref. Two instructions loading the
+// same pool word is the ordinary ARM shape -- that is why the word is pooled --
+// so the same 32-bit constant was reported once per referencing instruction.
+TEST(LiteralPoolTest, TheSamePoolWordIsReportedOnceHoweverManyInstructionsLoadIt)
+{
+	uint8_t codeData[32] = {};
+	uint64_t litVal = 0x5000;
+	for (int i = 0; i < 8; ++i)
+		codeData[12 + i] = (litVal >> (8 * i)) & 0xFF;
+
+	FlatView view;
+	view.addSection(0x1000, codeData, 32, true);
+	view.addSection(0x5000, cstr("arm literal string"));
+
+	StringDetectorConfig cfg;
+	cfg.minStringLen = 2;
+	StringDetector det(view, cfg);
+	std::vector<LiteralPoolEntry> pool;
+	std::vector<StringLiteral> strs;
+	det.onLiteralPool([&](auto& e) { pool.push_back(e); });
+	det.onString([&](auto& s) { strs.push_back(s); });
+
+	// Three instructions, one pool word.
+	det.processRef({0x1000, 0x100C, true});
+	det.processRef({0x1004, 0x100C, true});
+	det.processRef({0x1008, 0x100C, true});
+
+	EXPECT_EQ(1u, pool.size()) << "the pool word was reported " << pool.size() << " times";
+	EXPECT_EQ(1u, strs.size()) << "the string behind it was reported " << strs.size() << " times";
+}
+
+// Two DIFFERENT pool words are two entries, so the fix is not "report the
+// first and drop the rest".
+TEST(LiteralPoolTest, TwoDistinctPoolWordsAreTwoEntries)
+{
+	uint8_t codeData[64] = {};
+	for (int i = 0; i < 8; ++i)
+	{
+		codeData[16 + i] = (0x5000ull >> (8 * i)) & 0xFF;
+		codeData[24 + i] = (0x5020ull >> (8 * i)) & 0xFF;
+	}
+
+	FlatView view;
+	view.addSection(0x1000, codeData, 64, true);
+	view.addSection(0x5000, cstr("first string"));
+	view.addSection(0x5020, cstr("second string"));
+
+	StringDetectorConfig cfg;
+	cfg.minStringLen = 2;
+	StringDetector det(view, cfg);
+	std::vector<LiteralPoolEntry> pool;
+	det.onLiteralPool([&](auto& e) { pool.push_back(e); });
+
+	det.processRef({0x1000, 0x1010, true});
+	det.processRef({0x1004, 0x1018, true});
+
+	EXPECT_EQ(2u, pool.size());
+}
+
+// ─── The string-table entry floor ────────────────────────────────────────────
+
+// The third argument to detectStringTable is a MAXIMUM -- "Maximum entries to
+// check (default 1024)". processRef passed
+//
+//     cfg_.tableMinEntries > 0 ? 1024 : cfg_.tableMinEntries
+//
+// so a tableMinEntries of 0, which reads as "no floor", passed 0 as the maximum
+// and no entry was ever examined: setting the floor to nothing turned table
+// detection off. scanRegion(), the other call site, just takes the default and
+// so the two disagreed.
+TEST(StringTableTest, AZeroEntryFloorDoesNotTurnDetectionOff)
+{
+	// Four pointers to four strings, then a terminator.
+	uint8_t tbl[40] = {};
+	const uint64_t targets[4] = {0x5000, 0x5010, 0x5020, 0x5030};
+	for (int e = 0; e < 4; ++e)
+		for (int i = 0; i < 8; ++i)
+			tbl[e * 8 + i] = (targets[e] >> (8 * i)) & 0xFF;
+
+	FlatView view;
+	static const uint8_t kCode[4] = {};
+	view.addSection(0x1000, kCode, 4, true);
+	view.addSection(0x4000, tbl, sizeof(tbl));
+	for (int e = 0; e < 4; ++e)
+		view.addSection(targets[e], cstr("entry"));
+
+	StringDetectorConfig cfg;
+	cfg.minStringLen = 2;
+	cfg.tableMinEntries = 0; // no floor
+	StringDetector det(view, cfg);
+	std::vector<StringLiteral> strs;
+	det.onString([&](auto& s) { strs.push_back(s); });
+
+	det.processRef({0x1000, 0x4000, false});
+
+	EXPECT_FALSE(strs.empty()) << "a floor of zero suppressed every table entry";
+}
+
+// And a floor still floors: three entries against a minimum of four is refused.
+TEST(StringTableTest, AFloorAboveTheEntryCountStillRefuses)
+{
+	uint8_t tbl[32] = {};
+	const uint64_t targets[3] = {0x5000, 0x5010, 0x5020};
+	for (int e = 0; e < 3; ++e)
+		for (int i = 0; i < 8; ++i)
+			tbl[e * 8 + i] = (targets[e] >> (8 * i)) & 0xFF;
+
+	FlatView view;
+	static const uint8_t kCode[4] = {};
+	view.addSection(0x1000, kCode, 4, true);
+	view.addSection(0x4000, tbl, sizeof(tbl));
+	for (int e = 0; e < 3; ++e)
+		view.addSection(targets[e], cstr("entry"));
+
+	StringDetectorConfig cfg;
+	cfg.minStringLen = 2;
+	cfg.tableMinEntries = 4;
+	StringDetector det(view, cfg);
+	std::vector<StringLiteral> strs;
+	det.onString([&](auto& s) { strs.push_back(s); });
+
+	det.processRef({0x1000, 0x4000, false});
+
+	EXPECT_TRUE(strs.empty()) << "a three-entry table passed a floor of four";
+}
+
+// ─── detectWide / detectPascal / detectLenPfx ────────────────────────────────
+
+// StringDetectorConfig documents three classification switches. Nothing read
+// them: typeString() classifies unconditionally and StringDetector never
+// passed them on, so turning any of them off changed nothing at all.
+TEST(StringDetectorConfigTest, DetectWideOffSuppressesWideStrings)
+{
+	// "Hi" in UTF-16LE with a wide NUL.
+	uint8_t wide[] = {'H', 0, 'i', 0, 0, 0};
+	FlatView view;
+	static const uint8_t kCode[4] = {};
+	view.addSection(0x1000, kCode, 4, true);
+	view.addSection(0x4000, wide, sizeof(wide));
+
+	StringDetectorConfig on;
+	on.minStringLen = 2;
+	StringDetector detOn(view, on);
+	std::vector<StringLiteral> got;
+	detOn.onString([&](auto& s) { got.push_back(s); });
+	detOn.processRef({0x1000, 0x4000, false});
+	ASSERT_EQ(1u, got.size()) << "the fixture must be detected with the switch on";
+	EXPECT_EQ(StringKind::Wide, got[0].kind);
+
+	StringDetectorConfig off = on;
+	off.detectWide = false;
+	StringDetector detOff(view, off);
+	std::vector<StringLiteral> gotOff;
+	detOff.onString([&](auto& s) { gotOff.push_back(s); });
+	detOff.processRef({0x1000, 0x4000, false});
+	for (const auto& s: gotOff)
+		EXPECT_NE(StringKind::Wide, s.kind) << "detectWide = false was ignored";
+}
+
+TEST(StringDetectorConfigTest, DetectPascalOffSuppressesPascalStrings)
+{
+	// A length byte of 5 (not printable ASCII, so it reads as Pascal) then
+	// "Hello", then a non-printable byte so the C reading cannot take over.
+	uint8_t pas[] = {5, 'H', 'e', 'l', 'l', 'o', 0xFF, 0xFF};
+	FlatView view;
+	static const uint8_t kCode[4] = {};
+	view.addSection(0x1000, kCode, 4, true);
+	view.addSection(0x4000, pas, sizeof(pas));
+
+	StringDetectorConfig on;
+	on.minStringLen = 2;
+	StringDetector detOn(view, on);
+	std::vector<StringLiteral> got;
+	detOn.onString([&](auto& s) { got.push_back(s); });
+	detOn.processRef({0x1000, 0x4000, false});
+	ASSERT_EQ(1u, got.size()) << "the fixture must be detected with the switch on";
+	EXPECT_EQ(StringKind::Pascal, got[0].kind);
+
+	StringDetectorConfig off = on;
+	off.detectPascal = false;
+	StringDetector detOff(view, off);
+	std::vector<StringLiteral> gotOff;
+	detOff.onString([&](auto& s) { gotOff.push_back(s); });
+	detOff.processRef({0x1000, 0x4000, false});
+	for (const auto& s: gotOff)
+		EXPECT_NE(StringKind::Pascal, s.kind) << "detectPascal = false was ignored";
+}
+
+TEST(StringDetectorConfigTest, DetectLenPfxOffSuppressesLengthPrefixedStrings)
+{
+	// u32 length 5, "Hello", NUL.
+	uint8_t lp[] = {5, 0, 0, 0, 'H', 'e', 'l', 'l', 'o', 0};
+	FlatView view;
+	static const uint8_t kCode[4] = {};
+	view.addSection(0x1000, kCode, 4, true);
+	view.addSection(0x4000, lp, sizeof(lp));
+
+	StringDetectorConfig on;
+	on.minStringLen = 2;
+	StringDetector detOn(view, on);
+	std::vector<StringLiteral> got;
+	detOn.onString([&](auto& s) { got.push_back(s); });
+	detOn.processRef({0x1000, 0x4000, false});
+	ASSERT_EQ(1u, got.size()) << "the fixture must be detected with the switch on";
+	EXPECT_EQ(StringKind::LengthPrefixed, got[0].kind);
+
+	StringDetectorConfig off = on;
+	off.detectLenPfx = false;
+	StringDetector detOff(view, off);
+	std::vector<StringLiteral> gotOff;
+	detOff.onString([&](auto& s) { gotOff.push_back(s); });
+	detOff.processRef({0x1000, 0x4000, false});
+	for (const auto& s: gotOff)
+		EXPECT_NE(StringKind::LengthPrefixed, s.kind) << "detectLenPfx = false was ignored";
+}
