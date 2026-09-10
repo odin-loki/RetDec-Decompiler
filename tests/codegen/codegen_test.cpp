@@ -1057,6 +1057,45 @@ TEST(CodeGenPassTest, AGotoTheStructurerLeavesBehindGetsItsLabel)
 	EXPECT_EQ(1u, pass.stats().gotosRemaining);
 }
 
+TEST(CodeGenPassTest, GotoEliminationCanFireNowThatThereAreLabels)
+{
+	// GotoEliminator matches a goto against a Kind::Label statement -- see
+	// countLabelsInTree(). Nothing created one, so countLabelsInTree() always
+	// came back empty, no goto was ever eliminable, and Stats::gotosEliminated
+	// was structurally zero on every input. The same shape as condRewrites and
+	// castsRemoved: a pass that cannot fire and a counter that cannot move.
+	ssa::SSAFunction fn("elim_fn");
+	auto* entry = fn.addBlock("entry");
+	auto* target = fn.addBlock("target");
+	auto* retI = fn.addInstr(target->id, ssa::IrInstr::Op::Ret);
+
+	auto seq = cfg_structure::StructNode::seq();
+	auto entryBlk = std::make_unique<cfg_structure::StructNode>();
+	entryBlk->kind = cfg_structure::StructNode::Kind::Block;
+	entryBlk->blockId = entry->id;
+	seq->children.push_back(std::move(entryBlk));
+	seq->children.push_back(cfg_structure::StructNode::gotoNode(target->id, true));
+	auto targetBlk = std::make_unique<cfg_structure::StructNode>();
+	targetBlk->kind = cfg_structure::StructNode::Kind::Block;
+	targetBlk->blockId = target->id;
+	seq->children.push_back(std::move(targetBlk));
+
+	call_conv::CallingConvention cc;
+	cc.ret.kind = call_conv::RetKind::Void;
+	dce::DeadCodeResult dce;
+	dce.liveInstrs = {retI->id};
+
+	CodeGenPass pass;
+	auto cfn = pass.generateFunction(fn, *seq, cc, dce, {});
+
+	EXPECT_EQ(1u, pass.stats().gotosEliminated);
+	EXPECT_EQ(0u, pass.stats().gotosRemaining);
+
+	Emitter e;
+	const std::string out = e.emitFunction(cfn, {});
+	EXPECT_EQ(std::string::npos, out.find("goto ")) << out;
+}
+
 TEST(CodeGenPassTest, NoGotoIsEmittedForATargetThatIsNotInTheTree)
 {
 	// The other half: a Goto node naming a block the tree does not contain

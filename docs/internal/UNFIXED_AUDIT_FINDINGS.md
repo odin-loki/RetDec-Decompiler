@@ -633,6 +633,21 @@ guard nothing exercises is indistinguishable from one that does not work.
 
 Both halves verified by reverting them one at a time.
 
+**And the goto eliminator had never eliminated anything.**
+`GotoEliminator` matches a goto against a `Kind::Label` statement —
+`countLabelsInTree()` collects them and `rewriteStmtTree()` closes its guard
+at one. With no label ever created, that set was always empty, no goto was
+ever eliminable, and `Stats::gotosEliminated` was structurally zero on every
+input: the same shape as `condRewrites` and `castsRemoved` one section down,
+a pass that cannot fire beside a counter that cannot move.
+
+Emitting the label turns the pass on. It is now the reason the first test
+above has to set `enableGotoElim = false` — with it on, the eliminator folds
+that goto away, which is the pass working and would have hidden the
+emitter's half. A third test asserts the other side: with elimination on, the
+same input reports `gotosEliminated == 1`, `gotosRemaining == 0`, and emits
+no `goto` at all.
+
 ## The whole back end, from LLVM IR, in one test
 
 Every other test under `tests/llvmir2hll` exercises one pass on a module
