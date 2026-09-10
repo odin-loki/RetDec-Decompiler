@@ -109,6 +109,43 @@ static bool isNonValueOperand(const llvm::Value* op)
 	return op == nullptr || llvm::isa<llvm::BasicBlock>(op) || llvm::isa<llvm::Function>(op);
 }
 
+/// The comparison an `icmp`/`fcmp` is asking, as an ssa::CmpPred.
+///
+/// LLVM names the question; the SSA IR used to drop the name and keep only
+/// Op::Compare, so the C back end had nothing to emit but the subtraction a
+/// machine CMP computes. Predicates with no single C operator -- the
+/// unordered float ones, ORD and UNO -- stay None rather than being
+/// approximated by a comparison that differs on NaN.
+static ssa::CmpPred cmpPredOf(const llvm::Instruction& li)
+{
+	using P = llvm::CmpInst::Predicate;
+	using C = ssa::CmpPred;
+
+	const auto* ci = llvm::dyn_cast<llvm::CmpInst>(&li);
+	if (!ci) return C::None;
+
+	switch (ci->getPredicate())
+	{
+	case P::ICMP_EQ: return C::Eq;
+	case P::ICMP_NE: return C::Ne;
+	case P::ICMP_SLT: return C::Slt;
+	case P::ICMP_SLE: return C::Sle;
+	case P::ICMP_SGT: return C::Sgt;
+	case P::ICMP_SGE: return C::Sge;
+	case P::ICMP_ULT: return C::Ult;
+	case P::ICMP_ULE: return C::Ule;
+	case P::ICMP_UGT: return C::Ugt;
+	case P::ICMP_UGE: return C::Uge;
+	case P::FCMP_OEQ: return C::Eq;
+	case P::FCMP_ONE: return C::Ne;
+	case P::FCMP_OLT: return C::Flt;
+	case P::FCMP_OLE: return C::Fle;
+	case P::FCMP_OGT: return C::Fgt;
+	case P::FCMP_OGE: return C::Fge;
+	default: return C::None;
+	}
+}
+
 /// Translate one LLVM instruction into an ssa::IrInstr and append it to
 /// the given basic block.  Returns nullptr if the instruction should be
 /// skipped (e.g. alloca, getelementptr, unreachable).
@@ -124,6 +161,7 @@ static ssa::IrInstr* translateInstr(const llvm::Instruction& li, ssa::SSAFunctio
 		vma = a;
 
 	Op op = Op::Assign;
+	ssa::CmpPred pred = ssa::CmpPred::None;
 	std::string calleeStr;
 
 	if (llvm::isa<llvm::CallInst>(li))
@@ -156,6 +194,7 @@ static ssa::IrInstr* translateInstr(const llvm::Instruction& li, ssa::SSAFunctio
 	else if (llvm::isa<llvm::ICmpInst>(li) || llvm::isa<llvm::FCmpInst>(li))
 	{
 		op = Op::Compare;
+		pred = cmpPredOf(li);
 	}
 	else if (const auto* bo = llvm::dyn_cast<llvm::BinaryOperator>(&li))
 	{
@@ -184,6 +223,7 @@ static ssa::IrInstr* translateInstr(const llvm::Instruction& li, ssa::SSAFunctio
 
 	ssa::IrInstr* instr = fn.addInstr(blk.id, op, vma);
 	if (instr && !calleeStr.empty()) instr->calleeName = std::move(calleeStr);
+	if (instr) instr->cmpPred = pred;
 
 	// defValue and uses are filled in by buildSsaModule, which is the only
 	// place that has the whole function in hand. A use has to name the value

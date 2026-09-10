@@ -124,6 +124,47 @@ inline const char* flagBitName(FlagBit f) noexcept
 	return n[static_cast<int>(f)];
 }
 
+// ─── Comparison predicate ────────────────────────────────────────────────────
+
+/**
+ * Which comparison an @c Op::Compare instruction performs.
+ *
+ * `Op::Compare` covers both a machine `CMP`/`TEST`, which computes a
+ * difference and sets flags, and an LLVM `icmp`/`fcmp`, which names the
+ * question it is asking. The name was being dropped: every comparison arrived
+ * as `Op::Compare` and nothing recorded whether it asked `==` or `<`, so the
+ * C back end had no comparison operator to emit and wrote the subtraction
+ * instead -- `if (a - b)` where the source said `if (a < b)`.
+ *
+ * `None` is the machine case, where the question is in the branch that reads
+ * the flags rather than in the compare.
+ */
+enum class CmpPred : uint8_t
+{
+	None = 0, ///< not known -- a flag-setting compare, or an unmapped predicate
+	Eq,       ///< ==
+	Ne,       ///< !=
+	Slt,      ///< <   signed
+	Sle,      ///< <=  signed
+	Sgt,      ///< >   signed
+	Sge,      ///< >=  signed
+	Ult,      ///< <   unsigned
+	Ule,      ///< <=  unsigned
+	Ugt,      ///< >   unsigned
+	Uge,      ///< >=  unsigned
+	Flt,      ///< <   floating point, ordered
+	Fle,      ///< <=  floating point, ordered
+	Fgt,      ///< >   floating point, ordered
+	Fge,      ///< >=  floating point, ordered
+};
+
+/// Is @a p an unsigned integer comparison? Those need the operands read as
+/// unsigned in C, where the operator carries no signedness of its own.
+inline bool cmpPredIsUnsigned(CmpPred p) noexcept
+{
+	return p == CmpPred::Ult || p == CmpPred::Ule || p == CmpPred::Ugt || p == CmpPred::Uge;
+}
+
 // ─── Value kind ──────────────────────────────────────────────────────────────
 
 enum class ValueKind : uint8_t
@@ -258,6 +299,9 @@ struct IrInstr
 	// Post-SSA (after renaming): SSA value IDs
 	ValueId defValue = kInvalidValue;
 	std::vector<Use> uses;
+
+	// For Compare: which comparison this is, when the front end knew.
+	CmpPred cmpPred = CmpPred::None;
 
 	// For flag-producing instructions
 	bool writesFlagBundle = false;

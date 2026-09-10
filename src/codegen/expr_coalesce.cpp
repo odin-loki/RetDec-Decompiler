@@ -182,7 +182,7 @@ std::string CExpr::toString(int outerPrec) const {
 			s += ' ';
 		s += operand;
 		if (14 < outerPrec) s = "(" + s + ")";
-        return s;
+		return s;
     }
 
     case K::Cast: {
@@ -254,6 +254,55 @@ static bool ssaOpToBinOp(ssa::IrInstr::Op op, CExpr::BinOpKind& out) {
     }
 }
 
+// Map a comparison predicate → the C operator that asks the same question.
+// CmpPred::None is the machine compare, which asks nothing on its own.
+static bool cmpToBinOp(ssa::CmpPred p, CExpr::BinOpKind& out)
+{
+	using P = ssa::CmpPred;
+	using B = CExpr::BinOpKind;
+	switch (p)
+	{
+	case P::Eq: out = B::Eq; return true;
+	case P::Ne: out = B::Ne; return true;
+	case P::Slt:
+	case P::Ult:
+	case P::Flt: out = B::Lt; return true;
+	case P::Sle:
+	case P::Ule:
+	case P::Fle: out = B::Le; return true;
+	case P::Sgt:
+	case P::Ugt:
+	case P::Fgt: out = B::Gt; return true;
+	case P::Sge:
+	case P::Uge:
+	case P::Fge: out = B::Ge; return true;
+	case P::None: return false;
+	}
+	return false;
+}
+
+// The width the two operands of @a def are compared at, in bits. Falls back
+// to 32 when neither operand has a recorded value.
+static uint8_t operandWidth(const ssa::IrInstr* def, const ssa::SSAFunction& fn)
+{
+	for (const auto& u: def->uses)
+	{
+		if (const auto* v = fn.value(u.valueId)) return v->width;
+	}
+	return 32;
+}
+
+static std::shared_ptr<CType> unsignedTypeOfWidth(uint8_t bits)
+{
+	switch (bits)
+	{
+	case 8: return CType::make(CType::Kind::UInt8);
+	case 16: return CType::make(CType::Kind::UInt16);
+	case 64: return CType::make(CType::Kind::UInt64);
+	default: return CType::make(CType::Kind::UInt32);
+	}
+}
+
 static bool hasSideEffects(ssa::IrInstr::Op op) {
     using O = ssa::IrInstr::Op;
     return op == O::Call || op == O::Store;
@@ -320,7 +369,7 @@ std::string ExprCoalescer::nameForValue(uint32_t vid,
 			return n + "_" + suffix + std::to_string(val->version);
 		}
 	}
-    return "v" + std::to_string(vid);
+	return "v" + std::to_string(vid);
 }
 
 ExprCoalescer::Result ExprCoalescer::run(
@@ -514,12 +563,33 @@ std::shared_ptr<CExpr> ExprCoalescer::buildExpr(
         break;
 
     case O::Compare: {
-        // CMP/TEST: emit as a comparison expression. The actual condition
-        // (ZF, SF, etc.) is consumed by the flag reader. For the defining
-        // expression we emit: lhs - rhs (the value CMP computes conceptually).
         auto lhs = getUse(0);
         auto rhs = getUse(1);
-        result = CExpr::binop(CExpr::BinOpKind::Sub, lhs, rhs);
+
+		// When the front end knew which comparison this is -- an LLVM
+		// icmp/fcmp names it -- emit that operator. Nothing in this module
+		// built a comparison expression before, so every condition reached
+		// the C writer as the subtraction below and `if (a < b)` came out as
+		// `if (a - b)`. CondNormaliser, whose whole job is tidying
+		// comparisons, had nothing it could ever match.
+		CExpr::BinOpKind cmp;
+		if (cmpToBinOp(def->cmpPred, cmp))
+		{
+			if (ssa::cmpPredIsUnsigned(def->cmpPred))
+			{
+				// C puts the signedness in the operands, not the operator.
+				auto ut = unsignedTypeOfWidth(operandWidth(def, fn));
+				lhs = CExpr::cast(ut, lhs);
+				rhs = CExpr::cast(ut, rhs);
+			}
+			result = CExpr::binop(cmp, lhs, rhs);
+			break;
+		}
+
+		// A machine CMP/TEST asks nothing on its own: the condition (ZF, SF,
+		// ...) is in the branch that reads the flags. Emit the value CMP
+		// conceptually computes, lhs - rhs, as before.
+		result = CExpr::binop(CExpr::BinOpKind::Sub, lhs, rhs);
         break;
     }
 

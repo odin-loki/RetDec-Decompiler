@@ -18,8 +18,10 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 using retdec::buildSsaModule;
+using retdec::ssa::CmpPred;
 using retdec::ssa::IrInstr;
 using retdec::ssa::SSAFunction;
 using retdec::ssa::ValueKind;
@@ -391,6 +393,51 @@ TEST(LlvmToSsa, CmpXchgMapsToLock)
 	const SSAFunction* fn = findFn(*ssa, "cas");
 	ASSERT_NE(fn, nullptr);
 	EXPECT_GE(countOp(*fn, IrInstr::Op::Lock), 1);
+}
+
+constexpr const char* kCmpPredIR = R"IR(
+target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+define i32 @cmps(i32 %a, i32 %b, float %x, float %y) {
+  %s = icmp slt i32 %a, %b
+  %u = icmp ugt i32 %a, %b
+  %e = icmp eq i32 %a, %b
+  %f = fcmp ole float %x, %y
+  %n = fcmp uno float %x, %y
+  ret i32 0
+}
+)IR";
+
+TEST(LlvmToSsa, AComparisonKeepsThePredicateItAsks)
+{
+	// Every icmp/fcmp arrived as Op::Compare with nothing saying which
+	// comparison it was, so the C back end had no operator to emit and wrote
+	// the subtraction a machine CMP computes: `if (a - b)` for `if (a < b)`.
+	llvm::LLVMContext ctx;
+	auto module = parseIR(ctx, kCmpPredIR);
+	ASSERT_NE(module, nullptr);
+	auto ssa = buildSsaModule(*module);
+	ASSERT_NE(ssa, nullptr);
+	const SSAFunction* fn = findFn(*ssa, "cmps");
+	ASSERT_NE(fn, nullptr);
+
+	std::vector<CmpPred> preds;
+	for (const auto& blk: fn->blocks())
+	{
+		for (const IrInstr* i: blk->instrs)
+		{
+			if (i->op == IrInstr::Op::Compare) preds.push_back(i->cmpPred);
+		}
+	}
+
+	ASSERT_EQ(5u, preds.size());
+	EXPECT_EQ(CmpPred::Slt, preds[0]);
+	EXPECT_EQ(CmpPred::Ugt, preds[1]);
+	EXPECT_EQ(CmpPred::Eq, preds[2]);
+	EXPECT_EQ(CmpPred::Fle, preds[3]);
+	// `uno` asks whether either operand is NaN. No C comparison operator asks
+	// that, so it stays None rather than being approximated by one that
+	// differs exactly where it matters.
+	EXPECT_EQ(CmpPred::None, preds[4]);
 }
 
 constexpr const char* kInsnAddrIR = R"IR(

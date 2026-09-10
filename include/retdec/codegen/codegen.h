@@ -621,7 +621,12 @@ private:
  */
 class CondNormaliser {
 public:
-	std::shared_ptr<CExpr> normalise(std::shared_ptr<CExpr> expr, bool boolContext = false) const;
+	/// @param rewrites If non-null, incremented once per rewrite applied
+	///                 anywhere in @a expr. CodeGenPass::Stats::condRewrites
+	///                 is what this feeds; it read zero on every input before
+	///                 anything counted.
+	std::shared_ptr<CExpr>
+	normalise(std::shared_ptr<CExpr> expr, bool boolContext = false, std::size_t* rewrites = nullptr) const;
 
 private:
 	std::shared_ptr<CExpr> flipCmp(std::shared_ptr<CExpr> e) const;
@@ -671,14 +676,19 @@ public:
 		std::unordered_map<int64_t, std::string> fields; ///< offset → field name
 	};
 
-	std::shared_ptr<CExpr>
-	recover(std::shared_ptr<CExpr> expr, const std::unordered_map<std::string, StructInfo>& structs = {}) const;
+	/// @param castsRemoved If non-null, incremented once per cast dropped
+	///                     anywhere in @a expr. CodeGenPass::Stats::castsRemoved
+	///                     is what this feeds.
+	std::shared_ptr<CExpr> recover(
+		std::shared_ptr<CExpr> expr,
+		const std::unordered_map<std::string, StructInfo>& structs = {},
+		std::size_t* castsRemoved = nullptr) const;
 
 private:
 	std::shared_ptr<CExpr> trySubscript(std::shared_ptr<CExpr> expr) const;
 	std::shared_ptr<CExpr>
 	tryMember(std::shared_ptr<CExpr> expr, const std::unordered_map<std::string, StructInfo>& structs) const;
-	std::shared_ptr<CExpr> minimiseCasts(std::shared_ptr<CExpr> expr) const;
+	std::shared_ptr<CExpr> minimiseCasts(std::shared_ptr<CExpr> expr, std::size_t* castsRemoved) const;
 	bool isCastRedundant(const CType& outer, const CExpr& inner) const;
 };
 

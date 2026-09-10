@@ -598,6 +598,66 @@ behind it, and a CI job that configures with it ON against a POCL or Mesa
 Rusticl ICD — then the `UNBUILT_DIRS` entry comes out.
 
 
+
+## Every condition reached the C writer as a subtraction
+
+`src/retdec/llvm_to_ssa.cpp` mapped both `icmp` and `fcmp` to
+`ssa::IrInstr::Op::Compare` and kept nothing else. LLVM names the question a
+comparison asks — `slt`, `eq`, `uge` — and the adapter dropped the name.
+
+Downstream, `ExprCoalescer` had nothing to work from, so `Op::Compare` became
+`lhs - rhs`: the value a machine `CMP` conceptually computes. Nothing else in
+`src/codegen/` constructs a comparison `BinOpKind` either, so **no expression
+the C back end ever built contained `<`, `<=`, `>`, `>=`, `==` or `!=`.**
+`if (a < b)` came out as `if (a - b)`, and a condition that reached the writer
+through a flag read came out as a bare `v37`.
+
+That also made `CondNormaliser` — a 165-line file with nine unit tests, whose
+entire job is tidying comparisons — unable to match anything on the emitter
+path. Its tests passed because they hand it comparisons directly. Nothing in
+the pipeline ever did.
+
+`ssa::CmpPred` now rides on `Op::Compare`, the adapter sets it from the LLVM
+predicate, and the coalescer emits the matching C operator. Unsigned
+predicates get their operands cast to the unsigned type of the operand width,
+because C puts the signedness in the operands and not in the operator, so
+`icmp ult` is `(uint32_t)a < (uint32_t)b` and never a signed `a < b` on the
+same bits.
+
+Two cases deliberately stay as they were:
+
+* **Unordered float predicates**, and `ORD`/`UNO`. No C comparison operator
+  asks whether an operand is NaN, and approximating one with an operator that
+  differs exactly there is worse than the subtraction.
+* **A machine `CMP`/`TEST`**, which asks nothing on its own: the condition is
+  in the branch that reads the flags. `IrInstr::specificFlag` records *which*
+  flag a `Jcc` reads and nothing records the polarity, so `je` and `jne` are
+  indistinguishable in the IR. Recovering those needs a field the lifter would
+  set, and the lifter is in the front end this environment cannot build. Until
+  then a binary lifted straight to the SSA IR keeps `a - b`; one that goes
+  through LLVM gets the operator.
+
+### The counters beside it, and the knobs above it
+
+`CodeGenPass::Stats::condRewrites` and `::castsRemoved` are documented as
+counts of what those two passes did and were assigned by nothing, so they read
+`0` on every unit — the same shape as `DVSA::Result::carvedAccesses`. Both are
+now threaded through and counted, and `condRewrites` is non-zero end to end
+now that there are comparisons to rewrite.
+
+`Config::enableCondNorm` and `Config::enablePtrSyntax` sat beside
+`enableGotoElim` and `enableCoalescing`, which are both consulted, and were
+read by nothing: the two passes ran whatever the config said. They are
+consulted now, and OPT-01's accepted list of inert knobs is down from 69 to
+67.
+
+**Still open**: `castsRemoved` reads 0 through the pipeline even so.
+`PointerSyntax::recover()` is called on exactly one expression — the
+destination of a `Store` — and nothing in `src/codegen/` builds a `Cast` node
+that reaches it. `minimiseCasts()` is correct and unreached. Closing it means
+running pointer-syntax recovery over expressions generally, which is a
+behaviour change to every emitted statement and wants its own measurement.
+
 ## Two invariants in `Statement` that nothing was holding
 
 Neither of these had a corpus symptom to point at, which is why they are

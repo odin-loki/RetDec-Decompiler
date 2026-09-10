@@ -317,13 +317,19 @@ std::string Emitter::emitUnit(const CUnit& unit, const Config& cfg) const
 namespace {
 
 // Convert condition value ID → CExpr using the coalescer result.
-static std::shared_ptr<CExpr>
-condExpr(uint32_t vid, const ExprCoalescer::Result& exprs, const ssa::SSAFunction& fn, const CondNormaliser& norm)
+static std::shared_ptr<CExpr> condExpr(
+	uint32_t vid,
+	const ExprCoalescer::Result& exprs,
+	const ssa::SSAFunction& fn,
+	const CondNormaliser& norm,
+	const CodeGenPass::Config& cfg,
+	CodeGenPass::Stats& stats)
 {
 	if (vid == UINT32_MAX) return nullptr;
 	auto it = exprs.valueExprs.find(vid);
 	std::shared_ptr<CExpr> e = (it != exprs.valueExprs.end()) ? it->second : CExpr::var("v" + std::to_string(vid), vid);
-	return norm.normalise(e, true);
+	if (!cfg.enableCondNorm) return e;
+	return norm.normalise(e, true, &stats.condRewrites);
 }
 
 // Forward declaration.
@@ -335,13 +341,16 @@ static std::shared_ptr<CStmt> buildBody(
 	const CondNormaliser& condNorm,
 	const LoopFormSelector& loopSel,
 	const PointerSyntax& ptrSyn,
+	const CodeGenPass::Config& cfg,
 	CodeGenPass::Stats& stats);
 
 static std::shared_ptr<CStmt> instrToStmt(
 	const ssa::IrInstr* instr,
 	const ExprCoalescer::Result& exprs,
 	const ssa::SSAFunction& fn,
-	const PointerSyntax& ptrSyn)
+	const PointerSyntax& ptrSyn,
+	const CodeGenPass::Config& cfg,
+	CodeGenPass::Stats& stats)
 {
 	using O = ssa::IrInstr::Op;
 
@@ -358,7 +367,8 @@ static std::shared_ptr<CStmt> instrToStmt(
 		// Store: uses[0] = value, uses[1] = address
 		auto addrE = getUseExpr(1);
 		auto valE = getUseExpr(0);
-		auto lhsE = ptrSyn.recover(CExpr::unop(CExpr::UnOpKind::Deref, addrE), {});
+		auto derefE = CExpr::unop(CExpr::UnOpKind::Deref, addrE);
+		auto lhsE = cfg.enablePtrSyntax ? ptrSyn.recover(derefE, {}, &stats.castsRemoved) : derefE;
 		return CStmt::assign(lhsE, valE);
 	}
 	case O::Ret: {
@@ -419,6 +429,7 @@ static std::shared_ptr<CStmt> buildBody(
 	const CondNormaliser& condNorm,
 	const LoopFormSelector& loopSel,
 	const PointerSyntax& ptrSyn,
+	const CodeGenPass::Config& cfg,
 	CodeGenPass::Stats& stats)
 {
 	if (!node) return CStmt::block();
@@ -435,7 +446,7 @@ static std::shared_ptr<CStmt> buildBody(
 		{
 			if (!instr) continue;
 			if (!dce.liveInstrs.empty() && !dce.liveInstrs.count(instr->id)) continue;
-			auto s = instrToStmt(instr, exprs, fn, ptrSyn);
+			auto s = instrToStmt(instr, exprs, fn, ptrSyn, cfg, stats);
 			if (s) blk->children.push_back(s);
 		}
 		return blk;
@@ -445,7 +456,7 @@ static std::shared_ptr<CStmt> buildBody(
 		auto seq = CStmt::block();
 		for (auto& child: node->children)
 		{
-			auto sub = buildBody(child.get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, stats);
+			auto sub = buildBody(child.get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats);
 			if (!sub) continue;
 			if (sub->kind == CStmt::Kind::Block)
 				for (auto& s: sub->children)
@@ -457,24 +468,24 @@ static std::shared_ptr<CStmt> buildBody(
 	}
 
 	case NK::IfThen: {
-		auto cond = condExpr(node->condValueId, exprs, fn, condNorm);
+		auto cond = condExpr(node->condValueId, exprs, fn, condNorm, cfg, stats);
 		if (!cond) cond = CExpr::lit("1");
 		auto thenBody = node->children.empty()
 						  ? CStmt::block()
-						  : buildBody(node->children[0].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, stats);
+						  : buildBody(node->children[0].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats);
 		auto ifS = CStmt::ifStmt(cond);
 		ifS->children.push_back(thenBody);
 		return ifS;
 	}
 
 	case NK::IfThenElse: {
-		auto cond = condExpr(node->condValueId, exprs, fn, condNorm);
+		auto cond = condExpr(node->condValueId, exprs, fn, condNorm, cfg, stats);
 		if (!cond) cond = CExpr::lit("1");
 		auto thenBody = node->children.size() > 0
-						  ? buildBody(node->children[0].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, stats)
+						  ? buildBody(node->children[0].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats)
 						  : CStmt::block();
 		auto elseBody = node->children.size() > 1
-						  ? buildBody(node->children[1].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, stats)
+						  ? buildBody(node->children[1].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats)
 						  : CStmt::block();
 		auto ifS = CStmt::ifStmt(cond);
 		ifS->children.push_back(thenBody);
@@ -486,10 +497,10 @@ static std::shared_ptr<CStmt> buildBody(
 	case NK::DoWhile:
 	case NK::For:
 	case NK::Infinite: {
-		auto cond = condExpr(node->condValueId, exprs, fn, condNorm);
+		auto cond = condExpr(node->condValueId, exprs, fn, condNorm, cfg, stats);
 		auto body = node->children.empty()
 					  ? CStmt::block()
-					  : buildBody(node->children[0].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, stats);
+					  : buildBody(node->children[0].get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats);
 		return loopSel.select(*node, cond, nullptr, nullptr, body);
 	}
 
@@ -511,7 +522,7 @@ static std::shared_ptr<CStmt> buildBody(
 			sw->children.push_back(cs);
 			if (arm)
 			{
-				auto ab = buildBody(arm.get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, stats);
+				auto ab = buildBody(arm.get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats);
 				if (ab)
 				{
 					if (ab->kind == CStmt::Kind::Block)
@@ -528,7 +539,7 @@ static std::shared_ptr<CStmt> buildBody(
 			auto dc = std::make_shared<CStmt>();
 			dc->kind = CStmt::Kind::Default;
 			sw->children.push_back(dc);
-			auto db = buildBody(node->defaultCase.get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, stats);
+			auto db = buildBody(node->defaultCase.get(), exprs, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats);
 			if (db)
 			{
 				if (db->kind == CStmt::Kind::Block)
@@ -629,7 +640,7 @@ CFunction CodeGenPass::generateFunction(
 	// touch the counter either, `gotosEliminated += 0 - remaining` wrapped a
 	// std::size_t to 2^64-1 whenever any goto survived.
 	const auto gotosBefore = stats_.gotosRemaining;
-	auto body = buildBody(&structTree, exprResult, fn, dce, condNorm, loopSel, ptrSyn, stats_);
+	auto body = buildBody(&structTree, exprResult, fn, dce, condNorm, loopSel, ptrSyn, cfg, stats_);
 	if (!body || body->kind != CStmt::Kind::Block)
 	{
 		auto w = CStmt::block();

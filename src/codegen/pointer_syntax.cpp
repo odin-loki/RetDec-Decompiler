@@ -56,18 +56,19 @@ static bool sameType(const CType* a, const CType* b) {
 // ─── Public entry ─────────────────────────────────────────────────────────────
 
 std::shared_ptr<CExpr> PointerSyntax::recover(
-        std::shared_ptr<CExpr> expr,
-        const std::unordered_map<std::string, StructInfo>& structs) const {
-
-    if (!expr) return expr;
+	std::shared_ptr<CExpr> expr,
+	const std::unordered_map<std::string, StructInfo>& structs,
+	std::size_t* castsRemoved) const
+{
+	if (!expr) return expr;
 
     // First recurse into children.
     for (auto& c : expr->children)
-        c = recover(c, structs);
+		c = recover(c, structs, castsRemoved);
 
-    // Then try transformations on this node.
-    expr = minimiseCasts(expr);
-    expr = trySubscript(expr);
+	// Then try transformations on this node.
+	expr = minimiseCasts(expr, castsRemoved);
+	expr = trySubscript(expr);
     expr = tryMember(expr, structs);
 
     return expr;
@@ -181,10 +182,9 @@ std::shared_ptr<CExpr> PointerSyntax::tryMember(
 
 // ─── Cast minimisation ────────────────────────────────────────────────────────
 
-std::shared_ptr<CExpr> PointerSyntax::minimiseCasts(
-        std::shared_ptr<CExpr> expr) const {
-
-    using K = CExpr::Kind;
+std::shared_ptr<CExpr> PointerSyntax::minimiseCasts(std::shared_ptr<CExpr> expr, std::size_t* castsRemoved) const
+{
+	using K = CExpr::Kind;
     if (expr->kind != K::Cast) return expr;
 
     auto& inner = expr->children[0];
@@ -197,10 +197,13 @@ std::shared_ptr<CExpr> PointerSyntax::minimiseCasts(
     }
 
     // (T)x where x already has type T → x
-    if (isCastRedundant(*expr->castType, *inner))
-        return inner;
+	if (isCastRedundant(*expr->castType, *inner))
+	{
+		if (castsRemoved) ++*castsRemoved;
+		return inner;
+	}
 
-    return expr;
+	return expr;
 }
 
 bool PointerSyntax::isCastRedundant(const CType& outer, const CExpr& inner) const {

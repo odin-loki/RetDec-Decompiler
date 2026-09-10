@@ -281,6 +281,40 @@ TEST(CondNormaliserTest, NonBoolContextPreservedNeZero)
 	EXPECT_EQ(result->binOp, CExpr::BinOpKind::Ne);
 }
 
+TEST(CondNormaliserTest, RewritesAreCounted)
+{
+	// CodeGenPass::Stats::condRewrites is documented as a count of these and
+	// was never assigned, so it read 0 on every input -- including the ones
+	// where the pass had just rewritten something.
+	CondNormaliser n;
+	auto ne = CExpr::binop(CExpr::BinOpKind::Ne, CExpr::var("x"), CExpr::lit("0"));
+	std::size_t rewrites = 0;
+	n.normalise(ne, /*boolContext=*/true, &rewrites);
+	EXPECT_EQ(1u, rewrites);
+}
+
+TEST(CondNormaliserTest, NestedRewritesAreCountedOnce_Each)
+{
+	// !(a >= b) && !(c == d) -- two rewrites, one per operand, and the
+	// enclosing && is not one.
+	CondNormaliser n;
+	auto lhs = CExpr::unop(CExpr::UnOpKind::Not, CExpr::binop(CExpr::BinOpKind::Ge, CExpr::var("a"), CExpr::var("b")));
+	auto rhs = CExpr::unop(CExpr::UnOpKind::Not, CExpr::binop(CExpr::BinOpKind::Eq, CExpr::var("c"), CExpr::var("d")));
+	auto both = CExpr::binop(CExpr::BinOpKind::LAnd, lhs, rhs);
+	std::size_t rewrites = 0;
+	n.normalise(both, /*boolContext=*/true, &rewrites);
+	EXPECT_EQ(2u, rewrites);
+}
+
+TEST(CondNormaliserTest, NothingToRewriteCountsNothing)
+{
+	CondNormaliser n;
+	auto lt = CExpr::binop(CExpr::BinOpKind::Lt, CExpr::var("a"), CExpr::var("b"));
+	std::size_t rewrites = 0;
+	n.normalise(lt, /*boolContext=*/true, &rewrites);
+	EXPECT_EQ(0u, rewrites);
+}
+
 // ─── LoopFormSelector tests ───────────────────────────────────────────────────
 
 TEST(LoopFormSelectorTest, WhileLoop)
@@ -429,6 +463,36 @@ TEST(PointerSyntaxTest, DuplicateCastRemoved)
 	ASSERT_EQ(result->kind, CExpr::Kind::Cast);
 	// The cast chain should be collapsed.
 	EXPECT_EQ(result->children[0]->kind, CExpr::Kind::Cast);
+}
+
+TEST(PointerSyntaxTest, RemovedCastsAreCounted)
+{
+	// (int32_t)x where x is already int32_t -- the cast goes, and
+	// CodeGenPass::Stats::castsRemoved is what is supposed to say so.
+	PointerSyntax ps;
+	auto x = CExpr::var("x");
+	x->exprType = CType::make(CType::Kind::Int32);
+	auto redundant = CExpr::cast(CType::make(CType::Kind::Int32), x);
+
+	std::size_t removed = 0;
+	auto result = ps.recover(redundant, {}, &removed);
+
+	EXPECT_EQ(CExpr::Kind::Var, result->kind);
+	EXPECT_EQ(1u, removed);
+}
+
+TEST(PointerSyntaxTest, ACastThatIsNotRedundantIsNotCounted)
+{
+	PointerSyntax ps;
+	auto x = CExpr::var("x");
+	x->exprType = CType::make(CType::Kind::Int8);
+	auto widening = CExpr::cast(CType::make(CType::Kind::Int32), x);
+
+	std::size_t removed = 0;
+	auto result = ps.recover(widening, {}, &removed);
+
+	EXPECT_EQ(CExpr::Kind::Cast, result->kind);
+	EXPECT_EQ(0u, removed);
 }
 
 // ─── GotoEliminator tests ─────────────────────────────────────────────────────
@@ -797,6 +861,157 @@ TEST(CodeGenPassTest, StatsCoalescingCounts)
 	EXPECT_EQ(pass.stats().totalFunctions, 2u);
 }
 
+TEST(CodeGenPassTest, StatsCountTheConditionRewritesThePassMade)
+{
+	// Stats::condRewrites is documented as a count of CondNormaliser's
+	// rewrites and was never assigned, so it read 0 on every unit -- and
+	// there was nothing for it to count anyway, because the coalescer built
+	// no comparison for CondNormaliser to match. Both halves are here: the
+	// predicate reaches the expression, and the count reaches the stats.
+	//
+	//   t = (a == 0);  if (t) { ... }      →      if (!a) { ... }
+	ssa::SSAFunction fn("cond_test");
+	auto* entry = fn.addBlock("entry");
+	auto* a = fn.allocValue(ssa::ValueKind::VirtualReg);
+	auto* zero = fn.allocValue(ssa::ValueKind::Immediate);
+	zero->imm = 0;
+
+	auto* cmpI = fn.addInstr(entry->id, ssa::IrInstr::Op::Compare);
+	cmpI->cmpPred = ssa::CmpPred::Eq;
+	auto* cond = fn.allocValue(ssa::ValueKind::VirtualReg);
+	cmpI->defValue = cond->id;
+	cond->defInstr = cmpI;
+	cmpI->uses.push_back(ssa::Use{a->id, 0});
+	cmpI->uses.push_back(ssa::Use{zero->id, 1});
+
+	auto* retI = fn.addInstr(entry->id, ssa::IrInstr::Op::Ret);
+
+	cfg_structure::StructNode body;
+	body.kind = cfg_structure::StructNode::Kind::Block;
+	body.blockId = entry->id;
+
+	cfg_structure::StructNode tree;
+	tree.kind = cfg_structure::StructNode::Kind::IfThen;
+	tree.condValueId = cond->id;
+	tree.children.push_back(std::make_unique<cfg_structure::StructNode>(std::move(body)));
+
+	call_conv::CallingConvention cc;
+	cc.ret.kind = call_conv::RetKind::Void;
+	dce::DeadCodeResult dce;
+	dce.liveInstrs = {cmpI->id, retI->id};
+
+	CodeGenPass pass;
+	pass.generateFunction(fn, tree, cc, dce, {});
+
+	EXPECT_EQ(1u, pass.stats().condRewrites);
+}
+
+TEST(CodeGenPassTest, EnableCondNormOffActuallyTurnsTheNormaliserOff)
+{
+	// Config::enableCondNorm sat beside enableGotoElim and enableCoalescing,
+	// both of which are consulted, and was read by nothing: the normaliser
+	// ran whatever it was set to. The same shape as enablePtrSyntax below it.
+	ssa::SSAFunction fn("cond_off");
+	auto* entry = fn.addBlock("entry");
+	auto* a = fn.allocValue(ssa::ValueKind::VirtualReg);
+	auto* zero = fn.allocValue(ssa::ValueKind::Immediate);
+	zero->imm = 0;
+
+	auto* cmpI = fn.addInstr(entry->id, ssa::IrInstr::Op::Compare);
+	cmpI->cmpPred = ssa::CmpPred::Eq;
+	auto* cond = fn.allocValue(ssa::ValueKind::VirtualReg);
+	cmpI->defValue = cond->id;
+	cond->defInstr = cmpI;
+	cmpI->uses.push_back(ssa::Use{a->id, 0});
+	cmpI->uses.push_back(ssa::Use{zero->id, 1});
+	auto* retI = fn.addInstr(entry->id, ssa::IrInstr::Op::Ret);
+
+	cfg_structure::StructNode body;
+	body.kind = cfg_structure::StructNode::Kind::Block;
+	body.blockId = entry->id;
+	cfg_structure::StructNode tree;
+	tree.kind = cfg_structure::StructNode::Kind::IfThen;
+	tree.condValueId = cond->id;
+	tree.children.push_back(std::make_unique<cfg_structure::StructNode>(std::move(body)));
+
+	call_conv::CallingConvention cc;
+	cc.ret.kind = call_conv::RetKind::Void;
+	dce::DeadCodeResult dce;
+	dce.liveInstrs = {cmpI->id, retI->id};
+
+	CodeGenPass::Config off;
+	off.enableCondNorm = false;
+
+	CodeGenPass pass;
+	auto cfn = pass.generateFunction(fn, tree, cc, dce, off);
+
+	EXPECT_EQ(0u, pass.stats().condRewrites);
+	ASSERT_NE(cfn.body, nullptr);
+	ASSERT_FALSE(cfn.body->children.empty());
+	const auto& ifStmt = cfn.body->children[0];
+	ASSERT_EQ(CStmt::Kind::If, ifStmt->kind);
+	ASSERT_NE(ifStmt->expr, nullptr);
+	EXPECT_EQ(CExpr::Kind::BinOp, ifStmt->expr->kind) << "the == 0 was collapsed to a negation with the normaliser off";
+}
+
+TEST(CodeGenPassTest, EnablePtrSyntaxOffLeavesTheAddressArithmeticAlone)
+{
+	//   *(p + 4) = v
+	// With pointer syntax on that is `p[4] = v`; with it off the knob has to
+	// leave the dereference as written.
+	ssa::SSAFunction fn("ptr_off");
+	auto* entry = fn.addBlock("entry");
+	auto* p = fn.allocValue(ssa::ValueKind::VirtualReg);
+	auto* four = fn.allocValue(ssa::ValueKind::Immediate);
+	four->imm = 4;
+	auto* v = fn.allocValue(ssa::ValueKind::VirtualReg);
+
+	auto* addI = fn.addInstr(entry->id, ssa::IrInstr::Op::Add);
+	auto* addr = fn.allocValue(ssa::ValueKind::VirtualReg);
+	addI->defValue = addr->id;
+	addr->defInstr = addI;
+	addI->uses.push_back(ssa::Use{p->id, 0});
+	addI->uses.push_back(ssa::Use{four->id, 1});
+
+	auto* stI = fn.addInstr(entry->id, ssa::IrInstr::Op::Store);
+	stI->uses.push_back(ssa::Use{v->id, 0});
+	stI->uses.push_back(ssa::Use{addr->id, 1});
+
+	cfg_structure::StructNode tree;
+	tree.kind = cfg_structure::StructNode::Kind::Block;
+	tree.blockId = entry->id;
+
+	call_conv::CallingConvention cc;
+	cc.ret.kind = call_conv::RetKind::Void;
+	dce::DeadCodeResult dce;
+	dce.liveInstrs = {addI->id, stI->id};
+
+	// Store emits an Assign, whose destination is the lhs.
+	auto bodyText = [](const CFunction& f) {
+		std::string all;
+		for (const auto& c: f.body->children)
+		{
+			if (!c) continue;
+			if (c->lhs) all += c->lhs->toString() + " = ";
+			if (c->expr) all += c->expr->toString();
+			all += ";";
+		}
+		return all;
+	};
+
+	CodeGenPass on;
+	auto withSyntax = on.generateFunction(fn, tree, cc, dce, {});
+	const std::string subscripted = bodyText(withSyntax);
+	EXPECT_NE(std::string::npos, subscripted.find("[")) << subscripted;
+
+	CodeGenPass::Config off;
+	off.enablePtrSyntax = false;
+	CodeGenPass pass;
+	auto plain = pass.generateFunction(fn, tree, cc, dce, off);
+	const std::string emitted = bodyText(plain);
+	EXPECT_EQ(std::string::npos, emitted.find("[")) << emitted;
+}
+
 TEST(CodeGenPassTest, GenerateUnitMultipleFunctions)
 {
 	ssa::SSAFunction fn1("func_a");
@@ -853,6 +1068,100 @@ TEST(ExprCoalescerTest, ImmediateValueMaterialised)
 	auto it = result.valueExprs.find(immVal->id);
 	ASSERT_NE(it, result.valueExprs.end());
 	EXPECT_EQ(it->second->literal, "42");
+}
+
+TEST(ExprCoalescerTest, AKnownComparisonBecomesAComparison)
+{
+	// icmp slt a, b -- the predicate reaches the SSA IR now, so the C is
+	// `a < b`. It used to be `a - b`: Op::Compare carried no predicate and
+	// the coalescer emitted the value a machine CMP computes.
+	ssa::SSAFunction fn("cmp_test");
+	auto* blk = fn.addBlock("entry");
+	auto* a = fn.allocValue(ssa::ValueKind::Immediate);
+	a->imm = 3;
+	auto* b = fn.allocValue(ssa::ValueKind::Immediate);
+	b->imm = 4;
+
+	auto* cmpI = fn.addInstr(blk->id, ssa::IrInstr::Op::Compare);
+	cmpI->cmpPred = ssa::CmpPred::Slt;
+	auto* res = fn.allocValue(ssa::ValueKind::VirtualReg);
+	cmpI->defValue = res->id;
+	res->defInstr = cmpI;
+	cmpI->uses.push_back(ssa::Use{a->id, 0});
+	cmpI->uses.push_back(ssa::Use{b->id, 1});
+
+	dce::DeadCodeResult dce;
+	dce.liveInstrs.insert(cmpI->id);
+	ExprCoalescer ec;
+	auto result = ec.run(fn, dce);
+
+	auto it = result.valueExprs.find(res->id);
+	ASSERT_NE(it, result.valueExprs.end());
+	ASSERT_EQ(CExpr::Kind::BinOp, it->second->kind);
+	EXPECT_EQ(CExpr::BinOpKind::Lt, it->second->binOp);
+	EXPECT_EQ("3 < 4", it->second->toString());
+}
+
+TEST(ExprCoalescerTest, AnUnsignedComparisonReadsItsOperandsAsUnsigned)
+{
+	// C puts the signedness in the operands. `icmp ult` on 32-bit values is
+	// `(uint32_t)a < (uint32_t)b`, not `a < b`, which would be a signed
+	// comparison of the same bits.
+	ssa::SSAFunction fn("ucmp_test");
+	auto* blk = fn.addBlock("entry");
+	auto* a = fn.allocValue(ssa::ValueKind::Immediate);
+	a->imm = 3;
+	a->width = 32;
+	auto* b = fn.allocValue(ssa::ValueKind::Immediate);
+	b->imm = 4;
+	b->width = 32;
+
+	auto* cmpI = fn.addInstr(blk->id, ssa::IrInstr::Op::Compare);
+	cmpI->cmpPred = ssa::CmpPred::Ult;
+	auto* res = fn.allocValue(ssa::ValueKind::VirtualReg);
+	cmpI->defValue = res->id;
+	res->defInstr = cmpI;
+	cmpI->uses.push_back(ssa::Use{a->id, 0});
+	cmpI->uses.push_back(ssa::Use{b->id, 1});
+
+	dce::DeadCodeResult dce;
+	dce.liveInstrs.insert(cmpI->id);
+	ExprCoalescer ec;
+	auto result = ec.run(fn, dce);
+
+	auto it = result.valueExprs.find(res->id);
+	ASSERT_NE(it, result.valueExprs.end());
+	EXPECT_EQ("(uint32_t)3 < (uint32_t)4", it->second->toString());
+}
+
+TEST(ExprCoalescerTest, AMachineCompareStillEmitsTheSubtraction)
+{
+	// A CMP/TEST asks nothing on its own -- the condition is in the branch
+	// that reads the flags -- so CmpPred::None keeps the old shape. Without
+	// this the new branch could widen to cases it has no answer for.
+	ssa::SSAFunction fn("machine_cmp");
+	auto* blk = fn.addBlock("entry");
+	auto* a = fn.allocValue(ssa::ValueKind::Immediate);
+	a->imm = 3;
+	auto* b = fn.allocValue(ssa::ValueKind::Immediate);
+	b->imm = 4;
+
+	auto* cmpI = fn.addInstr(blk->id, ssa::IrInstr::Op::Compare);
+	auto* res = fn.allocValue(ssa::ValueKind::VirtualReg);
+	cmpI->defValue = res->id;
+	res->defInstr = cmpI;
+	cmpI->uses.push_back(ssa::Use{a->id, 0});
+	cmpI->uses.push_back(ssa::Use{b->id, 1});
+
+	dce::DeadCodeResult dce;
+	dce.liveInstrs.insert(cmpI->id);
+	ExprCoalescer ec;
+	auto result = ec.run(fn, dce);
+
+	auto it = result.valueExprs.find(res->id);
+	ASSERT_NE(it, result.valueExprs.end());
+	ASSERT_EQ(CExpr::Kind::BinOp, it->second->kind);
+	EXPECT_EQ(CExpr::BinOpKind::Sub, it->second->binOp);
 }
 
 TEST(ExprCoalescerTest, UndefValueEmitsZero)

@@ -9,8 +9,6 @@
   "include/retdec/cli_parser/cil_lifter.h::Options::decodeSwitchTargets",
   "include/retdec/cli_parser/cli_reader.h::CliReadOptions::decodeDebugInfo",
   "include/retdec/codegen/codegen.h::Config::addLineNums",
-  "include/retdec/codegen/codegen.h::Config::enableCondNorm",
-  "include/retdec/codegen/codegen.h::Config::enablePtrSyntax",
   "include/retdec/codegen/codegen.h::Config::structInfo",
   "include/retdec/csharp_emitter/cs_expr_emitter.h::Options::emitExplicitCasts",
   "include/retdec/csharp_emitter/cs_expr_emitter.h::Options::nullableAnnotations",
