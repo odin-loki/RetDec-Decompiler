@@ -26,8 +26,9 @@ are Release on the same hardware and container.
 made the emitted C assign to undeclared variables. CC-01
 (`scripts/ci/check_emitted_c_compiles.sh`) hands the emitted `.c` to a C
 compiler on every `ctest-linux` run; run 272 measured 24/24 on its slice and
-that rate is now the gate's floor. The 216-wide figure is being re-taken by
-the weekly nightly, which now runs CC-01 over the whole corpus. The per-optimisation-level 0% is stale for the same
+that rate is now the gate's floor. The 216-wide figure is being re-taken:
+CC-01 also runs over the whole corpus on every `ctest-linux` run, as a
+measurement without a floor until its first number is in. The per-optimisation-level 0% is stale for the same
 reason. Stock's 0/216 is unaffected and not re-measured here.
 
 Artifacts: `results/compare-fork-vs-stock-full.md`,

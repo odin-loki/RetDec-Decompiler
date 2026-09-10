@@ -44,8 +44,9 @@ a regression test; they are listed in
 [docs/internal/UNFIXED_AUDIT_FINDINGS.md](docs/internal/UNFIXED_AUDIT_FINDINGS.md).
 
 The 216-wide number has **not** been re-taken, so this table does not claim
-one. The weekly `algorithm-recovery-nightly` workflow now runs CC-01 over the
-whole corpus; when it reports, that figure replaces this note.
+one. CC-01 now runs over the whole corpus on every `ctest-linux` run — about
+ninety seconds, measured — and when it reports, that figure replaces this
+note.
 
 Stock RetDec's `0/216` is unaffected and not re-measured here.
 

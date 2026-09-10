@@ -679,12 +679,18 @@ Every clause of that was out of date:
   then 23/24, then 24/24 — against a published 0.
 
 A stale measurement is replaced by another measurement, not by an argument,
-so `algorithm-recovery-nightly` now runs CC-01 over the whole 216-binary
-corpus. No `--min-rate` on the first pass: it reports, the number becomes the
-floor in a follow-up commit that names the run it came from, exactly as CC-01
-itself was introduced. Until that number exists the table says the figure is
-stale and points here, rather than printing a 0 nobody believes or a
-216/216 nobody has measured.
+so CC-01 now runs over the whole 216-binary corpus on **every `ctest-linux`
+run**, not weekly. That cadence was a measurement too: run 272's CC-01 step
+took ten seconds for 24 binaries, so 216 is about ninety seconds against a
+job that already spends eight minutes building and seventeen in clang-tidy.
+It went into the nightly first, on the assumption that a full-corpus pass was
+expensive; the step timings said otherwise and it moved.
+
+No `--min-rate` on the full corpus yet: it reports, and the number becomes
+the floor in a follow-up commit that names the run it came from, exactly as
+the 24-binary slice was introduced. Until that number exists the tables say
+so, rather than printing a 0 nobody believes or a 216/216 nobody has
+measured.
 
 Stock RetDec's `0/216` is untouched — it was not re-measured and no claim
 about it changes.

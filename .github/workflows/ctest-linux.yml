@@ -263,6 +263,38 @@ jobs:
           } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
           exit $rc
 
+      # ...and the other 192.
+      #
+      # The slice above is gated because its rate is known; this is the whole
+      # corpus and its rate is not, so it reports and does not fail. The first
+      # number becomes the floor in a follow-up commit naming the run, which
+      # is how the slice itself was introduced.
+      #
+      # It is here rather than in the weekly nightly because the cost was
+      # measured rather than assumed: run 272's CC-01 step took ten seconds
+      # for 24 binaries, so 216 is about a minute and a half against a job
+      # that spends eight minutes building and seventeen in clang-tidy. A
+      # measurement that cheap does not belong on a weekly cadence.
+      - name: CC-01 emitted C compiles (all 216, measurement)
+        if: always()
+        run: |
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          if [ -z "$DEC" ]; then echo "retdec-decompiler not found"; exit 1; fi
+          set -o pipefail
+          rc=0
+          bash scripts/ci/check_emitted_c_compiles.sh \
+            --decompiler "$DEC" \
+            --corpus tests/algorithm_recovery/corpus \
+            --limit 0 --timeout 120 --errors 10 \
+            --save-failures cc01-failures-full 2>&1 | tee /tmp/cc01-full.log || rc=$?
+          {
+            echo "### CC-01 emitted C compiles (all 216, measurement only)"
+            echo '```'
+            grep -E '^CC-01|^  ' /tmp/cc01-full.log || tail -n 3 /tmp/cc01-full.log
+            echo '```'
+          } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+
       # $GITHUB_STEP_SUMMARY renders in the web UI but is not exposed by the
       # workflow-run API, and this job's log is ~16 MB with the numbers past
       # the window the log API returns. An artifact is the one form of this
@@ -287,7 +319,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: cc01-failures
-          path: cc01-failures
+          path: |
+            cc01-failures
+            cc01-failures-full
           if-no-files-found: ignore
           retention-days: 30
 
