@@ -13,7 +13,7 @@ Headline quality metric is **buildable C** (`--buildable`, default on), not defa
 | Metric | Fork | Stock RetDec 5.0 |
 |--------|------|------------------|
 | Recompile, `--buildable` sidecar | **216/216** | **0/216** |
-| Recompile, default `.c` | **24/24** on the CC-01 slice; 216-wide being re-taken | 0/216 |
+| Recompile, default `.c` | **208/216** (0.9630); 24/24 on the CC-01 slice | 0/216 |
 | syntax_valid_rate (default `.c`) | 1.0 | 1.0 |
 | mean_wall_s | 1.492 | 0.242 |
 
@@ -21,15 +21,22 @@ Headline quality metric is **buildable C** (`--buildable`, default on), not defa
 Release inside Docker. Treat the ~6× ratio as unmeasured until both sides
 are Release on the same hardware and container.
 
-**This fork's default-`.c` figure is stale.** It was taken before
-`NoInitVarDefOptimizer` stopped being run for the C back end, which is what
-made the emitted C assign to undeclared variables. CC-01
-(`scripts/ci/check_emitted_c_compiles.sh`) hands the emitted `.c` to a C
-compiler on every `ctest-linux` run; run 272 measured 24/24 on its slice and
-that rate is now the gate's floor. The 216-wide figure is being re-taken:
-CC-01 also runs over the whole corpus on every `ctest-linux` run, as a
-measurement without a floor until its first number is in. The per-optimisation-level 0% is stale for the same
-reason. Stock's 0/216 is unaffected and not re-measured here.
+**This fork's default-`.c` figure was `0/216` until run 274, and it was stale
+when it was written.** It was taken before `NoInitVarDefOptimizer` stopped
+being run for the C back end, which is what made the emitted C assign to
+undeclared variables. CC-01 (`scripts/ci/check_emitted_c_compiles.sh`) hands
+each emitted `.c` to a C compiler, over the whole corpus and over a 24-binary
+slice, on every `ctest-linux` run. Run 274, at `42cdb06`, was the first
+whole-corpus measurement: **208/216, rate 0.9630**, slice 24/24. Both are
+floors now.
+
+The eight failures are three defects: a `break` emitted outside any loop
+(`hash_table`, four builds), `pthread_create` called with one argument where
+the header declares four (`generated_pthread_mutex`, two builds), and a
+`void *` as an operand of `|` (`generated_bloom_filter`, two builds).
+
+The per-optimisation-level 0% below is stale for the same reason as the
+`0/216` was. Stock's 0/216 is unaffected and not re-measured here.
 
 Artifacts: `results/compare-fork-vs-stock-full.md`,
 `results/stock-retdec-docker-full.json`.

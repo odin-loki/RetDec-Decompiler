@@ -18,35 +18,38 @@ Stand-in corpus: 216 ELF binaries. Not the OSS-Fuzz paper set.
 | Metric | This fork | Stock RetDec 5.0 |
 |--------|-----------|------------------|
 | Recompile, **buildable C** (`--buildable`, default on) | **216/216** | **0/216** |
-| Recompile, default `.c` | **24/24** on the CC-01 slice; 216-wide being re-taken | 0/216 |
+| Recompile, default `.c` | **208/216** (0.9630) | 0/216 |
 | Algorithm-recovery F1, **name-blind** | **0.056** (95% CI 0.034–0.083) | n/a (no label export) |
 | Algorithm-recovery F1, name-assisted (symbolicated binaries) | 1.000 | n/a |
 
 Name-blind is the headline. Name-assisted is a second mode on binaries that
 still have symbol names; it is not a product F1. Do not advertise 1.0.
 
-**The `0/216` for this fork's default `.c` is a stale measurement and is being
-replaced.** It was taken before the cause it named was fixed:
+The default-`.c` figure is CC-01
+(`scripts/ci/check_emitted_c_compiles.sh`), which hands each emitted `.c` to a
+C compiler. It runs over the whole corpus on every `ctest-linux` run — about
+ninety seconds, measured — and over a 24-binary slice separately, hashed by
+name so every compiler and optimisation level is represented. Run 274, at
+`42cdb06`, was the first whole-corpus measurement: **208 of 216 compile, rate
+0.9630**, with the slice at 24/24. Both rates are now floors; any regression
+turns the run red.
+
+The eight that fail are three defects, not eight, and they are named rather
+than counted: a `break` emitted outside any loop (`hash_table`, four builds),
+`pthread_create` called with one argument where the header declares four
+(`generated_pthread_mutex`, two builds), and a `void *` used as an operand of
+`|` (`generated_bloom_filter`, two builds). Each one fixed raises the floor.
+
+This replaces a `0/216` that stood here until run 274 and was stale when it
+was written: it was taken before the cause it named was fixed.
 `NoInitVarDefOptimizer` deleted every initializer-less local declaration, so
 the emitted C assigned to variables it never declared. That pass is no longer
 run for the C back end (`src/llvmir2hll/optimizer/optimizer_manager.cpp` says
 why, at length), and the note that it "cannot be tested without the LLVM
-build" is no longer true either: `scripts/ci/check_llvmir2hll_tests.sh` runs
-that component locally in about four minutes.
-
-What is measured today is CC-01
-(`scripts/ci/check_emitted_c_compiles.sh`), which hands the emitted `.c` to a
-C compiler on every `ctest-linux` run. On its 24-binary slice — hashed by
-name, so every compiler and optimisation level is represented — run 272
-measured **24/24**, and that rate is now the floor: any regression turns the
-run red. Getting there took five distinct fixes in the C back end, each with
-a regression test; they are listed in
-[docs/internal/UNFIXED_AUDIT_FINDINGS.md](docs/internal/UNFIXED_AUDIT_FINDINGS.md).
-
-The 216-wide number has **not** been re-taken, so this table does not claim
-one. CC-01 now runs over the whole corpus on every `ctest-linux` run — about
-ninety seconds, measured — and when it reports, that figure replaces this
-note.
+build" was not true either: `scripts/ci/check_llvmir2hll_tests.sh` runs that
+component locally in about four minutes. Getting from there to 208 took five
+further fixes in the C back end, each with a regression test; they are listed
+in [docs/internal/UNFIXED_AUDIT_FINDINGS.md](docs/internal/UNFIXED_AUDIT_FINDINGS.md).
 
 Stock RetDec's `0/216` is unaffected and not re-measured here.
 

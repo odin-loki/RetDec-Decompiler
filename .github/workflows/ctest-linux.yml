@@ -275,7 +275,15 @@ jobs:
       # for 24 binaries, so 216 is about a minute and a half against a job
       # that spends eight minutes building and seventeen in clang-tidy. A
       # measurement that cheap does not belong on a weekly cadence.
-      - name: CC-01 emitted C compiles (all 216, measurement)
+      # Run 274, at 42cdb06, was the first to measure the whole corpus:
+      # 208 of 216 emitted C files compile, rate 0.9630. That is the floor now,
+      # which is how the 24-binary slice was introduced -- report first, then
+      # hold the number the report gave. The eight that fail are three defects,
+      # not eight: a `break` emitted outside any loop (hash_table, four builds),
+      # pthread_create called with one argument where the header declares four
+      # (generated_pthread_mutex, two builds), and a `void *` used as an operand
+      # of `|` (generated_bloom_filter, two builds). Each one fixed raises this.
+      - name: CC-01 emitted C compiles (all 216)
         if: always()
         run: |
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
@@ -285,10 +293,10 @@ jobs:
           bash scripts/ci/check_emitted_c_compiles.sh \
             --decompiler "$DEC" \
             --corpus tests/algorithm_recovery/corpus \
-            --limit 0 --timeout 120 --errors 10 \
+            --limit 0 --timeout 120 --errors 10 --min-rate 0.9630 \
             --save-failures cc01-failures-full 2>&1 | tee /tmp/cc01-full.log || rc=$?
           {
-            echo "### CC-01 emitted C compiles (all 216, measurement only)"
+            echo "### CC-01 emitted C compiles (all 216)"
             echo '```'
             grep -E '^CC-01|^  ' /tmp/cc01-full.log || tail -n 3 /tmp/cc01-full.log
             echo '```'
