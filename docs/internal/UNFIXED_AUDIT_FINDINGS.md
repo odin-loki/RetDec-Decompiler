@@ -135,11 +135,11 @@ without memoisation the two got different names. `tests/llvmir2hll` now runs
 (`scripts/ci/check_llvmir2hll_tests.sh`), and all three have regression tests
 there.
 
-### Still open: the emitted C contradicts the header it asks for
+### Closed by run 266: the emitted C contradicts the header it asks for
 
-CC-01 (`scripts/ci/check_emitted_c_compiles.sh`) measures 21/24 on its slice.
-One of the three failures is the goto symptom above by a route the fixes do not
-cover; the other two are this:
+CC-01 (`scripts/ci/check_emitted_c_compiles.sh`) measured 21/24 on its slice
+when this was written. One of the three failures was the goto symptom above by
+a route the fixes did not cover; the other two were this:
 
 ```
 ring_buffer-gcc-O3.c:78:12: error: too many arguments to function 'putc'
@@ -197,6 +197,10 @@ What is *not* verified here is the corpus effect: running the decompiler over
 `ring_buffer-gcc-O3` needs the front end, so whether CC-01's rate rises is for
 CI to say. The floor stays at 0.8750 until a run measures otherwise, and
 should be raised with the measurement.
+
+**Run 266 said it.** 23/24, rate 0.9583 — both arity failures gone, and the
+floor is now that number. The one file left is `generated_shell_sort-gcc-O2`,
+`label 'lab_0x112c' used but not defined`: the goto symptom, still open.
 
 ---
 

@@ -223,22 +223,27 @@ jobs:
           # does not change it, the recovery gate that the detections are
           # right, and all three read it as text.  README reports 0/216
           # recompiling; the first run of this step, on d9e8108, measured
-          # 21/24 (0.8750) on this slice, so that number is the floor rather
-          # than a guess.  The three that failed are two distinct defects:
-          # a goto to a label nothing defines, and calls to libc functions
-          # with more arguments than those functions take.  The second is the
-          # emitted C contradicting itself: run 262's log shows
-          # ring_buffer-gcc-O3 asking for `#include <stdio.h>` on line 7 --
-          # HeadersForDeclaredFuncs adds it because retdec recognised `putc`
-          # as a library function -- and then calling `putc(c, stream, a3)`
-          # against the two-argument prototype that header provides.  Raise
-          # the floor with each one fixed.
+          # 21/24 (0.8750) on this slice, so the floor has been a measurement
+          # rather than a guess from the start.  The three that failed were
+          # two distinct defects: a goto to a label nothing defines, and calls
+          # to libc functions with more arguments than those functions take.
+          # The second was the emitted C contradicting itself: run 262's log
+          # shows ring_buffer-gcc-O3 asking for `#include <stdio.h>` on line 7
+          # -- HeadersForDeclaredFuncs adds it because retdec recognised
+          # `putc` as a library function -- and then calling
+          # `putc(c, stream, a3)` against the two-argument prototype that
+          # header provides.  Semantics::getArityOfFunc() settled that one and
+          # run 266 measured 23/24 (0.9583), which is this floor.
+          #
+          # The one still failing is generated_shell_sort-gcc-O2:
+          # `label 'lab_0x112c' used but not defined`.  Raise the floor again
+          # when it goes.
           set -o pipefail
           rc=0
           bash scripts/ci/check_emitted_c_compiles.sh \
             --decompiler "$DEC" \
             --corpus tests/algorithm_recovery/corpus \
-            --limit 24 --timeout 120 --min-rate 0.8750 2>&1 | tee /tmp/cc01.log || rc=$?
+            --limit 24 --timeout 120 --min-rate 0.9583 2>&1 | tee /tmp/cc01.log || rc=$?
           {
             echo "### CC-01 emitted C compiles"
             echo '```'
