@@ -41,12 +41,11 @@ BcStackEffect stackEffectOf(BcOpcode op) noexcept {
     case Op::CmpEq: case Op::CmpNe: case Op::CmpLt:
     case Op::CmpGe: case Op::CmpGt: case Op::CmpLe:
     case Op::FCmpL: case Op::FCmpG:
-        return {2, 1};
-    case Op::IsNull: case Op::IsNotNull:
-        return {1, 1};
-    case Op::Instanceof:
-        return {1, 1};
-    // Conversion
+		return {2, 1};
+	case Op::IsNull:
+	case Op::IsNotNull: return {1, 1};
+	case Op::Instanceof: return {1, 1};
+	// Conversion
     case Op::I2L: case Op::I2F: case Op::I2D:
     case Op::L2I: case Op::L2F: case Op::L2D:
     case Op::F2I: case Op::F2L: case Op::F2D:
