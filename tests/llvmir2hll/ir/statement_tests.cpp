@@ -247,6 +247,54 @@ RedirectGotosToTransfersLabels) {
 }
 
 //
+// removePredecessors()
+//
+
+TEST_F(StatementTests, RemovingNonGotoPredecessorsKeepsAGotoThatTargetsThis)
+{
+	// `goto L; L: ...` -- the goto sits immediately before what it jumps to,
+	// so its *successor* is its own target. removePredecessors(true) is
+	// documented to remove only non-goto predecessors and tested only which
+	// statement falls through, so it dropped the goto from L's predecessors:
+	// isGotoTarget() went false, the writer stopped emitting `L:`, and the
+	// goto naming it stayed. Both statements still emitted, one label missing.
+	auto atL = EmptyStmt::create();
+	auto jump = GotoStmt::create(atL);
+	jump->setSuccessor(atL);
+	ASSERT_TRUE(atL->isGotoTarget());
+
+	atL->removePredecessors(true);
+
+	EXPECT_TRUE(atL->isGotoTarget()) << "the goto was dropped from the predecessors of the statement it"
+										" targets, so the emitter no longer writes the label it names";
+}
+
+TEST_F(StatementTests, RemovingNonGotoPredecessorsStillRemovesTheOneThatFallsThrough)
+{
+	// The other half, so the rule above cannot widen into "removes nothing".
+	auto b = EmptyStmt::create();
+	auto a = EmptyStmt::create();
+	a->setSuccessor(b);
+	ASSERT_TRUE(b->hasPredecessors());
+
+	b->removePredecessors(true);
+
+	EXPECT_FALSE(b->hasPredecessors());
+}
+
+TEST_F(StatementTests, RemovingAllPredecessorsRemovesTheGotoToo)
+{
+	// removePredecessors(false) means all of them, and still does.
+	auto atL = EmptyStmt::create();
+	auto jump = GotoStmt::create(atL);
+	jump->setSuccessor(atL);
+
+	atL->removePredecessors(false);
+
+	EXPECT_FALSE(atL->hasPredecessors());
+}
+
+//
 // removeStatement()
 //
 

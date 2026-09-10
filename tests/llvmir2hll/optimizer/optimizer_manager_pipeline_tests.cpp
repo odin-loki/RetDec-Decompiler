@@ -35,6 +35,10 @@
 #include "retdec/llvmir2hll/support/types.h"
 #include "retdec/llvmir2hll/support/visitors/ordered_all_visitor.h"
 
+#include <regex>
+#include <set>
+#include <sstream>
+
 using namespace ::testing;
 
 namespace retdec {
@@ -86,6 +90,54 @@ protected:
 			StrictArithmExprEvaluator::create(),
 			false);
 		om.optimize(m);
+	}
+
+	/// The C the writer produces for @a m, after the pipeline.
+	static std::string emitC(ShPtr<Module> m)
+	{
+		std::string code;
+		llvm::raw_string_ostream stream(code);
+		auto writer = CHLLWriter::create(stream);
+		writer->emitTargetCode(m);
+		stream.flush();
+		return code;
+	}
+
+	/// Every label the emitted C jumps to but never defines.
+	///
+	/// This is CC-01's question -- `label 'lab_0x112c' used but not defined'
+	/// is a C compiler asking exactly this -- answered without a front end, a
+	/// corpus binary or a CI round trip. A label is function-scoped in C, so
+	/// the scan resets at each closing brace in column one, which is where
+	/// CHLLWriter ends a function.
+	static std::set<std::string> undefinedLabels(const std::string& code)
+	{
+		std::set<std::string> missing;
+		std::set<std::string> jumpedTo;
+		std::set<std::string> defined;
+
+		const std::regex gotoRe(R"(\bgoto\s+([A-Za-z_]\w*)\s*;)");
+		const std::regex labelRe(R"(^\s*([A-Za-z_]\w*)\s*:(?!:))");
+
+		const auto closeFunction = [&]() {
+			for (const auto& l: jumpedTo)
+				if (!defined.count(l)) missing.insert(l);
+			jumpedTo.clear();
+			defined.clear();
+		};
+
+		std::istringstream in(code);
+		for (std::string line; std::getline(in, line);)
+		{
+			std::smatch m;
+			if (std::regex_search(line, m, gotoRe))
+				jumpedTo.insert(m[1]);
+			else if (std::regex_search(line, m, labelRe))
+				defined.insert(m[1]);
+			if (line == "}") closeFunction();
+		}
+		closeFunction();
+		return missing;
 	}
 
 	/// The names of every function with a goto the emitter cannot resolve.
@@ -242,6 +294,75 @@ TEST_F(OptimizerManagerPipelineTests, AnIrreducibleRegionKeepsItsGotosResolvable
 	runPipeline(module);
 
 	EXPECT_TRUE(functionsWithAStrandedGoto(module).empty());
+}
+
+
+// The emitted C itself, which is the thing CC-01 hands to a compiler. The BIR
+// invariant above is the same question one step earlier; this one catches a
+// label the tree holds but the writer does not write.
+TEST_F(OptimizerManagerPipelineTests, TheEmittedCDefinesEveryLabelItJumpsTo)
+{
+	auto module = convertLLVMIR2BIR(R"(
+		declare void @test(i32)
+
+		define void @function(i32 %n) {
+		entry:
+			br label %outer
+		outer:
+			%i = phi i32 [ 0, %entry ], [ %inext, %outerlatch ]
+			br label %inner
+		inner:
+			%j = phi i32 [ 0, %outer ], [ %jnext, %innerlatch ]
+			%c1 = icmp slt i32 %j, %n
+			br i1 %c1, label %innerbody, label %innerexit
+		innerbody:
+			%c2 = icmp eq i32 %j, 5
+			br i1 %c2, label %join, label %innerlatch
+		innerlatch:
+			%jnext = add i32 %j, 1
+			call void @test(i32 7)
+			br label %inner
+		innerexit:
+			call void @test(i32 1)
+			br label %join
+		join:
+			call void @test(i32 2)
+			%c3 = icmp eq i32 %i, 9
+			br i1 %c3, label %out, label %outerlatch
+		outerlatch:
+			%inext = add i32 %i, 1
+			br label %outer
+		out:
+			ret void
+		}
+	)");
+	ASSERT_TRUE(module);
+
+	runPipeline(module);
+
+	const auto code = emitC(module);
+	const auto missing = undefinedLabels(code);
+	EXPECT_TRUE(missing.empty()) << "the emitted C jumps to " << (missing.empty() ? "" : *missing.begin())
+								 << " and never defines it:\n"
+								 << code;
+}
+
+TEST_F(OptimizerManagerPipelineTests, TheUndefinedLabelScanFindsOne)
+{
+	// The scan is the assertion in the test above, so it needs its own check:
+	// one that cannot find a missing label passes on everything.
+	const std::string bad = "void f(void) {\n    goto lab_1;\n    return;\n}\n";
+	EXPECT_EQ(std::set<std::string>{"lab_1"}, undefinedLabels(bad));
+
+	const std::string good = "void f(void) {\n    goto lab_1;\n  lab_1:\n    return;\n}\n";
+	EXPECT_TRUE(undefinedLabels(good).empty());
+
+	// And a label is function-scoped: defining it in another function is not
+	// defining it here.
+	const std::string split =
+		"void f(void) {\n    goto lab_1;\n}\n"
+		"void g(void) {\n  lab_1:\n    return;\n}\n";
+	EXPECT_EQ(std::set<std::string>{"lab_1"}, undefinedLabels(split));
 }
 
 } // namespace tests

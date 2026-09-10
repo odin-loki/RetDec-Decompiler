@@ -639,6 +639,62 @@ Rusticl ICD — then the `UNBUILT_DIRS` entry comes out.
 
 
 
+
+## `removePredecessors(onlyNonGoto)` removed gotos
+
+```cpp
+void Statement::removePredecessors(bool onlyNonGoto) {
+    ...
+    // We remove only non-goto statements.
+    for (const auto &pred : preds) {
+        if (pred->getSuccessor() == thisStmt) {
+            toRemoveStmts.insert(pred);
+        }
+    }
+```
+
+The comment says non-goto and the test says fall-through, and a goto passes
+the fall-through test whenever it sits immediately before the statement it
+jumps to: in `goto L; L: ...` the goto's *successor* is its own target.
+
+So "only non-goto" dropped that goto from `L`'s predecessors.
+`Statement::isGotoTarget()` walks `preds`, so it then answered `false`;
+`CHLLWriter::emitGotoLabelIfNeeded()` asks exactly that question and stopped
+writing `L:` — while the goto naming it stayed. Both statements still
+emitted, one label missing, which is the shape of `goto lab_0x112c;` with no
+`lab_0x112c:`.
+
+Five callers, and every one wants the same thing: `setSuccessor()`,
+`prependStatement()`, `IfStmt::addClause()` and the two clause setters each
+mean "this is now the one statement that falls through into you". A goto
+does not fall through into anything — its successor is where it sits, not
+where it goes. Gotos are skipped now; `removePredecessors(false)` still
+means all of them, and has a test saying so.
+
+This one is in `llvmir2hll`, which is the path `retdec-decompiler` runs.
+
+### The emitted C is now checked for undefined labels without CI
+
+`OptimizerManagerPipelineTests` gained the question CC-01 actually asks. It
+converts LLVM IR, runs the pipeline, hands the module to `CHLLWriter`, and
+scans the emitted C for a label jumped to and never defined — resetting at
+each function, because a C label is function-scoped. `label 'lab_0x112c'
+used but not defined` is a compiler asking this; asking it here costs two
+minutes instead of a corpus binary, a front end and a thirty-minute round
+trip. The scan has its own test, including a label defined in the *next*
+function, since an assertion that cannot fail is worse than none.
+
+Getting the writer to run at all needed one fix.
+`HLLWriter::emitAddressRangeForFuncIfAvailable()` decided "available" by
+comparing against `NO_ADDRESS_RANGE`, which is `AddressRange(0, 0)` — a
+sentinel. A range that is merely *undefined*, which is what a `Config`
+returns when it knows nothing about the function, is not equal to that
+sentinel, so it went past the guard into
+`Address::toHexPrefixString()`, which asserts `isDefined()`. The guard asks
+whether the endpoints are defined as well now. The shipped `JsonConfig`
+returns the sentinel, so this was latent there; it aborts immediately on a
+config that does not.
+
 ## The Imortek codegen wrote every `goto` with no label to match
 
 `src/codegen/emitter.cpp` emits `goto L<blockId>;` for a

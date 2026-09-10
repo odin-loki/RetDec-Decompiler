@@ -660,6 +660,19 @@ void Statement::removePredecessors(bool onlyNonGoto) {
 	}
 
 	// We remove only non-goto statements.
+	//
+	// The test used to be `pred->getSuccessor() == this` alone, and a goto
+	// passes it whenever it sits immediately before the statement it jumps to:
+	// `goto L; L: ...`. So "only non-goto" dropped a goto from its own target's
+	// predecessors, `isGotoTarget()` went false, and CHLLWriter stopped writing
+	// the label -- while the goto naming it stayed. That is `goto L;` with no
+	// `L:` anywhere, from a function where both statements are still emitted.
+	//
+	// Every caller wants the same thing: setSuccessor(), prependStatement(),
+	// IfStmt::addClause() and the two clause setters each mean "this is now the
+	// one statement that falls through into you". A goto does not fall through
+	// into anything -- its successor is where it sits, not where it goes.
+	//
 	// Since iterators and references to the erased elements of a std::set are
 	// invalidated, we cannot erase statements while iterating over them. To
 	// circumvent this limitation, we store them into a separate set and erase
@@ -667,6 +680,10 @@ void Statement::removePredecessors(bool onlyNonGoto) {
 	StmtSet toRemoveStmts;
 	auto thisStmt = shared_from_this();
 	for (const auto &pred : preds) {
+		if (isa<GotoStmt>(pred))
+		{
+			continue;
+		}
 		if (pred->getSuccessor() == thisStmt) {
 			toRemoveStmts.insert(pred);
 		}

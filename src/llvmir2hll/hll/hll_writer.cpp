@@ -840,7 +840,14 @@ bool HLLWriter::emitModuleNameForFuncIfAvailable(ShPtr<Function> func) {
 */
 bool HLLWriter::emitAddressRangeForFuncIfAvailable(ShPtr<Function> func) {
 	auto addressRange = module->getAddressRangeForFunc(func);
-	if (addressRange == NO_ADDRESS_RANGE) {
+	// "Available" is asked twice on purpose. NO_ADDRESS_RANGE is
+	// AddressRange(0, 0), a sentinel, and a range that is merely *undefined*
+	// -- a default-constructed AddressRange, which is what a Config returns
+	// when it knows nothing about the function -- is not equal to it. That
+	// range sails past a sentinel comparison and then aborts:
+	// Address::toHexPrefixString() asserts isDefined().
+	if (addressRange == NO_ADDRESS_RANGE || !addressRange.getStart().isDefined() || !addressRange.getEnd().isDefined())
+	{
 		return false;
 	}
 
