@@ -137,6 +137,16 @@ jobs:
       - name: ARITY-01 libc arity table vs the C headers
         run: python3 scripts/ci/check_libc_arity.py --check --jobs 4
 
+      # OPT-01. A config field with a default and a doc comment is a promise
+      # that setting it changes something. Three on this branch did not keep it
+      # and each was a real defect -- StringDetectorConfig's three dead detect*
+      # switches, DVSA::Result::carvedAccesses, and
+      # AbiArtifactMarker::Config::arm32/aarch64, where the flag that would
+      # have stopped ARM32's scratch register being marked callee-saved existed
+      # and nothing read it. This stops the class growing.
+      - name: OPT-01 no new unread option fields
+        run: python3 scripts/ci/check_unread_options.py --check
+
   sanitizers:
     name: asan+ubsan
     runs-on: ubuntu-latest

@@ -102,6 +102,7 @@ CHECKS=(
 	"standalone demangler suite (system LLVM):::bash scripts/ci/check_demangler_tests.sh"
 	"standalone fileformat suites (system LLVM):::bash scripts/ci/check_fileformat_tests.sh"
 	"standalone libc arity table vs headers:::${PY} scripts/ci/check_libc_arity.py --check"
+	"ci-smoke  no new unread option fields:::${PY} scripts/ci/check_unread_options.py --check"
 )
 
 if [ "${1:-}" = "--list" ]; then
