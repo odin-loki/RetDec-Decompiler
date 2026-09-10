@@ -140,6 +140,45 @@ protected:
 		return missing;
 	}
 
+	/// Every label the emitted C defines twice in one function.
+	///
+	/// The other half of the label question, and the same kind of compile
+	/// error: `duplicate label 'lab_x'`. preserveLabel() copies a label
+	/// rather than moving it, so a pass that puts one statement's label on
+	/// two of them leaves both emitted.
+	static std::set<std::string> duplicateLabels(const std::string& code)
+	{
+		std::set<std::string> dupes;
+		std::set<std::string> seen;
+		const std::regex labelRe(R"(^\s*([A-Za-z_]\w*)\s*:(?!:))");
+
+		std::istringstream in(code);
+		for (std::string line; std::getline(in, line);)
+		{
+			std::smatch m;
+			if (std::regex_search(line, m, labelRe) && !seen.insert(m[1]).second)
+			{
+				dupes.insert(m[1]);
+			}
+			if (line == "}")
+			{
+				seen.clear();
+			}
+		}
+		return dupes;
+	}
+
+	/// Everything a C compiler would reject about @a code that this can see.
+	static std::set<std::string> labelProblems(const std::string& code)
+	{
+		auto problems = undefinedLabels(code);
+		for (const auto& d: duplicateLabels(code))
+		{
+			problems.insert("duplicate:" + d);
+		}
+		return problems;
+	}
+
 	/// The names of every function with a goto the emitter cannot resolve.
 	static StringSet functionsWithAStrandedGoto(ShPtr<Module> m)
 	{
@@ -341,7 +380,7 @@ TEST_F(OptimizerManagerPipelineTests, TheEmittedCDefinesEveryLabelItJumpsTo)
 	runPipeline(module);
 
 	const auto code = emitC(module);
-	const auto missing = undefinedLabels(code);
+	const auto missing = labelProblems(code);
 	EXPECT_TRUE(missing.empty()) << "the emitted C jumps to " << (missing.empty() ? "" : *missing.begin())
 								 << " and never defines it:\n"
 								 << code;
@@ -363,6 +402,23 @@ TEST_F(OptimizerManagerPipelineTests, TheUndefinedLabelScanFindsOne)
 		"void f(void) {\n    goto lab_1;\n}\n"
 		"void g(void) {\n  lab_1:\n    return;\n}\n";
 	EXPECT_EQ(std::set<std::string>{"lab_1"}, undefinedLabels(split));
+}
+
+TEST_F(OptimizerManagerPipelineTests, TheDuplicateLabelScanFindsOne)
+{
+	// `duplicate label 'lab_1'` is the same kind of whole-file rejection as
+	// an undefined one, so the scan for it needs the same treatment.
+	const std::string bad = "void f(void) {\n  lab_1:\n    x();\n  lab_1:\n    return;\n}\n";
+	EXPECT_EQ(std::set<std::string>{"lab_1"}, duplicateLabels(bad));
+
+	const std::string good = "void f(void) {\n  lab_1:\n    return;\n}\n";
+	EXPECT_TRUE(duplicateLabels(good).empty());
+
+	// Function-scoped again: the same name in two functions is fine.
+	const std::string twice =
+		"void f(void) {\n  lab_1:\n    return;\n}\n"
+		"void g(void) {\n  lab_1:\n    return;\n}\n";
+	EXPECT_TRUE(duplicateLabels(twice).empty());
 }
 
 
@@ -586,7 +642,7 @@ TEST_F(OptimizerManagerPipelineTests, WhileTrueToWhileCondAloneKeepsTheLabel)
 	auto module = convertLLVMIR2BIR(kShellSortFunction1080);
 	ASSERT_TRUE(module);
 	runPipeline(module, StringSet(), StringSet{"WhileTrueToWhileCond"});
-	EXPECT_TRUE(undefinedLabels(emitC(module)).empty());
+	EXPECT_TRUE(labelProblems(emitC(module)).empty());
 }
 
 TEST_F(OptimizerManagerPipelineTests, WhileTrueToUForLoopAloneKeepsTheLabel)
@@ -594,7 +650,7 @@ TEST_F(OptimizerManagerPipelineTests, WhileTrueToUForLoopAloneKeepsTheLabel)
 	auto module = convertLLVMIR2BIR(kShellSortFunction1080);
 	ASSERT_TRUE(module);
 	runPipeline(module, StringSet(), StringSet{"WhileTrueToUForLoop"});
-	EXPECT_TRUE(undefinedLabels(emitC(module)).empty());
+	EXPECT_TRUE(labelProblems(emitC(module)).empty());
 }
 
 TEST_F(OptimizerManagerPipelineTests, WhileTrueToForLoopAloneKeepsTheLabel)
@@ -602,7 +658,7 @@ TEST_F(OptimizerManagerPipelineTests, WhileTrueToForLoopAloneKeepsTheLabel)
 	auto module = convertLLVMIR2BIR(kShellSortFunction1080);
 	ASSERT_TRUE(module);
 	runPipeline(module, StringSet(), StringSet{"WhileTrueToForLoop"});
-	EXPECT_TRUE(undefinedLabels(emitC(module)).empty());
+	EXPECT_TRUE(labelProblems(emitC(module)).empty());
 }
 
 TEST_F(OptimizerManagerPipelineTests, ShellSortFunction1080EmitsNoUndefinedLabel)
@@ -613,7 +669,7 @@ TEST_F(OptimizerManagerPipelineTests, ShellSortFunction1080EmitsNoUndefinedLabel
 	runPipeline(module);
 
 	const auto code = emitC(module);
-	const auto missing = undefinedLabels(code);
+	const auto missing = labelProblems(code);
 	EXPECT_TRUE(missing.empty()) << "the emitted C jumps to " << (missing.empty() ? std::string() : *missing.begin())
 								 << " and never defines it:\n"
 								 << code;
