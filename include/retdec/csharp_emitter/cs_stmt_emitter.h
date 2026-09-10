@@ -76,6 +76,7 @@ private:
 	void emitThrow(const CilStmt& s);
 	void emitRethrow(const CilStmt& s);
 	void emitIf(const CilStmt& s);
+	void emitWhile(const CilStmt& s);
 	void emitGoto(const CilStmt& s);
 	void emitLabel(const CilStmt& s);
 	void emitLeave(const CilStmt& s);

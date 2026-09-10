@@ -1256,3 +1256,99 @@ TEST(CilVarRecovery, ACompareAndBranchKeepsItsCondition)
 	}
 	EXPECT_TRUE(sawIf);
 }
+
+// ─── While loops ─────────────────────────────────────────────────────────────
+//
+// buildWhile() collected the loop body into `whileStmt.loopBody` and then
+// emptied every block it had taken those statements from, but it filed the
+// statement under `StmtKind::If` with the comment "Placeholder -- emitter
+// handles while". No emitter handles it: CsStmtEmitter::emitIf reads `tryBody`
+// and `catches`, never `loopBody`, and with an empty tryBody it emits
+// `goto L<blockRef>;` -- and buildWhile never sets blockRef either. So a
+// recovered while loop reached the C# emitter as `if (cond) goto L0;` with its
+// entire body gone.
+
+namespace {
+
+/// while (i != 0) { i = 1; }  -- header b0, body b1, exit b2.
+BcMethod makeWhileLoop()
+{
+	BcMethod m = makeMethod("countdown");
+	auto& b0 = m.cfg.addBlock();
+	auto& b1 = m.cfg.addBlock();
+	auto& b2 = m.cfg.addBlock();
+
+	// b0: if (!local0) goto b2;
+	b0.instrs.push_back(makeInsnLocal(BcOpcode::DOTNET_LDLOC, 0));
+	BcInstruction brfalse = makeInsn(BcOpcode::DOTNET_BRFALSE);
+	brfalse.operands.push_back(BcBlockOperand{b2.id});
+	b0.instrs.push_back(std::move(brfalse));
+	b0.succs = {b1.id, b2.id};
+
+	// b1: local0 = 1; goto b0;
+	b1.instrs.push_back(makeInsn(BcOpcode::DOTNET_LDC_I4_1));
+	b1.instrs.push_back(makeInsnLocal(BcOpcode::DOTNET_STLOC, 0));
+	BcInstruction back = makeInsn(BcOpcode::DOTNET_BR);
+	back.operands.push_back(BcBlockOperand{b0.id});
+	b1.instrs.push_back(std::move(back));
+	b1.succs = {b0.id};
+	b1.preds = {b0.id};
+
+	// b2: return;
+	b2.instrs.push_back(makeInsn(BcOpcode::DOTNET_RET));
+	b2.preds = {b0.id};
+	b0.preds = {b1.id};
+
+	BcLocalVar lv;
+	lv.index = 0;
+	lv.name = "i";
+	lv.type = types::Int();
+	m.locals.push_back(std::move(lv));
+	return m;
+}
+
+/// Total statements in @a stmts, counting the bodies of structured statements.
+size_t countDeep(const std::vector<CilStmt>& stmts)
+{
+	size_t n = 0;
+	for (const auto& s: stmts)
+	{
+		++n;
+		n += countDeep(s.loopBody);
+		n += countDeep(s.tryBody);
+		for (const auto& c: s.catches)
+			n += countDeep(c.body);
+	}
+	return n;
+}
+
+} // namespace
+
+TEST(CilReconstructor, AWhileLoopIsNotFiledAsAnIf)
+{
+	BcModule module("m", SourceLang::CSharp);
+	BcClass& cls = module.addClass(BcClass{});
+	cls.name = cls.fqName = "C";
+	cls.methods.push_back(makeWhileLoop());
+
+	CilReconstructor rec;
+	auto r = rec.reconstruct(cls.methods.back(), module);
+	ASSERT_TRUE(r.success) << r.error;
+
+	// The loop was detected -- buildWhile ran and moved the body out of the
+	// blocks -- so there is exactly one statement carrying a loopBody.
+	const CilStmt* loop = nullptr;
+	for (const auto& s: r.method.body)
+	{
+		if (!s.loopBody.empty())
+		{
+			loop = &s;
+			break;
+		}
+	}
+	ASSERT_NE(nullptr, loop) << "no statement carries the recovered loop body";
+
+	// And it says it is a loop. Filed as If, the emitter drops the body.
+	EXPECT_EQ(StmtKind::While, loop->kind);
+	EXPECT_NE(nullptr, loop->expr) << "the loop condition was dropped";
+}

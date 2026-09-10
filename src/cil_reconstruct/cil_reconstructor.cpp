@@ -191,7 +191,7 @@ std::vector<CilStmt> CilReconstructor::buildWhile(
 
 	// Build while loop
 	CilStmt whileStmt;
-	whileStmt.kind = StmtKind::If; // Placeholder — emitter handles while
+	whileStmt.kind = StmtKind::While;
 	whileStmt.expr = cond;
 
 	// Collect loop body statements (excluding header)

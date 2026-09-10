@@ -113,6 +113,7 @@ enum class StmtKind
 
 	// Control flow
 	If,         ///< if (cond) goto/block
+	While,      ///< while (cond) { ... }   (body in loopBody)
 	Goto,       ///< goto label
 	Label,      ///< label:
 	Return,     ///< return [expr];

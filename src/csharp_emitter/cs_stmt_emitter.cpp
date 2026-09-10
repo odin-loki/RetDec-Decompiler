@@ -55,6 +55,7 @@ void CsStmtEmitter::emitStmt(const CilStmt& s)
 	case StmtKind::Throw: emitThrow(s); break;
 	case StmtKind::Rethrow: emitRethrow(s); break;
 	case StmtKind::If: emitIf(s); break;
+	case StmtKind::While: emitWhile(s); break;
 	case StmtKind::Goto: emitGoto(s); break;
 	case StmtKind::Label: emitLabel(s); break;
 	case StmtKind::Leave: emitLeave(s); break;
@@ -204,6 +205,15 @@ void CsStmtEmitter::emitIf(const CilStmt& s)
 		writer_.line("goto L" + std::to_string(s.blockRef) + ";");
 		writer_.dedent();
 	}
+}
+
+// ─── While ───────────────────────────────────────────────────────────────────
+
+void CsStmtEmitter::emitWhile(const CilStmt& s)
+{
+	std::string cond = s.expr ? expr_.emit(s.expr) : "true";
+	writer_.line("while (" + cond + ")");
+	emitForcedBlock(s.loopBody);
 }
 
 // ─── Goto / Label / Leave ────────────────────────────────────────────────────

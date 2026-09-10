@@ -1285,3 +1285,52 @@ TEST(CsTypeEmitter, EachOverloadGetsItsOwnReconstructedBody)
 	EXPECT_TRUE(contains(s, "recovered_int_overload")) << s;
 	EXPECT_TRUE(contains(s, "recovered_double_overload")) << s;
 }
+
+// ─── Regressions ─────────────────────────────────────────────────────────────
+
+TEST(CsExprEmitter, ANestedTernaryConditionKeepsItsParentheses)
+{
+	// emitTernary emitted its condition with emit(e.cond, 1), and parenIf only
+	// parenthesises when exprPrec < parentPrec -- so a ternary inside a ternary
+	// condition, precedence 1 against a parent precedence of 1, came out bare.
+	// C# `?:` is right-associative, so `(a ? b : c) ? d : e` re-read as
+	// `a ? b : (c ? d : e)`: a different expression, silently.
+	CsWriter w;
+	CsExprEmitter e(w);
+
+	ExprTernary inner{makeLocal(0, "a"), makeLocal(1, "b"), makeLocal(2, "c"), types::Int()};
+	auto innerExpr = std::make_shared<CilExpr>(std::move(inner), types::Int());
+
+	ExprTernary outer{innerExpr, makeLocal(3, "d"), makeLocal(4, "e"), types::Int()};
+	auto outerExpr = std::make_shared<CilExpr>(std::move(outer), types::Int());
+
+	EXPECT_EQ("(a ? b : c) ? d : e", e.emit(outerExpr));
+}
+
+TEST(CsStmtEmitter, AWhileLoopEmitsItsBody)
+{
+	// CilReconstructor::buildWhile moves the loop body into `loopBody` and
+	// clears the blocks it came from. emitIf reads tryBody and catches, never
+	// loopBody, and with an empty tryBody it falls through to
+	// `goto L<blockRef>;` -- so the whole body was dropped on the floor.
+	CsWriter w;
+	CsExprEmitter ex(w);
+	CsStmtEmitter st(w, ex);
+
+	CilStmt body;
+	body.kind = StmtKind::Assign;
+	body.target = makeLocal(0, "i");
+	body.expr = makeConst(1);
+
+	CilStmt loop;
+	loop.kind = StmtKind::While;
+	loop.expr = makeLocal(0, "i");
+	loop.loopBody.push_back(std::move(body));
+
+	st.emitStmt(loop);
+	const std::string out = w.str();
+
+	EXPECT_TRUE(contains(out, "while (i)")) << out;
+	EXPECT_TRUE(contains(out, "i = 1;")) << out;
+	EXPECT_FALSE(contains(out, "goto")) << out;
+}
