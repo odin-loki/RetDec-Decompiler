@@ -822,3 +822,130 @@ TEST(PrologueParser, PrologueAdjustCountsPushesAndTheFrameAllocation)
 	EXPECT_EQ(16, pushesOnly.prologueAdjust);
 	EXPECT_EQ(16, pushesOnly.frameSize);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AArch64 frame base
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The canonical AArch64 prologue is
+//
+//     stp x29, x30, [sp, #-N]!
+//     mov x29, sp
+//
+// so X29 IS the post-prologue SP: both point at the bottom of the frame, the
+// saved pair sits at [X29+0] and [X29+8], and the locals are ABOVE them.
+// x86-64 is the other way round -- `push rbp; mov rbp,rsp; sub rsp,N` leaves
+// RSP = RBP - N -- and DVSA::collectAccesses applied the x86 rule to every
+// architecture:
+//
+//     off = v->memOffset - (int64_t)prologue.frameSize;
+//
+// On AArch64 that moved every SP-relative access down by a whole frame.
+// carveAArch64 puts the saved-X29 region at [0, 8), which is where an
+// X29-relative access to it lands; an SP-relative access to the very same
+// bytes normalised to -N and missed the region entirely, so the saved frame
+// pointer and link register were handed back as ordinary local variables --
+// and something a frame above really did land on [0, 8) and got carved away
+// instead.
+
+namespace {
+
+PrologueInfo aarch64Prologue(int64_t frameSize = 48)
+{
+	PrologueParser pp(ABI::AAPCS64, Arch::ARM64);
+	auto info = pp.parse({stpPair(Reg::X29, Reg::X30, -frameSize)});
+	AbiRegionCarver carver;
+	carver.carve(info);
+	return info;
+}
+
+} // namespace
+
+TEST(DVSA, AnSpRelativeAccessToTheSavedPairIsCarvedOnAArch64)
+{
+	auto info = aarch64Prologue();
+
+	SSAFunction fn("f");
+	auto* b = fn.addBlock("entry");
+	// [SP+0] and [SP+8] -- the saved X29 and X30 the prologue just stored.
+	addMemRef(fn, b->id, (VarId)Reg::SP_ARM64, 0, 8);
+	addMemRef(fn, b->id, (VarId)Reg::SP_ARM64, 8, 8);
+
+	DVSA dvsa;
+	auto res = dvsa.run(fn, info);
+	EXPECT_EQ(0u, res.slots.size()) << "the saved frame pointer and link register became local variables";
+}
+
+TEST(DVSA, AnSpRelativeLocalIsStillASlotOnAArch64)
+{
+	// The other direction, so the fix cannot be "carve everything": a local in
+	// the frame above the saved pair is still a variable.
+	auto info = aarch64Prologue();
+
+	SSAFunction fn("f");
+	auto* b = fn.addBlock("entry");
+	addMemRef(fn, b->id, (VarId)Reg::SP_ARM64, 24, 8);
+
+	DVSA dvsa;
+	auto res = dvsa.run(fn, info);
+	EXPECT_EQ(1u, res.slots.size()) << "an ordinary AArch64 local was carved away";
+}
+
+TEST(DVSA, AnX29RelativeAccessToTheSavedPairIsStillCarved)
+{
+	// X29-relative accesses were already right and must stay right: DVSA does
+	// not normalise a base-register access at all, and the region is at [0, 8).
+	auto info = aarch64Prologue();
+
+	SSAFunction fn("f");
+	auto* b = fn.addBlock("entry");
+	addMemRef(fn, b->id, (VarId)Reg::X29, 0, 8);
+
+	DVSA dvsa;
+	auto res = dvsa.run(fn, info);
+	EXPECT_EQ(0u, res.slots.size());
+}
+
+// x86-64 keeps the rule it was written for.
+TEST(DVSA, AnSpRelativeAccessOnX86StillNormalisesByTheFrameSize)
+{
+	PrologueInfo info = emptyPrologue(64);
+
+	SSAFunction fn("f");
+	auto* b = fn.addBlock("entry");
+	// [RSP+56] is [RBP-8] on x86-64 with a 64-byte frame, and [RSP+48] is
+	// [RBP-16]. Two distinct slots, both reached through SP.
+	addMemRef(fn, b->id, (VarId)Reg::RSP, 56, 8);
+	addMemRef(fn, b->id, (VarId)Reg::RSP, 48, 8);
+
+	DVSA dvsa;
+	auto res = dvsa.run(fn, info);
+	ASSERT_EQ(2u, res.slots.size());
+	// Normalised to RBP-relative, which is what every consumer reads.
+	std::vector<int64_t> offs;
+	for (const auto& sl: res.slots)
+		offs.push_back(sl.baseOffset);
+	std::sort(offs.begin(), offs.end());
+	EXPECT_EQ(-16, offs[0]);
+	EXPECT_EQ(-8, offs[1]);
+}
+
+// Result::carvedAccesses is documented as "excluded as ABI-reserved" and was
+// never assigned, so it read 0 on every function -- including the AArch64 ones
+// where the carving was in fact excluding nothing at all. A statistic that
+// cannot be anything but zero cannot report that.
+TEST(DVSA, CarvedAccessesCountsWhatWasExcluded)
+{
+	auto info = aarch64Prologue();
+
+	SSAFunction fn("f");
+	auto* b = fn.addBlock("entry");
+	addMemRef(fn, b->id, (VarId)Reg::SP_ARM64, 0, 8);  // saved X29 -- carved
+	addMemRef(fn, b->id, (VarId)Reg::SP_ARM64, 8, 8);  // saved X30 -- carved
+	addMemRef(fn, b->id, (VarId)Reg::SP_ARM64, 24, 8); // a local  -- kept
+
+	DVSA dvsa;
+	auto res = dvsa.run(fn, info);
+	EXPECT_EQ(2u, res.carvedAccesses);
+	EXPECT_EQ(1u, res.totalAccesses);
+}

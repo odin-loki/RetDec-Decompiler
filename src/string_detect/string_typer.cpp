@@ -199,10 +199,17 @@ static bool isPrintableUtf8Lead(uint8_t c)
 // ─── UTF-16LE/BE reader ───────────────────────────────────────────────────────
 
 static std::optional<std::string>
-readUtf16(const IBinaryView& view, uint64_t vma, bool le, std::size_t maxBytes)
+readUtf16(const IBinaryView& view, uint64_t vma, bool le, std::size_t maxBytes, std::size_t* unitsOut)
 {
 	std::string result;
 	result.reserve(64);
+	// Code units read, not UTF-8 bytes produced. The caller used
+	// result.size() for both charCount and byteLength, and one BMP code point
+	// outside ASCII is two or three UTF-8 bytes but always exactly one UTF-16
+	// unit -- so both came out too large, byteLength by two or four bytes per
+	// non-ASCII character. byteLength is what a caller adds to an address to
+	// reach the next literal.
+	std::size_t units = 0;
 	uint8_t buf[2];
 	for (std::size_t i = 0; i < maxBytes - 1; i += 2)
 	{
@@ -212,8 +219,10 @@ readUtf16(const IBinaryView& view, uint64_t vma, bool le, std::size_t maxBytes)
 		{
 			// NUL terminator
 			if (result.empty()) return std::nullopt;
+			if (unitsOut) *unitsOut = units;
 			return result;
 		}
+		++units;
 		// Convert to UTF-8 (BMP only for now)
 		if (wc < 0x80)
 		{
@@ -254,14 +263,15 @@ std::optional<StringLiteral> typeString(const IBinaryView& view, uint64_t vma, s
 		// very likely UTF-16LE
 		if (got >= 4 && buf[1] == 0 && buf[3] == 0 && isPrintableAscii(buf[0]) && isPrintableAscii(buf[2]))
 		{
-			auto s = readUtf16(view, vma, true, bufSz);
-			if (s && s->size() >= 2)
+			std::size_t units = 0;
+			auto s = readUtf16(view, vma, true, bufSz, &units);
+			if (s && units >= 2)
 			{
 				StringLiteral sl;
 				sl.address = vma;
 				sl.value = std::move(*s);
-				sl.charCount = sl.value.size();      // approx (UTF-8 chars)
-				sl.byteLength = sl.charCount * 2 + 2; // wide chars + NUL
+				sl.charCount = units;          // UTF-16 code units
+				sl.byteLength = units * 2 + 2; // wide chars + NUL
 				sl.kind = StringKind::Wide;
 				sl.encoding = EncodingKind::UTF16LE;
 				return sl;
@@ -273,14 +283,15 @@ std::optional<StringLiteral> typeString(const IBinaryView& view, uint64_t vma, s
 	{
 		if (got >= 4 && buf[0] == 0 && buf[2] == 0 && isPrintableAscii(buf[1]) && isPrintableAscii(buf[3]))
 		{
-			auto s = readUtf16(view, vma, false, bufSz);
-			if (s && s->size() >= 2)
+			std::size_t units = 0;
+			auto s = readUtf16(view, vma, false, bufSz, &units);
+			if (s && units >= 2)
 			{
 				StringLiteral sl;
 				sl.address = vma;
 				sl.value = std::move(*s);
-				sl.charCount = sl.value.size();
-				sl.byteLength = sl.charCount * 2 + 2;
+				sl.charCount = units;
+				sl.byteLength = units * 2 + 2;
 				sl.kind = StringKind::Wide;
 				sl.encoding = EncodingKind::UTF16BE;
 				return sl;
@@ -291,7 +302,18 @@ std::optional<StringLiteral> typeString(const IBinaryView& view, uint64_t vma, s
 	// ── 3. Try Pascal string (u8 length prefix) ────────────────────────────────
 	{
 		uint8_t plen = buf[0];
-		if (plen >= 2 && plen <= 255 && (std::size_t)plen + 1 <= got)
+		// A length byte that is itself a printable ASCII character is
+		// ambiguous with the first character of a C string, and this branch
+		// runs BEFORE the C one. Every C string longer than the value of its
+		// own first byte passed the test below -- "This is..." starts with
+		// 'T' = 84, so a 95-character message was read as a Pascal string of
+		// length 84: the leading 'T' became a length byte and the last eleven
+		// characters were dropped. A printable-ASCII byte is far more often
+		// the 'T' of a message than the length of an 84-character
+		// ShortString, so the C reading wins there. Outside printable ASCII
+		// -- a ShortString of fewer than 32 characters or of more than 126 --
+		// there is no ambiguity and this still reads as Pascal.
+		if (!isPrintableAscii(plen) && plen >= 2 && (std::size_t)plen + 1 <= got)
 		{
 			bool ok = true;
 			// The counter has to be wider than the bound. As a uint8_t it

@@ -551,3 +551,99 @@ TEST(StringTyperTest, APascalLengthByteOf254StillReads)
 	EXPECT_EQ(StringKind::Pascal, s->kind);
 	EXPECT_EQ(254u, s->charCount);
 }
+
+// ─── Pascal against C ────────────────────────────────────────────────────────
+
+// typeString() tries the Pascal reading (case 3) before the C reading (case 5),
+// and the Pascal test was just "buf[0] is 2..255 and the next buf[0] bytes are
+// printable Latin-1". Every C string longer than the value of its own first
+// byte satisfies that. "This is..." starts with 'T' = 84, so a 95-character
+// message was claimed as a Pascal string of length 84: the leading 'T'
+// silently became a length byte and the last eleven characters were dropped.
+//
+// The two readings are genuinely ambiguous when the length byte could also be
+// a first character, so the C reading wins there -- a printable-ASCII byte is
+// far more often the 'T' of a message than the length of an 84-character
+// ShortString. A length byte outside printable ASCII (the common case: a
+// ShortString of fewer than 32 characters, or of more than 126) is not
+// ambiguous and still reads as Pascal, which the three tests above cover.
+TEST(StringTyperTest, ALongCStringIsNotClaimedAsAPascalString)
+{
+	const std::string msg =
+		"This is a fairly long and descriptive error message, comfortably past eighty-four characters.";
+	ASSERT_LT(static_cast<std::size_t>('T'), msg.size()) << "the fixture must be longer than its own first byte";
+
+	std::vector<uint8_t> data(msg.begin(), msg.end());
+	data.push_back(0);
+	FlatView view;
+	view.addSection(0x5000, data);
+
+	auto s = typeString(view, 0x5000, 512);
+	ASSERT_TRUE(s.has_value());
+	EXPECT_EQ(StringKind::CNulTerminated, s->kind) << "read as " << stringKindName(s->kind);
+	EXPECT_EQ(msg, s->value) << "the string was truncated or lost its first character";
+	EXPECT_EQ(msg.size(), s->charCount);
+}
+
+// The same shape one character shorter than its own first byte was never
+// ambiguous -- the printable run ends at the NUL before `plen` is reached --
+// and must keep reading as C.
+TEST(StringTyperTest, AShortCStringStillReadsAsC)
+{
+	const std::string msg = "Hello, world";
+	std::vector<uint8_t> data(msg.begin(), msg.end());
+	data.push_back(0);
+	FlatView view;
+	view.addSection(0x6000, data);
+
+	auto s = typeString(view, 0x6000, 512);
+	ASSERT_TRUE(s.has_value());
+	EXPECT_EQ(StringKind::CNulTerminated, s->kind);
+	EXPECT_EQ(msg, s->value);
+}
+
+// ─── Wide-string lengths ─────────────────────────────────────────────────────
+
+// charCount and byteLength for a UTF-16 string were computed from the UTF-8
+// TRANSCODING, not from the source:
+//
+//     sl.charCount  = sl.value.size();      // approx (UTF-8 chars)
+//     sl.byteLength = sl.charCount*2 + 2;   // wide chars + NUL
+//
+// One BMP code point outside ASCII is 2 or 3 UTF-8 bytes and exactly 2 UTF-16
+// bytes, so both numbers came out too large -- byteLength by 2 or 4 bytes per
+// non-ASCII character. byteLength is what a caller adds to an address to reach
+// the next literal, so an over-long one steps past real data.
+TEST(StringTyperTest, WideStringLengthsCountUtf16UnitsNotUtf8Bytes)
+{
+	// "Hi" then U+00E9 (e-acute, one UTF-16 unit but two UTF-8 bytes),
+	// UTF-16LE, NUL-terminated. The detector needs the first two code units to
+	// be printable ASCII before it will try UTF-16 at all, hence the "Hi".
+	std::vector<uint8_t> data = {'H', 0x00, 'i', 0x00, 0xE9, 0x00, 0x00, 0x00, 0xFF, 0xFF};
+	FlatView view;
+	view.addSection(0x7000, data);
+
+	auto s = typeString(view, 0x7000, 512);
+	ASSERT_TRUE(s.has_value());
+	ASSERT_EQ(StringKind::Wide, s->kind) << "read as " << stringKindName(s->kind);
+
+	EXPECT_EQ(3u, s->charCount) << "three code points, not four UTF-8 bytes";
+	EXPECT_EQ(8u, s->byteLength) << "3 code units * 2 bytes + a 2-byte NUL";
+	// The value is still the UTF-8 transcoding, which is four bytes for these
+	// three characters -- that is the point: it is not the same number.
+	EXPECT_EQ(4u, s->value.size());
+}
+
+// ASCII-only wide strings were already right, and must stay right.
+TEST(StringTyperTest, AnAsciiWideStringKeepsItsLengths)
+{
+	std::vector<uint8_t> data = {'H', 0, 'i', 0, 0, 0, 0xFF, 0xFF};
+	FlatView view;
+	view.addSection(0x8000, data);
+
+	auto s = typeString(view, 0x8000, 512);
+	ASSERT_TRUE(s.has_value());
+	ASSERT_EQ(StringKind::Wide, s->kind);
+	EXPECT_EQ(2u, s->charCount);
+	EXPECT_EQ(6u, s->byteLength);
+}

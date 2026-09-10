@@ -314,6 +314,27 @@ struct PrologueInfo
 
 	std::vector<std::pair<Reg, int64_t>> calleeSaves; ///< (reg, frame_offset)
 
+	/// What to add to an SP-relative access to express it relative to the
+	/// frame base -- the coordinate system abiRegions and DVSA's slots use.
+	///
+	/// DVSA hard-coded `-frameSize`, which is the x86 answer:
+	/// `push rbp; mov rbp,rsp; sub rsp,N` leaves RSP = RBP - N. AArch64 is the
+	/// other way round. Its canonical prologue is
+	///
+	///     stp x29, x30, [sp, #-N]!
+	///     mov x29, sp
+	///
+	/// so X29 IS the post-prologue SP: both name the bottom of the frame, the
+	/// saved pair sits at [X29+0] and [X29+8], and the locals are above them.
+	/// Subtracting a whole frame there moved every SP-relative access out from
+	/// under the carved regions, so the saved frame pointer and link register
+	/// came back as ordinary local variables while something a frame above
+	/// them was carved away instead.
+	int64_t spToFrameBase() const noexcept
+	{
+		return arch == Arch::ARM64 ? 0 : -frameSize;
+	}
+
 	/// All carved ABI regions (pre-filled by ABI region carver).
 	std::vector<FrameRegion> abiRegions;
 
@@ -455,7 +476,14 @@ public:
 	Result run(const ssa::SSAFunction& fn, const PrologueInfo& prologue) const;
 
 private:
-	std::vector<FrameAccess> collectAccesses(const ssa::SSAFunction& fn, const PrologueInfo& prologue) const;
+	/// @param carvedOut receives the number of stack accesses dropped because
+	///                  they fell inside an ABI-reserved region. It used to be
+	///                  nowhere: Result::carvedAccesses was documented,
+	///                  returned, and never assigned, so it read 0 on every
+	///                  function -- including the AArch64 ones where the
+	///                  carving was silently missing everything.
+	std::vector<FrameAccess>
+	collectAccesses(const ssa::SSAFunction& fn, const PrologueInfo& prologue, std::size_t* carvedOut = nullptr) const;
 
 	std::vector<FrameSlot> partition(std::vector<FrameAccess>& accesses) const;
 

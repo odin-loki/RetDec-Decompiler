@@ -105,9 +105,10 @@ static bool isBaseRegSP(ssa::VarId reg)
 }
 
 std::vector<FrameAccess>
-DVSA::collectAccesses(const ssa::SSAFunction& fn, const PrologueInfo& prologue) const
+DVSA::collectAccesses(const ssa::SSAFunction& fn, const PrologueInfo& prologue, std::size_t* carvedOut) const
 {
 	std::vector<FrameAccess> result;
+	std::size_t carved = 0;
 
 	for (auto& valPtr: fn.values())
 	{
@@ -119,13 +120,17 @@ DVSA::collectAccesses(const ssa::SSAFunction& fn, const PrologueInfo& prologue) 
 		int64_t off = v->memOffset;
 		if (isBaseRegSP(v->memBaseReg))
 		{
-			// Convert SP-relative → RBP-relative
-			off = v->memOffset - (int64_t)prologue.frameSize;
+			// Convert SP-relative → frame-base-relative. The delta is per-ABI:
+			// see PrologueInfo::spToFrameBase. It used to be a hard-coded
+			// -frameSize, which is right on x86 and a whole frame wrong on
+			// AArch64, where X29 and the post-prologue SP are the same address.
+			off = v->memOffset + prologue.spToFrameBase();
 		}
 
 		// Exclude ABI-reserved regions
 		if (isCarved(prologue, off, v->memWidth))
 		{
+			++carved;
 			continue;
 		}
 
@@ -148,6 +153,7 @@ DVSA::collectAccesses(const ssa::SSAFunction& fn, const PrologueInfo& prologue) 
 		return a.size > b.size; // wider first
 	});
 
+	if (carvedOut) *carvedOut = carved;
 	return result;
 }
 
@@ -220,7 +226,7 @@ DVSA::Result DVSA::run(const ssa::SSAFunction& fn, const PrologueInfo& prologue)
 {
 	Result res;
 
-	auto allAccesses = collectAccesses(fn, prologue);
+	auto allAccesses = collectAccesses(fn, prologue, &res.carvedAccesses);
 	res.totalAccesses = allAccesses.size();
 
 	auto slots = partition(allAccesses);
