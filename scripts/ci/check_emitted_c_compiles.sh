@@ -26,6 +26,15 @@
 # undeclared identifier and a label at the end of a block are all syntax- or
 # semantics-level errors the front end alone reports.
 #
+# Reading the failure
+# -------------------
+# `--save-failures DIR` copies the `.c` that did not compile, and the
+# compiler's own output, into DIR.  The error names a line in a file that
+# exists only inside the run, and this check runs on a CI runner: three rounds
+# of "label 'lab_0x112c' used but not defined" were diagnosed by reading the
+# pass source and guessing which one produced it, and the first two guesses
+# were wrong.  Two hundred lines of emitted C settle it.
+
 # Reporting versus gating
 # -----------------------
 # Without `--min-rate` this is a *measurement*: it prints the rate and exits 0.
@@ -40,7 +49,8 @@
 #
 # Usage:
 #   bash scripts/ci/check_emitted_c_compiles.sh --decompiler PATH --corpus DIR \
-#        [--limit N] [--timeout SECONDS] [--min-rate FLOAT] [--errors N]
+#        [--limit N] [--timeout SECONDS] [--min-rate FLOAT] [--errors N] \
+#        [--save-failures DIR]
 #   bash scripts/ci/check_emitted_c_compiles.sh --self-test
 set -euo pipefail
 
@@ -247,6 +257,36 @@ FAKE
 	check_ident "a.c:1:2: error: label \`lab_4006f0' used but not defined" \
 		"lab_4006f0" "backtick and apostrophe"
 
+	# 6e. --save-failures has to leave the emitted C where it can be read,
+	#     and only for the files that failed. A directory that comes back
+	#     empty is the same as not having the option.
+	rm -rf "${T}/kept"
+	expect 1 "kept the emitted C" "--save-failures says where it put them" \
+		--decompiler "${T}/bin/mostly_good" --min-rate 1.0 \
+		--save-failures "${T}/kept"
+	kept_c="$(find "${T}/kept" -name '*.c' 2>/dev/null | wc -l)"
+	if [[ "${kept_c}" -ne 1 ]]; then
+		echo "self-test: --save-failures kept ${kept_c} .c file(s), expected 1" >&2
+		fails=$(( fails + 1 ))
+	fi
+	if ! grep -q "undeclared_thing" "${T}/kept/"*.c 2>/dev/null; then
+		echo "self-test: --save-failures kept a file without the emitted C in it" >&2
+		fails=$(( fails + 1 ))
+	fi
+	if ! find "${T}/kept" -name '*.cc.log' | grep -q .; then
+		echo "self-test: --save-failures kept no compiler output" >&2
+		fails=$(( fails + 1 ))
+	fi
+
+	# ...and nothing at all when everything compiles.
+	rm -rf "${T}/kept_ok"
+	expect 0 "4/4" "--save-failures keeps nothing when nothing failed" \
+		--decompiler "${T}/bin/good" --save-failures "${T}/kept_ok"
+	if find "${T}/kept_ok" -type f 2>/dev/null | grep -q .; then
+		echo "self-test: --save-failures kept a file for a passing run" >&2
+		fails=$(( fails + 1 ))
+	fi
+
 	# 7. A floor is only a floor if the script refuses one it cannot read.
 	expect 2 "" "a non-numeric --min-rate is rejected" \
 		--decompiler "${T}/bin/good" --min-rate banana
@@ -267,6 +307,7 @@ CORPUS=""
 LIMIT=0
 TIMEOUT=120
 MIN_RATE=""
+SAVE_FAILURES=""
 ERRORS=5
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -276,6 +317,7 @@ while [[ $# -gt 0 ]]; do
 		--timeout) TIMEOUT="$2"; shift 2 ;;
 		--min-rate) MIN_RATE="$2"; shift 2 ;;
 		--errors) ERRORS="$2"; shift 2 ;;
+		--save-failures) SAVE_FAILURES="$2"; shift 2 ;;
 		*) echo "Unknown arg: $1" >&2; exit 2 ;;
 	esac
 done
@@ -328,6 +370,21 @@ fi
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
+if [[ -n "${SAVE_FAILURES}" ]]; then
+	mkdir -p "${SAVE_FAILURES}"
+fi
+
+# Keep the emitted C of a file that did not compile, next to what the compiler
+# said about it.  Without this the only trace of the defect is a line number
+# in a directory that the trap above deletes.
+save_failure() {
+	[[ -n "${SAVE_FAILURES}" ]] || return 0
+	local name="$1" src="$2" cerr="$3"
+	[[ -s "${src}" ]] && cp "${src}" "${SAVE_FAILURES}/${name}.c"
+	[[ -s "${cerr}" ]] && cp "${cerr}" "${SAVE_FAILURES}/${name}.cc.log"
+	return 0
+}
+
 OK=0
 BAD=0
 NOOUT=0
@@ -351,6 +408,7 @@ for bin in "${BINS[@]}"; do
 		NOOUT=$(( NOOUT + 1 ))
 		BAD=$(( BAD + 1 ))
 		FAILED_NAMES+=("${name} (no output)")
+		save_failure "${name}" "${out}" "${log}"
 		{
 			printf '=== %s: the decompiler produced no C ===\n' "${name}"
 			tail -n 5 "${log}" 2>/dev/null
@@ -364,6 +422,7 @@ for bin in "${BINS[@]}"; do
 	else
 		BAD=$(( BAD + 1 ))
 		FAILED_NAMES+=("${name}")
+		save_failure "${name}" "${out}" "${cerr}"
 		{
 			printf '=== %s ===\n' "${name}"
 			# The error alone names a line number in a file that only exists
@@ -398,6 +457,10 @@ TOTAL=$(( OK + BAD ))
 RATE="$(awk -v o="${OK}" -v t="${TOTAL}" 'BEGIN { if (t == 0) print "0.0000"; else printf "%.4f", o / t }')"
 
 echo "CC-01: ${OK}/${TOTAL} emitted C files compile (rate ${RATE}, ${NOOUT} with no output)"
+
+if [[ "${BAD}" -gt 0 && -n "${SAVE_FAILURES}" ]]; then
+	echo "CC-01: kept the emitted C of each failure under ${SAVE_FAILURES}"
+fi
 
 if [[ "${BAD}" -gt 0 ]]; then
 	echo "CC-01: files that did not compile:"

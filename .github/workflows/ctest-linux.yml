@@ -243,7 +243,8 @@ jobs:
           bash scripts/ci/check_emitted_c_compiles.sh \
             --decompiler "$DEC" \
             --corpus tests/algorithm_recovery/corpus \
-            --limit 24 --timeout 120 --min-rate 0.9583 2>&1 | tee /tmp/cc01.log || rc=$?
+            --limit 24 --timeout 120 --min-rate 0.9583 \
+            --save-failures cc01-failures 2>&1 | tee /tmp/cc01.log || rc=$?
           {
             echo "### CC-01 emitted C compiles"
             echo '```'
@@ -268,6 +269,19 @@ jobs:
         with:
           name: gate-numbers
           path: gate-numbers.md
+
+      # The emitted C of whatever CC-01 could not compile. The error names a
+      # line in a directory that exists only inside the run, so without this
+      # the diagnosis is a guess at which pass produced it -- and two rounds
+      # of guessing at `label 'lab_0x112c' used but not defined' picked the
+      # wrong pass both times.
+      - name: Publish the C that did not compile
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cc01-failures
+          path: cc01-failures
+          if-no-files-found: ignore
           if-no-files-found: warn
           retention-days: 30
 
