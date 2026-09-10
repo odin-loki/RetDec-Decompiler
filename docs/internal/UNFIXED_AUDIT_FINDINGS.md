@@ -640,6 +640,67 @@ Rusticl ICD — then the `UNBUILT_DIRS` entry comes out.
 
 
 
+
+## `lab_0x112c`, found
+
+`splitWhileTrueLoop()` refuses to split a `while (true)` loop when something
+jumps into it:
+
+```cpp
+while (currStmt) {
+    // When a statement in the loop is a goto target, we cannot split the
+    // loop. Otherwise, after optimizing the loop, we might end up with
+    // incorrect code.
+    if (currStmt->isGotoTarget()) {
+        return {};
+    }
+```
+
+The comment is right. The test is one level too shallow: `currStmt` walks the
+body's own successor chain, and nothing nested inside it.
+
+All three `while_true_to_*` optimizers call this function, and all three keep
+`splittedLoop->beforeLoopEndStmts` as the new body and throw the loop-end
+`if` away. The `break` or `return` inside that `if` is exactly where a goto
+lands, and exactly what is nested rather than top-level. Its label went with
+the discarded `if` while the goto naming it stayed —
+`goto lab_0x112c;` with no `lab_0x112c:`, which is what CC-01 had reported on
+`generated_shell_sort-gcc-O2` for five rounds.
+
+The question is asked over the whole body now, once, with
+`GotoTargetAnalysis::hasGotoTargets()`. Three lines.
+
+### How it was found, after four wrong answers
+
+Four earlier rounds each read the passes, found a real defect, fixed it, and
+watched the error come back at the same line. What broke the pattern was not
+a better guess:
+
+1. **`--save-failures`** made CC-01 keep the emitted `.c` and the `.ll` the
+   back end was given, instead of deleting both with its temp directory.
+2. **The `llvmir2bir_converter` exclusion** came off `check_llvmir2hll_tests.sh`
+   once the reason was measured rather than assumed, which is what let the
+   converter run here at all.
+3. **`OptimizerManagerPipelineTests`** turned that into a local pipeline:
+   LLVM IR in, thirty passes, emitted C out, scanned for a label jumped to
+   and never defined.
+4. **One CI round** produced the real IR. Reduced to the failing function it
+   is 200 lines, and it reproduced on the first run.
+5. **Delta-debugging** `OptimizerManager`'s `enabledOpts` found the smallest
+   set of passes that still stranded the label: one. Then the next one. Then
+   the shared helper both of them call.
+
+Five rounds of reading to narrow it to a subsystem; about two minutes to name
+the function once the input could be replayed. The reduced IR is now a test,
+so the next regression is caught before CI rather than five rounds after it.
+
+One honest note: of the three per-pass regression tests,
+`WhileTrueToForLoopAloneKeepsTheLabel` passes with the fix reverted —
+`WhileTrueToForLoopOptimizer` declines this particular input earlier, for an
+unrelated reason. It is kept as a control on the third caller, not claimed as
+evidence. A unit test written to make it load-bearing was dropped rather than
+kept: it also declined for the unrelated reason, so it could not fail either.
+
 ## `removePredecessors(onlyNonGoto)` removed gotos
 
 ```cpp

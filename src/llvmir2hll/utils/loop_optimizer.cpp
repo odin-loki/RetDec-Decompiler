@@ -6,6 +6,7 @@
 */
 
 #include <memory>
+#include "retdec/llvmir2hll/analysis/goto_target_analysis.h"
 #include "retdec/llvmir2hll/analysis/used_vars_visitor.h"
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
 #include "retdec/llvmir2hll/ir/break_stmt.h"
@@ -122,18 +123,32 @@ ShPtr<SplittedWhileTrueLoop> splitWhileTrueLoop(
 		return {};
 	}
 
+	// When a statement in the loop is a goto target, we cannot split the loop.
+	// Otherwise, after optimizing the loop, we might end up with incorrect
+	// code.
+	//
+	// "A statement in the loop" used to mean the body's own successor chain
+	// and nothing nested inside it -- the test was `currStmt->isGotoTarget()`
+	// inside the walk below. Every caller of this function throws away the
+	// loop-end `if`: the body they keep is beforeLoopEndStmts alone. A `break`
+	// or `return` inside that `if` is exactly where a goto lands, and exactly
+	// what is nested rather than top-level. Its label went with the discarded
+	// `if` while the goto naming it stayed -- `goto lab_0x112c;` with no
+	// `lab_0x112c:`, which is what CC-01 reported on
+	// generated_shell_sort-gcc-O2.
+	//
+	// GotoTargetAnalysis walks the nested statements as well, and following
+	// successors, so one call covers the whole body.
+	if (GotoTargetAnalysis::hasGotoTargets(stmt->getBody()))
+	{
+		return {};
+	}
+
 	// Split the loop.
 	auto splittedLoop = std::make_shared<SplittedWhileTrueLoop>();
 	ShPtr<Expression> exitCond;
 	auto currStmt = stmt->getBody();
 	while (currStmt) {
-		// When a statement in the loop is a goto target, we cannot split the
-		// loop. Otherwise, after optimizing the loop, we might end up with
-		// incorrect code.
-		if (currStmt->isGotoTarget()) {
-			return {};
-		}
-
 		// If there is more than one loop end, use the first one.
 		if (isLoopEnd(currStmt) && !exitCond) {
 			exitCond = getExitCondition(currStmt);
