@@ -907,6 +907,32 @@ still falls through to its successor.
 
 ## Corrections to claims made in this branch's commit messages
 
+### `getType()` is not a portable spelling of `getPointerType()`
+
+`ce86f3d` replaced `cNullPtr->getPointerType()` with `cNullPtr->getType()` and
+said `ConstantPointerNull` "specialises `getType()` to return a
+`PointerType*` in every LLVM this code has ever been built against". That was
+checked against the system LLVM and asserted of the pinned one, which is the
+same mistake as the exclusion the commit was undoing.
+
+Run 270 failed to build:
+
+```
+llvm_constant_converter.cpp:236: error: cannot convert
+'shared_ptr<Type>' to 'shared_ptr<PointerType>'
+```
+
+`typeConverter->convert()` is overloaded on `Type*` and `PointerType*`. The
+system LLVM does specialise `getType()` and picked the `PointerType*`
+overload; the pinned one does not, picked the `Type*` overload, and
+`ConstNullPointer::create()` would not take the result. The call compiled
+cleanly here and broke there.
+
+`llvm::cast<llvm::PointerType>(cNullPtr->getType())` names the type at the
+call site, so the overload chosen is the same whichever LLVM is in hand. That
+is sound by construction rather than by which header happens to be on the
+include path — which is what the original line was not, in either direction.
+
 ### "A workflow that does not parse does not run" — half right
 
 `9e54dd8`'s message says an unparseable workflow "produces no run at all, so

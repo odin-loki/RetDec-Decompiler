@@ -227,12 +227,18 @@ ShPtr<Expression> LLVMConstantConverter::convertToExpression(
 		const llvm::ConstantPointerNull *cNullPtr) {
 	PRECONDITION_NON_NULL(cNullPtr);
 
-	// getType() rather than getPointerType(): ConstantPointerNull specialises
-	// getType() to return a PointerType* in every LLVM this code has ever
-	// been built against, while getPointerType() was dropped with typed
-	// pointers. This one call is what kept the whole llvmir2bir_converter
-	// directory out of the standalone check.
-	auto type = typeConverter->convert(cNullPtr->getType());
+	// getType() rather than getPointerType(), which went with typed pointers.
+	// This one call is what kept the whole llvmir2bir_converter directory out
+	// of the standalone check.
+	//
+	// The cast is not decoration. typeConverter->convert() is overloaded on
+	// Type* and PointerType*, and which one getType() selects depends on
+	// whether the LLVM in hand specialises ConstantPointerNull::getType() to
+	// return a PointerType*. The system LLVM does and picked the overload
+	// returning ShPtr<PointerType>; the pinned one does not, picked the Type*
+	// overload, and ConstNullPointer::create() would not take the result.
+	// Naming the type here makes the choice the same in both.
+	auto type = typeConverter->convert(llvm::cast<llvm::PointerType>(cNullPtr->getType()));
 	return ConstNullPointer::create(type);
 }
 
