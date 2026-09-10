@@ -1,8 +1,8 @@
 /**
-* @file src/llvmir2hll/semantics/semantics/libc_semantics/get_arity_of_func.cpp
-* @brief Implementation of semantics::libc::getArityOfFunc() for LibcSemantics.
-* @copyright (c) 2025-2026 Odin Loch trading as Imortek
-*/
+ * @file src/llvmir2hll/semantics/semantics/libc_semantics/get_arity_of_func.cpp
+ * @brief Implementation of semantics::libc::getArityOfFunc() for LibcSemantics.
+ * @copyright (c) 2025-2026 Odin Loch trading as Imortek
+ */
 
 #include "retdec/llvmir2hll/semantics/semantics/libc_semantics/get_arity_of_func.h"
 
@@ -13,24 +13,24 @@ namespace libc {
 
 namespace {
 
-#define ADD_FUNC_ARITY(name, params, variadic) \
-	m.emplace(name, FuncArity{(params), (variadic)})
+#define ADD_FUNC_ARITY(name, params, variadic) m.emplace(name, FuncArity{(params), (variadic)})
 
 /**
-* @brief This function is used to initialize FUNC_ARITY_MAP later in the file.
-*
-* Every entry here was MEASURED against the system C headers rather than
-* recalled, by scripts/ci/check_libc_arity.py: for each name it compiles a call
-* with 0..8 arguments and records which counts the real declaration accepts.
-* A single accepted count is a fixed arity; acceptance of everything from N
-* upwards is variadic with N named parameters; anything else -- the function is
-* a macro, or is not declared on the platform -- is left out entirely, because
-* an entry that is only probably right is worse here than no entry.
-*
-* Run that script to re-derive this file. It is also a CI check: it fails if
-* the table and the headers ever disagree.
-*/
-const FuncArityMap &initFuncArityMap() {
+ * @brief This function is used to initialize FUNC_ARITY_MAP later in the file.
+ *
+ * Every entry here was MEASURED against the system C headers rather than
+ * recalled, by scripts/ci/check_libc_arity.py: for each name it compiles a call
+ * with 0..8 arguments and records which counts the real declaration accepts.
+ * A single accepted count is a fixed arity; acceptance of everything from N
+ * upwards is variadic with N named parameters; anything else -- the function is
+ * a macro, or is not declared on the platform -- is left out entirely, because
+ * an entry that is only probably right is worse here than no entry.
+ *
+ * Run that script to re-derive this file. It is also a CI check: it fails if
+ * the table and the headers ever disagree.
+ */
+const FuncArityMap& initFuncArityMap()
+{
 	static FuncArityMap m;
 
 	// assert.h
@@ -525,14 +525,14 @@ const FuncArityMap &initFuncArityMap() {
 #undef ADD_FUNC_ARITY
 
 /// Mapping of function names to their declared arity.
-const FuncArityMap &FUNC_ARITY_MAP = initFuncArityMap();
+const FuncArityMap& FUNC_ARITY_MAP = initFuncArityMap();
 
 } // anonymous namespace
 
-std::optional<FuncArity> getArityOfFunc(const std::string &funcName) {
+std::optional<FuncArity> getArityOfFunc(const std::string& funcName)
+{
 	auto i = FUNC_ARITY_MAP.find(funcName);
-	return i != FUNC_ARITY_MAP.end() ? std::optional<FuncArity>(i->second)
-									 : std::nullopt;
+	return i != FUNC_ARITY_MAP.end() ? std::optional<FuncArity>(i->second) : std::nullopt;
 }
 
 } // namespace libc
