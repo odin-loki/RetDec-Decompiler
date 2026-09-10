@@ -670,6 +670,16 @@ the discarded `if` while the goto naming it stayed —
 The question is asked over the whole body now, once, with
 `GotoTargetAnalysis::hasGotoTargets()`. Three lines.
 
+**It refuses more than it strictly has to**, and deliberately. Only the
+loop-end `if` and `afterLoopEndStmts` are discarded; a goto into
+`beforeLoopEndStmts`, which the new body keeps, is harmless. Checking only
+the discarded region would convert more loops than the old code did — the
+old test covered the whole top-level chain too — so it is a behaviour change
+beyond fixing the defect, and it needs the F1 and DET-01 numbers behind it
+rather than an argument. The narrow version also has to run *after* the
+split, since the split is what decides which parts are discarded. Left for a
+round that can measure it.
+
 ### How it was found, after four wrong answers
 
 Four earlier rounds each read the passes, found a real defect, fixed it, and
