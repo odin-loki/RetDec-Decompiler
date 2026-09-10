@@ -280,28 +280,39 @@ terminates differently from the binary.
 
 ---
 
-## 4. The public API cannot report failure
+## 4. The public API cannot report failure — **all four fixed, and now read**
 
-`src/retdec/retdec.cpp:1083` — `decompile()` is declared `bool` and returns
-`EXIT_SUCCESS`, which is `0`, which is `false`. There is no failure return path
-at all. So the idiomatic `if (!retdec::decompile(cfg)) { /* error */ }` reports
-an error on every successful run, and `if (retdec::decompile(cfg))` never fires.
+This section stood as an open list long after the code stopped matching it,
+which is its own finding: a doc that sends the next reader to re-fix finished
+work. Each item was checked against the source before this note was written.
 
-`src/retdec/retdec.cpp:1346` — `parallelBatchDecompile()` consequently reports
-every job as failed. A harness batching 216 binaries and counting successes gets
-0/216 whatever happens.
+* ~~`src/retdec/retdec.cpp` — `decompile()` is declared `bool` and returns
+  `EXIT_SUCCESS`, which is `0`, which is `false`.~~ **Fixed.** It returns
+  `true`, and the comment at that return records what the defect was.
+* ~~`parallelBatchDecompile()` consequently reports every job as failed.~~
+  **Fixed** by the above: `results[i] = futures[i].get()` takes `decompile()`'s
+  answer directly, and a thrown exception still gives `false`.
+* ~~`src/llvmir2hll/llvmir2hll.cpp` — failing to open the output file exits 0
+  having written nothing.~~ **Fixed.** `getOutputStream()` returns `{}` on the
+  error code and the caller returns `false`.
+* ~~`src/retdec-decompiler/retdec-decompiler.cpp` — there is no unknown-option
+  diagnostic anywhere in the CLI parser.~~ **Fixed.** `ProgramOptions::load()`
+  throws `unknown option: <opt> (see --help)`, and `main` catches it and
+  returns `EXIT_FAILURE`.
 
-`src/llvmir2hll/llvmir2hll.cpp:514` — failing to open the output file exits 0
-having written nothing. `retdec-decompiler -o /nonexistent/dir/out.c foo.elf`
-succeeds, silently.
+**None of the four was read by anything, which is how all four got in.** An
+exit code nothing checks is an exit code nothing keeps right, and the code was
+correct here only because somebody had recently looked.
 
-`src/retdec-decompiler/retdec-decompiler.cpp:1028` — there is no unknown-option
-diagnostic anywhere in the CLI parser. A malformed command line prints help to
-stdout and exits 0, and an unrecognised option is taken as the input filename.
+`scripts/ci/check_cli_exit_codes.sh` (CLI-01) reads them, from ctest-linux where
+the built decompiler is: an unknown option must exit non-zero, an unopenable
+`-o` path must exit non-zero, and — the part that matters — a real decompilation
+must exit zero having written something, because a gate that only asserts
+failures passes on a decompiler that fails at everything.
 
-These four together mean no script, Makefile or CI job can currently tell
-whether a decompilation worked. They are small, independent fixes; they need
-the build only because `src/retdec/` and `src/llvmir2hll/` link LLVM.
+Its self-test runs in the push gates and is two stub decompilers: one behaving
+as the source does now, one exiting 0 for everything, which is the state this
+section recorded. The check must pass the first and reject the second by name.
 
 ---
 

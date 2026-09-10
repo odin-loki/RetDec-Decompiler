@@ -214,6 +214,21 @@ jobs:
           } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
           exit $rc
 
+      # CLI-01. The four ways this tree used to report success for work it had
+      # not done -- decompile() returning EXIT_SUCCESS from a bool, the batch
+      # API handing that out for every job, an unopenable -o exiting 0 having
+      # written nothing, and no unknown-option diagnostic at all. All four are
+      # fixed in the source and none of them was read anywhere, which is how
+      # they got in: an exit code nothing checks is one nothing keeps right.
+      #
+      # The success case is part of the check. A gate that only asserts
+      # failures passes on a decompiler that fails at everything.
+      - name: CLI-01 exit codes
+        run: |
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          if [ -z "$DEC" ]; then echo "retdec-decompiler not found"; exit 1; fi
+          bash scripts/ci/check_cli_exit_codes.sh --decompiler "$DEC"
+
       - name: CC-01 emitted C compiles
         run: |
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
