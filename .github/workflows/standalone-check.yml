@@ -123,12 +123,22 @@ jobs:
       - name: DEM-01 demangler suite
         run: bash scripts/ci/check_demangler_tests.sh
 
-      # FF-01. tests/cpdetect and tests/loader -- 74 assertions over the layer
-      # that turns a file on disk into sections, segments and symbols -- ran
-      # nowhere for the same two reasons. src/fileformat was assumed to need
-      # the pinned llvm-project; it needs llvm/Object/COFF.h and a few
-      # llvm/Support headers, which llvm-dev provides, and stb, tlsh and
-      # authenticode-parser, which are vendored in deps/ with sources.
+      # FF-01. tests/cpdetect, tests/loader and tests/fileformat -- 209
+      # assertions over the layer that turns a file on disk into sections,
+      # segments and symbols. 157 of them ran nowhere before this step existed,
+      # for the same two reasons as L2H-01: standalone_check.sh skips anything
+      # needing a third-party library, and ctest-linux builds no test target.
+      # src/fileformat was assumed to need the pinned llvm-project; it needs
+      # llvm/Object/COFF.h and a few llvm/Support headers, which llvm-dev
+      # provides, and stb, tlsh and authenticode-parser, which are vendored in
+      # deps/ with sources.
+      #
+      # tests/fileformat was added last and was the largest of the three: 83 of
+      # its 129 cases ran nowhere, because standalone_check.sh builds the four
+      # files that need no LLVM and CI builds no test target at all. Eleven of
+      # the twelve it left were recorded as "not carried through the LLVM
+      # 23.1.0 migration"; all eleven compile and pass against llvm-dev.
+      #
       # tests/unpacker stays out: it links retdec::cpdetect, which needs YARA.
       - name: FF-01 fileformat-backed suites
         run: bash scripts/ci/check_fileformat_tests.sh --jobs 4

@@ -22,10 +22,13 @@
 # an entry from the manifest and it becomes a hard failure like any other.
 #
 # The second pass is the same question the other way round: a test source on
-# disk that no CMakeLists.txt names is a file nobody runs. That is how ten of
-# the twelve suites in tests/fileformat/ came to be dead, and how
-# tests/utils/dynamic_buffer_tests.cpp sat unbuilt with ten regression tests in
-# it. Files that are deliberately not listed carry a reason in UNBUILT below.
+# disk that no CMakeLists.txt names is a file nobody runs -- unless something
+# other than CMake runs it. That is how ten of the twelve suites in
+# tests/fileformat/ came to be dead, and how tests/utils/dynamic_buffer_tests.cpp
+# sat unbuilt with ten regression tests in it. Files that are deliberately not
+# listed carry a reason in UNBUILT below, and a reason there has to name the
+# thing that does run them: "nobody has got to it yet" is a debt entry, and the
+# eleven fileformat ones sat on it long after it stopped being true.
 #
 # Usage:
 #   bash scripts/check_cmake_sources.sh          # whole tree
@@ -103,9 +106,19 @@ UNBUILT_DIRS = {
 }
 
 UNBUILT = {
+    # These eleven were recorded as "not carried through the LLVM 23.1.0
+    # migration and not yet re-enabled". That reason did not survive being
+    # checked: all eleven compile and pass against the distribution llvm-dev,
+    # and scripts/ci/check_fileformat_tests.sh (FF-01) has built and run the
+    # whole directory since then -- 135 test cases, of which 83 ran nowhere
+    # before. They stay out of tests/fileformat/CMakeLists.txt because nothing
+    # builds that target: ctest-linux names retdec-decompiler, retdec-gui and
+    # retdec-gui-tests and no other, so listing them there would move them from
+    # one gate to none. What is still untested is the pinned LLVM, which is the
+    # only part of the original reason that was ever about the migration.
     "tests/fileformat/ar_archive_format_probe_tests.cpp":
-        "upstream fileformat suites; not carried through the LLVM 23.1.0 "
-        "migration and not yet re-enabled -- see docs/internal/UNFIXED_AUDIT_FINDINGS.md",
+        "run by scripts/ci/check_fileformat_tests.sh (FF-01) against the system "
+        "LLVM; not in the CMake target because CI builds no test target",
     "tests/fileformat/coff_format_tests.cpp": "as above",
     "tests/fileformat/elf_format_tests.cpp": "as above",
     "tests/fileformat/format_detection_tests.cpp": "as above",

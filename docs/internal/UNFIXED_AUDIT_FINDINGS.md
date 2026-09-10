@@ -521,12 +521,26 @@ LocalVariableTable extent in two more modules, three DEX conversions,
 `set10Byte`'s un-inverted path, `nibblesFor`'s capacity, the divergent match
 loop, and the stale citations. What is left is here.
 
-## Behind a build this environment cannot run
+## Behind a build this environment cannot run — except it is not
 
-Everything below is compiled only by the LLVM-dependent build, so a change to it
-here would ship untested — the same reason the audit findings above were written
-down rather than attempted. All were read and measured against the source; none
-were compiled.
+This section's heading was the reason nothing here was attempted: "everything
+below is compiled only by the LLVM-dependent build, so a change to it here would
+ship untested — all were read and measured against the source; none were
+compiled."
+
+That was checked and it is false. `scripts/ci/check_fileformat_tests.sh` (FF-01)
+compiles all of `src/fileformat`, `src/loader`, `src/common`, `src/pelib` and
+`src/serdes` against the distribution `llvm-dev` and has done since it was
+written — which is every file in the list below but the last, and that one is in
+`src/cli_parser`, a module `standalone_check.sh` already builds. The premise held
+when the audit was written and stopped holding when FF-01 landed; nobody went
+back and re-read it. It is the fourth exclusion reason on this branch to survive
+right up until somebody measured it, after `tests/cpdetect`+`tests/loader`,
+`tests/unpacker`, and the `llvmir2bir_converter` exclusion on L2H-01.
+
+So these are ordinary findings with an ordinary gate behind them, and each is
+fixable with a regression test that runs before the push. They are being worked
+through; what is left is below.
 
 * `src/fileformat/file_format/elf/elf_format.cpp:2770-2773` and
   `coff_format.cpp:600-609` — `getDeclaredFileLength` overrides that shadow the
@@ -536,9 +550,14 @@ were compiled.
   `secSeg->getOffset() + secOffset`.
 * `file_format.cpp:583-593` (`computeSectionTableHashes`) and `:1380`
   (`getOverlayEntropy`) — unchecked multiply and sums on header fields.
-* `src/fileformat/utils/other.cpp:407` — `getRealSizeInRegion`'s wrapping clamp.
-  Re-measured: `(10, 2^64-5, 512)` returns `18446744073709551611`. Reached from
-  `sec_seg.cpp:235/402` and `resource.cpp:93/218`.
+* ~~`src/fileformat/utils/other.cpp:407` — `getRealSizeInRegion`'s wrapping
+  clamp.~~ **Fixed.** `offset + requestedSize > regionSize` is now
+  `requestedSize > regionSize - offset`, which asks the same question without
+  the sum; `offset < regionSize` is established two lines above, so the
+  subtraction cannot wrap either. Six cases in `tests/fileformat/other_tests.cpp`,
+  four of them pinning the in-range answers so the clamp cannot be tightened by
+  accident. Verified by restoring the old line: the two wrapping cases fail and
+  the four in-range cases do not.
 * `src/fileformat/types/resource_table/bitmap_image.cpp:210, 302, 383, 437, 490`
   — unchecked `nBytesInRow * nRows` from header width/height/bitCount, feeding
   the clamp above.

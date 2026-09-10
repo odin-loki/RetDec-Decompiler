@@ -159,6 +159,10 @@ readonly GATED_ELSEWHERE=(
 	"demangler:scripts/ci/check_demangler_tests.sh (DEM-01, standalone-check.yml)"
 	"cpdetect:scripts/ci/check_fileformat_tests.sh (FF-01, standalone-check.yml)"
 	"loader:scripts/ci/check_fileformat_tests.sh (FF-01, standalone-check.yml)"
+	# tests/fileformat is in SUITES as well, which is not a contradiction: the
+	# four files in its PARTIAL_SUITES entry run here, and FF-01 runs all
+	# sixteen against the system LLVM. It is named here so that removing the
+	# partial entry cannot silently take the other twelve with it.
 	"gui:built and run directly by ctest-linux.yml's 'GUI unit tests (headless)' step"
 	"decompiler:script-driven tests that set LABELS themselves, so ctest -L unit reaches them"
 	"managed_integration:sets LABELS itself, so ctest -L unit reaches it"
@@ -242,10 +246,16 @@ readonly EXTRA_SOURCES=(
 # "suite:file.cpp file.cpp"
 readonly PARTIAL_SUITES=(
 	"retdec:semantic_recovery_export_test.cpp thread_pool_test.cpp managed_decompiler_test.cpp"
-	# The other eleven files in tests/fileformat/ drive retdec::fileformat,
-	# which publicly links LLVM. These three do not: the lattice, the DER
-	# decoder, and CharacterIterator, whose header includes only <cctype> and
-	# <iterator>.
+	# The other twelve files in tests/fileformat/ drive retdec::fileformat,
+	# which publicly links LLVM. These four do not: the lattice, the DER
+	# decoder, CharacterIterator -- whose header includes only <cctype> and
+	# <iterator> -- and the ELFIO bounds test, which is header-only.
+	#
+	# The twelve are not unrun; FF-01 builds the whole directory against the
+	# distribution llvm-dev. They stay out of this gate because its contract is
+	# a compiler plus deps/, and they need LLVM headers. Splitting them this way
+	# keeps the fast path fast: these four answer in seconds, the other twelve
+	# after a five-minute link.
 	"fileformat:format_lattice_test.cpp asn1_test.cpp character_iterator_test.cpp elfio_bounds_test.cpp"
 )
 

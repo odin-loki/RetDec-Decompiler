@@ -5,6 +5,7 @@ add_executable(retdec-fileformat-tests
     elfio_bounds_test.cpp
     format_lattice_test.cpp
     lief_adapter_test.cpp
+    other_tests.cpp
 )
 
 target_compile_features(retdec-fileformat-tests PRIVATE cxx_std_17)

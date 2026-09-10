@@ -180,6 +180,15 @@ guards:
   `deps/` with sources rather than being download stubs. FF-01 builds all of
   it. `unpacker` really is blocked, but by YARA rather than by LLVM, and the
   entry now says so.
+
+  `fileformat` is the fourth, and it was hidden differently: it is *in* `SUITES`,
+  which reads as covered, but its `PARTIAL_SUITES` entry names the four files
+  that need no LLVM and the other twelve went nowhere. Eleven of those twelve
+  also carried a reason in `check_cmake_sources.sh` — "not carried through the
+  LLVM 23.1.0 migration and not yet re-enabled" — so two separate lists agreed
+  they were dead. All twelve compile and pass against the distribution
+  `llvm-dev`, and FF-01 has run the whole directory since. 83 of the suite's 129
+  cases had been evaluated by nothing.
 * `.github/workflows/standalone-check.yml` runs the check under both `g++` and
   `clang++`, plus an ASan/UBSan job, on every pull request. Two compilers is not
   redundancy: Clang rejects code GCC quietly miscompiles, and the first run of

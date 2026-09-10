@@ -1,14 +1,29 @@
 #!/usr/bin/env bash
-# FF-01 — build and run tests/cpdetect and tests/loader against the system LLVM.
+# FF-01 — build and run tests/cpdetect, tests/loader and tests/fileformat against
+# the system LLVM.
 #
 # Why this exists
 # ---------------
-# Both suites -- 74 assertions over the layer that turns a file on disk into
-# sections, segments and symbols -- ran in no gate at all, for the same two
-# reasons as L2H-01, SEM-01 and DEM-01: standalone_check.sh skips anything that
-# needs a third-party library, and ctest-linux neither builds the test targets
-# nor selects them (gtest_discover_tests attaches no labels, so `ctest -L unit`
+# These suites -- the layer that turns a file on disk into sections, segments
+# and symbols -- ran in no gate at all, for the same two reasons as L2H-01,
+# SEM-01 and DEM-01: standalone_check.sh skips anything that needs a
+# third-party library, and ctest-linux neither builds the test targets nor
+# selects them (gtest_discover_tests attaches no labels, so `ctest -L unit`
 # reaches only the three tests/ directories that set LABELS themselves).
+#
+# tests/fileformat was the half of that hole this check left open. It is named
+# in standalone_check.sh's SUITES, which reads as covered, but its
+# PARTIAL_SUITES entry builds four of its sixteen files -- the lattice, the DER
+# decoder, CharacterIterator and the elfio bounds test, the ones that need no
+# LLVM. The other twelve drive retdec::fileformat itself: the ELF, PE, COFF,
+# Mach-O, Intel HEX, raw-data and AR readers, format detection and the format
+# factory. Counted before this check picked them up: 46 of the suite's 129 test
+# cases ran somewhere and 83 ran nowhere.
+#
+# They cost nothing to add. src/fileformat is already compiled here -- cpdetect
+# and loader link it -- and all sixteen files compile against the distribution
+# llvm-dev, measured with -fsyntax-only against LLVM 18.1.3 before the floor
+# below was set.
 #
 # src/fileformat was assumed to need the pinned llvm-project. It does not: it
 # uses llvm/Object/COFF.h, llvm/Object/Archive.h and a handful of
@@ -25,6 +40,7 @@
 #
 # Usage: bash scripts/ci/check_fileformat_tests.sh [--llvm-config PATH]
 #                                                  [--jobs N] [--keep]
+#        [--min-cpdetect N] [--min-loader N] [--min-fileformat N]
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -34,6 +50,7 @@ LLVM_CONFIG=""
 JOBS="$(nproc 2>/dev/null || echo 4)"
 MIN_CPDETECT=9
 MIN_LOADER=60
+MIN_FILEFORMAT=130
 KEEP=0
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -41,6 +58,7 @@ while [[ $# -gt 0 ]]; do
 		--jobs) JOBS="$2"; shift 2 ;;
 		--min-cpdetect) MIN_CPDETECT="$2"; shift 2 ;;
 		--min-loader) MIN_LOADER="$2"; shift 2 ;;
+		--min-fileformat) MIN_FILEFORMAT="$2"; shift 2 ;;
 		--keep) KEEP=1; shift ;;
 		*) echo "Unknown arg: $1" >&2; exit 2 ;;
 	esac
@@ -174,6 +192,7 @@ build_and_run() {
 status=0
 build_and_run cpdetect "${MIN_CPDETECT}" || status=1
 build_and_run loader "${MIN_LOADER}" || status=1
+build_and_run fileformat "${MIN_FILEFORMAT}" || status=1
 [[ "${status}" -eq 0 ]] || exit 1
 
 echo "FF-01: OK against LLVM ${LLVM_VERSION}"

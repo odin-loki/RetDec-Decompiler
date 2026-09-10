@@ -404,7 +404,20 @@ std::size_t getRealSizeInRegion(std::size_t offset, std::size_t requestedSize, s
 		return 0;
 	}
 
-	return (!requestedSize || offset + requestedSize > regionSize) ? regionSize - offset : requestedSize;
+	// `offset + requestedSize > regionSize` was the test here, and it is a
+	// wrapping sum: at offset 10 with requestedSize 0xFFFFFFFFFFFFFFFB in a
+	// 512-byte region it computes 5, decides 5 is inside the region, and hands
+	// back 18446744073709551611. Four callers -- SecSeg::getBytes and
+	// getString, Resource::getBytes and getString -- take that number and index
+	// a std::vector with it.
+	//
+	// `offset < regionSize` was established above, so `regionSize - offset` is
+	// the space actually left and cannot itself wrap. Comparing against it
+	// asks the same question without the sum, and gives the same answer for
+	// every request that did not wrap.
+	const std::size_t available = regionSize - offset;
+
+	return (!requestedSize || requestedSize > available) ? available : requestedSize;
 }
 
 /**
