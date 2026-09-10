@@ -5,10 +5,18 @@
 # ---------------
 # `tests/retdec/llvm_to_ssa_test.cpp` was run by nothing.  `scripts/
 # standalone_check.sh` builds only the modules that need no LLVM, and this
-# adapter needs `llvm/IR`; the CMake suite that would build it is behind
-# `RETDEC_ENABLE_LLVMIR2HLL_TESTS`, which is behind `RETDEC_TESTS`, and
-# ctest-linux configures with `RETDEC_TESTS:BOOL=OFF`.  So the file compiled in
-# nobody's build and its assertions were never evaluated.
+# adapter needs `llvm/IR`.
+#
+# This comment used to add "and ctest-linux configures with
+# RETDEC_TESTS:BOOL=OFF", which is not true: the full-linux-debug preset has
+# set RETDEC_TESTS to ON since 2026-08-25, overriding the OFF in
+# _optionDefaults.  The suite is configured there.  It still never ran, for two
+# reasons, both measured with a two-test probe project: ctest-linux's build step
+# names its targets explicitly and no test target is among them, so nothing
+# compiles the suite; and `gtest_discover_tests` attaches no labels, so the
+# `ctest -L unit` step selects neither the `<target>_NOT_BUILT` placeholder nor,
+# once built, the real test cases.  Either way the file compiled in nobody's
+# build and its assertions were never evaluated.
 #
 # That matters more than it sounds.  `buildSsaModule` is the single producer of
 # the SSA that every structural detector consumes, and the detectors' own unit

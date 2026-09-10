@@ -474,9 +474,14 @@ void SemDecoder::propagateUndefFlags(std::vector<DecodedInstr>& instrs)
 
 		// Update the current undefined flags state.
 		// Defined flags clear the undefined set; undefined flags add to it.
-		curUndef &= ~fe.defined;   // defined flags are no longer undef
-		curUndef &= ~fe.preserved; // preserved means they retain their state
-		curUndef |= fe.undefined;  // newly undefined flags
+		// A preserved flag keeps the value it had, undefined included, so it
+		// must NOT be cleared here. It was, and a well-formed FlagsEffect
+		// partitions the flags into defined | preserved | undefined -- so the
+		// two masks together cleared everything and this reduced to
+		// curUndef' = fe.undefined. Undefinedness died at the very next
+		// instruction, whatever that instruction was.
+		curUndef &= ~fe.defined;  // a deterministic write ends undefinedness
+		curUndef |= fe.undefined; // newly undefined flags
 	}
 }
 
@@ -608,7 +613,6 @@ std::vector<uint64_t> SemDecoder::bestPath(const DecodeGraph& g,
     std::unordered_map<uint64_t, double>   score;
     std::unordered_map<uint64_t, uint64_t> pred;
 
-    static constexpr double kNegInf = -std::numeric_limits<double>::infinity();
     score[startAddr] = 0.0;
 
     // Process in address order.
@@ -629,28 +633,42 @@ std::vector<uint64_t> SemDecoder::bestPath(const DecodeGraph& g,
         double nextScore = s + node.logFreq;
 
         for (uint64_t succ : node.successors) {
-			auto& ss = score[succ];
-			if (score.find(succ) == score.end()) ss = kNegInf;
-			if (nextScore > ss)
+			// operator[] would INSERT a value-initialised 0.0 here, which is
+			// what the -infinity guard below it was written to undo -- except
+			// that the insert happens first, so find() always succeeded and
+			// the guard never ran. Every logFreq is negative, so every partial
+			// score is negative, so `nextScore > 0.0` was false for every edge
+			// in every graph: pred stayed empty and the traceback below broke
+			// on its first step. Look the successor up without creating it.
+			auto sucIt = score.find(succ);
+			if (sucIt == score.end())
 			{
-				ss = nextScore;
+				score.emplace(succ, nextScore);
+				pred[succ] = addr;
+			}
+			else if (nextScore > sucIt->second)
+			{
+				sucIt->second = nextScore;
 				pred[succ] = addr;
 			}
 		}
 	}
 
-	// Find the end node with the best score at or near endAddr.
-	// Walk backwards from the highest-scored node <= endAddr.
+	// The end node is the one whose decode reaches furthest into the region.
+	//
+	// Not the highest-scored one: scores are sums of log-frequencies, so they
+	// are monotonically DECREASING along any path, and maximising over them
+	// picks whichever node is nearest the start -- startAddr itself, at 0.0.
+	// "Max-likelihood path through [startAddr, endAddr)" means the decode that
+	// covers the region; the DP above has already chosen the best path to each
+	// node, so all that is left is to say which node ends it. Candidates are
+	// the nodes the DP actually reached, which is what `score` holds.
 	uint64_t best = startAddr;
-	double bestScore = kNegInf;
 	for (auto& [addr, s]: score)
 	{
+		(void)s;
 		if (addr >= endAddr) continue;
-		if (s > bestScore)
-		{
-			bestScore = s;
-			best = addr;
-		}
+		if (addr > best) best = addr;
 	}
 
 	// Traceback.

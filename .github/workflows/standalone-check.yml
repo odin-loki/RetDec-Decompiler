@@ -71,10 +71,10 @@ jobs:
       # instead of on none.  gtest/gmock come from apt because
       # tests/llvmir2hll uses TEST_F, MOCK_METHOD and gmock matchers, which the
       # tests/standalone shim does not implement.
-      - name: Install LLVM headers and gtest
+      - name: Install LLVM headers, gtest and Capstone
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq llvm-dev libgtest-dev libgmock-dev
+          sudo apt-get install -y -qq llvm-dev libgtest-dev libgmock-dev libcapstone-dev
 
       # ADAPT-01. src/retdec/llvm_to_ssa.cpp is the single producer of the SSA
       # every structural detector consumes, and its tests were built by nothing.
@@ -82,10 +82,35 @@ jobs:
         run: bash scripts/ci/check_llvm_adapter.sh
 
       # L2H-01. tests/llvmir2hll is 1767 assertions over the component that
-      # writes the decompiler's C output, and ctest-linux configures with
-      # RETDEC_TESTS:BOOL=OFF, so none of them ran anywhere.
+      # writes the decompiler's C output, and none of them ran anywhere.
+      #
+      # An earlier version of this comment blamed RETDEC_TESTS:BOOL=OFF. That
+      # was wrong -- the full-linux-debug preset has set RETDEC_TESTS to ON
+      # since 2026-08-25, overriding the OFF in _optionDefaults. The real
+      # reasons are two, and both were measured with a two-test probe project:
+      #
+      #   1. ctest-linux's build step names its targets explicitly and no test
+      #      target is among them, so the suite is never compiled. An unbuilt
+      #      gtest_discover_tests target shows up under plain `ctest -N` as
+      #      `<target>_NOT_BUILT`.
+      #   2. gtest_discover_tests attaches NO labels unless asked, and the
+      #      "Unit tests" step runs `ctest -L unit`. The NOT_BUILT placeholder
+      #      is unlabelled, so `-L unit` does not select it -- and neither are
+      #      the real test cases once the target IS built.
+      #
+      # So `ctest -L unit` selects only the three tests/ directories that set
+      # LABELS themselves (decompiler, managed_integration, neural). Every
+      # module suite under tests/ is invisible to it.
       - name: L2H-01 llvmir2hll suite
         run: bash scripts/ci/check_llvmir2hll_tests.sh --jobs 4
+
+      # SEM-01. src/sem_decoder needs <capstone/capstone.h>, so
+      # standalone_check.sh lists it in EXCLUDED_REASONS -- and that silently
+      # took its 45 test cases with it, because nothing else runs them either
+      # (see the two reasons above). The decoder that turns machine code into
+      # semantic IR had no gate at all.
+      - name: SEM-01 sem_decoder suite
+        run: bash scripts/ci/check_sem_decoder_tests.sh
 
   sanitizers:
     name: asan+ubsan

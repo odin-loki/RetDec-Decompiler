@@ -133,6 +133,59 @@ readonly UNTESTED_MODULES=(
 	"experimental:staging area for code that has not settled; nothing here is API yet"
 )
 
+# Test suites this gate does not run, and the CI job that does.
+#
+# Why this list has to exist: a module listed in EXCLUDED_REASONS is kept out of
+# the fast path on purpose, and the SUITES drift check below only fires for a
+# suite whose module IS in the fast path -- so excluding a module silently took
+# its whole test suite with it, and nothing anywhere said so.  sem_decoder's 45
+# cases sat in that hole with two live defects in them.
+#
+# Nothing else runs them either.  Measured with a two-test probe project against
+# CMake's GoogleTest module: ctest-linux's build step names its targets
+# explicitly and no test target is among them, so an unbuilt
+# gtest_discover_tests target appears under plain `ctest -N` only as
+# `<target>_NOT_BUILT`; and gtest_discover_tests attaches NO labels, so the
+# `ctest -L unit` step selects neither that placeholder nor the real test cases
+# once the target IS built.  `ctest -L unit` therefore reaches only the three
+# tests/ directories that set LABELS themselves.
+#
+# So: "runs in ctest" is not a claim this file will accept.  Each entry names a
+# gate that actually executes the suite, and --audit fails on any tests/
+# directory that is in neither SUITES nor here.
+readonly GATED_ELSEWHERE=(
+	"llvmir2hll:scripts/ci/check_llvmir2hll_tests.sh (L2H-01, standalone-check.yml)"
+	"sem_decoder:scripts/ci/check_sem_decoder_tests.sh (SEM-01, standalone-check.yml)"
+	"gui:built and run directly by ctest-linux.yml's 'GUI unit tests (headless)' step"
+	"decompiler:script-driven tests that set LABELS themselves, so ctest -L unit reaches them"
+	"managed_integration:sets LABELS itself, so ctest -L unit reaches it"
+	"algorithm_recovery:python suites run by ci-smoke.yml via scripts/check_push_gates.sh"
+)
+
+# Test suites that no gate runs, with the reason and what it would take.
+#
+# This is a debt list, not an exemption: every entry is a suite whose assertions
+# are evaluated nowhere.  It is here so the number is visible and countable
+# instead of being discovered one defect at a time.  An entry leaves when a gate
+# starts running it, not when someone decides it is fine.
+readonly UNGATED_SUITES=(
+	"bin2llvmir:needs the pinned llvm-project; no gate builds it"
+	"capstone2llvmir:needs the pinned llvm-project and Capstone; no gate builds it"
+	"llvmir-emul:needs the pinned llvm-project; no gate builds it"
+	"cpdetect:needs retdec::fileformat, which needs the pinned llvm-project"
+	"loader:needs retdec::fileformat, which needs the pinned llvm-project"
+	"unpacker:needs retdec::fileformat, which needs the pinned llvm-project"
+	"demangler:needs retdec::demangler's LLVM-backed itanium parser"
+	"opencl:needs an OpenCL ICD loader, which no runner installs"
+	"benchmark:performance harness, run by perf-nightly.yml on a schedule not a push"
+	"crash_corpus:fixture directory, no assertions of its own"
+	"decompile_samples:fixture directory, no assertions of its own"
+	"decompilebench:fixture directory, no assertions of its own"
+	"test_binaries:fixture directory, no assertions of its own"
+	"verification:fixture directory, no assertions of its own"
+	"standalone:the gtest shim this script links, not a suite"
+)
+
 # Modules whose own CMakeLists asks for a later language standard than the rest
 # of the tree.  Kept in sync by --audit, which probes each module at its
 # declared standard.
@@ -324,17 +377,44 @@ if [ "$MODE" = audit ]; then
 	declare -A excludedSuite=()
 	for entry in "${EXCLUDED_SUITES[@]}"; do excludedSuite["${entry%%:*}"]=1; done
 
+	declare -A gatedElsewhere=()
+	for entry in "${GATED_ELSEWHERE[@]}"; do gatedElsewhere["${entry%%:*}"]=1; done
+	declare -A ungated=()
+	for entry in "${UNGATED_SUITES[@]}"; do ungated["${entry%%:*}"]=1; done
+
 	for d in tests/*/; do
 		t="$(basename "$d")"
 		shopt -s nullglob
 		tsrcs=("$d"*.cpp)
 		shopt -u nullglob
-		[ ${#tsrcs[@]} -eq 0 ] && continue
 		[ -n "${declaredSuite[$t]:-}" ] && continue
 		[ -n "${excludedSuite[$t]:-}" ] && continue
-		# Only complain when the code under test is already being compiled.
+		[ -n "${gatedElsewhere[$t]:-}" ] && continue
+		[ -n "${ungated[$t]:-}" ] && continue
+		[ ${#tsrcs[@]} -eq 0 ] && continue
+		# Every remaining tests/ directory with sources in it is a suite that
+		# runs in no gate and that nobody has said so about.  The old check only
+		# fired when the module was already in the fast path, which is exactly
+		# the case that CANNOT go unnoticed -- so excluding a module took its
+		# suite off the map for free.
 		if [ -n "${declared[$t]:-}" ]; then
 			bad "$t has a test suite and its module is in the fast path, but SUITES does not run it"
+		else
+			bad "$t has a test suite that no gate runs -- wire one up, or record which job does in GATED_ELSEWHERE, or admit the debt in UNGATED_SUITES"
+		fi
+		status=1
+	done
+
+	# And the reverse drift: a name in either list that no longer matches a
+	# tests/ directory, or that SUITES has since started running.  A stale
+	# exemption is how a suite gets excused twice.
+	for entry in "${GATED_ELSEWHERE[@]}" "${UNGATED_SUITES[@]}"; do
+		t="${entry%%:*}"
+		if [ ! -d "tests/$t" ]; then
+			bad "tests/$t does not exist, but it is still listed as gated or ungated"
+			status=1
+		elif [ -n "${declaredSuite[$t]:-}" ]; then
+			bad "$t is in SUITES now, so remove it from GATED_ELSEWHERE/UNGATED_SUITES"
 			status=1
 		fi
 	done

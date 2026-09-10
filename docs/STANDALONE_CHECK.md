@@ -134,6 +134,33 @@ guards:
   may be listed in `UNTESTED_MODULES` with a reason, which makes having no tests
   a decision rather than an oversight. That check found 933 test
   cases across 17 suites that were being compiled and never run.
+
+  The `SUITES` half of that used to fire only when the module under test was
+  already in the fast path — which is the one case that cannot go unnoticed for
+  long. Excluding a module from `MODULES` therefore took its whole test suite
+  off the map for free, and `sem_decoder`'s 45 cases sat in that hole with two
+  live defects in them. It now checks *every* `tests/` directory: a suite that
+  is in neither `SUITES` nor `GATED_ELSEWHERE` nor `UNGATED_SUITES` fails the
+  audit, and a name in either of those two lists that no longer matches a
+  directory — or that `SUITES` has since started running — fails it too.
+
+  `GATED_ELSEWHERE` names, per suite, the CI job that actually executes it.
+  "It runs in ctest" is not accepted as an answer, because it does not: measured
+  with a two-test probe project against CMake's `GoogleTest` module,
+  `gtest_discover_tests` attaches **no labels**, so `ctest -L unit` — what
+  `ctest-linux.yml` runs — selects none of the discovered cases even when the
+  target is built; and `ctest-linux.yml` names its build targets explicitly, so
+  no test target is compiled in the first place, leaving only an unlabelled
+  `<target>_NOT_BUILT` placeholder that `-L unit` also skips. `ctest -L unit`
+  reaches exactly the three `tests/` directories that set `LABELS` themselves.
+
+  `UNGATED_SUITES` is the debt list: suites whose assertions are evaluated
+  nowhere at all, each with the reason. It is not an exemption — an entry leaves
+  when a gate starts running the suite. It currently holds 15 entries, of which
+  7 are real suites (`bin2llvmir`, `capstone2llvmir`, `llvmir-emul`, `cpdetect`,
+  `loader`, `unpacker`, `demangler`) blocked on the pinned `llvm-project` build,
+  1 (`opencl`) on an ICD loader, and the rest are fixture directories, the gtest
+  shim itself, or behind an off-by-default option.
 * `.github/workflows/standalone-check.yml` runs the check under both `g++` and
   `clang++`, plus an ASan/UBSan job, on every pull request. Two compilers is not
   redundancy: Clang rejects code GCC quietly miscompiles, and the first run of

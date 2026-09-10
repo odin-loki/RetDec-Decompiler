@@ -544,3 +544,198 @@ TEST(DecoderInit, X86_64ModeCreates)
 {
     EXPECT_NO_THROW({ SemDecoder d(SemDecoder::Mode::X86_64); });
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// bestPath: relaxation over the overlapping-decode graph
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The relaxation step read
+//
+//     auto& ss = score[succ];
+//     if (score.find(succ) == score.end()) ss = kNegInf;
+//
+// and operator[] INSERTS a value-initialised 0.0 before the find() runs, so
+// the guard was dead and a first-time successor started at 0.0 rather than
+// -inf. Every logFreq is a log-frequency plus a length penalty, so every
+// partial score is strictly negative and `nextScore > ss` was false for every
+// edge in every graph: pred stayed empty, the traceback broke on its first
+// step, and bestPath returned a two-element path regardless of the input.
+//
+// The same operator[] also left a 0.0 entry behind for each successor it
+// refused to relax, and the "best end node" loop maximises over score -- so
+// the node it picked was whichever spurious 0.0 the unordered_map happened to
+// hand back first, not the best-scoring one.
+
+namespace {
+
+/// A linear chain 0x1000 -> 0x1002 -> 0x1004 with the given per-node scores.
+DecodeGraph makeChain(const std::vector<double>& logFreqs)
+{
+	DecodeGraph g;
+	for (std::size_t i = 0; i < logFreqs.size(); ++i)
+	{
+		DecodeNode n;
+		n.addr = 0x1000 + 2 * i;
+		n.len = 2;
+		n.logFreq = logFreqs[i];
+		if (i + 1 < logFreqs.size()) n.successors.push_back(0x1000 + 2 * (i + 1));
+		g.nodes[n.addr] = n;
+	}
+	return g;
+}
+
+} // namespace
+
+TEST(BestPath, AChainIsFollowedToItsEnd)
+{
+	// Three nodes, one edge each. The best path from 0x1000 covers all three.
+	DecodeGraph g = makeChain({-1.0, -1.0, -1.0});
+
+	auto path = SemDecoder::bestPath(g, 0x1000, 0x1010);
+
+	ASSERT_EQ(3u, path.size()) << "the traceback stopped early";
+	EXPECT_EQ(0x1000u, path[0]);
+	EXPECT_EQ(0x1002u, path[1]);
+	EXPECT_EQ(0x1004u, path[2]);
+}
+
+TEST(BestPath, TheHigherScoringPredecessorWins)
+{
+	// Two ways into 0x1006:
+	//   0x1000 -> 0x1002 -> 0x1006   total -1.0 + -1.0 = -2.0
+	//   0x1000 -> 0x1004 -> 0x1006   total -1.0 + -9.0 = -10.0
+	// The first is better, so 0x1006's predecessor must be 0x1002.
+	DecodeGraph g;
+	auto add = [&g](uint64_t a, double f, std::vector<uint64_t> succs) {
+		DecodeNode n;
+		n.addr = a;
+		n.len = 2;
+		n.logFreq = f;
+		n.successors = std::move(succs);
+		g.nodes[a] = n;
+	};
+	add(0x1000, -1.0, {0x1002, 0x1004});
+	add(0x1002, -1.0, {0x1006});
+	add(0x1004, -9.0, {0x1006});
+	add(0x1006, -1.0, {});
+
+	auto path = SemDecoder::bestPath(g, 0x1000, 0x1010);
+
+	ASSERT_EQ(3u, path.size()) << "the traceback stopped early";
+	EXPECT_EQ(0x1000u, path[0]);
+	EXPECT_EQ(0x1002u, path[1]) << "the worse predecessor was chosen";
+	EXPECT_EQ(0x1006u, path[2]);
+}
+
+TEST(BestPath, ANodeNoEdgeReachesIsNotScored)
+{
+	// 0x1004 is in the graph but nothing points at it. It must not turn up as
+	// the best end node -- which is exactly what a spurious 0.0 entry did,
+	// since 0.0 beats every real (negative) score.
+	DecodeGraph g;
+	auto add = [&g](uint64_t a, double f, std::vector<uint64_t> succs) {
+		DecodeNode n;
+		n.addr = a;
+		n.len = 2;
+		n.logFreq = f;
+		n.successors = std::move(succs);
+		g.nodes[a] = n;
+	};
+	add(0x1000, -1.0, {0x1002});
+	add(0x1002, -1.0, {});
+	add(0x1004, -1.0, {}); // unreachable
+
+	auto path = SemDecoder::bestPath(g, 0x1000, 0x1010);
+
+	EXPECT_EQ(0x1002u, path.back()) << "an unreachable node was picked as the end";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// propagateUndefFlags: undefinedness has to survive more than one instruction
+// ═══════════════════════════════════════════════════════════════════════════════
+
+TEST(UndefPropagation, UndefinednessSurvivesAPreservingInstruction)
+{
+	// The transfer function was
+	//     curUndef &= ~fe.defined;    // defined flags are no longer undef
+	//     curUndef &= ~fe.preserved;  // <-- preserved means they retain state
+	//     curUndef |=  fe.undefined;
+	// and a well-formed FlagsEffect partitions the flags into defined,
+	// preserved and undefined -- so the two ANDs together cleared everything
+	// and the whole function reduced to curUndef' = fe.undefined. Undefinedness
+	// died at the next instruction, whatever that instruction was.
+	//
+	// "Preserved" is the opposite: the flag keeps the value it had, undefined
+	// included. Three instructions is the shortest sequence that shows it; the
+	// existing two-instruction test passed either way.
+	DecodedInstr i0, i1, i2;
+	i0.isValid = i1.isValid = i2.isValid = true;
+	i0.len = i1.len = i2.len = 1;
+
+	// i0: defines ZF, leaves OF architecturally undefined.
+	FlagsEffect fe0;
+	fe0.defined = Flags::ZF;
+	fe0.undefined = Flags::OF;
+	fe0.preserved = Flags::ALL & ~(Flags::ZF | Flags::OF);
+	i0.flagsEffect = fe0;
+
+	// i1: touches nothing at all -- OF is still undefined after it.
+	FlagsEffect fe1;
+	fe1.defined = Flags::NONE;
+	fe1.undefined = Flags::NONE;
+	fe1.preserved = Flags::ALL;
+	i1.flagsEffect = fe1;
+
+	// i2: same, and this is the one that must still see OF as undefined.
+	i2.flagsEffect = fe1;
+
+	std::vector<DecodedInstr> seq = {i0, i1, i2};
+	SemDecoder::propagateUndefFlags(seq);
+
+	auto hasUndef = [](const DecodedInstr& d) {
+		for (const auto& op: d.ops)
+			if (op.type == SemOpType::Undef) return true;
+		return false;
+	};
+
+	EXPECT_TRUE(hasUndef(seq[1])) << "the instruction right after the undef missed it";
+	EXPECT_TRUE(hasUndef(seq[2])) << "undefinedness did not survive one preserving instruction";
+}
+
+TEST(UndefPropagation, ARedefinitionEndsIt)
+{
+	// The other half of the same transfer function: once something writes a
+	// deterministic value to OF, it is no longer undefined and consumers
+	// downstream must stop being told that it is.
+	DecodedInstr i0, i1, i2;
+	i0.isValid = i1.isValid = i2.isValid = true;
+	i0.len = i1.len = i2.len = 1;
+
+	FlagsEffect fe0;
+	fe0.defined = Flags::NONE;
+	fe0.undefined = Flags::OF;
+	fe0.preserved = Flags::ALL & ~Flags::OF;
+	i0.flagsEffect = fe0;
+
+	// i1 redefines OF.
+	FlagsEffect fe1;
+	fe1.defined = Flags::OF;
+	fe1.undefined = Flags::NONE;
+	fe1.preserved = Flags::ALL & ~Flags::OF;
+	i1.flagsEffect = fe1;
+
+	// i2 preserves everything; OF is defined by now.
+	FlagsEffect fe2;
+	fe2.defined = Flags::NONE;
+	fe2.undefined = Flags::NONE;
+	fe2.preserved = Flags::ALL;
+	i2.flagsEffect = fe2;
+
+	std::vector<DecodedInstr> seq = {i0, i1, i2};
+	SemDecoder::propagateUndefFlags(seq);
+
+	bool undefAtEnd = false;
+	for (const auto& op: seq[2].ops)
+		if (op.type == SemOpType::Undef) undefAtEnd = true;
+	EXPECT_FALSE(undefAtEnd) << "a redefined flag was still reported undefined";
+}
