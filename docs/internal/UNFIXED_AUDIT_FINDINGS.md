@@ -566,6 +566,40 @@ What is still open is one step further:
   that links the `.cu` instead of the `.cpp`, or splitting `GpuScanner` so the
   device path is a separate type.
 
+### The Imortek C back end is compiled, unit-tested, and linked into no tool
+
+`CodeGenPass::generateFunction()` and `generateUnit()` — the entry points of
+`src/codegen`, which turns SSA plus a `StructNode` tree into a C AST — have
+no caller anywhere in `src/`. Their only callers are `tests/codegen`.
+
+The link graph says the same thing from the other end. `retdec-codegen` is
+linked by exactly one target, `retdec-cxx-backend`; `retdec-cxx-backend` is
+linked by exactly one target, `retdec-cxx-backend-tests`.
+`retdec-decompiler` links `retdec::llvmir2hll` — the Avast back end — and
+neither of the two. So `src/cxx_backend` consumes a `codegen::CUnit` that
+nothing outside a test ever produces.
+
+This is not the same as `src/opencl`, which no `add_subdirectory` names:
+these are built, warned about, and unit-tested on every run of
+`scripts/standalone_check.sh`. What they are not is *reached*. Every defect
+found in them on this branch — the goto with no label, `CondNormaliser`
+having no comparison to match, `GotoEliminator` having no label to fold
+against, `Stats` counters that could only read zero — is a defect in code
+the shipped decompiler does not execute.
+
+That does not make the fixes wrong; a back end being built toward should be
+correct before it is switched on, and each was verified by reverting it. It
+does mean **none of them can explain a CC-01 failure**, which measures
+`retdec-decompiler` and therefore `llvmir2hll`. Where a commit message on
+this branch says the emitted C was broken by one of these, read it as the
+code being broken rather than the output — the correction below says so
+where it matters.
+
+Closing this is not a small change and is not attempted here: it means
+deciding whether the Imortek back end replaces `llvmir2hll` or sits beside
+it behind an option, and either answer is a design decision with a corpus
+measurement attached, not a wiring fix.
+
 ### `src/opencl/` and its eight test suites are built by nothing
 
 `src/opencl/` is 4,529 lines of OpenCL host code — context, disk cache,
@@ -906,6 +940,20 @@ API level instead, one of them the control for an ordinary statement, which
 still falls through to its successor.
 
 ## Corrections to claims made in this branch's commit messages
+
+### The codegen goto fixes are not on the shipped path
+
+`d4d9c9e` and `782117d` fix real defects in `src/codegen` — every `goto` it
+emitted named a label nothing wrote, and `GotoEliminator` consequently had
+nothing to eliminate against. Both messages describe the consequence as an
+uncompilable translation unit, which is what the code would produce.
+
+It produces nothing today. `CodeGenPass` has no caller outside
+`tests/codegen`, and `retdec-decompiler` links `llvmir2hll` instead — see
+the structural entry above. So neither fix changes any output the corpus
+measures, and neither is a candidate explanation for CC-01's
+`label 'lab_0x112c' used but not defined`, which comes from the `llvmir2hll`
+path.
 
 ### `getType()` is not a portable spelling of `getPointerType()`
 
