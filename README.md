@@ -18,7 +18,7 @@ Stand-in corpus: 216 ELF binaries. Not the OSS-Fuzz paper set.
 | Metric | This fork | Stock RetDec 5.0 |
 |--------|-----------|------------------|
 | Recompile, **buildable C** (`--buildable`, default on) | **216/216** | **0/216** |
-| Recompile, default `.c` | see below — 0/216 is stale | 0/216 |
+| Recompile, default `.c` | **24/24** on the CC-01 slice; 216-wide being re-taken | 0/216 |
 | Algorithm-recovery F1, **name-blind** | **0.056** (95% CI 0.034–0.083) | n/a (no label export) |
 | Algorithm-recovery F1, name-assisted (symbolicated binaries) | 1.000 | n/a |
 
@@ -37,11 +37,15 @@ that component locally in about four minutes.
 What is measured today is CC-01
 (`scripts/ci/check_emitted_c_compiles.sh`), which hands the emitted `.c` to a
 C compiler on every `ctest-linux` run. On its 24-binary slice — hashed by
-name, so every compiler and optimisation level is represented — it measures
-**23/24**, and the run that measures the rest of the fixes is in flight. The
-216-wide number has not been re-taken since the fixes; the weekly
-`algorithm-recovery-nightly` workflow now runs CC-01 over the whole corpus so
-that it can be, and this table will carry that figure rather than this note.
+name, so every compiler and optimisation level is represented — run 272
+measured **24/24**, and that rate is now the floor: any regression turns the
+run red. Getting there took five distinct fixes in the C back end, each with
+a regression test; they are listed in
+[docs/internal/UNFIXED_AUDIT_FINDINGS.md](docs/internal/UNFIXED_AUDIT_FINDINGS.md).
+
+The 216-wide number has **not** been re-taken, so this table does not claim
+one. The weekly `algorithm-recovery-nightly` workflow now runs CC-01 over the
+whole corpus; when it reports, that figure replaces this note.
 
 Stock RetDec's `0/216` is unaffected and not re-measured here.
 

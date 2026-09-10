@@ -660,8 +660,8 @@ Every clause of that was out of date:
   `scripts/ci/check_llvmir2hll_tests.sh` runs that component against the
   system LLVM in about four minutes.
 * The number is **contradicted by this repository's own CI**. CC-01 hands the
-  emitted `.c` to a compiler on every `ctest-linux` run and has measured
-  21/24, then 23/24, over several runs — against a published 0.
+  emitted `.c` to a compiler on every `ctest-linux` run and measured 21/24,
+  then 23/24, then 24/24 — against a published 0.
 
 A stale measurement is replaced by another measurement, not by an argument,
 so `algorithm-recovery-nightly` now runs CC-01 over the whole 216-binary
@@ -702,6 +702,11 @@ the discarded `if` while the goto naming it stayed —
 
 The question is asked over the whole body now, once, with
 `GotoTargetAnalysis::hasGotoTargets()`. Three lines.
+
+**Run 272 measured the effect: CC-01 24/24, rate 1.0000.** Every emitted C
+file on the slice compiles, and the floor is that number now. F1 stayed at
+0.2302 and DET-01 at 72 binaries with 0 skipped, so declining to convert
+loops something jumps into cost neither detection quality nor determinism.
 
 **It refuses more than it strictly has to**, and deliberately. Only the
 loop-end `if` and `afterLoopEndStmts` are discarded; a goto into

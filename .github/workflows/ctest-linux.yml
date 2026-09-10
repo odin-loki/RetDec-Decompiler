@@ -233,17 +233,22 @@ jobs:
           # `putc` as a library function -- and then calling
           # `putc(c, stream, a3)` against the two-argument prototype that
           # header provides.  Semantics::getArityOfFunc() settled that one and
-          # run 266 measured 23/24 (0.9583), which is this floor.
+          # run 266 measured 23/24.
           #
-          # The one still failing is generated_shell_sort-gcc-O2:
-          # `label 'lab_0x112c' used but not defined`.  Raise the floor again
-          # when it goes.
+          # The last one was generated_shell_sort-gcc-O2,
+          # `label 'lab_0x112c' used but not defined`: splitWhileTrueLoop()
+          # refuses to split a loop something jumps into, and asked that only
+          # of the body's top-level statements, while the three
+          # while_true_to_* passes that call it discard the loop-end `if` --
+          # where the `break` a goto lands on actually sits.  Run 272 measured
+          # 24/24, so the floor is 1.0000: every emitted C file on this slice
+          # compiles, and any regression at all turns the run red.
           set -o pipefail
           rc=0
           bash scripts/ci/check_emitted_c_compiles.sh \
             --decompiler "$DEC" \
             --corpus tests/algorithm_recovery/corpus \
-            --limit 24 --timeout 120 --min-rate 0.9583 \
+            --limit 24 --timeout 120 --min-rate 1.0000 \
             --save-failures cc01-failures 2>&1 | tee /tmp/cc01.log || rc=$?
           {
             echo "### CC-01 emitted C compiles"
