@@ -112,6 +112,14 @@ jobs:
       - name: SEM-01 sem_decoder suite
         run: bash scripts/ci/check_sem_decoder_tests.sh
 
+      # DEM-01. tests/demangler is 125 assertions over the component every C++
+      # symbol in a binary reaches the output through, and it ran nowhere for
+      # the same two reasons as L2H-01. src/compiler_abi carries a second,
+      # hand-written Itanium parser whose length accumulator overflowed an int;
+      # that one was found because compiler_abi IS in a gate.
+      - name: DEM-01 demangler suite
+        run: bash scripts/ci/check_demangler_tests.sh
+
   sanitizers:
     name: asan+ubsan
     runs-on: ubuntu-latest

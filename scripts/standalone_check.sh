@@ -156,6 +156,7 @@ readonly UNTESTED_MODULES=(
 readonly GATED_ELSEWHERE=(
 	"llvmir2hll:scripts/ci/check_llvmir2hll_tests.sh (L2H-01, standalone-check.yml)"
 	"sem_decoder:scripts/ci/check_sem_decoder_tests.sh (SEM-01, standalone-check.yml)"
+	"demangler:scripts/ci/check_demangler_tests.sh (DEM-01, standalone-check.yml)"
 	"gui:built and run directly by ctest-linux.yml's 'GUI unit tests (headless)' step"
 	"decompiler:script-driven tests that set LABELS themselves, so ctest -L unit reaches them"
 	"managed_integration:sets LABELS itself, so ctest -L unit reaches it"
@@ -175,7 +176,6 @@ readonly UNGATED_SUITES=(
 	"cpdetect:needs retdec::fileformat, which needs the pinned llvm-project"
 	"loader:needs retdec::fileformat, which needs the pinned llvm-project"
 	"unpacker:needs retdec::fileformat, which needs the pinned llvm-project"
-	"demangler:needs retdec::demangler's LLVM-backed itanium parser"
 	"opencl:needs an OpenCL ICD loader, which no runner installs"
 	"benchmark:performance harness, run by perf-nightly.yml on a schedule not a push"
 	"crash_corpus:fixture directory, no assertions of its own"

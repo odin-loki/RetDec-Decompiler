@@ -99,6 +99,7 @@ CHECKS=(
 	"standalone llvm_to_ssa adapter (system LLVM):::bash scripts/ci/check_llvm_adapter.sh"
 	"standalone llvmir2hll suite (system LLVM):::bash scripts/ci/check_llvmir2hll_tests.sh"
 	"standalone sem_decoder suite (system Capstone):::bash scripts/ci/check_sem_decoder_tests.sh"
+	"standalone demangler suite (system LLVM):::bash scripts/ci/check_demangler_tests.sh"
 )
 
 if [ "${1:-}" = "--list" ]; then

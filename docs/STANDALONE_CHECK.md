@@ -156,11 +156,13 @@ guards:
 
   `UNGATED_SUITES` is the debt list: suites whose assertions are evaluated
   nowhere at all, each with the reason. It is not an exemption — an entry leaves
-  when a gate starts running the suite. It currently holds 15 entries, of which
-  7 are real suites (`bin2llvmir`, `capstone2llvmir`, `llvmir-emul`, `cpdetect`,
-  `loader`, `unpacker`, `demangler`) blocked on the pinned `llvm-project` build,
-  1 (`opencl`) on an ICD loader, and the rest are fixture directories, the gtest
-  shim itself, or behind an off-by-default option.
+  when a gate starts running the suite. It currently holds 14 entries, of which
+  6 are real suites (`bin2llvmir`, `capstone2llvmir`, `llvmir-emul`, `cpdetect`,
+  `loader`, `unpacker`) blocked on the pinned `llvm-project` build, 1 (`opencl`)
+  on an ICD loader, and the rest are fixture directories, the gtest shim itself,
+  or behind an off-by-default option. `demangler` left the list when DEM-01
+  started building it against the system LLVM: `llvm/Demangle` is stable enough
+  that a pinned build is not required to exercise 125 assertions.
 * `.github/workflows/standalone-check.yml` runs the check under both `g++` and
   `clang++`, plus an ASan/UBSan job, on every pull request. Two compilers is not
   redundancy: Clang rejects code GCC quietly miscompiles, and the first run of
