@@ -225,10 +225,14 @@ struct ReplacementNode {
     uint32_t    dstReg     = 0;   ///< Destination pointer register
     uint32_t    srcReg     = 0;   ///< Source pointer register (Memcpy)
     int64_t     fillValue  = 0;   ///< For Memset: constant fill byte
-    uint32_t    countReg   = 0;   ///< Register holding the byte count
-    int64_t     countImm   = -1;  ///< Constant byte count (-1 = register)
+	/// Byte count, or -1 when it is not known. There used to be a `countReg`
+	/// beside this for the variable-length case; nothing ever set it, so a
+	/// negative count printed as `r0` rather than as unknown. The one matcher
+	/// that produces these nodes recognises unrolled vector copies, whose
+	/// length is the number of stores times their width -- always constant.
+	int64_t countImm = -1;
 
-    // ── Span in original instruction stream ───────────────────────────────────
+	// ── Span in original instruction stream ───────────────────────────────────
     uint64_t    firstVma   = 0;   ///< VMA of first instruction replaced
     uint64_t    lastVma    = 0;   ///< VMA of last instruction replaced
     std::size_t instrCount = 0;   ///< Number of original instructions replaced

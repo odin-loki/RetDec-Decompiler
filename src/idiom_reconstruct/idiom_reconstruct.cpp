@@ -54,19 +54,25 @@ std::string ReplacementNode::debugStr() const {
     case ReplacementKind::Memset:
         os << "memset(r" << dstReg << ", " << fillValue;
         if (countImm >= 0) os << ", " << countImm;
-        else               os << ", r" << countReg;
-        os << ")"; break;
-    case ReplacementKind::Memcpy:
+		else
+			os << ", <unknown length>";
+		os << ")";
+		break;
+	case ReplacementKind::Memcpy:
         os << "memcpy(r" << dstReg << ", r" << srcReg;
         if (countImm >= 0) os << ", " << countImm;
-        else               os << ", r" << countReg;
-        os << ")"; break;
-    case ReplacementKind::Memmove:
+		else
+			os << ", <unknown length>";
+		os << ")";
+		break;
+	case ReplacementKind::Memmove:
         os << "memmove(r" << dstReg << ", r" << srcReg;
         if (countImm >= 0) os << ", " << countImm;
-        else               os << ", r" << countReg;
-        os << ")"; break;
-    }
+		else
+			os << ", <unknown length>";
+		os << ")";
+		break;
+	}
     os << "  [vma " << std::hex << firstVma << ".." << lastVma
        << ", " << std::dec << instrCount << " instrs]";
     return os.str();

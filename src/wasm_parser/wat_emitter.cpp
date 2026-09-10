@@ -1092,11 +1092,7 @@ std::string WatEmitter::decodeInstr(DisState& st, const std::vector<uint8_t>& co
 void WatEmitter::emitFuncBody(
 	const WasmModule& mod, uint32_t funcIdx, const FuncCode& code, std::ostream& out, int indent) const
 {
-	DisState st{mod, funcIdx, 0, 0, 0};
-
-	// Count params
-	uint32_t typeIdx = mod.funcTypeIndex(funcIdx);
-	if (typeIdx < mod.types.size()) st.paramCount = (uint32_t)mod.types[typeIdx].params.size();
+	DisState st{mod, funcIdx, 0};
 
 	size_t pc = 0;
 	while (pc < code.body.size())

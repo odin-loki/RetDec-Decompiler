@@ -601,6 +601,37 @@ Rusticl ICD — then the `UNBUILT_DIRS` entry comes out.
 
 
 
+
+## Three fields that could only ever hold their default
+
+A sweep of every scalar field declared under `include/retdec` for one that
+nothing anywhere assigns turned up 357 candidates, most of them options a
+caller sets and a few of them parse artefacts of the sweep itself. Three
+survived reading:
+
+* **`ReplacementNode::countReg`** was read and never written.
+  `debugStr()` renders a `Memset`/`Memcpy`/`Memmove` with a negative
+  `countImm` as `memset(r3, 0, r0)` — where the `r0` is this field, always
+  zero. The only matcher that produces these nodes recognises unrolled vector
+  copies, whose length is the number of stores times their width and is
+  therefore always constant, so `countImm` is always set and the register
+  half of the pair never carried anything. An unknown length now prints as
+  unknown, and the file comment that promised "countImm or countReg" — and a
+  `fillReg` that does not exist at all — says what the matcher actually
+  emits.
+
+* **`WatEmitter::DisState::paramCount`** was written once, from
+  `mod.types[typeIdx].params.size()`, under a comment reading "Count params",
+  and read by nothing. `localId()` resolves a local by index against the name
+  section and does not need it.
+
+* **`WatEmitter::DisState::labelCounter`** was neither written nor read.
+
+All three are gone. The sweep is not a gate: at 357 candidates against 2,755
+fields the accepted list would be larger than the signal, and the ones that
+matter are found by asking whether a field is *read* — which is what OPT-01
+already does for options.
+
 ## Three merges that drop a body drop the labels inside it
 
 `IfStructureOptimizer::tryOptimization4` and patterns 6 and 7 of

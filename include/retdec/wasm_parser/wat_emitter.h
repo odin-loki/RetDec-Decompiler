@@ -118,9 +118,7 @@ private:
     struct DisState {
         const WasmModule&  mod;
         uint32_t           funcIdx    = 0;
-        uint32_t           paramCount = 0;  // params already counted
         int                blockDepth = 0;
-        uint32_t           labelCounter = 0;
     };
 
     std::string decodeInstr(DisState& st,

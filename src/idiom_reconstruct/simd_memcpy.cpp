@@ -53,8 +53,8 @@
  *
  * ## Output
  *
- *   ReplacementKind::Memset with dstReg, fillValue (or fillReg), countImm or countReg.
- *   ReplacementKind::Memcpy with dstReg, srcReg, countImm or countReg.
+ *   ReplacementKind::Memset with dstReg, fillValue and countImm.
+ *   ReplacementKind::Memcpy with dstReg, srcReg and countImm.
  *   ReplacementKind::Memmove for backward-copy variant.
  *
  * ## Limitations

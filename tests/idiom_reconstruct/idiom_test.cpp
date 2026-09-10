@@ -893,6 +893,22 @@ TEST(ReplacementNodeTest, DebugStrMemset)
 	EXPECT_NE(s.find("memset"), std::string::npos);
 }
 
+TEST(ReplacementNodeTest, DebugStrMemsetWithNoKnownLength)
+{
+	// A negative countImm means the length is not known. It used to print
+	// `r0`, because it was rendered as a register number from a `countReg`
+	// field nothing ever assigned -- so an unknown length read as a confident
+	// claim about register zero.
+	ReplacementNode r;
+	r.kind = ReplacementKind::Memset;
+	r.dstReg = 3;
+	r.fillValue = 0;
+	std::string s = r.debugStr();
+	EXPECT_NE(s.find("memset"), std::string::npos);
+	EXPECT_NE(s.find("unknown length"), std::string::npos) << s;
+	EXPECT_EQ(s.find(", r0)"), std::string::npos) << s;
+}
+
 // ─── The SIMD mem matcher's pairing, anchor and byte count ───────────────────
 
 // A backward copy: the loads run low-to-high and the stores high-to-low, which
