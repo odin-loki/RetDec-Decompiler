@@ -28,6 +28,17 @@ environment cannot compile, a failure whose log does not yet say enough.
 
 ## 1. The 0/216 recompile failure has one cause, and it is three lines
 
+**The heading is wrong, and the number is measured now.** It took five causes,
+not one — this pass, then the libc arity mismatch, then four separate ways of
+losing a goto's label — and CC-01 measured **24/24 (rate 1.0000)** on its
+slice at run 272, against the 0/216 this section was written to explain. The
+heading is left as written because the rest of the section argues from it; the
+correction is here rather than in a rewrite.
+
+Where the 216-wide figure is concerned the honest answer is still "not
+re-taken". `algorithm-recovery-nightly` now runs CC-01 over the whole corpus
+so that it will be.
+
 **Closed by 86970d0, by the narrow route.** The pass is no longer run:
 `optimizer_manager.cpp` now carries a comment in place of the `run<>` call
 naming the three facts in this tree that break the safety argument the old
@@ -36,14 +47,18 @@ initialiser-less `VarDefStmt` unconditionally, so it must not be re-enabled
 without the use check described below; it is correct only for a back end that
 emits no declarations, and this tree has only `c_hll_writer`.
 
-**The 0/216 number is now unmeasured, not fixed.** Nothing had ever handed the
+**The 0/216 number was unmeasured, not fixed.** Nothing had ever handed the
 emitted C to a compiler -- DET-01 compares two runs, CACHE-05 compares cache on
 against cache off, the recovery gate reads detections, and all three treat the
 output as text. `scripts/ci/check_emitted_c_compiles.sh` (CC-01) is that
-missing measurement and runs in ctest-linux; until its first number is in, the
-README's 0/216 is a figure that predates this branch and nobody has re-taken.
-Sections 2 and 3 below are the other whole-file failures and are still open, so
-a jump to 216/216 was never expected from this alone.
+missing measurement and runs in ctest-linux.
+
+Its readings, in order: 21/24 on `d9e8108`, 23/24 on run 266 once the libc
+arity mismatch was fixed, 24/24 on run 272 once the last of the goto-label
+routes was. The floor is 1.0000 now, so a regression turns the run red rather
+than being noticed a round later. Sections 2 and 3 below were the other
+whole-file failures and are closed; a jump to 216/216 was never expected from
+this section alone, and it did not come from it.
 
 The original entry follows.
 
