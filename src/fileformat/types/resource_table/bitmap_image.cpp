@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "retdec/fileformat/types/resource_table/bitmap_image.h"
+#include "retdec/utils/bounds.h"
 #include "retdec/utils/conversion.h"
 #include "retdec/utils/scope_exit.h"
 #include "retdec/utils/system.h"
@@ -17,6 +18,43 @@ using namespace retdec::utils;
 
 namespace retdec {
 namespace fileformat {
+
+namespace {
+
+/**
+ * How many elements to reserve for something read out of @a icon.
+ *
+ * Every count below comes from a DIB header field the file supplies, and the
+ * products of them are large: at width 0xFFFFFFFF, height 0xFFFFFFFF and
+ * bitCount 0xFFFF, `nBytesInRow * nRows` is 1152903920473874428 -- 1.15
+ * exabytes. That is *under* std::vector's max_size(), so `reserve` of it is not
+ * a std::length_error but an allocation attempt, and the std::bad_alloc it
+ * raises is caught by nothing between here and main().
+ *
+ * parseDibHeader refuses width > 512, height > 1024 and bitCount > 32, and
+ * parseDibFormat is the only caller that reaches these functions -- so through
+ * that path nBytes is at most 2048 * 512, and this changes nothing. But the
+ * bound is four calls away, nothing at the multiplications says so, and every
+ * parseDib*Data is public: the day something else calls one, the only thing
+ * between a header field and a 1.15-exabyte allocation is this function.
+ *
+ * It is a cap on the *hint*, not on the parse. reserve() only pre-allocates;
+ * the containers still grow to whatever is actually read, so no input that
+ * parsed before parses differently now. The cap is the icon's own loaded size,
+ * because that is the most bytes any of these reads can deliver -- `getBytes`
+ * clamps to it and the `bytes.size() != nBytes` test after each call already
+ * refuses anything short.
+ *
+ * bounds::reserveFor is proved over the whole 64-bit domain in
+ * tests/verification/bounds_proof.cpp. This is its first caller; it was written
+ * for exactly this shape and nothing had used it.
+ */
+std::size_t reserveWithin(const ResourceIcon& icon, std::size_t declared)
+{
+	return retdec::utils::bounds::reserveFor(declared, icon.getLoadedSize());
+}
+
+} // anonymous namespace
 
 /**
  * Get image width
@@ -190,7 +228,7 @@ bool BitmapImage::parseDib1Data(const ResourceIcon &icon, const struct BitmapInf
 	}
 
 	std::vector<struct BitmapPixel> palette;
-	palette.reserve(paletteSize);
+	palette.reserve(reserveWithin(icon, paletteSize));
 
 	if (!parseDibPalette(icon, palette, paletteSize))
 	{
@@ -204,8 +242,8 @@ bool BitmapImage::parseDib1Data(const ResourceIcon &icon, const struct BitmapInf
 	std::size_t nBytes = nBytesInRow * nRows;
 	std::uint8_t padding = nBytesInRow - ((nColumns * hdr.bitCount + 7) / 8);
 
-	image.reserve(nRows);
-	bytes.reserve(nBytes);
+	image.reserve(reserveWithin(icon, nRows));
+	bytes.reserve(reserveWithin(icon, nBytes));
 
 	if (!icon.getBytes(bytes, hdr.headerSize() + paletteSize * 4, nBytes) || bytes.size() != nBytes)
 	{
@@ -217,7 +255,7 @@ bool BitmapImage::parseDib1Data(const ResourceIcon &icon, const struct BitmapInf
 	for (std::size_t i = 0; i < nRows; i++)
 	{
 		std::vector<struct BitmapPixel> row;
-		row.reserve(nColumns);
+		row.reserve(reserveWithin(icon, nColumns));
 
 		for (std::size_t j = 0; j < nColumns / 8; j++)
 		{
@@ -282,7 +320,7 @@ bool BitmapImage::parseDib4Data(const ResourceIcon &icon, const struct BitmapInf
 	}
 
 	std::vector<struct BitmapPixel> palette;
-	palette.reserve(paletteSize);
+	palette.reserve(reserveWithin(icon, paletteSize));
 
 	if (!parseDibPalette(icon, palette, paletteSize))
 	{
@@ -296,8 +334,8 @@ bool BitmapImage::parseDib4Data(const ResourceIcon &icon, const struct BitmapInf
 	std::size_t nBytes = nBytesInRow * nRows;
 	std::uint8_t padding = nBytesInRow - ((nColumns * hdr.bitCount + 7) / 8);
 
-	image.reserve(nRows);
-	bytes.reserve(nBytes);
+	image.reserve(reserveWithin(icon, nRows));
+	bytes.reserve(reserveWithin(icon, nBytes));
 
 	if (!icon.getBytes(bytes, hdr.headerSize() + paletteSize * 4, nBytes) || bytes.size() != nBytes)
 	{
@@ -309,7 +347,7 @@ bool BitmapImage::parseDib4Data(const ResourceIcon &icon, const struct BitmapInf
 	for (std::size_t i = 0; i < nRows; i++)
 	{
 		std::vector<struct BitmapPixel> row;
-		row.reserve(nColumns);
+		row.reserve(reserveWithin(icon, nColumns));
 
 		for (std::size_t j = 0; j < nColumns / 2; j++)
 		{
@@ -362,7 +400,7 @@ bool BitmapImage::parseDib8Data(const ResourceIcon &icon, const struct BitmapInf
 	}
 
 	std::vector<struct BitmapPixel> palette;
-	palette.reserve(paletteSize);
+	palette.reserve(reserveWithin(icon, paletteSize));
 
 	if (!parseDibPalette(icon, palette, paletteSize))
 	{
@@ -377,8 +415,8 @@ bool BitmapImage::parseDib8Data(const ResourceIcon &icon, const struct BitmapInf
 	std::uint8_t bytesPP = hdr.bitCount / 8;
 	std::uint8_t padding = nBytesInRow - (nColumns * bytesPP);
 
-	image.reserve(nRows);
-	bytes.reserve(nBytes);
+	image.reserve(reserveWithin(icon, nRows));
+	bytes.reserve(reserveWithin(icon, nBytes));
 
 	if (!icon.getBytes(bytes, hdr.headerSize() + paletteSize * 4, nBytes) || bytes.size() != nBytes)
 	{
@@ -390,7 +428,7 @@ bool BitmapImage::parseDib8Data(const ResourceIcon &icon, const struct BitmapInf
 	for (std::size_t i = 0; i < nRows; i++)
 	{
 		std::vector<struct BitmapPixel> row;
-		row.reserve(nColumns);
+		row.reserve(reserveWithin(icon, nColumns));
 
 		for (std::size_t j = 0; j < nColumns; j++)
 		{
@@ -431,8 +469,8 @@ bool BitmapImage::parseDib24Data(const ResourceIcon &icon, const struct BitmapIn
 	std::uint8_t bytesPP = hdr.bitCount / 8;
 	std::uint8_t padding = nBytesInRow - (nColumns * bytesPP);
 
-	image.reserve(nRows);
-	bytes.reserve(nBytes);
+	image.reserve(reserveWithin(icon, nRows));
+	bytes.reserve(reserveWithin(icon, nBytes));
 
 	if (!icon.getBytes(bytes, hdr.headerSize(), nBytes) || bytes.size() != nBytes)
 	{
@@ -444,7 +482,7 @@ bool BitmapImage::parseDib24Data(const ResourceIcon &icon, const struct BitmapIn
 	for (std::size_t i = 0; i < nRows; i++)
 	{
 		std::vector<struct BitmapPixel> row;
-		row.reserve(nColumns);
+		row.reserve(reserveWithin(icon, nColumns));
 
 		for (std::size_t j = 0; j < nColumns; j++)
 		{
@@ -484,8 +522,8 @@ bool BitmapImage::parseDib32Data(const ResourceIcon &icon, const struct BitmapIn
 	std::size_t nBytes = nBytesInRow * nRows;
 	std::uint8_t bytesPP = hdr.bitCount / 8;
 
-	image.reserve(nRows);
-	bytes.reserve(nBytes);
+	image.reserve(reserveWithin(icon, nRows));
+	bytes.reserve(reserveWithin(icon, nBytes));
 
 	if (!icon.getBytes(bytes, hdr.headerSize(), nBytes) || bytes.size() != nBytes)
 	{
@@ -497,7 +535,7 @@ bool BitmapImage::parseDib32Data(const ResourceIcon &icon, const struct BitmapIn
 	for (std::size_t i = 0; i < nRows; i++)
 	{
 		std::vector<struct BitmapPixel> row;
-		row.reserve(nColumns);
+		row.reserve(reserveWithin(icon, nColumns));
 
 		for (std::size_t j = 0; j < nColumns; j++)
 		{
@@ -528,7 +566,7 @@ bool BitmapImage::parseDibPalette(const ResourceIcon &icon, std::vector<struct B
 {
 	std::size_t nBytes = nColors * 4;
 	std::vector<uint8_t> bytes;
-	bytes.reserve(nBytes);
+	bytes.reserve(reserveWithin(icon, nBytes));
 
 	if (!icon.getBytes(bytes, BitmapInformationHeader().headerSize(), nBytes) || bytes.size() != nBytes)
 	{

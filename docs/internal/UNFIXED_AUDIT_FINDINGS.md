@@ -584,9 +584,38 @@ through; what is left is below.
   four of them pinning the in-range answers so the clamp cannot be tightened by
   accident. Verified by restoring the old line: the two wrapping cases fail and
   the four in-range cases do not.
-* `src/fileformat/types/resource_table/bitmap_image.cpp:210, 302, 383, 437, 490`
-  — unchecked `nBytesInRow * nRows` from header width/height/bitCount, feeding
-  the clamp above.
+* ~~`src/fileformat/types/resource_table/bitmap_image.cpp` — unchecked
+  `nBytesInRow * nRows` from header width/height/bitCount, feeding the clamp
+  above.~~ **Measured; not reachable, and the number is worse than the entry
+  said.** The product is right and it is not a wrap: at width `0xFFFFFFFF`,
+  height `0xFFFFFFFF` and bitCount `0xFFFF` it is `1152903920473874428` — 1.15
+  exabytes — which is *below* `std::vector<std::uint8_t>::max_size()`, so
+  `bytes.reserve` of it is an allocation attempt rather than a
+  `std::length_error`. It raises `std::bad_alloc`, and nothing between
+  `BitmapImage` and `main()` catches one. `image.reserve(height / 2)` is 51 GB
+  of `std::vector` on its own.
+
+  Nothing gets there. `parseDibFormat` is the only caller of any
+  `parseDib*Data`, and it runs `parseDibHeader` first, which refuses
+  `width > 512`, `height > 1024` and `bitCount > 32` — so `nBytes` on that path
+  is at most `2048 * 512`, one megabyte.
+
+  The bound is four calls from the multiplication, nothing near it says so, and
+  every `parseDib*Data` is public. So the reserves are now clamped to the icon's
+  own loaded size with `bounds::reserveFor`, which is a cap on the *hint* and
+  not on the parse: `reserve` only pre-allocates, the containers still grow to
+  whatever is read, and the `bytes.size() != nBytes` test after each read
+  already refused anything short. No input that parsed before parses
+  differently.
+
+  `bounds::reserveFor` is ESBMC-proved and, until this, had no callers anywhere
+  in the tree. It was written for this shape.
+
+  `tests/fileformat/bitmap_image_tests.cpp` calls the public methods directly
+  with a header `parseDibHeader` would have refused. Two of the six are
+  evidence: 24 and 32 bpp have no palette to read first, so they reach the
+  reserves, and removing the clamp makes exactly those two fail with
+  `std::bad_alloc`. The other four say so in the file rather than being counted.
 * `src/loader/loader/segment.cpp:205`, `segment_data_source.cpp:81-82, 91` —
   post-hoc and pre-copy wrapping clamps. `Image::getXBytes` now refuses before
   them, but both have other callers.

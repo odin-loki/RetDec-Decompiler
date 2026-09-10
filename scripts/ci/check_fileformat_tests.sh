@@ -50,7 +50,7 @@ LLVM_CONFIG=""
 JOBS="$(nproc 2>/dev/null || echo 4)"
 MIN_CPDETECT=9
 MIN_LOADER=60
-MIN_FILEFORMAT=135
+MIN_FILEFORMAT=140
 KEEP=0
 while [[ $# -gt 0 ]]; do
 	case "$1" in

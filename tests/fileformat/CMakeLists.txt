@@ -1,6 +1,7 @@
 
 add_executable(retdec-fileformat-tests
     asn1_test.cpp
+    bitmap_image_tests.cpp
     character_iterator_test.cpp
     elfio_bounds_test.cpp
     format_lattice_test.cpp
