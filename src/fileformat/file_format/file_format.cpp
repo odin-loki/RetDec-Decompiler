@@ -2257,7 +2257,26 @@ bool FileFormat::getXByte(std::uint64_t address, std::uint64_t x, std::uint64_t&
 	}
 
 	const auto secOffset = address - secSeg->getAddress();
-	const auto offset = secSeg->getOffset() + secOffset;
+
+	// `secSeg->getOffset() + secOffset` was this line, and it is a sum of a
+	// file offset the section header states and an offset into the section.
+	// The first is unbounded -- ELFIO validates that the section *table* lies
+	// in the file, not that each section's sh_offset does -- so at
+	// sh_offset 0xFFFFFFFFFFFFFFFF the sum wraps to a small number, which the
+	// containment test below then finds comfortably inside the file. The read
+	// stays in bounds and returns the wrong bytes.
+	//
+	// It is not reachable today: a section whose sh_offset is outside the file
+	// has nothing loaded, so getLoadedSize() is 0 and the first rangeFitsWide
+	// refuses before the second is evaluated. That is a property of the loader
+	// rather than of this line, and this line is where the sum is.
+	// regionEndSaturating is the same arithmetic without the wrap -- it caps at
+	// SIZE_MAX, which no containment test admits -- and is proved over the
+	// whole 64-bit domain in tests/verification/bounds_proof.cpp, with cases in
+	// tests/loader_sim/xbyte_width_guard_test.cpp. Every offset that did not
+	// wrap is unchanged.
+	const auto offset = bounds_kernels::regionEndSaturating(secSeg->getOffset(), secOffset);
+
 	// `secOffset + x > secSeg->getLoadedSize() || offset + x > getLoadedFileLength()`
 	// was the containment test; both halves are sums of a section-relative
 	// offset and a caller width. x is at most 8 once the guard above has run,

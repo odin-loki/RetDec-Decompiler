@@ -538,9 +538,17 @@ back and re-read it. It is the fourth exclusion reason on this branch to survive
 right up until somebody measured it, after `tests/cpdetect`+`tests/loader`,
 `tests/unpacker`, and the `llvmir2bir_converter` exclusion on L2H-01.
 
-So these are ordinary findings with an ordinary gate behind them, and each is
-fixable with a regression test that runs before the push. They are being worked
-through; what is left is below.
+So these were ordinary findings with an ordinary gate behind them. All seven
+are resolved now, and the split is worth stating: **three were real** — the
+`getRealSizeInRegion` clamp, the two loader clamps, and the CIL signature
+traversal, which did not terminate on nine bytes — and **four were bounded by
+something the entry had not looked for**: two readers that refuse an
+out-of-range table, a check four calls upstream, and a short-circuit.
+
+Each of the four says so below with the measurement, and three of them were
+given a local bound anyway. Being unreachable is not the same as being
+bounded, and the distance between the check and the arithmetic is what the
+entries kept getting wrong in both directions.
 
 * ~~`src/fileformat/file_format/elf/elf_format.cpp` and `coff_format.cpp` —
   `getDeclaredFileLength` overrides that shadow the base function which *was*
@@ -572,10 +580,43 @@ through; what is left is below.
   below the offset it was formed from. Verified by making
   `ElfFormat::getSectionTableSize` return a size for a table ELFIO declined —
   the test fails, naming that.
-* `src/fileformat/file_format/file_format.cpp:2309` — `getXByte` still forms
-  `secSeg->getOffset() + secOffset`.
-* `file_format.cpp:583-593` (`computeSectionTableHashes`) and `:1380`
-  (`getOverlayEntropy`) — unchecked multiply and sums on header fields.
+* ~~`src/fileformat/file_format/file_format.cpp` — `getXByte` still forms
+  `secSeg->getOffset() + secOffset`.~~ **Fixed, though not reachable.** The sum
+  is real: `sh_offset` is unbounded — ELFIO validates that the section *table*
+  lies in the file, not that each section's data offset does — so at
+  `0xFFFFFFFFFFFFFFFF` it wraps to a small number the containment test below
+  finds comfortably inside the file, and the read returns the wrong bytes from
+  a valid address. It is not reachable because a section whose `sh_offset` is
+  outside the file has nothing loaded, so `getLoadedSize()` is 0 and the *first*
+  `rangeFitsWide` refuses before the second is evaluated.
+
+  That is a property of the loader, and the sum is here. `regionEndSaturating`
+  is the same arithmetic without the wrap, is proved over the whole 64-bit
+  domain, and has cases in `tests/loader_sim/xbyte_width_guard_test.cpp`. Every
+  offset that did not wrap is unchanged. No new test: the kernel is tested and
+  the substitution cannot change a non-wrapping answer — pinning the call site
+  would need an ELF with a valid section table and a hostile `sh_offset`, which
+  is worth building the day something makes this reachable.
+
+* ~~`file_format.cpp` (`computeSectionTableHashes`) and (`getOverlayEntropy`) —
+  unchecked multiply and sums on header fields.~~ **Measured; neither can
+  wrap.**
+
+  `getOverlayEntropy` computes `bytes.size() < declSize + overlaySize`, and the
+  sum cannot wrap by construction: `getOverlaySize()` returns `realSize -
+  declSize` when `realSize > declSize` and 0 otherwise, so a non-zero
+  `overlaySize` makes `declSize + overlaySize` exactly `realSize`, and a zero
+  one short-circuits the `||` before the sum is formed. The read after it is in
+  bounds for the same reason.
+
+  `computeSectionTableHashes` forms `getSectionTableOffset() + i *
+  getSectionTableEntrySize()` with `i` bounded by `sections.size()`. A non-empty
+  `sections` means ELFIO loaded the table, which means `e_shoff` is inside the
+  file — the same invariant `tests/fileformat/declared_file_length_tests.cpp`
+  already pins, since it asserts a table size of zero for an out-of-range
+  offset and that size is `sections.size() * entrySize`. `i * entrySize` is at
+  most `sections.size() * 65535`, both bounded by the file, so the product does
+  not overflow a 64-bit `std::size_t` either.
 * ~~`src/fileformat/utils/other.cpp:407` — `getRealSizeInRegion`'s wrapping
   clamp.~~ **Fixed.** `offset + requestedSize > regionSize` is now
   `requestedSize > regionSize - offset`, which asks the same question without
@@ -1261,6 +1302,21 @@ API level instead, one of them the control for an ordinary statement, which
 still falls through to its successor.
 
 ## Corrections to claims made in this branch's commit messages
+
+### "This was the last entry on the audit's list" — it was not
+
+48145da's message says the `cli_sig.cpp` traversal "was the last entry on the
+audit's 'behind a build this environment cannot run' list", and counts the list
+as six with two real. It was seven, two of them still open when that was
+written: `getXByte`'s offset sum and the `computeSectionTableHashes` /
+`getOverlayEntropy` pair. Both are resolved in the commit that adds this note,
+and the count that holds is: seven entries, three real — the
+`getRealSizeInRegion` clamp, the loader clamps, and the CIL traversal — and
+four bounded by something the entry had not looked for.
+
+The mistake is the one this section keeps catching: a claim about a *set*,
+written from the entry in front of me rather than from the list.
+
 
 ### The codegen goto fixes are not on the shipped path
 
