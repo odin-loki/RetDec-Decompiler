@@ -39,6 +39,7 @@
 #include "retdec/llvmir2hll/ir/if_stmt.h"
 #include "retdec/llvmir2hll/ir/or_op_expr.h"
 #include "retdec/llvmir2hll/ir/return_stmt.h"
+#include "retdec/llvmir2hll/analysis/goto_target_analysis.h"
 #include "retdec/llvmir2hll/ir/statement.h"
 #include "retdec/llvmir2hll/ir/unreachable_stmt.h"
 #include "retdec/llvmir2hll/optimizer/optimizers/if_structure_optimizer_ext.h"
@@ -99,7 +100,14 @@ bool tryOptimization6(ShPtr<IfStmt> stmt) {
     // with a jump for simplicity and safety.
     if (!endsWithJump(stmt->getFirstIfBody())) return false;
 
-    // Merge: (A || B)
+	// The two bodies are *equal*, not the same object, and the merge keeps
+	// stmt's and drops nextStmt's. A label inside the one being dropped goes
+	// with it, while the goto that names it survives elsewhere in the
+	// function -- `goto lab_x;` with no `lab_x:` anywhere. DeadCodeOptimizer
+	// asks this before discarding a clause body for the same reason.
+	if (GotoTargetAnalysis::hasGotoTargets(nextStmt->getFirstIfBody())) return false;
+
+	// Merge: (A || B)
     stmt->setFirstIfCond(OrOpExpr::create(stmt->getFirstIfCond(),
                                           nextStmt->getFirstIfCond()));
     // Transfer the else clause from nextStmt to stmt.
@@ -144,7 +152,10 @@ bool tryOptimization7(ShPtr<IfStmt> stmt) {
     // Both bodies must end with a jump for safety.
     if (!endsWithJump(stmt->getFirstIfBody())) return false;
 
-    // Merge conditions into nextStmt's leading condition.
+	// This merge keeps nextStmt's body and drops stmt's; see pattern 6.
+	if (GotoTargetAnalysis::hasGotoTargets(stmt->getFirstIfBody())) return false;
+
+	// Merge conditions into nextStmt's leading condition.
     nextStmt->setFirstIfCond(OrOpExpr::create(stmt->getFirstIfCond(),
                                                nextStmt->getFirstIfCond()));
 

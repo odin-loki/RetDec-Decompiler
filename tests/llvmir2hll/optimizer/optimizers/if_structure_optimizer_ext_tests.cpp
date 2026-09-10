@@ -31,12 +31,14 @@
 #include "retdec/llvmir2hll/ir/break_stmt.h"
 #include "retdec/llvmir2hll/ir/const_int.h"
 #include "retdec/llvmir2hll/ir/empty_stmt.h"
+#include "retdec/llvmir2hll/ir/goto_stmt.h"
 #include "retdec/llvmir2hll/ir/if_stmt.h"
 #include "retdec/llvmir2hll/ir/int_type.h"
 #include "retdec/llvmir2hll/ir/or_op_expr.h"
 #include "retdec/llvmir2hll/ir/return_stmt.h"
 #include "retdec/llvmir2hll/ir/variable.h"
 #include "retdec/llvmir2hll/optimizer/optimizers/if_structure_optimizer.h"
+#include "retdec/llvmir2hll/support/visitors/ordered_all_visitor.h"
 
 using namespace ::testing;
 
@@ -238,6 +240,110 @@ SingleIfNoSuccessorLeftUnchanged) {
 	EXPECT_NO_THROW(Optimizer::optimize<IfStructureOptimizer>(module));
 	ASSERT_TRUE(isa<IfStmt>(testFunc->getBody()))
 		<< "single if should remain";
+}
+
+
+namespace {
+
+/// Every statement the emitter walks from @a start.
+class ReachableStmtCollector : private OrderedAllVisitor {
+public:
+	static StmtUSet collect(ShPtr<Statement> start)
+	{
+		ReachableStmtCollector c;
+		c.visitStmt(start);
+		return c.seen;
+	}
+
+private:
+	void visitStmt(ShPtr<Statement> stmt, bool visitSuccessors = true, bool visitNestedStmts = true) override
+	{
+		if (stmt)
+		{
+			seen.insert(stmt);
+		}
+		OrderedAllVisitor::visitStmt(stmt, visitSuccessors, visitNestedStmts);
+	}
+
+	StmtUSet seen;
+};
+
+void expectEveryGotoResolves(const StmtUSet& reachable)
+{
+	for (const auto& stmt: reachable)
+	{
+		auto g = cast<GotoStmt>(stmt);
+		if (!g)
+		{
+			continue;
+		}
+		EXPECT_EQ(1u, reachable.count(g->getTarget())) << "a goto targets a statement the emitter never reaches, so its"
+														  " label is used but never defined";
+	}
+}
+
+} // namespace
+
+// Pattern 6 NOT applied: the body it would drop is jumped into.
+//
+// The two bodies are *equal*, not the same object, and the merge keeps the
+// first and drops the second -- so a label inside the second goes with it
+// while the goto naming it stays. Same shape as pattern 4 in the base
+// optimizer, and the same question DeadCodeOptimizer asks before it drops a
+// clause body.
+TEST_F(IfStructureOptimizerExtTests, Pattern6_ABodySomethingJumpsIntoIsNotDropped)
+{
+	auto varA = Variable::create("a", IntType::create(32));
+	auto varB = Variable::create("b", IntType::create(32));
+	auto varX = Variable::create("x", IntType::create(32));
+	testFunc->addLocalVar(varA);
+	testFunc->addLocalVar(varB);
+	testFunc->addLocalVar(varX);
+
+	auto bodyA = BreakStmt::create();
+	auto bodyB = BreakStmt::create();
+	bodyB->setLabel("lab_x");
+	auto elseBody = AssignStmt::create(varX, ConstInt::create(0, 32));
+
+	auto backGoto = GotoStmt::create(bodyB);
+	auto ifB = IfStmt::create(varB, bodyB, backGoto);
+	ifB->setElseClause(elseBody);
+	auto ifA = IfStmt::create(varA, bodyA, ifB);
+	testFunc->setBody(ifA);
+
+	Optimizer::optimize<IfStructureOptimizer>(module);
+
+	expectEveryGotoResolves(ReachableStmtCollector::collect(testFunc->getBody()));
+}
+
+// Pattern 7 NOT applied: the body it would drop -- the leading if's -- is
+// jumped into. Pattern 7 keeps the chain's body and discards the leading
+// one, so this is pattern 6's case with the two halves the other way round.
+TEST_F(IfStructureOptimizerExtTests, Pattern7_ABodySomethingJumpsIntoIsNotDropped)
+{
+	auto varA = Variable::create("a", IntType::create(32));
+	auto varB = Variable::create("b", IntType::create(32));
+	auto varC = Variable::create("c", IntType::create(32));
+	testFunc->addLocalVar(varA);
+	testFunc->addLocalVar(varB);
+	testFunc->addLocalVar(varC);
+
+	auto bodyA = makeReturn(99);
+	bodyA->setLabel("lab_x");
+	auto bodyB = makeReturn(99);
+	auto bodyC = makeReturn(1);
+
+	auto ifBC = IfStmt::create(varB, bodyB);
+	ifBC->addClause(varC, bodyC);
+	auto backGoto = GotoStmt::create(bodyA);
+	ifBC->setSuccessor(backGoto);
+
+	auto ifA = IfStmt::create(varA, bodyA, ifBC);
+	testFunc->setBody(ifA);
+
+	Optimizer::optimize<IfStructureOptimizer>(module);
+
+	expectEveryGotoResolves(ReachableStmtCollector::collect(testFunc->getBody()));
 }
 
 } // namespace tests

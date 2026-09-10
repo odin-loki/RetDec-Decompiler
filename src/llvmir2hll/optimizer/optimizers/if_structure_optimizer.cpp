@@ -6,6 +6,7 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include "retdec/llvmir2hll/analysis/goto_target_analysis.h"
 #include "retdec/llvmir2hll/ir/expression.h"
 #include "retdec/llvmir2hll/ir/if_stmt.h"
 #include "retdec/llvmir2hll/ir/not_op_expr.h"
@@ -221,6 +222,16 @@ bool IfStructureOptimizer::tryOptimization4(ShPtr<IfStmt> stmt) {
 	// that since both bodies are identical, it suffices to check only one of
 	// them.
 	if (!endsWithRetOrUnreach(stmt->getFirstIfBody())) {
+		return false;
+	}
+
+	// The two bodies are *equal*, not the same object, and this keeps the
+	// first and drops the second. A label inside the one being dropped goes
+	// with it, while the goto that names it survives elsewhere in the
+	// function -- `goto lab_x;` with no `lab_x:` anywhere. DeadCodeOptimizer
+	// asks the same question before discarding a clause body.
+	if (GotoTargetAnalysis::hasGotoTargets(nextIfStmt->getFirstIfBody()))
+	{
 		return false;
 	}
 

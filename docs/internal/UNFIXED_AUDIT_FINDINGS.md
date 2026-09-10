@@ -600,6 +600,35 @@ Rusticl ICD — then the `UNBUILT_DIRS` entry comes out.
 
 
 
+
+## Three merges that drop a body drop the labels inside it
+
+`IfStructureOptimizer::tryOptimization4` and patterns 6 and 7 of
+`if_structure_optimizer_ext.cpp` all merge two `if` statements with
+*identical* bodies into one `if (A || B)`. Identical means
+`Statement::areEqualStatements` — equal by value, two distinct objects — so
+one of the two bodies is kept and the other is dropped on the floor, along
+with anything nested inside it.
+
+`Statement::clone()` carries no label and neither does this: a label on a
+statement inside the discarded body goes with it, while the goto elsewhere in
+the function that names it stays. `goto lab_x;` with no `lab_x:` anywhere,
+which is the same symptom as `GotoCFGOptimizer` pattern A and the same shape
+of cause.
+
+The remedy is the one already applied in the same codebase:
+`DeadCodeOptimizer` asks `GotoTargetAnalysis::hasGotoTargets(body)` before it
+discards a clause body, six times, and `unreachable_code_in_cfg_remover.cpp`
+asks it once. These three now ask it too, each about whichever of the two
+bodies it is the one to drop — pattern 7 drops the leading `if`'s body rather
+than the second's, so its guard is on the other half.
+
+Each verified by reverting that guard alone. Whether any of the three is what
+CC-01 reports on `generated_shell_sort-gcc-O2` is **not** established: three
+rounds of reading pass sources have produced three real defects with real
+fixes and the same error at the same line 120 each time. The next round reads
+the emitted C itself, which `--save-failures` now keeps.
+
 ## A workflow that does not parse does not fail — it does not run
 
 `workflow_dispatch` on `ctest-linux.yml` came back with
