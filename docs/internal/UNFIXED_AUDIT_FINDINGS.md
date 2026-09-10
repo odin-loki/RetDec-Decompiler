@@ -733,10 +733,10 @@ the emitted C itself, which `--save-failures` now keeps.
     failed to parse workflow: (Line: 285, Col: 11):
     'if-no-files-found' is already defined
 
-The file was already pushed. A workflow GitHub cannot parse produces no run
-at all, so there is no red X: every scheduled and push-triggered run of that
-file simply stops happening until somebody notices. Nothing in this
-repository read these files, and there are twenty of them.
+The file was already pushed. Nothing in this repository read these files, and
+there are twenty of them. What an unparseable one costs depends on the
+trigger, and the correction below records what was actually observed rather
+than what the commit message assumed.
 
 The part worth recording is *how* it got past a check. The file was validated
 before the push with `yaml.safe_load()`, which accepts a repeated key and
@@ -862,6 +862,25 @@ API level instead, one of them the control for an ordinary statement, which
 still falls through to its successor.
 
 ## Corrections to claims made in this branch's commit messages
+
+### "A workflow that does not parse does not run" — half right
+
+`9e54dd8`'s message says an unparseable workflow "produces no run at all, so
+there is no red X anywhere". That is what `workflow_dispatch` does — the API
+call is rejected with the parse error and no run is created — and it is what
+the message generalised from.
+
+The push trigger behaves differently, and run 268 is the evidence: the push
+of `e69d0b0` created a run that failed immediately, `created_at`,
+`run_started_at` and `updated_at` all equal, listed under the workflow's
+*path* rather than its name because GitHub had no name to read. So a push
+does leave a red X.
+
+What does not change is the reason WF-01 exists: nothing in this repository
+looked at these files before the push, and the YAML check that ran did not
+reject a duplicate key. Whether the cost is a failed run or no run at all,
+the file should not have reached the branch.
+
 
 ### The Dalvik try-region wrap was not reaching a consumer
 
