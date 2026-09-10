@@ -242,7 +242,12 @@ jobs:
           {
             echo "### CC-01 emitted C compiles"
             echo '```'
-            grep -E '^CC-01' /tmp/cc01.log || tail -n 3 /tmp/cc01.log
+            # Also the indented continuation lines: the failing file names and
+            # the compiler's own errors are printed under their headers with a
+            # two-space indent, and a filter of '^CC-01' alone showed run 265
+            # "files that did not compile:" with nothing under it -- the
+            # headers without the diagnosis they introduce.
+            grep -E '^CC-01|^  ' /tmp/cc01.log || tail -n 3 /tmp/cc01.log
             echo '```'
           } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
           exit $rc
