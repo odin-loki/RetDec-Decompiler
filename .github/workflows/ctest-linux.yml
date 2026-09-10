@@ -275,14 +275,22 @@ jobs:
       # for 24 binaries, so 216 is about a minute and a half against a job
       # that spends eight minutes building and seventeen in clang-tidy. A
       # measurement that cheap does not belong on a weekly cadence.
-      # Run 274, at 42cdb06, was the first to measure the whole corpus:
-      # 208 of 216 emitted C files compile, rate 0.9630. That is the floor now,
-      # which is how the 24-binary slice was introduced -- report first, then
-      # hold the number the report gave. The eight that fail are three defects,
-      # not eight: a `break` emitted outside any loop (hash_table, four builds),
-      # pthread_create called with one argument where the header declares four
-      # (generated_pthread_mutex, two builds), and a `void *` used as an operand
-      # of `|` (generated_bloom_filter, two builds). Each one fixed raises this.
+      # Run 276, at 2c3669d: 216 of 216, rate 1.0000. The whole corpus.
+      #
+      # Run 274 was the first whole-corpus measurement and reported 0.9630 --
+      # eight files, three defects. Each was reduced from the .c and .ll that
+      # --save-failures kept, reproduced locally, fixed, and measured:
+      #
+      #   274  208/216  0.9630  the three, all present
+      #   275  214/216  0.9907  a `break` hoisted out of its loop, and a
+      #                         `void *` as an operand of `|`
+      #   276  216/216  1.0000  pthread_create called with one argument where
+      #                         <pthread.h> declares four
+      #
+      # F1 held at 0.2302 and DET-01 at 72 binaries, 0 skipped, across all
+      # three, so none of it was bought with detection quality or determinism.
+      #
+      # The floor is 1.0000 now: any regression at all turns the run red.
       - name: CC-01 emitted C compiles (all 216)
         if: always()
         run: |
@@ -293,7 +301,7 @@ jobs:
           bash scripts/ci/check_emitted_c_compiles.sh \
             --decompiler "$DEC" \
             --corpus tests/algorithm_recovery/corpus \
-            --limit 0 --timeout 120 --errors 10 --min-rate 0.9630 \
+            --limit 0 --timeout 120 --errors 10 --min-rate 1.0000 \
             --save-failures cc01-failures-full 2>&1 | tee /tmp/cc01-full.log || rc=$?
           {
             echo "### CC-01 emitted C compiles (all 216)"

@@ -13,7 +13,7 @@ Headline quality metric is **buildable C** (`--buildable`, default on), not defa
 | Metric | Fork | Stock RetDec 5.0 |
 |--------|------|------------------|
 | Recompile, `--buildable` sidecar | **216/216** | **0/216** |
-| Recompile, default `.c` | **208/216** (0.9630); 24/24 on the CC-01 slice | 0/216 |
+| Recompile, default `.c` | **216/216** | 0/216 |
 | syntax_valid_rate (default `.c`) | 1.0 | 1.0 |
 | mean_wall_s | 1.492 | 0.242 |
 
@@ -27,13 +27,15 @@ being run for the C back end, which is what made the emitted C assign to
 undeclared variables. CC-01 (`scripts/ci/check_emitted_c_compiles.sh`) hands
 each emitted `.c` to a C compiler, over the whole corpus and over a 24-binary
 slice, on every `ctest-linux` run. Run 274, at `42cdb06`, was the first
-whole-corpus measurement: **208/216, rate 0.9630**, slice 24/24. Both are
-floors now.
+whole-corpus measurement and reported 208/216. Run 276, at `2c3669d`, reports
+**216/216**. Both rates are floors now.
 
-The eight failures are three defects: a `break` emitted outside any loop
-(`hash_table`, four builds), `pthread_create` called with one argument where
-the header declares four (`generated_pthread_mutex`, two builds), and a
-`void *` as an operand of `|` (`generated_bloom_filter`, two builds).
+The eight failures run 274 found were three defects, fixed across runs 275 and
+276: a `break` hoisted out of the loop it belonged to (`hash_table`, four
+builds), `pthread_create` called with one argument where `<pthread.h>` declares
+four (`generated_pthread_mutex`, two builds), and a `void *` as an operand of
+`|` (`generated_bloom_filter`, two builds). Name-blind F1 held at 0.2302 and
+DET-01 at 72 binaries with 0 skipped throughout.
 
 The per-optimisation-level 0% below is stale for the same reason as the
 `0/216` was. Stock's 0/216 is unaffected and not re-measured here.
