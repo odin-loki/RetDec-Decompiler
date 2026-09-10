@@ -167,6 +167,32 @@ namespace {
 /// below the depth that exhausted the stack above.
 constexpr unsigned kMaxTypeDepth = 64;
 
+/// How many levels one outermost decode may descend in total, across the whole
+/// tree rather than along one path.
+///
+/// The depth bound above stops the descent and says nothing about the width,
+/// and a Type may contain several Types: ELEMENT_TYPE_GENERICINST carries a
+/// compressed argument count and then that many of them. So a TypeSpec row
+/// whose own signature is a GENERICINST with two self-referencing arguments
+/// branches twice per level, and 64 levels of that is 2^65 nodes.
+///
+/// Measured against a resolver modelled on CLIReader::typeSpecType, with the
+/// nine-byte field signature
+///
+///     06 15 12 06 02 12 06 12 06
+///
+/// -- FIELD, GENERICINST, CLASS TypeSpec row 1 (the row itself), two arguments,
+/// each CLASS TypeSpec row 1 again -- the decode made 2,000,000 resolver calls
+/// in 0.69 s and was still going when a counter in the test stopped it. It does
+/// not terminate. Nine bytes of attacker-controlled file data.
+///
+/// kMaxTypeDepth cannot fix this: the cycle stays inside 64 levels the whole
+/// time. What is missing is a bound on the work, so here is one. 100000 nodes
+/// is about 33 ms at the rate measured above, and is four orders of magnitude
+/// above any signature a language compiler emits --
+/// `Dictionary<string, List<int[]>>` is a dozen nodes.
+constexpr unsigned long long kMaxTypeWork = 100000;
+
 /// How deep the current thread is inside decodeType.
 ///
 /// Deliberately not a member of CliSigDecoder. The cycle above leaves this
@@ -177,13 +203,33 @@ constexpr unsigned kMaxTypeDepth = 64;
 /// descent from counting against a thread decoding a different assembly.
 thread_local unsigned g_typeDepth = 0;
 
+/// How many levels this thread has entered since the outermost one began.
+///
+/// A thread_local for the same reason as the depth, and never decremented: it
+/// is a budget for one top-level decode, not a position in the tree. It is
+/// reset when a descent starts at depth zero, which is the only point at which
+/// no decode is in progress -- the cycle re-enters through the resolver with
+/// the enclosing frames still holding their guards, so it never sees zero and
+/// never gets a fresh budget.
+thread_local unsigned long long g_typeWork = 0;
+
 /// Claims one level of descent for the enclosing scope and releases it on the
 /// way out, including on decodeType's several early returns.
 class DepthGuard {
 public:
-	DepthGuard(): entered_(g_typeDepth < kMaxTypeDepth)
+	DepthGuard()
 	{
-		if (entered_) ++g_typeDepth;
+		if (g_typeDepth == 0)
+		{
+			g_typeWork = 0;
+		}
+
+		entered_ = g_typeDepth < kMaxTypeDepth && g_typeWork < kMaxTypeWork;
+		if (entered_)
+		{
+			++g_typeDepth;
+			++g_typeWork;
+		}
 	}
 	~DepthGuard()
 	{
@@ -200,7 +246,7 @@ public:
 	}
 
 private:
-	bool entered_;
+	bool entered_ = false;
 };
 
 } // namespace

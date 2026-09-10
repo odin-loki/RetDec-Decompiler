@@ -648,12 +648,44 @@ through; what is left is below.
   `SegmentDataSource` and one for `Segment`. The two that do not are labelled in
   place — one is the guard the clamps rest on, and the other uses offset 0,
   where the sum does not wrap and the old clamp was right.
-* `src/cli_parser/cli_sig.cpp` — a self-referential TypeSpec whose signature is
-  a GENERICINST with two or more self-referencing type arguments (e.g.
-  `15 12 06 02 12 06 12 06`) drives an exponentially wide traversal under the
-  depth-64 bound. The bound stops the depth, not the width. Reachable, but the
-  fix is a visited-set through `ITypeNameResolver`, whose other implementation
-  is behind the LLVM build.
+* ~~`src/cli_parser/cli_sig.cpp` — a self-referential TypeSpec whose signature
+  is a GENERICINST with two or more self-referencing type arguments drives an
+  exponentially wide traversal under the depth-64 bound.~~ **Fixed, and it
+  reproduced.** This entry was right, including the byte sequence. As a field
+  signature it is nine bytes:
+
+  ```
+  06 15 12 06 02 12 06 12 06
+  ```
+
+  FIELD, GENERICINST, CLASS TypeSpec row 1 — the row itself — two arguments,
+  each the row itself again. Two branches per level, 64 levels: 2^65 nodes.
+  `kMaxTypeDepth` never trips, because the cycle never gets deeper than 64.
+
+  Measured against a resolver modelled on `CLIReader::typeSpecType`: **2,000,000
+  resolver calls in 0.69 s, and still descending** when a counter in the test
+  stopped it. At that rate 2^65 nodes is about 10^4 years. It does not
+  terminate.
+
+  The fix is not the visited-set this entry proposed — that needs
+  `ITypeNameResolver` to change, and its other implementation is behind the LLVM
+  build. A budget does the same job from inside this file: `kMaxTypeWork`
+  counts levels *entered* rather than levels *deep*, in a `thread_local` beside
+  `g_typeDepth`, reset only when a descent begins at depth zero. The cycle
+  re-enters through the resolver with the enclosing frames still holding their
+  guards, so it never sees zero and never gets a fresh budget. 100000 nodes is
+  about 33 ms at the rate above, and four orders of magnitude above what a
+  language compiler emits — `Dictionary<string, List<int[]>>` is a dozen nodes.
+
+  After: exactly 100000 calls, in 40 ms.
+
+  Three cases in `tests/cli_parser/cli_sig_width_test.cpp`. The resolver keeps a
+  cap of its own so that a regression fails the test in about two seconds
+  instead of never returning — a test that hangs is not one anyone can run.
+  Verified by removing the budget: the branching case fails and names the line.
+  The other two are labelled controls — the non-branching cycle, which the depth
+  bound already handled, and an ordinary nested generic, which a budget that
+  refused real work would break.
 
 ## Structural: code no test can reach
 
