@@ -1233,8 +1233,14 @@ BcInstruction JvmLifter::decodeInstr(
 		i.effect = {1, 1};
 		break;
 	// Comparisons
+	// lcmp is the three-way long compare: it pushes -1, 0 or 1. It lifted to
+	// CmpEq, an equality test, so `Long.compare(a, b)` -- and every `a < b` on
+	// longs, which javac compiles as lcmp followed by iflt -- came out as
+	// `a == b`. BcOpcode::LCmp exists for this and JavaExprEmitter already had
+	// a case for it emitting Long.compare(a, b); nothing produced it, so that
+	// case was dead.
 	case OP_LCMP:
-		i.opcode = BcOpcode::CmpEq;
+		i.opcode = BcOpcode::LCmp;
 		i.effect = {2, 1};
 		break;
 	case OP_FCMPL:
@@ -1338,16 +1344,23 @@ BcInstruction JvmLifter::decodeInstr(
 		i.effect = {2, 0};
 		break;
 	}
+	// if_acmpeq / if_acmpne are compare-and-BRANCH, exactly like the
+	// if_icmp family above: they pop two references and push nothing. They
+	// lifted to CmpEq/CmpNe, which are the value-producing comparisons --
+	// stackEffectOf says {2, 1} for those and the stack simulator gives them
+	// an int result -- and, worse, BcBasicBlock::hasTerminator() lists only
+	// the branch opcodes, so a block ending in if_acmpeq had no terminator at
+	// all and terminator() returned nullptr.
 	case OP_IF_ACMPEQ: {
 		uint32_t t = branchPc(readS2(), instrPc);
-		i.opcode = BcOpcode::CmpEq;
+		i.opcode = BcOpcode::IfEq;
 		i.operands.push_back(BcBlockOperand{t});
 		i.effect = {2, 0};
 		break;
 	}
 	case OP_IF_ACMPNE: {
 		uint32_t t = branchPc(readS2(), instrPc);
-		i.opcode = BcOpcode::CmpNe;
+		i.opcode = BcOpcode::IfNe;
 		i.operands.push_back(BcBlockOperand{t});
 		i.effect = {2, 0};
 		break;

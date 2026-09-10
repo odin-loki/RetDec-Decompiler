@@ -823,9 +823,20 @@ void DexLifter::buildBlocks(BcCFG& cfg, const CodeItem& code, const std::vector<
 			if (offsetToBlock.count(nextLeader) && !blk->instrs.empty())
 			{
 				auto& lastInsn = blk->instrs.back();
+				// DALVIK_RETURN_WIDE belongs here: `return-wide` (0x10) is
+				// the return every method with a long or double result ends
+				// on, and it was missing, so those blocks got an edge into
+				// whatever followed them in the code. findLeaders() already
+				// treats 0x10 as a terminator, so the two halves of the same
+				// question disagreed.
+				//
+				// DALVIK_SWITCH deliberately is NOT here: a Dalvik
+				// packed-switch or sparse-switch falls through when no case
+				// matches.
 				bool isTerminator =
 					lastInsn.opcode == BcOpcode::DALVIK_GOTO || lastInsn.opcode == BcOpcode::DALVIK_RETURN_VOID
-					|| lastInsn.opcode == BcOpcode::DALVIK_RETURN || lastInsn.opcode == BcOpcode::DALVIK_THROW;
+					|| lastInsn.opcode == BcOpcode::DALVIK_RETURN || lastInsn.opcode == BcOpcode::DALVIK_RETURN_WIDE
+					|| lastInsn.opcode == BcOpcode::DALVIK_THROW;
 				if (!isTerminator) cfg.addEdge(blk->id, offsetToBlock.at(nextLeader));
 			}
 		}
@@ -854,9 +865,36 @@ void DexLifter::wireExceptions(BcCFG& cfg, const CodeItem& code, const std::vect
 	for (size_t ti = 0; ti < code.tries.size(); ++ti)
 	{
 		const TryItem& t = code.tries[ti];
-		// Find handler list index via handlerOff (byte offset into handler list)
-		// We map by index since we parsed them sequentially.
-		if (ti >= code.handlers.handlers.size()) break;
+
+		// Resolve the handler by handler_off, not by index.
+		//
+		// This used to read `code.handlers.handlers[ti]` and give up entirely
+		// (`break`) once ti reached the handler count. The DEX format does not
+		// pair the two that way: TryItem::handlerOff is a byte offset into the
+		// encoded_catch_handler_list, and several try_items routinely name the
+		// SAME handler -- dx and d8 emit exactly that whenever two ranges have
+		// identical catch clauses. So the vectors need not be the same length
+		// and their order says nothing. With one shared handler and two tries
+		// the second region got no coverage at all, which is indistinguishable
+		// from code that was never in a try.
+		//
+		// A handler_off that names no parsed handler is skipped, rather than
+		// resolved to whatever sits at that index.
+		std::size_t hi = code.handlers.handlerOffsets.size();
+		for (std::size_t k = 0; k < code.handlers.handlerOffsets.size(); ++k)
+		{
+			if (code.handlers.handlerOffsets[k] == t.handlerOff)
+			{
+				hi = k;
+				break;
+			}
+		}
+		// A file parsed before handlerOffsets existed, or one the parser filled
+		// only partly, leaves the vector short. Falling back to the old
+		// by-index reading there keeps such input working exactly as it did,
+		// and is only reachable when there is no offset table to consult.
+		if (code.handlers.handlerOffsets.empty()) hi = ti;
+		if (hi >= code.handlers.handlers.size()) continue;
 
 		// findLeaders() refuses a try whose region does not fit; this is where
 		// the same numbers become BcExceptionHandler::startOffset/endOffset and
@@ -873,7 +911,7 @@ void DexLifter::wireExceptions(BcCFG& cfg, const CodeItem& code, const std::vect
 
 		// Find the handler block id. We look up by the handler addr.
 		// Blocks were labeled "L<offset>".
-		for (const auto& handler: code.handlers.handlers[ti])
+		for (const auto& handler: code.handlers.handlers[hi])
 		{
 			uint32_t handlerBlock = 0;
 			// Search for block by label
@@ -896,10 +934,10 @@ void DexLifter::wireExceptions(BcCFG& cfg, const CodeItem& code, const std::vect
 			cfg.addExceptionHandler(eh);
 		}
 
-		if (ti < code.handlers.catchAllAddrs.size() && code.handlers.catchAllAddrs[ti] != ~0u)
+		if (hi < code.handlers.catchAllAddrs.size() && code.handlers.catchAllAddrs[hi] != ~0u)
 		{
 			uint32_t catchAllBlock = 0;
-			uint32_t addr = code.handlers.catchAllAddrs[ti];
+			uint32_t addr = code.handlers.catchAllAddrs[hi];
 			for (const auto& blk: cfg.blocks())
 			{
 				if (blk.label == "L" + std::to_string(addr))

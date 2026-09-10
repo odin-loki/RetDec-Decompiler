@@ -24,6 +24,7 @@
 
 #include <cstring>
 #include <cstdint>
+#include <set>
 #include <string>
 #include <utility>
 #include <variant>
@@ -3255,4 +3256,224 @@ TEST(DexLifter, TheInstructionCounterRestartsForEachMethod)
 	ASSERT_FALSE(second.cfg.block(0).instrs.empty());
 	EXPECT_EQ(0u, first.cfg.block(0).instrs.front().id);
 	EXPECT_EQ(0u, second.cfg.block(0).instrs.front().id);
+}
+
+// ─── Terminators and try/handler pairing ─────────────────────────────────────
+
+// buildBlocks() tests the last instruction of a block against a four-name list
+// -- GOTO, RETURN_VOID, RETURN, THROW -- to decide whether to add a
+// fall-through edge. DALVIK_RETURN_WIDE is not in it, and `return-wide` (0x10)
+// is the return every method with a long or double result ends on. So those
+// blocks got an edge to whatever block happened to follow them in the code, and
+// every consumer that walks successors -- liveness, dominators, reachability --
+// walked straight through a return into unrelated code.
+//
+// findLeaders() already treats 0x10 as a terminator (it starts a new block at
+// off + sz), so the two halves of the same question disagreed.
+TEST(DexLifter, ReturnWideEndsItsBlock)
+{
+	auto dex = buildMinimalDex();
+	DexFile df = DexFile::parse(dex);
+
+	// return-wide v0 ; const/4 v1, #1 ; return-void
+	// The const is a leader because the return-wide before it is a terminator,
+	// so the two live in different blocks and no edge should join them.
+	auto result =
+		liftUnits(df, {static_cast<uint16_t>(0x0010u), static_cast<uint16_t>(0x1112u), static_cast<uint16_t>(0x000Eu)});
+	ASSERT_EQ(DexLiftResult::OK, result.status);
+	ASSERT_GE(result.cfg.blockCount(), 2u);
+
+	const auto& first = result.cfg.block(0);
+	ASSERT_FALSE(first.instrs.empty());
+	ASSERT_EQ(BcOpcode::DALVIK_RETURN_WIDE, first.instrs.back().opcode);
+	EXPECT_TRUE(first.succs.empty()) << "a block ending in return-wide has " << first.succs.size() << " successor(s)";
+}
+
+// The sibling cases, so the fix cannot be "drop the fall-through for every
+// block": an ordinary instruction still falls through to the next leader.
+TEST(DexLifter, AnOrdinaryInstructionStillFallsThrough)
+{
+	auto dex = buildMinimalDex();
+	DexFile df = DexFile::parse(dex);
+
+	// if-eqz v0, +2 ; const/4 v1, #1 ; return-void
+	// The if makes both the branch target and off+sz leaders, so block 0 ends
+	// on an ordinary two-way branch and must reach its fall-through.
+	auto result = liftUnits(
+		df,
+		{static_cast<uint16_t>(0x0038u),
+		 static_cast<uint16_t>(0x0002u),
+		 static_cast<uint16_t>(0x1112u),
+		 static_cast<uint16_t>(0x000Eu)});
+	ASSERT_EQ(DexLiftResult::OK, result.status);
+	ASSERT_GE(result.cfg.blockCount(), 2u);
+	EXPECT_FALSE(result.cfg.block(0).succs.empty()) << "a conditional branch lost its fall-through";
+}
+
+namespace {
+
+/// Two try regions whose try_items both point at the SAME encoded_catch_handler
+/// -- which is what dx and d8 emit whenever two ranges catch the same types.
+DexLiftResult liftTwoTriesSharingOneHandler(const DexFile& df)
+{
+	CodeItem code;
+	code.registersSize = 2;
+	code.insSize = 0;
+	code.outsSize = 0;
+	code.debugInfoOff = 0;
+	// four `return-void` units, so both regions fit inside the method
+	code.insns = {
+		static_cast<uint16_t>(0x000Eu),
+		static_cast<uint16_t>(0x000Eu),
+		static_cast<uint16_t>(0x000Eu),
+		static_cast<uint16_t>(0x000Eu)};
+	code.insnsSize = 4;
+
+	TryItem a;
+	a.startAddr = 0;
+	a.insnCount = 2;
+	a.handlerOff = 7; // both name the one and only handler
+	TryItem b;
+	b.startAddr = 2;
+	b.insnCount = 2;
+	b.handlerOff = 7;
+	code.tries = {a, b};
+	code.triesSize = 2;
+
+	// One handler list, at byte offset 7 from the start of the list.
+	code.handlers.handlers.push_back({CatchHandler{-1, 0}});
+	code.handlers.catchAllAddrs.push_back(0);
+	code.handlers.handlerOffsets.push_back(7);
+
+	return DexLifter(df).lift(code, 0);
+}
+
+} // namespace
+
+// wireExceptions() paired try_items with handler lists by INDEX --
+// `code.handlers.handlers[ti]`, and `if (ti >= handlers.size()) break;`. The
+// DEX format does not pair them that way: each try_item carries a handler_off,
+// a byte offset into the encoded_catch_handler_list, and several try_items
+// routinely share one handler. dx and d8 emit exactly that for
+//
+//     try { a(); } catch (E e) { h(); }
+//     try { b(); } catch (E e) { h(); }
+//
+// where the two ranges have identical catch clauses. With one handler list and
+// two tries, `break` fired on ti == 1 and the second region got no coverage at
+// all -- silently, because a try with no handler looks exactly like code that
+// was never in a try.
+TEST(DexLifter, TwoTriesSharingOneHandlerBothGetCoverage)
+{
+	auto dex = buildMinimalDex();
+	DexFile df = DexFile::parse(dex);
+	auto result = liftTwoTriesSharingOneHandler(df);
+	ASSERT_EQ(DexLiftResult::OK, result.status);
+
+	// One typed handler plus one catch-all, for each of the two regions.
+	std::set<std::pair<uint32_t, uint32_t>> regions;
+	for (const auto& h: result.cfg.handlers())
+		regions.insert({h.startOffset, h.endOffset});
+
+	EXPECT_EQ(1u, regions.count({0u, 2u})) << "the first try region lost its handler";
+	EXPECT_EQ(1u, regions.count({2u, 4u})) << "the second try region lost its handler";
+}
+
+// The other half: a handler_off that names no handler must be refused, not
+// resolved to whichever entry happens to sit at that index.
+TEST(DexLifter, ATryPointingAtNoHandlerIsRefused)
+{
+	auto dex = buildMinimalDex();
+	DexFile df = DexFile::parse(dex);
+
+	CodeItem code;
+	code.registersSize = 2;
+	code.insSize = 0;
+	code.outsSize = 0;
+	code.debugInfoOff = 0;
+	code.insns = {static_cast<uint16_t>(0x000Eu), static_cast<uint16_t>(0x000Eu)};
+	code.insnsSize = 2;
+
+	TryItem t;
+	t.startAddr = 0;
+	t.insnCount = 2;
+	t.handlerOff = 999; // no handler was parsed at this offset
+	code.tries.push_back(t);
+	code.triesSize = 1;
+	code.handlers.handlers.push_back({CatchHandler{-1, 0}});
+	code.handlers.catchAllAddrs.push_back(0);
+	code.handlers.handlerOffsets.push_back(7);
+
+	auto result = DexLifter(df).lift(code, 0);
+	ASSERT_EQ(DexLiftResult::OK, result.status);
+	EXPECT_EQ(0u, result.cfg.handlers().size()) << "a dangling handler_off resolved to some other handler";
+}
+
+// The other end of the handler_off fix: the parser has to record where each
+// encoded_catch_handler sits, or wireExceptions() has nothing to match against.
+// handlerListStart was captured and then discarded with a `(void)` cast.
+//
+// Layout below, byte offsets relative to the start of the
+// encoded_catch_handler_list:
+//
+//   +0  ULEB128 size = 2            (one byte)
+//   +1  handler #0: SLEB128 -1      (one byte, so one pair plus a catch-all)
+//   +2              type_idx  = 0   (one byte)
+//   +3              addr      = 0   (one byte)
+//   +4              catch_all = 0   (one byte)
+//   +5  handler #1: SLEB128 1       (one byte, one pair, no catch-all)
+//   +6              type_idx  = 1   (one byte)
+//   +7              addr      = 0   (one byte)
+//
+// so handlerOffsets must come back as {1, 5}, and the two try_items name them
+// by exactly those numbers.
+TEST(DexFile, EachCatchHandlerRecordsItsOffsetInTheList)
+{
+	auto dex = buildMinimalDex();
+	const uint32_t codeOff = static_cast<uint32_t>(dex.size());
+	appendU16le(dex, 2); // registers_size
+	appendU16le(dex, 0); // ins_size
+	appendU16le(dex, 0); // outs_size
+	appendU16le(dex, 2); // tries_size
+	appendU32le(dex, 0); // debug_info_off
+	appendU32le(dex, 4); // insns_size (even — no padding unit)
+	appendU16le(dex, 0x000E);
+	appendU16le(dex, 0x000E);
+	appendU16le(dex, 0x000E);
+	appendU16le(dex, 0x000E);
+
+	appendU32le(dex, 0); // try[0].start_addr
+	appendU16le(dex, 2); // try[0].insn_count
+	appendU16le(dex, 5); // try[0].handler_off  -> handler #1
+	appendU32le(dex, 2); // try[1].start_addr
+	appendU16le(dex, 2); // try[1].insn_count
+	appendU16le(dex, 1); // try[1].handler_off  -> handler #0
+
+	dex.push_back(0x02); // list size = 2
+	dex.push_back(0x7F); // handler #0: SLEB128 -1
+	dex.push_back(0x00); //   type_idx = 0
+	dex.push_back(0x00); //   addr = 0
+	dex.push_back(0x00); //   catch_all addr = 0
+	dex.push_back(0x01); // handler #1: SLEB128 1
+	dex.push_back(0x01); //   type_idx = 1
+	dex.push_back(0x00); //   addr = 0
+
+	DexFile df = DexFile::parse(dex);
+	CodeItem code = df.readCodeItem(codeOff);
+
+	ASSERT_EQ(2u, code.handlers.handlers.size());
+	ASSERT_EQ(2u, code.handlers.handlerOffsets.size());
+	EXPECT_EQ(1u, code.handlers.handlerOffsets[0]);
+	EXPECT_EQ(5u, code.handlers.handlerOffsets[1]);
+
+	// And handler #0 is the one with the catch-all, handler #1 the one without,
+	// so the offsets are attached to the handlers they actually name.
+	EXPECT_EQ(0u, code.handlers.catchAllAddrs[0]);
+	EXPECT_EQ(~0u, code.handlers.catchAllAddrs[1]);
+
+	// The two try_items name them in the reverse of parse order, which is what
+	// makes this a test of the offsets rather than of the index.
+	ASSERT_EQ(2u, code.tries.size());
+	EXPECT_EQ(5u, code.tries[0].handlerOff);
+	EXPECT_EQ(1u, code.tries[1].handlerOff);
 }

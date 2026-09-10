@@ -165,7 +165,10 @@ JvmStackSim::inferPushType(const BcInstruction& insn, const StackState& stateBef
 	case BcOpcode::CmpGt:
 	case BcOpcode::CmpLe:
 	case BcOpcode::FCmpL:
-	case BcOpcode::FCmpG: return types::Int();
+	case BcOpcode::FCmpG:
+	// lcmp pushes -1, 0 or 1 -- an int, like the rest of them. It was
+	// missing here because nothing produced LCmp.
+	case BcOpcode::LCmp: return types::Int();
 	case BcOpcode::IsNull:
 	case BcOpcode::IsNotNull: return types::Bool();
 

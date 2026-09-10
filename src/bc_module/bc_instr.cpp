@@ -41,7 +41,10 @@ BcStackEffect stackEffectOf(BcOpcode op) noexcept {
     case Op::CmpEq: case Op::CmpNe: case Op::CmpLt:
     case Op::CmpGe: case Op::CmpGt: case Op::CmpLe:
     case Op::FCmpL: case Op::FCmpG:
-		return {2, 1};
+	// LCmp had no case at all, so it fell through to the {0, 0} default: an
+	// opcode the header documents as pushing -1/0/1 for a long compare,
+	// reported as neither popping nor pushing.
+	case Op::LCmp: return {2, 1};
 	case Op::IsNull:
 	case Op::IsNotNull: return {1, 1};
 	case Op::Instanceof: return {1, 1};

@@ -338,7 +338,7 @@ JarReadResult JarReader::read(const uint8_t* data, size_t size)
 		if (opts_.resolveTypes)
 		{
 			TypeResolver resolver(res.module);
-			resolver.resolve(parseResults);
+			resolver.resolve();
 		}
 
 		res.ok = true;
@@ -355,24 +355,26 @@ JarReadResult JarReader::read(const uint8_t* data, size_t size)
 
 TypeResolver::TypeResolver(bc_module::BcModule& mod): mod_(mod) {}
 
-void TypeResolver::resolve(const std::vector<JvmParseResult>& results)
+void TypeResolver::resolve()
 {
-	for (const auto& pr: results)
+	// The module's own classes, not the parse results: JarReader::read() has
+	// already moved every parse result's BcClass in here, so reading them back
+	// out of the vector saw moved-from names and empty interface lists.
+	//
+	// addExternalRef writes to a different container than classes(), so adding
+	// while iterating is safe.
+	for (const auto& cls: mod_.classes())
 	{
-		// For each class, if the superclass is unknown in the module,
-		// add it as an external reference.
-		if (pr.cls.superClass)
+		// If the superclass is unknown in the module, record it as external.
+		if (cls.superClass && cls.superClass->isRef())
 		{
-			if (pr.cls.superClass->isRef())
+			const auto& name = cls.superClass->ref().className;
+			if (mod_.findClass(name) == nullptr && name != "java/lang/Object")
 			{
-				const auto& name = pr.cls.superClass->ref().className;
-				if (mod_.findClass(name) == nullptr && name != "java/lang/Object")
-				{
-					mod_.addExternalRef(name, "import " + name + ";");
-				}
+				mod_.addExternalRef(name, "import " + name + ";");
 			}
 		}
-		for (const auto& iface: pr.cls.interfaces)
+		for (const auto& iface: cls.interfaces)
 		{
 			if (iface.isRef())
 			{

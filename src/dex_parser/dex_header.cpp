@@ -621,9 +621,18 @@ CodeItem DexFile::readCodeItem(uint32_t offset) const
 		r.checkCount(handlerListSize, kMinCatchHandlerSize);
 		code.handlers.handlers.resize(handlerListSize);
 		code.handlers.catchAllAddrs.resize(handlerListSize, ~0u);
+		code.handlers.handlerOffsets.resize(handlerListSize, ~0u);
 
 		for (uint32_t i = 0; i < handlerListSize; ++i)
 		{
+			// TryItem::handlerOff is a byte offset from the START of the
+			// encoded_catch_handler_list -- the position of the ULEB128 size
+			// read just above -- to this encoded_catch_handler. Recording it
+			// is what lets wireExceptions() pair a try with its handler the
+			// way the format says, instead of by index; handlerListStart was
+			// captured and then thrown away with a (void) cast.
+			code.handlers.handlerOffsets[i] = static_cast<uint32_t>(r.pos() - handlerListStart);
+
 			int32_t size = r.sleb128(); // positive: type+addr pairs; negative: pairs + catch-all
 			// Negate in 64 bits: -size is undefined for INT32_MIN, which a
 			// crafted SLEB128 can produce.
@@ -655,7 +664,6 @@ CodeItem DexFile::readCodeItem(uint32_t offset) const
 				code.handlers.catchAllAddrs[i] = r.uleb128();
 			}
 		}
-		(void)handlerListStart; // suppress unused warning
 	}
 
 	return code;

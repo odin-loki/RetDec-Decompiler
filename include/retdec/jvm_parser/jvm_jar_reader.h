@@ -115,7 +115,19 @@ class TypeResolver {
 public:
     explicit TypeResolver(bc_module::BcModule& mod);
 
-    void resolve(const std::vector<JvmParseResult>& results);
+	/// Resolve against the classes already in the module.
+	///
+	/// This used to take the JvmParseResult vector and read `pr.cls` from it.
+	/// JarReader::read() moves every `pr.cls` into the module with
+	/// `addClass(std::move(pr.cls))` BEFORE calling this, so the superclass and
+	/// interface lists it read were moved-from: well-defined, unspecified, and
+	/// in practice empty. Nothing was ever resolved and no external reference
+	/// was ever recorded.
+	///
+	/// Reading the module instead also covers classes lifted out of nested
+	/// JARs, which the parse-result vector never held -- the call site's own
+	/// comment claimed it did.
+	void resolve();
 
 private:
     bc_module::BcModule& mod_;

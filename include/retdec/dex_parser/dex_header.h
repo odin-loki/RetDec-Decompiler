@@ -335,6 +335,16 @@ struct EncodedCatchHandlerList
 {
 	std::vector<std::vector<CatchHandler>> handlers;
 	std::vector<uint32_t> catchAllAddrs; ///< catch-all addr per handler
+
+	/// Byte offset of each encoded_catch_handler from the start of the
+	/// encoded_catch_handler_list, which is what TryItem::handlerOff names.
+	///
+	/// try_items are NOT paired with handler lists by index: several tries
+	/// routinely share one handler (dx and d8 emit that for any two ranges with
+	/// identical catch clauses), so the two vectors need not even be the same
+	/// length. wireExceptions() paired them by index anyway and dropped every
+	/// try past the handler count.
+	std::vector<uint32_t> handlerOffsets;
 };
 
 struct CodeItem

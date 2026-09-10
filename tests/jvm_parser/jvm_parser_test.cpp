@@ -2696,3 +2696,229 @@ TEST(JvmLifter, InstructionIdsAreUniqueAcrossTheWholeMethod)
 	for (size_t i = 0; i < sorted.size(); ++i)
 		EXPECT_EQ(static_cast<uint32_t>(i), sorted[i]);
 }
+
+// ─── Reference compare-and-branch, and lcmp ──────────────────────────────────
+
+// if_acmpeq (0xA5) and if_acmpne (0xA6) lifted to BcOpcode::CmpEq / CmpNe.
+// Those are the VALUE-producing comparisons -- getStackEffect says {2, 1} for
+// them and JvmStackSimulator::resultType gives them types::Int() -- while
+// if_acmpeq pops two references and pushes nothing. Three things followed:
+//
+//   * BcBasicBlock::hasTerminator() lists the branch opcodes, and CmpEq is not
+//     one, so a block ending in if_acmpeq had NO terminator: terminator()
+//     returned nullptr and every consumer that asks a block how it ends got
+//     "it doesn't".
+//   * The stack simulator pushed a result the JVM never pushed, so the operand
+//     depth was one too deep from that point to the end of the method.
+//   * The if_icmp family right above it in the same switch lifts to
+//     IfEq/IfNe/IfLt/..., so reference and integer compare-and-branch were
+//     lifted to two different kinds of thing.
+TEST(JvmLifter, ReferenceCompareAndBranchIsABranch)
+{
+	CodeAttr code;
+	code.bytecode = {
+		0x01, // 0: aconst_null
+		0x01, // 1: aconst_null
+		0xA5,
+		0x00,
+		0x04, // 2: if_acmpeq +4 -> 6
+		0xB1, // 5: return
+		0xB1, // 6: return
+	};
+	code.maxStack = 2;
+	code.maxLocals = 0;
+	ConstPool pool;
+	JvmLifter lifter(pool);
+	auto res = lifter.lift(code, "()V");
+	ASSERT_TRUE(res.ok) << res.error;
+	ASSERT_GE(res.cfg.blockCount(), 2u) << "the branch must split the method";
+
+	const auto& first = res.cfg.block(0);
+	ASSERT_FALSE(first.instrs.empty());
+	const auto& last = first.instrs.back();
+	EXPECT_EQ(BcOpcode::IfEq, last.opcode);
+	EXPECT_TRUE(first.hasTerminator()) << "a block ending in if_acmpeq has no terminator";
+	EXPECT_NE(nullptr, first.terminator());
+	// It still pops both references and pushes nothing.
+	EXPECT_EQ(2, last.effect.pop);
+	EXPECT_EQ(0, last.effect.push);
+}
+
+TEST(JvmLifter, ReferenceInequalityBranchIsABranchToo)
+{
+	CodeAttr code;
+	code.bytecode = {
+		0x01, // 0: aconst_null
+		0x01, // 1: aconst_null
+		0xA6,
+		0x00,
+		0x04, // 2: if_acmpne +4 -> 6
+		0xB1, // 5: return
+		0xB1, // 6: return
+	};
+	code.maxStack = 2;
+	code.maxLocals = 0;
+	ConstPool pool;
+	JvmLifter lifter(pool);
+	auto res = lifter.lift(code, "()V");
+	ASSERT_TRUE(res.ok) << res.error;
+	ASSERT_GE(res.cfg.blockCount(), 2u);
+
+	const auto& first = res.cfg.block(0);
+	ASSERT_FALSE(first.instrs.empty());
+	EXPECT_EQ(BcOpcode::IfNe, first.instrs.back().opcode);
+	EXPECT_TRUE(first.hasTerminator());
+}
+
+// lcmp (0x94) is the three-way long compare: it pops two longs and pushes
+// -1, 0 or 1. It lifted to BcOpcode::CmpEq, an equality test, so
+// `Long.compare(a, b)` and every `a < b` on longs -- which javac compiles as
+// lcmp followed by iflt -- came out as `a == b`.
+//
+// BcOpcode::LCmp exists for exactly this ("JVM lcmp -- push -1/0/1 for long
+// compare") and JavaExprEmitter already has a case for it emitting
+// Long.compare(a, b). Nothing produced it, so that case was dead.
+TEST(JvmLifter, LcmpIsAThreeWayCompareNotAnEqualityTest)
+{
+	CodeAttr code;
+	code.bytecode = {
+		0x09, // 0: lconst_0
+		0x0A, // 1: lconst_1
+		0x94, // 2: lcmp
+		0xAC, // 3: ireturn
+	};
+	code.maxStack = 4;
+	code.maxLocals = 0;
+	ConstPool pool;
+	JvmLifter lifter(pool);
+	auto res = lifter.lift(code, "()I");
+	ASSERT_TRUE(res.ok) << res.error;
+	ASSERT_GE(res.cfg.blockCount(), 1u);
+
+	const auto& instrs = res.cfg.block(0).instrs;
+	ASSERT_GE(instrs.size(), 3u);
+	EXPECT_EQ(BcOpcode::LCmp, instrs[2].opcode);
+	EXPECT_EQ(2, instrs[2].effect.pop);
+	EXPECT_EQ(1, instrs[2].effect.push);
+}
+
+// And the canonical table has to agree with it: stackEffectOf had no case for
+// LCmp at all, so it fell through to the {0, 0} default -- an opcode that
+// neither pops nor pushes. Fixing the lifter without this would have moved the
+// contradiction rather than removed it.
+TEST(BcInstrEffect, LCmpPopsTwoAndPushesOne)
+{
+	const auto eff = stackEffectOf(BcOpcode::LCmp);
+	EXPECT_EQ(2, eff.pop);
+	EXPECT_EQ(1, eff.push);
+}
+
+// ─── Cross-class type resolution ─────────────────────────────────────────────
+
+namespace {
+
+/// A minimal class file named @a name whose superclass is @a super.
+std::vector<uint8_t> makeClassExtending(const std::string& name, const std::string& super)
+{
+	std::vector<uint8_t> raw;
+	auto push4 = [&](uint32_t v) {
+		raw.push_back((v >> 24) & 0xFF);
+		raw.push_back((v >> 16) & 0xFF);
+		raw.push_back((v >> 8) & 0xFF);
+		raw.push_back(v & 0xFF);
+	};
+	auto push2 = [&](uint16_t v) {
+		raw.push_back((v >> 8) & 0xFF);
+		raw.push_back(v & 0xFF);
+	};
+	auto pushUtf8 = [&](const std::string& s) {
+		raw.push_back(1);
+		push2(static_cast<uint16_t>(s.size()));
+		for (char c: s)
+			raw.push_back(static_cast<uint8_t>(c));
+	};
+
+	push4(0xCAFEBABE);
+	push2(0);
+	push2(52);
+	push2(5); // cp_count: entries #1..#4
+
+	pushUtf8(name); // #1
+	raw.push_back(7);
+	push2(1);        // #2 Class(#1)
+	pushUtf8(super); // #3
+	raw.push_back(7);
+	push2(3); // #4 Class(#3)
+
+	push2(0x0021); // public + super
+	push2(2);      // this  = #2
+	push2(4);      // super = #4
+	push2(0);      // 0 interfaces
+	push2(0);      // 0 fields
+	push2(0);      // 0 methods
+	push2(0);      // 0 class attributes
+	return raw;
+}
+
+} // namespace
+
+// JarReader::read() does
+//
+//     for (auto& pr: parseResults)
+//         res.module.addClass(std::move(pr.cls));
+//     ...
+//     TypeResolver resolver(res.module);
+//     resolver.resolve(parseResults);      // <-- reads pr.cls again
+//
+// so every BcClass the resolver looked at had already been moved out. A
+// moved-from std::string and std::vector are valid but unspecified, and in
+// practice empty -- so superClass was null, interfaces was empty, and not one
+// external reference was ever recorded. resolve() now reads the module's own
+// classes, which is where they went.
+TEST(JarReader, AnExternalSuperclassIsRecordedAsAnExternalReference)
+{
+	auto zip = storedZip({{"Hello.class", makeClassExtending("Hello", "com/example/Base")}});
+	JarReader reader; // resolveTypes defaults true
+	auto res = reader.read(zip.data(), zip.size());
+	ASSERT_TRUE(res.ok) << res.error;
+	ASSERT_NE(nullptr, res.module.findClass("Hello"));
+
+	const auto& refs = res.module.externalRefs();
+	EXPECT_EQ(1u, refs.count("com/example/Base")) << "the superclass was not recorded as external";
+}
+
+// The other direction: a superclass that IS in the JAR is not external, and
+// java/lang/Object never is. Without this the fix could be "record everything".
+TEST(JarReader, ASuperclassInsideTheJarIsNotExternal)
+{
+	auto zip = storedZip({
+		{"Base.class", makeClassExtending("Base", "java/lang/Object")},
+		{"Derived.class", makeClassExtending("Derived", "Base")},
+	});
+	JarReader reader;
+	auto res = reader.read(zip.data(), zip.size());
+	ASSERT_TRUE(res.ok) << res.error;
+	ASSERT_NE(nullptr, res.module.findClass("Base"));
+	ASSERT_NE(nullptr, res.module.findClass("Derived"));
+
+	const auto& refs = res.module.externalRefs();
+	EXPECT_EQ(0u, refs.count("Base")) << "a class inside the JAR was called external";
+	EXPECT_EQ(0u, refs.count("java/lang/Object"));
+}
+
+// And the case the call site's own comment claimed to cover and did not: a
+// class lifted out of a nested JAR never appeared in `parseResults` at all --
+// those are merged straight into res.module -- so even a working by-results
+// resolver would have skipped it.
+TEST(JarReader, AClassFromANestedJarIsResolvedToo)
+{
+	auto inner = storedZip({{"Nested.class", makeClassExtending("Nested", "com/example/Other")}});
+	auto outer = storedZip({{"BOOT-INF/lib/dep.jar", inner}});
+	JarReader reader; // parseBoot defaults true
+	auto res = reader.read(outer.data(), outer.size());
+	ASSERT_TRUE(res.ok) << res.error;
+	ASSERT_NE(nullptr, res.module.findClass("Nested"));
+
+	const auto& refs = res.module.externalRefs();
+	EXPECT_EQ(1u, refs.count("com/example/Other")) << "a nested-JAR class was never resolved";
+}
