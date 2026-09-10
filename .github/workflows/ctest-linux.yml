@@ -117,11 +117,29 @@ jobs:
       - name: Integration tests
         run: ctest --test-dir build/linux --output-on-failure -L integration
 
+      # The measured gates below print their headline numbers to stdout, and
+      # stdout for this job is ~16 MB of clang-tidy output that the Actions log
+      # API will not return past its own window -- so the numbers that decide
+      # whether to raise a baseline were, in practice, unreadable. Each one now
+      # also lands in the job summary, which is a few lines and always
+      # retrievable.
       - name: Algorithm recovery live F1 (CI core subset)
         run: |
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
           if [ -z "$DEC" ]; then echo "retdec-decompiler not found"; exit 1; fi
-          bash scripts/run_algorithm_recovery_ci.sh --decompiler "$DEC"
+          # rc is captured rather than letting the pipeline abort the step: the
+          # number is most worth reading when the gate FAILS, so the summary
+          # has to be written either way.
+          set -o pipefail
+          rc=0
+          bash scripts/run_algorithm_recovery_ci.sh --decompiler "$DEC" 2>&1 | tee /tmp/f1.log || rc=$?
+          {
+            echo "### Algorithm recovery (ci_core)"
+            echo '```'
+            grep -E 'mean_f1|REGRESSION|PASS|decompiled=' /tmp/f1.log || tail -n 5 /tmp/f1.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
 
       - name: CACHE-05 cache-on vs cache-off
         run: |
@@ -182,10 +200,19 @@ jobs:
           # copy-propagation passes do not even go parallel below twenty-four
           # functions.  A third of the corpus, evenly spread so every compiler
           # and optimisation level is represented.
+          set -o pipefail
+          rc=0
           bash scripts/ci/check_output_determinism.sh \
             --decompiler "$DEC" \
             --corpus tests/algorithm_recovery/corpus \
-            --limit 72 --timeout 120
+            --limit 72 --timeout 120 2>&1 | tee /tmp/det01.log || rc=$?
+          {
+            echo "### DET-01 output determinism"
+            echo '```'
+            grep -E '^DET-01' /tmp/det01.log || tail -n 3 /tmp/det01.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
 
       - name: CC-01 emitted C compiles
         run: |
@@ -206,10 +233,19 @@ jobs:
           # as a library function -- and then calling `putc(c, stream, a3)`
           # against the two-argument prototype that header provides.  Raise
           # the floor with each one fixed.
+          set -o pipefail
+          rc=0
           bash scripts/ci/check_emitted_c_compiles.sh \
             --decompiler "$DEC" \
             --corpus tests/algorithm_recovery/corpus \
-            --limit 24 --timeout 120 --min-rate 0.8750
+            --limit 24 --timeout 120 --min-rate 0.8750 2>&1 | tee /tmp/cc01.log || rc=$?
+          {
+            echo "### CC-01 emitted C compiles"
+            echo '```'
+            grep -E '^CC-01' /tmp/cc01.log || tail -n 3 /tmp/cc01.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
 
       - name: Filename-rename integrity guard
         run: |

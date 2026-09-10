@@ -81,10 +81,16 @@ bash "${ROOT}/scripts/algorithm_recovery_gate.sh" \
 	--min-mean-f1 "${MIN_MEAN_F1}" \
 	--min-mean-f1-raw "${MIN_MEAN_F1_RAW}"
 
+# No `|| true` here. It used to be, so the gate printed its verdict and the run
+# stayed green: F1 could fall from 0.23 to 0.13 with "REGRESSION: mean_f1
+# dropped by 0.10" in the log and a passing build. What actually gated was
+# --min-mean-f1 above, a static 0.12 floor, not the 0.05 drop tolerance the
+# baseline declares. The one case that legitimately has no verdict -- no
+# baseline file yet -- is already the `if` around this.
 if [[ -f "${ROOT}/results/baseline-algorithm-recovery.json" ]]; then
 	bash "${ROOT}/scripts/algorithm_recovery_regression_gate.sh" \
 		--current "${RESULTS}" \
-		--profile ci_core || true
+		--profile ci_core
 fi
 
 echo "Algorithm recovery CI complete: ${RESULTS}"
