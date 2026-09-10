@@ -9,6 +9,7 @@ add_library(llvmir2hll STATIC
 	analysis/expr_types_analysis.cpp
 	analysis/goto_target_analysis.cpp
 	analysis/indirect_func_ref_analysis.cpp
+	analysis/loop_bound_jump_analysis.cpp
 	analysis/no_init_var_def_analysis.cpp
 	analysis/null_pointer_analysis.cpp
 	analysis/special_fp_analysis.cpp

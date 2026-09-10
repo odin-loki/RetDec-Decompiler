@@ -5,6 +5,7 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include "retdec/llvmir2hll/analysis/loop_bound_jump_analysis.h"
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
 #include "retdec/llvmir2hll/ir/break_stmt.h"
 #include "retdec/llvmir2hll/ir/const_bool.h"
@@ -58,6 +59,24 @@ void WhileTrueToWhileCondOptimizer::visit(ShPtr<WhileLoopStmt> stmt) {
 	ShPtr<SplittedWhileTrueLoop> splittedLoop(splitWhileTrueLoop(stmt));
 	if (!splittedLoop) {
 		// The loop cannot be optimized.
+		return;
+	}
+
+	// The statements before the loop end are cloned before the loop further
+	// down, because the body of a "while true" loop always runs at least once.
+	// A break or continue among them belongs to this loop, and the clone is
+	// outside it, so the clone's copy would be a break with nothing to break
+	// out of. CC-01 reported exactly that on hash_table-gcc-O2 --
+	// `break statement not within loop or switch` -- with the prefix hoisted
+	// above an empty `while (true) { }`.
+	//
+	// This pass is the only one of the three splitWhileTrueLoop callers that
+	// clones the prefix out of the loop: WhileTrueToForLoopOptimizer and
+	// WhileTrueToUForLoopOptimizer both keep it as the new loop's body, where
+	// a break stays enclosed. So the guard is here rather than in the shared
+	// helper.
+	if (LoopBoundJumpAnalysis::hasJumpBoundToEnclosingLoop(splittedLoop->beforeLoopEndStmts))
+	{
 		return;
 	}
 

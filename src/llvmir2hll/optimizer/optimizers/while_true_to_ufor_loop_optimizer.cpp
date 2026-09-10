@@ -5,6 +5,7 @@
 * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
 */
 
+#include "retdec/llvmir2hll/analysis/loop_bound_jump_analysis.h"
 #include "retdec/llvmir2hll/analysis/value_analysis.h"
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
 #include "retdec/llvmir2hll/ir/empty_stmt.h"
@@ -68,7 +69,21 @@ void WhileTrueToUForLoopOptimizer::tryReplacementWithUForLoop(
 	//   BODY;
 	//   while (!exit) { BODY; }
 	// which preserves semantics while still simplifying the original shape.
-	if (isDoWhileLoop(whileLoop)) {
+	// A break or continue in the body binds to this loop, and the first BODY
+	// above sits outside the loop that replaces it -- so the lowering would
+	// leave it with nothing to break out of. CC-01 reported exactly that on
+	// hash_table across four builds: `break statement not within loop or
+	// switch`, with the body hoisted above the loop it came from.
+	//
+	// WhileTrueToWhileCondOptimizer prepends a clone of the same prefix for the
+	// same "runs at least once" reason and needs the same precondition, which
+	// is why the question lives in LoopBoundJumpAnalysis rather than here.
+	// tryConversionToUForLoop below keeps the prefix as the new loop's *body*,
+	// where a break stays enclosed, so it is not covered by this guard and does
+	// not need to be.
+	if (isDoWhileLoop(whileLoop)
+		&& !LoopBoundJumpAnalysis::hasJumpBoundToEnclosingLoop(splittedLoop->beforeLoopEndStmts))
+	{
 		auto continueCond = getDoWhileCondition(whileLoop);
 		auto firstBody = splittedLoop->beforeLoopEndStmts;
 		if (continueCond && firstBody) {

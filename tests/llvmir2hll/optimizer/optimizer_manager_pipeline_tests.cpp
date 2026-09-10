@@ -26,17 +26,25 @@
 #include "retdec/llvmir2hll/evaluator/arithm_expr_evaluators/strict_arithm_expr_evaluator.h"
 #include "retdec/llvmir2hll/hll/hll_writers/c_hll_writer.h"
 #include "retdec/llvmir2hll/ir/function.h"
+#include "retdec/llvmir2hll/ir/break_stmt.h"
+#include "retdec/llvmir2hll/ir/continue_stmt.h"
+#include "retdec/llvmir2hll/ir/for_loop_stmt.h"
 #include "retdec/llvmir2hll/ir/goto_stmt.h"
 #include "retdec/llvmir2hll/ir/module.h"
 #include "retdec/llvmir2hll/ir/statement.h"
+#include "retdec/llvmir2hll/ir/switch_stmt.h"
+#include "retdec/llvmir2hll/ir/ufor_loop_stmt.h"
+#include "retdec/llvmir2hll/ir/while_loop_stmt.h"
 #include "retdec/llvmir2hll/obtainer/call_info_obtainers/pessim_call_info_obtainer.h"
 #include "retdec/llvmir2hll/optimizer/optimizer_manager.h"
 #include "retdec/llvmir2hll/support/smart_ptr.h"
 #include "retdec/llvmir2hll/support/types.h"
 #include "retdec/llvmir2hll/support/visitors/ordered_all_visitor.h"
 
+#include <cstdio>
 #include <regex>
 #include <set>
+#include <vector>
 #include <sstream>
 
 using namespace ::testing;
@@ -68,6 +76,69 @@ private:
 	}
 
 	StmtUSet seen;
+};
+
+/// Whether any `break` or `continue` below a statement has no loop or switch
+/// around it.
+///
+/// OrderedAllVisitor already walks nested statements and successors; all this
+/// adds is a depth counter incremented on the way into a loop or a switch, so
+/// a BreakStmt seen at depth zero is one C will reject.
+class StrandedBreakFinder : private OrderedAllVisitor {
+public:
+	static bool hasOne(ShPtr<Statement> start)
+	{
+		StrandedBreakFinder f;
+		f.visitStmt(start);
+		return f.found;
+	}
+
+private:
+	template <typename T>
+	void inLoop(ShPtr<T> stmt)
+	{
+		++depth;
+		OrderedAllVisitor::visit(stmt);
+		--depth;
+	}
+
+	void visit(ShPtr<WhileLoopStmt> stmt) override
+	{
+		inLoop(stmt);
+	}
+	void visit(ShPtr<ForLoopStmt> stmt) override
+	{
+		inLoop(stmt);
+	}
+	void visit(ShPtr<UForLoopStmt> stmt) override
+	{
+		inLoop(stmt);
+	}
+	void visit(ShPtr<SwitchStmt> stmt) override
+	{
+		inLoop(stmt);
+	}
+
+	void visit(ShPtr<BreakStmt> stmt) override
+	{
+		if (depth == 0)
+		{
+			found = true;
+		}
+		OrderedAllVisitor::visit(stmt);
+	}
+
+	void visit(ShPtr<ContinueStmt> stmt) override
+	{
+		if (depth == 0)
+		{
+			found = true;
+		}
+		OrderedAllVisitor::visit(stmt);
+	}
+
+	std::size_t depth = 0;
+	bool found = false;
 };
 
 } // namespace
@@ -193,6 +264,27 @@ protected:
 				{
 					bad.insert((*i)->getName());
 				}
+			}
+		}
+		return bad;
+	}
+
+	/// Every function holding a `break` or `continue` with nothing to break
+	/// out of.
+	///
+	/// The other half of CC-01's question. `break statement not within loop or
+	/// switch` is what a C compiler says about hash_table-gcc-O2, and it is a
+	/// property of the BIR, not of the text: a BreakStmt is stranded exactly
+	/// when no loop or switch encloses it. Walking down from each function
+	/// body and carrying that one bit answers it without a front end.
+	static StringSet functionsWithAStrandedBreak(ShPtr<Module> m)
+	{
+		StringSet bad;
+		for (auto i = m->func_definition_begin(); i != m->func_definition_end(); ++i)
+		{
+			if (StrandedBreakFinder::hasOne((*i)->getBody()))
+			{
+				bad.insert((*i)->getName());
 			}
 		}
 		return bad;
@@ -675,6 +767,246 @@ TEST_F(OptimizerManagerPipelineTests, ShellSortFunction1080EmitsNoUndefinedLabel
 								 << code;
 	EXPECT_TRUE(functionsWithAStrandedGoto(module).empty());
 }
+
+
+/// The function CC-01 reports `break statement not within loop or switch` on,
+/// from hash_table-gcc-O2, reduced to itself.
+///
+/// The IR is one loop and nothing clever: 12b0 tests a bucket's count, 12c2
+/// calls strcmp, 12d1 decrements a counter and branches back to 12b0, and
+/// there are two exits -- 12e9 on a match and 12e0 when the counter runs out.
+/// The C the back end emits for it puts 12b0's test, 12c2's call and the
+/// `break` at function scope and leaves `while (true) { }` empty after them,
+/// so the break has nothing to break out of.
+///
+/// Kept verbatim from the artifact scripts/ci/check_emitted_c_compiles.sh
+/// --save-failures wrote in ctest-linux run 274, minus the other twelve
+/// functions of that module.
+constexpr const char* kHashTableFunction1270 = R"(source_filename = "test"
+target datalayout = "e-m:e-p:64:64-i64:64-f80:128-n8:16:32:64-S128"
+
+@global_var_3fa8 = global i64 0
+@global_var_2004 = constant [6 x i8] c"alpha\00"
+@global_var_200a = constant [5 x i8] c"beta\00"
+@global_var_200f = constant [7 x i8] c"%d %d\0A\00"
+@global_var_4010 = global i64 0
+
+define i64 @function_1270(ptr %arg1, i64 %arg2) {
+dec_label_pc_1270:
+  %storemerge.reg2mem = alloca i64, align 8, !insn.addr !35
+  %r12.0.reg2mem = alloca i32, align 4, !insn.addr !35
+  %rbx.2.in.reg2mem = alloca i64, align 8, !insn.addr !35
+  %rbx.1.reg2mem = alloca i64, align 8, !insn.addr !35
+  %rbx.0.reg2mem = alloca i64, align 8, !insn.addr !35
+  %rdx.0.reg2mem = alloca i64, align 8, !insn.addr !35
+  %rax.0.reg2mem = alloca i64, align 8, !insn.addr !35
+  %0 = urem i64 %arg2, 256
+  %1 = icmp eq i64 %0, 0
+  store i64 %0, ptr %rax.0.reg2mem, align 8, !retdec.pointee !1, !insn.addr !36
+  store i64 %arg2, ptr %rdx.0.reg2mem, align 8, !retdec.pointee !1, !insn.addr !36
+  store i64 2166136261, ptr %rbx.0.reg2mem, align 8, !retdec.pointee !1, !insn.addr !36
+  store i64 2166136261, ptr %rbx.1.reg2mem, align 8, !retdec.pointee !1, !insn.addr !36
+  br i1 %1, label %dec_label_pc_12a3, label %dec_label_pc_1290, !insn.addr !36
+
+dec_label_pc_1290:                                ; preds = %dec_label_pc_1270, %dec_label_pc_1290
+  %rbx.0.reload = load i64, ptr %rbx.0.reg2mem, align 8, !retdec.pointee !1
+  %rdx.0.reload = load i64, ptr %rdx.0.reg2mem, align 8, !retdec.pointee !1
+  %rax.0.reload = load i64, ptr %rax.0.reg2mem, align 8, !retdec.pointee !1
+  %2 = add i64 %rdx.0.reload, 1, !insn.addr !37
+  %3 = xor i64 %rbx.0.reload, %rax.0.reload
+  %4 = inttoptr i64 %2 to ptr, !retdec.pointee !33, !insn.addr !37
+  %5 = load i8, ptr %4, align 1, !retdec.pointee !33, !insn.addr !37
+  %6 = zext i8 %5 to i64, !insn.addr !37
+  %7 = mul nuw nsw i64 %3, 16777619
+  %8 = and i64 %7, 4294967295
+  %.not = icmp eq i8 %5, 0, !insn.addr !37
+  store i64 %6, ptr %rax.0.reg2mem, align 8, !retdec.pointee !1, !insn.addr !38
+  store i64 %2, ptr %rdx.0.reg2mem, align 8, !retdec.pointee !1, !insn.addr !38
+  store i64 %8, ptr %rbx.0.reg2mem, align 8, !retdec.pointee !1, !insn.addr !38
+  store i64 %8, ptr %rbx.1.reg2mem, align 8, !retdec.pointee !1, !insn.addr !38
+  br i1 %.not, label %dec_label_pc_12a3, label %dec_label_pc_1290, !insn.addr !38
+
+dec_label_pc_12a3:                                ; preds = %dec_label_pc_1290, %dec_label_pc_1270
+  %9 = ptrtoint ptr %arg1 to i64
+  %rbx.1.reload = load i64, ptr %rbx.1.reg2mem, align 8, !retdec.pointee !1
+  store i64 %rbx.1.reload, ptr %rbx.2.in.reg2mem, align 8, !retdec.pointee !1, !insn.addr !39
+  store i32 32, ptr %r12.0.reg2mem, align 4, !retdec.pointee !40, !insn.addr !39
+  br label %dec_label_pc_12b0, !insn.addr !39
+
+dec_label_pc_12b0:                                ; preds = %dec_label_pc_12d1, %dec_label_pc_12a3
+  %r12.0.reload = load i32, ptr %r12.0.reg2mem, align 4, !retdec.pointee !40
+  %rbx.2.in.reload = load i64, ptr %rbx.2.in.reg2mem, align 8, !retdec.pointee !1
+  %rbx.2 = urem i64 %rbx.2.in.reload, 32
+  %sr_shl1 = mul nuw nsw i64 %rbx.2, 24
+  %10 = add i64 %sr_shl1, %9, !insn.addr !39
+  %11 = add i64 %10, 20, !insn.addr !39
+  %12 = inttoptr i64 %11 to ptr, !retdec.pointee !40, !insn.addr !39
+  %13 = load i32, ptr %12, align 4, !retdec.pointee !40, !insn.addr !39
+  %14 = icmp eq i32 %13, 0, !insn.addr !39
+  br i1 %14, label %dec_label_pc_12d1, label %dec_label_pc_12c2, !insn.addr !41
+
+dec_label_pc_12c2:                                ; preds = %dec_label_pc_12b0
+  %15 = call i64 @strcmp(i64 %10, i64 %arg2), !insn.addr !42
+  %16 = and i64 %15, 4294967295
+  %17 = icmp eq i64 %16, 0
+  br i1 %17, label %dec_label_pc_12e9, label %dec_label_pc_12d1, !insn.addr !43
+
+dec_label_pc_12d1:                                ; preds = %dec_label_pc_12c2, %dec_label_pc_12b0
+  %18 = add nuw nsw i64 %rbx.2, 1
+  %19 = add i32 %r12.0.reload, -1
+  %.not1 = icmp eq i32 %19, 0, !insn.addr !43
+  store i64 %18, ptr %rbx.2.in.reg2mem, align 8, !retdec.pointee !1, !insn.addr !44
+  store i32 %19, ptr %r12.0.reg2mem, align 4, !retdec.pointee !40, !insn.addr !44
+  store i64 4294967295, ptr %storemerge.reg2mem, align 8, !retdec.pointee !1, !insn.addr !44
+  br i1 %.not1, label %dec_label_pc_12e0, label %dec_label_pc_12b0, !insn.addr !44
+
+dec_label_pc_12e0:                                ; preds = %dec_label_pc_12d1, %dec_label_pc_12e9
+  %storemerge.reload = load i64, ptr %storemerge.reg2mem, align 8, !retdec.pointee !1
+  ret i64 %storemerge.reload, !insn.addr !45
+
+dec_label_pc_12e9:                                ; preds = %dec_label_pc_12c2
+  %20 = add i64 %10, 16, !insn.addr !45
+  %21 = inttoptr i64 %20 to ptr, !retdec.pointee !40, !insn.addr !45
+  %22 = load i32, ptr %21, align 4, !retdec.pointee !40, !insn.addr !45
+  %23 = zext i32 %22 to i64, !insn.addr !45
+  store i64 %23, ptr %storemerge.reg2mem, align 8, !retdec.pointee !1, !insn.addr !46
+  br label %dec_label_pc_12e0, !insn.addr !46
+
+; uselistorder directives
+  uselistorder i64 %arg2, { 2, 0, 1 }
+  uselistorder ptr %storemerge.reg2mem, { 2, 0, 1 }
+  uselistorder ptr %r12.0.reg2mem, { 1, 0, 2 }
+  uselistorder ptr %rbx.2.in.reg2mem, { 1, 0, 2 }
+  uselistorder ptr %rbx.0.reg2mem, { 2, 0, 1 }
+  uselistorder ptr %rdx.0.reg2mem, { 2, 0, 1 }
+  uselistorder ptr %rax.0.reg2mem, { 2, 0, 1 }
+  uselistorder label %dec_label_pc_1290, { 1, 0 }
+  uselistorder label %dec_label_pc_12e0, { 1, 0 }
+}
+
+!0 = !{i64 4096}
+!1 = !{!"i64"}
+!2 = !{i64 4114}
+!3 = !{i64 4116}
+!4 = !{i64 4122}
+!5 = !{i64 4134}
+!6 = !{i64 4212}
+!7 = !{i64 4228}
+!8 = !{i64 4244}
+!9 = !{i64 4260}
+!10 = !{i64 4276}
+!11 = !{i64 4288}
+!12 = !{i64 4330}
+!13 = !{i64 4355}
+!14 = !{i64 4361}
+!15 = !{i64 4377}
+!16 = !{i64 4388}
+!17 = !{i64 4401}
+!18 = !{i64 4424}
+!19 = !{i64 4437}
+!20 = !{i64 4446}
+!21 = !{i64 4461}
+!22 = !{i64 4462}
+!23 = !{i64 4511}
+!24 = !{i64 4517}
+!25 = !{i64 4559}
+!26 = !{i64 4624}
+!27 = !{i64 4640}
+!28 = !{i64 4651}
+!29 = !{i64 4665}
+!30 = !{i64 4674}
+!31 = !{i64 4692}
+!32 = !{i64 4679}
+!33 = !{!"i8"}
+!34 = !{i64 4708}
+!35 = !{i64 4720}
+!36 = !{i64 4739}
+!37 = !{i64 4749}
+!38 = !{i64 4769}
+!39 = !{i64 4780}
+!40 = !{!"i32"}
+!41 = !{i64 4800}
+!42 = !{i64 4808}
+!43 = !{i64 4815}
+!44 = !{i64 4827}
+!45 = !{i64 4840}
+!46 = !{i64 4845}
+!47 = !{i64 4864}
+!48 = !{i64 4892}
+!49 = !{i64 4906}
+!50 = !{i64 4929}
+!51 = !{i64 4940}
+!52 = !{i64 4950}
+!53 = !{i64 4957}
+!54 = !{i64 4969}
+!55 = !{i64 4987}
+!56 = !{i64 5000}
+!57 = !{i64 5009}
+!58 = !{i64 5031}
+!59 = !{i64 5052}
+declare i64 @strcmp(i64, i64))";
+
+/// The scan is worth nothing if it cannot see a break that is really stranded,
+/// so here is one built by hand: an IfStmt at function scope with a BreakStmt
+/// inside it and no loop anywhere.
+TEST_F(OptimizerManagerPipelineTests, TheStrandedBreakScanFindsOne)
+{
+	auto module = convertLLVMIR2BIR(R"(
+		define i32 @f(i32 %x) {
+		entry:
+		  %c = icmp eq i32 %x, 0
+		  br i1 %c, label %t, label %e
+		t:
+		  ret i32 1
+		e:
+		  ret i32 2
+		}
+	)");
+
+	auto f = module->getFuncByName("f");
+	ASSERT_TRUE(f);
+	f->getBody()->setSuccessor(BreakStmt::create());
+
+	EXPECT_FALSE(functionsWithAStrandedBreak(module).empty());
+}
+
+/// And nothing to report on a module whose only break is inside its loop.
+TEST_F(OptimizerManagerPipelineTests, TheStrandedBreakScanPassesAWellFormedLoop)
+{
+	auto module = convertLLVMIR2BIR(R"(
+		define i32 @f(i32 %n) {
+		entry:
+		  br label %loop
+		loop:
+		  %i = phi i32 [ 0, %entry ], [ %next, %body ]
+		  %c = icmp slt i32 %i, %n
+		  br i1 %c, label %body, label %done
+		body:
+		  %next = add i32 %i, 1
+		  br label %loop
+		done:
+		  ret i32 %i
+		}
+	)");
+
+	runPipeline(module);
+
+	EXPECT_TRUE(functionsWithAStrandedBreak(module).empty());
+}
+
+/// The reduced function, through the whole pipeline. This is the assertion
+/// CC-01 makes on the corpus, made here in a second rather than a CI round.
+TEST_F(OptimizerManagerPipelineTests, HashTableFunction1270KeepsItsBreakInsideALoop)
+{
+	auto module = convertLLVMIR2BIR(kHashTableFunction1270);
+
+	runPipeline(module);
+
+	EXPECT_TRUE(functionsWithAStrandedBreak(module).empty()) << "a break was emitted with no loop or switch around it";
+	EXPECT_TRUE(labelProblems(emitC(module)).empty());
+	EXPECT_TRUE(functionsWithAStrandedGoto(module).empty());
+}
+
 
 } // namespace tests
 } // namespace llvmir2hll
