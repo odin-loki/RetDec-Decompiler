@@ -60,8 +60,18 @@ Statement::Statement(Address a):
 */
 void Statement::setSuccessor(ShPtr<Statement> newSucc) {
 	if (succ) {
-		// Update the predecessors of the old successor.
-		succ->preds.erase(succ);
+		// Update the predecessors of the old successor: this statement no
+		// longer reaches it.
+		//
+		// This erased the old successor from its *own* predecessor set, which
+		// is a no-op for any statement that is not its own predecessor -- so
+		// the edge being replaced was never taken off the record. Nothing
+		// cleans it up afterwards either: removePredecessors(true) keeps a
+		// predecessor whose successor is no longer this statement, which is
+		// exactly the stale one. getUniquePredecessor() then answers with a
+		// statement that does not flow into it, and
+		// pre_while_true_loop_conv_optimizer rewrites around that answer.
+		succ->preds.erase(ucast<Statement>(shared_from_this()));
 	}
 
 	if (newSucc) {
@@ -293,13 +303,33 @@ Statement::predecessor_iterator Statement::predecessor_end() const {
 void Statement::removeStatement(ShPtr<Statement> stmt) {
 	PRECONDITION_NON_NULL(stmt);
 
-	// If the stamement to remove is goto, we need to remove it from its
-	// target's predecessors - target is not goto's successor.
+	// Where a jump *into* stmt has to land once stmt is gone.
+	//
+	// For an ordinary statement that is whatever runs next, its successor. A
+	// goto never falls through, so for a goto it is the goto's own target: a
+	// jump into `X: goto L;` means L, and sending it to the statement after
+	// the goto sends it into the code the jump existed to skip. That is a
+	// different program, not a tidier one.
+	//
+	// The function already agreed with that where the label is concerned:
+	// the block below moves a goto's label onto its target. It then sent the
+	// gotos the other way, so the label and the jumps that resolve through it
+	// ended up on two different statements.
+	ShPtr<Statement> gotoTarget;
 	if (auto gotoStmt = cast<GotoStmt>(stmt)) {
-		if (gotoStmt->getTarget()) {
-			gotoStmt->getTarget()->removeObserver(stmt);
-			gotoStmt->getTarget()->removePredecessor(stmt);
-			preserveLabel(stmt, gotoStmt->getTarget());
+		if (auto target = gotoStmt->getTarget())
+		{
+			// If the stamement to remove is goto, we need to remove it from its
+			// target's predecessors - target is not goto's successor.
+			target->removeObserver(stmt);
+			target->removePredecessor(stmt);
+			preserveLabel(stmt, target);
+
+			if (target != stmt)
+			{
+				// `X: goto X;` is its own target and no answer at all.
+				gotoTarget = target;
+			}
 		}
 	}
 
@@ -308,12 +338,18 @@ void Statement::removeStatement(ShPtr<Statement> stmt) {
 	// need to preserve the goto target. To this end, we first check whether
 	// stmt is a goto target and doesn't have a successor, and if this is the
 	// case, we replace it with a dummy empty statement.
-	if (stmt->isGotoTarget() && !stmt->hasSuccessor()) {
+	//
+	// A goto needs no such placeholder: it has somewhere for the jumps to go
+	// whether or not it has a successor.
+	if (!gotoTarget && stmt->isGotoTarget() && !stmt->hasSuccessor())
+	{
 		auto replacement = EmptyStmt::create(nullptr, stmt->getAddress());
 		preserveLabel(stmt, replacement);
 		Statement::replaceStatement(stmt, replacement);
 		return;
 	}
+
+	auto jumpDest = gotoTarget ? gotoTarget : stmt->getSuccessor();
 
 	// Replace the successors/targets of all predecessors. Since we may
 	// modify the predecessors set of stmt in the following loop, we have
@@ -326,7 +362,7 @@ void Statement::removeStatement(ShPtr<Statement> stmt) {
 		// In gotos, we may need to change both the successor and target.
 		if (ShPtr<GotoStmt> gotoStmt = cast<GotoStmt>(pred)) {
 			if (gotoStmt->getTarget() == stmt) {
-				gotoStmt->setTarget(stmt->getSuccessor());
+				gotoStmt->setTarget(jumpDest);
 			}
 		}
 	}
@@ -334,7 +370,13 @@ void Statement::removeStatement(ShPtr<Statement> stmt) {
 	// Update the stmt's successor (if any).
 	if (stmt->succ) {
 		stmt->succ->preds.erase(stmt);
-		preserveLabel(stmt, stmt->succ);
+		if (!gotoTarget)
+		{
+			// A goto's label went to its target above. Copying it here as
+			// well left two statements carrying it, and the emitter writes
+			// the label of every statement a goto points at.
+			preserveLabel(stmt, stmt->succ);
+		}
 	}
 
 	// Use the observer/subject interface to remove it also from all statements

@@ -597,6 +597,55 @@ Closing it means: an `RETDEC_ENABLE_OPENCL` option defaulting OFF,
 behind it, and a CI job that configures with it ON against a POCL or Mesa
 Rusticl ICD — then the `UNBUILT_DIRS` entry comes out.
 
+
+## Two invariants in `Statement` that nothing was holding
+
+Neither of these had a corpus symptom to point at, which is why they are
+recorded here rather than claimed as a fix for one. Both are wrong answers
+from a public API, reproduced at that level.
+
+**`setSuccessor()` never took the replaced edge off the record.**
+
+```cpp
+if (succ) {
+    // Update the predecessors of the old successor.
+    succ->preds.erase(succ);
+}
+```
+
+The comment says what was meant; the line erases the old successor from its
+*own* predecessor set, a no-op for any statement that is not its own
+predecessor. So after `a->setSuccessor(b); a->setSuccessor(c);`, `b` still
+records `a` as reaching it, and nothing cleans it up later:
+`removePredecessors(true)` keeps a predecessor whose successor is no longer
+this statement, which is exactly the stale one.
+
+Most readers of `preds` are guarded — `isGotoTarget()`, `redirectGotosTo()`
+and `removeStatement()` all re-check `getTarget() == this` — but
+`getUniquePredecessor()` is not, and `pre_while_true_loop_conv_optimizer`
+walks backwards through it and rewrites around the answer. A statement that
+does not flow into another is not its unique predecessor. Three tests.
+
+**`removeStatement()` sent a goto's label and its jumps to two different
+places.** A goto never falls through, so a jump into `X: goto L;` means L.
+The function agreed where the label was concerned — it moves a goto's label
+onto the goto's target — and then sent the inbound gotos to the goto's
+*successor*, the code the jump existed to skip, and copied the label there as
+well. Two statements carrying one label, and the jumps resolving through
+neither of them reliably.
+
+It is latent today: every caller that removes a goto pre-empts it.
+`GotoStmtOptimizer` prepends the replacement first, and `prependStatement()`
+ends in `notifyObservers(stmt)`, which is how an inbound goto gets redirected
+onto the prepended statement — so by the time `removeStatement()` runs there
+is nothing left in `preds` for it to get wrong. `GotoCFGOptimizer` pattern B
+removes a goto only when it is not a goto target; pattern D transfers the
+label and redirects the gotos first. An end-to-end test through
+`GotoStmtOptimizer` was written and then dropped, because it passed with the
+fix reverted: the prepend had already done the redirect. Four tests at the
+API level instead, one of them the control for an ordinary statement, which
+still falls through to its successor.
+
 ## Corrections to claims made in this branch's commit messages
 
 ### The Dalvik try-region wrap was not reaching a consumer

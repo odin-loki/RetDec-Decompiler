@@ -29,6 +29,50 @@ namespace tests {
 class StatementTests: public TestsWithModule {};
 
 //
+// setSuccessor()
+//
+
+TEST_F(StatementTests, SettingANewSuccessorDropsTheStatementFromTheOldSuccessorsPredecessors)
+{
+	auto a = EmptyStmt::create();
+	auto b = EmptyStmt::create();
+	auto c = EmptyStmt::create();
+
+	a->setSuccessor(b);
+	a->setSuccessor(c);
+
+	ASSERT_EQ(c, a->getSuccessor());
+	ASSERT_FALSE(b->hasPredecessors()) << "nothing reaches b any more, but a is still recorded as reaching it";
+}
+
+TEST_F(StatementTests, AStatementThatNoLongerReachesAnotherIsNotItsUniquePredecessor)
+{
+	// getUniquePredecessor() is what pre_while_true_loop_conv_optimizer and
+	// copy_propagation_optimizer walk backwards through, so a stale entry is
+	// not merely an extra name in a set -- it is the wrong statement, and they
+	// rewrite around it.
+	auto a = EmptyStmt::create();
+	auto b = EmptyStmt::create();
+	auto c = EmptyStmt::create();
+
+	a->setSuccessor(b);
+	a->setSuccessor(c);
+
+	ASSERT_EQ(ShPtr<Statement>(), b->getUniquePredecessor());
+}
+
+TEST_F(StatementTests, RemovingTheSuccessorDropsTheStatementFromItsPredecessors)
+{
+	auto a = EmptyStmt::create();
+	auto b = EmptyStmt::create();
+
+	a->setSuccessor(b);
+	a->removeSuccessor();
+
+	ASSERT_FALSE(b->hasPredecessors());
+}
+
+//
 // hasLabel()
 //
 
@@ -200,6 +244,76 @@ RedirectGotosToTransfersLabels) {
 
 	ASSERT_EQ("my_label", newTarget->getLabel());
 	ASSERT_FALSE(origTarget->hasLabel());
+}
+
+//
+// removeStatement()
+//
+
+TEST_F(StatementTests, RemovingAGotoSendsTheJumpsIntoItToItsTarget)
+{
+	// X: goto L;
+	//    a;
+	// L: b;
+	//
+	// A jump to X means L. Sending it to `a` -- the statement the goto
+	// existed to skip -- is a different program.
+	auto atL = EmptyStmt::create();
+	auto a = EmptyStmt::create(atL);
+	auto removed = GotoStmt::create(atL);
+	removed->setSuccessor(a);
+	auto jumpIn = GotoStmt::create(removed);
+
+	Statement::removeStatement(removed);
+
+	ASSERT_EQ(atL, jumpIn->getTarget()) << "the jump landed on the statement the removed goto skipped";
+}
+
+TEST_F(StatementTests, RemovingAGotoPutsItsLabelWhereItsJumpsNowGo)
+{
+	// The label and the gotos that resolve through it have to end up on the
+	// same statement, or the emitter writes one of them twice and the other
+	// not at all.
+	auto atL = EmptyStmt::create();
+	auto a = EmptyStmt::create(atL);
+	auto removed = GotoStmt::create(atL);
+	removed->setLabel("lab_x");
+	removed->setSuccessor(a);
+	auto jumpIn = GotoStmt::create(removed);
+
+	Statement::removeStatement(removed);
+
+	ASSERT_EQ(atL, jumpIn->getTarget());
+	ASSERT_EQ("lab_x", atL->getLabel());
+	ASSERT_FALSE(a->hasLabel()) << "the label was copied onto the successor as well, so two reachable"
+								   " statements carry it";
+}
+
+TEST_F(StatementTests, RemovingAGotoWithNoSuccessorStillSendsTheJumpsToItsTarget)
+{
+	// A goto is the last statement of its block, which is the ordinary case.
+	// The placeholder EmptyStmt that a targeted, successorless statement is
+	// replaced by has nowhere to fall through to; the goto's target does.
+	auto atL = EmptyStmt::create();
+	auto removed = GotoStmt::create(atL);
+	auto jumpIn = GotoStmt::create(removed);
+
+	Statement::removeStatement(removed);
+
+	ASSERT_EQ(atL, jumpIn->getTarget());
+}
+
+TEST_F(StatementTests, RemovingAnOrdinaryStatementStillSendsTheJumpsIntoItToItsSuccessor)
+{
+	// The other half of the rule, so the goto case cannot be widened by
+	// accident: an ordinary statement does fall through.
+	auto succ = EmptyStmt::create();
+	auto removed = EmptyStmt::create(succ);
+	auto jumpIn = GotoStmt::create(removed);
+
+	Statement::removeStatement(removed);
+
+	ASSERT_EQ(succ, jumpIn->getTarget());
 }
 
 //
