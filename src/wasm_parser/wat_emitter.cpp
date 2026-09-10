@@ -375,7 +375,6 @@ void WatEmitter::emitFunctions(const WasmModule& mod, std::ostream& out, int ind
 				moduleLocals += show;
 				localOffset += lc.count;
 			}
-
 		}
 		else
 		{

@@ -104,47 +104,48 @@ struct CilParam {
  * variables and carry complete expression trees.  They map 1:1 to C#
  * statement syntax.
  */
-enum class StmtKind {
-    // Variable operations
-    LocalDecl,       ///< type name [= expr];
-    Assign,          ///< target = expr;
-    CompoundAssign,  ///< target op= expr;  (e.g., x += 1)
+enum class StmtKind
+{
+	// Variable operations
+	LocalDecl,      ///< type name [= expr];
+	Assign,         ///< target = expr;
+	CompoundAssign, ///< target op= expr;  (e.g., x += 1)
 
-    // Control flow
-    If,              ///< if (cond) goto/block
-    Goto,            ///< goto label
-    Label,           ///< label:
-    Return,          ///< return [expr];
-    Throw,           ///< throw expr;
-    Rethrow,         ///< rethrow;
-    EndFinally,      ///< (internal: end of finally block)
-    EndFilter,       ///< (internal: endfilter expr)
-    Leave,           ///< (internal: leave target)
+	// Control flow
+	If,         ///< if (cond) goto/block
+	Goto,       ///< goto label
+	Label,      ///< label:
+	Return,     ///< return [expr];
+	Throw,      ///< throw expr;
+	Rethrow,    ///< rethrow;
+	EndFinally, ///< (internal: end of finally block)
+	EndFilter,  ///< (internal: endfilter expr)
+	Leave,      ///< (internal: leave target)
 
-    // Expression statements
-    ExprStmt,        ///< expr;  (void call, side-effecting expression)
+	// Expression statements
+	ExprStmt, ///< expr;  (void call, side-effecting expression)
 
-    // Try/catch/finally (structured)
-    Try,             ///< try { ... }
-    Catch,           ///< catch (Type e) { ... }
-    Filter,          ///< catch when (filter_expr) { ... }
-    Finally,         ///< finally { ... }
-    Fault,           ///< fault { ... }
+	// Try/catch/finally (structured)
+	Try,     ///< try { ... }
+	Catch,   ///< catch (Type e) { ... }
+	Filter,  ///< catch when (filter_expr) { ... }
+	Finally, ///< finally { ... }
+	Fault,   ///< fault { ... }
 
-    // High-level patterns (added by pattern detection)
-    ForEach,         ///< foreach (var x in collection) { ... }
-    Using,           ///< using (var x = ...) { ... }
-    Lock,            ///< lock (expr) { ... }
-    YieldReturn,     ///< yield return expr;
-    YieldBreak,      ///< yield break;
-    AwaitExpr,       ///< await expr  (used as sub-expression within Assign/ExprStmt)
+	// High-level patterns (added by pattern detection)
+	ForEach,     ///< foreach (var x in collection) { ... }
+	Using,       ///< using (var x = ...) { ... }
+	Lock,        ///< lock (expr) { ... }
+	YieldReturn, ///< yield return expr;
+	YieldBreak,  ///< yield break;
+	AwaitExpr,   ///< await expr  (used as sub-expression within Assign/ExprStmt)
 
-    // Fixed/unsafe
-    Fixed,           ///< fixed (T* ptr = ...) { ... }
-    Stackalloc,      ///< T* ptr = stackalloc T[n];
+	// Fixed/unsafe
+	Fixed,      ///< fixed (T* ptr = ...) { ... }
+	Stackalloc, ///< T* ptr = stackalloc T[n];
 
-    // Switch
-    Switch,          ///< switch (expr) { case ...: ... }
+	// Switch
+	Switch, ///< switch (expr) { case ...: ... }
 };
 
 struct CilStmt {

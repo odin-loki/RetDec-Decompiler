@@ -284,8 +284,8 @@ std::string CsExprEmitter::emitDefault(const ExprDefault& e) const {
 }
 
 std::string CsExprEmitter::emitTernary(const ExprTernary& e, int prec) const {
-    std::string cond = emit(e.cond, 1);
-    std::string then = emit(e.then, 1);
+	std::string cond = emit(e.cond, 1);
+	std::string then = emit(e.then, 1);
     std::string els  = emit(e.elseBr, 1);
     return parenIf(cond + " ? " + then + " : " + els, 1, prec);
 }
