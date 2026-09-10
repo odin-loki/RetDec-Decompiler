@@ -170,30 +170,30 @@ LouvainClusterer::cluster(const CallGraph& graph) {
 }
 
 double LouvainClusterer::computeModularity(
-    const std::vector<Node>& nodes,
-    const std::unordered_map<std::string,
-          std::unordered_map<std::string, double>>& adj,
-    double totalWeight) const {
-    if (totalWeight == 0.0) return 0.0;
-    double Q = 0.0;
-    std::unordered_map<std::string, int> idx;
-    for (int i = 0; i < static_cast<int>(nodes.size()); ++i)
-        idx[nodes[i].name] = i;
+	const std::vector<Node>& nodes,
+	const std::unordered_map<std::string,
+		  std::unordered_map<std::string, double>>& adj,
+	double totalWeight) const {
+	if (totalWeight == 0.0) return 0.0;
+	double Q = 0.0;
+	std::unordered_map<std::string, int> idx;
+	for (int i = 0; i < static_cast<int>(nodes.size()); ++i)
+		idx[nodes[i].name] = i;
 
-    for (const auto& [u, nbMap] : adj) {
-        auto iu = idx.find(u);
-        if (iu == idx.end()) continue;
-        for (const auto& [v, w] : nbMap) {
-            auto iv = idx.find(v);
-            if (iv == idx.end()) continue;
-            if (nodes[iu->second].community == nodes[iv->second].community) {
-                Q += w - cfg_.resolution *
-                     nodes[iu->second].degree * nodes[iv->second].degree /
-                     (2.0 * totalWeight);
-            }
-        }
-    }
-    return Q / (2.0 * totalWeight);
+	for (const auto& [u, nbMap] : adj) {
+		auto iu = idx.find(u);
+		if (iu == idx.end()) continue;
+		for (const auto& [v, w] : nbMap) {
+			auto iv = idx.find(v);
+			if (iv == idx.end()) continue;
+			if (nodes[iu->second].community == nodes[iv->second].community) {
+				Q += w - cfg_.resolution *
+					 nodes[iu->second].degree * nodes[iv->second].degree /
+					 (2.0 * totalWeight);
+			}
+		}
+	}
+	return Q / (2.0 * totalWeight);
 }
 
 // ─── ModuleNamer ──────────────────────────────────────────────────────────────
