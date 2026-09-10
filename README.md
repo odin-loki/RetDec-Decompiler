@@ -18,21 +18,36 @@ Stand-in corpus: 216 ELF binaries. Not the OSS-Fuzz paper set.
 | Metric | This fork | Stock RetDec 5.0 |
 |--------|-----------|------------------|
 | Recompile, **buildable C** (`--buildable`, default on) | **216/216** | **0/216** |
-| Recompile, default `.c` | 0/216 | 0/216 |
+| Recompile, default `.c` | see below — 0/216 is stale | 0/216 |
 | Algorithm-recovery F1, **name-blind** | **0.056** (95% CI 0.034–0.083) | n/a (no label export) |
 | Algorithm-recovery F1, name-assisted (symbolicated binaries) | 1.000 | n/a |
 
 Name-blind is the headline. Name-assisted is a second mode on binaries that
 still have symbol names; it is not a product F1. Do not advertise 1.0.
 
-Default `.c` still does not recompile on either side. The cause is now known and
-recorded in
-[docs/internal/UNFIXED_AUDIT_FINDINGS.md](docs/internal/UNFIXED_AUDIT_FINDINGS.md):
-`NoInitVarDefOptimizer` deletes every initializer-less local declaration for C
-output, so the emitted C assigns to variables it never declares. It is unfixed
-because it cannot be tested without the LLVM build. The buildable sidecar
-is on by default (`--buildable` / `C-EMIT` in [docs/CLAIMS.md](docs/CLAIMS.md));
-`--no-buildable` or `RETDEC_EMIT_BUILDABLE=0` turns it off.
+**The `0/216` for this fork's default `.c` is a stale measurement and is being
+replaced.** It was taken before the cause it named was fixed:
+`NoInitVarDefOptimizer` deleted every initializer-less local declaration, so
+the emitted C assigned to variables it never declared. That pass is no longer
+run for the C back end (`src/llvmir2hll/optimizer/optimizer_manager.cpp` says
+why, at length), and the note that it "cannot be tested without the LLVM
+build" is no longer true either: `scripts/ci/check_llvmir2hll_tests.sh` runs
+that component locally in about four minutes.
+
+What is measured today is CC-01
+(`scripts/ci/check_emitted_c_compiles.sh`), which hands the emitted `.c` to a
+C compiler on every `ctest-linux` run. On its 24-binary slice — hashed by
+name, so every compiler and optimisation level is represented — it measures
+**23/24**, and the run that measures the rest of the fixes is in flight. The
+216-wide number has not been re-taken since the fixes; the weekly
+`algorithm-recovery-nightly` workflow now runs CC-01 over the whole corpus so
+that it can be, and this table will carry that figure rather than this note.
+
+Stock RetDec's `0/216` is unaffected and not re-measured here.
+
+The buildable sidecar is on by default (`--buildable` / `C-EMIT` in
+[docs/CLAIMS.md](docs/CLAIMS.md)); `--no-buildable` or
+`RETDEC_EMIT_BUILDABLE=0` turns it off.
 
 Wall-clock figures that compare this Debug/WSL fork to stock Release-in-Docker
 are **not a comparison**. Treat published ~6× ratios as unmeasured.

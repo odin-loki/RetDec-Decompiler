@@ -112,6 +112,56 @@ jobs:
           fi
           bash scripts/run_algorithm_recovery_full.sh --decompiler "$DEC" --jobs 4
 
+      # CC-01 over the whole corpus, not the 24-binary slice ctest-linux
+      # measures on every run.
+      #
+      # README.md publishes "Recompile, default `.c`: 0/216" and names
+      # NoInitVarDefOptimizer as the cause. That pass is no longer run for the
+      # C back end, and CC-01 has measured 21-23 of 24 on its slice for
+      # several runs -- so the published number is contradicted by this
+      # repository's own CI and has been for a while. The way to replace a
+      # stale measurement is another measurement.
+      #
+      # No --min-rate: this reports, exactly as CC-01 did on its first run.
+      # Once a number has been seen it becomes the floor, in a commit that
+      # says which run it came from. A floor invented rather than measured is
+      # either vacuous or flaky.
+      - name: CC-01 emitted C compiles (full corpus)
+        if: always()
+        run: |
+          DEC="${DEC:-}"
+          if [[ -x install/linux/bin/retdec-decompiler ]]; then
+            DEC="install/linux/bin/retdec-decompiler"
+          else
+            DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          fi
+          if [ -z "$DEC" ]; then echo "retdec-decompiler not found"; exit 1; fi
+          set -o pipefail
+          rc=0
+          bash scripts/ci/check_emitted_c_compiles.sh \
+            --decompiler "$DEC" \
+            --corpus tests/algorithm_recovery/corpus \
+            --limit 0 --timeout 120 --errors 10 \
+            --save-failures cc01-full-failures 2>&1 | tee /tmp/cc01-full.log || rc=$?
+          {
+            echo "### CC-01 emitted C compiles (all 216)"
+            echo '```'
+            grep -E '^CC-01|^  ' /tmp/cc01-full.log || tail -n 3 /tmp/cc01-full.log
+            echo '```'
+          } | tee -a gate-numbers-full.md >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+
+      - name: Publish the full-corpus CC-01 numbers
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cc01-full
+          path: |
+            gate-numbers-full.md
+            cc01-full-failures
+          if-no-files-found: ignore
+          retention-days: 30
+
       - name: Algorithm recovery regression gate (CI core)
         run: |
           bash scripts/algorithm_recovery_regression_gate.sh \

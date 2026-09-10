@@ -13,7 +13,7 @@ Headline quality metric is **buildable C** (`--buildable`, default on), not defa
 | Metric | Fork | Stock RetDec 5.0 |
 |--------|------|------------------|
 | Recompile, `--buildable` sidecar | **216/216** | **0/216** |
-| Recompile, default `.c` | 0/216 | 0/216 |
+| Recompile, default `.c` | see the note below — 0/216 is stale | 0/216 |
 | syntax_valid_rate (default `.c`) | 1.0 | 1.0 |
 | mean_wall_s | 1.492 | 0.242 |
 
@@ -21,8 +21,14 @@ Headline quality metric is **buildable C** (`--buildable`, default on), not defa
 Release inside Docker. Treat the ~6× ratio as unmeasured until both sides
 are Release on the same hardware and container.
 
-Default `.c` does not recompile on either side. Per optimisation level
-(default `.c`): syntax 100%, recompile 0% at O0/O2/O3.
+**This fork's default-`.c` figure is stale.** It was taken before
+`NoInitVarDefOptimizer` stopped being run for the C back end, which is what
+made the emitted C assign to undeclared variables. CC-01
+(`scripts/ci/check_emitted_c_compiles.sh`) hands the emitted `.c` to a C
+compiler on every `ctest-linux` run and measures 23/24 on its slice; the
+216-wide figure is being re-taken by the weekly nightly, which now runs CC-01
+over the whole corpus. The per-optimisation-level 0% is stale for the same
+reason. Stock's 0/216 is unaffected and not re-measured here.
 
 Artifacts: `results/compare-fork-vs-stock-full.md`,
 `results/stock-retdec-docker-full.json`.

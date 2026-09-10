@@ -641,6 +641,39 @@ Rusticl ICD — then the `UNBUILT_DIRS` entry comes out.
 
 
 
+
+## The README published a number its own CI contradicted
+
+`README.md`'s results table led with
+
+| Recompile, default `.c` | 0/216 | 0/216 |
+
+and explained it: `NoInitVarDefOptimizer` deletes every initializer-less local
+declaration, so the emitted C assigns to variables it never declares —
+"unfixed because it cannot be tested without the LLVM build".
+
+Every clause of that was out of date:
+
+* The pass is **not run** for the C back end. `optimizer_manager.cpp` says so
+  and gives three reasons, each with a file and line.
+* It **can** be tested without the LLVM build.
+  `scripts/ci/check_llvmir2hll_tests.sh` runs that component against the
+  system LLVM in about four minutes.
+* The number is **contradicted by this repository's own CI**. CC-01 hands the
+  emitted `.c` to a compiler on every `ctest-linux` run and has measured
+  21/24, then 23/24, over several runs — against a published 0.
+
+A stale measurement is replaced by another measurement, not by an argument,
+so `algorithm-recovery-nightly` now runs CC-01 over the whole 216-binary
+corpus. No `--min-rate` on the first pass: it reports, the number becomes the
+floor in a follow-up commit that names the run it came from, exactly as CC-01
+itself was introduced. Until that number exists the table says the figure is
+stale and points here, rather than printing a 0 nobody believes or a
+216/216 nobody has measured.
+
+Stock RetDec's `0/216` is untouched — it was not re-measured and no claim
+about it changes.
+
 ## `lab_0x112c`, found
 
 `splitWhileTrueLoop()` refuses to split a `while (true)` loop when something

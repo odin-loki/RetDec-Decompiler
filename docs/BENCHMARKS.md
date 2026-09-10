@@ -28,7 +28,9 @@ py -3 scripts\run_stock_retdec_docker.py --profile full --skip-pull
 ```
 
 On this set both sides are typically syntax 1.0 on **default `.c`**, which
-does **not** recompile (0%). Buildable sidecars (`--buildable`, default on)
+was measured at 0% before the cause was fixed; that figure is stale and is
+being re-taken (see `docs/BENCHMARKS_TABLE.md`). Buildable sidecars
+(`--buildable`, default on)
 recompile **216/216** on the fork vs **0/216**
 stock. That is the headline quality number; see
 [BENCHMARKS_TABLE.md](BENCHMARKS_TABLE.md).
