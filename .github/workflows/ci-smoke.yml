@@ -50,6 +50,15 @@ jobs:
           sudo apt-get install -y clang-format
           bash scripts/check_format.sh
 
+      # A workflow GitHub cannot parse does not fail: it does not run at all,
+      # and every scheduled and push trigger in that file quietly stops. This
+      # file is one of them, so the check goes first among the cheap ones.
+      # yaml.safe_load() is not enough on its own -- it takes the last of a
+      # repeated key and says nothing, which is how a duplicate reached this
+      # branch and was found only by trying to dispatch the run it had broken.
+      - name: Every workflow parses, with no duplicate keys
+        run: python3 scripts/ci/check_workflow_yaml.py
+
       # A source list that names a deleted file fails the configure outright,
       # and the targets that would notice are behind the hours-long LLVM build.
       # This is a file-existence check; it needs no compiler and takes a second.

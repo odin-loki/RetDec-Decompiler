@@ -599,6 +599,35 @@ Rusticl ICD — then the `UNBUILT_DIRS` entry comes out.
 
 
 
+
+## A workflow that does not parse does not fail — it does not run
+
+`workflow_dispatch` on `ctest-linux.yml` came back with
+
+    failed to parse workflow: (Line: 285, Col: 11):
+    'if-no-files-found' is already defined
+
+The file was already pushed. A workflow GitHub cannot parse produces no run
+at all, so there is no red X: every scheduled and push-triggered run of that
+file simply stops happening until somebody notices. Nothing in this
+repository read these files, and there are twenty of them.
+
+The part worth recording is *how* it got past a check. The file was validated
+before the push with `yaml.safe_load()`, which accepts a repeated key and
+keeps the last one. It loaded cleanly here and was rejected there. A checker
+more permissive than the thing it stands in for is not a checker.
+
+`scripts/ci/check_workflow_yaml.py` (WF-01) parses every workflow with a
+loader that refuses duplicate keys at any level, and checks the structure
+GitHub requires: a name, a trigger, at least one job, `runs-on` and steps on
+every job that is not a reusable-workflow call, and exactly one of `uses` or
+`run` on every step. Eleven self-test cases, including the exact shape that
+got through — with an assertion in the test that `safe_load` does accept it,
+so the reason this check exists cannot quietly stop being true.
+
+Verified against the broken file itself: on the commit as pushed it fails and
+names line 285, the same line GitHub named.
+
 ## Every condition reached the C writer as a subtraction
 
 `src/retdec/llvm_to_ssa.cpp` mapped both `icmp` and `fcmp` to

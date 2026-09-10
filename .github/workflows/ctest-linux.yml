@@ -269,6 +269,8 @@ jobs:
         with:
           name: gate-numbers
           path: gate-numbers.md
+          if-no-files-found: warn
+          retention-days: 30
 
       # The emitted C of whatever CC-01 could not compile. The error names a
       # line in a directory that exists only inside the run, so without this
@@ -282,7 +284,6 @@ jobs:
           name: cc01-failures
           path: cc01-failures
           if-no-files-found: ignore
-          if-no-files-found: warn
           retention-days: 30
 
       - name: Filename-rename integrity guard
