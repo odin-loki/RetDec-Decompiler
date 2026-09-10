@@ -261,6 +261,97 @@ SaveDataWithCorrectOffsetAndSizeWorks) {
 	EXPECT_EQ(expected, result);
 }
 
+//
+// The clamps, against a size that wraps.
+//
+// `loadOffset + loadSize >= getDataSize()` and `saveOffset + saveSize >
+// getDataSize()` were the containment tests, and both are sums of two values
+// the caller supplies. At offset 1 with size 0xFFFFFFFFFFFFFFFF the sum is 0,
+// which is not >= any data size, so the clamp was skipped and the size stayed
+// at 18446744073709551615 -- read by the std::copy in each function, out of a
+// four-byte buffer.
+//
+// These are not the clamp being made stricter. The four tests above this
+// comment pin every in-range answer, and they pass unchanged.
+//
+
+TEST_F(SegmentDataSourceTests, LoadDataWithASizeThatWrapsIsClampedToWhatRemains)
+{
+	std::vector<std::uint8_t> data = {0x10, 0x11, 0x12, 0x13};
+	llvm::StringRef dataRef = llvm::StringRef(reinterpret_cast<const char*>(data.data()), data.size());
+	SegmentDataSource dataSource(dataRef);
+
+	std::vector<std::uint8_t> result;
+	std::vector<std::uint8_t> expected = {0x11, 0x12, 0x13};
+
+	EXPECT_TRUE(dataSource.loadData(1, 0xFFFFFFFFFFFFFFFFull, result));
+	EXPECT_EQ(expected, result);
+}
+
+TEST_F(SegmentDataSourceTests, LoadDataWithASizeThatWrapsToASmallNumberIsClampedToo)
+{
+	std::vector<std::uint8_t> data = {0x10, 0x11, 0x12, 0x13};
+	llvm::StringRef dataRef = llvm::StringRef(reinterpret_cast<const char*>(data.data()), data.size());
+	SegmentDataSource dataSource(dataRef);
+
+	std::vector<std::uint8_t> result;
+	std::vector<std::uint8_t> expected = {0x12, 0x13};
+
+	// 2 + (2^64 - 1) is 1, which is smaller than the four bytes here.
+	EXPECT_TRUE(dataSource.loadData(2, 0xFFFFFFFFFFFFFFFFull, result));
+	EXPECT_EQ(expected, result);
+}
+
+TEST_F(SegmentDataSourceTests, SaveDataWithASizeThatWrapsIsClampedToWhatRemains)
+{
+	std::vector<std::uint8_t> data = {0x10, 0x11, 0x12, 0x13};
+	llvm::StringRef dataRef = llvm::StringRef(reinterpret_cast<const char*>(data.data()), data.size());
+	SegmentDataSource dataSource(dataRef);
+
+	std::vector<std::uint8_t> result;
+	std::vector<std::uint8_t> expected = {0x10, 0x20, 0x21, 0x22};
+
+	std::vector<std::uint8_t> value = {0x20, 0x21, 0x22};
+	EXPECT_TRUE(dataSource.saveData(1, 0xFFFFFFFFFFFFFFFFull, value));
+	EXPECT_TRUE(dataSource.loadData(0, data.size(), result));
+	EXPECT_EQ(expected, result);
+}
+
+/// The bound the clamp never had. saveSize was checked against the destination
+/// and never against the source, so this asked for a hundred bytes out of a
+/// three-byte vector.
+TEST_F(SegmentDataSourceTests, SaveDataDoesNotReadPastTheEndOfTheVectorItIsGiven)
+{
+	std::vector<std::uint8_t> data = {0x10, 0x11, 0x12, 0x13};
+	llvm::StringRef dataRef = llvm::StringRef(reinterpret_cast<const char*>(data.data()), data.size());
+	SegmentDataSource dataSource(dataRef);
+
+	std::vector<std::uint8_t> result;
+	std::vector<std::uint8_t> expected = {0x20, 0x21, 0x22, 0x13};
+
+	std::vector<std::uint8_t> value = {0x20, 0x21, 0x22};
+	EXPECT_TRUE(dataSource.saveData(0, 100, value));
+	EXPECT_TRUE(dataSource.loadData(0, data.size(), result));
+	EXPECT_EQ(expected, result);
+}
+
+/// An offset at or past the end has nothing to read or write, whatever size
+/// comes with it -- the guard the clamps rest on.
+TEST_F(SegmentDataSourceTests, AnOffsetOutsideTheDataIsRefusedWhateverTheSize)
+{
+	std::vector<std::uint8_t> data = {0x10, 0x11, 0x12, 0x13};
+	llvm::StringRef dataRef = llvm::StringRef(reinterpret_cast<const char*>(data.data()), data.size());
+	SegmentDataSource dataSource(dataRef);
+
+	std::vector<std::uint8_t> result;
+	std::vector<std::uint8_t> value = {0x20};
+
+	EXPECT_FALSE(dataSource.loadData(4, 1, result));
+	EXPECT_FALSE(dataSource.loadData(0xFFFFFFFFFFFFFFFFull, 1, result));
+	EXPECT_FALSE(dataSource.saveData(4, 1, value));
+	EXPECT_FALSE(dataSource.saveData(0xFFFFFFFFFFFFFFFFull, 1, value));
+}
+
 } // namespace loader
 } // namespace retdec
 } // namespace tests

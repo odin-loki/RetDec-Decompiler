@@ -405,6 +405,72 @@ GetRawDataWithNoDataSegmentWorks) {
 	EXPECT_EQ(0, rawData.second);
 }
 
+//
+// getBytes' clamp, against a size that wraps.
+//
+// `addressOffset + size >= getSize()` decides how much of the segment is
+// backed by real data and how much is zero-filled, and it is a sum of two
+// values the caller supplies. At addressOffset 1 with size 0xFFFFFFFFFFFFFFFF
+// the sum is 0, which is not >= any segment size, so the clamp was skipped and
+// `result.resize(size, 0)` asked for 18446744073709551615 zeroed bytes.
+//
+
+TEST_F(SegmentTests, GetBytesWithASizeThatWrapsIsClampedToTheSegment)
+{
+	std::vector<std::uint8_t> data = {0x10, 0x11, 0x12, 0x13};
+	auto dataSource = makeDataSource(data);
+	Segment seg(nullptr, 0x1000, data.size(), std::move(dataSource));
+
+	std::vector<unsigned char> result;
+	std::vector<unsigned char> expected = {0x11, 0x12, 0x13};
+
+	EXPECT_TRUE(seg.getBytes(result, 1, 0xFFFFFFFFFFFFFFFFull));
+	EXPECT_EQ(expected, result);
+}
+
+/// A segment larger than the data behind it is the case the clamp exists for:
+/// what the source cannot supply is zero-filled, up to the segment's size and
+/// no further.
+///
+/// Not evidence for the fix, and the reason is worth writing down: at offset 0
+/// the sum does not wrap -- `0 + 0xFFFFFFFFFFFFFFFF` is itself, which is >=
+/// any segment size -- so the old clamp got this one right. Only a non-zero
+/// offset makes it wrap, which is what the test above uses. This holds the
+/// zero-fill behaviour instead, so a fix here cannot quietly stop doing it.
+TEST_F(SegmentTests, GetBytesWithASizeThatWrapsStillZeroFillsToTheSegmentSize)
+{
+	std::vector<std::uint8_t> data = {0x10, 0x11};
+	auto dataSource = makeDataSource(data);
+	Segment seg(nullptr, 0x1000, 4, std::move(dataSource));
+
+	std::vector<unsigned char> result;
+	std::vector<unsigned char> expected = {0x10, 0x11, 0x00, 0x00};
+
+	EXPECT_TRUE(seg.getBytes(result, 0, 0xFFFFFFFFFFFFFFFFull));
+	EXPECT_EQ(expected, result);
+}
+
+/// Every in-range answer is the answer it gave before.
+TEST_F(SegmentTests, GetBytesInRangeIsUnchanged)
+{
+	std::vector<std::uint8_t> data = {0x10, 0x11, 0x12, 0x13};
+	auto dataSource = makeDataSource(data);
+	Segment seg(nullptr, 0x1000, data.size(), std::move(dataSource));
+
+	std::vector<unsigned char> result;
+
+	EXPECT_TRUE(seg.getBytes(result, 1, 2));
+	EXPECT_EQ(std::vector<unsigned char>({0x11, 0x12}), result);
+
+	EXPECT_TRUE(seg.getBytes(result, 0, 4));
+	EXPECT_EQ(std::vector<unsigned char>({0x10, 0x11, 0x12, 0x13}), result);
+
+	EXPECT_TRUE(seg.getBytes(result, 0, 100));
+	EXPECT_EQ(std::vector<unsigned char>({0x10, 0x11, 0x12, 0x13}), result);
+
+	EXPECT_FALSE(seg.getBytes(result, 4, 1));
+}
+
 } // namespace loader
 } // namespace retdec
 } // namespace tests

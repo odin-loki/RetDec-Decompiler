@@ -616,9 +616,38 @@ through; what is left is below.
   evidence: 24 and 32 bpp have no palette to read first, so they reach the
   reserves, and removing the clamp makes exactly those two fail with
   `std::bad_alloc`. The other four say so in the file rather than being counted.
-* `src/loader/loader/segment.cpp:205`, `segment_data_source.cpp:81-82, 91` —
-  post-hoc and pre-copy wrapping clamps. `Image::getXBytes` now refuses before
-  them, but both have other callers.
+* ~~`src/loader/loader/segment.cpp`, `segment_data_source.cpp` — post-hoc and
+  pre-copy wrapping clamps. `Image::getXBytes` now refuses before them, but both
+  have other callers.~~ **Fixed.** These were the real ones in this list. Unlike
+  the `getDeclaredFileLength` overrides and the `BitmapImage` product, nothing
+  upstream bounds them and what they feed is a `std::copy`:
+
+  ```cpp
+  loadSize = loadOffset + loadSize >= getDataSize() ? getDataSize() - loadOffset : loadSize;
+  std::copy(_data.data() + loadOffset, _data.data() + loadOffset + loadSize, ...);
+  ```
+
+  At `loadOffset` 1 with `loadSize` `0xFFFFFFFFFFFFFFFF` the sum is 0, which is
+  not `>=` any data size, so the clamp is skipped and the copy reads
+  18446744073709551615 bytes out of a four-byte buffer. `saveData` is the same
+  shape with the copy going the other way, and `Segment::getBytes` is the same
+  shape ending in `result.resize(size, 0)`.
+
+  All three now compare against the space that remains, which the guard two
+  lines above each already established cannot wrap — the same repair as
+  `getRealSizeInRegion`, and equally answer-preserving: where the old test
+  clamped on equality, so does the new one.
+
+  `saveData` also gained a bound it never had: `saveSize` was checked against
+  the destination and never against the source, so `saveData(0, 100, aVectorOfTen)`
+  read ninety bytes past the end of the caller's vector. Every caller in this
+  tree passes a long enough vector; none of them says so.
+
+  Five cases in `tests/loader/segment_data_source_tests.cpp` and three in
+  `segment_tests.cpp`. Verified by restoring each old line: four fail for
+  `SegmentDataSource` and one for `Segment`. The two that do not are labelled in
+  place — one is the guard the clamps rest on, and the other uses offset 0,
+  where the sum does not wrap and the old clamp was right.
 * `src/cli_parser/cli_sig.cpp` — a self-referential TypeSpec whose signature is
   a GENERICINST with two or more self-referencing type arguments (e.g.
   `15 12 06 02 12 06 12 06`) drives an exponentially wide traversal under the

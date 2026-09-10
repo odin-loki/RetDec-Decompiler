@@ -202,7 +202,17 @@ bool Segment::getBytes(std::vector<unsigned char>& result, std::uint64_t address
 
 	// Data source may contain less data than we are representing with this segment
 	//   so we just fill the rest with zeroes.
-	size = addressOffset + size >= getSize() ? getSize() - addressOffset : size;
+	//
+	// `addressOffset + size >= getSize()` was the clamp and it wraps, the same
+	// way SegmentDataSource::loadData's did: at addressOffset 10 with size
+	// 0xFFFFFFFFFFFFFFFB the sum is 5, the clamp is skipped, and the resize
+	// below asks for 18446744073709551611 zeroed bytes.
+	//
+	// `addressOffset < getSize()` is established at the top of this function,
+	// so the remaining space cannot wrap.
+	const std::uint64_t available = getSize() - addressOffset;
+
+	size = size >= available ? available : size;
 	if (result.size() < size)
 		result.resize(size, 0);
 

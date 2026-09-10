@@ -78,7 +78,20 @@ bool SegmentDataSource::loadData(std::uint64_t loadOffset, std::uint64_t loadSiz
 	if (loadOffset >= getDataSize())
 		return false;
 
-	loadSize = loadOffset + loadSize >= getDataSize() ? getDataSize() - loadOffset : loadSize;
+	// `loadOffset + loadSize >= getDataSize()` was the clamp, and it is a
+	// wrapping sum of two values the caller supplies: at loadOffset 10 with
+	// loadSize 0xFFFFFFFFFFFFFFFB it computes 5, decides 5 is inside the
+	// buffer, and leaves loadSize at 18446744073709551611 -- which the
+	// std::copy below then reads, out of a buffer that may hold a few hundred
+	// bytes.
+	//
+	// `loadOffset < getDataSize()` is established two lines up, so the space
+	// that remains cannot itself wrap. Comparing against that asks the same
+	// question without the sum, and gives the same answer for every request
+	// that did not wrap: where the old test clamped on equality, so does this.
+	const std::uint64_t available = getDataSize() - loadOffset;
+
+	loadSize = loadSize >= available ? available : loadSize;
 	std::copy(_data.data() + loadOffset, _data.data() + loadOffset + loadSize, std::back_inserter(data));
 	return true;
 }
@@ -91,7 +104,23 @@ bool SegmentDataSource::saveData(std::uint64_t saveOffset, std::uint64_t saveSiz
 	if (saveOffset >= getDataSize())
 		return false;
 
-	saveSize = saveOffset + saveSize > getDataSize() ? getDataSize() - saveOffset : saveSize;
+	// The same wrapping sum, with the same fix. `saveOffset < getDataSize()`
+	// is established two lines up.
+	const std::uint64_t available = getDataSize() - saveOffset;
+
+	saveSize = saveSize > available ? available : saveSize;
+
+	// And a second bound the clamp above never had: saveSize is checked
+	// against the destination and nothing checks it against the source, so
+	// `saveData(0, 100, aVectorOfTen)` read ninety bytes past the end of the
+	// caller's vector. Every caller in this tree passes a vector at least as
+	// long as the size it asks for, which is why this has never been seen;
+	// none of them states it, and the read is out of bounds when one stops.
+	if (saveSize > data.size())
+	{
+		saveSize = data.size();
+	}
+
 	std::copy(data.data(), data.data() + saveSize, const_cast<char*>(_data.data()) + saveOffset);
 	return true;
 }
