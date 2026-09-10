@@ -1266,6 +1266,36 @@ this: that one segfaults, and the test for it exits 139 without the fix.
 
 ## Found while fixing the reproducibility defects, and deliberately left alone
 
+### `DerefOpExpr::getType()` returns the pointer's type, not the pointee's
+
+`src/llvmir2hll/ir/unary_op_expr.cpp:27`
+
+```cpp
+ShPtr<Type> UnaryOpExpr::getType() const {
+	return op->getType();
+}
+```
+
+`DerefOpExpr` does not override it. So `*p` reports the type of `p`: ask
+whether the operands of `*p | 8` are pointers and the answer is yes for every
+well-typed expression of that shape in the tree.
+
+Found by writing a scan for the `invalid operands to binary |` defect below and
+watching it report a function whose emitted C was correct. The scan unwraps one
+dereference itself; the IR was left alone.
+
+Changing it is not a small change. Every consumer of a dereference's type in
+the back end — the C writer's cast decisions, `ExprTypesAnalysis`, the
+optimizers that compare operand types before rewriting — currently reads the
+pointer type and has been tuned against that. A one-line fix here would move
+all of them at once with no measurement behind it, and this branch has a rule
+about that. It is written down so the next person to be surprised by a type
+query finds this instead of re-deriving it.
+
+The bar for doing it: a run with `DerefOpExpr::getType()` returning the
+contained type, F1 and DET-01 unchanged, and CC-01 no worse than the floor it
+had.
+
 ### The def-use chain comparator is not a strict weak ordering either
 
 `src/llvmir2hll/optimizer/optimizers/copy_propagation_optimizer.cpp`,

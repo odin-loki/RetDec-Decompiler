@@ -50,7 +50,7 @@ public:
 
 	/// @name Value conversion
 	/// @{
-	ShPtr<Expression> convertValueToDerefExpression(llvm::Value *value);
+	ShPtr<Expression> convertValueToDerefExpression(llvm::Value* value, llvm::Type* accessedType = nullptr);
 	ShPtr<Expression> convertValueToExpression(llvm::Value *value);
 	ShPtr<Expression> convertValueToExpressionDirectly(llvm::Value *value);
 	ShPtr<Variable> convertValueToVariable(llvm::Value *value);

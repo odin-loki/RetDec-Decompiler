@@ -25,6 +25,7 @@
 #include "retdec/llvmir2hll/ir/deref_op_expr.h"
 #include "retdec/llvmir2hll/ir/expression.h"
 #include "retdec/llvmir2hll/ir/module.h"
+#include "retdec/llvmir2hll/ir/int_to_ptr_cast_expr.h"
 #include "retdec/llvmir2hll/ir/pointer_type.h"
 #include "retdec/llvmir2hll/ir/unknown_type.h"
 #include "retdec/llvmir2hll/ir/variable.h"
@@ -152,18 +153,24 @@ ShPtr<LLVMValueConverter> LLVMValueConverter::create(ShPtr<Module> resModule,
 }
 
 /**
-* @brief Converts the given LLVM value @a value into a dereference
-*        expression in BIR.
-*
-* If converted value @a value is not considered as pointer, it returns value
-* converted into an expression in BIR as is (value is not converted into
-* dereference expression).
-*
-* @par Preconditions
-*  - @a value is non-null
-*/
-ShPtr<Expression> LLVMValueConverter::convertValueToDerefExpression(
-		llvm::Value *value) {
+ * @brief Converts the given LLVM value @a value into a dereference
+ *        expression in BIR.
+ *
+ * If converted value @a value is not considered as pointer, it returns value
+ * converted into an expression in BIR as is (value is not converted into
+ * dereference expression).
+ *
+ * @a accessedType is the type the accessing instruction reads or writes through
+ * the pointer, when the caller knows it -- @c LoadInst::getType(),
+ * @c StoreInst::getValueOperand()->getType(), and so on. It is used only when
+ * the pointer expression is an address literal whose pointee is unknown; see
+ * below.
+ *
+ * @par Preconditions
+ *  - @a value is non-null
+ */
+ShPtr<Expression> LLVMValueConverter::convertValueToDerefExpression(llvm::Value* value, llvm::Type* accessedType)
+{
 	PRECONDITION_NON_NULL(value);
 
 	auto expr = convertValueToExpressionDirectly(value);
@@ -171,6 +178,34 @@ ShPtr<Expression> LLVMValueConverter::convertValueToDerefExpression(
 		return expr;
 	} else if (auto addressOpExpr = cast<AddressOpExpr>(expr)) {
 		return addressOpExpr->getOperand();
+	}
+
+	// An opaque LLVM `ptr` converts to PointerType(UnknownType) -- see
+	// LLVMTypeConverter::convert(const llvm::PointerType*) -- and what would
+	// refine it is `retdec.pointee`, which lives on instructions. A
+	// ConstantExpr has no metadata, so `load i8, ptr inttoptr (i64 16421 to
+	// ptr)` produced `*(void * *)0x4025` and the C compiler was then asked for
+	// `*(void * *)0x4025 | 8`, which is `void *` as an operand of `|`. CC-01
+	// reported it on generated_bloom_filter in both clang builds.
+	//
+	// The instruction doing the access knows that type exactly: it is the type
+	// of the value it loads or stores, and LLVM carries it on the instruction
+	// itself rather than in metadata. Only the address-literal case is
+	// rewritten here, because that is the one where nothing else can supply a
+	// pointee -- a pointer arriving from a global, an alloca or another
+	// instruction already has one, and re-casting those would change output
+	// this has no measurement for.
+	if (accessedType)
+	{
+		if (auto intToPtr = cast<IntToPtrCastExpr>(expr))
+		{
+			auto ptrType = cast<PointerType>(intToPtr->getType());
+			if (ptrType && isa<UnknownType>(ptrType->getContainedType()))
+			{
+				expr = IntToPtrCastExpr::create(
+					intToPtr->getOperand(), PointerType::create(typeConverter->convert(accessedType)));
+			}
+		}
 	}
 
 	return DerefOpExpr::create(expr);

@@ -254,8 +254,9 @@ ShPtr<Statement> BasicBlockConverter::visitAtomicCmpXchgInst(llvm::AtomicCmpXchg
 {
 	const auto instAddr = LLVMSupport::getInstAddress(&inst);
 
-	auto readFrom = converter->convertValueToDerefExpression(inst.getPointerOperand());
-	auto writeTo = converter->convertValueToDerefExpression(inst.getPointerOperand());
+	auto* accessedType = inst.getCompareOperand()->getType();
+	auto readFrom = converter->convertValueToDerefExpression(inst.getPointerOperand(), accessedType);
+	auto writeTo = converter->convertValueToDerefExpression(inst.getPointerOperand(), accessedType);
 	auto compareWith = converter->convertValueToExpression(inst.getCompareOperand());
 	auto newValue = converter->convertValueToExpression(inst.getNewValOperand());
 	if (!readFrom || !writeTo || !compareWith || !newValue)
@@ -337,8 +338,9 @@ ShPtr<Statement> BasicBlockConverter::visitAtomicRMWInst(llvm::AtomicRMWInst& in
 	auto oldVal = converter->convertValueToVariable(&inst);
 	// Converted twice on purpose: the read and the write need independent
 	// expression trees, not two references to one.
-	auto readFrom = converter->convertValueToDerefExpression(inst.getPointerOperand());
-	auto writeTo = converter->convertValueToDerefExpression(inst.getPointerOperand());
+	auto* accessedType = inst.getValOperand()->getType();
+	auto readFrom = converter->convertValueToDerefExpression(inst.getPointerOperand(), accessedType);
+	auto writeTo = converter->convertValueToDerefExpression(inst.getPointerOperand(), accessedType);
 	auto value = converter->convertValueToExpression(inst.getValOperand());
 	if (!oldVal || !readFrom || !writeTo || !value)
 	{
@@ -377,7 +379,7 @@ ShPtr<Statement> BasicBlockConverter::visitLoadInst(llvm::LoadInst &inst) {
 		lhs->markAsExternal();
 	}
 
-	auto rhs = converter->convertValueToDerefExpression(inst.getPointerOperand());
+	auto rhs = converter->convertValueToDerefExpression(inst.getPointerOperand(), inst.getType());
 	return AssignStmt::create(lhs, cast<Expression>(rhs), nullptr, LLVMSupport::getInstAddress(&inst));
 }
 
@@ -398,7 +400,7 @@ ShPtr<Statement> BasicBlockConverter::visitReturnInst(llvm::ReturnInst &inst) {
 *        statement in BIR.
 */
 ShPtr<Statement> BasicBlockConverter::visitStoreInst(llvm::StoreInst &inst) {
-	auto lhs = converter->convertValueToDerefExpression(inst.getPointerOperand());
+	auto lhs = converter->convertValueToDerefExpression(inst.getPointerOperand(), inst.getValueOperand()->getType());
 	if (inst.isVolatile()) {
 		if (auto lhsVar = cast<Variable>(lhs)) {
 			lhsVar->markAsExternal();

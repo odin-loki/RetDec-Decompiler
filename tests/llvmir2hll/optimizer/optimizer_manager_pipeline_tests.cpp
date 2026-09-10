@@ -26,11 +26,19 @@
 #include "retdec/llvmir2hll/evaluator/arithm_expr_evaluators/strict_arithm_expr_evaluator.h"
 #include "retdec/llvmir2hll/hll/hll_writers/c_hll_writer.h"
 #include "retdec/llvmir2hll/ir/function.h"
+#include "retdec/llvmir2hll/ir/bit_and_op_expr.h"
+#include "retdec/llvmir2hll/ir/bit_or_op_expr.h"
+#include "retdec/llvmir2hll/ir/bit_shl_op_expr.h"
+#include "retdec/llvmir2hll/ir/bit_shr_op_expr.h"
+#include "retdec/llvmir2hll/ir/bit_xor_op_expr.h"
 #include "retdec/llvmir2hll/ir/break_stmt.h"
+#include "retdec/llvmir2hll/ir/deref_op_expr.h"
 #include "retdec/llvmir2hll/ir/continue_stmt.h"
 #include "retdec/llvmir2hll/ir/for_loop_stmt.h"
 #include "retdec/llvmir2hll/ir/goto_stmt.h"
+#include "retdec/llvmir2hll/ir/mod_op_expr.h"
 #include "retdec/llvmir2hll/ir/module.h"
+#include "retdec/llvmir2hll/ir/pointer_type.h"
 #include "retdec/llvmir2hll/ir/statement.h"
 #include "retdec/llvmir2hll/ir/switch_stmt.h"
 #include "retdec/llvmir2hll/ir/ufor_loop_stmt.h"
@@ -138,6 +146,87 @@ private:
 	}
 
 	std::size_t depth = 0;
+	bool found = false;
+};
+
+/// Whether any bitwise or modulo operator below a statement has a pointer for
+/// an operand.
+///
+/// The third of CC-01's questions. C requires integer operands for `|`, `&`,
+/// `^`, `<<`, `>>` and `%`; gcc says `invalid operands to binary | (have
+/// 'void *' and 'int')`, which is what it said about generated_bloom_filter.
+/// Like the other two scans this is a property of the BIR, so it needs no
+/// front end.
+class PointerBitwiseOperandFinder : private OrderedAllVisitor {
+public:
+	static bool hasOne(ShPtr<Statement> start)
+	{
+		PointerBitwiseOperandFinder f;
+		f.visitStmt(start);
+		return f.found;
+	}
+
+private:
+	/// The type an operand actually has in C.
+	///
+	/// UnaryOpExpr::getType() returns its operand's type, and DerefOpExpr does
+	/// not override it -- so a dereference reports the *pointer's* type rather
+	/// than the pointee's, and asking `isa<PointerType>` about `*p` says yes
+	/// for every well-typed `*p | x` in the tree. Unwrapping one dereference
+	/// is what makes this a scan for the defect rather than for the shape.
+	static ShPtr<Type> semanticTypeOf(ShPtr<Expression> expr)
+	{
+		if (auto deref = cast<DerefOpExpr>(expr))
+		{
+			if (auto ptrType = cast<PointerType>(deref->getOperand()->getType()))
+			{
+				return ptrType->getContainedType();
+			}
+		}
+		return expr->getType();
+	}
+
+	void check(ShPtr<Expression> op)
+	{
+		if (op && isa<PointerType>(semanticTypeOf(op)))
+		{
+			found = true;
+		}
+	}
+
+	template <typename T>
+	void checkBoth(ShPtr<T> expr)
+	{
+		check(expr->getFirstOperand());
+		check(expr->getSecondOperand());
+		OrderedAllVisitor::visit(expr);
+	}
+
+	void visit(ShPtr<BitOrOpExpr> expr) override
+	{
+		checkBoth(expr);
+	}
+	void visit(ShPtr<BitAndOpExpr> expr) override
+	{
+		checkBoth(expr);
+	}
+	void visit(ShPtr<BitXorOpExpr> expr) override
+	{
+		checkBoth(expr);
+	}
+	void visit(ShPtr<BitShlOpExpr> expr) override
+	{
+		checkBoth(expr);
+	}
+	void visit(ShPtr<BitShrOpExpr> expr) override
+	{
+		checkBoth(expr);
+	}
+	void visit(ShPtr<ModOpExpr> expr) override
+	{
+		checkBoth(expr);
+	}
+
 	bool found = false;
 };
 
@@ -283,6 +372,20 @@ protected:
 		for (auto i = m->func_definition_begin(); i != m->func_definition_end(); ++i)
 		{
 			if (StrandedBreakFinder::hasOne((*i)->getBody()))
+			{
+				bad.insert((*i)->getName());
+			}
+		}
+		return bad;
+	}
+
+	/// Every function applying a bitwise operator to a pointer.
+	static StringSet functionsWithAPointerBitwiseOperand(ShPtr<Module> m)
+	{
+		StringSet bad;
+		for (auto i = m->func_definition_begin(); i != m->func_definition_end(); ++i)
+		{
+			if (PointerBitwiseOperandFinder::hasOne((*i)->getBody()))
 			{
 				bad.insert((*i)->getName());
 			}
@@ -1007,6 +1110,81 @@ TEST_F(OptimizerManagerPipelineTests, HashTableFunction1270KeepsItsBreakInsideAL
 	EXPECT_TRUE(functionsWithAStrandedGoto(module).empty());
 }
 
+
+constexpr const char* kBloomFilterFunction1140 = R"(source_filename = "test"
+target datalayout = "e-m:e-p:64:64-i64:64-f80:128-n8:16:32:64-S128"
+
+@global_var_3ff0 = global i64 0
+@global_var_4018 = global i64 0
+@global_var_3fe0 = global i64 0
+@global_var_4025 = external global i8
+@global_var_2004 = constant [4 x i8] c"%d\0A\00"
+
+define i64 @function_1140() {
+dec_label_pc_1140:
+  %0 = load i8, ptr inttoptr (i64 16421 to ptr), align 1, !retdec.pointee !18
+  %1 = or i8 %0, 8
+  store i8 %1, ptr @global_var_4025, align 1, !retdec.pointee !18
+  %2 = call i64 @printf(ptr nonnull @global_var_2004, i64 1), !insn.addr !20
+  ret i64 0, !insn.addr !21
+}
+
+declare i64 @printf(ptr, i64)
+!0 = !{i64 4096}
+!1 = !{!"i64"}
+!2 = !{i64 4114}
+!3 = !{i64 4116}
+!4 = !{i64 4122}
+!5 = !{i64 4134}
+!6 = !{i64 4144}
+!7 = !{i64 4160}
+!8 = !{i64 4207}
+!9 = !{i64 4213}
+!10 = !{i64 4255}
+!11 = !{i64 4320}
+!12 = !{i64 4336}
+!13 = !{i64 4347}
+!14 = !{i64 4361}
+!15 = !{i64 4370}
+!16 = !{i64 4388}
+!17 = !{i64 4375}
+!18 = !{!"i8"}
+!19 = !{i64 4404}
+!20 = !{i64 4438}
+!21 = !{i64 4446}
+!22 = !{i64 4460})";
+
+
+/// The address-literal load CC-01 reports `invalid operands to binary |` on,
+/// from generated_bloom_filter-clang-O2, reduced to itself. Eight lines:
+///
+///     %0 = load i8, ptr inttoptr (i64 16421 to ptr), align 1
+///     %1 = or i8 %0, 8
+///     store i8 %1, ptr @global_var_4025, align 1
+///
+/// Every type in it is stated. The emitted C was `g4 = *(void * *)0x4025 | 8`
+/// beside `unsigned char g4;`.
+///
+/// Wrong straight out of the converter, before any pass runs, which is why
+/// both of these check the unoptimised module as well.
+TEST_F(OptimizerManagerPipelineTests, AnAddressLiteralLoadTakesTheTypeItLoads)
+{
+	auto module = convertLLVMIR2BIR(kBloomFilterFunction1140);
+
+	EXPECT_TRUE(functionsWithAPointerBitwiseOperand(module).empty())
+		<< "a pointer reached a bitwise operator straight out of the converter";
+	EXPECT_THAT(emitC(module), HasSubstr("*(unsigned char *)0x4025"));
+}
+
+TEST_F(OptimizerManagerPipelineTests, AndKeepsItThroughThePipeline)
+{
+	auto module = convertLLVMIR2BIR(kBloomFilterFunction1140);
+
+	runPipeline(module);
+
+	EXPECT_TRUE(functionsWithAPointerBitwiseOperand(module).empty());
+	EXPECT_THAT(emitC(module), Not(HasSubstr("(void * *)0x4025")));
+}
 
 } // namespace tests
 } // namespace llvmir2hll
