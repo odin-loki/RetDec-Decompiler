@@ -127,6 +127,55 @@ statement*, an error in every C standard before C23. Any block reached only by a
 goto and ending in `unreachable` — the standard lowering for a noreturn call —
 hits this. Emitting `;` or an explicit trap would do.
 
+**Both of the above are fixed** — `a4a1e92` and the commits around it — along
+with a third route to the same `goto` symptom: `HLLWriter::getRawGotoLabel()`
+invents `generated_N` for a statement with neither a label nor LLVM
+basic-block metadata and is called once for the goto and once for the label, so
+without memoisation the two got different names. `tests/llvmir2hll` now runs
+(`scripts/ci/check_llvmir2hll_tests.sh`), and all three have regression tests
+there.
+
+### Still open: the emitted C contradicts the header it asks for
+
+CC-01 (`scripts/ci/check_emitted_c_compiles.sh`) measures 21/24 on its slice.
+One of the three failures is the goto symptom above by a route the fixes do not
+cover; the other two are this:
+
+```
+ring_buffer-gcc-O3.c:78:12: error: too many arguments to function 'putc'
+    | return putc(c, stream, a3);
+    ? 7:#include <stdio.h>
+```
+
+`HeadersForDeclaredFuncs::getHeaders()` adds `<stdio.h>` because the semantics
+recognise `putc` as a library function, and `emitFunctionPrototypesForNonLibraryFuncs()`
+therefore emits no prototype of retdec's own — the header is taken as the
+truth. The call is then emitted against a signature the ABI recovery invented,
+with an extra argument. The file asserts two incompatible things about the same
+function.
+
+This is not fixed here, and the reason is worth recording rather than guessing
+at a patch:
+
+- The extra argument comes from parameter recovery in `bin2llvmir`, which needs
+  the pinned LLVM and cannot be built or tested in this environment. Every fix
+  landed on this branch was reproduced before it was written; a change here
+  could only be validated by a thirty-minute CI round trip, which is not the
+  same thing.
+- The obvious in-backend repairs are each wrong in a different way. Truncating
+  the call to the arity `semantics::getNameOfParam` knows would break `printf`,
+  which is variadic and has exactly one named parameter. Emitting retdec's own
+  prototype instead of taking the header replaces *too many arguments* with
+  *conflicting types*. Suppressing the header for that one function does not
+  help when another function pulls the same header in.
+- What would settle it is an arity (and variadic flag) in the semantics layer
+  next to `getCHeaderFileForFunc`, which is where this knowledge already lives
+  for headers and parameter names. That is a table, and a table is only worth
+  adding if it is right.
+
+Until then CC-01's floor holds the line at 0.8750: the rate cannot fall without
+turning CI red, and each fix that raises it should raise the floor with it.
+
 ---
 
 ## 3. Silent miscompilation, which is worse than a compile failure
