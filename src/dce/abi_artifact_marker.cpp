@@ -70,19 +70,47 @@ bool AbiArtifactMarker::isPrologueBlock(BlockId blk, const ssa::SSAFunction& fn)
 	return blk == fn.entryId();
 }
 
-bool AbiArtifactMarker::isCalleeSaveReg(const std::string& name, bool win64) const
+bool AbiArtifactMarker::isCalleeSaveReg(const std::string& name, const Config& cfg) const
 {
+	// Which registers a function must preserve is a property of the ABI, and
+	// Config has carried arm32 and aarch64 since it was written. Nothing read
+	// them: this applied the SysV AMD64 table on every architecture.
+	//
+	// On ARM32 that is not merely incomplete. "r12" is IP, a caller-saved
+	// scratch register -- src/eh_reconstruct/arm_ehabi.cpp names the ARM32
+	// registers "r0".."r12", "sp", "lr", "pc" -- so a store of it in the entry
+	// block is ordinary code, and calling it a callee-save pair hands it to
+	// DcePass as an artifact to remove. Meanwhile the registers ARM really does
+	// preserve were in no table at all.
+
 	// SysV AMD64 callee-saved: rbx, rbp, r12, r13, r14, r15
 	static const char* sysv[] = {"rbx", "rbp", "r12", "r13", "r14", "r15", nullptr};
 	// Win64 adds: rdi, rsi, xmm6..xmm15 (we handle GP regs here)
 	static const char* win64extra[] = {"rdi", "rsi", nullptr};
+	// AAPCS32: r4-r11 are callee-saved; r12 (IP) is NOT. lr is preserved
+	// across the call by the prologue/epilogue pair in the same way.
+	static const char* aapcs32[] = {"r4", "r5", "r6", "r7", "r8", "r9", "r10", "r11", "lr", nullptr};
+	// AAPCS64: x19-x28, plus the frame pointer x29 and link register x30.
+	static const char* aapcs64[] = {
+		"x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", nullptr};
 
-	for (int i = 0; sysv[i]; ++i)
-		if (name == sysv[i]) return true;
+	auto in = [&name](const char* const* table) {
+		for (int i = 0; table[i]; ++i)
+			if (name == table[i]) return true;
+		return false;
+	};
 
-	if (win64)
-		for (int i = 0; win64extra[i]; ++i)
-			if (name == win64extra[i]) return true;
+	if (cfg.arm32 && in(aapcs32)) return true;
+	if (cfg.aarch64 && in(aapcs64)) return true;
+
+	// The x86-64 tables are consulted only for an x86-64 target. Before, they
+	// were consulted for every target, which is what made ARM32's r12 look
+	// callee-saved.
+	if (cfg.sysVAmd64 || cfg.win64)
+	{
+		if (in(sysv)) return true;
+		if (cfg.win64 && in(win64extra)) return true;
+	}
 
 	return false;
 }
@@ -288,7 +316,7 @@ std::vector<AbiArtifact> AbiArtifactMarker::markCalleeSavePairs(const ssa::SSAFu
 
 		// Check if src is a callee-save register.
 		const std::string& srcName = fn.varName(src->varId);
-		if (!isCalleeSaveReg(srcName, cfg.win64)) continue;
+		if (!isCalleeSaveReg(srcName, cfg)) continue;
 
 		SaveInfo si;
 		si.storeId = instr->id;

@@ -68,7 +68,7 @@ std::unique_ptr<SSAFunction> makeWithAndRsp() {
 	IrInstr* andInstr = fn->addInstr(0, IrInstr::Op::And);
 	andInstr->defVar = rsp;
 	IrValue* imm = fn->allocValue(ValueKind::Immediate, kInvalidVar);
-    imm->imm = static_cast<uint64_t>(-16);
+	imm->imm = static_cast<uint64_t>(-16);
     andInstr->uses.push_back({imm->id, 0});
 
     fn->addInstr(0, IrInstr::Op::Ret);
@@ -77,8 +77,9 @@ std::unique_ptr<SSAFunction> makeWithAndRsp() {
 }
 
 /// Build a function with a callee-save store in entry and load in ret block.
-std::unique_ptr<SSAFunction> makeCalleeSaveFn() {
-    auto fn = std::make_unique<SSAFunction>("callee_save_fn");
+std::unique_ptr<SSAFunction> makeCalleeSaveFn(const char* regName = "rbx")
+{
+	auto fn = std::make_unique<SSAFunction>("callee_save_fn");
     fn->addBlock("entry");   // block 0 — prologue
     fn->addBlock("body");    // block 1 — body
     fn->addBlock("epilogue");// block 2 — epilogue + ret
@@ -87,9 +88,9 @@ std::unique_ptr<SSAFunction> makeCalleeSaveFn() {
     fn->block(0)->addSucc(1); fn->block(1)->addPred(0);
     fn->block(1)->addSucc(2); fn->block(2)->addPred(1);
 
-    // Declare "rbx" (callee-saved on SysV).
-    VarId rbx = fn->declareVar("rbx", 64);
-    IrValue* rbxVal = fn->allocValue(ValueKind::VirtualReg, rbx);
+	// Declare the saved register (callee-saved on SysV by default).
+	VarId rbx = fn->declareVar(regName, 64);
+	IrValue* rbxVal = fn->allocValue(ValueKind::VirtualReg, rbx);
 
     // Prologue: store rbx to [RBP-8].
     IrInstr* saveInstr = fn->addInstr(0, IrInstr::Op::Store);
@@ -106,7 +107,7 @@ std::unique_ptr<SSAFunction> makeCalleeSaveFn() {
     IrInstr* restoreInstr = fn->addInstr(2, IrInstr::Op::Load);
 	restoreInstr->defVar = rbx; // it is rbx that comes back, not just the slot
 	IrValue* srcSlot = fn->allocValue(ValueKind::MemRef, kInvalidVar);
-    srcSlot->memIsStack = true;
+	srcSlot->memIsStack = true;
     srcSlot->memOffset  = -8;
     restoreInstr->uses.push_back({srcSlot->id, 0});
     fn->addInstr(2, IrInstr::Op::Ret);
@@ -248,7 +249,7 @@ TEST(AbiArtifactMarker, PrologueSetup_Detected) {
 	IrInstr* sub = fn->addInstr(0, IrInstr::Op::Sub);
 	sub->defVar = rsp;
 	IrValue* imm = fn->allocValue(ValueKind::Immediate, kInvalidVar);
-    imm->imm = 32;
+	imm->imm = 32;
     sub->uses.push_back({imm->id, 0});
     fn->addInstr(0, IrInstr::Op::Ret);
     SSAPass pass; pass.run(*fn);
@@ -971,4 +972,90 @@ TEST(DcePass, InstructionsInEliminatedBlocksStayEliminated)
 
 	ASSERT_EQ(1u, res.eliminatedBlocks.count(orphan->id));
 	EXPECT_EQ(1u, res.eliminatedInstrs.count(orphanRet->id)) << "its block is gone, so the terminator is too";
+}
+
+// ─── Callee-save detection is not architecture-aware ─────────────────────────
+//
+// AbiArtifactMarker::Config declares arm32 and aarch64 alongside win64 and
+// sysVAmd64, and mark() reads only the latter two. isCalleeSaveReg therefore
+// applies the SysV AMD64 table -- rbx, rbp, r12, r13, r14, r15 -- on every
+// architecture.
+//
+// On ARM32 that is not merely incomplete, it is wrong: "r12" is IP, a
+// caller-saved scratch register (src/eh_reconstruct/arm_ehabi.cpp names the
+// ARM32 registers "r0".."r12", "sp", "lr", "pc"), and a store of it in the
+// entry block is ordinary code, not a prologue save. Marking it a
+// CalleeSavePair hands it to DcePass as an ABI artifact to remove.
+//
+// And the registers ARM really does preserve -- r4..r11 and lr on ARM32,
+// x19..x28 and x29/x30 on AArch64 -- are in no table at all, so a real
+// prologue save on either is not recognised.
+
+TEST(AbiArtifactMarker, Arm32ScratchRegisterIsNotACalleeSave)
+{
+	// r12 on ARM32 is IP: caller-saved. Storing it is not a prologue save.
+	auto fn = makeCalleeSaveFn("r12");
+	AbiArtifactMarker marker;
+	AbiArtifactMarker::Config cfg;
+	cfg.sysVAmd64 = false;
+	cfg.arm32 = true;
+
+	auto arts = marker.run(*fn, cfg);
+
+	for (const auto& a: arts)
+	{
+		EXPECT_NE(AbiArtifactKind::CalleeSavePair, a.kind)
+			<< "ARM32 r12 (IP, caller-saved) was marked a callee-save pair";
+	}
+}
+
+TEST(AbiArtifactMarker, Arm32CalleeSaveRegisterIsRecognised)
+{
+	// r4 is callee-saved on ARM32 and is in no table today.
+	auto fn = makeCalleeSaveFn("r4");
+	AbiArtifactMarker marker;
+	AbiArtifactMarker::Config cfg;
+	cfg.sysVAmd64 = false;
+	cfg.arm32 = true;
+
+	auto arts = marker.run(*fn, cfg);
+
+	bool found = false;
+	for (const auto& a: arts)
+		if (a.kind == AbiArtifactKind::CalleeSavePair) found = true;
+	EXPECT_TRUE(found) << "ARM32 r4 (callee-saved) was not recognised";
+}
+
+TEST(AbiArtifactMarker, AArch64CalleeSaveRegisterIsRecognised)
+{
+	auto fn = makeCalleeSaveFn("x19");
+	AbiArtifactMarker marker;
+	AbiArtifactMarker::Config cfg;
+	cfg.sysVAmd64 = false;
+	cfg.aarch64 = true;
+
+	auto arts = marker.run(*fn, cfg);
+
+	bool found = false;
+	for (const auto& a: arts)
+		if (a.kind == AbiArtifactKind::CalleeSavePair) found = true;
+	EXPECT_TRUE(found) << "AArch64 x19 (callee-saved) was not recognised";
+}
+
+// The x86-64 answer must not move: rbx is callee-saved under SysV, and r12 --
+// the same name that is scratch on ARM32 -- is callee-saved here.
+TEST(AbiArtifactMarker, SysVRegistersAreUnchanged)
+{
+	AbiArtifactMarker marker;
+	AbiArtifactMarker::Config cfg;
+	cfg.sysVAmd64 = true;
+
+	for (const char* reg: {"rbx", "r12", "r15"})
+	{
+		auto fn = makeCalleeSaveFn(reg);
+		bool found = false;
+		for (const auto& a: marker.run(*fn, cfg))
+			if (a.kind == AbiArtifactKind::CalleeSavePair) found = true;
+		EXPECT_TRUE(found) << reg << " is callee-saved under SysV AMD64";
+	}
 }

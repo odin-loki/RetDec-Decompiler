@@ -228,9 +228,9 @@ public:
     struct Config {
         bool win64        = false;  ///< Win64 shadow-space detection
         bool sysVAmd64    = true;   ///< SysV red zone detection
-        bool arm32        = false;
-        bool aarch64      = false;
-    };
+		bool arm32 = false;         ///< AAPCS32 callee-saved set (r4-r11, lr)
+		bool aarch64 = false;       ///< AAPCS64 callee-saved set (x19-x30)
+	};
     static Config defaultConfig() noexcept { return {}; }
 
     std::vector<AbiArtifact> run(const ssa::SSAFunction& fn,
@@ -244,8 +244,8 @@ private:
                                                    const Config& cfg) const;
     std::vector<AbiArtifact> markRedZone(const ssa::SSAFunction& fn) const;
 
-    bool isCalleeSaveReg(const std::string& name, bool win64) const;
-    bool isRspAlignInstr(const ssa::SSAFunction& fn, InstrId id) const;
+	bool isCalleeSaveReg(const std::string& name, const Config& cfg) const;
+	bool isRspAlignInstr(const ssa::SSAFunction& fn, InstrId id) const;
     bool isPrologueBlock(BlockId blk, const ssa::SSAFunction& fn) const;
 };
 
