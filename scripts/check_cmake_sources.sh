@@ -129,6 +129,14 @@ UNBUILT = {
     "tests/fileformat/macho_format_tests.cpp": "as above",
     "tests/fileformat/pe_format_tests.cpp": "as above",
     "tests/fileformat/raw_data_format_tests.cpp": "as above",
+    # Not one of the eleven: this one is new. It drives the two
+    # getDeclaredFileLength overrides, and the COFF half needs the `coffBytes`
+    # fixture, which coff_format_tests.cpp defines and the CMake target does not
+    # name. Listing it there would break that build to no purpose, since nothing
+    # builds it; FF-01 globs the directory and runs it.
+    "tests/fileformat/declared_file_length_tests.cpp":
+        "run by scripts/ci/check_fileformat_tests.sh (FF-01); its COFF fixture "
+        "lives in coff_format_tests.cpp, which the CMake target does not name",
     "tests/common/calling_convention_tests.cpp":
         "not listed in tests/common/CMakeLists.txt; same migration gap",
     "tests/managed_integration/fuzz/fuzz_pelib.cpp":

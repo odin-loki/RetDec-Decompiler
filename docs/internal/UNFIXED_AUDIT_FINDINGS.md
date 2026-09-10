@@ -542,10 +542,36 @@ So these are ordinary findings with an ordinary gate behind them, and each is
 fixable with a regression test that runs before the push. They are being worked
 through; what is left is below.
 
-* `src/fileformat/file_format/elf/elf_format.cpp:2770-2773` and
-  `coff_format.cpp:600-609` — `getDeclaredFileLength` overrides that shadow the
-  base function which *was* fixed, each forming unclamped 64-bit sums (and, in
-  the COFF case, an unchecked multiply) of header fields.
+* ~~`src/fileformat/file_format/elf/elf_format.cpp` and `coff_format.cpp` —
+  `getDeclaredFileLength` overrides that shadow the base function which *was*
+  fixed, each forming unclamped 64-bit sums (and, in the COFF case, an unchecked
+  multiply) of header fields.~~ **Measured; not reachable, and the finding was
+  wrong about why.** The sums are exactly as described — neither override
+  clamps anything — but nothing gets hostile values into them.
+
+  `ElfFormat` forms `max(shoff + sectionTableSize, phoff + segmentTableSize)`.
+  ELFIO reports a table size of zero unless the table lies inside the file, so
+  `e_shoff = 0xFFFFFFFFFFFFFFFF` arrives with a size of 0 and the sum is the
+  offset itself. Driven at the top of the address space, with `e_shnum` at
+  `0xFFFF`, the declared length comes back as `18446744073709551615` — the
+  offset, unwrapped.
+
+  `CoffFormat` forms `symbolTableOffset + numberOfSymbols * entrySize` and then
+  `declaredSize + sizeOfStringTable`. LLVM's `COFFObjectFile` reports zero
+  symbols for a table it could not read, which is the condition the override's
+  own `if` already tests, and `getSizeOfStringTable` refuses an offset past the
+  end before reading. With both 32-bit fields at `0xFFFFFFFF` the symbol count
+  is 0 and the string-table size is 0. The multiply is 32×32 into a 64-bit
+  `std::size_t` in any case, so it cannot overflow on any host this tree builds
+  for; on a 32-bit one it would, and nothing here asserts otherwise.
+
+  That makes both sums safe because of code some distance from them, which is
+  not a thing to leave unwritten. `tests/fileformat/declared_file_length_tests.cpp`
+  pins the invariant in five cases: a reader that starts reporting an extent for
+  a table it could not read makes the sum wrap and the declared length fall
+  below the offset it was formed from. Verified by making
+  `ElfFormat::getSectionTableSize` return a size for a table ELFIO declined —
+  the test fails, naming that.
 * `src/fileformat/file_format/file_format.cpp:2309` — `getXByte` still forms
   `secSeg->getOffset() + secOffset`.
 * `file_format.cpp:583-593` (`computeSectionTableHashes`) and `:1380`
