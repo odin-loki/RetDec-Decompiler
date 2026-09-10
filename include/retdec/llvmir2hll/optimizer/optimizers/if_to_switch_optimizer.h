@@ -85,11 +85,7 @@ private:
 	ShPtr<Expression> getControlExprIfConvertibleToLeUpperBoundSwitch(
 		ShPtr<IfStmt> ifStmt);
 	/// Else-if @c v >= k, @c v >= k-1, … @c v >= 1 (same @c v) + @c else → cases @c k..0.
-	ShPtr<Expression> getControlExprIfConvertibleToGeLowerBoundSwitch(
-		ShPtr<IfStmt> ifStmt);
 	/// Else-if @c v > k-1, … @c v > 0 (same @c v) + @c else → cases @c k..0.
-	ShPtr<Expression> getControlExprIfConvertibleToGtLowerBoundSwitch(
-		ShPtr<IfStmt> ifStmt);
 	ShPtr<Expression> getNextOpIfSecondOneIsConstInt(ShPtr<EqOpExpr>
 		eqOpExpr);
 	void convertIfStmtToSwitchStmt(ShPtr<IfStmt> ifStmt, ShPtr<Expression>
@@ -98,8 +94,6 @@ private:
 	void convertDenseIntegerPartitionIfChainToSwitchStmt(ShPtr<IfStmt> ifStmt,
 		ShPtr<Expression> controlExpr);
 	/// Dense descending cases @c k..1 + default (used by @c >= and @c > chains).
-	void convertDescendingIntegerCaseIfChainToSwitchStmt(ShPtr<IfStmt> ifStmt,
-		ShPtr<Expression> controlExpr);
 	/// @c if (v < n) { dense @c v==0..n-1 chain }  →  @c switch(v) (hoist).
 	bool tryConvertOuterLtWithInnerDenseEqChain(ShPtr<IfStmt> outerIf);
 	/// @c if (v <= n-1) { dense @c v==0..n-1 chain }  →  @c switch(v) (hoist).

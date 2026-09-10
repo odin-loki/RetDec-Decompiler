@@ -254,16 +254,46 @@ route to it is the last entry of the section above.
 These produce C that compiles cleanly and does the wrong thing. Nothing in the
 pipeline catches them, because `tu_valid` and `recompile` both pass.
 
-**`if_to_switch_optimizer.cpp:429` — range comparisons become single cases.**
-An unbounded `v >= k` / `v > k` else-if chain is converted into a `switch` whose
-cases are single values. `v = 7` takes branch A in the binary and branch C in
-the emitted source. This is the most common dispatch shape there is.
+**~~`if_to_switch_optimizer.cpp` — range comparisons become single cases.~~**
+**Fixed, and four tests asserted the defect.** An unbounded `v >= k` / `v > k`
+else-if chain became a `switch` whose cases are single values:
 
-**`if_to_switch_optimizer.cpp:310` — signedness ignored.** The `Lt`/`Le`
-upper-bound patterns do not distinguish the signed from the unsigned compare, so
-`if (v < 1) A; else if (v < 2) B; else C;` on a signed control expression becomes
-`switch (v) { case 0: A; case 1: B; default: C; }`. Every negative input takes
-`C` instead of `A`.
+```c
+if (v >= 2) b = 2; else if (v >= 1) b = 1; else b = 0;
+switch (v) { case 2: b = 2; case 1: b = 1; default: b = 0; }
+```
+
+`v = 7` sets `b = 2` in the first and `b = 0` in the second. Every value above
+the highest bound is wrong, signed or unsigned. The four conversions are gone —
+both `>=` and `>`, in the chain and the single-clause shape — and three tests
+assert the chains stay as they are.
+
+A correct construction exists for the *unsigned* case, and the comment where
+the calls used to be says what it is: the top clause is the unbounded one, so
+it belongs in the `default` and the else-clause body becomes a case. It is a
+different transformation, it is wrong for signed compares for the reason below,
+and it should arrive with F1, DET-01 and CC-01 behind it.
+
+**~~`if_to_switch_optimizer.cpp` — signedness ignored.~~** **Fixed.** The
+`Lt` and `Le` upper-bound patterns did not distinguish the signed compare from
+the unsigned one, so `if (v < 1) A; else if (v < 2) B; else C;` on a signed
+control expression became `switch (v) { case 0: A; case 1: B; default: C; }` and
+every negative input took `C`.
+
+The information was there: `ICMP_ULT` converts to `LtOpExpr::Variant::UCmp` and
+`ICMP_SLT` to `SCmp`. The `Lt` matcher never read the variant; the `Le` matcher
+read it only to require that every clause agreed with the first, which a chain
+of signed compares does. Both require `UCmp` now.
+
+`ElseIfLeUpperBoundChainConvertsToSwitch` built its chain with `SCmp` and
+asserted the conversion — a test that encoded the defect. It is `UCmp` now, and
+the signed shapes have tests of their own asserting refusal. Verified by
+restoring the original file: all five new tests fail.
+
+The nested and hoisting conversions in the same pass are unaffected and were
+checked: their switch cases come from exact `v == k` tests rather than from
+bounds, so a negative or out-of-range value matches no case and reaches the
+same default it reached before.
 
 **`copy_propagation_optimizer_ext.cpp:114` — propagation across an if.**
 `canPropagateThroughStmts` invokes `ValueAnalysis` with `visitNestedStmts=false`,

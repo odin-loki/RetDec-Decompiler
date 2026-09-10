@@ -93,21 +93,30 @@ void IfToSwitchOptimizer::visit(ShPtr<IfStmt> stmt) {
 		return;
 	}
 
-	// Else-if: v >= k, v >= k-1, … v >= 1  +  else  →  cases k..0
-	ShPtr<Expression> geControl(
-		getControlExprIfConvertibleToGeLowerBoundSwitch(stmt));
-	if (geControl) {
-		convertDescendingIntegerCaseIfChainToSwitchStmt(stmt, geControl);
-		return;
-	}
-
-	// Else-if: v > k-1, … v > 0  +  else  →  same case mapping (strict >)
-	ShPtr<Expression> gtControl(
-		getControlExprIfConvertibleToGtLowerBoundSwitch(stmt));
-	if (gtControl) {
-		convertDescendingIntegerCaseIfChainToSwitchStmt(stmt, gtControl);
-		return;
-	}
+	// There used to be two more conversions here: a descending `v >= k`
+	// else-if chain, and the same in `v >` form, each becoming
+	// `switch (v) { case k: … case 1: … default: … }`.
+	//
+	// They are gone because they were not equivalent to what they replaced. A
+	// `>=` chain is unbounded above and a switch case is one value:
+	//
+	//     if (v >= 2) b = 2; else if (v >= 1) b = 1; else b = 0;
+	//     switch (v) { case 2: b = 2; case 1: b = 1; default: b = 0; }
+	//
+	// v = 7 takes the first branch and sets b = 2. The switch has no case for
+	// 7, so it takes the default and sets b = 0. Every value above the highest
+	// bound is wrong, signed or unsigned, and the emitted C compiles cleanly
+	// while doing something else -- which is worse than not compiling, because
+	// nothing downstream can notice. Four tests asserted this conversion.
+	//
+	// A correct construction does exist for the *unsigned* case: the top
+	// clause is the one that is unbounded, so it belongs in the `default` and
+	// the else-clause body becomes a case. `v >= 2 → default, v == 1 → case 1,
+	// else → case 0` answers every unsigned value correctly. It is a different
+	// transformation from the one that was here, it is wrong for signed
+	// compares for the same reason the upper-bound chains are, and it should
+	// arrive with the F1, DET-01 and CC-01 numbers behind it rather than as a
+	// repair of this comment.
 
 	// if (v < n) { if (v==0)... else if (v==n-1)... }  →  switch (v)
 	if (tryConvertOuterLtWithInnerDenseEqChain(stmt)) {
@@ -324,6 +333,21 @@ ShPtr<Expression> IfToSwitchOptimizer::getControlExprIfConvertibleToLtUpperBound
 		if (!lt) {
 			return ShPtr<Expression>();
 		}
+		// The compare has to be unsigned. `if (v < 1) A; else if (v < 2) B;
+		// else C;` partitions {0}, {1} and the rest only when v cannot be
+		// negative: under a signed compare `v < 1` is every value at or below
+		// zero, `case 0:` catches one of them, and v = -5 takes A in the binary
+		// and the default in the emitted C. It compiles and it is a different
+		// program.
+		//
+		// The variant is known -- ICMP_ULT converts to UCmp and ICMP_SLT to
+		// SCmp -- and this loop did not read it. Nothing here can establish
+		// that a signed control expression is non-negative, so the answer is to
+		// decline.
+		if (lt->getVariant() != LtOpExpr::Variant::UCmp)
+		{
+			return ShPtr<Expression>();
+		}
 		// Require (control < ConstInt); not (ConstInt < control).
 		if (isa<ConstInt>(lt->getFirstOperand())) {
 			return ShPtr<Expression>();
@@ -382,6 +406,15 @@ ShPtr<Expression> IfToSwitchOptimizer::getControlExprIfConvertibleToLeUpperBound
 		if (!le) {
 			return ShPtr<Expression>();
 		}
+		// Unsigned, for the reason given in the Lt matcher above: a signed
+		// `v <= 0` is every value at or below zero and `case 0:` is one of
+		// them. The variant was read here already, but only to require that
+		// every clause agreed with the first -- which a chain of signed
+		// compares does.
+		if (le->getVariant() != LtEqOpExpr::Variant::UCmp)
+		{
+			return ShPtr<Expression>();
+		}
 		if (!haveVariant) {
 			cmpVariant = le->getVariant();
 			haveVariant = true;
@@ -424,171 +457,6 @@ ShPtr<Expression> IfToSwitchOptimizer::getControlExprIfConvertibleToLeUpperBound
 	}
 
 	return controlExpr;
-}
-
-ShPtr<Expression> IfToSwitchOptimizer::getControlExprIfConvertibleToGeLowerBoundSwitch(
-		ShPtr<IfStmt> ifStmt) {
-	if (!ifStmt->hasElseClause() || !ifStmt->hasIfClause()) {
-		return ShPtr<Expression>();
-	}
-	if (BreakInIfAnalysis::hasBreakStmt(ifStmt)) {
-		return ShPtr<Expression>();
-	}
-
-	const int k = static_cast<int>(
-		std::distance(ifStmt->clause_begin(), ifStmt->clause_end()));
-	if (k < 1) {
-		return ShPtr<Expression>();
-	}
-
-	ShPtr<Expression> controlExpr;
-	bool haveVariant = false;
-	GtEqOpExpr::Variant cmpVariant = GtEqOpExpr::Variant::SCmp;
-	int clauseIdx = 0;
-	for (auto i = ifStmt->clause_begin(), e = ifStmt->clause_end(); i != e;
-			++i, ++clauseIdx) {
-		ShPtr<GtEqOpExpr> ge(cast<GtEqOpExpr>(i->first));
-		if (!ge) {
-			return ShPtr<Expression>();
-		}
-		if (!haveVariant) {
-			cmpVariant = ge->getVariant();
-			haveVariant = true;
-		} else if (ge->getVariant() != cmpVariant) {
-			return ShPtr<Expression>();
-		}
-		if (isa<ConstInt>(ge->getFirstOperand())) {
-			return ShPtr<Expression>();
-		}
-		ShPtr<ConstInt> bound(cast<ConstInt>(ge->getSecondOperand()));
-		if (!bound) {
-			return ShPtr<Expression>();
-		}
-		ShPtr<Expression> lhs(ge->getFirstOperand());
-
-		const int64_t expected = static_cast<int64_t>(k - clauseIdx);
-		const llvm::APSInt &bv(bound->getValue());
-		if (bv.getBitWidth() > 64) {
-			return ShPtr<Expression>();
-		}
-		if (bv.isSigned()) {
-			if (bv.getSExtValue() != expected) {
-				return ShPtr<Expression>();
-			}
-		} else if (bv.getZExtValue() != static_cast<uint64_t>(expected)) {
-			return ShPtr<Expression>();
-		}
-
-		if (!controlExpr) {
-			controlExpr = lhs;
-		} else if (!controlExpr->isEqualTo(lhs)) {
-			return ShPtr<Expression>();
-		}
-
-		ShPtr<ValueData> exprData(va->getValueData(controlExpr));
-		if (exprData->hasCalls() || exprData->hasArrayAccesses() ||
-				exprData->hasDerefs()) {
-			return ShPtr<Expression>();
-		}
-	}
-
-	return controlExpr;
-}
-
-ShPtr<Expression> IfToSwitchOptimizer::getControlExprIfConvertibleToGtLowerBoundSwitch(
-		ShPtr<IfStmt> ifStmt) {
-	if (!ifStmt->hasElseClause() || !ifStmt->hasIfClause()) {
-		return ShPtr<Expression>();
-	}
-	if (BreakInIfAnalysis::hasBreakStmt(ifStmt)) {
-		return ShPtr<Expression>();
-	}
-
-	const int k = static_cast<int>(
-		std::distance(ifStmt->clause_begin(), ifStmt->clause_end()));
-	if (k < 1) {
-		return ShPtr<Expression>();
-	}
-
-	ShPtr<Expression> controlExpr;
-	bool haveVariant = false;
-	GtOpExpr::Variant cmpVariant = GtOpExpr::Variant::SCmp;
-	int clauseIdx = 0;
-	for (auto i = ifStmt->clause_begin(), e = ifStmt->clause_end(); i != e;
-			++i, ++clauseIdx) {
-		ShPtr<GtOpExpr> gt(cast<GtOpExpr>(i->first));
-		if (!gt) {
-			return ShPtr<Expression>();
-		}
-		if (!haveVariant) {
-			cmpVariant = gt->getVariant();
-			haveVariant = true;
-		} else if (gt->getVariant() != cmpVariant) {
-			return ShPtr<Expression>();
-		}
-		if (isa<ConstInt>(gt->getFirstOperand())) {
-			return ShPtr<Expression>();
-		}
-		ShPtr<ConstInt> bound(cast<ConstInt>(gt->getSecondOperand()));
-		if (!bound) {
-			return ShPtr<Expression>();
-		}
-		ShPtr<Expression> lhs(gt->getFirstOperand());
-
-		const int64_t expected = static_cast<int64_t>(k - 1 - clauseIdx);
-		const llvm::APSInt &bv(bound->getValue());
-		if (bv.getBitWidth() > 64) {
-			return ShPtr<Expression>();
-		}
-		if (bv.isSigned()) {
-			if (bv.getSExtValue() != expected) {
-				return ShPtr<Expression>();
-			}
-		} else if (bv.getZExtValue() != static_cast<uint64_t>(expected)) {
-			return ShPtr<Expression>();
-		}
-
-		if (!controlExpr) {
-			controlExpr = lhs;
-		} else if (!controlExpr->isEqualTo(lhs)) {
-			return ShPtr<Expression>();
-		}
-
-		ShPtr<ValueData> exprData(va->getValueData(controlExpr));
-		if (exprData->hasCalls() || exprData->hasArrayAccesses() ||
-				exprData->hasDerefs()) {
-			return ShPtr<Expression>();
-		}
-	}
-
-	return controlExpr;
-}
-
-void IfToSwitchOptimizer::convertDescendingIntegerCaseIfChainToSwitchStmt(
-		ShPtr<IfStmt> ifStmt,
-		ShPtr<Expression> controlExpr) {
-	unsigned caseBitWidth = 64;
-	if (ShPtr<IntType> it = cast<IntType>(controlExpr->getType())) {
-		caseBitWidth = it->getSize();
-	}
-
-	const int k = static_cast<int>(
-		std::distance(ifStmt->clause_begin(), ifStmt->clause_end()));
-
-	ShPtr<SwitchStmt> switchStmt(
-		SwitchStmt::create(controlExpr, nullptr, ifStmt->getAddress()));
-
-	int caseVal = k;
-	for (auto i = ifStmt->clause_begin(), e = ifStmt->clause_end(); i != e;
-			++i, --caseVal) {
-		appendBreakStmtIfNeeded(Statement::getLastStatement(i->second));
-		switchStmt->addClause(ConstInt::create(caseVal, caseBitWidth), i->second);
-	}
-
-	switchStmt->addDefaultClause(ifStmt->getElseClause());
-	appendBreakStmtIfNeeded(ifStmt->getElseClause());
-
-	Statement::replaceStatement(ifStmt, switchStmt);
 }
 
 void IfToSwitchOptimizer::convertDenseIntegerPartitionIfChainToSwitchStmt(

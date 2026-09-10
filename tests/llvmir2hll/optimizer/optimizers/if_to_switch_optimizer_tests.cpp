@@ -795,6 +795,81 @@ SequentialTwoSingleClauseIfsSameVarConvertToSwitch) {
 	ASSERT_EQ(body1, it->second);
 }
 
+//
+// The descending lower-bound conversions, which are gone.
+//
+// `if (v >= 2) b = 2; else if (v >= 1) b = 1; else b = 0;` used to become
+// `switch (v) { case 2: b = 2; case 1: b = 1; default: b = 0; }`, and four
+// tests asserted it. v = 7 takes the first branch and sets b = 2; the switch
+// has no case for 7, so it takes the default and sets b = 0. A `>=` chain is
+// unbounded above and a switch case is one value.
+//
+// These replace those four. They assert the chains stay as they are, in both
+// the `>=` and `>` forms and in the single-clause shape, because there is no
+// switch that answers the same question -- see the comment where the calls
+// used to be for the construction that would, and what it needs first.
+//
+
+TEST_F(IfToSwitchOptimizerTests, DescendingGeChainIsNotConverted)
+{
+	// if (v >= 2) b = 2; else if (v >= 1) b = 1; else b = 0;
+	ShPtr<Variable> varV(Variable::create("v", IntType::create(32)));
+	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
+	ShPtr<AssignStmt> b2(AssignStmt::create(varB, ConstInt::create(2, 32)));
+	ShPtr<AssignStmt> b1(AssignStmt::create(varB, ConstInt::create(1, 32)));
+	ShPtr<AssignStmt> b0(AssignStmt::create(varB, ConstInt::create(0, 32)));
+	ShPtr<IfStmt> ifStmt(
+		IfStmt::create(GtEqOpExpr::create(varV, ConstInt::create(2, 64), GtEqOpExpr::Variant::UCmp), b2));
+	ifStmt->addClause(GtEqOpExpr::create(varV, ConstInt::create(1, 64), GtEqOpExpr::Variant::UCmp), b1);
+	ifStmt->setElseClause(b0);
+	testFunc->setBody(ifStmt);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<IfToSwitchOptimizer>(module, va);
+
+	EXPECT_FALSE(isa<SwitchStmt>(testFunc->getBody()))
+		<< "a `v >= k` chain became a switch; every v above the highest bound "
+		   "now takes the default instead of the first clause";
+}
+
+TEST_F(IfToSwitchOptimizerTests, DescendingGtChainIsNotConverted)
+{
+	// if (v > 1) b = 2; else if (v > 0) b = 1; else b = 0;
+	ShPtr<Variable> varV(Variable::create("v", IntType::create(32)));
+	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
+	ShPtr<AssignStmt> b2(AssignStmt::create(varB, ConstInt::create(2, 32)));
+	ShPtr<AssignStmt> b1(AssignStmt::create(varB, ConstInt::create(1, 32)));
+	ShPtr<AssignStmt> b0(AssignStmt::create(varB, ConstInt::create(0, 32)));
+	ShPtr<IfStmt> ifStmt(IfStmt::create(GtOpExpr::create(varV, ConstInt::create(1, 64), GtOpExpr::Variant::UCmp), b2));
+	ifStmt->addClause(GtOpExpr::create(varV, ConstInt::create(0, 64), GtOpExpr::Variant::UCmp), b1);
+	ifStmt->setElseClause(b0);
+	testFunc->setBody(ifStmt);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<IfToSwitchOptimizer>(module, va);
+
+	EXPECT_FALSE(isa<SwitchStmt>(testFunc->getBody())) << "a `v > k` chain became a switch";
+}
+
+TEST_F(IfToSwitchOptimizerTests, SingleGeWithElseIsNotConverted)
+{
+	// if (v >= 1) b = 1; else b = 0;  -- the same defect with one clause
+	ShPtr<Variable> varV(Variable::create("v", IntType::create(32)));
+	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
+	ShPtr<AssignStmt> b1(AssignStmt::create(varB, ConstInt::create(1, 32)));
+	ShPtr<AssignStmt> b0(AssignStmt::create(varB, ConstInt::create(0, 32)));
+	ShPtr<IfStmt> ifStmt(
+		IfStmt::create(GtEqOpExpr::create(varV, ConstInt::create(1, 64), GtEqOpExpr::Variant::UCmp), b1));
+	ifStmt->setElseClause(b0);
+	testFunc->setBody(ifStmt);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<IfToSwitchOptimizer>(module, va);
+
+	EXPECT_FALSE(isa<SwitchStmt>(testFunc->getBody()))
+		<< "`if (v >= 1) … else …` became a switch; v = 7 now takes the else";
+}
+
 TEST_F(IfToSwitchOptimizerTests,
 ElseIfLtUpperBoundChainConvertsToSwitch) {
 	// if (v < 1) b = 10; else if (v < 2) b = 20; else b = 30;
@@ -833,25 +908,81 @@ ElseIfLtUpperBoundChainConvertsToSwitch) {
 	ASSERT_EQ(b30, sw->getDefaultClauseBody());
 }
 
-TEST_F(IfToSwitchOptimizerTests,
-ElseIfLeUpperBoundChainConvertsToSwitch) {
-	// if (v <= 0) b = 1; else if (v <= 1) b = 2; else b = 3;
+//
+// The same chains, spelled as signed compares.
+//
+// `if (v < 1) A; else if (v < 2) B; else C;` is a dense partition of 0 and 1
+// only when v cannot be negative. Under a signed compare `v < 1` is every value
+// at or below zero, and `case 0:` catches one of them -- so v = -5 takes A in
+// the binary and the switch's default in the emitted C. It compiles, it looks
+// right, and it is a different program.
+//
+// The converter records which compare it was: ICMP_ULT becomes
+// LtOpExpr::Variant::UCmp and ICMP_SLT becomes SCmp
+// (llvm_instruction_converter.cpp). The matchers below discarded it -- the Lt
+// one never read the variant at all, and the Le, Ge and Gt ones read it only to
+// require that every clause agreed.
+//
+
+TEST_F(IfToSwitchOptimizerTests, ElseIfSignedLtUpperBoundChainIsNotConverted)
+{
+	// if (v < 1) b = 10; else if (v < 2) b = 20; else b = 30;  -- signed
+	ShPtr<Variable> varV(Variable::create("v", IntType::create(32)));
+	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
+	ShPtr<AssignStmt> b10(AssignStmt::create(varB, ConstInt::create(10, 32)));
+	ShPtr<AssignStmt> b20(AssignStmt::create(varB, ConstInt::create(20, 32)));
+	ShPtr<AssignStmt> b30(AssignStmt::create(varB, ConstInt::create(30, 32)));
+	ShPtr<IfStmt> ifStmt(IfStmt::create(LtOpExpr::create(varV, ConstInt::create(1, 64), LtOpExpr::Variant::SCmp), b10));
+	ifStmt->addClause(LtOpExpr::create(varV, ConstInt::create(2, 64), LtOpExpr::Variant::SCmp), b20);
+	ifStmt->setElseClause(b30);
+	testFunc->setBody(ifStmt);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<IfToSwitchOptimizer>(module, va);
+
+	EXPECT_FALSE(isa<SwitchStmt>(testFunc->getBody()))
+		<< "a signed `v < k` chain became a switch; every negative v now takes "
+		   "the default instead of the first clause";
+}
+
+TEST_F(IfToSwitchOptimizerTests, ElseIfSignedLeUpperBoundChainIsNotConverted)
+{
+	// if (v <= 0) b = 1; else if (v <= 1) b = 2; else b = 3;  -- signed
+	ShPtr<Variable> varV(Variable::create("v", IntType::create(32)));
+	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
+	ShPtr<AssignStmt> b1(AssignStmt::create(varB, ConstInt::create(1, 32)));
+	ShPtr<AssignStmt> b2(AssignStmt::create(varB, ConstInt::create(2, 32)));
+	ShPtr<AssignStmt> b3(AssignStmt::create(varB, ConstInt::create(3, 32)));
+	ShPtr<IfStmt> ifStmt(
+		IfStmt::create(LtEqOpExpr::create(varV, ConstInt::create(0, 64), LtEqOpExpr::Variant::SCmp), b1));
+	ifStmt->addClause(LtEqOpExpr::create(varV, ConstInt::create(1, 64), LtEqOpExpr::Variant::SCmp), b2);
+	ifStmt->setElseClause(b3);
+	testFunc->setBody(ifStmt);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<IfToSwitchOptimizer>(module, va);
+
+	EXPECT_FALSE(isa<SwitchStmt>(testFunc->getBody())) << "a signed `v <= k` chain became a switch";
+}
+
+// This used to build the chain with LtEqOpExpr::Variant::SCmp and assert that
+// it converted. It is UCmp now, because the signed chain is the one directly
+// above: `v <= 0` under a signed compare is every value at or below zero, and
+// `case 0:` is one of them. The test asserted a conversion that changes the
+// program.
+TEST_F(IfToSwitchOptimizerTests, ElseIfLeUpperBoundChainConvertsToSwitch)
+{
+	// if (v <= 0) b = 1; else if (v <= 1) b = 2; else b = 3;  -- unsigned
 	ShPtr<Variable> varV(Variable::create("v", IntType::create(32)));
 	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
 	ShPtr<AssignStmt> b1(
 		AssignStmt::create(varB, ConstInt::create(1, 32)));
 	ShPtr<AssignStmt> b2(
 		AssignStmt::create(varB, ConstInt::create(2, 32)));
-	ShPtr<AssignStmt> b3(
-		AssignStmt::create(varB, ConstInt::create(3, 32)));
-	ShPtr<IfStmt> ifStmt(IfStmt::create(
-		LtEqOpExpr::create(varV, ConstInt::create(0, 64),
-			LtEqOpExpr::Variant::SCmp),
-		b1));
-	ifStmt->addClause(
-		LtEqOpExpr::create(varV, ConstInt::create(1, 64),
-			LtEqOpExpr::Variant::SCmp),
-		b2);
+	ShPtr<AssignStmt> b3(AssignStmt::create(varB, ConstInt::create(3, 32)));
+	ShPtr<IfStmt> ifStmt(
+		IfStmt::create(LtEqOpExpr::create(varV, ConstInt::create(0, 64), LtEqOpExpr::Variant::UCmp), b1));
+	ifStmt->addClause(LtEqOpExpr::create(varV, ConstInt::create(1, 64), LtEqOpExpr::Variant::UCmp), b2);
 	ifStmt->setElseClause(b3);
 	testFunc->setBody(ifStmt);
 
@@ -875,169 +1006,6 @@ ElseIfLeUpperBoundChainConvertsToSwitch) {
 	ASSERT_EQ(b3, sw->getDefaultClauseBody());
 }
 
-TEST_F(IfToSwitchOptimizerTests,
-ElseIfGeLowerBoundChainConvertsToSwitch) {
-	// if (v >= 2) b = 2; else if (v >= 1) b = 1; else b = 0;
-	ShPtr<Variable> varV(Variable::create("v", IntType::create(32)));
-	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
-	ShPtr<AssignStmt> b2(
-		AssignStmt::create(varB, ConstInt::create(2, 32)));
-	ShPtr<AssignStmt> b1(
-		AssignStmt::create(varB, ConstInt::create(1, 32)));
-	ShPtr<AssignStmt> b0(
-		AssignStmt::create(varB, ConstInt::create(0, 32)));
-	ShPtr<IfStmt> ifStmt(IfStmt::create(
-		GtEqOpExpr::create(varV, ConstInt::create(2, 64),
-			GtEqOpExpr::Variant::SCmp),
-		b2));
-	ifStmt->addClause(
-		GtEqOpExpr::create(varV, ConstInt::create(1, 64),
-			GtEqOpExpr::Variant::SCmp),
-		b1);
-	ifStmt->setElseClause(b0);
-	testFunc->setBody(ifStmt);
-
-	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
-	Optimizer::optimize<IfToSwitchOptimizer>(module, va);
-
-	ShPtr<SwitchStmt> sw(cast<SwitchStmt>(testFunc->getBody()));
-	ASSERT_TRUE(sw);
-	ASSERT_EQ(varV, sw->getControlExpr());
-	auto it = sw->clause_begin();
-	ShPtr<ConstInt> c2(cast<ConstInt>(it->first));
-	ASSERT_TRUE(c2);
-	EXPECT_TRUE(c2->isEqualTo(ConstInt::create(2, 32)));
-	ASSERT_EQ(b2, it->second);
-	++it;
-	ShPtr<ConstInt> c1(cast<ConstInt>(it->first));
-	ASSERT_TRUE(c1);
-	EXPECT_TRUE(c1->isEqualTo(ConstInt::create(1, 32)));
-	ASSERT_EQ(b1, it->second);
-	ASSERT_TRUE(sw->hasDefaultClause());
-	ASSERT_EQ(b0, sw->getDefaultClauseBody());
-}
-
-TEST_F(IfToSwitchOptimizerTests,
-SingleIfGeLowerBoundWithElseConvertsToSwitch) {
-	// if (v >= 1) b = 1; else b = 0;
-	ShPtr<Variable> varV(Variable::create("v", IntType::create(32)));
-	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
-	ShPtr<AssignStmt> b1(
-		AssignStmt::create(varB, ConstInt::create(1, 32)));
-	ShPtr<AssignStmt> b0(
-		AssignStmt::create(varB, ConstInt::create(0, 32)));
-	ShPtr<IfStmt> ifStmt(IfStmt::create(
-		GtEqOpExpr::create(varV, ConstInt::create(1, 64),
-			GtEqOpExpr::Variant::SCmp),
-		b1));
-	ifStmt->setElseClause(b0);
-	testFunc->setBody(ifStmt);
-
-	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
-	Optimizer::optimize<IfToSwitchOptimizer>(module, va);
-
-	ShPtr<SwitchStmt> sw(cast<SwitchStmt>(testFunc->getBody()));
-	ASSERT_TRUE(sw);
-	auto it = sw->clause_begin();
-	ShPtr<ConstInt> c1(cast<ConstInt>(it->first));
-	ASSERT_TRUE(c1);
-	EXPECT_TRUE(c1->isEqualTo(ConstInt::create(1, 32)));
-	ASSERT_EQ(b1, it->second);
-	ASSERT_EQ(b0, sw->getDefaultClauseBody());
-}
-
-TEST_F(IfToSwitchOptimizerTests,
-ElseIfGtLowerBoundChainConvertsToSwitch) {
-	// if (v > 1) b = 2; else if (v > 0) b = 1; else b = 0;
-	ShPtr<Variable> varV(Variable::create("v", IntType::create(32)));
-	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
-	ShPtr<AssignStmt> b2(
-		AssignStmt::create(varB, ConstInt::create(2, 32)));
-	ShPtr<AssignStmt> b1(
-		AssignStmt::create(varB, ConstInt::create(1, 32)));
-	ShPtr<AssignStmt> b0(
-		AssignStmt::create(varB, ConstInt::create(0, 32)));
-	ShPtr<IfStmt> ifStmt(IfStmt::create(
-		GtOpExpr::create(varV, ConstInt::create(1, 64),
-			GtOpExpr::Variant::SCmp),
-		b2));
-	ifStmt->addClause(
-		GtOpExpr::create(varV, ConstInt::create(0, 64),
-			GtOpExpr::Variant::SCmp),
-		b1);
-	ifStmt->setElseClause(b0);
-	testFunc->setBody(ifStmt);
-
-	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
-	Optimizer::optimize<IfToSwitchOptimizer>(module, va);
-
-	ShPtr<SwitchStmt> sw(cast<SwitchStmt>(testFunc->getBody()));
-	ASSERT_TRUE(sw);
-	ASSERT_EQ(varV, sw->getControlExpr());
-	auto it = sw->clause_begin();
-	ShPtr<ConstInt> c2(cast<ConstInt>(it->first));
-	ASSERT_TRUE(c2);
-	EXPECT_TRUE(c2->isEqualTo(ConstInt::create(2, 32)));
-	ASSERT_EQ(b2, it->second);
-	++it;
-	ShPtr<ConstInt> c1(cast<ConstInt>(it->first));
-	ASSERT_TRUE(c1);
-	EXPECT_TRUE(c1->isEqualTo(ConstInt::create(1, 32)));
-	ASSERT_EQ(b1, it->second);
-	ASSERT_TRUE(sw->hasDefaultClause());
-	ASSERT_EQ(b0, sw->getDefaultClauseBody());
-}
-
-TEST_F(IfToSwitchOptimizerTests,
-SingleIfGtLowerBoundWithElseConvertsToSwitch) {
-	ShPtr<Variable> varV(Variable::create("v", IntType::create(32)));
-	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
-	ShPtr<AssignStmt> b1(
-		AssignStmt::create(varB, ConstInt::create(1, 32)));
-	ShPtr<AssignStmt> b0(
-		AssignStmt::create(varB, ConstInt::create(0, 32)));
-	ShPtr<IfStmt> ifStmt(IfStmt::create(
-		GtOpExpr::create(varV, ConstInt::create(0, 64),
-			GtOpExpr::Variant::SCmp),
-		b1));
-	ifStmt->setElseClause(b0);
-	testFunc->setBody(ifStmt);
-
-	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
-	Optimizer::optimize<IfToSwitchOptimizer>(module, va);
-
-	ShPtr<SwitchStmt> sw(cast<SwitchStmt>(testFunc->getBody()));
-	ASSERT_TRUE(sw);
-	auto it = sw->clause_begin();
-	ShPtr<ConstInt> c1(cast<ConstInt>(it->first));
-	ASSERT_TRUE(c1);
-	EXPECT_TRUE(c1->isEqualTo(ConstInt::create(1, 32)));
-	ASSERT_EQ(b1, it->second);
-	ASSERT_EQ(b0, sw->getDefaultClauseBody());
-}
-
-TEST_F(IfToSwitchOptimizerTests,
-ElseIfGeLowerBoundChainWrongBoundNotOptimized) {
-	ShPtr<Variable> varV(Variable::create("v", IntType::create(32)));
-	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
-	ShPtr<AssignStmt> body(AssignStmt::create(varB, ConstInt::create(0, 32)));
-	ShPtr<IfStmt> ifStmt(IfStmt::create(
-		GtEqOpExpr::create(varV, ConstInt::create(2, 64),
-			GtEqOpExpr::Variant::SCmp),
-		body));
-	ifStmt->addClause(
-		GtEqOpExpr::create(varV, ConstInt::create(2, 64),
-			GtEqOpExpr::Variant::SCmp),
-		body);
-	ifStmt->setElseClause(body);
-	testFunc->setBody(ifStmt);
-
-	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
-	Optimizer::optimize<IfToSwitchOptimizer>(module, va);
-
-	ShPtr<IfStmt> out(cast<IfStmt>(testFunc->getBody()));
-	ASSERT_TRUE(out);
-}
 
 TEST_F(IfToSwitchOptimizerTests,
 ElseIfLeUpperBoundChainWrongBoundNotOptimized) {
