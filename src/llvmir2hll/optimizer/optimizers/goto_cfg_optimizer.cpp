@@ -313,18 +313,6 @@ private:
 // using a cleaner imperative traversal that avoids the ordering issues above.
 //===========================================================================
 
-/// Find whether @a target is reachable from @a start by following successors,
-/// within @a maxSteps steps. Returns true if found.
-bool isForwardReachable(ShPtr<Statement> start, ShPtr<Statement> target, int maxSteps = 256)
-{
-	auto s = start;
-	for (int i = 0; i < maxSteps && s; ++i, s = s->getSuccessor())
-	{
-		if (s == target) return true;
-	}
-	return false;
-}
-
 /// Collect the statements between @a start (inclusive) and @a end (exclusive)
 /// as a vector.  Returns empty vector if end is not reachable.
 std::vector<ShPtr<Statement>> collectBetween(ShPtr<Statement> start, ShPtr<Statement> end, int maxSteps = 256)
@@ -337,30 +325,44 @@ std::vector<ShPtr<Statement>> collectBetween(ShPtr<Statement> start, ShPtr<State
 	return result;
 }
 
-/// Build a cloned statement chain from @a stmts, with the last clone's
-/// successor set to nullptr.
-ShPtr<Statement> buildChain(const std::vector<ShPtr<Statement>>& stmts)
+/// Move the run @a between -- which must be exactly the statements from
+/// @c is->getSuccessor() up to but excluding @a target -- out of the main
+/// successor chain and into the first if-clause body of @a is, whose
+/// successor becomes @a target.
+///
+/// The run is *moved*, not copied.  Copying it is what this did, and it lost
+/// every label nested inside a compound statement: IfStmt::clone(),
+/// WhileLoopStmt::clone() and ForLoopStmt::clone() deep-copy their bodies
+/// through Statement::cloneStatements(), and no clone() carries a label.
+/// Redirecting the gotos aimed at the run's top-level statements -- which is
+/// all a walk over @a between can reach -- is not enough, because the
+/// statements nested inside those bodies are dropped along with their
+/// containers, and a goto elsewhere in the function still names the label one
+/// of them carried.  That is `goto lab_0x112c;` with no `lab_0x112c:`
+/// anywhere, which is what CC-01 measured on generated_shell_sort-gcc-O2.
+///
+/// Moving has nothing to fix up: every statement in the run keeps its
+/// identity, so its label, the gotos aimed at it, and everything nested
+/// inside it come along untouched.
+void moveRunIntoIfBody(
+	const ShPtr<IfStmt>& is, const std::vector<ShPtr<Statement>>& between, const ShPtr<Statement>& target)
 {
-	if (stmts.empty()) return nullptr;
-	ShPtr<Statement> head, tail;
-	for (auto& s: stmts)
+	// The body being replaced is `[empty...] goto target`, so reaching any of
+	// it meant reaching `target`; anything aimed at it is aimed at `target`.
+	// Without this the same symptom appears one statement over.
+	for (auto s = is->getFirstIfBody(); s; s = s->getSuccessor())
 	{
-		auto c = ucast<Statement>(s->clone());
-		c->setSuccessor(nullptr);
-		// No clone() carries the label over -- AssignStmt::clone() and its
-		// siblings copy metadata only.  The clone is what stays in the tree,
-		// so the label and every goto aimed at the original have to follow it,
-		// or the emitter writes `goto lab_x` with no `lab_x:` anywhere.
-		s->redirectGotosTo(c);
-		if (!head)
-			head = tail = c;
-		else
-		{
-			tail->setSuccessor(c);
-			tail = c;
-		}
+		s->redirectGotosTo(target);
 	}
-	return head;
+
+	// setFirstIfBody() first, while `is` is still the run's predecessor in the
+	// main chain: it prunes the predecessors that reach the new body by
+	// falling through, which is exactly the edge from `is` that the move
+	// replaces, and a clause body is not supposed to keep one.
+	auto last = between.back();
+	is->setFirstIfBody(between.front());
+	is->setSuccessor(target);
+	last->setSuccessor(nullptr);
 }
 
 /// One pass over the body of @a func.  Returns true if any change was made.
@@ -401,12 +403,6 @@ bool onePass(ShPtr<Function> func)
 							auto between = collectBetween(is->getSuccessor(), target);
 							if (!between.empty())
 							{
-								// Build the new if(!cond) { between... }
-								auto chain = buildChain(between);
-								auto negCond = ExpressionNegater::negate(is->getFirstIfCond());
-								// Detach the between stmts from the main list:
-								// set is's successor straight to target.
-								is->setSuccessor(target);
 								// Rewrite `is` in place: same statement
 								// object, inverted condition, the collected
 								// statements as its body.  Building a second
@@ -415,9 +411,9 @@ bool onePass(ShPtr<Function> func)
 								// statement that was then dropped on the
 								// floor -- the label vanished from the output
 								// while the gotos still named it.
+								auto negCond = ExpressionNegater::negate(is->getFirstIfCond());
+								moveRunIntoIfBody(is, between, target);
 								is->setFirstIfCond(negCond);
-								is->setFirstIfBody(chain);
-								// is already has successor = target. Done.
 								changed = true;
 								anyChange = true;
 								// Don't advance stmt; the rewritten `is` is

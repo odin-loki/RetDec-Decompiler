@@ -135,6 +135,35 @@ without memoisation the two got different names. `tests/llvmir2hll` now runs
 (`scripts/ci/check_llvmir2hll_tests.sh`), and all three have regression tests
 there.
 
+**And a fourth route, which is what run 266 was still reporting.** Pattern A
+of the same pass takes the run of statements between the `if` and the goto's
+target and makes it the new if-body. It *copied* that run: `buildChain()`
+cloned each statement and called `redirectGotosTo()` on the original so the
+label and the inbound gotos followed the clone.
+
+That covers the run's own statements and nothing inside them.
+`IfStmt::clone()`, `WhileLoopStmt::clone()` and `ForLoopStmt::clone()`
+deep-copy their bodies through `Statement::cloneStatements()`, and no `clone()`
+carries a label — so every statement nested inside a moved `if` or loop was
+dropped along with its container while a goto elsewhere in the function went on
+naming the label it had carried. `goto lab_0x112c;` with no `lab_0x112c:`.
+
+The run is now *moved* rather than copied, which has nothing to fix up: every
+statement keeps its identity, so its label, the gotos aimed at it and
+everything nested inside it come along untouched. Two of the pass's helpers
+(`buildChain`, `isForwardReachable`) were dead afterwards, the second of them
+already dead before.
+
+Moving exposed a smaller defect underneath. `Statement::transferLabelTo()` and
+`transferLabelFrom()` assigned unconditionally, so transferring from a
+statement with *no* label erased the label the destination had. The move
+redirects the gotos aimed at the discarded `goto L` onto `L` itself, and `L` is
+routinely labelled — the fix would have stranded a different goto than the one
+it repaired. Both now return early with nothing to transfer. The two existing
+tests named "does nothing when the statement has no label" could not see it:
+they left the *other* statement unlabelled too, which cannot tell a no-op from
+an assignment of the empty string.
+
 ### Closed by run 266: the emitted C contradicts the header it asks for
 
 CC-01 (`scripts/ci/check_emitted_c_compiles.sh`) measured 21/24 on its slice
@@ -200,7 +229,8 @@ should be raised with the measurement.
 
 **Run 266 said it.** 23/24, rate 0.9583 — both arity failures gone, and the
 floor is now that number. The one file left is `generated_shell_sort-gcc-O2`,
-`label 'lab_0x112c' used but not defined`: the goto symptom, still open.
+`label 'lab_0x112c' used but not defined`: the goto symptom, and the fourth
+route to it is the last entry of the section above.
 
 ---
 

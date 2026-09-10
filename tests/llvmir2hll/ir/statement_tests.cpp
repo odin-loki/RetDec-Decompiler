@@ -93,6 +93,19 @@ TransferLabelFromDoesNothingWhenStatementHasNoLabel) {
 	ASSERT_FALSE(stmt2->hasLabel());
 }
 
+TEST_F(StatementTests, TransferLabelFromKeepsOwnLabelWhenThereIsNothingToTransfer)
+{
+	// "Does nothing" was only ever tested with both statements unlabelled,
+	// which cannot tell a no-op from an assignment of the empty string.
+	auto stmt1 = EmptyStmt::create();
+	stmt1->setLabel("my_label");
+	auto stmt2 = EmptyStmt::create();
+
+	stmt1->transferLabelFrom(stmt2);
+
+	ASSERT_EQ("my_label", stmt1->getLabel());
+}
+
 //
 // transferLabelTo()
 //
@@ -118,6 +131,18 @@ TransferLabelToDoesNothingWhenStatementHasNoLabel) {
 
 	ASSERT_FALSE(stmt1->hasLabel());
 	ASSERT_FALSE(stmt2->hasLabel());
+}
+
+TEST_F(StatementTests, TransferLabelToKeepsTheDestinationLabelWhenThereIsNothingToTransfer)
+{
+	auto stmt1 = EmptyStmt::create();
+	auto stmt2 = EmptyStmt::create();
+	stmt2->setLabel("my_label");
+
+	stmt1->transferLabelTo(stmt2);
+
+	ASSERT_EQ("my_label", stmt2->getLabel()) << "an unlabelled statement took away the label the destination had,"
+												" so every goto aimed at the destination lost its definition";
 }
 
 //
@@ -147,6 +172,21 @@ RedirectGotosToRedirectsGotos) {
 	ASSERT_TRUE(newTarget->hasPredecessors());
 	ASSERT_FALSE(origTarget->isGotoTarget());
 	ASSERT_FALSE(origTarget->hasPredecessors());
+}
+
+TEST_F(StatementTests, RedirectGotosToKeepsTheNewTargetsLabelWhenTheOldTargetHasNone)
+{
+	// The whole point of redirecting is that the gotos keep resolving; they
+	// resolve through the new target's label, so wiping it strands them.
+	auto origTarget = EmptyStmt::create();
+	auto newTarget = EmptyStmt::create();
+	newTarget->setLabel("my_label");
+	auto gotoStmt = GotoStmt::create(origTarget);
+
+	origTarget->redirectGotosTo(newTarget);
+
+	ASSERT_TRUE(newTarget->isGotoTarget());
+	ASSERT_EQ("my_label", newTarget->getLabel());
 }
 
 TEST_F(StatementTests,

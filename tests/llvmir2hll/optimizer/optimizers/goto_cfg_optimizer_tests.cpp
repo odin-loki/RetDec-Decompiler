@@ -354,6 +354,175 @@ TEST_F(GotoCFGOptimizerTests, PatternA_LabelOnAStatementThatGetsClonedFollowsThe
 	}
 }
 
+
+/// The label carried by @a wanted, if the emitter can still reach the
+/// statement carrying it.
+bool labelIsStillEmitted(const StmtUSet& reachable, const std::string& wanted)
+{
+	for (const auto& stmt: reachable)
+	{
+		if (stmt->getLabel() == wanted)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+/// Every goto the emitter reaches must reach its target too, or it writes
+/// `goto L;` with no `L:` anywhere in the function.
+void expectEveryGotoResolves(const StmtUSet& reachable)
+{
+	for (const auto& stmt: reachable)
+	{
+		auto gotoStmt = cast<GotoStmt>(stmt);
+		if (!gotoStmt)
+		{
+			continue;
+		}
+		EXPECT_EQ(1u, reachable.count(gotoStmt->getTarget()))
+			<< "a goto targets a statement the emitter never reaches, so its"
+			   " label is used but never defined";
+	}
+}
+
+TEST_F(GotoCFGOptimizerTests, PatternA_ALabelNestedInsideAMovedLoopSurvives)
+{
+	// void test() {
+	//     int a;
+	//     if (a) goto L;
+	//     while (a) {
+	//         lab_inner: a = 1;   <- nested inside the run pattern A takes
+	//     }
+	//     L: a = 2;
+	//     goto lab_inner;         <- names a statement inside that loop
+	// }
+	//
+	// Redirecting the gotos aimed at the run's top-level statements reaches
+	// the while, not the assignment inside it. WhileLoopStmt::clone() deep-
+	// copies the body and no clone() carries a label, so copying the run
+	// dropped `lab_inner` while the goto below went on naming it.
+	auto varA = Variable::create("a", IntType::create(32));
+	testFunc->addLocalVar(varA);
+
+	auto backGoto = GotoStmt::create(ReturnStmt::create());
+	auto atL = AssignStmt::create(varA, ConstInt::create(llvm::APInt(32, 2)), backGoto);
+	auto inner = AssignStmt::create(varA, ConstInt::create(llvm::APInt(32, 1)));
+	inner->setLabel("lab_inner");
+	auto loop = WhileLoopStmt::create(varA, inner, atL);
+	auto gotoL = GotoStmt::create(atL);
+	auto ifStmt = IfStmt::create(varA, gotoL, loop);
+	backGoto->setTarget(inner);
+	testFunc->setBody(ifStmt);
+
+	Optimizer::optimize<GotoCFGOptimizer>(module);
+
+	auto reachable = ReachableStmtCollector::collect(testFunc->getBody());
+	EXPECT_TRUE(labelIsStillEmitted(reachable, "lab_inner"))
+		<< "the loop was copied into the new if-body and the original dropped,"
+		   " taking the label on the statement inside it with it";
+	expectEveryGotoResolves(reachable);
+}
+
+TEST_F(GotoCFGOptimizerTests, PatternA_ALabelNestedInsideAMovedIfSurvives)
+{
+	// The same shape with an if rather than a loop as the container, because
+	// IfStmt::clone() deep-copies its clause bodies by the same route.
+	//
+	// void test() {
+	//     int a;
+	//     if (a) goto L;
+	//     if (a) { lab_inner: a = 1; }
+	//     L: a = 2;
+	//     goto lab_inner;
+	// }
+	auto varA = Variable::create("a", IntType::create(32));
+	testFunc->addLocalVar(varA);
+
+	auto backGoto = GotoStmt::create(ReturnStmt::create());
+	auto atL = AssignStmt::create(varA, ConstInt::create(llvm::APInt(32, 2)), backGoto);
+	auto inner = AssignStmt::create(varA, ConstInt::create(llvm::APInt(32, 1)));
+	inner->setLabel("lab_inner");
+	// An else clause keeps this if out of pattern A's own hands: its body is
+	// not a lone goto, so the only thing that happens to it is the move.
+	auto innerIf = IfStmt::create(varA, inner, atL);
+	innerIf->setElseClause(EmptyStmt::create());
+	auto gotoL = GotoStmt::create(atL);
+	auto ifStmt = IfStmt::create(varA, gotoL, innerIf);
+	backGoto->setTarget(inner);
+	testFunc->setBody(ifStmt);
+
+	Optimizer::optimize<GotoCFGOptimizer>(module);
+
+	auto reachable = ReachableStmtCollector::collect(testFunc->getBody());
+	EXPECT_TRUE(labelIsStillEmitted(reachable, "lab_inner"));
+	expectEveryGotoResolves(reachable);
+}
+
+TEST_F(GotoCFGOptimizerTests, PatternA_AGotoIntoTheDiscardedIfBodyIsRedirected)
+{
+	// The `goto L` that pattern A recognises is itself thrown away. If
+	// something jumped to it, that jump meant "go to L", and has to keep
+	// meaning it.
+	//
+	// void test() {
+	//     int a;
+	//     if (a) { lab_body: goto L; }
+	//     a = 1;
+	//     L: a = 2;
+	//     goto lab_body;
+	// }
+	auto varA = Variable::create("a", IntType::create(32));
+	testFunc->addLocalVar(varA);
+
+	auto backGoto = GotoStmt::create(ReturnStmt::create());
+	auto atL = AssignStmt::create(varA, ConstInt::create(llvm::APInt(32, 2)), backGoto);
+	auto mid = AssignStmt::create(varA, ConstInt::create(llvm::APInt(32, 1)), atL);
+	auto gotoL = GotoStmt::create(atL);
+	gotoL->setLabel("lab_body");
+	auto ifStmt = IfStmt::create(varA, gotoL, mid);
+	backGoto->setTarget(gotoL);
+	testFunc->setBody(ifStmt);
+
+	Optimizer::optimize<GotoCFGOptimizer>(module);
+
+	auto reachable = ReachableStmtCollector::collect(testFunc->getBody());
+	expectEveryGotoResolves(reachable);
+	EXPECT_EQ(1u, reachable.count(atL)) << "the jump into the discarded body should now land on L itself";
+}
+
+TEST_F(GotoCFGOptimizerTests, PatternA_TheMovedRunKeepsTheTargetsOwnLabel)
+{
+	// The redirect above transfers a label onto the target. It must not take
+	// away the label the target already had -- gotos aimed at the target
+	// resolve through it.
+	//
+	// void test() {
+	//     int a;
+	//     if (a) goto L;      <- the body carries no label of its own
+	//     a = 1;
+	//     L: a = 2;           <- labelled, and jumped to from below
+	//     goto L;
+	// }
+	auto varA = Variable::create("a", IntType::create(32));
+	testFunc->addLocalVar(varA);
+
+	auto backGoto = GotoStmt::create(ReturnStmt::create());
+	auto atL = AssignStmt::create(varA, ConstInt::create(llvm::APInt(32, 2)), backGoto);
+	atL->setLabel("lab_L");
+	auto mid = AssignStmt::create(varA, ConstInt::create(llvm::APInt(32, 1)), atL);
+	auto gotoL = GotoStmt::create(atL);
+	auto ifStmt = IfStmt::create(varA, gotoL, mid);
+	backGoto->setTarget(atL);
+	testFunc->setBody(ifStmt);
+
+	Optimizer::optimize<GotoCFGOptimizer>(module);
+
+	auto reachable = ReachableStmtCollector::collect(testFunc->getBody());
+	EXPECT_TRUE(labelIsStillEmitted(reachable, "lab_L"));
+	expectEveryGotoResolves(reachable);
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

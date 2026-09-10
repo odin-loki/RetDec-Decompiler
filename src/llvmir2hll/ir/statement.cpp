@@ -771,6 +771,14 @@ void Statement::setLabel(const std::string &newLabel) {
 * @brief Transfers the label from the given statement to the current statement.
 */
 void Statement::transferLabelFrom(ShPtr<Statement> stmt) {
+	if (stmt->label.empty())
+	{
+		// Nothing to transfer. The assignment ran anyway, so transferring from
+		// an unlabelled statement erased this statement's own label -- and the
+		// gotos aimed at it went on naming a label nothing wrote.
+		return;
+	}
+
 	label = stmt->label;
 	stmt->label.clear();
 }
@@ -779,6 +787,13 @@ void Statement::transferLabelFrom(ShPtr<Statement> stmt) {
 * @brief Transfers the label from the current statement to the given statement.
 */
 void Statement::transferLabelTo(ShPtr<Statement> stmt) {
+	if (label.empty())
+	{
+		// See transferLabelFrom(): with no label to give, the assignment took
+		// away the one @a stmt already had.
+		return;
+	}
+
 	stmt->label = label;
 	label.clear();
 }
