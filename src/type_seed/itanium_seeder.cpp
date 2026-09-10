@@ -674,6 +674,22 @@ struct ItaniumParser
 		if (outConst) *outConst = isConst;
 
 		std::vector<std::string> parts;
+
+		// Itanium ABI 5.1.4: the substitution candidates of a nested name are
+		// its successive PREFIXES, and the entity's own trailing unqualified
+		// name is never one of them. Each component used to be registered on
+		// its own, so S0_ resolved to "B" where the prefix is "A::B", and S1_
+		// resolved to the function's own name -- `_ZN1A1B1gEPS0_S1_` came back
+		// with a second parameter of type "g". Committing the PREVIOUS
+		// component as each new one arrives means the last is never committed.
+		std::string subPrefix;
+		auto commitPrevPrefix = [&]() {
+			if (parts.empty()) return;
+			if (!subPrefix.empty()) subPrefix += "::";
+			subPrefix += parts.back();
+			subs.push_back(subPrefix);
+		};
+
 		while (!atEnd() && peek() != 'E')
 		{
 			// Substitution
@@ -686,8 +702,8 @@ struct ItaniumParser
 					std::string ta = parseTemplateArgs();
 					s += ta;
 				}
+				commitPrevPrefix();
 				parts.push_back(s);
-				subs.push_back(s);
 				continue;
 			}
 			// Template instantiation of last part
@@ -695,9 +711,10 @@ struct ItaniumParser
 			{
 				if (!parts.empty())
 				{
+					// The template arguments belong to the component already
+					// in `parts`, which has not been committed yet.
 					std::string ta = parseTemplateArgs();
 					parts.back() += ta;
-					subs.push_back(parts.back());
 				}
 				else
 				{
@@ -712,6 +729,7 @@ struct ItaniumParser
 			{
 				if (outIsCtor) *outIsCtor = isCtor;
 				if (outIsDtor) *outIsDtor = isDtor;
+				commitPrevPrefix();
 				parts.push_back(cd);
 				continue;
 			}
@@ -719,6 +737,7 @@ struct ItaniumParser
 			std::string op = tryOperator();
 			if (!op.empty())
 			{
+				commitPrevPrefix();
 				parts.push_back(op);
 				continue;
 			}
@@ -726,8 +745,8 @@ struct ItaniumParser
 			if (std::isdigit(static_cast<unsigned char>(peek())))
 			{
 				std::string sn = parseSourceName();
+				commitPrevPrefix();
 				parts.push_back(sn);
-				subs.push_back(sn);
 				continue;
 			}
 			break;
@@ -738,10 +757,15 @@ struct ItaniumParser
 		{
 			// Last part is the function name; everything before is the class chain.
 			// Well-known substitutions (Ss → "std::string") are not a class scope.
+			// A prefix component is a scope whether or not its rendering
+			// contains "::". The test used to be on the rendered text, so a
+			// template instantiation was dropped -- a libstdc++ container's
+			// allocator argument always renders as std::allocator<...> -- and
+			// `_ZNSt6vectorIiSaIiEE9push_backERKi` came back with the class
+			// "std", asserting that `this` points at a namespace.
 			std::string cls;
 			for (std::size_t i = 0; i + 1 < parts.size(); ++i)
 			{
-				if (parts[i].find("::") != std::string::npos) continue;
 				if (!cls.empty()) cls += "::";
 				cls += parts[i];
 			}
@@ -899,9 +923,26 @@ public:
 		info.functionName = funcName;
 		info.className = className;
 
-		// Rebuild namespace / class split
+		// Rebuild namespace / class split.
+		//
+		// The "::" that separates them has to be at bracket depth zero:
+		// rfind() finds the last one anywhere, and a template argument
+		// routinely contains one -- "std::vector<int, std::allocator<int> >"
+		// split at the "::" inside the allocator and left the class as
+		// "allocator<int> >".
 		{
-			auto pos = className.rfind("::");
+			std::size_t pos = std::string::npos;
+			int depth = 0;
+			for (std::size_t i = 0; i + 1 < className.size(); ++i)
+			{
+				const char c = className[i];
+				if (c == '<')
+					++depth;
+				else if (c == '>')
+					--depth;
+				else if (depth == 0 && c == ':' && className[i + 1] == ':')
+					pos = i;
+			}
 			if (pos != std::string::npos)
 			{
 				info.namespaceName = className.substr(0, pos);

@@ -818,8 +818,13 @@ static const ItaniumCase kItaniumCorpus[] = {
 	{"_ZN3FooD2Ev", "<destructor>", "Foo", false, false, true},
 	// Nested namespaces
 	{"_ZN3std3map6insertE", "insert", "map", false, false, false},
-	// STL
-	{"_ZNKSs4sizeEv", "size", nullptr, true, false, false},
+	// STL. Ss is the well-known substitution for std::basic_string<char...>,
+	// so the class of this symbol really is std::string -- className holds the
+	// innermost name and namespaceName the rest, as for every other member
+	// here. This row expected NO class, which is what the old text-based
+	// filter produced by dropping any nested-name component whose rendering
+	// contained "::".
+	{"_ZNKSs4sizeEv", "size", "string", true, false, false},
 };
 
 class ItaniumCorpusTest : public ::testing::TestWithParam<ItaniumCase> {};
@@ -1055,4 +1060,92 @@ TEST(ParserProgressTests, SwiftTupleNestedPastTheDepthCapTerminates)
 		auto info = d.tryExtract(sym);
 		(void)info;
 	}));
+}
+
+// ─── Demangled signatures have to match the demangler ────────────────────────
+//
+// Every mangling below was checked against the real tool -- llvm-undname for
+// MSVC, g++ plus c++filt for Itanium -- so the expected values are what the
+// symbol actually means, not what this parser happens to produce.
+
+// In the MSVC scheme only a NON-static member function carries a cv-qualifier
+// between the access code and the calling convention. The branch was taken on
+// class membership instead, so for a static member the calling-convention
+// character was eaten as a cv-qualifier and every field after it read one
+// position late -- the return type came back as the first parameter's type.
+TEST_F(MsvcSeederTest, AStaticMemberFunctionHasNoCvThis)
+{
+	// public: static int __cdecl A::bar(float)
+	auto sig = extract("?bar@A@@SAHM@Z");
+	ASSERT_TRUE(sig.valid());
+	EXPECT_EQ("int", sig.returnType) << "returnType=" << sig.returnType;
+	EXPECT_FALSE(sig.hasThis) << "a static member function has no this";
+	ASSERT_EQ(1u, sig.params.size());
+	EXPECT_EQ("float", sig.params[0].type);
+}
+
+TEST_F(MsvcSeederTest, ANonStaticMemberStillGetsItsThis)
+{
+	// public: int __thiscall Foo::getX(void) const
+	auto sig = extract("?getX@Foo@@QBEHXZ");
+	ASSERT_TRUE(sig.valid());
+	EXPECT_TRUE(sig.hasThis);
+	EXPECT_TRUE(sig.isConst);
+	EXPECT_EQ("int", sig.returnType);
+}
+
+// The lone 'X' IS the empty parameter list in MSVC mangling, not a parameter
+// of type void. The Itanium seeder has exactly this guard already.
+TEST_F(MsvcSeederTest, TheLoneXMeansNoParametersAtAll)
+{
+	for (const char* sym: {"?g@@YAHXZ", "?foo@@YAXXZ", "?getX@Foo@@QBEHXZ"})
+	{
+		auto sig = extract(sym);
+		ASSERT_TRUE(sig.valid()) << sym;
+		EXPECT_TRUE(sig.params.empty()) << sym << " reported " << sig.params.size() << " parameter(s), first type '"
+										<< (sig.params.empty() ? std::string() : sig.params[0].type) << "'";
+	}
+}
+
+// Itanium substitutions S_, S0_ ... are the successive PREFIXES of a nested
+// name, and the entity's own trailing unqualified name is never one of them.
+// Registering each component on its own, the function name included, made S1_
+// resolve to the function's own name.
+TEST(ItaniumSeeder, SubstitutionsResolveToScopedPrefixes)
+{
+	auto d = makeDefaultDispatcher();
+
+	// A::B::f(A::B*)
+	auto f = d.tryExtract("_ZN1A1B1fEPS0_");
+	ASSERT_TRUE(f.valid());
+	ASSERT_EQ(1u, f.params.size());
+	EXPECT_EQ("A::B*", f.params[0].type) << "S0_ is the prefix A::B, not B";
+
+	// A::B::g(A::B*, A::B*) -- S1_ used to come back as "g"
+	auto g = d.tryExtract("_ZN1A1B1gEPS0_S1_");
+	ASSERT_TRUE(g.valid());
+	ASSERT_EQ(2u, g.params.size());
+	EXPECT_NE("g", g.params[1].type) << "a substitution resolved to the function's own name";
+	// S1_ here is the composed type A::B*, which became a candidate when the
+	// first parameter used it. This parser does not record composed types as
+	// candidates, so it resolves to nothing -- a separate gap, and better than
+	// resolving to the wrong thing.
+}
+
+// A nested-name prefix component is a scope whether or not its rendering
+// happens to contain "::". The filter was on the rendered text, so a template
+// instantiation -- whose libstdc++ allocator argument always renders as
+// std::allocator<...> -- was dropped, leaving the namespace as the class.
+TEST(ItaniumSeeder, ATemplateInstantiationIsTheClassNotItsNamespace)
+{
+	auto d = makeDefaultDispatcher();
+
+	// std::vector<int, std::allocator<int> >::push_back(int const&)
+	auto pb = d.tryExtract("_ZNSt6vectorIiSaIiEE9push_backERKi");
+	ASSERT_TRUE(pb.valid());
+	// The class is the instantiation, the namespace is std. It used to come
+	// out as class "std" -- so `this` was a pointer to a namespace.
+	EXPECT_EQ("vector<int, std::allocator<int>>", pb.className) << pb.className;
+	EXPECT_EQ("std", pb.namespaceName) << pb.namespaceName;
+	EXPECT_EQ("std::vector*", pb.thisType) << pb.thisType;
 }

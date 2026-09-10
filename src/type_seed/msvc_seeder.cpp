@@ -420,31 +420,48 @@ public:
         // Format: <access><storage> where access=[A-Z] storage=[A-Z]
         // We skip the access level and static/virtual modifiers.
         // The next meaningful chars are calling convention + cv-this
-        if (!par.atEnd()) { par.get(); } // access flags
+		const char access = par.atEnd() ? '\0' : par.get();
 
-        // ── 4. Calling convention + CV-this ───────────────────────────────────
-        // Member: <access><cv-this><calling-conv>  e.g. QAE / QBE (thiscall).
-        // Free:   <access><calling-conv>           e.g. YA / YG / YI.
-        bool isConst = false;
-        if (!info.className.empty()) {
-            if (!par.atEnd()) isConst = par.parseCVThis();
-            if (!par.atEnd()) info.callingConvention = par.parseCalling();
-        } else {
-            if (!par.atEnd()) info.callingConvention = par.parseCalling();
-            if (!par.atEnd()) isConst = par.parseCVThis();
-        }
-        info.isConst = isConst;
+		// ── 4. Calling convention + CV-this ───────────────────────────────────
+		// Member: <access><cv-this><calling-conv>  e.g. QAE / QBE (thiscall).
+		// Free:   <access><calling-conv>           e.g. YA / YG / YI.
+		//
+		// Only a NON-static member function carries the cv-qualifier, and the
+		// access code is what says which this is -- C/D, K/L and S/T are the
+		// static members, Y/Z the free functions. Deciding on class membership
+		// instead ate a static member's calling-convention character as a
+		// cv-qualifier, so every field after it read one position late and the
+		// return type came back as the first parameter's type.
+		const bool isStaticMember =
+			(access == 'C' || access == 'D' || access == 'K' || access == 'L' || access == 'S' || access == 'T');
+		const bool isGlobalScope = (access == 'Y' || access == 'Z');
+		const bool isInstanceMember = !info.className.empty() && !isStaticMember && !isGlobalScope;
 
-        // Class membership → this pointer
-        if (!info.className.empty()) {
-            info.hasThis = true;
+		bool isConst = false;
+		if (isInstanceMember)
+		{
+			if (!par.atEnd()) isConst = par.parseCVThis();
+            if (!par.atEnd()) info.callingConvention = par.parseCalling();
+		}
+		else
+		{
+			if (!par.atEnd()) info.callingConvention = par.parseCalling();
+			if (!par.atEnd() && !isStaticMember && !isGlobalScope) isConst = par.parseCVThis();
+		}
+		info.isConst = isConst;
+
+		// Class membership → this pointer. A static member belongs to the
+		// class and takes no this.
+		if (isInstanceMember)
+		{
+			info.hasThis = true;
             std::string thisBase = info.className;
             auto lt = thisBase.find('<');
             if (lt != std::string::npos) thisBase = thisBase.substr(0,lt);
             info.thisType = (isConst?"const ":"") + thisBase + "*";
-        }
+		}
 
-        // ── 5. '@' separator before return type ───────────────────────────────
+		// ── 5. '@' separator before return type ───────────────────────────────
         par.consume('@');
 
         // ── 6. Return type ────────────────────────────────────────────────────
@@ -457,7 +474,10 @@ public:
         while (!par.atEnd() && par.peek()!='@' && par.peek()!='Z') {
             std::string pt = par.parseType();
             if (pt.empty()) break;
-            ParamInfo pi;
+			// A lone 'X' IS the empty parameter list in this scheme, not a
+			// parameter of type void. The Itanium seeder has the same guard.
+			if (pt == "void" && info.params.empty()) break;
+			ParamInfo pi;
             // Strip leading const
             if (pt.size()>6 && pt.substr(0,6)=="const ") {
                 pi.isConst = true; pt = pt.substr(6);
