@@ -108,27 +108,39 @@ struct ClassificationResult {
 
 class CodeDataClassifier {
 public:
-	/// Most bytes a single addExecutableRange/addReachableRange call will
-	/// materialise. Each byte costs two hash-map entries and the range bounds
-	/// come from file-declared headers, so an unbounded loop over one is a way
-	/// to exhaust memory with a section header. 64 MiB is larger than any real
-	/// executable range; a well-formed input never meets this.
-	static constexpr uint64_t kMaxRangeBytes = 64ull * 1024 * 1024;
+	/// Most distinct addresses this classifier will ever track.
+	///
+	/// This bounds MEMORY, which is what the range calls can exhaust. It used
+	/// to be a per-call bound on the address SPAN, 64 MiB, which is a different
+	/// quantity in two ways:
+	///
+	///   * Span is not memory. Measured on this classifier, one tracked address
+	///     costs about 86 bytes across the two hash maps, so a 64 MiB span is
+	///     5.5 GB. The two tests that exercised the old cap took the code_data
+	///     suite to 8.5 GB of peak RSS and 33 seconds -- the cap was doing its
+	///     job as written and the process was still nowhere near safe.
+	///   * Per call is not a bound at all. The range bounds come from
+	///     file-declared section headers, and a file may declare any number of
+	///     sections; N of them cost N times the cap.
+	///
+	/// 2 Mi addresses is about 180 MB, and is far larger than any real
+	/// executable range in a binary this classifier can usefully process. A
+	/// well-formed input never meets it. Ranges that overlap an
+	/// already-tracked address cost nothing extra, so the budget is spent on
+	/// distinct addresses rather than on calls.
+	static constexpr uint64_t kMaxTrackedAddresses = 2ull * 1024 * 1024;
 
 	/**
-     * Construct classifier for a binary image.
-     *
-     * @param arch      Target architecture.
-     * @param imageBase Base virtual address of the image.
-     * @param data      Raw image bytes (not owned; caller keeps alive).
-     * @param size      Image byte count.
-     */
-    CodeDataClassifier(Arch           arch,
-                       uint64_t       imageBase,
-                       const uint8_t* data,
-                       std::size_t    size);
+	 * Construct classifier for a binary image.
+	 *
+	 * @param arch      Target architecture.
+	 * @param imageBase Base virtual address of the image.
+	 * @param data      Raw image bytes (not owned; caller keeps alive).
+	 * @param size      Image byte count.
+	 */
+	CodeDataClassifier(Arch arch, uint64_t imageBase, const uint8_t* data, std::size_t size);
 
-    ~CodeDataClassifier() = default;
+	~CodeDataClassifier() = default;
 
     // ── Evidence injection API ────────────────────────────────────────────────
 
@@ -272,6 +284,11 @@ private:
     double& logOddsAt(uint64_t addr);
     static double logOddsToProb(double lo) noexcept;
     bool inExecRange(uint64_t addr) const noexcept;
+
+	/// True once kMaxTrackedAddresses distinct addresses have been tracked.
+	/// The range calls stop materialising new ones past this; addresses they
+	/// have already seen still cost nothing.
+	bool trackingBudgetSpent() const noexcept;
 };
 
 } // namespace code_data

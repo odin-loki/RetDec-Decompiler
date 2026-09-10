@@ -529,9 +529,7 @@ TEST(ExecRange, AnAbsurdlyLargeDeclaredRangeIsCapped)
 	auto clf = makeX86();
 	clf.addExecutableRange(0x400000, 0x400000 + (1ull << 40)); // a terabyte
 	clf.classify();
-	// The bound is kMaxRangeBytes; spelled as a literal so this test compiles
-	// against a build that does not have the constant yet.
-	EXPECT_LE(clf.stats().totalBytes, 64ull * 1024 * 1024);
+	EXPECT_EQ(CodeDataClassifier::kMaxTrackedAddresses, clf.stats().totalBytes);
 	// The start of the range is still marked -- the cap truncates, it does not
 	// discard.
 	EXPECT_GT(clf.stats().totalBytes, 0u);
@@ -542,5 +540,100 @@ TEST(ReachableRange, AnAbsurdlyLargeDeclaredLengthIsCapped)
 	auto clf = makeX86();
 	clf.addReachableRange(0x400000, 1ull << 40);
 	clf.classify();
-	EXPECT_LE(clf.stats().totalBytes, 64ull * 1024 * 1024);
+	EXPECT_EQ(CodeDataClassifier::kMaxTrackedAddresses, clf.stats().totalBytes);
+}
+
+// The cap used to be per CALL and on the address SPAN, so neither of the two
+// things that matter was bounded.
+//
+// Span is not memory: one tracked address costs about 86 bytes across the two
+// hash maps, so the old 64 MiB span cap was 5.5 GB, and the two tests above
+// took this suite to 8.5 GB of peak RSS and 33 seconds.
+//
+// And per call is not a bound: the range bounds come from file-declared
+// section headers and a file may declare any number of sections. Three calls
+// at the cap cost three times the cap.
+TEST(ExecRange, TheBudgetIsSharedAcrossCallsNotPerCall)
+{
+	auto clf = makeX86();
+	const uint64_t cap = CodeDataClassifier::kMaxTrackedAddresses;
+
+	// Three disjoint ranges, each large enough to spend the whole budget.
+	clf.addExecutableRange(0x1000000, 0x1000000 + cap);
+	clf.addExecutableRange(0x9000000, 0x9000000 + cap);
+	clf.addReachableRange(0x20000000, cap);
+	clf.classify();
+
+	EXPECT_EQ(cap, clf.stats().totalBytes) << "the budget was spent once per call";
+}
+
+// An address already tracked costs nothing, so a range that overlaps an
+// earlier one does not spend the budget twice.
+TEST(ExecRange, AnOverlappingRangeDoesNotSpendTheBudgetAgain)
+{
+	auto clf = makeX86();
+	clf.addExecutableRange(0x401000, 0x401100); // 256 addresses
+	clf.addExecutableRange(0x401000, 0x401100); // the same ones
+	clf.addExecutableRange(0x401080, 0x401180); // 128 new ones
+	clf.classify();
+	EXPECT_EQ(384u, clf.stats().totalBytes);
+}
+
+// ─── nonCodeRegions and the executable-range filter ──────────────────────────
+
+// The header says nonCodeRegions() returns "DATA or AMBIGUOUS regions within
+// executable sections". It returned every non-Code region anywhere, and
+// inExecRange() -- the private helper written for exactly this filter -- had
+// no callers at all: a predicate and its documented contract, both dead.
+//
+// It matters because the point of the pass is finding data embedded in code.
+// A region in .rodata is not that; it is just data, and reporting it drowns
+// the answer.
+TEST(NonCodeRegions, DataOutsideAnExecutableRangeIsNotReported)
+{
+	auto clf = makeX86();
+
+	// One executable range with a data-looking byte in it.
+	clf.addExecutableRange(0x401000, 0x401010);
+	clf.addReference(0x401008, RefType::DataPtr);
+
+	// And a byte well outside any executable range.
+	clf.addReference(0x500000, RefType::DataPtr);
+
+	clf.classify();
+
+	bool sawInside = false;
+	for (const auto& r: clf.nonCodeRegions())
+	{
+		EXPECT_LT(r.addr, 0x401010u) << "a region outside every executable range was reported";
+		EXPECT_GE(r.addr, 0x401000u) << "a region outside every executable range was reported";
+		if (r.addr <= 0x401008 && 0x401008 < r.addr + r.size) sawInside = true;
+	}
+	EXPECT_TRUE(sawInside) << "the embedded data inside the executable range was dropped";
+}
+
+// With no executable range declared at all, inExecRange() says yes to
+// everything -- so a caller that never calls addExecutableRange keeps exactly
+// the behaviour it had.
+TEST(NonCodeRegions, WithNoExecutableRangeEverythingIsStillReported)
+{
+	auto clf = makeX86();
+	clf.addReference(0x500000, RefType::DataPtr);
+	clf.classify();
+	EXPECT_FALSE(clf.nonCodeRegions().empty());
+}
+
+// codeRegions() is not filtered and must not become filtered: a Code verdict
+// outside a declared executable range is a finding, not noise.
+TEST(NonCodeRegions, CodeRegionsAreNotFiltered)
+{
+	auto clf = makeX86();
+	clf.addExecutableRange(0x401000, 0x401010);
+	clf.addEntryPoint(0x600000); // code found outside every declared range
+	clf.classify();
+
+	bool sawOutside = false;
+	for (const auto& r: clf.codeRegions())
+		if (r.addr >= 0x600000) sawOutside = true;
+	EXPECT_TRUE(sawOutside) << "codeRegions() started filtering by executable range";
 }

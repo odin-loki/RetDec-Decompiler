@@ -125,7 +125,7 @@ std::string FsTypeEmitter::typeStr(const BcType& t) const {
 	}
 	if (s.size() > 2 && s.substr(s.size() - 2) == "[]") return FsWriter::safeName(s.substr(0, s.size() - 2)) + "[]";
 	// Generic: List<T> → System.Collections.Generic.List<'T> simplified
-    return FsWriter::safeName(s);
+	return FsWriter::safeName(s);
 }
 
 // ─── accessStr ───────────────────────────────────────────────────────────────
@@ -288,11 +288,20 @@ void FsTypeEmitter::emitDU(const BcClass& cls) {
                 writer_.line("| " + FsWriter::safeName(f.name));
         }
     } else {
-        int64_t val = 0;
-        for (const auto& c : cls.enumConstants) {
-            writer_.line("| " + FsWriter::safeName(c) + " = " + std::to_string(val++));
-        }
-    }
+		// enumConstants is the ordered NAMES; the values are on the fields --
+		// which the branch right above already reads them from. A running
+		// counter renumbered everything 0..n-1, so a flags enum -- None = 0,
+		// Read = 1, Write = 2, Execute = 4 -- came out with Execute = 3. A case
+		// with no recorded value continues from the last.
+		int64_t next = 0;
+		for (const auto& c: cls.enumConstants)
+		{
+			const BcField* fld = cls.findField(c);
+			const int64_t val = (fld && fld->constantIntValue.has_value()) ? *fld->constantIntValue : next;
+			writer_.line("| " + FsWriter::safeName(c) + " = " + std::to_string(val));
+			next = val + 1;
+		}
+	}
     writer_.dedent();
 }
 

@@ -305,7 +305,8 @@ void VbTypeEmitter::emitProperty(
 
 void VbTypeEmitter::emitAbstractMethod(const BcMethod& m)
 {
-	emitVbAttributes(writer_, m.annotations);
+	// No emitVbAttributes here: emitMethod, this function's only caller, has
+	// already emitted them, so doing it again printed every attribute twice.
 	std::string acc = accessStr(m.access);
 	std::string name = VbWriter::safeName(m.name);
 	std::string params = paramList(m);
@@ -413,10 +414,19 @@ void VbTypeEmitter::emitEnum(const BcClass& cls)
 	writer_.indent();
 	if (!cls.enumConstants.empty())
 	{
-		int64_t val = 0;
+		// enumConstants is the ordered NAMES; the values are on the fields, as
+		// CsTypeEmitter::emitEnum reads them. A running counter renumbered
+		// everything 0..n-1, so a flags enum -- None = 0, Read = 1, Write = 2,
+		// Execute = 4 -- came out with Execute = 3 and every mask that used it
+		// meaning something else. A constant with no recorded value continues
+		// from the last, which is what VB does for an implicit member.
+		int64_t next = 0;
 		for (const auto& c: cls.enumConstants)
 		{
-			writer_.line(VbWriter::safeName(c) + " = " + std::to_string(val++));
+			const BcField* fld = cls.findField(c);
+			const int64_t val = (fld && fld->constantIntValue.has_value()) ? *fld->constantIntValue : next;
+			writer_.line(VbWriter::safeName(c) + " = " + std::to_string(val));
+			next = val + 1;
 		}
 	}
 	else

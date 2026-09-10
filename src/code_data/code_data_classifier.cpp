@@ -105,22 +105,27 @@ bool CodeDataClassifier::inExecRange(uint64_t addr) const noexcept
 
 // ─── Evidence 0: executable range ────────────────────────────────────────────
 
+bool CodeDataClassifier::trackingBudgetSpent() const noexcept
+{
+	return _logOdds.size() >= kMaxTrackedAddresses;
+}
+
 void CodeDataClassifier::addExecutableRange(uint64_t start, uint64_t end)
 {
-	// This classifier is per byte by design, so the bound has to be on how many
-	// bytes one call may materialise. Both bounds come from a section header
-	// the file declares, and each byte costs two hash-map entries: a PE section
-	// claiming a one-gigabyte virtual size asked for two billion of them.
-	// kMaxRangeBytes is far larger than any real .text, so a well-formed input
-	// never meets it.
-	if (end > start && end - start > kMaxRangeBytes) end = start + kMaxRangeBytes;
-
+	// The bound is on distinct tracked addresses, not on this call's span --
+	// see kMaxTrackedAddresses. Both range bounds come from a section header
+	// the file declares, and a file may declare any number of sections, so a
+	// per-call span cap bounds nothing. An address already tracked costs
+	// nothing, so overlapping ranges do not spend the budget twice.
 	for (uint64_t a = start; a < end; ++a)
 	{
+		if (_logOdds.find(a) == _logOdds.end())
+		{
+			if (trackingBudgetSpent()) break;
+			// Ensure an entry exists (with prior) so classify() covers it.
+			_logOdds[a] = kPrior_Unreachable;
+		}
 		_execRange[a] = true;
-        // Ensure an entry exists (with prior) so classify() covers it.
-        if (_logOdds.find(a) == _logOdds.end())
-            _logOdds[a] = kPrior_Unreachable;
 	}
 	_classified = false;
 }
@@ -139,14 +144,12 @@ void CodeDataClassifier::addEntryPoint(uint64_t addr)
 
 void CodeDataClassifier::addReachableRange(uint64_t addr, uint64_t len)
 {
-	// Same per-byte cost and the same file-declared length -- see
-	// addExecutableRange().
-	if (len > kMaxRangeBytes) len = kMaxRangeBytes;
-
+	// Same budget, same reason -- see addExecutableRange().
 	for (uint64_t i = 0; i < len; ++i)
 	{
+		if (_logOdds.find(addr + i) == _logOdds.end() && trackingBudgetSpent()) break;
 		double& lo = logOddsAt(addr + i);
-        // Upgrade prior from unreachable to reachable.
+		// Upgrade prior from unreachable to reachable.
         if (lo < kPrior_Reachable) lo = kPrior_Reachable;
         lo += kLLR_Reachable;
 	}
@@ -338,11 +341,24 @@ std::vector<ClassificationResult> CodeDataClassifier::codeRegions() const
 
 std::vector<ClassificationResult> CodeDataClassifier::nonCodeRegions() const
 {
-    auto all = results();
+	// "within executable sections", as the header says. This filter was
+	// missing, and inExecRange() -- the private helper written for it -- had no
+	// callers at all. The point of this pass is finding data embedded IN code;
+	// a region in .rodata is not that, it is just data, and reporting it
+	// drowns the answer.
+	//
+	// inExecRange() returns true for every address when no executable range
+	// was ever declared, so a caller that does not call addExecutableRange
+	// keeps exactly the behaviour it had.
+	auto all = results();
     std::vector<ClassificationResult> out;
     for (auto& r : all) {
-        if (r.label != Label::Code) out.push_back(r);
-    }
+		if (r.label == Label::Code) continue;
+		if (!inExecRange(r.addr)) continue;
+		// "Within" means the whole run, not just where it starts.
+		if (r.size > 1 && !inExecRange(r.addr + r.size - 1)) continue;
+		out.push_back(r);
+	}
     return out;
 }
 

@@ -198,6 +198,24 @@ private:
     static std::string extractLibName(const std::vector<std::string>& libSyms);
 };
 
+/**
+ * @brief Rename repeats in @a names so that no two entries are equal.
+ *
+ * A module's name comes from what its functions look like, and nothing stops
+ * two communities from arriving at the same one -- which becomes two
+ * add_library() targets of the same name in the emitted CMake, and a build that
+ * does not configure.
+ *
+ * The first occurrence keeps its name; later ones take the lowest free
+ * `<name>_<n>`. "Free" is the part that was missing: the suffixing used a
+ * per-name counter and never checked the result, so a module genuinely called
+ * `parser_1` collided with the `parser_1` invented for the second `parser` --
+ * recreating exactly the duplicate this exists to remove.
+ *
+ * Order-preserving, so the numbering is deterministic for a sorted input.
+ */
+std::vector<std::string> uniquifyModuleNames(std::vector<std::string> names);
+
 // ─── Header inference ─────────────────────────────────────────────────────────
 
 /**

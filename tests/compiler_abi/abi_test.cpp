@@ -340,3 +340,52 @@ TEST(AbiDescriptor, ForCompiler_x64_GccClang) {
     EXPECT_EQ(d.arch, Arch::X86_64);
     EXPECT_EQ(d.defaultCC.arch, Arch::X86_64);
 }
+
+// ─── The length parser's accumulator ─────────────────────────────────────────
+
+// GccClangDemangler's built-in fallback accumulated an Itanium length prefix
+// into an `int`:
+//
+//     int len = 0;
+//     while (p < end && isdigit(*p)) len = len * 10 + (*p++ - '0');
+//     if (len > 0 && p + len <= end) result.assign(p, len);
+//
+// A digit run longer than nine digits overflows it, which is undefined
+// behaviour in C++ and is what UBSan reports at abi_descriptor.cpp:630. The
+// `len > 0` check afterwards catches only the wraps that land negative.
+//
+// "4294967299" is 2^32 + 3, so it wraps to exactly 3: a symbol declaring a
+// four-billion-character name was demangled to the three characters that
+// happened to follow it. Both the nested (N...E) and the simple form have the
+// same loop, so both are checked.
+//
+// The fallback runs when __cxa_demangle declines the name, which it does for
+// every one of these -- they are not valid Itanium encodings.
+TEST(Demangler, ALengthPrefixThatOverflowsAnIntIsRefused)
+{
+	auto dem = makeDemangler(CompilerFamily::GCC_Clang);
+
+	EXPECT_EQ("_Z4294967299foo", dem->demangle("_Z4294967299foo"))
+		<< "a 4-billion-character name was read as three characters";
+	EXPECT_EQ("_ZN4294967299fooE", dem->demangle("_ZN4294967299fooE"))
+		<< "a 4-billion-character component was read as three characters";
+}
+
+// A run of nines is the other shape: it wraps to something large and negative
+// rather than small and positive, so the old `len > 0` guard did reject it --
+// but only after the overflow had already happened.
+TEST(Demangler, ARunOfNinesIsRefusedWithoutOverflowing)
+{
+	auto dem = makeDemangler(CompilerFamily::GCC_Clang);
+	EXPECT_EQ("_Z99999999999999999999foo", dem->demangle("_Z99999999999999999999foo"));
+	EXPECT_EQ("_ZN99999999999999999999fooE", dem->demangle("_ZN99999999999999999999fooE"));
+}
+
+// And a length that fits still works, in both forms, so the fix is not "reject
+// every length".
+TEST(Demangler, AnOrdinaryLengthPrefixStillReads)
+{
+	auto dem = makeDemangler(CompilerFamily::GCC_Clang);
+	EXPECT_EQ("foo", dem->demangle("_Z3foo"));
+	EXPECT_EQ("Foo::bar", dem->demangle("_ZN3Foo3barE"));
+}

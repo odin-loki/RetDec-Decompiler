@@ -435,3 +435,109 @@ TEST(ModuleClusterer, TwoModulesDoNotShareAName)
 	}
 	EXPECT_EQ(result.modules.size(), names.size());
 }
+
+// ─── Modularity: the null-model term ─────────────────────────────────────────
+//
+// Modularity is
+//
+//     Q = (1/2m) SUM_{u,v} [ A_uv - gamma * k_u k_v / 2m ] * delta(c_u, c_v)
+//
+// summed over ALL pairs in the same community. computeModularity iterated the
+// ADJACENCY lists, so a same-community pair with no edge between them
+// contributed neither its (zero) A_uv nor its null-model penalty -- and the
+// penalty is the whole point of the null model. Every reported Q was too high,
+// by more the sparser the community.
+//
+// The textbook identity that pins it: the partition that puts every node in
+// ONE community has Q = 1 - gamma exactly, which is 0 at the default
+// resolution -- the null model cancels the edges perfectly. The path a-b-c has
+// two non-adjacent same-community pairs (a,c) and (c,a), and reported 0.5.
+TEST(LouvainClusterer, OneCommunityOverEverythingHasZeroModularity)
+{
+	LouvainClusterer c;
+	CallGraph g;
+	for (const char* n: {"a", "b", "c"})
+	{
+		FunctionMeta f;
+		f.name = n;
+		g.functions.push_back(f);
+	}
+	g.edges = {{"a", "b", 5}, {"b", "c", 5}};
+	auto result = c.cluster(g);
+
+	ASSERT_EQ(3u, result.size());
+	ASSERT_EQ(result["a"], result["b"]) << "the fixture needs all three in one community";
+	ASSERT_EQ(result["b"], result["c"]) << "the fixture needs all three in one community";
+
+	EXPECT_NEAR(0.0, c.lastModularity(), 1e-9);
+}
+
+// And the other direction, so the fix cannot be "always return zero": two
+// disconnected triangles, one community each, is the textbook high-modularity
+// partition. Q for k equal disjoint cliques is 1 - 1/k, so 0.5 here.
+TEST(LouvainClusterer, TwoDisjointGroupsScoreHalf)
+{
+	LouvainClusterer c(LouvainConfig{1.0, 100, false});
+	CallGraph g;
+	for (const char* n: {"a", "b", "c", "x", "y", "z"})
+	{
+		FunctionMeta f;
+		f.name = n;
+		g.functions.push_back(f);
+	}
+	g.edges = {
+		{"a", "b", 10},
+		{"b", "c", 10},
+		{"a", "c", 10},
+		{"x", "y", 10},
+		{"y", "z", 10},
+		{"x", "z", 10},
+	};
+	auto result = c.cluster(g);
+
+	ASSERT_EQ(result["a"], result["c"]);
+	ASSERT_EQ(result["x"], result["z"]);
+	ASSERT_NE(result["a"], result["x"]) << "the fixture needs two communities";
+
+	EXPECT_NEAR(0.5, c.lastModularity(), 1e-9);
+}
+
+// ─── Module-name uniquifying ─────────────────────────────────────────────────
+
+// The uniquifier suffixes a repeat with _1, _2, ... and never checks whether
+// the name it just built is free. A module genuinely named `parser_1` --
+// ModuleNamer derives names from what the functions look like, and a numeric
+// tail is an ordinary thing for it to produce -- collides with the `parser_1`
+// invented for the second `parser`. That is exactly the duplicate the pass
+// exists to remove, and it becomes two add_library() targets of the same name
+// in the emitted CMake: a build that does not configure.
+TEST(ModuleNamer, UniquifyingDoesNotCreateTheDuplicateItIsRemoving)
+{
+	std::vector<std::string> names = {"parser", "parser", "parser_1"};
+	auto out = uniquifyModuleNames(names);
+
+	ASSERT_EQ(3u, out.size());
+	std::set<std::string> distinct(out.begin(), out.end());
+	EXPECT_EQ(3u, distinct.size()) << out[0] << ", " << out[1] << ", " << out[2];
+
+	// The first keeps its name; the taken suffix is skipped rather than reused.
+	EXPECT_EQ("parser", out[0]);
+	EXPECT_NE(out[1], out[2]);
+}
+
+TEST(ModuleNamer, DistinctNamesAreLeftAlone)
+{
+	std::vector<std::string> names = {"parser", "codec", "net"};
+	auto out = uniquifyModuleNames(names);
+	EXPECT_EQ(names, out);
+}
+
+TEST(ModuleNamer, PlainRepeatsStillGetConsecutiveSuffixes)
+{
+	std::vector<std::string> names = {"util", "util", "util"};
+	auto out = uniquifyModuleNames(names);
+	ASSERT_EQ(3u, out.size());
+	EXPECT_EQ("util", out[0]);
+	EXPECT_EQ("util_1", out[1]);
+	EXPECT_EQ("util_2", out[2]);
+}

@@ -462,3 +462,59 @@ TEST(FsTypeEmitter, ATwoDimensionalArrayKeepsBothSuffixes)
 	te.emitClass(cls, module);
 	EXPECT_NE(std::string::npos, w.str().find("int[][]")) << w.str();
 }
+
+// ─── Enum values ─────────────────────────────────────────────────────────────
+
+// emitDU numbered the cases 0, 1, 2, ... from a running counter and never
+// looked at what they are worth. enumConstants is only the ordered NAMES; the
+// values live in cls.fields[].constantIntValue -- the fallback branch right
+// above, taken when enumConstants is empty, already read them from there.
+//
+// A flags enum makes it plain: `None = 0, Read = 1, Write = 2, Execute = 4`
+// came out as 0, 1, 2, 3.
+TEST(FsTypeEmitter, EnumCasesKeepTheirRealValues)
+{
+	FsWriter w;
+	FsTypeEmitter em(w);
+	BcClass cls = makeSimpleClass("Perm");
+	cls.isEnum = true;
+	cls.enumConstants = {"None", "Read", "Write", "Execute"};
+	int64_t vals[] = {0, 1, 2, 4};
+	const char* names[] = {"None", "Read", "Write", "Execute"};
+	for (int i = 0; i < 4; ++i)
+	{
+		BcField f;
+		f.name = names[i];
+		f.constantIntValue = vals[i];
+		cls.fields.push_back(f);
+	}
+	BcModule mod("A", SourceLang::FSharp);
+	em.emitClass(cls, mod);
+	const std::string out = w.str();
+
+	EXPECT_NE(std::string::npos, out.find("| None = 0")) << out;
+	EXPECT_NE(std::string::npos, out.find("| Read = 1")) << out;
+	EXPECT_NE(std::string::npos, out.find("| Write = 2")) << out;
+	EXPECT_NE(std::string::npos, out.find("| Execute = 4")) << out;
+	EXPECT_EQ(std::string::npos, out.find("| Execute = 3")) << out;
+}
+
+TEST(FsTypeEmitter, AnUnvaluedEnumCaseContinuesFromTheLast)
+{
+	FsWriter w;
+	FsTypeEmitter em(w);
+	BcClass cls = makeSimpleClass("Mixed");
+	cls.isEnum = true;
+	cls.enumConstants = {"A", "B", "C"};
+	BcField a;
+	a.name = "A";
+	a.constantIntValue = 10;
+	cls.fields.push_back(a);
+	BcModule mod("A", SourceLang::FSharp);
+	em.emitClass(cls, mod);
+	const std::string out = w.str();
+
+	EXPECT_NE(std::string::npos, out.find("| A = 10")) << out;
+	EXPECT_NE(std::string::npos, out.find("| B = 11")) << out;
+	EXPECT_NE(std::string::npos, out.find("| C = 12")) << out;
+}

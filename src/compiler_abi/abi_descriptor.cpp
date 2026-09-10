@@ -615,22 +615,40 @@ public:
             ++p;
             while (p < end && *p != 'E') {
                 if (!std::isdigit(static_cast<unsigned char>(*p))) { ++p; continue; }
-                int len = 0;
-                while (p < end && std::isdigit(static_cast<unsigned char>(*p)))
-                    len = len * 10 + (*p++ - '0');
-                if (len <= 0 || p + len > end) break;
-                if (!result.empty()) result += "::";
+				// The accumulator used to be an `int`. A digit run longer than
+				// nine digits overflows it -- undefined behaviour, reported by
+				// UBSan -- and the `len <= 0` check afterwards only caught the
+				// wraps that landed negative. "4294967299" is 2^32 + 3, so it
+				// wrapped to 3 and a four-billion-character component was read
+				// as the three characters after it.
+				//
+				// Saturating below what is left in the buffer keeps the
+				// arithmetic in range and rejects the value on its own terms:
+				// no valid length can exceed the input it has to come out of.
+				const std::size_t cap = static_cast<std::size_t>(end - p) + 1;
+				std::size_t len = 0;
+				while (p < end && std::isdigit(static_cast<unsigned char>(*p)))
+				{
+					if (len < cap) len = len * 10 + static_cast<std::size_t>(*p - '0');
+					++p;
+				}
+				if (len == 0 || len > static_cast<std::size_t>(end - p)) break;
+				if (!result.empty()) result += "::";
                 result.append(p, len);
                 p += len;
             }
         } else {
             if (p < end && std::isdigit(static_cast<unsigned char>(*p))) {
-                int len = 0;
-                while (p < end && std::isdigit(static_cast<unsigned char>(*p)))
-                    len = len * 10 + (*p++ - '0');
-                if (len > 0 && p + len <= end)
-                    result.assign(p, len);
-            }
+				// Same accumulator, same overflow; see the nested form above.
+				const std::size_t cap = static_cast<std::size_t>(end - p) + 1;
+				std::size_t len = 0;
+				while (p < end && std::isdigit(static_cast<unsigned char>(*p)))
+				{
+					if (len < cap) len = len * 10 + static_cast<std::size_t>(*p - '0');
+					++p;
+				}
+				if (len > 0 && len <= static_cast<std::size_t>(end - p)) result.assign(p, len);
+			}
         }
         return result.empty() ? m : result;
     }

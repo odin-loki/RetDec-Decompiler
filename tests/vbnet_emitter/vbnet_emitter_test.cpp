@@ -454,3 +454,115 @@ TEST(VbFileEmitter, SortedImports) {
     size_t posSystem = result.source.find("Imports System");
     EXPECT_LT(posSystem, posAlpha);
 }
+
+// ─── Enum values ─────────────────────────────────────────────────────────────
+
+// emitEnum numbered the constants 0, 1, 2, ... from a running counter and never
+// looked at what they are actually worth. enumConstants is only the ordered
+// NAMES; the values live in cls.fields[].constantIntValue, which is where
+// CsTypeEmitter::emitEnum reads them from.
+//
+// A flags enum is the case that makes it plain: `None = 0, Read = 1,
+// Write = 2, Execute = 4` came out as 0, 1, 2, 3, so `Read Or Execute` was 3 in
+// the emitted source and 5 in the program it was decompiled from.
+TEST(VbTypeEmitter, EnumConstantsKeepTheirRealValues)
+{
+	VbWriter w;
+	VbTypeEmitter em(w);
+	BcClass cls = makeSimpleClass("Perm");
+	cls.isEnum = true;
+	cls.enumConstants = {"None", "Read", "Write", "Execute"};
+	int64_t vals[] = {0, 1, 2, 4};
+	const char* names[] = {"None", "Read", "Write", "Execute"};
+	for (int i = 0; i < 4; ++i)
+	{
+		BcField f;
+		f.name = names[i];
+		f.constantIntValue = vals[i];
+		cls.fields.push_back(f);
+	}
+	BcModule mod("A", SourceLang::VisualBasic);
+	em.emitClass(cls, mod);
+	const std::string out = w.str();
+
+	EXPECT_NE(std::string::npos, out.find("None = 0")) << out;
+	EXPECT_NE(std::string::npos, out.find("Read = 1")) << out;
+	EXPECT_NE(std::string::npos, out.find("Write = 2")) << out;
+	EXPECT_NE(std::string::npos, out.find("Execute = 4")) << out;
+	EXPECT_EQ(std::string::npos, out.find("Execute = 3")) << out;
+}
+
+// A constant with no recorded value continues from the last one, which is what
+// both VB and C# do for an implicitly numbered member -- not from zero, and not
+// from its own index.
+TEST(VbTypeEmitter, AnUnvaluedEnumConstantContinuesFromTheLast)
+{
+	VbWriter w;
+	VbTypeEmitter em(w);
+	BcClass cls = makeSimpleClass("Mixed");
+	cls.isEnum = true;
+	cls.enumConstants = {"A", "B", "C"};
+	BcField a;
+	a.name = "A";
+	a.constantIntValue = 10;
+	cls.fields.push_back(a);
+	// B and C have no field at all.
+	BcModule mod("A", SourceLang::VisualBasic);
+	em.emitClass(cls, mod);
+	const std::string out = w.str();
+
+	EXPECT_NE(std::string::npos, out.find("A = 10")) << out;
+	EXPECT_NE(std::string::npos, out.find("B = 11")) << out;
+	EXPECT_NE(std::string::npos, out.find("C = 12")) << out;
+}
+
+// emitMethod emits the attributes and then, for an abstract method, hands off
+// to emitAbstractMethod -- which emitted them again. emitAbstractMethod has
+// exactly one caller, and that caller has already done it.
+TEST(VbTypeEmitter, AnAbstractMethodGetsItsAttributesOnce)
+{
+	VbWriter w;
+	VbTypeEmitter em(w);
+	BcClass cls = makeSimpleClass("Base");
+	cls.isAbstract = true;
+
+	BcMethod m = makeMethod("Run");
+	m.isAbstract = true;
+	BcAnnotation ann;
+	ann.typeName = "System.ObsoleteAttribute";
+	m.annotations.push_back(ann);
+	cls.methods.push_back(m);
+
+	BcModule mod("A", SourceLang::VisualBasic);
+	em.emitClass(cls, mod);
+	const std::string out = w.str();
+
+	std::size_t n = 0;
+	for (std::size_t i = out.find("Obsolete"); i != std::string::npos; i = out.find("Obsolete", i + 1))
+		++n;
+	EXPECT_EQ(1u, n) << out;
+	EXPECT_NE(std::string::npos, out.find("MustOverride Sub Run")) << out;
+}
+
+// The non-abstract path was never doubled and must stay that way.
+TEST(VbTypeEmitter, AnOrdinaryMethodStillGetsItsAttributes)
+{
+	VbWriter w;
+	VbTypeEmitter em(w);
+	BcClass cls = makeSimpleClass("Impl");
+
+	BcMethod m = makeMethod("Run");
+	BcAnnotation ann;
+	ann.typeName = "System.ObsoleteAttribute";
+	m.annotations.push_back(ann);
+	cls.methods.push_back(m);
+
+	BcModule mod("A", SourceLang::VisualBasic);
+	em.emitClass(cls, mod);
+	const std::string out = w.str();
+
+	std::size_t n = 0;
+	for (std::size_t i = out.find("Obsolete"); i != std::string::npos; i = out.find("Obsolete", i + 1))
+		++n;
+	EXPECT_EQ(1u, n) << out;
+}

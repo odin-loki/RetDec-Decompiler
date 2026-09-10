@@ -171,28 +171,50 @@ LouvainClusterer::cluster(const CallGraph& graph) {
 
 double LouvainClusterer::computeModularity(
 	const std::vector<Node>& nodes,
-	const std::unordered_map<std::string,
-		  std::unordered_map<std::string, double>>& adj,
-	double totalWeight) const {
+	const std::unordered_map<std::string, std::unordered_map<std::string, double>>& adj,
+	double totalWeight) const
+{
 	if (totalWeight == 0.0) return 0.0;
 	double Q = 0.0;
 	std::unordered_map<std::string, int> idx;
 	for (int i = 0; i < static_cast<int>(nodes.size()); ++i)
 		idx[nodes[i].name] = i;
 
-	for (const auto& [u, nbMap] : adj) {
+	// Modularity is
+	//
+	//     Q = (1/2m) SUM_{u,v} [ A_uv - gamma * k_u k_v / 2m ] delta(c_u, c_v)
+	//
+	// over ALL pairs in the same community. Walking the adjacency lists only
+	// reaches pairs with an edge between them, and A_uv is zero for the rest --
+	// but their null-model penalty is not, and it is the whole point of the null
+	// model. Omitting it made every reported Q too high, by more the sparser the
+	// community: the partition that puts every node in one community has
+	// Q = 1 - gamma exactly, and a three-node path reported 0.5.
+	//
+	// So: the edge term from the adjacency (which holds both directions, so it
+	// sums to SUM_in over the community), and the null-model term in its closed
+	// form over communities, SUM_c (SUM_tot_c)^2, which needs no all-pairs walk.
+	for (const auto& [u, nbMap]: adj)
+	{
 		auto iu = idx.find(u);
 		if (iu == idx.end()) continue;
-		for (const auto& [v, w] : nbMap) {
+		for (const auto& [v, w]: nbMap)
+		{
 			auto iv = idx.find(v);
 			if (iv == idx.end()) continue;
-			if (nodes[iu->second].community == nodes[iv->second].community) {
-				Q += w - cfg_.resolution *
-					 nodes[iu->second].degree * nodes[iv->second].degree /
-					 (2.0 * totalWeight);
-			}
+			if (nodes[iu->second].community == nodes[iv->second].community) Q += w;
 		}
 	}
+
+	std::unordered_map<int, double> degreeByCommunity;
+	for (const auto& n: nodes)
+		degreeByCommunity[n.community] += n.degree;
+	for (const auto& [community, totDegree]: degreeByCommunity)
+	{
+		(void)community;
+		Q -= cfg_.resolution * totDegree * totDegree / (2.0 * totalWeight);
+	}
+
 	return Q / (2.0 * totalWeight);
 }
 
@@ -709,25 +731,57 @@ ClusterResult ModuleClusterer::cluster(const CallGraph& graph,
             return a.name < b.name;
         });
 
-	// A module's name comes from what its functions look like, and nothing
-	// stopped two communities from arriving at the same one -- which becomes
-	// two add_library() targets of the same name in the emitted CMake, and a
-	// build that does not configure. Suffix the repeats. This runs after the
-	// sort so the numbering is deterministic rather than following the
-	// unordered_map's iteration order.
+	// Suffix repeated module names. This runs after the sort so the numbering
+	// is deterministic rather than following the unordered_map's iteration
+	// order. See uniquifyModuleNames for why it is not a bare counter.
 	{
-		std::unordered_map<std::string, int> seen;
-		for (auto& mod: result.modules)
-		{
-			const int n = seen[mod.name]++;
-			if (n > 0) mod.name += "_" + std::to_string(n);
-		}
+		std::vector<std::string> names;
+		names.reserve(result.modules.size());
+		for (const auto& mod: result.modules)
+			names.push_back(mod.name);
+		names = uniquifyModuleNames(std::move(names));
+		for (std::size_t i = 0; i < result.modules.size(); ++i)
+			result.modules[i].name = std::move(names[i]);
 	}
 
 	// Infer inter-module dependencies
-    inferModuleDependencies(result, graph, communities);
+	inferModuleDependencies(result, graph, communities);
 
     return result;
+}
+
+// ─── uniquifyModuleNames ──────────────────────────────────────────────────────
+
+std::vector<std::string> uniquifyModuleNames(std::vector<std::string> names)
+{
+	// Every name in play, so a generated suffix cannot land on one that is
+	// already spoken for -- by an untouched original or by an earlier repeat.
+	std::unordered_set<std::string> taken;
+	std::unordered_map<std::string, int> nextSuffix;
+
+	// First pass: the first occurrence of each name keeps it.
+	std::vector<bool> keepsName(names.size(), false);
+	for (std::size_t i = 0; i < names.size(); ++i)
+	{
+		if (taken.insert(names[i]).second) keepsName[i] = true;
+	}
+
+	// Second pass: everything else takes the lowest free `<name>_<n>`.
+	for (std::size_t i = 0; i < names.size(); ++i)
+	{
+		if (keepsName[i]) continue;
+		const std::string base = names[i];
+		int& n = nextSuffix[base];
+		std::string candidate;
+		do
+		{
+			++n;
+			candidate = base + "_" + std::to_string(n);
+		}
+		while (!taken.insert(candidate).second);
+		names[i] = std::move(candidate);
+	}
+	return names;
 }
 
 } // namespace retdec::module_cluster
