@@ -52,9 +52,24 @@ run_checks() {
 		note "unknown option: exit ${rc}"
 	fi
 
+	# Not `find ... | sort | head -n1`. head closes the pipe after one line, sort
+	# takes EPIPE and exits 2, and `set -o pipefail` makes that the status of
+	# the command substitution -- so `set -e` kills the check. Whether it
+	# happens at all depends on whether sort's output fits the pipe buffer
+	# before head exits, which makes it a race rather than a failure: it passed
+	# here on a one-file corpus, passed in ctest-linux run 281, and failed in
+	# run 280 on the same 216 files.
+	#
+	# Reading the whole listing and taking the first element has no early
+	# close, so there is nothing to race.
 	local input=""
 	if [[ -d "${corpus}" ]]; then
-		input="$(find "${corpus}" -maxdepth 1 -type f ! -name '*.json' ! -name '*.md' 2>/dev/null | sort | head -n1)"
+		local -a candidates=()
+		while IFS= read -r f; do
+			candidates+=("$f")
+		done < <(find "${corpus}" -maxdepth 1 -type f ! -name '*.json' ! -name '*.md' 2>/dev/null \
+			| LC_ALL=C sort)
+		input="${candidates[0]:-}"
 	fi
 	if [[ -z "${input}" ]]; then
 		bad "no input binary under ${corpus}; the success and output-path checks cannot run"
@@ -92,8 +107,24 @@ run_checks() {
 if [[ "${1:-}" == "--self-test" ]]; then
 	work="$(mktemp -d)"
 	trap 'rm -rf "${work}"' EXIT
+	# Two thousand files on purpose, and the number is the point.
+	#
+	# The first version of this self-test wrote one. `find | sort | head -n1`
+	# picked the input then, and with one line sort never had a reader close
+	# early on it -- so the check passed here and failed in ctest-linux run 280
+	# on the real 216-file corpus, where sort took EPIPE, exited 2, and
+	# `set -o pipefail` handed that to `set -e`. Run 281 passed on the same
+	# code: whether it happens depends on whether sort's output fits the pipe
+	# buffer before head exits, so it was a race and not a failure.
+	#
+	# Two thousand paths is past the 64 KB buffer, which makes it deterministic:
+	# measured three times out of three against the old line.
 	mkdir -p "${work}/corpus"
-	printf 'not really a binary' > "${work}/corpus/fake.elf"
+	for i in $(seq 1 2000); do
+		printf 'not really a binary' > "${work}/corpus/fake-${i}.elf"
+	done
+	printf '{}' > "${work}/corpus/skipme.json"
+	printf '# notes' > "${work}/corpus/skipme.md"
 
 	cat > "${work}/good" <<'STUB'
 #!/usr/bin/env bash
