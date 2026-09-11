@@ -208,6 +208,7 @@ class Capstone2LlvmIrTranslatorArm64_impl :
 		void translateCondCompare(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateClz(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateShifts(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateBitfield(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateSub(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateNeg(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateNgc(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);

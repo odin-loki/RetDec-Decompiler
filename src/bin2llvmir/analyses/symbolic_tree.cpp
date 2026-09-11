@@ -415,33 +415,25 @@ void SymbolicTree::_simplifyNode()
 	else if (match(*this, m_Add(m_ConstantInt(c1), m_ConstantInt(c2)))
 	         && c1->getBitWidth() <= 64 && c2->getBitWidth() <= 64)
 	{
-		value = ConstantInt::get(
-				c1->getType(),
-				c1->getSExtValue() + c2->getSExtValue());
+		value = ConstantInt::get(c1->getType(), c1->getValue() + c2->getValue());
 		ops.clear();
 	}
 	else if (match(*this, m_Sub(m_ConstantInt(c1), m_ConstantInt(c2)))
 	         && c1->getBitWidth() <= 64 && c2->getBitWidth() <= 64)
 	{
-		value = ConstantInt::get(
-				c1->getType(),
-				c1->getSExtValue() - c2->getSExtValue());
+		value = ConstantInt::get(c1->getType(), c1->getValue() - c2->getValue());
 		ops.clear();
 	}
 	else if (match(*this, m_Or(m_ConstantInt(c1), m_ConstantInt(c2)))
 	         && c1->getBitWidth() <= 64 && c2->getBitWidth() <= 64)
 	{
-		value = ConstantInt::get(
-				c1->getType(),
-				c1->getSExtValue() | c2->getSExtValue());
+		value = ConstantInt::get(c1->getType(), c1->getValue() | c2->getValue());
 		ops.clear();
 	}
 	else if (match(*this, m_And(m_ConstantInt(c1), m_ConstantInt(c2)))
 	         && c1->getBitWidth() <= 64 && c2->getBitWidth() <= 64)
 	{
-		value = ConstantInt::get(
-				c1->getType(),
-				c1->getSExtValue() & c2->getSExtValue());
+		value = ConstantInt::get(c1->getType(), c1->getValue() & c2->getValue());
 		ops.clear();
 	}
 	else if (match(*this, m_Add(m_GlobalVariable(global), m_ConstantInt(c1)))
@@ -451,7 +443,9 @@ void SymbolicTree::_simplifyNode()
 	{
 		if (auto addr = _config->getGlobalAddress(global))
 		{
-			value = ConstantInt::get(c1->getType(), addr + c1->getSExtValue());
+			const unsigned w = c1->getBitWidth();
+			const std::uint64_t addrMask = (w >= 64) ? ~std::uint64_t(0) : ((std::uint64_t(1) << w) - 1);
+			value = ConstantInt::get(c1->getType(), llvm::APInt(w, std::uint64_t(addr) & addrMask) + c1->getValue());
 			ops.clear();
 		}
 	}
@@ -471,9 +465,7 @@ void SymbolicTree::_simplifyNode()
 	         && c1->getBitWidth() <= 64 && c2->getBitWidth() <= 64)
 	{
 		ops[0] = std::move(ops[0].ops[0]);
-		ops[1].value = ConstantInt::get(
-				c1->getType(),
-				c1->getSExtValue() + c2->getSExtValue());
+		ops[1].value = ConstantInt::get(c1->getType(), c1->getValue() + c2->getValue());
 	}
 
 	// Move Constants from ops[0] to ops[1].

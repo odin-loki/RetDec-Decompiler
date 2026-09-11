@@ -1955,3 +1955,127 @@ in the corpus, so end-to-end behaviour on the other four architectures remains
 unmeasured. What changed is that all five now have their instruction semantics
 checked on every push, which is the standing x86 already had and the other four
 never did.
+
+
+## 0/40: what the other four architectures actually did
+
+**Two root causes fixed; the rate itself comes from CI.** ARCH-01's first run,
+ctest-linux 285 at 69624d4, is the number the previous entry could not supply:
+
+```
+ARCH-01: arm        0/10   0.0000
+ARCH-01: arm64      0/10   0.0000
+ARCH-01: mips       0/10   0.0000
+ARCH-01: powerpc    0/10   0.0000
+ARCH-01: overall    0/40   0.0000
+```
+
+Zero, on every architecture, in the same run where CC-01 reports 216/216 for
+x86-64. Not "worse than x86-64" — nothing at all. Both causes are single
+defects, and both are invisible to a corpus that is entirely 64-bit x86.
+
+### Thirty of forty: a constant fold that cannot represent a negative number
+
+arm, mips and powerpc all dumped core in the decoding phase, at the same
+assertion:
+
+```
+APInt.h:127: llvm::APInt::APInt(unsigned, uint64_t, bool, bool):
+  Assertion `llvm::isUIntN(BitWidth, val) && "Value is not an N-bit unsigned value"' failed.
+  #13 SymbolicTree::_simplifyNode()  symbolic_tree.cpp:418
+  #22 Decoder::getJumpTarget()       decoder.cpp:926
+```
+
+`_simplifyNode` folds constant arithmetic with
+
+```cpp
+value = ConstantInt::get(c1->getType(), c1->getSExtValue() + c2->getSExtValue());
+```
+
+`getSExtValue()` widens to `int64_t`, and `ConstantInt::get`'s `uint64_t`
+overload asserts that the value fits the type as an **unsigned** N-bit number.
+Add two negative 32-bit constants and the sum is a negative `int64_t`, which as
+a `uint64_t` is enormous and does not fit `i32`.
+
+**On a 64-bit target every `int64_t` fits `i64`, so the assertion can never
+fire.** That is the whole reason 216 x86-64 binaries never found it and all
+thirty 32-bit ones die on it — and jump-target simplification is on the path
+of every binary, so it is not an edge case on those targets, it is all of them.
+
+Six folds (add, sub, or, and, the nested add, and the global-address add) use
+`APInt` arithmetic now, which is modular at the operand width — what the
+machine does, and what cannot assert. The global-address fold also masks the
+image address to the pointer width before widening, because there the two
+sides genuinely differ.
+
+### Ten of forty: one missing vector arrangement
+
+Every ARM64 binary failed with
+
+```
+[capstone2llvmir]: Arm64: extractVectorValue(): Unknown VESS type
+```
+
+`extractVectorValue` switches on the vector arrangement specifier and throws on
+anything it does not name. Nothing catches that throw, so it ends the
+decompilation of the **whole binary** rather than of one instruction. Of the
+fifteen `ARM64_VAS_*` capstone 5.0.9 defines, fourteen were named. The missing
+one was `ARM64_VAS_2D` — two 64-bit lanes, which is what every double-precision
+SIMD operand looks like and which glibc's string and math routines are full of.
+
+It extracts a 64-bit lane exactly as `1D` does; only the lane count differs and
+`vector_index` already carries the lane. One `case` label.
+
+A C enum switched on with a `default` gets no `-Wswitch` help, so C2L-01 now
+checks the exhaustiveness textually: every `ARM64_VAS_*` in capstone's header
+must appear in `arm64.cpp`. Falsified by deleting the new case.
+
+### Instruction coverage, and why the table ratio is the wrong number
+
+`scripts/ci/check_instruction_coverage.py` (COV-01) disassembles the corpus and
+asks what fraction of the instructions **actually present** each translator
+implements:
+
+| arch    | decoded   | skipped | rate   |
+|---------|----------:|--------:|-------:|
+| arm     | 1,571,329 | 474,577 | 0.8981 |
+| arm64   | 3,085,112 |      36 | 0.9826 |
+| mips    | 3,683,664 |      72 | 0.9952 |
+| powerpc | 3,981,728 |   8,212 | 0.9942 |
+
+This inverts the picture the dispatch tables give. By table ratio MIPS looks
+worst at 22.6%; weighted by what binaries contain it is the **best** of the
+four, at 99.52%. x86 is the lowest of all five by table ratio (24.6%) because
+it lists every SSE and AVX form it declines. A ratio over an ISA's own
+instruction count is not comparable across ISAs and should not be used to
+decide anything.
+
+`skipped` is the honesty column. ARM's 474,577 is static glibc interleaving ARM
+and Thumb while this disassembles in one mode: the Thumb regions decode as
+garbage, much of it as coprocessor instructions that are not in the binary at
+all — which is why ARM's top-uncovered list is led by `STC`, `LDC` and `CDP`,
+and why **the ARM figure is a lower bound with a wide error bar and its
+uncovered list must not be used to choose what to implement.**
+
+### What the arm64 measurement did justify
+
+Two families, both confirmed present in real binaries before any code changed:
+
+  * The six bitfield-move aliases — `UBFX`, `UBFIZ`, `SBFX`, `SBFIZ`, `BFI`,
+    `BFXIL`, 7,526 occurrences — were all `nullptr`. Capstone reports these
+    rather than the `UBFM`/`SBFM`/`BFM` they alias (zero occurrences of those),
+    so the aliases are what reaches real code. Each is a shift and a mask.
+
+  * `BTI`, `PACIASP`, `AUTIASP` and the rest of the ARMv8.3/8.5 control-flow
+    integrity set — 9,829 occurrences — had **no entry at all**, not even
+    `nullptr`, because the table predates both extensions. Current toolchains
+    emit them unconditionally, so almost every function prologue carried a
+    pseudo-call. They model as nothing: BTI is a landing pad, and PACIASP/
+    AUTIASP are a sign/authenticate pair whose composition is the identity on
+    X30.
+
+arm64 coverage moved 0.9770 → 0.9826 on the same corpus, which is the only
+reason to believe the two families were worth the change. Nine tests, each
+failing when the dispatch entries are reverted; keystone 0.9.2 predates ARMv8.3
+and cannot assemble those mnemonics, so those three go in as encodings checked
+against capstone.

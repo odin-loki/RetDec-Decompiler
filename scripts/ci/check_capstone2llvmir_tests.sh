@@ -49,7 +49,7 @@ WORKDIR="${C2L_WORKDIR:-}"
 # tests should not fail the gate, losing them must.
 readonly MIN_X86=1965
 readonly MIN_ARM=534
-readonly MIN_ARM64=457
+readonly MIN_ARM64=466
 readonly MIN_MIPS=598
 readonly MIN_POWERPC=808
 readonly MIN_EMUL=10
@@ -83,6 +83,24 @@ ks_pinned="$(sed -n 's|.*keystone/archive/refs/tags/\([0-9.]*\)\.zip.*|\1|p' cma
 	|| die "cmake/deps.cmake pins Capstone ${cs_pinned}, this gate builds ${CAPSTONE_TAG}"
 [ "${ks_pinned}" = "${KEYSTONE_TAG}" ] \
 	|| die "cmake/deps.cmake pins Keystone ${ks_pinned}, this gate builds ${KEYSTONE_TAG}"
+
+# ── No duplicate keys in any _i2fm ───────────────────────────────────────────
+# Each translator's instruction map is a std::map built from an initializer
+# list, and an initializer list keeps the FIRST entry for a repeated key and
+# discards the rest -- silently, with no warning from any compiler. So a second
+# entry added for an instruction that already has one does nothing at all, and
+# looks exactly like a fix. That happened while writing this: an ARM64_INS_HINT
+# entry added near the NOPs was dead on arrival behind a nullptr entry 300
+# lines earlier.
+for init in src/capstone2llvmir/*/*_init.cpp; do
+	dups="$(grep -oE '\{[A-Z0-9]+_INS_[A-Z0-9_]+,' "${init}" | sort | uniq -d || true)"
+	if [ -n "${dups}" ]; then
+		echo "C2L-01: FAIL ${init} maps an instruction more than once; the later" >&2
+		echo "        entry is discarded by the std::map initializer list:" >&2
+		printf '          %s\n' ${dups} >&2
+		exit 1
+	fi
+done
 
 # ── LLVM ─────────────────────────────────────────────────────────────────────
 if [ -z "${LLVM_CONFIG}" ]; then
@@ -128,6 +146,31 @@ build_dep capstone "${CAPSTONE_TAG}" \
 build_dep keystone "${KEYSTONE_TAG}" \
 	"https://github.com/keystone-engine/keystone" "${KS_PREFIX}" \
 	-DBUILD_LIBS_ONLY=1
+
+# ── Every vector arrangement capstone defines is handled ─────────────────────
+# extractVectorValue() switches on the ARM64 vector arrangement specifier and
+# throws on anything it does not name -- and nothing catches that throw, so a
+# single unhandled arrangement ends the decompilation of the whole binary
+# rather than of one instruction. ARM64_VAS_2D was the one of capstone's
+# fifteen that was missing, and it is why every ARM64 binary in the ARCH-01
+# corpus produced no output at all: glibc's string and math routines are full
+# of `.2d` operands.
+#
+# A C enum switched on with a `default` gets no -Wswitch help, so the
+# exhaustiveness is checked here instead of by the compiler.
+vas_hdr="${CS_PREFIX}/include/capstone/arm64.h"
+if [ -f "${vas_hdr}" ]; then
+	vas_missing=""
+	for v in $(grep -oE 'ARM64_VAS_[A-Z0-9_]+' "${vas_hdr}" | sort -u); do
+		grep -q "${v}" src/capstone2llvmir/arm64/arm64.cpp || vas_missing="${vas_missing} ${v}"
+	done
+	if [ -n "${vas_missing}" ]; then
+		echo "C2L-01: FAIL arm64.cpp does not name every ARM64_VAS_* capstone" >&2
+		echo "        defines; each unnamed one throws out of extractVectorValue" >&2
+		echo "        and ends the whole decompilation:${vas_missing}" >&2
+		exit 1
+	fi
+fi
 
 # ── Compile ──────────────────────────────────────────────────────────────────
 if [ -z "${WORKDIR}" ]; then

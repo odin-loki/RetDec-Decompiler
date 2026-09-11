@@ -159,6 +159,167 @@ INSTANTIATE_TEST_SUITE_P(
 // ARM64_INS_ADC
 //
 
+//
+// ARM64_INS_UBFX, UBFIZ, SBFX, SBFIZ, BFI, BFXIL -- the bitfield-move aliases
+//
+// These six were nullptr, so each became a pseudo-call. Capstone reports them
+// rather than the UBFM/SBFM/BFM they alias, so these are the forms real code
+// presents.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UBFX)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0xabcdef12},
+	});
+
+	// bits [15:8] of 0xabcdef12 are 0xef, zero-extended.
+	emulate("ubfx x0, x1, #8, #8");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0xef},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UBFIZ)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0xabcdef12},
+	});
+
+	// low 8 bits (0x12), moved up to bit 8.
+	emulate("ubfiz x0, x1, #8, #8");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x1200},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SBFX_negative)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0xab80},
+	});
+
+	// bits [15:8] are 0xab: as a signed 8-bit field that is -85, so the
+	// result is sign-extended across the whole 64-bit register. Taking the
+	// same field with ubfx would give 0xab, which is what makes this the
+	// case worth writing.
+	emulate("sbfx x0, x1, #8, #8");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0xffffffffffffffab},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SBFIZ_negative)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0xf0},
+	});
+
+	// low 4 bits are 0x0; bits [7:4] are 0xf. Take the low 8 bits as signed
+	// (-16) and place them at bit 4: 0xfffffffffffff00.
+	emulate("sbfiz x0, x1, #4, #8");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0xffffffffffffff00},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BFI_preserves_the_rest)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0xffffffffffffffff},
+		{ARM64_REG_X1, 0x00},
+	});
+
+	// Insert the low 8 bits of X1 (zero) at bit 8 of X0, leaving every other
+	// bit of X0 alone. A translation that forgot to read X0 would give 0.
+	emulate("bfi x0, x1, #8, #8");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X0, ARM64_REG_X1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0xffffffffffff00ff},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BFXIL_preserves_the_rest)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0xffffffffffffffff},
+		{ARM64_REG_X1, 0x0000},
+	});
+
+	// Take bits [15:8] of X1 (zero) into the low 8 bits of X0, leaving the
+	// upper bits of X0 alone.
+	emulate("bfxil x0, x1, #8, #8");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X0, ARM64_REG_X1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0xffffffffffffff00},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARMv8.3 pointer authentication and ARMv8.5 BTI
+//
+// Current toolchains emit these in almost every prologue and the table had no
+// entry for any of them, so each became a pseudo-call. They model as nothing.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BTI_is_nothing)
+{
+	// Keystone 0.9.2 predates ARMv8.5 and cannot assemble "bti c", so the
+	// encoding goes in directly; capstone 5.0.9 disassembles these four bytes
+	// as `bti c`.
+	emulate_bin("5f 24 03 d5");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PACIASP_AUTIASP_are_the_identity)
+{
+	// The pair is what a prologue and epilogue carry, and modelling each as
+	// the identity is what keeps their composition right. The thing this
+	// asserts is that neither touches a register -- in particular that
+	// neither writes X30 with a value no source ever held.
+	// paciasp; keystone cannot assemble it either.
+	emulate_bin("3f 23 03 d5");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_AUTIASP_is_nothing)
+{
+	// autiasp.
+	emulate_bin("bf 23 03 d5");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADC_r_r_r_false)
 {
 	setRegisters({

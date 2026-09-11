@@ -399,6 +399,14 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::extractVectorValue(
 			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 32 * op.vector_index));
 			val = irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt32Ty(_module->getContext()));
 			return irb.CreateBitCast(val, llvm::Type::getFloatTy(_module->getContext()));
+		// 2D and 1D both address 64-bit lanes; only the lane count differs,
+		// and vector_index already says which lane. 2D was the one
+		// arrangement of the fifteen capstone defines that this switch did
+		// not name, so it reached the throw below -- and that throw is not
+		// caught anywhere, so a single `v0.2d` operand ended the whole
+		// decompilation. Every ARM64 binary in the ARCH-01 corpus died this
+		// way: glibc's string and math routines are full of .2d.
+		case ARM64_VAS_2D:
 		case ARM64_VAS_1D:
 			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 64 * op.vector_index));
 			val = irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt64Ty(_module->getContext()));
@@ -2008,6 +2016,101 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateShifts(cs_insn* i, cs_arm64* 
 		{
 			throw GenericError("Shifts: unhandled insn ID");
 		}
+	}
+
+	storeOp(ai->operands[0], val, irb);
+}
+
+/**
+ * ARM64_INS_UBFX, ARM64_INS_UBFIZ, ARM64_INS_SBFX, ARM64_INS_SBFIZ,
+ * ARM64_INS_BFI, ARM64_INS_BFXIL
+ *
+ * The bitfield-move aliases. Capstone reports these rather than the UBFM/SBFM/
+ * BFM encodings they alias -- measured over a corpus of 36 statically linked
+ * aarch64 programs, UBFM, SBFM and BFM appear zero times and these six appear
+ * 7,526 -- so translating the aliases is what reaches real code.
+ *
+ * Every one is a shift and a mask. They were all `nullptr`, which sent each to
+ * a pseudo-call: correct in the sense that it does not claim a wrong value,
+ * and opaque to every later pass, because an asm pseudo-call is a barrier that
+ * nothing can see a definition through.
+ *
+ * Operands are (Rd, Rn, #lsb, #width) for all six.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateBitfield(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_EXPR(i, ai, irb, (ai->op_count == 4));
+
+	op1 = loadOp(ai->operands[1], irb);
+	auto* ty = llvm::cast<llvm::IntegerType>(op1->getType());
+	const unsigned bits = ty->getBitWidth();
+
+	const uint64_t lsb = static_cast<uint64_t>(ai->operands[2].imm);
+	const uint64_t width = static_cast<uint64_t>(ai->operands[3].imm);
+
+	// The encodings cannot express these, but the operands arrive from a
+	// disassembler rather than from the encoding, so refuse rather than emit a
+	// shift by more than the type's width -- which is poison in LLVM IR.
+	if (width == 0 || width > bits || lsb >= bits || lsb + width > bits)
+	{
+		throwUnhandledInstructions(i, "bitfield operands out of range");
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* maskC = llvm::ConstantInt::get(ty, llvm::APInt::getLowBitsSet(bits, static_cast<unsigned>(width)));
+	auto* lsbC = llvm::ConstantInt::get(ty, lsb);
+
+	llvm::Value* val = nullptr;
+	switch (i->id)
+	{
+	case ARM64_INS_UBFX: {
+		// Rd = (Rn >> lsb) & mask(width)
+		val = irb.CreateAnd(irb.CreateLShr(op1, lsbC), maskC);
+		break;
+	}
+	case ARM64_INS_UBFIZ: {
+		// Rd = (Rn & mask(width)) << lsb
+		val = irb.CreateShl(irb.CreateAnd(op1, maskC), lsbC);
+		break;
+	}
+	case ARM64_INS_SBFX: {
+		// Rd = sign_extend(Rn[lsb+width-1 : lsb], width). Shifting the
+		// field up to the sign bit and arithmetic-shifting it back is the
+		// sign extension, and needs no separate mask.
+		auto* up = llvm::ConstantInt::get(ty, bits - width);
+		val = irb.CreateAShr(irb.CreateShl(op1, llvm::ConstantInt::get(ty, bits - width - lsb)), up);
+		break;
+	}
+	case ARM64_INS_SBFIZ: {
+		// Rd = sign_extend(Rn[width-1:0], width) << lsb. Same trick, but
+		// shifted back by less so the field lands at lsb rather than 0.
+		val = irb.CreateAShr(
+			irb.CreateShl(op1, llvm::ConstantInt::get(ty, bits - width)),
+			llvm::ConstantInt::get(ty, bits - width - lsb));
+		break;
+	}
+	case ARM64_INS_BFI: {
+		// Rd = (Rd & ~(mask << lsb)) | ((Rn & mask) << lsb). The only two
+		// here that read their destination.
+		op0 = loadOp(ai->operands[0], irb);
+		auto* placed = irb.CreateShl(irb.CreateAnd(op1, maskC), lsbC);
+		auto* hole = llvm::ConstantInt::get(
+			ty, ~(llvm::APInt::getLowBitsSet(bits, static_cast<unsigned>(width)) << static_cast<unsigned>(lsb)));
+		val = irb.CreateOr(irb.CreateAnd(op0, hole), placed);
+		break;
+	}
+	case ARM64_INS_BFXIL: {
+		// Rd = (Rd & ~mask) | ((Rn >> lsb) & mask)
+		op0 = loadOp(ai->operands[0], irb);
+		auto* taken = irb.CreateAnd(irb.CreateLShr(op1, lsbC), maskC);
+		auto* hole = llvm::ConstantInt::get(ty, ~llvm::APInt::getLowBitsSet(bits, static_cast<unsigned>(width)));
+		val = irb.CreateOr(irb.CreateAnd(op0, hole), taken);
+		break;
+	}
+	default: {
+		throw GenericError("Bitfield: unhandled insn ID");
+	}
 	}
 
 	storeOp(ai->operands[0], val, irb);
