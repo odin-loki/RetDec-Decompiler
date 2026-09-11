@@ -369,21 +369,21 @@ static BranchInfo decode_branch_info(__global const uchar *bytes,
 
     if (b >= 0x70 && b <= 0x7F) {
         /* Short Jcc rel8 */
-        int rel = (int)(schar)(bytes[off + 1]);
+        int rel = (int)(char)(bytes[off + 1]);
         bi.type   = 2;
         bi.target = base_vma + next_insn + (long)rel;
         return bi;
     }
     if (b == 0xE3) {
         /* JECXZ/JRCXZ rel8 */
-        int rel = (int)(schar)(bytes[off + 1]);
+        int rel = (int)(char)(bytes[off + 1]);
         bi.type   = 2;
         bi.target = base_vma + next_insn + (long)rel;
         return bi;
     }
     if (b == 0xEB) {
         /* Short JMP rel8 */
-        int rel = (int)(schar)(bytes[off + 1]);
+        int rel = (int)(char)(bytes[off + 1]);
         bi.type   = 1;
         bi.target = base_vma + next_insn + (long)rel;
         return bi;

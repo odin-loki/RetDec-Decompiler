@@ -155,7 +155,7 @@ static bool ecr_join(__global uint *parent, __global uint *rnk, __global uint *p
     uint pa = pts_to[ra], pb = pts_to[rb];
     bool ch = ecr_union(parent, rnk, ra, rb);
     if (pa != NO_TARGET && pb != NO_TARGET) {
-        uint idx = atomic_inc((__global atomic_uint*)pending_count);
+        uint idx = atomic_inc((volatile __global uint*)pending_count);
         if (idx < max_pending) { pending_a[idx] = pa; pending_b[idx] = pb; }
     } else {
         uint winner = ecr_find(parent, a);
@@ -477,7 +477,7 @@ static uint exec_one(__private X86State *st,
 
     #define REG(r)   (st->regs[(r) + (rex_r ? 8u : 0u)])
     #define RMREG(r) (st->regs[(r) + (rex_b ? 8u : 0u)])
-    #define READ_IMM8  ((ip < func_size) ? (long)(schar)(func[ip++]) : 0L)
+    #define READ_IMM8  ((ip < func_size) ? (long)(char)(func[ip++]) : 0L)
     #define READ_IMM32 ((ip+3u < func_size) ? \
         (long)(int)((uint)func[ip]|((uint)func[ip+1]<<8)|((uint)func[ip+2]<<16)|((uint)func[ip+3]<<24)) \
         : (ip+=4u, 0L))
@@ -530,7 +530,7 @@ static uint exec_one(__private X86State *st,
             uint dst = (uint)((modrm>>3)&7u) + (rex_r?8u:0u);
             uint src = (uint)(modrm&7u) + (rex_b?8u:0u);
             if ((modrm>>6)==3u) {
-                if (opc2 == 0xBE) st->regs[dst] = (ulong)(long)(schar)(uchar)st->regs[src];
+                if (opc2 == 0xBE) st->regs[dst] = (ulong)(long)(char)(uchar)st->regs[src];
                 else              st->regs[dst] = (ulong)(long)(short)(ushort)st->regs[src];
             }
             st->rip = ip; return NO_FAULT;
@@ -836,11 +836,21 @@ static uint exec_one(__private X86State *st,
     }
 
     /* MOV r/m64, imm32: C7 /0 */
-    if (opc == 0xC7 && ip < func_size) {
+    if ((opc == 0xC6 || opc == 0xC7) && ip < func_size) {
         uchar modrm = func[ip++];
         uint rm = (uint)(modrm&7u) + (rex_b?8u:0u);
-        long imm = READ_IMM32;
+        long imm = (opc == 0xC6) ? READ_IMM8 : READ_IMM32;
         if ((modrm>>6)==3u) st->regs[rm] = (ulong)imm;
+        st->rip = ip; return NO_FAULT;
+    }
+
+    /* TEST r/m, r: 84/85. Flags only, no store. */
+    if ((opc == 0x84 || opc == 0x85) && ip < func_size) {
+        uchar modrm = func[ip++];
+        uint reg = (uint)((modrm>>3)&7u) + (rex_r?8u:0u);
+        uint rm  = (uint)(modrm&7u) + (rex_b?8u:0u);
+        if ((modrm>>6)==3u)
+            st->flags = compute_flags_logical64(st->regs[rm] & st->regs[reg]);
         st->rip = ip; return NO_FAULT;
     }
 

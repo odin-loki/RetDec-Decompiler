@@ -96,7 +96,7 @@ static bool ecr_join(__global uint *parent,
 
     /* If both ECRs had a points-to target, schedule a recursive join. */
     if (pa != NO_TARGET && pb != NO_TARGET) {
-        uint idx = atomic_inc((__global atomic_uint*)pending_count);
+        uint idx = atomic_inc((volatile __global uint*)pending_count);
         if (idx < max_pending) {
             pending_a[idx] = pa;
             pending_b[idx] = pb;

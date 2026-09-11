@@ -294,8 +294,8 @@ struct OCLTypeInferencer::Impl {
             std::uint32_t sl = opSlot[i];
             width[sl] = cpu_dsu::mergeWidth(width[sl], opWidth[i]);
             sign[sl]  = cpu_dsu::mergeSign(sign[sl], static_cast<TypeSign>(opSign[i]));
-            ptr[sl]  |= (opPtr[i] != 0);
-        }
+			ptr[sl] = ptr[sl] || (opPtr[i] != 0);
+		}
 
         // Propagation loop
         lastIter = 0;

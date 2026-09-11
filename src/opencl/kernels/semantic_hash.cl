@@ -324,7 +324,7 @@ static uint exec_one(__private X86State *st,
     #define RMREG(r) (st->regs[(r) + (rex_b ? 8 : 0)])
 
     /* ── Read imm8/16/32/64 ─────────────────────────────────────────────── */
-    #define READ_IMM8  ((ip < func_size) ? (long)(schar)(func[ip++]) : 0L)
+    #define READ_IMM8  ((ip < func_size) ? (long)(char)(func[ip++]) : 0L)
     #define READ_IMM32 ( (ip+3 < func_size) ? \
         (long)(int)((uint)func[ip] | ((uint)func[ip+1]<<8) | \
                     ((uint)func[ip+2]<<16) | ((uint)func[ip+3]<<24)) \
@@ -368,7 +368,7 @@ static uint exec_one(__private X86State *st,
             uint rm  = (uint)(modrm&7u) + (rex_b?8u:0u);
             uint mod = (uint)(modrm>>6);
             if (mod == 3u) {
-                if (opc2==0xBE) st->regs[reg] = (ulong)(long)(schar)(st->regs[rm] & 0xFFu);
+                if (opc2==0xBE) st->regs[reg] = (ulong)(long)(char)(st->regs[rm] & 0xFFu);
                 else            st->regs[reg] = (ulong)(long)(short)(st->regs[rm] & 0xFFFFu);
             }
             st->rip = ip; return NO_FAULT;
@@ -712,11 +712,21 @@ static uint exec_one(__private X86State *st,
     }
 
     /* MOV r/m, imm: C7 (32/64) */
-    if (opc == 0xC7 && ip < func_size) {
+    if ((opc == 0xC6 || opc == 0xC7) && ip < func_size) {
         uchar modrm = func[ip++];
         uint rm = (uint)(modrm&7u) + (rex_b?8u:0u);
-        long imm = READ_IMM32;
+        long imm = (opc == 0xC6) ? READ_IMM8 : READ_IMM32;
         if ((modrm>>6)==3u) st->regs[rm] = (ulong)imm;
+        st->rip = ip; return NO_FAULT;
+    }
+
+    /* TEST r/m, r: 84/85. Flags only, no store. */
+    if ((opc == 0x84 || opc == 0x85) && ip < func_size) {
+        uchar modrm = func[ip++];
+        uint reg = (uint)((modrm>>3)&7u) + (rex_r?8u:0u);
+        uint rm  = (uint)(modrm&7u) + (rex_b?8u:0u);
+        if ((modrm>>6)==3u)
+            st->flags = compute_flags_logical64(st->regs[rm] & st->regs[reg]);
         st->rip = ip; return NO_FAULT;
     }
 
@@ -754,16 +764,19 @@ static uint exec_one(__private X86State *st,
     }
 
     /* ADD/SUB/AND/OR/XOR/CMP r,r/m (01-05, 09, 11, 19, 21, 29, 31, 39) */
-    if ((opc & 0x06u) == 0 && opc <= 0x3F && (opc & 0x07u) < 2u && ip < func_size) {
+    if (opc <= 0x3Bu && (opc & 0x07u) <= 3u && ip < func_size) {
         uchar modrm = func[ip++];
         uint reg = (uint)((modrm>>3)&7u) + (rex_r?8u:0u);
         uint rm  = (uint)(modrm&7u) + (rex_b?8u:0u);
         uint grp = (opc >> 3) & 7u;
+        /* Bit 1 of the opcode is the direction: clear is `r/m, r`, set is
+         * `r, r/m`. Only the first was handled, so ADD r,r/m and its seven
+         * siblings fell through to the length decoder and did nothing. */
+        bool toRM = (opc & 2u) == 0u;
         if ((modrm>>6)==3u) {
-            ulong a = (opc&1u) ? st->regs[rm] : st->regs[reg];
-            ulong b2= (opc&1u) ? st->regs[reg]: st->regs[rm];
+            ulong a = toRM ? st->regs[rm]  : st->regs[reg];
+            ulong b2= toRM ? st->regs[reg] : st->regs[rm];
             ulong r = 0;
-            uint *dest = (opc&1u) ? &(uint)st->regs[rm] : &(uint)st->regs[reg]; /* stub */
             switch(grp){
             case 0: r=a+b2; st->flags=compute_flags_add64(a,b2,r); break;
             case 1: r=a|b2; st->flags=compute_flags_logical64(r); break;
@@ -773,7 +786,7 @@ static uint exec_one(__private X86State *st,
             case 7: r=a-b2; st->flags=compute_flags_sub64(a,b2,r); r=a; break; /* CMP */
             default: r=a;
             }
-            if (opc&1u) st->regs[rm]=r; else st->regs[reg]=r;
+            if (toRM) st->regs[rm]=r; else st->regs[reg]=r;
         }
         st->rip = ip; return NO_FAULT;
     }

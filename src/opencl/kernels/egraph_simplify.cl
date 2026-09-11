@@ -250,11 +250,13 @@ __kernel void retdec_egraph_saturate(
                 bool have_k    = class_literal(op, eclass, lit, uf_parent, n_nodes, uf_find(uf_parent, rhs[si]), &k_val);
                 bool have_mask = class_literal(op, eclass, lit, uf_parent, n_nodes, r, &mask_val);
                 if (have_k && have_mask && mask_val != 0UL) {
-                    /* Verify mask is a run of contiguous 1-bits. */
+                    /* Verify mask is a run of contiguous 1-bits.
+                     * The mask is applied after the shift -- this node is
+                     * EAND(ESHR(x, k), mask) -- so it already starts at bit 0.
+                     * Shifting it by k again zeroed every mask narrower than
+                     * the shift, so this rule only ever fired for k == 0. */
                     ulong m = mask_val;
-                    /* Remove trailing zeros, then check if all-ones */
-                    m >>= (uint)k_val;   /* shift to remove offset */
-                    /* For a contiguous mask: m & (m+1) == 0 */
+                    /* For a contiguous mask at bit 0: m & (m+1) == 0 */
                     bool contiguous = (m != 0UL) && ((m & (m + 1UL)) == 0UL);
                     if (contiguous) {
                         /* Create a new EBITFIELD node if none already exists */

@@ -972,6 +972,64 @@ Closing it means: an `RETDEC_ENABLE_OPENCL` option defaulting OFF,
 behind it, and a CI job that configures with it ON against a POCL or Mesa
 Rusticl ICD — then the `UNBUILT_DIRS` entry comes out.
 
+### The CMake half is still open; "compiled by nothing" is not
+
+**Partly closed by OCL-01.** The reason above is about `find_package`, and the
+sources do not need CMake to be compiled: they include `<CL/cl.h>`, the
+standard library and their own headers, and no LLVM. Checking that was one
+command, and the entry above stood for as long as nobody ran it.
+
+`scripts/ci/check_opencl_tests.sh` compiles all 19 translation units, builds
+every kernel, and runs all eight suites. It is in CI and in the push gates.
+What that found, none of which any check could have seen before:
+
+  * **`src/opencl` did not compile.** `ocl_type_inferencer.cpp:297` does
+    `ptr[sl] |= (opPtr[i] != 0)` on a `std::vector<bool>`, whose `reference`
+    proxy has no `operator|=`. Four lines up, `cpu_dsu::unite` spells the same
+    merge as `ptr[ra] || ptr[rb]`.
+
+  * **Three of the five kernels did not build**, and so did three of the five
+    *embedded copies* — `schar` is not an OpenCL C type, `&(uint)expr` is not
+    an lvalue, and `atomic_inc`'s cast to `atomic_uint*` made the call
+    ambiguous. There are two copies of every kernel: `kernels/*.cl`, and a C++
+    raw-string literal in `src/opencl/*_sources.cpp`. **The runtime compiles
+    the embedded copy**, so a check that read only the `.cl` files would have
+    checked the copy that never runs. They are not the same text — the
+    embedded `semantic_hash` is 832 lines against the `.cl` file's 952 — and
+    the comment claiming they are "embedded verbatim" is wrong.
+
+  * **The BITFIELD rewrite could only ever fire for a shift of zero.** Rule 5
+    turns `(x >> k) & mask` into a bitfield extract, and checked contiguity of
+    `mask >> k`. The mask is applied *after* the shift, so it already sits at
+    bit 0; shifting it again by `k` zeroed every mask narrower than the shift.
+    Present identically in the CPU path and both kernel copies.
+
+  * **The CPU emulator decoded almost nothing.** `host_emu::emulate` handled
+    NOP, RET, jumps, push/pop and `MOV reg, imm`. Every other opcode advanced
+    the instruction pointer by one byte and carried on — which resumes
+    decoding inside the next instruction, so every byte after the first
+    unknown one is read as an opcode. `xor eax,eax` and `mov rax,42` were both
+    unhandled, which is why two functions with different behaviour hashed
+    identically. It has a ModRM core now (the ALU groups in both directions,
+    `TEST`, the `MOV` forms, `MOVZX`/`MOVSX`), and an opcode it does not model
+    stops the run and reports `Unsupported` instead of producing a hash from a
+    desynchronised stream.
+
+**Why none of this showed up as a failure.** `OCLContext` falls back to the CPU
+path when a kernel fails to build, and the GPU tests assert only that they get
+the right number of non-zero hashes. So they passed whether the kernel compiled
+or not — and they did. That is why OCL-01 compiles the kernels itself rather
+than trusting the suite, and why it requires zero skips when a device is
+present.
+
+**What is still open.** The CPU fallback and the kernel are two implementations
+of one emulator, and they are not at parity: the kernel has a real
+instruction-length decoder, memory operands, `CALL` with a depth limit, string
+operations and the flag instructions; the CPU has none of those. No test
+compares the two against each other, so a divergence in the shapes both handle
+would not be caught. The CMake wiring above is also still open — OCL-01 builds
+these sources, `cmake` still does not.
+
 
 
 

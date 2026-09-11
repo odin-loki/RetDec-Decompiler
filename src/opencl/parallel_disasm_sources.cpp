@@ -191,7 +191,7 @@ void retdec_parallel_disasm(
             bb.flags |= RETDEC_BB_FLAG_ENDS_RET; break;
         }
         if (bx == 0xEB) {
-            int rel = (int)(schar)(bytes[po + 1]);
+            int rel = (int)(char)(bytes[po + 1]);
             bb.flags |= RETDEC_BB_FLAG_ENDS_JMP;
             bb.successor0 = base_vma + next_off + (long)rel; break;
         }
@@ -203,7 +203,7 @@ void retdec_parallel_disasm(
             bb.successor0 = base_vma + next_off + (long)rel; break;
         }
         if ((bx >= 0x70 && bx <= 0x7F) || bx == 0xE3) {
-            int rel = (int)(schar)(bytes[po + 1]);
+            int rel = (int)(char)(bytes[po + 1]);
             bb.flags |= RETDEC_BB_FLAG_ENDS_JCC;
             bb.successor0 = base_vma + next_off;
             bb.successor1 = base_vma + next_off + (long)rel; break;

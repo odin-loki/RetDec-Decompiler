@@ -172,8 +172,13 @@ static bool cpuSaturateOnce(EGraph &g)
                     if (classLiteral(op, ec, lit, parent, cpuFind(parent, rhs[si]), kv) &&
                         classLiteral(op, ec, lit, parent, r, mv) && mv != 0)
                     {
-                        uint64_t m = mv >> kv;
-                        bool contiguous = (m != 0) && ((m & (m + 1)) == 0);
+						// The mask is applied *after* the shift -- the node
+						// is AND(SHR(x, k), mask) -- so it already sits at bit
+						// 0 and must be tested as it is. Shifting it by k
+						// again zeroed every mask narrower than the shift, so
+						// this rule only ever fired for k == 0.
+						const uint64_t m = mv;
+						bool contiguous = (m != 0) && ((m & (m + 1)) == 0);
                         if (contiguous) {
                             op[id]  = static_cast<uint32_t>(EOpcode::BITFIELD);
                             lhs[id] = cpuFind(parent, lhs[si]);

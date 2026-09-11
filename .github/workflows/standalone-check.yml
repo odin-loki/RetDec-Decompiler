@@ -74,7 +74,8 @@ jobs:
       - name: Install LLVM headers, gtest and Capstone
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq llvm-dev libgtest-dev libgmock-dev libcapstone-dev
+          sudo apt-get install -y -qq llvm-dev libgtest-dev libgmock-dev libcapstone-dev \
+                                      opencl-headers ocl-icd-opencl-dev pocl-opencl-icd
 
       # ADAPT-01. src/retdec/llvm_to_ssa.cpp is the single producer of the SSA
       # every structural detector consumes, and its tests were built by nothing.
@@ -152,6 +153,19 @@ jobs:
       # disagree.
       - name: ARITY-01 libc arity table vs the C headers
         run: python3 scripts/ci/check_libc_arity.py --check --jobs 4
+
+      # OCL-01. src/opencl is 4,547 lines and tests/opencl is eight suites, and
+      # no build of this repository compiled either -- both carry a complete
+      # CMakeLists.txt that no add_subdirectory names. The audit entry that
+      # recorded that blamed find_package(OpenCL REQUIRED), which is a fact
+      # about CMake and not about the sources: they need <CL/cl.h>, the
+      # standard library and their own headers, and nothing else. Compiling
+      # them found a file that had never compiled, three kernels that had never
+      # built, and a rewrite rule that could only ever fire for a shift of
+      # zero. POCL supplies the device, so the GPU half runs rather than
+      # skipping.
+      - name: OCL-01 opencl library, kernels and suites
+        run: bash scripts/ci/check_opencl_tests.sh --self-test
 
       # OPT-01. A config field with a default and a doc comment is a promise
       # that setting it changes something. Three on this branch did not keep it

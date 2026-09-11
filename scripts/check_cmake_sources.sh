@@ -94,12 +94,15 @@ UNBUILT_DIRS = {
         "decompiler INPUT, not test sources; tests/benchmark/benchmark_cpp.cpp "
         "is a program the benchmark scripts compile and then decompile",
     "tests/opencl":
-        "src/opencl/ -- the library these 8 suites link -- is not added by any "
-        "CMakeLists either, so wiring the tests in alone would fail configure "
-        "wherever find_package(OpenCL REQUIRED) succeeds. 4,529 lines of host "
-        "code and its tests, built nowhere; recorded in "
-        "docs/internal/UNFIXED_AUDIT_FINDINGS.md rather than wired in blind, "
-        "because no configure of this tree can be run without LLVM",
+        "not built by CMake -- src/opencl/ is not added by any CMakeLists "
+        "either, and adding it unconditionally fails configure wherever "
+        "find_package(OpenCL REQUIRED) does not succeed. They are no longer "
+        "built NOWHERE, which is what this entry used to say: OCL-01 "
+        "(scripts/ci/check_opencl_tests.sh) compiles the library, builds all "
+        "ten kernel copies and runs all 96 cases, in CI and in the push gates. "
+        "Wiring them into CMake needs an RETDEC_ENABLE_OPENCL option "
+        "exercised in both states, which is a build change no configure in "
+        "this environment can verify",
     "tests/utils/cuda_stub":
         "host stubs standing in for the CUDA runtime in "
         "scripts/standalone_check.sh; the CMake build uses the real one",
