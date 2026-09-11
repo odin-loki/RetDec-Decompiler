@@ -28,16 +28,18 @@ environment cannot compile, a failure whose log does not yet say enough.
 
 ## 1. The 0/216 recompile failure has one cause, and it is three lines
 
-**The heading is wrong, and the number is measured now.** It took five causes,
-not one — this pass, then the libc arity mismatch, then four separate ways of
-losing a goto's label — and CC-01 measured **24/24 (rate 1.0000)** on its
-slice at run 272, against the 0/216 this section was written to explain. The
-heading is left as written because the rest of the section argues from it; the
-correction is here rather than in a rewrite.
+**The heading is wrong, and the number is measured now.** It took eight causes,
+not one — this pass, the libc arity mismatch, four separate ways of losing a
+goto's label, a `break` hoisted out of the loop it belonged to, a `void *` as
+an operand of `|`, and `pthread_create` called with one argument where the
+header declares four. The heading is left as written because the rest of the
+section argues from it; the correction is here rather than in a rewrite.
 
-Where the 216-wide figure is concerned the honest answer is still "not
-re-taken". `algorithm-recovery-nightly` now runs CC-01 over the whole corpus
-so that it will be.
+**216/216.** CC-01 runs over the whole corpus on every `ctest-linux` run and
+measured **216 of 216** at run 276, against the 0/216 this section was written
+to explain. Both it and the 24-binary slice are floored at 1.0000. The trail is
+runs 274 (208/216), 275 (214/216) and 276 (216/216), with F1 at 0.2302 and
+DET-01 at 72 binaries 0 skipped throughout.
 
 **Closed by 86970d0, by the narrow route.** The pass is no longer run:
 `optimizer_manager.cpp` now carries a comment in place of the `run<>` call
@@ -377,9 +379,45 @@ section recorded. The check must pass the first and reject the second by name.
 
 ---
 
-## 5. The SSA the detectors run on is not the SSA they were written against
+## 5. The SSA the detectors run on is not the SSA they were written against — **fixed and gated**
 
 `src/retdec/llvm_to_ssa.cpp`
+
+**Both halves are done, and this section stood open after they were.** That is
+the second time in this file — section 4 was the first — and it costs what a
+hidden defect costs: the next reader is sent to redo finished work. Checked
+against the source before this note was written:
+
+* `IrInstr::defValue` **is** assigned. `buildSsaModule`'s third pass sets it for
+  every instruction with a non-void type, from the value map. The comment at
+  `translateInstr` says why it cannot be done one instruction at a time: a phi
+  at a loop header names a value from the latch, which has not been translated
+  yet.
+* **Every operand becomes a use**, for every translated instruction. The fourth
+  pass is exactly the shape "The fix" below prescribed — a memo minting one id
+  per LLVM value, a fresh `Immediate` per constant occurrence, a shared
+  `VirtualReg` id otherwise — and the four-instruction-class restriction and the
+  `ConstantInt`-only `continue` are both gone.
+
+It is gated, too, which is the part section 4 was missing.
+`scripts/ci/check_llvm_adapter.sh` (ADAPT-01) builds this file against the
+system LLVM and runs `tests/retdec/llvm_to_ssa_test.cpp`, whose assertions are
+not "some instructions define something": one requires that **every**
+value-producing instruction defines a value, and another requires that the
+def-use graph is actually connected — that at least one used value is one some
+instruction defines. Either would fail on the state described below.
+
+**What no longer follows.** The table further down lists four detectors as dead
+on production input. That consequence rested on the adapter, and the adapter
+delivers now. Whether each of the four contributes is a separate measurement —
+the F1 gate reports the aggregate, not per detector — so the table is left as
+the record of what was found rather than rewritten into a claim nothing here
+took.
+
+The rest of this section is kept as written, because the reasoning is what made
+the fix possible and the "how it was found" is worth more than the list.
+
+---
 
 This is the widest finding in the file, and it is one defect, not a family of
 them. `src/retdec/retdec.cpp:684` builds the module every structural detector
@@ -496,20 +534,23 @@ Not reproducible in this environment either way — it needs the pinned LLVM
 build — so the fix rides on the next `ctest-linux` run rather than on a local
 test.
 
-Eleven of the thirteen test sources in `tests/fileformat/` and one in
-`tests/common/` are named by no `CMakeLists.txt`, so `ctest` does not build or
-run them: `ar_archive_format_probe_tests.cpp`, `coff_format_tests.cpp`,
-`elf_format_tests.cpp`, `format_detection_tests.cpp`,
-`format_factory_tests.cpp`, `intel_hex_format_20bit_tests.cpp`,
-`intel_hex_format_tests.cpp`, `intel_hex_token_test.cpp`,
-`macho_format_tests.cpp`, `pe_format_tests.cpp`, `raw_data_format_tests.cpp`
-and `tests/common/calling_convention_tests.cpp`. `tests/fileformat` builds two
-files. Whether they still compile against the LLVM 23.1.0 migration is not
-known here, because everything they link needs that build; re-enabling them
-blind would break `ctest-linux` for hours per attempt, so they are listed
-rather than switched on. `scripts/check_cmake_sources.sh` now fails on any
-*new* test source that nothing builds, and carries these twelve in an explicit
-`UNBUILT` list with that reason attached, so the set cannot grow quietly.
+~~Eleven of the thirteen test sources in `tests/fileformat/` are named by no
+`CMakeLists.txt`. Whether they still compile against the LLVM 23.1.0 migration
+is not known here.~~ **Measured; they all compile, and they all run.** The
+"not known here" was the load-bearing part of this entry and it was wrong:
+`scripts/ci/check_fileformat_tests.sh` (FF-01) already compiled `src/fileformat`
+against the distribution `llvm-dev`, so adding the directory was one line.
+Every one of the sixteen files in `tests/fileformat/` compiles, and 83 of the
+suite's 129 cases had been evaluated by nothing.
+
+They stay out of the CMake target because nothing builds it — `ctest-linux`
+names `retdec-decompiler`, `retdec-gui` and `retdec-gui-tests` and no other —
+so listing them there would move them from one gate to none.
+`scripts/check_cmake_sources.sh` carries them with that reason now, rather than
+with "not yet re-enabled".
+
+`tests/common/calling_convention_tests.cpp` is still unbuilt and still in that
+list.
 
 `src/bin2llvmir/providers/` — the ten provider maps are process-wide, and
 `ProviderInitialization::runOnModule` starts by calling `clear()` on all of
