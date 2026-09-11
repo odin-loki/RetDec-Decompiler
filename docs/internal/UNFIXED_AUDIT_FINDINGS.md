@@ -1890,3 +1890,68 @@ is a flag to run when that file changes.
 That bounds the concern rather than closing it by assertion: the 555 names both
 tables leave out are left out because they are macros or are genuinely not on
 this platform, and not because the map sent them to the wrong header.
+
+
+## Four architectures nothing had ever asked a question about
+
+**Closed by C2L-01.** Asked to bring every CPU architecture to parity with
+x86-64, the first thing to establish is what the gap actually is. It is not
+what it looks like from the instruction tables:
+
+| arch    | translated | listed | tests |
+|---------|-----------:|-------:|------:|
+| x86     |        331 |   1343 |  1965 |
+| arm     |        175 |    435 |   534 |
+| arm64   |        189 |    461 |   457 |
+| mips    |        142 |    627 |   598 |
+| powerpc |        283 |   1192 |   808 |
+
+("listed" counts the entries in each translator's `_i2fm`; the difference is
+entries mapped to `nullptr`, which fall through to a pseudo-call. x86 is at
+24.6% by that measure, the *lowest* of the five, because it lists every SSE and
+AVX form. A ratio over an ISA's own instruction count does not compare across
+ISAs.)
+
+The gap is not coverage. It is that **every end-to-end gate in this repository
+measures exactly one architecture**: all 216 binaries in
+`tests/algorithm_recovery/corpus` are x86-64, so CC-01, DET-01 and the F1
+recovery gate — the three numbers this branch publishes — say nothing at all
+about ARM, ARM64, MIPS or PowerPC.
+
+And the one place their semantics *are* checked, `tests/capstone2llvmir`, was
+on `UNGATED_SUITES`: 46,066 lines and 4,370 assertions evaluated nowhere. The
+recorded reason was
+
+> same LLVM 20+ drift (4-arg APInt, Intrinsic::getOrInsertDeclaration), and its
+> tests need `<keystone/keystone.h>`, which deps/keystone is a download stub for
+
+Both halves are facts about the machine rather than about the code.
+`llvm-20-dev` is in Ubuntu noble's own universe pocket, and Capstone 5.0.9 and
+Keystone 0.9.2 — the exact revisions `cmake/deps.cmake` pins — build from
+source in about three minutes between them. With those present all 17
+translator sources and all six test files compile **unchanged**, and all 4,370
+tests pass. The suite was never broken. Nothing had run it.
+
+The system Capstone is not enough, and that is where the "drift" reading came
+from: it is 4.0.2, and the x86 translator names `X86_REG_BND0..3`,
+`X86_INS_FUCOMPI` and `X86_INS_FCOMPI`, which arrived in 5.x. Six errors, and
+reading them as drift rather than as the wrong Capstone is what kept the entry
+standing.
+
+**The floors are per architecture** — `MIN_X86`, `MIN_ARM`, `MIN_ARM64`,
+`MIN_MIPS`, `MIN_POWERPC` — because a single total lets 1,965 x86 cases hide
+the disappearance of all 598 MIPS ones while the aggregate barely moves.
+Falsified by deleting `mips_tests.cpp`: `FAIL Mips: 0 test(s), floor is 598`,
+with the other four still reported.
+
+`tests/llvmir-emul` rides along, off the same list for the same reason; its
+library is already linked because the translator tests execute the IR they
+produce. 4,380 tests.
+
+**What this does not close.** Parity of *coverage* is untouched: MIPS still
+translates 142 instructions and PowerPC 283, and whether those are the ones
+real binaries use is not measured here. Nor is there a non-x86 binary anywhere
+in the corpus, so end-to-end behaviour on the other four architectures remains
+unmeasured. What changed is that all five now have their instruction semantics
+checked on every push, which is the standing x86 already had and the other four
+never did.

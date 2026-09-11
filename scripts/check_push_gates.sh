@@ -104,6 +104,7 @@ CHECKS=(
 	"standalone fileformat suites (system LLVM):::bash scripts/ci/check_fileformat_tests.sh"
 	"standalone arity tables vs headers:::${PY} scripts/ci/check_libc_arity.py --check"
 	"standalone opencl library and kernels:::bash scripts/ci/check_opencl_tests.sh --self-test"
+	"standalone capstone2llvmir (5 architectures):::bash scripts/ci/check_capstone2llvmir_tests.sh --self-test"
 	"ci-smoke  no new unread option fields:::${PY} scripts/ci/check_unread_options.py --check"
 	"ci-smoke  every workflow parses:::${PY} scripts/ci/check_workflow_yaml.py"
 	"ci-smoke  workflow parse check (self-test):::${PY} scripts/ci/check_workflow_yaml.py --self-test"

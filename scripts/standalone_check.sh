@@ -176,11 +176,8 @@ readonly GATED_ELSEWHERE=(
 # instead of being discovered one defect at a time.  An entry leaves when a gate
 # starts running it, not when someone decides it is fine.
 readonly UNGATED_SUITES=(
-	"bin2llvmir:uses LLVM 20+/21+ APIs (CmpPredicate, Intrinsic::getOrInsertDeclaration, Value::hasUseList); measured against system LLVM 18, it is real drift across many files, not a missing -I"
-	"capstone2llvmir:same LLVM 20+ drift (4-arg APInt, Intrinsic::getOrInsertDeclaration), and its tests need <keystone/keystone.h>, which deps/keystone is a download stub for"
-	"llvmir-emul:uses the 4-argument APInt ctor (LLVM 20+) in a dozen places; src/llvmir2hll/ir/const_int.cpp shows the #if LLVM_VERSION_MAJOR >= 20 shape a port would take, but this is an LLVM interpreter and ten tests is a thin return for that risk"
+	"bin2llvmir:9 of its 125 sources need LLVM 21 (Value::hasUseList); the other 116 compile against the llvm-20-dev C2L-01 installs, so the earlier reading -- 'real drift across many files, not a missing -I' -- was wrong twice over: it is nine files, and one of those nine IS a missing -I (deps/eigen). llvm-21-dev is not in noble"
 	"unpacker:links retdec::cpdetect, which needs YARA -- fileformat itself builds against the system LLVM (see FF-01)"
-	"opencl:needs an OpenCL ICD loader, which no runner installs"
 	"benchmark:performance harness, run by perf-nightly.yml on a schedule not a push"
 	"crash_corpus:fixture directory, no assertions of its own"
 	"decompile_samples:fixture directory, no assertions of its own"
