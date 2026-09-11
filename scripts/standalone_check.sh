@@ -167,6 +167,9 @@ readonly GATED_ELSEWHERE=(
 	"decompiler:script-driven tests that set LABELS themselves, so ctest -L unit reaches them"
 	"managed_integration:sets LABELS itself, so ctest -L unit reaches it"
 	"algorithm_recovery:python suites run by ci-smoke.yml via scripts/check_push_gates.sh"
+	"capstone2llvmir:scripts/ci/check_capstone2llvmir_tests.sh (C2L-01, standalone-check.yml) -- all five architectures, with a per-architecture floor"
+	"llvmir-emul:scripts/ci/check_capstone2llvmir_tests.sh (C2L-01, standalone-check.yml) -- its library is linked there anyway, so the suite rides along"
+	"opencl:scripts/ci/check_opencl_tests.sh (OCL-01, standalone-check.yml)"
 )
 
 # Test suites that no gate runs, with the reason and what it would take.

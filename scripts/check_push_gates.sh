@@ -98,6 +98,7 @@ CHECKS=(
 	"doc       CLI exit codes (self-test):::bash scripts/ci/check_cli_exit_codes.sh --self-test"
 	"doc       non-x86 decompile (self-test):::bash scripts/ci/check_multiarch_decompile.sh --self-test"
 	"standalone clang++ compile + warnings:::CXX=clang++ BUILD_DIR=build/standalone-clang bash scripts/standalone_check.sh --compile-only"
+	"standalone module/suite audit:::bash scripts/standalone_check.sh --audit"
 	"standalone llvm_to_ssa adapter (system LLVM):::bash scripts/ci/check_llvm_adapter.sh"
 	"standalone llvmir2hll suite (system LLVM):::bash scripts/ci/check_llvmir2hll_tests.sh"
 	"standalone sem_decoder suite (system Capstone):::bash scripts/ci/check_sem_decoder_tests.sh"
