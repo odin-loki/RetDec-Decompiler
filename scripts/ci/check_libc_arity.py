@@ -236,8 +236,80 @@ def render(measured: dict[str, tuple[int, bool] | None], headers: dict[str, str]
     return template[:start] + "\n" + body + template[end:]
 
 
+def audit_assignments(label: str, headers: dict[str, str], jobs: int) -> int:
+    """Names whose assigned header is real but does not declare them.
+
+    ARITY-01 proper cannot see this. A name that will not compile under its
+    assigned header is recorded as "a macro, or not declared on this platform"
+    and dropped from the table, and those two are the only causes it considers.
+    A third exists: the header is simply the wrong one. That is invisible --
+    the name quietly has no arity, and the emitted C gets an #include that does
+    not declare the function it is there for. It is what ioctl was under
+    <stropts.h>, and that was only caught because the header did not exist.
+
+    So: for every name the measurement drops, and which is not a
+    function-like macro under its own header, try it under every header the
+    semantics assigns. If some header declares it, the assignment is wrong.
+
+    This is a few thousand extra compiles and is not part of --check. Run it
+    when the header map changes:
+
+        python3 scripts/ci/check_libc_arity.py --audit-assignments
+
+    Measured over both modules at the time it was written: 1968 names, 0
+    misassigned. Falsified by moving strlen out of <string.h>, which it
+    reports.
+    """
+    work = tempfile.mkdtemp(prefix="libc-arity-audit-")
+    cc = os.environ.get("CC", "gcc")
+    all_inc = "".join(f"#include <{h}>\n" for h in sorted(set(headers.values())))
+
+    def compiles(text: str, idx: int) -> bool:
+        src = os.path.join(work, f"a{idx}.c")
+        with open(src, "w", encoding="utf-8") as f:
+            f.write(text)
+        r = subprocess.run(
+            [cc, "-std=c11", "-fsyntax-only",
+             "-Werror=implicit-function-declaration", "-Werror=implicit-int", src],
+            capture_output=True)
+        return r.returncode == 0
+
+    def declared_under(inc: str, fn: str, idx: int) -> bool:
+        return any(compiles(f"{inc}void t(void){{ {fn}({','.join('0' for _ in range(n))}); }}\n", idx)
+                   for n in range(MAX_ARGS + 1))
+
+    def classify(job):
+        (fn, hdr), idx = job
+        own = f"#include <{hdr}>\n"
+        if declared_under(own, fn, idx):
+            return None                        # measurable, already in the table
+        if compiles(f"{own}#ifndef {fn}\n#error not_a_macro\n#endif\n", idx):
+            return None                        # a function-like macro
+        if declared_under(all_inc, fn, idx):
+            return (fn, hdr)                   # some other assigned header has it
+        return None                            # genuinely absent here
+
+    bad = []
+    with ThreadPoolExecutor(max_workers=jobs) as ex:
+        for r in ex.map(classify, [(kv, i) for i, kv in enumerate(sorted(headers.items()))]):
+            if r:
+                bad.append(r)
+
+    if bad:
+        print(f"ARITY-01: FAIL {label}: {len(bad)} name(s) assigned a header "
+              f"that does not declare them", file=sys.stderr)
+        for fn, hdr in sorted(bad):
+            print(f"  {fn}: assigned <{hdr}>, which does not declare it; "
+                  f"another assigned header does", file=sys.stderr)
+        return 1
+
+    print(f"ARITY-01: OK {label}: each of {len(headers)} name(s) is declared "
+          f"by the header assigned to it, or by none at all")
+    return 0
+
+
 def run_module(label: str, header_table: Path, arity_table: Path,
-               write: bool, jobs: int) -> int:
+               write: bool, jobs: int, audit: bool = False) -> int:
     headers = func_headers(header_table)
     if not headers:
         print(f"ARITY-01: FAIL could not read any function from "
@@ -263,6 +335,9 @@ def run_module(label: str, header_table: Path, arity_table: Path,
               "toolchain, name it in HEADERS_NOT_ASSUMED with the reason.",
               file=sys.stderr)
         return 1
+
+    if audit:
+        return audit_assignments(label, headers, jobs)
 
     measured = measure(sorted(headers.items()), jobs)
 
@@ -305,6 +380,8 @@ def main() -> int:
     ap.add_argument("--check", action="store_true", help="compare (the default)")
     ap.add_argument("--jobs", type=int, default=min(16, (os.cpu_count() or 4)))
     ap.add_argument("--module", help="only this semantics (libc, gcc_general)")
+    ap.add_argument("--audit-assignments", action="store_true",
+                    help="check that each assigned header declares its names")
     args = ap.parse_args()
 
     status = 0
@@ -313,7 +390,8 @@ def main() -> int:
         if args.module and args.module != label:
             continue
         ran += 1
-        status |= run_module(label, header_table, arity_table, args.write, args.jobs)
+        status |= run_module(label, header_table, arity_table, args.write,
+                             args.jobs, args.audit_assignments)
 
     if not ran:
         print(f"ARITY-01: FAIL no such module: {args.module}", file=sys.stderr)

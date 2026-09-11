@@ -1807,3 +1807,28 @@ provokes, and `ioctl` is common in the world and absent from these 216.
 the assignments directly; reverting the header map fails three of them. The
 fourth reads the arity table, so its guard is ARITY-01 instead: with the header
 map reverted the probe fails, naming both headers.
+
+### The case that would still have been invisible, and is not any more
+
+Fixing `ioctl` left the more uncomfortable question standing. It was caught
+because `<stropts.h>` does not exist; a name assigned a header that *does*
+exist but does not declare it fails in exactly the same way and leaves no
+trace. ARITY-01 considers only two causes when a name will not compile under
+its header -- a function-like macro, or not on this platform -- and records
+either as "left out". A wrong-but-real header is silently the third, and the
+emitted C gets an `#include` that does not declare the function it is for.
+
+So it was measured. `--audit-assignments` takes every name the measurement
+drops, excludes the ones that really are function-like macros under their own
+header, and tries the rest under the union of every header the semantics
+assigns. Anything that then compiles is misassigned.
+
+**1968 names across both modules, 0 misassigned.** A clean result, which is
+only worth the words if the check could have said otherwise: moving `strlen`
+out of `<string.h>` makes it report `strlen`. It is not part of `--check` --
+it is a few thousand extra compiles and the header map changes rarely -- so it
+is a flag to run when that file changes.
+
+That bounds the concern rather than closing it by assertion: the 555 names both
+tables leave out are left out because they are macros or are genuinely not on
+this platform, and not because the map sent them to the wrong header.
