@@ -1188,6 +1188,112 @@ for s in "${run_suites[@]}"; do
 	fi
 done
 
+# The device half, executed rather than only compiled.
+#
+# compile_cuda_half above proved the 660 lines behind
+# RETDEC_GPU_SCANNER_HOST_ONLY still compile. It did not run any of them, and
+# an adversarial verify pass had already shown what that is worth: four fixes
+# inside that region were reverted and the suite stayed green at 13/13.
+#
+# Running them needs two things the CPU build does not. The object has to be
+# the one built from gpu_scanner.cu without RETDEC_GPU_SCANNER_HOST_ONLY --
+# passed explicitly, so the linker satisfies GpuScanner from it and never pulls
+# gpu_scanner_cpu.o out of libutils.a -- and the stub has to present a device,
+# or ensureGpu() takes its "CUDA absent" path and every method falls back to
+# the host code the `utils` suite already covers.
+#
+# The assertions are tests/utils/gpu_scanner_tests.cpp, unchanged and not
+# copied: the same file the `utils` suite runs against the CPU path. Two
+# implementations of one class, one set of assertions, and they have to agree.
+# That is worth more than a second set of assertions written for the device
+# path alone, which would only ever say what its author expected.
+#
+# What the stub does not model is at the top of tests/utils/cuda_stub/
+# cuda_runtime.h: no warp semantics, no coalescing, blocks serialised. A kernel
+# with an inter-block race passes here and fails on a device.
+# The floor. tests/utils/gpu_scanner_tests.cpp has 17; a shrink below this is a
+# question for whoever shrank it, not a quiet pass.
+readonly CUDA_HALF_MIN_TESTS=15
+
+run_cuda_half() {
+	local src="$ROOT/src/utils/gpu_scanner.cu"
+	local tsrc="$ROOT/tests/utils/gpu_scanner_tests.cpp"
+	if [ ! -f "$src" ] || [ ! -f "$tsrc" ]; then
+		skip "cuda half (no sources)"
+		return 2
+	fi
+
+	local work="$BUILD_DIR/cuda_half"
+	mkdir -p "$work"
+
+	{
+		printf '#include "cuda_runtime.h"\n'
+		printf '#include "retdec/utils/gpu_scanner.h"\n'
+		printf '#include "%s"\n' "$src"
+	} > "$work/device_tu.cpp"
+
+	# A device has to be presented before the first GpuScanner is constructed,
+	# and a static initialiser is the only point that is true for every test.
+	{
+		printf '#include "cuda_runtime.h"\n'
+		printf 'namespace {\n'
+		printf 'struct PresentADevice { PresentADevice() {\n'
+		printf '\tretdec::tests::cudastub::presentOneDevice(true);\n'
+		printf '} } g_presentADevice;\n'
+		printf '} // namespace\n'
+	} > "$work/present.cpp"
+
+	local stubInc="-I$ROOT/tests/utils/cuda_stub"
+	local bin="$work/gpu_device_tests"
+	# shellcheck disable=SC2086
+	if ! $CXX $TESTFLAGS $stubInc -Itests -x c++ -c "$work/device_tu.cpp" \
+			-o "$work/device_tu.o" > "$work/build.log" 2>&1
+	then
+		bad "cuda half (build: the device half does not compile to an object)"
+		grep -nE 'error' "$work/build.log" | head -10
+		return 1
+	fi
+
+	# shellcheck disable=SC2086
+	if ! $CXX $TESTFLAGS $stubInc -Itests \
+			"$tsrc" "$work/device_tu.o" "$ROOT/tests/utils/cuda_stub/cuda_stub.cpp" "$work/present.cpp" \
+			-Wl,--start-group "${libargs[@]}" "$BUILD_DIR/lib/libgtest_lite_main.a" -Wl,--end-group \
+			"$BUILD_DIR/obj/gtest_lite.o" -lpthread -o "$bin" >> "$work/build.log" 2>&1
+	then
+		bad "cuda half (link)"
+		grep -nE 'error|undefined reference|multiple definition' "$work/build.log" | head -10
+		return 1
+	fi
+
+	local out
+	if ! out="$("$bin" --gtest_brief 2>&1)"; then
+		bad "cuda half (tests)"
+		printf '%s\n' "$out" | tail -30
+		return 1
+	fi
+
+	# How many actually ran. A binary that runs none passes every assertion it
+	# has, which is the shape of green this whole file exists to refuse -- the
+	# first version of this check reported "runs 0 test(s)" and returned 0.
+	local ran
+	ran="$(printf '%s\n' "$out" | grep -aoE '[0-9]+ tests? ran' | tail -n1)"
+	ran="${ran%% *}"
+	if [ -z "$ran" ]; then
+		bad "cuda half (could not tell how many tests ran)"
+		printf '%s\n' "$out" | tail -10
+		return 1
+	fi
+	if [ "$ran" -lt "$CUDA_HALF_MIN_TESTS" ]; then
+		bad "cuda half (only $ran test(s) ran, expected at least $CUDA_HALF_MIN_TESTS)"
+		say "  If tests/utils/gpu_scanner_tests.cpp shrank on purpose, lower the"
+		say "  floor in CUDA_HALF_MIN_TESTS and say why."
+		return 1
+	fi
+
+	ok "gpu_scanner.cu device half runs $ran test(s) against the CUDA stubs"
+	return 0
+}
+
 # gui is not one of SUITES: it needs moc, rcc and a QApplication before the
 # first widget, so it has its own builder above. It still counts here.
 gui_selected=1
@@ -1209,8 +1315,24 @@ if [ $gui_selected -eq 1 ]; then
 	esac
 fi
 
+cuda_half_total=0
+cuda_half_selected=1
+if [ ${#WANTED[@]} -gt 0 ]; then
+	cuda_half_selected=0
+	for w in "${WANTED[@]}"; do [ "$w" = utils ] || [ "$w" = cuda_half ] && cuda_half_selected=1; done
+fi
+if [ $cuda_half_selected -eq 1 ]; then
+	run_cuda_half
+	cuda_half_status=$?
+	case $cuda_half_status in
+		0) cuda_half_total=1; passed=$((passed + 1)) ;;
+		2) : ;;
+		*) cuda_half_total=1; failed_suites+=("cuda_half") ;;
+	esac
+fi
+
 hdr "summary"
-say "suites passed: $passed / $(( ${#run_suites[@]} + gui_total ))"
+say "suites passed: $passed / $(( ${#run_suites[@]} + gui_total + cuda_half_total ))"
 if [ ${#failed_suites[@]} -gt 0 ]; then
 	bad "failing: ${failed_suites[*]}"
 	exit 1

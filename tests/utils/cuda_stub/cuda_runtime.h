@@ -46,6 +46,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <thread>
@@ -280,15 +281,50 @@ struct cudaDeviceProp
 	int multiProcessorCount = 0;
 };
 
-/// No device: ensureGpu() must take its "CUDA absent" path, so the CPU
-/// fallback is what a test observes unless it drives the kernel itself.
+/// Whether the stub presents a device.
+///
+/// Off by default: `ensureGpu()` then takes its "CUDA absent" path and a test
+/// observes the CPU fallback, which is what every existing user of this header
+/// expects. Turning it on is what makes the kernels run -- `cudaMalloc`,
+/// `cudaMemcpy` and `cudaFree` are already real host operations, so the whole
+/// device path works once `ensureGpu()` is allowed to succeed.
+///
+/// It is a function rather than a flag so the header can stay header-only and
+/// the storage can live in cuda_stub.cpp with the launch variables.
+namespace retdec {
+namespace tests {
+namespace cudastub {
+
+/// Present (or stop presenting) one device to the next GpuScanner constructed.
+void presentOneDevice(bool present);
+
+/// Whether a device is currently presented.
+bool deviceIsPresented();
+
+} // namespace cudastub
+} // namespace tests
+} // namespace retdec
+
 inline cudaError_t cudaSetDevice(int)
 {
-	return cudaErrorMemoryAllocation;
+	return retdec::tests::cudastub::deviceIsPresented() ? cudaSuccess : cudaErrorMemoryAllocation;
 }
-inline cudaError_t cudaGetDeviceProperties(cudaDeviceProp*, int)
+inline cudaError_t cudaGetDeviceProperties(cudaDeviceProp* prop, int)
 {
-	return cudaErrorMemoryAllocation;
+	if (!retdec::tests::cudastub::deviceIsPresented())
+	{
+		return cudaErrorMemoryAllocation;
+	}
+	if (prop != nullptr)
+	{
+		*prop = cudaDeviceProp{};
+		std::snprintf(prop->name, sizeof(prop->name), "%s", "cuda_stub device");
+		prop->major = 7;
+		prop->minor = 0;
+		prop->totalGlobalMem = std::size_t{1} << 30;
+		prop->multiProcessorCount = 1;
+	}
+	return cudaSuccess;
 }
 
 inline cudaError_t cudaGetLastError()
@@ -301,7 +337,7 @@ inline cudaError_t cudaDeviceSynchronize()
 }
 inline cudaError_t cudaGetDeviceCount(int* n)
 {
-	*n = 0;
+	*n = retdec::tests::cudastub::deviceIsPresented() ? 1 : 0;
 	return cudaSuccess;
 }
 

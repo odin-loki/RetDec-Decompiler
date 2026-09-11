@@ -37,7 +37,32 @@ suites against a shim, and runs them.
 |---|---|---|
 | Prerequisites | network, ~30 GB, CMake, Ninja | a C++17 compiler |
 | Cold time | hours | ~1 minute |
-| Coverage | whole product | 64 suites, ~4000 test cases over 62 modules, plus 493 GUI tests where Qt6 is installed |
+| Coverage | whole product | 64 suites, ~4000 test cases over 62 modules, plus 493 GUI tests where Qt6 is installed and `gpu_scanner.cu`'s device half |
+
+## The CUDA device half
+
+`src/utils/gpu_scanner.cu` has ~660 lines behind `RETDEC_GPU_SCANNER_HOST_ONLY`
+— every kernel and all the runtime plumbing — that the CMake build compiles only
+when CUDA is found, so in this tree nothing compiled them. An adversarial verify
+pass showed what that was worth: four fixes inside that region were reverted and
+the suite stayed green.
+
+`tests/utils/cuda_stub/` made them compile. Running them needed two more things:
+the object built *without* the host-only define, passed explicitly so the linker
+never pulls `gpu_scanner_cpu.o` out of `libutils.a`, and a stub that presents a
+device, since `cudaGetDeviceCount` returning 0 sent every method down the CPU
+fallback the `utils` suite already covers.
+
+The assertions are `tests/utils/gpu_scanner_tests.cpp` — the same 17 the `utils`
+suite runs against the CPU path, not a copy. Two implementations of one class,
+one set of assertions, and they have to agree.
+
+Measured: an off-by-one in `findAllKernel` leaves `utils` green at 351 tests and
+turns this red.
+
+What the stub does not model is documented at the top of `cuda_runtime.h`: no
+warp semantics, no coalescing, blocks serialised. A kernel with an inter-block
+race passes here and fails on a device.
 
 ## The GUI suite
 

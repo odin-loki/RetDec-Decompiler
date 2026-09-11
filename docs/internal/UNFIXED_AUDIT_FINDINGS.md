@@ -859,16 +859,53 @@ no warp semantics, no coalescing or timing, and blocks serialised rather than
 concurrent -- so a kernel with an inter-block race would pass there and fail on
 a device.
 
-What is still open is one step further:
+~~What is still open is one step further: the CUDA half is **compiled but not
+executed** by the suite.~~ **Closed.** It is executed now, by the second test
+binary this entry proposed.
 
-* The CUDA half is **compiled but not executed** by the suite. The stub can run
-  a kernel -- `__syncthreads()` is a real barrier across `std::thread` lanes, so
-  a kernel that fills a `__shared__` array before the barrier and reads its
-  neighbours' entries after it behaves correctly -- but nothing links it,
-  because `GpuScanner`'s methods are already defined by `gpu_scanner_cpu.o` and
-  the two cannot go in one binary. Closing it means either a second test binary
-  that links the `.cu` instead of the `.cpp`, or splitting `GpuScanner` so the
-  device path is a separate type.
+Two things were needed, and neither was the `GpuScanner` split the entry
+offered as the alternative:
+
+* **The object.** `gpu_scanner.cu` is compiled without
+  `RETDEC_GPU_SCANNER_HOST_ONLY` and passed to the link *explicitly*, so the
+  linker satisfies `GpuScanner`'s methods from it and never pulls
+  `gpu_scanner_cpu.o` out of `libutils.a`. Archive members are only taken to
+  resolve what is still undefined, so the two never collide.
+* **A device.** `cudaMalloc`, `cudaMemcpy` and `cudaFree` were already real host
+  operations, but `cudaGetDeviceCount` returned 0, so `ensureGpu()` took its
+  "CUDA absent" path and every method fell back to the host code the `utils`
+  suite already covers — the kernels would still not have run. The stub
+  presents one device now, behind `cudastub::presentOneDevice()`, off by
+  default so every existing user of the header sees what it saw before.
+
+**The assertions are `tests/utils/gpu_scanner_tests.cpp`, unchanged and not
+copied** — the same 17 the `utils` suite runs against the CPU path. Two
+implementations of one class, one set of assertions, and they have to agree.
+That is worth more than a second set written for the device path alone, which
+would only ever say what its author expected.
+
+Verified by repeating the experiment this section describes. An off-by-one in
+`findAllKernel` — `pos + needleLen >= dataSize` for `>` — is inside the
+device-only region:
+
+```
+  ok  utils — 351 tests ran
+ FAIL cuda half (tests)
+[  FAILED  ] GpuScannerTests.UploadedFileIsScannable
+```
+
+The CPU suite does not notice, which is the state that let four fixes be
+reverted with the suite staying green at 13/13. The new check does.
+
+The first version of it reported `runs 0 test(s)` and returned 0, because the
+count came from a `[ OK ]` grep that `--gtest_brief` suppresses. A binary that
+runs no tests passes every assertion it has, so the count is read from the
+"N tests ran" line now and floored at `CUDA_HALF_MIN_TESTS`.
+
+What the stub still does not model is at the top of
+`tests/utils/cuda_stub/cuda_runtime.h`: no warp semantics, no coalescing,
+blocks serialised rather than concurrent. A kernel with an inter-block race
+passes here and fails on a device.
 
 ### The Imortek C back end is compiled, unit-tested, and linked into no tool
 
