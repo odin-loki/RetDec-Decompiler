@@ -326,6 +326,53 @@ jobs:
           } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
           exit $rc
 
+      # ARCH-01. src/capstone2llvmir translates five architectures and every
+      # gate above measures one: all 216 corpus binaries are x86-64, so CC-01,
+      # DET-01 and the F1 gate say nothing about ARM, ARM64, MIPS or PowerPC.
+      # C2L-01 (standalone-check) covers their instruction semantics; this is
+      # the first thing to ask what the decompiler does with a whole binary of
+      # theirs.
+      #
+      # A measurement, not a floor: no --min-rate and no --arch-min, so it
+      # reports the rates and exits 0. Nobody has ever run these, and a floor
+      # picked before the first number is either vacuous or a fiction. The
+      # floors go in once this has printed a rate, which is the road CC-01
+      # took from 0/216 to 216/216.
+      #
+      # Bounded on purpose: --limit 40 over a corpus sorted by name gives ten
+      # programs across all four architectures, and at --timeout 60 the worst
+      # case is bounded rather than a job that hangs for hours on its first run.
+      - name: ARCH-01 non-x86 decompilation (measurement)
+        if: always()
+        run: |
+          sudo apt-get install -y -qq \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf \
+            gcc-mips-linux-gnu gcc-powerpc-linux-gnu \
+            libc6-dev-arm64-cross libc6-dev-armhf-cross \
+            libc6-dev-mips-cross libc6-dev-powerpc-cross
+          bash scripts/build_multiarch_corpus.sh --out /tmp/ma-corpus
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          if [ -z "$DEC" ]; then echo "retdec-decompiler not found"; exit 1; fi
+          bash scripts/ci/check_multiarch_decompile.sh \
+            --decompiler "$DEC" --corpus /tmp/ma-corpus \
+            --limit 40 --timeout 60 \
+            --save-failures arch01-failures 2>&1 | tee /tmp/arch01.log
+          {
+            echo "### ARCH-01 non-x86 decompilation"
+            echo '```'
+            grep -E '^ARCH-01' /tmp/arch01.log || tail -n 3 /tmp/arch01.log
+            echo '```'
+          } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish the non-x86 failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: arch01-failures
+          path: arch01-failures
+          if-no-files-found: ignore
+          retention-days: 30
+
       # $GITHUB_STEP_SUMMARY renders in the web UI but is not exposed by the
       # workflow-run API, and this job's log is ~16 MB with the numbers past
       # the window the log API returns. An artifact is the one form of this
