@@ -518,7 +518,6 @@ const FuncArityMap& initFuncArityMap()
 	ADD_FUNC_ARITY("towupper", 1, false);
 	ADD_FUNC_ARITY("wctrans", 1, false);
 	ADD_FUNC_ARITY("wctype", 1, false);
-
 	return m;
 }
 

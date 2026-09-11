@@ -128,18 +128,6 @@ const FuncArityMap& initFuncArityMap()
 	// ftw.h
 	ADD_FUNC_ARITY("ftw", 3, false);
 
-	// gdbm.h
-	ADD_FUNC_ARITY("gdbm_close", 1, false);
-	ADD_FUNC_ARITY("gdbm_export", 4, false);
-	ADD_FUNC_ARITY("gdbm_fdesc", 1, false);
-	ADD_FUNC_ARITY("gdbm_firstkey", 1, false);
-	ADD_FUNC_ARITY("gdbm_import", 3, false);
-	ADD_FUNC_ARITY("gdbm_reorganize", 1, false);
-	ADD_FUNC_ARITY("gdbm_setopt", 4, false);
-	ADD_FUNC_ARITY("gdbm_strerror", 1, false);
-	ADD_FUNC_ARITY("gdbm_sync", 1, false);
-	ADD_FUNC_ARITY("gdbm_version_cmp", 2, false);
-
 	// getopt.h
 	ADD_FUNC_ARITY("getopt", 3, false);
 	ADD_FUNC_ARITY("getopt_long", 5, false);
@@ -553,17 +541,6 @@ const FuncArityMap& initFuncArityMap()
 	ADD_FUNC_ARITY("mq_send", 4, false);
 	ADD_FUNC_ARITY("mq_setattr", 3, false);
 	ADD_FUNC_ARITY("mq_unlink", 1, false);
-
-	// ndbm.h
-	ADD_FUNC_ARITY("dbm_clearerr", 1, false);
-	ADD_FUNC_ARITY("dbm_close", 1, false);
-	ADD_FUNC_ARITY("dbm_dirfno", 1, false);
-	ADD_FUNC_ARITY("dbm_error", 1, false);
-	ADD_FUNC_ARITY("dbm_firstkey", 1, false);
-	ADD_FUNC_ARITY("dbm_nextkey", 1, false);
-	ADD_FUNC_ARITY("dbm_open", 3, false);
-	ADD_FUNC_ARITY("dbm_pagfno", 1, false);
-	ADD_FUNC_ARITY("dbm_rdonly", 1, false);
 
 	// net/if.h
 	ADD_FUNC_ARITY("if_freenameindex", 1, false);

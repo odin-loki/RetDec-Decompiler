@@ -29,6 +29,12 @@ that function, and records which counts the real declaration accepts:
                                        not declared on this platform), and it
                                        must NOT be in the table
 
+Every header the semantics assigns is probed for availability first, because
+an absent header and a function-like macro are otherwise the same observation
+-- nothing compiles -- and only one of them is a defect in the table. Headers
+that are not part of a base toolchain are named in HEADERS_NOT_ASSUMED instead,
+so the table cannot come to depend on what happens to be installed.
+
 `--check` (the default) compares the table against that measurement and fails
 on any disagreement. `--write` regenerates the file from it.
 
@@ -77,15 +83,47 @@ MODULES = [
 ]
 MAX_ARGS = 8
 
+# Headers this check does not assume, and why.
+#
+# The table has to mean the same thing everywhere it is checked. These are not
+# part of the C standard or of glibc's base set -- they arrive with a -dev
+# package -- so a machine that has them measures entries a machine without them
+# cannot re-derive, and the check fails on the second machine for a table that
+# was right on the first. That is exactly what happened: 19 dbm_/gdbm_ entries
+# were written here, where libgdbm-dev is installed, and standalone-check run
+# 161 rejected every one of them.
+#
+# The rule is the one standalone_check.sh's EXCLUDED_REASONS already states for
+# modules: an entry whose verdict depends on what is installed is an entry this
+# check cannot make, so it is named here with the reason rather than left to
+# fail somewhere else.
+HEADERS_NOT_ASSUMED = {
+    "gdbm.h": "provided by libgdbm-dev, which is not part of a base toolchain",
+    "ndbm.h": "provided by libgdbm-dev, which is not part of a base toolchain",
+    # The other direction, and the header probe is what found these: absent
+    # here and on the runner, so the table is right today by accident. An older
+    # glibc has them, would measure 11 more entries into the table, and every
+    # machine on a current glibc would then reject all 11.
+    "libio.h": "glibc made it internal in 2.28; not present on a current glibc",
+    "stropts.h": "STREAMS, removed from glibc in 2.30; not present on a current glibc",
+}
+
 
 def func_headers(header_table: Path) -> dict[str, str]:
-    """Every function the semantics assigns a C header, and which header."""
+    """Every function the semantics assigns a C header, and which header.
+
+    Functions whose header is in HEADERS_NOT_ASSUMED are left out entirely, so
+    they are neither measured nor expected in the table.
+    """
     s = header_table.read_text(encoding="utf-8")
     out: dict[str, str] = {}
     pat = r'static const char \*(\w+)\[\] = \{(.*?)\};\s*ADD_FUNCS_TO_C_HEADER_MAP\(\s*\1\s*,\s*"([^"]+)"'
     for m in re.finditer(pat, s, re.S):
+        hdr = m.group(3)
+        if hdr in HEADERS_NOT_ASSUMED:
+            continue
         for name in re.findall(r'"([^"]+)"', m.group(2)):
-            out[name] = m.group(3)
+            out[name] = hdr
     return out
 
 
@@ -95,6 +133,32 @@ def parse_arity_table(arity_table: Path) -> dict[str, tuple[int, bool]]:
     for m in re.finditer(r'ADD_FUNC_ARITY\("([^"]+)",\s*(\d+),\s*(true|false)\)', s):
         out[m.group(1)] = (int(m.group(2)), m.group(3) == "true")
     return out
+
+
+def probe_headers(hdrs: list[str], jobs: int) -> set[str]:
+    """Which of these headers this toolchain actually has.
+
+    Without this, an absent header is indistinguishable from a function-like
+    macro: both make every arg count fail to compile, so both classify as "not
+    measurable" and every name under the header is reported as a bad table
+    entry. That is what standalone-check runs 152-161 printed -- 19 lines
+    blaming dbm_/gdbm_ entries, when the one fact worth knowing was that the
+    runner has no <gdbm.h>. Ten runs, one cause, and the message never said it.
+    """
+    work = tempfile.mkdtemp(prefix="libc-arity-hdr-")
+    cc = os.environ.get("CC", "gcc")
+
+    def has(job) -> tuple[str, bool]:
+        hdr, idx = job
+        src = os.path.join(work, f"h{idx}.c")
+        with open(src, "w", encoding="utf-8") as f:
+            f.write(f"#include <{hdr}>\n")
+        r = subprocess.run([cc, "-std=c11", "-fsyntax-only", src],
+                           capture_output=True)
+        return hdr, r.returncode == 0
+
+    with ThreadPoolExecutor(max_workers=jobs) as ex:
+        return {h for h, ok in ex.map(has, [(h, i) for i, h in enumerate(hdrs)]) if ok}
 
 
 def measure(items: list[tuple[str, str]], jobs: int) -> dict[str, tuple[int, bool] | None]:
@@ -160,6 +224,26 @@ def run_module(label: str, header_table: Path, arity_table: Path,
     if not headers:
         print(f"ARITY-01: FAIL could not read any function from "
               f"{header_table.relative_to(ROOT)}", file=sys.stderr)
+        return 1
+
+    # Before measuring anything: a header the semantics assigns but this
+    # toolchain does not have makes every name under it unmeasurable, and the
+    # per-function message for that is wrong and misleading. Say it once, here,
+    # in the only terms that identify the cause. This gates --write too, so a
+    # machine missing a base header cannot quietly write a smaller table.
+    assigned = sorted(set(headers.values()))
+    absent = [h for h in assigned if h not in probe_headers(assigned, jobs)]
+    if absent:
+        print(f"ARITY-01: FAIL {label}: {len(absent)} header(s) the semantics "
+              f"assigns are not available to this toolchain", file=sys.stderr)
+        for h in absent:
+            n = sum(1 for v in headers.values() if v == h)
+            print(f"  <{h}>: assigned to {n} function(s), cannot be measured here",
+                  file=sys.stderr)
+        print("  The table must mean the same thing on every machine that checks "
+              "it, so either install the header or, if it is not part of a base "
+              "toolchain, name it in HEADERS_NOT_ASSUMED with the reason.",
+              file=sys.stderr)
         return 1
 
     measured = measure(sorted(headers.items()), jobs)
