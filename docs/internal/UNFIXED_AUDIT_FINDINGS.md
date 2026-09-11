@@ -295,18 +295,49 @@ checked: their switch cases come from exact `v == k` tests rather than from
 bounds, so a negative or out-of-range value matches no case and reaches the
 same default it reached before.
 
-**`copy_propagation_optimizer_ext.cpp:114` — propagation across an if.**
-`canPropagateThroughStmts` invokes `ValueAnalysis` with `visitNestedStmts=false`,
-so an intervening `if`/`while`/`for` is treated as opaque rather than as
-unknown. `t = f(); if (c) { t = 0; } g(t);` becomes
-`t = f(); if (c) { t = 0; } g(f());` — the call is duplicated, moved past a
-reassignment, and past whatever the body did.
+**~~`copy_propagation_optimizer_ext.cpp` — propagation across an if.~~**
+**Measured; does not reproduce, and the reading was right about the wrong
+thing.** `canPropagateThroughStmts` is exactly as described: its walk is
+`cur = cur->getSuccessor()`, so an IfStmt's body is stepped over, and
+`isWrittenIn` only recognises an AssignStmt whose LHS is the variable — which
+an IfStmt never is.
 
-**`while_true_to_for_loop_optimizer_ext.cpp:105` — loop direction by name.**
-Whether a loop counts up or down is decided by a substring match on the
-variable's *name*. A descending loop whose induction variable is not named
-suggestively is emitted with an ascending `i < N` exit test, so the emitted loop
-terminates differently from the binary.
+It is a *permission*, not the decision. `t = f(); if (c) { t = 0; } g(t);` gives
+`g(t)` two reaching definitions of `t`, so `CopyPropagationOptimizer` takes its
+"more than one definition" branch and refuses at the first check there, that all
+the definitions are identical. Measured on a well-formed module: the argument
+stays a variable. Forcing `canPropagateThroughStmts` to return `true`
+unconditionally does not change it; bypassing the use-def branch does, which is
+what makes the test evidence.
+
+Two cases in `copy_propagation_optimizer_tests.cpp`: the dangerous shape is
+refused, and an `if` that touches nothing the propagation cares about still
+propagates — so a future repair of the walk cannot quietly become "refuse
+everything".
+
+One note for whoever reads the entry next: the first attempt at this
+reproduction used a bare `Variable` named `f` rather than a declared `Function`,
+so `getFuncByName` returned null and the optimizer bailed four guards earlier.
+It looked like a refusal and was a malformed test.
+
+**~~`while_true_to_for_loop_optimizer_ext.cpp` — loop direction by name.~~**
+**Fixed, and three tests asserted the defect.** The function is
+`isNonNegativeExt`, and its second branch was a substring match on the
+variable's *name* — `size`, `len`, `cnt`, `num`, `idx`, `uint` — returning
+`true` whatever the type.
+
+A name is not a fact about a value. `int size = -1` is the commonest sentinel
+there is, and a signed `idx` walking backwards is routine. What the answer
+decides is whether a loop's exit test may be rewritten from `indVar != endValue`
+to `indVar < endValue`, which is equivalent only when the step is non-negative:
+with a negative step and `start > end`, `!=` runs the loop and `<` does not run
+it at all.
+
+The branch is gone. The type still answers when it can, which is sound and is
+what should have decided it. The three tests — one per name, each on a *signed*
+32-bit variable — now assert the refusal, and a fourth says the name stops
+mattering in both directions. Verified by restoring the heuristic: all three
+fail.
 
 ---
 

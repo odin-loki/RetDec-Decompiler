@@ -1103,6 +1103,101 @@ DoNotOptimizeWhenAuxiliaryVariableIsExternal) {
 		"expected `" << returnB << "`, got `" << stmt2 << "`";
 }
 
+//
+// Propagating a call across an `if` that reassigns the variable.
+//
+// docs/internal/UNFIXED_AUDIT_FINDINGS.md section 3 recorded this as a silent
+// miscompilation: canPropagateThroughStmts walks from the assignment to the
+// use with `cur = cur->getSuccessor()`, so an IfStmt's body is stepped over
+// rather than examined, and isWrittenIn only recognises an AssignStmt whose
+// LHS is the variable -- which an IfStmt never is. By that reading
+//
+//     t = f(); if (c) { t = 0; } g(t);
+//
+// becomes `g(f())`, running f() where the binary did not and handing g a value
+// the binary would have replaced.
+//
+// Measured, it does not. The reading is right about that function and wrong
+// about the decision: canPropagateThroughStmts is a permission, and the
+// use-def chain still has to agree. `g(t)` has two reaching definitions of t
+// here -- `t = f()` and `t = 0` -- so the "more than one definition" branch of
+// CopyPropagationOptimizer refuses at its first check, that all the definitions
+// are identical.
+//
+// Forcing canPropagateThroughStmts to return true unconditionally does not
+// change this shape's output. Bypassing the use-def branch does, which is what
+// makes the first test below evidence rather than decoration.
+//
+
+TEST_F(CopyPropagationOptimizerTests, CallIsNotPropagatedIntoAUseWithTwoReachingDefinitions)
+{
+	// t = f(); if (c) { t = 0; } g(t);
+	ShPtr<Variable> varT(Variable::create("t", IntType::create(32)));
+	ShPtr<Variable> varC(Variable::create("c", IntType::create(32)));
+	testFunc->addLocalVar(varT);
+	testFunc->addLocalVar(varC);
+
+	// Declared, not defined: an external call is what these guards admit, and
+	// a bare Variable named "f" is not one -- getFuncByName has to find it.
+	ShPtr<Function> funcF(FunctionBuilder("f").withRetType(IntType::create(32)).build());
+	ShPtr<Function> funcG(FunctionBuilder("g").withRetType(IntType::create(32)).build());
+	module->addFunc(funcF);
+	module->addFunc(funcG);
+
+	ShPtr<CallExpr> callF(CallExpr::create(funcF->getAsVar()));
+	ShPtr<AssignStmt> assignT(AssignStmt::create(varT, callF));
+	ShPtr<AssignStmt> resetT(AssignStmt::create(varT, ConstInt::create(0, 32)));
+	ShPtr<IfStmt> ifStmt(IfStmt::create(varC, resetT));
+	ShPtr<CallExpr> callG(CallExpr::create(funcG->getAsVar(), ExprVector{varT}));
+	ShPtr<CallStmt> callGStmt(CallStmt::create(callG));
+
+	assignT->setSuccessor(ifStmt);
+	ifStmt->setSuccessor(callGStmt);
+	testFunc->setBody(assignT);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<CopyPropagationOptimizer>(module, va, OptimCallInfoObtainer::create());
+
+	EXPECT_EQ(varT, callG->getArg(1)) << "something was propagated into g() across an if that reassigns t; "
+										 "g receives a value the binary would have replaced";
+}
+
+/// And the case the extended walk exists for, so a repair of the above cannot
+/// be "refuse everything". The `if` here does not touch t, so there is one
+/// reaching definition and the call moves.
+TEST_F(CopyPropagationOptimizerTests, CallIsPropagatedAcrossAnIfThatDoesNotTouchTheVariable)
+{
+	// t = f(); if (c) { u = 0; } g(t);
+	ShPtr<Variable> varT(Variable::create("t", IntType::create(32)));
+	ShPtr<Variable> varU(Variable::create("u", IntType::create(32)));
+	ShPtr<Variable> varC(Variable::create("c", IntType::create(32)));
+	testFunc->addLocalVar(varT);
+	testFunc->addLocalVar(varU);
+	testFunc->addLocalVar(varC);
+
+	ShPtr<Function> funcF(FunctionBuilder("f").withRetType(IntType::create(32)).build());
+	ShPtr<Function> funcG(FunctionBuilder("g").withRetType(IntType::create(32)).build());
+	module->addFunc(funcF);
+	module->addFunc(funcG);
+
+	ShPtr<CallExpr> callF(CallExpr::create(funcF->getAsVar()));
+	ShPtr<AssignStmt> assignT(AssignStmt::create(varT, callF));
+	ShPtr<AssignStmt> resetU(AssignStmt::create(varU, ConstInt::create(0, 32)));
+	ShPtr<IfStmt> ifStmt(IfStmt::create(varC, resetU));
+	ShPtr<CallExpr> callG(CallExpr::create(funcG->getAsVar(), ExprVector{varT}));
+	ShPtr<CallStmt> callGStmt(CallStmt::create(callG));
+
+	assignT->setSuccessor(ifStmt);
+	ifStmt->setSuccessor(callGStmt);
+	testFunc->setBody(assignT);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<CopyPropagationOptimizer>(module, va, OptimCallInfoObtainer::create());
+
+	EXPECT_TRUE(isa<CallExpr>(callG->getArg(1))) << "the extended walk stopped propagating across an if that touches "
+													"nothing it cares about";
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

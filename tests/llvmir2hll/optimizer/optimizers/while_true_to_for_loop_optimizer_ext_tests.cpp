@@ -129,22 +129,38 @@ IsNonNegativeExtReturnsFalseForSignedVar) {
 	EXPECT_FALSE(isNonNegativeExt(var));
 }
 
-TEST_F(WhileTrueToForLoopOptimizerExtTests,
-IsNonNegativeExtReturnsTrueForSizeNamedVar) {
+// These three asserted the opposite: that a *signed* 32-bit variable is
+// non-negative because of what it is called. A name is not a fact about a
+// value -- `int size = -1` is the commonest sentinel there is -- and the answer
+// decides whether a loop's `indVar != end` exit test may be rewritten as
+// `indVar < end`, which is only equivalent when the step is non-negative.
+//
+// The type still answers when it can, which is the test below these.
+
+TEST_F(WhileTrueToForLoopOptimizerExtTests, IsNonNegativeExtReturnsFalseForSignedSizeNamedVar)
+{
 	auto var = Variable::create("size", IntType::create(32, true));
-	EXPECT_TRUE(isNonNegativeExt(var));
+	EXPECT_FALSE(isNonNegativeExt(var));
 }
 
-TEST_F(WhileTrueToForLoopOptimizerExtTests,
-IsNonNegativeExtReturnsTrueForLenNamedVar) {
+TEST_F(WhileTrueToForLoopOptimizerExtTests, IsNonNegativeExtReturnsFalseForSignedLenNamedVar)
+{
 	auto var = Variable::create("len", IntType::create(32, true));
-	EXPECT_TRUE(isNonNegativeExt(var));
+	EXPECT_FALSE(isNonNegativeExt(var));
 }
 
-TEST_F(WhileTrueToForLoopOptimizerExtTests,
-IsNonNegativeExtReturnsTrueForIdxNamedVar) {
+TEST_F(WhileTrueToForLoopOptimizerExtTests, IsNonNegativeExtReturnsFalseForSignedIdxNamedVar)
+{
 	auto var = Variable::create("idx", IntType::create(32, true));
-	EXPECT_TRUE(isNonNegativeExt(var));
+	EXPECT_FALSE(isNonNegativeExt(var));
+}
+
+/// The name stops mattering in both directions: an unsigned variable is
+/// non-negative whatever it is called, and that is what should decide it.
+TEST_F(WhileTrueToForLoopOptimizerExtTests, IsNonNegativeExtReturnsTrueForAnUnsignedVarWhateverItIsCalled)
+{
+	EXPECT_TRUE(isNonNegativeExt(Variable::create("size", IntType::create(32, false))));
+	EXPECT_TRUE(isNonNegativeExt(Variable::create("zzz", IntType::create(32, false))));
 }
 
 TEST_F(WhileTrueToForLoopOptimizerExtTests,
