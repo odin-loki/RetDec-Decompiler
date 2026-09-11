@@ -734,6 +734,7 @@ const FuncArityMap& initFuncArityMap()
 	ADD_FUNC_ARITY("posix_spawnp", 6, false);
 
 	// stdio.h
+	ADD_FUNC_ARITY("__overflow", 2, false);
 	ADD_FUNC_ARITY("clearerr", 1, false);
 	ADD_FUNC_ARITY("fclose", 1, false);
 	ADD_FUNC_ARITY("feof", 1, false);
@@ -845,6 +846,9 @@ const FuncArityMap& initFuncArityMap()
 
 	// sys/file.h
 	ADD_FUNC_ARITY("flock", 2, false);
+
+	// sys/ioctl.h
+	ADD_FUNC_ARITY("ioctl", 2, true);
 
 	// sys/ipc.h
 	ADD_FUNC_ARITY("ftok", 2, false);

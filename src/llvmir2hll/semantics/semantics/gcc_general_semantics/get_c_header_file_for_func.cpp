@@ -35,6 +35,15 @@ const StringStringUMap &initFuncCHeaderMap() {
 	//
 	//  - All the _IO_* functions from libio.h were moved into stdio.h.
 	//
+	//  - libio.h and stropts.h were dropped. Assigning a header here is what
+	//    makes the C writer emit an #include for it, and neither exists on a
+	//    current glibc: libio.h became internal in 2.28 and stropts.h went
+	//    with STREAMS in 2.30. Of libio.h's three, only __overflow is still
+	//    declared (by stdio.h, where it now lives); __uflow and __underflow
+	//    are declared nowhere includable, so they get no header and are
+	//    emitted as declarations instead. Of stropts.h's eight, only ioctl
+	//    survives, under sys/ioctl.h, which is where glibc declares it.
+	//
 
 	// aio.h
 	static const char *AIO_H_FUNCS[] = {
@@ -305,14 +314,6 @@ const StringStringUMap &initFuncCHeaderMap() {
 		"textdomain",
 	};
 	ADD_FUNCS_TO_C_HEADER_MAP(LIBINTL_H_FUNCS, "libintl.h", m);
-
-	// libio.h
-	static const char *LIBIO_H_FUNCS[] = {
-		"__overflow",
-		"__uflow",
-		"__underflow",
-	};
-	ADD_FUNCS_TO_C_HEADER_MAP(LIBIO_H_FUNCS, "libio.h", m);
 
 	// locale.h
 	static const char *LOCALE_H_FUNCS[] = {
@@ -1164,6 +1165,7 @@ const StringStringUMap &initFuncCHeaderMap() {
 
 	// stdio.h
 	static const char *STDIO_H_FUNCS[] = {
+		"__overflow",
 		"_IO_feof",
 		"_IO_ferror",
 		"_IO_flockfile",
@@ -1417,24 +1419,17 @@ const StringStringUMap &initFuncCHeaderMap() {
 	};
 	ADD_FUNCS_TO_C_HEADER_MAP(STRING_H_FUNCS, "string.h", m);
 
-	// stropts.h
-	static const char *STROPTS_H_FUNCS[] = {
-		"fattach",
-		"fdetach",
-		"getmsg",
-		"getpmsg",
-		"ioctl",
-		"isastream",
-		"putmsg",
-		"putpmsg",
-	};
-	ADD_FUNCS_TO_C_HEADER_MAP(STROPTS_H_FUNCS, "stropts.h", m);
-
 	// sys/file.h
 	static const char *SYS_FILE_H_FUNCS[] = {
 		"flock",
 	};
 	ADD_FUNCS_TO_C_HEADER_MAP(SYS_FILE_H_FUNCS, "sys/file.h", m);
+
+	// sys/ioctl.h
+	static const char* SYS_IOCTL_H_FUNCS[] = {
+		"ioctl",
+	};
+	ADD_FUNCS_TO_C_HEADER_MAP(SYS_IOCTL_H_FUNCS, "sys/ioctl.h", m);
 
 	// sys/ipc.h
 	static const char *SYS_IPC_H_FUNCS[] = {

@@ -46,6 +46,50 @@ GetCHeaderFileForKnownFunctionsReturnsCorrectAnswer) {
 	EXPECT_EQ("sys/socket.h", headerForSocket.value());
 }
 
+TEST_F(GCCGeneralSemanticsTests, IoctlIsAssignedTheHeaderThatDeclaresIt)
+{
+	// Assigning a header here is what makes CHLLWriter emit an #include for
+	// it, so a header that does not exist is C that cannot compile. ioctl was
+	// assigned <stropts.h>, which went with STREAMS in glibc 2.30.
+	std::optional<std::string> header(semantics->getCHeaderFileForFunc("ioctl"));
+	ASSERT_TRUE(header) << "no header file for `ioctl`";
+	EXPECT_EQ("sys/ioctl.h", header.value());
+}
+
+TEST_F(GCCGeneralSemanticsTests, FunctionsWithNoIncludableHeaderAreAssignedNone)
+{
+	// The other seven of stropts.h, and the two libio.h internals that are
+	// still declared nowhere a program may #include. No header means the
+	// writer emits a declaration, which compiles; a dead header does not.
+	for (const std::string& funcName:
+		 {"fattach", "fdetach", "getmsg", "getpmsg", "isastream", "putmsg", "putpmsg", "__uflow", "__underflow"})
+	{
+		EXPECT_FALSE(semantics->getCHeaderFileForFunc(funcName))
+			<< "`" << funcName << "` is assigned a header that cannot be included";
+	}
+}
+
+TEST_F(GCCGeneralSemanticsTests, OverflowIsAssignedStdioWhichStillDeclaresIt)
+{
+	// The third libio.h name, unlike the other two, is declared by <stdio.h>
+	// on a current glibc, so it keeps a header and stays a library function.
+	std::optional<std::string> header(semantics->getCHeaderFileForFunc("__overflow"));
+	ASSERT_TRUE(header) << "no header file for `__overflow`";
+	EXPECT_EQ("stdio.h", header.value());
+}
+
+TEST_F(GCCGeneralSemanticsTests, IoctlHasTheArityItsRealDeclarationHas)
+{
+	// Only reachable because the header above is the right one: the arity
+	// table is measured against whatever header the semantics assigns, so
+	// under <stropts.h> ioctl had no entry at all and no call could be fixed
+	// up. glibc declares `int ioctl(int, unsigned long, ...)`.
+	std::optional<FuncArity> arity(semantics->getArityOfFunc("ioctl"));
+	ASSERT_TRUE(arity) << "no arity for `ioctl`";
+	EXPECT_EQ(2u, arity.value().numParams);
+	EXPECT_TRUE(arity.value().isVariadic);
+}
+
 TEST_F(GCCGeneralSemanticsTests,
 GetCHeaderFileForUnknownFunctionsReturnsNoAnswer) {
 	// foo

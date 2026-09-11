@@ -1769,3 +1769,41 @@ which resolves exported symbols only. The excerpt is anchored on the report
 banner now and prints the eighty lines above it, `llvm` is in the workflow's
 apt list, and the third run named the instruction on the first line it
 printed.
+
+## A `#include` for a header that no longer exists
+
+**Closed.** `GCCGeneralSemantics` assigned `<stropts.h>` to `ioctl` and seven
+others, and `<libio.h>` to three. Assigning a header is not a note: it is what
+makes `CHLLWriter` emit an `#include` for it --
+`HeadersForDeclaredFuncs::getHeaders` collects one per declared function and
+`c_hll_writer.cpp:376` writes them out. Neither header exists on a current
+glibc. `libio.h` became internal in 2.28 and `stropts.h` went with STREAMS in
+2.30, so any binary that declared one of those eleven produced C that failed at
+its own first line.
+
+`ioctl` is the one that matters: it is ordinary, and it is declared in
+`<sys/ioctl.h>`, which is where it is assigned now. Of the libio three,
+`__overflow` is still declared by `<stdio.h>` and moves there; `__uflow` and
+`__underflow` are declared nowhere includable, so they get no header at all and
+are emitted as declarations instead, which compiles. The other seven STREAMS
+names get none for the same reason.
+
+Moving `ioctl` also gave it an arity, which it could not have had before: the
+arity table is measured against whatever header the semantics assigns, and
+nothing is measurable from a header that cannot be included. It is
+`(2, variadic)` now, matching `int ioctl(int, unsigned long, ...)`, so an
+under-supplied `ioctl` call gets the cast the writer exists to add.
+
+**How it was found, and why not earlier.** Not by reading the header map --
+by ARITY-01's new header-availability probe, added for an unrelated
+portability defect, which reported `<libio.h>` and `<stropts.h>` as assigned
+but unavailable. CC-01 compiles all 216 corpus outputs and has been at 216/216;
+it never saw this because no corpus binary calls any of the eleven. That is the
+limit of a corpus gate stated plainly: it can only find defects the corpus
+provokes, and `ioctl` is common in the world and absent from these 216.
+
+**Gated twice.** Four tests in
+`tests/llvmir2hll/semantics/semantics/gcc_general_semantics_tests.cpp` assert
+the assignments directly; reverting the header map fails three of them. The
+fourth reads the arity table, so its guard is ARITY-01 instead: with the header
+map reverted the probe fails, naming both headers.

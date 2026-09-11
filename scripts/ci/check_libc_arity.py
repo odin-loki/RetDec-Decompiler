@@ -100,12 +100,12 @@ MAX_ARGS = 8
 HEADERS_NOT_ASSUMED = {
     "gdbm.h": "provided by libgdbm-dev, which is not part of a base toolchain",
     "ndbm.h": "provided by libgdbm-dev, which is not part of a base toolchain",
-    # The other direction, and the header probe is what found these: absent
-    # here and on the runner, so the table is right today by accident. An older
-    # glibc has them, would measure 11 more entries into the table, and every
-    # machine on a current glibc would then reject all 11.
-    "libio.h": "glibc made it internal in 2.28; not present on a current glibc",
-    "stropts.h": "STREAMS, removed from glibc in 2.30; not present on a current glibc",
+    # libio.h and stropts.h were here briefly. They were the wrong answer: a
+    # header the semantics assigns is a header the C writer emits an #include
+    # for, so one that exists nowhere is a defect in the assignment and not an
+    # exception the measurement should tolerate. Both are gone from the header
+    # map now, which is why this list does not name them -- and the probe below
+    # is what keeps them gone.
 }
 
 
@@ -117,8 +117,26 @@ def func_headers(header_table: Path) -> dict[str, str]:
     """
     s = header_table.read_text(encoding="utf-8")
     out: dict[str, str] = {}
-    pat = r'static const char \*(\w+)\[\] = \{(.*?)\};\s*ADD_FUNCS_TO_C_HEADER_MAP\(\s*\1\s*,\s*"([^"]+)"'
-    for m in re.finditer(pat, s, re.S):
+    # `char\s*\*\s*` rather than `char \*`: clang-format writes a newly added
+    # group as `const char* X[]` and the rest of the file as `const char *X[]`,
+    # and a parser that only accepts one of those reads the other as no group
+    # at all.
+    pat = (r'static const char\s*\*\s*(\w+)\[\] = \{(.*?)\};'
+           r'\s*ADD_FUNCS_TO_C_HEADER_MAP\(\s*\1\s*,\s*"([^"]+)"')
+    groups = list(re.finditer(pat, s, re.S))
+
+    # A group this pattern misses is not an error anywhere else: its functions
+    # are simply never measured, so they are never expected in the table, and
+    # the check passes having silently stopped looking at them. It only failed
+    # loudly here because ioctl was already in the table. Count instead.
+    declared = s.count("ADD_FUNCS_TO_C_HEADER_MAP(")
+    if len(groups) != declared:
+        raise SystemExit(
+            f"ARITY-01: FAIL {header_table.relative_to(ROOT)} has {declared} "
+            f"header group(s) but this script could parse {len(groups)}; the "
+            f"unparsed ones would be skipped in silence")
+
+    for m in groups:
         hdr = m.group(3)
         if hdr in HEADERS_NOT_ASSUMED:
             continue
