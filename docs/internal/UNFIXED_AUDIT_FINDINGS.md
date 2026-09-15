@@ -2122,3 +2122,42 @@ the one before it. A single ARCH-01 number cannot distinguish "one defect" from
 "four in a row", and three CI round-trips at forty-five minutes each is what
 finding them one at a time costs. The sweep is the answer to that, not another
 round trip.
+
+## The "nobody builds this" check never asked it about src/
+
+**Closed by extending `check_cmake_sources.sh`.** The check exists to catch
+sources no CMakeLists names — its own comment says *"a check written to catch
+'nobody builds this' that skips the directories nobody builds is worse than
+none, because its OK is trusted"* — and it walked `tests/` only. `src/` was
+never asked the question.
+
+Found while chasing the `ConstantInt::get` class: `types_propagator.cpp`
+appeared in a compile sweep with
+
+```
+error: 'resolveTypes' was not declared in this scope
+error: no declaration matches 'bool TypesPropagator::resolveTypes()'
+```
+
+which cannot compile on any compiler — and CI builds bin2llvmir fine, because
+nothing compiles that file.
+
+Three sources under `src/` are named by no CMakeLists, and the check now
+carries each with its reason:
+
+  * `unpackertool/plugins/example/example.cpp` — a template for writing an
+    unpacker plugin. Compiles; building it would register an unpacker that
+    unpacks nothing. Legitimately unbuilt.
+  * `rtti-finder/vtable/vtable_xref.cpp` — 244 lines, **does not compile**: 14
+    errors against the current API, including `VtableGcc::virtualFunctions`,
+    which does not exist. Its header is declared and included by nothing.
+  * `bin2llvmir/optimizations/types_propagator/types_propagator.cpp` — 347
+    lines, **does not compile**, as above. `simple_types/` is the types pass
+    the build actually uses.
+
+591 lines across the two broken files, neither of which has ever been through
+a compiler. They are recorded rather than repaired: making dead code compile is
+polish on something nothing runs, and wiring an unverified optimisation pass
+into the pipeline is a behaviour change with no evidence behind it. What is
+fixed is that the next one cannot arrive unnoticed — falsified two ways, by
+adding an unnamed source under `src/` and by deleting a reason from the list.

@@ -108,6 +108,29 @@ UNBUILT_DIRS = {
         "scripts/standalone_check.sh; the CMake build uses the real one",
 }
 
+# Sources under src/ that no CMakeLists names, with the reason.
+#
+# This list exists because the walk below used to cover tests/ only. The
+# question it asks -- "does anything build this?" -- is the same question for
+# product code, and src/ was never asked it: three files sat here unnamed by
+# any CMakeLists, and two of them do not even compile.
+UNBUILT_SRC = {
+    "src/unpackertool/plugins/example/example.cpp":
+        "a template for writing an unpacker plugin, not a plugin; it compiles, "
+        "and building it would register an unpacker that unpacks nothing",
+    "src/rtti-finder/vtable/vtable_xref.cpp":
+        "dead and does not compile: 14 errors against the current API, among "
+        "them VtableGcc::virtualFunctions, which does not exist. 244 lines "
+        "written against a shape rtti-finder no longer has. include/retdec/"
+        "rtti-finder/vtable/vtable_xref.h declares it and nothing includes that "
+        "either",
+    "src/bin2llvmir/optimizations/types_propagator/types_propagator.cpp":
+        "dead and does not compile: resolveTypes() is defined at line 287 and "
+        "called at line 71 and declared in no header, so this has never been "
+        "through a compiler. simple_types/ is the types pass the build "
+        "actually uses",
+}
+
 UNBUILT = {
     # These eleven were recorded as "not carried through the LLVM 23.1.0
     # migration and not yet re-enabled". That reason did not survive being
@@ -291,6 +314,23 @@ if ROOTS == ["."] or any(r.startswith("tests") for r in ROOTS):
                 continue
             unbuilt.append(rel)
 
+# The same question for product code. A source under src/ that no CMakeLists
+# names is compiled by nothing, which is how 591 lines across two files came to
+# sit in this tree without ever having been through a compiler.
+unbuilt_src = []
+if ROOTS == ["."] or any(r.startswith("src") for r in ROOTS):
+    for dirpath, dirnames, filenames in os.walk("src"):
+        dirnames[:] = [
+            d for d in dirnames
+            if d not in (".git", "build", "node_modules", "__pycache__")
+        ]
+        rel_dir = dirpath.replace(os.sep, "/")
+        for name in sorted(n for n in filenames if n.endswith((".cpp", ".cc", ".cxx"))):
+            rel = f"{rel_dir}/{name}"
+            if rel in named or rel in mentioned or rel in UNBUILT_SRC:
+                continue
+            unbuilt_src.append(rel)
+
 # ── third pass: a .cu source CMake will silently drop ───────────────────────
 #
 # CMake compiles a .cu only when the CUDA language is enabled. A .cu named by a
@@ -336,6 +376,11 @@ for rel in unbuilt:
     print("       add it to its CMakeLists, or give it a reason in UNBUILT in "
           "scripts/check_cmake_sources.sh")
 
+for rel in unbuilt_src:
+    print(f"{rel}: a src source no CMakeLists.txt names, so nothing compiles it")
+    print("       add it to its CMakeLists, or give it a reason in UNBUILT_SRC "
+          "in scripts/check_cmake_sources.sh")
+
 for rel in unregistered:
     print(f"{rel}/CMakeLists.txt: tests/CMakeLists.txt never add_subdirectory()s "
           "this, so nothing it builds is built")
@@ -353,18 +398,24 @@ print(f"checked {checked} source entries across {listfiles} CMakeLists.txt file(
 if UNBUILT:
     print(f"note: {len(UNBUILT)} test source(s) deliberately not built; "
           f"reasons in UNBUILT in this script")
-if missing or unbuilt or unregistered or cu_unbuilt:
+if UNBUILT_SRC:
+    print(f"note: {len(UNBUILT_SRC)} src source(s) built by nothing; "
+          f"reasons in UNBUILT_SRC in this script")
+if missing or unbuilt or unbuilt_src or unregistered or cu_unbuilt:
     if cu_unbuilt:
         print(f"FAIL: {len(cu_unbuilt)} .cu source(s) CMake would drop silently")
     if missing:
         print(f"FAIL: {len(missing)} missing source file(s)")
     if unbuilt:
         print(f"FAIL: {len(unbuilt)} test source(s) that nothing builds")
+    if unbuilt_src:
+        print(f"FAIL: {len(unbuilt_src)} src source(s) that nothing compiles")
     if unregistered:
         print(f"FAIL: {len(unregistered)} test director(y/ies) tests/CMakeLists.txt "
               f"never adds")
     sys.exit(1)
 print("OK: every source named by a CMake target exists or is fetchable, every "
-      "test source is built, every test directory is reachable from "
-      "tests/CMakeLists.txt, and no .cu source is silently dropped")
+      "test and src source is built or has a recorded reason, every test "
+      "directory is reachable from tests/CMakeLists.txt, and no .cu source is "
+      "silently dropped")
 PY
