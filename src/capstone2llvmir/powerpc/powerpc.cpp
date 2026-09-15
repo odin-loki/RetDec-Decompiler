@@ -934,8 +934,9 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoad(cs_insn* i, cs_ppc* pi
 			break;
 		case PPC_INS_LWZ:
 		case PPC_INS_LWZU:
-			ty = irb.getInt32Ty();
-			break;
+		case PPC_INS_LWA: ty = irb.getInt32Ty(); break;
+		case PPC_INS_LD:
+		case PPC_INS_LDU: ty = irb.getInt64Ty(); break;
 		default:
 			return;
 	}
@@ -943,7 +944,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoad(cs_insn* i, cs_ppc* pi
 	op1 = loadOpBinaryOp1(pi, irb, ty);
 
 	eOpConv conv = eOpConv::ZEXT_TRUNC_OR_BITCAST;
-	if (i->id == PPC_INS_LHA || i->id == PPC_INS_LHAU)
+	if (i->id == PPC_INS_LHA || i->id == PPC_INS_LHAU || i->id == PPC_INS_LWA)
 	{
 		conv = eOpConv::SEXT_TRUNC_OR_BITCAST;
 	}
@@ -952,14 +953,14 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoad(cs_insn* i, cs_ppc* pi
 	// With update.
 	//
 	auto& ppcOp1 = pi->operands[1];
-	if (i->id == PPC_INS_LBZU || i->id == PPC_INS_LHZU
-			|| i->id == PPC_INS_LWZU ||  i->id == PPC_INS_LHAU)
-	if (ppcOp1.type == PPC_OP_MEM && ppcOp1.mem.base != PPC_REG_INVALID)
-	if (auto* l = llvm::dyn_cast<llvm::LoadInst>(op1))
-	if (auto* cast = llvm::dyn_cast<llvm::CastInst>(l->getPointerOperand()))
-	{
-		storeRegister(ppcOp1.mem.base, cast->getOperand(0), irb);
-	}
+	if (i->id == PPC_INS_LBZU || i->id == PPC_INS_LHZU || i->id == PPC_INS_LWZU || i->id == PPC_INS_LHAU
+		|| i->id == PPC_INS_LDU)
+		if (ppcOp1.type == PPC_OP_MEM && ppcOp1.mem.base != PPC_REG_INVALID)
+			if (auto* l = llvm::dyn_cast<llvm::LoadInst>(op1))
+				if (auto* cast = llvm::dyn_cast<llvm::CastInst>(l->getPointerOperand()))
+				{
+					storeRegister(ppcOp1.mem.base, cast->getOperand(0), irb);
+				}
 }
 
 /**
@@ -990,11 +991,11 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadIndexed(cs_insn* i, cs_
 		case PPC_INS_LWZX:
 		case PPC_INS_LWZUX:
 		case PPC_INS_LWARX:
-			ty = irb.getInt32Ty();
-			break;
+		case PPC_INS_LWAX:
+		case PPC_INS_LWAUX: ty = irb.getInt32Ty(); break;
 		case PPC_INS_LDARX:
-			ty = irb.getInt64Ty();
-			break;
+		case PPC_INS_LDX:
+		case PPC_INS_LDUX: ty = irb.getInt64Ty(); break;
 		default:
 			return;
 	}
@@ -1006,7 +1007,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadIndexed(cs_insn* i, cs_
 	}
 
 	eOpConv conv = eOpConv::ZEXT_TRUNC_OR_BITCAST;
-	if (i->id == PPC_INS_LHAX || i->id == PPC_INS_LHAUX)
+	if (i->id == PPC_INS_LHAX || i->id == PPC_INS_LHAUX || i->id == PPC_INS_LWAX || i->id == PPC_INS_LWAUX)
 	{
 		conv = eOpConv::SEXT_TRUNC_OR_BITCAST;
 	}
@@ -1015,12 +1016,12 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadIndexed(cs_insn* i, cs_
 	// With update.
 	//
 	auto& ppcOp1 = pi->operands[1];
-	if (i->id == PPC_INS_LBZUX || i->id == PPC_INS_LHZUX
-			|| i->id == PPC_INS_LWZUX || i->id == PPC_INS_LHAUX)
-	if (ppcOp1.type == PPC_OP_REG && ppcOp1.reg != PPC_REG_INVALID)
-	{
-		storeRegister(ppcOp1.reg, add, irb);
-	}
+	if (i->id == PPC_INS_LBZUX || i->id == PPC_INS_LHZUX || i->id == PPC_INS_LWZUX || i->id == PPC_INS_LHAUX
+		|| i->id == PPC_INS_LDUX || i->id == PPC_INS_LWAUX)
+		if (ppcOp1.type == PPC_OP_REG && ppcOp1.reg != PPC_REG_INVALID)
+		{
+			storeRegister(ppcOp1.reg, add, irb);
+		}
 }
 
 /**
@@ -1046,6 +1047,8 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStore(cs_insn* i, cs_ppc* p
 		case PPC_INS_STWU:
 			ty = irb.getInt32Ty();
 			break;
+		case PPC_INS_STD:
+		case PPC_INS_STDU: ty = irb.getInt64Ty(); break;
 		default:
 			return;
 	}
@@ -1065,14 +1068,13 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStore(cs_insn* i, cs_ppc* p
 	// With update.
 	//
 	auto& ppcOp1 = pi->operands[1];
-	if (i->id == PPC_INS_STBU || i->id == PPC_INS_STHU
-			|| i->id == PPC_INS_STWU)
-	if (ppcOp1.type == PPC_OP_MEM && ppcOp1.mem.base != PPC_REG_INVALID)
-	if (auto* s = llvm::dyn_cast<llvm::StoreInst>(si))
-	if (auto* cast = llvm::dyn_cast<llvm::CastInst>(s->getPointerOperand()))
-	{
-		storeRegister(ppcOp1.mem.base, cast->getOperand(0), irb);
-	}
+	if (i->id == PPC_INS_STBU || i->id == PPC_INS_STHU || i->id == PPC_INS_STWU || i->id == PPC_INS_STDU)
+		if (ppcOp1.type == PPC_OP_MEM && ppcOp1.mem.base != PPC_REG_INVALID)
+			if (auto* s = llvm::dyn_cast<llvm::StoreInst>(si))
+				if (auto* cast = llvm::dyn_cast<llvm::CastInst>(s->getPointerOperand()))
+				{
+					storeRegister(ppcOp1.mem.base, cast->getOperand(0), irb);
+				}
 }
 
 /**
@@ -1102,8 +1104,8 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreIndexed(cs_insn* i, cs
 			ty = irb.getInt32Ty();
 			break;
 		case PPC_INS_STDCX:
-			ty = irb.getInt64Ty();
-			break;
+		case PPC_INS_STDX:
+		case PPC_INS_STDUX: ty = irb.getInt64Ty(); break;
 		default:
 			return;
 	}
@@ -1122,12 +1124,154 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreIndexed(cs_insn* i, cs
 	// With update.
 	//
 	auto& ppcOp1 = pi->operands[1];
-	if (i->id == PPC_INS_STBUX || i->id == PPC_INS_STHUX
-			|| i->id == PPC_INS_STWUX)
-	if (ppcOp1.type == PPC_OP_REG && ppcOp1.reg != PPC_REG_INVALID)
+	if (i->id == PPC_INS_STBUX || i->id == PPC_INS_STHUX || i->id == PPC_INS_STWUX || i->id == PPC_INS_STDUX)
+		if (ppcOp1.type == PPC_OP_REG && ppcOp1.reg != PPC_REG_INVALID)
+		{
+			storeRegister(ppcOp1.reg, add, irb);
+		}
+}
+
+/**
+ * PPC_INS_LFS, PPC_INS_LFSU, PPC_INS_LFD, PPC_INS_LFDU
+ *
+ * The FPRs are modelled as doubles (powerpc_init.cpp maps PPC_REG_F0..F31 to
+ * f64), which is what the hardware register file holds: a single-precision
+ * load converts the 32-bit datum to double on the way in. So the load reads
+ * float or double from memory and the store to the register widens, which is
+ * exactly eOpConv::FPCAST_OR_BITCAST.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadFloat(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, pi, irb);
+
+	llvm::Type* ty = nullptr;
+	switch (i->id)
 	{
-		storeRegister(ppcOp1.reg, add, irb);
+	case PPC_INS_LFS:
+	case PPC_INS_LFSU: ty = irb.getFloatTy(); break;
+	case PPC_INS_LFD:
+	case PPC_INS_LFDU: ty = irb.getDoubleTy(); break;
+	default: return;
 	}
+
+	op1 = loadOpBinaryOp1(pi, irb, ty);
+	storeOp(pi->operands[0], op1, irb, eOpConv::FPCAST_OR_BITCAST);
+
+	// With update.
+	//
+	auto& ppcOp1 = pi->operands[1];
+	if (i->id == PPC_INS_LFSU || i->id == PPC_INS_LFDU)
+		if (ppcOp1.type == PPC_OP_MEM && ppcOp1.mem.base != PPC_REG_INVALID)
+			if (auto* l = llvm::dyn_cast<llvm::LoadInst>(op1))
+				if (auto* cast = llvm::dyn_cast<llvm::CastInst>(l->getPointerOperand()))
+				{
+					storeRegister(ppcOp1.mem.base, cast->getOperand(0), irb);
+				}
+}
+
+/**
+ * PPC_INS_LFSX, PPC_INS_LFSUX, PPC_INS_LFDX, PPC_INS_LFDUX
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadFloatIndexed(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
+
+	llvm::Type* ty = nullptr;
+	switch (i->id)
+	{
+	case PPC_INS_LFSX:
+	case PPC_INS_LFSUX: ty = irb.getFloatTy(); break;
+	case PPC_INS_LFDX:
+	case PPC_INS_LFDUX: ty = irb.getDoubleTy(); break;
+	default: return;
+	}
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	auto* add = irb.CreateAdd(op1, op2);
+
+	auto* l = loadIntPtr(irb, add, ty);
+	storeOp(pi->operands[0], l, irb, eOpConv::FPCAST_OR_BITCAST);
+
+	// With update.
+	//
+	auto& ppcOp1 = pi->operands[1];
+	if (i->id == PPC_INS_LFSUX || i->id == PPC_INS_LFDUX)
+		if (ppcOp1.type == PPC_OP_REG && ppcOp1.reg != PPC_REG_INVALID)
+		{
+			storeRegister(ppcOp1.reg, add, irb);
+		}
+}
+
+/**
+ * PPC_INS_STFS, PPC_INS_STFSU, PPC_INS_STFD, PPC_INS_STFDU
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreFloat(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, pi, irb);
+
+	llvm::Type* ty = nullptr;
+	switch (i->id)
+	{
+	case PPC_INS_STFS:
+	case PPC_INS_STFSU: ty = irb.getFloatTy(); break;
+	case PPC_INS_STFD:
+	case PPC_INS_STFDU: ty = irb.getDoubleTy(); break;
+	default: return;
+	}
+
+	op0 = loadOpBinaryOp0(pi, irb);
+	op0 = generateTypeConversion(irb, op0, ty, eOpConv::FPCAST_OR_BITCAST);
+
+	auto* si = storeOp(pi->operands[1], op0, irb);
+
+	// With update.
+	//
+	auto& ppcOp1 = pi->operands[1];
+	if (i->id == PPC_INS_STFSU || i->id == PPC_INS_STFDU)
+		if (ppcOp1.type == PPC_OP_MEM && ppcOp1.mem.base != PPC_REG_INVALID)
+			if (auto* s = llvm::dyn_cast<llvm::StoreInst>(si))
+				if (auto* cast = llvm::dyn_cast<llvm::CastInst>(s->getPointerOperand()))
+				{
+					storeRegister(ppcOp1.mem.base, cast->getOperand(0), irb);
+				}
+}
+
+/**
+ * PPC_INS_STFSX, PPC_INS_STFSUX, PPC_INS_STFDX, PPC_INS_STFDUX
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreFloatIndexed(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, pi, irb);
+
+	llvm::Type* ty = nullptr;
+	switch (i->id)
+	{
+	case PPC_INS_STFSX:
+	case PPC_INS_STFSUX: ty = irb.getFloatTy(); break;
+	case PPC_INS_STFDX:
+	case PPC_INS_STFDUX: ty = irb.getDoubleTy(); break;
+	default: return;
+	}
+
+	op0 = loadOp(pi->operands[0], irb);
+	op1 = loadOp(pi->operands[1], irb);
+	op2 = loadOp(pi->operands[2], irb);
+
+	op0 = generateTypeConversion(irb, op0, ty, eOpConv::FPCAST_OR_BITCAST);
+	op1 = irb.CreateZExtOrTrunc(op1, getDefaultType());
+	op2 = irb.CreateZExtOrTrunc(op2, getDefaultType());
+
+	auto* add = irb.CreateAdd(op1, op2);
+	storeIntPtr(irb, op0, add, ty);
+
+	// With update.
+	//
+	auto& ppcOp1 = pi->operands[1];
+	if (i->id == PPC_INS_STFSUX || i->id == PPC_INS_STFDUX)
+		if (ppcOp1.type == PPC_OP_REG && ppcOp1.reg != PPC_REG_INVALID)
+		{
+			storeRegister(ppcOp1.reg, add, irb);
+		}
 }
 
 /**

@@ -378,6 +378,25 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::extractVectorValue(
 		return val;
 	}
 
+	// A negative vector_index means the operand names the whole register, not
+	// one lane of it: `add v0.4s, v1.4s, v2.4s` carries an arrangement but no
+	// index. Every lane branch below multiplies vector_index by a lane width
+	// and shifts by the result, so -1 became a shift by 2^128-32 -- poison --
+	// and then a truncation of that poison to a lane type. For the S
+	// arrangements that lane type is `float`, which is how ten of ten ARM64
+	// binaries died in "Tried to create an integer operation on a non-integer
+	// type" inside translateAdd.
+	//
+	// Returning the register whole is both defined and, for the bitwise
+	// vector instructions (eor/and/orr/mov on .16b), exactly right: those are
+	// lane-agnostic. It is not right for the arithmetic ones -- a lanewise
+	// add is not a 128-bit add -- and translateAdd and translateSub handle
+	// that case themselves rather than quietly emitting the wrong arithmetic.
+	if (op.vector_index < 0)
+	{
+		return val;
+	}
+
 	// Vector element size specifier
 	switch(op.vas)
 	{
@@ -1241,6 +1260,20 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateAdd(cs_insn* i, cs_arm64* ai,
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
 
+	// `add v0.4s, v1.4s, v2.4s` is four 32-bit adds, not one 128-bit add, and
+	// this translator has no vector model to say so. It reached CreateAdd
+	// anyway -- isFPRegister() knows Q, D, H and S registers but not V, so the
+	// bitcast below did not fire, and a `.4s` operand arrives as `float`:
+	// "Tried to create an integer operation on a non-integer type", which is
+	// how all ten ARM64 binaries in ARCH-01 dumped core. The guard other
+	// translators in this file already use is the right answer, and it is
+	// honest about what is not modelled instead of emitting the wrong
+	// arithmetic.
+	if (ifVectorGeneratePseudo(i, ai, irb))
+	{
+		return;
+	}
+
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb);
 	op2 = generateTypeConversion(irb, op2, op1->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
 
@@ -1274,6 +1307,12 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateAdd(cs_insn* i, cs_arm64* ai,
 void Capstone2LlvmIrTranslatorArm64_impl::translateSub(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
+
+	// See translateAdd: `sub v0.2d, v1.2d, v2.2d` is not a 128-bit subtract.
+	if (ifVectorGeneratePseudo(i, ai, irb))
+	{
+		return;
+	}
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb);
 	op2 = generateTypeConversion(irb, op2, op1->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);

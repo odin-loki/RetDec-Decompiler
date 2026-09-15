@@ -9105,6 +9105,110 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, StpStoreAttachesPointeeMetadata)
 	EXPECT_TRUE(found);
 }
 
+//
+// Vector-arrangement forms of the integer arithmetic instructions.
+//
+// `add v0.4s, v1.4s, v2.4s` is four 32-bit adds. The translator has no vector
+// model, and it used to reach CreateAdd anyway: extractVectorValue truncates a
+// .4s operand to i32 and bitcasts it to float, and isFPRegister() recognises
+// Q, D, H and S registers but not V, so the bitcast back to an integer never
+// fired. With assertions on, that is "Tried to create an integer operation on
+// a non-integer type" and a core dump -- how all ten ARM64 binaries in ARCH-01
+// died. With assertions off it is invalid IR that nothing notices.
+//
+// These read the IR rather than relying on an assertion, so they fail in
+// either kind of build.
+//
+
+static bool hasIntegerOpcodeOnFpType(llvm::Function* f)
+{
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		auto* bo = dyn_cast<BinaryOperator>(&*it);
+		if (bo == nullptr || !bo->getType()->isFPOrFPVectorTy())
+		{
+			continue;
+		}
+		switch (bo->getOpcode())
+		{
+		case Instruction::Add:
+		case Instruction::Sub:
+		case Instruction::Mul:
+		case Instruction::And:
+		case Instruction::Or:
+		case Instruction::Xor: return true;
+		default: break;
+		}
+	}
+	return false;
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADD_vector_4s_is_a_pseudo_call)
+{
+	auto* f = translate(assemble("add v0.4s, v1.4s, v2.4s"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_FALSE(hasIntegerOpcodeOnFpType(f));
+	EXPECT_NE(nullptr, _module.getFunction("__asm_add"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADD_vector_2d_is_a_pseudo_call)
+{
+	auto* f = translate(assemble("add v3.2d, v4.2d, v5.2d"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_FALSE(hasIntegerOpcodeOnFpType(f));
+	EXPECT_NE(nullptr, _module.getFunction("__asm_add"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SUB_vector_2d_is_a_pseudo_call)
+{
+	auto* f = translate(assemble("sub v0.2d, v1.2d, v2.2d"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_FALSE(hasIntegerOpcodeOnFpType(f));
+	EXPECT_NE(nullptr, _module.getFunction("__asm_sub"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADD_scalar_is_still_a_real_add)
+{
+	// The guard must not swallow the scalar form: these are X registers, not
+	// V registers, and this is an ordinary 64-bit add.
+	setRegisters({
+		{ARM64_REG_X1, 0x1200},
+		{ARM64_REG_X2, 0x34},
+	});
+
+	emulate("add x0, x1, x2");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_X1, ARM64_REG_X2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0x1234},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, WholeVectorOperandIsNotALaneExtraction)
+{
+	// A whole-register operand carries an arrangement and no index, so
+	// vector_index is -1. Every lane branch in extractVectorValue multiplies
+	// it by a lane width and shifts by the result, which for -1 is a shift by
+	// 2^128-32: poison, then truncated to a lane type. There must be no shift
+	// by a constant that large.
+	auto* f = translate(assemble("eor v0.16b, v1.16b, v2.16b"));
+	ASSERT_NE(nullptr, f);
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		auto* bo = dyn_cast<BinaryOperator>(&*it);
+		if (bo == nullptr || bo->getOpcode() != Instruction::LShr)
+		{
+			continue;
+		}
+		if (auto* c = dyn_cast<ConstantInt>(bo->getOperand(1)))
+		{
+			EXPECT_LT(c->getValue().getActiveBits(), 64u) << "shift amount came from a negative vector_index";
+		}
+	}
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

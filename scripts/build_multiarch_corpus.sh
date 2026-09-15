@@ -15,10 +15,28 @@
 # x86-64 corpus, and four more architectures of them is several hundred files
 # that would go stale the moment a source changed.
 #
-# Static, and here is why it matters for what is being measured: a dynamically
-# linked cross binary leaves the algorithm in a PLT stub and the decompiler
-# with almost nothing to recover, so the run would look like a pass while
-# testing nothing. Static linking puts the real code in the file.
+# Dynamically linked by default, with the same flags the x86-64 corpus is built
+# with (scripts/decompiler/build_corpus_fixtures.sh: -O0 -fno-inline
+# -fno-builtin, no -static). That is the point: ARCH-01 is asking whether the
+# other four architectures reach x86-64's result, and it can only ask that if
+# it hands them the same kind of binary.
+#
+# This defaulted to -static, on the reasoning that "a dynamically linked cross
+# binary leaves the algorithm in a PLT stub and the decompiler with almost
+# nothing to recover". That reasoning is wrong, and checking it takes one
+# command: `nm` on a dynamically linked cross build finds bubble_sort and main
+# in the binary. Only the libc calls go through the PLT, exactly as in the
+# x86-64 corpus that the F1 gate scores every run. What -static actually added
+# was all of glibc: 400-700 KB instead of 8-70 KB, and ARM, MIPS and PowerPC
+# all ran the entire pipeline and then hit ARCH-01's 60-second timeout at
+# "Disassembly generation", 58 seconds in. The gate read 0/40 for a reason
+# that was about the corpus, not the decompiler.
+#
+# --link static is still here, and is worth running deliberately: the static
+# set drags in glibc's hand-written SIMD and string routines, and that is what
+# surfaced the ARM64 vector-add crash and the four ConstantInt::get assertions.
+# It is a harder measurement than the x86-64 corpus, not the same one, so it
+# does not belong in a parity gate.
 #
 # gcc only. There is no cross-clang in the distribution's toolchain packages,
 # so the compiler dimension the x86-64 corpus has (gcc and clang) is not
@@ -26,6 +44,7 @@
 #
 # Usage: bash scripts/build_multiarch_corpus.sh [--out DIR] [--opts "O0 O2"]
 #                                               [--arch LIST] [--quiet]
+#                                               [--link dynamic|static]
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -33,6 +52,7 @@ SRC="${ROOT}/tests/algorithm_recovery/sources"
 OUT="${ROOT}/tests/algorithm_recovery/corpus-multiarch"
 OPTS="O0"
 QUIET=0
+LINK="dynamic"
 
 # The four architectures src/capstone2llvmir has a translator for, with the
 # triple that builds each. 32-bit ARM is built for the hard-float EABI because
@@ -46,6 +66,12 @@ while [ $# -gt 0 ]; do
 		--opts)  OPTS="$2"; shift 2 ;;
 		--arch)  ARCHES="$2"; shift 2 ;;
 		--quiet) QUIET=1; shift ;;
+		--link)
+			case "$2" in
+				dynamic|static) LINK="$2" ;;
+				*) echo "build_multiarch_corpus: --link takes dynamic or static" >&2; exit 2 ;;
+			esac
+			shift 2 ;;
 		*) echo "build_multiarch_corpus: unknown option: $1" >&2; exit 2 ;;
 	esac
 done
@@ -78,11 +104,14 @@ for cfile in $(find "${SRC}" -name '*.c' \
 	stem="$(echo "${rel%.c}" | tr '/' '_')"
 	link=""
 	grep -q 'pthread' "${cfile}" && link="-pthread"
+	link_mode=""
+	[ "${LINK}" = static ] && link_mode="-static"
 	for pair in ${ARCHES}; do
 		arch="${pair%%:*}"; triple="${pair##*:}"
 		for opt in ${OPTS}; do
 			name="${stem}-${arch}-gcc-${opt}"
-			if "${triple}-gcc" "-${opt}" -std=c11 -static \
+			if "${triple}-gcc" "-${opt}" -std=c11 ${link_mode} \
+					-fno-inline -fno-builtin \
 					-o "${OUT}/${name}" "${cfile}" ${link} \
 					>>"${OUT}/.build.log" 2>&1; then
 				built=$((built + 1))
@@ -97,5 +126,40 @@ done
 say "build_multiarch_corpus: ${built} binaries in ${OUT} (${failed} failed)"
 if [ "${failed}" != 0 ]; then
 	grep '^FAILED ' "${OUT}/.build.log" | head -10 >&2
+	exit 1
+fi
+
+# The worry that made this default to -static was that a dynamic cross binary
+# would hold nothing but PLT stubs. It does not, and this says so every run
+# rather than leaving it to be re-argued: `main` must be a defined text symbol
+# in every binary produced. If a future toolchain change ever does hollow these
+# out, the corpus fails to build instead of quietly measuring nothing.
+hollow=0
+unverified=0
+for pair in ${ARCHES}; do
+	arch="${pair%%:*}"; triple="${pair##*:}"
+	if ! command -v "${triple}-nm" >/dev/null 2>&1; then
+		# ${triple}-gcc is required above and comes from the same binutils
+		# packaging, so this should not happen. Skipping silently would make
+		# the check weaker than the thing it stands in for, which is the
+		# failure mode it exists to prevent, so it fails instead.
+		echo "build_multiarch_corpus: ${triple}-nm not found; cannot verify ${arch}" >&2
+		unverified=$((unverified + 1))
+		continue
+	fi
+	for bin in "${OUT}"/*-"${arch}"-gcc-*; do
+		[ -f "${bin}" ] || continue
+		if ! "${triple}-nm" "${bin}" 2>/dev/null | grep -qE '^[0-9a-f]+ [Tt] main$'; then
+			echo "build_multiarch_corpus: no defined 'main' in ${bin}" >&2
+			hollow=$((hollow + 1))
+		fi
+	done
+done
+if [ "${hollow}" != 0 ]; then
+	echo "build_multiarch_corpus: ${hollow} binary/binaries carry no code of their own" >&2
+	exit 1
+fi
+if [ "${unverified}" != 0 ]; then
+	echo "build_multiarch_corpus: ${unverified} architecture(s) could not be checked" >&2
 	exit 1
 fi

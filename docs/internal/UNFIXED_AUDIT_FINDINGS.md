@@ -2123,6 +2123,171 @@ the one before it. A single ARCH-01 number cannot distinguish "one defect" from
 finding them one at a time costs. The sweep is the answer to that, not another
 round trip.
 
+### ARCH-01's 0/40 was two different failures, and one of them was the corpus
+
+Run 287, at `784324e`, still read 0/40 — but the forty logs no longer say the
+same thing, and that is the finding.
+
+**Thirty of them are no longer crashes.** ARM, MIPS and PowerPC now run the
+entire pipeline. `binary_search-mips-gcc-O0` reaches *Disassembly generation*
+at 57.88 s and is killed by ARCH-01's 60-second timeout; PowerPC and ARM get
+to *Simple types recovery* at 57.65 s and 59.72 s. The four `ConstantInt::get`
+fixes did what they were supposed to do. What stops those thirty is wall clock.
+
+**And the wall clock is my own doing.** `build_multiarch_corpus.sh` passed
+`-static`, on this reasoning, written in its own header:
+
+> a dynamically linked cross binary leaves the algorithm in a PLT stub and the
+> decompiler with almost nothing to recover
+
+That is wrong, and one command falsifies it: `aarch64-linux-gnu-nm` on a
+dynamically linked cross build finds `bubble_sort` and `main` in the binary.
+Only the libc calls go through the PLT — exactly as in
+`tests/algorithm_recovery/corpus`, the x86-64 corpus the F1 gate scores every
+run and which is built with no `-static` at all. What `-static` added was the
+whole of glibc: 400–700 KB per binary against 8–70 KB.
+
+So ARCH-01 was not measuring what it claimed. Its question is whether the other
+four architectures reach x86-64's result, and it was handing them a
+categorically harder input than the x86-64 gates get. The builder now defaults
+to the same flags as the x86-64 corpus (`-O0 -fno-inline -fno-builtin`,
+dynamic), and `--link static` keeps the harder set for deliberate use — it is
+worth keeping, because glibc's hand-written SIMD is what surfaced every bug in
+this section.
+
+The claim is now checked rather than argued: the builder fails if `main` is not
+a defined text symbol in every binary it produces.
+
+What that changes, measured (COV-01 on the dynamic corpus, against the same
+tool's numbers for the static one):
+
+| arch    | static          | dynamic |
+|---------|-----------------|---------|
+| arm     | 0.8981          | 0.9581  |
+| arm64   | 0.9826          | 0.9998  |
+| mips    | 0.9952          | 1.0000  |
+| powerpc | 0.9942 → 0.9978 | 1.0000  |
+
+(PowerPC's static figure is before → after the load/store work below. Nothing
+in this batch changes any dispatch table for the other three, so their two
+columns differ only by corpus. Both ARM figures are lower bounds with a wide
+error bar — static glibc interleaves ARM and Thumb, COV-01 disassembles in one
+mode, and the skipped-byte column says so: 474,577 static, 426 dynamic.)
+
+Instruction coverage on binaries comparable to the x86-64 corpus is already
+essentially complete for three of the four. Whatever ARCH-01 finds next, it is
+not mostly a coverage problem.
+
+### ARM64: an integer add on a float, in all ten binaries
+
+The tenth of ARCH-01's forty is a different failure, and a real translator bug.
+All ten ARM64 binaries die in the same place:
+
+```
+Assertion `getType()->isIntOrIntVectorTy() && "Tried to create an integer
+operation on a non-integer type!"' failed.
+  ... Capstone2LlvmIrTranslatorArm64_impl::translateAdd (arm64.cpp:1255)
+```
+
+`add v0.4s, v1.4s, v2.4s` is four 32-bit adds. Two things have to be wrong for
+it to reach `CreateAdd`:
+
+1. `extractVectorValue` extracts a lane even when there is no lane to extract.
+   A whole-register operand carries an arrangement and `vector_index == -1`;
+   every branch of that switch multiplies the index by a lane width and shifts
+   by the result, so -1 became a shift by 2^128−32 — poison — then a truncation
+   of the poison to a lane type. For the S arrangements that type is `float`.
+2. `translateAdd` bitcasts FP operands back to integers only when
+   `isFPRegister(operands[0])`, and that predicate knows Q, D, H and S
+   registers but not V. So the bitcast never fired.
+
+Both are fixed. A negative index now returns the register whole, which is also
+exactly right for the bitwise vector instructions (`eor`/`and`/`orr`/`mov` on
+`.16b` are lane-agnostic), and `translateAdd`/`translateSub` take the
+`ifVectorGeneratePseudo` guard that five other translators in the same file
+already use — a lanewise add is not a 128-bit add, and saying "not modelled" is
+better than emitting the wrong arithmetic.
+
+**Reproduced without an assertions build.** The distribution LLVM is compiled
+with `NDEBUG`, so the assertion cannot fire here. The regression tests do not
+depend on it: they read the emitted IR and fail on an integer opcode carrying a
+floating-point type, and on a shift by a constant wider than 64 bits. Reverting
+either fix makes them fail with exactly the defect the CI log named.
+
+### PowerPC had no floating point at all
+
+Every one of the 44 `PPC_INS_F*` entries in the dispatch table was `nullptr`,
+and so were all sixteen float load/store forms — while `powerpc_init.cpp` maps
+`PPC_REG_F0..F31` to `double`. The register file was modelled and nothing ever
+wrote to it. COV-01 put `STFD` and `LFD` at the top of PowerPC's untranslated
+list, 0.37% of every instruction in the corpus between them.
+
+This is not a coverage statistic. A float load that becomes
+`call @__asm_lfd(...)` severs the dataflow the rest of the decompiler runs on,
+and the store form was worse: capstone marks the memory operand as read, so the
+generic pseudo-asm fallback emitted a *load* from the address a `stfd` stores
+to.
+
+Fixed for the loads and stores — `LFS LFSU LFSX LFSUX LFD LFDU LFDX LFDUX` and
+the eight `STF` forms — and for the 64-bit integer forms, which were equally
+absent and are every pointer load in a ppc64 binary: `LD LDU LDX LDUX STD STDU
+STDX STDUX LWA LWAX LWAUX`. PowerPC's corpus coverage goes 0.9942 → 0.9978
+(1.0000 on the dynamic corpus), and its suite 808 → 834 tests.
+
+The arithmetic — `FADD FSUB FMUL FDIV FMR FABS FNEG FCMPU`, the `FMADD`
+family, the conversions — is still `nullptr`. It is the next piece of work, not
+a thing this section claims to have done.
+
+**Not doing, and why it would be cheating.** `SC`, `MFFS`, `TRAP`,
+`DCBST`/`ICBI`/`DCBZ`, MIPS `RDHWR` (0.45% of MIPS, the single largest
+untranslated entry it has), ARM64 `MRS` and `SVC` all already reach
+`translatePseudoAsmGeneric`, which reads capstone's per-operand access flags
+and emits exactly the call an explicit pseudo-asm wiring would. Pointing their
+table entries at a helper would move roughly 1% of MIPS and 0.5% of ARM64 out
+of COV-01's untranslated column without changing one instruction of output.
+That is moving the metric, not the product.
+
+### Not one of the 367 corpus sources contains a float
+
+```
+$ find tests/algorithm_recovery/sources -name '*.c' | wc -l
+367
+$ find tests/algorithm_recovery/sources -name '*.c' | xargs grep -lE '\b(float|double)\b' | wc -l
+0
+```
+
+CC-01, DET-01, the F1 recovery gate and ARCH-01 all run on this corpus. None of
+them has ever put a floating-point instruction through the decompiler — on
+*any* architecture, x86-64 included. "216/216 emitted C files compile" is 216
+integer programs.
+
+That is the honest limit on the PowerPC floating-point work above: it is
+covered by 834 unit tests in `tests/capstone2llvmir`, and by no end-to-end gate
+at all, because no end-to-end gate has anything to run it on.
+
+Two related gaps, found while checking whether the FP work would even reach the
+emitted C:
+
+  * **The PowerPC path is otherwise complete.** `powerpc_conv.cpp` already
+    lists `_paramFPRegs` F1–F8 and `_returnFPRegs` F1. The machinery was
+    waiting for values that no instruction produced.
+
+  * **32-bit ARM has no FP registers in its calling convention at all.**
+    `arm_conv.cpp` sets `_numOfFPRegsPerParam = 2` and
+    `_numOfVectorRegsPerParam = 4` and then declares neither `_paramFPRegs` nor
+    `_returnFPRegs` — the only one of the eleven conventions that does not.
+    `arm_init.cpp` models `ARM_REG_S0` as f32 and `ARM_REG_D0` as f64, so the
+    registers exist. The corpus is built for `arm-linux-gnueabihf`, whose ABI
+    passes floats in s0–s15 and returns in s0, so on that ABI every float
+    parameter and return is currently invisible to parameter recovery.
+
+    Not fixed here, and not a one-line fix: `arm_init.cpp` gives S and D
+    registers separate globals rather than modelling the aliasing, so choosing
+    `_paramFPRegs = {S0..S15}` or `{D0..D7}` decides which half of the ABI
+    works. And which list applies at all depends on EF_ARM_ABI_FLOAT_HARD in
+    the ELF header, which nothing reads. Writing the register list without
+    settling those two would be guessing.
+
 ## The "nobody builds this" check never asked it about src/
 
 **Closed by extending `check_cmake_sources.sh`.** The check exists to catch

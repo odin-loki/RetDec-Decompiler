@@ -143,6 +143,8 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateLi(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLis(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLoad(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateLoadFloat(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateLoadFloatIndexed(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLoadIndexed(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateMcrf(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateMfctr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
@@ -170,6 +172,8 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateSrwi(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateSraw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateStore(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateStoreFloat(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateStoreFloatIndexed(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateStoreIndexed(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateSubf(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateSubfc(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);

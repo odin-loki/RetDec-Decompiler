@@ -49,9 +49,9 @@ WORKDIR="${C2L_WORKDIR:-}"
 # tests should not fail the gate, losing them must.
 readonly MIN_X86=1965
 readonly MIN_ARM=534
-readonly MIN_ARM64=466
+readonly MIN_ARM64=471
 readonly MIN_MIPS=598
-readonly MIN_POWERPC=808
+readonly MIN_POWERPC=834
 readonly MIN_EMUL=10
 
 # The revisions cmake/deps.cmake pins. Kept in step with it by CI: if they

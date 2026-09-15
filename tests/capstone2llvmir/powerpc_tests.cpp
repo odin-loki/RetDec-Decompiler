@@ -9536,6 +9536,300 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, LhbrxLoadAttachesPointeeMetadata)
 	EXPECT_TRUE(found);
 }
 
+//
+// Floating-point loads and stores.
+//
+// The FPRs are modelled as doubles, so a single-precision access converts:
+// widening on the way in, narrowing on the way out. These pin that, and pin
+// that the datum written to memory is 4 bytes for the S forms and 8 for the D
+// forms -- which is the part a bitcast would get wrong.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LFD)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+	});
+	setMemory({
+		{0x1120, 3.14_f64},
+	});
+
+	emulate("lfd 2, 0x120, 1");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F2, 3.14_f64},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1120});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LFS)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+	});
+	setMemory({
+		{0x1120, 1.5_f32},
+	});
+
+	emulate("lfs 2, 0x120, 1");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F2, 1.5_f64},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1120});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LFDU)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+	});
+	setMemory({
+		{0x1120, 3.14_f64},
+	});
+
+	emulate("lfdu 2, 0x120, 1");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F2, 3.14_f64},
+		{PPC_REG_R1, 0x1120},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1120});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LFDX)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+		{PPC_REG_R2, 0x120},
+	});
+	setMemory({
+		{0x1120, 3.14_f64},
+	});
+
+	emulate("lfdx 3, 1, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F3, 3.14_f64},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1120});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STFD)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+		{PPC_REG_F2, 3.14_f64},
+	});
+
+	emulate("stfd 2, 0x120, 1");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_F2});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1120, 3.14_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STFS)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+		{PPC_REG_F2, 1.5_f64},
+	});
+
+	emulate("stfs 2, 0x120, 1");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_F2});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1120, 1.5_f32},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STFDU)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+		{PPC_REG_F2, 3.14_f64},
+	});
+
+	emulate("stfdu 2, 0x120, 1");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_F2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R1, 0x1120},
+	});
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1120, 3.14_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STFDX)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+		{PPC_REG_R2, 0x120},
+		{PPC_REG_F3, 3.14_f64},
+	});
+
+	emulate("stfdx 3, 1, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_R2, PPC_REG_F3});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1120, 3.14_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, FloatLoadAttachesPointeeMetadata)
+{
+	ALL_MODES;
+	auto* f = translate(assemble("lfd 2, 0x120, 1"));
+	ASSERT_NE(nullptr, f);
+	bool found = false;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* l = dyn_cast<LoadInst>(&*it))
+		{
+			if (l->getMetadata("retdec.pointee"))
+			{
+				found = true;
+				break;
+			}
+		}
+	}
+	EXPECT_TRUE(found);
+}
+
+//
+// 64-bit integer loads and stores. ppc64 only: on ppc32 these encodings do
+// not exist, and the register file is 32 bits wide.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LD)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+	});
+	setMemory({
+		{0x1120, 0x123456789abcdef0_qw},
+	});
+
+	emulate("ld 3, 0x120, 1");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0x123456789abcdef0},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1120});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STD)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+		{PPC_REG_R3, 0x123456789abcdef0},
+	});
+
+	emulate("std 3, 0x120, 1");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_R3});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1120, 0x123456789abcdef0_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LDX)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+		{PPC_REG_R2, 0x120},
+	});
+	setMemory({
+		{0x1120, 0x123456789abcdef0_qw},
+	});
+
+	emulate("ldx 3, 1, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0x123456789abcdef0},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1120});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LWA)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+	});
+	setMemory({
+		{0x1120, 0xfffffffe_dw},
+	});
+
+	emulate("lwa 3, 0x120, 1");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0xfffffffffffffffe},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1120});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
