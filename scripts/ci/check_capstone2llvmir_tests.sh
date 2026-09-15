@@ -48,7 +48,7 @@ WORKDIR="${C2L_WORKDIR:-}"
 # The measured counts, per architecture. A floor, not an equality: adding
 # tests should not fail the gate, losing them must.
 readonly MIN_X86=1965
-readonly MIN_ARM=534
+readonly MIN_ARM=574
 readonly MIN_ARM64=471
 readonly MIN_MIPS=598
 readonly MIN_POWERPC=880

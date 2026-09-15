@@ -2247,6 +2247,98 @@ table entries at a helper would move roughly 1% of MIPS and 0.5% of ARM64 out
 of COV-01's untranslated column without changing one instruction of output.
 That is moving the metric, not the product.
 
+### 32-bit ARM had no floating point either, and one entry was unreachable
+
+The last of the five. All 149 `ARM_INS_V*` entries were `nullptr`, so every
+floating-point instruction on 32-bit ARM was an opaque `__asm_*` call -- while
+`arm_init.cpp` models 32 S registers as f32 and 32 D as f64. A six-line dot
+product built for `arm-linux-gnueabihf` emits `vldr`, `vstr`, `vmul.f64`,
+`vadd.f64` and `vmov.f64` in one function, none of which reached the rest of
+the decompiler.
+
+Scalar VFP is now translated: VLDR VSTR VADD VSUB VMUL VDIV VNMUL VNEG VABS
+VSQRT VMLA VMLS VNMLA VNMLS VFMA VFMS VFNMA VFNMS VCMP VCMPE VCVT VCVTR VMOV
+VMRS. NEON is not, and says so: anything whose `cs_arm::vector_data` is an
+integer type, or whose operands are Q registers or carry a lane index, goes to
+`translatePseudoAsmGeneric` -- the answer arm64 already gives through
+`ifVectorGeneratePseudo`. A lanewise add is not a scalar add.
+
+**The operand shapes were measured, not assumed.** Encodings taken from a real
+`arm-linux-gnueabihf-gcc -O0` build and run through the capstone revision
+`cmake/deps.cmake` pins. Three would have been wrong:
+
+  * `vcmp.f64 d7, #0` gives an **IMM 0**, not an FP operand, so the zero has to
+    be built from the other operand's type.
+  * `vmov d6, r0, r1` is low-word-first -- confirmed from the `ldrd r0, r1` and
+    `__floatdidf` call that precede it in real output.
+  * `vmrs`'s operands are both marked `access=0`, so the access flags cannot
+    drive it.
+
+**And one entry could never have fired.** Capstone 5.0.9 decodes
+`vmrs APSR_nzcv, fpscr` as `ARM_INS_FMSTAT` (58), the pre-UAL alias, while
+printing the mnemonic as "vmrs". `ARM_INS_VMRS` is 378 and is the general
+`vmrs rN, fpscr` form. The ARM table had no key for 58 at all, so wiring
+`ARM_INS_VMRS` looked exactly like a fix and did nothing -- which is what it
+did, until the test said so.
+
+This is the same shape as the duplicate `ARM64_INS_HINT` key: a dispatch entry
+that is never reached is dead, and it reads as done. C2L-01 guards the
+duplicate case textually; this one is only catchable by assembling the
+instruction and asserting the translation, which is what the 40 new ARM tests
+do. A count of what each table omits, for the record:
+
+| arch    | table keys | capstone ids | absent |
+|---------|-----------|--------------|--------|
+| arm     | 437       | 471          | 36     |
+| arm64   | 468       | 1288         | 821    |
+| mips    | 627       | 625          | 0      |
+| powerpc | 1192      | 1726         | 536    |
+| x86     | 1343      | 1523         | 182    |
+
+Most of those are unreachable-in-practice (arm64's are SVE and SME, which the
+table predates) and all of them still reach the pseudo-asm fallback, so an
+absent key is latent rather than broken. It becomes a defect the moment someone
+wires the canonical name for an encoding capstone reports under an alias.
+
+**Verified on the floating-point binaries**, which is the only evidence that
+counts here: COV-01 over cross-built float programs reports powerpc **1.0000**,
+mips 0.9916 (`MTHC1`), arm64 0.9846 (`LD1`/`ST1`). The 32-bit ARM figure cannot
+be read the same way -- COV-01 disassembles in one mode and this corpus is
+Thumb -- so ARM's evidence is the 40 tests, which run in both CS_MODE_ARM and
+CS_MODE_THUMB.
+
+### ARCH-01: 40/40, and the floors go in
+
+Run 288 at `517db16`:
+
+```
+ARCH-01: arm       10/10   1.0000
+ARCH-01: arm64     10/10   1.0000
+ARCH-01: mips      10/10   1.0000
+ARCH-01: powerpc   10/10   1.0000
+ARCH-01: overall   40/40   1.0000
+```
+
+against CC-01's 216/216 for x86-64 in the same run. Three commits earlier it
+was 0/40 on every architecture. The four defects between those two numbers:
+
+| what | where |
+|------|-------|
+| `ConstantInt::get(Type*, uint64_t)` asserts instead of truncating | four sites, each hidden behind the last |
+| `ARM64_VAS_2D` missing from a switch with a throwing default | `extractVectorValue` |
+| a lane extracted from a whole-register operand, yielding a `float` to an integer add | `extractVectorValue`, `translateAdd` |
+| `-static`, which made the corpus a harder problem than the one x86-64 is asked | `build_multiarch_corpus.sh` |
+
+Only the first was visible as "the decompiler is broken". The second and third
+needed the failure logs read rather than the wall clock; the fourth was mine,
+and needed the premise checked rather than believed.
+
+The step is a floor now, per architecture and set at what was measured, which
+is the road CC-01 took from 0/216 to 216/216. Per architecture and not in
+aggregate: an overall floor of 1.0 would pass while one architecture went to
+zero and another gained the same count, which is exactly what a parity gate
+must not do.
+
 ### PowerPC floating-point arithmetic, and the emulator that could not run it
 
 The load/store half landed first. This is the other 44 entries: `FADD FSUB

@@ -7,6 +7,9 @@
 
 #include <llvm/IR/InstIterator.h>
 
+#include <cstring>
+#include <cstdint>
+#include <limits>
 #include "capstone2llvmir/capstone2llvmir_tests.h"
 #include "retdec/capstone2llvmir/arm/arm.h"
 
@@ -6035,6 +6038,406 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, StrdStoreAttachesPointeeMetadata)
 		}
 	}
 	EXPECT_TRUE(found);
+}
+
+//
+// Scalar VFP.
+//
+// All 149 ARM_INS_V* entries were nullptr, so every floating-point instruction
+// on 32-bit ARM was an opaque __asm_* call. These cover the set a C compiler
+// emits for float and double, and the last one covers what must NOT happen:
+// a NEON instruction must not be translated as if it were scalar.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VLDR_d)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x1000},
+	});
+	setMemory({
+		{0x1000, 3.5_f64},
+	});
+
+	emulate("vldr d0, [r1]");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, 3.5_f64},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSTR_d)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x1000},
+		{ARM_REG_D0, 3.5_f64},
+	});
+
+	emulate("vstr d0, [r1]");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_D0});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 3.5_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSTR_s_is_four_bytes)
+{
+	ALL_MODES;
+
+	// An S register is 32 bits. Storing it as 8 would be the mistake worth
+	// catching, so the expectation pins the width, not just the value.
+	setRegisters({
+		{ARM_REG_R1, 0x1000},
+		{ARM_REG_S0, 1.5_f32},
+	});
+
+	emulate("vstr s0, [r1]");
+
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 1.5_f32},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VADD_f64)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, 1.5_f64},
+		{ARM_REG_D2, 2.25_f64},
+	});
+
+	emulate("vadd.f64 d0, d1, d2");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_D1, ARM_REG_D2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, 3.75_f64},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSUB_f64)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, 5.5_f64},
+		{ARM_REG_D2, 2.25_f64},
+	});
+
+	emulate("vsub.f64 d0, d1, d2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, 3.25_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMUL_f32)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_S1, 1.5_f32},
+		{ARM_REG_S2, 4.0_f32},
+	});
+
+	emulate("vmul.f32 s0, s1, s2");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_S1, ARM_REG_S2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_S0, 6.0_f32},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VDIV_f64)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, 9.0_f64},
+		{ARM_REG_D2, 4.0_f64},
+	});
+
+	emulate("vdiv.f64 d0, d1, d2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, 2.25_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VNEG_f64)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, 3.5_f64},
+	});
+
+	emulate("vneg.f64 d0, d1");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, -3.5},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VABS_f64)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, -3.5},
+	});
+
+	emulate("vabs.f64 d0, d1");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, 3.5_f64},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VSQRT_f64)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, 16.0_f64},
+	});
+
+	emulate("vsqrt.f64 d0, d1");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, 4.0_f64},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVT_f64_s32)
+{
+	ALL_MODES;
+
+	// The source S register holds a signed integer's BIT PATTERN, not a
+	// number: vector_data is F64S32 and that is the only thing that says so.
+	float src;
+	std::int32_t bits = -5;
+	std::memcpy(&src, &bits, sizeof(src));
+
+	setRegisters({
+		{ARM_REG_S1, src},
+	});
+
+	emulate("vcvt.f64.s32 d0, s1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_S1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, -5.0},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVT_s32_f64)
+{
+	ALL_MODES;
+
+	// And back: the destination S register receives a bit pattern.
+	float expected;
+	std::int32_t bits = 3;
+	std::memcpy(&expected, &bits, sizeof(expected));
+
+	setRegisters({
+		{ARM_REG_D1, 3.7_f64},
+	});
+
+	emulate("vcvt.s32.f64 s0, d1");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_S0, expected},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCVT_f32_f64)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_D1, 2.5_f64},
+	});
+
+	emulate("vcvt.f32.f64 s0, d1");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_S0, 2.5_f32},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMOV_s_from_gpr_is_a_bit_move)
+{
+	ALL_MODES;
+
+	// `vmov s0, r1` moves the bits. If it converted the number instead, s0
+	// would hold 1078530011.0f rather than the float those bits spell.
+	float expected;
+	std::uint32_t bits = 0x40490fdb; // float pi
+	std::memcpy(&expected, &bits, sizeof(expected));
+
+	setRegisters({
+		{ARM_REG_R1, 0x40490fdb},
+	});
+
+	emulate("vmov s0, r1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_S0, expected},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMOV_gpr_from_s_is_a_bit_move)
+{
+	ALL_MODES;
+
+	float src;
+	std::uint32_t bits = 0x40490fdb;
+	std::memcpy(&src, &bits, sizeof(src));
+
+	setRegisters({
+		{ARM_REG_S1, src},
+	});
+
+	emulate("vmov r0, s1");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x40490fdb},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMOV_d_from_gpr_pair_is_low_first)
+{
+	ALL_MODES;
+
+	// `vmov d0, r0, r1` puts r0 in the low half. Measured from a real build:
+	// gcc emits `ldrd r0, r1, [...]` and then this, so r0 is the low word.
+	double expected;
+	std::uint64_t bits = 0x3ff0000000000000ULL; // 1.0
+	std::memcpy(&expected, &bits, sizeof(expected));
+
+	setRegisters({
+		{ARM_REG_R0, 0x00000000},
+		{ARM_REG_R1, 0x3ff00000},
+	});
+
+	emulate("vmov d0, r0, r1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R0, ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, expected},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCMP_f64_packs_fpscr)
+{
+	ALL_MODES;
+
+	// vcmp writes FPSCR[31:28]. For 1.0 < 2.0 the ARM flags are N=1 (less
+	// than), Z=0, C=0 (not greater-or-equal, not unordered), V=0 (ordered),
+	// which packs to 0x80000000. These are not the integer compare's flags:
+	// C and V mean different things here.
+	setRegisters({
+		{ARM_REG_D0, 1.0_f64},
+		{ARM_REG_D1, 2.0_f64},
+	});
+
+	emulate("vcmp.f64 d0, d1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_D0, ARM_REG_D1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_FPSCR_NZCV, 0x80000000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VCMP_f64_unordered)
+{
+	ALL_MODES;
+
+	// A NaN on either side is unordered: V is set and C with it, and N and Z
+	// are clear. Nothing else distinguishes this from an ordinary compare, so
+	// without it the V bit could be wired to anything.
+	setRegisters({
+		{ARM_REG_D0, std::numeric_limits<double>::quiet_NaN()},
+		{ARM_REG_D1, 2.0_f64},
+	});
+
+	emulate("vcmp.f64 d0, d1");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_FPSCR_NZCV, 0x30000000},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMRS_unpacks_into_cpsr)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_FPSCR_NZCV, 0x80000000},
+	});
+
+	emulate("vmrs APSR_nzcv, fpscr");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_FPSCR_NZCV});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_CPSR_N, true},
+		{ARM_REG_CPSR_Z, false},
+		{ARM_REG_CPSR_C, false},
+		{ARM_REG_CPSR_V, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VADD_i32_is_neon_and_stays_a_pseudo_call)
+{
+	ALL_MODES;
+
+	// `vadd.i32 d0, d1, d2` is two 32-bit lane adds, not one f64 add. The
+	// registers are the same D registers the scalar form uses, so only
+	// cs_arm::vector_data tells them apart. Translating this as a scalar
+	// float add would be silently wrong, which is the whole reason the guard
+	// exists.
+	auto* f = translate(assemble("vadd.i32 d0, d1, d2"));
+	ASSERT_NE(nullptr, f);
+	// getPseudoAsmFunction() names the function after the mnemonic, and the
+	// mnemonic carries the type suffix: "__asm_vadd.i32", not "__asm_vadd".
+	EXPECT_NE(nullptr, _module.getFunction("__asm_vadd.i32"));
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		EXPECT_FALSE(
+			isa<llvm::BinaryOperator>(&*it) && cast<llvm::BinaryOperator>(&*it)->getOpcode() == llvm::Instruction::FAdd)
+			<< "NEON vadd.i32 was translated as a scalar float add";
+	}
 }
 
 } // namespace tests

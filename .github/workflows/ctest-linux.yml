@@ -333,16 +333,20 @@ jobs:
       # the first thing to ask what the decompiler does with a whole binary of
       # theirs.
       #
-      # A measurement, not a floor: no --min-rate and no --arch-min, so it
-      # reports the rates and exits 0. Nobody has ever run these, and a floor
-      # picked before the first number is either vacuous or a fiction. The
-      # floors go in once this has printed a rate, which is the road CC-01
-      # took from 0/216 to 216/216.
+      # Now a floor, because there is a measurement to floor. Run 288 at
+      # 517db16 read 40/40, every architecture at 1.0000 -- the same rate CC-01
+      # reports for x86-64 -- after three commits that took it from 0/40. The
+      # road CC-01 took from 0/216 to 216/216, and the same discipline: measure
+      # first, then gate at what was measured.
+      #
+      # Per architecture, not in aggregate. An overall floor of 1.0 would pass
+      # while one architecture went to zero and another gained the same number
+      # of binaries; that is precisely what a parity gate must not do.
       #
       # Bounded on purpose: --limit 40 over a corpus sorted by name gives ten
       # programs across all four architectures, and at --timeout 60 the worst
-      # case is bounded rather than a job that hangs for hours on its first run.
-      - name: ARCH-01 non-x86 decompilation (measurement)
+      # case is bounded rather than a job that hangs for hours.
+      - name: ARCH-01 non-x86 decompilation
         if: always()
         run: |
           sudo apt-get install -y -qq \
@@ -356,6 +360,7 @@ jobs:
           bash scripts/ci/check_multiarch_decompile.sh \
             --decompiler "$DEC" --corpus /tmp/ma-corpus \
             --limit 40 --timeout 60 \
+            --arch-min "arm=1.0 arm64=1.0 mips=1.0 powerpc=1.0" \
             --save-failures arch01-failures 2>&1 | tee /tmp/arch01.log
           {
             echo "### ARCH-01 non-x86 decompilation"

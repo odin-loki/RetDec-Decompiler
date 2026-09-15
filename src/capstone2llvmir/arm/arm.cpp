@@ -7,6 +7,8 @@
 
 #include <iomanip>
 
+#include <llvm/IR/Intrinsics.h>
+
 #include "capstone2llvmir/arm/arm_impl.h"
 
 namespace retdec {
@@ -375,6 +377,490 @@ uint32_t Capstone2LlvmIrTranslatorArm_impl::sysregNumberTranslation(uint32_t r)
 	{
 		return r;
 	}
+}
+
+//
+//==============================================================================
+// Scalar VFP.
+//==============================================================================
+//
+// All 149 ARM_INS_V* entries were nullptr, so on 32-bit ARM every floating
+// point instruction was an opaque __asm_* call -- while arm_init.cpp models 32
+// S registers as f32 and 32 D registers as f64. A six-line dot product built
+// for arm-linux-gnueabihf emits vldr, vstr, vmul.f64, vadd.f64 and vmov.f64 in
+// one function, and none of them reached the rest of the decompiler.
+//
+// Scalar only. NEON needs a vector model this translator does not have, and
+// cs_arm::vector_data says which is which: F32 and F64 for the scalar forms,
+// I8..U64 for the lanewise ones. Anything lanewise, anything on a Q register,
+// goes to the pseudo-asm fallback -- the same answer arm64 gives through
+// ifVectorGeneratePseudo, and an honest one, because a lanewise add is not a
+// scalar add.
+//
+
+bool Capstone2LlvmIrTranslatorArm_impl::isFpRegister(uint32_t r)
+{
+	return (r >= ARM_REG_S0 && r <= ARM_REG_S31) || (r >= ARM_REG_D0 && r <= ARM_REG_D31);
+}
+
+/**
+ * @brief Is this the scalar VFP form, as opposed to a NEON one?
+ *
+ * Every register operand must be an S or a D -- never a Q -- and the data type
+ * must be the single or double float, or unset, which is what VLDR, VSTR and
+ * VMOV carry.
+ */
+bool Capstone2LlvmIrTranslatorArm_impl::isScalarVfp(cs_arm* ai)
+{
+	if (ai->vector_data != ARM_VECTORDATA_INVALID && ai->vector_data != ARM_VECTORDATA_F32
+		&& ai->vector_data != ARM_VECTORDATA_F64)
+	{
+		return false;
+	}
+	for (unsigned j = 0; j < ai->op_count; ++j)
+	{
+		auto& op = ai->operands[j];
+		if (op.type != ARM_OP_REG)
+		{
+			continue;
+		}
+		if (op.reg >= ARM_REG_Q0 && op.reg <= ARM_REG_Q15)
+		{
+			return false;
+		}
+		if (op.vector_index >= 0)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
+ * The type a VFP operand is read and written at: f32 for an S register, f64
+ * for a D. VLDR, VSTR and VMOV carry no vector_data, so the register is the
+ * only thing that says.
+ */
+llvm::Type* Capstone2LlvmIrTranslatorArm_impl::vfpTypeOfReg(uint32_t r, llvm::IRBuilder<>& irb)
+{
+	if (r >= ARM_REG_D0 && r <= ARM_REG_D31)
+	{
+		return irb.getDoubleTy();
+	}
+	return irb.getFloatTy();
+}
+
+llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadVfpOp(cs_arm_op& op, llvm::IRBuilder<>& irb, llvm::Type* ty)
+{
+	auto* v = loadOp(op, irb, ty);
+	return generateTypeConversion(irb, v, ty, eOpConv::FPCAST_OR_BITCAST);
+}
+
+/**
+ * ARM_INS_VLDR, ARM_INS_VSTR
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateVfpLoadStore(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, ai, irb);
+
+	if (!isScalarVfp(ai) || ai->operands[0].type != ARM_OP_REG || !isFpRegister(ai->operands[0].reg))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* ty = vfpTypeOfReg(ai->operands[0].reg, irb);
+
+	if (i->id == ARM_INS_VLDR)
+	{
+		op1 = loadOp(ai->operands[1], irb, ty);
+		storeOp(ai->operands[0], op1, irb, eOpConv::FPCAST_OR_BITCAST);
+	}
+	else
+	{
+		op0 = loadVfpOp(ai->operands[0], irb, ty);
+		storeOp(ai->operands[1], op0, irb);
+	}
+}
+
+/**
+ * ARM_INS_VADD, ARM_INS_VSUB, ARM_INS_VMUL, ARM_INS_VDIV, ARM_INS_VNMUL
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateVfpArithm(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ai, irb);
+
+	if (!isScalarVfp(ai) || !isFpRegister(ai->operands[0].reg))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* ty = vfpTypeOfReg(ai->operands[0].reg, irb);
+	op1 = loadVfpOp(ai->operands[1], irb, ty);
+	op2 = loadVfpOp(ai->operands[2], irb, ty);
+
+	llvm::Value* val = nullptr;
+	switch (i->id)
+	{
+	case ARM_INS_VADD: val = irb.CreateFAdd(op1, op2); break;
+	case ARM_INS_VSUB: val = irb.CreateFSub(op1, op2); break;
+	case ARM_INS_VMUL: val = irb.CreateFMul(op1, op2); break;
+	case ARM_INS_VDIV: val = irb.CreateFDiv(op1, op2); break;
+	case ARM_INS_VNMUL: val = irb.CreateFNeg(irb.CreateFMul(op1, op2)); break;
+	default: return;
+	}
+	storeOp(ai->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
+}
+
+/**
+ * ARM_INS_VNEG, ARM_INS_VABS, ARM_INS_VSQRT
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateVfpUnary(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, ai, irb);
+
+	if (!isScalarVfp(ai) || !isFpRegister(ai->operands[0].reg))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* ty = vfpTypeOfReg(ai->operands[0].reg, irb);
+	op1 = loadVfpOp(ai->operands[1], irb, ty);
+
+	llvm::Value* val = nullptr;
+	switch (i->id)
+	{
+	case ARM_INS_VNEG: val = irb.CreateFNeg(op1); break;
+	case ARM_INS_VABS:
+		val = irb.CreateCall(llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fabs, ty), {op1});
+		break;
+	case ARM_INS_VSQRT:
+		val = irb.CreateCall(llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::sqrt, ty), {op1});
+		break;
+	default: return;
+	}
+	storeOp(ai->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
+}
+
+/**
+ * The multiply-accumulate forms, where the destination is also a source:
+ * ARM_INS_VMLA, ARM_INS_VMLS, ARM_INS_VNMLA, ARM_INS_VNMLS,
+ * ARM_INS_VFMA, ARM_INS_VFMS, ARM_INS_VFNMA, ARM_INS_VFNMS
+ *
+ * The VF* forms are fused, the others are not; both are llvm.fma here, because
+ * the difference is a double rounding this IR has no way to express.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateVfpMla(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ai, irb);
+
+	if (!isScalarVfp(ai) || !isFpRegister(ai->operands[0].reg))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* ty = vfpTypeOfReg(ai->operands[0].reg, irb);
+	auto* acc = loadVfpOp(ai->operands[0], irb, ty);
+	op1 = loadVfpOp(ai->operands[1], irb, ty);
+	op2 = loadVfpOp(ai->operands[2], irb, ty);
+
+	bool negProduct =
+		(i->id == ARM_INS_VMLS || i->id == ARM_INS_VFMS || i->id == ARM_INS_VNMLA || i->id == ARM_INS_VFNMA);
+	bool negAcc =
+		(i->id == ARM_INS_VNMLA || i->id == ARM_INS_VNMLS || i->id == ARM_INS_VFNMA || i->id == ARM_INS_VFNMS);
+
+	auto* fma = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::fma, ty);
+	llvm::Value* a = negProduct ? irb.CreateFNeg(op1) : op1;
+	llvm::Value* c = negAcc ? irb.CreateFNeg(acc) : acc;
+	llvm::Value* val = irb.CreateCall(fma, {a, op2, c});
+
+	storeOp(ai->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
+}
+
+/**
+ * ARM_INS_VCMP, ARM_INS_VCMPE
+ *
+ * These write FPSCR[31:28], and the vmrs that follows copies them into CPSR.
+ * The flags are not the integer ones: for an ordered compare N is less-than, Z
+ * is equal, C is greater-or-equal-or-unordered, and V is unordered.
+ *
+ * The second operand is an IMM 0 in the compare-with-zero form, not an FP
+ * operand -- measured, not assumed -- so the zero is built from the first
+ * operand's type.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateVfpCmp(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, ai, irb);
+
+	if (!isScalarVfp(ai) || !isFpRegister(ai->operands[0].reg))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* ty = vfpTypeOfReg(ai->operands[0].reg, irb);
+	op0 = loadVfpOp(ai->operands[0], irb, ty);
+
+	llvm::Value* rhs = nullptr;
+	if (ai->operands[1].type == ARM_OP_IMM || ai->operands[1].type == ARM_OP_FP)
+	{
+		rhs = llvm::ConstantFP::get(ty, 0.0);
+	}
+	else
+	{
+		rhs = loadVfpOp(ai->operands[1], irb, ty);
+	}
+
+	auto* n = irb.CreateFCmpOLT(op0, rhs);
+	auto* z = irb.CreateFCmpOEQ(op0, rhs);
+	auto* v = irb.CreateFCmpUNO(op0, rhs);
+	auto* c = irb.CreateOr(irb.CreateFCmpOGE(op0, rhs), v);
+
+	auto* i32 = getDefaultType();
+	auto* packed = irb.CreateOr(
+		irb.CreateOr(irb.CreateShl(irb.CreateZExt(n, i32), 31), irb.CreateShl(irb.CreateZExt(z, i32), 30)),
+		irb.CreateOr(irb.CreateShl(irb.CreateZExt(c, i32), 29), irb.CreateShl(irb.CreateZExt(v, i32), 28)));
+	storeRegister(ARM_REG_FPSCR_NZCV, packed, irb);
+}
+
+/**
+ * ARM_INS_VMRS, ARM_INS_FMSTAT
+ *
+ * `vmrs APSR_nzcv, fpscr` unpacks what the compare above packed. Both operands
+ * are marked access=0 by capstone, so this keys on the register ids rather
+ * than on the access flags.
+ *
+ * Wired under two ids, and the second is the one that matters: capstone 5.0.9
+ * decodes this exact encoding as ARM_INS_FMSTAT (58), the pre-UAL alias, while
+ * printing the mnemonic as "vmrs". ARM_INS_VMRS (378) is the general
+ * `vmrs rN, fpscr` form. Wiring only VMRS looks like a fix and does nothing --
+ * which is what it did, until a test said so.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateVmrs(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	if (ai->op_count != 2 || ai->operands[0].type != ARM_OP_REG || ai->operands[1].type != ARM_OP_REG
+		|| ai->operands[0].reg != ARM_REG_APSR_NZCV
+		|| !(ai->operands[1].reg == ARM_REG_FPSCR || ai->operands[1].reg == ARM_REG_FPSCR_NZCV))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+
+	auto* packed = loadRegister(ARM_REG_FPSCR_NZCV, irb);
+	auto bit = [&](unsigned n) -> llvm::Value* {
+		return irb.CreateTrunc(irb.CreateLShr(packed, llvm::ConstantInt::get(packed->getType(), n)), irb.getInt1Ty());
+	};
+	storeRegister(ARM_REG_CPSR_N, bit(31), irb);
+	storeRegister(ARM_REG_CPSR_Z, bit(30), irb);
+	storeRegister(ARM_REG_CPSR_C, bit(29), irb);
+	storeRegister(ARM_REG_CPSR_V, bit(28), irb);
+}
+
+/**
+ * ARM_INS_VCVT, ARM_INS_VCVTR
+ *
+ * cs_arm::vector_data names both ends of the conversion -- F64S32 is "to f64
+ * from s32" -- which is the only thing that says whether the S register on
+ * either side holds a number or an integer bit pattern.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateVfpCvt(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, ai, irb);
+
+	if (ai->operands[0].type != ARM_OP_REG || ai->operands[1].type != ARM_OP_REG || !isFpRegister(ai->operands[0].reg)
+		|| !isFpRegister(ai->operands[1].reg))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* f32 = irb.getFloatTy();
+	auto* f64 = irb.getDoubleTy();
+	auto* i32 = irb.getInt32Ty();
+
+	llvm::Type* dstTy = nullptr; // what lands in the destination register
+	llvm::Type* srcTy = nullptr; // how the source register is read
+	bool toInt = false, fromInt = false, isSigned = true;
+
+	switch (ai->vector_data)
+	{
+	case ARM_VECTORDATA_F64F32:
+		srcTy = f32;
+		dstTy = f64;
+		break;
+	case ARM_VECTORDATA_F32F64:
+		srcTy = f64;
+		dstTy = f32;
+		break;
+	case ARM_VECTORDATA_F64S32:
+		srcTy = i32;
+		dstTy = f64;
+		fromInt = true;
+		break;
+	case ARM_VECTORDATA_F32S32:
+		srcTy = i32;
+		dstTy = f32;
+		fromInt = true;
+		break;
+	case ARM_VECTORDATA_F64U32:
+		srcTy = i32;
+		dstTy = f64;
+		fromInt = true;
+		isSigned = false;
+		break;
+	case ARM_VECTORDATA_F32U32:
+		srcTy = i32;
+		dstTy = f32;
+		fromInt = true;
+		isSigned = false;
+		break;
+	case ARM_VECTORDATA_S32F64:
+		srcTy = f64;
+		dstTy = i32;
+		toInt = true;
+		break;
+	case ARM_VECTORDATA_S32F32:
+		srcTy = f32;
+		dstTy = i32;
+		toInt = true;
+		break;
+	case ARM_VECTORDATA_U32F64:
+		srcTy = f64;
+		dstTy = i32;
+		toInt = true;
+		isSigned = false;
+		break;
+	case ARM_VECTORDATA_U32F32:
+		srcTy = f32;
+		dstTy = i32;
+		toInt = true;
+		isSigned = false;
+		break;
+	default:
+		// The half-precision pairs and everything NEON.
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	// The source register is read at its own width and then reinterpreted as
+	// whatever this conversion says it holds: an S register carrying an s32 is
+	// still an f32 global.
+	auto* raw = loadOp(ai->operands[1], irb);
+	llvm::Value* src = fromInt ? generateTypeConversion(irb, raw, srcTy, eOpConv::ZEXT_TRUNC_OR_BITCAST)
+							   : generateTypeConversion(irb, raw, srcTy, eOpConv::FPCAST_OR_BITCAST);
+
+	llvm::Value* val = nullptr;
+	if (fromInt)
+	{
+		val = isSigned ? irb.CreateSIToFP(src, dstTy) : irb.CreateUIToFP(src, dstTy);
+	}
+	else if (toInt)
+	{
+		// VCVT truncates toward zero; VCVTR follows FPSCR[RN], whose reset
+		// value and ABI setting is round-to-nearest-even.
+		if (i->id == ARM_INS_VCVTR)
+		{
+			src = irb.CreateCall(
+				llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::roundeven, src->getType()), {src});
+		}
+		val = isSigned ? irb.CreateFPToSI(src, dstTy) : irb.CreateFPToUI(src, dstTy);
+	}
+	else
+	{
+		val = irb.CreateFPCast(src, dstTy);
+	}
+
+	// FPCAST_OR_BITCAST either way: when the destination is an S register
+	// holding an integer, the bitcast is what puts the bit pattern there.
+	storeOp(ai->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
+}
+
+/**
+ * ARM_INS_VMOV
+ *
+ * Several shapes, all measured against a real build:
+ *   vmov s15, r3      2 regs, S <- GPR: a bit pattern move, not a conversion
+ *   vmov r0, s15      2 regs, GPR <- S: the same the other way
+ *   vmov d6, r0, r1   3 regs, D <- GPR pair, low half first
+ *   vmov r0, r1, d6   3 regs, GPR pair <- D
+ *   vmov.f64 d7, d8   2 regs, both FP: a plain move
+ *   vmov.f64 d7, #1.0 reg + FP immediate
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateVfpMov(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	if (!isScalarVfp(ai))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* i32 = irb.getInt32Ty();
+	auto* i64 = irb.getInt64Ty();
+
+	// vmov d6, r0, r1 / vmov r0, r1, d6
+	if (ai->op_count == 3 && ai->operands[0].type == ARM_OP_REG && ai->operands[1].type == ARM_OP_REG
+		&& ai->operands[2].type == ARM_OP_REG)
+	{
+		if (isFpRegister(ai->operands[0].reg))
+		{
+			auto* lo = irb.CreateZExt(irb.CreateZExtOrTrunc(loadOp(ai->operands[1], irb), i32), i64);
+			auto* hi = irb.CreateZExt(irb.CreateZExtOrTrunc(loadOp(ai->operands[2], irb), i32), i64);
+			auto* bits = irb.CreateOr(lo, irb.CreateShl(hi, llvm::ConstantInt::get(i64, 32)));
+			storeOp(ai->operands[0], bits, irb, eOpConv::FPCAST_OR_BITCAST);
+			return;
+		}
+		if (isFpRegister(ai->operands[2].reg))
+		{
+			auto* bits = generateTypeConversion(irb, loadOp(ai->operands[2], irb), i64, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+			storeOp(ai->operands[0], irb.CreateTrunc(bits, i32), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+			storeOp(
+				ai->operands[1],
+				irb.CreateTrunc(irb.CreateLShr(bits, llvm::ConstantInt::get(i64, 32)), i32),
+				irb,
+				eOpConv::ZEXT_TRUNC_OR_BITCAST);
+			return;
+		}
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	if (ai->op_count != 2 || ai->operands[0].type != ARM_OP_REG)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	bool dstFp = isFpRegister(ai->operands[0].reg);
+	auto& src = ai->operands[1];
+
+	if (src.type == ARM_OP_FP)
+	{
+		auto* ty = vfpTypeOfReg(ai->operands[0].reg, irb);
+		storeOp(ai->operands[0], llvm::ConstantFP::get(ty, src.fp), irb, eOpConv::FPCAST_OR_BITCAST);
+		return;
+	}
+
+	if (src.type != ARM_OP_REG)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	bool srcFp = isFpRegister(src.reg);
+	auto* val = loadOp(src, irb);
+
+	if (dstFp && srcFp)
+	{
+		auto* ty = vfpTypeOfReg(ai->operands[0].reg, irb);
+		storeOp(ai->operands[0], generateTypeConversion(irb, val, ty, eOpConv::FPCAST_OR_BITCAST), irb);
+		return;
+	}
+	// One side is a GPR: this moves the bits, it does not convert the number.
+	storeOp(ai->operands[0], val, irb, dstFp ? eOpConv::FPCAST_OR_BITCAST : eOpConv::ZEXT_TRUNC_OR_BITCAST);
 }
 
 llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadOp(

@@ -8,6 +8,8 @@
 #ifndef CAPSTONE2LLVMIR_ARM_ARM_IMPL_H
 #define CAPSTONE2LLVMIR_ARM_ARM_IMPL_H
 
+#include <llvm/IR/Intrinsics.h>
+
 #include "retdec/capstone2llvmir/arm/arm.h"
 #include "capstone2llvmir/capstone2llvmir_impl.h"
 
@@ -137,6 +139,20 @@ class Capstone2LlvmIrTranslatorArm_impl :
 //
 	protected:
 		void translateAdc(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		static bool isFpRegister(uint32_t r);
+		static bool isScalarVfp(cs_arm* ai);
+		llvm::Type* vfpTypeOfReg(uint32_t r, llvm::IRBuilder<>& irb);
+		llvm::Value* loadVfpOp(cs_arm_op& op, llvm::IRBuilder<>& irb, llvm::Type* ty);
+
+		void translateVfpArithm(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateVfpCmp(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateVfpCvt(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateVfpLoadStore(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateVfpMla(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateVfpMov(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateVfpUnary(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateVmrs(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+
 		void translateAdd(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateAnd(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateB(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
