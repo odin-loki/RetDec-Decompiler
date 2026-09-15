@@ -13,6 +13,7 @@
 #define RETDEC_BIN2LLVMIR_UTILS_LLVM_H
 
 #include <llvm/ADT/Twine.h>
+#include <llvm/Config/llvm-config.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
@@ -23,6 +24,30 @@
 namespace retdec {
 namespace bin2llvmir {
 namespace llvm_utils {
+
+/**
+ * @brief Does @a v keep a list of its users?
+ *
+ * LLVM 21 stopped giving every Value a use list -- ConstantData and friends
+ * keep none -- and made users() assert for those. The guard that change needs
+ * is spelled Value::hasUseList(), which does not exist before 21.
+ *
+ * This exists so that the guard can be written once and compile against both.
+ * On LLVM 21 and later it is exactly hasUseList(); before it, every Value had
+ * a use list and users() asserted for none, so the answer is yes. The shipped
+ * build takes the first branch and is unaffected; the second is what lets
+ * bin2llvmir compile against the distribution llvm-20-dev, which is the only
+ * LLVM this repository's checks can install.
+ */
+inline bool hasUseList(const llvm::Value* v)
+{
+#if LLVM_VERSION_MAJOR >= 21
+	return v->hasUseList();
+#else
+	(void)v;
+	return true;
+#endif
+}
 
 //
 //==============================================================================

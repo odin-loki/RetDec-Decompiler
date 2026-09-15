@@ -98,7 +98,7 @@ AsmInstruction::AsmInstruction(llvm::Module* m, retdec::common::Address addr)
 	// ConstantInt::users() asserts hasUseList(). Find the llvm-to-asm
 	// store by walking the mapping global's users instead.
 	auto* gv = getLlvmToAsmGlobalVariable(m);
-	if (gv == nullptr || !gv->hasUseList())
+	if (gv == nullptr || !llvm_utils::hasUseList(gv))
 	{
 		return;
 	}

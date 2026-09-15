@@ -111,7 +111,7 @@ namespace {
 
 llvm::Type* inferPointeeFromUsers(const llvm::Value* v)
 {
-	if (!v || !v->hasUseList())
+	if (!v || !llvm_utils::hasUseList(v))
 	{
 		return nullptr;
 	}

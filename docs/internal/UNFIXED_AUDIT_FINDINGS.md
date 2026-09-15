@@ -2161,3 +2161,37 @@ polish on something nothing runs, and wiring an unverified optimisation pass
 into the pipeline is a behaviour change with no evidence behind it. What is
 fixed is that the next one cannot arrive unnoticed — falsified two ways, by
 adding an unnamed source under `src/` and by deleting a reason from the list.
+
+
+## bin2llvmir's "real drift across many files" was one API in seven files
+
+The largest ungated suite carried this reason:
+
+> uses LLVM 20+/21+ APIs (CmpPredicate, Intrinsic::getOrInsertDeclaration,
+> Value::hasUseList); measured against system LLVM 18, it is real drift across
+> many files, not a missing -I
+
+Measured against `llvm-20-dev` rather than 18, it was 8 files of 125. One of
+those was a missing `-Ideps/eigen`; one was `types_propagator.cpp`, which is
+built by nothing and does not compile at all. The other six, plus one more,
+were a single API: `Value::hasUseList()`, which LLVM 21 added when it stopped
+giving every Value a use list and made `users()` assert for the ones without.
+
+`llvm_utils::hasUseList()` spells that for both — `hasUseList()` from 21, and
+`true` before it, where every Value had a use list and `users()` asserted for
+none. The shipped build takes the first branch, so this is a no-op there.
+
+With it: **all 124 buildable `src/bin2llvmir` sources compile against LLVM 20,
+and 30 of the 31 in `tests/bin2llvmir`.**
+
+**What still blocks the suite, precisely.** `src/debugformat/dwarf.cpp`
+includes `llvm/DebugInfo/DWARF/LowLevel/DWARFExpression.h`, which exists only
+from LLVM 21, and `DebugFormat::loadDwarf()` is referenced by the link — so the
+test binary cannot be linked here even though almost everything compiles.
+Separately, `tests/bin2llvmir/utils/simplifycfg_tests.cpp` `#include`s an LLVM
+*source* file (`../lib/Transforms/Scalar/SimplifyCFGPass.cpp`) from the
+vendored llvm-project tree, so it only builds inside the full build.
+
+That is worth the distinction. "Real drift across many files" is a reason to
+stop looking; "one file needs one LLVM 21 header" is a reason to keep going,
+and it is what the measurement says.

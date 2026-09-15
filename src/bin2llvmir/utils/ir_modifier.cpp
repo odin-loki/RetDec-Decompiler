@@ -997,7 +997,7 @@ llvm::Value* IrModifier::changeObjectType(
 	// Therefore, we store all uses to our own container.
 	//
 	std::list<User*> users;
-	if (val->hasUseList())
+	if (llvm_utils::hasUseList(val))
 	{
 		for (const auto& U : val->users())
 		{

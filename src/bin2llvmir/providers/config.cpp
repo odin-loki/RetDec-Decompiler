@@ -717,7 +717,7 @@ void Config::tagFunctionsWithUsedCryptoGlobals()
 			}
 			else if (auto* e = dyn_cast_or_null<ConstantExpr>(user))
 			{
-				if (!e->hasUseList())
+				if (!llvm_utils::hasUseList(e))
 				{
 					continue;
 				}

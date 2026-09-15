@@ -31,6 +31,7 @@
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Module.h>
 
+#include "retdec/bin2llvmir/utils/llvm.h"
 #include "retdec/bin2llvmir/analyses/reachable_funcs_analysis.h"
 #include "retdec/bin2llvmir/optimizations/unreachable_funcs/unreachable_funcs.h"
 #include "retdec/utils/container.h"
@@ -103,7 +104,7 @@ bool userPreventsElim(User* user, const std::set<Function*>& liveFuncs, int dept
 	}
 	if (auto* ce = dyn_cast<ConstantExpr>(user))
 	{
-		if (!ce->hasUseList())
+		if (!llvm_utils::hasUseList(ce))
 		{
 			return false;
 		}

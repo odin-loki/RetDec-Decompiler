@@ -179,7 +179,7 @@ readonly GATED_ELSEWHERE=(
 # instead of being discovered one defect at a time.  An entry leaves when a gate
 # starts running it, not when someone decides it is fine.
 readonly UNGATED_SUITES=(
-	"bin2llvmir:9 of its 125 sources need LLVM 21 (Value::hasUseList); the other 116 compile against the llvm-20-dev C2L-01 installs, so the earlier reading -- 'real drift across many files, not a missing -I' -- was wrong twice over: it is nine files, and one of those nine IS a missing -I (deps/eigen). llvm-21-dev is not in noble"
+	"bin2llvmir:ONE file now. Value::hasUseList is LLVM 21+ and was the blocker in 7 files; llvm_utils::hasUseList() spells it for both and all 124 buildable sources compile against llvm-20-dev, as do 30 of the 31 test sources. What is left is src/debugformat/dwarf.cpp, which includes llvm/DebugInfo/DWARF/LowLevel/DWARFExpression.h -- a header that exists only from LLVM 21 -- and DebugFormat::loadDwarf() is referenced by the link, so the suite cannot be linked here. tests/bin2llvmir/utils/simplifycfg_tests.cpp is separate: it #includes an LLVM SOURCE file from the vendored llvm-project tree"
 	"unpacker:links retdec::cpdetect, which needs YARA -- fileformat itself builds against the system LLVM (see FF-01)"
 	"benchmark:performance harness, run by perf-nightly.yml on a schedule not a push"
 	"crash_corpus:fixture directory, no assertions of its own"

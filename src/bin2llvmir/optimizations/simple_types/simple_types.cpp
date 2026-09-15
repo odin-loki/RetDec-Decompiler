@@ -192,7 +192,7 @@ bool SimpleTypesAnalysis::runOnModule(Module& M)
 				bool done = false;
 				if (auto* ce = dyn_cast<ConstantExpr>(u))
 				{
-					if (!ce->hasUseList())
+					if (!llvm_utils::hasUseList(ce))
 					{
 						continue;
 					}
@@ -320,7 +320,7 @@ void SimpleTypesAnalysis::setGlobalConstants()
 				break;
 			}
 
-			if (!u->hasUseList())
+			if (!llvm_utils::hasUseList(u))
 			{
 				continue;
 			}
@@ -334,7 +334,7 @@ void SimpleTypesAnalysis::setGlobalConstants()
 					break;
 				}
 
-				if (!uu->hasUseList())
+				if (!llvm_utils::hasUseList(uu))
 				{
 					continue;
 				}
@@ -547,7 +547,7 @@ void SimpleTypesAnalysis::processValue(std::queue<Value*>& toProcess, EqSet*& eq
 		eqSetPtr->insert(config, current);
 		processedObjs.insert({current, eqSetPtr});
 
-		if (!current->hasUseList())
+		if (!llvm_utils::hasUseList(current))
 		{
 			continue;
 		}
@@ -565,7 +565,7 @@ void SimpleTypesAnalysis::processUse(llvm::Value* current, Value* u, std::queue<
 	{
 		LOG << "\t\t[EU]: " << llvmObjToString(eu) << " -> " << llvmObjToString(eu->getType()) << std::endl;
 
-		if (!eu->hasUseList())
+		if (!llvm_utils::hasUseList(eu))
 		{
 			return;
 		}

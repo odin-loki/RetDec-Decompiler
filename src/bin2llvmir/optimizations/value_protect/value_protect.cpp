@@ -604,7 +604,7 @@ void _getConstantExprInstructionUsers(
 		std::set<llvm::Instruction*>& users,
 		std::set<llvm::ConstantExpr*>& seen)
 {
-	if (!expr->hasUseList())
+	if (!llvm_utils::hasUseList(expr))
 	{
 		return;
 	}
