@@ -396,7 +396,12 @@ void SymbolicTree::_simplifyNode()
 		auto addr = AsmInstruction::getFunctionAddress(load->getFunction());
 		if (addr != 0)
 		{
-			value = ConstantInt::get(load->getType(), addr);
+			// The load's type need not be as wide as an address, and
+			// ConstantInt::get asserts rather than truncating. Every MIPS
+			// binary in the ARCH-01 corpus died here once the fold below
+			// stopped crashing first.
+			value = ConstantInt::get(
+				load->getType(), llvm::APInt(load->getType()->getIntegerBitWidth(), std::uint64_t(addr), false, true));
 			ops.clear();
 		}
 	}
@@ -415,25 +420,25 @@ void SymbolicTree::_simplifyNode()
 	else if (match(*this, m_Add(m_ConstantInt(c1), m_ConstantInt(c2)))
 	         && c1->getBitWidth() <= 64 && c2->getBitWidth() <= 64)
 	{
-		value = ConstantInt::get(c1->getType(), c1->getValue() + c2->getValue());
+		value = ConstantInt::get(c1->getType(), c1->getValue() + c2->getValue().sextOrTrunc(c1->getBitWidth()));
 		ops.clear();
 	}
 	else if (match(*this, m_Sub(m_ConstantInt(c1), m_ConstantInt(c2)))
 	         && c1->getBitWidth() <= 64 && c2->getBitWidth() <= 64)
 	{
-		value = ConstantInt::get(c1->getType(), c1->getValue() - c2->getValue());
+		value = ConstantInt::get(c1->getType(), c1->getValue() - c2->getValue().sextOrTrunc(c1->getBitWidth()));
 		ops.clear();
 	}
 	else if (match(*this, m_Or(m_ConstantInt(c1), m_ConstantInt(c2)))
 	         && c1->getBitWidth() <= 64 && c2->getBitWidth() <= 64)
 	{
-		value = ConstantInt::get(c1->getType(), c1->getValue() | c2->getValue());
+		value = ConstantInt::get(c1->getType(), c1->getValue() | c2->getValue().sextOrTrunc(c1->getBitWidth()));
 		ops.clear();
 	}
 	else if (match(*this, m_And(m_ConstantInt(c1), m_ConstantInt(c2)))
 	         && c1->getBitWidth() <= 64 && c2->getBitWidth() <= 64)
 	{
-		value = ConstantInt::get(c1->getType(), c1->getValue() & c2->getValue());
+		value = ConstantInt::get(c1->getType(), c1->getValue() & c2->getValue().sextOrTrunc(c1->getBitWidth()));
 		ops.clear();
 	}
 	else if (match(*this, m_Add(m_GlobalVariable(global), m_ConstantInt(c1)))
@@ -465,7 +470,7 @@ void SymbolicTree::_simplifyNode()
 	         && c1->getBitWidth() <= 64 && c2->getBitWidth() <= 64)
 	{
 		ops[0] = std::move(ops[0].ops[0]);
-		ops[1].value = ConstantInt::get(c1->getType(), c1->getValue() + c2->getValue());
+		ops[1].value = ConstantInt::get(c1->getType(), c1->getValue() + c2->getValue().sextOrTrunc(c1->getBitWidth()));
 	}
 
 	// Move Constants from ops[0] to ops[1].

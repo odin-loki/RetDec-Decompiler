@@ -2023,8 +2023,13 @@ fifteen `ARM64_VAS_*` capstone 5.0.9 defines, fourteen were named. The missing
 one was `ARM64_VAS_2D` — two 64-bit lanes, which is what every double-precision
 SIMD operand looks like and which glibc's string and math routines are full of.
 
-It extracts a 64-bit lane exactly as `1D` does; only the lane count differs and
-`vector_index` already carries the lane. One `case` label.
+It does **not** share the `1D` path, and the first attempt at this did, which
+was wrong: `1D` ends in a bitcast to `double`, so routing `2D` through it made
+`add v0.2d, ...` an integer add on a double and every ARM64 binary failed with
+*"Tried to create an integer operation on a non-integer type"* instead. A `.2d`
+lane is 64 bits and the arrangement alone does not say whether the instruction
+reads it as an integer or a double, so it returns the integer lane — the choice
+`VAS_INVALID` already makes for `vN.d[i]`.
 
 A C enum switched on with a `default` gets no `-Wswitch` help, so C2L-01 now
 checks the exhaustiveness textually: every `ARM64_VAS_*` in capstone's header
@@ -2079,3 +2084,41 @@ reason to believe the two families were worth the change. Nine tests, each
 failing when the dispatch entries are reverted; keystone 0.9.2 predates ARMv8.3
 and cannot assemble those mnemonics, so those three go in as encodings checked
 against capstone.
+
+
+### One fix is not one site: the same assertion, four places
+
+Fixing `symbolic_tree.cpp:418` did not move ARCH-01 off 0/40. It moved the
+crash. Run 286, at `fcd4895`, still lost all forty — and the failure logs show
+the same `isUIntN` assertion firing from three *different* places, one per
+architecture, each further down the pipeline than the last:
+
+| arch    | site                                        | reached from |
+|---------|---------------------------------------------|--------------|
+| mips    | `symbolic_tree.cpp:399`                     | StackAnalysis |
+| powerpc | `strength_reduction.cpp:146`                | strength reduction |
+| arm     | `fileimage.cpp:143`                         | image reads |
+
+They are all one class — `ConstantInt::get(Type*, uint64_t)` asserts rather
+than truncating when the value does not fit the type as an unsigned N-bit
+number — and all four instances are shapes that only a 32-bit target reaches:
+
+  * `~((1ULL << n) - 1)` is every high bit set **in sixty-four bits**, so it
+    fits no narrower type. (Also undefined for `n >= 64`.)
+  * an image address, or a function entry address, written into whatever type
+    the load had.
+  * `ci->getZExtValue() - 1` where `ci` is zero: `0 - 1` as a `uint64_t` is
+    every bit set. Not yet observed, found by looking for the shape.
+
+A sweep of all 457 `ConstantInt::get` call sites in `src/` narrowed to 50 whose
+value is an address, a mask, or a shift expression; 32 of those are in the x86
+translator, where the constant is built at the operand's own width and which
+216 binaries of evidence say is fine. Of the remaining 18, four were wrong and
+are fixed; the rest write an address into a default type that is wide enough
+for it.
+
+**The lesson recorded rather than the fix.** Each of these was hidden behind
+the one before it. A single ARCH-01 number cannot distinguish "one defect" from
+"four in a row", and three CI round-trips at forty-five minutes each is what
+finding them one at a time costs. The sweep is the answer to that, not another
+round trip.

@@ -260,7 +260,15 @@ bool CondBranchOpt::runOnInstruction(
 	{
 		auto* r = load->getPointerOperand();
 		auto* nl = llvm_utils::createLoadInst(r, "", br);
-		auto* nci = ConstantInt::get(nl->getType(), ci->getZExtValue() - 1);
+		// ci may be zero, and 0 - 1 as a uint64_t is every bit set, which
+		// fits no narrower type; ci need not be as wide as nl either.
+		// Subtract at nl's width, where the wrap is the one the machine does.
+		if (!nl->getType()->isIntegerTy())
+		{
+			return false;
+		}
+		const unsigned nw = nl->getType()->getIntegerBitWidth();
+		auto* nci = ConstantInt::get(nl->getType(), ci->getValue().zextOrTrunc(nw) - 1);
 
 		if (!nl->getType()->isIntegerTy() || !nci->getType()->isIntegerTy())
 		{

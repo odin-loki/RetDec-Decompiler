@@ -115,11 +115,15 @@ static bool reduceURem(BinaryOperator* inst) {
     unsigned log2 = 0;
     if (!isPow2Const(inst->getOperand(1), log2) || log2 == 0) return false;
 
-    uint64_t mask = (1ULL << log2) - 1;
-    IRBuilder<> irb(inst);
-    Value* maskVal = ConstantInt::get(inst->getType(), mask);
-    Value* andVal  = irb.CreateAnd(inst->getOperand(0), maskVal, "sr_and");
-    inst->replaceAllUsesWith(andVal);
+	// Build the mask at the instruction's own width. `1ULL << n` is undefined
+	// for n >= 64, and a mask computed in 64 bits does not necessarily fit a
+	// narrower type -- ConstantInt::get asserts when it does not.
+	const unsigned w = inst->getType()->getIntegerBitWidth();
+	if (log2 >= w) return false;
+	IRBuilder<> irb(inst);
+	Value* maskVal = ConstantInt::get(inst->getType(), APInt::getLowBitsSet(w, log2));
+	Value* andVal = irb.CreateAnd(inst->getOperand(0), maskVal, "sr_and");
+	inst->replaceAllUsesWith(andVal);
     inst->eraseFromParent();
     return true;
 }
@@ -140,12 +144,18 @@ static bool reduceShiftPair(BinaryOperator* inst) {
     if (!innerShift) return false;
     if (innerShift->getZExtValue() != outerAmt) return false;
 
-    // (shl x, N) then lshr N → mask off lower N bits.
-    uint64_t mask = ~((1ULL << outerAmt) - 1);
-    IRBuilder<> irb(inst);
-    Value* maskVal = ConstantInt::get(inst->getType(), mask);
-    Value* andVal  = irb.CreateAnd(inner->getOperand(0), maskVal, "sr_mask");
-    inst->replaceAllUsesWith(andVal);
+	// (shl x, N) then lshr N → mask off lower N bits.
+	//
+	// `~((1ULL << N) - 1)` has every bit above N set in SIXTY-FOUR bits, so on
+	// any narrower type the value does not fit and ConstantInt::get asserts.
+	// That is how every PowerPC binary in the ARCH-01 corpus died. Built at the
+	// instruction's own width it is exactly the high bits and nothing else.
+	const unsigned w = inst->getType()->getIntegerBitWidth();
+	if (outerAmt >= w) return false;
+	IRBuilder<> irb(inst);
+	Value* maskVal = ConstantInt::get(inst->getType(), ~APInt::getLowBitsSet(w, outerAmt));
+	Value* andVal = irb.CreateAnd(inner->getOperand(0), maskVal, "sr_mask");
+	inst->replaceAllUsesWith(andVal);
     inst->eraseFromParent();
     return true;
 }

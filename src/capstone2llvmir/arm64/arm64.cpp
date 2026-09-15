@@ -399,14 +399,23 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::extractVectorValue(
 			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 32 * op.vector_index));
 			val = irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt32Ty(_module->getContext()));
 			return irb.CreateBitCast(val, llvm::Type::getFloatTy(_module->getContext()));
-		// 2D and 1D both address 64-bit lanes; only the lane count differs,
-		// and vector_index already says which lane. 2D was the one
-		// arrangement of the fifteen capstone defines that this switch did
-		// not name, so it reached the throw below -- and that throw is not
-		// caught anywhere, so a single `v0.2d` operand ended the whole
-		// decompilation. Every ARM64 binary in the ARCH-01 corpus died this
-		// way: glibc's string and math routines are full of .2d.
+		// 2D was the one arrangement of capstone's fifteen this switch did
+		// not name, so it reached the throw below -- and that throw is caught
+		// nowhere, so a single `v0.2d` operand ended the whole decompilation.
+		//
+		// It does NOT share the 1D path. 1D ends in a bitcast to double, and
+		// routing 2D through it made `add v0.2d, ...` an integer add on a
+		// double: "Tried to create an integer operation on a non-integer
+		// type", which is how all ten ARM64 binaries failed after the first
+		// attempt at this. A .2d lane is 64 bits wide and the arrangement
+		// alone does not say whether the instruction reads it as an integer
+		// or a double, so this returns the integer lane -- the same choice
+		// the VAS_INVALID branch below already makes for `vN.d[i]`, and the
+		// one the integer instructions need.
 		case ARM64_VAS_2D:
+			val = irb.CreateLShr(
+				val, llvm::ConstantInt::get(val->getType(), 64u * static_cast<unsigned>(op.vector_index)));
+			return irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt64Ty(_module->getContext()));
 		case ARM64_VAS_1D:
 			val = irb.CreateLShr(val, llvm::ConstantInt::get(val->getType(), 64 * op.vector_index));
 			val = irb.CreateZExtOrTrunc(val, llvm::IntegerType::getInt64Ty(_module->getContext()));

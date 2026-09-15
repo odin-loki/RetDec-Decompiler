@@ -140,7 +140,16 @@ ConstantInt* FileImage::getConstantInt(
 
 	std::uint64_t v = 0;
 	auto s = Abi::getTypeByteSize(_module, t);
-	return _image->getXByte(addr, s, v) ? ConstantInt::get(t, v) : nullptr;
+	if (!_image->getXByte(addr, s, v))
+	{
+		return nullptr;
+	}
+	// getXByte fills a 64-bit word; getTypeByteSize rounds up to whole bytes,
+	// so for any type that is not a whole number of bytes -- or when the image
+	// hands back more than was asked for -- v can carry bits above t's width,
+	// and ConstantInt::get asserts rather than truncating. Truncation is what
+	// a load of that width does, so say so.
+	return cast<ConstantInt>(ConstantInt::get(t, APInt(t->getBitWidth(), v, false, true)));
 }
 
 llvm::ConstantInt* FileImage::getConstantDefault(retdec::common::Address addr)
