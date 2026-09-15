@@ -3233,6 +3233,83 @@ void LlvmIrEmulator::visitCallInst(llvm::CallInst& I)
 			}
 			return;
 		}
+
+		// The floating-point intrinsics. None of them survives the path
+		// below. IntrinsicLowering turns most into libcalls -- sqrt, floor,
+		// … -- which this interpreter cannot resolve, so it produced 0; for
+		// llvm.fma it does not even do that, but reports "Code generator does
+		// not support intrinsic function" through report_fatal_error, which
+		// takes the whole process with it. fabs, minnum and maxnum were
+		// already excluded from lowering for that reason and then fell to the
+		// unhandled-external path below, where a double return leaves
+		// GenericValue::DoubleVal uninitialised -- so they were returning
+		// whatever was on the stack.
+		//
+		// Computing them here is what an interpreter has to do. Everything
+		// PowerPC's floating point emits is in this list.
+		//
+		// Only f32 and f64: GenericValue keeps x86_fp80 in IntVal, not
+		// DoubleVal, so reading it here would be reading the wrong member.
+		// The fp80 forms keep the path they had.
+		if (I.getType()->isFloatTy() || I.getType()->isDoubleTy())
+		{
+			bool handled = true;
+			bool isF32 = I.getType()->isFloatTy();
+			auto arg = [&](unsigned n) -> double {
+				GenericValue g = _globalEc.getOperandValue(I.getArgOperand(n), ec);
+				return isF32 ? static_cast<double>(g.FloatVal) : g.DoubleVal;
+			};
+			double r = 0.0;
+			switch (id)
+			{
+			case Intrinsic::fabs: r = std::fabs(arg(0)); break;
+			case Intrinsic::sqrt: r = std::sqrt(arg(0)); break;
+			case Intrinsic::floor: r = std::floor(arg(0)); break;
+			case Intrinsic::ceil: r = std::ceil(arg(0)); break;
+			case Intrinsic::trunc: r = std::trunc(arg(0)); break;
+			case Intrinsic::round: r = std::round(arg(0)); break;
+			// Ties to even, which is what roundeven means and what
+			// nearbyint does under the default rounding mode.
+			case Intrinsic::roundeven:
+			case Intrinsic::nearbyint:
+			case Intrinsic::rint: r = std::nearbyint(arg(0)); break;
+			case Intrinsic::copysign: r = std::copysign(arg(0), arg(1)); break;
+			// fmin/fmax return the non-NaN operand, which is what
+			// llvm.minnum and llvm.maxnum specify.
+			case Intrinsic::minnum: r = std::fmin(arg(0), arg(1)); break;
+			case Intrinsic::maxnum: r = std::fmax(arg(0), arg(1)); break;
+			case Intrinsic::fma: r = std::fma(arg(0), arg(1), arg(2)); break;
+			default: handled = false; break;
+			}
+			if (handled)
+			{
+				GenericValue dest;
+				if (isF32)
+				{
+					dest.FloatVal = static_cast<float>(r);
+				}
+				else
+				{
+					dest.DoubleVal = r;
+				}
+				_globalEc.setValue(&I, dest);
+
+				// Still record the call. Tests written before this block
+				// existed assert that llvm.fabs, llvm.minnum and llvm.maxnum
+				// appear in getCalledValuesSet(), because reaching the
+				// unhandled-external path was the only thing that used to
+				// happen to them. Computing the value is not a reason to stop
+				// reporting the call.
+				CallEntry ce;
+				ce.calledValue = I.getCalledOperand();
+				for (auto aIt = I.arg_begin(), eIt = I.arg_end(); aIt != eIt; ++aIt)
+				{
+					ce.calledArguments.push_back(_globalEc.getOperandValue(*aIt, ec));
+				}
+				_calls.push_back(ce);
+				return;
+			}
+		}
 	}
 	if (cf && cf->isDeclaration() && cf->isIntrinsic() &&
 		    !(cf->getIntrinsicID() == Intrinsic::bitreverse

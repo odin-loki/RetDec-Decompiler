@@ -5,6 +5,9 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cstring>
+#include <limits>
+
 #include <llvm/IR/InstIterator.h>
 
 #include "capstone2llvmir/capstone2llvmir_tests.h"
@@ -9828,6 +9831,443 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LWA)
 	EXPECT_JUST_MEMORY_LOADED({0x1120});
 	EXPECT_NO_MEMORY_STORED();
 	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// Floating-point arithmetic.
+//
+// Every one of the 44 PPC_INS_F* entries in the dispatch table was nullptr,
+// while powerpc_init.cpp maps PPC_REG_F0..F31 to double: the register file was
+// modelled and nothing ever wrote to it.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FADD)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F1, 1.5_f64},
+		{PPC_REG_F2, 2.25_f64},
+	});
+
+	emulate("fadd 0, 1, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_F1, PPC_REG_F2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F0, 3.75_f64},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FADDS_rounds_to_single)
+{
+	ALL_MODES;
+
+	// 2^24+1 is the smallest integer a float cannot represent; it rounds to
+	// 2^24. The S form rounds its result to single before writing it back, so
+	// the register must hold 16777216, not 16777217.
+	//
+	// The obvious choice, 0.1, does not work: the double nearest 0.1 and the
+	// double nearest the float 0.1 differ by about 1.5e-9, and this harness
+	// compares doubles to a tolerance of 0.001, so the test would pass whether
+	// the rounding happened or not. Checked by deleting the rounding -- with
+	// 0.1 the test still passed, with this value it fails.
+	setRegisters({
+		{PPC_REG_F1, 16777217.0},
+		{PPC_REG_F2, 0.0_f64},
+	});
+
+	emulate("fadds 0, 1, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_F1, PPC_REG_F2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F0, 16777216.0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FSUB)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F1, 5.5_f64},
+		{PPC_REG_F2, 2.25_f64},
+	});
+
+	emulate("fsub 0, 1, 2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F0, 3.25_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FMUL)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F1, 1.5_f64},
+		{PPC_REG_F2, 4.0_f64},
+	});
+
+	emulate("fmul 0, 1, 2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F0, 6.0_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FDIV)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F1, 9.0_f64},
+		{PPC_REG_F2, 4.0_f64},
+	});
+
+	emulate("fdiv 0, 1, 2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F0, 2.25_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FMR)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F2, 3.5_f64},
+	});
+
+	emulate("fmr 1, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_F2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F1, 3.5_f64},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FNEG)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F2, 3.5_f64},
+	});
+
+	emulate("fneg 1, 2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F1, -3.5},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FABS)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F2, -3.5},
+	});
+
+	emulate("fabs 1, 2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F1, 3.5_f64},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FNABS)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F2, 3.5_f64},
+	});
+
+	emulate("fnabs 1, 2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F1, -3.5},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FSQRT)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F2, 16.0_f64},
+	});
+
+	emulate("fsqrt 1, 2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F1, 4.0_f64},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FRSP)
+{
+	ALL_MODES;
+
+	// See PPC_INS_FADDS_rounds_to_single for why the value is 2^24+1 and not
+	// something like 0.1.
+	setRegisters({
+		{PPC_REG_F2, 16777217.0},
+	});
+
+	emulate("frsp 1, 2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F1, 16777216.0},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FMADD)
+{
+	ALL_MODES;
+
+	// fmadd FRT, FRA, FRC, FRB is (FRA * FRC) + FRB. 2*3+4 is 10; if the last
+	// two operands were the other way round it would be 2*4+3 = 11, so this
+	// pins capstone's operand order as well as the arithmetic.
+	setRegisters({
+		{PPC_REG_F1, 2.0_f64},
+		{PPC_REG_F2, 3.0_f64},
+		{PPC_REG_F3, 4.0_f64},
+	});
+
+	emulate("fmadd 0, 1, 2, 3");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_F1, PPC_REG_F2, PPC_REG_F3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F0, 10.0_f64},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FMSUB)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F1, 2.0_f64},
+		{PPC_REG_F2, 3.0_f64},
+		{PPC_REG_F3, 4.0_f64},
+	});
+
+	emulate("fmsub 0, 1, 2, 3");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F0, 2.0_f64},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FNMADD)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F1, 2.0_f64},
+		{PPC_REG_F2, 3.0_f64},
+		{PPC_REG_F3, 4.0_f64},
+	});
+
+	emulate("fnmadd 0, 1, 2, 3");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F0, -10.0},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FNMSUB)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F1, 2.0_f64},
+		{PPC_REG_F2, 3.0_f64},
+		{PPC_REG_F3, 4.0_f64},
+	});
+
+	emulate("fnmsub 0, 1, 2, 3");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F0, -2.0},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FSEL_takes_FRC_when_FRA_is_not_negative)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F1, 0.0_f64},
+		{PPC_REG_F2, 10.0_f64},
+		{PPC_REG_F3, 20.0_f64},
+	});
+
+	emulate("fsel 0, 1, 2, 3");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F0, 10.0_f64},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FSEL_takes_FRB_when_FRA_is_negative)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F1, -1.0},
+		{PPC_REG_F2, 10.0_f64},
+		{PPC_REG_F3, 20.0_f64},
+	});
+
+	emulate("fsel 0, 1, 2, 3");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F0, 20.0_f64},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCMPU_less_than)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F1, 1.0_f64},
+		{PPC_REG_F2, 2.0_f64},
+	});
+
+	emulate("fcmpu cr0, 1, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_F1, PPC_REG_F2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR0LT, true},
+		{PPC_REG_CR0GT, false},
+		{PPC_REG_CR0EQ, false},
+		{PPC_REG_CR0UN, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCMPU_equal)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_F1, 2.0_f64},
+		{PPC_REG_F2, 2.0_f64},
+	});
+
+	emulate("fcmpu cr1, 1, 2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR1LT, false},
+		{PPC_REG_CR1GT, false},
+		{PPC_REG_CR1EQ, true},
+		{PPC_REG_CR1UN, false},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCMPU_unordered)
+{
+	ALL_MODES;
+
+	// The fourth bit of the field is FU, not a copy of XER, and it is the only
+	// thing that tells a NaN comparison from an equal one. storeCrX writes a
+	// constant zero there, which is why this does not go through it.
+	setRegisters({
+		{PPC_REG_F1, std::numeric_limits<double>::quiet_NaN()},
+		{PPC_REG_F2, 2.0_f64},
+	});
+
+	emulate("fcmpu cr0, 1, 2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR0LT, false},
+		{PPC_REG_CR0GT, false},
+		{PPC_REG_CR0EQ, false},
+		{PPC_REG_CR0UN, true},
+	});
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCTIWZ)
+{
+	ALL_MODES;
+
+	// fctiwz leaves an INTEGER in the FPR, not a number: 3.7 truncated to 3,
+	// sign-extended to 64 bits, and those bits reinterpreted as a double. The
+	// expected value is therefore the double whose bit pattern is 3 -- a
+	// denormal, not 3.0. Getting this wrong in the obvious direction (storing
+	// 3.0) is exactly what the expectation is here to catch.
+	double expected;
+	std::uint64_t bits = 3;
+	std::memcpy(&expected, &bits, sizeof(expected));
+
+	setRegisters({
+		{PPC_REG_F2, 3.7_f64},
+	});
+
+	emulate("fctiwz 1, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_F2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F1, expected},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCFID)
+{
+	ALL_MODES;
+
+	// fcfid is the other direction: the source FPR holds the integer 5 as a
+	// bit pattern, and the result is the number 5.0.
+	double src;
+	std::uint64_t bits = 5;
+	std::memcpy(&src, &bits, sizeof(src));
+
+	setRegisters({
+		{PPC_REG_F2, src},
+	});
+
+	emulate("fcfid 1, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_F2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F1, 5.0_f64},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_FCPSGN)
+{
+	ALL_MODES;
+
+	// fcpsgn FRT, FRA, FRB: the sign of FRA, the magnitude of FRB.
+	setRegisters({
+		{PPC_REG_F1, -1.0},
+		{PPC_REG_F2, 3.5_f64},
+	});
+
+	emulate("fcpsgn 0, 1, 2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_F0, -3.5},
+	});
 }
 
 } // namespace tests

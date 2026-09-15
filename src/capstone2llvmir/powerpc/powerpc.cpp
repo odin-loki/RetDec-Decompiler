@@ -285,6 +285,63 @@ llvm::Instruction* Capstone2LlvmIrTranslatorPowerpc_impl::storeOp(
 	}
 }
 
+void Capstone2LlvmIrTranslatorPowerpc_impl::crFieldRegisters(
+	uint32_t crReg, uint32_t& ltR, uint32_t& gtR, uint32_t& eqR, uint32_t& soR)
+{
+	switch (crReg)
+	{
+	case PPC_REG_CR0:
+		ltR = PPC_REG_CR0LT;
+		gtR = PPC_REG_CR0GT;
+		eqR = PPC_REG_CR0EQ;
+		soR = PPC_REG_CR0UN;
+		break;
+	case PPC_REG_CR1:
+		ltR = PPC_REG_CR1LT;
+		gtR = PPC_REG_CR1GT;
+		eqR = PPC_REG_CR1EQ;
+		soR = PPC_REG_CR1UN;
+		break;
+	case PPC_REG_CR2:
+		ltR = PPC_REG_CR2LT;
+		gtR = PPC_REG_CR2GT;
+		eqR = PPC_REG_CR2EQ;
+		soR = PPC_REG_CR2UN;
+		break;
+	case PPC_REG_CR3:
+		ltR = PPC_REG_CR3LT;
+		gtR = PPC_REG_CR3GT;
+		eqR = PPC_REG_CR3EQ;
+		soR = PPC_REG_CR3UN;
+		break;
+	case PPC_REG_CR4:
+		ltR = PPC_REG_CR4LT;
+		gtR = PPC_REG_CR4GT;
+		eqR = PPC_REG_CR4EQ;
+		soR = PPC_REG_CR4UN;
+		break;
+	case PPC_REG_CR5:
+		ltR = PPC_REG_CR5LT;
+		gtR = PPC_REG_CR5GT;
+		eqR = PPC_REG_CR5EQ;
+		soR = PPC_REG_CR5UN;
+		break;
+	case PPC_REG_CR6:
+		ltR = PPC_REG_CR6LT;
+		gtR = PPC_REG_CR6GT;
+		eqR = PPC_REG_CR6EQ;
+		soR = PPC_REG_CR6UN;
+		break;
+	case PPC_REG_CR7:
+		ltR = PPC_REG_CR7LT;
+		gtR = PPC_REG_CR7GT;
+		eqR = PPC_REG_CR7EQ;
+		soR = PPC_REG_CR7UN;
+		break;
+	default: throw GenericError("Unhandled CR register.");
+	}
+}
+
 void Capstone2LlvmIrTranslatorPowerpc_impl::storeCrX(
 		llvm::IRBuilder<>& irb,
 		uint32_t crReg,
@@ -315,59 +372,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::storeCrX(
 	uint32_t eqR = PPC_REG_CR0EQ;
 	uint32_t soR = PPC_REG_CR0UN;
 
-	switch (crReg)
-	{
-		case PPC_REG_CR0:
-			ltR = PPC_REG_CR0LT;
-			gtR = PPC_REG_CR0GT;
-			eqR = PPC_REG_CR0EQ;
-			soR = PPC_REG_CR0UN;
-			break;
-		case PPC_REG_CR1:
-			ltR = PPC_REG_CR1LT;
-			gtR = PPC_REG_CR1GT;
-			eqR = PPC_REG_CR1EQ;
-			soR = PPC_REG_CR1UN;
-			break;
-		case PPC_REG_CR2:
-			ltR = PPC_REG_CR2LT;
-			gtR = PPC_REG_CR2GT;
-			eqR = PPC_REG_CR2EQ;
-			soR = PPC_REG_CR2UN;
-			break;
-		case PPC_REG_CR3:
-			ltR = PPC_REG_CR3LT;
-			gtR = PPC_REG_CR3GT;
-			eqR = PPC_REG_CR3EQ;
-			soR = PPC_REG_CR3UN;
-			break;
-		case PPC_REG_CR4:
-			ltR = PPC_REG_CR4LT;
-			gtR = PPC_REG_CR4GT;
-			eqR = PPC_REG_CR4EQ;
-			soR = PPC_REG_CR4UN;
-			break;
-		case PPC_REG_CR5:
-			ltR = PPC_REG_CR5LT;
-			gtR = PPC_REG_CR5GT;
-			eqR = PPC_REG_CR5EQ;
-			soR = PPC_REG_CR5UN;
-			break;
-		case PPC_REG_CR6:
-			ltR = PPC_REG_CR6LT;
-			gtR = PPC_REG_CR6GT;
-			eqR = PPC_REG_CR6EQ;
-			soR = PPC_REG_CR6UN;
-			break;
-		case PPC_REG_CR7:
-			ltR = PPC_REG_CR7LT;
-			gtR = PPC_REG_CR7GT;
-			eqR = PPC_REG_CR7EQ;
-			soR = PPC_REG_CR7UN;
-			break;
-		default:
-			throw GenericError("Unhandled CR register.");
-	}
+	crFieldRegisters(crReg, ltR, gtR, eqR, soR);
 
 	storeRegister(ltR, lt, irb);
 	storeRegister(gtR, gt, irb);
@@ -384,59 +389,7 @@ std::tuple<llvm::Value*, llvm::Value*, llvm::Value*, llvm::Value*> Capstone2Llvm
 	uint32_t eqR = PPC_REG_CR0EQ;
 	uint32_t soR = PPC_REG_CR0UN;
 
-	switch (crReg)
-	{
-		case PPC_REG_CR0:
-			ltR = PPC_REG_CR0LT;
-			gtR = PPC_REG_CR0GT;
-			eqR = PPC_REG_CR0EQ;
-			soR = PPC_REG_CR0UN;
-			break;
-		case PPC_REG_CR1:
-			ltR = PPC_REG_CR1LT;
-			gtR = PPC_REG_CR1GT;
-			eqR = PPC_REG_CR1EQ;
-			soR = PPC_REG_CR1UN;
-			break;
-		case PPC_REG_CR2:
-			ltR = PPC_REG_CR2LT;
-			gtR = PPC_REG_CR2GT;
-			eqR = PPC_REG_CR2EQ;
-			soR = PPC_REG_CR2UN;
-			break;
-		case PPC_REG_CR3:
-			ltR = PPC_REG_CR3LT;
-			gtR = PPC_REG_CR3GT;
-			eqR = PPC_REG_CR3EQ;
-			soR = PPC_REG_CR3UN;
-			break;
-		case PPC_REG_CR4:
-			ltR = PPC_REG_CR4LT;
-			gtR = PPC_REG_CR4GT;
-			eqR = PPC_REG_CR4EQ;
-			soR = PPC_REG_CR4UN;
-			break;
-		case PPC_REG_CR5:
-			ltR = PPC_REG_CR5LT;
-			gtR = PPC_REG_CR5GT;
-			eqR = PPC_REG_CR5EQ;
-			soR = PPC_REG_CR5UN;
-			break;
-		case PPC_REG_CR6:
-			ltR = PPC_REG_CR6LT;
-			gtR = PPC_REG_CR6GT;
-			eqR = PPC_REG_CR6EQ;
-			soR = PPC_REG_CR6UN;
-			break;
-		case PPC_REG_CR7:
-			ltR = PPC_REG_CR7LT;
-			gtR = PPC_REG_CR7GT;
-			eqR = PPC_REG_CR7EQ;
-			soR = PPC_REG_CR7UN;
-			break;
-		default:
-			throw GenericError("Unhandled CR register.");
-	}
+	crFieldRegisters(crReg, ltR, gtR, eqR, soR);
 
 	llvm::Value* lt = loadRegister(ltR, irb);
 	llvm::Value* gt = loadRegister(gtR, irb);
@@ -461,59 +414,7 @@ llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::loadCrX(
 		return loadRegister(crReg, irb);
 	}
 
-	switch (crReg)
-	{
-		case PPC_REG_CR0:
-			ltR = PPC_REG_CR0LT;
-			gtR = PPC_REG_CR0GT;
-			eqR = PPC_REG_CR0EQ;
-			soR = PPC_REG_CR0UN;
-			break;
-		case PPC_REG_CR1:
-			ltR = PPC_REG_CR1LT;
-			gtR = PPC_REG_CR1GT;
-			eqR = PPC_REG_CR1EQ;
-			soR = PPC_REG_CR1UN;
-			break;
-		case PPC_REG_CR2:
-			ltR = PPC_REG_CR2LT;
-			gtR = PPC_REG_CR2GT;
-			eqR = PPC_REG_CR2EQ;
-			soR = PPC_REG_CR2UN;
-			break;
-		case PPC_REG_CR3:
-			ltR = PPC_REG_CR3LT;
-			gtR = PPC_REG_CR3GT;
-			eqR = PPC_REG_CR3EQ;
-			soR = PPC_REG_CR3UN;
-			break;
-		case PPC_REG_CR4:
-			ltR = PPC_REG_CR4LT;
-			gtR = PPC_REG_CR4GT;
-			eqR = PPC_REG_CR4EQ;
-			soR = PPC_REG_CR4UN;
-			break;
-		case PPC_REG_CR5:
-			ltR = PPC_REG_CR5LT;
-			gtR = PPC_REG_CR5GT;
-			eqR = PPC_REG_CR5EQ;
-			soR = PPC_REG_CR5UN;
-			break;
-		case PPC_REG_CR6:
-			ltR = PPC_REG_CR6LT;
-			gtR = PPC_REG_CR6GT;
-			eqR = PPC_REG_CR6EQ;
-			soR = PPC_REG_CR6UN;
-			break;
-		case PPC_REG_CR7:
-			ltR = PPC_REG_CR7LT;
-			gtR = PPC_REG_CR7GT;
-			eqR = PPC_REG_CR7EQ;
-			soR = PPC_REG_CR7UN;
-			break;
-		default:
-			throw GenericError("Unhandled CR register.");
-	}
+	crFieldRegisters(crReg, ltR, gtR, eqR, soR);
 
 	switch (type)
 	{
@@ -1129,6 +1030,279 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreIndexed(cs_insn* i, cs
 		{
 			storeRegister(ppcOp1.reg, add, irb);
 		}
+}
+
+/**
+ * The FPRs are doubles. A single-precision PowerPC operation computes in
+ * double and rounds the result to single before writing it back; the
+ * round-trip through float is that rounding.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::roundToSingle(llvm::IRBuilder<>& irb, llvm::Value* val)
+{
+	return irb.CreateFPExt(irb.CreateFPTrunc(val, irb.getFloatTy()), irb.getDoubleTy());
+}
+
+/**
+ * Load @a op as a double, whatever it arrives as.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::loadOpDouble(cs_ppc_op& op, llvm::IRBuilder<>& irb)
+{
+	auto* v = loadOp(op, irb, irb.getDoubleTy());
+	return generateTypeConversion(irb, v, irb.getDoubleTy(), eOpConv::FPCAST_OR_BITCAST);
+}
+
+llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::fpIntrinsic(
+	llvm::IRBuilder<>& irb, llvm::Intrinsic::ID id, llvm::ArrayRef<llvm::Value*> args)
+{
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, id, irb.getDoubleTy());
+	return irb.CreateCall(f, args);
+}
+
+/**
+ * Is @a id one of the single-precision forms? Those compute in double and
+ * round the result to single before writing it back.
+ */
+bool Capstone2LlvmIrTranslatorPowerpc_impl::isSinglePrecisionForm(unsigned id)
+{
+	switch (id)
+	{
+	case PPC_INS_FADDS:
+	case PPC_INS_FSUBS:
+	case PPC_INS_FMULS:
+	case PPC_INS_FDIVS:
+	case PPC_INS_FSQRTS:
+	case PPC_INS_FRES:
+	case PPC_INS_FRSQRTES:
+	case PPC_INS_FMADDS:
+	case PPC_INS_FMSUBS:
+	case PPC_INS_FNMADDS:
+	case PPC_INS_FNMSUBS:
+	case PPC_INS_FCFIDS:
+	case PPC_INS_FCFIDUS: return true;
+	default: return false;
+	}
+}
+
+/**
+ * PPC_INS_FADD, PPC_INS_FADDS, PPC_INS_FSUB, PPC_INS_FSUBS,
+ * PPC_INS_FMUL, PPC_INS_FMULS, PPC_INS_FDIV, PPC_INS_FDIVS,
+ * PPC_INS_FCPSGN
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateFpArithm(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, pi, irb);
+
+	op1 = loadOpDouble(pi->operands[1], irb);
+	op2 = loadOpDouble(pi->operands[2], irb);
+
+	llvm::Value* val = nullptr;
+	switch (i->id)
+	{
+	case PPC_INS_FADD:
+	case PPC_INS_FADDS: val = irb.CreateFAdd(op1, op2); break;
+	case PPC_INS_FSUB:
+	case PPC_INS_FSUBS: val = irb.CreateFSub(op1, op2); break;
+	case PPC_INS_FMUL:
+	case PPC_INS_FMULS: val = irb.CreateFMul(op1, op2); break;
+	case PPC_INS_FDIV:
+	case PPC_INS_FDIVS: val = irb.CreateFDiv(op1, op2); break;
+	// fcpsgn FRT, FRA, FRB takes the magnitude of FRB and the sign of FRA.
+	// llvm.copysign takes (magnitude, sign), so the operands swap.
+	case PPC_INS_FCPSGN: val = fpIntrinsic(irb, llvm::Intrinsic::copysign, {op2, op1}); break;
+	default: return;
+	}
+
+	if (isSinglePrecisionForm(i->id))
+	{
+		val = roundToSingle(irb, val);
+	}
+	storeOp(pi->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
+}
+
+/**
+ * The unary floating-point forms, written FRT, FRB.
+ *
+ * PPC_INS_FMR, PPC_INS_FNEG, PPC_INS_FABS, PPC_INS_FNABS,
+ * PPC_INS_FSQRT, PPC_INS_FSQRTS, PPC_INS_FRSP,
+ * PPC_INS_FRE, PPC_INS_FRES, PPC_INS_FRSQRTE, PPC_INS_FRSQRTES,
+ * PPC_INS_FRIM, PPC_INS_FRIN, PPC_INS_FRIP, PPC_INS_FRIZ,
+ * PPC_INS_FCTIW, PPC_INS_FCTIWZ, PPC_INS_FCTIWUZ,
+ * PPC_INS_FCTID, PPC_INS_FCTIDZ, PPC_INS_FCTIDUZ,
+ * PPC_INS_FCFID, PPC_INS_FCFIDS, PPC_INS_FCFIDU, PPC_INS_FCFIDUS
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateFpUnary(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, pi, irb);
+
+	auto* f64 = irb.getDoubleTy();
+
+	// The conversion instructions do not read or write their FPR as a number:
+	// fcfid reads a 64-bit integer out of one, and the fctiw/fctid family
+	// leaves one there. They load and store differently from everything else,
+	// so they come first.
+	switch (i->id)
+	{
+	case PPC_INS_FCFID:
+	case PPC_INS_FCFIDS:
+	case PPC_INS_FCFIDU:
+	case PPC_INS_FCFIDUS: {
+		op1 = loadOp(pi->operands[1], irb);
+		op1 = generateTypeConversion(irb, op1, irb.getInt64Ty(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		bool uns = (i->id == PPC_INS_FCFIDU || i->id == PPC_INS_FCFIDUS);
+		llvm::Value* val = uns ? irb.CreateUIToFP(op1, f64) : irb.CreateSIToFP(op1, f64);
+		if (isSinglePrecisionForm(i->id))
+		{
+			val = roundToSingle(irb, val);
+		}
+		storeOp(pi->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
+		return;
+	}
+	case PPC_INS_FCTIW:
+	case PPC_INS_FCTIWZ:
+	case PPC_INS_FCTIWUZ:
+	case PPC_INS_FCTID:
+	case PPC_INS_FCTIDZ:
+	case PPC_INS_FCTIDUZ: {
+		op1 = loadOpDouble(pi->operands[1], irb);
+		// The Z forms truncate. The other two round by FPSCR[RN], which is
+		// not modelled; round-to-nearest-even is its reset value and what
+		// every ABI leaves it at.
+		if (i->id == PPC_INS_FCTIW || i->id == PPC_INS_FCTID)
+		{
+			op1 = fpIntrinsic(irb, llvm::Intrinsic::roundeven, {op1});
+		}
+		bool wide = (i->id == PPC_INS_FCTID || i->id == PPC_INS_FCTIDZ || i->id == PPC_INS_FCTIDUZ);
+		bool uns = (i->id == PPC_INS_FCTIWUZ || i->id == PPC_INS_FCTIDUZ);
+		auto* ity = wide ? irb.getInt64Ty() : irb.getInt32Ty();
+		llvm::Value* val = uns ? irb.CreateFPToUI(op1, ity) : irb.CreateFPToSI(op1, ity);
+		// The W forms leave the result in the low 32 bits and the ISA
+		// leaves the high 32 undefined. Widening by the result's own
+		// signedness is a defined choice; for the D forms these are
+		// no-ops.
+		val = uns ? irb.CreateZExtOrTrunc(val, irb.getInt64Ty()) : irb.CreateSExtOrTrunc(val, irb.getInt64Ty());
+		// FPCAST_OR_BITCAST, not ZEXT_TRUNC_OR_BITCAST: the destination is
+		// an f64 register and the value is a bit pattern to be reinterpreted,
+		// not a number to be converted. ZEXT_TRUNC_OR_BITCAST throws on a
+		// non-integer destination; this bitcasts i64 to double, which is
+		// what the FPR holds after fctiw.
+		storeOp(pi->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
+		return;
+	}
+	default: break;
+	}
+
+	auto* one = llvm::ConstantFP::get(f64, 1.0);
+	op1 = loadOpDouble(pi->operands[1], irb);
+
+	llvm::Value* val = nullptr;
+	switch (i->id)
+	{
+	case PPC_INS_FMR: val = op1; break;
+	case PPC_INS_FNEG: val = irb.CreateFNeg(op1); break;
+	case PPC_INS_FABS: val = fpIntrinsic(irb, llvm::Intrinsic::fabs, {op1}); break;
+	case PPC_INS_FNABS: val = irb.CreateFNeg(fpIntrinsic(irb, llvm::Intrinsic::fabs, {op1})); break;
+	case PPC_INS_FSQRT:
+	case PPC_INS_FSQRTS: val = fpIntrinsic(irb, llvm::Intrinsic::sqrt, {op1}); break;
+	case PPC_INS_FRSP: val = roundToSingle(irb, op1); break;
+	// The estimate instructions are specified only to within a relative
+	// error bound, so the exact operation is the honest reading of them.
+	case PPC_INS_FRE:
+	case PPC_INS_FRES: val = irb.CreateFDiv(one, op1); break;
+	case PPC_INS_FRSQRTE:
+	case PPC_INS_FRSQRTES: val = irb.CreateFDiv(one, fpIntrinsic(irb, llvm::Intrinsic::sqrt, {op1})); break;
+	case PPC_INS_FRIM: val = fpIntrinsic(irb, llvm::Intrinsic::floor, {op1}); break;
+	case PPC_INS_FRIP: val = fpIntrinsic(irb, llvm::Intrinsic::ceil, {op1}); break;
+	case PPC_INS_FRIZ: val = fpIntrinsic(irb, llvm::Intrinsic::trunc, {op1}); break;
+	case PPC_INS_FRIN: val = fpIntrinsic(irb, llvm::Intrinsic::round, {op1}); break;
+	default: return;
+	}
+
+	if (isSinglePrecisionForm(i->id))
+	{
+		val = roundToSingle(irb, val);
+	}
+	storeOp(pi->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
+}
+
+/**
+ * The fused multiply-add family and fsel, all written FRT, FRA, FRC, FRB.
+ *
+ * PPC_INS_FMADD, PPC_INS_FMADDS, PPC_INS_FMSUB, PPC_INS_FMSUBS,
+ * PPC_INS_FNMADD, PPC_INS_FNMADDS, PPC_INS_FNMSUB, PPC_INS_FNMSUBS,
+ * PPC_INS_FSEL
+ *
+ * Operand order is the thing these cannot be written without settling: the
+ * assembly names FRA, FRC, FRB in that order, so operands[2] is the
+ * multiplicand and operands[3] the addend. The tests pin it, so if capstone
+ * ever disagrees they say so instead of the arithmetic being quietly wrong.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateFpTernary(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_QUATERNARY(i, pi, irb);
+
+	auto* a = loadOpDouble(pi->operands[1], irb);
+	auto* c = loadOpDouble(pi->operands[2], irb);
+	auto* b = loadOpDouble(pi->operands[3], irb);
+
+	if (i->id == PPC_INS_FSEL)
+	{
+		// FRT = FRA >= 0.0 ? FRC : FRB. The comparison is ordered, so a NaN in
+		// FRA selects FRB -- which is what the ISA says.
+		auto* zero = llvm::ConstantFP::get(irb.getDoubleTy(), 0.0);
+		auto* sel = irb.CreateSelect(irb.CreateFCmpOGE(a, zero), c, b);
+		storeOp(pi->operands[0], sel, irb, eOpConv::FPCAST_OR_BITCAST);
+		return;
+	}
+
+	bool negateAddend =
+		(i->id == PPC_INS_FMSUB || i->id == PPC_INS_FMSUBS || i->id == PPC_INS_FNMSUB || i->id == PPC_INS_FNMSUBS);
+	bool negateResult =
+		(i->id == PPC_INS_FNMADD || i->id == PPC_INS_FNMADDS || i->id == PPC_INS_FNMSUB || i->id == PPC_INS_FNMSUBS);
+
+	llvm::Value* val = fpIntrinsic(irb, llvm::Intrinsic::fma, {a, c, negateAddend ? irb.CreateFNeg(b) : b});
+	if (negateResult)
+	{
+		val = irb.CreateFNeg(val);
+	}
+	if (isSinglePrecisionForm(i->id))
+	{
+		val = roundToSingle(irb, val);
+	}
+	storeOp(pi->operands[0], val, irb, eOpConv::FPCAST_OR_BITCAST);
+}
+
+/**
+ * PPC_INS_FCMPU
+ *
+ * Not storeCrX: that builds integer comparisons, and it writes a constant zero
+ * into the fourth bit of the field because for the integer compares that bit
+ * is a copy of XER, which is not modelled. Here the fourth bit is FU,
+ * "unordered", and it is the only thing that distinguishes comparing a NaN
+ * from comparing two equal numbers.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateFcmp(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, pi, irb);
+
+	uint32_t crReg = PPC_REG_CR0;
+	if (pi->operands[0].type == PPC_OP_REG && pi->operands[0].reg >= PPC_REG_CR0 && pi->operands[0].reg <= PPC_REG_CR7)
+	{
+		crReg = pi->operands[0].reg;
+	}
+
+	auto* a = loadOpDouble(pi->operands[1], irb);
+	auto* b = loadOpDouble(pi->operands[2], irb);
+
+	uint32_t ltR = PPC_REG_CR0LT;
+	uint32_t gtR = PPC_REG_CR0GT;
+	uint32_t eqR = PPC_REG_CR0EQ;
+	uint32_t unR = PPC_REG_CR0UN;
+	crFieldRegisters(crReg, ltR, gtR, eqR, unR);
+
+	storeRegister(ltR, irb.CreateFCmpOLT(a, b), irb);
+	storeRegister(gtR, irb.CreateFCmpOGT(a, b), irb);
+	storeRegister(eqR, irb.CreateFCmpOEQ(a, b), irb);
+	storeRegister(unR, irb.CreateFCmpUNO(a, b), irb);
 }
 
 /**

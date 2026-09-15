@@ -363,6 +363,169 @@ TEST_F(LlvmIrEmulatorTests, usingOf_x86_fp80_Type)
 	EXPECT_DOUBLE_EQ(3.0, emu.getGlobalVariableValue(st0).DoubleVal);
 }
 
+//
+// Floating-point intrinsics.
+//
+// None of these used to work. IntrinsicLowering turns most of them into
+// libcalls -- sqrt, floor, … -- which this interpreter cannot resolve, so it
+// produced 0; llvm.fma does not even get that far, but reports "Code generator
+// does not support intrinsic function" through report_fatal_error and takes
+// the process with it. llvm.fabs, llvm.minnum and llvm.maxnum were already
+// excluded from lowering for that reason and then fell to the
+// unhandled-external path, where a double return leaves GenericValue::DoubleVal
+// uninitialised.
+//
+
+class LlvmIrEmulatorFpIntrinsicTests : public LlvmIrTests {
+protected:
+	double runUnary(const std::string& intrinsic, double in)
+	{
+		parseInput(
+					"declare double @llvm." + intrinsic + ".f64(double)\n"
+					"@g = internal global double 0.0\n"
+					"define i32 @f() {\n"
+					"  %a = load double, double* @g\n"
+					"  %b = call double @llvm." + intrinsic + ".f64(double %a)\n"
+					"  store double %b, double* @g\n"
+					"  ret i32 0\n"
+					"}\n");
+		auto* f = getFunctionByName("f");
+		auto* g = getGlobalByName("g");
+		GenericValue v;
+		v.DoubleVal = in;
+
+		LlvmIrEmulator emu(module.get());
+		emu.setGlobalVariableValue(g, v);
+		emu.runFunction(f);
+
+		return emu.getGlobalVariableValue(g).DoubleVal;
+	}
+};
+
+TEST_F(LlvmIrEmulatorFpIntrinsicTests, fabs)
+{
+	EXPECT_DOUBLE_EQ(3.5, runUnary("fabs", -3.5));
+}
+
+TEST_F(LlvmIrEmulatorFpIntrinsicTests, sqrt)
+{
+	EXPECT_DOUBLE_EQ(4.0, runUnary("sqrt", 16.0));
+}
+
+TEST_F(LlvmIrEmulatorFpIntrinsicTests, floor)
+{
+	EXPECT_DOUBLE_EQ(-4.0, runUnary("floor", -3.5));
+}
+
+TEST_F(LlvmIrEmulatorFpIntrinsicTests, ceil)
+{
+	EXPECT_DOUBLE_EQ(-3.0, runUnary("ceil", -3.5));
+}
+
+TEST_F(LlvmIrEmulatorFpIntrinsicTests, trunc)
+{
+	EXPECT_DOUBLE_EQ(-3.0, runUnary("trunc", -3.5));
+}
+
+TEST_F(LlvmIrEmulatorFpIntrinsicTests, round)
+{
+	// round is away from zero at a tie; roundeven below is to even. -3.5 is
+	// the value that tells them apart.
+	EXPECT_DOUBLE_EQ(-4.0, runUnary("round", -3.5));
+}
+
+TEST_F(LlvmIrEmulatorFpIntrinsicTests, roundeven)
+{
+	EXPECT_DOUBLE_EQ(-4.0, runUnary("roundeven", -3.5));
+	EXPECT_DOUBLE_EQ(2.0, runUnary("roundeven", 2.5));
+}
+
+TEST_F(LlvmIrEmulatorFpIntrinsicTests, fma)
+{
+	// The one that used to call report_fatal_error and end the test binary.
+	parseInput(R"(
+		declare double @llvm.fma.f64(double, double, double)
+		@g = internal global double 0.0
+		define i32 @f() {
+			%r = call double @llvm.fma.f64(double 2.0, double 3.0, double 4.0)
+			store double %r, double* @g
+			ret i32 0
+		}
+	)");
+	auto* f = getFunctionByName("f");
+	auto* g = getGlobalByName("g");
+
+	LlvmIrEmulator emu(module.get());
+	emu.runFunction(f);
+
+	EXPECT_DOUBLE_EQ(10.0, emu.getGlobalVariableValue(g).DoubleVal);
+}
+
+TEST_F(LlvmIrEmulatorFpIntrinsicTests, copysign)
+{
+	parseInput(R"(
+		declare double @llvm.copysign.f64(double, double)
+		@g = internal global double 0.0
+		define i32 @f() {
+			%r = call double @llvm.copysign.f64(double 3.5, double -1.0)
+			store double %r, double* @g
+			ret i32 0
+		}
+	)");
+	auto* f = getFunctionByName("f");
+	auto* g = getGlobalByName("g");
+
+	LlvmIrEmulator emu(module.get());
+	emu.runFunction(f);
+
+	EXPECT_DOUBLE_EQ(-3.5, emu.getGlobalVariableValue(g).DoubleVal);
+}
+
+TEST_F(LlvmIrEmulatorFpIntrinsicTests, floatWidth)
+{
+	// The f32 forms take the other half of the branch: GenericValue keeps them
+	// in FloatVal, not DoubleVal.
+	parseInput(R"(
+		declare float @llvm.sqrt.f32(float)
+		@g = internal global float 0.0
+		define i32 @f() {
+			%r = call float @llvm.sqrt.f32(float 16.0)
+			store float %r, float* @g
+			ret i32 0
+		}
+	)");
+	auto* f = getFunctionByName("f");
+	auto* g = getGlobalByName("g");
+
+	LlvmIrEmulator emu(module.get());
+	emu.runFunction(f);
+
+	EXPECT_FLOAT_EQ(4.0f, emu.getGlobalVariableValue(g).FloatVal);
+}
+
+TEST_F(LlvmIrEmulatorFpIntrinsicTests, theCallIsStillRecorded)
+{
+	// Computing the value must not stop the call being reported: tests written
+	// before this existed assert that llvm.fabs turns up in
+	// getCalledValuesSet(), because reaching the unhandled-external path was
+	// the only thing that used to happen to it.
+	parseInput(R"(
+		declare double @llvm.fabs.f64(double)
+		define i32 @f() {
+			%r = call double @llvm.fabs.f64(double -3.5)
+			ret i32 0
+		}
+	)");
+	auto* f = getFunctionByName("f");
+
+	LlvmIrEmulator emu(module.get());
+	emu.runFunction(f);
+
+	auto called = emu.getCalledValuesSet();
+	EXPECT_NE(nullptr, module->getFunction("llvm.fabs.f64"));
+	EXPECT_EQ(1u, called.count(module->getFunction("llvm.fabs.f64")));
+}
+
 } // tests
 } // llvmir_emul
 } // retdec

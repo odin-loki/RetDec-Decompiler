@@ -8,6 +8,8 @@
 #ifndef CAPSTONE2LLVMIR_POWERPC_POWERPC_IMPL_H
 #define CAPSTONE2LLVMIR_POWERPC_POWERPC_IMPL_H
 
+#include <llvm/IR/Intrinsics.h>
+
 #include "retdec/capstone2llvmir/powerpc/powerpc.h"
 #include "capstone2llvmir/capstone2llvmir_impl.h"
 
@@ -85,6 +87,12 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 				llvm::Value* op1 = nullptr,
 				bool signedCmp = true);
 		void storeCr0(llvm::IRBuilder<>& irb, cs_ppc* pi, llvm::Value* val);
+		void crFieldRegisters(uint32_t crReg, uint32_t& ltR, uint32_t& gtR, uint32_t& eqR, uint32_t& soR);
+
+		llvm::Value* roundToSingle(llvm::IRBuilder<>& irb, llvm::Value* val);
+		llvm::Value* loadOpDouble(cs_ppc_op& op, llvm::IRBuilder<>& irb);
+		llvm::Value* fpIntrinsic(llvm::IRBuilder<>& irb, llvm::Intrinsic::ID id, llvm::ArrayRef<llvm::Value*> args);
+		static bool isSinglePrecisionForm(unsigned id);
 
 		std::tuple<llvm::Value*, llvm::Value*, llvm::Value*, llvm::Value*> loadCrX(
 				llvm::IRBuilder<>& irb,
@@ -138,7 +146,11 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateDivw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateEqv(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateExtendSign(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateFcmp(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateFence(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateFpArithm(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateFpTernary(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateFpUnary(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLhbrx(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLi(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLis(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);

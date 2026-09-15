@@ -2247,6 +2247,64 @@ table entries at a helper would move roughly 1% of MIPS and 0.5% of ARM64 out
 of COV-01's untranslated column without changing one instruction of output.
 That is moving the metric, not the product.
 
+### PowerPC floating-point arithmetic, and the emulator that could not run it
+
+The load/store half landed first. This is the other 44 entries: `FADD FSUB
+FMUL FDIV` and their single-precision forms, `FMR FNEG FABS FNABS FSQRT FRSP
+FCPSGN FSEL`, the `FMADD` family, `FCMPU`, the estimates (`FRE FRSQRTE`), the
+rounding forms (`FRIM FRIN FRIP FRIZ`) and the twelve integer conversions.
+PowerPC's dispatch table now has no `PPC_INS_F*` left at `nullptr`.
+
+Three things worth writing down.
+
+**`FCMPU` cannot use `storeCrX`.** That helper builds integer comparisons, and
+it writes a constant zero into the fourth bit of the CR field because for the
+integer compares that bit is a copy of XER, which is not modelled. For a
+floating-point compare the fourth bit is FU, "unordered", and it is the only
+thing that distinguishes comparing a NaN from comparing two equal numbers. So
+`translateFcmp` writes the field itself, from `fcmp olt/ogt/oeq/uno`.
+
+The `crReg -> {lt, gt, eq, so}` switch was written out three times in
+`powerpc.cpp` already. A fourth copy was not the answer; `crFieldRegisters()`
+is, and the existing three now call it.
+
+**The single-precision forms round, and my first test could not tell.** An `S`
+form computes in double and rounds the result to single before writing it
+back. The obvious test value is 0.1, whose double and float-rounded-to-double
+representations differ by about 1.5e-9 — and this harness compares doubles to a
+tolerance of 0.001, so that test passed whether the rounding happened or not. I
+found this by deleting `roundToSingle` and watching the test still pass. The
+value is 2^24+1 now: the smallest integer a float cannot represent, which
+rounds to 2^24, a difference of 1.
+
+**The emulator could not execute any of it.** `tests/capstone2llvmir` runs the
+IR it produces, and `src/llvmir-emul` handled none of the floating-point
+intrinsics:
+
+  * `IntrinsicLowering` turns most of them into libcalls — `sqrt`, `floor`, … —
+    which the interpreter cannot resolve, so `fsqrt 16.0` came back 0.
+  * For `llvm.fma` it does not even do that. It reports "Code generator does
+    not support intrinsic function" through `report_fatal_error`, which ends
+    the process: one `fmadd` test killed the whole 4,477-test binary.
+  * `llvm.fabs`, `llvm.minnum` and `llvm.maxnum` were already excluded from
+    lowering, with the comment "can not lower those functions", and then fell
+    through to the unhandled-external path — where a `double` return leaves
+    `GenericValue::DoubleVal` uninitialised. They were returning whatever was
+    on the stack, and the ARM64 and x86 tests that use them only ever asserted
+    that the call was *recorded*, never what it returned.
+
+`visitCallInst` now computes fabs, sqrt, floor, ceil, trunc, round, roundeven,
+nearbyint, rint, copysign, minnum, maxnum and fma directly, for f32 and f64.
+Not for x86_fp80: `GenericValue` keeps those in `IntVal`, not `DoubleVal`, so
+the fp80 forms keep the path they had. And it still records the call, because
+six ARM64 and x86 tests assert exactly that — which is how I found out I had
+broken them.
+
+Eleven tests in `tests/llvmir-emul`, under a class name the C2L-01 filter
+actually matches (`LlvmIrEmul*`). The first draft called it `FpIntrinsicTests`,
+which the gate's own filter would have skipped: eleven tests that could
+disappear without the floor noticing.
+
 ### Not one of the 367 corpus sources contains a float
 
 ```
