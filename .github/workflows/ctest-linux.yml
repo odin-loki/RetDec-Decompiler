@@ -287,7 +287,7 @@ jobs:
       #
       # It is here rather than in the weekly nightly because the cost was
       # measured rather than assumed: run 272's CC-01 step took ten seconds
-      # for 24 binaries, so 216 is about a minute and a half against a job
+      # for 24 binaries, so the whole corpus is a couple of minutes against a job
       # that spends eight minutes building and seventeen in clang-tidy. A
       # measurement that cheap does not belong on a weekly cadence.
       # Run 276, at 2c3669d: 216 of 216, rate 1.0000. The whole corpus.
@@ -306,7 +306,15 @@ jobs:
       # three, so none of it was bought with detection quality or determinism.
       #
       # The floor is 1.0000 now: any regression at all turns the run red.
-      - name: CC-01 emitted C compiles (all 216)
+      #
+      # 252 binaries, not 216: six floating-point sources joined the corpus.
+      # Until they did, not one of its 367 sources contained a `float` or a
+      # `double`, so "216/216 emitted C files compile" was 216 integer
+      # programs and no gate here had ever put a floating-point instruction
+      # through the decompiler -- on any architecture, x86-64 included. The
+      # floor is a rate, so the count moving does not touch it; what is new is
+      # that the rate now covers FP.
+      - name: CC-01 emitted C compiles (all 252)
         if: always()
         run: |
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
@@ -319,7 +327,7 @@ jobs:
             --limit 0 --timeout 120 --errors 10 --min-rate 1.0000 \
             --save-failures cc01-failures-full 2>&1 | tee /tmp/cc01-full.log || rc=$?
           {
-            echo "### CC-01 emitted C compiles (all 216)"
+            echo "### CC-01 emitted C compiles (all 252)"
             echo '```'
             grep -E '^CC-01|^  ' /tmp/cc01-full.log || tail -n 3 /tmp/cc01-full.log
             echo '```'
@@ -327,7 +335,7 @@ jobs:
           exit $rc
 
       # ARCH-01. src/capstone2llvmir translates five architectures and every
-      # gate above measures one: all 216 corpus binaries are x86-64, so CC-01,
+      # gate above measures one: every corpus binary is x86-64, so CC-01,
       # DET-01 and the F1 gate say nothing about ARM, ARM64, MIPS or PowerPC.
       # C2L-01 (standalone-check) covers their instruction semantics; this is
       # the first thing to ask what the decompiler does with a whole binary of
@@ -369,12 +377,44 @@ jobs:
             echo '```'
           } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
 
+      # ARCH-01 over the whole corpus, and a measurement rather than a floor.
+      #
+      # The floored step above takes --limit 40, which is the first ten
+      # programs by name across the four architectures. The six floating-point
+      # sources sort past that window, so the step that gates has never seen a
+      # floating-point binary on any of these architectures -- and PowerPC and
+      # 32-bit ARM only learned to translate floating point in the two commits
+      # before this one.
+      #
+      # So this runs all 168 and reports. No --min-rate and no --arch-min: the
+      # 128 binaries it adds have never been measured, and a floor picked
+      # before the first number is either vacuous or a fiction. It gets one
+      # once it has printed a rate, which is the road CC-01 took from 24
+      # binaries to 252 and ARCH-01 itself took from 0/40 to 40/40.
+      - name: ARCH-01 non-x86 decompilation (whole corpus, measurement)
+        if: always()
+        run: |
+          DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
+          if [ -z "$DEC" ]; then echo "retdec-decompiler not found"; exit 1; fi
+          bash scripts/ci/check_multiarch_decompile.sh \
+            --decompiler "$DEC" --corpus /tmp/ma-corpus \
+            --limit 0 --timeout 60 \
+            --save-failures arch01-full-failures 2>&1 | tee /tmp/arch01-full.log
+          {
+            echo "### ARCH-01 non-x86 decompilation (whole corpus)"
+            echo '```'
+            grep -E '^ARCH-01' /tmp/arch01-full.log || tail -n 3 /tmp/arch01-full.log
+            echo '```'
+          } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Publish the non-x86 failures
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: arch01-failures
-          path: arch01-failures
+          path: |
+            arch01-failures
+            arch01-full-failures
           if-no-files-found: ignore
           retention-days: 30
 

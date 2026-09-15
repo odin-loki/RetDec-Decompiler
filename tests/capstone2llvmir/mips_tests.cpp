@@ -7,6 +7,8 @@
 
 #include <llvm/IR/InstIterator.h>
 
+#include <cstring>
+#include <cstdint>
 #include "capstone2llvmir/capstone2llvmir_tests.h"
 #include "retdec/capstone2llvmir/mips/mips.h"
 
@@ -6386,6 +6388,72 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, SynciEmitsFence)
 		}
 	}
 	EXPECT_TRUE(found);
+}
+
+//
+// MIPS_INS_MTHC1, MIPS_INS_MFHC1
+//
+// mtc1 and mfc1 move the low half of a 64-bit FPU register; these move the
+// high half, and a compiler emits them in pairs to get a double in and out of
+// the FPU without going through memory. MTHC1 was the only instruction COV-01
+// found untranslated in MIPS floating-point programs.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MTHC1)
+{
+	SKIP_MODE_64;
+
+	// The low half must survive: this writes only bits 63..32. Starting from
+	// 1.0 (0x3ff0000000000000) and writing 0x40090000 over the high half gives
+	// 0x4009000000000000, which is 3.125. Getting it wrong by clobbering the
+	// low half would still look plausible, so the low half is non-zero.
+	double start;
+	std::uint64_t startBits = 0x3ff0000012345678ULL;
+	std::memcpy(&start, &startBits, sizeof(start));
+	double expected;
+	std::uint64_t expectedBits = 0x4009000012345678ULL;
+	std::memcpy(&expected, &expectedBits, sizeof(expected));
+
+	setRegisters({
+		{MIPS_REG_4, 0x40090000},
+		{MIPS_REG_FD0, start},
+	});
+
+	// Keystone 0.9.2 will not assemble mthc1 in its MIPS32 mode ("instruction
+	// requires a CPU feature not currently enabled" -- it is MIPS32r2), so this
+	// goes in as the encoding, checked against capstone 5.0.9 first: 0x44e40000
+	// decodes as MIPS_INS_MTHC1 with operands $a0, $f0.
+	emulate_bin("00 00 e4 44");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_4, MIPS_REG_FD0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_FD0, expected},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MFHC1)
+{
+	SKIP_MODE_64;
+
+	double start;
+	std::uint64_t startBits = 0x4009000012345678ULL;
+	std::memcpy(&start, &startBits, sizeof(start));
+
+	setRegisters({
+		{MIPS_REG_FD0, start},
+	});
+
+	// 0x44640000; see MIPS_INS_MTHC1 above for why this is an encoding.
+	emulate_bin("00 00 64 44");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_FD0});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_4, 0x40090000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
 }
 
 } // namespace tests

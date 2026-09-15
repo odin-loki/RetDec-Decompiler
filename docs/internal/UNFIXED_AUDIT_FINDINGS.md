@@ -2307,6 +2307,91 @@ be read the same way -- COV-01 disassembles in one mode and this corpus is
 Thumb -- so ARM's evidence is the 40 tests, which run in both CS_MODE_ARM and
 CS_MODE_THUMB.
 
+### Six sources, so that the floating-point work is measured at all
+
+The section below records that no corpus source contained a `float` or a
+`double`. Six now do, and they were chosen so that between them they emit the
+instructions the last three commits implemented:
+
+| source | what it exercises |
+|--------|-------------------|
+| `float_dot_product` | double load, multiply, accumulate, return |
+| `float_mean_variance` | division by a converted int, nested calls |
+| `float_newton_sqrt` | an iterative loop, compare against a constant |
+| `float_matrix_multiply` | `float` rather than `double`, 2-D indexing |
+| `float_compare_sort` | floating-point comparison driving control flow |
+| `float_int_conversion` | every direction of int/float conversion |
+
+No libm: a call to `sqrt()` would land in a PLT stub and say nothing about a
+translator, so Newton-Raphson is written out in multiplies and divides.
+
+Across the six, PowerPC emits `lfd` (84), `stfd` (34), `fsub` (16), `fctiwz`
+(16), `fmr` (13), `fcmpu` (11), `fmul` (10), `lfs` (8), `stfs` (6), `fneg`,
+`fadd`, `frsp`, `fmadd`, `fdiv`, `fadds`, `fmuls`; 32-bit ARM emits `vldr`
+(40), `vmov` (39), `vcvt` (21), `vstr` (15), `vmul`, `vadd`, `vmrs`, `vcmpe`,
+`vneg`, `vdiv`, `vsub`, `vmls`. Every one of those was an opaque `__asm_*`
+call at the start of this session.
+
+COV-01 over the cross-built set: **powerpc 1.0000, mips 1.0000**, arm64 0.9958
+(`LD1`/`ST1`, NEON, out of scope by design).
+
+What this costs, and what it risks: the x86-64 corpus goes 216 -> 252 binaries
+and the multiarch one 144 -> 168. CC-01's floor is a rate, so the count moving
+does not touch it -- but its full run now covers floating-point programs for
+the first time, and if their emitted C does not compile the gate goes red. That
+would be the finding, not a regression.
+
+ARCH-01's floored step takes `--limit 40`, the first ten programs by name, and
+the float sources sort past that window. So a second step runs the whole 168
+and reports without a floor -- the road CC-01 took from 24 binaries to 252, and
+that ARCH-01 itself took from 0/40 to 40/40. A floor picked before the first
+number is either vacuous or a fiction.
+
+### What is left on the other three, measured
+
+COV-01 over the whole 168-binary multiarch corpus, floating-point sources
+included:
+
+| arch    | rate   | what is left |
+|---------|--------|--------------|
+| mips    | 1.0000 | nothing |
+| powerpc | 1.0000 | nothing |
+| arm64   | 0.9993 | `LD1`/`ST1` (NEON, 2 each) and `LDADDAL` (1) |
+| arm     | 0.9517 | 536 skipped bytes; see COV-01's own header |
+
+ARM's figure is not comparable and the tool says so: static and Thumb-mode code
+disassembled in a single mode decodes as garbage, which is why its
+uncovered list is led by `STC`, `CDP` and `LDC` -- coprocessor instructions
+that are not in the binary at all.
+
+`LDADDAL` is worth naming because it is not NEON and not a misdecode. The
+ARMv8.1 LSE atomics -- `LDADD`, `LDCLR`, `LDEOR`, `LDSET`, `SWP`, `CAS` and
+their acquire/release forms -- have **no entry at all** in the ARM64 table, not
+even `nullptr`, while `LDAXR`/`STLXR` are implemented. Modern glibc uses LSE
+where the target supports it. One occurrence in this corpus, so it is recorded
+rather than fixed; `atomicrmw` is the obvious mapping and the existing
+`setAtomic` calls show the shape.
+
+### MIPS: the other half of the move
+
+`mtc1` and `mfc1` move the low half of a 64-bit FPU register. `mthc1` and
+`mfhc1` move the high half, and a compiler emits them in pairs to get a double
+into and out of the FPU without going through memory. Both were `nullptr`, and
+`MTHC1` was the only instruction COV-01 found untranslated in MIPS
+floating-point programs.
+
+The double lives in the `FDn` register that
+`singlePrecisionToDoublePrecisionFpRegister` maps `$fN` onto, so the fix reads
+that register's bits, replaces one half and writes it back. The low half
+surviving is the whole point, so the test starts from `0x3ff0000012345678` --
+a non-zero low half, which the obvious wrong implementation (store the shifted
+high word) would clobber. Falsified exactly that way.
+
+Keystone 0.9.2 will not assemble `mthc1` in its MIPS32 mode ("instruction
+requires a CPU feature not currently enabled" -- it is MIPS32r2), so both go in
+as encodings checked against capstone 5.0.9 first. MIPS coverage on
+floating-point binaries: 0.9948 -> **1.0000**.
+
 ### ARCH-01: 40/40, and the floors go in
 
 Run 288 at `517db16`:
@@ -2397,7 +2482,7 @@ actually matches (`LlvmIrEmul*`). The first draft called it `FpIntrinsicTests`,
 which the gate's own filter would have skipped: eleven tests that could
 disappear without the floor noticing.
 
-### Not one of the 367 corpus sources contains a float
+### Not one of the 367 corpus sources contained a float
 
 ```
 $ find tests/algorithm_recovery/sources -name '*.c' | wc -l

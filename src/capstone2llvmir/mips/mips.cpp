@@ -1340,6 +1340,50 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMtc1(cs_insn* i, cs_mips* mi, 
 }
 
 /**
+ * MIPS_INS_MTHC1, MIPS_INS_MFHC1
+ *
+ * mtc1 and mfc1 move the LOW half of a 64-bit FPU register; these move the
+ * high half, and a compiler emits them in pairs to get a double in and out of
+ * the FPU without going through memory. Without them the pair was half a move
+ * and an opaque call -- MTHC1 was the only instruction COV-01 found
+ * untranslated in MIPS floating-point programs.
+ *
+ * The double lives in the FDn register that singlePrecisionToDoublePrecisionFpRegister
+ * maps $fN onto, so this reads that register's bits, replaces one half, and
+ * writes it back.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateMthc1(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	auto* i32 = irb.getInt32Ty();
+	auto* i64 = irb.getInt64Ty();
+
+	if (mi->operands[1].type != MIPS_OP_REG)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+	uint32_t fd = singlePrecisionToDoublePrecisionFpRegister(mi->operands[1].reg);
+
+	if (i->id == MIPS_INS_MFHC1)
+	{
+		auto* bits = irb.CreateBitCast(loadRegister(fd, irb), i64);
+		auto* hi = irb.CreateTrunc(irb.CreateLShr(bits, llvm::ConstantInt::get(i64, 32)), i32);
+		storeOp(mi->operands[0], hi, irb);
+		return;
+	}
+
+	op0 = loadOpBinaryOp0(mi, irb);
+	op0 = irb.CreateZExtOrTrunc(op0, i32);
+
+	auto* bits = irb.CreateBitCast(loadRegister(fd, irb), i64);
+	auto* lo = irb.CreateAnd(bits, llvm::ConstantInt::get(i64, 0xffffffffULL));
+	auto* hi = irb.CreateShl(irb.CreateZExt(op0, i64), llvm::ConstantInt::get(i64, 32));
+	storeRegister(fd, irb.CreateBitCast(irb.CreateOr(lo, hi), irb.getDoubleTy()), irb);
+}
+
+/**
  * MIPS_INS_MFHI
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateMfhi(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)

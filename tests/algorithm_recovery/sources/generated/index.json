@@ -209,5 +209,42 @@
       "Memset",
       "Memory"
     ]
+  },
+  {
+    "stem": "float_dot_product",
+    "algorithms": [
+      "DotProduct"
+    ]
+  },
+  {
+    "stem": "float_mean_variance",
+    "algorithms": [
+      "Statistics"
+    ]
+  },
+  {
+    "stem": "float_newton_sqrt",
+    "algorithms": [
+      "NewtonRaphson"
+    ]
+  },
+  {
+    "stem": "float_matrix_multiply",
+    "algorithms": [
+      "MatrixMultiply"
+    ]
+  },
+  {
+    "stem": "float_compare_sort",
+    "algorithms": [
+      "InsertionSort",
+      "Sort"
+    ]
+  },
+  {
+    "stem": "float_int_conversion",
+    "algorithms": [
+      "Conversion"
+    ]
   }
 ]

@@ -50,7 +50,7 @@ WORKDIR="${C2L_WORKDIR:-}"
 readonly MIN_X86=1965
 readonly MIN_ARM=574
 readonly MIN_ARM64=471
-readonly MIN_MIPS=598
+readonly MIN_MIPS=602
 readonly MIN_POWERPC=880
 readonly MIN_EMUL=21
 
