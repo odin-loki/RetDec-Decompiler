@@ -7123,3 +7123,131 @@ observable once two different views are both modelled.** x86's went unnoticed
 until AVX; ARM64's and ARM's were live the whole time because scalar
 floating-point and vector code both were. PowerPC's and MIPS's are latent
 because one side of each overlap is not modelled at all.
+
+## Batch X — every x87 FADD popped the stack
+
+### How this was found
+
+Having been caught twice by a capstone id that covers more than one
+instruction -- ARM64's `DUP`/`MOV` and x86's whole EVEX `VPCMP` family -- the
+question is how many more there are. So: decode 1.5 million random words per
+architecture, build the id → mnemonic map, discard the ones that differ only
+by a condition-code or hint suffix (which the translators read from
+`cs_arm.cc`, not from the mnemonic), and keep only ids that are **wired to a
+translator**. That is the precise danger set: a dispatch key that reaches real
+code and covers more than one operation.
+
+Most of what came back was benign -- ARM's `vector_data` suffixes, which
+`isScalarVfp()` already reads. Two x86 entries were not:
+
+```
+WIRED id 15    X86_INS_FADD    fadd faddp
+WIRED id 377   X86_INS_MOVD    movd movq
+```
+
+### X-1: FADDP has no id of its own
+
+Every other popping x87 instruction gets one:
+
+```
+fmulp  -> X86_INS_FMULP (506)      fmul  -> X86_INS_FMUL (504)
+fsubp  -> X86_INS_FSUBP (725)      fsub  -> X86_INS_FSUB (723)
+fdivp  -> X86_INS_FDIVP (158)      fdiv  -> X86_INS_FDIV (156)
+fstp   -> X86_INS_FSTP  (714)      fst   -> X86_INS_FST  (713)
+faddp  -> X86_INS_FADD  (15)       fadd  -> X86_INS_FADD (15)
+```
+
+`translateFadd` already knew: it detects FADDP by reading the opcode byte,
+because that is the only way to tell. And then it gated the pop on the id
+instead:
+
+```cpp
+bool isFADDP = xi->opcode[0] == 0xDE && ...;   // used for the destination
+...
+if (i->id == X86_INS_FADD)                     // true for EVERY form
+{
+    x87IncTop(irb, top);                       // the pop
+}
+```
+
+Its five siblings all read `i->id == X86_INS_FMULP`, `X86_INS_FSUBP`,
+`X86_INS_FDIVP`, `X86_INS_FDIVRP`, `X86_INS_FSUBRP`. FADD is the only one
+written against the non-popping id, and it is the only one where that id is
+what capstone returns for the popping form.
+
+So `fadd m32fp`, `fadd m64fp`, `fadd st(0), st(i)` and `fadd st(i), st(0)`
+**all popped the x87 stack**, and every instruction after one of them was
+reading a different register than it thought.
+
+### X-2: asked the hardware, not the manual
+
+This container is x86-64, so the behaviour was measured rather than quoted --
+`fnstsw` either side of each encoding, reading TOP out of bits 13:11:
+
+```
+fadds m32       TOP 6 -> 6   no pop
+faddl m64       TOP 6 -> 6   no pop
+fadd st(1),st   TOP 6 -> 6   no pop
+fadd st,st(1)   TOP 6 -> 6   no pop
+faddp           TOP 6 -> 7   POPS
+fmul st(1),st   TOP 6 -> 6   no pop
+fmulp           TOP 6 -> 7   POPS
+fsub st(1),st   TOP 6 -> 6   no pop
+fsubp           TOP 6 -> 7   POPS
+```
+
+Only DE pops, and the siblings were already right.
+
+### X-3: the opcode byte alone is not enough either
+
+Gating the pop on `opcode[0] == 0xDE` on its own is wrong for a second reason:
+**FIADD m16int is also DE** (`DE /0`). It is a different instruction, it does
+not pop, and capstone does give it its own id. So the test is "the id is FADD
+**and** the opcode is DE", which is exactly FADDP and nothing else. The
+existing `X86_INS_FIADD_m16` test is what caught this -- it had the right
+expectation all along and started failing the moment the pop moved onto the
+opcode byte alone.
+
+### X-4: four tests encoded the bug
+
+`X86_INS_FADD_d8`, `X86_INS_FADD_dc`, `X86_INS_FADD_d8_c0` and
+`X86_INS_FADD_dc_c0` all asserted `{X87_REG_TOP, 0x3}` after starting at 2 --
+a pop. One of them carries the SDM line as a comment directly above it:
+
+```
+// DC C0+i	FADD ST(i), ST(0)	Add ST(i) to ST(0) and store result in ST(i).
+```
+
+which says nothing about popping. The tests were written from the code rather
+than from the manual, which is the failure mode falsification cannot catch:
+reverting the fix makes them pass again, because they *are* the fix's
+mirror image.
+
+### Falsification
+
+Four mutations, each reverted alone; all four fail:
+
+| mutation | result |
+| --- | --- |
+| the pop gated on the id (the original bug) | 14 tests fail |
+| never pops | 6 tests fail |
+| `isFADDP` without the id check (catches `fiadd m16`) | 2 tests fail |
+| `isFADDP` without the opcode check | 14 tests fail |
+
+The new tests include two consecutive `fadd st, st(1)` instructions, because
+the cost of the bug was not the first instruction's answer -- that was right --
+but the second one's operands.
+
+### What it does not change
+
+The x86-64 static corpus contains **no x87 FADD at all**: modern glibc is
+compiled to SSE, so PSEUDO-01 does not move and could not have found this.
+It is live for 32-bit binaries and for anything using `long double`.
+
+`X86_INS_MOVD` covering `movd` and `movq` is the other entry from the scan and
+is **not** a bug: capstone reports the MMX forms with distinct ids
+(`movd` 377, `movq` 378), and the collision in the random-decode scan is the
+64-bit `movd` with REX.W, which Intel itself names `movq` and which is the
+same instruction.
+
+C2L-01 floor: X86 2547 → 2559. 5,422 tests.

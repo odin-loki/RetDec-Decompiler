@@ -5223,7 +5223,25 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFadd(cs_insn* i, cs_x86* xi, ll
 	EXPECT_IS_EXPR(i, xi, irb, (xi->op_count <= 2));
 
 	std::tie(op0, op1, top, idx) = loadOpFloatingBinaryTop(i, xi, irb);
-	bool isFADDP = xi->opcode[0] == 0xDE && xi->opcode[1] == 0x00&& xi->opcode[2] == 0x00 && xi->opcode[3] == 0x00;
+	// Capstone reports FADDP as X86_INS_FADD -- it is the ONE x87 arithmetic
+	// instruction whose popping form does not get its own id. fmulp is
+	// X86_INS_FMULP, fsubp is X86_INS_FSUBP, fdivp is X86_INS_FDIVP, fstp is
+	// X86_INS_FSTP; faddp is X86_INS_FADD. So the P form has to be read off
+	// the opcode byte, which is what this already did for the destination --
+	// and then the pop was gated on the id instead, which is true for every
+	// form.
+	//
+	// The result, until this was fixed: `fadd m32fp`, `fadd m64fp`,
+	// `fadd st(0), st(i)` and `fadd st(i), st(0)` all popped the x87 stack,
+	// and nothing after them in the function was reading the register it
+	// thought it was. Checked on the hardware rather than in the manual --
+	// fnstsw before and after each form -- and only DE pops.
+	// The id has to be part of the test as well as the opcode byte: FIADD
+	// m16int is ALSO 0xDE (DE /0), and it is a different instruction that
+	// does not pop. Capstone does give FIADD its own id, so
+	// "id is FADD and the opcode is DE" is exactly FADDP and nothing else.
+	bool isFADDP = i->id == X86_INS_FADD && xi->opcode[0] == 0xDE && xi->opcode[1] == 0x00 && xi->opcode[2] == 0x00
+				&& xi->opcode[3] == 0x00;
 
 	auto* fadd = irb.CreateFAdd(op0, op1);
 
@@ -5236,7 +5254,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateFadd(cs_insn* i, cs_x86* xi, ll
 		storeX87DataReg(irb, top, fadd);
 	}
 
-	if (i->id == X86_INS_FADD)
+	if (isFADDP)
 	{
 		x87IncTop(irb, top);
 	}

@@ -11144,9 +11144,10 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FADD_d8)
 
 	emulate("fadd dword ptr [0x1234]");
 
+	// FADD m32fp does NOT pop -- TOP is read to find st(0) and not written.
+	// This test asserted a pop until the translator stopped emitting one.
 	EXPECT_JUST_REGISTERS_LOADED({X87_REG_TOP, X86_REG_ST2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{X87_REG_TOP, 0x3},
 		{X86_REG_ST2, 3.14 + 3.14},
 	});
 	EXPECT_JUST_MEMORY_LOADED({0x1234});
@@ -11169,9 +11170,9 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FADD_dc)
 
 	emulate("fadd qword ptr [0x1234]");
 
+	// FADD m64fp does not pop either.
 	EXPECT_JUST_REGISTERS_LOADED({X87_REG_TOP, X86_REG_ST2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{X87_REG_TOP, 0x3},
 		{X86_REG_ST2, 3.14 + 3.14},
 	});
 	EXPECT_JUST_MEMORY_LOADED({0x1234});
@@ -11191,9 +11192,10 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FADD_d8_c0)
 
 	emulate("fadd st(0), st(3)");
 
+	// Only the DE form pops. Confirmed on the hardware with fnstsw either
+	// side of each encoding.
 	EXPECT_JUST_REGISTERS_LOADED({X87_REG_TOP, X86_REG_ST2, X86_REG_ST5});
 	EXPECT_JUST_REGISTERS_STORED({
-		{X87_REG_TOP, 0x3},
 		{X86_REG_ST2, 3.14 + 3.14},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
@@ -11214,7 +11216,6 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_FADD_dc_c0)
 
 	EXPECT_JUST_REGISTERS_LOADED({X87_REG_TOP, X86_REG_ST2, X86_REG_ST5});
 	EXPECT_JUST_REGISTERS_STORED({
-		{X87_REG_TOP, 0x3},
 		{X86_REG_ST5, 3.14 + 3.14},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
@@ -18921,6 +18922,94 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_signed_ranges_read_the_bound
 	EXPECT_NO_VALUE_CALLED();
 }
 
+
+//
+// FADD is the one x87 arithmetic instruction whose popping form has no
+// capstone id of its own. `fmulp` is X86_INS_FMULP, `fsubp` is
+// X86_INS_FSUBP, `fdivp` is X86_INS_FDIVP, `fstp` is X86_INS_FSTP -- and
+// `faddp` is X86_INS_FADD. The pop was gated on that id, which is true for
+// every FADD form, so all four non-popping ones popped.
+//
+// The expectations below were checked against the hardware, with `fnstsw`
+// either side of each encoding: only DE pops.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, FADDP_pops_and_the_others_do_not)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{X87_REG_TOP, 0x2},
+		{X86_REG_ST2, 1.0}, // st(0)
+		{X86_REG_ST3, 2.0}, // st(1)
+	});
+
+	emulate_bin("de c1"); // faddp st(1), st(0)
+
+	// The result lands in st(1) and the stack pops, so TOP moves 2 -> 3.
+	EXPECT_JUST_REGISTERS_STORED({
+		{X87_REG_TOP, 0x3},
+		{X86_REG_ST3, 3.0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, FADD_d8_does_not_move_TOP)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{X87_REG_TOP, 0x2},
+		{X86_REG_ST2, 1.0}, // st(0)
+		{X86_REG_ST3, 2.0}, // st(1)
+	});
+
+	emulate_bin("d8 c1"); // fadd st, st(1)
+
+	// Same two registers, one opcode byte different, and no pop.
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_ST2, 3.0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, FADD_dc_does_not_move_TOP)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{X87_REG_TOP, 0x2},
+		{X86_REG_ST2, 1.0}, // st(0)
+		{X86_REG_ST3, 2.0}, // st(1)
+	});
+
+	emulate_bin("dc c1"); // fadd st(1), st
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_ST3, 3.0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, Two_FADDs_in_a_row_still_see_the_same_stack)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{X87_REG_TOP, 0x2},
+		{X86_REG_ST2, 1.0}, // st(0)
+		{X86_REG_ST3, 2.0}, // st(1)
+	});
+
+	// This is what the bug cost: the second instruction's st(1) is only the
+	// same register as the first's if the first did not pop.
+	emulate_bin("d8 c1 d8 c1"); // fadd st, st(1) twice
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_ST2, 5.0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+}
 
 } // namespace tests
 } // namespace capstone2llvmir
