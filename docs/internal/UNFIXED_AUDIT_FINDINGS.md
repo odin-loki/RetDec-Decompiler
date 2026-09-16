@@ -3239,3 +3239,95 @@ COV-01 follows AArch64's `$x`/`$d` mapping symbols now as well as ARM's
 `$a`/`$t`/`$d`, so arm64's list is code rather than padding. It changed nothing
 on the dynamic corpus, whose `.text` carries no inline data, and it is the
 honest thing to do before quoting an arm64 uncovered list at all.
+
+
+## Two aborts the new translations reached, and the gates that found them
+
+ctest-linux 292, at `fb31221`, went red on CC-01 and on ARCH-01's arm64 floor.
+Both were mine, both were aborts rather than wrong answers, and neither was
+reachable before this branch because before this branch the instructions that
+reach them came out as `__asm_*` calls.
+
+This is the gates doing their job on the first run after the change, which is
+what they are for. It is also the third time in this branch that widening what
+gets translated has turned an unreachable path into a reachable one, after
+`fneg` and `freeze`.
+
+### `atomicrmw` was inlinable, and inlining it aborted
+
+```
+llvm_instruction_converter.cpp:554: visitInstruction: Fail (unsupported
+  instruction: %4 = atomicrmw add ptr %2, i32 %3 acq_rel, align 4)
+#9  InstVisitor<LLVMInstructionConverter,...>::visitAtomicRMWInst
+#16 LLVMInstructionConverter::convertExtCastInstToExpression
+#17 LLVMInstructionConverter::visitZExtInst
+```
+
+`BasicBlockConverter` converts `atomicrmw` as a *statement*, and has done since
+the C11-atomics fix earlier in this branch. `LLVMInstructionConverter` converts
+values used as operands into *expressions*, and has no case for it. Which of
+the two sees an instruction is decided by `LLVMSupport::isInlinableInst()`, and
+that said yes: one use, same basic block, not a call or a load or a phi.
+
+ARM64's `ldadd` writes the old value of the memory into a register, so the
+`atomicrmw` has exactly one use -- a `zext` -- and every binary containing one
+ended the decompiler. `generated_atomic_counter-arm64-gcc-O0`, the whole
+reason that source is in the corpus.
+
+`atomicrmw` and `cmpxchg` belong on the not-inlinable list for the reason
+`LoadInst` is already on it, and more so: each is a load *and* a store, so
+moving one to its use site reorders a write. With them on it, the use becomes
+the variable `BasicBlockConverter` already assigns to.
+
+Three tests, in `tests/llvmir2hll/llvm/llvm_support_tests.cpp`. The third one
+is there because the first two would pass against a function that always
+returns false.
+
+### `insertvalue` does not take a vector
+
+```
+Assertion `ExtractValueInst::getIndexedType(Agg->getType(), Idxs)
+           == Val->getType() && "Inserted value must match indexed type!"'
+#13 (anonymous namespace)::convertToType  ir_modifier.cpp:394
+#15 IrModifier::modifyFunction
+#16 ParamReturn::applyToIr
+```
+
+All fifteen CC-01 failures were this one assertion, and so were four of
+ARCH-01's five.
+
+`convertToType()` grouped vectors with structs and arrays and converted into
+them with `insertvalue`. `extractvalue` and `insertvalue` are struct and array
+only: `ExtractValueInst::getIndexedType(<2 x double>, {0})` returns **null**,
+so the assertion compares null against `double` and fires. Checked directly
+against LLVM 20 rather than inferred -- `getIndexedType` answers `<null>`, and
+`insertvalue <2 x double> undef, double %a, 0` builds without complaint on an
+assertions-off LLVM and is rejected by the verifier as "Invalid InsertValueInst
+operands!". CI's LLVM has assertions on, so it aborts instead.
+
+The vector forms are `insertelement` and `extractelement`. The other direction
+was missing too and was worse: a `<2 x double>` asked to become a `double` fell
+off the end of the chain into `llvm_unreachable()`.
+
+`ParamReturn` asks for the conversion when it rewrites a function's return
+type, which is why this arrived the moment `ADDSD` and friends started
+producing `<2 x double>` values instead of pseudo-asm calls.
+
+Falsified both ways against a real module: with the fix, `insertelement` and
+`extractelement` and a clean verifier; with `ir_modifier.cpp` alone reverted,
+`Invalid InsertValueInst operands!` on the first conversion and
+`UNREACHABLE executed at ir_modifier.cpp:420` on the second.
+
+### What ARCH-01's new column said
+
+```
+ARCH-01: x86_64    38/42   0.9048
+ARCH-01: arm       42/42   1.0000
+ARCH-01: arm64     41/42   0.9762
+ARCH-01: mips      42/42   1.0000
+ARCH-01: powerpc   42/42   1.0000
+```
+
+x86-64 is in this table for the first time, unfloored, as the control column --
+and on its first run it was the worst of the five. That is the entire argument
+for putting it there.

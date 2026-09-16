@@ -134,11 +134,21 @@ bool LLVMSupport::isInlinableInst(const llvm::Instruction *i) {
 
 	// It has to be an expression, and it has to be used exactly once. If it is
 	// dead, we generate it inline where it would go.
-	if (i->getType() == llvm::Type::getVoidTy(i->getContext()) || !i->hasOneUse() ||
-			i->isTerminator() || llvm::isa<llvm::CallInst>(i) ||
-			llvm::isa<llvm::PHINode>(i) || llvm::isa<llvm::LoadInst>(i) ||
-			llvm::isa<llvm::VAArgInst>(i) || llvm::isa<llvm::InsertElementInst>(i) ||
-			llvm::isa<llvm::InsertValueInst>(i)) {
+	// atomicrmw and cmpxchg belong here for the same reason LoadInst does,
+	// and more so: each is a load AND a store, so moving one to its use site
+	// reorders a write. They are also converted as statements by
+	// BasicBlockConverter, and an instruction that is both inlined as an
+	// expression and emitted as a statement is emitted twice -- except that
+	// LLVMInstructionConverter has no case for either, so what actually
+	// happened was visitInstruction() and an abort. ARM64's LSE atomics made
+	// that reachable: `ldadd` writes its old value to a register, which is a
+	// zext of the atomicrmw, and every binary containing one ended the
+	// decompiler.
+	if (i->getType() == llvm::Type::getVoidTy(i->getContext()) || !i->hasOneUse() || i->isTerminator()
+		|| llvm::isa<llvm::CallInst>(i) || llvm::isa<llvm::PHINode>(i) || llvm::isa<llvm::LoadInst>(i)
+		|| llvm::isa<llvm::VAArgInst>(i) || llvm::isa<llvm::InsertElementInst>(i) || llvm::isa<llvm::InsertValueInst>(i)
+		|| llvm::isa<llvm::AtomicRMWInst>(i) || llvm::isa<llvm::AtomicCmpXchgInst>(i))
+	{
 		// Don't inline a load across a store or other bad things!
 		return false;
 	}

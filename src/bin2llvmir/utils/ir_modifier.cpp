@@ -373,7 +373,58 @@ Value* convertToType(
 		auto* a = dyn_cast<Instruction>(toSimple);
 		conv = convertToType(toSimple, type, before, a, constExpr);
 	}
-	else if (type->isStructTy() || type->isArrayTy() || type->isVectorTy())
+	// A vector is not an aggregate, and insertvalue does not take one:
+	// ExtractValueInst::getIndexedType() answers null for a vector type, which
+	// is exactly what InsertValueInst::init()'s "Inserted value must match
+	// indexed type!" assertion reports. The vector form of the same idea is
+	// insertelement. Grouping vectors with structs and arrays below aborted
+	// the decompiler on every x86-64 floating-point binary the moment the SSE2
+	// scalar-double instructions started producing <2 x double> values instead
+	// of pseudo-asm calls -- ParamReturn asks for the conversion when it
+	// rewrites a function's return type.
+	else if (type->isVectorTy())
+	{
+		auto* idxt = llvm_utils::aggregateTypeAtIndex(type, 0);
+		assert(idxt);
+		auto* tmp = convertToType(val, idxt, before, after, constExpr);
+		auto* idx = ConstantInt::get(Type::getInt32Ty(type->getContext()), 0);
+
+		if (constExpr)
+		{
+			auto* c = dyn_cast<Constant>(tmp);
+			assert(c);
+			conv = ConstantFoldInsertElementInstruction(UndefValue::get(type), c, idx);
+		}
+		else
+		{
+			auto* i = InsertElementInst::Create(UndefValue::get(type), tmp, idx, "");
+			auto* a = val == tmp ? after : cast<Instruction>(tmp);
+			conv = insertBeforeAfter(i, before, a);
+		}
+	}
+	// The other direction, for the same reason: extractvalue does not take a
+	// vector either, and without this a <2 x double> asked to become a double
+	// fell off the end of this chain into llvm_unreachable().
+	else if (val->getType()->isVectorTy())
+	{
+		auto* idx = ConstantInt::get(Type::getInt32Ty(type->getContext()), 0);
+		Value* toSimple = nullptr;
+		if (constExpr)
+		{
+			toSimple = ConstantFoldExtractElementInstruction(cval, idx);
+		}
+		else
+		{
+			auto* i = ExtractElementInst::Create(val, idx, "");
+			toSimple = insertBeforeAfter(i, before, after);
+		}
+		if (toSimple)
+		{
+			auto* a = dyn_cast<Instruction>(toSimple);
+			conv = convertToType(toSimple, type, before, a, constExpr);
+		}
+	}
+	else if (type->isStructTy() || type->isArrayTy())
 	{
 		auto* idxt = llvm_utils::aggregateTypeAtIndex(type, 0);
 		assert(idxt);

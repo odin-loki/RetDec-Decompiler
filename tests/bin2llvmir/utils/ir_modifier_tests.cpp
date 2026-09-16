@@ -76,6 +76,65 @@ TEST_F(IrModifierTests, convertValueToTypeInt32ToFloat)
 	checkModuleAgainstExpectedIr(exp);
 }
 
+//
+// A vector is not an aggregate, and insertvalue/extractvalue do not take one:
+// ExtractValueInst::getIndexedType() answers null for a vector type, so
+// InsertValueInst's "Inserted value must match indexed type!" assertion
+// compares null against the element type and fires. Vectors were grouped with
+// structs and arrays here, which aborted the decompiler on every x86-64
+// floating-point binary once the SSE2 scalar-double instructions started
+// producing <2 x double> values instead of pseudo-asm calls: ParamReturn asks
+// for the conversion when it rewrites a function's return type.
+//
+
+TEST_F(IrModifierTests, convertValueToTypeDoubleToVector)
+{
+	parseInput(R"(
+		define void @fnc() {
+			%a = fadd double 1.0, 2.0
+			ret void
+		}
+	)");
+	auto* a = getValueByName("a");
+	auto* b = getNthInstruction<ReturnInst>();
+
+	IrModifier::convertValueToType(a, FixedVectorType::get(Type::getDoubleTy(context), 2), b);
+
+	std::string exp = R"(
+		define void @fnc() {
+			%a = fadd double 1.0, 2.0
+			%1 = insertelement <2 x double> undef, double %a, i32 0
+			ret void
+		}
+	)";
+	checkModuleAgainstExpectedIr(exp);
+}
+
+TEST_F(IrModifierTests, convertValueToTypeVectorToDouble)
+{
+	// The other direction, which fell off the end of the chain into
+	// llvm_unreachable() rather than into an assertion.
+	parseInput(R"(
+		define void @fnc() {
+			%a = fadd <2 x double> <double 1.0, double 2.0>, <double 3.0, double 4.0>
+			ret void
+		}
+	)");
+	auto* a = getValueByName("a");
+	auto* b = getNthInstruction<ReturnInst>();
+
+	IrModifier::convertValueToType(a, Type::getDoubleTy(context), b);
+
+	std::string exp = R"(
+		define void @fnc() {
+			%a = fadd <2 x double> <double 1.0, double 2.0>, <double 3.0, double 4.0>
+			%1 = extractelement <2 x double> %a, i32 0
+			ret void
+		}
+	)";
+	checkModuleAgainstExpectedIr(exp);
+}
+
 TEST_F(IrModifierTests, convertValueToTypeFunctionToPointer)
 {
 	parseInput(R"(
