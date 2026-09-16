@@ -7323,3 +7323,34 @@ registers yet, and a test that went through an instruction would be testing
 the guard instead.
 
 C2L-01 floor: MIPS 712 → 714. 5,424 tests.
+
+### The id-collision sweep, finished
+
+Decoding 1.5 million random words per architecture, keeping only ids that are
+**wired to a translator** and that cover mnemonics differing by more than a
+condition-code or hint suffix, gives the complete danger set. All five are now
+accounted for:
+
+| arch | wired collisions | how they are separated |
+| --- | --- | --- |
+| x86-64 | `FADD`/`FADDP`, `MOVD`/`MOVQ` | FADD fixed in Batch X; MOVD/MOVQ is the REX.W form of one instruction, not two |
+| x86-64 | the whole EVEX `VPCMP` family | fixed in Batch T, by parsing the mnemonic |
+| ARM64 | `DUP`/`MOV` | already handled: the diversion is scoped to a destination with a vector arrangement |
+| ARM | 30 ids, all `vector_data` suffixes | handled: every VFP translator guards on `isScalarVfp()`, which reads `cs_arm.vector_data` |
+| MIPS | 30 ids: FP variants and MSA | FP by operand type; MSA fixed in Batch Y |
+| PowerPC | none | the collisions its scan found are branch-hint suffixes on unwired ids |
+
+Three distinct mechanisms separate a colliding pair correctly, and it is worth
+naming which is which, because picking the wrong one is how these go wrong:
+
+* **a structured detail field** — `cs_arm.vector_data`, `cs_arm64.vas`. Best
+  when capstone provides one.
+* **the operand's type** — MIPS's `add` vs `add.d`, which works because
+  loading an `F` register yields a double. Robust and free, when the operands
+  differ.
+* **the mnemonic string** — x86's EVEX compares, where the id is wrong, no
+  detail field distinguishes them, and the operands are identical. Ugly, and
+  the only thing that works.
+
+The failure mode in every case found was reaching for the id when none of the
+three applies.
