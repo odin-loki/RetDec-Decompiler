@@ -6640,3 +6640,154 @@ powerpc  0.9960     traps, AltiVec, cache maintenance
 ```
 
 C2L-01 floor: X86 2433 → 2484. 5,313 tests.
+
+## Batch U — PCMPISTRI, and reading the semantics off the hardware
+
+### Why this one is different
+
+`pcmpistri` was the largest single unmodelled instruction left on x86-64 —
+6,393 sites, because glibc's `strlen`, `strcmp`, `strchr` and `strstr` are all
+built on it. It also has more behaviour packed into it than anything else in
+this branch: a four-field language in the imm8, four aggregation modes, two
+element formats, two signednesses, four polarities, two output selections, and
+five flags.
+
+Everything in this branch so far has been implemented from the manual and then
+falsified with mutations. That is a good method for an instruction whose
+behaviour fits in a paragraph. It is not a good method here, because the
+failure mode is not "I wrote the wrong operator" — it is "I misremembered
+which operand the validity mask applies to in aggregation mode 3", and a
+mutation test cannot tell me that my *baseline* is wrong. A test written from
+the same misunderstanding as the code passes.
+
+This container is x86-64 and the CPU reports `sse4_2`. So the semantics came
+off the hardware instead:
+
+1. A C model of the instruction was written from the manual.
+2. It was run against a real `pcmpistri` over **1,760,000** `(operand,
+   operand, imm8)` triples — 40,000 random operand pairs across 44 control
+   bytes, covering all four aggregations, both formats, both polarities that
+   do anything, both output selections, and every flag.
+3. **Zero mismatches.** What is implemented is that model.
+4. The translator's own IR, run in RetDec's emulator, was then compared
+   against the verified model over **88,000** more triples. Zero mismatches.
+
+The expected values in every unit test are the hardware's answers, emitted by
+a generator rather than typed.
+
+### The imm8
+
+```
+imm8[1:0]  format      00 unsigned bytes  01 unsigned words
+                       10 signed bytes    11 signed words
+imm8[3:2]  aggregation 00 EqualAny  01 Ranges  10 EqualEach  11 EqualOrdered
+imm8[5:4]  polarity    00 positive  01 negative
+                       10 masked positive  11 masked negative
+imm8[6]    output      0 least significant index  1 most significant
+```
+
+Every field is a literal, so all of it is decided at translation time and only
+the data is left to run time. The corpus uses four control bytes — `0x1a`,
+`0x3a`, `0x12`, `0x02` — but all of them are implemented, because a partial
+implementation that answered the wrong aggregation would be worse than the
+pseudo-assembly call it replaced.
+
+### U-1: the validity mask has no branch in it
+
+"Implicit length" means each operand ends at its first zero element. Writing
+that as a length and comparing against it would need a loop or a `cttz`; it is
+cheaper and clearer as a bit trick on the element-is-zero mask `Z`:
+
+```
+valid = (Z & -Z) - 1
+```
+
+the bits strictly below the lowest set bit. When no element is zero, `Z` is 0,
+`0 & -0` is 0, and `0 - 1` is all ones — the no-terminator case needs no
+special path. The flags fall out too: `ZF` is `Z2 != 0` and `SF` is `Z1 != 0`,
+so the numeric length is never computed at all.
+
+### U-2: one aggregation can zero its invalid elements and three cannot
+
+For **EqualAny**, the invalid elements of the first operand can simply be
+zeroed: every *valid* element of the second operand is non-zero by
+construction, so a zero can never match one. That turns sixteen per-element
+validity tests into one masked AND.
+
+For **Ranges** the same trick is wrong, and the reason is worth recording. A
+signed pair whose high element was zeroed becomes the range `[low, 0]`, which
+still matches every negative value. So each pair carries its own validity bit.
+This is the kind of thing the differential oracle catches and a hand-written
+test does not: the mutation that removes the pair validity failed **4,066** of
+88,000 comparisons and **none** of the fourteen unit tests written before it.
+
+For **EqualEach**, two elements that are both past the end count as **equal**.
+That forced true is what makes a negative-polarity `EqualEach` — which is
+`strcmp` — answer "the strings match" with every bit clear.
+
+For **EqualOrdered**, an invalid element of the first operand ends the
+comparison: everything from there on counts as matching, which is what turns a
+prefix comparison into a substring search.
+
+### U-3: the tests that had to be added afterwards
+
+The mutation driver found fourteen ways to get this wrong. Nine were caught by
+the fourteen unit tests generated from the oracle. **Five were not**, and every
+one of the five was a real defect the differential test failed thousands of
+times on:
+
+| mutation the unit tests missed | differential failures |
+| --- | --- |
+| EqualAny does not exclude the set past its terminator | 7,362 / 88,000 |
+| Ranges ignores pair validity | 4,066 / 88,000 |
+| masked negative inverts everything | 8,518 / 88,000 |
+| ZF and SF swapped | 10,222 / 88,000 |
+| Ranges always unsigned | 725 / 88,000 |
+
+`ZF` and `SF` is the instructive one. All fourteen tests had operands that
+either both carried a terminator or neither did, so the two flags always
+agreed and swapping them was invisible. Seven more cases were generated — from
+the oracle, again — to pin each of the five down, and the driver now catches
+all fourteen mutations with the committed suite alone.
+
+That is the finding under the finding: **a falsification suite is only as good
+as the inputs it was written with**, and an independent oracle is what tells
+you which inputs you failed to think of.
+
+### Falsification
+
+Fourteen mutations, each reverted alone, rebuilt and run against the committed
+tests: all fourteen fail. Separately, the five listed above were each run
+against the 88,000-case differential oracle, which failed on every one.
+
+### Where it leaves x86-64
+
+```
+                 static     unmodelled   kinds
+after Batch Q    0.9822      92,140       -
+after Batch R    0.9845      79,935      165
+after Batch S    0.9922      40,369      133
+after Batch T    0.9947      27,572      113
+after Batch U    0.9959      21,179      112
+```
+
+`pcmpistri` has left the list entirely. What is left is led by `syscall`
+(4,627, opaque by nature — the number in a register decides what it does) and
+then, as after Batch T, the **write-masked** vector operations: `vpxorq`,
+`vpaddb`, `vpcmpeqb` and `vptestnmb` with a `{k}` or `{z}` modifier, which
+this translator declines on purpose because the value model does not carry
+per-lane predication.
+
+### Where all five stand
+
+```
+x86_64   0.9959     syscall, write-masked vector ops, vpternlog
+arm      0.9977     table branches, coprocessor, NEON
+arm64    0.9945     SVE, MTE, movi
+mips     0.9989     syscall, break, the FPU control word
+powerpc  0.9960     traps, AltiVec, cache maintenance
+```
+
+x86-64 is no longer the worst of the five on the static corpus. ARM64 is.
+
+C2L-01 floor: X86 2484 → 2547. 5,376 tests.

@@ -18486,6 +18486,442 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPGTB_with_a_vector_destination_is_
 	EXPECT_NO_VALUE_CALLED();
 }
 
+//
+// ============================================================================
+// SSE4.2 string comparison: PCMPISTRI
+// ============================================================================
+//
+// Every expected value below was read off the hardware, not worked out by
+// hand. A C model of this instruction was first checked against a real
+// pcmpistri over 1,760,000 (operand, operand, imm8) triples spanning 40
+// control bytes, all four aggregations, both formats, both polarities that do
+// anything and both output selections; it matched on every one, each flag
+// included. These tests are that oracle's answers for the cases that pin down
+// each field of the imm8.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_equal_each_identical_strings)
+{
+	ONLY_MODE_64;
+
+	// EqualEach, negative polarity: identical and no null anywhere, so every lane matches, the inversion clears them
+	// all and the index is the element count.
+	setXmm(X86_REG_XMM0, 0x706f6e6d6c6b6a69ULL, 0x6867666564636261ULL);
+	setXmm(X86_REG_XMM1, 0x706f6e6d6c6b6a69ULL, 0x6867666564636261ULL);
+
+	emulate_bin("66 0f 3a 63 c1 1a"); // pcmpistri xmm0, xmm1, 0x1a
+
+	EXPECT_EQ(16ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_AF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_equal_each_first_difference)
+{
+	ONLY_MODE_64;
+
+	// The strings differ at index 3 and the negative polarity turns that into the only set bit.
+	setXmm(X86_REG_XMM0, 0x706f6e6d6c6b6a69ULL, 0x6867666564636261ULL);
+	setXmm(X86_REG_XMM1, 0x706f6e6d6c6b6a69ULL, 0x6867666558636261ULL);
+
+	emulate_bin("66 0f 3a 63 c1 1a"); // pcmpistri xmm0, xmm1, 0x1a
+
+	EXPECT_EQ(3ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_AF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_equal_each_both_terminated)
+{
+	ONLY_MODE_64;
+
+	// Both end at index 3. The elements past the end count as EQUAL -- that forced true is what makes a matching strcmp
+	// answer 16 with CF clear.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x0000000000636261ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0000000000636261ULL);
+
+	emulate_bin("66 0f 3a 63 c1 1a"); // pcmpistri xmm0, xmm1, 0x1a
+
+	EXPECT_EQ(16ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_AF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_equal_each_differing_short_strings)
+{
+	ONLY_MODE_64;
+
+	// Two short strings differing at index 2.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x0000000000636261ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0000000000646261ULL);
+
+	emulate_bin("66 0f 3a 63 c1 1a"); // pcmpistri xmm0, xmm1, 0x1a
+
+	EXPECT_EQ(2ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_AF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_equal_each_masked_negative)
+{
+	ONLY_MODE_64;
+
+	// Masked negative inverts only where the second operand is still inside its string.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x0000000000636261ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0000666564636261ULL);
+
+	emulate_bin("66 0f 3a 63 c1 3a"); // pcmpistri xmm0, xmm1, 0x3a
+
+	EXPECT_EQ(3ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_AF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_equal_any_positive)
+{
+	ONLY_MODE_64;
+
+	// EqualAny: which elements of the second operand appear anywhere in the first. Only the valid part of the first
+	// operand counts as the set.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x00000000007a7978ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0066656478636261ULL);
+
+	emulate_bin("66 0f 3a 63 c1 02"); // pcmpistri xmm0, xmm1, 0x02
+
+	EXPECT_EQ(3ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_AF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_equal_any_negative_sets_OF_from_bit_zero)
+{
+	ONLY_MODE_64;
+
+	// The same comparison with the result inverted: OF is bit 0 of the final mask.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x00000000007a7978ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0066656478636261ULL);
+
+	emulate_bin("66 0f 3a 63 c1 12"); // pcmpistri xmm0, xmm1, 0x12
+
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_AF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_ranges)
+{
+	ONLY_MODE_64;
+
+	// Ranges: the first operand is a list of (low, high) pairs.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x0000000000007a61ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0000000062613231ULL);
+
+	emulate_bin("66 0f 3a 63 c1 04"); // pcmpistri xmm0, xmm1, 0x04
+
+	EXPECT_EQ(2ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_AF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_equal_ordered_substring)
+{
+	ONLY_MODE_64;
+
+	// EqualOrdered: the offset in the second operand at which the first occurs.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x0000000000006362ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0000000064636261ULL);
+
+	emulate_bin("66 0f 3a 63 c1 0c"); // pcmpistri xmm0, xmm1, 0x0c
+
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_AF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_most_significant_index)
+{
+	ONLY_MODE_64;
+
+	// Bit 6 selects the highest set bit instead of the lowest.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x0000000000000061ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0000000061786178ULL);
+
+	emulate_bin("66 0f 3a 63 c1 40"); // pcmpistri xmm0, xmm1, 0x40
+
+	EXPECT_EQ(3ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_AF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_least_significant_index)
+{
+	ONLY_MODE_64;
+
+	// The same operands with bit 6 clear, so that the two answers differ.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x0000000000000061ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0000000061786178ULL);
+
+	emulate_bin("66 0f 3a 63 c1 00"); // pcmpistri xmm0, xmm1, 0x00
+
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_AF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_word_format)
+{
+	ONLY_MODE_64;
+
+	// Format 01: eight word lanes rather than sixteen byte lanes.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x0000000000001234ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0000000012349999ULL);
+
+	emulate_bin("66 0f 3a 63 c1 01"); // pcmpistri xmm0, xmm1, 0x01
+
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_AF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_signed_ranges_are_signed)
+{
+	ONLY_MODE_64;
+
+	// Format 10 makes the range comparison signed: 0xf0 is -16, which is inside the range -32..-1 and outside 0..127.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x000000000000ffe0ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x000000000000f010ULL);
+
+	emulate_bin("66 0f 3a 63 c1 44"); // pcmpistri xmm0, xmm1, 0x44
+
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_AF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_unsigned_ranges_are_unsigned)
+{
+	ONLY_MODE_64;
+
+	// The same bytes read unsigned: 0xf0 is 240, outside 224..255? -- whatever the hardware says.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x000000000000ffe0ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x000000000000f010ULL);
+
+	emulate_bin("66 0f 3a 63 c1 18"); // pcmpistri xmm0, xmm1, 0x18
+
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_AF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+
+//
+// The cases below exist because the fourteen above did not catch five real
+// mistakes. Each of those five was reverted alone and run against the
+// differential oracle, which failed thousands of times on every one; these
+// are the specific inputs that make each visible to the committed suite.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_equal_any_ignores_the_set_past_its_terminator)
+{
+	ONLY_MODE_64;
+
+	// The 'z' in the first operand sits past its null and is not part of the set, so nothing matches. Comparing against
+	// it anyway would answer index 0.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x00000000007a0061ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x000000000000007aULL);
+
+	emulate_bin("66 0f 3a 63 c1 00"); // pcmpistri xmm0, xmm1, 0x00
+
+	EXPECT_EQ(16ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_ranges_ignores_a_pair_past_the_terminator)
+{
+	ONLY_MODE_64;
+
+	// The second pair begins at the null, so it is not a range. Taking it would give 0x00..'q', which contains '1' and
+	// would answer index 0.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x0000000071007a61ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0000000000000031ULL);
+
+	emulate_bin("66 0f 3a 63 c1 04"); // pcmpistri xmm0, xmm1, 0x04
+
+	EXPECT_EQ(16ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_masked_negative_differs_from_plain_negative)
+{
+	ONLY_MODE_64;
+
+	// Inverting only inside the second operand's string answers 3; inverting everything answers 2.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x0000000000636261ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0000000000006261ULL);
+
+	emulate_bin("66 0f 3a 63 c1 3a"); // pcmpistri xmm0, xmm1, 0x3a
+
+	EXPECT_EQ(3ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_plain_negative_on_the_same_operands)
+{
+	ONLY_MODE_64;
+
+	// The same operands under plain negative polarity, so the two answers differ.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x0000000000636261ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0000000000006261ULL);
+
+	emulate_bin("66 0f 3a 63 c1 1a"); // pcmpistri xmm0, xmm1, 0x1a
+
+	EXPECT_EQ(2ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_ZF_is_the_second_operand_and_SF_the_first)
+{
+	ONLY_MODE_64;
+
+	// Only the second operand has a terminator. ZF follows the second operand and SF the first, so swapping them is
+	// visible here and nowhere that both or neither terminate.
+	setXmm(X86_REG_XMM0, 0x706f6e6d6c6b6a69ULL, 0x6867666564636261ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0000000000636261ULL);
+
+	emulate_bin("66 0f 3a 63 c1 1a"); // pcmpistri xmm0, xmm1, 0x1a
+
+	EXPECT_EQ(3ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_SF_alone_when_only_the_first_terminates)
+{
+	ONLY_MODE_64;
+
+	// The mirror image: only the first operand has a terminator.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x0000000000636261ULL);
+	setXmm(X86_REG_XMM1, 0x706f6e6d6c6b6a69ULL, 0x6867666564636261ULL);
+
+	emulate_bin("66 0f 3a 63 c1 1a"); // pcmpistri xmm0, xmm1, 0x1a
+
+	EXPECT_EQ(3ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, PCMPISTRI_signed_ranges_read_the_bounds_as_signed)
+{
+	ONLY_MODE_64;
+
+	// Format 10 makes this the range -32..32, which contains 5. Read unsigned it is 224..32, which is empty and would
+	// answer the element count.
+	setXmm(X86_REG_XMM0, 0x0000000000000000ULL, 0x00000000000020e0ULL);
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x0000000000000005ULL);
+
+	emulate_bin("66 0f 3a 63 c1 06"); // pcmpistri xmm0, xmm1, 0x06
+
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_RCX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

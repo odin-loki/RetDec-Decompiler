@@ -398,6 +398,10 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		bool hasEvexModifier(cs_x86* xi, unsigned from = 0) const;
 		unsigned vectorRegisterWidth(uint32_t r) const;
 		unsigned avxWidth(cs_x86* xi) const;
+		llvm::Value* generateValidMask(llvm::Value* zeroMask, llvm::IRBuilder<>& irb);
+		llvm::Value* spreadMaskToLanes(llvm::Value* mask, llvm::FixedVectorType* vecTy, llvm::IRBuilder<>& irb);
+		llvm::Value* broadcastMaskBit(llvm::Value* mask, unsigned bit, llvm::Type* ty, llvm::IRBuilder<>& irb);
+		void translateStringCompare(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		bool isWideVectorRegister(uint32_t r) const;
 		llvm::Value* loadWideVectorRegister(uint32_t r, llvm::IRBuilder<>& irb);
 		llvm::StoreInst* storeWideVectorRegister(uint32_t r, llvm::Value* val, llvm::IRBuilder<>& irb);

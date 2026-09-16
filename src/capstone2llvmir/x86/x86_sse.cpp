@@ -2147,5 +2147,247 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvxPackedFloat(cs_insn* i, cs_x
 	storeVectorOp(xi->operands[0], irb.CreateBitCast(res, irb.getIntNTy(bits)), bits, irb);
 }
 
+//
+//==============================================================================
+// SSE4.2 string comparison: PCMPISTRI / PCMPISTRM
+//==============================================================================
+//
+// The largest single unmodelled instruction left on x86-64 -- 6,393 sites in
+// the static corpus, because glibc's strlen, strcmp, strchr and strstr are all
+// built on it. It has a small language in its imm8:
+//
+//   imm8[1:0]  format      00 unsigned bytes  01 unsigned words
+//                          10 signed bytes    11 signed words
+//   imm8[3:2]  aggregation 00 EqualAny  01 Ranges  10 EqualEach  11 EqualOrdered
+//   imm8[5:4]  polarity    00 positive  01 negative
+//                          10 masked positive  11 masked negative
+//   imm8[6]    output      0 least significant index  1 most significant
+//
+// Every one of those is a literal, so all of it is decided here and only the
+// data is left to run time.
+//
+// The semantics below are not from the manual alone. A C model of this
+// function was checked against the hardware over 1,760,000 (operand, operand,
+// imm8) triples spanning 40 control bytes, every aggregation, both formats,
+// both polarities that do anything, and both output selections. It matched on
+// every one, including each flag. What is implemented here is that model.
+//
+// "Implicit length" means each operand ends at its first zero element. The
+// validity mask is therefore the bits BELOW the lowest set bit of the
+// element-is-zero mask -- `(Z & -Z) - 1`, which is all ones when Z is zero,
+// so the no-null case needs no special path.
+//
+
+/**
+ * The bits strictly below the lowest set bit of @p zeroMask: one bit per
+ * element, set while the element is still part of the string.
+ *
+ * When no element is zero this is all ones, because `0 & -0` is 0 and `0 - 1`
+ * is all ones -- the same expression, no branch.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorX86_impl::generateValidMask(llvm::Value* zeroMask, llvm::IRBuilder<>& irb)
+{
+	llvm::Value* lowest = irb.CreateAnd(zeroMask, irb.CreateNeg(zeroMask));
+	return irb.CreateSub(lowest, llvm::ConstantInt::get(zeroMask->getType(), 1));
+}
+
+/// Turn a one-bit-per-element mask into an all-ones-per-element vector mask.
+llvm::Value* Capstone2LlvmIrTranslatorX86_impl::spreadMaskToLanes(
+	llvm::Value* mask, llvm::FixedVectorType* vecTy, llvm::IRBuilder<>& irb)
+{
+	unsigned n = vecTy->getNumElements();
+	auto* boolVec = llvm::FixedVectorType::get(irb.getInt1Ty(), n);
+	return irb.CreateSExt(irb.CreateBitCast(mask, boolVec), vecTy);
+}
+
+/// Bit @p bit of @p mask, broadcast to every element of @p vecTy.
+llvm::Value* Capstone2LlvmIrTranslatorX86_impl::broadcastMaskBit(
+	llvm::Value* mask, unsigned bit, llvm::Type* ty, llvm::IRBuilder<>& irb)
+{
+	auto* maskTy = llvm::cast<llvm::IntegerType>(mask->getType());
+	llvm::Value* b = irb.CreateTrunc(irb.CreateLShr(mask, llvm::ConstantInt::get(maskTy, bit)), irb.getInt1Ty());
+	return irb.CreateSExt(b, ty);
+}
+
+void Capstone2LlvmIrTranslatorX86_impl::translateStringCompare(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	if (xi->op_count != 3 || xi->operands[2].type != X86_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned imm = static_cast<unsigned>(xi->operands[2].imm) & 0xff;
+	unsigned fmt = imm & 3;
+	unsigned agg = (imm >> 2) & 3;
+	unsigned pol = (imm >> 4) & 3;
+	bool mostSignificant = ((imm >> 6) & 1) != 0;
+	bool wide = (fmt & 1) != 0;
+	bool isSigned = ((fmt >> 1) & 1) != 0;
+	unsigned n = wide ? 8 : 16;
+	unsigned laneBits = wide ? 16 : 8;
+
+	unsigned bits = 128;
+	llvm::Value* rawA = loadVectorOp(xi->operands[0], irb, bits);
+	bits = 128;
+	llvm::Value* rawB = loadVectorOp(xi->operands[1], irb, bits);
+	if (rawA == nullptr || rawB == nullptr)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(laneBits), n);
+	auto* maskTy = irb.getIntNTy(n);
+	auto* zeroVec = llvm::Constant::getNullValue(vecTy);
+
+	llvm::Value* va = irb.CreateBitCast(rawA, vecTy);
+	llvm::Value* vb = irb.CreateBitCast(rawB, vecTy);
+
+	// Element-is-zero masks, and from them the validity masks.
+	llvm::Value* z1 = irb.CreateBitCast(irb.CreateICmpEQ(va, zeroVec), maskTy);
+	llvm::Value* z2 = irb.CreateBitCast(irb.CreateICmpEQ(vb, zeroVec), maskTy);
+	llvm::Value* v1 = generateValidMask(z1, irb);
+	llvm::Value* v2 = generateValidMask(z2, irb);
+
+	llvm::Value* res1 = nullptr;
+
+	if (agg == 0) // EqualAny: does this element of the second operand appear
+				  // anywhere in the first?
+	{
+		// Zeroing the invalid elements of the first operand is enough to
+		// exclude them: every VALID element of the second operand is
+		// non-zero by construction, so a zero can never match one, and the
+		// invalid elements of the second operand are masked off at the end.
+		llvm::Value* maskedA = irb.CreateAnd(va, spreadMaskToLanes(v1, vecTy, irb));
+		llvm::Value* acc = llvm::ConstantInt::get(maskTy, 0);
+		for (unsigned j = 0; j < n; ++j)
+		{
+			llvm::Value* elem = irb.CreateExtractElement(maskedA, irb.getInt32(j));
+			llvm::Value* eq = irb.CreateICmpEQ(vb, irb.CreateVectorSplat(n, elem));
+			acc = irb.CreateOr(acc, irb.CreateBitCast(eq, maskTy));
+		}
+		res1 = irb.CreateAnd(acc, v2);
+	}
+	else if (agg == 1) // Ranges: the first operand is a list of (low, high)
+					   // pairs.
+	{
+		// The zeroing trick is NOT available here. A signed pair whose high
+		// element was zeroed becomes the range [low, 0], which still matches
+		// every negative value -- so each pair carries its own validity.
+		llvm::Value* acc = llvm::ConstantInt::get(maskTy, 0);
+		for (unsigned j = 0; j + 1 < n; j += 2)
+		{
+			llvm::Value* lo = irb.CreateVectorSplat(n, irb.CreateExtractElement(va, irb.getInt32(j)));
+			llvm::Value* hi = irb.CreateVectorSplat(n, irb.CreateExtractElement(va, irb.getInt32(j + 1)));
+			llvm::Value* geLo = isSigned ? irb.CreateICmpSGE(vb, lo) : irb.CreateICmpUGE(vb, lo);
+			llvm::Value* leHi = isSigned ? irb.CreateICmpSLE(vb, hi) : irb.CreateICmpULE(vb, hi);
+			llvm::Value* in = irb.CreateBitCast(irb.CreateAnd(geLo, leHi), maskTy);
+			llvm::Value* pairValid =
+				irb.CreateAnd(broadcastMaskBit(v1, j, maskTy, irb), broadcastMaskBit(v1, j + 1, maskTy, irb));
+			acc = irb.CreateOr(acc, irb.CreateAnd(in, pairValid));
+		}
+		res1 = irb.CreateAnd(acc, v2);
+	}
+	else if (agg == 2) // EqualEach: element-wise equality.
+	{
+		// Two elements that are both PAST the end of their string count as
+		// equal -- that forced true is what makes a negative-polarity
+		// EqualEach answer "the strings match" with all bits clear.
+		llvm::Value* eq = irb.CreateBitCast(irb.CreateICmpEQ(va, vb), maskTy);
+		llvm::Value* bothValid = irb.CreateAnd(v1, v2);
+		llvm::Value* bothInvalid = irb.CreateAnd(irb.CreateNot(v1), irb.CreateNot(v2));
+		res1 = irb.CreateOr(irb.CreateAnd(eq, bothValid), bothInvalid);
+	}
+	else // EqualOrdered: does the first operand occur at this offset in the
+		 // second? -- the substring search.
+	{
+		llvm::Value* acc = llvm::Constant::getAllOnesValue(maskTy);
+		for (unsigned j = 0; j < n; ++j)
+		{
+			// Lane i of `shifted` is element i+j of the second operand. The
+			// lanes where i+j runs off the end are forced to 1 below, so
+			// what the shuffle puts there does not matter.
+			llvm::SmallVector<int, 16> idx;
+			for (unsigned k = 0; k < n; ++k)
+			{
+				idx.push_back(static_cast<int>(k + j < n ? k + j : n - 1));
+			}
+			llvm::Value* shifted = irb.CreateShuffleVector(vb, vb, idx);
+			llvm::Value* elem = irb.CreateVectorSplat(n, irb.CreateExtractElement(va, irb.getInt32(j)));
+			llvm::Value* eq = irb.CreateBitCast(irb.CreateICmpEQ(shifted, elem), maskTy);
+
+			// Element i+j of the second operand must be valid too.
+			llvm::Value* v2Shifted = irb.CreateLShr(v2, llvm::ConstantInt::get(maskTy, j));
+			// Lanes that ran off the end contribute nothing.
+			uint64_t past = (j == 0) ? 0 : (~((1ULL << (n - j)) - 1) & ((1ULL << n) - 1));
+			llvm::Value* term = irb.CreateOr(irb.CreateAnd(eq, v2Shifted), llvm::ConstantInt::get(maskTy, past));
+
+			// An invalid element of the first operand ends the comparison:
+			// everything from there on counts as matching.
+			llvm::Value* aValid = broadcastMaskBit(v1, j, maskTy, irb);
+			acc = irb.CreateAnd(acc, irb.CreateOr(irb.CreateNot(aValid), term));
+		}
+		res1 = acc;
+	}
+
+	// Polarity. Only 01 and 11 do anything; 00 and 10 leave the result alone.
+	llvm::Value* res2 = res1;
+	if (pol == 1)
+	{
+		res2 = irb.CreateNot(res1);
+	}
+	else if (pol == 3)
+	{
+		// Masked negative inverts only where the SECOND operand is still
+		// inside its string.
+		res2 = irb.CreateXor(res1, v2);
+	}
+
+	auto* zeroMask = llvm::ConstantInt::get(maskTy, 0);
+	llvm::Value* any = irb.CreateICmpNE(res2, zeroMask);
+
+	if (i->id == X86_INS_PCMPISTRM)
+	{
+		// The mask form writes XMM0: bit 6 chooses between the raw bit mask
+		// zero-extended and one all-ones element per set bit.
+		auto* i128 = irb.getInt128Ty();
+		llvm::Value* out =
+			mostSignificant ? irb.CreateBitCast(spreadMaskToLanes(res2, vecTy, irb), i128) : irb.CreateZExt(res2, i128);
+		storeRegister(X86_REG_XMM0, out, irb);
+		storeRegister(X86_REG_YMM0_HI, llvm::ConstantInt::get(i128, 0), irb);
+		storeRegister(X86_REG_ZMM0_HI, llvm::ConstantInt::get(irb.getIntNTy(256), 0), irb);
+	}
+	else
+	{
+		// The index form writes ECX: the position of the lowest or highest
+		// set bit, or the element count when there is none.
+		llvm::Value* idx = nullptr;
+		if (mostSignificant)
+		{
+			llvm::Value* lz = irb.CreateBinaryIntrinsic(llvm::Intrinsic::ctlz, res2, irb.getFalse());
+			idx = irb.CreateSub(llvm::ConstantInt::get(maskTy, n - 1), lz);
+		}
+		else
+		{
+			// cttz with is_zero_poison false answers the bit width for zero,
+			// which is exactly the "no match" answer the instruction wants --
+			// but only for the least-significant direction.
+			idx = irb.CreateBinaryIntrinsic(llvm::Intrinsic::cttz, res2, irb.getFalse());
+		}
+		idx = irb.CreateSelect(any, idx, llvm::ConstantInt::get(maskTy, n));
+		storeRegister(X86_REG_ECX, irb.CreateZExt(idx, irb.getInt32Ty()), irb);
+	}
+
+	storeRegisters(
+		irb,
+		{{X86_REG_CF, any},
+		 {X86_REG_ZF, irb.CreateICmpNE(z2, zeroMask)},
+		 {X86_REG_SF, irb.CreateICmpNE(z1, zeroMask)},
+		 {X86_REG_OF, irb.CreateTrunc(res2, irb.getInt1Ty())},
+		 {X86_REG_AF, irb.getFalse()},
+		 {X86_REG_PF, irb.getFalse()}});
+}
+
 } // namespace capstone2llvmir
 } // namespace retdec
