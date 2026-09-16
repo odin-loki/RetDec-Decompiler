@@ -201,11 +201,12 @@ class Capstone2LlvmIrTranslatorX86_impl :
 	protected:
 		virtual bool isOperandRegister(cs_x86_op& op) override;
 		virtual uint8_t getOperandAccess(cs_x86_op& op) override;
-//
-//==============================================================================
-// x86 implementation data.
-//==============================================================================
-//
+		void generateShiftDestinationWrite(cs_x86_op& dst, llvm::Value* val, llvm::IRBuilder<>& irb);
+		//
+		//==============================================================================
+		// x86 implementation data.
+		//==============================================================================
+		//
 	protected:
 		/// Maps register numbers to numbers of their parents depending on the
 		/// original basic mode (e.g. X86_REG_AH to X86_REG_EAX in 32-bit mode,

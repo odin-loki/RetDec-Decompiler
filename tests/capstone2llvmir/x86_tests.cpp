@@ -3004,6 +3004,268 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_IDIV_r64)
 }
 
 //
+// Batch AA -- the forms whose answer does not fit in one register.
+//
+// Every IDIV test above this point divides by a POSITIVE number, which is why
+// none of them noticed that the divisor was zero-extended. Every expected
+// value below was executed on the host CPU and read back, not worked out on
+// paper; see scripts/ci/x86_wide_oracle.c.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_IDIV_r64_negative_divisor)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RCX, 0xfffffffffffffffd}, // -3
+		{X86_REG_RDX, 0x0},
+		{X86_REG_RAX, 0xa}, // 10
+	});
+
+	emulate("idiv rcx");
+
+	// 10 / -3 is -3 remainder 1. Zero-extending the divisor made it
+	// 18446744073709551613, so the quotient came out 0 and the remainder 10.
+	EXPECT_JUST_REGISTERS_LOADED({X86_REG_RCX, X86_REG_RDX, X86_REG_RAX});
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_RDX, 0x1},
+		{X86_REG_RAX, 0xfffffffffffffffd},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_IDIV_r32_negative_divisor)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_ECX, 0xffffedcc}, // -0x1234
+		{X86_REG_EDX, 0x12},
+		{X86_REG_EAX, 0x345},
+	});
+
+	emulate("idiv ecx");
+
+	EXPECT_JUST_REGISTERS_LOADED({X86_REG_ECX, X86_REG_EDX, X86_REG_EAX});
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EDX, 0xb1d},
+		{X86_REG_EAX, 0xff02db4e},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_IDIV_r8_negative_divisor)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{X86_REG_CL, 0xf1}, // -15
+		{X86_REG_AX, 0x123},
+	});
+
+	emulate("idiv cl");
+
+	EXPECT_JUST_REGISTERS_LOADED({X86_REG_CL, X86_REG_AX});
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_AH, 0x6},  // remainder
+		{X86_REG_AL, 0xed}, // quotient, -19
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_IMUL_r8_overflows_into_the_sign_bit)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{X86_REG_CL, 0x08},
+		{X86_REG_AL, 0x10},
+	});
+
+	emulate("imul cl");
+
+	// 16 * 8 is 128. The high half is zero, but 128 does not fit in a signed
+	// byte, so the hardware sets both flags. The old test -- "the high half
+	// is neither zero nor all ones" -- set neither.
+	EXPECT_JUST_REGISTERS_LOADED({X86_REG_CL, X86_REG_AL});
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_AX, 0x80},
+		{X86_REG_OF, true},
+		{X86_REG_CF, true},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_IMUL_r8_high_all_ones_low_positive)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{X86_REG_CL, 0x03}, {X86_REG_AL, 0xd5}, // -43
+	});
+
+	emulate("imul cl");
+
+	// -43 * 3 is -129: the high half IS all ones, and it still does not fit
+	// in a signed byte. This is the other direction of the same mistake.
+	EXPECT_JUST_REGISTERS_LOADED({X86_REG_CL, X86_REG_AL});
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_AX, 0xff7f},
+		{X86_REG_OF, true},
+		{X86_REG_CF, true},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_IMUL_r32_high_all_ones_low_positive)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_ECX, 0x3}, {X86_REG_EAX, 0xd5555555}, // -715827883
+	});
+
+	emulate("imul ecx");
+
+	EXPECT_JUST_REGISTERS_LOADED({X86_REG_ECX, X86_REG_EAX});
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x7fffffff},
+		{X86_REG_EDX, 0xffffffff},
+		{X86_REG_OF, true},
+		{X86_REG_CF, true},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MUL_r8_unsigned_high_zero_is_no_overflow)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{X86_REG_CL, 0x08},
+		{X86_REG_AL, 0x10},
+	});
+
+	emulate("mul cl");
+
+	// The same operands as the IMUL test above. Unsigned, 128 fits in a byte
+	// pair with a zero high half, so neither flag is set -- the IMUL fix must
+	// not leak into MUL.
+	EXPECT_JUST_REGISTERS_LOADED({X86_REG_CL, X86_REG_AL});
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_AX, 0x80},
+		{X86_REG_OF, false},
+		{X86_REG_CF, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_SHLD_r32_count_masks_to_five_bits)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0xaaaaaaaa12345678},
+		{X86_REG_RCX, 0x00000000abcdef21},
+	});
+
+	emulate("shld eax, ecx, cl");
+
+	// cl is 0x21. A 32-bit operand masks the count to five bits, so this is a
+	// shift by ONE. Masking by the processor mode instead gave 33, and a
+	// shift of an i32 by 33 is poison.
+	EXPECT_EQ(0x000000002468acf1ULL, getRegisterValueUnsigned(X86_REG_RAX));
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_SHLD_r32_count_of_32_is_a_count_of_zero)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0xaaaaaaaa12345678},
+		{X86_REG_RCX, 0x00000000abcdef20},
+	});
+
+	emulate("shld eax, ecx, cl");
+
+	// cl is 0x20. Five bits of it is zero, so nothing moves. Six bits of it
+	// is 32, which runs the body and folds ecx in.
+	//
+	// The test above, with cl=0x21, does NOT catch that: the emulator reduces
+	// a shift amount modulo the width exactly as the hardware does, so a
+	// shift by 33 of an i32 gives the same answer as a shift by 1 and the
+	// wrong mask is invisible. It is not invisible in the IR -- `shl i32 x,
+	// 33` is poison, and the optimiser is entitled to do anything with it --
+	// but a test has to fail, not merely be right for a bad reason. This
+	// count is the one that fails.
+	EXPECT_EQ(0x0000000012345678ULL, getRegisterValueUnsigned(X86_REG_RAX));
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_SHRD_r32_count_masks_to_zero)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0xaaaaaaaa12345678},
+		{X86_REG_RCX, 0x00000000abcdef60},
+	});
+
+	emulate("shrd eax, ecx, cl");
+
+	// cl is 0x60: masked to five bits it is zero, so the value does not move.
+	// The register is still WRITTEN, though, and a 32-bit write clears the
+	// top half of RAX.
+	EXPECT_EQ(0x0000000012345678ULL, getRegisterValueUnsigned(X86_REG_RAX));
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_SHL_r32_zero_count_still_clears_the_top_half)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0xaaaaaaaa12345678},
+		{X86_REG_RCX, 0x0},
+	});
+
+	emulate("shl eax, cl");
+
+	EXPECT_EQ(0x0000000012345678ULL, getRegisterValueUnsigned(X86_REG_RAX));
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_ROL_r32_count_masks_to_zero_still_writes)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0xaaaaaaaa12345678},
+		{X86_REG_RCX, 0x20},
+	});
+
+	emulate("rol eax, cl");
+
+	// A rotate by 32 of a 32-bit value is the identity, and the count masks
+	// to zero besides -- but the destination is written either way.
+	EXPECT_EQ(0x0000000012345678ULL, getRegisterValueUnsigned(X86_REG_RAX));
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
 // X86_INS_JMP
 //
 

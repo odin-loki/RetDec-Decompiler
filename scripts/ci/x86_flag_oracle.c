@@ -170,6 +170,16 @@ static struct { const char* name; const char* asmtext; Fn fn; unsigned bits; } T
   {"add16", "add ax, cx",    o_add16, 16}, {"sub16", "sub ax, cx",   o_sub16, 16},
 };
 
+/* random() returns 31 bits, so `random() << 32 ^ random()` leaves bit 31 and
+   bit 63 clear in every draw. That is the whole signed half of the operand
+   space unreachable, on a test whose job is to find sign bugs. */
+static uint64_t rnd64(void)
+{
+  uint64_t x = 0;
+  for (int i = 0; i < 5; ++i) { x = (x << 13) ^ (uint64_t)(random() & 0x1fff); }
+  return x;
+}
+
 int main(int argc, char** argv)
 {
   long n = argc > 1 ? atol(argv[1]) : 200;
@@ -180,7 +190,7 @@ int main(int argc, char** argv)
       uint64_t a, b;
       int mode = random() % 4;
       if (mode == 0) { a = random() % 8; b = random() % 8; }
-      else if (mode == 1) { a = ((uint64_t)random() << 32) ^ random(); b = ((uint64_t)random() << 32) ^ random(); }
+      else if (mode == 1) { a = rnd64(); b = rnd64(); }
       else if (mode == 2) { a = 1ULL << (random() % 64); b = 1ULL << (random() % 64); }
       else { a = ~0ULL >> (random() % 64); b = ~0ULL >> (random() % 64); }
       Out o = TBL[k].fn(a, b);

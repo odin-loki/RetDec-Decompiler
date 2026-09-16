@@ -7549,3 +7549,257 @@ x87 and SSE flag-setting comparisons, and every architecture other than x86.
 The other four cannot be done this way in this container — there is no qemu —
 which is why ARM's SBC had to be derived by mapping x86's SBB rather than
 measured directly.
+
+## Batch AA — the instructions whose answer does not fit in one register
+
+### Why FLAG-01 could not see these
+
+FLAG-01 compares one destination register and six flags. That shape is what
+made it cheap, and it is also what it cannot express:
+
+```
+MUL, IMUL    write a result twice as wide as their operand, split across two
+             registers -- and at 8 and 16 bits they write only PART of those
+             registers.
+DIV, IDIV    read a dividend twice as wide as their operand and write both a
+             quotient and a remainder.
+SHLD, SHRD   have three operands.
+the shifts   are covered at 64 bits and nowhere else, and 64 bits is the one
+             width where the count mask and the destination width are both
+             the uninteresting case.
+```
+
+The last section of the FLAG-01 entry above lists exactly these as what it
+does not cover. This is that list, done.
+
+`scripts/ci/x86_wide_oracle.c` and `scripts/ci/x86_wide_compare.cpp` carry the
+full 64-bit RAX and RDX through every row, before and after. A translator that
+zeroes what it should merge, or merges what it should zero, is a mismatch
+rather than something nobody looked at. Four bugs came out of the first run.
+
+### AA-0: the generator could not produce a negative operand
+
+Before any of them, the instrument's own bug. Both oracles drew their random
+operands like this:
+
+```c
+a = ((uint64_t)random() << 32) ^ random();
+```
+
+`random()` returns 31 bits. Bit 31 and bit 63 are therefore clear in *every*
+draw — confirmed by OR-ing 200,000 of them together:
+
+```
+OR of 200000 draws: 7fffffff7fffffff
+bit63 ever set: 0   bit31 ever set: 0
+```
+
+A generator that cannot produce a negative operand cannot find a sign bug, and
+this one was hiding AA-1: the first sweep of MUL, DIV and the shifts came back
+**clean** on an instruction that gets `10 / -3` wrong, because the divisor was
+never negative. The fix is five 13-bit chunks, and it is applied to
+`x86_flag_oracle.c` as well — the shipped one had the same flaw.
+
+Not the first time on this branch that a green run turned out to be the test
+not looking — Batch V needed `verifyFunction` before a mutation would fail at
+all, and two Batch Z mutations needed operands that actually wrapped. It is
+why the rule is that a falsification run which passes is a result to check,
+not a result to report.
+
+### AA-1: IDIV zero-extended its divisor
+
+```c
+op1 = irb.CreateZExt(op1, op0->getType());   // for DIV *and* IDIV
+```
+
+The dividend is assembled from RDX:RAX as an exact bit pattern, so it needs no
+care. The divisor is widened, and widening it with a *zero* extension turns
+every negative divisor into a huge positive one:
+
+```
+idiv rcx   rax=10  rdx=0  rcx=-3
+  hardware   rax=-3  rdx=1
+  translator rax=0   rdx=10
+```
+
+All four widths. The fix is one conditional, matching the `SDiv`/`UDiv` and
+`SRem`/`URem` choices three lines below that were already written this way.
+
+Every IDIV test in the tree divides by a positive number, which is why this
+survived: the tests were written from the same reading of the manual as the
+code.
+
+### AA-2: one-operand IMUL's overflow test
+
+```c
+auto* f = irb.CreateICmpNE(h, 0);
+if (i->id == X86_INS_IMUL) { f = f && irb.CreateICmpNE(h, -1); }
+```
+
+"The high half is neither zero nor all ones" is not the rule. The rule is that
+the high half must be the **sign extension of the low half**, and the two
+differ in both directions:
+
+```
+imul cl   al=16   cl=8    ->  ax=0x0080   high=0, low is negative    cf=1 of=1
+imul cl   al=-43  cl=3    ->  ax=0xff7f   high=-1, low is positive   cf=1 of=1
+```
+
+The old test reported neither flag for either. `imul` by a small constant is
+ordinary compiler output, so this is not an exotic path — 16 times 8 is enough
+to reach it. MUL is unaffected: for the unsigned form "the high half is not
+zero" *is* the rule, and a test asserting exactly that now sits next to the
+IMUL ones.
+
+### AA-3: SHLD and SHRD masked the count by the processor mode
+
+```c
+if (getBasicMode() == CS_MODE_32)      { op2 = SRem(op2, 32); }
+else if (getBasicMode() == CS_MODE_64) { op2 = SRem(op2, 64); }
+```
+
+The count is masked by the **operand** size: five bits for a 16- or 32-bit
+operand, six for a 64-bit one. Reading the mode instead means that in 64-bit
+mode `shld eax, ecx, cl` with cl=0xe0 reduces 224 to 32 rather than to 0, and
+then shifts an i32 by 32 — which is poison, and poison does not stay where it
+is put once the optimiser sees it.
+
+The plain shifts, fifty lines up in the same file, already had it right:
+
+```c
+unsigned maskC = op0BitW == 64 ? 0x3f : 0x1f;
+```
+
+so the fix is to say the same thing here. These two were the only calls to
+`getBasicMode()` in `x86.cpp`; there are now none.
+
+At 16 bits a count above 15 is architecturally undefined, and the mask alone
+still leaves a shift of an i16 by 20. That is reduced as well — not to match
+the hardware, which is entitled to do anything there, but so that RetDec does
+not put poison into IR it then optimises.
+
+### AA-4: none of the nine shift forms wrote its destination at a zero count
+
+The manual says that when the masked count is zero the **flags** are not
+affected. It says nothing about the destination, and every one of these
+translators reads that silence as "write nothing":
+
+```c
+llvm::IRBuilder<> bodyIrb(generateIfNotThen(op1Zero, irb));
+```
+
+On x86-64 that is wrong, because a write to a 32-bit register zeroes bits
+63:32 whether or not the value changed. Measured, not assumed:
+
+```
+shld cl=0   (literal zero)  rax aaaaaaaa11112222 -> 0000000011112222
+shld cl=32  (masks to 0)    rax aaaaaaaa11112222 -> 0000000011112222
+shld cl=96  (masks to 0)    rax aaaaaaaa11112222 -> 0000000011112222
+shl  cl=0                   rax aaaaaaaa11112222 -> 0000000011112222
+shr  cl=0                   rax aaaaaaaa11112222 -> 0000000011112222
+sar  cl=0                   rax aaaaaaaa11112222 -> 0000000011112222
+rol  cl=0                   rax aaaaaaaa11112222 -> 0000000011112222
+ror  cl=0                   rax aaaaaaaa11112222 -> 0000000011112222
+rcl  cl=0                   rax aaaaaaaa11112222 -> 0000000011112222
+rcr  cl=0                   rax aaaaaaaa11112222 -> 0000000011112222
+```
+
+All nine, every count that masks to zero. `generateShiftDestinationWrite()`
+stores the loaded value back before the branch: a no-op in value terms, which
+gets the destination's width right for free. It is skipped for a memory
+destination, where there is nothing to widen and a redundant store would be a
+new memory write for later analyses to explain.
+
+This one was found by looking, not by the sweep — the sweep only covered SHLD
+and SHRD at first, so the other seven were carried by a fix nothing measured.
+The oracle now covers shl, shr, sar, rol, ror, rcl and rcr at 8, 16 and 32
+bits as well, and reverting the helper fails all nine:
+
+```
+by instruction:  shld32=6 shrd32=9 shl32=12 shr32=10 sar32=8
+                 rol32=10 ror32=7 rcl32=8 rcr32=8
+```
+
+### Two things the harness got wrong about itself
+
+Both were caught by the same habit: read a green result as a claim to check.
+
+**The wide self-test removed its own evidence.** It corrupted a row with
+`awk '{$6 = $6 + 1}'`. awk keeps numbers in doubles, so a 64-bit result became
+`1.47884e+19`, which does not parse back as an integer — the row was silently
+*dropped*, and the comparison reported one fewer comparison and no mismatch. A
+self-test that cannot fail is the thing self-tests exist to prevent. It now
+rewrites the last digit as text.
+
+**Eight rol/ror "mismatches" were the harness disagreeing with itself.** The
+oracle seeds the incoming carry for every single-operand shift; the comparator
+seeded it only for RCL and RCR. For a count that masks to zero CF is left
+alone, and "left alone" can only be checked if both sides started from the
+same value.
+
+### And one test that was right for the wrong reason
+
+`shld eax, ecx, cl` with cl=0x21 gives the correct answer even with AA-3 put
+back, because RetDec's emulator reduces a shift amount modulo the width
+exactly as the hardware does — so a shift by 33 of an i32 lands on the same
+value as a shift by 1. The bug is real in the IR, where `shl i32 x, 33` is
+poison, but a test has to *fail*, not merely be right. A second test at
+cl=0x20 — five bits of which is zero and six bits of which is 32 — is the one
+that fails.
+
+### Falsification
+
+Each fix reverted on its own, with an md5 guard, against both instruments.
+
+Against the hardware comparison (14,400 rows):
+
+```
+A_idiv_zext          361   idiv8=123 idiv16=112 idiv32=83 idiv64=43
+B_imul_of            152   imul8=49 imul16=48 imul32=37 imul64=18
+C_shxd_mask           22   shld32=8 shrd32=14
+E_zero_count_write    78   shld32=6 shrd32=9 shl32=12 shr32=10 sar32=8
+                           rol32=10 ror32=7 rcl32=8 rcr32=8
+```
+
+Every width of IDIV and of IMUL, and every one of the nine shift forms. The
+per-instruction tally is printed rather than the first forty failing rows,
+because the printed list is capped and a capped list read as a summary is how
+AA-4 nearly shipped covering two instructions instead of nine.
+
+Against the gtest suite, which is what runs on a machine that is not x86-64:
+
+```
+A_idiv_zext          3 new tests fail   IDIV_r8/r32/r64_negative_divisor
+B_imul_of            3 new tests fail   IMUL_r8/r32_high_all_ones_low_positive,
+                                        IMUL_r8_overflows_into_the_sign_bit
+C_shxd_mask          2 new tests fail   SHLD_r32_count_of_32_is_a_count_of_zero,
+                                        SHRD_r32_count_masks_to_zero
+E_zero_count_write   4 new tests fail   the two above plus
+                                        SHL_r32_zero_count_still_clears_the_top_half,
+                                        ROL_r32_count_masks_to_zero_still_writes
+```
+
+Twelve tests in all, and the driver checks after restoring that every one of
+them passes again — a mutation run that leaves the tree broken would otherwise
+report the same "caught" for the wrong reason.
+
+### After
+
+```
+14,400 wide comparisons against the hardware, 0 mismatches
+20,400 arithmetic comparisons, 0 mismatches
+ 1,024 condition-code comparisons, 0 mismatches
+```
+
+PSEUDO-01 does not move: all of these were already translated. They were
+translated wrongly, which is the one thing a coverage number cannot report.
+
+C2L-01 floor: X86 2580 → 2616. 5,495 tests.
+
+### Still not covered
+
+x87 and SSE comparisons (COMISS, UCOMISS, FCOMI and their double forms) set
+EFLAGS and are not in any of the three comparisons. Neither is SHLD/SHRD with
+a memory destination, nor BSWAP/XADD/CMPXCHG. And still no architecture other
+than x86 — there is no qemu in this container, so ARM, ARM64, MIPS and PowerPC
+remain checked by reading rather than by execution.

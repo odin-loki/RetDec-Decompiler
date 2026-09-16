@@ -2986,7 +2986,14 @@ void Capstone2LlvmIrTranslatorX86_impl::translateDiv(cs_insn* i, cs_x86* xi, llv
 		op0hl = irb.CreateShl(op0hl, resT->getBitWidth());
 		op0 = irb.CreateOr(op0hl, op0ll);
 	}
-	op1 = irb.CreateZExt(op1, op0->getType());
+	// The divisor is widened to the dividend's type, and for IDIV that has to
+	// be a SIGN extension. Zero-extending it turned every negative divisor
+	// into a huge positive one: `idiv rcx` with rax=10 and rcx=-3 gave a
+	// quotient of 0 and a remainder of 10, where the hardware gives -3
+	// remainder 1. The dividend needs no such care -- it is the exact
+	// two's-complement bit pattern of RDX:RAX either way.
+	op1 = i->id == X86_INS_IDIV ? irb.CreateSExt(op1, op0->getType())  // X86_INS_IDIV - signed.
+								: irb.CreateZExt(op1, op0->getType()); // X86_INS_DIV  - unsigned.
 
 	auto* div = i->id == X86_INS_IDIV
 			? irb.CreateSDiv(op0, op1)  // X86_INS_IDIV - signed.
@@ -3309,7 +3316,25 @@ void Capstone2LlvmIrTranslatorX86_impl::translateMul(cs_insn* i, cs_x86* xi, llv
 	auto* mul = irb.CreateMul(op0, op1);
 	auto* l = irb.CreateTrunc(mul, halfT);
 	auto* h = irb.CreateTrunc(irb.CreateLShr(mul, halfT->getBitWidth()), halfT);
-	auto* f = irb.CreateICmpNE(h, llvm::ConstantInt::get(h->getType(), 0));
+
+	// CF and OF say the same thing for both forms: the full product does not
+	// fit in the low half. For MUL that is "the high half is not zero". For
+	// IMUL it is "the high half is not the SIGN EXTENSION of the low half",
+	// which is not the same as "not zero and not all ones" -- the test this
+	// replaces. `imul cl` with al=16 and cl=8 gives 128: the high half is
+	// zero, but 128 does not fit in a signed byte, so the hardware sets both
+	// flags and the old test set neither.
+	llvm::Value* f = nullptr;
+	if (i->id == X86_INS_IMUL)
+	{
+		auto* signOfLow = irb.CreateAShr(l, llvm::ConstantInt::get(l->getType(), halfT->getBitWidth() - 1));
+		f = irb.CreateICmpNE(h, signOfLow);
+	}
+	else
+	{
+		f = irb.CreateICmpNE(h, llvm::ConstantInt::get(h->getType(), 0));
+	}
+
 	if (highR == X86_REG_INVALID)
 	{
 		storeRegister(lowR, mul, irb);
@@ -3318,11 +3343,6 @@ void Capstone2LlvmIrTranslatorX86_impl::translateMul(cs_insn* i, cs_x86* xi, llv
 	{
 		storeRegister(lowR, l, irb);
 		storeRegister(highR, h, irb);
-	}
-	if (i->id == X86_INS_IMUL)
-	{
-		auto* f1 = irb.CreateICmpNE(h, llvm::ConstantInt::get(h->getType(), -1, true));
-		f = irb.CreateAnd(f, f1);
 	}
 	storeRegister(X86_REG_OF, f, irb);
 	storeRegister(X86_REG_CF, f, irb);
@@ -3916,6 +3936,33 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSbb(cs_insn* i, cs_x86* xi, llv
 }
 
 /**
+ * The shift and rotate instructions write their destination even when the
+ * masked count is zero. That is invisible for a memory destination or a
+ * full-width register, but a write to a 32-bit register zeroes bits 63:32, so
+ * `shl eax, cl` with cl=0 clears the top half of RAX, and `shld eax, ecx, cl`
+ * with cl=0x60 -- a count that masks to zero -- does the same.
+ *
+ * Measured on the hardware rather than read off the manual, which says only
+ * that the FLAGS are unaffected and is silent about the write: all nine of
+ * shl, shr, sar, rol, ror, rcl, rcr, shld and shrd zero the upper half, at a
+ * literal count of zero and at counts that mask to zero.
+ *
+ * Every one of those translators wraps its body in a "count is not zero"
+ * branch, so this has to run before the branch. Storing the loaded value back
+ * is a no-op in value terms and gets the destination's width right for free.
+ * It is skipped for a memory destination, where there is nothing to widen and
+ * a redundant store would be a new memory write for later analyses to explain.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::generateShiftDestinationWrite(
+	cs_x86_op& dst, llvm::Value* val, llvm::IRBuilder<>& irb)
+{
+	if (dst.type == X86_OP_REG)
+	{
+		storeOp(dst, val, irb);
+	}
+}
+
+/**
  * X86_INS_SHL == X86_INS_SAL
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateShiftLeft(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
@@ -3938,6 +3985,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateShiftLeft(cs_insn* i, cs_x86* x
 	op1 = irb.CreateAnd(op1, mask);
 	auto* of = llvm::cast<llvm::Instruction>(loadRegister(X86_REG_OF, irb));
 	auto* op1Zero = irb.CreateICmpEQ(op1, llvm::ConstantInt::get(op1->getType(), 0));
+
+	generateShiftDestinationWrite(xi->operands[0], op0, irb);
 
 	// Sometimes (most of the times, not for op1 = CL) LLVM can eval cond brach
 	// cond on-the-fly. Then this pattern creates stuff like:
@@ -3988,6 +4037,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateShiftRight(cs_insn* i, cs_x86* 
 	op1 = irb.CreateAnd(op1, mask);
 	auto* of = llvm::cast<llvm::Instruction>(loadRegister(X86_REG_OF, irb));
 	auto* op1Zero = irb.CreateICmpEQ(op1, llvm::ConstantInt::get(op1->getType(), 0));
+	generateShiftDestinationWrite(xi->operands[0], op0, irb);
 	llvm::IRBuilder<> bodyIrb(generateIfNotThen(op1Zero, irb));
 
 	llvm::Value* shift = i->id == X86_INS_SHR
@@ -4024,16 +4074,26 @@ void Capstone2LlvmIrTranslatorX86_impl::translateShld(cs_insn* i, cs_x86* xi, ll
 	op2 = irb.CreateZExtOrTrunc(op2, op0->getType());
 	auto* of = loadRegister(X86_REG_OF, irb);
 
-	if (getBasicMode() == CS_MODE_32)
+	// The count is masked by the OPERAND size, not by the processor mode:
+	// five bits for a 16- or 32-bit operand, six for a 64-bit one. This read
+	// the mode instead, so in 64-bit mode `shld eax, ecx, cl` with cl=0xe0
+	// reduced 224 to 32 rather than to 0 and then shifted an i32 by 32 --
+	// poison, which the emulator evaluated to the source operand. The plain
+	// shifts, fifty lines up, already mask on op0's width; this is the same
+	// rule. These two were the only calls to getBasicMode() in this file.
+	unsigned op0BitW = op0->getType()->getIntegerBitWidth();
+	op2 = irb.CreateAnd(op2, llvm::ConstantInt::get(op2->getType(), op0BitW == 64 ? 0x3f : 0x1f));
+	if (op0BitW < 32)
 	{
-		op2 = irb.CreateSRem(op2, llvm::ConstantInt::get(op2->getType(), 32));
-	}
-	else if (getBasicMode() == CS_MODE_64) // && REX.W prefix.
-	{
-		op2 = irb.CreateSRem(op2, llvm::ConstantInt::get(op2->getType(), 64));
+		// A 16-bit SHLD/SHRD with a count above 15 is architecturally
+		// undefined. Reducing it keeps the IR free of poison, which a shift
+		// of an i16 by 20 would be -- and poison does not stay where it is
+		// put once the optimiser sees it.
+		op2 = irb.CreateAnd(op2, llvm::ConstantInt::get(op2->getType(), op0BitW - 1));
 	}
 
 	auto* op2Zero = irb.CreateICmpEQ(op2, llvm::ConstantInt::get(op2->getType(), 0));
+	generateShiftDestinationWrite(xi->operands[0], op0, irb);
 	llvm::IRBuilder<> bodyIrb(generateIfNotThen(op2Zero, irb));
 
 	auto* shl = bodyIrb.CreateShl(op0, op2);
@@ -4067,16 +4127,26 @@ void Capstone2LlvmIrTranslatorX86_impl::translateShrd(cs_insn* i, cs_x86* xi, ll
 	op2 = irb.CreateZExtOrTrunc(op2, op0->getType());
 	auto* of = loadRegister(X86_REG_OF, irb);
 
-	if (getBasicMode() == CS_MODE_32)
+	// The count is masked by the OPERAND size, not by the processor mode:
+	// five bits for a 16- or 32-bit operand, six for a 64-bit one. This read
+	// the mode instead, so in 64-bit mode `shld eax, ecx, cl` with cl=0xe0
+	// reduced 224 to 32 rather than to 0 and then shifted an i32 by 32 --
+	// poison, which the emulator evaluated to the source operand. The plain
+	// shifts, fifty lines up, already mask on op0's width; this is the same
+	// rule. These two were the only calls to getBasicMode() in this file.
+	unsigned op0BitW = op0->getType()->getIntegerBitWidth();
+	op2 = irb.CreateAnd(op2, llvm::ConstantInt::get(op2->getType(), op0BitW == 64 ? 0x3f : 0x1f));
+	if (op0BitW < 32)
 	{
-		op2 = irb.CreateSRem(op2, llvm::ConstantInt::get(op2->getType(), 32));
-	}
-	else if (getBasicMode() == CS_MODE_64) // && REX.W prefix.
-	{
-		op2 = irb.CreateSRem(op2, llvm::ConstantInt::get(op2->getType(), 64));
+		// A 16-bit SHLD/SHRD with a count above 15 is architecturally
+		// undefined. Reducing it keeps the IR free of poison, which a shift
+		// of an i16 by 20 would be -- and poison does not stay where it is
+		// put once the optimiser sees it.
+		op2 = irb.CreateAnd(op2, llvm::ConstantInt::get(op2->getType(), op0BitW - 1));
 	}
 
 	auto* op2Zero = irb.CreateICmpEQ(op2, llvm::ConstantInt::get(op2->getType(), 0));
+	generateShiftDestinationWrite(xi->operands[0], op0, irb);
 	llvm::IRBuilder<> bodyIrb(generateIfNotThen(op2Zero, irb));
 
 	auto* lshr = bodyIrb.CreateLShr(op0, op2);
@@ -4115,6 +4185,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRcr(cs_insn* i, cs_x86* xi, llv
 	op1 = irb.CreateAnd(op1, mask);
 	auto* op1NotZero = irb.CreateICmpNE(op1, llvm::ConstantInt::get(op1->getType(), 0));
 
+	generateShiftDestinationWrite(xi->operands[0], op0, irb);
 	llvm::IRBuilder<> bodyIrb(generateIfThen(op1NotZero, irb));
 
 	auto* cf = loadRegister(X86_REG_CF, bodyIrb, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
@@ -4162,6 +4233,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRcl(cs_insn* i, cs_x86* xi, llv
 	op1 = irb.CreateAnd(op1, mask);
 	auto* op1NotZero = irb.CreateICmpNE(op1, llvm::ConstantInt::get(op1->getType(), 0));
 
+	generateShiftDestinationWrite(xi->operands[0], op0, irb);
 	llvm::IRBuilder<> bodyIrb(generateIfThen(op1NotZero, irb));
 
 	auto* cf = loadRegister(X86_REG_CF, bodyIrb, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
@@ -4207,6 +4279,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRol(cs_insn* i, cs_x86* xi, llv
 	op1 = irb.CreateAnd(op1, mask);
 	auto* op1NotZero = irb.CreateICmpNE(op1, llvm::ConstantInt::get(op1->getType(), 0));
 
+	generateShiftDestinationWrite(xi->operands[0], op0, irb);
 	llvm::IRBuilder<> bodyIrb(generateIfThen(op1NotZero, irb));
 
 	auto* shl = bodyIrb.CreateShl(op0, op1);
@@ -4242,6 +4315,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateRor(cs_insn* i, cs_x86* xi, llv
 	op1 = irb.CreateAnd(op1, mask);
 	auto* op1NotZero = irb.CreateICmpNE(op1, llvm::ConstantInt::get(op1->getType(), 0));
 
+	generateShiftDestinationWrite(xi->operands[0], op0, irb);
 	llvm::IRBuilder<> bodyIrb(generateIfThen(op1NotZero, irb));
 
 	auto* srl = bodyIrb.CreateLShr(op0, op1);

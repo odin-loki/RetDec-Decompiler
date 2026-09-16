@@ -31,6 +31,19 @@
 #               than one -- because comparing against an undefined flag is
 #               comparing against whatever this CPU happened to leave behind.
 #
+#   wide        MUL, IMUL, DIV, IDIV, SHLD, SHRD and the single-operand
+#               shifts and rotates at 8, 16 and 32 bits -- everything whose
+#               answer does not fit in one register and six flags. Both RAX
+#               and RDX are compared in full, before and after, so a
+#               translator that zeroes what it should merge, or merges what
+#               it should zero, is a mismatch. Four bugs came out of the
+#               first run: IDIV zero-extended its divisor, one-operand IMUL
+#               got its overflow test wrong, SHLD and SHRD masked the count
+#               by the processor mode instead of the operand size, and none
+#               of the nine shift forms wrote its destination when the count
+#               masked to zero -- which on x86-64 is how the upper half of a
+#               32-bit destination gets cleared.
+#
 #   condition   every SETcc against every one of the 64 combinations of the
 #               six flags. Exhaustive, not sampled: 16 x 64 = 1024 cases. Jcc,
 #               SETcc and CMOVcc all go through the same sixteen generateCc*
@@ -127,8 +140,10 @@ link() {
 
 gcc -O0 -o "${WORKDIR}/flag_oracle" scripts/ci/x86_flag_oracle.c || die "oracle build failed"
 gcc -O0 -o "${WORKDIR}/cc_oracle"   scripts/ci/x86_cc_oracle.c   || die "cc oracle build failed"
+gcc -O0 -o "${WORKDIR}/wide_oracle" scripts/ci/x86_wide_oracle.c || die "wide oracle build failed"
 link scripts/ci/x86_flag_compare.cpp "${WORKDIR}/flag_compare"
 link scripts/ci/x86_cc_compare.cpp   "${WORKDIR}/cc_compare"
+link scripts/ci/x86_wide_compare.cpp "${WORKDIR}/wide_compare"
 
 rc=0
 
@@ -146,6 +161,29 @@ if [ "${SELF_TEST}" -eq 1 ]; then
 		*", 1 mismatches"*) echo "FLAG-01: self-test ok -- ${st}" ;;
 		*) die "self-test: expected exactly 1 mismatch, got: ${st}" ;;
 	esac
+
+	# The wide comparison checks two result registers as well as the flags,
+	# so its self-test corrupts a RESULT: that is the half the flag
+	# comparison cannot reach, and IDIV's sign bug showed up there and
+	# nowhere else.
+	"${WORKDIR}/wide_oracle" 20 > "${WORKDIR}/wrows.txt"
+	# The last digit is rewritten as TEXT, not incremented. awk keeps numbers
+	# in doubles, so `$6 + 1` on a 64-bit result yields 1.47884e+19, which
+	# does not parse back as an integer -- the row is silently dropped and
+	# the comparison reports one FEWER comparison and no mismatch. A
+	# self-test that quietly removes its own evidence is worse than none.
+	awk -F'|' 'BEGIN{OFS="|"} NR==2 && NF==13 {
+			last = substr($6, length($6));
+			$6 = substr($6, 1, length($6) - 1) (last == "0" ? "1" : "0")
+		} {print}' \
+		"${WORKDIR}/wrows.txt" > "${WORKDIR}/wrows.bad"
+	cmp -s "${WORKDIR}/wrows.txt" "${WORKDIR}/wrows.bad" \
+		&& die "self-test: corrupting a wide row changed nothing"
+	st="$(cd "${WORKDIR}" && ./wide_compare wrows.bad | tail -1)"
+	case "${st}" in
+		*", 1 mismatches"*) echo "FLAG-01: wide self-test ok -- ${st}" ;;
+		*) die "wide self-test: expected exactly 1 mismatch, got: ${st}" ;;
+	esac
 fi
 
 "${WORKDIR}/flag_oracle" "${ROWS}" > "${WORKDIR}/rows.txt"
@@ -153,6 +191,14 @@ out="$(cd "${WORKDIR}" && ./flag_compare rows.txt)"
 echo "${out}" | tail -20
 if ! echo "${out}" | grep -qE ', 0 mismatches'; then
 	echo "FLAG-01: FAIL arithmetic flags disagree with the hardware" >&2
+	rc=1
+fi
+
+"${WORKDIR}/wide_oracle" "${ROWS}" > "${WORKDIR}/wrows.txt"
+out="$(cd "${WORKDIR}" && ./wide_compare wrows.txt)"
+echo "${out}" | tail -20
+if ! echo "${out}" | grep -qE ', 0 mismatches'; then
+	echo "FLAG-01: FAIL wide results or flags disagree with the hardware" >&2
 	rc=1
 fi
 
