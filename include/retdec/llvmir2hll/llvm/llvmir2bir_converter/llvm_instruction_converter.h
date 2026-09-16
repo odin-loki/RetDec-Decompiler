@@ -9,6 +9,7 @@
 #define RETDEC_LLVMIR2HLL_LLVM_LLVMIR2BIR_CONVERTER_LLVM_INSTRUCTION_CONVERTER_H
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/Config/llvm-config.h>
 #include <llvm/IR/GetElementPtrTypeIterator.h>
 #include <llvm/IR/InstVisitor.h>
 
@@ -102,6 +103,11 @@ private:
 	ShPtr<Expression> visitFPTruncInst(llvm::FPTruncInst &inst);
 	ShPtr<Expression> visitIntToPtrInst(llvm::IntToPtrInst &inst);
 	ShPtr<Expression> visitPtrToIntInst(llvm::PtrToIntInst &inst);
+#if LLVM_VERSION_MAJOR >= 22
+	// ptrtoaddr, LLVM 22 and later; see the definition for why it is the same
+	// cast as ptrtoint here.
+	ShPtr<Expression> visitPtrToAddrInst(llvm::PtrToAddrInst& inst);
+#endif
 	ShPtr<Expression> visitSIToFPInst(llvm::SIToFPInst &inst);
 	ShPtr<Expression> visitUIToFPInst(llvm::UIToFPInst &inst);
 	ShPtr<Expression> visitICmpInst(llvm::ICmpInst &inst);

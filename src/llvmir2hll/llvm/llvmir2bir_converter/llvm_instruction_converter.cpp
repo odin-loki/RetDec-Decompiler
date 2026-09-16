@@ -414,6 +414,28 @@ ShPtr<Expression> LLVMInstructionConverter::visitPtrToIntInst(llvm::PtrToIntInst
 	return convertCastInstToExpression<PtrToIntCastExpr>(inst);
 }
 
+#if LLVM_VERSION_MAJOR >= 22
+/**
+ * @brief Converts an LLVM ptrtoaddr instruction into an expression in BIR.
+ *
+ * LLVM 22 split `ptrtoaddr` out of `ptrtoint`: it yields only the address part
+ * of a pointer, which on every target this decompiler supports is the whole
+ * pointer. The distinction exists for targets with fat pointers, where the
+ * capability metadata is dropped; there is nothing in BIR to drop, so this is
+ * the same cast as ptrtoint.
+ *
+ * InstVisitor delegates visitPtrToAddrInst to visitCastInst, and this converter
+ * names the specific casts rather than CastInst, so without this it fell to
+ * visitInstruction() and aborted -- the same shape as fneg, freeze and
+ * atomicrmw before it. IR2HLL-01 named it off the headers, against the LLVM the
+ * product is actually built with, before any binary reached it.
+ */
+ShPtr<Expression> LLVMInstructionConverter::visitPtrToAddrInst(llvm::PtrToAddrInst& inst)
+{
+	return convertCastInstToExpression<PtrToIntCastExpr>(inst);
+}
+#endif
+
 /**
 * @brief Converts the given LLVM sitofp instruction @a inst into an expression
 *        in BIR.

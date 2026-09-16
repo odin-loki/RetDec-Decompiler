@@ -3515,3 +3515,72 @@ absence when the failing condition is heap contents: the runs that reproduce
 it are the ones under load, and I had been running it on an idle machine. The
 second occurrence is what made the difference, and it should not have taken
 one.
+
+
+## IR2HLL-01 found one on its first CI run, and one in itself
+
+ctest-linux 294 was green on everything except the gate added the commit
+before, which is the gate doing its job: it reads the LLVM the product is
+compiled against, LLVM 23.1.0, and the local run had read the system LLVM 20.
+
+```
+IR2HLL-01: FAIL these opcodes reach visitInstruction(), which aborts:
+           FNeg (FPUnaryOperator)
+           FAdd (FPBinaryOperator)
+           FSub (FPBinaryOperator)
+           FMul (FPBinaryOperator)
+           FDiv (FPBinaryOperator)
+           FRem (FPBinaryOperator)
+           PtrToAddr (PtrToAddrInst)
+```
+
+Six of those seven are the checker's fault and one is real.
+
+**The six.** LLVM 23 split `FNeg` out of `UnaryOperator` into `FPUnaryOperator`
+and the five floating-point arithmetic opcodes out of `BinaryOperator` into
+`FPBinaryOperator`. `InstVisitor` generates a visit method per class and each
+one falls through to its base's:
+
+```cpp
+RetTy visitFPBinaryOperator(FPBinaryOperator &I) { DELEGATE(BinaryOperator); }
+```
+
+so a converter defining `visitBinaryOperator` covers `FPBinaryOperator` as
+well, and the six were never uncovered. The checker was matching class names
+without following that chain. It reads the chain out of `InstVisitor.h` now
+rather than hard-coding it, because which classes exist and what they delegate
+to is precisely what moves between LLVM releases.
+
+**The one.** `ptrtoaddr` is new in LLVM 22: the address part of a pointer,
+split out of `ptrtoint` for targets with fat pointers, where the capability
+metadata is dropped. `InstVisitor` delegates it to `visitCastInst`, and this
+converter names the specific casts rather than `CastInst`, so it reached
+`visitInstruction()` and would have aborted -- the fifth instance of that
+shape, after `fneg`, `freeze`, `atomicrmw` and `cmpxchg`, and the first one
+found before a binary reached it rather than after.
+
+There is nothing in BIR to drop, so `visitPtrToAddrInst` is the same cast as
+`ptrtoint`, behind `#if LLVM_VERSION_MAJOR >= 22` because the class does not
+exist in the LLVM the standalone suites build against.
+
+### A local gate weaker than the CI one
+
+The checker searched `llvm-config` first and the vendored build tree last, so
+a local run answered for LLVM 20 while CI answered for LLVM 23 -- and LLVM 20
+does not have `ptrtoaddr` at all. That is the same shape as the push gate that
+ran `--self-test` where CI ran the real check, and as the workdir guard that
+trusted an unstamped directory: a checker more permissive than the thing it
+stands in for.
+
+It looks in the vendored tree first now. Where there is no build tree, as on a
+fresh checkout, it falls back and the line it prints names which LLVM it asked,
+so the weaker answer is visible rather than assumed:
+
+```
+IR2HLL-01: 67 opcodes in /usr/lib/llvm-20/include
+IR2HLL-01: 69 opcodes in build/linux/external/src/llvm-project/llvm/include
+```
+
+Falsified against both: removing `visitPtrToAddrInst` fails the LLVM 23 check
+by name and leaves the LLVM 20 check passing, which is correct -- the opcode
+is not in LLVM 20.

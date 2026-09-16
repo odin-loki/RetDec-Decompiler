@@ -78,6 +78,18 @@ ACCOUNTED_ELSEWHERE = {
 
 
 def find_instruction_def() -> Path | None:
+    """The vendored LLVM first, then whatever is installed.
+
+    Order matters. The question is which instructions the shipped decompiler
+    can meet, so the answer has to come from the LLVM it is compiled against.
+    The two disagree: LLVM 20 has 67 opcodes and the pinned LLVM 23 has 69, and
+    one of the two it added -- ptrtoaddr -- is one this converter had no case
+    for. A local run against the system LLVM is a weaker check than CI's, and
+    the line this prints says which one it asked so that the difference is
+    visible rather than assumed.
+    """
+    for p in sorted(ROOT.glob("build/*/external/src/llvm-project/llvm/include/llvm/IR/Instruction.def")):
+        return p
     cfg = shutil.which("llvm-config-20") or shutil.which("llvm-config-21") \
         or shutil.which("llvm-config")
     if cfg:
@@ -88,9 +100,48 @@ def find_instruction_def() -> Path | None:
             return p
     for p in sorted(Path("/usr/lib").glob("llvm-*/include/llvm/IR/Instruction.def")):
         return p
-    for p in sorted(ROOT.glob("build/*/external/src/llvm-project/llvm/include/llvm/IR/Instruction.def")):
-        return p
     return None
+
+
+def delegation(include_dir: Path) -> dict[str, str]:
+    """InstVisitor's DELEGATE chain: {class: the class its visit falls back to}.
+
+    `InstVisitor` generates a visit method per instruction class and each one
+    falls through to its base's:
+
+        RetTy visitFPBinaryOperator(FPBinaryOperator &I) { DELEGATE(BinaryOperator); }
+        RetTy visitPtrToAddrInst(PtrToAddrInst &I)       { DELEGATE(CastInst); }
+
+    so a converter that defines `visitBinaryOperator` covers every
+    `FPBinaryOperator` too. Read out of the header rather than hard-coded,
+    because which classes exist and what they delegate to is exactly what
+    changes between LLVM releases: LLVM 23 split FNeg out of UnaryOperator
+    into FPUnaryOperator and the five FP arithmetic opcodes out of
+    BinaryOperator into FPBinaryOperator, and both still delegate to what the
+    converter already handles.
+    """
+    p = include_dir / "llvm" / "IR" / "InstVisitor.h"
+    if not p.is_file():
+        return {}
+    out = {}
+    for m in re.finditer(r'RetTy\s+visit(\w+)\s*\(\s*(\w+)\s*&[^)]*\)\s*\{\s*DELEGATE\((\w+)\)',
+                         p.read_text(encoding="utf-8")):
+        out[m.group(2)] = m.group(3)
+    return out
+
+
+def covered_by(cls: str, conv: str, deleg: dict[str, str]) -> bool:
+    """Does the converter define a visit for this class or anything it falls
+    back to? `Instruction` is where the chain ends and is the abort itself, so
+    it never counts."""
+    seen = set()
+    c = cls
+    while c and c != "Instruction" and c not in seen:
+        if f"visit{c}(" in conv:
+            return True
+        seen.add(c)
+        c = deleg.get(c)
+    return False
 
 
 def opcodes(path: Path):
@@ -115,6 +166,7 @@ def check(root: Path, defpath: Path) -> int:
     sup = (root / SUPPORT).read_text(encoding="utf-8")
     inl = inlinable_body(sup)
 
+    deleg = delegation(defpath.parent.parent.parent)
     rows = opcodes(defpath)
     if len(rows) < 40:
         print(f"IR2HLL-01: FAIL only {len(rows)} opcodes parsed from {defpath};"
@@ -127,7 +179,7 @@ def check(root: Path, defpath: Path) -> int:
         if kind == "TERM":
             counts["terminator"] += 1
             continue
-        if f"visit{cls}(" in conv:
+        if covered_by(cls, conv, deleg):
             counts["visited"] += 1
             continue
         if f"llvm::{cls}>" in inl:
@@ -139,7 +191,8 @@ def check(root: Path, defpath: Path) -> int:
         unaccounted.append((op, cls))
 
     print(f"IR2HLL-01: {len(rows)} opcodes in {defpath.parent.parent.parent}")
-    print(f"IR2HLL-01:   {counts['visited']:3d} have a visit* in the converter")
+    print(f"IR2HLL-01:   {counts['visited']:3d} have a visit* in the converter, "
+          f"directly or through InstVisitor's DELEGATE chain")
     print(f"IR2HLL-01:   {counts['not-inlinable']:3d} named in isInlinableInst()'s exclusion list")
     print(f"IR2HLL-01:   {counts['terminator']:3d} terminators, excluded by isTerminator()")
     print(f"IR2HLL-01:   {counts['elsewhere']:3d} accounted for elsewhere, with a reason")
