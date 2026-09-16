@@ -108,6 +108,55 @@ enum x87_reg_control
 };
 
 /**
+ * The upper halves of the sixteen YMM registers.
+ *
+ * YMM_n IS XMM_n extended: bits 127..0 are the XMM register and bits 255..128
+ * are an extension that only AVX can name. x86_init.cpp creates XMM, YMM and
+ * ZMM as three INDEPENDENT globals -- nothing maps one to another -- so an SSE
+ * write to xmm0 and an AVX read of ymm0 do not see each other, and vzeroupper
+ * has nothing to zero.
+ *
+ * The obvious repair is to make XMM a sub-register of ZMM through the parent
+ * map. The previous commit removed what blocked that (a hard-coded mask table
+ * that threw for any pair of widths outside the general-purpose registers),
+ * and it is still the wrong move here: only PARENT registers get globals in
+ * this register file, so aliasing XMM would stop getRegister(X86_REG_XMM0)
+ * resolving and every one of the 159 XMM references in the x86 test suite
+ * would have to be rewritten against ZMM, through accessors that do not assert
+ * past 64 bits.
+ *
+ * This is the decomposition the hardware manual uses instead: YMM = YMMH:XMM.
+ * XMM keeps its global and every SSE translator and test is untouched; the
+ * upper half is its own register; and the three rules that make AVX and SSE
+ * coexist become three things you can write down and test.
+ *
+ *   a legacy SSE write        leaves YMMH alone
+ *   a VEX-encoded 128-bit write   zeroes YMMH
+ *   vzeroupper                zeroes every YMMH
+ *
+ * Ids past the flag registers, the same way X86_REG_CF and X87_REG_IE are.
+ */
+enum x86_reg_ymm_high
+{
+	X86_REG_YMM0_HI = X87_REG_X + 1,
+	X86_REG_YMM1_HI,
+	X86_REG_YMM2_HI,
+	X86_REG_YMM3_HI,
+	X86_REG_YMM4_HI,
+	X86_REG_YMM5_HI,
+	X86_REG_YMM6_HI,
+	X86_REG_YMM7_HI,
+	X86_REG_YMM8_HI,
+	X86_REG_YMM9_HI,
+	X86_REG_YMM10_HI,
+	X86_REG_YMM11_HI,
+	X86_REG_YMM12_HI,
+	X86_REG_YMM13_HI,
+	X86_REG_YMM14_HI,
+	X86_REG_YMM15_HI,
+};
+
+/**
  * Representation of x86 address spaces.
  *
  * Based on values in X86ISelDAGToDag.cpp.

@@ -356,14 +356,13 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSsePcmpeq(
 	unsigned bits = packedCmpLaneBits(i->id);
 	unsigned lanes = 128 / bits;
 	auto* vecTy = FixedVectorType::get(irb.getIntNTy(bits), lanes);
-    Value* v0 = irb.CreateBitCast(toI128(op0, irb), vecTy);
-    Value* v1 = irb.CreateBitCast(toI128(op1, irb), vecTy);
+	Value* v0 = irb.CreateBitCast(toI128(op0, irb), vecTy);
+	Value* v1 = irb.CreateBitCast(toI128(op1, irb), vecTy);
     // i1 vector comparison.
 	Value* cmp = isGt ? irb.CreateICmpSGT(v0, v1) : irb.CreateICmpEQ(v0, v1);
 	// Sign-extend i1 → iN to get 0xFF…F or 0x00…0.
 	Value* ext = irb.CreateSExt(cmp, vecTy);
-    storeOp(xi->operands[0], irb.CreateBitCast(ext, irb.getInt128Ty()),
-            irb, eOpConv::NOTHING);
+	storeOp(xi->operands[0], irb.CreateBitCast(ext, irb.getInt128Ty()), irb, eOpConv::NOTHING);
 }
 
 /**
@@ -413,8 +412,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSsePunpckl(
 	}
 	unsigned lanes = 128 / bits;
 	auto* vecTy = FixedVectorType::get(irb.getIntNTy(bits), lanes);
-    Value* v0 = irb.CreateBitCast(toI128(op0, irb), vecTy);
-    Value* v1 = irb.CreateBitCast(toI128(op1, irb), vecTy);
+	Value* v0 = irb.CreateBitCast(toI128(op0, irb), vecTy);
+	Value* v1 = irb.CreateBitCast(toI128(op1, irb), vecTy);
 
 	// Low:  [v0[0], v1[0], v0[1], v1[1], ...]
 	// High: [v0[h], v1[h], v0[h+1], v1[h+1], ...] where h = lanes / 2
@@ -422,13 +421,13 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSsePunpckl(
 	unsigned base = high ? halfLanes : 0;
 	std::vector<int> mask;
 	mask.reserve(lanes);
-    for (unsigned n = 0; n < halfLanes; ++n) {
+	for (unsigned n = 0; n < halfLanes; ++n)
+	{
 		mask.push_back(static_cast<int>(base + n));
 		mask.push_back(static_cast<int>(lanes + base + n));
 	}
 	Value* result = irb.CreateShuffleVector(v0, v1, mask);
-    storeOp(xi->operands[0], irb.CreateBitCast(result, irb.getInt128Ty()),
-            irb, eOpConv::NOTHING);
+	storeOp(xi->operands[0], irb.CreateBitCast(result, irb.getInt128Ty()), irb, eOpConv::NOTHING);
 }
 
 /**
@@ -540,8 +539,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseHorizontal(cs_insn* i, cs_x8
 		// Even lanes: subtract; odd lanes: add.
 		auto* vec4f = vecType(irb.getFloatTy(), 4);
 		Value* v0 = irb.CreateBitCast(toI128(op0, irb), vec4f);
-        Value* v1 = irb.CreateBitCast(toI128(op1, irb), vec4f);
-        Value* adds = irb.CreateFAdd(v0, v1);
+		Value* v1 = irb.CreateBitCast(toI128(op1, irb), vec4f);
+		Value* adds = irb.CreateFAdd(v0, v1);
         Value* subs = irb.CreateFSub(v0, v1);
         // Blend: even from subs, odd from adds.
         std::vector<int> mask = {4, 1, 6, 3}; // subs[0], adds[1], subs[2], adds[3]
@@ -554,8 +553,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseHorizontal(cs_insn* i, cs_x8
 		auto* vec4f = vecType(irb.getFloatTy(), 4);
 		Value* v0 = irb.CreateBitCast(toI128(op0, irb), vec4f);
 		Value* v1 = irb.CreateBitCast(toI128(op1, irb), vec4f);
-        Value* e00 = irb.CreateExtractElement(v0, (uint64_t)0);
-        Value* e01 = irb.CreateExtractElement(v0, (uint64_t)1);
+		Value* e00 = irb.CreateExtractElement(v0, (uint64_t)0);
+		Value* e01 = irb.CreateExtractElement(v0, (uint64_t)1);
         Value* e02 = irb.CreateExtractElement(v0, (uint64_t)2);
         Value* e03 = irb.CreateExtractElement(v0, (uint64_t)3);
         Value* e10 = irb.CreateExtractElement(v1, (uint64_t)0);
@@ -575,8 +574,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseHorizontal(cs_insn* i, cs_x8
 		auto* vec4f = vecType(irb.getFloatTy(), 4);
 		Value* v0 = irb.CreateBitCast(toI128(op0, irb), vec4f);
 		Value* v1 = irb.CreateBitCast(toI128(op1, irb), vec4f);
-        Value* e00 = irb.CreateExtractElement(v0, (uint64_t)0);
-        Value* e01 = irb.CreateExtractElement(v0, (uint64_t)1);
+		Value* e00 = irb.CreateExtractElement(v0, (uint64_t)0);
+		Value* e01 = irb.CreateExtractElement(v0, (uint64_t)1);
         Value* e02 = irb.CreateExtractElement(v0, (uint64_t)2);
         Value* e03 = irb.CreateExtractElement(v0, (uint64_t)3);
         Value* e10 = irb.CreateExtractElement(v1, (uint64_t)0);
@@ -1465,6 +1464,386 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSsePavg(cs_insn* i, cs_x86* xi,
 	Value* avg = irb.CreateTrunc(irb.CreateLShr(sum, one), vecTy);
 
 	storeOp(xi->operands[0], irb.CreateBitCast(avg, irb.getInt128Ty()), irb, eOpConv::NOTHING);
+}
+
+//
+//==============================================================================
+// AVX: the VEX-encoded integer instructions.
+//==============================================================================
+//
+
+/**
+ * True for the sixteen YMM registers a 64-bit program without EVEX can name.
+ */
+static bool isYmmRegister(uint32_t r)
+{
+	return X86_REG_YMM0 <= r && r <= X86_REG_YMM15;
+}
+
+static bool isXmmRegister(uint32_t r)
+{
+	return X86_REG_XMM0 <= r && r <= X86_REG_XMM15;
+}
+
+/**
+ * The two registers a YMM operand is made of: YMM = YMMH:XMM.
+ */
+static uint32_t ymmLowHalf(uint32_t ymm)
+{
+	return X86_REG_XMM0 + (ymm - X86_REG_YMM0);
+}
+
+static uint32_t ymmHighHalf(uint32_t ymm)
+{
+	return X86_REG_YMM0_HI + (ymm - X86_REG_YMM0);
+}
+
+/**
+ * A vector operand read at its full width -- 128 bits for an XMM or memory
+ * operand, 256 for a YMM one.
+ *
+ * Returns nullptr for anything this cannot express, which is what sends the
+ * caller to the pseudo-assembly path rather than to a wrong answer at the
+ * wrong width.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorX86_impl::loadVectorOp(cs_x86_op& op, llvm::IRBuilder<>& irb, unsigned& bits)
+{
+	if (op.type == X86_OP_REG && isYmmRegister(op.reg))
+	{
+		bits = 256;
+		auto* i256 = irb.getIntNTy(256);
+		llvm::Value* lo = irb.CreateZExt(loadRegister(ymmLowHalf(op.reg), irb), i256);
+		llvm::Value* hi = irb.CreateZExt(loadRegister(ymmHighHalf(op.reg), irb), i256);
+		return irb.CreateOr(lo, irb.CreateShl(hi, llvm::ConstantInt::get(i256, 128)));
+	}
+
+	if (op.type == X86_OP_REG && isXmmRegister(op.reg))
+	{
+		bits = 128;
+		return loadRegister(op.reg, irb);
+	}
+
+	if (op.type == X86_OP_MEM)
+	{
+		// The memory operand's width is the instruction's, which the caller
+		// has already worked out from the register operands.
+		auto* ty = irb.getIntNTy(bits);
+		return loadOp(op, irb, ty);
+	}
+
+	return nullptr;
+}
+
+/**
+ * Write a vector result back, applying the rule that makes AVX and SSE coexist.
+ *
+ * A VEX-encoded 128-bit write ZEROES the upper half of the destination; a
+ * legacy SSE write leaves it alone. That is the entire reason vzeroupper
+ * exists, and it is the one thing a translator can get wrong here without
+ * producing a visibly odd value: the low half is right either way, and the
+ * upper half only matters to the next 256-bit read.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::storeVectorOp(
+	cs_x86_op& op, llvm::Value* val, unsigned bits, llvm::IRBuilder<>& irb)
+{
+	if (op.type == X86_OP_REG && isYmmRegister(op.reg))
+	{
+		auto* i128 = irb.getInt128Ty();
+		auto* wide = irb.getIntNTy(256);
+		val = irb.CreateZExtOrTrunc(val, wide);
+		storeRegister(ymmLowHalf(op.reg), irb.CreateTrunc(val, i128), irb);
+		storeRegister(
+			ymmHighHalf(op.reg), irb.CreateTrunc(irb.CreateLShr(val, llvm::ConstantInt::get(wide, 128)), i128), irb);
+		return;
+	}
+
+	if (op.type == X86_OP_REG && isXmmRegister(op.reg))
+	{
+		auto* i128 = irb.getInt128Ty();
+		storeRegister(op.reg, irb.CreateZExtOrTrunc(val, i128), irb);
+		// The VEX 128-bit write zeroes the upper half.
+		storeRegister(X86_REG_YMM0_HI + (op.reg - X86_REG_XMM0), llvm::ConstantInt::get(i128, 0), irb);
+		return;
+	}
+
+	storeOp(op, irb.CreateZExtOrTrunc(val, irb.getIntNTy(bits)), irb, eOpConv::NOTHING);
+}
+
+/**
+ * The width an AVX instruction operates at, taken from its register operands.
+ * Zero when they do not agree or are not vector registers at all.
+ */
+static unsigned avxWidth(cs_x86* xi)
+{
+	unsigned bits = 0;
+	for (unsigned k = 0; k < xi->op_count; ++k)
+	{
+		auto& op = xi->operands[k];
+		if (op.type != X86_OP_REG)
+		{
+			continue;
+		}
+		unsigned b = isYmmRegister(op.reg) ? 256 : (isXmmRegister(op.reg) ? 128 : 0);
+		if (b == 0 || (bits != 0 && b != bits))
+		{
+			return 0;
+		}
+		bits = b;
+	}
+
+	return bits;
+}
+
+/**
+ * X86_INS_VZEROUPPER, X86_INS_VZEROALL
+ *
+ * 9,336 occurrences in the static parity corpus, and until the upper halves
+ * were registers there was nothing for it to do. It is the instruction that
+ * exists because legacy SSE writes leave YMM's upper half alone: a compiler
+ * emits it before calling into code that might be SSE, so that the stale
+ * uppers do not cost a pipeline stall. Modelling it as a call to an undefined
+ * function left every subsequent 256-bit read of those registers wrong.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateVzeroupper(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	auto* i128 = irb.getInt128Ty();
+	auto* zero = llvm::ConstantInt::get(i128, 0);
+
+	for (unsigned n = 0; n < 16; ++n)
+	{
+		storeRegister(X86_REG_YMM0_HI + n, zero, irb);
+		if (i->id == X86_INS_VZEROALL)
+		{
+			// VZEROALL zeroes the whole register, not just the upper half.
+			storeRegister(X86_REG_XMM0 + n, zero, irb);
+		}
+	}
+}
+
+/**
+ * X86_INS_VMOVDQU, X86_INS_VMOVDQA, X86_INS_VMOVUPS, X86_INS_VMOVAPS,
+ * X86_INS_VMOVUPD, X86_INS_VMOVAPD, X86_INS_VMOVNTDQ
+ *
+ * The AVX moves, and between them the largest single group in what is left of
+ * x86-64: vmovdqu alone is 21,306 occurrences across its two signatures.
+ * Aligned and unaligned differ only in whether a misaligned address faults,
+ * which this model does not represent either way; integer and floating-point
+ * differ only in which execution unit the hardware uses.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateAvxMov(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	if (xi->op_count != 2)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned bits = avxWidth(xi);
+	if (bits == 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	llvm::Value* src = loadVectorOp(xi->operands[1], irb, bits);
+	if (src == nullptr)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	storeVectorOp(xi->operands[0], src, bits, irb);
+}
+
+/**
+ * X86_INS_VPAND, X86_INS_VPOR, X86_INS_VPXOR, X86_INS_VPANDN,
+ * X86_INS_VPADDB, X86_INS_VPADDW, X86_INS_VPADDD, X86_INS_VPADDQ,
+ * X86_INS_VPSUBB, X86_INS_VPSUBW, X86_INS_VPSUBD, X86_INS_VPSUBQ,
+ * X86_INS_VPMINUB, X86_INS_VPMAXUB, X86_INS_VPMINSB, X86_INS_VPMAXSB,
+ * X86_INS_VPCMPEQB, X86_INS_VPCMPEQW, X86_INS_VPCMPEQD, X86_INS_VPCMPEQQ,
+ * X86_INS_VPCMPGTB, X86_INS_VPCMPGTW, X86_INS_VPCMPGTD, X86_INS_VPCMPGTQ
+ *
+ * The three-operand VEX forms of the packed integer operations. The
+ * non-destructive third operand is the whole reason VEX exists, and it is the
+ * only structural difference from the SSE versions: `vpxor ymm0, ymm1, ymm2`
+ * leaves ymm1 alone where `pxor xmm0, xmm1` does not.
+ *
+ * The bitwise operations do not care about the lane width; the arithmetic and
+ * the compares do, and they are the ones where getting it wrong is quiet --
+ * `vpaddb` and `vpaddd` differ only in whether a carry crosses a byte
+ * boundary, so any operand whose lanes do not carry gives the same answer for
+ * both.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateAvxPackedBinary(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	if (xi->op_count != 3)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned bits = avxWidth(xi);
+	if (bits == 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned laneBits = 0;
+	switch (i->id)
+	{
+	case X86_INS_VPADDB:
+	case X86_INS_VPSUBB:
+	case X86_INS_VPMINUB:
+	case X86_INS_VPMAXUB:
+	case X86_INS_VPMINSB:
+	case X86_INS_VPMAXSB:
+	case X86_INS_VPCMPEQB:
+	case X86_INS_VPCMPGTB: laneBits = 8; break;
+	case X86_INS_VPADDW:
+	case X86_INS_VPSUBW:
+	case X86_INS_VPCMPEQW:
+	case X86_INS_VPCMPGTW: laneBits = 16; break;
+	case X86_INS_VPADDD:
+	case X86_INS_VPSUBD:
+	case X86_INS_VPCMPEQD:
+	case X86_INS_VPCMPGTD: laneBits = 32; break;
+	case X86_INS_VPADDQ:
+	case X86_INS_VPSUBQ:
+	case X86_INS_VPCMPEQQ:
+	case X86_INS_VPCMPGTQ: laneBits = 64; break;
+	// The bitwise operations are lane-independent.
+	case X86_INS_VPAND:
+	case X86_INS_VPOR:
+	case X86_INS_VPXOR:
+	case X86_INS_VPANDN: laneBits = bits; break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+
+	unsigned srcBits = bits;
+	llvm::Value* a = loadVectorOp(xi->operands[1], irb, srcBits);
+	srcBits = bits;
+	llvm::Value* b = loadVectorOp(xi->operands[2], irb, srcBits);
+	if (a == nullptr || b == nullptr)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	auto* wide = irb.getIntNTy(bits);
+	a = irb.CreateZExtOrTrunc(a, wide);
+	b = irb.CreateZExtOrTrunc(b, wide);
+
+	llvm::Value* res = nullptr;
+	if (laneBits == bits)
+	{
+		switch (i->id)
+		{
+		case X86_INS_VPAND: res = irb.CreateAnd(a, b); break;
+		case X86_INS_VPOR: res = irb.CreateOr(a, b); break;
+		case X86_INS_VPXOR: res = irb.CreateXor(a, b); break;
+		// ANDN is the FIRST operand inverted, not the second.
+		case X86_INS_VPANDN: res = irb.CreateAnd(irb.CreateNot(a), b); break;
+		default: break;
+		}
+	}
+	else
+	{
+		unsigned lanes = bits / laneBits;
+		auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(laneBits), lanes);
+		llvm::Value* va = irb.CreateBitCast(a, vecTy);
+		llvm::Value* vb = irb.CreateBitCast(b, vecTy);
+		llvm::Value* v = nullptr;
+		switch (i->id)
+		{
+		case X86_INS_VPADDB:
+		case X86_INS_VPADDW:
+		case X86_INS_VPADDD:
+		case X86_INS_VPADDQ: v = irb.CreateAdd(va, vb); break;
+		case X86_INS_VPSUBB:
+		case X86_INS_VPSUBW:
+		case X86_INS_VPSUBD:
+		case X86_INS_VPSUBQ: v = irb.CreateSub(va, vb); break;
+		case X86_INS_VPMINUB: v = irb.CreateSelect(irb.CreateICmpULT(va, vb), va, vb); break;
+		case X86_INS_VPMAXUB: v = irb.CreateSelect(irb.CreateICmpUGT(va, vb), va, vb); break;
+		case X86_INS_VPMINSB: v = irb.CreateSelect(irb.CreateICmpSLT(va, vb), va, vb); break;
+		case X86_INS_VPMAXSB: v = irb.CreateSelect(irb.CreateICmpSGT(va, vb), va, vb); break;
+		case X86_INS_VPCMPEQB:
+		case X86_INS_VPCMPEQW:
+		case X86_INS_VPCMPEQD:
+		case X86_INS_VPCMPEQQ:
+			// A lane of the result is all ones or all zeroes.
+			v = irb.CreateSExt(irb.CreateICmpEQ(va, vb), vecTy);
+			break;
+		case X86_INS_VPCMPGTB:
+		case X86_INS_VPCMPGTW:
+		case X86_INS_VPCMPGTD:
+		case X86_INS_VPCMPGTQ:
+			// SIGNED greater-than; there is no unsigned form.
+			v = irb.CreateSExt(irb.CreateICmpSGT(va, vb), vecTy);
+			break;
+		default: break;
+		}
+		if (v != nullptr)
+		{
+			res = irb.CreateBitCast(v, wide);
+		}
+	}
+
+	if (res == nullptr)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	storeVectorOp(xi->operands[0], res, bits, irb);
+}
+
+/**
+ * X86_INS_VPMOVMSKB
+ *
+ * 19,778 occurrences, the second-largest single entry left on x86-64, and the
+ * instruction every AVX2 string routine ends with: it collects the TOP BIT of
+ * each byte lane into a general-purpose register, so that a lane compare
+ * becomes a bitmask a scalar `tzcnt` can search.
+ *
+ * Sixteen bits from an XMM source and thirty-two from a YMM one, and the
+ * destination is always a 32-bit register with the rest zeroed. Taking the low
+ * bit of each lane instead of the top one is the quiet way to get this wrong:
+ * for the all-ones and all-zeroes lanes a compare produces, the two readings
+ * agree exactly, which is why the test here uses lanes that are neither.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateAvxPmovmskb(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	if (xi->op_count != 2 || xi->operands[1].type != X86_OP_REG)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned bits = isYmmRegister(xi->operands[1].reg) ? 256 : (isXmmRegister(xi->operands[1].reg) ? 128 : 0);
+	if (bits == 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	llvm::Value* src = loadVectorOp(xi->operands[1], irb, bits);
+	if (src == nullptr)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned lanes = bits / 8;
+	auto* vecTy = llvm::FixedVectorType::get(irb.getInt8Ty(), lanes);
+	llvm::Value* v = irb.CreateBitCast(src, vecTy);
+
+	// The sign bit of each lane, gathered into the bottom `lanes` bits.
+	llvm::Value* signs = irb.CreateICmpSLT(v, llvm::Constant::getNullValue(vecTy));
+	llvm::Value* mask = irb.CreateBitCast(signs, irb.getIntNTy(lanes));
+
+	storeOp(xi->operands[0], irb.CreateZExt(mask, irb.getInt32Ty()), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 }
 
 } // namespace capstone2llvmir

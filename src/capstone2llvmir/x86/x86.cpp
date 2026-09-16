@@ -427,6 +427,26 @@ void Capstone2LlvmIrTranslatorX86_impl::generateRegistersCommon()
 	createRegister(X86_REG_MM6, _regLt);
 	createRegister(X86_REG_MM7, _regLt);
 
+	// The upper halves of the YMM registers. YMM = YMMH:XMM, and the low
+	// half is the XMM register below, which is why an SSE write and an AVX
+	// read of the same register now see each other.
+	createRegister(X86_REG_YMM0_HI, _regLt);
+	createRegister(X86_REG_YMM1_HI, _regLt);
+	createRegister(X86_REG_YMM2_HI, _regLt);
+	createRegister(X86_REG_YMM3_HI, _regLt);
+	createRegister(X86_REG_YMM4_HI, _regLt);
+	createRegister(X86_REG_YMM5_HI, _regLt);
+	createRegister(X86_REG_YMM6_HI, _regLt);
+	createRegister(X86_REG_YMM7_HI, _regLt);
+	createRegister(X86_REG_YMM8_HI, _regLt);
+	createRegister(X86_REG_YMM9_HI, _regLt);
+	createRegister(X86_REG_YMM10_HI, _regLt);
+	createRegister(X86_REG_YMM11_HI, _regLt);
+	createRegister(X86_REG_YMM12_HI, _regLt);
+	createRegister(X86_REG_YMM13_HI, _regLt);
+	createRegister(X86_REG_YMM14_HI, _regLt);
+	createRegister(X86_REG_YMM15_HI, _regLt);
+
 	// XMM.
 	createRegister(X86_REG_XMM0, _regLt);
 	createRegister(X86_REG_XMM1, _regLt);

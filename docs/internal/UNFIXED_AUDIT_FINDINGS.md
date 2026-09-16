@@ -5997,3 +5997,137 @@ terms; the aliasing is not, until the instructions that depend on it arrive
 with it.
 
 C2L-01 floor: X86 2217 → 2229. 5,058 tests.
+
+---
+
+## Batch Q — AVX, and YMM = YMMH:XMM
+
+The previous batch established that the recorded blocker was wrong: YMM and ZMM
+globals already exist, and what was missing was any relationship between them
+and XMM. It also removed the thing that made the obvious repair impossible —
+the hard-coded sub-register mask table.
+
+The obvious repair is still not the one taken here, and the reason is the test
+suite rather than the translator: only **parent** registers get globals in this
+register file, so aliasing XMM to ZMM stops `getRegister(X86_REG_XMM0)`
+resolving, and all 159 XMM references in the x86 suite would have to be
+rewritten against ZMM through accessors that do not assert past 64 bits.
+
+The decomposition the hardware manual uses costs none of that:
+
+```
+YMM = YMMH : XMM
+```
+
+XMM keeps its global, so every SSE translator and every existing test is
+untouched. The upper half becomes sixteen new `i128` registers,
+`X86_REG_YMM0_HI..YMM15_HI`, at ids past the flag registers — the same pattern
+`X86_REG_CF` and `X87_REG_IE` already use. And the three rules that make AVX
+and SSE coexist become three things you can write down and test:
+
+```
+a legacy SSE write            leaves YMMH alone
+a VEX-encoded 128-bit write   zeroes YMMH
+vzeroupper                    zeroes every YMMH
+```
+
+### The rule that is quiet when you get it wrong
+
+The middle one. A VEX 128-bit write zeroes the upper half of its destination
+and a legacy SSE write does not — that difference is the *entire reason*
+`vzeroupper` exists, and it is the one thing here that can be wrong without
+producing a visibly odd value: the low half is right either way, and the upper
+half only matters to the next 256-bit read. Two tests do nothing but separate
+them, with the same operands and the same destination:
+
+```
+vmovdqu xmm0, xmm1    ->  YMM0_HI becomes zero
+movdqu  xmm0, xmm1    ->  YMM0_HI keeps 0xdeadbeef...
+```
+
+### `vzeroupper` had nothing to do
+
+9,336 occurrences, and until the upper halves were registers there was nothing
+for it to zero. It was a call to an undefined function, which left every
+subsequent 256-bit read of those registers wrong rather than unknown.
+
+### What went in
+
+```
+vzeroupper, vzeroall
+vmovdqu, vmovdqa, vmovups, vmovupd, vmovntdq
+vpand, vpor, vpxor, vpandn
+vpaddb/w/d/q, vpsubb/w/d/q
+vpminub, vpmaxub, vpminsb, vpmaxsb
+vpcmpeqb/w/d/q, vpcmpgtb/w/d/q
+vpmovmskb
+```
+
+Thirty-two dispatch entries, at 128 and 256 bits, with the width taken from the
+register operands and anything that does not agree falling back rather than
+being answered at the wrong one.
+
+Two lane traps, both with a test shaped around them:
+
+* `vpaddb` and `vpaddd` differ **only** in whether a carry crosses a byte
+  boundary, so any operand whose lanes do not carry gives the same answer for
+  both. Every lane in the test carries.
+* `vpmovmskb` collects the **top** bit of each byte lane. Taking the low bit
+  instead agrees exactly on the all-ones and all-zeroes lanes a compare
+  produces — which is every lane it normally sees — so the test uses `0x01` and
+  `0x80` alternating, where the two readings answer `0x55555555` and
+  `0xaaaaaaaa`.
+
+### Falsification
+
+Eight mutations, each reverted alone, each rebuilt and run; all eight fail:
+
+| mutation | result |
+| --- | --- |
+| the VEX 128-bit write stops zeroing the upper half | 1 test fails |
+| `vzeroupper` zeroes the whole register | 1 test fails |
+| the YMM halves swapped on load | 4 tests fail |
+| `VPANDN` inverts the second operand | 1 test fails |
+| `vpaddb` as a whole-register add | 1 test fails |
+| `vpmovmskb` takes the low bit of each lane | 2 tests fail |
+| `vpminub` becomes signed | 1 test fails |
+| the 32 dispatch entries back to `nullptr` | 10 tests fail |
+
+### Where it leaves x86-64
+
+```
+                 static     unmodelled
+before           0.9586     213,590
+after Batch Q    0.9822      92,140
+```
+
+121,450 instructions, and the largest single movement of this branch.
+
+What is left is dominated by **AVX-512**, which is a different problem again:
+
+```
+kmovd 10435   vmovdqu64 15566   vmovdqa64 3536   vptestmb 2452   vptestnmb 2178
+```
+
+Every one of those is EVEX-encoded and takes a **mask register** — `k0`..`k7`,
+a register file this translator does not have, and one whose whole purpose is
+per-lane predication that the value model would have to carry through every
+operation. That is the same shape of job as SVE's Z and P registers on ARM64,
+and it is now the largest remaining item on any architecture.
+
+Below it: `pcmpistri` 6,393 (SSE4.2 string compare, which has its own
+mini-language in an immediate), `syscall` 4,627 (opaque by nature), and the
+`vmovups`/`vpcmpeqb` remainders, which are the ZMM-width forms falling back
+correctly rather than being answered at 256 bits.
+
+### Where all five stand
+
+```
+x86_64   0.9822     AVX-512 mask registers, pcmpistri, syscall
+arm      0.9977     table branches, coprocessor, NEON
+arm64    0.9945     SVE, MTE, movi
+mips     0.9989     syscall, break, the FPU control word
+powerpc  0.9960     traps, AltiVec, cache maintenance
+```
+
+C2L-01 floor: X86 2229 → 2262. 5,091 tests.

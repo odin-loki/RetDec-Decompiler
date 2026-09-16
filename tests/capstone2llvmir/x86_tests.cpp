@@ -390,6 +390,224 @@ INSTANTIATE_TEST_SUITE_P(
 // and the high-byte offset, so that a generalisation that gets the shift or
 // the width wrong is not silently equivalent on the cases that are tested.
 
+//
+// AVX: the VEX-encoded integer instructions.
+//
+// YMM = YMMH:XMM. The low half is the XMM register every SSE test already
+// uses; the upper half is X86_REG_YMMn_HI. setYmm/ymmWord below write and read
+// the four 64-bit words of a 256-bit register through those two globals, which
+// is also the check that the decomposition holds: an SSE write to xmm0 and an
+// AVX read of ymm0 now see each other, and before this they did not.
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VZEROUPPER_clears_only_the_upper_halves)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x1111111111111111ULL, 0x2222222222222222ULL);
+	setXmm(X86_REG_YMM0_HI, 0x3333333333333333ULL, 0x4444444444444444ULL);
+	setXmm(X86_REG_XMM5, 0x5555555555555555ULL, 0x6666666666666666ULL);
+	setXmm(X86_REG_YMM5_HI, 0x7777777777777777ULL, 0x8888888888888888ULL);
+
+	emulate("vzeroupper");
+
+	// Every upper half is zero and every lower half is untouched. Until the
+	// upper halves were registers there was nothing for this to do, and it was
+	// 9,336 occurrences of a call to an undefined function.
+	EXPECT_EQ(0ULL, xmmLow(X86_REG_YMM0_HI));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_YMM0_HI));
+	EXPECT_EQ(0ULL, xmmLow(X86_REG_YMM5_HI));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_YMM5_HI));
+	EXPECT_EQ(0x2222222222222222ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x1111111111111111ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_EQ(0x6666666666666666ULL, xmmLow(X86_REG_XMM5));
+	EXPECT_EQ(0x5555555555555555ULL, xmmHigh(X86_REG_XMM5));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VZEROALL_clears_the_whole_register)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x1111111111111111ULL, 0x2222222222222222ULL);
+	setXmm(X86_REG_YMM0_HI, 0x3333333333333333ULL, 0x4444444444444444ULL);
+
+	emulate("vzeroall");
+
+	EXPECT_EQ(0ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmLow(X86_REG_YMM0_HI));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_YMM0_HI));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVDQU_ymm_moves_all_256_bits)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x1111111111111111ULL, 0x2222222222222222ULL);
+	setXmm(X86_REG_YMM1_HI, 0x3333333333333333ULL, 0x4444444444444444ULL);
+
+	emulate("vmovdqu ymm0, ymm1");
+
+	EXPECT_EQ(0x2222222222222222ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x1111111111111111ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_EQ(0x4444444444444444ULL, xmmLow(X86_REG_YMM0_HI));
+	EXPECT_EQ(0x3333333333333333ULL, xmmHigh(X86_REG_YMM0_HI));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// A VEX-encoded 128-bit write ZEROES the upper half of its destination; a
+// legacy SSE write leaves it alone. That difference is the entire reason
+// vzeroupper exists, and it is the one thing this can get wrong without
+// producing a visibly odd value -- the low half is right either way, and the
+// upper only matters to the next 256-bit read.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VEX_128bit_write_zeroes_the_upper_half)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x1111111111111111ULL, 0x2222222222222222ULL);
+	setXmm(X86_REG_YMM0_HI, 0xdeadbeefdeadbeefULL, 0xcafecafecafecafeULL);
+
+	emulate("vmovdqu xmm0, xmm1");
+
+	EXPECT_EQ(0x2222222222222222ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x1111111111111111ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmLow(X86_REG_YMM0_HI));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_YMM0_HI));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The companion: a legacy SSE write to the same register must NOT disturb the
+// upper half. If it did, vzeroupper would be pointless and every mixed
+// SSE/AVX sequence would lose data.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, legacy_SSE_write_leaves_the_upper_half_alone)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x1111111111111111ULL, 0x2222222222222222ULL);
+	setXmm(X86_REG_YMM0_HI, 0xdeadbeefdeadbeefULL, 0xcafecafecafecafeULL);
+
+	emulate("movdqu xmm0, xmm1");
+
+	EXPECT_EQ(0x2222222222222222ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xdeadbeefdeadbeefULL, xmmHigh(X86_REG_YMM0_HI));
+	EXPECT_EQ(0xcafecafecafecafeULL, xmmLow(X86_REG_YMM0_HI));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// vpcmpeqb is 23,150 occurrences across its two signatures, and it is how an
+// AVX2 string routine asks which of thirty-two bytes matches. A lane of the
+// result is all ones or all zeroes.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPEQB_ymm)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0x00112233aabbccddULL);
+	setXmm(X86_REG_YMM1_HI, 0xffffffffffffffffULL, 0x0011223344556677ULL);
+	setXmm(X86_REG_XMM2, 0x0000000000000000ULL, 0x0011223300000000ULL);
+	setXmm(X86_REG_YMM2_HI, 0x0000000000000000ULL, 0x0011223344556677ULL);
+
+	emulate("vpcmpeqb ymm0, ymm1, ymm2");
+
+	// Low 128: the top four bytes match, the bottom four do not; the high
+	// quadword is 0 against 0, so every one of those bytes matches.
+	EXPECT_EQ(0xffffffff00000000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xffffffffffffffffULL, xmmHigh(X86_REG_XMM0));
+	// Upper 128: the low quadword matches exactly; the high one does not.
+	EXPECT_EQ(0xffffffffffffffffULL, xmmLow(X86_REG_YMM0_HI));
+	EXPECT_EQ(0x0000000000000000ULL, xmmHigh(X86_REG_YMM0_HI));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// vpaddb and vpaddd differ only in whether a carry crosses a byte boundary, so
+// any operand whose lanes do not carry gives the same answer for both. Every
+// lane here carries.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPADDB_ymm_does_not_carry_between_lanes)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setXmm(X86_REG_YMM1_HI, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setXmm(X86_REG_XMM2, 0x0101010101010101ULL, 0x0101010101010101ULL);
+	setXmm(X86_REG_YMM2_HI, 0x0101010101010101ULL, 0x0101010101010101ULL);
+
+	emulate("vpaddb ymm0, ymm1, ymm2");
+
+	EXPECT_EQ(0ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmLow(X86_REG_YMM0_HI));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_YMM0_HI));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// ANDN inverts the FIRST operand, not the second. With these operands the two
+// readings give 0x00ff.. and 0xff00.., which is as far apart as they get.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPANDN_inverts_the_first_operand)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x0000000000000000ULL, 0xffffffff00000000ULL);
+	setXmm(X86_REG_YMM1_HI, 0ULL, 0ULL);
+	setXmm(X86_REG_XMM2, 0x0000000000000000ULL, 0xffffffffffffffffULL);
+	setXmm(X86_REG_YMM2_HI, 0ULL, 0ULL);
+
+	emulate("vpandn ymm0, ymm1, ymm2");
+
+	EXPECT_EQ(0x00000000ffffffffULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// vpmovmskb collects the TOP bit of each byte lane -- thirty-two of them from
+// a YMM source -- into a general-purpose register. Taking the LOW bit instead
+// is the quiet way to get this wrong: for the all-ones and all-zeroes lanes a
+// compare produces, the two readings agree exactly, so these lanes are
+// deliberately neither.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMOVMSKB_ymm_takes_the_top_bit_of_each_lane)
+{
+	ONLY_MODE_64;
+
+	// Bytes, from the bottom: 01 80 01 80 ... -- low bit set on the even
+	// lanes, top bit set on the odd ones.
+	setXmm(X86_REG_XMM1, 0x8001800180018001ULL, 0x8001800180018001ULL);
+	setXmm(X86_REG_YMM1_HI, 0x8001800180018001ULL, 0x8001800180018001ULL);
+
+	emulate("vpmovmskb eax, ymm1");
+
+	// Every odd lane, all thirty-two of them: 0xaaaaaaaa. Reading the low bit
+	// would answer 0x55555555.
+	EXPECT_EQ(0xaaaaaaaaULL, getRegisterValueUnsigned(X86_REG_EAX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMOVMSKB_xmm_is_sixteen_bits)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x8001800180018001ULL, 0x8001800180018001ULL);
+
+	emulate("vpmovmskb eax, xmm1");
+
+	EXPECT_EQ(0xaaaaULL, getRegisterValueUnsigned(X86_REG_EAX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPMINUB_ymm_is_unsigned)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0ULL, 0x00000000000000ffULL);
+	setXmm(X86_REG_YMM1_HI, 0ULL, 0ULL);
+	setXmm(X86_REG_XMM2, 0ULL, 0x0000000000000001ULL);
+	setXmm(X86_REG_YMM2_HI, 0ULL, 0ULL);
+
+	emulate("vpminub ymm0, ymm1, ymm2");
+
+	// 0xff is 255 unsigned, so 1 is the minimum. A signed reading would keep
+	// 0xff, since it is -1.
+	EXPECT_EQ(0x0000000000000001ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, sub_register_write_keeps_the_rest_of_its_parent)
 {
 	ONLY_MODE_64;
