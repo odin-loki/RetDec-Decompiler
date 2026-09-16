@@ -3956,3 +3956,141 @@ result is an index computed from an aggregate of sixteen lane comparisons
 under a four-way mode immediate -- translatable, but a subsystem rather than a
 table entry, and modelling it wrongly is worse than not modelling it. The
 other two are opaque by nature.
+
+
+## Batch C: what is left of the gap that is not AVX
+
+After Batch B the static corpus reads 0.9589 with 68 uncovered kinds. Sorted
+by occurrences, everything above 0.01% is `V`- or `K`-prefixed except three
+deliberate exceptions -- and a tail of general-purpose instructions that is
+short enough to finish.
+
+| instruction | occurrences | now |
+| --- | --- | --- |
+| `BLSMSK` | 1,008 | `translateBls` |
+| `SHRX` | 807 | `translateShiftX` |
+| `SARX` | 756 | `translateShiftX` |
+| `MOVBE` | 672 | `translateMovbe` |
+| `BZHI` | 633 | `translateBzhi` |
+| `SHLX` | 381 | `translateShiftX` |
+| `PAUSE` | 168 | `translateNop` |
+| `WAIT` | 126 | `translateNop` |
+| `ANDN` | 84 | `translateAndn` |
+| `BLSR` | 84 | `translateBls` |
+| `BEXTR`, `BLSI`, `RORX` | below the cut | as above |
+
+**`ANDN` complements the first source, not the second.** `dst = ~src1 & src2`.
+Two files over, `PANDN` is `~dst & src`. Both spellings look right and they
+disagree on every input pair that is not symmetric.
+
+**`BLS*`'s carry flag does not mean the same thing three times.** `BLSI` sets
+`CF` when the source is **not** zero; `BLSMSK` and `BLSR` set it when the
+source **is**. There is exactly one input -- zero -- on which the three
+disagree, so the tests use it.
+
+For `BLSMSK` the manual clears `ZF` outright rather than computing it, on the
+argument that the result cannot be zero (all ones for a zero source, at least
+1 otherwise). Computing it from the result gives the same answer for every
+input and does not depend on that argument staying true.
+
+**`BEXTR` has two shift amounts that come from a register**, and either can
+exceed the operand width, where an LLVM shift is poison rather than zero. Both
+are guarded by a select: past the top the extracted value is zero, and a
+length at or beyond the width is the full mask -- which `(1 << len) - 1`
+cannot produce without overflowing. Clamping the amount instead would answer
+for a different instruction.
+
+**`BZHI`'s `CF` is not `BLSR`'s question.** It reports that the index was at or
+past the operand width, in which case nothing is zeroed.
+
+**The BMI2 shifts do not touch the flags at all**, and that is the entire
+reason a compiler emits them: the shift can be scheduled across a comparison.
+Writing `SF`/`ZF`/`CF` in `translateShiftX` would be a wrong answer of the kind
+that shows up several instructions later, at the `Jcc` that reads a flag this
+instruction was chosen for not disturbing. The test for it is
+`EXPECT_JUST_REGISTERS_STORED({{X86_REG_EAX, ...}})` -- it fails if anything
+else was written.
+
+### The second thing the emulator cannot show
+
+`translateShiftX` masks the count to the operand width, because the hardware
+does and because `shl i32 %x, 36` is poison. Removing that mask leaves the
+suite green.
+
+```cpp
+unsigned getShiftAmount(uint64_t orgShiftAmount, llvm::APInt valueToShift)
+{
+    unsigned valueWidth = valueToShift.getBitWidth();
+    if (orgShiftAmount < static_cast<uint64_t>(valueWidth)) return orgShiftAmount;
+    // according to the llvm documentation, if orgShiftAmount > valueWidth,
+    // the result is undfeined. but we do shift by this rule:
+    return (NextPowerOf2(valueWidth-1) - 1) & orgShiftAmount;
+}
+```
+
+For a 32-bit value that is `& 31` -- the same mask x86 applies -- so the
+emulator masks whether the translator did or not. The mask stays, because what
+ships is the IR and not the emulator's reading of it; the test stays, because
+it pins the architectural answer; and the test's comment says it cannot
+falsify the mask, which is the part that would otherwise be quietly implied.
+
+Second instance after `llvm.cttz`'s `is_zero_poison`. Both are the emulator
+being *more forgiving* than LLVM, which is the safe direction for a test
+harness to be wrong in and the useless one for falsification.
+
+### Falsification
+
+Thirteen mutations, each reverted alone, each rebuilt and run. Twelve fail:
+
+| mutation | result |
+| --- | --- |
+| `ANDN` complements the wrong source | 2 tests fail |
+| `BLSI`'s `CF` direction flipped | 2 tests fail |
+| `BLSMSK` uses `AND` rather than `XOR` | 1 test fails |
+| `BEXTR`'s start and len swapped | 3 tests fail |
+| `BEXTR`'s start guard removed | 1 test fails |
+| `BEXTR`'s length guard removed | 1 test fails |
+| `BZHI`'s `CF` direction flipped | 2 tests fail |
+| `SARX` shifts in zeroes | 1 test fails |
+| the BMI2 shifts write flags | 6 tests fail |
+| `RORX` shifts instead of rotating | 1 test fails |
+| `MOVBE` does not swap | 1 test fails |
+| `PAUSE`/`WAIT` back to `nullptr` | 1 test fails |
+| the shift count is not masked | **suite stays green** -- see above |
+
+### Deliberately not in Batch C
+
+`MULX`, `PDEP` and `PEXT` have zero occurrences in the corpus. `MULX` takes
+`EDX`/`RDX` as an implicit operand, and guessing how Capstone reports an
+implicit operand rather than checking is how a silent miscompilation starts;
+`PDEP` and `PEXT` are bit-by-bit loops. `BLSIC` and the rest of AMD's TBM have
+zero occurrences and no compiler that emits them.
+
+### Where the three batches leave the static number
+
+```
+                 decoded   skipped    covered     rate  uncovered-kinds
+before Batch A  5230330         0    4940904   0.9447  84
+after Batch A   5230330         0    4986268   0.9533  78
+after Batch B   5230330         0    5015166   0.9589  68
+after Batch C   5230330         0    5019885   0.9598  58
+```
+
+78,981 instructions and twenty-six kinds. What is left is AVX, AVX-512, and
+`PCMPISTRI`, `SYSCALL` and `HLT`, which are recorded above as deliberate.
+
+### The local and CI numbers are not measured over the same bytes
+
+ctest-linux 298 ran the new static step and reported
+
+```
+arch         decoded   skipped    covered     rate  uncovered-kinds
+x86_64       5230246         0    4986184   0.9533  78
+```
+
+against 5,230,330 decoded here: 84 instructions apart, because the runner's
+glibc is not byte-identical to this container's. The rate agrees to four
+decimal places and the uncovered-kind count agrees exactly, which is the
+evidence that made it safe to floor -- and the 84-instruction difference is
+the evidence that made it right to measure in CI first rather than assert a
+locally-measured floor about a machine that was never asked.

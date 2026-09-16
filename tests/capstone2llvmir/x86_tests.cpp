@@ -16148,6 +16148,424 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PAVGW_rounds_up)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+
+//
+// BMI1 and BMI2, MOVBE, PAUSE.
+//
+// What is left of the non-AVX gap after Batch B, and all of it on general
+// purpose registers: SHRX 807, SARX 756, BZHI 633, SHLX 381, BLSMSK 1,008,
+// MOVBE 672, PAUSE 168, ANDN 84, BLSR 84.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_ANDN_complements_the_first_source)
+{
+	// ~ebx & ecx, not ~ecx & ebx. The reversed reading answers 0x0d0b0907
+	// here, so the operands are deliberately not symmetric.
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x0f0f0f0f},
+		{X86_REG_ECX, 0x12345678},
+	});
+
+	emulate("andn eax, ebx, ecx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x10305070},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+		{X86_REG_SF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_ANDN_sets_SF_from_the_result)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0},
+		{X86_REG_ECX, 0x80000000},
+	});
+
+	emulate("andn eax, ebx, ecx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x80000000},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+		{X86_REG_SF, true},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_BLSI_isolates_the_lowest_set_bit)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x18}, // bits 3 and 4
+	});
+
+	emulate("blsi eax, ebx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x08},
+		{X86_REG_CF, true}, // source is NOT zero
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+		{X86_REG_SF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_BLSMSK_masks_up_to_the_lowest_set_bit)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x18},
+	});
+
+	emulate("blsmsk eax, ebx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x0f},
+		{X86_REG_CF, false}, // source is not zero
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+		{X86_REG_SF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_BLSR_clears_the_lowest_set_bit)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x18},
+	});
+
+	emulate("blsr eax, ebx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x10},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+		{X86_REG_SF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_BLSI_CF_runs_the_other_way_from_BLSR)
+{
+	// The one input on which the three disagree about CF. BLSI sets it when
+	// the source is NOT zero; BLSR and BLSMSK set it when the source IS.
+	// Copying one instruction's CF to the others inverts a flag the branch
+	// after it reads, on exactly this input and no other.
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0},
+	});
+
+	emulate("blsi eax, ebx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, true},
+		{X86_REG_SF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_BLSR_of_zero_sets_CF)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0},
+	});
+
+	emulate("blsr eax, ebx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0},
+		{X86_REG_CF, true},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, true},
+		{X86_REG_SF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_BEXTR_extracts_a_field)
+{
+	// Control 0x0408: start at bit 8, take 4 bits. 0x12345678 >> 8 is
+	// 0x123456, and its bottom nibble is 6.
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x12345678},
+		{X86_REG_ECX, 0x0408},
+	});
+
+	emulate("bextr eax, ebx, ecx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x6},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_BEXTR_past_the_top_is_zero)
+{
+	// start = 0x40, which is past a 32-bit operand. An unguarded LLVM shift
+	// by more than the width is poison; the instruction's answer is zero.
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x12345678},
+		{X86_REG_ECX, 0x0440},
+	});
+
+	emulate("bextr eax, ebx, ecx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, true},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_BEXTR_of_the_full_width_is_the_source)
+{
+	// len = 0x20 on a 32-bit operand: the mask is every bit, which `1 << len`
+	// cannot produce without overflowing.
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x12345678},
+		{X86_REG_ECX, 0x2000},
+	});
+
+	emulate("bextr eax, ebx, ecx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x12345678},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_BZHI_zeroes_from_the_index_up)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x12345678},
+		{X86_REG_ECX, 8},
+	});
+
+	emulate("bzhi eax, ebx, ecx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x78},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+		{X86_REG_SF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_BZHI_index_past_the_width_sets_CF)
+{
+	// CF here is not BLSR's question. It reports that the index was at or
+	// past the operand width, in which case nothing is zeroed.
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x12345678},
+		{X86_REG_ECX, 32},
+	});
+
+	emulate("bzhi eax, ebx, ecx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x12345678},
+		{X86_REG_CF, true},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+		{X86_REG_SF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_SHLX_touches_no_flags)
+{
+	// The entire reason a compiler emits SHLX rather than SHL: the shift can
+	// be scheduled across a comparison because it does not disturb the
+	// flags. EXPECT_JUST_REGISTERS_STORED is the assertion -- it fails if
+	// anything other than EAX was written.
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x12345678},
+		{X86_REG_ECX, 4},
+	});
+
+	emulate("shlx eax, ebx, ecx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x23456780},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_SHRX_shifts_in_zeroes)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x80000000},
+		{X86_REG_ECX, 4},
+	});
+
+	emulate("shrx eax, ebx, ecx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x08000000},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_SARX_shifts_in_the_sign)
+{
+	// Same source and count as SHRX above, because the only thing that
+	// separates the two is what comes in at the top.
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x80000000},
+		{X86_REG_ECX, 4},
+	});
+
+	emulate("sarx eax, ebx, ecx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0xf8000000},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_SHLX_masks_the_count_to_the_width)
+{
+	// 36 & 31 == 4: the hardware masks the count to the operand width, and an
+	// unmasked LLVM shift by 36 of an i32 is poison, so translateShiftX()
+	// masks it.
+	//
+	// This test pins the architectural answer and CANNOT falsify that mask.
+	// tests/llvmir-emul's getShiftAmount() applies
+	// `(NextPowerOf2(width - 1) - 1) & amount` to any over-wide shift, which
+	// for a 32-bit value is `& 31` -- the same mask, so removing the
+	// translator's leaves the suite green. Verified by doing exactly that.
+	// Second instance of the emulator being more forgiving than LLVM, after
+	// llvm.cttz's is_zero_poison.
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x12345678},
+		{X86_REG_ECX, 36},
+	});
+
+	emulate("shlx eax, ebx, ecx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x23456780},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_RORX_rotates_rather_than_shifts)
+{
+	// The nibble that leaves the bottom comes back at the top: a shift would
+	// answer 0x01234567.
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x12345678},
+	});
+
+	emulate("rorx eax, ebx, 4");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x81234567},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_RORX_by_zero_is_the_source)
+{
+	// The one immediate for which the second shift would be by the full
+	// operand width, which is poison.
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EBX, 0x12345678},
+	});
+
+	emulate("rorx eax, ebx, 0");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x12345678},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MOVBE_reverses_the_bytes)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RBX, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x12345678_dw},
+	});
+
+	emulate("movbe eax, dword ptr [rbx]");
+
+	EXPECT_EQ(0x78563412, getRegisterValueUnsigned(X86_REG_EAX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PAUSE_is_a_hint_with_no_effect)
+{
+	// `rep nop`. It is a scheduling hint to the spin-wait predictor and does
+	// nothing architecturally.
+	SKIP_MODE_16;
+
+	emulate("pause");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

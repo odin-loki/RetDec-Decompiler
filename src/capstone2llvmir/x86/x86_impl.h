@@ -247,6 +247,12 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateAnd(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateBsf(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateBitCount(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAndn(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateBls(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateBextr(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateBzhi(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateShiftX(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateMovbe(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateBswap(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateBt(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateBtc(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);

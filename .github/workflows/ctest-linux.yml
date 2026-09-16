@@ -523,13 +523,23 @@ jobs:
       # mips 0.9954, powerpc 0.9980) and is not worth building 168 more static
       # binaries every run; x86-64 is the outlier and the one being worked on.
       #
-      # MEASUREMENT ONLY on this run -- no --arch-min. The rate depends on
-      # which glibc the runner's cross toolchains link in, and a floor
-      # measured on this container and asserted about that one is the same
-      # mistake as the local gate that read LLVM 20 while CI read LLVM 23.
-      # It is floored in the next commit, at whatever number CI itself
-      # reports, the same way ARCH-01's x86_64 column went in unfloored and
-      # was floored one run later.
+      # Floored at what CI itself measured, not at what this container did.
+      # The worry was real and the size of it is now known: run 298 decoded
+      # 5,230,246 instructions where the local corpus decodes 5,230,330 --
+      # 84 apart, because the runner's glibc is not byte-identical. The rate
+      # agreed to four decimal places both times and the uncovered-kind count
+      # agreed exactly, which is what makes a floor safe here and is also
+      # exactly why it went in unfloored first rather than asserting a local
+      # number about a machine nobody had asked.
+      #
+      #   run 298, de44fdb (Batch A)   5230246 decoded   0.9533   78 kinds
+      #   run 299, 3d27c30 (Batch B)   5230246 decoded   0.9589   68 kinds
+      #
+      # The floor is 0.9589 and the working tree measures 0.9598 with Batch C
+      # in it. The gap is one commit, not slack: the floor moves to whatever
+      # the next run reports, the same rhythm the C2L-01 per-architecture
+      # floors follow. A floor is raised on evidence from the thing being
+      # gated, never on evidence from somewhere else.
       - name: COV-01 instruction coverage (static corpus, x86-64)
         if: always()
         run: |
@@ -543,7 +553,8 @@ jobs:
           rc=0
           python3 scripts/ci/check_instruction_coverage.py \
             --corpus /tmp/ma-static --capstone-prefix "$CS" --top 24 \
-            --arch x86_64 2>&1 | tee /tmp/cov01-static.log || rc=$?
+            --arch x86_64 --arch-min "x86_64=0.9589" \
+            2>&1 | tee /tmp/cov01-static.log || rc=$?
           {
             echo "### COV-01 instruction coverage (static corpus, x86-64)"
             echo '```'

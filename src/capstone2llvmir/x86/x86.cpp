@@ -2135,6 +2135,236 @@ void Capstone2LlvmIrTranslatorX86_impl::translateBitCount(cs_insn* i, cs_x86* xi
 }
 
 /**
+ * X86_INS_ANDN
+ *
+ * dst = ~src1 & src2. Note the order: the operand that is complemented is the
+ * FIRST source, not the second, which is the opposite of PANDN two files over
+ * (`~dst & src`). Getting it backwards gives a different answer for every
+ * input pair that is not symmetric, and both spellings look right.
+ *
+ * Flags: SF and ZF from the result, OF and CF cleared. AF and PF are
+ * architecturally undefined and are left alone rather than being given a
+ * value this translator would then be asserting -- which is why
+ * generateSetSflags() is not used here: it writes PF.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateAndn(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, xi, irb);
+
+	op1 = loadOp(xi->operands[1], irb);
+	op2 = loadOp(xi->operands[2], irb);
+	auto* res = irb.CreateAnd(irb.CreateNot(op1), op2);
+
+	storeRegisters(
+		irb,
+		{{X86_REG_CF, irb.getInt1(false)},
+		 {X86_REG_OF, irb.getInt1(false)},
+		 {X86_REG_ZF, generateZeroFlag(res, irb)},
+		 {X86_REG_SF, generateSignFlag(res, irb)}});
+	storeOp(xi->operands[0], res, irb);
+}
+
+/**
+ * X86_INS_BLSI, X86_INS_BLSMSK, X86_INS_BLSR
+ *
+ * The three lowest-set-bit instructions, which differ by one operator each:
+ *
+ *     BLSI    dst = -src & src        isolate the lowest set bit
+ *     BLSMSK  dst = (src - 1) ^ src   mask up to and including it
+ *     BLSR    dst = (src - 1) & src   clear it
+ *
+ * CF is the odd one and is not the same question for all three. BLSI sets CF
+ * when the source is **not** zero; BLSMSK and BLSR set it when the source
+ * **is** zero. Copying one to the others inverts a flag that the branch after
+ * it reads.
+ *
+ * For BLSMSK the manual clears ZF outright rather than computing it, because
+ * the result cannot be zero: for a source of zero it is all ones, and
+ * otherwise it is at least 1. Computing it from the result gives the same
+ * answer for every input and does not need that argument to stay true.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateBls(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	op1 = loadOpBinaryOp1(xi, irb);
+	auto* ty = llvm::cast<llvm::IntegerType>(op1->getType());
+	auto* zero = llvm::ConstantInt::get(ty, 0);
+	auto* one = llvm::ConstantInt::get(ty, 1);
+
+	llvm::Value* res = nullptr;
+	llvm::Value* cf = nullptr;
+	switch (i->id)
+	{
+	case X86_INS_BLSI:
+		res = irb.CreateAnd(irb.CreateNeg(op1), op1);
+		cf = irb.CreateICmpNE(op1, zero);
+		break;
+	case X86_INS_BLSMSK:
+		res = irb.CreateXor(irb.CreateSub(op1, one), op1);
+		cf = irb.CreateICmpEQ(op1, zero);
+		break;
+	case X86_INS_BLSR:
+		res = irb.CreateAnd(irb.CreateSub(op1, one), op1);
+		cf = irb.CreateICmpEQ(op1, zero);
+		break;
+	default: throw GenericError("translateBls(): unhandled instruction id");
+	}
+
+	storeRegisters(
+		irb,
+		{{X86_REG_CF, cf},
+		 {X86_REG_OF, irb.getInt1(false)},
+		 {X86_REG_ZF, generateZeroFlag(res, irb)},
+		 {X86_REG_SF, generateSignFlag(res, irb)}});
+	storeOp(xi->operands[0], res, irb);
+}
+
+/**
+ * X86_INS_BEXTR — extract `len` bits starting at bit `start`.
+ *
+ *     start = ctrl[7:0], len = ctrl[15:8]
+ *     dst   = (src >> start) & ((1 << len) - 1)
+ *
+ * Both shift amounts come from a register and can exceed the operand width,
+ * where an LLVM shift is poison rather than zero. Each is therefore guarded by
+ * a select against the width: past the top the extracted value is zero, and a
+ * length at or beyond the width is the full mask. The guarded shift is still
+ * emitted -- a select only propagates poison from the arm it chooses -- and
+ * the alternative, clamping the amount, would answer for a different
+ * instruction.
+ *
+ * Flags: ZF from the result, CF and OF cleared; SF, AF and PF undefined.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateBextr(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, xi, irb);
+
+	llvm::Value* src = loadOp(xi->operands[1], irb);
+	llvm::Value* ctrl = loadOp(xi->operands[2], irb);
+	auto* ty = llvm::cast<llvm::IntegerType>(src->getType());
+	ctrl = irb.CreateZExtOrTrunc(ctrl, ty);
+
+	auto* zero = llvm::ConstantInt::get(ty, 0);
+	auto* one = llvm::ConstantInt::get(ty, 1);
+	auto* width = llvm::ConstantInt::get(ty, ty->getBitWidth());
+	auto* byteMask = llvm::ConstantInt::get(ty, 0xff);
+
+	llvm::Value* start = irb.CreateAnd(ctrl, byteMask);
+	llvm::Value* len = irb.CreateAnd(irb.CreateLShr(ctrl, llvm::ConstantInt::get(ty, 8)), byteMask);
+
+	llvm::Value* shifted = irb.CreateSelect(irb.CreateICmpULT(start, width), irb.CreateLShr(src, start), zero);
+	llvm::Value* mask = irb.CreateSelect(
+		irb.CreateICmpULT(len, width),
+		irb.CreateSub(irb.CreateShl(one, len), one),
+		llvm::Constant::getAllOnesValue(ty));
+	llvm::Value* res = irb.CreateAnd(shifted, mask);
+
+	storeRegisters(
+		irb,
+		{{X86_REG_CF, irb.getInt1(false)}, {X86_REG_OF, irb.getInt1(false)}, {X86_REG_ZF, generateZeroFlag(res, irb)}});
+	storeOp(xi->operands[0], res, irb);
+}
+
+/**
+ * X86_INS_BZHI — zero the bits of the source from bit `index` upwards.
+ *
+ * CF here is not "the source was zero" as it is for BLSR: it reports that the
+ * index was at or past the operand width, in which case nothing is zeroed and
+ * the source passes through unchanged.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateBzhi(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, xi, irb);
+
+	llvm::Value* src = loadOp(xi->operands[1], irb);
+	llvm::Value* ctrl = loadOp(xi->operands[2], irb);
+	auto* ty = llvm::cast<llvm::IntegerType>(src->getType());
+	ctrl = irb.CreateZExtOrTrunc(ctrl, ty);
+
+	auto* one = llvm::ConstantInt::get(ty, 1);
+	auto* width = llvm::ConstantInt::get(ty, ty->getBitWidth());
+	llvm::Value* n = irb.CreateAnd(ctrl, llvm::ConstantInt::get(ty, 0xff));
+	llvm::Value* inRange = irb.CreateICmpULT(n, width);
+
+	llvm::Value* masked = irb.CreateAnd(src, irb.CreateSub(irb.CreateShl(one, n), one));
+	llvm::Value* res = irb.CreateSelect(inRange, masked, src);
+
+	storeRegisters(
+		irb,
+		{{X86_REG_CF, irb.CreateNot(inRange)},
+		 {X86_REG_OF, irb.getInt1(false)},
+		 {X86_REG_ZF, generateZeroFlag(res, irb)},
+		 {X86_REG_SF, generateSignFlag(res, irb)}});
+	storeOp(xi->operands[0], res, irb);
+}
+
+/**
+ * X86_INS_SHLX, X86_INS_SHRX, X86_INS_SARX, X86_INS_RORX
+ *
+ * The BMI2 shifts. What separates them from SHL, SHR and SAR is not the shift
+ * -- it is that they **do not touch the flags at all**, which is the entire
+ * reason a compiler emits them: the shift can then be scheduled across a
+ * comparison. Writing SF/ZF/CF here would be a wrong answer of the kind that
+ * only shows up several instructions later, at the Jcc that reads a flag this
+ * instruction was chosen for not disturbing.
+ *
+ * The count is masked to the operand width by the hardware, so the masked
+ * amount is always in range and no poison guard is needed. RORX's count is an
+ * immediate, so its one out-of-range case -- a rotate by zero, which would
+ * otherwise be a shift by the full width -- is decided here rather than in
+ * the IR.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateShiftX(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, xi, irb);
+
+	llvm::Value* src = loadOp(xi->operands[1], irb);
+	auto* ty = llvm::cast<llvm::IntegerType>(src->getType());
+	unsigned bits = ty->getBitWidth();
+
+	llvm::Value* res = nullptr;
+	if (i->id == X86_INS_RORX)
+	{
+		unsigned n = static_cast<unsigned>(xi->operands[2].imm) & (bits - 1);
+		res = n == 0 ? src
+					 : irb.CreateOr(
+						   irb.CreateLShr(src, llvm::ConstantInt::get(ty, n)),
+						   irb.CreateShl(src, llvm::ConstantInt::get(ty, bits - n)));
+	}
+	else
+	{
+		llvm::Value* cnt = irb.CreateZExtOrTrunc(loadOp(xi->operands[2], irb), ty);
+		cnt = irb.CreateAnd(cnt, llvm::ConstantInt::get(ty, bits - 1));
+		switch (i->id)
+		{
+		case X86_INS_SHLX: res = irb.CreateShl(src, cnt); break;
+		case X86_INS_SHRX: res = irb.CreateLShr(src, cnt); break;
+		case X86_INS_SARX: res = irb.CreateAShr(src, cnt); break;
+		default: throw GenericError("translateShiftX(): unhandled instruction id");
+		}
+	}
+
+	storeOp(xi->operands[0], res, irb);
+}
+
+/**
+ * X86_INS_MOVBE — move with the bytes reversed.
+ *
+ * One of the two operands is always memory, and which one decides the
+ * direction; neither direction changes what happens to the value, so both are
+ * the same byte swap. No flags.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateMovbe(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	op1 = loadOpBinaryOp1(xi, irb);
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::bswap, op1->getType());
+	storeOp(xi->operands[0], irb.CreateCall(f, {op1}), irb);
+}
+
+/**
  * X86_INS_BSWAP
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateBswap(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
@@ -3017,7 +3247,9 @@ void Capstone2LlvmIrTranslatorX86_impl::translateNeg(cs_insn* i, cs_x86* xi, llv
  * SYSEXIT, XGETBV, LAR, LSL, INVPCID, SLDT, LLDT, SGDT, SIDT, LGDT, LIDT,
  * XSAVE, XRSTOR, XSAVEOPT, INVLPG, FLDENV, ARPL,
  * STR,
- * FWAIT, FNOP
+ * FWAIT, FNOP, WAIT,
+ * PAUSE,
+ * PREFETCH, PREFETCHNTA, PREFETCHT0, PREFETCHT1, PREFETCHT2, PREFETCHW
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateNop(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
 {
