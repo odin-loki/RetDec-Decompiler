@@ -3633,3 +3633,203 @@ at a translator that emits the pseudo-asm call it already emits.
 
 The branch started with x86-64 as the only architecture anything measured, and
 ends with x86-64 as the only one below 1.0.
+
+
+## x86-64 is the one below 1.0, and the static corpus says why
+
+COV-01 over the 210-binary dynamic corpus has x86-64 at 0.9931 with one
+uncovered kind. That is a true number about those binaries and a misleading
+one about the translator, because a dynamically linked `hello world` contains
+almost nothing: the interesting code lives in `libc.so.6`, which the corpus
+binaries call rather than contain.
+
+`scripts/build_multiarch_corpus.sh --link static` builds the same 210 sources
+with glibc linked in. Five million instructions instead of thirty thousand,
+and a very different answer:
+
+```
+arch         decoded   skipped    covered     rate  uncovered-kinds
+x86_64       5230330         0    4940904   0.9447  84
+arm                                         0.9943
+arm64                                       0.9840
+mips                                        0.9954
+powerpc                                     0.9980
+```
+
+(The four non-x86 rows are the rates from the same static build; only the
+x86-64 row is reproduced in full here because it is the one this section is
+about. ARM's is a lower bound with a wide error bar for the reason COV-01's
+own header gives.)
+
+x86-64 is the worst of the five by a wide margin, and the 289,426 instructions
+it does not translate are not exotica. They are what glibc's string, memory and
+maths routines are made of.
+
+### What the gap is made of
+
+The top of the uncovered list, by occurrences over 5,230,330 decoded:
+
+```
+X86_INS_VPCMPEQB     27914  0.53%      X86_INS_PCMPGTB       8600  0.16%
+X86_INS_VMOVDQU      24208  0.46%      X86_INS_VMOVDQA       8348  0.16%
+X86_INS_PMOVMSKB     21102  0.40%      X86_INS_VPANDN        8274  0.16%
+X86_INS_VPMOVMSKB    19946  0.38%      X86_INS_VMOVUPS       7266  0.14%
+X86_INS_VMOVDQU64    15913  0.30%      X86_INS_PCMPISTRI     6393  0.12%
+X86_INS_TZCNT        11662  0.22%      X86_INS_VPMINUB       5730  0.11%
+X86_INS_PALIGNR      10740  0.21%      X86_INS_PREFETCHT0    5544  0.11%
+X86_INS_KMOVD        10519  0.20%      X86_INS_PUNPCKLQDQ    5004  0.10%
+X86_INS_VPADDB        9890  0.19%      X86_INS_SYSCALL       4627  0.09%
+X86_INS_VZEROUPPER    9336  0.18%      X86_INS_MOVNTPS       3360  0.06%
+```
+
+Roughly two thirds of it is AVX and AVX-512 -- every `V`-prefixed entry, plus
+the `K` mask-register instructions. Those are not a table-entry problem. YMM0
+and ZMM0 do not exist in this translator's register file at all, so there is
+nothing for a `VMOVDQU` translator to write to; adding them is a subsystem,
+with its own aliasing rules against XMM, and it is recorded here rather than
+attempted.
+
+The other third is SSE2 and BMI1 -- 128-bit and general-purpose, on registers
+this translator already has. That part is a table-entry problem, and this
+commit is the first batch of it.
+
+### Batch A
+
+| instruction | occurrences | now |
+| --- | --- | --- |
+| `PMOVMSKB` | 21,102 | `translateSseMovMsk` |
+| `TZCNT` | 11,662 | `translateBitCount` |
+| `PREFETCHT0` | 5,544 | `translateNop` |
+| `MOVNTPS` | 3,360 | `translateSseMovWhole` |
+| `PREFETCHT1` | 2,688 | `translateNop` |
+| `MOVNTDQ` | 1,008 | `translateSseMovWhole` |
+| `LZCNT`, `POPCNT` | below the cut | `translateBitCount` |
+| `PREFETCH`, `PREFETCHNTA`, `PREFETCHT2`, `PREFETCHW` | below the cut | `translateNop` |
+| `MOVNTDQA`, `MOVNTPD` | below the cut | `translateSseMovWhole` |
+| `MOVNTI`, `MOVNTQ` | below the cut | `translateMov` |
+
+**`PMOVMSKB`** is the single most frequent untranslated x86 instruction in the
+corpus, and it is frequent for one reason: it is the second half of glibc's
+SSE2 string routines. `PCMPEQB` compares sixteen bytes at a time, `PMOVMSKB`
+asks which of those sixteen matched, and `TEST`/`Jcc` branch on the answer.
+`PCMPEQB` was already translated, so the comparison was being computed and
+then discarded at an `__asm_pmovmskb` call, and the branch after it read a
+value from nowhere. It is the same sign-bit gather as `MOVMSKPS`, over sixteen
+byte lanes instead of four dword ones, so it is four lines in the translator
+that was already there.
+
+**`TZCNT` and `LZCNT` are not `BSF` and `BSR`.** They share an encoding but
+for the `F3` prefix, and on a CPU without BMI1 a `TZCNT` decodes and executes
+as `BSF` -- which is the whole reason the encoding was chosen, and also the
+whole reason translating one as the other is wrong. For a **zero source** they
+disagree completely:
+
+```
+        src == 0            BSF                  TZCNT
+        destination         unmodified           operand width (32 or 64)
+        reported through    ZF = 1               CF = 1
+```
+
+A compiler emits `TZCNT` precisely so that it does not have to branch around
+the zero case. `llvm.cttz`/`llvm.ctlz` with `is_zero_poison=false` have exactly
+the defined behaviour, and that is why the second argument is `false` here and
+`true` in `translateBsf`.
+
+`POPCNT` is the odd one of the three on flags: `ZF` from the **source**, and
+`CF`, `OF`, `SF`, `AF` and `PF` architecturally **cleared** rather than
+undefined, so they are written. `TZCNT` and `LZCNT` leave those four alone,
+because "undefined" is not a value worth asserting.
+
+**The prefetches** are the fifth instance in this branch of the same shape,
+after ARM's `PLD`/`PLDW`/`PLI`, ARM64's `PRFM`/`PRFUM` and MIPS's `PREF`: an
+instruction that names an address, does not read it, writes nothing and cannot
+fault. As `nullptr` entries they came out as `__asm_prefetcht0` calls with a
+memory operand, which reads as a side effect the instruction does not have.
+
+**The non-temporal moves** differ from their ordinary counterparts only in
+cache allocation policy, which has no architecturally visible effect on the
+value moved. `MOVNTPS`, `MOVNTPD`, `MOVNTDQ` and `MOVNTDQA` are the 128-bit
+move `translateSseMovWhole` already is; `MOVNTI` and `MOVNTQ` are the plain
+store `translateMov` already is.
+
+### Deliberately not in Batch A
+
+`SYSCALL`, 4,627 occurrences, stays on the pseudo-asm path and should. It is
+an opaque, side-effecting transfer to the kernel that clobbers `RAX`, `RCX`
+and `R11` and can do anything at all to memory; `__asm_syscall()` is a more
+honest model of that than any sequence of loads and stores would be. Same for
+`HLT` and `PCMPISTRI`.
+
+`MOVNTSS` and `MOVNTSD` (AMD SSE4a) are left alone: zero occurrences, and the
+only way to reach them shares a width calculation with `MOVD`/`MOVQ`, so the
+change would perturb two translated instructions to reach two untranslated
+ones that nothing emits.
+
+### What the falsification could and could not show
+
+Four mutations, each reverted alone, each rebuilt and run:
+
+| mutation | result |
+| --- | --- |
+| `TZCNT`/`LZCNT` dispatched to `translateBsf` | the five zero-source and count tests fail |
+| `PMOVMSKB` treated as `MOVMSKPS` (four 32-bit lanes) | both `PMOVMSKB` tests fail |
+| prefetch and non-temporal entries back to `nullptr` | those six tests fail |
+| `POPCNT` no longer clearing the five flags | the three `POPCNT` tests fail |
+
+One mutation did **not** fail, and it is worth recording rather than quietly
+dropping. Flipping `is_zero_poison` from `false` to `true` -- the difference
+between "the answer for a zero input is the width" and "the answer for a zero
+input is poison" -- leaves the whole suite green, because
+`tests/llvmir-emul` implements `llvm.cttz` as `APInt::countr_zero()` and
+ignores the second argument entirely:
+
+```cpp
+else if (id == Intrinsic::cttz)
+    dest.IntVal = APInt(bw, src.IntVal.countr_zero());
+```
+
+So that argument is correct on the instruction manual's authority and not on
+this suite's, and the honest thing is to say so. It matters against a real
+LLVM -- `is_zero_poison=true` tells the optimiser the source is never zero,
+which for `TZCNT` is a lie and would license folding away the `CF` computation
+that the zero case exists to report -- and nothing here can demonstrate it.
+A test that cannot fail proves nothing; a test that cannot be written should
+be admitted to, not implied.
+
+### Where it leaves the static number
+
+```
+                 decoded   skipped    covered     rate  uncovered-kinds
+before          5230330         0    4940904   0.9447  84
+after           5230330         0    4986268   0.9533  78
+```
+
+45,364 instructions, 0.86 points, six kinds. The measurement is in CI from
+this commit -- `COV-01 instruction coverage (static corpus, x86-64)` -- and
+unfloored on its first run for the reason the step's own comment gives: the
+rate depends on which glibc the runner's cross toolchains link in, and a floor
+measured here and asserted about there is the mistake that let the local
+IR2HLL-01 gate read LLVM 20 while CI read LLVM 23. It is floored next commit
+at whatever number CI itself reports.
+
+### 182 instruction ids are not in the x86 table at all
+
+While measuring this, COV-01 reported five uncovered kinds as `NO ENTRY`
+rather than `listed, null`: `INCSSPQ` (630), `RDSSPQ` (378), `VPTERNLOGD`
+(3,550), `VPTESTMB` (2,981) and `VPTESTNMB` (717). They are not in
+`x86_init.cpp`'s table under any spelling. Checking the whole enum: of the
+1,523 instruction ids in the pinned Capstone 5.0.9, **182 have no row**.
+
+This is not a defect. The dispatch is
+
+```cpp
+auto fIt = _i2fm.find(i->id);
+if (fIt != _i2fm.end() && fIt->second != nullptr)
+```
+
+so a missing id and a `nullptr` row behave identically -- both fall through to
+the pseudo-asm path. It is a staleness signal: the table was written against
+an older Capstone and instructions added since (CET shadow stack, AVX-512
+VBMI, GFNI, the `K*` mask ops) were never listed. Recorded because the *next*
+time someone reads "listed, null" as "everything is accounted for", these 182
+are the counterexample.

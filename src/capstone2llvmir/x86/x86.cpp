@@ -2076,6 +2076,65 @@ void Capstone2LlvmIrTranslatorX86_impl::translateBsf(cs_insn* i, cs_x86* xi, llv
 }
 
 /**
+ * X86_INS_TZCNT, X86_INS_LZCNT, X86_INS_POPCNT
+ *
+ * The three BMI1/ABM counting instructions. They look like BSF/BSR and are not
+ * the same instruction: BSF leaves the destination *unmodified* when the source
+ * is zero and reports that through ZF, whereas TZCNT and LZCNT define the
+ * zero-source case -- the answer is the operand width -- and report it through
+ * CF. A compiler emits TZCNT precisely so it does not have to branch around
+ * that case, so translating it as BSF would drop the branch-free property and,
+ * for a zero source, produce a different number.
+ *
+ * llvm.cttz/ctlz with is_zero_poison=false have exactly the defined semantics:
+ * width for a zero input. That is the reason the second argument is false here
+ * and true in translateBsf().
+ *
+ * Flags. TZCNT and LZCNT: CF = (src == 0), ZF = (dst == 0); the other four are
+ * architecturally undefined and are left alone rather than being given a value
+ * this translator would then be asserting. POPCNT is the odd one: ZF = (src ==
+ * 0) and CF, OF, SF, AF and PF are *cleared*, not undefined, so they are
+ * written.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateBitCount(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	op1 = loadOpBinaryOp1(xi, irb);
+	auto* srcTy = llvm::cast<llvm::IntegerType>(op1->getType());
+	auto* zero = llvm::ConstantInt::get(srcTy, 0);
+
+	llvm::Intrinsic::ID id = i->id == X86_INS_TZCNT
+							   ? llvm::Intrinsic::cttz
+							   : (i->id == X86_INS_LZCNT ? llvm::Intrinsic::ctlz : llvm::Intrinsic::ctpop);
+	auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, id, srcTy);
+
+	llvm::Value* cnt = i->id == X86_INS_POPCNT ? irb.CreateCall(f, {op1}) : irb.CreateCall(f, {op1, irb.getFalse()});
+
+	auto* srcIsZero = irb.CreateICmpEQ(op1, zero);
+	if (i->id == X86_INS_POPCNT)
+	{
+		// ZF is set from the source, not the result: POPCNT of a non-zero
+		// source is never zero, so reading the result would be the same
+		// answer by accident and a different one if that ever changed.
+		storeRegisters(
+			irb,
+			{{X86_REG_ZF, srcIsZero},
+			 {X86_REG_CF, irb.getInt1(false)},
+			 {X86_REG_OF, irb.getInt1(false)},
+			 {X86_REG_SF, irb.getInt1(false)},
+			 {X86_REG_AF, irb.getInt1(false)},
+			 {X86_REG_PF, irb.getInt1(false)}});
+	}
+	else
+	{
+		storeRegisters(irb, {{X86_REG_CF, srcIsZero}, {X86_REG_ZF, irb.CreateICmpEQ(cnt, zero)}});
+	}
+
+	storeOp(xi->operands[0], cnt, irb);
+}
+
+/**
  * X86_INS_BSWAP
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateBswap(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
@@ -2819,7 +2878,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateLoadFarPtr(cs_insn* i, cs_x86* 
 }
 
 /**
- * X86_INS_MOV, X86_INS_MOVSX, X86_INS_MOVSXD, X86_INS_MOVZX, X86_INS_MOVABS
+ * X86_INS_MOV, X86_INS_MOVSX, X86_INS_MOVSXD, X86_INS_MOVZX, X86_INS_MOVABS,
+ * X86_INS_MOVNTI, X86_INS_MOVNTQ
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateMov(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
 {
@@ -2830,8 +2890,11 @@ void Capstone2LlvmIrTranslatorX86_impl::translateMov(cs_insn* i, cs_x86* xi, llv
 	{
 		case X86_INS_MOV:
 		case X86_INS_MOVABS:
-			storeOp(xi->operands[0], op1, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-			break;
+		// Non-temporal stores. The hint is about cache allocation policy and
+		// has no architecturally visible effect on the value stored, so at IR
+		// level MOVNTI and MOVNTQ are the move they spell.
+		case X86_INS_MOVNTI:
+		case X86_INS_MOVNTQ: storeOp(xi->operands[0], op1, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST); break;
 		case X86_INS_MOVSX:
 		case X86_INS_MOVSXD:
 			storeOp(xi->operands[0], op1, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);

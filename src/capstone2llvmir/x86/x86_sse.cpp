@@ -1208,18 +1208,28 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseShufp(cs_insn* i, cs_x86* xi
 }
 
 /**
- * MOVMSKPS, MOVMSKPD — gather the lanes' sign bits into a GPR.
+ * MOVMSKPS, MOVMSKPD, PMOVMSKB — gather the lanes' sign bits into a GPR.
  *
  * Built out of extractelement and shifts rather than `bitcast <4 x i1> to i4`
  * so that it stays within what tests/llvmir-emul can execute.
+ *
+ * PMOVMSKB is the same operation over sixteen byte lanes, and it is the single
+ * most frequent untranslated instruction in the static corpus -- 21,102
+ * occurrences, 0.40% of everything decoded. That is not because anyone writes
+ * it: it is the second half of glibc's SSE2 string routines, which compare
+ * sixteen bytes at a time with PCMPEQB and then ask "which of those sixteen
+ * matched" exactly this way. PCMPEQB was already translated, so the answer was
+ * being computed and then thrown away at an __asm_pmovmskb call, and the TEST
+ * and Jcc that follow it read a value out of nowhere.
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateSseMovMsk(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, xi, irb);
 
 	bool isDouble = i->id == X86_INS_MOVMSKPD;
-	unsigned n = isDouble ? 2 : 4;
-	unsigned laneBits = isDouble ? 64 : 32;
+	bool isByte = i->id == X86_INS_PMOVMSKB;
+	unsigned n = isByte ? 16 : (isDouble ? 2 : 4);
+	unsigned laneBits = isByte ? 8 : (isDouble ? 64 : 32);
 	auto* vecTy = FixedVectorType::get(irb.getIntNTy(laneBits), n);
 
 	Value* v = irb.CreateBitCast(toI128(loadOp(xi->operands[1], irb), irb), vecTy);

@@ -504,6 +504,54 @@ jobs:
           } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
           exit $rc
 
+      # COV-01 again, over a STATICALLY linked corpus, x86-64 only.
+      #
+      # The step above measures the 210-binary dynamic corpus, where x86-64
+      # reads 0.9931 with one uncovered kind. That is a true number about
+      # those binaries and a misleading one about the translator: a
+      # dynamically linked `hello world` contains almost no code, because the
+      # interesting parts live in libc.so.6, which the binary calls rather
+      # than contains. The same 42 sources linked with -static are five
+      # million instructions instead of thirty thousand, and x86-64 reads
+      # 0.9447 over them -- the worst of the five by a wide margin, and the
+      # reason the SSE2 and BMI1 batches exist at all.
+      #
+      # x86-64 only, on purpose. The measurement itself is cheap -- five
+      # seconds for 5.2 million instructions -- and what costs is linking the
+      # corpus, so the scope is about which binaries get built. The static
+      # number for the other four is worth having (arm 0.9943, arm64 0.9840,
+      # mips 0.9954, powerpc 0.9980) and is not worth building 168 more static
+      # binaries every run; x86-64 is the outlier and the one being worked on.
+      #
+      # MEASUREMENT ONLY on this run -- no --arch-min. The rate depends on
+      # which glibc the runner's cross toolchains link in, and a floor
+      # measured on this container and asserted about that one is the same
+      # mistake as the local gate that read LLVM 20 while CI read LLVM 23.
+      # It is floored in the next commit, at whatever number CI itself
+      # reports, the same way ARCH-01's x86_64 column went in unfloored and
+      # was floored one run later.
+      - name: COV-01 instruction coverage (static corpus, x86-64)
+        if: always()
+        run: |
+          CS="build/linux/deps/install/capstone"
+          if [ ! -f "$CS/include/capstone/capstone.h" ]; then
+            echo "COV-01: capstone install prefix not found at $CS"; exit 1
+          fi
+          bash scripts/build_multiarch_corpus.sh \
+            --out /tmp/ma-static --link static --arch "x86_64:x86_64-linux-gnu"
+          set -o pipefail
+          rc=0
+          python3 scripts/ci/check_instruction_coverage.py \
+            --corpus /tmp/ma-static --capstone-prefix "$CS" --top 24 \
+            --arch x86_64 2>&1 | tee /tmp/cov01-static.log || rc=$?
+          {
+            echo "### COV-01 instruction coverage (static corpus, x86-64)"
+            echo '```'
+            cat /tmp/cov01-static.log
+            echo '```'
+          } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+
       - name: Publish the non-x86 failures
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

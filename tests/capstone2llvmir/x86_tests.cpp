@@ -222,6 +222,38 @@ class Capstone2LlvmIrTranslatorX86Tests :
 			return _emulator->getGlobalVariableValue(gv).IntVal.lshr(64).trunc(64).getZExtValue();
 		}
 
+		// Same reason as setXmm: StoredValue cannot carry 128 bits, so a
+		// 128-bit memory cell is written and read in halves.
+		void setMemoryValue128(uint64_t addr, uint64_t hi, uint64_t lo)
+		{
+			llvm::GenericValue v;
+			const uint64_t words[2] = {lo, hi};
+			v.IntVal = llvm::APInt(128, llvm::ArrayRef<uint64_t>(words, 2));
+			_emulator->setMemoryValue(addr, v);
+		}
+
+		// getMemoryValue() hands back whatever width was last written to that
+		// address, and a cell nothing wrote is narrower than 128 bits -- on
+		// which APInt::lshr() asserts and takes the process down, hiding every
+		// test after this one. That is not hypothetical: it is what the
+		// falsification run for these translations did before this widened
+		// first. An unwritten cell should read as zero and fail a comparison,
+		// which is what a failing test is for.
+		static llvm::APInt as128(llvm::APInt v)
+		{
+			return v.getBitWidth() == 128 ? v : v.zextOrTrunc(128);
+		}
+
+		uint64_t memLow128(uint64_t addr)
+		{
+			return as128(_emulator->getMemoryValue(addr).IntVal).trunc(64).getZExtValue();
+		}
+
+		uint64_t memHigh128(uint64_t addr)
+		{
+			return as128(_emulator->getMemoryValue(addr).IntVal).lshr(64).trunc(64).getZExtValue();
+		}
+
 		virtual uint64_t getRegisterValueUnsigned(uint32_t reg) override
 		{
 			auto preg = getParentRegister(reg);
@@ -15515,6 +15547,350 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PSLLDQ_shifts_by_bytes)
 	emulate("pslldq xmm0, 1");
 
 	EXPECT_EQ(0x000000000000ff00ULL, xmmLow(X86_REG_XMM0));
+}
+
+
+//
+// X86_INS_TZCNT, X86_INS_LZCNT, X86_INS_POPCNT
+//
+// All three pointed at nullptr. TZCNT alone is 11,662 occurrences in the
+// static corpus -- the sixth most frequent untranslated instruction -- because
+// it is what a compiler emits for __builtin_ctz on anything from Haswell on.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_TZCNT_counts_trailing_zeros)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EDX, 1 << 20 | 1 << 25},
+	});
+
+	emulate("tzcnt eax, edx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 20},
+		{X86_REG_CF, false},
+		{X86_REG_ZF, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_TZCNT_of_zero_is_the_width_not_the_old_destination)
+{
+	// The whole test. BSF and TZCNT have the same encoding but for the F3
+	// prefix and are NOT the same instruction: for a zero source BSF leaves
+	// the destination untouched and sets ZF, TZCNT writes the operand width
+	// and sets CF. Translating one as the other is a wrong answer exactly
+	// here, and nowhere else -- which is why it would survive a test that
+	// only ever passed it a non-zero source.
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EAX, 1234},
+		{X86_REG_EDX, 0},
+	});
+
+	emulate("tzcnt eax, edx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 32}, // not 1234
+		{X86_REG_CF, true},
+		{X86_REG_ZF, false}, // the result is 32, and 32 is not zero
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_TZCNT_of_zero_reg64_is_64)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RDX, 0},
+	});
+
+	emulate("tzcnt rax, rdx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_RAX, 64},
+		{X86_REG_CF, true},
+		{X86_REG_ZF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_LZCNT_counts_leading_zeros)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EDX, 1 << 20 | 1 << 25},
+	});
+
+	emulate("lzcnt eax, edx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 6}, // 31 - 25
+		{X86_REG_CF, false},
+		{X86_REG_ZF, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_LZCNT_of_zero_is_the_width_not_the_old_destination)
+{
+	// BSR's half of the same distinction: for a zero source it leaves the
+	// destination alone and sets ZF, LZCNT writes the width and sets CF.
+	// (That the two disagree for a NON-zero source as well -- BSR answers
+	// the index of the top set bit, 25, and LZCNT the count of zeros above
+	// it, 6 -- is what the test above pins down.)
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EAX, 1234},
+		{X86_REG_EDX, 0},
+	});
+
+	emulate("lzcnt eax, edx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 32},
+		{X86_REG_CF, true},
+		{X86_REG_ZF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_LZCNT_sets_ZF_when_the_top_bit_is_set)
+{
+	// The one source for which the result is zero, and so the only one that
+	// tells ZF apart from a constant false.
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EDX, 0x80000000},
+	});
+
+	emulate("lzcnt eax, edx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0},
+		{X86_REG_CF, false},
+		{X86_REG_ZF, true},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_POPCNT_counts_set_bits_and_clears_five_flags)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EDX, 0b1011},
+	});
+
+	emulate("popcnt eax, edx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 3},
+		{X86_REG_ZF, false},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_SF, false},
+		{X86_REG_AF, false},
+		{X86_REG_PF, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_POPCNT_of_zero_sets_ZF)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EDX, 0},
+	});
+
+	emulate("popcnt eax, edx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0},
+		{X86_REG_ZF, true},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_SF, false},
+		{X86_REG_AF, false},
+		{X86_REG_PF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_POPCNT_reg64_counts_all_64)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RDX, 0xffffffffffffffffULL},
+	});
+
+	emulate("popcnt rax, rdx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_RAX, 64},
+		{X86_REG_ZF, false},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_SF, false},
+		{X86_REG_AF, false},
+		{X86_REG_PF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// X86_INS_PMOVMSKB
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PMOVMSKB_gathers_sixteen_sign_bits)
+{
+	// The most frequent untranslated instruction in the static corpus,
+	// 21,102 occurrences. Lanes 0, 6, 7 and 9 have their top bit set, so the
+	// answer is 0b10_1100_0001. The two lanes in the upper half are there
+	// because a translator that only looked at the low 64 bits would still
+	// pass a test whose set bits all lived down there.
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x000000000000ff00ULL, 0x8080000000000080ULL);
+
+	emulate("pmovmskb eax, xmm0");
+
+	EXPECT_EQ(0x2c1, getRegisterValueUnsigned(X86_REG_EAX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PMOVMSKB_of_all_ones_is_all_sixteen_bits)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+
+	emulate("pmovmskb eax, xmm0");
+
+	EXPECT_EQ(0xffff, getRegisterValueUnsigned(X86_REG_EAX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// Prefetch hints
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PREFETCHT0_is_a_hint_with_no_effect)
+{
+	// Same argument as ARM's PLD, ARM64's PRFM and MIPS's PREF, all of which
+	// went to translateNop earlier in this branch: a prefetch names an
+	// address, does not read it, writes nothing and cannot fault. As a
+	// nullptr entry it came out as an __asm_prefetcht0 call with a memory
+	// operand, which reads as a side effect the instruction does not have.
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0x1000},
+	});
+
+	emulate("prefetcht0 byte ptr [rax]");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PREFETCHW_is_a_hint_with_no_effect)
+{
+	// PREFETCHW asks for the line in an exclusive state, which is still only
+	// a cache-coherence hint: it does not write.
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0x1000},
+	});
+
+	emulate("prefetchw byte ptr [rax]");
+
+	EXPECT_NO_REGISTERS_LOADED_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// Non-temporal stores and loads
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MOVNTDQ_stores_all_128_bits)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+	setRegisters({
+		{X86_REG_RAX, 0x1000},
+	});
+
+	emulate("movntdq xmmword ptr [rax], xmm0");
+
+	EXPECT_EQ(0x99aabbccddeeff00ULL, memLow128(0x1000));
+	EXPECT_EQ(0x1122334455667788ULL, memHigh128(0x1000));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MOVNTPS_stores_all_128_bits)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+	setRegisters({
+		{X86_REG_RAX, 0x1000},
+	});
+
+	emulate("movntps xmmword ptr [rax], xmm0");
+
+	EXPECT_EQ(0x99aabbccddeeff00ULL, memLow128(0x1000));
+	EXPECT_EQ(0x1122334455667788ULL, memHigh128(0x1000));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MOVNTDQA_loads_all_128_bits)
+{
+	// The only one of the family that goes the other way.
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0x1000},
+	});
+	setMemoryValue128(0x1000, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+
+	emulate("movntdqa xmm0, xmmword ptr [rax]");
+
+	EXPECT_EQ(0x99aabbccddeeff00ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x1122334455667788ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MOVNTI_stores_the_register)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0x1000},
+		{X86_REG_EDX, 0x11223344},
+	});
+
+	emulate("movnti dword ptr [rax], edx");
+
+	EXPECT_EQ(0x11223344, getMemoryValueUnsigned(0x1000, 32));
+	EXPECT_NO_VALUE_CALLED();
 }
 
 } // namespace tests
