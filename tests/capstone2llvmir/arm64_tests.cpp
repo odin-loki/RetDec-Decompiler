@@ -9756,6 +9756,61 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CMEQ_d_form_zeroes_the_top
 	EXPECT_NO_VALUE_CALLED();
 }
 
+
+//
+// ARM64_INS_MRS, ARM64_INS_MSR
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_MRS_reads_the_thread_pointer)
+{
+	// 275 of every 293 `mrs` in the static corpus are this one, 12,400 in
+	// total. The register was already in arm64_init.cpp's tables; what was
+	// missing was the instruction that reads it.
+	setRegisters({
+		{ARM64_SYSREG_TPIDR_EL0, 0xdeadbeefcafef00d},
+	});
+
+	emulate("mrs x0, tpidr_el0");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X0, 0xdeadbeefcafef00d},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_MRS_reads_other_system_registers_too)
+{
+	// Not a special case for one register: every system register Capstone
+	// knows already has a global here.
+	setRegisters({
+		{ARM64_SYSREG_MIDR_EL1, 0x1122334455667788},
+	});
+
+	emulate("mrs x1, midr_el1");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X1, 0x1122334455667788},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_MSR_writes_the_thread_pointer)
+{
+	// The other direction, and the reason the operand order is read from the
+	// instruction rather than assumed: MSR's system register is operand 0.
+	setRegisters({
+		{ARM64_REG_X0, 0x00c0ffee0badf00d},
+	});
+
+	emulate("msr tpidr_el0, x0");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_SYSREG_TPIDR_EL0, 0x00c0ffee0badf00d},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

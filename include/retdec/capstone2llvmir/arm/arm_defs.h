@@ -42,4 +42,26 @@ enum arm_sysreg_extension
 	ARM_SYSREG_CPSR,
 };
 
+/**
+ * The thread pointer.
+ *
+ * ARM has no register for it in Capstone's enum because it is not a register
+ * in the ordinary sense: it is read out of coprocessor 15 with
+ * `mrc p15, 0, Rt, c13, c0, 3`, which Capstone reports as six immediate and
+ * register operands and nothing else. Every one of the 11,697 `mrc`
+ * instructions in the static parity corpus is that exact encoding -- it is how
+ * glibc finds thread-local storage on ARM -- and without somewhere to put the
+ * value they all became `__asm_mrc(15, 0, 13, 0, 3)`, which no later pass can
+ * do anything with.
+ *
+ * Synthetic register ids past *_REG_ENDING are how this translator already
+ * models CPSR flags, ARM's SPSR/CPSR pair and MIPS's double-precision FP
+ * pairs; Abi::addRegister() resizes its id table for anything past the end, so
+ * there is nothing else to change.
+ */
+enum arm_reg_thread_pointer
+{
+	ARM_REG_TPIDRURO = ARM_SYSREG_CPSR + 1,
+};
+
 #endif

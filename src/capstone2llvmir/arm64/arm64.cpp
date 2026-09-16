@@ -1233,6 +1233,56 @@ static unsigned vasByteWidth(arm64_vas vas)
 }
 
 /**
+ * ARM64_INS_MRS, ARM64_INS_MSR -- move from/to a system register.
+ *
+ * This translator already creates a global for every AArch64 system register
+ * Capstone knows: `arm64_init.cpp` lists all of them by name and by type,
+ * `tpidr_el0` among them. What was missing was the instruction that reads one.
+ *
+ * MRS is 12,400 occurrences in the static parity corpus, and 275 of every 293
+ * are `mrs xN, tpidr_el0` -- the thread pointer, how glibc finds thread-local
+ * storage. The rest read FPSR, FPCR, DCZID_EL0, CTR_EL0 and MIDR_EL1, and
+ * those have registers here too, so all of them translate.
+ *
+ * The system-register operand cannot go through loadOp(). Capstone's operand
+ * union aliases `sys` onto `reg`, so ARM64_OP_SYS values collide numerically
+ * with ordinary register ids -- loadOp() refuses them by design for exactly
+ * that reason. The id is read out of `.sys` and looked up directly, and an id
+ * this translator has no register for falls back to the pseudo-assembly call
+ * rather than inventing one.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateSysRegMove(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, ai, irb);
+
+	bool read = i->id == ARM64_INS_MRS;
+	cs_arm64_op& sysOp = read ? ai->operands[1] : ai->operands[0];
+	cs_arm64_op& gprOp = read ? ai->operands[0] : ai->operands[1];
+
+	if (sysOp.type != ARM64_OP_SYS || gprOp.type != ARM64_OP_REG)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* sysReg = getRegister(sysOp.sys);
+	if (sysReg == nullptr)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	if (read)
+	{
+		storeOp(gprOp, loadRegister(sysOp.sys, irb), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	}
+	else
+	{
+		storeRegister(sysOp.sys, loadOp(gprOp, irb), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	}
+}
+
+/**
  * Lane width in bits and lane count for a NEON arrangement. {0, 0} means an
  * arrangement this file does not model -- including the ones Capstone reports
  * as ARM64_VAS_INVALID for a scalar or lane-indexed operand, where there is no

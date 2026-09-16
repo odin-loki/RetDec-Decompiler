@@ -23,26 +23,26 @@ void Capstone2LlvmIrTranslatorMips_impl::initializeArchSpecific()
 
 void Capstone2LlvmIrTranslatorMips_impl::initializeRegNameMap()
 {
-	std::map<uint32_t, std::string> r2n =
-	{
-			// mips_reg_fpu_double
-			//
-			{MIPS_REG_FD0, "fd0"},
-			{MIPS_REG_FD2, "fd2"},
-			{MIPS_REG_FD4, "fd4"},
-			{MIPS_REG_FD6, "fd6"},
-			{MIPS_REG_FD8, "fd8"},
-			{MIPS_REG_FD10, "fd10"},
-			{MIPS_REG_FD12, "fd12"},
-			{MIPS_REG_FD14, "fd14"},
-			{MIPS_REG_FD16, "fd16"},
-			{MIPS_REG_FD18, "fd18"},
-			{MIPS_REG_FD20, "fd20"},
-			{MIPS_REG_FD22, "fd22"},
-			{MIPS_REG_FD24, "fd24"},
-			{MIPS_REG_FD26, "fd26"},
-			{MIPS_REG_FD28, "fd28"},
-			{MIPS_REG_FD30, "fd30"},
+	std::map<uint32_t, std::string> r2n = {
+		// mips_reg_fpu_double
+		//
+		{MIPS_REG_HWR_ULR, "hwr_ulr"},
+		{MIPS_REG_FD0, "fd0"},
+		{MIPS_REG_FD2, "fd2"},
+		{MIPS_REG_FD4, "fd4"},
+		{MIPS_REG_FD6, "fd6"},
+		{MIPS_REG_FD8, "fd8"},
+		{MIPS_REG_FD10, "fd10"},
+		{MIPS_REG_FD12, "fd12"},
+		{MIPS_REG_FD14, "fd14"},
+		{MIPS_REG_FD16, "fd16"},
+		{MIPS_REG_FD18, "fd18"},
+		{MIPS_REG_FD20, "fd20"},
+		{MIPS_REG_FD22, "fd22"},
+		{MIPS_REG_FD24, "fd24"},
+		{MIPS_REG_FD26, "fd26"},
+		{MIPS_REG_FD28, "fd28"},
+		{MIPS_REG_FD30, "fd30"},
 	};
 
 	_reg2name = std::move(r2n);
@@ -61,170 +61,171 @@ void Capstone2LlvmIrTranslatorMips_impl::initializeRegTypeMap()
 	auto* defTy = _basicMode == CS_MODE_MIPS64 ? i64 : i32;
 	auto* defFty = _basicMode == CS_MODE_MIPS64 ? f64 : f32;
 
-	std::map<uint32_t, llvm::Type*> r2t =
-	{
-			// Program counter.
-			//
-			{MIPS_REG_PC, defTy},
+	std::map<uint32_t, llvm::Type*> r2t = {
+		// Hardware register 29 (ULR), the thread pointer `rdhwr` reads.
+		{MIPS_REG_HWR_ULR, defTy},
+		// Program counter.
+		//
+		{MIPS_REG_PC, defTy},
 
-			// General purpose registers.
-			//
-			{MIPS_REG_0, defTy},
-			{MIPS_REG_1, defTy},
-			{MIPS_REG_2, defTy},
-			{MIPS_REG_3, defTy},
-			{MIPS_REG_4, defTy},
-			{MIPS_REG_5, defTy},
-			{MIPS_REG_6, defTy},
-			{MIPS_REG_7, defTy},
-			{MIPS_REG_8, defTy},
-			{MIPS_REG_9, defTy},
-			{MIPS_REG_10, defTy},
-			{MIPS_REG_11, defTy},
-			{MIPS_REG_12, defTy},
-			{MIPS_REG_13, defTy},
-			{MIPS_REG_14, defTy},
-			{MIPS_REG_15, defTy},
-			{MIPS_REG_16, defTy},
-			{MIPS_REG_17, defTy},
-			{MIPS_REG_18, defTy},
-			{MIPS_REG_19, defTy},
-			{MIPS_REG_20, defTy},
-			{MIPS_REG_21, defTy},
-			{MIPS_REG_22, defTy},
-			{MIPS_REG_23, defTy},
-			{MIPS_REG_24, defTy},
-			{MIPS_REG_25, defTy},
-			{MIPS_REG_26, defTy},
-			{MIPS_REG_27, defTy},
-			{MIPS_REG_28, defTy},
-			{MIPS_REG_29, defTy},
-			{MIPS_REG_30, defTy},
-			{MIPS_REG_31, defTy},
+		// General purpose registers.
+		//
+		{MIPS_REG_0, defTy},
+		{MIPS_REG_1, defTy},
+		{MIPS_REG_2, defTy},
+		{MIPS_REG_3, defTy},
+		{MIPS_REG_4, defTy},
+		{MIPS_REG_5, defTy},
+		{MIPS_REG_6, defTy},
+		{MIPS_REG_7, defTy},
+		{MIPS_REG_8, defTy},
+		{MIPS_REG_9, defTy},
+		{MIPS_REG_10, defTy},
+		{MIPS_REG_11, defTy},
+		{MIPS_REG_12, defTy},
+		{MIPS_REG_13, defTy},
+		{MIPS_REG_14, defTy},
+		{MIPS_REG_15, defTy},
+		{MIPS_REG_16, defTy},
+		{MIPS_REG_17, defTy},
+		{MIPS_REG_18, defTy},
+		{MIPS_REG_19, defTy},
+		{MIPS_REG_20, defTy},
+		{MIPS_REG_21, defTy},
+		{MIPS_REG_22, defTy},
+		{MIPS_REG_23, defTy},
+		{MIPS_REG_24, defTy},
+		{MIPS_REG_25, defTy},
+		{MIPS_REG_26, defTy},
+		{MIPS_REG_27, defTy},
+		{MIPS_REG_28, defTy},
+		{MIPS_REG_29, defTy},
+		{MIPS_REG_30, defTy},
+		{MIPS_REG_31, defTy},
 
-			// DSP registers.
-			//
-			{MIPS_REG_DSPCCOND, i1},
-			{MIPS_REG_DSPCARRY, i1},
-			{MIPS_REG_DSPEFI, i1},
-			{MIPS_REG_DSPOUTFLAG, i1},
-			{MIPS_REG_DSPOUTFLAG16_19, i1},
-			{MIPS_REG_DSPOUTFLAG20, i1},
-			{MIPS_REG_DSPOUTFLAG21, i1},
-			{MIPS_REG_DSPOUTFLAG22, i1},
-			{MIPS_REG_DSPOUTFLAG23, i1},
-			{MIPS_REG_DSPPOS, defTy},
-			{MIPS_REG_DSPSCOUNT, defTy},
+		// DSP registers.
+		//
+		{MIPS_REG_DSPCCOND, i1},
+		{MIPS_REG_DSPCARRY, i1},
+		{MIPS_REG_DSPEFI, i1},
+		{MIPS_REG_DSPOUTFLAG, i1},
+		{MIPS_REG_DSPOUTFLAG16_19, i1},
+		{MIPS_REG_DSPOUTFLAG20, i1},
+		{MIPS_REG_DSPOUTFLAG21, i1},
+		{MIPS_REG_DSPOUTFLAG22, i1},
+		{MIPS_REG_DSPOUTFLAG23, i1},
+		{MIPS_REG_DSPPOS, defTy},
+		{MIPS_REG_DSPSCOUNT, defTy},
 
-			// ACC registers.
-			//
-			{MIPS_REG_AC0, defTy},
-			{MIPS_REG_AC1, defTy},
-			{MIPS_REG_AC2, defTy},
-			{MIPS_REG_AC3, defTy},
+		// ACC registers.
+		//
+		{MIPS_REG_AC0, defTy},
+		{MIPS_REG_AC1, defTy},
+		{MIPS_REG_AC2, defTy},
+		{MIPS_REG_AC3, defTy},
 
-			// COP registers.
-			//
-			{MIPS_REG_CC0, defTy},
-			{MIPS_REG_CC1, defTy},
-			{MIPS_REG_CC2, defTy},
-			{MIPS_REG_CC3, defTy},
-			{MIPS_REG_CC4, defTy},
-			{MIPS_REG_CC5, defTy},
-			{MIPS_REG_CC6, defTy},
-			{MIPS_REG_CC7, defTy},
+		// COP registers.
+		//
+		{MIPS_REG_CC0, defTy},
+		{MIPS_REG_CC1, defTy},
+		{MIPS_REG_CC2, defTy},
+		{MIPS_REG_CC3, defTy},
+		{MIPS_REG_CC4, defTy},
+		{MIPS_REG_CC5, defTy},
+		{MIPS_REG_CC6, defTy},
+		{MIPS_REG_CC7, defTy},
 
-			// FPU registers.
-			//
-			{MIPS_REG_F0, defFty},
-			{MIPS_REG_F1, defFty},
-			{MIPS_REG_F2, defFty},
-			{MIPS_REG_F3, defFty},
-			{MIPS_REG_F4, defFty},
-			{MIPS_REG_F5, defFty},
-			{MIPS_REG_F6, defFty},
-			{MIPS_REG_F7, defFty},
-			{MIPS_REG_F8, defFty},
-			{MIPS_REG_F9, defFty},
-			{MIPS_REG_F10, defFty},
-			{MIPS_REG_F11, defFty},
-			{MIPS_REG_F12, defFty},
-			{MIPS_REG_F13, defFty},
-			{MIPS_REG_F14, defFty},
-			{MIPS_REG_F15, defFty},
-			{MIPS_REG_F16, defFty},
-			{MIPS_REG_F17, defFty},
-			{MIPS_REG_F18, defFty},
-			{MIPS_REG_F19, defFty},
-			{MIPS_REG_F20, defFty},
-			{MIPS_REG_F21, defFty},
-			{MIPS_REG_F22, defFty},
-			{MIPS_REG_F23, defFty},
-			{MIPS_REG_F24, defFty},
-			{MIPS_REG_F25, defFty},
-			{MIPS_REG_F26, defFty},
-			{MIPS_REG_F27, defFty},
-			{MIPS_REG_F28, defFty},
-			{MIPS_REG_F29, defFty},
-			{MIPS_REG_F30, defFty},
-			{MIPS_REG_F31, defFty},
+		// FPU registers.
+		//
+		{MIPS_REG_F0, defFty},
+		{MIPS_REG_F1, defFty},
+		{MIPS_REG_F2, defFty},
+		{MIPS_REG_F3, defFty},
+		{MIPS_REG_F4, defFty},
+		{MIPS_REG_F5, defFty},
+		{MIPS_REG_F6, defFty},
+		{MIPS_REG_F7, defFty},
+		{MIPS_REG_F8, defFty},
+		{MIPS_REG_F9, defFty},
+		{MIPS_REG_F10, defFty},
+		{MIPS_REG_F11, defFty},
+		{MIPS_REG_F12, defFty},
+		{MIPS_REG_F13, defFty},
+		{MIPS_REG_F14, defFty},
+		{MIPS_REG_F15, defFty},
+		{MIPS_REG_F16, defFty},
+		{MIPS_REG_F17, defFty},
+		{MIPS_REG_F18, defFty},
+		{MIPS_REG_F19, defFty},
+		{MIPS_REG_F20, defFty},
+		{MIPS_REG_F21, defFty},
+		{MIPS_REG_F22, defFty},
+		{MIPS_REG_F23, defFty},
+		{MIPS_REG_F24, defFty},
+		{MIPS_REG_F25, defFty},
+		{MIPS_REG_F26, defFty},
+		{MIPS_REG_F27, defFty},
+		{MIPS_REG_F28, defFty},
+		{MIPS_REG_F29, defFty},
+		{MIPS_REG_F30, defFty},
+		{MIPS_REG_F31, defFty},
 
-			{MIPS_REG_FCC0, defTy},
-			{MIPS_REG_FCC1, defTy},
-			{MIPS_REG_FCC2, defTy},
-			{MIPS_REG_FCC3, defTy},
-			{MIPS_REG_FCC4, defTy},
-			{MIPS_REG_FCC5, defTy},
-			{MIPS_REG_FCC6, defTy},
-			{MIPS_REG_FCC7, defTy},
+		{MIPS_REG_FCC0, defTy},
+		{MIPS_REG_FCC1, defTy},
+		{MIPS_REG_FCC2, defTy},
+		{MIPS_REG_FCC3, defTy},
+		{MIPS_REG_FCC4, defTy},
+		{MIPS_REG_FCC5, defTy},
+		{MIPS_REG_FCC6, defTy},
+		{MIPS_REG_FCC7, defTy},
 
-			// AFPR128.
-			//
-			{MIPS_REG_W0, i128},
-			{MIPS_REG_W1, i128},
-			{MIPS_REG_W2, i128},
-			{MIPS_REG_W3, i128},
-			{MIPS_REG_W4, i128},
-			{MIPS_REG_W5, i128},
-			{MIPS_REG_W6, i128},
-			{MIPS_REG_W7, i128},
-			{MIPS_REG_W8, i128},
-			{MIPS_REG_W9, i128},
-			{MIPS_REG_W10, i128},
-			{MIPS_REG_W11, i128},
-			{MIPS_REG_W12, i128},
-			{MIPS_REG_W13, i128},
-			{MIPS_REG_W14, i128},
-			{MIPS_REG_W15, i128},
-			{MIPS_REG_W16, i128},
-			{MIPS_REG_W17, i128},
-			{MIPS_REG_W18, i128},
-			{MIPS_REG_W19, i128},
-			{MIPS_REG_W20, i128},
-			{MIPS_REG_W21, i128},
-			{MIPS_REG_W22, i128},
-			{MIPS_REG_W23, i128},
-			{MIPS_REG_W24, i128},
-			{MIPS_REG_W25, i128},
-			{MIPS_REG_W26, i128},
-			{MIPS_REG_W27, i128},
-			{MIPS_REG_W28, i128},
-			{MIPS_REG_W29, i128},
-			{MIPS_REG_W30, i128},
-			{MIPS_REG_W31, f128},
+		// AFPR128.
+		//
+		{MIPS_REG_W0, i128},
+		{MIPS_REG_W1, i128},
+		{MIPS_REG_W2, i128},
+		{MIPS_REG_W3, i128},
+		{MIPS_REG_W4, i128},
+		{MIPS_REG_W5, i128},
+		{MIPS_REG_W6, i128},
+		{MIPS_REG_W7, i128},
+		{MIPS_REG_W8, i128},
+		{MIPS_REG_W9, i128},
+		{MIPS_REG_W10, i128},
+		{MIPS_REG_W11, i128},
+		{MIPS_REG_W12, i128},
+		{MIPS_REG_W13, i128},
+		{MIPS_REG_W14, i128},
+		{MIPS_REG_W15, i128},
+		{MIPS_REG_W16, i128},
+		{MIPS_REG_W17, i128},
+		{MIPS_REG_W18, i128},
+		{MIPS_REG_W19, i128},
+		{MIPS_REG_W20, i128},
+		{MIPS_REG_W21, i128},
+		{MIPS_REG_W22, i128},
+		{MIPS_REG_W23, i128},
+		{MIPS_REG_W24, i128},
+		{MIPS_REG_W25, i128},
+		{MIPS_REG_W26, i128},
+		{MIPS_REG_W27, i128},
+		{MIPS_REG_W28, i128},
+		{MIPS_REG_W29, i128},
+		{MIPS_REG_W30, i128},
+		{MIPS_REG_W31, f128},
 
-			// Multiply and divide registers.
-			//
-			{MIPS_REG_HI, defTy},
-			{MIPS_REG_LO, defTy},
+		// Multiply and divide registers.
+		//
+		{MIPS_REG_HI, defTy},
+		{MIPS_REG_LO, defTy},
 
-			{MIPS_REG_P0, defTy},
-			{MIPS_REG_P1, defTy},
-			{MIPS_REG_P2, defTy},
+		{MIPS_REG_P0, defTy},
+		{MIPS_REG_P1, defTy},
+		{MIPS_REG_P2, defTy},
 
-			{MIPS_REG_MPL0, defTy},
-			{MIPS_REG_MPL1, defTy},
-			{MIPS_REG_MPL2, defTy},
+		{MIPS_REG_MPL0, defTy},
+		{MIPS_REG_MPL1, defTy},
+		{MIPS_REG_MPL2, defTy},
 	};
 
 	// mips_reg_fpu_double
@@ -318,14 +319,8 @@ void Capstone2LlvmIrTranslatorMips_impl::initializePseudoCallInstructionIDs()
 //==============================================================================
 //
 
-std::map<
-	std::size_t,
-	void (Capstone2LlvmIrTranslatorMips_impl::*)(
-			cs_insn* i,
-			cs_mips*,
-			llvm::IRBuilder<>&)>
-Capstone2LlvmIrTranslatorMips_impl::_i2fm =
-{
+std::map<std::size_t, void (Capstone2LlvmIrTranslatorMips_impl::*)(cs_insn* i, cs_mips*, llvm::IRBuilder<>&)>
+	Capstone2LlvmIrTranslatorMips_impl::_i2fm = {
 		{MIPS_INS_INVALID, nullptr},
 
 		{MIPS_INS_ABSQ_S, nullptr},
@@ -825,7 +820,7 @@ Capstone2LlvmIrTranslatorMips_impl::_i2fm =
 		{MIPS_INS_PREPEND, nullptr},
 		{MIPS_INS_RADDU, nullptr},
 		{MIPS_INS_RDDSP, nullptr},
-		{MIPS_INS_RDHWR, nullptr},
+		{MIPS_INS_RDHWR, &Capstone2LlvmIrTranslatorMips_impl::translateRdhwr},
 		{MIPS_INS_REPLV, nullptr},
 		{MIPS_INS_REPL, nullptr},
 		{MIPS_INS_RINT, nullptr},
@@ -962,7 +957,7 @@ Capstone2LlvmIrTranslatorMips_impl::_i2fm =
 
 		// special instructions
 		{MIPS_INS_JALR_HB, nullptr}, // jump and link with Hazard Barrier
-		{MIPS_INS_JR_HB, nullptr}, // jump register with Hazard Barrier
+		{MIPS_INS_JR_HB, nullptr},   // jump register with Hazard Barrier
 
 		{MIPS_INS_ENDING, nullptr},
 };

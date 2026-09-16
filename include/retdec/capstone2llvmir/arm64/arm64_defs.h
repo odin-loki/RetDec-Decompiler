@@ -19,4 +19,5 @@ enum arm64_reg_cpsr_flags
 	ARM64_REG_PC,
 };
 
+
 #endif /* RETDEC_CAPSTONE2LLVMIR_ARM64_ARM64_DEFS_H */

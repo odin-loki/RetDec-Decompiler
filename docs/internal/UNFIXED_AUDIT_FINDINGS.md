@@ -4240,6 +4240,17 @@ out-of-bounds write, not a missing entry. That is a two-module change with a
 memory-safety edge, and it is written down here rather than attempted between
 two NEON batches.
 
+> **This paragraph was wrong on both counts, and the section further down
+> ("The thread pointer") is the correction.** `Abi::addRegister()` resizes its
+> table for any id past the end, so there is no out-of-bounds write; and
+> `arm64_init.cpp` already creates a global for every AArch64 system register
+> Capstone knows, `tpidr_el0` among them, so ARM64 needed no new id at all --
+> only the instruction that reads one. The `resize(ARM64_REG_ENDING)` line is
+> real and was read correctly; what was not checked was the function that
+> writes into the vector, eleven lines further down the same file. It is left
+> here rather than edited away because a recorded blocker that turns out not
+> to exist is worth being able to find again.
+
 `SVC` (4,206) and `BRK` (339) are opaque by nature, like x86's `SYSCALL`.
 
 `ST1B` (4,620), `LD1B` (2,688), `WHILELO` (588), `PTRUE` (168), `CNTB` and
@@ -4641,3 +4652,148 @@ so the three come together with a register-model change or not at all.
 
 `tbb`/`tbh` (2,066) are table branches: control flow, not data, and a different
 kind of work from anything in this section.
+
+
+## Batch G: the thread pointer
+
+The largest single item PSEUDO-01 found, and it is the same instruction on
+three architectures:
+
+| | reads | occurrences | was |
+| --- | --- | --- | --- |
+| ARM | `mrc p15, 0, Rt, c13, c0, 3` | 11,697 | `__asm_mrc(15, 0, 13, 0, 3)` |
+| ARM64 | `mrs Xd, tpidr_el0` | 12,400 | `__asm_mrs(...)` |
+| MIPS | `rdhwr rt, $29` | 19,389 | `__asm_rdhwr(...)` |
+
+43,486 occurrences between them. All three are how glibc finds thread-local
+storage, and all three were coming out of the decompiler as calls to undefined
+functions -- from which no later pass can recover that the result is a pointer,
+let alone a stable one. Every TLS access in every ARM, ARM64 and MIPS binary
+this decompiler has ever processed ended there.
+
+### The blocker recorded two commits ago was not one
+
+That commit said `TPIDR_EL0` needed a synthetic register id, and that
+`src/bin2llvmir/providers/abi/arm64.cpp`'s
+`_id2regs.resize(ARM64_REG_ENDING, nullptr)` made an id past the end "an
+out-of-bounds write, not a missing entry". Both halves were wrong.
+
+```cpp
+void Abi::addRegister(uint32_t id, llvm::GlobalVariable* reg)
+{
+    if (id >= _id2regs.size())
+    {
+        _id2regs.resize(id+1, nullptr);
+    }
+    _id2regs[id] = reg;
+}
+```
+
+The vector grows. The `resize(ARM64_REG_ENDING)` line is a reservation, not a
+bound, and it is eleven lines above the function that writes into it in the
+same file -- which I did not read.
+
+And this translator has been doing exactly this since before the branch:
+
+```cpp
+enum arm_reg_cpsr_flags { ARM_REG_CPSR_N = ARM_REG_ENDING + 1, ... };
+enum mips_reg_fpu_double { MIPS_REG_FD0 = MIPS_REG_ENDING + 1, ... };
+```
+
+The CPSR flags, ARM's SPSR/CPSR pair and MIPS's sixteen double-precision FP
+pairs are all synthetic ids past `*_REG_ENDING`. The pattern was established,
+working and three files away.
+
+Recording a blocker after reading one line of it, and then acting on that
+record two commits later, is a worse failure than not noticing the instruction
+at all: the note would have kept the work from being done. The wrong paragraph
+is annotated in place rather than deleted.
+
+### ARM64 needed no new register
+
+`arm64_init.cpp` already names and types **every** AArch64 system register
+Capstone knows -- 200-odd of them, `tpidr_el0`, `fpsr`, `fpcr`, `midr_el1` and
+the rest. What was missing was the instruction. `MRS` and `MSR` were `nullptr`
+entries, so a complete system-register file sat there with nothing able to read
+or write it.
+
+`translateSysRegMove` handles both directions and all of them, which is why the
+other eighteen `mrs` per binary translate too. The system-register operand
+cannot go through `loadOp()`: Capstone's operand union aliases `sys` onto
+`reg`, so `ARM64_OP_SYS` values collide numerically with ordinary register ids,
+and `loadOp()` refuses them by design for that exact reason. The id is read out
+of `.sys` and looked up directly; an id with no register falls back to the
+pseudo-assembly call.
+
+### MIPS: the selector that is also the stack pointer
+
+```
+rdhwr $v0, $29 | [0] type=REG reg=4(v0) | [1] type=REG reg=31(sp)
+```
+
+Capstone reports the hardware-register number as an ordinary GPR id, and
+`MIPS_REG_29` **is** `MIPS_REG_SP` -- the same enumerator value. A translation
+that loaded operand 1 would read the stack pointer, produce a plausible-looking
+pointer, and be wrong in every binary. The number is a selector into a
+different register file and is compared as a number here, never loaded. The
+test sets `$sp` to `0x7fff0000` and the thread pointer to `0xdeadbeef` and
+requires the second.
+
+There is no companion test for a different selector: Capstone 5.0.9 does not
+decode one. `$0`, `$1`, `$2` and `$3` all come back undecodable in MIPS32 mode
+and only `$29` produces an instruction, so the selector check is unexercised by
+this suite. Saying so is better than implying otherwise with a test that cannot
+reach it.
+
+### ARM: one encoding out of a coprocessor space
+
+`mrc` is a coprocessor read and coprocessor reads are genuinely opaque -- but
+`p15, 0, Rt, c13, c0, 3` is TPIDRURO, and in the static corpus it is *every*
+`mrc`. The translation checks all six immediates and sends anything else to the
+pseudo-assembly path, which the second test pins with `c0, c0, 0` (MIDR).
+
+That test found something worth keeping: `translatePseudoAsmGeneric()` passes
+every operand as an argument and returns void, so for `mrc` the destination
+register is **read** rather than written. An instruction that produces a value
+was producing nothing and consuming its own destination.
+
+### Falsification
+
+Six mutations, each reverted alone, each rebuilt and run; all six fail:
+
+| mutation | result |
+| --- | --- |
+| ARM `MRC` translates every coprocessor read | 1 test fails |
+| ARM `MRC` reads the stack pointer instead | 1 test fails |
+| ARM64's system-register operand index fixed at 0 | 2 tests fail |
+| ARM64 `MSR` writes the GPR instead of the system register | 1 test fails |
+| MIPS `RDHWR` loads operand 1 (the `$sp` trap) | 1 test fails |
+| the four dispatch entries back to `nullptr` | 5 tests fail |
+
+### Where it leaves the static corpus
+
+```
+             before   after   unmodelled
+arm          0.9931  0.9967    22387 -> 10690
+arm64        0.9900  0.9935    35514 -> 23114
+mips         0.9915  0.9960    36457 -> 17068
+```
+
+The gated dynamic corpus is unchanged -- it contains no `mrc`, `mrs` or
+`rdhwr` at all, which is the same reason it took a static corpus to find any of
+this.
+
+### What is left
+
+```
+arm      uqsub8 1554   tbb 1432   stcl 924   ldcl 924   uadd8 840   sel 840
+arm64    st1b 4620   svc 4206   ld1b 2688   movi 1557   ldg 1302   umaxp 882
+mips     syscall 3953   lwl 3586   lwr 3503   swl 2740   swr 2613   break 294
+powerpc  mfcr 9008   tdi 4968   sc 4292   tdgti 1331   lvx 1134   vperm 1134
+```
+
+PowerPC is now the worst of the five and `mfcr` its largest entry: move the
+whole condition register into a GPR, which needs the CR bit-order question the
+`cror` note above raises. `lvx`, `stvx` and `vperm` are AltiVec and need a
+vector register file. MIPS's `lwl`/`lwr`/`swl`/`swr` and ARM64's SVE and MTE
+are unchanged from the previous lists.

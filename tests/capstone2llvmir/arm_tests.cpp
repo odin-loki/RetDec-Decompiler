@@ -6762,6 +6762,53 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SXTH_sign_extends_a_halfword)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+
+//
+// ARM_INS_MRC
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_MRC_p15_c13_c0_3_is_the_thread_pointer)
+{
+	// 11,697 occurrences in the static corpus and every one of them this exact
+	// encoding: it is how glibc finds thread-local storage on ARM. They were
+	// all becoming __asm_mrc(15, 0, 13, 0, 3).
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_TPIDRURO, 0xdeadbeef},
+	});
+
+	emulate("mrc p15, #0, r0, c13, c0, #3");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_TPIDRURO});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xdeadbeef},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_MRC_any_other_coprocessor_read_stays_opaque)
+{
+	// c0, c0, 0 is MIDR, the main ID register. A coprocessor read really is
+	// opaque; the point of the translation above is that one encoding is not,
+	// so this checks that the six immediates are being looked at rather than
+	// the mnemonic.
+	ALL_MODES;
+
+	emulate("mrc p15, #0, r0, c0, c0, #0");
+
+	// translatePseudoAsmGeneric() passes every operand as an argument and
+	// returns void, so r0 is read rather than written -- which is its own
+	// reason for wanting the encoding above translated properly.
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R0});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_JUST_VALUES_CALLED({
+		{_module.getFunction("__asm_mrc"), {15, 0, 0, 0, 0, 0}},
+	});
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

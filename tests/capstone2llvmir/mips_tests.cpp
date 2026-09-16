@@ -6608,6 +6608,43 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_WSBH_swaps_within_halfwords)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+
+//
+// MIPS_INS_RDHWR
+//
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_RDHWR_29_is_the_thread_pointer_not_the_stack_pointer)
+{
+	// Capstone reports the hardware-register number as an ordinary GPR id, and
+	// MIPS_REG_29 IS MIPS_REG_SP. A translation that loaded operand 1 would
+	// read the stack pointer and look entirely plausible doing it -- so $sp is
+	// set to something distinctive here, and the answer must not be it.
+	//
+	// There is no companion test for a different selector, because Capstone
+	// 5.0.9 does not decode one: $0, $1, $2 and $3 all come back as
+	// undecodable in MIPS32 mode, and only $29 produces an instruction. The
+	// selector check in translateRdhwr() is therefore unexercised by this
+	// suite, and saying so is better than implying otherwise with a test that
+	// cannot reach it.
+	//
+	// 0x7c02e83b = rdhwr $2, $29, little-endian.
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_SP, 0x7fff0000},
+		{MIPS_REG_HWR_ULR, 0xdeadbeef},
+	});
+
+	emulate_bin("3b e8 02 7c");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_HWR_ULR});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xdeadbeef},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

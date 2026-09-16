@@ -133,6 +133,7 @@ class Capstone2LlvmIrTranslatorMips_impl :
 		void translateCvt(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateFpToInt(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateIns(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		void translateRdhwr(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateWsbh(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateDiv(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateDivu(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);

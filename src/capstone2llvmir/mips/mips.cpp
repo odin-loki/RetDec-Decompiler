@@ -602,6 +602,39 @@ void Capstone2LlvmIrTranslatorMips_impl::translateBcondal(cs_insn* i, cs_mips* m
 }
 
 /**
+ * MIPS_INS_RDHWR -- read a hardware register.
+ *
+ * `rdhwr rt, $29` reads hardware register 29, ULR ("user local"), which is the
+ * thread pointer: 19,389 occurrences in the static parity corpus, every one of
+ * them `$29`, and the single largest unmodelled pseudo-assembly call on any of
+ * the five architectures.
+ *
+ * The trap is in how Capstone reports it. The hardware-register number comes
+ * back as an ordinary GPR id, and MIPS_REG_29 is the same id as MIPS_REG_SP --
+ * so a translation that took operand 1 at face value and loaded it would read
+ * the stack pointer and produce something that looks entirely plausible. The
+ * number is a selector into a different register file, and it is compared as a
+ * number here rather than loaded.
+ *
+ * The other hardware registers ($0 CPUNum, $1 SYNCI_Step, $2 CC, $3 CCRes)
+ * stay on the pseudo-assembly path: a cycle counter is not a value this
+ * decompiler can model, and pretending otherwise would be worse than the call.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateRdhwr(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	if (mi->operands[0].type != MIPS_OP_REG || mi->operands[1].type != MIPS_OP_REG
+		|| mi->operands[1].reg != MIPS_REG_29)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	storeOp(mi->operands[0], loadRegister(MIPS_REG_HWR_ULR, irb), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
  * MIPS_INS_INS -- `ins rt, rs, pos, size`
  *
  * The other half of EXT: rt keeps its bits outside the field and takes the

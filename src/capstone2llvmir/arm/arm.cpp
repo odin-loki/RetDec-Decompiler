@@ -1605,6 +1605,41 @@ void Capstone2LlvmIrTranslatorArm_impl::translateRev16(cs_insn* i, cs_arm* ai, l
 	storeOp(ai->operands[0], res, irb);
 }
 
+/**
+ * ARM_INS_MRC -- read a coprocessor register.
+ *
+ * One encoding of this is not a coprocessor access in any useful sense:
+ *
+ *     mrc p15, 0, Rt, c13, c0, 3
+ *
+ * is the thread pointer, TPIDRURO, and it is how glibc finds thread-local
+ * storage on ARM. Every one of the 11,697 `mrc` instructions in the static
+ * parity corpus is that exact encoding, and all of them were becoming
+ * `__asm_mrc(15, 0, 13, 0, 3)` -- a call to an undefined function, from which
+ * no later pass can recover that the result is a pointer, let alone a stable
+ * one.
+ *
+ * Everything else stays on the pseudo-assembly path. A coprocessor read is
+ * genuinely opaque; this one is not, and the difference is six immediates that
+ * Capstone hands over.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateMrc(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	auto imm = [ai](unsigned n) { return ai->operands[n].imm; };
+	bool isThreadPointer = ai->op_count == 6 && ai->operands[0].type == ARM_OP_PIMM && imm(0) == 15
+						&& ai->operands[1].type == ARM_OP_IMM && imm(1) == 0 && ai->operands[2].type == ARM_OP_REG
+						&& ai->operands[3].type == ARM_OP_CIMM && imm(3) == 13 && ai->operands[4].type == ARM_OP_CIMM
+						&& imm(4) == 0 && ai->operands[5].type == ARM_OP_IMM && imm(5) == 3;
+
+	if (!isThreadPointer)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	storeOp(ai->operands[2], loadRegister(ARM_REG_TPIDRURO, irb), irb);
+}
+
 void Capstone2LlvmIrTranslatorArm_impl::translateClz(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, ai, irb);
