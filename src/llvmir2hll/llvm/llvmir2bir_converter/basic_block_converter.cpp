@@ -13,6 +13,8 @@
 #include "retdec/llvmir2hll/ir/bit_and_op_expr.h"
 #include "retdec/llvmir2hll/ir/bit_or_op_expr.h"
 #include "retdec/llvmir2hll/ir/bit_xor_op_expr.h"
+#include "retdec/llvmir2hll/ir/gt_op_expr.h"
+#include "retdec/llvmir2hll/ir/lt_op_expr.h"
 #include "retdec/llvmir2hll/ir/call_expr.h"
 #include "retdec/llvmir2hll/ir/call_stmt.h"
 #include "retdec/llvmir2hll/ir/empty_stmt.h"
@@ -327,9 +329,16 @@ ShPtr<Statement> BasicBlockConverter::visitFenceInst(llvm::FenceInst& inst)
  *   instruction: %var2 = atomicrmw add ptr inttoptr (i64 16412 to ptr), i32 1
  *   seq_cst)
  *
- * Operations this does not lower -- Nand, the four min/max forms, the
- * floating-point ones -- take the same path every other unhandled instruction
- * in this converter takes, which is an empty statement rather than an abort.
+ * The four min/max forms lower now too, as the conditional they are. Before
+ * that they fell to `default`, which leaves `updated` null -- and that does not
+ * emit an empty statement, it emits the READ alone and drops the write. A
+ * half-translated atomic reads as a plain load and says nothing about itself.
+ * ARM64's LDSMAX, LDSMIN, LDUMAX and LDUMIN are 48 of the LSE instruction ids
+ * and would have landed exactly there.
+ *
+ * What still takes that path: Nand (see below), and the floating-point forms,
+ * for which BIR has the operators but no instruction in this project emits
+ * them.
  */
 ShPtr<Statement> BasicBlockConverter::visitAtomicRMWInst(llvm::AtomicRMWInst& inst)
 {
@@ -356,6 +365,29 @@ ShPtr<Statement> BasicBlockConverter::visitAtomicRMWInst(llvm::AtomicRMWInst& in
 	case llvm::AtomicRMWInst::And: updated = BitAndOpExpr::create(oldVal, value); break;
 	case llvm::AtomicRMWInst::Or: updated = BitOrOpExpr::create(oldVal, value); break;
 	case llvm::AtomicRMWInst::Xor: updated = BitXorOpExpr::create(oldVal, value); break;
+	// No Nand: it is ~(a & b), BIR has no bitwise-not expression, and
+	// NotOpExpr is the LOGICAL not -- CHLLWriter emits it as `!`. Expanding
+	// it as `(a & b) ^ -1` needs an all-ones constant of the accessed width,
+	// which is more machinery than an operation no ARM64 or x86 instruction
+	// produces. It stays in `default` below, where it yields the read alone.
+	// The min/max forms have no operator in BIR, so they go in as the
+	// conditional they are. Without these the switch fell to `default` and
+	// left `updated` null, which drops the WRITE and keeps only the read: a
+	// silently half-translated atomic rather than a visible failure. ARM64's
+	// LDSMAX/LDSMIN/LDUMAX/LDUMIN are 48 of the LSE instruction ids and would
+	// have landed there.
+	case llvm::AtomicRMWInst::Max:
+		updated = TernaryOpExpr::create(GtOpExpr::create(oldVal, value, GtOpExpr::Variant::SCmp), oldVal, value);
+		break;
+	case llvm::AtomicRMWInst::UMax:
+		updated = TernaryOpExpr::create(GtOpExpr::create(oldVal, value, GtOpExpr::Variant::UCmp), oldVal, value);
+		break;
+	case llvm::AtomicRMWInst::Min:
+		updated = TernaryOpExpr::create(LtOpExpr::create(oldVal, value, LtOpExpr::Variant::SCmp), oldVal, value);
+		break;
+	case llvm::AtomicRMWInst::UMin:
+		updated = TernaryOpExpr::create(LtOpExpr::create(oldVal, value, LtOpExpr::Variant::UCmp), oldVal, value);
+		break;
 	default: break;
 	}
 

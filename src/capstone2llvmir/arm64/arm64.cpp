@@ -791,6 +791,426 @@ llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::loadRegister(
 	return ret;
 }
 
+//
+//==============================================================================
+// ARMv8.1 LSE atomics.
+//==============================================================================
+//
+// 124 instruction ids -- LDADD, LDCLR, LDEOR, LDSET, LDSMAX, LDSMIN, LDUMAX,
+// LDUMIN, SWP and CAS, each with four ordering suffixes and three widths --
+// and the ARM64 table had an entry for NONE of them, not even nullptr. Not a
+// translator that declined to model them: ids the dispatch could never reach.
+// LDAXR and STLXR, the older load/store-exclusive pair, are implemented.
+//
+// A compiler targeting armv8.1-a or later emits these for every atomic
+// operation, so a binary built that way had an opaque __asm_* call where x86
+// has real IR: x86 translates LOCK XADD and CMPXCHG to atomicrmw and cmpxchg,
+// and llvmir2hll converts both. This is the same path, and nothing about it is
+// new -- only ARM64's use of it.
+//
+// All three operands are uniform across the family, measured with capstone
+// 5.0.9 against encodings from aarch64-linux-gnu-as (keystone 0.9.2 predates
+// LSE and refuses every one of them):
+//
+//     op0 = Rs, the value operand        op1 = Rt, the destination
+//     op2 = [Xn], the memory operand
+//
+// CAS is the exception worth naming: it writes the old value back to **Rs**,
+// not to Rt. Rt is the desired value.
+
+llvm::AtomicOrdering Capstone2LlvmIrTranslatorArm64_impl::lseOrdering(unsigned id)
+{
+	switch (id)
+	{
+	// Acquire.
+	case ARM64_INS_LDADDA:
+	case ARM64_INS_LDADDAB:
+	case ARM64_INS_LDADDAH:
+	case ARM64_INS_LDCLRA:
+	case ARM64_INS_LDCLRAB:
+	case ARM64_INS_LDCLRAH:
+	case ARM64_INS_LDEORA:
+	case ARM64_INS_LDEORAB:
+	case ARM64_INS_LDEORAH:
+	case ARM64_INS_LDSETA:
+	case ARM64_INS_LDSETAB:
+	case ARM64_INS_LDSETAH:
+	case ARM64_INS_LDSMAXA:
+	case ARM64_INS_LDSMAXAB:
+	case ARM64_INS_LDSMAXAH:
+	case ARM64_INS_LDSMINA:
+	case ARM64_INS_LDSMINAB:
+	case ARM64_INS_LDSMINAH:
+	case ARM64_INS_LDUMAXA:
+	case ARM64_INS_LDUMAXAB:
+	case ARM64_INS_LDUMAXAH:
+	case ARM64_INS_LDUMINA:
+	case ARM64_INS_LDUMINAB:
+	case ARM64_INS_LDUMINAH:
+	case ARM64_INS_SWPA:
+	case ARM64_INS_SWPAB:
+	case ARM64_INS_SWPAH:
+	case ARM64_INS_CASA:
+	case ARM64_INS_CASAB:
+	case ARM64_INS_CASAH: return llvm::AtomicOrdering::Acquire;
+	// Release.
+	case ARM64_INS_LDADDL:
+	case ARM64_INS_LDADDLB:
+	case ARM64_INS_LDADDLH:
+	case ARM64_INS_LDCLRL:
+	case ARM64_INS_LDCLRLB:
+	case ARM64_INS_LDCLRLH:
+	case ARM64_INS_LDEORL:
+	case ARM64_INS_LDEORLB:
+	case ARM64_INS_LDEORLH:
+	case ARM64_INS_LDSETL:
+	case ARM64_INS_LDSETLB:
+	case ARM64_INS_LDSETLH:
+	case ARM64_INS_LDSMAXL:
+	case ARM64_INS_LDSMAXLB:
+	case ARM64_INS_LDSMAXLH:
+	case ARM64_INS_LDSMINL:
+	case ARM64_INS_LDSMINLB:
+	case ARM64_INS_LDSMINLH:
+	case ARM64_INS_LDUMAXL:
+	case ARM64_INS_LDUMAXLB:
+	case ARM64_INS_LDUMAXLH:
+	case ARM64_INS_LDUMINL:
+	case ARM64_INS_LDUMINLB:
+	case ARM64_INS_LDUMINLH:
+	case ARM64_INS_SWPL:
+	case ARM64_INS_SWPLB:
+	case ARM64_INS_SWPLH:
+	case ARM64_INS_CASL:
+	case ARM64_INS_CASLB:
+	case ARM64_INS_CASLH: return llvm::AtomicOrdering::Release;
+	// Acquire-release.
+	case ARM64_INS_LDADDAL:
+	case ARM64_INS_LDADDALB:
+	case ARM64_INS_LDADDALH:
+	case ARM64_INS_LDCLRAL:
+	case ARM64_INS_LDCLRALB:
+	case ARM64_INS_LDCLRALH:
+	case ARM64_INS_LDEORAL:
+	case ARM64_INS_LDEORALB:
+	case ARM64_INS_LDEORALH:
+	case ARM64_INS_LDSETAL:
+	case ARM64_INS_LDSETALB:
+	case ARM64_INS_LDSETALH:
+	case ARM64_INS_LDSMAXAL:
+	case ARM64_INS_LDSMAXALB:
+	case ARM64_INS_LDSMAXALH:
+	case ARM64_INS_LDSMINAL:
+	case ARM64_INS_LDSMINALB:
+	case ARM64_INS_LDSMINALH:
+	case ARM64_INS_LDUMAXAL:
+	case ARM64_INS_LDUMAXALB:
+	case ARM64_INS_LDUMAXALH:
+	case ARM64_INS_LDUMINAL:
+	case ARM64_INS_LDUMINALB:
+	case ARM64_INS_LDUMINALH:
+	case ARM64_INS_SWPAL:
+	case ARM64_INS_SWPALB:
+	case ARM64_INS_SWPALH:
+	case ARM64_INS_CASAL:
+	case ARM64_INS_CASALB:
+	case ARM64_INS_CASALH: return llvm::AtomicOrdering::AcquireRelease;
+	default: return llvm::AtomicOrdering::Monotonic;
+	}
+}
+
+/**
+ * The access width, which comes from the mnemonic suffix and NOT from the
+ * register: `ldaddb w1, w2, [x3]` names W registers and touches one byte.
+ */
+llvm::Type* Capstone2LlvmIrTranslatorArm64_impl::lseAccessType(unsigned id, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	switch (id)
+	{
+	case ARM64_INS_LDADDB:
+	case ARM64_INS_LDADDAB:
+	case ARM64_INS_LDADDLB:
+	case ARM64_INS_LDADDALB:
+	case ARM64_INS_LDCLRB:
+	case ARM64_INS_LDCLRAB:
+	case ARM64_INS_LDCLRLB:
+	case ARM64_INS_LDCLRALB:
+	case ARM64_INS_LDEORB:
+	case ARM64_INS_LDEORAB:
+	case ARM64_INS_LDEORLB:
+	case ARM64_INS_LDEORALB:
+	case ARM64_INS_LDSETB:
+	case ARM64_INS_LDSETAB:
+	case ARM64_INS_LDSETLB:
+	case ARM64_INS_LDSETALB:
+	case ARM64_INS_LDSMAXB:
+	case ARM64_INS_LDSMAXAB:
+	case ARM64_INS_LDSMAXLB:
+	case ARM64_INS_LDSMAXALB:
+	case ARM64_INS_LDSMINB:
+	case ARM64_INS_LDSMINAB:
+	case ARM64_INS_LDSMINLB:
+	case ARM64_INS_LDSMINALB:
+	case ARM64_INS_LDUMAXB:
+	case ARM64_INS_LDUMAXAB:
+	case ARM64_INS_LDUMAXLB:
+	case ARM64_INS_LDUMAXALB:
+	case ARM64_INS_LDUMINB:
+	case ARM64_INS_LDUMINAB:
+	case ARM64_INS_LDUMINLB:
+	case ARM64_INS_LDUMINALB:
+	case ARM64_INS_SWPB:
+	case ARM64_INS_SWPAB:
+	case ARM64_INS_SWPLB:
+	case ARM64_INS_SWPALB:
+	case ARM64_INS_CASB:
+	case ARM64_INS_CASAB:
+	case ARM64_INS_CASLB:
+	case ARM64_INS_CASALB: return irb.getInt8Ty();
+	case ARM64_INS_LDADDH:
+	case ARM64_INS_LDADDAH:
+	case ARM64_INS_LDADDLH:
+	case ARM64_INS_LDADDALH:
+	case ARM64_INS_LDCLRH:
+	case ARM64_INS_LDCLRAH:
+	case ARM64_INS_LDCLRLH:
+	case ARM64_INS_LDCLRALH:
+	case ARM64_INS_LDEORH:
+	case ARM64_INS_LDEORAH:
+	case ARM64_INS_LDEORLH:
+	case ARM64_INS_LDEORALH:
+	case ARM64_INS_LDSETH:
+	case ARM64_INS_LDSETAH:
+	case ARM64_INS_LDSETLH:
+	case ARM64_INS_LDSETALH:
+	case ARM64_INS_LDSMAXH:
+	case ARM64_INS_LDSMAXAH:
+	case ARM64_INS_LDSMAXLH:
+	case ARM64_INS_LDSMAXALH:
+	case ARM64_INS_LDSMINH:
+	case ARM64_INS_LDSMINAH:
+	case ARM64_INS_LDSMINLH:
+	case ARM64_INS_LDSMINALH:
+	case ARM64_INS_LDUMAXH:
+	case ARM64_INS_LDUMAXAH:
+	case ARM64_INS_LDUMAXLH:
+	case ARM64_INS_LDUMAXALH:
+	case ARM64_INS_LDUMINH:
+	case ARM64_INS_LDUMINAH:
+	case ARM64_INS_LDUMINLH:
+	case ARM64_INS_LDUMINALH:
+	case ARM64_INS_SWPH:
+	case ARM64_INS_SWPAH:
+	case ARM64_INS_SWPLH:
+	case ARM64_INS_SWPALH:
+	case ARM64_INS_CASH:
+	case ARM64_INS_CASAH:
+	case ARM64_INS_CASLH:
+	case ARM64_INS_CASALH: return irb.getInt16Ty();
+	default: break;
+	}
+	// No suffix: the width is the register's, W or X.
+	if (ai->op_count > 0 && ai->operands[0].type == ARM64_OP_REG && ai->operands[0].reg >= ARM64_REG_X0
+		&& ai->operands[0].reg <= ARM64_REG_X28)
+	{
+		return irb.getInt64Ty();
+	}
+	return irb.getInt32Ty();
+}
+
+/**
+ * ARM64_INS_LDADD and the rest of the read-modify-write family.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateLse(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ai, irb);
+
+	if (ai->operands[2].type != ARM64_OP_MEM)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	llvm::AtomicRMWInst::BinOp op;
+	bool complementValue = false;
+	switch (i->id)
+	{
+	case ARM64_INS_LDADD:
+	case ARM64_INS_LDADDA:
+	case ARM64_INS_LDADDL:
+	case ARM64_INS_LDADDAL:
+	case ARM64_INS_LDADDB:
+	case ARM64_INS_LDADDAB:
+	case ARM64_INS_LDADDLB:
+	case ARM64_INS_LDADDALB:
+	case ARM64_INS_LDADDH:
+	case ARM64_INS_LDADDAH:
+	case ARM64_INS_LDADDLH:
+	case ARM64_INS_LDADDALH: op = llvm::AtomicRMWInst::Add; break;
+	// LDCLR clears the bits SET in the operand, so the operand is
+	// complemented and the operation is an AND. Getting this one wrong by
+	// treating it as a plain AND would clear exactly the wrong bits.
+	case ARM64_INS_LDCLR:
+	case ARM64_INS_LDCLRA:
+	case ARM64_INS_LDCLRL:
+	case ARM64_INS_LDCLRAL:
+	case ARM64_INS_LDCLRB:
+	case ARM64_INS_LDCLRAB:
+	case ARM64_INS_LDCLRLB:
+	case ARM64_INS_LDCLRALB:
+	case ARM64_INS_LDCLRH:
+	case ARM64_INS_LDCLRAH:
+	case ARM64_INS_LDCLRLH:
+	case ARM64_INS_LDCLRALH:
+		op = llvm::AtomicRMWInst::And;
+		complementValue = true;
+		break;
+	case ARM64_INS_LDEOR:
+	case ARM64_INS_LDEORA:
+	case ARM64_INS_LDEORL:
+	case ARM64_INS_LDEORAL:
+	case ARM64_INS_LDEORB:
+	case ARM64_INS_LDEORAB:
+	case ARM64_INS_LDEORLB:
+	case ARM64_INS_LDEORALB:
+	case ARM64_INS_LDEORH:
+	case ARM64_INS_LDEORAH:
+	case ARM64_INS_LDEORLH:
+	case ARM64_INS_LDEORALH: op = llvm::AtomicRMWInst::Xor; break;
+	case ARM64_INS_LDSET:
+	case ARM64_INS_LDSETA:
+	case ARM64_INS_LDSETL:
+	case ARM64_INS_LDSETAL:
+	case ARM64_INS_LDSETB:
+	case ARM64_INS_LDSETAB:
+	case ARM64_INS_LDSETLB:
+	case ARM64_INS_LDSETALB:
+	case ARM64_INS_LDSETH:
+	case ARM64_INS_LDSETAH:
+	case ARM64_INS_LDSETLH:
+	case ARM64_INS_LDSETALH: op = llvm::AtomicRMWInst::Or; break;
+	case ARM64_INS_LDSMAX:
+	case ARM64_INS_LDSMAXA:
+	case ARM64_INS_LDSMAXL:
+	case ARM64_INS_LDSMAXAL:
+	case ARM64_INS_LDSMAXB:
+	case ARM64_INS_LDSMAXAB:
+	case ARM64_INS_LDSMAXLB:
+	case ARM64_INS_LDSMAXALB:
+	case ARM64_INS_LDSMAXH:
+	case ARM64_INS_LDSMAXAH:
+	case ARM64_INS_LDSMAXLH:
+	case ARM64_INS_LDSMAXALH: op = llvm::AtomicRMWInst::Max; break;
+	case ARM64_INS_LDSMIN:
+	case ARM64_INS_LDSMINA:
+	case ARM64_INS_LDSMINL:
+	case ARM64_INS_LDSMINAL:
+	case ARM64_INS_LDSMINB:
+	case ARM64_INS_LDSMINAB:
+	case ARM64_INS_LDSMINLB:
+	case ARM64_INS_LDSMINALB:
+	case ARM64_INS_LDSMINH:
+	case ARM64_INS_LDSMINAH:
+	case ARM64_INS_LDSMINLH:
+	case ARM64_INS_LDSMINALH: op = llvm::AtomicRMWInst::Min; break;
+	case ARM64_INS_LDUMAX:
+	case ARM64_INS_LDUMAXA:
+	case ARM64_INS_LDUMAXL:
+	case ARM64_INS_LDUMAXAL:
+	case ARM64_INS_LDUMAXB:
+	case ARM64_INS_LDUMAXAB:
+	case ARM64_INS_LDUMAXLB:
+	case ARM64_INS_LDUMAXALB:
+	case ARM64_INS_LDUMAXH:
+	case ARM64_INS_LDUMAXAH:
+	case ARM64_INS_LDUMAXLH:
+	case ARM64_INS_LDUMAXALH: op = llvm::AtomicRMWInst::UMax; break;
+	case ARM64_INS_LDUMIN:
+	case ARM64_INS_LDUMINA:
+	case ARM64_INS_LDUMINL:
+	case ARM64_INS_LDUMINAL:
+	case ARM64_INS_LDUMINB:
+	case ARM64_INS_LDUMINAB:
+	case ARM64_INS_LDUMINLB:
+	case ARM64_INS_LDUMINALB:
+	case ARM64_INS_LDUMINH:
+	case ARM64_INS_LDUMINAH:
+	case ARM64_INS_LDUMINLH:
+	case ARM64_INS_LDUMINALH: op = llvm::AtomicRMWInst::UMin; break;
+	case ARM64_INS_SWP:
+	case ARM64_INS_SWPA:
+	case ARM64_INS_SWPL:
+	case ARM64_INS_SWPAL:
+	case ARM64_INS_SWPB:
+	case ARM64_INS_SWPAB:
+	case ARM64_INS_SWPLB:
+	case ARM64_INS_SWPALB:
+	case ARM64_INS_SWPH:
+	case ARM64_INS_SWPAH:
+	case ARM64_INS_SWPLH:
+	case ARM64_INS_SWPALH: op = llvm::AtomicRMWInst::Xchg; break;
+	default: translatePseudoAsmGeneric(i, ai, irb); return;
+	}
+
+	auto* elem = lseAccessType(i->id, ai, irb);
+	auto* addr = generateGetOperandMemAddr(ai->operands[2], irb);
+	auto* ptr = intToPtr(irb, addr, elem);
+
+	auto* val = loadOp(ai->operands[0], irb);
+	val = generateTypeConversion(irb, val, elem, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	if (complementValue)
+	{
+		val = irb.CreateNot(val);
+	}
+
+	auto* old = irb.CreateAtomicRMW(op, ptr, val, llvm::MaybeAlign(), lseOrdering(i->id));
+	attachPointeeType(old, elem);
+
+	storeOp(ai->operands[1], old, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * ARM64_INS_CAS and its ordering and width variants.
+ *
+ * `cas Rs, Rt, [Xn]` compares the memory against Rs, stores Rt if they match,
+ * and writes the ORIGINAL memory value back to Rs. The destination is the
+ * first operand, not the second -- the opposite of every instruction above.
+ *
+ * CASP, the 128-bit register-pair form, is not here: it needs a pair of
+ * registers on each side and LLVM's cmpxchg does not take one.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateCas(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ai, irb);
+
+	if (ai->operands[2].type != ARM64_OP_MEM)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* elem = lseAccessType(i->id, ai, irb);
+	auto* addr = generateGetOperandMemAddr(ai->operands[2], irb);
+	auto* ptr = intToPtr(irb, addr, elem);
+
+	auto* expected = loadOp(ai->operands[0], irb);
+	auto* desired = loadOp(ai->operands[1], irb);
+	expected = generateTypeConversion(irb, expected, elem, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	desired = generateTypeConversion(irb, desired, elem, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+
+	auto ord = lseOrdering(i->id);
+	// cmpxchg's failure ordering may not be stronger than its success
+	// ordering, and may not be Release or AcquireRelease at all.
+	auto failOrd = (ord == llvm::AtomicOrdering::Release || ord == llvm::AtomicOrdering::AcquireRelease)
+					 ? llvm::AtomicOrdering::Monotonic
+					 : ord;
+
+	auto* cx = irb.CreateAtomicCmpXchg(ptr, expected, desired, llvm::MaybeAlign(), ord, failOrd);
+	attachPointeeType(cx, elem);
+
+	storeOp(ai->operands[0], irb.CreateExtractValue(cx, 0), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
 llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::loadOp(
 		cs_arm64_op& op,
 		llvm::IRBuilder<>& irb,

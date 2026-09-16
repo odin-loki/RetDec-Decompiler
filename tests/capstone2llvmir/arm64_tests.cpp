@@ -9209,6 +9209,237 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, WholeVectorOperandIsNotALaneExtracti
 	}
 }
 
+//
+// ARMv8.1 LSE atomics.
+//
+// 120 instruction ids with no entry in the dispatch table at all -- not even
+// nullptr -- so no translator could have reached them. A compiler targeting
+// armv8.1-a or later emits these for every atomic operation. x86 has had the
+// equivalent (LOCK XADD, CMPXCHG) as atomicrmw and cmpxchg all along.
+//
+// Keystone 0.9.2 predates LSE and refuses every one of them
+// (KS_ERR_ASM_INVALIDOPERAND), so these go in as encodings produced by
+// aarch64-linux-gnu-as and checked against capstone 5.0.9.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDADD)
+{
+	setRegisters({
+		{ARM64_REG_W1, 0x10},
+		{ARM64_REG_X3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x22_dw},
+	});
+
+	emulate_bin("62 00 21 b8"); // ldadd w1, w2, [x3]
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM64_REG_W1, ARM64_REG_X3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_W2, 0x22}, // the destination gets the OLD value
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x32_dw}, // and memory gets old + operand
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDADDAL_is_64_bit)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x10},
+		{ARM64_REG_X3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x123456789abcdef0_qw},
+	});
+
+	emulate_bin("62 00 e1 f8"); // ldaddal x1, x2, [x3]
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_X2, 0x123456789abcdef0},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x123456789abcdf00_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDADDB_touches_one_byte)
+{
+	// The width comes from the mnemonic suffix, not the register: this names
+	// W registers and must touch exactly one byte.
+	//
+	// Checked in the IR, not by emulating. The interpreter's memory is a map
+	// from address to value, not a byte array, so a one-byte and a four-byte
+	// access at the same address are indistinguishable to it -- an emulated
+	// version of this test passed with the width forced to 32 bits, and
+	// finding that out is the only reason it is written this way.
+	auto* f = translate(utils::hexStringToBytes("62 00 21 38")); // ldaddb
+	ASSERT_NE(nullptr, f);
+
+	llvm::AtomicRMWInst* rmw = nullptr;
+	for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+	{
+		if (auto* a = dyn_cast<llvm::AtomicRMWInst>(&*it))
+		{
+			rmw = a;
+			break;
+		}
+	}
+	ASSERT_NE(nullptr, rmw);
+	EXPECT_EQ(8u, rmw->getValOperand()->getType()->getIntegerBitWidth());
+	EXPECT_EQ(llvm::AtomicRMWInst::Add, rmw->getOperation());
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDCLR_clears_the_bits_that_are_set)
+{
+	// LDCLR clears the bits SET in the operand, so it is an AND with the
+	// COMPLEMENT. Treating it as a plain AND clears exactly the wrong bits,
+	// and with these values the two answers differ: 0xff & ~0x0f is 0xf0,
+	// 0xff & 0x0f is 0x0f.
+	setRegisters({
+		{ARM64_REG_W1, 0x0f},
+		{ARM64_REG_X3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0xff_dw},
+	});
+
+	emulate_bin("62 10 21 b8"); // ldclr w1, w2, [x3]
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_W2, 0xff},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0xf0_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDEOR)
+{
+	setRegisters({
+		{ARM64_REG_W1, 0x0f},
+		{ARM64_REG_X3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0xff_dw},
+	});
+
+	emulate_bin("62 20 21 b8"); // ldeor w1, w2, [x3]
+
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0xf0_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDSET)
+{
+	setRegisters({
+		{ARM64_REG_W1, 0x0f},
+		{ARM64_REG_X3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0xf0_dw},
+	});
+
+	emulate_bin("62 30 21 b8"); // ldset w1, w2, [x3]
+
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0xff_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SWP)
+{
+	setRegisters({
+		{ARM64_REG_W1, 0xaa},
+		{ARM64_REG_X3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0xbb_dw},
+	});
+
+	emulate_bin("62 80 21 b8"); // swp w1, w2, [x3]
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_W2, 0xbb},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0xaa_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CAS_writes_the_old_value_to_Rs)
+{
+	// CAS is the one that does not follow the family: the old value goes back
+	// to Rs, the FIRST operand, and Rt is the desired value. Writing it to Rt
+	// like every other instruction here would be wrong, and these values make
+	// that visible -- w1 must become 0xaa, not stay 0xaa by luck.
+	setRegisters({
+		{ARM64_REG_W1, 0xaa},
+		{ARM64_REG_W2, 0xcc},
+		{ARM64_REG_X3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0xaa_dw},
+	});
+
+	emulate_bin("62 7c a1 88"); // cas w1, w2, [x3]
+
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0xcc_dw}, // matched, so the desired value is stored
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CAS_does_not_store_when_it_does_not_match)
+{
+	setRegisters({
+		{ARM64_REG_W1, 0xaa},
+		{ARM64_REG_W2, 0xcc},
+		{ARM64_REG_X3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0xbb_dw},
+	});
+
+	emulate_bin("62 7c a1 88"); // cas w1, w2, [x3]
+
+	// The comparison fails, so memory keeps 0xbb and w1 takes it.
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_W1, 0xbb},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDSMAX_is_not_a_pseudo_call)
+{
+	// The signed-max form. Its downstream converter had no case for
+	// AtomicRMWInst::Max and dropped the write; that is fixed in llvmir2hll,
+	// and this pins that the translator emits the atomic rather than an
+	// opaque call.
+	setRegisters({
+		{ARM64_REG_W1, 0x05},
+		{ARM64_REG_X3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x09_dw},
+	});
+
+	emulate_bin("62 40 21 b8"); // ldsmax w1, w2, [x3]
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM64_REG_W2, 0x09},
+	});
+	// 9 is already the larger, so memory is written back unchanged.
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

@@ -3738,12 +3738,35 @@ void LlvmIrEmulator::visitShuffleVectorInst(llvm::ShuffleVectorInst& I)
 }
 
 /**
- * This is not really getting the value. It just sets ExtractValueInst's result
- * to uninitialized GenericValue.
+ * Extracts the element the indices name.
+ *
+ * This used to set the result to a default-constructed GenericValue and
+ * return -- so every extractvalue produced uninitialised memory that looked
+ * like a value. Nothing complained, because the only aggregates this
+ * interpreter saw came from cmpxchg, which it could not execute either.
  */
 void LlvmIrEmulator::visitExtractValueInst(llvm::ExtractValueInst& I)
 {
+	LocalExecutionContext& ec = _ecStack.back();
+	GenericValue agg = _globalEc.getOperandValue(I.getAggregateOperand(), ec);
+
+	GenericValue* cur = &agg;
+	bool ok = true;
+	for (unsigned idx: I.getIndices())
+	{
+		if (idx >= cur->AggregateVal.size())
+		{
+			ok = false;
+			break;
+		}
+		cur = &cur->AggregateVal[idx];
+	}
+
 	GenericValue dest;
+	if (ok)
+	{
+		dest = *cur;
+	}
 	_globalEc.setValue(&I, dest);
 }
 
@@ -3803,31 +3826,105 @@ void LlvmIrEmulator::visitInstruction(llvm::Instruction& I)
 		return;
 	}
 
+	// atomicrmw. Only Xchg used to be executed and everything else threw --
+	// so a translator that emitted `atomicrmw add` could not be tested at all,
+	// which is the state x86's LOCK XADD and ARM64's whole LSE family were in.
+	// There is no concurrency to model here: the interpreter is single
+	// threaded, so the atomic part is the read-modify-write happening at all.
 	if (auto* rmw = dyn_cast<AtomicRMWInst>(&I))
 	{
-		if (rmw->getOperation() != AtomicRMWInst::Xchg)
+		LocalExecutionContext& ec = _ecStack.back();
+		GenericValue val = _globalEc.getOperandValue(rmw->getValOperand(), ec);
+
+		auto* gv = dyn_cast<GlobalVariable>(rmw->getPointerOperand());
+		uint64_t ptrVal = 0;
+		GenericValue old;
+		if (gv)
+		{
+			old = _globalEc.getGlobal(gv);
+		}
+		else
+		{
+			GenericValue dst = _globalEc.getOperandValue(rmw->getPointerOperand(), ec);
+			ptrVal = reinterpret_cast<uint64_t>(reinterpret_cast<GenericValue*>(GVTOP(dst)));
+			old = _globalEc.getMemory(ptrVal);
+		}
+
+		GenericValue next;
+		bool handled = true;
+		switch (rmw->getOperation())
+		{
+		case AtomicRMWInst::Xchg: next = val; break;
+		case AtomicRMWInst::Add: next.IntVal = old.IntVal + val.IntVal; break;
+		case AtomicRMWInst::Sub: next.IntVal = old.IntVal - val.IntVal; break;
+		case AtomicRMWInst::And: next.IntVal = old.IntVal & val.IntVal; break;
+		case AtomicRMWInst::Or: next.IntVal = old.IntVal | val.IntVal; break;
+		case AtomicRMWInst::Xor: next.IntVal = old.IntVal ^ val.IntVal; break;
+		case AtomicRMWInst::Nand: next.IntVal = ~(old.IntVal & val.IntVal); break;
+		case AtomicRMWInst::Max: next.IntVal = old.IntVal.sgt(val.IntVal) ? old.IntVal : val.IntVal; break;
+		case AtomicRMWInst::Min: next.IntVal = old.IntVal.slt(val.IntVal) ? old.IntVal : val.IntVal; break;
+		case AtomicRMWInst::UMax: next.IntVal = old.IntVal.ugt(val.IntVal) ? old.IntVal : val.IntVal; break;
+		case AtomicRMWInst::UMin: next.IntVal = old.IntVal.ult(val.IntVal) ? old.IntVal : val.IntVal; break;
+		default: handled = false; break;
+		}
+		if (!handled)
 		{
 			throw LlvmIrEmulatorError(
 					"Unhandled instruction visited: " + llvmObjToString(&I));
 		}
 
-		LocalExecutionContext& ec = _ecStack.back();
-		GenericValue val = _globalEc.getOperandValue(rmw->getValOperand(), ec);
-		GenericValue old;
-		if (auto* gv = dyn_cast<GlobalVariable>(rmw->getPointerOperand()))
+		if (gv)
 		{
-			old = _globalEc.getGlobal(gv);
-			_globalEc.setGlobal(gv, val);
+			_globalEc.setGlobal(gv, next);
 		}
 		else
 		{
-			GenericValue dst = _globalEc.getOperandValue(rmw->getPointerOperand(), ec);
-			GenericValue* ptr = reinterpret_cast<GenericValue*>(GVTOP(dst));
-			uint64_t ptrVal = reinterpret_cast<uint64_t>(ptr);
-			old = _globalEc.getMemory(ptrVal);
-			_globalEc.setMemory(ptrVal, val);
+			_globalEc.setMemory(ptrVal, next);
 		}
 		_globalEc.setValue(&I, old);
+		return;
+	}
+
+	// cmpxchg, which used to fall to the throw below. Its result is the
+	// { old value, did it match } pair, and extractvalue reads it out.
+	if (auto* cx = dyn_cast<AtomicCmpXchgInst>(&I))
+	{
+		LocalExecutionContext& ec = _ecStack.back();
+		GenericValue cmp = _globalEc.getOperandValue(cx->getCompareOperand(), ec);
+		GenericValue val = _globalEc.getOperandValue(cx->getNewValOperand(), ec);
+
+		auto* gv = dyn_cast<GlobalVariable>(cx->getPointerOperand());
+		uint64_t ptrVal = 0;
+		GenericValue old;
+		if (gv)
+		{
+			old = _globalEc.getGlobal(gv);
+		}
+		else
+		{
+			GenericValue dst = _globalEc.getOperandValue(cx->getPointerOperand(), ec);
+			ptrVal = reinterpret_cast<uint64_t>(reinterpret_cast<GenericValue*>(GVTOP(dst)));
+			old = _globalEc.getMemory(ptrVal);
+		}
+
+		bool matched = old.IntVal.getBitWidth() == cmp.IntVal.getBitWidth() && old.IntVal == cmp.IntVal;
+		if (matched)
+		{
+			if (gv)
+			{
+				_globalEc.setGlobal(gv, val);
+			}
+			else
+			{
+				_globalEc.setMemory(ptrVal, val);
+			}
+		}
+
+		GenericValue dest;
+		dest.AggregateVal.resize(2);
+		dest.AggregateVal[0] = old;
+		dest.AggregateVal[1].IntVal = APInt(1, matched);
+		_globalEc.setValue(&I, dest);
 		return;
 	}
 
