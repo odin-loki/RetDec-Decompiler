@@ -62,6 +62,30 @@ class Capstone2LlvmIrTranslatorMipsTests :
 			}
 		}
 
+		// An integer result of trunc/round/ceil/floor lives in an FP
+		// register as a bit pattern, and comparing it as a float is useless:
+		// `bitcast i32 3 to float` is 4.2e-45, which EXPECT_NEAR(0.001) cannot
+		// tell from zero or from 4. These read the bits back.
+		uint32_t fpBits32(uint32_t reg)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			float f = _emulator->getGlobalVariableValue(gv).FloatVal;
+			uint32_t b = 0;
+			std::memcpy(&b, &f, sizeof(b));
+			return b;
+		}
+
+		uint64_t fpBits64(uint32_t reg)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			double d = _emulator->getGlobalVariableValue(gv).DoubleVal;
+			uint64_t b = 0;
+			std::memcpy(&b, &d, sizeof(b));
+			return b;
+		}
+
 		// These can/should be used at the beginning of each test case to
 		// determine which modes should the case be run for.
 		// They are macros because we want them to cause return in the current
@@ -4419,40 +4443,48 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ROUND_w_s_32)
 {
 	SKIP_MODE_64;
 
+	// To nearest EVEN, which is what MIPS specifies and what
+	// llvm.roundeven does. llvm.round -- half away from zero -- answers 3.
+
 	setRegisters({
-		{MIPS_REG_F2, 3.14_f32},
+		{MIPS_REG_F2, 2.5_f32},
 	});
 
 	emulate("round.w.s $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
-	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
-	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
+	// An LLVM intrinsic, not a pseudo-asm call. tests/llvmir-emul
+	// computes it and still records the call, so the assertion is
+	// which function was called rather than that none was.
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_round.w.s"), {3.14_f32}},
+		{_module.getFunction("llvm.roundeven.f32"), {2.5_f32}},
 	});
+	EXPECT_EQ(2u, fpBits32(MIPS_REG_F0));
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ROUND_w_d_32)
 {
 	SKIP_MODE_64;
 
+	// The negative half of the same question.
+
 	setRegisters({
-		{MIPS_REG_FD2, 3.14_f64},
+		{MIPS_REG_FD2, -2.5},
 	});
 
 	emulate("round.w.d $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_FD2});
-	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_FD0, ANY},
-	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
+	// An LLVM intrinsic, not a pseudo-asm call. tests/llvmir-emul
+	// computes it and still records the call, so the assertion is
+	// which function was called rather than that none was.
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_round.w.d"), {3.14_f64}},
+		{_module.getFunction("llvm.roundeven.f64"), {-2.5}},
 	});
+	// -2, not -3.
+	EXPECT_EQ(0xfffffffeu, fpBits32(MIPS_REG_F0));
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ROUND_w_s_64)
@@ -4520,19 +4552,20 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ROUND_l_d_64)
 	ONLY_MODE_64;
 
 	setRegisters({
-		{MIPS_REG_F2, 3.14_f64},
+		{MIPS_REG_F2, 2.5_f64},
 	});
 
 	emulate("round.l.d $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
-	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
-	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
+	// An LLVM intrinsic, not a pseudo-asm call. tests/llvmir-emul
+	// computes it and still records the call, so the assertion is
+	// which function was called rather than that none was.
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_round.l.d"), {3.14_f64}},
+		{_module.getFunction("llvm.roundeven.f64"), {2.5_f64}},
 	});
+	EXPECT_EQ(2ull, fpBits64(MIPS_REG_F0));
 }
 
 //
@@ -4835,20 +4868,23 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FLOOR_w_s_32)
 {
 	SKIP_MODE_64;
 
+	// Down. Ceil answers 4.
+
 	setRegisters({
-		{MIPS_REG_F2, 3.14_f32},
+		{MIPS_REG_F2, 3.9_f32},
 	});
 
 	emulate("floor.w.s $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
-	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
-	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
+	// An LLVM intrinsic, not a pseudo-asm call. tests/llvmir-emul
+	// computes it and still records the call, so the assertion is
+	// which function was called rather than that none was.
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_floor.w.s"), {3.14_f32}},
+		{_module.getFunction("llvm.floor.f32"), {3.9_f32}},
 	});
+	EXPECT_EQ(3u, fpBits32(MIPS_REG_F0));
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FLOOR_w_d_32)
@@ -4856,19 +4892,21 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FLOOR_w_d_32)
 	SKIP_MODE_64;
 
 	setRegisters({
-		{MIPS_REG_FD2, 3.14_f64},
+		{MIPS_REG_FD2, -3.1},
 	});
 
 	emulate("floor.w.d $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_FD2});
-	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_FD0, ANY},
-	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
+	// An LLVM intrinsic, not a pseudo-asm call. tests/llvmir-emul
+	// computes it and still records the call, so the assertion is
+	// which function was called rather than that none was.
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_floor.w.d"), {3.14_f64}},
+		{_module.getFunction("llvm.floor.f64"), {-3.1}},
 	});
+	// -4, not -3: down, away from zero.
+	EXPECT_EQ(0xfffffffcu, fpBits32(MIPS_REG_F0));
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FLOOR_w_s_64)
@@ -4936,19 +4974,20 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_FLOOR_l_d_64)
 	ONLY_MODE_64;
 
 	setRegisters({
-		{MIPS_REG_F2, 3.14_f64},
+		{MIPS_REG_F2, 3.9_f64},
 	});
 
 	emulate("floor.l.d $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
-	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
-	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
+	// An LLVM intrinsic, not a pseudo-asm call. tests/llvmir-emul
+	// computes it and still records the call, so the assertion is
+	// which function was called rather than that none was.
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_floor.l.d"), {3.14_f64}},
+		{_module.getFunction("llvm.floor.f64"), {3.9_f64}},
 	});
+	EXPECT_EQ(3ull, fpBits64(MIPS_REG_F0));
 }
 
 //
@@ -4959,40 +4998,48 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CEIL_w_s_32)
 {
 	SKIP_MODE_64;
 
+	// Up. Truncation answers 3.
+
 	setRegisters({
-		{MIPS_REG_F2, 3.14_f32},
+		{MIPS_REG_F2, 3.1_f32},
 	});
 
 	emulate("ceil.w.s $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
-	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
-	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
+	// An LLVM intrinsic, not a pseudo-asm call. tests/llvmir-emul
+	// computes it and still records the call, so the assertion is
+	// which function was called rather than that none was.
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_ceil.w.s"), {3.14_f32}},
+		{_module.getFunction("llvm.ceil.f32"), {3.1_f32}},
 	});
+	EXPECT_EQ(4u, fpBits32(MIPS_REG_F0));
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CEIL_w_d_32)
 {
 	SKIP_MODE_64;
 
+	// Up is toward zero for a negative, which is where ceil and floor
+	// swap places.
+
 	setRegisters({
-		{MIPS_REG_FD2, 3.14_f64},
+		{MIPS_REG_FD2, -3.1},
 	});
 
 	emulate("ceil.w.d $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_FD2});
-	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_FD0, ANY},
-	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
+	// An LLVM intrinsic, not a pseudo-asm call. tests/llvmir-emul
+	// computes it and still records the call, so the assertion is
+	// which function was called rather than that none was.
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_ceil.w.d"), {3.14_f64}},
+		{_module.getFunction("llvm.ceil.f64"), {-3.1}},
 	});
+	// -3, not -4.
+	EXPECT_EQ(0xfffffffdu, fpBits32(MIPS_REG_F0));
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CEIL_w_s_64)
@@ -5060,19 +5107,20 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CEIL_l_d_64)
 	ONLY_MODE_64;
 
 	setRegisters({
-		{MIPS_REG_F2, 3.14_f64},
+		{MIPS_REG_F2, 3.1_f64},
 	});
 
 	emulate("ceil.l.d $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
-	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
-	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
+	// An LLVM intrinsic, not a pseudo-asm call. tests/llvmir-emul
+	// computes it and still records the call, so the assertion is
+	// which function was called rather than that none was.
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_ceil.l.d"), {3.14_f64}},
+		{_module.getFunction("llvm.ceil.f64"), {3.1_f64}},
 	});
+	EXPECT_EQ(4ull, fpBits64(MIPS_REG_F0));
 }
 
 //
@@ -5083,40 +5131,40 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TRUNC_w_s_32)
 {
 	SKIP_MODE_64;
 
+	// Toward zero. A round-to-nearest reading answers 4.
+
 	setRegisters({
-		{MIPS_REG_F2, 3.14_f32},
+		{MIPS_REG_F2, 3.9_f32},
 	});
 
 	emulate("trunc.w.s $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
-	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
-	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_trunc.w.s"), {3.14_f32}},
-	});
+	EXPECT_NO_VALUE_CALLED();
+	EXPECT_EQ(3u, fpBits32(MIPS_REG_F0));
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TRUNC_w_d_32)
 {
 	SKIP_MODE_64;
 
+	// The destination of a `.w` form is the 32-bit register f0, NOT the
+	// fd0 that loadRegister()/storeRegister() map every FP operand of a
+	// double-format instruction to. Reading fd0 here would find nothing.
+	// Toward zero on a negative: floor would answer -4.
+
 	setRegisters({
-		{MIPS_REG_FD2, 3.14_f64},
+		{MIPS_REG_FD2, -3.9},
 	});
 
 	emulate("trunc.w.d $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_FD2});
-	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_FD0, ANY},
-	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_trunc.w.d"), {3.14_f64}},
-	});
+	EXPECT_NO_VALUE_CALLED();
+	// -3 as a 32-bit two's complement pattern.
+	EXPECT_EQ(0xfffffffdu, fpBits32(MIPS_REG_F0));
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TRUNC_w_s_64)
@@ -5183,20 +5231,19 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_TRUNC_l_d_64)
 {
 	ONLY_MODE_64;
 
+	// The one 64-bit form whose source and destination widths both match
+	// what MIPS64's register file provides.
+
 	setRegisters({
-		{MIPS_REG_F2, 3.14_f64},
+		{MIPS_REG_F2, 3.9_f64},
 	});
 
 	emulate("trunc.l.d $f0, $f2");
 
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_F2});
-	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_F0, ANY},
-	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_trunc.l.d"), {3.14_f64}},
-	});
+	EXPECT_NO_VALUE_CALLED();
+	EXPECT_EQ(3ull, fpBits64(MIPS_REG_F0));
 }
 
 //

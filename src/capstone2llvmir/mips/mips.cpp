@@ -602,6 +602,114 @@ void Capstone2LlvmIrTranslatorMips_impl::translateBcondal(cs_insn* i, cs_mips* m
 }
 
 /**
+ * MIPS_INS_TRUNC, MIPS_INS_ROUND, MIPS_INS_CEIL, MIPS_INS_FLOOR
+ *
+ * `trunc.w.d $f0, $f2` and its eleven siblings: convert a float or a double to
+ * a 32- or 64-bit integer under a fixed rounding mode, and leave the integer
+ * in an FP register as a bit pattern.
+ *
+ * All four ids were dispatched to translatePseudoAsmOp0FncOp1(), which emits
+ * `__asm_trunc.w.d(double)` and stores the *double* it returns. Two things
+ * were wrong with that and only one of them was the missing semantics: the
+ * destination of a `.w` form holds a 32-bit integer and belongs in the
+ * single-precision register, and loadRegister()/storeRegister() map every FP
+ * operand of a double-format instruction to the FDn file, so the result was
+ * landing in `fd0` where the next instruction would read `f0`.
+ *
+ * That is why the store here bypasses storeRegister() and goes through
+ * getRegister() directly, the way translateCvt()'s `cvt.s.d` branch already
+ * does: the automatic single-to-double mapping is right for the source and
+ * wrong for the destination, and there is no per-operand way to ask for it.
+ *
+ * Rounding mode is the whole difference between the four, and it is in the
+ * mnemonic: TRUNC is toward zero, which is what fptosi already does; ROUND is
+ * to nearest **even**, not away from zero, so it is llvm.roundeven and not
+ * llvm.round.
+ *
+ * Anything whose register widths do not match what the format asks for falls
+ * back to the pseudo-asm call rather than being given an answer. That is not a
+ * corner: on MIPS64 every FP register is 64 bits, so a `.s` source is not the
+ * float the instruction reads and a `.w` destination is not the 32-bit slot it
+ * writes. Six of the twelve forms translate (the four `.w.s`/`.w.d` pairs on
+ * MIPS32, and `.l.d` on MIPS64) and six do not, and the ones that do not say
+ * so in the output rather than answering at the wrong width.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateFpToInt(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	std::string mnem = i->mnemonic;
+	// <op>.<result width>.<source format>, e.g. trunc.w.d
+	unsigned dstBits = mnem.find(".w.") != std::string::npos ? 32 : (mnem.find(".l.") != std::string::npos ? 64 : 0);
+	unsigned srcBits = mnem.size() >= 2 && mnem.compare(mnem.size() - 2, 2, ".s") == 0
+						 ? 32
+						 : (mnem.size() >= 2 && mnem.compare(mnem.size() - 2, 2, ".d") == 0 ? 64 : 0);
+
+	if (mi->operands[0].type != MIPS_OP_REG
+		|| !(MIPS_REG_F0 <= mi->operands[0].reg && mi->operands[0].reg <= MIPS_REG_F31)
+		|| mi->operands[1].type != MIPS_OP_REG
+		|| !(MIPS_REG_F0 <= mi->operands[1].reg && mi->operands[1].reg <= MIPS_REG_F31))
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmOp0FncOp1(i, mi, irb);
+		return;
+	}
+	if (dstBits == 0 || srcBits == 0)
+	{
+		translatePseudoAsmOp0FncOp1(i, mi, irb);
+		return;
+	}
+
+	// The source goes through loadRegister(), which maps FP operands of a
+	// double-format instruction to the FDn file. Whether that produced a value
+	// of the width the mnemonic asks for is the question, so the loaded type is
+	// what gets checked -- not the register id, which is the same either way.
+	llvm::Value* src = loadRegister(mi->operands[1].reg, irb);
+	if (src == nullptr || !src->getType()->isFloatingPointTy() || src->getType()->getPrimitiveSizeInBits() != srcBits)
+	{
+		translatePseudoAsmOp0FncOp1(i, mi, irb);
+		return;
+	}
+
+	// The destination is decided by the RESULT width, not by the instruction's
+	// format group, which is why this does not go through storeRegister():
+	// that applies the same single-to-double mapping to the destination, and
+	// `trunc.w.d $f0, $f2` would land a 32-bit integer in fd0 where the next
+	// instruction reads f0.
+	uint32_t dr = mi->operands[0].reg;
+	llvm::Type* dstTy = getRegisterType(dr);
+	if (dstTy == nullptr || dstTy->getPrimitiveSizeInBits() != dstBits)
+	{
+		uint32_t alt = singlePrecisionToDoublePrecisionFpRegister(dr);
+		llvm::Type* altTy = getRegister(alt) ? getRegisterType(alt) : nullptr;
+		if (altTy != nullptr && altTy->getPrimitiveSizeInBits() == dstBits)
+		{
+			dr = alt;
+			dstTy = altTy;
+		}
+	}
+	auto* dstReg = getRegister(dr);
+	if (dstReg == nullptr || dstTy == nullptr || dstTy->getPrimitiveSizeInBits() != dstBits)
+	{
+		translatePseudoAsmOp0FncOp1(i, mi, irb);
+		return;
+	}
+
+	switch (i->id)
+	{
+	case MIPS_INS_TRUNC: break; // fptosi already truncates toward zero
+	case MIPS_INS_ROUND: src = irb.CreateUnaryIntrinsic(llvm::Intrinsic::roundeven, src); break;
+	case MIPS_INS_CEIL: src = irb.CreateUnaryIntrinsic(llvm::Intrinsic::ceil, src); break;
+	case MIPS_INS_FLOOR: src = irb.CreateUnaryIntrinsic(llvm::Intrinsic::floor, src); break;
+	default: throw GenericError("translateFpToInt(): unhandled instruction id");
+	}
+
+	llvm::Value* iv = irb.CreateFPToSI(src, irb.getIntNTy(dstBits));
+	auto* st = irb.CreateStore(irb.CreateBitCast(iv, dstTy), dstReg);
+	attachPointeeType(st, dstReg->getValueType());
+}
+
+/**
  * MIPS_INS_CVT
  */
 void Capstone2LlvmIrTranslatorMips_impl::translateCvt(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)

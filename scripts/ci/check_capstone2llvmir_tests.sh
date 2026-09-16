@@ -51,7 +51,7 @@ readonly MIN_X86=2217
 readonly MIN_ARM=596
 readonly MIN_ARM64=498
 readonly MIN_MIPS=604
-readonly MIN_POWERPC=882
+readonly MIN_POWERPC=890
 readonly MIN_EMUL=25
 
 # The revisions cmake/deps.cmake pins. Kept in step with it by CI: if they

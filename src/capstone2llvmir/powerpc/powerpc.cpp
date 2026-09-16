@@ -665,16 +665,22 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateClrlwi(cs_insn* i, cs_ppc* 
 	EXPECT_IS_SET(i, pi, irb, opCountTemp)
 	if(pi->op_count == 3)
 	{
+		// `clrlwi rA, rS, n` is `rlwinm rA, rS, 0, n, 31`: clear the top n bits
+		// of the WORD. Shifting left and back at the register's width clears
+		// the top n bits of the register, which on 64-bit PowerPC keeps the
+		// upper 32 bits the instruction is defined to drop -- `clrlwi r0, r1,
+		// 16` with r1 = 0x12345678 answered 0x12345678 instead of 0x5678.
 		std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-		op2 = irb.CreateAnd(op2, llvm::ConstantInt::get(op2->getType(), 31));
-		op1 = irb.CreateShl(op1, op2);
-		op1 = irb.CreateLShr(op1, op2);
-		storeOp(pi->operands[0], op1, irb);
-		storeCr0(irb, pi, op1);
+		auto* i32 = irb.getInt32Ty();
+		llvm::Value* w = irb.CreateZExtOrTrunc(op1, i32);
+		llvm::Value* n = irb.CreateAnd(irb.CreateZExtOrTrunc(op2, i32), llvm::ConstantInt::get(i32, 31));
+		llvm::Value* res = irb.CreateLShr(irb.CreateShl(w, n), n);
+		storeOp(pi->operands[0], res, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		storeCr0(irb, pi, res);
 	}
 	else
 	{
-		translateRotateComplex5op(i, pi, irb);
+		translateRotateWordMask(i, pi, irb);
 	}
 }
 
@@ -1972,6 +1978,120 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateOris(cs_insn* i, cs_ppc* pi
 /**
  * PPC_INS_RLWINM, PPC_INS_RLWIMI, PPC_INS_RLWNM
  */
+/**
+ * The 32-bit mask PowerPC's rotate-and-mask instructions take, built from a
+ * begin and an end bit.
+ *
+ * PowerPC numbers bits from the MOST significant end: bit 0 is 0x80000000.
+ * Getting that backwards produces a mask that is the bit-reverse of the right
+ * one, which for the common `rlwinm rA, rS, n, 0, 31-n` (a plain shift) is a
+ * plausible-looking wrong answer rather than an obvious one.
+ *
+ * MB > ME is not an error. It means the mask wraps: bits MB..31 and 0..ME,
+ * which is how a rotate-and-mask extracts a field that straddles the word
+ * boundary after rotation.
+ */
+static uint32_t ppcRotateMask(unsigned mb, unsigned me)
+{
+	uint32_t m = 0;
+	if (mb <= me)
+	{
+		for (unsigned b = mb; b <= me; ++b)
+		{
+			m |= 1u << (31 - b);
+		}
+	}
+	else
+	{
+		for (unsigned b = mb; b <= 31; ++b)
+		{
+			m |= 1u << (31 - b);
+		}
+		for (unsigned b = 0; b <= me; ++b)
+		{
+			m |= 1u << (31 - b);
+		}
+	}
+	return m;
+}
+
+/**
+ * PPC_INS_RLWINM, PPC_INS_RLWIMI, PPC_INS_RLWNM -- rotate left word, then mask.
+ *
+ *     rlwinm rA, rS, SH, MB, ME    rA = ROTL32(rS, SH) & MASK(MB, ME)
+ *     rlwnm  rA, rS, rB, MB, ME    the same, rotating by rB[27:31]
+ *     rlwimi rA, rS, SH, MB, ME    rA = (ROTL32(rS,SH) & MASK) | (rA & ~MASK)
+ *
+ * These were dispatched to translateRotateComplex5op(), which emits an
+ * __asm_rlwinm() call and stores its return value. That is 42 of the 8,736
+ * instructions in the PowerPC half of the parity corpus -- 0.48%, and the most
+ * frequent unmodelled pseudo-assembly call on any of the five architectures.
+ * COV-01 scored them covered, because the dispatch table has a function
+ * pointer for them; PSEUDO-01 is the measurement that says a function pointer
+ * and a translation are not the same thing.
+ *
+ * There is nothing here that needs a pseudo-asm call. Every operand but rS is
+ * an immediate (or, for RLWNM, a register read), the rotate is 32-bit, and
+ * the mask is a compile-time constant. GCC emits rlwinm for every shift and
+ * every bitfield extract on 32-bit PowerPC, which is why it is this frequent:
+ * `rlwinm r3, r3, 0, 16, 31` is `r3 = (uint16_t) r3`, and it was coming out of
+ * the decompiler as a call to an undefined function.
+ *
+ * The word is the low 32 bits of the source and the result is written
+ * zero-extended, which matters on 64-bit PowerPC and is a no-op on 32-bit.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateWordMask(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_NARY(i, pi, irb, 5);
+
+	if (pi->operands[3].type != PPC_OP_IMM || pi->operands[4].type != PPC_OP_IMM
+		|| (i->id != PPC_INS_RLWNM && pi->operands[2].type != PPC_OP_IMM))
+	{
+		throwUnexpectedOperands(i);
+		translateRotateComplex5op(i, pi, irb);
+		return;
+	}
+
+	auto* i32 = irb.getInt32Ty();
+	llvm::Value* w = irb.CreateZExtOrTrunc(loadOp(pi->operands[1], irb), i32);
+
+	unsigned mb = static_cast<unsigned>(pi->operands[3].imm) & 31;
+	unsigned me = static_cast<unsigned>(pi->operands[4].imm) & 31;
+	auto* mask = llvm::ConstantInt::get(i32, ppcRotateMask(mb, me));
+
+	llvm::Value* rot = nullptr;
+	if (i->id == PPC_INS_RLWNM)
+	{
+		// The rotate amount is dynamic, so the "rotate by zero" case has to be
+		// selected rather than decided: `lshr i32 %w, 32` is poison.
+		llvm::Value* sh =
+			irb.CreateAnd(irb.CreateZExtOrTrunc(loadOp(pi->operands[2], irb), i32), llvm::ConstantInt::get(i32, 31));
+		llvm::Value* spun =
+			irb.CreateOr(irb.CreateShl(w, sh), irb.CreateLShr(w, irb.CreateSub(llvm::ConstantInt::get(i32, 32), sh)));
+		rot = irb.CreateSelect(irb.CreateICmpEQ(sh, llvm::ConstantInt::get(i32, 0)), w, spun);
+	}
+	else
+	{
+		unsigned sh = static_cast<unsigned>(pi->operands[2].imm) & 31;
+		rot = sh == 0 ? w
+					  : irb.CreateOr(
+							irb.CreateShl(w, llvm::ConstantInt::get(i32, sh)),
+							irb.CreateLShr(w, llvm::ConstantInt::get(i32, 32 - sh)));
+	}
+
+	llvm::Value* res = irb.CreateAnd(rot, mask);
+	if (i->id == PPC_INS_RLWIMI)
+	{
+		// The insert form keeps the destination's bits outside the mask, which
+		// is the only reason it reads rA at all.
+		llvm::Value* old = irb.CreateZExtOrTrunc(loadOp(pi->operands[0], irb), i32);
+		res = irb.CreateOr(res, irb.CreateAnd(old, irb.CreateNot(mask)));
+	}
+
+	storeOp(pi->operands[0], res, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	storeCr0(irb, pi, res);
+}
+
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateComplex5op(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_NARY(i, pi, irb, 5);
@@ -1999,23 +2119,38 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateRotateComplex5op(cs_insn* i
 /**
  * PPC_INS_ROTLW, PPC_INS_ROTLWI
  */
+/**
+ * PPC_INS_ROTLWI, PPC_INS_ROTLW -- rotate left WORD.
+ *
+ * `rotlwi rA, rS, n` is `rlwinm rA, rS, n, 0, 31`: a rotate of the low 32 bits,
+ * written back zero-extended. This rotated the whole register, which is right
+ * on 32-bit PowerPC and wrong on 64-bit, where `rotlwi r0, r1, 8` with
+ * r1 = 0x12345678 answered 0x1234567800 instead of 0x34567812. Capstone only
+ * reports the extended mnemonic in 64-bit mode -- in 32-bit mode the same
+ * assembly comes back as a five-operand `rlwinm` -- so the one mode that
+ * reached this code was the one it was wrong for.
+ *
+ * The bits shifted out of bit 31 have to come back at bit 0. At 64 bits they
+ * moved into bit 32 instead and stayed there, which is not a rotate of
+ * anything.
+ */
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateRotlw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-	unsigned op0BitW = llvm::cast<llvm::IntegerType>(op1->getType())->getBitWidth();
-	unsigned maskC = op0BitW == 64 ? 0x3f : 0x1f;
-	auto* mask = llvm::ConstantInt::get(op2->getType(), maskC);
-	op2 = irb.CreateAnd(op2, mask);
+	auto* i32 = irb.getInt32Ty();
+	llvm::Value* w = irb.CreateZExtOrTrunc(op1, i32);
+	llvm::Value* n = irb.CreateAnd(irb.CreateZExtOrTrunc(op2, i32), llvm::ConstantInt::get(i32, 31));
 
-	auto* shl = irb.CreateShl(op1, op2);
-	auto* sub = irb.CreateSub(llvm::ConstantInt::get(op2->getType(), op0BitW), op2);
-	auto* srl = irb.CreateLShr(op1, sub);
-	auto* orr = irb.CreateOr(srl, shl);
+	// `lshr i32 %w, 32` is poison, and n is not always a constant here -- the
+	// register form exists -- so the zero case is selected rather than decided.
+	llvm::Value* spun =
+		irb.CreateOr(irb.CreateShl(w, n), irb.CreateLShr(w, irb.CreateSub(llvm::ConstantInt::get(i32, 32), n)));
+	llvm::Value* res = irb.CreateSelect(irb.CreateICmpEQ(n, llvm::ConstantInt::get(i32, 0)), w, spun);
 
-	storeOp(pi->operands[0], orr, irb);
-	storeCr0(irb, pi, orr);
+	storeOp(pi->operands[0], res, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	storeCr0(irb, pi, res);
 }
 
 /**
@@ -2055,26 +2190,42 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateShiftRight(cs_insn* i, cs_p
 /**
  * PPC_INS_SLWI
  */
+/**
+ * PPC_INS_SLWI -- shift left WORD immediate, `rlwinm rA, rS, n, 0, 31-n`.
+ *
+ * Same correction as ROTLWI and CLRLWI: the bits that leave bit 31 are dropped,
+ * not carried into bit 32, and the result is zero-extended.
+ */
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateSlwi(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb);
-	auto* shl = irb.CreateShl(op1, op2);
-	storeOp(pi->operands[0], shl, irb);
+	auto* i32 = irb.getInt32Ty();
+	llvm::Value* n = irb.CreateAnd(irb.CreateZExtOrTrunc(op2, i32), llvm::ConstantInt::get(i32, 31));
+	auto* shl = irb.CreateShl(irb.CreateZExtOrTrunc(op1, i32), n);
+	storeOp(pi->operands[0], shl, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	storeCr0(irb, pi, shl);
 }
 
 /**
  * PPC_INS_SRWI
  */
+/**
+ * PPC_INS_SRWI -- shift right WORD immediate, `rlwinm rA, rS, 32-n, n, 31`.
+ *
+ * The upper 32 bits of a 64-bit rS do not participate; shifting the whole
+ * register brought them down into the result.
+ */
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateSrwi(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb);
-	auto* shr = irb.CreateLShr(op1, op2);
-	storeOp(pi->operands[0], shr, irb);
+	auto* i32 = irb.getInt32Ty();
+	llvm::Value* n = irb.CreateAnd(irb.CreateZExtOrTrunc(op2, i32), llvm::ConstantInt::get(i32, 31));
+	auto* shr = irb.CreateLShr(irb.CreateZExtOrTrunc(op1, i32), n);
+	storeOp(pi->operands[0], shr, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 	storeCr0(irb, pi, shr);
 }
 

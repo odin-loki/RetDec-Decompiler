@@ -114,6 +114,14 @@ CHECKS=(
 	# runs here is its self-test -- which is more than ran before, since
 	# nothing anywhere invoked this script at all.
 	"standalone instruction coverage (self-test):::${PY} scripts/ci/check_instruction_coverage.py --self-test --capstone-prefix \"${C2L_DEPS_DIR:-/tmp/c2l-deps}/capstone-install\""
+	# PSEUDO-01 asks the translator rather than the table: which instructions
+	# come out as a pseudo-assembly call. Its self-test builds the probe, which
+	# means the translator sources have to compile and link against system LLVM
+	# without the test suite -- worth knowing on its own -- and then checks that
+	# the probe answers "not pseudo" for nop and "__asm_cpuid" for cpuid. The
+	# measurement over a corpus runs in standalone-check, which has the cross
+	# toolchains.
+	"standalone pseudo-asm probe (self-test):::bash scripts/ci/check_pseudo_asm.sh --self-test --capstone-prefix \"${C2L_DEPS_DIR:-/tmp/c2l-deps}/capstone-install\""
 	# Needs only LLVM's headers, so it belongs here rather than behind a build.
 	"standalone IR2HLL opcode coverage:::${PY} scripts/ci/check_ir2hll_opcodes.py"
 	"standalone IR2HLL opcodes (self-test):::${PY} scripts/ci/check_ir2hll_opcodes.py --self-test"

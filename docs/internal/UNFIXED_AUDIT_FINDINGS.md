@@ -4273,3 +4273,234 @@ the decompiler's **output** rather than function pointers in its table.
 ARCH-01 already runs the decompiler over this corpus, so the measurement is
 available; it is the next thing to build, and until it exists the ARM64 rate
 should be read as "has a function for", not "translates".
+
+
+## PSEUDO-01: asking the translator instead of the table
+
+COV-01 counts an instruction as covered when the dispatch table has a function
+pointer for it. The last commit recorded that this is an upper bound and named
+the mechanism -- `ifVectorGeneratePseudo()` returning early -- without
+measuring it. This measures it.
+
+`scripts/ci/pseudo_asm_probe.cpp` translates each instruction of a binary into
+a throwaway function and asks `isPseudoAsmFunctionCall()`, the translator's own
+predicate, whether anything it produced was a pseudo-assembly call. A fresh
+function per instruction, because a translation may create basic blocks of its
+own and counting within one block would miss a call placed in a new one.
+
+Not every `__asm_*` call is a gap. The product declares two of them as intended
+models -- a `rep stosq` modelled as `__asm_rep_stosq_memset` is a better answer
+than a loop, and `__asm_hlt` is the honest model of a halt -- and that list is
+read out of `isAsmIntrinsicName()` in `src/retdec/semantic_recovery_export.cpp`
+rather than kept in the gate, for the reason IR2HLL-01 reads `InstVisitor.h`
+rather than hard-coding its delegation chain. A gate with its own copy of the
+product's list is a gate that will eventually excuse something the product no
+longer excuses.
+
+### What it found on the corpus COV-01 calls perfect
+
+```
+COV-01    x86_64 0.9931   arm 1.0000   arm64 1.0000   mips 1.0000   powerpc 1.0000
+PSEUDO-01 x86_64 1.0000   arm 1.0000   arm64 0.9999   mips 0.9984   powerpc 0.9945
+```
+
+Both directions are informative.
+
+x86-64 goes **up**: its 45 pseudo-assembly calls are the 42 `__asm_hlt` in
+alignment padding and 3 `__asm_rep_stosq_memset`, and both are intended.
+COV-01's 0.9931 counted the `HLT` against it.
+
+Three of the four architectures COV-01 scores at 1.0000 go **down**:
+
+```
+arm64    __asm_movi                      1
+mips     __asm_trunc.w.d                12   __asm_trunc.w.s 1   __asm_swc2 1
+powerpc  __asm_rlwinm                   42   __asm_cror      6
+```
+
+Every one of those instructions has a function pointer in `_i2fm`. The function
+emits a call.
+
+### PowerPC's rotate-and-mask family
+
+`rlwinm` at 42 occurrences was the most frequent unmodelled pseudo-assembly
+call on any of the five architectures, and on the static corpus it is 28,341
+with `rlwimi` at 7,795 and the record form `rlwinm.` at 2,206 -- 0.83% of
+PowerPC. GCC emits `rlwinm` for every shift and every bitfield extract on
+32-bit PowerPC: `rlwinm r3, r3, 0, 16, 31` is `(uint16_t) r3`, and it was
+coming out of the decompiler as a call to an undefined function.
+
+There is nothing in it that needs one:
+
+```
+rlwinm rA, rS, SH, MB, ME    rA = ROTL32(rS, SH) & MASK(MB, ME)
+rlwnm  rA, rS, rB, MB, ME    the same, rotating by rB[27:31]
+rlwimi rA, rS, SH, MB, ME    rA = (ROTL32(rS,SH) & MASK) | (rA & ~MASK)
+```
+
+Two things in that mask are easy to get backwards and neither fails loudly.
+**PowerPC numbers bits from the most significant end**: bit 0 is `0x80000000`,
+so `MB=0, ME=15` is the *high* half. And **`MB > ME` is not an error** -- the
+mask wraps, covering bits MB..31 and 0..ME, which is how a rotate-and-mask
+extracts a field that straddles the word boundary after rotation. A translation
+that treated the wrap as empty would answer zero.
+
+### The same word, at the wrong width
+
+Fixing `rlwinm` made the PowerPC tests fail in `CS_MODE_64` only, which turned
+out to be a second defect underneath. Capstone reports the extended mnemonics
+in 64-bit mode and the raw five-operand form in 32-bit mode, so in 64-bit mode
+`rlwinm 0, 1, 8, 0, 31` arrives as `rotlwi` and `rlwinm 0, 1, 0, 16, 31` as
+`clrlwi` -- and the translators for those operate at the **register** width:
+
+| instruction | means | did | with `r1 = 0x12345678` |
+| --- | --- | --- | --- |
+| `rotlwi r0, r1, 8` | rotate the low 32 bits | rotated all 64 | `0x1234567800`, not `0x34567812` |
+| `clrlwi r0, r1, 16` | clear the top 16 of the word | cleared the top 16 of the register | `0x12345678`, not `0x5678` |
+| `slwi` | shift left, drop past bit 31 | carried into bit 32 | |
+| `srwi` | shift the word right | brought the upper 32 bits down | |
+
+The bits leaving bit 31 have to come back at bit 0. At 64 bits they moved into
+bit 32 and stayed there, which is not a rotate of anything. All four are word
+operations now, written back zero-extended, which is what the ISA says and a
+no-op on 32-bit PowerPC.
+
+This was reachable only in 64-bit mode, and 64-bit mode was the only mode that
+reached this code.
+
+### MIPS: the rounding conversions, and a destination in the wrong file
+
+`trunc`, `round`, `ceil` and `floor` were all dispatched to
+`translatePseudoAsmOp0FncOp1()`. Two things were wrong and only one of them was
+the missing semantics:
+
+```
+%0 = load double, ptr @fd2
+%1 = call double @__asm_trunc.w.d(double %0)
+store double %1, ptr @fd0        <-- the next instruction reads f0
+```
+
+The destination of a `.w` form holds a 32-bit integer and belongs in the
+single-precision register. `loadRegister()`/`storeRegister()` map **every** FP
+operand of a double-format instruction to the FDn file, which is right for the
+source and wrong for the destination, and there is no per-operand way to ask
+for it -- so the store goes through `getRegister()` directly, the way
+`translateCvt()`'s `cvt.s.d` branch already does.
+
+Rounding mode is the whole difference between the four and it is in the
+mnemonic. MIPS `round` is to nearest **even**, so it is `llvm.roundeven` and
+not `llvm.round`, which is half away from zero; the test uses 2.5 and -2.5,
+the only inputs on which the two disagree.
+
+Six of the twelve forms translate -- the four `.w.s`/`.w.d` pairs on MIPS32 and
+`.l.d` on MIPS64 -- and six do not. On MIPS64 every FP register is 64 bits, so
+a `.s` source is not the float the instruction reads and a `.w` destination is
+not the 32-bit slot it writes; those fall back to the pseudo-assembly call
+rather than answering at the wrong width. The rule is the loaded value's own
+type against the width the mnemonic asks for, not the register id, which is the
+same either way.
+
+### Twenty-seven tests were asserting the gap
+
+`tests/capstone2llvmir` had 24 MIPS and 3 PowerPC tests of this shape:
+
+```cpp
+EXPECT_JUST_VALUES_CALLED({
+    {_module.getFunction("__asm_rlwinm"), {0x1234, 0x4, 0x2, 0x5}},
+});
+```
+
+They pinned the pseudo-assembly call as if it were the specification. Fifteen
+of them are rewritten to assert semantics; the twelve that remain are the
+MIPS64 forms that still fall back, and they now say so. The old `rlwinm` test
+also used operands for which the answer is zero, which is the weakest possible
+assertion for a mask.
+
+### Falsification
+
+Ten mutations, each reverted alone, each rebuilt and run:
+
+| mutation | result |
+| --- | --- |
+| PowerPC's mask numbered from the bottom | 2 tests fail |
+| the wrapping mask treated as empty | 1 test fails |
+| `rlwimi` drops the destination merge | 1 test fails |
+| `rotlwi` back to register width | 2 tests fail |
+| `clrlwi` back to register width | 1 test fails |
+| the MIPS result stored through `storeRegister()` | 4 tests fail |
+| MIPS `round` as half-away-from-zero | 3 tests fail |
+| the probe never reports a pseudo-asm call | self-test fails, gate exits 1 |
+| the intended-model list parses to nothing | self-test fails, gate exits 1 |
+| the rotate family back to `translateRotateComplex5op` | **see below** |
+
+That last one is the argument for the gate existing, run as an experiment
+rather than asserted:
+
+```
+-- COV-01 (reads the dispatch table) --
+arch         decoded   skipped     zeros    covered     rate  uncovered-kinds
+powerpc         8904         0         0       8904   1.0000  0
+
+-- PSEUDO-01 (asks the translator) --
+arch       translated  modelled  unmodelled     rate  kinds
+powerpc          8736         0          48   0.9945  2
+    rlwinm             __asm_rlwinm                         42   0.48%
+```
+
+The dispatch table still has a function pointer either way, so COV-01 reports a
+perfect score for a translator that has stopped translating 42 instructions.
+
+### Where it leaves the parity corpus
+
+```
+arch       translated  modelled  unmodelled     rate
+x86_64           5871        45           0   1.0000
+arm              7837         0           0   1.0000
+arm64            6733         0           1   0.9999
+mips             8520         0           1   0.9999
+powerpc          8736         0           6   0.9993
+```
+
+PSEUDO-01 goes into `standalone-check.yml` unfloored on its first run, for the
+reason the static COV-01 step did, and into `check_push_gates.sh` as its
+self-test -- which also proves the translator sources compile and link against
+system LLVM without the test suite attached.
+
+### The three that are left, and the backlog behind them
+
+`__asm_swc2` (MIPS, 1) is a coprocessor-2 store: opaque by construction, like
+`SVC` and `SYSCALL`.
+
+`__asm_cror` (PowerPC, 6) is the condition-register bit family, and
+`translateCrModifTernary()` emits its pseudo-assembly call **on purpose**,
+taking all eleven CR fields back out of the return value. Translating it means
+mapping a CR bit index to this translator's split model -- `CR0LT`/`GT`/`EQ`/`UN`
+as four `i1`s, `CR1`..`CR7` as `i4` each -- and the bit order within those `i4`s
+is not written down anywhere I could check. Getting it wrong is a silent wrong
+branch, so it is recorded rather than guessed.
+
+`__asm_movi` (ARM64, 1 here, 1,557 on the static corpus) is the vector
+immediate. Capstone reports the raw `imm8` and a shift, not the expanded lane
+value: `movi v0.2d, #0xff` comes back as `imm=0xff` where the architectural
+value is `0xffffffffffffffff`. The family has about ten immediate encodings
+(8-bit, 16- and 32-bit shifted, 32-bit MSL, the 64-bit byte-mask, and the
+`fmov`-like form), and one wrong expansion is a wrong constant in the output.
+Recorded.
+
+The static corpus, measured with the same probe **before** the fixes in this
+commit, is the real backlog, and it is not what COV-01's uncovered lists say:
+
+```
+arch       translated  unmodelled     rate    top entries
+x86_64       5163159      213590   0.9586    vpcmpeqb 20010, vpmovmskb 19778, vmovdqu 13518
+arm          3240326       26650   0.9918    mrc 11697, ubfx 1898, uqsub8 1554, tbb 1432
+arm64        3559505       35514   0.9900    mrs 12400, st1b 4620, svc 4206, movi 1557
+mips         4292792       45329   0.9894    rdhwr 19389, ext 4389, lwl 3586, lwr 3503, ins 2580
+powerpc      4637012       79193   0.9829    rlwinm 28341, mfcr 9008, rlwimi 7795, tdi 4968
+```
+
+`ubfx` and `sxth` on ARM, `ext`, `ins` and `wsbh` on MIPS, and `mfcr` on
+PowerPC are ordinary instructions with no register-model obstacle at all. They
+are the next batch. `mrc` (ARM) and `rdhwr` (MIPS) are the TLS-pointer reads
+that `mrs` is on ARM64, and they need the same synthetic register the previous
+commit recorded.

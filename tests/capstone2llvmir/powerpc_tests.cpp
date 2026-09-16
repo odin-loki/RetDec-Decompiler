@@ -2146,20 +2146,80 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLWINM)
 {
 	ALL_MODES;
 
+	// A plain rotate: the full mask keeps every bit.
 	setRegisters({
-		{PPC_REG_R1, 0x1234},
+		{PPC_REG_R1, 0x12345678},
 	});
 
-	emulate("rlwinm 0, 1, 0x4, 0x2, 0x5");
+	emulate("rlwinm 0, 1, 8, 0, 31");
 
 	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
 	EXPECT_JUST_REGISTERS_STORED({
-		{PPC_REG_R0, ANY},
+		{PPC_REG_R0, 0x34567812},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_rlwinm"), {0x1234, 0x4, 0x2, 0x5}},
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLWINM_extracts_a_field)
+{
+	// `rlwinm rA, rS, 0, 16, 31` is how GCC spells `(uint16_t) rS`, and it is
+	// why this instruction is the most frequent unmodelled pseudo-asm call on
+	// any of the five architectures.
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x12345678},
 	});
+
+	emulate("rlwinm 0, 1, 0, 16, 31");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x5678},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLWINM_bit_zero_is_the_top_bit)
+{
+	// PowerPC numbers bits from the most significant end, so 0..15 is the
+	// HIGH half. Read the other way round this answers 0x5678.
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x12345678},
+	});
+
+	emulate("rlwinm 0, 1, 0, 0, 15");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x12340000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLWINM_mask_wraps_when_MB_exceeds_ME)
+{
+	// MB > ME is not an error: the mask is bits 24..31 and 0..7, which is
+	// 0xff0000ff. An implementation that treated MB > ME as empty answers 0.
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x12345678},
+	});
+
+	emulate("rlwinm 0, 1, 0, 24, 7");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x12000078},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -2168,22 +2228,22 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLWINM)
 
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLWIMI)
 {
+	// The insert form is the only one that reads its destination: the bits
+	// outside the mask are kept. Dropping that reads as 0x5678.
 	ALL_MODES;
 
 	setRegisters({
-		{PPC_REG_R1, 0x1234},
+		{PPC_REG_R0, 0xaabbccdd},
+		{PPC_REG_R1, 0x12345678},
 	});
 
-	emulate("rlwimi 0, 1, 0x4, 0x2, 0x5");
+	emulate("rlwimi 0, 1, 0, 16, 31");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
 	EXPECT_JUST_REGISTERS_STORED({
-		{PPC_REG_R0, ANY},
+		{PPC_REG_R0, 0xaabb5678},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_rlwimi"), {0x1234, 0x4, 0x2, 0x5}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -2192,23 +2252,42 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLWIMI)
 
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLWNM)
 {
+	// Same as RLWINM but the rotate amount comes from a register.
 	ALL_MODES;
 
 	setRegisters({
-		{PPC_REG_R1, 0x1234},
-		{PPC_REG_R2, 0x4},
+		{PPC_REG_R1, 0x12345678},
+		{PPC_REG_R2, 8},
 	});
 
-	emulate("rlwnm 0, 1, 2, 0x2, 0x5");
+	emulate("rlwnm 0, 1, 2, 0, 31");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{PPC_REG_R0, ANY},
+		{PPC_REG_R0, 0x34567812},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_rlwnm"), {0x1234, 0x4, 0x2, 0x5}},
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_RLWNM_by_zero_is_the_source)
+{
+	// The one rotate amount for which the complementary shift would be by the
+	// full operand width, which is poison, and which cannot be decided in C++
+	// here because the amount is in a register.
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x12345678},
+		{PPC_REG_R2, 0},
 	});
+
+	emulate("rlwnm 0, 1, 2, 0, 31");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x12345678},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //

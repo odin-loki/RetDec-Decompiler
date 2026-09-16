@@ -211,6 +211,41 @@ jobs:
           C2L_DEPS_DIR="$PWD/.c2l-deps" \
             bash scripts/ci/check_capstone2llvmir_tests.sh --self-test
 
+      # PSEUDO-01. COV-01 asks whether the dispatch table has a function
+      # pointer for an instruction id; this asks the translator whether what it
+      # produced was a pseudo-assembly call. The two are not the same question,
+      # and over the 210-binary parity corpus COV-01 reads 1.0000 for ARM,
+      # ARM64, MIPS and PowerPC while three of those four emit unmodelled
+      # __asm_* calls:
+      #
+      #   arm64    __asm_movi                      1
+      #   mips     __asm_trunc.w.d                12
+      #   powerpc  __asm_rlwinm                   42
+      #
+      # It lives in this job because it wants the same three things C2L-01
+      # does -- system LLVM 20, the pinned Capstone, and the translator sources
+      # compiled against them -- and it needs a corpus on top, which is the
+      # cross toolchains below and about a minute of linking.
+      #
+      # MEASUREMENT ONLY on its first run, no --arch-min, for the reason the
+      # static COV-01 step went in unfloored: a floor measured on a workstation
+      # and asserted about a runner is the mistake that let a local gate read
+      # LLVM 20 while CI read LLVM 23. Floored next commit at what CI reports.
+      - name: Install cross toolchains for the parity corpus
+        run: |
+          sudo apt-get install -y -qq \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf \
+            gcc-mips-linux-gnu gcc-powerpc-linux-gnu \
+            libc6-dev-arm64-cross libc6-dev-armhf-cross \
+            libc6-dev-mips-cross libc6-dev-powerpc-cross
+
+      - name: PSEUDO-01 pseudo-assembly calls per architecture
+        run: |
+          bash scripts/build_multiarch_corpus.sh --out /tmp/ma-corpus
+          bash scripts/ci/check_pseudo_asm.sh --self-test \
+            --capstone-prefix "$PWD/.c2l-deps/capstone-install" \
+            --corpus /tmp/ma-corpus --top 10
+
   sanitizers:
     name: asan+ubsan
     runs-on: ubuntu-latest
