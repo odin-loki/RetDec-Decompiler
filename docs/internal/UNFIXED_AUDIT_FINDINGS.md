@@ -6131,3 +6131,171 @@ powerpc  0.9960     traps, AltiVec, cache maintenance
 ```
 
 C2L-01 floor: X86 2229 → 2262. 5,091 tests.
+
+## Batch R — the opmask registers were already there, the instructions were not
+
+### The recorded blocker was wrong, again
+
+Batch Q ended by writing that AVX-512 needed "a **mask register** — `k0`..`k7`,
+a register file this translator does not have." That is false. `x86_init.cpp`
+has carried `{X86_REG_K0, i64}` through `{X86_REG_K7, i64}` in the type map,
+and `x86.cpp` has carried eight `createRegister(X86_REG_K0..K7, _regLt)` calls
+under the comment `// Opmask registers (AVX-512).`, for as long as this branch
+has existed.
+
+This is the second time in three batches that a blocker I recorded turned out
+to be a thing that was already present. Batch P made the same correction about
+the YMM globals. The shape is identical both times: **the note says "missing"
+where the truth is "present but unreached"**, because the evidence for it was
+a pseudo-assembly call in the output rather than a reading of the register
+file. A `__asm_kmovd` call proves that nothing translated `kmovd`. It does not
+say why, and I twice guessed the most expensive possible reason.
+
+What was actually missing was every instruction. All 41 opmask ids present in
+the dispatch table were `nullptr`; ten more that capstone emits — `KADDB/W/D/Q`,
+`KTESTB/W/D/Q`, `KUNPCKWD`, `KUNPCKDQ` — were **not in the table at all**,
+which reaches the same pseudo-assembly path by a different route and is
+therefore invisible to any check that reads the table for `nullptr`.
+
+### R-1: the width is in the mnemonic, and capstone will not tell you it
+
+Capstone reports `size = 2` for every opmask operand, for every instruction:
+
+```
+kmovq k1, rax   ops=2: REG(k1,sz=2) REG(rax,sz=8)
+kmovb k1, eax   ops=2: REG(k1,sz=2) REG(eax,sz=4)
+kmovd k1, k2    ops=2: REG(k1,sz=2) REG(k2,sz=2)
+```
+
+`KMOVB`, `KMOVW`, `KMOVD` and `KMOVQ` are four different instructions that
+differ only in how many bits they move, and the operand carries the same `2`
+for all four. A translator that took the width from the operand — which is
+what every other x86 translator in this file does, correctly — would make them
+one instruction. `maskWidth()` therefore switches on the id, across all 51.
+
+The tests pin this down per width rather than trusting one: `kmovb k1, eax`
+with `eax = 0x12345678` must answer `0x78`, where `KMOVW` answers `0x5678` and
+`KMOVD` `0x12345678`.
+
+### R-2: these instructions zero the destination's upper bits
+
+`k0`..`k7` are i64 globals. Every opmask instruction writes its own width and
+**clears everything above it** — `kmovw k1, k2` clears `k1[63:16]`. That is the
+opposite of the sub-register rule the rest of x86 uses, where a narrow write
+merges into the parent, and it is the rule a reasonable translator would reach
+for by habit.
+
+Every test that writes a mask register pre-loads it with `0xffffffffffffffff`,
+so a merging implementation answers `0xffffffffffff1234` where the correct
+answer is `0x1234`. That one mutation fails ten tests.
+
+### R-3: `KANDN` and `KUNPCK` both depend on which operand is `VEX.vvvv`
+
+Intel writes these three-operand forms as `DEST, SRC1, SRC2` where SRC1 is the
+`VEX.vvvv` operand — the **second** one listed — and SRC2 is the r/m operand.
+For the commutative ones (`KAND`, `KOR`, `KXOR`, `KXNOR`, `KADD`) the order
+does not matter and no test could detect it. For two of them it does:
+
+* `KANDN k1, k2, k3` is `~k2 & k3`, not `k2 & ~k3`. With `k2 = 0xf0f0` and
+  `k3 = 0xff00` the two readings answer `0x0f00` and `0x00f0`.
+* `KUNPCKBW k1, k2, k3` puts **k2 in the high byte**. With `k2 = 0xaa` and
+  `k3 = 0x55` the two readings answer `0xaa55` and `0x55aa`. A test using the
+  same value for both operands would pass either way.
+
+### R-4: `KSHIFTL`/`KSHIFTR` do not mask the count
+
+The count is the full `imm8` and is not taken modulo the width: `kshiftlw` by
+16 or more produces **zero**, where every general-purpose x86 shift would mask
+the count to `count & 15` and shift by nothing. Two consequences:
+
+* An implementation that reused the GPR shift path would answer `0x1234` for
+  `kshiftlw k1, k2, 16` instead of `0`.
+* An LLVM `shl i16 %x, 16` is **poison**, so the zero has to be produced
+  rather than computed. The count is a literal, so this is a decision at
+  translation time and not a `select`.
+
+### R-5: `KORTEST` compares against all-ones *at the instruction's width*
+
+`KORTEST` sets ZF when the OR is zero and CF when it is all ones — `0xff` for
+`KORTESTB`, `0xffff` for `KORTESTW`, `0xffffffffffffffff` for `KORTESTQ`. The
+test uses `k1 = 0x10f0, k2 = 0x000f`, where the byte-wide OR is `0xff` (CF set)
+and the word-wide OR is `0x10ff` (CF clear), so a width-confused implementation
+is visible in the flag rather than only in the value.
+
+`KTEST` is the pair that is easiest to get subtly wrong, because ZF and CF come
+from two different expressions over the same two operands:
+
+```
+ZF = ((SRC2 & SRC1) == 0)
+CF = ((SRC2 & ~SRC1) == 0)
+```
+
+Three mistakes are available — swapping the flags, negating the second operand
+instead of the first, and both — and a single test case cannot separate them.
+Two cases do: `k1 = 0xff00, k2 = 0x00ff` gives `ZF=1, CF=0`, and
+`k1 = 0xffff, k2 = 0x00ff` gives `ZF=0, CF=1`. The second is the one that rules
+out negating the wrong operand.
+
+Both clear OF, SF, AF and PF, which is a separate mutation and fails seven
+tests on its own.
+
+### Falsification
+
+Eleven mutations, each reverted alone, each rebuilt and run. All eleven fail
+(the counts below are distinct tests, not gtest's doubled `[ FAILED ]` lines):
+
+| mutation | result |
+| --- | --- |
+| a mask-register write merges instead of zeroing | 10 tests fail |
+| the width comes from capstone's operand size | 17 tests fail |
+| `KANDN` negates the r/m operand instead of `vvvv` | 1 test fails |
+| `KUNPCK` halves swapped | 3 tests fail |
+| the shift count masked like a GPR shift | 2 tests fail |
+| `KORTEST` ZF and CF swapped | 4 tests fail |
+| `KTEST` ZF and CF swapped | 2 tests fail |
+| `KTEST` CF negates the second operand | 1 test fails |
+| the test flags leave OF/SF/AF/PF alone | 7 tests fail |
+| `KSHIFTR` is arithmetic | 1 test fails |
+| the `KMOV` dispatch entries back to `nullptr` | 12 tests fail |
+
+Keystone 0.9.2 does not assemble any of these, so every test uses the encoding
+`llvm-mc` produces, each one checked against capstone's decode before it was
+written into a test.
+
+### Where it leaves x86-64
+
+```
+                 static     unmodelled
+before           0.9822      92,140
+after Batch R    0.9845      79,935
+```
+
+`kmovd` (10,435), `kortestd` (804) and `kmovq` (588) have left the list
+entirely. The largest remaining entry is now `vmovdqu64` at 6,674.
+
+### What this does not do
+
+It models the **mask registers**, not **masking**. An EVEX-encoded
+`vpaddb zmm1{k1}{z}, zmm2, zmm3` still falls back, and will until the value
+model carries per-lane predication through every vector operation. What Batch R
+buys is that the masks those instructions consume are now real values with real
+provenance rather than the return value of an opaque `__asm_kmovd` call — which
+is the difference between a decompiled loop whose bound is visibly derived from
+a comparison and one whose bound comes from nowhere.
+
+The remaining x86-64 list is now led by the 512-bit-wide moves and compares
+(`vmovdqu64`, `vmovdqa64`, `vpcmpeqb`, `vptestmb`), which need ZMM =
+ZMMH:YMMH:XMM — the same decomposition Batch Q did one level down — and by
+`pcmpistri` at 6,393, which needs no new register at all.
+
+### Where all five stand
+
+```
+x86_64   0.9845     512-bit moves and compares, pcmpistri, syscall
+arm      0.9977     table branches, coprocessor, NEON
+arm64    0.9945     SVE, MTE, movi
+mips     0.9989     syscall, break, the FPU control word
+powerpc  0.9960     traps, AltiVec, cache maintenance
+```
+
+C2L-01 floor: X86 2262 → 2370. 5,199 tests.

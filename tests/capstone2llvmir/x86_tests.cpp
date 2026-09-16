@@ -16862,6 +16862,662 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PAUSE_is_a_hint_with_no_effect
 	EXPECT_NO_VALUE_CALLED();
 }
 
+//
+// ============================================================================
+// AVX-512 opmask registers (k0..k7)
+// ============================================================================
+//
+// Keystone 0.9.2 does not assemble these, so every test below uses the
+// encoding that llvm-mc produces, verified against capstone's decode.
+//
+// Two properties are worth stating because they are what these tests are
+// actually for:
+//
+//   * The width comes from the mnemonic suffix. Capstone reports `size = 2`
+//     for EVERY opmask operand -- `kmovq k1, rax` and `kmovb k1, eax` both
+//     say 2 -- so the operand cannot supply it.
+//   * The destination bits above that width are ZEROED. k0..k7 are i64
+//     globals, so every test that writes one pre-loads it with all ones and
+//     then checks the result is not merged into.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KMOVW_zeroes_the_bits_above_its_width)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xffffffffffffffffULL},
+		{X86_REG_K2, 0x1234},
+	});
+
+	emulate_bin("c5 f8 90 ca"); // kmovw k1, k2
+
+	// Not 0xffffffffffff1234: KMOVW clears k1[63:16].
+	EXPECT_EQ(0x1234ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_JUST_REGISTERS_LOADED({X86_REG_K2});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KMOVB_gpr_reads_only_eight_bits)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xffffffffffffffffULL},
+		{X86_REG_EAX, 0x12345678},
+	});
+
+	emulate_bin("c5 f9 92 c8"); // kmovb k1, eax
+
+	// KMOVW would answer 0x5678 and KMOVD 0x12345678; capstone calls the
+	// opmask operand two bytes wide for all three.
+	EXPECT_EQ(0x78ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KMOVD_gpr_reads_thirty_two_bits)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xffffffffffffffffULL},
+		{X86_REG_EAX, 0x12345678},
+	});
+
+	emulate_bin("c5 fb 92 c8"); // kmovd k1, eax
+
+	EXPECT_EQ(0x12345678ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KMOVQ_gpr_reads_sixty_four_bits)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_RAX, 0x123456789abcdef0ULL},
+	});
+
+	emulate_bin("c4 e1 fb 92 c8"); // kmovq k1, rax
+
+	EXPECT_EQ(0x123456789abcdef0ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KMOVD_to_gpr_truncates_then_zero_extends)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xffffffff12345678ULL},
+	});
+
+	emulate_bin("c5 fb 93 c1"); // kmovd eax, k1
+
+	// The k register holds 64 bits; KMOVD takes the low 32 and the 32-bit
+	// write then zeroes the top half of rax.
+	EXPECT_EQ(0x12345678ULL, getRegisterValueUnsigned(X86_REG_RAX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KMOVB_to_gpr_zero_extends_one_byte)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xffffULL},
+	});
+
+	emulate_bin("c5 f9 93 c1"); // kmovb eax, k1
+
+	EXPECT_EQ(0xffULL, getRegisterValueUnsigned(X86_REG_RAX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KMOVQ_to_gpr)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0x123456789abcdef0ULL},
+	});
+
+	emulate_bin("c4 e1 fb 93 c1"); // kmovq rax, k1
+
+	EXPECT_EQ(0x123456789abcdef0ULL, getRegisterValueUnsigned(X86_REG_RAX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KMOVW_loads_two_bytes_from_memory)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xffffffffffffffffULL},
+		{X86_REG_RAX, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x1234_w},
+	});
+
+	emulate_bin("c5 f8 90 08"); // kmovw k1, word ptr [rax]
+
+	EXPECT_EQ(0x1234ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KMOVW_stores_two_bytes_to_memory)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xffffffffffff1234ULL},
+		{X86_REG_RAX, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x0000_w},
+	});
+
+	emulate_bin("c5 f8 91 08"); // kmovw word ptr [rax], k1
+
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x1234_w},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KANDNW_negates_the_vvvv_operand)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xffffffffffffffffULL},
+		{X86_REG_K2, 0xf0f0},
+		{X86_REG_K3, 0xff00},
+	});
+
+	emulate_bin("c5 ec 42 cb"); // kandnw k1, k2, k3
+
+	// ~k2 & k3 == 0x0f0f & 0xff00 == 0x0f00.
+	// The other reading, k2 & ~k3, would answer 0x00f0.
+	EXPECT_EQ(0x0f00ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_JUST_REGISTERS_LOADED({X86_REG_K2, X86_REG_K3});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KANDW)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xffffffffffffffffULL},
+		{X86_REG_K2, 0xf0f0},
+		{X86_REG_K3, 0xff00},
+	});
+
+	emulate_bin("c5 ec 41 cb"); // kandw k1, k2, k3
+
+	EXPECT_EQ(0xf000ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KORW)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_K2, 0xf0f0},
+		{X86_REG_K3, 0xff00},
+	});
+
+	emulate_bin("c5 ec 45 cb"); // korw k1, k2, k3
+
+	EXPECT_EQ(0xfff0ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KXORW)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_K2, 0xf0f0},
+		{X86_REG_K3, 0xff00},
+	});
+
+	emulate_bin("c5 ec 47 cb"); // kxorw k1, k2, k3
+
+	EXPECT_EQ(0x0ff0ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KXNORW_complements_within_sixteen_bits)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_K2, 0xf0f0},
+		{X86_REG_K3, 0xff00},
+	});
+
+	emulate_bin("c5 ec 46 cb"); // kxnorw k1, k2, k3
+
+	// ~(0xf0f0 ^ 0xff00) at 16 bits. Complementing the i64 register instead
+	// would answer 0xfffffffffffff00f.
+	EXPECT_EQ(0xf00fULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KANDQ_operates_on_all_sixty_four_bits)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_K2, 0xf0f0f0f0f0f0f0f0ULL},
+		{X86_REG_K3, 0xff00ff00ff00ff00ULL},
+	});
+
+	emulate_bin("c4 e1 ec 41 cb"); // kandq k1, k2, k3
+
+	EXPECT_EQ(0xf000f000f000f000ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KNOTW)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_K2, 0x1234},
+	});
+
+	emulate_bin("c5 f8 44 ca"); // knotw k1, k2
+
+	EXPECT_EQ(0xedcbULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KNOTB_complements_one_byte)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_K2, 0x1234},
+	});
+
+	emulate_bin("c5 f9 44 ca"); // knotb k1, k2
+
+	// ~0x34 within eight bits. KNOTW would answer 0xedcb.
+	EXPECT_EQ(0xcbULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KADDW_wraps_at_sixteen_bits)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_K2, 0xffff},
+		{X86_REG_K3, 2},
+	});
+
+	emulate_bin("c5 ec 4a cb"); // kaddw k1, k2, k3
+
+	// Adding as i64 would answer 0x10001 and leave a carry out of the mask.
+	EXPECT_EQ(0x0001ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KADDB_wraps_at_eight_bits)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_K2, 0xff},
+		{X86_REG_K3, 2},
+	});
+
+	emulate_bin("c5 ed 4a cb"); // kaddb k1, k2, k3
+
+	EXPECT_EQ(0x01ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KSHIFTLW)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_K2, 0x1234},
+	});
+
+	emulate_bin("c4 e3 f9 32 ca 04"); // kshiftlw k1, k2, 4
+
+	EXPECT_EQ(0x2340ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KSHIFTLW_by_the_full_width_is_zero)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xffffffffffffffffULL},
+		{X86_REG_K2, 0x1234},
+	});
+
+	emulate_bin("c4 e3 f9 32 ca 10"); // kshiftlw k1, k2, 16
+
+	// The count is NOT taken modulo the width -- a masking implementation
+	// would shift by zero and answer 0x1234 -- and an i16 `shl` by 16 is
+	// poison, so the zero has to be produced explicitly.
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KSHIFTLB_by_the_full_width_is_zero)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xffffffffffffffffULL},
+		{X86_REG_K2, 0x12},
+	});
+
+	emulate_bin("c4 e3 79 32 ca 08"); // kshiftlb k1, k2, 8
+
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KSHIFTRW)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_K2, 0x1234},
+	});
+
+	emulate_bin("c4 e3 f9 30 ca 04"); // kshiftrw k1, k2, 4
+
+	EXPECT_EQ(0x0123ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KSHIFTRD_shifts_in_zeroes_not_sign)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_K2, 0x87654321},
+	});
+
+	emulate_bin("c4 e3 79 31 ca 08"); // kshiftrd k1, k2, 8
+
+	// An arithmetic shift of the negative i32 would answer 0xff876543.
+	EXPECT_EQ(0x00876543ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KUNPCKBW_puts_the_vvvv_operand_high)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xffffffffffffffffULL},
+		{X86_REG_K2, 0xaa},
+		{X86_REG_K3, 0x55},
+	});
+
+	emulate_bin("c5 ed 4b cb"); // kunpckbw k1, k2, k3
+
+	// SRC1 (k2, the VEX.vvvv operand) is the HIGH byte. The other order
+	// would answer 0x55aa.
+	EXPECT_EQ(0xaa55ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KUNPCKWD)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_K2, 0xaaaa},
+		{X86_REG_K3, 0x5555},
+	});
+
+	emulate_bin("c5 ec 4b cb"); // kunpckwd k1, k2, k3
+
+	EXPECT_EQ(0xaaaa5555ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KUNPCKDQ_ignores_the_sources_upper_halves)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_K2, 0xffffffffaaaaaaaaULL},
+		{X86_REG_K3, 0xffffffff55555555ULL},
+	});
+
+	emulate_bin("c4 e1 ec 4b cb"); // kunpckdq k1, k2, k3
+
+	EXPECT_EQ(0xaaaaaaaa55555555ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KORTESTW_sets_ZF_and_clears_everything_else)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_K2, 0},
+	});
+
+	emulate_bin("c5 f8 98 ca"); // kortestw k1, k2
+
+	EXPECT_JUST_REGISTERS_LOADED({X86_REG_K1, X86_REG_K2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_ZF, true},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_SF, false},
+		{X86_REG_AF, false},
+		{X86_REG_PF, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KORTESTW_sets_CF_when_all_sixteen_bits_are_set)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xff00},
+		{X86_REG_K2, 0x00ff},
+	});
+
+	emulate_bin("c5 f8 98 ca"); // kortestw k1, k2
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_ZF, false},
+		{X86_REG_CF, true},
+		{X86_REG_OF, false},
+		{X86_REG_SF, false},
+		{X86_REG_AF, false},
+		{X86_REG_PF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KORTESTB_compares_against_eight_ones)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0x10f0},
+		{X86_REG_K2, 0x000f},
+	});
+
+	emulate_bin("c5 f9 98 ca"); // kortestb k1, k2
+
+	// At eight bits the OR is 0xff, so CF is set. Reading sixteen bits
+	// would give 0x10ff and clear it.
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_ZF, false},
+		{X86_REG_CF, true},
+		{X86_REG_OF, false},
+		{X86_REG_SF, false},
+		{X86_REG_AF, false},
+		{X86_REG_PF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KORTESTQ_compares_against_sixty_four_ones)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xffffffff00000000ULL},
+		{X86_REG_K2, 0x00000000ffffffffULL},
+	});
+
+	emulate_bin("c4 e1 f8 98 ca"); // kortestq k1, k2
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_ZF, false},
+		{X86_REG_CF, true},
+		{X86_REG_OF, false},
+		{X86_REG_SF, false},
+		{X86_REG_AF, false},
+		{X86_REG_PF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KTESTW_ZF_is_the_AND_and_CF_is_the_ANDN)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xff00},
+		{X86_REG_K2, 0x00ff},
+	});
+
+	emulate_bin("c5 f8 99 ca"); // ktestw k1, k2
+
+	// k2 & k1 == 0 -> ZF. k2 & ~k1 == 0x00ff -> CF clear. Swapping the two
+	// flags would answer the other way round.
+	EXPECT_JUST_REGISTERS_LOADED({X86_REG_K1, X86_REG_K2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_ZF, true},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_SF, false},
+		{X86_REG_AF, false},
+		{X86_REG_PF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KTESTW_CF_uses_the_first_operand_as_the_negated_one)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xffff},
+		{X86_REG_K2, 0x00ff},
+	});
+
+	emulate_bin("c5 f8 99 ca"); // ktestw k1, k2
+
+	// k2 & k1 == 0x00ff -> ZF clear. k2 & ~k1 == 0 -> CF set. Negating the
+	// second operand instead -- k1 & ~k2 == 0xff00 -- would clear CF.
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_ZF, false},
+		{X86_REG_CF, true},
+		{X86_REG_OF, false},
+		{X86_REG_SF, false},
+		{X86_REG_AF, false},
+		{X86_REG_PF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KTESTB_looks_at_eight_bits)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xff00},
+		{X86_REG_K2, 0xff00},
+	});
+
+	emulate_bin("c5 f9 99 ca"); // ktestb k1, k2
+
+	// Both low bytes are zero, so ZF is set and CF with it. At sixteen bits
+	// the AND would be 0xff00 and ZF would be clear.
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_ZF, true},
+		{X86_REG_CF, true},
+		{X86_REG_OF, false},
+		{X86_REG_SF, false},
+		{X86_REG_AF, false},
+		{X86_REG_PF, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KMOVQ_between_opmask_registers)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0},
+		{X86_REG_K2, 0x123456789abcdef0ULL},
+	});
+
+	emulate_bin("c4 e1 f8 90 ca"); // kmovq k1, k2
+
+	EXPECT_EQ(0x123456789abcdef0ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, KMOVD_between_opmask_registers_drops_the_upper_half)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_K1, 0xffffffffffffffffULL},
+		{X86_REG_K2, 0x123456789abcdef0ULL},
+	});
+
+	emulate_bin("c4 e1 f9 90 ca"); // kmovd k1, k2
+
+	EXPECT_EQ(0x9abcdef0ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

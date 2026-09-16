@@ -418,6 +418,19 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateCvtSd2Si(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateCvtDq2Ps(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateCvtPs2Dq(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+
+		// AVX-512 opmask registers (x86_avx512.cpp).
+		unsigned maskWidth(cs_insn* i);
+		llvm::Value* loadMaskOp(cs_x86_op& op, unsigned bits, llvm::IRBuilder<>& irb);
+		void storeMaskOp(cs_x86_op& op, llvm::Value* val, unsigned bits, llvm::IRBuilder<>& irb);
+		void storeMaskTestFlags(llvm::Value* zf, llvm::Value* cf, llvm::IRBuilder<>& irb);
+		void translateKmov(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateKopBinary(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateKnot(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateKshift(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateKunpck(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateKortest(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateKtest(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 };
 
 } // namespace capstone2llvmir
