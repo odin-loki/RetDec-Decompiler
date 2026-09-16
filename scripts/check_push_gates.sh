@@ -114,6 +114,9 @@ CHECKS=(
 	# runs here is its self-test -- which is more than ran before, since
 	# nothing anywhere invoked this script at all.
 	"standalone instruction coverage (self-test):::${PY} scripts/ci/check_instruction_coverage.py --self-test --capstone-prefix \"${C2L_DEPS_DIR:-/tmp/c2l-deps}/capstone-install\""
+	# Needs only LLVM's headers, so it belongs here rather than behind a build.
+	"standalone IR2HLL opcode coverage:::${PY} scripts/ci/check_ir2hll_opcodes.py"
+	"standalone IR2HLL opcodes (self-test):::${PY} scripts/ci/check_ir2hll_opcodes.py --self-test"
 	"ci-smoke  no new unread option fields:::${PY} scripts/ci/check_unread_options.py --check"
 	"ci-smoke  every workflow parses:::${PY} scripts/ci/check_workflow_yaml.py"
 	"ci-smoke  workflow parse check (self-test):::${PY} scripts/ci/check_workflow_yaml.py --self-test"

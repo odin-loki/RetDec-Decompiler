@@ -414,6 +414,36 @@ jobs:
             echo '```'
           } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
 
+      # IR2HLL-01. LLVMInstructionConverter::visitInstruction() calls FAIL(),
+      # which aborts the process, and it is the fallback for any instruction
+      # the IR-to-HLL expression converter has no case for. Three of those
+      # were found in this branch -- fneg, freeze and atomicrmw -- each by a
+      # corpus run after the fact, each because something started translating
+      # an instruction that used to come out as a pseudo-asm call.
+      #
+      # This asks the question off LLVM's own Instruction.def instead, against
+      # the LLVM the product is built with rather than whatever the runner has
+      # installed. Run against the initial import it names all four of them
+      # (fneg, freeze, atomicrmw, cmpxchg) with no corpus at all.
+      - name: IR2HLL-01 every LLVM opcode is converted or cannot arrive
+        if: always()
+        run: |
+          DEF="build/linux/external/src/llvm-project/llvm/include/llvm/IR/Instruction.def"
+          if [ ! -f "$DEF" ]; then
+            echo "IR2HLL-01: $DEF not found"; exit 1
+          fi
+          set -o pipefail
+          rc=0
+          python3 scripts/ci/check_ir2hll_opcodes.py --instruction-def "$DEF" \
+            2>&1 | tee /tmp/ir2hll01.log || rc=$?
+          {
+            echo "### IR2HLL-01 opcode coverage"
+            echo '```'
+            cat /tmp/ir2hll01.log
+            echo '```'
+          } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+
       # COV-01. Of the instructions real binaries actually contain, what
       # fraction does each translator have a function for?
       #

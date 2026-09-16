@@ -3331,3 +3331,54 @@ ARCH-01: powerpc   42/42   1.0000
 x86-64 is in this table for the first time, unfloored, as the control column --
 and on its first run it was the worst of the five. That is the entire argument
 for putting it there.
+
+
+## Asking the question up front instead of four times after the fact
+
+Four aborts of one shape were found in this branch, each by a corpus run after
+the change that made it reachable:
+
+| instruction | reached by | found |
+|-------------|------------|-------|
+| `fneg` | every FP negation, any architecture, since the initial import | the first corpus with a `float` in it |
+| `freeze` | LLVM's own optimiser, on an integer program | widening ARCH-01 to the whole corpus |
+| `atomicrmw` | ARM64 LSE, whose `ldadd` writes the old value to a register | ctest-linux 292 |
+| `cmpxchg` | ARM64 `cas` | the same |
+
+All four end in `LLVMInstructionConverter::visitInstruction()`, which calls
+`FAIL()` and aborts the process, and all four are answerable from LLVM's own
+headers with no corpus at all. `scripts/ci/check_ir2hll_opcodes.py` asks it.
+
+An instruction reaches the expression converter unless `isInlinableInst()` or
+`shouldBeConvertedAsInst()` keeps it out, so every opcode in LLVM's
+`Instruction.def` has to be one of four things: it has a `visit<Class>` in the
+converter; it is named in `isInlinableInst()`'s exclusion list; it is a
+terminator, excluded by `isTerminator()`; or it is in the script's
+`ACCOUNTED_ELSEWHERE` table with the reason it cannot arrive. There are six in
+that last group -- `alloca` (excluded a layer up), `store` and `fence` (void
+result), and the three exception-handling pads, which no translator emits and
+no machine code carries.
+
+Today, on LLVM 20, that is 43 + 7 + 11 + 6 = 67, the whole list.
+
+Run against the tree that broke ctest-linux 292 it names `AtomicRMW` and
+`AtomicCmpXchg`. Run against `894733d`, the initial import, it names all four:
+
+```
+IR2HLL-01: FAIL these opcodes reach visitInstruction(), which aborts:
+           FNeg (UnaryOperator)
+           AtomicCmpXchg (AtomicCmpXchgInst)
+           AtomicRMW (AtomicRMWInst)
+           Freeze (FreezeInst)
+```
+
+The self-test neuters one accounted-for opcode at a time -- deleting a
+converter case, and dropping an entry from the exclusion list -- and requires a
+failure for each, then requires the real tree to pass. Without that last part a
+checker whose parse silently broke would report "OK" on everything.
+
+It reads the LLVM the product is built with, not whatever the runner has
+installed: `build/linux/external/src/llvm-project/llvm/include/llvm/IR/Instruction.def`
+in CI, and whatever `llvm-config` points at locally. An LLVM upgrade that adds
+an instruction is exactly the case this is for, and asking a different LLVM
+than the one being compiled against would answer a different question.
