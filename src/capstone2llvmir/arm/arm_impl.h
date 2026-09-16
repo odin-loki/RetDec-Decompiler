@@ -140,6 +140,10 @@ class Capstone2LlvmIrTranslatorArm_impl :
 	protected:
 		void translateAdc(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		static bool isFpRegister(uint32_t r);
+		static bool isSingleView(uint32_t r);
+		static uint32_t singleViewParent(uint32_t r, unsigned& offset);
+		llvm::Value* loadSingleView(uint32_t r, llvm::IRBuilder<>& irb);
+		llvm::StoreInst* storeSingleView(uint32_t r, llvm::Value* val, llvm::IRBuilder<>& irb);
 		static bool isScalarVfp(cs_arm* ai);
 		llvm::Type* vfpTypeOfReg(uint32_t r, llvm::IRBuilder<>& irb);
 		llvm::Value* loadVfpOp(cs_arm_op& op, llvm::IRBuilder<>& irb, llvm::Type* ty);

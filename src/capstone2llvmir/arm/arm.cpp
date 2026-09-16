@@ -176,6 +176,90 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::getCurrentPc(cs_insn* i)
 	return llvm::ConstantInt::get(getDefaultType(), (pc >> 2) << 2);
 }
 
+/**
+ * ARM's VFP register bank overlaps: s0 and s1 ARE d0, s2 and s3 are d1, and
+ * so on up to d15. They were separate globals, so a `vldr d0, [r0]` followed
+ * by a `vmov r1, s0` read storage nothing had written -- and the corpus does
+ * exactly that, 9,323 `vldr d` against 684 `vmov gpr, s`.
+ *
+ * The mapping is `Dn[31:0] = S2n` and `Dn[63:32] = S2n+1`. That is the ARM
+ * ARM's definition, and gcc's own register allocation agrees: a function
+ * returning the low float half of a double argument compiles to a bare
+ * `bx lr`, and the high half to `vmov.f32 s0, s1`.
+ *
+ * This differs from ARM64 in two ways that matter. The views PAIR rather than
+ * nest, so s1 sits at bit 32 of its parent and needs an offset as well as a
+ * width. And an ARM sub-register write MERGES -- writing s0 leaves s1 alone --
+ * where every ARM64 sub-register write zeroes the rest.
+ *
+ * Q registers are not handled here. Every translator in this file already
+ * sends an operand on a Q register to pseudo-assembly, so nothing reads those
+ * globals; composing them from D pairs belongs with whatever first models a
+ * NEON instruction.
+ */
+bool Capstone2LlvmIrTranslatorArm_impl::isSingleView(uint32_t r)
+{
+	return r >= ARM_REG_S0 && r <= ARM_REG_S31;
+}
+
+/// The D register an S register is half of, and which half.
+uint32_t Capstone2LlvmIrTranslatorArm_impl::singleViewParent(uint32_t r, unsigned& offset)
+{
+	unsigned n = r - ARM_REG_S0;
+	offset = (n % 2) * 32;
+	return ARM_REG_D0 + n / 2;
+}
+
+llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadSingleView(uint32_t r, llvm::IRBuilder<>& irb)
+{
+	unsigned offset = 0;
+	auto* parent = getRegister(singleViewParent(r, offset));
+	if (parent == nullptr)
+	{
+		throw GenericError("loadRegister() unhandled S register.");
+	}
+
+	auto* i64 = irb.getInt64Ty();
+	llvm::Value* bits = irb.CreateBitCast(createLoad(irb, parent), i64);
+	if (offset)
+	{
+		bits = irb.CreateLShr(bits, llvm::ConstantInt::get(i64, offset));
+	}
+
+	return irb.CreateBitCast(irb.CreateTrunc(bits, irb.getInt32Ty()), irb.getFloatTy());
+}
+
+llvm::StoreInst*
+Capstone2LlvmIrTranslatorArm_impl::storeSingleView(uint32_t r, llvm::Value* val, llvm::IRBuilder<>& irb)
+{
+	unsigned offset = 0;
+	auto* parent = getRegister(singleViewParent(r, offset));
+	if (parent == nullptr)
+	{
+		throw GenericError("storeRegister() unhandled S register.");
+	}
+
+	auto* i32 = irb.getInt32Ty();
+	auto* i64 = irb.getInt64Ty();
+
+	llvm::Value* asFloat = generateTypeConversion(irb, val, irb.getFloatTy(), eOpConv::FPCAST_OR_BITCAST);
+	llvm::Value* piece = irb.CreateZExt(irb.CreateBitCast(asFloat, i32), i64);
+	if (offset)
+	{
+		piece = irb.CreateShl(piece, llvm::ConstantInt::get(i64, offset));
+	}
+
+	// The other half of the D register is left alone: an ARM sub-register
+	// write merges.
+	llvm::Value* old = irb.CreateBitCast(createLoad(irb, parent), i64);
+	llvm::Value* keep =
+		irb.CreateAnd(old, llvm::ConstantInt::get(i64, ~(static_cast<uint64_t>(0xffffffffULL) << offset)));
+
+	auto* s = irb.CreateStore(irb.CreateBitCast(irb.CreateOr(keep, piece), parent->getValueType()), parent);
+	attachPointeeType(s, parent->getValueType());
+	return s;
+}
+
 llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadRegister(
 		uint32_t r,
 		llvm::IRBuilder<>& irb,
@@ -190,6 +274,11 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadRegister(
 	if (r == ARM_REG_PC)
 	{
 		return getCurrentPc(_insn);
+	}
+
+	if (isSingleView(r))
+	{
+		return generateTypeConversion(irb, loadSingleView(r, irb), dstType, ct);
 	}
 
 	llvm::Value* llvmReg = getRegister(r);
@@ -1009,6 +1098,11 @@ llvm::Instruction* Capstone2LlvmIrTranslatorArm_impl::storeRegister(
 	if (r == ARM_REG_PC)
 	{
 		return generateBranchFunctionCall(irb, val);
+	}
+
+	if (isSingleView(r))
+	{
+		return storeSingleView(r, val, irb);
 	}
 
 	auto* llvmReg = getRegister(r);

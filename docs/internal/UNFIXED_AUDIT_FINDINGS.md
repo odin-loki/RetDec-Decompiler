@@ -6994,3 +6994,96 @@ as a width. `d16`..`d31` have no `s` views at all.
 
 That is a batch of its own and is not bolted onto this one. Recorded here with
 the reproduction so it does not have to be rediscovered.
+
+*Fixed in Batch W, immediately below.*
+
+## Batch W — on ARM, s0 and s1 are d0
+
+### What it is
+
+The finding recorded at the end of Batch V, fixed. `src/capstone2llvmir/arm/`
+had no parent-register concept at all -- `loadRegister` loaded the named
+global directly -- so `s0`, `s1` and `d0` were three separate globals for two
+halves of one register.
+
+It is heavily exercised. Across the ARM half of the static corpus:
+
+```
+vldr d, [mem]     9,323      writes a D register
+vstr d, [mem]     9,215
+vmov gpr, s         684      reads an S register
+vldr s, [mem]       467
+vstr s, [mem]        47
+```
+
+A `vldr d0, [r0]` followed by a `vmov r1, s0` -- the ordinary way a compiler
+gets the low word of a double into a general-purpose register -- read a global
+nothing had written.
+
+### The mapping, not from memory
+
+`Dn[31:0]` is `S2n` and `Dn[63:32]` is `S2n+1`. That is the ARM ARM's
+definition, and since there is no qemu in this container to build an oracle
+with, it was confirmed a second way -- from gcc's own register allocation:
+
+```c
+float low(double d)  { float f[2]; memcpy(f, &d, 8); return f[0]; }
+float high(double d) { float f[2]; memcpy(f, &d, 8); return f[1]; }
+```
+
+```
+low:   bx lr                      // the answer is already in s0
+high:  vmov.f32 s0, s1            // the high half IS s1
+       bx lr
+```
+
+`low` compiles to nothing at all. The double arrives in `d0` and the float
+returns in `s0`, so `s0` is `d0[31:0]` -- the toolchain says so by emitting no
+instruction.
+
+### Two things that make this NOT the ARM64 fix
+
+* The views **pair** rather than nest. `s1` sits at bit 32 of its parent, so
+  the machinery needs an offset as well as a width. ARM64's `b0`, `h0`, `s0`,
+  `d0` and `q0` are all the low end of `v0` and need only a width.
+* An ARM sub-register write **merges**. Writing `s0` leaves `s1` alone.
+  Every ARM64 sub-register write zeroes the rest. Applying ARM64's rule here
+  would silently destroy the other half of every D register on each scalar
+  float store -- and the mutation that does exactly that fails 8 tests.
+
+The merge has a visible cost: writing half a register requires reading the
+other half, so `vmov s0, r1` now loads `d0` as well as storing it, and two
+existing tests had to gain that load in their expectations. That is the
+instruction's actual data flow rather than an artefact.
+
+### What is left alone
+
+Q registers. Every translator in `arm.cpp` already sends an operand on a Q
+register to pseudo-assembly -- `isScalarVfp()` rejects them explicitly -- so
+nothing reads those globals today. Composing `qn` from `d2n`/`d2n+1` belongs
+with whatever first models a NEON instruction, and inventing it now would add
+a second unexercised mechanism.
+
+`d16`..`d31` have no S views at all and need nothing.
+
+### Falsification
+
+Six mutations, each reverted alone; all six fail:
+
+| mutation | result |
+| --- | --- |
+| S registers back to their own globals | 26 tests fail |
+| `s1` treated as the low half | 12 tests fail |
+| the pairing off by one (`sN` maps to `dN`) | 12 tests fail |
+| a narrow write zeroes the other half | 8 tests fail |
+| the read does not shift down | 6 tests fail |
+| the write does not shift up | 6 tests fail |
+
+### Where it leaves ARM
+
+PSEUDO-01 does not move, and cannot: this fixes wrong answers, not
+pseudo-assembly calls. ARM stays at 0.9977 on the static corpus. The 23,438
+VFP and NEON instructions in that corpus are the measure of what was affected,
+and 10,521 of them touch a register through a view.
+
+C2L-01 floor: ARM 624 -> 636. 5,410 tests.

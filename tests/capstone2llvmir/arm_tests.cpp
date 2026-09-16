@@ -60,6 +60,95 @@ class Capstone2LlvmIrTranslatorArmTests :
 			}
 		}
 
+		// s0 and s1 ARE d0: since the translator stopped holding them
+		// separately, a test that names an S register is naming half of a D
+		// register, and the fixture has to address it the same way the
+		// translator does. getRegister() maps to the parent so that the
+		// EXPECT_*_REGISTERS_* comparisons -- which compare globals -- line
+		// up, and the float accessors carry the offset.
+		static bool isSingleView(uint32_t reg)
+		{
+			return reg >= ARM_REG_S0 && reg <= ARM_REG_S31;
+		}
+
+		static uint32_t singleParent(uint32_t reg, unsigned& offset)
+		{
+			unsigned n = reg - ARM_REG_S0;
+			offset = (n % 2) * 32;
+			return ARM_REG_D0 + n / 2;
+		}
+
+		virtual llvm::GlobalVariable* getRegister(uint32_t reg) override
+		{
+			unsigned offset = 0;
+			return _translator->getRegister(isSingleView(reg) ? singleParent(reg, offset) : reg);
+		}
+
+		/// The raw bits of a D register. Its global is typed f64, so the
+		/// value lives in the GenericValue's DoubleVal and reading IntVal
+		/// answers zero.
+		uint64_t dBits(uint32_t reg)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			double d = _emulator->getGlobalVariableValue(gv).DoubleVal;
+			uint64_t bits;
+			std::memcpy(&bits, &d, sizeof bits);
+			return bits;
+		}
+
+		virtual float getRegisterValueFloat(uint32_t reg) override
+		{
+			if (!isSingleView(reg))
+			{
+				return Capstone2LlvmIrTranslatorTests::getRegisterValueFloat(reg);
+			}
+			unsigned offset = 0;
+			auto* gv = getRegister(singleParent(reg, offset));
+			double d = _emulator->getGlobalVariableValue(gv).DoubleVal;
+			uint64_t bits;
+			std::memcpy(&bits, &d, sizeof bits);
+			uint32_t half = static_cast<uint32_t>(bits >> offset);
+			float f;
+			std::memcpy(&f, &half, sizeof f);
+			return f;
+		}
+
+		virtual double getRegisterValueDouble(uint32_t reg) override
+		{
+			return isSingleView(reg) ? static_cast<double>(getRegisterValueFloat(reg))
+									 : Capstone2LlvmIrTranslatorTests::getRegisterValueDouble(reg);
+		}
+
+		virtual void setRegisterValueFloat(uint32_t reg, float val) override
+		{
+			if (!isSingleView(reg))
+			{
+				Capstone2LlvmIrTranslatorTests::setRegisterValueFloat(reg, val);
+				return;
+			}
+			unsigned offset = 0;
+			auto* gv = getRegister(singleParent(reg, offset));
+			llvm::GenericValue v = _emulator->getGlobalVariableValue(gv);
+			uint64_t bits;
+			std::memcpy(&bits, &v.DoubleVal, sizeof bits);
+			uint32_t half;
+			std::memcpy(&half, &val, sizeof half);
+			bits = (bits & ~(0xffffffffULL << offset)) | (static_cast<uint64_t>(half) << offset);
+			std::memcpy(&v.DoubleVal, &bits, sizeof v.DoubleVal);
+			_emulator->setGlobalVariableValue(gv, v);
+		}
+
+		virtual void setRegisterValueDouble(uint32_t reg, double val) override
+		{
+			if (isSingleView(reg))
+			{
+				setRegisterValueFloat(reg, static_cast<float>(val));
+				return;
+			}
+			Capstone2LlvmIrTranslatorTests::setRegisterValueDouble(reg, val);
+		}
+
 		// These can/should be used at the beginning of each test case to
 		// determine which modes should the case be run for.
 		// They are macros because we want them to cause return in the current
@@ -6706,7 +6795,11 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMOV_s_from_gpr_is_a_bit_move)
 
 	emulate("vmov s0, r1");
 
-	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
+	// d0 is loaded as well as stored: s0 is its low half and an ARM
+	// sub-register write MERGES, so the other half has to be read to be
+	// preserved. That is the whole difference from ARM64, where the same
+	// write would zero it.
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_D0});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_S0, expected},
 	});
@@ -6788,7 +6881,9 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_FCONSTS_loads_the_immediate)
 	// it is the obvious way to get this wrong.
 	emulate("vmov.f32 s0, #-1.5");
 
-	EXPECT_NO_REGISTERS_LOADED();
+	// Even a constant into s0 reads d0 first, because s1 -- the other half --
+	// must survive.
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_D0});
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_S0, -1.5f},
 	});
@@ -7011,6 +7106,120 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_MRC_any_other_coprocessor_read
 	EXPECT_JUST_VALUES_CALLED({
 		{_module.getFunction("__asm_mrc"), {15, 0, 0, 0, 0, 0}},
 	});
+}
+
+//
+// ============================================================================
+// s0 and s1 are d0
+// ============================================================================
+//
+// ARM's VFP bank overlaps: Dn[31:0] is S2n and Dn[63:32] is S2n+1. They were
+// separate globals, so `vldr d0, [r0]` followed by `vmov r1, s0` read storage
+// nothing had written -- and the static corpus does exactly that, 9,323
+// `vldr d` against 684 `vmov gpr, s`.
+//
+// The mapping is the ARM ARM's, and gcc's own register allocation agrees: a
+// function returning the low float half of a double argument compiles to a
+// bare `bx lr`, and the high half to `vmov.f32 s0, s1`.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, A_write_to_s0_is_visible_as_the_low_half_of_d0)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x40490fdb},
+	});
+
+	emulate("vmov s0, r1");
+
+	EXPECT_EQ(0x40490fdbULL, dBits(ARM_REG_D0) & 0xffffffffULL);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, A_write_to_s1_is_visible_as_the_HIGH_half_of_d0)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x40490fdb},
+	});
+
+	emulate("vmov s1, r1");
+
+	// s1 is the upper half, not the lower one. This is what makes ARM
+	// different from ARM64, where every narrow view is the low end.
+	EXPECT_EQ(0x40490fdbULL, dBits(ARM_REG_D0) >> 32);
+	EXPECT_EQ(0x0ULL, dBits(ARM_REG_D0) & 0xffffffffULL);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, Writing_s0_leaves_s1_alone)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_S1, 2.5_f32},
+		{ARM_REG_R1, 0x40490fdb},
+	});
+
+	emulate("vmov s0, r1");
+
+	// An ARM sub-register write MERGES. Zeroing the rest -- which is the
+	// ARM64 rule -- would lose s1.
+	EXPECT_EQ(2.5f, getRegisterValueFloat(ARM_REG_S1));
+	EXPECT_EQ(0x40490fdbULL, dBits(ARM_REG_D0) & 0xffffffffULL);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, Writing_s1_leaves_s0_alone)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_S0, 2.5_f32},
+		{ARM_REG_R1, 0x40490fdb},
+	});
+
+	emulate("vmov s1, r1");
+
+	EXPECT_EQ(2.5f, getRegisterValueFloat(ARM_REG_S0));
+	EXPECT_EQ(0x40490fdbULL, dBits(ARM_REG_D0) >> 32);
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, A_d_register_write_is_visible_through_both_s_halves)
+{
+	ALL_MODES;
+
+	// The double whose bits are 0x400000003f800000: 1.0f in the low half and
+	// 2.0f in the high one.
+	setRegisters({
+		{ARM_REG_D1, 2.000000473111868},
+	});
+
+	emulate("vmov.f64 d0, d1");
+
+	// Before s and d shared storage, both of these read zero.
+	EXPECT_EQ(1.0f, getRegisterValueFloat(ARM_REG_S0));
+	EXPECT_EQ(2.0f, getRegisterValueFloat(ARM_REG_S1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, The_pairing_continues_past_the_first_register)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x40490fdb},
+	});
+
+	emulate("vmov s5, r1");
+
+	// s5 is the high half of d2, not of d5 and not the low half of anything.
+	EXPECT_EQ(0x40490fdbULL, dBits(ARM_REG_D2) >> 32);
+	EXPECT_EQ(0x0ULL, dBits(ARM_REG_D5));
+	EXPECT_NO_VALUE_CALLED();
 }
 
 } // namespace tests
