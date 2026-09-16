@@ -3413,13 +3413,15 @@ COV-01 on the same corpus, also a floor:
 
 ### Prefetch hints are not instructions to model
 
-`PLD`, `PLDW` and `PLI` on ARM and `PRFM`/`PRFUM` on ARM64 touch no register
-and no byte of memory and cannot fault. There is nothing to translate, which is
-the answer `NOP` and `BTI` already get, and as `nullptr` entries they came out
-as `__asm_pld` calls -- 2,142 of them across the 42 static ARM binaries, plus
-924 `__asm_prfm` on ARM64. Noise in the output for instructions that do
-nothing. Falsified by reverting the five dispatch entries: exactly the three
-new tests fail.
+`PLD`, `PLDW` and `PLI` on ARM, `PRFM`/`PRFUM` on ARM64 and `PREF` on MIPS
+touch no register and no byte of memory and raise no addressing exception.
+There is nothing to translate, which is the answer `NOP` and `BTI` already
+get, and as `nullptr` entries they came out as `__asm_pld` calls -- 2,142 of
+them across the 42 static ARM binaries, 924 `__asm_prfm` on ARM64 and 840
+`__asm_pref` on MIPS. Noise in the output for instructions that do nothing.
+
+Falsified one architecture at a time by reverting the dispatch entries: each
+time, exactly the new tests for that architecture fail.
 
 C2L-01 floors: Arm 592 -> 596, Arm64 481 -> 482. 4,650 tests.
 

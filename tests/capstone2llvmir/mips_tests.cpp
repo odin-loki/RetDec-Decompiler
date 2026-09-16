@@ -6456,6 +6456,29 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MFHC1)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+//
+// MIPS_INS_PREF
+//
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_PREF_is_nothing)
+{
+	SKIP_MODE_64;
+
+	// A prefetch hint touches no register and no memory and raises no
+	// addressing exception, so there is nothing to translate -- the answer
+	// MIPS_INS_NOP already gets. As a nullptr entry it came out as an
+	// __asm_pref call.
+	setRegisters({
+		{MIPS_REG_4, 0x1000},
+	});
+
+	emulate("pref 0, 0($4)");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

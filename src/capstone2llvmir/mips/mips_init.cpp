@@ -817,7 +817,11 @@ Capstone2LlvmIrTranslatorMips_impl::_i2fm =
 		{MIPS_INS_PRECR, nullptr},
 		{MIPS_INS_PRECR_SRA, nullptr},
 		{MIPS_INS_PRECR_SRA_R, nullptr},
-		{MIPS_INS_PREF, nullptr},
+		// A prefetch hint: no register, no memory, no addressing exception.
+		// Nothing to translate, which is what MIPS_INS_NOP already gets and
+		// what ARM's PLD and ARM64's PRFM get. As a nullptr entry it came out
+		// as an __asm_pref call.
+		{MIPS_INS_PREF, &Capstone2LlvmIrTranslatorMips_impl::translateNop},
 		{MIPS_INS_PREPEND, nullptr},
 		{MIPS_INS_RADDU, nullptr},
 		{MIPS_INS_RDDSP, nullptr},
