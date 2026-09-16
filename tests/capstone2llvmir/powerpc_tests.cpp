@@ -2540,34 +2540,100 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MTLR)
 
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CRAND)
 {
+	// `crand 1, 2, 3` is CR0GT = CR0EQ & CR0UN. Capstone reports the three
+	// operands as the individual bit registers, which this translator has.
+	//
+	// The version this replaces asserted the old behaviour as if it were the
+	// specification: all four CR0 bits written from a pseudo-assembly call,
+	// plus the seven write-only CR1..CR7 `i4` registers. It was pinning a
+	// clobber.
 	ALL_MODES;
 
 	setRegisters({
-		{PPC_REG_CR0GT, 0x12},
-		{PPC_REG_CR0EQ, 0x34},
-		{PPC_REG_R3, 0x56},
+		{PPC_REG_CR0EQ, true},
+		{PPC_REG_CR0UN, true},
 	});
 
 	emulate("crand 1, 2, 3");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_CR0GT, PPC_REG_CR0EQ, PPC_REG_CR0UN});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_CR0EQ, PPC_REG_CR0UN});
 	EXPECT_JUST_REGISTERS_STORED({
-		{PPC_REG_CR0LT, ANY},
-		{PPC_REG_CR0GT, ANY},
-		{PPC_REG_CR0EQ, ANY},
-		{PPC_REG_CR0UN, ANY},
-		{PPC_REG_CR1, ANY},
-		{PPC_REG_CR2, ANY},
-		{PPC_REG_CR3, ANY},
-		{PPC_REG_CR4, ANY},
-		{PPC_REG_CR5, ANY},
-		{PPC_REG_CR6, ANY},
-		{PPC_REG_CR7, ANY},
+		{PPC_REG_CR0GT, true},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_crand"), {0x0, 0x0, 0x0}},
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CRAND_is_an_AND)
+{
+	// The same instruction with one input clear. Without this, a translation
+	// that always wrote true would pass the test above.
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_CR0EQ, true},
+		{PPC_REG_CR0UN, false},
 	});
+
+	emulate("crand 1, 2, 3");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR0GT, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CROR_reaches_CR7UN)
+{
+	// isCrBitRegister() read `PPC_REG_CR0EQ <= r && r <= PPC_REG_CR5UN`, and
+	// Capstone groups its CR bit registers by bit NAME rather than by field --
+	// EQ is 312..319, GT 320..327, LT 328..335, UN 336..343 -- so that range
+	// covered thirty of the thirty-two and excluded CR6UN and CR7UN. This is
+	// the bit it excluded.
+	//
+	// 0x4ffefb82 = cror cr7un, cr7eq, cr7un.
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_CR7EQ, true},
+		{PPC_REG_CR7UN, false},
+	});
+
+	emulate_bin("4f fe fb 82");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR7UN, true},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_CROR_on_CR7_leaves_CR0_alone)
+{
+	// Bits 28..31 are CR7. `cror 28, 29, 28` does not touch CR0, and the
+	// translation it replaces overwrote all four of CR0's bits with the
+	// results of an undefined function -- a wrong branch, not a missing
+	// translation, for any code that compared into CR0 and then did CR-bit
+	// arithmetic on another field.
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_CR0LT, true},
+		{PPC_REG_CR0GT, true},
+		{PPC_REG_CR0EQ, true},
+		{PPC_REG_CR0UN, true},
+		{PPC_REG_CR7LT, false},
+		{PPC_REG_CR7GT, true},
+	});
+
+	// Hand-assembled: Keystone does not produce this encoding from that
+	// syntax, and the bytes are what the corpus contains.
+	// 0x4f9de382 = cror cr7lt, cr7gt, cr7lt.
+	emulate_bin("4f 9d e3 82");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR7LT, true},
+	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -3539,18 +3605,29 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MFSPR)
 
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MFCR)
 {
+	// 9,008 occurrences in the static corpus, the largest unmodelled
+	// pseudo-assembly call on PowerPC.
+	//
+	// PowerPC numbers the condition register's bits from the MOST significant
+	// end: CR0's LT bit is bit 31 of the word and CR7's SO bit is bit 0. The
+	// three bits set here are the two ends and one in the middle, so a
+	// translation that assembled the fields the other way round answers
+	// 0x80004001 instead.
 	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_CR0LT, true}, // bit 31
+		{PPC_REG_CR3EQ, true}, // bit 31 - (4*3 + 2) = 17
+		{PPC_REG_CR7UN, true}, // bit 0
+	});
 
 	emulate("mfcr 0");
 
-	EXPECT_NO_REGISTERS_LOADED();
 	EXPECT_JUST_REGISTERS_STORED({
-		{PPC_REG_R0, ANY},
+		{PPC_REG_R0, 0x80020001},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_mfcr"), {}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //

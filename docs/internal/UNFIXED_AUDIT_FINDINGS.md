@@ -4797,3 +4797,137 @@ whole condition register into a GPR, which needs the CR bit-order question the
 `cror` note above raises. `lvx`, `stvx` and `vperm` are AltiVec and need a
 vector register file. MIPS's `lwl`/`lwr`/`swl`/`swr` and ARM64's SVE and MTE
 are unchanged from the previous lists.
+
+
+## Batch H: PowerPC's condition register was modelled twice, and one CR-bit
+## instruction never reached its translator
+
+Three findings, all in the same place, all found by following `__asm_mfcr`
+(9,008 in the static corpus, the largest remaining entry on any architecture)
+and `__asm_cror` (6 on the gated corpus).
+
+### The condition register has two representations and one of them is dead
+
+`powerpc_init.cpp` creates **both**:
+
+* 32 `i1` globals -- `cr0_lt`, `cr0_gt`, `cr0_eq`, `cr0_so` through `cr7_so` --
+  which `storeCr0()` and `storeCrX()` write on every comparison and every
+  record-form instruction; and
+* 8 `i4` globals, `PPC_REG_CR0`..`CR7`, one per field.
+
+Nothing anywhere calls `loadRegister(PPC_REG_CR0..CR7)`. The `i4` set is
+write-only: state that is produced, never consumed, and impossible to keep in
+step with the `i1` set that the branches actually read.
+
+### `cror` was clobbering CR0
+
+`translateCrModifTernary()` -- the entry for all eight CR-bit logical
+operations -- emitted a pseudo-assembly call returning an eleven-field struct
+and then wrote, unconditionally:
+
+```cpp
+storeRegister(PPC_REG_CR0LT, ExtractValue(c, {0}), irb);
+storeRegister(PPC_REG_CR0GT, ExtractValue(c, {1}), irb);
+storeRegister(PPC_REG_CR0EQ, ExtractValue(c, {2}), irb);
+storeRegister(PPC_REG_CR0UN, ExtractValue(c, {3}), irb);
+storeRegister(PPC_REG_CR1,   ExtractValue(c, {4}), irb);   // ... CR7
+```
+
+`cror cr7lt, cr7gt, cr7lt` does not touch CR0. That code overwrote all four of
+CR0's bits with the return value of an undefined function, so a comparison into
+CR0, then CR-bit arithmetic on any other field, then a branch on CR0, branched
+on whatever the call returned. A wrong branch, not a missing translation. The
+seven `CR1`..`CR7` writes went into the dead `i4` set.
+
+There is nothing to model here: Capstone reports all three operands as the
+individual bit registers this translator already has, so `cror` is one `or`
+between two `i1` loads.
+
+### `cror` never reached that code either
+
+Fixing it did not make the test pass, and the reason is the third finding:
+
+```
+4f9de382 -> cror cr7lt, cr7gt, cr7lt | id=227 ops=3
+227 -> crmove     231 -> cror
+```
+
+Capstone 5.0.9 decodes `cror` with **`PPC_INS_CRMOVE`'s id** while printing
+"cror". The dispatch table's `PPC_INS_CROR` entry was unreachable; every `cror`
+went to `translateCrNotMove`, whose `EXPECT_IS_BINARY` rejected its three
+operands and fell through to the generic pseudo-assembly path. That is the
+shape of the call PSEUDO-01 saw -- `void @__asm_cror(i1, i1, i1)`, three
+arguments and no return -- which is not what `translateCrModifTernary()`
+emitted, and the discrepancy was visible in the IR all along.
+
+Third instance of this shape in the branch, after ARM's `NOP`/`HINT` and
+`VMRS`/`FMSTAT`: **a dispatch-table key that Capstone does not produce**. The
+operation is taken from `i->mnemonic` now, which is what Capstone actually
+prints, and `translateCrNotMove` delegates when it is handed three operands.
+
+### `isCrBitRegister` was two registers short
+
+```cpp
+return PPC_REG_CR0EQ <= r && r <= PPC_REG_CR5UN;
+```
+
+Capstone groups the CR bit registers by bit **name**, not by field: EQ is
+312..319 for CR0..CR7, GT is 320..327, LT 328..335, UN 336..343. So that range
+is 312..341 and excludes exactly two registers, `CR6UN` and `CR7UN` -- the
+summary-overflow bits of the two highest fields. It reads as "the CR bit
+registers" and means "all but two of them". The predicate is used by
+`translateCrNotMove` and `translateCrSetClr` as well, so `crnot cr7so, cr7so`
+was falling to pseudo-assembly for the same reason.
+
+A range over an enum whose order has not been checked is the same defect as the
+`MIPS_REG_29 == MIPS_REG_SP` trap in the previous commit, one layer up.
+
+### `mfcr`
+
+The 32 bits assemble into a GPR at fixed positions, and PowerPC numbers them
+from the **most** significant end: CR0's LT bit is bit 31 of the word, CR7's SO
+bit is bit 0. The test sets one bit at each end and one in the middle, so a
+translation that assembled the fields the other way round answers `0x80004001`
+where the instruction answers `0x80020001`.
+
+### Falsification
+
+Six mutations, each reverted alone, each rebuilt and run; all six fail:
+
+| mutation | result |
+| --- | --- |
+| the CR-bit operation keyed on the id again | 2 tests fail |
+| `translateCrNotMove` does not delegate on three operands | 2 tests fail |
+| `crand` implemented as `or` | 1 test fails |
+| `mfcr`'s bit order reversed | 1 test fails |
+| `isCrBitRegister` back to `CR5UN` | 1 test fails |
+| `mfcr` back to the pseudo-assembly call | 1 test fails |
+
+The `CR5UN` mutation needed a test written for it: the CR7 test added first
+uses `CR7LT` and `CR7GT`, both inside the old range, so it could not have
+caught the off-by-two. `cror cr7un, cr7eq, cr7un` is the one that can.
+
+### Where it leaves PowerPC
+
+```
+                    static            gated corpus
+before Batch E      0.9829            0.9945
+after  Batch H      0.9932            1.0000
+```
+
+47,589 instructions on the static corpus between the two commits. PowerPC now
+joins x86-64 and ARM at 1.0000 on the gated corpus; the floor moves to match
+once CI has measured it.
+
+What is left on PowerPC is mostly not translatable here: `tdi`, `tdgti`,
+`tdlgti` and `twi` are conditional traps, `sc` is the system call, `attn` is a
+checkstop, `lvx`, `stvx` and `vperm` are AltiVec and need a vector register
+file, and `dcbst`/`icbi`/`dcbz` are cache maintenance -- `dcbz` in particular
+*does* write memory (it zeroes a cache line) and is the one worth doing next.
+`lwbrx`/`stwbrx` (byte-reversed load and store) and `stmw`/`lmw` (load and
+store multiple) are both straightforwardly specifiable.
+
+`mcrf` is still on the pseudo-assembly path, now visibly so: its function is
+named `__asm_mcrf_cr0_read`, which is what it does -- it reads CR0 and writes
+the dead `i4` registers. It is four `i1` copies and belongs in the next batch
+with `mtcrf`, which has the same shape.

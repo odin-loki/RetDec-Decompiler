@@ -493,9 +493,22 @@ bool Capstone2LlvmIrTranslatorPowerpc_impl::isCrRegister(cs_ppc_op& op)
 	return op.type == PPC_OP_REG && isCrRegister(op.reg);
 }
 
+/**
+ * Capstone's CR bit registers are grouped by bit NAME, not by field: EQ is
+ * 312..319 for CR0..CR7, GT is 320..327, LT 328..335 and UN 336..343. So a
+ * numeric range over them is a range over that layout and not over the fields,
+ * and the end of it is CR7UN.
+ *
+ * This said `r <= PPC_REG_CR5UN`, which is 341 -- correct for thirty of the
+ * thirty-two bits and wrong for CR6UN (342) and CR7UN (343). The two it
+ * excluded were the summary-overflow bits of the two highest fields, which is
+ * exactly the kind of near-miss a range over an enum whose order you have not
+ * checked produces: it looks like it says "the CR bit registers" and it says
+ * "all but two of them".
+ */
 bool Capstone2LlvmIrTranslatorPowerpc_impl::isCrBitRegister(uint32_t r)
 {
-	return PPC_REG_CR0EQ <= r && r <= PPC_REG_CR5UN;
+	return PPC_REG_CR0EQ <= r && r <= PPC_REG_CR7UN;
 }
 bool Capstone2LlvmIrTranslatorPowerpc_impl::isOperandRegister(cs_ppc_op& op)
 {
@@ -1662,8 +1675,148 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateCrModifTernary(cs_insn* i, 
  * PPC_INS_CRNOT  - crnot bx, by = crnor bx, by, by
  * PPC_INS_CRMOVE - crmove bx, by = cror bx, by, by
  */
+/**
+ * PPC_INS_CRAND, CRANDC, CREQV, CRNAND, CRNOR, CROR, CRORC, CRXOR
+ *
+ * One condition-register bit in, one bit out. Capstone reports all three
+ * operands as the individual bit registers -- `cror cr0lt, cr0eq, cr0lt` comes
+ * back as PPC_REG_CR0LT, PPC_REG_CR0EQ, PPC_REG_CR0LT -- and this translator
+ * has an `i1` global for every one of the 32 bits, which is what storeCrX()
+ * and storeCr0() write on every comparison. So there is nothing to model: it
+ * is a bitwise operation between two registers that already exist.
+ *
+ * What was there instead clobbered CR0
+ * ------------------------------------
+ *
+ * translateCrModifTernary() emitted a pseudo-assembly call returning a
+ * struct, and then did this, unconditionally, for every instruction in the
+ * family:
+ *
+ *     storeRegister(PPC_REG_CR0LT, ExtractValue(c, {0}), irb);
+ *     storeRegister(PPC_REG_CR0GT, ExtractValue(c, {1}), irb);
+ *     storeRegister(PPC_REG_CR0EQ, ExtractValue(c, {2}), irb);
+ *     storeRegister(PPC_REG_CR0UN, ExtractValue(c, {3}), irb);
+ *     storeRegister(PPC_REG_CR1,   ExtractValue(c, {4}), irb);   // ... CR7
+ *
+ * `cror cr7lt, cr7eq, cr7lt` does not touch CR0. That code overwrote all four
+ * of CR0's bits with the results of an undefined function -- so a comparison
+ * into CR0, then a CR-bit operation on any other field, then a branch on CR0,
+ * read whatever the call returned. A wrong branch, not a missing translation.
+ *
+ * The seven `PPC_REG_CR1`..`CR7` writes went nowhere at all. Those are `i4`
+ * globals that exist alongside the 32 `i1` bit registers, and nothing in this
+ * translator ever reads them: the condition register is modelled twice and one
+ * of the two models is write-only.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateCrBitOp(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, pi, irb);
+
+	auto isBit = [this](cs_ppc_op& op) { return op.type == PPC_OP_REG && isCrBitRegister(op.reg); };
+	if (!isBit(pi->operands[0]) || !isBit(pi->operands[1]) || !isBit(pi->operands[2]))
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+
+	llvm::Value* a = loadRegister(pi->operands[1].reg, irb);
+	llvm::Value* b = loadRegister(pi->operands[2].reg, irb);
+
+	// The operation comes from the MNEMONIC, not the id.
+	//
+	// Capstone 5.0.9 decodes `cror` with PPC_INS_CRMOVE's id (227) while
+	// printing "cror" -- the alias table wins on the id and loses on the
+	// text. A dispatch table keyed on ids alone therefore sent every `cror`
+	// to translateCrNotMove(), whose EXPECT_IS_BINARY rejected its three
+	// operands and fell through to the generic pseudo-assembly path. That is
+	// why PSEUDO-01 saw `__asm_cror(i1, i1, i1)` -- a void call with three
+	// arguments, which is not the shape translateCrModifTernary() emitted:
+	// the entry the table had for CROR was never reached at all.
+	//
+	// Third instance of this shape in the branch, after ARM's NOP/HINT and
+	// VMRS/FMSTAT: a table key that Capstone does not produce.
+	std::string mnem = i->mnemonic;
+	llvm::Value* res = nullptr;
+	if (mnem == "crand")
+		res = irb.CreateAnd(a, b);
+	else if (mnem == "cror")
+		res = irb.CreateOr(a, b);
+	else if (mnem == "crxor")
+		res = irb.CreateXor(a, b);
+	else if (mnem == "crandc")
+		res = irb.CreateAnd(a, irb.CreateNot(b));
+	else if (mnem == "crorc")
+		res = irb.CreateOr(a, irb.CreateNot(b));
+	else if (mnem == "crnand")
+		res = irb.CreateNot(irb.CreateAnd(a, b));
+	else if (mnem == "crnor")
+		res = irb.CreateNot(irb.CreateOr(a, b));
+	else if (mnem == "creqv")
+		res = irb.CreateNot(irb.CreateXor(a, b));
+	else
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+
+	storeRegister(pi->operands[0].reg, res, irb);
+}
+
+/**
+ * PPC_INS_MFCR -- move the whole condition register into a GPR.
+ *
+ * 9,008 occurrences in the static parity corpus, the largest unmodelled
+ * pseudo-assembly call on PowerPC. It is how a compiler spills the condition
+ * register, and it was `__asm_mfcr()`.
+ *
+ * The 32 bits are the 32 `i1` registers, and their positions are fixed by the
+ * architecture: CR field n occupies bits 4n..4n+3 counted from the MOST
+ * significant end, so CR0's LT bit is bit 31 of the word and CR7's SO bit is
+ * bit 0. Getting that backwards puts CR0 where CR7 belongs, which the test
+ * catches by giving each field a different value.
+ *
+ * Built at 32 bits and stored zero-extended, which is what the instruction
+ * does on 64-bit PowerPC and a no-op on 32-bit.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateMfcr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_UNARY(i, pi, irb);
+
+	auto* i32 = irb.getInt32Ty();
+	llvm::Value* res = llvm::ConstantInt::get(i32, 0);
+
+	for (unsigned f = 0; f < 8; ++f)
+	{
+		uint32_t lt = 0, gt = 0, eq = 0, so = 0;
+		crFieldRegisters(PPC_REG_CR0 + f, lt, gt, eq, so);
+		const uint32_t bits[4] = {lt, gt, eq, so};
+		for (unsigned b = 0; b < 4; ++b)
+		{
+			// Bit 0 is the most significant, so field f bit b is at
+			// 31 - (4f + b) counting from the bottom.
+			unsigned shift = 31 - (4 * f + b);
+			llvm::Value* v = irb.CreateZExt(loadRegister(bits[b], irb), i32);
+			res = irb.CreateOr(res, irb.CreateShl(v, llvm::ConstantInt::get(i32, shift)));
+		}
+	}
+
+	storeOp(pi->operands[0], res, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateCrNotMove(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
+	// Capstone hands the CRMOVE and CRNOT ids to instructions that are not
+	// those aliases -- `cror` arrives here with three operands and the
+	// mnemonic "cror" -- so the operand count decides which of the two this
+	// is before anything else does.
+	if (pi->op_count == 3)
+	{
+		translateCrBitOp(i, pi, irb);
+		return;
+	}
+
 	EXPECT_IS_BINARY(i, pi, irb);
 
 	uint32_t crReg0 = 0;
