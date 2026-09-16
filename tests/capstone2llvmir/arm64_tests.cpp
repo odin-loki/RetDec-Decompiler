@@ -5,6 +5,7 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cstring>
 #include <llvm/IR/InstIterator.h>
 
 #include "capstone2llvmir/capstone2llvmir_tests.h"
@@ -110,64 +111,105 @@ class Capstone2LlvmIrTranslatorArm64Tests :
 			return _translator->getRegister(getParentRegister(reg));
 		}
 
+		// b/h/s/d/q are views of v, which is an i128 -- so a floating-point
+		// register's bits live in the parent's IntVal, not in a GenericValue's
+		// DoubleVal or FloatVal. These four reinterpret rather than reading a
+		// field that was never written.
+		// s0 holds a float and d0 a double, so which of the two a register
+		// means depends on its width -- and the width is the VIEW's, not the
+		// i128 parent's.
+		bool viewIsSingle(uint32_t reg)
+		{
+			return _translator->getRegisterBitSize(reg) == 32;
+		}
+
+		virtual double getRegisterValueDouble(uint32_t reg) override
+		{
+			uint64_t bits = getRegisterValueUnsigned(reg);
+			if (viewIsSingle(reg))
+			{
+				float f;
+				uint32_t b32 = static_cast<uint32_t>(bits);
+				std::memcpy(&f, &b32, sizeof f);
+				return static_cast<double>(f);
+			}
+			double d;
+			std::memcpy(&d, &bits, sizeof d);
+			return d;
+		}
+
+		virtual float getRegisterValueFloat(uint32_t reg) override
+		{
+			return static_cast<float>(getRegisterValueDouble(reg));
+		}
+
+		virtual void setRegisterValueDouble(uint32_t reg, double val) override
+		{
+			if (viewIsSingle(reg))
+			{
+				float f = static_cast<float>(val);
+				uint32_t b32;
+				std::memcpy(&b32, &f, sizeof b32);
+				setRegisterValueUnsigned(reg, b32);
+				return;
+			}
+			uint64_t bits;
+			std::memcpy(&bits, &val, sizeof bits);
+			setRegisterValueUnsigned(reg, bits);
+		}
+
+		virtual void setRegisterValueFloat(uint32_t reg, float val) override
+		{
+			setRegisterValueDouble(reg, static_cast<double>(val));
+		}
+
+		// Since b/h/s/d/q are views of v, the parent here can be 128 bits
+		// wide and the view can be 8, 16 or 32 -- so this truncates to the
+		// view's own width rather than switching on a list of the two widths
+		// general-purpose registers happen to come in.
 		virtual uint64_t getRegisterValueUnsigned(uint32_t reg) override
 		{
 			auto preg = getParentRegister(reg);
 			auto* gv = getRegister(preg);
-			auto val = _emulator->getGlobalVariableValue(gv).IntVal.getZExtValue();
+			const llvm::APInt& whole = _emulator->getGlobalVariableValue(gv).IntVal;
+			uint64_t val = whole.getBitWidth() > 64 ? whole.trunc(64).getZExtValue() : whole.getZExtValue();
 
-			if (reg == preg)
+			unsigned bits = reg == preg ? 64 : _translator->getRegisterBitSize(reg);
+			if (bits == 0 || bits >= 64)
 			{
 				return val;
 			}
-
-			switch (_translator->getRegisterBitSize(reg))
-			{
-				case 32: return static_cast<uint32_t>(val);
-				case 64: return static_cast<uint64_t>(val);
-				default: throw std::runtime_error("Unknown reg bit size.");
-			}
+			return val & ((1ULL << bits) - 1);
 		}
 
+		// Writes the view's own bits into the parent and leaves the rest of
+		// the parent alone. This is test SETUP, so preserving the remainder is
+		// what a caller wants; the translator's own storeRegister() zeroes it,
+		// which is what the hardware does.
+		//
+		// Was a switch over {32, 64} that threw on anything else and read the
+		// parent with getZExtValue(). Now that b/h/s/d/q are views of the
+		// i128 v registers, both of those are wrong: the widths run 8 to 128
+		// and the parent does not fit in a uint64_t.
 		virtual void setRegisterValueUnsigned(uint32_t reg, uint64_t val) override
 		{
 			auto preg = getParentRegister(reg);
 			auto* gv = getRegister(preg);
 			auto* t = cast<llvm::IntegerType>(gv->getValueType());
+			unsigned wholeBits = t->getBitWidth();
 
 			GenericValue v = _emulator->getGlobalVariableValue(gv);
 
-			if (reg == preg)
+			unsigned bits = reg == preg ? wholeBits : _translator->getRegisterBitSize(reg);
+			if (bits == 0 || bits > wholeBits)
 			{
-				bool isSigned = false;
-				v.IntVal = APInt(t->getBitWidth(), val, isSigned,
-						/*implicitTrunc=*/true);
-				_emulator->setGlobalVariableValue(gv, v);
-				return;
+				throw std::runtime_error("Unknown reg bit size.");
 			}
 
-			uint64_t old = v.IntVal.getZExtValue();
-
-			switch (_translator->getRegisterBitSize(reg))
-			{
-			case 32:
-			    val = val & 0x00000000ffffffff;
-			    old = old & 0xffffffff00000000;
-			    break;
-			case 64:
-			    val = val & 0xffffffffffffffff;
-			    old = old & 0x0000000000000000;
-			    break;
-			default:
-			    throw std::runtime_error("Unknown reg bit size.");
-			}
-
-			val = old | val;
-			bool isSigned = false;
-			v.IntVal = APInt(t->getBitWidth(), val, isSigned,
-					/*implicitTrunc=*/true);
+			APInt fresh(wholeBits, val, /*isSigned=*/false, /*implicitTrunc=*/true);
+			APInt keep = APInt::getLowBitsSet(wholeBits, bits);
+			v.IntVal = (v.IntVal & ~keep) | (fresh & keep);
 			_emulator->setGlobalVariableValue(gv, v);
-			return;
 		}
 
 };
@@ -8699,17 +8741,17 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_MOVI_d_i)
 
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_MOVI_v_i)
 {
-	// Generate pseudo instruction in this case
 	emulate("movi v15.4h, #0xcf");
 
+	// 0xcf replicated into four halfword lanes. This used to be a
+	// pseudo-assembly call, and the test asserted that -- which is why the
+	// test had to change when the instruction started being translated.
+	EXPECT_EQ(0x00cf00cf00cf00cfULL, vLow(ARM64_REG_V15));
+	// A 64-bit arrangement clears the upper half of the register.
+	EXPECT_EQ(0x0ULL, vHigh(ARM64_REG_V15));
 	EXPECT_NO_REGISTERS_LOADED();
-	EXPECT_JUST_REGISTERS_STORED({
-		{ARM64_REG_V15, ANY},
-	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_movi"), {207}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -10304,6 +10346,306 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_MSR_writes_the_thread_poin
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM64_SYSREG_TPIDR_EL0, 0x00c0ffee0badf00d},
 	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ============================================================================
+// The ARM64 forms that had a dispatch entry and fell back anyway
+// ============================================================================
+//
+// Every instruction below was already in the dispatch table with a function
+// pointer, so COV-01 counted it as covered. PSEUDO-01 -- which asks the
+// translator instead of the table -- found them emitting pseudo-assembly for
+// 2,300 sites in the static corpus, because each translator declined the
+// particular operand shape these forms use.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, MOVI_replicates_across_a_4s_arrangement)
+{
+	setV(ARM64_REG_V0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+
+	emulate("movi v0.4s, #0x33");
+
+	EXPECT_EQ(0x0000003300000033ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000003300000033ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, MOVI_zeroes_a_vector)
+{
+	setV(ARM64_REG_V0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+
+	emulate("movi v0.4s, #0x0");
+
+	// 1,053 sites in the static corpus are exactly this: the idiom a
+	// compiler uses to zero a vector register.
+	EXPECT_EQ(0x0ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, MOVI_applies_the_lsl_shift_within_the_lane)
+{
+	setV(ARM64_REG_V0, 0, 0);
+
+	emulate("movi v0.4s, #0x33, lsl #8");
+
+	// Capstone reports the RAW imm8 and the shift separately, not the
+	// element value: taking the immediate alone would answer 0x33.
+	EXPECT_EQ(0x0000330000003300ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000330000003300ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, MOVI_msl_shifts_ones_in_not_zeroes)
+{
+	setV(ARM64_REG_V0, 0, 0);
+
+	emulate("movi v0.4s, #0x33, msl #8");
+
+	// MSL fills the vacated bits with ONES. An ordinary left shift would
+	// answer 0x00003300 per lane.
+	EXPECT_EQ(0x000033ff000033ffULL, vLow(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, MOVI_2d_takes_the_immediate_whole)
+{
+	setV(ARM64_REG_V0, 0, 0);
+
+	emulate("movi v0.2d, #0xff00ff00ff00ff00");
+
+	// For the .2d arrangement capstone reports the already-expanded 64 bits
+	// and there is no shift to apply.
+	EXPECT_EQ(0xff00ff00ff00ff00ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0xff00ff00ff00ff00ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, MVNI_is_the_complement_within_the_lane)
+{
+	setV(ARM64_REG_V0, 0, 0);
+
+	emulate("mvni v0.4s, #0x33");
+
+	// Complemented at 32 bits, not at 8: 0xcc would be the wrong width.
+	EXPECT_EQ(0xffffffccffffffccULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0xffffffccffffffccULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, REV16_reverses_bytes_within_each_halfword)
+{
+	setRegisters({
+		{ARM64_REG_W1, 0x11223344},
+	});
+
+	emulate("rev16 w0, w1");
+
+	// Within each halfword, not across the register: reversing the whole
+	// word would answer 0x44332211.
+	EXPECT_EQ(0x22114433ULL, getRegisterValueUnsigned(ARM64_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, REV16_on_a_64_bit_register_has_four_halfwords)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x1122334455667788ULL},
+	});
+
+	emulate("rev16 x0, x1");
+
+	EXPECT_EQ(0x2211443366558877ULL, getRegisterValueUnsigned(ARM64_REG_X0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, REV32_reverses_bytes_within_each_word)
+{
+	setRegisters({
+		{ARM64_REG_X1, 0x1122334455667788ULL},
+	});
+
+	emulate("rev32 x0, x1");
+
+	EXPECT_EQ(0x4433221188776655ULL, getRegisterValueUnsigned(ARM64_REG_X0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, FMOV_reads_the_high_lane_of_a_vector)
+{
+	setV(ARM64_REG_V0, 0xaaaaaaaaaaaaaaaaULL, 0x5555555555555555ULL);
+
+	emulate("fmov x3, v0.d[1]");
+
+	// Lane 1 is the HIGH half. Reading the register as a scalar would
+	// answer the low half.
+	EXPECT_EQ(0xaaaaaaaaaaaaaaaaULL, getRegisterValueUnsigned(ARM64_REG_X3));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, FMOV_writes_the_high_lane_and_leaves_the_low_one)
+{
+	setV(ARM64_REG_V0, 0xaaaaaaaaaaaaaaaaULL, 0x5555555555555555ULL);
+	setRegisters({
+		{ARM64_REG_X3, 0x0123456789abcdefULL},
+	});
+
+	emulate("fmov v0.d[1], x3");
+
+	EXPECT_EQ(0x5555555555555555ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0123456789abcdefULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, SADDL2_reads_the_upper_half_of_its_sources)
+{
+	// Low half 1, upper half 0x10 in both sources.
+	setV(ARM64_REG_V4, 0x0000001000000010ULL, 0x0000000100000001ULL);
+	setV(ARM64_REG_V5, 0x0000002000000020ULL, 0x0000000200000002ULL);
+	setV(ARM64_REG_V7, 0, 0);
+
+	emulate("saddl2 v7.2d, v4.4s, v5.4s");
+
+	// 0x10 + 0x20 in both destination lanes. The form without the 2 would
+	// read the LOW half and answer 3.
+	EXPECT_EQ(0x30ULL, vLow(ARM64_REG_V7));
+	EXPECT_EQ(0x30ULL, vHigh(ARM64_REG_V7));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, SADDL2_sign_extends_where_UADDL2_zero_extends)
+{
+	setV(ARM64_REG_V4, 0xffffffffffffffffULL, 0);
+	setV(ARM64_REG_V5, 0x0000000100000001ULL, 0);
+	setV(ARM64_REG_V7, 0, 0);
+
+	emulate("saddl2 v7.2d, v4.4s, v5.4s");
+
+	// -1 + 1 == 0 signed. Zero-extending would answer 0x100000000.
+	EXPECT_EQ(0x0ULL, vLow(ARM64_REG_V7));
+	EXPECT_EQ(0x0ULL, vHigh(ARM64_REG_V7));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, UADDL2_zero_extends)
+{
+	setV(ARM64_REG_V4, 0xffffffffffffffffULL, 0);
+	setV(ARM64_REG_V5, 0x0000000100000001ULL, 0);
+	setV(ARM64_REG_V7, 0, 0);
+
+	emulate("uaddl2 v7.2d, v4.4s, v5.4s");
+
+	EXPECT_EQ(0x100000000ULL, vLow(ARM64_REG_V7));
+	EXPECT_EQ(0x100000000ULL, vHigh(ARM64_REG_V7));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ADDV_sums_every_lane_into_a_scalar)
+{
+	setV(ARM64_REG_V1, 0, 0x0807060504030201ULL);
+	setV(ARM64_REG_V0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+
+	emulate("addv b0, v1.8b");
+
+	// 1+2+...+8 == 36, and the byte destination clears everything above it.
+	EXPECT_EQ(36ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ADDV_wraps_within_the_lane_width)
+{
+	setV(ARM64_REG_V1, 0, 0x8080808080808080ULL);
+	setV(ARM64_REG_V0, 0, 0);
+
+	emulate("addv b0, v1.8b");
+
+	// Eight lanes of 0x80 sum to 0x400, which is 0 in eight bits. Summing
+	// at a wider width would answer 0x400.
+	EXPECT_EQ(0x0ULL, vLow(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, UMAXV_is_unsigned_and_SMAXV_is_not)
+{
+	setV(ARM64_REG_V1, 0, 0x01020304050607ffULL);
+	setV(ARM64_REG_V0, 0, 0);
+
+	emulate("umaxv b0, v1.8b");
+
+	EXPECT_EQ(0xffULL, vLow(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, SMAXV_treats_the_lanes_as_signed)
+{
+	setV(ARM64_REG_V1, 0, 0x01020304050607ffULL);
+	setV(ARM64_REG_V0, 0, 0);
+
+	emulate("smaxv b0, v1.8b");
+
+	// 0xff is -1 signed, so the maximum is 7 rather than 0xff.
+	EXPECT_EQ(0x07ULL, vLow(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ============================================================================
+// b0, h0, s0, d0, q0 and v0 are one register
+// ============================================================================
+//
+// They were six independent globals. The ARM64 parent map covered only
+// W -> X, WSP -> SP and WZR -> XZR, so a scalar floating-point write and a
+// vector read of the same hardware register never saw each other. That is not
+// an exotic-extension problem like SVE: it is ordinary compiled
+// floating-point code.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, A_scalar_FP_write_is_visible_as_the_vector_register)
+{
+	setV(ARM64_REG_V0, 0xaaaaaaaaaaaaaaaaULL, 0xbbbbbbbbbbbbbbbbULL);
+	setRegisters({{ARM64_REG_X1, 0x0123456789abcdefULL}});
+
+	emulate("fmov d0, x1");
+
+	EXPECT_EQ(0x0123456789abcdefULL, vLow(ARM64_REG_V0));
+	// Writing a narrow view zeroes the rest of the register.
+	EXPECT_EQ(0x0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, A_vector_write_is_visible_as_the_scalar_register)
+{
+	setV(ARM64_REG_V0, 0, 0);
+
+	emulate("movi v0.2d, #0xff00ff00ff00ff00");
+
+	EXPECT_EQ(0xff00ff00ff00ff00ULL, getRegisterValueUnsigned(ARM64_REG_D0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, An_s_register_write_zeroes_the_whole_vector_above_it)
+{
+	setV(ARM64_REG_V0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setRegisters({{ARM64_REG_W1, 0x40490fdb}});
+
+	emulate("fmov s0, w1");
+
+	EXPECT_EQ(0x40490fdbULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, A_d_register_read_takes_the_low_half_of_the_vector)
+{
+	setV(ARM64_REG_V2, 0xaaaaaaaaaaaaaaaaULL, 0x0123456789abcdefULL);
+
+	emulate("fmov x4, d2");
+
+	// The low half, not the high one and not some separate d2 storage.
+	EXPECT_EQ(0x0123456789abcdefULL, getRegisterValueUnsigned(ARM64_REG_X4));
 	EXPECT_NO_VALUE_CALLED();
 }
 

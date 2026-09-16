@@ -16,6 +16,7 @@
 #include <vector>
 
 #include <llvm/ADT/APInt.h>
+#include <llvm/IR/Verifier.h>
 #include <llvm/Support/raw_ostream.h>
 
 #include <gtest/gtest.h>
@@ -290,6 +291,18 @@ class Capstone2LlvmIrTranslatorTests : public ::testing::Test
 
 			_translator->translate(bytes.data(), bytes.size(), addr, irb);
 
+			// The emulator is permissive: it will happily evaluate a bitcast
+			// between types of different sizes and produce a plausible-looking
+			// answer, so a malformed translation can pass every value
+			// assertion in this file. Verify the function instead of trusting
+			// that a green run means well-formed IR.
+			std::string err;
+			llvm::raw_string_ostream os(err);
+			if (llvm::verifyFunction(*f, &os))
+			{
+				ADD_FAILURE() << "translated function does not verify:\n" << os.str() << "\n" << dumpFunction(f);
+			}
+
 			return f;
 		}
 
@@ -443,11 +456,17 @@ class Capstone2LlvmIrTranslatorTests : public ::testing::Test
 			return _translator->getRegister(reg);
 		}
 
+		// APInt::getZExtValue() asserts above 64 bits. A register can be
+		// wider than that -- ARM64's v0 and x86's xmm0 are 128 bits, and on
+		// ARM64 d0 IS v0 -- so asking for a register "as a uint64" has to
+		// mean its low 64 bits rather than abort the run. vLow/vHigh and
+		// xmmLow/xmmHigh are there for the explicit case.
 		virtual uint64_t getRegisterValueUnsigned(uint32_t reg)
 		{
 			auto* gv = getRegister(reg);
 			assert(gv);
-			return _emulator->getGlobalVariableValue(gv).IntVal.getZExtValue();
+			const llvm::APInt& v = _emulator->getGlobalVariableValue(gv).IntVal;
+			return v.getBitWidth() > 64 ? v.trunc(64).getZExtValue() : v.getZExtValue();
 		}
 
 		virtual double getRegisterValueDouble(uint32_t reg)

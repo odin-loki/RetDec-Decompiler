@@ -221,6 +221,11 @@ class Capstone2LlvmIrTranslatorArm64_impl :
 		void translateNeonLaneBinary(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateNeonLaneShift(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateNeonLaneMove(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateNeonMovi(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateScalarRev(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateFMovLane(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateNeonWidenUpper(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateNeonAcross(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 
 		void translateAdd(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateAnd(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);

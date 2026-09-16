@@ -6791,3 +6791,195 @@ powerpc  0.9960     traps, AltiVec, cache maintenance
 x86-64 is no longer the worst of the five on the static corpus. ARM64 is.
 
 C2L-01 floor: X86 2484 → 2547. 5,376 tests.
+
+## Batch V — on ARM64, b0, h0, s0, d0, q0 and v0 were six registers
+
+### How this was found
+
+x86-64 finished Batch U at 0.9959, which made ARM64 the worst of the five on
+the static corpus at 0.9945. Measuring it gave 19,712 unmodelled instructions
+across 38 kinds — and most of the list was what I expected: SVE (`st1b` 4,620,
+`ld1b` 2,688, `whilelo` 588), `svc` 4,206, MTE (`ldg` 1,302, `st2g` 462).
+
+But `movi` was third at 1,557, and `rev16` (338), `fmov` (210) and `saddl2`
+(168) were on it too — and **all four already had a function pointer in the
+dispatch table**. COV-01 counts those as covered. They were emitting
+pseudo-assembly anyway, because each translator declined the particular
+operand shape those forms use. That is the gap PSEUDO-01 exists to see, and it
+is the third time on this branch it has paid for itself.
+
+Fixing `addv` then turned up something much larger.
+
+### V-1: the FP/NEON register file was fragmented
+
+`addv b0, v1.8b` writes `b0`. Writing `b0` did not change `v0`. Checking why:
+
+```cpp
+void Capstone2LlvmIrTranslatorArm64_impl::initializeRegistersParentMap()
+{
+	std::vector<std::vector<arm64_reg>> rss =
+	{
+		{ARM64_REG_W0,  ARM64_REG_X0},
+		...
+		{ARM64_REG_WSP, ARM64_REG_SP},
+		{ARM64_REG_WZR, ARM64_REG_XZR},
+	};
+```
+
+That is the whole map. W→X, WSP→SP, WZR→XZR. **The floating-point and vector
+registers are not in it at all**, so `b0` (i8), `h0` (i16), `s0` (f32),
+`d0` (f64), `q0` (f128) and `v0` (i128) were six independent globals for one
+hardware register.
+
+Two tests, one in each direction, confirmed it before anything was changed:
+
+```
+fmov d0, x1                    left v0 untouched
+movi v0.2d, #0xff00ff00ff00ff00  left d0 at zero
+```
+
+This is the same bug as the x86 XMM/YMM aliasing that Batches Q and S fixed,
+and it is worse in one respect: on x86 it needed AVX to show up, while here it
+affects **ordinary compiled floating-point code**. Any sequence that computes
+in `d` registers and then moves through a `v` register — which is what every
+vectorised loop prologue and epilogue does — was reading storage nothing had
+written.
+
+The fix is the parent map plus two changes to `loadRegister`/`storeRegister`:
+
+* A narrow view has to be truncated on read on an INTEGER of the right width
+  first. There is no `trunc i128 to double`.
+* A narrow view write **zeroes the rest of the register** — the rule for every
+  ARM64 sub-register, unlike x86 where an 8- or 16-bit write merges. The
+  existing code already zero-extended into the parent, which turns out to be
+  exactly right; it simply never had a wide parent to do it to.
+
+### V-2: which exposed a real `ucvtf` bug
+
+The first version of the store path converted the value straight to the
+parent's type. `ucvtf d0, w1` then produced
+
+```llvm
+%1 = trunc i64 %0 to i32
+%2 = bitcast i32 %1 to float     ; reinterprets 123 as 1.7e-43
+%3 = fpext float %2 to double
+```
+
+— a bitcast where the instruction means a conversion, because the caller's
+`eOpConv::UITOFP_OR_FPCAST` was being ignored. Nine tests caught it. The value
+is now converted to the **view's** type using whatever the caller asked for,
+and only then widened as bits.
+
+### V-3: the emulator will run invalid IR and give a plausible answer
+
+Falsifying the narrow-view read produced a green run. Removing the truncation
+entirely leaves `bitcast i128 to double` — a bitcast between types of
+different sizes, which is not valid LLVM IR — and **every test still passed**.
+Instrumenting the path showed it is reached hundreds of times per run, so this
+was not dead code: the emulator evaluated the malformed cast and produced a
+number that happened to satisfy the assertions.
+
+So the harness now runs `llvm::verifyFunction` on every translated function
+and fails the test if it does not verify. With that in place the same mutation
+fails **150 tests**.
+
+That is worth stating on its own: until this commit, *no test in this suite
+could tell well-formed IR from malformed IR*. Every value assertion went
+through an emulator that does not type-check. A translator that emitted
+nonsense of the right approximate shape would have passed.
+
+### V-4: the five forms that had a pointer and fell back
+
+| instruction | sites | why it fell back |
+| --- | --- | --- |
+| `movi` / `mvni` | 1,599 | `translateMovi` handed any vector arrangement to pseudo-assembly |
+| `rev16` / `rev32` | 338 | wired to the NEON lane translator, which declines a scalar |
+| `fmov` lane form | 210 | `translateFMov` declined anything touching a vector register |
+| `saddl2` and friends | 168 | not wired at all |
+| `addv` / `smaxv` / `umaxv` | 42 | not wired at all |
+
+Three details worth keeping:
+
+* Capstone reports `movi`'s RAW imm8 and the shift separately, not the element
+  value — except for the `.2d` arrangement, where it reports the expanded 64
+  bits and there is no shift. `MSL` shifts **ones** in, not zeroes.
+* `rev16` reverses bytes within each halfword: `0x11223344` becomes
+  `0x22114433`, not `0x44332211`. Implemented as masked swaps rather than a
+  vector `llvm.bswap`, because the emulator reads that intrinsic's operand as
+  a plain integer and asserts on a vector type — the wrong IR shape shows up
+  as a crash rather than a wrong answer.
+* The `2` widening forms differ from the plain ones only in reading the UPPER
+  half of their sources, which is invisible unless the two halves differ.
+
+### Falsification
+
+Sixteen mutations, each reverted alone, rebuilt and run. All sixteen fail:
+
+| mutation | result |
+| --- | --- |
+| a narrow-view write merges instead of zeroing | 314 tests fail |
+| a narrow-view read does not truncate | 150 tests fail |
+| a narrow view converts to the parent's type | 20 tests fail |
+| the `movi` dispatch back to `nullptr` | 16 tests fail |
+| `movi` does not replicate across the arrangement | 12 tests fail |
+| `rev16` reverses the whole register | 6 tests fail |
+| the widening `2` forms read the lower half | 4 tests fail |
+| the `addv` dispatch back to `nullptr` | 4 tests fail |
+| eight more, one or two tests each | |
+
+The narrow-view read mutation is the one that mattered: it was green until the
+harness started verifying the IR.
+
+### Where it leaves ARM64
+
+```
+                 static     unmodelled   kinds
+before           0.9945      19,712       38
+```
+
+The after-measurement over the 210-binary static corpus takes about half an
+hour and was still running when this was committed; the figure is recorded in
+the commit that follows rather than asserted here. What the change removes
+from that list is known instruction by instruction: `movi`/`mvni` 1,599,
+`rev16` 338, `fmov` 210, `saddl2` 168 and `addv` 42, which is 2,357 of the
+19,712 -- and none of that is what makes this batch worth having. The register
+aliasing was silently wrong on every instruction that touched an FP register,
+translated or not, and PSEUDO-01 cannot see that at all: it counts
+pseudo-assembly calls, and a wrong answer is not a pseudo-assembly call.
+
+What remains is dominated by two things this deliberately does not model:
+
+* **SVE** (`st1b`, `ld1b`, `whilelo`, `cntb`, `cntd`, `ptrue` — about 8,500).
+  Not a register-file job like AVX-512 was. ZMM is exactly 512 bits; an SVE
+  Z register's width is **implementation-defined and not knowable from the
+  instruction stream**, and `cntb`/`whilelo` return values that depend on it.
+  Modelling it at a guessed width would be wrong rather than incomplete.
+* **MTE** (`ldg`, `stg`, `st2g`, `irg`, `gmi` — about 3,200). `irg` produces
+  an architecturally random tag and `stg` writes a tag memory this model does
+  not have.
+
+plus `svc` (4,206), which is opaque by nature for the same reason `syscall` is
+on x86.
+
+### Unfixed: ARM 32-bit has the same fragmentation, in a harder shape
+
+`src/capstone2llvmir/arm/` has **no parent map at all** — no
+`getParentRegister` override — and its type map carries `{ARM_REG_S0, f32}`,
+`{ARM_REG_D0, f64}` and `{ARM_REG_Q0, f128}` as independent globals. The same
+two-line probe that found the ARM64 bug finds this one:
+
+```
+vmov s0, r0        with r0 = 0x12345678
+  s0 -> 0x12345678
+  d0 -> 0                      (both CS_MODE_ARM and CS_MODE_THUMB)
+```
+
+It is not the same fix. ARM64's views nest one-to-one — `b0`, `h0`, `s0`,
+`d0`, `q0` are all the low end of `v0` — so a parent map plus a
+truncate-and-zero-extend does it. ARM's VFP registers **pair**: `d0` is
+`s1:s0`, `d1` is `s3:s2`, and `q0` is `d1:d0`. So `s1` is the *high* half of
+its parent, not the low one, and the machinery has to carry an offset as well
+as a width. `d16`..`d31` have no `s` views at all.
+
+That is a batch of its own and is not bolted onto this one. Recorded here with
+the reproduction so it does not have to be rediscovered.
