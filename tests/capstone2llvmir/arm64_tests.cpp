@@ -59,6 +59,44 @@ class Capstone2LlvmIrTranslatorArm64Tests :
 			return dynamic_cast<Capstone2LlvmIrTranslatorArm64*>(_translator.get());
 		}
 
+		// V registers are i128 and StoredValue tops out at 64 bits -- its
+		// `_ow` literal is an `assert(false)` -- so the two halves are read
+		// and written directly here. Both matter: the whole point of the
+		// 64-bit NEON arrangements is that they ZERO the upper half, and
+		// getRegisterValueUnsigned() would assert on a register whose value
+		// does not fit in 64 bits rather than report it.
+		void setV(uint32_t reg, uint64_t hi, uint64_t lo)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			llvm::GenericValue v = _emulator->getGlobalVariableValue(gv);
+			const uint64_t words[2] = {lo, hi};
+			v.IntVal = llvm::APInt(128, llvm::ArrayRef<uint64_t>(words, 2));
+			_emulator->setGlobalVariableValue(gv, v);
+		}
+
+		uint64_t vLow(uint32_t reg)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			return _emulator->getGlobalVariableValue(gv).IntVal.trunc(64).getZExtValue();
+		}
+
+		uint64_t vHigh(uint32_t reg)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			return _emulator->getGlobalVariableValue(gv).IntVal.lshr(64).trunc(64).getZExtValue();
+		}
+
+		void setMemoryValue128(uint64_t addr, uint64_t hi, uint64_t lo)
+		{
+			llvm::GenericValue v;
+			const uint64_t words[2] = {lo, hi};
+			v.IntVal = llvm::APInt(128, llvm::ArrayRef<uint64_t>(words, 2));
+			_emulator->setMemoryValue(addr, v);
+		}
+
 	// Some of these (or their parts) might be moved to abstract parent class.
 	//
 	protected:
@@ -9458,6 +9496,84 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PRFM_is_nothing)
 
 	EXPECT_NO_REGISTERS_STORED();
 	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM64_INS_LD1, ARM64_INS_ST1
+//
+// The straight-copy form of the NEON list load and store -- the last thing
+// COV-01 found untranslated on ARM64 in the parity corpus. V registers are
+// i128 globals, so the arrangement decides only the total width; these move
+// bytes and need no lane model.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LD1_whole_register)
+{
+	setRegisters({
+		{ARM64_REG_X0, 0x1000},
+	});
+	setMemoryValue128(0x1000, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+
+	emulate("ld1 {v0.16b}, [x0]");
+
+	EXPECT_EQ(0x99aabbccddeeff00ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x1122334455667788ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LD1_d_form_zeroes_the_upper_half)
+{
+	// `.8b` is a 64-bit access and every 64-bit write to a V register clears
+	// bits 127:64. V0 starts with a non-zero upper half so that keeping it
+	// would be visible; a translation that merged instead of zeroing would
+	// leave 0xdeadbeefdeadbeef up there.
+	setV(ARM64_REG_V0, 0xdeadbeefdeadbeefULL, 0);
+	setRegisters({
+		{ARM64_REG_X1, 0x2000},
+	});
+	setMemory({
+		{0x2000, 0x0123456789abcdef_qw},
+	});
+
+	emulate("ld1 {v0.8b}, [x1]");
+
+	EXPECT_EQ(0x0123456789abcdefULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ST1_d_form_writes_the_low_half)
+{
+	setV(ARM64_REG_V0, 0xdeadbeefdeadbeefULL, 0x0123456789abcdefULL);
+	setRegisters({
+		{ARM64_REG_X0, 0x3000},
+	});
+
+	emulate("st1 {v0.8b}, [x0]");
+
+	EXPECT_JUST_MEMORY_STORED({
+		{0x3000, 0x0123456789abcdef_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ST1_list_writes_consecutive_addresses)
+{
+	// The second register goes one access width further on, not to the same
+	// address and not to base + 16.
+	setV(ARM64_REG_V0, 0, 0x1111111111111111ULL);
+	setV(ARM64_REG_V1, 0, 0x2222222222222222ULL);
+	setRegisters({
+		{ARM64_REG_X0, 0x4000},
+	});
+
+	emulate("st1 {v0.8b, v1.8b}, [x0]");
+
+	EXPECT_JUST_MEMORY_STORED({
+		{0x4000, 0x1111111111111111_qw},
+		{0x4008, 0x2222222222222222_qw},
+	});
 	EXPECT_NO_VALUE_CALLED();
 }
 

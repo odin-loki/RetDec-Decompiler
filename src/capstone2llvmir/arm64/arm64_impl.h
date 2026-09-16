@@ -205,6 +205,7 @@ class Capstone2LlvmIrTranslatorArm64_impl :
 		llvm::Type* lseAccessType(unsigned id, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateLse(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateCas(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateNeonLoadStore(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 
 		void translateAdd(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateAnd(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);

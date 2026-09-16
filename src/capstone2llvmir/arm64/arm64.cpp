@@ -1211,6 +1211,97 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateCas(cs_insn* i, cs_arm64* ai,
 	storeOp(ai->operands[0], irb.CreateExtractValue(cx, 0), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 }
 
+/**
+ * The number of bytes a NEON list operand moves, from its arrangement, or 0
+ * for the lane arrangements that name a single element rather than a register.
+ */
+static unsigned vasByteWidth(arm64_vas vas)
+{
+	switch (vas)
+	{
+	case ARM64_VAS_16B:
+	case ARM64_VAS_8H:
+	case ARM64_VAS_4S:
+	case ARM64_VAS_2D:
+	case ARM64_VAS_1Q: return 16;
+	case ARM64_VAS_8B:
+	case ARM64_VAS_4H:
+	case ARM64_VAS_2S:
+	case ARM64_VAS_1D: return 8;
+	default: return 0;
+	}
+}
+
+/**
+ * ARM64_INS_LD1, ARM64_INS_ST1
+ *
+ * The straight-copy form of the NEON list load and store, and the last thing
+ * COV-01 found untranslated on ARM64 in the parity corpus. `ld1 {v0.16b},
+ * [x0]` is a plain 128-bit load; `ld1 {v0.8b}, [x1]` a 64-bit one that zeroes
+ * the top half of the register, which is what every D-form write does. A list
+ * moves consecutive registers to or from consecutive addresses.
+ *
+ * None of that needs a lane model, which is why these two can be translated
+ * while the rest of NEON stays on the pseudo-asm path: V registers are i128
+ * globals here and the only thing the arrangement decides is the total width.
+ * `ld1 {v0.4s}, [x0]` and `ld1 {v0.16b}, [x0]` move the same 128 bits.
+ *
+ * What is deliberately left: writeback forms (`[x0], #16` has to update the
+ * base register), lane forms (`ld1 {v0.s}[2], [x0]`, which vasByteWidth
+ * rejects), and LD2/LD3/LD4 and their stores, which de-interleave rather than
+ * copy.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonLoadStore(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_EXPR(i, ai, irb, (ai->op_count >= 2));
+
+	auto& memOp = ai->operands[ai->op_count - 1];
+	unsigned regs = ai->op_count - 1;
+	if (memOp.type != ARM64_OP_MEM || ai->writeback)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned bytes = 0;
+	for (unsigned j = 0; j < regs; ++j)
+	{
+		auto& op = ai->operands[j];
+		unsigned b = vasByteWidth(op.vas);
+		if (!isVectorRegister(op) || op.vector_index >= 0 || b == 0 || (bytes != 0 && b != bytes))
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		bytes = b;
+	}
+
+	bool load = i->id == ARM64_INS_LD1;
+	auto* accessTy = irb.getIntNTy(bytes * 8);
+	auto* base = generateGetOperandMemAddr(memOp, irb);
+
+	for (unsigned j = 0; j < regs; ++j)
+	{
+		llvm::Value* at = base;
+		if (j)
+		{
+			at = irb.CreateAdd(base, llvm::ConstantInt::get(base->getType(), bytes * j));
+		}
+
+		if (load)
+		{
+			// ZEXT into the i128 register is the upper-half zeroing that a
+			// 64-bit arrangement does.
+			storeRegister(ai->operands[j].reg, loadIntPtr(irb, at, accessTy), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		}
+		else
+		{
+			auto* val = loadRegister(ai->operands[j].reg, irb);
+			storeIntPtr(irb, irb.CreateZExtOrTrunc(val, accessTy), at, accessTy);
+		}
+	}
+}
+
 llvm::Value* Capstone2LlvmIrTranslatorArm64_impl::loadOp(
 		cs_arm64_op& op,
 		llvm::IRBuilder<>& irb,

@@ -3584,3 +3584,52 @@ IR2HLL-01: 69 opcodes in build/linux/external/src/llvm-project/llvm/include
 Falsified against both: removing `visitPtrToAddrInst` fails the LLVM 23 check
 by name and leaves the LLVM 20 check passing, which is correct -- the opcode
 is not in LLVM 20.
+
+
+## The last two on ARM64: LD1 and ST1
+
+COV-01's arm64 row had two entries left, `LD1` and `ST1`, two occurrences
+each, and the note above said NEON. That is true of the family and not of
+these two forms.
+
+`ld1 {v0.16b}, [x0]` is a plain 128-bit load. `ld1 {v0.8b}, [x1]` is a 64-bit
+one that zeroes the top half of the register, which is what every D-form write
+does. A list moves consecutive registers to or from consecutive addresses.
+None of that needs a lane model, and that is the whole reason these two can be
+translated while the rest of NEON stays where it is: `V0`..`V31` are `i128`
+globals in this translator, so the arrangement decides only the total width.
+`ld1 {v0.4s}, [x0]` and `ld1 {v0.16b}, [x0]` move the same 128 bits.
+
+Deliberately left on the pseudo-asm path: writeback forms (`[x0], #16` has to
+update the base register), lane forms (`ld1 {v0.s}[2], [x0]`, which the width
+helper rejects by returning zero), and LD2/LD3/LD4 and their stores, which
+de-interleave rather than copy.
+
+Four tests. The interesting two are the D-form pair: the load starts with
+`0xdeadbeefdeadbeef` in the upper half of `V0` so that failing to zero it is
+visible, and the list store checks that the second register lands eight bytes
+on rather than at the same address or sixteen.
+
+Falsified by forcing the access width to 128 bits and the list offset to zero.
+The suite does not pass: it aborts, in `APInt::getZExtValue()`, because a
+128-bit store then lands where the harness reads 64 bits. A blunt signal, but
+an unambiguous one -- the mutation does not survive.
+
+### Where COV-01 ends up
+
+```
+arch         decoded   skipped    covered     rate  uncovered-kinds
+x86_64          6045         0       6003   0.9931  1
+arm             8060         0       8060   1.0000  0  (3808 bytes mapped as data)
+arm64           6742         0       6742   1.0000  0
+mips            8519         5       8519   1.0000  0
+powerpc         8904         0       8904   1.0000  0
+```
+
+Four of the five translate every instruction their 42 binaries contain. The
+fifth is x86-64, and what it has left is `HLT` in the alignment padding after
+`_start` -- code that never runs. It stays uncovered rather than being pointed
+at a translator that emits the pseudo-asm call it already emits.
+
+The branch started with x86-64 as the only architecture anything measured, and
+ends with x86-64 as the only one below 1.0.

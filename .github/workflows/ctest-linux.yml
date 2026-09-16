@@ -464,7 +464,7 @@ jobs:
       #
       #   x86_64  0.9931  HLT, one per binary, alignment padding
       #   arm     1.0000
-      #   arm64   0.9994  LD1/ST1, NEON, two occurrences each
+      #   arm64   1.0000
       #   mips    1.0000
       #   powerpc 1.0000
       #
@@ -475,7 +475,11 @@ jobs:
       # not in these binaries at all. What it named once it could see was
       # HINT, IT, ADR, ORN, VPUSH and VPOP, and those are implemented.
       #
-      # x86-64 is the lowest of the five now, and what is left of it is HLT in
+      # ARM64 reads 1.0000 because LD1 and ST1, the last two it had left, are
+      # implemented -- the straight-copy NEON list forms, which move bytes and
+      # need no lane model.
+      #
+      # x86-64 is the only one below 1.0 now, and what is left of it is HLT in
       # alignment padding. It stays uncovered rather than being wired to a
       # pseudo-asm call that would move the number without changing what the
       # decompiler emits.
@@ -490,7 +494,7 @@ jobs:
           rc=0
           python3 scripts/ci/check_instruction_coverage.py \
             --corpus /tmp/ma-corpus --capstone-prefix "$CS" --top 8 \
-            --arch-min "x86_64=0.9931 arm=1.0 arm64=0.9994 mips=1.0 powerpc=1.0" \
+            --arch-min "x86_64=0.9931 arm=1.0 arm64=1.0 mips=1.0 powerpc=1.0" \
             2>&1 | tee /tmp/cov01.log || rc=$?
           {
             echo "### COV-01 instruction coverage per architecture"
