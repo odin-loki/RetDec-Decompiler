@@ -6299,3 +6299,198 @@ powerpc  0.9960     traps, AltiVec, cache maintenance
 ```
 
 C2L-01 floor: X86 2262 → 2370. 5,199 tests.
+
+## Batch S — ZMM = ZMMH:YMMH:XMM, and the sixteen registers EVEX added
+
+### What the remainder actually was
+
+Batch R left x86-64 at 0.9845 and I wrote that what remained was led by
+`vmovdqu64` at 6,674 and the other 512-bit moves. That was half right. Running
+objdump over the corpus and grouping the fallbacks by *shape* rather than by
+mnemonic gave a different picture:
+
+```
+a  operands on registers 16..31 only   549   40%
+b  512-bit operands                    351   26%
+c  an opmask register as destination   335   24%
+d  a write mask or {z}                 139   10%
+```
+
+The largest group was not the width at all. It was `%ymm16`, `%ymm17`,
+`%ymm19` — 256-bit operations, already fully modelled, on the sixteen
+registers only EVEX can name. `isYmmRegister()` read
+`X86_REG_YMM0 <= r && r <= X86_REG_YMM15`, which is correct for AVX2 and wrong
+the moment a glibc string routine uses `ymm16`.
+
+### S-1: the decomposition, one level up and across all thirty-two
+
+Batch Q established YMM = YMMH:XMM so that a legacy SSE write and an AVX read
+of the same register see the same bits. Batch S extends that:
+
+```
+ZMMn = ZMMn_HI(511:256) : YMMn_HI(255:128) : XMMn(127:0)      n = 0..31
+```
+
+48 new synthetic globals — `YMM16_HI`..`YMM31_HI` and `ZMM0_HI`..`ZMM31_HI`.
+The standalone i256 `X86_REG_YMMn` and i512 `X86_REG_ZMMn` globals were
+already in the register file and remain there; nothing in the translator reads
+or writes them any more, which is the point. Holding `zmm3` in its own i512
+global would put `xmm3` and `zmm3` in different storage — the exact bug the
+decomposition exists to prevent, and the one mutation that fails 20 tests.
+
+For registers 16..31 there is no legacy alias to reconcile, so the
+decomposition buys nothing there except that it is the same rule.
+
+### S-2: the fallback was reading a register nothing writes
+
+This one was found by a test I wrote for something else, and it is the
+sharpest finding of the batch.
+
+`translatePseudoAsmGeneric` loads each operand so it can pass it to the
+`__asm_*` call. For a `zmm1` operand that is `loadRegister(X86_REG_ZMM1)`,
+which reads the i512 global — while every *translated* instruction now writes
+the three slices. So an instruction this translator declines to model would
+read a register that is permanently zero, and the output would look exactly
+like one that had been read correctly: a call with an argument, no warning,
+no pseudo-assembly marker on the value itself.
+
+The fix is in `loadRegister`/`storeRegister` rather than in the vector helpers,
+so that every path — modelled or not — sees the same storage. Two new methods,
+`loadWideVectorRegister` and `storeWideVectorRegister`, assemble and split.
+
+### S-3: capstone does not tell you an operand is a broadcast
+
+```
+vpaddd zmm2, zmm1, dword ptr [rdi]{1to16}
+  ops=3  R(zmm2,bcast=0)  R(zmm1,bcast=0)  M(sz=4,bcast=0)
+```
+
+`avx_bcast` is **zero**. The `{1to16}` appears in `op_str` and nowhere in the
+structured detail. The only evidence is the operand's `size`: four bytes,
+where the instruction operates at sixty-four.
+
+The vector path took its width from the *register* operands and then read that
+many bits of memory — so this was a live mistranslation before Batch S, not
+one it introduced: an EVEX `vpaddd ymm2, ymm1, dword ptr [rdi]{1to8}` on
+registers 0..15 reached it. The fix is to require every memory operand to be
+the width the registers agreed on, and otherwise decline.
+
+Two checks now enforce that, one in `avxWidth` and one in `loadVectorOp`.
+They are redundant: removing either alone changes nothing, and the test only
+fails when both go. That is worth stating rather than hiding — the falsification
+run reported two green mutations until I removed both together.
+
+### S-4: the EVEX modifiers, and which guard is actually load-bearing
+
+A write mask reaches capstone as an **extra operand**, not a flag:
+
+```
+vmovdqu8 zmm1{k2}, [rdi]      ops=3   R(zmm1) R(k2) M(sz=64)
+vmovdqu8 zmm1{k2}{z}, [rdi]   ops=3   R(zmm1) R(k2,ZMASK) M(sz=64)
+vpaddb   zmm3{k4}, zmm2, zmm1 ops=4   R(zmm3) R(k4) R(zmm2) R(zmm1)
+```
+
+So the operand-count checks the translators already had reject every masked
+form on their own. `hasEvexModifier()`'s opmask branch is therefore a second
+lock on a door that is already shut — the mutation that disables it fails
+nothing, and I am not going to claim otherwise.
+
+Its `{sae}` and embedded-rounding branch is different:
+
+```
+vaddps zmm3, zmm2, zmm1, {rn-sae}   ops=3   R R R   sae=1 rm=1
+```
+
+Three plain register operands, no mask, nothing about the instruction's shape
+to distinguish it from the ordinary form. Only `avx_sae`/`avx_rm` do, and
+suppressing exceptions while pinning the rounding mode is not what an IEEE
+`fadd` computes. That branch was dead too, because no floating-point AVX
+instruction was wired — so this batch wires `VADDPS`/`VSUBPS`/`VMULPS`/`VDIVPS`
+and their double forms, which makes the guard load-bearing and gives the
+packed-float arithmetic at 128, 256 and 512 bits along with it.
+
+### S-5: the scalar moves are not narrow whole-register moves
+
+`VMOVD` and `VMOVQ` write one element and **clear everything above it**,
+including the register-to-register `vmovq xmm2, xmm1` whose entire purpose is
+to take the low 64 bits and zero the rest. Routing them through the
+whole-register mover would copy 128 bits for that form and leave stale upper
+halves for the others. `VMOVD` moves 32 bits and `VMOVQ` 64, and the test that
+separates them has to use a *memory* operand — with a `%esi` source both
+widths answer the same, because esi is 32 bits either way.
+
+### Falsification
+
+Fifteen mutations, each reverted alone, rebuilt and run:
+
+| mutation | result |
+| --- | --- |
+| zmm3 held in its own global, not xmm3's | 20 tests fail |
+| the YMM predicate stops at fifteen | 1 test fails |
+| ZMM not recognised as a vector register | 4 tests fail |
+| a 512-bit load drops the top 256 | 4 tests fail |
+| a 256-bit write leaves 511:256 alone | 2 tests fail |
+| a 128-bit write leaves everything above alone | 1 test fails |
+| the broadcast width check, **both** guards | 1 test fails |
+| the EVEX modifier guard off | 1 test fails |
+| `vzeroupper` leaves the ZMM quarter | 1 test fails |
+| `vmovq` reg-to-reg copies the whole register | 1 test fails |
+| `vmovd` writes sixty-four bits | 1 test fails |
+| a wide vector register reads its own dead global | 1 test fails |
+| the EVEX move ids back to `nullptr` | 2 tests fail |
+| `vmovd`/`vmovq` back to `nullptr` | 5 tests fail |
+
+Four came back green on the first run and each was a real gap in the tests,
+not a fix that did not matter:
+
+* the broadcast check is duplicated, so removing one copy proves nothing —
+  fixed by mutating both;
+* the opmask guard is shadowed by the operand-count check — stated above
+  rather than papered over;
+* `vmovd`'s width was invisible with a register source — fixed by adding a
+  memory-operand test;
+* the dead-global read had no test at all — fixed by adding one that reads the
+  IR directly, since the emulator would show a plausible zero either way.
+
+### Where it leaves x86-64
+
+```
+                 static     unmodelled
+after Batch Q    0.9822      92,140
+after Batch R    0.9845      79,935
+after Batch S    0.9922      40,369
+```
+
+Every `vmov*` entry has left the top twenty-five. What is left is one shape
+and one instruction:
+
+```
+vpcmpeqb/vptestmb/vptestnmb/vpcmpltub ...  ~13,000   compare INTO a mask register
+pcmpistri                                    6,393   SSE4.2 string compare
+syscall                                      4,627   opaque by nature
+```
+
+The compares are category (c) from the table at the top: a vector comparison
+whose destination is `k1` rather than a vector register. Every piece needed
+for those now exists — the mask registers from Batch R, the vector values from
+Batch S — and it is the next batch.
+
+### Where all five stand
+
+```
+x86_64   0.9922     compare-into-mask, pcmpistri, syscall
+arm      0.9977     table branches, coprocessor, NEON
+arm64    0.9945     SVE, MTE, movi
+mips     0.9989     syscall, break, the FPU control word
+powerpc  0.9960     traps, AltiVec, cache maintenance
+```
+
+C2L-01 floor: X86 2370 → 2433. 5,262 tests.
+
+### A note on the format gate
+
+Batch R was committed with `x86_avx512.cpp` unformatted, and the push gates
+caught it. `scripts/check_format.sh --fix` with no `--base` did not cover the
+file, because it was still untracked when I ran it. The gate uses
+`--base "$(git rev-parse --verify -q '@{upstream}' || git rev-parse HEAD^)"`,
+which is the invocation that matters for a commit that adds a file.

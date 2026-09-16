@@ -1473,29 +1473,67 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSsePavg(cs_insn* i, cs_x86* xi,
 //
 
 /**
- * True for the sixteen YMM registers a 64-bit program without EVEX can name.
+ * All thirty-two of each. Registers 16..31 are EVEX-only -- no legacy SSE or
+ * VEX instruction can name them -- but they are held and decomposed exactly
+ * like the first sixteen, because a uniform rule is one rule. Stopping the
+ * range at 15, which is what the AVX2-era version of these predicates did,
+ * sends every `vmovdqu64 (%rdi),%ymm17` to pseudo-assembly.
  */
+static bool isZmmRegister(uint32_t r)
+{
+	return X86_REG_ZMM0 <= r && r <= X86_REG_ZMM31;
+}
+
 static bool isYmmRegister(uint32_t r)
 {
-	return X86_REG_YMM0 <= r && r <= X86_REG_YMM15;
+	return X86_REG_YMM0 <= r && r <= X86_REG_YMM31;
 }
 
 static bool isXmmRegister(uint32_t r)
 {
-	return X86_REG_XMM0 <= r && r <= X86_REG_XMM15;
+	return X86_REG_XMM0 <= r && r <= X86_REG_XMM31;
 }
 
 /**
- * The two registers a YMM operand is made of: YMM = YMMH:XMM.
+ * The index 0..31 of whichever vector register an operand names, whatever
+ * width it was written at. zmm3, ymm3 and xmm3 are three names for three
+ * nested slices of one register, so they share a number.
  */
-static uint32_t ymmLowHalf(uint32_t ymm)
+static unsigned vectorRegisterIndex(uint32_t r)
 {
-	return X86_REG_XMM0 + (ymm - X86_REG_YMM0);
+	if (isZmmRegister(r))
+	{
+		return r - X86_REG_ZMM0;
+	}
+	if (isYmmRegister(r))
+	{
+		return r - X86_REG_YMM0;
+	}
+	return r - X86_REG_XMM0;
 }
 
-static uint32_t ymmHighHalf(uint32_t ymm)
+/**
+ * The three registers a vector operand is made of: ZMM = ZMMH:YMMH:XMM.
+ *
+ * The low 128 bits live in the XMM global, which is what makes an SSE write
+ * and an AVX or EVEX read of the same register see each other. The separate
+ * i256 YMM and i512 ZMM globals in the register file are not used by any of
+ * this -- using them would reintroduce exactly the aliasing bug the
+ * decomposition exists to avoid.
+ */
+static uint32_t vectorLow128(uint32_t r)
 {
-	return X86_REG_YMM0_HI + (ymm - X86_REG_YMM0);
+	return X86_REG_XMM0 + vectorRegisterIndex(r);
+}
+
+static uint32_t vectorMid128(uint32_t r)
+{
+	return X86_REG_YMM0_HI + vectorRegisterIndex(r);
+}
+
+static uint32_t vectorHigh256(uint32_t r)
+{
+	return X86_REG_ZMM0_HI + vectorRegisterIndex(r);
 }
 
 /**
@@ -1508,25 +1546,46 @@ static uint32_t ymmHighHalf(uint32_t ymm)
  */
 llvm::Value* Capstone2LlvmIrTranslatorX86_impl::loadVectorOp(cs_x86_op& op, llvm::IRBuilder<>& irb, unsigned& bits)
 {
+	if (op.type == X86_OP_REG && isZmmRegister(op.reg))
+	{
+		bits = 512;
+		auto* i512 = irb.getIntNTy(512);
+		llvm::Value* lo = irb.CreateZExt(loadRegister(vectorLow128(op.reg), irb), i512);
+		llvm::Value* mid = irb.CreateZExt(loadRegister(vectorMid128(op.reg), irb), i512);
+		llvm::Value* hi = irb.CreateZExt(loadRegister(vectorHigh256(op.reg), irb), i512);
+		return irb.CreateOr(
+			irb.CreateOr(lo, irb.CreateShl(mid, llvm::ConstantInt::get(i512, 128))),
+			irb.CreateShl(hi, llvm::ConstantInt::get(i512, 256)));
+	}
+
 	if (op.type == X86_OP_REG && isYmmRegister(op.reg))
 	{
 		bits = 256;
 		auto* i256 = irb.getIntNTy(256);
-		llvm::Value* lo = irb.CreateZExt(loadRegister(ymmLowHalf(op.reg), irb), i256);
-		llvm::Value* hi = irb.CreateZExt(loadRegister(ymmHighHalf(op.reg), irb), i256);
+		llvm::Value* lo = irb.CreateZExt(loadRegister(vectorLow128(op.reg), irb), i256);
+		llvm::Value* hi = irb.CreateZExt(loadRegister(vectorMid128(op.reg), irb), i256);
 		return irb.CreateOr(lo, irb.CreateShl(hi, llvm::ConstantInt::get(i256, 128)));
 	}
 
 	if (op.type == X86_OP_REG && isXmmRegister(op.reg))
 	{
 		bits = 128;
-		return loadRegister(op.reg, irb);
+		return loadRegister(vectorLow128(op.reg), irb);
 	}
 
 	if (op.type == X86_OP_MEM)
 	{
-		// The memory operand's width is the instruction's, which the caller
-		// has already worked out from the register operands.
+		// The caller worked `bits` out from the REGISTER operands, and for a
+		// plain load the memory operand agrees. For an EVEX broadcast it does
+		// not: `vpaddd zmm2, zmm1, dword ptr [rdi]{1to16}` reads 32 bits and
+		// repeats them sixteen times, and capstone reports that as `size = 4`
+		// while leaving avx_bcast at 0 -- the {1to16} shows up in op_str and
+		// nowhere else. Taking the register width on trust would read 512
+		// bits of memory that the instruction never touches.
+		if (op.size * 8 != bits)
+		{
+			return nullptr;
+		}
 		auto* ty = irb.getIntNTy(bits);
 		return loadOp(op, irb, ty);
 	}
@@ -1546,27 +1605,82 @@ llvm::Value* Capstone2LlvmIrTranslatorX86_impl::loadVectorOp(cs_x86_op& op, llvm
 void Capstone2LlvmIrTranslatorX86_impl::storeVectorOp(
 	cs_x86_op& op, llvm::Value* val, unsigned bits, llvm::IRBuilder<>& irb)
 {
+	if (op.type == X86_OP_REG && isZmmRegister(op.reg))
+	{
+		auto* i128 = irb.getInt128Ty();
+		auto* i256 = irb.getIntNTy(256);
+		auto* wide = irb.getIntNTy(512);
+		val = irb.CreateZExtOrTrunc(val, wide);
+		storeRegister(vectorLow128(op.reg), irb.CreateTrunc(val, i128), irb);
+		storeRegister(
+			vectorMid128(op.reg), irb.CreateTrunc(irb.CreateLShr(val, llvm::ConstantInt::get(wide, 128)), i128), irb);
+		storeRegister(
+			vectorHigh256(op.reg), irb.CreateTrunc(irb.CreateLShr(val, llvm::ConstantInt::get(wide, 256)), i256), irb);
+		return;
+	}
+
 	if (op.type == X86_OP_REG && isYmmRegister(op.reg))
 	{
 		auto* i128 = irb.getInt128Ty();
+		auto* i256 = irb.getIntNTy(256);
 		auto* wide = irb.getIntNTy(256);
 		val = irb.CreateZExtOrTrunc(val, wide);
-		storeRegister(ymmLowHalf(op.reg), irb.CreateTrunc(val, i128), irb);
+		storeRegister(vectorLow128(op.reg), irb.CreateTrunc(val, i128), irb);
 		storeRegister(
-			ymmHighHalf(op.reg), irb.CreateTrunc(irb.CreateLShr(val, llvm::ConstantInt::get(wide, 128)), i128), irb);
+			vectorMid128(op.reg), irb.CreateTrunc(irb.CreateLShr(val, llvm::ConstantInt::get(wide, 128)), i128), irb);
+		// A 256-bit write zeroes bits 511:256, the same rule one level up.
+		storeRegister(vectorHigh256(op.reg), llvm::ConstantInt::get(i256, 0), irb);
 		return;
 	}
 
 	if (op.type == X86_OP_REG && isXmmRegister(op.reg))
 	{
 		auto* i128 = irb.getInt128Ty();
-		storeRegister(op.reg, irb.CreateZExtOrTrunc(val, i128), irb);
-		// The VEX 128-bit write zeroes the upper half.
-		storeRegister(X86_REG_YMM0_HI + (op.reg - X86_REG_XMM0), llvm::ConstantInt::get(i128, 0), irb);
+		auto* i256 = irb.getIntNTy(256);
+		storeRegister(vectorLow128(op.reg), irb.CreateZExtOrTrunc(val, i128), irb);
+		// The VEX or EVEX 128-bit write zeroes everything above it.
+		storeRegister(vectorMid128(op.reg), llvm::ConstantInt::get(i128, 0), irb);
+		storeRegister(vectorHigh256(op.reg), llvm::ConstantInt::get(i256, 0), irb);
 		return;
 	}
 
 	storeOp(op, irb.CreateZExtOrTrunc(val, irb.getIntNTy(bits)), irb, eOpConv::NOTHING);
+}
+
+/**
+ * True when an instruction carries an EVEX modifier this translator does not
+ * model, and must therefore fall back rather than answer the unmodified form.
+ *
+ * Capstone surfaces a write mask as an EXTRA OPERAND rather than a flag:
+ * `vmovdqu8 zmm1{k2}, [rdi]` comes back with three operands, the second being
+ * k2, and `{z}` sets avx_zero_opmask on it. That is what makes the check
+ * cheap -- an opmask register anywhere in an instruction that is not itself
+ * an opmask instruction means the write is predicated.
+ *
+ * Suppression (`{sae}`) and an embedded rounding mode change what a
+ * floating-point result is, so they disqualify an instruction too.
+ */
+static bool hasEvexModifier(cs_x86* xi)
+{
+	if (xi->avx_sae || xi->avx_rm != X86_AVX_RM_INVALID)
+	{
+		return true;
+	}
+
+	for (unsigned k = 0; k < xi->op_count; ++k)
+	{
+		auto& op = xi->operands[k];
+		if (op.avx_zero_opmask)
+		{
+			return true;
+		}
+		if (op.type == X86_OP_REG && X86_REG_K0 <= op.reg && op.reg <= X86_REG_K7)
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 /**
@@ -1575,6 +1689,11 @@ void Capstone2LlvmIrTranslatorX86_impl::storeVectorOp(
  */
 static unsigned avxWidth(cs_x86* xi)
 {
+	if (hasEvexModifier(xi))
+	{
+		return 0;
+	}
+
 	unsigned bits = 0;
 	for (unsigned k = 0; k < xi->op_count; ++k)
 	{
@@ -1583,12 +1702,26 @@ static unsigned avxWidth(cs_x86* xi)
 		{
 			continue;
 		}
-		unsigned b = isYmmRegister(op.reg) ? 256 : (isXmmRegister(op.reg) ? 128 : 0);
+		unsigned b = isZmmRegister(op.reg) ? 512 : isYmmRegister(op.reg) ? 256 : isXmmRegister(op.reg) ? 128 : 0;
 		if (b == 0 || (bits != 0 && b != bits))
 		{
 			return 0;
 		}
 		bits = b;
+	}
+
+	// Every memory operand has to be the same width the registers agreed on.
+	// An EVEX broadcast is the case where it is not, and capstone reports it
+	// only in the operand's size -- avx_bcast stays 0 and the {1to16} lives
+	// in op_str. Answering the non-broadcast form would read the wrong bytes
+	// and repeat none of them.
+	for (unsigned k = 0; k < xi->op_count; ++k)
+	{
+		auto& op = xi->operands[k];
+		if (op.type == X86_OP_MEM && op.size * 8 != bits)
+		{
+			return 0;
+		}
 	}
 
 	return bits;
@@ -1608,13 +1741,17 @@ void Capstone2LlvmIrTranslatorX86_impl::translateVzeroupper(cs_insn* i, cs_x86* 
 {
 	auto* i128 = irb.getInt128Ty();
 	auto* zero = llvm::ConstantInt::get(i128, 0);
+	auto* zero256 = llvm::ConstantInt::get(irb.getIntNTy(256), 0);
 
+	// In 64-bit mode both instructions touch registers 0..15 only; EVEX's
+	// upper sixteen are explicitly left alone by the manual.
 	for (unsigned n = 0; n < 16; ++n)
 	{
 		storeRegister(X86_REG_YMM0_HI + n, zero, irb);
+		storeRegister(X86_REG_ZMM0_HI + n, zero256, irb);
 		if (i->id == X86_INS_VZEROALL)
 		{
-			// VZEROALL zeroes the whole register, not just the upper half.
+			// VZEROALL zeroes the whole register, not just the upper part.
 			storeRegister(X86_REG_XMM0 + n, zero, irb);
 		}
 	}
@@ -1844,6 +1981,157 @@ void Capstone2LlvmIrTranslatorX86_impl::translateAvxPmovmskb(cs_insn* i, cs_x86*
 	llvm::Value* mask = irb.CreateBitCast(signs, irb.getIntNTy(lanes));
 
 	storeOp(xi->operands[0], irb.CreateZExt(mask, irb.getInt32Ty()), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * X86_INS_VMOVD, X86_INS_VMOVQ
+ *
+ * The scalar moves between a general-purpose register, memory and the bottom
+ * of a vector register. They are not narrow versions of VMOVDQU: every form
+ * that writes a vector register ZEROES everything above the element it
+ * writes, including the `vmovq xmm2, xmm1` form, whose whole purpose is to
+ * take the low 64 bits of one register and clear the rest.
+ *
+ * Routing these through translateAvxMov would copy the full 128 bits for the
+ * register-to-register form and leave the upper half of the destination
+ * carrying whatever it had for the others.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateAvxMovScalar(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	if (xi->op_count != 2 || hasEvexModifier(xi))
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned elemBits = i->id == X86_INS_VMOVQ ? 64 : 32;
+	auto* elemTy = irb.getIntNTy(elemBits);
+	auto& dst = xi->operands[0];
+	auto& src = xi->operands[1];
+
+	// Reading the element: from the bottom of a vector register, or from a
+	// general-purpose register or memory operand at its own width.
+	llvm::Value* val = nullptr;
+	if (src.type == X86_OP_REG && isXmmRegister(src.reg))
+	{
+		val = irb.CreateTrunc(loadRegister(vectorLow128(src.reg), irb), elemTy);
+	}
+	else if (src.type == X86_OP_MEM && src.size * 8 != elemBits)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	else
+	{
+		val = loadOp(src, irb, elemTy, false);
+	}
+
+	if (val == nullptr)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	if (dst.type == X86_OP_REG && isXmmRegister(dst.reg))
+	{
+		// Zero-extend into the low 128 and clear everything above it. This is
+		// the one rule all of these share and the one a whole-register move
+		// gets wrong.
+		auto* i128 = irb.getInt128Ty();
+		auto* i256 = irb.getIntNTy(256);
+		storeRegister(vectorLow128(dst.reg), irb.CreateZExt(val, i128), irb);
+		storeRegister(vectorMid128(dst.reg), llvm::ConstantInt::get(i128, 0), irb);
+		storeRegister(vectorHigh256(dst.reg), llvm::ConstantInt::get(i256, 0), irb);
+		return;
+	}
+
+	if (dst.type == X86_OP_MEM && dst.size * 8 != elemBits)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	storeOp(dst, val, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * X86_INS_VADDPS and the rest of the VEX/EVEX packed floating-point
+ * arithmetic, at 128, 256 or 512 bits.
+ *
+ * These are the instructions that make hasEvexModifier()'s {sae} and
+ * embedded-rounding-mode branch load-bearing rather than defensive: an EVEX
+ * `vaddps {rn-sae}, %zmm1, %zmm2, %zmm3` has three plain register operands
+ * and no write mask, so nothing about its shape distinguishes it from the
+ * ordinary form -- only avx_sae and avx_rm do. Suppressing exceptions and
+ * pinning the rounding mode change what the result is, and an IEEE `fadd`
+ * expresses neither, so the correct answer is to decline.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateAvxPackedFloat(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	if (xi->op_count != 3)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned bits = avxWidth(xi);
+	if (bits == 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	bool isDouble = false;
+	unsigned op = 0;
+	switch (i->id)
+	{
+	case X86_INS_VADDPS: op = 0; break;
+	case X86_INS_VSUBPS: op = 1; break;
+	case X86_INS_VMULPS: op = 2; break;
+	case X86_INS_VDIVPS: op = 3; break;
+	case X86_INS_VADDPD:
+		op = 0;
+		isDouble = true;
+		break;
+	case X86_INS_VSUBPD:
+		op = 1;
+		isDouble = true;
+		break;
+	case X86_INS_VMULPD:
+		op = 2;
+		isDouble = true;
+		break;
+	case X86_INS_VDIVPD:
+		op = 3;
+		isDouble = true;
+		break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+
+	llvm::Value* a = loadVectorOp(xi->operands[1], irb, bits);
+	llvm::Value* b = loadVectorOp(xi->operands[2], irb, bits);
+	if (a == nullptr || b == nullptr)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned laneBits = isDouble ? 64 : 32;
+	auto* laneTy = isDouble ? irb.getDoubleTy() : irb.getFloatTy();
+	auto* vecTy = llvm::FixedVectorType::get(laneTy, bits / laneBits);
+
+	llvm::Value* va = irb.CreateBitCast(a, vecTy);
+	llvm::Value* vb = irb.CreateBitCast(b, vecTy);
+	llvm::Value* res = nullptr;
+	switch (op)
+	{
+	case 0: res = irb.CreateFAdd(va, vb); break;
+	case 1: res = irb.CreateFSub(va, vb); break;
+	case 2: res = irb.CreateFMul(va, vb); break;
+	default: res = irb.CreateFDiv(va, vb); break;
+	}
+
+	storeVectorOp(xi->operands[0], irb.CreateBitCast(res, irb.getIntNTy(bits)), bits, irb);
 }
 
 } // namespace capstone2llvmir

@@ -154,6 +154,67 @@ enum x86_reg_ymm_high
 	X86_REG_YMM13_HI,
 	X86_REG_YMM14_HI,
 	X86_REG_YMM15_HI,
+	X86_REG_YMM16_HI,
+	X86_REG_YMM17_HI,
+	X86_REG_YMM18_HI,
+	X86_REG_YMM19_HI,
+	X86_REG_YMM20_HI,
+	X86_REG_YMM21_HI,
+	X86_REG_YMM22_HI,
+	X86_REG_YMM23_HI,
+	X86_REG_YMM24_HI,
+	X86_REG_YMM25_HI,
+	X86_REG_YMM26_HI,
+	X86_REG_YMM27_HI,
+	X86_REG_YMM28_HI,
+	X86_REG_YMM29_HI,
+	X86_REG_YMM30_HI,
+	X86_REG_YMM31_HI,
+};
+
+/**
+ * The top 256 bits of each ZMM register. ZMM = ZMMH:YMMH:XMM, one level up
+ * from the YMM decomposition above and for the same reason: the low 128 bits
+ * of zmm3 and xmm3 are the same bits, so they have to be the same global.
+ *
+ * All 32 exist. Only EVEX can name registers 16..31, so those have no legacy
+ * SSE alias to worry about -- but they are decomposed the same way anyway,
+ * because a uniform rule is one rule.
+ */
+enum x86_reg_zmm_high
+{
+	X86_REG_ZMM0_HI = X86_REG_YMM31_HI + 1,
+	X86_REG_ZMM1_HI,
+	X86_REG_ZMM2_HI,
+	X86_REG_ZMM3_HI,
+	X86_REG_ZMM4_HI,
+	X86_REG_ZMM5_HI,
+	X86_REG_ZMM6_HI,
+	X86_REG_ZMM7_HI,
+	X86_REG_ZMM8_HI,
+	X86_REG_ZMM9_HI,
+	X86_REG_ZMM10_HI,
+	X86_REG_ZMM11_HI,
+	X86_REG_ZMM12_HI,
+	X86_REG_ZMM13_HI,
+	X86_REG_ZMM14_HI,
+	X86_REG_ZMM15_HI,
+	X86_REG_ZMM16_HI,
+	X86_REG_ZMM17_HI,
+	X86_REG_ZMM18_HI,
+	X86_REG_ZMM19_HI,
+	X86_REG_ZMM20_HI,
+	X86_REG_ZMM21_HI,
+	X86_REG_ZMM22_HI,
+	X86_REG_ZMM23_HI,
+	X86_REG_ZMM24_HI,
+	X86_REG_ZMM25_HI,
+	X86_REG_ZMM26_HI,
+	X86_REG_ZMM27_HI,
+	X86_REG_ZMM28_HI,
+	X86_REG_ZMM29_HI,
+	X86_REG_ZMM30_HI,
+	X86_REG_ZMM31_HI,
 };
 
 /**

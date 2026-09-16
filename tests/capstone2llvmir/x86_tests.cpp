@@ -222,6 +222,58 @@ class Capstone2LlvmIrTranslatorX86Tests :
 			return _emulator->getGlobalVariableValue(gv).IntVal.lshr(64).trunc(64).getZExtValue();
 		}
 
+		// A vector register is THREE globals, not one:
+		//
+		//   ZMMn = ZMMn_HI(511:256) : YMMn_HI(255:128) : XMMn(127:0)
+		//
+		// The i256 X86_REG_YMMn and i512 X86_REG_ZMMn globals still exist in
+		// the register file but nothing reads or writes them -- using them
+		// would put xmm3 and zmm3 in different storage, which is the bug the
+		// decomposition exists to avoid. These helpers therefore address the
+		// slices, so a test cannot accidentally set a global nothing reads.
+		void setRegisterWide(uint32_t reg, const uint64_t* words, unsigned n)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			llvm::GenericValue v = _emulator->getGlobalVariableValue(gv);
+			v.IntVal = llvm::APInt(n * 64, llvm::ArrayRef<uint64_t>(words, n));
+			_emulator->setGlobalVariableValue(gv, v);
+		}
+
+		/// @param q Eight quadwords, least significant first.
+		void setZmm(unsigned n, const uint64_t (&q)[8])
+		{
+			setRegisterWide(X86_REG_XMM0 + n, &q[0], 2);
+			setRegisterWide(X86_REG_YMM0_HI + n, &q[2], 2);
+			setRegisterWide(X86_REG_ZMM0_HI + n, &q[4], 4);
+		}
+
+		/// True when @p f contains a call to a pseudo-assembly function --
+		/// i.e. the translator declined to model the instruction, which for
+		/// a form it cannot express is the correct outcome.
+		bool callsPseudoAsm(llvm::Function* f)
+		{
+			for (auto it = llvm::inst_begin(f), e = llvm::inst_end(f); it != e; ++it)
+			{
+				auto* c = dyn_cast<CallInst>(&*it);
+				if (c && _translator->isPseudoAsmFunctionCall(c))
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/// Quadword @p w (0..7) of vector register @p n.
+		uint64_t zmmWord(unsigned n, unsigned w)
+		{
+			uint32_t reg = w < 2 ? X86_REG_XMM0 + n : (w < 4 ? X86_REG_YMM0_HI + n : X86_REG_ZMM0_HI + n);
+			unsigned shift = (w < 2 ? w : (w < 4 ? w - 2 : w - 4)) * 64;
+			auto* gv = getRegister(reg);
+			assert(gv);
+			return _emulator->getGlobalVariableValue(gv).IntVal.lshr(shift).trunc(64).getZExtValue();
+		}
+
 		// Same reason as setXmm: StoredValue cannot carry 128 bits, so a
 		// 128-bit memory cell is written and read in halves.
 		void setMemoryValue128(uint64_t addr, uint64_t hi, uint64_t lo)
@@ -17516,6 +17568,482 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, KMOVD_between_opmask_registers_drops_t
 
 	EXPECT_EQ(0x9abcdef0ULL, getRegisterValueUnsigned(X86_REG_K1));
 	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ============================================================================
+// ZMM = ZMMH:YMMH:XMM, and the EVEX registers past fifteen
+// ============================================================================
+//
+// A vector register is three globals. The low 128 bits are the XMM global,
+// which is what makes a legacy SSE write and an EVEX read of the same
+// register see each other; above it sit YMMn_HI (255:128) and ZMMn_HI
+// (511:256). All thirty-two registers are held the same way -- 16..31 have
+// no legacy alias to worry about, but a uniform rule is one rule.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVDQU64_copies_all_five_hundred_and_twelve_bits)
+{
+	ONLY_MODE_64;
+
+	const uint64_t src[8] = {
+		0x1111111111111111ULL,
+		0x2222222222222222ULL,
+		0x3333333333333333ULL,
+		0x4444444444444444ULL,
+		0x5555555555555555ULL,
+		0x6666666666666666ULL,
+		0x7777777777777777ULL,
+		0x8888888888888888ULL,
+	};
+	const uint64_t junk[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(1, src);
+	setZmm(2, junk);
+
+	emulate_bin("62 f1 fe 48 6f d1"); // vmovdqu64 zmm2, zmm1
+
+	// Every word distinct, so a copy that reached only the low 128 or 256
+	// bits leaves all-ones behind where this expects a pattern.
+	for (unsigned w = 0; w < 8; ++w)
+	{
+		EXPECT_EQ(src[w], zmmWord(2, w)) << "quadword " << w;
+	}
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVDQU64_reaches_the_EVEX_only_registers)
+{
+	ONLY_MODE_64;
+
+	const uint64_t src[8] = {
+		0xaaaaaaaaaaaaaaaaULL, 0xbbbbbbbbbbbbbbbbULL, 0xccccccccccccccccULL, 0xddddddddddddddddULL, 0, 0, 0, 0};
+	const uint64_t junk[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(16, src);
+	setZmm(17, junk);
+
+	emulate_bin("62 a1 fe 28 6f c8"); // vmovdqu64 ymm17, ymm16
+
+	// ymm16 and ymm17 are past the sixteen a VEX-encoded instruction can
+	// name. A predicate that stopped at fifteen sends this to pseudo-assembly.
+	EXPECT_EQ(0xaaaaaaaaaaaaaaaaULL, zmmWord(17, 0));
+	EXPECT_EQ(0xbbbbbbbbbbbbbbbbULL, zmmWord(17, 1));
+	EXPECT_EQ(0xccccccccccccccccULL, zmmWord(17, 2));
+	EXPECT_EQ(0xddddddddddddddddULL, zmmWord(17, 3));
+	// A 256-bit write clears 511:256.
+	EXPECT_EQ(0ULL, zmmWord(17, 4));
+	EXPECT_EQ(0ULL, zmmWord(17, 7));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVDQA64_reaches_registers_past_sixteen_at_full_width)
+{
+	ONLY_MODE_64;
+
+	const uint64_t src[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+	const uint64_t junk[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(16, src);
+	setZmm(20, junk);
+
+	emulate_bin("62 a1 fd 48 6f e0"); // vmovdqa64 zmm20, zmm16
+
+	for (unsigned w = 0; w < 8; ++w)
+	{
+		EXPECT_EQ(src[w], zmmWord(20, w)) << "quadword " << w;
+	}
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, The_low_quarter_of_a_ZMM_register_IS_the_XMM_register)
+{
+	ONLY_MODE_64;
+
+	const uint64_t src[8] = {0x0123456789abcdefULL, 0xfedcba9876543210ULL, 9, 9, 9, 9, 9, 9};
+	setZmm(3, src);
+
+	emulate_bin("c5 f9 6f eb"); // vmovdqa xmm5, xmm3
+
+	// The 128-bit read of xmm3 must see what was written as zmm3's low
+	// quarter. Holding zmm3 in its own i512 global would answer zero here.
+	EXPECT_EQ(0x0123456789abcdefULL, zmmWord(5, 0));
+	EXPECT_EQ(0xfedcba9876543210ULL, zmmWord(5, 1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, A_256_bit_write_zeroes_bits_511_to_256)
+{
+	ONLY_MODE_64;
+
+	const uint64_t junk[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	const uint64_t src[8] = {1, 2, 3, 4, 0, 0, 0, 0};
+	setZmm(1, junk);
+	setZmm(2, src);
+
+	emulate_bin("c5 fe 6f ca"); // vmovdqu ymm1, ymm2
+
+	EXPECT_EQ(1ULL, zmmWord(1, 0));
+	EXPECT_EQ(4ULL, zmmWord(1, 3));
+	EXPECT_EQ(0ULL, zmmWord(1, 4));
+	EXPECT_EQ(0ULL, zmmWord(1, 5));
+	EXPECT_EQ(0ULL, zmmWord(1, 6));
+	EXPECT_EQ(0ULL, zmmWord(1, 7));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, A_128_bit_VEX_write_zeroes_bits_511_to_128)
+{
+	ONLY_MODE_64;
+
+	const uint64_t junk[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	const uint64_t src[8] = {7, 8, 0, 0, 0, 0, 0, 0};
+	setZmm(1, junk);
+	setZmm(2, src);
+
+	emulate_bin("c5 fa 6f ca"); // vmovdqu xmm1, xmm2
+
+	EXPECT_EQ(7ULL, zmmWord(1, 0));
+	EXPECT_EQ(8ULL, zmmWord(1, 1));
+	for (unsigned w = 2; w < 8; ++w)
+	{
+		EXPECT_EQ(0ULL, zmmWord(1, w)) << "quadword " << w;
+	}
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPADDB_adds_sixty_four_byte_lanes)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {0x01ff01ff01ff01ffULL, 0, 0, 0, 0, 0, 0, 0x01ff01ff01ff01ffULL};
+	const uint64_t b[8] = {0x0101010101010101ULL, 0, 0, 0, 0, 0, 0, 0x0101010101010101ULL};
+	const uint64_t junk[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(2, a);
+	setZmm(1, b);
+	setZmm(3, junk);
+
+	emulate_bin("62 f1 6d 48 fc d9"); // vpaddb zmm3, zmm2, zmm1
+
+	// 0xff + 0x01 wraps within its own byte; a whole-register add would
+	// carry into the neighbouring lane. The top quadword proves the lanes
+	// past 256 bits are being added at all.
+	EXPECT_EQ(0x0200020002000200ULL, zmmWord(3, 0));
+	EXPECT_EQ(0x0200020002000200ULL, zmmWord(3, 7));
+	EXPECT_EQ(0ULL, zmmWord(3, 3));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VZEROUPPER_zeroes_the_ZMM_high_quarter_too)
+{
+	ONLY_MODE_64;
+
+	const uint64_t junk[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(1, junk);
+
+	emulate_bin("c5 f8 77"); // vzeroupper
+
+	// The low 128 bits survive; everything above them goes.
+	EXPECT_EQ(~0ULL, zmmWord(1, 0));
+	EXPECT_EQ(~0ULL, zmmWord(1, 1));
+	for (unsigned w = 2; w < 8; ++w)
+	{
+		EXPECT_EQ(0ULL, zmmWord(1, w)) << "quadword " << w;
+	}
+}
+
+//
+// The EVEX modifiers this does not model, and must therefore not answer.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, An_EVEX_broadcast_operand_is_not_read_at_the_register_width)
+{
+	ONLY_MODE_64;
+
+	// vpaddd zmm2, zmm1, dword ptr [rdi]{1to16}
+	auto* f = translate(retdec::utils::hexStringToBytes("62 f1 75 58 fe 17"));
+	ASSERT_NE(nullptr, f);
+
+	// Capstone reports this operand as four bytes and leaves avx_bcast at
+	// zero -- the {1to16} appears only in op_str. Taking the width from the
+	// register operands instead would emit a 512-bit load of memory the
+	// instruction never touches.
+	// A load whose pointer is a global is a register read; only a load
+	// through an IntToPtr is a read of the program's memory.
+	for (auto it = llvm::inst_begin(f), e = llvm::inst_end(f); it != e; ++it)
+	{
+		auto* l = dyn_cast<LoadInst>(&*it);
+		if (l == nullptr || !isa<IntToPtrInst>(l->getPointerOperand()))
+		{
+			continue;
+		}
+		EXPECT_EQ(32u, l->getType()->getPrimitiveSizeInBits())
+			<< "a broadcast operand was not read at the width capstone reported";
+	}
+	EXPECT_TRUE(callsPseudoAsm(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, A_write_masked_EVEX_move_is_not_answered_as_the_unmasked_one)
+{
+	ONLY_MODE_64;
+
+	// vmovdqu8 zmm1{k2}, zmmword ptr [rdi]
+	auto* f = translate(retdec::utils::hexStringToBytes("62 f1 7f 4a 6f 0f"));
+	ASSERT_NE(nullptr, f);
+
+	// Capstone surfaces the write mask as an extra operand rather than a
+	// flag. Answering the unmasked form would overwrite every lane k2 says
+	// to leave alone, so the only correct outcome is the pseudo-assembly
+	// call -- an opaque value is honest where a wrong one is not.
+	EXPECT_TRUE(callsPseudoAsm(f)) << dumpFunction(f);
+}
+
+//
+// The scalar moves. Every form that writes a vector register clears
+// everything above the element it writes.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVQ_register_to_register_clears_the_upper_half)
+{
+	ONLY_MODE_64;
+
+	const uint64_t src[8] = {0x0123456789abcdefULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	const uint64_t junk[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(1, src);
+	setZmm(2, junk);
+
+	emulate_bin("c5 fa 7e d1"); // vmovq xmm2, xmm1
+
+	// This is the form whose only purpose is to clear. Routing it through a
+	// whole-register move would copy all 128 bits and leave bits 127:64 set.
+	EXPECT_EQ(0x0123456789abcdefULL, zmmWord(2, 0));
+	for (unsigned w = 1; w < 8; ++w)
+	{
+		EXPECT_EQ(0ULL, zmmWord(2, w)) << "quadword " << w;
+	}
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVD_from_a_gpr_writes_thirty_two_bits_and_clears_the_rest)
+{
+	ONLY_MODE_64;
+
+	const uint64_t junk[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(0, junk);
+	setRegisters({
+		{X86_REG_RSI, 0xffffffff12345678ULL},
+	});
+
+	emulate_bin("c5 f9 6e c6"); // vmovd xmm0, esi
+
+	// Thirty-two bits, not sixty-four: the source is esi.
+	EXPECT_EQ(0x12345678ULL, zmmWord(0, 0));
+	for (unsigned w = 1; w < 8; ++w)
+	{
+		EXPECT_EQ(0ULL, zmmWord(0, w)) << "quadword " << w;
+	}
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVD_to_a_gpr_takes_the_low_thirty_two_bits)
+{
+	ONLY_MODE_64;
+
+	const uint64_t src[8] = {0xfedcba9812345678ULL, ~0ULL, 0, 0, 0, 0, 0, 0};
+	setZmm(0, src);
+
+	emulate_bin("c5 f9 7e c6"); // vmovd esi, xmm0
+
+	EXPECT_EQ(0x12345678ULL, getRegisterValueUnsigned(X86_REG_RSI));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVQ_from_a_gpr_writes_sixty_four_bits)
+{
+	ONLY_MODE_64;
+
+	const uint64_t junk[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(1, junk);
+	setRegisters({
+		{X86_REG_RSI, 0x0123456789abcdefULL},
+	});
+
+	emulate_bin("c4 e1 f9 6e ce"); // vmovq xmm1, rsi
+
+	EXPECT_EQ(0x0123456789abcdefULL, zmmWord(1, 0));
+	for (unsigned w = 1; w < 8; ++w)
+	{
+		EXPECT_EQ(0ULL, zmmWord(1, w)) << "quadword " << w;
+	}
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVQ_to_a_gpr_takes_the_low_sixty_four_bits)
+{
+	ONLY_MODE_64;
+
+	const uint64_t src[8] = {0x0123456789abcdefULL, ~0ULL, 0, 0, 0, 0, 0, 0};
+	setZmm(1, src);
+
+	emulate_bin("c4 e1 f9 7e ce"); // vmovq rsi, xmm1
+
+	EXPECT_EQ(0x0123456789abcdefULL, getRegisterValueUnsigned(X86_REG_RSI));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVQ_loads_eight_bytes_and_clears_the_rest)
+{
+	ONLY_MODE_64;
+
+	const uint64_t junk[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(1, junk);
+	setRegisters({
+		{X86_REG_RSI, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x0123456789abcdef_qw},
+	});
+
+	emulate_bin("c5 fa 7e 0e"); // vmovq xmm1, qword ptr [rsi]
+
+	EXPECT_EQ(0x0123456789abcdefULL, zmmWord(1, 0));
+	EXPECT_EQ(0ULL, zmmWord(1, 1));
+	EXPECT_EQ(0ULL, zmmWord(1, 7));
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVQ_stores_eight_bytes)
+{
+	ONLY_MODE_64;
+
+	const uint64_t src[8] = {0x0123456789abcdefULL, ~0ULL, 0, 0, 0, 0, 0, 0};
+	setZmm(1, src);
+	setRegisters({
+		{X86_REG_RSI, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x0_qw},
+	});
+
+	emulate_bin("c5 f9 d6 0e"); // vmovq qword ptr [rsi], xmm1
+
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x0123456789abcdef_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VADDPS_adds_sixteen_float_lanes)
+{
+	ONLY_MODE_64;
+
+	// Two 1.0f lanes per quadword, and two 2.0f.
+	const uint64_t a[8] = {
+		0x3f8000003f800000ULL,
+		0x3f8000003f800000ULL,
+		0x3f8000003f800000ULL,
+		0x3f8000003f800000ULL,
+		0x3f8000003f800000ULL,
+		0x3f8000003f800000ULL,
+		0x3f8000003f800000ULL,
+		0x3f8000003f800000ULL};
+	const uint64_t b[8] = {
+		0x4000000040000000ULL,
+		0x4000000040000000ULL,
+		0x4000000040000000ULL,
+		0x4000000040000000ULL,
+		0x4000000040000000ULL,
+		0x4000000040000000ULL,
+		0x4000000040000000ULL,
+		0x4000000040000000ULL};
+	const uint64_t junk[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(2, a);
+	setZmm(1, b);
+	setZmm(3, junk);
+
+	emulate_bin("62 f1 6c 48 58 d9"); // vaddps zmm3, zmm2, zmm1
+
+	// 1.0f + 2.0f = 3.0f in every one of the sixteen lanes, including the
+	// eight past 256 bits.
+	for (unsigned w = 0; w < 8; ++w)
+	{
+		EXPECT_EQ(0x4040000040400000ULL, zmmWord(3, w)) << "quadword " << w;
+	}
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, An_embedded_rounding_mode_is_not_answered_as_the_plain_form)
+{
+	ONLY_MODE_64;
+
+	// vaddps zmm3, zmm2, zmm1, {rn-sae}
+	auto* f = translate(retdec::utils::hexStringToBytes("62 f1 6c 18 58 d9"));
+	ASSERT_NE(nullptr, f);
+
+	// Three plain register operands and no write mask: nothing about this
+	// instruction's SHAPE distinguishes it from the ordinary vaddps. Only
+	// avx_sae and avx_rm do, and suppressing exceptions while pinning the
+	// rounding mode is not what an IEEE fadd computes.
+	EXPECT_TRUE(callsPseudoAsm(f)) << dumpFunction(f);
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVD_loads_four_bytes_not_eight)
+{
+	ONLY_MODE_64;
+
+	const uint64_t junk[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(1, junk);
+	setRegisters({
+		{X86_REG_RSI, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x12345678_dw},
+	});
+
+	emulate_bin("c5 f9 6e 0e"); // vmovd xmm1, dword ptr [rsi]
+
+	// Four bytes. Reading eight would disagree with the operand size capstone
+	// reported and send the instruction to pseudo-assembly instead.
+	EXPECT_EQ(0x12345678ULL, zmmWord(1, 0));
+	for (unsigned w = 1; w < 8; ++w)
+	{
+		EXPECT_EQ(0ULL, zmmWord(1, w)) << "quadword " << w;
+	}
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, A_fallback_reading_a_ZMM_operand_reads_the_slices_not_the_dead_global)
+{
+	ONLY_MODE_64;
+
+	// vmovdqu8 zmm1{k2}, zmmword ptr [rdi] -- a merge-masked move, which
+	// reads zmm1's old value and which this translator declines to model.
+	auto* f = translate(retdec::utils::hexStringToBytes("62 f1 7f 4a 6f 0f"));
+	ASSERT_NE(nullptr, f);
+
+	// The i512 X86_REG_ZMM1 global exists in the register file and no
+	// translated instruction ever writes it. A fallback that read it would
+	// be reading a register that is permanently zero while looking, in the
+	// output, exactly like one that had been read correctly.
+	bool readsXmm1 = false;
+	bool readsDeadZmm1 = false;
+	for (auto it = llvm::inst_begin(f), e = llvm::inst_end(f); it != e; ++it)
+	{
+		auto* l = dyn_cast<LoadInst>(&*it);
+		if (l == nullptr)
+		{
+			continue;
+		}
+		if (l->getPointerOperand() == getRegister(X86_REG_XMM1))
+		{
+			readsXmm1 = true;
+		}
+		if (l->getPointerOperand() == getRegister(X86_REG_ZMM1))
+		{
+			readsDeadZmm1 = true;
+		}
+	}
+	EXPECT_TRUE(readsXmm1) << dumpFunction(f);
+	EXPECT_FALSE(readsDeadZmm1) << dumpFunction(f);
 }
 
 } // namespace tests

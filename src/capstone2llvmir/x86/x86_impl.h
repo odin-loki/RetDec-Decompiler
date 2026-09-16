@@ -393,6 +393,11 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateAvxMov(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxPackedBinary(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxPmovmskb(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxMovScalar(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateAvxPackedFloat(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		bool isWideVectorRegister(uint32_t r) const;
+		llvm::Value* loadWideVectorRegister(uint32_t r, llvm::IRBuilder<>& irb);
+		llvm::StoreInst* storeWideVectorRegister(uint32_t r, llvm::Value* val, llvm::IRBuilder<>& irb);
 		void translateSsePunpckl(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePshufd(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateSsePbyteShift(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);

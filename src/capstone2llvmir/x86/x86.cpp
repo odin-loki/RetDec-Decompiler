@@ -446,6 +446,56 @@ void Capstone2LlvmIrTranslatorX86_impl::generateRegistersCommon()
 	createRegister(X86_REG_YMM13_HI, _regLt);
 	createRegister(X86_REG_YMM14_HI, _regLt);
 	createRegister(X86_REG_YMM15_HI, _regLt);
+	createRegister(X86_REG_YMM16_HI, _regLt);
+	createRegister(X86_REG_YMM17_HI, _regLt);
+	createRegister(X86_REG_YMM18_HI, _regLt);
+	createRegister(X86_REG_YMM19_HI, _regLt);
+	createRegister(X86_REG_YMM20_HI, _regLt);
+	createRegister(X86_REG_YMM21_HI, _regLt);
+	createRegister(X86_REG_YMM22_HI, _regLt);
+	createRegister(X86_REG_YMM23_HI, _regLt);
+	createRegister(X86_REG_YMM24_HI, _regLt);
+	createRegister(X86_REG_YMM25_HI, _regLt);
+	createRegister(X86_REG_YMM26_HI, _regLt);
+	createRegister(X86_REG_YMM27_HI, _regLt);
+	createRegister(X86_REG_YMM28_HI, _regLt);
+	createRegister(X86_REG_YMM29_HI, _regLt);
+	createRegister(X86_REG_YMM30_HI, _regLt);
+	createRegister(X86_REG_YMM31_HI, _regLt);
+
+	// The top 256 bits of each ZMM register. ZMM = ZMMH:YMMH:XMM.
+	createRegister(X86_REG_ZMM0_HI, _regLt);
+	createRegister(X86_REG_ZMM1_HI, _regLt);
+	createRegister(X86_REG_ZMM2_HI, _regLt);
+	createRegister(X86_REG_ZMM3_HI, _regLt);
+	createRegister(X86_REG_ZMM4_HI, _regLt);
+	createRegister(X86_REG_ZMM5_HI, _regLt);
+	createRegister(X86_REG_ZMM6_HI, _regLt);
+	createRegister(X86_REG_ZMM7_HI, _regLt);
+	createRegister(X86_REG_ZMM8_HI, _regLt);
+	createRegister(X86_REG_ZMM9_HI, _regLt);
+	createRegister(X86_REG_ZMM10_HI, _regLt);
+	createRegister(X86_REG_ZMM11_HI, _regLt);
+	createRegister(X86_REG_ZMM12_HI, _regLt);
+	createRegister(X86_REG_ZMM13_HI, _regLt);
+	createRegister(X86_REG_ZMM14_HI, _regLt);
+	createRegister(X86_REG_ZMM15_HI, _regLt);
+	createRegister(X86_REG_ZMM16_HI, _regLt);
+	createRegister(X86_REG_ZMM17_HI, _regLt);
+	createRegister(X86_REG_ZMM18_HI, _regLt);
+	createRegister(X86_REG_ZMM19_HI, _regLt);
+	createRegister(X86_REG_ZMM20_HI, _regLt);
+	createRegister(X86_REG_ZMM21_HI, _regLt);
+	createRegister(X86_REG_ZMM22_HI, _regLt);
+	createRegister(X86_REG_ZMM23_HI, _regLt);
+	createRegister(X86_REG_ZMM24_HI, _regLt);
+	createRegister(X86_REG_ZMM25_HI, _regLt);
+	createRegister(X86_REG_ZMM26_HI, _regLt);
+	createRegister(X86_REG_ZMM27_HI, _regLt);
+	createRegister(X86_REG_ZMM28_HI, _regLt);
+	createRegister(X86_REG_ZMM29_HI, _regLt);
+	createRegister(X86_REG_ZMM30_HI, _regLt);
+	createRegister(X86_REG_ZMM31_HI, _regLt);
 
 	// XMM.
 	createRegister(X86_REG_XMM0, _regLt);
@@ -681,6 +731,67 @@ void Capstone2LlvmIrTranslatorX86_impl::generateRegisters64()
 //==============================================================================
 //
 
+/**
+ * True for a YMM or ZMM register NAME. The storage behind such a name is three
+ * other globals -- ZMM = ZMMH:YMMH:XMM -- and the standalone i256 YMMn and
+ * i512 ZMMn globals in the register file are not it.
+ *
+ * Without this, the two paths disagree: a translated `vmovdqu64 zmm1, zmm2`
+ * writes the slices while the pseudo-assembly fallback for an instruction
+ * this does not model reads the i512 global, which nothing ever wrote. The
+ * fallback would then be reading a register that is permanently zero and
+ * looking, in the output, exactly like one that had been read correctly.
+ */
+bool Capstone2LlvmIrTranslatorX86_impl::isWideVectorRegister(uint32_t r) const
+{
+	return (X86_REG_YMM0 <= r && r <= X86_REG_YMM31) || (X86_REG_ZMM0 <= r && r <= X86_REG_ZMM31);
+}
+
+llvm::Value* Capstone2LlvmIrTranslatorX86_impl::loadWideVectorRegister(uint32_t r, llvm::IRBuilder<>& irb)
+{
+	bool zmm = X86_REG_ZMM0 <= r && r <= X86_REG_ZMM31;
+	unsigned n = zmm ? r - X86_REG_ZMM0 : r - X86_REG_YMM0;
+	unsigned bits = zmm ? 512 : 256;
+	auto* ty = irb.getIntNTy(bits);
+
+	llvm::Value* ret = irb.CreateZExt(loadRegister(X86_REG_XMM0 + n, irb), ty);
+	ret = irb.CreateOr(
+		ret,
+		irb.CreateShl(irb.CreateZExt(loadRegister(X86_REG_YMM0_HI + n, irb), ty), llvm::ConstantInt::get(ty, 128)));
+	if (zmm)
+	{
+		ret = irb.CreateOr(
+			ret,
+			irb.CreateShl(irb.CreateZExt(loadRegister(X86_REG_ZMM0_HI + n, irb), ty), llvm::ConstantInt::get(ty, 256)));
+	}
+
+	return ret;
+}
+
+llvm::StoreInst*
+Capstone2LlvmIrTranslatorX86_impl::storeWideVectorRegister(uint32_t r, llvm::Value* val, llvm::IRBuilder<>& irb)
+{
+	bool zmm = X86_REG_ZMM0 <= r && r <= X86_REG_ZMM31;
+	unsigned n = zmm ? r - X86_REG_ZMM0 : r - X86_REG_YMM0;
+	unsigned bits = zmm ? 512 : 256;
+	auto* ty = irb.getIntNTy(bits);
+	auto* i128 = irb.getInt128Ty();
+
+	val = irb.CreateZExtOrTrunc(val, ty);
+	llvm::StoreInst* ret = storeRegister(X86_REG_XMM0 + n, irb.CreateTrunc(val, i128), irb);
+	ret = storeRegister(
+		X86_REG_YMM0_HI + n, irb.CreateTrunc(irb.CreateLShr(val, llvm::ConstantInt::get(ty, 128)), i128), irb);
+	if (zmm)
+	{
+		ret = storeRegister(
+			X86_REG_ZMM0_HI + n,
+			irb.CreateTrunc(irb.CreateLShr(val, llvm::ConstantInt::get(ty, 256)), irb.getIntNTy(256)),
+			irb);
+	}
+
+	return ret;
+}
+
 llvm::Value* Capstone2LlvmIrTranslatorX86_impl::loadRegister(
 		uint32_t r,
 		llvm::IRBuilder<>& irb,
@@ -690,6 +801,11 @@ llvm::Value* Capstone2LlvmIrTranslatorX86_impl::loadRegister(
 	if (r == X86_REG_INVALID)
 	{
 		return nullptr;
+	}
+
+	if (isWideVectorRegister(r))
+	{
+		return loadWideVectorRegister(r, irb);
 	}
 
 	auto* rt = getRegisterType(r);
@@ -754,6 +870,11 @@ llvm::StoreInst* Capstone2LlvmIrTranslatorX86_impl::storeRegister(
 		llvm::IRBuilder<>& irb,
 		eOpConv ct)
 {
+	if (isWideVectorRegister(r))
+	{
+		return storeWideVectorRegister(r, val, irb);
+	}
+
 	auto* rt = getRegisterType(r);
 	auto pr = getParentRegister(r);
 	auto* reg = getRegister(pr);
