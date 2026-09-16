@@ -3165,3 +3165,77 @@ thing to look at first is `GenericValue`'s default constructor, which leaves
 `DoubleVal` uninitialised -- the same shape as the `extractelement` and
 `extractvalue` defects above, and the only source of nondeterminism this
 emulator has.
+
+
+## The hollow-binary check reported failure exactly when it succeeded
+
+`--link static` has been unusable since the hollow check went in, and the
+reason is four characters:
+
+```sh
+if ! "${triple}-nm" "${bin}" 2>/dev/null | grep -qE '^[0-9a-f]+ [Tt] main$'; then
+```
+
+`set -o pipefail` is on. `grep -q` exits the instant it matches, which closes
+the pipe; `nm` is then killed by SIGPIPE and exits 141; `pipefail` makes 141 the
+pipeline's status; the `!` turns that into "no defined main". The check reports
+a hollow binary **because** the symbol is there.
+
+It never fired on the dynamic corpus and fired on all 210 binaries of the
+static one, which is the tell. A dynamically linked cross binary has a hundred
+or so symbols -- a few kilobytes, well inside the pipe buffer, so `nm` finishes
+writing before `grep` has decided anything and never sees SIGPIPE. A static one
+has thousands, comfortably past 64 KB, so `nm` is always still writing.
+
+`grep` without `-q` reads its input to the end. That is the fix.
+
+The rest of the repository was checked for the same shape. Seven other scripts
+combine `pipefail` with `| grep -q`, and all of them pipe from `printf` of a
+small variable, `find` over a handful of files, or `head -n 8` -- outputs that
+fit in the pipe buffer, where the producer completes regardless of when the
+consumer leaves. The hazard is specifically a large producer, which is why the
+one instance that mattered was the one reading a symbol table.
+
+This one is mine, from earlier in this branch, and it is the same lesson as the
+rest: the check was written and observed to pass on the corpus at hand, and the
+corpus at hand could not make it fail.
+
+## What a static corpus says, which is a different thing
+
+`--link static` drags in all of glibc: its hand-written SIMD, its string
+routines, its syscall stubs. It is deliberately not a gate -- it is a harder
+measurement than the x86-64 corpus rather than the same one -- but it is the
+best guide there is to what to implement next. Over the same 210 programs built
+`-static`:
+
+| arch    | decoded   | rate   | led by |
+|---------|-----------|--------|--------|
+| x86_64  | 5,230,330 | 0.9447 | `VPCMPEQB`, `VMOVDQU`, `PMOVMSKB`, `VPMOVMSKB`, `VMOVDQU64`, `TZCNT`, `PALIGNR`, `KMOVD` |
+| arm64   | 3,592,964 | 0.9836 | `UDF`, `MRS`, `EXT`, `ST1B`, `SVC` |
+| arm     | 3,398,752 | 0.9937 | `MRC`, `PLD`, `TBB`, `STCL`, `LDCL` |
+| mips    | 4,292,791 | 0.9952 | `RDHWR`, `PREF` |
+| powerpc | 4,640,553 | 0.9980 | `SC` |
+
+The question this branch was given was whether the other four architectures
+reach x86-64's level. On glibc-heavy code they are all **ahead** of it, and not
+narrowly: x86-64 is four points behind the next worst, because its list is
+AVX2 and AVX-512 -- `VPCMPEQB`, `VMOVDQU64`, `KMOVD`, `VZEROUPPER` -- and
+nothing in `src/capstone2llvmir/x86` models a YMM or ZMM register at all.
+
+That is recorded, not fixed. AVX needs 256-bit registers in the register file
+before any of its instructions can be translated, which is a subsystem rather
+than a table entry, and none of it is in user code -- it is in `memcpy` and
+`strlen`, behind ifunc dispatch.
+
+Four arm64 ids have **no entry at all**, which is the "the table predates the
+instruction" shape rather than a decision: `UDF` (17,340 occurrences, the most
+frequent untranslated arm64 instruction in this corpus), `LD1B` and `ST1B`
+(SVE) and `LDG` (MTE). They already take the pseudo-asm path, since an id with
+no entry falls through to it, so adding entries would move the number without
+changing what the decompiler emits -- which is the same reason x86-64's `HLT`
+is left where it is.
+
+COV-01 follows AArch64's `$x`/`$d` mapping symbols now as well as ARM's
+`$a`/`$t`/`$d`, so arm64's list is code rather than padding. It changed nothing
+on the dynamic corpus, whose `.text` carries no inline data, and it is the
+honest thing to do before quoting an arm64 uncovered list at all.

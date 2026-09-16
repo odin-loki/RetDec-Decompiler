@@ -161,7 +161,15 @@ for pair in ${ARCHES}; do
 	fi
 	for bin in "${OUT}"/*-"${arch}"-gcc-*; do
 		[ -f "${bin}" ] || continue
-		if ! "${triple}-nm" "${bin}" 2>/dev/null | grep -qE '^[0-9a-f]+ [Tt] main$'; then
+		# grep, not grep -q. `set -o pipefail` is on, and `grep -q` exits the
+		# moment it matches, which closes the pipe and kills nm with SIGPIPE --
+		# so the pipeline's status is 141 exactly when the symbol IS there.
+		# Dynamic binaries have a small enough symbol table that nm finishes
+		# writing first and it never fired; every static binary has a large
+		# one, so --link static reported all 210 of its binaries hollow. grep
+		# without -q reads its input to the end.
+		if ! "${triple}-nm" "${bin}" 2>/dev/null \
+				| grep -E '^[0-9a-f]+ [Tt] main$' >/dev/null; then
 			echo "build_multiarch_corpus: no defined 'main' in ${bin}" >&2
 			hollow=$((hollow + 1))
 		fi

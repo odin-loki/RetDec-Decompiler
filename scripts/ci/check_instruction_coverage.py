@@ -131,27 +131,41 @@ def text_section(binary: Path) -> tuple[int, int, int, int] | None:
     return int(m.group(1)), int(m.group(2), 16), int(m.group(3), 16), int(m.group(4), 16)
 
 
-def arm_regions(binary: Path, ndx: int, addr: int, off: int, size: int):
-    """Split .text by the ARM mapping symbols into (file offset, length, mode).
+# Which mapping-symbol names an architecture uses, and what each means. ARM
+# and AArch64 ELF both carry them; nothing else here does.
+MAPPING_SYMBOLS = {
+    "arm":   {"$a": "arm", "$t": "arm_thumb", "$d": None},
+    "arm64": {"$x": "arm64", "$d": None},
+}
 
-    32-bit ARM ELF carries $a, $t and $d symbols marking runs of ARM code,
-    Thumb code and inline data. Without them a single-mode disassembly reads
-    the Thumb runs and the literal pools as ARM instructions, which is how
-    this tool came to report STC, CDP and LDC -- coprocessor instructions
-    that are not in these binaries at all -- as ARM's most frequent
-    untranslated kinds. Data regions are dropped rather than counted: they
-    are known not to be instructions, which is a different fact from
-    capstone failing to decode them.
+
+def mapping_regions(binary: Path, arch: str, ndx: int, addr: int, off: int, size: int):
+    """Split .text by the ELF mapping symbols into (file offset, length, mode).
+
+    32-bit ARM marks runs of ARM code, Thumb code and inline data with $a, $t
+    and $d; AArch64 marks code and data with $x and $d. Without them a single
+    straight-through disassembly reads the Thumb runs and the literal pools as
+    instructions, which is how this tool came to report STC, CDP and LDC --
+    coprocessor instructions that are not in these binaries at all -- as ARM's
+    most frequent untranslated kinds, and UDF, LD1B and LDG as AArch64's.
+    Data regions are dropped rather than counted: they are known not to be
+    instructions, which is a different fact from capstone failing to decode
+    them.
 
     Returns (regions, data_bytes). An empty region list means no mapping
-    symbols, and the caller falls back to one ARM-mode run.
+    symbols, and the caller falls back to one straight-through run.
     """
+    kinds = MAPPING_SYMBOLS.get(arch)
+    if not kinds:
+        return [], 0
+    names = "|".join(re.escape(k) for k in kinds)
     out = subprocess.run(["readelf", "-sW", str(binary)],
                          capture_output=True, text=True).stdout
     marks = []
+    pat = re.compile(r'\s*\d+:\s+([0-9a-f]+)\s+\d+\s+NOTYPE\s+LOCAL\s+\S+\s+(\d+)\s+(%s)(?:\.\S*)?\s*$'
+                     % names)
     for line in out.splitlines():
-        m = re.match(r'\s*\d+:\s+([0-9a-f]+)\s+\d+\s+NOTYPE\s+LOCAL\s+\S+\s+(\d+)\s+(\$[atd])(?:\.\S*)?\s*$',
-                     line)
+        m = pat.match(line)
         if not m:
             continue
         if int(m.group(2)) != ndx:
@@ -170,10 +184,11 @@ def arm_regions(binary: Path, ndx: int, addr: int, off: int, size: int):
         n = end - a
         if n <= 0:
             continue
-        if kind == "$d":
+        mode = kinds[kind]
+        if mode is None:
             data += n
             continue
-        regions.append((off + (a - addr), n, "arm" if kind == "$a" else "arm_thumb"))
+        regions.append((off + (a - addr), n, mode))
     return regions, data
 
 
@@ -310,10 +325,9 @@ def main() -> int:
                 continue
             ndx, vaddr, off, size = sec
             regions = [(off, size, arch)]
-            if arch == "arm":
-                r, d = arm_regions(b, ndx, vaddr, off, size)
-                if r:
-                    regions, datab = r, datab + d
+            r, d = mapping_regions(b, arch, ndx, vaddr, off, size)
+            if r:
+                regions, datab = r, datab + d
             for roff, rsize, rmode in regions:
                 out = subprocess.run([str(dis), str(b), rmode, "0", f"{roff}:{rsize}"],
                                      capture_output=True, text=True).stdout
