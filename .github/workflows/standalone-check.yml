@@ -252,6 +252,17 @@ jobs:
             --corpus /tmp/ma-corpus --top 10 \
             --arch-min "x86_64=1.0 arm=1.0 arm64=0.9999 mips=0.9999 powerpc=1.0"
 
+      # FLAG-01 asks the question none of the coverage checks do: not whether
+      # an instruction is translated, but whether it is translated CORRECTLY.
+      # It executes each one on the runner's own CPU and compares every flag
+      # against the translator's IR. The runners are x86-64; on anything else
+      # the script skips.
+      - name: FLAG-01 arithmetic flags and condition codes against the hardware
+        run: |
+          bash scripts/ci/check_x86_flags.sh --self-test \
+            --capstone-prefix "$PWD/.c2l-deps/capstone-install" \
+            --rows 400
+
   sanitizers:
     name: asan+ubsan
     runs-on: ubuntu-latest

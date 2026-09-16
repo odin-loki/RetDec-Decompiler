@@ -7499,3 +7499,53 @@ PSEUDO-01 does not move: every one of these was already translated. It was
 translated wrongly.
 
 C2L-01 floors: X86 2559 → 2580, ARM 636 → 650. 5,459 tests.
+
+### FLAG-01, so this does not have to be a one-off
+
+The harness that found the SBB and NEG bugs is now
+`scripts/ci/check_x86_flags.sh`, run by `standalone-check` on every push. Two
+comparisons:
+
+```
+arithmetic  34 instruction forms x N random operand pairs
+            add sub and or xor cmp test imul neg inc dec not
+            shl shr sar rol ror rcl rcr adc sbb bt bts btr btc bsf bsr
+            at 8, 16, 32 and 64 bits
+condition   every SETcc against every one of the 64 flag combinations.
+            Exhaustive, not sampled: 16 x 64 = 1024 cases.
+```
+
+The condition-code half is worth more than its size suggests: `Jcc`, `SETcc`
+and `CMOVcc` all go through the same sixteen `generateCc*` helpers, so 1,024
+cheap comparisons verify **every conditional in x86 output**. It reports zero
+mismatches, which is a result rather than an assumption.
+
+Three things make it honest rather than decorative:
+
+* It **skips** on a non-x86-64 host rather than passing. It has to execute the
+  instructions.
+* It carries a per-instruction mask of the flags the architecture leaves
+  **undefined** — IMUL's SF/ZF/AF/PF, the logicals' AF, OF for shifts by other
+  than one, everything but CF for the bit tests and the rotates, nothing at
+  all for NOT. Without it the first run reported dozens of "mismatches" that
+  were only this CPU's leftovers. The mask is written from the SDM's own
+  wording, not from what happened to differ, because getting it wrong in the
+  other direction hides real bugs.
+* `--self-test` corrupts one expected flag and requires **exactly one**
+  mismatch back. A comparison that cannot report a difference proves nothing,
+  which is the same reason every mutation driver on this branch carries an md5
+  guard.
+
+Reverting either fix makes it fail with the exact flag named:
+
+```
+flags differ: of   got cf1 pf1 af0 zf0 sf1 of0  want cf1 pf1 af0 zf0 sf1 of1
+6800 comparisons, 1 mismatches (805 unmodelled)
+FLAG-01: FAIL arithmetic flags disagree with the hardware
+```
+
+What it does not cover: MUL/DIV/IDIV (two-register results), SHLD/SHRD, the
+x87 and SSE flag-setting comparisons, and every architecture other than x86.
+The other four cannot be done this way in this container — there is no qemu —
+which is why ARM's SBC had to be derived by mapping x86's SBB rather than
+measured directly.
