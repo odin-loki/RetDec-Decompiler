@@ -9181,28 +9181,79 @@ static bool hasIntegerOpcodeOnFpType(llvm::Function* f)
 	return false;
 }
 
-TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADD_vector_4s_is_a_pseudo_call)
+// These three asserted that a vector add or subtract came out as
+// __asm_add/__asm_sub, which was true and was the defect: translateAdd() and
+// translateSub() opened with `if (ifVectorGeneratePseudo(...)) return;`, so a
+// vector operand meant "give up". 588 occurrences of __asm_add in the static
+// parity corpus, every one of them scored covered by COV-01 because the
+// dispatch table has a function pointer for ADD.
+//
+// The guard was right when it was written -- the alternative then was
+// CreateAdd on a 128-bit register, which is not a lane-wise add of anything
+// and dumped core on `.4s` operands -- and it is the wrong answer now that the
+// lane model exists. What it protected against is still checked:
+// hasIntegerOpcodeOnFpType() must stay false.
+//
+// The lane values are chosen so that a 128-bit add and a lane-wise one differ:
+// every lane carries out of its top, so a register-wide add propagates each
+// carry into the next lane and a lane-wise one does not.
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADD_vector_4s)
 {
-	auto* f = translate(assemble("add v0.4s, v1.4s, v2.4s"));
-	ASSERT_NE(nullptr, f);
-	EXPECT_FALSE(hasIntegerOpcodeOnFpType(f));
-	EXPECT_NE(nullptr, _module.getFunction("__asm_add"));
+	setV(ARM64_REG_V1, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setV(ARM64_REG_V2, 0x0000000100000001ULL, 0x0000000100000001ULL);
+
+	emulate("add v0.4s, v1.4s, v2.4s");
+
+	// Each word wraps to zero on its own. A 128-bit add answers
+	// 0x0000000100000000 / 0x0000000100000001 instead.
+	EXPECT_EQ(0x0000000000000000ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000000000000ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
 }
 
-TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADD_vector_2d_is_a_pseudo_call)
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADD_vector_2d)
 {
-	auto* f = translate(assemble("add v3.2d, v4.2d, v5.2d"));
-	ASSERT_NE(nullptr, f);
-	EXPECT_FALSE(hasIntegerOpcodeOnFpType(f));
-	EXPECT_NE(nullptr, _module.getFunction("__asm_add"));
+	setV(ARM64_REG_V4, /*hi=*/5, /*lo=*/0xffffffffffffffffULL);
+	setV(ARM64_REG_V5, /*hi=*/7, /*lo=*/1);
+
+	emulate("add v3.2d, v4.2d, v5.2d");
+
+	// The low lane wraps to zero on its own. A 128-bit add would carry into
+	// the high lane and answer 13 there.
+	EXPECT_EQ(0x0000000000000000ULL, vLow(ARM64_REG_V3));
+	EXPECT_EQ(0x000000000000000cULL, vHigh(ARM64_REG_V3));
+	EXPECT_NO_VALUE_CALLED();
 }
 
-TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SUB_vector_2d_is_a_pseudo_call)
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SUB_vector_2d)
 {
-	auto* f = translate(assemble("sub v0.2d, v1.2d, v2.2d"));
-	ASSERT_NE(nullptr, f);
-	EXPECT_FALSE(hasIntegerOpcodeOnFpType(f));
-	EXPECT_NE(nullptr, _module.getFunction("__asm_sub"));
+	setV(ARM64_REG_V1, /*hi=*/0xa, /*lo=*/0);
+	setV(ARM64_REG_V2, /*hi=*/3, /*lo=*/1);
+
+	emulate("sub v0.2d, v1.2d, v2.2d");
+
+	// The low lane borrows. A 128-bit subtract would take that borrow out of
+	// the high lane and answer 9 there.
+	EXPECT_EQ(0xffffffffffffffffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000000000007ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The guard the three tests above used to assert is still needed for the
+// forms the lane model does not cover, and this pins it: an integer opcode
+// must never be created on a floating-point type.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_vector_ops_never_type_confuse)
+{
+	for (auto& a:
+		 {std::string("add v0.4s, v1.4s, v2.4s"),
+		  std::string("sub v0.2d, v1.2d, v2.2d"),
+		  std::string("mul v0.8h, v1.8h, v2.8h")})
+	{
+		auto* f = translate(assemble(a));
+		ASSERT_NE(nullptr, f) << a;
+		EXPECT_FALSE(hasIntegerOpcodeOnFpType(f)) << a;
+	}
 }
 
 TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADD_scalar_is_still_a_real_add)
@@ -9577,6 +9628,245 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ST1_list_writes_consecutiv
 	EXPECT_NO_VALUE_CALLED();
 }
 
+
+//
+// The NEON lane operations.
+//
+// Batch C's note on ARM64 said of these: "UMAXP (882), SHRN (798), UMINP,
+// ADDP, ADDV, UZP1, SADDL, UADDW, XTN, SHL, UMOV, CNT and MVNI are ordinary
+// lane operations this register model can express. A next batch, not a
+// limitation." This is that batch, restricted to the ones whose operands are
+// all the same width.
+//
+// v1 holds the words 1, 2, 3, 4 and v2 holds 5, 6, 7, 8 throughout the
+// permutes and the pairwise forms, because every lane is different and a mask
+// that is backwards therefore answers with the lanes in the wrong order rather
+// than by accident with the right ones.
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UZP1)
+{
+	setV(ARM64_REG_V1, /*hi=*/0x0000000400000003ULL, /*lo=*/0x0000000200000001ULL);
+	setV(ARM64_REG_V2, /*hi=*/0x0000000800000007ULL, /*lo=*/0x0000000600000005ULL);
+
+	emulate("uzp1 v0.4s, v1.4s, v2.4s");
+
+	// The even lanes of [v1, v2]: 1, 3, 5, 7.
+	EXPECT_EQ(0x0000000300000001ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000700000005ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UZP2)
+{
+	setV(ARM64_REG_V1, /*hi=*/0x0000000400000003ULL, /*lo=*/0x0000000200000001ULL);
+	setV(ARM64_REG_V2, /*hi=*/0x0000000800000007ULL, /*lo=*/0x0000000600000005ULL);
+
+	emulate("uzp2 v0.4s, v1.4s, v2.4s");
+
+	// The odd lanes: 2, 4, 6, 8.
+	EXPECT_EQ(0x0000000400000002ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000800000006ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ZIP1)
+{
+	setV(ARM64_REG_V1, /*hi=*/0x0000000400000003ULL, /*lo=*/0x0000000200000001ULL);
+	setV(ARM64_REG_V2, /*hi=*/0x0000000800000007ULL, /*lo=*/0x0000000600000005ULL);
+
+	emulate("zip1 v0.4s, v1.4s, v2.4s");
+
+	// The lower halves interleaved: 1, 5, 2, 6.
+	EXPECT_EQ(0x0000000500000001ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000600000002ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ZIP2)
+{
+	setV(ARM64_REG_V1, /*hi=*/0x0000000400000003ULL, /*lo=*/0x0000000200000001ULL);
+	setV(ARM64_REG_V2, /*hi=*/0x0000000800000007ULL, /*lo=*/0x0000000600000005ULL);
+
+	emulate("zip2 v0.4s, v1.4s, v2.4s");
+
+	// The upper halves: 3, 7, 4, 8.
+	EXPECT_EQ(0x0000000700000003ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000800000004ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// TRN1 and ZIP1 agree on the first two lanes and differ on the rest, which is
+// why both are here: one test could not tell them apart.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_TRN1)
+{
+	setV(ARM64_REG_V1, /*hi=*/0x0000000400000003ULL, /*lo=*/0x0000000200000001ULL);
+	setV(ARM64_REG_V2, /*hi=*/0x0000000800000007ULL, /*lo=*/0x0000000600000005ULL);
+
+	emulate("trn1 v0.4s, v1.4s, v2.4s");
+
+	// The even lanes of each: 1, 5, 3, 7.
+	EXPECT_EQ(0x0000000500000001ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000700000003ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_TRN2)
+{
+	setV(ARM64_REG_V1, /*hi=*/0x0000000400000003ULL, /*lo=*/0x0000000200000001ULL);
+	setV(ARM64_REG_V2, /*hi=*/0x0000000800000007ULL, /*lo=*/0x0000000600000005ULL);
+
+	emulate("trn2 v0.4s, v1.4s, v2.4s");
+
+	// The odd lanes of each: 2, 6, 4, 8.
+	EXPECT_EQ(0x0000000600000002ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000800000004ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The pairwise forms operate on ADJACENT lanes of vn followed by vm, not on
+// corresponding lanes of vn and vm. A lane-wise implementation of `addp` on
+// these operands answers 6, 8, 10, 12 rather than 3, 7, 11, 15.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ADDP)
+{
+	setV(ARM64_REG_V1, /*hi=*/0x0000000400000003ULL, /*lo=*/0x0000000200000001ULL);
+	setV(ARM64_REG_V2, /*hi=*/0x0000000800000007ULL, /*lo=*/0x0000000600000005ULL);
+
+	emulate("addp v0.4s, v1.4s, v2.4s");
+
+	EXPECT_EQ(0x0000000700000003ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000f0000000bULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UMAXP)
+{
+	setV(ARM64_REG_V1, /*hi=*/0x0000000400000003ULL, /*lo=*/0x0000000200000001ULL);
+	setV(ARM64_REG_V2, /*hi=*/0x0000000800000007ULL, /*lo=*/0x0000000600000005ULL);
+
+	emulate("umaxp v0.4s, v1.4s, v2.4s");
+
+	// max of each adjacent pair: 2, 4, 6, 8.
+	EXPECT_EQ(0x0000000400000002ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000800000006ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// UMAX and SMAX are one letter apart and disagree on every lane whose top bit
+// is set -- which for the byte lanes a NEON string routine works on is all the
+// interesting ones. The two tests use identical operands.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UMAX_is_unsigned)
+{
+	setV(ARM64_REG_V1, /*hi=*/0ULL, /*lo=*/0x00000000000000ffULL);
+	setV(ARM64_REG_V2, /*hi=*/0ULL, /*lo=*/0x0000000000000001ULL);
+
+	emulate("umax v0.16b, v1.16b, v2.16b");
+
+	// 0xff is 255 unsigned, so it wins.
+	EXPECT_EQ(0x00000000000000ffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SMAX_is_signed)
+{
+	setV(ARM64_REG_V1, /*hi=*/0ULL, /*lo=*/0x00000000000000ffULL);
+	setV(ARM64_REG_V2, /*hi=*/0ULL, /*lo=*/0x0000000000000001ULL);
+
+	emulate("smax v0.16b, v1.16b, v2.16b");
+
+	// 0xff is -1 signed, so 1 wins. Every other lane is 0 against 0.
+	EXPECT_EQ(0x0000000000000001ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The lane shifts are of the lane, not of the register: bits leaving a lane's
+// top do not enter the next one.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SHL_vector)
+{
+	setV(ARM64_REG_V1, /*hi=*/0x8000000180000001ULL, /*lo=*/0x8000000180000001ULL);
+
+	emulate("shl v0.4s, v1.4s, #1");
+
+	// Each word's top bit is discarded rather than carried into the next.
+	EXPECT_EQ(0x0000000200000002ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000200000002ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_USHR_vector)
+{
+	setV(ARM64_REG_V1, /*hi=*/0ULL, /*lo=*/0x00000000000000ffULL);
+
+	emulate("ushr v0.16b, v1.16b, #4");
+
+	EXPECT_EQ(0x000000000000000fULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// SSHR is arithmetic and USHR is not, and they disagree on exactly the lanes
+// whose top bit is set.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SSHR_vector)
+{
+	setV(ARM64_REG_V1, /*hi=*/0ULL, /*lo=*/0x00000000000000ffULL);
+
+	emulate("sshr v0.16b, v1.16b, #4");
+
+	// 0xff is -1, and -1 >> 4 is -1.
+	EXPECT_EQ(0x00000000000000ffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// A right shift by the lane width is a legal encoding -- it is how a register
+// is zeroed lane by lane -- and a shift equal to the operand's width is poison
+// in LLVM. Both right shifts are case-split for it.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_USHR_by_the_lane_width)
+{
+	setV(ARM64_REG_V1, /*hi=*/0xffffffffffffffffULL, /*lo=*/0xffffffffffffffffULL);
+
+	emulate("ushr v0.16b, v1.16b, #8");
+
+	EXPECT_EQ(0ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SSHR_by_the_lane_width)
+{
+	setV(ARM64_REG_V1, /*hi=*/0ULL, /*lo=*/0x000000000000ff01ULL);
+
+	emulate("sshr v0.16b, v1.16b, #8");
+
+	// Each lane becomes its own sign: 0x01 -> 0, 0xff -> 0xff.
+	EXPECT_EQ(0x000000000000ff00ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// One lane out of a NEON register into a general-purpose one, which is how the
+// result of a lane compare gets back into scalar code.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UMOV)
+{
+	setV(ARM64_REG_V1, /*hi=*/0ULL, /*lo=*/0x00000000ff112233ULL);
+
+	emulate("umov w0, v1.b[3]");
+
+	EXPECT_EQ(0xff, getRegisterValueUnsigned(ARM64_REG_W0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// SMOV sign-extends where UMOV zero-extends, and 0xff is where they differ.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SMOV)
+{
+	setV(ARM64_REG_V1, /*hi=*/0ULL, /*lo=*/0x00000000ff112233ULL);
+
+	emulate("smov x0, v1.b[3]");
+
+	EXPECT_EQ(0xffffffffffffffffULL, getRegisterValueUnsigned(ARM64_REG_X0));
+	EXPECT_NO_VALUE_CALLED();
+}
 
 //
 // ARM64_INS_EXT, the bitwise selects, and the lane compares.

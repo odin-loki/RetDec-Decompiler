@@ -15,6 +15,9 @@
 #include <sstream>
 #include <vector>
 
+#include <llvm/ADT/APInt.h>
+#include <llvm/Support/raw_ostream.h>
+
 #include <gtest/gtest.h>
 #include <keystone/keystone.h>
 
@@ -336,6 +339,24 @@ class Capstone2LlvmIrTranslatorTests : public ::testing::Test
 			return f;
 		}
 
+		// APInt::getZExtValue() asserts when the value needs more than 64
+		// bits, and this function runs inside a FAILING assertion -- so a
+		// test that should have reported a wrong answer aborted the whole
+		// process instead, and every test after it in the run never ran.
+		//
+		// ARM64 is where it bites: V registers are i128, so any NEON
+		// instruction that produces or consumes one makes the dump of a
+		// failing test fatal. Two of the falsification mutations for the NEON
+		// lane operations came back with "0 failing tests" for exactly this
+		// reason, which is the most misleading way a check can fail.
+		static std::string apIntToString(const llvm::APInt& v)
+		{
+			std::string out;
+			llvm::raw_string_ostream os(out);
+			v.print(os, /*isSigned=*/false);
+			return out;
+		}
+
 		std::string dumpFunction(llvm::Function* f)
 		{
 			std::stringstream ret;
@@ -372,7 +393,7 @@ class Capstone2LlvmIrTranslatorTests : public ::testing::Test
 				std::stringstream ss;
 				if (i->getType()->isIntegerTy())
 				{
-					ss << _emulator->getValueValue(i).IntVal.getZExtValue();
+					ss << apIntToString(_emulator->getValueValue(i).IntVal);
 				}
 				else if (i->getType()->isFloatTy())
 				{
@@ -387,7 +408,7 @@ class Capstone2LlvmIrTranslatorTests : public ::testing::Test
 					auto* i = s->getValueOperand();
 					if (i->getType()->isIntegerTy())
 					{
-						ss << _emulator->getValueValue(i).IntVal.getZExtValue();
+						ss << apIntToString(_emulator->getValueValue(i).IntVal);
 					}
 					else if (i->getType()->isFloatTy())
 					{
@@ -788,12 +809,25 @@ class Capstone2LlvmIrTranslatorTests : public ::testing::Test
 				{
 					switch (sv.type)
 					{
-
-						case StoredValue::eType::UNSIGNED:
-							EXPECT_EQ(sv.ui, ce->calledArguments[cntr].IntVal.getZExtValue())
-									<< "\narg # = " << cntr
-									<< "\n" << dumpFunction(_function);
-							break;
+					case StoredValue::eType::UNSIGNED: {
+						// Same assertion as dumpFunction's: an argument
+						// wider than 64 bits -- every ARM64 V register --
+						// cannot equal a 64-bit expectation, so say so
+						// rather than abort the process proving it.
+						const llvm::APInt& got = ce->calledArguments[cntr].IntVal;
+						if (got.getActiveBits() > 64)
+						{
+							ADD_FAILURE() << "\narg # = " << cntr << " is " << apIntToString(got)
+										  << ", which cannot equal " << sv.ui << "\n"
+										  << dumpFunction(_function);
+						}
+						else
+						{
+							EXPECT_EQ(sv.ui, got.getZExtValue()) << "\narg # = " << cntr << "\n"
+																 << dumpFunction(_function);
+						}
+						break;
+					}
 						case StoredValue::eType::DOUBLE:
 							EXPECT_DOUBLE_EQ(sv.d, ce->calledArguments[cntr].DoubleVal)
 									<< "\narg # = " << cntr
@@ -854,12 +888,25 @@ class Capstone2LlvmIrTranslatorTests : public ::testing::Test
 				{
 					switch (sv.type)
 					{
-
-						case StoredValue::eType::UNSIGNED:
-							EXPECT_EQ(sv.ui, ce->calledArguments[cntr].IntVal.getZExtValue())
-									<< "\narg # = " << cntr
-									<< "\n" << dumpFunction(_function);
-							break;
+					case StoredValue::eType::UNSIGNED: {
+						// Same assertion as dumpFunction's: an argument
+						// wider than 64 bits -- every ARM64 V register --
+						// cannot equal a 64-bit expectation, so say so
+						// rather than abort the process proving it.
+						const llvm::APInt& got = ce->calledArguments[cntr].IntVal;
+						if (got.getActiveBits() > 64)
+						{
+							ADD_FAILURE() << "\narg # = " << cntr << " is " << apIntToString(got)
+										  << ", which cannot equal " << sv.ui << "\n"
+										  << dumpFunction(_function);
+						}
+						else
+						{
+							EXPECT_EQ(sv.ui, got.getZExtValue()) << "\narg # = " << cntr << "\n"
+																 << dumpFunction(_function);
+						}
+						break;
+					}
 						case StoredValue::eType::DOUBLE:
 							EXPECT_DOUBLE_EQ(sv.d, ce->calledArguments[cntr].DoubleVal)
 									<< "\narg # = " << cntr

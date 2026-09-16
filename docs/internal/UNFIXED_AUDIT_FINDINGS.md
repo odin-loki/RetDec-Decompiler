@@ -5499,3 +5499,140 @@ The fourth is the over-correction, and it is the reason `isWordOperation()` is
 an explicit list rather than "everything without a D in its name".
 
 C2L-01 floor: Mips 688 → 712. 4,997 tests.
+
+---
+
+## Batch M — the ARM64 NEON lane operations, and a test harness that aborted
+## instead of failing
+
+ARM64 was the lowest of the four non-x86 architectures after Batch L.
+Batch C's note said of what remained: *"UMAXP (882), SHRN (798), UMINP, ADDP,
+ADDV, UZP1, SADDL, UADDW, XTN, SHL, UMOV, CNT and MVNI are ordinary lane
+operations this register model can express. A next batch, not a limitation."*
+This is that batch, restricted to the operations whose operands are all the
+same width.
+
+### `add`, `sub` and `mul` were not `nullptr` entries
+
+They had translators, and those translators opened with
+
+```cpp
+if (ifVectorGeneratePseudo(i, ai, irb)) return;
+```
+
+so a vector operand meant "give up" and `add v0.4s, v1.4s, v2.4s` came out as
+`__asm_add` — 588 occurrences in the static parity corpus, every one of them
+scored **covered** by COV-01, because the dispatch table has a function pointer
+for `ADD`. The WF-01 shape again, in the one place where the translator's own
+author wrote the bail-out deliberately.
+
+And it *was* deliberate, and right at the time. The comment above it says so:
+the alternative then was `CreateAdd` on a 128-bit register, which is not a
+lane-wise add of anything, and it dumped core on `.4s` operands in all ten
+ARM64 binaries of ARCH-01. The guard was the honest answer until there was a
+lane model. There is one now. What the guard protected against is still
+checked by a test — `hasIntegerOpcodeOnFpType()` must stay false — and three
+tests that asserted `__asm_add` and `__asm_sub` exist are rewritten to assert
+lane arithmetic instead.
+
+### Three families, one function
+
+```
+lane-wise    the operation between corresponding lanes
+pairwise     between ADJACENT lanes of vn followed by vm
+permute      no operation at all, only a choice of lanes
+```
+
+All three are one `shufflevector` apart. The pairwise forms become the
+lane-wise case by splitting the concatenation `[vn, vm]` into its even and odd
+lanes; the permutes are the mask alone.
+
+Every permute has its own test with `v1 = 1,2,3,4` and `v2 = 5,6,7,8`, because
+a mask that is backwards produces a vector with the right lanes in the wrong
+order, and `zip1` and `trn1` agree on the first two lanes of a four-lane
+arrangement — one test cannot tell them apart.
+
+### The right shifts, and a legal shift by the whole width
+
+`ushr v0.16b, v1.16b, #8` is a legal encoding — it is how a register is zeroed
+lane by lane — and `sshr` by 8 broadcasts each byte's sign. A shift equal to
+the operand's width is **poison** in LLVM, so both are case-split: the logical
+one answers zero and the arithmetic one shifts by `laneBits - 1`, which is the
+value the architecture defines.
+
+### The harness aborted instead of reporting, and hid two mutations
+
+Two of the nine falsification mutations came back **"0 failing tests"**. Both
+were genuinely falsified: the tests failed, and then the process died:
+
+```
+c2l_tests: llvm/ADT/APInt.h:1523: uint64_t llvm::APInt::getZExtValue() const:
+Assertion `getActiveBits() <= 64 && "Too many bits for uint64_t"' failed.
+```
+
+`dumpFunction()` prints every instruction's emulated value with
+`APInt::getZExtValue()`, and it runs **inside a failing assertion's message**.
+ARM64 V registers are `i128`. So any NEON test that fails takes the whole
+process with it, every test after it in the run never executes, and
+`--gtest_brief=1` reports nothing at all.
+
+That is the most misleading way a check can fail: not a wrong answer, but no
+answer, indistinguishable from success to anything counting `[  FAILED  ]`
+lines. It is the same shape as everything else this branch has been finding —
+a checker that is more permissive than the thing it stands in for — one level
+further out, in the test harness rather than in the product.
+
+`dumpFunction()` now prints through `APInt::print()`, and the two places that
+compare a called argument against a 64-bit expectation report a wider argument
+as a failure instead of asserting on it. With that in, the two mutations report
+3 and 17 failing tests.
+
+### Falsification
+
+Nine mutations, each reverted alone, each rebuilt and run; all nine fail:
+
+| mutation | result |
+| --- | --- |
+| the pairwise forms treated as lane-wise | 2 tests fail |
+| `UZP1` and `UZP2` swapped | 2 tests fail |
+| `ZIP1`'s mask becomes `TRN1`'s | 1 test fails |
+| `UMAXP` becomes signed | 1 test fails |
+| `SSHR` becomes logical | 2 tests fail |
+| the shift-by-the-lane-width case split removed | 2 tests fail |
+| `SMOV` zero-extends | 1 test fails |
+| `add`/`sub`/`mul` back to the pseudo-assembly path | 3 tests fail |
+| the 20 dispatch entries back to `nullptr` | 17 tests fail |
+
+The last two are the ones that read "0 failing tests" before the harness fix.
+
+### Where it leaves ARM64
+
+```
+                 static
+after Batch G    0.9935
+after Batch M    0.9941     23,114 unmodelled -> 20,930
+```
+
+What is left, and why:
+
+```
+st1b 4620   ld1b 2688   whilelo 588   cntb/cntd     SVE: needs Z and P registers
+svc 4206    brk 339                                 opaque by nature
+movi 1557                                           Capstone reports the raw
+                                                    imm8 and a shift rather
+                                                    than the expanded lane
+                                                    value, across ~10 encodings
+ldg 1302  st2g/stz2g 924  gmi/irg 756               MTE: needs an allocation-tag
+                                                    model
+shrn 798    xtn   saddl  uaddw  addv  cnt           modellable, different
+                                                    operand widths
+```
+
+The last row is the next batch. `shrn` and `xtn` narrow to half-width lanes,
+`saddl`/`uaddw` widen, and `addv` reduces — none of them satisfies
+`neonSameWidthRegs()`, which is why they are not in this one. `cnt` needs
+`llvm.ctpop` on a vector, which the emulator's intrinsic handler does not
+implement (it calls `getIntegerBitWidth()` on the result type), so it needs
+either an emulator change or a manual expansion.
+
+C2L-01 floor: Arm64 501 → 519. 5,015 tests.
