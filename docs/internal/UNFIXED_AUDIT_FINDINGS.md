@@ -5154,3 +5154,119 @@ opaque call: a call says "unknown", a wrong store says "known" and lies.
 `dcbst` and `icbi` have no memory effect to model at all. Correcting this here
 rather than deleting the note, for the same reason the `_id2regs.resize`
 paragraph was annotated in place.
+
+---
+
+## Batch J — the MIPS unaligned pair, and the endianness no fixture could see
+
+`lwl`, `lwr`, `swl` and `swr` are 12,442 occurrences in the static parity
+corpus: the largest specifiable group on any architecture outside x86's AVX,
+and the largest single item left on MIPS.
+
+MIPS has no unaligned load. A compiler that must read a word from an address it
+cannot prove aligned emits two instructions, each transferring the part of the
+word on one side of the containing aligned word's boundary:
+
+```
+lwl $2, 0($3)      big-endian          lwl $2, 3($3)      little-endian
+lwr $2, 3($3)                          lwr $2, 0($3)
+```
+
+They never appear apart. The loads were `translatePseudoAsmOp0FncOp1`, which at
+least returned a value; the stores were `translatePseudoAsmFncOp0Op1`, which
+**wrote no memory at all**.
+
+### Written against the aligned word
+
+Not as a run of byte accesses. That is both what the hardware does — one bus
+transaction — and the form from which a later pass can recognise the pair: two
+reads of the same aligned words merging into one value.
+
+The shift the merge needs is `8 * (EA & 3)` on a big-endian MIPS and
+`8 * (3 - (EA & 3))` on a little-endian one, and the other member of the pair
+uses its complement. All eight forms are one of those two shifts:
+
+```
+LWL   rt = (W << s)  | (rt & lowMask(s))
+LWR   rt = (W >> r)  | (rt & highMask(r))
+SWL   W  = (rt >> s) | (W  & highMask(s))
+SWR   W  = (rt << r) | (W  & lowMask(r))
+```
+
+with `r = (bytes - 1) * 8 - s`. `EA & 3` is a run-time value, so the shifts are
+run-time and the case split cannot be done in C++.
+
+`highMask(n)` keeps the **top** n bits and is therefore `~ones(width - n)`, not
+`~ones(n)`. Writing the second is the one mistake here that still produces a
+plausible answer, because for the middle alignments the two are the same size —
+it was in the first version of this and only the `EA & 3 == 1` cases caught it.
+Both masks are built one width up and truncated, because `ones(width)` is a
+shift by the operand width, which is poison in LLVM.
+
+### A second fixture, because one can only be one endianness
+
+`Capstone2LlvmIrTranslator::createMips32()` defaults to
+`CS_MODE_LITTLE_ENDIAN`, and Keystone's `KS_MODE_MIPS32` does the same, so the
+existing MIPS suite is little-endian throughout. The parity corpus is
+big-endian `mips-linux-gnu`. **The endianness the suite cannot see is the one
+the measured binaries use.**
+
+These four instructions are the only ones in this translator whose meaning
+depends on it, so the suite gained a second fixture differing from the first in
+exactly two lines — `KS_MODE_MIPS32 | KS_MODE_BIG_ENDIAN` and
+`createMips32(&_module, CS_MODE_BIG_ENDIAN)` — with the mirror-image
+expectations. Hard-coding either endianness now passes one suite and fails the
+other; reverting the `getExtraMode()` check fails sixteen tests across both.
+
+C2L-01 counts both fixtures towards the MIPS floor. A per-architecture floor
+that counts one of two fixtures is a floor the other can be deleted under.
+
+### The pair test
+
+Neither half's own test can catch two errors that cancel. `unaligned_word_load
+_pair` runs both instructions over memory holding `11 22 33 44 55 66 77 88` and
+requires the unaligned word at `0x1001` — `0x22334455` big-endian,
+`0x88112233` little-endian, from the same bytes.
+
+### Falsification
+
+Seven mutations, each reverted alone, each rebuilt and run; all seven fail:
+
+| mutation | result |
+| --- | --- |
+| the endianness hard-coded to big | 16 tests fail |
+| `highMask(n)` computed as `~ones(n)` | 5 tests fail |
+| the merge drops the half it keeps | 3 tests fail |
+| the store writes through instead of merging | 8 tests fail |
+| the address is not aligned down | 21 tests fail |
+| left and right swapped | 12 tests fail |
+| the doubleword forms answered on MIPS32 | 1 test fails |
+
+### Where it leaves MIPS
+
+```
+                 static
+after Batch G    0.9960
+after Batch J    0.9989     17,068 unmodelled -> 4,626
+```
+
+What is left is `syscall` 3953 (opaque by nature, like x86's SYSCALL), `break`
+294, `cfc1` 168 (the FPU control word, which needs an FCSR register), `swc2`
+85, and the `teqi`/`tnei`/`daddi` tail at 42 each.
+
+### What this uncovered, and is not fixed here
+
+`daddi` appearing at all sent me to the dispatch table, where
+`MIPS_INS_DADD`, `DADDI`, `DADDIU`, `DADDU`, `DSUB`, `DSUBU`, `DMULT`,
+`DMULTU`, `DDIV`, `DDIVU`, `DSLL`, `DSRL`, `DSRA`, `DSLLV`, `DSRLV`, `DSRAV`,
+`DSLL32`, `DSRL32`, `DSRA32`, `DROTR`, `DEXT`, `DINS`, `DCLZ`, `DCLO`, `DSBH`,
+`DSHD` — **the entire MIPS64 doubleword instruction set** — are every one of
+them `nullptr`.
+
+`createMips64()` exists, `CS_MODE_MIPS64` is half of this suite's
+instantiation, and a genuine 64-bit MIPS binary would arrive with almost none
+of its arithmetic translated. Neither COV-01 nor PSEUDO-01 can see it, because
+both corpora are 32-bit MIPS and contain no doubleword instruction at all:
+this is a gap in the *corpus*, not in either measurement's logic, and it is the
+first one found in this branch that no amount of refining the metric would
+have exposed. Next batch.

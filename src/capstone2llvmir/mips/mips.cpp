@@ -1396,6 +1396,158 @@ void Capstone2LlvmIrTranslatorMips_impl::translateStoreMemory(cs_insn* i, cs_mip
 }
 
 /**
+ * MIPS_INS_LWL, MIPS_INS_LWR, MIPS_INS_SWL, MIPS_INS_SWR,
+ * MIPS_INS_LDL, MIPS_INS_LDR, MIPS_INS_SDL, MIPS_INS_SDR
+ *
+ * The unaligned pair. MIPS has no unaligned load, so a compiler that must read
+ * a word from an address it cannot prove aligned emits two instructions, each
+ * of which transfers the part of the word that lies on one side of the
+ * containing aligned word's boundary:
+ *
+ *     lwl $2, 0($3)       big-endian        lwl $2, 3($3)    little-endian
+ *     lwr $2, 3($3)                         lwr $2, 0($3)
+ *
+ * 12,442 occurrences in the static parity corpus across the four word forms --
+ * the largest group left on MIPS and the largest specifiable group on any
+ * architecture outside x86's AVX. The loads were
+ * `translatePseudoAsmOp0FncOp1`, which at least returned a value; the stores
+ * were `translatePseudoAsmFncOp0Op1`, which wrote no memory at all.
+ *
+ * Written against the containing ALIGNED word rather than as a run of byte
+ * accesses. That is both what the hardware does -- one bus transaction -- and
+ * the form from which a later pass can recognise the pair: two reads of the
+ * same aligned words merging into one value.
+ *
+ * The shift the merge needs is `8 * (EA & 3)` on a big-endian MIPS and
+ * `8 * (3 - (EA & 3))` on a little-endian one, and the other member of the
+ * pair uses its complement. Every one of the eight cases is one of those two
+ * shifts:
+ *
+ *     LWL   rt = (W << s)  | (rt & lowMask(s))
+ *     LWR   rt = (W >> r)  | (rt & highMask(r))
+ *     SWL   W  = (rt >> s) | (W  & highMask(s))
+ *     SWR   W  = (rt << r) | (W  & lowMask(r))
+ *
+ * with `r = (bytes - 1) * 8 - s`. Endianness therefore enters in exactly one
+ * place, and it is read from the translator's own Capstone mode rather than
+ * assumed -- the corpus is big-endian `mips-linux-gnu` and this test suite is
+ * little-endian, so an implementation that hard-codes either is wrong for the
+ * other and there is no configuration in which both are exercised by accident.
+ *
+ * The masks are built at twice the width and truncated, because `highMask(0)`
+ * is `~((1 << width) - 1)` and a shift equal to the operand width is poison in
+ * LLVM. `EA & 3` is a run-time value, so the shifts are run-time too and the
+ * case split cannot be done in C++.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateUnalignedMemory(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	unsigned bytes = 0;
+	bool store = false;
+	bool left = false;
+	switch (i->id)
+	{
+	case MIPS_INS_LWL:
+		bytes = 4;
+		left = true;
+		break;
+	case MIPS_INS_LWR:
+		bytes = 4;
+		left = false;
+		break;
+	case MIPS_INS_SWL:
+		bytes = 4;
+		left = true;
+		store = true;
+		break;
+	case MIPS_INS_SWR:
+		bytes = 4;
+		left = false;
+		store = true;
+		break;
+	case MIPS_INS_LDL:
+		bytes = 8;
+		left = true;
+		break;
+	case MIPS_INS_LDR:
+		bytes = 8;
+		left = false;
+		break;
+	case MIPS_INS_SDL:
+		bytes = 8;
+		left = true;
+		store = true;
+		break;
+	case MIPS_INS_SDR:
+		bytes = 8;
+		left = false;
+		store = true;
+		break;
+	default: throw GenericError("Unhandled insn ID in translateUnalignedMemory().");
+	}
+
+	// The doubleword forms are MIPS64 only.
+	if (bytes == 8 && getArchByteSize() < 8)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	auto* ty = irb.getIntNTy(bytes * 8);
+	auto* wide = irb.getIntNTy(bytes * 16);
+
+	llvm::Value* ea = loadOp(mi->operands[1], irb, nullptr, /*lea=*/true);
+	ea = irb.CreateZExtOrTrunc(ea, ty);
+
+	llvm::Value* off = irb.CreateAnd(ea, llvm::ConstantInt::get(ty, bytes - 1));
+	llvm::Value* aligned = irb.CreateAnd(ea, llvm::ConstantInt::get(ty, ~static_cast<uint64_t>(bytes - 1)));
+
+	// s on a big-endian MIPS, its complement on a little-endian one.
+	llvm::Value* s = irb.CreateShl(off, llvm::ConstantInt::get(ty, 3));
+	if (getExtraMode() != CS_MODE_BIG_ENDIAN)
+	{
+		s = irb.CreateSub(llvm::ConstantInt::get(ty, (bytes - 1) * 8), s);
+	}
+	llvm::Value* r = irb.CreateSub(llvm::ConstantInt::get(ty, (bytes - 1) * 8), s);
+
+	// `ones(n)` is the low n bits set. Built one width up, because a shift by
+	// the whole width is poison in LLVM and n reaches the width here.
+	auto ones = [&](llvm::Value* n) -> llvm::Value* {
+		llvm::Value* w = irb.CreateShl(llvm::ConstantInt::get(wide, 1), irb.CreateZExt(n, wide));
+		w = irb.CreateSub(w, llvm::ConstantInt::get(wide, 1));
+		return irb.CreateTrunc(w, ty);
+	};
+
+	// lowMask(n) keeps the bottom n bits. highMask(n) keeps the TOP n, which is
+	// `ones` of the complement -- not of n. Getting that wrong is the one
+	// mistake here that still produces a plausible answer, because for the
+	// middle alignments the two masks are the same size.
+	auto lowMask = [&](llvm::Value* n) { return ones(n); };
+	auto highMask = [&](llvm::Value* n) {
+		return irb.CreateNot(ones(irb.CreateSub(llvm::ConstantInt::get(ty, bytes * 8), n)));
+	};
+
+	llvm::Value* rt = loadOp(mi->operands[0], irb);
+	rt = irb.CreateZExtOrTrunc(rt, ty);
+
+	if (store)
+	{
+		llvm::Value* mem = loadIntPtr(irb, aligned, ty);
+		llvm::Value* merged = left ? irb.CreateOr(irb.CreateLShr(rt, s), irb.CreateAnd(mem, highMask(s)))
+								   : irb.CreateOr(irb.CreateShl(rt, r), irb.CreateAnd(mem, lowMask(r)));
+		storeIntPtr(irb, merged, aligned, ty);
+	}
+	else
+	{
+		llvm::Value* mem = loadIntPtr(irb, aligned, ty);
+		llvm::Value* merged = left ? irb.CreateOr(irb.CreateShl(mem, s), irb.CreateAnd(rt, lowMask(s)))
+								   : irb.CreateOr(irb.CreateLShr(mem, r), irb.CreateAnd(rt, highMask(r)));
+		storeOp(mi->operands[0], merged, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+	}
+}
+
+/**
  * MIPS_INS_LUI
  * This behaves like 32-bit MIPS instruction even on 64-bit MIPS.
  */

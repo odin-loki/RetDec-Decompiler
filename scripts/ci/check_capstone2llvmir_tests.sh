@@ -50,7 +50,7 @@ WORKDIR="${C2L_WORKDIR:-}"
 readonly MIN_X86=2217
 readonly MIN_ARM=608
 readonly MIN_ARM64=501
-readonly MIN_MIPS=612
+readonly MIN_MIPS=640
 readonly MIN_POWERPC=926
 readonly MIN_EMUL=25
 
@@ -246,8 +246,17 @@ count_arch() {
 	# this script at the assignment -- so an architecture whose suite had gone
 	# missing entirely, the one case these floors exist for, exited without
 	# printing which one it was. `|| true` keeps the 0 and the message.
+	#
+	# $2 is an additional gtest filter pattern for an architecture with more
+	# than one fixture. MIPS has two: the default little-endian one and a
+	# big-endian one, because lwl/lwr/swl/swr are the only instructions in this
+	# translator whose meaning depends on the endianness and a single fixture
+	# can only ever be one of the two. Both count towards the MIPS floor, or
+	# the six big-endian tests could be deleted without the gate noticing.
+	local filter="*Capstone2LlvmIrTranslator$1Tests.*"
+	[ -n "${2:-}" ] && filter="${filter}:$2"
 	"${WORKDIR}/c2l_tests" --gtest_list_tests \
-		--gtest_filter="*Capstone2LlvmIrTranslator$1Tests.*" 2>/dev/null \
+		--gtest_filter="${filter}" 2>/dev/null \
 		| grep -cE '^  [A-Za-z]' || true
 }
 
@@ -255,7 +264,9 @@ bad=0
 for pair in "X86:${MIN_X86}" "Arm:${MIN_ARM}" "Arm64:${MIN_ARM64}" \
             "Mips:${MIN_MIPS}" "Powerpc:${MIN_POWERPC}"; do
 	arch="${pair%%:*}"; floor="${pair##*:}"
-	got="$(count_arch "${arch}")"
+	extra=""
+	[ "${arch}" = "Mips" ] && extra='*Capstone2LlvmIrTranslatorMipsBigEndianTests.*'
+	got="$(count_arch "${arch}" "${extra}")"
 	if [ "${got}" -lt "${floor}" ]; then
 		echo "C2L-01: FAIL ${arch}: ${got} test(s), floor is ${floor}" >&2
 		bad=1

@@ -62,6 +62,16 @@ class Capstone2LlvmIrTranslatorMipsTests :
 			}
 		}
 
+		// lwl/lwr produce a 32-bit word, and MIPS64 sign-extends it into
+		// the 64-bit register while MIPS32 does not. The same test body
+		// therefore expects two different values, and writing them out by
+		// hand in every case is how one of them ends up wrong.
+		uint64_t sx32(uint32_t v)
+		{
+			return GetParam() == CS_MODE_MIPS64 ? static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(v)))
+												: v;
+		}
+
 		// An integer result of trunc/round/ceil/floor lives in an FP
 		// register as a bit pattern, and comparing it as a float is useless:
 		// `bitcast i32 3 to float` is 4.2e-45, which EXPECT_NEAR(0.001) cannot
@@ -6642,6 +6652,450 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_RDHWR_29_is_the_thread_point
 		{MIPS_REG_2, 0xdeadbeef},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// MIPS_INS_LWL, MIPS_INS_LWR, MIPS_INS_SWL, MIPS_INS_SWR
+//
+// MIPS has no unaligned load, so a compiler that must read a word from an
+// address it cannot prove aligned emits two instructions, each transferring
+// the part of the word on one side of the containing aligned word's boundary.
+// 12,442 occurrences in the static parity corpus across the four word forms:
+// the largest specifiable group on any architecture outside x86's AVX.
+//
+// The memory word is 0x11223344 and the destination register 0xaabbccdd, so
+// every byte of the answer says where it came from, and no two of the four
+// alignments give the same result for any of the four instructions.
+//
+// These are the LITTLE-endian expectations; the big-endian fixture below
+// carries its own, and the two sets are mirror images. That is the whole point
+// of having both: the corpus is big-endian mips-linux-gnu and this fixture is
+// little-endian, so an implementation that hard-codes either endianness passes
+// one suite and fails the other.
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LWL)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd},
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x11223344_dw},
+	});
+
+	emulate("lwl $2, 1($3)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, sx32(0x3344ccdd)},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// Offset 3 on a little-endian MIPS is the whole word: the left part reaches
+// all the way down. Offset 0 is one byte. If the two were swapped this test
+// and the one above would both still pass with either reading of `left`, which
+// is why both alignments are here.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LWL_whole_word)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd},
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x11223344_dw},
+	});
+
+	emulate("lwl $2, 3($3)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, sx32(0x11223344)},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LWR)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd},
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x11223344_dw},
+	});
+
+	emulate("lwr $2, 1($3)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, sx32(0xaa112233)},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// A partial store is a read-modify-write of the containing aligned word at
+// this level of modelling -- the bytes it does not write have to survive. The
+// old translation was translatePseudoAsmFncOp0Op1, which wrote no memory at
+// all.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SWL)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd},
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x11223344_dw},
+	});
+
+	emulate("swl $2, 1($3)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x1122aabb_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SWR)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd},
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x11223344_dw},
+	});
+
+	emulate("swr $2, 1($3)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0xbbccdd44_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The pair, which is the only form either instruction appears in. On a
+// little-endian MIPS the idiom is `lwl rt, 3(A)` then `lwr rt, 0(A)`, and
+// together they must reconstruct the unaligned word at A. Memory holds
+// 44 33 22 11 88 77 66 55 from 0x1000, so the little-endian word at 0x1001 is
+// 0x88112233. Neither halves' own test can catch a pair of errors that cancel;
+// this one can.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, unaligned_word_load_pair)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1001},
+	});
+	setMemory({
+		{0x1000, 0x11223344_dw},
+		{0x1004, 0x55667788_dw},
+	});
+
+	emulate("lwl $2, 3($3)\nlwr $2, 0($3)");
+
+	EXPECT_EQ(sx32(0x88112233), getRegisterValueUnsigned(MIPS_REG_2));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LDL)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd11223344},
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x0102030405060708_qw},
+	});
+
+	emulate("ldl $2, 7($3)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x0102030405060708},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LDR)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd11223344},
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x0102030405060708_qw},
+	});
+
+	emulate("ldr $2, 1($3)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xaa01020304050607},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SDL)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd11223344},
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x0102030405060708_qw},
+	});
+
+	emulate("sdl $2, 1($3)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x010203040506aabb_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SDR)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd11223344},
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x0102030405060708_qw},
+	});
+
+	emulate("sdr $2, 1($3)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0xbbccdd1122334408_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The doubleword forms are MIPS64 instructions. On a 32-bit MIPS they fall
+// back rather than being answered at the wrong width, which is the same rule
+// EXT, INS and WSBH follow.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LDL_falls_back_on_mips32)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1000},
+	});
+
+	// 0x68620001 = ldl $2, 1($3). Keystone will not assemble a MIPS64
+	// instruction in MIPS32 mode, which is the point.
+	emulate_bin("01 00 62 68");
+
+	EXPECT_NE(nullptr, _module.getFunction("__asm_ldl"));
+}
+
+//
+// The big-endian fixture.
+//
+// lwl/lwr/swl/swr are the only instructions in this translator whose meaning
+// depends on the endianness of the machine, and the fixture above can only
+// ever be one of the two: Capstone2LlvmIrTranslator::createMips32() defaults
+// to CS_MODE_LITTLE_ENDIAN and Keystone's KS_MODE_MIPS32 does the same. The
+// parity corpus is big-endian mips-linux-gnu, which is to say the endianness
+// the little-endian suite cannot see is the one the measured binaries use.
+//
+// So a second fixture, differing from the first in exactly two lines. Its
+// expectations are the mirror images of the ones above; an implementation that
+// hard-codes either endianness passes one suite and fails the other, and one
+// that reads the endianness from somewhere other than its own Capstone mode
+// has nothing to read it from.
+
+class Capstone2LlvmIrTranslatorMipsBigEndianTests : public Capstone2LlvmIrTranslatorTests,
+													public ::testing::WithParamInterface<cs_mode> {
+protected:
+	virtual void initKeystoneEngine() override
+	{
+		if (ks_open(KS_ARCH_MIPS, static_cast<ks_mode>(KS_MODE_MIPS32 | KS_MODE_BIG_ENDIAN), &_assembler) != KS_ERR_OK)
+		{
+			throw std::runtime_error("ERROR: failed on ks_open().\n");
+		}
+	}
+
+	virtual void initCapstone2LlvmIrTranslator() override
+	{
+		_translator = Capstone2LlvmIrTranslator::createMips32(&_module, CS_MODE_BIG_ENDIAN);
+	}
+};
+
+INSTANTIATE_TEST_SUITE_P(
+	InstantiateMipsBigEndian,
+	Capstone2LlvmIrTranslatorMipsBigEndianTests,
+	::testing::Values(CS_MODE_MIPS32),
+	PrintCapstoneModeToString_Mips());
+
+TEST_P(Capstone2LlvmIrTranslatorMipsBigEndianTests, MIPS_INS_LWL)
+{
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd},
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x11223344_dw},
+	});
+
+	emulate("lwl $2, 1($3)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x223344dd},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// Offset 0 is the whole word on a big-endian MIPS and one byte on a
+// little-endian one. Compare with MIPS_INS_LWL_whole_word above, which needs
+// offset 3 for the same answer.
+TEST_P(Capstone2LlvmIrTranslatorMipsBigEndianTests, MIPS_INS_LWL_whole_word)
+{
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd},
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x11223344_dw},
+	});
+
+	emulate("lwl $2, 0($3)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x11223344},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsBigEndianTests, MIPS_INS_LWR)
+{
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd},
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x11223344_dw},
+	});
+
+	emulate("lwr $2, 1($3)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xaabb1122},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsBigEndianTests, MIPS_INS_SWL)
+{
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd},
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x11223344_dw},
+	});
+
+	emulate("swl $2, 1($3)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0x11aabbcc_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsBigEndianTests, MIPS_INS_SWR)
+{
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd},
+		{MIPS_REG_3, 0x1000},
+	});
+	setMemory({
+		{0x1000, 0x11223344_dw},
+	});
+
+	emulate("swr $2, 1($3)");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_JUST_MEMORY_LOADED({0x1000});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1000, 0xccdd3344_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The pair, big-endian: `lwl rt, 0(A)` then `lwr rt, 3(A)`. Memory holds
+// 11 22 33 44 55 66 77 88 from 0x1000, so the big-endian word at 0x1001 is
+// 0x22334455 -- and this is what GCC emits for `*(int*)p` when it cannot prove
+// p aligned, which is why these two instructions are 12,442 occurrences in the
+// corpus and never appear apart.
+TEST_P(Capstone2LlvmIrTranslatorMipsBigEndianTests, unaligned_word_load_pair)
+{
+	setRegisters({
+		{MIPS_REG_3, 0x1001},
+	});
+	setMemory({
+		{0x1000, 0x11223344_dw},
+		{0x1004, 0x55667788_dw},
+	});
+
+	emulate("lwl $2, 0($3)\nlwr $2, 3($3)");
+
+	EXPECT_EQ(0x22334455, getRegisterValueUnsigned(MIPS_REG_2));
 	EXPECT_NO_VALUE_CALLED();
 }
 
