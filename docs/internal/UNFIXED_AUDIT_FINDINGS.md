@@ -7796,6 +7796,38 @@ translated wrongly, which is the one thing a coverage number cannot report.
 
 C2L-01 floor: X86 2580 → 2616. 5,495 tests.
 
+### AB-4: the emulator was dropping every vector float intrinsic
+
+Found by the packed test above, which aborted the whole suite:
+
+```
+Assertion `Src2.AggregateVal.size() == Src3.AggregateVal.size()' failed.
+```
+
+`CVTTPS2DQ` passed and `CVTPS2DQ` did not, and the only difference between
+them is that the rounding form asks for `llvm.roundeven.v4f32` first. The
+interpreter's floating-point intrinsic block is guarded on
+
+```c
+if (I.getType()->isFloatTy() || I.getType()->isDoubleTy())
+```
+
+which is scalar-only, so every VECTOR intrinsic fell through to the
+unhandled-external path — and that path leaves `GenericValue::AggregateVal`
+**empty**. An empty aggregate propagates quietly through the next
+instruction, so nothing complained until a vector `select` met one and
+compared operand sizes.
+
+Until then, every packed conversion this interpreter ran was reading nothing
+and answering with it. Nothing caught it because `CVTPS2DQ` had no test at
+all: the translation was written, and the only thing that could have executed
+it could not.
+
+The guard is now on the *scalar* type and the computation runs per lane. This
+is the Batch V lesson from the other side: there the emulator ran invalid IR
+and returned a plausible number, here it declined to run valid IR and returned
+an absence. Both look like an answer.
+
 ### Still not covered
 
 x87 and SSE comparisons (COMISS, UCOMISS, FCOMI and their double forms) set
@@ -7803,3 +7835,147 @@ EFLAGS and are not in any of the three comparisons. Neither is SHLD/SHRD with
 a memory destination, nor BSWAP/XADD/CMPXCHG. And still no architecture other
 than x86 — there is no qemu in this container, so ARM, ARM64, MIPS and PowerPC
 remain checked by reading rather than by execution.
+
+## Batch AB — the AVX comparisons, and what a conversion answers off the end
+
+### How this was found
+
+The Batch AA entry above closes with a list of what its instruments still
+cannot reach, and the first item is the x87 and SSE comparisons. Those read an
+XMM register and write flags or a general-purpose register, which is a shape
+neither of the other two oracles can express: both pass their operands in
+general-purpose registers.
+
+`scripts/ci/x86_sse_oracle.c` and `x86_sse_compare.cpp` are that third shape.
+Operands are float BIT PATTERNS from a fixed pool — NaN quiet and signalling,
+both zeroes, both infinities, denormals, the integer-conversion boundaries and
+ordinary numbers — paired exhaustively, because the row of the comparison
+table that matters is the one only a NaN reaches.
+
+The first run reported two things.
+
+### AB-1: the AVX comparison forms were not translated at all
+
+```
+vucomisd    NOT TRANSLATED -- falls through to pseudo-assembly
+vucomiss    NOT TRANSLATED
+vcomisd     NOT TRANSLATED
+vcomiss     NOT TRANSLATED
+vmovmskps   NOT TRANSLATED
+vmovmskpd   NOT TRANSLATED
+vcvtsd2si   NOT TRANSLATED
+vcvtss2si   NOT TRANSLATED
+vcvttsd2si  NOT TRANSLATED
+vcvttss2si  NOT TRANSLATED
+```
+
+`vucomisd` is what a compiler emits for `a < b` on doubles on any machine
+built this decade. RetDec dispatched it, and the nine forms beside it, to
+`nullptr` — so an AVX binary got a pseudo-assembly call where an SSE binary
+got a comparison.
+
+They are not alone. Of 1,357 dispatch entries, 792 are `nullptr`, and 93 of
+those are VEX forms whose SSE twin IS translated. Most of that 93 cannot be
+wired up in one line, because the VEX encoding of an arithmetic instruction
+takes THREE operands where the SSE one takes two — measured, not assumed:
+
+```
+vucomisd xmm0, xmm1        ops=2      <- same shape as ucomisd
+vaddsd   xmm0, xmm1, xmm2  ops=3      <- not the same shape as addsd
+```
+
+These ten are the subset that is genuinely a drop-in: two operands, and a
+destination that is a general-purpose register or nothing at all, so there is
+no 256-bit upper half for the VEX form to zero.
+
+### AB-2: and wiring them up exposes the trap
+
+Three of the shared translators branch on the instruction id:
+
+```c
+bool isDouble = i->id == X86_INS_UCOMISD || i->id == X86_INS_COMISD;
+```
+
+Point `VUCOMISD` at that function and leave the line alone, and every AVX
+double comparison silently takes the single-precision path. Nothing crashes.
+No coverage number moves, because the instruction IS translated. It is
+translated as the wrong operation — 913 wrong answers out of 9,610 when the
+mutation was measured.
+
+This is the same bug class as the EVEX compares in Batch T and MIPS MSA in
+Batch Y: **one dispatch key covering more than one operation**. It has now
+appeared three times, so it gets a check rather than a note. C2L-01 fails if
+any V-form shares a translator whose body tests for the SSE id and not the VEX
+one. Fourteen shared translators pass it today.
+
+### AB-3: a conversion off the end of the range
+
+The larger of the two. `cvttsd2si` and its seven relatives were a bare
+`CreateFPToSI`:
+
+```
+cvtsd2si  +inf     hardware 0x80000000   translator 0
+cvtsd2si  NaN      hardware 0x80000000   translator 0
+cvtsd2si  1.0e24   hardware 0x80000000   translator 0
+cvtsd2si  -2^31-ε  hardware 0x80000000   translator 0x7fffffff
+```
+
+652 of 4,805 rows. x86 defines the answer for an input that does not fit — a
+NaN, an infinity, or a magnitude past the destination's range — as the
+**integer indefinite** value, the destination's minimum signed value. LLVM's
+`fptosi` calls that case poison, which is a different thing and a worse one:
+poison is not a value the decompiler can print, and it does not stay where it
+is put once the optimiser sees it.
+
+`generateFpToSiDefined()` range-checks first, feeds the conversion a value
+that is in range on every path — so the IR carries no poison at all rather
+than poison that happens not to be selected — and selects the indefinite value
+back in. Two details are load-bearing:
+
+* The bounds are `-2^(N-1)` and `2^(N-1)`, with a **strict** upper comparison.
+  `2^(N-1)-1` is the real limit but it is not exactly representable in binary
+  floating point, and 2147483647.0 as a float is 2147483648.0. The strict
+  form against the power of two is exact for both widths and both source
+  types, and it is the correct boundary for a value that has already been
+  rounded.
+* Both comparisons are **ordered**, so a NaN fails them and takes the
+  indefinite path without needing a test of its own.
+
+It works elementwise on a vector, so `CVTPS2DQ` and `CVTTPS2DQ` get it too.
+
+### Falsification
+
+```
+AB1_unwired          vucomisd reported NOT TRANSLATED, 500 fewer comparisons
+AB1_body_untaught    913 mismatches   vucomisd=457 vcomisd=456
+AB2_bare_fptosi     1295 mismatches   cvtsd2si=185 cvtss2si=146 cvttsd2si=179
+                                      cvttss2si=142 vcvtsd2si=174 vcvtss2si=150
+                                      vcvttsd2si=175 vcvttss2si=144
+```
+
+The middle one is the one worth having. It is the mutation that produces a
+translator which runs, terminates, writes plausible flags, and is wrong — the
+failure the new C2L-01 check exists to prevent.
+
+### After
+
+```
+9,610 comparisons against the hardware, 0 mismatches, 0 untranslated forms
+```
+
+C2L-01 floor: X86 2616 → 2664. 5,543 tests.
+
+The comparison fails on an untranslated form as well as on a wrong one,
+because an absence read as a pass is how these ten sat unnoticed.
+
+### Still not covered
+
+263 of the 792 `nullptr` entries are not AVX at all, and some are ordinary:
+the packed shifts (`PSLLD`, `PSRLQ`, `PSRAW` and the rest), `PSHUFB`, the
+saturating packed adds, `PMADDWD`, the `PMOVSX`/`PMOVZX` widening family,
+`PACKSSWB`, `PTEST` and `CMPPS`/`CMPPD`. Those are in every vectorised loop
+and every optimised string routine. They are a larger batch than this one and
+have not been started.
+
+The remaining 83 VEX forms with a translated SSE twin need a three-operand
+path and the VEX zeroing rule, not a dispatch entry.

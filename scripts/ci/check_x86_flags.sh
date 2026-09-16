@@ -44,6 +44,19 @@
 #               masked to zero -- which on x86-64 is how the upper half of a
 #               32-bit destination gets cleared.
 #
+#   sse         the instructions that READ an XMM register and write a
+#               general-purpose register or the flags: the floating-point
+#               comparisons, the sign-mask extractions and the scalar
+#               float-to-integer conversions. Operands are bit patterns --
+#               NaN, both zeroes, both infinities, denormals and the
+#               conversion boundaries -- because the row of the comparison
+#               table that matters is the one only a NaN reaches. It also
+#               fails on an instruction that is not translated at all, which
+#               is how the four AVX comparison forms were found: RetDec
+#               dispatched vucomisd and its three siblings to nullptr, so an
+#               AVX binary got a pseudo-assembly call where an SSE binary got
+#               a comparison.
+#
 #   condition   every SETcc against every one of the 64 combinations of the
 #               six flags. Exhaustive, not sampled: 16 x 64 = 1024 cases. Jcc,
 #               SETcc and CMOVcc all go through the same sixteen generateCc*
@@ -141,9 +154,14 @@ link() {
 gcc -O0 -o "${WORKDIR}/flag_oracle" scripts/ci/x86_flag_oracle.c || die "oracle build failed"
 gcc -O0 -o "${WORKDIR}/cc_oracle"   scripts/ci/x86_cc_oracle.c   || die "cc oracle build failed"
 gcc -O0 -o "${WORKDIR}/wide_oracle" scripts/ci/x86_wide_oracle.c || die "wide oracle build failed"
+# -mavx: the VEX forms are half the point of this one. The script has already
+# established the host is x86-64; a machine without AVX fails here rather than
+# quietly testing only the SSE half.
+gcc -O0 -mavx -o "${WORKDIR}/sse_oracle" scripts/ci/x86_sse_oracle.c || die "sse oracle build failed"
 link scripts/ci/x86_flag_compare.cpp "${WORKDIR}/flag_compare"
 link scripts/ci/x86_cc_compare.cpp   "${WORKDIR}/cc_compare"
 link scripts/ci/x86_wide_compare.cpp "${WORKDIR}/wide_compare"
+link scripts/ci/x86_sse_compare.cpp  "${WORKDIR}/sse_compare"
 
 rc=0
 
@@ -184,6 +202,20 @@ if [ "${SELF_TEST}" -eq 1 ]; then
 		*", 1 mismatches"*) echo "FLAG-01: wide self-test ok -- ${st}" ;;
 		*) die "wide self-test: expected exactly 1 mismatch, got: ${st}" ;;
 	esac
+
+	"${WORKDIR}/sse_oracle" 4 > "${WORKDIR}/srows.txt"
+	awk -F'|' 'BEGIN{OFS="|"} NR==2 && NF==12 {
+			last = substr($6, length($6));
+			$6 = substr($6, 1, length($6) - 1) (last == "0" ? "1" : "0")
+		} {print}' \
+		"${WORKDIR}/srows.txt" > "${WORKDIR}/srows.bad"
+	cmp -s "${WORKDIR}/srows.txt" "${WORKDIR}/srows.bad" \
+		&& die "self-test: corrupting an sse row changed nothing"
+	st="$(cd "${WORKDIR}" && ./sse_compare srows.bad | tail -1)"
+	case "${st}" in
+		*", 1 mismatches"*) echo "FLAG-01: sse self-test ok -- ${st}" ;;
+		*) die "sse self-test: expected exactly 1 mismatch, got: ${st}" ;;
+	esac
 fi
 
 "${WORKDIR}/flag_oracle" "${ROWS}" > "${WORKDIR}/rows.txt"
@@ -199,6 +231,21 @@ out="$(cd "${WORKDIR}" && ./wide_compare wrows.txt)"
 echo "${out}" | tail -20
 if ! echo "${out}" | grep -qE ', 0 mismatches'; then
 	echo "FLAG-01: FAIL wide results or flags disagree with the hardware" >&2
+	rc=1
+fi
+
+"${WORKDIR}/sse_oracle" "${ROWS}" > "${WORKDIR}/srows.txt"
+out="$(cd "${WORKDIR}" && ./sse_compare srows.txt)"
+echo "${out}" | tail -20
+if ! echo "${out}" | grep -qE ', 0 mismatches'; then
+	echo "FLAG-01: FAIL float comparisons or conversions disagree with the hardware" >&2
+	rc=1
+fi
+# An instruction that falls through to pseudo-assembly is not a mismatch, it
+# is an absence, and the comparison reports it separately so that it cannot
+# be read as a pass.
+if ! echo "${out}" | grep -qE '0 untranslated forms'; then
+	echo "FLAG-01: FAIL an instruction under test is not translated at all" >&2
 	rc=1
 fi
 

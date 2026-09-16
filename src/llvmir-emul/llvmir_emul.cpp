@@ -3257,46 +3257,84 @@ void LlvmIrEmulator::visitCallInst(llvm::CallInst& I)
 		// Only f32 and f64: GenericValue keeps x86_fp80 in IntVal, not
 		// DoubleVal, so reading it here would be reading the wrong member.
 		// The fp80 forms keep the path they had.
-		if (I.getType()->isFloatTy() || I.getType()->isDoubleTy())
+		//
+		// VECTORS of those two as well. The packed SSE forms ask for
+		// llvm.roundeven.v4f32 -- CVTPS2DQ is a roundeven and an fptosi --
+		// and a scalar-only guard sent every one of them to the
+		// unhandled-external path below, which leaves GenericValue's
+		// AggregateVal EMPTY. Nothing complained, because an empty aggregate
+		// propagates quietly through the next instruction; it took a vector
+		// `select` meeting one to turn it into an assertion on the operand
+		// sizes. Until then every packed conversion this interpreter ran was
+		// reading nothing and answering with it.
+		llvm::Type* elemTy = I.getType()->getScalarType();
+		if (elemTy->isFloatTy() || elemTy->isDoubleTy())
 		{
 			bool handled = true;
-			bool isF32 = I.getType()->isFloatTy();
+			bool isF32 = elemTy->isFloatTy();
+			auto* vecTy = llvm::dyn_cast<llvm::FixedVectorType>(I.getType());
+			unsigned lanes = vecTy ? vecTy->getNumElements() : 1;
+			unsigned lane = 0;
 			auto arg = [&](unsigned n) -> double {
 				GenericValue g = _globalEc.getOperandValue(I.getArgOperand(n), ec);
+				if (vecTy)
+				{
+					return isF32 ? static_cast<double>(g.AggregateVal[lane].FloatVal) : g.AggregateVal[lane].DoubleVal;
+				}
 				return isF32 ? static_cast<double>(g.FloatVal) : g.DoubleVal;
 			};
-			double r = 0.0;
-			switch (id)
+			std::vector<double> results(lanes, 0.0);
+			for (lane = 0; lane < lanes && handled; ++lane)
 			{
-			case Intrinsic::fabs: r = std::fabs(arg(0)); break;
-			case Intrinsic::sqrt: r = std::sqrt(arg(0)); break;
-			case Intrinsic::floor: r = std::floor(arg(0)); break;
-			case Intrinsic::ceil: r = std::ceil(arg(0)); break;
-			case Intrinsic::trunc: r = std::trunc(arg(0)); break;
-			case Intrinsic::round: r = std::round(arg(0)); break;
-			// Ties to even, which is what roundeven means and what
-			// nearbyint does under the default rounding mode.
-			case Intrinsic::roundeven:
-			case Intrinsic::nearbyint:
-			case Intrinsic::rint: r = std::nearbyint(arg(0)); break;
-			case Intrinsic::copysign: r = std::copysign(arg(0), arg(1)); break;
-			// fmin/fmax return the non-NaN operand, which is what
-			// llvm.minnum and llvm.maxnum specify.
-			case Intrinsic::minnum: r = std::fmin(arg(0), arg(1)); break;
-			case Intrinsic::maxnum: r = std::fmax(arg(0), arg(1)); break;
-			case Intrinsic::fma: r = std::fma(arg(0), arg(1), arg(2)); break;
-			default: handled = false; break;
+				double r = 0.0;
+				switch (id)
+				{
+				case Intrinsic::fabs: r = std::fabs(arg(0)); break;
+				case Intrinsic::sqrt: r = std::sqrt(arg(0)); break;
+				case Intrinsic::floor: r = std::floor(arg(0)); break;
+				case Intrinsic::ceil: r = std::ceil(arg(0)); break;
+				case Intrinsic::trunc: r = std::trunc(arg(0)); break;
+				case Intrinsic::round: r = std::round(arg(0)); break;
+				// Ties to even, which is what roundeven means and what
+				// nearbyint does under the default rounding mode.
+				case Intrinsic::roundeven:
+				case Intrinsic::nearbyint:
+				case Intrinsic::rint: r = std::nearbyint(arg(0)); break;
+				case Intrinsic::copysign: r = std::copysign(arg(0), arg(1)); break;
+				// fmin/fmax return the non-NaN operand, which is what
+				// llvm.minnum and llvm.maxnum specify.
+				case Intrinsic::minnum: r = std::fmin(arg(0), arg(1)); break;
+				case Intrinsic::maxnum: r = std::fmax(arg(0), arg(1)); break;
+				case Intrinsic::fma: r = std::fma(arg(0), arg(1), arg(2)); break;
+				default: handled = false; break;
+				}
+				results[lane] = r;
 			}
 			if (handled)
 			{
 				GenericValue dest;
-				if (isF32)
+				if (vecTy)
 				{
-					dest.FloatVal = static_cast<float>(r);
+					dest.AggregateVal.resize(lanes);
+					for (unsigned k = 0; k < lanes; ++k)
+					{
+						if (isF32)
+						{
+							dest.AggregateVal[k].FloatVal = static_cast<float>(results[k]);
+						}
+						else
+						{
+							dest.AggregateVal[k].DoubleVal = results[k];
+						}
+					}
+				}
+				else if (isF32)
+				{
+					dest.FloatVal = static_cast<float>(results[0]);
 				}
 				else
 				{
-					dest.DoubleVal = r;
+					dest.DoubleVal = results[0];
 				}
 				_globalEc.setValue(&I, dest);
 

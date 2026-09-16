@@ -16033,6 +16033,238 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MOVSS_between_registers_keeps_
 	EXPECT_EQ(0xaaaaaaaaaaaaaaaaULL, xmmHigh(X86_REG_XMM0));
 }
 
+//
+// Batch AB -- the AVX forms of the comparisons and conversions, and what a
+// conversion answers when the input does not fit.
+//
+// Every expected value below was executed on the host CPU; see
+// scripts/ci/x86_sse_oracle.c.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VUCOMISD_is_translated_at_all)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0, dbits(1.0));
+	setXmm(X86_REG_XMM1, 0, dbits(2.0));
+
+	emulate("vucomisd xmm0, xmm1");
+
+	// `vucomisd` is what a compiler emits for a double comparison on any
+	// machine built this decade. It was dispatched to nullptr, so an AVX
+	// binary got a pseudo-assembly call here and an SSE binary got a
+	// comparison.
+	EXPECT_EQ(1, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(0, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(0, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VUCOMISD_is_a_DOUBLE_comparison)
+{
+	ONLY_MODE_64;
+
+	// 1.0 and 2.0 as doubles have a low half of zero, so read as two FLOATS
+	// both operands are +0.0 and the comparison answers "equal". Wiring the
+	// VEX id to translateSseComi without telling the body that it is a
+	// double form gives exactly that -- 913 wrong answers out of 9,610 when
+	// it was measured, and nothing crashes, because the instruction IS
+	// translated, just as the wrong operation.
+	setXmm(X86_REG_XMM0, 0, dbits(1.0));
+	setXmm(X86_REG_XMM1, 0, dbits(2.0));
+
+	emulate("vucomisd xmm0, xmm1");
+
+	EXPECT_EQ(1, getRegisterValueUnsigned(X86_REG_CF)); // 1.0 < 2.0
+	EXPECT_EQ(0, getRegisterValueUnsigned(X86_REG_ZF)); // not equal
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VUCOMISD_unordered_sets_all_three)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0, 0x7ff8000000000000ULL); // quiet NaN
+	setXmm(X86_REG_XMM1, 0, dbits(1.0));
+
+	emulate("vucomisd xmm0, xmm1");
+
+	// The one row of the table nothing but a NaN reaches.
+	EXPECT_EQ(1, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1, getRegisterValueUnsigned(X86_REG_PF));
+	EXPECT_EQ(1, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(0, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(0, getRegisterValueUnsigned(X86_REG_SF));
+	EXPECT_EQ(0, getRegisterValueUnsigned(X86_REG_AF));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VCOMISS_is_a_float_comparison)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0, fbits(1.0f));
+	setXmm(X86_REG_XMM1, 0, fbits(2.0f));
+
+	emulate("vcomiss xmm0, xmm1");
+
+	EXPECT_EQ(1, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(0, getRegisterValueUnsigned(X86_REG_ZF));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVMSKPD_is_two_lanes_not_four)
+{
+	ONLY_MODE_64;
+
+	// Sign bit set on the UPPER double only. Read as four floats the answer
+	// would be 0x8, not 0x2.
+	setXmm(X86_REG_XMM1, 0x8000000000000000ULL, 0x0000000000000000ULL);
+
+	emulate("vmovmskpd eax, xmm1");
+
+	EXPECT_EQ(0x2, getRegisterValueUnsigned(X86_REG_RAX));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VMOVMSKPS_is_four_lanes)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0x8000000000000000ULL, 0x8000000000000000ULL);
+
+	emulate("vmovmskps eax, xmm1");
+
+	EXPECT_EQ(0xa, getRegisterValueUnsigned(X86_REG_RAX));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VCVTTSD2SI_is_a_double_conversion)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, dbits(2.7));
+
+	emulate("vcvttsd2si eax, xmm1");
+
+	EXPECT_EQ(2, getRegisterValueUnsigned(X86_REG_RAX));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VCVTSD2SI_rounds_to_nearest_even)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, dbits(2.5));
+
+	emulate("vcvtsd2si eax, xmm1");
+
+	// To NEAREST EVEN, so 2, not 3.
+	EXPECT_EQ(2, getRegisterValueUnsigned(X86_REG_RAX));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, CVTTSD2SI_infinity_is_the_integer_indefinite)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x7ff0000000000000ULL); // +inf
+
+	emulate("cvttsd2si eax, xmm1");
+
+	// x86 answers with the destination's minimum signed value when the input
+	// does not fit. LLVM's fptosi calls that poison, which is not a value the
+	// decompiler can print and does not stay where it is put.
+	EXPECT_EQ(0x80000000ULL, getRegisterValueUnsigned(X86_REG_RAX));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, CVTTSD2SI_nan_is_the_integer_indefinite)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x7ff8000000000000ULL);
+
+	emulate("cvttsd2si eax, xmm1");
+
+	EXPECT_EQ(0x80000000ULL, getRegisterValueUnsigned(X86_REG_RAX));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, CVTTSD2SI_out_of_range_is_the_integer_indefinite)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, dbits(1.0e24));
+
+	emulate("cvttsd2si eax, xmm1");
+
+	EXPECT_EQ(0x80000000ULL, getRegisterValueUnsigned(X86_REG_RAX));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, CVTSD2SI_negative_infinity_is_the_integer_indefinite)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0xfff0000000000000ULL);
+
+	emulate("cvtsd2si eax, xmm1");
+
+	EXPECT_EQ(0x80000000ULL, getRegisterValueUnsigned(X86_REG_RAX));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, CVTTSS2SI_infinity_is_the_integer_indefinite)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM1, 0, 0x7f800000ULL); // +inf as a float
+
+	emulate("cvttss2si eax, xmm1");
+
+	EXPECT_EQ(0x80000000ULL, getRegisterValueUnsigned(X86_REG_RAX));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, CVTTSD2SI_in_range_is_unaffected_by_the_guard)
+{
+	ONLY_MODE_64;
+
+	// The range check must not disturb the ordinary answer, which is the
+	// whole reason the bound is 2^31 with a strict comparison rather than
+	// 2^31-1: the latter is not representable in binary floating point.
+	setXmm(X86_REG_XMM1, 0, dbits(2147483647.0));
+
+	emulate("cvttsd2si eax, xmm1");
+
+	EXPECT_EQ(0x7fffffffULL, getRegisterValueUnsigned(X86_REG_RAX));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, CVTTPS2DQ_indefinite_is_per_lane)
+{
+	ONLY_MODE_64;
+
+	// 1.5, +inf, -2.5, 1.0e24 -- two lanes in range and two not. The range
+	// guard works elementwise, so the packed forms get it too; without a test
+	// here it would be a fix applied to five instructions and measured on
+	// four, which is the mistake Batch AA nearly made with the shifts.
+	setXmm(
+		X86_REG_XMM1,
+		(uint64_t)0xc0200000ULL | ((uint64_t)0x6a000000ULL << 32),
+		(uint64_t)0x3fc00000ULL | ((uint64_t)0x7f800000ULL << 32));
+
+	emulate("cvttps2dq xmm0, xmm1");
+
+	EXPECT_EQ(0x8000000000000001ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x80000000fffffffeULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, CVTPS2DQ_rounds_and_keeps_the_indefinite)
+{
+	ONLY_MODE_64;
+
+	setXmm(
+		X86_REG_XMM1,
+		(uint64_t)0xc0200000ULL | ((uint64_t)0x6a000000ULL << 32),
+		(uint64_t)0x3fc00000ULL | ((uint64_t)0x7f800000ULL << 32));
+
+	emulate("cvtps2dq xmm0, xmm1");
+
+	// 1.5 rounds to 2 and -2.5 to -2, both to nearest EVEN; the two lanes
+	// that do not fit stay indefinite.
+	EXPECT_EQ(0x8000000000000002ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x80000000fffffffeULL, xmmHigh(X86_REG_XMM0));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_CVTTSD2SI_truncates_toward_zero)
 {
 	ONLY_MODE_64;

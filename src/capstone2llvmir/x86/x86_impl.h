@@ -201,6 +201,7 @@ class Capstone2LlvmIrTranslatorX86_impl :
 	protected:
 		virtual bool isOperandRegister(cs_x86_op& op) override;
 		virtual uint8_t getOperandAccess(cs_x86_op& op) override;
+		llvm::Value* generateFpToSiDefined(llvm::Value* v, llvm::Type* intTy, llvm::IRBuilder<>& irb);
 		void generateShiftDestinationWrite(cs_x86_op& dst, llvm::Value* val, llvm::IRBuilder<>& irb);
 		//
 		//==============================================================================

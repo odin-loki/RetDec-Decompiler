@@ -47,7 +47,7 @@ WORKDIR="${C2L_WORKDIR:-}"
 
 # The measured counts, per architecture. A floor, not an equality: adding
 # tests should not fail the gate, losing them must.
-readonly MIN_X86=2616
+readonly MIN_X86=2664
 readonly MIN_ARM=650
 readonly MIN_ARM64=556
 readonly MIN_MIPS=714
@@ -101,6 +101,48 @@ for init in src/capstone2llvmir/*/*_init.cpp; do
 		exit 1
 	fi
 done
+
+# ── A VEX form that shares its translator must be known to the body ──────────
+#
+# The SSE and VEX encodings of the same operation differ only in the
+# instruction id, so the natural way to translate `vucomisd` is to point it at
+# translateSseComi and be done. That works right up to the point where the
+# body branches on the id:
+#
+#     bool isDouble = i->id == X86_INS_UCOMISD || i->id == X86_INS_COMISD;
+#
+# With VUCOMISD wired in and that line left alone, every AVX double comparison
+# silently takes the single-precision path -- 913 wrong answers out of 9,610
+# when it was measured. Nothing crashes and no coverage number moves, because
+# the instruction IS translated; it is translated as the wrong operation.
+#
+# This is the same bug class as the EVEX compares (Batch T) and MIPS MSA
+# (Batch Y), so it gets a check rather than a note: for every V-form sharing a
+# translator with its SSE twin, if the body tests for the SSE id it must test
+# for the VEX id too.
+python3 - <<'PYCHECK' || exit 1
+import re, sys, pathlib
+init = pathlib.Path("src/capstone2llvmir/x86/x86_init.cpp").read_text()
+ent = dict(re.findall(
+    r'\{X86_INS_([A-Z0-9_]+),\s*(?:&Capstone2LlvmIrTranslatorX86_impl::)?(\w+)\}', init))
+bodies = "".join(p.read_text() for p in pathlib.Path("src/capstone2llvmir/x86").glob("*.cpp"))
+bad = []
+for name, fn in sorted(ent.items()):
+    if fn == "nullptr" or not name.startswith("V"):
+        continue
+    base = name[1:]
+    if ent.get(base) != fn:
+        continue
+    if re.search(rf'X86_INS_{base}\b', bodies) and not re.search(rf'X86_INS_{name}\b', bodies):
+        bad.append((name, base, fn))
+if bad:
+    print("C2L-01: FAIL a VEX form shares a translator whose body does not know it:",
+          file=sys.stderr)
+    for n, b, f in bad:
+        print(f"          X86_INS_{n} -> {f}, which branches on X86_INS_{b}", file=sys.stderr)
+    sys.exit(1)
+print(f"C2L-01:   VEX/SSE shared translators: {sum(1 for k, v in ent.items() if k.startswith('V') and v != 'nullptr' and ent.get(k[1:]) == v)} checked")
+PYCHECK
 
 # ── LLVM ─────────────────────────────────────────────────────────────────────
 if [ -z "${LLVM_CONFIG}" ]; then
