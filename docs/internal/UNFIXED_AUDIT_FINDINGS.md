@@ -7087,3 +7087,39 @@ VFP and NEON instructions in that corpus are the measure of what was affected,
 and 10,521 of them touch a register through a view.
 
 C2L-01 floor: ARM 624 -> 636. 5,410 tests.
+
+### Did the other three have it too?
+
+Having found the same bug on x86, ARM64 and ARM, the question is whether it is
+everywhere. It is not, and the reasons are worth recording so the check does
+not have to be repeated:
+
+| arch | overlapping views | status |
+| --- | --- | --- |
+| x86-64 | XMM ⊂ YMM ⊂ ZMM | fixed in Batches Q and S |
+| ARM64 | b/h/s/d/q ⊂ v | fixed in Batch V |
+| ARM | s pairs into d, d pairs into q | s/d fixed in Batch W; q not reachable |
+| PowerPC | f0..f31 are the high halves of vs0..vs31; v0..v31 are vs32..vs63 | **not reachable** |
+| MIPS | f2n/f2n+1 pair into a double when FR=0 | **not reachable** |
+
+PowerPC: all **143** VSX instruction ids in the dispatch table are `nullptr`.
+Nothing reads or writes the `VS` globals, so the overlap cannot be observed.
+Whoever wires the first VSX instruction inherits this problem and should read
+Batch S before starting — `vs0` is `f0` in its high half, which is the same
+decomposition x86 needed.
+
+MIPS: the mapping already exists as
+`singlePrecisionToDoublePrecisionFpRegister()`, and it is gated on
+`cs_insn_group(MIPS_GRP_NOTFP64BIT)` — the FR=0 case, which is the only one
+where the pairing applies. Within that it maps an odd register to the whole
+even one rather than to its upper half, which would be wrong for a
+single-precision write to `f1`. Counting the corpus: **zero** single-precision
+operations (`*.s`, `lwc1`, `swc1`, `mtc1`, `mfc1`) name an odd `f` register,
+which is what the O32 ABI requires. Not exercised, and left alone rather than
+changed on the strength of an argument with no test behind it.
+
+The general shape, across all five: **an overlapping-view bug is only
+observable once two different views are both modelled.** x86's went unnoticed
+until AVX; ARM64's and ARM's were live the whole time because scalar
+floating-point and vector code both were. PowerPC's and MIPS's are latent
+because one side of each overlap is not modelled at all.
