@@ -7354,3 +7354,148 @@ naming which is which, because picking the wrong one is how these go wrong:
 
 The failure mode in every case found was reaching for the id when none of the
 three applies.
+
+## Batch Z — SBB applied its carry twice, on two architectures
+
+### How this was found
+
+Every bug in the last three batches came from a dispatch key that lies. This
+one came from a different question: **is the arithmetic right?** Nothing on
+this branch had checked, because every test for it was written by the same
+person who wrote the code.
+
+This container is x86-64. So: execute each instruction on the CPU with random
+operands, capture the result and all six flags, then run the translator's IR
+in RetDec's emulator over the same inputs and compare. 26 instructions × 400
+random operand pairs = 10,400 comparisons.
+
+The first run reported 127 mismatches. 126 were `sbb64` and one was `neg64`.
+`adc64` — the same operation with the carry added rather than subtracted —
+had **none**.
+
+### Z-1: the flag helpers apply the carry, and SBB applied it first
+
+```cpp
+// translateSbb, before
+op1 = irb.CreateAdd(op1, cf);          // fold the carry into the operand
+auto* sub = irb.CreateSub(op0, op1);
+storeRegistersPlusSflags(irb, sub, {
+    {X86_REG_AF, generateBorrowSubCInt4(op0, op1, irb)},   // no cf argument:
+    {X86_REG_CF, generateBorrowSubC(sub, op0, op1, irb)},  // these LOAD it
+    {X86_REG_OF, generateOverflowSubC(sub, op0, op1, irb)}});
+```
+
+The helpers take an optional `cf`; omitted, they load CF from the register
+themselves. So the carry went in twice — once folded into `op1`, once inside
+each helper.
+
+`translateAdc` next door has always done it correctly: it keeps `op0` and
+`op1`, computes `op0 + op1 + cf` separately, and passes `cf` **explicitly** to
+every helper. That is why ADC was clean and SBB was not.
+
+### Z-2: and the helper itself was wrong anyway
+
+```cpp
+// generateBorrowSubC, before
+cfSub  = sub - cf
+CF = cf ? ((op0 < cfSub) || (op1 < -1))
+        : (op0 < op1)
+```
+
+`op1 < -1` unsigned is true for **every** `op1` except all-ones. So with a
+borrow in, the answer was 1 almost regardless of the operands. The correct
+borrow out of `op0 - op1 - cf` is `op0 < op1 + cf` without wrapping, which
+for a carry of 0 or 1 is:
+
+```
+(op0 < op1) || (op0 == op1 && cf)
+```
+
+written that way precisely because `op1 + 1` wraps to zero when `op1` is all
+ones — and that wrap is a real case: `sbb eax, 0xffffffff` with CF set
+borrows, and computing it as `op0 < op1 + 1` says it does not.
+
+`generateOverflowSubC` had the matching mistake: it asked the sign question
+about `sub - cf`, a value the instruction never produces.
+
+### Z-3: the same bug on ARM
+
+`generateBorrowSubC` had exactly one other caller — ARM's SBC — and that one
+uses it **correctly**, keeping its operands and passing the carry explicitly.
+It inherited the broken formula anyway:
+
+```
+sbcs r0, r1, r2   with r1 = 5, r2 = 3, C clear (borrow in)
+  5 - 3 - 1 = 1, which does not borrow, so ARM's C (NOT borrow) is 1
+  translator answered 0
+```
+
+ARM's SBC is the same ALU operation as x86's SBB with the carry named the
+other way round, so the expectations for the new ARM tests come from executing
+the equivalent SBB on this CPU and inverting C. The arithmetic is identical;
+only the convention differs.
+
+Two existing ARM tests asserted the wrong carry, both with the same comment:
+
+```cpp
+{ARM_REG_CPSR_C, false}, // TODO: check, somehow (emul) is it ok?
+```
+
+The author did not know, guessed, and wrote the guess down as an expectation.
+
+### Z-4: NEG's overflow was hardcoded to zero
+
+```cpp
+{X86_REG_OF, zero}
+```
+
+NEG is `0 - op0`, and that overflows for exactly one input: the minimum signed
+value, whose negation is itself. `neg rax` with `rax = 0x8000000000000000`
+sets OF on the hardware and cleared it here.
+
+### Z-5: which flags the comparison may ask about
+
+The first version of the differential test reported dozens of `imul`
+"mismatches" that were nothing of the kind: IMUL leaves SF, ZF, AF and PF
+**architecturally undefined**, and comparing against an undefined flag is
+comparing against whatever this particular CPU happened to leave behind. The
+driver now carries a per-instruction mask — AF undefined for the logicals, OF
+undefined for shifts by other than one, only CF for the bit tests, nothing at
+all for NOT — and 955 of the 10,400 comparisons fall outside it.
+
+Getting that mask wrong in the other direction would hide real bugs, so it is
+written from the SDM's own "undefined" wording rather than from what happened
+to differ.
+
+### Falsification
+
+Six mutations, each reverted alone; all six fail:
+
+| mutation | result |
+| --- | --- |
+| the shared borrow helper back to the old formula | 9 tests fail |
+| SBB ignores the carry in for CF | 6 tests fail |
+| SBB folds the carry into the operand again | 4 tests fail |
+| SBB's AF ignores the carry in | 4 tests fail |
+| the shared overflow helper uses `result - carry` | 2 tests fail |
+| NEG's overflow back to zero | 1 test fails |
+
+Two of them came back green on the first run and needed inputs the existing
+tests did not have: the operand-folding one needs `op1 + carry` to actually
+wrap, and the overflow one needs a borrow in **and** a result sitting exactly
+on the sign boundary. Both are now pinned from either side.
+
+### After
+
+```
+10,400 comparisons against the hardware, 0 mismatches (955 undefined flags skipped)
+```
+
+across `add`, `sub`, `and`, `or`, `xor`, `cmp`, `test`, `imul`, `neg`, `inc`,
+`dec`, `not`, `shl`, `shr`, `sar`, `rol`, `ror`, `adc`, `sbb`, `bt`, `bts`,
+`btr`, `btc` at 32 and 64 bits.
+
+PSEUDO-01 does not move: every one of these was already translated. It was
+translated wrongly.
+
+C2L-01 floors: X86 2559 → 2580, ARM 636 → 650. 5,459 tests.

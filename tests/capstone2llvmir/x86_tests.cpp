@@ -4939,15 +4939,19 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_SBB_cf_true)
 
 	emulate("sbb eax, ebx");
 
+	// Every flag here is the hardware's answer, executed on this machine.
+	// The test used to pin CF to `true` -- 0x1234 - 0x568 does not borrow --
+	// and leave the other five as ANY, which is why the carry being applied
+	// twice went unnoticed for as long as it did.
 	EXPECT_JUST_REGISTERS_LOADED({X86_REG_EAX, X86_REG_EBX, X86_REG_CF});
 	EXPECT_JUST_REGISTERS_STORED({
 		{X86_REG_EAX, 0x1234 - (0x567 + 0x1)},
-		{X86_REG_CF, true},
-		{X86_REG_OF, ANY},
-		{X86_REG_ZF, ANY},
-		{X86_REG_SF, ANY},
-		{X86_REG_PF, ANY},
-		{X86_REG_AF, ANY},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+		{X86_REG_SF, false},
+		{X86_REG_PF, true},
+		{X86_REG_AF, true},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
@@ -19009,6 +19013,176 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, Two_FADDs_in_a_row_still_see_the_same_
 		{X86_REG_ST2, 5.0},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
+}
+
+//
+// SBB and NEG, against the hardware
+// ---------------------------------
+// The expectations below were executed on this machine's CPU, not derived
+// from the manual. SBB applied its incoming carry twice -- once folding it
+// into the operand and once inside the flag helpers, which load CF
+// themselves -- so the borrow was wrong for almost every pair with a carry
+// in. ADC next door has always kept its operands and passed the carry
+// explicitly, which is why ADC was clean.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, SBB_with_a_carry_in_that_does_not_borrow)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EAX, 0x1234},
+		{X86_REG_EBX, 0x567},
+		{X86_REG_CF, true},
+	});
+
+	emulate("sbb eax, ebx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0xccc},
+		{X86_REG_CF, false},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+		{X86_REG_SF, false},
+		{X86_REG_PF, true},
+		{X86_REG_AF, true},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, SBB_borrows_when_the_carry_in_tips_it_over)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EAX, 0x0},
+		{X86_REG_EBX, 0x1},
+		{X86_REG_CF, true},
+	});
+
+	emulate("sbb eax, ebx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0xfffffffe},
+		{X86_REG_CF, true},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+		{X86_REG_SF, true},
+		{X86_REG_PF, false},
+		{X86_REG_AF, true},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, SBB_of_equal_operands_borrows_only_with_a_carry_in)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EAX, 0x1000},
+		{X86_REG_EBX, 0x1000},
+		{X86_REG_CF, true},
+	});
+
+	emulate("sbb eax, ebx");
+
+	// a == b is the boundary the carry decides, and it is where `op1 + carry`
+	// would have to be computed without wrapping.
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0xffffffff},
+		{X86_REG_CF, true},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+		{X86_REG_SF, true},
+		{X86_REG_PF, true},
+		{X86_REG_AF, true},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, NEG_of_the_minimum_signed_value_overflows)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0x8000000000000000ULL},
+	});
+
+	emulate("neg rax");
+
+	// The one input NEG overflows on: its negation is itself. OF was
+	// hardcoded to zero.
+	EXPECT_EQ(0x8000000000000000ULL, getRegisterValueUnsigned(X86_REG_RAX));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, NEG_of_anything_else_does_not_overflow)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0x8000000000000001ULL},
+	});
+
+	emulate("neg rax");
+
+	EXPECT_EQ(0x7fffffffffffffffULL, getRegisterValueUnsigned(X86_REG_RAX));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_OF));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, SBB_when_the_subtrahend_plus_carry_would_wrap)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EAX, 0x1234},
+		{X86_REG_EBX, 0xffffffff},
+		{X86_REG_CF, true},
+	});
+
+	emulate("sbb eax, ebx");
+
+	// `op1 + carry` is 0x100000000, which does not fit: computing the borrow
+	// as `op0 < op1 + carry` wraps it to zero and answers "no borrow". The
+	// hardware borrows.
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0x1234},
+		{X86_REG_CF, true},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+		{X86_REG_SF, false},
+		{X86_REG_PF, false},
+		{X86_REG_AF, true},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, SBB_all_ones_from_all_ones_with_a_carry_in)
+{
+	SKIP_MODE_16;
+
+	setRegisters({
+		{X86_REG_EAX, 0xffffffff},
+		{X86_REG_EBX, 0xffffffff},
+		{X86_REG_CF, true},
+	});
+
+	emulate("sbb eax, ebx");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{X86_REG_EAX, 0xffffffff},
+		{X86_REG_CF, true},
+		{X86_REG_OF, false},
+		{X86_REG_ZF, false},
+		{X86_REG_SF, true},
+		{X86_REG_PF, true},
+		{X86_REG_AF, true},
+	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 } // namespace tests

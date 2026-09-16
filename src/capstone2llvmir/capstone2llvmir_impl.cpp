@@ -1485,10 +1485,13 @@ llvm::Value* Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::generateOverflowSub
 	{
 		cf = loadRegister(getCarryRegister(), irb);
 	}
-	auto* cfc = irb.CreateZExtOrTrunc(cf, sub->getType());
-	auto* ofSub = irb.CreateSub(sub, cfc);
+	// The sign of the result disagrees with op0's, and op0's disagreed with
+	// op1's. `sub` already has the borrow folded in, so subtracting `cf` from
+	// it again -- which is what this used to do -- asks the question about a
+	// value the instruction never produced.
+	(void)cf;
 	auto* xor0 = irb.CreateXor(op0, op1);
-	auto* xor1 = irb.CreateXor(op0, ofSub);
+	auto* xor1 = irb.CreateXor(op0, sub);
 	auto* ofAnd = irb.CreateAnd(xor0, xor1);
 	return irb.CreateICmpSLT(
 			ofAnd,
@@ -1522,15 +1525,21 @@ llvm::Value* Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::generateBorrowSubC(
 	{
 		cf = loadRegister(getCarryRegister(), irb);
 	}
-	auto* cfc = irb.CreateZExtOrTrunc(cf, sub->getType());
-	auto* cfSub = irb.CreateSub(sub, cfc);
-	auto* cfIcmp1 = irb.CreateICmpULT(op0, cfSub);
-	auto* negOne = llvm::ConstantInt::getSigned(op1->getType(), -1);
-	auto* cfIcmp2 = irb.CreateICmpULT(op1, negOne);
-	auto* cfOr = irb.CreateOr(cfIcmp1, cfIcmp2);
-	auto* cfIcmp3 = irb.CreateICmpULT(op0, op1);
+	// The borrow out of `op0 - op1 - cf` is `op0 < op1 + cf` without
+	// wrapping. `cf` is 0 or 1, so that is `op0 < op1`, or `op0 == op1` with
+	// a borrow in -- which avoids computing `op1 + 1`, which wraps to zero
+	// when op1 is all ones.
+	//
+	// This used to be a select over `(op0 < sub - cf) || (op1 < -1)`. The
+	// second term is true for every op1 except all-ones, so with a borrow in
+	// the answer was 1 almost regardless of the operands. x86's SBB had its
+	// own copy of the same mistake, found by running 400 random operand pairs
+	// per instruction on the CPU and comparing every flag; SBB accounted for
+	// 126 of the 127 disagreements and ADC, which passes its carry
+	// explicitly, had none.
+	(void)sub;
 	auto* cff = irb.CreateZExtOrTrunc(cf, irb.getInt1Ty());
-	return irb.CreateSelect(cff, cfOr, cfIcmp3);
+	return irb.CreateOr(irb.CreateICmpULT(op0, op1), irb.CreateAnd(irb.CreateICmpEQ(op0, op1), cff));
 }
 
 /**

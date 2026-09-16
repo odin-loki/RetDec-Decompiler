@@ -3340,10 +3340,18 @@ void Capstone2LlvmIrTranslatorX86_impl::translateNeg(cs_insn* i, cs_x86* xi, llv
 
 	auto* sub = irb.CreateSub(zero, op0);
 
-	storeRegistersPlusSflags(irb, sub, {
-			{X86_REG_AF, generateBorrowSubInt4(zero, op0, irb)},
-			{X86_REG_CF, irb.CreateICmpNE(op0, zero)},
-			{X86_REG_OF, zero}});
+	// OF was hardcoded to zero. NEG is `0 - op0`, and that overflows for
+	// exactly one input: the minimum signed value, whose negation is itself.
+	// `neg rax` with rax = 0x8000000000000000 sets OF on the hardware.
+	auto* intMin =
+		llvm::ConstantInt::get(op0->getType(), llvm::APInt::getSignedMinValue(op0->getType()->getIntegerBitWidth()));
+
+	storeRegistersPlusSflags(
+		irb,
+		sub,
+		{{X86_REG_AF, generateBorrowSubInt4(zero, op0, irb)},
+		 {X86_REG_CF, irb.CreateICmpNE(op0, zero)},
+		 {X86_REG_OF, irb.CreateICmpEQ(op0, intMin)}});
 	storeOp(xi->operands[0], sub, irb);
 }
 
@@ -3873,12 +3881,36 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSbb(cs_insn* i, cs_x86* xi, llv
 	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
 	auto* cf = loadRegister(X86_REG_CF, irb, op0->getType(), eOpConv::ZEXT_TRUNC_OR_BITCAST);
 
-	op1 = irb.CreateAdd(op1, cf);
-	auto* sub = irb.CreateSub(op0, op1);
-	storeRegistersPlusSflags(irb, sub, {
-			{X86_REG_AF, generateBorrowSubCInt4(op0, op1, irb)},
-			{X86_REG_CF, generateBorrowSubC(sub, op0, op1, irb)},
-			{X86_REG_OF, generateOverflowSubC(sub, op0, op1, irb)}});
+	// The carry is applied ONCE, here. This used to fold it into op1 and then
+	// hand the modified op1 to generateBorrowSubC() and friends, which load
+	// CF themselves and apply it a second time -- so with an incoming carry
+	// of 1 the borrow came out wrong for almost every operand pair. ADC next
+	// door has always done it this way, keeping its operands and passing the
+	// carry explicitly; SBB did not.
+	//
+	// Found by executing 400 random operand pairs per instruction on this
+	// machine's CPU and comparing the flags; SBB was 126 of the 127
+	// disagreements, and ADC had none.
+	auto* sub = irb.CreateSub(irb.CreateSub(op0, op1), cf);
+	auto* cfBit = irb.CreateTrunc(cf, irb.getInt1Ty());
+	auto* zero = llvm::ConstantInt::get(op0->getType(), 0);
+	auto* fifteen = llvm::ConstantInt::get(op0->getType(), 15);
+
+	// CF is `op0 < op1 + carry` without wrapping. The carry is 0 or 1, so
+	// that is `op0 < op1`, or `op0 == op1` with a carry in -- which avoids
+	// the `op1 + 1` that wraps when op1 is all ones.
+	auto* borrow = irb.CreateOr(irb.CreateICmpULT(op0, op1), irb.CreateAnd(irb.CreateICmpEQ(op0, op1), cfBit));
+
+	// AF is the same question asked of the low nibble.
+	auto* lo0 = irb.CreateAnd(op0, fifteen);
+	auto* lo1 = irb.CreateAnd(op1, fifteen);
+	auto* borrow4 = irb.CreateOr(irb.CreateICmpULT(lo0, lo1), irb.CreateAnd(irb.CreateICmpEQ(lo0, lo1), cfBit));
+
+	// OF: the sign of the result disagrees with op0's, and op0's disagreed
+	// with op1's. Folding the borrow into `sub` first makes this exact.
+	auto* of = irb.CreateICmpSLT(irb.CreateAnd(irb.CreateXor(op0, op1), irb.CreateXor(op0, sub)), zero);
+
+	storeRegistersPlusSflags(irb, sub, {{X86_REG_AF, borrow4}, {X86_REG_CF, borrow}, {X86_REG_OF, of}});
 
 	storeOp(xi->operands[0], sub, irb);
 }

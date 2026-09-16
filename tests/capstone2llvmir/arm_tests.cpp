@@ -2156,7 +2156,10 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SBC_s_r_r_i_false)
 		{ARM_REG_R0, 0x1230},
 		{ARM_REG_CPSR_N, false},
 		{ARM_REG_CPSR_Z, false},
-		{ARM_REG_CPSR_C, false}, // TODO: check, somehow (emul) is it ok?
+		// 0x1235 - 4 - 1 does not borrow, and ARM's carry out is NOT borrow.
+		// This was `false` with a comment asking whether it was right; it was
+		// not, and it matched a bug in generateBorrowSubC().
+		{ARM_REG_CPSR_C, true},
 		{ARM_REG_CPSR_V, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
@@ -2236,7 +2239,10 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_RSC_s_r_r_r_false)
 		{ARM_REG_R0, 0x1230},
 		{ARM_REG_CPSR_N, false},
 		{ARM_REG_CPSR_Z, false},
-		{ARM_REG_CPSR_C, false}, // TODO: check, somehow (emul) is it ok?
+		// 0x1235 - 4 - 1 does not borrow, and ARM's carry out is NOT borrow.
+		// This was `false` with a comment asking whether it was right; it was
+		// not, and it matched a bug in generateBorrowSubC().
+		{ARM_REG_CPSR_C, true},
 		{ARM_REG_CPSR_V, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
@@ -7220,6 +7226,146 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, The_pairing_continues_past_the_first_r
 	EXPECT_EQ(0x40490fdbULL, dBits(ARM_REG_D2) >> 32);
 	EXPECT_EQ(0x0ULL, dBits(ARM_REG_D5));
 	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// SBC's carry out
+// ---------------
+// ARM's SBC computes `Rn - Rm - NOT(C)` and reports NOT(borrow) in C, which
+// is the same ALU operation as x86's SBB with the flag named the other way
+// round. So these expectations come from executing the equivalent SBB on this
+// machine's CPU and inverting the carry -- the arithmetic is identical, only
+// the convention differs.
+//
+// generateBorrowSubC() answered `(op0 < sub - cf) || (op1 != all ones)`,
+// whose second term is true for almost every operand, so with a borrow in the
+// carry out was wrong nearly always. x86's SBB had its own copy of the same
+// mistake.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, SBC_carry_out_when_it_does_not_borrow)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 5}, {ARM_REG_R2, 3}, {ARM_REG_CPSR_C, false}, // borrow in
+	});
+
+	emulate("sbcs r0, r1, r2");
+
+	// 5 - 3 - 1 = 1, no borrow, so C is set.
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(ARM_REG_CPSR_C));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(ARM_REG_CPSR_N));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(ARM_REG_CPSR_Z));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(ARM_REG_CPSR_V));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, SBC_carry_out_when_it_does_borrow)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 3}, {ARM_REG_R2, 5}, {ARM_REG_CPSR_C, true}, // no borrow in
+	});
+
+	emulate("sbcs r0, r1, r2");
+
+	EXPECT_EQ(0xfffffffeULL, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(ARM_REG_CPSR_C));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(ARM_REG_CPSR_N));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, SBC_equal_operands_are_decided_by_the_carry_in)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x1000}, {ARM_REG_R2, 0x1000}, {ARM_REG_CPSR_C, false}, // borrow in
+	});
+
+	emulate("sbcs r0, r1, r2");
+
+	// Equal operands with a borrow in: the result is -1 and it borrows, so C
+	// is clear. This is the boundary case the old formula could not express
+	// without computing `op1 + 1`, which wraps.
+	EXPECT_EQ(0xffffffffULL, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(ARM_REG_CPSR_C));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(ARM_REG_CPSR_N));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(ARM_REG_CPSR_Z));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, SBC_equal_operands_without_a_borrow_in_are_zero)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x1000}, {ARM_REG_R2, 0x1000}, {ARM_REG_CPSR_C, true}, // no borrow in
+	});
+
+	emulate("sbcs r0, r1, r2");
+
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(ARM_REG_CPSR_C));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(ARM_REG_CPSR_Z));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, SBC_overflow_is_read_from_the_result)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x80000000}, {ARM_REG_R2, 1}, {ARM_REG_CPSR_C, true}, // no borrow in
+	});
+
+	emulate("sbcs r0, r1, r2");
+
+	// The minimum signed value minus one: signed overflow. generateOverflowSubC()
+	// asked the question about `result - carry`, a value the instruction never
+	// produced.
+	EXPECT_EQ(0x7fffffffULL, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(ARM_REG_CPSR_V));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(ARM_REG_CPSR_C));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, SBC_overflow_with_a_borrow_in_does_not_overflow)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x80000001}, {ARM_REG_R2, 0}, {ARM_REG_CPSR_C, false}, // borrow in
+	});
+
+	emulate("sbcs r0, r1, r2");
+
+	// The result is exactly the minimum signed value, which is representable,
+	// so V is clear. Asking the overflow question about `result - borrow`
+	// instead -- 0x7fffffff, whose sign differs -- answers V set. That is
+	// what generateOverflowSubC() used to do, and it needs a borrow in AND a
+	// result on the sign boundary to show, which is why the first four SBC
+	// tests did not catch it.
+	EXPECT_EQ(0x80000000ULL, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(ARM_REG_CPSR_V));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(ARM_REG_CPSR_N));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(ARM_REG_CPSR_C));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, SBC_overflow_with_a_borrow_in_that_does_overflow)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x80000000}, {ARM_REG_R2, 0}, {ARM_REG_CPSR_C, false}, // borrow in
+	});
+
+	emulate("sbcs r0, r1, r2");
+
+	// One less, and it does overflow. The pair pins the boundary from both
+	// sides.
+	EXPECT_EQ(0x7fffffffULL, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(ARM_REG_CPSR_V));
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(ARM_REG_CPSR_N));
+	EXPECT_EQ(1ULL, getRegisterValueUnsigned(ARM_REG_CPSR_C));
 }
 
 } // namespace tests
