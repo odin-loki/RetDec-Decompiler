@@ -1,16 +1,16 @@
 # Generated provenance summary
 
 Produced by `scripts/ci/generate_provenance.py`. Do not hand-edit.
-Scanned `3139` C/C++ files under `src/`, `include/`, `tests/`.
+Scanned `3140` C/C++ files under `src/`, `include/`, `tests/`.
 
 | Class | Count |
 |-------|------:|
 | `avast-mit` | 1941 |
 | `pelib-porst` | 25 |
-| `imortek-or-undated` | 1173 |
+| `imortek-or-undated` | 1174 |
 | `rewrite-tell-leftover` | 0 |
 
-Odin-only files in known-upstream modules: **170** (Imortek additions inside Avast directories, or undated headers).
+Odin-only files in known-upstream modules: **171** (Imortek additions inside Avast directories, or undated headers).
 
 ## Rewrite-tell leftovers (must be zero)
 
@@ -36,6 +36,7 @@ None.
 - `src/bin2llvmir/utils/ctypes2llvm.cpp`
 - `src/capstone2llvmir/arm/arm_thumb_interwork.cpp`
 - `src/capstone2llvmir/arm64/arm64_fp_ext.cpp`
+- `src/capstone2llvmir/x86/x86_avx512.cpp`
 - `src/capstone2llvmir/x86/x86_sse.cpp`
 - `src/fileformat/file_format/pe/pe_dll_list.cpp`
 - `src/fileformat/lattice/format_lattice.cpp`
@@ -97,5 +98,4 @@ None.
 - `include/retdec/fileformat/lief_adapter.h`
 - `include/retdec/fileformat/types/certificate_table/certificate.h`
 - `include/retdec/fileformat/types/certificate_table/certificate_table.h`
-- `include/retdec/fileformat/types/import_table/elf_import_table.h`
-- … 90 more
+- … 91 more
