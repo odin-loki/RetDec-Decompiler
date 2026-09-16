@@ -7489,6 +7489,269 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, variable_shifts_mask_their_amount)
 }
 
 //
+// On MIPS64 the instructions WITHOUT the D are 32-bit word operations whose
+// results are sign-extended into the 64-bit register.
+//
+// Every one of these was done at the register width, which makes it the
+// doubleword instruction sitting next to it in the table -- `addu` performing
+// `daddu`, `sll` performing `dsll`, `mult` performing `dmult`. The rule was
+// already in this file: translateMadd() and translateMsub() carry
+//
+//     // We operate on 0..31 bits even if on MIPS64.
+//
+// and truncate their operands. It was applied in two translators out of a
+// dozen.
+//
+// None of the 688 MIPS tests that existed before this could see the
+// difference, because all of them use operands that fit in 32 bits and whose
+// results do not set bit 31 -- under which the two readings agree exactly.
+// These use values where they do not.
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ADDU_is_a_word_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x0000000180000000},
+		{MIPS_REG_4, 1},
+	});
+
+	emulate("addu $2, $3, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		// The word sum is 0x80000001, sign-extended. At the register width
+		// it would be 0x0000000180000001 -- the bits above 31 survive and
+		// the sign extension does not happen.
+		{MIPS_REG_2, 0xffffffff80000001},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SUBU_is_a_word_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x0000000100000000},
+		{MIPS_REG_4, 1},
+	});
+
+	emulate("subu $2, $3, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xffffffffffffffff},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// `daddu` is the 64-bit one and must NOT be narrowed. Same operands as the
+// `addu` test above, so the two answers sit side by side.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DADDU_is_a_doubleword_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x0000000180000000},
+		{MIPS_REG_4, 1},
+	});
+
+	emulate("daddu $2, $3, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x0000000180000001},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The logical operations genuinely are 64-bit on MIPS64 and are not on the
+// word list. If they were added to it this fails.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_AND_is_a_doubleword_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0xaabbccdd11223344},
+		{MIPS_REG_4, 0xffffffffffff0000},
+	});
+
+	emulate("and $2, $3, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xaabbccdd11220000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SLL_is_a_word_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x0000000018000000},
+	});
+
+	emulate("sll $2, $3, 4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xffffffff80000000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The shift is of the WORD, so the bits above 31 do not come down into it.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SRL_is_a_word_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0xffffffff11223344},
+	});
+
+	emulate("srl $2, $3, 4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x01122334},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// Arithmetic, so the sign comes from bit 31 of the word rather than bit 63 of
+// the register.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SRA_is_a_word_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x0000000080000000},
+	});
+
+	emulate("sra $2, $3, 4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xfffffffff8000000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// `sllv` masks to the low FIVE bits on MIPS64 too, because it is a word
+// instruction. 36 is a shift of 4, not of 36.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_SLLV_masks_to_five_bits)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x0000000011223344},
+		{MIPS_REG_4, 36},
+	});
+
+	emulate("sllv $2, $3, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x12233440},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ROTR_is_a_word_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x0000000011223344},
+	});
+
+	// 0x00231202 = rotr $2, $3, 8
+	emulate_bin("02 12 23 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x44112233},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// `mult` is a word multiply even on MIPS64: 32 x 32 into a 64-bit product,
+// whose halves go into LO and HI sign-extended. At the register width it is
+// `dmult`, and LO gets the whole 64-bit product with HI zero.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_MULTU_is_a_word_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x00000000ffffffff},
+		{MIPS_REG_4, 2},
+	});
+
+	emulate("multu $3, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_LO, 0xfffffffffffffffe},
+		{MIPS_REG_HI, 0x0000000000000001},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DIVU_is_a_word_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x0000000100000007},
+		{MIPS_REG_4, 2},
+	});
+
+	// 0x0064001b = divu $3, $4. Keystone macro-expands a written `divu`.
+	emulate_bin("1b 00 64 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_LO, 3},
+		{MIPS_REG_HI, 1},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// `clz` counts in the low 32 bits. At the register width it counts the 31
+// leading zeros of the doubleword instead of the 16 of the word.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_CLZ_is_a_word_operation)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x0000000100008000},
+	});
+
+	emulate("clz $2, $3");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 16},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
 // The big-endian fixture.
 //
 // lwl/lwr/swl/swr are the only instructions in this translator whose meaning

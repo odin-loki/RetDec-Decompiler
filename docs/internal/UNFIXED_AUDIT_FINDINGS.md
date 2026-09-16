@@ -5411,3 +5411,91 @@ shifts is the next batch, and it is a correction rather than an addition: it
 changes what already-translated instructions mean.
 
 C2L-01 floor: Mips 640 → 688.
+
+---
+
+## Batch L — on MIPS64 the word instructions were doublewords
+
+The mirror of Batch K, and a correction rather than an addition: it changes what
+already-translated instructions mean.
+
+On a 64-bit MIPS the instructions **without** the `D` are 32-bit word
+operations whose results are sign-extended into the 64-bit register. `addu $2,
+$3, $4` adds the low halves and sign-extends; `daddu` adds the registers. They
+are different instructions and both exist — so doing the word one at the
+register width silently performs the other, which until the previous commit was
+the only 64-bit arithmetic this translator had.
+
+Thirteen translators were doing exactly that: `translateAdd`, `translateSub`,
+`translateNegu`, `translateSll`, `translateSrl`, `translateSra`,
+`translateRotr`, `translateMul`, `translateMult`, `translateDiv`,
+`translateDivu`, `translateClz` and `translateClo`.
+
+### The rule was already in this file
+
+`translateMadd()` and `translateMsub()` both carry
+
+```cpp
+// We operate on 0..31 bits even if on MIPS64.
+```
+
+and truncate their operands to `i32` before doing anything. Batch F applied the
+same rule again to `EXT`, `INS` and `WSBH` by restricting them to 32-bit
+registers. It was correct, written down, and applied in two translators out of
+a dozen.
+
+Nothing needed inventing here: `isWordOperation()` is the list, and
+`narrowToWord()` truncates. The sign-extension back into the 64-bit register
+needs no code at all, because `storeOp()`'s MIPS default is already
+`SEXT_TRUNC_OR_BITCAST`.
+
+### What is deliberately not on the list
+
+`AND`, `OR`, `XOR`, `NOR` and their immediate forms, `SLT`, `SLTU`, `MOVN` and
+`MOVZ` genuinely operate on the whole 64-bit register on MIPS64. `SEB` and
+`SEH` sign-extend from bit 7 and bit 15, which gives the same answer at either
+width. `LUI` already carried its own note saying it behaves as a 32-bit
+instruction. A test pins `and` as a doubleword operation so that adding it to
+the list fails.
+
+### `mult` needed more than narrowing
+
+`mult` is 32 × 32 into a **64-bit** product whose two halves go into `LO` and
+`HI` *sign-extended to the register width*; `dmult` is 64 × 64 into 128. The
+product width was `getArchBitSize() * 2`, which is 128 on MIPS64 for both. It
+is now twice the width of the narrowed operand, and the halves go back through
+`storeRegister`, whose sign-extending default does the rest.
+
+### None of the 688 existing MIPS tests could see any of this
+
+Every one of them uses operands that fit in 32 bits and produce results that do
+not set bit 31 — exactly the region where the two readings agree. Applying the
+whole change left all 688 passing. The twenty-four tests added here use values
+where they do not agree, and each states both answers in its comment:
+
+```
+addu  0x180000000 + 1     word 0xffffffff80000001    doubleword 0x180000001
+sll   0x18000000 << 4     word 0xffffffff80000000    doubleword 0x180000000
+srl   0xffffffff11223344  word 0x01122334            doubleword 0x0ffffffff1122334
+sllv  by 36               word shifts by 4           doubleword shifts by 36
+multu 0xffffffff * 2      word LO/HI = -2 / 1        doubleword LO = 0x1fffffffe
+clz   0x100008000         word 16                    doubleword 31
+```
+
+### Falsification
+
+Six mutations, each reverted alone, each rebuilt and run; all six fail:
+
+| mutation | result |
+| --- | --- |
+| `narrowToWord` is a no-op | 10 tests fail |
+| the shifts are not word operations | 5 tests fail |
+| `mult`/`multu` are not word operations | 1 test fails |
+| the doubleword instructions are narrowed too | 6 tests fail |
+| `mult`'s halves at the full product width | 1 test fails |
+| `clz`/`clo` are not word operations | 1 test fails |
+
+The fourth is the over-correction, and it is the reason `isWordOperation()` is
+an explicit list rather than "everything without a D in its name".
+
+C2L-01 floor: Mips 688 → 712. 4,997 tests.

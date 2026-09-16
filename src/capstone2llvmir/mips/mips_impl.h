@@ -187,6 +187,8 @@ class Capstone2LlvmIrTranslatorMips_impl :
 		void translateDoubleBitfield(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateDoubleByteSwap(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		llvm::Value* generateRotateRight(llvm::IRBuilder<>& irb, llvm::Value* val, llvm::Value* amount);
+		bool isWordOperation(cs_insn* i);
+		llvm::Value* narrowToWord(cs_insn* i, llvm::IRBuilder<>& irb, llvm::Value* val);
 		llvm::Value* maskShiftAmount(llvm::IRBuilder<>& irb, llvm::Value* val, llvm::Value* amount);
 		void translateSub(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateSyscall(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);

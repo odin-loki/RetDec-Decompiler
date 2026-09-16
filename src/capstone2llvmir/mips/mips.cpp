@@ -503,6 +503,8 @@ void Capstone2LlvmIrTranslatorMips_impl::translateAdd(cs_insn* i, cs_mips* mi, l
 	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST, eOpConv::FPCAST_OR_BITCAST);
+	op1 = narrowToWord(i, irb, op1);
+	op2 = narrowToWord(i, irb, op2);
 	auto* add = op1->getType()->isFloatingPointTy()
 			? irb.CreateFAdd(op1, op2)
 			: irb.CreateAdd(op1, op2);
@@ -1122,6 +1124,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateClo(cs_insn* i, cs_mips* mi, l
 	EXPECT_IS_BINARY(i, mi, irb);
 
 	op1 = loadOpBinaryOp1(mi, irb);
+	op1 = narrowToWord(i, irb, op1);
 	op1 = irb.CreateXor(op1, llvm::ConstantInt::getSigned(op1->getType(), -1));
 	auto* f = llvm::Intrinsic::getOrInsertDeclaration(
 			_module,
@@ -1139,6 +1142,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateClz(cs_insn* i, cs_mips* mi, l
 	EXPECT_IS_BINARY(i, mi, irb);
 
 	op1 = loadOpBinaryOp1(mi, irb);
+	op1 = narrowToWord(i, irb, op1);
 	auto* f = llvm::Intrinsic::getOrInsertDeclaration(
 			_module,
 			llvm::Intrinsic::ctlz,
@@ -1165,6 +1169,8 @@ void Capstone2LlvmIrTranslatorMips_impl::translateDiv(cs_insn* i, cs_mips* mi, l
 		EXPECT_IS_BINARY(i, mi, irb);
 
 		std::tie(op0, op1) = loadOpBinary(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+		op0 = narrowToWord(i, irb, op0);
+		op1 = narrowToWord(i, irb, op1);
 
 		auto* div = irb.CreateSDiv(op0, op1);
 		storeRegister(MIPS_REG_LO, div, irb);
@@ -1181,6 +1187,8 @@ void Capstone2LlvmIrTranslatorMips_impl::translateDivu(cs_insn* i, cs_mips* mi, 
 	EXPECT_IS_BINARY(i, mi, irb);
 
 	std::tie(op0, op1) = loadOpBinary(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST);
+	op0 = narrowToWord(i, irb, op0);
+	op1 = narrowToWord(i, irb, op1);
 	auto* div = irb.CreateUDiv(op0, op1);
 	storeRegister(MIPS_REG_LO, div, irb);
 	auto* rem = irb.CreateURem(op0, op1);
@@ -1758,6 +1766,82 @@ Capstone2LlvmIrTranslatorMips_impl::maskShiftAmount(llvm::IRBuilder<>& irb, llvm
 }
 
 /**
+ * Is this a 32-bit WORD operation, on a register file that is 64 bits wide?
+ *
+ * On a 64-bit MIPS the instructions without the D are word operations whose
+ * results are sign-extended into the 64-bit register. `addu $2, $3, $4` adds
+ * the low halves and sign-extends; `daddu` adds the registers. They are
+ * different instructions and both exist, so doing the word one at the register
+ * width silently turns it into the other -- which, until the previous commit
+ * added them, was the only 64-bit arithmetic this translator had.
+ *
+ * The rule was already in this file. translateMadd() and translateMsub() both
+ * carry
+ *
+ *     // We operate on 0..31 bits even if on MIPS64.
+ *
+ * and truncate their operands. It was applied in those two translators and in
+ * no other, and Batch F applied it again to EXT, INS and WSBH by restricting
+ * them to 32-bit registers. This is the same rule for the rest of them.
+ *
+ * Not every instruction is on this list, and the ones that are not are not
+ * oversights: AND, OR, XOR, NOR and their immediate forms, SLT and SLTU, MOVN
+ * and MOVZ genuinely operate on the whole 64-bit register. SEB and SEH
+ * sign-extend from bit 7 and bit 15, which gives the same answer at either
+ * width. LUI already carries its own note saying it behaves as a 32-bit
+ * instruction on MIPS64.
+ */
+bool Capstone2LlvmIrTranslatorMips_impl::isWordOperation(cs_insn* i)
+{
+	switch (i->id)
+	{
+	case MIPS_INS_ADD:
+	case MIPS_INS_ADDI:
+	case MIPS_INS_ADDIU:
+	case MIPS_INS_ADDU:
+	case MIPS_INS_SUB:
+	case MIPS_INS_SUBU:
+	case MIPS_INS_NEG:
+	case MIPS_INS_NEGU:
+	case MIPS_INS_SLL:
+	case MIPS_INS_SLLV:
+	case MIPS_INS_SRL:
+	case MIPS_INS_SRLV:
+	case MIPS_INS_SRA:
+	case MIPS_INS_SRAV:
+	case MIPS_INS_ROTR:
+	case MIPS_INS_ROTRV:
+	case MIPS_INS_MUL:
+	case MIPS_INS_MULT:
+	case MIPS_INS_MULTU:
+	case MIPS_INS_DIV:
+	case MIPS_INS_DIVU:
+	case MIPS_INS_CLZ:
+	case MIPS_INS_CLO: return true;
+	default: return false;
+	}
+}
+
+/**
+ * The operand of a word instruction, narrowed to the word it operates on.
+ *
+ * A no-op on 32-bit MIPS and on any instruction that is not a word operation,
+ * so it can be applied unconditionally at the top of a translator. The result
+ * goes back through storeOp(), whose MIPS default is SEXT_TRUNC_OR_BITCAST --
+ * so the sign-extension the architecture requires on the way back into the
+ * 64-bit register is already there and needs no code.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorMips_impl::narrowToWord(cs_insn* i, llvm::IRBuilder<>& irb, llvm::Value* val)
+{
+	if (val == nullptr || !isWordOperation(i) || !val->getType()->isIntegerTy(64))
+	{
+		return val;
+	}
+
+	return irb.CreateTrunc(val, irb.getInt32Ty());
+}
+
+/**
  * MIPS_INS_LUI
  * This behaves like 32-bit MIPS instruction even on 64-bit MIPS.
  */
@@ -1880,6 +1964,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateNegu(cs_insn* i, cs_mips* mi, 
 	EXPECT_IS_BINARY(i, mi, irb);
 
 	op1 = loadOpBinaryOp1(mi, irb);
+	op1 = narrowToWord(i, irb, op1);
 	auto* sub = irb.CreateSub(llvm::ConstantInt::get(op1->getType(), 0), op1);
 	storeOp(mi->operands[0], sub, irb);
 }
@@ -2223,6 +2308,8 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMul(cs_insn* i, cs_mips* mi, l
 	}
 	else
 	{
+		op1 = narrowToWord(i, irb, op1);
+		op2 = narrowToWord(i, irb, op2);
 		auto* mul = irb.CreateMul(op1, op2);
 		storeOp(mi->operands[0], mul, irb);
 		storeRegisterUnpredictable(MIPS_REG_HI, irb);
@@ -2238,7 +2325,17 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMult(cs_insn* i, cs_mips* mi, 
 	EXPECT_IS_BINARY(i, mi, irb);
 
 	std::tie(op0, op1) = loadOpBinary(mi, irb, eOpConv::THROW);
-	auto* ty = irb.getIntNTy(getArchBitSize() * 2);
+
+	// `mult` is a word multiply even on MIPS64: 32 x 32 into a 64-bit
+	// product, whose two halves go into LO and HI SIGN-EXTENDED to the
+	// register width. `dmult` is the doubleword one, 64 x 64 into 128.
+	// Doing the word form at the register width makes it the doubleword
+	// form, which is the instruction next to it in the table.
+	op0 = narrowToWord(i, irb, op0);
+	op1 = narrowToWord(i, irb, op1);
+
+	unsigned half = op0->getType()->getIntegerBitWidth();
+	auto* ty = irb.getIntNTy(half * 2);
 	if (i->id == MIPS_INS_MULT || i->id == MIPS_INS_DMULT)
 	{
 		op0 = irb.CreateSExt(op0, ty);
@@ -2254,10 +2351,14 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMult(cs_insn* i, cs_mips* mi, 
 		throw GenericError("unhandled insn ID");
 	}
 	auto* mul = irb.CreateMul(op0, op1);
-	auto* low = irb.CreateTrunc(mul, getRegisterType(MIPS_REG_LO));
+	auto* halfTy = irb.getIntNTy(half);
+	// storeRegister's MIPS default is SEXT_TRUNC_OR_BITCAST, so each half
+	// is sign-extended into a wider LO or HI, which is what the
+	// architecture requires of the word form.
+	auto* low = irb.CreateTrunc(mul, halfTy);
 	storeRegister(MIPS_REG_LO, low, irb);
-	auto* shift = irb.CreateLShr(mul, getArchBitSize());
-	auto* high = irb.CreateTrunc(shift, getRegisterType(MIPS_REG_HI));
+	auto* shift = irb.CreateLShr(mul, half);
+	auto* high = irb.CreateTrunc(shift, halfTy);
 	storeRegister(MIPS_REG_HI, high, irb);
 }
 
@@ -2314,6 +2415,8 @@ void Capstone2LlvmIrTranslatorMips_impl::translateRotr(cs_insn* i, cs_mips* mi, 
 	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	op1 = narrowToWord(i, irb, op1);
+	op2 = narrowToWord(i, irb, op2);
 	storeOp(mi->operands[0], generateRotateRight(irb, op1, op2), irb);
 }
 
@@ -2357,6 +2460,8 @@ void Capstone2LlvmIrTranslatorMips_impl::translateSll(cs_insn* i, cs_mips* mi, l
 	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	op1 = narrowToWord(i, irb, op1);
+	op2 = narrowToWord(i, irb, op2);
 	op2 = maskShiftAmount(irb, op1, op2);
 	auto* shl = irb.CreateShl(op1, op2);
 	storeOp(mi->operands[0], shl, irb);
@@ -2396,6 +2501,8 @@ void Capstone2LlvmIrTranslatorMips_impl::translateSra(cs_insn* i, cs_mips* mi, l
 	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	op1 = narrowToWord(i, irb, op1);
+	op2 = narrowToWord(i, irb, op2);
 	op2 = maskShiftAmount(irb, op1, op2);
 	auto* sra = irb.CreateAShr(op1, op2);
 	storeOp(mi->operands[0], sra, irb);
@@ -2409,6 +2516,8 @@ void Capstone2LlvmIrTranslatorMips_impl::translateSrl(cs_insn* i, cs_mips* mi, l
 	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	op1 = narrowToWord(i, irb, op1);
+	op2 = narrowToWord(i, irb, op2);
 	op2 = maskShiftAmount(irb, op1, op2);
 	auto* shr = irb.CreateLShr(op1, op2);
 	storeOp(mi->operands[0], shr, irb);
@@ -2422,6 +2531,8 @@ void Capstone2LlvmIrTranslatorMips_impl::translateSub(cs_insn* i, cs_mips* mi, l
 	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::SEXT_TRUNC_OR_BITCAST, eOpConv::FPCAST_OR_BITCAST);
+	op1 = narrowToWord(i, irb, op1);
+	op2 = narrowToWord(i, irb, op2);
 	auto* sub = op1->getType()->isFloatingPointTy()
 			? irb.CreateFSub(op1, op2)
 			: irb.CreateSub(op1, op2);
