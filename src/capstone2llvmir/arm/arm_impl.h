@@ -160,6 +160,9 @@ class Capstone2LlvmIrTranslatorArm_impl :
 		void translateCbnz(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateCbz(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateClz(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateBitfield(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateSxt(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
+		void translateRev16(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateEor(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateLdmStm(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);
 		void translateLdr(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb);

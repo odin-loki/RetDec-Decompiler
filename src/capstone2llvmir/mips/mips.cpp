@@ -602,6 +602,82 @@ void Capstone2LlvmIrTranslatorMips_impl::translateBcondal(cs_insn* i, cs_mips* m
 }
 
 /**
+ * MIPS_INS_INS -- `ins rt, rs, pos, size`
+ *
+ * The other half of EXT: rt keeps its bits outside the field and takes the
+ * bottom `size` bits of rs inside it. 2,580 occurrences in the static corpus,
+ * and it is the only one of the pair that reads its destination.
+ *
+ *     rt = (rt & ~mask) | ((rs << pos) & mask)     mask = ((1<<size)-1) << pos
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateIns(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_QUATERNARY(i, mi, irb);
+
+	op1 = loadOp(mi->operands[1], irb);
+	op2 = loadOp(mi->operands[2], irb);
+	op3 = loadOp(mi->operands[3], irb);
+
+	// 32-bit registers only, for the reason EXT is: DINS is the 64-bit one.
+	auto* ty = llvm::dyn_cast<llvm::IntegerType>(op1->getType());
+	if (ty == nullptr || ty->getBitWidth() != 32 || !llvm::isa<llvm::ConstantInt>(op2)
+		|| !llvm::isa<llvm::ConstantInt>(op3))
+	{
+		translatePseudoAsmOp0FncOp1Op2Op3(i, mi, irb);
+		return;
+	}
+	uint64_t pos = llvm::cast<llvm::ConstantInt>(op2)->getZExtValue();
+	uint64_t size = llvm::cast<llvm::ConstantInt>(op3)->getZExtValue();
+	unsigned bits = ty->getBitWidth();
+	if (size == 0 || pos >= bits || size > bits - pos)
+	{
+		translatePseudoAsmOp0FncOp1Op2Op3(i, mi, irb);
+		return;
+	}
+
+	uint64_t field = size >= 64 ? ~0ull : ((1ull << size) - 1);
+	auto* mask = llvm::ConstantInt::get(ty, field << pos);
+	llvm::Value* old = loadOp(mi->operands[0], irb);
+	llvm::Value* res = irb.CreateOr(
+		irb.CreateAnd(old, irb.CreateNot(mask)),
+		irb.CreateAnd(irb.CreateShl(op1, llvm::ConstantInt::get(ty, pos)), mask));
+	storeOp(mi->operands[0], res, irb);
+}
+
+/**
+ * MIPS_INS_WSBH -- `wsbh rd, rt`, swap the bytes WITHIN each halfword.
+ *
+ * 1,890 occurrences, and it is half of how MIPS spells a byte swap: `wsbh`
+ * followed by `rotr rd, rd, 16` is a 32-bit bswap, which is why it turns up in
+ * every endian conversion in the corpus.
+ *
+ * Not llvm.bswap.i32: `0x11223344` becomes `0x22114433`, not `0x44332211`.
+ * The intrinsic is the plausible wrong answer here.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateWsbh(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	op1 = loadOpBinaryOp1(mi, irb);
+	auto* ty = llvm::dyn_cast<llvm::IntegerType>(op1->getType());
+	// 32-bit registers only. WSBH is a word instruction and MIPS64 spells the
+	// 64-bit one DSBH; swapping all four halfwords of a 64-bit register would
+	// be that other instruction, which is the plausible wrong answer a
+	// register-width implementation produces.
+	if (ty == nullptr || ty->getBitWidth() != 32)
+	{
+		translatePseudoAsmOp0FncOp1(i, mi, irb);
+		return;
+	}
+
+	auto* eight = llvm::ConstantInt::get(ty, 8);
+	auto* m = llvm::ConstantInt::get(ty, 0x00ff00ffull);
+	llvm::Value* res =
+		irb.CreateOr(irb.CreateShl(irb.CreateAnd(op1, m), eight), irb.CreateAnd(irb.CreateLShr(op1, eight), m));
+	storeOp(mi->operands[0], res, irb);
+}
+
+/**
  * MIPS_INS_TRUNC, MIPS_INS_ROUND, MIPS_INS_CEIL, MIPS_INS_FLOOR
  *
  * `trunc.w.d $f0, $f2` and its eleven siblings: convert a float or a double to
@@ -1115,6 +1191,32 @@ void Capstone2LlvmIrTranslatorMips_impl::translateExt(cs_insn* i, cs_mips* mi, l
 		fabs = irb.CreateBitCast(fabs, op1Ty);
 		storeOp(mi->operands[0], fabs, irb);
 		return;
+	}
+
+	// The general case, which everything but that one idiom fell through to:
+	//
+	//     ext rt, rs, pos, size    rt = (rs >> pos) & ((1 << size) - 1)
+	//
+	// pos and size are immediates in every encoding, so the mask is constant
+	// and the shift cannot leave the operand's width. 4,389 occurrences in the
+	// static corpus were reaching __asm_ext instead.
+	// 32-bit registers only. EXT is a word instruction -- MIPS64 spells the
+	// 64-bit one DEXT -- and on a 64-bit register file the result would also
+	// have to be sign-extended as a word, which is a different question from
+	// the one this answers.
+	if (op1Ty && op1Ty->getBitWidth() == 32 && llvm::isa<llvm::ConstantInt>(op2) && llvm::isa<llvm::ConstantInt>(op3))
+	{
+		uint64_t pos = llvm::cast<llvm::ConstantInt>(op2)->getZExtValue();
+		uint64_t size = llvm::cast<llvm::ConstantInt>(op3)->getZExtValue();
+		unsigned bits = op1Ty->getBitWidth();
+		if (size > 0 && pos < bits && size <= bits - pos)
+		{
+			uint64_t mask = size >= 64 ? ~0ull : ((1ull << size) - 1);
+			auto* res = irb.CreateAnd(
+				irb.CreateLShr(op1, llvm::ConstantInt::get(op1Ty, pos)), llvm::ConstantInt::get(op1Ty, mask));
+			storeOp(mi->operands[0], res, irb);
+			return;
+		}
 	}
 
 	llvm::Function* fnc = getPseudoAsmFunction(

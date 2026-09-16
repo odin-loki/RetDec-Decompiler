@@ -4504,3 +4504,140 @@ PowerPC are ordinary instructions with no register-model obstacle at all. They
 are the next batch. `mrc` (ARM) and `rdhwr` (MIPS) are the TLS-pointer reads
 that `mrs` is on ARM64, and they need the same synthetic register the previous
 commit recorded.
+
+
+## Batch F: the bitfield instructions PSEUDO-01 named
+
+The previous section listed a backlog PSEUDO-01 found and COV-01 could not
+see. This is the top of it that has no register-model obstacle: bitfield
+reads and writes, sign-extension, and byte-order changes within a word. Twelve
+instructions, all of them scored "covered" by COV-01 and all of them emitting a
+call.
+
+| instruction | occurrences | was | now |
+| --- | --- | --- | --- |
+| ARM `UBFX` | 1,898 | `__asm_ubfx` | `translateBitfield` |
+| ARM `SXTH` | 805 | `__asm_sxth` | `translateSxt` |
+| ARM `SBFX`, `BFI`, `BFC`, `SXTB` | below the cut | pseudo-asm | as above |
+| ARM `REV16`, `REVSH`, `RBIT` | below the cut | pseudo-asm | `translateRev16` |
+| MIPS `EXT` | 4,389 | `__asm_ext` | general path in `translateExt` |
+| MIPS `INS` | 2,580 | `__asm_ins` | `translateIns` |
+| MIPS `WSBH` | 1,890 | `__asm_wsbh` | `translateWsbh` |
+
+### Three ways to get these wrong, all of them quiet
+
+**Sign.** `UBFX` and `SBFX` differ in one letter and in what happens to a field
+whose top bit is set; `SXTB`/`SXTH` differ from the `UXT` pair the same way.
+The tests use fields and values whose top bit is set, because a field of
+`0x56` cannot tell the two apart.
+
+`SBFX` is also the one with an ordering trap: sign-extending from an arbitrary
+bit is `(rn << (32 - lsb - width)) >>s (32 - width)`, and the arithmetic shift
+has to come **second**. Masking first and then shifting loses the sign.
+
+**Width.** `REV16` is not a 32-bit byte swap and neither is `WSBH`:
+`0x12345678` becomes `0x34127856`, not `0x78563412`. Both are the plausible
+`llvm.bswap` away from being wrong, and on MIPS the difference has a name --
+`wsbh` followed by `rotr $2, $2, 16` is how the ISA spells a 32-bit swap, which
+is why `wsbh` appears in every endian conversion in the corpus. `REVSH` is the
+low halfword swapped and then **sign**-extended.
+
+For the same reason, `EXT`, `INS` and `WSBH` are restricted to 32-bit registers
+here. They are word instructions; MIPS64 spells the 64-bit ones `DEXT`, `DINS`
+and `DSBH`, and a register-width implementation silently becomes that other
+instruction. Out-of-range widths fall back to the pseudo-assembly call.
+
+**The destination.** `BFI`, `BFC` and MIPS `INS` read their destination and
+keep its bits outside the field. Dropping that is the difference between
+`0xaabbeedd` and `0xee00`.
+
+`translateExt` was the interesting one: it already had a translator, and that
+translator handled exactly one idiom -- `ext rt, rs, 0, 31`, recognised as a
+floating-point absolute value because clearing the sign bit is what it is --
+and sent every other form to `__asm_ext`. The idiom stays; the general case is
+four lines below it.
+
+### A test that could not fail, caught by falsification
+
+The first version of the three MIPS tests used `emulate()` and hit
+
+```
+error: instruction requires a CPU feature not currently enabled
+ext $2, $3, 8, 8
+```
+
+because Keystone will not assemble MIPS32R2 instructions in plain MIPS32 mode.
+Changing them to `ONLY_MODE_32R6` made the suite green -- and the falsification
+run then showed why that was worse than the failure: reverting `ext`, `ins` and
+**all three** left the suite passing, because
+
+```cpp
+::testing::Values(CS_MODE_MIPS32, CS_MODE_MIPS64),
+```
+
+is the whole instantiation. `ONLY_MODE_32R6` meant the test body never ran.
+They use `emulate_bin()` with hand-assembled encodings now, which Capstone
+decodes in MIPS32 mode without complaint, and the three mutations fail as they
+should.
+
+This is the value of reverting every fix separately, stated plainly: the tests
+passed, the code was right, and the tests were still worthless.
+
+### Falsification
+
+Ten mutations, each reverted alone, each rebuilt and run; all ten fail:
+
+| mutation | result |
+| --- | --- |
+| `SBFX` zero-extends | 1 test fails |
+| `BFI` drops the destination | 1 test fails |
+| the bitfield mask is not shifted into place | 2 tests fail |
+| `REV16` is a word bswap | 1 test fails |
+| `REVSH` zero-extends | 1 test fails |
+| `RBIT` is a bswap | 1 test fails |
+| `SXTB`/`SXTH` zero-extend | 2 tests fail |
+| MIPS `EXT`'s general path removed | 1 test fails |
+| MIPS `INS` drops the destination | 1 test fails |
+| MIPS `WSBH` is a word bswap | 1 test fails |
+
+### Where it leaves the static corpus
+
+```
+             before   after   uncovered kinds
+arm          0.9918  0.9931       36 -> 28
+mips         0.9894  0.9915       15 -> 12
+```
+
+PSEUDO-01 is floored from this commit, at what CI itself measured on run 194:
+
+```
+x86_64 1.0000   arm 1.0000   arm64 0.9999   mips 0.9999   powerpc 0.9993
+```
+
+x86-64 and ARM at 1.0000 means any instruction that stops being translated on
+either fails the step -- including one that keeps its function pointer, which
+is the case COV-01 cannot see.
+
+### What is left, in order
+
+```
+arm      mrc 11697   uqsub8 1554   tbb 1432   stcl 924   ldcl 924   sel 840
+mips     rdhwr 19389   syscall 3953   lwl 3586   lwr 3503   swl 2740   swr 2613
+```
+
+`mrc` (ARM) and `rdhwr` (MIPS) are the TLS-pointer reads that `mrs` is on
+ARM64: 31,086 occurrences between them, and all three need the same synthetic
+register id and the matching ABI-provider resize recorded two commits ago. That
+is now the single largest item on any architecture and is worth doing properly.
+
+`lwl`/`lwr`/`swl`/`swr` (12,442) are the MIPS unaligned load and store pair.
+They are specifiable, and their specification is endianness-dependent in a way
+that would need the corpus's big-endian binaries and a little-endian fixture to
+test both halves -- a batch of its own rather than a line each.
+
+`sel`, `uadd8` and `uqsub8` (3,234) are the ARMv6 GPR SIMD ops. `sel` reads the
+`GE` flags, which this translator does not model, and `uadd8` writes them --
+so the three come together with a register-model change or not at all.
+
+`tbb`/`tbh` (2,066) are table branches: control flow, not data, and a different
+kind of work from anything in this section.

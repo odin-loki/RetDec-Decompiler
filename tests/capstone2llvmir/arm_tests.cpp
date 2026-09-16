@@ -4304,6 +4304,9 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_REV)
 
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_REV16)
 {
+	// Bytes swapped WITHIN each halfword, both halves. A 32-bit bswap -- the
+	// plausible wrong answer, and the one REV next door actually is -- gives
+	// 0x78563412.
 	ALL_MODES;
 
 	setRegisters({
@@ -4314,12 +4317,10 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_REV16)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0x34127856},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_rev16"), {0x12345678}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -4328,22 +4329,24 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_REV16)
 
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_REVSH)
 {
+	// The low halfword swapped and then SIGN-extended. 0x0080 swaps to 0x8000,
+	// whose top bit is set, so zero-extending answers 0x00008000 instead.
 	ALL_MODES;
 
 	setRegisters({
-		{ARM_REG_R1, 0x12345678},
+		{ARM_REG_R1, 0x12340080},
 	});
 
 	emulate("revsh r0, r1");
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0xffff8000},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_revsh"), {0x12345678}},
-	});
+	// No call assertion: tests/llvmir-emul computes llvm.bswap without
+	// recording it, unlike llvm.bitreverse, which it records because the RBIT
+	// tests below ask for it. The stored value is what proves the semantics.
 }
 
 //
@@ -4352,6 +4355,9 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_REVSH)
 
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_RBIT)
 {
+	// All 32 bits reversed, not the bytes: 0x12345678 is
+	// 00010010 00110100 01010110 01111000, which read backwards is
+	// 00011110 01101010 00101100 01001000.
 	ALL_MODES;
 
 	setRegisters({
@@ -4362,11 +4368,11 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_RBIT)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0x1e6a2c48},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_rbit"), {0x12345678}},
+		{_module.getFunction("llvm.bitreverse.i32"), {0x12345678}},
 	});
 }
 
@@ -5874,6 +5880,7 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_MLA_s)
 
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_BFC)
 {
+	// Clear bits 5..20. 0x1234 keeps only its bottom five bits, 0x14.
 	ALL_MODES;
 
 	setRegisters({
@@ -5884,12 +5891,10 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_BFC)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R0});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0x14},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_bfc"), {0x1234, 0x5, 0x10}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -5898,6 +5903,8 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_BFC)
 
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_BFI)
 {
+	// Insert r1's low 16 bits at bit 5 and keep everything of r0 outside that
+	// window: 0x14 from below the field, 0xacf00 from r1 shifted into it.
 	ALL_MODES;
 
 	setRegisters({
@@ -5909,12 +5916,10 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_BFI)
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R0, ARM_REG_R1});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0xacf14},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_bfi"), {0x1234, 0x5678, 0x5, 0x10}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -6671,6 +6676,90 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VADD_i32_is_neon_and_stays_a_p
 			isa<llvm::BinaryOperator>(&*it) && cast<llvm::BinaryOperator>(&*it)->getOpcode() == llvm::Instruction::FAdd)
 			<< "NEON vadd.i32 was translated as a scalar float add";
 	}
+}
+
+
+//
+// ARM_INS_UBFX, ARM_INS_SBFX, ARM_INS_SXTB, ARM_INS_SXTH
+//
+// None of these had a test. UBFX is 1,898 occurrences in the static corpus and
+// SXTH 805, and all four were reaching a pseudo-assembly call.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UBFX_extracts_zero_extended)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x12345678},
+	});
+
+	emulate("ubfx r0, r1, #8, #8");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x56},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SBFX_extracts_sign_extended)
+{
+	// Same field position as UBFX above and a field whose top bit is set, so
+	// the two answer 0xffffff80 and 0x80 -- the only thing that separates them.
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x12348078},
+	});
+
+	emulate("sbfx r0, r1, #8, #8");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xffffff80},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SXTB_sign_extends_a_byte)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x12345680},
+	});
+
+	emulate("sxtb r0, r1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xffffff80},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SXTH_sign_extends_a_halfword)
+{
+	// UXTH next door answers 0x8000 for this input; the S is the whole
+	// instruction.
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x12348000},
+	});
+
+	emulate("sxth r0, r1");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xffff8000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
 }
 
 } // namespace tests

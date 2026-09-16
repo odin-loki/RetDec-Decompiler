@@ -227,10 +227,15 @@ jobs:
       # compiled against them -- and it needs a corpus on top, which is the
       # cross toolchains below and about a minute of linking.
       #
-      # MEASUREMENT ONLY on its first run, no --arch-min, for the reason the
-      # static COV-01 step went in unfloored: a floor measured on a workstation
-      # and asserted about a runner is the mistake that let a local gate read
-      # LLVM 20 while CI read LLVM 23. Floored next commit at what CI reports.
+      # Floored at what CI itself measured. Run 194 at 2ee4ef3 reported the
+      # same five numbers this container does, to four decimal places and with
+      # the same per-instruction counts, which is what makes the floor safe:
+      #
+      #   x86_64  1.0000   arm 1.0000   arm64 0.9999   mips 0.9999   powerpc 0.9993
+      #
+      # x86-64 and ARM are floored at 1.0000, which means any instruction that
+      # stops being translated on either fails this step -- including one that
+      # keeps its function pointer, which is the case COV-01 cannot see.
       - name: Install cross toolchains for the parity corpus
         run: |
           sudo apt-get install -y -qq \
@@ -244,7 +249,8 @@ jobs:
           bash scripts/build_multiarch_corpus.sh --out /tmp/ma-corpus
           bash scripts/ci/check_pseudo_asm.sh --self-test \
             --capstone-prefix "$PWD/.c2l-deps/capstone-install" \
-            --corpus /tmp/ma-corpus --top 10
+            --corpus /tmp/ma-corpus --top 10 \
+            --arch-min "x86_64=1.0 arm=1.0 arm64=0.9999 mips=0.9999 powerpc=0.9993"
 
   sanitizers:
     name: asan+ubsan

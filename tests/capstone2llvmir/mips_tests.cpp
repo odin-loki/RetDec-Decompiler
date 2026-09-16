@@ -6526,6 +6526,88 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_PREF_is_nothing)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+
+//
+// MIPS_INS_EXT, MIPS_INS_INS, MIPS_INS_WSBH
+//
+// EXT had a translator that handled one idiom -- `ext rt, rs, 0, 31`, read as
+// a floating-point absolute value -- and sent every other form to
+// __asm_ext, which is 4,389 occurrences in the static corpus. INS (2,580) and
+// WSBH (1,890) had no translation at all. PSEUDO-01 is what named them; COV-01
+// scores all three covered, because the table has a function pointer for each.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_EXT_general_field)
+{
+	// Assembled by hand rather than through emulate(): Keystone refuses EXT,
+	// INS and WSBH in plain MIPS32 mode ("instruction requires a CPU feature
+	// not currently enabled") because they are MIPS32R2, and this suite is
+	// instantiated over CS_MODE_MIPS32 and CS_MODE_MIPS64 only -- so an
+	// ONLY_MODE_32R6 guard would make the test body unreachable. Capstone
+	// decodes them in MIPS32 mode without complaint.
+	//
+	// 0x7c623a00 = ext $2, $3, 8, 8, little-endian.
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_3, 0x12345678},
+	});
+
+	emulate_bin("00 3a 62 7c");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x56},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_INS_keeps_the_bits_outside_the_field)
+{
+	// The only one of the pair that reads its destination. Dropping that
+	// answers 0xee00.
+	//
+	// 0x7c627a04 = ins $2, $3, 8, 8.
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd},
+		{MIPS_REG_3, 0x000000ee},
+	});
+
+	emulate_bin("04 7a 62 7c");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xaabbeedd},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_WSBH_swaps_within_halfwords)
+{
+	// Not a 32-bit byte swap: that would answer 0x78563412. `wsbh` followed by
+	// `rotr $2, $2, 16` is how MIPS spells one, which is why this instruction
+	// turns up in every endian conversion in the corpus.
+	//
+	// 0x7c0310a0 = wsbh $2, $3.
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_3, 0x12345678},
+	});
+
+	emulate_bin("a0 10 03 7c");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x34127856},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

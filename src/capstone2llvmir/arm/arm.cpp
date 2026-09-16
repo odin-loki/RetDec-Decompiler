@@ -1457,6 +1457,154 @@ void Capstone2LlvmIrTranslatorArm_impl::translateCbz(cs_insn* i, cs_arm* ai, llv
 /**
  * ARM_INS_CLZ
  */
+/**
+ * ARM_INS_UBFX, ARM_INS_SBFX, ARM_INS_BFI, ARM_INS_BFC
+ *
+ * The bitfield family, all four of which were on the pseudo-assembly path.
+ * `ubfx` alone is 1,898 occurrences in the static corpus and is what a
+ * compiler emits for every unsigned bitfield read on ARM.
+ *
+ *     ubfx rd, rn, #lsb, #width    rd = (rn >> lsb) & ((1 << width) - 1)
+ *     sbfx rd, rn, #lsb, #width    the same, sign-extended from bit width-1
+ *     bfi  rd, rn, #lsb, #width    rd = (rd & ~mask) | ((rn << lsb) & mask)
+ *     bfc  rd,     #lsb, #width    rd = rd & ~mask
+ *
+ * `lsb` and `width` are immediates in every encoding, so the mask is a
+ * compile-time constant and none of the shifts can leave the operand's width.
+ *
+ * SBFX is the one with a trap: sign-extending from an arbitrary bit is a pair
+ * of shifts, `(rn << (32 - lsb - width)) >>s (32 - width)`, and the arithmetic
+ * right shift has to come second. Masking first and then shifting right would
+ * lose the sign.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateBitfield(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	bool isBfc = i->id == ARM_INS_BFC;
+	unsigned wantOps = isBfc ? 3 : 4;
+	EXPECT_IS_EXPR(i, ai, irb, (ai->op_count == wantOps));
+
+	unsigned lsbIdx = isBfc ? 1 : 2;
+	if (ai->operands[lsbIdx].type != ARM_OP_IMM || ai->operands[lsbIdx + 1].type != ARM_OP_IMM)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* ty = getDefaultType();
+	unsigned bits = ty->getBitWidth();
+	unsigned lsb = static_cast<unsigned>(ai->operands[lsbIdx].imm);
+	unsigned width = static_cast<unsigned>(ai->operands[lsbIdx + 1].imm);
+	if (width == 0 || lsb >= bits || width > bits - lsb)
+	{
+		throwUnexpectedOperands(i);
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	uint64_t fieldMask = width == 64 ? ~0ull : ((1ull << width) - 1);
+	auto* maskAtZero = llvm::ConstantInt::get(ty, fieldMask);
+	auto* maskInPlace = llvm::ConstantInt::get(ty, fieldMask << lsb);
+
+	llvm::Value* res = nullptr;
+	switch (i->id)
+	{
+	case ARM_INS_UBFX: {
+		llvm::Value* src = loadOp(ai->operands[1], irb);
+		res = irb.CreateAnd(irb.CreateLShr(src, llvm::ConstantInt::get(ty, lsb)), maskAtZero);
+		break;
+	}
+	case ARM_INS_SBFX: {
+		llvm::Value* src = loadOp(ai->operands[1], irb);
+		// Left first, then arithmetic right: the sign bit of the field has
+		// to reach the top before the shift that replicates it.
+		llvm::Value* up = irb.CreateShl(src, llvm::ConstantInt::get(ty, bits - lsb - width));
+		res = irb.CreateAShr(up, llvm::ConstantInt::get(ty, bits - width));
+		break;
+	}
+	case ARM_INS_BFI: {
+		llvm::Value* src = loadOp(ai->operands[1], irb);
+		llvm::Value* old = loadOp(ai->operands[0], irb);
+		res = irb.CreateOr(
+			irb.CreateAnd(old, irb.CreateNot(maskInPlace)),
+			irb.CreateAnd(irb.CreateShl(src, llvm::ConstantInt::get(ty, lsb)), maskInPlace));
+		break;
+	}
+	case ARM_INS_BFC: {
+		llvm::Value* old = loadOp(ai->operands[0], irb);
+		res = irb.CreateAnd(old, irb.CreateNot(maskInPlace));
+		break;
+	}
+	default: throw GenericError("translateBitfield(): unhandled instruction id");
+	}
+
+	storeOp(ai->operands[0], res, irb);
+}
+
+/**
+ * ARM_INS_SXTB, ARM_INS_SXTH
+ *
+ * Sign-extend a byte or a halfword. The unsigned pair already had translators;
+ * these did not, and `sxth` is 805 occurrences in the static corpus.
+ *
+ * The optional `, ror #n` is part of the operand as Capstone reports it, so
+ * loadOpBinaryOp1() has already applied it -- the same way translateUxtb()
+ * relies on it.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateSxt(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, ai, irb);
+
+	op1 = loadOpBinaryOp1(ai, irb);
+	unsigned from = i->id == ARM_INS_SXTB ? 8 : 16;
+	auto* narrow = irb.CreateTrunc(op1, irb.getIntNTy(from));
+	storeOp(ai->operands[0], irb.CreateSExt(narrow, getDefaultType()), irb);
+}
+
+/**
+ * ARM_INS_REV16, ARM_INS_REVSH, ARM_INS_RBIT
+ *
+ * REV was translated with llvm.bswap and these three were not, though two of
+ * them are the same intrinsic applied to a different width.
+ *
+ *     rev16 rd, rm    swap the bytes WITHIN each halfword, both halves
+ *     revsh rd, rm    swap the bytes of the low halfword, then sign-extend
+ *     rbit  rd, rm    reverse all 32 bits
+ *
+ * REV16 is not a 32-bit byte swap: `0x11223344` becomes `0x22114433`, not
+ * `0x44332211`. Reaching for llvm.bswap.i32 here would be the plausible wrong
+ * answer, which is why it is spelled as the two masked shifts it is.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateRev16(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, ai, irb);
+
+	op1 = loadOpBinaryOp1(ai, irb);
+	auto* ty = getDefaultType();
+
+	if (i->id == ARM_INS_RBIT)
+	{
+		auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::bitreverse, op1->getType());
+		storeOp(ai->operands[0], irb.CreateCall(f, {op1}), irb);
+		return;
+	}
+
+	if (i->id == ARM_INS_REVSH)
+	{
+		auto* i16 = irb.getInt16Ty();
+		auto* f = llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::bswap, i16);
+		auto* swapped = irb.CreateCall(f, {irb.CreateTrunc(op1, i16)});
+		storeOp(ai->operands[0], irb.CreateSExt(swapped, ty), irb);
+		return;
+	}
+
+	auto* eight = llvm::ConstantInt::get(ty, 8);
+	auto* lowBytes = llvm::ConstantInt::get(ty, 0x00ff00ffull);
+	llvm::Value* res = irb.CreateOr(
+		irb.CreateShl(irb.CreateAnd(op1, lowBytes), eight), irb.CreateAnd(irb.CreateLShr(op1, eight), lowBytes));
+	storeOp(ai->operands[0], res, irb);
+}
+
 void Capstone2LlvmIrTranslatorArm_impl::translateClz(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, ai, irb);
