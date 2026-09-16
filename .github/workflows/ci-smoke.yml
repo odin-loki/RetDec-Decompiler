@@ -57,7 +57,15 @@ jobs:
       # repeated key and says nothing, which is how a duplicate reached this
       # branch and was found only by trying to dispatch the run it had broken.
       - name: Every workflow parses, with no duplicate keys
-        run: python3 scripts/ci/check_workflow_yaml.py
+        run: |
+          # actions/setup-python puts a bare interpreter from the tool cache
+          # on PATH, and that one has no PyYAML -- the system python3 does,
+          # which is why this passed locally and failed here for five commits
+          # while nobody was reading this workflow's result. The gate is right
+          # to fail loudly rather than skip itself when its parser is missing;
+          # what was wrong was that CI never had the parser.
+          python3 -m pip install --quiet pyyaml
+          python3 scripts/ci/check_workflow_yaml.py
 
       # A source list that names a deleted file fails the configure outright,
       # and the targets that would notice are behind the hours-long LLVM build.
