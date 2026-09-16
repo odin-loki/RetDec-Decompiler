@@ -108,6 +108,7 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		bool isCrRegister(uint32_t r);
 		bool isCrRegister(cs_ppc_op& op);
 		bool isCrBitRegister(uint32_t r);
+		llvm::Value* generateIndexedAddress(cs_ppc* pi, llvm::Value* base, llvm::Value* index, llvm::IRBuilder<>& irb);
 		virtual bool isOperandRegister(cs_ppc_op& op) override;
 //
 //==============================================================================
@@ -153,7 +154,8 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateFpArithm(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateFpTernary(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateFpUnary(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
-		void translateLhbrx(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateLoadStoreByteReverse(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
+		void translateLoadStoreMultiple(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLi(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLis(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateLoad(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
@@ -165,7 +167,6 @@ class Capstone2LlvmIrTranslatorPowerpc_impl :
 		void translateMflr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateMr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateMtcrf(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
-		void translateMtcr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateMtctr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateMtlr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);
 		void translateMulhw(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb);

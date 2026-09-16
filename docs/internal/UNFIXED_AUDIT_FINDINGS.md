@@ -4931,3 +4931,226 @@ store multiple) are both straightforwardly specifiable.
 named `__asm_mcrf_cr0_read`, which is what it does -- it reads CR0 and writes
 the dead `i4` registers. It is four `i1` copies and belongs in the next batch
 with `mtcrf`, which has the same shape.
+
+---
+
+## Batch I — the condition-register moves, the byte-reversed accesses, the
+## multiples, and an undefined address in five translators
+
+Batch H's backlog, in its own order, plus one finding that was not on it and is
+the most serious thing in the commit.
+
+### `rA = 0` is the literal zero, and it was `undef`
+
+Every X-form (register-indexed) memory access on PowerPC has the same special
+case in its encoding: the rA field is a register number, except that **rA = 0
+means the literal zero rather than r0**. `lwzx rD, 0, rB` addresses rB and
+nothing else. GCC emits it whenever the address is already whole in one
+register, which on a RISC with no base+index addressing mode is most of the
+time.
+
+Capstone reports that slot as `PPC_OP_REG` with `reg == PPC_REG_INVALID`, and
+`loadOp()`'s register case is:
+
+```cpp
+case PPC_OP_REG:
+{
+    auto* r = loadRegister(op.reg, irb);
+    return r ? r : llvm::UndefValue::get(ty ? ty : getDefaultType());
+}
+```
+
+`loadRegister()` returns `nullptr` for `PPC_REG_INVALID`. So the effective
+address of every rA = 0 indexed access was
+
+```llvm
+%2 = add i64 undef, %1
+%3 = inttoptr i64 %2 to ptr
+```
+
+an undefined pointer, in five translators: `translateLoadIndexed`,
+`translateStoreIndexed`, `translateLoadFloatIndexed`,
+`translateStoreFloatIndexed` and `translateLhbrx`.
+
+The `d(rA)` forms never had this. `loadOp()`'s `PPC_OP_MEM` case already reads
+`mem.base == PPC_REG_INVALID` as "displacement alone" — the rule was known,
+written down, and applied to one of the two addressing forms.
+
+#### The test that could not fail
+
+The first three tests written for this passed with the fix reverted. The
+emulator evaluates `UndefValue` as zero, so `add undef, rB` and `rB` reach the
+same address; and because `loadOp()` never emits a load for an invalid
+register, the register-load set is identical either way. Nothing observable
+through emulation distinguishes the two.
+
+That is the fourth time in this branch that a mutation has come back green, and
+the answer each time has been that the assertion was in the wrong place. The
+defect here is in the IR, so the assertion is:
+
+```cpp
+for (auto& op : it->operands())
+{
+    EXPECT_FALSE(isa<UndefValue>(op.get())) << a << " produced an undef operand";
+}
+```
+
+over all seven affected shapes. Reverting `generateIndexedAddress` now fails it.
+
+### `mcrf`
+
+`mcrf crD, crS` copies one condition register field to another: four bits. It
+was three pseudo-assembly calls, and the shape of each says what was wrong:
+
+| form | call | what was dead |
+| --- | --- | --- |
+| `mcrf crD, cr0` | `__asm_mcrf_cr0_read(i1,i1,i1,i1) -> i4` | the `i4` destination |
+| `mcrf cr0, crS` | `__asm_mcrf_cr0_write(i4) -> {i1,i1,i1,i1}` | the `i4` source |
+| `mcrf crD, crS` | `__asm_mcrf(i4) -> i4` | both |
+
+Batch H established that the `i4` registers `PPC_REG_CR0..CR7` are written and
+never read; the `i1` bits are what every branch reads. All three of these were
+the two representations bridged by an opaque function. It is four `i1` copies.
+
+### `mtcrf`, and a dispatch key with no encoding
+
+`mtcrf CRM, rS` writes the CR fields selected by an 8-bit mask from the low
+word of rS — the counterpart of `mfcr`, which Batch H fixed. It returned a
+struct of four `i1`s and seven `i4`s and stored all eleven: the four that
+matter came out of an undefined function, the seven with the field structure
+were dead.
+
+Two orderings, both easy to get backwards and neither loud:
+
+* The bit positions are numbered from the **most** significant end, the same as
+  `mfcr`: field *f* bit *b* is at `31 - (4f + b)`.
+* **CRM is numbered the same way.** Mask bit `0x80` selects CR0, `0x01` selects
+  CR7. Read as `1 << f` the mask selects the mirror-image set of fields, which
+  for the common `0xff` and `0xf0` is invisible. The one-field test uses `0x08`,
+  which is CR4 under the architecture's numbering and CR3 under the other.
+
+`PPC_INS_MTCR` was dispatched to `translateMtcr`, which was doubly wrong —
+
+```cpp
+storeRegister(PPC_REG_CR0GT, irb.CreateAnd(op0, irb.getInt32(1 << 1)), irb);
+```
+
+an `i32` stored into an `i1` register, so `storeRegister`'s truncation takes bit
+0 of `op0 & 2`, which is always zero; thirty-one of the thirty-two bits were
+constant `false` and the one that was not was the wrong end of the word — and
+**unreachable**. Capstone decodes `mtcr rS` as `PPC_INS_MTCRF` with mask
+`0xff`. An exhaustive scan of the XFX `xo = 144` encoding space, which is the
+only space LLVM's tables map to `MTCRF8`/`"mtcr"`, produces exactly two ids in
+both 32- and 64-bit mode:
+
+```
+id=774   mtcrf     ops=2
+id=796   mtocrf    ops=1
+```
+
+`PPC_INS_MTCR` (773) is in the instruction enum and comes out of the
+disassembler for nothing. This is the fourth dispatch key in this branch that
+Capstone does not produce, after ARM's `NOP`/`HINT` and `VMRS`/`FMSTAT` and
+PowerPC's `CROR`/`CRMOVE`. The entry is `nullptr` now and the broken translator
+is gone; `mtcr` reaches `translateMtcrf`, where it always went.
+
+`mtocrf` stays unmodelled for a different reason: capstone reports **one**
+operand for it, the source register, and drops the mask. The instruction cannot
+be translated from the detail available.
+
+### The byte-reversed accesses
+
+`lhbrx`, `lwbrx`, `ldbrx`, `sthbrx`, `stwbrx`, `stdbrx` — load or store with
+the byte order of the other endianness. A big-endian PowerPC reading a
+little-endian file uses them, so they are what a decompiler meets in ELF
+parsers, PE parsers and network code.
+
+Four of the six were `nullptr` or a pseudo-assembly call. The two stores were
+`translatePseudoAsmFncOp0Op1Op2`, which passes the value and the two address
+registers to an opaque function and **writes no memory at all** — a store that
+stores nothing is not an approximation of a store.
+
+The one that was modelled, `lhbrx`, was two byte loads OR'd together, with
+
+```
+// TODO: Maybe model this as ASM pseudo call as PPC_INS_LWBRX.
+```
+
+on it and its test commented out under `TODO: Not working, maybe because of
+little vs big endian?`. The suggestion ran the wrong way and the diagnosis was
+wrong: the emulator stores a 16-bit value at one address rather than as two
+bytes, so the second byte load read nothing. One `llvm.bswap` covers all six.
+
+### `lmw` and `stmw`
+
+`stmw rS, d(rA)` writes rS, rS+1, … r31 to consecutive words; `lmw` reads them
+back. A compiler emits them to save and restore the callee-saved half of the
+register file in one instruction, so they bracket whole functions. `stmw` was
+668 occurrences of a call that wrote nothing; `lmw` was `nullptr`.
+
+The count is 32 − rS and is encoded nowhere: `stmw r28, 8(r1)` is four
+transfers and `stmw r31, 8(r1)` is one. The tests give each register a distinct
+value and pin both ends of the written range.
+
+The transfers are 32-bit words on 64-bit PowerPC too. The emulator cannot see
+that either — its memory is a map from address to value and does not record the
+width of an access, so a 64-bit store and a 32-bit store at the same address
+are indistinguishable to it. That assertion is in the IR as well.
+
+### Falsification
+
+Nine mutations, each reverted alone, each rebuilt and run; all nine fail:
+
+| mutation | result |
+| --- | --- |
+| `rA = 0` back to a plain add | 2 tests fail |
+| `mcrf` back to the pseudo-assembly path | 8 tests fail |
+| `mtcrf`'s mask read as `1 << f` | 4 tests fail |
+| `mtcrf`'s bit order reversed | 6 tests fail |
+| the byte-reversed store drops its `bswap` | 7 tests fail |
+| the multiple counts from r0 | 6 tests fail |
+| the multiple's offset is `r * 4` | 6 tests fail |
+| `lwbrx` back to the pseudo-assembly call | 4 tests fail |
+| the multiple transfers at register width | 1 test fails |
+
+Two of the nine — the first and the last — came back **green** on their first
+run, and both are recorded above. Neither was a fix that did not matter; both
+were assertions written where the emulator cannot look.
+
+### Where it leaves PowerPC
+
+```
+                    static            gated corpus
+before Batch E      0.9829            0.9945
+after  Batch H      0.9932            1.0000
+after  Batch I      0.9960            1.0000
+```
+
+The PSEUDO-01 PowerPC floor moves from 0.9993 to 1.0, which is what
+standalone-check 200 measured for itself.
+
+What is left on PowerPC, in order:
+
+```
+tdi 4968   sc 4292   tdgti 1331   lvx 1134   vperm 1134   stvx 1050
+tdlgti 558   attn 431   dcbst 378   icbi 378   dcbz 336   tdlti 317   twi 315
+```
+
+The traps (`tdi`, `tdgti`, `tdlgti`, `tdlti`, `twi`) are ~7,500 between them
+and are the largest remaining group: `td`/`tw` are how GCC spells a
+division-by-zero check and `__builtin_trap`. They are conditional control flow
+into a handler, not a value computation, and belong with `sc` (the system call)
+and `attn` (checkstop) in whatever model this decompiler grows for traps.
+`lvx`, `stvx` and `vperm` are AltiVec and need a vector register file.
+
+**`dcbz`, reconsidered.** Batch H's note said `dcbz` "*does* write memory (it
+zeroes a cache line) and is the one worth doing next". Having looked at it: it
+is not, and the reason is that the architecture does not say how much memory it
+writes. The cache block size is implementation-defined — 32 bytes on the 32-bit
+implementations this corpus is built for, 128 on POWER4 and later, 32 again on
+the PPC970. Choosing one and emitting a fixed-size zeroing store would produce
+C that is wrong on the machines that do not match, which is worse than the
+opaque call: a call says "unknown", a wrong store says "known" and lies.
+`dcbst` and `icbi` have no memory effect to model at all. Correcting this here
+rather than deleting the note, for the same reason the `_id2regs.resize`
+paragraph was annotated in place.

@@ -515,6 +515,42 @@ bool Capstone2LlvmIrTranslatorPowerpc_impl::isOperandRegister(cs_ppc_op& op)
 	return op.type == PPC_OP_REG;
 }
 
+/**
+ * The effective address of an X-form (register-indexed) memory access.
+ *
+ * The rA slot of every X-form access has an encoding the d(rA) forms share and
+ * that the arithmetic forms do not: rA = 0 does not mean r0, it means the
+ * literal zero. `lwzx rD, 0, rB` therefore addresses rB alone, and GCC emits
+ * exactly that whenever the address is already whole in one register.
+ *
+ * Capstone reports that slot as PPC_OP_REG with reg PPC_REG_INVALID, and
+ * loadOp() turns an invalid register into UndefValue -- so the address of
+ * every rA=0 indexed access was `add undef, rB`, an undefined pointer, in five
+ * translators (integer and float, load and store, and lhbrx). The d(rA) forms
+ * never had this: loadOp()'s PPC_OP_MEM case already reads
+ * `mem.base == PPC_REG_INVALID` as "displacement alone". This applies the same
+ * rule to the register-indexed forms.
+ *
+ * The rA slot is always the second-to-last operand -- operands[1] of three for
+ * the ternary form, operands[0] of two for the binary one -- which is the same
+ * slot loadOpBinaryOrTernaryOp1Op2() loads, because _loadOps() counts back
+ * from the end.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorPowerpc_impl::generateIndexedAddress(
+	cs_ppc* pi, llvm::Value* base, llvm::Value* index, llvm::IRBuilder<>& irb)
+{
+	if (pi->op_count >= 2)
+	{
+		cs_ppc_op& aOp = pi->operands[pi->op_count - 2];
+		if (aOp.type == PPC_OP_REG && aOp.reg == PPC_REG_INVALID)
+		{
+			return index;
+		}
+	}
+
+	return irb.CreateAdd(base, index);
+}
+
 //
 //==============================================================================
 // PowerPC instruction translation methods.
@@ -893,7 +929,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadIndexed(cs_insn* i, cs_
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-	auto* add = irb.CreateAdd(op1, op2);
+	auto* add = generateIndexedAddress(pi, op1, op2, irb);
 
 	llvm::Type* ty = nullptr;
 	switch (i->id)
@@ -1032,7 +1068,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreIndexed(cs_insn* i, cs
 
 	op0 = irb.CreateZExtOrTrunc(op0, ty);
 
-	auto* add = irb.CreateAdd(op1, op2);
+	auto* add = generateIndexedAddress(pi, op1, op2, irb);
 	auto* st = storeIntPtr(irb, op0, add, ty);
 	if (i->id == PPC_INS_STWCX || i->id == PPC_INS_STDCX)
 	{
@@ -1380,7 +1416,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadFloatIndexed(cs_insn* i
 	}
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-	auto* add = irb.CreateAdd(op1, op2);
+	auto* add = generateIndexedAddress(pi, op1, op2, irb);
 
 	auto* l = loadIntPtr(irb, add, ty);
 	storeOp(pi->operands[0], l, irb, eOpConv::FPCAST_OR_BITCAST);
@@ -1454,7 +1490,7 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreFloatIndexed(cs_insn* 
 	op1 = irb.CreateZExtOrTrunc(op1, getDefaultType());
 	op2 = irb.CreateZExtOrTrunc(op2, getDefaultType());
 
-	auto* add = irb.CreateAdd(op1, op2);
+	auto* add = generateIndexedAddress(pi, op1, op2, irb);
 	storeIntPtr(irb, op0, add, ty);
 
 	// With update.
@@ -1468,27 +1504,125 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateStoreFloatIndexed(cs_insn* 
 }
 
 /**
- * PPC_INS_LHBRX
- * TODO: Maybe model this as ASM pseudo call as PPC_INS_LWBRX.
+ * PPC_INS_LHBRX, PPC_INS_LWBRX, PPC_INS_LDBRX,
+ * PPC_INS_STHBRX, PPC_INS_STWBRX, PPC_INS_STDBRX
+ *
+ * The byte-reversed accesses: load or store a halfword, word or doubleword
+ * with the byte order of the other endianness. A big-endian PowerPC reading a
+ * little-endian file uses them, which is why they are what a decompiler meets
+ * in ELF parsers, network code and anything that touches a PE header.
+ *
+ * `lwbrx` was 1,092 occurrences of `__asm_lwbrx` in the static parity corpus,
+ * `stwbrx` was a write-only `__asm_stwbrx` call -- the store disappeared
+ * entirely, because translatePseudoAsmFncOp0Op1Op2 passes the value and the
+ * two address registers to an opaque function and nothing writes memory. The
+ * halfword load was modelled, by hand, as two byte loads OR'd together with a
+ * `TODO: Maybe model this as ASM pseudo call as PPC_INS_LWBRX` on it: the
+ * suggestion ran the wrong way. One `llvm.bswap` covers all six.
  */
-void Capstone2LlvmIrTranslatorPowerpc_impl::translateLhbrx(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadStoreByteReverse(
+	cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY_OR_TERNARY(i, pi, irb);
 
+	llvm::Type* ty = nullptr;
+	bool store = false;
+	switch (i->id)
+	{
+	case PPC_INS_LHBRX: ty = irb.getInt16Ty(); break;
+	case PPC_INS_LWBRX: ty = irb.getInt32Ty(); break;
+	case PPC_INS_LDBRX: ty = irb.getInt64Ty(); break;
+	case PPC_INS_STHBRX:
+		ty = irb.getInt16Ty();
+		store = true;
+		break;
+	case PPC_INS_STWBRX:
+		ty = irb.getInt32Ty();
+		store = true;
+		break;
+	case PPC_INS_STDBRX:
+		ty = irb.getInt64Ty();
+		store = true;
+		break;
+	default: return;
+	}
+
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(pi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	auto* addr = generateIndexedAddress(pi, op1, op2, irb);
 
-	auto* addHi = irb.CreateAdd(op1, op2);
-	llvm::Value* lHi = loadIntPtr(irb, addHi, irb.getInt8Ty());
-	lHi = irb.CreateZExtOrTrunc(lHi, irb.getInt16Ty());
+	auto* bswap =
+		llvm::Intrinsic::getOrInsertDeclaration(_module, llvm::Intrinsic::bswap, llvm::ArrayRef<llvm::Type*>{ty});
 
-	auto* addLo = irb.CreateAdd(addHi, llvm::ConstantInt::get(addHi->getType(), 1));
-	llvm::Value* lLo = loadIntPtr(irb, addLo, irb.getInt8Ty());
-	lLo = irb.CreateZExtOrTrunc(lLo, irb.getInt16Ty());
-	lLo = irb.CreateShl(lLo, 8);
+	if (store)
+	{
+		llvm::Value* val = loadOp(pi->operands[0], irb);
+		val = irb.CreateZExtOrTrunc(val, ty);
+		val = irb.CreateCall(bswap, llvm::ArrayRef<llvm::Value*>{val});
+		storeIntPtr(irb, val, addr, ty);
+	}
+	else
+	{
+		llvm::Value* val = loadIntPtr(irb, addr, ty);
+		val = irb.CreateCall(bswap, llvm::ArrayRef<llvm::Value*>{val});
+		storeOp(pi->operands[0], val, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	}
+}
 
-	auto* val = irb.CreateOr(lLo, lHi);
+/**
+ * PPC_INS_LMW, PPC_INS_STMW
+ *
+ * Load and store multiple word: `stmw rS, d(rA)` writes rS, rS+1, ... r31 to
+ * consecutive words starting at d + rA, and `lmw` reads them back. A compiler
+ * emits them to save and restore the callee-saved half of the register file in
+ * one instruction, so they bracket whole functions -- `stmw` was 668
+ * occurrences of a pseudo-assembly call that wrote nothing at all, and `lmw`
+ * was dispatched to nullptr, which is the unhandled-instruction path.
+ *
+ * The count is implied, not encoded: it is 32 - rS, so `stmw r28, 8(r1)` is
+ * four stores and `stmw r31, 8(r1)` is one. Getting that backwards (counting
+ * up from r0, or storing a fixed number) is what the tests here are shaped to
+ * catch -- each register gets a different value and the memory either side of
+ * the written range is checked as well.
+ *
+ * The transfers are 32-bit words on 64-bit PowerPC too, and `lmw`
+ * zero-extends. The architecture leaves the case where rA is inside the loaded
+ * range invalid; loading through the address computed once, up front, is the
+ * reading every implementation takes.
+ */
+void Capstone2LlvmIrTranslatorPowerpc_impl::translateLoadStoreMultiple(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, pi, irb);
 
-	storeOp(pi->operands[0], val, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	if (pi->operands[0].type != PPC_OP_REG || !isGeneralPurposeRegister(pi->operands[0].reg))
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+
+	auto* i32 = irb.getInt32Ty();
+	llvm::Value* addr = loadOp(pi->operands[1], irb, nullptr, /*lea=*/true);
+	unsigned first = getGeneralPurposeRegisterIndex(pi->operands[0].reg);
+
+	for (unsigned r = first; r < 32; ++r)
+	{
+		llvm::Value* ea = addr;
+		if (unsigned off = (r - first) * 4)
+		{
+			ea = irb.CreateAdd(addr, llvm::ConstantInt::get(addr->getType(), off));
+		}
+
+		uint32_t reg = PPC_REG_R0 + r;
+		if (i->id == PPC_INS_STMW)
+		{
+			llvm::Value* val = loadRegister(reg, irb);
+			storeIntPtr(irb, irb.CreateZExtOrTrunc(val, i32), ea, i32);
+		}
+		else
+		{
+			llvm::Value* val = loadIntPtr(irb, ea, i32);
+			storeRegister(reg, val, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		}
+	}
 }
 
 /**
@@ -1530,86 +1664,63 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateMr(cs_insn* i, cs_ppc* pi, 
 
 /**
  * PPC_INS_MTCRF
+ *
+ * `mtcrf CRM, rS` writes the condition register fields selected by the 8-bit
+ * mask CRM from the low word of rS. It is the counterpart of `mfcr`, and the
+ * pair is how a compiler spills and reloads the condition register; `mtcr rS`
+ * is the same instruction with CRM = 0xff, and capstone reports it that way.
+ *
+ * This was a pseudo-assembly call returning a struct of four `i1`s and seven
+ * `i4`s -- the four CR0 bits the rest of the translator actually reads, then
+ * CR1..CR7 as four-bit registers that nothing reads. The condition register
+ * was modelled twice, in two widths, and mtcrf wrote both: the halves that
+ * mattered came out of an opaque function, and the halves that did not were
+ * the only ones with the field structure. Every write to CR1..CR7 was dead,
+ * and every write to CR0 was unknown.
+ *
+ * The bit positions are the architecture's and are the same ones `mfcr` reads:
+ * CR field n occupies bits 4n..4n+3 counted from the MOST significant end of
+ * the word, so CR0's LT bit is bit 31 and CR7's SO bit is bit 0. The mask is
+ * numbered the same way -- CRM bit 0 is 0x80 and selects CR0 -- which is the
+ * half of this that a plain `1 << f` gets backwards.
  */
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateMtcrf(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, pi, irb);
 
-	std::tie(op0, op1) = loadOpBinary(pi, irb);
+	if (pi->operands[0].type != PPC_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
 
 	auto* i1 = irb.getInt1Ty();
-	auto* i4 = irb.getIntNTy(4);
-	llvm::Function* fnc = getPseudoAsmFunction(
-			i,
-			llvm::StructType::create(llvm::ArrayRef<llvm::Type*>{
-					i1, i1, i1, i1, i4, i4, i4, i4, i4, i4, i4}),
-			llvm::ArrayRef<llvm::Type*>{op0->getType(), op1->getType()});
+	auto* i32 = irb.getInt32Ty();
+	uint64_t mask = static_cast<uint64_t>(pi->operands[0].imm);
 
-	auto* c = irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{op0, op1});
+	llvm::Value* src = loadOpBinaryOp1(pi, irb);
+	src = irb.CreateZExtOrTrunc(src, i32);
 
-	storeRegister(PPC_REG_CR0LT, irb.CreateExtractValue(c, {0}), irb);
-	storeRegister(PPC_REG_CR0GT, irb.CreateExtractValue(c, {1}), irb);
-	storeRegister(PPC_REG_CR0EQ, irb.CreateExtractValue(c, {2}), irb);
-	storeRegister(PPC_REG_CR0UN, irb.CreateExtractValue(c, {3}), irb);
+	for (unsigned f = 0; f < 8; ++f)
+	{
+		// CRM is numbered from the most significant end too: bit 0x80
+		// selects CR0.
+		if ((mask & (0x80u >> f)) == 0)
+		{
+			continue;
+		}
 
-	storeRegister(PPC_REG_CR1, irb.CreateExtractValue(c, {4}), irb);
-	storeRegister(PPC_REG_CR2, irb.CreateExtractValue(c, {5}), irb);
-	storeRegister(PPC_REG_CR3, irb.CreateExtractValue(c, {6}), irb);
-	storeRegister(PPC_REG_CR4, irb.CreateExtractValue(c, {7}), irb);
-	storeRegister(PPC_REG_CR5, irb.CreateExtractValue(c, {8}), irb);
-	storeRegister(PPC_REG_CR6, irb.CreateExtractValue(c, {9}), irb);
-	storeRegister(PPC_REG_CR7, irb.CreateExtractValue(c, {10}), irb);
-}
+		uint32_t lt = 0, gt = 0, eq = 0, so = 0;
+		crFieldRegisters(PPC_REG_CR0 + f, lt, gt, eq, so);
+		const uint32_t bits[4] = {lt, gt, eq, so};
 
-/**
- * PPC_INS_MTCR
- */
-void Capstone2LlvmIrTranslatorPowerpc_impl::translateMtcr(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
-{
-	EXPECT_IS_UNARY(i, pi, irb);
-
-	op0 = loadOpUnary(pi, irb);
-	op0 = irb.CreateZExtOrTrunc(op0, irb.getInt32Ty());
-
-	storeRegister(PPC_REG_CR0LT, irb.CreateAnd(op0, irb.getInt32(1 << 0)), irb);
-	storeRegister(PPC_REG_CR0GT, irb.CreateAnd(op0, irb.getInt32(1 << 1)), irb);
-	storeRegister(PPC_REG_CR0EQ, irb.CreateAnd(op0, irb.getInt32(1 << 2)), irb);
-	storeRegister(PPC_REG_CR0UN, irb.CreateAnd(op0, irb.getInt32(1 << 3)), irb);
-
-	storeRegister(PPC_REG_CR1LT, irb.CreateAnd(op0, irb.getInt32(1 << 4)), irb);
-	storeRegister(PPC_REG_CR1GT, irb.CreateAnd(op0, irb.getInt32(1 << 5)), irb);
-	storeRegister(PPC_REG_CR1EQ, irb.CreateAnd(op0, irb.getInt32(1 << 6)), irb);
-	storeRegister(PPC_REG_CR1UN, irb.CreateAnd(op0, irb.getInt32(1 << 7)), irb);
-
-	storeRegister(PPC_REG_CR2LT, irb.CreateAnd(op0, irb.getInt32(1 << 8)), irb);
-	storeRegister(PPC_REG_CR2GT, irb.CreateAnd(op0, irb.getInt32(1 << 9)), irb);
-	storeRegister(PPC_REG_CR2EQ, irb.CreateAnd(op0, irb.getInt32(1 << 10)), irb);
-	storeRegister(PPC_REG_CR2UN, irb.CreateAnd(op0, irb.getInt32(1 << 11)), irb);
-
-	storeRegister(PPC_REG_CR3LT, irb.CreateAnd(op0, irb.getInt32(1 << 12)), irb);
-	storeRegister(PPC_REG_CR3GT, irb.CreateAnd(op0, irb.getInt32(1 << 13)), irb);
-	storeRegister(PPC_REG_CR3EQ, irb.CreateAnd(op0, irb.getInt32(1 << 14)), irb);
-	storeRegister(PPC_REG_CR3UN, irb.CreateAnd(op0, irb.getInt32(1 << 15)), irb);
-
-	storeRegister(PPC_REG_CR4LT, irb.CreateAnd(op0, irb.getInt32(1 << 16)), irb);
-	storeRegister(PPC_REG_CR4GT, irb.CreateAnd(op0, irb.getInt32(1 << 17)), irb);
-	storeRegister(PPC_REG_CR4EQ, irb.CreateAnd(op0, irb.getInt32(1 << 18)), irb);
-	storeRegister(PPC_REG_CR4UN, irb.CreateAnd(op0, irb.getInt32(1 << 19)), irb);
-
-	storeRegister(PPC_REG_CR5LT, irb.CreateAnd(op0, irb.getInt32(1 << 20)), irb);
-	storeRegister(PPC_REG_CR5GT, irb.CreateAnd(op0, irb.getInt32(1 << 21)), irb);
-	storeRegister(PPC_REG_CR5EQ, irb.CreateAnd(op0, irb.getInt32(1 << 22)), irb);
-	storeRegister(PPC_REG_CR5UN, irb.CreateAnd(op0, irb.getInt32(1 << 23)), irb);
-
-	storeRegister(PPC_REG_CR6LT, irb.CreateAnd(op0, irb.getInt32(1 << 24)), irb);
-	storeRegister(PPC_REG_CR6GT, irb.CreateAnd(op0, irb.getInt32(1 << 25)), irb);
-	storeRegister(PPC_REG_CR6EQ, irb.CreateAnd(op0, irb.getInt32(1 << 26)), irb);
-	storeRegister(PPC_REG_CR6UN, irb.CreateAnd(op0, irb.getInt32(1 << 27)), irb);
-
-	storeRegister(PPC_REG_CR7LT, irb.CreateAnd(op0, irb.getInt32(1 << 28)), irb);
-	storeRegister(PPC_REG_CR7GT, irb.CreateAnd(op0, irb.getInt32(1 << 29)), irb);
-	storeRegister(PPC_REG_CR7EQ, irb.CreateAnd(op0, irb.getInt32(1 << 30)), irb);
-	storeRegister(PPC_REG_CR7UN, irb.CreateAnd(op0, irb.getInt32(1 << 31)), irb);
+		for (unsigned b = 0; b < 4; ++b)
+		{
+			unsigned shift = 31 - (4 * f + b);
+			llvm::Value* v = irb.CreateLShr(src, llvm::ConstantInt::get(i32, shift));
+			storeRegister(bits[b], irb.CreateTrunc(v, i1), irb);
+		}
+	}
 }
 
 /**
@@ -1886,70 +1997,61 @@ void Capstone2LlvmIrTranslatorPowerpc_impl::translateCrSetClr(cs_insn* i, cs_ppc
 
 /**
  * PPC_INS_MCRF
+ *
+ * `mcrf crD, crS` copies one condition register field to another: four bits,
+ * unchanged, in one instruction. It is how a compiler keeps a comparison
+ * result alive across code that would clobber CR0.
+ *
+ * It was three pseudo-assembly calls, one per case, and the shape of them says
+ * what went wrong. `mcrf crD, cr0` became `__asm_mcrf_cr0_read(lt, gt, eq,
+ * so) -> i4` -- it read the four `i1` bits of CR0 correctly and then stored
+ * the opaque result into crD as a four-bit register that nothing reads.
+ * `mcrf cr0, crS` became `__asm_mcrf_cr0_write(i4) -> {i1,i1,i1,i1}`, reading
+ * crS as the same dead `i4`. And `mcrf cr3, cr5`, where neither side is CR0
+ * and which is most of the 466 occurrences, became `__asm_mcrf(i4) -> i4`:
+ * both halves dead.
+ *
+ * Each of the three was the condition register modelled in two widths at once,
+ * with an opaque function bridging between them. It is four `i1` copies.
+ * Reading all four before writing any keeps it a copy rather than a sequence
+ * of assignments, which matters only for crD == crS -- handled above -- but
+ * costs nothing to get right.
  */
 void Capstone2LlvmIrTranslatorPowerpc_impl::translateMcrf(cs_insn* i, cs_ppc* pi, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, pi, irb);
 
-	if (pi->operands[0].type == PPC_OP_REG
-			&& pi->operands[1].type == PPC_OP_REG
-			&& pi->operands[0].reg == pi->operands[1].reg)
+	auto isField = [](cs_ppc_op& op) {
+		return op.type == PPC_OP_REG && PPC_REG_CR0 <= op.reg && op.reg <= PPC_REG_CR7;
+	};
+
+	if (!isField(pi->operands[0]) || !isField(pi->operands[1]))
+	{
+		translatePseudoAsmGeneric(i, pi, irb);
+		return;
+	}
+
+	if (pi->operands[0].reg == pi->operands[1].reg)
 	{
 		return;
 	}
 
-	if (pi->operands[1].type == PPC_OP_REG
-			&& pi->operands[1].reg == PPC_REG_CR0)
+	uint32_t dLt = 0, dGt = 0, dEq = 0, dSo = 0;
+	uint32_t sLt = 0, sGt = 0, sEq = 0, sSo = 0;
+	crFieldRegisters(pi->operands[0].reg, dLt, dGt, dEq, dSo);
+	crFieldRegisters(pi->operands[1].reg, sLt, sGt, sEq, sSo);
+
+	const uint32_t dst[4] = {dLt, dGt, dEq, dSo};
+	const uint32_t src[4] = {sLt, sGt, sEq, sSo};
+
+	llvm::Value* vals[4] = {nullptr, nullptr, nullptr, nullptr};
+	for (unsigned b = 0; b < 4; ++b)
 	{
-		auto* lt = loadRegister(PPC_REG_CR0LT, irb);
-		auto* gt = loadRegister(PPC_REG_CR0GT, irb);
-		auto* eq = loadRegister(PPC_REG_CR0EQ, irb);
-		auto* so = loadRegister(PPC_REG_CR0UN, irb);
-
-		llvm::Function* fnc = getPseudoAsmFunction(
-				i,
-				irb.getIntNTy(4),
-				llvm::ArrayRef<llvm::Type*>{
-						lt->getType(),
-						gt->getType(),
-						eq->getType(),
-						so->getType()},
-				getPseudoAsmFunctionName(i) + "_cr0_read");
-
-		auto* c = irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{lt, gt, eq, so});
-		storeOp(pi->operands[0], c, irb);
+		vals[b] = loadRegister(src[b], irb);
 	}
-	else if (pi->operands[0].type == PPC_OP_REG
-			&& pi->operands[0].reg == PPC_REG_CR0)
+	for (unsigned b = 0; b < 4; ++b)
 	{
-		op1 = loadOpBinaryOp1(pi, irb);
-
-		auto* i1 = irb.getInt1Ty();
-		llvm::Function* fnc = getPseudoAsmFunction(
-				i,
-				llvm::StructType::create(llvm::ArrayRef<llvm::Type*>{
-						i1, i1, i1, i1}),
-				llvm::ArrayRef<llvm::Type*>{op1->getType()},
-				getPseudoAsmFunctionName(i) + "_cr0_write");
-
-		auto* c = irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{op1});
-
-		storeRegister(PPC_REG_CR0LT, irb.CreateExtractValue(c, {0}), irb);
-		storeRegister(PPC_REG_CR0GT, irb.CreateExtractValue(c, {1}), irb);
-		storeRegister(PPC_REG_CR0EQ, irb.CreateExtractValue(c, {2}), irb);
-		storeRegister(PPC_REG_CR0UN, irb.CreateExtractValue(c, {3}), irb);
-	}
-	else
-	{
-		op1 = loadOpBinaryOp1(pi, irb);
-
-		llvm::Function* fnc = getPseudoAsmFunction(
-				i,
-				op1->getType(),
-				llvm::ArrayRef<llvm::Type*>{op1->getType()});
-
-		auto* c = irb.CreateCall(fnc, llvm::ArrayRef<llvm::Value*>{op1});
-		storeOp(pi->operands[0], c, irb);
+		storeRegister(dst[b], vals[b], irb);
 	}
 }
 

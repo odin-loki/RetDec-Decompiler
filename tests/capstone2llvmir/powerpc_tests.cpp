@@ -2460,34 +2460,96 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MR_does_not_inherit_a_reco
 // PPC_INS_MTCRF
 //
 
+// The source word is 0x12345678, whose eight nibbles are 1,2,3,4,5,6,7,8 --
+// every condition register field gets a different value, so a field landing in
+// the wrong place is visible rather than coincidentally right. Counted from the
+// most significant end, field f is nibble f: CR0 is 0x1 = LT,GT,EQ,SO 0,0,0,1
+// and CR3 is 0x4 = 0,1,0,0.
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MTCRF)
 {
 	ALL_MODES;
 
 	setRegisters({
-		{PPC_REG_R1, 0x1234},
+		{PPC_REG_R1, 0x12345678},
 	});
 
 	emulate("mtcrf 0xf0, 1");
 
 	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
 	EXPECT_JUST_REGISTERS_STORED({
-		{PPC_REG_CR0LT, ANY},
-		{PPC_REG_CR0GT, ANY},
-		{PPC_REG_CR0EQ, ANY},
-		{PPC_REG_CR0UN, ANY},
-		{PPC_REG_CR1, ANY},
-		{PPC_REG_CR2, ANY},
-		{PPC_REG_CR3, ANY},
-		{PPC_REG_CR4, ANY},
-		{PPC_REG_CR5, ANY},
-		{PPC_REG_CR6, ANY},
-		{PPC_REG_CR7, ANY},
+		{PPC_REG_CR0LT, false},
+		{PPC_REG_CR0GT, false},
+		{PPC_REG_CR0EQ, false},
+		{PPC_REG_CR0UN, true},
+		{PPC_REG_CR1LT, false},
+		{PPC_REG_CR1GT, false},
+		{PPC_REG_CR1EQ, true},
+		{PPC_REG_CR1UN, false},
+		{PPC_REG_CR2LT, false},
+		{PPC_REG_CR2GT, false},
+		{PPC_REG_CR2EQ, true},
+		{PPC_REG_CR2UN, true},
+		{PPC_REG_CR3LT, false},
+		{PPC_REG_CR3GT, true},
+		{PPC_REG_CR3EQ, false},
+		{PPC_REG_CR3UN, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_mtcrf"), {0xf0, 0x1234}},
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// CRM is numbered from the most significant end: 0x08 is 0x80 >> 4 and selects
+// CR4 alone. Read as `1 << f` it would select CR3, so this distinguishes the
+// two directions -- and EXPECT_JUST_REGISTERS_STORED insists nothing else is
+// written, which a mask ignored altogether would fail.
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MTCRF_one_field)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x12345678},
 	});
+
+	emulate("mtcrf 0x8, 1");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR4LT, false},
+		{PPC_REG_CR4GT, true},
+		{PPC_REG_CR4EQ, false},
+		{PPC_REG_CR4UN, true},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// `mtcr rS` is `mtcrf 0xff, rS`, and capstone reports it as one: PPC_INS_MTCR
+// is in the instruction enum but no encoding decodes to it, which is why the
+// translator it was dispatched to could never run. The low nibble of the word
+// is CR7, so this is also the check that the word is not read backwards.
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MTCR)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x12345678},
+	});
+
+	emulate("mtcr 1");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_CR0LT, false}, {PPC_REG_CR0GT, false}, {PPC_REG_CR0EQ, false}, {PPC_REG_CR0UN, true},
+		{PPC_REG_CR1LT, false}, {PPC_REG_CR1GT, false}, {PPC_REG_CR1EQ, true},  {PPC_REG_CR1UN, false},
+		{PPC_REG_CR2LT, false}, {PPC_REG_CR2GT, false}, {PPC_REG_CR2EQ, true},  {PPC_REG_CR2UN, true},
+		{PPC_REG_CR3LT, false}, {PPC_REG_CR3GT, true},  {PPC_REG_CR3EQ, false}, {PPC_REG_CR3UN, false},
+		{PPC_REG_CR4LT, false}, {PPC_REG_CR4GT, true},  {PPC_REG_CR4EQ, false}, {PPC_REG_CR4UN, true},
+		{PPC_REG_CR5LT, false}, {PPC_REG_CR5GT, true},  {PPC_REG_CR5EQ, true},  {PPC_REG_CR5UN, false},
+		{PPC_REG_CR6LT, false}, {PPC_REG_CR6GT, true},  {PPC_REG_CR6EQ, true},  {PPC_REG_CR6UN, true},
+		{PPC_REG_CR7LT, true},  {PPC_REG_CR7GT, false}, {PPC_REG_CR7EQ, false}, {PPC_REG_CR7UN, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -2984,6 +3046,157 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LWZX)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+// `lwzx rD, 0, rB` is not `lwzx rD, r0, rB`: in every X-form memory access rA
+// = 0 is the literal zero. GCC emits it whenever the address is already whole
+// in one register, so it is not a corner case -- and the address it produced
+// was `add undef, rB`. r0 is given a value here so that reading it as a
+// register moves the load somewhere this test does not set.
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LWZX_ra_is_zero)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R0, 0x2000},
+		{PPC_REG_R2, 0x1120},
+	});
+	setMemory({
+		{0x1120, 0x12345678_dw},
+	});
+
+	emulate("lwzx 3, 0, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0x12345678},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1120});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STWX_ra_is_zero)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R0, 0x2000},
+		{PPC_REG_R3, 0x12345678},
+		{PPC_REG_R2, 0x1120},
+	});
+
+	emulate("stwx 3, 0, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R2, PPC_REG_R3});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1120, 0x12345678_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The emulator cannot see this one. It evaluates UndefValue as zero, so
+// `add undef, rB` and `rB` reach the same address and the tests above pass
+// either way -- which is why the bug survived: every existing test of an
+// indexed access used a real rA. The defect is in the IR, so the assertion
+// belongs there: after translating an rA = 0 form, nothing in the function may
+// be undef or poison.
+//
+// All six shapes are listed because the rA slot is read by five different
+// translators and they were fixed one at a time.
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, IndexedFormsWithRaZeroProduceNoUndefAddress)
+{
+	ALL_MODES;
+
+	const std::vector<std::string> insns = {
+		"lwzx 3, 0, 2",
+		"stwx 3, 0, 2",
+		"lwbrx 3, 0, 2",
+		"stwbrx 3, 0, 2",
+		"lhbrx 3, 0, 2",
+		"lfsx 3, 0, 2",
+		"stfsx 3, 0, 2",
+	};
+
+	for (auto& a: insns)
+	{
+		auto* f = translate(assemble(a));
+		ASSERT_NE(nullptr, f) << a;
+		for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+		{
+			for (auto& op: it->operands())
+			{
+				EXPECT_FALSE(isa<UndefValue>(op.get()))
+					<< a << " produced an undef operand in: " << llvmObjToString(&*it);
+			}
+		}
+	}
+}
+
+// The same instructions with a real rA must still add it, or the fix above
+// would be "ignore rA".
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, IndexedFormsWithRealRaStillAdd)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+		{PPC_REG_R2, 0x120},
+	});
+	setMemory({
+		{0x1120, 0x12345678_dw},
+	});
+
+	emulate("lwzx 3, 1, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0x12345678},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1120});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// lmw and stmw transfer 32-bit words on 64-bit PowerPC too. The emulator's
+// memory is a map from address to value and does not record the width of an
+// access, so it cannot tell a 32-bit store from a 64-bit one at the same
+// address -- reverting this to the register width leaves every emulation test
+// above passing. The width is in the IR, so it is checked there.
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, LoadStoreMultipleTransfersWords)
+{
+	ALL_MODES;
+
+	for (auto& a: {std::string("stmw 28, 8(1)"), std::string("lmw 28, 8(1)")})
+	{
+		auto* f = translate(assemble(a));
+		ASSERT_NE(nullptr, f) << a;
+		unsigned n = 0;
+		for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+		{
+			// Memory, as opposed to a register, is reached through an
+			// inttoptr of the computed address.
+			if (auto* l = dyn_cast<LoadInst>(&*it))
+			{
+				if (isa<IntToPtrInst>(l->getPointerOperand()))
+				{
+					EXPECT_EQ(32u, l->getType()->getIntegerBitWidth()) << a;
+					++n;
+				}
+			}
+			else if (auto* st = dyn_cast<StoreInst>(&*it))
+			{
+				if (isa<IntToPtrInst>(st->getPointerOperand()))
+				{
+					EXPECT_EQ(32u, st->getValueOperand()->getType()->getIntegerBitWidth()) << a;
+					++n;
+				}
+			}
+		}
+		EXPECT_EQ(4u, n) << a << " should transfer r28..r31";
+	}
+}
+
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, LwarxLoadIsAtomic)
 {
 	ALL_MODES;
@@ -3468,33 +3681,60 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LHAUX_sext_64)
 }
 
 //
-// PPC_INS_LHBRX
+// PPC_INS_LHBRX, PPC_INS_LWBRX, PPC_INS_LDBRX
 //
 
-// TODO: Not working, maybe because of little vs big endian?
-//
-//TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LHBRX)
-//{
-//	ALL_MODES;
-//
-//	setRegisters({
-//		{PPC_REG_R1, 0x1000},
-//		{PPC_REG_R2, 0x120},
-//	});
-//	setMemory({
-//		{0x1120, 0x12ff_w},
-//	});
-//
-//	emulate("lhbrx 0, 1, 2");
-//
-//	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_R2});
-//	EXPECT_JUST_REGISTERS_STORED({
-//		{PPC_REG_R0, 0xff12},
-//	});
-//	EXPECT_JUST_MEMORY_LOADED({0x1120});
-//	EXPECT_NO_MEMORY_STORED();
-//	EXPECT_NO_VALUE_CALLED();
-//}
+// This test was commented out with "TODO: Not working, maybe because of little
+// vs big endian?" on it. It was right about the halfword and wrong about the
+// cause: lhbrx was the only one of the six byte-reversed accesses that was
+// modelled at all, by hand, as two byte loads OR'd together -- and the
+// emulator stores a 16-bit value at one address rather than as two bytes, so
+// the second byte load read nothing. One llvm.bswap reads the halfword whole.
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LHBRX)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+		{PPC_REG_R2, 0x120},
+	});
+	setMemory({
+		{0x1120, 0x12ff_w},
+	});
+
+	emulate("lhbrx 0, 1, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0xff12},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1120});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LDBRX)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+		{PPC_REG_R2, 0x120},
+	});
+	setMemory({
+		{0x1120, 0x1122334455667788_qw},
+	});
+
+	emulate("ldbrx 0, 1, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x8877665544332211},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1120});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
 
 //
 // PPC_INS_LI
@@ -3544,17 +3784,48 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LWBRX)
 		{PPC_REG_R1, 0x1000},
 		{PPC_REG_R2, 0x120},
 	});
+	setMemory({
+		{0x1120, 0x12345678_dw},
+	});
 
 	emulate("lwbrx 0, 1, 2");
 
 	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{PPC_REG_R0, ANY},
+		{PPC_REG_R0, 0x78563412},
 	});
-	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_lwbrx"), {0x1000, 0x120}},
+	EXPECT_JUST_MEMORY_LOADED({0x1120});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The rA = 0 form. In every X-form memory access rA = 0 means the literal zero
+// rather than r0, and capstone reports that slot as a register with the
+// invalid id -- which loadOp() turns into UndefValue, so the address was
+// `add undef, rB`. r0 is deliberately given a value here: if the translator
+// reads it as a register, the address is 0x1120 + 0x2000 and no load lands on
+// the memory this sets.
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LWBRX_ra_is_zero)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R0, 0x2000},
+		{PPC_REG_R2, 0x1120},
 	});
+	setMemory({
+		{0x1120, 0x12345678_dw},
+	});
+
+	emulate("lwbrx 3, 0, 2");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R3, 0x78563412},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1120});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -3689,6 +3960,9 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MCRF_same)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+// The bit pattern is LT,GT,EQ,SO = 1,0,1,0: no transposition of two of them
+// and no reversal of all four produces the same four values, so a field copied
+// into the wrong slot shows up.
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MCRF_read_cr0)
 {
 	ALL_MODES;
@@ -3704,12 +3978,13 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MCRF_read_cr0)
 
 	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_CR0LT, PPC_REG_CR0GT, PPC_REG_CR0EQ, PPC_REG_CR0UN});
 	EXPECT_JUST_REGISTERS_STORED({
-		{PPC_REG_CR4, ANY},
+		{PPC_REG_CR4LT, true},
+		{PPC_REG_CR4GT, false},
+		{PPC_REG_CR4EQ, true},
+		{PPC_REG_CR4UN, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_mcrf_cr0_read"), {true, false, true, false}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MCRF_write_cr0)
@@ -3717,90 +3992,228 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MCRF_write_cr0)
 	ALL_MODES;
 
 	setRegisters({
-		{PPC_REG_CR4, 0xa},
+		{PPC_REG_CR4LT, true},
+		{PPC_REG_CR4GT, false},
+		{PPC_REG_CR4EQ, true},
+		{PPC_REG_CR4UN, false},
 	});
 
 	emulate("mcrf 0, 4");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_CR4});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_CR4LT, PPC_REG_CR4GT, PPC_REG_CR4EQ, PPC_REG_CR4UN});
 	EXPECT_JUST_REGISTERS_STORED({
-		{PPC_REG_CR0LT, ANY},
-		{PPC_REG_CR0GT, ANY},
-		{PPC_REG_CR0EQ, ANY},
-		{PPC_REG_CR0UN, ANY},
+		{PPC_REG_CR0LT, true},
+		{PPC_REG_CR0GT, false},
+		{PPC_REG_CR0EQ, true},
+		{PPC_REG_CR0UN, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_mcrf_cr0_write"), {0xa}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
+// Neither side is CR0, which is most of the 466 occurrences in the parity
+// corpus and was the case where both halves of the old model were dead: it
+// read crS as a four-bit register nothing writes and wrote crD as a four-bit
+// register nothing reads.
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MCRF_other)
 {
 	ALL_MODES;
 
 	setRegisters({
-		{PPC_REG_CR4, 0xa},
+		{PPC_REG_CR4LT, true},
+		{PPC_REG_CR4GT, false},
+		{PPC_REG_CR4EQ, true},
+		{PPC_REG_CR4UN, false},
 	});
 
 	emulate("mcrf 2, 4");
 
-	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_CR4});
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_CR4LT, PPC_REG_CR4GT, PPC_REG_CR4EQ, PPC_REG_CR4UN});
 	EXPECT_JUST_REGISTERS_STORED({
-		{PPC_REG_CR2, ANY},
+		{PPC_REG_CR2LT, true},
+		{PPC_REG_CR2GT, false},
+		{PPC_REG_CR2EQ, true},
+		{PPC_REG_CR2UN, false},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_mcrf"), {0xa}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
-// PPC_INS_STHBRX
+// PPC_INS_STHBRX, PPC_INS_STWBRX, PPC_INS_STDBRX
 //
 
+// These were `translatePseudoAsmFncOp0Op1Op2`: the value and the two address
+// registers went into an opaque function and nothing was written. A store that
+// stores nothing is not an approximation of a store.
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STHBRX)
 {
 	ALL_MODES;
 
 	setRegisters({
-		{PPC_REG_R0, 0x12},
-		{PPC_REG_R4, 0x34},
-		{PPC_REG_R5, 0x56},
+		{PPC_REG_R0, 0x12ff},
+		{PPC_REG_R4, 0x1000},
+		{PPC_REG_R5, 0x120},
 	});
 
 	emulate("sthbrx 0, 4, 5");
 
 	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R4, PPC_REG_R5});
 	EXPECT_NO_REGISTERS_STORED();
-	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_sthbrx"), {0x12, 0x34, 0x56}},
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1120, 0xff12_w},
 	});
+	EXPECT_NO_VALUE_CALLED();
 }
-
-//
-// PPC_INS_STWBRX
-//
 
 TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STWBRX)
 {
 	ALL_MODES;
 
 	setRegisters({
-		{PPC_REG_R0, 0x12},
-		{PPC_REG_R4, 0x34},
-		{PPC_REG_R5, 0x56},
+		{PPC_REG_R0, 0x12345678},
+		{PPC_REG_R4, 0x1000},
+		{PPC_REG_R5, 0x120},
 	});
 
 	emulate("stwbrx 0, 4, 5");
 
 	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R4, PPC_REG_R5});
 	EXPECT_NO_REGISTERS_STORED();
-	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_stwbrx"), {0x12, 0x34, 0x56}},
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1120, 0x78563412_dw},
 	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STDBRX)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{PPC_REG_R0, 0x1122334455667788},
+		{PPC_REG_R4, 0x1000},
+		{PPC_REG_R5, 0x120},
+	});
+
+	emulate("stdbrx 0, 4, 5");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R4, PPC_REG_R5});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1120, 0x8877665544332211_qw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The store side of the rA = 0 form.
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STWBRX_ra_is_zero)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R0, 0x2000},
+		{PPC_REG_R3, 0x12345678},
+		{PPC_REG_R5, 0x1120},
+	});
+
+	emulate("stwbrx 3, 0, 5");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R3, PPC_REG_R5});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1120, 0x78563412_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// PPC_INS_LMW, PPC_INS_STMW
+//
+
+// The count is 32 - rS and is not encoded anywhere: `stmw 28, 8(1)` is four
+// stores, of r28, r29, r30 and r31, at 8, 12, 16 and 20 past r1. Each register
+// gets a distinct value, so a run written in the wrong order or starting from
+// the wrong register does not pass; EXPECT_JUST_MEMORY_STORED holds the ends
+// of the range, so a fifth store or a missing first one does not either.
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STMW)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+		{PPC_REG_R28, 0xaaaa1111},
+		{PPC_REG_R29, 0xbbbb2222},
+		{PPC_REG_R30, 0xcccc3333},
+		{PPC_REG_R31, 0xdddd4444},
+	});
+
+	emulate("stmw 28, 8(1)");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_R28, PPC_REG_R29, PPC_REG_R30, PPC_REG_R31});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1008, 0xaaaa1111_dw},
+		{0x100c, 0xbbbb2222_dw},
+		{0x1010, 0xcccc3333_dw},
+		{0x1014, 0xdddd4444_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// rS = r31 is one transfer. A fixed count, or one counting up from r0, is
+// thirty-two.
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STMW_one_register)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+		{PPC_REG_R31, 0xdddd4444},
+	});
+
+	emulate("stmw 31, 8(1)");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1, PPC_REG_R31});
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED();
+	EXPECT_JUST_MEMORY_STORED({
+		{0x1008, 0xdddd4444_dw},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_LMW)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{PPC_REG_R1, 0x1000},
+	});
+	setMemory({
+		{0x1008, 0xaaaa1111_dw},
+		{0x100c, 0xbbbb2222_dw},
+		{0x1010, 0xcccc3333_dw},
+		{0x1014, 0xdddd4444_dw},
+	});
+
+	emulate("lmw 28, 8(1)");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R1});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R28, 0xaaaa1111},
+		{PPC_REG_R29, 0xbbbb2222},
+		{PPC_REG_R30, 0xcccc3333},
+		{PPC_REG_R31, 0xdddd4444},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1008, 0x100c, 0x1010, 0x1014});
+	EXPECT_NO_MEMORY_STORED();
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -3821,9 +4234,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STB)
 	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1});
 	EXPECT_NO_REGISTERS_STORED();
 	EXPECT_NO_MEMORY_LOADED();
-	EXPECT_JUST_MEMORY_STORED({
-		{0x1120, 0x78_b}
-	});
+	EXPECT_JUST_MEMORY_STORED({{0x1120, 0x78_b}});
 	EXPECT_NO_VALUE_CALLED();
 }
 
@@ -3845,9 +4256,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STH)
 	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1});
 	EXPECT_NO_REGISTERS_STORED();
 	EXPECT_NO_MEMORY_LOADED();
-	EXPECT_JUST_MEMORY_STORED({
-		{0x1120, 0x5678_w}
-	});
+	EXPECT_JUST_MEMORY_STORED({{0x1120, 0x5678_w}});
 	EXPECT_NO_VALUE_CALLED();
 }
 
@@ -3869,9 +4278,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STW)
 	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1});
 	EXPECT_NO_REGISTERS_STORED();
 	EXPECT_NO_MEMORY_LOADED();
-	EXPECT_JUST_MEMORY_STORED({
-		{0x1120, 0x12345678_w}
-	});
+	EXPECT_JUST_MEMORY_STORED({{0x1120, 0x12345678_w}});
 	EXPECT_NO_VALUE_CALLED();
 }
 
@@ -3891,9 +4298,7 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_STBU)
 	emulate("stbu 0, 0x120, 1");
 
 	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R0, PPC_REG_R1});
-	EXPECT_JUST_REGISTERS_STORED({
-		{PPC_REG_R1, 0x1120}
-	});
+	EXPECT_JUST_REGISTERS_STORED({{PPC_REG_R1, 0x1120}});
 	EXPECT_NO_MEMORY_LOADED();
 	EXPECT_JUST_MEMORY_STORED({
 		{0x1120, 0x78_b}

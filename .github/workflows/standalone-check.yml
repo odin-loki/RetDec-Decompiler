@@ -250,7 +250,7 @@ jobs:
           bash scripts/ci/check_pseudo_asm.sh --self-test \
             --capstone-prefix "$PWD/.c2l-deps/capstone-install" \
             --corpus /tmp/ma-corpus --top 10 \
-            --arch-min "x86_64=1.0 arm=1.0 arm64=0.9999 mips=0.9999 powerpc=0.9993"
+            --arch-min "x86_64=1.0 arm=1.0 arm64=0.9999 mips=0.9999 powerpc=1.0"
 
   sanitizers:
     name: asan+ubsan
