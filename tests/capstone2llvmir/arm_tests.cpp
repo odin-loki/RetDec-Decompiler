@@ -1710,10 +1710,19 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_MVN_s_r_r)
 }
 
 //
-// ARM_INS_NOP
+// ARM_INS_HINT
+//
+// This test was called ARM_INS_NOP and asserted that `nop` came out as a call
+// to __asm_nop. Both halves of that were wrong and agreed with each other:
+// capstone decodes `nop` to ARM_INS_HINT, not ARM_INS_NOP, so the table's
+// translateNop entry was on a key capstone never produces and every hint took
+// the pseudo-asm path. The test recorded the behaviour it found rather than
+// the behaviour the instruction has, and 238 hints in the ARM corpus -- its
+// most frequent untranslated instruction, by a factor of three -- went out as
+// opaque calls.
 //
 
-TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_NOP)
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_HINT_nop_is_nothing)
 {
 	ALL_MODES;
 
@@ -1721,9 +1730,157 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_NOP)
 
 	EXPECT_NO_REGISTERS_STORED();
 	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_HINT_wfi_keeps_its_call)
+{
+	ALL_MODES;
+
+	// Not every hint is a no-op. WFI stops the core until an interrupt
+	// arrives, and dropping it because it shares an instruction id with NOP
+	// would delete an observable effect rather than an absence of one.
+	emulate("wfi");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_nop"), {}},
+		{_module.getFunction("__asm_wfi"), {}},
 	});
+}
+
+//
+// ARM_INS_IT
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_IT_is_a_no_op_of_its_own)
+{
+	ONLY_MODE_THUMB;
+
+	// The block header does nothing by itself: capstone puts the condition on
+	// each instruction inside the block and the dispatcher wraps those in it.
+	emulate("it eq");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM_INS_ADR
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ADR)
+{
+	ONLY_MODE_THUMB;
+
+	// At address 0 a Thumb instruction reads PC as 4, so `adr r0, #20` is 24.
+	// Capstone hands over the offset, not the resolved address, so a
+	// translation that stored the immediate would answer 20.
+	emulate("adr r0, #20");
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 24},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, thumb_reads_pc_as_address_plus_four_when_four_bytes_wide)
+{
+	ONLY_MODE_THUMB;
+
+	// `addw r0, pc, #20` is a 32-bit Thumb instruction, and Thumb reads PC as
+	// the instruction's address plus 4 whatever its width. getCurrentPc()
+	// computed address + 2*size, which is +4 for a 16-bit instruction and +8
+	// for this one, so this answered 28.
+	emulate("addw r0, pc, #20");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 24},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM_INS_VPUSH, ARM_INS_VPOP
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VPUSH_uses_eight_byte_slots_for_d_registers)
+{
+	ALL_MODES;
+
+	// The slot size is the register's, not the architecture's word. At four
+	// bytes apart -- which is what the integer PUSH/POP translator writes --
+	// d1 would land on top of the second half of d0 at 0x10f4 and the two
+	// stores would overlap.
+	setRegisters({
+		{ARM_REG_SP, 0x1100},
+		{ARM_REG_D0, 1.5_f64},
+		{ARM_REG_D1, 2.5_f64},
+	});
+
+	emulate("vpush {d0, d1}");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_SP, 0x10f0},
+	});
+	EXPECT_JUST_MEMORY_STORED({
+		{0x10f0, 1.5_f64},
+		{0x10f8, 2.5_f64},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VPOP_reads_upward_from_sp)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_SP, 0x1000},
+	});
+	setMemory({
+		{0x1000, 1.5_f64},
+		{0x1008, 2.5_f64},
+	});
+
+	emulate("vpop {d0, d1}");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, 1.5_f64},
+		{ARM_REG_D1, 2.5_f64},
+		{ARM_REG_SP, 0x1010},
+	});
+	EXPECT_JUST_MEMORY_LOADED({0x1000, 0x1008});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM_INS_ORN
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_ORN)
+{
+	ONLY_MODE_THUMB;
+
+	// 0x10000000 | ~0x0000000f is 0xfffffff0. `a | b` would be 0x1000000f
+	// and `~(a | b)` 0xefffffe0, so the operands are chosen to tell the three
+	// readings apart.
+	setRegisters({
+		{ARM_REG_R1, 0x10000000},
+		{ARM_REG_R2, 0x0000000f},
+	});
+
+	emulate("orn r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xfffffff0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -6351,6 +6508,45 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_VMOV_d_from_gpr_pair_is_low_fi
 	EXPECT_JUST_REGISTERS_STORED({
 		{ARM_REG_D0, expected},
 	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
+// ARM_INS_FCONSTD, ARM_INS_FCONSTS
+//
+// The VFP move-immediate. Capstone prints both as "vmov" but gives them ids of
+// their own, and neither id was a key in the dispatch table -- not `nullptr`,
+// absent -- which is why COV-01 reported `<id 52> NO ENTRY` instead of naming
+// an unimplemented instruction.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_FCONSTD_loads_the_immediate)
+{
+	ALL_MODES;
+
+	emulate("vmov.f64 d0, #2.5");
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_D0, 2.5_f64},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_FCONSTS_loads_the_immediate)
+{
+	ALL_MODES;
+
+	// Negative, because the VFP modified immediate has a sign bit and dropping
+	// it is the obvious way to get this wrong.
+	emulate("vmov.f32 s0, #-1.5");
+
+	EXPECT_NO_REGISTERS_LOADED();
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_S0, -1.5f},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
 	EXPECT_NO_VALUE_CALLED();
 }
 

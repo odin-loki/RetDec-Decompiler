@@ -30,7 +30,9 @@
 */
 
 #include <capstone/capstone.h>
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Value.h>
@@ -460,28 +462,22 @@ static Value* scalarFltBinOp(
 }
 
 /**
- * ADDPS — packed single-precision float add.
- * ADDSS — scalar single-precision float add (lane 0 only).
  * ADDSUBPS — alternating add/sub: even lanes subtract, odd lanes add.
  * HADDPS — horizontal add: dst[0]=src1[0]+src1[1], dst[1]=src1[2]+src1[3],
  *           dst[2]=src2[0]+src2[1], dst[3]=src2[2]+src2[3].
  * HSUBPS — horizontal sub.
+ *
+ * The plain lane-wise forms this used to also carry -- ADDPS and ADDSS -- are
+ * in translateSseFltArith with their SUB, MUL, DIV, PD and SD counterparts.
  */
-void Capstone2LlvmIrTranslatorX86_impl::translateSseAddPs(
-        cs_insn* i, cs_x86* xi, IRBuilder<>& irb) {
-    EXPECT_IS_BINARY(i, xi, irb);
+void Capstone2LlvmIrTranslatorX86_impl::translateSseHorizontal(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
     std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
 
-    if (i->id == X86_INS_ADDSS) {
-        storeOp(xi->operands[0],
-                scalarFltBinOp(op0, op1, false, Instruction::FAdd, irb),
-                irb, eOpConv::NOTHING);
-    } else if (i->id == X86_INS_ADDPS) {
-        storeOp(xi->operands[0],
-                packedFltBinOp(op0, op1, false, Instruction::FAdd, irb),
-                irb, eOpConv::NOTHING);
-    } else if (i->id == X86_INS_ADDSUBPS) {
-        // Even lanes: subtract; odd lanes: add.
+	if (i->id == X86_INS_ADDSUBPS)
+	{
+		// Even lanes: subtract; odd lanes: add.
         auto* vec4f = vecType(irb.getFloatTy(), 4);
         Value* v0 = irb.CreateBitCast(toI128(op0, irb), vec4f);
         Value* v1 = irb.CreateBitCast(toI128(op1, irb), vec4f);
@@ -492,8 +488,10 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseAddPs(
         Value* blended = irb.CreateShuffleVector(subs, adds, mask);
         storeOp(xi->operands[0], irb.CreateBitCast(blended, irb.getInt128Ty()),
                 irb, eOpConv::NOTHING);
-    } else if (i->id == X86_INS_HADDPS) {
-        auto* vec4f = vecType(irb.getFloatTy(), 4);
+	}
+	else if (i->id == X86_INS_HADDPS)
+	{
+		auto* vec4f = vecType(irb.getFloatTy(), 4);
         Value* v0 = irb.CreateBitCast(toI128(op0, irb), vec4f);
         Value* v1 = irb.CreateBitCast(toI128(op1, irb), vec4f);
         Value* e00 = irb.CreateExtractElement(v0, (uint64_t)0);
@@ -511,8 +509,10 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseAddPs(
         res = irb.CreateInsertElement(res, irb.CreateFAdd(e12, e13), (uint64_t)3);
         storeOp(xi->operands[0], irb.CreateBitCast(res, irb.getInt128Ty()),
                 irb, eOpConv::NOTHING);
-    } else if (i->id == X86_INS_HSUBPS) {
-        auto* vec4f = vecType(irb.getFloatTy(), 4);
+	}
+	else if (i->id == X86_INS_HSUBPS)
+	{
+		auto* vec4f = vecType(irb.getFloatTy(), 4);
         Value* v0 = irb.CreateBitCast(toI128(op0, irb), vec4f);
         Value* v1 = irb.CreateBitCast(toI128(op1, irb), vec4f);
         Value* e00 = irb.CreateExtractElement(v0, (uint64_t)0);
@@ -530,37 +530,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseAddPs(
         res = irb.CreateInsertElement(res, irb.CreateFSub(e12, e13), (uint64_t)3);
         storeOp(xi->operands[0], irb.CreateBitCast(res, irb.getInt128Ty()),
                 irb, eOpConv::NOTHING);
-    }
-}
-
-/**
- * MULPS — packed float multiply.
- * MULSS — scalar float multiply (lane 0).
- */
-void Capstone2LlvmIrTranslatorX86_impl::translateSseMulPs(
-        cs_insn* i, cs_x86* xi, IRBuilder<>& irb) {
-    EXPECT_IS_BINARY(i, xi, irb);
-    std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
-    bool scalar = (i->id == X86_INS_MULSS);
-    auto fn = scalar
-        ? scalarFltBinOp(op0, op1, false, Instruction::FMul, irb)
-        : packedFltBinOp(op0, op1, false, Instruction::FMul, irb);
-    storeOp(xi->operands[0], fn, irb, eOpConv::NOTHING);
-}
-
-/**
- * DIVPS — packed float divide.
- * DIVSS — scalar float divide (lane 0).
- */
-void Capstone2LlvmIrTranslatorX86_impl::translateSseDivPs(
-        cs_insn* i, cs_x86* xi, IRBuilder<>& irb) {
-    EXPECT_IS_BINARY(i, xi, irb);
-    std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
-    bool scalar = (i->id == X86_INS_DIVSS);
-    auto fn = scalar
-        ? scalarFltBinOp(op0, op1, false, Instruction::FDiv, irb)
-        : packedFltBinOp(op0, op1, false, Instruction::FDiv, irb);
-    storeOp(xi->operands[0], fn, irb, eOpConv::NOTHING);
+	}
 }
 
 //===========================================================================
@@ -586,6 +556,15 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCvtSi2Ss(
 
 /**
  * CVTSS2SI — float32 lane 0 → int32/64.
+ *
+ * This ROUNDS, to nearest-even under the default MXCSR; the truncating form is
+ * CVTTSS2SI, and it is a separate instruction for a reason. The comment here
+ * used to say "round toward nearest (C default); use FPToSI (truncation)",
+ * which is two statements that contradict each other: FPToSI truncates, so
+ * `cvtss2si eax, xmm0` on 2.7 answered 2 where the hardware answers 3.
+ *
+ * The destination width is the operand's, not the address size's:
+ * `cvtss2si eax, xmm0` is a 32-bit conversion inside a 64-bit program.
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateCvtSs2Si(
         cs_insn* i, cs_x86* xi, IRBuilder<>& irb) {
@@ -594,9 +573,9 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCvtSs2Si(
     auto* vec4f = vecType(irb.getFloatTy(), 4);
     Value* v = irb.CreateBitCast(toI128(src, irb), vec4f);
     Value* lane0 = irb.CreateExtractElement(v, (uint64_t)0);
-    // Round toward nearest (C default); use FPToSI (truncation).
-    unsigned destBits = _basicMode == CS_MODE_64 ? 64 : 32;
-    Value* intVal = irb.CreateFPToSI(lane0, irb.getIntNTy(destBits));
+	lane0 = irb.CreateUnaryIntrinsic(Intrinsic::roundeven, lane0);
+	unsigned destBits = xi->operands[0].size ? xi->operands[0].size * 8 : 32;
+	Value* intVal = irb.CreateFPToSI(lane0, irb.getIntNTy(destBits));
     // ZEXT_TRUNC_OR_BITCAST: the destination GPR alloca may be wider
     // (e.g. i64) than intVal (i32), which would crash StoreInst::AssertOK.
     storeOp(xi->operands[0], intVal, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
@@ -618,7 +597,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCvtSi2Sd(
 }
 
 /**
- * CVTSD2SI — float64 lane 0 → int32/64.
+ * CVTSD2SI — float64 lane 0 → int32/64, rounding; see translateCvtSs2Si.
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateCvtSd2Si(
         cs_insn* i, cs_x86* xi, IRBuilder<>& irb) {
@@ -627,8 +606,9 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCvtSd2Si(
     auto* vec2d = vecType(irb.getDoubleTy(), 2);
     Value* v = irb.CreateBitCast(toI128(src, irb), vec2d);
     Value* lane0 = irb.CreateExtractElement(v, (uint64_t)0);
-    unsigned destBits = _basicMode == CS_MODE_64 ? 64 : 32;
-    Value* intVal = irb.CreateFPToSI(lane0, irb.getIntNTy(destBits));
+	lane0 = irb.CreateUnaryIntrinsic(Intrinsic::roundeven, lane0);
+	unsigned destBits = xi->operands[0].size ? xi->operands[0].size * 8 : 32;
+	Value* intVal = irb.CreateFPToSI(lane0, irb.getIntNTy(destBits));
     // ZEXT_TRUNC_OR_BITCAST: same fix as translateCvtSs2Si — GPR alloca
     // may be i64 while intVal is i32.
     storeOp(xi->operands[0], intVal, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
@@ -650,7 +630,11 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCvtDq2Ps(
 }
 
 /**
- * CVTPS2DQ — packed float32 → packed int32 (truncation).
+ * CVTPS2DQ — packed float32 → packed int32, rounding to nearest-even.
+ * CVTTPS2DQ — the same, truncating toward zero.
+ *
+ * The extra T is the only difference between them and it was not being read:
+ * this rounded nothing and CVTTPS2DQ was not in the table at all.
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateCvtPs2Dq(
         cs_insn* i, cs_x86* xi, IRBuilder<>& irb) {
@@ -659,9 +643,596 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCvtPs2Dq(
     auto* vec4f = vecType(irb.getFloatTy(), 4);
     auto* vec4i = vecType(irb.getInt32Ty(), 4);
     Value* v   = irb.CreateBitCast(toI128(src, irb), vec4f);
-    Value* res = irb.CreateFPToSI(v, vec4i);
+	if (i->id != X86_INS_CVTTPS2DQ)
+	{
+		v = irb.CreateUnaryIntrinsic(Intrinsic::roundeven, v);
+	}
+	Value* res = irb.CreateFPToSI(v, vec4i);
     storeOp(xi->operands[0], irb.CreateBitCast(res, irb.getInt128Ty()),
             irb, eOpConv::NOTHING);
+}
+
+//===========================================================================
+// SSE2 double precision, and the single-precision forms left out with it
+//===========================================================================
+//
+// Everything below this line was `nullptr` in x86_init.cpp, and what that adds
+// up to is that x86-64 -- the architecture every other one in this repository
+// is measured against -- could not translate `double` arithmetic. The System V
+// ABI passes and returns a double in an XMM register and gcc compiles `a + b`
+// on doubles to ADDSD, so a floating-point program decompiled to a wall of
+// `__asm_movsd` and `__asm_addsd` calls. Counted over the six floating-point
+// programs in tests/algorithm_recovery/sources/generated, MOVSD alone is the
+// second most frequent instruction in the whole text section, behind MOV.
+//
+// The machinery was already here: scalarFltBinOp and packedFltBinOp both take
+// an `isDouble` flag and neither had a caller that passed true.
+
+/// Does this operand name an XMM register?
+static bool isXmmOp(const cs_x86_op& op)
+{
+	return op.type == X86_OP_REG && op.reg >= X86_REG_XMM0 && op.reg <= X86_REG_XMM31;
+}
+
+namespace {
+/// Which of the four PS/SS/PD/SD shapes an instruction has.
+struct FltForm
+{
+	bool isDouble;
+	bool isScalar;
+};
+} // anonymous namespace
+
+/**
+ * The element type and lane count are in the mnemonic and nowhere else: PS is
+ * four floats, PD two doubles, SS and SD the low lane of each. Spelled out per
+ * id rather than derived from a suffix, because getting one of these wrong is
+ * a silent miscompilation -- treating ADDSD as ADDPD adds a second lane that
+ * the program never asked to be added.
+ */
+static bool fltForm(unsigned id, FltForm& out)
+{
+	switch (id)
+	{
+	case X86_INS_ADDPS:
+	case X86_INS_SUBPS:
+	case X86_INS_MULPS:
+	case X86_INS_DIVPS:
+	case X86_INS_MAXPS:
+	case X86_INS_MINPS:
+	case X86_INS_SQRTPS: out = {false, false}; return true;
+	case X86_INS_ADDSS:
+	case X86_INS_SUBSS:
+	case X86_INS_MULSS:
+	case X86_INS_DIVSS:
+	case X86_INS_MAXSS:
+	case X86_INS_MINSS:
+	case X86_INS_SQRTSS: out = {false, true}; return true;
+	case X86_INS_ADDPD:
+	case X86_INS_SUBPD:
+	case X86_INS_MULPD:
+	case X86_INS_DIVPD:
+	case X86_INS_MAXPD:
+	case X86_INS_MINPD:
+	case X86_INS_SQRTPD: out = {true, false}; return true;
+	case X86_INS_ADDSD:
+	case X86_INS_SUBSD:
+	case X86_INS_MULSD:
+	case X86_INS_DIVSD:
+	case X86_INS_MAXSD:
+	case X86_INS_MINSD:
+	case X86_INS_SQRTSD: out = {true, true}; return true;
+	default: return false;
+	}
+}
+
+/**
+ * ADDPS/ADDSS/ADDPD/ADDSD, SUBPS/SUBSS/SUBPD/SUBSD,
+ * MULPS/MULSS/MULPD/MULSD, DIVPS/DIVSS/DIVPD/DIVSD.
+ *
+ * The scalar forms leave the upper lanes of the destination alone; that is
+ * what scalarFltBinOp's insertelement is for, and it is the whole difference
+ * between ADDSD and ADDPD.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSseFltArith(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	FltForm f;
+	if (!fltForm(i->id, f))
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned opcode;
+	switch (i->id)
+	{
+	case X86_INS_ADDPS:
+	case X86_INS_ADDSS:
+	case X86_INS_ADDPD:
+	case X86_INS_ADDSD: opcode = Instruction::FAdd; break;
+	case X86_INS_SUBPS:
+	case X86_INS_SUBSS:
+	case X86_INS_SUBPD:
+	case X86_INS_SUBSD: opcode = Instruction::FSub; break;
+	case X86_INS_MULPS:
+	case X86_INS_MULSS:
+	case X86_INS_MULPD:
+	case X86_INS_MULSD: opcode = Instruction::FMul; break;
+	case X86_INS_DIVPS:
+	case X86_INS_DIVSS:
+	case X86_INS_DIVPD:
+	case X86_INS_DIVSD: opcode = Instruction::FDiv; break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	Value* res = f.isScalar ? scalarFltBinOp(op0, op1, f.isDouble, opcode, irb)
+							: packedFltBinOp(op0, op1, f.isDouble, opcode, irb);
+	storeOp(xi->operands[0], res, irb, eOpConv::NOTHING);
+}
+
+/**
+ * MAXPS/MAXSS/MAXPD/MAXSD, MINPS/MINSS/MINPD/MINSD.
+ *
+ * Not llvm.maxnum. x86's MAXSD is defined as `dst > src ? dst : src`, which
+ * returns the SECOND operand whenever either is a NaN and whenever both are
+ * zeros of opposite sign -- the opposite of what llvm.maxnum does with a NaN.
+ * The select spells the architecture's definition directly.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSseFltMinMax(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	FltForm f;
+	if (!fltForm(i->id, f))
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+	bool isMax = i->id == X86_INS_MAXPS || i->id == X86_INS_MAXSS || i->id == X86_INS_MAXPD || i->id == X86_INS_MAXSD;
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+
+	Type* elemTy = f.isDouble ? irb.getDoubleTy() : irb.getFloatTy();
+	unsigned n = f.isDouble ? 2 : 4;
+	auto* vecTy = FixedVectorType::get(elemTy, n);
+	Value* vDst = irb.CreateBitCast(toI128(op0, irb), vecTy);
+	Value* vSrc = irb.CreateBitCast(toI128(op1, irb), vecTy);
+
+	if (f.isScalar)
+	{
+		Value* a = irb.CreateExtractElement(vDst, (uint64_t)0);
+		Value* b = irb.CreateExtractElement(vSrc, (uint64_t)0);
+		Value* c = isMax ? irb.CreateFCmpOGT(a, b) : irb.CreateFCmpOLT(a, b);
+		Value* r = irb.CreateSelect(c, a, b);
+		storeOp(
+			xi->operands[0],
+			irb.CreateBitCast(irb.CreateInsertElement(vDst, r, (uint64_t)0), irb.getInt128Ty()),
+			irb,
+			eOpConv::NOTHING);
+		return;
+	}
+
+	Value* res = UndefValue::get(vecTy);
+	for (unsigned lane = 0; lane < n; ++lane)
+	{
+		Value* a = irb.CreateExtractElement(vDst, (uint64_t)lane);
+		Value* b = irb.CreateExtractElement(vSrc, (uint64_t)lane);
+		Value* c = isMax ? irb.CreateFCmpOGT(a, b) : irb.CreateFCmpOLT(a, b);
+		res = irb.CreateInsertElement(res, irb.CreateSelect(c, a, b), (uint64_t)lane);
+	}
+	storeOp(xi->operands[0], irb.CreateBitCast(res, irb.getInt128Ty()), irb, eOpConv::NOTHING);
+}
+
+/**
+ * SQRTPS/SQRTSS/SQRTPD/SQRTSD.
+ *
+ * The scalar forms take the square root of the SOURCE's low lane and keep the
+ * DESTINATION's upper lanes, which is not the shape any of the arithmetic
+ * above has and is easy to write as sqrt-in-place by mistake.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSseSqrt(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	FltForm f;
+	if (!fltForm(i->id, f))
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+
+	Type* elemTy = f.isDouble ? irb.getDoubleTy() : irb.getFloatTy();
+	unsigned n = f.isDouble ? 2 : 4;
+	auto* vecTy = FixedVectorType::get(elemTy, n);
+	Value* vSrc = irb.CreateBitCast(toI128(op1, irb), vecTy);
+
+	auto sqrtOf = [&](Value* v) { return irb.CreateUnaryIntrinsic(Intrinsic::sqrt, v); };
+
+	if (f.isScalar)
+	{
+		Value* vDst = irb.CreateBitCast(toI128(op0, irb), vecTy);
+		Value* r = sqrtOf(irb.CreateExtractElement(vSrc, (uint64_t)0));
+		storeOp(
+			xi->operands[0],
+			irb.CreateBitCast(irb.CreateInsertElement(vDst, r, (uint64_t)0), irb.getInt128Ty()),
+			irb,
+			eOpConv::NOTHING);
+		return;
+	}
+
+	Value* res = UndefValue::get(vecTy);
+	for (unsigned lane = 0; lane < n; ++lane)
+	{
+		res = irb.CreateInsertElement(res, sqrtOf(irb.CreateExtractElement(vSrc, (uint64_t)lane)), (uint64_t)lane);
+	}
+	storeOp(xi->operands[0], irb.CreateBitCast(res, irb.getInt128Ty()), irb, eOpConv::NOTHING);
+}
+
+/**
+ * UCOMISS, UCOMISD, COMISS, COMISD — compare the low lanes and write EFLAGS.
+ *
+ * The architecture's table is
+ *
+ *     unordered  ZF=1 PF=1 CF=1
+ *     less       ZF=0 PF=0 CF=1
+ *     equal      ZF=1 PF=0 CF=0
+ *     greater    ZF=0 PF=0 CF=0
+ *
+ * which is three unordered-inclusive comparisons and no branching at all:
+ * ZF is `unordered or equal`, CF is `unordered or less`, PF is `unordered`.
+ * OF, AF and SF are cleared.
+ *
+ * COMIS* differs from UCOMIS* only in which NaNs raise an exception, and this
+ * lifter has no floating-point exception state to raise into, so the two are
+ * the same translation.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSseComi(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	bool isDouble = i->id == X86_INS_UCOMISD || i->id == X86_INS_COMISD;
+	Type* elemTy = isDouble ? irb.getDoubleTy() : irb.getFloatTy();
+	unsigned n = isDouble ? 2 : 4;
+	auto* vecTy = FixedVectorType::get(elemTy, n);
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	Value* a = irb.CreateExtractElement(irb.CreateBitCast(toI128(op0, irb), vecTy), (uint64_t)0);
+	Value* b = irb.CreateExtractElement(irb.CreateBitCast(toI128(op1, irb), vecTy), (uint64_t)0);
+
+	storeRegister(X86_REG_ZF, irb.CreateFCmpUEQ(a, b), irb);
+	storeRegister(X86_REG_PF, irb.CreateFCmpUNO(a, b), irb);
+	storeRegister(X86_REG_CF, irb.CreateFCmpULT(a, b), irb);
+	storeRegister(X86_REG_OF, irb.getFalse(), irb);
+	storeRegister(X86_REG_AF, irb.getFalse(), irb);
+	storeRegister(X86_REG_SF, irb.getFalse(), irb);
+}
+
+/**
+ * ANDPS/ANDPD, ANDNPS/ANDNPD, ORPS/ORPD, XORPS/XORPD.
+ *
+ * Bitwise on the whole 128 bits; the PS/PD distinction carries no information
+ * at all here. They are in every floating-point binary because they are how a
+ * compiler writes negation and absolute value: `xorpd xmm0, [sign mask]` and
+ * `andpd xmm0, [magnitude mask]`.
+ *
+ * ANDN is `(~dst) & src`, complementing the DESTINATION -- the reverse of the
+ * argument order the mnemonic suggests.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSseFltLogic(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	Value* a = toI128(op0, irb);
+	Value* b = toI128(op1, irb);
+
+	Value* res = nullptr;
+	switch (i->id)
+	{
+	case X86_INS_ANDPS:
+	case X86_INS_ANDPD: res = irb.CreateAnd(a, b); break;
+	case X86_INS_ANDNPS:
+	case X86_INS_ANDNPD: res = irb.CreateAnd(irb.CreateNot(a), b); break;
+	case X86_INS_ORPS:
+	case X86_INS_ORPD: res = irb.CreateOr(a, b); break;
+	case X86_INS_XORPS:
+	case X86_INS_XORPD: res = irb.CreateXor(a, b); break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+	storeOp(xi->operands[0], res, irb, eOpConv::NOTHING);
+}
+
+/**
+ * MOVSS, and the SSE form of MOVSD.
+ *
+ * Capstone gives `movsd xmm0, qword ptr [rdi]` and the string instruction
+ * `movsd` the same id, X86_INS_MOVSD, and this table entry used to point at
+ * translateMoveString, which rejects anything whose operands are not both
+ * memory -- so the most common instruction in x86-64 floating-point code came
+ * out as a pseudo-asm call. The two are told apart here by whether an operand
+ * names an XMM register, which is the only thing that distinguishes them.
+ *
+ * Three forms, and the difference between the first two is the whole reason
+ * this cannot be translateSseMovWhole:
+ *
+ *     movsd xmm1, xmm2   low lane from xmm2, upper lanes of xmm1 PRESERVED
+ *     movsd xmm1, m64    low lane from memory, upper lanes ZEROED
+ *     movsd m64, xmm1    low lane to memory
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSseMovScalar(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	if (i->id == X86_INS_MOVSD && !isXmmOp(xi->operands[0]) && !isXmmOp(xi->operands[1]))
+	{
+		translateMoveString(i, xi, irb);
+		return;
+	}
+
+	unsigned bits = (i->id == X86_INS_MOVSD) ? 64 : 32;
+	auto* laneTy = irb.getIntNTy(bits);
+
+	// Destination is memory: write the low lane and nothing else.
+	if (xi->operands[0].type == X86_OP_MEM)
+	{
+		Value* src = loadOp(xi->operands[1], irb);
+		storeOp(xi->operands[0], irb.CreateTrunc(toI128(src, irb), laneTy), irb, eOpConv::NOTHING);
+		return;
+	}
+
+	Value* src = loadOp(xi->operands[1], irb);
+	Value* lane = irb.CreateZExt(irb.CreateTrunc(toI128(src, irb), laneTy), irb.getInt128Ty());
+
+	if (xi->operands[1].type == X86_OP_MEM)
+	{
+		// Loading from memory zeroes the rest of the register.
+		storeOp(xi->operands[0], lane, irb, eOpConv::NOTHING);
+		return;
+	}
+
+	// Register to register: keep everything above the low lane.
+	Value* dst = toI128(loadOp(xi->operands[0], irb), irb);
+	Value* keep = irb.CreateAnd(dst, ConstantInt::get(irb.getInt128Ty(), APInt::getHighBitsSet(128, 128 - bits)));
+	storeOp(xi->operands[0], irb.CreateOr(keep, lane), irb, eOpConv::NOTHING);
+}
+
+/**
+ * MOVLPS/MOVLPD — move the low 64 bits, keeping the high 64.
+ * MOVHPS/MOVHPD — move the high 64 bits, keeping the low 64.
+ *
+ * Both halves matter in both directions, so neither is a whole-register move
+ * and neither is translateSseMovScalar's zeroing memory form.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSseMovHalf(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	bool high = i->id == X86_INS_MOVHPS || i->id == X86_INS_MOVHPD;
+	auto* i128 = irb.getInt128Ty();
+	auto* i64t = irb.getInt64Ty();
+
+	if (xi->operands[0].type == X86_OP_MEM)
+	{
+		Value* src = toI128(loadOp(xi->operands[1], irb), irb);
+		if (high)
+		{
+			src = irb.CreateLShr(src, ConstantInt::get(i128, 64));
+		}
+		storeOp(xi->operands[0], irb.CreateTrunc(src, i64t), irb, eOpConv::NOTHING);
+		return;
+	}
+
+	Value* dst = toI128(loadOp(xi->operands[0], irb), irb);
+	Value* src = irb.CreateZExt(irb.CreateTrunc(toI128(loadOp(xi->operands[1], irb), irb), i64t), i128);
+	if (high)
+	{
+		src = irb.CreateShl(src, ConstantInt::get(i128, 64));
+	}
+	Value* keep = irb.CreateAnd(
+		dst, ConstantInt::get(i128, high ? APInt::getLowBitsSet(128, 64) : APInt::getHighBitsSet(128, 64)));
+	storeOp(xi->operands[0], irb.CreateOr(keep, src), irb, eOpConv::NOTHING);
+}
+
+/**
+ * CVTSS2SD, CVTSD2SS — widen or narrow the low lane, keeping the rest.
+ * CVTPS2PD — the low two floats become two doubles.
+ * CVTPD2PS — two doubles become the low two floats, the upper two zeroed.
+ * CVTDQ2PD — the low two int32s become two doubles.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSseCvtFlt(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	auto* i128 = irb.getInt128Ty();
+	auto* vec4f = vecType(irb.getFloatTy(), 4);
+	auto* vec2d = vecType(irb.getDoubleTy(), 2);
+	auto* vec4i = vecType(irb.getInt32Ty(), 4);
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	Value* src = toI128(op1, irb);
+
+	switch (i->id)
+	{
+	case X86_INS_CVTSS2SD: {
+		Value* lane = irb.CreateExtractElement(irb.CreateBitCast(src, vec4f), (uint64_t)0);
+		Value* wide = irb.CreateFPExt(lane, irb.getDoubleTy());
+		Value* dst = irb.CreateBitCast(toI128(op0, irb), vec2d);
+		storeOp(
+			xi->operands[0],
+			irb.CreateBitCast(irb.CreateInsertElement(dst, wide, (uint64_t)0), i128),
+			irb,
+			eOpConv::NOTHING);
+		return;
+	}
+	case X86_INS_CVTSD2SS: {
+		Value* lane = irb.CreateExtractElement(irb.CreateBitCast(src, vec2d), (uint64_t)0);
+		Value* narrow = irb.CreateFPTrunc(lane, irb.getFloatTy());
+		Value* dst = irb.CreateBitCast(toI128(op0, irb), vec4f);
+		storeOp(
+			xi->operands[0],
+			irb.CreateBitCast(irb.CreateInsertElement(dst, narrow, (uint64_t)0), i128),
+			irb,
+			eOpConv::NOTHING);
+		return;
+	}
+	case X86_INS_CVTPS2PD: {
+		Value* v = irb.CreateBitCast(src, vec4f);
+		Value* res = UndefValue::get(vec2d);
+		for (unsigned lane = 0; lane < 2; ++lane)
+		{
+			res = irb.CreateInsertElement(
+				res, irb.CreateFPExt(irb.CreateExtractElement(v, (uint64_t)lane), irb.getDoubleTy()), (uint64_t)lane);
+		}
+		storeOp(xi->operands[0], irb.CreateBitCast(res, i128), irb, eOpConv::NOTHING);
+		return;
+	}
+	case X86_INS_CVTPD2PS: {
+		Value* v = irb.CreateBitCast(src, vec2d);
+		Value* res = ConstantAggregateZero::get(vec4f);
+		for (unsigned lane = 0; lane < 2; ++lane)
+		{
+			res = irb.CreateInsertElement(
+				res, irb.CreateFPTrunc(irb.CreateExtractElement(v, (uint64_t)lane), irb.getFloatTy()), (uint64_t)lane);
+		}
+		storeOp(xi->operands[0], irb.CreateBitCast(res, i128), irb, eOpConv::NOTHING);
+		return;
+	}
+	case X86_INS_CVTDQ2PD: {
+		Value* v = irb.CreateBitCast(src, vec4i);
+		Value* res = UndefValue::get(vec2d);
+		for (unsigned lane = 0; lane < 2; ++lane)
+		{
+			res = irb.CreateInsertElement(
+				res, irb.CreateSIToFP(irb.CreateExtractElement(v, (uint64_t)lane), irb.getDoubleTy()), (uint64_t)lane);
+		}
+		storeOp(xi->operands[0], irb.CreateBitCast(res, i128), irb, eOpConv::NOTHING);
+		return;
+	}
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+}
+
+/**
+ * CVTTSS2SI, CVTTSD2SI — low lane to integer, truncating toward zero.
+ *
+ * The rounding one is CVTSS2SI/CVTSD2SI above; this is the pair a C cast from
+ * double to int compiles to, and gcc emits CVTTSD2SI nine times in the six
+ * floating-point corpus programs.
+ *
+ * The destination width comes from the operand, not from the address size:
+ * `cvttsd2si eax, xmm0` is a 32-bit conversion in a 64-bit program.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateCvtTt2Si(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	bool isDouble = i->id == X86_INS_CVTTSD2SI;
+	auto* vecTy = isDouble ? vecType(irb.getDoubleTy(), 2) : vecType(irb.getFloatTy(), 4);
+	Value* src = toI128(loadOp(xi->operands[1], irb), irb);
+	Value* lane = irb.CreateExtractElement(irb.CreateBitCast(src, vecTy), (uint64_t)0);
+
+	unsigned destBits = xi->operands[0].size ? xi->operands[0].size * 8 : 32;
+	storeOp(xi->operands[0], irb.CreateFPToSI(lane, irb.getIntNTy(destBits)), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * UNPCKLPS/UNPCKHPS, UNPCKLPD/UNPCKHPD — interleave lanes from the two halves.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSseUnpck(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	bool isDouble = i->id == X86_INS_UNPCKLPD || i->id == X86_INS_UNPCKHPD;
+	bool high = i->id == X86_INS_UNPCKHPS || i->id == X86_INS_UNPCKHPD;
+	Type* elemTy = isDouble ? irb.getDoubleTy() : irb.getFloatTy();
+	unsigned n = isDouble ? 2 : 4;
+	auto* vecTy = FixedVectorType::get(elemTy, n);
+
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	Value* a = irb.CreateBitCast(toI128(op0, irb), vecTy);
+	Value* b = irb.CreateBitCast(toI128(op1, irb), vecTy);
+
+	std::vector<int> mask;
+	unsigned base = high ? n / 2 : 0;
+	for (unsigned k = 0; k < n / 2; ++k)
+	{
+		mask.push_back(static_cast<int>(base + k));
+		mask.push_back(static_cast<int>(n + base + k));
+	}
+	storeOp(
+		xi->operands[0],
+		irb.CreateBitCast(irb.CreateShuffleVector(a, b, mask), irb.getInt128Ty()),
+		irb,
+		eOpConv::NOTHING);
+}
+
+/**
+ * SHUFPS, SHUFPD — the low half of the result is picked out of the
+ * destination, the high half out of the source, both by the immediate.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSseShufp(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, xi, irb);
+
+	bool isDouble = i->id == X86_INS_SHUFPD;
+	Type* elemTy = isDouble ? irb.getDoubleTy() : irb.getFloatTy();
+	unsigned n = isDouble ? 2 : 4;
+	auto* vecTy = FixedVectorType::get(elemTy, n);
+
+	Value* a = irb.CreateBitCast(toI128(loadOp(xi->operands[0], irb), irb), vecTy);
+	Value* b = irb.CreateBitCast(toI128(loadOp(xi->operands[1], irb), irb), vecTy);
+	auto ctrl = static_cast<uint8_t>(xi->operands[2].imm);
+
+	std::vector<int> mask;
+	if (isDouble)
+	{
+		mask = {static_cast<int>(ctrl & 1), static_cast<int>(2 + ((ctrl >> 1) & 1))};
+	}
+	else
+	{
+		mask = {
+			static_cast<int>(ctrl & 3),
+			static_cast<int>((ctrl >> 2) & 3),
+			static_cast<int>(4 + ((ctrl >> 4) & 3)),
+			static_cast<int>(4 + ((ctrl >> 6) & 3))};
+	}
+	storeOp(
+		xi->operands[0],
+		irb.CreateBitCast(irb.CreateShuffleVector(a, b, mask), irb.getInt128Ty()),
+		irb,
+		eOpConv::NOTHING);
+}
+
+/**
+ * MOVMSKPS, MOVMSKPD — gather the lanes' sign bits into a GPR.
+ *
+ * Built out of extractelement and shifts rather than `bitcast <4 x i1> to i4`
+ * so that it stays within what tests/llvmir-emul can execute.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSseMovMsk(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+
+	bool isDouble = i->id == X86_INS_MOVMSKPD;
+	unsigned n = isDouble ? 2 : 4;
+	unsigned laneBits = isDouble ? 64 : 32;
+	auto* vecTy = FixedVectorType::get(irb.getIntNTy(laneBits), n);
+
+	Value* v = irb.CreateBitCast(toI128(loadOp(xi->operands[1], irb), irb), vecTy);
+	auto* i32t = irb.getInt32Ty();
+	Value* res = ConstantInt::get(i32t, 0);
+	for (unsigned lane = 0; lane < n; ++lane)
+	{
+		Value* e = irb.CreateExtractElement(v, (uint64_t)lane);
+		Value* bit = irb.CreateZExt(
+			irb.CreateTrunc(irb.CreateLShr(e, ConstantInt::get(e->getType(), laneBits - 1)), irb.getInt1Ty()), i32t);
+		res = irb.CreateOr(res, irb.CreateShl(bit, ConstantInt::get(i32t, lane)));
+	}
+	storeOp(xi->operands[0], res, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 }
 
 } // namespace capstone2llvmir

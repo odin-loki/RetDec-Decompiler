@@ -159,11 +159,21 @@ void Capstone2LlvmIrTranslatorArm_impl::translateInstruction(
  * =>
  * PC = current + 4 = current + 2*2 = current + 2*insn_size
  */
+/**
+ * The value an instruction reads out of PC.
+ *
+ * ARM reads the instruction's address plus 8. Thumb reads it plus 4 -- and
+ * plus 4 whether the instruction is 16 or 32 bits wide, which is the part the
+ * expression here used to get wrong. It was `address + 2*size`, which is
+ * address+8 in ARM and address+4 for a 16-bit Thumb instruction, and so looked
+ * right in both of the cases anything tested; a 32-bit Thumb instruction has
+ * size 4 and got address+8, four bytes past where the architecture says PC is.
+ * Thumb-2 literal loads and ADR both read it.
+ */
 llvm::Value* Capstone2LlvmIrTranslatorArm_impl::getCurrentPc(cs_insn* i)
 {
-	return llvm::ConstantInt::get(
-			getDefaultType(),
-			((i->address + (2*i->size)) >> 2) << 2);
+	uint64_t pc = _basicMode == CS_MODE_THUMB ? i->address + 4 : i->address + 8;
+	return llvm::ConstantInt::get(getDefaultType(), (pc >> 2) << 2);
 }
 
 llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadRegister(
@@ -1690,6 +1700,129 @@ void Capstone2LlvmIrTranslatorArm_impl::translateMul(cs_insn* i, cs_arm* ai, llv
 void Capstone2LlvmIrTranslatorArm_impl::translateNop(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
 {
 	// nothing
+}
+
+/**
+ * ARM_INS_HINT
+ *
+ * Capstone decodes the whole hint space -- NOP, YIELD, WFE, WFI, SEV, SEVL,
+ * DBG and the pointer-authentication and branch-target hints -- to this one
+ * id, and gives it no operand. ARM_INS_NOP exists too but capstone does not
+ * produce it for these encodings, so `translateNop` sat wired to a key that
+ * never arrived while HINT went to the pseudo-asm path: 238 occurrences in
+ * the 42-binary ARM corpus, its single most frequent untranslated
+ * instruction by a factor of three.
+ *
+ * Most of the space is a no-op and is translated as one. WFI, WFE, SEV, SEVL
+ * and DBG are not -- they wait on or signal an external event -- and keep the
+ * pseudo-asm call rather than being silently dropped. The mnemonic is the only
+ * thing that separates them, because the operand capstone would carry the
+ * hint number in is absent.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateHint(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	std::string m(i->mnemonic);
+	if (m == "wfi" || m == "wfe" || m == "sev" || m == "sevl" || m == "dbg")
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	// A no-op: nop, yield, esb, csdb, bti, pac* and the rest of the space.
+}
+
+/**
+ * ARM_INS_ADR
+ *
+ * `adr rN, label` is PC plus an immediate -- how a compiler names an address
+ * in its own function without going through a literal pool. Capstone reports
+ * the offset rather than the resolved address, so the translation is the PC
+ * value the architecture defines plus that offset, and getCurrentPc above is
+ * what makes the Thumb case right.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateAdr(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, ai, irb);
+
+	if (ai->operands[1].type != ARM_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* pc = getCurrentPc(i);
+	auto* off = llvm::ConstantInt::getSigned(pc->getType(), ai->operands[1].imm);
+	storeOp(ai->operands[0], irb.CreateAdd(pc, off), irb);
+}
+
+/**
+ * ARM_INS_VPUSH, ARM_INS_VPOP
+ *
+ * The VFP half of PUSH and POP. translateLdmStm cannot serve them: it writes
+ * every slot at getArchByteSize(), which is four, and a D register is eight.
+ * A list of D registers pushed four bytes apart overlaps itself.
+ *
+ * The registers always go to consecutive slots in ascending register order
+ * from the lowest address, both directions, and capstone hands them over in
+ * that order.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateVfpPushPop(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_EXPR(i, ai, irb, (ai->op_count > 0));
+
+	for (unsigned j = 0; j < ai->op_count; ++j)
+	{
+		if (ai->operands[j].type != ARM_OP_REG || !isFpRegister(ai->operands[j].reg))
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+	}
+
+	bool load = i->id == ARM_INS_VPOP;
+	auto* elem = vfpTypeOfReg(ai->operands[0].reg, irb);
+	uint64_t sz = elem->isDoubleTy() ? 8 : 4;
+
+	auto* sp = loadRegister(ARM_REG_SP, irb);
+	auto* total = llvm::ConstantInt::get(sp->getType(), sz * ai->op_count);
+	// VPUSH writes below the old SP; VPOP reads from it.
+	auto* base = load ? sp : irb.CreateSub(sp, total);
+
+	for (unsigned j = 0; j < ai->op_count; ++j)
+	{
+		auto* at = irb.CreateAdd(base, llvm::ConstantInt::get(sp->getType(), sz * j));
+		if (load)
+		{
+			storeOp(ai->operands[j], loadIntPtr(irb, at, elem), irb, eOpConv::FPCAST_OR_BITCAST);
+		}
+		else
+		{
+			storeIntPtr(irb, loadVfpOp(ai->operands[j], irb, elem), at, elem);
+		}
+	}
+
+	storeRegister(ARM_REG_SP, load ? irb.CreateAdd(sp, total) : base, irb);
+}
+
+/**
+ * ARM_INS_ORN
+ *
+ * Thumb-2's `orn rd, rn, op2` is `rn | ~op2`. The complement is on the second
+ * operand, not on the result.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateOrn(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY_OR_TERNARY(i, ai, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb, eOpConv::THROW);
+	auto* val = irb.CreateOr(op1, irb.CreateNot(op2));
+	// Same flag rule as ORR: N and Z from the result, V untouched.
+	if (ai->update_flags)
+	{
+		llvm::Value* zero = llvm::ConstantInt::get(val->getType(), 0);
+		storeRegister(ARM_REG_CPSR_N, irb.CreateICmpSLT(val, zero), irb);
+		storeRegister(ARM_REG_CPSR_Z, irb.CreateICmpEQ(val, zero), irb);
+	}
+	storeOp(ai->operands[0], val, irb);
 }
 
 /**

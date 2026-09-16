@@ -6,6 +6,7 @@
  */
 
 #include <cmath>
+#include <cstring>
 
 #include <llvm/IR/InstIterator.h>
 
@@ -189,6 +190,36 @@ class Capstone2LlvmIrTranslatorX86Tests :
 		virtual llvm::GlobalVariable* getRegister(uint32_t reg) override
 		{
 			return _translator->getRegister(getParentRegister(reg));
+		}
+
+		// XMM registers are i128 and StoredValue tops out at 64 bits -- its
+		// `_ow` literal is an `assert(false)` -- so the two halves are read
+		// and written directly here. Both halves matter: the difference
+		// between ADDSD and ADDPD is only visible in the upper one, and
+		// getRegisterValueUnsigned() below would assert on a register whose
+		// value does not fit in 64 bits.
+		void setXmm(uint32_t reg, uint64_t hi, uint64_t lo)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			llvm::GenericValue v = _emulator->getGlobalVariableValue(gv);
+			const uint64_t words[2] = {lo, hi};
+			v.IntVal = llvm::APInt(128, llvm::ArrayRef<uint64_t>(words, 2));
+			_emulator->setGlobalVariableValue(gv, v);
+		}
+
+		uint64_t xmmLow(uint32_t reg)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			return _emulator->getGlobalVariableValue(gv).IntVal.trunc(64).getZExtValue();
+		}
+
+		uint64_t xmmHigh(uint32_t reg)
+		{
+			auto* gv = getRegister(reg);
+			assert(gv);
+			return _emulator->getGlobalVariableValue(gv).IntVal.lshr(64).trunc(64).getZExtValue();
 		}
 
 		virtual uint64_t getRegisterValueUnsigned(uint32_t reg) override
@@ -14996,6 +15027,494 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, RepStosbAttachesPointeeMetadata)
 		}
 	}
 	EXPECT_TRUE(found);
+}
+
+//
+// ==========================================================================
+// SSE, and the double-precision half of it in particular
+// ==========================================================================
+//
+// src/capstone2llvmir/x86/x86_sse.cpp is 668 lines and, before these, nothing
+// in this suite executed one of them: no test in the file so much as named an
+// XMM register. Two of its translators -- PSHUFD and the PSLLDQ/PSRLDQ pair --
+// were not reachable at all, having been written, declared and compiled but
+// never given a dispatch entry.
+//
+// The double-precision instructions are the ones that matter most. x86-64
+// passes and returns a double in an XMM register and compiles `a + b` to
+// ADDSD, and every one of ADDSD, SUBSD, MULSD, DIVSD, UCOMISD, SQRTSD, MAXSD,
+// MINSD, CVTTSD2SI and the SSE form of MOVSD was `nullptr`.
+//
+
+namespace {
+
+uint64_t dbits(double d)
+{
+	uint64_t u;
+	std::memcpy(&u, &d, sizeof(u));
+	return u;
+}
+
+uint32_t fbits(float f)
+{
+	uint32_t u;
+	std::memcpy(&u, &f, sizeof(u));
+	return u;
+}
+
+} // anonymous namespace
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_ADDSD_touches_only_the_low_lane)
+{
+	SKIP_MODE_16;
+
+	// The upper lane is what tells ADDSD from ADDPD. With 8.0 over 1.0 and
+	// 4.0 over 2.0, the scalar answer keeps 8.0 up there and the packed one
+	// would put 12.0.
+	setXmm(X86_REG_XMM0, dbits(8.0), dbits(1.0));
+	setXmm(X86_REG_XMM1, dbits(4.0), dbits(2.0));
+
+	emulate("addsd xmm0, xmm1");
+
+	EXPECT_EQ(dbits(3.0), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(8.0), xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_ADDPD_adds_both_lanes)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, dbits(8.0), dbits(1.0));
+	setXmm(X86_REG_XMM1, dbits(4.0), dbits(2.0));
+
+	emulate("addpd xmm0, xmm1");
+
+	EXPECT_EQ(dbits(3.0), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(12.0), xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_SUBSD_subtracts_the_source)
+{
+	SKIP_MODE_16;
+
+	// Not commutative, so the operand order is checkable: 10 - 3, not 3 - 10.
+	setXmm(X86_REG_XMM0, 0, dbits(10.0));
+	setXmm(X86_REG_XMM1, 0, dbits(3.0));
+
+	emulate("subsd xmm0, xmm1");
+
+	EXPECT_EQ(dbits(7.0), xmmLow(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MULSD_multiplies_the_low_lane)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, dbits(5.0), dbits(1.5));
+	setXmm(X86_REG_XMM1, dbits(7.0), dbits(4.0));
+
+	emulate("mulsd xmm0, xmm1");
+
+	EXPECT_EQ(dbits(6.0), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(5.0), xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_DIVSD_divides_by_the_source)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, dbits(9.0));
+	setXmm(X86_REG_XMM1, 0, dbits(2.0));
+
+	emulate("divsd xmm0, xmm1");
+
+	EXPECT_EQ(dbits(4.5), xmmLow(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_SUBSS_subtracts_the_low_float)
+{
+	SKIP_MODE_16;
+
+	// SUBSS and SUBPS were `nullptr` while ADDPS, MULPS and DIVPS were not,
+	// which is the shape of an unfinished list rather than a decision.
+	setXmm(X86_REG_XMM0, 0, fbits(10.0f));
+	setXmm(X86_REG_XMM1, 0, fbits(3.0f));
+
+	emulate("subss xmm0, xmm1");
+
+	EXPECT_EQ(fbits(7.0f), static_cast<uint32_t>(xmmLow(X86_REG_XMM0)));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_ADDSS_touches_only_the_low_float)
+{
+	SKIP_MODE_16;
+
+	// ADDSS was wired before this branch, to a function that also handled
+	// ADDPS; nothing had ever run it.
+	setXmm(X86_REG_XMM0, 0, (uint64_t(fbits(9.0f)) << 32) | fbits(1.0f));
+	setXmm(X86_REG_XMM1, 0, (uint64_t(fbits(5.0f)) << 32) | fbits(2.0f));
+
+	emulate("addss xmm0, xmm1");
+
+	EXPECT_EQ(fbits(3.0f), static_cast<uint32_t>(xmmLow(X86_REG_XMM0)));
+	EXPECT_EQ(fbits(9.0f), static_cast<uint32_t>(xmmLow(X86_REG_XMM0) >> 32));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_SQRTSD_roots_the_source_and_keeps_the_destination)
+{
+	SKIP_MODE_16;
+
+	// The shape no arithmetic instruction has: the operand read is the
+	// SOURCE's low lane, the lanes kept are the DESTINATION's. Rooting the
+	// destination in place would answer 3.0 here, not 5.0.
+	setXmm(X86_REG_XMM0, dbits(7.0), dbits(9.0));
+	setXmm(X86_REG_XMM1, dbits(1.0), dbits(25.0));
+
+	emulate("sqrtsd xmm0, xmm1");
+
+	EXPECT_EQ(dbits(5.0), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(7.0), xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MAXSD_returns_the_source_when_the_source_is_NaN)
+{
+	SKIP_MODE_16;
+
+	// x86 defines MAXSD as `dst > src ? dst : src`, so a NaN anywhere in the
+	// comparison makes the comparison false and yields the SOURCE.
+	//
+	// The NaN goes in the SOURCE, not the destination, and that is the whole
+	// point. With it in the destination both readings agree on 2.0, so the
+	// test would pass against llvm.maxnum and prove nothing. Here x86 answers
+	// NaN and llvm.maxnum answers 2.0, which is why this is a select and not
+	// an intrinsic.
+	setXmm(X86_REG_XMM0, 0, dbits(2.0));
+	setXmm(X86_REG_XMM1, 0, 0x7ff8000000000000ULL); // quiet NaN
+
+	emulate("maxsd xmm0, xmm1");
+
+	EXPECT_EQ(0x7ff8000000000000ULL, xmmLow(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MAXSD_returns_the_larger)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, dbits(6.0));
+	setXmm(X86_REG_XMM1, 0, dbits(2.0));
+
+	emulate("maxsd xmm0, xmm1");
+
+	EXPECT_EQ(dbits(6.0), xmmLow(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MINSD_returns_the_smaller)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, dbits(6.0));
+	setXmm(X86_REG_XMM1, 0, dbits(2.0));
+
+	emulate("minsd xmm0, xmm1");
+
+	EXPECT_EQ(dbits(2.0), xmmLow(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_UCOMISD_less_sets_CF_alone)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, dbits(1.0));
+	setXmm(X86_REG_XMM1, 0, dbits(2.0));
+
+	emulate("ucomisd xmm0, xmm1");
+
+	EXPECT_EQ(1, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(0, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(0, getRegisterValueUnsigned(X86_REG_PF));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_UCOMISD_greater_clears_everything)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, dbits(2.0));
+	setXmm(X86_REG_XMM1, 0, dbits(1.0));
+
+	emulate("ucomisd xmm0, xmm1");
+
+	EXPECT_EQ(0, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(0, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(0, getRegisterValueUnsigned(X86_REG_PF));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_UCOMISD_equal_sets_ZF_alone)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, dbits(2.0));
+	setXmm(X86_REG_XMM1, 0, dbits(2.0));
+
+	emulate("ucomisd xmm0, xmm1");
+
+	EXPECT_EQ(0, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(0, getRegisterValueUnsigned(X86_REG_PF));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_UCOMISD_unordered_sets_all_three)
+{
+	SKIP_MODE_16;
+
+	// The row that separates the three unordered-inclusive predicates from
+	// the ordered ones: a NaN sets ZF, PF and CF together.
+	setXmm(X86_REG_XMM0, 0, 0x7ff8000000000000ULL);
+	setXmm(X86_REG_XMM1, 0, dbits(2.0));
+
+	emulate("ucomisd xmm0, xmm1");
+
+	EXPECT_EQ(1, getRegisterValueUnsigned(X86_REG_CF));
+	EXPECT_EQ(1, getRegisterValueUnsigned(X86_REG_ZF));
+	EXPECT_EQ(1, getRegisterValueUnsigned(X86_REG_PF));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_XORPD_is_how_a_compiler_negates)
+{
+	SKIP_MODE_16;
+
+	// `xorpd xmm0, [sign mask]` is what gcc emits for unary minus on a
+	// double, and it has to reach the whole 128 bits: the sign bit of the
+	// upper lane is bit 127.
+	setXmm(X86_REG_XMM0, dbits(4.0), dbits(1.0));
+	setXmm(X86_REG_XMM1, 0x8000000000000000ULL, 0x8000000000000000ULL);
+
+	emulate("xorpd xmm0, xmm1");
+
+	EXPECT_EQ(dbits(-1.0), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(-4.0), xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_ANDNPS_complements_the_destination)
+{
+	SKIP_MODE_16;
+
+	// ANDN is `(~dst) & src` -- the destination is the complemented side,
+	// which is the reverse of what the operand order suggests.
+	// Complementing the source instead would answer 0 here, not 0xf0f0f0f0.
+	setXmm(X86_REG_XMM0, 0, 0x000000000f0f0f0fULL);
+	setXmm(X86_REG_XMM1, 0, 0x00000000ffffffffULL);
+
+	emulate("andnps xmm0, xmm1");
+
+	EXPECT_EQ(0x00000000f0f0f0f0ULL, xmmLow(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MOVSD_between_registers_keeps_the_upper_lane)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, dbits(8.0), dbits(1.0));
+	setXmm(X86_REG_XMM1, dbits(4.0), dbits(2.0));
+
+	emulate("movsd xmm0, xmm1");
+
+	EXPECT_EQ(dbits(2.0), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(8.0), xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MOVSD_from_memory_zeroes_the_upper_lane)
+{
+	ONLY_MODE_64;
+
+	// The register form preserves the upper lane and the memory form clears
+	// it. Translating both as a whole-register move gets one of them wrong
+	// whichever way it is written.
+	setXmm(X86_REG_XMM0, dbits(8.0), dbits(1.0));
+	setRegisters({
+		{X86_REG_RAX, 0x1000},
+	});
+	setMemoryValueUnsigned(0x1000, dbits(3.5), 64);
+
+	emulate("movsd xmm0, qword ptr [rax]");
+
+	EXPECT_EQ(dbits(3.5), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MOVSD_to_memory_writes_the_low_lane)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, dbits(8.0), dbits(3.5));
+	setRegisters({
+		{X86_REG_RAX, 0x1000},
+	});
+
+	emulate("movsd qword ptr [rax], xmm0");
+
+	EXPECT_EQ(dbits(3.5), getMemoryValueUnsigned(0x1000, 64));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MOVSD_with_two_memory_operands_is_still_the_string_move)
+{
+	// Keystone 0.9.2 refuses a bare `rep movsd` in every mode ("invalid
+	// mnemonic") and wants the operands spelled out, which pins the register
+	// names and so the mode. Which operands are XMM registers is not a
+	// property of the mode, so one mode asks the whole question.
+	ONLY_MODE_32;
+
+	// Capstone gives the SSE instruction and the string instruction the same
+	// id, so the entry has to serve both. Sending every MOVSD down the SSE
+	// path would quietly turn `rep movsd` into a four-byte store -- the same
+	// bug this branch fixes, pointing the other way. `rep movsd` becomes a
+	// named memcpy call, and nothing on the SSE path emits one.
+	auto* f = translate(assemble("rep movsd dword ptr [edi], dword ptr [esi]"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_NE(std::string::npos, dumpFunction(f).find("__asm_rep_movsd_memcpy"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MOVSS_between_registers_keeps_bits_127_32)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0xaaaaaaaaaaaaaaaaULL, 0xbbbbbbbb11111111ULL);
+	setXmm(X86_REG_XMM1, 0, 0x0000000022222222ULL);
+
+	emulate("movss xmm0, xmm1");
+
+	EXPECT_EQ(0xbbbbbbbb22222222ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xaaaaaaaaaaaaaaaaULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_CVTTSD2SI_truncates_toward_zero)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, 0, dbits(2.7));
+
+	emulate("cvttsd2si rax, xmm0");
+
+	EXPECT_EQ(2, getRegisterValueUnsigned(X86_REG_RAX));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_CVTSD2SI_rounds_to_nearest)
+{
+	ONLY_MODE_64;
+
+	// The one without the T rounds. The comment on translateCvtSd2Si used to
+	// say "round toward nearest (C default); use FPToSI (truncation)", and
+	// FPToSI is what it did, so this answered 2.
+	setXmm(X86_REG_XMM0, 0, dbits(2.7));
+
+	emulate("cvtsd2si rax, xmm0");
+
+	EXPECT_EQ(3, getRegisterValueUnsigned(X86_REG_RAX));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_CVTSS2SD_widens_the_low_lane)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, dbits(8.0), 0);
+	setXmm(X86_REG_XMM1, 0, fbits(2.5f));
+
+	emulate("cvtss2sd xmm0, xmm1");
+
+	EXPECT_EQ(dbits(2.5), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(8.0), xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_CVTSD2SS_narrows_the_low_lane)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, 0x1111111122222222ULL);
+	setXmm(X86_REG_XMM1, 0, dbits(2.5));
+
+	emulate("cvtsd2ss xmm0, xmm1");
+
+	EXPECT_EQ(fbits(2.5f), static_cast<uint32_t>(xmmLow(X86_REG_XMM0)));
+	EXPECT_EQ(0x11111111u, static_cast<uint32_t>(xmmLow(X86_REG_XMM0) >> 32));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_UNPCKLPD_interleaves_the_low_lanes)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, dbits(8.0), dbits(1.0));
+	setXmm(X86_REG_XMM1, dbits(4.0), dbits(2.0));
+
+	emulate("unpcklpd xmm0, xmm1");
+
+	EXPECT_EQ(dbits(1.0), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(2.0), xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_UNPCKHPD_interleaves_the_high_lanes)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, dbits(8.0), dbits(1.0));
+	setXmm(X86_REG_XMM1, dbits(4.0), dbits(2.0));
+
+	emulate("unpckhpd xmm0, xmm1");
+
+	EXPECT_EQ(dbits(8.0), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(4.0), xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_SHUFPD_takes_the_high_lane_from_the_source)
+{
+	SKIP_MODE_16;
+
+	// imm 0b01: result lane 0 = dst lane 1, result lane 1 = src lane 0.
+	setXmm(X86_REG_XMM0, dbits(8.0), dbits(1.0));
+	setXmm(X86_REG_XMM1, dbits(4.0), dbits(2.0));
+
+	emulate("shufpd xmm0, xmm1, 1");
+
+	EXPECT_EQ(dbits(8.0), xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(dbits(2.0), xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MOVMSKPD_gathers_the_sign_bits)
+{
+	ONLY_MODE_64;
+
+	setXmm(X86_REG_XMM0, dbits(-4.0), dbits(1.0));
+
+	emulate("movmskpd eax, xmm0");
+
+	EXPECT_EQ(2, getRegisterValueUnsigned(X86_REG_EAX));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PSHUFD_reaches_its_translator_at_all)
+{
+	SKIP_MODE_16;
+
+	// translateSsePshufd has been in x86_sse.cpp since the file was written
+	// and X86_INS_PSHUFD pointed at nullptr, so none of it ran. 0x1b is
+	// 0b00_01_10_11: reverse the four lanes.
+	setXmm(X86_REG_XMM1, 0x4444444433333333ULL, 0x2222222211111111ULL);
+
+	emulate("pshufd xmm0, xmm1, 0x1b");
+
+	EXPECT_EQ(0x3333333344444444ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x1111111122222222ULL, xmmHigh(X86_REG_XMM0));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PSLLDQ_shifts_by_bytes)
+{
+	SKIP_MODE_16;
+
+	// The other translator nothing could reach. The shift count is in BYTES,
+	// which is what the DQ suffix means and the only thing that separates
+	// this from PSLLQ.
+	setXmm(X86_REG_XMM0, 0, 0x00000000000000ffULL);
+
+	emulate("pslldq xmm0, 1");
+
+	EXPECT_EQ(0x000000000000ff00ULL, xmmLow(X86_REG_XMM0));
 }
 
 } // namespace tests

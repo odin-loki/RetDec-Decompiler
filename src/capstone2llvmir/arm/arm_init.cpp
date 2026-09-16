@@ -387,7 +387,7 @@ Capstone2LlvmIrTranslatorArm_impl::_i2fm =
 
 		{ARM_INS_ADC, &Capstone2LlvmIrTranslatorArm_impl::translateAdc},
 		{ARM_INS_ADD, &Capstone2LlvmIrTranslatorArm_impl::translateAdd},
-		{ARM_INS_ADR, nullptr},
+		{ARM_INS_ADR, &Capstone2LlvmIrTranslatorArm_impl::translateAdr},
 		{ARM_INS_AESD, nullptr},
 		{ARM_INS_AESE, nullptr},
 		{ARM_INS_AESIMC, nullptr},
@@ -421,6 +421,14 @@ Capstone2LlvmIrTranslatorArm_impl::_i2fm =
 		{ARM_INS_EOR, &Capstone2LlvmIrTranslatorArm_impl::translateEor},
 		{ARM_INS_ERET, nullptr},
 		{ARM_INS_VMOV, &Capstone2LlvmIrTranslatorArm_impl::translateVfpMov},
+		// `vmov.f64 d0, #1.0` and `vmov.f32 s0, #1.0` -- the VFP
+		// move-immediate. Capstone prints them as "vmov" but gives them their
+		// own ids, and neither id was a key here, so COV-01 reported them as
+		// `<id 52> NO ENTRY` rather than as an unimplemented instruction.
+		// translateVfpMov already handles an ARM_OP_FP source operand, which
+		// is the only form these take.
+		{ARM_INS_FCONSTD, &Capstone2LlvmIrTranslatorArm_impl::translateVfpMov},
+		{ARM_INS_FCONSTS, &Capstone2LlvmIrTranslatorArm_impl::translateVfpMov},
 		{ARM_INS_FLDMDBX, nullptr},
 		{ARM_INS_FLDMIAX, nullptr},
 		{ARM_INS_VMRS, &Capstone2LlvmIrTranslatorArm_impl::translateVmrs},
@@ -432,7 +440,7 @@ Capstone2LlvmIrTranslatorArm_impl::_i2fm =
 		{ARM_INS_FMSTAT, &Capstone2LlvmIrTranslatorArm_impl::translateVmrs},
 		{ARM_INS_FSTMDBX, nullptr},
 		{ARM_INS_FSTMIAX, nullptr},
-		{ARM_INS_HINT, nullptr},
+		{ARM_INS_HINT, &Capstone2LlvmIrTranslatorArm_impl::translateHint},
 		{ARM_INS_HLT, nullptr},
 		{ARM_INS_HVC, nullptr},
 		{ARM_INS_ISB, &Capstone2LlvmIrTranslatorArm_impl::translateFence},
@@ -803,10 +811,14 @@ Capstone2LlvmIrTranslatorArm_impl::_i2fm =
 		{ARM_INS_DCPS1, nullptr},
 		{ARM_INS_DCPS2, nullptr},
 		{ARM_INS_DCPS3, nullptr},
-		{ARM_INS_IT, nullptr},
+		// Nothing to do: capstone puts the IT block's condition on each of the
+		// instructions inside it, and the dispatcher above wraps every
+		// instruction whose cc is not AL in that condition already. The
+		// block header itself has no effect of its own.
+		{ARM_INS_IT, &Capstone2LlvmIrTranslatorArm_impl::translateNop},
 		{ARM_INS_LSL, &Capstone2LlvmIrTranslatorArm_impl::translateShifts},
 		{ARM_INS_LSR, &Capstone2LlvmIrTranslatorArm_impl::translateShifts},
-		{ARM_INS_ORN, nullptr},
+		{ARM_INS_ORN, &Capstone2LlvmIrTranslatorArm_impl::translateOrn},
 		{ARM_INS_ROR, &Capstone2LlvmIrTranslatorArm_impl::translateShifts},
 		{ARM_INS_RRX, &Capstone2LlvmIrTranslatorArm_impl::translateShifts},
 		{ARM_INS_SUBW, nullptr},
@@ -824,8 +836,8 @@ Capstone2LlvmIrTranslatorArm_impl::_i2fm =
 		{ARM_INS_WFI, nullptr},
 		{ARM_INS_SEV, nullptr},
 		{ARM_INS_SEVL, nullptr},
-		{ARM_INS_VPUSH, nullptr},
-		{ARM_INS_VPOP, nullptr},
+		{ARM_INS_VPUSH, &Capstone2LlvmIrTranslatorArm_impl::translateVfpPushPop},
+		{ARM_INS_VPOP, &Capstone2LlvmIrTranslatorArm_impl::translateVfpPushPop},
 
 		{ARM_INS_ENDING, nullptr},
 };

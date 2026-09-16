@@ -3688,9 +3688,28 @@ void LlvmIrEmulator::visitVAArgInst(llvm::VAArgInst& I)
  * This is not really getting the value. It just sets ExtractValueInst's result
  * to uninitialized GenericValue.
  */
+/**
+ * Reads the lane the index names.
+ *
+ * This used to set the result to a default-constructed GenericValue and
+ * return, exactly as visitExtractValueInst did -- so every extractelement
+ * produced a zero, whatever was in the vector. Nothing caught it because
+ * until the SSE tests, no test in tests/capstone2llvmir named an XMM
+ * register, and a whole-vector operation like ADDPD never extracts a lane.
+ * ADDSD does, and answered 0.0 for 1.0 + 2.0.
+ */
 void LlvmIrEmulator::visitExtractElementInst(llvm::ExtractElementInst& I)
 {
+	LocalExecutionContext& ec = _ecStack.back();
+	GenericValue vec = _globalEc.getOperandValue(I.getVectorOperand(), ec);
+	GenericValue idxGV = _globalEc.getOperandValue(I.getIndexOperand(), ec);
+	unsigned idx = static_cast<unsigned>(idxGV.IntVal.getZExtValue());
+
 	GenericValue dest;
+	if (idx < vec.AggregateVal.size())
+	{
+		dest = vec.AggregateVal[idx];
+	}
 	_globalEc.setValue(&I, dest);
 }
 
@@ -3702,6 +3721,15 @@ void LlvmIrEmulator::visitInsertElementInst(llvm::InsertElementInst& I)
 	GenericValue elem = _globalEc.getOperandValue(I.getOperand(1), ec);
 	GenericValue idxGV = _globalEc.getOperandValue(I.getOperand(2), ec);
 	unsigned idx = static_cast<unsigned>(idxGV.IntVal.getZExtValue());
+	// The input vector decides the size, except when it carries none at all:
+	// a poison operand comes back with an empty AggregateVal, and dropping
+	// the inserted lane on the floor is how an insert into poison would
+	// otherwise read.
+	auto* vt = llvm::dyn_cast<llvm::FixedVectorType>(I.getType());
+	if (vt && vec.AggregateVal.size() < vt->getNumElements())
+	{
+		vec.AggregateVal.resize(vt->getNumElements());
+	}
 	if (idx < vec.AggregateVal.size())
 		vec.AggregateVal[idx] = elem;
 	_globalEc.setValue(&I, vec);
