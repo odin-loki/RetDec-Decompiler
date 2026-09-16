@@ -6401,12 +6401,34 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, issue_633)
 
 	emulate_bin("c0 ff b7 79"); // ori.b $w31, $w31, 0xb7
 
+	// MSA shares its capstone ids with the scalar instructions it is named
+	// after: this is MIPS_INS_ORI, the same id as a plain `ori`. It used to
+	// reach translateOr, which OR'd the immediate into the LOW BYTE of the
+	// register -- where ORI.B ORs it into all sixteen byte lanes. The value
+	// was never checked here (the expectation was ANY), so the wrong answer
+	// passed.
+	//
+	// MSA is not modelled, so the honest answer is the pseudo-assembly call
+	// every other unmodelled instruction gets.
 	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_W31});
-	EXPECT_JUST_REGISTERS_STORED({
-		{MIPS_REG_W31, ANY},
-	});
+	EXPECT_NO_REGISTERS_STORED();
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_NO_VALUE_CALLED();
+	EXPECT_NE(nullptr, _module.getFunction("__asm_ori.b"));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MSA_registers_are_a_hundred_and_twenty_eight_bits)
+{
+	ONLY_MODE_32;
+
+	// initializeRegTypeMap() declared these with a local named `i128` that
+	// was getInt64Ty, so every MSA vector register was half its width. The
+	// same declaration block had `i1` as getInt32Ty, which made the nine DSP
+	// condition and carry flags 32 bits each.
+	ASSERT_NE(nullptr, getRegister(MIPS_REG_W0));
+	EXPECT_EQ(128u, getRegister(MIPS_REG_W0)->getValueType()->getPrimitiveSizeInBits());
+	EXPECT_EQ(128u, getRegister(MIPS_REG_W31)->getValueType()->getPrimitiveSizeInBits());
+	ASSERT_NE(nullptr, getRegister(MIPS_REG_DSPCARRY));
+	EXPECT_EQ(1u, getRegister(MIPS_REG_DSPCARRY)->getValueType()->getPrimitiveSizeInBits());
 }
 
 TEST_P(Capstone2LlvmIrTranslatorMipsTests, SyncEmitsFence)

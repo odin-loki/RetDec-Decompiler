@@ -98,6 +98,7 @@ class Capstone2LlvmIrTranslatorMips_impl :
 				uint32_t r,
 				llvm::IRBuilder<>& irb);
 		bool isFpInstructionVariant(cs_insn* i);
+		bool hasMsaOperand(cs_mips* mi) const;
 
 		virtual bool isOperandRegister(cs_mips_op& op) override;
 		bool isGeneralPurposeRegister(uint32_t r);

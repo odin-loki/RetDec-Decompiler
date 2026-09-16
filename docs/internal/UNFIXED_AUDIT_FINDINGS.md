@@ -7251,3 +7251,75 @@ is **not** a bug: capstone reports the MMX forms with distinct ids
 same instruction.
 
 C2L-01 floor: X86 2547 → 2559. 5,422 tests.
+
+## Batch Y — MSA reached the scalar translator, and two misnamed types
+
+### Y-1: the same collision, on MIPS
+
+The random-decode scan that found the x87 FADD bug also flagged thirty wired
+MIPS ids covering more than one mnemonic. Most were the floating-point
+variants — `add`/`add.d`, `movn`/`movn.d`, `div`/`div.d` — and those are fine,
+because the translators distinguish them by **operand type** rather than by
+id: loading an `F` register yields a double, and `translateAdd` picks
+`CreateFAdd` over `CreateAdd` on that basis. It works, and it is worth naming
+as the pattern that saved MIPS where the id could not.
+
+MSA is different. `ld.b $w0, 0($a0)` is `MIPS_INS_LD`, the same id as the
+scalar doubleword load; `and.v` is `MIPS_INS_AND`; `sll.b` is `MIPS_INS_SLL`.
+The only thing separating them is that the operands are `W` registers, and
+those carry no type the translator can key on.
+
+What happened before: they reached the scalar translator. `ori.b $w31, $w31,
+0xb7` reached `translateOr`, which OR'd the immediate into the **low byte** of
+the register where ORI.B ORs it into all sixteen byte lanes. There was a test
+for that instruction — `issue_633` — and it passed, because its expectation
+for the value was `ANY`.
+
+MSA is not modelled, so the answer is the pseudo-assembly call every other
+unmodelled instruction gets. One guard at dispatch, on the presence of a W
+operand, does it for the whole extension. `and.v` would in fact have come out
+right as a 128-bit AND; `ld.b` would not, and deciding which per id is exactly
+how the EVEX compare family went wrong on x86.
+
+### Y-2: `i128` was `getInt64Ty` and `i1` was `getInt32Ty`
+
+Chasing why `@w31` printed as `i64` when the type map says `i128`:
+
+```cpp
+auto* i1   = llvm::IntegerType::getInt32Ty(_module->getContext());
+auto* i32  = llvm::IntegerType::getInt32Ty(_module->getContext());
+auto* i64  = llvm::IntegerType::getInt64Ty(_module->getContext());
+auto* i128 = llvm::IntegerType::getInt64Ty(_module->getContext());
+```
+
+Two of the four locals are misnamed rather than mistyped. Every register
+declared `i128` — all 32 MSA vector registers — was **64 bits**, half its
+width. Every register declared `i1` — the nine DSP condition, carry and
+overflow flags — was **32 bits**.
+
+There was a second, separate typo in the same block: `{MIPS_REG_W31, f128}`
+where `W0`..`W30` are `i128`, so the last MSA register was a different type
+from the other thirty-one.
+
+Neither is reachable today, which is why none of it was noticed: no DSP
+instruction is wired, nothing reads the DSP flags, and MSA now goes to
+pseudo-assembly. All three are fixed because they are wrong, and because
+whoever models either extension would inherit them.
+
+### Falsification
+
+Four mutations, each reverted alone; all four fail:
+
+| mutation | result |
+| --- | --- |
+| MSA operands reach the scalar translator again | 1 test fails |
+| the MSA register range off by one (drops W31) | 1 test fails |
+| MSA registers back to 64 bits | 1 test fails |
+| the DSP flags back to 32 bits | 1 test fails |
+
+The register-width test asserts the widths directly rather than through
+behaviour, because there is no behaviour to assert: nothing reads these
+registers yet, and a test that went through an instruction would be testing
+the guard instead.
+
+C2L-01 floor: MIPS 712 → 714. 5,424 tests.

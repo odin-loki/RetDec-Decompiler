@@ -159,6 +159,25 @@ uint32_t Capstone2LlvmIrTranslatorMips_impl::getCarryRegister()
 	return MIPS_REG_INVALID;
 }
 
+/**
+ * True when any operand names an MSA vector register. MSA is not modelled --
+ * the W registers have no globals at all -- so this is what keeps an MSA
+ * instruction out of the scalar translator that shares its id.
+ */
+bool Capstone2LlvmIrTranslatorMips_impl::hasMsaOperand(cs_mips* mi) const
+{
+	for (unsigned k = 0; k < mi->op_count; ++k)
+	{
+		auto& op = mi->operands[k];
+		if (op.type == MIPS_OP_REG && MIPS_REG_W0 <= op.reg && op.reg <= MIPS_REG_W31)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void Capstone2LlvmIrTranslatorMips_impl::translateInstruction(
 		cs_insn* i,
 		llvm::IRBuilder<>& irb)
@@ -167,6 +186,24 @@ void Capstone2LlvmIrTranslatorMips_impl::translateInstruction(
 
 	cs_detail* d = i->detail;
 	cs_mips* mi = &d->mips;
+
+	// MSA instructions share their capstone ids with the scalar ones they are
+	// named after -- `ld.b $w0, 0($a0)` is MIPS_INS_LD, the same id as the
+	// doubleword load, and `and.v` is MIPS_INS_AND. The only thing that tells
+	// them apart is that the operands are W registers.
+	//
+	// Until now those ids reached the scalar translator, which called
+	// loadRegister() on a W register, found no global for it and THREW --
+	// taking the whole function's translation with it rather than degrading
+	// to a pseudo-assembly call the way every other unmodelled instruction
+	// does. Route them to that call instead. `and.v` would in fact have come
+	// out right as a 128-bit AND; `ld.b` would not, and guessing which is
+	// which per id is how the EVEX compare family went wrong on x86.
+	if (hasMsaOperand(mi))
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
 
 	auto fIt = _i2fm.find(i->id);
 	if (fIt != _i2fm.end() && fIt->second != nullptr)

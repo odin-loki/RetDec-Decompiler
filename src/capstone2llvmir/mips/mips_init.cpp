@@ -50,10 +50,16 @@ void Capstone2LlvmIrTranslatorMips_impl::initializeRegNameMap()
 
 void Capstone2LlvmIrTranslatorMips_impl::initializeRegTypeMap()
 {
-	auto* i1 = llvm::IntegerType::getInt32Ty(_module->getContext());
+	// These two were misnamed rather than mistyped: `i1` was getInt32Ty and
+	// `i128` was getInt64Ty, so the nine DSP condition and carry flags were
+	// 32 bits each and all 32 MSA vector registers were 64 -- half their
+	// width. Neither is reachable today (no DSP instruction is wired and MSA
+	// goes to pseudo-assembly), which is why it went unnoticed; both would be
+	// inherited by whoever models either extension.
+	auto* i1 = llvm::IntegerType::getInt1Ty(_module->getContext());
 	auto* i32 = llvm::IntegerType::getInt32Ty(_module->getContext());
 	auto* i64 = llvm::IntegerType::getInt64Ty(_module->getContext());
-	auto* i128 = llvm::IntegerType::getInt64Ty(_module->getContext());
+	auto* i128 = llvm::IntegerType::getIntNTy(_module->getContext(), 128);
 	auto* f32 = llvm::Type::getFloatTy(_module->getContext());
 	auto* f64 = llvm::Type::getDoubleTy(_module->getContext());
 	auto* f128 = llvm::Type::getFP128Ty(_module->getContext());
@@ -212,7 +218,7 @@ void Capstone2LlvmIrTranslatorMips_impl::initializeRegTypeMap()
 		{MIPS_REG_W28, i128},
 		{MIPS_REG_W29, i128},
 		{MIPS_REG_W30, i128},
-		{MIPS_REG_W31, f128},
+		{MIPS_REG_W31, i128},
 
 		// Multiply and divide registers.
 		//
