@@ -2721,3 +2721,447 @@ vendored llvm-project tree, so it only builds inside the full build.
 That is worth the distinction. "Real drift across many files" is a reason to
 stop looking; "one file needs one LLVM 21 header" is a reason to keep going,
 and it is what the measurement says.
+
+
+## The 124 ARM64 atomics that were not `nullptr` — they were absent
+
+COV-01's arm64 leftovers named `LDADDAL`, and the entry above recorded it
+rather than fixing it: one occurrence in the corpus. Then I went looking for
+the entry to change and there wasn't one. `LDADD`, `LDCLR`, `LDEOR`, `LDSET`,
+`LDSMAX`, `LDSMIN`, `LDUMAX`, `LDUMIN`, `SWP` and `CAS` — ten operations, four
+ordering suffixes each (plain, `A`, `L`, `AL`), three widths each (`B`, `H`,
+word/doubleword) — had **no key at all** in `arm64_init.cpp`'s dispatch map.
+Not a translator that declined to model them. Ids the dispatch could never
+reach, which is a different thing from a `nullptr` and reads differently in a
+`grep`: a `nullptr` count says "we know about these"; an absent key says
+nothing at all.
+
+`LDAXR`/`STLXR`, the ARMv8.0 load/store-exclusive pair they replace, *are*
+implemented. So the gap is specifically ARMv8.1, and a compiler told
+`-march=armv8.1-a` or later emits LSE for every atomic in the program. Modern
+glibc does this at runtime through ifuncs. On x86-64 the equivalent
+instructions — `LOCK XADD`, `CMPXCHG` — translate to `atomicrmw` and
+`cmpxchg`, and llvmir2hll converts both into C. This was the same path all
+along; only ARM64's use of it was missing.
+
+**The operand order is uniform, and CAS breaks it.** Measured with capstone
+5.0.9:
+
+```
+op0 = Rs (the value)   op1 = Rt (the destination)   op2 = [Xn]
+```
+
+so `ldadd w1, w2, [x3]` reads `w1`, adds it to the memory at `x3`, and writes
+the *old* memory value to `w2`. `cas` uses the same three slots for different
+roles: `cas Rs, Rt, [Xn]` compares against Rs, stores Rt on a match, and writes
+the old value back to **Rs**. The destination is operand 0, not operand 1 — the
+opposite of the other nine. That is the sort of thing a family-wide loop gets
+wrong silently, so `translateCas` is a separate function.
+
+**Two things do not map straight across.**
+
+`LDCLR` clears the bits set in Rs, which is `And` with the complement, not
+`And` — `ldclr` with operand `0xff` clears a byte, it does not keep it. There
+is no `AtomicRMWInst::AndNot`, so the value is `CreateNot`-ed first and the op
+is `And`.
+
+`CAS`'s failure ordering may not be stronger than its success ordering and may
+not be `Release` or `AcquireRelease` at all (LLVM asserts). `CASL` and `CASAL`
+therefore take `Monotonic` on the failure path, which is what the architecture
+means anyway: a release barrier on a store that did not happen is not a thing.
+
+`CASP`, the 128-bit register-pair form, is deliberately not here. It needs a
+register pair on each side and `cmpxchg` takes one value; it falls through to
+the pseudo-asm path, as it did before.
+
+**The width comes from the mnemonic, not the register.** `ldaddb w1, w2, [x3]`
+names W registers and touches one byte. The first version of the test could not
+have caught this getting it wrong, twice:
+
+* First attempt: plain values, so an `i32` RMW and an `i8` RMW at the same
+  address computed the same answer.
+* Second attempt: a neighbouring `0xff` byte that a 32-bit access would drag
+  in — which also passed, because the llvmir-emul memory model is an
+  address→`GenericValue` map, not a byte array. Access *width* is not
+  observable through that emulator at all, no matter what you put next door.
+
+The test that works asserts on the IR: find the `AtomicRMWInst`, ask
+`getValOperand()->getType()->getIntegerBitWidth()`, require 8. Falsified by
+returning `getDefaultType()` from `lseAccessType` — 8 vs 32, which is the
+failure the first two versions were supposed to produce.
+
+**Keystone cannot assemble any of this.** 0.9.2 is from 2017 and predates
+ARMv8.1; it refuses every LSE mnemonic. The encodings are from
+`aarch64-linux-gnu-as` and checked against capstone 5.0.9 before use, the same
+route the MIPS `mthc1` entry above took.
+
+### Three emulator defects the atomics tests surfaced
+
+`llvmir-emul` is what the capstone2llvmir tests run the translated IR on, so
+adding atomics to ARM64 immediately ran into what it does with them.
+
+`atomicrmw` handled `Xchg` and nothing else — every other op fell through to
+the same "store the new value" path, so `add`, `and`, `or`, `xor`, `max`,
+`min`, `umax` and `umin` all silently behaved like `xchg` and returned the
+right *old* value while writing the wrong *new* one. A test that only reads the
+result would pass. Now all twelve integer ops compute.
+
+`cmpxchg` was not handled at all.
+
+`extractvalue` returned a default-constructed `GenericValue` — i.e. whatever
+was on the stack — instead of the requested element. That one is not
+atomics-specific: it is wrong for every aggregate, and it was reachable before
+this branch by any IR that used one. `cmpxchg` is what made it load-bearing,
+since its result is a `{value, i1}` pair.
+
+### llvmir2hll: four `atomicrmw` kinds that reached the empty statement
+
+The earlier entry on `atomicrmw` conversion wired `add`, `sub`, `and`, `or`,
+`xor` and `xchg`, and said the remaining forms "are not lowered and take the
+empty-statement path". `LDSMAX`/`LDSMIN`/`LDUMAX`/`LDUMIN` are exactly those
+remaining forms, so that path stopped being hypothetical. All four are now
+`TernaryOpExpr`s — `a > b ? a : b` with `GtOpExpr::Variant::SCmp` for the
+signed pair and `UCmp` for the unsigned — which is what the operation means and
+what a reader wants to see.
+
+`Nand` is still not converted, and this is a real limitation rather than an
+oversight: BIR has no bitwise-not. `NotOpExpr` emits `!`, the logical one, so
+writing `!(a & b)` for `~(a & b)` would be a silent miscompilation of exactly
+the kind section 3 is about. It keeps the empty-statement path until BIR grows
+the operator.
+
+### What it is gated at
+
+`MIN_ARM64` goes 471 → **481**. The ARM64 suite is the only one that moves.
+
+
+
+## The architecture everything else is measured against could not add two doubles
+
+Asked to bring ARM, ARM64, MIPS and PowerPC up to x86-64's level, I spent most
+of this branch on those four. Then I went to compare `x86_init.cpp` against
+`arm_init.cpp` and found this:
+
+```
+{X86_INS_ADDSD, nullptr},
+{X86_INS_SUBSD, nullptr},
+{X86_INS_MULSD, nullptr},
+{X86_INS_DIVSD, nullptr},
+{X86_INS_UCOMISD, nullptr},
+{X86_INS_COMISD, nullptr},
+{X86_INS_SQRTSD, nullptr},
+{X86_INS_MAXSD, nullptr},   {X86_INS_MINSD, nullptr},
+{X86_INS_CVTTSD2SI, nullptr},
+{X86_INS_XORPD, nullptr},   {X86_INS_ANDPD, nullptr},
+{X86_INS_MOVSS, nullptr},
+```
+
+The whole double-precision half of SSE2. On x86-64 the System V ABI passes and
+returns a `double` in an XMM register, and gcc compiles `a + b` on doubles to
+`addsd`; there is no other way to write it. So the one architecture with 252
+binaries of end-to-end evidence behind it, the control every other number in
+this branch is quoted against, turned every floating-point program into a wall
+of `__asm_addsd` and `__asm_movsd` calls.
+
+`MOVSD` was worse than `nullptr`. Capstone gives `movsd xmm0, qword ptr [rdi]`
+and the string instruction `movsd` **the same id**, and the table pointed that
+id at `translateMoveString`, which rejects anything whose operands are not both
+memory. There is even a TODO in that function naming the exact address in the
+exact sample where somebody hit it. Counted over the six floating-point corpus
+programs, `movsd` is the second most frequent instruction in the whole text
+section, behind `mov`.
+
+### Why no gate saw it
+
+Three reasons, and each is worth fixing in its own right.
+
+**COV-01 did not measure x86.** Its four architectures were the non-x86 four,
+because the tool was written to answer "are the other four as good as x86-64"
+and nobody thought to point it at x86-64. Its own header explains at length why
+a dispatch-table ratio is the wrong number and a corpus-weighted one is right;
+the corpus it weighted by had no x86 in it. It does now:
+
+| arch    | before | after  | what is left |
+|---------|--------|--------|--------------|
+| x86_64  | 0.9846 | 0.9931 | `HLT` -- one per binary, alignment padding |
+
+**COV-01 cannot see a translator that declines.** Its question is whether the
+id has a non-null function pointer, so `MOVSD` counted as covered in both
+columns above while producing a pseudo-asm call every time. The 0.9846 was
+therefore an overstatement, and the real gap was larger than the table shows.
+This is recorded rather than fixed: answering it properly means running the
+translator over every decoded instruction and asking whether a `__asm_` call
+came out, which is a different tool from a disassembler and a dispatch table.
+
+**Nothing ran COV-01 at all.** It is a script with no caller -- not in
+`check_push_gates.sh`, not in any workflow. A measurement nobody takes is a
+measurement nobody has.
+
+**`x86_sse.cpp` had no tests.** 668 lines, 24 translators, and the string
+`XMM` appeared in `tests/capstone2llvmir/x86_tests.cpp` eight times, all of
+them inside comments about `FXSAVE`. Two of those translators --
+`translateSsePshufd` and `translateSsePbyteShift` -- had no dispatch entry
+either: written, declared, compiled, unreachable. The file's own header says
+"the apply script does this automatically via sed", and for those two it did
+not.
+
+### What is implemented
+
+The machinery was already there. `scalarFltBinOp` and `packedFltBinOp` both
+take an `isDouble` flag and neither had a caller that passed `true`.
+
+* `translateSseFltArith` -- ADD/SUB/MUL/DIV across SS, SD, PS and PD. The
+  scalar forms leave the upper lanes alone; that is the entire difference
+  between `addsd` and `addpd`, and it is what the tests check.
+* `translateSseFltMinMax` -- MAX and MIN. Deliberately not `llvm.maxnum`:
+  x86 defines `MAXSD` as `dst > src ? dst : src`, so a NaN in either operand
+  yields the **source**, where `llvm.maxnum` returns the non-NaN operand. A
+  select spells the architecture's definition exactly and the intrinsic does
+  not.
+* `translateSseSqrt` -- the one shape nothing else has: the root of the
+  *source's* low lane, with the *destination's* upper lanes kept.
+* `translateSseComi` -- UCOMIS\*/COMIS\* to EFLAGS, branchlessly. The
+  architecture's table is
+  `unordered ZF=PF=CF=1`, `less CF=1`, `equal ZF=1`, `greater all clear`,
+  which is `ZF = fcmp ueq`, `CF = fcmp ult`, `PF = fcmp uno` and nothing else.
+  COMIS\* differs from UCOMIS\* only in which NaNs raise an exception and this
+  lifter has no exception state, so they translate the same.
+* `translateSseFltLogic` -- AND/ANDN/OR/XOR on all 128 bits. These are in
+  every floating-point binary because they are how a compiler writes negation
+  and absolute value. ANDN complements the **destination**, the reverse of what
+  the operand order suggests.
+* `translateSseMovScalar` -- MOVSS and the SSE MOVSD, telling the SSE form from
+  the string form by whether an operand names an XMM register. Three cases and
+  the difference between the first two is the reason this cannot be a
+  whole-register move: register-to-register preserves the upper lane, memory-to-
+  register zeroes it.
+* `translateSseMovHalf`, `translateSseCvtFlt`, `translateCvtTt2Si`,
+  `translateSseUnpck`, `translateSseShufp`, `translateSseMovMsk` -- MOVLP\*/
+  MOVHP\*, the float-to-float conversions, the truncating conversions to
+  integer, UNPCK\*, SHUFP\* and MOVMSKP\*.
+
+Plus the two orphans wired, and MOVUPS/MOVUPD pointed at the whole-register
+move they always were.
+
+### Two rounding bugs found while reading the neighbours
+
+`translateCvtSd2Si` carried the comment *"Round toward nearest (C default); use
+FPToSI (truncation)"* -- two halves of a sentence that contradict each other.
+`FPToSI` truncates, so `cvtsd2si rax, xmm0` on 2.7 answered 2. The instruction
+that truncates is `CVTTSD2SI`, which is why it is a separate opcode; both are
+now what they say they are, and the test for each would fail on the other's
+implementation.
+
+`translateCvtPs2Dq` had the same shape: it truncated, `CVTPS2DQ` rounds, and
+`CVTTPS2DQ` -- the one it was actually implementing -- was not in the table.
+
+Both also took their destination width from `_basicMode`, so a 64-bit program
+was assumed to be converting into a 64-bit register. The width is the operand's:
+`cvttsd2si eax, xmm0` is a 32-bit conversion inside a 64-bit program. For
+in-range values the two agree after `storeOp` truncates, which is why no test
+here claims this as a behaviour fix -- it is written from the right source now
+and that is all.
+
+### The emulator returned zero for every `extractelement`
+
+```cpp
+void LlvmIrEmulator::visitExtractElementInst(llvm::ExtractElementInst& I)
+{
+	GenericValue dest;
+	_globalEc.setValue(&I, dest);
+}
+```
+
+Identical to the `visitExtractValueInst` defect recorded above, and reachable
+by anything that reads a lane. `ADDPD` passed its test on the first run because
+a whole-vector `fadd` never extracts; `ADDSD` answered 0.0 for 1.0 + 2.0. Thirty
+of the new tests failed on it, which is how it was found, and no test could have
+found it before because none of them had ever used a vector.
+
+`visitInsertElementInst` is fixed alongside it: it sized the result from its
+input vector, and an insert into `poison` arrives with an empty `AggregateVal`,
+so the inserted lane was dropped.
+
+### x86-64 in the multiarch corpus, as the control column
+
+`build_multiarch_corpus.sh` built four architectures because the x86-64 corpus
+already existed. But the parity question is "is every architecture at x86-64's
+level", and that is only answerable if x86-64 is measured on the same sources,
+the same flags and the same tools. It is built here now too, through its
+triple-prefixed driver (`x86_64-linux-gnu-gcc`) so that nothing below needs a
+special case, and ARCH-01 and COV-01 both report it alongside the other four.
+
+Its first COV-01 number was the lowest of the five.
+
+### COV-01 is a gate now, on all five
+
+Measured over the 210-binary corpus, after everything above:
+
+| arch    | rate   | what is left |
+|---------|--------|--------------|
+| x86_64  | 0.9931 | `HLT` -- one per binary, alignment padding |
+| arm     | 1.0000 | nothing |
+| arm64   | 0.9994 | `LD1`/`ST1` (NEON, 2 each) |
+| mips    | 1.0000 | nothing |
+| powerpc | 1.0000 | nothing |
+
+x86-64 is the lowest of the five. What is left of it is `HLT`, once per binary,
+in the alignment padding after `_start` -- code that never runs. It stays
+uncovered rather than being pointed at a translator that emits the pseudo-asm
+call it already emits, which would move the number and change nothing.
+
+ARM's uncovered list no longer carries `<id 52> NO ENTRY`. That was
+`ARM_INS_FCONSTD` -- `vmov.f64 d0, #1.0`, the VFP move-immediate, which
+capstone prints as "vmov" but gives an id of its own, and which was not a key
+in the table. `FCONSTS` is its single-precision twin and was equally absent.
+`translateVfpMov` already handled the `ARM_OP_FP` operand these carry, so both
+are one dispatch entry each. The rest of ARM's list took a change to the tool
+before it could be read at all; that is the next section.
+
+The floors are the measured values, not a notch below them. That needed one
+correction to be possible at all: the rate is printed to four decimals and was
+compared as a full double, so `6003/6045` displayed as `0.9931` and compared as
+`0.99305`, and every architecture failed the floor copied from its own output.
+A gate whose displayed number and compared number differ is a gate nobody can
+set a floor for. It compares at the printed precision now, and the self-test
+covers the three outcomes -- no floor, an unreachable floor, a floor of zero --
+each of which flips if the gating is removed. Falsified by making the failure
+branch `return 0`: two of the four self-test cases fail.
+
+
+## What 32-bit ARM was really missing, once it could be measured
+
+COV-01's ARM row came with a paragraph of apology: 536 bytes it could not
+decode, and an uncovered list led by `STC`, `CDP` and `LDC` -- coprocessor
+instructions that are not in these binaries at all. The tool's own header said
+so: an ARM figure from it "is a lower bound with a wide error bar, and its
+uncovered list should not be used to decide what to implement."
+
+That is fixable, and the fix is in the ELF. 32-bit ARM objects carry `$a`, `$t`
+and `$d` mapping symbols marking runs of ARM code, Thumb code and inline data.
+Following them, COV-01 disassembles each run in the mode it is actually in and
+drops the literal pools rather than pretending to decode them:
+
+```
+                 decoded   skipped   covered     rate   uncovered kinds
+before              5300       536      5055   0.9538   24
+after               8060         0      7698   0.9551    6  (3808 bytes of data)
+```
+
+The rate barely moved. Everything else did. `skipped` is zero, a third more
+instructions are being read at all, and the uncovered list stopped being
+fiction:
+
+```
+ARM_INS_HINT   238   2.95%   listed, null
+ARM_INS_IT      78   0.97%   listed, null
+ARM_INS_ADR     43   0.53%   listed, null
+ARM_INS_VPUSH    1           listed, null
+ARM_INS_VPOP     1           listed, null
+ARM_INS_ORN      1           listed, null
+```
+
+Six real instructions instead of twenty-four phantoms, and three of them are
+one line of dispatch each.
+
+### `ARM_INS_NOP` is a key capstone does not produce
+
+`HINT` is capstone's id for the entire hint space -- `nop`, `yield`, `wfe`,
+`wfi`, `sev`, `sevl`, `dbg`, the pointer-authentication and branch-target
+hints -- and `ARM_INS_NOP` exists but is not what a `nop` decodes to. The table
+had `ARM_INS_NOP` pointing at `translateNop` and no entry for `HINT`, so the
+translator that does the right thing sat on a key nothing arrives at. Third
+time this branch has found that shape: `ARM_INS_VMRS` against `ARM_INS_FMSTAT`,
+a duplicate `ARM64_INS_HINT` key, and now this.
+
+There was a test. It was called `ARM_INS_NOP`, and it asserted that `nop` comes
+out as a call to `__asm_nop`:
+
+```cpp
+EXPECT_JUST_VALUES_CALLED({
+    {_module.getFunction("__asm_nop"), {}},
+});
+```
+
+Both halves wrong and agreeing with each other. The test was written from the
+behaviour observed rather than the behaviour the instruction has, so it locked
+the defect in: a `nop` that produced nothing would have failed it.
+
+Most of the hint space is genuinely a no-op and is translated as one. `WFI`,
+`WFE`, `SEV`, `SEVL` and `DBG` are not -- they wait on or signal an external
+event -- and keep their pseudo-asm call rather than being silently dropped,
+which is the difference between "this does nothing" and "we do not model what
+this does". Capstone gives these no operand at all, so the mnemonic is the only
+thing that separates them.
+
+### Thumb reads PC as address + 4, at every width
+
+```cpp
+return llvm::ConstantInt::get(
+        getDefaultType(),
+        ((i->address + (2*i->size)) >> 2) << 2);
+```
+
+ARM reads PC as the instruction's address plus 8, and `2*size` is 8 for a
+4-byte ARM instruction. Thumb reads it as the address plus 4 -- and plus 4
+whether the instruction is 16 or 32 bits wide. `2*size` is 4 for a 16-bit Thumb
+instruction, which is right, and 8 for a 32-bit one, which is four bytes past
+where the architecture says PC is. Every Thumb-2 PC-relative load and every
+32-bit `ADR` was off by a word.
+
+It looked correct because it is correct in two of the three cases, and the
+third had no test. `addw r0, pc, #20` at address 0 answered 28 and answers 24
+now.
+
+### `IT` is a no-op, and that is a fact about the dispatcher
+
+`IT` makes the next one to four instructions conditional. Capstone puts that
+condition on each of those instructions' `cc`, and `arm.cpp`'s dispatcher
+already wraps any instruction whose `cc` is not `AL` in a generated condition.
+So the block header has no effect of its own and the right translation is
+nothing -- but only because of what happens elsewhere, which is why the entry
+carries a comment saying so rather than looking like an oversight.
+
+### `ADR`, `ORN`, `VPUSH`, `VPOP`
+
+`adr rN, label` is PC plus an immediate -- how a compiler names an address in
+its own function without a literal pool. Capstone reports the offset, not the
+resolved address, so a translation that stored the immediate would answer 20
+where the answer is 24.
+
+`orn rd, rn, op2` is `rn | ~op2`; the complement is on the second operand, not
+on the result.
+
+`VPUSH`/`VPOP` cannot reuse `translateLdmStm`, which writes every slot at
+`getArchByteSize()` -- four. A D register is eight, so a list of them pushed
+four bytes apart overlaps itself. The test pushes `{d0, d1}` and checks both
+addresses, which is the assertion the integer translator would fail.
+
+### Where ARM ends up
+
+```
+arch         decoded   skipped    covered     rate  uncovered-kinds
+arm             8060         0       8060   1.0000  0  (3808 bytes mapped as data)
+```
+
+Every instruction in the 42 ARM binaries has a translator. The number it
+started this branch at was 0.9517, and the number it would still be showing
+without the mapping-symbol change is 0.9551 -- with six real gaps hidden behind
+twenty-four that were never there.
+
+### One failure that has not come back
+
+One C2L-01 run in this sequence reported `PPC_INS_MR/CS_MODE_64` failed. It is
+a three-line test -- set r11, `mr 0, 11`, expect r0 -- in an architecture this
+branch had not touched since the floating-point work, and it has not failed
+again: the same binary has since run the whole suite clean twelve times, five
+of them back to back with nothing else on the machine, plus six runs of the
+PowerPC tests alone.
+
+It is recorded rather than explained. "Flake" is not a root cause and this is
+not being called one; what can be said is that it did not reproduce, and that
+the counts and the gate are green on the tree being pushed. If it returns, the
+thing to look at first is `GenericValue`'s default constructor, which leaves
+`DoubleVal` uninitialised -- the same shape as the `extractelement` and
+`extractvalue` defects above, and the only source of nondeterminism this
+emulator has.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# build_multiarch_corpus.sh — build the algorithm-recovery sources for the four
-# non-x86 architectures RetDec translates.
+# build_multiarch_corpus.sh — build the algorithm-recovery sources for all five
+# architectures RetDec translates.
 #
 # Why this exists
 # ---------------
@@ -10,6 +10,16 @@
 # four other architectures src/capstone2llvmir translates. C2L-01 checks their
 # instruction semantics; nothing checks what the decompiler does with a whole
 # binary.
+#
+# x86-64 is built here too, and it is not redundant with the corpus above. The
+# question these gates ask is "is every architecture at x86-64's level", and
+# that is only answerable if x86-64 is measured on the same sources, the same
+# flags and the same tools as the other four. It is the control column: when
+# ARM64 reads 0.98 the interesting fact is what x86-64 reads on the same 42
+# binaries, not what it reads on 252 different ones. COV-01 found the value of
+# this immediately -- x86-64's own coverage of floating-point programs was the
+# worst of the five, because every SSE2 double-precision instruction was
+# unimplemented.
 #
 # The binaries are built, not committed: they come from the same sources as the
 # x86-64 corpus, and four more architectures of them is several hundred files
@@ -54,11 +64,13 @@ OPTS="O0"
 QUIET=0
 LINK="dynamic"
 
-# The four architectures src/capstone2llvmir has a translator for, with the
+# The five architectures src/capstone2llvmir has a translator for, with the
 # triple that builds each. 32-bit ARM is built for the hard-float EABI because
 # that is what the distribution ships; MIPS and PowerPC are big-endian here,
 # which is the side of those two that x86-64 testing never exercises at all.
-ARCHES="arm64:aarch64-linux-gnu arm:arm-linux-gnueabihf mips:mips-linux-gnu powerpc:powerpc-linux-gnu"
+# x86-64 goes through its triple-prefixed driver rather than plain `gcc` so
+# that it needs no special case anywhere below.
+ARCHES="x86_64:x86_64-linux-gnu arm64:aarch64-linux-gnu arm:arm-linux-gnueabihf mips:mips-linux-gnu powerpc:powerpc-linux-gnu"
 
 while [ $# -gt 0 ]; do
 	case "$1" in

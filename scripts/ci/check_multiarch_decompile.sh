@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# ARCH-01 — decompile the same sources built for ARM, ARM64, MIPS and PowerPC,
-# and report the success rate per architecture.
+# ARCH-01 — decompile the same sources built for every architecture RetDec
+# translates, and report the success rate per architecture.
 #
 # Why this exists
 # ---------------
@@ -99,7 +99,7 @@ run_check() {
 		local name arch out log
 		name="$(basename "${bin}")"
 		# The builder names every file <stem>-<arch>-gcc-<opt>.
-		arch="$(echo "${name}" | sed -n 's/.*-\(arm64\|arm\|mips\|powerpc\)-gcc-O[0-9s]*$/\1/p')"
+		arch="$(echo "${name}" | sed -n 's/.*-\(x86_64\|arm64\|arm\|mips\|powerpc\)-gcc-O[0-9s]*$/\1/p')"
 		[ -n "${arch}" ] || arch="unknown"
 		out="${work}/${name}.c"
 		log="${work}/${name}.log"
@@ -122,7 +122,11 @@ run_check() {
 	# total nobody reads.
 	local bad=0
 	local total_ok=0 total_all=0
-	for arch in arm arm64 mips powerpc unknown; do
+	# x86-64 is in the list as the control column: the parity question is
+	# whether the other four reach it, which is unanswerable unless it is
+	# measured on the same binaries. An architecture with no binaries at all
+	# is skipped below, so this stays correct on a corpus built with --arch.
+	for arch in x86_64 arm arm64 mips powerpc unknown; do
 		local n_all n_ok
 		n_all="$(grep -c "^${arch} " "${work}/results" || true)"
 		[ "${n_all}" != 0 ] || continue

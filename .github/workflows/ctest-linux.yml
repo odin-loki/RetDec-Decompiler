@@ -341,6 +341,12 @@ jobs:
       # the first thing to ask what the decompiler does with a whole binary of
       # theirs.
       #
+      # x86-64 is in the corpus too now, as the control column -- same sources,
+      # same flags, same tools -- and it is reported here without a floor until
+      # it has a measured run to floor at. That is the road every other number
+      # in this file took, and skipping it is how a floor ends up being either
+      # vacuous or a fiction.
+      #
       # Now a floor, because there is a measurement to floor. Run 288 at
       # 517db16 read 40/40, every architecture at 1.0000 -- the same rate CC-01
       # reports for x86-64 -- after three commits that took it from 0/40. The
@@ -386,12 +392,12 @@ jobs:
       # 32-bit ARM only learned to translate floating point in the two commits
       # before this one.
       #
-      # So this runs all 168 and reports. No --min-rate and no --arch-min: the
-      # 128 binaries it adds have never been measured, and a floor picked
-      # before the first number is either vacuous or a fiction. It gets one
-      # once it has printed a rate, which is the road CC-01 took from 24
-      # binaries to 252 and ARCH-01 itself took from 0/40 to 40/40.
-      - name: ARCH-01 non-x86 decompilation (whole corpus, measurement)
+      # A floor now. Its first run, 290 at 938f6be, read 162/168 and the six
+      # failures were two decompiler crashes -- fneg and freeze, both
+      # unsupported by the IR-to-HLL converter, one of them reached by an
+      # integer program. With those fixed, run 291 at 46075a9 read 168/168 on
+      # every architecture, so that is what it is gated at.
+      - name: ARCH-01 non-x86 decompilation (whole corpus)
         if: always()
         run: |
           DEC="$(find build/linux -name retdec-decompiler -type f | head -n1)"
@@ -399,6 +405,7 @@ jobs:
           bash scripts/ci/check_multiarch_decompile.sh \
             --decompiler "$DEC" --corpus /tmp/ma-corpus \
             --limit 0 --timeout 60 \
+            --arch-min "arm=1.0 arm64=1.0 mips=1.0 powerpc=1.0" \
             --save-failures arch01-full-failures 2>&1 | tee /tmp/arch01-full.log
           {
             echo "### ARCH-01 non-x86 decompilation (whole corpus)"
@@ -406,6 +413,59 @@ jobs:
             grep -E '^ARCH-01' /tmp/arch01-full.log || tail -n 3 /tmp/arch01-full.log
             echo '```'
           } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
+
+      # COV-01. Of the instructions real binaries actually contain, what
+      # fraction does each translator have a function for?
+      #
+      # This script existed and nothing ran it -- not this workflow, not
+      # ci-smoke, not check_push_gates.sh. It also did not measure x86, on the
+      # reasoning that x86 is the thing the others are compared against. That
+      # is exactly the reasoning that let x86-64 ship without ADDSD: its own
+      # coverage of floating-point programs was the lowest of the five, 0.9846,
+      # and nobody had a number to notice it by.
+      #
+      # Floored at the measured values rather than below them. A toolchain
+      # change that moves a rate down is a thing to be told about, and slack in
+      # a floor is how a gate becomes more permissive than the thing it stands
+      # in for. Measured over the 210-binary corpus the step above builds:
+      #
+      #   x86_64  0.9931  HLT, one per binary, alignment padding
+      #   arm     1.0000
+      #   arm64   0.9994  LD1/ST1, NEON, two occurrences each
+      #   mips    1.0000
+      #   powerpc 1.0000
+      #
+      # ARM reads 1.0000 because COV-01 follows the $a/$t/$d mapping symbols
+      # now instead of disassembling the whole .text in one mode. Its old
+      # 0.9538 was measured over Thumb runs and literal pools decoded as ARM,
+      # and its uncovered list was led by coprocessor instructions that are
+      # not in these binaries at all. What it named once it could see was
+      # HINT, IT, ADR, ORN, VPUSH and VPOP, and those are implemented.
+      #
+      # x86-64 is the lowest of the five now, and what is left of it is HLT in
+      # alignment padding. It stays uncovered rather than being wired to a
+      # pseudo-asm call that would move the number without changing what the
+      # decompiler emits.
+      - name: COV-01 instruction coverage per architecture
+        if: always()
+        run: |
+          CS="build/linux/deps/install/capstone"
+          if [ ! -f "$CS/include/capstone/capstone.h" ]; then
+            echo "COV-01: capstone install prefix not found at $CS"; exit 1
+          fi
+          set -o pipefail
+          rc=0
+          python3 scripts/ci/check_instruction_coverage.py \
+            --corpus /tmp/ma-corpus --capstone-prefix "$CS" --top 8 \
+            --arch-min "x86_64=0.9931 arm=1.0 arm64=0.9994 mips=1.0 powerpc=1.0" \
+            2>&1 | tee /tmp/cov01.log || rc=$?
+          {
+            echo "### COV-01 instruction coverage per architecture"
+            echo '```'
+            cat /tmp/cov01.log
+            echo '```'
+          } | tee -a gate-numbers.md >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
 
       - name: Publish the non-x86 failures
         if: always()
