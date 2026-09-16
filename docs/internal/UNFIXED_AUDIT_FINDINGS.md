@@ -6494,3 +6494,149 @@ caught it. `scripts/check_format.sh --fix` with no `--base` did not cover the
 file, because it was still untracked when I ran it. The gate uses
 `--base "$(git rev-parse --verify -q '@{upstream}' || git rev-parse HEAD^)"`,
 which is the invocation that matters for a commit that adds a file.
+
+## Batch T — capstone returns the wrong instruction id for every EVEX compare
+
+### The finding
+
+This one is not about a missing translator. It is about a dispatch key that
+lies, and it is the sharpest instance of WF-01's inverse — one key covering
+many instructions — that this branch has found.
+
+Capstone 5.0.9 decodes the EVEX `VPCMP`/`VPCMPU` predicate aliases and returns
+`X86_INS_VPCMPB + predicate`. The element width and the signedness do not
+enter into it. Decoding all 48 encodings and grouping by the id capstone
+returned:
+
+```
+1111  X86_INS_VPCMPB       vpcmpequb vpcmpequd vpcmpequq vpcmpequw
+1112  X86_INS_VPCMPD       vpcmplt{b,d,q,w} vpcmplt{ub,ud,uq,uw}
+1113  X86_INS_VPCMPEQB     vpcmpeqb vpcmple{b,d,q,w} vpcmple{ub,ud,uq,uw}
+1115  X86_INS_VPCMPEQQ     vpcmpeqq vpcmpneq{b,d,q,w} vpcmpneq{ub,ud,uq,uw}
+1116  X86_INS_VPCMPEQW     vpcmpeqw vpcmpnlt{b,d,q,w} vpcmpnlt{ub,ud,uq,uw}
+1117  X86_INS_VPCMPESTRI   vpcmpnle{b,d,q,w} vpcmpnle{ub,ud,uq,uw}
+```
+
+Read the last row again. A 512-bit vector comparison comes back as
+**`X86_INS_VPCMPESTRI`**, the id of an SSE4.2 packed string compare. Nothing
+about the two instructions is related. If `VPCMPESTRI` had ever been wired to
+a translator, capstone would have handed it `vpcmpnleb` and it would have been
+translated as a string search.
+
+The mnemonic string is right in all 48 cases. So the translator parses
+`vpcmp<pred>[u]<size>` out of `cs_insn::mnemonic` and uses the id only to
+reach the function. Anything that does not parse — a genuine `vpcmpestri`,
+say — falls back, which is how the two stay separated while sharing a key.
+
+Parsing runs back to front: the last character is the element size, a `u`
+before it makes the comparison unsigned, and the remainder is the predicate.
+No predicate name ends in `u`, so the split is unambiguous.
+
+`VPTESTM`/`VPTESTNM` are the part capstone gets right — eight distinct,
+correct ids — so those dispatch normally. Four of them (`VPTESTMB`,
+`VPTESTMW`, `VPTESTNMB`, `VPTESTNMW`) were **absent from the dispatch table
+entirely**, the same gap Batch R found for `KADD`/`KTEST`.
+
+### T-1: predicates 3 and 7 have no mnemonic
+
+```
+vpcmpb k1, zmm2, zmm1, 3    ops=4   R(k1) R(zmm2) R(zmm1) I(3)
+vpcmpb k1, zmm2, zmm1, 7    ops=4   R(k1) R(zmm2) R(zmm1) I(7)
+```
+
+FALSE and TRUE render as the **base** mnemonic with the predicate in a fourth
+operand, and the two are indistinguishable by mnemonic. So the parser has a
+third answer besides "predicate P" and "not a compare": "read operand 3".
+
+### T-2: my own guard rejected the destination
+
+`hasEvexModifier()` from Batch S answers "does this instruction carry a write
+mask", and it does so by looking for an opmask register among the operands.
+For a comparison, operand 0 **is** an opmask register — the destination — so
+the guard rejected every instruction in this batch and all sixteen tests came
+back reading zero from a pseudo-assembly call.
+
+A compare into `k1` is not a predicated instruction. The guard now takes the
+first operand to consider, and the compares pass 1. That is a small fix and it
+is recorded here because the symptom — every new test failing identically with
+the right code — reads like the translator was never wired, and it was.
+
+### T-3: the mask is one bit per lane, bit 0 for lane 0
+
+`icmp` on an `<N x iW>` gives `<N x i1>`; bitcasting that to `iN` puts lane 0
+in bit 0, and the zero-extension into the i64 opmask register clears
+everything above the lane count. The test uses `0xfe` repeating rather than a
+symmetric pattern, so a reversed lane order answers `0x7f7f...` and is visible.
+
+Lane counts run from 2 (quadwords at 128 bits) to 64 (bytes at 512), and the
+128-bit tests pre-load `k1` with all ones so a mask that merged instead of
+zero-extending shows up.
+
+### Falsification
+
+Fourteen mutations, each reverted alone, rebuilt and run:
+
+| mutation | result |
+| --- | --- |
+| the predicate taken from the capstone id | 2 tests fail |
+| signedness ignored | 3 tests fail |
+| the lane width always bytes | 3 tests fail |
+| `le` read as `eq` | 1 test fails |
+| `nle` read as `eq` | 1 test fails |
+| the base form's predicate not read from the immediate | 2 tests fail |
+| the two source operands swapped | 5 tests fail |
+| the mask merged instead of zero-extended | 10 tests fail |
+| `VPTESTNM` not negated | 1 test fails |
+| `VPTESTM` lane width always bytes | 1 test fails |
+| the destination mask treated as a write mask | 13 tests fail |
+| the compare ids back to `nullptr` | 1 test fails |
+| the `VPTESTM` ids back to `nullptr` | 1 test fails |
+| a vector destination no longer routed to the AVX2 compare | 2 tests fail |
+
+The first one is the point of the batch: it implements exactly what "trust the
+id" computes, and the tests that catch it are the ones named after the
+instruction the id claims — `VPCMPLEUB_is_not_the_VPCMPEQB_its_id_claims` and
+`VPCMPNLEB_is_not_the_VPCMPESTRI_its_id_claims`.
+
+One mutation came back green on the first run: the one for the mask
+zero-extension re-read the register it had just written in the same basic
+block, so `old | new` was `new` and the mutation computed the correct answer.
+Rewritten to merge with the value loaded beforehand, it fails 10 tests.
+
+### Where it leaves x86-64
+
+```
+                 static     unmodelled   kinds
+after Batch Q    0.9822      92,140       -
+after Batch R    0.9845      79,935      165
+after Batch S    0.9922      40,369      133
+after Batch T    0.9947      27,572      113
+```
+
+```
+pcmpistri     6,393   SSE4.2 string compare -- needs no new register
+syscall       4,627   opaque by nature
+vpxorq        1,722   write-masked
+vpaddb        1,954   write-masked
+vpcmpeqb      2,123   write-masked
+```
+
+Everything with a `vpcmp`/`vptest` name still in the list is the **predicated**
+form — `{k2}` or `{z}` — which this declines on purpose. That is category (d)
+from Batch S's table, the last one, and the only one that needs the value
+model to carry per-lane predication rather than just to produce and consume
+masks.
+
+The largest single remaining item on x86-64 is now `pcmpistri`.
+
+### Where all five stand
+
+```
+x86_64   0.9947     pcmpistri, syscall, write-masked vector ops
+arm      0.9977     table branches, coprocessor, NEON
+arm64    0.9945     SVE, MTE, movi
+mips     0.9989     syscall, break, the FPU control word
+powerpc  0.9960     traps, AltiVec, cache maintenance
+```
+
+C2L-01 floor: X86 2433 → 2484. 5,313 tests.

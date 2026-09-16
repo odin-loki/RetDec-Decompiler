@@ -395,6 +395,9 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateAvxPmovmskb(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxMovScalar(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateAvxPackedFloat(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		bool hasEvexModifier(cs_x86* xi, unsigned from = 0) const;
+		unsigned vectorRegisterWidth(uint32_t r) const;
+		unsigned avxWidth(cs_x86* xi) const;
 		bool isWideVectorRegister(uint32_t r) const;
 		llvm::Value* loadWideVectorRegister(uint32_t r, llvm::IRBuilder<>& irb);
 		llvm::StoreInst* storeWideVectorRegister(uint32_t r, llvm::Value* val, llvm::IRBuilder<>& irb);
@@ -436,6 +439,10 @@ class Capstone2LlvmIrTranslatorX86_impl :
 		void translateKunpck(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateKortest(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 		void translateKtest(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		unsigned maskCompareWidth(cs_x86* xi);
+		void storeLaneMask(cs_x86_op& dst, llvm::Value* lanes, llvm::IRBuilder<>& irb);
+		void translateVectorCompare(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
+		void translateVectorTestMask(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb);
 };
 
 } // namespace capstone2llvmir

@@ -18046,6 +18046,446 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, A_fallback_reading_a_ZMM_operand_reads
 	EXPECT_FALSE(readsDeadZmm1) << dumpFunction(f);
 }
 
+//
+// ============================================================================
+// Comparisons whose destination is an opmask register
+// ============================================================================
+//
+// Capstone 5.0.9 returns the WRONG instruction id for the whole EVEX VPCMP
+// family: `X86_INS_VPCMPB + predicate`, ignoring element width and signedness.
+// One id therefore covers up to nine different instructions, and one of them
+// is the id of an unrelated SSE4.2 string instruction. Several tests below
+// exist only to prove the translator reads the mnemonic and not the id --
+// each one names the instruction the id claims it is.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPEQB_produces_one_bit_per_byte_lane)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {
+		0x0102030405060708ULL,
+		0x0102030405060708ULL,
+		0x0102030405060708ULL,
+		0x0102030405060708ULL,
+		0x0102030405060708ULL,
+		0x0102030405060708ULL,
+		0x0102030405060708ULL,
+		0x0102030405060708ULL};
+	const uint64_t b[8] = {
+		0x0102030405060700ULL,
+		0x0102030405060700ULL,
+		0x0102030405060700ULL,
+		0x0102030405060700ULL,
+		0x0102030405060700ULL,
+		0x0102030405060700ULL,
+		0x0102030405060700ULL,
+		0x0102030405060700ULL};
+	setZmm(2, a);
+	setZmm(1, b);
+	setRegisters({{X86_REG_K1, 0xffffffffffffffffULL}});
+
+	emulate_bin("62 f1 6d 48 74 c9"); // vpcmpeqb k1, zmm2, zmm1
+
+	// Byte 0 of each quadword differs and the other seven match, so every
+	// group of eight bits reads 0xfe. Lane 0 is bit 0: the pattern is not
+	// symmetric, so a reversed lane order would answer 0x7f7f...
+	EXPECT_EQ(0xfefefefefefefefeULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPEQB_at_128_bits_zeroes_the_mask_above_sixteen_lanes)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {0x0102030405060708ULL, 0x0102030405060708ULL, 0, 0, 0, 0, 0, 0};
+	const uint64_t b[8] = {0x0102030405060700ULL, 0x0102030405060700ULL, 0, 0, 0, 0, 0, 0};
+	setZmm(2, a);
+	setZmm(1, b);
+	setRegisters({{X86_REG_K1, 0xffffffffffffffffULL}});
+
+	emulate_bin("62 f1 6d 08 74 c9"); // vpcmpeqb k1, xmm2, xmm1
+
+	// Sixteen lanes, and k1[63:16] cleared.
+	EXPECT_EQ(0xfefeULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPLTUB_is_unsigned)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL};
+	const uint64_t b[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(2, a);
+	setZmm(1, b);
+	setRegisters({{X86_REG_K1, 0}});
+
+	emulate_bin("62 f3 6d 48 3e c9 01"); // vpcmpltub k1, zmm2, zmm1
+
+	// 1 < 255 unsigned in every lane. Signed it would be 1 < -1, which is
+	// false everywhere -- and capstone gives vpcmpltub and vpcmpltb the SAME
+	// id, so only the mnemonic separates them.
+	EXPECT_EQ(0xffffffffffffffffULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPLTB_is_signed_and_shares_its_id_with_VPCMPLTUB)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL};
+	const uint64_t b[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(2, a);
+	setZmm(1, b);
+	setRegisters({{X86_REG_K1, ~0ULL}});
+
+	emulate_bin("62 f3 6d 48 3f c9 01"); // vpcmpltb k1, zmm2, zmm1
+
+	// Same id (X86_INS_VPCMPD), same operands, opposite answer: 1 < -1 is
+	// false in every lane.
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPLEUB_is_not_the_VPCMPEQB_its_id_claims)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL};
+	const uint64_t b[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(2, a);
+	setZmm(1, b);
+	setRegisters({{X86_REG_K1, 0}});
+
+	emulate_bin("62 f3 6d 48 3e c9 02"); // vpcmpleub k1, zmm2, zmm1
+
+	// Capstone reports this as X86_INS_VPCMPEQB. 1 <= 255 unsigned is true
+	// everywhere; a byte equality would be false everywhere.
+	EXPECT_EQ(0xffffffffffffffffULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPNLEB_is_not_the_VPCMPESTRI_its_id_claims)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL};
+	const uint64_t b[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(2, a);
+	setZmm(1, b);
+	setRegisters({{X86_REG_K1, 0}});
+
+	emulate_bin("62 f3 6d 48 3f c9 06"); // vpcmpnleb k1, zmm2, zmm1
+
+	// Capstone reports this 512-bit vector compare as X86_INS_VPCMPESTRI,
+	// an SSE4.2 string instruction. Signed 1 > -1 is true in every lane.
+	EXPECT_EQ(0xffffffffffffffffULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPNEQUB_is_not_the_VPCMPEQQ_its_id_claims)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL,
+		0x0101010101010101ULL};
+	const uint64_t b[8] = {~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL};
+	setZmm(2, a);
+	setZmm(1, b);
+	setRegisters({{X86_REG_K1, 0}});
+
+	emulate_bin("62 f3 6d 48 3e c9 04"); // vpcmpnequb k1, zmm2, zmm1
+
+	// Capstone reports this as X86_INS_VPCMPEQQ. Sixty-four byte lanes all
+	// differ, so the answer is all ones; eight quadword equalities would
+	// answer zero.
+	EXPECT_EQ(0xffffffffffffffffULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPB_with_the_FALSE_predicate_clears_every_lane)
+{
+	ONLY_MODE_64;
+
+	const uint64_t v[8] = {7, 7, 7, 7, 7, 7, 7, 7};
+	setZmm(2, v);
+	setZmm(1, v);
+	setRegisters({{X86_REG_K1, ~0ULL}});
+
+	emulate_bin("62 f3 6d 48 3f c9 03"); // vpcmpb k1, zmm2, zmm1, 3
+
+	// Predicates 3 and 7 have no mnemonic of their own -- capstone renders
+	// both as plain `vpcmpb` and puts the predicate in a fourth operand. The
+	// operands are equal, so reading the predicate as EQ would answer all
+	// ones.
+	EXPECT_EQ(0ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPB_with_the_TRUE_predicate_sets_every_lane)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+	const uint64_t b[8] = {8, 7, 6, 5, 4, 3, 2, 1};
+	setZmm(2, a);
+	setZmm(1, b);
+	setRegisters({{X86_REG_K1, 0}});
+
+	emulate_bin("62 f3 6d 48 3f c9 07"); // vpcmpb k1, zmm2, zmm1, 7
+
+	EXPECT_EQ(0xffffffffffffffffULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPEQD_compares_sixteen_dword_lanes)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {
+		0x0000000100000001ULL,
+		0x0000000100000001ULL,
+		0x0000000100000001ULL,
+		0x0000000100000001ULL,
+		0x0000000100000001ULL,
+		0x0000000100000001ULL,
+		0x0000000100000001ULL,
+		0x0000000100000001ULL};
+	const uint64_t b[8] = {
+		0x0000000100000002ULL,
+		0x0000000100000002ULL,
+		0x0000000100000002ULL,
+		0x0000000100000002ULL,
+		0x0000000100000002ULL,
+		0x0000000100000002ULL,
+		0x0000000100000002ULL,
+		0x0000000100000002ULL};
+	setZmm(2, a);
+	setZmm(1, b);
+	setRegisters({{X86_REG_K1, ~0ULL}});
+
+	emulate_bin("62 f1 6d 48 76 c9"); // vpcmpeqd k1, zmm2, zmm1
+
+	// The low dword of each quadword differs and the high one matches:
+	// sixteen lanes, alternating, and everything above them cleared.
+	EXPECT_EQ(0xaaaaULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPEQQ_compares_eight_quadword_lanes)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+	const uint64_t b[8] = {1, 0, 3, 0, 5, 0, 7, 0};
+	setZmm(2, a);
+	setZmm(1, b);
+	setRegisters({{X86_REG_K1, ~0ULL}});
+
+	emulate_bin("62 f2 ed 48 29 c9"); // vpcmpeqq k1, zmm2, zmm1
+
+	// Lanes 0, 2, 4 and 6 match.
+	EXPECT_EQ(0x55ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPTESTMB_sets_a_lane_when_the_AND_is_non_zero)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL};
+	const uint64_t b[8] = {
+		0x00ff00ff00ff00ffULL,
+		0x00ff00ff00ff00ffULL,
+		0x00ff00ff00ff00ffULL,
+		0x00ff00ff00ff00ffULL,
+		0x00ff00ff00ff00ffULL,
+		0x00ff00ff00ff00ffULL,
+		0x00ff00ff00ff00ffULL,
+		0x00ff00ff00ff00ffULL};
+	setZmm(2, a);
+	setZmm(1, b);
+	setRegisters({{X86_REG_K1, 0}});
+
+	emulate_bin("62 f2 6d 48 26 c9"); // vptestmb k1, zmm2, zmm1
+
+	// Even byte lanes AND to 0x0f, odd ones to zero.
+	EXPECT_EQ(0x5555555555555555ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPTESTNMB_is_the_complement)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL};
+	const uint64_t b[8] = {
+		0x00ff00ff00ff00ffULL,
+		0x00ff00ff00ff00ffULL,
+		0x00ff00ff00ff00ffULL,
+		0x00ff00ff00ff00ffULL,
+		0x00ff00ff00ff00ffULL,
+		0x00ff00ff00ff00ffULL,
+		0x00ff00ff00ff00ffULL,
+		0x00ff00ff00ff00ffULL};
+	setZmm(2, a);
+	setZmm(1, b);
+	setRegisters({{X86_REG_K1, 0}});
+
+	emulate_bin("62 f2 6e 48 26 c9"); // vptestnmb k1, zmm2, zmm1
+
+	EXPECT_EQ(0xaaaaaaaaaaaaaaaaULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPTESTMD_tests_dword_lanes_not_byte_ones)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL,
+		0x0f0f0f0f0f0f0f0fULL};
+	const uint64_t b[8] = {
+		0x00000000000000ffULL,
+		0x00000000000000ffULL,
+		0x00000000000000ffULL,
+		0x00000000000000ffULL,
+		0x00000000000000ffULL,
+		0x00000000000000ffULL,
+		0x00000000000000ffULL,
+		0x00000000000000ffULL};
+	setZmm(2, a);
+	setZmm(1, b);
+	setRegisters({{X86_REG_K1, 0}});
+
+	emulate_bin("62 f2 6d 48 27 c9"); // vptestmd k1, zmm2, zmm1
+
+	// Only the low dword of each quadword has any bit in common: sixteen
+	// lanes, every other one set. Testing bytes would answer
+	// 0x0101010101010101 across sixty-four lanes instead.
+	EXPECT_EQ(0x5555ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPEQB_compares_the_EVEX_only_registers)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {
+		0x0102030405060708ULL, 0x0102030405060708ULL, 0x0102030405060708ULL, 0x0102030405060708ULL, 0, 0, 0, 0};
+	const uint64_t b[8] = {
+		0x0102030405060700ULL, 0x0102030405060700ULL, 0x0102030405060700ULL, 0x0102030405060700ULL, 0, 0, 0, 0};
+	setZmm(17, a);
+	setZmm(16, b);
+	setRegisters({{X86_REG_K1, ~0ULL}});
+
+	emulate_bin("62 b1 75 20 74 c8"); // vpcmpeqb k1, ymm17, ymm16
+
+	// Thirty-two lanes, and k1[63:32] cleared.
+	EXPECT_EQ(0xfefefefeULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPLTUQ_compares_quadwords_unsigned)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {1, 1, 1, 1, 1, 1, 1, 1};
+	const uint64_t b[8] = {~0ULL, 0, ~0ULL, 0, ~0ULL, 0, ~0ULL, 0};
+	setZmm(2, a);
+	setZmm(1, b);
+	setRegisters({{X86_REG_K1, ~0ULL}});
+
+	emulate_bin("62 f3 ed 48 1e c9 01"); // vpcmpltuq k1, zmm2, zmm1
+
+	// 1 < 0xffffffffffffffff unsigned is true; signed it would be 1 < -1,
+	// false. Lanes 1, 3, 5 and 7 compare against zero and are false either
+	// way, so the answer names the signedness on its own.
+	EXPECT_EQ(0x55ULL, getRegisterValueUnsigned(X86_REG_K1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, VPCMPGTB_with_a_vector_destination_is_still_the_AVX2_compare)
+{
+	ONLY_MODE_64;
+
+	const uint64_t a[8] = {0x0000000000000001ULL, 0, 0, 0, 0, 0, 0, 0};
+	const uint64_t b[8] = {0x00000000000000ffULL, 0, 0, 0, 0, 0, 0, 0};
+	setZmm(2, a);
+	setZmm(1, b);
+	setZmm(3, a);
+
+	emulate_bin("c5 e9 64 d9"); // vpcmpgtb xmm3, xmm2, xmm1
+
+	// Signed 1 > -1 in lane 0, and every other lane is 0 > 0. The result
+	// goes into a VECTOR register as all-ones lanes, not into a mask.
+	EXPECT_EQ(0xffULL, zmmWord(3, 0));
+	EXPECT_EQ(0ULL, zmmWord(3, 1));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

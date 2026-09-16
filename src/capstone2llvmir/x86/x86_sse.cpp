@@ -1659,15 +1659,28 @@ void Capstone2LlvmIrTranslatorX86_impl::storeVectorOp(
  *
  * Suppression (`{sae}`) and an embedded rounding mode change what a
  * floating-point result is, so they disqualify an instruction too.
+ *
+ * @param from First operand to consider. A comparison whose DESTINATION is
+ *             an opmask register is not thereby predicated, so those pass 1.
  */
-static bool hasEvexModifier(cs_x86* xi)
+/**
+ * 512, 256 or 128 for a vector register name, 0 for anything else.
+ */
+unsigned Capstone2LlvmIrTranslatorX86_impl::vectorRegisterWidth(uint32_t r) const
+{
+	return isZmmRegister(r) ? 512 : (isYmmRegister(r) ? 256 : (isXmmRegister(r) ? 128 : 0));
+}
+
+bool Capstone2LlvmIrTranslatorX86_impl::hasEvexModifier(cs_x86* xi, unsigned from) const
 {
 	if (xi->avx_sae || xi->avx_rm != X86_AVX_RM_INVALID)
 	{
 		return true;
 	}
 
-	for (unsigned k = 0; k < xi->op_count; ++k)
+	// `from` skips the destination for an instruction whose destination IS an
+	// opmask register -- a compare into k1 is not a predicated instruction.
+	for (unsigned k = from; k < xi->op_count; ++k)
 	{
 		auto& op = xi->operands[k];
 		if (op.avx_zero_opmask)
@@ -1687,7 +1700,7 @@ static bool hasEvexModifier(cs_x86* xi)
  * The width an AVX instruction operates at, taken from its register operands.
  * Zero when they do not agree or are not vector registers at all.
  */
-static unsigned avxWidth(cs_x86* xi)
+unsigned Capstone2LlvmIrTranslatorX86_impl::avxWidth(cs_x86* xi) const
 {
 	if (hasEvexModifier(xi))
 	{

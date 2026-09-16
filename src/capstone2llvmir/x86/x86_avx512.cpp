@@ -25,8 +25,11 @@
  *      every one of these.
  */
 
+#include <string>
+
 #include <capstone/capstone.h>
 #include <llvm/IR/Constants.h>
+#include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Value.h>
@@ -334,6 +337,328 @@ void Capstone2LlvmIrTranslatorX86_impl::translateKtest(cs_insn* i, cs_x86* xi, l
 	llvm::Value* zf = irb.CreateICmpEQ(irb.CreateAnd(s2, s1), zero);
 	llvm::Value* cf = irb.CreateICmpEQ(irb.CreateAnd(s2, irb.CreateNot(s1)), zero);
 	storeMaskTestFlags(zf, cf, irb);
+}
+
+//
+//==============================================================================
+// Comparisons whose destination is an opmask register.
+//==============================================================================
+//
+// These cannot be dispatched on the capstone instruction id, because for the
+// EVEX VPCMP family the id is wrong. Capstone 5.0.9 returns
+// `X86_INS_VPCMPB + predicate`, ignoring both the element width and the
+// signedness -- so a single id covers up to nine different instructions:
+//
+//   id 1113 (X86_INS_VPCMPEQB)    vpcmpeqb vpcmpleb vpcmpled vpcmpleq
+//                                 vpcmpleub vpcmpleud vpcmpleuq vpcmpleuw
+//                                 vpcmplew
+//   id 1116 (X86_INS_VPCMPEQW)    vpcmpeqw and every vpcmpnlt* form
+//   id 1117 (X86_INS_VPCMPESTRI)  every vpcmpnle* form -- an SSE4.2 string
+//                                 instruction's id, handed to a 512-bit
+//                                 vector compare
+//
+// The mnemonic string is right in every case, so that is what these read.
+// Anything that does not parse as `vpcmp<pred>[u]<size>` falls back, which is
+// what keeps a genuine `vpcmpestri` out of here.
+//
+
+namespace {
+
+/// The predicate encoding shared by VPCMP and VPCMPU.
+enum : unsigned
+{
+	CMP_EQ = 0,
+	CMP_LT = 1,
+	CMP_LE = 2,
+	CMP_FALSE = 3,
+	CMP_NEQ = 4,
+	CMP_NLT = 5,
+	CMP_NLE = 6,
+	CMP_TRUE = 7,
+};
+
+struct VectorCompareForm
+{
+	unsigned laneBits = 0;
+	unsigned pred = 0;
+	bool isSigned = true;
+	bool fromImmediate = false;
+	bool ok = false;
+};
+
+/**
+ * Read `vpcmp<pred>[u]<size>` out of a capstone mnemonic.
+ *
+ * Parsing runs back to front: the last character is the element size, a `u`
+ * before it makes the comparison unsigned, and what remains is the predicate.
+ * No predicate name ends in `u`, so that split is unambiguous.
+ *
+ * An empty predicate is the base form -- `vpcmpb`, `vpcmpud` -- which capstone
+ * emits for predicates 3 and 7 and which carries the predicate in a fourth
+ * operand instead.
+ */
+VectorCompareForm parseVectorCompare(const char* m)
+{
+	VectorCompareForm f;
+	std::string s(m ? m : "");
+	if (s.compare(0, 5, "vpcmp") != 0 || s.size() < 6)
+	{
+		return f;
+	}
+	s = s.substr(5);
+
+	switch (s.back())
+	{
+	case 'b': f.laneBits = 8; break;
+	case 'w': f.laneBits = 16; break;
+	case 'd': f.laneBits = 32; break;
+	case 'q': f.laneBits = 64; break;
+	default: return f;
+	}
+	s.pop_back();
+
+	if (!s.empty() && s.back() == 'u')
+	{
+		f.isSigned = false;
+		s.pop_back();
+	}
+
+	if (s.empty())
+	{
+		f.fromImmediate = true;
+	}
+	else if (s == "eq")
+	{
+		f.pred = CMP_EQ;
+	}
+	else if (s == "lt")
+	{
+		f.pred = CMP_LT;
+	}
+	else if (s == "le")
+	{
+		f.pred = CMP_LE;
+	}
+	else if (s == "neq")
+	{
+		f.pred = CMP_NEQ;
+	}
+	else if (s == "nlt")
+	{
+		f.pred = CMP_NLT;
+	}
+	else if (s == "nle")
+	{
+		f.pred = CMP_NLE;
+	}
+	else if (s == "gt")
+	{
+		// VPCMPGT is signed-only and has no immediate form.
+		f.pred = CMP_NLE;
+		f.isSigned = true;
+	}
+	else
+	{
+		return f;
+	}
+
+	f.ok = true;
+	return f;
+}
+
+} // anonymous namespace
+
+/**
+ * The width a mask-producing comparison operates at, taken from its source
+ * operands -- the destination is an opmask register and says nothing.
+ */
+unsigned Capstone2LlvmIrTranslatorX86_impl::maskCompareWidth(cs_x86* xi)
+{
+	unsigned bits = 0;
+	for (unsigned k = 1; k < xi->op_count; ++k)
+	{
+		auto& op = xi->operands[k];
+		if (op.type != X86_OP_REG)
+		{
+			continue;
+		}
+		unsigned b = vectorRegisterWidth(op.reg);
+		if (b == 0 || (bits != 0 && b != bits))
+		{
+			return 0;
+		}
+		bits = b;
+	}
+
+	if (bits == 0)
+	{
+		return 0;
+	}
+
+	for (unsigned k = 1; k < xi->op_count; ++k)
+	{
+		auto& op = xi->operands[k];
+		if (op.type == X86_OP_MEM && op.size * 8 != bits)
+		{
+			return 0;
+		}
+	}
+
+	return bits;
+}
+
+/**
+ * Write a lane-wise predicate into an opmask register.
+ *
+ * One bit per lane, bit 0 for lane 0, and the bits above the lane count are
+ * cleared -- the same rule every opmask write follows.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::storeLaneMask(cs_x86_op& dst, llvm::Value* lanes, llvm::IRBuilder<>& irb)
+{
+	auto* vecTy = llvm::cast<llvm::FixedVectorType>(lanes->getType());
+	unsigned n = vecTy->getNumElements();
+	storeMaskOp(dst, irb.CreateBitCast(lanes, irb.getIntNTy(n)), n, irb);
+}
+
+/**
+ * VPCMPEQ/VPCMPGT/VPCMP/VPCMPU with an opmask destination, at 128, 256 or
+ * 512 bits.
+ *
+ * With a VECTOR destination the same mnemonics are the AVX2 comparisons that
+ * produce all-ones or all-zero lanes, which translateAvxPackedBinary already
+ * handles -- so this routes there rather than answering a mask.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateVectorCompare(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	if (xi->op_count < 3 || !isMaskRegister(xi->operands[0].type == X86_OP_REG ? xi->operands[0].reg : X86_REG_INVALID))
+	{
+		translateAvxPackedBinary(i, xi, irb);
+		return;
+	}
+
+	auto f = parseVectorCompare(i->mnemonic);
+	if (!f.ok || hasEvexModifier(xi, 1))
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	if (f.fromImmediate)
+	{
+		if (xi->op_count != 4 || xi->operands[3].type != X86_OP_IMM)
+		{
+			translatePseudoAsmGeneric(i, xi, irb);
+			return;
+		}
+		f.pred = static_cast<unsigned>(xi->operands[3].imm) & 0x7;
+	}
+	else if (xi->op_count != 3)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned bits = maskCompareWidth(xi);
+	if (bits == 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	llvm::Value* a = loadVectorOp(xi->operands[1], irb, bits);
+	llvm::Value* b = loadVectorOp(xi->operands[2], irb, bits);
+	if (a == nullptr || b == nullptr)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned n = bits / f.laneBits;
+	auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(f.laneBits), n);
+	llvm::Value* va = irb.CreateBitCast(a, vecTy);
+	llvm::Value* vb = irb.CreateBitCast(b, vecTy);
+
+	llvm::Value* lanes = nullptr;
+	switch (f.pred)
+	{
+	case CMP_EQ: lanes = irb.CreateICmpEQ(va, vb); break;
+	case CMP_NEQ: lanes = irb.CreateICmpNE(va, vb); break;
+	case CMP_LT: lanes = f.isSigned ? irb.CreateICmpSLT(va, vb) : irb.CreateICmpULT(va, vb); break;
+	case CMP_LE: lanes = f.isSigned ? irb.CreateICmpSLE(va, vb) : irb.CreateICmpULE(va, vb); break;
+	case CMP_NLT: lanes = f.isSigned ? irb.CreateICmpSGE(va, vb) : irb.CreateICmpUGE(va, vb); break;
+	case CMP_NLE: lanes = f.isSigned ? irb.CreateICmpSGT(va, vb) : irb.CreateICmpUGT(va, vb); break;
+	case CMP_FALSE: lanes = llvm::Constant::getNullValue(llvm::FixedVectorType::get(irb.getInt1Ty(), n)); break;
+	default: lanes = llvm::Constant::getAllOnesValue(llvm::FixedVectorType::get(irb.getInt1Ty(), n)); break;
+	}
+
+	storeLaneMask(xi->operands[0], lanes, irb);
+}
+
+/**
+ * VPTESTM and VPTESTNM.
+ *
+ * `vptestmb k1, zmm2, zmm1` sets k1[i] when the bitwise AND of lane i is
+ * non-zero; VPTESTNM sets it when the AND is zero. These ids are the one part
+ * of the family capstone gets right, so they dispatch normally.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateVectorTestMask(cs_insn* i, cs_x86* xi, llvm::IRBuilder<>& irb)
+{
+	if (xi->op_count != 3 || xi->operands[0].type != X86_OP_REG || !isMaskRegister(xi->operands[0].reg)
+		|| hasEvexModifier(xi, 1))
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned laneBits = 0;
+	bool negated = false;
+	switch (i->id)
+	{
+	case X86_INS_VPTESTMB: laneBits = 8; break;
+	case X86_INS_VPTESTMW: laneBits = 16; break;
+	case X86_INS_VPTESTMD: laneBits = 32; break;
+	case X86_INS_VPTESTMQ: laneBits = 64; break;
+	case X86_INS_VPTESTNMB:
+		laneBits = 8;
+		negated = true;
+		break;
+	case X86_INS_VPTESTNMW:
+		laneBits = 16;
+		negated = true;
+		break;
+	case X86_INS_VPTESTNMD:
+		laneBits = 32;
+		negated = true;
+		break;
+	case X86_INS_VPTESTNMQ:
+		laneBits = 64;
+		negated = true;
+		break;
+	default: translatePseudoAsmGeneric(i, xi, irb); return;
+	}
+
+	unsigned bits = maskCompareWidth(xi);
+	if (bits == 0)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	llvm::Value* a = loadVectorOp(xi->operands[1], irb, bits);
+	llvm::Value* b = loadVectorOp(xi->operands[2], irb, bits);
+	if (a == nullptr || b == nullptr)
+	{
+		translatePseudoAsmGeneric(i, xi, irb);
+		return;
+	}
+
+	unsigned n = bits / laneBits;
+	auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(laneBits), n);
+	llvm::Value* andv = irb.CreateAnd(irb.CreateBitCast(a, vecTy), irb.CreateBitCast(b, vecTy));
+	auto* zero = llvm::Constant::getNullValue(vecTy);
+
+	llvm::Value* lanes = negated ? irb.CreateICmpEQ(andv, zero) : irb.CreateICmpNE(andv, zero);
+	storeLaneMask(xi->operands[0], lanes, irb);
 }
 
 } // namespace capstone2llvmir
