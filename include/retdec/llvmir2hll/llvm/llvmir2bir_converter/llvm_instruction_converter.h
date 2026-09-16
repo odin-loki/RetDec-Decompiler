@@ -112,6 +112,8 @@ private:
 	ShPtr<Expression> visitExtractElementInst(llvm::ExtractElementInst &inst);
 	ShPtr<Expression> visitInsertElementInst(llvm::InsertElementInst &inst);
 	ShPtr<Expression> visitShuffleVectorInst(llvm::ShuffleVectorInst &inst);
+	ShPtr<Expression> visitUnaryOperator(llvm::UnaryOperator& inst);
+	ShPtr<Expression> visitFreezeInst(llvm::FreezeInst& inst);
 	ShPtr<Expression> visitInstruction(llvm::Instruction &inst);
 	/// @}
 

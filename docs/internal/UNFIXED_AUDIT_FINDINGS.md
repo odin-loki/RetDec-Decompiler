@@ -2347,6 +2347,84 @@ and reports without a floor -- the road CC-01 took from 24 binaries to 252, and
 that ARCH-01 itself took from 0/40 to 40/40. A floor picked before the first
 number is either vacuous or a fiction.
 
+### Two instructions the IR-to-HLL converter aborts on
+
+The whole-corpus ARCH-01 step existed to measure the 128 binaries the floored
+one never sees. Its first run, ctest-linux 290 at `938f6be`, read **162/168**,
+and the six failures are two decompiler crashes:
+
+```
+ARCH-01: arm       41/42   0.9762
+ARCH-01: arm64     40/42   0.9524
+ARCH-01: mips      41/42   0.9762
+ARCH-01: powerpc   40/42   0.9524
+ARCH-01: overall  162/168  0.9643
+```
+
+| instruction | failures | why it is there |
+|-------------|----------|-----------------|
+| `fneg`      | 4 — arm, arm64, mips, powerpc | LLVM 11 replaced the `fsub -0.0, x` idiom with a dedicated unary operator; this converter predates it |
+| `freeze`    | 2 — arm64, powerpc | LLVM's own optimiser inserts it; no translator chose to emit it |
+
+Both reach `LLVMInstructionConverter::visitInstruction`, which calls `FAIL()`
+and aborts the process. Not a wrong result — the whole decompilation ends.
+
+**`fneg` is not new, and not from this session's work.** `git blame` puts the
+five `CreateFNeg` calls in `arm64.cpp` at `894733d`, the initial import. Any
+ARM64 binary containing a floating-point negation has ended the decompiler
+since then. Nothing caught it because not one of the 367 corpus sources
+contained a `float` — which is exactly what the six added in the previous
+commit were for, and they found it on the first run.
+
+The conversions are both one line of meaning. `fneg x` is `NegOpExpr(x)`.
+`freeze x` is `x`: it pins any undef or poison in its operand to a value the
+instruction does not name, and a decompiler has no undef to pin, so there is
+nothing to emit but the operand.
+
+**`gcd_euclid` is the `freeze` one, and it is an integer program.** So this was
+never a floating-point problem; widening the measurement is what found it. The
+floored ARCH-01 step takes the first ten programs by name and would not have
+reached either binary.
+
+### A gate that reused objects it could not identify
+
+Diagnosing the two above cost a stash-and-rebuild, because L2H-01 reported
+
+```
+undefined reference to llvm::APInt::toString(SmallVectorImpl<char>&, unsigned, bool, bool, bool)
+```
+
+from `const_int.cpp` — a file nothing in the working tree had touched. It was
+not the working tree. `L2H_WORKDIR` reuses an object whenever the object is
+newer than its source, which says nothing about the compiler or the LLVM
+headers that produced it, and the directory I pointed it at held objects dated
+six days earlier, built against a different LLVM. `APSInt::toString` is an
+inline; the stale `const_int.o` carried a call to the five-argument
+`APInt::toString` that LLVM 20 does not export, and the linker only complained
+once something referenced that weak section.
+
+The flags, the compiler and the LLVM version are stamped into the workdir now,
+and a workdir stamped differently is emptied rather than reused.
+
+**The first version of that guard missed its own motivating case.** It trusted
+a workdir carrying no stamp — and the directory that caused the trouble
+predated stamping, so it carried none. Run against it, the guard passed the
+stale objects straight through and reproduced the identical link error. An
+unstamped workdir is now discarded too: its provenance is unknown, which is
+precisely what the check refuses. That is the third time in this work a checker
+turned out to be more permissive than the thing it stood in for.
+
+Two other notes from the same episode, neither worth a guard but both worth
+not repeating:
+
+  * Editing a shell script while it is running corrupts that run. Bash reads a
+    script incrementally, so an edit shifts the bytes under the interpreter;
+    this one died on `STAMP: unbound variable` at a line that defines `STAMP`
+    twenty lines earlier.
+  * The evidence that the working tree was innocent came from `git stash` and a
+    clean rebuild — 2207 tests, linking fine — not from reading the diff and
+    deciding it looked unrelated.
+
 ### 32-bit ARM claimed a capacity it had no registers for
 
 `arm_conv.cpp` set

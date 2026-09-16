@@ -38,6 +38,7 @@
 #include "retdec/llvmir2hll/ir/lt_eq_op_expr.h"
 #include "retdec/llvmir2hll/ir/lt_op_expr.h"
 #include "retdec/llvmir2hll/ir/mod_op_expr.h"
+#include "retdec/llvmir2hll/ir/neg_op_expr.h"
 #include "retdec/llvmir2hll/ir/mul_op_expr.h"
 #include "retdec/llvmir2hll/ir/neq_op_expr.h"
 #include "retdec/llvmir2hll/ir/pointer_type.h"
@@ -687,6 +688,58 @@ PointerLoadInstPointeeMetadataDoesNotDoubleWrap)
 	auto birPtr = cast<PointerType>(var->getType());
 	ASSERT_TRUE(birPtr);
 	ASSERT_TRUE(isa<UnknownType>(birPtr->getContainedType()));
+}
+
+//
+// fneg and freeze.
+//
+// Both reached visitInstruction(), which calls FAIL() and aborts the process.
+// `fneg` is LLVM 11's replacement for the `fsub -0.0, x` idiom and this
+// converter predates it, so every floating-point negation ended the whole
+// decompilation; `freeze` is introduced by LLVM's own optimiser, so no
+// translator chose to emit it. Neither was noticed because not one corpus
+// source contained a `float` until six were added.
+//
+
+TEST_F(LLVMInstructionsConverterTests, FNegInstructionIsConvertedToNegOpExpr)
+{
+	auto type = llvm::Type::getDoubleTy(context);
+	auto arg = std::make_unique<llvm::Argument>(type, "arg");
+	auto llvmInst = std::unique_ptr<llvm::UnaryOperator>(llvm::UnaryOperator::CreateFNeg(arg.get()));
+
+	auto birExpr = converter->convertInstructionToExpression(llvmInst.get());
+
+	ASSERT_TRUE(birExpr);
+	auto birNeg = cast<NegOpExpr>(birExpr);
+	ASSERT_TRUE(birNeg);
+	ASSERT_BIR_EQ(converter->convertValueToExpression(arg.get()), birNeg->getOperand());
+}
+
+TEST_F(LLVMInstructionsConverterTests, FNegOfFloatIsConvertedToNegOpExpr)
+{
+	auto type = llvm::Type::getFloatTy(context);
+	auto arg = std::make_unique<llvm::Argument>(type, "arg");
+	auto llvmInst = std::unique_ptr<llvm::UnaryOperator>(llvm::UnaryOperator::CreateFNeg(arg.get()));
+
+	auto birExpr = converter->convertInstructionToExpression(llvmInst.get());
+
+	ASSERT_TRUE(birExpr);
+	ASSERT_TRUE(isa<NegOpExpr>(birExpr));
+}
+
+TEST_F(LLVMInstructionsConverterTests, FreezeInstructionIsConvertedToItsOperand)
+{
+	// freeze x is x with any undef or poison in it pinned to a value the
+	// instruction does not name. A decompiler has no undef to pin, so the
+	// expression is simply the operand's.
+	auto type = llvm::Type::getInt32Ty(context);
+	auto arg = std::make_unique<llvm::Argument>(type, "arg");
+	auto llvmInst = std::unique_ptr<llvm::FreezeInst>(new llvm::FreezeInst(arg.get()));
+
+	auto birExpr = converter->convertInstructionToExpression(llvmInst.get());
+
+	ASSERT_TRUE(birExpr);
+	ASSERT_BIR_EQ(converter->convertValueToExpression(arg.get()), birExpr);
 }
 
 } // namespace tests

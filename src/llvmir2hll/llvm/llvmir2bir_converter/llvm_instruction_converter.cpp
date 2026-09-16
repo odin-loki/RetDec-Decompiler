@@ -43,6 +43,7 @@
 #include "retdec/llvmir2hll/ir/lt_op_expr.h"
 #include "retdec/llvmir2hll/ir/mod_op_expr.h"
 #include "retdec/llvmir2hll/ir/mul_op_expr.h"
+#include "retdec/llvmir2hll/ir/neg_op_expr.h"
 #include "retdec/llvmir2hll/ir/neq_op_expr.h"
 #include "retdec/llvmir2hll/ir/pointer_type.h"
 #include "retdec/llvmir2hll/ir/ptr_to_int_cast_expr.h"
@@ -511,6 +512,38 @@ ShPtr<Expression> LLVMInstructionConverter::visitInsertElementInst(
 */
 ShPtr<Expression> LLVMInstructionConverter::visitShuffleVectorInst(
 		llvm::ShuffleVectorInst &inst) {
+	return getConverter()->convertValueToExpression(inst.getOperand(0));
+}
+
+/**
+ * @brief Converts an LLVM unary operation @a inst into a BIR expression.
+ *
+ * There is exactly one: `fneg`, which LLVM 11 introduced to replace the
+ * `fsub -0.0, x` idiom. This converter was written before that and fell to
+ * visitInstruction(), which aborts the process -- so every floating-point
+ * negation on any architecture ended the decompilation. Nothing noticed,
+ * because no corpus source contained a `float` until one did.
+ */
+ShPtr<Expression> LLVMInstructionConverter::visitUnaryOperator(llvm::UnaryOperator& inst)
+{
+	if (inst.getOpcode() == llvm::Instruction::FNeg)
+	{
+		return NegOpExpr::create(getConverter()->convertValueToExpression(inst.getOperand(0)));
+	}
+	return visitInstruction(inst);
+}
+
+/**
+ * @brief Converts an LLVM freeze instruction @a inst into a BIR expression.
+ *
+ * `freeze x` is x, with any undef or poison in it pinned to some fixed value
+ * the instruction does not name. There is nothing to emit for that in C: the
+ * value is the operand, and a decompiler has no undef to pin. LLVM's own
+ * optimiser introduces these, so this is not an instruction any translator
+ * chose to produce -- and it aborted the process when it appeared.
+ */
+ShPtr<Expression> LLVMInstructionConverter::visitFreezeInst(llvm::FreezeInst& inst)
+{
 	return getConverter()->convertValueToExpression(inst.getOperand(0));
 }
 

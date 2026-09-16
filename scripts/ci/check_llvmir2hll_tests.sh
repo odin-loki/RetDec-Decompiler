@@ -162,6 +162,38 @@ if [[ "${#SRCS[@]}" -lt 400 ]]; then
 	exit 1
 fi
 
+# An object is reused when it is newer than its source -- which says nothing
+# about the compiler or the LLVM headers that produced it. A workdir kept from
+# an earlier run against a different llvm-config silently mixes object files
+# from two LLVM versions, and the result is a link error in a file nobody
+# touched: `undefined reference to llvm::APInt::toString(..., bool, bool)`,
+# from a six-day-old const_int.o whose APSInt inline called the five-argument
+# form that LLVM 20 does not export. It cost a stash-and-rebuild to establish
+# that the working tree was innocent.
+#
+# So the flags are stamped into the workdir, and a workdir stamped differently
+# is emptied rather than reused. Reuse that cannot tell you what it is reusing
+# is worse than no reuse.
+STAMP="${WORK}/.build-stamp"
+WANT="$(printf '%s\n' "${CXX:-g++}" "${CXXFLAGS}" "${LLVM_CONFIG}" \
+	"$("${LLVM_CONFIG}" --version)" | sha256sum | cut -d' ' -f1)"
+#
+# An UNSTAMPED workdir is discarded too, and that is the case this exists for:
+# the workdir that caused the trouble predated stamping, so trusting it because
+# it carries no stamp would let exactly the original failure through. Verified
+# by running against that six-day-old directory -- with the stamp check written
+# to trust unstamped dirs it reproduced the link error, and with this it does
+# not. A guard more permissive than the thing it stands in for is not a guard.
+if [[ -d "${WORK}/obj" ]] \
+		&& { [[ ! -f "${STAMP}" ]] || [[ "$(cat "${STAMP}")" != "${WANT}" ]]; } \
+		&& [[ -n "$(ls -A "${WORK}/obj" 2>/dev/null)" ]]; then
+	echo "L2H-01: workdir was built with different flags, a different LLVM, or"
+	echo "        carries no record of either; discarding it"
+	rm -rf "${WORK}/obj"
+	mkdir -p "${WORK}/obj"
+fi
+printf '%s' "${WANT}" > "${STAMP}"
+
 echo "L2H-01: compiling ${#SRCS[@]} translation units with ${JOBS} job(s)"
 
 cat > "${WORK}/compile-one.sh" <<'ONE'
