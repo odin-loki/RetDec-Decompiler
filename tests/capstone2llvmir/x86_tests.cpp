@@ -375,6 +375,84 @@ INSTANTIATE_TEST_SUITE_P(
 // X86_INS_AAA
 //
 
+// The sub-register write mask used to be a hard-coded three-by-four table --
+// i8, i16 and i32 children against i16, i32 and i64 parents, plus the row for
+// the four high-byte registers -- and any pair outside it threw "Mask not
+// initialized in storeRegister()".
+//
+// That covered every general-purpose register and nothing else, which is the
+// reason XMM, YMM and ZMM are three INDEPENDENT globals in this register file
+// rather than one register seen at three widths: mapping XMM's parent to YMM
+// would have made every SSE store throw before it wrote anything.
+//
+// The mask is `~((2^childBits - 1) << offset)` at the parent's width, which is
+// exactly what the table spelled out. These pin the four shapes the table had
+// and the high-byte offset, so that a generalisation that gets the shift or
+// the width wrong is not silently equivalent on the cases that are tested.
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, sub_register_write_keeps_the_rest_of_its_parent)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0x1122334455667788},
+	});
+
+	emulate("mov al, 0xff");
+
+	// Only the bottom byte changes.
+	EXPECT_EQ(0x11223344556677ff, getRegisterValueUnsigned(X86_REG_RAX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, high_byte_write_is_offset_by_eight)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0x1122334455667788},
+	});
+
+	emulate("mov ah, 0xff");
+
+	// The SECOND byte, not the first: ah is bits 15..8, and the shift by 8 is
+	// the one thing the general mask cannot derive from the widths alone.
+	EXPECT_EQ(0x112233445566ff88, getRegisterValueUnsigned(X86_REG_RAX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, word_write_keeps_the_rest_of_its_parent)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0x1122334455667788},
+	});
+
+	emulate("mov ax, 0xbeef");
+
+	EXPECT_EQ(0x1122334455660000 | 0xbeef, getRegisterValueUnsigned(X86_REG_RAX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The one sub-register write that is NOT a merge: x86-64 zero-extends a 32-bit
+// write to the whole 64-bit register, and storeRegister has a case for it
+// above the masking path. A generalisation that reached the mask here would
+// answer 0x11223344deadbeef.
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, dword_write_zero_extends_rather_than_merging)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{X86_REG_RAX, 0x1122334455667788},
+	});
+
+	emulate("mov eax, 0xdeadbeef");
+
+	EXPECT_EQ(0x00000000deadbeef, getRegisterValueUnsigned(X86_REG_RAX));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_AAA_decimal_carry)
 {
 	SKIP_MODE_64; // undef op

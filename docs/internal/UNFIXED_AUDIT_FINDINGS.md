@@ -5901,3 +5901,99 @@ nature or needs a register file that does not exist yet. The four are now
 within 0.004 of each other, and all four are above where x86-64 sits.
 
 C2L-01 floor: Arm 608 → 624. 5,046 tests.
+
+---
+
+## Batch P — the sub-register mask was a hard-coded table, and it is why AVX
+## cannot be modelled
+
+x86-64 is the lowest of the five now that the other four are done, at 0.9586,
+and what is left of it is AVX. The recorded reason has been "needs YMM/ZMM in
+the register file" since the first x86 batch. **That is not what is missing.**
+
+`x86_init.cpp` already creates `X86_REG_YMM0..31` as `i256` globals and
+`X86_REG_ZMM0..31` as `i512`. They have been there all along. What is missing
+is that XMM, YMM and ZMM are three **independent** globals: nothing maps one to
+another, so an SSE write to `xmm0` and an AVX read of `ymm0` do not see each
+other, and `vzeroupper` has nothing to zero.
+
+This is the second time in this branch a recorded blocker turned out to be a
+line I had not read — the first was `_id2regs.resize`, corrected in Batch G.
+The lesson from that one was to read the function rather than the declaration;
+this one needed reading a different file entirely.
+
+### What actually blocks it
+
+`initializeRegistersParentMapToOther` exists and would take the mapping in one
+line. The obstruction is one level down, in `storeRegister`:
+
+```cpp
+else if (rt->isIntegerTy(16))
+{
+    if (l->getType()->isIntegerTy(32))  { andC = irb.getInt32(0xffff0000); }
+    else if (l->getType()->isIntegerTy(64)) { andC = irb.getInt64(0xffffffffffff0000); }
+}
+...
+if (andC == nullptr)
+{
+    throw GenericError("Mask not initialized in storeRegister().");
+}
+```
+
+A hard-coded three-by-four table — `i8`, `i16` and `i32` children against
+`i16`, `i32` and `i64` parents, plus the row for the four high-byte registers —
+and **any pair outside it throws**. That covers every general-purpose register
+and nothing else. Mapping XMM's parent to YMM would have made every SSE store
+throw before it wrote anything.
+
+Every entry in that table is `~((2^childBits - 1) << offset)` at the parent's
+width, with `offset` 8 for exactly `AH`/`CH`/`DH`/`BH` and 0 for everything
+else. Written that way it is four lines, it is correct for any pair of widths,
+and it says what the rule is instead of listing its instances.
+
+Four tests pin the shapes the table had, including the one case that is *not* a
+merge: x86-64 zero-extends a 32-bit write to the whole 64-bit register, and
+`storeRegister` handles that above the masking path. A generalisation that
+reached the mask there would answer `0x11223344deadbeef` for
+`mov eax, 0xdeadbeef`.
+
+Falsified by four mutations: dropping the high-byte offset fails 35 tests,
+taking the parent's width as the child's fails 37, forgetting to invert the
+mask fails 177, and removing the 32-bit zero-extension fails 13.
+
+### What is measured, and what is left
+
+The corpus says which AVX widths matter. Disassembling the static x86-64
+corpus and classifying every `v*` instruction by its widest register operand:
+
+```
+xmm     2064    13%
+ymm    12912    79%
+zmm     1456     9%
+```
+
+So the VEX 128-bit forms alone would address an eighth of it; the bulk is YMM.
+
+With the mask generalised, the remaining work is in three parts, and they have
+to go together or not at all:
+
+1. **The parent map.** Three lines. Verified locally: it applies cleanly and
+   the translator builds.
+2. **The test fixture.** Only *parent* registers get globals in this register
+   file — in 64-bit mode `RAX` has one and `EAX` does not — so aliasing XMM to
+   ZMM means `getRegister(X86_REG_XMM0)` stops resolving, and
+   `getRegisterValueUnsigned` asserts on an `i512` besides. The ARM64 suite hit
+   the same wall at 128 bits and answered it with `vLow`/`vHigh`; the x86 suite
+   needs the same for every SSE test.
+3. **The instructions.** `vpcmpeqb`, `vpmovmskb`, `vmovdqu`, `vpaddb`,
+   `vpandn`, `vpminub` and the rest, at 128 and 256 bits.
+
+**Why (1) is not committed on its own.** It would alias the registers without
+the VEX upper-zeroing rule, and a legacy SSE write would then be visible to an
+AVX read that should have seen zeros — turning "unknown" into "wrong", which is
+the argument this branch already made about `dcbz`. The mask generalisation is
+committed because it is correct on its own terms and is falsifiable on its own
+terms; the aliasing is not, until the instructions that depend on it arrive
+with it.
+
+C2L-01 floor: X86 2217 → 2229. 5,058 tests.

@@ -766,71 +766,43 @@ llvm::StoreInst* Capstone2LlvmIrTranslatorX86_impl::storeRegister(
 	else
 	{
 		llvm::Value* l = createLoad(irb, reg);
-		if (!(l->getType()->isIntegerTy(16)
-				|| l->getType()->isIntegerTy(32)
-				|| l->getType()->isIntegerTy(64)))
+		auto* parentTy = llvm::dyn_cast<llvm::IntegerType>(l->getType());
+		if (parentTy == nullptr)
 		{
 			throw GenericError("Unexpected parent type.");
 		}
 
-		llvm::Value* andC = nullptr;
+		// The mask a sub-register write needs is `~((2^childBits - 1) <<
+		// offset)` at the parent's width, and offset is 8 for exactly the
+		// four high-byte registers and 0 for everything else.
+		//
+		// This was a hard-coded three-by-four table of those values -- i8,
+		// i16 and i32 children against i16, i32 and i64 parents, plus the
+		// AH/CH/DH/BH row -- and any pair outside it threw "Mask not
+		// initialized in storeRegister()". That covered every general-purpose
+		// register and nothing else, which is why XMM, YMM and ZMM are three
+		// independent globals in this register file rather than one register
+		// seen at three widths: mapping XMM's parent to YMM would have made
+		// every SSE store throw.
+		unsigned parentBits = parentTy->getBitWidth();
+		unsigned childBits = getRegisterBitSize(r);
+		unsigned offset = 0;
 		if (r == X86_REG_AH
 				|| r == X86_REG_CH
 				|| r == X86_REG_DH
 				|| r == X86_REG_BH)
 		{
-			if (l->getType()->isIntegerTy(16))
-			{
-				andC = irb.getInt16(0x00ff);
-			}
-			else if (l->getType()->isIntegerTy(32))
-			{
-				andC = irb.getInt32(0xffff00ff);
-			}
-			else if (l->getType()->isIntegerTy(64))
-			{
-				andC = irb.getInt64(0xffffffffffff00ff);
-			}
-
+			offset = 8;
 			val = irb.CreateShl(val, 8);
 		}
-		else if (rt->isIntegerTy(8))
+
+		if (childBits == 0 || childBits + offset > parentBits)
 		{
-			if (l->getType()->isIntegerTy(16))
-			{
-				andC = irb.getInt16(0xff00);
-			}
-			else if (l->getType()->isIntegerTy(32))
-			{
-				andC = irb.getInt32(0xffffff00);
-			}
-			else if (l->getType()->isIntegerTy(64))
-			{
-				andC = irb.getInt64(0xffffffffffffff00);
-			}
+			throw GenericError("Sub-register does not fit its parent.");
 		}
-		else if (rt->isIntegerTy(16))
-		{
-			if (l->getType()->isIntegerTy(32))
-			{
-				andC = irb.getInt32(0xffff0000);
-			}
-			else if (l->getType()->isIntegerTy(64))
-			{
-				andC = irb.getInt64(0xffffffffffff0000);
-			}
-		}
-		else if (rt->isIntegerTy(32))
-		{
-			if (l->getType()->isIntegerTy(64))
-			{
-				andC = irb.getInt64(0xffffffff00000000);
-			}
-		}
-		if (andC == nullptr)
-		{
-			throw GenericError("Mask not initialized in storeRegister().");
-		}
+
+		llvm::APInt keep = llvm::APInt::getAllOnes(childBits).zext(parentBits).shl(offset);
+		auto* andC = llvm::ConstantInt::get(parentTy, ~keep);
 		l = irb.CreateAnd(l, andC);
 
 		auto* o = irb.CreateOr(l, val);
