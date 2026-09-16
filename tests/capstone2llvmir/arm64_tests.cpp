@@ -9630,6 +9630,212 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ST1_list_writes_consecutiv
 
 
 //
+// The NEON operations whose source and destination arrangements differ in
+// width, and three that were not missing translations but wrong ones.
+
+// `neg v0.4s, v1.4s` reached translateNeg(), which has no vector guard and
+// emitted `sub i128 0, v1`. For v1 = 1,1,1,1 the instruction answers
+// -1,-1,-1,-1 and that code answers 0xfffffffe fffffffe fffffffe ffffffff --
+// every lane but the lowest is off by one, because the borrow crossed.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_NEG_vector_does_not_borrow_across_lanes)
+{
+	setV(ARM64_REG_V1, /*hi=*/0x0000000100000001ULL, /*lo=*/0x0000000100000001ULL);
+
+	emulate("neg v0.4s, v1.4s");
+
+	EXPECT_EQ(0xffffffffffffffffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0xffffffffffffffffULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ABS_vector)
+{
+	// lanes -1, -2, 3, 4
+	setV(ARM64_REG_V1, /*hi=*/0x0000000400000003ULL, /*lo=*/0xfffffffeffffffffULL);
+
+	emulate("abs v0.4s, v1.4s");
+
+	EXPECT_EQ(0x0000000200000001ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000400000003ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CNT)
+{
+	setV(ARM64_REG_V1, /*hi=*/0ULL, /*lo=*/0xaa557f800f0001ffULL);
+
+	emulate("cnt v0.16b, v1.16b");
+
+	// Per byte: ff->8, 01->1, 00->0, 0f->4, 80->1, 7f->7, 55->4, aa->4.
+	EXPECT_EQ(0x0404070104000108ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// REV16, REV32 and REV64 reverse the BYTES within each group and leave the
+// groups where they are. They are not a byte swap of the register: the three
+// answers below differ from each other and all three differ from
+// 0x000102...0f reversed.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_REV16_vector)
+{
+	setV(ARM64_REG_V1, /*hi=*/0x0f0e0d0c0b0a0908ULL, /*lo=*/0x0706050403020100ULL);
+
+	emulate("rev16 v0.16b, v1.16b");
+
+	EXPECT_EQ(0x0607040502030001ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0e0f0c0d0a0b0809ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_REV32_vector)
+{
+	setV(ARM64_REG_V1, /*hi=*/0x0f0e0d0c0b0a0908ULL, /*lo=*/0x0706050403020100ULL);
+
+	emulate("rev32 v0.16b, v1.16b");
+
+	EXPECT_EQ(0x0405060700010203ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0c0d0e0f08090a0bULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_REV64_vector)
+{
+	setV(ARM64_REG_V1, /*hi=*/0x0f0e0d0c0b0a0908ULL, /*lo=*/0x0706050403020100ULL);
+
+	emulate("rev64 v0.16b, v1.16b");
+
+	EXPECT_EQ(0x0001020304050607ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x08090a0b0c0d0e0fULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// DUP broadcasts. It reached translateMov(), which put w1 in lane 0 and zero
+// in the other three.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_DUP_from_a_gpr)
+{
+	setRegisters({
+		{ARM64_REG_W1, 0xdeadbeef},
+	});
+
+	emulate("dup v0.4s, w1");
+
+	EXPECT_EQ(0xdeadbeefdeadbeefULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0xdeadbeefdeadbeefULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The lane form. It reached translateMov() too, which copied the whole source
+// register -- so the answer was the source unchanged rather than lane 2 in
+// all four places.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_DUP_from_a_lane)
+{
+	setV(ARM64_REG_V1, /*hi=*/0x0000000400000003ULL, /*lo=*/0x0000000200000001ULL);
+
+	emulate("dup v0.4s, v1.s[2]");
+
+	EXPECT_EQ(0x0000000300000003ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0000000300000003ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// `mov s0, v1.s[0]` is the SAME Capstone id as `dup v0.4s, w1` -- ARM64_INS_DUP
+// for both -- and the two are told apart only by whether the destination has a
+// vector arrangement. This pins the scalar form so that diverting on the id
+// alone fails.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_DUP_with_a_scalar_destination_is_a_move)
+{
+	setV(ARM64_REG_V1, /*hi=*/0ULL, /*lo=*/0x00000000deadbeefULL);
+
+	auto* f = translate(assemble("mov s0, v1.s[0]"));
+	ASSERT_NE(nullptr, f);
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_dup"));
+	EXPECT_EQ(nullptr, _module.getFunction("__asm_mov"));
+}
+
+// The narrowing moves. The `2` suffix is not a different operation, it is a
+// different DESTINATION HALF: `xtn` writes 64 bits and zeroes the top of the
+// register, `xtn2` writes the top and leaves the bottom alone. A compiler
+// emits the pair back to back, so translating `xtn2` as `xtn` destroys the
+// half the previous instruction just produced.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_XTN)
+{
+	setV(ARM64_REG_V1, /*hi=*/0xff00ddeebbcc99aaULL, /*lo=*/0x7788556633441122ULL);
+	setV(ARM64_REG_V0, /*hi=*/0xcafecafecafecafeULL, /*lo=*/0xcafecafecafecafeULL);
+
+	emulate("xtn v0.8b, v1.8h");
+
+	EXPECT_EQ(0x00eeccaa88664422ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_XTN2_keeps_the_lower_half)
+{
+	setV(ARM64_REG_V1, /*hi=*/0xff00ddeebbcc99aaULL, /*lo=*/0x7788556633441122ULL);
+	setV(ARM64_REG_V0, /*hi=*/0xcafecafecafecafeULL, /*lo=*/0x0123456789abcdefULL);
+
+	emulate("xtn2 v0.16b, v1.8h");
+
+	EXPECT_EQ(0x0123456789abcdefULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x00eeccaa88664422ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SHRN)
+{
+	setV(ARM64_REG_V1, /*hi=*/0xddeeff0099aabbccULL, /*lo=*/0x5566778811223344ULL);
+
+	emulate("shrn v0.4h, v1.4s, #4");
+
+	// Each word shifted right 4 and truncated to a halfword.
+	EXPECT_EQ(0xeff0abbc67782334ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The widening adds exist so that the sum of two full-range lanes cannot
+// overflow, which is exactly the bit an implementation at the narrow width
+// throws away: 0xff + 1 is 0x0100 here and 0x00 at eight bits.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UADDL)
+{
+	setV(ARM64_REG_V1, /*hi=*/0ULL, /*lo=*/0xffffffffffffffffULL);
+	setV(ARM64_REG_V2, /*hi=*/0ULL, /*lo=*/0x0101010101010101ULL);
+
+	emulate("uaddl v0.8h, v1.8b, v2.8b");
+
+	EXPECT_EQ(0x0100010001000100ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0100010001000100ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// Identical operands, one letter different: 0xff is -1 signed, so every lane
+// is zero.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_SADDL_is_signed)
+{
+	setV(ARM64_REG_V1, /*hi=*/0ULL, /*lo=*/0xffffffffffffffffULL);
+	setV(ARM64_REG_V2, /*hi=*/0ULL, /*lo=*/0x0101010101010101ULL);
+
+	emulate("saddl v0.8h, v1.8b, v2.8b");
+
+	EXPECT_EQ(0ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The W form takes one already-wide source and one narrow one.
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_UADDW)
+{
+	setV(ARM64_REG_V1, /*hi=*/0x00ff00ff00ff00ffULL, /*lo=*/0x00ff00ff00ff00ffULL);
+	setV(ARM64_REG_V2, /*hi=*/0ULL, /*lo=*/0x0101010101010101ULL);
+
+	emulate("uaddw v0.8h, v1.8h, v2.8b");
+
+	EXPECT_EQ(0x0100010001000100ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x0100010001000100ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
 // The NEON lane operations.
 //
 // Batch C's note on ARM64 said of these: "UMAXP (882), SHRN (798), UMINP,

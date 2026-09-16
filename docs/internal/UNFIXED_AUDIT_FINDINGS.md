@@ -5636,3 +5636,131 @@ implement (it calls `getIntegerBitWidth()` on the result type), so it needs
 either an emulator change or a manual expansion.
 
 C2L-01 floor: Arm64 501 → 519. 5,015 tests.
+
+---
+
+## Batch N — three NEON instructions were not missing, they were wrong
+
+The rest of Batch M's backlog — the operations whose source and destination
+arrangements differ in width — plus three that had translators and produced
+wrong answers.
+
+### `neg v0.4s` negated the register
+
+`translateNeg` has **no vector guard at all**. Every other translator that can
+meet a vector operand opens with `ifVectorGeneratePseudo`; this one does not,
+so `neg v0.4s, v1.4s` reached `CreateSub` on the 128-bit register.
+
+```
+v1 = 1, 1, 1, 1
+
+the instruction   ffffffff ffffffff ffffffff ffffffff
+this code         fffffffe fffffffe fffffffe ffffffff
+```
+
+Every lane but the lowest is off by one, because the borrow crossed. That is
+worse than `__asm_neg` would have been: a call to an undefined function is
+visibly unknown, and this produced a plausible answer and was scored **covered**
+by COV-01.
+
+`mvn v0.16b, v1.16b` reaches `translateMov`, which negates at the register
+width — and that one is *right*, because a bitwise NOT does not cross lane
+boundaries. It stays where it is. The difference between the two is the whole
+point: `ABS` and `NEG` carry, `NOT` does not.
+
+### `dup` moved instead of broadcasting
+
+Both forms reached `translateMov`:
+
+```
+dup v0.4s, w1        lane 0 got w1, lanes 1..3 got zero
+dup v0.4s, v1.s[2]   the whole source register was copied
+```
+
+Neither broadcast anything.
+
+### One capstone id, two instructions, told apart by the destination
+
+Fixing that broke three passing tests, and the reason is the fourth instance in
+this branch of a capstone id not meaning what its name says — this time in the
+other direction. `mov s0, v1.s[0]` is reported as **`ARM64_INS_DUP`**, the same
+id as `dup v0.4s, w1`. It is the same encoding. The two are distinguishable
+only by whether the *destination* has a vector arrangement:
+
+```
+dup v0.4s, w1      [0 v0 vas=4S  vi=-1]     broadcast
+mov s0, v1.s[0]    [0 s0 vas=0   vi=-1]     extract one lane
+```
+
+Diverting on the id alone sends the scalar form — which `translateMov` already
+handled correctly — to a translator that cannot express it. The diversion tests
+the destination, and a test pins the scalar form so that the id-only version
+fails.
+
+### The `2` suffix is a destination half, not an operation
+
+`xtn v0.8b, v1.8h` writes 64 bits and zeroes the top half of the register, the
+way every D-form write does. `xtn2 v0.16b, v1.8h` writes the **top** 64 bits
+and leaves the bottom alone. A compiler emits the pair back to back to narrow
+two full registers into one, so translating `xtn2` as `xtn` destroys the half
+the previous instruction just produced — and the test for it sets the
+destination's low half to a sentinel and requires it to survive.
+
+### The widening adds exist for the bit a narrow implementation discards
+
+`uaddl v0.8h, v1.8b, v2.8b` extends each byte to a halfword *before* adding, so
+the sum of two full-range lanes cannot overflow. That is the entire reason the
+instruction exists. `0xff + 1` is `0x0100` here and `0x00` at eight bits, and
+`saddl` on the same operands is `0`, because `0xff` is `-1`.
+
+### `cnt` and the emulator
+
+`llvm.ctpop` on a vector is the obvious expression and the emulator's intrinsic
+handler cannot execute it — it calls `getIntegerBitWidth()` on the result type,
+which asserts for a vector. So `cnt` is the classic SWAR sequence instead:
+vector adds, ands and shifts, all of which the emulator already does. The
+translation is a little longer and it is testable, which the intrinsic would
+not have been.
+
+### Falsification
+
+Nine mutations, each reverted alone, each rebuilt and run; all nine fail:
+
+| mutation | result |
+| --- | --- |
+| `neg` back to a 128-bit register negate | 1 test fails |
+| `DUP` back to `translateMov` | 2 tests fail |
+| `DUP` diverted on the id alone | 4 tests fail |
+| `xtn2` writes the low half | 1 test fails |
+| the widening operations all unsigned | 1 test fails |
+| `rev16`/`rev32`/`rev64` as a whole-register byte swap | 3 tests fail |
+| `CNT`'s SWAR loses its last fold | 1 test fails |
+| `shrn` drops its shift | 1 test fails |
+| the 18 dispatch entries back to `nullptr` | 11 tests fail |
+
+### Where it leaves ARM64
+
+```
+                 static
+after Batch G    0.9935
+after Batch M    0.9941
+after Batch N    0.9945     20,930 unmodelled -> 19,712
+```
+
+What remains needs registers this translator does not have, or is opaque:
+
+```
+st1b 4620  ld1b 2688  whilelo 588  cnt{b,d}     SVE: Z and P registers
+svc 4206   brk 339                              opaque by nature
+movi 1557                                       Capstone reports a raw imm8
+                                                and a shift, not the expanded
+                                                lane value, across ~10 encodings
+ldg 1302  st2g/stz2g 924  gmi/irg 756           MTE: an allocation-tag model
+```
+
+ARM64 is at the limit of what the current register model can express. The next
+real gain there is a Z/P register file for SVE, which is the same size of job
+as YMM/ZMM for x86-64's AVX — the largest remaining item on any architecture,
+at ~150k occurrences.
+
+C2L-01 floor: Arm64 519 → 534. 5,030 tests.

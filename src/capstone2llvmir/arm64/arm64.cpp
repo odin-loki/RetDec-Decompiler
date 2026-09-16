@@ -1762,6 +1762,330 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeonLaneMove(cs_insn* i, cs_a
 }
 
 /**
+ * The (laneBits, lanes) of a NEON operand, for the operations whose source and
+ * destination arrangements differ in width.
+ *
+ * neonSameWidthRegs() answers "are these all the same total width", which is
+ * the right question for a lane-wise operation and the wrong one for a
+ * narrowing or widening one: `xtn v0.8b, v1.8h` reads 128 bits and writes 64,
+ * and `uaddl v0.8h, v1.8b, v2.8b` does the reverse.
+ */
+bool Capstone2LlvmIrTranslatorArm64_impl::neonArrangement(cs_arm64_op& op, unsigned& laneBits, unsigned& lanes) const
+{
+	auto p = vasLanes(op.vas);
+	laneBits = p.first;
+	lanes = p.second;
+
+	return isVectorRegister(op) && op.vector_index < 0 && laneBits != 0;
+}
+
+/**
+ * ARM64_INS_NEG, ARM64_INS_ABS, ARM64_INS_NOT, ARM64_INS_CNT,
+ * ARM64_INS_REV16, ARM64_INS_REV32, ARM64_INS_REV64
+ *
+ * The unary lane operations. Two of these were not missing translations --
+ * they were wrong ones.
+ *
+ * `neg v0.4s, v1.4s` reached translateNeg(), which has no vector guard at all
+ * and emits `sub i128 0, v1`. That is a negation of the register, not of each
+ * of its four words, and it borrows across every lane boundary: for
+ * v1 = 1,1,1,1 the instruction answers -1,-1,-1,-1 and that code answers
+ * -1,-2,-2,-2. An instruction with a translator, producing an answer, and
+ * scored covered by COV-01 -- which is worse than __asm_neg, because a call to
+ * an undefined function is at least visibly unknown.
+ *
+ * `mvn v0.16b, v1.16b` reaches translateMov(), which negates at the register
+ * width -- and that one is right, because a bitwise NOT does not cross lane
+ * boundaries. It stays where it is. The difference between the two is the
+ * whole point: ABS and NEG carry, NOT does not.
+ *
+ * CNT is a per-byte population count. llvm.ctpop on a vector is the obvious
+ * expression and the emulator's intrinsic handler cannot execute it -- it
+ * calls getIntegerBitWidth() on the result type -- so it is the classic SWAR
+ * sequence instead, which is vector adds, ands and shifts and needs nothing
+ * the emulator does not already do.
+ *
+ * REV16, REV32 and REV64 reverse the BYTES within each 16-, 32- or 64-bit
+ * group and leave the groups where they are. They are not a byte swap of the
+ * register and they are not a lane reversal: `rev32 v0.8h, v1.8h` swaps the
+ * two halfwords inside each word, four times.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonLaneUnary(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned laneBits = 0;
+	unsigned lanes = 0;
+	if (ai->op_count != 2 || !neonArrangement(ai->operands[0], laneBits, lanes) || !isVectorRegister(ai->operands[1]))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* laneTy = irb.getIntNTy(laneBits);
+	auto* w = irb.getIntNTy(laneBits * lanes);
+	auto* vecTy = llvm::FixedVectorType::get(laneTy, lanes);
+	auto splat = [&](uint64_t v) {
+		return llvm::ConstantVector::getSplat(llvm::ElementCount::getFixed(lanes), llvm::ConstantInt::get(laneTy, v));
+	};
+
+	llvm::Value* res = nullptr;
+	switch (i->id)
+	{
+	case ARM64_INS_REV16:
+	case ARM64_INS_REV32:
+	case ARM64_INS_REV64: {
+		// The byte order inside each group is reversed; the groups stay
+		// put. Done on a byte vector, which is what the arrangement of
+		// these is anyway.
+		unsigned group = i->id == ARM64_INS_REV16 ? 2 : (i->id == ARM64_INS_REV32 ? 4 : 8);
+		unsigned totalBytes = (laneBits * lanes) / 8;
+		if (laneBits > group * 8 || totalBytes % group != 0)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+
+		llvm::Value* bytes = loadNeonVector(ai->operands[1].reg, 8, totalBytes, irb);
+		llvm::SmallVector<int, 16> mask;
+		for (unsigned k = 0; k < totalBytes; ++k)
+		{
+			unsigned base = (k / group) * group;
+			mask.push_back(int(base + (group - 1 - (k % group))));
+		}
+		llvm::Value* rev = irb.CreateShuffleVector(bytes, bytes, mask);
+		storeRegister(
+			ai->operands[0].reg,
+			irb.CreateBitCast(rev, irb.getIntNTy(totalBytes * 8)),
+			irb,
+			eOpConv::ZEXT_TRUNC_OR_BITCAST);
+		return;
+	}
+	default: break;
+	}
+
+	llvm::Value* a = loadNeonVector(ai->operands[1].reg, laneBits, lanes, irb);
+
+	switch (i->id)
+	{
+	case ARM64_INS_NEG: res = irb.CreateSub(llvm::Constant::getNullValue(vecTy), a); break;
+	case ARM64_INS_NOT: res = irb.CreateNot(a); break;
+	case ARM64_INS_ABS: {
+		// The architecture defines abs of the most negative lane as
+		// itself, which is what a two's-complement negate gives, so the
+		// select needs no special case for it.
+		llvm::Value* negated = irb.CreateSub(llvm::Constant::getNullValue(vecTy), a);
+		res = irb.CreateSelect(irb.CreateICmpSLT(a, llvm::Constant::getNullValue(vecTy)), negated, a);
+		break;
+	}
+	case ARM64_INS_CNT: {
+		if (laneBits != 8)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		// x -= (x >> 1) & 0x55
+		llvm::Value* x = a;
+		x = irb.CreateSub(x, irb.CreateAnd(irb.CreateLShr(x, splat(1)), splat(0x55)));
+		// x = (x & 0x33) + ((x >> 2) & 0x33)
+		x = irb.CreateAdd(irb.CreateAnd(x, splat(0x33)), irb.CreateAnd(irb.CreateLShr(x, splat(2)), splat(0x33)));
+		// x = (x + (x >> 4)) & 0x0f
+		x = irb.CreateAnd(irb.CreateAdd(x, irb.CreateLShr(x, splat(4))), splat(0x0f));
+		res = x;
+		break;
+	}
+	default: translatePseudoAsmGeneric(i, ai, irb); return;
+	}
+
+	storeRegister(ai->operands[0].reg, irb.CreateBitCast(res, w), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * ARM64_INS_DUP
+ *
+ * Broadcast, in both its forms: `dup v0.4s, w1` puts the low word of a
+ * general-purpose register into every lane, and `dup v0.4s, v1.s[2]` puts one
+ * lane of a NEON register into every lane.
+ *
+ * It reached translateMov(), which moved. For the register form that means
+ * zero-extending w1 into the 128-bit V register, so lane 0 got the value and
+ * lanes 1..3 got zero; for the lane form it means copying the whole source
+ * register, so nothing was broadcast at all. Both produce an answer, and both
+ * are scored covered.
+ *
+ * Expressed as a shufflevector against an all-zero mask, which is the LLVM
+ * idiom for a splat and the form a later pass can recognise.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonDup(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	unsigned laneBits = 0;
+	unsigned lanes = 0;
+	if (ai->op_count != 2 || !neonArrangement(ai->operands[0], laneBits, lanes))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* laneTy = irb.getIntNTy(laneBits);
+	auto* vecTy = llvm::FixedVectorType::get(laneTy, lanes);
+	auto* w = irb.getIntNTy(laneBits * lanes);
+
+	auto& src = ai->operands[1];
+	llvm::Value* lane = nullptr;
+	if (isVectorRegister(src) && src.vector_index >= 0)
+	{
+		// One lane of a NEON register. The index is over the whole 128-bit
+		// register, not over the destination's arrangement.
+		unsigned srcLanes = 128 / laneBits;
+		if (static_cast<unsigned>(src.vector_index) >= srcLanes)
+		{
+			translatePseudoAsmGeneric(i, ai, irb);
+			return;
+		}
+		lane = irb.CreateExtractElement(
+			loadNeonVector(src.reg, laneBits, srcLanes, irb),
+			llvm::ConstantInt::get(irb.getInt32Ty(), src.vector_index));
+	}
+	else if (src.type == ARM64_OP_REG && !isVectorRegister(src))
+	{
+		lane = irb.CreateZExtOrTrunc(loadRegister(src.reg, irb), laneTy);
+	}
+	else
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	llvm::Value* v =
+		irb.CreateInsertElement(llvm::Constant::getNullValue(vecTy), lane, llvm::ConstantInt::get(irb.getInt32Ty(), 0));
+	v = irb.CreateShuffleVector(v, llvm::Constant::getNullValue(vecTy), llvm::SmallVector<int, 16>(lanes, 0));
+
+	storeRegister(ai->operands[0].reg, irb.CreateBitCast(v, w), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * ARM64_INS_XTN, ARM64_INS_XTN2, ARM64_INS_SHRN, ARM64_INS_SHRN2
+ *
+ * The narrowing moves: each lane of the source becomes a lane half its width.
+ * XTN truncates; SHRN shifts right first, which is how a fixed-point value is
+ * brought down a size.
+ *
+ * The `2` suffix is not a different operation, it is a different DESTINATION
+ * HALF. `xtn v0.8b, v1.8h` writes 64 bits and zeroes the top half of v0, the
+ * way every D-form write does; `xtn2 v0.16b, v1.8h` writes the TOP 64 bits and
+ * leaves the bottom alone. A compiler emits the pair back to back to narrow
+ * two full registers into one, so translating `xtn2` as `xtn` destroys the
+ * half the previous instruction just produced.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonNarrow(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	bool shift = i->id == ARM64_INS_SHRN || i->id == ARM64_INS_SHRN2;
+	bool upper = i->id == ARM64_INS_XTN2 || i->id == ARM64_INS_SHRN2;
+
+	unsigned dstBits = 0, dstLanes = 0, srcBits = 0, srcLanes = 0;
+	if (ai->op_count != (shift ? 3u : 2u) || (shift && ai->operands[2].type != ARM64_OP_IMM)
+		|| !neonArrangement(ai->operands[0], dstBits, dstLanes) || !neonArrangement(ai->operands[1], srcBits, srcLanes)
+		|| srcBits != dstBits * 2 || srcLanes * srcBits != 128)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	// The result is always srcLanes narrow lanes -- 64 bits. For the `2` form
+	// the destination arrangement names all sixteen and only the top half is
+	// written.
+	if (dstLanes != (upper ? srcLanes * 2 : srcLanes))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	uint64_t amount = shift ? static_cast<uint64_t>(ai->operands[2].imm) : 0;
+	if (amount >= srcBits)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* srcTy = irb.getIntNTy(srcBits);
+	llvm::Value* a = loadNeonVector(ai->operands[1].reg, srcBits, srcLanes, irb);
+	if (shift && amount != 0)
+	{
+		a = irb.CreateLShr(
+			a,
+			llvm::ConstantVector::getSplat(
+				llvm::ElementCount::getFixed(srcLanes), llvm::ConstantInt::get(srcTy, amount)));
+	}
+
+	llvm::Value* narrow = irb.CreateTrunc(a, llvm::FixedVectorType::get(irb.getIntNTy(dstBits), srcLanes));
+	llvm::Value* half = irb.CreateBitCast(narrow, irb.getInt64Ty());
+
+	if (upper)
+	{
+		auto* i128 = irb.getIntNTy(128);
+		llvm::Value* dst = irb.CreateZExtOrTrunc(loadRegister(ai->operands[0].reg, irb), i128);
+		dst = irb.CreateAnd(dst, llvm::ConstantInt::get(i128, 0xffffffffffffffffULL));
+		llvm::Value* top = irb.CreateShl(irb.CreateZExt(half, i128), llvm::ConstantInt::get(i128, 64));
+		storeRegister(ai->operands[0].reg, irb.CreateOr(dst, top), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	}
+	else
+	{
+		storeRegister(ai->operands[0].reg, half, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	}
+}
+
+/**
+ * ARM64_INS_UADDL, ARM64_INS_SADDL, ARM64_INS_USUBL, ARM64_INS_SSUBL,
+ * ARM64_INS_UADDW, ARM64_INS_SADDW, ARM64_INS_USUBW, ARM64_INS_SSUBW
+ *
+ * The widening adds and subtracts: the result lanes are twice the width of the
+ * narrow source's, so the sum of two full-range lanes cannot overflow. That is
+ * the whole reason these exist, and translating them at the narrow width
+ * throws away exactly the bit they were emitted to keep.
+ *
+ * The L forms take two narrow sources; the W forms take one already-wide
+ * source and one narrow one. The signedness is the extension of the narrow
+ * operands, and it is the letter the two mnemonics differ in.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonWiden(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	bool wideFirst =
+		i->id == ARM64_INS_UADDW || i->id == ARM64_INS_SADDW || i->id == ARM64_INS_USUBW || i->id == ARM64_INS_SSUBW;
+	bool isSub =
+		i->id == ARM64_INS_USUBL || i->id == ARM64_INS_SSUBL || i->id == ARM64_INS_USUBW || i->id == ARM64_INS_SSUBW;
+	bool isSigned =
+		i->id == ARM64_INS_SADDL || i->id == ARM64_INS_SSUBL || i->id == ARM64_INS_SADDW || i->id == ARM64_INS_SSUBW;
+
+	unsigned dstBits = 0, dstLanes = 0;
+	unsigned aBits = 0, aLanes = 0, bBits = 0, bLanes = 0;
+	if (ai->op_count != 3 || !neonArrangement(ai->operands[0], dstBits, dstLanes)
+		|| !neonArrangement(ai->operands[1], aBits, aLanes) || !neonArrangement(ai->operands[2], bBits, bLanes)
+		|| dstLanes != aLanes || dstLanes != bLanes || bBits * 2 != dstBits
+		|| aBits != (wideFirst ? dstBits : dstBits / 2))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* wideVec = llvm::FixedVectorType::get(irb.getIntNTy(dstBits), dstLanes);
+	auto extend = [&](llvm::Value* v) { return isSigned ? irb.CreateSExt(v, wideVec) : irb.CreateZExt(v, wideVec); };
+
+	llvm::Value* a = loadNeonVector(ai->operands[1].reg, aBits, aLanes, irb);
+	llvm::Value* b = loadNeonVector(ai->operands[2].reg, bBits, bLanes, irb);
+	if (!wideFirst)
+	{
+		a = extend(a);
+	}
+	b = extend(b);
+
+	llvm::Value* res = isSub ? irb.CreateSub(a, b) : irb.CreateAdd(a, b);
+
+	storeRegister(
+		ai->operands[0].reg,
+		irb.CreateBitCast(res, irb.getIntNTy(dstBits * dstLanes)),
+		irb,
+		eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
  * ARM64_INS_LD1, ARM64_INS_ST1
  *
  * The straight-copy form of the NEON list load and store, and the last thing
@@ -2399,6 +2723,15 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateNeg(cs_insn* i, cs_arm64* ai,
 {
 	EXPECT_IS_BINARY(i, ai, irb);
 
+	// `neg v0.4s, v1.4s` is four negates, not one. There was no vector guard
+	// here at all, so it reached CreateSub on the 128-bit register and
+	// borrowed across every lane boundary.
+	if (hasVectorOperand(ai))
+	{
+		translateNeonLaneUnary(i, ai, irb);
+		return;
+	}
+
 	auto* op2 = loadOpBinaryOp1(ai, irb);
 
 	llvm::Value* val = nullptr;
@@ -2510,6 +2843,24 @@ void Capstone2LlvmIrTranslatorArm64_impl::translateFence(cs_insn* i, cs_arm64* a
 void Capstone2LlvmIrTranslatorArm64_impl::translateMov(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, ai, irb);
+
+	// DUP broadcasts; it does not move. Reaching here, `dup v0.4s, w1` put w1
+	// in lane 0 and zero in the other three, and `dup v0.4s, v1.s[2]` copied
+	// the whole source register. MVN stays: a bitwise NOT does not cross lane
+	// boundaries, so doing it at the register width is right.
+	//
+	// The destination decides, not the id. Capstone reports `mov s0, v1.s[0]`
+	// with ARM64_INS_DUP too -- it is the same encoding, and the two are told
+	// apart only by whether the DESTINATION has a vector arrangement. A
+	// scalar destination is the extract-one-lane form, which is what the code
+	// below already does correctly, and three tests pinning it fail the
+	// moment the id alone is used to divert.
+	if (i->id == ARM64_INS_DUP && isVectorRegister(ai->operands[0]) && ai->operands[0].vas != ARM64_VAS_INVALID
+		&& ai->operands[0].vector_index < 0)
+	{
+		translateNeonDup(i, ai, irb);
+		return;
+	}
 
 	op1 = loadOp(ai->operands[1], irb);
 	auto* dstTy = getRegisterType(ai->operands[0].reg);
