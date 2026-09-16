@@ -1548,6 +1548,216 @@ void Capstone2LlvmIrTranslatorMips_impl::translateUnalignedMemory(cs_insn* i, cs
 }
 
 /**
+ * MIPS_INS_DSLL32, MIPS_INS_DSRL32, MIPS_INS_DSRA32, MIPS_INS_DROTR32
+ *
+ * The shift-by-more-than-31 forms. A MIPS64 shift immediate is five bits, so
+ * shifting a doubleword by 32 or more needs a second opcode: `dsll32 rd, rt,
+ * sa` shifts by sa + 32. The assembler hides this -- you write `dsll $2, $3,
+ * 40` and get `dsll32 $2, $3, 8` -- and a translation that takes the reported
+ * immediate at face value is off by exactly 32, which for a shift is the
+ * difference between a value and zero.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateDoubleShift32(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, mi, irb);
+
+	op1 = loadOp(mi->operands[1], irb);
+	op2 = loadOp(mi->operands[2], irb);
+	auto* ty = op1->getType();
+	op2 = irb.CreateZExtOrTrunc(op2, ty);
+
+	auto* amount = irb.CreateAdd(op2, llvm::ConstantInt::get(ty, 32));
+
+	llvm::Value* res = nullptr;
+	switch (i->id)
+	{
+	case MIPS_INS_DSLL32: res = irb.CreateShl(op1, amount); break;
+	case MIPS_INS_DSRL32: res = irb.CreateLShr(op1, amount); break;
+	case MIPS_INS_DSRA32: res = irb.CreateAShr(op1, amount); break;
+	case MIPS_INS_DROTR32: res = generateRotateRight(irb, op1, amount); break;
+	default: throw GenericError("Unhandled insn ID in translateDoubleShift32().");
+	}
+
+	storeOp(mi->operands[0], res, irb);
+}
+
+/**
+ * A rotate right by a run-time amount, without the shift-by-the-whole-width
+ * that is poison in LLVM.
+ *
+ * `x >> n | x << (width - n)` is the obvious form and it is wrong for n == 0:
+ * the left shift is then by the whole width. `rotr rd, rt, 0` is a legal
+ * encoding meaning "no rotation", and translateRotr() produced poison for it.
+ * Masking the complement with width - 1 fixes both at once -- for n == 0 it
+ * gives 0, so both halves are x and the OR is x -- and costs one `and`.
+ */
+llvm::Value*
+Capstone2LlvmIrTranslatorMips_impl::generateRotateRight(llvm::IRBuilder<>& irb, llvm::Value* val, llvm::Value* amount)
+{
+	auto* ty = llvm::cast<llvm::IntegerType>(val->getType());
+	unsigned width = ty->getBitWidth();
+
+	amount = irb.CreateAnd(amount, llvm::ConstantInt::get(ty, width - 1));
+	auto* complement =
+		irb.CreateAnd(irb.CreateSub(llvm::ConstantInt::get(ty, width), amount), llvm::ConstantInt::get(ty, width - 1));
+
+	return irb.CreateOr(irb.CreateLShr(val, amount), irb.CreateShl(val, complement));
+}
+
+/**
+ * MIPS_INS_DEXT, MIPS_INS_DEXTM, MIPS_INS_DEXTU,
+ * MIPS_INS_DINS, MIPS_INS_DINSM, MIPS_INS_DINSU
+ *
+ * The 64-bit bitfield read and write. Six opcodes rather than two, because
+ * `pos` and `size` are six bits of encoding between them and cannot cover the
+ * whole 0..63 x 1..64 range: DEXTM adds 32 to the size, DEXTU adds 32 to the
+ * position, and DINSM and DINSU do the same for the write.
+ *
+ * Capstone does NOT apply those offsets. It reports the encoded fields with
+ * only the `msbd + 1` arithmetic done, so
+ *
+ *     dextm $2, $3, 0, 33     arrives as    pos 0, size 1
+ *     dextu $2, $3, 32, 8     arrives as    pos 0, size 8
+ *
+ * Taking its numbers at face value reads a one-bit field where a 33-bit one
+ * was meant, and reads bit 0 where bit 32 was meant. Neither is a crash and
+ * both look like a plausible bitfield, which is why the tests here use the M
+ * and U forms with fields whose two readings cannot coincide.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateDoubleBitfield(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_QUATERNARY(i, mi, irb);
+
+	if (mi->operands[2].type != MIPS_OP_IMM || mi->operands[3].type != MIPS_OP_IMM)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	uint64_t pos = static_cast<uint64_t>(mi->operands[2].imm);
+	uint64_t size = static_cast<uint64_t>(mi->operands[3].imm);
+
+	switch (i->id)
+	{
+	case MIPS_INS_DEXTM:
+	case MIPS_INS_DINSM: size += 32; break;
+	case MIPS_INS_DEXTU:
+	case MIPS_INS_DINSU: pos += 32; break;
+	default: break;
+	}
+
+	if (size == 0 || pos >= 64 || size > 64 - pos)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	op1 = loadOp(mi->operands[1], irb);
+	auto* ty = llvm::dyn_cast<llvm::IntegerType>(op1->getType());
+	if (ty == nullptr || ty->getBitWidth() != 64)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	uint64_t mask = size >= 64 ? ~0ull : ((1ull << size) - 1);
+
+	bool insert = i->id == MIPS_INS_DINS || i->id == MIPS_INS_DINSM || i->id == MIPS_INS_DINSU;
+
+	if (insert)
+	{
+		// The destination keeps every bit outside the field.
+		llvm::Value* dst = loadOp(mi->operands[0], irb);
+		dst = irb.CreateZExtOrTrunc(dst, ty);
+		auto* cleared = irb.CreateAnd(dst, llvm::ConstantInt::get(ty, ~(mask << pos)));
+		auto* field =
+			irb.CreateShl(irb.CreateAnd(op1, llvm::ConstantInt::get(ty, mask)), llvm::ConstantInt::get(ty, pos));
+		storeOp(mi->operands[0], irb.CreateOr(cleared, field), irb);
+	}
+	else
+	{
+		auto* res =
+			irb.CreateAnd(irb.CreateLShr(op1, llvm::ConstantInt::get(ty, pos)), llvm::ConstantInt::get(ty, mask));
+		storeOp(mi->operands[0], res, irb);
+	}
+}
+
+/**
+ * MIPS_INS_DSBH, MIPS_INS_DSHD
+ *
+ * The doubleword byte-order instructions, and neither is a 64-bit byte swap.
+ * DSBH swaps the two bytes WITHIN each of the four halfwords; DSHD reverses
+ * the order of the four halfwords and leaves the bytes inside them alone.
+ * `dsbh` then `dshd` is how the ISA spells a full 64-bit swap, which is the
+ * same relationship `wsbh` then `rotr 16` has on the 32-bit side -- and the
+ * same reason one llvm.bswap.i64 is the wrong answer for either of them
+ * alone.
+ */
+void Capstone2LlvmIrTranslatorMips_impl::translateDoubleByteSwap(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, mi, irb);
+
+	op1 = loadOpBinaryOp1(mi, irb);
+	auto* ty = llvm::dyn_cast<llvm::IntegerType>(op1->getType());
+	if (ty == nullptr || ty->getBitWidth() != 64)
+	{
+		translatePseudoAsmGeneric(i, mi, irb);
+		return;
+	}
+
+	auto bits = [&](uint64_t v) { return llvm::ConstantInt::get(ty, v); };
+
+	llvm::Value* res = nullptr;
+	if (i->id == MIPS_INS_DSBH)
+	{
+		res = irb.CreateOr(
+			irb.CreateShl(irb.CreateAnd(op1, bits(0x00ff00ff00ff00ffull)), bits(8)),
+			irb.CreateLShr(irb.CreateAnd(op1, bits(0xff00ff00ff00ff00ull)), bits(8)));
+	}
+	else
+	{
+		res = irb.CreateOr(
+			irb.CreateOr(
+				irb.CreateLShr(op1, bits(48)),
+				irb.CreateAnd(irb.CreateLShr(op1, bits(16)), bits(0x00000000ffff0000ull))),
+			irb.CreateOr(
+				irb.CreateAnd(irb.CreateShl(op1, bits(16)), bits(0x0000ffff00000000ull)),
+				irb.CreateShl(op1, bits(48))));
+	}
+
+	storeOp(mi->operands[0], res, irb);
+}
+
+/**
+ * The shift amount a MIPS shift actually uses.
+ *
+ * `sllv rd, rt, rs` shifts by the low FIVE bits of rs and `dsllv` by the low
+ * six; the hardware masks, and nothing here did. A shift by 33 on a 32-bit
+ * register is a shift past the operand's width, which is poison in LLVM, so
+ * `sllv` with any register value above 31 -- which a compiler emits whenever
+ * the amount is computed rather than constant -- produced poison rather than
+ * the rotation-free shift-by-1 the machine performs.
+ *
+ * The emulator cannot see this: getShiftAmount() masks an over-wide shift with
+ * exactly the same `& (width - 1)`, so every emulation test passes either way.
+ * The assertion is therefore on the IR.
+ *
+ * Masking by `width - 1` is right for both widths at once, because the width
+ * here is the register width and MIPS masks by exactly the bits that index it.
+ */
+llvm::Value*
+Capstone2LlvmIrTranslatorMips_impl::maskShiftAmount(llvm::IRBuilder<>& irb, llvm::Value* val, llvm::Value* amount)
+{
+	auto* ty = llvm::dyn_cast<llvm::IntegerType>(val->getType());
+	if (ty == nullptr || amount->getType() != ty)
+	{
+		return amount;
+	}
+
+	return irb.CreateAnd(amount, llvm::ConstantInt::get(ty, ty->getBitWidth() - 1));
+}
+
+/**
  * MIPS_INS_LUI
  * This behaves like 32-bit MIPS instruction even on 64-bit MIPS.
  */
@@ -2029,12 +2239,12 @@ void Capstone2LlvmIrTranslatorMips_impl::translateMult(cs_insn* i, cs_mips* mi, 
 
 	std::tie(op0, op1) = loadOpBinary(mi, irb, eOpConv::THROW);
 	auto* ty = irb.getIntNTy(getArchBitSize() * 2);
-	if (i->id == MIPS_INS_MULT)
+	if (i->id == MIPS_INS_MULT || i->id == MIPS_INS_DMULT)
 	{
 		op0 = irb.CreateSExt(op0, ty);
 		op1 = irb.CreateSExt(op1, ty);
 	}
-	else if (i->id == MIPS_INS_MULTU)
+	else if (i->id == MIPS_INS_MULTU || i->id == MIPS_INS_DMULTU)
 	{
 		op0 = irb.CreateZExt(op0, ty);
 		op1 = irb.CreateZExt(op1, ty);
@@ -2104,12 +2314,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateRotr(cs_insn* i, cs_mips* mi, 
 	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
-	op2 = irb.CreateAnd(op2, llvm::ConstantInt::get(op2->getType(), 31)); // low 5 bits
-	auto* lshr = irb.CreateLShr(op1, op2);
-	auto* sub = irb.CreateSub(llvm::ConstantInt::get(op2->getType(), 32), op2);
-	auto* shl = irb.CreateShl(op1, sub);
-	auto* o = irb.CreateOr(lshr, shl);
-	storeOp(mi->operands[0], o, irb);
+	storeOp(mi->operands[0], generateRotateRight(irb, op1, op2), irb);
 }
 
 /**
@@ -2152,6 +2357,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateSll(cs_insn* i, cs_mips* mi, l
 	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	op2 = maskShiftAmount(irb, op1, op2);
 	auto* shl = irb.CreateShl(op1, op2);
 	storeOp(mi->operands[0], shl, irb);
 }
@@ -2190,6 +2396,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateSra(cs_insn* i, cs_mips* mi, l
 	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	op2 = maskShiftAmount(irb, op1, op2);
 	auto* sra = irb.CreateAShr(op1, op2);
 	storeOp(mi->operands[0], sra, irb);
 }
@@ -2202,6 +2409,7 @@ void Capstone2LlvmIrTranslatorMips_impl::translateSrl(cs_insn* i, cs_mips* mi, l
 	EXPECT_IS_BINARY_OR_TERNARY(i, mi, irb);
 
 	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(mi, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	op2 = maskShiftAmount(irb, op1, op2);
 	auto* shr = irb.CreateLShr(op1, op2);
 	storeOp(mi->operands[0], shr, irb);
 }

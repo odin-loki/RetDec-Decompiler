@@ -5270,3 +5270,144 @@ both corpora are 32-bit MIPS and contain no doubleword instruction at all:
 this is a gap in the *corpus*, not in either measurement's logic, and it is the
 first one found in this branch that no amount of refining the metric would
 have exposed. Next batch.
+
+---
+
+## Batch K — MIPS64 had no doubleword instructions
+
+Thirty-two dispatch entries, every one of them `nullptr`:
+
+```
+DADD  DADDI DADDU DADDIU  DSUB  DSUBU  DMULT DMULTU  DDIV  DDIVU
+DSLL  DSLLV DSRL  DSRLV   DSRA  DSRAV  DSLL32 DSRL32 DSRA32
+DROTR DROTRV DROTR32  DCLZ DCLO
+DEXT  DEXTM DEXTU  DINS  DINSM DINSU  DSBH  DSHD
+```
+
+That is the whole 64-bit arithmetic, shift, count and bitfield set.
+`Capstone2LlvmIrTranslator::createMips64()` exists, `CS_MODE_MIPS64` is half of
+the MIPS test suite's instantiation, and `decoder_init.cpp` line 127 selects it
+for a 64-bit MIPS binary — so a real MIPS64 binary reached this translator with
+almost none of its arithmetic translated.
+
+**Neither COV-01 nor PSEUDO-01 could see it.** Both corpora are 32-bit MIPS and
+contain no doubleword instruction at all, so the denominator never included
+one. This is the first gap found in this branch that is in the *corpus* rather
+than in a measurement's logic, and no amount of refining either metric would
+have exposed it — it was found by reading the dispatch table after `daddi`
+showed up at 42 occurrences in the Batch J measurement.
+
+### Most of it is the existing translators at the register width
+
+Capstone decodes **none** of these in `CS_MODE_MIPS32` — checked, all of them —
+so a doubleword instruction can only arrive when the translator is in 64-bit
+mode, where `getDefaultType()` is already `i64`. `DADD` and friends route to
+`translateAdd`, `DSLL` to `translateSll`, `DMULT` to `translateMult` (two ids
+added to its sign/zero-extend switch), `DDIV`/`DDIVU` to `translateDiv` and
+`translateDivu`, `DCLZ`/`DCLO` to `translateClz`/`translateClo`. No mode guard
+is needed and none is written.
+
+### Four things that are not
+
+**The `32` forms.** A MIPS64 shift immediate is five bits, so shifting a
+doubleword by 32 or more needs a second opcode: `dsll32 rd, rt, sa` shifts by
+`sa + 32`. The assembler hides this — you write `dsll $2, $3, 40` and get
+`dsll32 $2, $3, 8` — and taking the reported immediate at face value is off by
+exactly 32, which for a shift is the difference between a value and zero.
+
+**The bitfield six, and capstone's missing `+32`.** `pos` and `size` are six
+bits of encoding between them and cannot cover the whole 0..63 × 1..64 range,
+so `DEXTM` adds 32 to the size, `DEXTU` adds 32 to the position, and `DINSM`
+and `DINSU` do the same for the write. **Capstone does not apply those
+offsets.** It reports the encoded fields with only the `msbd + 1` arithmetic
+done:
+
+```
+dextm $2, $3, 0, 33     arrives as    pos 0, size 1
+dextu $2, $3, 32, 8     arrives as    pos 0, size 8
+```
+
+Taking its numbers at face value reads a one-bit field where a 33-bit one was
+meant, and reads bit 0 where bit 32 was meant. Neither is a crash and both look
+like a plausible bitfield. The tests use source values whose bit 32 is set, so
+the two readings differ in the answer's top bit as well as its width.
+
+**`dsbh` and `dshd` are not a 64-bit byte swap.** `dsbh` swaps the two bytes
+within each of the four halfwords; `dshd` reverses the four halfwords and
+leaves the bytes inside them alone. One `llvm.bswap.i64` answers
+`0x8877665544332211` for both — which is what `dsbh` *followed by* `dshd`
+produces, and is how the ISA spells the full swap. Same relationship `wsbh`
+then `rotr 16` has on the 32-bit side, and the same trap Batch F found there.
+
+**Keystone will not assemble the R2 forms** (`dext`, `dins`, `dsbh`, `dshd`,
+`drotr`) in `KS_MODE_MIPS64`, and it macro-expands a written `ddivu` into a
+zero check, the divide, a `break` and an `mflo`. Those tests use hand-assembled
+encodings through `emulate_bin()`, as Batch F's do.
+
+### Two defects the doubleword work exposed in the 32-bit code
+
+**`rotr rd, rt, 0` produced poison.** `translateRotr` was
+
+```cpp
+op2 = irb.CreateAnd(op2, ConstantInt::get(ty, 31));
+auto* lshr = irb.CreateLShr(op1, op2);
+auto* sub  = irb.CreateSub(ConstantInt::get(ty, 32), op2);
+auto* shl  = irb.CreateShl(op1, sub);
+```
+
+For `op2 == 0` the left shift is by 32, the whole width, which is poison in
+LLVM — and a rotation of zero is a legal encoding meaning "no rotation".
+Masking the complement with `width - 1` fixes it and costs one `and`: for
+`n == 0` the complement is 0, both halves are `x`, and the OR is `x`.
+
+**The variable shifts did not mask their amount.** `sllv rd, rt, rs` shifts by
+the low *five* bits of `rs` and `dsllv` by the low six; the hardware masks and
+nothing here did. A computed shift amount above the register width — which is
+every case where the amount is not a constant — shifted past the operand's
+width, which is poison.
+
+Neither is visible to the emulator. `getShiftAmount()` masks an over-wide shift
+with exactly the same `& (width - 1)`, so it answers correctly whichever
+implementation is underneath: the rotate mutation came back **green** on its
+first run, and so would a shift-masking one. Both assertions are on the IR —
+no shift may have a constant amount at or above its operand's width, and every
+variable shift's amount must be an `and` with `width - 1`.
+
+That is the third and fourth time in this branch an emulation test has been
+unable to see a real defect, after PowerPC's `undef` address and `lmw`'s
+transfer width. The pattern is now explicit: **the emulator normalises away
+exactly the undefined behaviour that matters in the decompiler's output.**
+Poison, undef and access width are all invisible to it, and assertions about
+any of the three belong on the IR.
+
+### Falsification
+
+Eight mutations, each reverted alone, each rebuilt and run; all eight fail:
+
+| mutation | result |
+| --- | --- |
+| `dsll32` does not add 32 | 4 tests fail |
+| `DEXTM`/`DINSM`'s `+32` on size dropped | 2 tests fail |
+| `DEXTU`/`DINSU`'s `+32` on position dropped | 2 tests fail |
+| the insert forms drop the destination | 3 tests fail |
+| `dsbh`/`dshd` as a 64-bit `bswap` | 2 tests fail |
+| the rotate back to its poison-for-zero shape | 2 tests fail |
+| the variable shifts stop masking | 2 tests fail |
+| the 32 dispatch entries back to `nullptr` | 21 tests fail |
+
+### What is still wrong on MIPS64, and is not fixed here
+
+The mirror of this batch. On a 64-bit MIPS the instructions *without* the `D`
+are 32-bit word operations whose results are sign-extended into the 64-bit
+register — `add`, `addu`, `addi`, `addiu`, `sub`, `subu`, `sll`, `srl`, `sra`,
+`sllv`, `srlv`, `srav`, `rotr`, `mult`, `multu`, `div`, `divu`, `clz`, `clo` —
+and every one of them is done here at the register width, which silently makes
+it the doubleword instruction that now exists alongside it. `and`, `or`, `xor`,
+`nor`, `slt` and `sltu` genuinely are 64-bit and are right as they stand.
+
+Batch F already applied this rule to `EXT`, `INS` and `WSBH`, which fall back
+rather than answering at the wrong width. Extending it to the arithmetic and
+shifts is the next batch, and it is a correction rather than an addition: it
+changes what already-translated instructions mean.
+
+C2L-01 floor: Mips 640 → 688.

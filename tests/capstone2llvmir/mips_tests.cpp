@@ -6932,6 +6932,563 @@ TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_LDL_falls_back_on_mips32)
 }
 
 //
+// The MIPS64 doubleword instructions.
+//
+// Every one of these was `nullptr` in the dispatch table: MIPS_INS_DADD,
+// DADDI, DADDU, DADDIU, DSUB, DSUBU, DMULT, DMULTU, DDIV, DDIVU, DSLL, DSRL,
+// DSRA, DSLLV, DSRLV, DSRAV, DSLL32, DSRL32, DSRA32, DROTR, DROTRV, DROTR32,
+// DCLZ, DCLO, DEXT, DEXTM, DEXTU, DINS, DINSM, DINSU, DSBH and DSHD -- the
+// whole 64-bit arithmetic, shift and bitfield set. decoder_init.cpp selects
+// CS_MODE_MIPS64 for a 64-bit MIPS binary, so a real one arrived here with
+// almost none of its arithmetic translated, and neither COV-01 nor PSEUDO-01
+// could see it because both corpora are 32-bit.
+//
+// ONLY_MODE_64 throughout, and it is not vacuous here the way ONLY_MODE_32R6
+// was in Batch F: CS_MODE_MIPS64 is half of this suite's instantiation.
+// Capstone decodes none of these in MIPS32 mode, which is why no mode guard is
+// needed in the translator.
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DADD)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1122334455667788},
+		{MIPS_REG_4, 0x1000000000000001},
+	});
+
+	emulate("dadd $2, $3, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x2122334455667789},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DADDIU)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1122334455667788},
+	});
+
+	emulate("daddiu $2, $3, 8");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x1122334455667790},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DSUBU)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1122334455667788},
+		{MIPS_REG_4, 0x0000000000000088},
+	});
+
+	emulate("dsubu $2, $3, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x1122334455667700},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// A shift of 40 bits, which no MIPS64 shift immediate can hold: the assembler
+// spells it dsll32 with sa = 8 and the hardware adds 32. Reading the reported
+// immediate at face value shifts by 8 and answers 0x2233445566778800.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DSLL32)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1122334455667788},
+	});
+
+	emulate("dsll32 $2, $3, 8");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x6677880000000000},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DSRL32)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1122334455667788},
+	});
+
+	emulate("dsrl32 $2, $3, 8");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x112233},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The operand's top bit is set, so an arithmetic shift and a logical one give
+// different answers. dsrl32 of the same value is 0xaabbcc.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DSRA32)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0xaabbccdd11223344},
+	});
+
+	emulate("dsra32 $2, $3, 8");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xffffffffffaabbcc},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DSLLV)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1122334455667788},
+		{MIPS_REG_4, 4},
+	});
+
+	emulate("dsllv $2, $3, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x1223344556677880},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DCLZ)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x0000000100000000},
+	});
+
+	emulate("dclz $2, $3");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 31},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DMULT)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x0000000100000002},
+		{MIPS_REG_4, 3},
+	});
+
+	emulate("dmult $3, $4");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_LO, 0x0000000300000006},
+		{MIPS_REG_HI, 0},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DDIVU)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x0000000300000007},
+		{MIPS_REG_4, 0x0000000100000000},
+	});
+
+	// 0x0064001f = ddivu $3, $4. Keystone macro-expands a written `ddivu`
+	// into a zero check, the divide, a break and an mflo, which is four
+	// instructions and not what this is about.
+	emulate_bin("1f 00 64 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3, MIPS_REG_4});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_LO, 3},
+		{MIPS_REG_HI, 7},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The bitfield six. Capstone reports the ENCODED fields and does not apply the
+// +32 that DEXTM, DEXTU, DINSM and DINSU add, so `dextm $2, $3, 0, 33` arrives
+// as "pos 0, size 1" and `dextu $2, $3, 32, 8" as "pos 0, size 8". Taking
+// those at face value reads a one-bit field and reads bit 0 instead of bit 32.
+// Keystone will not assemble any of the six in KS_MODE_MIPS64 -- they need the
+// R2 feature bit -- so these use hand-assembled encodings, as Batch F's EXT,
+// INS and WSBH tests do.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DEXT)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1122334555667788},
+	});
+
+	// 0x7c623a03 = dext $2, $3, 8, 8
+	emulate_bin("03 3a 62 7c");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x77},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// size 33, reported as 1. Bit 32 of the source is set, so the two readings
+// differ in the top bit of the answer as well as in its width.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DEXTM)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1122334555667788},
+	});
+
+	// 0x7c620001 = dextm $2, $3, 0, 33
+	emulate_bin("01 00 62 7c");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x155667788},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// pos 32, reported as 0. Read at face value this answers 0x88, the byte at the
+// bottom, instead of 0x45, the byte at bit 32.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DEXTU)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1122334555667788},
+	});
+
+	// 0x7c623802 = dextu $2, $3, 32, 8
+	emulate_bin("02 38 62 7c");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x45},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The insert forms read their destination and keep every bit outside the
+// field.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DINS)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd11223344},
+		{MIPS_REG_3, 0x1122334555667788},
+	});
+
+	// 0x7c627a07 = dins $2, $3, 8, 8
+	emulate_bin("07 7a 62 7c");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xaabbccdd11228844},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DINSM)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd11223344},
+		{MIPS_REG_3, 0x1122334555667788},
+	});
+
+	// 0x7c620005 = dinsm $2, $3, 0, 33
+	emulate_bin("05 00 62 7c");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xaabbccdd55667788},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DINSU)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_2, 0xaabbccdd11223344},
+		{MIPS_REG_3, 0x1122334555667788},
+	});
+
+	// 0x7c623806 = dinsu $2, $3, 32, 8
+	emulate_bin("06 38 62 7c");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_2, MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0xaabbcc8811223344},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// dsbh swaps the two bytes within each of the four halfwords; dshd reverses
+// the four halfwords and leaves the bytes inside them alone. Neither is a
+// 64-bit byte swap, and one llvm.bswap.i64 answers 0x8877665544332211 for
+// both -- which is what dsbh FOLLOWED BY dshd produces, and is how the ISA
+// spells the full swap.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DSBH)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1122334455667788},
+	});
+
+	// 0x7c0310a4 = dsbh $2, $3
+	emulate_bin("a4 10 03 7c");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x2211443366558877},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DSHD)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1122334455667788},
+	});
+
+	// 0x7c031164 = dshd $2, $3
+	emulate_bin("64 11 03 7c");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x7788556633441122},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DROTR)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1122334455667788},
+	});
+
+	// 0x0023123a = drotr $2, $3, 8
+	emulate_bin("3a 12 23 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x8811223344556677},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// A rotation of zero is a legal encoding meaning "no rotation", and the
+// obvious `x >> n | x << (64 - n)` shifts by the whole width for it, which is
+// poison in LLVM. translateRotr() had exactly that shape at 32 bits and
+// `rotr rd, rt, 0` produced poison; masking the complement with width - 1
+// fixes both.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DROTR_by_zero)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1122334455667788},
+	});
+
+	// 0x0023103a = drotr $2, $3, 0
+	emulate_bin("3a 10 23 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x1122334455667788},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_DROTR32)
+{
+	ONLY_MODE_64;
+
+	setRegisters({
+		{MIPS_REG_3, 0x1122334455667788},
+	});
+
+	// 0x0023123e = drotr32 $2, $3, 8
+	emulate_bin("3e 12 23 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x4455667788112233},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The 32-bit rotate had the same poison-by-zero shape. `rotr $2, $3, 0` is the
+// one input that tells the two implementations apart.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, MIPS_INS_ROTR_by_zero)
+{
+	ONLY_MODE_32;
+
+	setRegisters({
+		{MIPS_REG_3, 0x11223344},
+	});
+
+	// 0x00231002 = rotr $2, $3, 0
+	emulate_bin("02 10 23 00");
+
+	EXPECT_JUST_REGISTERS_LOADED({MIPS_REG_3});
+	EXPECT_JUST_REGISTERS_STORED({
+		{MIPS_REG_2, 0x11223344},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// A rotation of zero is a legal encoding, and the obvious
+// `x >> n | x << (width - n)` shifts by the WHOLE WIDTH for it, which is
+// poison in LLVM. translateRotr() had exactly that shape.
+//
+// The emulator cannot see it: getShiftAmount() turns a shift of 64 on an i64
+// into `63 & 64`, which is 0, so it computes `x | x` and answers correctly
+// whichever implementation is underneath -- reverting the fix leaves the two
+// emulation tests above passing. The defect is a constant in the IR, so that
+// is where it is checked: no shift in a translated rotate may have a constant
+// amount at or above the operand's width.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, rotates_by_zero_do_not_shift_by_the_width)
+{
+	ALL_MODES;
+
+	// 0x00231002 = rotr $2, $3, 0   (32-bit)
+	// 0x0023103a = drotr $2, $3, 0  (64-bit, MIPS64 only)
+	std::vector<std::string> insns = {"02 10 23 00"};
+	if (GetParam() == CS_MODE_MIPS64)
+	{
+		insns.push_back("3a 10 23 00");
+	}
+
+	for (auto& a: insns)
+	{
+		auto* f = translate(utils::hexStringToBytes(a));
+		ASSERT_NE(nullptr, f) << a;
+		for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+		{
+			unsigned op = it->getOpcode();
+			if (op != Instruction::Shl && op != Instruction::LShr && op != Instruction::AShr)
+			{
+				continue;
+			}
+			if (auto* c = dyn_cast<ConstantInt>(it->getOperand(1)))
+			{
+				EXPECT_LT(c->getZExtValue(), it->getType()->getIntegerBitWidth()) << a << ": " << llvmObjToString(&*it);
+			}
+			for (auto& o: it->operands())
+			{
+				EXPECT_FALSE(isa<PoisonValue>(o.get())) << a;
+			}
+		}
+	}
+}
+
+// `sllv rd, rt, rs` shifts by the low FIVE bits of rs and `dsllv` by the low
+// six. The hardware masks and nothing here did, so a computed shift amount
+// above the register width -- which is every case where the amount is not a
+// constant -- shifted past the operand's width, which is poison in LLVM.
+//
+// The emulator masks an over-wide shift with exactly the same
+// `& (width - 1)`, so no emulation test can tell the two apart: reverting the
+// mask leaves every other test in this file passing. The assertion is on the
+// IR, where the defect is.
+TEST_P(Capstone2LlvmIrTranslatorMipsTests, variable_shifts_mask_their_amount)
+{
+	ALL_MODES;
+
+	const std::vector<std::string> insns = {
+		"sllv $2, $3, $4",
+		"srlv $2, $3, $4",
+		"srav $2, $3, $4",
+	};
+
+	for (auto& a: insns)
+	{
+		auto* f = translate(assemble(a));
+		ASSERT_NE(nullptr, f) << a;
+		bool checked = false;
+		for (auto it = inst_begin(f), e = inst_end(f); it != e; ++it)
+		{
+			unsigned op = it->getOpcode();
+			if (op != Instruction::Shl && op != Instruction::LShr && op != Instruction::AShr)
+			{
+				continue;
+			}
+			checked = true;
+			auto* amount = it->getOperand(1);
+			auto* mask = dyn_cast<BinaryOperator>(amount);
+			ASSERT_NE(nullptr, mask) << a << ": shift amount is not masked";
+			EXPECT_EQ(Instruction::And, mask->getOpcode()) << a;
+			auto* c = dyn_cast<ConstantInt>(mask->getOperand(1));
+			ASSERT_NE(nullptr, c) << a;
+			EXPECT_EQ(it->getType()->getIntegerBitWidth() - 1, c->getZExtValue()) << a;
+		}
+		EXPECT_TRUE(checked) << a << ": no shift found";
+	}
+}
+
+//
 // The big-endian fixture.
 //
 // lwl/lwr/swl/swr are the only instructions in this translator whose meaning

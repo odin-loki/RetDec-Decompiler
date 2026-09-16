@@ -183,6 +183,11 @@ class Capstone2LlvmIrTranslatorMips_impl :
 		void translateSrl(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateStoreMemory(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateUnalignedMemory(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		void translateDoubleShift32(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		void translateDoubleBitfield(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		void translateDoubleByteSwap(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
+		llvm::Value* generateRotateRight(llvm::IRBuilder<>& irb, llvm::Value* val, llvm::Value* amount);
+		llvm::Value* maskShiftAmount(llvm::IRBuilder<>& irb, llvm::Value* val, llvm::Value* amount);
 		void translateSub(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateSyscall(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
 		void translateXor(cs_insn* i, cs_mips* mi, llvm::IRBuilder<>& irb);
