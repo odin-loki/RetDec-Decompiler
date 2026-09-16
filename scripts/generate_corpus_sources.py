@@ -481,126 +481,142 @@ int main(void) {
     # out in multiplies and divides.
     ("float_dot_product", ["DotProduct"], """
 #include <stdio.h>
-static double dot_product(const double* a, const double* b, int n) {
-    double sum = 0.0;
-    for (int i = 0; i < n; ++i)
-        sum += a[i] * b[i];
-    return sum;
+static double dot_product(const double* a, const double* b, int n)
+{
+	double sum = 0.0;
+	for (int i = 0; i < n; ++i)
+		sum += a[i] * b[i];
+	return sum;
 }
-int main(void) {
-    double a[4] = {1.5, 2.5, 3.5, 4.5};
-    double b[4] = {2.0, 4.0, 0.5, 1.0};
-    printf("%d\\n", (int)(dot_product(a, b, 4) * 100.0));
-    return 0;
+int main(void)
+{
+	double a[4] = {1.5, 2.5, 3.5, 4.5};
+	double b[4] = {2.0, 4.0, 0.5, 1.0};
+	printf("%d\\n", (int)(dot_product(a, b, 4) * 100.0));
+	return 0;
 }
 """),
     ("float_mean_variance", ["Statistics"], """
 #include <stdio.h>
-static double mean(const double* v, int n) {
-    double s = 0.0;
-    for (int i = 0; i < n; ++i)
-        s += v[i];
-    return s / (double)n;
+static double mean(const double* v, int n)
+{
+	double s = 0.0;
+	for (int i = 0; i < n; ++i)
+		s += v[i];
+	return s / (double)n;
 }
-static double variance(const double* v, int n) {
-    double m = mean(v, n);
-    double s = 0.0;
-    for (int i = 0; i < n; ++i) {
-        double d = v[i] - m;
-        s += d * d;
-    }
-    return s / (double)n;
+static double variance(const double* v, int n)
+{
+	double m = mean(v, n);
+	double s = 0.0;
+	for (int i = 0; i < n; ++i)
+	{
+		double d = v[i] - m;
+		s += d * d;
+	}
+	return s / (double)n;
 }
-int main(void) {
-    double v[5] = {2.0, 4.0, 4.0, 4.0, 5.0};
-    printf("%d %d\\n", (int)(mean(v, 5) * 10.0), (int)(variance(v, 5) * 10.0));
-    return 0;
+int main(void)
+{
+	double v[5] = {2.0, 4.0, 4.0, 4.0, 5.0};
+	printf("%d %d\\n", (int)(mean(v, 5) * 10.0), (int)(variance(v, 5) * 10.0));
+	return 0;
 }
 """),
     ("float_newton_sqrt", ["NewtonRaphson"], """
 #include <stdio.h>
 // No libm: a call to sqrt() would be a PLT stub and would say nothing about
 // the translator. This is the square root written in multiplies and divides.
-static double newton_sqrt(double x) {
-    if (x <= 0.0)
-        return 0.0;
-    double guess = x;
-    for (int i = 0; i < 24; ++i) {
-        double next = 0.5 * (guess + x / guess);
-        double diff = next - guess;
-        if (diff < 0.0)
-            diff = -diff;
-        guess = next;
-        if (diff < 1e-12)
-            break;
-    }
-    return guess;
+static double newton_sqrt(double x)
+{
+	if (x <= 0.0) return 0.0;
+	double guess = x;
+	for (int i = 0; i < 24; ++i)
+	{
+		double next = 0.5 * (guess + x / guess);
+		double diff = next - guess;
+		if (diff < 0.0) diff = -diff;
+		guess = next;
+		if (diff < 1e-12) break;
+	}
+	return guess;
 }
-int main(void) {
-    printf("%d\\n", (int)(newton_sqrt(2.0) * 1000.0));
-    return 0;
+int main(void)
+{
+	printf("%d\\n", (int)(newton_sqrt(2.0) * 1000.0));
+	return 0;
 }
 """),
     ("float_matrix_multiply", ["MatrixMultiply"], """
 #include <stdio.h>
 #define N 4
-static void matmul(const float a[N][N], const float b[N][N], float c[N][N]) {
-    for (int i = 0; i < N; ++i)
-        for (int j = 0; j < N; ++j) {
-            float s = 0.0f;
-            for (int k = 0; k < N; ++k)
-                s += a[i][k] * b[k][j];
-            c[i][j] = s;
-        }
+static void matmul(const float a[N][N], const float b[N][N], float c[N][N])
+{
+	for (int i = 0; i < N; ++i)
+		for (int j = 0; j < N; ++j)
+		{
+			float s = 0.0f;
+			for (int k = 0; k < N; ++k)
+				s += a[i][k] * b[k][j];
+			c[i][j] = s;
+		}
 }
-int main(void) {
-    float a[N][N], b[N][N], c[N][N];
-    for (int i = 0; i < N; ++i)
-        for (int j = 0; j < N; ++j) {
-            a[i][j] = (float)(i + j);
-            b[i][j] = (float)(i - j);
-        }
-    matmul(a, b, c);
-    printf("%d\\n", (int)c[N - 1][N - 1]);
-    return 0;
+int main(void)
+{
+	float a[N][N], b[N][N], c[N][N];
+	for (int i = 0; i < N; ++i)
+		for (int j = 0; j < N; ++j)
+		{
+			a[i][j] = (float)(i + j);
+			b[i][j] = (float)(i - j);
+		}
+	matmul(a, b, c);
+	printf("%d\\n", (int)c[N - 1][N - 1]);
+	return 0;
 }
 """),
     ("float_compare_sort", ["InsertionSort", "Sort"], """
 #include <stdio.h>
 // Floating-point comparison, which is a different instruction and a different
 // flag path from the integer compare every other sort in this corpus uses.
-static void insertion_sort_d(double* a, int n) {
-    for (int i = 1; i < n; ++i) {
-        double key = a[i];
-        int j = i - 1;
-        while (j >= 0 && a[j] > key) {
-            a[j + 1] = a[j];
-            --j;
-        }
-        a[j + 1] = key;
-    }
+static void insertion_sort_d(double* a, int n)
+{
+	for (int i = 1; i < n; ++i)
+	{
+		double key = a[i];
+		int j = i - 1;
+		while (j >= 0 && a[j] > key)
+		{
+			a[j + 1] = a[j];
+			--j;
+		}
+		a[j + 1] = key;
+	}
 }
-int main(void) {
-    double a[6] = {3.5, -1.25, 0.0, 9.75, 2.5, -8.0};
-    insertion_sort_d(a, 6);
-    printf("%d %d\\n", (int)(a[0] * 100.0), (int)(a[5] * 100.0));
-    return 0;
+int main(void)
+{
+	double a[6] = {3.5, -1.25, 0.0, 9.75, 2.5, -8.0};
+	insertion_sort_d(a, 6);
+	printf("%d %d\\n", (int)(a[0] * 100.0), (int)(a[5] * 100.0));
+	return 0;
 }
 """),
     ("float_int_conversion", ["Conversion"], """
 #include <stdio.h>
 // Every direction of the int/float conversion instructions: signed and
 // unsigned, both widths, both ways.
-static double roundtrip(int v) {
-    double d = (double)v;
-    float f = (float)d;
-    long long l = (long long)(f * 2.0f);
-    unsigned u = (unsigned)(d < 0.0 ? -d : d);
-    return (double)l + (double)u;
+static double roundtrip(int v)
+{
+	double d = (double)v;
+	float f = (float)d;
+	long long l = (long long)(f * 2.0f);
+	unsigned u = (unsigned)(d < 0.0 ? -d : d);
+	return (double)l + (double)u;
 }
-int main(void) {
-    printf("%d\\n", (int)roundtrip(-1234));
-    return 0;
+int main(void)
+{
+	printf("%d\\n", (int)roundtrip(-1234));
+	return 0;
 }
 """),
 ]

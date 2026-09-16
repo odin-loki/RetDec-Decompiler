@@ -43,6 +43,18 @@ jobs:
       - name: DOC-05 withdrawn claims
         run: python scripts/ci/check_withdrawn_claims.py
 
+      # CC-CONV. arm_conv.cpp set _numOfFPRegsPerParam and
+      # _numOfVectorRegsPerParam and declared no floating-point or vector
+      # registers at all -- the only one of the eleven conventions that did.
+      # Nothing failed: usesFPRegistersForParameters() returns false when the
+      # lists are empty, so the analysis never looked, while the two "how many
+      # registers may one parameter span" numbers sat there reading as though
+      # the subject had been thought about.
+      - name: CC-CONV calling conventions declare what they claim
+        run: |
+          python scripts/ci/check_calling_conventions.py --self-test
+          python scripts/ci/check_calling_conventions.py
+
       - name: LEG-02 Avast MIT notice
         run: python scripts/ci/check_avast_mit_notice.py
 

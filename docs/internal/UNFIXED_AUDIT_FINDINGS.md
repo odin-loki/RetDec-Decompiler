@@ -2347,6 +2347,54 @@ and reports without a floor -- the road CC-01 took from 24 binaries to 252, and
 that ARCH-01 itself took from 0/40 to 40/40. A floor picked before the first
 number is either vacuous or a fiction.
 
+### 32-bit ARM claimed a capacity it had no registers for
+
+`arm_conv.cpp` set
+
+```cpp
+_numOfFPRegsPerParam = 2;
+_numOfVectorRegsPerParam = 4;
+```
+
+and declared neither `_paramFPRegs` nor `_paramDoubleRegs` nor
+`_paramVectorRegs` — the only one of the eleven conventions that named none of
+them. AAPCS-VFP passes floating-point arguments in s0–s15 and d0–d7 and returns
+in s0 or d0, and this project's ARM corpus is hard-float, so every
+floating-point parameter and return value on 32-bit ARM was invisible to
+parameter recovery.
+
+Nothing failed. `usesFPRegistersForParameters()` returns false when both lists
+are empty, so the analysis never looked — while the two "how many registers may
+one parameter span" numbers sat there reading as though the subject had been
+thought about.
+
+**Both lists, and why that is enough.** The blocker I recorded earlier was that
+`arm_init.cpp` gives the S and D registers separate globals instead of
+modelling them as one bank, so naming either alone catches only half the ABI.
+MIPS has the identical split and solves it by declaring both `_paramFPRegs`
+(single) and `_paramDoubleRegs` (double); ARM now does the same. The aliasing
+that is still not modelled would matter only if a value were written as S and
+read as D, which compiler output for a single argument does not do.
+
+**And the hard/soft question does not block it either.** On soft-float ARM
+floats pass in r0–r3. This analysis is driven by which registers a callee
+actually *reads* before writing, so a soft-float function simply never reads
+s0 and nothing is reported: the lists add candidates, they do not assert an
+ABI. Reading `EF_ARM_ABI_FLOAT_HARD` would be the faithful thing and nothing
+reads it today — `ElfFormat::getAbiVersion()` reads `EF_ARM_ABIMASK` and stops
+there — but it is not needed to make this correct.
+
+**What no gate here checks.** Nothing in this repository measures parameter
+recovery on ARM: the F1 gate is x86-64 and nine binaries, and ARCH-01 checks
+that decompilation exits 0, not what it recovered. So this change is a
+declaration matching a published ABI, verified to compile and following the
+MIPS precedent — and that is the whole of the evidence for it.
+
+What *is* checked is the shape of the mistake. CC-CONV fails any convention
+that sets `_numOfFPRegsPerParam` without declaring FP or double registers, or
+`_numOfVectorRegsPerParam` without vector ones. Falsified against the real
+pre-fix file, which it rejects with both rules.
+
 ### What is left on the other three, measured
 
 COV-01 over the whole 168-binary multiarch corpus, floating-point sources

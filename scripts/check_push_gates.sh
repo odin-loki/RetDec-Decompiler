@@ -104,6 +104,8 @@ CHECKS=(
 	"standalone sem_decoder suite (system Capstone):::bash scripts/ci/check_sem_decoder_tests.sh"
 	"standalone demangler suite (system LLVM):::bash scripts/ci/check_demangler_tests.sh"
 	"standalone fileformat suites (system LLVM):::bash scripts/ci/check_fileformat_tests.sh"
+	"doc       calling conventions (self-test):::${PY} scripts/ci/check_calling_conventions.py --self-test"
+	"doc       calling conventions:::${PY} scripts/ci/check_calling_conventions.py"
 	"standalone arity tables vs headers:::${PY} scripts/ci/check_libc_arity.py --check"
 	"standalone opencl library and kernels:::bash scripts/ci/check_opencl_tests.sh --self-test"
 	"standalone capstone2llvmir (5 architectures):::bash scripts/ci/check_capstone2llvmir_tests.sh --self-test"
