@@ -1542,6 +1542,389 @@ void Capstone2LlvmIrTranslatorArm_impl::translateBitfield(cs_insn* i, cs_arm* ai
 }
 
 /**
+ * The ARMv6 parallel add and subtract instructions, and SEL.
+ *
+ * Four byte lanes or two halfword lanes in a general-purpose register, added
+ * or subtracted independently. ARM has no NEON register here and does not need
+ * one: the lanes are the bytes of r0..r14, which is why hand-written ARMv6
+ * string routines are built out of these and why `uqsub8` (1,554), `uadd8`
+ * (840) and `sel` (840) are what is left on ARM after the bitfield batch.
+ *
+ * Three variants of every operation, and they differ in what happens at the
+ * lane boundary:
+ *
+ *   plain        wraps, and RECORDS what happened in the GE flags
+ *   saturating   clamps to the lane's range, sets no flags
+ *   halving      keeps the bit that would have been lost, sets no flags
+ *
+ * and two lane orders: the straight forms operate lane against lane, the
+ * exchange forms (ASX, SAX) swap the halves of the second operand first and
+ * then add one lane and subtract the other. `uasx` is subtract-low, add-high;
+ * `usax` is the other way round. Getting that pair backwards is invisible for
+ * any operand where the two halves are equal, so the tests use halves that are
+ * not.
+ *
+ * The GE flags are the point of the plain forms. `uadd8` sets GE[n] when lane
+ * n carried out; `usub8` sets GE[n] when lane n did NOT borrow, which is the
+ * unsigned `a >= b` the mnemonic is named after; the signed forms set GE[n]
+ * when the lane's signed result is non-negative. The halfword forms set GE in
+ * pairs, because there are four flags and two lanes. Everything then feeds
+ * SEL, which is a lane-wise select and reads nothing else.
+ *
+ * The arithmetic is done one lane wider than the lane, so the carry, the
+ * borrow and the halving bit are all still there to be read; the plain forms
+ * then truncate and the saturating ones clamp.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateParallelArith(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ai, irb);
+
+	unsigned laneBits = 0; // 8 or 16
+	bool isSigned = false;
+	bool saturating = false;
+	bool halving = false;
+	// Per lane: true adds, false subtracts. For the straight forms every lane
+	// does the same thing; for the exchange forms they differ.
+	bool addLow = true;
+	bool addHigh = true;
+	bool exchange = false;
+
+	switch (i->id)
+	{
+	// Byte, plain.
+	case ARM_INS_UADD8: laneBits = 8; break;
+	case ARM_INS_SADD8:
+		laneBits = 8;
+		isSigned = true;
+		break;
+	case ARM_INS_USUB8:
+		laneBits = 8;
+		addLow = addHigh = false;
+		break;
+	case ARM_INS_SSUB8:
+		laneBits = 8;
+		isSigned = true;
+		addLow = addHigh = false;
+		break;
+	// Byte, saturating.
+	case ARM_INS_UQADD8:
+		laneBits = 8;
+		saturating = true;
+		break;
+	case ARM_INS_QADD8:
+		laneBits = 8;
+		saturating = true;
+		isSigned = true;
+		break;
+	case ARM_INS_UQSUB8:
+		laneBits = 8;
+		saturating = true;
+		addLow = addHigh = false;
+		break;
+	case ARM_INS_QSUB8:
+		laneBits = 8;
+		saturating = true;
+		isSigned = true;
+		addLow = addHigh = false;
+		break;
+	// Byte, halving.
+	case ARM_INS_UHADD8:
+		laneBits = 8;
+		halving = true;
+		break;
+	case ARM_INS_SHADD8:
+		laneBits = 8;
+		halving = true;
+		isSigned = true;
+		break;
+	case ARM_INS_UHSUB8:
+		laneBits = 8;
+		halving = true;
+		addLow = addHigh = false;
+		break;
+	case ARM_INS_SHSUB8:
+		laneBits = 8;
+		halving = true;
+		isSigned = true;
+		addLow = addHigh = false;
+		break;
+	// Halfword, plain.
+	case ARM_INS_UADD16: laneBits = 16; break;
+	case ARM_INS_SADD16:
+		laneBits = 16;
+		isSigned = true;
+		break;
+	case ARM_INS_USUB16:
+		laneBits = 16;
+		addLow = addHigh = false;
+		break;
+	case ARM_INS_SSUB16:
+		laneBits = 16;
+		isSigned = true;
+		addLow = addHigh = false;
+		break;
+	// Halfword, saturating.
+	case ARM_INS_UQADD16:
+		laneBits = 16;
+		saturating = true;
+		break;
+	case ARM_INS_QADD16:
+		laneBits = 16;
+		saturating = true;
+		isSigned = true;
+		break;
+	case ARM_INS_UQSUB16:
+		laneBits = 16;
+		saturating = true;
+		addLow = addHigh = false;
+		break;
+	case ARM_INS_QSUB16:
+		laneBits = 16;
+		saturating = true;
+		isSigned = true;
+		addLow = addHigh = false;
+		break;
+	// Halfword, halving.
+	case ARM_INS_UHADD16:
+		laneBits = 16;
+		halving = true;
+		break;
+	case ARM_INS_SHADD16:
+		laneBits = 16;
+		halving = true;
+		isSigned = true;
+		break;
+	case ARM_INS_UHSUB16:
+		laneBits = 16;
+		halving = true;
+		addLow = addHigh = false;
+		break;
+	case ARM_INS_SHSUB16:
+		laneBits = 16;
+		halving = true;
+		isSigned = true;
+		addLow = addHigh = false;
+		break;
+	// The exchange forms. ASX subtracts the low lane and adds the high
+	// one; SAX does the opposite. Both are halfword only.
+	case ARM_INS_UASX:
+		laneBits = 16;
+		exchange = true;
+		addLow = false;
+		break;
+	case ARM_INS_SASX:
+		laneBits = 16;
+		exchange = true;
+		addLow = false;
+		isSigned = true;
+		break;
+	case ARM_INS_USAX:
+		laneBits = 16;
+		exchange = true;
+		addHigh = false;
+		break;
+	case ARM_INS_SSAX:
+		laneBits = 16;
+		exchange = true;
+		addHigh = false;
+		isSigned = true;
+		break;
+	case ARM_INS_UQASX:
+		laneBits = 16;
+		exchange = true;
+		addLow = false;
+		saturating = true;
+		break;
+	case ARM_INS_QASX:
+		laneBits = 16;
+		exchange = true;
+		addLow = false;
+		saturating = true;
+		isSigned = true;
+		break;
+	case ARM_INS_UQSAX:
+		laneBits = 16;
+		exchange = true;
+		addHigh = false;
+		saturating = true;
+		break;
+	case ARM_INS_QSAX:
+		laneBits = 16;
+		exchange = true;
+		addHigh = false;
+		saturating = true;
+		isSigned = true;
+		break;
+	case ARM_INS_UHASX:
+		laneBits = 16;
+		exchange = true;
+		addLow = false;
+		halving = true;
+		break;
+	case ARM_INS_SHASX:
+		laneBits = 16;
+		exchange = true;
+		addLow = false;
+		halving = true;
+		isSigned = true;
+		break;
+	case ARM_INS_UHSAX:
+		laneBits = 16;
+		exchange = true;
+		addHigh = false;
+		halving = true;
+		break;
+	case ARM_INS_SHSAX:
+		laneBits = 16;
+		exchange = true;
+		addHigh = false;
+		halving = true;
+		isSigned = true;
+		break;
+	default: translatePseudoAsmGeneric(i, ai, irb); return;
+	}
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	auto* i32 = irb.getInt32Ty();
+	op1 = irb.CreateZExtOrTrunc(op1, i32);
+	op2 = irb.CreateZExtOrTrunc(op2, i32);
+
+	unsigned lanes = 32 / laneBits;
+	auto* laneTy = irb.getIntNTy(laneBits);
+	// TWO bits wider than the lane, not one, and the second bit is not
+	// slack. One extra bit holds the unsigned sum's carry -- and then 0xff +
+	// 0xff is 510, which does not fit a SIGNED nine-bit value, so every
+	// comparison against the saturation bounds would read it as -2. Two bits
+	// hold every case: an unsigned sum reaches 510 of a signed 511, an
+	// unsigned difference reaches -255, and the signed forms are narrower
+	// than both.
+	auto* wideTy = irb.getIntNTy(laneBits + 2);
+
+	auto lane = [&](llvm::Value* v, unsigned n) -> llvm::Value* {
+		llvm::Value* x = irb.CreateLShr(v, llvm::ConstantInt::get(i32, n * laneBits));
+		return irb.CreateTrunc(x, laneTy);
+	};
+
+	llvm::Value* result = llvm::ConstantInt::get(i32, 0);
+	llvm::Value* ge[4] = {nullptr, nullptr, nullptr, nullptr};
+
+	for (unsigned n = 0; n < lanes; ++n)
+	{
+		llvm::Value* a = lane(op1, n);
+		// The exchange forms take the OTHER half of the second operand.
+		llvm::Value* b = lane(op2, exchange ? (lanes - 1 - n) : n);
+
+		llvm::Value* aw = isSigned ? irb.CreateSExt(a, wideTy) : irb.CreateZExt(a, wideTy);
+		llvm::Value* bw = isSigned ? irb.CreateSExt(b, wideTy) : irb.CreateZExt(b, wideTy);
+
+		bool add = (n == 0) ? addLow : addHigh;
+		llvm::Value* wide = add ? irb.CreateAdd(aw, bw) : irb.CreateSub(aw, bw);
+
+		llvm::Value* out = nullptr;
+		if (halving)
+		{
+			out = irb.CreateTrunc(
+				isSigned ? irb.CreateAShr(wide, llvm::ConstantInt::get(wideTy, 1))
+						 : irb.CreateLShr(wide, llvm::ConstantInt::get(wideTy, 1)),
+				laneTy);
+		}
+		else if (saturating)
+		{
+			int64_t lo = isSigned ? -(int64_t(1) << (laneBits - 1)) : 0;
+			int64_t hi = isSigned ? (int64_t(1) << (laneBits - 1)) - 1 : (int64_t(1) << laneBits) - 1;
+			auto* loC = llvm::ConstantInt::getSigned(wideTy, lo);
+			auto* hiC = llvm::ConstantInt::getSigned(wideTy, hi);
+			// Both bounds are compared signed, for both signednesses: the
+			// operands were extended according to theirs, so `wide` is
+			// already the true value and the only question left is where it
+			// sits between the lane's limits.
+			llvm::Value* c = irb.CreateSelect(irb.CreateICmpSLT(wide, loC), loC, wide);
+			c = irb.CreateSelect(irb.CreateICmpSGT(c, hiC), hiC, c);
+			out = irb.CreateTrunc(c, laneTy);
+		}
+		else
+		{
+			out = irb.CreateTrunc(wide, laneTy);
+			// GE[n] is what happened at the lane boundary, and it is the only
+			// thing that distinguishes these from an ordinary wrapping add.
+			llvm::Value* flag = nullptr;
+			if (isSigned)
+			{
+				// Non-negative signed result.
+				flag = irb.CreateICmpSGE(wide, llvm::ConstantInt::get(wideTy, 0));
+			}
+			else if (add)
+			{
+				// Carried out of the lane.
+				flag = irb.CreateICmpNE(
+					irb.CreateLShr(wide, llvm::ConstantInt::get(wideTy, laneBits)), llvm::ConstantInt::get(wideTy, 0));
+			}
+			else
+			{
+				// Did not borrow, which is unsigned a >= b.
+				flag = irb.CreateICmpSGE(wide, llvm::ConstantInt::get(wideTy, 0));
+			}
+
+			if (laneBits == 8)
+			{
+				ge[n] = flag;
+			}
+			else
+			{
+				// Two lanes, four flags: each halfword sets a pair.
+				ge[2 * n] = flag;
+				ge[2 * n + 1] = flag;
+			}
+		}
+
+		llvm::Value* placed = irb.CreateShl(irb.CreateZExt(out, i32), llvm::ConstantInt::get(i32, n * laneBits));
+		result = irb.CreateOr(result, placed);
+	}
+
+	storeOp(ai->operands[0], result, irb);
+
+	if (ge[0] != nullptr)
+	{
+		storeRegister(ARM_REG_CPSR_GE0, ge[0], irb);
+		storeRegister(ARM_REG_CPSR_GE1, ge[1], irb);
+		storeRegister(ARM_REG_CPSR_GE2, ge[2], irb);
+		storeRegister(ARM_REG_CPSR_GE3, ge[3], irb);
+	}
+}
+
+/**
+ * ARM_INS_SEL
+ *
+ * Byte n of the result is byte n of the first source when GE[n] is set and
+ * byte n of the second otherwise. It reads the GE flags and nothing else, so
+ * it was the half of a pair that could not be translated until the other half
+ * produced the flags -- which is why both are in the same commit.
+ */
+void Capstone2LlvmIrTranslatorArm_impl::translateSel(cs_insn* i, cs_arm* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ai, irb);
+
+	std::tie(op1, op2) = loadOpBinaryOrTernaryOp1Op2(ai, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	auto* i32 = irb.getInt32Ty();
+	op1 = irb.CreateZExtOrTrunc(op1, i32);
+	op2 = irb.CreateZExtOrTrunc(op2, i32);
+
+	const uint32_t geRegs[4] = {ARM_REG_CPSR_GE0, ARM_REG_CPSR_GE1, ARM_REG_CPSR_GE2, ARM_REG_CPSR_GE3};
+
+	llvm::Value* result = llvm::ConstantInt::get(i32, 0);
+	for (unsigned n = 0; n < 4; ++n)
+	{
+		auto* shift = llvm::ConstantInt::get(i32, n * 8);
+		llvm::Value* a = irb.CreateAnd(irb.CreateLShr(op1, shift), llvm::ConstantInt::get(i32, 0xff));
+		llvm::Value* b = irb.CreateAnd(irb.CreateLShr(op2, shift), llvm::ConstantInt::get(i32, 0xff));
+		llvm::Value* pick = irb.CreateSelect(loadRegister(geRegs[n], irb), a, b);
+		result = irb.CreateOr(result, irb.CreateShl(pick, shift));
+	}
+
+	storeOp(ai->operands[0], result, irb);
+}
+
+/**
  * ARM_INS_SXTB, ARM_INS_SXTH
  *
  * Sign-extend a byte or a halfword. The unsigned pair already had translators;

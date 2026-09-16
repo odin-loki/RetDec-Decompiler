@@ -5764,3 +5764,140 @@ as YMM/ZMM for x86-64's AVX — the largest remaining item on any architecture,
 at ~150k occurrences.
 
 C2L-01 floor: Arm64 519 → 534. 5,030 tests.
+
+---
+
+## Batch O — the ARMv6 parallel instructions, and the flags that were the point
+
+`uqsub8` (1,554), `uadd8` (840) and `sel` (840) were what remained on ARM after
+the bitfield batch, and Batch F's note said they "come together with a GE-flag
+model or not at all". That turns out to be exactly right, and the reason is
+worth stating: **without the flags these are an ordinary wrapping add done four
+times, and `sel` — which reads nothing else — cannot be translated at all.**
+
+### Four byte lanes in a general-purpose register
+
+ARM needs no NEON register for these. The lanes are the bytes of `r0`..`r14`,
+which is why hand-written ARMv6 string routines are built out of them. Three
+variants of every operation, differing only in what happens at the lane
+boundary:
+
+```
+plain        wraps, and RECORDS what happened in the GE flags
+saturating   clamps to the lane's range, sets no flags
+halving      keeps the bit that would have been lost, sets no flags
+```
+
+and two lane orders: the straight forms operate lane against lane, the exchange
+forms (`ASX`, `SAX`) take the *other* half of the second operand and then add
+one lane and subtract the other. Thirty-seven instructions, one function.
+
+### The GE flags
+
+Four `i1` registers at ids past `ARM_REG_ENDING`, the same way `ARM_REG_CPSR_N`
+and `ARM_REG_TPIDRURO` already are. Four separate bits rather than a nibble of
+a wider register, for the reason PowerPC's condition register needed: a
+four-bit register that nothing reads is a second representation to keep in step
+with, and the one this translator can act on is the bit.
+
+What sets them is not one rule but three, and the mnemonics name them:
+
+```
+uadd8   GE[n] = lane n carried out
+usub8   GE[n] = lane n did NOT borrow, i.e. unsigned a >= b
+sadd8   GE[n] = the lane's SIGNED result is non-negative
+```
+
+The unsigned-add and unsigned-subtract rules are different questions with the
+same shape, and a test where one lane is `0x80 + 0x80` separates the signed
+rule from the unsigned one — it carries out *and* is negative.
+
+The halfword forms set the flags **in pairs**: four flags, two lanes.
+
+### Two bits wider, not one
+
+The arithmetic is done wider than the lane so the carry, the borrow and the
+halving bit are all still there to be read. One extra bit is not enough, and
+the reason is the saturating forms: `0xff + 0xff` is 510, which does not fit a
+**signed** nine-bit value, so every comparison against the saturation bound
+would read it as −2 and clamp upward instead of downward. Two bits hold every
+case — an unsigned sum reaches 510 of a signed 511, an unsigned difference
+reaches −255, and the signed forms are narrower than both.
+
+That was in the first version of this, found by working the ranges out on
+paper rather than by a test, and there is now a mutation for it: reverting the
+width to `laneBits + 1` fails two tests.
+
+### Eight tests were asserting the gap
+
+The suite had tests for `uqadd8`, `uqsub8`, `uqadd16`, `uqsub16`, `uqasx`,
+`uqsax`, `uhadd8` and `sel` that all read
+
+```cpp
+EXPECT_JUST_VALUES_CALLED({
+    {_module.getFunction("__asm_uqadd8"), {0x1234, 0x5678}},
+});
+```
+
+with `{ARM_REG_R0, ANY}` for the result. They pinned the pseudo-assembly call
+as if it were the specification. All eight are rewritten to assert arithmetic.
+
+Two of the replacements were wrong on their first run — the exchange pair, where
+I wrote the expected values out by hand and took the wrong half of the second
+operand. The code was right and the tests were wrong, which the falsification
+step would not have caught, because a wrong test that fails is simply a failing
+test. The values are computed now, which is what the rest of this branch does
+and what I should have done there.
+
+### Falsification
+
+Nine mutations, each reverted alone, each rebuilt and run; all nine fail:
+
+| mutation | result |
+| --- | --- |
+| the GE flags are never written | 14 tests fail |
+| `usub8`'s GE becomes the carry test | 6 tests fail |
+| the halfword forms set one flag each instead of a pair | 6 tests fail |
+| the exchange forms stop exchanging | 8 tests fail |
+| the saturating forms wrap | 14 tests fail |
+| the halving forms do not halve | 2 tests fail |
+| the wide type back to `laneBits + 1` | 2 tests fail |
+| `SEL` ignores the GE flags | 4 tests fail |
+| the 37 dispatch entries back to `nullptr` | 32 tests fail |
+
+### Where it leaves ARM
+
+```
+                 static
+after Batch F    0.9931
+after Batch G    0.9967
+after Batch O    0.9977     10,690 unmodelled -> 7,456
+```
+
+What is left:
+
+```
+tbb 1432  tbh 634            table branches -- control flow, a different kind
+                             of work from anything in this batch
+stcl 924  ldcl 924           coprocessor load and store, opaque
+svc 554   udf 256            opaque by nature
+vld1.8 546  vst1.8 294       ARM NEON, which needs the D/Q register model
+vpadd.i8 336  vldmia 169     ARM64 has (arm64_init.cpp names V0..V31; the
+                             32-bit translator does not)
+```
+
+### Where all five stand
+
+```
+x86_64   0.9586     AVX and AVX-512, needing YMM/ZMM
+arm      0.9977     table branches, coprocessor, NEON
+arm64    0.9945     SVE, MTE, movi
+mips     0.9989     syscall, break, the FPU control word
+powerpc  0.9960     traps, AltiVec, cache maintenance
+```
+
+Every remaining item on the four non-x86 architectures is either opaque by
+nature or needs a register file that does not exist yet. The four are now
+within 0.004 of each other, and all four are above where x86-64 sits.
+
+C2L-01 floor: Arm 608 → 624. 5,046 tests.

@@ -64,4 +64,30 @@ enum arm_reg_thread_pointer
 	ARM_REG_TPIDRURO = ARM_SYSREG_CPSR + 1,
 };
 
+/**
+ * The four GE bits of the APSR.
+ *
+ * They are what the ARMv6 parallel add and subtract instructions produce and
+ * the only thing SEL consumes: `uadd8 r0, r1, r2` records, for each of the
+ * four byte lanes, whether that lane carried, and `sel r3, r4, r5` then picks
+ * byte n from r4 or r5 according to GE[n]. Between them they are how ARM
+ * spells a lane-wise select without a NEON register, which is the idiom every
+ * hand-written ARMv6 memchr and strlen is built out of.
+ *
+ * Four i1 registers rather than a nibble of a wider one, for the reason
+ * PowerPC's condition register needed: a four-bit register that the branches
+ * do not read is a second representation to keep in step with, and the one
+ * this translator can act on is the bit.
+ *
+ * Ids past ARM_REG_ENDING, the same way ARM_REG_CPSR_N and ARM_REG_TPIDRURO
+ * are. Abi::addRegister() grows _id2regs to fit.
+ */
+enum arm_reg_ge_flags
+{
+	ARM_REG_CPSR_GE0 = ARM_REG_TPIDRURO + 1,
+	ARM_REG_CPSR_GE1,
+	ARM_REG_CPSR_GE2,
+	ARM_REG_CPSR_GE3,
+};
+
 #endif

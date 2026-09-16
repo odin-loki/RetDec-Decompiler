@@ -4420,25 +4420,229 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_CLZ_ones)
 // ARM_INS_UQADD8
 //
 
-TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQADD8)
+//
+// The ARMv6 parallel add and subtract instructions, and the GE flags.
+//
+// Four byte lanes or two halfword lanes in a general-purpose register. ARM
+// needs no NEON register for these -- the lanes are the bytes of r0..r14 --
+// which is why hand-written ARMv6 string routines are built out of them, and
+// why uqsub8 (1,554), uadd8 (840) and sel (840) are what is left on ARM after
+// the bitfield batch.
+//
+// The plain forms are the ones with the GE flags, and the flags are the whole
+// point: without them these are an ordinary wrapping add done four times, and
+// SEL -- which reads nothing else -- cannot be translated at all.
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UADD8_sets_the_GE_flags)
+{
+	ALL_MODES;
+
+	// Lanes 1 and 3 carry out of the byte; lanes 0 and 2 do not.
+	setRegisters({
+		{ARM_REG_R1, 0xff01ff01},
+		{ARM_REG_R2, 0x01010101},
+	});
+
+	emulate("uadd8 r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x00020002},
+		{ARM_REG_CPSR_GE0, false},
+		{ARM_REG_CPSR_GE1, true},
+		{ARM_REG_CPSR_GE2, false},
+		{ARM_REG_CPSR_GE3, true},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// For the unsigned subtract, GE means "did not borrow", which is the unsigned
+// a >= b the mnemonic is named after.
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_USUB8_sets_the_GE_flags)
 {
 	ALL_MODES;
 
 	setRegisters({
-		{ARM_REG_R1, 0x1234},
-		{ARM_REG_R2, 0x5678},
+		{ARM_REG_R1, 0x0510ff00},
+		{ARM_REG_R2, 0x10050010},
+	});
+
+	emulate("usub8 r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xf50bfff0},
+		{ARM_REG_CPSR_GE0, false},
+		{ARM_REG_CPSR_GE1, true},
+		{ARM_REG_CPSR_GE2, true},
+		{ARM_REG_CPSR_GE3, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The signed forms set GE when the lane's SIGNED result is non-negative, which
+// is a different question from the unsigned carry: lane 1 here is 0x80 + 0x80,
+// which carries out unsigned and is -256 signed.
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SADD8_sets_the_GE_flags)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x7f800100},
+		{ARM_REG_R2, 0x01800100},
+	});
+
+	emulate("sadd8 r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x80000200},
+		{ARM_REG_CPSR_GE0, true},
+		{ARM_REG_CPSR_GE1, true},
+		{ARM_REG_CPSR_GE2, false},
+		{ARM_REG_CPSR_GE3, true},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// Two lanes, four flags: each halfword sets a pair.
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UADD16_sets_the_GE_flags_in_pairs)
+{
+	ALL_MODES;
+
+	// The low halfword carries, the high one does not.
+	setRegisters({
+		{ARM_REG_R1, 0x0001ffff},
+		{ARM_REG_R2, 0x00010001},
+	});
+
+	emulate("uadd16 r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x00020000},
+		{ARM_REG_CPSR_GE0, true},
+		{ARM_REG_CPSR_GE1, true},
+		{ARM_REG_CPSR_GE2, false},
+		{ARM_REG_CPSR_GE3, false},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The saturating and halving forms set NO flags. If they did, the GE state a
+// preceding plain form left would be destroyed and the SEL after it would pick
+// the wrong bytes -- which is a whole-idiom failure, not a wrong lane.
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQADD8_leaves_the_GE_flags_alone)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x8090a0b0},
+		{ARM_REG_R2, 0x70605040},
+	});
+
+	emulate("uqadd8 r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0xf0f0f0f0},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The exchange pair, on operands whose halves differ, because for equal halves
+// ASX and SAX answer the same thing.
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UASX_subtracts_the_low_lane)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x00500100},
+		{ARM_REG_R2, 0x00200030},
+	});
+
+	// low  = 0x0100 - 0x0020 = 0x00e0, no borrow, so its pair of GE flags set
+	// high = 0x0050 + 0x0030 = 0x0080, no carry, so its pair does not
+	emulate("uasx r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x008000e0},
+		{ARM_REG_CPSR_GE0, true},
+		{ARM_REG_CPSR_GE1, true},
+		{ARM_REG_CPSR_GE2, false},
+		{ARM_REG_CPSR_GE3, false},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_USAX_adds_the_low_lane)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0x00500100},
+		{ARM_REG_R2, 0x00200030},
+	});
+
+	// low  = 0x0100 + 0x0020 = 0x0120 -- the OTHER half of r2, which is what
+	// makes this the exchange form; the straight usub16 would use 0x0030
+	// high = 0x0050 - 0x0030 = 0x0020
+	emulate("usax r0, r1, r2");
+
+	EXPECT_JUST_REGISTERS_STORED({
+		{ARM_REG_R0, 0x00200120},
+		{ARM_REG_CPSR_GE0, false},
+		{ARM_REG_CPSR_GE1, false},
+		{ARM_REG_CPSR_GE2, true},
+		{ARM_REG_CPSR_GE3, true},
+	});
+	EXPECT_NO_VALUE_CALLED();
+}
+
+// The pair, which is the only shape either half appears in: a parallel compare
+// that leaves the GE flags, then a SEL that reads them. Without the flags
+// neither instruction means anything on its own.
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_parallel_compare_then_select)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R1, 0xff01ff01},
+		{ARM_REG_R2, 0x01010101},
+		{ARM_REG_R4, 0xaabbccdd},
+		{ARM_REG_R5, 0x11223344},
+	});
+
+	emulate("uadd8 r0, r1, r2");
+	emulate("sel r3, r4, r5");
+
+	EXPECT_EQ(0xaa22cc44, getRegisterValueUnsigned(ARM_REG_R3));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQADD8)
+{
+	ALL_MODES;
+
+	// Saturating: every byte sum exceeds 0xff and clamps there rather than
+	// wrapping. A wrapping add answers 0xf0f0f0f0 here too for these lanes --
+	// so the operands are chosen with sums of 0xf0 exactly, and UQSUB8 below
+	// on the same pair is what separates saturate from wrap.
+	setRegisters({
+		{ARM_REG_R1, 0x8090a0b0},
+		{ARM_REG_R2, 0x70605040},
 	});
 
 	emulate("uqadd8 r0, r1, r2");
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0xf0f0f0f0},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_uqadd8"), {0x1234, 0x5678}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -4450,20 +4654,18 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQADD16)
 	ALL_MODES;
 
 	setRegisters({
-		{ARM_REG_R1, 0x1234},
-		{ARM_REG_R2, 0x5678},
+		{ARM_REG_R1, 0x8090a0b0},
+		{ARM_REG_R2, 0x70605040},
 	});
 
 	emulate("uqadd16 r0, r1, r2");
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0xf0f0f0f0},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_uqadd16"), {0x1234, 0x5678}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -4475,20 +4677,18 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQSUB8)
 	ALL_MODES;
 
 	setRegisters({
-		{ARM_REG_R1, 0x1234},
-		{ARM_REG_R2, 0x5678},
+		{ARM_REG_R1, 0x8090a0b0},
+		{ARM_REG_R2, 0x70605040},
 	});
 
 	emulate("uqsub8 r0, r1, r2");
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0x10305070},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_uqsub8"), {0x1234, 0x5678}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -4500,20 +4700,18 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQSUB16)
 	ALL_MODES;
 
 	setRegisters({
-		{ARM_REG_R1, 0x1234},
-		{ARM_REG_R2, 0x5678},
+		{ARM_REG_R1, 0x8090a0b0},
+		{ARM_REG_R2, 0x70605040},
 	});
 
 	emulate("uqsub16 r0, r1, r2");
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0x10305070},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_uqsub16"), {0x1234, 0x5678}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -4524,21 +4722,22 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQASX)
 {
 	ALL_MODES;
 
+	// ASX subtracts the LOW lane and adds the high one, against the OTHER
+	// half of the second operand. USAX below is the same operands the other
+	// way round and answers differently.
 	setRegisters({
-		{ARM_REG_R1, 0x1234},
-		{ARM_REG_R2, 0x5678},
+		{ARM_REG_R1, 0x8090a0b0},
+		{ARM_REG_R2, 0x70605040},
 	});
 
 	emulate("uqasx r0, r1, r2");
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0xd0d03050},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_uqasx"), {0x1234, 0x5678}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -4550,20 +4749,18 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UQSAX)
 	ALL_MODES;
 
 	setRegisters({
-		{ARM_REG_R1, 0x1234},
-		{ARM_REG_R2, 0x5678},
+		{ARM_REG_R1, 0x8090a0b0},
+		{ARM_REG_R2, 0x70605040},
 	});
 
 	emulate("uqsax r0, r1, r2");
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0x3050ffff},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_uqsax"), {0x1234, 0x5678}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -4574,21 +4771,27 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_SEL)
 {
 	ALL_MODES;
 
+	// SEL reads the GE flags and nothing else, so it could not be translated
+	// until something produced them. GE = 0,1,0,1 picks bytes from r4, r5,
+	// r4, r5 counting from the bottom.
 	setRegisters({
-		{ARM_REG_R1, 0x1234},
-		{ARM_REG_R2, 0x5678},
+		{ARM_REG_CPSR_GE0, false},
+		{ARM_REG_CPSR_GE1, true},
+		{ARM_REG_CPSR_GE2, false},
+		{ARM_REG_CPSR_GE3, true},
+		{ARM_REG_R1, 0xaabbccdd},
+		{ARM_REG_R2, 0x11223344},
 	});
 
 	emulate("sel r0, r1, r2");
 
-	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
+	EXPECT_JUST_REGISTERS_LOADED(
+		{ARM_REG_R1, ARM_REG_R2, ARM_REG_CPSR_GE0, ARM_REG_CPSR_GE1, ARM_REG_CPSR_GE2, ARM_REG_CPSR_GE3});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0xaa22cc44},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_sel"), {0x1234, 0x5678}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
@@ -4698,21 +4901,22 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_UHADD8)
 {
 	ALL_MODES;
 
+	// Halving keeps the bit an eight-bit add would have lost: 0x80 + 0x70 is
+	// 0xf0, and half of it is 0x78. Computing the sum at eight bits first and
+	// then halving gives the same answer only when the sum did not carry.
 	setRegisters({
-		{ARM_REG_R1, 0x1234},
-		{ARM_REG_R2, 0x5678},
+		{ARM_REG_R1, 0x8090a0b0},
+		{ARM_REG_R2, 0x70605040},
 	});
 
 	emulate("uhadd8 r0, r1, r2");
 
 	EXPECT_JUST_REGISTERS_LOADED({ARM_REG_R1, ARM_REG_R2});
 	EXPECT_JUST_REGISTERS_STORED({
-		{ARM_REG_R0, ANY},
+		{ARM_REG_R0, 0x78787878},
 	});
 	EXPECT_NO_MEMORY_LOADED_STORED();
-	EXPECT_JUST_VALUES_CALLED({
-		{_module.getFunction("__asm_uhadd8"), {0x1234, 0x5678}},
-	});
+	EXPECT_NO_VALUE_CALLED();
 }
 
 //
