@@ -6935,17 +6935,28 @@ harness started verifying the IR.
 ```
                  static     unmodelled   kinds
 before           0.9945      19,712       38
+after            0.9951      17,355       32
 ```
 
-The after-measurement over the 210-binary static corpus takes about half an
-hour and was still running when this was committed; the figure is recorded in
-the commit that follows rather than asserted here. What the change removes
-from that list is known instruction by instruction: `movi`/`mvni` 1,599,
-`rev16` 338, `fmov` 210, `saddl2` 168 and `addv` 42, which is 2,357 of the
-19,712 -- and none of that is what makes this batch worth having. The register
-aliasing was silently wrong on every instruction that touched an FP register,
-translated or not, and PSEUDO-01 cannot see that at all: it counts
-pseudo-assembly calls, and a wrong answer is not a pseudo-assembly call.
+2,357 removed, which is exactly what the five wired forms account for:
+`movi`/`mvni` 1,599, `rev16` 338, `fmov` 210, `saddl2` 168, `addv` 42. All six
+mnemonics have left the list.
+
+None of that is what makes this batch worth having. The register aliasing was
+silently wrong on every instruction that touched a floating-point register,
+translated or not, and **PSEUDO-01 cannot see that at all**: it counts
+pseudo-assembly calls, and a wrong answer is not a pseudo-assembly call. The
+rate moved by 0.0006; the thing that was fixed does not show up in it.
+
+What remains, and why:
+
+```
+SVE          8,568   st1b 4,620  ld1b 2,688  whilelo 588  cntd 294  cntb 210  ptrue 168
+svc          4,206   opaque by nature
+MTE          3,234   ldg 1,302  stz2g 462  st2g 462  gmi 378  irg 378  stzg 126  stg 126
+brk, dc        633   a trap, and implementation-defined cache maintenance
+cpy/set        294   the ARMv8.8 memcpy and memset instructions
+```
 
 What remains is dominated by two things this deliberately does not model:
 
