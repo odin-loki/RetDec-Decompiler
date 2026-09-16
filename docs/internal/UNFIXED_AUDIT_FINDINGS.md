@@ -3833,3 +3833,126 @@ an older Capstone and instructions added since (CET shadow stack, AVX-512
 VBMI, GFNI, the `K*` mask ops) were never listed. Recorded because the *next*
 time someone reads "listed, null" as "everything is accounted for", these 182
 are the counterexample.
+
+
+## Batch B: the packed integer instructions glibc actually uses
+
+After Batch A the static-corpus x86-64 rate is 0.9533 with 78 uncovered kinds,
+and the top of what is left is still recognisable: `PALIGNR` 10,740,
+`PCMPGTB` 8,600, `PUNPCKLQDQ` 5,004, `PMINUB` 3,168. All 128-bit, all on
+registers this translator already has.
+
+| instruction | occurrences | now |
+| --- | --- | --- |
+| `PALIGNR` | 10,740 | `translateSsePalignr` |
+| `PCMPGTB`/`W`/`D`/`Q` | 8,600+ | `translateSsePcmpeq` |
+| `PUNPCKLQDQ`, `PUNPCKHQDQ`, `PUNPCKLWD`, `PUNPCKH{BW,WD,DQ}` | 5,634+ | `translateSsePunpckl` |
+| `PMIN`/`PMAX`, signed and unsigned, B/W/D | 3,546+ | `translateSsePminMax` |
+| `PCMPEQQ` | — | `translateSsePcmpeq` |
+| `PAVGB`, `PAVGW` | — | `translateSsePavg` |
+
+Every one of these is decided by a property the mnemonic spells out and the IR
+does not, and each of the three properties had a way of going wrong that was
+already sitting in this file:
+
+**Signedness.** `PCMPGT` is a **signed** comparison and `PMINU`/`PMAXU` are
+unsigned ones. The two readings disagree on every lane whose top bit is set,
+which in the code these appear in -- the output of a `PCMPEQB`, where a match
+is `0xff` -- is all the interesting ones. So the tests use `0xff` against
+`0x01` and `0x80` against `0x0f`, not values that happen to agree.
+
+**Lane width.** `translateSsePcmpeq` ended its width switch with
+`default: bits = 32`. That was harmless while exactly three ids reached it and
+would have silently compared 32-bit lanes the moment `PCMPEQQ` -- sitting
+`nullptr` two lines away in the table -- was pointed at it. The switch is total
+now and throws on an id it does not know.
+
+`translateSsePunpckl` had the same shape in a shorter spelling:
+
+```cpp
+unsigned bits = (i->id == X86_INS_PUNPCKLBW) ? 8 : 32;
+```
+
+correct for the two ids that reached it, `PUNPCKLBW` and `PUNPCKLDQ`, and
+wrong for `PUNPCKLWD`, which was `nullptr` directly below them in the table.
+Wiring it would have interleaved 32-bit lanes under a 16-bit mnemonic: no
+crash, no assertion, a different answer. This is the same defect as the ARM
+`ARM_INS_NOP`/`ARM_INS_HINT` and PowerPC `update_cr0` findings earlier in this
+branch -- a table whose correctness depends on which entries happen to be
+`nullptr`.
+
+**Which half.** `PUNPCKH` takes the top half of each operand rather than the
+bottom. Same shuffle, source indices moved up by half the lane count.
+
+`PALIGNR` is the one with an arithmetic trap rather than a naming one. It
+concatenates destination and source into 256 bits and takes a 128-bit window
+`imm` bytes up. Written as one i256 shift it reads better; written as i128
+operations it stays inside what `tests/llvmir-emul` executes, and the three
+cases have to be separated in C++ anyway, because `imm == 0` and `imm == 16`
+are exactly the two values that would make an LLVM shift equal to its
+operand's width, which is poison. `imm >= 32` is architecturally zero.
+
+`PAVG` rounds half up and adds **one bit wider than the lane**. At the lane's
+own width `0xff + 0x02 + 1` wraps to `0x02` and the answer comes out `0x01`
+instead of `0x81`. The widening is not a precaution, it is the instruction, so
+the test uses inputs whose sum carries out of the lane.
+
+### The emulator change that turned out to be dead
+
+`visitBinaryOperator()`'s vector branch lists add, sub, mul, the four division
+and remainder forms, and, or and xor -- and not `shl`, `lshr` or `ashr`, which
+would fall into its `default:` and `llvm_unreachable()`. `PAVG` emits a vector
+`lshr`, so the three cases were added.
+
+The falsification run said they were not needed: removing them again left the
+suite green. `InstVisitor` dispatches `Shl`, `LShr` and `AShr` to
+`visitShl()`, `visitLShr()` and `visitAShr()`, each of which has its own
+vector branch, so `visitBinaryOperator()` never sees them and the missing
+cases are unreachable.
+
+The cases were reverted and a comment left in their place saying why they are
+absent. The four tests stay: the vector branches of the three shift visitors
+had no test either way, and the eight packed-shift instructions
+`PSLLW`..`PSRLQ` will depend on them.
+
+This is the second time in two commits that a falsification run came back
+green and the right reading was "check the mutation" rather than "report the
+result" -- the first being the `PMOVMSKB` sed that matched the wrong
+indentation. The difference is that this one was the code being wrong, not the
+mutation.
+
+### Falsification
+
+Eight mutations, each reverted alone, each rebuilt and run:
+
+| mutation | result |
+| --- | --- |
+| `PCMPGT` compares unsigned | 2 tests fail |
+| `PCMPEQQ` at 32-bit lanes | 1 test fails |
+| `PUNPCKLWD` at 32-bit lanes | 1 test fails |
+| `PUNPCKH` takes the low half | 2 tests fail |
+| `PMIN`/`PMAX` signedness flipped | 2 tests fail |
+| `PALIGNR` shifts by bits, not bytes | 1 test fails |
+| `PAVG` adds at the lane's own width | 2 tests fail |
+| emulator vector shift cases removed | **suite stays green** -- see above |
+
+### Where it leaves the static number
+
+```
+                 decoded   skipped    covered     rate  uncovered-kinds
+before Batch A  5230330         0    4940904   0.9447  84
+after Batch A   5230330         0    4986268   0.9533  78
+after Batch B   5230330         0    5015166   0.9589  68
+```
+
+74,262 instructions and sixteen kinds across the two. What is left above 0.01%
+is, with three exceptions, AVX and AVX-512: `VPCMPEQB`, `VMOVDQU`,
+`VPMOVMSKB`, `VMOVDQU64`, `KMOVD`, `VPADDB`, `VZEROUPPER` and the rest of the
+`V`- and `K`-prefixed list, which need YMM and ZMM in the register file.
+
+The three exceptions are deliberate, not pending: `PCMPISTRI` (6,393),
+`SYSCALL` (4,627) and `HLT` (294). The first is a string comparison whose
+result is an index computed from an aggregate of sixteen lane comparisons
+under a four-way mode immediate -- translatable, but a subsystem rather than a
+table entry, and modelling it wrongly is worse than not modelling it. The
+other two are opaque by nature.

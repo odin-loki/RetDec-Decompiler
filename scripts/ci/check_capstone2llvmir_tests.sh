@@ -47,12 +47,12 @@ WORKDIR="${C2L_WORKDIR:-}"
 
 # The measured counts, per architecture. A floor, not an equality: adding
 # tests should not fail the gate, losing them must.
-readonly MIN_X86=2112
+readonly MIN_X86=2157
 readonly MIN_ARM=596
 readonly MIN_ARM64=486
 readonly MIN_MIPS=604
 readonly MIN_POWERPC=882
-readonly MIN_EMUL=21
+readonly MIN_EMUL=25
 
 # The revisions cmake/deps.cmake pins. Kept in step with it by CI: if they
 # diverge, this gate is testing something the product does not use.

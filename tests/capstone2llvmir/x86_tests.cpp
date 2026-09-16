@@ -15893,6 +15893,261 @@ TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_MOVNTI_stores_the_register)
 	EXPECT_NO_VALUE_CALLED();
 }
 
+
+//
+// Packed integer compare, unpack, min/max, align and average.
+//
+// Everything below was a nullptr entry. Between them they are ~28,500
+// occurrences in the static corpus, and every one of them is decided by a
+// property the mnemonic spells out and the IR does not: signedness, lane
+// width, or which half of the operand is taken. Each test therefore uses
+// inputs on which the wrong reading gives a different answer, because inputs
+// on which it does not are the reason a wrong reading survives.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PCMPGTB_compares_signed)
+{
+	// Byte 0 is 0xff against 0x01. Signed that is -1 against 1 and the answer
+	// is 0x00; unsigned it is 255 against 1 and the answer is 0xff. Byte 1 is
+	// 5 against 2, which is greater either way, so the result is not all
+	// zeroes and a stuck-at-zero translator cannot pass.
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, 0x00000000000005ffULL);
+	setXmm(X86_REG_XMM1, 0, 0x0000000000000201ULL);
+
+	emulate("pcmpgtb xmm0, xmm1");
+
+	EXPECT_EQ(0x000000000000ff00ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PCMPGTD_compares_signed)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, 0x00000005ffffffffULL);
+	setXmm(X86_REG_XMM1, 0, 0x0000000200000001ULL);
+
+	emulate("pcmpgtd xmm0, xmm1");
+
+	EXPECT_EQ(0xffffffff00000000ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PCMPEQQ_compares_64_bit_lanes)
+{
+	// The lane width is the whole test. The low halves differ as 64-bit lanes
+	// and agree in their bottom 32 bits, so a 32-bit reading answers
+	// 0x00000000ffffffff where the instruction answers zero. That reading was
+	// not hypothetical: translateSsePcmpeq used to end its width switch with
+	// `default: bits = 32`.
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0x1111111111111111ULL, 0x2222222211111111ULL);
+	setXmm(X86_REG_XMM1, 0x1111111111111111ULL, 0x3333333311111111ULL);
+
+	emulate("pcmpeqq xmm0, xmm1");
+
+	EXPECT_EQ(0ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xffffffffffffffffULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PUNPCKLWD_interleaves_16_bit_lanes)
+{
+	// The width that the old `(id == PUNPCKLBW) ? 8 : 32` would have got
+	// wrong: as 32-bit lanes the answer is 0x5555111166662222, as 16-bit ones
+	// it is 0x6666222255551111.
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, 0x4444333322221111ULL);
+	setXmm(X86_REG_XMM1, 0, 0x8888777766665555ULL);
+
+	emulate("punpcklwd xmm0, xmm1");
+
+	EXPECT_EQ(0x6666222255551111ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x8888444477773333ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PUNPCKLQDQ_takes_the_low_half_of_each)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0xaaaaaaaaaaaaaaaaULL, 0x1111111111111111ULL);
+	setXmm(X86_REG_XMM1, 0xbbbbbbbbbbbbbbbbULL, 0x2222222222222222ULL);
+
+	emulate("punpcklqdq xmm0, xmm1");
+
+	EXPECT_EQ(0x1111111111111111ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x2222222222222222ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PUNPCKHQDQ_takes_the_high_half_of_each)
+{
+	// Same operands as the L form above, and no overlap in the answer: this
+	// is the test that separates the two halves rather than the two widths.
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0xaaaaaaaaaaaaaaaaULL, 0x1111111111111111ULL);
+	setXmm(X86_REG_XMM1, 0xbbbbbbbbbbbbbbbbULL, 0x2222222222222222ULL);
+
+	emulate("punpckhqdq xmm0, xmm1");
+
+	EXPECT_EQ(0xaaaaaaaaaaaaaaaaULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xbbbbbbbbbbbbbbbbULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PUNPCKHBW_interleaves_the_top_eight_bytes)
+{
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0x0807060504030201ULL, 0);
+	setXmm(X86_REG_XMM1, 0x1817161514131211ULL, 0);
+
+	emulate("punpckhbw xmm0, xmm1");
+
+	EXPECT_EQ(0x1404130312021101ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x1808170716061505ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PMINUB_compares_unsigned)
+{
+	// 0xff against 0x01 and 0x80 against 0x0f. Unsigned the answers are 0x01
+	// and 0x0f; signed they are 0xff and 0x80 -- every bit different.
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, 0x00000000000080ffULL);
+	setXmm(X86_REG_XMM1, 0, 0x0000000000000f01ULL);
+
+	emulate("pminub xmm0, xmm1");
+
+	EXPECT_EQ(0x0000000000000f01ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PMAXSW_compares_signed)
+{
+	// The other half of the same question. Signed the answers are 1 and 5;
+	// unsigned they are 0xffff and 0x8000.
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, 0x000000000005ffffULL);
+	setXmm(X86_REG_XMM1, 0, 0x0000000080000001ULL);
+
+	emulate("pmaxsw xmm0, xmm1");
+
+	EXPECT_EQ(0x0000000000050001ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PALIGNR_takes_a_window_across_both)
+{
+	// imm 4: the result starts four bytes into the source and runs into the
+	// bottom four bytes of the destination. Every byte of the answer comes
+	// from a different place than it would with imm 0 or imm 16.
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+	setXmm(X86_REG_XMM1, 0xaabbccddeeff0011ULL, 0x2233445566778899ULL);
+
+	emulate("palignr xmm0, xmm1, 4");
+
+	EXPECT_EQ(0xeeff001122334455ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xddeeff00aabbccddULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PALIGNR_of_zero_is_the_source)
+{
+	// One of the two shift amounts that would be a shift of exactly the
+	// operand width, which is poison, if this were spelled as one i128 shift
+	// pair without separating the cases.
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+	setXmm(X86_REG_XMM1, 0xaabbccddeeff0011ULL, 0x2233445566778899ULL);
+
+	emulate("palignr xmm0, xmm1, 0");
+
+	EXPECT_EQ(0x2233445566778899ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0xaabbccddeeff0011ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PALIGNR_of_sixteen_is_the_destination)
+{
+	// The other one.
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+	setXmm(X86_REG_XMM1, 0xaabbccddeeff0011ULL, 0x2233445566778899ULL);
+
+	emulate("palignr xmm0, xmm1, 16");
+
+	EXPECT_EQ(0x99aabbccddeeff00ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0x1122334455667788ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PALIGNR_past_the_top_is_zero)
+{
+	// Architecturally zero, not a wrapped shift: the window has moved
+	// entirely past the top of the concatenation.
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+	setXmm(X86_REG_XMM1, 0xaabbccddeeff0011ULL, 0x2233445566778899ULL);
+
+	emulate("palignr xmm0, xmm1, 32");
+
+	EXPECT_EQ(0ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PAVGB_adds_one_bit_wider_than_the_lane)
+{
+	// 0xff and 0x02 average to 0x81, and 0x80 and 0x81 also average to 0x81.
+	// Both sums carry out of eight bits, so an implementation that adds at
+	// the lane's own width answers 0x01 for each -- which is why the inputs
+	// are these and not two values that happen to fit.
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, 0x00000000000080ffULL);
+	setXmm(X86_REG_XMM1, 0, 0x0000000000008102ULL);
+
+	emulate("pavgb xmm0, xmm1");
+
+	EXPECT_EQ(0x0000000000008181ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorX86Tests, X86_INS_PAVGW_rounds_up)
+{
+	// 0xffff and 0x0002 average to 0x8001 and not 0x8000: the +1 is in the
+	// instruction, and dropping it moves every odd sum by one.
+	SKIP_MODE_16;
+
+	setXmm(X86_REG_XMM0, 0, 0x000000000000ffffULL);
+	setXmm(X86_REG_XMM1, 0, 0x0000000000000002ULL);
+
+	emulate("pavgw xmm0, xmm1");
+
+	EXPECT_EQ(0x0000000000008001ULL, xmmLow(X86_REG_XMM0));
+	EXPECT_EQ(0ULL, xmmHigh(X86_REG_XMM0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

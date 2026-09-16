@@ -317,56 +317,116 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSsePxor(
 }
 
 /**
- * PCMPEQB/W/D — packed compare equal; result lane is all-1s or all-0s.
+ * PCMPEQB/W/D/Q, PCMPGTB/W/D/Q — packed compare; a result lane is all-1s or
+ * all-0s.
+ *
+ * The two families are one function because they differ in exactly one
+ * predicate, and splitting them is how the lane width ends up spelled twice.
+ * The comparison for PCMPGT is **signed** -- that is the whole content of the
+ * instruction, and the unsigned reading gives a different answer for every
+ * lane with its top bit set, which for byte lanes is half of them.
+ *
+ * `laneBits` throws on an id it does not know rather than defaulting to 32.
+ * The defaulting version was live here: PCMPEQQ pointed at `nullptr`, and
+ * wiring it to this function would have silently compared 32-bit lanes.
  */
+static unsigned packedCmpLaneBits(unsigned id)
+{
+	switch (id)
+	{
+	case X86_INS_PCMPEQB:
+	case X86_INS_PCMPGTB: return 8;
+	case X86_INS_PCMPEQW:
+	case X86_INS_PCMPGTW: return 16;
+	case X86_INS_PCMPEQD:
+	case X86_INS_PCMPGTD: return 32;
+	case X86_INS_PCMPEQQ:
+	case X86_INS_PCMPGTQ: return 64;
+	default: throw GenericError("packedCmpLaneBits(): unhandled instruction id");
+	}
+}
+
 void Capstone2LlvmIrTranslatorX86_impl::translateSsePcmpeq(
         cs_insn* i, cs_x86* xi, IRBuilder<>& irb) {
     EXPECT_IS_BINARY(i, xi, irb);
     std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
 
-    unsigned bits;
-    switch (i->id) {
-        case X86_INS_PCMPEQB: bits =  8; break;
-        case X86_INS_PCMPEQW: bits = 16; break;
-        case X86_INS_PCMPEQD: bits = 32; break;
-        default: bits = 32; break;
-    }
-    unsigned lanes = 128 / bits;
-    auto* vecTy = FixedVectorType::get(irb.getIntNTy(bits), lanes);
+	bool isGt =
+		i->id == X86_INS_PCMPGTB || i->id == X86_INS_PCMPGTW || i->id == X86_INS_PCMPGTD || i->id == X86_INS_PCMPGTQ;
+	unsigned bits = packedCmpLaneBits(i->id);
+	unsigned lanes = 128 / bits;
+	auto* vecTy = FixedVectorType::get(irb.getIntNTy(bits), lanes);
     Value* v0 = irb.CreateBitCast(toI128(op0, irb), vecTy);
     Value* v1 = irb.CreateBitCast(toI128(op1, irb), vecTy);
     // i1 vector comparison.
-    Value* cmp = irb.CreateICmpEQ(v0, v1);
-    // Sign-extend i1 → iN to get 0xFF…F or 0x00…0.
-    Value* ext = irb.CreateSExt(cmp, vecTy);
+	Value* cmp = isGt ? irb.CreateICmpSGT(v0, v1) : irb.CreateICmpEQ(v0, v1);
+	// Sign-extend i1 → iN to get 0xFF…F or 0x00…0.
+	Value* ext = irb.CreateSExt(cmp, vecTy);
     storeOp(xi->operands[0], irb.CreateBitCast(ext, irb.getInt128Ty()),
             irb, eOpConv::NOTHING);
 }
 
 /**
- * PUNPCKLBW — unpack and interleave low bytes.
- * PUNPCKLDQ — unpack and interleave low doublewords.
+ * PUNPCKL{BW,WD,DQ,QDQ} and PUNPCKH{BW,WD,DQ,QDQ} — unpack and interleave.
+ *
+ * This used to read `unsigned bits = (i->id == X86_INS_PUNPCKLBW) ? 8 : 32;`
+ * and was correct because exactly two ids reached it, PUNPCKLBW and
+ * PUNPCKLDQ. It is the kind of correct that stops being correct the moment
+ * someone adds a third entry to the table: PUNPCKLWD pointed at `nullptr`
+ * next to those two, and wiring it there would have interleaved 32-bit lanes
+ * under a 16-bit mnemonic -- no crash, no assertion, a different answer.
+ *
+ * The high forms take the top half of each operand instead of the bottom, and
+ * are what a compiler uses to widen the upper lanes of a vector. They are the
+ * same shuffle with the source indices moved up by half the lane count.
  */
 void Capstone2LlvmIrTranslatorX86_impl::translateSsePunpckl(
         cs_insn* i, cs_x86* xi, IRBuilder<>& irb) {
     EXPECT_IS_BINARY(i, xi, irb);
     std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
 
-    unsigned bits = (i->id == X86_INS_PUNPCKLBW) ? 8 : 32;
-    unsigned lanes = 128 / bits;
-    auto* vecTy = FixedVectorType::get(irb.getIntNTy(bits), lanes);
+	unsigned bits = 0;
+	bool high = false;
+	switch (i->id)
+	{
+	case X86_INS_PUNPCKLBW: bits = 8; break;
+	case X86_INS_PUNPCKLWD: bits = 16; break;
+	case X86_INS_PUNPCKLDQ: bits = 32; break;
+	case X86_INS_PUNPCKLQDQ: bits = 64; break;
+	case X86_INS_PUNPCKHBW:
+		bits = 8;
+		high = true;
+		break;
+	case X86_INS_PUNPCKHWD:
+		bits = 16;
+		high = true;
+		break;
+	case X86_INS_PUNPCKHDQ:
+		bits = 32;
+		high = true;
+		break;
+	case X86_INS_PUNPCKHQDQ:
+		bits = 64;
+		high = true;
+		break;
+	default: throw GenericError("translateSsePunpckl(): unhandled instruction id");
+	}
+	unsigned lanes = 128 / bits;
+	auto* vecTy = FixedVectorType::get(irb.getIntNTy(bits), lanes);
     Value* v0 = irb.CreateBitCast(toI128(op0, irb), vecTy);
     Value* v1 = irb.CreateBitCast(toI128(op1, irb), vecTy);
 
-    // Interleave low half: [v0[0], v1[0], v0[1], v1[1], ...]
-    unsigned halfLanes = lanes / 2;
-    std::vector<int> mask;
-    mask.reserve(lanes);
+	// Low:  [v0[0], v1[0], v0[1], v1[1], ...]
+	// High: [v0[h], v1[h], v0[h+1], v1[h+1], ...] where h = lanes / 2
+	unsigned halfLanes = lanes / 2;
+	unsigned base = high ? halfLanes : 0;
+	std::vector<int> mask;
+	mask.reserve(lanes);
     for (unsigned n = 0; n < halfLanes; ++n) {
-        mask.push_back(static_cast<uint32_t>(n));
-        mask.push_back(static_cast<uint32_t>(lanes + n));
-    }
-    Value* result = irb.CreateShuffleVector(v0, v1, mask);
+		mask.push_back(static_cast<int>(base + n));
+		mask.push_back(static_cast<int>(lanes + base + n));
+	}
+	Value* result = irb.CreateShuffleVector(v0, v1, mask);
     storeOp(xi->operands[0], irb.CreateBitCast(result, irb.getInt128Ty()),
             irb, eOpConv::NOTHING);
 }
@@ -473,13 +533,13 @@ static Value* scalarFltBinOp(
 void Capstone2LlvmIrTranslatorX86_impl::translateSseHorizontal(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
 {
 	EXPECT_IS_BINARY(i, xi, irb);
-    std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
 
 	if (i->id == X86_INS_ADDSUBPS)
 	{
 		// Even lanes: subtract; odd lanes: add.
-        auto* vec4f = vecType(irb.getFloatTy(), 4);
-        Value* v0 = irb.CreateBitCast(toI128(op0, irb), vec4f);
+		auto* vec4f = vecType(irb.getFloatTy(), 4);
+		Value* v0 = irb.CreateBitCast(toI128(op0, irb), vec4f);
         Value* v1 = irb.CreateBitCast(toI128(op1, irb), vec4f);
         Value* adds = irb.CreateFAdd(v0, v1);
         Value* subs = irb.CreateFSub(v0, v1);
@@ -492,8 +552,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseHorizontal(cs_insn* i, cs_x8
 	else if (i->id == X86_INS_HADDPS)
 	{
 		auto* vec4f = vecType(irb.getFloatTy(), 4);
-        Value* v0 = irb.CreateBitCast(toI128(op0, irb), vec4f);
-        Value* v1 = irb.CreateBitCast(toI128(op1, irb), vec4f);
+		Value* v0 = irb.CreateBitCast(toI128(op0, irb), vec4f);
+		Value* v1 = irb.CreateBitCast(toI128(op1, irb), vec4f);
         Value* e00 = irb.CreateExtractElement(v0, (uint64_t)0);
         Value* e01 = irb.CreateExtractElement(v0, (uint64_t)1);
         Value* e02 = irb.CreateExtractElement(v0, (uint64_t)2);
@@ -513,8 +573,8 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseHorizontal(cs_insn* i, cs_x8
 	else if (i->id == X86_INS_HSUBPS)
 	{
 		auto* vec4f = vecType(irb.getFloatTy(), 4);
-        Value* v0 = irb.CreateBitCast(toI128(op0, irb), vec4f);
-        Value* v1 = irb.CreateBitCast(toI128(op1, irb), vec4f);
+		Value* v0 = irb.CreateBitCast(toI128(op0, irb), vec4f);
+		Value* v1 = irb.CreateBitCast(toI128(op1, irb), vec4f);
         Value* e00 = irb.CreateExtractElement(v0, (uint64_t)0);
         Value* e01 = irb.CreateExtractElement(v0, (uint64_t)1);
         Value* e02 = irb.CreateExtractElement(v0, (uint64_t)2);
@@ -576,9 +636,9 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCvtSs2Si(
 	lane0 = irb.CreateUnaryIntrinsic(Intrinsic::roundeven, lane0);
 	unsigned destBits = xi->operands[0].size ? xi->operands[0].size * 8 : 32;
 	Value* intVal = irb.CreateFPToSI(lane0, irb.getIntNTy(destBits));
-    // ZEXT_TRUNC_OR_BITCAST: the destination GPR alloca may be wider
-    // (e.g. i64) than intVal (i32), which would crash StoreInst::AssertOK.
-    storeOp(xi->operands[0], intVal, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	// ZEXT_TRUNC_OR_BITCAST: the destination GPR alloca may be wider
+	// (e.g. i64) than intVal (i32), which would crash StoreInst::AssertOK.
+	storeOp(xi->operands[0], intVal, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 }
 
 /**
@@ -609,9 +669,9 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCvtSd2Si(
 	lane0 = irb.CreateUnaryIntrinsic(Intrinsic::roundeven, lane0);
 	unsigned destBits = xi->operands[0].size ? xi->operands[0].size * 8 : 32;
 	Value* intVal = irb.CreateFPToSI(lane0, irb.getIntNTy(destBits));
-    // ZEXT_TRUNC_OR_BITCAST: same fix as translateCvtSs2Si — GPR alloca
-    // may be i64 while intVal is i32.
-    storeOp(xi->operands[0], intVal, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+	// ZEXT_TRUNC_OR_BITCAST: same fix as translateCvtSs2Si — GPR alloca
+	// may be i64 while intVal is i32.
+	storeOp(xi->operands[0], intVal, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
 }
 
 /**
@@ -648,8 +708,7 @@ void Capstone2LlvmIrTranslatorX86_impl::translateCvtPs2Dq(
 		v = irb.CreateUnaryIntrinsic(Intrinsic::roundeven, v);
 	}
 	Value* res = irb.CreateFPToSI(v, vec4i);
-    storeOp(xi->operands[0], irb.CreateBitCast(res, irb.getInt128Ty()),
-            irb, eOpConv::NOTHING);
+	storeOp(xi->operands[0], irb.CreateBitCast(res, irb.getInt128Ty()), irb, eOpConv::NOTHING);
 }
 
 //===========================================================================
@@ -1243,6 +1302,169 @@ void Capstone2LlvmIrTranslatorX86_impl::translateSseMovMsk(cs_insn* i, cs_x86* x
 		res = irb.CreateOr(res, irb.CreateShl(bit, ConstantInt::get(i32t, lane)));
 	}
 	storeOp(xi->operands[0], res, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+
+/**
+ * PMIN/PMAX, signed and unsigned, byte through dword.
+ *
+ * `select(a < b, a, b)` rather than an intrinsic, for the same reason
+ * translateSseFltMinMax uses a select: these are exact integer comparisons
+ * with no NaN case to get wrong, and the emulator executes select and icmp.
+ *
+ * Signedness is the whole instruction. PMINUB and PMINSB differ on every lane
+ * whose top bit is set, which for bytes coming out of a PCMPEQB is all of the
+ * matching ones, so reading the U or the S wrongly is a silent miscompilation
+ * in exactly the code these appear in.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSsePminMax(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+
+	unsigned bits = 0;
+	bool isSigned = false;
+	bool isMax = false;
+	switch (i->id)
+	{
+	case X86_INS_PMINUB: bits = 8; break;
+	case X86_INS_PMINUW: bits = 16; break;
+	case X86_INS_PMINUD: bits = 32; break;
+	case X86_INS_PMAXUB:
+		bits = 8;
+		isMax = true;
+		break;
+	case X86_INS_PMAXUW:
+		bits = 16;
+		isMax = true;
+		break;
+	case X86_INS_PMAXUD:
+		bits = 32;
+		isMax = true;
+		break;
+	case X86_INS_PMINSB:
+		bits = 8;
+		isSigned = true;
+		break;
+	case X86_INS_PMINSW:
+		bits = 16;
+		isSigned = true;
+		break;
+	case X86_INS_PMINSD:
+		bits = 32;
+		isSigned = true;
+		break;
+	case X86_INS_PMAXSB:
+		bits = 8;
+		isSigned = true;
+		isMax = true;
+		break;
+	case X86_INS_PMAXSW:
+		bits = 16;
+		isSigned = true;
+		isMax = true;
+		break;
+	case X86_INS_PMAXSD:
+		bits = 32;
+		isSigned = true;
+		isMax = true;
+		break;
+	default: throw GenericError("translateSsePminMax(): unhandled instruction id");
+	}
+	unsigned lanes = 128 / bits;
+	auto* vecTy = FixedVectorType::get(irb.getIntNTy(bits), lanes);
+	Value* v0 = irb.CreateBitCast(toI128(op0, irb), vecTy);
+	Value* v1 = irb.CreateBitCast(toI128(op1, irb), vecTy);
+
+	Value* cmp = nullptr;
+	if (isMax)
+	{
+		cmp = isSigned ? irb.CreateICmpSGT(v0, v1) : irb.CreateICmpUGT(v0, v1);
+	}
+	else
+	{
+		cmp = isSigned ? irb.CreateICmpSLT(v0, v1) : irb.CreateICmpULT(v0, v1);
+	}
+	Value* res = irb.CreateSelect(cmp, v0, v1);
+	storeOp(xi->operands[0], irb.CreateBitCast(res, irb.getInt128Ty()), irb, eOpConv::NOTHING);
+}
+
+/**
+ * PALIGNR dst, src, imm — concatenate dst:src and take 16 bytes starting
+ * `imm` bytes in from the bottom.
+ *
+ *     temp = (dst << 128) | src      (256 bits, dst on top)
+ *     dst  = temp >> (imm * 8)       (low 128 bits of that)
+ *
+ * Done on i128 rather than i256 on purpose. The shift amount is a compile-time
+ * constant here, so the three cases can be separated in C++ and every LLVM
+ * shift kept strictly below its operand's width -- a shift of exactly the
+ * width is poison, and `imm == 0` and `imm == 16` are the two values that
+ * would produce one. The i256 spelling reads better and puts an
+ * arbitrary-precision shift through tests/llvmir-emul for no gain.
+ *
+ * `imm >= 32` is architecturally zero, not poison and not a wrap: the window
+ * has moved entirely past the top of the concatenation.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSsePalignr(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, xi, irb);
+
+	Value* dst = toI128(loadOp(xi->operands[0], irb), irb);
+	Value* src = toI128(loadOp(xi->operands[1], irb), irb);
+	auto* i128 = irb.getInt128Ty();
+	unsigned n = static_cast<unsigned>(xi->operands[2].imm) & 0xff;
+
+	Value* res = nullptr;
+	if (n == 0)
+	{
+		res = src;
+	}
+	else if (n < 16)
+	{
+		Value* lo = irb.CreateLShr(src, ConstantInt::get(i128, n * 8));
+		Value* hi = irb.CreateShl(dst, ConstantInt::get(i128, 128 - n * 8));
+		res = irb.CreateOr(hi, lo);
+	}
+	else if (n < 32)
+	{
+		res = irb.CreateLShr(dst, ConstantInt::get(i128, (n - 16) * 8));
+	}
+	else
+	{
+		res = ConstantInt::get(i128, 0);
+	}
+	storeOp(xi->operands[0], res, irb, eOpConv::NOTHING);
+}
+
+/**
+ * PAVGB, PAVGW — packed unsigned average with round-half-up.
+ *
+ *     dst[k] = (dst[k] + src[k] + 1) >> 1
+ *
+ * The addition is done one bit wider than the lane. At the lane's own width
+ * 0xff + 0xff + 1 wraps to 0xff, which is also the right answer, so a
+ * truncated version passes a test over saturating inputs and fails over
+ * 0x80 + 0x80: 0x81 instead of 0x80. The widening is not a precaution, it is
+ * the instruction.
+ */
+void Capstone2LlvmIrTranslatorX86_impl::translateSsePavg(cs_insn* i, cs_x86* xi, IRBuilder<>& irb)
+{
+	EXPECT_IS_BINARY(i, xi, irb);
+	std::tie(op0, op1) = loadOpBinary(xi, irb, eOpConv::NOTHING);
+
+	unsigned bits = i->id == X86_INS_PAVGB ? 8 : 16;
+	unsigned lanes = 128 / bits;
+	auto* vecTy = FixedVectorType::get(irb.getIntNTy(bits), lanes);
+	auto* wideTy = FixedVectorType::get(irb.getIntNTy(bits * 2), lanes);
+
+	Value* v0 = irb.CreateZExt(irb.CreateBitCast(toI128(op0, irb), vecTy), wideTy);
+	Value* v1 = irb.CreateZExt(irb.CreateBitCast(toI128(op1, irb), vecTy), wideTy);
+	Value* one = ConstantInt::get(wideTy, 1);
+	Value* sum = irb.CreateAdd(irb.CreateAdd(v0, v1), one);
+	Value* avg = irb.CreateTrunc(irb.CreateLShr(sum, one), vecTy);
+
+	storeOp(xi->operands[0], irb.CreateBitCast(avg, irb.getInt128Ty()), irb, eOpConv::NOTHING);
 }
 
 } // namespace capstone2llvmir

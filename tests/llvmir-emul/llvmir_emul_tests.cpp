@@ -526,6 +526,99 @@ TEST_F(LlvmIrEmulatorFpIntrinsicTests, theCallIsStillRecorded)
 	EXPECT_EQ(1u, called.count(module->getFunction("llvm.fabs.f64")));
 }
 
+
+//
+// Vector shifts.
+//
+// These pin behaviour that already worked and nothing asked about. The
+// packed-average translation emits a vector lshr and the eight packed-shift
+// instructions PSLLW..PSRLQ will emit the rest, so it is worth knowing which
+// of them the emulator can execute before a translator depends on it.
+//
+// They were written believing there was a hole to fix: visitBinaryOperator()'s
+// vector switch lists add, sub, mul, the divisions, and, or and xor and not
+// the three shifts, so a vector shift reaching it would hit llvm_unreachable().
+// Adding the three cases there and then removing them again left the suite
+// green -- because InstVisitor dispatches Shl, LShr and AShr to visitShl(),
+// visitLShr() and visitAShr(), each of which has its own vector branch, and
+// visitBinaryOperator() never sees them. The cases were reverted; the tests
+// stay, because the path they exercise had no test either way.
+//
+// Each of the three is checked against a case the other two get wrong: >> 1
+// of a value with the top bit set separates lshr from ashr, and << 1 of the
+// same separates shl from both.
+//
+
+class LlvmIrEmulatorVectorShiftTests : public LlvmIrTests {
+protected:
+	llvm::APInt runShift(const std::string& op, const std::string& in)
+	{
+		parseInput(
+				"@g = internal global <4 x i32> zeroinitializer\n"
+				"define i32 @f() {\n"
+				"  %r = " + op + " <4 x i32> " + in
+						+ ", <i32 1, i32 1, i32 1, i32 1>\n"
+				"  store <4 x i32> %r, <4 x i32>* @g\n"
+				"  ret i32 0\n"
+				"}\n");
+		auto* f = getFunctionByName("f");
+		auto* g = getGlobalByName("g");
+
+		LlvmIrEmulator emu(module.get());
+		emu.runFunction(f);
+
+		auto gv = emu.getGlobalVariableValue(g);
+		EXPECT_EQ(4u, gv.AggregateVal.size());
+		return gv.AggregateVal[0].IntVal;
+	}
+};
+
+TEST_F(LlvmIrEmulatorVectorShiftTests, lshr)
+{
+	// 0x80000000 >>logical 1 == 0x40000000.
+	EXPECT_EQ(0x40000000u, runShift("lshr", "<i32 -2147483648, i32 0, i32 0, i32 0>").getZExtValue());
+}
+
+TEST_F(LlvmIrEmulatorVectorShiftTests, ashr)
+{
+	// The same input >>arithmetic 1 keeps the sign: 0xc0000000.
+	EXPECT_EQ(0xc0000000u, runShift("ashr", "<i32 -2147483648, i32 0, i32 0, i32 0>").getZExtValue());
+}
+
+TEST_F(LlvmIrEmulatorVectorShiftTests, shl)
+{
+	// 0x40000001 << 1 == 0x80000002, which neither shift right can produce.
+	EXPECT_EQ(0x80000002u, runShift("shl", "<i32 1073741825, i32 0, i32 0, i32 0>").getZExtValue());
+}
+
+TEST_F(LlvmIrEmulatorVectorShiftTests, everyLaneIsShifted)
+{
+	// A one-lane test would pass against an implementation that shifted lane
+	// zero and copied the rest, which is the shape the scalar path would take
+	// if it were reached by accident.
+	parseInput(R"(
+		@g = internal global <4 x i32> zeroinitializer
+		define i32 @f() {
+			%r = lshr <4 x i32> <i32 16, i32 32, i32 64, i32 128>,
+			                    <i32 1, i32 2, i32 3, i32 4>
+			store <4 x i32> %r, <4 x i32>* @g
+			ret i32 0
+		}
+	)");
+	auto* f = getFunctionByName("f");
+	auto* g = getGlobalByName("g");
+
+	LlvmIrEmulator emu(module.get());
+	emu.runFunction(f);
+
+	auto gv = emu.getGlobalVariableValue(g);
+	ASSERT_EQ(4u, gv.AggregateVal.size());
+	EXPECT_EQ(8u, gv.AggregateVal[0].IntVal.getZExtValue());
+	EXPECT_EQ(8u, gv.AggregateVal[1].IntVal.getZExtValue());
+	EXPECT_EQ(8u, gv.AggregateVal[2].IntVal.getZExtValue());
+	EXPECT_EQ(8u, gv.AggregateVal[3].IntVal.getZExtValue());
+}
+
 } // tests
 } // llvmir_emul
 } // retdec

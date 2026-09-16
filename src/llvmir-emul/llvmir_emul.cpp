@@ -2829,6 +2829,12 @@ void LlvmIrEmulator::visitBinaryOperator(llvm::BinaryOperator& I)
 			case Instruction::And:   INTEGER_VECTOR_OPERATION(&) break;
 			case Instruction::Or:    INTEGER_VECTOR_OPERATION(|) break;
 			case Instruction::Xor:   INTEGER_VECTOR_OPERATION(^) break;
+			// Shl, LShr and AShr are absent from this switch on purpose:
+			// visitShl(), visitLShr() and visitAShr() below have their own
+			// vector branches, and InstVisitor dispatches those opcodes
+			// there, so they never arrive here. Adding them was tried and
+			// the falsification run said so -- removing them again left the
+			// suite green, which is what a dead case looks like.
 			case Instruction::FAdd:  FLOAT_VECTOR_OP(+) break;
 			case Instruction::FSub:  FLOAT_VECTOR_OP(-) break;
 			case Instruction::FMul:  FLOAT_VECTOR_OP(*) break;
