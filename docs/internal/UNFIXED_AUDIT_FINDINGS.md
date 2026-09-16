@@ -3382,3 +3382,134 @@ installed: `build/linux/external/src/llvm-project/llvm/include/llvm/IR/Instructi
 in CI, and whatever `llvm-config` points at locally. An LLVM upgrade that adds
 an instruction is exactly the case this is for, and asking a different LLVM
 than the one being compiled against would answer a different question.
+
+
+## Where this lands
+
+ctest-linux 293 at `811319d`, every step green:
+
+```
+ARCH-01: x86_64    42/42   1.0000
+ARCH-01: arm       42/42   1.0000
+ARCH-01: arm64     42/42   1.0000
+ARCH-01: mips      42/42   1.0000
+ARCH-01: powerpc   42/42   1.0000
+ARCH-01: overall  210/210  1.0000
+```
+
+Same 42 sources, same flags, same tools, all five architectures. That is the
+question this branch was given, and it is now a floor rather than a reading:
+all five are at `--arch-min 1.0`.
+
+COV-01 on the same corpus, also a floor:
+
+| arch    | rate   | what is left |
+|---------|--------|--------------|
+| x86_64  | 0.9931 | `HLT` in alignment padding |
+| arm     | 1.0000 | nothing |
+| arm64   | 0.9994 | `LD1`/`ST1` (NEON, 2 each) |
+| mips    | 1.0000 | nothing |
+| powerpc | 1.0000 | nothing |
+
+### Prefetch hints are not instructions to model
+
+`PLD`, `PLDW` and `PLI` on ARM and `PRFM`/`PRFUM` on ARM64 touch no register
+and no byte of memory and cannot fault. There is nothing to translate, which is
+the answer `NOP` and `BTI` already get, and as `nullptr` entries they came out
+as `__asm_pld` calls -- 2,142 of them across the 42 static ARM binaries, plus
+924 `__asm_prfm` on ARM64. Noise in the output for instructions that do
+nothing. Falsified by reverting the five dispatch entries: exactly the three
+new tests fail.
+
+C2L-01 floors: Arm 592 -> 596, Arm64 481 -> 482. 4,650 tests.
+
+
+## The PowerPC flake was a silent miscompilation
+
+`PPC_INS_MR/CS_MODE_64` failed once in a C2L-01 gate run and was recorded above
+as "one failure that has not come back", with a note that the thing to look at
+if it returned was `GenericValue`'s default constructor. It came back on the
+next gate run, so it got looked at properly.
+
+It reproduces. Not in isolation -- 120 runs of that one test under four
+competing CPU hogs, all clean -- but in the PowerPC suite under the same load
+it failed on run 14 of 25. The difference is what the process had allocated
+before it, which is the shape of an uninitialised read.
+
+The failing run's IR says what happened:
+
+```
+  4660 :   %0 = load i64, ptr @r11
+  4660 :   store i64 %0, ptr @r0
+     0 :   %1 = icmp slt i64 %0, 0
+     0 :   store i1 %1, ptr @cr0_lt
+     1 :   %2 = icmp sgt i64 %0, 0
+     ...
+```
+
+`mr` is not a record form and sets no flags. `storeCr0()` runs only when
+`pi->update_cr0` is set, so capstone had reported this `mr` as `mr.`.
+
+### Where it comes from
+
+```c
+void PPC_post_printer(csh ud, cs_insn *insn, char *insn_asm, MCInst *mci)
+{
+	...
+	if (strrchr(insn->mnemonic, '.') != NULL) {
+		insn->detail->ppc.update_cr0 = true;
+	}
+}
+```
+
+The post-printer reads `insn->mnemonic`. `fill_insn()` calls it *before* it
+copies the mnemonic in -- the line above the copy in capstone's own source is a
+commented-out `// memset(mnem, 0, CS_MNEMONIC_SIZE);`. So the field it reads is
+whatever was in the buffer beforehand.
+
+With `cs_disasm()`'s array that is the previous instruction's mnemonic, which
+is capstone's bug and is at least deterministic. `capstone2llvmir` does not use
+that: it calls `cs_malloc()` per instruction so that every `cs_insn` can be
+kept, and `cs_malloc()` sets only `detail` -- `mnemonic` is uninitialised heap.
+
+Demonstrated directly, same four bytes, same handle, three buffers:
+
+```
+trial 0 (cleared):        mnem='mr' ops='r0, r11' update_cr0=0 bh=0
+trial 1 ("addc." in it):  mnem='mr' ops='r0, r11' update_cr0=1 bh=0
+trial 2 ("bdnzt+" in it): mnem='mr' ops='r0, r11' update_cr0=0 bh=1
+```
+
+So this was never a test problem. Any PowerPC instruction RetDec decodes can
+be given a CR0 update it does not perform, decided by the allocator, and the
+conditional branches that read `cr0_lt`/`cr0_gt`/`cr0_eq` downstream read it.
+That is a wrong answer rather than a crash, which is the worse kind, and it
+predates this branch entirely.
+
+Capstone reads the mnemonic in exactly one architecture's post-printer --
+PowerPC's, three times, for `'+'`, `'-'` and `'.'`. The other six read only the
+`insn_asm` buffer they are handed.
+
+### The fix, and the test
+
+`cs_malloc()` is wrapped: the two strings capstone reads before it writes them
+are cleared. It belongs in this repository rather than in the pinned capstone,
+and it is two assignments.
+
+The test primes the hazard rather than waiting for it. It assembles first, so
+nothing else allocates in between, then frees a chunk of exactly
+`sizeof(cs_insn)` carrying `"addc."` at the mnemonic offset; glibc's tcache is
+LIFO per size class, so `cs_malloc()`'s next allocation of that size gets it
+back. Falsified by removing the two assignments: the new test fails, and
+nothing else does.
+
+C2L-01 floor: Powerpc 880 -> 882. 4,652 tests.
+
+### What the first write-up got wrong
+
+Recording it as "did not reproduce, here is where to look if it returns" was
+the wrong call. Twelve clean runs of the whole suite is not evidence of
+absence when the failing condition is heap contents: the runs that reproduce
+it are the ones under load, and I had been running it on an idle machine. The
+second occurrence is what made the difference, and it should not have taken
+one.

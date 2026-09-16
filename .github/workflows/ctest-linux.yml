@@ -341,11 +341,14 @@ jobs:
       # the first thing to ask what the decompiler does with a whole binary of
       # theirs.
       #
-      # x86-64 is in the corpus too now, as the control column -- same sources,
-      # same flags, same tools -- and it is reported here without a floor until
-      # it has a measured run to floor at. That is the road every other number
-      # in this file took, and skipping it is how a floor ends up being either
-      # vacuous or a fiction.
+      # x86-64 is in the corpus too, as the control column: same sources, same
+      # flags, same tools, so "is every architecture at x86-64's level" is a
+      # question with an answer. It went in unfloored, which is the road every
+      # other number in this file took; its first run, 292 at fb31221, read
+      # 38/42, and the four failures were one assertion in bin2llvmir that the
+      # SSE2 work had made reachable. With that fixed, 293 at 811319d read
+      # 42/42 on every architecture and 210/210 overall, so all five are
+      # floored at 1.0 now.
       #
       # Now a floor, because there is a measurement to floor. Run 288 at
       # 517db16 read 40/40, every architecture at 1.0000 -- the same rate CC-01
@@ -374,7 +377,7 @@ jobs:
           bash scripts/ci/check_multiarch_decompile.sh \
             --decompiler "$DEC" --corpus /tmp/ma-corpus \
             --limit 40 --timeout 60 \
-            --arch-min "arm=1.0 arm64=1.0 mips=1.0 powerpc=1.0" \
+            --arch-min "x86_64=1.0 arm=1.0 arm64=1.0 mips=1.0 powerpc=1.0" \
             --save-failures arch01-failures 2>&1 | tee /tmp/arch01.log
           {
             echo "### ARCH-01 non-x86 decompilation"
@@ -405,7 +408,7 @@ jobs:
           bash scripts/ci/check_multiarch_decompile.sh \
             --decompiler "$DEC" --corpus /tmp/ma-corpus \
             --limit 0 --timeout 60 \
-            --arch-min "arm=1.0 arm64=1.0 mips=1.0 powerpc=1.0" \
+            --arch-min "x86_64=1.0 arm=1.0 arm64=1.0 mips=1.0 powerpc=1.0" \
             --save-failures arch01-full-failures 2>&1 | tee /tmp/arch01-full.log
           {
             echo "### ARCH-01 non-x86 decompilation (whole corpus)"

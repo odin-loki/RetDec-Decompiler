@@ -1805,6 +1805,43 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, thumb_reads_pc_as_address_plus_four_wh
 }
 
 //
+// ARM_INS_PLD, ARM_INS_PLI
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_PLD_is_nothing)
+{
+	ALL_MODES;
+
+	// A prefetch hint touches no register and no memory and cannot fault, so
+	// there is nothing to translate. As a nullptr entry it came out as an
+	// __asm_pld call -- 2,142 of them across the static ARM corpus.
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+	});
+
+	emulate("pld [r0]");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_PLI_is_nothing)
+{
+	ALL_MODES;
+
+	setRegisters({
+		{ARM_REG_R0, 0x1000},
+	});
+
+	emulate("pli [r0]");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+//
 // ARM_INS_VPUSH, ARM_INS_VPOP
 //
 

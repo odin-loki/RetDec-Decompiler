@@ -162,6 +162,45 @@ uint32_t Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::getArchBitSize()
 //
 // etc.
 
+namespace {
+
+/**
+ * cs_malloc() hands back an uninitialised cs_insn: only @c detail is set.
+ * That matters because capstone's PowerPC post-printer reads @c mnemonic
+ * BEFORE fill_insn() writes it --
+ *
+ *     if (strrchr(insn->mnemonic, '.') != NULL)
+ *         insn->detail->ppc.update_cr0 = true;
+ *
+ * -- so whatever bytes the allocator happened to return decide whether the
+ * instruction is treated as a record form. With cs_disasm()'s array the
+ * buffer holds the PREVIOUS instruction's mnemonic, which is capstone's own
+ * bug; with cs_malloc() and cs_disasm_iter(), which is what this file uses so
+ * that every cs_insn can be kept, it is uninitialised heap.
+ *
+ * Demonstrated directly: the same four bytes, 7d 60 5b 78, decode to `mr r0,
+ * r11` with update_cr0 = 0 from a cleared buffer and update_cr0 = 1 from one
+ * containing "addc.". The branch-hint field goes the same way on a '+' or a
+ * '-'. A PowerPC binary was therefore getting CR0 updates, and so conditional
+ * branches reading them, on instructions that set no flags -- decided by the
+ * heap.
+ *
+ * Clearing the two strings capstone reads before it writes them is the whole
+ * fix, and it belongs here rather than in the pinned capstone.
+ */
+cs_insn* allocCsInsn(csh handle)
+{
+	cs_insn* insn = cs_malloc(handle);
+	if (insn)
+	{
+		insn->mnemonic[0] = '\0';
+		insn->op_str[0] = '\0';
+	}
+	return insn;
+}
+
+} // anonymous namespace
+
 template <typename CInsn, typename CInsnOp>
 typename Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::TranslationResult
 Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::translate(
@@ -177,7 +216,7 @@ Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::translate(
 	TranslationResult res;
 
 	// We want to keep all Capstone instructions -> alloc a new one each time.
-	cs_insn* insn = cs_malloc(_handle);
+	cs_insn* insn = allocCsInsn(_handle);
 
 	uint64_t address = a;
 
@@ -215,7 +254,7 @@ Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::translate(
 			return res;
 		}
 
-		insn = cs_malloc(_handle);
+		insn = allocCsInsn(_handle);
 
 		// TODO: hack, solve better.
 		disasmRes = cs_disasm_iter(_handle, &bytes, &size, &address, insn);
@@ -243,7 +282,7 @@ Capstone2LlvmIrTranslator_impl<CInsn, CInsnOp>::translateOne(
 	TranslationResultOne res;
 
 	// We want to keep all Capstone instructions -> alloc a new one each time.
-	cs_insn* insn = cs_malloc(_handle);
+	cs_insn* insn = allocCsInsn(_handle);
 
 	uint64_t address = a;
 	_branchGenerated = nullptr;

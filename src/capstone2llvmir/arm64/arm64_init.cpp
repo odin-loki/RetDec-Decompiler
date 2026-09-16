@@ -1959,8 +1959,11 @@ std::map<std::size_t, void (Capstone2LlvmIrTranslatorArm64_impl::*)(cs_insn* i, 
 		{ARM64_INS_PMULL2, nullptr},
 		{ARM64_INS_PMULL, nullptr},
 		{ARM64_INS_PMUL, nullptr},
-		{ARM64_INS_PRFM, nullptr},
-		{ARM64_INS_PRFUM, nullptr},
+		// Prefetch hints, like ARM's PLD: no effect on program state and no
+		// fault, so the translation is nothing -- which is what ARM64_INS_NOP
+		// and ARM64_INS_BTI above already get.
+		{ARM64_INS_PRFM, &Capstone2LlvmIrTranslatorArm64_impl::translateNop},
+		{ARM64_INS_PRFUM, &Capstone2LlvmIrTranslatorArm64_impl::translateNop},
 		{ARM64_INS_RADDHN, nullptr},
 		{ARM64_INS_RADDHN2, nullptr},
 		{ARM64_INS_RBIT, &Capstone2LlvmIrTranslatorArm64_impl::translateRev},

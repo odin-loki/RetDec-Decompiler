@@ -495,9 +495,15 @@ Capstone2LlvmIrTranslatorArm_impl::_i2fm =
 		{ARM_INS_ORR, &Capstone2LlvmIrTranslatorArm_impl::translateOrr},
 		{ARM_INS_PKHBT, &Capstone2LlvmIrTranslatorArm_impl::translatePseudoAsmOp0FncOp1Op2},
 		{ARM_INS_PKHTB, &Capstone2LlvmIrTranslatorArm_impl::translatePseudoAsmOp0FncOp1Op2},
-		{ARM_INS_PLDW, nullptr},
-		{ARM_INS_PLD, nullptr},
-		{ARM_INS_PLI, nullptr},
+		// Prefetch hints. They have no effect on program state at all --
+		// not a register, not a byte of memory, and they cannot fault -- so
+		// the translation is nothing, exactly as for NOP. Left as nullptr
+		// they became __asm_pld calls: 2,142 of them across the 42 static ARM
+		// binaries, pure noise in the output for an instruction that does
+		// nothing.
+		{ARM_INS_PLDW, &Capstone2LlvmIrTranslatorArm_impl::translateNop},
+		{ARM_INS_PLD, &Capstone2LlvmIrTranslatorArm_impl::translateNop},
+		{ARM_INS_PLI, &Capstone2LlvmIrTranslatorArm_impl::translateNop},
 		{ARM_INS_QADD, nullptr},
 		{ARM_INS_QADD16, nullptr},
 		{ARM_INS_QADD8, nullptr},

@@ -5,6 +5,8 @@
  * @copyright (c) 2025-2026 Odin Loch trading as Imortek (modifications)
  */
 
+#include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 
@@ -2321,6 +2323,51 @@ TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MR)
 	});
 
 	emulate("mr 0, 11");
+
+	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R11});
+	EXPECT_JUST_REGISTERS_STORED({
+		{PPC_REG_R0, 0x1234},
+	});
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorPowerpcTests, PPC_INS_MR_does_not_inherit_a_record_form_from_the_heap)
+{
+	// capstone's PPC post-printer reads insn->mnemonic BEFORE fill_insn()
+	// writes it:
+	//
+	//     if (strrchr(insn->mnemonic, '.') != NULL)
+	//         insn->detail->ppc.update_cr0 = true;
+	//
+	// and capstone2llvmir hands it a freshly cs_malloc'd buffer for every
+	// instruction, so an uninitialised '.' in that buffer turns any PowerPC
+	// instruction into a record form -- CR0 written, and conditional branches
+	// reading it, on an instruction that sets no flags. The same four bytes
+	// decode to `mr r0, r11` with update_cr0 = 0 from a cleared buffer and
+	// update_cr0 = 1 from one holding "addc.".
+	//
+	// This is what made PPC_INS_MR above fail about one run in fourteen under
+	// load, and pass every time in isolation: the failing runs were the ones
+	// where the allocator returned a chunk with a dot in it.
+	//
+	// The priming below frees a chunk of exactly sizeof(cs_insn) carrying
+	// "addc." at the mnemonic offset. glibc's tcache is LIFO per size class,
+	// so cs_malloc's next allocation of that size gets it back. The assemble
+	// step is done first so that nothing else allocates in between.
+	auto bytes = assemble("mr 0, 11");
+
+	void* poison = std::malloc(sizeof(cs_insn));
+	ASSERT_NE(nullptr, poison);
+	std::memset(poison, 0, sizeof(cs_insn));
+	std::strcpy(static_cast<char*>(poison) + offsetof(cs_insn, mnemonic), "addc.");
+	std::free(poison);
+
+	setRegisters({
+		{PPC_REG_R11, 0x1234},
+	});
+
+	_emulate(bytes);
 
 	EXPECT_JUST_REGISTERS_LOADED({PPC_REG_R11});
 	EXPECT_JUST_REGISTERS_STORED({

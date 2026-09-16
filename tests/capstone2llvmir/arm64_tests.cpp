@@ -9440,6 +9440,27 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_LDSMAX_is_not_a_pseudo_cal
 	EXPECT_NO_VALUE_CALLED();
 }
 
+//
+// ARM64_INS_PRFM
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_PRFM_is_nothing)
+{
+	// A prefetch hint touches no register and no memory and cannot fault, so
+	// there is nothing to translate -- the same answer ARM64_INS_NOP and
+	// ARM64_INS_BTI already get. As a nullptr entry it came out as an
+	// __asm_prfm call.
+	setRegisters({
+		{ARM64_REG_X0, 0x1000},
+	});
+
+	emulate("prfm pldl1keep, [x0]");
+
+	EXPECT_NO_REGISTERS_STORED();
+	EXPECT_NO_MEMORY_LOADED_STORED();
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec
