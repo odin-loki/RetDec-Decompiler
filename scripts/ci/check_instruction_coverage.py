@@ -201,6 +201,63 @@ def build(src: str, out: Path, inc: Path, lib: Path) -> None:
         raise SystemExit(f"COV-01: FAIL could not build helper:\n{r.stderr[:2000]}")
 
 
+# A run of zero bytes this long inside a code region is not code. The
+# threshold is 64 bytes: sixteen AArch64 instructions, or thirty-two x86
+# `add byte ptr [rax], al`, and no compiler emits either as a reachable
+# sequence. Below it, padding is small enough that a handful of decodes either
+# way does not move a rate, and the risk of eating something real is not worth
+# taking.
+ZERO_RUN = 64
+
+
+def split_on_zero_runs(blob: bytes, off: int, size: int, min_run: int = ZERO_RUN):
+    """Split [off, off+size) around runs of >= min_run zero bytes.
+
+    Why this exists
+    ---------------
+    COV-01 excludes data using the ARM/AArch64 $d mapping symbols, and that is
+    the right mechanism when the producer marks its data. A statically linked
+    glibc does not always: bubblesort-arm64-gcc-O0 carries 4,080 consecutive
+    zero bytes at 0x40f378, immediately after `_nl_cleanup_ctype`, inside an
+    $x region and covered by no FUNC symbol. Capstone decodes each of those
+    1,020 words as `udf #0`, and across the seventeen static arm64 binaries
+    that have such a hole that is 17,340 instructions -- 0.48% of everything
+    decoded, and the single largest entry in arm64's uncovered list.
+
+    It is the same call as x86-64's `HLT` in the alignment padding after
+    `_start`: a rate is only worth having if its denominator is instructions
+    the program can execute, and the answer is to stop counting the padding,
+    not to point a translator at it.
+
+    Returns (subregions, zero_bytes). The zero bytes are reported in their own
+    column rather than folded into `skipped`, because "capstone could not
+    decode this" and "this was not code" are different facts and collapsing
+    them is how a denominator stops being checkable.
+    """
+    subs = []
+    zeros = 0
+    i = off
+    end = off + size
+    while i < end:
+        if blob[i] == 0:
+            j = i
+            while j < end and blob[j] == 0:
+                j += 1
+            if j - i >= min_run:
+                zeros += j - i
+                i = j
+                continue
+            # A short run is ordinary padding or an immediate; keep it.
+            nxt = blob.find(b"\x00" * min_run, j, end)
+        else:
+            nxt = blob.find(b"\x00" * min_run, i, end)
+        stop = nxt if nxt != -1 else end
+        if stop > i:
+            subs.append((i, stop - i))
+        i = stop
+    return subs, zeros
+
+
 def self_test(capstone_prefix: str) -> int:
     """Two binaries, three runs: no floor, an impossible floor, a floor of
     zero. What this proves is that --arch-min is read at all -- the first
@@ -243,6 +300,42 @@ def self_test(capstone_prefix: str) -> int:
             fails += 1
         else:
             print(f"COV-01: self-test ok  {name}")
+
+    # split_on_zero_runs decides what is not counted at all, so it is checked
+    # directly rather than through a rate, where an off-by-one would move a
+    # number by a fraction of a percent and look like the corpus changing.
+    # The pair that matters is the boundary: ZERO_RUN zero bytes are dropped
+    # and ZERO_RUN - 1 are kept.
+    z = b"\x00"
+    a = b"\xaa"
+    zero_cases = [
+        ("a region with no zeros is one piece",
+         a * 10, 0, 10, [(0, 10)], 0),
+        ("a region that is all zeros is nothing",
+         z * 64, 0, 64, [], 64),
+        ("a long run splits the region in two",
+         a * 8 + z * 64 + a * 8, 0, 80, [(0, 8), (72, 8)], 64),
+        ("one byte short of the threshold is kept",
+         a * 8 + z * 63 + a * 8, 0, 79, [(0, 79)], 0),
+        ("a leading run is dropped",
+         z * 64 + a * 4, 0, 68, [(64, 4)], 64),
+        ("a trailing run is dropped",
+         a * 4 + z * 64, 0, 68, [(0, 4)], 64),
+        ("a short run is not padding",
+         z * 4 + a * 4, 0, 8, [(0, 8)], 0),
+        ("offsets are absolute, not region-relative",
+         b"\xff" * 16 + a * 8 + z * 64 + a * 8, 16, 80, [(16, 8), (88, 8)], 64),
+    ]
+    for name, blob, off, size, want_subs, want_zeros in zero_cases:
+        subs, zeros = split_on_zero_runs(blob, off, size, ZERO_RUN)
+        if subs != want_subs or zeros != want_zeros:
+            print(f"COV-01: self-test FAIL zero runs, {name}: "
+                  f"got {subs} {zeros}, expected {want_subs} {want_zeros}",
+                  file=sys.stderr)
+            fails += 1
+        else:
+            print(f"COV-01: self-test ok  zero runs, {name}")
+
     if fails:
         return 1
     print("COV-01: self-test OK")
@@ -298,7 +391,8 @@ def main() -> int:
     dis = work / "dis"
     build(DIS_C % {"dispatch": dispatch}, dis, inc, lib)
 
-    print(f"{'arch':9s} {'decoded':>10s} {'skipped':>9s} {'covered':>10s} {'rate':>8s}  uncovered-kinds")
+    print(f"{'arch':9s} {'decoded':>10s} {'skipped':>9s} {'zeros':>9s} "
+          f"{'covered':>10s} {'rate':>8s}  uncovered-kinds")
     findings = {}
     rates: dict[str, float] = {}
     for arch in wanted:
@@ -316,7 +410,7 @@ def main() -> int:
             v, n = line.split(None, 1)
             idmap[int(v)] = n
 
-        counts, skipped, total, datab = Counter(), 0, 0, 0
+        counts, skipped, total, datab, zerob = Counter(), 0, 0, 0, 0
         for b in sorted(corpus.glob(f"*-{arch}-gcc-*")):
             if not b.is_file():
                 continue
@@ -328,25 +422,30 @@ def main() -> int:
             r, d = mapping_regions(b, arch, ndx, vaddr, off, size)
             if r:
                 regions, datab = r, datab + d
+            blob = b.read_bytes()
             for roff, rsize, rmode in regions:
-                out = subprocess.run([str(dis), str(b), rmode, "0", f"{roff}:{rsize}"],
-                                     capture_output=True, text=True).stdout
-                for line in out.splitlines():
-                    p = line.split(None, 1)
-                    if len(p) < 2:
-                        continue
-                    if p[1].startswith(".byte"):
-                        skipped += 1
-                        continue
-                    total += 1
-                    counts[int(p[0])] += 1
+                subs, z = split_on_zero_runs(blob, roff, rsize)
+                zerob += z
+                for soff, ssize in subs:
+                    out = subprocess.run([str(dis), str(b), rmode, "0", f"{soff}:{ssize}"],
+                                         capture_output=True, text=True).stdout
+                    for line in out.splitlines():
+                        p = line.split(None, 1)
+                        if len(p) < 2:
+                            continue
+                        if p[1].startswith(".byte"):
+                            skipped += 1
+                            continue
+                        total += 1
+                        counts[int(p[0])] += 1
 
         covered = sum(c for i, c in counts.items() if idmap.get(i) in impl)
         unc = sorted(((i, c) for i, c in counts.items() if idmap.get(i) not in impl),
                      key=lambda x: -x[1])
         rate = covered / total if total else 0.0
         note = f"  ({datab} bytes mapped as data)" if datab else ""
-        print(f"{arch:9s} {total:10d} {skipped:9d} {covered:10d} {rate:8.4f}  {len(unc)}{note}")
+        print(f"{arch:9s} {total:10d} {skipped:9d} {zerob:9d} "
+              f"{covered:10d} {rate:8.4f}  {len(unc)}{note}")
         findings[arch] = (unc, idmap, total)
         rates[arch] = rate
 

@@ -9577,6 +9577,185 @@ TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_ST1_list_writes_consecutiv
 	EXPECT_NO_VALUE_CALLED();
 }
 
+
+//
+// ARM64_INS_EXT, the bitwise selects, and the lane compares.
+//
+// What COV-01 finds on ARM64 once the static corpus is measured and the
+// zero-filled holes in glibc's .text are taken out of the denominator: EXT
+// 5,124, CMEQ 1,512, CMHS 294, BIT 210, CMGE 42. All of them expressible with
+// V0..V31 as i128 globals.
+//
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_EXT_takes_a_window_across_both)
+{
+	// Byte 0 of the result is byte 4 of vn, and byte 15 is byte 3 of vm.
+	// The operand order is the opposite of x86's PALIGNR -- there the
+	// destination is the high half of the concatenation, here the second
+	// source is -- so a translation copied across from that one answers with
+	// the halves swapped.
+	setV(ARM64_REG_V1, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+	setV(ARM64_REG_V2, 0xaabbccddeeff0011ULL, 0x2233445566778899ULL);
+
+	emulate("ext v0.16b, v1.16b, v2.16b, #4");
+
+	EXPECT_EQ(0x5566778899aabbccULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x6677889911223344ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_EXT_of_zero_is_the_first_source)
+{
+	// The index for which the second shift would be by the full operand
+	// width, which is poison.
+	setV(ARM64_REG_V1, 0x1122334455667788ULL, 0x99aabbccddeeff00ULL);
+	setV(ARM64_REG_V2, 0xaabbccddeeff0011ULL, 0x2233445566778899ULL);
+
+	emulate("ext v0.16b, v1.16b, v2.16b, #0");
+
+	EXPECT_EQ(0x99aabbccddeeff00ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x1122334455667788ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_EXT_d_form_is_64_bit_and_zeroes_the_top)
+{
+	// `.8b` makes the whole operation 64-bit: the window runs from vn into
+	// vm across eight bytes, not sixteen, and the write clears bits 127:64.
+	// V0 starts dirty so that keeping them would be visible.
+	setV(ARM64_REG_V0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setV(ARM64_REG_V1, 0xdeadbeefdeadbeefULL, 0x1122334455667788ULL);
+	setV(ARM64_REG_V2, 0xdeadbeefdeadbeefULL, 0x99aabbccddeeff00ULL);
+
+	emulate("ext v0.8b, v1.8b, v2.8b, #4");
+
+	EXPECT_EQ(0xddeeff0011223344ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BSL_selects_with_the_destination)
+{
+	// The three bitwise selects share operands here on purpose: which
+	// register is the selector is the entire difference between them, so the
+	// three tests differ only in the mnemonic and answer differently.
+	setV(ARM64_REG_V0, 0x1111111111111111ULL, 0x2222222222222222ULL);
+	setV(ARM64_REG_V1, 0x3333333333333333ULL, 0x4444444444444444ULL);
+	setV(ARM64_REG_V2, 0x5555555555555555ULL, 0x6666666666666666ULL);
+
+	emulate("bsl v0.16b, v1.16b, v2.16b");
+
+	EXPECT_EQ(0x4444444444444444ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x5555555555555555ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BIT_selects_with_the_second_source)
+{
+	setV(ARM64_REG_V0, 0x1111111111111111ULL, 0x2222222222222222ULL);
+	setV(ARM64_REG_V1, 0x3333333333333333ULL, 0x4444444444444444ULL);
+	setV(ARM64_REG_V2, 0x5555555555555555ULL, 0x6666666666666666ULL);
+
+	emulate("bit v0.16b, v1.16b, v2.16b");
+
+	EXPECT_EQ(0x4444444444444444ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x1111111111111111ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_BIF_is_BIT_with_the_mask_inverted)
+{
+	setV(ARM64_REG_V0, 0x1111111111111111ULL, 0x2222222222222222ULL);
+	setV(ARM64_REG_V1, 0x3333333333333333ULL, 0x4444444444444444ULL);
+	setV(ARM64_REG_V2, 0x5555555555555555ULL, 0x6666666666666666ULL);
+
+	emulate("bif v0.16b, v1.16b, v2.16b");
+
+	EXPECT_EQ(0x2222222222222222ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0x3333333333333333ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CMEQ_against_zero_is_the_string_idiom)
+{
+	// "Which of these sixteen bytes is the terminator." Byte 2 is the only
+	// non-zero one, so it is the only lane that comes out zero.
+	setV(ARM64_REG_V1, 0, 0x0000000000ff0000ULL);
+
+	emulate("cmeq v0.16b, v1.16b, #0");
+
+	EXPECT_EQ(0xffffffffff00ffffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0xffffffffffffffffULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CMHS_compares_unsigned)
+{
+	// Byte 0 is 0xff against 0x01: unsigned that is 255 >= 1 and the lane is
+	// all ones.
+	setV(ARM64_REG_V1, 0, 0x00000000000000ffULL);
+	setV(ARM64_REG_V2, 0, 0x0000000000000001ULL);
+
+	emulate("cmhs v0.16b, v1.16b, v2.16b");
+
+	EXPECT_EQ(0xffffffffffffffffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0xffffffffffffffffULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CMGE_compares_signed)
+{
+	// Same operands as CMHS above, and one letter apart in the mnemonic:
+	// signed, 0xff is -1 and -1 >= 1 is false, so byte 0 comes out zero.
+	setV(ARM64_REG_V1, 0, 0x00000000000000ffULL);
+	setV(ARM64_REG_V2, 0, 0x0000000000000001ULL);
+
+	emulate("cmge v0.16b, v1.16b, v2.16b");
+
+	EXPECT_EQ(0xffffffffffffff00ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0xffffffffffffffffULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CMGT_reads_the_arrangement)
+{
+	// 4S rather than 16B, so the lane width comes from the arrangement and
+	// not from a default. As byte lanes the answer would be
+	// 0xffff00ff00000000 in the low half.
+	setV(ARM64_REG_V1, 0, 0x00000005ffffffffULL);
+	setV(ARM64_REG_V2, 0, 0x0000000200000001ULL);
+
+	emulate("cmgt v0.4s, v1.4s, v2.4s");
+
+	EXPECT_EQ(0xffffffff00000000ULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CMTST_is_an_AND_not_a_comparison)
+{
+	setV(ARM64_REG_V1, 0, 0x0000000000000f0fULL);
+	setV(ARM64_REG_V2, 0, 0x0000000000000801ULL);
+
+	emulate("cmtst v0.16b, v1.16b, v2.16b");
+
+	EXPECT_EQ(0x000000000000ffffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArm64Tests, ARM64_INS_CMEQ_d_form_zeroes_the_top)
+{
+	setV(ARM64_REG_V0, 0xffffffffffffffffULL, 0xffffffffffffffffULL);
+	setV(ARM64_REG_V1, 0xdeadbeefdeadbeefULL, 0x0000000000ff0000ULL);
+
+	emulate("cmeq v0.8b, v1.8b, #0");
+
+	EXPECT_EQ(0xffffffffff00ffffULL, vLow(ARM64_REG_V0));
+	EXPECT_EQ(0ULL, vHigh(ARM64_REG_V0));
+	EXPECT_NO_VALUE_CALLED();
+}
+
 } // namespace tests
 } // namespace capstone2llvmir
 } // namespace retdec

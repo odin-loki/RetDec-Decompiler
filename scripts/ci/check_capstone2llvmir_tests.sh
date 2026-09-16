@@ -49,7 +49,7 @@ WORKDIR="${C2L_WORKDIR:-}"
 # tests should not fail the gate, losing them must.
 readonly MIN_X86=2217
 readonly MIN_ARM=596
-readonly MIN_ARM64=486
+readonly MIN_ARM64=498
 readonly MIN_MIPS=604
 readonly MIN_POWERPC=882
 readonly MIN_EMUL=25

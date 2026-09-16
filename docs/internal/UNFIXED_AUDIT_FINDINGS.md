@@ -4094,3 +4094,182 @@ decimal places and the uncovered-kind count agrees exactly, which is the
 evidence that made it safe to floor -- and the 84-instruction difference is
 the evidence that made it right to measure in CI first rather than assert a
 locally-measured floor about a machine that was never asked.
+
+
+## COV-01 was counting 17,340 zero words as ARM64 instructions
+
+Measuring the four non-x86 architectures over the static corpus put arm64 at
+0.9840 -- the worst of the four -- and the single largest entry in its
+uncovered list was an id the dispatch table does not list at all:
+
+```
+<id 1155>                    17340   0.48%  NO ENTRY
+```
+
+Capstone says that id is `udf`. AArch64's `udf` is the encoding whose top
+sixteen bits are zero, so any all-zero word decodes as one.
+
+GNU objdump finds no `udf` in these binaries and no all-zero word in `.text`
+of the one I first looked at. Scanning all forty-two: seventeen of them have
+exactly 1,020 all-zero words each, and in `bubblesort-arm64-gcc-O0` they are
+one contiguous run of 4,080 bytes at `0x40f378`, immediately after
+`_nl_cleanup_ctype`, covered by no `FUNC` symbol -- and inside an `$x` region,
+so glibc has marked 4 KB of zero padding as **code**.
+
+COV-01's data filter is the `$d` mapping symbols, and that is the right
+mechanism when the producer marks its data. Here the producer did not.
+
+### The fix, and why it is not the fix that moves the number
+
+The answer is the same one x86-64's `HLT`-in-alignment-padding got: a rate is
+only worth having if its denominator is instructions the program can execute,
+so stop counting the padding, rather than pointing a translator at it.
+
+`split_on_zero_runs()` splits each code region around runs of 64 or more zero
+bytes. The threshold is sixteen AArch64 instructions or thirty-two x86
+`add byte ptr [rax], al`, and no compiler emits either as a reachable
+sequence. The excluded bytes are reported in **their own column**, not folded
+into `skipped`:
+
+```
+arch         decoded   skipped     zeros    covered     rate  uncovered-kinds
+x86_64       5230330         0         0    5019885   0.9598  58
+arm          3398752         0         0    3379355   0.9943  20
+arm64        3575624        42     69360    3542591   0.9908  47
+mips         4292791        89         0    4273234   0.9954   3
+powerpc      4640553      9561         0    4631149   0.9980  23
+```
+
+"Capstone could not decode this" and "this was not code" are different facts,
+and a rule that quietly makes a rate better is the shape this branch has been
+finding all along. Separate column, eight self-test cases pinning the
+boundary (64 bytes dropped, 63 kept, leading, trailing, absolute offsets), and
+the rule changes nothing on the **gated** dynamic corpus -- all five read
+`zeros 0` there, so the existing CI floors are untouched.
+
+Falsified by disabling the split: arm64 reads 0.9860 instead of 0.9908, 48
+uncovered kinds instead of 47, and `udf` returns to the top of the list with
+17,340 occurrences.
+
+## ARM64: EXT, the bitwise selects, and the lane compares
+
+With the padding out of the denominator, arm64's uncovered list is real:
+
+| instruction | occurrences | now |
+| --- | --- | --- |
+| `EXT` | 5,124 | `translateNeonExt` |
+| `CMEQ` | 1,512 | `translateNeonCmp` |
+| `CMHS` | 294 | `translateNeonCmp` |
+| `BIT` | 210 | `translateNeonBitSel` |
+| `CMGE` | 42 | `translateNeonCmp` |
+| `CMGT`, `CMHI`, `CMTST`, `BSL`, `BIF` | below the cut | as above |
+
+**`EXT` is `PALIGNR` with the operands the other way round.** x86 makes the
+destination the high half of the concatenation; AArch64 makes the second
+source the high half. A translation copied across from the one written three
+commits ago answers with the halves swapped for every index except zero, which
+is why the test checks that byte 0 of the result is byte 4 of `vn` and byte 15
+is byte 3 of `vm`.
+
+It is done at the arrangement's own width rather than always at 128 bits: for
+`.8b` the operation is 64-bit and the write zeroes bits 127:64, which is what
+every D-form write does. The shifts are split by case in C++ for the same
+reason `PALIGNR`'s are -- index zero would otherwise be a shift by exactly the
+operand width. `index >= width` is architecturally UNDEFINED rather than zero,
+so it goes to the pseudo-asm path instead of being given an answer.
+
+**The three bitwise selects differ only in which register is the selector**,
+and they are the one family of NEON data-processing instructions that needs no
+lane model at all:
+
+```
+BSL vd, vn, vm    vd = (vn & vd) | (vm & ~vd)   the destination selects
+BIT vd, vn, vm    vd = (vd & ~vm) | (vn & vm)   the second source masks
+BIF vd, vn, vm    vd = (vd & vm) | (vn & ~vm)   the same, inverted
+```
+
+The three tests use identical operands and differ only in the mnemonic, so
+each one is pinned by an answer the other two do not produce.
+
+**The lane compares are one letter apart and half of them are signed.** `CMGE`
+and `CMGT` are signed; `CMHS` and `CMHI` are the unsigned pair. The two
+readings disagree on every lane with its top bit set, which for the byte lanes
+a NEON string routine works on is all the interesting ones -- so the `CMHS`
+and `CMGE` tests use identical operands (`0xff` against `0x01`) and expect
+different answers. `CMTST` is not a comparison at all: `(vn & vm) != 0` per
+lane.
+
+`cmeq vd.<T>, vn.<T>, #0` -- compare against an immediate zero -- is the form
+that matters, because it is how a NEON string routine asks which of sixteen
+bytes is the terminator.
+
+### Falsification
+
+Eight mutations, each reverted alone, each rebuilt and run:
+
+| mutation | result |
+| --- | --- |
+| COV-01's zero-run split disabled | arm64 reads 0.9860, `udf` leads the list |
+| `EXT`'s two sources swapped | 3 tests fail |
+| `EXT` always 128-bit | 1 test fails |
+| `BIT` selects with the destination | 1 test fails |
+| `CMHS`/`CMGE` signedness flipped | 3 tests fail |
+| the compare's lane width forced to bytes | 1 test fails |
+| `CMTST` made a comparison | 1 test fails |
+| the ten dispatch entries back to `nullptr` | the suite aborts |
+
+One mutation did not apply on its first attempt -- a multi-line Python string
+inside a shell heredoc -- and the driver said so and skipped the run rather
+than reporting a green suite. That guard exists because of the `PMOVMSKB`
+mutation two commits ago that silently did not apply and was reported as a
+result.
+
+### What is left on ARM64, and why
+
+`MRS`, 12,400 occurrences, is now the largest entry. 275 of the 293 in each
+binary are `mrs xN, tpidr_el0` -- the TLS thread pointer -- and the rest are
+`fpsr`, `fpcr`, `dczid_el0`, `ctr_el0` and `midr_el1`. Modelling `TPIDR_EL0`
+as a register would be a real improvement: every TLS access currently ends at
+an opaque `__asm_mrs()` call, and a modelled register would let the rest of
+the pipeline propagate it. It is not done here because Capstone has no
+`ARM64_REG_TPIDR_EL0` -- system registers are a separate namespace reported as
+`ARM64_OP_SYS` -- so it needs a synthetic register id, and
+`src/bin2llvmir/providers/abi/arm64.cpp` sizes its arrays with
+`_id2regs.resize(ARM64_REG_ENDING, nullptr)`. An id past that end is an
+out-of-bounds write, not a missing entry. That is a two-module change with a
+memory-safety edge, and it is written down here rather than attempted between
+two NEON batches.
+
+`SVC` (4,206) and `BRK` (339) are opaque by nature, like x86's `SYSCALL`.
+
+`ST1B` (4,620), `LD1B` (2,688), `WHILELO` (588), `PTRUE` (168), `CNTB` and
+`CNTD` are **SVE**, and `LDG` (1,302), `ST2G`, `STZG`, `STZ2G`, `IRG` and
+`GMI` are **MTE**. Both need registers that do not exist in this translator --
+Z and P for SVE, an allocation-tag model for MTE. Recorded, not attempted, for
+the same reason AVX is: a subsystem, not a table entry.
+
+`UMAXP` (882), `SHRN` (798), `UMINP`, `ADDP`, `ADDV`, `UZP1`, `SADDL`,
+`UADDW`, `XTN`, `SHL`, `UMOV`, `CNT` and `MVNI` are ordinary NEON lane
+operations that this register model can express. They are a next batch, not a
+limitation.
+
+### A weakness in COV-01 itself, recorded
+
+COV-01 counts an instruction as covered when the dispatch table has a function
+pointer for it. On ARM64 that is not the same as translating it:
+
+```cpp
+if (ifVectorGeneratePseudo(i, ai, irb))
+{
+    return;
+}
+```
+
+`translateMovi` and several others begin with that line, so for a vector
+operand they emit exactly the `__asm_movi` call a `nullptr` entry would have
+emitted -- and COV-01 scores them covered. The number it reports is therefore
+an upper bound on ARM64, and the honest metric would count `__asm_*` calls in
+the decompiler's **output** rather than function pointers in its table.
+ARCH-01 already runs the decompiler over this corpus, so the measurement is
+available; it is the next thing to build, and until it exists the ARM64 rate
+should be read as "has a function for", not "translates".

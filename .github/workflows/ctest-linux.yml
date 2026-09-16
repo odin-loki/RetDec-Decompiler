@@ -516,12 +516,24 @@ jobs:
       # 0.9447 over them -- the worst of the five by a wide margin, and the
       # reason the SSE2 and BMI1 batches exist at all.
       #
-      # x86-64 only, on purpose. The measurement itself is cheap -- five
-      # seconds for 5.2 million instructions -- and what costs is linking the
-      # corpus, so the scope is about which binaries get built. The static
-      # number for the other four is worth having (arm 0.9943, arm64 0.9840,
-      # mips 0.9954, powerpc 0.9980) and is not worth building 168 more static
-      # binaries every run; x86-64 is the outlier and the one being worked on.
+      # All five now, not just x86-64. It started as x86-64 only on the
+      # reasoning that the other four were not worth building 168 more static
+      # binaries for; measuring them locally disproved that twice over. arm64
+      # read 0.9840, the worst of the four, and the largest single entry in
+      # its uncovered list was 17,340 all-zero words that glibc marks as code
+      # -- a defect in this measurement, not in the translator, and one that
+      # only a static corpus was ever going to show. The measurement is five
+      # seconds per architecture; the corpus build is the cost and it is
+      # minutes, not tens of minutes.
+      #
+      # Only x86-64 is floored. The other four go in as measurements first,
+      # the same way x86-64 did, and are floored once CI has reported them
+      # itself. Local numbers, for the record:
+      #
+      #   arm     0.9943   (741,430 bytes mapped as data by $d)
+      #   arm64   0.9908
+      #   mips    0.9954
+      #   powerpc 0.9980
       #
       # Floored at what CI itself measured, not at what this container did.
       # The worry was real and the size of it is now known: run 298 decoded
@@ -534,29 +546,27 @@ jobs:
       #
       #   run 298, de44fdb (Batch A)   5230246 decoded   0.9533   78 kinds
       #   run 299, 3d27c30 (Batch B)   5230246 decoded   0.9589   68 kinds
+      #   run 300, a936683 (Batch C)   5230246 decoded   0.9598   58 kinds
       #
-      # The floor is 0.9589 and the working tree measures 0.9598 with Batch C
-      # in it. The gap is one commit, not slack: the floor moves to whatever
-      # the next run reports, the same rhythm the C2L-01 per-architecture
-      # floors follow. A floor is raised on evidence from the thing being
-      # gated, never on evidence from somewhere else.
-      - name: COV-01 instruction coverage (static corpus, x86-64)
+      # The floor is whatever the last run reported, so it trails the working
+      # tree by one commit and never leads it. A floor is raised on evidence
+      # from the thing being gated, never on evidence from somewhere else.
+      - name: COV-01 instruction coverage (static corpus)
         if: always()
         run: |
           CS="build/linux/deps/install/capstone"
           if [ ! -f "$CS/include/capstone/capstone.h" ]; then
             echo "COV-01: capstone install prefix not found at $CS"; exit 1
           fi
-          bash scripts/build_multiarch_corpus.sh \
-            --out /tmp/ma-static --link static --arch "x86_64:x86_64-linux-gnu"
+          bash scripts/build_multiarch_corpus.sh --out /tmp/ma-static --link static
           set -o pipefail
           rc=0
           python3 scripts/ci/check_instruction_coverage.py \
-            --corpus /tmp/ma-static --capstone-prefix "$CS" --top 24 \
-            --arch x86_64 --arch-min "x86_64=0.9589" \
+            --corpus /tmp/ma-static --capstone-prefix "$CS" --top 16 \
+            --arch-min "x86_64=0.9598" \
             2>&1 | tee /tmp/cov01-static.log || rc=$?
           {
-            echo "### COV-01 instruction coverage (static corpus, x86-64)"
+            echo "### COV-01 instruction coverage (static corpus)"
             echo '```'
             cat /tmp/cov01-static.log
             echo '```'

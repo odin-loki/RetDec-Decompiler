@@ -206,6 +206,10 @@ class Capstone2LlvmIrTranslatorArm64_impl :
 		void translateLse(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateCas(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateNeonLoadStore(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateNeonExt(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateNeonBitSel(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		void translateNeonCmp(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
+		bool neonSameWidthRegs(cs_arm64* ai, unsigned n, unsigned& bytes);
 
 		void translateAdd(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);
 		void translateAnd(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb);

@@ -1233,6 +1233,196 @@ static unsigned vasByteWidth(arm64_vas vas)
 }
 
 /**
+ * Lane width in bits and lane count for a NEON arrangement. {0, 0} means an
+ * arrangement this file does not model -- including the ones Capstone reports
+ * as ARM64_VAS_INVALID for a scalar or lane-indexed operand, where there is no
+ * arrangement to read.
+ */
+static std::pair<unsigned, unsigned> vasLanes(arm64_vas vas)
+{
+	switch (vas)
+	{
+	case ARM64_VAS_16B: return {8, 16};
+	case ARM64_VAS_8B: return {8, 8};
+	case ARM64_VAS_8H: return {16, 8};
+	case ARM64_VAS_4H: return {16, 4};
+	case ARM64_VAS_4S: return {32, 4};
+	case ARM64_VAS_2S: return {32, 2};
+	case ARM64_VAS_2D: return {64, 2};
+	case ARM64_VAS_1D: return {64, 1};
+	default: return {0, 0};
+	}
+}
+
+/**
+ * True if every operand in [0, n) is a plain V register with a modelled
+ * arrangement of the same total width, and none of them is lane-indexed.
+ * Writes that width, in bytes, through \p bytes.
+ */
+bool Capstone2LlvmIrTranslatorArm64_impl::neonSameWidthRegs(cs_arm64* ai, unsigned n, unsigned& bytes)
+{
+	bytes = 0;
+	for (unsigned j = 0; j < n; ++j)
+	{
+		auto& op = ai->operands[j];
+		unsigned b = vasByteWidth(op.vas);
+		if (!isVectorRegister(op) || op.vector_index >= 0 || b == 0 || (bytes != 0 && b != bytes))
+		{
+			return false;
+		}
+		bytes = b;
+	}
+	return bytes != 0;
+}
+
+/**
+ * ARM64_INS_EXT -- `ext vd.<T>, vn.<T>, vm.<T>, #index`
+ *
+ * Concatenate vm:vn and take <T>'s width of bytes starting `index` in from the
+ * bottom. It is x86's PALIGNR with the operands the other way round: there the
+ * destination is the high half, here the second source is, so copying that
+ * translation across would answer with the two halves swapped for every index
+ * except zero.
+ *
+ * 5,124 occurrences in the static corpus, the most frequent thing on ARM64
+ * that is neither a system register read nor a supervisor call. It is what
+ * every hand-written NEON `memcpy` tail uses to realign a vector.
+ *
+ * Done on the arrangement's own width rather than always on 128 bits: for an
+ * 8B arrangement the operation is 64-bit and the write zeroes the upper half
+ * of the register, which is what every D-form write does. The shifts are split
+ * by case in C++ for the same reason PALIGNR's are -- `index == 0` would
+ * otherwise be a shift by exactly the operand width, which is poison.
+ *
+ * `index >= width` is architecturally UNDEFINED rather than zero, so it goes
+ * to the pseudo-asm path instead of being given an answer.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonExt(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_EXPR(i, ai, irb, (ai->op_count == 4));
+
+	unsigned bytes = 0;
+	if (!neonSameWidthRegs(ai, 3, bytes) || ai->operands[3].type != ARM64_OP_IMM || ai->operands[3].imm < 0
+		|| static_cast<uint64_t>(ai->operands[3].imm) >= bytes)
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	unsigned n = static_cast<unsigned>(ai->operands[3].imm);
+	auto* w = irb.getIntNTy(bytes * 8);
+	llvm::Value* vn = irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), w);
+	llvm::Value* vm = irb.CreateZExtOrTrunc(loadRegister(ai->operands[2].reg, irb), w);
+
+	llvm::Value* res = n == 0 ? vn
+							  : irb.CreateOr(
+									irb.CreateLShr(vn, llvm::ConstantInt::get(w, n * 8)),
+									irb.CreateShl(vm, llvm::ConstantInt::get(w, bytes * 8 - n * 8)));
+
+	storeRegister(ai->operands[0].reg, res, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * ARM64_INS_BSL, ARM64_INS_BIT, ARM64_INS_BIF
+ *
+ * The three bitwise selects, and the only NEON data-processing instructions
+ * here that need no lane model at all: they are bit-for-bit, so the
+ * arrangement decides the width and nothing else.
+ *
+ *     BSL vd, vn, vm    vd = (vn & vd) | (vm & ~vd)   vd is the selector
+ *     BIT vd, vn, vm    vd = (vd & ~vm) | (vn & vm)   vm is the mask
+ *     BIF vd, vn, vm    vd = (vd & vm) | (vn & ~vm)   the same, inverted
+ *
+ * All three read the destination, and which of the three registers is the
+ * selector is the whole difference between them. BSL uses the destination;
+ * BIT and BIF use the second source.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonBitSel(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ai, irb);
+
+	unsigned bytes = 0;
+	if (!neonSameWidthRegs(ai, 3, bytes))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* w = irb.getIntNTy(bytes * 8);
+	llvm::Value* d = irb.CreateZExtOrTrunc(loadRegister(ai->operands[0].reg, irb), w);
+	llvm::Value* n = irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), w);
+	llvm::Value* m = irb.CreateZExtOrTrunc(loadRegister(ai->operands[2].reg, irb), w);
+
+	llvm::Value* res = nullptr;
+	switch (i->id)
+	{
+	case ARM64_INS_BSL: res = irb.CreateOr(irb.CreateAnd(n, d), irb.CreateAnd(m, irb.CreateNot(d))); break;
+	case ARM64_INS_BIT: res = irb.CreateOr(irb.CreateAnd(d, irb.CreateNot(m)), irb.CreateAnd(n, m)); break;
+	case ARM64_INS_BIF: res = irb.CreateOr(irb.CreateAnd(d, m), irb.CreateAnd(n, irb.CreateNot(m))); break;
+	default: throw GenericError("translateNeonBitSel(): unhandled instruction id");
+	}
+
+	storeRegister(ai->operands[0].reg, res, irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
+ * ARM64_INS_CMEQ, CMGE, CMGT, CMHI, CMHS, CMTST
+ *
+ * Per-lane compare; a lane of the result is all ones or all zeroes. Two forms:
+ * against another register, and against an immediate zero (`cmeq v0.16b,
+ * v1.16b, #0`), which is how a NEON string routine asks "which of these bytes
+ * is the terminator".
+ *
+ * Signedness is the whole instruction and the mnemonics are one letter apart:
+ * CMGE and CMGT are signed, CMHS and CMHI the unsigned pair. The two readings
+ * disagree on every lane with its top bit set, which for the byte lanes coming
+ * out of a string search is all the interesting ones.
+ *
+ * CMTST is the odd one and is not a comparison at all -- `(vn & vm) != 0` per
+ * lane -- so it has no immediate form here.
+ */
+void Capstone2LlvmIrTranslatorArm64_impl::translateNeonCmp(cs_insn* i, cs_arm64* ai, llvm::IRBuilder<>& irb)
+{
+	EXPECT_IS_TERNARY(i, ai, irb);
+
+	unsigned bytes = 0;
+	bool immZero = ai->operands[2].type == ARM64_OP_IMM && ai->operands[2].imm == 0;
+	if (!neonSameWidthRegs(ai, immZero ? 2 : 3, bytes))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+	auto [laneBits, lanes] = vasLanes(ai->operands[0].vas);
+	if (laneBits == 0 || (!immZero && ai->operands[2].type != ARM64_OP_REG))
+	{
+		translatePseudoAsmGeneric(i, ai, irb);
+		return;
+	}
+
+	auto* w = irb.getIntNTy(bytes * 8);
+	auto* vecTy = llvm::FixedVectorType::get(irb.getIntNTy(laneBits), lanes);
+	llvm::Value* a = irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[1].reg, irb), w), vecTy);
+	llvm::Value* b = immZero
+					   ? llvm::Constant::getNullValue(vecTy)
+					   : irb.CreateBitCast(irb.CreateZExtOrTrunc(loadRegister(ai->operands[2].reg, irb), w), vecTy);
+
+	llvm::Value* cmp = nullptr;
+	switch (i->id)
+	{
+	case ARM64_INS_CMEQ: cmp = irb.CreateICmpEQ(a, b); break;
+	case ARM64_INS_CMGE: cmp = irb.CreateICmpSGE(a, b); break;
+	case ARM64_INS_CMGT: cmp = irb.CreateICmpSGT(a, b); break;
+	case ARM64_INS_CMHI: cmp = irb.CreateICmpUGT(a, b); break;
+	case ARM64_INS_CMHS: cmp = irb.CreateICmpUGE(a, b); break;
+	case ARM64_INS_CMTST: cmp = irb.CreateICmpNE(irb.CreateAnd(a, b), llvm::Constant::getNullValue(vecTy)); break;
+	default: throw GenericError("translateNeonCmp(): unhandled instruction id");
+	}
+
+	storeRegister(
+		ai->operands[0].reg, irb.CreateBitCast(irb.CreateSExt(cmp, vecTy), w), irb, eOpConv::ZEXT_TRUNC_OR_BITCAST);
+}
+
+/**
  * ARM64_INS_LD1, ARM64_INS_ST1
  *
  * The straight-copy form of the NEON list load and store, and the last thing
