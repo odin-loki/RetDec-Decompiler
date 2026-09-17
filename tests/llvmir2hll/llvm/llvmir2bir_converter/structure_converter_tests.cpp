@@ -147,10 +147,14 @@ AssertionResult StructureConverterTests::isTerminatingSwitchClause(
 			<< funcParam << ")";
 	}
 
-	// LLVM 23 stock IR: `call void @test(i32 N); ret void` collapses to
-	// `return test(N)`, so the terminator may be the call itself.
+	// This used to also accept the clause body itself being the terminator,
+	// because `call void @test(i32 N); ret void` was being collapsed into
+	// `return test(N)` -- a return with a value inside a void function, which
+	// does not compile. The comment blamed "LLVM 23 stock IR"; it was this
+	// tree's own tail-call collapse. The call keeps its own statement now.
 	auto successor = getFirstNonEmptySuccOf(clauseBody);
-	if (!isa<T>(successor) && !(isa<T>(clauseBody) && isa<ReturnStmt>(clauseBody))) {
+	if (!isa<T>(successor))
+	{
 		return AssertionFailure()
 			<< "This clause is not terminated correctly";
 	}
@@ -977,10 +981,7 @@ IfElseConditionWithClonedBlockWithReturnIsConvertedCorrectly) {
 	ASSERT_TRUE(isCallOfFuncTest(ifBody, 5));
 	auto callStmt2 = getFirstNonEmptySuccOf(ifBody);
 	ASSERT_TRUE(isCallOfFuncTest(callStmt2, 6));
-	// LLVM 23: `test(6); return;` collapses to `return test(6)`.
-	auto ret1 = isa<ReturnStmt>(callStmt2)
-		? callStmt2
-		: getFirstNonEmptySuccOf(callStmt2);
+	auto ret1 = getFirstNonEmptySuccOf(callStmt2);
 	ASSERT_TRUE(isa<ReturnStmt>(ret1));
 	ASSERT_FALSE(ifStmt1->hasElseClause());
 	auto callStmt3 = getFirstNonEmptySuccOf(ifStmt1);
@@ -3836,8 +3837,7 @@ SwitchWithDefaultClauseTerminatedByReturnIsConvertedCorrectly) {
 	ASSERT_FALSE(defaultClause->first) << "This is not a default clause.";
 	auto defaultBody = skipEmptyStmts(defaultClause->second);
 	ASSERT_TRUE(isCallOfFuncTest(defaultBody, 4));
-	ASSERT_TRUE(isa<ReturnStmt>(defaultBody)
-		|| isa<ReturnStmt>(getFirstNonEmptySuccOf(defaultBody)));
+	ASSERT_TRUE(isa<ReturnStmt>(getFirstNonEmptySuccOf(defaultBody)));
 	ASSERT_TRUE(isCallOfFuncTest(getFirstNonEmptySuccOf(switchStmt), 5));
 }
 

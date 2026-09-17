@@ -863,9 +863,40 @@ void CHLLWriter::visit(ShPtr<BitShlOpExpr> expr)
 
 void CHLLWriter::visit(ShPtr<BitShrOpExpr> expr)
 {
-	// TODO Distinguish between logical and arithmetical shifts (recall that if
-	// the first operand is of a signed type with a negative value, it is
-	// implementation-defined whether >> is logical or arithmetical).
+	// C's `>>` on a signed operand shifts in copies of the sign bit on every
+	// mainstream compiler, so emitting a bare `>>` for a LOGICAL shift of a
+	// signed value prints something that computes a different number from the
+	// program: `lshr i32 -8, 1` is 0x7FFFFFFC and `(int32_t)-8 >> 1` is -4.
+	// LLVM's `lshr` arrives here as Variant::Logical
+	// (llvm_instruction_converter.cpp), so the distinction is available; it was
+	// simply not used. A cast of the left operand to the unsigned type of the
+	// same width makes `>>` logical by the language rule rather than by the
+	// compiler's choice.
+	//
+	// Nothing is emitted when the operand is already unsigned, or when its
+	// type is not an integer we can name -- there `>>` is either already right
+	// or not ours to guess at.
+	ShPtr<IntType> intTy(cast<IntType>(expr->getFirstOperand()->getType()));
+	if (expr->isLogical() && intTy && intTy->isSigned() && !intTy->isBool())
+	{
+		bool bracketsAreNeeded = bracketsManager->areBracketsNeeded(expr);
+		if (bracketsAreNeeded)
+		{
+			out->punctuation('(');
+		}
+		out->punctuation('(');
+		IntType::create(intTy->getSize(), false)->accept(this);
+		out->punctuation(')');
+		expr->getFirstOperand()->accept(this);
+		out->operatorX(">>");
+		expr->getSecondOperand()->accept(this);
+		if (bracketsAreNeeded)
+		{
+			out->punctuation(')');
+		}
+		return;
+	}
+
 	emitBinaryOpExpr(">>", expr);
 }
 

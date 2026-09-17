@@ -32,67 +32,39 @@ namespace retdec {
 namespace llvmir2hll {
 
 /**
- * Extended computeStep — handles mul/shl in addition to add/sub.
+ * Extended computeStep — the multiplicative cases, which it does NOT handle.
  *
  * Call this from the end of WhileTrueToForLoopOptimizer::computeStepOfForLoop
  * just before the `return {};` fallthrough, passing indVarInfo->updateStmt
  * and indVarInfo->indVar.
  *
- * Returns a non-null ShPtr<Expression> step if recognisable, {} otherwise.
+ * It used to return the multiply factor for `i = i * k`, and `1 << n` for
+ * `i = i << n`, and the caller handed that straight to ForLoopStmt::create as
+ * the step. ForLoopStmt has no multiplicative form: CHLLWriter emits the step
+ * as `i++`, `i--`, `i -= x` or `i += x`, and nothing else. So `i = i * 2`
+ * came out as `i += 2`:
  *
- * For mul/shl steps the for loop becomes:
- *   for (i = init; i op limit; i = i * step) { ... }
- * which is valid C. The optimizer only produces this when the step factor
- * is a constant ≥ 2, to avoid infinite loops (step=1 is add) or ambiguity.
+ *   int32_t i = 1, sum = 0;
+ *   while (true) { sum = sum + i; if (i >= 64) break; i = i * 2; }
+ *
+ * runs i over 1, 2, 4, 8, 16, 32, 64 and leaves sum = 127. The emitted
+ * `for (i = 1; i < 65; i += 2)` runs i over 1, 3, 5 ... 63 and leaves
+ * sum = 1024 -- thirty-two iterations where there were seven. The `+ 1`
+ * adjustment the caller makes to the end value is only correct for a unit
+ * step besides.
+ *
+ * The comment this replaces claimed the loop "becomes for (...; i = i * step)",
+ * which is a form the writer cannot produce. A multiplicative step belongs in
+ * WhileTrueToUForLoopOptimizer, whose UForLoopStmt carries an arbitrary step
+ * expression; until it is done there, these shapes are not recognised.
+ *
+ * Returns {} always. The signature is kept so the call site and its test stay
+ * where they are.
  */
 ShPtr<Expression> computeStepExt(ShPtr<Expression> updateRhs, ShPtr<Variable> indVar)
 {
-	// i = i * x   or   i = x * i
-	if (auto mulExpr = cast<MulOpExpr>(updateRhs))
-	{
-		ShPtr<Expression> factor;
-		if (mulExpr->getFirstOperand() == indVar)
-		{
-			factor = mulExpr->getSecondOperand();
-		}
-		else if (mulExpr->getSecondOperand() == indVar)
-		{
-			factor = mulExpr->getFirstOperand();
-		}
-		if (factor)
-		{
-			// Only emit for positive constant factors ≥ 2 to avoid
-			// emitting an infinite or degenerate loop.
-			if (auto ci = cast<ConstInt>(factor))
-			{
-				if (ci->isPositive() && ci->getValue() >= 2)
-				{
-					return factor;
-				}
-			}
-		}
-	}
-
-	// i = i << x   →   step = 1 << x  (as a MulOpExpr for readability)
-	// Emit as: i *= (1 << x)  only when x is a small constant.
-	if (auto shlExpr = cast<BitShlOpExpr>(updateRhs))
-	{
-		if (shlExpr->getFirstOperand() == indVar)
-		{
-			auto shiftAmt = shlExpr->getSecondOperand();
-			if (auto ci = cast<ConstInt>(shiftAmt))
-			{
-				uint64_t n = ci->getValue().getZExtValue();
-				if (n >= 1 && n <= 30)
-				{
-					// Return (1 << n) as a ConstInt — the step in the for-loop.
-					llvm::APInt stepVal(32, 1ULL << n);
-					return ConstInt::create(stepVal, true);
-				}
-			}
-		}
-	}
-
+	(void)updateRhs;
+	(void)indVar;
 	return {};
 }
 

@@ -13,6 +13,7 @@
 #include "llvmir2hll/hll/hll_writers/hll_writer_tests.h"
 #include "retdec/llvmir2hll/ir/add_op_expr.h"
 #include "retdec/llvmir2hll/ir/assign_op_expr.h"
+#include "retdec/llvmir2hll/ir/bit_shr_op_expr.h"
 #include "retdec/llvmir2hll/ir/call_expr.h"
 #include "retdec/llvmir2hll/ir/call_stmt.h"
 #include "retdec/llvmir2hll/ir/const_float.h"
@@ -50,6 +51,53 @@ void CHLLWriterTests::SetUp() {
 	HLLWriterTests::SetUp();
 
 	writer = CHLLWriter::create(codeStream);
+}
+
+//
+// Emission of shifts.
+//
+// C's `>>` on a signed operand shifts in copies of the sign bit on every
+// mainstream compiler, so a LOGICAL shift of a signed value cannot be emitted
+// as a bare `>>`: the printed C computes a different number from the program.
+// `lshr i32 -8, 1` is 0x7FFFFFFC; `(int32_t)-8 >> 1` is -4.
+//
+
+TEST_F(CHLLWriterTests, LogicalShiftRightOfASignedValueIsEmittedThroughAnUnsignedCast)
+{
+	auto x = Variable::create("x", IntType::create(32, true));
+	module->addGlobalVar(
+		Variable::create("g", IntType::create(32, true)),
+		BitShrOpExpr::create(x, ConstInt::create(1, 32), BitShrOpExpr::Variant::Logical));
+
+	auto code = emitCodeForCurrentModule();
+
+	ASSERT_TRUE(contains(code, "(uint32_t)x>>1")) << code;
+}
+
+TEST_F(CHLLWriterTests, ArithmeticalShiftRightOfASignedValueIsEmittedPlain)
+{
+	auto x = Variable::create("x", IntType::create(32, true));
+	module->addGlobalVar(
+		Variable::create("g", IntType::create(32, true)),
+		BitShrOpExpr::create(x, ConstInt::create(1, 32), BitShrOpExpr::Variant::Arithmetical));
+
+	auto code = emitCodeForCurrentModule();
+
+	ASSERT_TRUE(contains(code, "x >> 1")) << code;
+	ASSERT_FALSE(contains(code, "(uint32_t)x")) << code;
+}
+
+TEST_F(CHLLWriterTests, LogicalShiftRightOfAnUnsignedValueNeedsNoCast)
+{
+	auto x = Variable::create("x", IntType::create(32, false));
+	module->addGlobalVar(
+		Variable::create("g", IntType::create(32, false)),
+		BitShrOpExpr::create(x, ConstInt::create(1, 32), BitShrOpExpr::Variant::Logical));
+
+	auto code = emitCodeForCurrentModule();
+
+	ASSERT_TRUE(contains(code, "x >> 1")) << code;
+	ASSERT_FALSE(contains(code, "(uint32_t)x")) << code;
 }
 
 TEST_F(CHLLWriterTests,

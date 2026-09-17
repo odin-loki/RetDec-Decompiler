@@ -82,10 +82,23 @@ void LLVMIntrinsicsOptimizer::visit(ShPtr<CallExpr> expr) {
 
 void LLVMIntrinsicsOptimizer::visit(ShPtr<CallStmt> stmt) {
 	ShPtr<Function> calledFunc(getCalledFunc(stmt->getCall()));
+
+	// The null test has to come FIRST. getCalledFunc answers null whenever the
+	// callee expression is not a Variable, or names no function in the module
+	// -- which is the ordinary shape of a decompiled indirect call, `(*fp)();`
+	// or a call through a function-pointer local. Reading the name before
+	// checking dereferences null and segfaults on exactly that input.
+	if (!calledFunc || calledFunc->isDefinition())
+	{
+		FuncOptimizer::visit(stmt);
+		return;
+	}
+
 	const auto& _iname = calledFunc->getInitialName();
 	bool _strip = startsWith(_iname, "llvm.ctpop.")
 	    || isStrippableLLVMIntrinsic(_iname);
-	if (!calledFunc || calledFunc->isDefinition() || !_strip) {
+	if (!_strip)
+	{
 		FuncOptimizer::visit(stmt);
 		return;
 	}

@@ -25,32 +25,32 @@ class WhileTrueToForLoopOptimizerExtTests: public Test {};
 // computeStepExt tests
 //
 
-TEST_F(WhileTrueToForLoopOptimizerExtTests,
-ComputeStepExtReturnsMulFactorForITimesConst) {
-	// i = i * 3  → step = 3
+// A ForLoopStmt's step is emitted additively -- CHLLWriter writes `i++`,
+// `i--`, `i -= x` or `i += x` and nothing else -- so returning a MULTIPLY
+// factor as the step printed `i += 2` for `i = i * 2`. These two tests
+// asserted the factor came back, which is the wrong contract: they passed
+// while the emitted loop ran thirty-two iterations where the program ran
+// seven.
+TEST_F(WhileTrueToForLoopOptimizerExtTests, ComputeStepExtDoesNotReturnAMulFactorAsAnAdditiveStep)
+{
+	// i = i * 3
 	auto varI = Variable::create("i", IntType::create(32, true));
 	auto factor = ConstInt::create(llvm::APInt(32, 3, true), true);
 	auto mulExpr = MulOpExpr::create(varI, factor);
 
 	auto step = computeStepExt(mulExpr, varI);
-	ASSERT_NE(nullptr, step) << "expected non-null step for i*3";
-	auto ci = cast<ConstInt>(step);
-	ASSERT_NE(nullptr, ci);
-	EXPECT_EQ(3u, ci->getValue().getZExtValue());
+	EXPECT_EQ(nullptr, step) << "i *= 3 cannot be spelled as a for-loop step";
 }
 
-TEST_F(WhileTrueToForLoopOptimizerExtTests,
-ComputeStepExtReturnsMulFactorForConstTimesI) {
-	// i = 4 * i  → step = 4 (symmetric case)
+TEST_F(WhileTrueToForLoopOptimizerExtTests, ComputeStepExtDoesNotReturnAMulFactorWithTheConstantOnTheLeft)
+{
+	// i = 4 * i
 	auto varI = Variable::create("i", IntType::create(32, true));
 	auto factor = ConstInt::create(llvm::APInt(32, 4, true), true);
 	auto mulExpr = MulOpExpr::create(factor, varI);
 
 	auto step = computeStepExt(mulExpr, varI);
-	ASSERT_NE(nullptr, step) << "expected non-null step for 4*i";
-	auto ci = cast<ConstInt>(step);
-	ASSERT_NE(nullptr, ci);
-	EXPECT_EQ(4u, ci->getValue().getZExtValue());
+	EXPECT_EQ(nullptr, step);
 }
 
 TEST_F(WhileTrueToForLoopOptimizerExtTests,
@@ -64,18 +64,15 @@ ComputeStepExtRejectsFactorLessThan2) {
 	EXPECT_EQ(nullptr, step) << "should not compute step for factor=1";
 }
 
-TEST_F(WhileTrueToForLoopOptimizerExtTests,
-ComputeStepExtReturnsPowerOf2ForShiftLeft) {
-	// i = i << 2  → step = (1 << 2) = 4
+TEST_F(WhileTrueToForLoopOptimizerExtTests, ComputeStepExtDoesNotTurnAShiftIntoAnAdditiveStep)
+{
+	// i = i << 2 multiplies by four; `i += 4` is a different loop.
 	auto varI = Variable::create("i", IntType::create(32, true));
 	auto shiftAmt = ConstInt::create(llvm::APInt(32, 2, true), true);
 	auto shlExpr = BitShlOpExpr::create(varI, shiftAmt);
 
 	auto step = computeStepExt(shlExpr, varI);
-	ASSERT_NE(nullptr, step) << "expected non-null step for i<<2";
-	auto ci = cast<ConstInt>(step);
-	ASSERT_NE(nullptr, ci);
-	EXPECT_EQ(4u, ci->getValue().getZExtValue());
+	EXPECT_EQ(nullptr, step);
 }
 
 TEST_F(WhileTrueToForLoopOptimizerExtTests,

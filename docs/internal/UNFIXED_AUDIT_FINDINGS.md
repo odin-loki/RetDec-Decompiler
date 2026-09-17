@@ -9853,3 +9853,99 @@ That is the fourth time in this audit that the apparatus, rather than the code
 or the test, produced the wrong answer -- and the first where the wrong answer
 was "your fix is unnecessary", which is the direction that gets a real fix
 thrown away.
+
+## Batch AV — llvmir2hll, the layer that writes the C (2026-09-17)
+
+Two sweeps over `src/llvmir2hll/`, the layer between the optimised LLVM IR and
+the emitted C. Both audits diffed against upstream `avast/retdec` first, so
+each finding is separated into "this tree changed it" and "upstream behaviour".
+Everything fixed below is the former.
+
+### Fixed
+
+| Site | What it did |
+|---|---|
+| `llvm/llvmir2bir_converter/basic_block_converter.cpp` | `collapseAdjacentTailCallReturns` turned `f(x); return;` into `return f(x);`. A value-less `ReturnStmt` comes from `ret void`, which only occurs in a function whose return type is void, so this printed `return f(x);` inside a `void` function — a constraint violation in every version of C, rejected outright by gcc 14. Nothing downstream repairs it: `CHLLWriter` emits `return <expr>;` unconditionally and `VoidReturnOptimizer` only touches returns *without* a value. The assignment form below it (`%t = call; return %t;`) is sound and was kept. |
+| `hll/hll_writers/c_hll_writer.cpp` | `>>` was emitted for both shift variants, under a TODO saying the distinction was not made. C's `>>` on a signed operand shifts in copies of the sign bit on every mainstream compiler, so a LOGICAL shift of a signed value printed something that computes a different number: `lshr i32 -8, 1` is `0x7FFFFFFC` and `(int32_t)-8 >> 1` is −4. LLVM's `lshr` already arrives as `Variant::Logical`; the left operand is now cast to the unsigned type of the same width, which makes `>>` logical by the language rule rather than by the compiler's choice. |
+| `optimizer/optimizers/llvm_intrinsics_optimizer.cpp` | The null test sat *below* the dereference: `calledFunc->getInitialName()` ran before `if (!calledFunc ...)`. `getCalledFunc` answers null whenever the callee is not a `Variable` or names no module function — the ordinary shape of a decompiled indirect call. Segfault, not a diagnostic. Upstream has the checks in the right order, so this is a regression. |
+| `optimizer/optimizers/char_array_to_string_optimizer.cpp` | Promoted any array of small integers to a `ConstString` without looking at the element type, so an `int32_t[]` table of printable ASCII printed `int32_t g[6] = "Hello";` — not valid C, and six bytes described where the binary holds twenty-four. Also `getZExtValue()` with no active-bits guard. |
+| `optimizer/optimizers/while_true_to_for_loop_optimizer_ext.cpp` | `computeStepExt` returned the multiply factor for `i = i * k`, and `1 << n` for `i = i << n`, and the caller handed it to `ForLoopStmt::create` as the step. `ForLoopStmt` has no multiplicative form — `CHLLWriter` emits `i++`, `i--`, `i -= x` or `i += x` and nothing else — so `i = i * 2` came out as `i += 2`: seven iterations became thirty-two, and `sum` went from 127 to 1024. Its own header comment claimed the loop "becomes `for (...; i = i * step)`", a form the writer cannot produce. |
+| `optimizer/optimizers/if_to_switch_optimizer.cpp` | A *sequential* `if (v == K)` chain re-evaluates its condition at every step; a switch tests once. Nothing stopped a clause body from writing the control variable, so `if (v == 0) { v = 1; } if (v == 1) { g = 1; }` became a switch that never reaches the second clause. And `std::set<llvm::APSInt> seenValues;` was declared and never read, so two clauses could carry the same constant — `case 1:` twice, a hard compile error, with the second body dropped. |
+
+### The tests had been rewritten to assert the defect
+
+The tail-call collapse was pinned in **eight** places. Five in
+`basic_block_converter_tests.cpp` and
+`llvm_instruction_converter_constants_tests.cpp` assert a `ReturnStmt` carrying
+a `CallExpr` where the function is declared `void`; two of them are still named
+`...IsConvertedCorrectlyAsCallStmt`. Three more in `structure_converter_tests.cpp`
+were *widened* to accept either shape, with comments blaming "LLVM 23 stock IR"
+for a collapse this tree performs itself. All eight now assert the call keeping
+its own statement.
+
+`computeStepExt`'s tests asserted the wrong contract directly —
+`EXPECT_EQ(3u, ci->getValue().getZExtValue())` for `i = i * 3` — so they could
+never have failed on the step being additive.
+
+That is the eighth time in this audit that a test encoded the same misreading
+as the defect it should have caught.
+
+### Still open, with the evidence
+
+- **`structure_converter.cpp` controlled node splitting** redirects a
+  predecessor's edge with `removeSucc(idx)` + `addSuccessor(clone)`. The
+  successor vector's INDEX is the branch polarity — `reduceToIfStatement`
+  negates the condition iff the index is 1, `structureByGotos` reads
+  `getSucc(0)` as the true target — and erase-then-append reorders it, so a
+  two-way branch has its arms exchanged with the condition left alone.
+  `addSuccessor` also builds a fresh edge with `backEdge == false`, and
+  `detectBackEdges` is not re-run, so a redirected back edge loses its marking
+  in exactly the irreducible region that invoked splitting. The fix is a
+  `replaceSucc(i, n)` that preserves position and back-edge flag. Not done here:
+  no test in the 68-test suite uses an irreducible CFG, so there is nothing to
+  demonstrate it against, and CNS is unreachable from every existing case.
+- **`SimpleAliasAnalysis::pointsTo`** now answers "must point to X" from a
+  single textual assignment anywhere in the body — flow-insensitive, and
+  ignoring the pointer's value on entry. Upstream returns null with a comment
+  saying the analysis is not strong enough to answer. `ValueAnalysis` treats a
+  non-null answer as a MUST-access, so `void f(int *p, int c) { int a;
+  if (c) p = &a; *p = 1; }` records the store as a must-write to the local `a`.
+  The one test that exercises it was changed to assert the new answer for the
+  single *unconditional* case, which is sound; the conditional, loop, parameter
+  and address-taken cases have no test.
+- **`SimpleAliasAnalysis::mayPointTo`** returns a reference to a
+  `thread_local` buffer the next call overwrites, from a method declared
+  `const`. No current caller holds two live references, so it is latent.
+- **Type-based may-alias filtering** (`simple_alias_analysis_ext.cpp`) keeps
+  only integer candidates at least as wide as the pointee. That is not a valid
+  *may*-alias rule — a `uint32_t*` walking a byte buffer is ordinary in
+  decompiled code. Currently a no-op on the main path because opaque pointers
+  leave the pointee `UnknownType`; live for pointers typed from
+  `retdec.pointee` metadata.
+- **`LoopBoundJumpAnalysis`** holds its enclosing-loop counter over the
+  successor chain, because it descends with `OrderedAllVisitor::visit`, which
+  visits the statement's successor as well as its body. So everything after a
+  nested loop at the same level is seen as still inside it. It also counts a
+  `switch` for `continue`, which C does not capture. Both make it answer "no
+  jump" where there is one, and the analysis exists to stop a prefix being
+  hoisted out of a loop — the result is `continue;` outside any loop.
+- **`while_true_to_ufor_loop_optimizer.cpp` do-while lowering** reads the
+  condition out of the loop-end `if` and discards the `if`, including a
+  `return` and any assignment inside it. `isLoopEnd` accepts all three shapes.
+  `WhileTrueToWhileCondOptimizer` handles the same input correctly by
+  re-emitting them, but the UFor pass runs first.
+- **`c_arithm_expr_evaluator.cpp`** folds an int→float `BitCastExpr` between
+  mismatched widths by `zextOrTrunc`-ing the operand, which is not what a bit
+  reinterpretation means: `BitCastExpr(ConstInt(0x3F800000, 32), Float(64))`
+  becomes 5.24e-315. Its test asserts the truncating behaviour; upstream
+  declines to evaluate.
+- **`llvm_instruction_converter.cpp`** truncates a GEP-into-string offset to 32
+  bits through `int64_t`, so index −1 prints as `+ 4294967295`.
+- **`goto_cfg_optimizer.cpp`** carries a 210-line `FuncRewriter` class that is
+  never constructed and is visibly broken (`stmt = stmt;`,
+  `newIf->prependStatement(newIf)`, a mutate-then-`return false`).
+- **`if_to_switch_optimizer.cpp` is 8,114 lines** against upstream's 200, of
+  which roughly 6,000 are ~40 near-identical
+  `tryConvert{Lt,Le,Gt,Ge}With{Three..Six}LevelNested*` functions. Those were
+  not read. A differential check of each family against its mirror is the
+  obvious next step and the likeliest home for a one-character asymmetry.

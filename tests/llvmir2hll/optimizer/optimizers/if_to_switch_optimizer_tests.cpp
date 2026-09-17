@@ -795,6 +795,58 @@ SequentialTwoSingleClauseIfsSameVarConvertToSwitch) {
 	ASSERT_EQ(body1, it->second);
 }
 
+// A SEQUENTIAL chain re-evaluates its condition at every step; a switch tests
+// once. So a clause body that writes the control variable changes which later
+// clauses run, and the conversion is not sound. The test above chose bodies
+// that write `b`, so this was invisible.
+TEST_F(IfToSwitchOptimizerTests, SequentialIfChainWhoseBodyWritesTheControlVarIsNotConverted)
+{
+	// if (v == 0) { v = 1; }
+	// if (v == 1) { b = 1; }
+	//
+	// With v = 0 the original sets v and then enters the second if, so b is 1.
+	// A switch takes case 0, breaks, and b is untouched.
+	ShPtr<Variable> varV(Variable::create("v", IntType::create(32)));
+	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
+	ShPtr<IfStmt> if0(IfStmt::create(
+		EqOpExpr::create(varV, ConstInt::create(0, 64)), AssignStmt::create(varV, ConstInt::create(1, 32))));
+	ShPtr<IfStmt> if1(IfStmt::create(
+		EqOpExpr::create(varV, ConstInt::create(1, 64)), AssignStmt::create(varB, ConstInt::create(1, 32))));
+	if0->setSuccessor(if1);
+	testFunc->setBody(if0);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<IfToSwitchOptimizer>(module, va);
+
+	EXPECT_FALSE(isa<SwitchStmt>(testFunc->getBody()))
+		<< "a clause that writes the control variable was folded into a switch";
+}
+
+// Two clauses carrying the same constant become two `case 1:` labels, which is
+// a duplicate case label -- a hard compile error -- and the second body is
+// dropped. The `seenValues` set that was meant to catch this was declared and
+// never read.
+TEST_F(IfToSwitchOptimizerTests, SequentialIfChainWithADuplicateCaseValueIsNotConverted)
+{
+	// if (v == 1) { a = 1; }
+	// if (v == 1) { b = 1; }
+	ShPtr<Variable> varV(Variable::create("v", IntType::create(32)));
+	ShPtr<Variable> varA(Variable::create("a", IntType::create(32)));
+	ShPtr<Variable> varB(Variable::create("b", IntType::create(32)));
+	ShPtr<IfStmt> if0(IfStmt::create(
+		EqOpExpr::create(varV, ConstInt::create(1, 64)), AssignStmt::create(varA, ConstInt::create(1, 32))));
+	ShPtr<IfStmt> if1(IfStmt::create(
+		EqOpExpr::create(varV, ConstInt::create(1, 64)), AssignStmt::create(varB, ConstInt::create(1, 32))));
+	if0->setSuccessor(if1);
+	testFunc->setBody(if0);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<IfToSwitchOptimizer>(module, va);
+
+	EXPECT_FALSE(isa<SwitchStmt>(testFunc->getBody()))
+		<< "two clauses with the same constant became duplicate case labels";
+}
+
 //
 // The descending lower-bound conversions, which are gone.
 //

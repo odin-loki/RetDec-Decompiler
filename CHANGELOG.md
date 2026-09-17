@@ -267,6 +267,38 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
   201-instruction function: 5,025 calls before, 3 after (once per process). The
   strings are now built only when something will print them.
 
+- **llvmir2hll, the layer that writes the C.** Six defects, five of them
+  visible in the emitted output.
+
+  `f(x); return;` in a `void` function was collapsed into `return f(x);` — a
+  constraint violation in every version of C, which gcc 14 rejects outright.
+  The collapse was pinned in **eight** tests: five assert the collapsed shape
+  directly (two of them still named `...IsConvertedCorrectlyAsCallStmt`), and
+  three were widened to accept either, with comments blaming "LLVM 23 stock IR"
+  for something this tree does itself.
+
+  The C writer emitted `>>` for both shift variants, under a TODO saying the
+  distinction was not being made. C's `>>` on a signed operand shifts in copies
+  of the sign bit, so a logical shift of a signed value printed a different
+  computation: `lshr i32 -8, 1` is `0x7FFFFFFC` and `(int32_t)-8 >> 1` is −4.
+  The left operand is cast to the unsigned type of the same width now.
+
+  `computeStepExt` returned a multiply factor as a for-loop step, and
+  `ForLoopStmt` has no multiplicative form — the writer emits `i++`, `i--`,
+  `i -= x` or `i += x` and nothing else. `i = i * 2` came out as `i += 2`:
+  seven iterations became thirty-two. Its own tests asserted the factor came
+  back, so they encoded the wrong contract and could not have failed.
+
+  An array of small integers was promoted to a string without checking the
+  element width, so an `int32_t[]` table printed
+  `int32_t g[6] = "Hello";`. A sequential `if (v == K)` chain was folded into a
+  switch without checking whether a clause body writes the control variable —
+  which changes which later clauses run, because the chain re-evaluates and a
+  switch does not — and its duplicate-case guard, `seenValues`, was declared
+  and never read, so two clauses could produce `case 1:` twice. And
+  `LLVMIntrinsicsOptimizer` read the callee's name before testing it for null,
+  segfaulting on any indirect call.
+
 - **The rest of bin2llvmir.** Two more sweeps, over the idiom recognisers and
   the passes around them.
 

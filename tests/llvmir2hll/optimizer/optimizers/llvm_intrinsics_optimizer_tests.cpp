@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include "retdec/llvmir2hll/ir/call_expr.h"
+#include "retdec/llvmir2hll/ir/const_int.h"
 #include "retdec/llvmir2hll/ir/call_stmt.h"
 #include "retdec/llvmir2hll/ir/empty_stmt.h"
 #include "retdec/llvmir2hll/ir/function.h"
@@ -35,6 +36,33 @@ OptimizerHasNonEmptyID) {
 
 	EXPECT_TRUE(!optimizer->getId().empty()) <<
 		"the optimizer should have a non-empty ID";
+}
+
+// getCalledFunc answers null whenever the callee expression is not a Variable,
+// or names no function in the module. Both are the ordinary shape of a
+// decompiled indirect call, and the pass read the callee's name before testing
+// for null. Every other test here calls a function registered in the module,
+// so none of them reaches it.
+TEST_F(LLVMIntrinsicsOptimizerTests, ACallThroughAFunctionPointerDoesNotCrash)
+{
+	// void test() {
+	//     fp();      // fp is a local, not a module function
+	// }
+	auto fp = Variable::create("fp", IntType::create(32));
+	testFunc->setBody(CallStmt::create(CallExpr::create(fp)));
+
+	ASSERT_NO_FATAL_FAILURE(Optimizer::optimize<LLVMIntrinsicsOptimizer>(module));
+}
+
+TEST_F(LLVMIntrinsicsOptimizerTests, ACallWhoseCalleeIsNotAVariableDoesNotCrash)
+{
+	// void test() {
+	//     (*(void (*)())1)();
+	// }
+	auto target = ConstInt::create(llvm::APInt(32, 1, false), false);
+	testFunc->setBody(CallStmt::create(CallExpr::create(target)));
+
+	ASSERT_NO_FATAL_FAILURE(Optimizer::optimize<LLVMIntrinsicsOptimizer>(module));
 }
 
 TEST_F(LLVMIntrinsicsOptimizerTests,

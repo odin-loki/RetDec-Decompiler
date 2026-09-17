@@ -159,9 +159,9 @@ ConstantGetElementPtrWhichGetsStringConstantIsConvertedCorrectly) {
 
 	auto f = module->getFuncByName("function");
 	ASSERT_TRUE(f);
-	auto retStmt = cast<ReturnStmt>(f->getBody());
-	ASSERT_TRUE(retStmt);
-	auto callExpr = cast<CallExpr>(retStmt->getRetVal());
+	auto callStmt = cast<CallStmt>(f->getBody());
+	ASSERT_TRUE(callStmt);
+	auto callExpr = callStmt->getCall();
 	ASSERT_TRUE(callExpr);
 	auto callArg = cast<ConstString>(callExpr->getArg(1));
 	ASSERT_TRUE(callArg);
@@ -186,9 +186,9 @@ ConstantGetElementPtrWhichGetsWideStringConstantIsConvertedCorrectly) {
 
 	auto f = module->getFuncByName("function");
 	ASSERT_TRUE(f);
-	auto retStmt = cast<ReturnStmt>(f->getBody());
-	ASSERT_TRUE(retStmt);
-	auto callExpr = cast<CallExpr>(retStmt->getRetVal());
+	auto callStmt = cast<CallStmt>(f->getBody());
+	ASSERT_TRUE(callStmt);
+	auto callExpr = callStmt->getCall();
 	ASSERT_TRUE(callExpr);
 	auto callArg = cast<ConstString>(callExpr->getArg(1));
 	ASSERT_TRUE(callArg);
@@ -232,9 +232,9 @@ ConstantGetElementPtrWithNonZeroFirstIndexIsConvertedCorrectly) {
 
 	auto f = module->getFuncByName("function");
 	ASSERT_TRUE(f);
-	auto retStmt = cast<ReturnStmt>(f->getBody());
-	ASSERT_TRUE(retStmt);
-	auto callExpr = cast<CallExpr>(retStmt->getRetVal());
+	auto callStmt = cast<CallStmt>(f->getBody());
+	ASSERT_TRUE(callStmt);
+	auto callExpr = callStmt->getCall();
 	ASSERT_TRUE(callExpr);
 	auto addrOp1 = cast<AddressOpExpr>(callExpr->getArg(1));
 	ASSERT_TRUE(addrOp1);

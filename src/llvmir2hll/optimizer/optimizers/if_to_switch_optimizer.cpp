@@ -8025,8 +8025,49 @@ void IfToSwitchOptimizer::tryConvertSequentialIfChainToSwitch(
 		return;
 	}
 
+	// Unlike an else-if chain, a SEQUENTIAL chain re-evaluates the condition at
+	// every step, so a clause body that writes the control variable changes
+	// which later clauses run. A switch tests once.
+	//
+	//   if (v == 0) { v = 1; }
+	//   if (v == 1) { g = 1; }
+	//
+	// With v = 0 the original sets v and then enters the second if, so g is 1.
+	// The switch takes case 0, breaks, and g is untouched.
+	VarSet ctrlVars(ctrlData->getDirReadVars());
+	auto bodyWritesControlVar = [&](ShPtr<IfStmt> s) {
+		ShPtr<ValueData> bodyData(va->getValueData(s->getFirstIfBody()));
+		for (const auto& v: bodyData->getDirWrittenVars())
+		{
+			if (ctrlVars.find(v) != ctrlVars.end())
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	if (bodyWritesControlVar(firstIf))
+	{
+		return;
+	}
+
 	// Collect the chain.
+	//
+	// seenValues was declared here and never read, so two clauses could carry
+	// the same constant: `if (v == 1) a(); if (v == 1) b();` became
+	// `switch (v) { case 1: a(); break; case 1: b(); break; }`, which is a
+	// duplicate case label -- a hard compile error -- on top of dropping b().
 	std::set<llvm::APSInt> seenValues;
+	auto recordValue = [&](ShPtr<EqOpExpr> eq) {
+		ShPtr<ConstInt> c(cast<ConstInt>(
+			eq->getFirstOperand()->isEqualTo(controlExpr) ? eq->getSecondOperand() : eq->getFirstOperand()));
+		return c && seenValues.insert(c->getValue()).second;
+	};
+	if (!recordValue(firstEq))
+	{
+		return;
+	}
+
 	std::vector<ShPtr<IfStmt>> chain;
 	chain.push_back(firstIf);
 
@@ -8042,6 +8083,9 @@ void IfToSwitchOptimizer::tryConvertSequentialIfChainToSwitch(
 
 		ShPtr<Expression> cand(getNextOpIfSecondOneIsConstInt(eq));
 		if (!cand || !cand->isEqualTo(controlExpr)) break;
+
+		if (!recordValue(eq)) break;
+		if (bodyWritesControlVar(nextIf)) break;
 
 		chain.push_back(nextIf);
 		cur = nextIf->getSuccessor();

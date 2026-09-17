@@ -65,6 +65,49 @@ GlobalCharArrayWithHelloIsConvertedToString) {
 		"expected ConstString, got " << init;
 }
 
+// A ConstString is bytes. An int32_t[] table whose elements all happen to be
+// printable ASCII is not a string: promoting it prints
+// `int32_t g[6] = "Hello";`, which is not valid C, and describes six bytes
+// where the binary holds twenty-four. Every existing test in this file builds
+// its array from IntType::create(8), so the missing width check was invisible.
+static ShPtr<ConstArray> makeWideArray(const std::vector<int>& vals, unsigned width)
+{
+	ConstArray::ArrayValue arrVals;
+	for (int v: vals)
+	{
+		llvm::APInt ap(width, static_cast<uint64_t>(v), false);
+		arrVals.push_back(ConstInt::create(ap, false));
+	}
+	auto arrType = ArrayType::create(IntType::create(width), {vals.size()});
+	return ConstArray::create(arrVals, arrType);
+}
+
+TEST_F(CharArrayToStringOptimizerTests, GlobalArrayOfThirtyTwoBitElementsIsNotConvertedToAString)
+{
+	auto arr = makeWideArray({72, 101, 108, 108, 111, 0}, 32);
+	auto var = Variable::create("g_wide", arr->getType());
+	module->addGlobalVar(var, arr);
+
+	Optimizer::optimize<CharArrayToStringOptimizer>(module);
+
+	auto it = module->global_var_begin();
+	ASSERT_NE(it, module->global_var_end());
+	EXPECT_FALSE(isa<ConstString>((*it)->getInitializer())) << "an int32_t[] table was promoted to a byte string";
+}
+
+TEST_F(CharArrayToStringOptimizerTests, GlobalArrayOfSixteenBitElementsIsNotConvertedToAString)
+{
+	auto arr = makeWideArray({72, 105, 0}, 16);
+	auto var = Variable::create("g_wide16", arr->getType());
+	module->addGlobalVar(var, arr);
+
+	Optimizer::optimize<CharArrayToStringOptimizer>(module);
+
+	auto it = module->global_var_begin();
+	ASSERT_NE(it, module->global_var_end());
+	EXPECT_FALSE(isa<ConstString>((*it)->getInitializer()));
+}
+
 TEST_F(CharArrayToStringOptimizerTests,
 GlobalCharArrayWithoutNullTerminatorIsNotConverted) {
 	// "Hi" without null terminator → should not be converted.

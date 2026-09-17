@@ -52,24 +52,19 @@ ShPtr<Statement> collapseAdjacentTailCallReturns(ShPtr<Statement> first) {
 		while (cur && cur->getSuccessor()) {
 			ShPtr<Statement> nxt = cur->getSuccessor();
 
-			if (auto cs = cast<CallStmt>(cur)) {
-				if (auto rs = cast<ReturnStmt>(nxt)) {
-					if (!rs->hasRetVal()) {
-						auto nr = ReturnStmt::create(cs->getCall(), nullptr,
-							rs->getAddress());
-						const auto &meta = rs->getMetadata();
-						nr->setMetadata(meta.empty() ? "tail call" : meta);
-
-						Statement::removeStatement(rs);
-						Statement::replaceStatement(cur, nr);
-						if (cur == first) {
-							first = nr;
-						}
-						again = true;
-						break;
-					}
-				}
-			}
+			// A value-less ReturnStmt comes from `ret void`, and `ret void`
+			// only appears in a function whose return type is void. Turning
+			// `f(x); return;` into `return f(x);` there prints
+			// `return f(x);` inside a void function, which is a constraint
+			// violation in every version of C -- gcc 14 rejects it outright --
+			// and nothing downstream repairs it: CHLLWriter emits
+			// `return <expr>;` unconditionally and VoidReturnOptimizer only
+			// touches returns WITHOUT a value. The call keeps its own
+			// statement.
+			//
+			// The assignment form below is a different matter: the block ends
+			// in `ret`, so the temporary can have no other use, and the
+			// collapse is sound.
 
 			if (auto as = cast<AssignStmt>(cur)) {
 				if (auto rs = cast<ReturnStmt>(nxt)) {

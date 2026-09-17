@@ -29,7 +29,9 @@
 #include "retdec/llvmir2hll/ir/const_array.h"
 #include "retdec/llvmir2hll/ir/const_int.h"
 #include "retdec/llvmir2hll/ir/const_string.h"
+#include "retdec/llvmir2hll/ir/array_type.h"
 #include "retdec/llvmir2hll/ir/global_var_def.h"
+#include "retdec/llvmir2hll/ir/int_type.h"
 #include "retdec/llvmir2hll/ir/module.h"
 #include "retdec/llvmir2hll/optimizer/optimizers/char_array_to_string_optimizer.h"
 #include "retdec/llvmir2hll/support/debug.h"
@@ -59,7 +61,16 @@ bool CharArrayToStringOptimizer::tryExtractString(ShPtr<ConstArray> arr,
                                                    std::string& out) {
     if (!arr->isInitialized()) return false;
 
-    std::size_t n = 0;
+	// A ConstString is bytes. Promoting an int16_t[] or int32_t[] table whose
+	// elements all happen to be printable ASCII prints
+	// `int32_t g[6] = "Hello";` -- not valid C, and describing six bytes where
+	// the binary has twenty-four. Only an 8-bit element array is a string.
+	ShPtr<ArrayType> arrTy(cast<ArrayType>(arr->getType()));
+	if (!arrTy) return false;
+	ShPtr<IntType> elemTy(cast<IntType>(arrTy->getContainedType()));
+	if (!elemTy || elemTy->getSize() != 8) return false;
+
+	std::size_t n = 0;
     // Count elements.
     for (auto it = arr->init_begin(), e = arr->init_end(); it != e; ++it)
         ++n;
@@ -72,9 +83,10 @@ bool CharArrayToStringOptimizer::tryExtractString(ShPtr<ConstArray> arr,
     for (auto it = arr->init_begin(), e = arr->init_end(); it != e; ++it) {
         ShPtr<ConstInt> ci(cast<ConstInt>(*it));
         if (!ci) return false;
-        int val = static_cast<int>(ci->getValue().getZExtValue());
-        if (val < 0 || val > 127) return false;
-        bytes.push_back(val);
+		const llvm::APInt& v = ci->getValue();
+		if (v.getActiveBits() > 7) return false; // also excludes negatives
+		int val = static_cast<int>(v.getZExtValue());
+		bytes.push_back(val);
     }
 
     // Must end with null terminator.
