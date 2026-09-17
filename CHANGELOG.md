@@ -363,6 +363,24 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- `LoopBoundJumpAnalysis` answered "no jump" in two cases where there was one.
+  It decides whether a statement chain may be moved outside its enclosing loop,
+  and two passes ask it before doing exactly that, so a wrong "no" becomes
+  `break statement not within loop or switch` in the emitted C. It is
+  fork-authored, 96 lines, and had no tests.
+
+  - Its `descendInto` raised the enclosing count around
+    `OrderedAllVisitor::visit`, which visits a statement's **successor** as well
+    as its body — so everything after a nested loop, at the same level, read as
+    still inside it, and a `break` there was missed. The body is now visited
+    with the count raised and the successor with it restored.
+  - One counter served both jumps, so a `switch` counted as capturing
+    `continue`. C captures `break` in a `switch` and not `continue`. There are
+    now two counts and `SwitchStmt` raises only the break one.
+
+  12 tests added; restoring either defect fails exactly the cases it causes.
+
+
 - `CArithmExprEvaluator` folded a `BitCastExpr` between types of different
   widths by `zextOrTrunc`-ing the operand. A bitcast reinterprets the *same*
   bits; when the widths differ there are none to reinterpret, and the result

@@ -4,6 +4,7 @@ add_executable(tests-llvmir2hll
 	analysis/def_use_analysis_tests.cpp
 	analysis/break_in_if_analysis_tests.cpp
 	analysis/goto_target_analysis_tests.cpp
+	analysis/loop_bound_jump_analysis_tests.cpp
 	analysis/indirect_func_ref_analysis_tests.cpp
 	analysis/null_pointer_analysis_tests.cpp
 	analysis/value_analysis_tests.cpp

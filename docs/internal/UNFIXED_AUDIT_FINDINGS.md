@@ -10792,3 +10792,78 @@ offset of 2^32 is not truncated.
   recognise, so a `FloatType` of, say, 48 bits silently becomes a 64-bit
   bitcast — which the width check above now refuses, but by accident rather
   than by design.
+
+---
+
+## Batch BE — the guard that said "no jump" where there was one (2026-09-17)
+
+`LoopBoundJumpAnalysis` decides whether a statement chain may be copied or
+moved outside the loop that encloses it. Two passes ask it before doing exactly
+that: `WhileTrueToWhileCondOptimizer` prepends a clone of the loop's body
+prefix before the loop, and `WhileTrueToUForLoopOptimizer`'s do-while lowering
+(batch BB) puts the prefix at the loop's old position. A wrong "no" becomes
+`break statement not within loop or switch` in the emitted C — which CC-01
+reported on `hash_table` across four builds, and which is why the analysis
+exists.
+
+It is 96 lines of fork-authored code and it had **no tests**. It has two
+defects, both recorded in batch AV and both now fixed and covered.
+
+### Defect 1 — the enclosing count leaked onto the successor chain
+
+```cpp
+template <typename T>
+void LoopBoundJumpAnalysis::descendInto(ShPtr<T> stmt) {
+        ++enclosingLoops;
+        OrderedAllVisitor::visit(stmt);
+        --enclosingLoops;
+}
+```
+
+`OrderedAllVisitor::visit(WhileLoopStmt)` visits the body **and the successor**.
+So the count stayed raised over everything after a nested loop at the same
+level:
+
+```
+while true {
+    while (x) { ... }    // the count goes up here
+    if (c) break;        // and is still up here, so this is missed
+    ...
+}
+```
+
+That `break` binds to the *outer* loop. The analysis answered "no jump bound to
+the enclosing loop", which is precisely the answer that lets the caller hoist it
+out of the loop it belongs to. `descendInto` now visits the body with the count
+raised and the successor with it restored.
+
+### Defect 2 — a `switch` counted as capturing `continue`
+
+One counter served both jumps. C captures `break` in a `switch` and does **not**
+capture `continue`: a `continue` inside a `switch` inside a loop binds to the
+loop. Counting the switch for both meant such a `continue` read as bound to the
+switch, and the prefix holding it was movable when it was not. There are now
+two counts — `enclosingLoops` for `continue`, `enclosingBreakTargets` for
+`break` — and `SwitchStmt` raises only the second.
+
+`SwitchStmt` has clauses rather than one body, so its visit does not go through
+`descendInto`; it walks the clauses with the break count raised and the
+successor with it restored, for the same reason as defect 1.
+
+### Added
+
+`tests/llvmir2hll/analysis/loop_bound_jump_analysis_tests.cpp`, 12 cases. The
+two that matter are `ABreakAFTERANestedLoopStillBinds` and
+`AContinueInsideASwitchBindsToTheLoop`; restoring either defect fails exactly
+the cases that defect causes and nothing else.
+
+### Still open
+
+- The analysis follows a `GotoStmt`'s successor and not its target, on the
+  stated ground that a break reached through the target is not in this chain.
+  That is the same choice `BreakInIfAnalysis` makes and it is recorded rather
+  than tested: none of the twelve cases builds a goto.
+- Nothing here checks the callers. That a correct answer from this analysis
+  makes the do-while lowering correct is the subject of batch BB's differential,
+  which builds no nested loops — so the two fixes are each covered and their
+  combination is not.

@@ -57,8 +57,11 @@ public:
 private:
 	LoopBoundJumpAnalysis();
 
+	/// Visit @a stmt's body with the enclosing counts raised, then its
+	/// successor with them restored.  OrderedAllVisitor::visit walks the
+	/// successor too, and the successor is NOT inside the loop.
 	template <typename T>
-	void descendInto(ShPtr<T> stmt);
+	void descendInto(ShPtr<T> stmt, bool isLoop);
 
 	/// @name Visitor Interface
 	/// @{
@@ -73,8 +76,14 @@ private:
 	/// @}
 
 private:
-	/// How many loops or switches enclose the statement being visited.
+	/// How many loops enclose the statement being visited.  A `continue`
+	/// binds to the innermost of these.
 	std::size_t enclosingLoops;
+
+	/// How many loops OR switches enclose it.  A `break` binds to the
+	/// innermost of THESE, which is why the two are counted separately: C
+	/// captures `break` in a `switch` and does not capture `continue`.
+	std::size_t enclosingBreakTargets;
 
 	/// Whether a break or continue was found outside all of them.
 	bool foundJump;

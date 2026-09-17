@@ -20,7 +20,9 @@ namespace llvmir2hll {
 /**
  * @brief Constructs a new analysis.
  */
-LoopBoundJumpAnalysis::LoopBoundJumpAnalysis(): OrderedAllVisitor(), enclosingLoops(0), foundJump(false) {}
+LoopBoundJumpAnalysis::LoopBoundJumpAnalysis():
+	OrderedAllVisitor(), enclosingLoops(0), enclosingBreakTargets(0), foundJump(false)
+{}
 
 /**
  * @brief Returns @c true if @a stmts holds a @c break or @c continue that binds
@@ -42,39 +44,91 @@ bool LoopBoundJumpAnalysis::hasJumpBoundToEnclosingLoop(ShPtr<Statement> stmts)
 }
 
 /**
- * @brief Visits @a stmt with the enclosing-construct count raised by one.
+ * @brief Visits @a stmt's body with the enclosing counts raised, then its
+ *        successor with them restored.
+ *
+ * This used to be @c OrderedAllVisitor::visit(stmt) between an increment and a
+ * decrement, and that visits the statement's SUCCESSOR as well as its body. So
+ * everything after a nested loop, at the same level, was counted as still
+ * inside it:
+ *
+ *     while true {
+ *         while (x) { ... }    // the counter goes up here
+ *         if (c) break;        // and was still up here, so this was missed
+ *         ...
+ *     }
+ *
+ * The @c break binds to the OUTER loop and the analysis answered "no jump
+ * bound to the enclosing loop", which is exactly the answer that lets the
+ * do-while lowering hoist it out of the loop it belongs to.
  */
 template <typename T>
-void LoopBoundJumpAnalysis::descendInto(ShPtr<T> stmt)
+void LoopBoundJumpAnalysis::descendInto(ShPtr<T> stmt, bool isLoop)
 {
-	++enclosingLoops;
-	OrderedAllVisitor::visit(stmt);
-	--enclosingLoops;
+	if (isLoop)
+	{
+		++enclosingLoops;
+	}
+	++enclosingBreakTargets;
+	if (visitNestedStmts)
+	{
+		visitStmt(stmt->getBody());
+	}
+	--enclosingBreakTargets;
+	if (isLoop)
+	{
+		--enclosingLoops;
+	}
+
+	if (visitSuccessors && stmt->hasSuccessor())
+	{
+		visitStmt(stmt->getSuccessor());
+	}
 }
 
 void LoopBoundJumpAnalysis::visit(ShPtr<WhileLoopStmt> stmt)
 {
-	descendInto(stmt);
+	descendInto(stmt, true);
 }
 
 void LoopBoundJumpAnalysis::visit(ShPtr<ForLoopStmt> stmt)
 {
-	descendInto(stmt);
+	descendInto(stmt, true);
 }
 
 void LoopBoundJumpAnalysis::visit(ShPtr<UForLoopStmt> stmt)
 {
-	descendInto(stmt);
+	descendInto(stmt, true);
 }
 
 void LoopBoundJumpAnalysis::visit(ShPtr<SwitchStmt> stmt)
 {
-	descendInto(stmt);
+	// A switch is a break target and is NOT a continue target: `continue`
+	// inside a switch inside a loop binds to the loop. It used to be counted
+	// as both, so such a continue was reported as bound to the switch and the
+	// prefix holding it was hoisted out of its loop.
+	//
+	// SwitchStmt has clauses rather than one body, so this does not go through
+	// descendInto.
+	++enclosingBreakTargets;
+	if (visitNestedStmts)
+	{
+		for (auto i = stmt->clause_begin(), e = stmt->clause_end(); i != e; ++i)
+		{
+			visitStmt(i->second);
+		}
+	}
+	--enclosingBreakTargets;
+
+	if (visitSuccessors && stmt->hasSuccessor())
+	{
+		visitStmt(stmt->getSuccessor());
+	}
 }
 
 void LoopBoundJumpAnalysis::visit(ShPtr<BreakStmt> stmt)
 {
-	foundJump = foundJump || enclosingLoops == 0;
+	foundJump = foundJump || enclosingBreakTargets == 0;
 	OrderedAllVisitor::visit(stmt);
 }
 
