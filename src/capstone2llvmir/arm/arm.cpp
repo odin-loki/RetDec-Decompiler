@@ -292,6 +292,74 @@ llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadRegister(
 	return createLoad(irb, llvmReg);
 }
 
+/**
+ * The index TERM of a memory operand: the index register with its shift and
+ * its sign applied, and nothing else.
+ *
+ * The address computation in loadOp() already does this. The pre- and
+ * post-indexed writeback paths did not -- they reloaded the bare index
+ * register, so `ldr r0, [r1, r2, lsl #2]!` loaded from r1 + (r2 << 2) and then
+ * wrote back r1 + r2, and `ldr r0, [r1, -r2]!` loaded from r1 - r2 and wrote
+ * back r1 + r2. The address and the writeback disagreed about their own
+ * addressing mode.
+ *
+ * Not generateOperandShift(), which writes CPSR_C: the address path has
+ * already called it, and a second identical write is noise at best. A memory
+ * operand's shift is always an immediate in A32 -- `[Rn, Rm, LSL Rs]` is not
+ * encodable -- so every case here is a constant and can be built directly.
+ * A shift kind that is not one of those falls back to the unshifted register,
+ * which is what this code did for all of them before.
+ */
+llvm::Value* Capstone2LlvmIrTranslatorArm_impl::loadMemIndexTerm(cs_arm_op& op, llvm::IRBuilder<>& irb)
+{
+	auto* idx = loadRegister(op.mem.index, irb);
+	if (idx == nullptr)
+	{
+		return nullptr;
+	}
+	auto* ty = llvm::cast<llvm::IntegerType>(idx->getType());
+	unsigned w = ty->getBitWidth();
+
+	if (op.mem.lshift > 0 && op.mem.lshift < w)
+	{
+		idx = irb.CreateShl(idx, llvm::ConstantInt::get(ty, op.mem.lshift));
+	}
+
+	unsigned k = op.shift.value;
+	switch (op.shift.type)
+	{
+	case ARM_SFT_LSL:
+		if (k > 0 && k < w) idx = irb.CreateShl(idx, llvm::ConstantInt::get(ty, k));
+		break;
+	case ARM_SFT_LSR:
+		// LSR #0 encodes LSR #32, which empties the register.
+		idx = (k == 0 || k >= w) ? llvm::cast<llvm::Value>(llvm::ConstantInt::get(ty, 0))
+								 : irb.CreateLShr(idx, llvm::ConstantInt::get(ty, k));
+		break;
+	case ARM_SFT_ASR:
+		// ASR #0 encodes ASR #32: the sign bit in every position, which is
+		// the shift by w-1 the clamp produces.
+		idx = irb.CreateAShr(idx, llvm::ConstantInt::get(ty, (k == 0 || k >= w) ? w - 1 : k));
+		break;
+	case ARM_SFT_ROR:
+		if (k > 0 && k < w)
+		{
+			idx = irb.CreateOr(
+				irb.CreateLShr(idx, llvm::ConstantInt::get(ty, k)),
+				irb.CreateShl(idx, llvm::ConstantInt::get(ty, w - k)));
+		}
+		break;
+	default: break;
+	}
+
+	// The sign is op.subtracted, not mem.scale; see loadOp().
+	if (op.subtracted)
+	{
+		idx = irb.CreateNeg(idx);
+	}
+	return idx;
+}
+
 llvm::Value* Capstone2LlvmIrTranslatorArm_impl::generateOperandShift(
 		llvm::IRBuilder<>& irb,
 		cs_arm_op& op,
@@ -2971,7 +3039,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdr(cs_insn* i, cs_arm* ai, llv
 		}
 		else if (ai->operands[1].mem.index != ARM_REG_INVALID)
 		{
-			idx = loadRegister(ai->operands[1].mem.index, irb);
+			idx = loadMemIndexTerm(ai->operands[1], irb);
 		}
 	}
 	else if (ai->op_count == 3
@@ -3058,7 +3126,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateLdrd(cs_insn* i, cs_arm* ai, ll
 		}
 		else if (ai->operands[2].mem.index != ARM_REG_INVALID)
 		{
-			idx = loadRegister(ai->operands[2].mem.index, irb);
+			idx = loadMemIndexTerm(ai->operands[2], irb);
 		}
 	}
 	else if (ai->op_count == 4
@@ -3230,7 +3298,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStr(cs_insn* i, cs_arm* ai, llv
 			}
 			else if (ai->operands[2].mem.index != ARM_REG_INVALID)
 			{
-				idx = loadRegister(ai->operands[2].mem.index, irb);
+				idx = loadMemIndexTerm(ai->operands[2], irb);
 			}
 			// Maybe we should add +4 to idx?
 		}
@@ -3272,7 +3340,7 @@ void Capstone2LlvmIrTranslatorArm_impl::translateStr(cs_insn* i, cs_arm* ai, llv
 		}
 		else if (ai->operands[1].mem.index != ARM_REG_INVALID)
 		{
-			idx = loadRegister(ai->operands[1].mem.index, irb);
+			idx = loadMemIndexTerm(ai->operands[1], irb);
 		}
 	}
 	else if (ai->op_count == 3

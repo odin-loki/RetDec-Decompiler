@@ -9260,3 +9260,35 @@ expectation could not tell.
 
 Falsification: each of the three fixes reverted alone fails 4, 4 and 5 tests
 respectively.
+
+### AN-4  The pre-indexed writeback disagreed with its own address
+
+Having fixed the sign in the address (AN-1), the writeback still reloaded the
+bare index register, so it dropped both the shift and the sign:
+
+    ldr r0, [r1, r2, lsl #2]!   r1 = 0x1000, r2 = 4
+      loads [0x1010]  and leaves r1 = 0x1004
+    ldr r0, [r1, -r2]!          r1 = 0x1010, r2 = 8
+      loads [0x1008]  and leaves r1 = 0x1018
+
+The address and the writeback were computing different addressing modes from
+the same operand. Four sites now share one helper with the address path's
+rules.
+
+The helper deliberately does NOT call generateOperandShift, which writes
+CPSR_C: the address path has already called it, and a second identical write is
+noise. A memory operand's shift is always an immediate in A32 -- `[Rn, Rm, LSL
+Rs]` is not encodable -- so every case can be built directly.
+
+There was no test anywhere for `[Rn, Rm, lsl #N]!`, and the one named
+`ARM_INS_LDR_minus_reg_preindexed_writeback` assembles `[r1, r2]!` with a
+negative value in r2, which exercises none of this.
+
+### Noted, not fixed: a shifted operand writes CPSR_C for non-S instructions
+
+`generateOperandShift` writes CPSR_C unconditionally, so `ldr r0, [r1, r2, lsl
+#2]` and `add r0, r1, r2, ror #5` both update the carry. ARM updates the
+shifter carry-out only for the flag-setting forms. Several existing tests
+assert the current behaviour (`ARM_INS_ADD_ror` expects CPSR_C stored), so
+fixing it means revisiting them; it is a real defect and is recorded rather
+than guessed at here.

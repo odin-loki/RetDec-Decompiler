@@ -86,6 +86,9 @@ class Capstone2LlvmIrTranslatorArm_impl :
 				llvm::IRBuilder<>& irb,
 				cs_arm* ai);
 
+		/// The index term of a memory operand, with its shift and sign but
+		/// without generateOperandShift()'s flag writes; see the definition.
+		llvm::Value* loadMemIndexTerm(cs_arm_op& op, llvm::IRBuilder<>& irb);
 		llvm::Value* generateOperandShift(
 				llvm::IRBuilder<>& irb,
 				cs_arm_op& op,

@@ -2549,6 +2549,47 @@ TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDR_plus_reg_preindexed_writeb
 // mem.scale == -1 branch this translator used never fired and the offset was
 // ADDED. The test below is named "minus_reg" but assembles `[r1, r2]!` with a
 // negative value in r2, which exercises nothing of that path.
+// The writeback must move the base by the SAME amount the address used. It
+// reloaded the bare index register, so the shift and the sign were dropped and
+// the two disagreed about their own addressing mode. There is no test anywhere
+// for `[Rn, Rm, lsl #N]!`.
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDR_preindexed_writeback_keeps_the_shift)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x1000},
+		{ARM_REG_R2, 0x4},
+	});
+	setMemory({
+		{0x1010, 0xfeedface_dw},
+	});
+
+	emulate("ldr r0, [r1, r2, lsl #2]!");
+
+	// 0x1000 + (4 << 2) = 0x1010, and r1 must land there too -- not at 0x1004.
+	EXPECT_EQ(0xfeedfaceu, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(0x1010u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
+TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDR_preindexed_writeback_keeps_the_sign)
+{
+	SKIP_MODE_THUMB;
+
+	setRegisters({
+		{ARM_REG_R1, 0x1010},
+		{ARM_REG_R2, 0x8},
+	});
+	setMemory({
+		{0x1008, 0x12345678_dw},
+	});
+
+	emulate("ldr r0, [r1, -r2]!");
+
+	EXPECT_EQ(0x12345678u, getRegisterValueUnsigned(ARM_REG_R0));
+	EXPECT_EQ(0x1008u, getRegisterValueUnsigned(ARM_REG_R1));
+}
+
 TEST_P(Capstone2LlvmIrTranslatorArmTests, ARM_INS_LDR_minus_reg_is_subtracted)
 {
 	SKIP_MODE_THUMB;
