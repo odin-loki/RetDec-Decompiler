@@ -11505,3 +11505,105 @@ about. Later runs got a fresh cache key and built LLVM 23 without complaint.
 - 45 translation units — Qt's generated sources, `src/gui`, `src/yaracpp` —
   are skipped for want of a dependency this build directory has not built.
   They are named, and they are not measured.
+
+---
+
+## Batch BN — `for (int i = ...)` around a variable the next loop still uses (2026-09-17)
+
+With the pinned-LLVM compile error fixed, `ctest-linux` built the decompiler
+and ran the integration steps for the first time in this audit. Everything
+passed except one:
+
+```
+CC-01: 251/252 emitted C files compile (rate 0.9960, 0 with no output)
+CC-01: files that did not compile:
+  generated_float_matrix_multiply-gcc-O2
+  .../generated_float_matrix_multiply-gcc-O2.c:140:14:
+      error: 'v17' undeclared (first use in this function)
+```
+
+The emitted C, from the artefact the workflow uploads:
+
+```c
+for (uint64_t v17 = v14; v15 != v12; v17 += 4) {
+    v15 += 16;
+    v16 = 0;
+}
+// ...
+while (v13 != (uint64_t)&v18) {
+    v15 = v6;
+    for (v17 = v14; v15 != v12; v17 += 4) {   // v17 is out of scope here
+```
+
+`for (uint64_t v17 = ...)` is a C scope, not a comment: it ends `v17` at the
+loop's closing brace. The second loop is a sibling, not a child, so its `v17`
+is undeclared.
+
+### Where it is decided
+
+`VarDefStmtOptimizer::tryOptimizeUForLoop` calls
+`UForLoopStmt::markInitAsDefinition()`, which is what makes `CHLLWriter` emit
+the type in the init clause. It checked only that the loop's init assigns to
+the variable being optimized. Nothing checked where else the variable is read.
+
+`findStmtsToOptimize` does not rule it out either, and the reason is worth
+writing down because the code reads as though it does. It refuses to narrow
+only when some ONE nesting level holds the variable in two or more blocks —
+sibling `if`s at the same depth, which is the case its comment illustrates.
+Two loops at DIFFERENT depths, one at the top of the function and one inside a
+`while` below it, hold the variable in one block each, at two levels. No level
+has two, so the check passes and the first use wins.
+
+`isVarUsedOnlyInLoop` now asks the question directly: every direct and indirect
+use of the variable, from `VarUsesVisitor`, has to be the loop or inside it,
+walked with `Statement::getParent()`. The `VarDefStmt` this optimization is
+about to delete does not count. When a use is elsewhere, the optimization
+declines and the ordinary path emits `uint64_t v17;` ahead of both loops.
+
+Two tests, and the second is the point: a fix that simply stopped marking
+anything would pass the reproduction and fail the control.
+
+* `DoesNotMarkUForLoopInitAsDefinitionWhenVarIsAlsoUsedOutsideTheLoop` — the
+  shape above, at BIR level. It fails on the unfixed optimizer.
+* `MarksUForLoopInitAsDefinitionWhenTheOnlyOtherUseIsInsideTheLoop` — the
+  legitimate narrowing still happens.
+
+Falsified: disabling the new guard alone fails exactly the first test and
+nothing else. 2,256 tests pass with it.
+
+### Two instrument failures found on the way, both in this repository
+
+**`currFunc` was null.** `VarDefStmtOptimizer::runOnFunction` overrides
+`FuncOptimizer::runOnFunction` and never calls it, and that base is where
+`currFunc` is assigned. `VarUsesVisitor::getUses` has
+`PRECONDITION_NON_NULL(func)`, so the first call aborted the test binary. It is
+set explicitly now. Any future code in this optimizer that reaches for
+`currFunc` would have hit the same thing.
+
+**`L2H-01` printed nothing when the binary aborted.** The failure diagnostic
+starts by grepping `run.log` for `[  FAILED  ]` lines. An abort produces none,
+the grep exits 1, and `set -e` killed the script mid-diagnostic — so the entire
+report was the words `--- failing tests ---` followed by nothing, at the exact
+moment the tail of the log was the only thing that could say what happened.
+Every grep in that block ends in `|| true` now, and the same run then reports:
+
+```
+src/llvmir2hll/analysis/var_uses_visitor.cpp:108: getUses:
+    Precondition failed: `func` (expected a non-null pointer).
+L2H-01: full log: .../run.log
+```
+
+That is the seventeenth time in this audit that the apparatus, rather than the
+code, gave the wrong answer — and the second time the wrong answer was silence.
+
+### Still open
+
+- The BIR tests fix the decision; whether `CC-01` reaches 252/252 is a
+  statement about the whole corpus that only `ctest-linux` can make.
+- `tryOptimizeUForLoop` is the only caller of `markInitAsDefinition`, so this
+  closes the scope question for `UForLoopStmt`. `ForLoopStmt` emits its own
+  induction variable a different way and was not audited here.
+- `findStmtsToOptimize`'s level rule is left as it is. The containment check
+  sits in front of the one consumer that narrows a scope; the rule itself still
+  answers "used in two blocks" with "two blocks at one level", and whether that
+  is wrong for the prepend path was not established.

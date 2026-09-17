@@ -418,6 +418,38 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- **The emitted C declared a loop variable the next loop still used.**
+  `VarDefStmtOptimizer` turned a universal for loop's init into a definition —
+  `for (uint64_t v17 = v14; ...)` — without checking where else the variable is
+  read. That is a C scope: it ends the variable at the loop's closing brace. A
+  sibling loop further down the function then referenced it, and gcc rejected
+  the file with `'v17' undeclared`. `CC-01` caught it on
+  `generated_float_matrix_multiply-gcc-O2`, 251 of 252.
+
+  The existing guard does not cover this and reads as though it does: it
+  refuses to narrow only when some one nesting level holds the variable in two
+  or more blocks. Two loops at different depths — one at the top of a function,
+  one inside a `while` below it — hold it in one block each. Every use of the
+  variable now has to be inside the loop, walked with `Statement::getParent()`
+  over `VarUsesVisitor`'s direct and indirect uses; otherwise the ordinary path
+  emits the declaration ahead of both loops.
+
+  Two tests: the failing shape, and a control in which the only other use is
+  inside the loop and the narrowing must still happen — a fix that simply
+  stopped marking anything would pass the first and fail the second. Disabling
+  the guard alone fails exactly the first and nothing else; 2,256 tests pass
+  with it.
+
+  Two instrument defects were found under it and are fixed in the same change.
+  `VarDefStmtOptimizer::runOnFunction` overrides `FuncOptimizer::runOnFunction`
+  and never calls it, so `currFunc` was null and `VarUsesVisitor::getUses`
+  aborted the test binary on its precondition. And `L2H-01`'s failure
+  diagnostic began by grepping the log for `[  FAILED  ]` lines, which an abort
+  does not produce — the grep exited 1, `set -e` killed the script, and the
+  whole report was `--- failing tests ---` followed by nothing. Every grep in
+  that block tolerates no match now, and the same run then names the
+  precondition, its file and line, and the test it died in.
+
 - **`ctest-linux` could not build the decompiler.** `translateFist` assigned
   `IRBuilder::CreateUnaryIntrinsic`'s result to the `llvm::CallInst*` that
   `loadX87DataReg` returns. That compiles on LLVM 20, whose

@@ -23,6 +23,8 @@ namespace llvmir2hll {
 class Statement;
 class UForLoopStmt;
 class ValueAnalysis;
+class VarDefStmt;
+class VarUsesVisitor;
 
 /**
 * @brief Optimizes VarDefStmt to closest place of it's variable use.
@@ -149,12 +151,15 @@ private:
 	void sortVarDefStmts(const VarDefStmtSet &noInitVarDefStmts);
 	void tryToFindAndEnterToNextNestingLevel(ShPtr<Statement> stmt,
 		VarSet &thisLvlVars, std::size_t order);
-	bool tryOptimizeUForLoop(ShPtr<UForLoopStmt> loop,
-		ShPtr<Variable> optimizedVar) const;
+	bool tryOptimizeUForLoop(ShPtr<UForLoopStmt> loop, ShPtr<Variable> optimizedVar, ShPtr<VarDefStmt> varDef) const;
+	bool isVarUsedOnlyInLoop(ShPtr<UForLoopStmt> loop, ShPtr<Variable> var, ShPtr<VarDefStmt> varDef) const;
 
 private:
 	/// Analysis of values.
 	ShPtr<ValueAnalysis> va;
+
+	/// Uses of variables in the function currently being optimized.
+	ShPtr<VarUsesVisitor> vuv;
 
 	/// Saves level of current nesting.
 	std::size_t level;

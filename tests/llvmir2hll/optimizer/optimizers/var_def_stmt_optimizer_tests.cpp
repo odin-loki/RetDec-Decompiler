@@ -694,6 +694,97 @@ MarksUForLoopInitAsDefinitionWhenVarIsDefinedInInitPart) {
 	ASSERT_TRUE(loop->isInitDefinition());
 }
 
+TEST_F(VarDefStmtOptimizerTests, DoesNotMarkUForLoopInitAsDefinitionWhenVarIsAlsoUsedOutsideTheLoop)
+{
+	//
+	// void test() {
+	//     int i;
+	//     for (i = 1; ;) {
+	//     }
+	//     while (g) {
+	//         for (i = 1; ;) {
+	//         }
+	//     }
+	// }
+	//
+	// The two loops are siblings, so `for (int i = 1; ...)` on the first one
+	// puts the second one's `i` out of scope. gcc rejects the result:
+	//
+	//     error: 'v17' undeclared (first use in this function)
+	//
+	// which is what CC-01 caught on generated_float_matrix_multiply-gcc-O2.
+	// The definition has to stay in the enclosing block.
+	//
+	auto varG = Variable::create("g", IntType::create(32));
+	module->addGlobalVar(varG);
+	auto varI = Variable::create("i", IntType::create(32));
+	testFunc->addLocalVar(varI);
+
+	auto innerLoop = UForLoopStmt::create(
+		AssignOpExpr::create(varI, ConstInt::create(1, 32)),
+		ShPtr<Expression>(),
+		ShPtr<Expression>(),
+		EmptyStmt::create());
+	auto whileLoop = WhileLoopStmt::create(varG, innerLoop);
+	auto outerLoop = UForLoopStmt::create(
+		AssignOpExpr::create(varI, ConstInt::create(1, 32)),
+		ShPtr<Expression>(),
+		ShPtr<Expression>(),
+		EmptyStmt::create());
+	outerLoop->setSuccessor(whileLoop);
+	auto varDefI = VarDefStmt::create(varI);
+	varDefI->setSuccessor(outerLoop);
+	testFunc->setBody(varDefI);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<VarDefStmtOptimizer>(module, va);
+
+	ASSERT_FALSE(outerLoop->isInitDefinition()) << "the first loop's init was turned into a definition, which scopes i "
+												   "to that loop while the second loop still uses it";
+	ASSERT_FALSE(innerLoop->isInitDefinition())
+		<< "the second loop's init was turned into a definition, which scopes i "
+		   "to that loop while the first loop still uses it";
+
+	// The definition has to survive somewhere ahead of both loops.
+	auto first = cast<VarDefStmt>(testFunc->getBody());
+	ASSERT_TRUE(first) << "expected the body to start with a VarDefStmt, got " << testFunc->getBody();
+	ASSERT_EQ(varI, first->getVar()) << "expected a definition of i, got " << first;
+}
+
+TEST_F(VarDefStmtOptimizerTests, MarksUForLoopInitAsDefinitionWhenTheOnlyOtherUseIsInsideTheLoop)
+{
+	//
+	// void test() {
+	//     int i;
+	//     for (i = 1; ;) {
+	//         g = i;
+	//     }
+	// }
+	//
+	// The body is inside the loop, so narrowing i to the loop is sound and
+	// the optimization must still happen. This is the control for the case
+	// above: a fix that simply stopped marking anything would pass that test
+	// and fail this one.
+	//
+	auto varG = Variable::create("g", IntType::create(32));
+	module->addGlobalVar(varG);
+	auto varI = Variable::create("i", IntType::create(32));
+	testFunc->addLocalVar(varI);
+
+	auto assignGI = AssignStmt::create(varG, varI);
+	auto loop = UForLoopStmt::create(
+		AssignOpExpr::create(varI, ConstInt::create(1, 32)), ShPtr<Expression>(), ShPtr<Expression>(), assignGI);
+	auto varDefI = VarDefStmt::create(varI);
+	varDefI->setSuccessor(loop);
+	testFunc->setBody(varDefI);
+
+	INSTANTIATE_ALIAS_ANALYSIS_AND_VALUE_ANALYSIS(module);
+	Optimizer::optimize<VarDefStmtOptimizer>(module, va);
+
+	ASSERT_BIR_EQ(loop, testFunc->getBody());
+	ASSERT_TRUE(loop->isInitDefinition());
+}
+
 } // namespace tests
 } // namespace llvmir2hll
 } // namespace retdec

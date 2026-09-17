@@ -12,6 +12,7 @@
 
 #include "retdec/llvmir2hll/analysis/no_init_var_def_analysis.h"
 #include "retdec/llvmir2hll/analysis/value_analysis.h"
+#include "retdec/llvmir2hll/analysis/var_uses_visitor.h"
 #include "retdec/llvmir2hll/ir/assign_op_expr.h"
 #include "retdec/llvmir2hll/ir/assign_stmt.h"
 #include "retdec/llvmir2hll/ir/float_type.h"
@@ -64,6 +65,15 @@ void VarDefStmtOptimizer::doOptimization()
 
 void VarDefStmtOptimizer::runOnFunction(ShPtr<Function> func)
 {
+	// This override does not call FuncOptimizer::runOnFunction, which is
+	// where currFunc is normally set, and VarUsesVisitor::getUses asserts on a
+	// null function -- an abort with no failing test named.
+	currFunc = func;
+
+	// Uncached: optimizeWithPrepend() rewrites the function as it goes, and a
+	// stale answer here is a variable declared in the wrong scope.
+	vuv = VarUsesVisitor::create(va);
+
 	ShPtr<NoInitVarDefAnalysis> varDefStmtAnalysis(new NoInitVarDefAnalysis());
 
 	// Get all VarDefStmt statements without an initializer.
@@ -233,7 +243,8 @@ void VarDefStmtOptimizer::tryToFindAndEnterToNextNestingLevel(
  *
  * @return @c true when the optimization was performed, @c false otherwise.
  */
-bool VarDefStmtOptimizer::tryOptimizeUForLoop(ShPtr<UForLoopStmt> loop, ShPtr<Variable> optimizedVar) const
+bool VarDefStmtOptimizer::tryOptimizeUForLoop(
+	ShPtr<UForLoopStmt> loop, ShPtr<Variable> optimizedVar, ShPtr<VarDefStmt> varDef) const
 {
 	// When the variable is used in the initialization part of a
 	// universal for loop, we can mark its initialization part as a definition.
@@ -252,8 +263,81 @@ bool VarDefStmtOptimizer::tryOptimizeUForLoop(ShPtr<UForLoopStmt> loop, ShPtr<Va
 		return false;
 	}
 
+	// The declaration is a C scope, not a comment: `for (int i = ...)` ends i
+	// at the loop's closing brace. Doing it while the variable is read
+	// anywhere else emits C that does not compile.
+	//
+	// findStmtsToOptimize() does not rule this out. It refuses to narrow only
+	// when some ONE nesting level holds the variable in two or more blocks,
+	// and two sibling loops at different depths -- one at the top of a
+	// function, one inside a while below it -- hold it in one block each.
+	// CC-01 caught exactly that shape on
+	// generated_float_matrix_multiply-gcc-O2:
+	//
+	//     for (uint64_t v17 = v14; v15 != v12; v17 += 4) { /* ... */ }
+	//     while (v13 != (uint64_t)&v18) {
+	//         for (v17 = v14; v15 != v12; v17 += 4) { /* ... */ }
+	//
+	//     error: 'v17' undeclared (first use in this function)
+	//
+	if (!isVarUsedOnlyInLoop(loop, optimizedVar, varDef))
+	{
+		return false;
+	}
+
 	loop->markInitAsDefinition();
 	loop->redirectGotosTo(loop);
+	return true;
+}
+
+/**
+ * @brief Is every use of @a var inside @a loop?
+ *
+ * @a varDef is the definition this optimization is about to remove, so it does
+ * not count as a use.
+ */
+bool VarDefStmtOptimizer::isVarUsedOnlyInLoop(
+	ShPtr<UForLoopStmt> loop, ShPtr<Variable> var, ShPtr<VarDefStmt> varDef) const
+{
+	auto uses = vuv->getUses(var, currFunc);
+	if (!uses)
+	{
+		// No answer is not the same as "nowhere else"; decline.
+		return false;
+	}
+
+	auto isInLoop = [&loop](ShPtr<Statement> stmt) {
+		// Bounded, because getParent() walks predecessors and a corrupted
+		// chain would otherwise spin here rather than report anything.
+		std::unordered_set<Statement*> seen;
+		for (auto s = stmt; s; s = s->getParent())
+		{
+			if (s == loop)
+			{
+				return true;
+			}
+			if (!seen.insert(s.get()).second)
+			{
+				return false;
+			}
+		}
+		return false;
+	};
+
+	for (const auto& stmt: uses->dirUses)
+	{
+		if (stmt != varDef && !isInLoop(stmt))
+		{
+			return false;
+		}
+	}
+	for (const auto& stmt: uses->indirUses)
+	{
+		if (stmt != varDef && !isInLoop(stmt))
+		{
+			return false;
+		}
+	}
 	return true;
 }
 
@@ -714,7 +798,7 @@ void VarDefStmtOptimizer::optimizeWithPrepend(StmtSet& toRemoveStmts) const
 			// Universal for loops have to be treated specifically.
 			if (auto uforLoop = cast<UForLoopStmt>(it->second.stmt))
 			{
-				bool optimized = tryOptimizeUForLoop(uforLoop, stmt->getVar());
+				bool optimized = tryOptimizeUForLoop(uforLoop, stmt->getVar(), stmt);
 				if (optimized)
 				{
 					toRemoveStmts.insert(stmt);

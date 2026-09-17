@@ -250,11 +250,19 @@ if ! "${BIN}" "${RUN_ARGS[@]}" > "${WORK}/run.log" 2>&1; then
 	# cost a whole falsification run here: the cap fell just short of the one
 	# suite the run existed to look at, so a test that had correctly caught a
 	# seeded defect read as having missed it.  Detail is capped; names are not.
+	#
+	# Every grep below ends in `|| true`.  Without it, a run that ABORTS prints
+	# no `[  FAILED  ]` line at all, the first grep exits 1, `set -e` kills the
+	# script mid-diagnostic, and the whole report is the words "--- failing
+	# tests ---" followed by nothing -- at the exact moment the tail of the log
+	# is the only thing that says what happened.  That cost a cycle here: a
+	# null currFunc tripped an assertion inside VarUsesVisitor and the gate
+	# named neither the assertion nor a test.
 	echo "--- failing tests ---" >&2
 	grep -aoE '^\[  FAILED  \] [A-Za-z][A-Za-z0-9_]*\.[A-Za-z0-9_]*' \
-		"${WORK}/run.log" | sort -u >&2
+		"${WORK}/run.log" | sort -u >&2 || true
 	echo "--- first assertions ---" >&2
-	grep -aE 'Failure$' -A 3 "${WORK}/run.log" | head -n 60 >&2
+	{ grep -aE 'Failure$' -A 3 "${WORK}/run.log" || true; } | head -n 60 >&2
 	echo "--- context ---" >&2
 	tail -n 40 "${WORK}/run.log" >&2
 	echo "L2H-01: full log: ${WORK}/run.log" >&2
