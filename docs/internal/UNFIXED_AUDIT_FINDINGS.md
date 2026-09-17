@@ -11195,3 +11195,43 @@ wrong.
   pairs. They were not audited here. Most operate on a node whose successors
   are about to be discarded, where position cannot matter, but "most" is a
   reading.
+
+---
+
+## Batch BJ — reading back what this branch claimed (2026-09-17)
+
+Ten rows went into `docs/CLAIMS.md` over batches AX–BI. Reading them back
+against the evidence beneath each one, five headline claims were broader than
+what had been measured. The headline is the part that gets read and quoted; the
+evidence column is where the scope was already stated correctly, which makes
+the mismatch a claim the register itself contradicts two columns later.
+
+| was | is |
+|---|---|
+| The `if`-nest to `switch` reconstruction runs the same body it replaced | …, **for the nests this differential generates** — 232 of 516 converted, and it does not enumerate the forty `tryConvert*` functions |
+| An idiom rewrite preserves uses it did not match | …, **in the four shapes measured** — reverting the fix fails one of the four |
+| Lowering a `while true` loop preserves what the function computes | …, **for the three loop-end shapes `isLoopEnd` accepts** |
+| The backend does not invent constants it cannot derive | **Two conversions** that used to invent a constant now decline: a mismatched-width bitcast and an oversized GEP offset |
+| `pointsTo` only says "always" when it is always | `pointsTo` **refuses three cases** where it used to say "always" and was not |
+
+A sixth was wrong rather than broad. `C-ORPHAN-SUITES` read "Every test
+directory is run by ctest or by a named check", and `tests/unpacker` is run by
+neither — it links `retdec::cpdetect`, which needs YARA, and
+`check_fileformat_tests.sh` says so. The claim now reads "Every test directory
+is run, **or its omission is recorded with a reason**", and the evidence column
+names the one omission.
+
+Nothing in the register is withdrawn by this and no evidence changed. The point
+is narrower and worth writing down on its own: a claims register is only useful
+if the claim and the evidence say the same thing, and five of ten did not on
+the first pass. The failure mode is specific — the evidence gets written while
+the measurement is fresh and is accurate; the headline gets written as a
+summary of what the *fix* was for, which is always broader than what the
+*measurement* covered.
+
+### Still open
+
+- Nothing checks this automatically. `check_withdrawn_claims.py` verifies that
+  withdrawn claims stay withdrawn, and `check_doc_vs_code.py` that documents
+  and code agree; neither reads a claim's headline against its own evidence
+  column, and it is not obvious that a script could.

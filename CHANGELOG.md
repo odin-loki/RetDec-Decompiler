@@ -395,6 +395,17 @@ All notable changes to RetDec (Odin Loch Trading as Imortek) are documented here
 
 ### Fixed
 
+- Six claim headlines in `docs/CLAIMS.md` corrected against their own evidence
+  columns. Five were broader than what had been measured — "the `if`-nest to
+  `switch` reconstruction runs the same body it replaced" became "…for the
+  nests this differential generates", and four like it. One was wrong: "Every
+  test directory is run by ctest or by a named check" is false for
+  `tests/unpacker`, which is run by neither and is now recorded as an omission
+  with a reason. No evidence changed and nothing is withdrawn; the headline is
+  the part that gets quoted, and five of ten said more than the column beneath
+  them.
+
+
 - Controlled node splitting in `structure_converter.cpp` redirected a
   predecessor's edge with `removeSucc(idx)` + `addSuccessor(clone)`, which
   erases at the index and appends at the end. The successor **index is the
